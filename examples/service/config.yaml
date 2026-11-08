@@ -1,0 +1,6 @@
+log:
+  level: ${LOG_LEVEL:-info}   # debug | info | warn | error
+  format: ${LOG_FORMAT:-json} # json | text
+
+db:
+  dsn: ${DATABASE_URL:-postgres://app:hunter2@localhost:5432/app}
