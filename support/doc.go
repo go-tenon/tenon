@@ -24,7 +24,7 @@
 //
 // # 约定
 //
-//   - 各子包彼此独立；不依赖本仓库的 config、logger、errs。
+//   - 不依赖本仓库的 config、logger。
 //   - 普通输入（空值、nil、越界长度）不会 panic，也不修改入参。
 //   - 字符串按字符（rune）计数，而不是按字节。
 package support

@@ -7,10 +7,8 @@ import (
 
 // PanicError 是由 recover 到的 panic 转换而来的错误。
 //
-// PanicError 刻意不实现 Unwrap：panic 一定是程序缺陷，不能因为 panic 的值
-// 恰好是 errs.New(errs.NotFound, …)、errs.FieldErrors 或 context.Canceled，
-// 就被 errs.CodeOf 归为 NotFound、InvalidArgument、Canceled，
-// 或被 errs.MessageOf 把文案展示给用户。errs 会把它当作普通错误归为 Internal。
+// PanicError 刻意不实现 Unwrap，避免 panic 的值被错误链判断误认为
+// 可正常处理的业务错误或 context.Canceled；调用方应按内部故障处理。
 // 需要检查 panic 的原始值时，用 errors.As 取出 *PanicError 后读取 Value。
 type PanicError struct {
 	// Value 是传给 panic 的值。

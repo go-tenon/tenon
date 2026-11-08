@@ -37,7 +37,7 @@ func TestCatch(t *testing.T) {
 	})
 	t.Run("panic with error does not unwrap", func(t *testing.T) {
 		// A panic is always a bug: its value must not leak a classification
-		// (errs.CodeOf, context.Canceled, ...) through the error chain.
+		// (context.Canceled, business errors, ...) through the error chain.
 		err := Catch(func() error { panic(context.Canceled) })
 		if errors.Is(err, context.Canceled) {
 			t.Errorf("errors.Is(err, context.Canceled) = true, want false")
