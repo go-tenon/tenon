@@ -16,6 +16,7 @@
 // 本目录只放社区库缺少、或现有实现不适合生产环境直接使用的部分：
 //
 //	support          Catch：把 panic 转成带调用栈的 error（lo.TryCatch 会丢弃错误与调用栈）
+//	support/crypt    用一个密钥做 AES-256-GCM 加密与解密（crypto/cipher 过于底层，易用错）
 //	support/password 基于 argon2id 的密码哈希与校验（x/crypto/argon2 只提供底层 KDF）
 //	support/random   密码学安全的 token、验证码（lo.RandomString 基于非安全随机数）
 //	support/strx     手机号、身份证、邮箱脱敏
