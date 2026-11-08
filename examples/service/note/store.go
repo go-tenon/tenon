@@ -26,7 +26,7 @@ type Note struct {
 	CreatedAt time.Time
 }
 
-// Store 是内存中的笔记存储，实际产品通常基于 pgx 实现。
+// Store 是内存中的笔记存储，实际产品基于 bun 实现，模型嵌入 database.Model。
 type Store struct {
 	mu    sync.Mutex
 	seq   int

@@ -7,6 +7,7 @@
 | `config` | YAML 配置加载，环境变量引用，`Secret` 打码 |
 | `logger` | 基于 slog 的日志初始化与 context 字段透传 |
 | `support` | 社区库缺少的通用工具（加密、密码哈希、随机 token、脱敏、集合） |
+| `database` | Postgres（bun + pgx + goose）：连接池、UUIDv7 主键与时间戳的公共 `Model`、带锁的迁移 |
 | `httpx` | chi 中间件（RequestID、RealIP、AccessLog、Recover、SecureHeaders）与 Server 生命周期 |
 | `httpx/auth` | Session 与 Bearer 认证的 Principal 约定、登录/退出、页面登录拦截 |
 | `httpx/rest` | huma 的 5xx 错误日志、按 OpenAPI security 鉴权、单文件 action 约定 |
@@ -24,10 +25,10 @@
 - HTTP Client：[Resty](https://github.com/go-resty/resty)
 - 错误处理：[cockroachdb/errors](https://github.com/cockroachdb/errors)（包装错误用 `errors.Wrap`，`fmt.Errorf` 会丢失日志中的调用栈）
 - 缓存：[gocache](https://github.com/eko/gocache)
-- 数据库：Postgres，使用 [pgx](https://github.com/jackc/pgx) 直连
+- 数据库：Postgres 18+，查询用 [bun](https://bun.uptrace.dev)，驱动用 [pgx](https://github.com/jackc/pgx)，迁移用 [goose](https://github.com/pressly/goose)，约定见 `database` 包文档
 - 分布式锁：Postgres advisory lock（优先事务级 `pg_try_advisory_xact_lock`，事务结束自动释放）；已引入 Redis 的项目可选 [bsm/redislock](https://github.com/bsm/redislock)
 
 使用示例见 [examples/service](./examples/service)：一个包含 REST API、HTMX 页面、登录的完整服务，
 运行 `go run ./examples/service -config examples/service/config.yaml` 后打开 http://localhost:8080（admin / admin）。
 
-运行测试：`go test ./...`。
+运行测试：`go test ./...`。`database` 包的集成测试需要 Postgres 18+，设置 `DATABASE_TEST_DSN` 后运行，否则跳过（见 `database/database_test.go`）。

@@ -82,12 +82,12 @@ func run(cfg Config) error {
 	huma.NewErrorWithContext = rest.LogServerErrors(huma.NewErrorWithContext)
 	web.ErrorHandler = views.ErrorHandler
 
-	// 依赖。实际产品在这里创建 pgx 连接池等，并传给各模块。
+	// 依赖。实际产品在这里用 database.Open 连接数据库、database.Migrate 执行迁移，并传给各模块。
 	users := user.NewStore(cfg.Demo.Name, string(cfg.Demo.Password), string(cfg.Demo.APIToken))
 	notes := note.NewStore()
 
 	sessions := scs.New()
-	sessions.Store = memstore.New() // 实际产品使用 pgxstore 或 redisstore
+	sessions.Store = memstore.New() // 实际产品使用 postgresstore.New(db.DB) 或 redisstore
 	sessions.Lifetime = cfg.Session.Lifetime
 	sessions.Cookie.Secure = cfg.Session.SecureCookie
 
