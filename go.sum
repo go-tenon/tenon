@@ -1,3 +1,5 @@
+github.com/alexedwards/scs/v2 v2.9.0 h1:xa05mVpwTBm1iLeTMNFfAWpKUm4fXAW7CeAViqBVS90=
+github.com/alexedwards/scs/v2 v2.9.0/go.mod h1:ToaROZxyKukJKT/xLcVQAChi5k6+Pn1Gvmdl7h3RRj8=
 github.com/danielgtaylor/huma/v2 v2.40.0 h1:429ynr7/T9Iar+8P6NSsjcKwCRgaXvPKvqIFmbeL6vE=
 github.com/danielgtaylor/huma/v2 v2.40.0/go.mod h1:x+utAArLHnM93jq2Wy7nLYkVorUF1vYML2hoPVb/5yo=
 github.com/fxamacker/cbor/v2 v2.9.6 h1:NHZPxuUjJXQjX9itA785y/5NKSlI4HQ+S7noZsmI7hs=

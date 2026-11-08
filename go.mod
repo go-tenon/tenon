@@ -3,6 +3,7 @@ module github.com/shellphy-kit/tools
 go 1.27.3
 
 require (
+	github.com/alexedwards/scs/v2 v2.9.0
 	github.com/danielgtaylor/huma/v2 v2.40.0
 	github.com/go-chi/chi/v5 v5.5.0
 	go.yaml.in/yaml/v4 v4.0.0
