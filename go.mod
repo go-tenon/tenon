@@ -3,6 +3,7 @@ module github.com/shellphy-kit/tools
 go 1.27.3
 
 require (
+	github.com/go-chi/chi/v5 v5.5.0
 	go.yaml.in/yaml/v4 v4.0.0
 	golang.org/x/crypto v0.58.0
 )
