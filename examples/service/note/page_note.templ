@@ -1,0 +1,7 @@
+package note
+
+templ noteDetail(n Note) {
+	<h1>{ n.Text }</h1>
+	<p>{ n.Author } · { n.CreatedAt.Format("2006-01-02 15:04") }</p>
+	<a href="/">返回列表</a>
+}

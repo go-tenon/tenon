@@ -1,45 +1,54 @@
-// Command service shows how a product wires the config and logger modules
-// together in main.
+// Command service 演示产品如何在 main 中组装本仓库的各个模块：
+// config、logger、httpx（chi 中间件与 Server）、httpx/auth（Session + Bearer）、
+// httpx/rest（huma API）与 httpx/web（templ + HTMX 页面）。
 //
-// Run from the repository root:
+// 在仓库根目录运行：
 //
 //	go run ./examples/service -config examples/service/config.yaml
-//	LOG_LEVEL=debug LOG_FORMAT=text go run ./examples/service -config examples/service/config.yaml
+//	LOG_FORMAT=text go run ./examples/service -config examples/service/config.yaml
+//
+// 然后：
+//
+//	浏览器打开 http://localhost:8080 ，用 admin / admin 登录
+//	API 文档：http://localhost:8080/docs
+//	curl -H 'Authorization: Bearer dev-token' http://localhost:8080/api/v1/notes
+//
+// 修改 .templ 文件后重新生成（生成的 _templ.go 已提交，运行示例不需要 templ 命令）：
+//
+//	go run github.com/a-h/templ/cmd/templ@v0.3.1100 generate -path examples/service
 package main
 
 import (
 	"context"
 	"flag"
 	"log/slog"
+	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+
+	"github.com/alexedwards/scs/v2"
+	"github.com/alexedwards/scs/v2/memstore"
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/danielgtaylor/huma/v2/adapters/humachi"
+	"github.com/go-chi/chi/v5"
 
 	"github.com/shellphy-kit/tools/config"
+	"github.com/shellphy-kit/tools/examples/service/account"
+	"github.com/shellphy-kit/tools/examples/service/note"
+	"github.com/shellphy-kit/tools/examples/service/user"
+	"github.com/shellphy-kit/tools/examples/service/views"
+	"github.com/shellphy-kit/tools/httpx"
+	"github.com/shellphy-kit/tools/httpx/auth"
+	"github.com/shellphy-kit/tools/httpx/rest"
+	"github.com/shellphy-kit/tools/httpx/web"
 	"github.com/shellphy-kit/tools/logger"
 )
 
 const (
 	serviceName = "example-service"
-	version     = "dev" // normally injected with -ldflags
+	version     = "dev" // 通常由 -ldflags 注入
 )
-
-// Config is owned by the product. The log section uses slog.Level directly:
-// it decodes from "debug", "info", "warn", "error".
-type Config struct {
-	Log struct {
-		Level  slog.Level `yaml:"level"`
-		Format string     `yaml:"format"`
-	} `yaml:"log"`
-	DB struct {
-		DSN config.Secret `yaml:"dsn"`
-	} `yaml:"db"`
-}
-
-func DefaultConfig() Config {
-	var c Config
-	c.Log.Level = slog.LevelInfo
-	c.Log.Format = logger.FormatJSON
-	return c
-}
 
 func main() {
 	path := flag.String("config", "config.yaml", "path to the configuration file")
@@ -51,7 +60,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// LevelVar allows changing the level at runtime (e.g. on config reload).
+	// LevelVar 允许运行时调整级别（例如重新加载配置时）。
 	var level slog.LevelVar
 	level.Set(cfg.Log.Level)
 	slog.SetDefault(logger.New(logger.Options{
@@ -59,17 +68,60 @@ func main() {
 		Format: cfg.Log.Format,
 	}).With("service", serviceName, "version", version))
 
-	// Secret fields are masked, so the whole config can be logged safely.
+	// Secret 字段会被打码，整个配置可以安全地写入日志。
 	slog.Info("config loaded", "config", cfg)
 
-	// Request-scoped fields are attached to the context once (typically in
-	// a middleware); every slog.*Context call below includes them.
-	ctx := logger.WithAttrs(context.Background(), slog.String("request_id", "req-1"))
-	createOrder(ctx, 42)
+	if err := run(cfg); err != nil {
+		slog.Error("service stopped", "err", err)
+		os.Exit(1)
+	}
 }
 
-// createOrder is ordinary business code: it uses only the standard library slog.
-func createOrder(ctx context.Context, id int) {
-	slog.DebugContext(ctx, "creating order", "order_id", id)
-	slog.InfoContext(ctx, "order created", "order_id", id)
+func run(cfg Config) error {
+	// 全局错误处理：显式替换 huma 与 web 的默认实现。
+	huma.NewErrorWithContext = rest.LogServerErrors(huma.NewErrorWithContext)
+	web.ErrorHandler = views.ErrorHandler
+
+	// 依赖。实际产品在这里创建 pgx 连接池等，并传给各模块。
+	users := user.NewStore(cfg.Demo.Name, string(cfg.Demo.Password), string(cfg.Demo.APIToken))
+	notes := note.NewStore()
+
+	sessions := scs.New()
+	sessions.Store = memstore.New() // 实际产品使用 pgxstore 或 redisstore
+	sessions.Lifetime = cfg.Session.Lifetime
+	sessions.Cookie.Secure = cfg.Session.SecureCookie
+
+	// 全局中间件：顺序见 httpx 包文档。
+	r := chi.NewRouter()
+	r.Use(
+		httpx.RealIP(cfg.HTTP.TrustedProxies...),
+		httpx.RequestID,
+		httpx.AccessLog(nil),
+		httpx.Recover(nil),
+		httpx.SecureHeaders,
+		http.NewCrossOriginProtection().Handler, // Cookie 会话的 CSRF 防护
+		sessions.LoadAndSave,
+		auth.LoadSession(sessions, users.Load),
+	)
+
+	r.Handle("/static/*", views.Static)
+	r.Handle("/vendor/*", views.Vendor)
+
+	// REST API：/api/v1，文档在 /docs。
+	apiConfig := huma.DefaultConfig("Notes API", version)
+	apiConfig.Components.SecuritySchemes = rest.SecuritySchemes(sessions.Cookie.Name)
+	api := humachi.New(r, apiConfig)
+	api.UseMiddleware(rest.Authorize(api, users.VerifyToken))
+	rest.Mount(huma.NewGroup(api, "/api/v1"), note.APIActions(notes)...)
+
+	// 页面。
+	account.MountPages(r, sessions, users)
+	r.Group(func(r chi.Router) {
+		r.Use(auth.RequireLogin[*user.User]("/login"))
+		note.MountPages(r, notes)
+	})
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return httpx.NewServer(cfg.HTTP, r).Run(ctx)
 }

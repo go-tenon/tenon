@@ -1,0 +1,14 @@
+package account
+
+templ loginForm(next, errMsg string) {
+	<h1>登录</h1>
+	if errMsg != "" {
+		<p class="error">{ errMsg }</p>
+	}
+	<form class="stacked" method="post" action="/login">
+		<input type="hidden" name="next" value={ next }/>
+		<input name="name" placeholder="用户名" autocomplete="username" required/>
+		<input name="password" type="password" placeholder="密码" autocomplete="current-password" required/>
+		<button type="submit">登录</button>
+	</form>
+}

@@ -2,5 +2,16 @@ log:
   level: ${LOG_LEVEL:-info}   # debug | info | warn | error
   format: ${LOG_FORMAT:-json} # json | text
 
-db:
-  dsn: ${DATABASE_URL:-postgres://app:hunter2@localhost:5432/app}
+http:
+  addr: ${HTTP_ADDR:-:8080}
+  shutdown_delay: 0s          # Kubernetes 中建议 5s
+  trusted_proxies: []         # 部署在反向代理后时填写代理网段，如 ["10.0.0.0/8"]
+
+session:
+  lifetime: 24h
+  secure_cookie: false        # 本地 HTTP 调试用；HTTPS 部署时设为 true
+
+demo:
+  name: admin
+  password: ${DEMO_PASSWORD:-admin}
+  api_token: ${DEMO_API_TOKEN:-dev-token}

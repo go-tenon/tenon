@@ -1,0 +1,42 @@
+package views
+
+import (
+	"strconv"
+
+	"github.com/shellphy-kit/tools/examples/service/user"
+	"github.com/shellphy-kit/tools/httpx/auth"
+)
+
+// Layout 是整页布局，页面内容通过 web.Page 作为 children 传入。
+templ Layout(title string) {
+	<!DOCTYPE html>
+	<html lang="zh-CN">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<title>{ title }</title>
+			<link rel="stylesheet" href={ Static.URL("app.css") }/>
+			<script src={ Vendor.URL("htmx.min.js") }></script>
+		</head>
+		<body hx-on:notify="alert(event.detail.message)">
+			<header>
+				<a href="/">Notes</a>
+				if u, ok := auth.From[*user.User](ctx); ok {
+					<form method="post" action="/logout">
+						<span>{ u.Name }</span>
+						<button type="submit">退出</button>
+					</form>
+				}
+			</header>
+			<main id="content">
+				{ children... }
+			</main>
+		</body>
+	</html>
+}
+
+templ errorContent(status int, msg string) {
+	<h1>{ strconv.Itoa(status) }</h1>
+	<p>{ msg }</p>
+	<a href="/">返回首页</a>
+}
