@@ -108,6 +108,23 @@ func TestFieldErrorsString(t *testing.T) {
 	}
 }
 
+func TestFieldErrorsErr(t *testing.T) {
+	if err := (FieldErrors{}).Err(); err != nil {
+		t.Errorf("empty: got %v, want nil", err)
+	}
+	var nilMap FieldErrors
+	if err := nilMap.Err(); err != nil {
+		t.Errorf("nil map: got %v, want nil", err)
+	}
+	err := FieldErrors{"a": "b"}.Err()
+	if CodeOf(err) != InvalidArgument {
+		t.Errorf("non-empty: got code %q", CodeOf(err))
+	}
+	if fe, ok := errors.AsType[FieldErrors](err); !ok || fe["a"] != "b" {
+		t.Errorf("non-empty: got %v", err)
+	}
+}
+
 func TestErrorsIsWithFieldErrorsInChain(t *testing.T) {
 	// FieldErrors is a map (not comparable); errors.Is must not panic on it.
 	err := fmt.Errorf("op: %w", FieldErrors{"a": "b"})

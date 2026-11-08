@@ -24,10 +24,7 @@ func validateSignup(email, name string) error {
 	if name == "" {
 		fe["name"] = "不能为空"
 	}
-	if len(fe) > 0 {
-		return fe
-	}
-	return nil
+	return fe.Err()
 }
 
 func Example() {
