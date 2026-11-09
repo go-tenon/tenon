@@ -38,4 +38,12 @@ cockroachdb/errors；缓存直接使用 eko/gocache。
 go test ./...
 ```
 
-集成测试与参考应用随后续 PR 加入。CI 见 `.github/workflows/ci.yml`。
+```bash
+# 集成测试需要 Postgres / 可选 Redis
+export DATABASE_TEST_DSN='postgres://postgres:postgres@127.0.0.1:55432/postgres?sslmode=disable'
+export REDIS_TEST_ADDR='127.0.0.1:6379'
+go test -tags=integration ./database/... ./examples/... ./internal/consumetest/...
+```
+
+文档：[`docs/support-matrix.md`](./docs/support-matrix.md)、[`docs/production.md`](./docs/production.md)、[`docs/api-review.md`](./docs/api-review.md)。
+CI 见 `.github/workflows/ci.yml`。
