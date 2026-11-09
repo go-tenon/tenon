@@ -14,13 +14,13 @@ Module：`github.com/ryan053857/mygoravel`。设计规格与实施计划见 [`sp
 | `logging` | 已交付 | slog 构建与上下文字段辅助 |
 | `i18n` | 已交付 | go-i18n 目录分层组合与冻结 Bundle |
 | `fault` | 已交付 | Code/Kind/公开参数与 HTTP 中立映射 |
-| `cleanup` | 后续 PR | 资源清理栈 |
+| `cleanup` | 已交付 | 资源清理栈 |
+| `httpx` | 已交付 | net/http 运行与停机排空 |
+| `httpx/rest` | 已交付 | Huma 装配、延迟绑定与离线 OpenAPI |
 | `identity` | 后续 PR | 已认证主体 |
 | `database` | 后续 PR | PostgreSQL（Bun + pgx） |
 | `database/migrate` | 后续 PR | goose Provider 装配 |
 | `database/dbtest` | 后续 PR | 真实数据库测试隔离 |
-| `httpx` | 后续 PR | net/http 生命周期与中间件 |
-| `httpx/rest` | 后续 PR | Huma / OpenAPI |
 | `command` | 后续 PR | serve / config / migrate / openapi 命令工厂 |
 | `examples/api` | 后续 PR | 手写参考 API 应用 |
 

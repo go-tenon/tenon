@@ -4,6 +4,8 @@ go 1.27.3
 
 require (
 	github.com/cockroachdb/errors v1.14.0
+	github.com/danielgtaylor/huma/v2 v2.40.0
+	github.com/go-chi/chi/v5 v5.5.0
 	github.com/nicksnyder/go-i18n/v2 v2.7.0
 	go.yaml.in/yaml/v4 v4.0.0
 	golang.org/x/text v0.43.0
@@ -18,5 +20,5 @@ require (
 	github.com/kr/text v0.2.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/rogpeppe/go-internal v1.9.0 // indirect
-	golang.org/x/sys v0.39.0 // indirect
+	golang.org/x/sys v0.49.0 // indirect
 )
