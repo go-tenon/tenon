@@ -1,7 +1,0 @@
-body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 1rem; color: #222; }
-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
-header form { display: flex; gap: .5rem; align-items: center; }
-form { display: flex; gap: .5rem; margin: 1rem 0; }
-form.stacked { flex-direction: column; max-width: 18rem; }
-input { flex: 1; padding: .4rem; }
-.error { color: #b00020; }

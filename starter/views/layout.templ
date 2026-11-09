@@ -3,40 +3,97 @@ package views
 import (
 	"strconv"
 
-	"github.com/ryan053857/go-kit/starter/user"
-	"github.com/ryan053857/go-kit/httpx/auth"
+	"github.com/ryan053857/go-kit/starter/components"
+	"github.com/ryan053857/go-kit/starter/components/button"
+	"github.com/ryan053857/go-kit/starter/components/card"
+	"github.com/ryan053857/go-kit/starter/components/toast"
 )
 
 // Layout 是整页布局，页面内容通过 web.Page 作为 children 传入。
-templ Layout(title string) {
+templ Layout(p Page) {
 	<!DOCTYPE html>
 	<html lang="zh-CN">
 		<head>
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
-			<title>{ title }</title>
-			<link rel="stylesheet" href={ Static.URL("app.css") }/>
-			<script src={ Vendor.URL("htmx.min.js") }></script>
+			<title>{ p.Title } · Starter</title>
+			<link rel="stylesheet" href={ Static.URL("css/output.css") }/>
+			@components.Scripts()
+			<script defer src={ Vendor.URL("htmx.min.js") }></script>
 		</head>
-		<body hx-on:notify="alert(event.detail.message)">
-			<header>
-				<a href="/">Notes</a>
-				if u, ok := auth.From[*user.User](ctx); ok {
-					<form method="post" action="/logout">
-						<span>{ u.Name }</span>
-						<button type="submit">退出</button>
-					</form>
-				}
-			</header>
-			<main id="content">
+		<body class="bg-muted/40 min-h-svh font-sans antialiased">
+			if p.User != nil {
+				<header class="bg-background border-b">
+					<div class="mx-auto flex h-14 max-w-4xl items-center gap-2 px-4">
+						<a href="/" class="mr-4 font-semibold">Starter</a>
+						@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeSm, Href: "/"}) {
+							笔记
+						}
+						@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeSm, Href: "/settings"}) {
+							账号设置
+						}
+						<div class="ml-auto flex items-center gap-3 text-sm">
+							<span class="text-muted-foreground">{ DisplayName(p.User) }</span>
+							<form method="post" action="/logout">
+								@button.Button(button.Props{Type: button.TypeSubmit, Variant: button.VariantOutline, Size: button.SizeSm}) {
+									退出
+								}
+							</form>
+						</div>
+					</div>
+				</header>
+			}
+			<main id="content" class="mx-auto max-w-4xl px-4 py-8">
 				{ children... }
 			</main>
+			@toast.Toaster()
+			if p.Flash != "" {
+				@toastMarker(p.Flash, false)
+			}
 		</body>
 	</html>
 }
 
+// AuthCard 是登录、注册等页面居中的卡片。
+templ AuthCard(title, description string) {
+	<div class="flex min-h-[70svh] items-center justify-center">
+		@card.Card(card.Props{Class: "w-full max-w-sm"}) {
+			@card.Header() {
+				@card.Title() {
+					{ title }
+				}
+				if description != "" {
+					@card.Description() {
+						{ description }
+					}
+				}
+			}
+			@card.Content() {
+				{ children... }
+			}
+		}
+	</div>
+}
+
+templ toastMarker(msg string, isError bool) {
+	if isError {
+		@toast.Toast(toast.Props{Title: msg, Type: toast.TypeError})
+	} else {
+		@toast.Toast(toast.Props{Title: msg, Type: toast.TypeSuccess})
+	}
+}
+
+// ToastOOB 在 HTMX 响应中附带一条提示：通过 hx-swap-oob 追加到 body，不影响主体内容的替换。
+templ ToastOOB(msg string, isError bool) {
+	<div hx-swap-oob="beforeend:body">
+		@toastMarker(msg, isError)
+	</div>
+}
+
 templ errorContent(status int, msg string) {
-	<h1>{ strconv.Itoa(status) }</h1>
-	<p>{ msg }</p>
-	<a href="/">返回首页</a>
+	@AuthCard(strconv.Itoa(status), msg) {
+		@button.Button(button.Props{Href: "/", Variant: button.VariantOutline, Class: "w-full"}) {
+			返回首页
+		}
+	}
 }

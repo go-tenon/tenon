@@ -1,0 +1,41 @@
+package account
+
+import (
+	"time"
+
+	"github.com/ryan053857/go-kit/config"
+)
+
+// Config 是账号模块的配置，产品放在自己的配置中：
+//
+//	account:
+//	  jwt_secret: ${JWT_SECRET}   # 至少 32 字节的随机串，例如 openssl rand -base64 48
+type Config struct {
+	JWTSecret config.Secret `yaml:"jwt_secret"` // access token 的 HS256 签名密钥，至少 32 字节
+	Issuer    string        `yaml:"issuer"`     // access token 的 iss，默认 "go-kit"
+
+	AccessTTL    time.Duration `yaml:"access_ttl"`    // access token 有效期，默认 15m
+	RefreshTTL   time.Duration `yaml:"refresh_ttl"`   // refresh token 有效期（每次刷新后顺延），默认 7 天
+	RememberTTL  time.Duration `yaml:"remember_ttl"`  // 登录时勾选“记住我”的 refresh token 有效期，默认 30 天
+	RefreshGrace time.Duration `yaml:"refresh_grace"` // 刷新后旧 refresh token 仍可使用的时间（应对网络重试），默认 30s
+	ResetTTL     time.Duration `yaml:"reset_ttl"`     // 重置密码链接有效期，默认 1h
+
+	// CheckSession 为 true 时，每次校验 access token 都查询会话是否仍存在，踢下线立即生效；
+	// 为 false（默认）时不查库，踢下线最长在 AccessTTL 后生效。
+	CheckSession bool `yaml:"check_session"`
+
+	MinPasswordLength int `yaml:"min_password_length"` // 默认 8
+}
+
+// DefaultConfig 返回带默认值的 Config（JWTSecret 为空，必须由产品配置）。
+func DefaultConfig() Config {
+	return Config{
+		Issuer:            "go-kit",
+		AccessTTL:         15 * time.Minute,
+		RefreshTTL:        7 * 24 * time.Hour,
+		RememberTTL:       30 * 24 * time.Hour,
+		RefreshGrace:      30 * time.Second,
+		ResetTTL:          time.Hour,
+		MinPasswordLength: 8,
+	}
+}

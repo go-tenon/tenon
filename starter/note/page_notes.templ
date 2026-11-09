@@ -1,19 +1,45 @@
 package note
 
+import (
+	"time"
+
+	"github.com/ryan053857/go-kit/starter/components/button"
+	"github.com/ryan053857/go-kit/starter/components/card"
+	"github.com/ryan053857/go-kit/starter/components/input"
+)
+
 templ notesContent(notes []Note) {
-	<h1>笔记</h1>
-	<form hx-post="/notes" hx-target="#notes" hx-swap="beforeend" hx-on::after-request="if (event.detail.successful) this.reset()">
-		<input name="text" placeholder="写点什么…" autocomplete="off"/>
-		<button type="submit">添加</button>
-	</form>
-	<ul id="notes">
-		for _, n := range notes {
-			@noteItem(&n)
-		}
-	</ul>
-	<button hx-get="/" hx-target="#content">刷新</button>
+	<div class="flex flex-col gap-6">
+		<h1 class="text-2xl font-semibold">我的笔记</h1>
+		<form
+			class="flex gap-2"
+			hx-post="/notes"
+			hx-target="#notes"
+			hx-swap="afterbegin"
+			hx-on::after-request="if (event.detail.successful && event.detail.target.id === 'notes') this.reset()"
+		>
+			@input.Input(input.Props{Name: "text", Placeholder: "写点什么…", Attributes: templ.Attributes{"autocomplete": "off"}})
+			@button.Button(button.Props{Type: button.TypeSubmit}) {
+				添加
+			}
+		</form>
+		<ul id="notes" class="flex flex-col gap-2">
+			for i := range notes {
+				@noteItem(&notes[i])
+			}
+		</ul>
+	</div>
 }
 
 templ noteItem(n *Note) {
-	<li><a href={ templ.SafeURL("/notes/" + n.ID.String()) }>{ n.Text }</a> <small>— { n.Author }</small></li>
+	<li>
+		<a href={ templ.SafeURL("/notes/" + n.ID.String()) } class="block">
+			@card.Card(card.Props{Class: "hover:bg-accent/50 py-4 transition-colors"}) {
+				@card.Content(card.ContentProps{Class: "flex items-center justify-between gap-4"}) {
+					<span class="truncate">{ n.Text }</span>
+					<span class="text-muted-foreground shrink-0 text-xs">{ n.CreatedAt.In(time.Local).Format("01-02 15:04") }</span>
+				}
+			}
+		</a>
+	</li>
 }

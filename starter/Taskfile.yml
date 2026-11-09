@@ -1,0 +1,37 @@
+# 本地开发命令，需要 task（https://taskfile.dev）与 Tailwind CSS v4 独立 CLI（tailwindcss）。
+version: "3"
+
+vars:
+  TEMPL: go run github.com/a-h/templ/cmd/templ@v0.3.1100
+
+tasks:
+  dev:
+    desc: 开发模式：templ、Tailwind 监听文件变化，自动重启服务
+    cmds:
+      - task --parallel templ css-watch
+
+  templ:
+    desc: 监听 .templ 变化并重启服务（http://localhost:7331 带自动刷新）
+    cmds:
+      - '{{.TEMPL}} generate --watch --proxy="http://localhost:8080" --cmd="go run ." --open-browser=false'
+
+  generate:
+    desc: 生成 templ 代码、css 与组件 js
+    cmds:
+      - '{{.TEMPL}} generate'
+      - task: css
+      - shadcn-templ bundle
+
+  css:
+    desc: 编译 Tailwind
+    cmds:
+      - tailwindcss -i assets/css/globals.css -o assets/css/output.css --minify
+
+  css-watch:
+    cmds:
+      - tailwindcss -i assets/css/globals.css -o assets/css/output.css --watch
+
+  migrate-publish:
+    desc: 发布 go-kit 模块的新迁移
+    cmds:
+      - go run . migrate publish

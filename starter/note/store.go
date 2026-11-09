@@ -1,4 +1,4 @@
-// Package note 是示例业务模块：领域逻辑、REST action 与页面 action 放在同一个包中，
+// Package note 是示例业务模块：每个用户自己的笔记。领域逻辑、REST action 与页面 action 放在同一个包中，
 // 每个 action 一个文件。
 package note
 
@@ -25,42 +25,42 @@ type Note struct {
 	bun.BaseModel `bun:"table:notes"`
 	database.Model
 
-	Text   string `bun:"text,notnull"`
-	Author string `bun:"author,notnull"`
+	UserID uuid.UUID `bun:"user_id,notnull,type:uuid"`
+	Text   string    `bun:"text,notnull"`
 }
 
-// Store 读写笔记。
+// Store 读写笔记，所有方法只操作 userID 自己的笔记。
 type Store struct {
 	db bun.IDB
 }
 
 func NewStore(db bun.IDB) *Store { return &Store{db: db} }
 
-func (s *Store) Create(ctx context.Context, author, text string) (*Note, error) {
+func (s *Store) Create(ctx context.Context, userID uuid.UUID, text string) (*Note, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return nil, ErrEmpty
 	}
-	n := &Note{Text: text, Author: author}
+	n := &Note{UserID: userID, Text: text}
 	if _, err := s.db.NewInsert().Model(n).Exec(ctx); err != nil {
 		return nil, err
 	}
 	return n, nil
 }
 
-func (s *Store) List(ctx context.Context) ([]Note, error) {
+func (s *Store) List(ctx context.Context, userID uuid.UUID) ([]Note, error) {
 	notes := []Note{}
-	err := s.db.NewSelect().Model(&notes).Order("id").Scan(ctx)
+	err := s.db.NewSelect().Model(&notes).Where("user_id = ?", userID).Order("id DESC").Scan(ctx)
 	return notes, err
 }
 
-func (s *Store) Get(ctx context.Context, id string) (*Note, error) {
-	uid, err := uuid.Parse(id)
+func (s *Store) Get(ctx context.Context, userID uuid.UUID, id string) (*Note, error) {
+	nid, err := uuid.Parse(id)
 	if err != nil {
 		return nil, ErrNotFound
 	}
 	n := new(Note)
-	err = s.db.NewSelect().Model(n).Where("id = ?", uid).Scan(ctx)
+	err = s.db.NewSelect().Model(n).Where("id = ? AND user_id = ?", nid, userID).Scan(ctx)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}

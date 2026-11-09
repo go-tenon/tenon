@@ -20,6 +20,8 @@ import (
 	"github.com/ryan053857/go-kit/database"
 	"github.com/ryan053857/go-kit/httpx"
 	"github.com/ryan053857/go-kit/httpx/rest"
+	"github.com/ryan053857/go-kit/mail"
+	"github.com/ryan053857/go-kit/messaging"
 )
 
 //go:embed migrations/*.sql
@@ -53,6 +55,9 @@ type App struct {
 	Config   *Config
 	DB       *bun.DB
 	Sessions *scs.SessionManager
+	Mailer   mail.Mailer
+	// Bus 处理异步消息：在 Setup 中用 messaging.Handle 注册处理函数，Serve 时与 HTTP 服务一起运行。
+	Bus *messaging.Bus
 
 	// Router 为根路由，已挂载 RequestID、AccessLog 等全局中间件（顺序见 New）。
 	// 产品可以继续 Use 中间件，但必须在注册任何路由、调用 API() 之前（chi 的规则）。
@@ -98,6 +103,13 @@ func build(ctx context.Context, cfg *Config, opts Options, connect, migrate bool
 			}
 		}
 	} else if a.DB, err = database.New(cfg.Database); err != nil {
+		return nil, err
+	}
+
+	if a.Mailer, err = mail.New(cfg.Mail); err != nil {
+		return nil, err
+	}
+	if a.Bus, err = messaging.New(a.DB.DB); err != nil {
 		return nil, err
 	}
 
@@ -159,11 +171,32 @@ func (a *App) Close() error {
 	return nil
 }
 
-// Serve 启动 HTTP 服务直到 ctx 取消，/readyz 会检查数据库连接。
+// Serve 运行消息处理函数与 HTTP 服务，直到 ctx 取消或其中之一出错；/readyz 会检查数据库连接。
+// 消息处理开始后才开始接受 HTTP 请求。停止时先停 HTTP（等待进行中的请求），再停消息处理。
 func (a *App) Serve(ctx context.Context) error {
+	busCtx, stopBus := context.WithCancel(context.WithoutCancel(ctx))
+	defer stopBus()
+	httpCtx, stopHTTP := context.WithCancel(ctx)
+	defer stopHTTP()
+
+	busErr := make(chan error, 1)
+	go func() {
+		err := a.Bus.Run(busCtx)
+		stopHTTP() // 消息处理出错时停止 HTTP
+		busErr <- err
+	}()
+	select {
+	case <-a.Bus.Running():
+	case <-httpCtx.Done():
+		stopBus()
+		return <-busErr
+	}
+
 	srv := httpx.NewServer(a.Config.HTTP, a.Router)
 	srv.ReadyCheck = a.DB.PingContext
-	return srv.Run(ctx)
+	httpErr := srv.Run(httpCtx)
+	stopBus()
+	return errors.Join(httpErr, <-busErr)
 }
 
 func (o Options) migrationsDir() string {

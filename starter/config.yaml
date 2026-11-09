@@ -14,7 +14,19 @@ session:
   lifetime: 24h
   secure_cookie: ${SESSION_SECURE_COOKIE:-false} # 本地 HTTP 调试用 false；HTTPS 部署时设为 true
 
-demo:
-  name: admin
-  password: ${DEMO_PASSWORD:-admin}
-  api_token: ${DEMO_API_TOKEN:-dev-token}
+mail:
+  driver: ${MAIL_DRIVER:-log}  # log（只写日志）| smtp | resend
+  from: ${MAIL_FROM:-Starter <no-reply@example.com>}
+  smtp:
+    host: ${SMTP_HOST:-localhost}
+    port: ${SMTP_PORT:-587}
+    username: ${SMTP_USERNAME:-}
+    password: ${SMTP_PASSWORD:-}
+  resend:
+    api_key: ${RESEND_API_KEY:-}
+
+base_url: ${BASE_URL:-http://localhost:8080}
+
+account:
+  # 生产环境必须通过环境变量设置：openssl rand -base64 48
+  jwt_secret: ${JWT_SECRET:-dev-only-secret-0123456789abcdef0123456789}

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/ryan053857/go-kit/database"
 	"github.com/ryan053857/go-kit/database/dbtest"
 	"github.com/ryan053857/go-kit/httpx/rest"
+	"github.com/ryan053857/go-kit/messaging"
 )
 
 type productConfig struct {
@@ -208,4 +210,51 @@ func run(t *testing.T, cfg app.Configurer, opts app.Options, args ...string) str
 		t.Fatalf("%v: %v\n%s", args, err, out.String())
 	}
 	return out.String()
+}
+
+func TestServe(t *testing.T) {
+	cfg := productConfig{Config: app.DefaultConfig()}
+	cfg.Database.DSN = dbtest.DSN(t)
+	cfg.HTTP.Addr = "127.0.0.1:0"
+
+	handled := make(chan int, 1)
+	a, err := app.New(t.Context(), &cfg.Config, app.Options{
+		Name: "test",
+		Setup: func(a *app.App) error {
+			return messaging.Handle(a.Bus, "app_test", func(_ context.Context, n int) error {
+				handled <- n
+				return nil
+			})
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	served := make(chan error, 1)
+	go func() { served <- a.Serve(ctx) }()
+
+	if err := a.Bus.Publish(t.Context(), "app_test", 42); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case n := <-handled:
+		if n != 42 {
+			t.Errorf("handled %d", n)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("message not handled")
+	}
+
+	cancel()
+	select {
+	case err := <-served:
+		if err != nil {
+			t.Errorf("Serve = %v", err)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("Serve did not stop")
+	}
 }

@@ -9,7 +9,7 @@ import (
 
 	"github.com/ryan053857/go-kit/httpx/auth"
 	"github.com/ryan053857/go-kit/httpx/rest"
-	"github.com/ryan053857/go-kit/starter/user"
+	"github.com/ryan053857/go-kit/modules/account"
 )
 
 type CreateNoteInput struct {
@@ -32,15 +32,15 @@ func (a *CreateNote) Register(api huma.API) {
 		Method:        http.MethodPost,
 		Path:          "/notes",
 		Summary:       "创建笔记",
-		Tags:          []string{"note"},
+		Tags:          []string{"笔记"},
 		DefaultStatus: http.StatusCreated,
 		Security:      rest.RequireAuth(),
 	}, a.handle)
 }
 
 func (a *CreateNote) handle(ctx context.Context, in *CreateNoteInput) (*CreateNoteOutput, error) {
-	u, _ := auth.From[*user.User](ctx) // rest.Authorize 已保证已登录
-	n, err := a.Notes.Create(ctx, u.Name, in.Body.Text)
+	p, _ := auth.From[*account.Principal](ctx) // rest.Authorize 已保证已登录
+	n, err := a.Notes.Create(ctx, p.ID, in.Body.Text)
 	switch {
 	case errors.Is(err, ErrEmpty):
 		return nil, huma.Error422UnprocessableEntity("笔记内容不能为空")
