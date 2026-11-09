@@ -40,65 +40,88 @@ go test -race ./...
 <a id="http-tests"></a>
 ## HTTP 测试
 
-测试 HTTP 接口时，不需要真正监听端口。用 `httptest` 创建请求和响应记录器，然后直接调用 `api.Handler()` 即可。下面是一个完整的 `api_test.go`：
+测试 HTTP 接口时，不需要真正监听端口。用 `httptest` 创建请求和响应记录器，然后直接调用 `api.Handler()` 即可。
+
+请调用应用自己的路由注册函数，而不是在测试中重新声明路由，这样测试覆盖的就是真实的路由配置、认证和输入验证。下面是博客应用完整的 `internal/article/articlehttp/routes_test.go`：
 
 ```go
-package api_test
+package articlehttp_test
 
 import (
-    "context"
     "encoding/json"
     "net/http"
     "net/http/httptest"
+    "strings"
     "testing"
 
-    "github.com/danielgtaylor/huma/v2"
+    "example.com/blog/internal/article"
+    "example.com/blog/internal/article/articlehttp"
+    "example.com/blog/internal/auth"
     "github.com/ryan053857/mygoravel/httpx/rest"
 )
 
-func TestPing(t *testing.T) {
-    type Input struct{}
-    type Output struct {
-        Body struct {
-            Message string `json:"message"`
-        }
-    }
+func newTestAPI() *rest.API {
     api := rest.New(rest.Options{})
-    op := huma.Operation{OperationID: "ping", Method: http.MethodGet, Path: "/ping"}
-    rest.Public()(&op)
-    rest.Register(api, op, func() func(context.Context, *Input) (*Output, error) {
-        return func(context.Context, *Input) (*Output, error) {
-            out := &Output{}
-            out.Body.Message = "pong"
-            return out, nil
-        }
-    })
+    validate := auth.Validator(auth.Config{Credentials: []auth.Credential{
+        {Token: "alice-token", SubjectID: "alice", Scopes: []string{"articles"}},
+        {Token: "guest-token", SubjectID: "guest"},
+    }})
+    // 这些请求在调用服务之前就会被拒绝，所以不需要数据库
+    articlehttp.Register(api, rest.RequireBearer(api, validate, "articles"), article.NewService(nil))
+    return api
+}
 
-    response := httptest.NewRecorder()
-    api.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/ping", nil))
-    if response.Code != http.StatusOK {
-        t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+func TestCreateArticleRejectsBadRequests(t *testing.T) {
+    const valid = `{"title":"Hello World","slug":"hello-world","content":"……"}`
+    tests := []struct {
+        name     string
+        token    string
+        body     string
+        status   int
+        code     string
+        location string
+    }{
+        {"没有 token", "", valid, http.StatusUnauthorized, "auth.unauthenticated", ""},
+        {"缺少 scope", "guest-token", valid, http.StatusForbidden, "auth.forbidden", ""},
+        {"slug 格式不对", "alice-token", `{"title":"Hello World","slug":"Hello World","content":""}`, http.StatusUnprocessableEntity, "", "body.slug"},
     }
-    var body struct {
-        Message string `json:"message"`
-    }
-    if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
-        t.Fatal(err)
-    }
-    if body.Message != "pong" || response.Header().Get("X-Request-ID") == "" {
-        t.Fatalf("unexpected response: %s", response.Body.String())
+    api := newTestAPI()
+    for _, tc := range tests {
+        t.Run(tc.name, func(t *testing.T) {
+            req := httptest.NewRequest(http.MethodPost, "/articles", strings.NewReader(tc.body))
+            req.Header.Set("Content-Type", "application/json")
+            if tc.token != "" {
+                req.Header.Set("Authorization", "Bearer "+tc.token)
+            }
+            rr := httptest.NewRecorder()
+            api.Handler().ServeHTTP(rr, req)
+
+            var problem struct {
+                Code   string `json:"code"`
+                Errors []struct {
+                    Location string `json:"location"`
+                } `json:"errors"`
+            }
+            if err := json.Unmarshal(rr.Body.Bytes(), &problem); err != nil {
+                t.Fatal(err)
+            }
+            if rr.Code != tc.status || problem.Code != tc.code {
+                t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+            }
+            if tc.location != "" && (len(problem.Errors) == 0 || problem.Errors[0].Location != tc.location) {
+                t.Fatalf("errors=%s", rr.Body.String())
+            }
+        })
     }
 }
 ```
 
-在实际项目中，你通常会调用应用自己的路由注册函数（例如 `notehttp.Register`），而不是在测试中重新声明路由。这样测试覆盖的就是真实的路由配置。
+这个测试用表格列出了三种在调用业务服务之前就会被拒绝的请求：没有 token、缺少 scope、输入格式不对。它们不会触及数据库，所以可以传入 `article.NewService(nil)`，测试运行得很快。
 
 <a id="testing-auth-and-errors"></a>
 ### 测试认证与错误响应
 
-请通过完整的 `api.Handler()` 来测试认证、验证错误和越权访问，而不是直接调用处理器函数。这样测试才能覆盖认证中间件、输入验证和错误转换的完整过程。
-
-一组典型的接口测试包括：
+请通过完整的 `api.Handler()` 来测试认证、验证错误和越权访问，而不是直接调用处理器函数。这样测试才能覆盖认证中间件、输入验证和错误转换的完整过程。一组典型的接口测试包括：
 
 - 不带 `Authorization` 头的请求返回 `401`；
 - 缺少 scope 的 token 返回 `403`；
@@ -106,25 +129,69 @@ func TestPing(t *testing.T) {
 - 访问他人的资源返回 `403` 或 `404`；
 - 错误响应中的 `code` 与预期的错误码一致。
 
+前三种由上面的测试覆盖。后两种取决于数据库中的数据，更适合直接测试业务服务，见下一节。
+
 <a id="testing-services"></a>
 ## 测试业务服务
 
-业务规则（尤其是资源所有权检查）应当通过直接调用业务服务来测试。由于主体是作为参数传入的，你可以很方便地模拟不同的调用者：
+业务规则（尤其是资源所有权检查）应当通过直接调用业务服务来测试。由于主体是作为参数传入的，你可以很方便地模拟不同的调用者。下面是 `internal/article/service_test.go`，它在一个真实的测试数据库上验证草稿的可见性和发布规则：
 
 ```go
-alice := identity.Subject{ID: "alice", Type: identity.SubjectUser}
-bob := identity.Subject{ID: "bob", Type: identity.SubjectUser}
+//go:build integration
 
-item, err := svc.Create(ctx, alice, "准备发布")
-if err != nil {
-    t.Fatal(err)
-}
-if _, err := svc.Get(ctx, bob, item.ID); !errors.Is(err, note.ErrForbidden) {
-    t.Fatalf("expected forbidden, got %v", err)
+package article_test
+
+import (
+    "context"
+    "errors"
+    "testing"
+
+    "example.com/blog/internal/article"
+    "example.com/blog/migrations"
+    "github.com/ryan053857/mygoravel/database/dbtest"
+    "github.com/ryan053857/mygoravel/identity"
+)
+
+func TestDraftVisibilityAndPublishing(t *testing.T) {
+    ctx := context.Background()
+    svc := article.NewService(dbtest.Open(t, migrations.FS))
+    alice := identity.Subject{ID: "alice", Type: identity.SubjectUser}
+    bob := identity.Subject{ID: "bob", Type: identity.SubjectUser}
+
+    item, err := svc.Create(ctx, alice, article.Changes{Title: "Hello World", Slug: "hello-world"})
+    if err != nil {
+        t.Fatal(err)
+    }
+
+    // 草稿只有作者能看到
+    if _, err := svc.Get(ctx, bob, item.ID); !errors.Is(err, article.ErrNotFound) {
+        t.Fatalf("bob read a draft: %v", err)
+    }
+    // 只有作者能发布，而且不能重复发布
+    if _, err := svc.Publish(ctx, bob, item.ID); !errors.Is(err, article.ErrForbidden) {
+        t.Fatalf("bob published: %v", err)
+    }
+    if _, err := svc.Publish(ctx, alice, item.ID); err != nil {
+        t.Fatal(err)
+    }
+    if _, err := svc.Publish(ctx, alice, item.ID); !errors.Is(err, article.ErrAlreadyPublished) {
+        t.Fatalf("published twice: %v", err)
+    }
+    // 发布之后所有人都能看到
+    if _, err := svc.Get(ctx, bob, item.ID); err != nil {
+        t.Fatal(err)
+    }
+    // slug 不能重复
+    _, err = svc.Create(ctx, bob, article.Changes{Title: "Another", Slug: "hello-world"})
+    if !errors.Is(err, article.ErrSlugTaken) {
+        t.Fatalf("duplicate slug: %v", err)
+    }
 }
 ```
 
-优先使用真实的依赖。只有在确实需要隔离某项外部能力时（例如第三方支付），才在业务包中定义一个小接口，并在测试中提供简单的实现，见[依赖装配](dependencies.md#replacing-dependencies-in-tests)。
+`dbtest.Open` 为这个测试创建一个独立的数据库并执行 `migrations.FS` 中的迁移，详见下面的[数据库测试](#database-tests)。
+
+优先使用真实的依赖。只有在确实需要隔离某项外部能力时（例如对象存储），才在业务包中定义一个小接口，并在测试中提供简单的实现，见[依赖装配](dependencies.md#replacing-dependencies-in-tests)。
 
 <a id="testing-configuration"></a>
 ## 测试配置
@@ -162,39 +229,10 @@ func TestLoadConfig(t *testing.T) {
 
 测试数据库代码时，最可靠的方式是使用真实的 PostgreSQL。`dbtest.Open` 会为**每个测试**创建一个独立的临时数据库，执行你的迁移，并在测试结束时删除它。测试之间互不干扰，可以放心地并行运行。
 
-下面的测试文件应放在 `migrations` 目录的上一级，`migrations` 中至少要有一个 SQL 文件：
+上一节的 `service_test.go` 就是这样使用它的：
 
 ```go
-//go:build integration
-
-package storage_test
-
-import (
-    "embed"
-    "testing"
-
-    "github.com/ryan053857/mygoravel/database/dbtest"
-    "github.com/ryan053857/mygoravel/database/migrate"
-)
-
-//go:embed migrations/*.sql
-var files embed.FS
-
-func TestDatabase(t *testing.T) {
-    migrations, err := migrate.Sub(files, "migrations")
-    if err != nil {
-        t.Fatal(err)
-    }
-    db := dbtest.Open(t, migrations)
-
-    var name string
-    if err := db.QueryRow("select current_database()").Scan(&name); err != nil {
-        t.Fatal(err)
-    }
-    if name == "" {
-        t.Fatal("missing isolated database")
-    }
-}
+svc := article.NewService(dbtest.Open(t, migrations.FS))
 ```
 
 `dbtest.Open` 返回一个已执行迁移的 `*bun.DB`，你可以把它直接传给业务服务进行测试。迁移参数传 `nil` 时会创建一个空数据库。
@@ -235,7 +273,7 @@ go test -race -count=1 -tags=integration ./...
 <a id="command-tests"></a>
 ## 命令测试
 
-测试命令行时，不需要启动新的进程。把 `command.IO` 指向 `bytes.Buffer`，通过 `SetArgs` 指定参数，然后执行命令并检查输出。下面是一个完整的测试文件：
+测试命令行时，不需要启动新的进程。用 `bytes.Buffer` 接收输出，通过 `SetArgs` 指定参数，然后执行命令并检查输出和退出码。下面是博客应用完整的 `internal/cli/cli_test.go`，它测试的是[命令行](commands.md#root-command)一章中真实的 `cli.New`：
 
 ```go
 package cli_test
@@ -243,31 +281,41 @@ package cli_test
 import (
     "bytes"
     "context"
-    "fmt"
+    "path/filepath"
+    "strings"
     "testing"
 
+    "example.com/blog/internal/cli"
     "github.com/ryan053857/mygoravel/command"
-    "github.com/spf13/cobra"
 )
 
-func TestOpenAPICommand(t *testing.T) {
-    var out, diagnostic bytes.Buffer
-    root := command.Root("api", "HTTP API", command.IO{Out: &out, Err: &diagnostic})
-    root.AddCommand(command.NewOpenAPI(func(ctx context.Context, cmd *cobra.Command, args []string) error {
-        _, err := fmt.Fprintln(cmd.OutOrStdout(), `{"openapi":"3.1.0"}`)
-        return err
-    }))
-    root.SetArgs([]string{"openapi"})
-    if err := root.ExecuteContext(context.Background()); err != nil {
+func run(args ...string) (string, error) {
+    var out, errOut bytes.Buffer
+    root := cli.New(&out, &errOut)
+    root.SetArgs(args)
+    err := root.ExecuteContext(context.Background())
+    return out.String(), err
+}
+
+func TestOpenAPIDoesNotNeedConfig(t *testing.T) {
+    out, err := run("openapi")
+    if err != nil {
         t.Fatal(err)
     }
-    if out.String() != "{\"openapi\":\"3.1.0\"}\n" || diagnostic.Len() != 0 {
-        t.Fatalf("stdout=%q stderr=%q", out.String(), diagnostic.String())
+    if !strings.Contains(out, `"/articles/{id}/publish"`) {
+        t.Fatalf("missing route in %s", out)
+    }
+}
+
+func TestConfigCheckReportsMissingFile(t *testing.T) {
+    _, err := run("config", "check", "--config", filepath.Join(t.TempDir(), "missing.yaml"))
+    if command.ExitCode(err) != command.ExitConfig {
+        t.Fatalf("exit code = %d, err = %v", command.ExitCode(err), err)
     }
 }
 ```
 
-这个例子使用固定的输出来演示如何测试命令的接线。在你的应用中，请测试真实的命令回调，并对失败情况（配置错误、依赖不可用、非法参数）断言对应的 `command.ExitCode`。
+第一个测试确认 `openapi` 命令不需要配置文件和数据库，并且输出了真实的路由；第二个测试确认配置文件缺失时，命令以 `ExitConfig` 退出。
 
 <a id="testing-shutdown"></a>
 ## 测试平滑停止

@@ -25,7 +25,7 @@
 服务在构造函数中接收它需要的依赖，并保存在结构体字段中。例如，一个需要访问数据库的服务：
 
 ```go
-package note
+package article
 
 import "github.com/uptrace/bun"
 
@@ -43,8 +43,8 @@ func NewService(db *bun.DB) *Service {
 服务的方法通过第一个参数 `ctx context.Context` 接收请求的取消信号和截止时间，并把它继续传给数据库查询等下游调用：
 
 ```go
-func (s *Service) Find(ctx context.Context, id uuid.UUID) (*Note, error) {
-    var item Note
+func (s *Service) Find(ctx context.Context, id uuid.UUID) (*Article, error) {
+    var item Article
     err := s.db.NewSelect().Model(&item).Where("id = ?", id).Scan(ctx)
     // ...
 }
@@ -53,10 +53,31 @@ func (s *Service) Find(ctx context.Context, id uuid.UUID) (*Note, error) {
 <a id="assembling-the-application"></a>
 ## 在入口中组装应用
 
-应用的入口（通常是 `internal/bootstrap` 包）负责创建所有依赖，并按正确的顺序把它们连接起来。下面是一个 `serve` 命令背后的组装函数片段，`Config` 是应用自己定义的配置结构，`note` 和 `notehttp` 是应用自己的业务包：
+应用的入口（通常是 `internal/bootstrap` 包）负责创建所有依赖，并按正确的顺序把它们连接起来。下面是博客应用完整的 `internal/bootstrap/serve.go`，`serve` 命令会调用其中的 `Serve`（见[命令行](commands.md#root-command)）：
 
 ```go
-func Serve(ctx context.Context, cfg Config, logger *slog.Logger) (err error) {
+package bootstrap
+
+import (
+    "context"
+    "log/slog"
+
+    "example.com/blog/internal/article"
+    "example.com/blog/internal/article/articlehttp"
+    "example.com/blog/internal/auth"
+    "example.com/blog/internal/settings"
+    "github.com/ryan053857/mygoravel/cleanup"
+    "github.com/ryan053857/mygoravel/database"
+    "github.com/ryan053857/mygoravel/httpx"
+    "github.com/ryan053857/mygoravel/httpx/rest"
+)
+
+// Routes 注册应用的全部路由。serve 和 openapi 命令共用它，保证文档与实际接口一致。
+func Routes(api *rest.API, validate rest.TokenValidator, articles *article.Service) {
+    articlehttp.Register(api, rest.RequireBearer(api, validate, "articles"), articles)
+}
+
+func Serve(ctx context.Context, cfg settings.Config, logger *slog.Logger) (err error) {
     var stack cleanup.Stack
     defer func() {
         err = stack.CloseWith(context.Background(), err)
@@ -72,19 +93,21 @@ func Serve(ctx context.Context, cfg Config, logger *slog.Logger) (err error) {
     })
 
     // 2. 构造业务服务
-    notes := note.NewService(db)
+    articles := article.NewService(db)
 
     // 3. 创建 API 并注册路由
     api := rest.New(rest.Options{
-        Title: "Notes API", Version: "1.0.0",
+        Title: "Blog API", Version: "1.0.0",
         HTTP: cfg.HTTP, Logger: logger,
     })
-    notehttp.Register(api, notes)
+    Routes(api, auth.Validator(cfg.Auth), articles)
 
     // 4. 开始监听，直到 ctx 被取消
     return httpx.ListenAndServe(ctx, cfg.HTTP, api.Handler(), httpx.ServeOptions{Logger: logger})
 }
 ```
+
+其中 `settings.Config` 是应用的[配置结构](configuration.md#loading-configuration)，`auth.Validator` 是 token 校验器（见[认证](authentication.md#token-validators)），`article` 和 `articlehttp` 是应用自己的业务包（见[路由](routing.md#organizing-routes)）。路由注册单独放在 `Routes` 中，这样 `openapi` 命令可以在不打开任何资源的情况下复用它。
 
 整个过程就是普通的函数调用：先创建被依赖的对象，再创建依赖它们的对象。`httpx.ListenAndServe` 返回后，`defer` 中的 `stack.CloseWith` 才会关闭数据库连接，因此正在处理的请求不会因为数据库提前关闭而失败。请求处理与停机的完整顺序见[请求生命周期](lifecycle.md)。
 
@@ -150,16 +173,31 @@ func WithDatabase(ctx context.Context, cfg database.Config,
 
 在 mygoravel 中，大多数测试可以直接使用真实的依赖，例如用 `dbtest` 创建一个真实的测试数据库（见[测试](testing.md#database-tests)）。
 
-当你确实需要替换某个依赖时（例如调用第三方支付接口），遵循 Go 的惯例：**由使用方定义接口**。在业务包中声明一个只包含所需方法的小接口，构造函数接收这个接口，测试中传入一个简单的实现即可：
+当你确实需要替换某个依赖时（例如把文章配图上传到对象存储），遵循 Go 的惯例：**由使用方定义接口**。在业务包中声明一个只包含所需方法的小接口，构造函数接收这个接口：
 
 ```go
-type PaymentGateway interface {
-    Charge(ctx context.Context, orderID string, amount int64) error
+package article
+
+type ImageStore interface {
+    Put(ctx context.Context, key string, data []byte) error
 }
 
-func NewCheckoutService(db *bun.DB, payments PaymentGateway) *CheckoutService {
-    return &CheckoutService{db: db, payments: payments}
+func NewService(db *bun.DB, images ImageStore) *Service {
+    return &Service{db: db, images: images}
 }
+```
+
+在测试中传入一个简单的内存实现即可，不需要真实的对象存储：
+
+```go
+type memoryImages map[string][]byte
+
+func (m memoryImages) Put(_ context.Context, key string, data []byte) error {
+    m[key] = data
+    return nil
+}
+
+svc := article.NewService(db, memoryImages{})
 ```
 
 不需要为每个服务预先定义接口，只在真正需要替换实现时再引入。

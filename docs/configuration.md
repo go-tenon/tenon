@@ -64,7 +64,27 @@ func Load(path string) (Config, error) {
 | `logging.Config` | `logs` | [创建日志器](logging.md#creating-a-logger) |
 | `database.Config` | `database` | [数据库配置](database.md#configuration) |
 
-应用自己的配置（例如业务开关、第三方服务地址）同样定义成结构体，作为新字段加入 `Config`。
+应用自己的配置（例如业务开关、第三方服务地址）同样定义成结构体，作为新字段加入 `Config`。例如博客需要把文章中的图片上传到对象存储：
+
+```go
+type StorageConfig struct {
+    Endpoint string `yaml:"endpoint"`
+    Bucket   string `yaml:"bucket"`
+}
+
+type Config struct {
+    HTTP     httpx.Config    `yaml:"http"`
+    Logs     logging.Config  `yaml:"logs"`
+    Database database.Config `yaml:"database"`
+    Storage  StorageConfig   `yaml:"storage"`
+}
+```
+
+```yaml
+storage:
+  endpoint: ${STORAGE_ENDPOINT}
+  bucket: blog-images
+```
 
 `config.Load` 会依次完成：读取 `envfile`、展开环境变量、把文件内容解码到结构体、调用 `Validate` 校验。
 
@@ -113,11 +133,7 @@ DATABASE_URL=postgres://app:secret@localhost:5432/app
 任何配置类型实现了 `Validate() error` 方法，`Load` 都会在解码后调用它。根结构体和所有嵌套字段都会被检查，子字段先于父结构体，所有错误一次性汇总返回：
 
 ```go
-type PaymentConfig struct {
-    Endpoint string `yaml:"endpoint"`
-}
-
-func (c PaymentConfig) Validate() error {
+func (c StorageConfig) Validate() error {
     if c.Endpoint == "" {
         return errors.New("endpoint is required")
     }
@@ -125,8 +141,10 @@ func (c PaymentConfig) Validate() error {
 }
 ```
 
+如果部署时忘了设置 `STORAGE_ENDPOINT`，`${STORAGE_ENDPOINT}` 会直接报错；如果设置成了空字符串，`Validate` 会拒绝它：
+
 ```text
-config: config.yaml: invalid configuration: payment: endpoint is required
+config: config.yaml: invalid configuration: storage: endpoint is required
 ```
 
 框架预定义的配置类型都已经实现了 `Validate`，放进根结构体后会自动校验。需要跨段检查时，在根结构体上实现 `Validate` 即可。

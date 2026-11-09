@@ -94,16 +94,29 @@ func Check(ctx context.Context, dsn string) error {
 <a id="defining-models"></a>
 ## 定义模型
 
-模型是一个带有 `bun` 标签的普通 Go 结构体，描述数据表的列与字段之间的映射：
+模型是一个带有 `bun` 标签的普通 Go 结构体，描述数据表的列与字段之间的映射。本文档以一个博客的文章为例：
 
 ```go
-type Note struct {
-    ID        uuid.UUID `bun:"id,pk"`
-    OwnerID   string    `bun:"owner_id,notnull"`
-    Title     string    `bun:"title,notnull"`
-    CreatedAt time.Time `bun:"created_at,notnull"`
+package article
+
+const (
+    StatusDraft     = "draft"
+    StatusPublished = "published"
+)
+
+type Article struct {
+    ID          uuid.UUID  `bun:"id,pk"`
+    AuthorID    string     `bun:"author_id,notnull"`
+    Title       string     `bun:"title,notnull"`
+    Slug        string     `bun:"slug,notnull"`
+    Content     string     `bun:"content,notnull"`
+    Status      string     `bun:"status,notnull"`
+    PublishedAt *time.Time `bun:"published_at"`
+    CreatedAt   time.Time  `bun:"created_at,notnull"`
 }
 ```
+
+`Slug` 是文章在网址中的标识，例如 `/blog/hello-world` 中的 `hello-world`，它在所有文章中必须唯一。文章创建时是草稿（`draft`），发布后变为 `published`，并记录发布时间。
 
 模型只用于查询映射，表结构本身由[迁移](migrations.md)管理。
 
@@ -113,7 +126,7 @@ type Note struct {
 在业务服务中，使用注入的 `db` 构建查询：
 
 ```go
-var item Note
+var item Article
 err := db.NewSelect().
     Model(&item).
     Where("id = ?", id).
@@ -127,24 +140,24 @@ err := db.NewSelect().
 ```go
 _, err := db.NewInsert().Model(&item).Exec(ctx)
 _, err = db.NewUpdate().Model(&item).WherePK().Exec(ctx)
-_, err = db.NewDelete().Model((*Note)(nil)).Where("id = ?", id).Exec(ctx)
+_, err = db.NewDelete().Model((*Article)(nil)).Where("id = ?", id).Exec(ctx)
 ```
 
 <a id="handling-not-found"></a>
 ### 处理“未找到”
 
-查询单条记录时，如果没有匹配的行，Bun 会返回 `sql.ErrNoRows`。请把它转换为业务的“未找到”错误，其他数据库错误则原样返回：
+查询单条记录时，如果没有匹配的行，Bun 会返回 `sql.ErrNoRows`。请把它转换为业务的“未找到”错误；其他数据库错误用 `cockroachdb/errors` 的 `errors.Wrap` 补充上下文后返回：
 
 ```go
 if errors.Is(err, sql.ErrNoRows) {
     return nil, ErrNotFound.New()
 }
 if err != nil {
-    return nil, err
+    return nil, errors.Wrap(err, "load article")
 }
 ```
 
-未经转换的数据库错误会被当作内部错误，返回 `500` 并记录日志。
+其他数据库错误会被当作内部错误，返回 `500`，完整的错误链和堆栈会记录到日志中，见[错误处理](errors.md#wrapping-errors)。
 
 <a id="transactions"></a>
 ## 事务
@@ -169,13 +182,29 @@ err := db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 <a id="constraint-errors"></a>
 ## 处理约束错误
 
-数据库约束是保证数据一致性的最后一道防线。当插入的数据违反唯一约束时，你通常希望返回一个 `409 Conflict`，而不是 `500`。`database` 包提供了几个判断函数：
+数据库约束是保证数据一致性的最后一道防线。当插入的数据违反唯一约束时，例如两篇文章使用了相同的 slug，你通常希望返回一个 `409 Conflict`，而不是 `500`。下面是创建文章的完整实现，`articles_slug_key` 是[迁移](migrations.md#migration-structure)中定义的唯一约束：
 
 ```go
-if database.IsUniqueViolation(err, "notes_owner_title_key") {
-    return nil, ErrConflict.Wrap(err)
+func (s *Service) Create(ctx context.Context, subject identity.Subject, c Changes) (*Article, error) {
+    if subject.ID == "" {
+        return nil, ErrForbidden.New()
+    }
+    item := &Article{
+        ID: uuid.New(), AuthorID: subject.ID, Status: StatusDraft,
+        Title: c.Title, Slug: c.Slug, Content: c.Content, CreatedAt: time.Now().UTC(),
+    }
+    _, err := s.db.NewInsert().Model(item).Exec(ctx)
+    if database.IsUniqueViolation(err, "articles_slug_key") {
+        return nil, ErrSlugTaken.Wrap(err, errorx.Public("slug", c.Slug))
+    }
+    if err != nil {
+        return nil, errors.Wrap(err, "insert article")
+    }
+    return item, nil
 }
 ```
+
+`database` 包提供了以下判断函数：
 
 | 函数 | 判断的约束 | SQLSTATE |
 | --- | --- | --- |
@@ -183,7 +212,7 @@ if database.IsUniqueViolation(err, "notes_owner_title_key") {
 | `database.IsForeignKeyViolation(err)` | 外键约束 | 23503 |
 | `database.IsCheckViolation(err)` | 检查约束 | 23514 |
 
-`IsUniqueViolation` 可以传入约束名，只在指定的约束冲突时返回 `true`。推荐总是指定约束名，为不同的约束返回不同的业务错误，例如“标题重复”和“邮箱已注册”；其他错误则保留原因继续返回。
+`IsUniqueViolation` 可以传入约束名，只在指定的约束冲突时返回 `true`。推荐总是指定约束名，为不同的约束返回不同的业务错误，例如“slug 已被使用”和“邮箱已注册”；其他错误则保留原因继续返回。
 
 <a id="testing"></a>
 ## 测试

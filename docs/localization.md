@@ -63,10 +63,10 @@ func NewAPI() (*rest.API, error) {
 启用本地化后，默认中间件会根据请求的 `Accept-Language` 头，从已加载的语言中选择最匹配的一种，并通过 `Content-Language` 响应头告知客户端。不支持或无法解析的语言会回退到默认语言。
 
 ```bash
-curl -i http://localhost:8080/notes -H 'Accept-Language: en'
+curl -i http://localhost:8080/articles -H 'Accept-Language: en'
 ```
 
-假设 `/notes` 是一个需要认证的路由，这个请求由于没有携带凭据会返回 `401`，`detail` 为英文的 `Authentication required`，而 `code` 始终是 `auth.unauthenticated`。
+假设 `/articles` 是一个需要认证的路由，这个请求由于没有携带凭据会返回 `401`，`detail` 为英文的 `Authentication required`，而 `code` 始终是 `auth.unauthenticated`。
 
 在代码中，可以用 `i18n.Locale(ctx)` 读取当前请求选定的语言。
 
@@ -79,15 +79,17 @@ curl -i http://localhost:8080/notes -H 'Accept-Language: en'
 为应用自己的消息创建翻译文件，文件名就是语言标签。例如 `locales/en.yaml`：
 
 ```yaml
-note.not_found: Note not found
-note.archived: This note has been archived
+article.not_found: Article not found
+article.slug_locked: The slug of a published article cannot be changed
+article.slug_taken: "The slug \"{{.slug}}\" is already taken"
 ```
 
 以及 `locales/zh-CN.yaml`：
 
 ```yaml
-note.not_found: 笔记不存在
-note.archived: 笔记已归档
+article.not_found: 文章不存在
+article.slug_locked: 已发布文章的 slug 不能修改
+article.slug_taken: "slug“{{.slug}}”已被使用"
 ```
 
 消息 ID 与[业务错误码](errors.md#defining-errors)使用相同的写法，这样错误响应就能直接找到对应的翻译。
@@ -106,9 +108,9 @@ func newBundle() (*goi18n.Bundle, error) {
         Default: "en",
         Layers: []i18n.Layer{
             i18n.FrameworkLayer(),
-            {Priority: i18n.PriorityProduct, FS: localeFiles, Name: "notes"},
+            {Priority: i18n.PriorityProduct, FS: localeFiles, Name: "blog"},
         },
-        RequiredIDs: []string{"note.not_found", "note.archived"},
+        RequiredIDs: []string{"article.not_found", "article.slug_locked", "article.slug_taken"},
     })
 }
 ```
@@ -141,7 +143,7 @@ func newBundle() (*goi18n.Bundle, error) {
 ```go
 localizer := goi18n.NewLocalizer(bundle, i18n.Locale(ctx))
 message, err := localizer.Localize(&goi18n.LocalizeConfig{
-    MessageID: "note.archived",
+    MessageID: "article.slug_locked",
 })
 ```
 
@@ -152,13 +154,13 @@ message, err := localizer.Localize(&goi18n.LocalizeConfig{
 
 启用本地化后，业务错误的响应会把错误码作为消息 ID，自动翻译 `detail` 字段。你只需在翻译文件中为每个业务错误码添加一条消息即可。
 
-如果错误通过 [`errorx.Public`](errors.md#public-parameters) 携带了公开参数，它们会作为模板数据传入翻译。例如错误 `ErrConflict.New(errorx.Public("field", "title"))` 配合下面的翻译：
+如果错误通过 [`errorx.Public`](errors.md#public-parameters) 携带了公开参数，它们会作为模板数据传入翻译。例如上面的 `article.slug_taken` 翻译中使用了 `{{.slug}}`，返回错误时附加同名参数：
 
-```yaml
-note.conflict: "{{.field}} already exists"
+```go
+return ErrSlugTaken.Wrap(err, errorx.Public("slug", c.Slug))
 ```
 
-得到的 `detail` 为 `title already exists`。
+请求语言为中文时，得到的 `detail` 为 `slug“hello-world”已被使用`。
 
 如果找不到某个错误码的翻译，`detail` 会使用 HTTP 状态的通用描述，同时（在配置了日志器时）记录一条缺失翻译的警告日志，提醒你补充翻译。
 

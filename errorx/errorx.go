@@ -13,7 +13,7 @@ type Template struct {
 	code string
 }
 
-// Define 创建模板，code 使用 note.not_found 形式的业务错误码。
+// Define 创建模板，code 使用 article.not_found 形式的业务错误码。
 func Define(kind Kind, code string) *Template {
 	return &Template{kind: kind, code: code}
 }

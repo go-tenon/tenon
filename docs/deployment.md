@@ -106,7 +106,7 @@ TLS 终止、CORS、限流等功能，可以在反向代理中配置，也可以
 logger := logging.New(cfg.Logs, logging.Options{
     Writer: os.Stderr,
     Attrs: []slog.Attr{
-        slog.String("service", "notes"),
+        slog.String("service", "blog"),
         slog.String("version", version),
     },
 })

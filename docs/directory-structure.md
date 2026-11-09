@@ -20,22 +20,39 @@ mygoravel 不要求固定的目录结构，也不会根据目录位置自动发�
 <a id="application-layout"></a>
 ## 推荐的应用结构
 
+下面是文档中贯穿使用的博客应用的结构：
+
 ```text
-my-app/
+blog/
 ├── go.mod
 ├── config.yaml
 ├── cmd/
 │   └── api/
-│       └── main.go          进程入口：信号处理、命令行
+│       └── main.go          进程入口：信号处理、退出码
 ├── internal/
-│   ├── bootstrap/           读取配置、打开资源、组装服务
-│   └── note/                一个业务模块
-│       ├── note.go          模型与业务错误
+│   ├── cli/                 命令行：serve、openapi、migrate、config
+│   ├── settings/            配置结构与加载
+│   ├── bootstrap/           打开资源、组装服务、注册路由
+│   ├── auth/                token 校验器
+│   └── article/             文章业务模块
+│       ├── article.go       模型与业务错误
 │       ├── service.go       业务规则与数据库操作
-│       └── notehttp/        HTTP 输入输出与路由注册
-├── migrations/              SQL 迁移文件
+│       └── articlehttp/     HTTP 输入输出与路由注册
+├── migrations/              SQL 迁移文件和 embed.go
 └── locales/                 应用自己的翻译文件
 ```
+
+各个文件的完整代码分布在相应的章节中：
+
+| 文件 | 章节 |
+| --- | --- |
+| `cmd/api/main.go`、`internal/cli/cli.go` | [命令行](commands.md#root-command) |
+| `internal/settings` | [配置](configuration.md#loading-configuration) |
+| `internal/bootstrap/serve.go` | [依赖装配](dependencies.md#assembling-the-application) |
+| `internal/auth/auth.go` | [认证](authentication.md#token-validators) |
+| `internal/article/article.go`、`service.go` | [数据库](database.md#defining-models)、[错误处理](errors.md#example)、[授权](authorization.md#checking-in-transactions) |
+| `internal/article/articlehttp/routes.go` | [路由](routing.md#organizing-routes) |
+| `migrations/`、`internal/cli/migrate.go` | [迁移](migrations.md#embedding-migrations) |
 
 目录不必一次建齐，等真正有代码要放时再创建即可。
 
@@ -52,9 +69,9 @@ my-app/
 <a id="business-packages"></a>
 ### 业务包
 
-每个业务模块放在 `internal` 下的一个独立包中，例如 `internal/note`。业务包包含模型、[业务错误](errors.md)和服务，它不关心请求来自 HTTP、命令行还是测试。
+每个业务模块放在 `internal` 下的一个独立包中，例如 `internal/article`。业务包包含模型、[业务错误](errors.md)和服务，它不关心请求来自 HTTP、命令行还是测试。
 
-HTTP 相关的代码放在业务包的子包中，例如 `internal/note/notehttp`。它负责定义请求和响应的结构、注册路由，并在处理器中调用业务服务。依赖方向始终是 `notehttp → note`，业务包不会反过来引用 HTTP 子包。
+HTTP 相关的代码放在业务包的子包中，例如 `internal/article/articlehttp`。它负责定义请求和响应的结构、注册路由，并在处理器中调用业务服务。依赖方向始终是 `articlehttp → article`，业务包不会反过来引用 HTTP 子包。
 
 这样划分的好处是职责清晰：
 
@@ -82,11 +99,11 @@ HTTP 相关的代码放在业务包的子包中，例如 `internal/note/notehttp
 
 | 对象 | 约定 | 示例 |
 | --- | --- | --- |
-| 业务包 | 单数 | `note` |
-| 资源路径 | 复数 | `/notes`、`/notes/{id}` |
-| JSON 字段 | snake_case | `owner_id` |
-| OperationID | `资源-动作` | `note-create` |
-| 业务错误码 | `资源.原因` | `note.not_found` |
+| 业务包 | 单数 | `article` |
+| 资源路径 | 复数 | `/articles`、`/articles/{id}` |
+| JSON 字段 | snake_case | `author_id` |
+| OperationID | `资源-动作` | `article-create` |
+| 业务错误码 | `资源.原因` | `article.not_found` |
 | Go 缩写 | 全大写 | `ID`、`HTTP`、`DSN`、`TTL` |
 
 <a id="framework-packages"></a>

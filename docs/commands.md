@@ -29,24 +29,102 @@
 <a id="root-command"></a>
 ## 根命令
 
-使用 `command.Root` 创建应用的根命令，然后通过 `AddCommand` 安装子命令：
+推荐把命令行的组装放在应用的 `internal/cli` 包中，入口文件只负责处理信号和退出码。下面是博客应用完整的 `internal/cli/cli.go`，它安装了 `serve`、`openapi`、`migrate` 和 `config` 四个命令：
 
 ```go
-root := command.Root("api", "Notes API", command.IO{
-    Out: os.Stdout,
-    Err: os.Stderr,
-})
-root.AddCommand(command.NewServe(serve))
+package cli
+
+import (
+    "context"
+    "encoding/json"
+    "io"
+
+    "github.com/spf13/cobra"
+
+    "example.com/blog/internal/auth"
+    "example.com/blog/internal/bootstrap"
+    "example.com/blog/internal/settings"
+    "github.com/ryan053857/mygoravel/command"
+    "github.com/ryan053857/mygoravel/httpx/rest"
+    "github.com/ryan053857/mygoravel/logging"
+)
+
+// New 组装应用的根命令。
+func New(out, errOut io.Writer) *cobra.Command {
+    root := command.Root("api", "Blog API", command.IO{Out: out, Err: errOut})
+    root.PersistentFlags().String("config", "config.yaml", "配置文件路径")
+
+    root.AddCommand(command.NewServe(func(ctx context.Context, cmd *cobra.Command, _ []string) error {
+        cfg, err := loadConfig(cmd)
+        if err != nil {
+            return err
+        }
+        logger := logging.New(cfg.Logs, logging.Options{Writer: cmd.ErrOrStderr()})
+        return bootstrap.Serve(ctx, cfg, logger)
+    }))
+
+    root.AddCommand(command.NewOpenAPI(func(_ context.Context, cmd *cobra.Command, _ []string) error {
+        api := rest.New(rest.Options{Title: "Blog API", Version: "1.0.0", Mode: rest.ModeOpenAPI})
+        bootstrap.Routes(api, auth.Validator(auth.Config{}), nil)
+        data, err := api.OpenAPIJSON()
+        if err != nil {
+            return err
+        }
+        _, err = cmd.OutOrStdout().Write(append(data, '\n'))
+        return err
+    }))
+
+    root.AddCommand(newMigrateCommand())
+
+    root.AddCommand(command.NewConfig(
+        func(_ context.Context, cmd *cobra.Command, _ []string) error {
+            _, err := loadConfig(cmd)
+            return err
+        },
+        func(_ context.Context, cmd *cobra.Command, _ []string) error {
+            cfg, err := loadConfig(cmd)
+            if err != nil {
+                return err
+            }
+            return json.NewEncoder(cmd.OutOrStdout()).Encode(cfg)
+        },
+    ))
+    return root
+}
+
+func loadConfig(cmd *cobra.Command) (settings.Config, error) {
+    path, _ := cmd.Flags().GetString("config")
+    cfg, err := settings.Load(path)
+    if err != nil {
+        return cfg, command.AsExitError(command.ExitConfig, err)
+    }
+    return cfg, nil
+}
 ```
 
-在 `main` 函数中执行根命令，并把错误转换为进程退出码：
+其中 `settings.Load` 加载配置（见[配置](configuration.md#loading-configuration)），`bootstrap.Serve` 和 `bootstrap.Routes` 组装应用并注册路由（见[依赖装配](dependencies.md#assembling-the-application)），`auth.Validator` 是 token 校验器（见[认证](authentication.md#token-validators)）。
+
+入口文件 `cmd/api/main.go` 执行根命令，并把错误转换为进程退出码：
 
 ```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "os"
+    "os/signal"
+    "syscall"
+
+    "example.com/blog/internal/cli"
+    "github.com/ryan053857/mygoravel/command"
+)
+
 func main() {
     ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
     defer stop()
 
-    root := cli.New() // 应用自己组装根命令的函数
+    root := cli.New(os.Stdout, os.Stderr)
     if err := root.ExecuteContext(ctx); err != nil {
         fmt.Fprintln(os.Stderr, err)
         os.Exit(command.ExitCode(err))
@@ -76,78 +154,31 @@ type RunE func(ctx context.Context, cmd *cobra.Command, args []string) error
 <a id="serve-command"></a>
 ### serve 命令
 
-`serve` 命令的回调负责读取配置并启动服务。下面的片段假设应用已经定义了 `settings.Load` 用于加载配置，`bootstrap.Serve` 用于组装并启动应用（见[依赖装配](dependencies.md#assembling-the-application)）：
-
-```go
-root.PersistentFlags().String("config", "config.yaml", "配置文件路径")
-
-root.AddCommand(command.NewServe(func(ctx context.Context, cmd *cobra.Command, args []string) error {
-    path, _ := cmd.Flags().GetString("config")
-    cfg, err := settings.Load(path)
-    if err != nil {
-        return command.AsExitError(command.ExitConfig, err)
-    }
-    return bootstrap.Serve(ctx, cfg, logger)
-}))
-```
+`serve` 的回调读取配置、创建日志器，然后交给 `bootstrap.Serve` 打开数据库并启动 HTTP 服务。配置加载失败时，`loadConfig` 用 `command.AsExitError` 把错误标记为 `ExitConfig`，部署脚本可以据此区分“配置写错了”和其他故障。
 
 <a id="openapi-command"></a>
 ### openapi 命令
 
-`openapi` 命令以[文档模式](routing.md#exporting-openapi)注册路由并输出 OpenAPI 文档。由于文档模式不会调用处理器工厂，这个命令不需要配置文件，也不需要连接数据库。下面是一个完整的命令构造函数，它接收应用自己的路由注册函数：
+`openapi` 以[文档模式](routing.md#exporting-openapi)调用与 `serve` 相同的 `bootstrap.Routes`，因此导出的文档与实际运行的接口始终一致。文档模式不会调用处理器工厂，也不会调用 token 校验器，所以这里传入空的认证配置和 `nil` 服务即可，不需要配置文件，也不需要连接数据库：
 
-```go
-package cli
-
-import (
-    "context"
-    "io"
-
-    "github.com/ryan053857/mygoravel/command"
-    "github.com/ryan053857/mygoravel/httpx/rest"
-    "github.com/spf13/cobra"
-)
-
-func New(register func(*rest.API), out, diagnostic io.Writer) *cobra.Command {
-    root := command.Root("hello", "Hello API", command.IO{
-        Out: out, Err: diagnostic,
-    })
-    root.AddCommand(command.NewOpenAPI(func(ctx context.Context,
-        cmd *cobra.Command, args []string,
-    ) error {
-        api := rest.New(rest.Options{Mode: rest.ModeOpenAPI})
-        register(api)
-        data, err := api.OpenAPIJSON()
-        if err != nil {
-            return err
-        }
-        _, err = cmd.OutOrStdout().Write(append(data, '\n'))
-        return err
-    }))
-    return root
-}
+```bash
+./bin/api openapi > openapi.json
 ```
-
-传入的 `register` 可以就是[路由](routing.md#basic-routing)一章中的 `registerPing`。
 
 <a id="config-command"></a>
 ### config 命令
 
 `command.NewConfig` 接收两个回调，分别对应 `config check` 和 `config show`：
 
-```go
-root.AddCommand(command.NewConfig(checkConfig, showConfig))
-```
+- `check` 只加载并校验配置，不访问网络。发布前运行它，可以尽早发现缺失的环境变量或写错的字段；
+- `show` 输出校验后的配置。上面的例子输出 JSON；`show` 还预定义了 `--format` 选项（默认 `yaml`），你可以在回调中读取它并选择对应的编码器。
 
-- `check` 应当加载并校验配置，只做离线检查，不访问网络；
-- `show` 输出校验后的配置。它已经预定义了 `--format` 选项（默认 `yaml`），你在回调中读取这个选项并选择对应的编码器即可。
-
-配置的读取与校验见[配置](configuration.md#inspecting-configuration)。
+配置的读取与校验见[配置](configuration.md)。
 
 <a id="migrate-and-doctor-commands"></a>
 ### migrate 与 doctor 命令
 
-`command.NewMigrate` 接收 `up`、`status`、`down` 三个回调，在回调中调用 goose Provider 的对应方法即可，详见[迁移](migrations.md#running-migrations)。
+`command.NewMigrate` 接收 `up`、`status`、`down` 三个回调，在回调中调用 goose Provider 的对应方法即可。上面的 `newMigrateCommand` 定义在 `internal/cli/migrate.go` 中，完整代码见[迁移命令](migrations.md#migration-commands)。
 
 `command.NewDoctor` 用于探测外部依赖，例如数据库是否可以连通。请为每项探测设置超时，并在依赖不可用时返回 `command.ExitUnavailable` 退出码。
 

@@ -152,14 +152,15 @@ curl -i http://localhost:8080/ping
 
 你会得到一个 `200 OK` 响应：
 
-```json
-{
-  "$schema": "http://localhost:8080/schemas/PingOutputBody.json",
-  "message": "pong"
-}
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+X-Request-Id: 3UHKWQUZP5TTP24PG3SQNGA5EO
+
+{"message":"pong"}
 ```
 
-其中 `$schema` 是 Huma 自动加入的字段，指向描述该响应结构的 JSON Schema。
+`X-Request-Id` 是框架为每个请求生成的唯一 ID，排查问题时可以用它在日志中找到这个请求，见[请求](requests.md#request-id)。
 
 mygoravel 还为你生成了接口文档。在浏览器中打开 `http://localhost:8080/docs` 即可查看，原始的 OpenAPI 文档位于 `http://localhost:8080/openapi.json`。
 

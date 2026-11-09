@@ -39,7 +39,7 @@ logs:
 logger := logging.New(cfg.Logs, logging.Options{
     Writer: os.Stderr,
     Attrs: []slog.Attr{
-        slog.String("service", "notes"),
+        slog.String("service", "blog"),
         slog.String("version", "0.1.0"),
     },
 })
@@ -58,18 +58,22 @@ logger := logging.New(cfg.Logs, logging.Options{
 <a id="writing-log-messages"></a>
 ## 写入日志
 
-使用 slog 的原生方法记录日志，并以键值对的形式附加结构化字段：
+需要记录业务事件的服务，像接收数据库一样，通过构造函数接收日志器，见[依赖装配](dependencies.md#constructor-injection)。然后使用 slog 的原生方法记录日志，以键值对的形式附加结构化字段。例如在文章发布成功后记录一条日志：
 
 ```go
-logger.InfoContext(ctx, "note created",
-    "note_id", noteID,
-    "owner_id", ownerID,
-)
+func (s *Service) Publish(ctx context.Context, subject identity.Subject, id uuid.UUID) (*Article, error) {
+    // ……在事务中检查并更新文章状态
+    s.logger.InfoContext(ctx, "article published",
+        "article_id", item.ID,
+        "author_id", item.AuthorID,
+    )
+    return item, nil
+}
 ```
 
 请尽量使用带 `Context` 后缀的方法（`InfoContext`、`ErrorContext` 等）并传入当前的 `ctx`，这样日志才能自动带上请求 ID，见下一节。
 
-字段名应当保持稳定，例如始终使用 `note_id` 而不是有时写 `noteId`，这样才方便在日志系统中检索和聚合。
+字段名应当保持稳定，例如始终使用 `article_id` 而不是有时写 `articleId`，这样才方便在日志系统中检索和聚合。
 
 <a id="contextual-information"></a>
 ## 上下文信息
@@ -86,7 +90,7 @@ api := rest.New(rest.Options{Logger: logger})
 中间件还会把请求 ID 放入请求的 context。之后，只要你在业务代码中用 `logging.New` 创建的日志器配合请求的 `ctx` 记录日志，这些日志就会自动带上 `request_id` 字段：
 
 ```json
-{"level":"INFO","msg":"note created","service":"notes","request_id":"9F2K…","note_id":"0f8c…"}
+{"level":"INFO","msg":"article published","service":"blog","request_id":"9F2K…","article_id":"0f8c…","author_id":"alice"}
 ```
 
 这样，同一个请求的访问日志、错误诊断和业务日志都可以通过 `request_id` 关联起来。
@@ -97,7 +101,7 @@ api := rest.New(rest.Options{Logger: logger})
 你也可以把自己的字段放入 context，之后使用这个 context 记录的所有日志都会带上它们：
 
 ```go
-ctx = logging.WithAttrs(ctx, slog.String("component", "note"))
+ctx = logging.WithAttrs(ctx, slog.String("component", "article"))
 ```
 
 多次调用 `WithAttrs` 会累加字段，并且不会影响父 context。

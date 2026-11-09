@@ -72,16 +72,17 @@ func Put(ctx context.Context, addr string, value string) error {
 <a id="using-in-services"></a>
 ### 在服务中使用
 
-业务服务通过构造函数接收 gocache 的 `cache.CacheInterface` 接口，与接收数据库连接的方式相同：
+业务服务通过构造函数接收 gocache 的 `cache.CacheInterface` 接口，与接收数据库连接的方式相同。下面为文章服务加上缓存，同时接收一个日志器，用来记录缓存故障：
 
 ```go
 type Service struct {
-    db    *bun.DB
-    cache cache.CacheInterface[string]
+    db     *bun.DB
+    cache  cache.CacheInterface[string]
+    logger *slog.Logger
 }
 
-func NewService(db *bun.DB, c cache.CacheInterface[string]) *Service {
-    return &Service{db: db, cache: c}
+func NewService(db *bun.DB, c cache.CacheInterface[string], logger *slog.Logger) *Service {
+    return &Service{db: db, cache: c, logger: logger}
 }
 ```
 
@@ -104,6 +105,57 @@ func NewService(db *bun.DB, c cache.CacheInterface[string]) *Service {
 
 请注意区分“未命中”和“缓存服务故障”：前者是正常情况，后者需要记录日志以便排查。
 
+下面是按照这个策略实现的读取文章。`find` 是直接查询数据库的方法，写法见[数据库](database.md#handling-not-found)：
+
+```go
+func cacheKey(id uuid.UUID) string {
+    return "blog:article:v1:" + id.String()
+}
+
+func (s *Service) Get(ctx context.Context, subject identity.Subject, id uuid.UUID) (*Article, error) {
+    if subject.ID == "" {
+        return nil, ErrForbidden.New()
+    }
+    item, err := s.load(ctx, id)
+    if err != nil {
+        return nil, err
+    }
+    // 无论是否来自缓存，都要检查权限
+    if item.Status == StatusDraft && item.AuthorID != subject.ID {
+        return nil, ErrNotFound.New()
+    }
+    return item, nil
+}
+
+// load 先读缓存，未命中或缓存不可用时查询数据库，再把结果写回缓存。
+func (s *Service) load(ctx context.Context, id uuid.UUID) (*Article, error) {
+    key := cacheKey(id)
+    raw, err := s.cache.Get(ctx, key)
+    switch {
+    case err == nil:
+        var item Article
+        if err := json.Unmarshal([]byte(raw), &item); err == nil {
+            return &item, nil
+        }
+        s.logger.WarnContext(ctx, "discard undecodable cache entry", "key", key)
+    case !errors.Is(err, store.NotFound{}):
+        s.logger.WarnContext(ctx, "read article cache", "key", key, "error", err)
+    }
+
+    item, err := s.find(ctx, id)
+    if err != nil {
+        return nil, err
+    }
+    data, _ := json.Marshal(item)
+    if err := s.cache.Set(ctx, key, string(data), store.WithExpiration(10*time.Minute)); err != nil {
+        s.logger.WarnContext(ctx, "write article cache", "key", key, "error", err)
+    }
+    return item, nil
+}
+```
+
+gocache 在未命中时返回 `store.NotFound`，用 `errors.Is(err, store.NotFound{})` 判断即可。文章被序列化为 JSON 后存入缓存，草稿也会被缓存，因此 `Get` 在拿到文章之后，无论它来自缓存还是数据库，都要检查当前用户能否看到它。
+
 > [!WARNING]
 > 命中缓存时，同样要执行资源所有权检查。缓存中的数据可能属于其他用户，跳过检查会导致越权访问。
 
@@ -115,8 +167,10 @@ func NewService(db *bun.DB, c cache.CacheInterface[string]) *Service {
 推荐的缓存键格式包含命名空间、资源类型、格式版本和资源 ID：
 
 ```text
-<namespace>:note:v1:<id>
+<namespace>:article:v1:<id>
 ```
+
+上面例子中的 `blog:article:v1:<id>` 就是按这个格式构造的。
 
 - `namespace` 用于隔离不同的应用和部署环境，避免多个环境共用一个 Redis 时互相干扰；
 - `v1` 表示缓存内容的序列化格式。当你修改了缓存的数据结构，只需把版本升为 `v2`，旧格式的缓存就会自然失效。
@@ -126,7 +180,17 @@ func NewService(db *bun.DB, c cache.CacheInterface[string]) *Service {
 <a id="invalidation"></a>
 ## 缓存失效
 
-当数据被修改时，需要让对应的缓存失效。推荐的做法是在数据库**事务提交成功之后**删除缓存键；如果事务回滚，缓存保持原样。删除缓存失败时，记录诊断日志即可，数据库的修改仍然算作成功。
+当数据被修改时，需要让对应的缓存失效。推荐的做法是在数据库**事务提交成功之后**删除缓存键；如果事务回滚，缓存保持原样。删除缓存失败时，记录诊断日志即可，数据库的修改仍然算作成功：
+
+```go
+func (s *Service) invalidate(ctx context.Context, id uuid.UUID) {
+    if err := s.cache.Delete(ctx, cacheKey(id)); err != nil {
+        s.logger.WarnContext(ctx, "invalidate article cache", "article_id", id, "error", err)
+    }
+}
+```
+
+例如在[发布文章](authorization.md#checking-in-transactions)的 `RunInTx` 成功返回之后，调用 `s.invalidate(ctx, id)`。
 
 这是一种**最终一致**的缓存：在并发场景下，一个读请求可能在更新删除缓存之后，又把旧值写回缓存，直到 TTL 到期才会更新。因此请为缓存设置合理的 TTL。如果业务需要更强的一致性，可以引入版本号等机制，或者直接读取数据库。
 

@@ -17,18 +17,20 @@
 <a id="validation-quickstart"></a>
 ## 快速上手
 
-假设我们要实现一个创建笔记的接口，标题必填，长度在 1 到 120 个字符之间，标签最多 10 个：
+假设我们要实现一个创建文章的接口：标题必填，长度不超过 200 个字符；slug 只能包含小写字母、数字和连字符；标签最多 10 个：
 
 ```go
-type CreateNoteInput struct {
+type CreateArticleInput struct {
     Body struct {
-        Title string   `json:"title" minLength:"1" maxLength:"120"`
-        Tags  []string `json:"tags,omitempty" maxItems:"10"`
+        Title   string   `json:"title" minLength:"1" maxLength:"200"`
+        Slug    string   `json:"slug" pattern:"^[a-z0-9]+(-[a-z0-9]+)*$" maxLength:"100"`
+        Content string   `json:"content"`
+        Tags    []string `json:"tags,omitempty" maxItems:"10"`
     }
 }
 ```
 
-就是这样！当客户端发送的标题为空或者过长时，Huma 会自动返回一个 `422` 错误响应，你的处理器不会被调用。
+就是这样！当客户端发送的标题为空、slug 含有空格或大写字母时，Huma 会自动返回一个 `422` 错误响应，你的处理器不会被调用。
 
 <a id="available-validation-rules"></a>
 ## 可用的验证规则
@@ -61,21 +63,27 @@ type CreateNoteInput struct {
 - **路径参数**总是必填。
 
 ```go
-type UpdateNoteInput struct {
+type UpdateArticleInput struct {
     ID   uuid.UUID `path:"id"`
     Body struct {
-        Title   string  `json:"title" minLength:"1" maxLength:"120"`
-        Summary *string `json:"summary,omitempty" maxLength:"500"`
+        Title   string  `json:"title" minLength:"1" maxLength:"200"`
+        Excerpt *string `json:"excerpt,omitempty" maxLength:"500"`
     }
 }
 ```
 
-这里 `Summary` 使用了指针类型，这样处理器就能区分“客户端没有传这个字段”（`nil`）和“客户端传了空字符串”（指向 `""` 的指针）。
+这里摘要 `Excerpt` 使用了指针类型，这样处理器就能区分“客户端没有传这个字段”（`nil`）和“客户端传了空字符串”（指向 `""` 的指针）。
 
 <a id="validation-error-response"></a>
 ## 验证错误响应
 
-请求体不是合法的 JSON 时返回 `400`，字段验证失败时返回 `422`。两种情况都是 Huma 原生的错误响应，带有 `errors` 数组逐条说明每个字段的问题：
+请求体不是合法的 JSON 时返回 `400`，字段验证失败时返回 `422`。两种情况都是 Huma 原生的错误响应，带有 `errors` 数组逐条说明每个字段的问题。例如，客户端创建文章时发送了空标题和不合法的 slug：
+
+```json
+{"title": "", "slug": "Hello World", "content": "……"}
+```
+
+会收到：
 
 ```json
 {
@@ -83,6 +91,7 @@ type UpdateNoteInput struct {
   "status": 422,
   "detail": "validation failed",
   "errors": [
+    {"message": "expected string to match pattern ^[a-z0-9]+(-[a-z0-9]+)*$", "location": "body.slug", "value": "Hello World"},
     {"message": "expected length >= 1", "location": "body.title", "value": ""}
   ]
 }
@@ -103,21 +112,21 @@ type UpdateNoteInput struct {
 <a id="business-validation"></a>
 ## 业务规则验证
 
-结构体标签适合描述格式上的约束，例如长度、范围和格式。而“同一用户下的笔记标题不能重复”、“已归档的笔记不能编辑”这类需要查询数据或依赖业务状态的规则，应该放在业务服务中检查，并返回一个[业务错误](errors.md)：
+结构体标签适合描述格式上的约束，例如长度、范围和格式。而“slug 不能与其他文章重复”、“已发布的文章不能修改 slug”这类需要查询数据或依赖业务状态的规则，应该放在业务服务中检查，并返回一个[业务错误](errors.md)：
 
 ```go
-var ErrNoteArchived = errorx.Define(errorx.InvalidArgument, "note.archived")
+var ErrSlugLocked = errorx.Define(errorx.InvalidArgument, "article.slug_locked")
 
-func (s *Service) Rename(ctx context.Context, subject identity.Subject, id uuid.UUID, title string) error {
-    // ……读取笔记
-    if note.Archived {
-        return ErrNoteArchived.New()
+func (s *Service) Update(ctx context.Context, subject identity.Subject, id uuid.UUID, c Changes) (*Article, error) {
+    // ……读取文章
+    if item.Status == StatusPublished && c.Slug != item.Slug {
+        return nil, ErrSlugLocked.New()
     }
     // ……
 }
 ```
 
-`errorx.InvalidArgument` 分类的错误会被转换为 `422` 响应，`code` 字段为 `note.archived`，客户端可以据此给出准确的提示。
+`errorx.InvalidArgument` 分类的错误同样会被转换为 `422` 响应，但它没有 `errors` 数组，而是带有 `code` 字段 `article.slug_locked`，客户端可以据此给出准确的提示。完整的例子见[错误处理](errors.md#example)。
 
 > [!TIP]
 > 业务服务也可能被命令行或测试直接调用，绕过 HTTP 层的验证。对于必须成立的约束（例如标题不能为空），在服务中再检查一次是一个好习惯。

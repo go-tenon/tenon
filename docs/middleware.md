@@ -24,7 +24,7 @@ mygoravel 已经为你准备好了一组常用的中间件。使用 `rest.New` �
 | 能力 | 行为 |
 | --- | --- |
 | 请求 ID | 为每个请求生成唯一 ID，写入 context 和 `X-Request-ID` 响应头 |
-| 访问日志 | 提供日志器时，记录请求方法、状态码、耗时和客户端地址 |
+| 访问日志 | 提供日志器时，记录请求方法、状态码、耗时、客户端地址，以及业务错误的错误码 |
 | panic 恢复 | 处理器 panic 时，若尚未写出响应则返回通用的 500 错误；若已开始写响应则中止连接 |
 | 安全响应头 | 设置 `X-Content-Type-Options: nosniff` |
 | 请求体大小限制 | 默认 1 MiB，超出时返回 413 |
@@ -95,18 +95,25 @@ http:
 <a id="chi-middleware"></a>
 ### 全局中间件
 
-如果需要为所有请求添加自定义行为，可以先创建一个 chi Router 并安装中间件，再通过 `Options.Router` 传给 `rest.New`：
+如果需要为所有请求添加自定义行为，可以先创建一个 chi Router 并安装中间件，再通过 `Options.Router` 传给 `rest.New`。
+
+例如，博客在数据库维护期间需要进入只读模式：读请求照常处理，修改文章等写请求统一返回 `503`：
 
 ```go
+var readOnly atomic.Bool // 由运维开关控制，例如收到某个信号时切换
+
 router := chi.NewRouter()
 router.Use(func(next http.Handler) http.Handler {
     return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        w.Header().Set("X-Service", "notes")
+        if readOnly.Load() && r.Method != http.MethodGet && r.Method != http.MethodHead {
+            httpx.WriteProblem(w, http.StatusServiceUnavailable, "read-only mode")
+            return
+        }
         next.ServeHTTP(w, r)
     })
 })
 
-api := rest.New(rest.Options{Router: router})
+api := rest.New(rest.Options{Router: router, HTTP: cfg.HTTP, Logger: logger})
 ```
 
 这里使用了 `github.com/go-chi/chi/v5`。chi 要求所有中间件在注册路由之前安装，而 `rest.New` 会在构造时安装默认中间件，所以请先安装自己的中间件，再调用 `rest.New`，最后注册路由。
@@ -117,14 +124,27 @@ api := rest.New(rest.Options{Router: router})
 <a id="route-middleware"></a>
 ### 路由中间件
 
-只对某条路由生效的逻辑，可以使用 Huma 原生的 `Operation.Middlewares`：
+只对某条路由生效的逻辑，可以使用 Huma 原生的 `Operation.Middlewares`。
+
+例如，博客早期的接口路径是 `/posts/{id}`，后来统一改为 `/articles/{id}`。旧路径暂时保留，但要在响应头中提醒客户端迁移：
 
 ```go
-op.Middlewares = append(op.Middlewares, func(ctx huma.Context, next func(huma.Context)) {
+legacy := huma.Operation{
+    OperationID: "post-get",
+    Method:      http.MethodGet,
+    Path:        "/posts/{id}",
+    Summary:     "获取文章（已废弃，请使用 /articles/{id}）",
+    Deprecated:  true,
+}
+legacy.Middlewares = append(legacy.Middlewares, func(ctx huma.Context, next func(huma.Context)) {
     ctx.SetHeader("Deprecation", "true")
+    ctx.SetHeader("Link", "</articles/"+ctx.Param("id")+`>; rel="successor-version"`)
     next(ctx)
 })
+requireArticles(&legacy)
 ```
+
+之后像注册 `article-get` 一样注册它即可。`Deprecated: true` 还会在 OpenAPI 文档中把这条路由标记为已废弃。
 
 路由中间件在默认中间件之后、处理器之前执行。
 

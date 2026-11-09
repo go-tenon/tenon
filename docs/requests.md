@@ -17,7 +17,7 @@
 在 mygoravel 中，你不需要手动读取 `http.Request`。每条路由都有一个**输入类型**——一个普通的 Go 结构体，字段上的标签说明这个值从哪里来。Huma 会在调用处理器之前读取请求、转换类型并完成[验证](validation.md)，你的处理器拿到的就是一个已经填好的结构体。
 
 ```go
-return func(ctx context.Context, in *GetNoteInput) (*NoteOutput, error) {
+return func(ctx context.Context, in *GetArticleInput) (*ArticleOutput, error) {
     // in.ID 已经是解析好的 uuid.UUID
 }
 ```
@@ -28,10 +28,10 @@ return func(ctx context.Context, in *GetNoteInput) (*NoteOutput, error) {
 <a id="path-parameters"></a>
 ### 路径参数
 
-使用 `path` 标签读取路由路径中的参数。下面的输入类型对应 `/notes/{id}`，`uuid.UUID` 来自 `github.com/google/uuid`：
+使用 `path` 标签读取路由路径中的参数。下面的输入类型对应 `/articles/{id}`，`uuid.UUID` 来自 `github.com/google/uuid`：
 
 ```go
-type GetNoteInput struct {
+type GetArticleInput struct {
     ID uuid.UUID `path:"id"`
 }
 ```
@@ -44,13 +44,13 @@ type GetNoteInput struct {
 使用 `query` 标签读取查询参数。你可以同时声明默认值和取值范围：
 
 ```go
-type ListNotesInput struct {
+type ListArticlesInput struct {
     Before string `query:"before"`
     Limit  int    `query:"limit" default:"20" minimum:"1" maximum:"100"`
 }
 ```
 
-客户端请求 `/notes?limit=50` 时，`in.Limit` 为 50；省略 `limit` 时为默认值 20；传入 500 时，请求会被拒绝。查询参数默认是可选的。
+客户端请求 `/articles?limit=50` 时，`in.Limit` 为 50；省略 `limit` 时为默认值 20；传入 500 时，请求会被拒绝。查询参数默认是可选的。
 
 > [!NOTE]
 > 上面的写法会把超出范围的 `limit` 当作错误拒绝。如果你希望把它悄悄截断为 100，就不要声明 `maximum`，而是在业务服务中处理，并在接口描述中说明这一行为。
@@ -75,9 +75,11 @@ type RequestInput struct {
 输入结构体中名为 `Body` 的字段表示请求体：
 
 ```go
-type CreateNoteInput struct {
+type CreateArticleInput struct {
     Body struct {
-        Title string `json:"title" minLength:"1" maxLength:"120"`
+        Title   string `json:"title" minLength:"1" maxLength:"200"`
+        Slug    string `json:"slug" pattern:"^[a-z0-9]+(-[a-z0-9]+)*$" maxLength:"100"`
+        Content string `json:"content"`
     }
 }
 ```
@@ -85,22 +87,24 @@ type CreateNoteInput struct {
 客户端发送：
 
 ```http
-POST /notes
+POST /articles
 Content-Type: application/json
 Authorization: Bearer <token>
 
-{"title":"准备发布"}
+{"title":"Hello World","slug":"hello-world","content":"这是我的第一篇文章。"}
 ```
 
-处理器中通过 `in.Body.Title` 读取标题。请求体中的字段默认是**必填**的，验证规则的写法见[验证](validation.md)。
+处理器中通过 `in.Body.Title`、`in.Body.Slug` 等读取字段。请求体中的字段默认是**必填**的，验证规则的写法见[验证](validation.md)。
 
 一个输入类型可以同时包含路径参数、查询参数、请求头和请求体：
 
 ```go
-type UpdateNoteInput struct {
+type UpdateArticleInput struct {
     ID   uuid.UUID `path:"id"`
     Body struct {
-        Title string `json:"title" minLength:"1" maxLength:"120"`
+        Title   string `json:"title" minLength:"1" maxLength:"200"`
+        Slug    string `json:"slug" pattern:"^[a-z0-9]+(-[a-z0-9]+)*$" maxLength:"100"`
+        Content string `json:"content"`
     }
 }
 ```

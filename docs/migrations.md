@@ -22,12 +22,12 @@ mygoravel 使用 [goose](https://github.com/pressly/goose) 管理迁移。迁移
 <a id="writing-migrations"></a>
 ## 编写迁移
 
-在应用的 `migrations` 目录中新建一个 SQL 文件。文件名以一个唯一、递增的 UTC 时间戳开头，后面跟上描述，例如 `20261111090000_create_notes.sql`。
+在应用的 `migrations` 目录中新建一个 SQL 文件。文件名以一个唯一、递增的 UTC 时间戳开头，后面跟上描述，例如 `20261111090000_create_articles.sql`。
 
 你也可以使用 goose 的命令行工具生成文件：
 
 ```bash
-goose -dir migrations create create_notes sql
+goose -dir migrations create create_articles sql
 ```
 
 <a id="migration-structure"></a>
@@ -37,15 +37,20 @@ goose -dir migrations create create_notes sql
 
 ```sql
 -- +goose Up
-CREATE TABLE notes (
-    id uuid PRIMARY KEY,
-    owner_id text NOT NULL,
-    title text NOT NULL,
-    created_at timestamptz NOT NULL DEFAULT now()
+CREATE TABLE articles (
+    id           uuid PRIMARY KEY,
+    author_id    text NOT NULL,
+    title        text NOT NULL,
+    slug         text NOT NULL,
+    content      text NOT NULL,
+    status       text NOT NULL DEFAULT 'draft',
+    published_at timestamptz,
+    created_at   timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT articles_slug_key UNIQUE (slug)
 );
 
 -- +goose Down
-DROP TABLE notes;
+DROP TABLE articles;
 ```
 
 默认情况下，每个迁移文件在一个事务中执行，失败时整体回滚。
@@ -53,18 +58,19 @@ DROP TABLE notes;
 <a id="embedding-migrations"></a>
 ## 嵌入迁移文件
 
-为了让部署时只需要一个二进制文件，请用 `embed` 把迁移文件嵌入进来。在 `migrations` 目录的上一级创建一个 Go 文件，例如 `migrations_embed.go`：
+为了让部署时只需要一个二进制文件，请用 `embed` 把迁移文件嵌入进来。在 `migrations` 目录中创建 `embed.go`：
 
 ```go
-package main
+// Package migrations 嵌入应用的 SQL 迁移文件。
+package migrations
 
 import "embed"
 
-//go:embed migrations/*.sql
-var migrationFiles embed.FS
+//go:embed *.sql
+var FS embed.FS
 ```
 
-`//go:embed` 的路径相对于这个 Go 文件所在的目录。每次新增迁移文件后，都需要重新构建应用。
+这样 `migrations` 就成了一个普通的 Go 包，命令行和测试都可以通过 `migrations.FS` 使用这些文件。每次新增迁移文件后，都需要重新构建应用。
 
 <a id="running-migrations"></a>
 ## 运行迁移
@@ -72,66 +78,94 @@ var migrationFiles embed.FS
 <a id="creating-a-provider"></a>
 ### 创建迁移器
 
-使用 `migrate.NewProvider` 创建一个 goose 迁移器（Provider）。下面是一个完整的函数，它执行所有尚未应用的迁移：
+使用 `migrate.NewProvider` 创建一个 goose 迁移器（Provider），然后调用它的方法：
 
 ```go
-package migrations
-
-import (
-    "context"
-    "io/fs"
-
-    "github.com/ryan053857/mygoravel/database/migrate"
-    "github.com/uptrace/bun"
-)
-
-func Up(ctx context.Context, db *bun.DB, files fs.FS) error {
-    provider, err := migrate.NewProvider(db.DB, files)
-    if err != nil {
-        return err
-    }
-    _, err = provider.Up(ctx)
+provider, err := migrate.NewProvider(db.DB, migrations.FS)
+if err != nil {
     return err
 }
+err = migrate.Up(ctx, provider)
 ```
 
-`NewProvider` 要求传入的文件系统**根目录**直接包含迁移文件。对于上一节嵌入的 `migrationFiles`，需要先取出 `migrations` 子目录：
-
-```go
-files, err := migrate.Sub(migrationFiles, "migrations")
-```
+其中 `db` 是 `database.Open` 打开的 `*bun.DB`，`db.DB` 是它底层的 `*sql.DB`。`NewProvider` 要求文件系统的**根目录**直接包含迁移文件，`migrations.FS` 正好满足这个要求。如果你的迁移文件嵌入在某个子目录中，可以先用 `migrate.Sub(files, "migrations")` 取出子目录。
 
 `NewProvider` 返回的是原生的 `*goose.Provider`，你可以直接调用它的 `Up`、`Down`、`Status` 等方法。它已经配置好了以下行为：
 
 - 使用 PostgreSQL 的会话锁，保证多个实例同时执行迁移时也只会串行运行；
 - 只使用 SQL 文件，不使用 goose 的全局 Go 迁移注册。
 
-版本记录表、事务和锁都由 goose 管理。框架还提供了 `migrate.Up(ctx, provider)`，它在调用 `provider.Up` 的基础上为错误附加了上下文信息。
+版本记录表、事务和锁都由 goose 管理。上面用到的 `migrate.Up(ctx, provider)` 在调用 `provider.Up` 的基础上为错误附加了上下文信息。
 
 <a id="migration-commands"></a>
 ### 迁移命令
 
-推荐使用 `command.NewMigrate` 为应用添加迁移命令，它会创建 `migrate up`、`migrate status` 和 `migrate down` 三个子命令：
+推荐使用 `command.NewMigrate` 为应用添加迁移命令，它会创建 `migrate up`、`migrate status` 和 `migrate down` 三个子命令。下面是博客应用完整的 `internal/cli/migrate.go`，在[根命令](commands.md#root-command)中通过 `root.AddCommand(newMigrateCommand())` 安装：
 
 ```go
-root.AddCommand(command.NewMigrate(
-    func(ctx context.Context, cmd *cobra.Command, args []string) error {
-        return withProvider(ctx, cmd, func(p *goose.Provider) error {
-            _, err := p.Up(ctx)
+package cli
+
+import (
+    "context"
+    "encoding/json"
+
+    "github.com/pressly/goose/v3"
+    "github.com/spf13/cobra"
+
+    "example.com/blog/migrations"
+    "github.com/ryan053857/mygoravel/command"
+    "github.com/ryan053857/mygoravel/database"
+    "github.com/ryan053857/mygoravel/database/migrate"
+)
+
+func newMigrateCommand() *cobra.Command {
+    return command.NewMigrate(
+        withProvider(func(ctx context.Context, _ *cobra.Command, p *goose.Provider) error {
+            return migrate.Up(ctx, p)
+        }),
+        withProvider(func(ctx context.Context, cmd *cobra.Command, p *goose.Provider) error {
+            statuses, err := p.Status(ctx)
+            if err != nil {
+                return err
+            }
+            return json.NewEncoder(cmd.OutOrStdout()).Encode(statuses)
+        }),
+        withProvider(func(ctx context.Context, _ *cobra.Command, p *goose.Provider) error {
+            _, err := p.Down(ctx)
             return err
-        })
-    },
-    statusFunc, // 调用 p.Status(ctx)，把结果编码为 JSON 输出
-    downFunc,   // 调用 p.Down(ctx)，回滚最近一次迁移
-))
+        }),
+    )
+}
+
+// withProvider 打开数据库并创建迁移器，执行 run 之后关闭连接。
+func withProvider(run func(context.Context, *cobra.Command, *goose.Provider) error) command.RunE {
+    return func(ctx context.Context, cmd *cobra.Command, _ []string) error {
+        cfg, err := loadConfig(cmd)
+        if err != nil {
+            return err
+        }
+        db, err := database.Open(ctx, cfg.Database)
+        if err != nil {
+            return command.AsExitError(command.ExitUnavailable, err)
+        }
+        defer db.Close()
+
+        provider, err := migrate.NewProvider(db.DB, migrations.FS)
+        if err != nil {
+            return err
+        }
+        return run(ctx, cmd, provider)
+    }
+}
 ```
 
-这里的 `withProvider` 是应用自己的辅助函数：它只读取配置文件中的 `database` 段，打开数据库连接，创建 Provider，执行传入的函数，最后关闭连接。
+`loadConfig` 与 `serve` 命令共用，定义在 `cli.go` 中。数据库连不上时，命令以 `ExitUnavailable` 退出，部署脚本可以据此重试。
 
 之后，你就可以在部署流程中执行：
 
 ```bash
-./bin/api migrate up
+./bin/api migrate up --config config.yaml
+./bin/api migrate status --config config.yaml
 ```
 
 迁移成功后，再启动依赖新表结构的 API 服务。完整的发布流程见[部署](deployment.md#running-migrations)。

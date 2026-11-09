@@ -5,7 +5,7 @@
 // errors.Is 按错误码匹配，errors.As 提取错误实例，传输边界负责状态映射。
 // 已注册 cockroachdb/errors 编解码器，错误跨进程传输后仍保留错误码、分类和公开参数。
 //
-//	var ErrNotFound = errorx.Define(errorx.NotFound, "note.not_found")
+//	var ErrNotFound = errorx.Define(errorx.NotFound, "article.not_found")
 //
-//	return ErrNotFound.New(errorx.Public("note_id", id))
+//	return ErrNotFound.New(errorx.Public("article_id", id))
 package errorx

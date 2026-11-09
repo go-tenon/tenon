@@ -64,7 +64,7 @@ api := rest.New(rest.Options{
 
 | 声明 | 作用 |
 | --- | --- |
-| `OperationID` | 路由的唯一标识，会出现在 OpenAPI 文档中，例如 `note-create` |
+| `OperationID` | 路由的唯一标识，会出现在 OpenAPI 文档中，例如 `article-create` |
 | `Method`、`Path` | HTTP 方法与路径 |
 | `Summary` | 路由的简短描述，显示在接口文档中 |
 | 输入类型 | 路径参数、查询参数、请求头和请求体的来源、类型及验证规则 |
@@ -97,7 +97,7 @@ func(ctx context.Context, in *Input) (*Output, error)
 
 - 路由没有声明访问策略（既没有调用 `Public` 也没有调用 `RequireBearer`）；
 - `OperationID` 与已注册的路由重复；
-- 与已注册的路由方法相同且路径形状冲突，例如 `/notes/{id}` 与 `/notes/{noteID}`。
+- 与已注册的路由方法相同且路径形状冲突，例如 `/articles/{id}` 与 `/articles/{articleID}`。
 
 <a id="route-parameters"></a>
 ## 路由参数
@@ -105,14 +105,14 @@ func(ctx context.Context, in *Input) (*Output, error)
 路径中用花括号声明参数，并在输入类型中用 `path` 标签读取：
 
 ```go
-type GetNoteInput struct {
+type GetArticleInput struct {
     ID uuid.UUID `path:"id"`
 }
 
 op := huma.Operation{
-    OperationID: "note-get",
+    OperationID: "article-get",
     Method:      http.MethodGet,
-    Path:        "/notes/{id}",
+    Path:        "/articles/{id}",
 }
 ```
 
@@ -132,8 +132,8 @@ rest.Public()(&op)
 需要认证的路由使用 `rest.RequireBearer`，并可以要求调用者具备指定的 scope：
 
 ```go
-requireNotes := rest.RequireBearer(api, validateToken, "notes")
-requireNotes(&op)
+requireArticles := rest.RequireBearer(api, validateToken, "articles")
+requireArticles(&op)
 ```
 
 `validateToken` 是你提供的 token 校验函数。`RequireBearer` 会同时完成两件事：在运行时检查请求的 `Authorization` 头，以及在 OpenAPI 文档中标记这条路由需要认证。完整用法见[认证](authentication.md)。
@@ -141,37 +141,123 @@ requireNotes(&op)
 <a id="organizing-routes"></a>
 ## 组织路由
 
-当路由变多时，推荐在每个业务模块的 HTTP 子包中提供一个 `Register` 函数，集中注册该模块的所有路由。下面是 `internal/note/notehttp` 包中的片段，`note.Service` 是业务服务，`NoteDTO` 与 `toDTO` 是该包定义的输出结构与转换函数：
+当路由变多时，推荐在每个业务模块的 HTTP 子包中提供一个 `Register` 函数，集中注册该模块的所有路由。下面是完整的 `internal/article/articlehttp/routes.go`，它注册了创建、获取和发布文章三条路由。`article` 是同一应用中的业务包，业务服务的实现见[错误处理](errors.md#returning-errors)和[授权](authorization.md#ownership)：
 
 ```go
-func Register(api *rest.API, requireNotes func(*huma.Operation), notes *note.Service) {
-    op := huma.Operation{
-        OperationID: "note-get",
-        Method:      http.MethodGet,
-        Path:        "/notes/{id}",
-        Summary:     "获取笔记",
+package articlehttp
+
+import (
+    "context"
+    "net/http"
+    "time"
+
+    "github.com/danielgtaylor/huma/v2"
+    "github.com/google/uuid"
+
+    "example.com/blog/internal/article"
+    "github.com/ryan053857/mygoravel/httpx/rest"
+    "github.com/ryan053857/mygoravel/identity"
+)
+
+type ArticleDTO struct {
+    ID          string     `json:"id"`
+    Title       string     `json:"title"`
+    Slug        string     `json:"slug"`
+    AuthorID    string     `json:"author_id"`
+    Status      string     `json:"status"`
+    PublishedAt *time.Time `json:"published_at,omitempty"`
+}
+
+type ArticleOutput struct {
+    Body ArticleDTO
+}
+
+type CreateArticleInput struct {
+    Body struct {
+        Title   string `json:"title" minLength:"1" maxLength:"200"`
+        Slug    string `json:"slug" pattern:"^[a-z0-9]+(-[a-z0-9]+)*$" maxLength:"100"`
+        Content string `json:"content"`
     }
-    requireNotes(&op)
-    rest.Register(api, op, func() func(context.Context, *GetNoteInput) (*NoteOutput, error) {
-        return func(ctx context.Context, in *GetNoteInput) (*NoteOutput, error) {
-            item, err := notes.Find(ctx, in.ID)
+}
+
+type ArticleIDInput struct {
+    ID uuid.UUID `path:"id"`
+}
+
+func toDTO(a *article.Article) ArticleDTO {
+    return ArticleDTO{
+        ID: a.ID.String(), Title: a.Title, Slug: a.Slug,
+        AuthorID: a.AuthorID, Status: a.Status, PublishedAt: a.PublishedAt,
+    }
+}
+
+// Register 注册文章模块的全部路由。
+func Register(api *rest.API, requireArticles func(*huma.Operation), articles *article.Service) {
+    create := huma.Operation{
+        OperationID:   "article-create",
+        Method:        http.MethodPost,
+        Path:          "/articles",
+        Summary:       "创建文章",
+        DefaultStatus: http.StatusCreated,
+    }
+    requireArticles(&create)
+    rest.Register(api, create, func() func(context.Context, *CreateArticleInput) (*ArticleOutput, error) {
+        return func(ctx context.Context, in *CreateArticleInput) (*ArticleOutput, error) {
+            subject, _ := identity.FromContext(ctx)
+            item, err := articles.Create(ctx, subject, article.Changes{
+                Title: in.Body.Title, Slug: in.Body.Slug, Content: in.Body.Content,
+            })
             if err != nil {
                 return nil, err
             }
-            return &NoteOutput{Body: toDTO(item)}, nil
+            return &ArticleOutput{Body: toDTO(item)}, nil
         }
     })
 
-    // 继续注册 note-list、note-create……
+    get := huma.Operation{
+        OperationID: "article-get",
+        Method:      http.MethodGet,
+        Path:        "/articles/{id}",
+        Summary:     "获取文章",
+    }
+    requireArticles(&get)
+    rest.Register(api, get, func() func(context.Context, *ArticleIDInput) (*ArticleOutput, error) {
+        return func(ctx context.Context, in *ArticleIDInput) (*ArticleOutput, error) {
+            subject, _ := identity.FromContext(ctx)
+            item, err := articles.Get(ctx, subject, in.ID)
+            if err != nil {
+                return nil, err
+            }
+            return &ArticleOutput{Body: toDTO(item)}, nil
+        }
+    })
+
+    publish := huma.Operation{
+        OperationID: "article-publish",
+        Method:      http.MethodPost,
+        Path:        "/articles/{id}/publish",
+        Summary:     "发布文章",
+    }
+    requireArticles(&publish)
+    rest.Register(api, publish, func() func(context.Context, *ArticleIDInput) (*ArticleOutput, error) {
+        return func(ctx context.Context, in *ArticleIDInput) (*ArticleOutput, error) {
+            subject, _ := identity.FromContext(ctx)
+            item, err := articles.Publish(ctx, subject, in.ID)
+            if err != nil {
+                return nil, err
+            }
+            return &ArticleOutput{Body: toDTO(item)}, nil
+        }
+    })
 }
 ```
 
-处理器只做三件事：把输入转换为业务参数、调用业务服务、把结果转换为输出。业务规则留在服务中。
+每个处理器都只做三件事：把输入转换为业务参数、调用业务服务、把结果转换为输出。业务规则，包括“只有作者能发布”、“不能重复发布”，都留在服务中。输入和输出类型的写法分别见[请求](requests.md)和[响应](responses.md)。
 
-入口在组装应用时调用它：
+入口在组装应用时调用它，并决定这些路由的访问策略：
 
 ```go
-notehttp.Register(api, rest.RequireBearer(api, validateToken, "notes"), notes)
+articlehttp.Register(api, rest.RequireBearer(api, validateToken, "articles"), articles)
 ```
 
 <a id="openapi"></a>

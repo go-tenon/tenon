@@ -37,7 +37,7 @@ type Subject struct {
 | `ID` | 调用者的唯一标识，是一个不透明的字符串，例如用户 ID |
 | `Type` | 调用者类别：`identity.SubjectUser`（用户）或 `identity.SubjectService`（服务） |
 | `Method` | 认证方式，例如 `bearer` |
-| `Scopes` | 调用者被授予的访问范围，例如 `notes` |
+| `Scopes` | 调用者被授予的访问范围，例如 `articles` |
 
 **校验器（TokenValidator）** 是你提供的函数，负责把 token 转换为主体：
 
@@ -48,13 +48,16 @@ type TokenValidator func(ctx huma.Context, token string) (identity.Subject, erro
 <a id="token-validators"></a>
 ## 编写 Token 校验器
 
-下面是一个完整的校验器示例。为了便于理解，它只接受配置文件中的一个固定 token：
+下面是博客应用完整的 `internal/auth/auth.go`。为了便于理解，它把可用的 token 直接写在配置文件中，每个 token 对应一个调用者和它的 scope：
 
 ```go
 package auth
 
 import (
+    "errors"
+
     "github.com/danielgtaylor/huma/v2"
+
     "github.com/ryan053857/mygoravel/errorx"
     "github.com/ryan053857/mygoravel/httpx/rest"
     "github.com/ryan053857/mygoravel/identity"
@@ -62,18 +65,63 @@ import (
 
 var ErrUnauthenticated = errorx.Define(errorx.Unauthenticated, "auth.unauthenticated")
 
-func Validator(expected string) rest.TokenValidator {
-    return func(ctx huma.Context, token string) (identity.Subject, error) {
-        if expected == "" || token != expected {
+// Credential 是一个 API token 及其代表的调用者。
+type Credential struct {
+    Token     string   `yaml:"token"`
+    SubjectID string   `yaml:"subject_id"`
+    Scopes    []string `yaml:"scopes"`
+}
+
+type Config struct {
+    Credentials []Credential `yaml:"credentials"`
+}
+
+func (c Config) Validate() error {
+    seen := make(map[string]bool, len(c.Credentials))
+    for _, cred := range c.Credentials {
+        if cred.Token == "" || cred.SubjectID == "" {
+            return errors.New("credentials: token and subject_id are required")
+        }
+        if seen[cred.Token] {
+            return errors.New("credentials: duplicate token")
+        }
+        seen[cred.Token] = true
+    }
+    return nil
+}
+
+// Validator 返回一个在配置的凭据中查找 token 的校验器。
+func Validator(cfg Config) rest.TokenValidator {
+    byToken := make(map[string]Credential, len(cfg.Credentials))
+    for _, cred := range cfg.Credentials {
+        byToken[cred.Token] = cred
+    }
+    return func(_ huma.Context, token string) (identity.Subject, error) {
+        cred, ok := byToken[token]
+        if !ok {
             return identity.Subject{}, ErrUnauthenticated.New()
         }
         return identity.Subject{
-            ID: "alice", Type: identity.SubjectUser,
-            Method: "bearer", Scopes: []string{"notes"},
+            ID:     cred.SubjectID,
+            Type:   identity.SubjectUser,
+            Method: "bearer",
+            Scopes: cred.Scopes,
         }, nil
     }
 }
 ```
+
+在配置文件中这样写，并把 `auth.Config` 加入应用的[根配置结构体](configuration.md#loading-configuration)（字段名为 `Auth`，配置段为 `auth`）：
+
+```yaml
+auth:
+  credentials:
+    - token: ${API_TOKEN_ALICE}
+      subject_id: alice
+      scopes: [articles]
+```
+
+`Validate` 会在加载配置时检查空 token 和重复的 token，配置有误时应用无法启动。
 
 在实际应用中，校验器通常会查询数据库中的 API Key，或者使用成熟的库验证 JWT 的签名和有效期。无论采用哪种方式，校验器都应当在返回主体之前完成**全部**的有效性检查：签名、过期时间、是否已吊销，以及权限范围的来源。
 
@@ -91,14 +139,14 @@ func Validator(expected string) rest.TokenValidator {
 使用 `rest.RequireBearer` 为路由启用认证。它的参数是 API 实例、校验器，以及调用者必须具备的 scope：
 
 ```go
-requireNotes := rest.RequireBearer(api, auth.Validator(cfg.Token), "notes")
+requireArticles := rest.RequireBearer(api, auth.Validator(cfg.Auth), "articles")
 
 op := huma.Operation{
-    OperationID: "note-list",
+    OperationID: "article-list",
     Method:      http.MethodGet,
-    Path:        "/notes",
+    Path:        "/articles",
 }
-requireNotes(&op)
+requireArticles(&op)
 rest.Register(api, op, newListHandler)
 ```
 
@@ -126,6 +174,25 @@ rest.Register(api, op, newListHandler)
 
 无论校验器返回什么错误码，客户端看到的都是统一的 `auth.unauthenticated`，不会因此得知 token 是“不存在”还是“已过期”。`401` 响应带有 `WWW-Authenticate: Bearer` 响应头。校验器返回 5xx 类错误时，响应的 `detail` 为 `authentication unavailable`，不包含校验器的错误码；框架会在配置了日志器的情况下记录一条诊断日志。
 
+例如，不带 token 创建文章：
+
+```bash
+curl -i -X POST http://localhost:8080/articles \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"Hello World","slug":"hello-world","content":"……"}'
+```
+
+```http
+HTTP/1.1 401 Unauthorized
+Content-Type: application/problem+json
+Cache-Control: no-store
+Www-Authenticate: Bearer
+
+{"title":"Unauthorized","status":401,"detail":"Unauthorized","code":"auth.unauthenticated"}
+```
+
+启用[本地化](localization.md)后，`detail` 会被翻译，例如中文为“请先认证”。
+
 认证在输入验证之前执行，所以未认证的请求不会看到验证错误。
 
 <a id="retrieving-the-subject"></a>
@@ -134,41 +201,23 @@ rest.Register(api, op, newListHandler)
 认证通过后，主体会被放入请求的 context。在处理器中使用 `identity.FromContext` 读取它，再传给业务服务：
 
 ```go
-return func(ctx context.Context, in *ListNotesInput) (*ListNotesOutput, error) {
+return func(ctx context.Context, in *ListArticlesInput) (*ListArticlesOutput, error) {
     subject, ok := identity.FromContext(ctx)
     if !ok {
         return nil, auth.ErrUnauthenticated.New()
     }
-    items, err := notes.List(ctx, subject, in.Before, in.Limit)
+    items, err := articles.List(ctx, subject, in.Before, in.Limit)
     // ……
 }
 ```
 
 对于受 `RequireBearer` 保护的路由，`ok` 总是为 `true`。保留这个检查可以防止路由配置被误改为公开后，处理器在没有身份的情况下继续执行。
 
+另一种做法是让业务服务拒绝空的主体，见[授权](authorization.md#ownership)。这样即使路由被误改为公开，请求也会在服务中被拒绝，处理器就可以简单地写成 `subject, _ := identity.FromContext(ctx)`，[路由](routing.md#organizing-routes)一章中的 `articlehttp` 就是这样做的。
+
 <a id="managing-credentials"></a>
 ## 管理凭据
 
-凭据存放在哪里、如何签发和吊销，完全由应用决定。如果你的凭据比较简单，可以把它们放在配置文件中：
-
-```go
-type Credential struct {
-    Token     string `yaml:"token"`
-    SubjectID string `yaml:"subject_id"`
-}
-
-type AuthConfig struct {
-    Credentials []Credential `yaml:"credentials"`
-}
-```
-
-```yaml
-auth:
-  credentials:
-    - token: ${API_TOKEN_ALICE}
-      subject_id: alice
-```
-
-请在 `AuthConfig` 的 `Validate` 方法中检查空 token、空主体和重复的凭据，然后把校验后的配置传给校验器。
+凭据存放在哪里、如何签发和吊销，完全由应用决定。上面把 token 写在配置文件中的做法适合内部服务或少量固定的调用方；对外开放的 API 通常会把 API Key 存在数据库中，或者使用 JWT，此时只需替换校验器的实现，路由和业务代码都不需要改变。
 
 用户注册、登录会话、刷新 token 等功能不在 mygoravel 的范围内。你可以选择合适的认证服务或库来实现它们，最终在校验器中把验证结果转换为 `identity.Subject` 即可。
