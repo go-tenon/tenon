@@ -68,27 +68,19 @@ func TestExternalModuleConsumesFramework(t *testing.T) {
 	info, _ := json.Marshal(map[string]any{"Version": version, "Time": time.Now().UTC()})
 	must(t, os.WriteFile(filepath.Join(moduleDir, version+".info"), info, 0644))
 	must(t, os.WriteFile(filepath.Join(moduleDir, "list"), []byte(version+"\n"), 0644))
-	// Export the maintained application, including its tests and embedded SQL.
-	source := filepath.Join(root, "examples/api")
-	must(t, filepath.WalkDir(source, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
+	// Consume public HTTP/config/error contracts from an independent module.
+	// Reuse framework contract tests rather than maintaining a second application.
+	for _, pkg := range []string{"httpx/rest", "config", "fault", "command"} {
+		destination := filepath.Join(dir, filepath.Base(pkg))
+		must(t, os.MkdirAll(destination, 0755))
+		files, err := filepath.Glob(filepath.Join(root, pkg, "*_test.go"))
+		must(t, err)
+		for _, file := range files {
+			source, err := os.ReadFile(file)
+			must(t, err)
+			must(t, os.WriteFile(filepath.Join(destination, filepath.Base(file)), source, 0644))
 		}
-		rel, err := filepath.Rel(source, path)
-		if err != nil {
-			return err
-		}
-		target := filepath.Join(dir, rel)
-		if d.IsDir() {
-			return os.MkdirAll(target, 0755)
-		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		data = bytes.ReplaceAll(data, []byte(framework+"/examples/api"), []byte("consumer.example"))
-		return os.WriteFile(target, data, 0644)
-	}))
+	}
 	must(t, os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module consumer.example\n\ngo 1.27.3\n\nrequire "+framework+" "+version+"\n"), 0644))
 	proxyURL := (&url.URL{Scheme: "file", Path: filepath.ToSlash(proxy)}).String()
 	upstream, err := exec.Command("go", "env", "GOPROXY").Output()
@@ -117,18 +109,7 @@ func TestExternalModuleConsumesFramework(t *testing.T) {
 	if module.Replace != nil || module.Dir == root || module.Dir == "" {
 		t.Fatalf("not consuming published candidate: %s", resolved)
 	}
-	run("test", "-race", "-count=1", "-tags=integration", "./...")
-	doc := run("run", ".", "--config", "missing.yaml", "openapi")
-	if !bytes.Contains(doc, []byte("order-update")) {
-		t.Fatal("full application was not exported")
-	}
-	// The no-database fixture also consumes the same downloaded candidate.
-	minimal := filepath.Join(dir, "minimal")
-	must(t, os.MkdirAll(minimal, 0755))
-	fixture, err := os.ReadFile(filepath.Join(root, "httpx/rest/minimal_test.go"))
-	must(t, err)
-	must(t, os.WriteFile(filepath.Join(minimal, "minimal_test.go"), fixture, 0644))
-	run("test", "-race", "./minimal")
+	run("test", "-race", "-count=1", "./...")
 }
 func must(t *testing.T, err error) {
 	t.Helper()

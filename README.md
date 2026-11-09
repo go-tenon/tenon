@@ -1,53 +1,39 @@
 # mygoravel
 
-约定驱动、显式装配的 Go 应用框架。第一期交付常规 HTTP API 的完整路径：
-配置、错误、日志、路由、校验、鉴权、数据库、迁移、按需缓存、测试与运行管理。
+约定驱动、显式装配的 Go 应用框架。当前面向常规 HTTP API，提供配置、错误、日志、路由、校验、认证、数据库、迁移、可选缓存、测试与运行管理的完整使用路径。
 
-Module：`github.com/ryan053857/mygoravel`。设计规格与实施计划见 [`spec.go`](./spec.go)；
-编码约定见 [`docs/conventions.md`](./docs/conventions.md)。
+通过普通 Go 代码连接依赖，直接使用社区组件的原生能力：chi / Huma、slog、Bun / pgx、goose、Cobra、go-i18n、cockroachdb/errors，以及可选的 eko/gocache。
 
-## 第一期目标包
+## 开始使用
 
-| 包 | 状态 | 职责 |
-|---|---|---|
-| `config` | 已交付 | 文档解析、按段解码、环境注入、Secret 脱敏 |
-| `logging` | 已交付 | slog 构建与上下文字段辅助 |
-| `i18n` | 已交付 | go-i18n 原生 Bundle 的目录组合与校验 |
-| `fault` | 已交付 | 传输中立的 Code/Kind/公开参数 |
-| `cleanup` | 已交付 | 资源清理栈 |
-| `httpx` | 已交付 | net/http 排空与默认边界中间件 |
-| `httpx/rest` | 已交付 | Huma 装配、延迟绑定与离线 OpenAPI |
-| `identity` | 已交付 | 已认证主体 |
-| `database` | 已交付 | PostgreSQL（Bun + pgx）连接与事务 |
-| `database/migrate` | 已交付 | goose Provider 与已发布迁移检查 |
-| `database/dbtest` | 已交付 | 真实数据库测试隔离 |
-| `command` | 已交付 | serve / config / migrate / openapi 命令工厂 |
-| `examples/api` | 已交付 | 手写参考 API 应用 |
+- [阅读用户文档](docs/README.md)
+- [运行第一个应用](docs/installation.md)
+- [编写 HTTP 路由](docs/routing.md)
 
-包只在有实际代码时创建。默认组合：chi、Huma、slog、Bun、pgx、goose、Cobra、go-i18n、
-cockroachdb/errors；缓存直接使用 eko/gocache。
+需要 Go 1.27.3，数据库支持 PostgreSQL。无需数据库的最小 HTTP 程序见[路由教程](docs/routing.md#first-route)。
 
-## 旧代码
+## 学习与查阅
 
-`legacy/` 是独立 module 中的旧 go-kit 快照，退出第一期主构建，仅作需求参考。
-说明见 [`legacy/README.md`](./legacy/README.md)。
+| 要做的事情 | 文档 |
+| --- | --- |
+| 管理配置与密钥 | [配置](docs/configuration.md) |
+| 组织业务和依赖 | [目录结构](docs/directory-structure.md) |
+| 处理错误和日志 | [错误处理](docs/errors.md) · [日志](docs/logging.md) |
+| 保护业务资源 | [认证与授权](docs/authentication.md) |
+| 使用数据库和迁移 | [数据库](docs/database.md) · [迁移](docs/migrations.md) |
+| 添加查询缓存 | [缓存](docs/cache.md) |
+| 测试和发布应用 | [测试](docs/testing.md) · [部署](docs/deployment.md) |
 
-## 开发
+Module 路径为 `github.com/ryan053857/mygoravel`。依赖版本以 [go.mod](go.mod) 为准，使用与代码版本对应的文档。
+
+## 参与开发
+
+在仓库根目录执行单元测试：
 
 ```bash
 go test ./...
 ```
 
-```bash
-# 完整集成验收需要 PostgreSQL 18 和 Redis 7
-export DATABASE_TEST_DSN='postgres://postgres:postgres@127.0.0.1:55432/postgres?sslmode=disable'
-export REDIS_TEST_ADDR='127.0.0.1:6379'
-go test -race -count=1 -tags=integration ./...
-```
+真实 PostgreSQL 集成测试和独立模块消费验收见[测试指南](docs/testing.md#integration-tests)。CI 配置见 [.github/workflows/ci.yml](.github/workflows/ci.yml)。
 
-文档：[`docs/support-matrix.md`](./docs/support-matrix.md)、[`docs/production.md`](./docs/production.md)、[`docs/api-review.md`](./docs/api-review.md)。
-CI 见 `.github/workflows/ci.yml`。
-
-独立消费验收会生成临时 Go 模块代理，从模块 zip 下载当前候选版本，并导出完整
-`examples/api` 运行测试；不使用 `replace`。验收覆盖离线 OpenAPI、迁移、数据库写入、
-缓存与权限、实际进程 SIGTERM 退出，以及无数据库/缓存的最小 HTTP 应用。
+框架设计与实施规格保留在 [spec.go](spec.go)。`legacy/` 是独立的旧 module，不参与当前主构建；当前使用方式以用户文档为准。

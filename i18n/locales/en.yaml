@@ -3,6 +3,3 @@ error.internal: An unexpected error occurred
 error.validation: Invalid request
 auth.unauthenticated: Authentication required
 auth.forbidden: Permission denied
-order.not_found: Order not found
-order.forbidden: Permission denied
-order.conflict: An order with this title already exists
