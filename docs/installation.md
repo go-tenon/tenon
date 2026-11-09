@@ -8,7 +8,6 @@
     - [编写入口文件](#entrypoint)
     - [启动服务](#running)
 - [下一步](#next-steps)
-- [常见问题](#troubleshooting)
 
 <a id="meet-mygoravel"></a>
 ## 认识 mygoravel
@@ -193,14 +192,3 @@ mygoravel 还为你生成了接口文档。在浏览器中打开 `http://localho
 - 用[命令行](commands.md)为应用加上 `serve`、`migrate`、`openapi` 等子命令。
 
 如果想先了解一个 mygoravel 应用整体是如何组织的，可以阅读[目录结构](directory-structure.md)和[依赖装配](dependencies.md)。
-
-<a id="troubleshooting"></a>
-## 常见问题
-
-| 现象 | 解决方法 |
-| --- | --- |
-| `go get` 找不到框架版本 | 确认所用的分支、提交或标签已经推送到远程仓库，并检查 module 路径是否拼写正确 |
-| 编译时提示缺少依赖 | 在应用目录中运行 `go mod tidy` |
-| 启动时提示 8080 端口已被占用 | 修改 `main.go` 中 `net.Listen` 的地址，例如改为 `127.0.0.1:8081` |
-| 请求返回 404 | 检查 `Operation.Path` 是否正确，以及注册函数（如 `registerPing`）是否被调用 |
-| 启动时 panic：`endpoint must explicitly declare Public or RequireBearer` | 每条路由都必须声明访问策略，在注册前调用 `rest.Public()(&op)` 或 `rest.RequireBearer(...)(&op)` |
