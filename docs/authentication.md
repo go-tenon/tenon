@@ -58,12 +58,12 @@ import (
 
     "github.com/danielgtaylor/huma/v2"
     "github.com/ryan053857/mygoravel/config"
-    "github.com/ryan053857/mygoravel/fault"
+    "github.com/ryan053857/mygoravel/errorx"
     "github.com/ryan053857/mygoravel/httpx/rest"
     "github.com/ryan053857/mygoravel/identity"
 )
 
-var ErrUnauthenticated = fault.Define(fault.Unauthenticated, "auth.unauthenticated")
+var ErrUnauthenticated = errorx.Define(errorx.Unauthenticated, "auth.unauthenticated")
 
 func Validator(expected config.Secret) rest.TokenValidator {
     return func(ctx huma.Context, token string) (identity.Subject, error) {
@@ -89,8 +89,8 @@ func Validator(expected config.Secret) rest.TokenValidator {
 | 校验器返回 | 结果 |
 | --- | --- |
 | 有效的主体（`ID` 非空） | 认证通过 |
-| `fault.Unauthenticated` 等 4xx 类错误，或 `ID` 为空的主体 | `401` |
-| `fault.Unavailable` 等 5xx 类错误 | 对应的 `5xx`，例如认证服务暂时不可用时返回 `503` |
+| `errorx.Unauthenticated` 等 4xx 类错误，或 `ID` 为空的主体 | `401` |
+| `errorx.Unavailable` 等 5xx 类错误 | 对应的 `5xx`，例如认证服务暂时不可用时返回 `503` |
 
 <a id="protecting-routes"></a>
 ## 保护路由
@@ -129,9 +129,9 @@ rest.Register(api, op, newListHandler)
 | 没有携带 `Authorization` 头，或格式不是 `Bearer <token>` | 401 | `auth.unauthenticated` |
 | 校验器拒绝了 token | 401 | `auth.unauthenticated` |
 | 缺少所需的 scope | 403 | `auth.forbidden` |
-| 校验器返回 5xx 类错误 | 与错误分类对应，例如 503 | `error.internal` |
+| 校验器返回 5xx 类错误 | 与错误分类对应，例如 503 | 无 |
 
-无论校验器返回什么错误码，客户端看到的都是统一的 `auth.unauthenticated`，不会因此得知 token 是“不存在”还是“已过期”。`401` 响应带有 `WWW-Authenticate: Bearer` 响应头。校验器返回 5xx 类错误时，框架会在配置了日志器的情况下记录一条诊断日志。
+无论校验器返回什么错误码，客户端看到的都是统一的 `auth.unauthenticated`，不会因此得知 token 是“不存在”还是“已过期”。`401` 响应带有 `WWW-Authenticate: Bearer` 响应头。校验器返回 5xx 类错误时，响应的 `detail` 为 `authentication unavailable`，不包含校验器的错误码；框架会在配置了日志器的情况下记录一条诊断日志。
 
 认证在输入验证之前执行，所以未认证的请求不会看到验证错误。
 

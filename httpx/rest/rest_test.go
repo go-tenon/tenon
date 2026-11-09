@@ -13,7 +13,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/ryan053857/mygoravel/fault"
+	"github.com/ryan053857/mygoravel/errorx"
 	"github.com/ryan053857/mygoravel/httpx"
 	"github.com/ryan053857/mygoravel/httpx/rest"
 )
@@ -101,8 +101,8 @@ func TestInstanceTransformersIsolated(t *testing.T) {
 	}
 }
 
-func TestPingServeAndFaultMapping(t *testing.T) {
-	errDenied := fault.Define(fault.PermissionDenied, "demo.denied")
+func TestPingServeAndErrorMapping(t *testing.T) {
+	errDenied := errorx.Define(errorx.PermissionDenied, "demo.denied")
 	api := rest.New(rest.Options{Title: "ping"})
 	rest.Register(api, huma.Operation{Security: []map[string][]string{},
 		OperationID: "ping",
@@ -185,8 +185,8 @@ func TestPingServeAndFaultMapping(t *testing.T) {
 	if resp.StatusCode != http.StatusUnprocessableEntity {
 		t.Fatalf("validation status=%d body=%s", resp.StatusCode, body)
 	}
-	if strings.Contains(string(body), `"value"`) {
-		t.Fatalf("validation echoed value field: %s", body)
+	if !strings.Contains(string(body), `"location":"body.secret"`) {
+		t.Fatalf("validation missing location: %s", body)
 	}
 
 	cancel()

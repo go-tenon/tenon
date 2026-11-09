@@ -57,7 +57,7 @@ if subject.HasScope("notes:admin") {
 具备 `notes` scope 只说明调用者可以使用笔记接口，并不意味着他可以读取任意一条笔记。业务服务需要检查资源是否属于当前的主体：
 
 ```go
-var ErrForbidden = fault.Define(fault.PermissionDenied, "note.forbidden")
+var ErrForbidden = errorx.Define(errorx.PermissionDenied, "note.forbidden")
 
 func (s *Service) Get(ctx context.Context, subject identity.Subject, id uuid.UUID) (*Note, error) {
     if subject.ID == "" {
@@ -79,7 +79,7 @@ func (s *Service) Get(ctx context.Context, subject identity.Subject, id uuid.UUI
 服务在入口处拒绝空的主体 ID。这保证了即使服务被命令行或其他代码直接调用，也不会跳过身份检查。
 
 > [!TIP]
-> 对于不属于当前用户的资源，返回 `404` 而不是 `403` 也是一种常见做法，它可以避免泄露“这个资源存在”的信息。你可以根据业务需要选择 `fault.NotFound` 或 `fault.PermissionDenied`。
+> 对于不属于当前用户的资源，返回 `404` 而不是 `403` 也是一种常见做法，它可以避免泄露“这个资源存在”的信息。你可以根据业务需要选择 `errorx.NotFound` 或 `errorx.PermissionDenied`。
 
 <a id="authorization-functions"></a>
 ### 编写授权函数
@@ -125,6 +125,6 @@ err := s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 ## 授权失败的响应
 
 - 缺少路由所需的 scope 时，框架返回 `403`，错误码为 `auth.forbidden`；
-- 业务服务返回 `fault.PermissionDenied` 分类的错误时，返回 `403`，错误码为你定义的业务错误码，例如 `note.forbidden`。
+- 业务服务返回 `errorx.PermissionDenied` 分类的错误时，返回 `403`，错误码为你定义的业务错误码，例如 `note.forbidden`。
 
 两者都使用统一的[错误响应格式](errors.md#response-format)。

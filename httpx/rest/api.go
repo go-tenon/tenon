@@ -11,7 +11,6 @@ import (
 	goi18n "github.com/nicksnyder/go-i18n/v2/i18n"
 
 	"github.com/ryan053857/mygoravel/httpx"
-	"github.com/ryan053857/mygoravel/i18n"
 	"github.com/ryan053857/mygoravel/logging"
 )
 
@@ -28,9 +27,10 @@ const (
 // API 包装 huma.API，携带模式与实例级策略。
 type API struct {
 	huma.API
-	mode   Mode
-	router chi.Router
-	logger *slog.Logger
+	mode      Mode
+	router    chi.Router
+	logger    *slog.Logger
+	languages *goi18n.Bundle
 }
 
 // Options 创建 API。
@@ -39,7 +39,7 @@ type Options struct {
 	Title      string
 	Version    string
 	Mode       Mode
-	// Transformers 追加到 Huma 配置；默认始终包含 StripErrorValues。
+	// Transformers 追加在 Huma 默认 Transformer 之后。
 	Transformers []huma.Transformer
 	// Router 可选；nil 时使用 chi.NewRouter()。
 	Router chi.Router
@@ -61,32 +61,19 @@ func New(opts Options) *API {
 		r = chi.NewRouter()
 	}
 	r.Use(httpx.Middleware(opts.Middleware))
-	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
-		httpx.WriteProblem(w, 404, "error.not_found", httpx.RequestID(r.Context()))
+	r.NotFound(func(w http.ResponseWriter, _ *http.Request) {
+		httpx.WriteProblem(w, http.StatusNotFound, "route not found")
 	})
-	r.MethodNotAllowed(func(w http.ResponseWriter, r *http.Request) {
-		httpx.WriteProblem(w, 405, "error.method_not_allowed", httpx.RequestID(r.Context()))
+	r.MethodNotAllowed(func(w http.ResponseWriter, _ *http.Request) {
+		httpx.WriteProblem(w, http.StatusMethodNotAllowed, "method not allowed")
 	})
 	cfg := huma.DefaultConfig(opts.Title, opts.Version)
+	// huma.ErrorModel 的 JSON 是 ErrorModel 的合法实例，因此文档统一描述为 ErrorModel；
+	// 不覆盖全局 huma.NewError，避免影响同一进程中的其他 Huma API。
 	cfg.OpenAPI.Components.Schemas.RegisterTypeAlias(reflect.TypeOf(huma.ErrorModel{}), reflect.TypeOf(ErrorModel{}))
-	cfg.Transformers = append([]huma.Transformer{StripErrorValues, func(ctx huma.Context, status string, v any) (any, error) {
-		if e, ok := v.(*ErrorModel); ok && opts.Middleware.Languages != nil {
-			if msg, err := goi18n.NewLocalizer(opts.Middleware.Languages, i18n.Locale(ctx.Context())).Localize(&goi18n.LocalizeConfig{MessageID: e.Code}); err == nil {
-				e.Detail = msg
-			} else {
-				e.Detail = http.StatusText(e.Status)
-				if e.Status >= 500 {
-					e.Detail = "An unexpected error occurred"
-				}
-				if opts.Middleware.Logger != nil {
-					opts.Middleware.Logger.WarnContext(ctx.Context(), "missing error translation", "code", e.Code)
-				}
-			}
-		}
-		return v, nil
-	}}, opts.Transformers...)
+	cfg.Transformers = append(cfg.Transformers, opts.Transformers...)
 	h := humachi.New(r, cfg)
-	return &API{API: h, mode: opts.Mode, router: r, logger: opts.Middleware.Logger}
+	return &API{API: h, mode: opts.Mode, router: r, logger: opts.Middleware.Logger, languages: opts.Middleware.Languages}
 }
 
 // Mode 返回当前模式。

@@ -1,11 +1,10 @@
-package fault
+package errorx
 
 import (
 	"fmt"
 	"maps"
 
 	"github.com/cockroachdb/errors"
-	"github.com/cockroachdb/errors/errbase"
 )
 
 // Template 是不可变的业务错误模板，通常定义为包级变量。
@@ -43,72 +42,65 @@ func Public(key string, value any) Option {
 
 // Error 是一次具体失败；带 cause 与公开参数，堆栈在 New/Wrap 调用处捕获。
 type Error struct {
-	template *Template
-	public   map[string]any
-	cause    error
+	code   string
+	kind   Kind
+	public map[string]any
+	cause  error
 }
 
 // New 在调用处创建带堆栈的失败实例。
 func (t *Template) New(opts ...Option) error {
-	e := &Error{template: t}
-	for _, opt := range opts {
-		opt(e)
-	}
-	return errors.WithStackDepth(e, 1)
+	return errors.WithStackDepth(t.instance(nil, opts), 1)
 }
 
 // Wrap 包装 cause，并在调用处附加堆栈。
 func (t *Template) Wrap(cause error, opts ...Option) error {
-	e := &Error{template: t, cause: cause}
+	return errors.WithStackDepth(t.instance(cause, opts), 1)
+}
+
+func (t *Template) instance(cause error, opts []Option) *Error {
+	e := &Error{code: t.code, kind: t.kind, cause: cause}
 	for _, opt := range opts {
 		opt(e)
 	}
-	return errors.WithStackDepth(e, 1)
+	return e
 }
 
-// Error 返回稳定业务错误码。
-func (e *Error) Error() string { return e.Code() }
+// Error 返回 "code: cause"，与 cockroachdb/errors 包装器的约定一致；没有 cause 时只返回错误码。
+func (e *Error) Error() string { return fmt.Sprint(e) }
 
 // Unwrap 返回内部 cause。
 func (e *Error) Unwrap() error { return e.cause }
 
-// Is 匹配同一模板或模板本身。
+// Is 按错误码匹配模板或其他实例。错误码全局唯一且稳定，
+// 因此经 errors.EncodeError/DecodeError 跨进程传输后匹配依然成立。
 func (e *Error) Is(target error) bool {
 	switch t := target.(type) {
 	case *Template:
-		return e.template == t
+		return e.code == t.code
 	case *Error:
-		return e.template != nil && e.template == t.template
+		return e.code == t.code
 	default:
 		return false
 	}
 }
 
 // Code 返回稳定错误码。
-func (e *Error) Code() string {
-	if e.template == nil {
-		return "fault.internal"
-	}
-	return e.template.code
-}
+func (e *Error) Code() string { return e.code }
 
 // Kind 返回分类。
-func (e *Error) Kind() Kind {
-	if e.template == nil {
-		return Internal
-	}
-	return e.template.kind
-}
+func (e *Error) Kind() Kind { return e.kind }
 
 // Public 返回公开参数的浅拷贝。
 func (e *Error) Public() map[string]any { return maps.Clone(e.public) }
 
-// Format 实现 fmt.Formatter，委托给 cockroachdb/errors 扩展协议。
+// Format 实现 fmt.Formatter，%+v 输出完整错误链与各层堆栈。
 func (e *Error) Format(s fmt.State, verb rune) { errors.FormatError(e, s, verb) }
 
-// FormatError 实现 errors.Formatter，保留 cause 链与安全详情。
-func (e *Error) FormatError(p errbase.Printer) error {
-	p.Print(e.Error())
+// SafeFormatError 实现 errors.SafeFormatter：错误码是稳定标识，脱敏时保留；
+// 公开参数可能含用户数据，只在详细输出中出现并参与脱敏。
+func (e *Error) SafeFormatError(p errors.Printer) error {
+	p.Print(errors.Safe(e.code))
 	if len(e.public) > 0 && p.Detail() {
 		p.Printf("public=%v", e.public)
 	}
@@ -119,11 +111,11 @@ func (e *Error) FormatError(p errbase.Printer) error {
 func CodeOf(err error) string {
 	var e *Error
 	if errors.As(err, &e) {
-		return e.Code()
+		return e.code
 	}
 	var t *Template
 	if errors.As(err, &t) {
-		return t.Code()
+		return t.code
 	}
 	return ""
 }
@@ -132,11 +124,11 @@ func CodeOf(err error) string {
 func KindOf(err error) Kind {
 	var e *Error
 	if errors.As(err, &e) {
-		return e.Kind()
+		return e.kind
 	}
 	var t *Template
 	if errors.As(err, &t) {
-		return t.Kind()
+		return t.kind
 	}
 	return Internal
 }

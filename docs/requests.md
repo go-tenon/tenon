@@ -114,7 +114,7 @@ type UpdateNoteInput struct {
 requestID := httpx.RequestID(ctx)
 ```
 
-同一个 ID 会出现在响应头 `X-Request-ID`、错误响应的 `request_id` 字段以及这个请求的所有日志中。当用户反馈问题时，请他们提供这个 ID，你就能在日志中找到对应的请求。
+同一个 ID 会出现在响应头 `X-Request-ID` 以及这个请求的所有日志中。当用户反馈问题时，请他们提供这个 ID，你就能在日志中找到对应的请求。
 
 <a id="limits"></a>
 ## 请求体大小与超时

@@ -68,7 +68,7 @@ go test -race -count=1 -tags=integration ./...
 <a id="architecture-tests"></a>
 ### 架构测试
 
-`internal/archtest` 检查框架各个包之间的依赖方向。例如 `fault`、`identity` 等基础包不能依赖 HTTP 或数据库相关的包，`database` 只能依赖 `config`。如果你的修改引入了新的包依赖，请先确认它符合分层设计，再相应地更新测试中的规则。
+`internal/archtest` 检查框架各个包之间的依赖方向。例如 `errorx`、`identity` 等基础包不能依赖 HTTP 或数据库相关的包，`database` 只能依赖 `config`。如果你的修改引入了新的包依赖，请先确认它符合分层设计，再相应地更新测试中的规则。
 
 <a id="consumer-tests"></a>
 ### 外部模块消费测试

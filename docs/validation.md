@@ -75,27 +75,28 @@ type UpdateNoteInput struct {
 <a id="validation-error-response"></a>
 ## 验证错误响应
 
-请求体不是合法的 JSON 时返回 `400`，字段验证失败时返回 `422`。两种情况都使用统一的错误格式，并带有 `errors` 数组指出出错的位置：
+请求体不是合法的 JSON 时返回 `400`，字段验证失败时返回 `422`。两种情况都是 Huma 原生的错误响应，带有 `errors` 数组逐条说明每个字段的问题：
 
 ```json
 {
-  "status": 422,
   "title": "Unprocessable Entity",
-  "detail": "Invalid request",
-  "code": "error.validation",
-  "request_id": "<请求 ID>",
+  "status": 422,
+  "detail": "validation failed",
   "errors": [
-    {"message": "Invalid value", "location": "body.title"}
+    {"message": "expected length >= 1", "location": "body.title", "value": ""}
   ]
 }
 ```
 
-客户端可以根据 `errors[].location` 把错误提示显示在对应的表单字段旁边。
+| 字段 | 说明 |
+| --- | --- |
+| `message` | 违反的约束，例如 `expected length >= 1` |
+| `location` | 出错的位置，例如 `body.title`、`query.limit` |
+| `value` | 服务端收到的值 |
 
-上面是启用了框架内置英文消息时的响应。启用[本地化](localization.md)后，`detail` 会根据请求的语言翻译，例如中文为“请求参数无效”；未启用本地化时，`detail` 为 HTTP 状态描述。
+客户端可以根据 `errors[].location` 把错误提示显示在对应的表单字段旁边。`message` 是 Huma 生成的英文描述，不会被翻译。需要本地化提示时，客户端应当根据 `location` 和接口文档中的约束自行生成文案。
 
-> [!NOTE]
-> 为了避免泄露内部信息，`errors` 中的 `message` 统一为 `Invalid value`，不会回显客户端提交的值或具体的规则细节。客户端应当根据接口文档中的约束来生成友好的提示。
+验证错误不带 `code` 字段，客户端根据状态码 `400` 或 `422` 识别它们，见[错误响应格式](errors.md#response-format)。
 
 如果路由需要认证，认证会先于验证执行。因此，一个没有携带凭据且请求体也不合法的请求，会得到 `401` 而不是 `422`。
 
@@ -105,7 +106,7 @@ type UpdateNoteInput struct {
 结构体标签适合描述格式上的约束，例如长度、范围和格式。而“同一用户下的笔记标题不能重复”、“已归档的笔记不能编辑”这类需要查询数据或依赖业务状态的规则，应该放在业务服务中检查，并返回一个[业务错误](errors.md)：
 
 ```go
-var ErrNoteArchived = fault.Define(fault.InvalidArgument, "note.archived")
+var ErrNoteArchived = errorx.Define(errorx.InvalidArgument, "note.archived")
 
 func (s *Service) Rename(ctx context.Context, subject identity.Subject, id uuid.UUID, title string) error {
     // ……读取笔记
@@ -116,7 +117,7 @@ func (s *Service) Rename(ctx context.Context, subject identity.Subject, id uuid.
 }
 ```
 
-`fault.InvalidArgument` 分类的错误会被转换为 `422` 响应，`code` 字段为 `note.archived`，客户端可以据此给出准确的提示。
+`errorx.InvalidArgument` 分类的错误会被转换为 `422` 响应，`code` 字段为 `note.archived`，客户端可以据此给出准确的提示。
 
 > [!TIP]
 > 业务服务也可能被命令行或测试直接调用，绕过 HTTP 层的验证。对于必须成立的约束（例如标题不能为空），在服务中再检查一次是一个好习惯。

@@ -112,7 +112,7 @@ logger := logging.New(logging.Options{
 })
 ```
 
-排查问题时，可以使用错误响应中的 `request_id` 在日志中找到同一请求的访问日志和错误诊断。详见[日志](logging.md)。
+排查问题时，可以使用响应头 `X-Request-ID` 中的请求 ID，在日志中找到同一请求的访问日志和错误诊断。详见[日志](logging.md)。
 
 <a id="upgrading"></a>
 ## 升级依赖

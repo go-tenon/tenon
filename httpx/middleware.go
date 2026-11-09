@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/go-chi/chi/v5/middleware"
 	goi18n "github.com/nicksnyder/go-i18n/v2/i18n"
 
@@ -82,7 +83,7 @@ func Middleware(opts MiddlewareOptions) func(http.Handler) http.Handler {
 						opts.Logger.ErrorContext(ctx, "request panic", "stack", string(debug.Stack()))
 					}
 					if rw.Status() == 0 {
-						WriteProblem(rw, 500, "error.internal", id)
+						WriteProblem(rw, http.StatusInternalServerError, "unexpected error occurred")
 					} else {
 						panic(http.ErrAbortHandler)
 					}
@@ -90,7 +91,7 @@ func Middleware(opts MiddlewareOptions) func(http.Handler) http.Handler {
 
 			}()
 			if r.ContentLength > opts.MaxBodyBytes {
-				WriteProblem(rw, 413, "error.body_too_large", id)
+				WriteProblem(rw, http.StatusRequestEntityTooLarge, "request body too large")
 				return
 			}
 			r.Body = http.MaxBytesReader(rw, r.Body, opts.MaxBodyBytes)
@@ -105,21 +106,16 @@ func Middleware(opts MiddlewareOptions) func(http.Handler) http.Handler {
 	}
 }
 
-// WriteProblem 输出 HTTP 边界的通用 Problem Details 响应。
-func WriteProblem(w http.ResponseWriter, status int, code, id string) {
-	w.Header().Set("Content-Type", "application/problem+json")
-	w.WriteHeader(status)
-	detail := http.StatusText(status)
-	if status >= 500 {
-		detail = "An unexpected error occurred"
+// WriteProblem 在 Huma 之外输出 Problem Details 错误，结构与 huma.NewError 一致。
+func WriteProblem(w http.ResponseWriter, status int, detail string) {
+	problem := huma.NewError(status, detail)
+	ct := "application/json"
+	if f, ok := problem.(huma.ContentTypeFilter); ok {
+		ct = f.ContentType(ct)
 	}
-	_ = json.NewEncoder(w).Encode(struct {
-		Status    int    `json:"status"`
-		Title     string `json:"title"`
-		Detail    string `json:"detail"`
-		Code      string `json:"code"`
-		RequestID string `json:"request_id"`
-	}{status, http.StatusText(status), detail, code, id})
+	w.Header().Set("Content-Type", ct)
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(problem)
 }
 
 func clientAddress(r *http.Request, proxies []netip.Prefix) string {

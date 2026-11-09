@@ -7,6 +7,7 @@
     - [包装底层错误](#wrapping-errors)
     - [附加公开参数](#public-parameters)
 - [判断错误](#inspecting-errors)
+    - [跨进程传递](#cross-process-errors)
 - [错误响应](#error-responses)
     - [状态码映射](#status-mapping)
     - [响应格式](#response-format)
@@ -28,16 +29,16 @@ mygoravel 的业务错误由两个要素组成：
 <a id="defining-errors"></a>
 ## 定义业务错误
 
-使用 `fault.Define` 定义一个错误**模板**，通常作为业务包的包级变量：
+使用 `errorx.Define` 定义一个错误**模板**，通常作为业务包的包级变量：
 
 ```go
 package note
 
-import "github.com/ryan053857/mygoravel/fault"
+import "github.com/ryan053857/mygoravel/errorx"
 
 var (
-    ErrNotFound = fault.Define(fault.NotFound, "note.not_found")
-    ErrConflict = fault.Define(fault.Conflict, "note.conflict")
+    ErrNotFound = errorx.Define(errorx.NotFound, "note.not_found")
+    ErrConflict = errorx.Define(errorx.Conflict, "note.conflict")
 )
 ```
 
@@ -50,22 +51,22 @@ func (s *Service) Find(ctx context.Context, id uuid.UUID) (*Note, error) {
 }
 ```
 
-错误码推荐使用 `资源.原因` 的形式，全部小写，用下划线连接单词。
+错误码推荐使用 `资源.原因` 的形式，全部小写，用下划线连接单词。错误码在整个应用中必须唯一，因为 `errors.Is` 是按错误码判断两个错误是否相同的。
 
 <a id="error-kinds"></a>
 ### 错误分类
 
-`fault` 包提供了以下分类：
+`errorx` 包提供了以下分类：
 
 | 分类 | 含义 | HTTP 状态 |
 | --- | --- | --- |
-| `fault.InvalidArgument` | 输入不符合业务规则 | 422 |
-| `fault.Unauthenticated` | 调用者身份未知 | 401 |
-| `fault.PermissionDenied` | 调用者无权执行该操作 | 403 |
-| `fault.NotFound` | 资源不存在 | 404 |
-| `fault.Conflict` | 与当前状态冲突，例如重复创建 | 409 |
-| `fault.Unavailable` | 依赖暂时不可用，可以稍后重试 | 503 |
-| `fault.Internal` | 内部错误 | 500 |
+| `errorx.InvalidArgument` | 输入不符合业务规则 | 422 |
+| `errorx.Unauthenticated` | 调用者身份未知 | 401 |
+| `errorx.PermissionDenied` | 调用者无权执行该操作 | 403 |
+| `errorx.NotFound` | 资源不存在 | 404 |
+| `errorx.Conflict` | 与当前状态冲突，例如重复创建 | 409 |
+| `errorx.Unavailable` | 依赖暂时不可用，可以稍后重试 | 503 |
+| `errorx.Internal` | 内部错误 | 500 |
 
 <a id="returning-errors"></a>
 ## 返回错误
@@ -81,6 +82,8 @@ if database.IsUniqueViolation(err, "notes_owner_title_key") {
 }
 ```
 
+包装后的错误遵循 `cockroachdb/errors` 的约定：`err.Error()` 返回 `note.conflict: <原始错误消息>`，`%+v` 输出完整错误链和各层堆栈。客户端只会看到错误码和翻译后的 `detail`，原始错误消息只出现在服务端日志中。
+
 对于其他无法归类的错误，可以使用 `github.com/cockroachdb/errors` 添加上下文后继续向上返回：
 
 ```go
@@ -94,16 +97,16 @@ if err != nil {
 <a id="public-parameters"></a>
 ### 附加公开参数
 
-有时你希望错误携带一些额外的信息，例如哪个字段冲突了。可以在创建错误时通过 `fault.Public` 附加参数：
+有时你希望错误携带一些额外的信息，例如哪个字段冲突了。可以在创建错误时通过 `errorx.Public` 附加参数：
 
 ```go
-return ErrConflict.New(fault.Public("field", "title"))
+return ErrConflict.New(errorx.Public("field", "title"))
 ```
 
-之所以叫“公开”参数，是因为它们经过你的确认，可以展示给调用者。之后可以用 `fault.PublicOf(err)` 读取，例如在翻译错误消息时作为模板数据使用。
+之所以叫“公开”参数，是因为它们经过你的确认，可以展示给调用者。启用[本地化](localization.md#translating-errors)后，它们会自动作为翻译模板的数据，例如 `{{.field}}`。在其他地方也可以用 `errorx.PublicOf(err)` 读取。
 
 > [!NOTE]
-> 公开参数**不会**自动出现在错误响应中。是否展示、如何展示，由你在自定义的响应转换或翻译逻辑中决定。
+> 公开参数不会作为独立字段出现在错误响应中，只会通过翻译模板体现在 `detail` 里。
 
 <a id="inspecting-errors"></a>
 ## 判断错误
@@ -119,9 +122,23 @@ if errors.Is(err, note.ErrNotFound) {
 也可以直接从错误链中读取错误码和分类：
 
 ```go
-code := fault.CodeOf(err) // "note.not_found"，非业务错误时为空字符串
-kind := fault.KindOf(err) // fault.NotFound，非业务错误时为 fault.Internal
+code := errorx.CodeOf(err) // "note.not_found"，非业务错误时为空字符串
+kind := errorx.KindOf(err) // errorx.NotFound，非业务错误时为 errorx.Internal
 ```
+
+<a id="cross-process-errors"></a>
+### 跨进程传递
+
+`errorx` 已经为 `cockroachdb/errors` 注册了编解码器。业务错误经过 `errors.EncodeError` 编码、在另一个进程中用 `errors.DecodeError` 还原后，错误码、分类、公开参数和 `errors.Is` 的判断结果都保持不变。这适用于通过 gRPC、消息队列等方式在服务之间传递错误的场景：
+
+```go
+encoded := errors.EncodeError(ctx, err) // 可序列化的 protobuf 消息
+// ……传输到另一个进程……
+decoded := errors.DecodeError(ctx, encoded)
+errors.Is(decoded, note.ErrNotFound) // true
+```
+
+公开参数以 JSON 形式传输，因此还原后的数值类型会变为 `float64`。
 
 <a id="error-responses"></a>
 ## 错误响应
@@ -134,15 +151,14 @@ kind := fault.KindOf(err) // fault.NotFound，非业务错误时为 fault.Intern
 <a id="response-format"></a>
 ### 响应格式
 
-所有错误响应都使用 [Problem Details](https://www.rfc-editor.org/rfc/rfc9457) 格式，`Content-Type` 为 `application/problem+json`：
+所有错误响应都直接沿用 [Huma](https://huma.rocks) 的错误结构，也就是 [Problem Details](https://www.rfc-editor.org/rfc/rfc9457) 格式，`Content-Type` 为 `application/problem+json`。mygoravel 只在此基础上为业务错误增加了一个 `code` 字段：
 
 ```json
 {
-  "status": 404,
   "title": "Not Found",
+  "status": 404,
   "detail": "Note not found",
-  "code": "note.not_found",
-  "request_id": "<请求 ID>"
+  "code": "note.not_found"
 }
 ```
 
@@ -151,16 +167,23 @@ kind := fault.KindOf(err) // fault.NotFound，非业务错误时为 fault.Intern
 | `status` | HTTP 状态码 |
 | `title` | 状态码的标准描述 |
 | `detail` | 面向用户的提示文案 |
-| `code` | 稳定的错误码，客户端应根据它编写分支逻辑 |
-| `request_id` | 请求 ID，用于在服务端日志中查找对应记录 |
-| `errors` | 仅验证错误包含，见[验证](validation.md#validation-error-response) |
+| `code` | 稳定的业务错误码，客户端应根据它编写分支逻辑。**只有业务错误包含** |
+| `errors` | 字段级的错误明细，见[验证](validation.md#validation-error-response) |
+| `type`、`instance` | Huma 定义的 RFC 9457 标准字段，mygoravel 默认不填写 |
+
+响应中是否带有 `code`，可以用来区分错误的来源：
+
+- **有 `code`**：业务错误，由 `errorx` 定义，客户端按 `code` 处理；
+- **没有 `code`**：协议层或输入层的错误，例如路由不存在、请求体验证失败、服务端内部错误，客户端按 `status` 处理。
+
+需要定位某个请求时，使用响应头 `X-Request-ID` 中的请求 ID，它与这个请求的所有日志相对应。
 
 `detail` 的内容取决于是否启用了[本地化](localization.md)：
 
 - 启用本地化时，以错误码为消息 ID 翻译，例如上面的 `Note not found` 来自应用提供的英文翻译。找不到翻译时，使用 HTTP 状态描述；
-- 未启用本地化时，业务错误的 `detail` 为错误码本身。
+- 未启用本地化时，使用 HTTP 状态描述，例如 `Not Found`。
 
-对于 `500` 等服务端错误，`detail` 始终是通用提示，不会泄露任何内部信息。
+处理器返回的错误既不是业务错误、也不是 Huma 错误时，例如数据库驱动的原始错误，客户端只会收到一个通用的 `500`，`detail` 为 `unexpected error occurred`。原始错误信息只会进入[错误日志](#reporting-errors)。
 
 > [!WARNING]
 > `detail` 是展示文案，可能随语言和版本变化。客户端请不要根据 `detail` 做逻辑判断，而应使用 `code`。
@@ -168,13 +191,15 @@ kind := fault.KindOf(err) // fault.NotFound，非业务错误时为 fault.Intern
 <a id="huma-errors"></a>
 ### 原生 Huma 错误
 
-如果你只是想返回一个纯 HTTP 层面的错误，也可以使用 Huma 内置的错误函数，例如 `huma.Error404NotFound`。即使被包装过，它的状态码也会被保留。为了避免泄露内部信息，这类错误的文案会被替换为通用提示，因此在业务代码中更推荐使用 `fault` 定义的错误。
+如果你只是想返回一个纯 HTTP 层面的错误，也可以直接使用 Huma 内置的错误函数，例如 `huma.Error404NotFound("note does not exist")`。即使被包装过，它也会原样输出：状态码和 `detail` 都会保留，但不带 `code`，也不会被翻译。
+
+你也可以返回自己实现了 `huma.StatusError` 接口的错误类型，Huma 会按照这个类型本身的结构序列化它。需要稳定的错误码或本地化文案时，请使用 `errorx` 定义的错误。
 
 <a id="reporting-errors"></a>
 ## 错误日志
 
 mygoravel 遵循“**在处理决定的地方记录一次**”的原则：业务代码只负责添加上下文并返回错误，不需要自己记录日志。
 
-当 API 配置了日志器时，`rest.Register` 会为每个 `5xx` 错误记录一条诊断日志，包含错误码和可报告的堆栈。与此同时，访问日志会记录每个请求的结果。两条日志带有相同的 `request_id`，可以关联查看。日志的配置方式见[日志](logging.md)。
+当 API 配置了日志器时，`rest.Register` 会为每个 `5xx` 错误记录一条诊断日志，包含错误码和完整的错误链。错误链以 `%+v` 格式输出，包括每一层包装的上下文、原始错误消息和调用处堆栈。与此同时，访问日志会记录每个请求的结果。两条日志带有相同的 `request_id`，可以关联查看。日志的配置方式见[日志](logging.md)。
 
 `4xx` 错误属于正常的业务结果，只体现在访问日志中，不会产生额外的错误日志。

@@ -2,16 +2,17 @@ package rest
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/cockroachdb/errors"
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/ryan053857/mygoravel/fault"
+	"github.com/ryan053857/mygoravel/errorx"
 )
 
 // Register 登记端点。ModeServe 调用 newHandler，ModeOpenAPI 安装文档占位处理器。
-// 处理器错误经 FromFault 转换为 HTTP 错误。
+// 处理器错误经 FromError 转换为 HTTP 错误，业务错误的 detail 按请求语言翻译。
 func Register[I, O any](api *API, op huma.Operation, newHandler func() func(context.Context, *I) (*O, error)) {
 	if api == nil {
 		panic("rest: nil API")
@@ -51,9 +52,9 @@ func Register[I, O any](api *API, op huma.Operation, newHandler func() func(cont
 			if err == nil {
 				return out, nil
 			}
-			se := FromFault(err)
+			se := api.httpError(ctx, err)
 			if se.GetStatus() >= 500 && api.logger != nil {
-				api.logger.ErrorContext(ctx, "request failed", "code", fault.CodeOf(err), "stack", errors.GetReportableStackTrace(err))
+				api.logger.ErrorContext(ctx, "request failed", "code", errorx.CodeOf(err), "error", fmt.Sprintf("%+v", err))
 			}
 			return out, se
 		}

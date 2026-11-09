@@ -96,8 +96,7 @@ api.Router().Get("/readyz", func(w http.ResponseWriter, r *http.Request) {
     ctx, cancel := context.WithTimeout(r.Context(), time.Second)
     defer cancel()
     if draining.Load() || db.PingContext(ctx) != nil {
-        httpx.WriteProblem(w, http.StatusServiceUnavailable,
-            "error.unavailable", httpx.RequestID(r.Context()))
+        httpx.WriteProblem(w, http.StatusServiceUnavailable, "not ready")
         return
     }
     w.WriteHeader(http.StatusNoContent)

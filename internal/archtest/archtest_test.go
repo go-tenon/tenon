@@ -14,14 +14,14 @@ const module = "github.com/ryan053857/mygoravel"
 var dependencies = map[string][]string{
 	"cleanup":  {},
 	"config":   {},
-	"fault":    {},
+	"errorx":   {},
 	"logging":  {},
 	"i18n":     {},
 	"identity": {},
 	"database": {"config"},
-	"httpx":    {"fault", "identity", "i18n", "logging"},
-	"command":  {"cleanup", "config", "fault", "logging", "i18n", "identity", "database", "httpx"},
-	"internal": {"cleanup", "config", "fault", "logging", "i18n", "identity", "database", "httpx", "command"},
+	"httpx":    {"errorx", "identity", "i18n", "logging"},
+	"command":  {"cleanup", "config", "errorx", "logging", "i18n", "identity", "database", "httpx"},
+	"internal": {"cleanup", "config", "errorx", "logging", "i18n", "identity", "database", "httpx", "command"},
 }
 
 // 传输、数据库和命令组件的包前缀。
@@ -104,11 +104,11 @@ func TestDependencyRules(t *testing.T) {
 		from, to string
 		allowed  bool
 	}{
-		{module + "/httpx/rest", module + "/fault", true},
+		{module + "/httpx/rest", module + "/errorx", true},
 		{module + "/database/dbtest", module + "/database/migrate", true},
 		{module + "/database", module + "/config", true},
 		{module + "/config", "go.yaml.in/yaml/v4", true},
-		{module + "/fault", module + "/httpx/rest", false},
+		{module + "/errorx", module + "/httpx/rest", false},
 		{module + "/httpx", module + "/command", false},
 		{module + "/database", module + "/httpx", false},
 		{module + "/cleanup", "github.com/jackc/pgx/v5", false},

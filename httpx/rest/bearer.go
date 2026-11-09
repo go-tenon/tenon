@@ -1,11 +1,12 @@
 package rest
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/ryan053857/mygoravel/fault"
+	"github.com/ryan053857/mygoravel/errorx"
 	"github.com/ryan053857/mygoravel/identity"
 )
 
@@ -13,8 +14,8 @@ import (
 type TokenValidator func(ctx huma.Context, token string) (identity.Subject, error)
 
 var (
-	errUnauthenticated = fault.Define(fault.Unauthenticated, "auth.unauthenticated")
-	errForbidden       = fault.Define(fault.PermissionDenied, "auth.forbidden")
+	errUnauthenticated = errorx.Define(errorx.Unauthenticated, "auth.unauthenticated")
+	errForbidden       = errorx.Define(errorx.PermissionDenied, "auth.forbidden")
 )
 
 // EnsureBearerScheme 在 OpenAPI 组件中登记 bearer 安全方案。
@@ -61,25 +62,25 @@ func RequireBearer(api huma.API, validate TokenValidator, scopes ...string) func
 			token := bearerToken(ctx.Header("Authorization"))
 			if token == "" {
 				ctx.SetHeader("WWW-Authenticate", `Bearer`)
-				_ = huma.WriteErr(api, ctx, 401, "unauthenticated", FromFault(errUnauthenticated.New()))
+				writeError(api, ctx, problem(api, ctx, errUnauthenticated.New()))
 				return
 			}
 			sub, err := validate(ctx, token)
 			if err != nil && HTTPStatus(err) >= 500 {
 				if a, ok := api.(*API); ok && a.logger != nil {
-					a.logger.ErrorContext(ctx.Context(), "authentication backend failed", "code", fault.CodeOf(err))
+					a.logger.ErrorContext(ctx.Context(), "authentication backend failed", "code", errorx.CodeOf(err), "error", fmt.Sprintf("%+v", err))
 				}
-				_ = huma.WriteErr(api, ctx, HTTPStatus(err), "authentication unavailable")
+				writeError(api, ctx, huma.NewErrorWithContext(ctx, HTTPStatus(err), "authentication unavailable"))
 				return
 			}
 			if err != nil || sub.ID == "" {
 				ctx.SetHeader("WWW-Authenticate", `Bearer`)
-				_ = huma.WriteErr(api, ctx, 401, "unauthenticated", FromFault(err))
+				writeError(api, ctx, problem(api, ctx, errUnauthenticated.New()))
 				return
 			}
 			for _, sc := range scopeCopy {
 				if !sub.HasScope(sc) {
-					_ = huma.WriteErr(api, ctx, 403, "forbidden", FromFault(errForbidden.New(fault.Public("scope", sc))))
+					writeError(api, ctx, problem(api, ctx, errForbidden.New(errorx.Public("scope", sc))))
 					return
 				}
 			}
@@ -96,6 +97,14 @@ func Public() func(op *huma.Operation) {
 			panic("rest: cannot mark an authenticated endpoint public")
 		}
 	}
+}
+
+// problem 转换中间件中的业务错误；api 为 *API 时按请求语言翻译 detail。
+func problem(api huma.API, ctx huma.Context, err error) huma.StatusError {
+	if a, ok := api.(*API); ok {
+		return a.httpError(ctx.Context(), err)
+	}
+	return FromError(err)
 }
 
 func bearerToken(h string) string {

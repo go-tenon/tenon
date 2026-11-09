@@ -6,6 +6,7 @@ require (
 	github.com/cockroachdb/errors v1.14.0
 	github.com/danielgtaylor/huma/v2 v2.40.0
 	github.com/go-chi/chi/v5 v5.5.0
+	github.com/gogo/protobuf v1.3.2
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.12.0
 	github.com/joho/godotenv v1.5.1
@@ -22,7 +23,6 @@ require (
 	github.com/cockroachdb/logtags v0.0.0-20230118201751-21c54148d20b // indirect
 	github.com/cockroachdb/redact v1.1.5 // indirect
 	github.com/getsentry/sentry-go v0.46.0 // indirect
-	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect

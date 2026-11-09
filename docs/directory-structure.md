@@ -98,7 +98,7 @@ mygoravel 的每个包都可以单独使用，按需引入即可：
 | --- | --- | --- |
 | `config` | 读取 YAML 配置、展开环境变量、敏感值脱敏 | [配置](configuration.md) |
 | `cleanup` | 按逆序关闭入口打开的资源 | [依赖装配](dependencies.md#closing-resources) |
-| `fault` | 定义带稳定错误码和分类的业务错误 | [错误处理](errors.md) |
+| `errorx` | 定义带稳定错误码和分类的业务错误 | [错误处理](errors.md) |
 | `logging` | 构造 slog 日志器，传递请求关联字段 | [日志](logging.md) |
 | `i18n` | 组合 go-i18n 消息目录 | [本地化](localization.md) |
 | `identity` | 表示已认证的主体，并在 context 中传递 | [认证](authentication.md) |

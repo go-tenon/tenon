@@ -53,12 +53,10 @@ func NewAPI() (*rest.API, error) {
 <a id="built-in-messages"></a>
 ### 内置消息
 
-`i18n.FrameworkLayer()` 提供了框架内置的英文（`en`）和简体中文（`zh-CN`）消息，覆盖常见的错误码：
+`i18n.FrameworkLayer()` 提供了框架内置的英文（`en`）和简体中文（`zh-CN`）消息，覆盖框架自身定义的业务错误码：
 
 | 消息 ID | en | zh-CN |
 | --- | --- | --- |
-| `error.internal` | An unexpected error occurred | 服务暂时无法处理请求 |
-| `error.validation` | Invalid request | 请求参数无效 |
 | `auth.unauthenticated` | Authentication required | 请先认证 |
 | `auth.forbidden` | Permission denied | 没有访问权限 |
 
@@ -155,9 +153,17 @@ message, err := localizer.Localize(&goi18n.LocalizeConfig{
 <a id="translating-errors"></a>
 ## 翻译错误消息
 
-启用本地化后，错误响应会把错误码作为消息 ID，自动翻译 `detail` 字段。你只需在翻译文件中为每个业务错误码添加一条消息即可。
+启用本地化后，业务错误的响应会把错误码作为消息 ID，自动翻译 `detail` 字段。你只需在翻译文件中为每个业务错误码添加一条消息即可。
+
+如果错误通过 [`errorx.Public`](errors.md#public-parameters) 携带了公开参数，它们会作为模板数据传入翻译。例如错误 `ErrConflict.New(errorx.Public("field", "title"))` 配合下面的翻译：
+
+```yaml
+note.conflict: "{{.field}} already exists"
+```
+
+得到的 `detail` 为 `title already exists`。
 
 如果找不到某个错误码的翻译，`detail` 会使用 HTTP 状态的通用描述，同时（在配置了日志器时）记录一条缺失翻译的警告日志，提醒你补充翻译。
 
-> [!TIP]
-> 如果错误通过 [`fault.Public`](errors.md#public-parameters) 携带了公开参数，你可以用 `fault.PublicOf(err)` 读取它们，并作为 `LocalizeConfig.TemplateData` 传入，生成包含具体信息的提示。
+> [!NOTE]
+> 只有业务错误会被翻译。验证错误、路由不存在、服务端内部错误等不带 `code` 的错误保持 Huma 的英文描述，客户端应根据状态码自行展示提示。

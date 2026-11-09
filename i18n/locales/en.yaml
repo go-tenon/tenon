@@ -1,5 +1,3 @@
 mygoravel.ok: OK
-error.internal: An unexpected error occurred
-error.validation: Invalid request
 auth.unauthenticated: Authentication required
 auth.forbidden: Permission denied

@@ -1,121 +1,107 @@
 package rest
 
 import (
+	"context"
 	"net/http"
+	"strconv"
 
 	"github.com/cockroachdb/errors"
 	"github.com/danielgtaylor/huma/v2"
+	goi18n "github.com/nicksnyder/go-i18n/v2/i18n"
 
-	"github.com/ryan053857/mygoravel/fault"
-	"github.com/ryan053857/mygoravel/httpx"
+	"github.com/ryan053857/mygoravel/errorx"
+	"github.com/ryan053857/mygoravel/i18n"
 )
 
-// ErrorDetail 包含公开的校验提示和字段位置。
-type ErrorDetail struct {
-	Message  string `json:"message"`
-	Location string `json:"location,omitempty"`
-}
-
-// ErrorModel 定义业务错误和校验错误共用的 Problem Details 响应。
+// ErrorModel 在 Huma 原生 Problem Details 上增加业务错误码。
+//
+// 只有业务错误带 code。Huma 自身产生的校验和协议错误保持 huma.ErrorModel 原样，
+// 它们同样是本类型 schema 的合法实例，因此 OpenAPI 统一用本类型描述错误响应。
 type ErrorModel struct {
-	Status    int           `json:"status"`
-	Title     string        `json:"title"`
-	Detail    string        `json:"detail"`
-	Code      string        `json:"code"`
-	RequestID string        `json:"request_id"`
-	Errors    []ErrorDetail `json:"errors,omitempty"`
+	huma.ErrorModel
+	Code string `json:"code,omitempty" doc:"Stable business error code. Present only on business errors."`
 }
 
-func (e *ErrorModel) Error() string             { return e.Detail }
-func (e *ErrorModel) GetStatus() int            { return e.Status }
-func (e *ErrorModel) ContentType(string) string { return "application/problem+json" }
-
-// HTTPStatus 将 fault.Kind 映射为 HTTP 状态。
+// HTTPStatus 将 errorx.Kind 映射为 HTTP 状态。
 func HTTPStatus(err error) int {
-	switch fault.KindOf(err) {
-	case fault.InvalidArgument:
-		return 422
-	case fault.Unauthenticated:
-		return 401
-	case fault.PermissionDenied:
-		return 403
-	case fault.NotFound:
-		return 404
-	case fault.Conflict:
-		return 409
-	case fault.Unavailable:
-		return 503
+	switch errorx.KindOf(err) {
+	case errorx.InvalidArgument:
+		return http.StatusUnprocessableEntity
+	case errorx.Unauthenticated:
+		return http.StatusUnauthorized
+	case errorx.PermissionDenied:
+		return http.StatusForbidden
+	case errorx.NotFound:
+		return http.StatusNotFound
+	case errorx.Conflict:
+		return http.StatusConflict
+	case errorx.Unavailable:
+		return http.StatusServiceUnavailable
 	default:
-		return 500
+		return http.StatusInternalServerError
 	}
 }
 
-func statusCode(status int) string {
-	switch status {
-	case 400, 422:
-		return "error.validation"
-	case 401:
-		return "auth.unauthenticated"
-	case 403:
-		return "auth.forbidden"
-	case 404:
-		return "error.not_found"
-	case 405:
-		return "error.method_not_allowed"
-	case 413:
-		return "error.body_too_large"
-	default:
-		if status >= 500 {
-			return "error.internal"
-		}
-		return "error.request"
-	}
-}
-
-// FromFault 转换业务错误，保留原生 Huma 状态错误；nil 输入返回 nil。
-func FromFault(err error) huma.StatusError {
+// FromError 将处理器错误转换为 HTTP 错误，nil 输入返回 nil：
+//   - 业务错误转为带 code 的 ErrorModel，detail 为 HTTP 状态描述；
+//   - 其他 huma.StatusError（例如 huma.Error404NotFound）即使被包装也原样返回；
+//   - 其余错误转为通用 500，内部错误信息不会进入响应。
+func FromError(err error) huma.StatusError {
 	if err == nil {
 		return nil
 	}
-	code := fault.CodeOf(err)
+	code := errorx.CodeOf(err)
 	if code == "" {
 		var se huma.StatusError
 		if errors.As(err, &se) {
 			return se
 		}
+		return huma.Error500InternalServerError("unexpected error occurred")
 	}
 	status := HTTPStatus(err)
-	if code == "" {
-		code = statusCode(status)
+	return &ErrorModel{
+		ErrorModel: huma.ErrorModel{Status: status, Title: http.StatusText(status), Detail: http.StatusText(status)},
+		Code:       code,
 	}
-	detail := code
-	if status >= 500 {
-		detail = "An unexpected error occurred"
-	}
-	return &ErrorModel{Status: status, Title: http.StatusText(status), Detail: detail, Code: code}
 }
 
-// StripErrorValues 将 Huma 校验错误转换为公开响应，并填入请求标识。
-func StripErrorValues(ctx huma.Context, status string, v any) (any, error) {
-	var model *ErrorModel
-	switch e := v.(type) {
-	case *ErrorModel:
-		copy := *e
-		model = &copy
-	case *huma.ErrorModel:
-		model = &ErrorModel{Status: e.Status, Title: http.StatusText(e.Status), Code: statusCode(e.Status), Detail: http.StatusText(e.Status)}
-		if e.Status >= 500 {
-			model.Detail = "An unexpected error occurred"
-		} else {
-			for _, d := range e.Errors {
-				if d != nil {
-					model.Errors = append(model.Errors, ErrorDetail{Message: "Invalid value", Location: d.Location})
-				}
-			}
-		}
-	default:
-		return v, nil
+// httpError 转换处理器错误；启用本地化时以错误码为消息 ID 翻译业务错误的 detail，
+// errorx.Public 参数作为模板数据。
+func (a *API) httpError(ctx context.Context, err error) huma.StatusError {
+	se := FromError(err)
+	if a.languages == nil || errorx.CodeOf(err) == "" {
+		return se
 	}
-	model.RequestID = httpx.RequestID(ctx.Context())
-	return model, nil
+	m := se.(*ErrorModel)
+	msg, lerr := goi18n.NewLocalizer(a.languages, i18n.Locale(ctx)).Localize(&goi18n.LocalizeConfig{
+		MessageID:    m.Code,
+		TemplateData: errorx.PublicOf(err),
+	})
+	if lerr != nil {
+		if a.logger != nil {
+			a.logger.WarnContext(ctx, "missing error translation", "code", m.Code)
+		}
+		return se
+	}
+	m.Detail = msg
+	return se
+}
+
+// writeError 按 Huma 的方式在中间件中写出错误：协商内容类型、执行 Transformer 后序列化。
+func writeError(api huma.API, ctx huma.Context, se huma.StatusError) {
+	ct, err := api.Negotiate(ctx.Header("Accept"))
+	if err != nil {
+		ct = "application/json"
+	}
+	if f, ok := se.(huma.ContentTypeFilter); ok {
+		ct = f.ContentType(ct)
+	}
+	status := se.GetStatus()
+	body, err := api.Transform(ctx, strconv.Itoa(status), se)
+	if err != nil {
+		body = se
+	}
+	ctx.SetHeader("Content-Type", ct)
+	ctx.SetStatus(status)
+	_ = api.Marshal(ctx.BodyWriter(), ct, body)
 }
