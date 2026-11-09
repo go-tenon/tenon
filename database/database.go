@@ -11,7 +11,7 @@ import (
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect/pgdialect"
 
-	"github.com/shellphy-kit/tools/config"
+	"github.com/ryan053857/go-kit/config"
 )
 
 // Config 是数据库连接配置，产品将其嵌入自己的配置结构体，

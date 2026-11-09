@@ -4,9 +4,9 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/shellphy-kit/tools/config"
-	"github.com/shellphy-kit/tools/httpx"
-	"github.com/shellphy-kit/tools/logger"
+	"github.com/ryan053857/go-kit/config"
+	"github.com/ryan053857/go-kit/httpx"
+	"github.com/ryan053857/go-kit/logger"
 )
 
 // Config 由产品自己定义。log 级别直接使用 slog.Level，可从 "debug"、"info" 等解码；

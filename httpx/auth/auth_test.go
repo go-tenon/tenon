@@ -16,7 +16,7 @@ import (
 	"github.com/alexedwards/scs/v2/memstore"
 	"github.com/go-chi/chi/v5"
 
-	"github.com/shellphy-kit/tools/logger"
+	"github.com/ryan053857/go-kit/logger"
 )
 
 type user struct{ id string }

@@ -6,9 +6,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/shellphy-kit/tools/examples/service/user"
-	"github.com/shellphy-kit/tools/httpx/auth"
-	"github.com/shellphy-kit/tools/httpx/web"
+	"github.com/ryan053857/go-kit/examples/service/user"
+	"github.com/ryan053857/go-kit/httpx/auth"
+	"github.com/ryan053857/go-kit/httpx/web"
 )
 
 // AddNote 处理列表页上的 HTMX 表单：成功时返回新的 <li> 片段，由 htmx 追加到列表末尾。

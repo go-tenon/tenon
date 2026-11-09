@@ -46,7 +46,7 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/shellphy-kit/tools/httpx"
+	"github.com/ryan053857/go-kit/httpx"
 )
 
 // ErrUnauthenticated 表示凭证无效：会话中的用户已不存在或被禁用、token 无效或过期等。

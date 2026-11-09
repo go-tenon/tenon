@@ -8,8 +8,8 @@ import (
 	"context"
 	"crypto/subtle"
 
-	"github.com/shellphy-kit/tools/httpx/auth"
-	"github.com/shellphy-kit/tools/support/password"
+	"github.com/ryan053857/go-kit/httpx/auth"
+	"github.com/ryan053857/go-kit/support/password"
 )
 
 // User 是本服务的 Principal。

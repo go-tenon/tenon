@@ -3,7 +3,7 @@ package random_test
 import (
 	"fmt"
 
-	"github.com/shellphy-kit/tools/support/random"
+	"github.com/ryan053857/go-kit/support/random"
 )
 
 func ExampleToken() {

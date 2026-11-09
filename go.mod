@@ -1,4 +1,4 @@
-module github.com/shellphy-kit/tools
+module github.com/ryan053857/go-kit
 
 go 1.27.3
 

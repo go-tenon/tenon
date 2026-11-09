@@ -6,7 +6,7 @@ import (
 	"io/fs"
 	"net/http"
 
-	"github.com/shellphy-kit/tools/httpx/web"
+	"github.com/ryan053857/go-kit/httpx/web"
 )
 
 //go:embed static

@@ -3,7 +3,7 @@ package crypt_test
 import (
 	"fmt"
 
-	"github.com/shellphy-kit/tools/support/crypt"
+	"github.com/ryan053857/go-kit/support/crypt"
 )
 
 // appKey would come from configuration; generate one with: openssl rand -base64 32

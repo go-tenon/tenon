@@ -30,7 +30,7 @@ import (
 
 	"golang.org/x/crypto/argon2"
 
-	"github.com/shellphy-kit/tools/support/random"
+	"github.com/ryan053857/go-kit/support/random"
 )
 
 // ErrInvalidHash 表示待校验的哈希不是本包支持的 argon2id PHC 字符串。

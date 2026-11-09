@@ -5,7 +5,7 @@ import (
 	"maps"
 	"slices"
 
-	"github.com/shellphy-kit/tools/support/set"
+	"github.com/ryan053857/go-kit/support/set"
 )
 
 func ExampleOf() {

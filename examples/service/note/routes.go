@@ -3,7 +3,7 @@ package note
 import (
 	"github.com/go-chi/chi/v5"
 
-	"github.com/shellphy-kit/tools/httpx/rest"
+	"github.com/ryan053857/go-kit/httpx/rest"
 )
 
 // APIActions 列出本模块的 REST action。

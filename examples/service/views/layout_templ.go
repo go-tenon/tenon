@@ -12,8 +12,8 @@ import templruntime "github.com/a-h/templ/runtime"
 import (
 	"strconv"
 
-	"github.com/shellphy-kit/tools/examples/service/user"
-	"github.com/shellphy-kit/tools/httpx/auth"
+	"github.com/ryan053857/go-kit/examples/service/user"
+	"github.com/ryan053857/go-kit/httpx/auth"
 )
 
 // Layout 是整页布局，页面内容通过 web.Page 作为 children 传入。

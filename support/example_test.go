@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/shellphy-kit/tools/support"
+	"github.com/ryan053857/go-kit/support"
 )
 
 func ExampleCatch() {

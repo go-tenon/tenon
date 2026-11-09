@@ -10,7 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
-	"github.com/shellphy-kit/tools/logger"
+	"github.com/ryan053857/go-kit/logger"
 )
 
 // AccessLog 返回为每个请求输出一条 "http request" 日志的中间件，字段为：

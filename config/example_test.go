@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/shellphy-kit/tools/config"
+	"github.com/ryan053857/go-kit/config"
 )
 
 type Config struct {

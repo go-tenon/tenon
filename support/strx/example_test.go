@@ -3,7 +3,7 @@ package strx_test
 import (
 	"fmt"
 
-	"github.com/shellphy-kit/tools/support/strx"
+	"github.com/ryan053857/go-kit/support/strx"
 )
 
 func ExampleMask() {

@@ -10,7 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/shellphy-kit/tools/httpx"
+	"github.com/ryan053857/go-kit/httpx"
 )
 
 func Example() {

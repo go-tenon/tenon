@@ -16,8 +16,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/shellphy-kit/tools/config"
-	"github.com/shellphy-kit/tools/logger"
+	"github.com/ryan053857/go-kit/config"
+	"github.com/ryan053857/go-kit/logger"
 )
 
 func TestMain(m *testing.M) {

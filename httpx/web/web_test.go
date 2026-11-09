@@ -19,7 +19,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/go-chi/chi/v5"
 
-	"github.com/shellphy-kit/tools/logger"
+	"github.com/ryan053857/go-kit/logger"
 )
 
 func text(s string) templ.Component {

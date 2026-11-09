@@ -8,7 +8,7 @@ import (
 
 	"github.com/uptrace/bun"
 
-	"github.com/shellphy-kit/tools/database"
+	"github.com/ryan053857/go-kit/database"
 )
 
 type Post struct {

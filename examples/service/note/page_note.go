@@ -7,8 +7,8 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/go-chi/chi/v5"
 
-	"github.com/shellphy-kit/tools/examples/service/views"
-	"github.com/shellphy-kit/tools/httpx/web"
+	"github.com/ryan053857/go-kit/examples/service/views"
+	"github.com/ryan053857/go-kit/httpx/web"
 )
 
 // NotePage 是笔记详情页，演示页面中的错误写法与 API 相同：返回 huma.Error404NotFound。

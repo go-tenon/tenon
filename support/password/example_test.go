@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/shellphy-kit/tools/support/password"
+	"github.com/ryan053857/go-kit/support/password"
 )
 
 func ExampleHash() {

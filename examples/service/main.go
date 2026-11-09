@@ -33,16 +33,16 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
 
-	"github.com/shellphy-kit/tools/config"
-	"github.com/shellphy-kit/tools/examples/service/account"
-	"github.com/shellphy-kit/tools/examples/service/note"
-	"github.com/shellphy-kit/tools/examples/service/user"
-	"github.com/shellphy-kit/tools/examples/service/views"
-	"github.com/shellphy-kit/tools/httpx"
-	"github.com/shellphy-kit/tools/httpx/auth"
-	"github.com/shellphy-kit/tools/httpx/rest"
-	"github.com/shellphy-kit/tools/httpx/web"
-	"github.com/shellphy-kit/tools/logger"
+	"github.com/ryan053857/go-kit/config"
+	"github.com/ryan053857/go-kit/examples/service/account"
+	"github.com/ryan053857/go-kit/examples/service/note"
+	"github.com/ryan053857/go-kit/examples/service/user"
+	"github.com/ryan053857/go-kit/examples/service/views"
+	"github.com/ryan053857/go-kit/httpx"
+	"github.com/ryan053857/go-kit/httpx/auth"
+	"github.com/ryan053857/go-kit/httpx/rest"
+	"github.com/ryan053857/go-kit/httpx/web"
+	"github.com/ryan053857/go-kit/logger"
 )
 
 const (

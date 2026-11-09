@@ -5,8 +5,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/shellphy-kit/tools/examples/service/views"
-	"github.com/shellphy-kit/tools/httpx/web"
+	"github.com/ryan053857/go-kit/examples/service/views"
+	"github.com/ryan053857/go-kit/httpx/web"
 )
 
 // NotesPage 是笔记列表页。直接打开返回整页；页面内“刷新”按钮用 hx-get 局部加载，只返回片段。

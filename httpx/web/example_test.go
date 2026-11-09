@@ -11,7 +11,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/go-chi/chi/v5"
 
-	"github.com/shellphy-kit/tools/httpx/web"
+	"github.com/ryan053857/go-kit/httpx/web"
 )
 
 // 实际项目中 Layout 与 OrderView 由 .templ 文件生成，这里用 ComponentFunc 代替。

@@ -8,7 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5/middleware"
 
-	"github.com/shellphy-kit/tools/support"
+	"github.com/ryan053857/go-kit/support"
 )
 
 // Recover 返回把 handler 中的 panic 转为 500 响应的中间件。

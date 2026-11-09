@@ -6,7 +6,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/shellphy-kit/tools/httpx/rest"
+	"github.com/ryan053857/go-kit/httpx/rest"
 )
 
 type NoteDTO struct {

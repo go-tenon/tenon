@@ -7,7 +7,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/shellphy-kit/tools/httpx/auth"
+	"github.com/ryan053857/go-kit/httpx/auth"
 )
 
 // OpenAPI security scheme 名称，与 SecuritySchemes、RequireAuth 和 Authorize 配合使用。

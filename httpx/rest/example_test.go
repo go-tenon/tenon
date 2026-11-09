@@ -10,8 +10,8 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
 
-	"github.com/shellphy-kit/tools/httpx"
-	"github.com/shellphy-kit/tools/httpx/rest"
+	"github.com/ryan053857/go-kit/httpx"
+	"github.com/ryan053857/go-kit/httpx/rest"
 )
 
 // 以下三个类型通常单独放在 greet/get_greeting.go 一个文件中。

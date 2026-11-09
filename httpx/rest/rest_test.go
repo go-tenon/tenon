@@ -17,8 +17,8 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
 
-	"github.com/shellphy-kit/tools/httpx"
-	"github.com/shellphy-kit/tools/logger"
+	"github.com/ryan053857/go-kit/httpx"
+	"github.com/ryan053857/go-kit/logger"
 )
 
 // stackErr mimics cockroachdb/errors: %v prints the message, %+v adds a stack.

@@ -8,10 +8,10 @@ import (
 	"github.com/alexedwards/scs/v2"
 	"github.com/go-chi/chi/v5"
 
-	"github.com/shellphy-kit/tools/examples/service/user"
-	"github.com/shellphy-kit/tools/examples/service/views"
-	"github.com/shellphy-kit/tools/httpx/auth"
-	"github.com/shellphy-kit/tools/httpx/web"
+	"github.com/ryan053857/go-kit/examples/service/user"
+	"github.com/ryan053857/go-kit/examples/service/views"
+	"github.com/ryan053857/go-kit/httpx/auth"
+	"github.com/ryan053857/go-kit/httpx/web"
 )
 
 // LoginPage 显示登录表单并处理提交。登录成功后跳回 next 参数指定的页面（由 auth.RequireLogin 附带）。

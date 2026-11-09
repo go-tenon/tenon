@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/shellphy-kit/tools/logger"
+	"github.com/ryan053857/go-kit/logger"
 )
 
 func Example() {

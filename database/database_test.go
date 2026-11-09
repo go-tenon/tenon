@@ -15,8 +15,8 @@ import (
 	"github.com/uptrace/bun"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/shellphy-kit/tools/config"
-	"github.com/shellphy-kit/tools/database"
+	"github.com/ryan053857/go-kit/config"
+	"github.com/ryan053857/go-kit/database"
 )
 
 type User struct {
