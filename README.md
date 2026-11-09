@@ -21,8 +21,8 @@ Module：`github.com/ryan053857/mygoravel`。设计规格与实施计划见 [`sp
 | `database` | 已交付 | PostgreSQL（Bun + pgx）连接与事务 |
 | `database/migrate` | 已交付 | goose Provider 与已发布迁移检查 |
 | `database/dbtest` | 已交付 | 真实数据库测试隔离 |
-| `command` | 后续 PR | serve / config / migrate / openapi 命令工厂 |
-| `examples/api` | 后续 PR | 手写参考 API 应用 |
+| `command` | 已交付 | serve / config / migrate / openapi 命令工厂 |
+| `examples/api` | 已交付 | 手写参考 API 应用 |
 
 包只在有实际代码时创建。默认组合：chi、Huma、slog、Bun、pgx、goose、Cobra、go-i18n、
 cockroachdb/errors；缓存直接使用 eko/gocache。
