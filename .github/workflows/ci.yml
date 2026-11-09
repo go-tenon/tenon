@@ -20,8 +20,18 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       DATABASE_TEST_DSN: postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable
+      REDIS_TEST_ADDR: 127.0.0.1:6379
     steps:
       - uses: actions/checkout@v4
 
@@ -39,4 +49,4 @@ jobs:
         run: go test ./...
 
       - name: Integration
-        run: go test -tags=integration ./database/...
+        run: go test -tags=integration ./database/... ./examples/cacheaside/...
