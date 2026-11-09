@@ -48,18 +48,13 @@ func main() {
 
     root := cli.New() // 应用自己组装根命令的函数
     if err := root.ExecuteContext(ctx); err != nil {
-        code := command.ExitCode(err)
-        if code == command.ExitInternal {
-            fmt.Fprintf(os.Stderr, "%+v\n", err) // 未知故障：完整错误链和堆栈
-        } else {
-            fmt.Fprintln(os.Stderr, err) // 可预期的失败：简洁的错误文本
-        }
-        os.Exit(code)
+        fmt.Fprintln(os.Stderr, err)
+        os.Exit(command.ExitCode(err))
     }
 }
 ```
 
-`command.Root` 创建的命令关闭了 Cobra 默认的错误输出和用法提示，所以请像上面这样自己打印错误。内部错误输出完整的错误链和堆栈，便于排查；其他失败只输出简洁的错误文本，原因见[堆栈与错误文本](errors.md#stack-traces)。`ExecuteContext` 传入的 `ctx` 会传递给每个命令的回调，收到 `SIGTERM` 时它会被取消。
+`command.Root` 创建的命令关闭了 Cobra 默认的错误输出和用法提示，所以请像上面这样自己打印错误。`ExecuteContext` 传入的 `ctx` 会传递给每个命令的回调，收到 `SIGTERM` 时它会被取消。
 
 <a id="built-in-commands"></a>
 ## 内置命令
