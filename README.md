@@ -8,21 +8,21 @@ Module：`github.com/ryan053857/mygoravel`。设计规格与实施计划见 [`sp
 
 ## 第一期目标包
 
-| 包 | 职责 |
-|---|---|
-| `cleanup` | 资源清理栈 |
-| `config` | 类型化配置加载、校验、脱敏 |
-| `fault` | 与传输无关的业务错误语义 |
-| `logging` | slog 构建与上下文字段 |
-| `i18n` | 可选 go-i18n 目录辅助 |
-| `identity` | 已认证主体 |
-| `database` | PostgreSQL（Bun + pgx） |
-| `database/migrate` | goose Provider 装配 |
-| `database/dbtest` | 真实数据库测试隔离 |
-| `httpx` | net/http 生命周期与中间件 |
-| `httpx/rest` | Huma / OpenAPI |
-| `command` | serve / config / migrate / openapi 命令工厂 |
-| `examples/api` | 手写参考 API 应用 |
+| 包 | 状态 | 职责 |
+|---|---|---|
+| `config` | 已交付 | 文档解析、按段解码、环境注入、Secret 脱敏 |
+| `logging` | 已交付 | slog 构建与上下文字段辅助 |
+| `i18n` | 已交付 | go-i18n 目录分层组合与冻结 Bundle |
+| `cleanup` | 后续 PR | 资源清理栈 |
+| `fault` | 后续 PR | 与传输无关的业务错误语义 |
+| `identity` | 后续 PR | 已认证主体 |
+| `database` | 后续 PR | PostgreSQL（Bun + pgx） |
+| `database/migrate` | 后续 PR | goose Provider 装配 |
+| `database/dbtest` | 后续 PR | 真实数据库测试隔离 |
+| `httpx` | 后续 PR | net/http 生命周期与中间件 |
+| `httpx/rest` | 后续 PR | Huma / OpenAPI |
+| `command` | 后续 PR | serve / config / migrate / openapi 命令工厂 |
+| `examples/api` | 后续 PR | 手写参考 API 应用 |
 
 包只在有实际代码时创建。默认组合：chi、Huma、slog、Bun、pgx、goose、Cobra、go-i18n、
 cockroachdb/errors；缓存直接使用 eko/gocache。
