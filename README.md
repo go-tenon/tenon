@@ -17,7 +17,7 @@ Module：`github.com/ryan053857/mygoravel`。设计规格与实施计划见 [`sp
 | `cleanup` | 已交付 | 资源清理栈 |
 | `httpx` | 已交付 | net/http 运行与停机排空 |
 | `httpx/rest` | 已交付 | Huma 装配、延迟绑定与离线 OpenAPI |
-| `identity` | 后续 PR | 已认证主体 |
+| `identity` | 已交付 | 已认证主体 |
 | `database` | 已交付 | PostgreSQL（Bun + pgx）连接与事务 |
 | `database/migrate` | 已交付 | goose Provider 与已发布迁移检查 |
 | `database/dbtest` | 已交付 | 真实数据库测试隔离 |
