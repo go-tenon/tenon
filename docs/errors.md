@@ -5,6 +5,7 @@
     - [错误分类](#error-kinds)
 - [返回错误](#returning-errors)
     - [包装底层错误](#wrapping-errors)
+    - [堆栈与错误文本](#stack-traces)
     - [附加公开参数](#public-parameters)
 - [判断错误](#inspecting-errors)
     - [跨进程传递](#cross-process-errors)
@@ -42,7 +43,7 @@ var (
 )
 ```
 
-每次失败时，调用模板的 `New` 方法创建一个具体的错误。`New` 会在调用处记录堆栈，方便排查问题：
+每次失败时，调用模板的 `New` 方法创建一个具体的错误：
 
 ```go
 func (s *Service) Find(ctx context.Context, id uuid.UUID) (*Note, error) {
@@ -56,17 +57,19 @@ func (s *Service) Find(ctx context.Context, id uuid.UUID) (*Note, error) {
 <a id="error-kinds"></a>
 ### 错误分类
 
-`errorx` 包提供了以下分类：
+分类描述的是失败的**性质**，与 HTTP、命令行、队列等调用方式无关。`errorx` 包提供了以下分类：
 
-| 分类 | 含义 | HTTP 状态 |
+| 分类 | 含义 | 调用方原样重试是否有意义 |
 | --- | --- | --- |
-| `errorx.InvalidArgument` | 输入不符合业务规则 | 422 |
-| `errorx.Unauthenticated` | 调用者身份未知 | 401 |
-| `errorx.PermissionDenied` | 调用者无权执行该操作 | 403 |
-| `errorx.NotFound` | 资源不存在 | 404 |
-| `errorx.Conflict` | 与当前状态冲突，例如重复创建 | 409 |
-| `errorx.Unavailable` | 依赖暂时不可用，可以稍后重试 | 503 |
-| `errorx.Internal` | 内部错误 | 500 |
+| `errorx.InvalidArgument` | 输入不符合业务规则 | 否，需要修正输入 |
+| `errorx.Unauthenticated` | 调用者身份未知 | 否，需要先认证 |
+| `errorx.PermissionDenied` | 调用者无权执行该操作 | 否 |
+| `errorx.NotFound` | 资源不存在 | 否 |
+| `errorx.Conflict` | 与当前状态冲突，例如重复创建 | 否，需要先解决冲突 |
+| `errorx.Unavailable` | 依赖暂时不可用 | 是，可以稍后重试 |
+| `errorx.Internal` | 内部错误 | 通常没有意义，需要排查 |
+
+每种调用方式在自己的入口处把分类转换为对应的结果，例如 HTTP 接口转换为[状态码](#status-mapping)，命令行转换为[退出码](commands.md#exit-codes)。业务代码只需选择最贴切的分类。
 
 <a id="returning-errors"></a>
 ## 返回错误
@@ -82,9 +85,9 @@ if database.IsUniqueViolation(err, "notes_owner_title_key") {
 }
 ```
 
-包装后的错误遵循 `cockroachdb/errors` 的约定：`err.Error()` 返回 `note.conflict: <原始错误消息>`，`%+v` 输出完整错误链和各层堆栈。客户端只会看到错误码和翻译后的 `detail`，原始错误消息只出现在服务端日志中。
+包装后的错误遵循 `cockroachdb/errors` 的约定：`err.Error()` 返回 `note.conflict: <原始错误消息>`。客户端只会看到错误码和翻译后的 `detail`，原始错误消息只出现在服务端日志中。
 
-对于其他无法归类的错误，可以使用 `github.com/cockroachdb/errors` 添加上下文后继续向上返回：
+对于其他无法归类的错误，使用 `github.com/cockroachdb/errors` 的 `errors.Wrap` 添加上下文后继续向上返回：
 
 ```go
 if err != nil {
@@ -93,6 +96,20 @@ if err != nil {
 ```
 
 未分类的错误最终会被当作内部错误处理，返回 `500`。
+
+<a id="stack-traces"></a>
+### 堆栈与错误文本
+
+mygoravel 遵循一条生产环境中常用的原则：**把堆栈留给未知的系统故障，把简洁的错误文本留给可预期的业务结果。**
+
+- **可预期的业务结果**：分类为 `InvalidArgument`、`Unauthenticated`、`PermissionDenied`、`NotFound`、`Conflict` 的错误不记录堆栈。它们是正常流程的一部分，错误码加上逐层包装的上下文已经足以定位问题，堆栈只会增加噪音和开销。
+- **系统故障**：分类为 `Unavailable`、`Internal` 的错误，`New` 和 `Wrap` 会在调用处记录堆栈。
+
+是否记录堆栈取决于**分类**，而不是错误是否由 `errorx` 创建。例如 `errorx.Define(errorx.Unavailable, "note.db")` 虽然是一个业务模板，表示的却是系统故障，因此会带上堆栈。
+
+未分类的底层错误同样需要堆栈。数据库驱动、标准库返回的原始错误本身不带堆栈，因此请在它们**刚进入你的代码**时用 `errors.Wrap` 或 `errors.WithStack` 包装，堆栈就记录在这一层。如果一路只用 `fmt.Errorf` 向上返回，最终的错误日志中就只有文本，没有位置信息。
+
+两类错误在日志中的去向也不同，见[错误日志](#reporting-errors)。
 
 <a id="public-parameters"></a>
 ### 附加公开参数
@@ -146,7 +163,19 @@ errors.Is(decoded, note.ErrNotFound) // true
 <a id="status-mapping"></a>
 ### 状态码映射
 
-通过 `rest.Register` 注册的处理器返回错误时，mygoravel 会根据[错误分类](#error-kinds)选择 HTTP 状态码。这个映射只存在于 `httpx/rest` 包中，业务包不需要关心。
+通过 `rest.Register` 注册的处理器返回错误时，mygoravel 会根据[错误分类](#error-kinds)选择 HTTP 状态码：
+
+| 分类 | HTTP 状态 |
+| --- | --- |
+| `errorx.InvalidArgument` | 422 Unprocessable Entity |
+| `errorx.Unauthenticated` | 401 Unauthorized |
+| `errorx.PermissionDenied` | 403 Forbidden |
+| `errorx.NotFound` | 404 Not Found |
+| `errorx.Conflict` | 409 Conflict |
+| `errorx.Unavailable` | 503 Service Unavailable |
+| `errorx.Internal` 及非业务错误 | 500 Internal Server Error |
+
+这个映射只存在于 `httpx/rest` 包中，业务包不需要关心。
 
 <a id="response-format"></a>
 ### 响应格式
@@ -202,4 +231,10 @@ mygoravel 遵循“**在处理决定的地方记录一次**”的原则：业务
 
 当 API 配置了日志器时，`rest.Register` 会为每个 `5xx` 错误记录一条诊断日志，包含错误码和完整的错误链。错误链以 `%+v` 格式输出，包括每一层包装的上下文、原始错误消息和调用处堆栈。与此同时，访问日志会记录每个请求的结果。两条日志带有相同的 `request_id`，可以关联查看。日志的配置方式见[日志](logging.md)。
 
-`4xx` 错误属于正常的业务结果，只体现在访问日志中，不会产生额外的错误日志。
+`4xx` 错误属于正常的业务结果，不会产生额外的错误日志。业务错误的错误码会作为 `code` 字段写入这个请求的访问日志，例如：
+
+```json
+{"level":"INFO","msg":"http request","method":"POST","status":409,"code":"note.conflict","request_id":"9F2K…"}
+```
+
+需要为访问日志追加其他字段时，可以在处理过程中调用 `httpx.AddAccessLogAttrs(ctx, attrs...)`。

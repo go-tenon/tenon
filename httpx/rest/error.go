@@ -2,6 +2,7 @@ package rest
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -10,6 +11,7 @@ import (
 	goi18n "github.com/nicksnyder/go-i18n/v2/i18n"
 
 	"github.com/ryan053857/mygoravel/errorx"
+	"github.com/ryan053857/mygoravel/httpx"
 	"github.com/ryan053857/mygoravel/i18n"
 )
 
@@ -65,11 +67,16 @@ func FromError(err error) huma.StatusError {
 	}
 }
 
-// httpError 转换处理器错误；启用本地化时以错误码为消息 ID 翻译业务错误的 detail，
-// errorx.Public 参数作为模板数据。
+// httpError 转换处理器错误。业务错误的错误码写入访问日志；启用本地化时以错误码为
+// 消息 ID 翻译 detail，errorx.Public 参数作为模板数据。
 func (a *API) httpError(ctx context.Context, err error) huma.StatusError {
 	se := FromError(err)
-	if a.languages == nil || errorx.CodeOf(err) == "" {
+	code := errorx.CodeOf(err)
+	if code == "" {
+		return se
+	}
+	httpx.AddAccessLogAttrs(ctx, slog.String("code", code))
+	if a.languages == nil {
 		return se
 	}
 	m := se.(*ErrorModel)

@@ -10,6 +10,7 @@ import (
 	"net/netip"
 	"runtime/debug"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -26,6 +27,28 @@ type requestIDKey struct{}
 func RequestID(ctx context.Context) string {
 	id, _ := ctx.Value(requestIDKey{}).(string)
 	return id
+}
+
+type accessLogKey struct{}
+
+// accessLog 收集处理过程中追加到访问日志的字段。
+type accessLog struct {
+	mu    sync.Mutex
+	attrs []any
+}
+
+// AddAccessLogAttrs 为当前请求的访问日志追加字段，例如业务错误码；
+// 不在默认中间件内或未配置日志器时忽略。
+func AddAccessLogAttrs(ctx context.Context, attrs ...slog.Attr) {
+	l, ok := ctx.Value(accessLogKey{}).(*accessLog)
+	if !ok {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for _, a := range attrs {
+		l.attrs = append(l.attrs, a)
+	}
 }
 
 // MiddlewareOptions 配置实例级 HTTP 策略，非正数限额使用默认值。
@@ -57,6 +80,10 @@ func Middleware(opts MiddlewareOptions) func(http.Handler) http.Handler {
 			id := rand.Text()
 			ctx := context.WithValue(r.Context(), requestIDKey{}, id)
 			ctx = logging.WithAttrs(ctx, slog.String(logging.AttrRequestID, id))
+			access := &accessLog{}
+			if opts.Logger != nil {
+				ctx = context.WithValue(ctx, accessLogKey{}, access)
+			}
 			ctx, cancel := context.WithTimeout(ctx, opts.RequestTimeout)
 			defer cancel()
 
@@ -71,7 +98,11 @@ func Middleware(opts MiddlewareOptions) func(http.Handler) http.Handler {
 					if status == 0 {
 						status = http.StatusOK
 					}
-					opts.Logger.InfoContext(ctx, "http request", "method", r.Method, "status", status, "duration", time.Since(start), "client", r.RemoteAddr)
+					args := []any{"method", r.Method, "status", status, "duration", time.Since(start), "client", r.RemoteAddr}
+					access.mu.Lock()
+					args = append(args, access.attrs...)
+					access.mu.Unlock()
+					opts.Logger.InfoContext(ctx, "http request", args...)
 				}
 			}()
 			defer func() {

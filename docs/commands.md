@@ -48,13 +48,18 @@ func main() {
 
     root := cli.New() // 应用自己组装根命令的函数
     if err := root.ExecuteContext(ctx); err != nil {
-        fmt.Fprintln(os.Stderr, err)
-        os.Exit(command.ExitCode(err))
+        code := command.ExitCode(err)
+        if code == command.ExitInternal {
+            fmt.Fprintf(os.Stderr, "%+v\n", err) // 未知故障：完整错误链和堆栈
+        } else {
+            fmt.Fprintln(os.Stderr, err) // 可预期的失败：简洁的错误文本
+        }
+        os.Exit(code)
     }
 }
 ```
 
-`command.Root` 创建的命令关闭了 Cobra 默认的错误输出和用法提示，所以请像上面这样自己打印错误。`ExecuteContext` 传入的 `ctx` 会传递给每个命令的回调，收到 `SIGTERM` 时它会被取消。
+`command.Root` 创建的命令关闭了 Cobra 默认的错误输出和用法提示，所以请像上面这样自己打印错误。内部错误输出完整的错误链和堆栈，便于排查；其他失败只输出简洁的错误文本，原因见[堆栈与错误文本](errors.md#stack-traces)。`ExecuteContext` 传入的 `ctx` 会传递给每个命令的回调，收到 `SIGTERM` 时它会被取消。
 
 <a id="built-in-commands"></a>
 ## 内置命令
@@ -175,6 +180,7 @@ root.AddCommand(command.NewConfig(checkConfig, showConfig))
 | 退出码 | 常量 | 含义 |
 | --- | --- | --- |
 | 0 | `command.ExitOK` | 成功 |
+| 1 | `command.ExitFailure` | 操作被业务规则拒绝，例如输入无效或资源不存在 |
 | 2 | `command.ExitUsage` | 用法错误，例如未知选项或多余参数 |
 | 3 | `command.ExitConfig` | 配置错误 |
 | 4 | `command.ExitUnavailable` | 外部依赖不可用 |
@@ -188,4 +194,12 @@ if err := db.PingContext(ctx); err != nil {
 }
 ```
 
-`command.ExitCode` 从错误链中取出退出码；没有标记过的错误返回 `ExitInternal`，`nil` 返回 `ExitOK`。
+`command.ExitCode` 从错误链中取出退出码，`nil` 返回 `ExitOK`。没有显式标记的错误，按[业务错误](errors.md#error-kinds)的分类转换：
+
+| 分类 | 退出码 |
+| --- | --- |
+| `errorx.Unavailable` | `ExitUnavailable`（4） |
+| `errorx.Internal` 及非业务错误 | `ExitInternal`（5） |
+| 其余分类 | `ExitFailure`（1） |
+
+因此，命令回调直接返回业务服务的错误即可，不需要逐个标记。只有当你想覆盖默认结果时，才需要使用 `command.AsExitError`。

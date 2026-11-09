@@ -234,3 +234,32 @@ func TestLanguageAndLoggerAreInstanceLocal(t *testing.T) {
 		t.Fatal("loggers crossed instances")
 	}
 }
+
+func TestAccessLogCarriesBusinessCode(t *testing.T) {
+	var logs bytes.Buffer
+	api := rest.New(rest.Options{Middleware: httpx.MiddlewareOptions{Logger: slog.New(slog.NewJSONHandler(&logs, nil))}})
+	op := huma.Operation{OperationID: "conflict", Method: "GET", Path: "/conflict"}
+	rest.Public()(&op)
+	rest.Register(api, op, func() func(context.Context, *pingIn) (*pingOut, error) {
+		return func(context.Context, *pingIn) (*pingOut, error) {
+			return nil, errorx.Define(errorx.Conflict, "demo.conflict").Wrap(errors.New("pq: duplicate key"))
+		}
+	})
+	secured := huma.Operation{OperationID: "secured", Method: "GET", Path: "/secured"}
+	rest.RequireBearer(api, func(huma.Context, string) (identity.Subject, error) { return identity.Subject{ID: "u"}, nil })(&secured)
+	rest.Register(api, secured, func() func(context.Context, *pingIn) (*pingOut, error) {
+		return func(context.Context, *pingIn) (*pingOut, error) { return &pingOut{}, nil }
+	})
+	for path, code := range map[string]string{"/conflict": "demo.conflict", "/secured": "auth.unauthenticated"} {
+		logs.Reset()
+		api.Handler().ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", path, nil))
+		lines := strings.Split(strings.TrimSpace(logs.String()), "\n")
+		var entry map[string]any
+		if len(lines) != 1 || json.Unmarshal([]byte(lines[0]), &entry) != nil {
+			t.Fatalf("%s: expected only the access log line, got:\n%s", path, logs.String())
+		}
+		if entry["msg"] != "http request" || entry["code"] != code {
+			t.Fatalf("%s: %v", path, entry)
+		}
+	}
+}

@@ -40,7 +40,7 @@ func Public(key string, value any) Option {
 	}
 }
 
-// Error 是一次具体失败；带 cause 与公开参数，堆栈在 New/Wrap 调用处捕获。
+// Error 是一次具体失败，带 cause 与公开参数。
 type Error struct {
 	code   string
 	kind   Kind
@@ -48,14 +48,23 @@ type Error struct {
 	cause  error
 }
 
-// New 在调用处创建带堆栈的失败实例。
+// New 创建失败实例。Unavailable 和 Internal 属于系统故障，在调用处附加堆栈；
+// 其余分类是可预期的业务结果，由错误码定位，不附加堆栈。
 func (t *Template) New(opts ...Option) error {
-	return errors.WithStackDepth(t.instance(nil, opts), 1)
+	e := t.instance(nil, opts)
+	if t.kind.systemic() {
+		return errors.WithStackDepth(e, 1)
+	}
+	return e
 }
 
-// Wrap 包装 cause，并在调用处附加堆栈。
+// Wrap 包装 cause 创建失败实例，堆栈规则与 New 相同。
 func (t *Template) Wrap(cause error, opts ...Option) error {
-	return errors.WithStackDepth(t.instance(cause, opts), 1)
+	e := t.instance(cause, opts)
+	if t.kind.systemic() {
+		return errors.WithStackDepth(e, 1)
+	}
+	return e
 }
 
 func (t *Template) instance(cause error, opts []Option) *Error {

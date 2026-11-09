@@ -38,19 +38,31 @@ func TestIsAsWithStdAndCrdbWrap(t *testing.T) {
 
 }
 
-func TestStackPointsAtCallSite(t *testing.T) {
-	err := makeNotFound()
-	s := fmt.Sprintf("%+v", err)
-	if !strings.Contains(s, "makeNotFound") {
-		t.Fatalf("stack should include makeNotFound, got:\n%s", s)
+var errUnavailable = errorx.Define(errorx.Unavailable, "order.db")
+
+func TestStackOnlyForSystemFailures(t *testing.T) {
+	for _, err := range []error{makeUnavailable(), wrapUnavailable()} {
+		s := fmt.Sprintf("%+v", err)
+		if !strings.Contains(s, "makeUnavailable") && !strings.Contains(s, "wrapUnavailable") {
+			t.Fatalf("stack should point at call site, got:\n%s", s)
+		}
+		if strings.Contains(s, "Define(") {
+			t.Fatalf("stack should not be captured at Define:\n%s", s)
+		}
 	}
-	if strings.Contains(s, "Define(") {
-		t.Fatalf("stack should not be captured at Define:\n%s", s)
+	for _, err := range []error{errNotFound.New(), errConflict.Wrap(errors.New("pq: unique violation"))} {
+		if s := fmt.Sprintf("%+v", err); strings.Contains(s, "stack trace") {
+			t.Fatalf("expected business outcome must not carry a stack:\n%s", s)
+		}
 	}
 }
 
-func makeNotFound() error {
-	return errNotFound.New()
+func makeUnavailable() error {
+	return errUnavailable.New()
+}
+
+func wrapUnavailable() error {
+	return errUnavailable.Wrap(errors.New("dial tcp: connection refused"))
 }
 
 func TestWrapPreservesCauseAndFormatChain(t *testing.T) {
@@ -115,6 +127,16 @@ func TestNetworkRoundTripKeepsIdentity(t *testing.T) {
 		}
 		if got.Error() != err.Error() {
 			t.Fatalf("%s: message changed: %q -> %q", name, err.Error(), got.Error())
+		}
+	}
+}
+
+func TestEveryKindSurvivesRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	for _, kind := range []errorx.Kind{errorx.InvalidArgument, errorx.Unauthenticated, errorx.PermissionDenied, errorx.NotFound, errorx.Conflict, errorx.Unavailable, errorx.Internal} {
+		err := errorx.Define(kind, "demo."+kind.String()).New()
+		if got := errorx.KindOf(crdb.DecodeError(ctx, crdb.EncodeError(ctx, err))); got != kind {
+			t.Fatalf("%v decoded as %v", kind, got)
 		}
 	}
 }

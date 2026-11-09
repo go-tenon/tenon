@@ -112,9 +112,9 @@ logger := slog.New(logging.NewContextHandler(myHandler))
 
 | 日志 | 记录者 | 内容 |
 | --- | --- | --- |
-| 访问日志 | 默认中间件 | 每个请求的方法、状态码、耗时、客户端地址 |
+| 访问日志 | 默认中间件 | 每个请求的方法、状态码、耗时、客户端地址，以及业务错误的错误码 |
 | 错误诊断 | `rest.Register` | `5xx` 错误的错误码和完整错误链 |
-| 认证后端故障 | `rest.RequireBearer` | 校验器返回 `5xx` 类错误时的错误码 |
+| 认证后端故障 | `rest.RequireBearer` | 校验器返回 `5xx` 类错误时的错误码和完整错误链 |
 | 缺失翻译 | 错误响应转换 | 找不到错误码对应翻译时的警告 |
 
 详见[错误处理](errors.md#reporting-errors)。

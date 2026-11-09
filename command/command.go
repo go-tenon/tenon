@@ -6,11 +6,14 @@ import (
 
 	"github.com/cockroachdb/errors"
 	"github.com/spf13/cobra"
+
+	"github.com/ryan053857/mygoravel/errorx"
 )
 
 // 命令退出码。
 const (
 	ExitOK          = 0
+	ExitFailure     = 1
 	ExitUsage       = 2
 	ExitConfig      = 3
 	ExitUnavailable = 4
@@ -119,7 +122,9 @@ type ExitError struct {
 func (e *ExitError) Error() string { return e.Err.Error() }
 func (e *ExitError) Unwrap() error { return e.Err }
 
-// ExitCode 从错误链提取退出码。
+// ExitCode 从错误链提取退出码。显式标记的退出码优先；其次按 errorx.Kind 映射：
+// Unavailable 为 ExitUnavailable，Internal 和未分类错误为 ExitInternal，
+// 其余业务错误为 ExitFailure。
 func ExitCode(err error) int {
 	if err == nil {
 		return ExitOK
@@ -128,5 +133,12 @@ func ExitCode(err error) int {
 	if errors.As(err, &ee) {
 		return ee.Code
 	}
-	return ExitInternal
+	switch errorx.KindOf(err) {
+	case errorx.Unavailable:
+		return ExitUnavailable
+	case errorx.Internal:
+		return ExitInternal
+	default:
+		return ExitFailure
+	}
 }
