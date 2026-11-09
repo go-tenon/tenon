@@ -1,113 +1,285 @@
-// Package archtest 检查 go-kit 的约定（见 docs/conventions.md）：
+// Package archtest 检查 mygoravel 的包依赖与第一期范围约束（见 docs/conventions.md、spec.go）。
 //
-//	基础设施（config、logger、i18n、authz、database、httpx/…、support/… 等）  只能依赖基础设施
-//	app                                                                      只能依赖基础设施
-//	modules/…                                                                只能依赖基础设施，模块之间互不依赖
+// 目标包图（只在有实际代码时建包，本测试不要求空包存在）：
 //
-// examples、internal 不受限制。新增顶层包时需要在 layerOf 中归类。
-// 另外检查 go-kit 自身的代码（不含 examples 与测试）不使用 fmt.Errorf（统一用 cockroachdb/errors）。
+//	cleanup、config、fault、logging、i18n、identity
+//	database、database/migrate、database/dbtest
+//	httpx、httpx/rest、command
+//	examples/api、internal/archtest
+//
+// 依赖规则摘要：
+//
+//	fault、identity     不依赖 HTTP、数据库或运行层
+//	config、logging、i18n 不依赖业务、HTTP、数据库、command、cleanup
+//	cleanup             不依赖 database、httpx、command 或具体驱动
+//	database*           不依赖 httpx、command
+//	httpx*              不依赖 command、examples
+//	command             可依赖基础设施，不依赖 examples 业务
+//	examples/*          不受限制
+//
+// 另外禁止第一期引入后期形态依赖，并禁止框架源码使用 fmt.Errorf。
 package archtest
 
 import (
+	"bufio"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
 
-const module = "github.com/ryan053857/go-kit"
+const module = "github.com/ryan053857/mygoravel"
 
-type layer int
+// 第一期允许存在的顶层包（及已知子树）。未列出的顶层包视为未归类失败。
+var knownRoots = map[string]bool{
+	"cleanup":  true,
+	"config":   true,
+	"fault":    true,
+	"logging":  true,
+	"i18n":     true,
+	"identity": true,
+	"database": true,
+	"httpx":    true,
+	"command":  true,
+	"examples": true,
+	"internal": true,
+}
 
-const (
-	unrestricted layer = iota
-	infra
-	appLayer
-	modules
-)
+// 不得出现在第一期 go.mod 依赖中的后期形态模块路径前缀。
+var forbiddenDepPrefixes = []string{
+	"github.com/a-h/templ",
+	"github.com/alexedwards/scs",
+	"github.com/ThreeDotsLabs/watermill",
+	"github.com/go-co-op/gocron",
+	"github.com/gorilla/websocket",
+	"google.golang.org/grpc",
+	"github.com/aws/aws-sdk-go-v2/service/s3",
+	"github.com/resend/resend-go",
+	"github.com/wneessen/go-mail",
+	"github.com/xuri/excelize",
+}
 
-var infraRoots = []string{"config", "logger", "i18n", "authz", "database", "httpx", "support", "mail", "storage", "messaging"}
-
-func layerOf(pkg string) (layer, bool) {
+func rootOf(pkg string) (string, bool) {
 	rel, ok := strings.CutPrefix(pkg, module+"/")
 	if !ok {
-		return 0, false // 外部包
+		if pkg == module {
+			return "", true
+		}
+		return "", false
 	}
 	root, _, _ := strings.Cut(rel, "/")
-	switch root {
-	case "app":
-		return appLayer, true
-	case "modules":
-		return modules, true
-	case "examples", "starter", "internal":
-		return unrestricted, true
-	}
-	for _, r := range infraRoots {
-		if root == r {
-			return infra, true
-		}
-	}
-	return -1, true // 未归类
+	return root, true
 }
 
-func allowed(from, to layer) bool {
-	switch from {
-	case infra:
-		return to == infra
-	case appLayer:
-		return to == infra || to == appLayer
-	case modules:
-		return to == infra || to == modules
-	}
-	return true
+func under(pkg, prefix string) bool {
+	return pkg == prefix || strings.HasPrefix(pkg, prefix+"/")
 }
 
-func TestLayers(t *testing.T) {
+func TestPackageGraph(t *testing.T) {
 	cmd := exec.Command("go", "list", "-f", `{{.ImportPath}}{{range .Imports}} {{.}}{{end}}`, module+"/...")
 	out, err := cmd.Output()
 	if err != nil {
 		t.Fatalf("go list: %v", err)
 	}
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+	text := strings.TrimSpace(string(out))
+	if text == "" {
+		return
+	}
+	for _, line := range strings.Split(text, "\n") {
 		fields := strings.Fields(line)
 		pkg, imports := fields[0], fields[1:]
-		from, _ := layerOf(pkg)
-		if from == -1 {
-			t.Errorf("%s: unclassified top-level package, add it to layerOf", pkg)
+		root, internal := rootOf(pkg)
+		if !internal {
+			continue
+		}
+		if root != "" && !knownRoots[root] {
+			t.Errorf("%s: unclassified top-level package; add to knownRoots or remove from phase-1 tree", pkg)
 			continue
 		}
 		for _, imp := range imports {
-			to, internal := layerOf(imp)
-			if !internal {
-				continue
-			}
-			switch {
-			case to == unrestricted && from != unrestricted:
-				t.Errorf("%s imports %s: examples/internal must not be imported", pkg, imp)
-			case !allowed(from, to):
-				t.Errorf("%s imports %s: violates layering", pkg, imp)
-			case from == modules && to == modules && moduleOf(pkg) != moduleOf(imp):
-				t.Errorf("%s imports %s: modules must not depend on each other", pkg, imp)
+			assertImportAllowed(t, pkg, imp)
+		}
+	}
+}
+
+func assertImportAllowed(t *testing.T, from, to string) {
+	t.Helper()
+	toRoot, toInternal := rootOf(to)
+	if !toInternal {
+		return
+	}
+	if toRoot != "" && !knownRoots[toRoot] {
+		t.Errorf("%s imports %s: target is outside phase-1 package graph", from, to)
+		return
+	}
+
+	switch {
+	case under(from, module+"/fault"), under(from, module+"/identity"):
+		if under(to, module+"/httpx") || under(to, module+"/database") ||
+			under(to, module+"/command") || under(to, module+"/cleanup") ||
+			under(to, module+"/examples") {
+			t.Errorf("%s imports %s: fault/identity must not depend on HTTP, database, or runtime layers", from, to)
+		}
+	case under(from, module+"/config"), under(from, module+"/logging"), under(from, module+"/i18n"):
+		if under(to, module+"/httpx") || under(to, module+"/database") ||
+			under(to, module+"/command") || under(to, module+"/cleanup") ||
+			under(to, module+"/examples") || under(to, module+"/identity") ||
+			under(to, module+"/fault") {
+			t.Errorf("%s imports %s: config/logging/i18n must not depend on business or runtime layers", from, to)
+		}
+	case under(from, module+"/cleanup"):
+		if under(to, module+"/database") || under(to, module+"/httpx") ||
+			under(to, module+"/command") || under(to, module+"/examples") ||
+			under(to, module+"/i18n") || under(to, module+"/identity") {
+			t.Errorf("%s imports %s: cleanup must not depend on drivers or runtime layers", from, to)
+		}
+	case under(from, module+"/database"):
+		if under(to, module+"/httpx") || under(to, module+"/command") || under(to, module+"/examples") {
+			t.Errorf("%s imports %s: database must not depend on httpx/command/examples", from, to)
+		}
+	case under(from, module+"/httpx"):
+		if under(to, module+"/command") || under(to, module+"/examples") {
+			t.Errorf("%s imports %s: httpx must not depend on command/examples", from, to)
+		}
+	case under(from, module+"/command"):
+		if under(to, module+"/examples") {
+			t.Errorf("%s imports %s: command must not install example/business packages", from, to)
+		}
+	}
+
+	// 业务核心不得反向依赖其 HTTP 子包（例如 order → orderhttp）。
+	if !toInternal {
+		return
+	}
+	fromBase := filepath.Base(from)
+	toBase := filepath.Base(to)
+	if strings.HasSuffix(toBase, "http") && fromBase == strings.TrimSuffix(toBase, "http") {
+		t.Errorf("%s imports %s: core must not import its HTTP subpackage", from, to)
+	}
+}
+
+func TestNoPhase1ForbiddenDeps(t *testing.T) {
+	cmd := exec.Command("go", "list", "-m", "all")
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("go list -m all: %v", err)
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		path := fields[0]
+		for _, prefix := range forbiddenDepPrefixes {
+			if path == prefix || strings.HasPrefix(path, prefix+"/") {
+				t.Errorf("phase-1 module must not depend on later-form package %s", path)
 			}
 		}
 	}
 }
 
-// moduleOf 返回模块包所属的模块名，如 modules/account/x → account。
-func moduleOf(pkg string) string {
-	rel := strings.TrimPrefix(pkg, module+"/modules/")
-	name, _, _ := strings.Cut(rel, "/")
-	return name
+func TestNoEmptyPhase1Packages(t *testing.T) {
+	root := moduleRoot(t)
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if !knownRoots[name] || name == "internal" || name == "examples" {
+			continue
+		}
+		if !hasGoFiles(filepath.Join(root, name)) {
+			t.Errorf("%s/: empty package directory is not allowed; create only with real code", name)
+		}
+	}
 }
 
 func TestNoFmtErrorf(t *testing.T) {
-	out, err := exec.Command("git", "grep", "-n", "fmt.Errorf(", "--", "*.go", ":!*_test.go", ":!examples", ":!starter", ":!internal").Output()
-	if err != nil && len(out) == 0 {
-		return // 没有匹配（git grep 退出码 1）
-	}
-	for line := range strings.Lines(string(out)) {
-		if strings.Contains(line, "//") && strings.Index(line, "//") < strings.Index(line, "fmt.Errorf(") {
-			continue // 注释
+	root := moduleRoot(t)
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
 		}
-		t.Errorf("use cockroachdb/errors instead of fmt.Errorf: %s", strings.TrimSpace(line))
+		name := d.Name()
+		if d.IsDir() {
+			switch name {
+			case ".git", "legacy", "examples", "internal":
+				if path != root {
+					return filepath.SkipDir
+				}
+			}
+			return nil
+		}
+		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			return nil
+		}
+		rel, _ := filepath.Rel(root, path)
+		if rel == "spec.go" {
+			return nil
+		}
+		f, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		sc := bufio.NewScanner(f)
+		lineNo := 0
+		for sc.Scan() {
+			lineNo++
+			line := sc.Text()
+			idx := strings.Index(line, "fmt.Errorf(")
+			if idx < 0 {
+				continue
+			}
+			if c := strings.Index(line, "//"); c >= 0 && c < idx {
+				continue
+			}
+			t.Errorf("use cockroachdb/errors instead of fmt.Errorf: %s:%d: %s", rel, lineNo, strings.TrimSpace(line))
+		}
+		return sc.Err()
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
+}
+
+func moduleRoot(t *testing.T) string {
+	t.Helper()
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller failed")
+	}
+	dir := filepath.Dir(file)
+	for {
+		mod := filepath.Join(dir, "go.mod")
+		if data, err := os.ReadFile(mod); err == nil && strings.Contains(string(data), "module "+module) {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatal("module root not found")
+		}
+		dir = parent
+	}
+}
+
+func hasGoFiles(dir string) bool {
+	var found bool
+	_ = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil || found {
+			return err
+		}
+		if !d.IsDir() && strings.HasSuffix(d.Name(), ".go") {
+			found = true
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	return found
 }
