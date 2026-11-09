@@ -161,17 +161,17 @@ func assertImportAllowed(t *testing.T, from, to string) {
 }
 
 func TestNoPhase1ForbiddenDeps(t *testing.T) {
-	cmd := exec.Command("go", "list", "-m", "all")
+	// 只检查直接依赖；cockroachdb/errors 等允许依赖的传递闭包不计入违规。
+	cmd := exec.Command("go", "list", "-m", "-f", `{{if not .Indirect}}{{.Path}}{{end}}`, "all")
 	out, err := cmd.Output()
 	if err != nil {
-		t.Fatalf("go list -m all: %v", err)
+		t.Fatalf("go list -m: %v", err)
 	}
 	for _, line := range strings.Split(string(out), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) == 0 {
+		path := strings.TrimSpace(line)
+		if path == "" || path == module {
 			continue
 		}
-		path := fields[0]
 		for _, prefix := range forbiddenDepPrefixes {
 			if path == prefix || strings.HasPrefix(path, prefix+"/") {
 				t.Errorf("phase-1 module must not depend on later-form package %s", path)
