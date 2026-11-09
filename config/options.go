@@ -14,7 +14,6 @@ type options struct {
 func applyOptions(opts []Option) options {
 	o := options{
 		sections: make(map[string]struct{}),
-		lookup:   nil,
 	}
 	for _, opt := range opts {
 		opt(&o)
@@ -33,7 +32,7 @@ func WithSections(names ...string) Option {
 }
 
 // WithLookup 注入环境变量查找；Decode 展开 ${VAR} 时使用。
-// 未设置时 Decode 报错（测试应注入 map 查找，而不是改进程环境）。
+// 展开真实变量引用时需要此选项；转义的字面量直接保留。
 func WithLookup(fn LookupFunc) Option {
 	return func(o *options) {
 		o.lookup = fn

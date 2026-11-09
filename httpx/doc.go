@@ -1,5 +1,3 @@
-// Package httpx 提供 net/http 生命周期辅助与通用中间件约定。
-//
-// Serve 运行已构造的 *http.Server 与 net.Listener，并协调排空停机；
-// 不引入通用 Service 协议或多服务监督器。
+// Package httpx 提供 HTTP 中间件与服务器停机协调。
+// Serve 运行原生 http.Server 和 net.Listener，处理请求排空与关闭错误。
 package httpx

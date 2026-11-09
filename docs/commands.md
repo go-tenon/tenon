@@ -25,7 +25,7 @@ command 包提供返回原生 Cobra Command 的工厂。应用选择需要的命
 | NewMigrate | migrate up / status / down | 连接数据库并调用 goose.Provider |
 | NewOpenAPI | openapi | 离线登记接口并输出文档 |
 
-这些工厂不会自动安装到应用。配置文件路径、版本信息和命令需要的资源，都由应用显式连接。
+应用通过 AddCommand 安装所需命令，并显式提供配置路径、版本信息和运行资源。
 
 <a id="factories"></a>
 
@@ -65,7 +65,7 @@ func New(register func(*rest.API), out, diagnostic io.Writer) *cobra.Command {
 }
 ```
 
-传入的 register 可以使用[路由章节](routing.md#first-route)的写法。构造命令不会执行回调，ExecuteContext 才进入对应逻辑。
+传入的 register 可以使用[路由章节](routing.md#first-route)的写法。ExecuteContext 执行所选命令的回调。
 
 <a id="exits"></a>
 
@@ -81,7 +81,7 @@ main 的最外层负责信号、ExecuteContext 和退出码。回调返回错误
 | 4 | ExitUnavailable | 外部依赖不可用 |
 | 5 | ExitInternal | 未分类执行错误 |
 
-配置和连接错误不会仅凭文本自动分类。应用需要在拥有处理决定的位置附加正确的退出码。
+应用在处理配置或连接错误的位置调用 AsExitError，附加对应退出码。
 
 <a id="output"></a>
 
@@ -91,13 +91,13 @@ Root 接收 command.IO，命令可以使用 cmd.OutOrStdout 和 cmd.ErrOrStderr�
 
 需要配置路径时，用 Cobra 原生 Flags 或 PersistentFlags 定义。NewConfig 的 show 子命令提供 format 标志，但实际格式验证与序列化由 show 回调实现。其他选项同样由应用定义。
 
-避免让文档导出回调读取运行密钥，或让迁移命令加载与数据库无关的配置。按命令选择资源，有助于保持命令独立可测试。
+文档导出回调读取接口描述选项，迁移命令读取数据库配置。各命令按自己的执行范围打开资源。
 
 <a id="development"></a>
 
 ## 开发工具
 
-应用直接使用 go test，不需要专用测试运行器。热重载或任务工具可以调用普通的 Go 构建、测试和应用启动命令；它们不是框架运行的前提。
+应用使用 go test 运行测试。热重载或任务工具按需调用 Go 构建、测试和应用启动命令。
 
 ---
 

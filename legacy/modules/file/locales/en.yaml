@@ -1,5 +1,0 @@
-file.too_large: "File is too large (max {{.MaxMB}} MB)."
-file.type_not_allowed: This file type is not allowed.
-file.not_found: File not found.
-file.no_direct_upload: Direct upload is not supported by the current storage.
-file.upload_incomplete: The file was not uploaded or its size does not match.

@@ -1,5 +1,0 @@
-role.not_found: 角色不存在
-role.name_taken: 角色名称已存在
-role.unknown_permission: "未知的权限：{{.Permission}}"
-permission.*: 全部权限
-permission.role.manage: 管理角色与权限

@@ -13,27 +13,22 @@ import (
 	"github.com/ryan053857/mygoravel/httpx/rest"
 )
 
+type minimalInput struct{}
+type minimalOutput struct {
+	Body struct {
+		OK bool `json:"ok"`
+	}
+}
+
 func TestMinimalHTTPWithoutDatabaseOrCache(t *testing.T) {
 	api := rest.New(rest.Options{Title: "minimal"})
 	rest.Register(api, huma.Operation{Security: []map[string][]string{},
 		OperationID: "ping",
 		Method:      http.MethodGet,
 		Path:        "/ping",
-	}, func() func(context.Context, *struct{}) (*struct {
-		Body struct {
-			OK bool `json:"ok"`
-		}
-	}, error) {
-		return func(context.Context, *struct{}) (*struct {
-			Body struct {
-				OK bool `json:"ok"`
-			}
-		}, error) {
-			out := &struct {
-				Body struct {
-					OK bool `json:"ok"`
-				}
-			}{}
+	}, func() func(context.Context, *minimalInput) (*minimalOutput, error) {
+		return func(context.Context, *minimalInput) (*minimalOutput, error) {
+			out := &minimalOutput{}
 			out.Body.OK = true
 			return out, nil
 		}

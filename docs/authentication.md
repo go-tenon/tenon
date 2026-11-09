@@ -48,7 +48,7 @@ func Validator(expected config.Secret) rest.TokenValidator {
 }
 ```
 
-这个函数只演示静态凭据。实际应用可以查询凭据存储或使用经过验证的 token 库；返回 Subject 之前必须完成相应的有效性检查。Subject 本身不会验证签名、期限或权限来源。
+这个函数只演示静态凭据。实际应用可以查询凭据存储或使用经过验证的 token 库；返回 Subject 之前必须完成相应的有效性检查。校验器负责签名、期限和权限来源，Subject 保存验证结果。
 
 <a id="protect-routes"></a>
 
@@ -66,9 +66,9 @@ op := huma.Operation{
 requireNotes(&op)
 ```
 
-然后使用 `rest.Register` 注册处理器。所有传入的 scope 都必须满足。HTTP bearer 的 OpenAPI Security 不使用 OAuth scope 数组；所需业务 scopes 记录在 `x-required-scopes` 扩展中。
+然后使用 `rest.Register` 注册处理器。所有传入的 scope 都必须满足。HTTP bearer 的 OpenAPI scope 数组为空；所需业务 scopes 记录在 `x-required-scopes` 扩展中。
 
-缺少凭据、凭据无效或返回空主体 ID 时是 401；缺少 scope 时是 403。401 带有 `WWW-Authenticate: Bearer`。校验后端返回 Unavailable 等内部错误时按 5xx 处理，避免把依赖故障伪装为凭据错误。
+缺少凭据、凭据无效或返回空主体 ID 时是 401；缺少 scope 时是 403。401 带有 `WWW-Authenticate: Bearer`。校验后端返回 Unavailable 等内部错误时按 5xx 处理。
 
 公开接口调用 `rest.Public()(&op)`。漏掉访问策略会在登记时失败。
 
@@ -92,7 +92,7 @@ return service.List(ctx, subject, params)
 
 ## 业务层授权
 
-端点要求 `notes` scope，并不意味着用户能读取其他人的笔记。业务服务查询资源后还应检查所有权：
+端点验证 `notes` scope 后，业务服务继续检查资源所有权：
 
 ```go
 if note.OwnerID != subject.ID {
@@ -121,7 +121,7 @@ type AuthConfig struct {
 
 解码后检查空 token、空主体和重复凭据，再把已校验值传给校验器。配置文件中的环境变量通过 config.WithLookup 显式读取。
 
-框架不提供默认账户、默认 token 或凭据存储。需要用户注册、会话、刷新 token 等能力时，由应用选择认证组件，并将验证结果转换为 Subject。
+账户、token 和凭据存储由应用定义。用户注册、会话、刷新 token 等能力使用所选认证组件，其验证结果转换为 Subject。
 
 ---
 

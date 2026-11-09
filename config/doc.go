@@ -1,17 +1,16 @@
-// Package config 提供类型化配置的文档解析与按段解码。
+// Package config 解析 YAML 文档并按顶层段解码配置。
 //
-// 默认值由应用的 DefaultConfig 设置；ReadFile / Parse 得到 Document，
-// 此时不展开环境变量。Document.Decode 解码指定顶层段时才展开变量、
-// 拒绝未知字段并调用 Validate。
+// 应用先创建默认配置，再调用 ReadFile 或 Parse，最后用 Document.Decode
+// 展开所选段的环境变量、检查字段并调用 Validate。
 //
 //	doc, err := config.ReadFile("config.yaml",
-//		config.WithSections("http", "database", "logging"),
+//		config.WithSections("http", "database"),
 //		config.WithLookup(os.LookupEnv),
 //	)
+//	if err != nil { return err }
 //	httpCfg := DefaultHTTPConfig()
-//	if err := doc.Decode("http", &httpCfg); err != nil { ... }
+//	if err := doc.Decode("http", &httpCfg); err != nil { return err }
 //
-// 环境变量仅出现在 YAML 标量中的 ${VAR} / ${VAR:-default}；查找函数由
-// WithLookup 注入，本包不调用 os.Getenv。映射合并、序列替换；拒绝显式 null
-// 与多文档。Secret 在诊断输出中脱敏，真实值通过 Reveal 取得。
+// 映射按键合并，序列整体替换；显式 null 与多文档输入返回错误。
+// Secret 在诊断输出中脱敏，Reveal 返回原值。
 package config

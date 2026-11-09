@@ -5,12 +5,14 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"io/fs"
-	"net/url"
 	"os"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/uptrace/bun"
+	"github.com/uptrace/bun/dialect/pgdialect"
 
 	"github.com/ryan053857/mygoravel/config"
 	"github.com/ryan053857/mygoravel/database"
@@ -20,7 +22,7 @@ import (
 // EnvDSN 是测试管理员连接的环境变量。
 const EnvDSN = "DATABASE_TEST_DSN"
 
-// RequireDSN 返回管理员 DSN；未设置时失败（用于 integration 测试，禁止静默跳过）。
+// RequireDSN 返回测试管理员 DSN，未设置时使测试失败。
 func RequireDSN(t testing.TB) string {
 	t.Helper()
 	dsn := os.Getenv(EnvDSN)
@@ -61,18 +63,20 @@ func Open(t testing.TB, migrations fs.FS) *bun.DB {
 		}
 	})
 
-	u, err := url.Parse(adminDSN)
+	pgxConfig, err := pgx.ParseConfig(adminDSN)
 	if err != nil {
 		t.Fatal(err)
 	}
-	u.Path = "/" + name
-	cfg := database.DefaultConfig()
-	cfg.DSN = config.Secret(u.String())
-	db, err := database.Open(ctx, cfg)
-	if err != nil {
+	pgxConfig.Database = name
+	db := bun.NewDB(stdlib.OpenDB(*pgxConfig), pgdialect.New())
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("dbtest: close database: %v", err)
+		}
+	})
+	if err := db.PingContext(ctx); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = db.Close() })
 
 	if migrations != nil {
 		p, err := migrate.NewProvider(db.DB, migrations)

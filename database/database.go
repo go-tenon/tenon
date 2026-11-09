@@ -34,31 +34,34 @@ func DefaultConfig() Config {
 	}
 }
 
-// Validate 检查必填项。
+// Validate 检查 DSN 与连接池参数。
 func (c Config) Validate() error {
+	_, err := c.parse()
+	return err
+}
+
+func (c Config) parse() (*pgx.ConnConfig, error) {
 	if c.DSN.Reveal() == "" {
-		return errors.New("database: dsn is required")
+		return nil, errors.New("database: dsn is required")
 	}
 	if c.MaxOpenConns < 0 || c.MaxIdleConns < 0 {
-		return errors.New("database: connection pool sizes must be >= 0")
+		return nil, errors.New("database: connection pool sizes must be >= 0")
 	}
 	if c.ConnMaxLifetime < 0 || c.ConnMaxIdleTime < 0 {
-		return errors.New("database: connection lifetimes must be >= 0")
+		return nil, errors.New("database: connection lifetimes must be >= 0")
 	}
-	if _, err := pgx.ParseConfig(c.DSN.Reveal()); err != nil {
-		return errors.New("database: invalid dsn")
+	parsed, err := pgx.ParseConfig(c.DSN.Reveal())
+	if err != nil {
+		return nil, errors.New("database: invalid dsn")
 	}
-	return nil
+	return parsed, nil
 }
 
 // Open 创建原生连接池并 Ping；任何失败都关闭已打开的资源。
 func Open(ctx context.Context, cfg Config) (*bun.DB, error) {
-	if err := cfg.Validate(); err != nil {
-		return nil, err
-	}
-	pgxCfg, err := pgx.ParseConfig(cfg.DSN.Reveal())
+	pgxCfg, err := cfg.parse()
 	if err != nil {
-		return nil, errors.New("database: invalid dsn")
+		return nil, err
 	}
 	sqldb := stdlib.OpenDB(*pgxCfg)
 	sqldb.SetMaxOpenConns(cfg.MaxOpenConns)

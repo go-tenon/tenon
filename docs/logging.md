@@ -30,7 +30,7 @@ logger := logging.New(logging.Options{
 
 需要标准库 `os`、`log/slog` 和框架 `logging` 包。默认格式是 JSON、级别是 Info；省略 Writer 时输出到 stdout。API 进程通常显式使用 stderr，把 stdout 留给命令结果。
 
-本地阅读日志时可以使用 `logging.FormatText`。`AddSource: true` 可加入来源位置。框架不替换进程的 `slog.Default`。
+本地阅读日志时可以使用 `logging.FormatText`。`AddSource: true` 可加入来源位置。构造结果是独立的日志器。
 
 <a id="structured"></a>
 
@@ -43,7 +43,7 @@ logger.InfoContext(ctx, "note created",
 )
 ```
 
-`ctx`、`noteID` 和 `ownerID` 来自当前业务操作。字段名保持稳定，便于检索和聚合。不要将完整请求体、Authorization 或带凭据的连接串放入日志。
+`ctx`、`noteID` 和 `ownerID` 来自当前业务操作。字段名保持稳定，便于检索和聚合。日志字段只选取操作标识、结果和经过脱敏的诊断数据。
 
 <a id="context"></a>
 
@@ -73,15 +73,15 @@ ctx = logging.WithAttrs(ctx, slog.String("component", "note"))
 
 ## 错误日志责任
 
-业务层补充上下文后返回错误，处理决定所在的边界记录失败。不要在服务、处理器和 middleware 中连续打印同一个 error。
+业务层补充上下文后返回错误，处理决定所在的边界记录一次失败诊断。
 
-默认 REST 5xx 诊断记录 code 和安全堆栈，不输出原始 cause；访问日志也不包含 URL 查询参数或正文。应用自己的日志仍须遵循相同的敏感值处理约定。
+默认 REST 处理器的 5xx 诊断记录 code 和可报告堆栈；认证后端故障记录 code。访问日志记录方法、状态、耗时和客户端地址。应用日志按同样的字段范围与脱敏约定组织。
 
 <a id="secrets"></a>
 
 ## 敏感字段
 
-`config.Secret` 会在 slog 输出中脱敏。不要在日志中调用 `Reveal()`，也不要先转换为普通字符串再记录。错误的 `%+v` 格式化不具备自动脱敏能力。
+将 `config.Secret` 本身交给 slog，可以得到脱敏输出。`Reveal()` 和普通字符串转换得到原值；错误的 `%+v` 会包含详细原因，输出前由调用方检查敏感信息。
 
 ---
 

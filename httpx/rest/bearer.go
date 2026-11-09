@@ -34,7 +34,7 @@ func EnsureBearerScheme(api huma.API) {
 }
 
 // RequireBearer 同时设置 OpenAPI Security 与运行时中间件。
-// 未声明安全要求的端点不要调用本函数。scopes 全部需要满足。
+// 校验器返回有效主体，并满足 scopes 中的全部权限。
 func RequireBearer(api huma.API, validate TokenValidator, scopes ...string) func(op *huma.Operation) {
 	if validate == nil {
 		panic("rest: nil token validator")
@@ -92,7 +92,7 @@ func RequireBearer(api huma.API, validate TokenValidator, scopes ...string) func
 func Public() func(op *huma.Operation) {
 	return func(op *huma.Operation) {
 		op.Security = []map[string][]string{}
-		if op.Metadata != nil && op.Metadata["mygoravel.bearer"] == true {
+		if op.Metadata["mygoravel.bearer"] == true {
 			panic("rest: cannot mark an authenticated endpoint public")
 		}
 	}

@@ -1,4 +1,3 @@
-// Package identity 定义已认证主体与请求内身份传递。
-//
-// Subject 不绑定具体账号模型；第一期不提供 Gate/RBAC 引擎。
+// Package identity 定义已认证的用户或服务主体，并通过 context 传递身份。
+// 凭据校验由入口完成，资源授权由业务服务执行。
 package identity

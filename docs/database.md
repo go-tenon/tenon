@@ -41,7 +41,7 @@ func Check(ctx context.Context, dsn config.Secret) error {
 }
 ```
 
-应用入口通常只打开一次，然后把 `db` 传给业务服务，退出时再关闭。为启动探测传入有 deadline 的 context，可避免等待超过应用的启动预算。
+应用入口通常只打开一次，然后把 `db` 传给业务服务，退出时再关闭。启动探测通过 context deadline 限定等待时间。
 
 <a id="configuration"></a>
 
@@ -64,7 +64,7 @@ database:
 | conn_max_lifetime | 1h | 连接最长存活时间 |
 | conn_max_idle_time | 30m | 空闲连接最长保留时间 |
 
-根据数据库容量和部署副本数分配连接预算。默认值只通过 `DefaultConfig` 应用一次，`Open` 不会把显式零值再改回默认值。
+根据数据库容量和部署副本数分配连接预算。`DefaultConfig` 提供默认值，`Open` 使用调用方传入的值，包括显式零值。
 
 <a id="models"></a>
 
@@ -81,7 +81,7 @@ type Note struct {
 }
 ```
 
-这里需要 `github.com/google/uuid` 和标准库 `time`。模型定义不会创建数据库表，表结构由[迁移](migrations.md)管理。
+这里需要 `github.com/google/uuid` 和标准库 `time`。模型描述查询映射，表结构由[迁移](migrations.md)管理。
 
 用已经注入服务的 `db` 查询笔记：
 
@@ -108,9 +108,9 @@ err := db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 })
 ```
 
-回调返回错误时回滚，成功时提交。参与同一事务的操作使用传入的 `tx`，不要在回调中误用另一个数据库连接。需要嵌套事务或 savepoint 时，应明确使用 Bun 的原生能力与语义。
+回调返回错误时回滚，成功时提交。参与同一事务的操作统一使用传入的 `tx`。需要嵌套事务或 savepoint 时，应明确使用 Bun 的原生能力与语义。
 
-网络请求、缓存失效等外部副作用不会自动成为数据库事务的一部分。如果业务使用查询缓存，通常在提交成功后失效，见[缓存失效](cache.md#invalidation)。
+网络请求和缓存失效由业务单独编排。查询缓存通常在提交成功后失效，见[缓存失效](cache.md#invalidation)。
 
 <a id="constraints"></a>
 
@@ -126,7 +126,7 @@ if database.IsUniqueViolation(err, "notes_owner_title_key") {
 
 `ErrConflict` 是应用的 fault 模板。还可以使用 `IsForeignKeyViolation` 和 `IsCheckViolation` 判断对应 SQLSTATE。
 
-尽量指定已知约束名，避免把所有数据库错误都当作同一种业务冲突。传给数据库的 context 应来自当前用例，以便请求取消和截止时间生效。
+指定已知约束名，分别映射对应业务冲突；其他错误保留原因返回。传给数据库的 context 应来自当前用例，以便请求取消和截止时间生效。
 
 <a id="tests"></a>
 

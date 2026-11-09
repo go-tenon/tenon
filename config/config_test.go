@@ -41,9 +41,7 @@ func lookupEnv(m map[string]string) config.LookupFunc {
 
 func parse(t *testing.T, yamlText string, sections ...string) *config.Document {
 	t.Helper()
-	if len(sections) == 0 {
-		sections = []string{"http", "database", "logging", "name", "tags", "labels", "db"}
-	}
+
 	doc, err := config.Parse([]byte(yamlText),
 		config.WithSections(sections...),
 		config.WithLookup(lookupEnv(nil)),
@@ -142,7 +140,7 @@ db:
 		t.Fatal(err)
 	}
 
-	// 未 Decode 的段不应要求变量存在：换一个没有 db 变量的 lookup 只解 http。
+	// 仅解码 http 段时，保留 db 中尚未展开的变量。
 	httpDoc, err := config.Parse([]byte(`
 http:
   port: ${TEST_PORT}
@@ -201,16 +199,6 @@ func TestMapMergeSliceReplace(t *testing.T) {
 		Labels map[string]string `yaml:"labels"`
 	}
 	doc, err := config.Parse([]byte(`
-tags: [a, b]
-labels:
-  env: prod
-`), config.WithSections("tags", "labels"), config.WithLookup(lookupEnv(nil)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	// 段是顶层键；分别解码需要把 tags/labels 作为独立段值。
-	// 这里用整段文档模拟：每个顶层键的值解码到字段容器不方便，改为单段嵌套。
-	doc, err = config.Parse([]byte(`
 app:
   tags: [a, b]
   labels:

@@ -43,7 +43,7 @@ type RequestInput struct {
 }
 ```
 
-认证头应交给[Bearer 认证](authentication.md)处理，不把解析后的 token 当作已经验证的身份。
+认证头交给[Bearer 认证](authentication.md)处理，凭据校验成功后得到主体。
 
 <a id="json-body"></a>
 
@@ -69,7 +69,7 @@ Authorization: Bearer <token>
 {"title":"准备发布"}
 ```
 
-标题的结构校验会在处理器执行前完成。业务服务仍应检查自己的规则，以便直接调用服务的测试或其他入口得到同样的业务约束。
+标题的结构校验会在处理器执行前完成。业务服务检查业务规则，直接调用与 HTTP 入口遵循同样的约束。
 
 <a id="validation-errors"></a>
 
@@ -90,9 +90,9 @@ JSON 语法错误通常返回 400，字段校验失败返回 422。错误正文�
 }
 ```
 
-上面展示启用框架英文目录时的正文；未启用语言目录时，detail 使用状态描述。客户端应根据 `code` 和 `errors[].location` 展示错误，不依赖 detail 的具体文字。
+上面展示启用框架英文目录时的正文；未启用语言目录时，detail 使用状态描述。客户端根据 `code` 和 `errors[].location` 决定展示位置与交互。
 
-字段错误不包含提交的原值，默认 message 也不会复述解析器原始诊断。认证失败可能在正文校验前就返回 401。
+字段错误只包含公开提示和位置，默认 message 为 Invalid value。认证失败可能在正文校验前就返回 401。
 
 <a id="limits"></a>
 
@@ -111,7 +111,7 @@ api := rest.New(rest.Options{
 
 省略时默认 1 MiB 和 30 秒。Huma Operation 也有原生的正文限制设置；如果要允许某个接口更大的正文，需要同时检查该 Operation 和外层中间件的上限。
 
-超时会取消请求 context，不会强制终止任意 Go 函数。数据库查询和外部客户端调用应使用处理器收到的 `ctx`。服务器的 `ReadTimeout`、`WriteTimeout`、`ReadHeaderTimeout` 则由应用创建 `http.Server` 时设置；见[最小应用](routing.md#first-route)。
+超时会取消请求 context，处理器负责响应取消。数据库查询和外部客户端调用应使用处理器收到的 `ctx`。服务器的 `ReadTimeout`、`WriteTimeout`、`ReadHeaderTimeout` 则由应用创建 `http.Server` 时设置；见[最小应用](routing.md#first-route)。
 
 <a id="request-id"></a>
 
@@ -123,7 +123,7 @@ api := rest.New(rest.Options{
 requestID := httpx.RequestID(ctx)
 ```
 
-每个请求获得新的标识，响应头 `X-Request-ID` 和错误正文中的 `request_id` 与它一致。它用于关联日志，不等同于分布式 trace ID。
+每个请求获得新的标识，响应头 `X-Request-ID` 和错误正文中的 `request_id` 与它一致。它用于关联本次请求的日志；trace ID 由应用的追踪设施提供。
 
 ---
 

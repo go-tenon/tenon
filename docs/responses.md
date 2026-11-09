@@ -16,7 +16,7 @@ HTTP 处理器返回输出结构体和 error。输出中的 `Body` 是 JSON 正�
 
 ## 返回 JSON
 
-定义面向客户端的 DTO，不直接返回数据库模型：
+定义面向客户端的输出 DTO：
 
 ```go
 type NoteDTO struct {
@@ -30,7 +30,7 @@ type NoteOutput struct {
 }
 ```
 
-处理器成功时返回 `&NoteOutput{Body: ...}, nil`。`Body` 是 Huma 的约定字段，不会成为 JSON 中的额外 `body` 层。Huma 默认还会为对象响应提供 `$schema` 字段和 Link 响应头，用于定位对应的 JSON Schema；本章后续 JSON 示例只展示业务字段。
+处理器成功时返回 `&NoteOutput{Body: ...}, nil`。`Body` 中的字段直接构成 JSON 正文。Huma 默认还会为对象响应提供 `$schema` 字段和 Link 响应头，用于定位对应的 JSON Schema；本章后续 JSON 示例只展示业务字段。
 
 有正文的普通成功响应默认是 200；创建资源时如需返回 201，应明确设置 Operation 的默认状态。
 
@@ -49,7 +49,7 @@ op := huma.Operation{
 }
 ```
 
-仍需为 `op` 绑定安全策略，再注册处理器。需要响应头时，将它声明在输出结构体中：
+为 `op` 绑定安全策略后注册处理器。需要响应头时，将它声明在输出结构体中：
 
 ```go
 type CreatedNoteOutput struct {
@@ -70,7 +70,7 @@ type CreatedNoteOutput struct {
 items := make([]NoteDTO, 0)
 ```
 
-不要让 nil slice 意外序列化为 `null`。时间字段使用 `time.Time` 或明确的 RFC3339 字符串；业务保存 UTC 时刻，展示时再应用指定时区。
+nil slice 会序列化为 `null`，空 slice 会序列化为 `[]`。时间字段使用 `time.Time` 或明确的 RFC3339 字符串；业务保存 UTC 时刻，展示时再应用指定时区。
 
 <a id="pagination"></a>
 
@@ -89,15 +89,15 @@ type ListOutput struct {
 
 处理器用当前页填充 Items，并将下一页的位置编码到 Next。客户端把 Next 原样传给下一次请求的 before 参数；没有下一页时省略 next。
 
-数据查询应使用确定且唯一的排序，例如 `created_at DESC, id DESC`。游标应携带版本、排序位置和查询约束；解码、校验与查询条件由业务实现。游标不是授权凭据，服务仍然需要根据当前主体筛选数据。
+数据查询应使用确定且唯一的排序，例如 `created_at DESC, id DESC`。游标应携带版本、排序位置和查询约束；解码、校验与查询条件由业务实现。服务根据当前主体筛选数据，再应用游标条件。
 
-框架不内置分页执行器。查询条件沿用 Bun 原生 API，见[数据库](database.md)。
+分页查询由业务实现，使用 Bun 原生 API，见[数据库](database.md)。
 
 <a id="errors"></a>
 
 ## 返回错误
 
-业务失败直接返回 error，由 `rest.Register` 的边界转换处理。不要把数据库错误或 `%+v` 堆栈放进输出结构体。
+业务失败直接返回 error，由 `rest.Register` 的边界转换处理。输出结构体只包含对外业务数据。
 
 错误状态、稳定错误码和日志责任见[错误处理](errors.md)。
 

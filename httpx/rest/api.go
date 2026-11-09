@@ -21,7 +21,7 @@ type Mode int
 const (
 	// ModeServe 为运行模式：调用 newHandler 并挂载处理器。
 	ModeServe Mode = iota
-	// ModeOpenAPI 为文档模式：只生成 schema，绝不调用 newHandler。
+	// ModeOpenAPI 为文档模式：生成 schema，使用内部占位处理器。
 	ModeOpenAPI
 )
 
@@ -85,7 +85,6 @@ func New(opts Options) *API {
 		}
 		return v, nil
 	}}, opts.Transformers...)
-	// 关闭内置 docs 路径可由调用方设置；默认保留。
 	h := humachi.New(r, cfg)
 	return &API{API: h, mode: opts.Mode, router: r, logger: opts.Middleware.Logger}
 }

@@ -10,13 +10,13 @@ import (
 	"github.com/ryan053857/mygoravel/httpx"
 )
 
-// ErrorDetail deliberately excludes submitted values and parser diagnostics.
+// ErrorDetail 包含公开的校验提示和字段位置。
 type ErrorDetail struct {
 	Message  string `json:"message"`
 	Location string `json:"location,omitempty"`
 }
 
-// ErrorModel is the single public Problem Details schema, including validation errors.
+// ErrorModel 定义业务错误和校验错误共用的 Problem Details 响应。
 type ErrorModel struct {
 	Status    int           `json:"status"`
 	Title     string        `json:"title"`
@@ -30,7 +30,7 @@ func (e *ErrorModel) Error() string             { return e.Detail }
 func (e *ErrorModel) GetStatus() int            { return e.Status }
 func (e *ErrorModel) ContentType(string) string { return "application/problem+json" }
 
-// HTTPStatus maps neutral fault semantics at the HTTP boundary only.
+// HTTPStatus 将 fault.Kind 映射为 HTTP 状态。
 func HTTPStatus(err error) int {
 	switch fault.KindOf(err) {
 	case fault.InvalidArgument:
@@ -72,7 +72,7 @@ func statusCode(status int) string {
 	}
 }
 
-// FromFault preserves wrapped HTTP errors and maps neutral domain errors without exposing causes.
+// FromFault 转换业务错误，保留原生 Huma 状态错误；nil 输入返回 nil。
 func FromFault(err error) huma.StatusError {
 	if err == nil {
 		return nil
@@ -95,7 +95,7 @@ func FromFault(err error) huma.StatusError {
 	return &ErrorModel{Status: status, Title: http.StatusText(status), Detail: detail, Code: code}
 }
 
-// StripErrorValues normalizes native Huma errors into the documented safe model.
+// StripErrorValues 将 Huma 校验错误转换为公开响应，并填入请求标识。
 func StripErrorValues(ctx huma.Context, status string, v any) (any, error) {
 	var model *ErrorModel
 	switch e := v.(type) {

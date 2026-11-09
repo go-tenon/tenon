@@ -47,7 +47,7 @@ if database.IsUniqueViolation(err, "notes_owner_title_key") {
 return errors.Wrap(err, "create note")
 ```
 
-错误链兼容标准库的 `errors.Is`、`errors.As` 和 `fmt.Errorf` 的 `%w`：
+错误链支持标准库的 `errors.Is`、`errors.As` 和 `fmt.Errorf` 的 `%w`：
 
 ```go
 if errors.Is(err, ErrNoteNotFound) {
@@ -55,7 +55,7 @@ if errors.Is(err, ErrNoteNotFound) {
 }
 ```
 
-不要根据 `err.Error()` 的文字判断错误。`fault.CodeOf`、`fault.KindOf` 可以从包装链读取语义；框架没有全局错误注册表。
+使用 `errors.Is` 匹配模板，使用 `fault.CodeOf`、`fault.KindOf` 从包装链读取业务语义。
 
 <a id="http-status"></a>
 
@@ -73,7 +73,7 @@ if errors.Is(err, ErrNoteNotFound) {
 | Unavailable | 503 |
 | Internal、未分类错误 | 500 |
 
-HTTP 映射位于 `httpx/rest`，业务包不需要导入 `net/http`。纯 HTTP 错误也可以使用 Huma 的 StatusError；例如包装过的 `huma.Error404NotFound` 仍能保留 404。对外文字会经过统一的安全转换，不保证保留原始 error 文本。
+HTTP 映射位于 `httpx/rest`，业务包只使用 fault 分类。纯 HTTP 错误可以使用 Huma 的 StatusError；包装过的 `huma.Error404NotFound` 保留 404。原生 Huma 错误文案经 Transformer 转换为通用提示。
 
 <a id="problem"></a>
 
@@ -93,23 +93,23 @@ HTTP 映射位于 `httpx/rest`，业务包不需要导入 `net/http`。纯 HTTP 
 
 Content-Type 为 `application/problem+json`。字段校验失败时还会有 `errors` 数组，见[请求校验](requests.md#validation-errors)。同一模型用于 OpenAPI schema。
 
-客户端根据 code 编写分支，用 request_id 联系服务日志；detail 是展示文案，可能随语言改变。未知错误不会公开 cause、SQL 或堆栈。
+客户端根据 code 编写分支，用 request_id 联系服务日志；detail 是展示文案，可能随语言改变。未知错误使用通用提示。
 
 <a id="public-data"></a>
 
 ## 公开参数
 
-`fault.Public` 可以附加经过业务确认可公开的元数据，使用 `fault.PublicOf` 读取。默认 HTTP 错误模型没有参数字段，也不会自动将这些元数据插入译文。只有应用明确实现对应输出策略后，它们才会出现在响应中。
+`fault.Public` 附加经过业务确认可公开的元数据，`fault.PublicOf` 读取这些数据。应用通过自定义输出模型或翻译逻辑显式呈现它们。
 
-密码、token 和其他内部值不应放进公开参数，也不应拼进 Wrap 的消息。
+公开参数与 Wrap 消息使用已审核的业务标识和操作说明。
 
 <a id="reporting"></a>
 
 ## 记录错误与翻译
 
-业务层负责返回错误。`rest.Register` 在有 Logger 时记录 5xx 诊断，访问日志记录每次请求的结果；避免在每一层重复记录同一个失败。
+业务层返回错误，`rest.Register` 在有 Logger 时记录一次 5xx 诊断。访问日志记录每次请求的结果。
 
-默认诊断记录稳定 code 和安全堆栈，不输出原始 cause。`%+v` 只是一种详细格式化方式，不是脱敏方式。
+默认诊断记录稳定 code 和可报告堆栈。`%+v` 会展开错误链中的详细原因，输出范围由调用边界控制。
 
 启用语言目录后，错误码可作为消息 ID。内置目录包含常见英文和中文错误；自定义错误的翻译方式见[本地化](localization.md)。
 

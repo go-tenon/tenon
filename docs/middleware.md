@@ -45,9 +45,9 @@ api := rest.New(rest.Options{
 })
 ```
 
-此处需要标准库 `net/netip`。列表为空时保留直接连接的 RemoteAddr。填写实际反向代理的网段，避免把全部互联网地址都设为可信。
+此处需要标准库 `net/netip`。列表为空时保留直接连接的 RemoteAddr。TrustedProxies 填写应用实际使用的反向代理网段。
 
-该策略处理客户端地址，不会自动推断公网域名、协议、TLS 或可信用户身份。
+该策略处理客户端地址。公网域名、协议、TLS 和用户身份由相应的入口配置与认证组件处理。
 
 <a id="chi"></a>
 
@@ -74,7 +74,7 @@ api := rest.New(rest.Options{Router: router})
 
 ## 用于普通 HTTP Handler
 
-不使用 Huma 时，也可以单独使用 `httpx.Middleware`：
+普通 `http.Handler` 可以单独安装 `httpx.Middleware`：
 
 ```go
 handler := httpx.Middleware(httpx.MiddlewareOptions{
@@ -82,13 +82,13 @@ handler := httpx.Middleware(httpx.MiddlewareOptions{
 })(mux)
 ```
 
-`mux` 是原生 `http.Handler`，`logger` 是应用日志器。不要再用它包裹已经由 `rest.New` 安装同一中间件的 Router，以免生成重复日志或请求 ID。
+`mux` 是原生 `http.Handler`，`logger` 是应用日志器。同一请求链安装一次该中间件；`rest.New` 已完成安装。
 
 <a id="cancellation"></a>
 
 ## 请求结束与取消
 
-默认中间件只设置请求 context 的 deadline；处理器必须主动遵守取消。它不统一把所有超时改写成某个 HTTP 状态，也不会启动 goroutine 来强行中断处理器。服务器读写时限见[请求与校验](requests.md#limits)。
+默认中间件设置请求 context 的 deadline。处理器同步执行，并主动响应取消、返回对应结果。服务器读写时限见[请求与校验](requests.md#limits)。
 
 ---
 

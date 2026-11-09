@@ -1,8 +1,6 @@
-// Package i18n 提供基于 go-i18n 的目录组合与校验辅助。
+// Package i18n 组合 go-i18n 消息目录并校验默认语言中的必需消息。
 //
-// 直接构建 *goi18n.Bundle / *goi18n.Localizer；构建完成后 Bundle 约定不再修改。
-// 覆盖顺序：框架默认 → 模块 → 产品；相同优先级下重复消息 ID 直接报错。
-// 不提供每次翻译的 Catalog 门面；context 只携带语言标记。
-//
-// 第一期请求语言取 Accept-Language 与默认语言，不读取 Cookie。
+// New 返回原生 Bundle，翻译使用 go-i18n Localizer。
+// 消息按框架、模块、产品的优先级覆盖；同一语言、同一优先级的重复 ID 返回错误。
+// 请求通过 Accept-Language 选择目录语言，context 携带选择结果。
 package i18n

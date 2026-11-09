@@ -1,11 +1,13 @@
 package database_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/ryan053857/mygoravel/config"
 	"github.com/ryan053857/mygoravel/database"
 	"github.com/ryan053857/mygoravel/database/migrate"
 )
@@ -35,5 +37,61 @@ func TestCheckPublishedDetectsModification(t *testing.T) {
 	err := migrate.CheckPublished(dir, base)
 	if err == nil || !strings.Contains(err.Error(), "modified") {
 		t.Fatalf("got %v", err)
+	}
+}
+
+func TestPublishedMigrationsIncludeNestedFiles(t *testing.T) {
+	live, baseline := t.TempDir(), t.TempDir()
+	for _, dir := range []string{live, baseline} {
+		if err := os.MkdirAll(filepath.Join(dir, "schema"), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "schema/00001_init.sql"), []byte("SELECT 1;"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(live, "00002_next.sql"), []byte("SELECT 2;"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrate.CheckPublished(live, baseline); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(live, "schema/00001_init.sql")
+	if err := os.WriteFile(file, []byte("SELECT 3;"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrate.CheckPublished(live, baseline); err == nil || !strings.Contains(err.Error(), "modified") {
+		t.Fatalf("expected modified migration, got %v", err)
+	}
+	if err := os.Remove(file); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrate.CheckPublished(live, baseline); err == nil || !strings.Contains(err.Error(), "missing") {
+		t.Fatalf("expected missing migration, got %v", err)
+	}
+}
+
+func TestOpenAndValidateShareConfigurationChecks(t *testing.T) {
+	for _, cfg := range []database.Config{
+		{},
+		{DSN: config.Secret("postgres://user:secret@host:not-a-port/db")},
+		{DSN: config.Secret("postgres://localhost/db"), MaxOpenConns: -1},
+		{DSN: config.Secret("postgres://localhost/db"), ConnMaxLifetime: -1},
+	} {
+		validation := cfg.Validate()
+		db, err := database.Open(context.Background(), cfg)
+		if db != nil || validation == nil || err == nil || err.Error() != validation.Error() {
+			t.Fatalf("validation=%v open=%v db=%v", validation, err, db)
+		}
+		if strings.Contains(err.Error(), "secret") {
+			t.Fatalf("configuration error exposed credentials: %v", err)
+		}
+	}
+}
+
+func TestPublishedMigrationsRequireCurrentDirectory(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing")
+	if err := migrate.CheckPublished(missing, t.TempDir()); err == nil {
+		t.Fatal("missing current directory accepted")
 	}
 }

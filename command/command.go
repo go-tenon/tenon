@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Exit codes.
+// 命令退出码。
 const (
 	ExitOK          = 0
 	ExitUsage       = 2

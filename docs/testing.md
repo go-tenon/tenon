@@ -2,7 +2,7 @@
 
 [文档首页](README.md) / 测试与部署
 
-mygoravel 使用标准 `testing`、`httptest` 和 `go test`。单元测试不依赖外部服务；需要 PostgreSQL 的框架测试通过 integration build tag 显式运行。
+mygoravel 使用标准 `testing`、`httptest` 和 `go test`。单元测试独立运行；需要 PostgreSQL 的框架测试通过 integration build tag 显式运行。
 
 本章内容：
 
@@ -82,15 +82,15 @@ func TestPing(t *testing.T) {
 }
 ```
 
-认证、校验错误和越权路径同样通过真实 Router 测试。不要只测试处理器函数，而遗漏认证中间件或错误转换。
+认证、校验错误和越权路径通过真实 Router 测试，覆盖认证中间件、处理器与错误转换。
 
 <a id="business-tests"></a>
 
 ## 业务与配置测试
 
-业务授权应该有直接调用服务的测试，证明脱离 HTTP 后所有权检查仍然有效。可以直接注入真实业务依赖；只有确实需要隔离某项能力时，才在消费方定义小接口或提供测试实现。
+业务授权通过直接调用服务的测试验证所有权检查。可以直接注入真实业务依赖；只有确实需要隔离某项能力时，才在消费方定义小接口或提供测试实现。
 
-配置测试通过 `config.Parse` 和 `WithLookup` 注入字节与环境查询函数，覆盖默认值、零值、未知字段和敏感值脱敏。避免为了配置隔离而修改整个进程的环境。
+配置测试通过 `config.Parse` 和 `WithLookup` 注入字节与环境查询函数，覆盖默认值、零值、未知字段和敏感值脱敏。每个测试持有自己的环境查询函数。
 
 <a id="database-tests"></a>
 
@@ -132,7 +132,7 @@ func TestDatabase(t *testing.T) {
 }
 ```
 
-测试结束时关闭连接并删除数据库。不提供迁移时传 nil，得到空库。不要让集成测试使用生产数据库凭据。
+测试结束时关闭连接并删除数据库。迁移参数为 nil 时创建空库。管理员连接使用独立测试环境的凭据。
 
 <a id="integration-tests"></a>
 
@@ -153,7 +153,7 @@ export DATABASE_TEST_DSN='postgres://postgres:postgres@127.0.0.1:55432/postgres?
 go test -race -count=1 -tags=integration ./...
 ```
 
-缺少数据库地址会导致测试失败，不会静默跳过。应用如果使用缓存等其他外部服务，需要自行补充对应的集成测试。
+缺少数据库地址会导致测试失败。应用如果使用缓存等其他外部服务，需要自行补充对应的集成测试。
 
 完成后执行 `docker stop mygoravel-test-postgres` 清理临时实例。
 
@@ -201,9 +201,9 @@ HTTP 生命周期测试应覆盖正常取消、正在处理的请求、监听异
 
 ## 离线文档与外部消费
 
-路由文档测试使用 ModeOpenAPI，并让处理器构造回调一旦执行就使测试失败。错误响应还应对生成的 schema 做校验，避免正文与文档漂移。
+路由文档测试使用 ModeOpenAPI，并让处理器构造回调一旦执行就使测试失败。错误响应对生成的 schema 做校验，验证正文与文档一致。
 
-仓库的独立消费测试把当前代码制成模块代理 zip，在临时 module 中运行 HTTP、配置、错误和命令的公开 API 契约测试。它通过 GOPROXY 获取候选版本，不使用本地 replace，用于验证框架可以被外部应用正常引用。
+仓库的独立消费测试把当前代码制成模块代理 zip，在临时 module 中运行 HTTP、配置、错误和命令的公开 API 契约测试。测试通过 GOPROXY 获取候选版本，检查实际解析到的模块目录与版本，验证外部应用的引用路径。
 
 ---
 

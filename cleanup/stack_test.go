@@ -14,9 +14,8 @@ func TestLIFOAndIdempotentClose(t *testing.T) {
 	var order []string
 	var s cleanup.Stack
 	for _, name := range []string{"a", "b", "c"} {
-		n := name
-		if err := s.Add(n, func(context.Context) error {
-			order = append(order, n)
+		if err := s.Add(name, func(context.Context) error {
+			order = append(order, name)
 			return nil
 		}); err != nil {
 			t.Fatal(err)
@@ -28,7 +27,6 @@ func TestLIFOAndIdempotentClose(t *testing.T) {
 	if strings.Join(order, "") != "cba" {
 		t.Fatalf("order=%v", order)
 	}
-	// 重复 Close 不应再次执行。
 	if err := s.Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -53,12 +51,11 @@ func buildWithFailure(closed *[]string) (err error) {
 	defer func() { err = s.CloseWith(context.Background(), err) }()
 
 	for _, name := range []string{"a", "b", "c"} {
-		n := name
-		if n == "c" {
+		if name == "c" {
 			return errors.New("open c")
 		}
-		if err := s.Add(n, func(context.Context) error {
-			*closed = append(*closed, n)
+		if err := s.Add(name, func(context.Context) error {
+			*closed = append(*closed, name)
 			return nil
 		}); err != nil {
 			return err
@@ -124,15 +121,5 @@ func TestNoAddAfterClose(t *testing.T) {
 	err := s.Add("x", func(context.Context) error { return nil })
 	if err == nil {
 		t.Fatal("expected error")
-	}
-}
-
-func TestNoHTTPDependency(t *testing.T) {
-	// 包级编译依赖由 archtest 约束；这里确认 Stack API 仅需 context。
-	var s cleanup.Stack
-	ctx := context.Background()
-	_ = s.Add("n", func(context.Context) error { return nil })
-	if err := s.Close(ctx); err != nil {
-		t.Fatal(err)
 	}
 }

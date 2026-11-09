@@ -62,3 +62,19 @@ func TestAliasesAreDecodedIndependently(t *testing.T) {
 		}
 	}
 }
+
+func TestEscapedEnvironmentReferenceNeedsNoLookup(t *testing.T) {
+	doc, err := config.Parse([]byte("app:\n  value: $${TOKEN}\n"), config.WithSections("app"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg struct {
+		Value string `yaml:"value"`
+	}
+	if err := doc.Decode("app", &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Value != "${TOKEN}" {
+		t.Fatalf("value=%q", cfg.Value)
+	}
+}

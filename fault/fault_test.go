@@ -91,7 +91,7 @@ func TestPublicIsolatedFromCause(t *testing.T) {
 	if strings.Contains(fe.Error(), "token=abc") {
 		t.Fatalf("Error() leaked cause: %q", fe.Error())
 	}
-	// %+v 诊断可含 cause；这是日志边界的责任，不是对外 Error() 文本。
+	// %+v 保留 cause，诊断输出由调用边界决定。
 	if !strings.Contains(fmt.Sprintf("%+v", err), "token=abc") {
 		t.Fatal("percent+v should retain cause for diagnostics")
 	}

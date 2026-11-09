@@ -1,9 +1,11 @@
 package i18n
 
 import (
+	"cmp"
 	"context"
 	"io/fs"
 	"path"
+	"slices"
 	"strings"
 
 	"github.com/cockroachdb/errors"
@@ -45,7 +47,8 @@ type Options struct {
 	RequiredIDs []string
 }
 
-// New 构建并冻结 Bundle。
+// New 按优先级加载消息并校验 RequiredIDs，返回原生 Bundle。
+// 调用方在开始处理请求前完成目录修改。
 func New(opts Options) (*goi18n.Bundle, error) {
 	def := opts.Default
 	if def == "" {
@@ -56,18 +59,18 @@ func New(opts Options) (*goi18n.Bundle, error) {
 		return nil, errors.Wrapf(err, "i18n: default locale %q", def)
 	}
 
-	layers := append([]Layer(nil), opts.Layers...)
-	sortLayers(layers)
+	layers := slices.Clone(opts.Layers)
+	slices.SortStableFunc(layers, func(a, b Layer) int { return cmp.Compare(a.Priority, b.Priority) })
 
 	b := goi18n.NewBundle(defTag)
 	b.RegisterUnmarshalFunc("yaml", yaml.Unmarshal)
 	b.RegisterUnmarshalFunc("yml", yaml.Unmarshal)
 
-	// priority -> locale -> id -> layer name；同一语言、同一优先级下 ID 不可重复。
+	// 按优先级、语言和消息 ID 记录来源。
 	seen := map[Priority]map[string]map[string]string{}
 	for _, layer := range layers {
 		if layer.FS == nil {
-			continue
+			return nil, errors.Newf("i18n: layer %s requires a filesystem", layerLabel(layer))
 		}
 		if seen[layer.Priority] == nil {
 			seen[layer.Priority] = map[string]map[string]string{}
@@ -109,17 +112,6 @@ func layerLabel(l Layer) string {
 	return "layer"
 }
 
-func sortLayers(layers []Layer) {
-	// 稳定：Priority 升序，同 Priority 保持原顺序。
-	for i := 1; i < len(layers); i++ {
-		j := i
-		for j > 0 && layers[j-1].Priority > layers[j].Priority {
-			layers[j-1], layers[j] = layers[j], layers[j-1]
-			j--
-		}
-	}
-}
-
 type msgRef struct {
 	locale string
 	id     string
@@ -143,10 +135,7 @@ func loadLayer(b *goi18n.Bundle, layer Layer) ([]msgRef, error) {
 		if err != nil {
 			return errors.Wrapf(err, "i18n: load %s from %s", p, layerLabel(layer))
 		}
-		locale := strings.TrimSuffix(path.Base(p), path.Ext(p))
-		if mf.Tag != language.Und {
-			locale = mf.Tag.String()
-		}
+		locale := mf.Tag.String()
 		for _, m := range mf.Messages {
 			out = append(out, msgRef{locale: locale, id: m.ID})
 		}
@@ -170,15 +159,16 @@ func Locale(ctx context.Context) string {
 	return ""
 }
 
-// MatchAcceptLanguage negotiates loaded languages, with explicit default fallback.
+// MatchAcceptLanguage 返回匹配的目录语言，匹配失败时返回默认语言。
 func MatchAcceptLanguage(b *goi18n.Bundle, header string) string {
+	supported := b.LanguageTags()
 	tags, _, err := language.ParseAcceptLanguage(header)
 	if err != nil || len(tags) == 0 {
-		return b.LanguageTags()[0].String()
+		return supported[0].String()
 	}
-	m, _, confidence := language.NewMatcher(b.LanguageTags()).Match(tags...)
+	_, index, confidence := language.NewMatcher(supported).Match(tags...)
 	if confidence == language.No {
-		return b.LanguageTags()[0].String()
+		return supported[0].String()
 	}
-	return m.String()
+	return supported[index].String()
 }

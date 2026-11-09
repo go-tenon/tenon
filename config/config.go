@@ -16,7 +16,7 @@ type Validator interface {
 	Validate() error
 }
 
-// Document 是已解析、尚未按段展开环境变量的配置文档。
+// Document 保存解析后的 YAML 节点和按段解码选项。
 type Document struct {
 	root     *yaml.Node // DocumentNode，或 nil 表示空流
 	sections map[string]struct{}
@@ -24,7 +24,7 @@ type Document struct {
 	path     string // 仅用于错误前缀，可为空
 }
 
-// ReadFile 读取 path 并解析为 Document，不展开环境变量。
+// ReadFile 读取 path 并解析为 Document，环境变量在 Decode 时展开。
 func ReadFile(path string, opts ...Option) (*Document, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -38,7 +38,7 @@ func ReadFile(path string, opts ...Option) (*Document, error) {
 	return doc, nil
 }
 
-// Parse 从 YAML 字节解析 Document，不展开环境变量。
+// Parse 从 YAML 字节解析 Document，环境变量在 Decode 时展开。
 func Parse(data []byte, opts ...Option) (*Document, error) {
 	o := applyOptions(opts)
 	if len(o.sections) == 0 {
@@ -95,15 +95,12 @@ func (d *Document) Decode(section string, dst any) error {
 	return nil
 }
 
-// HasSection 报告文档是否包含该顶层段（不论是否已声明）。
+// HasSection 报告文档是否包含指定顶层段。
 func (d *Document) HasSection(section string) bool {
 	return d != nil && d.sectionNode(section) != nil
 }
 
 func wrapPath(path string, err error) error {
-	if err == nil {
-		return nil
-	}
 	if path == "" {
 		return errors.Wrap(err, "config")
 	}
@@ -216,7 +213,7 @@ func rejectNulls(n *yaml.Node) error {
 	return nil
 }
 
-// Copy nodes rather than re-encoding: retain source positions and isolate aliases per Decode.
+// cloneNode 保留源码位置，并为每次 Decode 创建独立节点和别名副本。
 func cloneNode(n *yaml.Node) (*yaml.Node, error) {
 	active := map[*yaml.Node]bool{}
 	var clone func(*yaml.Node) (*yaml.Node, error)
@@ -248,7 +245,7 @@ func cloneNode(n *yaml.Node) (*yaml.Node, error) {
 	return clone(n)
 }
 
-// YAML error messages can contain input values. Keep positions and field paths only.
+// safeYAMLError 将 YAML 解码诊断替换为字段路径与源码位置。
 func safeYAMLError(err error, node *yaml.Node, section string) error {
 	var many *yaml.LoadErrors
 	var one *yaml.LoadError

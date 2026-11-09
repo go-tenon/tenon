@@ -2,7 +2,7 @@
 
 [文档首页](README.md) / 进阶使用
 
-本地化用于展示文案，不改变业务错误的 Code 或 Kind。目录组合后得到原生 go-i18n Bundle，应用可继续使用 go-i18n Localizer。
+本地化提供展示文案，Code 和 Kind 保持稳定的业务语义。目录组合后得到原生 go-i18n Bundle，应用可继续使用 go-i18n Localizer。
 
 本章内容：
 
@@ -86,7 +86,7 @@ bundle, err := i18n.New(i18n.Options{
 
 覆盖顺序是框架 → 模块 → 产品，对应 PriorityFramework、PriorityModule、PriorityProduct。同一优先级、同一语言重复消息 ID 会失败。RequiredIDs 检查默认语言中指定的消息是否存在。
 
-Bundle 构建后按不可变目录使用，不在处理请求时添加或覆盖消息。
+每个 Layer 需要提供 FS。Bundle 是原生可变对象，应用在启动阶段完成目录修改，请求阶段按只读目录使用。
 
 <a id="localizer"></a>
 
@@ -101,15 +101,15 @@ message, err := localizer.Localize(&goi18n.LocalizeConfig{
 })
 ```
 
-模板数据、复数和其他翻译能力沿用 go-i18n 的原生 LocalizeConfig。请求 context 只保存语言标记，不保存目录或其他依赖。
+模板数据、复数和其他翻译能力沿用 go-i18n 的原生 LocalizeConfig。请求 context 保存语言标记，Bundle 由应用显式传入。
 
 <a id="fallback"></a>
 
 ## 错误文案的回退
 
-REST 呈现层将错误 code 作为消息 ID。找不到消息时使用通用状态文案，并在有 Logger 时记录缺失诊断。只检查应用明确声明的 RequiredIDs，不能在启动时发现所有运行时拼接的 ID。
+REST 呈现层将错误 code 作为消息 ID。找不到消息时使用通用状态文案，并在有 Logger 时记录缺失诊断。启动校验的范围由 RequiredIDs 明确指定，动态消息在翻译时按同样的回退策略处理。
 
-翻译不自动消费 `fault.Public` 中的参数。需要插值时，在应用展示逻辑中显式选择允许公开的数据。
+模板插值使用 LocalizeConfig.TemplateData。应用可通过 fault.PublicOf 读取元数据，再选择允许展示的字段。
 
 ---
 

@@ -75,7 +75,7 @@ func TestAcceptLanguageAndContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := i18n.MatchAcceptLanguage(b, "en-US,en;q=0.9"); got != "en" && !strings.HasPrefix(got, "en") {
+	if got := i18n.MatchAcceptLanguage(b, "en-US,en;q=0.9"); got != "en" {
 		t.Fatalf("got %q", got)
 	}
 	ctx := i18n.WithLocale(context.Background(), "en")
@@ -88,7 +88,6 @@ func TestAcceptLanguageAndContext(t *testing.T) {
 }
 
 func TestNoGlobalCatalog(t *testing.T) {
-	// 两个 Bundle 互不影响即证明没有可变全局目录。
 	fs := fstest.MapFS{"zh-CN.yaml": &fstest.MapFile{Data: []byte("only: x\n")}}
 	first, err := i18n.New(i18n.Options{Layers: []i18n.Layer{{Priority: i18n.PriorityProduct, FS: fs}}})
 	if err != nil {
@@ -118,5 +117,29 @@ func TestRequiredTemplateAndUnsupportedLanguage(t *testing.T) {
 	message, err := goi18n.NewLocalizer(b, "en").Localize(&goi18n.LocalizeConfig{MessageID: "greet", TemplateData: map[string]any{"Name": "Ada"}})
 	if err != nil || message != "Hello Ada" {
 		t.Fatal(message, err)
+	}
+}
+
+func TestConfiguredLayerRequiresFilesystem(t *testing.T) {
+	_, err := i18n.New(i18n.Options{Layers: []i18n.Layer{{Name: "product"}}})
+	if err == nil || !strings.Contains(err.Error(), "product") {
+		t.Fatalf("expected layer configuration error, got %v", err)
+	}
+}
+
+func TestNegotiatedLanguageBelongsToBundle(t *testing.T) {
+	bundle, err := i18n.New(i18n.Options{Layers: []i18n.Layer{i18n.FrameworkLayer()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for header, want := range map[string]string{
+		"en-US": "en", "en-GB": "en", "zh-Hans": "zh-CN",
+		"fr": "zh-CN", "": "zh-CN", "???": "zh-CN",
+	} {
+		t.Run(header, func(t *testing.T) {
+			if got := i18n.MatchAcceptLanguage(bundle, header); got != want {
+				t.Fatalf("got %q want %q", got, want)
+			}
+		})
 	}
 }

@@ -21,9 +21,13 @@ import (
 
 type requestIDKey struct{}
 
-func RequestID(ctx context.Context) string { id, _ := ctx.Value(requestIDKey{}).(string); return id }
+// RequestID 返回请求标识，未设置时返回空字符串。
+func RequestID(ctx context.Context) string {
+	id, _ := ctx.Value(requestIDKey{}).(string)
+	return id
+}
 
-// MiddlewareOptions are instance-local HTTP boundary policies. Zero limits use safe defaults.
+// MiddlewareOptions 配置实例级 HTTP 策略，非正数限额使用默认值。
 type MiddlewareOptions struct {
 	Logger         *slog.Logger
 	Languages      *goi18n.Bundle
@@ -32,8 +36,8 @@ type MiddlewareOptions struct {
 	TrustedProxies []netip.Prefix
 }
 
-// Middleware installs correlation, safe access logging, recovery, limits and language negotiation.
-// Forwarded addresses are used only when every proxy between the peer and selected client is trusted.
+// Middleware 安装请求关联、访问日志、恢复、限额与语言协商。
+// 客户端地址沿可信代理链从右向左解析。
 func Middleware(opts MiddlewareOptions) func(http.Handler) http.Handler {
 	if opts.Logger != nil {
 		opts.Logger = slog.New(logging.NewContextHandler(opts.Logger.Handler()))
@@ -101,7 +105,7 @@ func Middleware(opts MiddlewareOptions) func(http.Handler) http.Handler {
 	}
 }
 
-// WriteProblem is used by HTTP-level failures that happen before Huma routing.
+// WriteProblem 输出 HTTP 边界的通用 Problem Details 响应。
 func WriteProblem(w http.ResponseWriter, status int, code, id string) {
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(status)

@@ -21,7 +21,7 @@ import (
 
 const framework = "github.com/ryan053857/mygoravel"
 
-// Consume a real module zip through GOPROXY, with no replace or source-tree imports.
+// 通过 GOPROXY 下载候选模块并运行公开 API 测试。
 func TestExternalModuleConsumesFramework(t *testing.T) {
 	_, file, _, _ := runtime.Caller(0)
 	root := filepath.Clean(filepath.Join(filepath.Dir(file), "../.."))
@@ -41,7 +41,7 @@ func TestExternalModuleConsumesFramework(t *testing.T) {
 			return err
 		}
 		if d.IsDir() {
-			if rel != "." && (strings.HasPrefix(d.Name(), ".") || d.Name() == "legacy") {
+			if rel != "." && strings.HasPrefix(d.Name(), ".") {
 				return filepath.SkipDir
 			}
 			return nil
@@ -68,8 +68,7 @@ func TestExternalModuleConsumesFramework(t *testing.T) {
 	info, _ := json.Marshal(map[string]any{"Version": version, "Time": time.Now().UTC()})
 	must(t, os.WriteFile(filepath.Join(moduleDir, version+".info"), info, 0644))
 	must(t, os.WriteFile(filepath.Join(moduleDir, "list"), []byte(version+"\n"), 0644))
-	// Consume public HTTP/config/error contracts from an independent module.
-	// Reuse framework contract tests rather than maintaining a second application.
+	// 在独立 module 中运行框架的公开契约测试。
 	for _, pkg := range []string{"httpx/rest", "config", "fault", "command"} {
 		destination := filepath.Join(dir, filepath.Base(pkg))
 		must(t, os.MkdirAll(destination, 0755))

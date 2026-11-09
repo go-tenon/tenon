@@ -34,7 +34,7 @@ go build -trimpath -o bin/api .
 
 `--config`、serve 或 doctor 等名称只有在应用定义或安装相应命令后才存在。可参考[应用命令](commands.md)组合需要的入口，再让部署平台调用这些实际存在的命令。
 
-为数据库连接和外部探测设置明确的 context deadline。凭据与 TLS 参数按部署环境配置，不写入源码。
+为数据库连接和外部探测设置明确的 context deadline。凭据与 TLS 参数由部署环境提供。
 
 <a id="release"></a>
 
@@ -42,7 +42,7 @@ go build -trimpath -o bin/api .
 
 在发布步骤中构造 goose.Provider 并执行迁移，确认成功后再启动依赖新结构的应用。具体连接方式见[迁移](migrations.md)。
 
-Provider 的数据库锁可以串行化迁移执行，但不会自动协调应用版本切换。滚动升级时保持新旧代码对数据库结构的兼容。
+Provider 的数据库锁串行化迁移执行，发布平台负责应用版本切换。滚动升级时保持新旧代码对数据库结构的兼容。
 
 <a id="probes"></a>
 
@@ -50,7 +50,7 @@ Provider 的数据库锁可以串行化迁移执行，但不会自动协调应�
 
 应用自己登记存活和就绪路径，并让部署平台使用相应路径及成功状态。一个常见约定是 live 只检查进程响应，ready 检查排空状态与必要依赖。
 
-使用短超时探测数据库。可丢弃缓存通常不影响 ready。可直接使用[生命周期章节](lifecycle.md#health)的 handler 写法，不需要额外探针框架。
+使用短超时探测数据库。ready 检查实际必需的依赖，可以使用[生命周期章节](lifecycle.md#health)的 handler 写法。
 
 <a id="shutdown"></a>
 
@@ -58,9 +58,9 @@ Provider 的数据库锁可以串行化迁移执行，但不会自动协调应�
 
 进程管理器应把 SIGTERM 传给应用二进制。入口将取消信号传给 httpx.Serve，后者执行排空，再由入口关闭依赖。
 
-设置 ShutdownTimeout，并为平台停止宽限期留出排空和后续清理的时间。预算为 0 表示立即关闭。框架不额外等待代理摘流，相关策略由部署平台配置。
+设置 ShutdownTimeout，并为平台停止宽限期留出排空和后续清理的时间。预算为 0 表示立即关闭。代理摘流与等待时间由部署平台配置。
 
-业务和驱动必须遵守 context；任意忽略取消的 goroutine 无法被强制终止。
+业务和驱动通过 context 响应取消；忽略取消的 goroutine 会继续运行。
 
 <a id="diagnostics"></a>
 
@@ -68,7 +68,7 @@ Provider 的数据库锁可以串行化迁移执行，但不会自动协调应�
 
 显式把日志器传给 API，通常使用 stderr 作为服务日志输出。用 request_id 关联访问结果与错误诊断。
 
-位于反向代理后时配置实际 TrustedProxies 网段。TLS 终止、CORS、限流和认证来源由应用按需接入，默认 HTTP 中间件不自动配置这些系统。
+位于反向代理后时配置实际 TrustedProxies 网段。TLS 终止、CORS、限流和认证来源由应用按需接入。
 
 <a id="upgrades"></a>
 

@@ -35,5 +35,3 @@ go test ./...
 ```
 
 真实 PostgreSQL 集成测试和独立模块消费验收见[测试指南](docs/testing.md#integration-tests)。CI 配置见 [.github/workflows/ci.yml](.github/workflows/ci.yml)。
-
-框架设计与实施规格保留在 [spec.go](spec.go)。`legacy/` 是独立的旧 module，不参与当前主构建；当前使用方式以用户文档为准。

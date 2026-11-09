@@ -23,7 +23,7 @@
 3. 构造业务服务，登记路由。
 4. 创建 listener，调用 httpx.Serve。
 
-不需要某项资源时就省略对应步骤。迁移应由独立发布步骤执行，不放进普通 HTTP 启动流程。
+入口只打开当前应用需要的资源，迁移由独立发布步骤执行。
 
 <a id="request-flow"></a>
 
@@ -37,7 +37,7 @@ rest.New 提供的默认边界顺序是：
 → Huma 输入校验 → 业务服务 → 响应转换
 ```
 
-业务错误在 HTTP 边界转换。日志器和语言目录由应用显式传入，不同实例互不共享这些策略。
+业务错误在 HTTP 边界转换。日志器和语言目录由应用显式传入，每个实例持有自己的策略。
 
 <a id="resources"></a>
 
@@ -75,9 +75,9 @@ func WithDatabase(ctx context.Context, cfg database.Config,
 }
 ```
 
-后登记的资源先关闭；后续构建失败时，之前的资源仍会释放。CloseWith 保留运行错误和关闭错误，重复关闭不会再次释放。
+后登记的资源先关闭，构建失败时也会释放已登记资源。CloseWith 保留运行错误和关闭错误，每个清理函数执行一次。
 
-Stack 由入口串行使用。清理使用独立有限的 context，未提供 deadline 时预算为 10 秒；清理函数必须遵守该 context。
+Stack 由入口串行使用。清理 context 保留传入的值与 deadline，解除原取消信号；未提供 deadline 时预算为 10 秒。清理函数负责遵守该 context。
 
 <a id="shutdown"></a>
 
@@ -95,7 +95,7 @@ return httpx.Serve(ctx, server, listener, httpx.ServeOptions{
 
 这里 draining 是 httpx.Draining。收到取消信号或监听异常时，Serve 先调用 OnDraining，再执行 Shutdown；请求根 context 在排空结束或超时后才取消。
 
-超时后关闭连接。预算为 0 时立即取消并关闭。Serve 返回后，入口才关闭数据库等资源。业务查询和外部调用必须使用请求 context，框架不能强制结束忽略取消的 goroutine。
+超时后关闭连接。预算为 0 时立即取消并关闭。Serve 返回后，入口才关闭数据库等资源。业务查询和外部调用通过请求 context 响应取消。忽略取消的 goroutine 会继续运行。
 
 <a id="health"></a>
 
@@ -118,7 +118,7 @@ api.Router().Get("/readyz", func(w http.ResponseWriter, r *http.Request) {
 })
 ```
 
-可丢弃的查询缓存通常不属于 ready 的必需依赖。具体路径、依赖集合和探测预算由应用决定。
+ready 通常只探测业务执行必需的依赖。具体路径、依赖集合和探测预算由应用决定。
 
 ---
 

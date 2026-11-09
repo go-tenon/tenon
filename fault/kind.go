@@ -1,6 +1,6 @@
 package fault
 
-// Kind 是错误分类，供边界映射；不是业务错误码。客户端分支应使用 Code。
+// Kind 是供传输边界映射状态的错误分类。客户端使用 Code 区分业务失败。
 type Kind int
 
 const (
@@ -28,8 +28,6 @@ func (k Kind) String() string {
 		return "conflict"
 	case Unavailable:
 		return "unavailable"
-	case Internal:
-		return "internal"
 	default:
 		return "internal"
 	}

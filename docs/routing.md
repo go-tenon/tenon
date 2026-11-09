@@ -2,7 +2,7 @@
 
 [文档首页](README.md) / HTTP 基础
 
-路由使用 Huma 的 `Operation` 和 Go 输入输出类型声明。mygoravel 在注册时连接安全策略、错误转换和离线文档模式；处理器仍然是普通 Go 函数。
+路由使用 Huma 的 `Operation` 和 Go 输入输出类型声明。mygoravel 在注册时连接安全策略、错误转换和离线文档模式；处理器使用普通 Go 函数。
 
 本章内容：
 
@@ -111,7 +111,7 @@ curl -i http://localhost:8080/ping
 }
 ```
 
-程序没有数据库、缓存或认证配置。
+这个程序只安装公开的 HTTP 路由。
 
 <a id="operations"></a>
 
@@ -126,7 +126,7 @@ curl -i http://localhost:8080/ping
 | Public 或 RequireBearer | 显式访问策略 |
 | newHandler 回调 | 在运行模式下构造处理器 |
 
-`rest.Register` 会拒绝没有安全声明、重复 OperationID 和冲突路径的登记。构造回调适合捕获已经装配的业务服务；不要在注册路径或描述信息时查询数据库。
+`rest.Register` 会拒绝没有安全声明、重复 OperationID 和冲突路径的登记。构造回调捕获已装配的业务服务；路径与描述信息来自类型和接口配置。
 
 <a id="security"></a>
 
@@ -141,7 +141,7 @@ requireNotes(&op)
 
 其中 `validateToken` 的类型为 `rest.TokenValidator`。再将 `op` 传给 `rest.Register`。完整校验方式见[认证与授权](authentication.md)。
 
-认证声明会同时连接运行时中间件和 OpenAPI Security。不要只写文档中的 Security，然后遗漏实际认证逻辑。
+RequireBearer 同时连接运行时中间件和 OpenAPI Security。
 
 <a id="openapi"></a>
 
@@ -157,7 +157,7 @@ registerPing(api)
 data, err := api.OpenAPIJSON()
 ```
 
-`data` 是文档 JSON。`ModeOpenAPI` 不调用 `newHandler`，也不构造业务服务。应将数据库打开操作放在运行入口，而不是放在路由声明函数中。
+`data` 是文档 JSON。`ModeOpenAPI` 使用内部占位处理器生成 schema。应用将数据库打开和业务构造放在运行入口，登记函数只声明接口。
 
 默认 Huma 文档路径为 `/docs`，OpenAPI JSON 路径为 `/openapi.json`。需要 CLI 导出时，可按[应用命令](commands.md#factories)连接同一个登记函数。文档生成方式与运行时必须使用同一份路由声明。
 
@@ -173,7 +173,7 @@ api.Router().Get("/livez", func(w http.ResponseWriter, r *http.Request) {
 })
 ```
 
-这种路由经过默认 HTTP 中间件，但不会自动加入 Huma 的 OpenAPI，也不使用类型化输入校验。
+这种路由经过默认 HTTP 中间件，输入解析由 handler 负责。需要类型化校验与 OpenAPI 时，使用 rest.Register。
 
 也可以通过 `api.API` 调用原生 `huma.Register`。此时应用自己负责安全声明、处理器错误转换和离线绑定行为。普通业务 API 推荐沿用本章的 `rest.Register` 路径。
 

@@ -1,7 +1,5 @@
-// Package logging 提供 slog 的配置、构建与上下文字段辅助。
+// Package logging 构造 slog.Logger 并连接 context 中的关联字段。
 //
-// New 返回 *slog.Logger，不定义 logging.Logger，也不提供另一套 Info/Error 门面。
-// 不修改 slog.Default。业务代码只依赖标准库 slog；只有装配与中间件需要本包。
-//
-// 标准关联字段名：service、version、component、request_id、trace_id、message_id、attempt。
+// New 返回独立日志器。业务使用 slog 的原生方法，
+// WithAttrs 和 NewContextHandler 负责传递 request_id 等字段。
 package logging

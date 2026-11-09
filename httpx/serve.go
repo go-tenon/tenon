@@ -13,9 +13,9 @@ import (
 
 // ServeOptions 控制 Serve 的停机行为。
 type ServeOptions struct {
-	// ShutdownTimeout 是 Shutdown 排空上限；0 表示不等待（立即 Close）。
+	// ShutdownTimeout 是 Shutdown 排空上限；0 表示立即 Close。
 	ShutdownTimeout time.Duration
-	// Logger 可选；nil 时不写启动/停机日志。
+	// Logger 记录排空开始和服务器停止；nil 表示关闭这些日志。
 	Logger *slog.Logger
 	// OnDraining 在开始排空前调用（例如撤销 ready）；可空。
 	OnDraining func()
@@ -24,7 +24,7 @@ type ServeOptions struct {
 // Serve 在 ln 上运行 srv，直到 ctx 取消或 Serve 返回错误。
 //
 // ctx 取消或监听异常后：先调用 OnDraining，再 Shutdown；若超时则取消请求并 Close。
-// 必须等 Serve 返回后，调用方才应关闭数据库等依赖（由 cleanup 顺序保证）。
+// 调用方在 Serve 返回后关闭数据库等请求依赖。
 func Serve(ctx context.Context, srv *http.Server, ln net.Listener, opts ServeOptions) error {
 	if srv == nil {
 		return errors.New("httpx: nil server")
@@ -39,7 +39,7 @@ func Serve(ctx context.Context, srv *http.Server, ln net.Listener, opts ServeOpt
 	if opts.ShutdownTimeout < 0 {
 		return errors.New("httpx: shutdown timeout must not be negative")
 	}
-	// 与退出信号隔离，先排空，再取消剩余请求。保留应用自己的 BaseContext。
+	// 请求继承应用的 BaseContext，在排空结束后取消。
 	requestRoot, cancelRequests := context.WithCancel(context.Background())
 	defer cancelRequests()
 	baseContext := srv.BaseContext
@@ -88,7 +88,7 @@ func Serve(ctx context.Context, srv *http.Server, ln net.Listener, opts ServeOpt
 	if stopCancel != nil {
 		stopCancel()
 	}
-	// 只有本次运行协调的关闭才是正常退出。
+	// 本次停机流程产生的 ErrServerClosed 表示正常退出。
 	if !returned && errors.Is(serveErr, http.ErrServerClosed) {
 		serveErr = nil
 	}

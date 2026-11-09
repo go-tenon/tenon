@@ -2,6 +2,7 @@ package fault
 
 import (
 	"fmt"
+	"maps"
 
 	"github.com/cockroachdb/errors"
 	"github.com/cockroachdb/errors/errbase"
@@ -13,7 +14,7 @@ type Template struct {
 	code string
 }
 
-// Define 创建模板。code 形如 order.insufficient_stock。
+// Define 创建模板，code 使用 note.not_found 形式的业务错误码。
 func Define(kind Kind, code string) *Template {
 	return &Template{kind: kind, code: code}
 }
@@ -27,16 +28,10 @@ func (t *Template) Kind() Kind { return t.kind }
 // Error 实现 error，便于 errors.Is(err, ErrXxx)。
 func (t *Template) Error() string { return t.code }
 
-// Is 按模板指针身份匹配。
-func (t *Template) Is(target error) bool {
-	other, ok := target.(*Template)
-	return ok && t == other
-}
-
 // Option 配置一次失败实例的公开信息。
 type Option func(*Error)
 
-// Public 附加允许出现在对外响应中的参数；不得放入秘密或内部细节。
+// Public 附加允许公开的业务参数，具体呈现由边界决定。
 func Public(key string, value any) Option {
 	return func(e *Error) {
 		if e.public == nil {
@@ -71,13 +66,8 @@ func (t *Template) Wrap(cause error, opts ...Option) error {
 	return errors.WithStackDepth(e, 1)
 }
 
-// Error 返回错误码；不包含 cause 或内部细节。
-func (e *Error) Error() string {
-	if e.template == nil {
-		return "fault.internal"
-	}
-	return e.template.code
-}
+// Error 返回稳定业务错误码。
+func (e *Error) Error() string { return e.Code() }
 
 // Unwrap 返回内部 cause。
 func (e *Error) Unwrap() error { return e.cause }
@@ -111,16 +101,7 @@ func (e *Error) Kind() Kind {
 }
 
 // Public 返回公开参数的浅拷贝。
-func (e *Error) Public() map[string]any {
-	if len(e.public) == 0 {
-		return nil
-	}
-	out := make(map[string]any, len(e.public))
-	for k, v := range e.public {
-		out[k] = v
-	}
-	return out
-}
+func (e *Error) Public() map[string]any { return maps.Clone(e.public) }
 
 // Format 实现 fmt.Formatter，委托给 cockroachdb/errors 扩展协议。
 func (e *Error) Format(s fmt.State, verb rune) { errors.FormatError(e, s, verb) }

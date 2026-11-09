@@ -32,7 +32,7 @@ my-app/
 └── migrations/          应用自有的 SQL 迁移
 ```
 
-这是可选的应用布局，不是框架自动识别的目录协议。只在出现真实代码时建立目录。
+应用可按规模采用这个布局，目录随实际代码建立。
 
 <a id="dependencies"></a>
 
@@ -50,9 +50,9 @@ func New(db *bun.DB) *Service {
 }
 ```
 
-这里的 bun 来自 `github.com/uptrace/bun`。连接由入口打开，再传给服务；构造函数本身不执行查询或启动后台任务。
+这里的 bun 来自 `github.com/uptrace/bun`。连接由入口打开，再传给服务；构造函数保存服务需要的依赖。
 
-当需要替换实现或隔离测试时，由实际消费方定义小接口。不必为每个服务增加 Repository、容器或服务查找方法。
+替换实现或隔离测试时，由实际消费方定义所需的小接口。
 
 <a id="business"></a>
 
@@ -60,7 +60,7 @@ func New(db *bun.DB) *Service {
 
 字段格式、HTTP 路径和响应头属于入口。业务规则、资源所有权及事务边界属于服务。
 
-处理器把解析后的输入转换为业务参数，调用服务，然后构造输出 DTO。业务服务可以接收 context 处理取消，但不应从 context 中读取数据库、缓存或依赖容器。
+处理器把解析后的输入转换为业务参数，调用服务，然后构造输出 DTO。业务服务通过 context 处理取消，通过构造参数接收数据库和缓存。
 
 <a id="packages"></a>
 
@@ -89,7 +89,7 @@ func New(db *bun.DB) *Service {
 
 业务包使用单数，如 note；资源路径用复数，如 `/notes`。JSON 使用 snake_case，OperationID 使用 `note-create`，业务错误码使用 `note.not_found`。Go 缩写遵循 ID、HTTP、DSN、TTL 等惯用写法。
 
-依赖从入口指向业务，从业务指向实际需要的基础能力。业务不反向依赖自己的 HTTP 子包，fault 和 identity 保持传输中立。当前指南面向 HTTP API。
+依赖从入口指向业务，从业务指向实际需要的基础能力。HTTP 子包引用业务核心，fault 和 identity 保持传输中立。当前指南面向 HTTP API。
 
 ---
 

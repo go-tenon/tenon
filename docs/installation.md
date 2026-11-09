@@ -18,7 +18,7 @@ mygoravel 是普通 Go module。本章从一个空目录开始，运行只依赖
 
 ## 环境要求
 
-当前代码使用 Go 1.27.3，精确工具链要求以仓库 go.mod 为准。一个最小 HTTP API 不需要 PostgreSQL 或 Redis。
+当前代码使用 Go 1.27.3，精确工具链要求以仓库 go.mod 为准。本章的最小 HTTP API 只需 Go 工具链。
 
 <a id="create-project"></a>
 
@@ -43,7 +43,7 @@ MYGORAVEL_VERSION='<版本号或提交>'
 go get "github.com/ryan053857/mygoravel@$MYGORAVEL_VERSION"
 ```
 
-将占位符替换为实际版本。文档应与所安装代码来自同一版本；本地尚未发布的改动不会被 go get 下载。
+将占位符替换为实际版本。使用与所安装代码同版本的文档；go get 下载已发布的版本或提交。
 
 <a id="entrypoint"></a>
 
@@ -58,7 +58,7 @@ go mod tidy
 go run .
 ```
 
-服务监听 `127.0.0.1:8080`。它没有配置文件要求，也不会打开数据库或缓存。
+服务监听 `127.0.0.1:8080`。运行参数直接写在 main.go 中。
 
 <a id="first-request"></a>
 
@@ -85,7 +85,7 @@ curl -i http://localhost:8080/ping
 - 用[数据库](database.md)打开 PostgreSQL 连接，用[迁移](migrations.md)管理表结构。
 - 用[应用命令](commands.md)安装需要的配置检查、文档导出和运行入口。
 
-应用通过普通参数传递依赖。所需命令、配置字段和路由都由应用显式定义，框架不扫描目录自动装配。
+应用通过普通参数传递依赖，在入口显式定义命令、配置字段和路由。
 
 <a id="troubleshooting"></a>
 

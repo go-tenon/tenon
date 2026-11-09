@@ -43,9 +43,6 @@ func expandScalar(n *yaml.Node, lookup LookupFunc) error {
 }
 
 func expand(s string, lookup LookupFunc) (string, error) {
-	if lookup == nil {
-		return "", errors.New("config: environment lookup is not configured (use config.WithLookup)")
-	}
 	var b strings.Builder
 	for {
 		i := strings.Index(s, "${")
@@ -71,6 +68,9 @@ func expand(s string, lookup LookupFunc) (string, error) {
 		name, def, hasDef := strings.Cut(ref, ":-")
 		if !validName(name) {
 			return "", errors.New("invalid environment variable reference")
+		}
+		if lookup == nil {
+			return "", errors.New("config: environment lookup is not configured (use config.WithLookup)")
 		}
 		val, ok := lookup(name)
 		switch {

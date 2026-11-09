@@ -7,7 +7,7 @@ import (
 )
 
 // Secret 是会在打印与序列化时脱敏的字符串。
-// 真实值只通过 [Secret.Reveal] 取得，不要依赖类型转换以外的隐式出口用于日志。
+// Reveal 显式返回原值，日志与诊断使用 Secret 本身。
 type Secret string
 
 const secretMask = "******"
@@ -26,13 +26,13 @@ func (s Secret) String() string {
 // GoString 覆盖 %#v。
 func (s Secret) GoString() string { return `"` + s.String() + `"` }
 
-// MarshalText 供 encoding/json、log/slog 等使用。
+// MarshalText 返回脱敏文本，供 JSON 等文本编码器使用。
 func (s Secret) MarshalText() ([]byte, error) { return []byte(s.String()), nil }
 
 // MarshalYAML 供 YAML 编码器优先使用。
 func (s Secret) MarshalYAML() (any, error) { return s.String(), nil }
 
-// Format masks all verbs, including hexadecimal formatting.
+// Format 对所有 fmt 格式动词输出脱敏文本。
 func (s Secret) Format(state fmt.State, verb rune) {
 	v := s.String()
 	if verb == 'q' || (verb == 'v' && state.Flag('#')) {
@@ -40,4 +40,6 @@ func (s Secret) Format(state fmt.State, verb rune) {
 	}
 	_, _ = io.WriteString(state, v)
 }
+
+// LogValue 返回供 slog 记录的脱敏值。
 func (s Secret) LogValue() slog.Value { return slog.StringValue(s.String()) }

@@ -32,9 +32,9 @@ CREATE TABLE notes (
 DROP TABLE notes;
 ```
 
-Up 定义前进变更，Down 定义对应回退。也可以用 goose 官方 create 工具创建文件；mygoravel 没有第二套迁移生成命令。
+Up 定义前进变更，Down 定义对应回退。也可以用 goose 官方 create 工具创建文件。
 
-同一秒有多个变更时选择下一个有效时刻，避免生成不存在的时间戳。已有迁移保持原样，新变更使用追加文件。
+同一秒有多个变更时选择下一个有效时刻。已有迁移保持原样，新变更使用追加文件。
 
 <a id="embed"></a>
 
@@ -51,7 +51,7 @@ import "embed"
 var migrationFiles embed.FS
 ```
 
-嵌入路径相对于这个 Go 文件。不要忘记在新增 SQL 后重新构建应用。
+嵌入路径相对于这个 Go 文件。新增 SQL 后重新构建应用。
 
 <a id="provider"></a>
 
@@ -90,9 +90,9 @@ Provider 返回的是原生 `*goose.Provider`。可直接使用 `Up`、`Status`�
 
 把 Provider 方法连接到应用选择安装的 Cobra 命令。例如，在 `command.NewMigrate` 的 up 回调中调用 `provider.Up(ctx)`，在 status 回调中取得 `provider.Status(ctx)` 并编码为 JSON。
 
-这些回调负责读取数据库配置、打开连接和关闭资源。需要什么配置就解码什么段，不必为了执行迁移读取 HTTP 或认证配置。
+这些回调负责读取数据库配置、打开连接和关闭资源。回调只解码数据库和迁移所需配置段。
 
-迁移应在明确的发布步骤中执行，避免在普通 HTTP 启动逻辑中隐式修改表结构。命令工厂的具体用法见[应用命令](commands.md)。
+迁移在发布步骤中执行，成功后启动依赖新结构的 HTTP 应用。命令工厂的具体用法见[应用命令](commands.md)。
 
 <a id="published-migrations"></a>
 
@@ -102,7 +102,7 @@ Provider 返回的是原生 `*goose.Provider`。可直接使用 `Up`、`Status`�
 
 在应用的 CI 中，选择明确的发布 tag 或已发布文件目录作为基线。使用 `migrate.CheckPublished(currentDir, baselineDir)` 或 `migrate.CheckFS(currentFS, baselineFS)` 比较已有迁移是否存在且字节一致；当前目录可以追加文件。
 
-这项检查只比较源码，不检查数据库历史内容。没有正式发布版本时，可以用旧迁移 fixture 验证从旧版本升级到当前版本的行为。
+这项检查验证迁移源码的相对路径与字节内容。首次发布前，可以用旧迁移 fixture 演练升级。
 
 <a id="recovery"></a>
 
@@ -110,7 +110,7 @@ Provider 返回的是原生 `*goose.Provider`。可直接使用 `Up`、`Status`�
 
 某些操作需要使用 goose 的 `NO TRANSACTION` 指令。失败时可能已有部分 DDL 生效，而迁移版本没有推进。
 
-先查询实际数据库状态，确定哪些语句已经执行，再决定清理、修复或继续的步骤。不要仅根据版本号直接重复执行。仓库集成测试包含部分 DDL 成功后失败、检查状态、人工恢复再执行的演练。
+先查询实际数据库状态，确定哪些语句已经执行，再决定清理、修复或继续的步骤。恢复步骤依据实际结构与迁移版本共同确定。仓库集成测试包含部分 DDL 成功后失败、检查状态、人工恢复再执行的演练。
 
 ---
 
