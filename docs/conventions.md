@@ -1,223 +1,105 @@
-# go-kit 约定
+# mygoravel 约定
 
-本文是 go-kit 的规则与约束。新增或修改代码前先对照本文；能自动检查的规则由 `internal/archtest` 检查。
-标注 **【待确认】** 的条目是尚未定下的取舍。
+本文是 mygoravel 的规则与约束。新增或修改代码前先对照本文与根目录 `spec.go`；
+能自动检查的规则由 `internal/archtest` 执行。
 
-## 1. 定位
+## 1. 定位与第一期范围
 
-- go-kit 是正式产品的半成品：基础设施、装配层与可复用的业务模块。**go-kit 本身是交付物。**
-- `examples/` 是用 go-kit 组装的示例，主要用途是端到端测试 go-kit；面向不同场景的脚手架以后在其中另开。
-- 与 go-kit 同一个仓库、同一个 `go.mod`，CI 一起测试。
+- mygoravel 是约定驱动、显式装配的 Go 应用框架；第一期只交付常规 HTTP API 完整路径。
+- 框架给出经过验证的默认组合；开发者负责业务模型、业务规则与应用装配。
+- 交付物包括库、API 运维命令、可运行参考应用、约定与测试工具。
+- 控制台业务应用、页面与会话、RPC、WebSocket、独立 worker/scheduler 均为后期目标，
+  不因“未来可能用到”而加入核心依赖或空包。
+- 旧实现快照在 `legacy/`（独立 module），不参与第一期主构建；详见 `legacy/README.md`。
 
-## 2. 分层与依赖
+## 2. 目标包图与依赖方向
 
-```
-examples/*            产品示例，不受限制
-app                   装配层：只依赖基础设施
-modules/*             业务模块：只依赖基础设施，模块之间互不依赖
-基础设施               config logger i18n database httpx/* mail messaging storage support/*：只依赖基础设施
-```
-
-- 模块之间**不能互相 import**。需要协作时：
-  - “当前用户”统一由 `httpx/auth` 提供（见 §6.3），不依赖 account；
-  - 事件通过回调，由产品（或示例）在装配时连接，例如 account 的事件写入 audit。
-- 当前 `modules/audit` 依赖 `modules/account`（`AccountEvent` 适配函数），按本条要移除：
-  audit 不再保存摘要文字（见 §5.4），account 事件到审计记录的转换只有几行，放在示例中。**【待确认】**
-- 第三方库：优先使用社区成熟、主流的库，直接暴露其类型（如 `*bun.DB`、`gocron.Scheduler`），
-  不为了“统一”再包一层。新引入的依赖写进 README 的“直接使用的社区组件”。
-
-## 3. 包的结构
-
-一个业务模块（以 `modules/order` 为例）：
+只在存在实际代码时建包：
 
 ```
-modules/order/
-	doc.go              包文档：做什么、如何装配（完整示例代码）
-	config.go           Config、DefaultConfig
-	order.go            Service、New、领域错误、模型
-	*.go                按功能拆分的业务逻辑
-	endpoints.go        REST 接口（rest.Endpoint）与 DTO
-	messages.go         消息 topic、payload 与处理函数（如果有）
-	migrations/         0001_create_orders.sql …
-	locales/            zh-CN.toml、en.toml
-	*_test.go
+cleanup/           资源清理栈
+config/            类型化配置
+fault/             与传输无关的业务错误语义
+logging/           slog 构建与上下文字段
+i18n/              可选 go-i18n 目录辅助
+identity/          已认证主体
+database/          PostgreSQL（Bun/pgx）
+database/migrate/  goose Provider 默认装配
+database/dbtest/   真实数据库测试隔离
+httpx/             net/http 生命周期与中间件
+httpx/rest/        Huma 适配与 OpenAPI
+command/           serve/config/migrate/openapi 等命令工厂
+internal/archtest/ 依赖方向与副作用规则
+examples/api/      最小完整数据库 API 参考应用
 ```
 
-### 3.1 构造
+依赖规则：
 
-- 模块的主类型叫 `Service`，用 `New` 构造；次要类型用 `NewXxx`（如 `account.NewAvatars`）。
-- 依赖（`*bun.DB`、`storage.Storage` 等）作为 `New` 的参数，配置放在最后：
+- `fault`、`identity` 不依赖 HTTP、数据库或运行层。
+- `config`、`logging`、`i18n` 不依赖业务模块和运行层。
+- `cleanup` 不依赖 database、HTTP 或具体驱动。
+- `database*` 不依赖 `httpx`；关联信息通过中立日志字段传递。
+- 业务核心不依赖 `cleanup`、`command` 或 HTTP 端点；HTTP 子包可依赖核心，核心绝不反向引用。
+- `command` 可组合基础设施命令工厂，但不固定安装业务模块。
+- 应用 bootstrap 可连接全部层；业务服务不可接收整个应用或资源集合。
 
-  ```go
-  func New(db *bun.DB, store storage.Storage, cfg Config) (*Service, error)
-  ```
+## 3. 成熟组件评审标准
 
-  配置不可能出错时返回值可以只有 `*Service`。
-- 回调不放在 `Config` 中，也不用导出的可变字段，而是在构造后用 `OnXxx` 方法注册（可注册多个，
-  按注册顺序调用），必须在开始处理请求之前注册：
+组件集成优先级：直接使用原生 API → 提供配置/装配示例 → 少量连接代码 →
+确有不可替代的框架语义时才定义新类型。
 
-  ```go
-  users.OnEvent(func(ctx context.Context, e account.Event) { ... })
-  jobs.OnFinish(func(ctx context.Context, job *export.Job) { ... })
-  ```
+新增包装必须同时说明：
 
-### 3.2 配置
+1. 上游原生 API 是什么；
+2. 缺失的具体语义是什么；
+3. 为何仅靠装配或示例不足。
 
-- `Config` 的字段带 yaml 标签（snake_case），`DefaultConfig()` 返回全部默认值。
-- `New` 中把零值字段补成默认值，产品只写需要修改的配置项也能正常运行。
-- 时长用 `time.Duration`（yaml 中写 `15m`、`24h`），密钥用 `config.Secret`（打印时打码）。
-- 产品配置结构体内嵌 `app.Config`，模块配置作为命名字段：`Account account.Config \`yaml:"account"\``。
+不予引入：仅为统一方法名、隐藏依赖、或复制上游 CRUD/路由/缓存门面的包装。
+可直接暴露 `*bun.DB`、`chi.Router`、`huma.API`、`*slog.Logger`、gocache 原生类型。
+第一期默认组合：net/http + chi、Huma、slog、Bun + pgx、goose、Cobra、go-i18n、
+cockroachdb/errors；需要缓存时直接使用 eko/gocache。
 
-## 4. 错误
+## 4. 命名约定
 
-### 4.1 包装
+- 目录最后一段与包名一致。
+- `cleanup.Stack`：资源清理，不是 App/Manager。
+- `logging`：只做 slog 配置与字段辅助，`logging.New` 返回 `*slog.Logger`，不定义 Logger 门面。
+- `fault.Error` / `fault.Kind`；`identity.Subject`。
+- `New` 只构造；`Open` 获取外部资源；`Register` 登记端点；`httpx.Serve` 运行已构造的 server。
+- `config.ReadFile` / `config.Parse` → `Document`；`Decode` 解码指定段。
+- 缩写：ID、URL、HTTP、API、DB、DSN、TTL；复合词 OpenAPI、WebSocket、Postgres。
+- 业务包单数（`order`），HTTP 子包如 `orderhttp`；路径资源名复数（`/orders`）。
+- 配置文件字段 snake_case；JSON 与错误码片段 snake_case；OperationID 如 `order-create`。
 
-- go-kit 统一使用 `github.com/cockroachdb/errors`：`errors.New`、`errors.Wrap`、`errors.Is`、`errors.As`，
-  错误带调用栈，日志用 `%+v` 打印。不使用 `fmt.Errorf`（由 archtest 检查）。
-- 包装时以包名开头：`errors.Wrap(err, "account: register")`。
+## 5. API 参考应用需求
 
-### 4.2 领域错误
+`examples/api`（在对应 PR 交付）必须证明：
 
-- 每个模块用导出的哨兵变量定义领域错误，并在定义处登记 HTTP 状态码与错误码：
+- 手写装配即可完成配置、路由、错误、授权、数据库、迁移、可选缓存、测试与运行；
+- 同时存在一个不使用数据库/缓存的最小 HTTP 应用路径，证明可选组件不是隐式依赖；
+- OpenAPI 可完全离线导出；migrate 不要求认证/缓存环境变量；
+- 两个应用实例的语言、错误映射、日志器、缓存与身份策略互不污染。
 
-  ```go
-  var ErrEmailTaken = httpx.DefineError(http.StatusConflict, "account.email_taken")
-  ```
+## 6. 后期形态清单（非第一期验收）
 
-  错误码同时是多语言消息的 ID（§5），也是 API 响应中给客户端判断用的稳定标识。
-- 处理函数（REST 接口与页面）直接返回领域错误，不写 `mapError`：全局的错误处理按登记的信息
-  决定状态码，并把错误码翻译为当前语言的提示。
-- 未登记的错误一律视为 500，记录日志，响应只返回通用提示。
+| 形态 | 复用 | 独立增加 |
+|---|---|---|
+| 控制台应用 | 配置、cleanup、业务、错误 | 原生命令与一次性释放 |
+| Web 页面 | 业务服务 | templ/scs、会话、CSRF、页面错误呈现 |
+| RPC | 中立业务错误 | 原生服务器与状态映射 |
+| WebSocket | HTTP 升级所需能力 | 连接生命周期、心跳、授权、清理 |
+| worker/scheduler | cleanup、日志 | Watermill/gocron、幂等与排空约定 |
 
-### 4.3 响应格式
+后期顺序按真实需求确定；不把本表当作本期隐藏工作。
 
-REST 接口的错误响应为 RFC 9457（huma 默认），增加 `code` 字段：
+## 7. 测试与 CI
 
-```json
-{"status": 409, "title": "Conflict", "detail": "该邮箱已注册", "code": "account.email_taken"}
-```
+- 单元测试不依赖外部服务；核心契约用外部测试包。
+- 集成测试使用 `integration` build tag；缺少已声明依赖必须失败，不得静默跳过。
+- CI 至少：格式检查、`go vet`、单元测试；后续 PR 再叠加 race、数据库/缓存集成与独立消费测试。
+- 框架源码（不含 examples/internal/测试）不使用 `fmt.Errorf`，统一 cockroachdb/errors。
 
-App 根据 `code` 判断错误、根据 `detail` 显示提示。
+## 8. 文档与版本
 
-## 5. 多语言
-
-### 5.1 基础
-
-- 新增基础设施包 `i18n`，基于 [go-i18n](https://github.com/nicksnyder/go-i18n)（CLDR 复数规则、模板参数）。
-- go-kit 自带 `zh-CN`（默认、兜底）与 `en` 两种语言。
-- 所有面向用户的文字（错误提示、邮件、页面、通知、审计摘要）都通过消息 ID 翻译，代码中不写死。
-  OpenAPI 文档（接口摘要、字段说明）是写给开发者看的，使用中文，不翻译。
-
-### 5.2 消息文件
-
-- 每个模块在 `locales/<语言>.toml` 中提供自己的消息，消息 ID 以模块名开头：`account.email_taken`。
-- 模块的消息在 import 时自动注册到 `i18n` 的默认目录（类似 database/sql 注册驱动），
-  产品用 `i18n.Load(fsys)` 加载自己的消息；后加载的覆盖先加载的，因此产品可以改写 go-kit 的任何提示。
-  **【待确认】**：也可以像迁移一样由产品在 `app.Options` 中显式列出，缺点是漏写时提示会静默缺失。
-
-### 5.3 确定语言
-
-- 每个请求的语言由 `i18n.Middleware` 确定，依次取：`lang` Cookie（用户在页面上切换的）→
-  `Accept-Language` 头 → 默认语言。响应带 `Content-Language` 头。
-- 账号保存用户选择的语言（`users.locale`）。异步发送的内容（邮件、通知）没有请求，使用收件人的 `users.locale`；
-  消息 payload 中带上 `Locale` 字段。
-- 页面与代码中翻译：`i18n.T(ctx, "account.email_taken")`、`i18n.T(ctx, "export.done", map[string]any{"File": name})`。
-
-### 5.4 保存在数据库中的内容
-
-- go-kit 不在数据库中保存翻译后的文字，保存消息 ID 与参数，显示时翻译：
-  - 审计日志：保存 `action` 与 `data`，摘要由消息 `audit.<action>` 翻译。
-  - 站内通知：保存 `type` 与 `data`，标题与正文由消息 `notification.<type>.title`、`notification.<type>.body` 翻译。
-    **【待确认】**：这要求产品发的每种通知都在消息文件中定义；另一种做法是发送时按收件人语言翻译好再保存，
-    简单但切换语言后旧通知不会变。
-- 用户输入的内容（笔记、名称等）原样保存，不翻译。
-
-### 5.5 已知限制
-
-huma 的参数校验错误（如“长度不能小于 1”）的字段级详情是英文，由 huma 生成；
-顶层的 `detail` 会翻译为“请求参数有误”。后续可以按 huma 的消息模板逐条翻译。
-
-### 5.6 时区 **【待确认】**
-
-数据库统一保存 `timestamptz`。显示时使用服务器时区，还是在账号中保存用户时区（`users.time_zone`）？
-建议先只做服务器时区，需要时再加。
-
-## 6. HTTP
-
-### 6.1 接口（Endpoint）
-
-- 模块不注册路由，只提供返回 `rest.Endpoint[I, O]` 的函数，命名为 `<动作>Endpoint`，由产品选择路径挂载。
-- `OperationID` 为 `<模块>-<动作>`（如 `account-login`），`Tags` 为模块名。
-- 需要登录的接口声明 `Security: rest.RequireAuth()`；修改密码、管理 API Key 等敏感接口不接受 API Key。
-- 普通 HTTP 处理函数（下载、跳转等）以 `http.Handler` 返回，命名为 `<动作>Handler`；
-  内部用 `web.HandlerFunc`（返回 error）。
-- 路径参数用标准库 `r.PathValue("id")`，不用 `chi.URLParam`。
-
-### 6.2 DTO
-
-- 返回给客户端的类型命名为 `<模型>DTO`，转换统一为 Service 的方法 `s.<模型>DTO(m)`（可以用到配置，如生成 URL）。
-- JSON 字段 snake_case；ID 为 UUID 字符串；时间为 RFC 3339；可省略的字段用 `omitzero`/`omitempty`。
-- 模型（bun 结构体）不直接返回给客户端。
-
-### 6.3 当前用户
-
-- 所有 ID 都是 UUID，`auth.Principal` 的 `UserID()` 改为返回 `uuid.UUID`。
-- 任何模块都用 `auth.UserID(ctx) (uuid.UUID, bool)` 取当前用户，不再传入 `CurrentUser` 函数，也不依赖 account。
-
-### 6.4 分页
-
-- 列表统一用游标分页：请求参数 `before`（上一页返回的 `next`）与 `limit`，响应：
-
-  ```json
-  {"items": [...], "next": "0193…"}
-  ```
-
-  `next` 省略表示没有更多。共用 `rest.PageInput`、`rest.Page[T]`；服务层用 `database.PageParams`，
-  按 UUIDv7 主键倒序（即按创建时间倒序）。
-- 数据量确定很小的列表（登录设备、API Key）可以不分页，直接返回数组。
-
-## 7. 数据库
-
-- 迁移：模块内按 `0001_create_xxx.sql` 编号，由 `migrate publish` 复制到产品的迁移目录；**已发布的迁移不再修改**，改表结构一律新增迁移。
-- 表名：复数 snake_case；与其他模块容易重名的加模块前缀（`user_sessions`、`audit_logs`、`export_jobs`）。
-- 主键：`id uuid PRIMARY KEY DEFAULT uuidv7()`，应用中由 `database.Model` 生成。
-  `created_at`、`updated_at` 紧跟 `id`；只追加的表只有 `created_at`（`database.CreatedModel`）；
-  不是每张表都需要时间戳，不写死 `set_updated_at` 触发器。
-- 跨模块引用（如 `user_id`）**不加外键**，同一模块内的表可以加。
-- 约束与索引命名：唯一约束 `<表>_<列>_key`（`database.IsUniqueViolation` 依据它判断），索引 `<表>_<列>_idx`。
-- 状态等枚举用 `text` + `CHECK`；灵活结构用 `jsonb`；时间一律 `timestamptz`。
-- 需要清理的数据提供 `Cleanup`/`Prune` 方法，由产品用定时任务调用；模块不自己启动后台 goroutine。
-
-## 8. 消息、事件与定时任务
-
-- 异步消息 topic 命名 `<模块>_<事件>`（watermill-sql 用 topic 作表名的一部分，不能含点），
-  payload 类型以 `Requested` 结尾，JSON 字段 snake_case。
-- 发消息与写业务数据在同一事务中（`messaging.PublishTx`），处理函数必须可以重复执行（至少一次投递）。
-- 同步事件（回调）类型名 `<模块>.<事件>`（如 `account.login`），用 `OnEvent` 注册。
-- 定时任务由产品在 `a.Scheduler` 中注册，多实例只在 leader 上执行；模块只提供要调用的方法。
-
-## 9. 日志
-
-- 使用 `slog` 并传入 context（`slog.InfoContext`），自动带上 `request_id`、`user_id`。
-- 键名 snake_case，错误的键名为 `err`；不记录密码、token、密钥。
-- 业务已经成功、附带操作失败（审计写入、通知发送）时只记 Warn/Error 日志，不向上返回错误。
-
-## 10. 时间
-
-- Service 内部用不导出的 `s.now()` 取当前时间，测试中可以替换；不在业务代码中直接调用 `time.Now()`。
-- 保存到数据库的时间截断到微秒（`database.Model` 已处理）。
-
-## 11. 测试
-
-- 集成测试使用真实的 Postgres 18（`DATABASE_TEST_DSN`），每个测试一个临时库：
-  `db := dbtest.New(t, account.Migrations, audit.Migrations)` 建库、发布并执行迁移。
-- 外部依赖用进程内替身：S3 用 gofakes3，邮件用 `mailtest.Recorder`，SMTP 用 Mailpit（可选）。
-- 优先写外部测试包（`package xxx_test`），只测公开 API；需要替换时钟等内部状态时才用包内测试。
-- 每个模块至少有服务层测试与接口测试；`examples/` 有端到端测试，覆盖完整的装配。
-- CI（GitHub Actions）跑 `go vet`、`gofmt` 检查与全部测试（含 Postgres 18 服务）。
-
-## 12. 文档与版本
-
-- 代码注释、包文档使用中文。每个包的 `doc.go` 写清楚做什么、不做什么、如何装配（可复制的示例代码）。
-- 导出的标识符都有注释。
-- 按语义化版本打 tag；`v0.x` 期间允许不兼容的修改，但在 CHANGELOG 中写明迁移方法。
+- 包文档与导出标识符注释使用中文。
+- 按语义化版本打 tag；`v0.x` 允许不兼容变更，CHANGELOG 写明迁移方法。
