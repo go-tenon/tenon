@@ -13,8 +13,8 @@ Module：`github.com/ryan053857/mygoravel`。设计规格与实施计划见 [`sp
 | `config` | 已交付 | 文档解析、按段解码、环境注入、Secret 脱敏 |
 | `logging` | 已交付 | slog 构建与上下文字段辅助 |
 | `i18n` | 已交付 | go-i18n 目录分层组合与冻结 Bundle |
+| `fault` | 已交付 | Code/Kind/公开参数与 HTTP 中立映射 |
 | `cleanup` | 后续 PR | 资源清理栈 |
-| `fault` | 后续 PR | 与传输无关的业务错误语义 |
 | `identity` | 后续 PR | 已认证主体 |
 | `database` | 后续 PR | PostgreSQL（Bun + pgx） |
 | `database/migrate` | 后续 PR | goose Provider 装配 |
