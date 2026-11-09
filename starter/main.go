@@ -18,7 +18,11 @@ import (
 	"github.com/ryan053857/go-kit/app"
 	"github.com/ryan053857/go-kit/database"
 	"github.com/ryan053857/go-kit/modules/account"
+	"github.com/ryan053857/go-kit/modules/audit"
+	"github.com/ryan053857/go-kit/modules/export"
 	"github.com/ryan053857/go-kit/modules/file"
+	"github.com/ryan053857/go-kit/modules/notification"
+	"github.com/ryan053857/go-kit/modules/setting"
 	"github.com/ryan053857/go-kit/starter/migrations"
 )
 
@@ -34,7 +38,8 @@ func options(cfg *Config) app.Options {
 		Name:       "starter",
 		Version:    version,
 		Migrations: migrations.FS,
-		Publish:    []database.MigrationSource{account.Migrations, file.Migrations},
-		Setup:      func(a *app.App) error { return setup(a, cfg) },
+		Publish: []database.MigrationSource{account.Migrations, file.Migrations, audit.Migrations,
+			notification.Migrations, setting.Migrations, export.Migrations},
+		Setup: func(a *app.App) error { return setup(a, cfg) },
 	}
 }

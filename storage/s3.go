@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -91,6 +93,43 @@ func (s *S3) Delete(ctx context.Context, key string) error {
 		return fmt.Errorf("storage: delete %s: %w", key, err)
 	}
 	return nil
+}
+
+// PresignPut 实现 Presigner。
+func (s *S3) PresignPut(ctx context.Context, key, contentType string, size int64, expires time.Duration) (*PresignedPut, error) {
+	if err := checkKey(key); err != nil {
+		return nil, err
+	}
+	in := &s3.PutObjectInput{Bucket: aws.String(s.bucket), Key: aws.String(key), ContentLength: aws.Int64(size)}
+	if contentType != "" {
+		in.ContentType = aws.String(contentType)
+	}
+	req, err := s3.NewPresignClient(s.client).PresignPutObject(ctx, in, s3.WithPresignExpires(expires))
+	if err != nil {
+		return nil, fmt.Errorf("storage: presign %s: %w", key, err)
+	}
+	h := http.Header{}
+	for k, v := range req.SignedHeader {
+		if k != "Host" {
+			h[k] = v
+		}
+	}
+	return &PresignedPut{URL: req.URL, Header: h, ExpiresAt: time.Now().Add(expires)}, nil
+}
+
+// Size 实现 Presigner。
+func (s *S3) Size(ctx context.Context, key string) (int64, error) {
+	if err := checkKey(key); err != nil {
+		return 0, err
+	}
+	out, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{Bucket: aws.String(s.bucket), Key: aws.String(key)})
+	if err != nil {
+		if isNotFound(err) {
+			return 0, ErrNotFound
+		}
+		return 0, fmt.Errorf("storage: head %s: %w", key, err)
+	}
+	return aws.ToInt64(out.ContentLength), nil
 }
 
 func isNotFound(err error) bool {

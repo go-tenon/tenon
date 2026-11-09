@@ -10,6 +10,18 @@
 //	rest.Post(v1, "/files", file.UploadEndpoint(files, account.CurrentUserID))
 //	a.Router.Get("/files/{id}", files.DownloadHandler(file.OwnerOnly(account.CurrentUserID)))
 //
+// # 客户端直传
+//
+// 使用 S3 存储时，大文件可以由客户端直接上传到对象存储，不占用应用带宽：
+// 先调用 CreateUpload（CreateUploadEndpoint）得到预签名地址，客户端 PUT 文件内容，
+// 再调用 CompleteUpload（CompleteUploadEndpoint）校验大小与类型。单个文件最大 5 GB。
+//
+// # 未被引用的文件
+//
+// 文件作为业务数据的附件时（先上传、再提交表单），可以设置 Config.RequireAttach：
+// 上传的文件在 AttachTTL 内没有被 Attach 就会被 Cleanup 删除，用户放弃填写的表单不会留下垃圾文件。
+// 业务保存时在同一事务中调用 Attach。未完成的直传也由 Cleanup 删除，产品用定时任务定期调用它。
+//
 // 迁移：把 file.Migrations 加入 app.Options.Publish。
 package file
 
@@ -26,6 +38,7 @@ import (
 	"net/http"
 	"path"
 	"strings"
+	"time"
 	"uuid"
 
 	"github.com/uptrace/bun"
@@ -41,9 +54,11 @@ var migrationsFS embed.FS
 var Migrations = database.MigrationSource{Name: "file", FS: mustSub(migrationsFS, "migrations")}
 
 var (
-	ErrTooLarge       = errors.New("file: too large")
-	ErrTypeNotAllowed = errors.New("file: type not allowed")
-	ErrNotFound       = errors.New("file: not found")
+	ErrTooLarge         = errors.New("file: too large")
+	ErrTypeNotAllowed   = errors.New("file: type not allowed")
+	ErrNotFound         = errors.New("file: not found")
+	ErrNoDirectUpload   = errors.New("file: storage does not support direct upload") // 存储不是 S3
+	ErrUploadIncomplete = errors.New("file: object not uploaded or size mismatch")
 )
 
 // Config 是文件模块的配置。
@@ -54,16 +69,35 @@ type Config struct {
 	AllowedTypes []string `yaml:"allowed_types"`
 	// URLPrefix 为下载地址的前缀，用于生成 FileDTO.URL，默认 "/files/"。与 DownloadHandler 的挂载路径一致。
 	URLPrefix string `yaml:"url_prefix"`
+
+	// MaxDirectSize 为客户端直传的最大字节数，默认 1 GiB（S3 单次 PUT 的上限为 5 GB）。
+	MaxDirectSize int64 `yaml:"max_direct_size"`
+	// RequireAttach 为 true 时，新上传的文件需要在 AttachTTL 内被 Attach，否则被 Cleanup 删除。
+	RequireAttach bool `yaml:"require_attach"`
+	// AttachTTL 默认 24h。
+	AttachTTL time.Duration `yaml:"attach_ttl"`
 }
 
 // DefaultConfig 返回带默认值的 Config。
 func DefaultConfig() Config {
-	return Config{MaxSize: 20 << 20, URLPrefix: "/files/"}
+	return Config{MaxSize: 20 << 20, URLPrefix: "/files/", MaxDirectSize: 1 << 30, AttachTTL: 24 * time.Hour}
 }
+
+// 文件状态。
+const (
+	StatusPending = "pending" // 客户端直传尚未完成
+	StatusReady   = "ready"
+)
+
+// 直传的预签名地址有效期；未完成的直传在 pendingTTL 后被 Cleanup 删除。
+const (
+	presignTTL = 15 * time.Minute
+	pendingTTL = time.Hour
+)
 
 // File 是一个已上传的文件。
 type File struct {
-	bun.BaseModel `bun:"table:files"`
+	bun.BaseModel `bun:"table:files,alias:f"`
 	database.Model
 
 	UserID      uuid.UUID `bun:"user_id,nullzero,type:uuid"`
@@ -71,6 +105,8 @@ type File struct {
 	ContentType string    `bun:"content_type,notnull"`
 	Size        int64     `bun:"size,notnull"`
 	Key         string    `bun:"key,notnull"`
+	Status      string    `bun:"status,notnull"`
+	ExpiresAt   time.Time `bun:"expires_at,nullzero"` // 非零时到期后被 Cleanup 删除
 }
 
 // Service 管理文件。
@@ -87,6 +123,12 @@ func NewService(db *bun.DB, store storage.Storage, cfg Config) *Service {
 	}
 	if cfg.URLPrefix == "" {
 		cfg.URLPrefix = DefaultConfig().URLPrefix
+	}
+	if cfg.MaxDirectSize <= 0 {
+		cfg.MaxDirectSize = DefaultConfig().MaxDirectSize
+	}
+	if cfg.AttachTTL <= 0 {
+		cfg.AttachTTL = DefaultConfig().AttachTTL
 	}
 	return &Service{db: db, store: store, cfg: cfg}
 }
@@ -125,7 +167,8 @@ func (s *Service) Upload(ctx context.Context, userID uuid.UUID, filename string,
 		return nil, ErrTypeNotAllowed
 	}
 
-	f := &File{UserID: userID, Filename: filename, ContentType: contentType, Size: size}
+	f := &File{UserID: userID, Filename: filename, ContentType: contentType, Size: size, Status: StatusReady,
+		ExpiresAt: s.attachDeadline()}
 	f.ID = uuid.NewV7()
 	f.Key = "files/" + f.ID.String() + ext
 	if err := s.store.Put(ctx, f.Key, r, contentType); err != nil {
@@ -138,10 +181,10 @@ func (s *Service) Upload(ctx context.Context, userID uuid.UUID, filename string,
 	return f, nil
 }
 
-// Get 返回文件元数据，不存在时返回 ErrNotFound。
+// Get 返回已上传完成的文件的元数据，不存在（或直传尚未完成）时返回 ErrNotFound。
 func (s *Service) Get(ctx context.Context, id uuid.UUID) (*File, error) {
 	f := new(File)
-	err := s.db.NewSelect().Model(f).Where("id = ?", id).Scan(ctx)
+	err := s.db.NewSelect().Model(f).Where("id = ? AND status = ?", id, StatusReady).Scan(ctx)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}

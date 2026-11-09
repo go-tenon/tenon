@@ -19,6 +19,19 @@ type Config struct {
 	RememberTTL  time.Duration `yaml:"remember_ttl"`  // 登录时勾选“记住我”的 refresh token 有效期，默认 30 天
 	RefreshGrace time.Duration `yaml:"refresh_grace"` // 刷新后旧 refresh token 仍可使用的时间（应对网络重试），默认 30s
 	ResetTTL     time.Duration `yaml:"reset_ttl"`     // 重置密码链接有效期，默认 1h
+	VerifyTTL    time.Duration `yaml:"verify_ttl"`    // 邮箱验证链接有效期，默认 24h
+
+	// VerifyEmail 为 true 时，注册后自动发送邮箱验证邮件（需注册 TopicEmailVerification 的处理函数）。
+	// 是否要求验证后才能使用由产品决定，见 User.EmailVerified。
+	VerifyEmail bool `yaml:"verify_email"`
+
+	// EncryptionKey 用于加密两步验证的密钥，base64 编码的 32 字节（openssl rand -base64 32）。
+	// 为空时由 JWTSecret 派生，此时更换 JWTSecret 会使已启用的两步验证全部失效。
+	EncryptionKey config.Secret `yaml:"encryption_key"`
+
+	// APIKeyPrefix 是 API Key 的前缀，默认 "sk"，生成的 Key 形如 sk_xxxx。
+	// Bearer token 以该前缀加下划线开头时按 API Key 校验，否则按 access token 校验。
+	APIKeyPrefix string `yaml:"api_key_prefix"`
 
 	// CheckSession 为 true 时，每次校验 access token 都查询会话是否仍存在，踢下线立即生效；
 	// 为 false（默认）时不查库，踢下线最长在 AccessTTL 后生效。
@@ -40,6 +53,8 @@ func DefaultConfig() Config {
 		RememberTTL:       30 * 24 * time.Hour,
 		RefreshGrace:      30 * time.Second,
 		ResetTTL:          time.Hour,
+		VerifyTTL:         24 * time.Hour,
+		APIKeyPrefix:      "sk",
 		MinPasswordLength: 8,
 		AvatarBaseURL:     "/",
 	}

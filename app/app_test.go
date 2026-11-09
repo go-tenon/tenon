@@ -3,6 +3,7 @@ package app_test
 import (
 	"bytes"
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/go-co-op/gocron/v2"
 
 	"github.com/ryan053857/go-kit/app"
 	"github.com/ryan053857/go-kit/database"
@@ -216,11 +218,38 @@ func TestServe(t *testing.T) {
 	cfg := productConfig{Config: app.DefaultConfig()}
 	cfg.Database.DSN = dbtest.DSN(t)
 	cfg.HTTP.Addr = "127.0.0.1:0"
+	cfg.HTTP.ShutdownDelay = 0
+
+	// 模拟 systemd 的通知 socket。
+	sock := filepath.Join(t.TempDir(), "notify.sock")
+	conn, err := net.ListenUnixgram("unixgram", &net.UnixAddr{Name: sock, Net: "unixgram"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	t.Setenv("NOTIFY_SOCKET", sock)
+	notified := make(chan string, 8)
+	go func() {
+		buf := make([]byte, 256)
+		for {
+			n, err := conn.Read(buf)
+			if err != nil {
+				return
+			}
+			notified <- string(buf[:n])
+		}
+	}()
 
 	handled := make(chan int, 1)
+	ticks := make(chan struct{}, 16)
 	a, err := app.New(t.Context(), &cfg.Config, app.Options{
 		Name: "test",
 		Setup: func(a *app.App) error {
+			_, err := a.Scheduler.NewJob(gocron.DurationJob(50*time.Millisecond),
+				gocron.NewTask(func(ctx context.Context) { ticks <- struct{}{} }))
+			if err != nil {
+				return err
+			}
 			return messaging.Handle(a.Bus, "app_test", func(_ context.Context, n int) error {
 				handled <- n
 				return nil
@@ -247,6 +276,14 @@ func TestServe(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("message not handled")
 	}
+	select {
+	case <-ticks:
+	case <-time.After(10 * time.Second):
+		t.Fatal("scheduled job did not run")
+	}
+	if got := <-notified; got != "READY=1" {
+		t.Errorf("notify = %q", got)
+	}
 
 	cancel()
 	select {
@@ -256,5 +293,19 @@ func TestServe(t *testing.T) {
 		}
 	case <-time.After(30 * time.Second):
 		t.Fatal("Serve did not stop")
+	}
+	if got := <-notified; got != "STOPPING=1" {
+		t.Errorf("notify = %q", got)
+	}
+}
+
+func TestCommandSystemd(t *testing.T) {
+	cfg := productConfig{Config: app.DefaultConfig()}
+	out := run(t, &cfg, app.Options{Name: "myapp"}, "systemd", "--exec", "/opt/myapp/myapp")
+	for _, want := range []string{"Type=notify", "User=myapp", "WorkingDirectory=/opt/myapp",
+		"ExecStart=/opt/myapp/myapp serve --config /opt/myapp/config.yaml", "ReadWritePaths=/opt/myapp/data"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in\n%s", want, out)
+		}
 	}
 }

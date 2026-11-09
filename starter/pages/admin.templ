@@ -1,0 +1,143 @@
+package pages
+
+import (
+	"uuid"
+
+	"github.com/ryan053857/go-kit/modules/audit"
+	"github.com/ryan053857/go-kit/starter/components/badge"
+	"github.com/ryan053857/go-kit/starter/components/button"
+	"github.com/ryan053857/go-kit/starter/components/card"
+	"github.com/ryan053857/go-kit/starter/components/checkbox"
+	"github.com/ryan053857/go-kit/starter/components/field"
+	"github.com/ryan053857/go-kit/starter/components/input"
+	"github.com/ryan053857/go-kit/starter/components/table"
+	"github.com/ryan053857/go-kit/starter/views"
+)
+
+templ adminNav(active string) {
+	<div class="flex items-center gap-2">
+		<h1 class="mr-4 text-2xl font-semibold">管理</h1>
+		for _, tab := range []struct{ Href, Label string }{{"/admin/settings", "系统设置"}, {"/admin/audit", "审计日志"}} {
+			if tab.Href == active {
+				@button.Button(button.Props{Href: tab.Href, Variant: button.VariantSecondary, Size: button.SizeSm}) {
+					{ tab.Label }
+				}
+			} else {
+				@button.Button(button.Props{Href: tab.Href, Variant: button.VariantGhost, Size: button.SizeSm}) {
+					{ tab.Label }
+				}
+			}
+		}
+	</div>
+}
+
+templ adminSettingsPage(site views.SiteSettings, errMsg string) {
+	<div class="flex flex-col gap-6">
+		@adminNav("/admin/settings")
+		@card.Card() {
+			@card.Header() {
+				@card.Title() {
+					站点
+				}
+			}
+			@card.Content() {
+				<form method="post" action="/admin/settings" class="flex flex-col gap-6">
+					@formError(errMsg)
+					@field.Group() {
+						@field.Field() {
+							@field.Label(field.LabelProps{For: "name"}) {
+								站点名称
+							}
+							@input.Input(input.Props{ID: "name", Name: "name", Value: site.Name, Required: true})
+						}
+						@field.Field(field.Props{Orientation: field.OrientationHorizontal}) {
+							@checkbox.Checkbox(checkbox.Props{ID: "registration_open", Name: "registration_open", DefaultChecked: site.RegistrationOpen})
+							@field.Label(field.LabelProps{For: "registration_open"}) {
+								开放注册
+							}
+						}
+					}
+					<div>
+						@button.Button(button.Props{Type: button.TypeSubmit}) {
+							保存
+						}
+					</div>
+				</form>
+			}
+		}
+	</div>
+}
+
+templ adminAuditPage(logs []audit.Log, actors map[uuid.UUID]string, action string) {
+	<div class="flex flex-col gap-6">
+		@adminNav("/admin/audit")
+		@card.Card() {
+			@card.Header() {
+				@card.Title() {
+					最近 100 条
+				}
+				@card.Description() {
+					<form method="get" action="/admin/audit" class="mt-2 flex items-center gap-2">
+						@input.Input(input.Props{Name: "action", Value: action, Placeholder: "按动作筛选，如 account.login", Class: "max-w-64"})
+						@button.Button(button.Props{Type: button.TypeSubmit, Variant: button.VariantOutline, Size: button.SizeSm}) {
+							筛选
+						}
+					</form>
+				}
+			}
+			@card.Content() {
+				@table.Table() {
+					@table.Header() {
+						@table.Row() {
+							@table.Head() {
+								时间
+							}
+							@table.Head() {
+								操作者
+							}
+							@table.Head() {
+								动作
+							}
+							@table.Head() {
+								描述
+							}
+							@table.Head() {
+								IP
+							}
+						}
+					}
+					@table.Body() {
+						for _, l := range logs {
+							@table.Row() {
+								@table.Cell() {
+									{ fmtTime(l.CreatedAt) }
+								}
+								@table.Cell() {
+									if name, ok := actors[l.ActorID]; ok {
+										{ name }
+									} else {
+										—
+									}
+								}
+								@table.Cell(table.CellProps{Class: "font-mono text-xs"}) {
+									{ l.Action }
+								}
+								@table.Cell() {
+									{ l.Summary }
+									if l.Failed {
+										@badge.Badge(badge.Props{Variant: badge.VariantDestructive, Class: "ml-2"}) {
+											失败
+										}
+									}
+								}
+								@table.Cell() {
+									{ l.IP }
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	</div>
+}

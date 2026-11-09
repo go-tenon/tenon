@@ -1,10 +1,12 @@
-// Package pages 是账号相关的页面：登录、注册、找回与重置密码、退出、账号设置。
+// Package pages 是账号相关的页面：登录（含两步验证、第三方登录）、注册、找回与重置密码、邮箱验证、
+// 退出、账号设置、安全设置，以及通知与管理后台页面。
 // 页面属于产品，业务逻辑全部调用 go-kit 的 account.Service；可以随意修改样式与流程。
 package pages
 
 import (
 	"errors"
 	"net/http"
+	"net/url"
 	"uuid"
 
 	"github.com/alexedwards/scs/v2"
@@ -14,38 +16,52 @@ import (
 	"github.com/ryan053857/go-kit/httpx/auth"
 	"github.com/ryan053857/go-kit/httpx/web"
 	"github.com/ryan053857/go-kit/modules/account"
+	"github.com/ryan053857/go-kit/modules/audit"
+	"github.com/ryan053857/go-kit/modules/notification"
+	"github.com/ryan053857/go-kit/modules/setting"
 	"github.com/ryan053857/go-kit/starter/views"
 )
 
 // Pages 处理账号相关的页面。
 type Pages struct {
-	Users    *account.Service
-	Avatars  *account.Avatars
-	Sessions *scs.SessionManager
-	View     *views.Renderer
+	Users         *account.Service
+	Avatars       *account.Avatars
+	Sessions      *scs.SessionManager
+	View          *views.Renderer
+	Audit         *audit.Service
+	Notifications *notification.Service
+	Settings      *setting.Store
+	// OAuth 是已启用的第三方登录，登录页与安全设置页显示对应的按钮。
+	OAuth []account.OAuthProvider
 }
 
-// MountPublic 注册不需要登录的页面。
-func (p *Pages) MountPublic(r chi.Router) {
+// MountPublic 注册不需要登录的页面。limit 是登录、注册等表单提交的限流中间件。
+func (p *Pages) MountPublic(r chi.Router, limit func(http.Handler) http.Handler) {
 	r.Method(http.MethodGet, "/login", web.HandlerFunc(p.login))
-	r.Method(http.MethodPost, "/login", web.HandlerFunc(p.login))
+	r.With(limit).Method(http.MethodPost, "/login", web.HandlerFunc(p.login))
+	r.Method(http.MethodGet, "/login/mfa", web.HandlerFunc(p.loginMFA))
+	r.With(limit).Method(http.MethodPost, "/login/mfa", web.HandlerFunc(p.loginMFA))
 	r.Method(http.MethodGet, "/register", web.HandlerFunc(p.register))
-	r.Method(http.MethodPost, "/register", web.HandlerFunc(p.register))
+	r.With(limit).Method(http.MethodPost, "/register", web.HandlerFunc(p.register))
 	r.Method(http.MethodGet, "/forgot-password", web.HandlerFunc(p.forgot))
-	r.Method(http.MethodPost, "/forgot-password", web.HandlerFunc(p.forgot))
+	r.With(limit).Method(http.MethodPost, "/forgot-password", web.HandlerFunc(p.forgot))
 	r.Method(http.MethodGet, "/reset-password", web.HandlerFunc(p.reset))
-	r.Method(http.MethodPost, "/reset-password", web.HandlerFunc(p.reset))
+	r.With(limit).Method(http.MethodPost, "/reset-password", web.HandlerFunc(p.reset))
+	r.Method(http.MethodGet, "/verify-email", web.HandlerFunc(p.verifyEmail))
 	r.Method(http.MethodPost, "/logout", web.HandlerFunc(p.logout))
 }
 
 // MountPrivate 注册需要登录的页面，调用方负责挂载 auth.RequireLogin。
-func (p *Pages) MountPrivate(r chi.Router) {
+func (p *Pages) MountPrivate(r chi.Router, limit func(http.Handler) http.Handler) {
 	r.Method(http.MethodGet, "/settings", web.HandlerFunc(p.settings))
 	r.Method(http.MethodPost, "/settings/profile", web.HandlerFunc(p.updateProfile))
 	r.Method(http.MethodPost, "/settings/avatar", web.HandlerFunc(p.setAvatar))
 	r.Method(http.MethodPost, "/settings/avatar/remove", web.HandlerFunc(p.removeAvatar))
 	r.Method(http.MethodPost, "/settings/password", web.HandlerFunc(p.changePassword))
 	r.Method(http.MethodPost, "/settings/sessions/{id}/revoke", web.HandlerFunc(p.revokeSession))
+	r.With(limit).Method(http.MethodPost, "/settings/email/verification", web.HandlerFunc(p.sendVerification))
+	p.mountSecurity(r, limit)
+	p.mountNotifications(r)
 }
 
 type form struct {
@@ -55,10 +71,22 @@ type form struct {
 	Token string
 	Error string
 	Done  bool
+	OAuth []account.OAuthProvider
+}
+
+// oauthErrors 是第三方登录失败时 error 参数对应的提示。
+var oauthErrors = map[string]string{
+	"denied":         "已取消第三方授权",
+	"email_taken":    "该邮箱已注册，请先用密码登录，再在安全设置中绑定第三方账号",
+	"email_required": "无法从第三方账号获取已验证的邮箱",
+	"identity_taken": "该第三方账号已绑定其他账号",
+	"disabled":       "账号已停用",
+	"failed":         "第三方登录失败，请重试",
 }
 
 func (p *Pages) login(w http.ResponseWriter, r *http.Request) error {
-	f := form{Next: auth.SafeRedirect(r.FormValue("next"), "/"), Email: r.FormValue("email")}
+	f := form{Next: auth.SafeRedirect(r.FormValue("next"), "/"), Email: r.FormValue("email"), OAuth: p.OAuth,
+		Error: oauthErrors[r.URL.Query().Get("error")]}
 	if _, ok := auth.From[*account.Principal](r.Context()); ok {
 		web.Redirect(w, r, f.Next)
 		return nil
@@ -73,18 +101,56 @@ func (p *Pages) login(w http.ResponseWriter, r *http.Request) error {
 		case err != nil:
 			return err
 		default:
-			if err := p.Users.WebLogin(r.Context(), p.Sessions, u, r); err != nil {
+			mfa, err := p.Users.WebBeginLogin(r.Context(), p.Sessions, u, r)
+			if err != nil {
 				return err
 			}
-			web.Redirect(w, r, f.Next)
+			if mfa {
+				web.Redirect(w, r, "/login/mfa?next="+url.QueryEscape(f.Next))
+			} else {
+				web.Redirect(w, r, f.Next)
+			}
 			return nil
 		}
 	}
 	return p.View.Page(w, r, statusOf(f), "登录", loginPage(f))
 }
 
+// loginMFA 是密码正确后输入两步验证码的页面。
+func (p *Pages) loginMFA(w http.ResponseWriter, r *http.Request) error {
+	f := form{Next: auth.SafeRedirect(r.FormValue("next"), "/")}
+	if !p.Users.WebPendingMFA(r.Context(), p.Sessions) {
+		web.Redirect(w, r, "/login")
+		return nil
+	}
+	if r.Method == http.MethodPost {
+		err := p.Users.WebCompleteMFA(r.Context(), p.Sessions, r.FormValue("code"), r)
+		switch {
+		case errors.Is(err, account.ErrInvalidMFACode):
+			f.Error = "验证码错误"
+		case errors.Is(err, account.ErrInvalidToken), errors.Is(err, account.ErrUserDisabled):
+			p.View.Flash(r.Context(), "登录已失效，请重新登录")
+			web.Redirect(w, r, "/login")
+			return nil
+		case err != nil:
+			return err
+		default:
+			web.Redirect(w, r, f.Next)
+			return nil
+		}
+	}
+	return p.View.Page(w, r, statusOf(f), "两步验证", loginMFAPage(f))
+}
+
 func (p *Pages) register(w http.ResponseWriter, r *http.Request) error {
-	f := form{Email: r.FormValue("email"), Name: r.FormValue("name")}
+	f := form{Email: r.FormValue("email"), Name: r.FormValue("name"), OAuth: p.OAuth}
+	site, err := views.Site.Get(r.Context(), p.Settings)
+	if err != nil {
+		return err
+	}
+	if !site.RegistrationOpen {
+		return huma.Error403Forbidden("暂未开放注册")
+	}
 	if r.Method == http.MethodPost {
 		u, err := p.Users.Register(r.Context(), f.Email, r.FormValue("password"), f.Name)
 		switch {
@@ -98,7 +164,7 @@ func (p *Pages) register(w http.ResponseWriter, r *http.Request) error {
 			if err := p.Users.WebLogin(r.Context(), p.Sessions, u, r); err != nil {
 				return err
 			}
-			p.View.Flash(r.Context(), "注册成功")
+			p.View.Flash(r.Context(), "注册成功，请查收邮箱验证邮件")
 			web.Redirect(w, r, "/")
 			return nil
 		}
@@ -135,6 +201,33 @@ func (p *Pages) reset(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	return p.View.Page(w, r, statusOf(f), "重置密码", resetPage(f))
+}
+
+// verifyEmail 是验证邮件中的链接。
+func (p *Pages) verifyEmail(w http.ResponseWriter, r *http.Request) error {
+	_, err := p.Users.VerifyEmail(r.Context(), r.URL.Query().Get("token"))
+	switch {
+	case errors.Is(err, account.ErrInvalidToken):
+		return huma.Error400BadRequest("验证链接无效或已过期，请在账号设置中重新发送")
+	case err != nil:
+		return err
+	}
+	p.View.Flash(r.Context(), "邮箱已验证")
+	if _, ok := auth.From[*account.Principal](r.Context()); ok {
+		web.Redirect(w, r, "/settings")
+	} else {
+		web.Redirect(w, r, "/login")
+	}
+	return nil
+}
+
+// sendVerification 由 HTMX 调用，重新发送验证邮件。
+func (p *Pages) sendVerification(w http.ResponseWriter, r *http.Request) error {
+	pr, _ := auth.From[*account.Principal](r.Context())
+	if err := p.Users.RequestEmailVerification(r.Context(), pr.ID); err != nil {
+		return err
+	}
+	return views.Toast(w, r, "验证邮件已发送", false)
 }
 
 func (p *Pages) logout(w http.ResponseWriter, r *http.Request) error {

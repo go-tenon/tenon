@@ -44,3 +44,13 @@ base_url: ${BASE_URL:-http://localhost:8080}
 account:
   # 生产环境必须通过环境变量设置：openssl rand -base64 48
   jwt_secret: ${JWT_SECRET:-dev-only-secret-0123456789abcdef0123456789}
+  # 加密两步验证密钥：openssl rand -base64 32；为空时由 jwt_secret 派生
+  encryption_key: ${ENCRYPTION_KEY:-}
+  verify_email: true            # 注册后发送邮箱验证邮件
+
+admins:                         # 管理员邮箱，可访问 /admin
+  - ${ADMIN_EMAIL:-admin@example.com}
+
+github:                         # 第三方登录，回调地址为 {base_url}/auth/github/callback
+  client_id: ${GITHUB_CLIENT_ID:-}
+  client_secret: ${GITHUB_CLIENT_SECRET:-}

@@ -22,7 +22,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"strings"
+	"time"
 
 	"github.com/ryan053857/go-kit/config"
 )
@@ -39,6 +41,23 @@ type Storage interface {
 	Get(ctx context.Context, key string) (io.ReadCloser, error)
 	// Delete 删除对象，对象不存在时也返回 nil。
 	Delete(ctx context.Context, key string) error
+}
+
+// Presigner 由支持客户端直传的存储实现（S3 驱动实现了它，本地目录没有）。
+// 直传时文件内容不经过应用：应用签发一个短时有效的上传地址，客户端直接 PUT 到对象存储。
+type Presigner interface {
+	// PresignPut 返回上传 key 的 PUT 请求。size 与 contentType 包含在签名中，
+	// 客户端必须带上 PresignedPut.Header 中的全部请求头，且内容长度必须等于 size。
+	PresignPut(ctx context.Context, key, contentType string, size int64, expires time.Duration) (*PresignedPut, error)
+	// Size 返回对象的字节数，对象不存在时返回 ErrNotFound。
+	Size(ctx context.Context, key string) (int64, error)
+}
+
+// PresignedPut 是预签名的上传请求。
+type PresignedPut struct {
+	URL       string
+	Header    http.Header
+	ExpiresAt time.Time
 }
 
 // 驱动名。

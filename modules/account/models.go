@@ -14,16 +14,23 @@ type User struct {
 	bun.BaseModel `bun:"table:users,alias:u"`
 	database.Model
 
-	Email        string    `bun:"email,notnull"`
-	Name         string    `bun:"name,notnull"`
-	PasswordHash string    `bun:"password_hash,notnull"`
-	AvatarKey    string    `bun:"avatar_key,notnull"`
-	DisabledAt   time.Time `bun:"disabled_at,nullzero"`
-	LastLoginAt  time.Time `bun:"last_login_at,nullzero"`
+	Email           string    `bun:"email,notnull"`
+	Name            string    `bun:"name,notnull"`
+	PasswordHash    string    `bun:"password_hash,notnull"`
+	AvatarKey       string    `bun:"avatar_key,notnull"`
+	EmailVerifiedAt time.Time `bun:"email_verified_at,nullzero"`
+	DisabledAt      time.Time `bun:"disabled_at,nullzero"`
+	LastLoginAt     time.Time `bun:"last_login_at,nullzero"`
 }
 
 // Disabled 报告账号是否已停用。
 func (u *User) Disabled() bool { return !u.DisabledAt.IsZero() }
+
+// EmailVerified 报告邮箱是否已验证。
+func (u *User) EmailVerified() bool { return !u.EmailVerifiedAt.IsZero() }
+
+// HasPassword 报告账号是否设置了密码（只用第三方登录注册的账号没有密码）。
+func (u *User) HasPassword() bool { return u.PasswordHash != "" }
 
 // 会话类型。
 const (
@@ -56,4 +63,42 @@ type resetToken struct {
 	TokenHash string    `bun:"token_hash,notnull"`
 	ExpiresAt time.Time `bun:"expires_at,notnull"`
 	UsedAt    time.Time `bun:"used_at,nullzero"`
+}
+
+type mfa struct {
+	bun.BaseModel `bun:"table:user_mfa,alias:m"`
+
+	UserID        uuid.UUID `bun:"user_id,pk,type:uuid"`
+	CreatedAt     time.Time `bun:"created_at,notnull"`
+	UpdatedAt     time.Time `bun:"updated_at,notnull"`
+	Secret        string    `bun:"secret,notnull"`
+	RecoveryCodes []string  `bun:"recovery_codes,array,notnull"`
+	LastStep      int64     `bun:"last_step,notnull"`
+	EnabledAt     time.Time `bun:"enabled_at,nullzero"`
+}
+
+// APIKey 是用户创建的 API Key。token 原文只在创建时返回一次。
+type APIKey struct {
+	bun.BaseModel `bun:"table:user_api_keys,alias:k"`
+	database.CreatedModel
+
+	UserID     uuid.UUID `bun:"user_id,notnull,type:uuid"`
+	Name       string    `bun:"name,notnull"`
+	TokenHash  string    `bun:"token_hash,notnull"`
+	Hint       string    `bun:"hint,notnull"`
+	Scopes     []string  `bun:"scopes,array,notnull"`
+	LastUsedAt time.Time `bun:"last_used_at,nullzero"`
+	ExpiresAt  time.Time `bun:"expires_at,nullzero"`
+}
+
+// Identity 是账号绑定的第三方登录账号。
+type Identity struct {
+	bun.BaseModel `bun:"table:user_identities,alias:i"`
+	database.CreatedModel
+
+	UserID   uuid.UUID `bun:"user_id,notnull,type:uuid"`
+	Provider string    `bun:"provider,notnull"`
+	Subject  string    `bun:"subject,notnull"`
+	Email    string    `bun:"email,notnull"`
+	Name     string    `bun:"name,notnull"`
 }

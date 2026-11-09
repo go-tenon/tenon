@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/johannesboyne/gofakes3"
 	"github.com/johannesboyne/gofakes3/backend/s3mem"
@@ -99,6 +101,37 @@ func TestS3(t *testing.T) {
 		t.Fatal(err)
 	}
 	testStorage(t, s)
+
+	// 预签名直传。
+	p, ok := s.(storage.Presigner)
+	if !ok {
+		t.Fatal("S3 does not implement Presigner")
+	}
+	body := "direct upload"
+	put, err := p.PresignPut(t.Context(), "up/a.txt", "text/plain", int64(len(body)), 15*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(put.URL, "X-Amz-Signature=") || put.Header.Get("Content-Type") != "text/plain" {
+		t.Errorf("presigned = %+v", put)
+	}
+	req, _ := http.NewRequest(http.MethodPut, put.URL, strings.NewReader(body))
+	req.Header = put.Header.Clone()
+	req.ContentLength = int64(len(body))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("PUT = %s", resp.Status)
+	}
+	if n, err := p.Size(t.Context(), "up/a.txt"); err != nil || n != int64(len(body)) {
+		t.Errorf("size = %d, %v", n, err)
+	}
+	if _, err := p.Size(t.Context(), "up/missing"); !errors.Is(err, storage.ErrNotFound) {
+		t.Errorf("size of missing: %v", err)
+	}
 
 	cfg.S3.Bucket = ""
 	if _, err := storage.New(cfg); err == nil {

@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"slices"
+	"strings"
 	"time"
 	"uuid"
 
@@ -17,15 +19,26 @@ import (
 	"github.com/ryan053857/go-kit/support/random"
 )
 
-// Principal 是已认证的调用方：网页会话与 access token 认证得到的都是它。
+// Principal 是已认证的调用方：网页会话、access token 与 API Key 认证得到的都是它。
 // 用 auth.From[*account.Principal](ctx) 取出；需要账号详情时用 Service.User 查询。
 type Principal struct {
 	ID        uuid.UUID // 用户 ID
-	SessionID uuid.UUID // 会话 ID
+	SessionID uuid.UUID // 会话 ID；API Key 认证时为零值
+	APIKeyID  uuid.UUID // API Key 认证时为 Key 的 ID，否则为零值
+	Scopes    []string  // API Key 的 scope，为空表示不限
 }
 
 // UserID 实现 auth.Principal。
 func (p *Principal) UserID() string { return p.ID.String() }
+
+// HasScope 实现 auth.ScopeChecker：网页会话与 access token 拥有全部 scope；
+// API Key 未限定 scope 时拥有全部 scope，否则只拥有创建时指定的 scope。
+func (p *Principal) HasScope(scope string) bool {
+	return len(p.Scopes) == 0 || slices.Contains(p.Scopes, scope)
+}
+
+// IsAPIKey 报告调用方是否用 API Key 认证。修改密码、管理 API Key 等敏感接口不接受 API Key。
+func (p *Principal) IsAPIKey() bool { return p.APIKeyID != uuid.Nil() }
 
 // Tokens 是登录或刷新后发给客户端的凭证。
 type Tokens struct {
@@ -45,11 +58,28 @@ type ClientInfo struct {
 
 // Login 校验邮箱密码并创建一个 API 会话，返回 access token 与 refresh token。
 // remember 为 true 时 refresh token 有效期为 RememberTTL，否则为 RefreshTTL。
+// 账号启用了两步验证时返回 *MFARequiredError，客户端需再调用 LoginMFA。
 func (s *Service) Login(ctx context.Context, email, plainPassword string, remember bool, client ClientInfo) (*Tokens, error) {
 	u, err := s.Authenticate(ctx, email, plainPassword)
 	if err != nil {
 		return nil, err
 	}
+	st, err := s.MFAStatus(ctx, u.ID)
+	if err != nil {
+		return nil, err
+	}
+	if st.Enabled {
+		challenge, err := s.mfaChallenge(u.ID, remember)
+		if err != nil {
+			return nil, fmt.Errorf("account: login: %w", err)
+		}
+		return nil, &MFARequiredError{UserID: u.ID, Challenge: challenge}
+	}
+	return s.startAPISession(ctx, u, remember, client)
+}
+
+// startAPISession 为已通过认证的用户创建 API 会话并签发凭证。
+func (s *Service) startAPISession(ctx context.Context, u *User, remember bool, client ClientInfo) (*Tokens, error) {
 	refresh := random.Token(32)
 	sess := &Session{
 		UserID:    u.ID,
@@ -126,6 +156,7 @@ func (s *Service) Refresh(ctx context.Context, refreshToken string, client Clien
 	if reused != nil {
 		slog.WarnContext(ctx, "refresh token reused after rotation, session revoked",
 			"user_id", reused.UserID, "session_id", reused.ID)
+		s.emit(ctx, Event{Type: EventTokenReused, UserID: reused.UserID, SessionID: reused.ID})
 		return nil, ErrInvalidToken
 	}
 	if err != nil {
@@ -137,12 +168,15 @@ func (s *Service) Refresh(ctx context.Context, refreshToken string, client Clien
 	return tokens, nil
 }
 
-// VerifyAccessToken 校验 access token，供 rest.Authorize 使用：
+// VerifyAccessToken 校验 Bearer token（access token 或 API Key），供 rest.Authorize 使用：
 //
 //	api.UseMiddleware(rest.Authorize(api, users.VerifyAccessToken))
 //
 // token 无效或过期时返回 auth.ErrUnauthenticated。Config.CheckSession 为 true 时还会确认会话仍存在。
 func (s *Service) VerifyAccessToken(ctx context.Context, token string) (*Principal, error) {
+	if strings.HasPrefix(token, s.cfg.APIKeyPrefix+"_") {
+		return s.verifyAPIKey(ctx, token)
+	}
 	claims := new(accessClaims)
 	_, err := jwt.ParseWithClaims(token, claims,
 		func(*jwt.Token) (any, error) { return []byte(s.cfg.JWTSecret), nil },
@@ -186,9 +220,25 @@ func (s *Service) Sessions(ctx context.Context, userID uuid.UUID) ([]Session, er
 	return list, nil
 }
 
-// RevokeSession 注销用户的一个会话（退出登录、踢下线）。会话不存在时返回 ErrNotFound。
+// RevokeSession 注销用户的一个会话（踢下线）。会话不存在时返回 ErrNotFound。
 // 已签发的 access token 在过期前仍然有效，除非开启了 Config.CheckSession。
 func (s *Service) RevokeSession(ctx context.Context, userID, sessionID uuid.UUID) error {
+	return s.revokeSession(ctx, userID, sessionID, EventSessionRevoked)
+}
+
+// Logout 注销调用方自己的当前会话（退出登录）。会话已不存在时也返回 nil。
+func (s *Service) Logout(ctx context.Context, p *Principal) error {
+	if p.SessionID == uuid.Nil() {
+		return nil
+	}
+	err := s.revokeSession(ctx, p.ID, p.SessionID, EventLogout)
+	if errors.Is(err, ErrNotFound) {
+		return nil
+	}
+	return err
+}
+
+func (s *Service) revokeSession(ctx context.Context, userID, sessionID uuid.UUID, event string) error {
 	res, err := s.db.NewDelete().Model((*Session)(nil)).
 		Where("id = ? AND user_id = ?", sessionID, userID).Exec(ctx)
 	if err != nil {
@@ -197,6 +247,7 @@ func (s *Service) RevokeSession(ctx context.Context, userID, sessionID uuid.UUID
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotFound
 	}
+	s.emit(ctx, Event{Type: event, UserID: userID, SessionID: sessionID})
 	return nil
 }
 
@@ -205,7 +256,7 @@ func (s *Service) createSession(ctx context.Context, sess *Session, client Clien
 	now := s.now()
 	sess.IP, sess.UserAgent = client.IP, truncate(client.UserAgent, 255)
 	sess.LastSeenAt = now
-	return s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+	err := s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 		_, err := tx.NewDelete().Model((*Session)(nil)).
 			Where("user_id = ? AND expires_at <= ?", sess.UserID, now).Exec(ctx)
 		if err != nil {
@@ -216,6 +267,10 @@ func (s *Service) createSession(ctx context.Context, sess *Session, client Clien
 		}
 		return nil
 	})
+	if err == nil {
+		s.emit(ctx, Event{Type: EventLogin, UserID: sess.UserID, SessionID: sess.ID})
+	}
+	return err
 }
 
 type accessClaims struct {

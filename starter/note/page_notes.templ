@@ -18,6 +18,10 @@ templ notesContent(notes []Note) {
 			@button.Button(button.Props{Href: "/notes/export?format=xlsx", Variant: button.VariantOutline, Size: button.SizeSm}) {
 				导出 Excel
 			}
+			@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm,
+				Attributes: templ.Attributes{"hx-post": "/notes/export-jobs", "hx-vals": `{"format":"xlsx"}`, "hx-swap": "none"}}) {
+				后台导出
+			}
 		</div>
 		<form
 			class="flex gap-2"

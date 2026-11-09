@@ -16,6 +16,7 @@ import (
 	"github.com/uptrace/bun"
 
 	"github.com/ryan053857/go-kit/database"
+	"github.com/ryan053857/go-kit/support/crypt"
 	"github.com/ryan053857/go-kit/support/password"
 )
 
@@ -33,13 +34,20 @@ var (
 	ErrWeakPassword       = errors.New("account: password too short")
 	ErrInvalidToken       = errors.New("account: invalid or expired token")
 	ErrNotFound           = errors.New("account: not found")
+	ErrInvalidMFACode     = errors.New("account: invalid mfa code")
+	ErrMFAEnabled         = errors.New("account: mfa already enabled")
+	ErrMFANotEnabled      = errors.New("account: mfa not enabled")
+	ErrLastLoginMethod    = errors.New("account: cannot remove the last login method")
+	ErrForbidden          = errors.New("account: not allowed with this credential")
 )
 
 // Service 实现账号相关的全部业务逻辑，页面与 API 共用。
 type Service struct {
-	db  *bun.DB
-	cfg Config
-	now func() time.Time
+	db        *bun.DB
+	cfg       Config
+	cipher    *crypt.Cipher
+	now       func() time.Time
+	listeners []func(context.Context, Event)
 }
 
 // NewService 返回使用 db 的 Service。cfg 通常从 DefaultConfig 开始，由配置文件覆盖。
@@ -47,22 +55,60 @@ func NewService(db *bun.DB, cfg Config) (*Service, error) {
 	if len(cfg.JWTSecret) < 32 {
 		return nil, errors.New("account: jwt_secret must be at least 32 bytes")
 	}
-	return &Service{db: db, cfg: cfg, now: time.Now}, nil
+	key := deriveKey(cfg.JWTSecret, "mfa")
+	if cfg.EncryptionKey != "" {
+		var err error
+		if key, err = crypt.ParseKey(string(cfg.EncryptionKey)); err != nil {
+			return nil, fmt.Errorf("account: encryption_key: %w", err)
+		}
+	}
+	c, err := crypt.New(key)
+	if err != nil {
+		return nil, fmt.Errorf("account: encryption_key: %w", err)
+	}
+	if cfg.APIKeyPrefix == "" {
+		cfg.APIKeyPrefix = "sk"
+	}
+	return &Service{db: db, cfg: cfg, cipher: c, now: time.Now}, nil
 }
 
 // Register 创建账号。邮箱不区分大小写，已存在时返回 ErrEmailTaken；密码过短时返回 ErrWeakPassword。
+// Config.VerifyEmail 为 true 时在同一事务中发布 TopicEmailVerification 消息。
 func (s *Service) Register(ctx context.Context, email, plainPassword, name string) (*User, error) {
 	if err := s.checkPassword(plainPassword); err != nil {
 		return nil, err
 	}
 	u := &User{Email: normalizeEmail(email), Name: strings.TrimSpace(name), PasswordHash: password.Hash(plainPassword)}
-	if _, err := s.db.NewInsert().Model(u).Exec(ctx); err != nil {
-		if database.IsUniqueViolation(err, "users_email_key") {
-			return nil, ErrEmailTaken
-		}
-		return nil, fmt.Errorf("account: register: %w", err)
+	if err := s.createUser(ctx, u, nil); err != nil {
+		return nil, err
 	}
 	return u, nil
+}
+
+// createUser 插入账号，可在同一事务中执行 then（如绑定第三方账号）。
+func (s *Service) createUser(ctx context.Context, u *User, then func(context.Context, bun.Tx) error) error {
+	err := s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		if _, err := tx.NewInsert().Model(u).Exec(ctx); err != nil {
+			return err
+		}
+		if then != nil {
+			if err := then(ctx, tx); err != nil {
+				return err
+			}
+		}
+		if s.cfg.VerifyEmail && !u.EmailVerified() {
+			return s.publishVerification(ctx, tx, u)
+		}
+		return nil
+	})
+	if err != nil {
+		if database.IsUniqueViolation(err, "users_email_key") {
+			return ErrEmailTaken
+		}
+		return fmt.Errorf("account: register: %w", err)
+	}
+	s.emit(ctx, Event{Type: EventRegistered, UserID: u.ID})
+	return nil
 }
 
 // Authenticate 校验邮箱与密码并更新最后登录时间。
@@ -73,6 +119,7 @@ func (s *Service) Authenticate(ctx context.Context, email, plainPassword string)
 	if errors.Is(err, sql.ErrNoRows) {
 		// 用户不存在时也计算一次哈希，避免通过响应时间判断邮箱是否已注册。
 		_, _ = password.Verify(plainPassword, dummyHash())
+		s.emit(ctx, Event{Type: EventLoginFailed, Email: normalizeEmail(email)})
 		return nil, ErrInvalidCredentials
 	}
 	if err != nil {
@@ -83,6 +130,7 @@ func (s *Service) Authenticate(ctx context.Context, email, plainPassword string)
 		return nil, fmt.Errorf("account: authenticate: %w", err)
 	}
 	if !ok {
+		s.emit(ctx, Event{Type: EventLoginFailed, UserID: u.ID, Email: u.Email})
 		return nil, ErrInvalidCredentials
 	}
 	if u.Disabled() {
@@ -128,7 +176,7 @@ func (s *Service) UpdateName(ctx context.Context, userID uuid.UUID, name string)
 }
 
 // ChangePassword 校验当前密码后设置新密码，并注销除 keepSessionID 以外的全部会话。
-// 当前密码错误时返回 ErrInvalidCredentials。
+// 当前密码错误时返回 ErrInvalidCredentials。账号还没有密码时（只用第三方登录）不校验 current，直接设置。
 func (s *Service) ChangePassword(ctx context.Context, userID, keepSessionID uuid.UUID, current, newPassword string) error {
 	if err := s.checkPassword(newPassword); err != nil {
 		return err
@@ -137,11 +185,13 @@ func (s *Service) ChangePassword(ctx context.Context, userID, keepSessionID uuid
 	if err != nil {
 		return err
 	}
-	if ok, _ := password.Verify(current, u.PasswordHash); !ok {
-		return ErrInvalidCredentials
+	if u.HasPassword() {
+		if ok, _ := password.Verify(current, u.PasswordHash); !ok {
+			return ErrInvalidCredentials
+		}
 	}
 	u.PasswordHash = password.Hash(newPassword)
-	return s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+	err = s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 		if _, err := tx.NewUpdate().Model(u).Column("password_hash", "updated_at").WherePK().Exec(ctx); err != nil {
 			return fmt.Errorf("account: change password: %w", err)
 		}
@@ -152,11 +202,15 @@ func (s *Service) ChangePassword(ctx context.Context, userID, keepSessionID uuid
 		}
 		return nil
 	})
+	if err == nil {
+		s.emit(ctx, Event{Type: EventPasswordChanged, UserID: userID})
+	}
+	return err
 }
 
 // SetDisabled 停用或启用账号。停用时同时注销其全部会话。
 func (s *Service) SetDisabled(ctx context.Context, userID uuid.UUID, disabled bool) error {
-	return s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+	err := s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 		q := tx.NewUpdate().Model((*User)(nil)).Where("id = ?", userID).Set("updated_at = ?", s.now())
 		if disabled {
 			q = q.Set("disabled_at = ?", s.now())
@@ -177,6 +231,14 @@ func (s *Service) SetDisabled(ctx context.Context, userID uuid.UUID, disabled bo
 		}
 		return nil
 	})
+	if err == nil {
+		e := Event{Type: EventEnabled, UserID: userID}
+		if disabled {
+			e.Type = EventDisabled
+		}
+		s.emit(ctx, e)
+	}
+	return err
 }
 
 func (s *Service) checkPassword(p string) error {

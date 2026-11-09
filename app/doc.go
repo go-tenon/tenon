@@ -1,6 +1,7 @@
 // Package app 是产品的装配层：读取配置、初始化日志、连接数据库、执行迁移、
-// 组装全局中间件与 huma API、创建邮件发送器（a.Mailer）、文件存储（a.Storage）与消息总线（a.Bus）、
-// 提供命令行子命令、优雅停机。serve 同时运行 HTTP 服务与消息处理函数。
+// 组装全局中间件与 huma API、创建邮件发送器（a.Mailer）、文件存储（a.Storage）、消息总线（a.Bus）
+// 与定时任务（a.Scheduler），提供命令行子命令、优雅停机。serve 同时运行 HTTP 服务、消息处理函数与定时任务，
+// 在 systemd 中运行时发送就绪通知与看门狗心跳（systemd 子命令输出 unit 文件）。
 // 产品只需要写配置结构体、迁移，以及在 Setup 中构造自己的服务并挂载路由。
 //
 // app 只依赖 go-kit 的基础设施包，不认识任何业务模块；go-kit 的业务模块也不依赖 app，

@@ -32,25 +32,31 @@ import (
 //	rest.Delete(v1, "/me/avatar", account.RemoveAvatarEndpoint(avatars))
 //	a.Router.Handle("/avatars/*", avatars.Handler())
 //
-// 需要登录的接口声明了 rest.RequireAuth()，网页会话（Cookie）与 access token（Bearer）都可以访问，
-// 需要在 API 上挂载 rest.Authorize(api, users.VerifyAccessToken)。
-// 登录、注册、找回密码等接口建议在产品中加上限流（如 github.com/go-chi/httprate）。
+// 邮箱验证、两步验证、API Key 与第三方账号的接口见 endpoints_security.go。
+//
+// 需要登录的接口声明了 rest.RequireAuth()，网页会话（Cookie）、access token 与 API Key（Bearer）都可以访问，
+// 需要在 API 上挂载 rest.Authorize(api, users.VerifyAccessToken)。修改密码、登录设备、两步验证、
+// API Key 管理等敏感接口不接受 API Key。
+// 登录、注册、找回密码、验证码等接口应在产品中限流（rest.RateLimit）。
 
 var tags = []string{"账号"}
 
 // UserDTO 是返回给客户端的账号信息。
 type UserDTO struct {
-	ID          string    `json:"id" format:"uuid"`
-	Email       string    `json:"email" format:"email"`
-	Name        string    `json:"name"`
-	AvatarURL   string    `json:"avatar_url,omitempty" doc:"头像地址，没有头像时省略"`
-	CreatedAt   time.Time `json:"created_at"`
-	LastLoginAt time.Time `json:"last_login_at,omitzero"`
+	ID            string    `json:"id" format:"uuid"`
+	Email         string    `json:"email" format:"email"`
+	Name          string    `json:"name"`
+	AvatarURL     string    `json:"avatar_url,omitempty" doc:"头像地址，没有头像时省略"`
+	EmailVerified bool      `json:"email_verified"`
+	HasPassword   bool      `json:"has_password" doc:"只用第三方登录注册的账号没有密码，修改密码时不需要填写当前密码"`
+	CreatedAt     time.Time `json:"created_at"`
+	LastLoginAt   time.Time `json:"last_login_at,omitzero"`
 }
 
 // UserDTO 返回 u 的 UserDTO。
 func (s *Service) UserDTO(u *User) UserDTO {
 	return UserDTO{ID: u.ID.String(), Email: u.Email, Name: u.Name, AvatarURL: s.AvatarURL(u),
+		EmailVerified: u.EmailVerified(), HasPassword: u.HasPassword(),
 		CreatedAt: u.CreatedAt, LastLoginAt: u.LastLoginAt}
 }
 
@@ -105,6 +111,16 @@ type userOutput struct{ Body UserDTO }
 
 type tokensOutput struct{ Body TokensDTO }
 
+// LoginDTO 是登录的结果：要么直接得到凭证，要么需要两步验证（mfa_required 为 true，
+// 此时只返回 mfa_token，让用户输入验证码后调用两步验证登录接口）。
+type LoginDTO struct {
+	TokensDTO
+	MFARequired bool   `json:"mfa_required,omitempty" doc:"为 true 时需要两步验证，凭证字段为空"`
+	MFAToken    string `json:"mfa_token,omitempty" doc:"两步验证登录时提交，5 分钟内有效"`
+}
+
+type loginOutput struct{ Body LoginDTO }
+
 // mapError 把领域错误转换为 HTTP 错误，其他错误原样返回（500）。
 func mapError(err error) error {
 	switch {
@@ -122,6 +138,14 @@ func mapError(err error) error {
 		return huma.Error404NotFound("不存在")
 	case errors.Is(err, ErrInvalidImage):
 		return huma.Error422UnprocessableEntity("请上传 JPEG、PNG、GIF 或 WebP 图片（不超过 10 MB）")
+	case errors.Is(err, ErrInvalidMFACode):
+		return huma.Error422UnprocessableEntity("验证码错误")
+	case errors.Is(err, ErrMFAEnabled):
+		return huma.Error409Conflict("已启用两步验证")
+	case errors.Is(err, ErrMFANotEnabled):
+		return huma.Error409Conflict("未启用两步验证")
+	case errors.Is(err, ErrLastLoginMethod):
+		return huma.Error409Conflict("这是唯一的登录方式，请先设置密码")
 	}
 	return err
 }
@@ -132,6 +156,15 @@ func principal(ctx context.Context) (*Principal, error) {
 		return nil, huma.Error401Unauthorized("未登录")
 	}
 	return p, nil
+}
+
+// userPrincipal 用于敏感接口：只接受网页会话与 access token，不接受 API Key。
+func userPrincipal(ctx context.Context) (*Principal, error) {
+	p, err := principal(ctx)
+	if err == nil && p.IsAPIKey() {
+		return nil, huma.Error403Forbidden("API Key 不能访问此接口")
+	}
+	return p, err
 }
 
 type registerInput struct {
@@ -165,16 +198,20 @@ type loginInput struct {
 	}
 }
 
-// LoginEndpoint 用邮箱密码登录，返回 access token 与 refresh token。
-func LoginEndpoint(s *Service) rest.Endpoint[loginInput, tokensOutput] {
-	return rest.Endpoint[loginInput, tokensOutput]{
+// LoginEndpoint 用邮箱密码登录，返回 access token 与 refresh token；
+// 账号启用了两步验证时返回 mfa_required 与 mfa_token。
+func LoginEndpoint(s *Service) rest.Endpoint[loginInput, loginOutput] {
+	return rest.Endpoint[loginInput, loginOutput]{
 		Operation: huma.Operation{OperationID: "account-login", Summary: "登录", Tags: tags},
-		Handler: func(ctx context.Context, in *loginInput) (*tokensOutput, error) {
+		Handler: func(ctx context.Context, in *loginInput) (*loginOutput, error) {
 			t, err := s.Login(ctx, in.Body.Email, in.Body.Password, in.Body.Remember, in.client())
+			if mfaErr, ok := errors.AsType[*MFARequiredError](err); ok {
+				return &loginOutput{Body: LoginDTO{MFARequired: true, MFAToken: mfaErr.Challenge}}, nil
+			}
 			if err != nil {
 				return nil, mapError(err)
 			}
-			return &tokensOutput{Body: toTokensDTO(t)}, nil
+			return &loginOutput{Body: LoginDTO{TokensDTO: toTokensDTO(t)}}, nil
 		},
 	}
 }
@@ -211,10 +248,7 @@ func LogoutEndpoint(s *Service) rest.Endpoint[struct{}, struct{}] {
 			if err != nil {
 				return nil, err
 			}
-			if err := s.RevokeSession(ctx, p.ID, p.SessionID); err != nil && !errors.Is(err, ErrNotFound) {
-				return nil, err
-			}
-			return nil, nil
+			return nil, s.Logout(ctx, p)
 		},
 	}
 }
@@ -315,7 +349,7 @@ func ChangePasswordEndpoint(s *Service) rest.Endpoint[changePasswordInput, struc
 		Operation: huma.Operation{OperationID: "account-change-password", Summary: "修改密码", Tags: tags,
 			DefaultStatus: http.StatusNoContent, Security: rest.RequireAuth()},
 		Handler: func(ctx context.Context, in *changePasswordInput) (*struct{}, error) {
-			p, err := principal(ctx)
+			p, err := userPrincipal(ctx)
 			if err != nil {
 				return nil, err
 			}
@@ -335,7 +369,7 @@ func SessionsEndpoint(s *Service) rest.Endpoint[struct{}, sessionsOutput] {
 	return rest.Endpoint[struct{}, sessionsOutput]{
 		Operation: huma.Operation{OperationID: "account-sessions", Summary: "登录设备", Tags: tags, Security: rest.RequireAuth()},
 		Handler: func(ctx context.Context, _ *struct{}) (*sessionsOutput, error) {
-			p, err := principal(ctx)
+			p, err := userPrincipal(ctx)
 			if err != nil {
 				return nil, err
 			}
@@ -366,7 +400,7 @@ func RevokeSessionEndpoint(s *Service) rest.Endpoint[revokeSessionInput, struct{
 		Operation: huma.Operation{OperationID: "account-revoke-session", Summary: "注销登录设备", Tags: tags,
 			DefaultStatus: http.StatusNoContent, Security: rest.RequireAuth()},
 		Handler: func(ctx context.Context, in *revokeSessionInput) (*struct{}, error) {
-			p, err := principal(ctx)
+			p, err := userPrincipal(ctx)
 			if err != nil {
 				return nil, err
 			}

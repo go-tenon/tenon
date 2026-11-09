@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/ryan053857/go-kit/app"
+	"github.com/ryan053857/go-kit/config"
 	"github.com/ryan053857/go-kit/database/dbtest"
 )
 
@@ -25,6 +26,7 @@ func newTestApp(t *testing.T) *app.App {
 	cfg.BaseURL = "http://test"
 	cfg.Account.JWTSecret = "test-secret-0123456789abcdef0123456789"
 	cfg.Storage.Local.Dir = t.TempDir()
+	cfg.Admins = []string{"admin@example.com"}
 
 	a, err := app.New(t.Context(), &cfg.Config, options(&cfg))
 	if err != nil {
@@ -77,6 +79,17 @@ func expect(t *testing.T, rec *httptest.ResponseRecorder, status int, contains .
 		if !strings.Contains(rec.Body.String(), s) {
 			t.Fatalf("body does not contain %q:\n%s", s, rec.Body)
 		}
+	}
+}
+
+// TestConfigFile 确认 config.yaml 可以加载（默认值即可启动）。
+func TestConfigFile(t *testing.T) {
+	cfg := DefaultConfig()
+	if err := config.Load("config.yaml", &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Admins) != 1 || cfg.Admins[0] != "admin@example.com" || !cfg.Account.VerifyEmail {
+		t.Errorf("config = %+v", cfg)
 	}
 }
 

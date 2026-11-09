@@ -84,6 +84,7 @@ func (s *Service) ResetPassword(ctx context.Context, token, newPassword string) 
 	}
 	hash := password.Hash(newPassword)
 	now := s.now()
+	var userID uuid.UUID
 	err := s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 		rt := new(resetToken)
 		err := tx.NewSelect().Model(rt).
@@ -105,6 +106,7 @@ func (s *Service) ResetPassword(ctx context.Context, token, newPassword string) 
 			return ErrInvalidToken
 		}
 		rt.UsedAt = now
+		userID = rt.UserID
 		if _, err := tx.NewUpdate().Model(rt).Column("used_at").WherePK().Exec(ctx); err != nil {
 			return err
 		}
@@ -113,6 +115,9 @@ func (s *Service) ResetPassword(ctx context.Context, token, newPassword string) 
 	})
 	if err != nil && !errors.Is(err, ErrInvalidToken) {
 		return fmt.Errorf("account: reset password: %w", err)
+	}
+	if err == nil {
+		s.emit(ctx, Event{Type: EventPasswordReset, UserID: userID})
 	}
 	return err
 }

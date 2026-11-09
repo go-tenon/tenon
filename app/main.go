@@ -42,6 +42,7 @@ import (
 //	migrate create NAME 在迁移目录新建迁移文件（不读配置）
 //	migrate publish     把 go-kit 模块的迁移复制到迁移目录（不读配置）
 //	openapi             输出 OpenAPI 文档（不连接数据库）；--format json|yaml
+//	systemd             输出 systemd unit 文件（不读配置）；--user、--dir、--exec
 func Main(cfg Configurer, opts Options) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	err := Command(cfg, opts).ExecuteContext(ctx)
@@ -105,7 +106,7 @@ func Command(cfg Configurer, opts Options) *cobra.Command {
 	}
 	root.PersistentFlags().StringVarP(&configPath, "config", "c", "config.yaml", "配置文件路径")
 	root.Flags().AddFlagSet(serve.Flags())
-	root.AddCommand(serve, migrateCommand(cfg, opts, load), openapiCommand(cfg, opts, load))
+	root.AddCommand(serve, migrateCommand(cfg, opts, load), openapiCommand(cfg, opts, load), systemdCommand(opts))
 	return root
 }
 
