@@ -198,3 +198,26 @@ func TestPingServeAndErrorMapping(t *testing.T) {
 		t.Fatal("shutdown timeout")
 	}
 }
+
+func TestResponsesHaveNoSchemaLink(t *testing.T) {
+	api := rest.New(rest.Options{})
+	rest.Register(api, huma.Operation{Security: []map[string][]string{}, OperationID: "ping", Method: http.MethodGet, Path: "/ping"}, func() func(context.Context, *pingIn) (*pingOut, error) {
+		return func(context.Context, *pingIn) (*pingOut, error) { return &pingOut{}, nil }
+	})
+	rest.Register(api, huma.Operation{Security: []map[string][]string{}, OperationID: "deny", Method: http.MethodGet, Path: "/deny"}, func() func(context.Context, *pingIn) (*pingOut, error) {
+		return func(context.Context, *pingIn) (*pingOut, error) {
+			return nil, errorx.Define(errorx.NotFound, "demo.missing").New()
+		}
+	})
+	for _, path := range []string{"/ping", "/deny"} {
+		rr := httptest.NewRecorder()
+		api.Handler().ServeHTTP(rr, httptest.NewRequest(http.MethodGet, path, nil))
+		if strings.Contains(rr.Body.String(), "$schema") || rr.Header().Get("Link") != "" {
+			t.Fatalf("%s: %s %v", path, rr.Body.String(), rr.Header())
+		}
+	}
+	doc, _ := api.OpenAPIJSON()
+	if strings.Contains(string(doc), `"$schema"`) {
+		t.Fatal("schemas still declare $schema property")
+	}
+}
