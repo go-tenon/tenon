@@ -1,22 +1,54 @@
-# 认证与授权
+# 认证
 
-[文档首页](README.md) / 安全
+- [简介](#introduction)
+    - [核心概念](#key-concepts)
+- [编写 Token 校验器](#token-validators)
+- [保护路由](#protecting-routes)
+    - [认证失败的响应](#failed-authentication)
+- [获取已认证的主体](#retrieving-the-subject)
+- [管理凭据](#managing-credentials)
 
-认证回答“调用者是谁”，授权回答“这个调用者能否执行当前操作”。mygoravel 用 `identity.Subject` 传递已验证身份，用端点策略和业务检查分别保护入口与资源。
+<a id="introduction"></a>
+## 简介
 
-本章内容：
+很多 API 都需要知道“是谁在调用”。mygoravel 内置了基于 Bearer Token 的认证：客户端在请求头中携带 `Authorization: Bearer <token>`，框架调用你提供的校验函数确认身份，然后把身份信息交给处理器。
 
-- [提供凭据校验器](#validator)
-- [保护路由](#protect-routes)
-- [读取主体](#subject)
-- [业务层授权](#authorization)
-- [管理凭据来源](#credentials)
+mygoravel 不限定 token 的种类和来源。它可以是数据库中的 API Key，也可以是由认证服务签发的 JWT——你只需要写一个函数，告诉框架这个 token 对应谁。
 
-<a id="validator"></a>
+> [!NOTE]
+> 认证回答的是“调用者是谁”，而“调用者能不能做这件事”属于授权，请参阅[授权](authorization.md)。
 
-## 提供凭据校验器
+<a id="key-concepts"></a>
+### 核心概念
 
-`rest.TokenValidator` 接收 Huma context 与 bearer token，返回主体或错误。下面是完整的演示实现：
+**主体（Subject）** 表示一个已经通过认证的调用者，它由 `identity` 包定义：
+
+```go
+type Subject struct {
+    ID     string
+    Type   SubjectType
+    Method string
+    Scopes []string
+}
+```
+
+| 字段 | 说明 |
+| --- | --- |
+| `ID` | 调用者的唯一标识，是一个不透明的字符串，例如用户 ID |
+| `Type` | 调用者类别：`identity.SubjectUser`（用户）或 `identity.SubjectService`（服务） |
+| `Method` | 认证方式，例如 `bearer` |
+| `Scopes` | 调用者被授予的访问范围，例如 `notes` |
+
+**校验器（TokenValidator）** 是你提供的函数，负责把 token 转换为主体：
+
+```go
+type TokenValidator func(ctx huma.Context, token string) (identity.Subject, error)
+```
+
+<a id="token-validators"></a>
+## 编写 Token 校验器
+
+下面是一个完整的校验器示例。为了便于理解，它只接受配置文件中的一个固定 token：
 
 ```go
 package auth
@@ -48,65 +80,83 @@ func Validator(expected config.Secret) rest.TokenValidator {
 }
 ```
 
-这个函数只演示静态凭据。实际应用可以查询凭据存储或使用经过验证的 token 库；返回 Subject 之前必须完成相应的有效性检查。校验器负责签名、期限和权限来源，Subject 保存验证结果。
+这里使用 `subtle.ConstantTimeCompare` 比较 token，以防止时序攻击。
 
-<a id="protect-routes"></a>
+在实际应用中，校验器通常会查询数据库中的 API Key，或者使用成熟的库验证 JWT 的签名和有效期。无论采用哪种方式，校验器都应当在返回主体之前完成**全部**的有效性检查：签名、过期时间、是否已吊销，以及权限范围的来源。
 
+校验器的返回值决定了请求的结果：
+
+| 校验器返回 | 结果 |
+| --- | --- |
+| 有效的主体（`ID` 非空） | 认证通过 |
+| `fault.Unauthenticated` 等 4xx 类错误，或 `ID` 为空的主体 | `401` |
+| `fault.Unavailable` 等 5xx 类错误 | 对应的 `5xx`，例如认证服务暂时不可用时返回 `503` |
+
+<a id="protecting-routes"></a>
 ## 保护路由
 
-构造 API 后，将校验器和 scope 要求绑定到 Operation：
+使用 `rest.RequireBearer` 为路由启用认证。它的参数是 API 实例、校验器，以及调用者必须具备的 scope：
 
 ```go
-requireNotes := rest.RequireBearer(api, validateToken, "notes")
+requireNotes := rest.RequireBearer(api, auth.Validator(cfg.Token), "notes")
+
 op := huma.Operation{
     OperationID: "note-list",
     Method:      http.MethodGet,
     Path:        "/notes",
 }
 requireNotes(&op)
+rest.Register(api, op, newListHandler)
 ```
 
-然后使用 `rest.Register` 注册处理器。所有传入的 scope 都必须满足。HTTP bearer 的 OpenAPI scope 数组为空；所需业务 scopes 记录在 `x-required-scopes` 扩展中。
+`RequireBearer` 返回的函数可以复用于多条路由。可以传入多个 scope，调用者必须**全部**具备才能访问；不传 scope 则只要求认证通过。
 
-缺少凭据、凭据无效或返回空主体 ID 时是 401；缺少 scope 时是 403。401 带有 `WWW-Authenticate: Bearer`。校验后端返回 Unavailable 等内部错误时按 5xx 处理。
+`RequireBearer` 同时做了两件事：
 
-公开接口调用 `rest.Public()(&op)`。漏掉访问策略会在登记时失败。
+- 在运行时检查 `Authorization` 请求头并调用校验器；
+- 在 OpenAPI 文档中把这条路由标记为需要 Bearer 认证，所需的 scope 记录在 `x-required-scopes` 扩展字段中。
 
-<a id="subject"></a>
+需要认证的响应还会自动加上 `Cache-Control: no-store`，防止响应被中间代理缓存。
 
-## 读取主体
+> [!TIP]
+> 不需要认证的路由也必须显式调用 `rest.Public()(&op)`。忘记声明访问策略的路由会在注册时 panic，因此你不会意外地发布一个未受保护的接口。
 
-认证成功后，处理器从 context 取得主体：
+<a id="failed-authentication"></a>
+### 认证失败的响应
+
+| 情况 | 状态码 | 错误码 |
+| --- | --- | --- |
+| 没有携带 `Authorization` 头，或格式不是 `Bearer <token>` | 401 | `auth.unauthenticated` |
+| 校验器拒绝了 token | 401 | `auth.unauthenticated` |
+| 缺少所需的 scope | 403 | `auth.forbidden` |
+| 校验器返回 5xx 类错误 | 与错误分类对应，例如 503 | `error.internal` |
+
+无论校验器返回什么错误码，客户端看到的都是统一的 `auth.unauthenticated`，不会因此得知 token 是“不存在”还是“已过期”。`401` 响应带有 `WWW-Authenticate: Bearer` 响应头。校验器返回 5xx 类错误时，框架会在配置了日志器的情况下记录一条诊断日志。
+
+认证在输入验证之前执行，所以未认证的请求不会看到验证错误。
+
+<a id="retrieving-the-subject"></a>
+## 获取已认证的主体
+
+认证通过后，主体会被放入请求的 context。在处理器中使用 `identity.FromContext` 读取它，再传给业务服务：
 
 ```go
-subject, ok := identity.FromContext(ctx)
-if !ok {
-    return nil, ErrUnauthenticated.New()
-}
-return service.List(ctx, subject, params)
-```
-
-这是处理器中的片段；`service` 和 `params` 是应用自己的业务服务与参数。Subject 的 ID 是不透明字符串，Type 可表示用户或服务，Method 记录认证方式，Scopes 保存已验证的访问范围。
-
-<a id="authorization"></a>
-
-## 业务层授权
-
-端点验证 `notes` scope 后，业务服务继续检查资源所有权：
-
-```go
-if note.OwnerID != subject.ID {
-    return nil, ErrForbidden.New()
+return func(ctx context.Context, in *ListNotesInput) (*ListNotesOutput, error) {
+    subject, ok := identity.FromContext(ctx)
+    if !ok {
+        return nil, auth.ErrUnauthenticated.New()
+    }
+    items, err := notes.List(ctx, subject, in.Before, in.Limit)
+    // ……
 }
 ```
 
-`ErrForbidden` 是 PermissionDenied 分类的业务模板。这项检查也适用于缓存命中；写操作应在实际读写资源的事务中完成检查。业务入口还应拒绝空主体 ID，确保直接调用服务时也会执行身份检查。
+对于受 `RequireBearer` 保护的路由，`ok` 总是为 `true`。保留这个检查可以防止路由配置被误改为公开后，处理器在没有身份的情况下继续执行。
 
-<a id="credentials"></a>
+<a id="managing-credentials"></a>
+## 管理凭据
 
-## 管理凭据来源
-
-凭据来源由应用决定。使用静态配置时，可以定义自己的结构：
+凭据存放在哪里、如何签发和吊销，完全由应用决定。如果你的凭据比较简单，可以把它们放在配置文件中：
 
 ```go
 type Credential struct {
@@ -119,10 +169,13 @@ type AuthConfig struct {
 }
 ```
 
-解码后检查空 token、空主体和重复凭据，再把已校验值传给校验器。配置文件中的环境变量通过 config.WithLookup 显式读取。
+```yaml
+auth:
+  credentials:
+    - token: ${API_TOKEN_ALICE}
+      subject_id: alice
+```
 
-账户、token 和凭据存储由应用定义。用户注册、会话、刷新 token 等能力使用所选认证组件，其验证结果转换为 Subject。
+请在 `AuthConfig` 的 `Validate` 方法中检查空 token、空主体和重复的凭据，然后把校验后的配置传给校验器。token 字段使用 `config.Secret`，可以避免它出现在日志中。
 
----
-
-[上一篇：日志](logging.md) · [下一篇：数据库](database.md)
+用户注册、登录会话、刷新 token 等功能不在 mygoravel 的范围内。你可以选择合适的认证服务或库来实现它们，最终在校验器中把验证结果转换为 `identity.Subject` 即可。

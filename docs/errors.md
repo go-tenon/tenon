@@ -1,85 +1,140 @@
 # 错误处理
 
-[文档首页](README.md) / HTTP 基础
+- [简介](#introduction)
+- [定义业务错误](#defining-errors)
+    - [错误分类](#error-kinds)
+- [返回错误](#returning-errors)
+    - [包装底层错误](#wrapping-errors)
+    - [附加公开参数](#public-parameters)
+- [判断错误](#inspecting-errors)
+- [错误响应](#error-responses)
+    - [状态码映射](#status-mapping)
+    - [响应格式](#response-format)
+    - [原生 Huma 错误](#huma-errors)
+- [错误日志](#reporting-errors)
 
-业务错误由稳定的错误码和分类组成。业务服务返回错误，HTTP 边界决定状态码、对外文案和诊断日志。
+<a id="introduction"></a>
+## 简介
 
-本章内容：
+当你开始一个新的 mygoravel 项目时，错误处理已经为你配置好了。业务代码只需要返回错误，mygoravel 会负责选择 HTTP 状态码、生成统一格式的错误响应，并记录服务端错误的日志。
 
-- [定义业务错误](#domain-errors)
-- [包装与判断](#wrapping)
-- [HTTP 状态映射](#http-status)
-- [错误响应](#problem)
-- [公开参数](#public-data)
-- [记录错误与翻译](#reporting)
+mygoravel 的业务错误由两个要素组成：
 
-<a id="domain-errors"></a>
+- **错误码**：一个稳定的字符串，例如 `note.not_found`。客户端根据它来区分不同的失败原因，它不会随语言或文案变化；
+- **错误分类**：例如“未找到”、“冲突”、“无权限”，用于决定 HTTP 状态码。
 
+业务包只关心错误码和分类，完全不需要知道 HTTP 的存在。这样，同一个业务服务既可以被 HTTP 接口调用，也可以被命令行或测试直接调用。
+
+<a id="defining-errors"></a>
 ## 定义业务错误
 
-使用 `fault.Define` 创建可复用的模板，每次失败时调用 `New`：
+使用 `fault.Define` 定义一个错误**模板**，通常作为业务包的包级变量：
 
 ```go
-var ErrNoteNotFound = fault.Define(fault.NotFound, "note.not_found")
+package note
 
-func FindNote(id string) error {
-    return ErrNoteNotFound.New()
+import "github.com/ryan053857/mygoravel/fault"
+
+var (
+    ErrNotFound = fault.Define(fault.NotFound, "note.not_found")
+    ErrConflict = fault.Define(fault.Conflict, "note.conflict")
+)
+```
+
+每次失败时，调用模板的 `New` 方法创建一个具体的错误。`New` 会在调用处记录堆栈，方便排查问题：
+
+```go
+func (s *Service) Find(ctx context.Context, id uuid.UUID) (*Note, error) {
+    // ……
+    return nil, ErrNotFound.New()
 }
 ```
 
-这里的 `fault` 来自 `github.com/ryan053857/mygoravel/fault`。模板通常定义在业务包内；`New` 在具体失败处记录堆栈。
+错误码推荐使用 `资源.原因` 的形式，全部小写，用下划线连接单词。
 
-<a id="wrapping"></a>
+<a id="error-kinds"></a>
+### 错误分类
 
-## 包装与判断
+`fault` 包提供了以下分类：
 
-需要保留底层原因时，使用模板的 `Wrap`：
+| 分类 | 含义 | HTTP 状态 |
+| --- | --- | --- |
+| `fault.InvalidArgument` | 输入不符合业务规则 | 422 |
+| `fault.Unauthenticated` | 调用者身份未知 | 401 |
+| `fault.PermissionDenied` | 调用者无权执行该操作 | 403 |
+| `fault.NotFound` | 资源不存在 | 404 |
+| `fault.Conflict` | 与当前状态冲突，例如重复创建 | 409 |
+| `fault.Unavailable` | 依赖暂时不可用，可以稍后重试 | 503 |
+| `fault.Internal` | 内部错误 | 500 |
+
+<a id="returning-errors"></a>
+## 返回错误
+
+<a id="wrapping-errors"></a>
+### 包装底层错误
+
+很多业务错误由底层错误引起，例如数据库的唯一约束冲突。使用模板的 `Wrap` 方法可以返回业务错误，同时保留原始原因供日志排查：
 
 ```go
 if database.IsUniqueViolation(err, "notes_owner_title_key") {
-    return ErrNoteConflict.Wrap(err)
+    return ErrConflict.Wrap(err)
 }
 ```
 
-上例假定 `ErrNoteConflict` 定义为 Conflict 分类。其他错误可以用 `github.com/cockroachdb/errors` 增加操作上下文：
+对于其他无法归类的错误，可以使用 `github.com/cockroachdb/errors` 添加上下文后继续向上返回：
 
 ```go
-return errors.Wrap(err, "create note")
-```
-
-错误链支持标准库的 `errors.Is`、`errors.As` 和 `fmt.Errorf` 的 `%w`：
-
-```go
-if errors.Is(err, ErrNoteNotFound) {
-    // 根据稳定模板处理。
+if err != nil {
+    return errors.Wrap(err, "create note")
 }
 ```
 
-使用 `errors.Is` 匹配模板，使用 `fault.CodeOf`、`fault.KindOf` 从包装链读取业务语义。
+未分类的错误最终会被当作内部错误处理，返回 `500`。
 
-<a id="http-status"></a>
+<a id="public-parameters"></a>
+### 附加公开参数
 
-## HTTP 状态映射
+有时你希望错误携带一些额外的信息，例如哪个字段冲突了。可以在创建错误时通过 `fault.Public` 附加参数：
 
-通过 `rest.Register` 返回的业务错误按下表转换：
+```go
+return ErrConflict.New(fault.Public("field", "title"))
+```
 
-| fault.Kind | HTTP 状态 |
-| --- | --- |
-| InvalidArgument | 422 |
-| Unauthenticated | 401 |
-| PermissionDenied | 403 |
-| NotFound | 404 |
-| Conflict | 409 |
-| Unavailable | 503 |
-| Internal、未分类错误 | 500 |
+之所以叫“公开”参数，是因为它们经过你的确认，可以展示给调用者。之后可以用 `fault.PublicOf(err)` 读取，例如在翻译错误消息时作为模板数据使用。
 
-HTTP 映射位于 `httpx/rest`，业务包只使用 fault 分类。纯 HTTP 错误可以使用 Huma 的 StatusError；包装过的 `huma.Error404NotFound` 保留 404。原生 Huma 错误文案经 Transformer 转换为通用提示。
+> [!NOTE]
+> 公开参数**不会**自动出现在错误响应中。是否展示、如何展示，由你在自定义的响应转换或翻译逻辑中决定。
 
-<a id="problem"></a>
+<a id="inspecting-errors"></a>
+## 判断错误
 
+业务错误完全兼容 Go 标准的错误处理方式。使用 `errors.Is` 判断错误是否来自某个模板，即使它已被多层包装：
+
+```go
+if errors.Is(err, note.ErrNotFound) {
+    // 处理笔记不存在的情况
+}
+```
+
+也可以直接从错误链中读取错误码和分类：
+
+```go
+code := fault.CodeOf(err) // "note.not_found"，非业务错误时为空字符串
+kind := fault.KindOf(err) // fault.NotFound，非业务错误时为 fault.Internal
+```
+
+<a id="error-responses"></a>
 ## 错误响应
 
-定义 `note.not_found` 错误并提供对应英文翻译后，可以得到类似正文：
+<a id="status-mapping"></a>
+### 状态码映射
+
+通过 `rest.Register` 注册的处理器返回错误时，mygoravel 会根据[错误分类](#error-kinds)选择 HTTP 状态码。这个映射只存在于 `httpx/rest` 包中，业务包不需要关心。
+
+<a id="response-format"></a>
+### 响应格式
+
+所有错误响应都使用 [Problem Details](https://www.rfc-editor.org/rfc/rfc9457) 格式，`Content-Type` 为 `application/problem+json`：
 
 ```json
 {
@@ -87,32 +142,39 @@ HTTP 映射位于 `httpx/rest`，业务包只使用 fault 分类。纯 HTTP 错�
   "title": "Not Found",
   "detail": "Note not found",
   "code": "note.not_found",
-  "request_id": "<请求标识>"
+  "request_id": "<请求 ID>"
 }
 ```
 
-Content-Type 为 `application/problem+json`。字段校验失败时还会有 `errors` 数组，见[请求校验](requests.md#validation-errors)。同一模型用于 OpenAPI schema。
+| 字段 | 说明 |
+| --- | --- |
+| `status` | HTTP 状态码 |
+| `title` | 状态码的标准描述 |
+| `detail` | 面向用户的提示文案 |
+| `code` | 稳定的错误码，客户端应根据它编写分支逻辑 |
+| `request_id` | 请求 ID，用于在服务端日志中查找对应记录 |
+| `errors` | 仅验证错误包含，见[验证](validation.md#validation-error-response) |
 
-客户端根据 code 编写分支，用 request_id 联系服务日志；detail 是展示文案，可能随语言改变。未知错误使用通用提示。
+`detail` 的内容取决于是否启用了[本地化](localization.md)：
 
-<a id="public-data"></a>
+- 启用本地化时，以错误码为消息 ID 翻译，例如上面的 `Note not found` 来自应用提供的英文翻译。找不到翻译时，使用 HTTP 状态描述；
+- 未启用本地化时，业务错误的 `detail` 为错误码本身。
 
-## 公开参数
+对于 `500` 等服务端错误，`detail` 始终是通用提示，不会泄露任何内部信息。
 
-`fault.Public` 附加经过业务确认可公开的元数据，`fault.PublicOf` 读取这些数据。应用通过自定义输出模型或翻译逻辑显式呈现它们。
+> [!WARNING]
+> `detail` 是展示文案，可能随语言和版本变化。客户端请不要根据 `detail` 做逻辑判断，而应使用 `code`。
 
-公开参数与 Wrap 消息使用已审核的业务标识和操作说明。
+<a id="huma-errors"></a>
+### 原生 Huma 错误
 
-<a id="reporting"></a>
+如果你只是想返回一个纯 HTTP 层面的错误，也可以使用 Huma 内置的错误函数，例如 `huma.Error404NotFound`。即使被包装过，它的状态码也会被保留。为了避免泄露内部信息，这类错误的文案会被替换为通用提示，因此在业务代码中更推荐使用 `fault` 定义的错误。
 
-## 记录错误与翻译
+<a id="reporting-errors"></a>
+## 错误日志
 
-业务层返回错误，`rest.Register` 在有 Logger 时记录一次 5xx 诊断。访问日志记录每次请求的结果。
+mygoravel 遵循“**在处理决定的地方记录一次**”的原则：业务代码只负责添加上下文并返回错误，不需要自己记录日志。
 
-默认诊断记录稳定 code 和可报告堆栈。`%+v` 会展开错误链中的详细原因，输出范围由调用边界控制。
+当 API 配置了日志器时，`rest.Register` 会为每个 `5xx` 错误记录一条诊断日志，包含错误码和可报告的堆栈。与此同时，访问日志会记录每个请求的结果。两条日志带有相同的 `request_id`，可以关联查看。日志的配置方式见[日志](logging.md)。
 
-启用语言目录后，错误码可作为消息 ID。内置目录包含常见英文和中文错误；自定义错误的翻译方式见[本地化](localization.md)。
-
----
-
-[上一篇：响应](responses.md) · [下一篇：日志](logging.md)
+`4xx` 错误属于正常的业务结果，只体现在访问日志中，不会产生额外的错误日志。

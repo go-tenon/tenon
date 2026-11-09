@@ -1,22 +1,20 @@
 # 响应
 
-[文档首页](README.md) / HTTP 基础
+- [创建响应](#creating-responses)
+    - [JSON 响应](#json-responses)
+    - [状态码](#status-codes)
+    - [响应头](#headers)
+- [集合与时间](#collections-and-times)
+- [分页](#pagination)
+- [返回错误](#returning-errors)
 
-HTTP 处理器返回输出结构体和 error。输出中的 `Body` 是 JSON 正文，其他字段可声明响应状态或响应头。
+<a id="creating-responses"></a>
+## 创建响应
 
-本章内容：
+<a id="json-responses"></a>
+### JSON 响应
 
-- [返回 JSON](#json)
-- [设置状态与响应头](#status-headers)
-- [空集合与时间](#collections)
-- [游标分页](#pagination)
-- [返回错误](#errors)
-
-<a id="json"></a>
-
-## 返回 JSON
-
-定义面向客户端的输出 DTO：
+和[请求](requests.md)一样，响应也由一个 Go 结构体描述，称为**输出类型**。输出类型中名为 `Body` 的字段就是 JSON 响应体：
 
 ```go
 type NoteDTO struct {
@@ -30,15 +28,31 @@ type NoteOutput struct {
 }
 ```
 
-处理器成功时返回 `&NoteOutput{Body: ...}, nil`。`Body` 中的字段直接构成 JSON 正文。Huma 默认还会为对象响应提供 `$schema` 字段和 Link 响应头，用于定位对应的 JSON Schema；本章后续 JSON 示例只展示业务字段。
+处理器成功时返回输出和 `nil` 错误：
 
-有正文的普通成功响应默认是 200；创建资源时如需返回 201，应明确设置 Operation 的默认状态。
+```go
+return &NoteOutput{Body: toDTO(item)}, nil
+```
 
-<a id="status-headers"></a>
+`Body` 中的字段会被编码为 JSON 返回给客户端：
 
-## 设置状态与响应头
+```json
+{
+  "id": "0f8c2f0e-...",
+  "title": "准备发布",
+  "owner_id": "alice"
+}
+```
 
-在路由声明中指定固定成功状态：
+Huma 还会为对象响应自动加入一个 `$schema` 字段和 `Link` 响应头，指向描述响应结构的 JSON Schema。为了简洁，本文档的 JSON 示例省略了 `$schema`。
+
+> [!TIP]
+> 建议为响应定义专门的 DTO 结构，而不是直接返回数据库模型。这样你可以自由地调整数据库结构，而不会意外地改变 API，也不会把内部字段暴露给客户端。
+
+<a id="status-codes"></a>
+### 状态码
+
+有响应体的成功响应默认返回 `200`。如果需要返回固定的其他状态码，例如创建资源时的 `201`，可以在路由声明中设置 `DefaultStatus`：
 
 ```go
 op := huma.Operation{
@@ -49,7 +63,19 @@ op := huma.Operation{
 }
 ```
 
-为 `op` 绑定安全策略后注册处理器。需要响应头时，将它声明在输出结构体中：
+如果状态码需要在每次请求时动态决定，可以在输出类型中声明一个 `Status int` 字段，这是 Huma 的原生能力：
+
+```go
+type UpsertNoteOutput struct {
+    Status int
+    Body   NoteDTO
+}
+```
+
+<a id="headers"></a>
+### 响应头
+
+在输出类型中使用 `header` 标签声明响应头：
 
 ```go
 type CreatedNoteOutput struct {
@@ -58,28 +84,33 @@ type CreatedNoteOutput struct {
 }
 ```
 
-处理器设置 `Location` 为新资源路径，例如 `/notes/<id>`。需要每次请求动态选择状态时，可使用 Huma 原生输出字段 `Status int`。
+处理器中设置字段的值即可：
 
-<a id="collections"></a>
+```go
+return &CreatedNoteOutput{
+    Location: "/notes/" + item.ID.String(),
+    Body:     toDTO(item),
+}, nil
+```
 
-## 空集合与时间
+<a id="collections-and-times"></a>
+## 集合与时间
 
-列表为空时返回 `[]`，便于客户端直接遍历。Go 中可以初始化一个空 slice：
+列表为空时，应当返回 `[]` 而不是 `null`，这样客户端可以直接遍历而无需判空。在 Go 中，`nil` slice 会被编码为 `null`，所以请初始化一个空 slice：
 
 ```go
 items := make([]NoteDTO, 0)
 ```
 
-nil slice 会序列化为 `null`，空 slice 会序列化为 `[]`。时间字段使用 `time.Time` 或明确的 RFC3339 字符串；业务保存 UTC 时刻，展示时再应用指定时区。
+时间字段使用 `time.Time`，它会被编码为 RFC 3339 格式的字符串，例如 `"2026-11-10T08:30:00Z"`。建议在业务和数据库中统一使用 UTC 时间，只在展示时转换为用户所在的时区。
 
 <a id="pagination"></a>
+## 分页
 
-## 游标分页
-
-分页结构由应用定义。例如，列表正文可以包含 `items` 和可选的 `next`：
+mygoravel 不规定分页的结构，你可以根据业务自行设计。对于数据量大、写入频繁的列表，推荐使用**游标分页**。下面是一个包含当前页数据和下一页游标的响应：
 
 ```go
-type ListOutput struct {
+type ListNotesOutput struct {
     Body struct {
         Items []NoteDTO `json:"items"`
         Next  string    `json:"next,omitempty"`
@@ -87,20 +118,33 @@ type ListOutput struct {
 }
 ```
 
-处理器用当前页填充 Items，并将下一页的位置编码到 Next。客户端把 Next 原样传给下一次请求的 before 参数；没有下一页时省略 next。
+客户端拿到 `next` 后，把它原样作为下一次请求的 `before` 参数传回；没有下一页时，响应中不包含 `next`：
 
-数据查询应使用确定且唯一的排序，例如 `created_at DESC, id DESC`。游标应携带版本、排序位置和查询约束；解码、校验与查询条件由业务实现。服务根据当前主体筛选数据，再应用游标条件。
+```json
+{
+  "items": [{"id": "…", "title": "…", "owner_id": "alice"}],
+  "next": "djE6MjAyNi0xMS0xMFQwODozMDowMFo6MGY4YzJmMGU"
+}
+```
 
-分页查询由业务实现，使用 Bun 原生 API，见[数据库](database.md)。
+实现游标分页时，有几点值得注意：
 
-<a id="errors"></a>
+- 查询必须使用**确定且唯一**的排序，例如 `ORDER BY created_at DESC, id DESC`，否则翻页时可能出现重复或遗漏；
+- 游标中应包含排序位置，最好再加上版本号，以便将来调整格式；
+- 先按当前用户筛选数据，再应用游标条件，避免越权读取。
 
+分页查询本身使用 Bun 的原生 API 实现，见[数据库](database.md)。
+
+<a id="returning-errors"></a>
 ## 返回错误
 
-业务失败直接返回 error，由 `rest.Register` 的边界转换处理。输出结构体只包含对外业务数据。
+业务失败时，处理器直接返回 `error` 即可，不需要在输出类型中设计错误字段：
 
-错误状态、稳定错误码和日志责任见[错误处理](errors.md)。
+```go
+item, err := notes.Find(ctx, in.ID)
+if err != nil {
+    return nil, err
+}
+```
 
----
-
-[上一篇：请求与校验](requests.md) · [下一篇：错误处理](errors.md)
+`rest.Register` 会把错误转换为统一格式的错误响应，并选择合适的状态码。如何定义业务错误、它们如何映射到 HTTP 状态码，请参阅[错误处理](errors.md)。

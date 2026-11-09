@@ -1,37 +1,46 @@
-# 测试
+# 测试：快速入门
 
-[文档首页](README.md) / 测试与部署
-
-mygoravel 使用标准 `testing`、`httptest` 和 `go test`。单元测试独立运行；需要 PostgreSQL 的框架测试通过 integration build tag 显式运行。
-
-本章内容：
-
-- [运行单元测试](#unit-tests)
+- [简介](#introduction)
+- [运行测试](#running-tests)
 - [HTTP 测试](#http-tests)
-- [业务与配置测试](#business-tests)
+    - [测试认证与错误响应](#testing-auth-and-errors)
+- [测试业务服务](#testing-services)
+- [测试配置](#testing-configuration)
 - [数据库测试](#database-tests)
-- [运行完整集成测试](#integration-tests)
-- [命令与生命周期测试](#lifecycle-tests)
-- [离线文档与外部消费](#consumption)
+    - [创建测试数据库](#creating-test-databases)
+    - [在本地运行数据库测试](#running-database-tests-locally)
+- [命令测试](#command-tests)
+- [测试平滑停止](#testing-shutdown)
+- [测试 OpenAPI 文档](#testing-openapi)
 
-<a id="unit-tests"></a>
+<a id="introduction"></a>
+## 简介
 
-## 运行单元测试
+mygoravel 在设计时就考虑了测试。由于所有依赖都是显式传入的，你可以在测试中轻松构造 API、服务和命令，而不需要启动整个应用。
 
-在仓库根目录执行：
+mygoravel 不引入额外的测试框架，直接使用 Go 标准库的 `testing`、`net/http/httptest` 和 `go test` 命令。
+
+<a id="running-tests"></a>
+## 运行测试
+
+在应用根目录中执行：
 
 ```bash
 go test ./...
+```
+
+建议同时开启竞态检测，它可以帮你发现并发访问共享数据的问题：
+
+```bash
 go test -race ./...
 ```
 
-在自己的应用中也使用相同命令。race 检测覆盖共享状态和并发访问；只在需要集成依赖时再添加 tag。
+需要真实数据库的测试通过 `integration` 构建标签与普通测试区分开，见[数据库测试](#database-tests)。
 
 <a id="http-tests"></a>
-
 ## HTTP 测试
 
-以下是完整的 `api_test.go`，可放在已添加框架依赖的应用中：
+测试 HTTP 接口时，不需要真正监听端口。用 `httptest` 创建请求和响应记录器，然后直接调用 `api.Handler()` 即可。下面是一个完整的 `api_test.go`：
 
 ```go
 package api_test
@@ -82,23 +91,66 @@ func TestPing(t *testing.T) {
 }
 ```
 
-认证、校验错误和越权路径通过真实 Router 测试，覆盖认证中间件、处理器与错误转换。
+在实际项目中，你通常会调用应用自己的路由注册函数（例如 `notehttp.Register`），而不是在测试中重新声明路由。这样测试覆盖的就是真实的路由配置。
 
-<a id="business-tests"></a>
+<a id="testing-auth-and-errors"></a>
+### 测试认证与错误响应
 
-## 业务与配置测试
+请通过完整的 `api.Handler()` 来测试认证、验证错误和越权访问，而不是直接调用处理器函数。这样测试才能覆盖认证中间件、输入验证和错误转换的完整过程。
 
-业务授权通过直接调用服务的测试验证所有权检查。可以直接注入真实业务依赖；只有确实需要隔离某项能力时，才在消费方定义小接口或提供测试实现。
+一组典型的接口测试包括：
 
-配置测试通过 `config.Parse` 和 `WithLookup` 注入字节与环境查询函数，覆盖默认值、零值、未知字段和敏感值脱敏。每个测试持有自己的环境查询函数。
+- 不带 `Authorization` 头的请求返回 `401`；
+- 缺少 scope 的 token 返回 `403`；
+- 不合法的请求体返回 `422`，并检查 `errors[].location`；
+- 访问他人的资源返回 `403` 或 `404`；
+- 错误响应中的 `code` 与预期的错误码一致。
+
+<a id="testing-services"></a>
+## 测试业务服务
+
+业务规则（尤其是资源所有权检查）应当通过直接调用业务服务来测试。由于主体是作为参数传入的，你可以很方便地模拟不同的调用者：
+
+```go
+alice := identity.Subject{ID: "alice", Type: identity.SubjectUser}
+bob := identity.Subject{ID: "bob", Type: identity.SubjectUser}
+
+item, err := svc.Create(ctx, alice, "准备发布")
+if err != nil {
+    t.Fatal(err)
+}
+if _, err := svc.Get(ctx, bob, item.ID); !errors.Is(err, note.ErrForbidden) {
+    t.Fatalf("expected forbidden, got %v", err)
+}
+```
+
+优先使用真实的依赖。只有在确实需要隔离某项外部能力时（例如第三方支付），才在业务包中定义一个小接口，并在测试中提供简单的实现，见[依赖装配](dependencies.md#replacing-dependencies-in-tests)。
+
+<a id="testing-configuration"></a>
+## 测试配置
+
+使用 `config.Parse` 直接从字节解析配置，并通过 `config.WithLookup` 注入环境变量，测试不需要真实的文件，也不会修改进程环境：
+
+```go
+doc, err := config.Parse([]byte("http:\n  addr: ${HTTP_ADDR}\n"),
+    config.WithSections("http"),
+    config.WithLookup(func(name string) (string, bool) {
+        return map[string]string{"HTTP_ADDR": ":9000"}[name], name == "HTTP_ADDR"
+    }),
+)
+```
+
+建议覆盖以下情况：默认值、显式的零值、未知字段、校验失败，以及敏感字段在输出中是否被脱敏。
 
 <a id="database-tests"></a>
-
 ## 数据库测试
 
-`dbtest.Open` 创建每测试独立的数据库。管理员 DSN 通过 `DATABASE_TEST_DSN` 传入，账户需要创建和删除数据库的权限。
+<a id="creating-test-databases"></a>
+### 创建测试数据库
 
-将下面的测试放在应用迁移目录的上一级；`migrations` 中至少包含一个 SQL 文件：
+测试数据库代码时，最可靠的方式是使用真实的 PostgreSQL。`dbtest.Open` 会为**每个测试**创建一个独立的临时数据库，执行你的迁移，并在测试结束时删除它。测试之间互不干扰，可以放心地并行运行。
+
+下面的测试文件应放在 `migrations` 目录的上一级，`migrations` 中至少要有一个 SQL 文件：
 
 ```go
 //go:build integration
@@ -122,6 +174,7 @@ func TestDatabase(t *testing.T) {
         t.Fatal(err)
     }
     db := dbtest.Open(t, migrations)
+
     var name string
     if err := db.QueryRow("select current_database()").Scan(&name); err != nil {
         t.Fatal(err)
@@ -132,36 +185,45 @@ func TestDatabase(t *testing.T) {
 }
 ```
 
-测试结束时关闭连接并删除数据库。迁移参数为 nil 时创建空库。管理员连接使用独立测试环境的凭据。
+`dbtest.Open` 返回一个已执行迁移的 `*bun.DB`，你可以把它直接传给业务服务进行测试。迁移参数传 `nil` 时会创建一个空数据库。
 
-<a id="integration-tests"></a>
+`dbtest` 通过环境变量 `DATABASE_TEST_DSN` 获取一个管理员连接，该账户需要有创建和删除数据库的权限。没有设置这个变量时，测试会直接失败，而不是被跳过——这样可以避免数据库测试在 CI 中被悄悄忽略。
 
-## 运行完整集成测试
+> [!WARNING]
+> 请为 `DATABASE_TEST_DSN` 使用专门的测试数据库实例，不要指向任何存放真实数据的数据库。
 
-启动独立的 PostgreSQL 测试实例：
+文件开头的 `//go:build integration` 让这些测试只在显式指定 `-tags=integration` 时运行，普通的 `go test ./...` 不会执行它们。
+
+<a id="running-database-tests-locally"></a>
+### 在本地运行数据库测试
+
+如果你安装了 Docker，可以用下面的命令启动一个临时的 PostgreSQL：
 
 ```bash
-docker run --name mygoravel-test-postgres --rm -d \
+docker run --name app-test-postgres --rm -d \
   -e POSTGRES_PASSWORD=postgres \
   -p 127.0.0.1:55432:5432 postgres:18
 ```
 
-使用 `docker exec mygoravel-test-postgres pg_isready -U postgres` 确认数据库就绪，再在仓库根目录执行：
+等待数据库就绪：
+
+```bash
+docker exec app-test-postgres pg_isready -U postgres
+```
+
+然后设置环境变量并运行测试：
 
 ```bash
 export DATABASE_TEST_DSN='postgres://postgres:postgres@127.0.0.1:55432/postgres?sslmode=disable'
 go test -race -count=1 -tags=integration ./...
 ```
 
-缺少数据库地址会导致测试失败。应用如果使用缓存等其他外部服务，需要自行补充对应的集成测试。
+测试完成后，执行 `docker stop app-test-postgres` 即可清理。如果你的应用还用到了 Redis 等其他外部服务，请为它们编写各自的集成测试。
 
-完成后执行 `docker stop mygoravel-test-postgres` 清理临时实例。
+<a id="command-tests"></a>
+## 命令测试
 
-<a id="lifecycle-tests"></a>
-
-## 命令与生命周期测试
-
-命令通过注入输出和回调测试，无需启动应用进程。下面是完整的测试文件：
+测试命令行时，不需要启动新的进程。把 `command.IO` 指向 `bytes.Buffer`，通过 `SetArgs` 指定参数，然后执行命令并检查输出。下面是一个完整的测试文件：
 
 ```go
 package cli_test
@@ -193,18 +255,35 @@ func TestOpenAPICommand(t *testing.T) {
 }
 ```
 
-这里的固定输出只验证命令接线；生成 OpenAPI 的回调应另行验证真实 schema。配置失败、依赖不可用和非法参数也应断言对应的 `command.ExitCode`。
+这个例子使用固定的输出来演示如何测试命令的接线。在你的应用中，请测试真实的命令回调，并对失败情况（配置错误、依赖不可用、非法参数）断言对应的 `command.ExitCode`。
 
-HTTP 生命周期测试应覆盖正常取消、正在处理的请求、监听异常和排空超时。应用入口自行处理信号时，还应运行子进程并发送 SIGTERM，验证资源关闭与退出状态。
+<a id="testing-shutdown"></a>
+## 测试平滑停止
 
-<a id="consumption"></a>
+如果你的应用对停机行为有要求，可以为 `httpx.Serve` 编写测试，覆盖以下场景：
 
-## 离线文档与外部消费
+- 取消 context 后，服务正常退出；
+- 停机时正在处理的请求能够完成；
+- 排空超时后，未完成的请求被取消；
+- 监听发生错误时，`Serve` 返回该错误。
 
-路由文档测试使用 ModeOpenAPI，并让处理器构造回调一旦执行就使测试失败。错误响应对生成的 schema 做校验，验证正文与文档一致。
+如果入口自己处理系统信号，还可以在测试中以子进程方式启动应用，发送 `SIGTERM`，验证资源被正确关闭以及进程的退出码。
 
-仓库的独立消费测试把当前代码制成模块代理 zip，在临时 module 中运行 HTTP、配置、错误和命令的公开 API 契约测试。测试通过 GOPROXY 获取候选版本，检查实际解析到的模块目录与版本，验证外部应用的引用路径。
+<a id="testing-openapi"></a>
+## 测试 OpenAPI 文档
 
----
+在文档模式下注册路由时，处理器工厂不应被调用。你可以让测试中的工厂一旦被调用就使测试失败，以此确保生成文档时不会意外地访问数据库等资源：
 
-[上一篇：应用命令](commands.md) · [下一篇：部署](deployment.md)
+```go
+api := rest.New(rest.Options{Mode: rest.ModeOpenAPI})
+op := huma.Operation{OperationID: "ping", Method: http.MethodGet, Path: "/ping"}
+rest.Public()(&op)
+rest.Register(api, op, func() func(context.Context, *PingInput) (*PingOutput, error) {
+    t.Fatal("handler factory must not run in OpenAPI mode")
+    return nil
+})
+
+data, err := api.OpenAPIJSON()
+```
+
+你还可以把生成的文档与仓库中保存的 `openapi.json` 进行比较，这样每次接口变更都会在代码审查中清晰可见。

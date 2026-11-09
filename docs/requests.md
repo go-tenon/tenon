@@ -1,22 +1,34 @@
-# 请求与校验
+# 请求
 
-[文档首页](README.md) / HTTP 基础
+- [简介](#introduction)
+- [定义输入类型](#input-types)
+    - [路径参数](#path-parameters)
+    - [查询参数](#query-parameters)
+    - [请求头](#headers)
+    - [JSON 请求体](#json-body)
+- [请求 ID](#request-id)
+- [请求体大小与超时](#limits)
+    - [请求体大小](#body-size)
+    - [超时与取消](#timeouts)
 
-用 Go 结构体描述接口输入，Huma 负责读取路径、查询参数和 JSON 请求体，并在进入处理器前完成校验。
+<a id="introduction"></a>
+## 简介
 
-本章内容：
+在 mygoravel 中，你不需要手动读取 `http.Request`。每条路由都有一个**输入类型**——一个普通的 Go 结构体，字段上的标签说明这个值从哪里来。Huma 会在调用处理器之前读取请求、转换类型并完成[验证](validation.md)，你的处理器拿到的就是一个已经填好的结构体。
 
-- [路径与查询参数](#parameters)
-- [JSON 请求体](#json-body)
-- [校验失败](#validation-errors)
-- [大小限制与超时](#limits)
-- [读取请求标识](#request-id)
+```go
+return func(ctx context.Context, in *GetNoteInput) (*NoteOutput, error) {
+    // in.ID 已经是解析好的 uuid.UUID
+}
+```
 
-<a id="parameters"></a>
+<a id="input-types"></a>
+## 定义输入类型
 
-## 路径与查询参数
+<a id="path-parameters"></a>
+### 路径参数
 
-下面的输入类型适用于 `/notes/{id}`。使用 `github.com/google/uuid` 中的 UUID 类型读取笔记标识：
+使用 `path` 标签读取路由路径中的参数。下面的输入类型对应 `/notes/{id}`，`uuid.UUID` 来自 `github.com/google/uuid`：
 
 ```go
 type GetNoteInput struct {
@@ -24,7 +36,12 @@ type GetNoteInput struct {
 }
 ```
 
-列表查询可以定义为：
+路径参数总是必填的。如果路径中的值无法转换为字段类型（例如不是合法的 UUID），请求会被拒绝，并返回验证错误。
+
+<a id="query-parameters"></a>
+### 查询参数
+
+使用 `query` 标签读取查询参数。你可以同时声明默认值和取值范围：
 
 ```go
 type ListNotesInput struct {
@@ -33,9 +50,15 @@ type ListNotesInput struct {
 }
 ```
 
-这个定义把越界的 limit 当作输入错误拒绝。若业务选择截断或重置越界值，应在自己的服务中明确实现该策略，并让接口文档与实际行为一致。
+客户端请求 `/notes?limit=50` 时，`in.Limit` 为 50；省略 `limit` 时为默认值 20；传入 500 时，请求会被拒绝。查询参数默认是可选的。
 
-请求头也可以作为字段读取：
+> [!NOTE]
+> 上面的写法会把超出范围的 `limit` 当作错误拒绝。如果你希望把它悄悄截断为 100，就不要声明 `maximum`，而是在业务服务中处理，并在接口描述中说明这一行为。
+
+<a id="headers"></a>
+### 请求头
+
+使用 `header` 标签读取请求头：
 
 ```go
 type RequestInput struct {
@@ -43,13 +66,13 @@ type RequestInput struct {
 }
 ```
 
-认证头交给[Bearer 认证](authentication.md)处理，凭据校验成功后得到主体。
+> [!TIP]
+> `Authorization` 头不需要自己读取。使用 `rest.RequireBearer` 保护路由后，认证通过的身份可以直接从 context 中获取，见[认证](authentication.md)。
 
 <a id="json-body"></a>
+### JSON 请求体
 
-## JSON 请求体
-
-输入结构体中名为 `Body` 的字段表示正文：
+输入结构体中名为 `Body` 的字段表示请求体：
 
 ```go
 type CreateNoteInput struct {
@@ -69,62 +92,62 @@ Authorization: Bearer <token>
 {"title":"准备发布"}
 ```
 
-标题的结构校验会在处理器执行前完成。业务服务检查业务规则，直接调用与 HTTP 入口遵循同样的约束。
+处理器中通过 `in.Body.Title` 读取标题。请求体中的字段默认是**必填**的，验证规则的写法见[验证](validation.md)。
 
-<a id="validation-errors"></a>
+一个输入类型可以同时包含路径参数、查询参数、请求头和请求体：
 
-## 校验失败
-
-JSON 语法错误通常返回 400，字段校验失败返回 422。错误正文使用统一的 Problem Details 格式，例如：
-
-```json
-{
-  "status": 422,
-  "title": "Unprocessable Entity",
-  "detail": "Invalid request",
-  "code": "error.validation",
-  "request_id": "<请求标识>",
-  "errors": [
-    {"message": "Invalid value", "location": "body.title"}
-  ]
+```go
+type UpdateNoteInput struct {
+    ID   uuid.UUID `path:"id"`
+    Body struct {
+        Title string `json:"title" minLength:"1" maxLength:"120"`
+    }
 }
 ```
 
-上面展示启用框架英文目录时的正文；未启用语言目录时，detail 使用状态描述。客户端根据 `code` 和 `errors[].location` 决定展示位置与交互。
-
-字段错误只包含公开提示和位置，默认 message 为 Invalid value。认证失败可能在正文校验前就返回 401。
-
-<a id="limits"></a>
-
-## 大小限制与超时
-
-`rest.Options.Middleware` 可以设置整个 API 的请求体上限和请求 context 时限：
-
-```go
-api := rest.New(rest.Options{
-    Middleware: httpx.MiddlewareOptions{
-        MaxBodyBytes:   1 << 20,
-        RequestTimeout: 30 * time.Second,
-    },
-})
-```
-
-省略时默认 1 MiB 和 30 秒。Huma Operation 也有原生的正文限制设置；如果要允许某个接口更大的正文，需要同时检查该 Operation 和外层中间件的上限。
-
-超时会取消请求 context，处理器负责响应取消。数据库查询和外部客户端调用应使用处理器收到的 `ctx`。服务器的 `ReadTimeout`、`WriteTimeout`、`ReadHeaderTimeout` 则由应用创建 `http.Server` 时设置；见[最小应用](routing.md#first-route)。
-
 <a id="request-id"></a>
+## 请求 ID
 
-## 读取请求标识
-
-处理器内可以调用：
+默认中间件会为每个请求生成一个唯一的 ID。在处理器或业务代码中，可以通过请求的 context 读取它：
 
 ```go
 requestID := httpx.RequestID(ctx)
 ```
 
-每个请求获得新的标识，响应头 `X-Request-ID` 和错误正文中的 `request_id` 与它一致。它用于关联本次请求的日志；trace ID 由应用的追踪设施提供。
+同一个 ID 会出现在响应头 `X-Request-ID`、错误响应的 `request_id` 字段以及这个请求的所有日志中。当用户反馈问题时，请他们提供这个 ID，你就能在日志中找到对应的请求。
 
----
+<a id="limits"></a>
+## 请求体大小与超时
 
-[上一篇：HTTP 中间件](middleware.md) · [下一篇：响应](responses.md)
+<a id="body-size"></a>
+### 请求体大小
+
+为了防止过大的请求耗尽服务器资源，默认中间件把请求体限制在 1 MiB，超出时返回 `413`。你可以在创建 API 时调整这个上限：
+
+```go
+api := rest.New(rest.Options{
+    Middleware: httpx.MiddlewareOptions{
+        MaxBodyBytes: 8 << 20, // 8 MiB
+    },
+})
+```
+
+> [!NOTE]
+> Huma 的 `Operation` 也有自己的 `MaxBodyBytes` 设置。如果某个接口需要接收更大的请求体，请同时检查该路由和全局中间件的上限，两者都需要足够大。
+
+<a id="timeouts"></a>
+### 超时与取消
+
+默认中间件为每个请求的 context 设置 30 秒的超时，可以通过 `RequestTimeout` 选项调整：
+
+```go
+api := rest.New(rest.Options{
+    Middleware: httpx.MiddlewareOptions{
+        RequestTimeout: 10 * time.Second,
+    },
+})
+```
+
+超时后，请求的 context 会被取消。为了让超时真正生效，请把处理器收到的 `ctx` 一路传给数据库查询和外部 HTTP 调用。
+
+除了请求 context 的超时，服务器本身还有读写超时，例如 `ReadTimeout`、`WriteTimeout` 和 `ReadHeaderTimeout`。它们由你在创建 `http.Server` 时设置，参考[安装](installation.md#entrypoint)中的示例。

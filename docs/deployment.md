@@ -1,83 +1,130 @@
 # 部署
 
-[文档首页](README.md) / 测试与部署
+- [简介](#introduction)
+- [构建应用](#building)
+- [发布流程](#release-process)
+    - [检查配置](#checking-configuration)
+    - [执行迁移](#running-migrations)
+    - [启动服务](#starting-the-server)
+- [健康检查](#health-checks)
+- [平滑停止](#graceful-shutdown)
+- [反向代理与网络](#reverse-proxies)
+- [日志](#logging)
+- [升级依赖](#upgrading)
 
-构建、配置检查、迁移、启动和停止都由应用入口明确编排。本章说明如何把这些框架能力接到自己的部署流程。
+<a id="introduction"></a>
+## 简介
 
-本章内容：
+当你准备把 mygoravel 应用部署到生产环境时，有几件重要的事情需要做好：构建一个可重复的二进制文件、在启动前检查配置和执行迁移、让部署平台正确地探测健康状态，以及在停止时平滑地排空请求。本章将逐一介绍。
 
-- [构建应用](#build)
-- [配置与启动](#configuration)
-- [数据库发布](#release)
-- [健康检查](#probes)
-- [平滑退出](#shutdown)
-- [日志与网络边界](#diagnostics)
-- [升级验证](#upgrades)
-
-<a id="build"></a>
-
+<a id="building"></a>
 ## 构建应用
 
-对于[快速开始](installation.md)中根目录包含 main.go 的应用：
+Go 应用会被编译成一个独立的二进制文件。对于根目录包含 `main.go` 的应用：
 
 ```bash
 go build -trimpath -o bin/api .
 ```
 
-如果入口位于 cmd/api，则把构建目标改为 `./cmd/api`。构建路径由应用布局决定。固定 go.mod/go.sum，并记录构建提交。
+如果入口位于 `cmd/api`，则把构建目标改为 `./cmd/api`。`-trimpath` 会去掉二进制中的本地路径信息。
 
-<a id="configuration"></a>
+由于迁移文件和翻译文件都已通过 `embed` 嵌入，部署时只需要这一个二进制文件和配置文件。请将 `go.mod` 和 `go.sum` 提交到版本库，并记录每次构建对应的提交，以便出现问题时准确定位版本。
 
-## 配置与启动
+<a id="release-process"></a>
+## 发布流程
 
-最小程序可以直接执行 `./bin/api`。如果应用使用 YAML，应在入口定义配置路径和加载逻辑；使用环境变量时，通过 WithLookup 显式提供查询函数。
+一次典型的发布按以下顺序进行。下面的命令假设你已经按照[命令行](commands.md)一章为应用安装了对应的子命令和 `--config` 选项。
 
-`--config`、serve 或 doctor 等名称只有在应用定义或安装相应命令后才存在。可参考[应用命令](commands.md)组合需要的入口，再让部署平台调用这些实际存在的命令。
+<a id="checking-configuration"></a>
+### 检查配置
 
-为数据库连接和外部探测设置明确的 context deadline。凭据与 TLS 参数由部署环境提供。
+在发布前离线检查配置文件，可以尽早发现缺失的环境变量或写错的字段：
 
-<a id="release"></a>
+```bash
+./bin/api config check --config config.yaml
+```
 
-## 数据库发布
+必要时，再用 `doctor` 命令确认数据库等外部依赖可以连通：
 
-在发布步骤中构造 goose.Provider 并执行迁移，确认成功后再启动依赖新结构的应用。具体连接方式见[迁移](migrations.md)。
+```bash
+./bin/api doctor --config config.yaml
+```
 
-Provider 的数据库锁串行化迁移执行，发布平台负责应用版本切换。滚动升级时保持新旧代码对数据库结构的兼容。
+<a id="running-migrations"></a>
+### 执行迁移
 
-<a id="probes"></a>
+在启动新版本的服务**之前**执行数据库迁移：
 
+```bash
+./bin/api migrate up --config config.yaml
+```
+
+迁移器使用数据库锁，即使多个部署任务同时执行迁移，也只会串行运行。迁移成功后，再启动依赖新表结构的服务。滚动发布期间，新旧版本会同时运行，请确保数据库变更对两个版本都兼容，见[零停机变更](migrations.md#zero-downtime-changes)。
+
+<a id="starting-the-server"></a>
+### 启动服务
+
+```bash
+./bin/api serve --config config.yaml
+```
+
+数据库密码、token 等敏感信息建议通过部署平台的环境变量或密钥管理功能提供，在配置文件中用 `${DATABASE_URL}` 这样的方式引用，而不是直接写入文件。
+
+<a id="health-checks"></a>
 ## 健康检查
 
-应用自己登记存活和就绪路径，并让部署平台使用相应路径及成功状态。一个常见约定是 live 只检查进程响应，ready 检查排空状态与必要依赖。
+mygoravel 不会自动注册健康检查路由，你可以根据部署平台的要求自行注册，并在平台中配置相应的路径：
 
-使用短超时探测数据库。ready 检查实际必需的依赖，可以使用[生命周期章节](lifecycle.md#health)的 handler 写法。
+- **存活检查**（例如 `/livez`）：只确认进程可以响应；
+- **就绪检查**（例如 `/readyz`）：确认服务没有在排空，并且必需的依赖可用。
 
-<a id="shutdown"></a>
+具体写法见[请求生命周期](lifecycle.md#health-checks)。
 
-## 平滑退出
+<a id="graceful-shutdown"></a>
+## 平滑停止
 
-进程管理器应把 SIGTERM 传给应用二进制。入口将取消信号传给 httpx.Serve，后者执行排空，再由入口关闭依赖。
+部署平台在停止实例时通常会发送 `SIGTERM`。请确保这个信号能传递到应用进程——例如在容器中直接以应用二进制作为入口进程，而不是通过一个不转发信号的 shell 脚本启动。
 
-设置 ShutdownTimeout，并为平台停止宽限期留出排空和后续清理的时间。预算为 0 表示立即关闭。代理摘流与等待时间由部署平台配置。
+收到信号后，`httpx.Serve` 会开始排空请求，详见[请求生命周期](lifecycle.md#graceful-shutdown)。配置停机时间时请注意：
 
-业务和驱动通过 context 响应取消；忽略取消的 goroutine 会继续运行。
+- `ShutdownTimeout` 决定了排空请求的最长时间；
+- 部署平台的停止宽限期（例如 Kubernetes 的 `terminationGracePeriodSeconds`）应当大于 `ShutdownTimeout` 加上关闭数据库等资源所需的时间，否则进程可能在清理完成前被强制终止。
 
-<a id="diagnostics"></a>
+<a id="reverse-proxies"></a>
+## 反向代理与网络
 
-## 日志与网络边界
+如果应用部署在负载均衡器或反向代理之后，请在 `TrustedProxies` 中配置代理的实际网段，以便正确识别客户端地址，见[可信代理](middleware.md#trusted-proxies)。
 
-显式把日志器传给 API，通常使用 stderr 作为服务日志输出。用 request_id 关联访问结果与错误诊断。
+TLS 终止、CORS、限流等功能，可以在反向代理中配置，也可以作为[自定义中间件](middleware.md#custom-middleware)加入应用。
 
-位于反向代理后时配置实际 TrustedProxies 网段。TLS 终止、CORS、限流和认证来源由应用按需接入。
+<a id="logging"></a>
+## 日志
 
-<a id="upgrades"></a>
+建议把服务日志输出到标准错误，使用 JSON 格式，并通过 `Attrs` 附加服务名和版本号，便于日志平台采集和检索：
 
-## 升级验证
+```go
+logger := logging.New(logging.Options{
+    Writer: os.Stderr,
+    Attrs: []slog.Attr{
+        slog.String("service", "notes"),
+        slog.String("version", version),
+    },
+})
+```
 
-框架当前工具链要求以 [go.mod](../go.mod) 为准，数据库集成测试使用 PostgreSQL 18。应用添加的可选组件应有自己的版本固定和集成验证。
+排查问题时，可以使用错误响应中的 `request_id` 在日志中找到同一请求的访问日志和错误诊断。详见[日志](logging.md)。
 
-升级后执行单元测试、race 和实际依赖测试。源码迁移基线比较见[发布后的迁移](migrations.md#published-migrations)。
+<a id="upgrading"></a>
+## 升级依赖
 
----
+升级 mygoravel 或其他依赖之后，请至少执行以下检查：
 
-[上一篇：测试](testing.md) · [返回文档首页](README.md)
+```bash
+go test ./...
+go test -race ./...
+go test -race -tags=integration ./...
+```
+
+框架所需的 Go 版本以其 [go.mod](../go.mod) 为准，框架自身的数据库集成测试使用 PostgreSQL 18。你的应用额外引入的组件（例如缓存客户端）应当固定版本，并有各自的集成测试。
+
+如果你在 CI 中启用了[已发布迁移检查](migrations.md#checking-in-ci)，它也会帮助你确认升级过程中没有意外修改已发布的迁移。

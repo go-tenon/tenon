@@ -1,23 +1,66 @@
-# 数据库
+# 数据库：快速入门
 
-[文档首页](README.md) / 数据库
-
-当前数据库组合是 PostgreSQL、pgx 和 Bun。`database.Open` 完成连接池装配和连通性检查，之后直接使用返回的 `*bun.DB` 查询和事务能力。
-
-本章内容：
-
-- [打开连接](#connection)
-- [连接配置](#configuration)
-- [定义模型与查询](#models)
+- [简介](#introduction)
+- [配置](#configuration)
+- [连接数据库](#connecting)
+- [定义模型](#defining-models)
+- [执行查询](#running-queries)
+    - [处理“未找到”](#handling-not-found)
 - [事务](#transactions)
-- [识别约束错误](#constraints)
-- [使用真实数据库测试](#tests)
+- [处理约束错误](#constraint-errors)
+- [测试](#testing)
 
-<a id="connection"></a>
+<a id="introduction"></a>
+## 简介
 
-## 打开连接
+几乎每个 API 都需要与数据库交互。mygoravel 目前支持 PostgreSQL，并使用以下组件：
 
-下面是完整的连接探测函数：
+- [pgx](https://github.com/jackc/pgx)：PostgreSQL 驱动；
+- [Bun](https://bun.uptrace.dev)：SQL 优先的 Go ORM，负责查询构建和模型映射；
+- [goose](https://github.com/pressly/goose)：数据库迁移，见[迁移](migrations.md)。
+
+`database` 包负责打开一个配置好的连接池，返回原生的 `*bun.DB`。之后的查询、事务等操作都直接使用 Bun 的 API，你可以随时参考 [Bun 官方文档](https://bun.uptrace.dev/guide/)。
+
+<a id="configuration"></a>
+## 配置
+
+数据库配置通常放在配置文件的 `database` 段中：
+
+```yaml
+database:
+  dsn: ${DATABASE_URL}
+  max_open_conns: 20
+  max_idle_conns: 10
+  conn_max_lifetime: 1h
+  conn_max_idle_time: 30m
+```
+
+| 字段 | 说明 | `DefaultConfig` 中的默认值 |
+| --- | --- | --- |
+| `dsn` | PostgreSQL 连接串，例如 `postgres://user:pass@localhost:5432/app?sslmode=disable` | 无，必填 |
+| `max_open_conns` | 最大连接数；`0` 表示不限制 | 4 × `GOMAXPROCS` |
+| `max_idle_conns` | 最大空闲连接数；`0` 表示不保留空闲连接 | 4 × `GOMAXPROCS` |
+| `conn_max_lifetime` | 连接的最长存活时间 | `1h` |
+| `conn_max_idle_time` | 空闲连接的最长保留时间 | `30m` |
+
+这些字段对应 `database.Config` 结构体。用 `database.DefaultConfig()` 创建默认值，再从配置文件中解码覆盖：
+
+```go
+cfg := database.DefaultConfig()
+if err := doc.Decode("database", &cfg); err != nil {
+    return err
+}
+```
+
+`database.Config` 实现了 `Validate` 方法，解码时会自动检查 DSN 是否为空、连接池参数是否合法。`dsn` 字段的类型是 `config.Secret`，不会在日志中泄露密码。
+
+> [!TIP]
+> 设置 `max_open_conns` 时，请考虑应用的部署副本数：所有副本的连接数之和不应超过数据库的最大连接数。
+
+<a id="connecting"></a>
+## 连接数据库
+
+使用 `database.Open` 打开连接池。它会立即 Ping 数据库确认连通，失败时自动释放已打开的资源。下面是一个完整的连接检查函数：
 
 ```go
 package storage
@@ -41,36 +84,14 @@ func Check(ctx context.Context, dsn config.Secret) error {
 }
 ```
 
-应用入口通常只打开一次，然后把 `db` 传给业务服务，退出时再关闭。启动探测通过 context deadline 限定等待时间。
+`database.Open` 使用你传入的配置值，包括显式设置的零值。为 `ctx` 设置一个截止时间，可以避免数据库不可达时启动过程无限等待。
 
-<a id="configuration"></a>
+在应用中，连接池应当在入口打开**一次**，然后传给所有需要它的业务服务，在应用退出时关闭，见[依赖装配](dependencies.md)。
 
-## 连接配置
+<a id="defining-models"></a>
+## 定义模型
 
-```yaml
-database:
-  dsn: ${DATABASE_URL}
-  max_open_conns: 20
-  max_idle_conns: 10
-  conn_max_lifetime: 1h
-  conn_max_idle_time: 30m
-```
-
-| 字段 | DefaultConfig 中的值 | 说明 |
-| --- | --- | --- |
-| dsn | 空，必填 | pgx 接受的 PostgreSQL 连接串 |
-| max_open_conns | 4 × GOMAXPROCS(0) | 最大连接数；0 沿用 database/sql 的不设上限语义 |
-| max_idle_conns | 4 × GOMAXPROCS(0) | 最大空闲连接数；0 不保留空闲连接 |
-| conn_max_lifetime | 1h | 连接最长存活时间 |
-| conn_max_idle_time | 30m | 空闲连接最长保留时间 |
-
-根据数据库容量和部署副本数分配连接预算。`DefaultConfig` 提供默认值，`Open` 使用调用方传入的值，包括显式零值。
-
-<a id="models"></a>
-
-## 定义模型与查询
-
-使用 Bun 的结构体标签。示例：
+模型是一个带有 `bun` 标签的普通 Go 结构体，描述数据表的列与字段之间的映射：
 
 ```go
 type Note struct {
@@ -81,9 +102,12 @@ type Note struct {
 }
 ```
 
-这里需要 `github.com/google/uuid` 和标准库 `time`。模型描述查询映射，表结构由[迁移](migrations.md)管理。
+模型只用于查询映射，表结构本身由[迁移](migrations.md)管理。
 
-用已经注入服务的 `db` 查询笔记：
+<a id="running-queries"></a>
+## 执行查询
+
+在业务服务中，使用注入的 `db` 构建查询：
 
 ```go
 var item Note
@@ -93,30 +117,56 @@ err := db.NewSelect().
     Scan(ctx)
 ```
 
-查询参数通过 Bun 的占位符绑定。区分 `sql.ErrNoRows` 与其他数据库错误，前者可以映射为业务 NotFound，后者保留错误原因返回给边界。
+查询参数通过 `?` 占位符绑定，Bun 会负责转义，请不要手动拼接 SQL 字符串。始终把请求的 `ctx` 传给 `Scan` 或 `Exec`，这样请求取消或超时时，查询也会随之停止。
+
+插入、更新和删除同样使用 Bun 的原生 API：
+
+```go
+_, err := db.NewInsert().Model(&item).Exec(ctx)
+_, err = db.NewUpdate().Model(&item).WherePK().Exec(ctx)
+_, err = db.NewDelete().Model((*Note)(nil)).Where("id = ?", id).Exec(ctx)
+```
+
+<a id="handling-not-found"></a>
+### 处理“未找到”
+
+查询单条记录时，如果没有匹配的行，Bun 会返回 `sql.ErrNoRows`。请把它转换为业务的“未找到”错误，其他数据库错误则原样返回：
+
+```go
+if errors.Is(err, sql.ErrNoRows) {
+    return nil, ErrNotFound.New()
+}
+if err != nil {
+    return nil, err
+}
+```
+
+未经转换的数据库错误会被当作内部错误，返回 `500` 并记录日志。
 
 <a id="transactions"></a>
-
 ## 事务
 
-事务直接使用 Bun 的 `RunInTx`。下面是业务服务中的片段，`item` 是准备插入的模型：
+使用 Bun 的 `RunInTx` 在事务中执行一组操作。回调返回错误时事务回滚，返回 `nil` 时提交：
 
 ```go
 err := db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-    _, err := tx.NewInsert().Model(item).Exec(ctx)
+    if _, err := tx.NewInsert().Model(item).Exec(ctx); err != nil {
+        return err
+    }
+    _, err := tx.NewInsert().Model(audit).Exec(ctx)
     return err
 })
 ```
 
-回调返回错误时回滚，成功时提交。参与同一事务的操作统一使用传入的 `tx`。需要嵌套事务或 savepoint 时，应明确使用 Bun 的原生能力与语义。
+> [!WARNING]
+> 在回调内部，所有操作都必须使用传入的 `tx`，而不是外层的 `db`。使用 `db` 的操作不属于这个事务，回滚时也不会被撤销。
 
-网络请求和缓存失效由业务单独编排。查询缓存通常在提交成功后失效，见[缓存失效](cache.md#invalidation)。
+请避免在事务中执行网络请求或删除缓存等外部操作。缓存失效应当在事务提交成功之后进行，见[缓存](cache.md#invalidation)。如需嵌套事务或保存点，请参阅 Bun 的相关文档。
 
-<a id="constraints"></a>
+<a id="constraint-errors"></a>
+## 处理约束错误
 
-## 识别约束错误
-
-已知的唯一约束可以映射为稳定业务错误：
+数据库约束是保证数据一致性的最后一道防线。当插入的数据违反唯一约束时，你通常希望返回一个 `409 Conflict`，而不是 `500`。`database` 包提供了几个判断函数：
 
 ```go
 if database.IsUniqueViolation(err, "notes_owner_title_key") {
@@ -124,16 +174,15 @@ if database.IsUniqueViolation(err, "notes_owner_title_key") {
 }
 ```
 
-`ErrConflict` 是应用的 fault 模板。还可以使用 `IsForeignKeyViolation` 和 `IsCheckViolation` 判断对应 SQLSTATE。
+| 函数 | 判断的约束 | SQLSTATE |
+| --- | --- | --- |
+| `database.IsUniqueViolation(err, names...)` | 唯一约束 | 23505 |
+| `database.IsForeignKeyViolation(err)` | 外键约束 | 23503 |
+| `database.IsCheckViolation(err)` | 检查约束 | 23514 |
 
-指定已知约束名，分别映射对应业务冲突；其他错误保留原因返回。传给数据库的 context 应来自当前用例，以便请求取消和截止时间生效。
+`IsUniqueViolation` 可以传入约束名，只在指定的约束冲突时返回 `true`。推荐总是指定约束名，为不同的约束返回不同的业务错误，例如“标题重复”和“邮箱已注册”；其他错误则保留原因继续返回。
 
-<a id="tests"></a>
+<a id="testing"></a>
+## 测试
 
-## 使用真实数据库测试
-
-`database/dbtest` 为每次测试创建隔离数据库，可以先执行嵌入的迁移，并在结束时删除数据库。使用方法见[测试](testing.md#database-tests)。
-
----
-
-[上一篇：认证与授权](authentication.md) · [下一篇：数据库迁移](migrations.md)
+`database/dbtest` 包可以为每个测试创建一个独立的真实数据库，执行迁移后交给测试使用，测试结束时自动删除。详见[测试](testing.md#database-tests)。

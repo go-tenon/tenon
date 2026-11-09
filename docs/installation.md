@@ -1,28 +1,48 @@
-# 安装与快速开始
+# 安装
 
-[文档首页](README.md) / 入门
+- [认识 mygoravel](#meet-mygoravel)
+    - [为什么选择 mygoravel](#why-mygoravel)
+- [创建应用](#creating-an-application)
+    - [环境要求](#requirements)
+    - [安装 mygoravel](#installing-mygoravel)
+    - [编写入口文件](#entrypoint)
+    - [启动服务](#running)
+- [下一步](#next-steps)
+- [常见问题](#troubleshooting)
 
-mygoravel 是普通 Go module。本章从一个空目录开始，运行只依赖 HTTP 能力的 API；数据库、缓存和认证在需要时分别接入。
+<a id="meet-mygoravel"></a>
+## 认识 mygoravel
 
-本章内容：
+mygoravel 是一个用于构建 HTTP API 的 Go 应用框架。它为配置加载、路由、请求验证、错误响应、日志、认证、数据库访问、迁移和命令行工具提供了一套统一的约定，让你把精力放在业务本身，而不是反复拼装基础设施。
 
-- [环境要求](#requirements)
-- [创建应用](#create-project)
-- [添加框架依赖](#dependency)
-- [编写入口](#entrypoint)
-- [发起请求](#first-request)
-- [添加应用能力](#next-steps)
-- [停止与排查](#troubleshooting)
+和很多“大而全”的框架不同，mygoravel 不会把社区组件藏在自己的抽象后面。路由使用 [chi](https://github.com/go-chi/chi) 和 [Huma](https://huma.rocks)，日志使用标准库 `log/slog`，数据库使用 [Bun](https://bun.uptrace.dev) 与 pgx，迁移使用 [goose](https://github.com/pressly/goose)，命令行使用 [Cobra](https://github.com/spf13/cobra)。mygoravel 负责把它们以一致的方式连接起来，你学到的每一项技能都是这些组件本身的技能。
+
+<a id="why-mygoravel"></a>
+### 为什么选择 mygoravel
+
+**依赖一目了然。** mygoravel 没有服务容器，也没有全局注册表。数据库连接、日志器、缓存都通过普通的 Go 构造函数参数传递，阅读入口文件就能知道应用由哪些部分组成。
+
+**约定开箱即用。** 每个请求都会自动获得请求 ID；所有错误都使用统一的 [Problem Details](https://www.rfc-editor.org/rfc/rfc9457) 格式返回；每条路由都必须显式声明是公开的还是需要认证的——忘记声明会在启动时就报错，而不是上线后才发现接口没有受保护。
+
+**按需引入。** 每个包都可以单独使用。一个最小的 API 只需要路由相关的包；需要数据库、缓存或本地化时，再逐步加入。
+
+**接口文档自动生成。** 路由的输入输出由 Go 类型描述，OpenAPI 文档随代码自动生成，并且可以在不连接数据库的情况下离线导出。
+
+<a id="creating-an-application"></a>
+## 创建应用
 
 <a id="requirements"></a>
+### 环境要求
 
-## 环境要求
+- Go 1.27.3 或更高版本（精确的工具链要求以框架的 [go.mod](../go.mod) 为准）
+- PostgreSQL（仅在使用数据库功能时需要）
 
-当前代码使用 Go 1.27.3，精确工具链要求以仓库 go.mod 为准。本章的最小 HTTP API 只需 Go 工具链。
+本章创建的最小 API 只需要 Go 工具链。
 
-<a id="create-project"></a>
+<a id="installing-mygoravel"></a>
+### 安装 mygoravel
 
-## 创建应用
+mygoravel 是一个普通的 Go module。首先为你的应用创建一个目录并初始化 module：
 
 ```bash
 mkdir hello-api
@@ -30,77 +50,160 @@ cd hello-api
 go mod init example.com/hello-api
 ```
 
-目录名和 module 路径由你决定。下文命令均在这个应用目录运行。
-
-<a id="dependency"></a>
-
-## 添加框架依赖
-
-选择已推送的框架版本或提交，将其写入环境变量后安装：
+目录名和 module 路径可以按你的项目来取。接下来添加框架依赖：
 
 ```bash
-MYGORAVEL_VERSION='<版本号或提交>'
-go get "github.com/ryan053857/mygoravel@$MYGORAVEL_VERSION"
+go get github.com/ryan053857/mygoravel@main
 ```
 
-将占位符替换为实际版本。使用与所安装代码同版本的文档；go get 下载已发布的版本或提交。
+你也可以把 `@main` 换成某个具体的提交哈希或版本标签，让依赖版本固定下来。
+
+> [!TIP]
+> 如果你在本地同时修改框架和应用，可以在应用的 `go.mod` 中加入 `replace github.com/ryan053857/mygoravel => ../mygoravel`，让应用直接使用本地的框架代码。
 
 <a id="entrypoint"></a>
+### 编写入口文件
 
-## 编写入口
+在应用目录中创建 `main.go`，内容如下。这是一个完整的程序：
 
-把[路由章节中的完整 main.go](routing.md#first-route)保存为当前目录的 `main.go`。这个程序显式完成四件事：构造 API、注册 `/ping`、监听 HTTP、响应退出信号。
+```go
+package main
 
-然后整理依赖并启动：
+import (
+    "context"
+    "log/slog"
+    "net"
+    "net/http"
+    "os"
+    "os/signal"
+    "syscall"
+    "time"
+
+    "github.com/danielgtaylor/huma/v2"
+    "github.com/ryan053857/mygoravel/httpx"
+    "github.com/ryan053857/mygoravel/httpx/rest"
+    "github.com/ryan053857/mygoravel/logging"
+)
+
+type PingInput struct{}
+
+type PingOutput struct {
+    Body struct {
+        Message string `json:"message"`
+    }
+}
+
+func registerPing(api *rest.API) {
+    op := huma.Operation{
+        OperationID: "ping",
+        Method:      http.MethodGet,
+        Path:        "/ping",
+        Summary:     "检查 API 是否可响应",
+    }
+    rest.Public()(&op)
+    rest.Register(api, op, func() func(context.Context, *PingInput) (*PingOutput, error) {
+        return func(ctx context.Context, in *PingInput) (*PingOutput, error) {
+            out := &PingOutput{}
+            out.Body.Message = "pong"
+            return out, nil
+        }
+    })
+}
+
+func run() error {
+    ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+    defer stop()
+
+    logger := logging.New(logging.Options{Writer: os.Stderr})
+    api := rest.New(rest.Options{
+        Title: "Hello API", Version: "1.0.0",
+        Middleware: httpx.MiddlewareOptions{Logger: logger},
+    })
+    registerPing(api)
+
+    listener, err := net.Listen("tcp", "127.0.0.1:8080")
+    if err != nil {
+        return err
+    }
+    server := &http.Server{
+        Handler: api.Handler(), ReadHeaderTimeout: 5 * time.Second,
+        ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second,
+        IdleTimeout: time.Minute,
+    }
+    return httpx.Serve(ctx, server, listener, httpx.ServeOptions{
+        ShutdownTimeout: 10 * time.Second,
+        Logger:          logger,
+    })
+}
+
+func main() {
+    if err := run(); err != nil {
+        slog.Error("application stopped", "error", err)
+        os.Exit(1)
+    }
+}
+```
+
+这个程序只做了四件事：
+
+1. 创建日志器和 API 实例；
+2. 通过 `registerPing` 注册一条 `GET /ping` 路由；
+3. 在 `127.0.0.1:8080` 上监听；
+4. 收到 Ctrl+C 或 `SIGTERM` 时，等待正在处理的请求完成后退出。
+
+现在不必理解每一行代码，[路由](routing.md)和[请求生命周期](lifecycle.md)章节会详细解释它们。
+
+<a id="running"></a>
+### 启动服务
+
+整理依赖并启动应用：
 
 ```bash
 go mod tidy
 go run .
 ```
 
-服务监听 `127.0.0.1:8080`。运行参数直接写在 main.go 中。
-
-<a id="first-request"></a>
-
-## 发起请求
-
-保持服务运行，在另一个终端执行：
+保持服务运行，在另一个终端发起请求：
 
 ```bash
 curl -i http://localhost:8080/ping
 ```
 
-成功时返回 200，JSON 中的 message 为 pong；Huma 还会加入描述响应结构的 `$schema` 链接。
+你会得到一个 `200 OK` 响应：
 
-浏览器打开 `http://localhost:8080/docs` 查看接口文档。原始 OpenAPI 位于 `http://localhost:8080/openapi.json`。
+```json
+{
+  "$schema": "http://localhost:8080/schemas/PingOutputBody.json",
+  "message": "pong"
+}
+```
+
+其中 `$schema` 是 Huma 自动加入的字段，指向描述该响应结构的 JSON Schema。
+
+mygoravel 还为你生成了接口文档。在浏览器中打开 `http://localhost:8080/docs` 即可查看，原始的 OpenAPI 文档位于 `http://localhost:8080/openapi.json`。
+
+恭喜！你的第一个 mygoravel 应用已经运行起来了。在服务终端按 Ctrl+C 即可停止它。
 
 <a id="next-steps"></a>
+## 下一步
 
-## 添加应用能力
+现在你已经有了一个可以运行的 API，接下来可以根据需要逐步加入更多能力：
 
-根据实际需求逐步加入：
+- 用[配置](configuration.md)从 YAML 文件和环境变量中读取监听地址等参数；
+- 阅读[路由](routing.md)、[请求](requests.md)和[响应](responses.md)，编写真正的业务接口；
+- 用[认证](authentication.md)保护需要登录才能访问的接口；
+- 用[数据库](database.md)连接 PostgreSQL，用[迁移](migrations.md)管理表结构；
+- 用[命令行](commands.md)为应用加上 `serve`、`migrate`、`openapi` 等子命令。
 
-- 用[配置](configuration.md)加载自己的结构体。
-- 用[认证与授权](authentication.md)保护需要身份的接口。
-- 用[数据库](database.md)打开 PostgreSQL 连接，用[迁移](migrations.md)管理表结构。
-- 用[应用命令](commands.md)安装需要的配置检查、文档导出和运行入口。
-
-应用通过普通参数传递依赖，在入口显式定义命令、配置字段和路由。
+如果想先了解一个 mygoravel 应用整体是如何组织的，可以阅读[目录结构](directory-structure.md)和[依赖装配](dependencies.md)。
 
 <a id="troubleshooting"></a>
+## 常见问题
 
-## 停止与排查
-
-在服务终端按 Ctrl+C，入口会排空请求后退出。
-
-| 现象 | 检查方法 |
+| 现象 | 解决方法 |
 | --- | --- |
-| 找不到框架版本 | 确认版本或提交已经推送，且 module 路径正确 |
-| 缺少依赖 | 在应用目录运行 go mod tidy |
-| 8080 已占用 | 修改 main.go 中 net.Listen 的地址 |
-| 路由返回 404 | 检查 Operation.Path 与登记函数是否被调用 |
-| 注册时提示缺少安全声明 | 为 Operation 调用 Public 或 RequireBearer |
-
----
-
-[返回文档首页](README.md) · [下一篇：配置](configuration.md)
+| `go get` 找不到框架版本 | 确认所用的分支、提交或标签已经推送到远程仓库，并检查 module 路径是否拼写正确 |
+| 编译时提示缺少依赖 | 在应用目录中运行 `go mod tidy` |
+| 启动时提示 8080 端口已被占用 | 修改 `main.go` 中 `net.Listen` 的地址，例如改为 `127.0.0.1:8081` |
+| 请求返回 404 | 检查 `Operation.Path` 是否正确，以及注册函数（如 `registerPing`）是否被调用 |
+| 启动时 panic：`endpoint must explicitly declare Public or RequireBearer` | 每条路由都必须声明访问策略，在注册前调用 `rest.Public()(&op)` 或 `rest.RequireBearer(...)(&op)` |

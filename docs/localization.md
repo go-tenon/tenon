@@ -1,22 +1,29 @@
 # 本地化
 
-[文档首页](README.md) / 进阶使用
+- [简介](#introduction)
+- [启用本地化](#enabling-localization)
+    - [内置消息](#built-in-messages)
+- [确定请求语言](#determining-the-locale)
+- [定义翻译](#defining-translations)
+    - [翻译文件](#translation-files)
+    - [加载翻译](#loading-translations)
+    - [覆盖优先级](#override-priority)
+- [获取翻译](#retrieving-translations)
+- [翻译错误消息](#translating-errors)
 
-本地化提供展示文案，Code 和 Kind 保持稳定的业务语义。目录组合后得到原生 go-i18n Bundle，应用可继续使用 go-i18n Localizer。
+<a id="introduction"></a>
+## 简介
 
-本章内容：
+mygoravel 的本地化功能可以让同一个 API 根据请求的语言返回不同语言的提示文案，最常见的用途就是翻译错误响应中的 `detail` 字段。
 
-- [启用内置语言](#bundle)
-- [请求语言](#negotiation)
-- [添加应用消息](#messages)
-- [在代码中翻译](#localizer)
-- [错误文案的回退](#fallback)
+在开始之前，有一点需要明确：本地化只影响**展示文案**。错误码、错误分类等业务语义永远保持不变，客户端应当始终根据 `code` 判断错误，而把 `detail` 直接展示给用户。
 
-<a id="bundle"></a>
+mygoravel 的本地化基于 [go-i18n](https://github.com/nicksnyder/go-i18n)。`i18n` 包负责把框架内置的消息和你的翻译文件组合成一个原生的 go-i18n `Bundle`，之后你可以直接使用 go-i18n 的全部能力。
 
-## 启用内置语言
+<a id="enabling-localization"></a>
+## 启用本地化
 
-下面是构建语言目录并连接 API 的完整函数：
+下面是一个完整的函数，它创建包含内置消息的语言目录，并把它传给 API：
 
 ```go
 package api
@@ -30,7 +37,7 @@ import (
 func NewAPI() (*rest.API, error) {
     bundle, err := i18n.New(i18n.Options{
         Default: "zh-CN",
-        Layers: []i18n.Layer{i18n.FrameworkLayer()},
+        Layers:  []i18n.Layer{i18n.FrameworkLayer()},
     })
     if err != nil {
         return nil, err
@@ -41,76 +48,116 @@ func NewAPI() (*rest.API, error) {
 }
 ```
 
-内置目录提供 en 和 zh-CN。未填写 `i18n.Options.Default` 时，目录构建默认使用 zh-CN。应用可以通过自己的配置将 Default 显式设置为 en。
+`Default` 是默认语言，当请求的语言不受支持时使用它。省略时默认为 `zh-CN`，你也可以设置为 `en`。
 
-<a id="negotiation"></a>
+<a id="built-in-messages"></a>
+### 内置消息
 
-## 请求语言
+`i18n.FrameworkLayer()` 提供了框架内置的英文（`en`）和简体中文（`zh-CN`）消息，覆盖常见的错误码：
 
-提供 Languages 后，中间件根据 `Accept-Language` 选择已加载语言，并写入 `Content-Language` 响应头。不支持或无效的语言请求回退到默认语言。
+| 消息 ID | en | zh-CN |
+| --- | --- | --- |
+| `error.internal` | An unexpected error occurred | 服务暂时无法处理请求 |
+| `error.validation` | Invalid request | 请求参数无效 |
+| `auth.unauthenticated` | Authentication required | 请先认证 |
+| `auth.forbidden` | Permission denied | 没有访问权限 |
+
+<a id="determining-the-locale"></a>
+## 确定请求语言
+
+启用本地化后，默认中间件会根据请求的 `Accept-Language` 头，从已加载的语言中选择最匹配的一种，并通过 `Content-Language` 响应头告知客户端。不支持或无法解析的语言会回退到默认语言。
 
 ```bash
-curl -i http://localhost:8080/notes -H 'Accept-Language: zh-CN'
+curl -i http://localhost:8080/notes -H 'Accept-Language: en'
 ```
 
-对于应用已注册且要求 Bearer 的 `/notes` 路由，这个请求因缺少凭据返回 401；启用内置语言目录后，detail 为中文提示，错误 code 仍是 `auth.unauthenticated`。
+假设 `/notes` 是一个需要认证的路由，这个请求由于没有携带凭据会返回 `401`，`detail` 为英文的 `Authentication required`，而 `code` 始终是 `auth.unauthenticated`。
 
-<a id="messages"></a>
+在代码中，可以用 `i18n.Locale(ctx)` 读取当前请求选定的语言。
 
-## 添加应用消息
+<a id="defining-translations"></a>
+## 定义翻译
 
-创建 `locales/en.yaml` 和 `locales/zh-CN.yaml`，文件名表示语言。例如：
+<a id="translation-files"></a>
+### 翻译文件
+
+为应用自己的消息创建翻译文件，文件名就是语言标签。例如 `locales/en.yaml`：
 
 ```yaml
-note.closed: This note has been closed
+note.not_found: Note not found
+note.archived: This note has been archived
 ```
 
-中文文件：
+以及 `locales/zh-CN.yaml`：
 
 ```yaml
-note.closed: 笔记已关闭
+note.not_found: 笔记不存在
+note.archived: 笔记已归档
 ```
 
-通过 embed.FS 或其他 fs.FS 作为一层目录传入。下面的片段假定 `localeFiles` 已由 `//go:embed locales/*.yaml` 声明：
+消息 ID 与[业务错误码](errors.md#defining-errors)使用相同的写法，这样错误响应就能直接找到对应的翻译。
+
+<a id="loading-translations"></a>
+### 加载翻译
+
+用 `embed` 把翻译文件嵌入二进制，作为一个新的消息层传给 `i18n.New`：
 
 ```go
-bundle, err := i18n.New(i18n.Options{
-    Default: "en",
-    Layers: []i18n.Layer{
-        i18n.FrameworkLayer(),
-        {Priority: i18n.PriorityProduct, FS: localeFiles, Name: "notes"},
-    },
-    RequiredIDs: []string{"note.closed"},
-})
+//go:embed locales/*.yaml
+var localeFiles embed.FS
+
+func newBundle() (*goi18n.Bundle, error) {
+    return i18n.New(i18n.Options{
+        Default: "en",
+        Layers: []i18n.Layer{
+            i18n.FrameworkLayer(),
+            {Priority: i18n.PriorityProduct, FS: localeFiles, Name: "notes"},
+        },
+        RequiredIDs: []string{"note.not_found", "note.archived"},
+    })
+}
 ```
 
-覆盖顺序是框架 → 模块 → 产品，对应 PriorityFramework、PriorityModule、PriorityProduct。同一优先级、同一语言重复消息 ID 会失败。RequiredIDs 检查默认语言中指定的消息是否存在。
+这里的 `goi18n` 是 `github.com/nicksnyder/go-i18n/v2/i18n` 的别名，用来与框架的 `i18n` 包区分。每一层都必须提供 `FS`，框架会读取其中所有的 YAML 翻译文件。`Name` 只用于错误信息，方便定位是哪一层出了问题。
 
-每个 Layer 需要提供 FS。Bundle 是原生可变对象，应用在启动阶段完成目录修改，请求阶段按只读目录使用。
+`RequiredIDs` 列出默认语言中**必须存在**的消息。如果漏写了某条翻译，`i18n.New` 会直接返回错误，问题在启动时就能被发现。
 
-<a id="localizer"></a>
+> [!NOTE]
+> `i18n.New` 返回的是原生的 go-i18n `Bundle`，它本身是可修改的。请在启动阶段完成所有修改，开始处理请求后只读取它。
 
-## 在代码中翻译
+<a id="override-priority"></a>
+### 覆盖优先级
 
-使用 `github.com/nicksnyder/go-i18n/v2/i18n`，通常别名为 `goi18n`，与框架辅助包区分：
+每一层消息都有一个优先级，高优先级的层可以覆盖低优先级层中的同名消息：
+
+| 优先级 | 常量 | 用途 |
+| --- | --- | --- |
+| 0 | `i18n.PriorityFramework` | 框架内置消息 |
+| 1 | `i18n.PriorityModule` | 可复用模块提供的消息 |
+| 2 | `i18n.PriorityProduct` | 应用自己的消息 |
+
+例如，如果你不喜欢内置的“请先认证”，只需在应用的 `zh-CN.yaml` 中重新定义 `auth.unauthenticated`。同一优先级、同一语言中出现重复的消息 ID 会返回错误。
+
+<a id="retrieving-translations"></a>
+## 获取翻译
+
+在业务代码中需要翻译其他文案时，直接使用 go-i18n 的 `Localizer`，并通过 `i18n.Locale(ctx)` 获取当前请求的语言：
 
 ```go
 localizer := goi18n.NewLocalizer(bundle, i18n.Locale(ctx))
 message, err := localizer.Localize(&goi18n.LocalizeConfig{
-    MessageID: "note.closed",
+    MessageID: "note.archived",
 })
 ```
 
-模板数据、复数和其他翻译能力沿用 go-i18n 的原生 LocalizeConfig。请求 context 保存语言标记，Bundle 由应用显式传入。
+模板变量、复数形式等高级功能都通过 go-i18n 原生的 `LocalizeConfig` 使用，请参阅 [go-i18n 文档](https://github.com/nicksnyder/go-i18n)。
 
-<a id="fallback"></a>
+<a id="translating-errors"></a>
+## 翻译错误消息
 
-## 错误文案的回退
+启用本地化后，错误响应会把错误码作为消息 ID，自动翻译 `detail` 字段。你只需在翻译文件中为每个业务错误码添加一条消息即可。
 
-REST 呈现层将错误 code 作为消息 ID。找不到消息时使用通用状态文案，并在有 Logger 时记录缺失诊断。启动校验的范围由 RequiredIDs 明确指定，动态消息在翻译时按同样的回退策略处理。
+如果找不到某个错误码的翻译，`detail` 会使用 HTTP 状态的通用描述，同时（在配置了日志器时）记录一条缺失翻译的警告日志，提醒你补充翻译。
 
-模板插值使用 LocalizeConfig.TemplateData。应用可通过 fault.PublicOf 读取元数据，再选择允许展示的字段。
-
----
-
-[上一篇：缓存](cache.md) · [下一篇：应用命令](commands.md)
+> [!TIP]
+> 如果错误通过 [`fault.Public`](errors.md#public-parameters) 携带了公开参数，你可以用 `fault.PublicOf(err)` 读取它们，并作为 `LocalizeConfig.TemplateData` 传入，生成包含具体信息的提示。
