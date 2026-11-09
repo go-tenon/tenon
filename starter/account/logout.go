@@ -6,9 +6,9 @@ import (
 	"github.com/alexedwards/scs/v2"
 	"github.com/go-chi/chi/v5"
 
-	"github.com/ryan053857/go-kit/examples/service/user"
 	"github.com/ryan053857/go-kit/httpx/auth"
 	"github.com/ryan053857/go-kit/httpx/web"
+	"github.com/ryan053857/go-kit/starter/user"
 )
 
 // Logout 销毁会话后跳转到登录页。只接受 POST，跨站请求由 http.CrossOriginProtection 拦截。

@@ -3,8 +3,9 @@
 // API 直接使用 github.com/danielgtaylor/huma/v2 与 adapters/humachi，
 // 本包不包装 huma 的 API，只补充：
 //
-//	LogServerErrors  5xx 错误带调用栈记录日志（huma 本身不记录错误）
-//	Action、Mount    单文件 action 模式的接口约定
+//	LogServerErrors        5xx 错误带调用栈记录日志（huma 本身不记录错误）
+//	Action、Mount          单文件 action 模式的接口约定（产品自己的接口）
+//	Endpoint、Get、Post…   go-kit 模块提供的接口，由产品选择路径挂载
 //
 // # 用法
 //
@@ -60,6 +61,14 @@
 //		}
 //		return &CreateOrderOutput{Body: toDTO(o)}, nil
 //	}
+//
+// # Endpoint
+//
+// go-kit 的业务模块不自己注册路由，而是返回 Endpoint：处理函数加 OpenAPI 元数据，不含 Method 与 Path。
+// 产品在自己的路由文件中显式挂载，所有路由一目了然，不需要的接口不挂即可：
+//
+//	rest.Post(v1, "/auth/login", account.Login(users))
+//	rest.Post(v1, "/auth/refresh", account.Refresh(users))
 //
 // # 错误处理
 //

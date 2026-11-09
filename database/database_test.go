@@ -1,11 +1,8 @@
 package database_test
 
 import (
-	"context"
-	"crypto/rand"
 	"database/sql"
 	"errors"
-	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -15,8 +12,8 @@ import (
 	"github.com/uptrace/bun"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/ryan053857/go-kit/config"
 	"github.com/ryan053857/go-kit/database"
+	"github.com/ryan053857/go-kit/database/dbtest"
 )
 
 type User struct {
@@ -27,42 +24,12 @@ type User struct {
 	Name  string `bun:"name,notnull"`
 }
 
-// 集成测试需要 Postgres 18+，例如：
-//
-//	docker run -d --rm -e POSTGRES_PASSWORD=postgres -p 55432:5432 postgres:18
-//	DATABASE_TEST_DSN=postgres://postgres:postgres@localhost:55432/postgres?sslmode=disable go test ./database/
-//
-// 每个测试创建一个独立的临时数据库。
+// 集成测试需要 Postgres 18+，见 dbtest 包。每个测试创建一个独立的临时数据库。
 func newTestDB(t *testing.T) *bun.DB {
 	t.Helper()
-	dsn := os.Getenv("DATABASE_TEST_DSN")
-	if dsn == "" {
-		t.Skip("DATABASE_TEST_DSN not set")
-	}
-	ctx := t.Context()
-
-	admin, err := database.Open(ctx, database.Config{DSN: config.Secret(dsn)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = admin.Close() })
-
-	name := "test_" + strings.ToLower(rand.Text()[:12])
-	if _, err := admin.ExecContext(ctx, "CREATE DATABASE "+name); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_, _ = admin.ExecContext(context.Background(), "DROP DATABASE "+name+" WITH (FORCE)")
-	})
-
-	u, err := url.Parse(dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	u.Path = "/" + name
 	cfg := database.DefaultConfig()
-	cfg.DSN = config.Secret(u.String())
-	db, err := database.Open(ctx, cfg)
+	cfg.DSN = dbtest.DSN(t)
+	db, err := database.Open(t.Context(), cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

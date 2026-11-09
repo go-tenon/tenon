@@ -43,13 +43,26 @@ func DefaultConfig() Config {
 	}
 }
 
-// Open 通过 pgx 连接 Postgres，返回 *bun.DB，并用 ctx Ping 一次以尽早发现配置错误。
-// 调用方负责 Close。
+// Open 与 New 相同，并用 ctx Ping 一次以尽早发现配置错误。调用方负责 Close。
 //
 // 本函数不挂载查询日志等 hook，由产品按需显式添加，例如：
 //
 //	db.AddQueryHook(bunslog.NewQueryHook(bunslog.WithSlowQueryThreshold(200 * time.Millisecond)))
 func Open(ctx context.Context, cfg Config) (*bun.DB, error) {
+	db, err := New(cfg)
+	if err != nil {
+		return nil, err
+	}
+	if err := db.PingContext(ctx); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("database: ping: %w", err)
+	}
+	return db, nil
+}
+
+// New 通过 pgx 创建连接 Postgres 的 *bun.DB，但不建立连接：首次查询时才连接。
+// 用于不需要访问数据库的场景，例如导出 OpenAPI 文档。调用方负责 Close。
+func New(cfg Config) (*bun.DB, error) {
 	pgxCfg, err := pgx.ParseConfig(string(cfg.DSN))
 	if err != nil {
 		// pgx 的解析错误会对密码打码，可以直接返回。
@@ -61,11 +74,5 @@ func Open(ctx context.Context, cfg Config) (*bun.DB, error) {
 	sqldb.SetMaxIdleConns(cfg.MaxIdleConns)
 	sqldb.SetConnMaxLifetime(cfg.ConnMaxLifetime)
 	sqldb.SetConnMaxIdleTime(cfg.ConnMaxIdleTime)
-
-	db := bun.NewDB(sqldb, pgdialect.New())
-	if err := db.PingContext(ctx); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("database: ping: %w", err)
-	}
-	return db, nil
+	return bun.NewDB(sqldb, pgdialect.New()), nil
 }

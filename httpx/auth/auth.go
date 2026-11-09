@@ -11,7 +11,7 @@
 // # Session
 //
 // 会话直接使用 github.com/alexedwards/scs/v2，由产品创建 SessionManager 并选择存储
-// （pgxstore、redisstore 等），本包只约定会话中保存用户 ID 的方式：
+// （postgresstore、redisstore 等；使用 app 包时已配置为 postgresstore），本包只约定会话中保存用户 ID 的方式：
 //
 //	Login / Logout       登录时更换会话 token（防会话固定攻击），退出时销毁会话
 //	LoadSession          全局中间件：会话中有用户时加载 Principal 放入 context
@@ -25,7 +25,7 @@
 // # 组装
 //
 //	sm := scs.New()
-//	sm.Store = pgxstore.New(pool)
+//	sm.Store = postgresstore.New(db.DB)
 //
 //	r := chi.NewRouter()
 //	r.Use(

@@ -16,8 +16,8 @@ type NoteDTO struct {
 	CreatedAt string `json:"created_at" format:"date-time"`
 }
 
-func toDTO(n Note) NoteDTO {
-	return NoteDTO{ID: n.ID, Text: n.Text, Author: n.Author, CreatedAt: n.CreatedAt.Format("2006-01-02T15:04:05Z07:00")}
+func toDTO(n *Note) NoteDTO {
+	return NoteDTO{ID: n.ID.String(), Text: n.Text, Author: n.Author, CreatedAt: n.CreatedAt.Format("2006-01-02T15:04:05Z07:00")}
 }
 
 type ListNotesOutput struct {
@@ -40,9 +40,13 @@ func (a *ListNotes) Register(api huma.API) {
 }
 
 func (a *ListNotes) handle(ctx context.Context, _ *struct{}) (*ListNotesOutput, error) {
+	notes, err := a.Notes.List(ctx)
+	if err != nil {
+		return nil, err
+	}
 	out := &ListNotesOutput{Body: []NoteDTO{}}
-	for _, n := range a.Notes.List(ctx) {
-		out.Body = append(out.Body, toDTO(n))
+	for i := range notes {
+		out.Body = append(out.Body, toDTO(&notes[i]))
 	}
 	return out, nil
 }

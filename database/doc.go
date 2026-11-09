@@ -1,19 +1,27 @@
 // Package database 约定产品访问 Postgres 的方式：[bun] 作为查询构造器，
-// [pgx] 作为驱动，[goose] 管理 SQL 迁移，所有表使用 UUIDv7 主键与
-// created_at、updated_at 时间戳。要求 Postgres 18 及以上（内置 uuidv7()）。
+// [pgx] 作为驱动，[goose] 管理 SQL 迁移，主键使用 UUIDv7。要求 Postgres 18 及以上（内置 uuidv7()）。
 //
 // 本包只提供：
 //
-//	Config / Open       连接池默认值、DSN 打码、启动时 Ping
-//	Model               id、created_at、updated_at 三个公共字段及其自动填充
-//	Migrate             带 advisory lock 的 goose Up，多实例同时启动也安全
-//	IsUniqueViolation   判断唯一约束冲突
+//	Config / Open / New            连接池默认值、DSN 打码、启动时 Ping
+//	Model / CreatedModel           公共字段（id、created_at、updated_at）及其自动填充
+//	NewMigrator / Migrate          带 advisory lock 的 goose，多实例同时启动也安全
+//	MigrationSource                go-kit 模块随包发布的迁移
+//	PublishMigrations              把模块迁移复制到产品的迁移目录
+//	CreateMigration                新建产品迁移文件
+//	IsUniqueViolation              判断唯一约束冲突
+//
+// 使用 go-kit 的 app 包时，以上大部分由 app 调用，产品通过子命令操作：
+//
+//	go run . migrate create create_orders   新建迁移
+//	go run . migrate publish                发布已注册模块的迁移
+//	go run . migrate up | down | status
 //
 // 查询、事务、关联等直接使用 bun 的 API，本包不做包装。
 //
 // # 启动
 //
-// 产品在 main 中显式组装：
+// 不使用 app 包时，产品在 main 中显式组装：
 //
 //	db, err := database.Open(ctx, cfg.Database)
 //	if err != nil { ... }
@@ -56,18 +64,40 @@
 //
 // # 迁移
 //
-// 迁移文件放在产品的 migrations 包中，用 embed 打包进二进制：
+// 产品只有一个迁移目录，全部迁移（产品自己的与 go-kit 模块发布过来的）都在这里，
+// 用 embed 打包进二进制，共用一张 goose 版本表：
 //
 //	migrations/
-//		migrations.go          package migrations; //go:embed *.sql; var FS embed.FS
-//		00001_init.sql
-//		00002_create_users.sql
+//		migrations.go                                   package migrations; //go:embed *.sql; var FS embed.FS
+//		20261109120000_session_0001_create_sessions.sql  由 PublishMigrations 从 go-kit 复制
+//		20261110093000_create_orders.sql                 产品自己的迁移
 //
-// 第一个迁移创建维护 updated_at 的触发器函数。Model 的 hook 只在通过模型更新全部列时生效，
-// 触发器兜底处理 Column 部分更新、Set、批量更新与手写 SQL：本次 UPDATE 没有改动
-// updated_at 时，设为当前事务的开始时间。
+// 文件名以时间戳为版本号（YYYYMMDDHHMMSS），CreateMigration 与 PublishMigrations 保证新文件的
+// 版本号大于目录中已有的最大版本号。go-kit 模块的迁移在 go-kit 中只按 0001、0002 排序，
+// 发布时才获得版本号；复制过来的文件归产品所有，可以审阅、修改后提交。
+//
+// 普通实体表按以下模板创建，created_at、updated_at 紧跟在 id 之后，其后是业务字段。
+// 主键与时间戳的默认值供手写 SQL 使用，通过 bun 插入时由应用填充：
 //
 //	-- +goose Up
+//	CREATE TABLE orders (
+//		id         uuid PRIMARY KEY DEFAULT uuidv7(),
+//		created_at timestamptz NOT NULL DEFAULT now(),
+//		updated_at timestamptz NOT NULL DEFAULT now(),
+//		sku        text NOT NULL
+//	);
+//
+//	-- +goose Down
+//	DROP TABLE orders;
+//
+// 只追加的表（对应 CreatedModel）去掉 updated_at；自然主键表、关联表按需定义。
+//
+// # updated_at 触发器（可选）
+//
+// Model 的 hook 只在通过模型更新时生效。某张表经常被 Column 部分更新、Set 或手写 SQL 修改时，
+// 产品可以为它加触发器兜底：本次 UPDATE 没有改动 updated_at 时设为当前事务的开始时间。
+// go-kit 自己的表不依赖这个触发器。
+//
 //	-- +goose StatementBegin
 //	CREATE FUNCTION set_updated_at() RETURNS trigger LANGUAGE plpgsql AS $$
 //	BEGIN
@@ -79,34 +109,8 @@
 //	$$;
 //	-- +goose StatementEnd
 //
-//	-- +goose Down
-//	DROP FUNCTION set_updated_at();
-//
-// 之后每张表按以下模板创建。主键与时间戳的默认值供手写 SQL 使用，通过 bun 插入时由应用填充：
-//
-//	-- +goose Up
-//	CREATE TABLE users (
-//		id         uuid PRIMARY KEY DEFAULT uuidv7(),
-//		created_at timestamptz NOT NULL DEFAULT now(),
-//		updated_at timestamptz NOT NULL DEFAULT now(),
-//		email      text NOT NULL UNIQUE
-//	);
-//	CREATE TRIGGER users_set_updated_at BEFORE UPDATE ON users
+//	CREATE TRIGGER orders_set_updated_at BEFORE UPDATE ON orders
 //		FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-//
-//	-- +goose Down
-//	DROP TABLE users;
-//
-// 创建迁移文件、回滚、查看状态使用 goose 命令行。用 go run 指定版本运行，与 go.mod 中的
-// goose 库版本保持一致（不使用 go.mod 的 tool 指令，它会把 goose 支持的所有数据库驱动加入依赖）：
-//
-//	export GOOSE_DRIVER=postgres GOOSE_DBSTRING=$DATABASE_URL GOOSE_MIGRATION_DIR=migrations
-//	go run github.com/pressly/goose/v3/cmd/goose@v3.29.0 create -s create_users sql
-//	go run github.com/pressly/goose/v3/cmd/goose@v3.29.0 status
-//	go run github.com/pressly/goose/v3/cmd/goose@v3.29.0 down
-//
-// -s 使用连续编号（00001、00002……）。两个分支各自新增迁移时会出现重复编号，
-// goose 会报错拒绝执行，合并时改号即可。
 //
 // [bun]: https://bun.uptrace.dev
 // [pgx]: https://github.com/jackc/pgx

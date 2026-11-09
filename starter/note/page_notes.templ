@@ -8,12 +8,12 @@ templ notesContent(notes []Note) {
 	</form>
 	<ul id="notes">
 		for _, n := range notes {
-			@noteItem(n)
+			@noteItem(&n)
 		}
 	</ul>
 	<button hx-get="/" hx-target="#content">刷新</button>
 }
 
-templ noteItem(n Note) {
-	<li><a href={ templ.SafeURL("/notes/" + n.ID) }>{ n.Text }</a> <small>— { n.Author }</small></li>
+templ noteItem(n *Note) {
+	<li><a href={ templ.SafeURL("/notes/" + n.ID.String()) }>{ n.Text }</a> <small>— { n.Author }</small></li>
 }

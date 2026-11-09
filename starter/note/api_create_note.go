@@ -7,9 +7,9 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/ryan053857/go-kit/examples/service/user"
 	"github.com/ryan053857/go-kit/httpx/auth"
 	"github.com/ryan053857/go-kit/httpx/rest"
+	"github.com/ryan053857/go-kit/starter/user"
 )
 
 type CreateNoteInput struct {
