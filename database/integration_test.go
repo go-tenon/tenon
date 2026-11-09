@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"sync"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/google/uuid"
@@ -124,7 +125,7 @@ func TestTxRollbackUniqueAndCancel(t *testing.T) {
 	ctx := context.Background()
 
 	id := uuid.Must(uuid.NewV7())
-	err := database.RunInTx(ctx, db, nil, func(ctx context.Context, tx bun.Tx) error {
+	err := db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 		_, err := tx.NewInsert().Model(&item{ID: id, Name: "a", SKU: "s1"}).Exec(ctx)
 		return err
 	})
@@ -132,7 +133,7 @@ func TestTxRollbackUniqueAndCancel(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = database.RunInTx(ctx, db, nil, func(ctx context.Context, tx bun.Tx) error {
+	err = db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 		_, err := tx.NewInsert().Model(&item{ID: uuid.Must(uuid.NewV7()), Name: "b", SKU: "s1"}).Exec(ctx)
 		if !database.IsUniqueViolation(err, "items_sku_key") {
 			t.Fatalf("want unique violation, got %v", err)
@@ -143,7 +144,7 @@ func TestTxRollbackUniqueAndCancel(t *testing.T) {
 		t.Fatal("expected tx error")
 	}
 
-	err = database.RunInTx(ctx, db, nil, func(ctx context.Context, tx bun.Tx) error {
+	err = db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 		if _, err := tx.NewInsert().Model(&item{ID: uuid.Must(uuid.NewV7()), Name: "c", SKU: "s2"}).Exec(ctx); err != nil {
 			return err
 		}
@@ -163,11 +164,43 @@ func TestTxRollbackUniqueAndCancel(t *testing.T) {
 	cctx, cancel := context.WithTimeout(ctx, time.Millisecond)
 	defer cancel()
 	time.Sleep(2 * time.Millisecond)
-	err = database.RunInTx(cctx, db, &sql.TxOptions{}, func(ctx context.Context, tx bun.Tx) error {
+	err = db.RunInTx(cctx, &sql.TxOptions{}, func(ctx context.Context, tx bun.Tx) error {
 		_, err := tx.NewInsert().Model(&item{ID: uuid.Must(uuid.NewV7()), Name: "d", SKU: "s3"}).Exec(ctx)
 		return err
 	})
 	if err == nil {
 		t.Fatal("expected cancel error")
+	}
+}
+
+func TestNonTransactionalMigrationRequiresManualRecovery(t *testing.T) {
+	db := dbtest.Open(t, nil)
+	ctx := context.Background()
+	source := fstest.MapFS{"00001_partial.sql": &fstest.MapFile{Data: []byte("-- +goose NO TRANSACTION\n-- +goose Up\nCREATE TABLE partial (id int);\nINSERT INTO missing_table VALUES (1);\n-- +goose Down\nDROP TABLE partial;\n")}}
+	p, err := migrate.NewProvider(db.DB, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := migrate.Up(ctx, p); err == nil {
+		t.Fatal("failure not propagated")
+	}
+	ver, err := p.GetDBVersion(ctx)
+	if err != nil || ver != 0 {
+		t.Fatal(ver, err)
+	}
+	var exists bool
+	if err := db.QueryRow("SELECT to_regclass('partial') IS NOT NULL").Scan(&exists); err != nil || !exists {
+		t.Fatal("partial DDL did not survive", err)
+	}
+	// Inspect the actual database, then undo the partial fixture before retrying.
+	if _, err := db.ExecContext(ctx, "DROP TABLE partial; CREATE TABLE missing_table (id int)"); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrate.Up(ctx, p); err != nil {
+		t.Fatal(err)
+	}
+	ver, err = p.GetDBVersion(ctx)
+	if err != nil || ver != 1 {
+		t.Fatal(ver, err)
 	}
 }

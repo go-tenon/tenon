@@ -3,8 +3,8 @@
 | 组件 | 版本 / 约束 |
 |---|---|
 | Go | 与 `go.mod` 中 `go` 行一致（当前 1.27.x） |
-| PostgreSQL | 18+ |
-| Redis（可选） | 7.x（仅缓存示例/集成） |
+| PostgreSQL | 18（当前验收版本） |
+| Redis（可选） | 7.x（可选 API 查询缓存与集成） |
 | chi | v5 |
 | Huma | v2.40.x |
 | Bun + pgx | bun v1.3.x / pgx v5.12.x |

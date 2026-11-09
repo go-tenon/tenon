@@ -63,14 +63,14 @@ func expand(s string, lookup LookupFunc) (string, error) {
 
 		end := strings.IndexByte(s[i+2:], '}')
 		if end < 0 {
-			return "", errors.Newf("unterminated reference in %q", s[i:])
+			return "", errors.New("unterminated environment reference")
 		}
 		ref := s[i+2 : i+2+end]
 		s = s[i+2+end+1:]
 
 		name, def, hasDef := strings.Cut(ref, ":-")
 		if !validName(name) {
-			return "", errors.Newf("invalid environment variable reference ${%s}", ref)
+			return "", errors.New("invalid environment variable reference")
 		}
 		val, ok := lookup(name)
 		switch {

@@ -34,15 +34,15 @@ func TestBundleIsolationAndOverride(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	msgA, err := a.Localizer("zh-CN").Localize(&goi18n.LocalizeConfig{MessageID: "greet"})
+	msgA, err := goi18n.NewLocalizer(a, "zh-CN").Localize(&goi18n.LocalizeConfig{MessageID: "greet"})
 	if err != nil || msgA != "你好A" {
 		t.Fatalf("a=%q err=%v", msgA, err)
 	}
-	msgB, err := b.Localizer("zh-CN").Localize(&goi18n.LocalizeConfig{MessageID: "greet"})
+	msgB, err := goi18n.NewLocalizer(b, "zh-CN").Localize(&goi18n.LocalizeConfig{MessageID: "greet"})
 	if err != nil || msgB != "你好B" {
 		t.Fatalf("b=%q err=%v", msgB, err)
 	}
-	ok, err := a.Localizer("en").Localize(&goi18n.LocalizeConfig{MessageID: "mygoravel.ok"})
+	ok, err := goi18n.NewLocalizer(a, "en").Localize(&goi18n.LocalizeConfig{MessageID: "mygoravel.ok"})
 	if err != nil || ok != "OK" {
 		t.Fatalf("framework en=%q err=%v", ok, err)
 	}
@@ -75,7 +75,7 @@ func TestAcceptLanguageAndContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := b.MatchAcceptLanguage("en-US,en;q=0.9"); got != "en" && !strings.HasPrefix(got, "en") {
+	if got := i18n.MatchAcceptLanguage(b, "en-US,en;q=0.9"); got != "en" && !strings.HasPrefix(got, "en") {
 		t.Fatalf("got %q", got)
 	}
 	ctx := i18n.WithLocale(context.Background(), "en")
@@ -98,10 +98,25 @@ func TestNoGlobalCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := second.Localizer("zh-CN").Localize(&goi18n.LocalizeConfig{MessageID: "only"}); err == nil {
+	if _, err := goi18n.NewLocalizer(second, "zh-CN").Localize(&goi18n.LocalizeConfig{MessageID: "only"}); err == nil {
 		t.Fatal("second bundle should not see first bundle messages")
 	}
-	if _, err := first.Localizer("zh-CN").Localize(&goi18n.LocalizeConfig{MessageID: "mygoravel.ok"}); err == nil {
+	if _, err := goi18n.NewLocalizer(first, "zh-CN").Localize(&goi18n.LocalizeConfig{MessageID: "mygoravel.ok"}); err == nil {
 		t.Fatal("first bundle should not see framework messages it did not load")
+	}
+}
+
+func TestRequiredTemplateAndUnsupportedLanguage(t *testing.T) {
+	files := fstest.MapFS{"en.yaml": &fstest.MapFile{Data: []byte("greet: Hello {{.Name}}\n")}, "zh-CN.yaml": &fstest.MapFile{Data: []byte("greet: 你好 {{.Name}}\n")}}
+	b, err := i18n.New(i18n.Options{Default: "en", RequiredIDs: []string{"greet"}, Layers: []i18n.Layer{{FS: files}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := i18n.MatchAcceptLanguage(b, "fr"); got != "en" {
+		t.Fatal(got)
+	}
+	message, err := goi18n.NewLocalizer(b, "en").Localize(&goi18n.LocalizeConfig{MessageID: "greet", TemplateData: map[string]any{"Name": "Ada"}})
+	if err != nil || message != "Hello Ada" {
+		t.Fatal(message, err)
 	}
 }

@@ -97,7 +97,7 @@ cockroachdb/errors；需要缓存时直接使用 eko/gocache。
 - 单元测试不依赖外部服务；核心契约用外部测试包。
 - 集成测试使用 `integration` build tag；缺少已声明依赖必须失败，不得静默跳过。
 - CI 至少：格式检查、`go vet`、单元测试；后续 PR 再叠加 race、数据库/缓存集成与独立消费测试。
-- 框架源码（不含 examples/internal/测试）不使用 `fmt.Errorf`，统一 cockroachdb/errors。
+- 新增上下文与堆栈优先使用 cockroachdb/errors；允许标准 errors 和 fmt.Errorf 的 %w 错误链互操作。
 
 ## 8. 文档与版本
 

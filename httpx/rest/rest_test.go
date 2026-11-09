@@ -39,7 +39,7 @@ type echoOut struct {
 func TestOpenAPIDoesNotCallNewHandler(t *testing.T) {
 	called := false
 	api := rest.New(rest.Options{Title: "doc", Mode: rest.ModeOpenAPI})
-	rest.Register(api, huma.Operation{
+	rest.Register(api, huma.Operation{Security: []map[string][]string{},
 		OperationID: "ping",
 		Method:      http.MethodGet,
 		Path:        "/ping",
@@ -74,14 +74,14 @@ func TestInstanceTransformersIsolated(t *testing.T) {
 	}
 	a := rest.New(rest.Options{Title: "a", Transformers: []huma.Transformer{markA}})
 	b := rest.New(rest.Options{Title: "b", Transformers: []huma.Transformer{markB}})
-	rest.Register(a, huma.Operation{OperationID: "a-ping", Method: http.MethodGet, Path: "/ping"}, func() func(context.Context, *pingIn) (*pingOut, error) {
+	rest.Register(a, huma.Operation{Security: []map[string][]string{}, OperationID: "a-ping", Method: http.MethodGet, Path: "/ping"}, func() func(context.Context, *pingIn) (*pingOut, error) {
 		return func(context.Context, *pingIn) (*pingOut, error) {
 			out := &pingOut{}
 			out.Body.Message = "a"
 			return out, nil
 		}
 	})
-	rest.Register(b, huma.Operation{OperationID: "b-ping", Method: http.MethodGet, Path: "/ping"}, func() func(context.Context, *pingIn) (*pingOut, error) {
+	rest.Register(b, huma.Operation{Security: []map[string][]string{}, OperationID: "b-ping", Method: http.MethodGet, Path: "/ping"}, func() func(context.Context, *pingIn) (*pingOut, error) {
 		return func(context.Context, *pingIn) (*pingOut, error) {
 			out := &pingOut{}
 			out.Body.Message = "b"
@@ -104,7 +104,7 @@ func TestInstanceTransformersIsolated(t *testing.T) {
 func TestPingServeAndFaultMapping(t *testing.T) {
 	errDenied := fault.Define(fault.PermissionDenied, "demo.denied")
 	api := rest.New(rest.Options{Title: "ping"})
-	rest.Register(api, huma.Operation{
+	rest.Register(api, huma.Operation{Security: []map[string][]string{},
 		OperationID: "ping",
 		Method:      http.MethodGet,
 		Path:        "/ping",
@@ -115,7 +115,7 @@ func TestPingServeAndFaultMapping(t *testing.T) {
 			return out, nil
 		}
 	})
-	rest.Register(api, huma.Operation{
+	rest.Register(api, huma.Operation{Security: []map[string][]string{},
 		OperationID: "deny",
 		Method:      http.MethodGet,
 		Path:        "/deny",
@@ -124,7 +124,7 @@ func TestPingServeAndFaultMapping(t *testing.T) {
 			return nil, errDenied.New()
 		}
 	})
-	rest.Register(api, huma.Operation{
+	rest.Register(api, huma.Operation{Security: []map[string][]string{},
 		OperationID: "echo",
 		Method:      http.MethodPost,
 		Path:        "/echo",

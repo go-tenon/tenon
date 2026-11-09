@@ -41,6 +41,9 @@ type RunE func(ctx context.Context, cmd *cobra.Command, args []string) error
 
 func wrap(run RunE) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, args []string) error {
+		if len(args) > 0 {
+			return AsExitError(ExitUsage, errors.New("unexpected positional arguments"))
+		}
 		return run(cmd.Context(), cmd, args)
 	}
 }
@@ -52,7 +55,10 @@ func Root(name, short string, io IO) *cobra.Command {
 		Short:         short,
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		Args:          func(cmd *cobra.Command, args []string) error { return AsExitError(ExitUsage, cobra.NoArgs(cmd, args)) },
+		RunE:          func(cmd *cobra.Command, args []string) error { return cmd.Help() },
 	}
+	cmd.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return AsExitError(ExitUsage, err) })
 	bindIO(cmd, io)
 	return cmd
 }
@@ -69,7 +75,7 @@ func NewServe(run RunE) *cobra.Command {
 
 // NewMigrate 构造 migrate 根命令，并挂 up/status/down。
 func NewMigrate(up, status, down RunE) *cobra.Command {
-	root := &cobra.Command{Use: "migrate", Short: "数据库迁移"}
+	root := Root("migrate", "数据库迁移", IO{})
 	root.AddCommand(&cobra.Command{Use: "up", Short: "应用迁移", RunE: wrap(up)})
 	root.AddCommand(&cobra.Command{Use: "status", Short: "迁移状态", RunE: wrap(status)})
 	root.AddCommand(&cobra.Command{Use: "down", Short: "回滚一步", RunE: wrap(down)})
@@ -83,9 +89,11 @@ func NewOpenAPI(run RunE) *cobra.Command {
 
 // NewConfig 构造 config check/show。
 func NewConfig(check, show RunE) *cobra.Command {
-	root := &cobra.Command{Use: "config", Short: "配置工具"}
+	root := Root("config", "配置工具", IO{})
 	root.AddCommand(&cobra.Command{Use: "check", Short: "离线校验配置", RunE: wrap(check)})
-	root.AddCommand(&cobra.Command{Use: "show", Short: "输出脱敏配置", RunE: wrap(show)})
+	showCmd := &cobra.Command{Use: "show", Short: "输出脱敏配置", RunE: wrap(show)}
+	showCmd.Flags().String("format", "yaml", "输出格式: yaml/json")
+	root.AddCommand(showCmd)
 	return root
 }
 

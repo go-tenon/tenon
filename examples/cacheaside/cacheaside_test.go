@@ -20,7 +20,6 @@ import (
 	"github.com/uptrace/bun"
 
 	"github.com/ryan053857/mygoravel/cleanup"
-	"github.com/ryan053857/mygoravel/database"
 	"github.com/ryan053857/mygoravel/database/dbtest"
 	"github.com/ryan053857/mygoravel/database/migrate"
 )
@@ -69,7 +68,7 @@ func TestMemoryCacheAsideCommitInvalidate(t *testing.T) {
 	c := cache.New[string](gocache_store.NewGoCache(client))
 	ns := "appA"
 
-	err := database.RunInTx(ctx, db, nil, func(ctx context.Context, tx bun.Tx) error {
+	err := db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 		_, err := tx.NewInsert().Model(&item{ID: "1", Name: "alpha"}).Exec(ctx)
 		return err
 	})
@@ -84,7 +83,7 @@ func TestMemoryCacheAsideCommitInvalidate(t *testing.T) {
 		t.Fatalf("cache %q err=%v", v, err)
 	}
 
-	err = database.RunInTx(ctx, db, nil, func(ctx context.Context, tx bun.Tx) error {
+	err = db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 		_, err := tx.NewUpdate().Model(&item{ID: "1", Name: "beta"}).Column("name").WherePK().Exec(ctx)
 		return err
 	})

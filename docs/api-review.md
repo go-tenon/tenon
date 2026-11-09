@@ -4,13 +4,13 @@
 |---|---|---|
 | config | 是 | 按段解码、注入 Lookup、Secret 脱敏、拒绝 null |
 | logging | 是（薄） | 仅 slog 装配与 context 字段，返回 `*slog.Logger` |
-| i18n | 是（薄） | 分层合并/冻结/校验；仍暴露 go-i18n Bundle |
+| i18n | 构建辅助 | 分层合并/校验；直接返回原生 `*i18n.Bundle` |
 | fault | 是 | Code/Kind/公开参数；堆栈仍用 cockroachdb/errors |
 | cleanup | 是 | 单所有者 LIFO 清理语义 |
-| database | 薄装配 | 直接暴露 `*bun.DB` |
+| database | 薄装配 | 直接返回 `*bun.DB`，事务直接使用 `db.RunInTx` |
 | database/migrate | 薄装配 | 直接暴露 `*goose.Provider` |
-| httpx | 是（Serve） | 监听/排空协调与错误归并 |
-| httpx/rest | 薄适配 | 延迟绑定 + 实例 Transformer；仍可用原生 `huma.Register` |
+| httpx | 是 | 监听/排空协调、请求关联、可信代理、恢复与限额 |
+| httpx/rest | 薄适配 | 延迟绑定、安全声明检查、统一 Problem schema 与实例 Transformer；仍可用原生 `huma.Register` |
 | command | 薄工厂 | 返回 `*cobra.Command` |
 | identity | 是 | 中立 Subject |
 

@@ -34,9 +34,7 @@ func TestIsAsWithStdAndCrdbWrap(t *testing.T) {
 	if e.Public()["order_id"] != "o1" {
 		t.Fatalf("public=%v", e.Public())
 	}
-	if fault.HTTPStatus(crdbWrapped) != 404 {
-		t.Fatalf("status=%d", fault.HTTPStatus(crdbWrapped))
-	}
+
 }
 
 func TestStackPointsAtCallSite(t *testing.T) {
@@ -78,26 +76,6 @@ func TestTemplatesAreDistinct(t *testing.T) {
 	a := errNotFound.New()
 	if errors.Is(a, errConflict) {
 		t.Fatal("different templates must not match")
-	}
-}
-
-func TestKindHTTPStatusMapping(t *testing.T) {
-	cases := map[fault.Kind]int{
-		fault.InvalidArgument:  422,
-		fault.Unauthenticated:  401,
-		fault.PermissionDenied: 403,
-		fault.NotFound:         404,
-		fault.Conflict:         409,
-		fault.Unavailable:      503,
-		fault.Internal:         500,
-	}
-	for k, want := range cases {
-		if got := k.HTTPStatus(); got != want {
-			t.Fatalf("%v: got %d want %d", k, got, want)
-		}
-	}
-	if fault.HTTPStatus(errors.New("boom")) != 500 {
-		t.Fatal("unknown error should map to 500")
 	}
 }
 

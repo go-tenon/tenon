@@ -1,9 +1,9 @@
 //go:build ignore
 
 // 本文件是新框架的设计规格与实施计划，不参与编译。
-// 状态：目标设计，尚未实现。日期：2026-11-09。
+// 状态：第一期实现与回归验收规格。更新：2026-11-10。
 // 框架暂定名：mygoravel。目标 module：github.com/ryan053857/mygoravel。
-// 本轮只更新规格，实际 module/import 改名随实施 PR 完成。
+// module/import 已落实；下文十个 PR 保留为设计与交付责任划分。
 package spec
 
 /*

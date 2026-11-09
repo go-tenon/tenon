@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/uptrace/bun"
 
@@ -33,7 +34,8 @@ func RequireDSN(t testing.TB) string {
 func Open(t testing.TB, migrations fs.FS) *bun.DB {
 	t.Helper()
 	adminDSN := RequireDSN(t)
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 
 	admin, err := database.Open(ctx, database.Config{DSN: config.Secret(adminDSN)})
 	if err != nil {
@@ -46,13 +48,17 @@ func Open(t testing.TB, migrations fs.FS) *bun.DB {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		db, err := database.Open(context.Background(), database.Config{DSN: config.Secret(adminDSN)})
+		cleanCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		db, err := database.Open(cleanCtx, database.Config{DSN: config.Secret(adminDSN)})
 		if err != nil {
-			t.Logf("dbtest: reopen admin: %v", err)
+			t.Errorf("dbtest: reopen admin: %v", err)
 			return
 		}
 		defer db.Close()
-		_, _ = db.ExecContext(context.Background(), "DROP DATABASE IF EXISTS "+name+" WITH (FORCE)")
+		if _, err := db.ExecContext(cleanCtx, "DROP DATABASE IF EXISTS "+name+" WITH (FORCE)"); err != nil {
+			t.Errorf("dbtest: drop database: %v", err)
+		}
 	})
 
 	u, err := url.Parse(adminDSN)

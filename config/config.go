@@ -2,6 +2,7 @@ package config
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"reflect"
@@ -45,7 +46,7 @@ func Parse(data []byte, opts ...Option) (*Document, error) {
 	}
 	root, err := parseDocument(data)
 	if err != nil {
-		return nil, errors.Wrap(err, "config")
+		return nil, errors.Wrap(safeYAMLError(err, nil, ""), "config")
 	}
 	if root != nil {
 		if err := rejectNulls(root); err != nil {
@@ -79,16 +80,16 @@ func (d *Document) Decode(section string, dst any) error {
 			return err
 		}
 		if err := expandNode(cloned, d.lookup); err != nil {
-			return wrapPath(d.path, err)
+			return wrapPath(d.path, errors.Wrapf(err, "section %s", section))
 		}
 		if err := cloned.Load(dst, yaml.WithKnownFields()); err != nil {
-			return wrapPath(d.path, err)
+			return wrapPath(d.path, safeYAMLError(err, cloned, section))
 		}
 	}
 
 	if v, ok := dst.(Validator); ok {
 		if err := v.Validate(); err != nil {
-			return wrapPath(d.path, errors.Wrap(err, "invalid configuration"))
+			return wrapPath(d.path, errors.Wrapf(err, "section %s: invalid configuration", section))
 		}
 	}
 	return nil
@@ -164,33 +165,37 @@ func parseDocument(data []byte) (*yaml.Node, error) {
 func checkAllowedSections(root *yaml.Node, allowed map[string]struct{}) error {
 	body := mappingBody(root)
 	if body == nil {
-		// 空文档、纯标量等：无顶层段可声明违规。
-		if root.Kind == yaml.DocumentNode && len(root.Content) == 0 {
-			return nil
-		}
-		if root.Kind == yaml.DocumentNode && len(root.Content) == 1 {
-			n := root.Content[0]
-			if n.Kind == yaml.ScalarNode && (n.Value == "" || n.Tag == "!!null") {
-				return nil
-			}
-			if n.Kind == yaml.MappingNode {
-				body = n
-			} else if n.Kind != yaml.DocumentNode {
-				// 非 mapping 根：没有段名，视为无未知段。
-				return nil
-			}
-		}
-		if body == nil {
-			return nil
-		}
+		return errors.New("configuration root must be a mapping")
 	}
-	for i := 0; i+1 < len(body.Content); i += 2 {
+	if err := checkMappings(body); err != nil {
+		return err
+	}
+	for i := 0; i < len(body.Content); i += 2 {
 		k := body.Content[i]
-		if k.Kind != yaml.ScalarNode {
-			continue
-		}
 		if _, ok := allowed[k.Value]; !ok {
 			return errors.Newf("line %d: unknown top-level section %q", k.Line, k.Value)
+		}
+	}
+	return nil
+}
+
+func checkMappings(n *yaml.Node) error {
+	if n.Kind == yaml.MappingNode {
+		seen := map[string]bool{}
+		for i := 0; i < len(n.Content); i += 2 {
+			k := n.Content[i]
+			if k.Kind != yaml.ScalarNode || k.ShortTag() != "!!str" {
+				return errors.Newf("line %d: mapping keys must be strings", k.Line)
+			}
+			if seen[k.Value] {
+				return errors.Newf("line %d: duplicate mapping key", k.Line)
+			}
+			seen[k.Value] = true
+		}
+	}
+	for _, c := range n.Content {
+		if err := checkMappings(c); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -211,22 +216,79 @@ func rejectNulls(n *yaml.Node) error {
 	return nil
 }
 
+// Copy nodes rather than re-encoding: retain source positions and isolate aliases per Decode.
 func cloneNode(n *yaml.Node) (*yaml.Node, error) {
-	var buf bytes.Buffer
-	enc := yaml.NewEncoder(&buf)
-	if err := enc.Encode(n); err != nil {
-		return nil, errors.Wrap(err, "config: clone section")
+	active := map[*yaml.Node]bool{}
+	var clone func(*yaml.Node) (*yaml.Node, error)
+	clone = func(n *yaml.Node) (*yaml.Node, error) {
+		if n == nil {
+			return nil, nil
+		}
+		if active[n] {
+			return nil, errors.New("config: cyclic YAML alias")
+		}
+		active[n] = true
+		defer delete(active, n)
+		if n.Kind == yaml.AliasNode {
+			return clone(n.Alias)
+		}
+		out := *n
+		out.Content = nil
+		out.Anchor = ""
+		out.Alias = nil
+		for _, child := range n.Content {
+			c, err := clone(child)
+			if err != nil {
+				return nil, err
+			}
+			out.Content = append(out.Content, c)
+		}
+		return &out, nil
 	}
-	if err := enc.Close(); err != nil {
-		return nil, errors.Wrap(err, "config: clone section")
+	return clone(n)
+}
+
+// YAML error messages can contain input values. Keep positions and field paths only.
+func safeYAMLError(err error, node *yaml.Node, section string) error {
+	var many *yaml.LoadErrors
+	var one *yaml.LoadError
+	var failures []*yaml.LoadError
+	if errors.As(err, &many) {
+		failures = many.Errors
+	} else if errors.As(err, &one) {
+		failures = []*yaml.LoadError{one}
+	} else {
+		return err
 	}
-	var out yaml.Node
-	if err := yaml.NewDecoder(bytes.NewReader(buf.Bytes())).Decode(&out); err != nil {
-		return nil, errors.Wrap(err, "config: clone section")
+	var out []error
+	for _, e := range failures {
+		field := section
+		var walk func(*yaml.Node, string)
+		walk = func(n *yaml.Node, path string) {
+			if n == nil {
+				return
+			}
+			if n.Line == e.Mark.Line && n.Column == e.Mark.Column {
+				field = path
+			}
+			switch n.Kind {
+			case yaml.MappingNode:
+				for i := 0; i < len(n.Content); i += 2 {
+					k, v := n.Content[i], n.Content[i+1]
+					name := path + "." + k.Value
+					if k.Line == e.Mark.Line && k.Column == e.Mark.Column {
+						field = name
+					}
+					walk(v, name)
+				}
+			case yaml.SequenceNode:
+				for i, c := range n.Content {
+					walk(c, fmt.Sprintf("%s[%d]", path, i))
+				}
+			}
+		}
+		walk(node, section)
+		out = append(out, errors.Newf("%s at line %d column %d: invalid YAML value, type or field", field, e.Mark.Line, e.Mark.Column))
 	}
-	// Encode 包了一层 DocumentNode；Decode 到 section 值时需要内容节点。
-	if out.Kind == yaml.DocumentNode && len(out.Content) == 1 {
-		return out.Content[0], nil
-	}
-	return &out, nil
+	return errors.Join(out...)
 }

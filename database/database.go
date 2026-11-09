@@ -42,32 +42,30 @@ func (c Config) Validate() error {
 	if c.MaxOpenConns < 0 || c.MaxIdleConns < 0 {
 		return errors.New("database: connection pool sizes must be >= 0")
 	}
+	if c.ConnMaxLifetime < 0 || c.ConnMaxIdleTime < 0 {
+		return errors.New("database: connection lifetimes must be >= 0")
+	}
+	if _, err := pgx.ParseConfig(c.DSN.Reveal()); err != nil {
+		return errors.New("database: invalid dsn")
+	}
 	return nil
 }
 
-// New 创建 *bun.DB，不主动连接。
-func New(cfg Config) (*bun.DB, error) {
+// Open 创建原生连接池并 Ping；任何失败都关闭已打开的资源。
+func Open(ctx context.Context, cfg Config) (*bun.DB, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
 	pgxCfg, err := pgx.ParseConfig(cfg.DSN.Reveal())
 	if err != nil {
-		return nil, errors.Wrap(err, "database")
+		return nil, errors.New("database: invalid dsn")
 	}
 	sqldb := stdlib.OpenDB(*pgxCfg)
 	sqldb.SetMaxOpenConns(cfg.MaxOpenConns)
 	sqldb.SetMaxIdleConns(cfg.MaxIdleConns)
 	sqldb.SetConnMaxLifetime(cfg.ConnMaxLifetime)
 	sqldb.SetConnMaxIdleTime(cfg.ConnMaxIdleTime)
-	return bun.NewDB(sqldb, pgdialect.New()), nil
-}
-
-// Open 创建并 Ping；失败时关闭连接。
-func Open(ctx context.Context, cfg Config) (*bun.DB, error) {
-	db, err := New(cfg)
-	if err != nil {
-		return nil, err
-	}
+	db := bun.NewDB(sqldb, pgdialect.New())
 	if err := db.PingContext(ctx); err != nil {
 		_ = db.Close()
 		return nil, errors.Wrap(err, "database: ping")

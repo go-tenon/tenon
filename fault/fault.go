@@ -160,19 +160,6 @@ func KindOf(err error) Kind {
 	return Internal
 }
 
-// HTTPStatus 按中立 Kind 映射返回建议 HTTP 状态；未知错误为 500。
-func HTTPStatus(err error) int {
-	var e *Error
-	if errors.As(err, &e) {
-		return e.Kind().HTTPStatus()
-	}
-	var t *Template
-	if errors.As(err, &t) {
-		return t.Kind().HTTPStatus()
-	}
-	return Internal.HTTPStatus()
-}
-
 // PublicOf 从错误链提取公开参数。
 func PublicOf(err error) map[string]any {
 	var e *Error

@@ -15,7 +15,7 @@ import (
 
 func TestMinimalHTTPWithoutDatabaseOrCache(t *testing.T) {
 	api := rest.New(rest.Options{Title: "minimal"})
-	rest.Register(api, huma.Operation{
+	rest.Register(api, huma.Operation{Security: []map[string][]string{},
 		OperationID: "ping",
 		Method:      http.MethodGet,
 		Path:        "/ping",

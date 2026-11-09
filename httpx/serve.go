@@ -23,7 +23,7 @@ type ServeOptions struct {
 
 // Serve 在 ln 上运行 srv，直到 ctx 取消或 Serve 返回错误。
 //
-// ctx 取消后：先调用 OnDraining，再 Shutdown；若超时则 Close。
+// ctx 取消或监听异常后：先调用 OnDraining，再 Shutdown；若超时则取消请求并 Close。
 // 必须等 Serve 返回后，调用方才应关闭数据库等依赖（由 cleanup 顺序保证）。
 func Serve(ctx context.Context, srv *http.Server, ln net.Listener, opts ServeOptions) error {
 	if srv == nil {
@@ -36,49 +36,66 @@ func Serve(ctx context.Context, srv *http.Server, ln net.Listener, opts ServeOpt
 		return errors.New("httpx: nil context")
 	}
 
+	if opts.ShutdownTimeout < 0 {
+		return errors.New("httpx: shutdown timeout must not be negative")
+	}
+	// 与退出信号隔离，先排空，再取消剩余请求。保留应用自己的 BaseContext。
+	requestRoot, cancelRequests := context.WithCancel(context.Background())
+	defer cancelRequests()
+	baseContext := srv.BaseContext
+	var stopCancel func() bool
+	srv.BaseContext = func(l net.Listener) context.Context {
+		base := context.Background()
+		if baseContext != nil {
+			base = baseContext(l)
+		}
+		ctx, cancel := context.WithCancel(base)
+		stopCancel = context.AfterFunc(requestRoot, cancel)
+		return ctx
+	}
 	errc := make(chan error, 1)
 	go func() { errc <- srv.Serve(ln) }()
-	if opts.Logger != nil {
-		opts.Logger.Info("http server started", "addr", ln.Addr().String())
-	}
-
+	var serveErr error
+	returned := false
 	select {
-	case err := <-errc:
-		if errors.Is(err, http.ErrServerClosed) {
-			return nil
-		}
-		return errors.Wrap(err, "httpx: serve")
+	case serveErr = <-errc:
+		returned = true
 	case <-ctx.Done():
 	}
-
 	if opts.OnDraining != nil {
 		opts.OnDraining()
 	}
 	if opts.Logger != nil {
-		opts.Logger.Info("http server shutting down", "timeout", opts.ShutdownTimeout)
+		opts.Logger.Info("http server draining")
 	}
-
-	sctx := context.Background()
-	var cancel context.CancelFunc
-	if opts.ShutdownTimeout > 0 {
-		sctx, cancel = context.WithTimeout(sctx, opts.ShutdownTimeout)
-		defer cancel()
-	}
-	if err := srv.Shutdown(sctx); err != nil {
-		_ = srv.Close()
-		serveErr := <-errc
-		if !errors.Is(serveErr, http.ErrServerClosed) && serveErr != nil {
-			return errors.Join(errors.Wrap(err, "httpx: shutdown"), serveErr)
+	var shutdownErr error
+	if opts.ShutdownTimeout == 0 {
+		cancelRequests()
+		shutdownErr = srv.Close()
+	} else {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), opts.ShutdownTimeout)
+		shutdownErr = srv.Shutdown(shutdownCtx)
+		cancel()
+		if shutdownErr != nil {
+			cancelRequests()
+			shutdownErr = errors.Join(shutdownErr, srv.Close())
 		}
-		return errors.Wrap(err, "httpx: shutdown")
 	}
-	if err := <-errc; err != nil && !errors.Is(err, http.ErrServerClosed) {
-		return errors.Wrap(err, "httpx: serve")
+	if !returned {
+		serveErr = <-errc
+	}
+	cancelRequests()
+	if stopCancel != nil {
+		stopCancel()
+	}
+	// 只有本次运行协调的关闭才是正常退出。
+	if !returned && errors.Is(serveErr, http.ErrServerClosed) {
+		serveErr = nil
 	}
 	if opts.Logger != nil {
 		opts.Logger.Info("http server stopped")
 	}
-	return nil
+	return errors.Join(errors.Wrap(serveErr, "httpx: serve"), errors.Wrap(shutdownErr, "httpx: shutdown"))
 }
 
 // Draining 是可在就绪检查中观察的排空标志。

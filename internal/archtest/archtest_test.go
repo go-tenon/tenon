@@ -17,11 +17,10 @@
 //	command             可依赖基础设施，不依赖 examples 业务
 //	examples/*          不受限制
 //
-// 另外禁止第一期引入后期形态依赖，并禁止框架源码使用 fmt.Errorf。
+// 另外禁止第一期引入后期形态依赖，允许标准 errors 与 cockroachdb/errors 互操作。
 package archtest
 
 import (
-	"bufio"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -106,6 +105,13 @@ func TestPackageGraph(t *testing.T) {
 
 func assertImportAllowed(t *testing.T, from, to string) {
 	t.Helper()
+	if (under(from, module+"/fault") || under(from, module+"/identity")) &&
+		(under(to, "net/http") || strings.HasPrefix(to, "github.com/danielgtaylor/huma") || strings.HasPrefix(to, "github.com/go-chi/chi") || under(to, "database/sql") || strings.HasPrefix(to, "github.com/uptrace/bun") || strings.HasPrefix(to, "github.com/jackc/pgx") || strings.HasPrefix(to, "github.com/spf13/cobra")) {
+		t.Errorf("%s imports transport/database/runtime package %s", from, to)
+	}
+	if under(from, module+"/examples/api/internal") && !strings.HasSuffix(filepath.Base(from), "http") && (under(to, "net/http") || strings.HasPrefix(to, "github.com/danielgtaylor/huma") || strings.HasPrefix(to, "github.com/go-chi/chi") || under(to, module+"/command") || under(to, module+"/cleanup")) {
+		t.Errorf("business core %s imports entrypoint/runtime %s", from, to)
+	}
 	toRoot, toInternal := rootOf(to)
 	if !toInternal {
 		return
@@ -197,55 +203,6 @@ func TestNoEmptyPhase1Packages(t *testing.T) {
 		if !hasGoFiles(filepath.Join(root, name)) {
 			t.Errorf("%s/: empty package directory is not allowed; create only with real code", name)
 		}
-	}
-}
-
-func TestNoFmtErrorf(t *testing.T) {
-	root := moduleRoot(t)
-	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		name := d.Name()
-		if d.IsDir() {
-			switch name {
-			case ".git", "legacy", "examples", "internal":
-				if path != root {
-					return filepath.SkipDir
-				}
-			}
-			return nil
-		}
-		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
-			return nil
-		}
-		rel, _ := filepath.Rel(root, path)
-		if rel == "spec.go" {
-			return nil
-		}
-		f, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-		sc := bufio.NewScanner(f)
-		lineNo := 0
-		for sc.Scan() {
-			lineNo++
-			line := sc.Text()
-			idx := strings.Index(line, "fmt.Errorf(")
-			if idx < 0 {
-				continue
-			}
-			if c := strings.Index(line, "//"); c >= 0 && c < idx {
-				continue
-			}
-			t.Errorf("use cockroachdb/errors instead of fmt.Errorf: %s:%d: %s", rel, lineNo, strings.TrimSpace(line))
-		}
-		return sc.Err()
-	})
-	if err != nil {
-		t.Fatal(err)
 	}
 }
 

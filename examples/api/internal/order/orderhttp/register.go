@@ -93,6 +93,18 @@ func Register(api *rest.API, deps Dependencies) {
 		}
 	})
 
+	updateOp := huma.Operation{OperationID: "order-update", Method: http.MethodPatch, Path: "/orders/{id}", Summary: "更新订单"}
+	auth(&updateOp)
+	rest.Register(api, updateOp, func() func(context.Context, *updateIn) (*getOut, error) {
+		return func(ctx context.Context, in *updateIn) (*getOut, error) {
+			sub, _ := identity.FromContext(ctx)
+			o, err := deps.Orders.Update(ctx, sub, in.ID, order.CreateParams{Title: in.Body.Title})
+			if err != nil {
+				return nil, err
+			}
+			return &getOut{Body: dto(o)}, nil
+		}
+	})
 	listOp := huma.Operation{OperationID: "order-list", Method: http.MethodGet, Path: "/orders", Summary: "列出订单"}
 	auth(&listOp)
 	rest.Register(api, listOp, func() func(context.Context, *listIn) (*listOut, error) {
@@ -101,22 +113,13 @@ func Register(api *rest.API, deps Dependencies) {
 			if !ok {
 				return nil, fault.Define(fault.Unauthenticated, "auth.unauthenticated").New()
 			}
-			params := order.ListParams{Limit: in.Limit}
-			if in.Before != "" {
-				id, err := uuid.Parse(in.Before)
-				if err != nil {
-					return nil, fault.Define(fault.InvalidArgument, "order.invalid_cursor").New()
-				}
-				params.Before = &id
-			}
+			params := order.ListParams{Limit: in.Limit, Before: in.Before}
 			res, err := deps.Orders.List(ctx, sub, params)
 			if err != nil {
 				return nil, err
 			}
 			out := &listOut{}
-			if res.Next != nil {
-				out.Body.Next = res.Next.String()
-			}
+			out.Body.Next = res.Next
 			out.Body.Items = []OrderDTO{}
 			for i := range res.Items {
 				out.Body.Items = append(out.Body.Items, dto(&res.Items[i]))
@@ -124,4 +127,11 @@ func Register(api *rest.API, deps Dependencies) {
 			return out, nil
 		}
 	})
+}
+
+type updateIn struct {
+	ID   uuid.UUID `path:"id"`
+	Body struct {
+		Title string `json:"title" minLength:"1" maxLength:"120"`
+	}
 }

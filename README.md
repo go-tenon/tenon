@@ -12,10 +12,10 @@ Module：`github.com/ryan053857/mygoravel`。设计规格与实施计划见 [`sp
 |---|---|---|
 | `config` | 已交付 | 文档解析、按段解码、环境注入、Secret 脱敏 |
 | `logging` | 已交付 | slog 构建与上下文字段辅助 |
-| `i18n` | 已交付 | go-i18n 目录分层组合与冻结 Bundle |
-| `fault` | 已交付 | Code/Kind/公开参数与 HTTP 中立映射 |
+| `i18n` | 已交付 | go-i18n 原生 Bundle 的目录组合与校验 |
+| `fault` | 已交付 | 传输中立的 Code/Kind/公开参数 |
 | `cleanup` | 已交付 | 资源清理栈 |
-| `httpx` | 已交付 | net/http 运行与停机排空 |
+| `httpx` | 已交付 | net/http 排空与默认边界中间件 |
 | `httpx/rest` | 已交付 | Huma 装配、延迟绑定与离线 OpenAPI |
 | `identity` | 已交付 | 已认证主体 |
 | `database` | 已交付 | PostgreSQL（Bun + pgx）连接与事务 |
@@ -39,11 +39,15 @@ go test ./...
 ```
 
 ```bash
-# 集成测试需要 Postgres / 可选 Redis
+# 完整集成验收需要 PostgreSQL 18 和 Redis 7
 export DATABASE_TEST_DSN='postgres://postgres:postgres@127.0.0.1:55432/postgres?sslmode=disable'
 export REDIS_TEST_ADDR='127.0.0.1:6379'
-go test -tags=integration ./database/... ./examples/... ./internal/consumetest/...
+go test -race -count=1 -tags=integration ./...
 ```
 
 文档：[`docs/support-matrix.md`](./docs/support-matrix.md)、[`docs/production.md`](./docs/production.md)、[`docs/api-review.md`](./docs/api-review.md)。
 CI 见 `.github/workflows/ci.yml`。
+
+独立消费验收会生成临时 Go 模块代理，从模块 zip 下载当前候选版本，并导出完整
+`examples/api` 运行测试；不使用 `replace`。验收覆盖离线 OpenAPI、迁移、数据库写入、
+缓存与权限、实际进程 SIGTERM 退出，以及无数据库/缓存的最小 HTTP 应用。

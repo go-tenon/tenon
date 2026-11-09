@@ -1,10 +1,17 @@
 http:
   addr: ${HTTP_ADDR:-:8080}
-
+  shutdown_timeout: 10s
+  request_timeout: 30s
+  max_body_bytes: 1048576
+  default_language: en
+  trusted_proxies: []
 database:
   dsn: ${DATABASE_URL}
-
 auth:
-  tokens:
-    dev: alice
-    bob: bob
+  credentials:
+    - token: ${API_TOKEN}
+      subject_id: alice
+cache:
+  driver: none
+  namespace: orders
+  ttl: 1m

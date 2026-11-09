@@ -1,5 +1,11 @@
 package config
 
+import (
+	"fmt"
+	"io"
+	"log/slog"
+)
+
 // Secret 是会在打印与序列化时脱敏的字符串。
 // 真实值只通过 [Secret.Reveal] 取得，不要依赖类型转换以外的隐式出口用于日志。
 type Secret string
@@ -25,3 +31,13 @@ func (s Secret) MarshalText() ([]byte, error) { return []byte(s.String()), nil }
 
 // MarshalYAML 供 YAML 编码器优先使用。
 func (s Secret) MarshalYAML() (any, error) { return s.String(), nil }
+
+// Format masks all verbs, including hexadecimal formatting.
+func (s Secret) Format(state fmt.State, verb rune) {
+	v := s.String()
+	if verb == 'q' || (verb == 'v' && state.Flag('#')) {
+		v = `"` + v + `"`
+	}
+	_, _ = io.WriteString(state, v)
+}
+func (s Secret) LogValue() slog.Value { return slog.StringValue(s.String()) }

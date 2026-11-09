@@ -45,16 +45,8 @@ type Options struct {
 	RequiredIDs []string
 }
 
-// Bundle 是冻结后的消息目录，可安全并发读取。
-type Bundle struct {
-	bundle     *goi18n.Bundle
-	defaultTag language.Tag
-	matcher    language.Matcher
-	tags       []language.Tag
-}
-
 // New 构建并冻结 Bundle。
-func New(opts Options) (*Bundle, error) {
+func New(opts Options) (*goi18n.Bundle, error) {
 	def := opts.Default
 	if def == "" {
 		def = LocaleZhCN
@@ -96,19 +88,18 @@ func New(opts Options) (*Bundle, error) {
 		}
 	}
 
-	out := &Bundle{
-		bundle:     b,
-		defaultTag: defTag,
-		tags:       b.LanguageTags(),
-	}
-	out.matcher = language.NewMatcher(out.tags)
-
-	if len(opts.RequiredIDs) > 0 {
-		if err := out.checkRequired(opts.RequiredIDs); err != nil {
-			return nil, err
+	for _, id := range opts.RequiredIDs {
+		found := false
+		for _, locales := range seen {
+			if _, ok := locales[defTag.String()][id]; ok {
+				found = true
+			}
+		}
+		if !found {
+			return nil, errors.Newf("i18n: default locale missing message %s", id)
 		}
 	}
-	return out, nil
+	return b, nil
 }
 
 func layerLabel(l Layer) string {
@@ -164,51 +155,6 @@ func loadLayer(b *goi18n.Bundle, layer Layer) ([]msgRef, error) {
 	return out, err
 }
 
-func (b *Bundle) checkRequired(ids []string) error {
-	loc := goi18n.NewLocalizer(b.bundle, b.defaultTag.String())
-	var missing []string
-	for _, id := range ids {
-		if _, err := loc.Localize(&goi18n.LocalizeConfig{MessageID: id}); err != nil {
-			missing = append(missing, id)
-		}
-	}
-	if len(missing) > 0 {
-		return errors.Newf("i18n: default locale %s missing messages: %s", b.defaultTag, strings.Join(missing, ", "))
-	}
-	return nil
-}
-
-// Localizer 返回指定语言的 go-i18n Localizer；空或不支持时回退到默认语言。
-func (b *Bundle) Localizer(locale string) *goi18n.Localizer {
-	tag := b.Match(locale)
-	return goi18n.NewLocalizer(b.bundle, tag)
-}
-
-// Match 将 locale 匹配到已加载语言；空则返回默认语言。
-func (b *Bundle) Match(locale string) string {
-	if locale == "" {
-		return b.defaultTag.String()
-	}
-	tag, _ := language.Parse(locale)
-	m, _, _ := b.matcher.Match(tag)
-	return m.String()
-}
-
-// Default 返回默认语言标签。
-func (b *Bundle) Default() string { return b.defaultTag.String() }
-
-// Locales 返回已加载语言；第一个不一定是默认语言，使用 Default 取默认。
-func (b *Bundle) Locales() []string {
-	out := make([]string, len(b.tags))
-	for i, t := range b.tags {
-		out[i] = t.String()
-	}
-	return out
-}
-
-// Unwrap 返回底层 *goi18n.Bundle，供需要原生 API 的调用方使用。
-func (b *Bundle) Unwrap() *goi18n.Bundle { return b.bundle }
-
 type localeKey struct{}
 
 // WithLocale 将语言标记写入 context。
@@ -224,15 +170,15 @@ func Locale(ctx context.Context) string {
 	return ""
 }
 
-// MatchAcceptLanguage 按 Accept-Language 与默认语言选择标签。
-func (b *Bundle) MatchAcceptLanguage(header string) string {
-	if header == "" {
-		return b.defaultTag.String()
-	}
+// MatchAcceptLanguage negotiates loaded languages, with explicit default fallback.
+func MatchAcceptLanguage(b *goi18n.Bundle, header string) string {
 	tags, _, err := language.ParseAcceptLanguage(header)
 	if err != nil || len(tags) == 0 {
-		return b.defaultTag.String()
+		return b.LanguageTags()[0].String()
 	}
-	m, _, _ := b.matcher.Match(tags...)
+	m, _, confidence := language.NewMatcher(b.LanguageTags()).Match(tags...)
+	if confidence == language.No {
+		return b.LanguageTags()[0].String()
+	}
 	return m.String()
 }

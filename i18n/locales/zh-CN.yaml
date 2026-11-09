@@ -1,1 +1,8 @@
 mygoravel.ok: 正常
+error.internal: 服务暂时无法处理请求
+error.validation: 请求参数无效
+auth.unauthenticated: 请先认证
+auth.forbidden: 没有访问权限
+order.not_found: 订单不存在
+order.forbidden: 没有访问权限
+order.conflict: 已存在同名订单
