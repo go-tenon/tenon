@@ -42,10 +42,12 @@ go test -race ./...
 
 测试 HTTP 接口时，不需要真正监听端口。用 `httptest` 创建请求和响应记录器，然后直接调用 `api.Handler()` 即可。
 
-请调用应用自己的路由注册函数，而不是在测试中重新声明路由，这样测试覆盖的就是真实的路由配置、认证和输入验证。下面是博客应用完整的 `internal/article/articlehttp/routes_test.go`：
+请调用应用自己的路由注册函数，而不是在测试中重新声明路由，这样测试覆盖的就是真实的路由配置、认证和输入验证。测试文件也可以按业务动作命名。下面是博客应用完整的 `internal/article/articlehttp/actions/create_article_test.go`，它测试[创建文章](routing.md#http-actions)的 `CreateArticle` action：
+
+这里使用外部测试包 `actions_test`，通过父包 `articlehttp.Register` 注册真实路由。生产代码的依赖方向仍然是 `articlehttp → actions → article`，`actions` 包不需要反向导入父包。
 
 ```go
-package articlehttp_test
+package actions_test
 
 import (
     "encoding/json"
@@ -307,6 +309,20 @@ func TestOpenAPIDoesNotNeedConfig(t *testing.T) {
     }
 }
 
+func TestRoutesDoesNotNeedConfig(t *testing.T) {
+    out, err := run("routes", "--method", "post", "--path", "/articles",
+        "--config", filepath.Join(t.TempDir(), "missing.yaml"))
+    if err != nil {
+        t.Fatal(err)
+    }
+    if !strings.Contains(out, "article-create") || !strings.Contains(out, "article-publish") {
+        t.Fatalf("missing route in %s", out)
+    }
+    if strings.Contains(out, "article-get") || strings.Contains(out, "/docs") {
+        t.Fatalf("route filters did not apply: %s", out)
+    }
+}
+
 func TestConfigCheckReportsMissingFile(t *testing.T) {
     _, err := run("config", "check", "--config", filepath.Join(t.TempDir(), "missing.yaml"))
     if command.ExitCode(err) != command.ExitConfig {
@@ -315,7 +331,7 @@ func TestConfigCheckReportsMissingFile(t *testing.T) {
 }
 ```
 
-第一个测试确认 `openapi` 命令不需要配置文件和数据库，并且输出了真实的路由；第二个测试确认配置文件缺失时，命令以 `ExitConfig` 退出。
+前两个测试确认 `openapi`、`routes` 命令可以离线查看真实的接口声明，`routes` 同时检查方法和路径过滤；最后一个测试确认配置文件缺失时，`config check` 以 `ExitConfig` 退出。
 
 <a id="testing-shutdown"></a>
 ## 测试平滑停止

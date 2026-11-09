@@ -1,0 +1,91 @@
+package rest
+
+import (
+	"cmp"
+	"net/http"
+	"slices"
+	"strings"
+
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/go-chi/chi/v5"
+)
+
+// Route 描述一条已注册的 HTTP 路由。
+type Route struct {
+	Method      string
+	Path        string
+	OperationID string
+	Summary     string
+	// Access 是 OpenAPI 中声明的访问策略：public、bearer（可带 scope）或 unknown。
+	// 它不推断 chi 中间件的行为；没有可识别声明的路由一律为 unknown。
+	Access string
+}
+
+// Routes 返回按路径、方法排序的路由快照，不调用处理器或处理器工厂。
+// 结果包含原生 chi 路由和文档端点；隐藏或未进入 OpenAPI 的路由没有 OperationID 和 Summary，
+// Access 为 unknown。请在应用完成路由注册后调用。
+func (a *API) Routes() []Route {
+	var routes []Route
+	// Walk 只会返回回调产生的错误；这里的回调始终成功。
+	_ = chi.Walk(a.router, func(method, path string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
+		route := Route{Method: method, Path: path, Access: "unknown"}
+		if op := routeOperation(a.OpenAPI().Paths[path], method); op != nil {
+			route.OperationID = op.OperationID
+			route.Summary = op.Summary
+			route.Access = routeAccess(op)
+		}
+		routes = append(routes, route)
+		return nil
+	})
+	slices.SortFunc(routes, func(a, b Route) int {
+		if order := cmp.Compare(a.Path, b.Path); order != 0 {
+			return order
+		}
+		return cmp.Compare(a.Method, b.Method)
+	})
+	return routes
+}
+
+func routeOperation(item *huma.PathItem, method string) *huma.Operation {
+	if item == nil {
+		return nil
+	}
+	switch method {
+	case http.MethodGet:
+		return item.Get
+	case http.MethodPost:
+		return item.Post
+	case http.MethodPut:
+		return item.Put
+	case http.MethodPatch:
+		return item.Patch
+	case http.MethodDelete:
+		return item.Delete
+	case http.MethodHead:
+		return item.Head
+	case http.MethodOptions:
+		return item.Options
+	case http.MethodTrace:
+		return item.Trace
+	default:
+		return nil
+	}
+}
+
+func routeAccess(op *huma.Operation) string {
+	if op.Security == nil {
+		return "unknown"
+	}
+	if len(op.Security) == 0 {
+		return "public"
+	}
+	if len(op.Security) == 1 && len(op.Security[0]) == 1 && op.Metadata["mygoravel.bearer"] == true {
+		if _, ok := op.Security[0]["bearer"]; ok {
+			if scopes, ok := op.Extensions["x-required-scopes"].([]string); ok && len(scopes) > 0 {
+				return "bearer: " + strings.Join(scopes, ", ")
+			}
+			return "bearer"
+		}
+	}
+	return "unknown"
+}

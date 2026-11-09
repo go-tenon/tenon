@@ -72,7 +72,7 @@ import (
     "github.com/ryan053857/mygoravel/httpx/rest"
 )
 
-// Routes 注册应用的全部路由。serve 和 openapi 命令共用它，保证文档与实际接口一致。
+// Routes 注册应用的全部路由。serve、openapi 和 routes 命令共用它。
 func Routes(api *rest.API, validate rest.TokenValidator, articles *article.Service) {
     articlehttp.Register(api, rest.RequireBearer(api, validate, "articles"), articles)
 }
@@ -107,12 +107,12 @@ func Serve(ctx context.Context, cfg settings.Config, logger *slog.Logger) (err e
 }
 ```
 
-其中 `settings.Config` 是应用的[配置结构](configuration.md#loading-configuration)，`auth.Validator` 是 token 校验器（见[认证](authentication.md#token-validators)），`article` 和 `articlehttp` 是应用自己的业务包（见[路由](routing.md#organizing-routes)）。路由注册单独放在 `Routes` 中，这样 `openapi` 命令可以在不打开任何资源的情况下复用它。
+其中 `settings.Config` 是应用的[配置结构](configuration.md#loading-configuration)，`auth.Validator` 是 token 校验器（见[认证](authentication.md#token-validators)），`article` 和 `articlehttp` 是应用自己的业务包（见[路由](routing.md#organizing-routes)）。路由声明保留在各模块的 `routes.go`，`bootstrap.Routes` 统一调用各模块的 `Register`，让 `serve`、`openapi` 和 [routes](commands.md#routes-command) 命令复用同一份声明。后两个命令在文档模式下注册，不打开运行时资源；action 在处理器工厂内部构造，只有 `serve` 会调用它们。
 
 整个过程就是普通的函数调用：先创建被依赖的对象，再创建依赖它们的对象。`httpx.ListenAndServe` 返回后，`defer` 中的 `stack.CloseWith` 才会关闭数据库连接，因此正在处理的请求不会因为数据库提前关闭而失败。请求处理与停机的完整顺序见[请求生命周期](lifecycle.md)。
 
 > [!TIP]
-> 入口只打开当前命令真正需要的资源。例如 `serve` 命令需要数据库和 HTTP 监听，而 `openapi` 命令什么资源都不需要。把不同命令的组装逻辑分开，可以让每个命令都快速、独立地运行。
+> 入口只打开当前命令真正需要的资源。例如 `serve` 命令需要数据库和 HTTP 监听，而上面的 `openapi`、`routes` 命令不需要这些资源。把不同命令的组装逻辑分开，可以让每个命令都快速、独立地运行。
 
 <a id="closing-resources"></a>
 ## 关闭资源

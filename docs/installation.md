@@ -175,6 +175,6 @@ mygoravel 还为你生成了接口文档。在浏览器中打开 `http://localho
 - 阅读[路由](routing.md)、[请求](requests.md)和[响应](responses.md)，编写真正的业务接口；
 - 用[认证](authentication.md)保护需要登录才能访问的接口；
 - 用[数据库](database.md)连接 PostgreSQL，用[迁移](migrations.md)管理表结构；
-- 用[命令行](commands.md)为应用加上 `serve`、`migrate`、`openapi` 等子命令。
+- 用[命令行](commands.md)为应用加上 `serve`、`migrate`、`openapi`、`routes` 等子命令。
 
 如果想先了解一个 mygoravel 应用整体是如何组织的，可以阅读[目录结构](directory-structure.md)和[依赖装配](dependencies.md)。

@@ -16,9 +16,12 @@
 
 在 mygoravel 中，你不需要手动读取 `http.Request`。每条路由都有一个**输入类型**——一个普通的 Go 结构体，字段上的标签说明这个值从哪里来。Huma 会在调用处理器之前读取请求、转换类型并完成[验证](validation.md)，你的处理器拿到的就是一个已经填好的结构体。
 
+例如，在[获取文章](routing.md#http-actions)的 `GetArticle.Handle` 方法中，输入已经完成类型转换。它和 `GetArticleInput` 一起定义在 `internal/article/articlehttp/actions/get_article.go` 中，属于 `actions` 包；共享的 `ArticleOutput` 定义在同包的 `dto.go` 中。下面只展示方法签名和读取输入的位置：
+
 ```go
-return func(ctx context.Context, in *GetArticleInput) (*ArticleOutput, error) {
+func (a *GetArticle) Handle(ctx context.Context, in *GetArticleInput) (*ArticleOutput, error) {
     // in.ID 已经是解析好的 uuid.UUID
+    // ……调用业务服务并返回输出
 }
 ```
 

@@ -49,7 +49,7 @@
 <a id="declaring-input"></a>
 ### 声明输入格式
 
-格式上的要求直接写在输入类型的结构体标签上。不符合要求的请求会被框架拦截，并返回 `422`：
+格式上的要求直接写在输入类型的结构体标签上。不符合要求的请求会被框架拦截，并返回 `422`。按照[按业务动作组织处理器](routing.md#http-actions)的约定，把下面的输入类型放在 `internal/article/articlehttp/actions/update_article.go` 中，与修改文章的处理器放在一起，包名为 `actions`：
 
 ```go
 type UpdateArticleInput struct {
@@ -150,7 +150,32 @@ func (s *Service) Update(ctx context.Context, subject identity.Subject, id uuid.
 <a id="calling-from-handlers"></a>
 ### 在处理器中调用服务
 
-处理器不需要做任何错误转换，直接返回服务的错误即可：
+处理器不需要做任何错误转换，直接返回服务的错误即可。在同一个 `update_article.go` 中，为“修改文章”定义 `UpdateArticle`，通过构造函数接收上面的业务服务。下面是处理器部分的代码；`context`、`article` 和 `identity` 分别来自标准库、应用的业务包和框架的身份包：
+
+```go
+type UpdateArticle struct {
+    articles *article.Service
+}
+
+func NewUpdateArticle(articles *article.Service) *UpdateArticle {
+    return &UpdateArticle{articles: articles}
+}
+
+func (a *UpdateArticle) Handle(ctx context.Context, in *UpdateArticleInput) (*ArticleOutput, error) {
+    subject, _ := identity.FromContext(ctx) // 未认证时主体为空，服务会以 article.forbidden 拒绝
+    item, err := a.articles.Update(ctx, subject, in.ID, article.Changes{
+        Title:   in.Body.Title,
+        Slug:    in.Body.Slug,
+        Content: in.Body.Content,
+    })
+    if err != nil {
+        return nil, err
+    }
+    return &ArticleOutput{Body: toDTO(item)}, nil
+}
+```
+
+共享的 `ArticleOutput` 和 `toDTO` 定义在 `actions/dto.go` 中，完整代码见[共享响应结构](routing.md#shared-responses)。接着在父包 `articlehttp` 的 `routes.go` 的 `Register` 函数中加入下面的路由声明。`api`、`requireArticles` 和 `articles` 都由 `Register` 的参数传入，`actions` 的导入路径是 `example.com/blog/internal/article/articlehttp/actions`：
 
 ```go
 op := huma.Operation{
@@ -160,23 +185,12 @@ op := huma.Operation{
     Summary:     "修改文章",
 }
 requireArticles(&op)
-rest.Register(api, op, func() func(context.Context, *UpdateArticleInput) (*ArticleOutput, error) {
-    return func(ctx context.Context, in *UpdateArticleInput) (*ArticleOutput, error) {
-        subject, _ := identity.FromContext(ctx) // 未认证时主体为空，服务会以 article.forbidden 拒绝
-        item, err := articles.Update(ctx, subject, in.ID, article.Changes{
-            Title:   in.Body.Title,
-            Slug:    in.Body.Slug,
-            Content: in.Body.Content,
-        })
-        if err != nil {
-            return nil, err
-        }
-        return &ArticleOutput{Body: toDTO(item)}, nil
-    }
+rest.Register(api, op, func() func(context.Context, *actions.UpdateArticleInput) (*actions.ArticleOutput, error) {
+    return actions.NewUpdateArticle(articles).Handle
 })
 ```
 
-`requireArticles` 要求请求携带有效的 token，见[认证](authentication.md)；`ArticleOutput` 和 `toDTO` 见[响应](responses.md)。
+`requireArticles` 要求请求携带有效的 token，见[认证](authentication.md)。处理器在工厂内部构造，因此离线查看路由或导出 OpenAPI 时不会创建它，也不会访问业务服务。
 
 <a id="what-clients-see"></a>
 ### 客户端看到的响应

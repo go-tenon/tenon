@@ -5,6 +5,7 @@
 - [内置命令](#built-in-commands)
     - [serve 命令](#serve-command)
     - [openapi 命令](#openapi-command)
+    - [routes 命令](#routes-command)
     - [config 命令](#config-command)
     - [migrate 与 doctor 命令](#migrate-and-doctor-commands)
 - [参数与选项](#arguments-and-options)
@@ -16,7 +17,7 @@
 
 一个 API 应用除了启动 HTTP 服务，通常还需要执行一些运维任务：检查配置、执行数据库迁移、导出接口文档、探测外部依赖是否可用等。mygoravel 的 `command` 包基于 [Cobra](https://github.com/spf13/cobra)，为这些常见任务提供了现成的命令骨架。
 
-每个工厂函数返回的都是原生的 `*cobra.Command`。框架只负责命令的名称、说明和参数检查，命令具体做什么由你传入的回调决定。你可以只安装需要的命令，也可以添加完全自定义的 Cobra 命令。
+每个工厂函数返回的都是原生的 `*cobra.Command`。大多数命令由你传入回调执行具体工作；`routes` 接收创建 API 的回调，由框架完成路由遍历、过滤和表格输出。你可以只安装需要的命令，也可以添加完全自定义的 Cobra 命令。
 
 完成本章后，你的应用可以这样使用：
 
@@ -24,12 +25,13 @@
 ./bin/api serve --config config.yaml
 ./bin/api migrate up
 ./bin/api openapi > openapi.json
+./bin/api routes
 ```
 
 <a id="root-command"></a>
 ## 根命令
 
-推荐把命令行的组装放在应用的 `internal/cli` 包中，入口文件只负责处理信号和退出码。下面是博客应用完整的 `internal/cli/cli.go`，它安装了 `serve`、`openapi`、`migrate` 和 `config` 四个命令：
+推荐把命令行的组装放在应用的 `internal/cli` 包中，入口文件只负责处理信号和退出码。下面是博客应用完整的 `internal/cli/cli.go`，它安装了 `serve`、`openapi`、`routes`、`migrate` 和 `config` 五个命令：
 
 ```go
 package cli
@@ -73,6 +75,12 @@ func New(out, errOut io.Writer) *cobra.Command {
         }
         _, err = cmd.OutOrStdout().Write(append(data, '\n'))
         return err
+    }))
+
+    root.AddCommand(command.NewRoutes(func(_ context.Context) (*rest.API, error) {
+        api := rest.New(rest.Options{Title: "Blog API", Version: "1.0.0", Mode: rest.ModeOpenAPI})
+        bootstrap.Routes(api, auth.Validator(auth.Config{}), nil)
+        return api, nil
     }))
 
     root.AddCommand(newMigrateCommand())
@@ -142,11 +150,12 @@ func main() {
 | --- | --- | --- |
 | `command.NewServe` | `serve` | 读取配置、打开资源、启动 HTTP 服务 |
 | `command.NewOpenAPI` | `openapi` | 以文档模式注册路由，输出 OpenAPI 文档 |
+| `command.NewRoutes` | `routes` | 以文档模式注册路由并返回 `*rest.API`（框架负责过滤和打印） |
 | `command.NewConfig` | `config check`、`config show` | 校验配置，输出加载后的配置 |
 | `command.NewMigrate` | `migrate up`、`migrate status`、`migrate down` | 连接数据库，执行迁移 |
 | `command.NewDoctor` | `doctor` | 在限定时间内探测外部依赖是否可用 |
 
-所有回调的签名都是 `command.RunE`：
+除 `NewRoutes` 外，以上命令回调的签名都是 `command.RunE`：
 
 ```go
 type RunE func(ctx context.Context, cmd *cobra.Command, args []string) error
@@ -165,6 +174,39 @@ type RunE func(ctx context.Context, cmd *cobra.Command, args []string) error
 ```bash
 ./bin/api openapi > openapi.json
 ```
+
+<a id="routes-command"></a>
+### routes 命令
+
+当业务模块变多时，你可以用 `routes` 查看整个应用的路由，不必逐个打开模块中的 `routes.go`：
+
+```bash
+./bin/api routes
+./bin/api routes --method POST
+./bin/api routes --path /articles
+./bin/api routes --method post --path /articles
+```
+
+`--method` 不区分大小写，`--path` 按路径包含的文本匹配，两者同时使用时取交集。不匹配任何路由时只输出表头。结果按路径、HTTP 方法排序，例如 `--path /articles` 会输出：
+
+```text
+METHOD  PATH                    OPERATION ID     ACCESS            SUMMARY
+POST    /articles               article-create   bearer: articles  创建文章
+GET     /articles/{id}          article-get      bearer: articles  获取文章
+POST    /articles/{id}/publish  article-publish  bearer: articles  发布文章
+```
+
+SUMMARY 来自路由声明的 `huma.Operation.Summary`，没有摘要时显示为 `-`；摘要中的换行和制表符会合并为空格，保持每条路由占一行。
+
+`NewRoutes` 的回调签名是 `func(context.Context) (*rest.API, error)`。回调负责以 `rest.ModeOpenAPI` 创建 API，并调用与 `serve`、`openapi` 相同的 `bootstrap.Routes`；命令负责读取 `api.Routes()` 并输出结果。上面的完整示例不加载配置、不打开数据库，也不会构造 action 或执行 token 校验器。请把依赖运行时资源的 action 构造保留在[处理器工厂](routing.md#handler-factories)内。
+
+路由声明仍留在各业务模块的 `routes.go`，新增模块时把它的 `Register` 加入 `bootstrap.Routes`，无需再维护一份总览清单。如果应用按配置启用不同路由，查看命令也应使用相同的路由选择条件。
+
+列表包含当前 API 的原生 chi 路由、挂载的 chi 子路由，以及 `/docs`、`/openapi.json` 等文档端点。没有 OpenAPI 信息的路由，其 Operation ID 和 SUMMARY 显示为 `-`，ACCESS 显示为 `unknown`。隐藏的 Huma 接口也会列出，但没有 OpenAPI 元数据可用于补充这些列。
+
+挂载 `chi.Router` 时，列表可以展开具体的子路由。对于挂载的不透明 `http.Handler`，例如 `Mount("/files", handler)`，列表会按 chi 支持的各个方法列出 `/files/*`，包括 `CONNECT`、`QUERY` 等，ACCESS 均为 `unknown`；这些行表示挂载点接收的方法，不能据此判断处理器内部支持哪些接口，也无法展开其内部路由。
+
+ACCESS 展示路由声明：`public` 表示显式公开，`bearer` 表示要求认证，`bearer: articles` 同时列出所需的 scope。`unknown` 表示无法从声明确定策略，不表示允许匿名访问；自定义中间件的实际行为不会由这个命令检查。
 
 <a id="config-command"></a>
 ### config 命令

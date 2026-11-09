@@ -136,18 +136,22 @@ auth:
 <a id="protecting-routes"></a>
 ## 保护路由
 
-使用 `rest.RequireBearer` 为路由启用认证。它的参数是 API 实例、校验器，以及调用者必须具备的 scope：
+使用 `rest.RequireBearer` 为路由启用认证。它的参数是 API 实例、校验器，以及调用者必须具备的 scope。
+
+下面是 `articlehttp` 包中注册“获取文章”接口的片段：`api` 由 `rest.New` 创建，`cfg.Auth` 来自应用配置，`articles` 是已经构造好的业务服务。`actions` 的导入路径是 `example.com/blog/internal/article/articlehttp/actions`，其中的输入、输出和处理器定义见[路由](routing.md#organizing-routes)：
 
 ```go
 requireArticles := rest.RequireBearer(api, auth.Validator(cfg.Auth), "articles")
 
 op := huma.Operation{
-    OperationID: "article-list",
+    OperationID: "article-get",
     Method:      http.MethodGet,
-    Path:        "/articles",
+    Path:        "/articles/{id}",
 }
 requireArticles(&op)
-rest.Register(api, op, newListHandler)
+rest.Register(api, op, func() func(context.Context, *actions.GetArticleInput) (*actions.ArticleOutput, error) {
+    return actions.NewGetArticle(articles).Handle
+})
 ```
 
 `RequireBearer` 返回的函数可以复用于多条路由。可以传入多个 scope，调用者必须**全部**具备才能访问；不传 scope 则只要求认证通过。
@@ -198,22 +202,27 @@ Www-Authenticate: Bearer
 <a id="retrieving-the-subject"></a>
 ## 获取已认证的主体
 
-认证通过后，主体会被放入请求的 context。在处理器中使用 `identity.FromContext` 读取它，再传给业务服务：
+认证通过后，主体会被放入请求的 context。在处理器中使用 `identity.FromContext` 读取它，再传给业务服务。
+
+例如，你可以把 `articlehttp/actions/get_article.go` 中[获取文章处理器](routing.md#http-actions)的 `Handle` 方法改为下面这样，显式拒绝没有主体的请求。这个方法位于 `actions` 包中，`a.articles` 由 `NewGetArticle` 注入，`auth.ErrUnauthenticated` 定义在本章的 `internal/auth/auth.go` 中：
 
 ```go
-return func(ctx context.Context, in *ListArticlesInput) (*ListArticlesOutput, error) {
+func (a *GetArticle) Handle(ctx context.Context, in *GetArticleInput) (*ArticleOutput, error) {
     subject, ok := identity.FromContext(ctx)
     if !ok {
         return nil, auth.ErrUnauthenticated.New()
     }
-    items, err := articles.List(ctx, subject, in.Before, in.Limit)
-    // ……
+    item, err := a.articles.Get(ctx, subject, in.ID)
+    if err != nil {
+        return nil, err
+    }
+    return &ArticleOutput{Body: toDTO(item)}, nil
 }
 ```
 
 对于受 `RequireBearer` 保护的路由，`ok` 总是为 `true`。保留这个检查可以防止路由配置被误改为公开后，处理器在没有身份的情况下继续执行。
 
-另一种做法是让业务服务拒绝空的主体，见[授权](authorization.md#ownership)。这样即使路由被误改为公开，请求也会在服务中被拒绝，处理器就可以简单地写成 `subject, _ := identity.FromContext(ctx)`，[路由](routing.md#organizing-routes)一章中的 `articlehttp` 就是这样做的。
+另一种做法是让业务服务拒绝空的主体，见[授权](authorization.md#ownership)。这样即使路由被误改为公开，请求也会在服务中被拒绝，处理器就可以简单地写成 `subject, _ := identity.FromContext(ctx)`，[路由](routing.md#organizing-routes)一章中 `actions` 包的处理器就是这样做的。
 
 <a id="managing-credentials"></a>
 ## 管理凭据

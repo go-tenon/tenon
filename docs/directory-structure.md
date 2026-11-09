@@ -5,6 +5,7 @@
     - [cmd 目录](#the-cmd-directory)
     - [internal/bootstrap 目录](#the-bootstrap-directory)
     - [业务包](#business-packages)
+    - [按业务动作组织处理器](#http-actions)
     - [migrations 目录](#the-migrations-directory)
     - [locales 目录](#the-locales-directory)
 - [命名约定](#naming-conventions)
@@ -30,7 +31,7 @@ blog/
 │   └── api/
 │       └── main.go          进程入口：信号处理、退出码
 ├── internal/
-│   ├── cli/                 命令行：serve、openapi、migrate、config
+│   ├── cli/                 命令行：serve、routes、openapi、migrate、config
 │   ├── settings/            配置结构与加载
 │   ├── bootstrap/           打开资源、组装服务、注册路由
 │   ├── auth/                token 校验器
@@ -38,6 +39,12 @@ blog/
 │       ├── article.go       模型与业务错误
 │       ├── service.go       业务规则与数据库操作
 │       └── articlehttp/     HTTP 输入输出与路由注册
+│           ├── routes.go                本模块的路由声明与 action 绑定
+│           └── actions/                 HTTP 请求处理动作
+│               ├── create_article.go    创建文章
+│               ├── get_article.go       获取文章
+│               ├── publish_article.go   发布文章
+│               └── dto.go               动作共享的响应结构与转换
 ├── migrations/              SQL 迁移文件和 embed.go
 └── locales/                 应用自己的翻译文件
 ```
@@ -51,7 +58,9 @@ blog/
 | `internal/bootstrap/serve.go` | [依赖装配](dependencies.md#assembling-the-application) |
 | `internal/auth/auth.go` | [认证](authentication.md#token-validators) |
 | `internal/article/article.go`、`service.go` | [数据库](database.md#defining-models)、[错误处理](errors.md#example)、[授权](authorization.md#checking-in-transactions) |
-| `internal/article/articlehttp/routes.go` | [路由](routing.md#organizing-routes) |
+| `internal/article/articlehttp/routes.go` | [模块内注册](routing.md#module-registration) |
+| `internal/article/articlehttp/actions/` 下的 `create_article.go`、`get_article.go`、`publish_article.go` | [按业务动作组织处理器](routing.md#http-actions) |
+| `internal/article/articlehttp/actions/dto.go` | [共享响应结构](routing.md#shared-responses) |
 | `migrations/`、`internal/cli/migrate.go` | [迁移](migrations.md#embedding-migrations) |
 
 目录不必一次建齐，等真正有代码要放时再创建即可。
@@ -71,7 +80,7 @@ blog/
 
 每个业务模块放在 `internal` 下的一个独立包中，例如 `internal/article`。业务包包含模型、[业务错误](errors.md)和服务，它不关心请求来自 HTTP、命令行还是测试。
 
-HTTP 相关的代码放在业务包的子包中，例如 `internal/article/articlehttp`。它负责定义请求和响应的结构、注册路由，并在处理器中调用业务服务。依赖方向始终是 `articlehttp → article`，业务包不会反过来引用 HTTP 子包。
+HTTP 相关的代码放在业务包的子包中，例如 `internal/article/articlehttp`。其中 `routes.go` 注册路由，`actions` 子包定义请求和响应的结构，并在处理器中调用业务服务。依赖方向是 `articlehttp → actions → article`；路由入口也可以接收业务服务并传给 action，但业务包不会反过来引用 HTTP 层。
 
 这样划分的好处是职责清晰：
 
@@ -81,6 +90,21 @@ HTTP 相关的代码放在业务包的子包中，例如 `internal/article/artic
 | 路由路径、HTTP 方法、响应头 | 资源所有权检查 |
 | 输出 DTO 的结构 | 事务边界 |
 | 认证方式 | 业务错误的定义 |
+
+<a id="http-actions"></a>
+### 按业务动作组织处理器
+
+文档推荐在模块的 HTTP 包内使用 `actions/` 目录，让你从目录树就能识别请求处理代码。每个 action 单独放在一个文件中，包含该动作的输入、独有的输出、依赖、构造函数和 `Handle` 方法。比如 `actions/create_article.go` 定义 `CreateArticle`，`actions/publish_article.go` 定义 `PublishArticle`。
+
+模块的 `routes.go` 属于 `articlehttp` 包，统一声明路径、HTTP 方法、访问策略和 action 绑定；`actions/` 是独立的 Go 子包，所有动作和共享响应文件 `actions/dto.go` 都放在这个包中。完整代码见[组织路由](routing.md#organizing-routes)。
+
+目录名表达职责，文件名和类型名表达业务动作。例如，“归档文章”使用 `actions/archive_article.go` 和 `actions.ArchiveArticle`，无需再给文件名加 `action_` 前缀或给类型名加 `Action` 后缀。把 `actions` 放在 HTTP 包内，也能说明它们负责 HTTP 请求适配，业务规则仍然放在 `article` 服务中。
+
+共享 DTO 放在 `actions` 包内，可以避免处理器反过来导入路由包而形成循环依赖。无需为每个 action 再创建子包，也无需提前拆出更多只有少量类型的包。
+
+这些是推荐的组织与命名约定，不是框架限制。mygoravel 不会扫描目录、检查一个文件里有几个 action，也不要求实现 `Action` 接口；你可以根据应用规模使用普通函数或其他布局。业务服务同样无需按每个 HTTP 动作拆成独立类型。
+
+查看应用全部路由时，可以使用 [routes 命令](commands.md#routes-command)。它从同一份注册代码生成全局路由表，模块内部仍然保留自己的 `routes.go`。
 
 <a id="the-migrations-directory"></a>
 ### migrations 目录
@@ -100,6 +124,12 @@ HTTP 相关的代码放在业务包的子包中，例如 `internal/article/artic
 | 对象 | 约定 | 示例 |
 | --- | --- | --- |
 | 业务包 | 单数 | `article` |
+| HTTP action 目录 | HTTP 包内的 `actions/` | `articlehttp/actions/` |
+| action 文件 | `动作_业务对象.go` | `actions/create_article.go`、`actions/publish_article.go` |
+| action 类型 | `动作 + 业务对象` | `CreateArticle`、`PublishArticle` |
+| action 构造函数 | `New` + 类型名 | `NewCreateArticle` |
+| action 处理方法 | `Handle` | `(*CreateArticle).Handle` |
+| 输入、独有输出 | 动作名 + `Input` / `Output` | `CreateArticleInput` |
 | 资源路径 | 复数 | `/articles`、`/articles/{id}` |
 | JSON 字段 | snake_case | `author_id` |
 | OperationID | `资源-动作` | `article-create` |
