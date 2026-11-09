@@ -5,6 +5,7 @@ import (
 	"context"
 	"io/fs"
 	"net/http"
+	"strings"
 
 	"github.com/a-h/templ"
 	"github.com/alexedwards/scs/v2"
@@ -25,7 +26,9 @@ var (
 type Page struct {
 	Title string
 	User  *account.User // 未登录时为 nil
-	Flash string        // 上一个请求留下的提示，显示为 toast
+	// AvatarURL 是当前用户的头像地址，没有头像时为空。
+	AvatarURL string
+	Flash     string // 上一个请求留下的提示，显示为 toast
 }
 
 // Renderer 渲染整页：加载当前用户与闪存提示后套上 Layout。
@@ -46,6 +49,7 @@ func (v *Renderer) Page(w http.ResponseWriter, r *http.Request, status int, titl
 			return err
 		}
 		p.User = u
+		p.AvatarURL = v.Users.AvatarURL(u)
 	}
 	if !web.IsPartial(r) {
 		p.Flash = v.Sessions.PopString(ctx, flashKey)
@@ -96,4 +100,11 @@ func mustAssets(prefix string, fsys fs.FS) *web.Assets {
 		panic(err)
 	}
 	return a
+}
+
+func initial(name string) string {
+	for _, r := range name {
+		return strings.ToUpper(string(r))
+	}
+	return "?"
 }

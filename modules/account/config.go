@@ -25,6 +25,10 @@ type Config struct {
 	CheckSession bool `yaml:"check_session"`
 
 	MinPasswordLength int `yaml:"min_password_length"` // 默认 8
+
+	// AvatarBaseURL 是头像地址的前缀，头像地址为 AvatarBaseURL + 对象键（如 avatars/<用户>/<id>.jpg）。
+	// 默认 "/"，即由应用通过 Avatars.Handler 提供（挂在 /avatars/*）；使用 CDN 时填 CDN 地址。
+	AvatarBaseURL string `yaml:"avatar_base_url"`
 }
 
 // DefaultConfig 返回带默认值的 Config（JWTSecret 为空，必须由产品配置）。
@@ -37,5 +41,6 @@ func DefaultConfig() Config {
 		RefreshGrace:      30 * time.Second,
 		ResetTTL:          time.Hour,
 		MinPasswordLength: 8,
+		AvatarBaseURL:     "/",
 	}
 }

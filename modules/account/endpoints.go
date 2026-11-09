@@ -28,6 +28,9 @@ import (
 //	rest.Post(v1, "/me/password", account.ChangePasswordEndpoint(users))
 //	rest.Get(v1, "/me/sessions", account.SessionsEndpoint(users))
 //	rest.Delete(v1, "/me/sessions/{id}", account.RevokeSessionEndpoint(users))
+//	rest.Put(v1, "/me/avatar", account.SetAvatarEndpoint(avatars))
+//	rest.Delete(v1, "/me/avatar", account.RemoveAvatarEndpoint(avatars))
+//	a.Router.Handle("/avatars/*", avatars.Handler())
 //
 // 需要登录的接口声明了 rest.RequireAuth()，网页会话（Cookie）与 access token（Bearer）都可以访问，
 // 需要在 API 上挂载 rest.Authorize(api, users.VerifyAccessToken)。
@@ -40,12 +43,15 @@ type UserDTO struct {
 	ID          string    `json:"id" format:"uuid"`
 	Email       string    `json:"email" format:"email"`
 	Name        string    `json:"name"`
+	AvatarURL   string    `json:"avatar_url,omitempty" doc:"头像地址，没有头像时省略"`
 	CreatedAt   time.Time `json:"created_at"`
 	LastLoginAt time.Time `json:"last_login_at,omitzero"`
 }
 
-func toUserDTO(u *User) UserDTO {
-	return UserDTO{ID: u.ID.String(), Email: u.Email, Name: u.Name, CreatedAt: u.CreatedAt, LastLoginAt: u.LastLoginAt}
+// UserDTO 返回 u 的 UserDTO。
+func (s *Service) UserDTO(u *User) UserDTO {
+	return UserDTO{ID: u.ID.String(), Email: u.Email, Name: u.Name, AvatarURL: s.AvatarURL(u),
+		CreatedAt: u.CreatedAt, LastLoginAt: u.LastLoginAt}
 }
 
 // TokensDTO 是登录、刷新返回的凭证。
@@ -114,6 +120,8 @@ func mapError(err error) error {
 		return huma.Error401Unauthorized("凭证无效或已过期")
 	case errors.Is(err, ErrNotFound):
 		return huma.Error404NotFound("不存在")
+	case errors.Is(err, ErrInvalidImage):
+		return huma.Error422UnprocessableEntity("请上传 JPEG、PNG、GIF 或 WebP 图片（不超过 10 MB）")
 	}
 	return err
 }
@@ -143,7 +151,7 @@ func RegisterEndpoint(s *Service) rest.Endpoint[registerInput, userOutput] {
 			if err != nil {
 				return nil, mapError(err)
 			}
-			return &userOutput{Body: toUserDTO(u)}, nil
+			return &userOutput{Body: s.UserDTO(u)}, nil
 		},
 	}
 }
@@ -265,7 +273,7 @@ func MeEndpoint(s *Service) rest.Endpoint[struct{}, userOutput] {
 			if err != nil {
 				return nil, mapError(err)
 			}
-			return &userOutput{Body: toUserDTO(u)}, nil
+			return &userOutput{Body: s.UserDTO(u)}, nil
 		},
 	}
 }
@@ -289,7 +297,7 @@ func UpdateMeEndpoint(s *Service) rest.Endpoint[updateMeInput, userOutput] {
 			if err != nil {
 				return nil, mapError(err)
 			}
-			return &userOutput{Body: toUserDTO(u)}, nil
+			return &userOutput{Body: s.UserDTO(u)}, nil
 		},
 	}
 }
@@ -367,6 +375,51 @@ func RevokeSessionEndpoint(s *Service) rest.Endpoint[revokeSessionInput, struct{
 				return nil, huma.Error404NotFound("不存在")
 			}
 			return nil, mapError(s.RevokeSession(ctx, p.ID, id))
+		},
+	}
+}
+
+type avatarInput struct {
+	RawBody huma.MultipartFormFiles[struct {
+		File huma.FormFile `form:"file" required:"true" doc:"头像图片：JPEG、PNG、GIF 或 WebP，不超过 10 MB"`
+	}]
+}
+
+// SetAvatarEndpoint 上传头像（multipart/form-data，字段名 file），返回更新后的账号信息。
+func SetAvatarEndpoint(a *Avatars) rest.Endpoint[avatarInput, userOutput] {
+	return rest.Endpoint[avatarInput, userOutput]{
+		Operation: huma.Operation{OperationID: "account-set-avatar", Summary: "上传头像", Tags: tags,
+			Security: rest.RequireAuth(), MaxBodyBytes: MaxAvatarBytes + 1<<20},
+		Handler: func(ctx context.Context, in *avatarInput) (*userOutput, error) {
+			p, err := principal(ctx)
+			if err != nil {
+				return nil, err
+			}
+			f := in.RawBody.Data().File
+			defer f.Close()
+			u, err := a.Set(ctx, p.ID, f)
+			if err != nil {
+				return nil, mapError(err)
+			}
+			return &userOutput{Body: a.users.UserDTO(u)}, nil
+		},
+	}
+}
+
+// RemoveAvatarEndpoint 删除头像，返回更新后的账号信息。
+func RemoveAvatarEndpoint(a *Avatars) rest.Endpoint[struct{}, userOutput] {
+	return rest.Endpoint[struct{}, userOutput]{
+		Operation: huma.Operation{OperationID: "account-remove-avatar", Summary: "删除头像", Tags: tags, Security: rest.RequireAuth()},
+		Handler: func(ctx context.Context, _ *struct{}) (*userOutput, error) {
+			p, err := principal(ctx)
+			if err != nil {
+				return nil, err
+			}
+			u, err := a.Remove(ctx, p.ID)
+			if err != nil {
+				return nil, mapError(err)
+			}
+			return &userOutput{Body: a.users.UserDTO(u)}, nil
 		},
 	}
 }

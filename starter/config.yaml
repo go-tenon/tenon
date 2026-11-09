@@ -25,6 +25,20 @@ mail:
   resend:
     api_key: ${RESEND_API_KEY:-}
 
+storage:
+  driver: ${STORAGE_DRIVER:-local}  # local | s3
+  local:
+    dir: ${STORAGE_DIR:-data/storage}
+  s3:
+    endpoint: ${S3_ENDPOINT:-}        # AWS S3 留空；R2、OSS、MinIO 等填服务地址
+    region: ${S3_REGION:-auto}
+    bucket: ${S3_BUCKET:-}
+    access_key_id: ${S3_ACCESS_KEY_ID:-}
+    secret_access_key: ${S3_SECRET_ACCESS_KEY:-}
+
+files:
+  max_size: 20971520                 # 20 MiB
+
 base_url: ${BASE_URL:-http://localhost:8080}
 
 account:

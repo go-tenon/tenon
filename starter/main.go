@@ -18,6 +18,7 @@ import (
 	"github.com/ryan053857/go-kit/app"
 	"github.com/ryan053857/go-kit/database"
 	"github.com/ryan053857/go-kit/modules/account"
+	"github.com/ryan053857/go-kit/modules/file"
 	"github.com/ryan053857/go-kit/starter/migrations"
 )
 
@@ -33,7 +34,7 @@ func options(cfg *Config) app.Options {
 		Name:       "starter",
 		Version:    version,
 		Migrations: migrations.FS,
-		Publish:    []database.MigrationSource{account.Migrations},
+		Publish:    []database.MigrationSource{account.Migrations, file.Migrations},
 		Setup:      func(a *app.App) error { return setup(a, cfg) },
 	}
 }

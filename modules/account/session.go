@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"time"
 	"uuid"
 
@@ -260,4 +261,30 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return string(r[:n])
+}
+
+// CurrentUserID 返回当前登录用户的 ID（网页会话或 access token 认证的），供其他模块使用，
+// 例如 file.UploadEndpoint(files, account.CurrentUserID)。
+func CurrentUserID(ctx context.Context) (uuid.UUID, bool) {
+	p, ok := auth.From[*Principal](ctx)
+	if !ok {
+		return uuid.Nil(), false
+	}
+	return p.ID, true
+}
+
+// LoadAccessToken 返回全局中间件：请求带有有效的 Authorization: Bearer access token 时，
+// 把 *Principal 放入 context，使 huma 之外的普通路由（如文件下载）也能识别 App 的登录状态。
+// token 无效时按未登录处理，不返回错误。
+func (s *Service) LoadAccessToken(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if token, ok := auth.BearerToken(r.Header.Get("Authorization")); ok {
+			if _, loaded := auth.From[*Principal](r.Context()); !loaded {
+				if p, err := s.VerifyAccessToken(r.Context(), token); err == nil {
+					r = r.WithContext(auth.WithPrincipal(r.Context(), p))
+				}
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
 }

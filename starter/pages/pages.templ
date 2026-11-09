@@ -137,7 +137,26 @@ templ settingsPage(d *settingsData) {
 					{ d.User.Email }
 				}
 			}
-			@card.Content() {
+			@card.Content(card.ContentProps{Class: "flex flex-col gap-6"}) {
+				<div class="flex items-center gap-4">
+					@views.Avatar(d.AvatarURL, views.DisplayName(d.User), "size-16 text-lg")
+					<form method="post" action="/settings/avatar" enctype="multipart/form-data" class="flex items-center gap-2">
+						<input
+							type="file"
+							name="avatar"
+							accept="image/jpeg,image/png,image/gif,image/webp"
+							class="text-muted-foreground max-w-56 text-sm file:mr-2 file:rounded-md file:border-0 file:bg-secondary file:px-2 file:py-1 file:text-sm"
+							onchange="this.form.requestSubmit()"
+						/>
+					</form>
+					if d.AvatarURL != "" {
+						<form method="post" action="/settings/avatar/remove">
+							@button.Button(button.Props{Type: button.TypeSubmit, Variant: button.VariantGhost, Size: button.SizeSm}) {
+								删除头像
+							}
+						</form>
+					}
+				</div>
 				<form method="post" action="/settings/profile" class="flex items-end gap-3">
 					<div class="flex-1">
 						@textField("name", "名称", "name", "text", d.User.Name, "name")

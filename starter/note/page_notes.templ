@@ -10,7 +10,15 @@ import (
 
 templ notesContent(notes []Note) {
 	<div class="flex flex-col gap-6">
-		<h1 class="text-2xl font-semibold">我的笔记</h1>
+		<div class="flex items-center gap-2">
+			<h1 class="mr-auto text-2xl font-semibold">我的笔记</h1>
+			@button.Button(button.Props{Href: "/notes/export?format=csv", Variant: button.VariantOutline, Size: button.SizeSm}) {
+				导出 CSV
+			}
+			@button.Button(button.Props{Href: "/notes/export?format=xlsx", Variant: button.VariantOutline, Size: button.SizeSm}) {
+				导出 Excel
+			}
+		</div>
 		<form
 			class="flex gap-2"
 			hx-post="/notes"

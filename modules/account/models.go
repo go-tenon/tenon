@@ -17,6 +17,7 @@ type User struct {
 	Email        string    `bun:"email,notnull"`
 	Name         string    `bun:"name,notnull"`
 	PasswordHash string    `bun:"password_hash,notnull"`
+	AvatarKey    string    `bun:"avatar_key,notnull"`
 	DisabledAt   time.Time `bun:"disabled_at,nullzero"`
 	LastLoginAt  time.Time `bun:"last_login_at,nullzero"`
 }

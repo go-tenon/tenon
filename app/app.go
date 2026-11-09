@@ -22,6 +22,7 @@ import (
 	"github.com/ryan053857/go-kit/httpx/rest"
 	"github.com/ryan053857/go-kit/mail"
 	"github.com/ryan053857/go-kit/messaging"
+	"github.com/ryan053857/go-kit/storage"
 )
 
 //go:embed migrations/*.sql
@@ -56,6 +57,7 @@ type App struct {
 	DB       *bun.DB
 	Sessions *scs.SessionManager
 	Mailer   mail.Mailer
+	Storage  storage.Storage
 	// Bus 处理异步消息：在 Setup 中用 messaging.Handle 注册处理函数，Serve 时与 HTTP 服务一起运行。
 	Bus *messaging.Bus
 
@@ -107,6 +109,9 @@ func build(ctx context.Context, cfg *Config, opts Options, connect, migrate bool
 	}
 
 	if a.Mailer, err = mail.New(cfg.Mail); err != nil {
+		return nil, err
+	}
+	if a.Storage, err = storage.New(cfg.Storage); err != nil {
 		return nil, err
 	}
 	if a.Bus, err = messaging.New(a.DB.DB); err != nil {

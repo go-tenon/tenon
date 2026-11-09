@@ -19,5 +19,6 @@ func APIActions(notes *Store) []rest.Action {
 func MountPages(r chi.Router, notes *Store, view *views.Renderer) {
 	(&NotesPage{Notes: notes, View: view}).Mount(r)
 	(&AddNote{Notes: notes}).Mount(r)
+	(&ExportNotes{Notes: notes}).Mount(r)
 	(&NotePage{Notes: notes, View: view}).Mount(r)
 }

@@ -1,7 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
+	"image"
+	"image/png"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -20,6 +24,7 @@ func newTestApp(t *testing.T) *app.App {
 	cfg.Session.SecureCookie = false
 	cfg.BaseURL = "http://test"
 	cfg.Account.JWTSecret = "test-secret-0123456789abcdef0123456789"
+	cfg.Storage.Local.Dir = t.TempDir()
 
 	a, err := app.New(t.Context(), &cfg.Config, options(&cfg))
 	if err != nil {
@@ -142,4 +147,82 @@ func TestForgotPasswordPage(t *testing.T) {
 	expect(t, c.do("POST", "/forgot-password", "email=nobody@example.com"), 200, "请查收邮件")
 	expect(t, c.do("GET", "/reset-password?token=bogus", ""), 200, "重置密码")
 	expect(t, c.do("POST", "/reset-password", "token=bogus&password=password9"), 422, "链接无效或已过期")
+}
+
+// multipartBody 返回只包含一个文件字段的 multipart 请求体与 Content-Type。
+func multipartBody(t *testing.T, field, filename string, data []byte) (string, string) {
+	t.Helper()
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	fw, _ := mw.CreateFormFile(field, filename)
+	_, _ = fw.Write(data)
+	_ = mw.Close()
+	return buf.String(), mw.FormDataContentType()
+}
+
+func pngBytes() []byte {
+	var buf bytes.Buffer
+	_ = png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 64, 64)))
+	return buf.Bytes()
+}
+
+func TestAvatarExportAndFiles(t *testing.T) {
+	a := newTestApp(t)
+	c := &browser{t: t, h: a.Router}
+	form := url.Values{"name": {"Alice"}, "email": {"alice@example.com"}, "password": {"password1"}}.Encode()
+	expect(t, c.do("POST", "/register", form), http.StatusSeeOther)
+
+	// 账号设置页上传头像，页头显示头像。
+	body, ct := multipartBody(t, "avatar", "me.png", pngBytes())
+	expect(t, c.do("POST", "/settings/avatar", body, "Content-Type", ct), http.StatusSeeOther)
+	rec := c.do("GET", "/settings", "")
+	expect(t, rec, 200, "头像已更新", `src="/avatars/`)
+	src := rec.Body.String()[strings.Index(rec.Body.String(), `src="/avatars/`)+5:]
+	src = src[:strings.Index(src, `"`)]
+	rec = c.do("GET", src, "")
+	expect(t, rec, 200)
+	if rec.Header().Get("Content-Type") != "image/jpeg" {
+		t.Errorf("avatar content type = %s", rec.Header().Get("Content-Type"))
+	}
+	body, ct = multipartBody(t, "avatar", "x.txt", []byte("not an image"))
+	expect(t, c.do("POST", "/settings/avatar", body, "Content-Type", ct), http.StatusSeeOther)
+	expect(t, c.do("GET", "/settings", ""), 200, "请上传 JPEG")
+
+	// 导出笔记。
+	expect(t, c.do("POST", "/notes", "text=%3D1%2B1", "HX-Request", "true"), 200)
+	rec = c.do("GET", "/notes/export?format=csv", "")
+	expect(t, rec, 200, "内容,创建时间", "'=1+1")
+	if cd := rec.Header().Get("Content-Disposition"); !strings.HasPrefix(cd, "attachment;") {
+		t.Errorf("Content-Disposition = %q", cd)
+	}
+	rec = c.do("GET", "/notes/export?format=xlsx", "")
+	expect(t, rec, 200)
+	if !bytes.HasPrefix(rec.Body.Bytes(), []byte("PK")) {
+		t.Error("xlsx is not a zip file")
+	}
+	expect(t, c.do("GET", "/notes/export?format=pdf", ""), 400)
+
+	// App：用 access token 上传文件，再用同一个 token 下载；其他用户下载不到。
+	app := &browser{t: t, h: a.Router}
+	rec = app.do("POST", "/api/v1/auth/login", `{"email":"alice@example.com","password":"password1"}`)
+	var tok struct {
+		AccessToken string `json:"access_token"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &tok)
+	app.bearer = tok.AccessToken
+	body, ct = multipartBody(t, "file", "notes.txt", []byte("hello file"))
+	rec = app.do("POST", "/api/v1/files", body, "Content-Type", ct)
+	expect(t, rec, 201, `"filename":"notes.txt"`)
+	var f struct {
+		URL string `json:"url"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &f)
+	expect(t, app.do("GET", f.URL, ""), 200, "hello file")
+
+	other := &browser{t: t, h: a.Router}
+	expect(t, other.do("POST", "/api/v1/auth/register", `{"email":"bob@example.com","password":"password1"}`), 201)
+	rec = other.do("POST", "/api/v1/auth/login", `{"email":"bob@example.com","password":"password1"}`)
+	_ = json.Unmarshal(rec.Body.Bytes(), &tok)
+	other.bearer = tok.AccessToken
+	expect(t, other.do("GET", f.URL, ""), 404)
 }

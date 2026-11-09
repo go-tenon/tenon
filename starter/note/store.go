@@ -50,8 +50,13 @@ func (s *Store) Create(ctx context.Context, userID uuid.UUID, text string) (*Not
 
 func (s *Store) List(ctx context.Context, userID uuid.UUID) ([]Note, error) {
 	notes := []Note{}
-	err := s.db.NewSelect().Model(&notes).Where("user_id = ?", userID).Order("id DESC").Scan(ctx)
+	err := s.query(userID).Model(&notes).Scan(ctx)
 	return notes, err
+}
+
+// query 返回用户的全部笔记，新的在前；列表与导出共用。
+func (s *Store) query(userID uuid.UUID) *bun.SelectQuery {
+	return s.db.NewSelect().Model((*Note)(nil)).Where("user_id = ?", userID).Order("id DESC")
 }
 
 func (s *Store) Get(ctx context.Context, userID uuid.UUID, id string) (*Note, error) {

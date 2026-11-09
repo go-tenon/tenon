@@ -20,6 +20,7 @@ import (
 // Pages 处理账号相关的页面。
 type Pages struct {
 	Users    *account.Service
+	Avatars  *account.Avatars
 	Sessions *scs.SessionManager
 	View     *views.Renderer
 }
@@ -41,6 +42,8 @@ func (p *Pages) MountPublic(r chi.Router) {
 func (p *Pages) MountPrivate(r chi.Router) {
 	r.Method(http.MethodGet, "/settings", web.HandlerFunc(p.settings))
 	r.Method(http.MethodPost, "/settings/profile", web.HandlerFunc(p.updateProfile))
+	r.Method(http.MethodPost, "/settings/avatar", web.HandlerFunc(p.setAvatar))
+	r.Method(http.MethodPost, "/settings/avatar/remove", web.HandlerFunc(p.removeAvatar))
 	r.Method(http.MethodPost, "/settings/password", web.HandlerFunc(p.changePassword))
 	r.Method(http.MethodPost, "/settings/sessions/{id}/revoke", web.HandlerFunc(p.revokeSession))
 }
@@ -143,10 +146,11 @@ func (p *Pages) logout(w http.ResponseWriter, r *http.Request) error {
 }
 
 type settingsData struct {
-	User     *account.User
-	Sessions []account.Session
-	Current  uuid.UUID
-	Error    string // 修改密码的错误
+	User      *account.User
+	AvatarURL string
+	Sessions  []account.Session
+	Current   uuid.UUID
+	Error     string // 修改密码的错误
 }
 
 func (p *Pages) settingsData(r *http.Request) (*settingsData, error) {
@@ -159,7 +163,7 @@ func (p *Pages) settingsData(r *http.Request) (*settingsData, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &settingsData{User: u, Sessions: list, Current: pr.SessionID}, nil
+	return &settingsData{User: u, AvatarURL: p.Users.AvatarURL(u), Sessions: list, Current: pr.SessionID}, nil
 }
 
 func (p *Pages) settings(w http.ResponseWriter, r *http.Request) error {
@@ -176,6 +180,39 @@ func (p *Pages) updateProfile(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	p.View.Flash(r.Context(), "已保存")
+	web.Redirect(w, r, "/settings")
+	return nil
+}
+
+func (p *Pages) setAvatar(w http.ResponseWriter, r *http.Request) error {
+	pr, _ := auth.From[*account.Principal](r.Context())
+	r.Body = http.MaxBytesReader(w, r.Body, account.MaxAvatarBytes+1<<20)
+	f, _, err := r.FormFile("avatar")
+	if err != nil {
+		p.View.Flash(r.Context(), "请选择图片")
+		web.Redirect(w, r, "/settings")
+		return nil
+	}
+	defer f.Close()
+	_, err = p.Avatars.Set(r.Context(), pr.ID, f)
+	switch {
+	case errors.Is(err, account.ErrInvalidImage):
+		p.View.Flash(r.Context(), "请上传 JPEG、PNG、GIF 或 WebP 图片（不超过 10 MB）")
+	case err != nil:
+		return err
+	default:
+		p.View.Flash(r.Context(), "头像已更新")
+	}
+	web.Redirect(w, r, "/settings")
+	return nil
+}
+
+func (p *Pages) removeAvatar(w http.ResponseWriter, r *http.Request) error {
+	pr, _ := auth.From[*account.Principal](r.Context())
+	if _, err := p.Avatars.Remove(r.Context(), pr.ID); err != nil {
+		return err
+	}
+	p.View.Flash(r.Context(), "头像已删除")
 	web.Redirect(w, r, "/settings")
 	return nil
 }

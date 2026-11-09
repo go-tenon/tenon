@@ -33,6 +33,7 @@ templ Layout(p Page) {
 							账号设置
 						}
 						<div class="ml-auto flex items-center gap-3 text-sm">
+							@Avatar(p.AvatarURL, DisplayName(p.User), "size-7")
 							<span class="text-muted-foreground">{ DisplayName(p.User) }</span>
 							<form method="post" action="/logout">
 								@button.Button(button.Props{Type: button.TypeSubmit, Variant: button.VariantOutline, Size: button.SizeSm}) {
@@ -52,6 +53,17 @@ templ Layout(p Page) {
 			}
 		</body>
 	</html>
+}
+
+// Avatar 显示头像；没有头像时显示名称的首字。
+templ Avatar(url, name, class string) {
+	if url != "" {
+		<img src={ url } alt={ name } class={ "bg-muted rounded-full object-cover", class }/>
+	} else {
+		<span class={ "bg-muted text-muted-foreground inline-flex items-center justify-center rounded-full text-xs font-medium", class }>
+			{ initial(name) }
+		</span>
+	}
 }
 
 // AuthCard 是登录、注册等页面居中的卡片。

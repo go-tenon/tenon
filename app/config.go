@@ -8,6 +8,7 @@ import (
 	"github.com/ryan053857/go-kit/httpx"
 	"github.com/ryan053857/go-kit/logger"
 	"github.com/ryan053857/go-kit/mail"
+	"github.com/ryan053857/go-kit/storage"
 )
 
 // Config 是 app 需要的配置。产品定义自己的配置结构体并内嵌它：
@@ -33,6 +34,8 @@ import (
 //	  lifetime: 24h
 //	mail:
 //	  driver: log
+//	storage:
+//	  driver: local
 //	billing: ...
 type Config struct {
 	Log      LogConfig       `yaml:"log"`
@@ -40,6 +43,7 @@ type Config struct {
 	Database database.Config `yaml:"database"`
 	Session  SessionConfig   `yaml:"session"`
 	Mail     mail.Config     `yaml:"mail"`
+	Storage  storage.Config  `yaml:"storage"`
 }
 
 // LogConfig 是日志配置。

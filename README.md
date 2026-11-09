@@ -12,7 +12,7 @@
   app         modules/*      两者互不依赖
    │             │
    ▼             ▼
-基础设施：config logger database httpx/* mail messaging support/*
+基础设施：config logger database httpx/* mail messaging storage support/*
 ```
 
 - **基础设施**：互相独立、可单独使用，不含业务；由 `internal/archtest` 检查不依赖上层。
@@ -24,7 +24,9 @@
 | 包 | 内容 |
 |---|---|
 | `app` | 装配层：`Main`、`New`、子命令、迁移发布 |
-| `modules/account` | 账号：注册、登录（JWT access + 轮换的 refresh token，网页用 Cookie 会话）、找回与修改密码、登录设备管理 |
+| `modules/account` | 账号：注册、登录（JWT access + 轮换的 refresh token，网页用 Cookie 会话）、找回与修改密码、登录设备管理、头像 |
+| `modules/file` | 文件：上传（按内容识别类型、大小与类型限制）、元数据、经应用转发的下载与权限检查 |
+| `modules/export` | 表格导出：列定义 + 行迭代器，流式写出 CSV（防公式注入）或 XLSX |
 | `config` | YAML 配置加载，环境变量引用，`Secret` 打码 |
 | `logger` | 基于 slog 的日志初始化与 context 字段透传 |
 | `database` | Postgres（bun + pgx + goose）：连接池、UUIDv7 主键与时间戳的公共模型、带锁的迁移、模块迁移发布 |
@@ -35,6 +37,7 @@
 | `httpx/web` | templ 渲染、HTMX 辅助、带版本号的静态资源、内置 htmx |
 | `mail` | 发送邮件：log（开发）、SMTP、Resend 三种实现；`mail/mailtest` 供测试 |
 | `messaging` | 基于 Watermill + Postgres 的异步消息：事务内发布、自动重试、poison 队列 |
+| `storage` | 文件存储：本地目录或 S3 兼容存储（AWS S3、R2、OSS、COS、MinIO） |
 | `support` | 社区库缺少的通用工具（加密、密码哈希、随机 token、脱敏、集合） |
 
 ## 迁移
@@ -56,6 +59,7 @@ go-kit 不提供页面。starter 的页面用 [templ](https://github.com/a-h/tem
 - REST API：[huma](https://github.com/danielgtaylor/huma)（`adapters/humachi`）
 - Session：[scs](https://github.com/alexedwards/scs)（app 已配置 postgresstore）
 - 异步消息：[Watermill](https://github.com/ThreeDotsLabs/watermill)（watermill-sql 的 Postgres 队列），以后需要时可换成 NATS
+- 对象存储：[aws-sdk-go-v2](https://github.com/aws/aws-sdk-go-v2)（S3）；Excel：[excelize](https://github.com/xuri/excelize)；图片缩放：`golang.org/x/image/draw`
 - 命令行：[cobra](https://github.com/spf13/cobra)（app 已提供根命令，产品可用 `app.Command` 追加子命令）
 - 页面模板：[templ](https://github.com/a-h/templ)，产品在 go.mod 中用 `tool` 指令固定 templ 命令版本，与运行时库一致
 - 表单解码与校验：[go-playground/form](https://github.com/go-playground/form)、[go-playground/validator](https://github.com/go-playground/validator)

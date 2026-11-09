@@ -12,6 +12,7 @@ import (
 	"github.com/ryan053857/go-kit/httpx/web"
 	"github.com/ryan053857/go-kit/messaging"
 	"github.com/ryan053857/go-kit/modules/account"
+	"github.com/ryan053857/go-kit/modules/file"
 	"github.com/ryan053857/go-kit/starter/note"
 	"github.com/ryan053857/go-kit/starter/pages"
 	"github.com/ryan053857/go-kit/starter/views"
@@ -23,6 +24,8 @@ func setup(a *app.App, cfg *Config) error {
 	if err != nil {
 		return err
 	}
+	avatars := account.NewAvatars(users, a.Storage)
+	files := file.NewService(a.DB, a.Storage, cfg.Files)
 	notes := note.NewStore(a.DB)
 	view := &views.Renderer{Users: users, Sessions: a.Sessions}
 	web.ErrorHandler = view.Error
@@ -37,10 +40,15 @@ func setup(a *app.App, cfg *Config) error {
 	}
 
 	// 中间件：必须在注册路由之前。
-	a.Router.Use(users.LoadWebSession(a.Sessions))
+	a.Router.Use(
+		users.LoadWebSession(a.Sessions),
+		users.LoadAccessToken, // 让文件下载等普通路由也能识别 App 的 Bearer token
+	)
 
 	a.Router.Handle("/assets/*", views.Static)
 	a.Router.Handle("/vendor/*", views.Vendor)
+	a.Router.Handle("/avatars/*", avatars.Handler())
+	a.Router.Get("/files/{id}", files.DownloadHandler(file.OwnerOnly(account.CurrentUserID)).ServeHTTP)
 
 	// REST API：/api/v1，文档在 /docs。网页会话（Cookie）与 access token（Bearer）都可以访问。
 	api := a.API()
@@ -57,10 +65,13 @@ func setup(a *app.App, cfg *Config) error {
 	rest.Post(v1, "/me/password", account.ChangePasswordEndpoint(users))
 	rest.Get(v1, "/me/sessions", account.SessionsEndpoint(users))
 	rest.Delete(v1, "/me/sessions/{id}", account.RevokeSessionEndpoint(users))
+	rest.Put(v1, "/me/avatar", account.SetAvatarEndpoint(avatars))
+	rest.Delete(v1, "/me/avatar", account.RemoveAvatarEndpoint(avatars))
+	rest.Post(v1, "/files", file.UploadEndpoint(files, account.CurrentUserID))
 	rest.Mount(v1, note.APIActions(notes)...)
 
 	// 页面。
-	accountPages := &pages.Pages{Users: users, Sessions: a.Sessions, View: view}
+	accountPages := &pages.Pages{Users: users, Avatars: avatars, Sessions: a.Sessions, View: view}
 	accountPages.MountPublic(a.Router)
 	a.Router.Group(func(r chi.Router) {
 		r.Use(auth.RequireLogin[*account.Principal]("/login"))
