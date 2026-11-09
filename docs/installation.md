@@ -58,9 +58,6 @@ go get github.com/ryan053857/mygoravel@main
 
 你也可以把 `@main` 换成某个具体的提交哈希或版本标签，让依赖版本固定下来。
 
-> [!TIP]
-> 如果你在本地同时修改框架和应用，可以在应用的 `go.mod` 中加入 `replace github.com/ryan053857/mygoravel => ../mygoravel`，让应用直接使用本地的框架代码。
-
 <a id="entrypoint"></a>
 ### 编写入口文件
 
