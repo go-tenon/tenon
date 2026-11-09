@@ -6,7 +6,12 @@ require (
 	github.com/cockroachdb/errors v1.14.0
 	github.com/danielgtaylor/huma/v2 v2.40.0
 	github.com/go-chi/chi/v5 v5.5.0
+	github.com/google/uuid v1.6.0
+	github.com/jackc/pgx/v5 v5.12.0
 	github.com/nicksnyder/go-i18n/v2 v2.7.0
+	github.com/pressly/goose/v3 v3.29.0
+	github.com/uptrace/bun v1.3.0
+	github.com/uptrace/bun/dialect/pgdialect v1.3.0
 	go.yaml.in/yaml/v4 v4.0.0
 	golang.org/x/text v0.43.0
 )
@@ -16,9 +21,21 @@ require (
 	github.com/cockroachdb/redact v1.1.5 // indirect
 	github.com/getsentry/sentry-go v0.46.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
+	github.com/jackc/pgpassfile v1.0.0 // indirect
+	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
+	github.com/jackc/puddle/v2 v2.2.3 // indirect
+	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
+	github.com/mfridman/interpolate v0.0.2 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
+	github.com/puzpuzpuz/xsync/v3 v3.5.1 // indirect
 	github.com/rogpeppe/go-internal v1.9.0 // indirect
+	github.com/sethvargo/go-retry v0.5.0 // indirect
+	github.com/tmthrgd/go-hex v0.0.0-20190904060850-447a3041c3bc // indirect
+	github.com/vmihailenco/msgpack/v5 v5.4.1 // indirect
+	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
+	go.uber.org/multierr v1.11.0 // indirect
+	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 )
