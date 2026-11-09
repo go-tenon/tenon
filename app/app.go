@@ -3,14 +3,14 @@ package app
 import (
 	"context"
 	"embed"
-	"errors"
-	"fmt"
 	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/cockroachdb/errors"
 
 	"github.com/alexedwards/scs/postgresstore"
 	"github.com/alexedwards/scs/v2"
@@ -22,9 +22,11 @@ import (
 	googleuuid "github.com/google/uuid"
 	"github.com/uptrace/bun"
 
+	"github.com/ryan053857/go-kit/authz"
 	"github.com/ryan053857/go-kit/database"
 	"github.com/ryan053857/go-kit/httpx"
 	"github.com/ryan053857/go-kit/httpx/rest"
+	"github.com/ryan053857/go-kit/i18n"
 	"github.com/ryan053857/go-kit/mail"
 	"github.com/ryan053857/go-kit/messaging"
 	"github.com/ryan053857/go-kit/storage"
@@ -65,6 +67,8 @@ type App struct {
 	Storage  storage.Storage
 	// Bus 处理异步消息：在 Setup 中用 messaging.Handle 注册处理函数，Serve 时与 HTTP 服务一起运行。
 	Bus *messaging.Bus
+	// Gate 是授权规则（见 authz）：产品与模块在 Setup 中定义能力，rest.Authorize 与 authz.Require 据此检查。
+	Gate *authz.Gate
 	// Scheduler 运行定时任务（github.com/go-co-op/gocron/v2）：在 Setup 中用 NewJob 添加，Serve 时启动。
 	// 多实例部署时只有一个实例（Postgres advisory lock 选出的 leader）执行任务；
 	// 同一任务上一次未结束时跳过本次；任务返回的错误与 panic 会记录日志。
@@ -90,19 +94,20 @@ var setErrorHandler sync.Once
 // New 连接数据库、执行 opts.Migrations、组装 Router 并调用 opts.Setup，返回可以处理请求的 App。
 // 调用方负责 Close。Main 的 serve 命令即用它启动；集成测试也可以直接调用它，再用 a.Router 处理请求。
 //
-// Router 的全局中间件依次为：RealIP、RequestID、AccessLog、Recover、SecureHeaders、
+// Router 的全局中间件依次为：RealIP、RequestID、AccessLog、Recover、SecureHeaders、语言（i18n.Middleware）、
 // CSRF 防护（http.CrossOriginProtection）、会话加载（Sessions.LoadAndSave）。
-// 同时把 huma.NewErrorWithContext 替换为 rest.LogServerErrors 包装后的版本（进程内只替换一次）。
+// 同时把 huma.NewErrorWithContext 替换为 rest.NewErrorWithContext（进程内只替换一次）：
+// 领域错误按登记的状态码与多语言提示响应，5xx 记录日志。
 func New(ctx context.Context, cfg *Config, opts Options) (*App, error) {
 	return build(ctx, cfg, opts, true, true)
 }
 
 func build(ctx context.Context, cfg *Config, opts Options, connect, migrate bool) (_ *App, err error) {
 	setErrorHandler.Do(func() {
-		huma.NewErrorWithContext = rest.LogServerErrors(huma.NewErrorWithContext)
+		huma.NewErrorWithContext = rest.NewErrorWithContext
 	})
 
-	a := &App{Config: cfg, opts: opts}
+	a := &App{Config: cfg, opts: opts, Gate: authz.New()}
 	defer func() {
 		if err != nil {
 			_ = a.Close()
@@ -149,7 +154,7 @@ func build(ctx context.Context, cfg *Config, opts Options, connect, migrate bool
 		),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("app: scheduler: %w", err)
+		return nil, errors.Wrap(err, "app: scheduler")
 	}
 
 	a.Sessions = scs.New()
@@ -169,6 +174,7 @@ func build(ctx context.Context, cfg *Config, opts Options, connect, migrate bool
 		httpx.AccessLog(nil),
 		httpx.Recover(nil),
 		httpx.SecureHeaders,
+		i18n.Middleware,
 		http.NewCrossOriginProtection().Handler,
 		a.Sessions.LoadAndSave,
 	)
@@ -176,7 +182,7 @@ func build(ctx context.Context, cfg *Config, opts Options, connect, migrate bool
 
 	if opts.Setup != nil {
 		if err = opts.Setup(a); err != nil {
-			return nil, fmt.Errorf("app: setup: %w", err)
+			return nil, errors.Wrap(err, "app: setup")
 		}
 	}
 	return a, nil
@@ -225,7 +231,7 @@ func (a *App) Close() error {
 func (a *App) Serve(ctx context.Context) error {
 	ln, err := net.Listen("tcp", a.Config.HTTP.Addr)
 	if err != nil {
-		return fmt.Errorf("app: %w", err)
+		return errors.Wrap(err, "app")
 	}
 
 	busCtx, stopBus := context.WithCancel(context.WithoutCancel(ctx))

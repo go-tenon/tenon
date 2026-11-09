@@ -1,0 +1,36 @@
+account.email_taken: This email is already registered.
+account.invalid_credentials: Incorrect email or password.
+account.wrong_password: Current password is incorrect.
+account.user_disabled: This account has been disabled.
+account.weak_password: "Password must be at least {{.Min}} characters."
+account.invalid_token: Your session has expired. Please sign in again.
+account.invalid_link: This link is invalid or has expired.
+account.not_found: Not found.
+account.invalid_mfa_code: Invalid verification code.
+account.mfa_enabled: Two-factor authentication is already enabled.
+account.mfa_not_enabled: Two-factor authentication is not enabled.
+account.last_login_method: This is your only sign-in method. Set a password first.
+account.api_key_not_allowed: API keys cannot perform this action.
+account.invalid_image: Please upload a JPEG, PNG, GIF or WebP image (up to 10 MB).
+account.identity_taken: This account is already linked to another user.
+account.email_required: Could not get a verified email from the provider.
+account.registration_closed: Registration is closed.
+account.invalid_expiry: Expiry must be in the future.
+
+audit.account.registered: Registered
+audit.account.login: Signed in
+audit.account.login_failed: Failed sign-in attempt
+audit.account.logout: Signed out
+audit.account.session_revoked: Signed out a device
+audit.account.token_reused: Token reuse detected; the device was signed out
+audit.account.password_changed: Changed password
+audit.account.password_reset: Reset password via email
+audit.account.email_verified: Verified email
+audit.account.mfa_enabled: Enabled two-factor authentication
+audit.account.mfa_disabled: Disabled two-factor authentication
+audit.account.api_key_created: Created an API key
+audit.account.api_key_revoked: Deleted an API key
+audit.account.identity_linked: Linked a third-party account
+audit.account.identity_removed: Unlinked a third-party account
+audit.account.disabled: Account disabled
+audit.account.enabled: Account enabled

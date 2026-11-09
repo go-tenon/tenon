@@ -2,12 +2,12 @@ package storage
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
+
+	"github.com/cockroachdb/errors"
 )
 
 // Local 把对象保存在本地目录中，key 对应目录下的相对路径。
@@ -32,11 +32,11 @@ func (l *Local) Put(_ context.Context, key string, r io.ReadSeeker, _ string) (e
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-		return fmt.Errorf("storage: %w", err)
+		return errors.Wrap(err, "storage")
 	}
 	tmp, err := os.CreateTemp(filepath.Dir(p), ".upload-*")
 	if err != nil {
-		return fmt.Errorf("storage: %w", err)
+		return errors.Wrap(err, "storage")
 	}
 	defer func() {
 		if err != nil {
@@ -45,13 +45,13 @@ func (l *Local) Put(_ context.Context, key string, r io.ReadSeeker, _ string) (e
 		}
 	}()
 	if _, err = io.Copy(tmp, r); err != nil {
-		return fmt.Errorf("storage: write %s: %w", key, err)
+		return errors.Wrapf(err, "storage: write %s", key)
 	}
 	if err = tmp.Close(); err != nil {
-		return fmt.Errorf("storage: write %s: %w", key, err)
+		return errors.Wrapf(err, "storage: write %s", key)
 	}
 	if err = os.Rename(tmp.Name(), p); err != nil {
-		return fmt.Errorf("storage: write %s: %w", key, err)
+		return errors.Wrapf(err, "storage: write %s", key)
 	}
 	return nil
 }
@@ -66,7 +66,7 @@ func (l *Local) Get(_ context.Context, key string) (io.ReadCloser, error) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("storage: %w", err)
+		return nil, errors.Wrap(err, "storage")
 	}
 	return f, nil
 }
@@ -77,7 +77,7 @@ func (l *Local) Delete(_ context.Context, key string) error {
 		return err
 	}
 	if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("storage: %w", err)
+		return errors.Wrap(err, "storage")
 	}
 	return nil
 }

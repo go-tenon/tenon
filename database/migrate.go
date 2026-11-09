@@ -3,7 +3,6 @@ package database
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"io/fs"
 	"log/slog"
 	"os"
@@ -14,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cockroachdb/errors"
 	"github.com/pressly/goose/v3"
 	"github.com/pressly/goose/v3/lock"
 )
@@ -26,11 +26,11 @@ func NewMigrator(db *sql.DB, fsys fs.FS) (*goose.Provider, error) {
 	// 每秒重试一次，最多等待 5 分钟（goose 默认每 5 秒重试）。
 	locker, err := lock.NewPostgresSessionLocker(lock.WithLockTimeout(1, 300))
 	if err != nil {
-		return nil, fmt.Errorf("database: migrate: %w", err)
+		return nil, errors.Wrap(err, "database: migrate")
 	}
 	p, err := goose.NewProvider(goose.DialectPostgres, db, fsys, goose.WithSessionLocker(locker))
 	if err != nil {
-		return nil, fmt.Errorf("database: migrate: %w", err)
+		return nil, errors.Wrap(err, "database: migrate")
 	}
 	return p, nil
 }
@@ -51,12 +51,12 @@ func Migrate(ctx context.Context, db *sql.DB, fsys fs.FS) error {
 		}
 	}
 	if err != nil {
-		return fmt.Errorf("database: migrate: %w", err)
+		return errors.Wrap(err, "database: migrate")
 	}
 
 	version, err := p.GetDBVersion(ctx)
 	if err != nil {
-		return fmt.Errorf("database: migrate: %w", err)
+		return errors.Wrap(err, "database: migrate")
 	}
 	slog.InfoContext(ctx, "database migrated", "version", version, "applied", len(results))
 	return nil
@@ -93,11 +93,11 @@ func PublishMigrations(dir string, sources ...MigrationSource) ([]string, error)
 	var written []string
 	for _, src := range sources {
 		if !namePattern.MatchString(src.Name) {
-			return written, fmt.Errorf("database: invalid migration source name %q", src.Name)
+			return written, errors.Newf("database: invalid migration source name %q", src.Name)
 		}
 		files, err := fs.Glob(src.FS, "*.sql")
 		if err != nil {
-			return written, fmt.Errorf("database: %s migrations: %w", src.Name, err)
+			return written, errors.Wrapf(err, "database: %s migrations", src.Name)
 		}
 		slices.Sort(files)
 		for _, file := range files {
@@ -107,13 +107,13 @@ func PublishMigrations(dir string, sources ...MigrationSource) ([]string, error)
 			}
 			data, err := fs.ReadFile(src.FS, file)
 			if err != nil {
-				return written, fmt.Errorf("database: %s migrations: %w", src.Name, err)
+				return written, errors.Wrapf(err, "database: %s migrations", src.Name)
 			}
 			version++
 			name := strconv.FormatInt(version, 10) + suffix
 			path := filepath.Join(dir, name)
 			if err := os.WriteFile(path, data, 0o644); err != nil {
-				return written, fmt.Errorf("database: publish migration: %w", err)
+				return written, errors.Wrap(err, "database: publish migration")
 			}
 			existing = append(existing, name)
 			written = append(written, path)
@@ -133,7 +133,7 @@ const migrationTemplate = `-- +goose Up
 // 版本号规则与 PublishMigrations 相同。name 只能包含小写字母、数字与下划线，如 create_orders。
 func CreateMigration(dir, name string) (string, error) {
 	if !namePattern.MatchString(name) {
-		return "", fmt.Errorf("database: invalid migration name %q (use snake_case)", name)
+		return "", errors.Newf("database: invalid migration name %q (use snake_case)", name)
 	}
 	_, version, err := scanMigrations(dir)
 	if err != nil {
@@ -141,7 +141,7 @@ func CreateMigration(dir, name string) (string, error) {
 	}
 	path := filepath.Join(dir, strconv.FormatInt(version+1, 10)+"_"+name+".sql")
 	if err := os.WriteFile(path, []byte(migrationTemplate), 0o644); err != nil {
-		return "", fmt.Errorf("database: create migration: %w", err)
+		return "", errors.Wrap(err, "database: create migration")
 	}
 	return path, nil
 }
@@ -150,11 +150,11 @@ func CreateMigration(dir, name string) (string, error) {
 // max(dir 中最大版本号, 当前时间 - 1 秒)，调用方加一后使用。dir 不存在时创建。
 func scanMigrations(dir string) (names []string, version int64, err error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, 0, fmt.Errorf("database: %w", err)
+		return nil, 0, errors.Wrap(err, "database")
 	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil, 0, fmt.Errorf("database: %w", err)
+		return nil, 0, errors.Wrap(err, "database")
 	}
 	now, _ := strconv.ParseInt(time.Now().UTC().Format("20060102150405"), 10, 64)
 	version = now - 1

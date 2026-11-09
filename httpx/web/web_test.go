@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -14,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+
+	"github.com/cockroachdb/errors"
 
 	"github.com/a-h/templ"
 	"github.com/danielgtaylor/huma/v2"
@@ -126,7 +127,7 @@ func TestHandlerFunc(t *testing.T) {
 	}
 
 	notFound := huma.Error404NotFound("order not found")
-	rec := serve(fmt.Errorf("load: %w", notFound))
+	rec := serve(errors.Wrap(notFound, "load"))
 	if rec.Code != 404 || rec.Body.String() != "error page 404" || !errors.Is(gotErr, notFound) {
 		t.Errorf("status error: %d %q %v", rec.Code, rec.Body, gotErr)
 	}
@@ -161,7 +162,7 @@ func TestDefaultErrorHandler(t *testing.T) {
 	HandlerFunc(func(http.ResponseWriter, *http.Request) error {
 		return huma.Error403Forbidden("no")
 	}).ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
-	if rec.Code != 403 || strings.TrimSpace(rec.Body.String()) != "Forbidden" {
+	if rec.Code != 403 || strings.TrimSpace(rec.Body.String()) != "no" {
 		t.Errorf("got %d %q", rec.Code, rec.Body)
 	}
 }

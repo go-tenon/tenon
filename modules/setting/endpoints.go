@@ -18,11 +18,11 @@ type input[T any] struct{ Body T }
 //	rest.Get(admin, "/settings/site", setting.GetEndpoint(settings, Site))
 //	rest.Put(admin, "/settings/site", setting.PutEndpoint(settings, Site))
 //
-// 接口只要求登录，产品必须在挂载处限制只有管理员能访问（Get 的设置不敏感时也可以公开给前端）。
+// 两个接口都需要 setting.manage 能力；Get 的设置不敏感时，产品可以在挂载时去掉 Security 公开给前端。
 func GetEndpoint[T any](s *Store, g Group[T]) rest.Endpoint[struct{}, output[T]] {
 	return rest.Endpoint[struct{}, output[T]]{
 		Operation: huma.Operation{OperationID: "setting-get-" + g.Key, Summary: "读取设置：" + g.Key,
-			Tags: []string{"系统设置"}, Security: rest.RequireAuth()},
+			Tags: []string{"setting"}, Security: rest.RequireAuth(Manage)},
 		Handler: func(ctx context.Context, _ *struct{}) (*output[T], error) {
 			v, err := g.Get(ctx, s)
 			if err != nil {
@@ -37,7 +37,7 @@ func GetEndpoint[T any](s *Store, g Group[T]) rest.Endpoint[struct{}, output[T]]
 func PutEndpoint[T any](s *Store, g Group[T]) rest.Endpoint[input[T], output[T]] {
 	return rest.Endpoint[input[T], output[T]]{
 		Operation: huma.Operation{OperationID: "setting-put-" + g.Key, Summary: "保存设置：" + g.Key,
-			Tags: []string{"系统设置"}, Security: rest.RequireAuth()},
+			Tags: []string{"setting"}, Security: rest.RequireAuth(Manage)},
 		Handler: func(ctx context.Context, in *input[T]) (*output[T], error) {
 			if err := g.Set(ctx, s, in.Body); err != nil {
 				return nil, err

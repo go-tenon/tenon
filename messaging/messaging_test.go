@@ -3,7 +3,6 @@ package messaging_test
 import (
 	"bytes"
 	"context"
-	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +11,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/cockroachdb/errors"
 
 	"github.com/uptrace/bun"
 

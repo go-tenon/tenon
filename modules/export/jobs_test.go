@@ -3,7 +3,6 @@ package export_test
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -13,12 +12,14 @@ import (
 	"time"
 	"uuid"
 
+	"github.com/cockroachdb/errors"
+
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
 
-	"github.com/ryan053857/go-kit/database"
 	"github.com/ryan053857/go-kit/database/dbtest"
+	"github.com/ryan053857/go-kit/httpx/auth"
 	"github.com/ryan053857/go-kit/httpx/rest"
 	"github.com/ryan053857/go-kit/messaging"
 	"github.com/ryan053857/go-kit/modules/export"
@@ -35,35 +36,27 @@ var rowsTable = export.Table[scoreRow]{Name: "成绩", Columns: []export.Column[
 	{Header: "分数", Value: func(r scoreRow) any { return r.Score }},
 }}
 
-type userKey struct{}
+type principal struct{ id uuid.UUID }
 
-func currentUser(ctx context.Context) (uuid.UUID, bool) {
-	id, ok := ctx.Value(userKey{}).(uuid.UUID)
-	return id, ok
+func (p principal) UserID() uuid.UUID { return p.id }
+
+func TestMain(m *testing.M) {
+	huma.NewErrorWithContext = rest.NewErrorWithContext
+	os.Exit(m.Run())
 }
 
 func TestJobs(t *testing.T) {
-	cfg := database.DefaultConfig()
-	cfg.DSN = dbtest.DSN(t)
-	db, err := database.Open(t.Context(), cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	dir := t.TempDir()
-	if _, err := database.PublishMigrations(dir, export.Migrations); err != nil {
-		t.Fatal(err)
-	}
-	if err := database.Migrate(t.Context(), db.DB, os.DirFS(dir)); err != nil {
-		t.Fatal(err)
-	}
+	db := dbtest.New(t, export.Migrations)
 	store := storage.NewLocal(t.TempDir())
 	bus, err := messaging.New(db.DB)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	jobs := export.NewJobs(db, store)
+	jobs, err := export.NewJobs(db, store, bus, export.JobsConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	jobs.Register("scores", "成绩", func(ctx context.Context, job *export.Job, w io.Writer) error {
 		var p struct{ Min int }
 		if err := job.Decode(&p); err != nil {
@@ -81,10 +74,7 @@ func TestJobs(t *testing.T) {
 		return export.Write(w, job.Format, rowsTable, export.SliceRows(rows))
 	})
 	finished := make(chan *export.Job, 4)
-	jobs.OnFinish = func(_ context.Context, job *export.Job) { finished <- job }
-	if err := messaging.Handle(bus, export.TopicExport, jobs.Handle); err != nil {
-		t.Fatal(err)
-	}
+	jobs.OnFinish(func(_ context.Context, job *export.Job) { finished <- job })
 	runCtx, stop := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { _ = bus.Run(runCtx); close(done) }()
@@ -102,17 +92,17 @@ func TestJobs(t *testing.T) {
 	r.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Header.Get("X-User") == "alice" {
-				r = r.WithContext(context.WithValue(r.Context(), userKey{}, alice))
+				r = r.WithContext(auth.WithPrincipal(r.Context(), principal{alice}))
 			}
 			next.ServeHTTP(w, r)
 		})
 	})
 	api := humachi.New(r, huma.DefaultConfig("t", "1"))
 	noSec := func(o *huma.Operation) { o.Security = nil }
-	rest.Post(api, "/api/exports", export.StartEndpoint(jobs, currentUser), noSec)
-	rest.Get(api, "/api/exports", export.JobsEndpoint(jobs, currentUser), noSec)
-	rest.Get(api, "/api/exports/{id}", export.JobEndpoint(jobs, currentUser), noSec)
-	r.Get("/exports/{id}/download", jobs.DownloadHandler(currentUser).ServeHTTP)
+	rest.Post(api, "/api/exports", export.StartEndpoint(jobs), noSec)
+	rest.Get(api, "/api/exports", export.JobsEndpoint(jobs), noSec)
+	rest.Get(api, "/api/exports/{id}", export.JobEndpoint(jobs), noSec)
+	r.Get("/exports/{id}/download", jobs.DownloadHandler().ServeHTTP)
 
 	do := func(method, path, body, user string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(method, path, strings.NewReader(body))

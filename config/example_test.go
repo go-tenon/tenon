@@ -1,11 +1,12 @@
 package config_test
 
 import (
-	"errors"
 	"fmt"
 	"log"
 	"os"
 	"time"
+
+	"github.com/cockroachdb/errors"
 
 	"github.com/ryan053857/go-kit/config"
 )

@@ -1,0 +1,37 @@
+account.email_taken: 该邮箱已注册
+account.invalid_credentials: 邮箱或密码错误
+account.wrong_password: 当前密码错误
+account.user_disabled: 账号已停用
+account.weak_password: "密码至少 {{.Min}} 位"
+account.invalid_token: 凭证无效或已过期，请重新登录
+account.invalid_link: 链接无效或已过期
+account.not_found: 不存在
+account.invalid_mfa_code: 验证码错误
+account.mfa_enabled: 已启用两步验证
+account.mfa_not_enabled: 未启用两步验证
+account.last_login_method: 这是唯一的登录方式，请先设置密码
+account.api_key_not_allowed: API Key 不能执行此操作
+account.invalid_image: 请上传 JPEG、PNG、GIF 或 WebP 图片（不超过 10 MB）
+account.identity_taken: 该第三方账号已绑定其他账号
+account.email_required: 无法从第三方账号获取已验证的邮箱
+account.registration_closed: 暂未开放注册
+account.invalid_expiry: 过期时间必须晚于现在
+
+# 账号事件的审计摘要（audit 模块按 audit.<事件> 翻译）。
+audit.account.registered: 注册账号
+audit.account.login: 登录
+audit.account.login_failed: 登录失败
+audit.account.logout: 退出登录
+audit.account.session_revoked: 注销登录设备
+audit.account.token_reused: 检测到凭证被重复使用，已注销该登录设备
+audit.account.password_changed: 修改密码
+audit.account.password_reset: 通过邮件重置密码
+audit.account.email_verified: 验证邮箱
+audit.account.mfa_enabled: 启用两步验证
+audit.account.mfa_disabled: 关闭两步验证
+audit.account.api_key_created: 创建 API Key
+audit.account.api_key_revoked: 删除 API Key
+audit.account.identity_linked: 绑定第三方账号
+audit.account.identity_removed: 解绑第三方账号
+audit.account.disabled: 账号被停用
+audit.account.enabled: 账号被启用

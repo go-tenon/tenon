@@ -4,13 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"slices"
 	"strings"
 	"testing"
+	"uuid"
+
+	"github.com/cockroachdb/errors"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
@@ -26,13 +28,20 @@ type testUser struct {
 	scopes []string
 }
 
-func (u *testUser) UserID() string         { return u.id }
+// idOf 把测试中的名字转换为固定的 UUID。
+func idOf(name string) uuid.UUID {
+	var u uuid.UUID
+	copy(u[:], name)
+	return u
+}
+
+func (u *testUser) UserID() uuid.UUID      { return idOf(u.id) }
 func (u *testUser) HasScope(s string) bool { return slices.Contains(u.scopes, s) }
 
 // plainUser does not implement auth.ScopeChecker.
 type plainUser struct{ id string }
 
-func (u plainUser) UserID() string { return u.id }
+func (u plainUser) UserID() uuid.UUID { return idOf(u.id) }
 
 type whoamiOutput struct {
 	Body struct {
@@ -57,7 +66,7 @@ func newAuthAPI(t *testing.T, logs *bytes.Buffer) (http.Handler, huma.API) {
 	prev := slog.Default()
 	slog.SetDefault(logger.New(logger.Options{Writer: logs}))
 	prevNew := huma.NewErrorWithContext
-	huma.NewErrorWithContext = LogServerErrors(huma.NewErrorWithContext)
+	huma.NewErrorWithContext = NewErrorWithContext
 	t.Cleanup(func() {
 		slog.SetDefault(prev)
 		huma.NewErrorWithContext = prevNew
@@ -78,7 +87,7 @@ func newAuthAPI(t *testing.T, logs *bytes.Buffer) (http.Handler, huma.API) {
 	config := huma.DefaultConfig("Test", "1.0.0")
 	config.Components.SecuritySchemes = SecuritySchemes("session")
 	api := humachi.New(r, config)
-	api.UseMiddleware(Authorize(api, verifyToken))
+	api.UseMiddleware(Authorize(api, verifyToken, nil))
 
 	whoami := func(ctx context.Context, _ *struct{}) (*whoamiOutput, error) {
 		out := &whoamiOutput{}
@@ -178,7 +187,7 @@ func TestAuthorizeAccessLogUserID(t *testing.T) {
 			access = m
 		}
 	}
-	if access["user_id"] != "bearer-user" {
+	if access["user_id"] != idOf("bearer-user").String() {
 		t.Errorf("access log user_id = %v, want bearer-user: %s", access["user_id"], logs.String())
 	}
 }
@@ -187,7 +196,7 @@ func TestAuthorizeScopesWithoutChecker(t *testing.T) {
 	_, api := humatestAPI(t)
 	api.UseMiddleware(Authorize(api, func(context.Context, string) (plainUser, error) {
 		return plainUser{"p"}, nil
-	}))
+	}, nil))
 	huma.Register(api, huma.Operation{
 		OperationID: "scoped", Method: http.MethodGet, Path: "/scoped", Security: RequireAuth("admin"),
 	}, func(ctx context.Context, _ *struct{}) (*struct{}, error) { return nil, nil })
@@ -203,7 +212,7 @@ func TestAuthorizeScopesWithoutChecker(t *testing.T) {
 
 func TestAuthorizeNilVerifier(t *testing.T) {
 	_, api := humatestAPI(t)
-	api.UseMiddleware(Authorize[*testUser](api, nil))
+	api.UseMiddleware(Authorize[*testUser](api, nil, nil))
 	huma.Register(api, huma.Operation{
 		OperationID: "p", Method: http.MethodGet, Path: "/p", Security: RequireAuth(),
 	}, func(ctx context.Context, _ *struct{}) (*struct{}, error) { return nil, nil })

@@ -7,6 +7,10 @@
 //	go test ./...
 //
 // 未设置时调用 DSN 的测试会被跳过。
+//
+// 大多数测试直接用 New：建临时库、发布并执行模块迁移，返回连接：
+//
+//	db := dbtest.New(t, account.Migrations, audit.Migrations)
 package dbtest
 
 import (
@@ -16,6 +20,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/uptrace/bun"
 
 	"github.com/ryan053857/go-kit/config"
 	"github.com/ryan053857/go-kit/database"
@@ -59,4 +65,27 @@ func DSN(t testing.TB) config.Secret {
 
 	u.Path = "/" + name
 	return config.Secret(u.String())
+}
+
+// New 创建临时数据库，把 sources 的迁移发布到临时目录并按顺序执行，返回连接（测试结束时关闭）。
+// 没有设置 DATABASE_TEST_DSN 时跳过测试。
+func New(t testing.TB, sources ...database.MigrationSource) *bun.DB {
+	t.Helper()
+	cfg := database.DefaultConfig()
+	cfg.DSN = DSN(t)
+	db, err := database.Open(t.Context(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if len(sources) > 0 {
+		dir := t.TempDir()
+		if _, err := database.PublishMigrations(dir, sources...); err != nil {
+			t.Fatal(err)
+		}
+		if err := database.Migrate(t.Context(), db.DB, os.DirFS(dir)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return db
 }

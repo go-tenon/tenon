@@ -2,13 +2,14 @@ package httpx
 
 import (
 	"context"
-	"errors"
 	"io"
 	"net"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/cockroachdb/errors"
 )
 
 type testServer struct {

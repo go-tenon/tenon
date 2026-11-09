@@ -26,7 +26,8 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"encoding/base64"
-	"errors"
+
+	"github.com/cockroachdb/errors"
 )
 
 // KeySize 是密钥的字节数（AES-256）。

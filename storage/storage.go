@@ -19,12 +19,12 @@ package storage
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/cockroachdb/errors"
 
 	"github.com/ryan053857/go-kit/config"
 )
@@ -100,7 +100,7 @@ func New(cfg Config) (Storage, error) {
 	case DriverS3:
 		return newS3(cfg)
 	}
-	return nil, fmt.Errorf("storage: unknown driver %q", cfg.Driver)
+	return nil, errors.Newf("storage: unknown driver %q", cfg.Driver)
 }
 
 // ValidKey 报告 key 是否是合法的对象键。
@@ -118,7 +118,7 @@ func ValidKey(key string) bool {
 
 func checkKey(key string) error {
 	if !ValidKey(key) {
-		return fmt.Errorf("storage: invalid key %q", key)
+		return errors.Newf("storage: invalid key %q", key)
 	}
 	return nil
 }

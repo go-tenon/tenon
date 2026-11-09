@@ -3,10 +3,11 @@ package crypt
 import (
 	"bytes"
 	"encoding/base64"
-	"errors"
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/cockroachdb/errors"
 )
 
 var (

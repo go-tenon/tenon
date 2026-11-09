@@ -1,10 +1,10 @@
 package config
 
 import (
-	"fmt"
 	"os"
 	"strings"
 
+	"github.com/cockroachdb/errors"
 	"go.yaml.in/yaml/v4"
 )
 
@@ -37,7 +37,7 @@ func expandScalar(n *yaml.Node) error {
 	}
 	v, err := expand(n.Value)
 	if err != nil {
-		return fmt.Errorf("line %d: %w", n.Line, err)
+		return errors.Wrapf(err, "line %d", n.Line)
 	}
 	n.Value = v
 	// The resolved tag was computed from the unexpanded text (always !!str).
@@ -71,21 +71,21 @@ func expand(s string) (string, error) {
 
 		end := strings.IndexByte(s[i+2:], '}')
 		if end < 0 {
-			return "", fmt.Errorf("unterminated reference in %q", s[i:])
+			return "", errors.Newf("unterminated reference in %q", s[i:])
 		}
 		ref := s[i+2 : i+2+end]
 		s = s[i+2+end+1:]
 
 		name, def, hasDef := strings.Cut(ref, ":-")
 		if !validName(name) {
-			return "", fmt.Errorf("invalid environment variable reference ${%s}", ref)
+			return "", errors.Newf("invalid environment variable reference ${%s}", ref)
 		}
 		val, ok := os.LookupEnv(name)
 		switch {
 		case hasDef && val == "":
 			val = def
 		case !ok:
-			return "", fmt.Errorf("environment variable %s is not set (use ${%s:-} to allow empty)", name, name)
+			return "", errors.Newf("environment variable %s is not set (use ${%s:-} to allow empty)", name, name)
 		}
 		b.WriteString(val)
 	}

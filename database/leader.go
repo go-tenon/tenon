@@ -3,10 +3,10 @@ package database
 import (
 	"context"
 	"database/sql"
-	"errors"
-	"fmt"
 	"hash/fnv"
 	"sync"
+
+	"github.com/cockroachdb/errors"
 )
 
 // ErrNotLeader 表示当前实例不是 leader。
@@ -46,12 +46,12 @@ func (l *Leader) IsLeader(ctx context.Context) error {
 	}
 	conn, err := l.db.Conn(ctx)
 	if err != nil {
-		return fmt.Errorf("database: leader: %w", err)
+		return errors.Wrap(err, "database: leader")
 	}
 	var ok bool
 	if err := conn.QueryRowContext(ctx, "SELECT pg_try_advisory_lock($1)", l.key).Scan(&ok); err != nil {
 		_ = conn.Close()
-		return fmt.Errorf("database: leader: %w", err)
+		return errors.Wrap(err, "database: leader")
 	}
 	if !ok {
 		_ = conn.Close()

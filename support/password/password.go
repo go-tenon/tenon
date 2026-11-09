@@ -24,9 +24,10 @@ package password
 import (
 	"crypto/subtle"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/cockroachdb/errors"
 
 	"golang.org/x/crypto/argon2"
 

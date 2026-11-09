@@ -5,8 +5,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -14,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"uuid"
+
+	"github.com/cockroachdb/errors"
 
 	"github.com/alexedwards/scs/v2"
 	"github.com/uptrace/bun"
@@ -23,13 +23,8 @@ import (
 	"github.com/ryan053857/go-kit/config"
 	"github.com/ryan053857/go-kit/database"
 	"github.com/ryan053857/go-kit/httpx/auth"
+	"github.com/ryan053857/go-kit/i18n"
 	"github.com/ryan053857/go-kit/support/random"
-)
-
-// 第三方登录的错误。
-var (
-	ErrIdentityTaken = errors.New("account: identity linked to another user")
-	ErrEmailRequired = errors.New("account: provider returned no verified email")
 )
 
 // OAuthUser 是从第三方平台取得的账号信息。
@@ -131,7 +126,7 @@ func getJSON(ctx context.Context, client *http.Client, url string, v any) error 
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return fmt.Errorf("GET %s: %s: %s", url, resp.Status, body)
+		return errors.Newf("GET %s: %s: %s", url, resp.Status, body)
 	}
 	return json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(v)
 }
@@ -144,7 +139,8 @@ func getJSON(ctx context.Context, client *http.Client, url string, v any) error 
 //
 // 邮箱已被一个未验证邮箱的用户注册时返回 ErrEmailTaken（防止有人抢先用别人的邮箱注册，
 // 等邮箱主人用第三方登录时接管账号），用户需先用密码登录，再在设置中绑定。
-// 平台没有返回邮箱时返回 ErrEmailRequired；用户已停用时返回 ErrUserDisabled。
+// 平台没有返回邮箱时返回 ErrEmailRequired；用户已停用时返回 ErrUserDisabled；
+// 没有配置 Actions.CreateOAuthUser 时不自动注册，返回 ErrRegistrationClosed。
 func (s *Service) OAuthLogin(ctx context.Context, provider string, ou *OAuthUser) (*User, error) {
 	u := new(User)
 	err := s.db.NewSelect().Model(u).
@@ -157,13 +153,13 @@ func (s *Service) OAuthLogin(ctx context.Context, provider string, ou *OAuthUser
 		}
 		return u, nil
 	case !errors.Is(err, sql.ErrNoRows):
-		return nil, fmt.Errorf("account: oauth login: %w", err)
+		return nil, errors.Wrap(err, "account: oauth login")
 	}
 
 	if ou.Email == "" {
 		return nil, ErrEmailRequired
 	}
-	email := normalizeEmail(ou.Email)
+	email := NormalizeEmail(ou.Email)
 	err = s.db.NewSelect().Model(u).Where("email = ?", email).Scan(ctx)
 	switch {
 	case err == nil:
@@ -178,21 +174,28 @@ func (s *Service) OAuthLogin(ctx context.Context, provider string, ou *OAuthUser
 		}
 		return u, nil
 	case !errors.Is(err, sql.ErrNoRows):
-		return nil, fmt.Errorf("account: oauth login: %w", err)
+		return nil, errors.Wrap(err, "account: oauth login")
 	}
 
-	u = &User{Email: email, Name: strings.TrimSpace(ou.Name)}
-	if ou.EmailVerified {
-		u.EmailVerifiedAt = s.now()
+	if s.actions.CreateOAuthUser == nil {
+		return nil, ErrRegistrationClosed
 	}
-	err = s.createUser(ctx, u, func(ctx context.Context, tx bun.Tx) error {
-		return s.insertIdentity(ctx, tx, u.ID, provider, ou)
+	fields := &UserFields{Email: email, Locale: i18n.Locale(ctx)}
+	if ou.EmailVerified {
+		fields.EmailVerifiedAt = s.now()
+	}
+	id, err := s.Register(ctx, func(ctx context.Context, tx bun.Tx) (uuid.UUID, error) {
+		id, err := s.actions.CreateOAuthUser(ctx, tx, fields, ou)
+		if err != nil {
+			return id, err
+		}
+		return id, s.insertIdentity(ctx, tx, id, provider, ou)
 	})
 	if err != nil {
 		return nil, err
 	}
-	s.emit(ctx, Event{Type: EventIdentityLinked, UserID: u.ID, Provider: provider})
-	return u, nil
+	s.emit(ctx, Event{Type: EventIdentityLinked, UserID: id, Provider: provider})
+	return s.User(ctx, id)
 }
 
 // LinkIdentity 把第三方账号绑定到用户。该第三方账号已绑定其他用户时返回 ErrIdentityTaken，
@@ -203,7 +206,7 @@ func (s *Service) LinkIdentity(ctx context.Context, userID uuid.UUID, provider s
 		owner, err := s.db.NewSelect().Model((*Identity)(nil)).
 			Where("provider = ? AND subject = ? AND user_id = ?", provider, ou.Subject, userID).Exists(ctx)
 		if err != nil {
-			return fmt.Errorf("account: link identity: %w", err)
+			return errors.Wrap(err, "account: link identity")
 		}
 		if owner {
 			return nil
@@ -211,7 +214,7 @@ func (s *Service) LinkIdentity(ctx context.Context, userID uuid.UUID, provider s
 		return ErrIdentityTaken
 	}
 	if err != nil {
-		return fmt.Errorf("account: link identity: %w", err)
+		return errors.Wrap(err, "account: link identity")
 	}
 	s.emit(ctx, Event{Type: EventIdentityLinked, UserID: userID, Provider: provider})
 	return nil
@@ -227,7 +230,7 @@ func (s *Service) insertIdentity(ctx context.Context, db bun.IDB, userID uuid.UU
 func (s *Service) Identities(ctx context.Context, userID uuid.UUID) ([]Identity, error) {
 	list := []Identity{}
 	if err := s.db.NewSelect().Model(&list).Where("user_id = ?", userID).Order("id").Scan(ctx); err != nil {
-		return nil, fmt.Errorf("account: list identities: %w", err)
+		return nil, errors.Wrap(err, "account: list identities")
 	}
 	return list, nil
 }
@@ -268,7 +271,7 @@ func (s *Service) UnlinkIdentity(ctx context.Context, userID, identityID uuid.UU
 		return err
 	}
 	if err != nil {
-		return fmt.Errorf("account: unlink identity: %w", err)
+		return errors.Wrap(err, "account: unlink identity")
 	}
 	s.emit(ctx, Event{Type: EventIdentityRemoved, UserID: userID, Provider: provider})
 	return nil
@@ -285,7 +288,7 @@ func (s *Service) UnlinkIdentity(ctx context.Context, userID, identityID uuid.UU
 // 登录页放一个指向 /auth/github 的链接即可；已登录时访问则把第三方账号绑定到当前用户
 // （设置页的“绑定 GitHub”）。可带 ?next=/settings 指定完成后跳转的站内地址。
 // 失败时跳转到 ErrorURL 并带上 error 参数：denied（用户取消授权）、email_taken、email_required、
-// identity_taken、disabled、failed（其他错误，详情见日志）。
+// identity_taken、disabled、registration_closed、failed（其他错误，详情见日志）。
 type OAuthWeb struct {
 	Users     *Service
 	Sessions  *scs.SessionManager
@@ -352,12 +355,12 @@ func (o *OAuthWeb) Callback(w http.ResponseWriter, r *http.Request) {
 	}
 	tok, err := p.Config.Exchange(ctx, q.Get("code"), oauth2.VerifierOption(st.Verifier))
 	if err != nil {
-		o.fail(w, r, "failed", fmt.Errorf("oauth exchange: %w", err))
+		o.fail(w, r, "failed", errors.Wrap(err, "oauth exchange"))
 		return
 	}
 	ou, err := p.User(ctx, p.Config.Client(ctx, tok))
 	if err != nil || ou.Subject == "" {
-		o.fail(w, r, "failed", fmt.Errorf("oauth user: %w", err))
+		o.fail(w, r, "failed", errors.Wrap(err, "oauth user"))
 		return
 	}
 
@@ -375,7 +378,7 @@ func (o *OAuthWeb) Callback(w http.ResponseWriter, r *http.Request) {
 		o.fail(w, r, "", err)
 		return
 	}
-	mfa, err := o.Users.WebBeginLogin(ctx, o.Sessions, u, r)
+	mfa, err := o.Users.WebBeginLogin(ctx, o.Sessions, u.ID, r)
 	if err != nil {
 		o.fail(w, r, "failed", err)
 		return
@@ -397,6 +400,8 @@ func (o *OAuthWeb) fail(w http.ResponseWriter, r *http.Request, code string, err
 			code = "identity_taken"
 		case errors.Is(err, ErrUserDisabled):
 			code = "disabled"
+		case errors.Is(err, ErrRegistrationClosed):
+			code = "registration_closed"
 		default:
 			code = "failed"
 		}

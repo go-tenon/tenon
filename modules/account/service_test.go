@@ -2,19 +2,21 @@ package account
 
 import (
 	"context"
-	"errors"
 	"os"
-	"strings"
 	"sync"
 	"testing"
 	"time"
+	"uuid"
+
+	"github.com/cockroachdb/errors"
+	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/uptrace/bun"
 
-	"github.com/ryan053857/go-kit/database"
 	"github.com/ryan053857/go-kit/database/dbtest"
 	"github.com/ryan053857/go-kit/httpx/auth"
-	"github.com/ryan053857/go-kit/mail/mailtest"
+	"github.com/ryan053857/go-kit/httpx/rest"
+	"github.com/ryan053857/go-kit/i18n"
 	"github.com/ryan053857/go-kit/messaging"
 )
 
@@ -45,28 +47,16 @@ type env struct {
 	bus   *messaging.Bus
 }
 
-// newEnv 创建临时数据库、发布并执行本模块的迁移，返回使用可控时钟的 Service。
+// newEnv 创建临时数据库、发布并执行本模块的迁移（含 users 表模板），返回使用可控时钟的 Service。
 func newEnv(t *testing.T) *env {
 	t.Helper()
-	cfg := database.DefaultConfig()
-	cfg.DSN = dbtest.DSN(t)
-	db, err := database.Open(t.Context(), cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-
-	dir := t.TempDir()
-	if _, err := database.PublishMigrations(dir, Migrations); err != nil {
-		t.Fatal(err)
-	}
-	if err := database.Migrate(t.Context(), db.DB, os.DirFS(dir)); err != nil {
-		t.Fatal(err)
-	}
-
+	db := dbtest.New(t, Migrations)
 	acfg := DefaultConfig()
 	acfg.JWTSecret = testSecret
-	svc, err := NewService(db, acfg)
+	svc, err := New(db, acfg, Actions{CreateOAuthUser: func(ctx context.Context, tx bun.Tx, u *UserFields, ou *OAuthUser) (uuid.UUID, error) {
+		_, err := tx.NewInsert().Model(&User{UserFields: *u}).Returning("id").Exec(ctx, &u.ID)
+		return u.ID, err
+	}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,17 +70,39 @@ func newEnv(t *testing.T) *env {
 	return &env{db: db, svc: svc, clock: c, bus: bus}
 }
 
+// createUser 是产品的注册逻辑：写 users 表。
+func (e *env) createUser(ctx context.Context, email, pw string) (uuid.UUID, error) {
+	return e.svc.Register(ctx, func(ctx context.Context, tx bun.Tx) (uuid.UUID, error) {
+		if err := e.svc.CheckPassword(pw); err != nil {
+			return uuid.Nil(), err
+		}
+		u := &User{}
+		u.Email, u.PasswordHash = NormalizeEmail(email), HashPassword(pw)
+		_, err := tx.NewInsert().Model(u).Exec(ctx)
+		return u.ID, err
+	})
+}
+
 func (e *env) register(t *testing.T, email, pw string) *User {
 	t.Helper()
-	u, err := e.svc.Register(t.Context(), email, pw, "Tester")
+	id, err := e.createUser(t.Context(), email, pw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	u, err := e.svc.User(t.Context(), id)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return u
 }
 
+func TestMain(m *testing.M) {
+	huma.NewErrorWithContext = rest.NewErrorWithContext
+	os.Exit(m.Run())
+}
+
 func TestNewServiceRequiresSecret(t *testing.T) {
-	if _, err := NewService(nil, DefaultConfig()); err == nil {
+	if _, err := New(nil, DefaultConfig(), Actions{}); err == nil {
 		t.Error("empty secret accepted")
 	}
 }
@@ -100,13 +112,13 @@ func TestRegisterAndAuthenticate(t *testing.T) {
 	ctx := t.Context()
 
 	u := e.register(t, "  Alice@Example.com ", "password1")
-	if u.Email != "alice@example.com" || u.Name != "Tester" || u.PasswordHash == "password1" {
+	if u.Email != "alice@example.com" || u.PasswordHash == "password1" {
 		t.Errorf("user = %+v", u)
 	}
-	if _, err := e.svc.Register(ctx, "ALICE@example.com", "password1", ""); !errors.Is(err, ErrEmailTaken) {
+	if _, err := e.createUser(ctx, "ALICE@example.com", "password1"); !errors.Is(err, ErrEmailTaken) {
 		t.Errorf("duplicate email: %v", err)
 	}
-	if _, err := e.svc.Register(ctx, "bob@example.com", "short", ""); !errors.Is(err, ErrWeakPassword) {
+	if _, err := e.createUser(ctx, "bob@example.com", "short"); !errors.Is(err, ErrWeakPassword) {
 		t.Errorf("weak password: %v", err)
 	}
 
@@ -243,7 +255,7 @@ func TestRevokeAndCheckSession(t *testing.T) {
 
 	// 修改密码：保留当前会话，注销其他会话。
 	c, _ := e.svc.Login(ctx, "a@example.com", "password1", false, ClientInfo{})
-	if err := e.svc.ChangePassword(ctx, u.ID, a.SessionID, "wrong", "password2"); !errors.Is(err, ErrInvalidCredentials) {
+	if err := e.svc.ChangePassword(ctx, u.ID, a.SessionID, "wrong", "password2"); !errors.Is(err, ErrWrongPassword) {
 		t.Errorf("wrong current password: %v", err)
 	}
 	if err := e.svc.ChangePassword(ctx, u.ID, a.SessionID, "password1", "password2"); err != nil {
@@ -267,11 +279,12 @@ func TestPasswordReset(t *testing.T) {
 	u := e.register(t, "a@example.com", "password1")
 	sess, _ := e.svc.Login(ctx, "a@example.com", "password1", false, ClientInfo{})
 
-	mailer := &mailtest.Recorder{}
 	tokens := make(chan string, 4)
+	events := make(chan PasswordResetRequested, 4)
 	err := messaging.Handle(e.bus, TopicPasswordReset, func(ctx context.Context, ev PasswordResetRequested) error {
+		events <- ev
 		tokens <- ev.Token
-		return PasswordResetMail{Mailer: mailer, URL: func(tok string) string { return "https://app.test/reset?token=" + tok }}.Handle(ctx, ev)
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -286,7 +299,7 @@ func TestPasswordReset(t *testing.T) {
 	if err := e.svc.RequestPasswordReset(ctx, "nobody@example.com"); err != nil {
 		t.Fatal(err)
 	}
-	if err := e.svc.RequestPasswordReset(ctx, "A@example.com"); err != nil {
+	if err := e.svc.RequestPasswordReset(i18n.WithLocale(ctx, "en"), "A@example.com"); err != nil {
 		t.Fatal(err)
 	}
 	// 一分钟内重复请求被忽略。
@@ -305,24 +318,20 @@ func TestPasswordReset(t *testing.T) {
 		t.Error("throttled request sent a second mail")
 	case <-time.After(1500 * time.Millisecond):
 	}
-	sent := mailer.Sent()
-	if len(sent) != 1 || sent[0].To[0] != u.Email || !strings.Contains(sent[0].Text, "https://app.test/reset?token="+token) {
-		t.Fatalf("sent = %+v", sent)
-	}
-	if !strings.Contains(sent[0].HTML, "60 分钟") {
-		t.Errorf("html = %s", sent[0].HTML)
+	if ev := <-events; ev.UserID != u.ID || ev.Email != u.Email || ev.Locale != "en" || ev.Token != token {
+		t.Fatalf("event = %+v", ev)
 	}
 
 	if err := e.svc.ResetPassword(ctx, token, "short"); !errors.Is(err, ErrWeakPassword) {
 		t.Errorf("weak password: %v", err)
 	}
-	if err := e.svc.ResetPassword(ctx, "bogus", "password2"); !errors.Is(err, ErrInvalidToken) {
+	if err := e.svc.ResetPassword(ctx, "bogus", "password2"); !errors.Is(err, ErrInvalidLink) {
 		t.Errorf("bogus token: %v", err)
 	}
 	if err := e.svc.ResetPassword(ctx, token, "password2"); err != nil {
 		t.Fatal(err)
 	}
-	if err := e.svc.ResetPassword(ctx, token, "password3"); !errors.Is(err, ErrInvalidToken) {
+	if err := e.svc.ResetPassword(ctx, token, "password3"); !errors.Is(err, ErrInvalidLink) {
 		t.Errorf("token reused: %v", err)
 	}
 	if _, err := e.svc.Authenticate(ctx, "a@example.com", "password2"); err != nil {
@@ -343,7 +352,7 @@ func TestPasswordReset(t *testing.T) {
 		t.Fatal("second reset message not handled")
 	}
 	e.clock.add(2 * time.Hour)
-	if err := e.svc.ResetPassword(ctx, token, "password3"); !errors.Is(err, ErrInvalidToken) {
+	if err := e.svc.ResetPassword(ctx, token, "password3"); !errors.Is(err, ErrInvalidLink) {
 		t.Errorf("expired token: %v", err)
 	}
 }

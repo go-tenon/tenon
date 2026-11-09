@@ -1,9 +1,10 @@
 package password
 
 import (
-	"errors"
 	"strings"
 	"testing"
+
+	"github.com/cockroachdb/errors"
 )
 
 // fast keeps the tests quick; DefaultParams is exercised separately.

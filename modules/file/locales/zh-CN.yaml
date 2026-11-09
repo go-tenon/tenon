@@ -1,0 +1,5 @@
+file.too_large: "文件太大（不超过 {{.MaxMB}} MB）"
+file.type_not_allowed: 不支持的文件类型
+file.not_found: 文件不存在
+file.no_direct_upload: 当前存储不支持直传
+file.upload_incomplete: 文件未上传或与声明的大小不符

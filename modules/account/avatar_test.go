@@ -2,7 +2,6 @@ package account
 
 import (
 	"bytes"
-	"errors"
 	"image"
 	"image/color"
 	"image/jpeg"
@@ -15,10 +14,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cockroachdb/errors"
+
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
 
+	"github.com/ryan053857/go-kit/httpx/auth"
 	"github.com/ryan053857/go-kit/httpx/rest"
 	"github.com/ryan053857/go-kit/storage"
 )
@@ -55,8 +57,8 @@ func TestAvatars(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(got.AvatarKey, "avatars/"+u.ID.String()+"/") || e.svc.AvatarURL(got) != "/"+got.AvatarKey {
-		t.Fatalf("avatar key = %q, url = %q", got.AvatarKey, e.svc.AvatarURL(got))
+	if !strings.HasPrefix(got.AvatarKey, "avatars/"+u.ID.String()+"/") || e.svc.AvatarURL(got.AvatarKey) != "/"+got.AvatarKey {
+		t.Fatalf("avatar key = %q, url = %q", got.AvatarKey, e.svc.AvatarURL(got.AvatarKey))
 	}
 	data, err := os.ReadFile(filepath.Join(dir, got.AvatarKey))
 	if err != nil {
@@ -102,7 +104,7 @@ func TestAvatars(t *testing.T) {
 		t.Errorf("old avatar not deleted: %v", err)
 	}
 	got, err = avatars.Remove(ctx, u.ID)
-	if err != nil || got.AvatarKey != "" || e.svc.AvatarURL(got) != "" {
+	if err != nil || got.AvatarKey != "" || e.svc.AvatarURL(got.AvatarKey) != "" {
 		t.Fatalf("remove = %+v, %v", got, err)
 	}
 	if reloaded, _ := e.svc.User(ctx, u.ID); reloaded.AvatarKey != "" {
@@ -119,11 +121,11 @@ func TestAvatarEndpointAndAccessToken(t *testing.T) {
 	r := chi.NewRouter()
 	r.Use(e.svc.LoadAccessToken)
 	api := humachi.New(r, huma.DefaultConfig("test", "1"))
-	api.UseMiddleware(rest.Authorize(api, e.svc.VerifyAccessToken))
+	api.UseMiddleware(rest.Authorize(api, e.svc.VerifyAccessToken, nil))
 	rest.Put(api, "/me/avatar", SetAvatarEndpoint(avatars))
 	rest.Delete(api, "/me/avatar", RemoveAvatarEndpoint(avatars))
 	r.Get("/whoami", func(w http.ResponseWriter, r *http.Request) {
-		if id, ok := CurrentUserID(r.Context()); ok {
+		if id, ok := auth.UserID(r.Context()); ok {
 			_, _ = w.Write([]byte(id.String()))
 		}
 	})

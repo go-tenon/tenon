@@ -13,7 +13,7 @@
 //	func (a *ExportNotes) serve(w http.ResponseWriter, r *http.Request) error {
 //		format, err := export.ParseFormat(r.URL.Query().Get("format"))
 //		if err != nil {
-//			return huma.Error400BadRequest(err.Error())
+//			return err // ErrUnknownFormat，已登记为 422
 //		}
 //		q := db.NewSelect().Model((*note.Note)(nil)).Where("user_id = ?", uid).Order("id")
 //		return export.Serve(w, format, notesTable, export.QueryRows[note.Note](r.Context(), q))
@@ -33,7 +33,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/csv"
-	"errors"
 	"fmt"
 	"io"
 	"iter"
@@ -41,6 +40,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/cockroachdb/errors"
 
 	"github.com/uptrace/bun"
 	"github.com/xuri/excelize/v2"
@@ -62,7 +63,7 @@ func ParseFormat(s string) (Format, error) {
 	case "xlsx", "excel":
 		return XLSX, nil
 	}
-	return "", fmt.Errorf("export: unknown format %q (csv | xlsx)", s)
+	return "", ErrUnknownFormat
 }
 
 // ContentType 返回格式对应的 MIME 类型。
@@ -132,7 +133,7 @@ func Write[T any](w io.Writer, format Format, t Table[T], rows iter.Seq2[T, erro
 	case XLSX:
 		return writeXLSX(w, t, rows)
 	}
-	return fmt.Errorf("export: unknown format %q", format)
+	return errors.Newf("export: unknown format %q", format)
 }
 
 // Serve 以附件形式把表格写入 HTTP 响应，文件名为 "<Name>-<日期>.<扩展名>"。
@@ -166,7 +167,7 @@ func writeCSV[T any](w io.Writer, t Table[T], rows iter.Seq2[T, error]) error {
 	for row, err := range rows {
 		if err != nil {
 			cw.Flush()
-			return fmt.Errorf("export: %w", err)
+			return errors.Wrap(err, "export")
 		}
 		for i, c := range t.Columns {
 			record[i] = csvSafe(text(c.Value(row)))
@@ -184,31 +185,31 @@ func writeXLSX[T any](w io.Writer, t Table[T], rows iter.Seq2[T, error]) error {
 	defer f.Close()
 	sheet := sheetName(t.Name)
 	if err := f.SetSheetName("Sheet1", sheet); err != nil {
-		return fmt.Errorf("export: %w", err)
+		return errors.Wrap(err, "export")
 	}
 	sw, err := f.NewStreamWriter(sheet)
 	if err != nil {
-		return fmt.Errorf("export: %w", err)
+		return errors.Wrap(err, "export")
 	}
 	bold, err := f.NewStyle(&excelize.Style{Font: &excelize.Font{Bold: true}})
 	if err != nil {
-		return fmt.Errorf("export: %w", err)
+		return errors.Wrap(err, "export")
 	}
 
 	if err := sw.SetPanes(&excelize.Panes{Freeze: true, YSplit: 1, TopLeftCell: "A2", ActivePane: "bottomLeft"}); err != nil {
-		return fmt.Errorf("export: %w", err)
+		return errors.Wrap(err, "export")
 	}
 	cells := make([]any, len(t.Columns))
 	for i, c := range t.Columns {
 		cells[i] = excelize.Cell{StyleID: bold, Value: c.Header}
 	}
 	if err := sw.SetRow("A1", cells); err != nil {
-		return fmt.Errorf("export: %w", err)
+		return errors.Wrap(err, "export")
 	}
 	n := 1
 	for row, err := range rows {
 		if err != nil {
-			return fmt.Errorf("export: %w", err)
+			return errors.Wrap(err, "export")
 		}
 		n++
 		for i, c := range t.Columns {
@@ -216,14 +217,14 @@ func writeXLSX[T any](w io.Writer, t Table[T], rows iter.Seq2[T, error]) error {
 		}
 		cell, _ := excelize.CoordinatesToCellName(1, n)
 		if err := sw.SetRow(cell, cells); err != nil {
-			return fmt.Errorf("export: %w", err)
+			return errors.Wrap(err, "export")
 		}
 	}
 	if err := sw.Flush(); err != nil {
-		return fmt.Errorf("export: %w", err)
+		return errors.Wrap(err, "export")
 	}
 	if _, err := f.WriteTo(w); err != nil {
-		return fmt.Errorf("export: %w", err)
+		return errors.Wrap(err, "export")
 	}
 	return nil
 }

@@ -48,6 +48,7 @@ import (
 	wsql "github.com/ThreeDotsLabs/watermill-sql/v4/pkg/sql"
 	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/ThreeDotsLabs/watermill/message/router/middleware"
+	"github.com/cockroachdb/errors"
 
 	"github.com/ryan053857/go-kit/httpx"
 	"github.com/ryan053857/go-kit/logger"
@@ -87,19 +88,19 @@ func New(db *sql.DB) (*Bus, error) {
 		InitializeSchema: true,
 	}, log)
 	if err != nil {
-		return nil, fmt.Errorf("messaging: %w", err)
+		return nil, errors.Wrap(err, "messaging")
 	}
 	pub, err := wsql.NewPublisher(wsql.BeginnerFromStdSQL(db), wsql.PublisherConfig{SchemaAdapter: schema, AutoInitializeSchema: true}, log)
 	if err != nil {
-		return nil, fmt.Errorf("messaging: %w", err)
+		return nil, errors.Wrap(err, "messaging")
 	}
 	router, err := message.NewRouter(message.RouterConfig{CloseTimeout: 30 * time.Second}, log)
 	if err != nil {
-		return nil, fmt.Errorf("messaging: %w", err)
+		return nil, errors.Wrap(err, "messaging")
 	}
 	poison, err := middleware.PoisonQueue(pub, PoisonTopic)
 	if err != nil {
-		return nil, fmt.Errorf("messaging: %w", err)
+		return nil, errors.Wrap(err, "messaging")
 	}
 	router.AddMiddleware(
 		poison,
@@ -122,10 +123,10 @@ func Handle[T any](b *Bus, topic string, fn func(ctx context.Context, payload T)
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.topics[topic] {
-		return fmt.Errorf("messaging: topic %q already has a handler", topic)
+		return errors.Newf("messaging: topic %q already has a handler", topic)
 	}
 	if err := b.sub.SubscribeInitialize(topic); err != nil {
-		return fmt.Errorf("messaging: declare %q: %w", topic, err)
+		return errors.Wrapf(err, "messaging: declare %q", topic)
 	}
 	b.topics[topic] = true
 
@@ -138,7 +139,7 @@ func Handle[T any](b *Bus, topic string, fn func(ctx context.Context, payload T)
 
 		var payload T
 		if err := json.Unmarshal(msg.Payload, &payload); err != nil {
-			return fmt.Errorf("messaging: decode %s payload: %w", topic, err)
+			return errors.Wrapf(err, "messaging: decode %s payload", topic)
 		}
 		return fn(ctx, payload)
 	})
@@ -149,7 +150,7 @@ func Handle[T any](b *Bus, topic string, fn func(ctx context.Context, payload T)
 func (b *Bus) Declare(topics ...string) error {
 	for _, t := range topics {
 		if err := b.sub.SubscribeInitialize(t); err != nil {
-			return fmt.Errorf("messaging: declare %q: %w", t, err)
+			return errors.Wrapf(err, "messaging: declare %q", t)
 		}
 	}
 	return nil
@@ -162,7 +163,7 @@ func (b *Bus) Publish(ctx context.Context, topic string, payload any) error {
 		return err
 	}
 	if err := b.pub.Publish(topic, msg); err != nil {
-		return fmt.Errorf("messaging: publish %s: %w", topic, err)
+		return errors.Wrapf(err, "messaging: publish %s", topic)
 	}
 	return nil
 }
@@ -176,10 +177,10 @@ func PublishTx(ctx context.Context, tx *sql.Tx, topic string, payload any) error
 	}
 	pub, err := wsql.NewPublisher(wsql.TxFromStdSQL(tx), wsql.PublisherConfig{SchemaAdapter: schema}, watermill.NopLogger{})
 	if err != nil {
-		return fmt.Errorf("messaging: %w", err)
+		return errors.Wrap(err, "messaging")
 	}
 	if err := pub.Publish(topic, msg); err != nil {
-		return fmt.Errorf("messaging: publish %s: %w", topic, err)
+		return errors.Wrapf(err, "messaging: publish %s", topic)
 	}
 	return nil
 }
@@ -209,7 +210,7 @@ func (b *Bus) Run(ctx context.Context) error {
 		_ = b.router.Close()
 	}()
 	if err := b.router.Run(context.WithoutCancel(ctx)); err != nil {
-		return fmt.Errorf("messaging: %w", err)
+		return errors.Wrap(err, "messaging")
 	}
 	return nil
 }
@@ -222,7 +223,7 @@ func (b *Bus) Running() <-chan struct{} {
 func newMessage(ctx context.Context, payload any) (*message.Message, error) {
 	data, err := json.Marshal(payload)
 	if err != nil {
-		return nil, fmt.Errorf("messaging: encode payload: %w", err)
+		return nil, errors.Wrap(err, "messaging: encode payload")
 	}
 	msg := message.NewMessage(watermill.NewUUID(), data)
 	if id := httpx.RequestIDFrom(ctx); id != "" {

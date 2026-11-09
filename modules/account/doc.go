@@ -46,7 +46,7 @@
 //	a.Router.Use(users.LoadWebSession(a.Sessions))
 //
 //	api := a.API()
-//	api.UseMiddleware(rest.Authorize(api, users.VerifyAccessToken))
+//	api.UseMiddleware(rest.Authorize(api, users.VerifyAccessToken, a.Gate))
 //	v1 := huma.NewGroup(api, "/api/v1")
 //	rest.Post(v1, "/auth/login", account.LoginEndpoint(users))
 //	...（完整列表见 endpoints.go）

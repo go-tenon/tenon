@@ -1,8 +1,9 @@
 package database
 
 import (
-	"errors"
 	"slices"
+
+	"github.com/cockroachdb/errors"
 
 	"github.com/jackc/pgx/v5/pgconn"
 )

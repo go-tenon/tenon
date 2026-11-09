@@ -2,8 +2,8 @@ package mail
 
 import (
 	"context"
-	"errors"
-	"fmt"
+
+	"github.com/cockroachdb/errors"
 
 	"github.com/resend/resend-go/v4"
 )
@@ -32,7 +32,7 @@ func (r *resendMailer) Send(ctx context.Context, m Message) error {
 		Html:    m.HTML,
 	})
 	if err != nil {
-		return fmt.Errorf("mail: resend: %w", err)
+		return errors.Wrap(err, "mail: resend")
 	}
 	return nil
 }

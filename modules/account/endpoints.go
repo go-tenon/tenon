@@ -2,11 +2,13 @@ package account
 
 import (
 	"context"
-	"errors"
 	"net"
 	"net/http"
 	"time"
 	"uuid"
+
+	"github.com/cockroachdb/errors"
+	"github.com/uptrace/bun"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -17,15 +19,14 @@ import (
 // 以下函数返回账号相关的 REST 接口，由产品选择路径挂载，例如：
 //
 //	v1 := huma.NewGroup(a.API(), "/api/v1")
-//	rest.Post(v1, "/auth/register", account.RegisterEndpoint(users))
+//	rest.Post(v1, "/auth/register", account.RegisterEndpoint(users, createUser)) // createUser 由产品实现
 //	rest.Post(v1, "/auth/login", account.LoginEndpoint(users))
 //	rest.Post(v1, "/auth/refresh", account.RefreshEndpoint(users))
 //	rest.Post(v1, "/auth/logout", account.LogoutEndpoint(users))
 //	rest.Post(v1, "/auth/forgot-password", account.ForgotPasswordEndpoint(users))
 //	rest.Post(v1, "/auth/reset-password", account.ResetPasswordEndpoint(users))
-//	rest.Get(v1, "/me", account.MeEndpoint(users))
-//	rest.Patch(v1, "/me", account.UpdateMeEndpoint(users))
 //	rest.Post(v1, "/me/password", account.ChangePasswordEndpoint(users))
+//	rest.Put(v1, "/me/locale", account.SetLocaleEndpoint(users))
 //	rest.Get(v1, "/me/sessions", account.SessionsEndpoint(users))
 //	rest.Delete(v1, "/me/sessions/{id}", account.RevokeSessionEndpoint(users))
 //	rest.Put(v1, "/me/avatar", account.SetAvatarEndpoint(avatars))
@@ -33,32 +34,16 @@ import (
 //	a.Router.Handle("/avatars/*", avatars.Handler())
 //
 // 邮箱验证、两步验证、API Key 与第三方账号的接口见 endpoints_security.go。
+// “当前用户”“修改资料”等与用户字段有关的接口由产品实现。
 //
 // 需要登录的接口声明了 rest.RequireAuth()，网页会话（Cookie）、access token 与 API Key（Bearer）都可以访问，
-// 需要在 API 上挂载 rest.Authorize(api, users.VerifyAccessToken)。修改密码、登录设备、两步验证、
+// 需要在 API 上挂载 rest.Authorize(api, users.VerifyAccessToken, a.Gate)。修改密码、登录设备、两步验证、
 // API Key 管理等敏感接口不接受 API Key。
 // 登录、注册、找回密码、验证码等接口应在产品中限流（rest.RateLimit）。
+//
+// 处理函数直接返回领域错误，由 rest.NewErrorWithContext 转换为对应的状态码与多语言提示。
 
 var tags = []string{"账号"}
-
-// UserDTO 是返回给客户端的账号信息。
-type UserDTO struct {
-	ID            string    `json:"id" format:"uuid"`
-	Email         string    `json:"email" format:"email"`
-	Name          string    `json:"name"`
-	AvatarURL     string    `json:"avatar_url,omitempty" doc:"头像地址，没有头像时省略"`
-	EmailVerified bool      `json:"email_verified"`
-	HasPassword   bool      `json:"has_password" doc:"只用第三方登录注册的账号没有密码，修改密码时不需要填写当前密码"`
-	CreatedAt     time.Time `json:"created_at"`
-	LastLoginAt   time.Time `json:"last_login_at,omitzero"`
-}
-
-// UserDTO 返回 u 的 UserDTO。
-func (s *Service) UserDTO(u *User) UserDTO {
-	return UserDTO{ID: u.ID.String(), Email: u.Email, Name: u.Name, AvatarURL: s.AvatarURL(u),
-		EmailVerified: u.EmailVerified(), HasPassword: u.HasPassword(),
-		CreatedAt: u.CreatedAt, LastLoginAt: u.LastLoginAt}
-}
 
 // TokensDTO 是登录、刷新返回的凭证。
 type TokensDTO struct {
@@ -107,8 +92,6 @@ func (c *clientInput) Resolve(ctx huma.Context) []error {
 
 func (c *clientInput) client() ClientInfo { return ClientInfo{IP: c.ip, UserAgent: c.UserAgent} }
 
-type userOutput struct{ Body UserDTO }
-
 type tokensOutput struct{ Body TokensDTO }
 
 // LoginDTO 是登录的结果：要么直接得到凭证，要么需要两步验证（mfa_required 为 true，
@@ -121,39 +104,10 @@ type LoginDTO struct {
 
 type loginOutput struct{ Body LoginDTO }
 
-// mapError 把领域错误转换为 HTTP 错误，其他错误原样返回（500）。
-func mapError(err error) error {
-	switch {
-	case errors.Is(err, ErrInvalidCredentials):
-		return huma.Error401Unauthorized("邮箱或密码错误")
-	case errors.Is(err, ErrUserDisabled):
-		return huma.Error403Forbidden("账号已停用")
-	case errors.Is(err, ErrEmailTaken):
-		return huma.Error409Conflict("邮箱已被注册")
-	case errors.Is(err, ErrWeakPassword):
-		return huma.Error422UnprocessableEntity("密码太短")
-	case errors.Is(err, ErrInvalidToken):
-		return huma.Error401Unauthorized("凭证无效或已过期")
-	case errors.Is(err, ErrNotFound):
-		return huma.Error404NotFound("不存在")
-	case errors.Is(err, ErrInvalidImage):
-		return huma.Error422UnprocessableEntity("请上传 JPEG、PNG、GIF 或 WebP 图片（不超过 10 MB）")
-	case errors.Is(err, ErrInvalidMFACode):
-		return huma.Error422UnprocessableEntity("验证码错误")
-	case errors.Is(err, ErrMFAEnabled):
-		return huma.Error409Conflict("已启用两步验证")
-	case errors.Is(err, ErrMFANotEnabled):
-		return huma.Error409Conflict("未启用两步验证")
-	case errors.Is(err, ErrLastLoginMethod):
-		return huma.Error409Conflict("这是唯一的登录方式，请先设置密码")
-	}
-	return err
-}
-
 func principal(ctx context.Context) (*Principal, error) {
 	p, ok := auth.From[*Principal](ctx)
 	if !ok { // rest.Authorize 未挂载或接口未声明 Security
-		return nil, huma.Error401Unauthorized("未登录")
+		return nil, auth.ErrUnauthenticated
 	}
 	return p, nil
 }
@@ -162,29 +116,40 @@ func principal(ctx context.Context) (*Principal, error) {
 func userPrincipal(ctx context.Context) (*Principal, error) {
 	p, err := principal(ctx)
 	if err == nil && p.IsAPIKey() {
-		return nil, huma.Error403Forbidden("API Key 不能访问此接口")
+		return nil, ErrAPIKeyNotAllowed
 	}
 	return p, err
 }
 
-type registerInput struct {
+type registeredOutput struct {
 	Body struct {
-		Email    string `json:"email" format:"email" maxLength:"254"`
-		Password string `json:"password" minLength:"1" maxLength:"128"`
-		Name     string `json:"name,omitempty" maxLength:"100"`
+		ID string `json:"id" format:"uuid" doc:"新用户的 ID"`
 	}
 }
 
-// RegisterEndpoint 注册账号，成功返回 201 与账号信息（不自动登录）。
-func RegisterEndpoint(s *Service) rest.Endpoint[registerInput, userOutput] {
-	return rest.Endpoint[registerInput, userOutput]{
+// RegisterEndpoint 注册账号，成功返回 201 与用户 ID（不自动登录）。输入 I 由产品定义（huma 校验其字段），
+// create 由产品实现：校验并写 users 表，见 Service.Register。
+//
+//	type registerInput struct {
+//		Body struct {
+//			Email    string `json:"email" format:"email" maxLength:"254"`
+//			Password string `json:"password" maxLength:"128"`
+//			Name     string `json:"name" maxLength:"100"`
+//		}
+//	}
+//	rest.Post(v1, "/auth/register", account.RegisterEndpoint(users,
+//		func(ctx context.Context, tx bun.Tx, in *registerInput) (uuid.UUID, error) { ... }))
+func RegisterEndpoint[I any](s *Service, create func(ctx context.Context, tx bun.Tx, in *I) (uuid.UUID, error)) rest.Endpoint[I, registeredOutput] {
+	return rest.Endpoint[I, registeredOutput]{
 		Operation: huma.Operation{OperationID: "account-register", Summary: "注册", Tags: tags, DefaultStatus: http.StatusCreated},
-		Handler: func(ctx context.Context, in *registerInput) (*userOutput, error) {
-			u, err := s.Register(ctx, in.Body.Email, in.Body.Password, in.Body.Name)
+		Handler: func(ctx context.Context, in *I) (*registeredOutput, error) {
+			id, err := s.Register(ctx, func(ctx context.Context, tx bun.Tx) (uuid.UUID, error) { return create(ctx, tx, in) })
 			if err != nil {
-				return nil, mapError(err)
+				return nil, err
 			}
-			return &userOutput{Body: s.UserDTO(u)}, nil
+			out := &registeredOutput{}
+			out.Body.ID = id.String()
+			return out, nil
 		},
 	}
 }
@@ -205,11 +170,12 @@ func LoginEndpoint(s *Service) rest.Endpoint[loginInput, loginOutput] {
 		Operation: huma.Operation{OperationID: "account-login", Summary: "登录", Tags: tags},
 		Handler: func(ctx context.Context, in *loginInput) (*loginOutput, error) {
 			t, err := s.Login(ctx, in.Body.Email, in.Body.Password, in.Body.Remember, in.client())
-			if mfaErr, ok := errors.AsType[*MFARequiredError](err); ok {
+			var mfaErr *MFARequiredError
+			if errors.As(err, &mfaErr) {
 				return &loginOutput{Body: LoginDTO{MFARequired: true, MFAToken: mfaErr.Challenge}}, nil
 			}
 			if err != nil {
-				return nil, mapError(err)
+				return nil, err
 			}
 			return &loginOutput{Body: LoginDTO{TokensDTO: toTokensDTO(t)}}, nil
 		},
@@ -230,7 +196,7 @@ func RefreshEndpoint(s *Service) rest.Endpoint[refreshInput, tokensOutput] {
 		Handler: func(ctx context.Context, in *refreshInput) (*tokensOutput, error) {
 			t, err := s.Refresh(ctx, in.Body.RefreshToken, in.client())
 			if err != nil {
-				return nil, mapError(err)
+				return nil, err
 			}
 			return &tokensOutput{Body: toTokensDTO(t)}, nil
 		},
@@ -283,55 +249,28 @@ func ResetPasswordEndpoint(s *Service) rest.Endpoint[resetInput, struct{}] {
 		Operation: huma.Operation{OperationID: "account-reset-password", Summary: "重置密码", Tags: tags,
 			DefaultStatus: http.StatusNoContent},
 		Handler: func(ctx context.Context, in *resetInput) (*struct{}, error) {
-			if err := s.ResetPassword(ctx, in.Body.Token, in.Body.NewPassword); err != nil {
-				if errors.Is(err, ErrInvalidToken) {
-					return nil, huma.Error400BadRequest("链接无效或已过期")
-				}
-				return nil, mapError(err)
-			}
-			return nil, nil
+			return nil, s.ResetPassword(ctx, in.Body.Token, in.Body.NewPassword)
 		},
 	}
 }
 
-// MeEndpoint 返回当前账号信息。
-func MeEndpoint(s *Service) rest.Endpoint[struct{}, userOutput] {
-	return rest.Endpoint[struct{}, userOutput]{
-		Operation: huma.Operation{OperationID: "account-me", Summary: "当前账号", Tags: tags, Security: rest.RequireAuth()},
-		Handler: func(ctx context.Context, _ *struct{}) (*userOutput, error) {
-			p, err := principal(ctx)
-			if err != nil {
-				return nil, err
-			}
-			u, err := s.User(ctx, p.ID)
-			if err != nil {
-				return nil, mapError(err)
-			}
-			return &userOutput{Body: s.UserDTO(u)}, nil
-		},
-	}
-}
-
-type updateMeInput struct {
+type localeInput struct {
 	Body struct {
-		Name string `json:"name" maxLength:"100"`
+		Locale string `json:"locale" maxLength:"35" doc:"语言标签，如 zh-CN、en；空串表示跟随请求的 Accept-Language"`
 	}
 }
 
-// UpdateMeEndpoint 修改当前账号的名称。
-func UpdateMeEndpoint(s *Service) rest.Endpoint[updateMeInput, userOutput] {
-	return rest.Endpoint[updateMeInput, userOutput]{
-		Operation: huma.Operation{OperationID: "account-update-me", Summary: "修改账号信息", Tags: tags, Security: rest.RequireAuth()},
-		Handler: func(ctx context.Context, in *updateMeInput) (*userOutput, error) {
-			p, err := principal(ctx)
+// SetLocaleEndpoint 设置当前用户的语言，邮件与通知使用它。
+func SetLocaleEndpoint(s *Service) rest.Endpoint[localeInput, struct{}] {
+	return rest.Endpoint[localeInput, struct{}]{
+		Operation: huma.Operation{OperationID: "account-set-locale", Summary: "设置语言", Tags: tags,
+			DefaultStatus: http.StatusNoContent, Security: rest.RequireAuth()},
+		Handler: func(ctx context.Context, in *localeInput) (*struct{}, error) {
+			p, err := userPrincipal(ctx)
 			if err != nil {
 				return nil, err
 			}
-			u, err := s.UpdateName(ctx, p.ID, in.Body.Name)
-			if err != nil {
-				return nil, mapError(err)
-			}
-			return &userOutput{Body: s.UserDTO(u)}, nil
+			return nil, s.SetLocale(ctx, p.ID, in.Body.Locale)
 		},
 	}
 }
@@ -353,11 +292,7 @@ func ChangePasswordEndpoint(s *Service) rest.Endpoint[changePasswordInput, struc
 			if err != nil {
 				return nil, err
 			}
-			err = s.ChangePassword(ctx, p.ID, p.SessionID, in.Body.CurrentPassword, in.Body.NewPassword)
-			if errors.Is(err, ErrInvalidCredentials) {
-				return nil, huma.Error422UnprocessableEntity("当前密码错误")
-			}
-			return nil, mapError(err)
+			return nil, s.ChangePassword(ctx, p.ID, p.SessionID, in.Body.CurrentPassword, in.Body.NewPassword)
 		},
 	}
 }
@@ -406,9 +341,9 @@ func RevokeSessionEndpoint(s *Service) rest.Endpoint[revokeSessionInput, struct{
 			}
 			id, err := uuid.Parse(in.ID)
 			if err != nil {
-				return nil, huma.Error404NotFound("不存在")
+				return nil, ErrNotFound
 			}
-			return nil, mapError(s.RevokeSession(ctx, p.ID, id))
+			return nil, s.RevokeSession(ctx, p.ID, id)
 		},
 	}
 }
@@ -419,12 +354,18 @@ type avatarInput struct {
 	}]
 }
 
-// SetAvatarEndpoint 上传头像（multipart/form-data，字段名 file），返回更新后的账号信息。
-func SetAvatarEndpoint(a *Avatars) rest.Endpoint[avatarInput, userOutput] {
-	return rest.Endpoint[avatarInput, userOutput]{
+type avatarOutput struct {
+	Body struct {
+		AvatarURL string `json:"avatar_url" doc:"新头像的地址"`
+	}
+}
+
+// SetAvatarEndpoint 上传头像（multipart/form-data，字段名 file），返回新头像的地址。
+func SetAvatarEndpoint(a *Avatars) rest.Endpoint[avatarInput, avatarOutput] {
+	return rest.Endpoint[avatarInput, avatarOutput]{
 		Operation: huma.Operation{OperationID: "account-set-avatar", Summary: "上传头像", Tags: tags,
 			Security: rest.RequireAuth(), MaxBodyBytes: MaxAvatarBytes + 1<<20},
-		Handler: func(ctx context.Context, in *avatarInput) (*userOutput, error) {
+		Handler: func(ctx context.Context, in *avatarInput) (*avatarOutput, error) {
 			p, err := principal(ctx)
 			if err != nil {
 				return nil, err
@@ -433,27 +374,27 @@ func SetAvatarEndpoint(a *Avatars) rest.Endpoint[avatarInput, userOutput] {
 			defer f.Close()
 			u, err := a.Set(ctx, p.ID, f)
 			if err != nil {
-				return nil, mapError(err)
+				return nil, err
 			}
-			return &userOutput{Body: a.users.UserDTO(u)}, nil
+			out := &avatarOutput{}
+			out.Body.AvatarURL = a.users.AvatarURL(u.AvatarKey)
+			return out, nil
 		},
 	}
 }
 
-// RemoveAvatarEndpoint 删除头像，返回更新后的账号信息。
-func RemoveAvatarEndpoint(a *Avatars) rest.Endpoint[struct{}, userOutput] {
-	return rest.Endpoint[struct{}, userOutput]{
-		Operation: huma.Operation{OperationID: "account-remove-avatar", Summary: "删除头像", Tags: tags, Security: rest.RequireAuth()},
-		Handler: func(ctx context.Context, _ *struct{}) (*userOutput, error) {
+// RemoveAvatarEndpoint 删除头像。
+func RemoveAvatarEndpoint(a *Avatars) rest.Endpoint[struct{}, struct{}] {
+	return rest.Endpoint[struct{}, struct{}]{
+		Operation: huma.Operation{OperationID: "account-remove-avatar", Summary: "删除头像", Tags: tags,
+			DefaultStatus: http.StatusNoContent, Security: rest.RequireAuth()},
+		Handler: func(ctx context.Context, _ *struct{}) (*struct{}, error) {
 			p, err := principal(ctx)
 			if err != nil {
 				return nil, err
 			}
-			u, err := a.Remove(ctx, p.ID)
-			if err != nil {
-				return nil, mapError(err)
-			}
-			return &userOutput{Body: a.users.UserDTO(u)}, nil
+			_, err = a.Remove(ctx, p.ID)
+			return nil, err
 		},
 	}
 }

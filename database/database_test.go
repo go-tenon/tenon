@@ -2,12 +2,13 @@ package database_test
 
 import (
 	"database/sql"
-	"errors"
 	"os"
 	"strings"
 	"testing"
 	"time"
 	"uuid"
+
+	"github.com/cockroachdb/errors"
 
 	"github.com/uptrace/bun"
 	"golang.org/x/sync/errgroup"

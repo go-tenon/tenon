@@ -2,12 +2,12 @@ package account
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
 	"uuid"
+
+	"github.com/cockroachdb/errors"
 
 	"github.com/alexedwards/scs/v2"
 
@@ -24,19 +24,16 @@ const (
 // 网页会话的最近活跃时间最多每隔这么久更新一次，避免每个请求都写库。
 const touchInterval = 5 * time.Minute
 
-// WebLogin 为已通过 Authenticate 的用户创建网页会话：在 user_sessions 中记录一行，
+// WebLogin 为已通过认证的用户（如 Authenticate、注册后）创建网页会话：在 user_sessions 中记录一行，
 // 更换 Cookie 会话的 token（防会话固定攻击）并保存会话 ID。会话有效期与 sm.Lifetime 相同。
-//
-//	u, err := users.Authenticate(ctx, email, password)
-//	...
-//	err = users.WebLogin(ctx, a.Sessions, u, r)
-func (s *Service) WebLogin(ctx context.Context, sm *scs.SessionManager, u *User, r *http.Request) error {
-	sess := &Session{UserID: u.ID, Kind: KindWeb, ExpiresAt: s.now().Add(sm.Lifetime)}
+// 不检查两步验证，登录表单请用 WebBeginLogin。
+func (s *Service) WebLogin(ctx context.Context, sm *scs.SessionManager, userID uuid.UUID, r *http.Request) error {
+	sess := &Session{UserID: userID, Kind: KindWeb, ExpiresAt: s.now().Add(sm.Lifetime)}
 	if err := s.createSession(ctx, sess, ClientInfo{IP: httpx.ClientIP(r), UserAgent: r.UserAgent()}); err != nil {
 		return err
 	}
 	if err := sm.RenewToken(ctx); err != nil {
-		return fmt.Errorf("account: web login: %w", err)
+		return errors.Wrap(err, "account: web login")
 	}
 	sm.Put(ctx, webSessionKey, sess.ID.String())
 	return nil
@@ -48,20 +45,20 @@ func (s *Service) WebLogin(ctx context.Context, sm *scs.SessionManager, u *User,
 //
 //	u, err := users.Authenticate(ctx, email, password)
 //	...
-//	mfa, err := users.WebBeginLogin(ctx, a.Sessions, u, r)
+//	mfa, err := users.WebBeginLogin(ctx, a.Sessions, u.ID, r)
 //	if mfa { redirect("/login/mfa") } else { redirect("/") }
-func (s *Service) WebBeginLogin(ctx context.Context, sm *scs.SessionManager, u *User, r *http.Request) (mfaRequired bool, err error) {
-	st, err := s.MFAStatus(ctx, u.ID)
+func (s *Service) WebBeginLogin(ctx context.Context, sm *scs.SessionManager, userID uuid.UUID, r *http.Request) (mfaRequired bool, err error) {
+	st, err := s.MFAStatus(ctx, userID)
 	if err != nil {
 		return false, err
 	}
 	if !st.Enabled {
-		return false, s.WebLogin(ctx, sm, u, r)
+		return false, s.WebLogin(ctx, sm, userID, r)
 	}
 	if err := sm.RenewToken(ctx); err != nil {
-		return false, fmt.Errorf("account: web login: %w", err)
+		return false, errors.Wrap(err, "account: web login")
 	}
-	sm.Put(ctx, mfaUserKey, u.ID.String())
+	sm.Put(ctx, mfaUserKey, userID.String())
 	sm.Put(ctx, mfaAtKey, s.now().Unix())
 	return true, nil
 }
@@ -109,7 +106,7 @@ func (s *Service) WebCompleteMFA(ctx context.Context, sm *scs.SessionManager, co
 	}
 	sm.Remove(ctx, mfaUserKey)
 	sm.Remove(ctx, mfaAtKey)
-	return s.WebLogin(ctx, sm, u, r)
+	return s.WebLogin(ctx, sm, id, r)
 }
 
 // WebLogout 注销当前网页会话并销毁 Cookie 会话。
@@ -120,7 +117,7 @@ func (s *Service) WebLogout(ctx context.Context, sm *scs.SessionManager) error {
 		}
 	}
 	if err := sm.Destroy(ctx); err != nil {
-		return fmt.Errorf("account: web logout: %w", err)
+		return errors.Wrap(err, "account: web logout")
 	}
 	return nil
 }

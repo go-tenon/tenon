@@ -1,8 +1,9 @@
 package database_test
 
 import (
-	"errors"
 	"testing"
+
+	"github.com/cockroachdb/errors"
 
 	"github.com/ryan053857/go-kit/database"
 )

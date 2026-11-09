@@ -3,8 +3,9 @@ package database_test
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"uuid"
+
+	"github.com/cockroachdb/errors"
 
 	"github.com/uptrace/bun"
 

@@ -1,0 +1,289 @@
+package pages
+
+import (
+	"strconv"
+	"time"
+
+	"github.com/ryan053857/go-kit/modules/audit"
+	"github.com/ryan053857/go-kit/examples/starter/components/alert"
+	"github.com/ryan053857/go-kit/examples/starter/components/badge"
+	"github.com/ryan053857/go-kit/examples/starter/components/button"
+	"github.com/ryan053857/go-kit/examples/starter/components/card"
+	"github.com/ryan053857/go-kit/examples/starter/components/input"
+	"github.com/ryan053857/go-kit/examples/starter/components/table"
+)
+
+func fmtTime(t time.Time) string {
+	if t.IsZero() {
+		return "—"
+	}
+	return t.In(time.Local).Format("2006-01-02 15:04")
+}
+
+templ securityPage(d *securityData) {
+	<div class="flex flex-col gap-6">
+		@settingsNav("/settings/security")
+		@mfaCard(d.MFA)
+		@apiKeysCard(d.APIKeys)
+		if len(d.Identities) > 0 {
+			@identitiesCard(d.Identities)
+		}
+		@securityLogCard(d.Logs)
+	</div>
+}
+
+// codeForm 是提交验证码的行内表单，由 HTMX 提交并替换整个卡片。
+templ codeForm(action, label string, variant button.Variant, hidden map[string]string) {
+	<form hx-post={ action } hx-target="#mfa-card" hx-swap="outerHTML" class="flex items-center gap-2">
+		for k, v := range hidden {
+			<input type="hidden" name={ k } value={ v }/>
+		}
+		@input.Input(input.Props{Name: "code", Placeholder: "6 位验证码或恢复码", Required: true, Class: "w-48",
+			Attributes: templ.Attributes{"autocomplete": "one-time-code"}})
+		@button.Button(button.Props{Type: button.TypeSubmit, Variant: variant}) {
+			{ label }
+		}
+	</form>
+}
+
+templ mfaCard(d mfaData) {
+	<div id="mfa-card">
+		@card.Card() {
+			@card.Header() {
+				@card.Title(card.TitleProps{Class: "flex items-center gap-2"}) {
+					两步验证
+					if d.Status.Enabled {
+						@badge.Badge(badge.Props{Variant: badge.VariantSecondary}) {
+							已启用
+						}
+					}
+				}
+				@card.Description() {
+					登录时除密码外，还需要输入验证器 App（如 Google Authenticator、1Password）中的验证码
+				}
+			}
+			@card.Content(card.ContentProps{Class: "flex flex-col gap-4"}) {
+				@formError(d.Error)
+				if len(d.Codes) > 0 {
+					@alert.Alert() {
+						@alert.Title() {
+							请保存以下恢复码
+						}
+						@alert.Description() {
+							手机丢失时可以用恢复码登录，每个只能使用一次。恢复码只显示这一次。
+						}
+					}
+					<div class="bg-muted grid grid-cols-2 gap-2 rounded-md p-4 font-mono text-sm sm:grid-cols-5">
+						for _, c := range d.Codes {
+							<span>{ c }</span>
+						}
+					</div>
+					<div>
+						@button.Button(button.Props{Href: "/settings/security", Variant: button.VariantOutline}) {
+							我已保存
+						}
+					</div>
+				} else if d.Setup != nil {
+					<div class="flex flex-col gap-4 sm:flex-row sm:items-start">
+						<img src={ templ.SafeURL(d.QRCode) } alt="两步验证二维码" class="size-40 rounded-md border bg-white p-2"/>
+						<div class="flex flex-col gap-3 text-sm">
+							<p>1. 用验证器 App 扫描二维码；无法扫码时手动输入密钥：</p>
+							<code class="bg-muted rounded px-2 py-1 font-mono break-all">{ d.Setup.Secret }</code>
+							<p>2. 输入 App 中显示的 6 位验证码：</p>
+							@codeForm("/settings/mfa/enable", "启用", button.VariantDefault, map[string]string{"secret": d.Setup.Secret, "url": d.Setup.URL})
+						</div>
+					</div>
+				} else if d.Status.Enabled {
+					<p class="text-muted-foreground text-sm">
+						启用于 { fmtTime(d.Status.EnabledAt) }，剩余恢复码 { strconv.Itoa(d.Status.RecoveryCodes) } 个。
+						输入验证码后可以重新生成恢复码或关闭两步验证。
+					</p>
+					<div class="flex flex-col gap-3">
+						@codeForm("/settings/mfa/recovery-codes", "重新生成恢复码", button.VariantOutline, nil)
+						@codeForm("/settings/mfa/disable", "关闭两步验证", button.VariantDestructive, nil)
+					</div>
+				} else {
+					<div>
+						@button.Button(button.Props{Attributes: templ.Attributes{"hx-post": "/settings/mfa/setup", "hx-target": "#mfa-card", "hx-swap": "outerHTML"}}) {
+							启用两步验证
+						}
+					</div>
+				}
+			}
+		}
+	</div>
+}
+
+templ apiKeysCard(d apiKeysData) {
+	<div id="api-keys-card">
+		@card.Card() {
+			@card.Header() {
+				@card.Title() {
+					API Key
+				}
+				@card.Description() {
+					供脚本或第三方系统调用 API：放在请求头 Authorization: Bearer &lt;API Key&gt; 中。
+				}
+			}
+			@card.Content(card.ContentProps{Class: "flex flex-col gap-4"}) {
+				@formError(d.Error)
+				if d.NewToken != "" {
+					@alert.Alert() {
+						@alert.Title() {
+							API Key 已创建，请立即复制保存，它只显示这一次
+						}
+						@alert.Description() {
+							<code class="bg-muted mt-2 block rounded px-2 py-1 font-mono break-all select-all">{ d.NewToken }</code>
+						}
+					}
+				}
+				if len(d.Keys) > 0 {
+					@table.Table() {
+						@table.Header() {
+							@table.Row() {
+								@table.Head() {
+									名称
+								}
+								@table.Head() {
+									Key
+								}
+								@table.Head() {
+									最近使用
+								}
+								@table.Head() {
+									创建时间
+								}
+								@table.Head() {
+								}
+							}
+						}
+						@table.Body() {
+							for _, k := range d.Keys {
+								@table.Row() {
+									@table.Cell() {
+										{ k.Name }
+									}
+									@table.Cell(table.CellProps{Class: "font-mono text-xs"}) {
+										sk_…{ k.Hint }
+									}
+									@table.Cell() {
+										{ fmtTime(k.LastUsedAt) }
+									}
+									@table.Cell() {
+										{ fmtTime(k.CreatedAt) }
+									}
+									@table.Cell(table.CellProps{Class: "text-right"}) {
+										@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm,
+											Attributes: templ.Attributes{
+												"hx-post":    "/settings/api-keys/" + k.ID.String() + "/revoke",
+												"hx-target":  "#api-keys-card",
+												"hx-swap":    "outerHTML",
+												"hx-confirm": "删除后使用该 Key 的程序将无法访问，确定删除？",
+											}}) {
+											删除
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+				<form hx-post="/settings/api-keys" hx-target="#api-keys-card" hx-swap="outerHTML" class="flex items-center gap-2">
+					@input.Input(input.Props{Name: "name", Placeholder: "用途，如：数据同步脚本", Required: true, Class: "max-w-64"})
+					@button.Button(button.Props{Type: button.TypeSubmit, Variant: button.VariantOutline}) {
+						创建 API Key
+					}
+				</form>
+			}
+		}
+	</div>
+}
+
+templ identitiesCard(items []identityItem) {
+	<div id="identities-card">
+		@card.Card() {
+			@card.Header() {
+				@card.Title() {
+					第三方账号
+				}
+				@card.Description() {
+					绑定后可以用第三方账号登录
+				}
+			}
+			@card.Content(card.ContentProps{Class: "flex flex-col gap-3"}) {
+				for _, it := range items {
+					<div class="flex items-center gap-3 text-sm">
+						<span class="w-20 font-medium">{ it.Provider.Label }</span>
+						if it.Identity != nil {
+							<span class="text-muted-foreground flex-1">{ it.Identity.Name } { it.Identity.Email }</span>
+							@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm,
+								Attributes: templ.Attributes{
+									"hx-post":    "/settings/identities/" + it.Identity.ID.String() + "/unlink",
+									"hx-target":  "#identities-card",
+									"hx-swap":    "outerHTML",
+									"hx-confirm": "确定解绑？",
+								}}) {
+								解绑
+							}
+						} else {
+							<span class="text-muted-foreground flex-1">未绑定</span>
+							@button.Button(button.Props{Href: "/auth/" + it.Provider.Name + "?next=/settings/security", Variant: button.VariantOutline, Size: button.SizeSm}) {
+								绑定
+							}
+						}
+					</div>
+				}
+			}
+		}
+	</div>
+}
+
+templ securityLogCard(logs []audit.Log) {
+	@card.Card() {
+		@card.Header() {
+			@card.Title() {
+				安全日志
+			}
+			@card.Description() {
+				最近 20 条登录与安全相关的操作
+			}
+		}
+		@card.Content() {
+			@table.Table() {
+				@table.Header() {
+					@table.Row() {
+						@table.Head() {
+							时间
+						}
+						@table.Head() {
+							操作
+						}
+						@table.Head() {
+							IP
+						}
+					}
+				}
+				@table.Body() {
+					for _, l := range logs {
+						@table.Row() {
+							@table.Cell() {
+								{ fmtTime(l.CreatedAt) }
+							}
+							@table.Cell() {
+								{ l.Summary }
+								if l.Failed {
+									@badge.Badge(badge.Props{Variant: badge.VariantDestructive, Class: "ml-2"}) {
+										失败
+									}
+								}
+							}
+							@table.Cell() {
+								{ l.IP }
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}

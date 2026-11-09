@@ -1,0 +1,141 @@
+package views
+
+import (
+	"strconv"
+
+	"github.com/ryan053857/go-kit/examples/starter/components"
+	"github.com/ryan053857/go-kit/examples/starter/components/button"
+	"github.com/ryan053857/go-kit/examples/starter/components/card"
+	"github.com/ryan053857/go-kit/examples/starter/components/icon"
+	"github.com/ryan053857/go-kit/examples/starter/components/toast"
+)
+
+// Layout 是整页布局，页面内容通过 web.Page 作为 children 传入。
+templ Layout(p Page) {
+	<!DOCTYPE html>
+	<html lang="zh-CN">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<title>{ p.Title } · { p.SiteName }</title>
+			<link rel="stylesheet" href={ Static.URL("css/output.css") }/>
+			@components.Scripts()
+			<script defer src={ Vendor.URL("htmx.min.js") }></script>
+		</head>
+		<body class="bg-muted/40 min-h-svh font-sans antialiased">
+			if p.User != nil {
+				<header class="bg-background border-b">
+					<div class="mx-auto flex h-14 max-w-4xl items-center gap-2 px-4">
+						<a href="/" class="mr-4 font-semibold">{ p.SiteName }</a>
+						@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeSm, Href: "/"}) {
+							笔记
+						}
+						@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeSm, Href: "/settings"}) {
+							账号设置
+						}
+						if p.IsAdmin {
+							@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeSm, Href: "/admin/settings"}) {
+								管理
+							}
+						}
+						<div class="ml-auto flex items-center gap-3 text-sm">
+							@NotificationBell(p.Unread)
+							@Avatar(p.AvatarURL, DisplayName(p.User), "size-7")
+							<span class="text-muted-foreground">{ DisplayName(p.User) }</span>
+							<form method="post" action="/logout">
+								@button.Button(button.Props{Type: button.TypeSubmit, Variant: button.VariantOutline, Size: button.SizeSm}) {
+									退出
+								}
+							</form>
+						</div>
+					</div>
+				</header>
+			}
+			<main id="content" class="mx-auto max-w-4xl px-4 py-8">
+				{ children... }
+			</main>
+			@toast.Toaster()
+			if p.Flash != "" {
+				@toastMarker(p.Flash, false)
+			}
+		</body>
+	</html>
+}
+
+// NotificationBell 是页头的通知入口，每 30 秒用 HTMX 刷新未读数。
+templ NotificationBell(unread int) {
+	<a
+		href="/notifications"
+		class="hover:bg-accent relative inline-flex size-8 items-center justify-center rounded-md"
+		title="通知"
+		hx-get="/notifications/bell"
+		hx-trigger="every 30s"
+		hx-swap="outerHTML"
+	>
+		@icon.Bell(icon.Props{Size: 18})
+		if unread > 0 {
+			<span class="bg-destructive absolute -top-0.5 -right-0.5 min-w-4 rounded-full px-1 text-center text-[10px] leading-4 text-white">
+				if unread > 99 {
+					99+
+				} else {
+					{ strconv.Itoa(unread) }
+				}
+			</span>
+		}
+	</a>
+}
+
+// Avatar 显示头像；没有头像时显示名称的首字。
+templ Avatar(url, name, class string) {
+	if url != "" {
+		<img src={ url } alt={ name } class={ "bg-muted rounded-full object-cover", class }/>
+	} else {
+		<span class={ "bg-muted text-muted-foreground inline-flex items-center justify-center rounded-full text-xs font-medium", class }>
+			{ initial(name) }
+		</span>
+	}
+}
+
+// AuthCard 是登录、注册等页面居中的卡片。
+templ AuthCard(title, description string) {
+	<div class="flex min-h-[70svh] items-center justify-center">
+		@card.Card(card.Props{Class: "w-full max-w-sm"}) {
+			@card.Header() {
+				@card.Title() {
+					{ title }
+				}
+				if description != "" {
+					@card.Description() {
+						{ description }
+					}
+				}
+			}
+			@card.Content() {
+				{ children... }
+			}
+		}
+	</div>
+}
+
+templ toastMarker(msg string, isError bool) {
+	if isError {
+		@toast.Toast(toast.Props{Title: msg, Type: toast.TypeError})
+	} else {
+		@toast.Toast(toast.Props{Title: msg, Type: toast.TypeSuccess})
+	}
+}
+
+// ToastOOB 在 HTMX 响应中附带一条提示：通过 hx-swap-oob 追加到 body，不影响主体内容的替换。
+templ ToastOOB(msg string, isError bool) {
+	<div hx-swap-oob="beforeend:body">
+		@toastMarker(msg, isError)
+	</div>
+}
+
+templ errorContent(status int, msg string) {
+	@AuthCard(strconv.Itoa(status), msg) {
+		@button.Button(button.Props{Href: "/", Variant: button.VariantOutline, Class: "w-full"}) {
+			返回首页
+		}
+	}
+}

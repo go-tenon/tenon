@@ -1,8 +1,9 @@
 package support_test
 
 import (
-	"errors"
 	"fmt"
+
+	"github.com/cockroachdb/errors"
 
 	"github.com/ryan053857/go-kit/support"
 )

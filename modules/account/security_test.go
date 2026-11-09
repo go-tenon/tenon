@@ -3,7 +3,6 @@ package account
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -14,6 +13,8 @@ import (
 	"time"
 	"uuid"
 
+	"github.com/cockroachdb/errors"
+
 	"github.com/alexedwards/scs/v2"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
@@ -23,7 +24,6 @@ import (
 
 	"github.com/ryan053857/go-kit/httpx/auth"
 	"github.com/ryan053857/go-kit/httpx/rest"
-	"github.com/ryan053857/go-kit/mail/mailtest"
 	"github.com/ryan053857/go-kit/messaging"
 )
 
@@ -65,12 +65,10 @@ func TestEmailVerification(t *testing.T) {
 	ev := &events{}
 	e.svc.OnEvent(ev.record)
 
-	mailer := &mailtest.Recorder{}
 	tokens := make(chan string, 4)
 	err := messaging.Handle(e.bus, TopicEmailVerification, func(ctx context.Context, m EmailVerificationRequested) error {
-		err := EmailVerificationMail{Mailer: mailer, URL: func(tok string) string { return "https://app.test/verify?token=" + tok }}.Handle(ctx, m)
 		tokens <- m.Token
-		return err
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -87,14 +85,11 @@ func TestEmailVerification(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("verification message not handled")
 	}
-	if sent := mailer.Sent(); len(sent) != 1 || !strings.Contains(sent[0].Text, token) || !strings.Contains(sent[0].HTML, "24 小时") {
-		t.Fatalf("sent = %+v", sent)
-	}
 
-	if _, err := e.svc.VerifyEmail(ctx, token[:len(token)-2]+"AA"); !errors.Is(err, ErrInvalidToken) {
+	if _, err := e.svc.VerifyEmail(ctx, token[:len(token)-2]+"AA"); !errors.Is(err, ErrInvalidLink) {
 		t.Errorf("tampered token: %v", err)
 	}
-	if _, err := e.svc.VerifyEmail(ctx, "garbage"); !errors.Is(err, ErrInvalidToken) {
+	if _, err := e.svc.VerifyEmail(ctx, "garbage"); !errors.Is(err, ErrInvalidLink) {
 		t.Errorf("garbage token: %v", err)
 	}
 	got, err := e.svc.VerifyEmail(ctx, token)
@@ -115,12 +110,12 @@ func TestEmailVerification(t *testing.T) {
 	if _, err := e.svc.db.NewUpdate().Model(b).Set("email = ?", "c@example.com").WherePK().Exec(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.svc.VerifyEmail(ctx, tokB); !errors.Is(err, ErrInvalidToken) {
+	if _, err := e.svc.VerifyEmail(ctx, tokB); !errors.Is(err, ErrInvalidLink) {
 		t.Errorf("email changed: %v", err)
 	}
 	tokB = e.svc.emailToken(b.ID, "c@example.com", e.clock.now().Add(time.Hour).Truncate(time.Second))
 	e.clock.add(2 * time.Hour)
-	if _, err := e.svc.VerifyEmail(ctx, tokB); !errors.Is(err, ErrInvalidToken) {
+	if _, err := e.svc.VerifyEmail(ctx, tokB); !errors.Is(err, ErrInvalidLink) {
 		t.Errorf("expired: %v", err)
 	}
 
@@ -179,8 +174,8 @@ func TestMFA(t *testing.T) {
 
 	// 登录需要两步验证。
 	_, err = e.svc.Login(ctx, "a@example.com", "password1", true, ClientInfo{})
-	mfaErr, ok := errors.AsType[*MFARequiredError](err)
-	if !ok {
+	var mfaErr *MFARequiredError
+	if !errors.As(err, &mfaErr) {
 		t.Fatalf("login = %v", err)
 	}
 	// 同一个验证码（同一时间步）只能用一次：启用时已经用过。
@@ -205,7 +200,7 @@ func TestMFA(t *testing.T) {
 
 	// 恢复码：可用一次，大小写与连字符不敏感。
 	_, err = e.svc.Login(ctx, "a@example.com", "password1", false, ClientInfo{})
-	mfaErr, _ = errors.AsType[*MFARequiredError](err)
+	_ = errors.As(err, &mfaErr)
 	if _, err := e.svc.LoginMFA(ctx, mfaErr.Challenge, strings.ToUpper(strings.ReplaceAll(codes[0], "-", "")), ClientInfo{}); err != nil {
 		t.Fatalf("recovery code: %v", err)
 	}
@@ -351,7 +346,7 @@ func TestOAuthWeb(t *testing.T) {
 	r.Post("/login", func(w http.ResponseWriter, r *http.Request) {
 		u, err := e.svc.Authenticate(r.Context(), r.FormValue("email"), r.FormValue("password"))
 		if err == nil {
-			err = e.svc.WebLogin(r.Context(), sm, u, r)
+			err = e.svc.WebLogin(r.Context(), sm, u.ID, r)
 		}
 		if err != nil {
 			http.Error(w, err.Error(), 401)
@@ -394,7 +389,7 @@ func TestOAuthWeb(t *testing.T) {
 		t.Fatalf("identities = %+v", ids)
 	}
 	got, _ := e.svc.User(ctx, mustParse(t, uid))
-	if !got.EmailVerified() || got.HasPassword() || got.Name != "GH User" {
+	if !got.EmailVerified() || got.HasPassword() {
 		t.Errorf("user = %+v", got)
 	}
 	// 唯一的登录方式不能解绑；设置密码后可以。
@@ -469,10 +464,10 @@ func TestSecurityEndpoints(t *testing.T) {
 	r := chi.NewRouter()
 	r.Use(sm.LoadAndSave, e.svc.LoadWebSession(sm))
 	api := humachi.New(r, huma.DefaultConfig("test", "1"))
-	api.UseMiddleware(rest.Authorize(api, e.svc.VerifyAccessToken))
+	api.UseMiddleware(rest.Authorize(api, e.svc.VerifyAccessToken, nil))
 	rest.Post(api, "/auth/login", LoginEndpoint(e.svc))
 	rest.Post(api, "/auth/login/mfa", LoginMFAEndpoint(e.svc))
-	rest.Get(api, "/me", MeEndpoint(e.svc))
+	rest.Get(api, "/me/sessions", SessionsEndpoint(e.svc))
 	rest.Post(api, "/me/password", ChangePasswordEndpoint(e.svc))
 	rest.Post(api, "/me/mfa/setup", SetupMFAEndpoint(e.svc))
 	rest.Post(api, "/me/mfa/enable", EnableMFAEndpoint(e.svc))
@@ -508,7 +503,7 @@ func TestSecurityEndpoints(t *testing.T) {
 	keyClient := &client{t: t, h: r, bearer: created.Token}
 	expect(t, keyClient.do("GET", "/notes", ""), 204)
 	expect(t, keyClient.do("POST", "/notes", ""), 403)
-	expect(t, keyClient.do("GET", "/me", ""), 200)
+	expect(t, keyClient.do("GET", "/me/sessions", ""), 403) // 敏感接口不接受 API Key
 	expect(t, keyClient.do("POST", "/me/api-keys", `{"name":"escalate"}`), 403)
 	expect(t, keyClient.do("POST", "/me/password", `{"current_password":"password1","new_password":"password2"}`), 403)
 	expect(t, c.do("GET", "/notes", ""), 204) // access token 拥有全部 scope

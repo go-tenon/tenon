@@ -42,7 +42,7 @@ func LoginMFAEndpoint(s *Service) rest.Endpoint[loginMFAInput, tokensOutput] {
 		Handler: func(ctx context.Context, in *loginMFAInput) (*tokensOutput, error) {
 			t, err := s.LoginMFA(ctx, in.Body.MFAToken, in.Body.Code, in.client())
 			if err != nil {
-				return nil, mapError(err)
+				return nil, err
 			}
 			return &tokensOutput{Body: toTokensDTO(t)}, nil
 		},
@@ -55,16 +55,13 @@ type tokenInput struct {
 	}
 }
 
-// VerifyEmailEndpoint 用验证邮件中的 token 验证邮箱，返回账号信息。
-func VerifyEmailEndpoint(s *Service) rest.Endpoint[tokenInput, userOutput] {
-	return rest.Endpoint[tokenInput, userOutput]{
-		Operation: huma.Operation{OperationID: "account-verify-email", Summary: "验证邮箱", Tags: tags},
-		Handler: func(ctx context.Context, in *tokenInput) (*userOutput, error) {
-			u, err := s.VerifyEmail(ctx, in.Body.Token)
-			if err != nil {
-				return nil, mapError(err)
-			}
-			return &userOutput{Body: s.UserDTO(u)}, nil
+// VerifyEmailEndpoint 用验证邮件中的 token 验证邮箱。
+func VerifyEmailEndpoint(s *Service) rest.Endpoint[tokenInput, struct{}] {
+	return rest.Endpoint[tokenInput, struct{}]{
+		Operation: huma.Operation{OperationID: "account-verify-email", Summary: "验证邮箱", Tags: tags, DefaultStatus: http.StatusNoContent},
+		Handler: func(ctx context.Context, in *tokenInput) (*struct{}, error) {
+			_, err := s.VerifyEmail(ctx, in.Body.Token)
+			return nil, err
 		},
 	}
 }
@@ -79,7 +76,7 @@ func SendVerificationEmailEndpoint(s *Service) rest.Endpoint[struct{}, struct{}]
 			if err != nil {
 				return nil, err
 			}
-			return nil, mapError(s.RequestEmailVerification(ctx, p.ID))
+			return nil, s.RequestEmailVerification(ctx, p.ID)
 		},
 	}
 }
@@ -129,7 +126,7 @@ func SetupMFAEndpoint(s *Service) rest.Endpoint[struct{}, mfaSetupOutput] {
 			}
 			setup, err := s.SetupMFA(ctx, p.ID)
 			if err != nil {
-				return nil, mapError(err)
+				return nil, err
 			}
 			out := &mfaSetupOutput{}
 			out.Body.Secret, out.Body.URL = setup.Secret, setup.URL
@@ -161,7 +158,7 @@ func EnableMFAEndpoint(s *Service) rest.Endpoint[codeInput, recoveryCodesOutput]
 			}
 			codes, err := s.EnableMFA(ctx, p.ID, in.Body.Code)
 			if err != nil {
-				return nil, mapError(err)
+				return nil, err
 			}
 			out := &recoveryCodesOutput{}
 			out.Body.RecoveryCodes = codes
@@ -180,7 +177,7 @@ func DisableMFAEndpoint(s *Service) rest.Endpoint[codeInput, struct{}] {
 			if err != nil {
 				return nil, err
 			}
-			return nil, mapError(s.DisableMFA(ctx, p.ID, in.Body.Code))
+			return nil, s.DisableMFA(ctx, p.ID, in.Body.Code)
 		},
 	}
 }
@@ -196,7 +193,7 @@ func RegenerateRecoveryCodesEndpoint(s *Service) rest.Endpoint[codeInput, recove
 			}
 			codes, err := s.RegenerateRecoveryCodes(ctx, p.ID, in.Body.Code)
 			if err != nil {
-				return nil, mapError(err)
+				return nil, err
 			}
 			out := &recoveryCodesOutput{}
 			out.Body.RecoveryCodes = codes
@@ -271,7 +268,7 @@ func CreateAPIKeyEndpoint(s *Service) rest.Endpoint[createAPIKeyInput, createAPI
 				return nil, err
 			}
 			if !in.Body.ExpiresAt.IsZero() && !in.Body.ExpiresAt.After(time.Now()) {
-				return nil, huma.Error422UnprocessableEntity("过期时间必须晚于现在")
+				return nil, ErrInvalidExpiry
 			}
 			k, token, err := s.CreateAPIKey(ctx, p.ID, in.Body.Name, in.Body.Scopes, in.Body.ExpiresAt)
 			if err != nil {
@@ -300,9 +297,9 @@ func RevokeAPIKeyEndpoint(s *Service) rest.Endpoint[idInput, struct{}] {
 			}
 			id, err := uuid.Parse(in.ID)
 			if err != nil {
-				return nil, huma.Error404NotFound("不存在")
+				return nil, ErrNotFound
 			}
-			return nil, mapError(s.RevokeAPIKey(ctx, p.ID, id))
+			return nil, s.RevokeAPIKey(ctx, p.ID, id)
 		},
 	}
 }
@@ -353,9 +350,9 @@ func UnlinkIdentityEndpoint(s *Service) rest.Endpoint[idInput, struct{}] {
 			}
 			id, err := uuid.Parse(in.ID)
 			if err != nil {
-				return nil, huma.Error404NotFound("不存在")
+				return nil, ErrNotFound
 			}
-			return nil, mapError(s.UnlinkIdentity(ctx, p.ID, id))
+			return nil, s.UnlinkIdentity(ctx, p.ID, id)
 		},
 	}
 }

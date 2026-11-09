@@ -2,10 +2,10 @@ package database
 
 import (
 	"context"
-	"fmt"
 	"runtime"
 	"time"
 
+	"github.com/cockroachdb/errors"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/uptrace/bun"
@@ -55,7 +55,7 @@ func Open(ctx context.Context, cfg Config) (*bun.DB, error) {
 	}
 	if err := db.PingContext(ctx); err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("database: ping: %w", err)
+		return nil, errors.Wrap(err, "database: ping")
 	}
 	return db, nil
 }
@@ -66,7 +66,7 @@ func New(cfg Config) (*bun.DB, error) {
 	pgxCfg, err := pgx.ParseConfig(string(cfg.DSN))
 	if err != nil {
 		// pgx 的解析错误会对密码打码，可以直接返回。
-		return nil, fmt.Errorf("database: %w", err)
+		return nil, errors.Wrap(err, "database")
 	}
 
 	sqldb := stdlib.OpenDB(*pgxCfg)

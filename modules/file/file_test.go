@@ -2,8 +2,6 @@ package file_test
 
 import (
 	"bytes"
-	"context"
-	"errors"
 	"image"
 	"image/png"
 	"mime/multipart"
@@ -14,12 +12,15 @@ import (
 	"testing"
 	"uuid"
 
+	"github.com/cockroachdb/errors"
+
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
 
 	"github.com/ryan053857/go-kit/database"
 	"github.com/ryan053857/go-kit/database/dbtest"
+	"github.com/ryan053857/go-kit/httpx/auth"
 	"github.com/ryan053857/go-kit/httpx/rest"
 	"github.com/ryan053857/go-kit/modules/file"
 	"github.com/ryan053857/go-kit/storage"
@@ -42,7 +43,7 @@ func newService(t *testing.T, cfg file.Config) (*file.Service, storage.Storage) 
 		t.Fatal(err)
 	}
 	store := storage.NewLocal(t.TempDir())
-	return file.NewService(db, store, cfg), store
+	return file.New(db, store, cfg), store
 }
 
 func pngBytes() []byte {
@@ -109,12 +110,9 @@ func TestUploadAndTypes(t *testing.T) {
 	}
 }
 
-type ctxKey struct{}
+type principal struct{ id uuid.UUID }
 
-func currentUser(ctx context.Context) (uuid.UUID, bool) {
-	id, ok := ctx.Value(ctxKey{}).(uuid.UUID)
-	return id, ok
-}
+func (p principal) UserID() uuid.UUID { return p.id }
 
 func TestEndpoints(t *testing.T) {
 	s, _ := newService(t, file.DefaultConfig())
@@ -124,14 +122,14 @@ func TestEndpoints(t *testing.T) {
 	r.Use(func(next http.Handler) http.Handler { // 用 X-User 头模拟登录
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if id, err := uuid.Parse(r.Header.Get("X-User")); err == nil {
-				r = r.WithContext(context.WithValue(r.Context(), ctxKey{}, id))
+				r = r.WithContext(auth.WithPrincipal(r.Context(), principal{id}))
 			}
 			next.ServeHTTP(w, r)
 		})
 	})
 	api := humachi.New(r, huma.DefaultConfig("test", "1"))
-	rest.Post(api, "/files", file.UploadEndpoint(s, currentUser), func(o *huma.Operation) { o.Security = nil })
-	r.Get("/files/{id}", s.DownloadHandler(file.OwnerOnly(currentUser)).ServeHTTP)
+	rest.Post(api, "/files", file.UploadEndpoint(s), func(o *huma.Operation) { o.Security = nil })
+	r.Get("/files/{id}", s.DownloadHandler(file.OwnerOnly).ServeHTTP)
 
 	var body bytes.Buffer
 	mw := multipart.NewWriter(&body)

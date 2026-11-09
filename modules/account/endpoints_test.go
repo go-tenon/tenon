@@ -1,41 +1,61 @@
 package account
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+	"uuid"
 
 	"github.com/alexedwards/scs/v2"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
+	"github.com/uptrace/bun"
 
 	"github.com/ryan053857/go-kit/httpx/auth"
 	"github.com/ryan053857/go-kit/httpx/rest"
 	"github.com/ryan053857/go-kit/httpx/web"
+	"github.com/ryan053857/go-kit/i18n"
 )
+
+// registerInput 是产品定义的注册输入。
+type registerInput struct {
+	Body struct {
+		Email    string `json:"email" format:"email"`
+		Password string `json:"password"`
+		Name     string `json:"name,omitempty"`
+	}
+}
 
 // newServer 按包文档的推荐方式挂载全部接口与一个网页登录表单。
 func newServer(t *testing.T, e *env) http.Handler {
 	t.Helper()
 	sm := scs.New()
 	r := chi.NewRouter()
-	r.Use(sm.LoadAndSave, e.svc.LoadWebSession(sm))
+	r.Use(i18n.Middleware, sm.LoadAndSave, e.svc.LoadWebSession(sm))
 
 	api := humachi.New(r, huma.DefaultConfig("test", "1"))
-	api.UseMiddleware(rest.Authorize(api, e.svc.VerifyAccessToken))
+	api.UseMiddleware(rest.Authorize(api, e.svc.VerifyAccessToken, nil))
 	v1 := huma.NewGroup(api, "/api/v1")
-	rest.Post(v1, "/auth/register", RegisterEndpoint(e.svc))
+	rest.Post(v1, "/auth/register", RegisterEndpoint(e.svc, func(ctx context.Context, tx bun.Tx, in *registerInput) (uuid.UUID, error) {
+		if err := e.svc.CheckPassword(in.Body.Password); err != nil {
+			return uuid.Nil(), err
+		}
+		u := &User{}
+		u.Email, u.PasswordHash = NormalizeEmail(in.Body.Email), HashPassword(in.Body.Password)
+		_, err := tx.NewInsert().Model(u).Exec(ctx)
+		return u.ID, err
+	}))
 	rest.Post(v1, "/auth/login", LoginEndpoint(e.svc))
 	rest.Post(v1, "/auth/refresh", RefreshEndpoint(e.svc))
 	rest.Post(v1, "/auth/logout", LogoutEndpoint(e.svc))
 	rest.Post(v1, "/auth/forgot-password", ForgotPasswordEndpoint(e.svc))
 	rest.Post(v1, "/auth/reset-password", ResetPasswordEndpoint(e.svc))
-	rest.Get(v1, "/me", MeEndpoint(e.svc))
-	rest.Patch(v1, "/me", UpdateMeEndpoint(e.svc))
+	rest.Put(v1, "/me/locale", SetLocaleEndpoint(e.svc))
 	rest.Post(v1, "/me/password", ChangePasswordEndpoint(e.svc))
 	rest.Get(v1, "/me/sessions", SessionsEndpoint(e.svc))
 	rest.Delete(v1, "/me/sessions/{id}", RevokeSessionEndpoint(e.svc))
@@ -45,7 +65,7 @@ func newServer(t *testing.T, e *env) http.Handler {
 		if err != nil {
 			return huma.Error401Unauthorized("bad credentials")
 		}
-		return e.svc.WebLogin(r.Context(), sm, u, r)
+		return e.svc.WebLogin(r.Context(), sm, u.ID, r)
 	}).ServeHTTP)
 	r.Post("/logout", web.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
 		return e.svc.WebLogout(r.Context(), sm)
@@ -63,9 +83,12 @@ type client struct {
 	cookie *http.Cookie
 }
 
-func (c *client) do(method, path, body string) *httptest.ResponseRecorder {
+func (c *client) do(method, path, body string, header ...string) *httptest.ResponseRecorder {
 	c.t.Helper()
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	for i := 0; i+1 < len(header); i += 2 {
+		req.Header.Set(header[i], header[i+1])
+	}
 	if strings.HasPrefix(body, "{") {
 		req.Header.Set("Content-Type", "application/json")
 	} else if body != "" {
@@ -98,10 +121,18 @@ func TestEndpointsAPI(t *testing.T) {
 
 	expect(t, c.do("POST", "/api/v1/auth/register", `{"email":"a@example.com","password":"password1","name":"A"}`), 201)
 	expect(t, c.do("POST", "/api/v1/auth/register", `{"email":"a@example.com","password":"password1"}`), 409)
-	expect(t, c.do("POST", "/api/v1/auth/register", `{"email":"b@example.com","password":"short"}`), 422)
-	expect(t, c.do("POST", "/api/v1/auth/login", `{"email":"a@example.com","password":"nope"}`), 401)
+	rec := c.do("POST", "/api/v1/auth/register", `{"email":"b@example.com","password":"short"}`)
+	expect(t, rec, 422)
+	if !strings.Contains(rec.Body.String(), `"code":"account.weak_password"`) || !strings.Contains(rec.Body.String(), "密码至少 8 位") {
+		t.Errorf("weak password = %s", rec.Body)
+	}
+	rec = c.do("POST", "/api/v1/auth/login", `{"email":"a@example.com","password":"nope"}`, "Accept-Language", "en")
+	expect(t, rec, 401)
+	if !strings.Contains(rec.Body.String(), "Incorrect email or password.") {
+		t.Errorf("localized error = %s", rec.Body)
+	}
 
-	rec := c.do("POST", "/api/v1/auth/login", `{"email":"a@example.com","password":"password1"}`)
+	rec = c.do("POST", "/api/v1/auth/login", `{"email":"a@example.com","password":"password1"}`, "Accept-Language", "en")
 	expect(t, rec, 200)
 	var tok TokensDTO
 	_ = json.Unmarshal(rec.Body.Bytes(), &tok)
@@ -109,17 +140,11 @@ func TestEndpointsAPI(t *testing.T) {
 		t.Fatalf("tokens = %+v", tok)
 	}
 
-	expect(t, c.do("GET", "/api/v1/me", ""), 401)
+	expect(t, c.do("GET", "/api/v1/me/sessions", ""), 401)
 	c.bearer = tok.AccessToken
-	rec = c.do("GET", "/api/v1/me", "")
-	expect(t, rec, 200)
-	if !strings.Contains(rec.Body.String(), `"email":"a@example.com"`) {
-		t.Errorf("me = %s", rec.Body)
-	}
-	rec = c.do("PATCH", "/api/v1/me", `{"name":"Alice"}`)
-	expect(t, rec, 200)
-	if !strings.Contains(rec.Body.String(), `"name":"Alice"`) {
-		t.Errorf("update me = %s", rec.Body)
+	expect(t, c.do("PUT", "/api/v1/me/locale", `{"locale":"en-US"}`), 204)
+	if u, _ := e.svc.Authenticate(t.Context(), "a@example.com", "password1"); u.Locale != "en" {
+		t.Errorf("locale = %q", u.Locale)
 	}
 
 	rec = c.do("POST", "/api/v1/auth/refresh", `{"refresh_token":"`+tok.RefreshToken+`"}`)

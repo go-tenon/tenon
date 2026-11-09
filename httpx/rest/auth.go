@@ -2,11 +2,13 @@ package rest
 
 import (
 	"context"
-	"errors"
 	"net/http"
+
+	"github.com/cockroachdb/errors"
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/ryan053857/go-kit/authz"
 	"github.com/ryan053857/go-kit/httpx/auth"
 )
 
@@ -29,22 +31,22 @@ func SecuritySchemes(cookieName string) map[string]*huma.SecurityScheme {
 }
 
 // RequireAuth 返回 huma.Operation.Security 的值：Bearer 或 Session 任一认证通过，
-// 且 Principal 具备全部 scopes 即可访问。
+// 且当前用户具有全部 abilities（见 authz）即可访问。
 //
 //	huma.Register(api, huma.Operation{
 //		...
-//		Security: rest.RequireAuth("order:write"),
+//		Security: rest.RequireAuth("order.update"),
 //	}, a.handle)
 //
 // 只允许其中一种方式时，直接按 OpenAPI 的格式书写，例如
 // []map[string][]string{{rest.SchemeBearer: {}}}。
-func RequireAuth(scopes ...string) []map[string][]string {
-	if scopes == nil {
-		scopes = []string{}
+func RequireAuth(abilities ...string) []map[string][]string {
+	if abilities == nil {
+		abilities = []string{}
 	}
 	return []map[string][]string{
-		{SchemeBearer: scopes},
-		{SchemeSession: scopes},
+		{SchemeBearer: abilities},
+		{SchemeSession: abilities},
 	}
 }
 
@@ -56,13 +58,14 @@ func RequireAuth(scopes ...string) []map[string][]string {
 //   - SchemeSession：context 中已有类型为 P 的 Principal（由 auth.LoadSession 放入）即通过。
 //   - SchemeBearer：调用 verifyBearer 校验 Authorization 头中的 token，通过后用 auth.WithPrincipal 放入 context。
 //     verifyBearer 为 nil 时 Bearer 始终不通过。
-//   - 声明了 scope 时，Principal 必须实现 auth.ScopeChecker 且具备全部 scope。
+//   - Security 中声明的 scope 是能力（ability）：由 gate.Allows 判断（gate 同时检查 API Key 等凭证的 scope）；
+//     gate 为 nil 时只要求 Principal 实现 auth.ScopeChecker 且具备全部 scope。
 //
-// 未认证时响应 401；已认证但 scope 不足时响应 403。
+// 未认证时响应 401；已认证但没有能力时响应 403。
 // verifyBearer 返回 auth.ErrUnauthenticated 时按 token 无效处理，返回其他错误时响应 500。
 //
-//	api.UseMiddleware(rest.Authorize(api, tokens.Verify))
-func Authorize[P auth.Principal](api huma.API, verifyBearer func(ctx context.Context, token string) (P, error)) func(huma.Context, func(huma.Context)) {
+//	api.UseMiddleware(rest.Authorize(api, users.VerifyAccessToken, gate))
+func Authorize[P auth.Principal](api huma.API, verifyBearer func(ctx context.Context, token string) (P, error), gate *authz.Gate) func(huma.Context, func(huma.Context)) {
 	return func(ctx huma.Context, next func(huma.Context)) {
 		reqs := ctx.Operation().Security
 		if len(reqs) == 0 {
@@ -123,7 +126,7 @@ func Authorize[P auth.Principal](api huma.API, verifyBearer func(ctx context.Con
 					}
 				case SchemeBearer:
 					if err := checkBearer(); err != nil {
-						_ = huma.WriteErr(api, ctx, http.StatusInternalServerError, "authentication failed", err)
+						_ = huma.WriteErr(api, ctx, http.StatusInternalServerError, "verify bearer token", err)
 						return
 					}
 					if !hasBearer {
@@ -139,36 +142,41 @@ func Authorize[P auth.Principal](api huma.API, verifyBearer func(ctx context.Con
 				continue
 			}
 			authenticated = true
-			if !hasScopes(p, scopes) {
+			pc := c
+			if fromBearer {
+				pc = auth.WithPrincipal(c, p)
+			}
+			if !allowed(pc, p, scopes, gate) {
 				continue
 			}
-
 			if fromBearer {
-				ctx = huma.WithContext(ctx, auth.WithPrincipal(c, p))
+				ctx = huma.WithContext(ctx, pc)
 			}
 			next(ctx)
 			return
 		}
 
 		if authenticated {
-			_ = huma.WriteErr(api, ctx, http.StatusForbidden, "insufficient permissions")
+			_ = huma.WriteErr(api, ctx, http.StatusForbidden, "", authz.ErrForbidden)
 			return
 		}
 		ctx.SetHeader("WWW-Authenticate", "Bearer")
-		_ = huma.WriteErr(api, ctx, http.StatusUnauthorized, "authentication required")
+		_ = huma.WriteErr(api, ctx, http.StatusUnauthorized, "", auth.ErrUnauthenticated)
 	}
 }
 
-func hasScopes(p auth.Principal, scopes []string) bool {
-	if len(scopes) == 0 {
-		return true
-	}
-	sc, ok := p.(auth.ScopeChecker)
-	if !ok {
-		return false
-	}
-	for _, s := range scopes {
-		if !sc.HasScope(s) {
+// allowed 检查 Security 中声明的能力：有 gate 时由 gate 判断（同时检查 Principal 的 scope），
+// 否则只检查 Principal 的 scope。ctx 中已有 p。
+func allowed(ctx context.Context, p auth.Principal, abilities []string, gate *authz.Gate) bool {
+	for _, a := range abilities {
+		if gate != nil {
+			if !gate.Allows(ctx, a) {
+				return false
+			}
+			continue
+		}
+		sc, ok := p.(auth.ScopeChecker)
+		if !ok || !sc.HasScope(a) {
 			return false
 		}
 	}

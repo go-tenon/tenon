@@ -1,0 +1,4 @@
+export.not_found: 导出任务不存在
+export.unknown_kind: 不支持的导出类型
+export.unknown_format: 不支持的导出格式（csv 或 xlsx）
+export.failed: 导出失败，请稍后重试

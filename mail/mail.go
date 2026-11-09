@@ -21,8 +21,8 @@ package mail
 
 import (
 	"context"
-	"errors"
-	"fmt"
+
+	"github.com/cockroachdb/errors"
 
 	"github.com/ryan053857/go-kit/config"
 )
@@ -76,7 +76,7 @@ func New(cfg Config) (Mailer, error) {
 	case DriverResend:
 		return newResend(cfg)
 	}
-	return nil, fmt.Errorf("mail: unknown driver %q", cfg.Driver)
+	return nil, errors.Newf("mail: unknown driver %q", cfg.Driver)
 }
 
 func validate(m Message) error {

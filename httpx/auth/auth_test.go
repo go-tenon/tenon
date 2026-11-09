@@ -4,13 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"uuid"
+
+	"github.com/cockroachdb/errors"
 
 	"github.com/alexedwards/scs/v2"
 	"github.com/alexedwards/scs/v2/memstore"
@@ -19,22 +21,26 @@ import (
 	"github.com/ryan053857/go-kit/logger"
 )
 
-type user struct{ id string }
+const u1 = "01900000-0000-7000-8000-000000000001"
 
-func (u *user) UserID() string { return u.id }
+type user struct{ id uuid.UUID }
 
-type apiClient struct{ id string }
+func (u *user) UserID() uuid.UUID { return u.id }
 
-func (c apiClient) UserID() string { return c.id }
+func (u *user) String() string { return u.id.String() }
+
+type apiClient struct{ id uuid.UUID }
+
+func (c apiClient) UserID() uuid.UUID { return c.id }
 
 func TestPrincipalContext(t *testing.T) {
 	var buf bytes.Buffer
 	log := logger.New(logger.Options{Writer: &buf})
 
-	ctx := WithPrincipal(context.Background(), &user{"u-1"})
+	ctx := WithPrincipal(context.Background(), &user{uuid.MustParse(u1)})
 
 	u, ok := From[*user](ctx)
-	if !ok || u.id != "u-1" {
+	if !ok || u.id.String() != u1 {
 		t.Fatalf("From[*user] = %v, %v", u, ok)
 	}
 	// Different principal types do not collide.
@@ -48,7 +54,7 @@ func TestPrincipalContext(t *testing.T) {
 	log.InfoContext(ctx, "x")
 	var m map[string]any
 	_ = json.Unmarshal(buf.Bytes(), &m)
-	if m["user_id"] != "u-1" {
+	if m["user_id"] != u1 {
 		t.Errorf("log user_id = %v, want u-1", m["user_id"])
 	}
 }
@@ -107,7 +113,7 @@ func newSessionApp(t *testing.T) *sessionApp {
 	slog.SetDefault(logger.New(logger.Options{Writer: &app.logs}))
 	t.Cleanup(func() { slog.SetDefault(prev) })
 
-	load := func(ctx context.Context, id string) (*user, error) {
+	load := func(ctx context.Context, id uuid.UUID) (*user, error) {
 		if app.loadErr != nil {
 			return nil, app.loadErr
 		}
@@ -117,7 +123,7 @@ func newSessionApp(t *testing.T) *sessionApp {
 	r := chi.NewRouter()
 	r.Use(app.sm.LoadAndSave, LoadSession(app.sm, load))
 	r.Post("/login", func(w http.ResponseWriter, r *http.Request) {
-		if err := Login(r.Context(), app.sm, r.FormValue("id")); err != nil {
+		if err := Login(r.Context(), app.sm, uuid.MustParse(r.FormValue("id"))); err != nil {
 			t.Error(err)
 		}
 	})
@@ -131,7 +137,7 @@ func newSessionApp(t *testing.T) *sessionApp {
 	})
 	r.Get("/me", func(w http.ResponseWriter, r *http.Request) {
 		if u, ok := From[*user](r.Context()); ok {
-			_, _ = io.WriteString(w, u.id)
+			_, _ = io.WriteString(w, u.id.String())
 		}
 	})
 	r.Group(func(r chi.Router) {
@@ -184,11 +190,11 @@ func TestSessionLoginFlow(t *testing.T) {
 		t.Fatalf("anonymous /me = %q, want empty", body)
 	}
 
-	logged := sessionCookie(t, app.do("POST", "/login?id=u-1", anon, nil))
+	logged := sessionCookie(t, app.do("POST", "/login?id="+u1, anon, nil))
 	if logged.Value == anon.Value {
 		t.Error("Login must renew the session token")
 	}
-	if body := app.do("GET", "/me", logged, nil).Body.String(); body != "u-1" {
+	if body := app.do("GET", "/me", logged, nil).Body.String(); body != u1 {
 		t.Errorf("/me = %q, want u-1", body)
 	}
 	if rec := app.do("GET", "/private", logged, nil); rec.Code != 200 || rec.Body.String() != "secret" {
@@ -204,7 +210,7 @@ func TestSessionLoginFlow(t *testing.T) {
 func TestLoadSessionErrors(t *testing.T) {
 	t.Run("unauthenticated user is logged out", func(t *testing.T) {
 		app := newSessionApp(t)
-		cookie := sessionCookie(t, app.do("POST", "/login?id=u-1", nil, nil))
+		cookie := sessionCookie(t, app.do("POST", "/login?id="+u1, nil, nil))
 
 		app.loadErr = errors.Join(errors.New("user disabled"), ErrUnauthenticated)
 		if rec := app.do("GET", "/me", cookie, nil); rec.Code != 200 || rec.Body.String() != "" {
@@ -219,7 +225,7 @@ func TestLoadSessionErrors(t *testing.T) {
 
 	t.Run("other errors respond 500 and log", func(t *testing.T) {
 		app := newSessionApp(t)
-		cookie := sessionCookie(t, app.do("POST", "/login?id=u-1", nil, nil))
+		cookie := sessionCookie(t, app.do("POST", "/login?id="+u1, nil, nil))
 
 		app.loadErr = errors.New("db down")
 		if rec := app.do("GET", "/me", cookie, nil); rec.Code != 500 {

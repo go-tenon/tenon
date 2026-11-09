@@ -3,12 +3,12 @@ package account
 import (
 	"context"
 	"database/sql"
-	"errors"
-	"fmt"
 	"log/slog"
 	"strings"
 	"time"
 	"uuid"
+
+	"github.com/cockroachdb/errors"
 
 	"github.com/ryan053857/go-kit/httpx/auth"
 	"github.com/ryan053857/go-kit/support/random"
@@ -34,7 +34,7 @@ func (s *Service) CreateAPIKey(ctx context.Context, userID uuid.UUID, name strin
 		ExpiresAt: expiresAt,
 	}
 	if _, err := s.db.NewInsert().Model(k).Exec(ctx); err != nil {
-		return nil, "", fmt.Errorf("account: create api key: %w", err)
+		return nil, "", errors.Wrap(err, "account: create api key")
 	}
 	s.emit(ctx, Event{Type: EventAPIKeyCreated, UserID: userID, SubjectID: k.ID})
 	return k, token, nil
@@ -44,7 +44,7 @@ func (s *Service) CreateAPIKey(ctx context.Context, userID uuid.UUID, name strin
 func (s *Service) APIKeys(ctx context.Context, userID uuid.UUID) ([]APIKey, error) {
 	list := []APIKey{}
 	if err := s.db.NewSelect().Model(&list).Where("user_id = ?", userID).Order("id DESC").Scan(ctx); err != nil {
-		return nil, fmt.Errorf("account: list api keys: %w", err)
+		return nil, errors.Wrap(err, "account: list api keys")
 	}
 	return list, nil
 }
@@ -53,7 +53,7 @@ func (s *Service) APIKeys(ctx context.Context, userID uuid.UUID) ([]APIKey, erro
 func (s *Service) RevokeAPIKey(ctx context.Context, userID, keyID uuid.UUID) error {
 	res, err := s.db.NewDelete().Model((*APIKey)(nil)).Where("id = ? AND user_id = ?", keyID, userID).Exec(ctx)
 	if err != nil {
-		return fmt.Errorf("account: revoke api key: %w", err)
+		return errors.Wrap(err, "account: revoke api key")
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotFound
@@ -74,7 +74,7 @@ func (s *Service) verifyAPIKey(ctx context.Context, token string) (*Principal, e
 		return nil, auth.ErrUnauthenticated
 	}
 	if err != nil {
-		return nil, fmt.Errorf("account: verify api key: %w", err)
+		return nil, errors.Wrap(err, "account: verify api key")
 	}
 	if now.Sub(k.LastUsedAt) > apiKeyTouchInterval {
 		if _, err := s.db.NewUpdate().Model(k).Set("last_used_at = ?", now).WherePK().Exec(ctx); err != nil {

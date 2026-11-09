@@ -3,8 +3,6 @@ package account
 import (
 	"bytes"
 	"context"
-	"errors"
-	"fmt"
 	"image"
 	"image/color"
 	_ "image/gif" // 注册解码器
@@ -16,15 +14,14 @@ import (
 	"strings"
 	"uuid"
 
+	"github.com/cockroachdb/errors"
+
 	"golang.org/x/image/draw"
 	_ "golang.org/x/image/webp"
 
 	"github.com/ryan053857/go-kit/httpx/web"
 	"github.com/ryan053857/go-kit/storage"
 )
-
-// ErrInvalidImage 表示上传的头像不是支持的图片（JPEG、PNG、GIF、WebP）或尺寸过大。
-var ErrInvalidImage = errors.New("account: invalid image")
 
 const (
 	avatarSize      = 256
@@ -45,19 +42,19 @@ func NewAvatars(users *Service, store storage.Storage) *Avatars {
 	return &Avatars{users: users, store: store}
 }
 
-// AvatarURL 返回用户头像的地址，没有头像时返回空串。
-func (s *Service) AvatarURL(u *User) string {
-	if u.AvatarKey == "" {
+// AvatarURL 返回头像对象键（UserFields.AvatarKey）对应的地址，没有头像时返回空串。
+func (s *Service) AvatarURL(key string) string {
+	if key == "" {
 		return ""
 	}
-	return s.cfg.AvatarBaseURL + u.AvatarKey
+	return s.cfg.AvatarBaseURL + key
 }
 
 // Set 处理并保存新头像，替换旧头像。不是支持的图片时返回 ErrInvalidImage。
 func (a *Avatars) Set(ctx context.Context, userID uuid.UUID, r io.Reader) (*User, error) {
 	data, err := io.ReadAll(io.LimitReader(r, MaxAvatarBytes+1))
 	if err != nil {
-		return nil, fmt.Errorf("account: read avatar: %w", err)
+		return nil, errors.Wrap(err, "account: read avatar")
 	}
 	if len(data) > MaxAvatarBytes {
 		return nil, ErrInvalidImage
@@ -86,7 +83,7 @@ func (a *Avatars) Set(ctx context.Context, userID uuid.UUID, r io.Reader) (*User
 	}
 	if _, err := a.users.db.NewUpdate().Model(u).Column("avatar_key", "updated_at").WherePK().Exec(ctx); err != nil {
 		_ = a.store.Delete(context.WithoutCancel(ctx), u.AvatarKey)
-		return nil, fmt.Errorf("account: set avatar: %w", err)
+		return nil, errors.Wrap(err, "account: set avatar")
 	}
 	a.deleteObject(ctx, old)
 	return u, nil
@@ -104,7 +101,7 @@ func (a *Avatars) Remove(ctx context.Context, userID uuid.UUID) (*User, error) {
 	old := u.AvatarKey
 	u.AvatarKey = ""
 	if _, err := a.users.db.NewUpdate().Model(u).Column("avatar_key", "updated_at").WherePK().Exec(ctx); err != nil {
-		return nil, fmt.Errorf("account: remove avatar: %w", err)
+		return nil, errors.Wrap(err, "account: remove avatar")
 	}
 	a.deleteObject(ctx, old)
 	return u, nil
@@ -160,7 +157,7 @@ func encodeAvatar(src image.Image) ([]byte, error) {
 
 	var buf bytes.Buffer
 	if err := jpeg.Encode(&buf, dst, &jpeg.Options{Quality: 85}); err != nil {
-		return nil, fmt.Errorf("account: encode avatar: %w", err)
+		return nil, errors.Wrap(err, "account: encode avatar")
 	}
 	return buf.Bytes(), nil
 }

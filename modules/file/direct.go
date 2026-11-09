@@ -3,14 +3,14 @@ package file
 import (
 	"context"
 	"database/sql"
-	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"path"
 	"strings"
 	"time"
 	"uuid"
+
+	"github.com/cockroachdb/errors"
 
 	"github.com/uptrace/bun"
 
@@ -43,7 +43,7 @@ func (s *Service) CreateUpload(ctx context.Context, userID uuid.UUID, filename, 
 		return nil, nil, ErrNoDirectUpload
 	}
 	if size <= 0 || size > s.cfg.MaxDirectSize {
-		return nil, nil, ErrTooLarge
+		return nil, nil, s.tooLarge(s.cfg.MaxDirectSize)
 	}
 	filename = cleanFilename(filename)
 	ext := strings.ToLower(path.Ext(filename))
@@ -62,7 +62,7 @@ func (s *Service) CreateUpload(ctx context.Context, userID uuid.UUID, filename, 
 		return nil, nil, err
 	}
 	if _, err := s.db.NewInsert().Model(f).Exec(ctx); err != nil {
-		return nil, nil, fmt.Errorf("file: create upload: %w", err)
+		return nil, nil, errors.Wrap(err, "file: create upload")
 	}
 	up := &Upload{URL: put.URL, Method: "PUT", Header: map[string]string{}, ExpiresAt: put.ExpiresAt}
 	for k := range put.Header {
@@ -82,7 +82,7 @@ func (s *Service) CompleteUpload(ctx context.Context, userID, id uuid.UUID) (*Fi
 		return nil, ErrNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("file: complete upload: %w", err)
+		return nil, errors.Wrap(err, "file: complete upload")
 	}
 	if f.Status == StatusReady {
 		return f, nil
@@ -117,7 +117,7 @@ func (s *Service) CompleteUpload(ctx context.Context, userID, id uuid.UUID) (*Fi
 	_, err = s.db.NewUpdate().Model(f).Column("content_type", "status", "expires_at", "updated_at").
 		Where("id = ? AND status = ?", f.ID, StatusPending).Exec(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("file: complete upload: %w", err)
+		return nil, errors.Wrap(err, "file: complete upload")
 	}
 	return f, nil
 }
@@ -132,7 +132,7 @@ func (s *Service) Attach(ctx context.Context, db bun.IDB, ids ...uuid.UUID) erro
 		Where("id IN (?) AND status = ? AND (expires_at IS NULL OR expires_at > ?)", bun.List(ids), StatusReady, time.Now()).
 		Exec(ctx)
 	if err != nil {
-		return fmt.Errorf("file: attach: %w", err)
+		return errors.Wrap(err, "file: attach")
 	}
 	if n, _ := res.RowsAffected(); int(n) != len(ids) {
 		return ErrNotFound
@@ -149,7 +149,7 @@ func (s *Service) Cleanup(ctx context.Context) (int, error) {
 		err := s.db.NewSelect().Model(&files).Column("id", "key").
 			Where("expires_at < ?", time.Now()).Limit(500).Scan(ctx)
 		if err != nil {
-			return total, fmt.Errorf("file: cleanup: %w", err)
+			return total, errors.Wrap(err, "file: cleanup")
 		}
 		deleted := 0
 		for _, f := range files {
@@ -158,7 +158,7 @@ func (s *Service) Cleanup(ctx context.Context) (int, error) {
 				continue // 留到下次重试
 			}
 			if _, err := s.db.NewDelete().Model((*File)(nil)).Where("id = ?", f.ID).Exec(ctx); err != nil {
-				return total, fmt.Errorf("file: cleanup: %w", err)
+				return total, errors.Wrap(err, "file: cleanup")
 			}
 			deleted++
 		}

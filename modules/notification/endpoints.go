@@ -2,31 +2,29 @@ package notification
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"time"
 	"uuid"
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/ryan053857/go-kit/database"
+	"github.com/ryan053857/go-kit/httpx/auth"
 	"github.com/ryan053857/go-kit/httpx/rest"
 )
 
-// 以下函数返回通知相关的 REST 接口，user 返回当前用户 ID（如 account.CurrentUserID）：
+// 以下函数返回站内信的 REST 接口，当前用户取自 auth.UserID：
 //
-//	rest.Get(v1, "/notifications", notification.ListEndpoint(notes, account.CurrentUserID))
-//	rest.Get(v1, "/notifications/unread-count", notification.UnreadCountEndpoint(notes, account.CurrentUserID))
-//	rest.Post(v1, "/notifications/{id}/read", notification.MarkReadEndpoint(notes, account.CurrentUserID))
-//	rest.Post(v1, "/notifications/read-all", notification.MarkAllReadEndpoint(notes, account.CurrentUserID))
-//	rest.Delete(v1, "/notifications/{id}", notification.DeleteEndpoint(notes, account.CurrentUserID))
+//	rest.Get(v1, "/notifications", notification.ListEndpoint(notes))
+//	rest.Get(v1, "/notifications/unread-count", notification.UnreadCountEndpoint(notes))
+//	rest.Post(v1, "/notifications/{id}/read", notification.MarkReadEndpoint(notes))
+//	rest.Post(v1, "/notifications/read-all", notification.MarkAllReadEndpoint(notes))
+//	rest.Delete(v1, "/notifications/{id}", notification.DeleteEndpoint(notes))
 
-// CurrentUser 返回当前登录用户的 ID，例如 account.CurrentUserID。
-type CurrentUser func(ctx context.Context) (uuid.UUID, bool)
+var tags = []string{"notification"}
 
-var tags = []string{"通知"}
-
-// DTO 是返回给客户端的通知。
-type DTO struct {
+// MessageDTO 是返回给客户端的站内信。
+type MessageDTO struct {
 	ID        string         `json:"id" format:"uuid"`
 	Type      string         `json:"type" example:"order.shipped"`
 	Title     string         `json:"title"`
@@ -37,58 +35,45 @@ type DTO struct {
 	CreatedAt time.Time      `json:"created_at"`
 }
 
-// ToDTO 返回 n 的 DTO。
-func ToDTO(n *Notification) DTO {
-	return DTO{ID: n.ID.String(), Type: n.Type, Title: n.Title, Body: n.Body, URL: n.URL, Data: n.Data,
-		Read: n.Read(), CreatedAt: n.CreatedAt}
+// MessageDTO 返回 m 的 MessageDTO。
+func (s *Service) MessageDTO(m *Message) MessageDTO {
+	return MessageDTO{ID: m.ID.String(), Type: m.Type, Title: m.Title, Body: m.Body, URL: m.URL, Data: m.Data,
+		Read: m.Read(), CreatedAt: m.CreatedAt}
 }
 
-func uid(ctx context.Context, user CurrentUser) (uuid.UUID, error) {
-	id, ok := user(ctx)
+func currentUser(ctx context.Context) (uuid.UUID, error) {
+	id, ok := auth.UserID(ctx)
 	if !ok {
-		return id, huma.Error401Unauthorized("未登录")
+		return id, auth.ErrUnauthenticated
 	}
 	return id, nil
 }
 
-func mapError(err error) error {
-	if errors.Is(err, ErrNotFound) {
-		return huma.Error404NotFound("通知不存在")
-	}
-	return err
-}
-
 type listInput struct {
-	Unread bool   `query:"unread" doc:"只返回未读"`
-	Before string `query:"before" format:"uuid" doc:"上一页返回的 next，省略表示第一页"`
-	Limit  int    `query:"limit" minimum:"1" maximum:"100" default:"20"`
+	rest.PageInput
+	Unread bool `query:"unread" doc:"只返回未读"`
 }
 
-type listOutput struct {
-	Body struct {
-		Items []DTO  `json:"items"`
-		Next  string `json:"next,omitempty" doc:"下一页的 before 参数，没有更多时省略"`
-	}
-}
+type listOutput struct{ Body rest.Page[MessageDTO] }
 
-// ListEndpoint 列出当前用户的通知，最新的在前。
-func ListEndpoint(s *Service, user CurrentUser) rest.Endpoint[listInput, listOutput] {
+// ListEndpoint 列出当前用户的站内信，最新的在前（游标分页）。
+func ListEndpoint(s *Service) rest.Endpoint[listInput, listOutput] {
 	return rest.Endpoint[listInput, listOutput]{
-		Operation: huma.Operation{OperationID: "notification-list", Summary: "通知列表", Tags: tags, Security: rest.RequireAuth()},
+		Operation: huma.Operation{OperationID: "notification-list", Summary: "站内信列表", Tags: tags, Security: rest.RequireAuth()},
 		Handler: func(ctx context.Context, in *listInput) (*listOutput, error) {
-			id, err := uid(ctx, user)
+			uid, err := currentUser(ctx)
 			if err != nil {
 				return nil, err
 			}
-			before, _ := uuid.Parse(in.Before)
-			list, next, err := s.List(ctx, id, ListOptions{UnreadOnly: in.Unread, Before: before, Limit: in.Limit})
+			list, next, err := s.List(ctx, uid, ListOptions{UnreadOnly: in.Unread,
+				Cursor: database.ParseCursor(in.Before, in.Limit)})
 			if err != nil {
 				return nil, err
 			}
 			out := &listOutput{}
-			out.Body.Items = make([]DTO, 0, len(list))
+			out.Body.Items = make([]MessageDTO, 0, len(list))
 			for i := range list {
-				out.Body.Items = append(out.Body.Items, ToDTO(&list[i]))
+				out.Body.Items = append(out.Body.Items, s.MessageDTO(&list[i]))
 			}
 			if next != uuid.Nil() {
 				out.Body.Next = next.String()
@@ -104,17 +89,17 @@ type countOutput struct {
 	}
 }
 
-// UnreadCountEndpoint 返回当前用户的未读通知数。
-func UnreadCountEndpoint(s *Service, user CurrentUser) rest.Endpoint[struct{}, countOutput] {
+// UnreadCountEndpoint 返回当前用户的未读站内信数。
+func UnreadCountEndpoint(s *Service) rest.Endpoint[struct{}, countOutput] {
 	return rest.Endpoint[struct{}, countOutput]{
-		Operation: huma.Operation{OperationID: "notification-unread-count", Summary: "未读通知数", Tags: tags, Security: rest.RequireAuth()},
+		Operation: huma.Operation{OperationID: "notification-unread-count", Summary: "未读数", Tags: tags, Security: rest.RequireAuth()},
 		Handler: func(ctx context.Context, _ *struct{}) (*countOutput, error) {
-			id, err := uid(ctx, user)
+			uid, err := currentUser(ctx)
 			if err != nil {
 				return nil, err
 			}
 			out := &countOutput{}
-			out.Body.Count, err = s.UnreadCount(ctx, id)
+			out.Body.Count, err = s.UnreadCount(ctx, uid)
 			return out, err
 		},
 	}
@@ -124,55 +109,63 @@ type idInput struct {
 	ID string `path:"id" format:"uuid"`
 }
 
-// MarkReadEndpoint 把一条通知标记为已读。
-func MarkReadEndpoint(s *Service, user CurrentUser) rest.Endpoint[idInput, struct{}] {
+func parseID(s string) (uuid.UUID, error) {
+	id, err := uuid.Parse(s)
+	if err != nil {
+		return id, ErrNotFound
+	}
+	return id, nil
+}
+
+// MarkReadEndpoint 把一条站内信标记为已读。
+func MarkReadEndpoint(s *Service) rest.Endpoint[idInput, struct{}] {
 	return rest.Endpoint[idInput, struct{}]{
 		Operation: huma.Operation{OperationID: "notification-mark-read", Summary: "标记已读", Tags: tags,
 			DefaultStatus: http.StatusNoContent, Security: rest.RequireAuth()},
 		Handler: func(ctx context.Context, in *idInput) (*struct{}, error) {
-			id, err := uid(ctx, user)
+			uid, err := currentUser(ctx)
 			if err != nil {
 				return nil, err
 			}
-			nid, err := uuid.Parse(in.ID)
+			id, err := parseID(in.ID)
 			if err != nil {
-				return nil, mapError(ErrNotFound)
+				return nil, err
 			}
-			return nil, mapError(s.MarkRead(ctx, id, nid))
+			return nil, s.MarkRead(ctx, uid, id)
 		},
 	}
 }
 
-// MarkAllReadEndpoint 把当前用户的全部通知标记为已读。
-func MarkAllReadEndpoint(s *Service, user CurrentUser) rest.Endpoint[struct{}, struct{}] {
+// MarkAllReadEndpoint 把当前用户的全部站内信标记为已读。
+func MarkAllReadEndpoint(s *Service) rest.Endpoint[struct{}, struct{}] {
 	return rest.Endpoint[struct{}, struct{}]{
 		Operation: huma.Operation{OperationID: "notification-mark-all-read", Summary: "全部标记已读", Tags: tags,
 			DefaultStatus: http.StatusNoContent, Security: rest.RequireAuth()},
 		Handler: func(ctx context.Context, _ *struct{}) (*struct{}, error) {
-			id, err := uid(ctx, user)
+			uid, err := currentUser(ctx)
 			if err != nil {
 				return nil, err
 			}
-			return nil, s.MarkAllRead(ctx, id)
+			return nil, s.MarkAllRead(ctx, uid)
 		},
 	}
 }
 
-// DeleteEndpoint 删除一条通知。
-func DeleteEndpoint(s *Service, user CurrentUser) rest.Endpoint[idInput, struct{}] {
+// DeleteEndpoint 删除一条站内信。
+func DeleteEndpoint(s *Service) rest.Endpoint[idInput, struct{}] {
 	return rest.Endpoint[idInput, struct{}]{
-		Operation: huma.Operation{OperationID: "notification-delete", Summary: "删除通知", Tags: tags,
+		Operation: huma.Operation{OperationID: "notification-delete", Summary: "删除站内信", Tags: tags,
 			DefaultStatus: http.StatusNoContent, Security: rest.RequireAuth()},
 		Handler: func(ctx context.Context, in *idInput) (*struct{}, error) {
-			id, err := uid(ctx, user)
+			uid, err := currentUser(ctx)
 			if err != nil {
 				return nil, err
 			}
-			nid, err := uuid.Parse(in.ID)
+			id, err := parseID(in.ID)
 			if err != nil {
-				return nil, mapError(ErrNotFound)
+				return nil, err
 			}
-			return nil, mapError(s.Delete(ctx, id, nid))
+			return nil, s.Delete(ctx, uid, id)
 		},
 	}
 }

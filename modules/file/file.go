@@ -6,9 +6,9 @@
 // 业务表通过 file_id 引用文件；需要附件的接口在自己的 handler 中调用 Upload、Serve，
 // 并按业务规则判断谁能访问。模块也提供了“上传我的文件、下载我的文件”的通用接口：
 //
-//	files := file.NewService(a.DB, a.Storage, cfg.Files)
-//	rest.Post(v1, "/files", file.UploadEndpoint(files, account.CurrentUserID))
-//	a.Router.Get("/files/{id}", files.DownloadHandler(file.OwnerOnly(account.CurrentUserID)))
+//	files := file.New(a.DB, a.Storage, cfg.Files)
+//	rest.Post(v1, "/files", file.UploadEndpoint(files))
+//	a.Router.Get("/files/{id}", files.DownloadHandler(file.OwnerOnly))
 //
 // # 客户端直传
 //
@@ -29,7 +29,6 @@ import (
 	"context"
 	"database/sql"
 	"embed"
-	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -41,24 +40,33 @@ import (
 	"time"
 	"uuid"
 
+	"github.com/cockroachdb/errors"
+
 	"github.com/uptrace/bun"
 
 	"github.com/ryan053857/go-kit/database"
+	"github.com/ryan053857/go-kit/httpx"
+	"github.com/ryan053857/go-kit/i18n"
 	"github.com/ryan053857/go-kit/storage"
 )
 
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 
+//go:embed locales/*.yaml
+var locales embed.FS
+
+func init() { i18n.MustLoad(locales) }
+
 // Migrations 是本模块的迁移。
 var Migrations = database.MigrationSource{Name: "file", FS: mustSub(migrationsFS, "migrations")}
 
 var (
-	ErrTooLarge         = errors.New("file: too large")
-	ErrTypeNotAllowed   = errors.New("file: type not allowed")
-	ErrNotFound         = errors.New("file: not found")
-	ErrNoDirectUpload   = errors.New("file: storage does not support direct upload") // 存储不是 S3
-	ErrUploadIncomplete = errors.New("file: object not uploaded or size mismatch")
+	ErrTooLarge         = httpx.DefineError(http.StatusRequestEntityTooLarge, "file.too_large")
+	ErrTypeNotAllowed   = httpx.DefineError(http.StatusUnsupportedMediaType, "file.type_not_allowed")
+	ErrNotFound         = httpx.DefineError(http.StatusNotFound, "file.not_found")
+	ErrNoDirectUpload   = httpx.DefineError(http.StatusNotImplemented, "file.no_direct_upload") // 存储不是 S3
+	ErrUploadIncomplete = httpx.DefineError(http.StatusUnprocessableEntity, "file.upload_incomplete")
 )
 
 // Config 是文件模块的配置。
@@ -116,8 +124,8 @@ type Service struct {
 	cfg   Config
 }
 
-// NewService 返回使用 db 与 store 的 Service。
-func NewService(db *bun.DB, store storage.Storage, cfg Config) *Service {
+// New 返回使用 db 与 store 的 Service。
+func New(db *bun.DB, store storage.Storage, cfg Config) *Service {
 	if cfg.MaxSize <= 0 {
 		cfg.MaxSize = DefaultConfig().MaxSize
 	}
@@ -146,18 +154,18 @@ func (s *Service) URL(f *File) string { return s.cfg.URLPrefix + f.ID.String() }
 func (s *Service) Upload(ctx context.Context, userID uuid.UUID, filename string, r io.ReadSeeker) (*File, error) {
 	size, err := r.Seek(0, io.SeekEnd)
 	if err != nil {
-		return nil, fmt.Errorf("file: %w", err)
+		return nil, errors.Wrap(err, "file")
 	}
 	if size > s.cfg.MaxSize {
-		return nil, ErrTooLarge
+		return nil, s.tooLarge(s.cfg.MaxSize)
 	}
 	if _, err := r.Seek(0, io.SeekStart); err != nil {
-		return nil, fmt.Errorf("file: %w", err)
+		return nil, errors.Wrap(err, "file")
 	}
 	head := make([]byte, 512)
 	n, _ := io.ReadFull(r, head)
 	if _, err := r.Seek(0, io.SeekStart); err != nil {
-		return nil, fmt.Errorf("file: %w", err)
+		return nil, errors.Wrap(err, "file")
 	}
 
 	filename = cleanFilename(filename)
@@ -176,7 +184,7 @@ func (s *Service) Upload(ctx context.Context, userID uuid.UUID, filename string,
 	}
 	if _, err := s.db.NewInsert().Model(f).Exec(ctx); err != nil {
 		_ = s.store.Delete(context.WithoutCancel(ctx), f.Key)
-		return nil, fmt.Errorf("file: save: %w", err)
+		return nil, errors.Wrap(err, "file: save")
 	}
 	return f, nil
 }
@@ -189,7 +197,7 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (*File, error) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("file: get: %w", err)
+		return nil, errors.Wrap(err, "file: get")
 	}
 	return f, nil
 }
@@ -199,7 +207,7 @@ func (s *Service) Delete(ctx context.Context, id uuid.UUID) error {
 	f := new(File)
 	res, err := s.db.NewDelete().Model(f).Where("id = ?", id).Returning("key").Exec(ctx)
 	if err != nil {
-		return fmt.Errorf("file: delete: %w", err)
+		return errors.Wrap(err, "file: delete")
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotFound
@@ -302,4 +310,8 @@ func mustSub(fsys fs.FS, dir string) fs.FS {
 		panic(err)
 	}
 	return sub
+}
+
+func (s *Service) tooLarge(max int64) error {
+	return httpx.WithData(ErrTooLarge, map[string]any{"MaxMB": max >> 20})
 }

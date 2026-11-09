@@ -1,10 +1,11 @@
 package httpx
 
 import (
-	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
+
+	"github.com/cockroachdb/errors"
 
 	"github.com/go-chi/chi/v5/middleware"
 

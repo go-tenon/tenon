@@ -59,3 +59,39 @@ func DefaultConfig() Config {
 		AvatarBaseURL:     "/",
 	}
 }
+
+// withDefaults 把零值字段补成默认值，产品只写需要修改的配置项也能正常运行。
+func (c Config) withDefaults() Config {
+	d := DefaultConfig()
+	if c.Issuer == "" {
+		c.Issuer = d.Issuer
+	}
+	if c.AccessTTL <= 0 {
+		c.AccessTTL = d.AccessTTL
+	}
+	if c.RefreshTTL <= 0 {
+		c.RefreshTTL = d.RefreshTTL
+	}
+	if c.RememberTTL <= 0 {
+		c.RememberTTL = d.RememberTTL
+	}
+	if c.RefreshGrace <= 0 {
+		c.RefreshGrace = d.RefreshGrace
+	}
+	if c.ResetTTL <= 0 {
+		c.ResetTTL = d.ResetTTL
+	}
+	if c.VerifyTTL <= 0 {
+		c.VerifyTTL = d.VerifyTTL
+	}
+	if c.APIKeyPrefix == "" {
+		c.APIKeyPrefix = d.APIKeyPrefix
+	}
+	if c.MinPasswordLength <= 0 {
+		c.MinPasswordLength = d.MinPasswordLength
+	}
+	if c.AvatarBaseURL == "" {
+		c.AvatarBaseURL = d.AvatarBaseURL
+	}
+	return c
+}

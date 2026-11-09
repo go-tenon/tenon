@@ -3,7 +3,6 @@ package file_test
 import (
 	"bytes"
 	"context"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -11,6 +10,8 @@ import (
 	"testing"
 	"time"
 	"uuid"
+
+	"github.com/cockroachdb/errors"
 
 	"github.com/johannesboyne/gofakes3"
 	"github.com/johannesboyne/gofakes3/backend/s3mem"
@@ -80,7 +81,7 @@ func TestDirectUpload(t *testing.T) {
 	cfg := file.DefaultConfig()
 	cfg.AllowedTypes = []string{"image/", "application/pdf"}
 	cfg.MaxDirectSize = 1 << 20
-	s := file.NewService(db, newS3(t), cfg)
+	s := file.New(db, newS3(t), cfg)
 	ctx := t.Context()
 	owner := uuid.NewV7()
 	img := pngBytes()
@@ -132,7 +133,7 @@ func TestDirectUpload(t *testing.T) {
 	}
 
 	// 本地存储不支持直传。
-	local := file.NewService(db, storage.NewLocal(t.TempDir()), cfg)
+	local := file.New(db, storage.NewLocal(t.TempDir()), cfg)
 	if _, _, err := local.CreateUpload(ctx, owner, "a.png", "image/png", 10); !errors.Is(err, file.ErrNoDirectUpload) {
 		t.Errorf("local: %v", err)
 	}
@@ -144,7 +145,7 @@ func TestAttachAndCleanup(t *testing.T) {
 	cfg.RequireAttach = true
 	cfg.AttachTTL = time.Hour
 	store := storage.NewLocal(t.TempDir())
-	s := file.NewService(db, store, cfg)
+	s := file.New(db, store, cfg)
 	ctx := t.Context()
 	owner := uuid.NewV7()
 

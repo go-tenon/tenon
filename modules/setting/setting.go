@@ -25,19 +25,28 @@ import (
 	"database/sql"
 	"embed"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"io/fs"
 	"sync"
 	"time"
 
+	"github.com/cockroachdb/errors"
+
 	"github.com/uptrace/bun"
 
 	"github.com/ryan053857/go-kit/database"
+	"github.com/ryan053857/go-kit/i18n"
 )
 
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
+
+//go:embed locales/*.yaml
+var locales embed.FS
+
+func init() { i18n.MustLoad(locales) }
+
+// Manage 是修改系统设置的能力（权限），GetEndpoint 与 PutEndpoint 需要它。
+const Manage = "setting.manage"
 
 // Migrations 是本模块的迁移。
 var Migrations = database.MigrationSource{Name: "setting", FS: mustSub(migrationsFS, "migrations")}
@@ -81,7 +90,7 @@ func (s *Store) raw(ctx context.Context, key string) ([]byte, error) {
 	r := new(row)
 	err := s.db.NewSelect().Model(r).Where("key = ?", key).Scan(ctx)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return nil, fmt.Errorf("setting: get %s: %w", key, err)
+		return nil, errors.Wrapf(err, "setting: get %s", key)
 	}
 	if s.TTL > 0 {
 		s.mu.Lock()
@@ -97,7 +106,7 @@ func (s *Store) put(ctx context.Context, key string, value []byte) error {
 		Set("value = EXCLUDED.value, updated_at = EXCLUDED.updated_at").
 		Exec(ctx)
 	if err != nil {
-		return fmt.Errorf("setting: set %s: %w", key, err)
+		return errors.Wrapf(err, "setting: set %s", key)
 	}
 	s.mu.Lock()
 	delete(s.cache, key)
@@ -116,10 +125,10 @@ func (g Group[T]) Get(ctx context.Context, s *Store) (T, error) {
 	var v T
 	def, err := json.Marshal(g.Default)
 	if err != nil {
-		return v, fmt.Errorf("setting: %s: %w", g.Key, err)
+		return v, errors.Wrapf(err, "setting: %s", g.Key)
 	}
 	if err := json.Unmarshal(def, &v); err != nil { // 深拷贝 Default，避免修改共享的切片与 map
-		return v, fmt.Errorf("setting: %s: %w", g.Key, err)
+		return v, errors.Wrapf(err, "setting: %s", g.Key)
 	}
 	raw, err := s.raw(ctx, g.Key)
 	if err != nil {
@@ -127,7 +136,7 @@ func (g Group[T]) Get(ctx context.Context, s *Store) (T, error) {
 	}
 	if raw != nil {
 		if err := json.Unmarshal(raw, &v); err != nil {
-			return v, fmt.Errorf("setting: decode %s: %w", g.Key, err)
+			return v, errors.Wrapf(err, "setting: decode %s", g.Key)
 		}
 	}
 	return v, nil
@@ -137,7 +146,7 @@ func (g Group[T]) Get(ctx context.Context, s *Store) (T, error) {
 func (g Group[T]) Set(ctx context.Context, s *Store, v T) error {
 	raw, err := json.Marshal(v)
 	if err != nil {
-		return fmt.Errorf("setting: encode %s: %w", g.Key, err)
+		return errors.Wrapf(err, "setting: encode %s", g.Key)
 	}
 	return s.put(ctx, g.Key, raw)
 }

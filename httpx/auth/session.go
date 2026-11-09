@@ -2,14 +2,15 @@ package auth
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
+	"uuid"
 
 	"github.com/alexedwards/scs/v2"
+	"github.com/cockroachdb/errors"
 )
 
 // sessionUserKey 是会话中保存用户 ID 的键。
@@ -19,25 +20,26 @@ const sessionUserKey = "auth.user_id"
 //
 // 写入前会更换会话 token，防止会话固定攻击；因此请在校验完密码等凭证之后调用。
 // 需要在 sm.LoadAndSave 之内使用。
-func Login(ctx context.Context, sm *scs.SessionManager, userID string) error {
+func Login(ctx context.Context, sm *scs.SessionManager, userID uuid.UUID) error {
 	if err := sm.RenewToken(ctx); err != nil {
-		return fmt.Errorf("auth: renew session token: %w", err)
+		return errors.Wrap(err, "auth: renew session token")
 	}
-	sm.Put(ctx, sessionUserKey, userID)
+	sm.Put(ctx, sessionUserKey, userID.String())
 	return nil
 }
 
 // Logout 销毁当前会话（包括会话中的其他数据）。
 func Logout(ctx context.Context, sm *scs.SessionManager) error {
 	if err := sm.Destroy(ctx); err != nil {
-		return fmt.Errorf("auth: destroy session: %w", err)
+		return errors.Wrap(err, "auth: destroy session")
 	}
 	return nil
 }
 
-// SessionUserID 返回当前会话中登录的用户 ID，未登录时为空。
-func SessionUserID(ctx context.Context, sm *scs.SessionManager) string {
-	return sm.GetString(ctx, sessionUserKey)
+// SessionUserID 返回当前会话中登录的用户 ID，未登录时 ok 为 false。
+func SessionUserID(ctx context.Context, sm *scs.SessionManager) (uuid.UUID, bool) {
+	id, err := uuid.Parse(sm.GetString(ctx, sessionUserKey))
+	return id, err == nil
 }
 
 // LoadSession 返回全局中间件：会话中有登录用户时，调用 load 加载 Principal 并用 WithPrincipal 放入 context；
@@ -47,12 +49,12 @@ func SessionUserID(ctx context.Context, sm *scs.SessionManager) string {
 // 返回其他错误时记录 Error 日志并响应 500。
 //
 // 需要挂在 sm.LoadAndSave 之后。
-func LoadSession[P Principal](sm *scs.SessionManager, load func(ctx context.Context, userID string) (P, error)) func(http.Handler) http.Handler {
+func LoadSession[P Principal](sm *scs.SessionManager, load func(ctx context.Context, userID uuid.UUID) (P, error)) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
-			userID := SessionUserID(ctx, sm)
-			if userID == "" {
+			userID, ok := SessionUserID(ctx, sm)
+			if !ok {
 				next.ServeHTTP(w, r)
 				return
 			}

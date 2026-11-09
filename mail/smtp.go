@@ -2,8 +2,8 @@ package mail
 
 import (
 	"context"
-	"errors"
-	"fmt"
+
+	"github.com/cockroachdb/errors"
 
 	gomail "github.com/wneessen/go-mail"
 )
@@ -31,7 +31,7 @@ func newSMTP(cfg Config) (*smtpMailer, error) {
 	case "none":
 		opts = append(opts, gomail.WithTLSPolicy(gomail.NoTLS))
 	default:
-		return nil, fmt.Errorf("mail: unknown smtp tls %q", c.TLS)
+		return nil, errors.Newf("mail: unknown smtp tls %q", c.TLS)
 	}
 	if port == 465 {
 		opts = append(opts, gomail.WithSSL())
@@ -45,7 +45,7 @@ func newSMTP(cfg Config) (*smtpMailer, error) {
 	}
 	client, err := gomail.NewClient(c.Host, opts...)
 	if err != nil {
-		return nil, fmt.Errorf("mail: %w", err)
+		return nil, errors.Wrap(err, "mail")
 	}
 	return &smtpMailer{from: cfg.From, client: client}, nil
 }
@@ -56,10 +56,10 @@ func (s *smtpMailer) Send(ctx context.Context, m Message) error {
 	}
 	msg := gomail.NewMsg()
 	if err := msg.From(s.from); err != nil {
-		return fmt.Errorf("mail: from: %w", err)
+		return errors.Wrap(err, "mail: from")
 	}
 	if err := msg.To(m.To...); err != nil {
-		return fmt.Errorf("mail: to: %w", err)
+		return errors.Wrap(err, "mail: to")
 	}
 	msg.Subject(m.Subject)
 	switch {
@@ -72,7 +72,7 @@ func (s *smtpMailer) Send(ctx context.Context, m Message) error {
 		msg.SetBodyString(gomail.TypeTextPlain, m.Text)
 	}
 	if err := s.client.DialAndSendWithContext(ctx, msg); err != nil {
-		return fmt.Errorf("mail: smtp: %w", err)
+		return errors.Wrap(err, "mail: smtp")
 	}
 	return nil
 }

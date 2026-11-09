@@ -4,9 +4,14 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strings"
 
+	"github.com/cockroachdb/errors"
 	"github.com/danielgtaylor/huma/v2"
+
+	"github.com/ryan053857/go-kit/httpx"
+	"github.com/ryan053857/go-kit/i18n"
 )
 
 // Action 是单文件 action 的约定：在 Register 中调用 huma.Register 注册自己。
@@ -21,43 +26,84 @@ func Mount(api huma.API, actions ...Action) {
 	}
 }
 
-// NewErrorWithContextFunc 是 huma.NewErrorWithContext 的函数类型。
-type NewErrorWithContextFunc = func(ctx huma.Context, status int, msg string, errs ...error) huma.StatusError
+// ErrorModel 是 REST 接口的错误响应（RFC 9457），比 huma.ErrorModel 多一个稳定的错误码：
+//
+//	{"status": 409, "title": "Conflict", "detail": "该邮箱已注册", "code": "account.email_taken"}
+//
+// 客户端根据 code 判断错误类型，根据 detail 显示提示（按请求的语言翻译）。
+type ErrorModel struct {
+	huma.ErrorModel
+	Code string `json:"code,omitempty" doc:"错误码，客户端据此判断错误类型，如 account.email_taken"`
+}
 
-// LogServerErrors 包装 next（通常是 huma.NewErrorWithContext），
-// 在状态码 >= 500 时用请求的 context 输出一条 Error 日志，响应内容不变：
+// 没有登记错误码时，按状态码使用的通用错误码。
+var statusCodes = map[int]string{
+	http.StatusBadRequest:          "error.validation",
+	http.StatusUnauthorized:        "auth.unauthenticated",
+	http.StatusForbidden:           "authz.forbidden",
+	http.StatusNotFound:            "error.not_found",
+	http.StatusUnprocessableEntity: "error.validation",
+	http.StatusTooManyRequests:     "error.too_many_requests",
+}
+
+// NewErrorWithContext 替换 huma.NewErrorWithContext（app 已替换），使 REST 接口的错误：
 //
-//	huma.NewErrorWithContext = rest.LogServerErrors(huma.NewErrorWithContext)
+//   - errs 中有登记的领域错误（httpx.DefineError）时，使用其状态码、错误码与翻译后的提示；
+//     handler 直接 return 领域错误即可，不需要转换为 huma 的错误；
 //
-// 日志的 err 字段以 %+v 格式化，cockroachdb/errors 等库的错误会带上调用栈；
-// 因为使用请求的 context，request_id 等字段也会自动带上。日志使用 slog.Default()。
+//   - 否则按状态码给出通用的错误码与提示（参数校验失败、未登录、无权限……），5xx 不暴露内部错误；
 //
-// 注意 fmt.Errorf("...: %w", err) 的结果不实现 fmt.Formatter，%+v 时不会输出内层的调用栈，
-// 包装错误请用 cockroachdb/errors 的 errors.Wrap / errors.Wrapf。
+//   - 状态码 >= 500 时以 %+v 记录 Error 日志（带调用栈与 request_id）；
 //
-// huma 只对 handler 返回的普通 error 调用 huma.NewErrorWithContext；
-// handler 直接返回 huma.Error500InternalServerError 等已构造好的错误时不经过这里，
-// 因此遇到非预期错误时请直接 return err。
-func LogServerErrors(next NewErrorWithContextFunc) NewErrorWithContextFunc {
-	return func(ctx huma.Context, status int, msg string, errs ...error) huma.StatusError {
-		if status >= 500 {
-			var c context.Context = context.Background()
-			if ctx != nil {
-				c = ctx.Context()
-			}
-			attrs := []any{"status", status}
-			// 逐个以 %+v 格式化：errors.Join 的结果不实现 fmt.Formatter，会丢失调用栈。
-			var details []string
-			for _, err := range errs {
-				if err != nil {
-					details = append(details, fmt.Sprintf("%+v", err))
-				}
-			}
-			if len(details) > 0 {
-				attrs = append(attrs, "err", strings.Join(details, "\n"))
-			}
-			slog.ErrorContext(c, msg, attrs...)
-		}
-		return next(ctx, status, msg, errs...)
+//   - 参数校验的字段级详情（huma.ErrorDetail）保留在 errors 中。
+//
+//     huma.NewErrorWithContext = rest.NewErrorWithContext
+func NewErrorWithContext(ctx huma.Context, status int, msg string, errs ...error) huma.StatusError {
+	c := context.Background()
+	if ctx != nil {
+		c = ctx.Context()
 	}
+	model := &ErrorModel{}
+	found := false
+	for _, err := range errs {
+		if err == nil {
+			continue
+		}
+		if info, ok := httpx.Describe(c, err); ok && !found {
+			found = true
+			status, model.Code, model.Detail = info.Status, info.Code, info.Message
+			continue
+		}
+		var d huma.ErrorDetailer
+		if errors.As(err, &d) {
+			model.Errors = append(model.Errors, d.ErrorDetail())
+		}
+	}
+	if !found {
+		code := statusCodes[status]
+		if status >= 500 {
+			code = "error.internal"
+		}
+		model.Code = code
+		model.Detail = msg
+		if code != "" {
+			model.Detail = i18n.T(c, code)
+		}
+	}
+	if status >= 500 {
+		attrs := []any{"status", status}
+		var details []string
+		for _, err := range errs {
+			if err != nil {
+				details = append(details, fmt.Sprintf("%+v", err))
+			}
+		}
+		if len(details) > 0 {
+			attrs = append(attrs, "err", strings.Join(details, "\n"))
+		}
+		slog.ErrorContext(c, msg, attrs...)
+	}
+	model.Status = status
+	model.Title = http.StatusText(status)
+	return model
 }

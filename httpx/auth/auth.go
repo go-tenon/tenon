@@ -42,23 +42,24 @@ package auth
 
 import (
 	"context"
-	"errors"
 	"log/slog"
+	"net/http"
 	"strings"
+	"uuid"
 
 	"github.com/ryan053857/go-kit/httpx"
 )
 
-// ErrUnauthenticated 表示凭证无效：会话中的用户已不存在或被禁用、token 无效或过期等。
+// ErrUnauthenticated 表示未登录或凭证无效：会话中的用户已不存在或被禁用、token 无效或过期等。
 //
-// 产品提供的加载与校验函数在这些情况下应返回它（或包装它的错误），
+// 加载与校验凭证的函数在这些情况下应返回它（或包装它的错误），
 // 调用方据此按“未登录”处理；返回其他错误则视为服务端故障，响应 500。
-var ErrUnauthenticated = errors.New("auth: unauthenticated")
+var ErrUnauthenticated = httpx.DefineError(http.StatusUnauthorized, "auth.unauthenticated")
 
-// Principal 是已认证的调用方，由产品定义具体类型。
+// Principal 是已认证的调用方。
 type Principal interface {
-	// UserID 返回调用方 ID，用作日志的 user_id 字段。
-	UserID() string
+	// UserID 返回调用方的用户 ID，也用作日志的 user_id 字段。
+	UserID() uuid.UUID
 }
 
 // ScopeChecker 可由 Principal 实现，用于 httpx/rest 的 Authorize 检查 OpenAPI security 中声明的 scope。
@@ -68,10 +69,28 @@ type ScopeChecker interface {
 
 type principalKey[P Principal] struct{}
 
+type anyPrincipalKey struct{}
+
 // WithPrincipal 返回携带 p 的 context，同时用 httpx.WithLogAttrs 挂上 user_id 日志字段。
 func WithPrincipal[P Principal](ctx context.Context, p P) context.Context {
 	ctx = context.WithValue(ctx, principalKey[P]{}, p)
-	return httpx.WithLogAttrs(ctx, slog.String("user_id", p.UserID()))
+	ctx = context.WithValue(ctx, anyPrincipalKey{}, Principal(p))
+	return httpx.WithLogAttrs(ctx, slog.String("user_id", p.UserID().String()))
+}
+
+// Current 返回 ctx 中的 Principal（不论具体类型）；未登录时 ok 为 false。
+func Current(ctx context.Context) (Principal, bool) {
+	p, ok := ctx.Value(anyPrincipalKey{}).(Principal)
+	return p, ok
+}
+
+// UserID 返回当前登录用户的 ID；未登录时 ok 为 false。各模块用它取当前用户，不需要依赖账号模块。
+func UserID(ctx context.Context) (uuid.UUID, bool) {
+	p, ok := Current(ctx)
+	if !ok {
+		return uuid.Nil(), false
+	}
+	return p.UserID(), true
 }
 
 // From 返回 ctx 中类型为 P 的 Principal；未登录时 ok 为 false。

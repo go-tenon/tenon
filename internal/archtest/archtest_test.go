@@ -1,10 +1,11 @@
-// Package archtest 检查 go-kit 的分层依赖：
+// Package archtest 检查 go-kit 的约定（见 docs/conventions.md）：
 //
-//	基础设施（config、logger、database、httpx/…、support/… 等）  只能依赖基础设施
-//	app                                                          只能依赖基础设施
-//	modules/…                                                    只能依赖基础设施与其他模块
+//	基础设施（config、logger、i18n、authz、database、httpx/…、support/… 等）  只能依赖基础设施
+//	app                                                                      只能依赖基础设施
+//	modules/…                                                                只能依赖基础设施，模块之间互不依赖
 //
-// starter、internal 不受限制。新增顶层包时需要在 layerOf 中归类。
+// examples、internal 不受限制。新增顶层包时需要在 layerOf 中归类。
+// 另外检查 go-kit 自身的代码（不含 examples 与测试）不使用 fmt.Errorf（统一用 cockroachdb/errors）。
 package archtest
 
 import (
@@ -24,7 +25,7 @@ const (
 	modules
 )
 
-var infraRoots = []string{"config", "logger", "database", "httpx", "support", "mail", "storage", "messaging"}
+var infraRoots = []string{"config", "logger", "i18n", "authz", "database", "httpx", "support", "mail", "storage", "messaging"}
 
 func layerOf(pkg string) (layer, bool) {
 	rel, ok := strings.CutPrefix(pkg, module+"/")
@@ -37,7 +38,7 @@ func layerOf(pkg string) (layer, bool) {
 		return appLayer, true
 	case "modules":
 		return modules, true
-	case "starter", "internal":
+	case "examples", "starter", "internal":
 		return unrestricted, true
 	}
 	for _, r := range infraRoots {
@@ -79,11 +80,34 @@ func TestLayers(t *testing.T) {
 			if !internal {
 				continue
 			}
-			if to == unrestricted && from != unrestricted {
-				t.Errorf("%s imports %s: starter/internal must not be imported", pkg, imp)
-			} else if !allowed(from, to) {
+			switch {
+			case to == unrestricted && from != unrestricted:
+				t.Errorf("%s imports %s: examples/internal must not be imported", pkg, imp)
+			case !allowed(from, to):
 				t.Errorf("%s imports %s: violates layering", pkg, imp)
+			case from == modules && to == modules && moduleOf(pkg) != moduleOf(imp):
+				t.Errorf("%s imports %s: modules must not depend on each other", pkg, imp)
 			}
 		}
+	}
+}
+
+// moduleOf 返回模块包所属的模块名，如 modules/account/x → account。
+func moduleOf(pkg string) string {
+	rel := strings.TrimPrefix(pkg, module+"/modules/")
+	name, _, _ := strings.Cut(rel, "/")
+	return name
+}
+
+func TestNoFmtErrorf(t *testing.T) {
+	out, err := exec.Command("git", "grep", "-n", "fmt.Errorf(", "--", "*.go", ":!*_test.go", ":!examples", ":!starter", ":!internal").Output()
+	if err != nil && len(out) == 0 {
+		return // 没有匹配（git grep 退出码 1）
+	}
+	for line := range strings.Lines(string(out)) {
+		if strings.Contains(line, "//") && strings.Index(line, "//") < strings.Index(line, "fmt.Errorf(") {
+			continue // 注释
+		}
+		t.Errorf("use cockroachdb/errors instead of fmt.Errorf: %s", strings.TrimSpace(line))
 	}
 }

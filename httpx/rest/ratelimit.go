@@ -32,7 +32,7 @@ func RateLimit(api huma.API, limit int, window time.Duration) func(huma.Context,
 			ctx.SetHeader(k, v[0])
 		}
 		if limited {
-			_ = huma.WriteErr(api, ctx, http.StatusTooManyRequests, "请求过于频繁，请稍后再试")
+			_ = huma.WriteErr(api, ctx, http.StatusTooManyRequests, "too many requests")
 			return
 		}
 		next(ctx)

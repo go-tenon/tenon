@@ -2,13 +2,13 @@ package httpx
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
 	"sync/atomic"
 	"time"
+
+	"github.com/cockroachdb/errors"
 )
 
 // 健康检查路径。Server 在路由之前处理这两个路径，因此它们不经过中间件，也不产生访问日志。
@@ -50,7 +50,7 @@ func NewServer(cfg Config, h http.Handler) *Server {
 func (s *Server) Run(ctx context.Context) error {
 	ln, err := net.Listen("tcp", s.cfg.Addr)
 	if err != nil {
-		return fmt.Errorf("httpx: %w", err)
+		return errors.Wrap(err, "httpx")
 	}
 	return s.Serve(ctx, ln)
 }
@@ -73,7 +73,7 @@ func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 
 	select {
 	case err := <-errc:
-		return fmt.Errorf("httpx: %w", err)
+		return errors.Wrap(err, "httpx")
 	case <-ctx.Done():
 	}
 
@@ -92,10 +92,10 @@ func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 	if err := srv.Shutdown(sctx); err != nil {
 		_ = srv.Close()
 		<-errc
-		return fmt.Errorf("httpx: shutdown: %w", err)
+		return errors.Wrap(err, "httpx: shutdown")
 	}
 	if err := <-errc; !errors.Is(err, http.ErrServerClosed) {
-		return fmt.Errorf("httpx: %w", err)
+		return errors.Wrap(err, "httpx")
 	}
 	log.Info("http server stopped")
 	return nil

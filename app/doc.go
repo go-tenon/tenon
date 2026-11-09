@@ -27,7 +27,7 @@
 //
 //		// 2. 再注册路由。a.API() 首次调用时会注册 /docs 等文档路由。
 //		api := a.API()
-//		api.UseMiddleware(rest.Authorize(api, users.VerifyAccessToken))
+//		api.UseMiddleware(rest.Authorize(api, users.VerifyAccessToken, a.Gate))
 //		v1 := huma.NewGroup(api, "/api/v1")
 //		rest.Post(v1, "/auth/login", account.Login(users)) // go-kit 模块提供的接口
 //		rest.Mount(v1, order.APIActions(orders)...)        // 产品自己的接口

@@ -9,28 +9,43 @@ import (
 	"github.com/ryan053857/go-kit/database"
 )
 
-// User 是一个账号。产品特有的用户字段放在自己的表中（以 user_id 关联），不要修改 users 表。
-type User struct {
-	bun.BaseModel `bun:"table:users,alias:u"`
+// UserFields 是账号模块要求 users 表具有的列。users 表归产品所有（迁移由 account.Migrations 发布后归产品），
+// 产品的 User 模型嵌入它，再加上自己的字段：
+//
+//	type User struct {
+//		bun.BaseModel `bun:"table:users,alias:u"`
+//		account.UserFields
+//
+//		Name string `bun:"name,notnull"`
+//	}
+//
+// 账号模块只读写这些列，不会碰产品加的列。
+type UserFields struct {
 	database.Model
 
-	Email           string    `bun:"email,notnull"`
-	Name            string    `bun:"name,notnull"`
-	PasswordHash    string    `bun:"password_hash,notnull"`
-	AvatarKey       string    `bun:"avatar_key,notnull"`
+	Email           string    `bun:"email,notnull"`         // 小写，唯一约束 users_email_key
+	PasswordHash    string    `bun:"password_hash,notnull"` // argon2id；为空表示不能用密码登录
 	EmailVerifiedAt time.Time `bun:"email_verified_at,nullzero"`
 	DisabledAt      time.Time `bun:"disabled_at,nullzero"`
 	LastLoginAt     time.Time `bun:"last_login_at,nullzero"`
+	Locale          string    `bun:"locale,notnull"`     // 用户选择的语言，空表示跟随请求
+	AvatarKey       string    `bun:"avatar_key,notnull"` // 头像在 storage 中的对象键，空表示没有头像
 }
 
 // Disabled 报告账号是否已停用。
-func (u *User) Disabled() bool { return !u.DisabledAt.IsZero() }
+func (u *UserFields) Disabled() bool { return !u.DisabledAt.IsZero() }
 
 // EmailVerified 报告邮箱是否已验证。
-func (u *User) EmailVerified() bool { return !u.EmailVerifiedAt.IsZero() }
+func (u *UserFields) EmailVerified() bool { return !u.EmailVerifiedAt.IsZero() }
 
 // HasPassword 报告账号是否设置了密码（只用第三方登录注册的账号没有密码）。
-func (u *User) HasPassword() bool { return u.PasswordHash != "" }
+func (u *UserFields) HasPassword() bool { return u.PasswordHash != "" }
+
+// User 是账号模块看到的用户：只有 UserFields 中的列。
+type User struct {
+	bun.BaseModel `bun:"table:users,alias:u"`
+	UserFields
+}
 
 // 会话类型。
 const (

@@ -2,10 +2,11 @@ package support
 
 import (
 	"context"
-	"errors"
 	"io"
 	"strings"
 	"testing"
+
+	"github.com/cockroachdb/errors"
 )
 
 func TestCatch(t *testing.T) {

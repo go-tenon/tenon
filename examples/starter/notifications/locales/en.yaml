@@ -1,0 +1,12 @@
+notify.greeting: "Hi {{.Name}},"
+notify.welcome.title: Welcome
+notify.welcome.body: Turn on two-factor authentication in your account settings to keep your account safe.
+notify.reset.subject: Reset your password
+notify.reset.intro: "We received a request to reset your password. Open the link below to choose a new one. It expires in {{.Minutes}} minutes:"
+notify.reset.ignore: If you didn't request this, you can ignore this email. Your password won't change.
+notify.verify.subject: Verify your email
+notify.verify.intro: "Open the link below to verify your email. It expires in {{.Hours}} hours:"
+notify.verify.ignore: If you didn't create an account, you can ignore this email.
+notify.export_done.title: "Export ready: {{.File}}"
+notify.export_failed.title: "Export failed: {{.File}}"
+notify.export_failed.body: Please try again later.

@@ -2,10 +2,11 @@ package export_test
 
 import (
 	"bytes"
-	"errors"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/cockroachdb/errors"
 
 	"github.com/xuri/excelize/v2"
 

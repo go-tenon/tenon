@@ -12,6 +12,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/cockroachdb/errors"
 	"github.com/pressly/goose/v3"
 	"github.com/spf13/cobra"
 
@@ -226,7 +227,7 @@ func openapiCommand(cfg Configurer, opts Options, load func() error) *cobra.Comm
 			case "json":
 				data, err = json.MarshalIndent(spec, "", "  ")
 			default:
-				return fmt.Errorf("unknown format %q (json | yaml)", format)
+				return errors.Newf("unknown format %q (json | yaml)", format)
 			}
 			if err != nil {
 				return err

@@ -30,11 +30,11 @@ package config
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"os"
 	"reflect"
 
+	"github.com/cockroachdb/errors"
 	"go.yaml.in/yaml/v4"
 )
 
@@ -49,10 +49,10 @@ type Validator interface {
 func Load(path string, dst any) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("config: %w", err)
+		return errors.Wrap(err, "config")
 	}
 	if err := parse(data, dst); err != nil {
-		return fmt.Errorf("config: %s: %w", path, err)
+		return errors.Wrapf(err, "config: %s", path)
 	}
 	return nil
 }
@@ -61,14 +61,14 @@ func Load(path string, dst any) error {
 // for tests and for configuration embedded with go:embed.
 func Parse(data []byte, dst any) error {
 	if err := parse(data, dst); err != nil {
-		return fmt.Errorf("config: %w", err)
+		return errors.Wrap(err, "config")
 	}
 	return nil
 }
 
 func parse(data []byte, dst any) error {
 	if v := reflect.ValueOf(dst); v.Kind() != reflect.Pointer || v.IsNil() {
-		return fmt.Errorf("destination must be a non-nil pointer, got %T", dst)
+		return errors.Newf("destination must be a non-nil pointer, got %T", dst)
 	}
 
 	root, err := parseDocument(data)
@@ -87,7 +87,7 @@ func parse(data []byte, dst any) error {
 
 	if v, ok := dst.(Validator); ok {
 		if err := v.Validate(); err != nil {
-			return fmt.Errorf("invalid configuration: %w", err)
+			return errors.Wrap(err, "invalid configuration")
 		}
 	}
 	return nil
@@ -112,7 +112,7 @@ func parseDocument(data []byte) (*yaml.Node, error) {
 		if err != nil {
 			return nil, err
 		}
-		return nil, fmt.Errorf("line %d: expected a single YAML document, found more", extra.Line)
+		return nil, errors.Newf("line %d: expected a single YAML document, found more", extra.Line)
 	}
 	return &root, nil
 }

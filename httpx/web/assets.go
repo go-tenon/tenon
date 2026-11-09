@@ -4,10 +4,11 @@ import (
 	"crypto/sha256"
 	"embed"
 	"encoding/hex"
-	"fmt"
 	"io/fs"
 	"net/http"
 	"strings"
+
+	"github.com/cockroachdb/errors"
 )
 
 //go:embed vendor/htmx.min.js vendor/htmx.LICENSE
@@ -50,7 +51,7 @@ type Assets struct {
 //	r.Handle("/static/*", static)
 func NewAssets(prefix string, fsys fs.FS) (*Assets, error) {
 	if !strings.HasPrefix(prefix, "/") || !strings.HasSuffix(prefix, "/") {
-		return nil, fmt.Errorf("web: assets prefix %q must start and end with /", prefix)
+		return nil, errors.Newf("web: assets prefix %q must start and end with /", prefix)
 	}
 	a := &Assets{prefix: prefix, fsys: fsys, hashes: map[string]string{}}
 	err := fs.WalkDir(fsys, ".", func(name string, d fs.DirEntry, err error) error {
@@ -66,7 +67,7 @@ func NewAssets(prefix string, fsys fs.FS) (*Assets, error) {
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("web: assets: %w", err)
+		return nil, errors.Wrap(err, "web: assets")
 	}
 	return a, nil
 }

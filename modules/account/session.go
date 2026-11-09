@@ -3,14 +3,14 @@ package account
 import (
 	"context"
 	"database/sql"
-	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"slices"
 	"strings"
 	"time"
 	"uuid"
+
+	"github.com/cockroachdb/errors"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/uptrace/bun"
@@ -29,10 +29,10 @@ type Principal struct {
 }
 
 // UserID 实现 auth.Principal。
-func (p *Principal) UserID() string { return p.ID.String() }
+func (p *Principal) UserID() uuid.UUID { return p.ID }
 
-// HasScope 实现 auth.ScopeChecker：网页会话与 access token 拥有全部 scope；
-// API Key 未限定 scope 时拥有全部 scope，否则只拥有创建时指定的 scope。
+// HasScope 实现 auth.ScopeChecker（scope 即 authz 的能力）：网页会话与 access token 不受限制；
+// API Key 未限定 scope 时不受限制，否则只能使用创建时指定的能力。用户是否具有该能力仍由 authz 判断。
 func (p *Principal) HasScope(scope string) bool {
 	return len(p.Scopes) == 0 || slices.Contains(p.Scopes, scope)
 }
@@ -71,7 +71,7 @@ func (s *Service) Login(ctx context.Context, email, plainPassword string, rememb
 	if st.Enabled {
 		challenge, err := s.mfaChallenge(u.ID, remember)
 		if err != nil {
-			return nil, fmt.Errorf("account: login: %w", err)
+			return nil, errors.Wrap(err, "account: login")
 		}
 		return nil, &MFARequiredError{UserID: u.ID, Challenge: challenge}
 	}
@@ -163,14 +163,14 @@ func (s *Service) Refresh(ctx context.Context, refreshToken string, client Clien
 		if errors.Is(err, ErrInvalidToken) {
 			return nil, err
 		}
-		return nil, fmt.Errorf("account: refresh: %w", err)
+		return nil, errors.Wrap(err, "account: refresh")
 	}
 	return tokens, nil
 }
 
 // VerifyAccessToken 校验 Bearer token（access token 或 API Key），供 rest.Authorize 使用：
 //
-//	api.UseMiddleware(rest.Authorize(api, users.VerifyAccessToken))
+//	api.UseMiddleware(rest.Authorize(api, users.VerifyAccessToken, a.Gate))
 //
 // token 无效或过期时返回 auth.ErrUnauthenticated。Config.CheckSession 为 true 时还会确认会话仍存在。
 func (s *Service) VerifyAccessToken(ctx context.Context, token string) (*Principal, error) {
@@ -199,7 +199,7 @@ func (s *Service) VerifyAccessToken(ctx context.Context, token string) (*Princip
 		ok, err := s.db.NewSelect().Model((*Session)(nil)).
 			Where("id = ? AND user_id = ? AND expires_at > ?", p.SessionID, p.ID, s.now()).Exists(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("account: verify session: %w", err)
+			return nil, errors.Wrap(err, "account: verify session")
 		}
 		if !ok {
 			return nil, auth.ErrUnauthenticated
@@ -215,7 +215,7 @@ func (s *Service) Sessions(ctx context.Context, userID uuid.UUID) ([]Session, er
 		Where("user_id = ? AND expires_at > ?", userID, s.now()).
 		Order("last_seen_at DESC").Scan(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("account: list sessions: %w", err)
+		return nil, errors.Wrap(err, "account: list sessions")
 	}
 	return list, nil
 }
@@ -242,7 +242,7 @@ func (s *Service) revokeSession(ctx context.Context, userID, sessionID uuid.UUID
 	res, err := s.db.NewDelete().Model((*Session)(nil)).
 		Where("id = ? AND user_id = ?", sessionID, userID).Exec(ctx)
 	if err != nil {
-		return fmt.Errorf("account: revoke session: %w", err)
+		return errors.Wrap(err, "account: revoke session")
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotFound
@@ -260,10 +260,10 @@ func (s *Service) createSession(ctx context.Context, sess *Session, client Clien
 		_, err := tx.NewDelete().Model((*Session)(nil)).
 			Where("user_id = ? AND expires_at <= ?", sess.UserID, now).Exec(ctx)
 		if err != nil {
-			return fmt.Errorf("account: create session: %w", err)
+			return errors.Wrap(err, "account: create session")
 		}
 		if _, err := tx.NewInsert().Model(sess).Exec(ctx); err != nil {
-			return fmt.Errorf("account: create session: %w", err)
+			return errors.Wrap(err, "account: create session")
 		}
 		return nil
 	})
@@ -291,7 +291,7 @@ func (s *Service) issue(sess *Session, refresh string) (*Tokens, error) {
 		SID: sess.ID.String(),
 	}).SignedString([]byte(s.cfg.JWTSecret))
 	if err != nil {
-		return nil, fmt.Errorf("account: sign access token: %w", err)
+		return nil, errors.Wrap(err, "account: sign access token")
 	}
 	return &Tokens{
 		UserID:           sess.UserID,
@@ -316,16 +316,6 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return string(r[:n])
-}
-
-// CurrentUserID 返回当前登录用户的 ID（网页会话或 access token 认证的），供其他模块使用，
-// 例如 file.UploadEndpoint(files, account.CurrentUserID)。
-func CurrentUserID(ctx context.Context) (uuid.UUID, bool) {
-	p, ok := auth.From[*Principal](ctx)
-	if !ok {
-		return uuid.Nil(), false
-	}
-	return p.ID, true
 }
 
 // LoadAccessToken 返回全局中间件：请求带有有效的 Authorization: Bearer access token 时，

@@ -15,6 +15,9 @@ import (
 )
 
 func TestRateLimit(t *testing.T) {
+	prev := huma.NewErrorWithContext
+	huma.NewErrorWithContext = rest.NewErrorWithContext
+	t.Cleanup(func() { huma.NewErrorWithContext = prev })
 	r := chi.NewRouter()
 	api := humachi.New(r, huma.DefaultConfig("Test", "1.0.0"))
 	limited := huma.NewGroup(api, "/auth")
@@ -39,7 +42,7 @@ func TestRateLimit(t *testing.T) {
 	}
 	rec := do("/auth/a", "10.0.0.1")
 	if rec.Code != http.StatusTooManyRequests || rec.Header().Get("Retry-After") == "" ||
-		!strings.Contains(rec.Body.String(), "请求过于频繁") {
+		!strings.Contains(rec.Body.String(), "error.too_many_requests") {
 		t.Fatalf("3rd = %d %v %s", rec.Code, rec.Header(), rec.Body)
 	}
 	if rec := do("/auth/a", "10.0.0.2"); rec.Code != 200 {

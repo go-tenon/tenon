@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -12,6 +11,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/cockroachdb/errors"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
@@ -72,14 +73,14 @@ func (echoAction) Register(api huma.API) {
 }
 
 // newAPI builds the stack a product would: chi + httpx middlewares + humachi,
-// with LogServerErrors installed, logging JSON into buf.
+// with NewErrorWithContext installed, logging JSON into buf.
 func newAPI(t *testing.T, buf *bytes.Buffer, actions ...Action) http.Handler {
 	t.Helper()
 
 	prevLog := slog.Default()
 	slog.SetDefault(logger.New(logger.Options{Writer: buf}))
 	prevNew := huma.NewErrorWithContext
-	huma.NewErrorWithContext = LogServerErrors(huma.NewErrorWithContext)
+	huma.NewErrorWithContext = NewErrorWithContext
 	t.Cleanup(func() {
 		slog.SetDefault(prevLog)
 		huma.NewErrorWithContext = prevNew
@@ -110,7 +111,7 @@ func TestMount(t *testing.T) {
 	}
 }
 
-func TestLogServerErrors(t *testing.T) {
+func TestNewErrorWithContext(t *testing.T) {
 	t.Run("unexpected error is logged with stack and context", func(t *testing.T) {
 		var buf bytes.Buffer
 		h := newAPI(t, &buf, &pingAction{err: &stackErr{"db timeout"}})
@@ -119,12 +120,13 @@ func TestLogServerErrors(t *testing.T) {
 		if rec.Code != 500 {
 			t.Fatalf("status = %d, want 500", rec.Code)
 		}
-		// Response is huma's default problem+json, unchanged.
-		var body huma.ErrorModel
+		// 响应不暴露内部错误，只有通用提示与错误码。
+		var body ErrorModel
 		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 			t.Fatal(err)
 		}
-		if body.Detail != "unexpected error occurred" || len(body.Errors) != 1 || body.Errors[0].Message != "db timeout" {
+		if body.Code != "error.internal" || body.Detail != "服务器开小差了，请稍后再试" || len(body.Errors) != 0 ||
+			strings.Contains(rec.Body.String(), "db timeout") {
 			t.Errorf("unexpected body: %s", rec.Body)
 		}
 
@@ -164,21 +166,26 @@ func TestLogServerErrors(t *testing.T) {
 		slog.SetDefault(logger.New(logger.Options{Writer: &buf}))
 		defer slog.SetDefault(prev)
 
-		var called bool
-		next := func(_ huma.Context, status int, msg string, errs ...error) huma.StatusError {
-			called = true
-			return huma.NewError(status, msg, errs...)
-		}
-		se := LogServerErrors(next)(nil, 503, "down", &stackErr{"a"}, nil, errors.New("b"))
-		if !called || se.GetStatus() != 503 {
-			t.Fatalf("next not called correctly: %v %v", called, se)
+		se := NewErrorWithContext(nil, 503, "down", &stackErr{"a"}, nil, errors.New("b"))
+		if se.GetStatus() != 503 {
+			t.Fatalf("status = %d", se.GetStatus())
 		}
 		var m map[string]any
 		if err := json.Unmarshal(buf.Bytes(), &m); err != nil {
 			t.Fatal(err)
 		}
-		if m["err"] != "a\n  at order.Create (order.go:42)\nb" {
+		if !strings.HasPrefix(m["err"].(string), "a\n  at order.Create (order.go:42)\n") {
 			t.Errorf("err = %q", m["err"])
+		}
+	})
+
+	t.Run("domain errors use registered status, code and translation", func(t *testing.T) {
+		errTaken := httpx.DefineError(409, "error.not_found")
+		h := newAPI(t, &bytes.Buffer{}, &pingAction{err: errors.Wrap(errTaken, "wrapped")})
+		rec := do(h, "/api/v1/ping")
+		if rec.Code != 409 || !strings.Contains(rec.Body.String(), `"code":"error.not_found"`) ||
+			!strings.Contains(rec.Body.String(), "请求的内容不存在") {
+			t.Errorf("domain error = %d %s", rec.Code, rec.Body)
 		}
 	})
 }

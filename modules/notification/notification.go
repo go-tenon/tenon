@@ -1,28 +1,61 @@
-// Package notification 是站内通知模块：给用户发通知、列出、未读数、标记已读。
+// Package notification 是通知：产品定义通知类型，go-kit 负责分发、渠道与站内信。类似 Laravel 的 Notification。
 //
-//	notes := notification.New(a.DB)
-//	notes.Send(ctx, userID, notification.Notification{Type: "order.shipped", Title: "订单已发货",
-//		Body: "订单 #1024 已由顺丰发出", URL: "/orders/1024"})
+// # 通知类型
 //
-// 与业务数据同时提交时用 SendTx。邮件、短信等其他渠道由产品自己发送（可在同一事务中发布消息）。
-// 页面上的未读数可以用 HTMX 定时刷新（hx-trigger="every 30s"）；需要即时推送时在 OnSend 回调中处理。
+// 通知类型由产品定义，字段会序列化到队列中（只放 ID、单号等简单数据）。实现哪个渠道的接口，就通过哪个渠道发送：
+//
+//	type OrderShipped struct {
+//		OrderID uuid.UUID `json:"order_id"`
+//		No      string    `json:"no"`
+//	}
+//
+//	func (OrderShipped) Type() string { return "order.shipped" }
+//
+//	// 站内信
+//	func (n OrderShipped) ToDatabase(ctx context.Context, r notification.Recipient) (notification.Content, error) {
+//		return notification.Content{Title: i18n.T(ctx, "order.shipped", map[string]any{"No": n.No}), URL: "/orders/" + n.OrderID.String()}, nil
+//	}
+//
+//	// 邮件（To 为空时发给 r.Email）
+//	func (n OrderShipped) ToMail(ctx context.Context, r notification.Recipient) (mail.Message, error) { ... }
+//
+// 渲染时 ctx 的语言已经是收件人的语言（Recipient.Locale），i18n.T 直接得到对应语言的文字。
+// 可选实现 Via(r Recipient) []string 进一步筛选渠道（如按用户的通知偏好）。
+//
+// # 发送
+//
+//	notes, err := notification.New(a.DB, a.Bus)
+//	notes.AddChannel(notes.DatabaseChannel())
+//	notes.AddChannel(notification.MailChannel(a.Mailer))
+//	notification.Register[OrderShipped](notes)
+//
+//	err = notes.Send(ctx, user.Recipient(), OrderShipped{OrderID: o.ID, No: o.No})
+//	err = notes.SendTx(ctx, tx, user.Recipient(), n) // 与业务数据同一事务
+//
+// 发送总是异步的：每个渠道一条消息，由 app 的消息总线处理，某个渠道失败重试时不影响其他渠道。
+// 站内信保存发送时按收件人语言渲染好的标题、正文与链接，同时保存通知类型与原始数据。
 //
 // 迁移：把 notification.Migrations 加入 app.Options.Publish。
 package notification
 
 import (
 	"context"
+	"database/sql"
 	"embed"
-	"errors"
-	"fmt"
+	"encoding/json"
 	"io/fs"
-	"strings"
+	"log/slog"
+	"net/http"
 	"time"
 	"uuid"
 
+	"github.com/cockroachdb/errors"
 	"github.com/uptrace/bun"
 
 	"github.com/ryan053857/go-kit/database"
+	"github.com/ryan053857/go-kit/httpx"
+	"github.com/ryan053857/go-kit/i18n"
+	"github.com/ryan053857/go-kit/messaging"
 )
 
 //go:embed migrations/*.sql
@@ -31,158 +64,151 @@ var migrationsFS embed.FS
 // Migrations 是本模块的迁移。
 var Migrations = database.MigrationSource{Name: "notification", FS: mustSub(migrationsFS, "migrations")}
 
-// ErrNotFound 表示通知不存在或不属于该用户。
-var ErrNotFound = errors.New("notification: not found")
+//go:embed locales/*.yaml
+var locales embed.FS
 
-// Notification 是一条站内通知。发送时填写 Type、Title 及可选的 Body、URL、Data。
-type Notification struct {
-	bun.BaseModel `bun:"table:notifications,alias:n"`
-	database.CreatedModel
+func init() { i18n.MustLoad(locales) }
 
-	UserID uuid.UUID      `bun:"user_id,notnull,type:uuid"`
-	Type   string         `bun:"type,notnull"`
-	Title  string         `bun:"title,notnull"`
-	Body   string         `bun:"body,notnull"`
-	URL    string         `bun:"url,notnull"`
-	Data   map[string]any `bun:"data,type:jsonb,notnull"`
-	ReadAt time.Time      `bun:"read_at,nullzero"`
+// ErrNotFound 表示站内信不存在或不属于该用户。
+var ErrNotFound = httpx.DefineError(http.StatusNotFound, "notification.not_found")
+
+// TopicDeliver 是投递通知的消息，由 New 注册的处理函数处理。
+const TopicDeliver = "notification_deliver"
+
+// Notification 是一种通知，由产品定义。Type 必须能在零值上调用（值接收者），用于在队列中还原通知。
+type Notification interface {
+	Type() string
 }
 
-// Read 报告通知是否已读。
-func (n *Notification) Read() bool { return !n.ReadAt.IsZero() }
+// Router 可由通知实现，返回要使用的渠道名（在支持的渠道中再筛选）。
+type Router interface {
+	Via(r Recipient) []string
+}
 
-// Service 管理站内通知。
+// Recipient 是通知的接收者，产品从自己的用户构造。
+type Recipient struct {
+	UserID uuid.UUID `json:"user_id"` // 站内信的归属
+	Email  string    `json:"email,omitempty"`
+	Phone  string    `json:"phone,omitempty"`
+	Name   string    `json:"name,omitempty"`
+	Locale string    `json:"locale,omitempty"` // 渲染通知使用的语言，空表示默认语言
+}
+
+// Channel 是发送通知的渠道。内置 DatabaseChannel（站内信）与 MailChannel（邮件），产品可以实现短信、App 推送等。
+type Channel interface {
+	// Name 是渠道名，如 "database"、"mail"。
+	Name() string
+	// Accepts 报告渠道能否发送 n（通常检查 n 是否实现了渠道要求的接口）。
+	Accepts(n Notification) bool
+	// Deliver 发送通知。返回错误时由消息总线重试。
+	Deliver(ctx context.Context, r Recipient, n Notification) error
+}
+
+// Service 发送通知并管理站内信。
 type Service struct {
-	db *bun.DB
-	// OnSend 可选，在通知写入（事务提交前，SendTx 时）后调用，用于即时推送。
-	OnSend func(ctx context.Context, n *Notification)
+	db       *bun.DB
+	channels []Channel
+	types    map[string]func(data []byte) (Notification, error)
+	now      func() time.Time
 }
 
-// New 返回 Service。
-func New(db *bun.DB) *Service { return &Service{db: db} }
-
-// Send 给 userIDs 中的每个用户发送一条通知。
-func (s *Service) Send(ctx context.Context, n Notification, userIDs ...uuid.UUID) error {
-	return s.SendTx(ctx, s.db, n, userIDs...)
+// New 返回 Service，并在 bus 上注册投递通知的处理函数。
+func New(db *bun.DB, bus *messaging.Bus) (*Service, error) {
+	s := &Service{db: db, types: map[string]func([]byte) (Notification, error){}, now: time.Now}
+	if err := messaging.Handle(bus, TopicDeliver, s.deliver); err != nil {
+		return nil, err
+	}
+	return s, nil
 }
 
-// SendTx 在 db（可以是 bun.Tx）中发送通知，用于与业务数据在同一事务中提交。
-func (s *Service) SendTx(ctx context.Context, db bun.IDB, n Notification, userIDs ...uuid.UUID) error {
-	if n.Type == "" || strings.TrimSpace(n.Title) == "" {
-		return errors.New("notification: type and title are required")
+// AddChannel 添加渠道。应在开始处理请求之前调用。
+func (s *Service) AddChannel(ch Channel) { s.channels = append(s.channels, ch) }
+
+// Register 登记通知类型 T，队列中的消息据此还原为 T。发送前必须登记。
+func Register[T Notification](s *Service) {
+	var zero T
+	s.types[zero.Type()] = func(data []byte) (Notification, error) {
+		var v T
+		err := json.Unmarshal(data, &v)
+		return v, err
 	}
-	if len(userIDs) == 0 {
-		return nil
+}
+
+type delivery struct {
+	Channel   string          `json:"channel"`
+	Type      string          `json:"type"`
+	Recipient Recipient       `json:"recipient"`
+	Data      json.RawMessage `json:"data"`
+}
+
+// Send 发送通知：为每个适用的渠道发布一条消息，由消息总线异步投递。
+func (s *Service) Send(ctx context.Context, r Recipient, n Notification) error {
+	return s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error { return s.SendTx(ctx, tx, r, n) })
+}
+
+// SendTx 在 tx 中发布通知，与业务数据一起提交。通知类型未登记或没有适用的渠道时返回错误。
+func (s *Service) SendTx(ctx context.Context, tx bun.Tx, r Recipient, n Notification) error {
+	if _, ok := s.types[n.Type()]; !ok {
+		return errors.Newf("notification: type %q not registered", n.Type())
 	}
-	if n.Data == nil {
-		n.Data = map[string]any{}
+	data, err := json.Marshal(n)
+	if err != nil {
+		return errors.Wrapf(err, "notification: encode %s", n.Type())
 	}
-	list := make([]Notification, len(userIDs))
-	for i, id := range userIDs {
-		list[i] = n
-		list[i].ID = uuid.Nil()
-		list[i].UserID = id
+	sent := 0
+	for _, ch := range s.via(r, n) {
+		err := messaging.PublishTx(ctx, tx.Tx, TopicDeliver, delivery{Channel: ch.Name(), Type: n.Type(), Recipient: r, Data: data})
+		if err != nil {
+			return errors.Wrapf(err, "notification: send %s", n.Type())
+		}
+		sent++
 	}
-	if _, err := db.NewInsert().Model(&list).Exec(ctx); err != nil {
-		return fmt.Errorf("notification: send %s: %w", n.Type, err)
+	if sent == 0 {
+		return errors.Newf("notification: no channel for %s", n.Type())
 	}
-	if s.OnSend != nil {
-		for i := range list {
-			s.OnSend(ctx, &list[i])
+	return nil
+}
+
+func (s *Service) via(r Recipient, n Notification) []Channel {
+	var want map[string]bool
+	if rt, ok := n.(Router); ok {
+		want = map[string]bool{}
+		for _, name := range rt.Via(r) {
+			want[name] = true
 		}
 	}
+	var out []Channel
+	for _, ch := range s.channels {
+		if ch.Accepts(n) && (want == nil || want[ch.Name()]) {
+			out = append(out, ch)
+		}
+	}
+	return out
+}
+
+// deliver 处理 TopicDeliver：还原通知，以收件人的语言交给渠道发送。
+func (s *Service) deliver(ctx context.Context, d delivery) error {
+	decode, ok := s.types[d.Type]
+	if !ok {
+		slog.ErrorContext(ctx, "notification type not registered, dropped", "type", d.Type)
+		return nil
+	}
+	n, err := decode(d.Data)
+	if err != nil {
+		slog.ErrorContext(ctx, "decode notification, dropped", "type", d.Type, "err", err)
+		return nil
+	}
+	ctx = i18n.WithLocale(ctx, d.Recipient.Locale)
+	for _, ch := range s.channels {
+		if ch.Name() == d.Channel {
+			return ch.Deliver(ctx, d.Recipient, n)
+		}
+	}
+	slog.ErrorContext(ctx, "notification channel not found, dropped", "channel", d.Channel, "type", d.Type)
 	return nil
 }
 
-// ListOptions 是列表的查询条件。
-type ListOptions struct {
-	UnreadOnly bool
-	Before     uuid.UUID // 游标：只返回 ID 小于它的通知
-	Limit      int       // 默认 20，最大 100
-}
-
-// List 按时间倒序返回用户的通知。返回的 next 非零时，把它作为下一页的 Before。
-func (s *Service) List(ctx context.Context, userID uuid.UUID, opt ListOptions) (list []Notification, next uuid.UUID, err error) {
-	limit := opt.Limit
-	switch {
-	case limit <= 0:
-		limit = 20
-	case limit > 100:
-		limit = 100
-	}
-	list = []Notification{}
-	q := s.db.NewSelect().Model(&list).Where("user_id = ?", userID).OrderExpr("id DESC").Limit(int64(limit + 1))
-	if opt.UnreadOnly {
-		q = q.Where("read_at IS NULL")
-	}
-	if opt.Before != uuid.Nil() {
-		q = q.Where("id < ?", opt.Before)
-	}
-	if err := q.Scan(ctx); err != nil {
-		return nil, uuid.Nil(), fmt.Errorf("notification: list: %w", err)
-	}
-	if len(list) > limit {
-		list = list[:limit]
-		next = list[limit-1].ID
-	}
-	return list, next, nil
-}
-
-// UnreadCount 返回用户的未读通知数。
-func (s *Service) UnreadCount(ctx context.Context, userID uuid.UUID) (int, error) {
-	n, err := s.db.NewSelect().Model((*Notification)(nil)).Where("user_id = ? AND read_at IS NULL", userID).Count(ctx)
-	if err != nil {
-		return 0, fmt.Errorf("notification: unread count: %w", err)
-	}
-	return int(n), nil
-}
-
-// MarkRead 把用户的一条通知标记为已读；不存在时返回 ErrNotFound，已读时返回 nil。
-func (s *Service) MarkRead(ctx context.Context, userID, id uuid.UUID) error {
-	res, err := s.db.NewUpdate().Model((*Notification)(nil)).
-		Set("read_at = COALESCE(read_at, ?)", time.Now()).
-		Where("id = ? AND user_id = ?", id, userID).Exec(ctx)
-	if err != nil {
-		return fmt.Errorf("notification: mark read: %w", err)
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return ErrNotFound
-	}
-	return nil
-}
-
-// MarkAllRead 把用户的全部通知标记为已读。
-func (s *Service) MarkAllRead(ctx context.Context, userID uuid.UUID) error {
-	_, err := s.db.NewUpdate().Model((*Notification)(nil)).Set("read_at = ?", time.Now()).
-		Where("user_id = ? AND read_at IS NULL", userID).Exec(ctx)
-	if err != nil {
-		return fmt.Errorf("notification: mark all read: %w", err)
-	}
-	return nil
-}
-
-// Delete 删除用户的一条通知，不存在时返回 ErrNotFound。
-func (s *Service) Delete(ctx context.Context, userID, id uuid.UUID) error {
-	res, err := s.db.NewDelete().Model((*Notification)(nil)).Where("id = ? AND user_id = ?", id, userID).Exec(ctx)
-	if err != nil {
-		return fmt.Errorf("notification: delete: %w", err)
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return ErrNotFound
-	}
-	return nil
-}
-
-// Prune 删除早于 olderThan 之前的已读通知，返回删除的条数。由产品的定时任务调用。
-func (s *Service) Prune(ctx context.Context, olderThan time.Duration) (int64, error) {
-	res, err := s.db.NewDelete().Model((*Notification)(nil)).
-		Where("read_at IS NOT NULL AND created_at < ?", time.Now().Add(-olderThan)).Exec(ctx)
-	if err != nil {
-		return 0, fmt.Errorf("notification: prune: %w", err)
-	}
-	n, _ := res.RowsAffected()
-	return n, nil
-}
+func isNoRows(err error) bool { return errors.Is(err, sql.ErrNoRows) }
 
 func mustSub(fsys fs.FS, dir string) fs.FS {
 	sub, err := fs.Sub(fsys, dir)

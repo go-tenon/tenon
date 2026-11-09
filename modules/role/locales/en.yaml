@@ -1,0 +1,5 @@
+role.not_found: Role not found.
+role.name_taken: A role with this name already exists.
+role.unknown_permission: "Unknown permission: {{.Permission}}"
+permission.*: All permissions
+permission.role.manage: Manage roles and permissions

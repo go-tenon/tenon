@@ -47,7 +47,7 @@ func (a *GetGreeting) handle(ctx context.Context, in *GetGreetingInput) (*GetGre
 }
 
 func Example() {
-	huma.NewErrorWithContext = rest.LogServerErrors(huma.NewErrorWithContext)
+	huma.NewErrorWithContext = rest.NewErrorWithContext
 
 	r := chi.NewRouter()
 	r.Use(httpx.RequestID, httpx.AccessLog(nil), httpx.Recover(nil))

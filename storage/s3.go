@@ -2,11 +2,11 @@ package storage
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/cockroachdb/errors"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -50,10 +50,10 @@ func (s *S3) Put(ctx context.Context, key string, r io.ReadSeeker, contentType s
 	}
 	size, err := r.Seek(0, io.SeekEnd)
 	if err != nil {
-		return fmt.Errorf("storage: %w", err)
+		return errors.Wrap(err, "storage")
 	}
 	if _, err := r.Seek(0, io.SeekStart); err != nil {
-		return fmt.Errorf("storage: %w", err)
+		return errors.Wrap(err, "storage")
 	}
 	in := &s3.PutObjectInput{
 		Bucket:        aws.String(s.bucket),
@@ -65,7 +65,7 @@ func (s *S3) Put(ctx context.Context, key string, r io.ReadSeeker, contentType s
 		in.ContentType = aws.String(contentType)
 	}
 	if _, err := s.client.PutObject(ctx, in); err != nil {
-		return fmt.Errorf("storage: put %s: %w", key, err)
+		return errors.Wrapf(err, "storage: put %s", key)
 	}
 	return nil
 }
@@ -79,7 +79,7 @@ func (s *S3) Get(ctx context.Context, key string) (io.ReadCloser, error) {
 		if isNotFound(err) {
 			return nil, ErrNotFound
 		}
-		return nil, fmt.Errorf("storage: get %s: %w", key, err)
+		return nil, errors.Wrapf(err, "storage: get %s", key)
 	}
 	return out.Body, nil
 }
@@ -90,7 +90,7 @@ func (s *S3) Delete(ctx context.Context, key string) error {
 	}
 	_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: aws.String(s.bucket), Key: aws.String(key)})
 	if err != nil && !isNotFound(err) {
-		return fmt.Errorf("storage: delete %s: %w", key, err)
+		return errors.Wrapf(err, "storage: delete %s", key)
 	}
 	return nil
 }
@@ -106,7 +106,7 @@ func (s *S3) PresignPut(ctx context.Context, key, contentType string, size int64
 	}
 	req, err := s3.NewPresignClient(s.client).PresignPutObject(ctx, in, s3.WithPresignExpires(expires))
 	if err != nil {
-		return nil, fmt.Errorf("storage: presign %s: %w", key, err)
+		return nil, errors.Wrapf(err, "storage: presign %s", key)
 	}
 	h := http.Header{}
 	for k, v := range req.SignedHeader {
@@ -127,7 +127,7 @@ func (s *S3) Size(ctx context.Context, key string) (int64, error) {
 		if isNotFound(err) {
 			return 0, ErrNotFound
 		}
-		return 0, fmt.Errorf("storage: head %s: %w", key, err)
+		return 0, errors.Wrapf(err, "storage: head %s", key)
 	}
 	return aws.ToInt64(out.ContentLength), nil
 }

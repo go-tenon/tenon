@@ -5,13 +5,13 @@ import (
 	"context"
 	"crypto/subtle"
 	"database/sql"
-	"errors"
-	"fmt"
 	"image/png"
 	"slices"
 	"strings"
 	"time"
 	"uuid"
+
+	"github.com/cockroachdb/errors"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/pquerna/otp"
@@ -60,7 +60,7 @@ func (s *Service) MFAStatus(ctx context.Context, userID uuid.UUID) (MFAStatus, e
 		return MFAStatus{}, nil
 	}
 	if err != nil {
-		return MFAStatus{}, fmt.Errorf("account: mfa status: %w", err)
+		return MFAStatus{}, errors.Wrap(err, "account: mfa status")
 	}
 	return MFAStatus{Enabled: true, EnabledAt: m.EnabledAt, RecoveryCodes: len(m.RecoveryCodes)}, nil
 }
@@ -74,7 +74,7 @@ func (s *Service) SetupMFA(ctx context.Context, userID uuid.UUID) (*MFASetup, er
 	}
 	key, err := totp.Generate(totp.GenerateOpts{Issuer: s.cfg.Issuer, AccountName: u.Email, Period: totpPeriod})
 	if err != nil {
-		return nil, fmt.Errorf("account: setup mfa: %w", err)
+		return nil, errors.Wrap(err, "account: setup mfa")
 	}
 	now := s.now()
 	m := &mfa{UserID: userID, CreatedAt: now, UpdatedAt: now, Secret: s.cipher.EncryptString(key.Secret()), RecoveryCodes: []string{}}
@@ -84,7 +84,7 @@ func (s *Service) SetupMFA(ctx context.Context, userID uuid.UUID) (*MFASetup, er
 		Where("m.enabled_at IS NULL").
 		Exec(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("account: setup mfa: %w", err)
+		return nil, errors.Wrap(err, "account: setup mfa")
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return nil, ErrMFAEnabled
@@ -262,7 +262,7 @@ func mfaError(op string, err error) error {
 		errors.Is(err, ErrMFANotEnabled) || errors.Is(err, ErrNotFound) {
 		return err
 	}
-	return fmt.Errorf("account: %s: %w", op, err)
+	return errors.Wrapf(err, "account: %s", op)
 }
 
 // mfaClaims 是两步验证 challenge 的内容，用单独派生的密钥签名，不能当作 access token 使用。
