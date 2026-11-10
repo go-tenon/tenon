@@ -32,7 +32,7 @@ var dependencies = map[string][]string{
 	"queue":      {"logging"},
 	"broadcast":  {"logging"},
 	"schedule":   {"lock", "logging"},
-	"ai":         {"errorx", "httpx", "logging"},
+	"ai":         {"errorx", "httpx", "logging", "database"},
 	"command":    {"cleanup", "config", "errorx", "logging", "i18n", "identity", "database", "httpx", "page"},
 	"internal":   {"cleanup", "config", "errorx", "logging", "i18n", "identity", "database", "httpx", "page", "command", "filesystem", "mail", "ratelimit", "session", "lock", "hashing", "queue", "web", "schedule", "ai", "apitoken", "broadcast"},
 }
@@ -274,11 +274,15 @@ func TestDatabaseCoreDoesNotLinkDrivers(t *testing.T) {
 		module + "/database":           all,
 		module + "/database/migrate":   all,
 		module + "/command/migratecmd": all,
+		module + "/ai":                 all,
 	}
+	// 各驱动子包和 AI 对话存储的同名子包只链接自己的驱动。
 	for name, own := range drivers {
 		for _, other := range all {
 			if other != own {
-				checks[module+"/database/"+name] = append(checks[module+"/database/"+name], other)
+				for _, pkg := range []string{module + "/database/" + name, module + "/ai/" + name} {
+					checks[pkg] = append(checks[pkg], other)
+				}
 			}
 		}
 	}
