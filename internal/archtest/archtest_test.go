@@ -22,11 +22,12 @@ var dependencies = map[string][]string{
 	"database":   {"config"},
 	"filesystem": {"errorx", "identity"},
 	"mail":       {"i18n"},
-	"httpx":      {"errorx", "identity", "i18n", "logging"},
+	"ratelimit":  {"errorx"},
+	"httpx":      {"errorx", "identity", "i18n", "logging", "ratelimit"},
 	"session":    {"identity", "httpx", "logging"},
 	"lock":       {},
 	"command":    {"cleanup", "config", "errorx", "logging", "i18n", "identity", "database", "httpx", "page"},
-	"internal":   {"cleanup", "config", "errorx", "logging", "i18n", "identity", "database", "httpx", "page", "command", "filesystem", "mail", "session", "lock"},
+	"internal":   {"cleanup", "config", "errorx", "logging", "i18n", "identity", "database", "httpx", "page", "command", "filesystem", "mail", "ratelimit", "session", "lock"},
 }
 
 // 基础包不引用传输、数据库和命令组件。

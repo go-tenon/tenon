@@ -44,6 +44,7 @@
 - [认证](authentication.md)
 - [授权](authorization.md)
 - [会话](session.md)
+- [限流](rate-limiting.md)
 
 ## 数据库
 
