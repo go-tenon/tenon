@@ -10,6 +10,7 @@
     - [覆盖内置消息](#overriding-built-in-messages)
 - [获取翻译](#retrieving-translations)
 - [翻译错误消息](#translating-errors)
+- [在 HTTP 之外使用](#outside-http)
 
 <a id="introduction"></a>
 ## 简介
@@ -160,3 +161,20 @@ return ErrSlugTaken.Wrap(err, errorx.Public("slug", c.Slug))
 
 > [!NOTE]
 > 只有业务错误会被翻译。验证错误、路由不存在、服务端内部错误等不带 `code` 的错误保持 Huma 的英文描述，客户端应根据状态码自行展示提示。
+
+<a id="outside-http"></a>
+## 在 HTTP 之外使用
+
+`i18n.T` 只读取 context 中的语言，`httpx.Locale` 只是替 HTTP 请求调用了 `i18n.WithLocale`。后台任务等其他入口要自己写入语言，否则 `i18n.T` 会原样返回消息 ID。
+
+例如文章发布后，后台任务给作者发送通知，语言取自作者的偏好设置：
+
+```go
+func (n *Notifier) ArticlePublished(ctx context.Context, a *Article, author *User) error {
+    ctx = i18n.WithLocale(ctx, n.languages, i18n.Match(n.languages, author.Language))
+    title := i18n.T(ctx, "article.published", map[string]any{"title": a.Title})
+    return n.send(ctx, author, title)
+}
+```
+
+`i18n.Match` 接受 `Accept-Language` 格式的偏好，在语言目录中协商，匹配失败时返回默认语言。它可以接收多个值，gRPC 拦截器可以直接传入 `metadata.ValueFromIncomingContext(ctx, "accept-language")...`。
