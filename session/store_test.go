@@ -163,7 +163,7 @@ func TestStoreRevokeSubject(t *testing.T) {
 func TestStoreRevokeOthers(t *testing.T) {
 	forEachDriver(t, func(t *testing.T, driver database.Driver) {
 		store := session.NewStore(openDB(t, driver))
-		srv, _ := newApp(t, store)
+		srv := newApp(t, store)
 		laptop, phone, bob := newClient(t), newClient(t), newClient(t)
 		for c, user := range map[*http.Client]string{laptop: "alice", phone: "alice", bob: "bob"} {
 			if resp := do(t, c, http.MethodPost, srv.URL+"/login", `{"user":"`+user+`"}`); resp.StatusCode != http.StatusNoContent {
@@ -183,7 +183,7 @@ func TestStoreRevokeOthers(t *testing.T) {
 		}
 
 		// 未登录的会话不能撤销其他会话。
-		sm := session.New(defaults(), store, nil)
+		sm := session.New(defaults(), store)
 		ctx, err := sm.Load(context.Background(), "")
 		if err != nil {
 			t.Fatal(err)
@@ -235,7 +235,7 @@ func TestStoreCleanup(t *testing.T) {
 func TestStoreWithSessionManager(t *testing.T) {
 	forEachDriver(t, func(t *testing.T, driver database.Driver) {
 		db := openDB(t, driver)
-		srv, _ := newApp(t, session.NewStore(db))
+		srv := newApp(t, session.NewStore(db))
 		c := newClient(t)
 		if resp := do(t, c, http.MethodPost, srv.URL+"/login", `{"user":"root"}`); resp.StatusCode != http.StatusNoContent {
 			t.Fatalf("login status=%d", resp.StatusCode)

@@ -24,12 +24,13 @@ var dependencies = map[string][]string{
 	"mail":       {"i18n"},
 	"ratelimit":  {"errorx"},
 	"httpx":      {"errorx", "identity", "i18n", "logging", "ratelimit"},
-	"session":    {"identity", "httpx", "logging"},
+	"session":    {"identity"},
+	"web":        {"errorx", "httpx", "i18n", "identity", "logging", "session"},
 	"lock":       {},
 	"hashing":    {},
 	"queue":      {"logging"},
 	"command":    {"cleanup", "config", "errorx", "logging", "i18n", "identity", "database", "httpx", "page"},
-	"internal":   {"cleanup", "config", "errorx", "logging", "i18n", "identity", "database", "httpx", "page", "command", "filesystem", "mail", "ratelimit", "session", "lock", "hashing", "queue"},
+	"internal":   {"cleanup", "config", "errorx", "logging", "i18n", "identity", "database", "httpx", "page", "command", "filesystem", "mail", "ratelimit", "session", "lock", "hashing", "queue", "web"},
 }
 
 // 基础包不引用传输、数据库和命令组件。
@@ -44,7 +45,7 @@ var infrastructure = []string{
 
 // 后期应用形态使用的组件，当前 module 保持 HTTP API 依赖范围。
 var laterFormModules = []string{
-	"github.com/a-h/templ", "github.com/go-co-op/gocron",
+	"github.com/go-co-op/gocron",
 	"github.com/gorilla/websocket", "google.golang.org/grpc",
 	"github.com/xuri/excelize",
 }
@@ -126,7 +127,11 @@ func TestDependencyRules(t *testing.T) {
 		{module + "/mail", module + "/i18n", true},
 		{module + "/mail", module + "/database", false},
 		{module + "/httpx", module + "/mail", false},
-		{module + "/session", module + "/httpx/rest", true},
+		{module + "/session", module + "/httpx/rest", false},
+		{module + "/session", module + "/web", false},
+		{module + "/web", module + "/session", true},
+		{module + "/web", module + "/httpx", true},
+		{module + "/httpx", module + "/web", false},
 		{module + "/httpx", module + "/session", false},
 		{module + "/session", module + "/database", false},
 		{module + "/lock", "github.com/uptrace/bun", true},
@@ -184,6 +189,21 @@ func TestDependencyScope(t *testing.T) {
 		for _, prefix := range laterFormModules {
 			if under(path, prefix) {
 				t.Errorf("HTTP API module imports later-form component %s", path)
+			}
+		}
+	}
+}
+
+// TestAPIDoesNotLinkTempl 确保 JSON API 与会话存储不会链接 templ，templ 只由 web 引入。
+func TestAPIDoesNotLinkTempl(t *testing.T) {
+	for _, pkg := range []string{module + "/httpx", module + "/httpx/rest", module + "/session"} {
+		out, err := exec.Command("go", "list", "-deps", pkg).CombinedOutput()
+		if err != nil {
+			t.Fatalf("go list: %v\n%s", err, out)
+		}
+		for _, dep := range strings.Fields(string(out)) {
+			if under(dep, "github.com/a-h/templ") {
+				t.Errorf("%s depends on %s", pkg, dep)
 			}
 		}
 	}
