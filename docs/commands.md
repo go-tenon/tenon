@@ -185,6 +185,7 @@ type RunE func(ctx context.Context, cmd *cobra.Command, args []string) error
 ./bin/api routes --method POST
 ./bin/api routes --path /articles
 ./bin/api routes --method post --path /articles
+./bin/api routes --all
 ```
 
 `--method` 不区分大小写，`--path` 按路径包含的文本匹配，两者同时使用时取交集。不匹配任何路由时只输出表头。结果按路径、HTTP 方法排序，例如 `--path /articles` 会输出：
@@ -198,15 +199,15 @@ POST    /articles/{id}/publish  article-publish  bearer: articles  发布文章
 
 SUMMARY 来自路由声明的 `huma.Operation.Summary`，没有摘要时显示为 `-`；摘要中的换行和制表符会合并为空格，保持每条路由占一行。
 
-`NewRoutes` 的回调签名是 `func(context.Context) (*rest.API, error)`。回调负责以 `rest.ModeOpenAPI` 创建 API，并调用与 `serve`、`openapi` 相同的 `bootstrap.Routes`；命令负责读取 `api.Routes()` 并输出结果。上面的完整示例不加载配置、不打开数据库，也不会构造 action 或执行 token 校验器。请把依赖运行时资源的 action 构造保留在[处理器工厂](routing.md#handler-factories)内。
+`NewRoutes` 的回调签名是 `func(context.Context) (*rest.API, error)`。回调负责以 `rest.ModeOpenAPI` 创建 API（其他模式会被命令拒绝，避免执行处理器工厂），并调用与 `serve`、`openapi` 相同的 `bootstrap.Routes`；命令负责读取 `api.Routes()` 并输出结果。上面的完整示例不加载配置、不打开数据库，也不会构造 action 或执行 token 校验器。请把依赖运行时资源的 action 构造保留在[处理器工厂](routing.md#handler-factories)内。
 
 路由声明仍留在各业务模块的 `routes.go`，新增模块时把它的 `Register` 加入 `bootstrap.Routes`，无需再维护一份总览清单。如果应用按配置启用不同路由，查看命令也应使用相同的路由选择条件。
 
-列表包含当前 API 的原生 chi 路由、挂载的 chi 子路由，以及 `/docs`、`/openapi.json` 等文档端点。没有 OpenAPI 信息的路由，其 Operation ID 和 SUMMARY 显示为 `-`，ACCESS 显示为 `unknown`。隐藏的 Huma 接口也会列出，但没有 OpenAPI 元数据可用于补充这些列。
+列表包含当前 API 的原生 chi 路由和挂载的 chi 子路由。Huma 自动注册的 `/docs`、`/openapi.json`、`/schemas/{schema}` 等文档端点默认不显示，加上 `--all` 时才会列出，ACCESS 显示为 `docs`。其他没有 OpenAPI 信息的路由，其 Operation ID 和 SUMMARY 显示为 `-`，ACCESS 显示为 `unknown`。隐藏的 Huma 接口也会列出，但没有 OpenAPI 元数据可用于补充这些列。
 
 挂载 `chi.Router` 时，列表可以展开具体的子路由。对于挂载的不透明 `http.Handler`，例如 `Mount("/files", handler)`，列表会按 chi 支持的各个方法列出 `/files/*`，包括 `CONNECT`、`QUERY` 等，ACCESS 均为 `unknown`；这些行表示挂载点接收的方法，不能据此判断处理器内部支持哪些接口，也无法展开其内部路由。
 
-ACCESS 展示路由声明：`public` 表示显式公开，`bearer` 表示要求认证，`bearer: articles` 同时列出所需的 scope。`unknown` 表示无法从声明确定策略，不表示允许匿名访问；自定义中间件的实际行为不会由这个命令检查。
+ACCESS 展示路由声明：`public` 表示显式公开，`bearer` 表示要求认证，`bearer: articles` 同时列出所需的 scope，`docs` 表示 Huma 的文档端点。`unknown` 表示无法从声明确定策略，不表示允许匿名访问；自定义中间件的实际行为不会由这个命令检查。
 
 <a id="config-command"></a>
 ### config 命令

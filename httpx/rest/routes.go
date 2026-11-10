@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"net/http"
 	"slices"
-	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/go-chi/chi/v5"
@@ -16,23 +15,35 @@ type Route struct {
 	Path        string
 	OperationID string
 	Summary     string
-	// Access 是 OpenAPI 中声明的访问策略：public、bearer（可带 scope）或 unknown。
-	// 它不推断 chi 中间件的行为；没有可识别声明的路由一律为 unknown。
+	// Access 是路由声明的访问策略，取值见 Access* 常量。
+	// 它不推断 chi 中间件的行为；没有可识别声明的路由一律为 AccessUnknown。
 	Access string
+	// Scopes 是 AccessBearer 路由要求调用者具备的全部 scope。
+	Scopes []string
 }
 
+// Route.Access 的取值。
+const (
+	AccessPublic  = "public"  // 通过 Public 显式公开
+	AccessBearer  = "bearer"  // 通过 RequireBearer 要求认证
+	AccessDocs    = "docs"    // Huma 自动注册的文档端点，例如 /docs、/openapi.json
+	AccessUnknown = "unknown" // 无法从声明确定策略，不表示允许匿名访问
+)
+
 // Routes 返回按路径、方法排序的路由快照，不调用处理器或处理器工厂。
-// 结果包含原生 chi 路由和文档端点；隐藏或未进入 OpenAPI 的路由没有 OperationID 和 Summary，
-// Access 为 unknown。请在应用完成路由注册后调用。
+// 结果包含原生 chi 路由和 Access 为 AccessDocs 的文档端点；隐藏或未进入 OpenAPI 的路由
+// 没有 OperationID 和 Summary，Access 为 AccessUnknown。请在应用完成路由注册后调用。
 func (a *API) Routes() []Route {
 	var routes []Route
 	// Walk 只会返回回调产生的错误；这里的回调始终成功。
 	_ = chi.Walk(a.router, func(method, path string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
-		route := Route{Method: method, Path: path, Access: "unknown"}
+		route := Route{Method: method, Path: path, Access: AccessUnknown}
 		if op := routeOperation(a.OpenAPI().Paths[path], method); op != nil {
 			route.OperationID = op.OperationID
 			route.Summary = op.Summary
-			route.Access = routeAccess(op)
+			route.Access, route.Scopes = routeAccess(op)
+		} else if a.docRoutes[path] {
+			route.Access = AccessDocs
 		}
 		routes = append(routes, route)
 		return nil
@@ -72,20 +83,18 @@ func routeOperation(item *huma.PathItem, method string) *huma.Operation {
 	}
 }
 
-func routeAccess(op *huma.Operation) string {
+func routeAccess(op *huma.Operation) (string, []string) {
 	if op.Security == nil {
-		return "unknown"
+		return AccessUnknown, nil
 	}
 	if len(op.Security) == 0 {
-		return "public"
+		return AccessPublic, nil
 	}
 	if len(op.Security) == 1 && len(op.Security[0]) == 1 && op.Metadata["mygoravel.bearer"] == true {
 		if _, ok := op.Security[0]["bearer"]; ok {
-			if scopes, ok := op.Extensions["x-required-scopes"].([]string); ok && len(scopes) > 0 {
-				return "bearer: " + strings.Join(scopes, ", ")
-			}
-			return "bearer"
+			scopes, _ := op.Extensions["x-required-scopes"].([]string)
+			return AccessBearer, slices.Clone(scopes)
 		}
 	}
-	return "unknown"
+	return AccessUnknown, nil
 }

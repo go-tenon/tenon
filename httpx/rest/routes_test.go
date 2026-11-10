@@ -59,14 +59,16 @@ func TestRoutesIncludesTypedNativeAndHiddenRoutesWithoutRuntime(t *testing.T) {
 		{Method: http.MethodGet, Path: "/inventory/health/ready", Access: "unknown"},
 		{Method: http.MethodGet, Path: "/inventory/hidden", Access: "unknown"},
 		{Method: http.MethodGet, Path: "/inventory/items", OperationID: "item-list", Summary: "查看条目列表\n支持分页", Access: "public"},
-		{Method: http.MethodPost, Path: "/inventory/items", OperationID: "item-create", Summary: "创建条目", Access: "bearer: items:write, items:read"},
+		{Method: http.MethodPost, Path: "/inventory/items", OperationID: "item-create", Summary: "创建条目", Access: "bearer", Scopes: []string{"items:write", "items:read"}},
 		{Method: http.MethodGet, Path: "/inventory/private", OperationID: "item-private", Access: "bearer"},
 	}
 	if !reflect.DeepEqual(inventory, want) {
 		t.Fatalf("routes = %#v, want %#v", inventory, want)
 	}
-	for _, path := range []string{"/docs", "/openapi.json"} {
-		if !slices.Contains(routes, rest.Route{Method: http.MethodGet, Path: path, Access: "unknown"}) {
+	for _, path := range []string{"/docs", "/openapi.json", "/openapi.yaml", "/openapi-3.0.json", "/openapi-3.0.yaml", "/schemas/{schema}"} {
+		if !slices.ContainsFunc(routes, func(r rest.Route) bool {
+			return reflect.DeepEqual(r, rest.Route{Method: http.MethodGet, Path: path, Access: rest.AccessDocs})
+		}) {
 			t.Errorf("missing documentation endpoint %s", path)
 		}
 	}
@@ -78,6 +80,14 @@ func TestRoutesIncludesTypedNativeAndHiddenRoutesWithoutRuntime(t *testing.T) {
 	routes[0].Path = "changed"
 	if api.Routes()[0].Path == "changed" {
 		t.Fatal("snapshot mutation changed the API")
+	}
+	for i, r := range routes {
+		if r.OperationID == "item-create" {
+			routes[i].Scopes[0] = "changed"
+		}
+	}
+	if !slices.ContainsFunc(api.Routes(), func(r rest.Route) bool { return slices.Equal(r.Scopes, []string{"items:write", "items:read"}) }) {
+		t.Fatal("scope mutation changed the API")
 	}
 }
 
@@ -130,5 +140,17 @@ func TestRoutesExpandsOpaqueMountMethodsWithoutInvokingHandler(t *testing.T) {
 				t.Fatalf("mount routes = %#v, want %#v", got, want)
 			}
 		})
+	}
+}
+
+func TestRoutesMarksOnlyHumaDocumentationEndpoints(t *testing.T) {
+	api := rest.New(rest.Options{Mode: rest.ModeOpenAPI})
+	// 与文档端点相似但由应用注册的路由不能被误标为 docs。
+	api.Router().Get("/openapi", func(http.ResponseWriter, *http.Request) {})
+	api.Router().Get("/docs/guide", func(http.ResponseWriter, *http.Request) {})
+	for _, route := range api.Routes() {
+		if (route.Path == "/openapi" || route.Path == "/docs/guide") && route.Access != rest.AccessUnknown {
+			t.Errorf("%s marked as %s", route.Path, route.Access)
+		}
 	}
 }

@@ -26,7 +26,8 @@ func TestRoutesCommand(t *testing.T) {
 		want []string
 		omit []string
 	}{
-		{"all", nil, []string{"GET /articles article-list public 获取文章 列表", "POST /articles article-create bearer: articles 创建文章", "GET /livez - unknown -", "GET /docs - unknown -"}, nil},
+		{"default", nil, []string{"GET /articles article-list public 获取文章 列表", "POST /articles article-create bearer: articles 创建文章", "GET /livez - unknown -"}, []string{"/docs", "/openapi", "/schemas"}},
+		{"all", []string{"--all"}, []string{"GET /articles article-list public 获取文章 列表", "GET /docs - docs -", "GET /openapi.json - docs -", "GET /schemas/{schema} - docs -"}, nil},
 		{"method", []string{"--method", "post"}, []string{"POST /articles article-create bearer: articles 创建文章"}, []string{"article-list", "/livez", "/docs"}},
 		{"path", []string{"--path", "live"}, []string{"GET /livez - unknown -"}, []string{"article-create", "article-list", "/docs"}},
 		{"combined", []string{"--path", "articles", "--method", "get"}, []string{"GET /articles article-list public 获取文章 列表"}, []string{"article-create", "/docs"}},
@@ -113,6 +114,7 @@ func TestRoutesRejectsMissingAPI(t *testing.T) {
 	}{
 		{"nil factory", nil, "routes: nil API factory"},
 		{"nil API", func(context.Context) (*rest.API, error) { return nil, nil }, "routes: API factory returned nil"},
+		{"serve mode", func(context.Context) (*rest.API, error) { return rest.New(rest.Options{}), nil }, "routes: API factory must use rest.ModeOpenAPI"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var out, diagnostics bytes.Buffer

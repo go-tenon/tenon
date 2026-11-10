@@ -31,6 +31,8 @@ type API struct {
 	router    chi.Router
 	logger    *slog.Logger
 	languages *goi18n.Bundle
+	// docRoutes 是 Huma 自动注册的文档端点路径，用于在路由总览中标记它们。
+	docRoutes map[string]bool
 }
 
 // Options 创建 API。
@@ -80,7 +82,24 @@ func New(opts Options) *API {
 	cfg.OpenAPI.Components.Schemas.RegisterTypeAlias(reflect.TypeOf(huma.ErrorModel{}), reflect.TypeOf(ErrorModel{}))
 	cfg.Transformers = append(cfg.Transformers, opts.Transformers...)
 	h := humachi.New(r, cfg)
-	return &API{API: h, mode: opts.Mode, router: r, logger: opts.Logger, languages: opts.Languages}
+	return &API{API: h, mode: opts.Mode, router: r, logger: opts.Logger, languages: opts.Languages, docRoutes: docRoutes(cfg)}
+}
+
+// docRoutes 按 Huma 的注册规则列出文档端点路径。
+func docRoutes(cfg huma.Config) map[string]bool {
+	paths := map[string]bool{}
+	if cfg.OpenAPIPath != "" {
+		for _, suffix := range []string{".json", ".yaml", "-3.0.json", "-3.0.yaml"} {
+			paths[cfg.OpenAPIPath+suffix] = true
+		}
+	}
+	if cfg.DocsPath != "" {
+		paths[cfg.DocsPath] = true
+	}
+	if cfg.SchemasPath != "" {
+		paths[cfg.SchemasPath+"/{schema}"] = true
+	}
+	return paths
 }
 
 // Mode 返回当前模式。
