@@ -4,6 +4,8 @@
 - [配置](#configuration)
 - [连接数据库](#connecting)
 - [定义模型](#defining-models)
+    - [自动维护时间戳](#timestamps)
+    - [软删除](#soft-deletes)
 - [执行查询](#running-queries)
     - [处理“未找到”](#handling-not-found)
 - [事务](#transactions)
@@ -99,6 +101,12 @@ func Check(ctx context.Context, dsn string) error {
 ```go
 package article
 
+import (
+    "time"
+
+    "github.com/google/uuid"
+)
+
 const (
     StatusDraft     = "draft"
     StatusPublished = "published"
@@ -112,13 +120,97 @@ type Article struct {
     Content     string     `bun:"content,notnull"`
     Status      string     `bun:"status,notnull"`
     PublishedAt *time.Time `bun:"published_at"`
-    CreatedAt   time.Time  `bun:"created_at,notnull"`
+    CreatedAt   time.Time  `bun:"created_at,notnull,skipupdate"`
+    UpdatedAt   time.Time  `bun:"updated_at,notnull"`
+    DeletedAt   time.Time  `bun:"deleted_at,soft_delete,nullzero"`
 }
 ```
 
 `Slug` 是文章在网址中的标识，例如 `/blog/hello-world` 中的 `hello-world`，它在所有文章中必须唯一。文章创建时是草稿（`draft`），发布后变为 `published`，并记录发布时间。
 
-模型只用于查询映射，表结构本身由[迁移](migrations.md)管理。
+模型声明字段映射和下面介绍的 Bun 行为，表结构本身由[迁移](migrations.md#migration-structure)管理。mygoravel 不会统一添加 `created_at`、`updated_at`、`deleted_at`，你可以按需在模型和迁移中声明它们。本文的 `Article` 示例同时使用时间戳和软删除。
+
+<a id="timestamps"></a>
+### 自动维护时间戳
+
+如果你希望创建、修改记录时自动维护时间戳，可以在模型上实现 Bun 的 [`BeforeAppendModel`](https://bun.uptrace.dev/guide/hooks.html#beforeappendmodel) 钩子。Bun 会在构建插入或更新语句前调用它，无需在 `database.Open` 中注册。
+
+在 `article` 包中新增 `model_hooks.go`，为上面的 `Article` 实现钩子：
+
+```go
+package article
+
+import (
+    "context"
+    "time"
+
+    "github.com/uptrace/bun"
+)
+
+var _ bun.BeforeAppendModelHook = (*Article)(nil)
+
+func (a *Article) BeforeAppendModel(ctx context.Context, query bun.Query) error {
+    now := time.Now().UTC()
+    switch query.(type) {
+    case *bun.InsertQuery:
+        if a.CreatedAt.IsZero() {
+            a.CreatedAt = now
+        }
+        a.UpdatedAt = now
+    case *bun.UpdateQuery:
+        a.UpdatedAt = now
+    }
+    return nil
+}
+```
+
+这个实现会在插入时填充空的 `CreatedAt` 并设置 `UpdatedAt`，在更新时刷新 `UpdatedAt`。模型中 `CreatedAt` 的 `skipupdate` 标签会让 Bun 在根据模型生成更新字段时跳过创建时间。
+
+钩子修改的是模型字段。使用 `Column(...)` 限定更新列时，仍需把 `updated_at` 包含进去。下面的 `item` 是已加载并修改标题的 `Article`，`db` 是打开的连接池：
+
+```go
+_, err := db.NewUpdate().
+    Model(&item).
+    Column("title", "updated_at").
+    WherePK().
+    Exec(ctx)
+```
+
+如果使用 `Set(...)` 显式指定更新表达式，需要同时设置 `Set("updated_at = ?", time.Now().UTC())`。`Model((*Article)(nil))` 没有模型实例可供此钩子修改，原生 SQL 也不会调用模型钩子；这些写入路径需要自行维护时间戳。迁移中的 `DEFAULT now()` 只提供插入默认值，不会在更新时自动刷新时间。
+
+<a id="soft-deletes"></a>
+### 软删除
+
+如果删除后需要保留记录，可以使用 Bun 原生的[模型软删除](https://bun.uptrace.dev/guide/soft-deletes.html#using-bun-models)。上面 `DeletedAt` 的 `soft_delete` 标签启用该功能，`nullzero` 将 Go 的零时间映射为 SQL `NULL`；迁移中对应的 `deleted_at` 列应允许为空。
+
+对于配置了该标签的模型，`NewDelete()` 会更新 `deleted_at`，普通模型查询会自动排除已软删除的记录。下面的 `id` 是目标文章的 UUID，`ctx` 是请求上下文，`db` 是打开的连接池：
+
+```go
+// 标记为已删除，保留记录。
+_, err := db.NewDelete().
+    Model((*Article)(nil)).
+    Where("id = ?", id).
+    Exec(ctx)
+
+// 仅查询已软删除的文章。
+var deleted []Article
+err = db.NewSelect().Model(&deleted).WhereDeleted().Scan(ctx)
+
+// 查询全部文章，包括已软删除的记录。
+var all []Article
+err = db.NewSelect().Model(&all).WhereAllWithDeleted().Scan(ctx)
+
+// 物理删除目标文章，无论它是否已软删除。
+_, err = db.NewDelete().
+    Model((*Article)(nil)).
+    Where("id = ?", id).
+    ForceDelete().
+    Exec(ctx)
+```
+
+软删除由 Bun 根据模型标签处理，直接执行原生 SQL 时需要自行处理 `deleted_at` 条件。上述时间戳钩子只处理插入和更新查询，`NewDelete()` 的软删除不会通过其中的 `*bun.UpdateQuery` 分支刷新 `updated_at`。
+
+软删除的记录仍然参与数据库唯一约束。本例的 `articles_slug_key` 会继续保留已删除文章的 slug；如果业务允许复用，可在迁移中改为仅覆盖 `deleted_at IS NULL` 的唯一索引，见 Bun 的[唯一索引说明](https://bun.uptrace.dev/guide/soft-deletes.html#unique-indexes)。
 
 <a id="running-queries"></a>
 ## 执行查询
@@ -191,7 +283,7 @@ func (s *Service) Create(ctx context.Context, subject identity.Subject, c Change
     }
     item := &Article{
         ID: uuid.New(), AuthorID: subject.ID, Status: StatusDraft,
-        Title: c.Title, Slug: c.Slug, Content: c.Content, CreatedAt: time.Now().UTC(),
+        Title: c.Title, Slug: c.Slug, Content: c.Content,
     }
     _, err := s.db.NewInsert().Model(item).Exec(ctx)
     if database.IsUniqueViolation(err, "articles_slug_key") {

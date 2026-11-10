@@ -126,7 +126,7 @@ func (s *Service) Publish(ctx context.Context, subject identity.Subject, id uuid
         }
         now := time.Now().UTC()
         item.Status, item.PublishedAt = StatusPublished, &now
-        if _, err := tx.NewUpdate().Model(item).Column("status", "published_at").WherePK().Exec(ctx); err != nil {
+        if _, err := tx.NewUpdate().Model(item).Column("status", "published_at", "updated_at").WherePK().Exec(ctx); err != nil {
             return errors.Wrap(err, "publish article")
         }
         return nil
