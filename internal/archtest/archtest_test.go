@@ -20,9 +20,10 @@ var dependencies = map[string][]string{
 	"identity": {},
 	"page":     {"errorx"},
 	"database": {"config"},
+	"files":    {"identity", "database"},
 	"httpx":    {"errorx", "identity", "i18n", "logging"},
 	"command":  {"cleanup", "config", "errorx", "logging", "i18n", "identity", "database", "httpx", "page"},
-	"internal": {"cleanup", "config", "errorx", "logging", "i18n", "identity", "database", "httpx", "page", "command"},
+	"internal": {"cleanup", "config", "errorx", "logging", "i18n", "identity", "database", "httpx", "page", "command", "files"},
 }
 
 // 传输、数据库和命令组件的包前缀。
@@ -37,7 +38,7 @@ var laterFormModules = []string{
 	"github.com/a-h/templ", "github.com/alexedwards/scs",
 	"github.com/ThreeDotsLabs/watermill", "github.com/go-co-op/gocron",
 	"github.com/gorilla/websocket", "google.golang.org/grpc",
-	"github.com/aws/aws-sdk-go-v2/service/s3", "github.com/resend/resend-go",
+	"github.com/resend/resend-go",
 	"github.com/wneessen/go-mail", "github.com/xuri/excelize",
 }
 
@@ -112,6 +113,9 @@ func TestDependencyRules(t *testing.T) {
 		{module + "/errorx", module + "/httpx/rest", false},
 		{module + "/httpx", module + "/command", false},
 		{module + "/database", module + "/httpx", false},
+		{module + "/files", module + "/identity", true},
+		{module + "/files", module + "/httpx", false},
+		{module + "/database", module + "/files", false},
 		{module + "/cleanup", "github.com/jackc/pgx/v5", false},
 		{module + "/config", "net/http", false},
 		{module + "/i18n", "github.com/spf13/cobra", false},
@@ -124,6 +128,19 @@ func TestDependencyRules(t *testing.T) {
 				t.Fatalf("allowed=%v reason=%q", tc.allowed, reason)
 			}
 		})
+	}
+}
+
+// TestLocalFilesDoesNotLinkS3 确保仅使用本地文件服务不会链接 S3 SDK。
+func TestLocalFilesDoesNotLinkS3(t *testing.T) {
+	out, err := exec.Command("go", "list", "-deps", module+"/files/local").CombinedOutput()
+	if err != nil {
+		t.Fatalf("go list: %v\n%s", err, out)
+	}
+	for _, dep := range strings.Fields(string(out)) {
+		if under(dep, "github.com/aws/aws-sdk-go-v2") {
+			t.Errorf("local files depends on %s", dep)
+		}
 	}
 }
 

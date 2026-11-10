@@ -156,8 +156,10 @@ mygoravel 的每个包都可以单独使用，按需引入即可：
 | `httpx` | HTTP 中间件、平滑停机 | [中间件](middleware.md)、[请求生命周期](lifecycle.md) |
 | `httpx/rest` | 基于 Huma 的路由注册、错误转换与 OpenAPI | [路由](routing.md) |
 | `database` | 打开 PostgreSQL 连接，识别约束错误 | [数据库](database.md) |
-| `database/migrate` | 构造 goose 迁移器，检查已发布迁移 | [迁移](migrations.md) |
+| `database/migrate` | 构造 goose 迁移器、发布功能包迁移、检查历史迁移 | [迁移](migrations.md) |
 | `database/dbtest` | 为测试创建隔离的真实数据库 | [测试](testing.md#database-tests) |
+| `files` | 基于单张 `files` 表管理上传、确认、归属和清理 | [文件存储与上传](files.md) |
+| `files/local`、`files/s3` | 文件服务的本地与 S3 存储实现 | [文件存储与上传](files.md#assembling-files) |
 | `command` | 根命令、`Run`、`config` 命令、退出码 | [命令行](commands.md) |
 | `command/migratecmd` | `migrate` 命令 | [migrate 命令](commands.md#migrate-command) |
 | `command/restcmd` | `openapi`、`routes` 命令 | [openapi 命令](commands.md#openapi-command) |

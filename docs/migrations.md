@@ -4,6 +4,7 @@
 - [编写迁移](#writing-migrations)
     - [迁移文件结构](#migration-structure)
 - [嵌入迁移文件](#embedding-migrations)
+- [发布框架迁移](#publishing-framework-migrations)
 - [运行迁移](#running-migrations)
     - [迁移命令](#migration-commands)
     - [在代码中执行迁移](#creating-a-provider)
@@ -75,6 +76,71 @@ var FS embed.FS
 ```
 
 这样 `migrations` 就成了一个普通的 Go 包，命令行和测试都可以通过 `migrations.FS` 使用这些文件。每次新增迁移文件后，都需要重新构建应用。
+
+<a id="publishing-framework-migrations"></a>
+## 发布框架迁移
+
+文件上传等可选功能自带迁移 SQL。使用这些功能时，把迁移发布到你的应用目录，审查并纳入版本控制，然后交给应用现有的 goose 迁移流程执行。
+
+发布命令需要显式注册。下面是加入已有命令装配代码的片段：`root` 是 `command.Root` 返回的根命令，`migrations.FS` 是应用嵌入的迁移，`dbConfig` 是应用命令装配中从配置取出数据库配置的函数。需要导入 `command/migratecmd`、`database/migrate` 和 `files` 包：
+
+```go
+migrationCmd := migratecmd.New(migrations.FS, dbConfig)
+migrationCmd.AddCommand(migratecmd.Publish(
+    migrate.Source{Name: "files", FS: files.Migrations()},
+))
+root.AddCommand(migrationCmd)
+```
+
+在应用根目录执行：
+
+```bash
+go run ./cmd/api migrate publish --dir migrations
+```
+
+`--dir` 默认是当前工作目录下的 `migrations`。命令只输出本次新生成的文件名；再次运行且没有新增迁移时，没有输出。发布过程不加载应用配置，不连接数据库或存储，也不执行 SQL。
+
+每个发布文件的第一行包含稳定的来源标记，例如：
+
+```sql
+-- mygoravel: files/0001_create_files
+```
+
+发布器通过这个标记识别已有迁移。你可以在首次执行前调整 SQL 或重命名文件，但应保留标记；再次发布不会覆盖你的修改。升级框架后，再次运行命令只会发布新增的来源迁移。新迁移版本高于目录已有最大版本，重复版本或重复来源标记会直接报错。
+
+框架来源的名称、原始文件名和版本一经发布就不能改变；升级时只能追加更高版本。发布器会拒绝同一来源版本改名，以及在已发布版本之前补插迁移，避免把旧 SQL 当作新增迁移重复执行。这个限制不影响应用对发布后文件的重命名，只要保留来源标记。
+
+生成的版本默认是 UTC 时间戳，跨分钟、日期和年份时按一秒递增。已有目录使用普通数字版本时，发布器同样保证新版本大于已有最大值；不能表示为四位年份时间戳的版本按整数递增，超过 Goose 的 `int64` 范围会在写入前报错。
+
+发布器对目录使用系统文件锁，多个发布进程同时操作同一目录时，未取得锁的进程会报错，可以稍后重试。锁在进程退出后自动释放；目录中的 `.mygoravel-publish.lock` 保留供后续调用复用，可以把 `.mygoravel-publish*` 加入项目的 `.gitignore`。单个 SQL 在完整写入后以硬链接原子发布，因此目标文件系统需要支持文件锁和硬链接。发布中途遇到 I/O 错误时，已完成的文件会保留，修复后重试即可。
+
+> [!NOTE]
+> 发布完成后，需要审查和提交 SQL，再重新构建应用，将新文件嵌入二进制。然后运行 `migrate up`。已经在任何环境执行过的迁移不能修改，后续调整必须新增迁移。`CheckPublished` 继续用于检查应用自身的历史基线，不用于比较框架源 SQL 与应用定制后的 SQL。
+
+如果应用还没有任何 SQL，`//go:embed *.sql` 暂时无法编译。可以先创建独立的发布入口，不导入应用的迁移包。下面是完整的 `cmd/publish/main.go`：
+
+```go
+package main
+
+import (
+    "github.com/ryan053857/mygoravel/command"
+    "github.com/ryan053857/mygoravel/command/migratecmd"
+    "github.com/ryan053857/mygoravel/database/migrate"
+    "github.com/ryan053857/mygoravel/files"
+)
+
+func main() {
+    root := command.Root("publish-migrations", "发布应用需要的迁移")
+    root.AddCommand(migratecmd.Publish(
+        migrate.Source{Name: "files", FS: files.Migrations()},
+    ))
+    command.Execute(root)
+}
+```
+
+执行 `go run ./cmd/publish publish --dir migrations` 后，再添加应用的 `migrations/embed.go` 和迁移执行命令。这个发布入口也可以一直保留，供开发时使用。
+
+自定义命令或工具也可以直接调用 `migrate.Publish("migrations", sources...)`；`sources` 是应用显式选择的 `[]migrate.Source`。每个来源的 `Name` 是稳定的包标识，`FS` 根目录直接包含带数字版本的 SQL。来源按传入顺序发布，同一来源的文件按数字版本排序。
 
 <a id="running-migrations"></a>
 ## 运行迁移

@@ -87,6 +87,7 @@ func main() {
 | `command.Run(use, short, run)` | 任意名称，例如 `serve`、`worker` | 是 |
 | `command.Config[C]()` | `config check`、`config show` | 是 |
 | `migratecmd.New(fsys, dbConfig)` | `migrate up`、`migrate status`、`migrate down` | 是 |
+| `migratecmd.Publish(sources...)` | 显式挂载的 `migrate publish` | 否 |
 | `restcmd.OpenAPI(opts, register)` | `openapi` | 否 |
 | `restcmd.Routes(opts, register)` | `routes` | 否 |
 
@@ -175,6 +176,14 @@ VERSION         STATE    APPLIED AT           FILE
 ```
 
 命令会加载配置、连接数据库并在结束后关闭连接。数据库连不上时以 `ExitUnavailable` 退出，部署脚本可以据此重试。迁移文件的编写与嵌入见[迁移](migrations.md)。
+
+需要文件上传等功能自带的 SQL 时，可在 `migratecmd.New` 返回的命令上显式添加 `migratecmd.Publish(sources...)`。其中 `sources` 是应用选择的 `[]migrate.Source`，例如 `migrate.Source{Name: "files", FS: files.Migrations()}`。注册后可以执行：
+
+```bash
+go run ./cmd/api migrate publish --dir migrations
+```
+
+这个命令只将尚未发布的 SQL 拷贝到应用目录，不加载配置、不连接数据库、不执行迁移。`--dir` 默认是 `migrations`；每个新增文件输出一行，重复执行不覆盖已有来源。注册代码、空项目首次发布方式及升级流程见[发布框架迁移](migrations.md#publishing-framework-migrations)。
 
 <a id="config-command"></a>
 ### config 命令
