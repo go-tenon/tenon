@@ -60,7 +60,7 @@ func (a *Publish) Handle(ctx context.Context, subject identity.Subject, id uuid.
         if err != nil {
             return errors.Wrap(err, "load article")
         }
-        if !canEdit(subject, item) {
+        if !CanEdit(subject, item) {
             return ErrForbidden.New()
         }
         if item.Status == StatusPublished {
@@ -134,12 +134,13 @@ func find(ctx context.Context, db bun.IDB, id uuid.UUID) (*Article, error) {
     return item, nil
 }
 
-func canEdit(subject identity.Subject, item *Article) bool {
+// CanEdit 报告 subject 能否修改 item，页面也用它决定是否显示编辑按钮。
+func CanEdit(subject identity.Subject, item *Article) bool {
     return subject.Can("articles:admin") || item.AuthorID == subject.ID
 }
 ```
 
-模型的定义见[定义模型](database.md#defining-models)，业务错误见[定义业务错误](errors.md#defining-errors)。`find` 和 `canEdit` 不导出，它们只是 action 之间共享的实现细节。不要因为两个 action 有几行相似的代码就急着提取函数；规则真正相同时再提取。
+模型的定义见[定义模型](database.md#defining-models)，业务错误见[定义业务错误](errors.md#defining-errors)。`find` 不导出，它只是 action 之间共享的实现细节；`CanEdit` 是授权规则，页面要用同一份规则决定显示哪些按钮，所以导出，见[授权函数](authorization.md#authorization-functions)。不要因为两个 action 有几行相似的代码就急着提取函数；规则真正相同时再提取。
 
 <a id="entry-points"></a>
 ## 从不同入口运行
@@ -173,7 +174,7 @@ rest.Register(api, publish, NewPublish(db).HTTP)
 // PublishAt 是定时发布的任务，payload 是文章 ID。
 var PublishAt = queue.Topic[uuid.UUID]("articles.publish")
 
-// system 是队列任务的调用者，canEdit 允许它发布任何文章。
+// system 是队列任务的调用者，CanEdit 允许它发布任何文章。
 var system = identity.Subject{ID: "system", Type: identity.SubjectService, Permissions: []string{"articles:admin"}}
 
 // Job 处理定时发布的任务。文章已经发布时任务视为完成，所以重复执行是安全的。

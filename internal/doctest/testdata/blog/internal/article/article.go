@@ -55,7 +55,7 @@ func find(ctx context.Context, db bun.IDB, id uuid.UUID) (*Article, error) {
 	return item, nil
 }
 
-func canEdit(subject identity.Subject, item *Article) bool {
+func CanEdit(subject identity.Subject, item *Article) bool {
 	return subject.Can("articles:admin") || item.AuthorID == subject.ID
 }
 
