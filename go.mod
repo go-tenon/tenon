@@ -43,6 +43,7 @@ require (
 	github.com/openai/openai-go v1.12.0
 	github.com/pressly/goose/v3 v3.29.0
 	github.com/prometheus/client_golang v1.25.0
+	github.com/qdrant/go-client v1.19.0
 	github.com/redis/rueidis v1.0.79
 	github.com/resend/resend-go/v3 v3.17.0
 	github.com/rs/cors v1.11.1
