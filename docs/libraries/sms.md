@@ -1,18 +1,5 @@
 # 短信
 
-- [简介](#introduction)
-- [装配发送器](#assembling)
-- [发送短信](#sending)
-- [错误](#errors)
-- [多个服务商](#failover)
-- [测试](#testing)
-- [使用阿里云](#aliyun)
-- [使用腾讯云](#tencent)
-- [自定义发送器](#custom-senders)
-
-<a id="introduction"></a>
-## 简介
-
 国内短信不能发送任意一段文字：只能用审核通过的**签名**和**模板**发送，发送时传模板 ID 和模板变量，例如模板“您的验证码是 ${code}，15 分钟内有效”加上 `{"code": "123456"}`。
 
 所以 `sms` 中的一条短信是收件号码、模板名和模板变量。模板名是应用自己起的，例如 `login_code`；签名和每家服务商的模板 ID 写在各自的配置中。同一条短信可以交给不同的服务商发送，业务代码不需要知道用的是哪一家。
@@ -24,7 +11,29 @@
 | `sms/logsms` | 只写日志不发送，用于开发 |
 | `sms/smstest` | 在内存中记录，用于测试 |
 
-本章的例子是[读者 App](../security/account-examples.md#reader-api) 的验证码登录。
+- [示例用法](#example-usage)
+- [装配发送器](#assembling)
+- [发送短信](#sending)
+- [错误](#errors)
+- [多个服务商](#failover)
+- [测试](#testing)
+- [使用阿里云](#aliyun)
+- [使用腾讯云](#tencent)
+- [自定义发送器](#custom-senders)
+- [API 参考](#api-reference)
+
+<a id="example-usage"></a>
+## 示例用法
+
+```go
+sender := logsms.New(nil) // 开发时写进日志；生产环境换成 aliyun.New 或 tencent.New
+
+err := sender.Send(ctx, sms.Message{
+    To:       "+8613800138000",
+    Template: "login_code",
+    Params:   map[string]string{"code": "123456"},
+})
+```
 
 <a id="assembling"></a>
 ## 装配发送器
@@ -56,7 +65,7 @@ sms:
   aliyun:
     access_key_id: ${ALIYUN_ACCESS_KEY_ID}
     access_key_secret: ${ALIYUN_ACCESS_KEY_SECRET}
-    sign_name: 博客
+    sign_name: 示例
     templates:
       login_code: SMS_465000001
 ```
@@ -172,7 +181,7 @@ sms:
     secret_id: ${TENCENT_SECRET_ID}
     secret_key: ${TENCENT_SECRET_KEY}
     app_id: "1400000001"
-    sign_name: 博客
+    sign_name: 示例
     templates:
       login_code: {id: "2000001", params: [code]}
 ```
@@ -205,3 +214,48 @@ func (s *TwilioSender) Send(ctx context.Context, msg sms.Message) error {
     // 调用 Twilio API；21211（号码无效）、21610（用户退订）包装为 sms.ErrRejected
 }
 ```
+
+<a id="api-reference"></a>
+## API 参考
+
+包 `github.com/go-tenon/tenon/sms`。
+
+### Sender
+
+```go
+type Sender interface {
+    Send(ctx context.Context, msg Message) error
+}
+```
+
+### Message
+
+| 字段 | 说明 |
+| --- | --- |
+| `To string` | E.164 格式的号码，例如 `+8613800138000` |
+| `Template string` | 应用给模板起的名字，驱动按配置换成服务商的模板 ID |
+| `Params map[string]string` | 模板变量 |
+
+`Message` 可以完整地编码为 JSON，便于交给队列发送。
+
+### 发送器
+
+| 构造函数 | 说明 |
+| --- | --- |
+| `aliyun.New(cfg aliyun.Config, client *http.Client)` | 包 `sms/aliyun`，阿里云短信服务 |
+| `tencent.New(cfg tencent.Config, client *http.Client)` | 包 `sms/tencent`，腾讯云短信 |
+| `logsms.New(logger *slog.Logger)` | 包 `sms/logsms`，只写日志 |
+| `smstest.New()` | 包 `sms/smstest`，在内存中记录，见[测试](#testing) |
+
+
+### Failover
+
+```go
+func Failover(senders []Named, opts FailoverOptions) Sender
+```
+
+按顺序尝试多个服务商，见[多个服务商](#failover)。
+
+### 错误
+
+见[错误](#errors)。

@@ -1,6 +1,10 @@
 # 广播
 
-- [简介](#introduction)
+[服务端推送](../responses/sse.md)让一个连接上的客户端收到消息。部署多个实例时，发布消息的请求和要收到消息的客户端往往在不同实例上：编辑 A 在实例 1 上发布了文章，编辑 B 的长连接在实例 2 上。`broadcast` 包负责把消息送到每个实例，再交给这个实例上订阅了它的连接。
+
+它与传输方式无关：同一个 Hub 既可以推给 SSE 连接，也可以推给[实时频道](realtime.md)的 WebSocket 客户端。消息按主题（topic）分发，例如 `articles`、`room:42`。
+
+- [示例用法](#example-usage)
 - [创建 Hub](#creating-the-hub)
 - [发布事件](#publishing-events)
 - [推送给客户端](#pushing-to-browsers)
@@ -8,23 +12,34 @@
 - [后端](#backends)
 - [投递保证](#delivery-guarantees)
 - [测试](#testing)
+- [API 参考](#api-reference)
 
-<a id="introduction"></a>
-## 简介
+<a id="example-usage"></a>
+## 示例用法
 
-[服务端推送](../responses/sse.md)让一个连接上的客户端收到消息。部署多个实例时，发布消息的请求和要收到消息的客户端往往在不同实例上：编辑 A 在实例 1 上发布了文章，编辑 B 的长连接在实例 2 上。`broadcast` 包负责把消息送到每个实例，再交给这个实例上订阅了它的连接。
+```go
+hub := broadcast.New(redisbroadcast.New(rdb, "app:broadcast"), nil)
+defer hub.Close()
 
-它与传输方式无关：同一个 Hub 既可以推给 SSE 连接，也可以推给[实时频道](realtime.md)的 WebSocket 客户端。消息按主题（topic）分发，例如 `articles`、`room:42`。
+// 一个实例上订阅
+sub := hub.Subscribe("articles")
+defer sub.Close()
 
-本章为博客的编辑后台加上「其他编辑刚刚发布了什么」的实时提示。
+// 任意实例上发布，每个实例上订阅了 articles 的连接都会收到
+err := hub.PublishJSON(ctx, "articles", ArticlePublished{ID: id, Title: title})
+
+for m := range sub.C() {
+    // m.Topic、m.Data
+}
+```
 
 <a id="creating-the-hub"></a>
 ## 创建 Hub
 
-每个进程创建一个 `broadcast.Hub`，所有长连接共用。在[入口](../concepts/dependencies.md#assembling-the-application)的 `open` 中创建它，并登记关闭：
+每个进程创建一个 `broadcast.Hub`，所有长连接共用。在入口创建它，并登记关闭：
 
 ```go
-hub := broadcast.New(redisbroadcast.New(rdb, "blog:broadcast"), nil)
+hub := broadcast.New(redisbroadcast.New(rdb, "app:broadcast"), nil)
 stack.MustAdd("broadcast", func(context.Context) error { return hub.Close() })
 ```
 
@@ -33,7 +48,7 @@ stack.MustAdd("broadcast", func(context.Context) error { return hub.Close() })
 <a id="publishing-events"></a>
 ## 发布事件
 
-文章发布成功后，[Publish](../concepts/actions.md#writing-actions) action 发布一个事件，`hub` 由它的构造函数传入。事件在发布文章的事务中用 [AfterCommit](../database/quick-start.md#after-commit) 登记，事务提交之后才发出：
+例如文章发布成功后，“发布文章”的业务动作发布一个事件，`hub` 由它的构造函数传入。事件在发布文章的事务中用 [AfterCommit](../database/quick-start.md#after-commit) 登记，事务提交之后才发出：
 
 ```go
 type ArticlePublished struct {
@@ -85,7 +100,7 @@ for {
 <a id="replaying-missed-events"></a>
 ### 断线补发
 
-连接断开期间的事件不会再投递。[长连接](../responses/sse.md#long-lived-connections)的处理器为每个事件带上了 ID，客户端重连时通过 `Last-Event-ID` 发回最后收到的 ID。文章的 ID 是 UUIDv7，按时间排序，所以补发就是查询这个 ID 之后发布的文章。`publishedAfter` 是 `article.PublishedAfter` action：
+连接断开期间的事件不会再投递。[长连接](../responses/sse.md#long-lived-connections)的处理器为每个事件带上了 ID，客户端重连时通过 `Last-Event-ID` 发回最后收到的 ID。文章的 ID 是 UUIDv7，按时间排序，所以补发就是查询这个 ID 之后发布的文章。`publishedAfter` 是查询之后发布的文章的业务动作 `article.PublishedAfter`：
 
 ```go
 return rest.SSE(func(s *httpx.Stream) error {
@@ -116,7 +131,7 @@ return rest.SSE(func(s *httpx.Stream) error {
 实例之间的消息经由 Redis 的分片 Pub/Sub（`SPUBLISH`、`SSUBSCRIBE`，需要 Redis 7 或更新的版本）传递，`rdb` 是[入口中创建的 Redis 客户端](redis.md#connecting)：
 
 ```go
-hub := broadcast.New(redisbroadcast.New(rdb, "blog:broadcast"), nil)
+hub := broadcast.New(redisbroadcast.New(rdb, "app:broadcast"), nil)
 ```
 
 频道名区分不同的应用，同一个应用的实例必须相同。单机部署也要经由 Redis 传递：[不停机升级](../installation/deployment.md#upgrade-overlap)或滚动发布时新旧进程短暂并存，旧进程中还没结束的请求和任务发布的事件，要送到已经重连到新进程的浏览器。
@@ -155,3 +170,57 @@ msg := broadcasttest.Receive(t, sub)
 ```
 
 它保留全部消息，只用于测试。实现自己的后端时，用 `broadcasttest.TestBackend` 检查它是否符合约定。
+
+<a id="api-reference"></a>
+## API 参考
+
+包 `github.com/go-tenon/tenon/broadcast`。
+
+### New
+
+```go
+func New(backend Backend, logger *slog.Logger) *Hub
+```
+
+创建 Hub，在后台开始接收消息。每个进程一个。
+
+### Hub
+
+```go
+func (h *Hub) Publish(ctx context.Context, topic string, data []byte) error
+func (h *Hub) PublishJSON(ctx context.Context, topic string, v any) error
+func (h *Hub) Subscribe(topics ...string) *Subscription
+func (h *Hub) Listen(deliver func(Message), lost func(error)) (stop func())
+func (h *Hub) Close() error
+```
+
+`Publish` 把消息交给后端，送到每个实例；`Subscribe` 订阅一个或多个主题；`Listen` 接收全部主题的消息，[实时频道](realtime.md)用它；`Close` 停止接收并结束全部订阅。
+
+### Subscription
+
+```go
+func (s *Subscription) C() <-chan Message
+func (s *Subscription) Err() error
+func (s *Subscription) Close()
+```
+
+`C` 在订阅结束时关闭，`Err` 返回结束的原因：`ErrClosed`（Hub 已关闭）、`ErrSlow`（订阅者处理太慢）或 `ErrLost`（与后端的连接中断）。
+
+### Message
+
+| 字段 | 说明 |
+| --- | --- |
+| `Topic string` | 主题 |
+| `Data []byte` | 消息内容 |
+
+### redisbroadcast.New
+
+```go
+func New(rdb rueidis.Client, channel string) *Backend
+```
+
+包 `github.com/go-tenon/tenon/broadcast/redisbroadcast`。经由 Redis 的 Pub/Sub 在实例之间传递消息，`channel` 是使用的频道名。
+
+### NewCredentials
+
+见[服务端推送](../responses/sse.md#immediate-revocation)。

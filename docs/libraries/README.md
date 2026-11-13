@@ -9,7 +9,8 @@
 - [定时任务](scheduling.md)：按计划执行任务，多实例去重
 - [广播](broadcasting.md)：跨实例发布消息
 - [实时频道](realtime.md)：基于 Centrifuge 的 WebSocket 频道
-- [文件存储与上传](filesystem.md)：本地磁盘与 S3，files 表，上传
+- [文件存储](filesystem.md)：本地磁盘与 S3，files 表，上传与确认
+- [文件的常见用法与上传接口](file-uploads.md)：替换文件、缩略图、REST 上传接口
 - [邮件](mail.md)：发送邮件，多个服务商切换
 - [短信](sms.md)：发送短信，模板与服务商
 - [生成 PDF](pdf.md)：用 templ 和 CSS 生成 PDF

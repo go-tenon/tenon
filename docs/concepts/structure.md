@@ -162,7 +162,7 @@ SQL 迁移文件，由 `embed.go` 嵌入程序，部署时用 `migrate up` 执�
 | `ratelimit` | 按键限流，`ratelimit/redislimit` 是 Redis 限流器 | [限流](../libraries/rate-limiting.md) |
 | `broadcast` | 实例之间广播消息，`broadcast/redisbroadcast` 是 Redis 后端 | [广播](../libraries/broadcasting.md) |
 | `filesystem` | `files` 表、上传、公开地址；`local`、`s3` 两种磁盘 | [文件存储与上传](../libraries/filesystem.md) |
-| `imgproxy` | 签名的 imgproxy 地址，按需缩放图片 | [图片缩略图](../libraries/filesystem.md#thumbnails) |
+| `imgproxy` | 签名的 imgproxy 地址，按需缩放图片 | [图片缩略图](../libraries/file-uploads.md#thumbnails) |
 | `mail` | 邮件；`smtp`、`resend`、`ses` 发送，`logmail` 用于开发 | [邮件](../libraries/mail.md) |
 | `sms` | 短信；`aliyun`、`tencent` 发送，`logsms` 用于开发 | [短信](../libraries/sms.md) |
 | `pdf` | 把 templ 页面生成为 PDF，`pdf/gotenberg` 生成 | [生成 PDF](../libraries/pdf.md) |

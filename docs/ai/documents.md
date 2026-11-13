@@ -147,7 +147,7 @@ for _, s := range doc.SectionsIn(chunk.Start, chunk.End) {
 <a id="processing-uploads"></a>
 ## 在后台处理上传的文档
 
-博客允许作者给文章上传附件，AI 助手回答读者问题时可以引用附件的内容。附件通过[文件存储](../libraries/filesystem.md)上传，确认时发布一个队列任务，见[确认后异步处理](../libraries/filesystem.md#processing-files)：
+博客允许作者给文章上传附件，AI 助手回答读者问题时可以引用附件的内容。附件通过[文件存储](../libraries/filesystem.md)上传，确认时发布一个队列任务，见[确认后异步处理](../libraries/file-uploads.md#processing-files)：
 
 ```go
 type IndexJob struct {

@@ -1,18 +1,5 @@
 # 出站请求
 
-- [简介](#introduction)
-- [创建客户端](#creating-clients)
-- [允许的地址与端口](#allowed-destinations)
-    - [本地开发](#local-development)
-- [处理被拒绝的请求](#handling-refusals)
-- [重试](#retrying)
-- [代理](#proxies)
-- [在其他组件中使用](#using-with-other-components)
-- [测试](#testing)
-
-<a id="introduction"></a>
-## 简介
-
 有些请求的地址由用户填写：租户的 [webhook](../features/webhooks.md) 端点、文章中链接的预览、AI 助手要抓取的网页。如果直接用 `http.DefaultClient` 去请求，有人可以填 `http://169.254.169.254/latest/meta-data/` 读取云服务器的元数据（其中可能有临时密钥），或者填 `http://10.0.0.5:6379/` 访问内网服务。这类攻击叫服务端请求伪造（SSRF）。
 
 `outbound` 包创建只能访问公网地址的 `*http.Client`。地址在域名解析之后、建立连接之前检查，检查的是真正要连接的 IP，所以下面这些绕过方式都无效：
@@ -23,10 +10,33 @@
 
 拒绝的地址取自 IANA 的特殊用途地址登记表，由 [code.dny.dev/ssrf](https://pkg.go.dev/code.dny.dev/ssrf) 维护，包括内网、回环、链路本地、运营商级 NAT、组播、保留地址，以及能内嵌 IPv4 地址的 IPv6 前缀。
 
+- [示例用法](#example-usage)
+- [创建客户端](#creating-clients)
+- [允许的地址与端口](#allowed-destinations)
+    - [本地开发](#local-development)
+- [处理被拒绝的请求](#handling-refusals)
+- [重试](#retrying)
+- [代理](#proxies)
+- [在其他组件中使用](#using-with-other-components)
+- [测试](#testing)
+- [API 参考](#api-reference)
+
+<a id="example-usage"></a>
+## 示例用法
+
+```go
+client := outbound.New(outbound.Options{Timeout: 5 * time.Second})
+
+resp, err := client.Get(userURL)
+if errors.Is(err, outbound.ErrForbidden) {
+    return ErrBadLink.New() // 地址指向内网、回环或元数据接口
+}
+```
+
 <a id="creating-clients"></a>
 ## 创建客户端
 
-博客为文章中的链接显示预览卡片：取出页面的标题和图片。链接是作者填的，用 `outbound` 的客户端请求它。客户端可以复用，在[入口](../concepts/dependencies.md#assembling-the-application)中创建一次，传给 action：
+例如为文章中的链接显示预览卡片：取出页面的标题和图片。链接是作者填的，用 `outbound` 的客户端请求它。客户端可以复用，在入口创建一次，传给业务动作：
 
 ```go
 import "github.com/go-tenon/tenon/outbound"
@@ -73,7 +83,7 @@ func (a *Preview) fetch(ctx context.Context, link string) (*LinkPreview, error) 
 
 ```go
 opts := outbound.Options{AnyPort: true}
-if a.cfg.Env == "local" {
+if cfg.Env == "local" {
     opts.Allow = []netip.Prefix{netip.MustParsePrefix("127.0.0.1/32"), netip.MustParsePrefix("::1/128")}
 }
 client := outbound.New(opts)
@@ -141,7 +151,7 @@ previews.Transport = outbound.Retry(previews.Transport, outbound.RetryOptions{})
 <a id="testing"></a>
 ## 测试
 
-`outbound/outboundtest` 提供不连接网络的 `http.RoundTripper`：按方法和地址登记响应，记录发出的每个请求。把它的 `Client()` 交给 action，就可以测试链接预览，不需要真的去请求 `example.com`：
+`outbound/outboundtest` 提供不连接网络的 `http.RoundTripper`：按方法和地址登记响应，记录发出的每个请求。把它的 `Client()` 交给业务动作，就可以测试链接预览，不需要真的去请求 `example.com`：
 
 ```go
 func TestPreview(t *testing.T) {
@@ -190,3 +200,51 @@ fake.On("POST https://api.resend.com/emails").Reply(outboundtest.JSON(200, map[s
 client := resendsdk.NewCustomClient(fake.Client(), "re_test") // github.com/resend/resend-go/v3
 mailer, err := resend.NewWithClient(client, from)
 ```
+
+<a id="api-reference"></a>
+## API 参考
+
+包 `github.com/go-tenon/tenon/outbound`。
+
+### New
+
+```go
+func New(opts Options) *http.Client
+```
+
+| `Options` 字段 | 说明 |
+| --- | --- |
+| `Timeout time.Duration` | 整个请求的超时，包括连接、重定向和读取响应体；零值为默认值，负数表示不限制 |
+| `Ports []uint16` | 允许连接的端口，`nil` 时只允许 80 和 443 |
+| `AnyPort bool` | 允许任何端口，地址检查仍然生效 |
+| `Allow []netip.Prefix` | 额外允许的网段，先于内置的拒绝规则检查 |
+
+连接被拒绝时，错误满足 `errors.Is(err, ErrForbidden)`。
+
+### Retry
+
+```go
+func Retry(next http.RoundTripper, opts RetryOptions) http.RoundTripper
+```
+
+临时失败时重试可以安全重复的请求，见[重试](#retrying)。
+
+| `RetryOptions` 字段 | 说明 |
+| --- | --- |
+| `Attempts int` | 包括第一次在内的最多尝试次数，默认 3 |
+| `Backoff time.Duration` | 第一次重试前的等待，之后翻倍并加上抖动，默认 200ms |
+| `MaxWait time.Duration` | 两次尝试之间最长的等待，默认 5s；`Retry-After` 超过它时不再重试 |
+
+### outboundtest
+
+包 `github.com/go-tenon/tenon/outbound/outboundtest`。
+
+```go
+func New(t testing.TB) *Transport
+func (f *Transport) On(pattern string) *Route
+func (f *Transport) Client() *http.Client
+func (f *Transport) Requests() []Request
+func (f *Transport) Sent(pattern string) []Request
+```
+
+`On` 按方法和地址登记响应（`JSON`、`Text`、`Status`、`Fail`、`Handler`），`Requests` 和 `Sent` 返回发出的请求，见[测试](#testing)。

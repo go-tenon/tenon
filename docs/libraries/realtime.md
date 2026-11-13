@@ -1,6 +1,10 @@
 # 实时频道
 
-- [简介](#introduction)
+[服务端推送](../responses/sse.md)适合服务器单向推送：通知角标、进度、AI 的流式回答。聊天、在线状态、「对方正在输入」这类场景需要双向的连接、在线成员和移动端 SDK，`realtime` 包为此在进程内嵌入 [Centrifuge](https://github.com/centrifugal/centrifuge)，提供 WebSocket 实时频道。客户端使用 Centrifuge 的[官方 SDK](https://centrifugal.dev/docs/transports/client_sdk)：浏览器的 centrifuge-js，以及 Swift、Java、Dart 等。
+
+频道就是[广播](broadcasting.md)的主题。业务代码照常通过 `hub.PublishJSON` 发布，SSE 处理器和 WebSocket 客户端都会收到；多个实例之间由 Hub 的后端传递消息，不需要另外部署服务。
+
+- [示例用法](#example-usage)
 - [创建 Realtime](#creating)
 - [频道](#channels)
     - [私有频道](#private-channels)
@@ -14,20 +18,35 @@
 - [部署](#deployment)
     - [单独部署实时连接](#separate-process)
 - [指标](#metrics)
+- [API 参考](#api-reference)
 
-<a id="introduction"></a>
-## 简介
+<a id="example-usage"></a>
+## 示例用法
 
-[服务端推送](../responses/sse.md)适合服务器单向推送：通知角标、进度、AI 的流式回答。聊天、在线状态、「对方正在输入」这类场景需要双向的连接、在线成员和移动端 SDK，`realtime` 包为此在进程内嵌入 [Centrifuge](https://github.com/centrifugal/centrifuge)，提供 WebSocket 实时频道。客户端使用 Centrifuge 的[官方 SDK](https://centrifugal.dev/docs/transports/client_sdk)：浏览器的 centrifuge-js，以及 Swift、Java、Dart 等。
+```go
+rt, err := realtime.New(hub, realtime.Options{Authenticate: tokens.Validate})
+if err != nil {
+    return err
+}
+rt.Channel("articles", realtime.Public())
+router.Handle("/realtime", rt.Handler())
 
-频道就是[广播](broadcasting.md)的主题。业务代码照常通过 `hub.PublishJSON` 发布，SSE 处理器和 WebSocket 客户端都会收到；多个实例之间由 Hub 的后端传递消息，不需要另外部署服务。
+// 业务代码照常发布到 Hub，订阅了 articles 频道的客户端都会收到
+err = hub.PublishJSON(ctx, "articles", ArticlePublished{ID: id})
+```
 
-本章继续博客的编辑后台：其他编辑发布文章时实时出现提示，并显示谁正在编辑同一篇文章。
+```ts
+import { Centrifuge } from "centrifuge"
+
+const client = new Centrifuge("wss://example.com/realtime", { getToken })
+client.newSubscription("articles").on("publication", (ctx) => console.log(ctx.data)).subscribe()
+client.connect()
+```
 
 <a id="creating"></a>
 ## 创建 Realtime
 
-每个进程创建一个 `realtime.Realtime`。在[入口](../concepts/dependencies.md#assembling-the-application)的 `open` 中，接着 Hub 创建它：
+每个进程创建一个 `realtime.Realtime`。在入口接着 Hub 创建它：
 
 ```go
 rt, err := realtime.New(hub, realtime.Options{})
@@ -48,7 +67,7 @@ stack.MustAdd("realtime", rt.Shutdown)
 rt.Channel("articles", realtime.Public())
 ```
 
-[发布文章](broadcasting.md#publishing-events)的 action 不需要修改：它发布到 `articles` 主题的事件，现在也会发给订阅了 `articles` 频道的客户端。
+[发布文章](broadcasting.md#publishing-events)的业务动作不需要修改：它发布到 `articles` 主题的事件，现在也会发给订阅了 `articles` 频道的客户端。
 
 登记规则就是把一个主题公开给客户端。没有匹配规则的频道一律不能订阅，所以 Hub 上的其他主题不会因此暴露。消息的内容必须是 JSON。
 
@@ -207,7 +226,7 @@ members, err := rt.Members(ctx, "editing:"+id.String())
 在线成员保存在所有实例共用的存储中，登记 presence 频道之前必须设置 `Options.Presence`，否则 `rt.Channel` 会 panic。只有一个实例时也一样：[不停机升级](../installation/deployment.md#zero-downtime-upgrades)时新旧进程同时运行，双方要看到同一份在线成员。在线成员保存在 [Redis](redis.md) 中：
 
 ```go
-rt, err := realtime.New(hub, realtime.Options{Presence: redispresence.New(rdb, "blog:presence:")})
+rt, err := realtime.New(hub, realtime.Options{Presence: redispresence.New(rdb, "app:presence:")})
 ```
 
 没有 presence 频道的应用不需要设置它，`rt.Members` 返回空列表。测试中用 `realtimetest.NewPresence()`，它把在线记录保存在内存中；同一个交给多个 `Realtime`，就模拟了共用存储的多个实例。
@@ -305,3 +324,60 @@ location / {
 | --- | --- | --- |
 | `realtime.connections` | 仪表 | 本实例当前的连接数 |
 | `realtime.subscriptions` | 仪表 | 这些连接的订阅数 |
+
+<a id="api-reference"></a>
+## API 参考
+
+包 `github.com/go-tenon/tenon/realtime`。
+
+### New
+
+```go
+func New(hub *broadcast.Hub, opts Options) (*Realtime, error)
+```
+
+每个进程一个，接收 `hub` 上的全部消息。
+
+### Options
+
+| 字段 | 说明 |
+| --- | --- |
+| `Authenticate func(ctx, token string) (identity.Subject, error)` | 校验客户端 SDK 传入的令牌，通常与 `rest.RequireBearer` 用同一个校验器，见[认证](#authentication) |
+| `Accounts identity.Accounts` | 接受的账号体系，通常与 `rest.Options.Accounts` 相同；设置了 `Authenticate` 时必须设置 |
+| `Tenant func(r *http.Request) string` | 取出连接所在的租户 |
+| `Credentials httpx.CredentialWatcher` | 撤销凭据后立即断开，见[撤销后断开](#revocation) |
+| `TrustedOrigins []string` | 允许跨站建立连接的来源，默认只接受同源的浏览器连接 |
+| `Presence PresenceStore` | 在线成员的存储，presence 频道必须设置，见[保存在线成员](#presence-stores) |
+| `PresenceGrace time.Duration` | 离开后保留在线记录的时间，默认 10 秒，最长 30 秒 |
+| `MeterProvider metric.MeterProvider` | 报告连接数和订阅数，见[指标](#metrics) |
+| `Logger *slog.Logger` | 日志器 |
+
+### Realtime
+
+```go
+func (rt *Realtime) Channel(pattern string, rule Rule)
+func (rt *Realtime) Handler() http.Handler
+func (rt *Realtime) Members(ctx context.Context, channel string) ([]Member, error)
+func (rt *Realtime) Unsubscribe(ref identity.Ref, channel string) error
+func (rt *Realtime) Shutdown(ctx context.Context) error
+```
+
+`Channel` 登记频道及其规则，`pattern` 可以带参数，例如 `article:{id}`。`Handler` 是 WebSocket 的处理器。`Members` 列出 presence 频道的在线成员。`Unsubscribe` 把一个主体从频道中移出。`Shutdown` 断开全部客户端。
+
+### Rule
+
+```go
+func Public() Rule
+func Private(authorize Authorizer) Rule
+func Presence(authorize PresenceAuthorizer) Rule
+```
+
+公开频道、需要授权的私有频道、带在线成员的频道。`Authorizer` 收到主体和频道参数，返回是否允许订阅。
+
+### redispresence.New
+
+```go
+func New(rdb rueidis.Client, prefix string) *Store
+```
+
+包 `github.com/go-tenon/tenon/realtime/redispresence`。在线成员的 Redis 存储。
