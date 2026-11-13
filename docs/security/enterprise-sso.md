@@ -1,17 +1,5 @@
 # 企业单点登录
 
-- [简介](#introduction)
-- [连接与域名](#connections)
-- [验证域名](#verifying-domains)
-- [运行时创建提供方](#providers)
-- [登录](#signing-in)
-- [同步角色](#syncing-roles)
-- [要求用 SSO 登录](#requiring-sso)
-- [不支持的](#not-supported)
-
-<a id="introduction"></a>
-## 简介
-
 B2B 产品的企业客户通常要求员工用公司自己的身份系统登录，例如 Okta、Microsoft Entra ID、Google Workspace。一个完整的例子：
 
 - 租户在后台填写自己的 OpenID Connect 应用，并验证邮箱域名 `acme.com`；
@@ -21,7 +9,15 @@ B2B 产品的企业客户通常要求员工用公司自己的身份系统登录�
 
 框架提供其中的通用部分：[`login/oauth`](social-login.md) 完成 OpenID Connect 流程，[`login.Realm`](login.md) 管理登录标识和[按租户的登录策略](login.md#policies)，[`authz`](authorization.md) 管理角色。连接配置、域名验证和登录页由应用编写，本章给出一套写法。
 
-本章的成员账号按租户登录（`PerTenant: true`），租户取自子域名，例如 `acme.app.example.com`；同一个人在两个租户中是两个账号。单页应用的登录接口写法与[第三方登录](social-login.md#spa-login)相同。
+例子中的成员账号按租户登录（`PerTenant: true`），租户取自子域名，例如 `acme.app.example.com`；同一个人在两个租户中是两个账号。单页应用的登录接口写法与[第三方登录](social-login.md#spa-login)相同。
+
+- [连接与域名](#connections)
+- [验证域名](#verifying-domains)
+- [运行时创建提供方](#providers)
+- [登录](#signing-in)
+- [同步角色](#syncing-roles)
+- [要求用 SSO 登录](#requiring-sso)
+- [不支持的](#not-supported)
 
 <a id="connections"></a>
 ## 连接与域名
@@ -175,7 +171,7 @@ func idpMFA(claims map[string]any) bool {
 ```
 
 - **`TrustEmail`**：邮箱在这个租户中已经有账号时（例如公司改用 SSO 之前员工用密码注册过），`External` 直接把 SSO 账号绑定给它并登录。只有在租户验证过这个邮箱的域名时才设置，`Verified` 检查 `ext.Email` 的域名在 `sso_domains` 中属于这个租户并且 `verified_at` 不为空。
-- **自动开通**：`out.Proof` 表示还没有账号。`signUp` 是应用的注册 action，在事务中创建成员行并调用 `Register`，与[验证码注册](login.md#codes)相同，返回的也是 `login.Outcome`。
+- **自动开通**：`out.Proof` 表示还没有账号。`signUp` 是应用的注册业务动作，在事务中创建成员行并调用 `Register`，与[验证码注册](login.md#codes)相同，返回的也是 `login.Outcome`。
 - **`TwoFactor`**：IdP 做过多因素认证时，这次登录记为 `[sso, idp_mfa]`，计入二次验证；租户要求二次验证时不再要求用户在本应用中另设验证器。
 
 <a id="syncing-roles"></a>
@@ -231,5 +227,5 @@ PolicyFor: func(ctx context.Context) (login.Policy, error) {
 ## 不支持的
 
 - **SAML**：Okta、Entra ID、Google Workspace、Ping 都支持 OpenID Connect，先用它。确实需要 SAML 的客户再单独接入。
-- **SCIM**：IdP 主动推送账号的创建和停用。本章在登录时同步，加上应用中的停用和撤销，能覆盖大部分情况。
+- **SCIM**：IdP 主动推送账号的创建和停用。本页的写法在登录时同步，加上应用中的停用和撤销，能覆盖大部分情况。
 - **IdP 发起的登录**：在 IdP 的应用列表中点图标时，IdP 跳到应用的登录地址，应用照常发起上面的流程即可。

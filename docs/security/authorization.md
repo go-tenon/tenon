@@ -1,6 +1,18 @@
 # 授权
 
-- [简介](#introduction)
+[认证](authentication.md)确认了调用者是谁，接下来还需要回答：这个调用者**能不能**执行当前的操作？这就是授权。
+
+Tenon 的授权分为三层：
+
+| 层次 | 回答的问题 | 由谁检查 |
+| --- | --- | --- |
+| 路由 | 能不能使用这一类功能，例如“编辑文章” | 框架，按路由声明的权限，在调用处理器之前 |
+| 资源 | 能不能操作这一条数据，例如“只能修改自己的文章” | [业务动作](../concepts/actions.md) 的 `Handle`，在读写数据的事务中 |
+| 数据范围 | 列表里应该出现哪些数据 |业务动作的 `Handle`，在构造查询时 |
+
+三层缺一不可：路由挡住明显不该访问的请求，资源级检查保证每一条数据只被正确的人修改，数据范围保证列表和搜索不会泄露别人的数据。
+
+- [示例用法](#example-usage)
 - [权限](#permissions)
     - [在路由上声明](#route-permissions)
     - [在代码中检查](#checking-permissions)
@@ -17,21 +29,25 @@
 - [列表查询中的授权](#scoping-queries)
 - [在界面中按权限显示](#authorization-in-views)
 - [授权失败的响应](#authorization-failures)
+- [API 参考](#api-reference)
 
-<a id="introduction"></a>
-## 简介
+<a id="example-usage"></a>
+## 示例用法
 
-[认证](authentication.md)确认了调用者是谁，接下来还需要回答：这个调用者**能不能**执行当前的操作？这就是授权。
+```go
+// 路由要求权限
+rest.RequireBearer(api, tokens.Validate, "articles:write")(&op)
 
-Tenon 的授权分为三层：
+// 业务规则中检查
+if !subject.Can("articles:admin") && item.AuthorID != subject.ID {
+    return ErrForbidden.New()
+}
 
-| 层次 | 回答的问题 | 由谁检查 |
-| --- | --- | --- |
-| 路由 | 能不能使用这一类功能，例如“编辑文章” | 框架，按路由声明的权限，在调用处理器之前 |
-| 资源 | 能不能操作这一条数据，例如“只能修改自己的文章” | [action](../concepts/actions.md) 的 `Handle`，在读写数据的事务中 |
-| 数据范围 | 列表里应该出现哪些数据 | action 的 `Handle`，在构造查询时 |
-
-三层缺一不可：路由挡住明显不该访问的请求，资源级检查保证每一条数据只被正确的人修改，数据范围保证列表和搜索不会泄露别人的数据。
+// 角色与权限保存在数据库中，按租户分配
+roles := authz.NewStore(db, auth.Permissions)
+err := roles.Assign(ctx, sub.Ref(), tenant, editorRole.ID)
+api := rest.New(rest.Options{Accounts: identity.Accounts{user.Type: roles.Resolve}})
+```
 
 <a id="permissions"></a>
 ## 权限
@@ -80,7 +96,7 @@ migrationCmd.AddCommand(migratecmd.Publish(
 <a id="permission-catalog"></a>
 ### 声明权限目录
 
-应用的全部权限在代码中声明一次。下面是博客的 `internal/auth/permissions.go`：
+应用的全部权限在代码中声明一次。例如 `permissions.go`：
 
 ```go
 package auth
@@ -170,7 +186,7 @@ resolve := func(ctx context.Context, sub identity.Subject) (identity.Subject, er
 每个请求都要加载一次权限。请求量大时，用 `authz.Cache` 把权限缓存在 [Memcached](../libraries/cache.md) 中，请求不再查询数据库：
 
 ```go
-roles := authz.NewStore(a.db, auth.Permissions, authz.Cache(mc, "blog:prod:", time.Minute))
+roles := authz.NewStore(a.db, auth.Permissions, authz.Cache(mc, "app:prod:", time.Minute))
 ```
 
 第二个参数是命名空间，共用一个 Memcached 的应用和环境要各不相同，否则会读到别的数据库中的权限；第三个参数是过期时间。`Resolve` 和 `Permissions` 先读缓存，用法不变。
@@ -197,7 +213,7 @@ admin, err := roles.CreateRole(ctx, authz.Role{Name: "admin", Permissions: []str
 <a id="ownership"></a>
 ## 资源级授权：所有权
 
-具备 `articles:read` 只说明调用者可以使用文章接口，并不意味着他可以读取任意一篇文章。已发布的文章所有人都能看，但草稿只有作者本人能看。“获取文章”的 `Get` action 需要根据当前的主体检查：
+具备 `articles:read` 只说明调用者可以使用文章接口，并不意味着他可以读取任意一篇文章。已发布的文章所有人都能看，但草稿只有作者本人能看。“获取文章”的 `Get`业务动作需要根据当前的主体检查：
 
 ```go
 var (
@@ -220,9 +236,9 @@ func (a *Get) Handle(ctx context.Context, subject identity.Subject, id uuid.UUID
 }
 ```
 
-请注意，主体是作为参数**显式传入** `Handle` 的，而不是在内部从 context 中读取。这样，action 的权限要求一目了然，在测试中也很容易构造不同身份的调用者。`find` 是文章模块中按 ID 查询的函数，见[模块内共享的代码](../concepts/actions.md#shared-code)。
+请注意，主体是作为参数**显式传入** `Handle` 的，而不是在内部从 context 中读取。这样，业务动作的权限要求一目了然，在测试中也很容易构造不同身份的调用者。`find` 是文章模块中按 ID 查询的函数，见[模块内共享的代码](../concepts/actions.md#shared-code)。
 
-`Handle` 一开始就拒绝空的主体 ID。这保证了即使 action 被命令行或其他代码直接调用，也不会跳过身份检查。
+`Handle` 一开始就拒绝空的主体 ID。这保证了即使业务动作被命令行或其他代码直接调用，也不会跳过身份检查。
 
 > [!TIP]
 > 上面对别人的草稿返回 `404` 而不是 `403`，这样不会泄露“这篇草稿存在”的信息。而修改别人已发布的文章时，文章本身是公开的，返回 `403` 更准确。你可以根据业务需要选择 `errorx.NotFound` 或 `errorx.PermissionDenied`。
@@ -230,7 +246,7 @@ func (a *Get) Handle(ctx context.Context, subject identity.Subject, id uuid.UUID
 <a id="authorization-functions"></a>
 ### 编写授权函数
 
-当授权规则变得复杂时，把它提取为业务包 `article.go` 中**导出**的函数。各个 action 和[给界面的 DTO](#authorization-in-views)调用同一个函数，规则只有一份：
+当授权规则变得复杂时，把它提取为业务包 `article.go` 中**导出**的函数。各个业务动作和[给界面的 DTO](#authorization-in-views)调用同一个函数，规则只有一份：
 
 ```go
 // CanEdit 报告 subject 能否修改 item：作者本人，或者能修改任何文章的编辑。
@@ -246,7 +262,7 @@ func CanEdit(subject identity.Subject, item *Article) bool {
 
 对于写操作，请在实际读写数据的**同一个事务**中完成所有权检查。如果先在事务外检查、再在事务内修改，两步之间资源可能已经被其他请求改变。
 
-下面是“发布文章”的 `Publish` action 的 `Handle`，完整的 `publish.go` 见[编写 action](../concepts/actions.md#writing-actions)。它用 `FOR UPDATE` 锁住这篇文章，在同一个事务中检查权限和状态，然后更新：
+下面是“发布文章”的 `Publish`业务动作的 `Handle`，完整的 `publish.go` 见[编写业务动作](../concepts/actions.md#writing-actions)。它用 `FOR UPDATE` 锁住这篇文章，在同一个事务中检查权限和状态，然后更新：
 
 ```go
 func (a *Publish) Handle(ctx context.Context, subject identity.Subject, id uuid.UUID) (*Article, error) {
@@ -337,13 +353,56 @@ func toDTO(sub identity.Subject, a *Article) ArticleDTO {
 {me.permissions.includes("comments:delete") && <button onClick={clearComments}>清空评论</button>}
 ```
 
-`me.permissions` 是 `sub.Permissions`，其中可能有 `articles:*` 这样的通配符；需要判断某个具体权限时，让接口直接返回布尔值，不要在前端实现通配符匹配。隐藏按钮只是为了界面友好，不能代替服务端的检查：action 仍然要按上面的方式授权。
+`me.permissions` 是 `sub.Permissions`，其中可能有 `articles:*` 这样的通配符；需要判断某个具体权限时，让接口直接返回布尔值，不要在前端实现通配符匹配。隐藏按钮只是为了界面友好，不能代替服务端的检查：业务动作仍然要按上面的方式授权。
 
 <a id="authorization-failures"></a>
 ## 授权失败的响应
 
 - 缺少路由所需的权限时，API 返回 `403`，错误码为 `auth.forbidden`；
 - 在租户中没有任何角色时，`authz` 的 `Resolve` 返回 `authz.not_member`，状态码为 `404`；
-- action 返回 `errorx.PermissionDenied` 或 `errorx.NotFound` 分类的错误时，响应对应的状态码，错误码为你定义的业务错误码，例如 `article.forbidden`。
+-业务动作返回 `errorx.PermissionDenied` 或 `errorx.NotFound` 分类的错误时，响应对应的状态码，错误码为你定义的业务错误码，例如 `article.forbidden`。
 
 它们都使用统一的[错误响应格式](../general/errors.md#response-format)。
+
+<a id="api-reference"></a>
+## API 参考
+
+包 `github.com/go-tenon/tenon/authz`。
+
+### NewStore
+
+```go
+func NewStore(db bun.IDB, catalog Catalog, opts ...Option) *Store
+func Cache(mc cachex.Client, prefix string, ttl time.Duration) Option
+```
+
+`catalog` 是代码中声明的全部权限（`Permission{Name, Description}`）。`Cache` 把每个主体的权限缓存在 Memcached 中，修改角色后同步失效。
+
+### Store
+
+```go
+func (s *Store) Resolve(ctx context.Context, sub identity.Subject) (identity.Subject, error)
+func (s *Store) Permissions(ctx context.Context, ref identity.Ref, tenant string) ([]string, bool, error)
+func (s *Store) CreateRole(ctx context.Context, r Role) (Role, error)
+func (s *Store) UpdateRole(ctx context.Context, r Role) (Role, error)
+func (s *Store) DeleteRole(ctx context.Context, id string) error
+func (s *Store) Role(ctx context.Context, id, tenant string) (Role, error)
+func (s *Store) Roles(ctx context.Context, tenant string) ([]Role, error)
+func (s *Store) Assign(ctx context.Context, ref identity.Ref, tenant, roleID string) error
+func (s *Store) Unassign(ctx context.Context, ref identity.Ref, tenant, roleID string) error
+func (s *Store) RolesOf(ctx context.Context, ref identity.Ref, tenant string) ([]Role, error)
+func (s *Store) Members(ctx context.Context, tenant string) ([]Member, error)
+func (s *Store) RemoveMember(ctx context.Context, ref identity.Ref, tenant string) (int, error)
+func (s *Store) Tenants(ctx context.Context, ref identity.Ref) ([]string, error)
+```
+
+`Resolve` 作为 `identity.Accounts` 的 Resolver，按请求所在的租户加载主体的权限；不是租户成员时返回 `ErrNotMember`（404）。`Role.Tenant` 为空的是全局角色，可以在任何租户中分配。
+
+### identity.Subject.Can
+
+```go
+func (s Subject) Can(perm string) bool
+func Grants(granted []string, perm string) bool
+```
+
+`Permissions` 中有 `perm` 或匹配它的通配符（`articles:*`、`*`）时为真；令牌带 `Scopes` 时还要在 `Scopes` 中。

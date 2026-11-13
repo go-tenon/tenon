@@ -1,6 +1,13 @@
 # 加密与签名链接
 
-- [简介](#introduction)
+`crypt` 包用一个应用密钥做两件事：
+
+- **加密**以后还要读出明文的值，例如租户填写的模型服务商 API Key、第三方平台的 refresh token。这类值不能像密码那样[哈希](hashing.md)，因为调用第三方接口时要用到明文。
+- **签名链接**：给邮件里的链接加上过期时间和签名，用户点开时确认链接是本站生成的、没有被改过、没有过期。例如邮箱验证、退订通知。
+
+加密使用 AES-256-GCM，签名使用 HMAC-SHA256，两者的子密钥都从应用密钥用 HKDF 派生，互不相同。
+
+- [示例用法](#example-usage)
 - [配置](#configuration)
 - [加密数据](#encrypting-data)
 - [签名链接](#signed-urls)
@@ -8,16 +15,20 @@
     - [永不过期的链接](#permanent-urls)
 - [轮换密钥](#rotating-keys)
 - [测试](#testing)
+- [API 参考](#api-reference)
 
-<a id="introduction"></a>
-## 简介
+<a id="example-usage"></a>
+## 示例用法
 
-`crypt` 包用一个应用密钥做两件事：
+```go
+c := crypt.New(cfg.Crypt)
 
-- **加密**以后还要读出明文的值，例如租户填写的模型服务商 API Key、第三方平台的 refresh token。这类值不能像密码那样[哈希](hashing.md)，因为调用第三方接口时要用到明文。
-- **签名链接**：给邮件里的链接加上过期时间和签名，用户点开时确认链接是本站生成的、没有被改过、没有过期。例如邮箱验证、退订通知。
+secret := c.Encrypt(apiKey)          // 保存到数据库
+apiKey, err := c.Decrypt(secret)      // 读取时解密
 
-加密使用 AES-256-GCM，签名使用 HMAC-SHA256，两者的子密钥都从应用密钥用 HKDF 派生，互不相同。
+link := c.SignURL("https://example.com/email/verify?user=42", 24*time.Hour)
+err = c.VerifyURL(r.URL) // 签名不对或已过期时返回 crypt.ErrInvalidSignature
+```
 
 <a id="configuration"></a>
 ## 配置
@@ -44,7 +55,7 @@ openssl rand -base64 32
 
 密钥一旦用来加密了数据，就不能丢失或随意更换：没有它，已经加密的值无法解开，已经发出的链接全部失效。更换密钥见[轮换密钥](#rotating-keys)。
 
-在[入口](../concepts/dependencies.md#assembling-the-application)的 `open` 中创建 `Crypt`，保存在 `App` 中，传给需要它的 action 和处理器。`Crypt` 可以并发使用，整个应用共用一个：
+在[入口](../concepts/dependencies.md#assembling-the-application)的 `open` 中创建 `Crypt`，保存在 `App` 中，传给需要它的业务动作和处理器。`Crypt` 可以并发使用，整个应用共用一个：
 
 ```go
 c := crypt.New(cfg.Crypt)
@@ -53,7 +64,7 @@ c := crypt.New(cfg.Crypt)
 <a id="encrypting-data"></a>
 ## 加密数据
 
-`Encrypt` 返回 URL 安全的 base64 文本，存在普通的文本列中。每次加密使用新的随机数，同一个值两次的结果不同。下面是保存租户模型服务商的 action：
+`Encrypt` 返回 URL 安全的 base64 文本，存在普通的文本列中。每次加密使用新的随机数，同一个值两次的结果不同。下面是保存租户模型服务商的业务动作：
 
 ```go
 type Provider struct {
@@ -91,11 +102,11 @@ model := chat.NewModel(ai.ModelConfig{Model: p.Model, BaseURL: p.BaseURL, APIKey
 <a id="signed-urls"></a>
 ## 签名链接
 
-用户修改邮箱后，博客给新邮箱发一封验证邮件。`SignURL` 在链接后加上 `expires` 和 `signature` 两个参数：
+例如用户修改邮箱后，给新邮箱发一封验证邮件。`SignURL` 在链接后加上 `expires` 和 `signature` 两个参数：
 
 ```go
-link := a.crypt.SignURL("https://blog.example.com/email/verify/"+u.ID+"?email="+url.QueryEscape(u.Email), 24*time.Hour)
-// https://blog.example.com/email/verify/42?email=a%40b.com&expires=1731400000&signature=Xy...
+link := a.crypt.SignURL("https://example.com/email/verify/"+u.ID+"?email="+url.QueryEscape(u.Email), 24*time.Hour)
+// https://example.com/email/verify/42?email=a%40b.com&expires=1731400000&signature=Xy...
 
 msg, err := a.emails.Render(ctx, "verify_email", map[string]any{"URL": link})
 ```
@@ -124,7 +135,7 @@ func (h *Handlers) VerifyEmail(w http.ResponseWriter, r *http.Request) error {
 
 验证链接从邮件中打开，不需要登录，所以它是一个[公开页面](../responses/views.md)。
 
-`VerifyURL` 只证明这个链接是本站发出的。链接发出之后数据可能变了，action 仍要按当前数据判断：上面的 `verifyEmail` 要确认用户当前的邮箱仍是链接中的 `email`，用户在此期间又改过邮箱，旧链接就不再生效。
+`VerifyURL` 只证明这个链接是本站发出的。链接发出之后数据可能变了，业务动作仍要按当前数据判断：上面的 `verifyEmail` 要确认用户当前的邮箱仍是链接中的 `email`，用户在此期间又改过邮箱，旧链接就不再生效。
 
 签名不对时返回 `crypt.ErrInvalidSignature`，过期时返回 `crypt.ErrExpired`。两者都是 `errorx.PermissionDenied`，页面呈现 403 [错误页](../responses/views.md#error-pages)，提示“链接无效”或“链接已过期”。过期页可以提供重新发送的入口：
 
@@ -145,7 +156,7 @@ if errors.Is(err, crypt.ErrExpired) {
 `ttl` 为 0 时链接不过期，适合退订这类在旧邮件中也要能用的链接：
 
 ```go
-link := a.crypt.SignURL("https://blog.example.com/unsubscribe/"+u.ID, 0)
+link := a.crypt.SignURL("https://example.com/unsubscribe/"+u.ID, 0)
 ```
 
 需要只能使用一次的链接（例如重置密码）时，签名不够，要把令牌存在数据库中，用过就删除。
@@ -181,8 +192,34 @@ c := crypt.New(crypt.Config{Key: crypt.GenerateKey()})
 
 ```go
 synctest.Test(t, func(t *testing.T) {
-    link, _ := url.Parse(c.SignURL("https://blog.example.com/email/verify/42", time.Hour))
+    link, _ := url.Parse(c.SignURL("https://example.com/email/verify/42", time.Hour))
     time.Sleep(time.Hour)
     assert.ErrorIs(t, c.VerifyURL(link), crypt.ErrExpired)
 })
 ```
+
+<a id="api-reference"></a>
+## API 参考
+
+包 `github.com/go-tenon/tenon/crypt`。
+
+### New
+
+```go
+func New(cfg Config) *Crypt
+func GenerateKey() string
+```
+
+`Config` 中是应用密钥和轮换时保留的旧密钥，见[配置](#configuration)。`GenerateKey` 生成一个新密钥。
+
+### Crypt
+
+```go
+func (c *Crypt) Encrypt(plaintext string) string
+func (c *Crypt) Decrypt(ciphertext string) (string, error)
+func (c *Crypt) SignURL(rawURL string, ttl time.Duration) string
+func (c *Crypt) VerifyURL(u *url.URL) error
+func (c *Crypt) Derive(purpose string) [][]byte
+```
+
+`Encrypt` 用当前密钥加密，`Decrypt` 依次尝试当前和旧的密钥，都失败时返回 `ErrDecrypt`。`SignURL` 加上 `expires` 和 `signature` 参数，`VerifyURL` 校验，失败时返回 `ErrInvalidSignature`（403）。`Derive` 为某个用途派生密钥（当前的在前），供其他组件签名使用。

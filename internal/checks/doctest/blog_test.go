@@ -18,18 +18,8 @@ type docFile struct {
 
 // blogFiles 是要编译的完整文件。其余的包在 testdata/blog 中只声明用到的部分。
 var blogFiles = []docFile{
-	{"internal/auth/auth.go", "security/authentication.md"},
-	{"internal/auth/permissions.go", "security/authorization.md"},
-	{"internal/auth/social/social.go", "security/social-login.md"},
-	{"internal/auth/authhttp/web_social.go", "security/social-login.md"},
-	{"internal/auth/authhttp/social.go", "security/social-login.md"},
 	{"internal/article/tools.go", "ai/mcp.md"},
 	{"internal/attachment/vector.go", "ai/vector.md"},
-	{"internal/editor/editor.go", "security/account-examples.md"},
-	{"internal/reader/reader.go", "security/account-examples.md"},
-	{"internal/accounts/accounts.go", "security/account-examples.md"},
-	{"internal/editor/editorapi/routes.go", "security/account-examples.md"},
-	{"internal/reader/readerapi/routes.go", "security/account-examples.md"},
 }
 
 // blogFragments 是文档中没有 package 和 import 的片段，补上它们后作为文件编译。

@@ -1,6 +1,14 @@
 # OAuth 授权服务器
 
-- [简介](#introduction)
+[MCP 服务](../ai/mcp.md)可以用[个人访问令牌](api-tokens.md#personal-access-tokens)连接 Claude Code、Cursor，它们允许填写请求头。claude.ai（网页、桌面、手机）和 ChatGPT 的远程连接器不能填请求头，它们走 MCP 规定的 OAuth 流程：用户在浏览器中登录你的应用，在同意页上点“允许”，客户端拿到令牌。`oauthserver` 是这个流程中的授权服务器。
+
+- 遵循 OAuth 2.1 和 [MCP 授权规范](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization)：授权码 + PKCE S256，授权服务器元数据（RFC 8414），授权响应带 `iss`（RFC 9207），令牌绑定资源（RFC 8707）。
+- 客户端不需要事先登记：claude.ai、ChatGPT 的 client_id 是一个 https 地址，授权时从这个地址取回客户端的名称和回调地址（Client ID Metadata Document）。
+- 令牌是 [`apitoken`](api-tokens.md) 的 OAuth 令牌：只能用于授权时的 MCP 服务，权限是用户本人的权限与同意的范围的交集，按使用滑动过期，出现在用户的令牌列表中，可以随时撤销。
+
+同意页是应用的[单页应用](../responses/spa.md)中的一个页面：授权端点校验请求后跳到同意页，同意页用登录 token 调用两个接口，读取请求、提交用户的选择。所以能授权的是这两个接口接受的账号体系。例子中授权的是编辑：他们在编辑后台登录，在 Claude 中查找和发布文章。
+
+- [示例用法](#example-usage)
 - [安装](#installation)
 - [装配](#assembling)
     - [范围](#scopes)
@@ -13,17 +21,22 @@
 - [部署](#deployment)
     - [部署在路径之下](#path-prefix)
 - [测试](#testing)
+- [API 参考](#api-reference)
 
-<a id="introduction"></a>
-## 简介
+<a id="example-usage"></a>
+## 示例用法
 
-[MCP 服务](../ai/mcp.md)可以用[个人访问令牌](api-tokens.md#personal-access-tokens)连接 Claude Code、Cursor，它们允许填写请求头。claude.ai（网页、桌面、手机）和 ChatGPT 的远程连接器不能填请求头，它们走 MCP 规定的 OAuth 流程：用户在浏览器中登录你的应用，在同意页上点“允许”，客户端拿到令牌。`oauthserver` 是这个流程中的授权服务器。
-
-- 遵循 OAuth 2.1 和 [MCP 授权规范](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization)：授权码 + PKCE S256，授权服务器元数据（RFC 8414），授权响应带 `iss`（RFC 9207），令牌绑定资源（RFC 8707）。
-- 客户端不需要事先登记：claude.ai、ChatGPT 的 client_id 是一个 https 地址，授权时从这个地址取回客户端的名称和回调地址（Client ID Metadata Document）。
-- 令牌是 [`apitoken`](api-tokens.md) 的 OAuth 令牌：只能用于授权时的 MCP 服务，权限是用户本人的权限与同意的范围的交集，按使用滑动过期，出现在用户的令牌列表中，可以随时撤销。
-
-同意页是应用的[单页应用](../responses/spa.md)中的一个页面：授权端点校验请求后跳到同意页，同意页用登录 token 调用两个接口，读取请求、提交用户的选择。所以能授权的是这两个接口接受的账号体系。本章的例子是博客的编辑：他们在编辑后台登录，在 Claude 中查找和发布文章。
+```go
+oauth := oauthserver.New(db, tokens, oauthserver.Options{
+    Issuer:     "https://example.com",
+    Resources:  []string{"https://example.com/mcp"},
+    Scopes:     []oauthserver.Scope{{Name: "articles:read", Description: "查看文章"}},
+    ConsentURL: "/oauth/consent",
+})
+router.Handle(oauth.MetadataPath(), oauth.Metadata())
+oauth.Routes(router)                                    // 授权、令牌端点
+oauth.Register(api, rest.RequireBearer(api, tokens.Validate)) // 同意页调用的接口
+```
 
 <a id="installation"></a>
 ## 安装
@@ -44,8 +57,8 @@ migratecmd.Publish(
 
 ```go
 oauth := oauthserver.New(a.db, tokens, oauthserver.Options{
-    Issuer:    "https://blog.example.com",
-    Resources: []string{"https://blog.example.com/mcp"},
+    Issuer:    "https://example.com",
+    Resources: []string{"https://example.com/mcp"},
     Scopes: []oauthserver.Scope{
         {Name: "articles:read", Description: "查看文章"},
         {Name: "articles:write", Description: "撰写和发布文章"},
@@ -97,7 +110,7 @@ oauth.Register(api, rest.RequireBearer(api, tokens.Validate)) // 编辑后台用
 MCP 服务要告诉客户端去哪里授权，并且只接受发给自己的令牌：
 
 ```go
-res := oauth.Resource("https://blog.example.com/mcp")
+res := oauth.Resource("https://example.com/mcp")
 router.Handle(res.MetadataPath(), mcpx.ResourceMetadata(res))
 router.Handle("/mcp", mcpx.Handler(tools, mcpx.HandlerOptions{
     Validate: tokens.ValidateFor(res.URL),
@@ -113,7 +126,7 @@ router.Handle("/mcp", mcpx.Handler(tools, mcpx.HandlerOptions{
 <a id="flow"></a>
 ## 授权流程
 
-用户在 Claude 中添加连接器，填写 `https://blog.example.com/mcp`：
+用户在 Claude 中添加连接器，填写 `https://example.com/mcp`：
 
 1. Claude 访问 MCP 服务，得到 `401`，从受保护资源元数据和授权服务器元数据中找到各端点。
 2. Claude 在浏览器中打开 `/oauth/authorize`。授权端点校验请求后跳到编辑后台的同意页，地址中带着 `request` 参数。
@@ -262,3 +275,38 @@ location = /.well-known/oauth-protected-resource/blog/mcp { proxy_pass http://bl
 3. 用授权码换令牌，再用令牌调用 MCP 工具。
 
 框架自己的测试还用 MCP 官方 Go SDK 的 OAuth 客户端（`auth.NewAuthorizationCodeHandler`）走过一遍：从 `401` 开始发现元数据、授权、换取令牌到调用工具。
+
+<a id="api-reference"></a>
+## API 参考
+
+包 `github.com/go-tenon/tenon/oauthserver`。
+
+### New
+
+```go
+func New(db bun.IDB, tokens *apitoken.Store, opts Options) *Server
+```
+
+| `Options` 字段 | 说明 |
+| --- | --- |
+| `Issuer` | 授权服务器的地址 |
+| `Resources` | 可以授权访问的资源，例如 MCP 服务的地址 |
+| `Scopes` | 可以授权的范围及其说明，显示在同意页上 |
+| `ConsentURL` | 单页应用中同意页的地址 |
+| `Clients` | 预先登记的客户端 |
+| `DynamicRegistration` | 允许客户端动态注册，默认关闭 |
+| `TokenLifetime` | 签发的令牌的有效期 |
+
+### Server
+
+```go
+func (s *Server) Routes(r chi.Router)
+func (s *Server) Register(api *rest.API, auth func(*huma.Operation))
+func (s *Server) Metadata() http.Handler
+func (s *Server) MetadataPath() string
+func (s *Server) Resource(resource string) mcpx.Resource
+func (s *Server) Cleanup(ctx context.Context, limit int) (int, error)
+func (s *Server) CleanupClients(keep time.Duration) func(ctx context.Context, limit int) (int, error)
+```
+
+`Routes` 注册授权和令牌端点；`Register` 注册同意页调用的两个接口；`Metadata` 是授权服务器元数据；`Resource` 返回交给 `mcpx` 的受保护资源说明。签发的令牌用 `tokens.ValidateFor(resource)` 校验。

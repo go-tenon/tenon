@@ -1,21 +1,5 @@
 # API 令牌
 
-- [简介](#introduction)
-- [配置](#configuration)
-- [装配](#assembling)
-- [登录与登出](#login-and-logout)
-- [个人访问令牌](#personal-access-tokens)
-- [设备与令牌列表](#listing-tokens)
-- [撤销令牌](#revoking-tokens)
-- [加载权限](#loading-permissions)
-- [JWT 模式](#jwt)
-- [OAuth 令牌](#oauth-tokens)
-- [过期清理](#cleanup)
-- [单页应用](#single-page-applications)
-
-<a id="introduction"></a>
-## 简介
-
 JSON API 使用 Bearer token [认证](authentication.md)。`apitoken` 包把 token 存在数据库中，提供签发、校验、滑动过期和撤销，校验函数可以直接交给 `rest.RequireBearer`。
 
 token 分为两类：
@@ -28,6 +12,36 @@ token 分为两类：
 表中只保存 token 的 SHA-256，明文只在签发时返回一次。
 
 登录 token 默认是不透明的：每个请求都按 token 查一次表，撤销立即生效。也可以改用 [JWT 模式](#jwt)：请求带短期的 access token，校验只验签名，过期后用 refresh token 换新的。
+
+- [示例用法](#example-usage)
+- [配置](#configuration)
+- [装配](#assembling)
+- [登录与登出](#login-and-logout)
+- [个人访问令牌](#personal-access-tokens)
+- [设备与令牌列表](#listing-tokens)
+- [撤销令牌](#revoking-tokens)
+- [加载权限](#loading-permissions)
+- [JWT 模式](#jwt)
+- [OAuth 令牌](#oauth-tokens)
+- [过期清理](#cleanup)
+- [单页应用](#single-page-applications)
+- [API 参考](#api-reference)
+
+<a id="example-usage"></a>
+## 示例用法
+
+```go
+tokens := apitoken.NewStore(db, cfg.APIToken)
+
+// 登录成功后签发
+plain, err := tokens.Login(ctx, sub, apitoken.Device{IP: ip, UserAgent: ua})
+
+// 保护路由：校验 Authorization: Bearer <plain>
+rest.RequireBearer(api, tokens.Validate)(&op)
+
+// 退出登录
+err = tokens.Revoke(ctx, sub, sub.Credential)
+```
 
 <a id="configuration"></a>
 ## 配置
@@ -85,7 +99,7 @@ plain, err := customerTokens.Login(ctx, sub, device)
 <a id="login-and-logout"></a>
 ## 登录与登出
 
-单页应用和 App 用账号密码换取登录 token。下面是 `internal/auth/authhttp/routes.go` 中的登录和登出接口，`users` 是博客用户的 [`login.Realm`](login.md)，它校验邮箱和密码：
+单页应用和 App 用账号密码换取登录 token。例如 `routes.go` 中的登录和登出接口，`users` 是用户的 [`login.Realm`](login.md)，它校验邮箱和密码：
 
 ```go
 type TokenInput struct {
@@ -344,7 +358,7 @@ router.Method(http.MethodGet, "/.well-known/jwks.json", customerJWT.JWKS())
 OAuth 令牌只能用于授权时的资源：`Validate` 不接受它，`ValidateFor(resource)` 只接受发给 `resource` 的 OAuth 令牌，同时照常接受登录 token 和个人访问令牌：
 
 ```go
-mcpx.HandlerOptions{Validate: tokens.ValidateFor("https://blog.example.com/mcp") /* … */}
+mcpx.HandlerOptions{Validate: tokens.ValidateFor("https://example.com/mcp") /* … */}
 ```
 
 它出现在 `List` 中，`ClientName` 用于“已连接的应用”页面，`Revoke` 断开连接；`RevokeOthers` 不影响它，`RevokeSubject` 一并撤销。客户端交回令牌时，授权服务器调用 `RevokeToken`。
@@ -442,3 +456,60 @@ func (h *handlers) logout(ctx context.Context, _ *struct{}) (*LogoutOutput, erro
 | 同源，例如由 [`httpx.SPA`](../responses/spa.md) 提供 | 不需要 |
 | 同一站点的不同子域名，例如 `app.example.com` 与 `api.example.com` | API 的 [CORS](../http/middleware.md#cors) 设置 `credentials: true`，逐个列出来源；`RefreshCookie.Domain` 设为 `example.com`；前端刷新时 `credentials: "include"` |
 | 不同站点，例如 `example.com` 与 `example-api.io` | 浏览器拦截第三方 cookie，用不了 cookie。退回请求体方式，refresh token 只能放在 `localStorage` 中，页面上的脚本都能读到，要格外防范 XSS |
+
+<a id="api-reference"></a>
+## API 参考
+
+包 `github.com/go-tenon/tenon/apitoken`。
+
+### Store
+
+```go
+func NewStore(db bun.IDB, cfg Config) *Store
+func (s *Store) Login(ctx context.Context, sub identity.Subject, d Device) (string, error)
+func (s *Store) Create(ctx context.Context, sub identity.Subject, p Personal) (string, error)
+func (s *Store) Validate(ctx context.Context, token string) (identity.Subject, error)
+func (s *Store) ValidateFor(resource string) func(ctx context.Context, token string) (identity.Subject, error)
+func (s *Store) Confirm(ctx context.Context, sub identity.Subject, methods ...string) error
+func (s *Store) List(ctx context.Context, sub identity.Subject) ([]Token, error)
+func (s *Store) Revoke(ctx context.Context, sub identity.Subject, id string) error
+func (s *Store) RevokeOthers(ctx context.Context, sub identity.Subject) (int, error)
+func (s *Store) RevokeSubject(ctx context.Context, ref identity.Ref) (int, error)
+func (s *Store) RevokeToken(ctx context.Context, token string) error
+func (s *Store) Cleanup(ctx context.Context, limit int) (int, error)
+```
+
+| 方法 | 说明 |
+| --- | --- |
+| `Login` | 登录令牌，空闲超时后失效；`Device` 记下“记住我”、IP 和 User-Agent |
+| `Create` | 个人访问令牌，`Personal` 指定名称、`Scopes` 和可选的租户 |
+| `Validate` | 校验令牌，交给 `rest.RequireBearer` |
+| `ValidateFor` | 只接受签发给 `resource` 的 OAuth 令牌，见 [OAuth 授权服务器](oauth-server.md) |
+| `Confirm` | 记下主体刚刚确认过身份，供 `rest.Confirmed` 检查 |
+| `List`、`Revoke`、`RevokeOthers` | 设备列表、退出某台设备、退出其他设备 |
+| `RevokeSubject` | 停用账号时撤销全部令牌 |
+| `Cleanup` | 删除过期的令牌，交给定时任务 |
+
+### JWT
+
+```go
+func NewJWT(store *Store, cfg JWTConfig) *JWT
+func (j *JWT) Login(ctx context.Context, sub identity.Subject, d Device) (Pair, error)
+func (j *JWT) Refresh(ctx context.Context, refresh string) (Pair, error)
+func (j *JWT) Validate(ctx context.Context, token string) (identity.Subject, error)
+func (j *JWT) Confirm(ctx context.Context, sub identity.Subject, methods ...string) (Pair, error)
+func (j *JWT) JWKS() http.Handler
+func HMACKeys(c *crypt.Crypt) Keys
+func Ed25519Keys(key ed25519.PrivateKey, previous ...ed25519.PublicKey) Keys
+```
+
+短期的 access token 加可以刷新的 refresh token，见 [JWT 模式](#jwt)。`Pair` 的字段是 `Access`、`Refresh`、`ExpiresAt`、`RefreshExpiresAt`。
+
+### RefreshCookie
+
+```go
+func (c RefreshCookie) Set(p Pair) *http.Cookie
+func (c RefreshCookie) Clear() *http.Cookie
+```
+
+单页应用把 refresh token 放在 HttpOnly cookie 中，见[单页应用](#single-page-applications)。
