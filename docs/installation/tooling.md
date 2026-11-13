@@ -1,18 +1,6 @@
 # 开发工具
 
-- [简介](#introduction)
-- [安装](#installation)
-- [tenon init](#init)
-- [tenon dev](#dev)
-- [tenon build](#build)
-- [tenon generate](#generate)
-- [tenon.json](#configuration)
-- [应用这一侧](#app-side)
-
-<a id="introduction"></a>
-## 简介
-
-`tenon` 是开发 Tenon 应用的命令行工具，作用类似 [mygo](https://github.com/egoist/mygo) 的 CLI：
+`tenon` 是开发 Tenon 应用的命令行工具，只负责开发和构建：
 
 | 命令 | 作用 |
 | --- | --- |
@@ -20,9 +8,15 @@
 | `tenon build` | 先构建前端，再编译应用，前端的构建产物嵌入二进制 |
 | `tenon generate` | 生成 TypeScript 和 Go 客户端 |
 
-它只负责开发和构建。`serve`、`work`、`migrate`、`routes`、`openapi` 这些运行时的命令仍然在应用自己的二进制中，部署后照样可用，见[命令行](../general/commands.md)。
+`serve`、`work`、`migrate`、`routes`、`openapi` 这些运行时的命令在应用自己的二进制中，部署后照样可用，见[命令行](../general/commands.md)。`tenon` 读取项目根目录的 `tenon.json`，所有字段都有约定的默认值，按[目录结构](../concepts/structure.md)组织的项目可以没有这个文件。
 
-`tenon` 读取项目根目录的 `tenon.json`。所有字段都有约定的默认值，按[目录结构](../concepts/structure.md)组织的项目可以没有这个文件。
+- [安装](#installation)
+- [tenon init](#init)
+- [tenon dev](#dev)
+- [tenon build](#build)
+- [tenon generate](#generate)
+- [tenon.json](#configuration)
+- [应用这一侧](#app-side)
 
 <a id="installation"></a>
 ## 安装

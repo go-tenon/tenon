@@ -272,7 +272,7 @@ func (a *SaveSettings) HTTP(ctx context.Context, in *SiteSettingsBody) (*SiteSet
 <a id="testing"></a>
 ## 测试
 
-在[测试数据库](../testing/overview.md#database-tests)上使用真实的 `Group`，需要非默认值时先 `Save`：
+在[测试数据库](../testing/database.md#database-tests)上使用真实的 `Group`，需要非默认值时先 `Save`：
 
 ```go
 func TestRegisterWhenSignupClosed(t *testing.T) {

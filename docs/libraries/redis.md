@@ -159,7 +159,7 @@ Lua 脚本用 `rueidis.NewLuaScript`，其他用法见 [rueidis 文档](https://
 <a id="testing"></a>
 ## 测试
 
-依赖 Redis 的代码用真实的 Redis 测试。和[数据库测试](../testing/overview.md#database-tests)一样，通过环境变量取得测试服务器的地址。下面是 `internal/article/views_test.go`：
+依赖 Redis 的代码用真实的 Redis 测试。和[数据库测试](../testing/database.md#database-tests)一样，通过环境变量取得测试服务器的地址。下面是 `internal/article/views_test.go`：
 
 ```go
 package article_test
@@ -217,4 +217,4 @@ func TestViews(t *testing.T) {
 > [!WARNING]
 > 请让 `REDIS_TEST_URL` 指向专门的测试实例，不要指向存放真实数据的 Redis。
 
-本地用 `compose.test.yml` 把 Redis 和 PostgreSQL 一起启动，见[在本地运行数据库测试](../testing/overview.md#running-database-tests-locally)。
+本地用 `compose.test.yml` 把 Redis 和 PostgreSQL 一起启动，见[在本地运行数据库测试](../testing/database.md#running-database-tests-locally)。

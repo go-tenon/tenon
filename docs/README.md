@@ -106,6 +106,8 @@ Tenon 是一个用于构建 HTTP API 的 Go 应用框架。登录后使用的界
 
 - [测试](testing/README.md)
     - [快速入门](testing/overview.md)
+    - [数据库与业务动作](testing/database.md)
+    - [HTTP 与命令](testing/http.md)
 
 ## 参与开发
 

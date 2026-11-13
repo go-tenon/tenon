@@ -1,6 +1,7 @@
 # 部署
 
-- [简介](#introduction)
+部署一个 Tenon 应用要做好几件事：构建可重复的二进制、启动前检查配置并执行迁移、让部署平台正确地探测健康状态、停止时平滑地排空请求，以及升级时不停机。本页依次介绍，最后是 PgBouncer、队列运维和备份。
+
 - [构建应用](#building)
 - [发布流程](#release-process)
     - [检查配置](#checking-configuration)
@@ -30,11 +31,6 @@
     - [恢复之后](#after-restoring)
     - [恢复演练](#restore-drills)
 - [升级依赖](#upgrading)
-
-<a id="introduction"></a>
-## 简介
-
-当你准备把 Tenon 应用部署到生产环境时，有几件重要的事情需要做好：构建一个可重复的二进制文件、在启动前检查配置和执行迁移、让部署平台正确地探测健康状态，以及在停止时平滑地排空请求。本章将逐一介绍。
 
 <a id="building"></a>
 ## 构建应用
