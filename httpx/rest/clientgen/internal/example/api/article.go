@@ -172,6 +172,28 @@ func (g ArticleGroup) List(ctx context.Context, in article.ListInput) (page.Offs
 	return out, err
 }
 
+// Preview 预览链接
+//
+// POST /articles/preview
+func (g ArticleGroup) Preview(ctx context.Context, in article.PreviewInput) (article.PreviewOutput, error) {
+	var out article.PreviewOutput
+	h := http.Header{}
+	wire.SetHeader(h, "User-Agent", in.UserAgent)
+	err := g.c.Do(ctx, &wire.Request{
+		Method: "POST",
+		Path:   "/articles/preview",
+		Header: h,
+		Out:    &out.Body,
+		Response: func(res *http.Response) error {
+			if err := wire.ParseHeader(res, "Set-Cookie", &out.SetCookie); err != nil {
+				return err
+			}
+			return nil
+		},
+	})
+	return out, err
+}
+
 // Publish 发布文章
 //
 // POST /articles/{id}/publish

@@ -42,8 +42,6 @@ go run ./cmd/api migrate make create_articles_table
 
 时间戳使用 goose 的格式 `20261111090000`：goose 把第一个下划线之前的数字当作版本号。
 
-应用还没有任何迁移时，`migrations/embed.go` 中的 `//go:embed *.sql` 无法编译，应用的 `migrate make` 也就无法运行。这时用一个不导入迁移包的独立入口创建第一个迁移，见[发布框架迁移](#publishing-framework-migrations)末尾的 `cmd/publish/main.go`。
-
 <a id="migration-structure"></a>
 ### 迁移文件结构
 
@@ -84,7 +82,9 @@ package migrations
 
 import "embed"
 
-//go:embed *.sql
+// 模式写成 * 而不是 *.sql：还没有迁移时也能编译，embed.go 不是 .sql，不会被当作迁移。
+//
+//go:embed *
 var FS embed.FS
 ```
 
@@ -125,30 +125,6 @@ go run ./cmd/api migrate publish --dir migrations
 
 > [!NOTE]
 > 发布完成后，需要审查和提交 SQL，再重新构建应用，将新文件嵌入二进制。然后运行 `migrate up`。已经在任何环境执行过的迁移不能修改，后续调整必须新增迁移。`CheckPublished` 继续用于检查应用自身的历史基线，不用于比较框架源 SQL 与应用定制后的 SQL。
-
-如果应用还没有任何 SQL，`//go:embed *.sql` 暂时无法编译。可以先创建独立的入口，不导入应用的迁移包。下面是完整的 `cmd/publish/main.go`，它同时提供 `make` 和 `publish`：
-
-```go
-package main
-
-import (
-    "github.com/go-tenon/tenon/command"
-    "github.com/go-tenon/tenon/command/migratecmd"
-    "github.com/go-tenon/tenon/database/migrate"
-    "github.com/go-tenon/tenon/filesystem"
-)
-
-func main() {
-    root := command.Root("migrations", "新建或发布迁移")
-    root.AddCommand(
-        migratecmd.Make(),
-        migratecmd.Publish(migrate.Source{Name: "filesystem", FS: filesystem.Migrations()}),
-    )
-    command.Execute(root)
-}
-```
-
-执行 `go run ./cmd/publish make create_articles_table` 或 `go run ./cmd/publish publish --dir migrations` 生成第一个 SQL 后，再添加应用的 `migrations/embed.go` 和迁移执行命令。这个入口也可以一直保留，供开发时使用。
 
 自定义命令或工具也可以直接调用 `migrate.Publish("migrations", sources...)`；`sources` 是应用显式选择的 `[]migrate.Source`。每个来源的 `Name` 是稳定的包标识，`FS` 根目录直接包含带数字版本的 SQL。来源按传入顺序发布，同一来源的文件按数字版本排序。
 

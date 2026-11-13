@@ -76,7 +76,7 @@ export interface FormFile {
 }
 
 export interface OffsetArticleDTO {
-  items: ArticleDTO[] | null
+  items: ArticleDTO[]
   page: number
   per_page: number
   /** Total number of items across all pages. */
@@ -85,6 +85,10 @@ export interface OffsetArticleDTO {
 
 export interface PingOutputBody {
   ok: boolean
+}
+
+export interface PreviewOutputBody {
+  url: string
 }
 
 /** article-cover 的表单。 */
@@ -185,6 +189,13 @@ export function createClient(options: ClientOptions) {
        */
       list: (input: ArticleListInput = {}): Promise<OffsetArticleDTO> =>
         rt.request<OffsetArticleDTO>({ method: "GET", path: `/articles`, public: true, query: { "page": input["page"], "per_page": input["per_page"], "q": input["q"], "status": input["status"], "tag": input["tag"] } }),
+      /**
+       * 预览链接
+       *
+       * POST /articles/preview
+       */
+      preview: (): Promise<PreviewOutputBody> =>
+        rt.request<PreviewOutputBody>({ method: "POST", path: `/articles/preview`, public: true }),
       /**
        * 发布文章
        *

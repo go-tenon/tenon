@@ -140,3 +140,23 @@ queueweb.slot_name: Name
 queueweb.title: Queue
 queueweb.view: View
 queueweb.wal_status: WAL status
+apitoken.invalid: Your session has expired, please sign in again
+auth.expired: Your session has expired, please refresh and try again
+database.busy: The service is busy, please try again later
+database.unavailable: The service is temporarily unavailable, please try again later
+ai.bad_request: There is no message to answer
+ai.no_worker: The assistant is temporarily unavailable, please try again later
+ai.shutting_down: The service is restarting, please try again later
+filesystem.invalid: The uploaded file is incomplete
+filesystem.too_large: The file is too large
+filesystem.not_uploaded: The file has not finished uploading
+filesystem.direct_upload_unsupported: Direct upload is not supported
+filesystem.not_accepted: This kind of file is not accepted
+filesystem.not_found: The file does not exist or has expired
+push.invalid_device: Invalid device
+settings.invalid: Invalid settings
+webhook.endpoint_not_found: Webhook endpoint not found
+webhook.delivery_not_found: Delivery not found
+webhook.invalid_url: The webhook URL must be an absolute http or https URL
+webhook.invalid_events: Subscribe to at least one event with a valid name
+webhook.invalid_signature: Invalid webhook signature

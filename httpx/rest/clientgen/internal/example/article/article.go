@@ -189,6 +189,26 @@ func Register(api *rest.API, s *Store, auth func(*huma.Operation)) {
 		map[string]any{"changed": ArticleDTO{}, "deleted": uuid.UUID{}, "message": ""}, s.events)
 	rest.Register(api, op("article-cover", http.MethodPost, "/articles/{id}/cover", "上传封面", true), s.cover)
 	rest.Register(api, op("ping", http.MethodGet, "/ping", "", false), ping)
+	rest.Register(api, op("article-preview", http.MethodPost, "/articles/preview", "预览链接", false), preview)
+}
+
+// PreviewInput 记录预览者的浏览器：User-Agent 由浏览器设置，TS 客户端不把它作为参数。
+type PreviewInput struct {
+	UserAgent string `header:"User-Agent"`
+}
+
+// PreviewOutput 把预览凭据写入 cookie：浏览器中的脚本读不到 Set-Cookie，TS 客户端只返回响应体。
+type PreviewOutput struct {
+	SetCookie *http.Cookie `header:"Set-Cookie"`
+	Body      struct {
+		URL string `json:"url"`
+	}
+}
+
+func preview(_ context.Context, in *PreviewInput) (*PreviewOutput, error) {
+	out := &PreviewOutput{SetCookie: &http.Cookie{Name: "preview", Value: in.UserAgent, Path: "/articles", HttpOnly: true}}
+	out.Body.URL = "/articles/preview"
+	return out, nil
 }
 
 func ping(context.Context, *struct{}) (*PingOutput, error) {

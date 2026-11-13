@@ -209,7 +209,7 @@ func (t *tsGen) analyze(ep rest.Endpoint, events *strings.Builder) (*tsOp, error
 		}
 	}
 	for _, p := range op.Parameters {
-		if p.In == "query" || p.In == "header" {
+		if p.In == "query" || p.In == "header" && !browserHeader(p.Name) {
 			o.params = append(o.params, tsParam{key: p.Name, in: p.In, typ: t.typ(p.Schema, ""), doc: p.Description, required: p.Required})
 		}
 	}
@@ -244,9 +244,24 @@ func (t *tsGen) analyze(ep rest.Endpoint, events *strings.Builder) (*tsOp, error
 		} else if len(resp.Content) > 0 {
 			return nil, skip("response " + strings.Join(slices.Sorted(maps.Keys(resp.Content)), ", ") + " is not supported")
 		}
-		o.headers = slices.Sorted(maps.Keys(resp.Headers))
+		for _, h := range slices.Sorted(maps.Keys(resp.Headers)) {
+			if !strings.EqualFold(h, "Set-Cookie") { // 浏览器中的脚本读不到 Set-Cookie，cookie 由浏览器保存
+				o.headers = append(o.headers, h)
+			}
+		}
 	}
 	return o, nil
+}
+
+// browserHeader 报告请求头是否由浏览器自己设置、脚本不能设置，例如 User-Agent、Cookie。
+// 服务端读取它们（例如登录时记录设备），客户端的方法不把它们作为参数。
+func browserHeader(name string) bool {
+	switch strings.ToLower(name) {
+	case "user-agent", "cookie", "host", "origin", "referer", "content-length", "connection", "accept-encoding":
+		return true
+	}
+	lower := strings.ToLower(name)
+	return strings.HasPrefix(lower, "sec-") || strings.HasPrefix(lower, "proxy-")
 }
 
 // success 返回第一个 2xx 响应。
@@ -405,6 +420,9 @@ func (t *tsGen) schemas() string {
 	all := t.registry.Map()
 	for _, name := range slices.Sorted(maps.Keys(all)) {
 		s := all[name]
+		if t.registry.TypeFromRef("#/components/schemas/"+name) == reflect.TypeFor[http.Cookie]() {
+			continue // Set-Cookie 响应头的类型，客户端不返回这个响应头
+		}
 		b.WriteString("\n" + tsDoc(s.Description, ""))
 		if s.Type == huma.TypeObject && len(s.OneOf)+len(s.AnyOf)+len(s.AllOf) == 0 && s.AdditionalProperties != true && !isSchema(s.AdditionalProperties) {
 			b.WriteString("export interface " + tsName(name) + " " + t.object(s, "") + "\n")
