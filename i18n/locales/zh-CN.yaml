@@ -140,3 +140,23 @@ queueweb.slot_name: 名称
 queueweb.title: 队列
 queueweb.view: 查看
 queueweb.wal_status: WAL 状态
+apitoken.invalid: 登录已失效，请重新登录
+auth.expired: 登录已过期，请刷新后重试
+database.busy: 服务繁忙，请稍后再试
+database.unavailable: 服务暂时不可用，请稍后再试
+ai.bad_request: 没有可以回答的消息
+ai.no_worker: AI 助手暂时不可用，请稍后再试
+ai.shutting_down: 服务正在重启，请稍后再试
+filesystem.invalid: 上传的文件不完整
+filesystem.too_large: 文件太大
+filesystem.not_uploaded: 文件还没有上传完成
+filesystem.direct_upload_unsupported: 不支持直接上传
+filesystem.not_accepted: 不支持这种文件
+filesystem.not_found: 文件不存在或已过期
+push.invalid_device: 设备信息不正确
+settings.invalid: 设置不合法
+webhook.endpoint_not_found: Webhook 地址不存在
+webhook.delivery_not_found: 投递记录不存在
+webhook.invalid_url: Webhook 地址必须是 http 或 https 的完整地址
+webhook.invalid_events: 至少订阅一个事件，事件名的格式要正确
+webhook.invalid_signature: Webhook 签名不正确

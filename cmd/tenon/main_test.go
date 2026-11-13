@@ -10,11 +10,11 @@ import (
 	"testing"
 )
 
-// fake 记录参数；go build -o BIN 写出一个记录参数的伪造应用。
+// fake 记录参数；go build -mod=mod -o BIN（generate 编译应用）写出一个记录参数的伪造应用。
 const fake = `#!/bin/sh
 echo "$(basename "$0") $* @$(basename "$PWD")" >> "$TENON_LOG"
-if [ "$1" = "build" ] && [ "$2" = "-o" ]; then
-	printf '#!/bin/sh\necho "app $*" >> "$TENON_LOG"\n' > "$3"; chmod +x "$3"
+if [ "$1 $2 $3" = "build -mod=mod -o" ]; then
+	printf '#!/bin/sh\necho "app $*" >> "$TENON_LOG"\n' > "$4"; chmod +x "$4"
 fi
 `
 

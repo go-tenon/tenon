@@ -22,21 +22,21 @@ import (
 )
 
 // fake 是伪造的命令：记录参数；监听模式（--watch、bun x vite）一直运行，直到收到 SIGINT。
-// go build -o BIN 写出一个伪造的应用：serve 一直运行到 SIGTERM，其他子命令记录后退出；源码中有 BROKEN 时编译失败。
+// go build -mod=mod -o BIN 写出一个伪造的应用：serve 一直运行到 SIGTERM，其他子命令记录后退出；源码中有 BROKEN 时编译失败。
 const fake = `#!/bin/sh
 echo "$(basename "$0") $*" >> "$DEVCMD_LOG"
 if [ "$1 $2" = "tool -n" ]; then echo /fake/templ; exit 0; fi
 if [ "$1 $2" = "list -m" ]; then echo "$DEVCMD_FRAMEWORK"; exit 0; fi
-if [ "$1 $2" = "build -o" ]; then
+if [ "$1 $2 $3" = "build -mod=mod -o" ]; then
 	if grep -rqs BROKEN --include=*.go .; then echo "main.go:1: syntax error" >&2; exit 1; fi
-	cat > "$3" <<'APP'
+	cat > "$4" <<'APP'
 #!/bin/sh
 echo "app $* templ=$TEMPL_DEV_MODE" >> "$DEVCMD_LOG"
 [ "$1" = "serve" ] || exit 0
 trap 'echo "app stopped" >> "$DEVCMD_LOG"; exit 0' TERM
 while :; do sleep 0.02; done
 APP
-	chmod +x "$3"
+	chmod +x "$4"
 	exit 0
 fi
 case "$*" in

@@ -25,7 +25,7 @@ func (p OffsetParams) Offset() int64 { return int64(p.Page-1) * int64(p.PerPage)
 
 // Offset 是固定分页的响应体。
 type Offset[T any] struct {
-	Items   []T   `json:"items"`
+	Items   []T   `json:"items" nullable:"false"`
 	Page    int   `json:"page"`
 	PerPage int   `json:"per_page"`
 	Total   int64 `json:"total" doc:"Total number of items across all pages."`
@@ -93,7 +93,7 @@ func (p CursorParams) After(v any) (bool, error) {
 
 // Cursor 是游标分页的响应体，没有下一页时省略 next_cursor。
 type Cursor[T any] struct {
-	Items      []T    `json:"items"`
+	Items      []T    `json:"items" nullable:"false"`
 	NextCursor string `json:"next_cursor,omitempty" doc:"Pass as cursor to fetch the next page. Absent on the last page."`
 }
 

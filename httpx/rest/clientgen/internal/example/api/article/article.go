@@ -4,6 +4,7 @@
 package article
 
 import (
+	"net/http"
 	"time"
 
 	"github.com/go-tenon/tenon/httpx/rest/clientgen/internal/example/api/page"
@@ -81,6 +82,22 @@ type ListInput struct {
 // PingOutputBody 是 PingOutput 的响应体。
 type PingOutputBody struct {
 	OK bool `json:"ok"`
+}
+
+// PreviewInput 记录预览者的浏览器：User-Agent 由浏览器设置，TS 客户端不把它作为参数。
+type PreviewInput struct {
+	UserAgent string `header:"User-Agent"`
+}
+
+// PreviewOutput 把预览凭据写入 cookie：浏览器中的脚本读不到 Set-Cookie，TS 客户端只返回响应体。
+type PreviewOutput struct {
+	SetCookie *http.Cookie `header:"Set-Cookie"`
+	Body      PreviewOutputBody
+}
+
+// PreviewOutputBody 是 PreviewOutput 的响应体。
+type PreviewOutputBody struct {
+	URL string `json:"url"`
 }
 
 // PublishInput 是发布文章的参数。

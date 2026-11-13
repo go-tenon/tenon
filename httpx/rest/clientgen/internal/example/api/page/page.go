@@ -9,7 +9,7 @@ import (
 
 // Offset 是固定分页的响应体。
 type Offset[T any] struct {
-	Items   []T   `json:"items"`
+	Items   []T   `json:"items" nullable:"false"`
 	Page    int   `json:"page"`
 	PerPage int   `json:"per_page"`
 	Total   int64 `json:"total" doc:"Total number of items across all pages."`

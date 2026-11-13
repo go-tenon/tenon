@@ -199,7 +199,7 @@ func generateCommand() *cobra.Command {
 				return err
 			}
 			bin := filepath.Join(tmp, "app")
-			if err := run(cmd, ".", "go", "build", "-o", bin, cfg.Main); err != nil {
+			if err := run(cmd, ".", "go", "build", "-mod=mod", "-o", bin, cfg.Main); err != nil {
 				return err
 			}
 			return run(cmd, ".", bin, args...)

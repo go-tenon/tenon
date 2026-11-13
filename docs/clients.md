@@ -86,7 +86,7 @@ export const api = createClient({
   baseURL: "/api",
   credentials: "include",
   auth: {
-    refresh: async () => (await plain.auth.refresh({})).access_token,
+    refresh: async () => (await plain.auth.refresh()).access_token,
     onSignedOut: () => router.navigate({ to: "/login" }),
   },
   // 403 auth.confirm_required（rest.Confirmed）：弹出密码框，确认成功后重试原请求

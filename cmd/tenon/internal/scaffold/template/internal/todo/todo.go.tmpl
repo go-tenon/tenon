@@ -30,8 +30,8 @@ type Store struct {
 	next  int64
 }
 
-// NewStore 创建空的 Store。
-func NewStore() *Store { return &Store{} }
+// NewStore 创建空的 Store。items 不是 nil，列表为空时返回 [] 而不是 null。
+func NewStore() *Store { return &Store{items: []Todo{}} }
 
 type ListOutput struct {
 	Body []Todo

@@ -22,6 +22,7 @@ go get github.com/go-tenon/tenon@main
 
 | 你想做的事 | 文档 |
 | --- | --- |
+| 从零做出一个完整的应用 | [入门教程](docs/tutorial/README.md) |
 | 运行第一个应用 | [安装](docs/installation.md) |
 | 一条命令开发、构建前端和应用 | [开发工具](docs/tooling.md) |
 | 读取配置与密钥 | [配置](docs/configuration.md) |

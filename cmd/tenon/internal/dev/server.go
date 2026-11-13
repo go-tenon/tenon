@@ -92,7 +92,8 @@ func (d dev) serve(ctx context.Context) error {
 
 // build 编译应用到 bin，失败时打印错误并返回 false。
 func (d dev) build(ctx context.Context, bin string) bool {
-	cmd := exec.CommandContext(ctx, "go", "build", "-o", bin, d.cfg.Main)
+	// -mod=mod：新导入的包带来新的依赖时自动补全 go.mod，不用先停下来 go mod tidy。
+	cmd := exec.CommandContext(ctx, "go", "build", "-mod=mod", "-o", bin, d.cfg.Main)
 	cmd.Stdout, cmd.Stderr = d.out, d.errOut
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() == nil {
