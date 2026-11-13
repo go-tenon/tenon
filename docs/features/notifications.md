@@ -1,6 +1,10 @@
 # 通知
 
-- [简介](#introduction)
+用户需要知道和自己有关的事：文章被发布了、被评论了、被邀请加入团队了。`notification` 包是站内通知的收件箱：每条通知是 `notifications` 表中的一行，属于某个租户中的某个主体，带有已读状态。
+
+`notification` 包只提供站内的收件箱，其他渠道已经有各自的包：[邮件](../libraries/mail.md)、[移动推送](push.md)、[队列](../libraries/queue.md)、[广播](../libraries/broadcasting.md)。一次通知发往哪些渠道，由业务动作显式写出来，读代码就能看到会发生什么。
+
+- [示例用法](#example-usage)
 - [安装](#installation)
 - [发送通知](#sending)
     - [收件人](#recipients)
@@ -11,15 +15,26 @@
 - [其他渠道：Telegram](#telegram)
 - [实时推送](#realtime)
 - [保留期限](#retention)
+- [API 参考](#api-reference)
 
-<a id="introduction"></a>
-## 简介
+<a id="example-usage"></a>
+## 示例用法
 
-用户需要知道和自己有关的事：文章被发布了、被评论了、被邀请加入团队了。`notification` 包是站内通知的收件箱：每条通知是 `notifications` 表中的一行，属于某个租户中的某个主体，带有已读状态。
+```go
+// 在业务事务中发送，与业务修改一起提交
+err := database.RunInTx(ctx, db, nil, func(ctx context.Context, tx database.Tx) error {
+    // ... 发布文章
+    _, err := notification.Send(ctx, tx, notification.Notification{
+        Event: "article.published",
+        Data:  map[string]any{"article_id": item.ID, "title": item.Title},
+    }, notification.RecipientOf(author))
+    return err
+})
 
-`notification` 包只提供站内的收件箱，其他渠道已经有各自的包：[邮件](../libraries/mail.md)、[移动推送](push.md)、[队列](../libraries/queue.md)、[广播](../libraries/broadcasting.md)。一次通知发往哪些渠道，由 action 显式写出来，读代码就能看到会发生什么。
-
-本章的例子：管理员替作者发布文章后，通知作者。
+// 收件人读取自己的通知
+list, err := notification.List(ctx, db, notification.Query{Recipient: notification.RecipientOf(sub)})
+n, err := notification.UnreadCount(ctx, db, notification.RecipientOf(sub))
+```
 
 <a id="installation"></a>
 ## 安装
@@ -148,7 +163,7 @@ msg.To = []mail.Address{{Name: authorUser.Name, Address: authorUser.Email}}
 return mailjob.Send.Publish(ctx, tx, msg)
 ```
 
-`authorUser` 是事务中查出的作者。用户是否接收邮件这类偏好保存在应用自己的表中，由 action 判断。
+`authorUser` 是事务中查出的作者。用户是否接收邮件这类偏好保存在应用自己的表中，由业务动作判断。
 
 <a id="telegram"></a>
 ## 其他渠道：Telegram
@@ -334,3 +349,32 @@ func (h *Handlers) Inbox(ctx context.Context, _ *struct{}) (*huma.StreamResponse
 ```go
 sched.Add("notifications:cleanup", "0 4 * * *", schedule.Cleanup(notification.Cleanup(a.db, 90*24*time.Hour), 1000))
 ```
+
+<a id="api-reference"></a>
+## API 参考
+
+包 `github.com/go-tenon/tenon/notification`。所有函数都接收 `bun.IDB`，可以传连接池或事务。
+
+```go
+func Send(ctx context.Context, db bun.IDB, n Notification, to ...Recipient) ([]Notification, error)
+func List(ctx context.Context, db bun.IDB, q Query) ([]Notification, error)
+func Get(ctx context.Context, db bun.IDB, r Recipient, id uuid.UUID) (*Notification, error)
+func UnreadCount(ctx context.Context, db bun.IDB, r Recipient) (int, error)
+func MarkRead(ctx context.Context, db bun.IDB, r Recipient, ids ...uuid.UUID) error
+func MarkAllRead(ctx context.Context, db bun.IDB, r Recipient) error
+func Delete(ctx context.Context, db bun.IDB, r Recipient, ids ...uuid.UUID) error
+func Cleanup(db bun.IDB, keep time.Duration) func(ctx context.Context, limit int) (int, error)
+func RecipientOf(s identity.Subject) Recipient
+func Migrations() fs.FS
+```
+
+| 函数 | 说明 |
+| --- | --- |
+| `Send` | 给每个收件人写一条通知，返回写入的通知 |
+| `List`、`Get` | 读取收件人自己的通知，读不到别人的 |
+| `UnreadCount` | 未读数 |
+| `MarkRead`、`MarkAllRead`、`Delete` | 只作用于收件人自己的通知 |
+| `Cleanup` | 删除早于 `keep` 的通知，交给[定时任务](../libraries/scheduling.md#framework-cleanups) |
+| `RecipientOf` | 主体所在的租户和主体，就是收件人 |
+
+`Notification` 是 `notifications` 表的 Bun 模型，字段 `Event`、`Data`、`ReadAt`、`CreatedAt`；不存在或不属于收件人时返回 `ErrNotFound`。

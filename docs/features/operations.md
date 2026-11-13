@@ -1,6 +1,12 @@
 # 后台操作
 
-- [简介](#introduction)
+有些操作要在后台跑好几分钟：导入几万行表格、导出几十万篇文章、批量发布选中的一百篇文章。用户需要看到进度，结束后知道结果，还希望在一个“任务中心”里看到自己发起过的所有操作。
+
+`operation` 包把这些操作记在 `operations` 表中：谁发起的、是什么操作、当前状态、处理了多少、失败了多少、失败的原因。[后台导入和导出](background-import-export.md#background-imports)也建立在它之上，所以导入、导出和应用自己的批量操作出现在同一个列表里，用同一种方式推送进度。
+
+操作只负责记录，执行仍然是普通的[队列](../libraries/queue.md)任务。
+
+- [示例用法](#example-usage)
 - [安装](#installation)
 - [发起操作](#starting)
 - [执行操作](#running)
@@ -8,17 +14,28 @@
 - [进度推送](#progress)
 - [任务中心](#listing)
 - [清理](#cleanup)
+- [API 参考](#api-reference)
 
-<a id="introduction"></a>
-## 简介
+<a id="example-usage"></a>
+## 示例用法
 
-有些操作要在后台跑好几分钟：导入几万行表格、导出几十万篇文章、批量发布选中的一百篇文章。用户需要看到进度，结束后知道结果，还希望在一个“任务中心”里看到自己发起过的所有操作。
+```go
+ops := operation.New(db)
 
-`operation` 包把这些操作记在 `operations` 表中：谁发起的、是什么操作、当前状态、处理了多少、失败了多少、失败的原因。[后台导入和导出](import-export.md#background-imports)也建立在它之上，所以导入、导出和应用自己的批量操作出现在同一个列表里，用同一种方式推送进度。
+// 发起：在业务事务中登记，同时发布任务
+op, err := ops.Start(ctx, tx, subject, "articles.bulk_publish")
+err = BulkPublishJob.Publish(ctx, tx, op.ID)
 
-操作只负责记录，执行仍然是普通的[队列](../libraries/queue.md)任务。
-
-本章的例子：作者在文章列表中选中多篇草稿，一键发布。
+// 任务中运行：报告进度，最后在同一个事务中保存结果
+err = ops.Run(ctx, op.ID, func(ctx context.Context, r *operation.Run) error {
+    r.SetTotal(len(ids))
+    for _, id := range ids {
+        // ...
+        r.Add(1, 0)
+    }
+    return nil
+}, nil)
+```
 
 <a id="installation"></a>
 ## 安装
@@ -32,7 +49,7 @@ migratecmd.Publish(
 )
 ```
 
-在 `bootstrap.App` 中创建服务，交给需要它的 action：
+在 `bootstrap.App` 中创建服务，交给需要它的业务动作：
 
 ```go
 ops := operation.New(db)
@@ -41,30 +58,9 @@ ops := operation.New(db)
 <a id="starting"></a>
 ## 发起操作
 
-下面是完整的 `internal/article/bulk_publish.go`，每一篇仍然由[发布文章](../concepts/actions.md#writing-actions)的 `Publish` 完成：
+例如 `bulk_publish.go`，每一篇仍然由[发布文章](../concepts/actions.md#writing-actions)的 `Publish` 完成：
 
 ```go
-package article
-
-import (
-    "context"
-
-    "github.com/cockroachdb/errors"
-    "github.com/danielgtaylor/huma/v2"
-    "github.com/google/uuid"
-    "github.com/uptrace/bun"
-
-    "github.com/go-tenon/tenon/broadcast"
-    "github.com/go-tenon/tenon/database"
-    "github.com/go-tenon/tenon/errorx"
-    "github.com/go-tenon/tenon/httpx"
-    "github.com/go-tenon/tenon/httpx/rest"
-    "github.com/go-tenon/tenon/identity"
-    "github.com/go-tenon/tenon/notification"
-    "github.com/go-tenon/tenon/operation"
-    "github.com/go-tenon/tenon/queue"
-)
-
 // BulkPublishRequest 是批量发布的任务：哪一个操作、谁发起的、发布哪些文章。
 type BulkPublishRequest struct {
     Operation uuid.UUID        `json:"operation"`
@@ -326,3 +322,49 @@ ops, err := a.ops.List(ctx, subject, operation.Query{Limit: 20})
 ```go
 sched.Add("operations:cleanup", "0 3 * * *", schedule.Cleanup(a.ops.Cleanup(30*24*time.Hour), 1000))
 ```
+
+<a id="api-reference"></a>
+## API 参考
+
+包 `github.com/go-tenon/tenon/operation`。
+
+### Service
+
+```go
+func New(db *bun.DB) *Service
+func (s *Service) Start(ctx context.Context, tx bun.IDB, owner identity.Subject, kind string) (*Operation, error)
+func (s *Service) Run(ctx context.Context, id uuid.UUID,
+    fn func(ctx context.Context, r *Run) error,
+    saved func(ctx context.Context, tx database.Tx, op *Operation) error,
+) error
+func (s *Service) Get(ctx context.Context, owner identity.Subject, id uuid.UUID) (*Operation, error)
+func (s *Service) List(ctx context.Context, owner identity.Subject, q Query) ([]Operation, error)
+func (s *Service) Cleanup(keep time.Duration) func(ctx context.Context, limit int) (int, error)
+```
+
+`Start` 登记一个操作，`Run` 在任务中执行它：`fn` 返回 `nil` 时操作完成，返回错误时按[执行操作](#running)中的规则处理；每次保存进度后，`saved` 在同一个事务中执行，可以为 `nil`。`Get`、`List` 只返回 `owner` 发起的操作。
+
+### Run
+
+```go
+func (r *Run) SetTotal(n int)
+func (r *Run) Add(processed, failed int)
+func (r *Run) Save(ctx context.Context, write func(ctx context.Context, tx database.Tx) error) error
+func (r *Run) Complete(ctx context.Context, write func(ctx context.Context, tx database.Tx) error) error
+func (r *Run) Operation() *Operation
+func (r *Run) Restart()
+```
+
+`Save` 保存进度，`write` 在同一个事务中保存应用自己的断点；`Complete` 标记完成。
+
+### 拆成多个任务
+
+```go
+func Fanout[T any](ctx context.Context, tx bun.IDB, id uuid.UUID, topic queue.Topic[Unit[T]], items ...T) error
+func HandleUnit[T any](s *Service,
+    fn func(ctx context.Context, op *Operation, data T) error,
+    saved func(ctx context.Context, tx database.Tx, op *Operation) error,
+) func(ctx context.Context, u Unit[T]) error
+```
+
+每一项一个任务，并行处理，见[拆成多个任务](#fanout)。
