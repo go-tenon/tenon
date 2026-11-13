@@ -14,7 +14,7 @@ Tenon 是一个用于构建 HTTP API 的 Go 应用框架：后台和用户端是
 go get github.com/go-tenon/tenon@main
 ```
 
-需要 Go 1.27.3 或更高版本。基础设施是固定的一套，每个组件只做最擅长的事：PostgreSQL 保存业务数据，[Memcached](docs/cache.md) 做缓存，[Redis](docs/redis.md) 做锁、限流和广播，[NSQ](docs/queue.md) 做任务队列。框架的包分为基础、基础设施、入口、功能四层，每个包都可以单独使用，见[框架包一览](docs/directory-structure.md#framework-packages)。从[安装](docs/installation.md)开始，`tenon init` 一条命令生成能直接运行的 Go + React 项目。
+需要 Go 1.27.3 或更高版本。基础设施是固定的一套，每个组件只做最擅长的事：PostgreSQL 保存业务数据，[Memcached](docs/libraries/cache.md) 做缓存，[Redis](docs/libraries/redis.md) 做锁、限流和广播，[NSQ](docs/libraries/queue.md) 做任务队列。框架的包分为基础、基础设施、入口、功能四层，每个包都可以单独使用，见[框架包一览](docs/concepts/structure.md#framework-packages)。从[安装](docs/installation/installing.md)开始，`tenon init` 一条命令生成能直接运行的 Go + React 项目。
 
 ## 文档
 
@@ -23,39 +23,39 @@ go get github.com/go-tenon/tenon@main
 | 你想做的事 | 文档 |
 | --- | --- |
 | 从零做出一个完整的应用 | [入门教程](docs/tutorial/README.md) |
-| 运行第一个应用 | [安装](docs/installation.md) |
-| 一条命令开发、构建前端和应用 | [开发工具](docs/tooling.md) |
-| 读取配置与密钥 | [配置](docs/configuration.md) |
-| 组织项目代码 | [目录结构](docs/directory-structure.md) · [依赖装配](docs/dependencies.md) · [业务动作](docs/actions.md) |
-| 编写接口 | [路由](docs/routing.md) · [请求](docs/requests.md) · [验证](docs/validation.md) · [响应](docs/responses.md) · [认证](docs/authentication.md) |
-| 为前端和 App 生成接口类型 | [客户端代码](docs/clients.md) |
-| 把 React、Vue 等单页应用打进二进制 | [单页应用](docs/spa.md) |
-| 渲染公开页面 | [视图](docs/views.md) · [表单](docs/forms.md) · [界面组件](docs/components.md) · [文档页](docs/doc-pages.md) |
-| 推送实时消息 | [服务端推送](docs/sse.md) · [广播](docs/broadcasting.md) · [实时频道](docs/realtime.md) |
-| 查看全部路由 | [routes 命令](docs/commands.md#routes-command) |
-| 处理错误与日志 | [错误处理](docs/errors.md) · [日志](docs/logging.md) · [可观测性](docs/telemetry.md) |
-| 在后台执行任务 | [队列](docs/queue.md) · [定时任务](docs/scheduling.md) |
-| 防止任务重复执行 | [原子锁](docs/locks.md) |
-| 上传和管理文件 | [文件存储与上传](docs/filesystem.md) |
-| 发送邮件 | [邮件](docs/mail.md) |
-| 发送短信验证码 | [短信](docs/sms.md) |
-| 生成发票、报表等 PDF | [生成 PDF](docs/pdf.md) |
-| 请求用户填写的地址 | [出站请求](docs/outbound.md) |
-| 给用户发站内通知 | [通知](docs/notifications.md) |
-| 给 App 发推送通知 | [移动推送](docs/push.md) |
-| 记录谁改了什么 | [操作日志](docs/activity.md) |
-| 逐步放量、紧急关闭新功能 | [功能开关](docs/features.md) |
-| 让管理员修改站点名称、注册开关等设置 | [设置](docs/settings.md) |
-| 导入导出 Excel 和 CSV | [导入与导出](docs/import-export.md) |
-| 批量处理并显示进度 | [后台操作](docs/operations.md) |
-| 向租户推送事件 | [Webhook](docs/webhooks.md) |
-| 按关键词搜索文章、商品 | [全文搜索](docs/search.md) |
-| 构建 AI 助手 | [AI 助手](docs/ai.md) · [服务端推送](docs/sse.md) |
-| 让 Claude、Cursor 调用业务操作 | [MCP 服务](docs/mcp.md) · [OAuth 授权服务器](docs/oauth-server.md) |
-| 让 AI 引用 PDF、Word 等文档 | [文档转换与切分](docs/documents.md) · [向量检索](docs/vector.md) |
-| 保护接口 | [认证](docs/authentication.md) · [登录与注册](docs/login.md) · [授权](docs/authorization.md) · [哈希](docs/hashing.md) · [加密与签名链接](docs/encryption.md) · [限流](docs/rate-limiting.md) · [人机验证](docs/login.md#captcha) |
-| 使用数据库 | [数据库](docs/database.md) · [迁移](docs/migrations.md) |
-| 测试与上线 | [测试](docs/testing.md) · [部署](docs/deployment.md) |
+| 运行第一个应用 | [安装](docs/installation/installing.md) |
+| 一条命令开发、构建前端和应用 | [开发工具](docs/installation/tooling.md) |
+| 读取配置与密钥 | [配置](docs/general/configuration.md) |
+| 组织项目代码 | [目录结构](docs/concepts/structure.md) · [依赖装配](docs/concepts/dependencies.md) · [业务动作](docs/concepts/actions.md) |
+| 编写接口 | [路由](docs/http/routing.md) · [请求](docs/http/requests.md) · [验证](docs/http/validation.md) · [响应](docs/responses/responses.md) · [认证](docs/security/authentication.md) |
+| 为前端和 App 生成接口类型 | [客户端代码](docs/responses/clients.md) |
+| 把 React、Vue 等单页应用打进二进制 | [单页应用](docs/responses/spa.md) |
+| 渲染公开页面 | [视图](docs/responses/views.md) · [表单](docs/responses/forms.md) · [界面组件](docs/responses/components.md) · [文档页](docs/responses/doc-pages.md) |
+| 推送实时消息 | [服务端推送](docs/responses/sse.md) · [广播](docs/libraries/broadcasting.md) · [实时频道](docs/libraries/realtime.md) |
+| 查看全部路由 | [routes 命令](docs/general/commands.md#routes-command) |
+| 处理错误与日志 | [错误处理](docs/general/errors.md) · [日志](docs/general/logging.md) · [可观测性](docs/general/telemetry.md) |
+| 在后台执行任务 | [队列](docs/libraries/queue.md) · [定时任务](docs/libraries/scheduling.md) |
+| 防止任务重复执行 | [原子锁](docs/libraries/locks.md) |
+| 上传和管理文件 | [文件存储与上传](docs/libraries/filesystem.md) |
+| 发送邮件 | [邮件](docs/libraries/mail.md) |
+| 发送短信验证码 | [短信](docs/libraries/sms.md) |
+| 生成发票、报表等 PDF | [生成 PDF](docs/libraries/pdf.md) |
+| 请求用户填写的地址 | [出站请求](docs/libraries/outbound.md) |
+| 给用户发站内通知 | [通知](docs/features/notifications.md) |
+| 给 App 发推送通知 | [移动推送](docs/features/push.md) |
+| 记录谁改了什么 | [操作日志](docs/features/activity.md) |
+| 逐步放量、紧急关闭新功能 | [功能开关](docs/features/flags.md) |
+| 让管理员修改站点名称、注册开关等设置 | [设置](docs/features/settings.md) |
+| 导入导出 Excel 和 CSV | [导入与导出](docs/features/import-export.md) |
+| 批量处理并显示进度 | [后台操作](docs/features/operations.md) |
+| 向租户推送事件 | [Webhook](docs/features/webhooks.md) |
+| 按关键词搜索文章、商品 | [全文搜索](docs/features/search.md) |
+| 构建 AI 助手 | [AI 助手](docs/ai/chat.md) · [服务端推送](docs/responses/sse.md) |
+| 让 Claude、Cursor 调用业务操作 | [MCP 服务](docs/ai/mcp.md) · [OAuth 授权服务器](docs/security/oauth-server.md) |
+| 让 AI 引用 PDF、Word 等文档 | [文档转换与切分](docs/ai/documents.md) · [向量检索](docs/ai/vector.md) |
+| 保护接口 | [认证](docs/security/authentication.md) · [登录与注册](docs/security/login.md) · [授权](docs/security/authorization.md) · [哈希](docs/security/hashing.md) · [加密与签名链接](docs/security/encryption.md) · [限流](docs/libraries/rate-limiting.md) · [人机验证](docs/security/login.md#captcha) |
+| 使用数据库 | [数据库](docs/database/quick-start.md) · [迁移](docs/database/migrations.md) |
+| 测试与上线 | [测试](docs/testing/overview.md) · [部署](docs/installation/deployment.md) |
 
 ## 参与开发
 

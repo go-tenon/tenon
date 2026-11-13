@@ -19,7 +19,7 @@ import (
 	"github.com/go-tenon/tenon/identity"
 )
 
-// 以下输入、输出和处理器与 docs/filesystem.md 中 REST 一节的示例保持一致。
+// 以下输入、输出和处理器与 docs/libraries/filesystem.md 中 REST 一节的示例保持一致。
 
 type UploadFileInput struct {
 	RawBody huma.MultipartFormFiles[struct {

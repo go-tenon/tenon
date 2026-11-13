@@ -1,6 +1,6 @@
 // Package dbtest 为测试在 PostgreSQL 测试服务器上创建隔离的临时数据库，测试结束时删除。
 // 服务器的管理员连接由环境变量 POSTGRES_TEST_URL 给出。队列用逻辑复制转发任务，
-// 服务器需要 wal_level=logical，max_replication_slots 要容得下并行测试的数据库，见 docs/testing.md。
+// 服务器需要 wal_level=logical，max_replication_slots 要容得下并行测试的数据库，见 docs/testing/overview.md。
 package dbtest
 
 import (

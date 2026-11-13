@@ -100,4 +100,4 @@ VERSION         STATE    APPLIED AT           FILE
 
 下一章，我们为这张表写接口。
 
-深入了解：[迁移](../migrations.md)、[数据库](../database.md)。
+深入了解：[迁移](../database/migrations.md)、[数据库](../database/quick-start.md)。
