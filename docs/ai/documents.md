@@ -1,6 +1,13 @@
 # 文档转换与切分
 
-- [简介](#introduction)
+让 AI 助手回答“这份合同的付款条件是什么”，需要先把合同拆成一段段文字，算出向量存起来，提问时找出最相关的几段交给模型。`document` 包负责其中不涉及模型的部分，分两步：
+
+1. **转换**：`document/convert` 把 PDF、Word、PowerPoint、Excel、CSV、HTML、纯文本和 JSON 转换为 Markdown，并记录每一页、每张幻灯片、每个工作表落在 Markdown 的哪个区间。
+2. **切分**：`document/split` 把 Markdown 切成长度有上限的分段。中文和英文都在句末、分句标点等自然的位置断开，标题处总会断开，表格和代码只在行之间断开。
+
+两步之间只靠**字节区间**联系：每个分段都是 Markdown 中的 `[Start, End)`，与转换记录的页区间求交集，就知道这一段出自第几页。分段正文与原文逐字节相同，引用时可以直接高亮原文。
+
+- [示例用法](#example-usage)
 - [转换文档](#converting)
     - [选择转换器](#choosing-converters)
     - [上限](#limits)
@@ -10,16 +17,30 @@
     - [定位原文的页](#locating-pages)
 - [在后台处理上传的文档](#processing-uploads)
 - [各种格式](#formats)
+- [API 参考](#api-reference)
 
-<a id="introduction"></a>
-## 简介
+<a id="example-usage"></a>
+## 示例用法
 
-让 AI 助手回答“这份合同的付款条件是什么”，需要先把合同拆成一段段文字，算出向量存起来，提问时找出最相关的几段交给模型。`document` 包负责其中不涉及模型的部分，分两步：
+```go
+registry := all.New(all.Options{})
+format, ok := convert.FormatOf("manual.pdf")
+if !ok {
+    return convert.ErrUnsupported.New()
+}
+doc, err := registry.Convert(ctx, format, convert.Input{Reader: file, Name: "manual.pdf"})
+if err != nil {
+    return err
+}
 
-1. **转换**：`document/convert` 把 PDF、Word、PowerPoint、Excel、CSV、HTML、纯文本和 JSON 转换为 Markdown，并记录每一页、每张幻灯片、每个工作表落在 Markdown 的哪个区间。
-2. **切分**：`document/split` 把 Markdown 切成长度有上限的分段。中文和英文都在句末、分句标点等自然的位置断开，标题处总会断开，表格和代码只在行之间断开。
-
-两步之间只靠**字节区间**联系：每个分段都是 Markdown 中的 `[Start, End)`，与转换记录的页区间求交集，就知道这一段出自第几页。分段正文与原文逐字节相同，引用时可以直接高亮原文。
+splitter, err := split.New(split.Options{Size: 1000, Overlap: 100})
+if err != nil {
+    return err
+}
+for _, c := range splitter.Split(doc.Markdown) {
+    // c.Text 是一个分段，c.Headings 是它所在的各级标题
+}
+```
 
 <a id="converting"></a>
 ## 转换文档
@@ -79,7 +100,7 @@ converters.Register(docx.New(docx.Options{}), convert.DOCX)
 <a id="errors"></a>
 ### 错误
 
-文档本身有问题时，转换返回的错误包装了以下四种之一，它们都属于 `errorx.InvalidArgument`：action 直接返回时得到 `422` 和翻译好的提示，例如“文档设置了密码，无法读取”。
+文档本身有问题时，转换返回的错误包装了以下四种之一，它们都属于 `errorx.InvalidArgument`：业务动作直接返回时得到 `422` 和翻译好的提示，例如“文档设置了密码，无法读取”。
 
 | 错误 | 含义 |
 | --- | --- |
@@ -147,7 +168,7 @@ for _, s := range doc.SectionsIn(chunk.Start, chunk.End) {
 <a id="processing-uploads"></a>
 ## 在后台处理上传的文档
 
-博客允许作者给文章上传附件，AI 助手回答读者问题时可以引用附件的内容。附件通过[文件存储](../libraries/filesystem.md)上传，确认时发布一个队列任务，见[确认后异步处理](../libraries/file-uploads.md#processing-files)：
+例如作者可以给文章上传附件，AI 助手回答读者问题时可以引用附件的内容。附件通过[文件存储](../libraries/filesystem.md)上传，确认时发布一个队列任务，见[确认后异步处理](../libraries/file-uploads.md#processing-files)：
 
 ```go
 type IndexJob struct {
@@ -226,3 +247,31 @@ func (a *Index) Job(ctx context.Context, job IndexJob) error {
 - 不提取图片，也不调用任何模型。
 
 `convert.Converter` 只有一个方法，其他格式可以自己实现并注册到 `Registry`，输出 Markdown 后照样用 `split` 切分。
+
+<a id="api-reference"></a>
+## API 参考
+
+### convert
+
+包 `github.com/go-tenon/tenon/document/convert`。
+
+```go
+func (r *Registry) Convert(ctx context.Context, f Format, in Input) (Document, error)
+func (r *Registry) Register(c Converter, formats ...Format)
+func (r *Registry) Lookup(f Format) (Converter, bool)
+func (r *Registry) Formats() []Format
+func FormatOf(filename string) (Format, bool)
+```
+
+`convert/all.New` 返回注册了全部内置转换器的 `Registry`；只需要部分格式时自己创建 `Registry`，程序更小。不支持的格式返回 `ErrUnsupported`，超出 `Limits` 时返回 `*LimitError`。
+
+### split
+
+包 `github.com/go-tenon/tenon/document/split`。
+
+```go
+func New(opts Options) (*Splitter, error)
+func (s *Splitter) Split(text string) []Chunk
+```
+
+按 Markdown 的结构切分，每个 `Chunk` 带着它所在的标题和在原文中的位置。

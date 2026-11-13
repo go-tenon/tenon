@@ -1,6 +1,10 @@
 # 向量检索
 
-- [简介](#introduction)
+[全文搜索](../features/search.md)按关键词查找，读者问“付款要在多久内完成”，写着“验收后 30 日内结清”的那一段就搜不到。向量检索按语义查找：把每一段文字用模型转换为向量，提问时找出向量最接近的几段，交给模型回答。
+
+`vector` 包把向量保存在 [Qdrant](https://qdrant.tech) 中，不放进 PostgreSQL。数据仍然以数据库为准，Qdrant 中只是由它算出来的副本。用法与[全文搜索](../features/search.md)相同：业务动作在修改数据的事务中调用 `Sync`，队列任务重新读取数据、计算向量，然后写入 Qdrant。事务回滚时，同步也一起取消。
+
+- [示例用法](#example-usage)
 - [安装](#installation)
 - [连接 Qdrant](#connecting)
 - [声明索引](#defining-indexes)
@@ -15,13 +19,21 @@
     - [重排](#reranking)
 - [换模型](#changing-models)
 - [测试](#testing)
+- [API 参考](#api-reference)
 
-<a id="introduction"></a>
-## 简介
+<a id="example-usage"></a>
+## 示例用法
 
-[全文搜索](../features/search.md)按关键词查找，读者问“付款要在多久内完成”，写着“验收后 30 日内结清”的那一段就搜不到。向量检索按语义查找：把每一段文字用模型转换为向量，提问时找出向量最接近的几段，交给模型回答。
+```go
+store := vector.New(db, qdrantClient, vector.Model{Name: "text-embedding-3-small", Dims: 1536, Embedder: embedder})
 
-`vector` 包把向量保存在 [Qdrant](https://qdrant.tech) 中，不放进 PostgreSQL。数据仍然以数据库为准，Qdrant 中只是由它算出来的副本。用法与[全文搜索](../features/search.md)相同：action 在修改数据的事务中调用 `Sync`，队列任务重新读取数据、计算向量，然后写入 Qdrant。事务回滚时，同步也一起取消。
+var Chunks = vector.Define[ChunkDoc]("attachment_chunks")
+
+// 修改数据的事务中发起同步，提交后由 worker 计算向量并写入 Qdrant
+err := Chunks.Sync(ctx, tx, fileID.String())
+
+hits, err := Chunks.Search(ctx, store, vector.Query{Text: "如何退款", Limit: 5})
+```
 
 <a id="installation"></a>
 ## 安装
@@ -87,22 +99,9 @@ vectors := vector.New(db, qc, vector.Model{
 <a id="defining-indexes"></a>
 ## 声明索引
 
-[文档转换与切分](documents.md#processing-uploads)把文章的附件切分为分段，存进 `attachment_chunks` 表（模型 `AttachmentChunk`）。下面是完整的 `internal/attachment/vector.go`，它声明分段的向量索引、读取文档和列出 key 的函数：
+[文档转换与切分](documents.md#processing-uploads)把文章的附件切分为分段，存进 `attachment_chunks` 表（模型 `AttachmentChunk`）。例如 `vector.go`，它声明分段的向量索引、读取文档和列出 key 的函数：
 
 ```go
-package attachment
-
-import (
-    "context"
-
-    "github.com/cockroachdb/errors"
-    "github.com/google/uuid"
-    "github.com/uptrace/bun"
-
-    "github.com/go-tenon/tenon/queue"
-    "github.com/go-tenon/tenon/vector"
-)
-
 // ChunkDoc 是一个分段在向量索引中的文档，只放回答问题需要的字段。
 type ChunkDoc struct {
     ArticleID uuid.UUID `json:"article_id" vector:"filter"`
@@ -365,3 +364,43 @@ func TestFind(t *testing.T) {
 ```
 
 `aitest.Embedder` 给不同的文本几乎正交的向量，只有原文完全相同的查询才排在第一。它只能用来测试同步、过滤和租户是否正确，测不了语义检索的效果。
+
+<a id="api-reference"></a>
+## API 参考
+
+包 `github.com/go-tenon/tenon/vector`。
+
+### New
+
+```go
+func New(db *bun.DB, client *qdrant.Client, model Model, opts ...Option) *Store
+func WithPrefix(prefix string) Option
+func WithPrevious(models ...Model) Option
+```
+
+`Model` 的字段：`Name`、`Dims`、`Embedder`（`ai.Embedder` 的实现）。`WithPrevious` 在更换模型期间保留旧模型，见[更换模型](#reindexing)。
+
+### Define
+
+```go
+func Define[D any](name string, opts ...IndexOption) *Index[D]
+func Hybrid(tok search.Tokenizer) IndexOption
+```
+
+声明一个向量索引，`Hybrid` 同时建关键词索引，语义与关键词混合检索。
+
+### Index
+
+```go
+func (ix *Index[D]) Sync(ctx context.Context, db bun.IDB, keys ...string) error
+func (ix *Index[D]) Refresh(ctx context.Context, s *Store, load LoadFunc[D], keys ...string) error
+func (ix *Index[D]) Search(ctx context.Context, s *Store, q Query) ([]Hit[D], error)
+func (ix *Index[D]) Handle(w *queue.Worker, s *Store, load LoadFunc[D], scan ScanFunc, opts ...queue.HandleOption)
+func (ix *Index[D]) Reindex(ctx context.Context, tx bun.IDB, ops *operation.Service, owner identity.Subject) (*operation.Operation, error)
+```
+
+与[全文搜索](../features/search.md#api-reference)的 `Index` 用法相同。`Query` 的字段：`Text`（不能为空）、`Tenant`、`Filter`、`Limit`、`MinScore`。
+
+### 过滤
+
+`Eq`、`In`、`Gt`、`Gte`、`Lt`、`Lte`、`And`、`Or`、`Not`，与全文搜索的写法相同。

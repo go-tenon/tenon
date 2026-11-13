@@ -1,6 +1,19 @@
 # AI 助手
 
-- [简介](#introduction)
+`ai/chat` 包用于构建对话式的 AI 助手：模型边想边答，需要时调用应用提供的工具，回答以[服务端推送](../responses/sse.md)实时显示给用户。
+
+agent 本身由 [trpc-agent-go](https://github.com/trpc-group/trpc-agent-go) 提供：模型、工具、提示词、记忆、多 agent 协作都直接使用它的 API，见[它的文档](https://trpc-group.github.io/trpc-agent-go/)。`ai/chat` 补上 Web 应用还需要的部分：
+
+- **后台运行**：一次回答可能持续几分钟，不受 HTTP 请求的时限约束。用户刷新页面或网络断开后，生成过程不受影响，重新连接后接着收到剩余的内容。
+- **中途插话**：模型还在查资料时，用户可以继续发消息，不需要等它答完，也不会打断它。
+- **审批**：退款、发布这类操作，模型调用工具后先停下，由人确认后才执行。审批可以在几小时后、在另一个进程中进行。
+- **前端协议**：实现 Vercel AI SDK 的 UI 消息流协议，前端直接使用 `useChat`。
+- **图片、语音和向量**：生成图片、合成和识别语音、计算向量、重排，接口统一，测试时有替身。
+- **决策**：用专门的决策模型做分类、路由和打分，得到概率而不是文本。
+
+后两项在 `ai` 包中，不依赖 `ai/chat`：只用到它们的应用不会链接 trpc-agent-go。
+
+- [示例用法](#example-usage)
 - [准备数据表](#preparing-tables)
 - [装配](#assembling)
     - [配置模型](#configuring-models)
@@ -20,24 +33,28 @@
     - [多个实例](#multiple-instances)
     - [在 worker 中运行](#running-on-workers)
 - [测试](#testing)
+- [API 参考](#api-reference)
 
-<a id="introduction"></a>
-## 简介
+<a id="example-usage"></a>
+## 示例用法
 
-`ai/chat` 包用于构建对话式的 AI 助手：模型边想边答，需要时调用应用提供的工具，回答以[服务端推送](../responses/sse.md)实时显示给用户。
+```go
+agent := llmagent.New("writer",
+    llmagent.WithModel(chat.NewModel(cfg.AI)),
+    llmagent.WithInstruction("你是写作助手。回答简洁。"),
+    llmagent.WithGenerationConfig(model.GenerationConfig{Stream: true}),
+)
+runs := chat.NewRuns("app", agent, sessions)
 
-agent 本身由 [trpc-agent-go](https://github.com/trpc-group/trpc-agent-go) 提供：模型、工具、提示词、记忆、多 agent 协作都直接使用它的 API，见[它的文档](https://trpc-group.github.io/trpc-agent-go/)。`ai/chat` 补上 Web 应用还需要的部分：
+// 接口：开始一次回答，把事件流式推给前端
+run, err := runs.Submit(ctx, sub.ID, req)
+if err != nil {
+    return nil, err
+}
+return chat.UIStream(run), nil
+```
 
-- **后台运行**：一次回答可能持续几分钟，不受 HTTP 请求的时限约束。用户刷新页面或网络断开后，生成过程不受影响，重新连接后接着收到剩余的内容。
-- **中途插话**：模型还在查资料时，用户可以继续发消息，不需要等它答完，也不会打断它。
-- **审批**：退款、发布这类操作，模型调用工具后先停下，由人确认后才执行。审批可以在几小时后、在另一个进程中进行。
-- **前端协议**：实现 Vercel AI SDK 的 UI 消息流协议，前端直接使用 `useChat`。
-- **图片、语音和向量**：生成图片、合成和识别语音、计算向量、重排，接口统一，测试时有替身。
-- **决策**：用专门的决策模型做分类、路由和打分，得到概率而不是文本。
-
-后两项在 `ai` 包中，不依赖 `ai/chat`：只用到它们的应用不会链接 trpc-agent-go。
-
-本章为博客的编辑后台加一个写作助手：它可以搜索已有文章，帮编辑发布草稿。发布之前需要编辑确认。
+回答在后台运行，页面刷新或断线后用 `chat.UIResume` 接着读；需要审批的工具调用先暂停，等用户批准。
 
 <a id="preparing-tables"></a>
 ## 准备数据表
@@ -55,7 +72,7 @@ migrationCmd.AddCommand(migratecmd.Publish(
 <a id="assembling"></a>
 ## 装配
 
-助手由三部分组成：模型、带工具的 agent，以及运行它的 `chat.Runs`。在 `internal/bootstrap/app.go` 的 `open` 中创建它们：
+助手由三部分组成：模型、带工具的 agent，以及运行它的 `chat.Runs`。在入口打开共用资源的地方创建它们：
 
 ```go
 chat.SetLogger(slog.Default())
@@ -68,11 +85,11 @@ if err != nil {
 publish := assistant.PublishTool(article.NewPublish(db))
 agent := llmagent.New("writer",
     llmagent.WithModel(chat.NewModel(cfg.AI)),
-    llmagent.WithInstruction("你是博客的写作助手，帮编辑查找文章和发布草稿。回答简洁。"),
+    llmagent.WithInstruction("你是写作助手，帮编辑查找文章和发布草稿。回答简洁。"),
     llmagent.WithGenerationConfig(model.GenerationConfig{Stream: true}),
     llmagent.WithTools([]tool.Tool{assistant.SearchTool(article.NewSearch(db)), publish}),
 )
-runs := chat.NewRuns("blog", agent, sessions, chat.RequireApproval(publish))
+runs := chat.NewRuns("app", agent, sessions, chat.RequireApproval(publish))
 stack.MustAdd("ai", func(ctx context.Context) error {
     // 等进行中的回答说完，最多 1 分钟，之后取消剩下的
     drain, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
@@ -599,7 +616,7 @@ decider := systemone.New(ai.ModelConfig{Model: "decision-model-preview", BaseURL
 一次运行在启动它的实例上执行。部署多个实例时，用 `chat.Cluster` 把各实例的 `Runs` 连起来，同一个对话的请求就可以落在任何一个实例上：
 
 ```go
-runs := chat.NewRuns("blog", agent, sessions,
+runs := chat.NewRuns("app", agent, sessions,
     chat.RequireApproval(publish),
     chat.Cluster(hub, locker),
 )
@@ -619,7 +636,7 @@ runs := chat.NewRuns("blog", agent, sessions,
 默认情况下，回答在接到请求的 HTTP 实例上运行。把它们交给 worker 进程，HTTP 实例的部署和扩缩容就不会打断回答，AI 的负载也不占用 HTTP 进程：
 
 ```go
-runs := chat.NewRuns("blog", agent, sessions,
+runs := chat.NewRuns("app", agent, sessions,
     chat.RequireApproval(publish),
     chat.Cluster(hub, locker),
     chat.RunOnWorkers(),
@@ -672,3 +689,67 @@ dc := aitest.NewDecider()            // 是非题 0.5，选择题选第一项，
 ```
 
 传入预设结果时按顺序返回，用完后再收到请求就返回错误；`Requests()` 返回收到的请求，`FailWith(err)` 让之后的请求失败，用于测试出错的处理。
+
+<a id="api-reference"></a>
+## API 参考
+
+包 `github.com/go-tenon/tenon/ai/chat`。
+
+### NewRuns
+
+```go
+func NewRuns(app string, ag agent.Agent, sessions session.Service, opts ...Option) *Runs
+func RequireApproval(tools ...tool.CallableTool) Option
+func Cluster(hub *broadcast.Hub, locker *lock.Locker) Option
+func AgentFor(choose func(ctx context.Context, c Conversation) (agent.Agent, error)) Option
+func KeepFinished(d time.Duration) Option
+```
+
+`RequireApproval` 列出需要审批的工具；`Cluster` 让多个实例共同承担对话，见[多个实例](#multiple-instances)；`AgentFor` 按对话选择 agent。
+
+### Runs
+
+```go
+func (rs *Runs) Submit(ctx context.Context, userID string, req UIRequest, opts ...agent.RunOption) (*Run, error)
+func (rs *Runs) Start(ctx context.Context, userID, sessionID string, msg model.Message, opts ...agent.RunOption) (*Run, error)
+func (rs *Runs) Send(ctx context.Context, userID, sessionID string, msg model.Message, opts ...agent.RunOption) (*Run, error)
+func (rs *Runs) Steer(ctx context.Context, userID, sessionID string, msg model.Message) error
+func (rs *Runs) Get(ctx context.Context, userID, sessionID string) (*Run, error)
+func (rs *Runs) Pending(ctx context.Context, userID, sessionID string) ([]ToolCall, error)
+func (rs *Runs) Approve(ctx context.Context, userID, sessionID, callID string, opts ...agent.RunOption) (*Run, error)
+func (rs *Runs) Reject(ctx context.Context, userID, sessionID, callID, reason string, opts ...agent.RunOption) (*Run, error)
+func (rs *Runs) UIMessages(ctx context.Context, userID, sessionID string) ([]UIMessage, error)
+func (rs *Runs) Shutdown(ctx context.Context) error
+func (rs *Runs) Close() error
+```
+
+| 方法 | 说明 |
+| --- | --- |
+| `Submit` | 处理前端发来的 Vercel AI SDK 请求，开始一次回答 |
+| `Start`、`Send` | 在代码中开始一次回答 |
+| `Steer` | 回答进行中插话 |
+| `Get` | 进行中的回答，断线后接着读 |
+| `Pending`、`Approve`、`Reject` | 审批工具调用 |
+| `UIMessages` | 对话的历史消息，供页面显示 |
+| `Shutdown`、`Close` | 停止时等进行中的回答说完；取消剩下的 |
+
+### 流
+
+```go
+func UIStream(run *Run) *huma.StreamResponse
+func UIResume(run *Run) *huma.StreamResponse
+func WriteUIStream(w http.ResponseWriter, r *http.Request, run *Run) error
+```
+
+按 Vercel AI SDK 的 UI 消息流协议推送事件。
+
+### 其他
+
+```go
+func NewModel(cfg ai.ModelConfig, opts ...openai.Option) model.Model
+func NewSessions(db *bun.DB, opts ...tpg.ServiceOpt) (session.Service, error)
+func SetLogger(l *slog.Logger)
+func Migrations() fs.FS
+```
+
+`NewModel` 用 OpenAI 兼容接口创建模型；`NewSessions` 把对话保存在应用的 PostgreSQL 中。媒体、向量、重排和决策的接口在 `ai` 包中，见[媒体](#media)和[决策](#decisions)。

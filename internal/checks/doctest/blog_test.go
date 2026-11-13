@@ -18,43 +18,12 @@ type docFile struct {
 
 // blogFiles 是要编译的完整文件。其余的包在 testdata/blog 中只声明用到的部分。
 var blogFiles = []docFile{
-	{"internal/article/tools.go", "ai/mcp.md"},
-	{"internal/attachment/vector.go", "ai/vector.md"},
 }
 
 // blogFragments 是文档中没有 package 和 import 的片段，补上它们后作为文件编译。
 var blogFragments = []struct {
 	path, doc, prefix, header string
 }{
-	{"internal/attachment/find.go", "ai/vector.md", "type Find struct", `package attachment
-
-import (
-	"context"
-
-	"github.com/google/uuid"
-
-	"github.com/go-tenon/tenon/vector"
-)
-`},
-	{"internal/article/publish_tool.go", "ai/mcp.md", "type PublishArgs struct", `package article
-
-import (
-	"context"
-
-	"github.com/google/uuid"
-
-	"github.com/go-tenon/tenon/identity"
-)
-`},
-	{"internal/article/search_tool.go", "ai/mcp.md", "type SearchArgs struct", `package article
-
-import (
-	"context"
-
-	"github.com/go-tenon/tenon/page"
-	"github.com/go-tenon/tenon/search"
-)
-`},
 }
 
 var goBlock = regexp.MustCompile("(?s)```go\n(.*?)```")

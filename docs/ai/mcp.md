@@ -1,6 +1,17 @@
 # MCP 服务
 
-- [简介](#introduction)
+[MCP](https://modelcontextprotocol.io)（Model Context Protocol）让 Claude、Cursor、VS Code 这类 AI 客户端调用外部系统的工具。`mcpx` 把业务动作作为 MCP 工具提供出去：运营人员在 Claude 里说“把昨天那篇关于发布流程的草稿发出去”，Claude 先调用 `article_search` 找到文章，再调用 `article_publish` 发布它。
+
+协议和传输由官方的 [Go SDK](https://github.com/modelcontextprotocol/go-sdk) 实现，`mcpx` 补上应用需要的部分：
+
+- **与 JSON API 相同的认证**：请求带 Bearer token，主体、租户和权限的规则与 [`rest.RequireBearer`](../security/authentication.md) 完全相同。
+- **按权限筛选工具**：每个工具声明需要的权限，主体没有权限的工具既看不到也调不了。给 AI 用的[个人访问令牌](../security/api-tokens.md#personal-access-tokens)只给 `articles:read`，它就只能用只读的工具。
+- **按 Huma 的规则校验参数**：工具参数的 schema 和校验与 REST 的请求体相同。
+- **错误分开对待**：业务错误交给模型，让它据此调整；内部错误只告诉它“内部错误”，完整错误写进日志。
+
+服务不保存会话：每个请求独立处理，多个实例之间不需要粘性会话或共享存储。代价是服务端不能主动向客户端发请求或发送进度通知，工具应当在一次调用中完成。
+
+- [示例用法](#example-usage)
 - [编写工具](#writing-tools)
     - [参数与返回值](#arguments-and-results)
     - [错误](#errors)
@@ -13,25 +24,30 @@
 - [观测](#observability)
 - [测试](#testing)
 - [其他功能](#other-features)
+- [API 参考](#api-reference)
 
-<a id="introduction"></a>
-## 简介
+<a id="example-usage"></a>
+## 示例用法
 
-[MCP](https://modelcontextprotocol.io)（Model Context Protocol）让 Claude、Cursor、VS Code 这类 AI 客户端调用外部系统的工具。`mcpx` 把 action 作为 MCP 工具提供出去：运营人员在 Claude 里说“把昨天那篇关于发布流程的草稿发出去”，Claude 先调用 `article_search` 找到文章，再调用 `article_publish` 发布它。
+```go
+srv := mcpx.New(mcpx.Options{Name: "app", Instructions: "文章管理。"})
 
-协议和传输由官方的 [Go SDK](https://github.com/modelcontextprotocol/go-sdk) 实现，`mcpx` 补上应用需要的部分：
+mcpx.Register(srv, mcpx.Tool{
+    Name:        "article_publish",
+    Description: "发布一篇草稿。",
+    Permissions: []string{"articles:write"},
+}, NewPublish(db).Tool)
 
-- **与 JSON API 相同的认证**：请求带 Bearer token，主体、租户和权限的规则与 [`rest.RequireBearer`](../security/authentication.md) 完全相同。
-- **按权限筛选工具**：每个工具声明需要的权限，主体没有权限的工具既看不到也调不了。给 AI 用的[个人访问令牌](../security/api-tokens.md#personal-access-tokens)只给 `articles:read`，它就只能用只读的工具。
-- **按 Huma 的规则校验参数**：工具参数的 schema 和校验与 REST 的请求体相同。
-- **错误分开对待**：业务错误交给模型，让它据此调整；内部错误只告诉它“内部错误”，完整错误写进日志。
-
-服务不保存会话：每个请求独立处理，多个实例之间不需要粘性会话或共享存储。代价是服务端不能主动向客户端发请求或发送进度通知，工具应当在一次调用中完成。
+router.Handle("/mcp", mcpx.Handler(srv, mcpx.HandlerOptions{
+    Validate: tokens.Validate,
+    Accounts: identity.Accounts{user.Type: nil},
+}))
+```
 
 <a id="writing-tools"></a>
 ## 编写工具
 
-工具入口是 action 的 `Tool` 方法，签名是 `func(ctx, In) (Out, error)`。它和 [HTTP 入口](../concepts/actions.md#as-http)一样只做转换：从参数中取出业务参数、从 `ctx` 中取出主体，调用 `Handle`。下面是 `internal/article/publish.go` 中新增的部分：
+工具入口是业务动作的 `Tool` 方法，签名是 `func(ctx, In) (Out, error)`。它和 [HTTP 入口](../concepts/actions.md#as-http)一样只做转换：从参数中取出业务参数、从 `ctx` 中取出主体，调用 `Handle`。例如 `publish.go` 中新增的部分：
 
 ```go
 type PublishArgs struct {
@@ -52,7 +68,7 @@ func (a *Publish) Tool(ctx context.Context, in PublishArgs) (*ArticleDTO, error)
 
 `Handle` 中的授权照常生效：只有作者能发布自己的文章，AI 以谁的令牌调用，就以谁的身份执行。
 
-搜索在 `internal/article/search.go` 中，`Search` 的 [HTTP 入口](../features/search.md#searching)接收查询参数，工具入口接收 JSON 参数：
+搜索的业务动作 `Search` 在 `search.go` 中，`Search` 的 [HTTP 入口](../features/search.md#searching)接收查询参数，工具入口接收 JSON 参数：
 
 ```go
 type SearchArgs struct {
@@ -111,17 +127,9 @@ invalid arguments:
 <a id="registering-tools"></a>
 ## 登记工具
 
-模块的工具在 `internal/article/tools.go` 中声明，它和 `routes.go` 一样只描述入口。下面是完整的文件：
+模块的工具在 `tools.go` 中声明，它和 `routes.go` 一样只描述入口：
 
 ```go
-package article
-
-import (
-    "github.com/uptrace/bun"
-
-    "github.com/go-tenon/tenon/mcpx"
-)
-
 // Tools 登记文章模块的 MCP 工具。
 func Tools(srv *mcpx.Server, db *bun.DB) {
     mcpx.Register(srv, mcpx.Tool{
@@ -160,9 +168,9 @@ func Tools(srv *mcpx.Server, db *bun.DB) {
 
 ```go
 srv := mcpx.New(mcpx.Options{
-    Name:         "blog",
+    Name:         "app",
     Version:      "1.0.0",
-    Instructions: "博客的文章管理。文章 ID 是 UUID，不知道 ID 时先用 article_search 查找。",
+    Instructions: "文章管理。文章 ID 是 UUID，不知道 ID 时先用 article_search 查找。",
 })
 article.Tools(srv, a.db)
 router.Handle("/mcp", mcpx.Handler(srv, mcpx.HandlerOptions{
@@ -192,10 +200,10 @@ router.Handle("/mcp", mcpx.Handler(srv, mcpx.HandlerOptions{
 <a id="connecting-clients"></a>
 ## 连接客户端
 
-服务使用 Streamable HTTP 传输，地址是 `https://blog.example.com/mcp`，令牌放在 `Authorization` 请求头中。Claude Code：
+服务使用 Streamable HTTP 传输，地址是 `https://example.com/mcp`，令牌放在 `Authorization` 请求头中。Claude Code：
 
 ```bash
-claude mcp add --transport http blog https://blog.example.com/mcp \
+claude mcp add --transport http blog https://example.com/mcp \
   --header "Authorization: Bearer <个人访问令牌>"
 ```
 
@@ -204,15 +212,15 @@ Cursor、VS Code 等在 MCP 配置文件中写明地址和请求头：
 ```json
 {
   "mcpServers": {
-    "blog": {
-      "url": "https://blog.example.com/mcp",
+    "app": {
+      "url": "https://example.com/mcp",
       "headers": { "Authorization": "Bearer <个人访问令牌>" }
     }
   }
 }
 ```
 
-claude.ai（网页、桌面、手机）和 ChatGPT 的远程连接器不能填写请求头，它们走 MCP 的 OAuth 流程：用户在浏览器中登录你的应用并同意授权。设置 [OAuth 授权服务器](../security/oauth-server.md) 后，在这些客户端中只需填写 `https://blog.example.com/mcp`。
+claude.ai（网页、桌面、手机）和 ChatGPT 的远程连接器不能填写请求头，它们走 MCP 的 OAuth 流程：用户在浏览器中登录你的应用并同意授权。设置 [OAuth 授权服务器](../security/oauth-server.md) 后，在这些客户端中只需填写 `https://example.com/mcp`。
 
 <a id="stdio"></a>
 ## 本地 stdio
@@ -245,7 +253,7 @@ stdio 的标准输出就是协议通道，日志照常写到标准错误，不�
 `mcpx.WithTelemetry` 报告每个请求的耗时指标和链路，属性遵循 OpenTelemetry 的 [MCP 语义约定](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/mcp.md)：
 
 ```go
-srv := mcpx.New(mcpx.Options{Name: "blog"}, mcpx.WithTelemetry(a.meters, a.tracers))
+srv := mcpx.New(mcpx.Options{Name: "app"}, mcpx.WithTelemetry(a.meters, a.tracers))
 ```
 
 每个请求是一个 span，名称是方法和工具名，例如 `tools/call article_publish`，挂在 HTTP 请求的 span 之下，工具中执行的[数据库语句](../general/telemetry.md#database)也在这条链路中。指标和各属性见[可观测性](../general/telemetry.md#mcp)。
@@ -258,7 +266,7 @@ srv := mcpx.New(mcpx.Options{Name: "blog"}, mcpx.WithTelemetry(a.meters, a.trace
 ```go
 func TestPublishTool(t *testing.T) {
     db := dbtest.Open(t, migrations.FS)
-    srv := mcpx.New(mcpx.Options{Name: "blog"})
+    srv := mcpx.New(mcpx.Options{Name: "app"})
     article.Tools(srv, db)
 
     // ……创建 alice 的一篇草稿 draft
@@ -277,9 +285,44 @@ func TestPublishTool(t *testing.T) {
 }
 ```
 
-`Call` 在工具不存在或主体没有权限时返回错误；工具自己报告的错误在 `res.IsError` 中，`res.Text` 是模型看到的内容。`Handle` 的业务规则已经由 action 的测试覆盖，工具的测试只需要确认参数、权限和返回值。
+`Call` 在工具不存在或主体没有权限时返回错误；工具自己报告的错误在 `res.IsError` 中，`res.Text` 是模型看到的内容。`Handle` 的业务规则已经由业务动作的测试覆盖，工具的测试只需要确认参数、权限和返回值。
 
 <a id="other-features"></a>
 ## 其他功能
 
 MCP 还有 resource（只读的数据，例如编辑规范）和 prompt（预先写好的提示词模板）。`srv.SDK()` 返回底层的 `*mcp.Server`，用 SDK 的 API 直接添加它们，见 [SDK 的文档](https://pkg.go.dev/github.com/modelcontextprotocol/go-sdk/mcp)。用 SDK 直接添加的工具不经过 `mcpx` 的权限检查和参数校验，工具请用 `mcpx.Register` 登记。
+
+<a id="api-reference"></a>
+## API 参考
+
+包 `github.com/go-tenon/tenon/mcpx`。
+
+### New
+
+```go
+func New(opts Options, options ...ServerOption) *Server
+func WithTelemetry(mp metric.MeterProvider, tp trace.TracerProvider) ServerOption
+```
+
+`Options` 的字段：`Name`（服务名）、`Instructions`（给模型的说明）、`Logger`。
+
+### Register
+
+```go
+func Register[I, O any](s *Server, t Tool, fn func(context.Context, I) (O, error))
+```
+
+登记一个工具，参数类型 `I` 的标签与 REST 的请求体相同，Huma 按它生成参数的 JSON Schema 并校验。`Tool` 的字段：`Name`、`Title`、`Description`、`Permissions`（主体需要的权限，没有时工具对它不可见），以及注解 `ReadOnly`、`Destructive`、`Idempotent`。
+
+### Handler
+
+```go
+func Handler(s *Server, opts HandlerOptions) http.Handler
+func ResourceMetadata(r Resource) http.Handler
+```
+
+无状态的 Streamable HTTP 处理器。`HandlerOptions` 的字段：`Validate`（校验 Bearer 令牌）、`Accounts`、`Tenant`、`Resource`（OAuth 受保护资源的说明，见 [OAuth 授权服务器](../security/oauth-server.md)）、`Permissions`（使用这个服务需要的权限）。
+
+### mcpcmd、mcpxtest
+
+`mcpx/mcpcmd` 是以 stdio 运行服务、列出工具的 `mcp` 命令；`mcpx/mcpxtest` 在测试中以指定的主体调用工具，见[测试](#testing)。
