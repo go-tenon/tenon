@@ -18,20 +18,15 @@ type docFile struct {
 
 // blogFiles 是要编译的完整文件。其余的包在 testdata/blog 中只声明用到的部分。
 var blogFiles = []docFile{
-	{"cmd/api/main.go", "general/commands.md"},
-	{"internal/cli/cli.go", "general/commands.md"},
 	{"internal/bootstrap/seed.go", "database/migrations.md"},
 	{"internal/auth/auth.go", "security/authentication.md"},
 	{"internal/auth/permissions.go", "security/authorization.md"},
-	{"internal/bootstrap/app.go", "concepts/dependencies.md"},
-	{"internal/bootstrap/http.go", "concepts/dependencies.md"},
 	{"internal/mailjob/mailjob.go", "libraries/queue.md"},
 	{"internal/bootstrap/worker.go", "libraries/queue.md"},
 	{"internal/bootstrap/scheduler.go", "libraries/scheduling.md"},
 	{"internal/auth/social/social.go", "security/social-login.md"},
 	{"internal/auth/authhttp/web_social.go", "security/social-login.md"},
 	{"internal/auth/authhttp/social.go", "security/social-login.md"},
-	{"internal/article/publish.go", "concepts/actions.md"},
 	{"internal/article/get.go", "http/routing.md"},
 	{"internal/article/routes.go", "http/routing.md"},
 	{"internal/article/dto.go", "http/routing.md"},
@@ -45,8 +40,6 @@ var blogFiles = []docFile{
 	{"internal/attachment/vector.go", "ai/vector.md"},
 	{"internal/article/article_test.go", "testing/overview.md"},
 	{"internal/article/commands_test.go", "testing/overview.md"},
-	{"internal/article/commands.go", "concepts/actions.md"},
-	{"internal/bootstrap/commands.go", "concepts/actions.md"},
 	{"internal/editor/editor.go", "security/account-examples.md"},
 	{"internal/reader/reader.go", "security/account-examples.md"},
 	{"internal/accounts/accounts.go", "security/account-examples.md"},
@@ -58,21 +51,6 @@ var blogFiles = []docFile{
 var blogFragments = []struct {
 	path, doc, prefix, header string
 }{
-	{"internal/article/publish_command.go", "concepts/actions.md", "// Command 处理 article publish", `package article
-
-import (
-	"fmt"
-
-	"github.com/google/uuid"
-	"github.com/spf13/cobra"
-
-	"github.com/go-tenon/tenon/command"
-	"github.com/go-tenon/tenon/identity"
-)
-
-// system 在文档中与 Job 一起给出。
-var system identity.Subject
-`},
 	{"internal/article/import_template.go", "features/import-export.md", "type TemplateInput struct", `package article
 
 import (

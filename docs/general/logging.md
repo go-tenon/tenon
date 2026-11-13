@@ -1,7 +1,9 @@
 # 日志
 
-- [简介](#introduction)
-- [创建日志器](#creating-a-logger)
+Tenon 用 Go 标准库的 [`log/slog`](https://pkg.go.dev/log/slog) 记录结构化日志，全局日志器就是 `slog.Default()`。`logging` 包在 slog 之上做三件事：按配置构造日志器；让日志自动带上请求 ID 等关联字段；把 [slog-formatter](https://github.com/samber/slog-formatter) 和 [slog-multi](https://github.com/samber/slog-multi) 接入处理链。除此之外，用的都是标准的 slog API。
+
+- [示例用法](#example-usage)
+- [配置](#creating-a-logger)
     - [按组件设置级别](#component-levels)
 - [写入日志](#writing-log-messages)
 - [上下文信息](#contextual-information)
@@ -14,25 +16,35 @@
     - [Handler 中间件](#handler-middleware)
     - [使用自己的 slog Handler](#custom-handlers)
 - [敏感信息脱敏](#redacting-sensitive-data)
+    - [使用内置规则](#builtin-redaction)
+    - [自定义规则](#custom-redaction)
+    - [注意事项](#redaction-caveats)
 - [测试日志](#testing-logs)
+- [API 参考](#api-reference)
 
-<a id="introduction"></a>
-## 简介
+<a id="example-usage"></a>
+## 示例用法
 
-Tenon 使用 Go 标准库的 [`log/slog`](https://pkg.go.dev/log/slog) 记录结构化日志，全局日志器就是 `slog.Default()`。在入口处安装一次：
+在入口安装一次：
 
 ```go
 slog.SetDefault(logging.New(cfg.Logs))
 ```
 
-之后，框架组件（访问日志、panic 恢复、5xx 诊断、平滑停止）和业务代码都通过它记录日志，不需要把日志器层层传递。
+之后框架组件（访问日志、panic 恢复、5xx 诊断）和业务代码都通过它记录，不需要层层传递日志器：
 
-`logging` 包在标准 slog 之上做了三件事：按配置构造日志器；让日志自动带上请求 ID 等关联字段；把 [slog-formatter](https://github.com/samber/slog-formatter) 和 [slog-multi](https://github.com/samber/slog-multi) 接入处理链，用于格式化字段和分发到多个输出。除此之外，你使用的都是标准的 slog API。
+```go
+slog.InfoContext(ctx, "article published", "article_id", item.ID)
+```
+
+```json
+{"time":"…","level":"INFO","msg":"article published","request_id":"9F2K…","article_id":"0f8c…"}
+```
 
 <a id="creating-a-logger"></a>
-## 创建日志器
+## 配置
 
-日志级别、格式这些需要按环境调整的值来自 `logging.Config`，通常放在配置文件的 `logs` 段：
+日志级别、格式来自 `logging.Config`，通常放在配置文件的 `logs` 段：
 
 ```yaml
 logs:
@@ -130,7 +142,7 @@ ctx = logging.WithAttrs(ctx, slog.String(logging.AttrComponent, "billing"))
 <a id="writing-log-messages"></a>
 ## 写入日志
 
-业务代码直接使用 slog 的包级函数记录日志，以键值对的形式附加结构化字段。例如在文章发布成功后记录一条日志：
+业务代码直接使用 slog 的包级函数记录日志，以键值对的形式附加结构化字段。例如文章发布成功后：
 
 ```go
 func (a *Publish) Handle(ctx context.Context, subject identity.Subject, id uuid.UUID) (*Article, error) {
@@ -145,7 +157,7 @@ func (a *Publish) Handle(ctx context.Context, subject identity.Subject, id uuid.
 
 请尽量使用带 `Context` 后缀的方法（`InfoContext`、`ErrorContext` 等）并传入当前的 `ctx`，这样日志才能自动带上请求 ID，见下一节。
 
-如果某个 action 需要单独的日志器（例如写入审计日志），像接收数据库一样通过构造函数接收 `*slog.Logger` 即可，见[依赖装配](../concepts/dependencies.md#constructor-injection)。
+如果某个动作需要单独的日志器（例如写入审计日志），像接收数据库一样通过构造函数接收 `*slog.Logger` 即可，见[依赖装配](../concepts/dependencies.md#constructor-injection)。
 
 字段名应当保持稳定，例如始终使用 `article_id` 而不是有时写 `articleId`，这样才方便在日志系统中检索和聚合。
 
@@ -203,7 +215,7 @@ slog.ErrorContext(ctx, "sync feed failed", "feed_id", id, "error", err)
 `logging.New` 默认启用 `logging.ErrorFormatter`，它会把 `error` 类型的字段展开为一个分组：
 
 ```json
-{"level":"ERROR","msg":"sync feed failed","feed_id":"…","error":{"message":"article.slug_taken: pq: duplicate key","code":"article.slug_taken","stack":"article.slug_taken: pq: duplicate key\n(1) article.slug_taken\nWraps: (2) attached stack trace\n  -- stack trace:\n  | example.com/blog/internal/article.(*Update).Handle\n …"}}
+{"level":"ERROR","msg":"sync feed failed","feed_id":"…","error":{"message":"article.slug_taken: pq: duplicate key","code":"article.slug_taken","stack":"article.slug_taken: pq: duplicate key\n(1) article.slug_taken\nWraps: (2) attached stack trace\n  -- stack trace:\n  | example.com/app/internal/article.(*Update).Handle\n …"}}
 ```
 
 | 字段 | 内容 |
@@ -342,6 +354,7 @@ slog.SetDefault(slog.New(logging.NewContextHandler(myHandler)))
 
 框架默认不脱敏任何字段。需要时，通过 `logging.Format` 加上 slog-formatter 的脱敏规则。规则在分发之前执行，所以对所有输出都生效，框架自己记录的访问日志、错误诊断也同样会经过它们。
 
+<a id="builtin-redaction"></a>
 ### 使用内置规则
 
 `PIIFormatter` 对指定字段及其所有子字段脱敏，`IPAddressFormatter` 整体隐藏指定字段：
@@ -370,6 +383,7 @@ slog.InfoContext(ctx, "user signed up",
 - 长度大于 5 的字符串保留前 4 个字符，其余替换为 `*******`；
 - 其他值（短字符串、数字、时间等）整体替换为 `*******`。
 
+<a id="custom-redaction"></a>
 ### 自定义规则
 
 规则不合适时，用 `FormatByKey` 或 `FormatByType` 自己写。例如手机号只保留后 4 位：
@@ -392,6 +406,7 @@ logging.Format(slogformatter.FormatByType(func(u *account.User) slog.Value {
 }))
 ```
 
+<a id="redaction-caveats"></a>
 ### 注意事项
 
 - 规则**只按字段名或类型匹配，不检查内容**。直接拼接进日志消息的文本不会被处理，所以敏感数据请始终作为结构化字段传入，不要写进消息。
@@ -427,3 +442,88 @@ func TestPublishLogsEvent(t *testing.T) {
 
 > [!WARNING]
 > `Capture` 修改全局状态，使用它的测试不能调用 `t.Parallel()`。并行测试请改用 `logtest.New()`，再把 `rec.Logger()` 显式传给被测组件，例如 `httpx.Defaults(cfg, rec.Logger(), nil)`。
+
+<a id="api-reference"></a>
+## API 参考
+
+包 `github.com/go-tenon/tenon/logging`。
+
+### New
+
+```go
+func New(cfg Config, opts ...Option) *slog.Logger
+```
+
+按配置构造日志器，不修改全局状态。默认启用 `ErrorFormatter`，输出到 `cfg.Writer`（默认标准错误）。
+
+### Option
+
+```go
+func Format(formatters ...slogformatter.Formatter) Option
+func Pipe(middlewares ...slogmulti.Middleware) Option
+func Fanout(handlers ...slog.Handler) Option
+func Export(lp log.LoggerProvider) Option
+```
+
+把格式化规则、Handler 中间件、追加的输出、OpenTelemetry 日志推送放进[处理链](#pipeline)的对应位置。
+
+### WithAttrs
+
+```go
+func WithAttrs(ctx context.Context, attrs ...slog.Attr) context.Context
+func ContextAttrs(ctx context.Context) []slog.Attr
+```
+
+把字段放进 context，之后用这个 context 记录的日志都带上它们。多次调用累加，不影响父 context。`ContextAttrs` 读取已放入的字段。
+
+### AttrComponent
+
+```go
+const AttrComponent = "component"
+```
+
+组件字段名，[按组件设置级别](#component-levels)时按它匹配。
+
+### NewContextHandler
+
+```go
+func NewContextHandler(h slog.Handler) slog.Handler
+```
+
+包装 `h`，让它输出 context 中的字段。只在绕开 `New` 自己构造日志器时需要。
+
+### ErrorFormatter
+
+```go
+func ErrorFormatter() slogformatter.Formatter
+```
+
+把 `error` 字段展开为 `message`、`code`、`stack` 分组。`New` 默认启用。
+
+### RecordError
+
+```go
+func RecordError(span trace.Span, err error)
+```
+
+在链路上记录错误，属性与 `ErrorFormatter` 的字段对应，见[错误追踪](telemetry.md#error-tracking)。
+
+### Or
+
+```go
+func Or(l *slog.Logger) *slog.Logger
+```
+
+`l` 为 `nil` 时返回 `slog.Default()`。组件处理可选的日志器参数时使用。
+
+### logtest
+
+包 `github.com/go-tenon/tenon/logging/logtest`。
+
+```go
+func Capture(t testing.TB) *Recorder
+func New() *Recorder
+func (r *Recorder) Logger() *slog.Logger
+```
+
+`Capture` 在测试期间把记录器安装为 `slog.Default`，结束后恢复；`New` 只创建记录器，用 `Logger()` 显式传给被测组件。读取记录的方法见[测试日志](#testing-logs)。

@@ -1,7 +1,10 @@
 # 业务动作
 
-- [简介](#introduction)
-- [编写 action](#writing-actions)
+Tenon 推荐把业务逻辑写成**动作**（动作）：每个业务动作是一个类型，单独放在一个文件中，例如“发布文章”是 `article/publish.go` 中的 `article.Publish`。这个文件包含这个动作的全部代码：依赖、业务规则，以及 HTTP 接口、队列任务、命令行等入口方法。
+
+这个模式不需要框架支持：没有 `Action` 接口，没有反射，也不按方法名自动发现。入口方法是普通的 Go 方法，注册路由或任务时作为方法值传入，签名由编译器检查。模块中也没有包揽所有操作的 `Service`：新增一个动作就新增一个文件。
+
+- [编写动作](#writing-actions)
 - [模块内共享的代码](#shared-code)
 - [从不同入口运行](#entry-points)
     - [HTTP 接口](#as-http)
@@ -9,7 +12,7 @@
     - [定时任务](#as-scheduled-tasks)
     - [命令行](#as-commands)
     - [AI 工具](#as-tools)
-    - [页面、其他 action 和脚本](#direct-calls)
+    - [页面、其他动作和脚本](#direct-calls)
 - [同步的后续动作](#follow-ups)
     - [声明钩子](#declaring-hooks)
     - [在 bootstrap 中连接](#wiring-hooks)
@@ -17,36 +20,12 @@
 - [数据对象](#data-objects)
 - [约定](#conventions)
 
-<a id="introduction"></a>
-## 简介
-
-Tenon 推荐把业务逻辑写成 **action**：每个业务动作是一个类型，单独放在一个文件中，例如“发布文章”就是 `internal/article/publish.go` 中的 `article.Publish`。这个文件包含这个动作的全部代码：依赖、业务规则，以及 HTTP 接口、队列任务等各个入口。
-
-这个模式不需要任何框架支持：没有 `Action` 接口，没有反射，也不靠方法名约定自动发现。入口方法就是普通的 Go 方法，在注册路由或任务时作为方法值传进去，签名由编译器检查。
-
-模块中没有一个包揽所有操作的 `Service`。需要修改“发布文章”时，只看 `publish.go` 一个文件就够了；新增一个动作就新增一个文件，不会让某个类型越来越大。
-
 <a id="writing-actions"></a>
-## 编写 action
+## 编写动作
 
-下面是完整的 `internal/article/publish.go`：
+“发布文章”的 `publish.go`。`Article`、`ErrNotFound` 等在同一个包的 `article.go` 中，见[下一节](#shared-code)：
 
 ```go
-package article
-
-import (
-    "context"
-    "database/sql"
-    "time"
-
-    "github.com/cockroachdb/errors"
-    "github.com/google/uuid"
-    "github.com/uptrace/bun"
-
-    "github.com/go-tenon/tenon/database"
-    "github.com/go-tenon/tenon/identity"
-)
-
 // Publish 发布文章。
 type Publish struct {
     db *bun.DB
@@ -106,13 +85,9 @@ func (a *Publish) HTTP(ctx context.Context, in *PublishInput) (*ArticleOutput, e
 <a id="shared-code"></a>
 ## 模块内共享的代码
 
-多个 action 共用的东西放在 `article.go` 中：模型、业务错误、提交的数据，以及包内的查询和授权函数：
+多个动作共用的东西放在 `article.go` 中：模型、业务错误、提交的数据，以及包内的查询和授权函数：
 
 ```go
-package article
-
-// Article 的定义见数据库一章。
-
 var (
     ErrNotFound         = errorx.Define(errorx.NotFound, "article.not_found")
     ErrForbidden        = errorx.Define(errorx.PermissionDenied, "article.forbidden")
@@ -147,17 +122,17 @@ func CanEdit(subject identity.Subject, item *Article) bool {
 }
 ```
 
-模型的定义见[定义模型](../database/quick-start.md#defining-models)，业务错误见[定义业务错误](../general/errors.md#defining-errors)。`find` 不导出，它只是 action 之间共享的实现细节；`CanEdit` 是授权规则，页面要用同一份规则决定显示哪些按钮，所以导出，见[授权函数](../security/authorization.md#authorization-functions)。不要因为两个 action 有几行相似的代码就急着提取函数；规则真正相同时再提取。
+模型的定义见[定义模型](../database/quick-start.md#defining-models)，业务错误见[定义业务错误](../general/errors.md#defining-errors)。`find` 不导出，它只是动作之间共享的实现细节；`CanEdit` 是授权规则，页面要用同一份规则决定显示哪些按钮，所以导出，见[授权函数](../security/authorization.md#authorization-functions)。不要因为两个动作有几行相似的代码就急着提取函数；规则真正相同时再提取。
 
 <a id="entry-points"></a>
 ## 从不同入口运行
 
-同一个 action 可以从多个入口运行。每个入口是 action 上的一个方法，在注册的地方作为方法值传入。
+同一个动作可以从多个入口运行。每个入口是动作上的一个方法，在注册的地方作为方法值传入。
 
 <a id="as-http"></a>
 ### HTTP 接口
 
-模块的 `routes.go` 声明路由，把 action 的 `HTTP` 方法注册为处理器：
+模块的 `routes.go` 声明路由，把动作的 `HTTP` 方法注册为处理器：
 
 ```go
 publish := huma.Operation{
@@ -170,7 +145,7 @@ requireArticles(&publish)
 rest.Register(api, publish, NewPublish(db).HTTP)
 ```
 
-`routes.go` 的完整代码见[模块内注册](../http/routing.md#module-registration)。action 在注册时构造一次，之后它的方法被所有请求并发调用。
+`routes.go` 的完整代码见[模块内注册](../http/routing.md#module-registration)。动作在注册时构造一次，之后它的方法被所有请求并发调用。
 
 <a id="as-jobs"></a>
 ### 队列任务
@@ -197,7 +172,7 @@ func (a *Publish) Job(ctx context.Context, id uuid.UUID) error {
 }
 ```
 
-`queue.Topic` 把 topic 名称和 payload 类型绑在一起，发布和处理共用这一个声明。多租户应用中，payload 还要带上租户，`system` 按租户构造，见[后台任务](../security/tenancy.md#tenant-jobs)。设置定时发布的 action 在写入发布时间的同一个事务中发布任务：
+`queue.Topic` 把 topic 名称和 payload 类型绑在一起，发布和处理共用这一个声明。多租户应用中，payload 还要带上租户，`system` 按租户构造，见[后台任务](../security/tenancy.md#tenant-jobs)。设置定时发布的动作在写入发布时间的同一个事务中发布任务：
 
 ```go
 err := PublishAt.Publish(ctx, tx, item.ID, queue.At(publishAt))
@@ -212,7 +187,7 @@ article.PublishAt.Handle(w, article.NewPublish(a.db).Job)
 <a id="as-scheduled-tasks"></a>
 ### 定时任务
 
-调度器的任务是 `func(ctx context.Context) error`。`Handle` 正好是这个签名的 action 可以直接注册，例如[定时任务](../libraries/scheduling.md#defining-tasks)一章中发布到期文章的 `PublishScheduled`：
+调度器的任务是 `func(ctx context.Context) error`。`Handle` 正好是这个签名的动作可以直接注册，例如[定时任务](../libraries/scheduling.md#defining-tasks)一章中发布到期文章的 `PublishScheduled`：
 
 ```go
 sched.Add("articles:publish-scheduled", "* * * * *", article.NewPublishScheduled(a.db).Handle)
@@ -241,19 +216,10 @@ func (a *Publish) Command(cmd *cobra.Command, args []string) error {
 
 `Handle` 返回的业务错误原样返回，框架按错误分类转换为[退出码](../general/commands.md#exit-codes)，例如文章不存在时以 1 退出。
 
-模块的命令在 `internal/article/commands.go` 中声明，它和 `routes.go` 一样只描述入口：命令名、参数和选项。下面是完整的文件：
+模块的命令在 `commands.go` 中声明，它和 `routes.go` 一样只描述入口：命令名、参数和选项：
 
 ```go
-package article
-
-import (
-    "github.com/spf13/cobra"
-    "github.com/uptrace/bun"
-
-    "github.com/go-tenon/tenon/command"
-)
-
-// Commands 声明 article 模块的命令，bootstrap.Commands 调用它。
+// Commands 声明 article 模块的命令，入口调用它。
 func Commands(db *bun.DB) *cobra.Command {
     group := &cobra.Command{Use: "article", Short: "管理文章"}
     group.AddCommand(&cobra.Command{
@@ -266,31 +232,12 @@ func Commands(db *bun.DB) *cobra.Command {
 }
 ```
 
-构造命令行时还没有加载配置，也没有打开数据库。`command.Bind` 解决这个问题：它先用零值的依赖调用一次声明函数，得到命令的名称、参数和选项；执行其中一个命令时，再加载配置、调用 `open` 装配依赖，用装配好的依赖重新声明，执行同一个命令的 `RunE`，命令返回后关闭资源。下面是完整的 `internal/bootstrap/commands.go`，`open` 就是[依赖装配](dependencies.md#assembling-the-application)一章中 `serve` 用的那个。除了各模块的命令，需要数据库的其他命令也在这里声明，例如[队列状态](../libraries/queue.md#stats-command)、[定时任务列表](../libraries/scheduling.md#schedules-command)、[重建搜索索引](../features/search.md#reindexing)和[填充数据](../database/migrations.md#seeding)：
+构造命令行时还没有加载配置，也没有打开数据库。入口用 `command.Bind` 声明模块的命令：执行时才装配依赖，见[只在执行时装配的命令](dependencies.md#deferred-commands)：
 
 ```go
-package bootstrap
-
-import (
-    "github.com/spf13/cobra"
-
-    "example.com/blog/internal/article"
-    "github.com/go-tenon/tenon/command"
-    "github.com/go-tenon/tenon/queue/queuecmd"
-    "github.com/go-tenon/tenon/schedule/schedulecmd"
-    "github.com/go-tenon/tenon/search/searchcmd"
-)
-
-// Commands 返回需要 App 的命令，执行时才装配 App。
 func Commands() []*cobra.Command {
     return command.Bind(open, func(a *App) []*cobra.Command {
-        return []*cobra.Command{
-            article.Commands(a.db),
-            queuecmd.New(a.db),
-            schedulecmd.New(a.tasks),
-            searchcmd.New(a.db, article.SearchIndex),
-            seed(a.db),
-        }
+        return []*cobra.Command{article.Commands(a.db)}
     })
 }
 ```
@@ -301,7 +248,8 @@ func Commands() []*cobra.Command {
 ./bin/api article publish 0193e7a2-7c1e-7b4a-9d2f-3c5a1e8b6f10
 ```
 
-声明时传入的 `App` 字段都是零值，所以 `Commands` 和 action 的构造函数只能保存依赖、不能使用它们，这与[生成 OpenAPI 文档](../http/routing.md#exporting-openapi)时的约定相同。需要在执行时才能创建的对象，例如注册了任务的调度器，传入创建它的方法 `a.tasks`，而不是调用它的结果。同样的原因，`RunE` 用 `cmd.Flags().GetString` 这类方法读取选项，不要用 `StringVar` 绑定的变量：执行的是重新声明的命令的 `RunE`，选项只解析在第一次声明的命令上。`--help` 和参数个数错误不会执行 `RunE`，也就不会打开数据库。
+> [!IMPORTANT]
+> 声明时传入的依赖都是零值，所以 `Commands` 和动作的构造函数只能保存依赖、不能使用它们。`RunE` 用 `cmd.Flags().GetString` 这类方法读取选项，不要用 `StringVar` 绑定的变量：执行的是重新声明的命令，绑定的变量不会被解析。
 
 <a id="as-tools"></a>
 ### AI 工具
@@ -324,9 +272,9 @@ func (a *Publish) Tool(ctx context.Context, in PublishArgs) (*ArticleDTO, error)
 模块在 `tools.go` 中用 `mcpx.Register` 登记工具，声明名称、说明和需要的权限，见 [MCP 服务](../ai/mcp.md)。
 
 <a id="direct-calls"></a>
-### 页面、其他 action 和脚本
+### 页面、其他动作和脚本
 
-其他地方直接调用 `Handle`。[页面处理器](../responses/views.md#rendering-pages)持有它用到的 action；[填充数据](../database/migrations.md#seeding)的 `seed` 命令组合了多个动作，它不是某一个 action 的入口，所以直接调用 `Create` 和 `Publish` 的 `Handle`：
+其他地方直接调用 `Handle`。[页面处理器](../responses/views.md#rendering-pages)持有它用到的动作；[填充数据](../database/migrations.md#seeding)的 `seed` 命令组合了多个动作，它不是某一个动作的入口，所以直接调用 `Create` 和 `Publish` 的 `Handle`：
 
 ```go
 item, err := article.NewCreate(db).Handle(ctx, alice, changes)
@@ -334,7 +282,7 @@ item, err := article.NewCreate(db).Handle(ctx, alice, changes)
 
 页面处理器不放在 `article` 包中，因为 templ 组件要导入 `article` 包的类型，放在一起会造成循环导入。
 
-一个 action 需要另一个 action 时，通过构造函数接收它，而不是在内部构造。例如[导入文章](../features/import-export.md#import-action)时复用 `Create` 的规则：
+一个动作需要另一个动作时，通过构造函数接收它，而不是在内部构造。例如[导入文章](../features/import-export.md#import-action)时复用 `Create` 的规则：
 
 ```go
 type Import struct {
@@ -349,7 +297,7 @@ func NewImport(create *Create) *Import {
 <a id="follow-ups"></a>
 ## 同步的后续动作
 
-一个动作完成后，其他模块常常要跟着做点什么，例如文章发布后，积分模块给作者加积分。Tenon 没有事件分发器：action 声明一个钩子类型，bootstrap 把其他模块的函数传进来。`article` 不导入 `points`，发布文章会触发什么都写在装配代码里，不需要到处查找监听器。
+一个动作完成后，其他模块常常要跟着做点什么，例如文章发布后，积分模块给作者加积分。Tenon 没有事件分发器：动作声明一个钩子类型，bootstrap 把其他模块的函数传进来。`article` 不导入 `points`，发布文章会触发什么都写在装配代码里，不需要到处查找监听器。
 
 <a id="declaring-hooks"></a>
 ### 声明钩子
@@ -390,8 +338,6 @@ func NewPublish(db *bun.DB, onPublished ...PublishedHook) *Publish {
 钩子由下游模块提供，例如 `internal/points/article.go`：
 
 ```go
-package points
-
 // ArticlePublished 给发布文章的作者加 10 积分。
 func ArticlePublished(ctx context.Context, tx database.Tx, item *article.Article) error {
     return add(ctx, tx, item.AuthorID, 10, "article.published")
@@ -455,8 +401,8 @@ article.Commands(a.db, onPublished)
 ## 约定
 
 - **命名**：类型名是动词，包名已经说明了对象，例如 `article.Publish`、`article.Create`；文件名与类型名对应，例如 `publish.go`。
-- **构造函数只保存依赖**。生成 OpenAPI 文档、[查看路由](../http/routing.md#listing-routes)和[声明命令](#as-commands)时，action 会被构造，但传入的依赖都是零值，方法不会被调用。
-- **字段只保存依赖**。action 被并发调用，请求数据只放在参数和局部变量中。
+- **构造函数只保存依赖**。生成 OpenAPI 文档、[查看路由](../http/routing.md#listing-routes)和[声明命令](#as-commands)时，动作会被构造，但传入的依赖都是零值，方法不会被调用。
+- **字段只保存依赖**。动作被并发调用，请求数据只放在参数和局部变量中。
 - **`Handle` 是唯一的业务入口**。入口方法只做转换：读取参数和主体、调用 `Handle`、转换结果和错误。入口方法按来源命名：`HTTP`、`Job`、`Command`。
 - **测试 `Handle`**。业务规则直接调用 `Handle` 测试，入口的认证和验证通过 HTTP 测试覆盖，见[测试](../testing/overview.md#testing-actions)。
 

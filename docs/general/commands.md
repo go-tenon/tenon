@@ -1,99 +1,94 @@
 # 命令行
 
-- [简介](#introduction)
+`command` 包基于 [Cobra](https://github.com/spf13/cobra) 提供应用的命令：启动服务、执行迁移、检查配置、导出接口文档、查看路由。每个命令都是一个独立的 `*cobra.Command`，应用按需装配到根命令上，用不到的不会出现。
+
+- [示例用法](#example-usage)
 - [装配命令行](#declaring-the-cli)
 - [内置命令](#built-in-commands)
     - [Run：serve 与常驻进程](#run-command)
+    - [在一个进程中运行多个部分](#running-together)
     - [openapi 命令](#openapi-command)
     - [routes 命令](#routes-command)
-    - [dev 命令](#dev-command)
     - [migrate 命令](#migrate-command)
     - [config 命令](#config-command)
 - [自定义命令](#custom-commands)
 - [输入与输出](#input-and-output)
 - [退出码](#exit-codes)
+- [API 参考](#api-reference)
 
-<a id="introduction"></a>
-## 简介
+<a id="example-usage"></a>
+## 示例用法
 
-一个 API 应用除了启动 HTTP 服务，通常还需要执行一些运维任务：检查配置、执行数据库迁移、导出接口文档、查看路由。Tenon 的 `command` 包基于 [Cobra](https://github.com/spf13/cobra) 实现了这些命令。每个命令都是一个独立的 `*cobra.Command`，应用按需把它们装配到根命令上，用不到的命令不会出现。
+```go
+package main
 
-完成本章后，你的应用可以这样使用：
+import (
+    "context"
+    "fmt"
+
+    "github.com/go-tenon/tenon/command"
+)
+
+type Config struct {
+    Greeting string `yaml:"greeting"`
+}
+
+func main() {
+    root := command.Root("api", "示例")
+    root.AddCommand(
+        command.Run("hello", "打个招呼", func(ctx context.Context, cfg Config) error {
+            fmt.Println(cfg.Greeting)
+            return nil
+        }),
+        command.Config[Config](),
+    )
+    command.Execute(root)
+}
+```
 
 ```bash
-./bin/api serve
-./bin/api migrate up
-./bin/api openapi > openapi.json
-./bin/api routes --method post
-./bin/api serve --config config/app.yaml --config config/prod.yaml
+go run . hello --config config/app.yaml
+go run . config show
 ```
+
+`command.Run` 先读取 `.env`、加载并校验 `--config` 指定的配置，再调用你的函数；收到 `SIGINT`、`SIGTERM` 时取消 `ctx`。
 
 <a id="declaring-the-cli"></a>
 ## 装配命令行
 
-`command.Root` 创建根命令，然后用 Cobra 原生的 `AddCommand` 装配应用需要的命令。下面是博客应用完整的 `internal/cli/cli.go`：
+`command.Root` 创建根命令，然后用 Cobra 原生的 `AddCommand` 装配命令。一个 API 应用的 `cmd/api/main.go`：
 
 ```go
-package cli
-
-import (
-    "github.com/spf13/cobra"
-
-    "example.com/blog/internal/bootstrap"
-    "example.com/blog/internal/settings"
-    "example.com/blog/migrations"
-    "github.com/go-tenon/tenon/command"
-    "github.com/go-tenon/tenon/command/migratecmd"
-    "github.com/go-tenon/tenon/command/httpcmd"
-    "github.com/go-tenon/tenon/database"
-)
-
-// New 返回应用的根命令。
-func New() *cobra.Command {
+func main() {
     root := command.Root("api", "Blog API")
     root.AddCommand(
         command.Run("serve", "启动 HTTP 服务", bootstrap.Serve),
         command.Run("work", "处理队列任务", bootstrap.Work),
         command.Run("schedule", "执行定时任务", bootstrap.Schedule),
         command.Run("start", "在一个进程中运行 HTTP 服务、队列和定时任务", bootstrap.Start),
-        migratecmd.New(migrations.FS, dbConfig),
-        command.Config[settings.Config](),
+        migratecmd.New(migrations.FS, func(cfg bootstrap.Config) database.Config { return cfg.Database }),
+        command.Config[bootstrap.Config](),
     )
     root.AddCommand(httpcmd.Commands(bootstrap.API, bootstrap.DocRoutes, bootstrap.DocRouter)...)
     root.AddCommand(bootstrap.Commands()...)
-    return root
-}
-
-func dbConfig(cfg settings.Config) database.Config { return cfg.Database }
-```
-
-入口文件 `cmd/api/main.go` 只有一行：
-
-```go
-package main
-
-import (
-    "example.com/blog/internal/cli"
-    "github.com/go-tenon/tenon/command"
-)
-
-func main() {
-    command.Execute(cli.New())
+    command.Execute(root)
 }
 ```
+
+`bootstrap` 中的 `Serve`、`Start`、`API`、`DocRoutes`、`DocRouter` 见[依赖装配](../concepts/dependencies.md#assembling-the-application)和[入门教程](../tutorial/02-infrastructure.md#entrypoint)，`bootstrap.Commands` 是需要数据库的命令，见[自定义命令](#custom-commands)。
 
 `command.Execute` 执行根命令。收到 `SIGINT` 或 `SIGTERM` 时，它会取消命令的 context；命令失败时，它把错误写到标准错误，并以对应的[退出码](#exit-codes)结束进程。
 
-`command.Root` 在根命令上定义了 `--config` 选项，所有子命令共用它。它可以传入多次，后面的文件覆盖前面的，默认是 `config/app.yaml`，见[按环境覆盖配置](configuration.md#overriding-configuration)。需要配置的命令由框架负责读取项目根目录的 [.env](configuration.md#env-files)、按 `--config` 加载配置并校验，你的代码只会拿到校验通过的配置。配置结构 `settings.Config` 见[配置](configuration.md#loading-configuration)，类型参数通常可以从你传入的函数推断出来。
+`command.Root` 在根命令上定义了 `--config` 选项，所有子命令共用它。它可以传入多次，后面的文件覆盖前面的，默认是 `config/app.yaml`，见[按环境覆盖配置](configuration.md#overriding-configuration)。需要配置的命令由框架负责读取项目根目录的 [.env](configuration.md#env-files)、按 `--config` 加载配置并校验，你的代码只会拿到校验通过的配置。配置结构见[配置](configuration.md#loading-configuration)，类型参数通常可以从你传入的函数推断出来。
 
 | 构造函数 | 创建的命令 | 需要配置 |
 | --- | --- | --- |
 | `command.Run(use, short, run)` | 任意名称，例如 `serve`、`worker` | 是 |
 | `command.Config[C]()` | `config check`、`config show` | 是 |
 | `migratecmd.New(fsys, dbConfig, opts...)` | `migrate up`、`migrate status`、`migrate down`、`migrate make`；`migratecmd.Name` 构造其他数据库的命令，见[多个数据库](../database/quick-start.md#multiple-databases) | 是 |
-| `migratecmd.Publish(driver, sources...)` | 显式挂载的 `migrate publish` | 否 |
+| `migratecmd.Publish(sources...)` | 显式挂载的 `migrate publish` | 否 |
 | `httpcmd.Commands(opts, register, router)` | `openapi`、`routes`、`client`（生成 TypeScript 或 Go 客户端，见[客户端代码](../responses/clients.md)）；也可以用 `httpcmd.OpenAPI`、`httpcmd.Routes`、`clientgen.Command` 单独装配 | 否 |
-| `command.Bind(open, declare)` | 应用声明的命令，例如 `article publish`，见[从命令行运行 action](../concepts/actions.md#as-commands) | 是 |
+| `command.Bind(open, declare)` | 应用声明的命令，例如 `article publish`，见[从命令行运行动作](../concepts/actions.md#as-commands) | 是 |
 | `queuecmd.New(db)` | `queue status`、`queue failed`、`queue slot recreate`，在 `command.Bind` 中声明，见[队列状态](../libraries/queue.md#stats-command) | 是 |
 | `schedulecmd.New(tasks, m)` | `schedules`，在 `command.Bind` 中声明，见[列出任务的命令](../libraries/scheduling.md#schedules-command) | 是 |
 
@@ -115,7 +110,7 @@ root.AddCommand(
 <a id="run-command"></a>
 ### Run：serve 与常驻进程
 
-`command.Run` 创建一个先加载配置、再调用 `run(ctx, cfg)` 的命令。`ctx` 会在进程收到停止信号时被取消，常驻进程据此退出。博客应用的 `bootstrap.Serve` 装配应用并启动 HTTP 服务，见[依赖装配](../concepts/dependencies.md#assembling-the-application)，HTTP 服务会据此[平滑停止](../concepts/lifecycle.md)：
+`command.Run` 创建一个先加载配置、再调用 `run(ctx, cfg)` 的命令。`ctx` 会在进程收到停止信号时被取消，常驻进程据此退出。`bootstrap.Serve` 装配应用并启动 HTTP 服务，见[依赖装配](../concepts/dependencies.md#assembling-the-application)，HTTP 服务会据此[平滑停止](../concepts/lifecycle.md)：
 
 ```bash
 ./bin/api serve                                                 # 使用 config/app.yaml
@@ -127,23 +122,22 @@ root.AddCommand(
 <a id="running-together"></a>
 ### 在一个进程中运行多个部分
 
-博客应用有三个常驻部分：HTTP 服务、[队列 worker](../libraries/queue.md#running-workers) 和[定时任务调度器](../libraries/scheduling.md#running-the-scheduler)，分别是 `App` 的 `HTTP`、`Worker` 和 `Scheduler` 方法（见[依赖装配](../concepts/dependencies.md#assembling-the-application)）。每个命令只是选择运行哪些部分：
+一个完整的应用通常有三个常驻部分：HTTP 服务、[队列 worker](../libraries/queue.md#running-workers) 和[定时任务调度器](../libraries/scheduling.md#running-the-scheduler)，分别是 `App` 的 `HTTP`、`Worker` 和 `Scheduler` 方法（见[依赖装配](../concepts/dependencies.md#assembling-the-application)）。每个命令只是选择运行哪些部分：
 
 ```go
-// Serve 和 Start 在 app.go 中，Work 在 worker.go 中，Schedule 在 scheduler.go 中
-func Serve(ctx context.Context, cfg settings.Config) error {
+func Serve(ctx context.Context, cfg Config) error {
     return run(ctx, cfg, (*App).HTTP)
 }
 
-func Work(ctx context.Context, cfg settings.Config) error {
+func Work(ctx context.Context, cfg Config) error {
     return run(ctx, cfg, (*App).Worker)
 }
 
-func Schedule(ctx context.Context, cfg settings.Config) error {
+func Schedule(ctx context.Context, cfg Config) error {
     return run(ctx, cfg, (*App).Scheduler)
 }
 
-func Start(ctx context.Context, cfg settings.Config) error {
+func Start(ctx context.Context, cfg Config) error {
     return run(ctx, cfg, (*App).HTTP, (*App).Worker, (*App).Scheduler)
 }
 ```
@@ -179,12 +173,12 @@ func Start(ctx context.Context, cfg settings.Config) error {
 
 默认输出 OpenAPI 3.1；有的客户端生成器只支持 3.0，例如 oapi-codegen，这时加上 `--spec 3.0`。
 
-博客应用的 `bootstrap.API` 和 `bootstrap.DocRoutes` 定义在 `internal/bootstrap` 中，与 `serve` 共用同一份 API 选项和路由注册（见[依赖装配](../concepts/dependencies.md#assembling-the-application)），因此导出的文档与实际运行的接口始终一致。文档模式不会调用处理器，也不会调用 token 校验器，所以这个命令不读取配置文件，也不连接数据库。
+`bootstrap.API` 和 `bootstrap.DocRoutes` 与 `serve` 共用同一份 API 选项和路由注册（见[依赖装配](../concepts/dependencies.md#assembling-the-application)），因此导出的文档与实际运行的接口始终一致。文档模式不会调用处理器，也不会调用 token 校验器，所以这个命令不读取配置文件，也不连接数据库。
 
 <a id="routes-command"></a>
 ### routes 命令
 
-当业务模块变多时，你可以用 `routes` 查看整个应用的路由，包括 JSON API 和[页面](../responses/views.md#page-routes)，不必逐个打开模块中的 `routes.go`。`httpcmd.Routes` 的参数是构造完整路由的函数，博客应用的 `bootstrap.DocRouter` 见[依赖装配](../concepts/dependencies.md#assembling-the-application)。它在文档模式下注册路由，不需要配置文件：
+当业务模块变多时，你可以用 `routes` 查看整个应用的路由，包括 JSON API 和[页面](../responses/views.md#page-routes)，不必逐个打开模块中的 `routes.go`。`httpcmd.Routes` 的参数是构造完整路由的函数，例如[入门教程](../tutorial/02-infrastructure.md#assembling)中的 `bootstrap.DocRouter`。它在文档模式下注册路由，不需要配置文件：
 
 ```bash
 ./bin/api routes
@@ -207,11 +201,6 @@ POST    /articles/{id}/publish  article-publish  bearer: articles  发布文章
 - **OPERATION ID**、**SUMMARY** 来自 `huma.Operation`，页面路由没有，显示为 `-`。摘要中的换行会合并为空格。
 
 Huma 自动注册的 `/docs`、`/openapi.json`、`/schemas/{schema}` 等文档端点默认不显示，加上 `--all` 才会列出。列表也包含直接注册在 chi 上的原生路由和挂载的子路由；挂载的不透明 `http.Handler`（例如 `Mount("/files", handler)`）显示为 `/files/*`，无法展开其内部路由。
-
-<a id="dev-command"></a>
-### dev 命令
-
-开发时一起运行 Vite 和应用、修改代码后重新编译和重启，由[开发工具](../installation/tooling.md)的 `go tool tenon dev` 提供，不是应用自己的命令。
 
 <a id="migrate-command"></a>
 ### migrate 命令
@@ -269,7 +258,7 @@ root.AddCommand(&cobra.Command{
     Short: "检查数据库能否连通",
     Args:  command.NoArgs,
     RunE: func(cmd *cobra.Command, _ []string) error {
-        cfg, err := command.LoadConfig[settings.Config](cmd)
+        cfg, err := command.LoadConfig[Config](cmd)
         if err != nil {
             return err
         }
@@ -284,7 +273,21 @@ root.AddCommand(&cobra.Command{
 
 选项使用 Cobra 原生的 `Flags` 定义。命令的 context 通过 `cmd.Context()` 获取，进程收到停止信号时它会被取消。需要恰好 n 个位置参数时，用 `command.ExactArgs(n)`，参数个数不对同样以 `ExitUsage` 失败。
 
-需要应用资源的命令不必这样手动加载配置和打开数据库：在 `bootstrap.Commands` 中声明它，由 `command.Bind` 在执行时装配 `App`。执行某个业务动作的命令写成 action 的 `Command` 入口，见[从命令行运行 action](../concepts/actions.md#as-commands)。
+需要应用资源的命令不必这样手动加载配置和打开数据库，用 `command.Bind` 声明，执行时才装配：
+
+```go
+// bootstrap.Commands 返回需要 App 的命令。
+func Commands() []*cobra.Command {
+    return command.Bind(open, func(a *App) []*cobra.Command {
+        return []*cobra.Command{
+            article.Commands(a.db),
+            queuecmd.New(a.db),
+        }
+    })
+}
+```
+
+`open` 与 `serve` 用的是同一个，见[只在执行时装配的命令](../concepts/dependencies.md#deferred-commands)。执行某个业务动作的命令写成动作的 `Command` 入口，见[从命令行运行动作](../concepts/actions.md#as-commands)。
 
 <a id="input-and-output"></a>
 ## 输入与输出
@@ -315,8 +318,101 @@ root.AddCommand(&cobra.Command{
 | `errorx.Internal` 及非业务错误 | `ExitInternal`（5） |
 | 其余分类 | `ExitFailure`（1） |
 
-因此，命令直接返回 action 的错误即可。需要覆盖默认结果时，用 `command.AsExitError` 为错误标记退出码，`command.ExitCode` 则从错误中取出退出码：
+因此，命令直接返回动作的错误即可。需要覆盖默认结果时，用 `command.AsExitError` 为错误标记退出码，`command.ExitCode` 则从错误中取出退出码：
 
 ```go
 return command.AsExitError(command.ExitUnavailable, err)
 ```
+
+<a id="api-reference"></a>
+## API 参考
+
+包 `github.com/go-tenon/tenon/command`。
+
+### Root、Execute
+
+```go
+func Root(name, short string) *cobra.Command
+func Execute(root *cobra.Command)
+```
+
+`Root` 返回带 `--config` 选项的根命令，未知命令、未知选项和多余参数标记为 `ExitUsage`。`Execute` 执行它：停止信号取消命令的 context，失败时把错误写到标准错误，以 `ExitCode(err)` 退出。
+
+### Run
+
+```go
+func Run[C any](use, short string, run func(ctx context.Context, cfg C) error) *cobra.Command
+```
+
+加载配置后执行 `run`。
+
+### Config
+
+```go
+func Config[C any]() *cobra.Command
+```
+
+`config check` 与 `config show`。
+
+### LoadConfig
+
+```go
+func LoadConfig[C any](cmd *cobra.Command) (C, error)
+```
+
+在自定义命令中读取 `.env`、按 `--config` 加载并校验配置，失败时带 `ExitConfig`。
+
+### Bind
+
+```go
+func Bind[C, D any](open func(ctx context.Context, cfg C, stack *cleanup.Stack) (*D, error), declare func(*D) []*cobra.Command) []*cobra.Command
+```
+
+依赖推迟到执行时装配的命令，见[只在执行时装配的命令](../concepts/dependencies.md#deferred-commands)。
+
+### NoArgs、ExactArgs
+
+```go
+func NoArgs(cmd *cobra.Command, args []string) error
+func ExactArgs(n int) cobra.PositionalArgs
+```
+
+与 Cobra 的同名函数相同，参数个数不对时以 `ExitUsage` 失败。
+
+### AsExitError、ExitCode
+
+```go
+func AsExitError(code int, err error) error
+func ExitCode(err error) int
+```
+
+为错误标记退出码；取出错误对应的退出码，规则见[退出码](#exit-codes)。
+
+### Daemon、Concurrently
+
+见[依赖装配的 API 参考](../concepts/dependencies.md#api-reference)。
+
+### httpcmd
+
+包 `github.com/go-tenon/tenon/command/httpcmd`。
+
+```go
+func Commands(opts rest.Options, register func(api *rest.API), router func() chi.Routes) []*cobra.Command
+func OpenAPI(opts rest.Options, register func(api *rest.API)) *cobra.Command
+func Routes(router func() chi.Routes) *cobra.Command
+```
+
+`Commands` 返回 `openapi`、`routes` 和 `client` 三个命令。
+
+### migratecmd
+
+包 `github.com/go-tenon/tenon/command/migratecmd`。
+
+```go
+func New[C any](fsys fs.FS, dbConfig func(cfg C) database.Config, opts ...Option) *cobra.Command
+func Name(name string) Option
+func Publish(sources ...migrate.Source) *cobra.Command
+func Make() *cobra.Command
+```
+
+`New` 返回 `migrate` 及其 `up`、`status`、`down`、`make` 子命令；`Name` 为另一个数据库构造 `migrate <name> …`；`Publish` 返回 `migrate publish`；`Make` 单独返回 `migrate make`，不需要配置。

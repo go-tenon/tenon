@@ -1,7 +1,11 @@
 # 可观测性
 
-- [简介](#introduction)
-- [推送](#setup)
+框架的 HTTP 服务、数据库连接池、队列、调度器、限流器、MCP 服务和实时频道都可以报告 [OpenTelemetry](https://opentelemetry.io/docs/languages/go/) 指标，前五个还报告链路。`telemetry` 包把指标、链路和应用的日志一起推送到一个 OTLP 接收端，例如 [OpenObserve](https://openobserve.ai/)，不需要另外部署收集器。
+
+指标和链路都需要显式开启：把 `MeterProvider`、`TracerProvider` 交给要报告的组件，没有传入的组件不报告。Redis、Memcached 等依赖由各自的生态报告，例如 rueidis 的 [rueidisotel](https://pkg.go.dev/github.com/redis/rueidis/rueidisotel)，把同一个 Provider 交给它们即可。
+
+- [示例用法](#example-usage)
+- [配置](#setup)
     - [自己创建 Provider](#custom-providers)
 - [框架组件](#components)
     - [HTTP 请求](#http)
@@ -15,18 +19,29 @@
 - [链路与日志](#trace-logs)
 - [错误追踪](#error-tracking)
 - [告警示例](#alerting)
+- [API 参考](#api-reference)
 
-<a id="introduction"></a>
-## 简介
+<a id="example-usage"></a>
+## 示例用法
 
-框架的 HTTP 服务、数据库连接池、队列、调度器、限流器、MCP 服务和实时频道都可以报告 [OpenTelemetry](https://opentelemetry.io/docs/languages/go/) 指标，其中 HTTP 服务、数据库连接池、队列、调度器和 MCP 服务还报告链路。`telemetry` 包把这些指标、链路和应用的日志一起推送到一个 OTLP 接收端，例如 [OpenObserve](https://openobserve.ai/)，不需要另外部署收集器。
+```go
+tel, err := telemetry.Open(ctx, cfg.Telemetry)
+if err != nil {
+    return err
+}
+stack.MustAdd("telemetry", tel.Shutdown)
+slog.SetDefault(logging.New(cfg.Logs, logging.Export(tel.Logs)))
 
-这里只有框架自己的组件，数据库连接池由 `database.Open` 打开，也在其中。Redis、Memcached 这些依赖由各自的生态报告，例如 rueidis 的 [rueidisotel](https://pkg.go.dev/github.com/redis/rueidis/rueidisotel)，或者服务器一侧的 exporter，把同一个 Provider 交给它们即可。
+db, err := database.Open(ctx, cfg.Database, database.WithTelemetry(tel.Meters, tel.Tracers))
+// ...
+router.Use(httpx.Telemetry(tel.Meters, tel.Tracers))
+router.Use(httpx.Defaults(cfg.HTTP, nil, nil)...)
+```
 
-和其他功能一样，指标和链路都需要显式开启：把 `MeterProvider`、`TracerProvider` 交给需要报告的组件，没有传入的组件不报告。
+日志、数据库语句和 HTTP 请求的指标与链路都推送到 `cfg.Telemetry.Endpoint`；它为空时什么也不推送，本地开发不用配置。
 
 <a id="setup"></a>
-## 推送
+## 配置
 
 在配置文件的 `telemetry` 段填写接收端：
 
@@ -35,7 +50,7 @@ telemetry:
   endpoint: ${OTLP_ENDPOINT:-}    # 例如 http://openobserve:5080/api/default
   headers:
     Authorization: Basic ${OTLP_TOKEN:-}
-  service: blog
+  service: api
   version: ${APP_VERSION:-}
 ```
 
@@ -44,18 +59,7 @@ telemetry:
 - `service` 为空时取可执行文件名；`version` 为空时取构建信息中的模块版本。日志、指标、链路都用这里的服务名和版本，`logs` 段不再重复。
 - `sample_ratio` 是新链路的采样比例，默认 `1`，即全部记录。请求带着调用方的链路进来时，跟随调用方的决定。
 
-把 `telemetry.Config` 放进[根配置](configuration.md#loading-configuration)，在[入口](../concepts/dependencies.md#assembling-the-application)的 `open` 中最先打开它：
-
-```go
-tel, err := telemetry.Open(ctx, cfg.Telemetry)
-if err != nil {
-    return nil, err
-}
-stack.MustAdd("telemetry", tel.Shutdown)
-slog.SetDefault(logging.New(cfg.Logs, logging.Export(tel.Logs)))
-```
-
-`tel.Meters`、`tel.Tracers` 保存在 `App` 的 `meters`、`tracers` 字段中，[框架组件](#components)一节把它们交给需要报告的组件。`tel.Shutdown` 最先登记、最后执行，发出缓冲中的数据，其他资源关闭时记录的日志也能推送出去。
+把 `telemetry.Config` 放进[根配置](configuration.md#loading-configuration)，在入口中**最先**打开它，如[示例用法](#example-usage)。`tel.Shutdown` 最先登记、最后执行，发出缓冲中的数据，其他资源关闭时记录的日志也能推送出去。
 
 `logging.Export` 让日志同时推送出去，经过和标准错误上同样的级别和格式化。`ctx` 中有 span 时，日志记录带上它的链路，日志平台可以从一条日志跳到它所在的链路。标准错误上的日志照常输出，启动阶段的错误和接收端不可用时的排查都靠它。只想推送指标和链路时，不传 `logging.Export` 即可。
 
@@ -81,8 +85,8 @@ slog.SetDefault(logging.New(cfg.Logs, logging.Export(tel.Logs)))
 `httpx.Telemetry` 是一个中间件，安装在 `httpx.Defaults` 之前，访问日志才能带上 `trace_id`，panic 转换成的 `500` 也会被记录：
 
 ```go
-router.Use(httpx.Telemetry(a.meters, a.tracers))
-router.Use(httpx.Defaults(a.cfg.HTTP, nil, nil)...)
+router.Use(httpx.Telemetry(tel.Meters, tel.Tracers))
+router.Use(httpx.Defaults(cfg.HTTP, nil, nil)...)
 ```
 
 | 指标 | 类型 | 属性 |
@@ -118,7 +122,7 @@ span 的 `db.query.text` 是把字面量换成 `?` 之后的 SQL，例如 `SELEC
 ### 队列
 
 ```go
-w := queue.NewWorker(a.db, a.cfg.Queue, nil, queue.WithTelemetry(a.meters, a.tracers))
+w := queue.NewWorker(db, cfg.Queue, nil, queue.WithTelemetry(tel.Meters, tel.Tracers))
 ```
 
 worker 报告每个任务的等待时长 `queue.job.wait` 和处理耗时 `queue.job.duration`，各指标的含义见[队列的指标](../libraries/queue.md#metrics)。积压的任务数由 nsqd 统计，见[队列状态](../libraries/queue.md#stats-command)。
@@ -131,7 +135,7 @@ worker 报告每个任务的等待时长 `queue.job.wait` 和处理耗时 `queue
 ### 定时任务
 
 ```go
-sched := schedule.New(a.locker, a.cfg.Schedule, nil, schedule.WithTelemetry(a.meters, a.tracers))
+sched := schedule.New(locker, cfg.Schedule, nil, schedule.WithTelemetry(tel.Meters, tel.Tracers))
 ```
 
 | 指标 | 类型 | 属性 | 含义 |
@@ -147,7 +151,7 @@ sched := schedule.New(a.locker, a.cfg.Schedule, nil, schedule.WithTelemetry(a.me
 ### 限流
 
 ```go
-attempts := ratelimit.Observe(a.meters, "login", redislimit.New(a.rdb, "blog:login", cfg))
+attempts := ratelimit.Observe(tel.Meters, "login", redislimit.New(rdb, "app:login", cfg))
 ```
 
 | 指标 | 类型 | 属性 | 含义 |
@@ -160,7 +164,7 @@ attempts := ratelimit.Observe(a.meters, "login", redislimit.New(a.rdb, "blog:log
 ### MCP 服务
 
 ```go
-srv := mcpx.New(mcpx.Options{Name: "blog"}, mcpx.WithTelemetry(a.meters, a.tracers))
+srv := mcpx.New(mcpx.Options{Name: "app"}, mcpx.WithTelemetry(tel.Meters, tel.Tracers))
 ```
 
 | 指标 | 类型 | 属性 |
@@ -238,3 +242,39 @@ sum(rate(ratelimit_requests_total{ratelimit_name="login", ratelimit_result="exce
 # 每天凌晨的报表任务 25 小时内没有成功过
 increase(schedule_task_duration_seconds_count{schedule_task="reports:daily", schedule_task_outcome="succeeded"}[25h]) == 0
 ```
+
+<a id="api-reference"></a>
+## API 参考
+
+### telemetry.Open
+
+```go
+func Open(ctx context.Context, cfg Config) (*Providers, error)
+```
+
+包 `github.com/go-tenon/tenon/telemetry`。按配置创建推送日志、指标和链路的 Provider，同时开始报告 Go 运行时指标。`cfg.Endpoint` 为空时返回 noop 实现。
+
+### telemetry.Providers
+
+| 字段或方法 | 说明 |
+| --- | --- |
+| `Logs log.LoggerProvider` | 传给 `logging.Export` |
+| `Meters metric.MeterProvider` | 传给各组件的 `WithTelemetry` 或 `httpx.Telemetry` |
+| `Tracers trace.TracerProvider` | 同上 |
+| `Shutdown(ctx) error` | 发出缓冲中的数据并关闭 |
+
+### 各组件的接入点
+
+| 组件 | 写法 |
+| --- | --- |
+| HTTP | `httpx.Telemetry(mp, tp)`，中间件，安装在 `httpx.Defaults` 之前 |
+| 数据库 | `database.Open(ctx, cfg, database.WithTelemetry(mp, tp))` |
+| 队列 | `queue.NewWorker(..., queue.WithTelemetry(mp, tp))` |
+| 定时任务 | `schedule.New(..., schedule.WithTelemetry(mp, tp))` |
+| 限流 | `ratelimit.Observe(mp, name, limiter)` |
+| MCP | `mcpx.New(opts, mcpx.WithTelemetry(mp, tp))` |
+| 实时频道 | `realtime.Options.MeterProvider` |
+| 日志 | `logging.New(cfg, logging.Export(lp))` |
+| 自己的 span | `logging.RecordError(span, err)` |
+
+`mp`、`tp` 为 `nil` 时 panic；只需要其中一种时，另一个传 OpenTelemetry 的 noop 实现。
