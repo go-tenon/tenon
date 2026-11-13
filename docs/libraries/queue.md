@@ -1,6 +1,14 @@
 # 队列
 
-- [简介](#introduction)
+有些工作不需要让用户等它完成，例如发送邮件、生成缩略图、通知第三方。`queue` 包把这些工作作为任务交给 [NSQ](https://nsq.io)，由单独的 worker 进程取出执行；执行失败的任务按退避时间自动重试，次数用完后转入失败任务表，等待人工处理。
+
+任务按 topic 分类：发布方把任务发到一个 topic，worker 为每个 topic 注册一个处理函数。
+
+任务和业务数据**在同一个事务中发布**：`Publish` 把任务写进 PostgreSQL 的 WAL（预写日志），事务提交后 worker 经由逻辑复制立即读到，转发到 NSQ；事务回滚时任务一起取消。这样既不会出现「文章发布了、通知任务丢了」，也不会出现「通知发出去了、文章却回滚了」。任务不写入任何表，发布任务的事务之间不会互相等待，提交的吞吐与不发布任务时相当。
+
+每个任务**至少执行一次**：worker 崩溃或停止超时时，正在处理的任务会交给其他 worker 重新执行，处理函数需要能安全地重复执行。任务之间不保证执行顺序。
+
+- [示例用法](#example-usage)
 - [准备](#preparing)
 - [发布任务](#publishing-jobs)
     - [延迟执行](#delayed-jobs)
@@ -18,19 +26,30 @@
     - [队列状态](#stats-command)
     - [队列面板](#panel)
 - [测试](#testing)
+- [API 参考](#api-reference)
 
-<a id="introduction"></a>
-## 简介
+<a id="example-usage"></a>
+## 示例用法
 
-有些工作不需要让用户等它完成，例如发送邮件、生成缩略图、通知第三方。`queue` 包把这些工作作为任务交给 [NSQ](https://nsq.io)，由单独的 worker 进程取出执行；执行失败的任务按退避时间自动重试，次数用完后转入失败任务表，等待人工处理。
+```go
+// 声明 topic：名称和任务内容的类型
+var SendWelcome = queue.Topic[uuid.UUID]("users.send_welcome")
 
-任务按 topic 分类：发布方把任务发到一个 topic，worker 为每个 topic 注册一个处理函数。
+// 发布：与业务数据在同一个事务中提交
+err := database.RunInTx(ctx, db, nil, func(ctx context.Context, tx database.Tx) error {
+    if _, err := tx.NewInsert().Model(user).Exec(ctx); err != nil {
+        return err
+    }
+    return SendWelcome.Publish(ctx, tx, user.ID)
+})
 
-任务和业务数据**在同一个事务中发布**：`Publish` 把任务写进 PostgreSQL 的 WAL（预写日志），事务提交后 worker 经由逻辑复制立即读到，转发到 NSQ；事务回滚时任务一起取消。这样既不会出现「文章发布了、通知任务丢了」，也不会出现「通知发出去了、文章却回滚了」。任务不写入任何表，发布任务的事务之间不会互相等待，提交的吞吐与不发布任务时相当。
-
-每个任务**至少执行一次**：worker 崩溃或停止超时时，正在处理的任务会交给其他 worker 重新执行，处理函数需要能安全地重复执行。任务之间不保证执行顺序。
-
-[邮件](mail.md#sending-mail)一章中，文章发布后直接同步发送通知邮件：接口要等邮件服务器响应，发送失败也不会重试。本章把它改为交给队列发送。
+// 处理：在 worker 进程中注册
+w := queue.NewWorker(db, cfg.Queue, nil)
+SendWelcome.Handle(w, func(ctx context.Context, id uuid.UUID) error {
+    return sendWelcomeEmail(ctx, id) // 返回错误时稍后重试
+})
+err = w.Run(ctx)
+```
 
 <a id="preparing"></a>
 ## 准备
@@ -52,7 +71,7 @@ max_slot_wal_keep_size = 10GB   # 复制槽最多保留的 WAL，见下文
 wal_sender_timeout = 10s        # 转发的 worker 失联多久后由别的 worker 接手
 ```
 
-应用的数据库用户需要 `REPLICATION` 属性（`ALTER ROLE blog REPLICATION`）。云数据库在参数组中开启逻辑复制，例如 RDS 的 `rds.logical_replication`。
+应用的数据库用户需要 `REPLICATION` 属性（`ALTER ROLE app REPLICATION`）。云数据库在参数组中开启逻辑复制，例如 RDS 的 `rds.logical_replication`。
 
 队列的迁移创建两张表和一个逻辑复制槽：`queue_scheduled` 保存执行时间较晚的任务，`queue_failed_jobs` 保存失败的任务；复制槽记录 worker 转发到了哪里。使用前先[发布](../database/migrations.md#publishing-framework-migrations)这些迁移：
 
@@ -70,7 +89,7 @@ migrationCmd.AddCommand(migratecmd.Publish(
 <a id="publishing-jobs"></a>
 ## 发布任务
 
-`queue.Topic` 把 topic 名称和任务内容（payload）的类型声明在一起。发布和处理通常不在一处，两边共用这个声明，名称写错或类型不一致时无法通过编译。发送邮件的 topic 声明在博客应用的 `internal/mailjob/mailjob.go` 中，所有要发邮件的业务包都用它：
+`queue.Topic` 把 topic 名称和任务内容（payload）的类型声明在一起。发布和处理通常不在一处，两边共用这个声明，名称写错或类型不一致时无法通过编译。例如发送邮件的 topic 声明在一个单独的小包 `mailjob` 中，所有要发邮件的业务包都用它：
 
 ```go
 package mailjob
@@ -86,7 +105,7 @@ var Send = queue.Topic[mail.Message]("mail.send")
 
 topic 名由字母、数字、`.`、`_`、`-` 组成，加上[配置](#configuration)中的前缀后最长 64 个字符。
 
-`Publish` 把 payload 编码为 JSON，写入传入的数据库。传入事务时，任务和业务数据一起提交。下面是改写后的 `Publish` action：通知邮件在发布文章的同一个事务中渲染并发布，它不再需要发送器：
+`Publish` 把 payload 编码为 JSON，写入传入的数据库。传入事务时，任务和业务数据一起提交。例如发布文章时，通知邮件在同一个事务中渲染并发布：
 
 ```go
 func (a *Publish) Handle(ctx context.Context, subject identity.Subject, id uuid.UUID) (*Article, error) {
@@ -96,7 +115,7 @@ func (a *Publish) Handle(ctx context.Context, subject identity.Subject, id uuid.
 
         msg, err := a.emails.Render(ctx, "article_published", map[string]any{
             "Title": item.Title,
-            "URL":   "https://blog.example.com/" + item.Slug,
+            "URL":   "https://example.com/" + item.Slug,
         })
         if err != nil {
             return err
@@ -128,7 +147,7 @@ err := PublishAt.Publish(ctx, tx, item.ID, queue.At(item.PublishAt))
 
 离执行时间不超过 `max_defer`（默认 1 小时）的任务转发为 NSQ 的延迟消息；更晚的先存入 `queue_scheduled`，快到时间再转发，所以延迟多久都可以。NSQ 定期检查到期的延迟消息，新建的 topic 上第一批延迟消息可能晚几秒执行。
 
-业务包自己的 topic 和处理它的 action 声明在同一个文件中，见[队列任务](../concepts/actions.md#as-jobs)。
+业务包自己的 topic 和处理它的业务动作声明在同一个文件中，见[队列任务](../concepts/actions.md#as-jobs)。
 
 <a id="multi-step-jobs"></a>
 ### 多步任务
@@ -170,22 +189,11 @@ mailjob.Send.Handle(w, mailer.Send)
 <a id="running-workers"></a>
 ### 启动 worker
 
-worker 是 `App` 的一个运行部分（见[依赖装配](../concepts/dependencies.md#assembling-the-application)）。它做两件事：把发布的任务转发到 NSQ，以及处理已注册 topic 的任务。
+worker 是进程的一个运行部分（见[多个运行部分](../concepts/dependencies.md#running-parts)）。它做两件事：把发布的任务转发到 NSQ，以及处理已注册 topic 的任务。
 
-一个复制槽同时只能被一个连接读取，所以部署多个 worker 实例时，只有一个在转发，其余的待命，每 5 秒尝试一次；转发的实例停止或失联后，其中一个接手，从已经确认的位置继续。任务的处理不受影响，所有实例都处理任务。下面是博客应用完整的 `internal/bootstrap/worker.go`：
+一个复制槽同时只能被一个连接读取，所以部署多个 worker 实例时，只有一个在转发，其余的待命，每 5 秒尝试一次；转发的实例停止或失联后，其中一个接手，从已经确认的位置继续。任务的处理不受影响，所有实例都处理任务。在入口的 `bootstrap` 包中：
 
 ```go
-package bootstrap
-
-import (
-    "context"
-
-    "example.com/blog/internal/mailjob"
-    "example.com/blog/internal/settings"
-    "github.com/go-tenon/tenon/command"
-    "github.com/go-tenon/tenon/queue"
-)
-
 // Worker 装配队列 worker，返回的函数转发并处理队列任务，直到 ctx 被取消。
 func (a *App) Worker(*command.Daemon) (func(context.Context) error, error) {
     mailer, err := newMailer(a.cfg.Mail)
@@ -200,12 +208,12 @@ func (a *App) Worker(*command.Daemon) (func(context.Context) error, error) {
 }
 
 // Work 只运行队列 worker，work 命令调用它。
-func Work(ctx context.Context, cfg settings.Config) error {
+func Work(ctx context.Context, cfg Config) error {
     return run(ctx, cfg, (*App).Worker)
 }
 ```
 
-`newMailer` 见[装配发送器](mail.md#assembling-mailer)。action 的任务入口也注册在这里，例如定时发布文章，见[队列任务](../concepts/actions.md#as-jobs)。在根命令中注册它：
+`newMailer` 见[装配发送器](mail.md#assembling-mailer)。业务动作的任务入口也注册在这里，例如定时发布文章，见[队列任务](../concepts/actions.md#as-jobs)。在根命令中注册它：
 
 ```go
 root.AddCommand(command.Run("work", "处理队列任务", bootstrap.Work))
@@ -233,7 +241,7 @@ type Config struct {
 queue:
   nsqd: 127.0.0.1:4150  # nsqd 的 TCP 地址，转发任务时发布到这里
   lookupd: []           # nsqlookupd 的 HTTP 地址；设置后从它们发现所有 nsqd 并消费
-  prefix: ""            # 加在每个 topic 前面，例如 "blog."，多个应用或环境共用 nsqd 时区分
+  prefix: ""            # 加在每个 topic 前面，例如 "app."，多个应用或环境共用 nsqd 时区分
   channel: worker       # 同一个应用的 worker 使用同一个 channel
   concurrency: 10       # 每个 topic 同时处理的任务数
   max_attempts: 10      # 最多执行的次数
@@ -502,3 +510,85 @@ w := queue.NewWorker(db, queuetest.Config(t), nil)
 article.PublishJob.Handle(w, publish.Job)
 queuetest.Run(t, w) // 测试结束时停止
 ```
+
+<a id="api-reference"></a>
+## API 参考
+
+包 `github.com/go-tenon/tenon/queue`。
+
+### Topic
+
+```go
+type Topic[T any] string
+
+func (t Topic[T]) Publish(ctx context.Context, db bun.IDB, payload T, opts ...PublishOption) error
+func (t Topic[T]) PublishAll(ctx context.Context, db bun.IDB, payloads []T, opts ...PublishOption) error
+func (t Topic[T]) Handle(w *Worker, fn func(ctx context.Context, payload T) error, opts ...HandleOption)
+```
+
+`Publish` 把 payload 编码为 JSON，写入 `db` 的 WAL，`db` 是事务时随事务提交。`Handle` 在 worker 上注册处理函数。
+
+### PublishOption
+
+```go
+func Delay(d time.Duration) PublishOption
+func At(t time.Time) PublishOption
+```
+
+延迟执行，见[延迟执行](#delayed-jobs)。
+
+### HandleOption
+
+```go
+func Concurrency(n int) HandleOption
+func MaxAttempts(n int) HandleOption
+```
+
+这个 topic 同时处理的任务数和最多尝试的次数，默认取自[配置](#configuration)。
+
+### NewWorker
+
+```go
+func NewWorker(db *bun.DB, cfg Config, logger *slog.Logger, opts ...WorkerOption) *Worker
+func (w *Worker) Run(ctx context.Context) error
+func WithTelemetry(mp metric.MeterProvider, tp trace.TracerProvider) WorkerOption
+func WithObserver(o Observer) WorkerOption
+```
+
+`Run` 转发发布的任务并处理已注册的 topic，直到 `ctx` 被取消。`WithObserver` 接收[任务事件](#job-events)。
+
+### 处理函数的返回值
+
+```go
+func Permanent(err error) error
+func RetryAfter(err error, d time.Duration) error
+func AttemptFromContext(ctx context.Context) (attempt int, final bool)
+```
+
+`Permanent` 标记不再重试，直接转入失败任务；`RetryAfter` 指定下次重试的时间；`AttemptFromContext` 返回这是第几次尝试、是否最后一次。见[失败与重试](#failures-and-retries)。
+
+### FailedJobs
+
+```go
+func NewFailedJobs(db bun.IDB) *FailedJobs
+func (f *FailedJobs) List(ctx context.Context, q FailedQuery) ([]FailedJob, error)
+func (f *FailedJobs) Get(ctx context.Context, id uuid.UUID) (FailedJob, error)
+func (f *FailedJobs) Retry(ctx context.Context, id uuid.UUID) error
+func (f *FailedJobs) RetryAll(ctx context.Context, topic string, before time.Time, limit int) (int, error)
+func (f *FailedJobs) Delete(ctx context.Context, id uuid.UUID) error
+func (f *FailedJobs) DeleteAll(ctx context.Context, topic string, before time.Time, limit int) (int, error)
+func (f *FailedJobs) Counts(ctx context.Context) ([]TopicCount, error)
+func (f *FailedJobs) Cleanup(keep time.Duration) func(ctx context.Context, limit int) (int, error)
+```
+
+查看、重试和删除失败任务，见[失败任务](#failed-jobs)。
+
+### 其他
+
+```go
+func Migrations() fs.FS
+func ReadStatus(ctx context.Context, db bun.IDB) (Status, error)
+func RecreateSlot(ctx context.Context, db bun.IDB, force bool) error
+```
+
+`Migrations` 是队列的迁移；`ReadStatus` 读取复制槽和延迟任务的状态，`queue status` 命令用它；`RecreateSlot` 在复制槽失效后重建，见[部署](../installation/deployment.md#queue-recovery)。

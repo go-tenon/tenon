@@ -591,7 +591,7 @@ decider := systemone.New(ai.ModelConfig{Model: "decision-model-preview", BaseURL
 ## 部署
 
 - **停机**：清理资源时，`runs.Shutdown` 不再开始新的回答（返回 `chat.ErrShuttingDown`，即 `503`），等进行中的回答说完，超过时限的才取消；取消的回答已经生成的部分保留在对话中，用户可以继续对话。等待期间 HTTP 服务已经停止，浏览器的消息流会断开：部署了[多个实例](#multiple-instances)时，浏览器重连到其他实例继续接收这次回答；单实例时，回答说完后保存在对话中，页面重新加载时可以看到。`Shutdown` 用的时间要计入部署平台的停止宽限期，见[平滑停止](../installation/deployment.md#graceful-shutdown)。
-- **后台任务**：不需要实时显示的 AI 工作（例如生成摘要、给文章打标签）交给[队列](../libraries/queue.md)执行，在处理函数中直接调用 trpc-agent-go 的 `runner.Run`。队列任务[至少执行一次](../libraries/queue.md#introduction)，这些工具需要能安全地重复执行。
+- **后台任务**：不需要实时显示的 AI 工作（例如生成摘要、给文章打标签）交给[队列](../libraries/queue.md)执行，在处理函数中直接调用 trpc-agent-go 的 `runner.Run`。队列任务[至少执行一次](../libraries/queue.md)，这些工具需要能安全地重复执行。
 
 <a id="multiple-instances"></a>
 ### 多个实例

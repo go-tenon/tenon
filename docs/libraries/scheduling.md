@@ -1,6 +1,10 @@
 # 定时任务
 
-- [简介](#introduction)
+过期的 token、验证码和失败任务都会在数据库中留下过期的行，需要定期清理；应用自己也常有定时的工作，例如每天凌晨生成报表。`schedule` 包按 cron 表达式定时执行这些任务，精度到秒。
+
+调度器只负责「按时触发」：任务就是一个 `func(ctx context.Context) error`，在调度器所在的进程中执行。部署多个实例时，同一个任务的同一次触发只会在一个实例上执行。
+
+- [示例用法](#example-usage)
 - [定义任务](#defining-tasks)
     - [表达式](#expressions)
     - [时区](#timezones)
@@ -15,13 +19,21 @@
     - [手动执行](#running-manually)
 - [清理框架数据](#framework-cleanups)
 - [测试](#testing)
+- [API 参考](#api-reference)
 
-<a id="introduction"></a>
-## 简介
+<a id="example-usage"></a>
+## 示例用法
 
-过期的 token、验证码和失败任务都会在数据库中留下过期的行，需要定期清理；应用自己也常有定时的工作，例如每天凌晨生成报表。`schedule` 包按 cron 表达式定时执行这些任务，精度到秒。
+```go
+sched := schedule.New(locker, cfg.Schedule, nil)
+sched.Add("reports:daily", "0 0 2 * * *", buildDailyReport, // 每天 02:00:00
+    schedule.Describe("生成前一天的报表"))
+sched.Add("articles:publish-scheduled", "@every 1m", publishScheduled.Handle)
 
-调度器只负责「按时触发」：任务就是一个 `func(ctx context.Context) error`，在调度器所在的进程中执行。部署多个实例时，同一个任务的同一次触发只会在一个实例上执行。
+err := sched.Run(ctx) // 一直运行到 ctx 被取消
+```
+
+部署多个实例时，`locker` 保证每次触发只有一个实例执行。
 
 <a id="defining-tasks"></a>
 ## 定义任务
@@ -33,7 +45,7 @@ sched := schedule.New(locker, cfg.Schedule, nil)
 sched.Add("articles:publish-scheduled", "* * * * *", article.NewPublishScheduled(db).Handle)
 ```
 
-任务通常是 [action](../concepts/actions.md#as-scheduled-tasks) 的 `Handle` 方法：发布到期文章的 `PublishScheduled` 不需要参数，它的 `Handle` 正好是任务的签名。`schedule.Describe` 为任务加一句说明，在[查看任务](#listing-tasks)时展示。
+任务通常是[业务动作](../concepts/actions.md#as-scheduled-tasks)的 `Handle` 方法：发布到期文章的 `PublishScheduled` 不需要参数，它的 `Handle` 正好是任务的签名。`schedule.Describe` 为任务加一句说明，在[查看任务](#listing-tasks)时展示。
 
 `locker` 是[原子锁](locks.md)，调度器用它在多个实例之间去重、防止任务重叠，见[多个实例](#multiple-instances)。第二个参数是配置段，见[失败与停止](#failures-and-shutdown)；第三个参数是日志器，`nil` 时使用 `slog.Default()`。
 
@@ -67,21 +79,9 @@ sched.Add("reports:daily", "0 3 * * *", reports.Generate, schedule.In(shanghai))
 <a id="running-the-scheduler"></a>
 ## 运行调度器
 
-调度器是 `App` 的一个运行部分（见[依赖装配](../concepts/dependencies.md#assembling-the-application)）。下面是博客应用完整的 `internal/bootstrap/scheduler.go`，`a.locker` 是 `open` 中创建的[原子锁](locks.md#redis-store)。注册任务单独写在 `tasks` 中，调度器运行它，[查看任务](#listing-tasks)的命令和后台页面也用它，任务只定义一次。指标和链路的选项也在这里设置，查看任务时不执行任务，它们不起作用：
+调度器是进程的一个运行部分（见[多个运行部分](../concepts/dependencies.md#running-parts)）。在入口的 `bootstrap` 包中，`a.locker` 是入口创建的[原子锁](locks.md#redis-store)。注册任务单独写在 `tasks` 中，调度器运行它，[查看任务](#listing-tasks)的命令和后台页面也用它，任务只定义一次。指标和链路的选项也在这里设置，查看任务时不执行任务，它们不起作用：
 
 ```go
-package bootstrap
-
-import (
-    "context"
-    "time"
-
-    "example.com/blog/internal/article"
-    "example.com/blog/internal/settings"
-    "github.com/go-tenon/tenon/command"
-    "github.com/go-tenon/tenon/schedule"
-)
-
 // tasks 创建调度器并注册全部定时任务。
 func (a *App) tasks() *schedule.Scheduler {
     sched := schedule.New(a.locker, a.cfg.Schedule, nil,
@@ -99,7 +99,7 @@ func (a *App) Scheduler(*command.Daemon) (func(context.Context) error, error) {
 }
 
 // Schedule 只运行调度器，schedule 命令调用它。
-func Schedule(ctx context.Context, cfg settings.Config) error {
+func Schedule(ctx context.Context, cfg Config) error {
     return run(ctx, cfg, (*App).Scheduler)
 }
 ```
@@ -266,7 +266,7 @@ article.PublishScheduledJob.Handle(w, func(ctx context.Context, _ struct{}) erro
 })
 ```
 
-任务和队列处理函数调用的是同一个 action，手动执行和定时执行的效果相同。手动执行不受[防止重叠](#preventing-overlaps)的限制，需要互斥的任务在 action 中自己使用[原子锁](locks.md)。
+任务和队列处理函数调用的是同一个业务动作，手动执行和定时执行的效果相同。手动执行不受[防止重叠](#preventing-overlaps)的限制，需要互斥的任务在业务动作中自己使用[原子锁](locks.md)。
 
 <a id="framework-cleanups"></a>
 ## 清理框架数据
@@ -315,3 +315,48 @@ func TestDailyReport(t *testing.T) {
 ```
 
 任务本身是普通的函数，直接调用它测试即可。
+
+<a id="api-reference"></a>
+## API 参考
+
+包 `github.com/go-tenon/tenon/schedule`。
+
+### New
+
+```go
+func New(locker *lock.Locker, cfg Config, logger *slog.Logger, opts ...SchedulerOption) *Scheduler
+func WithTelemetry(mp metric.MeterProvider, tp trace.TracerProvider) SchedulerOption
+func WithObserver(o Observer) SchedulerOption
+```
+
+`locker` 用于在多个实例之间去重。`WithObserver` 接收每次执行的事件，见[执行记录](#run-history)。
+
+### Scheduler
+
+```go
+func (s *Scheduler) Add(name, expr string, run func(ctx context.Context) error, opts ...TaskOption)
+func (s *Scheduler) Run(ctx context.Context) error
+func (s *Scheduler) RunDue(ctx context.Context, t time.Time) error
+func (s *Scheduler) Tasks() []Task
+func (s *Scheduler) Running(ctx context.Context) (map[string]bool, error)
+```
+
+`Add` 注册任务，名称为空或重复、表达式无效，或在 `Run` 之后调用时 panic。`Run` 每秒检查到期的任务。`RunDue` 执行在时刻 `t` 到期的任务，用于测试。`Tasks` 和 `Running` 供[查看任务](#listing-tasks)使用。
+
+### TaskOption
+
+| 选项 | 说明 |
+| --- | --- |
+| `Describe(description string)` | 任务的说明 |
+| `In(loc *time.Location)` | 按这个时区解释表达式，见[时区](#timezones) |
+| `Timeout(d time.Duration)` | 执行超时，超过后取消任务的 `ctx`，记为 `ErrTimeout` |
+| `AllowOverlap()` | 上一次还没结束时也触发，见[防止重叠](#preventing-overlaps) |
+| `EveryInstance()` | 每个实例都执行，不用锁去重 |
+
+### Cleanup
+
+```go
+func Cleanup(fn func(ctx context.Context, limit int) (int, error), limit int) func(ctx context.Context) error
+```
+
+把分批删除的函数（例如 `FailedJobs.Cleanup`）包装成任务：每批最多 `limit` 行，删到没有为止，见[清理框架数据](#framework-cleanups)。
