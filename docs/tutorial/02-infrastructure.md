@@ -35,7 +35,7 @@ services:
     ports: ["127.0.0.1:5432:5432"]
     volumes: [postgres:/var/lib/postgresql]
     healthcheck:
-      test: pg_isready -U blog
+      test: pg_isready -U blog -h 127.0.0.1
       interval: 1s
       retries: 60
 
