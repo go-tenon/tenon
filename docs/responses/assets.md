@@ -1,26 +1,21 @@
 # 前端资源
 
-- [简介](#introduction)
+[界面组件](components.md)的样式表和脚本由框架内置，`ui.Assets()` 提供。应用自己的图片、字体、脚本，以及用 Tailwind 生成的样式表，通过 `embed` 打进二进制，由 `web.Static` 提供，部署时只有一个二进制文件。
+
+`web.Static` 按文件内容给地址加上指纹，例如 `/static/css/app.3f2a9c1d.css`。这样的地址可以让浏览器和 CDN 永久缓存：内容一变，指纹随之改变，页面引用的就是新地址。
+
 - [存放静态文件](#static-files)
 - [提供静态文件](#serving)
 - [在页面中引用](#referencing)
 - [缓存](#caching)
 - [开发模式](#development)
 - [用 Tailwind CSS 编写样式](#tailwind)
-
-<a id="introduction"></a>
-## 简介
-
-[界面组件](components.md)的样式表和脚本由框架内置，`ui.Assets()` 提供。应用自己的图片、字体、脚本，以及用 Tailwind 生成的样式表，放在应用中，通过 `embed` 打进二进制，由 `web.Static` 提供。部署时仍然只有一个二进制文件。
-
-`web.Static` 按文件内容给地址加上指纹，例如 `/static/css/app.3f2a9c1d.css`。这样的地址可以让浏览器和 CDN 永久缓存：文件内容一变，指纹随之改变，页面引用的就是新地址，不需要手动加版本号，也不会读到旧缓存。
-
-本章接着[视图](views.md)一章，给博客的公开页面加上应用自己的静态文件和样式。
+- [API 参考](#api-reference)
 
 <a id="static-files"></a>
 ## 存放静态文件
 
-把静态文件放在页面布局旁边的 `internal/web/static` 目录中，并嵌入程序。下面是 `internal/web/static.go`：
+把静态文件放在页面布局旁边的 `static` 目录中，并嵌入程序，例如 `internal/web/static.go`：
 
 ```go
 package web
@@ -40,10 +35,10 @@ var Static, _ = fs.Sub(files, "static")
 <a id="serving"></a>
 ## 提供静态文件
 
-在 `HTTP` 方法中，用 `web.NewStatic` 创建 `Static`，挂载到 `web.StaticPath`（`/static/`），再把它交给 `web.New`：
+用 `web.NewStatic` 创建 `Static`，挂载到 `web.StaticPath`（`/static/`），再把它交给 `web.New`：
 
 ```go
-static, err := web.NewStatic(layout.Static, web.StaticOptions{DevDir: a.cfg.StaticDir})
+static, err := web.NewStatic(layout.Static, web.StaticOptions{DevDir: cfg.StaticDir})
 if err != nil {
     return err
 }
@@ -64,7 +59,7 @@ router.Handle(web.AssetsPath+"*", web.Assets())
 在 templ 组件中用 `web.StaticURL` 取地址。例如在页面上显示 logo：
 
 ```templ
-<img src={ web.StaticURL(ctx, "img/logo.svg") } alt="Blog"/>
+<img src={ web.StaticURL(ctx, "img/logo.svg") } alt="Logo"/>
 ```
 
 文件名是相对 `static` 目录的路径。页面路由和错误页渲染时，`ctx` 中带有 `Options.Static`，返回的是带指纹的地址。不存在的文件不会报错，地址也不带指纹。可以访问 `/static/` 加文件名检查文件是否存在。
@@ -86,7 +81,7 @@ router.Handle(web.AssetsPath+"*", web.Assets())
 
 嵌入的文件只有重新编译后才会更新。开发时把 `StaticOptions.DevDir` 设为静态文件目录，`Static` 就改为直接读取磁盘：地址不带指纹，响应也不缓存，修改样式后刷新页面即可看到。
 
-`DevDir` 取自应用配置。在 `settings.Config` 中加一个字段：
+`DevDir` 取自应用配置。在配置结构体中加一个字段：
 
 ```go
 type Config struct {
@@ -109,7 +104,7 @@ static_dir: internal/web/static
 
 Tailwind 的 [standalone CLI](https://tailwindcss.com/blog/standalone-cli) 是一个独立的可执行文件，不需要 Node.js。从 [GitHub Releases](https://github.com/tailwindlabs/tailwindcss/releases) 下载对应平台的版本，放进 `PATH`。
 
-样式的入口文件不放进 `static`，下面是 `internal/web/app.css`：
+样式的入口文件不放进 `static`，例如 `internal/web/app.css`：
 
 ```css
 @import "tailwindcss";
@@ -146,3 +141,30 @@ go tool tenon dev
 ```
 
 修改 `.templ` 后，templ 重新生成代码、重启应用；Tailwind 随之重新生成 `internal/web/static/css/app.css`，浏览器自动刷新。停止 `dev` 时，它会生成压缩的样式表。生成的 `app.css` 和 `_templ.go` 一样要提交到版本库，这样构建和 CI 不需要安装 Tailwind。
+
+<a id="api-reference"></a>
+## API 参考
+
+包 `github.com/go-tenon/tenon/web`。
+
+### NewStatic
+
+```go
+func NewStatic(fsys fs.FS, opts StaticOptions) (*Static, error)
+```
+
+读取 `fsys` 中的全部文件并计算指纹。`*Static` 是 `http.Handler`，挂载在 `StaticPath`（`/static/`）。
+
+### StaticOptions
+
+| 字段 | 说明 |
+| --- | --- |
+| `DevDir string` | 非空时直接读取这个目录，地址不带指纹，响应不缓存。只在开发时设置 |
+
+### StaticURL
+
+```go
+func StaticURL(ctx context.Context, name string) string
+```
+
+返回 `name`（相对 `static` 目录的路径）带指纹的地址。`ctx` 中没有 `Static`，或者文件不存在时，返回不带指纹的地址。

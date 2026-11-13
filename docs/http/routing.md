@@ -1,6 +1,8 @@
 # 路由
 
-- [基本路由](#basic-routing)
+路由把一个 HTTP 方法和路径交给处理器。Tenon 的路由建立在 [Huma](https://huma.rocks) 之上：每条路由由一个 `huma.Operation`、一个**输入类型**和一个**输出类型**组成，Huma 据此解析参数、验证输入，并生成 OpenAPI 文档。
+
+- [示例用法](#basic-routing)
     - [路由声明](#operations)
     - [处理器](#handlers)
     - [注册时的检查](#registration-checks)
@@ -8,7 +10,7 @@
 - [访问策略](#access-policies)
 - [组织路由](#organizing-routes)
     - [模块内注册](#module-registration)
-    - [action 的 HTTP 入口](#http-actions)
+    - [动作的 HTTP 入口](#http-actions)
     - [共享响应结构](#shared-responses)
     - [查看全部路由](#listing-routes)
 - [API 版本](#api-versioning)
@@ -19,14 +21,23 @@
 - [使用原生 chi 与 Huma](#native-apis)
     - [注册普通 HTTP 处理器](#plain-handlers)
     - [使用原生 huma.Register](#native-huma-register)
+- [API 参考](#api-reference)
 
 <a id="basic-routing"></a>
-## 基本路由
-
-Tenon 的路由建立在 [Huma](https://huma.rocks) 之上。每条路由由三部分组成：一个 `huma.Operation` 描述路由本身，一个**输入类型**描述请求，一个**输出类型**描述响应。下面是[安装](../installation/installing.md#entrypoint)一章中注册 `/ping` 的代码：
+## 示例用法
 
 ```go
-type PingInput struct{}
+package main
+
+import (
+    "context"
+    "log"
+    "net/http"
+
+    "github.com/danielgtaylor/huma/v2"
+
+    "github.com/go-tenon/tenon/httpx/rest"
+)
 
 type PingOutput struct {
     Body struct {
@@ -34,7 +45,15 @@ type PingOutput struct {
     }
 }
 
-func registerPing(api *rest.API) {
+func ping(ctx context.Context, _ *struct{}) (*PingOutput, error) {
+    out := &PingOutput{}
+    out.Body.Message = "pong"
+    return out, nil
+}
+
+func main() {
+    api := rest.New(rest.Options{Title: "Hello API", Version: "1.0.0"})
+
     op := huma.Operation{
         OperationID: "ping",
         Method:      http.MethodGet,
@@ -42,24 +61,18 @@ func registerPing(api *rest.API) {
         Summary:     "检查 API 是否可响应",
     }
     rest.Public()(&op)
-    rest.Register(api, op, func(ctx context.Context, in *PingInput) (*PingOutput, error) {
-        out := &PingOutput{}
-        out.Body.Message = "pong"
-        return out, nil
-    })
+    rest.Register(api, op, ping)
+
+    log.Fatal(http.ListenAndServe(":8080", api.Handler()))
 }
 ```
 
-其中 `api` 是由 `rest.New` 创建的 API 实例：
-
-```go
-api := rest.New(rest.Options{
-    Title:   "Hello API",
-    Version: "1.0.0",
-})
+```bash
+curl localhost:8080/ping
+# {"message":"pong"}
 ```
 
-`Title` 和 `Version` 会出现在生成的 OpenAPI 文档中。
+`http://localhost:8080/docs` 是可交互的接口文档。实际的应用用 `httpx.Serve` 平滑停止，并安装[默认中间件](middleware.md#default-middleware)。
 
 <a id="operations"></a>
 ### 路由声明
@@ -74,7 +87,7 @@ api := rest.New(rest.Options{
 | 输入类型 | 路径参数、查询参数、请求头和请求体的来源、类型及验证规则 |
 | 输出类型 | 响应体、状态码和响应头 |
 | 访问策略 | `rest.Public()` 或 `rest.RequireBearer(...)`，必须选择一个 |
-| 处理器 | 处理请求的函数，通常是 [action](../concepts/actions.md) 的 `HTTP` 方法 |
+| 处理器 | 处理请求的函数，通常是[业务动作](../concepts/actions.md)的 `HTTP` 方法 |
 
 由于请求和响应的结构都写在 Go 类型中，Huma 可以据此自动完成参数解析、输入验证，并生成准确的 OpenAPI 文档。输入和输出类型的写法分别见[请求](requests.md)和[响应](../responses/responses.md)。
 
@@ -87,14 +100,14 @@ api := rest.New(rest.Options{
 func(ctx context.Context, in *Input) (*Output, error)
 ```
 
-业务接口的处理器通常是 [action](../concepts/actions.md) 的方法值，例如 `article.NewPublish(db).HTTP`。
+业务接口的处理器通常是[业务动作](../concepts/actions.md)的方法值，例如 `article.NewPublish(db).HTTP`。
 
 API 有两种运行模式：
 
 - **运行模式**（`rest.ModeServe`，默认）：处理器挂载到路由上；
 - **文档模式**（`rest.ModeOpenAPI`）：只生成接口文档，**不会调用处理器**，也可以传 `nil`。
 
-文档模式下路由照常注册，action 也会被构造，只是传入的数据库等依赖都是 `nil`。只要构造函数只保存依赖、不使用它们，就可以在没有任何外部依赖的环境中（例如 CI）导出接口文档，详见[离线导出](#exporting-openapi)。
+文档模式下路由照常注册，动作也会被构造，只是传入的数据库等依赖都是 `nil`。只要构造函数只保存依赖、不使用它们，就可以在没有任何外部依赖的环境中（例如 CI）导出接口文档，详见[离线导出](#exporting-openapi)。
 
 <a id="registration-checks"></a>
 ### 注册时的检查
@@ -148,7 +161,7 @@ requireArticles(&op)
 <a id="organizing-routes"></a>
 ## 组织路由
 
-业务代码按 [action](../concepts/actions.md) 组织，每个业务动作一个文件，HTTP 入口是 action 的 `HTTP` 方法。每个业务模块再用一个 `routes.go` 集中声明自己的路由，你可以在这里查看路径、方法和访问策略，再跳转到对应的 action：
+业务代码按[业务动作](../concepts/actions.md)组织，每个动作一个文件，HTTP 入口是动作的 `HTTP` 方法。每个业务模块再用一个 `routes.go` 集中声明自己的路由，在这里能看到路径、方法和访问策略：
 
 ```text
 internal/article/
@@ -163,20 +176,9 @@ internal/article/
 <a id="module-registration"></a>
 ### 模块内注册
 
-`internal/article/routes.go` 与 action 同属 `article` 包，提供模块的统一 `Register` 入口。它只声明路由，并把 action 的 `HTTP` 方法注册为处理器：
+`routes.go` 与动作同属一个包，提供模块的 `Register` 入口。它只声明路由，把动作的 `HTTP` 方法注册为处理器：
 
 ```go
-package article
-
-import (
-    "net/http"
-
-    "github.com/danielgtaylor/huma/v2"
-    "github.com/uptrace/bun"
-
-    "github.com/go-tenon/tenon/httpx/rest"
-)
-
 // Register 注册文章模块的全部路由。
 func Register(api *rest.API, requireArticles func(*huma.Operation), db *bun.DB) {
     create := huma.Operation{
@@ -209,31 +211,20 @@ func Register(api *rest.API, requireArticles func(*huma.Operation), db *bun.DB) 
 }
 ```
 
-`Register` 接收模块的 action 需要的依赖，在注册时构造它们。生成 OpenAPI 或查看路由时，`db` 为 `nil`，处理器不会被调用。
+`Register` 接收模块的动作需要的依赖，在注册时构造它们。生成 OpenAPI 或查看路由时，`db` 为 `nil`，处理器不会被调用。
 
-入口在组装应用时调用模块的注册函数，并决定这些路由的访问策略。这里的 `db` 是入口打开的数据库，`validateToken` 是 token 校验器，完整的组装代码见[依赖装配](../concepts/dependencies.md#assembling-the-application)：
+入口在组装应用时调用它，并决定这些路由的访问策略。`validateToken` 是令牌校验器，见[认证](../security/authentication.md)：
 
 ```go
 article.Register(api, rest.RequireBearer(api, validateToken, "articles"), db)
 ```
 
 <a id="http-actions"></a>
-### action 的 HTTP 入口
+### 动作的 HTTP 入口
 
-`publish.go` 的完整代码见[编写 action](../concepts/actions.md#writing-actions)。`create.go` 和 `get.go` 的写法相同，下面是 `internal/article/get.go`：
+`get.go` 中的“获取文章”。`find`、`ErrNotFound` 等是模块内共享的代码，见[业务动作](../concepts/actions.md#shared-code)：
 
 ```go
-package article
-
-import (
-    "context"
-
-    "github.com/google/uuid"
-    "github.com/uptrace/bun"
-
-    "github.com/go-tenon/tenon/identity"
-)
-
 // Get 获取文章。
 type Get struct {
     db *bun.DB
@@ -281,18 +272,14 @@ type CreateInput struct {
 }
 ```
 
-每个 `HTTP` 方法只做三件事：从输入和 context 中取出参数、调用 `Handle`、把结果转换为输出。业务规则，包括“只有作者能发布”、“不能重复发布”，都在 `Handle` 中。不同 action 使用各自的输入类型，后续可以独立增加字段或验证规则。
+每个 `HTTP` 方法只做三件事：从输入和 context 中取出参数、调用 `Handle`、把结果转换为输出。业务规则，包括“只有作者能发布”、“不能重复发布”，都在 `Handle` 中。不同动作使用各自的输入类型，后续可以独立增加字段或验证规则。
 
 <a id="shared-responses"></a>
 ### 共享响应结构
 
-这几个 action 返回同一种文章表示，因此把 `ArticleDTO`、`ArticleOutput` 和转换函数放在 `internal/article/dto.go` 中共享。某个 action 独有的输出类型直接放在它自己的文件中：
+这几个动作返回同一种文章表示，所以把 `ArticleDTO`、`ArticleOutput` 和转换函数放在 `dto.go` 中共享。某个动作独有的输出类型放在它自己的文件中：
 
 ```go
-package article
-
-import "time"
-
 type ArticleDTO struct {
     ID          string     `json:"id" example:"0193a5c2-7d1e-7b3a-9f61-2c4e8d0a1b2c"`
     Title       string     `json:"title" example:"Hello World"`
@@ -336,23 +323,23 @@ func toDTO(a *Article) ArticleDTO {
 
 ```go
 router.Route("/api/v1", func(r chi.Router) {
-    r.Use(httpx.Timeout(a.cfg.HTTP.Timeout))
+    r.Use(httpx.Timeout(cfg.HTTP.Timeout))
     opts := API
     opts.Router, opts.BasePath = r, "/api/v1"
-    Routes(rest.New(opts), auth.Validator(a.cfg.Auth), a.db)
+    Routes(rest.New(opts))
 })
 ```
 
 路由按子路由注册，接口地址是 `/api/v1/articles`。`BasePath` 写入 OpenAPI 文档的 `servers`，文档页 `/api/v1/docs` 和生成的客户端据此拼出完整地址；`routes` 命令显示的也是完整路径。
 
-需要不兼容的修改时，新版本挂在另一个子路由下，用自己的 `rest.API`。两个版本各有一份 OpenAPI 文档，共用同一套 action：
+需要不兼容的修改时，新版本挂在另一个子路由下，用自己的 `rest.API`。两个版本各有一份 OpenAPI 文档，共用同一套业务动作：
 
 ```go
 router.Route("/api/v2", func(r chi.Router) {
-    r.Use(httpx.Timeout(a.cfg.HTTP.Timeout))
+    r.Use(httpx.Timeout(cfg.HTTP.Timeout))
     opts := APIv2
     opts.Router, opts.BasePath = r, "/api/v2"
-    RoutesV2(rest.New(opts), auth.Validator(a.cfg.Auth), a.db)
+    RoutesV2(rest.New(opts))
 })
 ```
 
@@ -404,7 +391,7 @@ api := rest.New(rest.Options{
     Title: "Hello API", Version: "1.0.0",
     Mode:  rest.ModeOpenAPI,
 })
-registerPing(api)
+Routes(api) // 与运行时相同的注册函数
 
 data, err := api.OpenAPIJSON()
 ```
@@ -412,7 +399,7 @@ data, err := api.OpenAPIJSON()
 `data` 就是 OpenAPI 文档的 JSON 内容。因为运行模式和文档模式使用的是同一份路由声明，导出的文档与实际运行的接口始终保持一致。
 
 > [!TIP]
-> 结合[命令行](../general/commands.md#openapi-command)中的 `openapi` 命令，你可以通过 `./bin/api openapi > openapi.json` 导出文档。
+> 应用的 [`openapi` 命令](../general/commands.md#openapi-command)就是这样导出的：`./bin/api openapi > openapi.json`。
 
 <a id="native-apis"></a>
 ## 使用原生 chi 与 Huma
@@ -436,3 +423,60 @@ api.Router().Get("/livez", func(w http.ResponseWriter, r *http.Request) {
 `rest.API` 内嵌了 `huma.API`，因此你也可以调用 Huma 原生的 `huma.Register`。不过这样做会绕过 Tenon 的访问策略检查、业务错误转换和文档模式支持，这些都需要你自己处理。除非有特殊需求，否则推荐使用 `rest.Register`。
 
 `rest.New` 不安装任何中间件，中间件的安装方式请参阅[中间件](middleware.md)。
+
+<a id="api-reference"></a>
+## API 参考
+
+包 `github.com/go-tenon/tenon/httpx/rest`。
+
+### New
+
+```go
+func New(opts Options) *API
+```
+
+创建 API，不安装任何中间件。
+
+### Options
+
+| 字段 | 说明 |
+| --- | --- |
+| `Title`、`Version` | 写入 OpenAPI 文档 |
+| `Mode` | `ModeServe`（默认）或 `ModeOpenAPI` |
+| `Router chi.Router` | 挂载路由的 Router，`nil` 时新建一个。中间件在传入前安装 |
+| `BasePath` | API 挂载的路径前缀，写入 OpenAPI 的 `servers` |
+| `Logger *slog.Logger` | 记录 5xx 错误，`nil` 时用 `slog.Default()` |
+| `Transformers []huma.Transformer` | 追加在 Huma 默认的 Transformer 之后 |
+| `Accounts identity.Accounts` | 接受的账号体系，见[认证](../security/authentication.md) |
+| `Tenant func(huma.Context) string` | 从请求取出租户，见[多租户](../security/tenancy.md) |
+| `Credentials httpx.CredentialWatcher` | 长连接复查凭据的信号，见[服务端推送](../responses/sse.md#immediate-revocation) |
+
+### Register
+
+```go
+func Register[I, O any](api *API, op huma.Operation, handler func(context.Context, *I) (*O, error))
+```
+
+注册一条路由。运行模式挂载处理器，文档模式只生成文档。发现[注册时的检查](#registration-checks)中的问题时 panic。
+
+### Public、RequireBearer
+
+```go
+func Public() func(op *huma.Operation)
+func RequireBearer(api *API, validate TokenValidator, permissions ...string) func(op *huma.Operation)
+```
+
+访问策略，在 `Register` 之前作用于 `op`。`RequireBearer` 要求有效的 Bearer 令牌和全部 `permissions`。
+
+### API
+
+```go
+func (a *API) Handler() http.Handler
+func (a *API) Router() chi.Router
+func (a *API) Mode() Mode
+func (a *API) OpenAPIJSON() ([]byte, error)
+func (a *API) OpenAPI30JSON() ([]byte, error)
+func (a *API) Endpoints() []Endpoint
+```
+
+`Handler` 是挂载了全部路由的处理器；`OpenAPIJSON`、`OpenAPI30JSON` 导出 OpenAPI 3.1、3.0 文档；`Endpoints` 列出已注册的路由及其访问策略，`routes` 命令用它。

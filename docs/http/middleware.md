@@ -1,9 +1,13 @@
 # 中间件
 
-- [简介](#introduction)
-- [默认中间件](#default-middleware)
+中间件在请求到达处理器之前和之后做通用的事：确定请求 ID、记录访问日志、限制请求体大小、恢复 panic。Tenon 的中间件都是标准的 `func(http.Handler) http.Handler`，安装在 chi Router 上；`rest.New` 不会替你安装任何中间件。
+
+> [!IMPORTANT]
+> 一个中间件是否生效，只取决于代码里有没有安装它。配置文件只提供参数，不会开启或关闭中间件。参数不合法时（例如超时为 0），构造时就 panic，而不是静默跳过。
+
+- [示例用法](#default-middleware)
 - [请求超时](#request-timeout)
-- [HTTP 配置](#http-configuration)
+- [配置](#http-configuration)
     - [请求 ID](#request-id)
     - [可信代理](#trusted-proxies)
     - [访问日志](#access-log)
@@ -18,25 +22,17 @@
     - [全局中间件](#chi-middleware)
     - [路由中间件](#route-middleware)
 - [用于普通 HTTP 处理器](#plain-handlers)
-
-<a id="introduction"></a>
-## 简介
-
-中间件提供了一种方便的机制，用来检查和处理进入应用的 HTTP 请求。例如，为每个请求生成请求 ID、记录访问日志、限制请求体大小等。
-
-Tenon 的中间件都是标准的 `func(http.Handler) http.Handler`，安装在 chi Router 上。`rest.New` 不会替你安装任何中间件。
-
-**一个中间件是否生效，只取决于代码里有没有安装它。** 配置文件只提供参数，任何配置值都不会开启或关闭中间件。反过来，安装中间件时参数不合法（例如超时为 0、日志器为 `nil`），构造时就会 panic，而不是静默跳过。
+- [API 参考](#api-reference)
 
 <a id="default-middleware"></a>
-## 默认中间件
+## 示例用法
 
 `httpx.Defaults` 返回每个应用都应该安装的基础中间件。先把它们和[请求超时](#request-timeout)安装到 Router 上，再把 Router 交给 `rest.New`：
 
 ```go
 router := chi.NewRouter()
-router.Use(httpx.Defaults(a.cfg.HTTP, nil, nil)...)
-router.Use(httpx.Timeout(a.cfg.HTTP.Timeout))
+router.Use(httpx.Defaults(cfg.HTTP, nil, nil)...)
+router.Use(httpx.Timeout(cfg.HTTP.Timeout))
 
 api := rest.New(rest.Options{Router: router})
 ```
@@ -79,7 +75,7 @@ api := rest.New(rest.Options{Router: router})
 [服务端推送](../responses/sse.md)不受它影响：SSE 开始推送后摆脱这个超时，连接一直保持到客户端断开，所以流式路由可以和普通路由装在同一组中间件下。
 
 <a id="http-configuration"></a>
-## HTTP 配置
+## 配置
 
 `httpx.Config` 对应配置文件的 `http` 段：顶层是服务器参数，每个有参数的中间件对应一个同名子段。
 
@@ -129,11 +125,11 @@ http:
 把 `httpx.Config` 放进应用的根配置结构体（`config.Load` 会自动填充默认值并校验），再把它交给 `httpx.Defaults` 和 `httpx.Serve`：
 
 ```go
-router.Use(httpx.Defaults(a.cfg.HTTP, nil, nil)...)
+router.Use(httpx.Defaults(cfg.HTTP, nil, nil)...)
 // ...
-ln, err := d.Listen("tcp", a.cfg.HTTP.Addr)
+ln, err := d.Listen("tcp", cfg.HTTP.Addr)
 // ...
-return httpx.Serve(ctx, a.cfg.HTTP, ln, api.Handler(), httpx.ServeOptions{})
+return httpx.Serve(ctx, cfg.HTTP, ln, api.Handler(), httpx.ServeOptions{})
 ```
 
 不经过 `config.Load` 时（例如在测试中），请从 `httpx.DefaultConfig()` 开始修改。零值的 `httpx.Config{}` 不合法，`httpx.Defaults` 会 panic，`httpx.Serve` 会返回错误。
@@ -230,8 +226,8 @@ http:
 `httpx.RateLimit` 按客户端限制请求频率，超出时返回 `429`。它不在默认中间件中，需要时在 `httpx.Defaults` 之后安装：
 
 ```go
-router.Use(httpx.Defaults(a.cfg.HTTP, nil, nil)...)
-router.Use(httpx.RateLimit(ratelimit.NewMemory(a.cfg.HTTP.RateLimit), httpx.KeyByIP))
+router.Use(httpx.Defaults(cfg.HTTP, nil, nil)...)
+router.Use(httpx.RateLimit(ratelimit.NewMemory(cfg.HTTP.RateLimit), httpx.KeyByIP))
 ```
 
 参数来自 `http.rate_limit` 段。限流的 key、配额参数、在处理器中按用户限流以及多实例共享计数，见[限流](../libraries/rate-limiting.md)。
@@ -243,7 +239,7 @@ router.Use(httpx.RateLimit(ratelimit.NewMemory(a.cfg.HTTP.RateLimit), httpx.KeyB
 
 ```go
 router.Route("/api", func(r chi.Router) {
-    r.Use(httpx.CORS(a.cfg.HTTP.CORS))
+    r.Use(httpx.CORS(cfg.HTTP.CORS))
     // ...
 })
 ```
@@ -282,16 +278,16 @@ type Config struct {
     Ops map[string]string `yaml:"ops"` // 运维账号：用户名 → 密码哈希
 }
 
-func (a *App) verifyOps(_ context.Context, user, password string) (bool, error) {
-    hash, ok := a.cfg.Ops[user]
-    return ok && a.hasher.Check(password, hash), nil
+verifyOps := func(_ context.Context, user, password string) (bool, error) {
+    hash, ok := cfg.Ops[user]
+    return ok && hasher.Check(password, hash), nil
 }
 ```
 
 ```go
 ops := router.With(
     httpx.RateLimit(opsLimiter, httpx.KeyByIP), // 限制暴力尝试，见限流
-    httpx.BasicAuth("ops", a.verifyOps),
+    httpx.BasicAuth("ops", verifyOps),
 )
 ```
 
@@ -324,8 +320,8 @@ App 收到 `app.upgrade_required` 时显示升级页面，打开应用商店或�
 
 ```go
 router.Route("/api", func(r chi.Router) {
-    r.Use(httpx.CORS(a.cfg.HTTP.CORS))
-    r.Use(httpx.AppVersion(a.cfg.HTTP.AppVersion))
+    r.Use(httpx.CORS(cfg.HTTP.CORS))
+    r.Use(httpx.AppVersion(cfg.HTTP.AppVersion))
     // ...
 })
 ```
@@ -352,7 +348,7 @@ http:
 应用直接对外提供服务、前面没有负责压缩的反向代理或 CDN 时，在 `httpx.Defaults` 之后安装 `httpx.Compress`：
 
 ```go
-router.Use(httpx.Defaults(a.cfg.HTTP, nil, nil)...)
+router.Use(httpx.Defaults(cfg.HTTP, nil, nil)...)
 router.Use(httpx.Compress())
 ```
 
@@ -372,28 +368,28 @@ router.Use(httpx.Compress())
 `httpx.Telemetry` 为每个请求创建 OpenTelemetry span，并把耗时记录为指标 `http.server.request.duration`，按方法、状态码和路由模板区分。它安装在 `httpx.Defaults` 之前，访问日志才能带上 `trace_id`，panic 转换成的 `500` 也会被记录：
 
 ```go
-router.Use(httpx.Telemetry(a.meters, a.tracers))
-router.Use(httpx.Defaults(a.cfg.HTTP, nil, nil)...)
+router.Use(httpx.Telemetry(tel.Meters, tel.Tracers))
+router.Use(httpx.Defaults(cfg.HTTP, nil, nil)...)
 ```
 
-`a.meters`、`a.tracers` 的创建和指标的属性见[可观测性](../general/telemetry.md#http)。
+`tel` 的创建和指标的属性见[可观测性](../general/telemetry.md#http)。
 
 <a id="custom-stack"></a>
 ## 自行组装
 
 `httpx.Defaults` 只是一个返回切片的普通函数。当默认组合不合适时，可以直接挑选需要的中间件，自己决定顺序和参数。
 
-例如，博客允许作者在 `/uploads/` 下上传最大 20 MiB 的图片，其他接口仍然使用配置的上限。`BodyLimit` 一旦安装就无法在内层放宽，所以要在安装时按路径选择上限：
+例如，允许在 `/uploads/` 下上传最大 20 MiB 的图片，其他接口仍然使用配置的上限。`BodyLimit` 一旦安装就无法在内层放宽，所以要在安装时按路径选择上限：
 
 ```go
 router.Use(
-    httpx.AssignRequestID(a.cfg.HTTP.RequestID),
+    httpx.AssignRequestID(cfg.HTTP.RequestID),
     httpx.NoSniff(),
-    httpx.ClientIP(a.cfg.HTTP.ClientIP),
-    httpx.AccessLog(a.cfg.HTTP.AccessLog, nil),
+    httpx.ClientIP(cfg.HTTP.ClientIP),
+    httpx.AccessLog(cfg.HTTP.AccessLog, nil),
     httpx.Recover(nil),
     func(next http.Handler) http.Handler {
-        small := httpx.BodyLimit(a.cfg.HTTP.BodyLimit)(next)
+        small := httpx.BodyLimit(cfg.HTTP.BodyLimit)(next)
         large := httpx.BodyLimit(httpx.BodyLimitConfig{MaxBytes: 20 << 20})(next)
         return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
             if strings.HasPrefix(r.URL.Path, "/uploads/") {
@@ -418,13 +414,13 @@ router.Use(
 
 自己编写的中间件和默认中间件安装方式完全相同，`router.Use` 的先后顺序就是执行顺序。
 
-例如，博客在数据库维护期间需要进入只读模式：读请求照常处理，修改文章等写请求统一返回 `503`：
+例如，数据库维护期间进入只读模式：读请求照常处理，修改文章等写请求统一返回 `503`：
 
 ```go
 var readOnly atomic.Bool // 由运维开关控制，例如收到某个信号时切换
 
 router := chi.NewRouter()
-router.Use(httpx.Defaults(a.cfg.HTTP, nil, nil)...)
+router.Use(httpx.Defaults(cfg.HTTP, nil, nil)...)
 router.Use(func(next http.Handler) http.Handler {
     return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
         if readOnly.Load() && r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -447,7 +443,7 @@ chi 要求所有中间件在注册路由之前安装，所以请先安装中间�
 
 只对某条路由生效的逻辑，可以使用 Huma 原生的 `Operation.Middlewares`。
 
-例如，博客早期的接口路径是 `/posts/{id}`，后来统一改为 `/articles/{id}`。旧路径暂时保留，但要在响应头中提醒客户端迁移：
+例如，早期的接口路径是 `/posts/{id}`，后来统一改为 `/articles/{id}`。旧路径暂时保留，但要在响应头中提醒客户端迁移：
 
 ```go
 legacy := huma.Operation{
@@ -478,5 +474,64 @@ requireArticles(&legacy)
 这些中间件不依赖 `rest` 包。如果你有一个普通的 `http.Handler`（例如标准库的 `http.ServeMux`），可以用 `chi.Chain` 为它安装：
 
 ```go
-handler := chi.Chain(httpx.Defaults(a.cfg.HTTP, nil, nil)...).Handler(mux)
+handler := chi.Chain(httpx.Defaults(cfg.HTTP, nil, nil)...).Handler(mux)
 ```
+
+<a id="api-reference"></a>
+## API 参考
+
+包 `github.com/go-tenon/tenon/httpx`。每个中间件的参数取自 `httpx.Config` 中的同名子段。
+
+### Defaults
+
+```go
+func Defaults(cfg Config, logger *slog.Logger, languages *goi18n.Bundle) []func(http.Handler) http.Handler
+```
+
+按顺序返回 `AssignRequestID`、`NoSniff`、`ClientIP`、`Locale`、`AccessLog`、`Recover`、`BodyLimit`、`AcquireTimeout`。`cfg` 不合法时 panic；`logger` 为 `nil` 时用 `slog.Default()`；`languages` 为 `nil` 时只用内置消息。
+
+### 中间件
+
+| 函数 | 说明 |
+| --- | --- |
+| `AssignRequestID(cfg RequestIDConfig)` | [请求 ID](#request-id) |
+| `NoSniff()` | `X-Content-Type-Options: nosniff` |
+| `ClientIP(cfg ClientIPConfig)` | [可信代理](#trusted-proxies) |
+| `Locale(languages *goi18n.Bundle)` | 语言协商，见[本地化](../general/localization.md#determining-the-locale) |
+| `AccessLog(cfg AccessLogConfig, logger *slog.Logger)` | [访问日志](#access-log) |
+| `Recover(logger *slog.Logger)` | 恢复 panic |
+| `BodyLimit(cfg BodyLimitConfig)` | 限制请求体大小 |
+| `AcquireTimeout(d time.Duration)` | 等待共享资源的时限 |
+| `Timeout(cfg TimeoutConfig)` | [请求超时](#request-timeout) |
+| `RateLimit(limiter ratelimit.Limiter, key KeyFunc)` | [限流](#rate-limiting) |
+| `CORS(cfg CORSConfig)` | [跨域请求](#cors) |
+| `BasicAuth(realm string, verify func(ctx context.Context, user, password string) (bool, error))` | [HTTP Basic 认证](#basic-auth) |
+| `AppVersion(cfg AppVersionConfig)` | [App 最低版本](#app-version) |
+| `Compress()` | [响应压缩](#compression) |
+| `Telemetry(mp metric.MeterProvider, tp trace.TracerProvider)` | [指标](#metrics) |
+
+### 读取请求信息
+
+```go
+func RequestID(ctx context.Context) string
+func BasicUser(ctx context.Context) string
+func KeyByIP(r *http.Request) string
+```
+
+请求 ID；Basic 认证通过的用户名；按客户端地址的限流键。
+
+### WriteProblem
+
+```go
+func WriteProblem(w http.ResponseWriter, status int, detail string)
+```
+
+在普通处理器或中间件中写出与 API 相同格式的错误响应。
+
+### DefaultConfig
+
+```go
+func DefaultConfig() Config
+```
+
+全部字段为默认值的配置。不经过 `config.Load` 时（例如测试中）从它开始修改。

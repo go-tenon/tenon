@@ -1,6 +1,8 @@
 # 响应
 
-- [创建响应](#creating-responses)
+和[请求](../http/requests.md)一样，响应由一个 Go 结构体描述，称为**输出类型**：`Body` 字段是 JSON 响应体，带 `header` 标签的字段是响应头，`Status` 字段决定状态码。处理器返回输出和 `nil` 错误即成功，返回错误时由框架转换为[统一的错误响应](../general/errors.md)。列表接口用 `page` 包分页。
+
+- [示例用法](#creating-responses)
     - [JSON 响应](#json-responses)
     - [状态码](#status-codes)
     - [响应头](#headers)
@@ -10,14 +12,15 @@
     - [游标分页](#cursor-pagination)
     - [筛选与排序](#filtering-and-sorting)
 - [返回错误](#returning-errors)
+- [API 参考](#api-reference)
 
 <a id="creating-responses"></a>
-## 创建响应
+## 示例用法
 
 <a id="json-responses"></a>
 ### JSON 响应
 
-和[请求](../http/requests.md)一样，响应也由一个 Go 结构体描述，称为**输出类型**。输出类型中名为 `Body` 的字段就是 JSON 响应体：
+输出类型中名为 `Body` 的字段就是 JSON 响应体：
 
 ```go
 type ArticleDTO struct {
@@ -251,7 +254,7 @@ type ListQuery struct {
 
 `sort` 的值是列名，前面加 `-` 表示降序，和页面上的 [`ui.SortHead`](views.md#list-pages) 一致。Huma 在调用处理器之前检查这些参数：`?sort=views`、`?status=archived` 返回 `422`；空值等同于没有这个参数，取 `default` 的值。
 
-列表 action 把参数转换为查询条件。每个 `sort` 值对应一个固定的 `ORDER BY`：
+列表的业务动作把参数转换为查询条件。每个 `sort` 值对应一个固定的 `ORDER BY`：
 
 ```go
 // orders 是 ListQuery.Sort 每个取值对应的排序。
@@ -305,7 +308,7 @@ func (a *List) HTTP(ctx context.Context, in *ListQuery) (*ListOutput, error) {
 - 每种排序都以 `id` 结尾，原因与游标分页相同：只按 `title` 排序时，标题相同的文章在两次查询之间的顺序不固定，翻页时可能重复或遗漏。
 - 参数为空时不添加对应的条件。按调用者限定范围的条件（例如只看到自己的草稿）写在同一个查询中，见[列表查询中的授权](../security/authorization.md#scoping-queries)。
 - `LIKE` 只适合简单的标题匹配。需要分词、按相关度排序时，使用[搜索](../features/search.md)。
-- 游标分页的排序固定写在 action 中，不提供 `sort` 参数：游标保存的是排序位置，换一种排序，原来的游标就失效了。需要让用户选择排序的列表，使用固定分页。
+- 游标分页的排序固定写在业务动作中，不提供 `sort` 参数：游标保存的是排序位置，换一种排序，原来的游标就失效了。需要让用户选择排序的列表，使用固定分页。
 
 <a id="returning-errors"></a>
 ## 返回错误
@@ -320,3 +323,56 @@ if err != nil {
 ```
 
 `rest.Register` 会把错误转换为统一格式的错误响应，并选择合适的状态码。如何定义业务错误、它们如何映射到 HTTP 状态码，请参阅[错误处理](../general/errors.md)。
+
+<a id="api-reference"></a>
+## API 参考
+
+包 `github.com/go-tenon/tenon/page`。
+
+### OffsetParams
+
+```go
+type OffsetParams struct {
+    Page    int `query:"page" default:"1" minimum:"1"`
+    PerPage int `query:"per_page" default:"20" minimum:"1" maximum:"100"`
+}
+
+func (p OffsetParams) Limit() int64
+func (p OffsetParams) Offset() int64
+```
+
+嵌入输入类型。`Limit`、`Offset` 对应 SQL 的 `LIMIT` 和 `OFFSET`。
+
+### Offset
+
+```go
+type Offset[T any] struct {
+    Items   []T   `json:"items"`
+    Page    int   `json:"page"`
+    PerPage int   `json:"per_page"`
+    Total   int64 `json:"total"`
+}
+
+func NewOffset[T any](items []T, p OffsetParams, total int64) Offset[T]
+func (o Offset[T]) LastPage() int
+func (o Offset[T]) Links(onEachSide int) []int
+```
+
+固定分页的响应体，`items` 为空时编码为 `[]`。`LastPage` 和 `Links` 用于渲染页码导航。
+
+### CursorParams
+
+```go
+func (p CursorParams) After(v any) (bool, error)
+func (p CursorParams) Limit() int64
+```
+
+嵌入输入类型，查询参数为 `cursor` 和 `per_page`。`After` 把游标解码到 `v`，报告请求是否带了游标；`Limit` 比 `per_page` 多一，多读的一条用来判断是否还有下一页。
+
+### Cursor
+
+```go
+func NewCursor[T any](items []T, p CursorParams, key func(T) any) Cursor[T]
+```
+
+截掉多读的一条，用 `key` 返回的排序位置编码 `next_cursor`。响应体为 `items` 和可选的 `next_cursor`。

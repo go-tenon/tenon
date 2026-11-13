@@ -1,6 +1,8 @@
 # 客户端代码
 
-- [简介](#introduction)
+前端、App 和其他服务调用 JSON API 时，请求和响应的类型不需要手写。`client` 命令从路由声明直接生成 TypeScript 和 Go 客户端：函数按 operationId 分组，类型和服务端一致，业务错误码是常量。其他语言用 [openapi 命令](../general/commands.md#openapi-command)导出的 OpenAPI 文档生成。
+
+- [示例用法](#introduction)
 - [生成的名称](#generated-names)
 - [TypeScript](#typescript)
     - [生成客户端](#generating-types)
@@ -23,17 +25,34 @@
 - [其他语言](#other-languages)
 - [App 版本](#app-version)
 - [检查接口变更](#checking-changes)
+- [API 参考](#api-reference)
 
 <a id="introduction"></a>
-## 简介
+## 示例用法
 
-前端和 App 调用 JSON API 时，请求和响应的类型不需要手写。[openapi 命令](../general/commands.md#openapi-command)导出的 OpenAPI 文档描述了每个接口的路径、参数、请求体、响应和错误，各语言的生成器据此生成类型或客户端代码。文档和服务端出自同一份路由声明，任何支持 OpenAPI 的生成器都可以使用。TypeScript 和 Go 的调用方用 `client` 命令直接从路由生成客户端：[TypeScript](#typescript) 的类型取自同一份 OpenAPI 文档，[Go](#go) 的类型从源码复制。
+```bash
+go run ./cmd/api client --ts frontend/src/api   # TypeScript
+go run ./cmd/api client --out ../api            # Go
+```
+
+```ts
+const article = await api.article.update(id, { title: "Hello", slug: "hello", content: "" })
+```
+
+```go
+a, err := c.Article.Update(ctx, id, article.Changes{Title: "Hello", Slug: "hello"})
+if errors.Is(err, article.ErrSlugTaken) {
+    // ...
+}
+```
+
+开发时 `go tool tenon dev` 在每次重新编译后自动生成，改了 Go 接口，前端的类型随之更新，见[开发工具](../installation/tooling.md)。
+
+把 OpenAPI 文档也提交到仓库，接口的每次变化都会出现在代码评审中，CI 还可以[检查不兼容的变更](#checking-changes)：
 
 ```bash
 ./bin/api openapi > openapi.json
 ```
-
-把 `openapi.json` 提交到仓库，接口的每次变化都会出现在代码评审中，CI 还可以[检查不兼容的变更](#checking-changes)。
 
 <a id="generated-names"></a>
 ## 生成的名称
@@ -73,7 +92,7 @@ go tool tenon generate   # 等价于 go run ./cmd/api client --ts frontend/src/a
 <a id="creating-the-client"></a>
 ### 创建客户端
 
-博客的单页应用用 [JWT 模式](../security/api-tokens.md#jwt)登录，refresh token 保存在 [HttpOnly cookie](../security/api-tokens.md#single-page-applications) 中。access token 只放在内存里，由客户端保管：请求自动带上它；受保护的接口返回 `401` 时调用一次 `auth.refresh` 换新的，再重试请求。下面是 `frontend/src/client.ts`：
+单页应用用 [JWT 模式](../security/api-tokens.md#jwt)登录，refresh token 保存在 [HttpOnly cookie](../security/api-tokens.md#single-page-applications) 中。access token 只放在内存里，由客户端保管：请求自动带上它；受保护的接口返回 `401` 时调用一次 `auth.refresh` 换新的，再重试请求。下面是 `frontend/src/client.ts`：
 
 ```ts
 import { createClient } from "./api/api"
@@ -100,7 +119,7 @@ export const api = createClient({
 - 公开的接口（[`rest.Public`](../http/routing.md#access-policies)）从不带 token，`401` 时也不刷新。
 - 请求带上 `Accept-Language`（默认是浏览器的语言，`language` 可以覆盖），错误的 `detail` 按它翻译。App 的 WebView 设置 `appVersion`，作为 [`X-App-Version`](#app-version) 发送。
 
-`/auth/login`、`/auth/refresh` 是博客自己注册的公开接口，写法见[单页应用](../security/api-tokens.md#single-page-applications)。App、桌面端（Electron、Tauri）和小程序不用 cookie：登录时不传 `cookie`，refresh token 在响应体中，保存在系统的钥匙串中，`refresh` 把它放进请求体。
+`/auth/login`、`/auth/refresh` 是应用自己注册的公开接口，写法见[单页应用](../security/api-tokens.md#single-page-applications)。App、桌面端（Electron、Tauri）和小程序不用 cookie：登录时不传 `cookie`，refresh token 在响应体中，保存在系统的钥匙串中，`refresh` 把它放进请求体。
 
 <a id="calling-endpoints"></a>
 ### 调用接口
@@ -286,7 +305,7 @@ blog/
 
 ```go
 c := api.New(api.Options{
-    BaseURL:    "https://blog.example.com",
+    BaseURL:    "https://api.example.com",
     Auth:       tokens,                           // 见下文“认证”
     AppVersion: "macos/1.4.2",                    // 见中间件的“App 最低版本”
     Language:   func() string { return "zh-CN" }, // 错误的 Detail 按它翻译
@@ -483,3 +502,30 @@ PUT /articles/{id} added the new required request property `slug`
 ```
 
 oasdiff 只比较请求和响应的结构。schema 改名不改变结构，它不会报告，但生成的类型名会变，前端重新生成类型后由编译器发现。
+
+<a id="api-reference"></a>
+## API 参考
+
+### client 命令
+
+由 `httpcmd.Commands` 加入应用的命令行，在服务端的源码目录中运行，以文档模式注册路由，不读取配置，也不连接数据库。
+
+| 选项 | 说明 |
+| --- | --- |
+| `--ts <dir>` | TypeScript 客户端的输出目录，例如 `frontend/src/api` |
+| `--out <dir>` | Go 客户端的输出目录，目录名是根包的包名，例如 `../api` |
+| `--main <pkg>` | 应用的主包，在它的依赖中查找错误码；默认是当前程序 |
+| `--import <pkg>` | 生成的 Go 代码可以直接导入的包（含子包），可重复；默认只有 `github.com/google/uuid` |
+| `--rename <path>=<name>` | 服务端包路径对应的镜像包名，可重复 |
+
+### clientgen
+
+包 `github.com/go-tenon/tenon/httpx/rest/clientgen`。
+
+```go
+func Command(opts rest.Options, register func(api *rest.API)) *cobra.Command
+func Generate(api *rest.API, opts Options) (*Result, error)
+func GenerateTS(api *rest.API, opts TSOptions) (*Result, error)
+```
+
+`Command` 单独构造 `client` 命令；`Generate`、`GenerateTS` 在代码中生成，例如写自己的生成工具时。

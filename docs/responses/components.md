@@ -1,6 +1,10 @@
 # 界面组件
 
-- [简介](#introduction)
+按钮、表格、下拉菜单、对话框这些界面组件来自 [shadcn-templ](https://github.com/axadrn/shadcn-templ)，它是 [shadcn/ui](https://ui.shadcn.com) 的 templ 移植版。框架在 go.mod 中固定了它的版本，`web/ui` 包内置了这个版本的样式表和组件脚本：应用直接 import 组件，不需要安装 shadcn-templ 的命令行，也不需要 Tailwind。
+
+`web/ui` 把组件接到[页面](views.md)上：按主题加载样式表和脚本；局部请求的错误显示为 toast；`hx-confirm` 弹出确认对话框；提供表单字段、分页、排序表头、空状态这几个与 `web` 配合的组件。这些衔接都可以不用，换成应用自己的写法，见[不同区域的界面](#areas)。组件中的文字（分页的“上一页”、确认框的“取消”等）按请求的语言显示，见[本地化](../general/localization.md#built-in-messages)。
+
+- [示例用法](#example-usage)
 - [主题](#themes)
 - [布局](#layouts)
 - [使用组件](#using-components)
@@ -10,27 +14,35 @@
 - [不同区域的界面](#areas)
 - [升级组件](#upgrading)
 - [注意事项](#caveats)
+- [API 参考](#api-reference)
 
-<a id="introduction"></a>
-## 简介
+<a id="example-usage"></a>
+## 示例用法
 
-按钮、表格、下拉菜单、对话框这些界面组件来自 [shadcn-templ](https://github.com/axadrn/shadcn-templ)。它是 [shadcn/ui](https://ui.shadcn.com) 的 templ 移植版，交互（焦点锁定、键盘导航、弹层定位）来自 Base UI 的移植。
+```templ
+import (
+	"github.com/axadrn/shadcn-templ/v2/components/button"
+	"github.com/go-tenon/tenon/web/ui"
+)
 
-框架在 go.mod 中固定了 shadcn-templ 的版本，`web/ui` 包内置了这个版本的样式表和组件脚本。应用直接 import 组件，不需要安装 shadcn-templ 的命令行，也不需要 Tailwind。`web/ui` 负责把组件接到[页面](views.md)上：
+templ Home() {
+	@ui.Page(ui.PageProps{Title: "首页"}) {
+		@button.Button(button.Props{Href: "/articles"}) {
+			阅读文章
+		}
+		@ui.Toaster()
+	}
+}
+```
 
-- 按主题加载样式表和脚本；
-- 局部请求的错误显示为 toast；
-- `hx-confirm` 弹出确认对话框；
-- 表单字段、分页、排序表头、空状态这几个与 `web` 配合的组件。
-
-这些衔接都可以不用，换成应用自己的写法，见[不同区域的界面](#areas)。
-
-本章给博客的公开页面加上组件。组件中的文字（分页的「上一页」、确认框的「取消」等）按请求的语言显示，见[本地化](../general/localization.md#built-in-messages)。
+```go
+router.Handle(ui.AssetsPath+"*", ui.Assets())
+```
 
 <a id="themes"></a>
 ## 主题
 
-页面的外观由 `web.Options.Theme` 决定，它的字段都可以写在配置文件中。在 `settings.Config` 中加一个字段：
+页面的外观由 `web.Options.Theme` 决定，它的字段都可以写在配置文件中。在配置结构体中加一个字段：
 
 ```go
 type Config struct {
@@ -63,7 +75,7 @@ theme:
 ```go
 pages := web.New(web.Options{
     ErrorPage: ui.ErrorPage,
-    Theme:     a.cfg.Theme,
+    Theme:     cfg.Theme,
 })
 router.Handle(web.AssetsPath+"*", web.Assets())
 router.Handle(ui.AssetsPath+"*", ui.Assets())
@@ -143,7 +155,7 @@ import "github.com/axadrn/shadcn-templ/v2/components/button"
 }
 ```
 
-`hx-confirm` 是对话框的标题。`data-confirm-description` 是说明，`data-confirm-action` 是确认按钮的文字，默认按请求的语言显示「确定」。`data-confirm-variant="destructive"` 让确认按钮显示为危险操作。取消、按 Esc 或点击遮罩时不发请求。
+`hx-confirm` 是对话框的标题。`data-confirm-description` 是说明，`data-confirm-action` 是确认按钮的文字，默认按请求的语言显示“确定”。`data-confirm-variant="destructive"` 让确认按钮显示为危险操作。取消、按 Esc 或点击遮罩时不发请求。
 
 <a id="busy-buttons"></a>
 ## 请求进行中
@@ -195,3 +207,56 @@ shadcn-templ 的版本随框架升级，`ui.ShadcnTemplVersion` 是当前版本�
 - **给对话框固定的 `ID`。** 组件没有 `ID` 时会生成随机值，同一个对话框重新渲染后就对不上了。
 - **对话框不要放在 `<table>` 里。** 对话框渲染的是 `<div>`，浏览器解析 HTML 时会把 `<tbody>` 中的 `<div>` 移到表格外面。
 - **templ 会拦截字符串形式的事件处理器。** `templ.Attributes{"onclick": "…"}` 渲染出来是一段注释，不会执行。在元素上写 `data-*` 属性，在应用的脚本中用事件委托处理，这样也符合[内容安全策略](views.md#content-security-policy)。
+
+<a id="api-reference"></a>
+## API 参考
+
+包 `github.com/go-tenon/tenon/web/ui`。组件本身的参数见 [shadcn-templ](https://github.com/axadrn/shadcn-templ)。
+
+### 页面与资源
+
+```go
+func Page(p PageProps) templ.Component
+func Head() templ.Component
+func Assets() http.Handler
+func ErrorPage(status int, message string) templ.Component
+func Toaster(props ...toast.ToasterProps) templ.Component
+func Confirm() templ.Component
+func ThemeToggle() templ.Component
+```
+
+`Page` 输出完整的 HTML 文档；自己写 `<html>` 时在 `<head>` 中调用 `Head`。`Assets` 提供样式表和脚本，挂载在 `AssetsPath`。`ErrorPage` 用作 `web.Options.ErrorPage`。`Toaster` 显示局部请求的错误和提示。
+
+### 列表
+
+```go
+func Pagination(pg Pager, p PaginationProps) templ.Component
+func SortHead(current, key, label string, url func(sort string) string, props ...SortHeadProps) templ.Component
+func Empty(p EmptyProps) templ.Component
+```
+
+分页导航、可排序的表头、空状态，用法见[列表页](views.md#list-pages)。
+
+### 表单字段
+
+```go
+func TextField(f Form, name, label string, props ...FieldProps) templ.Component
+func TextareaField(f Form, name, label string, props ...FieldProps) templ.Component
+func SelectField(f Form, name, label string, options []Option, props ...FieldProps) templ.Component
+func CheckboxField(f Form, name, label string, props ...FieldProps) templ.Component
+func CheckboxGroupField(f Form, name, label string, options []Option, props ...FieldProps) templ.Component
+func RadioGroupField(f Form, name, label string, options []Option, props ...FieldProps) templ.Component
+func SwitchField(f Form, name, label string, props ...FieldProps) templ.Component
+```
+
+带标签、回填和错误提示的字段，`f` 是 `web.Form`，用法见[渲染表单](forms.md#rendering-forms)。
+
+### web.Theme
+
+| 字段 | 说明 |
+| --- | --- |
+| `Style` | 组件的风格，见[主题](#themes) |
+| `Mode` | 明暗模式 |
+| `Radius`、`Font` | 圆角和字体 |
+| `Vars`、`DarkVars` | 覆盖颜色等 CSS 变量 |
+| `Stylesheet` | 用应用自己的样式表代替内置的，见[用 Tailwind CSS 编写样式](assets.md#tailwind) |
