@@ -259,7 +259,7 @@ api := rest.New(rest.Options{
                 return identity.Subject{}, err
             }
             if u.Disabled {
-                return identity.Subject{}, auth.ErrUnauthenticated.New()
+                return identity.Subject{}, identity.ErrUnauthenticated.New()
             }
             sub.Permissions = u.Permissions
             return sub, nil

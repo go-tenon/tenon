@@ -243,8 +243,8 @@ function Consent() {
 
 ```go
 oauth := oauthserver.New(a.db, tokens, oauthserver.Options{
-    Issuer:     "https://example.com/blog",
-    Resources:  []string{"https://example.com/blog/mcp"},
+    Issuer:     "https://example.com",
+    Resources:  []string{"https://example.com/mcp"},
     ConsentURL: "/blog/oauth/consent",
     // ……
 })
@@ -253,7 +253,7 @@ router.Route("/blog", func(r chi.Router) {
     oauth.Routes(r) // /blog/oauth/authorize、/blog/oauth/token……
 })
 
-res := oauth.Resource("https://example.com/blog/mcp")
+res := oauth.Resource("https://example.com/mcp")
 router.Handle(res.MetadataPath(), mcpx.ResourceMetadata(res)) // /.well-known/oauth-protected-resource/blog/mcp
 ```
 

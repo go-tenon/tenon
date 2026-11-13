@@ -7,7 +7,7 @@ B2B 产品的企业客户通常要求员工用公司自己的身份系统登录�
 - IdP 中的分组同步为租户中的角色；
 - 租户可以要求成员只能用 SSO 登录，并要求 IdP 做过多因素认证。
 
-框架提供其中的通用部分：[`login/oauth`](social-login.md) 完成 OpenID Connect 流程，[`login.Realm`](login.md) 管理登录标识和[按租户的登录策略](login.md#policies)，[`authz`](authorization.md) 管理角色。连接配置、域名验证和登录页由应用编写，本章给出一套写法。
+框架提供其中的通用部分：[`login/oauth`](social-login.md) 完成 OpenID Connect 流程，[`login.Realm`](login.md) 管理登录标识和[按租户的登录策略](login.md#policies)，[`authz`](authorization.md) 管理角色。连接配置、域名验证和登录页由应用编写，本页给出一套写法。
 
 例子中的成员账号按租户登录（`PerTenant: true`），租户取自子域名，例如 `acme.app.example.com`；同一个人在两个租户中是两个账号。单页应用的登录接口写法与[第三方登录](social-login.md#spa-login)相同。
 

@@ -74,7 +74,7 @@ Tenant: func(ctx huma.Context) string { return ctx.Header("X-Tenant") },
 
 ```go
 owner, err := roles.CreateRole(ctx, authz.Role{Name: "owner", Permissions: []string{"*"}})
-member, err := roles.CreateRole(ctx, authz.Role{Name: "member", Permissions: []string{auth.ArticlesRead, auth.ArticlesWrite}})
+member, err := roles.CreateRole(ctx, authz.Role{Name: "member", Permissions: []string{"articles:read", "articles:write"}})
 ```
 
 <a id="creating-tenants"></a>
@@ -256,7 +256,7 @@ err = roles.Assign(ctx, staff, "", platformAdmin.ID) // staff 是运营人员的
 客服需要进入租户排查问题时，在所有租户（`authz.AllTenants`）中给他分配一个只读的全局角色，他在每个租户中都拥有这个角色的权限：
 
 ```go
-support, err := roles.CreateRole(ctx, authz.Role{Name: "support", Permissions: []string{auth.ArticlesRead, auth.ArticlesReadDrafts}})
+support, err := roles.CreateRole(ctx, authz.Role{Name: "support", Permissions: []string{"articles:read", "articles:read-drafts"}})
 err = roles.Assign(ctx, staff, authz.AllTenants, support.ID)
 ```
 
@@ -292,7 +292,7 @@ plain, err := customerTokens.Login(ctx, out.Subject, device) // out.Subject.Tena
 ```go
 plain, err := tokens.Create(ctx, sub, apitoken.Personal{
     Name:   "acme 报表",
-    Scopes: []string{auth.ArticlesRead},
+    Scopes: []string{"articles:read"},
     Tenant: sub.Tenant,
 })
 ```

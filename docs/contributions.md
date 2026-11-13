@@ -14,7 +14,7 @@
 <a id="introduction"></a>
 ## 简介
 
-本章面向 Tenon 框架本身的开发者。如果你只是在自己的应用中使用 Tenon，可以跳过这一章，应用的测试方法请参阅[测试](testing/overview.md)。
+本页面向 Tenon 框架本身的开发者。如果你只是在自己的应用中使用 Tenon，可以跳过这一页，应用的测试方法请参阅[测试](testing/overview.md)。
 
 <a id="development-environment"></a>
 ## 开发环境
@@ -85,7 +85,7 @@ Redis 的锁、限流、在线成员和广播的测试对单机 Redis 和集群�
 <a id="doc-tests"></a>
 ### 文档用法测试
 
-`internal/checks/doctest` 编译文档中的代码。已改写为参考页的目录（`standalone_test.go` 的 `standaloneDirs`）中，每个以 `package` 开头的代码块单独编译；其余文档中的博客示例文件仍由 `blog_test.go` 提取出来，和 `testdata/blog` 中的占位包一起编译。修改框架 API 时，测试会指出文档中不再能编译的代码。
+`internal/checks/doctest` 编译文档中的代码：除入门教程外，每个以 `package` 开头的代码块都是完整文件，单独放进临时 module 编译；没有 `package` 的片段不编译。入门教程由 `cmd/tenon` 的 `TestTutorial` 在 CI 的 scaffold 任务中按章节做一遍。修改框架 API 时，测试会指出文档中不再能编译的代码。
 
 <a id="continuous-integration"></a>
 ## 持续集成

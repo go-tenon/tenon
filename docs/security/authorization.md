@@ -174,7 +174,7 @@ resolve := func(ctx context.Context, sub identity.Subject) (identity.Subject, er
         return identity.Subject{}, err
     }
     if u.Disabled {
-        return identity.Subject{}, auth.ErrUnauthenticated.New() // 401，单页应用回到登录页
+        return identity.Subject{}, identity.ErrUnauthenticated.New() // 401，单页应用回到登录页
     }
     return roles.Resolve(ctx, sub)
 }

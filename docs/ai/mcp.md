@@ -174,7 +174,7 @@ srv := mcpx.New(mcpx.Options{
 })
 article.Tools(srv, a.db)
 router.Handle("/mcp", mcpx.Handler(srv, mcpx.HandlerOptions{
-    Validate: auth.Validator(a.cfg.Auth),
+    Validate: tokens.Validate,
     Accounts: API.Accounts,
 }))
 ```

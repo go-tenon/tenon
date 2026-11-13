@@ -91,11 +91,9 @@ type TokenValidator func(ctx context.Context, token string) (identity.Subject, e
 <a id="token-validators"></a>
 ## 编写 Token 校验器
 
-例如 `auth.go`。为了便于理解，它把可用的 token 直接写在配置文件中，每个 token 对应一个调用者和它的权限：
+下面的校验器为了便于理解，把可用的 token 直接写在配置文件中，每个 token 对应一个调用者和它的权限：
 
 ```go
-var ErrUnauthenticated = errorx.Define(errorx.Unauthenticated, "auth.unauthenticated")
-
 // Credential 是一个 API token 及其代表的调用者。
 type Credential struct {
     Token       string   `yaml:"token"`
@@ -130,7 +128,7 @@ func Validator(cfg Config) rest.TokenValidator {
     return func(_ context.Context, token string) (identity.Subject, error) {
         cred, ok := byToken[token]
         if !ok {
-            return identity.Subject{}, ErrUnauthenticated.New()
+            return identity.Subject{}, identity.ErrUnauthenticated.New()
         }
         return identity.Subject{
             Type:        user.Type,
@@ -142,7 +140,7 @@ func Validator(cfg Config) rest.TokenValidator {
 }
 ```
 
-在配置文件中这样写，并把 `auth.Config` 加入应用的[根配置结构体](../general/configuration.md#loading-configuration)（字段名为 `Auth`，配置段为 `auth`）：
+在配置文件中这样写，并把这个 `Config` 加入应用的[根配置结构体](../general/configuration.md#loading-configuration)（字段名为 `Auth`，配置段为 `auth`）：
 
 ```yaml
 auth:
@@ -177,7 +175,7 @@ api := rest.New(rest.Options{Accounts: identity.Accounts{user.Type: nil}})
 
 使用 `rest.RequireBearer` 为路由启用认证。它的参数是 API 实例、校验器，以及调用者必须能执行的权限。
 
-下面是注册“获取文章”接口的片段：`api` 由 `rest.New` 创建，`validate` 是入口中用 `auth.Validator(a.cfg.Auth)` 创建的校验器，`db` 是入口打开的数据库。`Get`业务动作的定义见[路由](../http/routing.md#http-actions)：
+下面是注册“获取文章”接口的片段：`api` 由 `rest.New` 创建，`validate` 是令牌校验器，例如 [`tokens.Validate`](api-tokens.md)，`db` 是入口打开的数据库。`Get`业务动作的定义见[路由](../http/routing.md#http-actions)：
 
 ```go
 requireArticles := rest.RequireBearer(api, validate, "articles")
@@ -200,7 +198,7 @@ rest.Register(api, op, NewGet(db).HTTP)
 
 需要认证的响应还会自动加上 `Cache-Control: no-store`，防止响应被中间代理缓存。
 
-`RequireBearer` 基于更通用的 `rest.RequireAuth` 实现。需要其他认证方式（例如从自定义请求头读取 API Key）时，可以用 `RequireAuth` 声明自己的 OpenAPI 安全方案和认证函数，认证失败的响应与本章相同。
+`RequireBearer` 基于更通用的 `rest.RequireAuth` 实现。需要其他认证方式（例如从自定义请求头读取 API Key）时，可以用 `RequireAuth` 声明自己的 OpenAPI 安全方案和认证函数，认证失败的响应与上面相同。
 
 > [!TIP]
 > 不需要认证的路由也必须显式调用 `rest.Public()(&op)`。忘记声明访问策略的路由会在注册时 panic，因此你不会意外地发布一个未受保护的接口。
@@ -255,7 +253,7 @@ api := rest.New(rest.Options{
                 return identity.Subject{}, err
             }
             if u.Disabled {
-                return identity.Subject{}, auth.ErrUnauthenticated.New()
+                return identity.Subject{}, identity.ErrUnauthenticated.New()
             }
             sub.Permissions = u.Permissions
             return sub, nil
@@ -372,7 +370,7 @@ plain, err := tokens.Login(ctx, target, device)
           return identity.Subject{}, err
       }
       if !identity.Grants(perms, "users:impersonate") {
-          return identity.Subject{}, auth.ErrUnauthenticated.New()
+          return identity.Subject{}, identity.ErrUnauthenticated.New()
       }
   }
   return roles.Resolve(ctx, sub)
@@ -387,13 +385,13 @@ plain, err := tokens.Login(ctx, target, device)
 
 认证通过后，主体会被放入请求的 context。在处理器中使用 `identity.FromContext` 读取它，再传给业务动作的 `Handle`。
 
-例如把[获取文章](../http/routing.md#http-actions)的 `HTTP` 方法改为下面这样，显式拒绝没有主体的请求。`auth.ErrUnauthenticated` 定义在本章的 `internal/auth/auth.go` 中：
+例如把[获取文章](../http/routing.md#http-actions)的 `HTTP` 方法改为下面这样，显式拒绝没有主体的请求：
 
 ```go
 func (a *Get) HTTP(ctx context.Context, in *GetInput) (*ArticleOutput, error) {
     subject, ok := identity.FromContext(ctx)
     if !ok {
-        return nil, auth.ErrUnauthenticated.New()
+        return nil, identity.ErrUnauthenticated.New()
     }
     item, err := a.Handle(ctx, subject, in.ID)
     if err != nil {
