@@ -67,7 +67,7 @@ if subject.Can("articles:read-drafts") {
 <a id="roles"></a>
 ## 角色
 
-`authz` 包提供基于角色的权限，对应 Laravel 的 spatie/laravel-permission：权限组成角色，角色分配给用户。权限变化立即生效，不需要重新登录。它把数据存在应用的数据库中，
+`authz` 包提供基于角色的权限：权限组成角色，角色分配给用户。权限变化立即生效，不需要重新登录。它把数据存在应用的数据库中，
 
 使用前先发布它的迁移，见[发布框架迁移](migrations.md#publishing-framework-migrations)：
 
@@ -230,7 +230,7 @@ func (a *Get) Handle(ctx context.Context, subject identity.Subject, id uuid.UUID
 <a id="authorization-functions"></a>
 ### 编写授权函数
 
-当授权规则变得复杂时，把它提取为业务包 `article.go` 中**导出**的函数，相当于 Laravel 的 Policy。各个 action 和[给界面的 DTO](#authorization-in-views)调用同一个函数，规则只有一份：
+当授权规则变得复杂时，把它提取为业务包 `article.go` 中**导出**的函数。各个 action 和[给界面的 DTO](#authorization-in-views)调用同一个函数，规则只有一份：
 
 ```go
 // CanEdit 报告 subject 能否修改 item：作者本人，或者能修改任何文章的编辑。

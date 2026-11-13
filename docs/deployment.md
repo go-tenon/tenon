@@ -364,7 +364,7 @@ TLS 终止和响应压缩通常在反向代理中配置。全站使用 HTTPS 后
 <a id="maintenance-windows"></a>
 ## 维护窗口
 
-按[发布流程](#release-process)发布不需要停服：迁移对新旧版本都兼容，`reload` 不停机地换上新版本。所以 Tenon 不提供 Laravel 那样的 `down`、`up` 命令。少数情况下确实要停一段时间：
+按[发布流程](#release-process)发布不需要停服：迁移对新旧版本都兼容，`reload` 不停机地换上新版本。所以 Tenon 不提供停服维护的命令。少数情况下确实要停一段时间：
 
 - 数据库本身要维护，例如升级主版本、迁移到新的实例；
 - 一次变更无法拆成[对新旧版本都兼容](migrations.md#zero-downtime-changes)的几步；

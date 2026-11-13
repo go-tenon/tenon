@@ -453,7 +453,7 @@ ID                                    TOPIC      ATTEMPTS  FAILED AT            
 <a id="panel"></a>
 ### 队列面板
 
-`queue/queueweb` 把同样的内容做成网页，相当于 Laravel 的 Horizon，但只读写队列已有的数据：
+`queue/queueweb` 把同样的内容做成网页，只读写队列已有的数据：
 
 - **概览**：复制槽是否有 worker 在转发、WAL 状态和积压、`queue_scheduled` 中的任务数和最早的执行时间、各 topic 的失败任务数，每 5 秒刷新一次；
 - **失败任务**：按 topic 筛选、翻页；详情页显示格式化的 payload、元数据、完整的错误和堆栈；单条重试或删除，按 topic 全部重试或全部删除；

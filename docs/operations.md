@@ -248,7 +248,7 @@ article.BulkPublishJob.Handle(w, article.NewBulkPublish(a.db, a.hub, a.ops, arti
 <a id="fanout"></a>
 ## 并行处理
 
-逐篇发布在一个任务中依次执行。每个单位很慢又彼此独立时，例如为每篇文章调用模型生成摘要，可以把操作扇出为多个队列任务，由多个 worker 并行处理，全部结束后操作变为 `completed`，相当于 Laravel 的 `Bus::batch`。
+逐篇发布在一个任务中依次执行。每个单位很慢又彼此独立时，例如为每篇文章调用模型生成摘要，可以把操作扇出为多个队列任务，由多个 worker 并行处理，全部结束后操作变为 `completed`。
 
 topic 的 payload 是 `operation.Unit[T]`，T 是一个单位的业务数据：
 

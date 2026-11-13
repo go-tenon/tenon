@@ -17,7 +17,7 @@
 <a id="introduction"></a>
 ## 简介
 
-[MCP 服务](mcp.md)可以用[个人访问令牌](api-tokens.md#personal-access-tokens)连接 Claude Code、Cursor，它们允许填写请求头。claude.ai（网页、桌面、手机）和 ChatGPT 的远程连接器不能填请求头，它们走 MCP 规定的 OAuth 流程：用户在浏览器中登录你的应用，在同意页上点“允许”，客户端拿到令牌。`oauthserver` 是这个流程中的授权服务器，相当于 Laravel 生态的 Passport。
+[MCP 服务](mcp.md)可以用[个人访问令牌](api-tokens.md#personal-access-tokens)连接 Claude Code、Cursor，它们允许填写请求头。claude.ai（网页、桌面、手机）和 ChatGPT 的远程连接器不能填请求头，它们走 MCP 规定的 OAuth 流程：用户在浏览器中登录你的应用，在同意页上点“允许”，客户端拿到令牌。`oauthserver` 是这个流程中的授权服务器。
 
 - 遵循 OAuth 2.1 和 [MCP 授权规范](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization)：授权码 + PKCE S256，授权服务器元数据（RFC 8414），授权响应带 `iss`（RFC 9207），令牌绑定资源（RFC 8707）。
 - 客户端不需要事先登记：claude.ai、ChatGPT 的 client_id 是一个 https 地址，授权时从这个地址取回客户端的名称和回调地址（Client ID Metadata Document）。

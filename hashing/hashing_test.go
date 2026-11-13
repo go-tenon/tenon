@@ -54,7 +54,7 @@ func TestArgon2idFormat(t *testing.T) {
 func TestCheckAcceptsBothFormats(t *testing.T) {
 	argon, _ := hashing.New(cheap("argon2id")).Make("password")
 	bc, _ := hashing.New(cheap("bcrypt")).Make("password")
-	// PHP password_hash 生成的 $2y$ 哈希，Laravel 用户工厂的默认密码 password。
+	// PHP password_hash 生成的 $2y$ 哈希，密码是 password。
 	php := "$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi"
 	for _, driver := range []string{"argon2id", "bcrypt"} {
 		h := hashing.New(cheap(driver))
