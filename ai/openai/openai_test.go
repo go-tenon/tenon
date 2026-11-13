@@ -254,12 +254,12 @@ func TestRerank(t *testing.T) {
 	})
 	c := s.client("bge-reranker")
 
-	got, err := c.Rerank(t.Context(), "PHP 框架", []string{"Django", "Laravel", "React"}, 2)
+	got, err := c.Rerank(t.Context(), "Ruby 框架", []string{"Django", "Rails", "React"}, 2)
 	require.NoError(t, err)
 	assert.Equal(t, []ai.Ranked{{Index: 1, Score: 0.9}, {Index: 0, Score: 0.2}}, got)
 	r := s.last()
 	assert.Equal(t, "/v1/rerank", r.Path)
-	assert.Equal(t, map[string]any{"model": "bge-reranker", "query": "PHP 框架", "documents": []any{"Django", "Laravel", "React"}, "top_n": float64(2)}, r.JSON)
+	assert.Equal(t, map[string]any{"model": "bge-reranker", "query": "Ruby 框架", "documents": []any{"Django", "Rails", "React"}, "top_n": float64(2)}, r.JSON)
 
 	// limit 不小于文档数时不发 top_n。
 	_, err = c.Rerank(t.Context(), "q", []string{"a", "b"}, 5)

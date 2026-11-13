@@ -17,7 +17,7 @@
 <a id="introduction"></a>
 ## 简介
 
-需要登录的界面——后台、用户端、[OAuth 同意页](oauth-server.md#consent-page)——都是[单页应用](spa.md)，调用 [JSON API](routing.md)，用 Bearer token 认证。官网、文章页、帮助中心这类**公开页面**适合在服务端渲染：搜索引擎直接读到内容，首屏不用等脚本加载。写法类似 Laravel 的 Blade 加 Livewire：
+需要登录的界面——后台、用户端、[OAuth 同意页](oauth-server.md#consent-page)——都是[单页应用](spa.md)，调用 [JSON API](routing.md)，用 Bearer token 认证。官网、文章页、帮助中心这类**公开页面**适合在服务端渲染：搜索引擎直接读到内容，首屏不用等脚本加载：
 
 - [templ](https://templ.guide) 把 `.templ` 文件编译成带类型参数的 Go 函数，相当于 Blade 组件，错误在编译期就能发现；
 - [htmx 4](https://four.htmx.org) 用 HTML 属性声明「点这里就请求某个地址，把返回的片段放到某个位置」，服务端只管返回 HTML；

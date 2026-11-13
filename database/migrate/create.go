@@ -22,7 +22,7 @@ var (
 // create_articles_table 或 add_published_at_to_articles_table；文件名为
 // "<UTC 时间戳>_<name>.sql"，版本保证大于目录中已有的最大版本。
 //
-// 与 Laravel 一样，Create 从 name 推断表名并生成对应的骨架：create_<table>[_table]
+// Create 从 name 推断表名并生成对应的骨架：create_<table>[_table]
 // 生成 CREATE TABLE，主键是由应用用 uuid.NewV7() 生成的 UUID；..._to|from|in_<table>[_table] 生成 ALTER TABLE，其余只有 goose 注解。
 func Create(dir, name string) (string, error) {
 	if !migrationName.MatchString(name) {

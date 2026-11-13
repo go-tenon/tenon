@@ -32,7 +32,7 @@ go run ./cmd/api migrate make create_articles_table
 
 命令输出新文件的路径，例如 `migrations/20261111090000_create_articles_table.sql`。文件名是 UTC 时间戳加名称，版本保证大于目录中已有的迁移，所以新迁移总是排在最后。命令不加载配置、不连接数据库；`--dir` 默认是 `migrations`。
 
-与 Laravel 一样，命令会从名称推断表名并生成骨架：
+命令会从名称推断表名并生成骨架：
 
 | 名称 | 生成的骨架 |
 | --- | --- |
@@ -40,7 +40,7 @@ go run ./cmd/api migrate make create_articles_table
 | `add_published_at_to_articles_table`、`drop_summary_from_articles_table` | `ALTER TABLE articles`，补全后才能执行 |
 | 其他名称，例如 `backfill_article_slugs` | 只有 goose 注解 |
 
-时间戳使用 goose 的格式 `20261111090000`，而不是 Laravel 的 `2026_11_11_090000`：goose 把第一个下划线之前的数字当作版本号。
+时间戳使用 goose 的格式 `20261111090000`：goose 把第一个下划线之前的数字当作版本号。
 
 应用还没有任何迁移时，`migrations/embed.go` 中的 `//go:embed *.sql` 无法编译，应用的 `migrate make` 也就无法运行。这时用一个不导入迁移包的独立入口创建第一个迁移，见[发布框架迁移](#publishing-framework-migrations)末尾的 `cmd/publish/main.go`。
 

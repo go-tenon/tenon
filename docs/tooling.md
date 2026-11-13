@@ -12,7 +12,7 @@
 <a id="introduction"></a>
 ## 简介
 
-`tenon` 是开发 Tenon 应用的命令行工具，作用类似 Laravel 的 Vite 插件加 Sail，或者 [mygo](https://github.com/egoist/mygo) 的 CLI：
+`tenon` 是开发 Tenon 应用的命令行工具，作用类似 [mygo](https://github.com/egoist/mygo) 的 CLI：
 
 | 命令 | 作用 |
 | --- | --- |

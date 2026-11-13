@@ -12,7 +12,7 @@
 <a id="introduction"></a>
 ## 简介
 
-用户可以用 Google、GitHub 等账号登录，相当于 Laravel 的 Socialite。分两步：
+用户可以用 Google、GitHub 等账号登录，分两步：
 
 1. `login/oauth` 与第三方交互，得到第三方确认过的账号 `login.External`：OpenID Connect 提供方（Google、Apple、Microsoft、企业的身份系统）用 `oauth.Discover`，只支持 OAuth 2.0 的提供方（GitHub、微信）用 `oauth.New`；
 2. [`login.Realm`](login.md) 的 `External` 把第三方账号当作一种[登录标识](login.md#identifiers)：已经绑定就登录，还没有就返回注册凭证。

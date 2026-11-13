@@ -17,7 +17,7 @@
 <a id="introduction"></a>
 ## 简介
 
-[MCP](https://modelcontextprotocol.io)（Model Context Protocol）让 Claude、Cursor、VS Code 这类 AI 客户端调用外部系统的工具。`mcpx` 把 action 作为 MCP 工具提供出去：运营人员在 Claude 里说“把昨天那篇关于发布流程的草稿发出去”，Claude 先调用 `article_search` 找到文章，再调用 `article_publish` 发布它。这和 Laravel 的 [laravel/mcp](https://laravel.com/docs/mcp) 做的是同一件事。
+[MCP](https://modelcontextprotocol.io)（Model Context Protocol）让 Claude、Cursor、VS Code 这类 AI 客户端调用外部系统的工具。`mcpx` 把 action 作为 MCP 工具提供出去：运营人员在 Claude 里说“把昨天那篇关于发布流程的草稿发出去”，Claude 先调用 `article_search` 找到文章，再调用 `article_publish` 发布它。
 
 协议和传输由官方的 [Go SDK](https://github.com/modelcontextprotocol/go-sdk) 实现，`mcpx` 补上应用需要的部分：
 

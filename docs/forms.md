@@ -11,7 +11,7 @@
 <a id="introduction"></a>
 ## 简介
 
-页面中的表单和 JSON API 使用同一套[验证](validation.md)规则：在结构体字段上写 Huma 的标签。`web.ParseForm` 解析浏览器提交的表单，按标签验证，并保留用户的原始输入，验证失败时可以原样回填，作用类似 Laravel 的 `old()`。
+页面中的表单和 JSON API 使用同一套[验证](validation.md)规则：在结构体字段上写 Huma 的标签。`web.ParseForm` 解析浏览器提交的表单，按标签验证，并保留用户的原始输入，验证失败时可以原样回填。
 
 本章接着[视图](views.md)一章，在文章页底部加上订阅新文章的表单。
 

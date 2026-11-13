@@ -330,7 +330,7 @@ func TestPublishCommand(t *testing.T) {
 <a id="test-data"></a>
 ## 准备测试数据
 
-测试数据通过 action 创建，这样数据一定满足业务规则，测试不会用到线上不可能出现的数据。Tenon 没有 Laravel 那样的模型工厂，许多测试都要用的数据，在测试文件中写一个带默认值的函数，例如 `internal/article/helpers_test.go`：
+测试数据通过 action 创建，这样数据一定满足业务规则，测试不会用到线上不可能出现的数据。Tenon 没有模型工厂，许多测试都要用的数据，在测试文件中写一个带默认值的函数，例如 `internal/article/helpers_test.go`：
 
 ```go
 // newArticle 以 author 的身份创建一篇草稿。edit 修改默认内容，不需要时传 nil。
@@ -362,7 +362,7 @@ item := newArticle(t, db, alice, func(c *article.Changes) { c.Slug = "hello-worl
 <a id="controlling-time"></a>
 ## 控制时间
 
-和时间有关的测试使用 Go 标准库的 [testing/synctest](https://pkg.go.dev/testing/synctest)，它对应 Laravel 的 `travelTo` 和 `Carbon::setTestNow`。在 `synctest.Test` 中，`time.Now`、`time.Sleep`、定时器和 `context` 的超时都使用一个假时钟：代码执行时时钟不走，`time.Sleep` 立即把时钟拨到之后。不需要给 action 传入时钟。
+和时间有关的测试使用 Go 标准库的 [testing/synctest](https://pkg.go.dev/testing/synctest)。在 `synctest.Test` 中，`time.Now`、`time.Sleep`、定时器和 `context` 的超时都使用一个假时钟：代码执行时时钟不走，`time.Sleep` 立即把时钟拨到之后。不需要给 action 传入时钟。
 
 下面的测试检查草稿放了两天才发布时，发布时间是发布那一刻：
 

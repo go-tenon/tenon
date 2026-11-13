@@ -12,13 +12,13 @@ import (
 
 func TestRerankBy(t *testing.T) {
 	type post struct{ Title string }
-	posts := []post{{"Django 入门"}, {"Laravel 与 PHP"}, {"React Hooks"}}
+	posts := []post{{"Django 入门"}, {"Rails 与 Ruby"}, {"React Hooks"}}
 
-	got, err := ai.RerankBy(t.Context(), aitest.NewReranker(), "PHP", posts, func(p post) string { return p.Title }, 1)
+	got, err := ai.RerankBy(t.Context(), aitest.NewReranker(), "Ruby", posts, func(p post) string { return p.Title }, 1)
 	require.NoError(t, err)
-	assert.Equal(t, []post{{"Laravel 与 PHP"}}, got)
+	assert.Equal(t, []post{{"Rails 与 Ruby"}}, got)
 
-	got, err = ai.RerankBy(t.Context(), aitest.NewReranker(), "PHP", nil, func(p post) string { return p.Title }, 1)
+	got, err = ai.RerankBy(t.Context(), aitest.NewReranker(), "Ruby", nil, func(p post) string { return p.Title }, 1)
 	require.NoError(t, err)
 	assert.Empty(t, got)
 
