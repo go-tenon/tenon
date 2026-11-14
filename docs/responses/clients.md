@@ -16,6 +16,7 @@
     - [校验规则与验证提示](#validation-rules)
     - [权限](#ts-permissions)
     - [枚举](#ts-enums)
+    - [错误、校验与分页](#client-runtime)
     - [其他工具](#other-ts-tools)
 - [Go 客户端](#go)
     - [生成客户端](#generating-go-client)
@@ -102,34 +103,46 @@ go tool tenon generate   # 等价于 go run ./cmd/api client --ts packages/clien
 <a id="creating-the-client"></a>
 ### 创建客户端
 
-单页应用用 [JWT 模式](../security/api-tokens.md#jwt)登录，refresh token 保存在 [HttpOnly cookie](../security/api-tokens.md#single-page-applications) 中。access token 只放在内存里，由客户端保管：请求自动带上它；受保护的接口返回 `401` 时调用一次 `auth.refresh` 换新的，再重试请求。下面是 `apps/web/src/client.ts`：
+单页应用用 [JWT 模式](../security/api-tokens.md#jwt)登录，refresh token 保存在 [HttpOnly cookie](../security/api-tokens.md#single-page-applications) 中。access token 只放在内存里：请求自动带上它，受保护的接口返回 `401` 时刷新一次，再重试请求。框架的 `@go-tenon/client` 提供会话 `createSession`，按[客户端协议](../http/protocol.md#sessions)保存和刷新凭据。下面是 `apps/web/src/client.ts`：
 
 ```ts
+import { createSession } from "@go-tenon/client"
 import { createClient } from "@blog/client/api"
 import { router } from "./router"
 
 // 刷新接口靠 cookie 认证。单页应用与 API 在不同的子域名时需要 credentials: "include"。
 const plain = createClient({ baseURL: "/api", credentials: "include" })
 
+export const session = createSession({
+  refresh: () => plain.auth.refresh(), // 浏览器：refresh token 在 cookie 中，请求体为空
+  onSignedOut: () => router.navigate({ to: "/login" }),
+})
+
 export const api = createClient({
   baseURL: "/api",
   credentials: "include",
-  auth: {
-    refresh: async () => (await plain.auth.refresh()).access_token,
-    onSignedOut: () => router.navigate({ to: "/login" }),
-  },
+  auth: session.auth,
   // 403 auth.confirm_required（rest.Confirmed）：弹出密码框，确认成功后重试原请求
   onConfirmRequired: () => confirmDialog.open(),
 })
+session.connect(api)
 ```
 
-- 打开页面（包括刷新页面、新标签页）时先调用一次 `await api.refresh()`，返回 `true` 表示已经登录，决定显示登录页还是应用。
-- 登录接口返回后调用 `api.setAccessToken(out.access_token)`；登出调用 `DELETE /auth/session`，服务端撤销这次登录并清除 cookie，再调用 `api.setAccessToken("")`。
-- 几个请求同时收到 `401` 时，只调用一次 `refresh`，它们都等这一次的结果。刷新失败（返回空值或抛出错误）时调用 `onSignedOut`，原来的 `401` 抛给调用方。
+- 打开页面（包括刷新页面、新标签页）时先调用一次 `await session.restore()`，返回 `true` 表示已经登录，决定显示登录页还是应用。
+- 登录接口返回后调用 `await session.signIn(out, { account: me.id })`：所有连接的客户端得到 access token，身份记为这个账号。登出时先调用登出接口，服务端撤销这次登录并清除 cookie，再调用 `await session.signOut()`。
+- 几个请求同时收到 `401` 时只刷新一次，它们都等这一次的结果。刷新返回 `401` 时这次登录已经失效：清除凭据和身份，调用 `onSignedOut`；网络错误不清除凭据，下次再试。
+- 一个会话可以连接多个 API 的客户端（`session.connect`），例如同一次登录调用 `/api` 和 `/api/admin`。
 - 公开的接口（[`rest.Public`](../http/routing.md#access-policies)）直接请求，`401` 原样返回给调用者。
 - 请求带上 `Accept-Language`（默认是浏览器的语言，`language` 可以覆盖），错误的 `detail` 按它翻译。App 的 WebView 设置 `appVersion`，作为 [`X-App-Version`](#app-version) 发送。
 
-`/auth/login`、`/auth/refresh` 是应用自己注册的公开接口，写法见[单页应用](../security/api-tokens.md#single-page-applications)。App、桌面端（Electron、Tauri）和小程序用响应体传递：登录时省略 `cookie`，refresh token 在响应体中，保存在系统的钥匙串中，`refresh` 把它放进请求体。
+`/auth/login`、`/auth/refresh` 是应用自己注册的公开接口，写法见[单页应用](../security/api-tokens.md#single-page-applications)。App、桌面端和小程序用响应体传递：登录时省略 `cookie`，refresh token 在响应体中，保存在系统的安全存储中。给 `createSession` 传入存储，`refresh` 收到保存的 refresh token，把它放进请求体：
+
+```ts
+const session = createSession({
+  storage: secureStorage, // { get, set, remove }，例如 Expo SecureStore
+  refresh: (refreshToken) => plain.auth.refresh({ refresh_token: refreshToken }),
+})
+```
 
 <a id="calling-endpoints"></a>
 ### 调用接口
@@ -224,12 +237,14 @@ saveBlob(blob, filename || "failures.xlsx")
 `queries.ts` 的 `createQueries` 为每个接口生成 TanStack Query 的选项，不需要手写 query key：
 
 ```ts
+import { clearOnIdentityChange } from "@go-tenon/client"
 import { createQueries } from "@blog/client/api/queries"
 
 export const queries = createQueries(api, {
   queryClient,
-  scope: () => [session.userId, session.tenant], // 切换账号或租户后，旧的缓存不再命中
+  scope: session.scope, // [账号, 租户]：切换账号或租户后，旧的缓存不再命中
 })
+clearOnIdentityChange(session, queryClient) // 登录、退出、切换身份时清空缓存
 ```
 
 | 接口 | 生成的选项 | 交给 |
@@ -327,6 +342,58 @@ enums.ArticleStatus.labels["zh-CN"].draft // "草稿"
 ```
 
 显示文字取自翻译文件中 `<前缀>.<取值>` 的消息，应用的翻译文件由 `httpcmd.Translations` 传入，见[校验规则与验证提示](#validation-rules)。某种语言只写了部分取值的显示文字，或者所有语言都没有时，`generate` 输出警告；界面中缺少的显示文字先用默认语言，再用取值本身。
+
+<a id="client-runtime"></a>
+### 错误、校验与分页
+
+`@go-tenon/client` 还提供按客户端协议处理错误、校验和分页的函数。它们不依赖任何包和浏览器 API，React Native 等环境中同样可以使用。
+
+**错误。** `describeError` 按协议把错误分为几类，界面按类处理：
+
+```ts
+import { describeError, fieldErrors } from "@go-tenon/client"
+
+const info = describeError(err)
+switch (info.kind) {
+  case "invalid": // 400、422 带 errors
+    form.setErrors(fieldErrors(err)) // { title: "不能为空", "tags.1": "不能为空" }
+    break
+  case "rate_limited":
+    toast(`请 ${info.retryAfter} 秒后重试`)
+    break
+  case "business":
+    toast(info.message) // 按 info.code 处理时，用 errors.ts 中的常量
+    break
+}
+```
+
+| `kind` | 情况 |
+| --- | --- |
+| `unauthenticated` | `401`，刷新后仍然失败 |
+| `forbidden`、`confirm_required`、`two_factor_required`、`method_required` | `403`，按错误码区分 |
+| `upgrade_required` | `426`，App 版本过低 |
+| `rate_limited` | `429`，`retryAfter` 是建议的等待秒数 |
+| `invalid` | `400`、`422` 带字段错误 |
+| `business` | 带 `code` 的业务错误 |
+| `not_found`、`server` | `404`、`5xx` |
+| `network`、`aborted` | 没有得到响应、请求被取消 |
+
+`fieldErrors` 把位置转为表单的字段路径：`body.items[0].name` 是 `items.0.name`；`parseLocation` 得到各段 `["items", 0, "name"]`。
+
+**校验。** `validate` 用生成的[校验规则与验证提示](#validation-rules)校验输入，位置、错误码和提示与服务端一致，提交前就能在字段旁边显示：
+
+```ts
+import { validate } from "@go-tenon/client"
+import { components, schemas } from "@blog/client/api/schemas"
+import { messages } from "@blog/client/api/messages"
+
+const errors = validate(schemas.article.create.body, values, { components, messages, language: "zh-CN" })
+// [{ location: "body.title", code: "validation.filled", message: "不能为空", value: "" }]
+```
+
+框架的测试用同一批输入分别在前端和服务端校验，保证两边的结果相同。`oneOf`、`anyOf`、`not` 不在前端校验，以服务端的结果为准。
+
+**分页。** `toPageParams`、`toTableState` 在表格状态（`pageIndex` 从 0 开始）和查询参数（`page` 从 1 开始）之间转换；`parsePageParams` 从地址读取分页，不合法的值取默认值，`per_page` 不超过 100；`parseSort`、`formatSort` 处理 `-created` 这样的排序参数。
 
 <a id="other-ts-tools"></a>
 ### 其他工具

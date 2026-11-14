@@ -77,6 +77,27 @@ func TestTSRoundTrip(t *testing.T) {
 	}
 }
 
+// TestTSValidationMatchesServer 用 bun 运行 testdata/validate.ts：同一批输入分别用 @go-tenon/client 的 validate
+// 和示例服务校验，位置、错误码和提示必须一致。
+func TestTSValidationMatchesServer(t *testing.T) {
+	bun := requireBun(t)
+	base := serve(t, tokens{"secret": true})
+	example, err := filepath.Abs(exampleTSOut)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lib, err := filepath.Abs("../../../js/client/src/index.ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(bun, "run", "testdata/validate.ts")
+	cmd.Env = append(os.Environ(), "BASE_URL="+base+"/api", "EXAMPLE="+example, "LIB="+lib)
+	out, err := cmd.CombinedOutput()
+	if err != nil || !strings.Contains(string(out), "validation matches") {
+		t.Fatalf("bun: %v\n%s", err, out)
+	}
+}
+
 func requireBun(t *testing.T) string {
 	t.Helper()
 	bun, err := exec.LookPath("bun")

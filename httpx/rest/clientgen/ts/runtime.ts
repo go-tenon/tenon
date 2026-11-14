@@ -64,8 +64,10 @@ export class ApiError extends Error {
   readonly fields: FieldError[]
   /** 请求编号，用户报告问题时附上它。 */
   readonly requestId?: string
+  /** 建议的等待秒数，来自 Retry-After 响应头，出现在 429 和部分 503 中。 */
+  readonly retryAfter?: number
 
-  constructor(status: number, body: Record<string, unknown> | undefined, requestId?: string) {
+  constructor(status: number, body: Record<string, unknown> | undefined, requestId?: string, retryAfter?: number) {
     const detail = typeof body?.detail === "string" ? body.detail : undefined
     super(detail ?? (typeof body?.title === "string" ? body.title : `HTTP ${status}`))
     this.name = "ApiError"
@@ -74,6 +76,7 @@ export class ApiError extends Error {
     this.detail = detail
     this.fields = Array.isArray(body?.errors) ? (body.errors as FieldError[]) : []
     this.requestId = requestId
+    this.retryAfter = retryAfter
   }
 }
 
@@ -295,7 +298,8 @@ async function toError(res: Response): Promise<ApiError> {
   } catch {
     body = undefined
   }
-  return new ApiError(res.status, body, res.headers.get("X-Request-ID") ?? undefined)
+  const retryAfter = Number(res.headers.get("Retry-After") ?? "")
+  return new ApiError(res.status, body, res.headers.get("X-Request-ID") ?? undefined, retryAfter > 0 ? retryAfter : undefined)
 }
 
 function filename(disposition: string | null): string {
