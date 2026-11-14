@@ -113,6 +113,15 @@ type TokenValidator func(ctx context.Context, token string) (identity.Subject, e
 
 为了好读，下面的例子把可用 token 直接写在配置里：每个 token 对应一个人和他的权限。
 
+这里会出现两个名字很像的函数，但它们干的是两件不同的事，发生在不同阶段：
+
+| 函数 | 什么时候跑 | 干什么 |
+| --- | --- | --- |
+| `Config.Validate` | **启动时**，加载配置之后 | 检查配置本身写得对不对（有没有空 token、有没有重复） |
+| `Validator` 返回的那个函数 | **每次请求**，`RequireBearer` 调校验器时 | 拿请求里的 token 去查「这是谁」 |
+
+二者共用同一份 `Config` 数据，但互不调用：`Validate` 不参与验请求；请求时的校验器也不再跑一遍配置检查——它假定启动时已经查过了。
+
 ```go
 // Credential 是一个 API token 及其代表的调用者。
 type Credential struct {
@@ -125,6 +134,8 @@ type Config struct {
     Credentials []Credential `yaml:"credentials"`
 }
 
+// Validate 是配置约定：把 Config 挂到根配置后，Load 会自动调用它。
+// 这里只检查「配置合不合法」，不碰任何 HTTP 请求。
 func (c Config) Validate() error {
     seen := make(map[string]bool, len(c.Credentials))
     for _, cred := range c.Credentials {
@@ -139,7 +150,8 @@ func (c Config) Validate() error {
     return nil
 }
 
-// Validator 返回一个在配置的凭据中查找 token 的校验器。
+// Validator 用配置造出一个「请求时用的」TokenValidator。
+// 启动时调用一次；返回的闭包会在之后的每个受保护请求里被调用。
 func Validator(cfg Config) rest.TokenValidator {
     byToken := make(map[string]Credential, len(cfg.Credentials))
     for _, cred := range cfg.Credentials {
@@ -160,7 +172,14 @@ func Validator(cfg Config) rest.TokenValidator {
 }
 ```
 
-配置可以这样写，并把这个 `Config` 挂到应用的[根配置结构体](../general/configuration.md#loading-configuration)上（字段名 `Auth`，配置段 `auth`）：
+串起来看，生命周期大概是：
+
+1. 配置文件写出可用凭据（见下）
+2. 应用启动：`config.Load` 解出 `Config`，自动调用 `Config.Validate`；配错了直接起不来
+3. 装配路由：调用 `Validator(cfg)` 一次，得到校验器，交给 `RequireBearer`
+4. 请求到来：`RequireBearer` 取出 Bearer token，调用那个校验器，得到主体或 `401`
+
+配置可以这样写，并把这个 `Config` 挂到应用的[根配置结构体](../general/configuration.md#loading-configuration)上（字段名 `Auth`，配置段 `auth`）。任何实现了 `Validate() error` 的配置类型，`Load` 都会在解码后调用它：
 
 ```yaml
 auth:
@@ -170,9 +189,7 @@ auth:
       permissions: [articles]
 ```
 
-`Validate` 会在加载配置时检查空 token 和重复 token；配错了，应用直接起不来。
-
-真实项目里，校验器多半会查数据库里的 API Key，或用现成库验 JWT 的签名和有效期。不管哪种做法，**把该查的都查完再返回主体**：签名、过期、是否已吊销、权限从哪来，都要在这一步搞定。
+真实项目里，校验器多半会查数据库里的 API Key，或用现成库验 JWT 的签名和有效期——那时往往没有这份写死在配置里的凭据表，也就不一定需要上面的 `Config.Validate`；但请求时的 `TokenValidator` 仍然要有。不管哪种做法，**把该查的都查完再返回主体**：签名、过期、是否已吊销、权限从哪来，都要在这一步搞定。
 
 校验器的返回值直接决定请求结果：
 
