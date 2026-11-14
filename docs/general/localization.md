@@ -1,6 +1,10 @@
 # 本地化
 
-- [简介](#introduction)
+本地化让同一个 API 按请求的语言返回提示文案，最常见的是翻译错误响应的 `detail`。它只影响**展示文案**：错误码、分类等业务语义不变，客户端按 `code` 判断错误，把 `detail` 直接展示给用户。
+
+本地化基于 [go-i18n](https://github.com/nicksnyder/go-i18n)。`i18n` 包把框架内置的消息和你的翻译文件组合成一个原生的 go-i18n `Bundle`，并在请求的 context 中携带协商出的语言。
+
+- [示例用法](#example-usage)
 - [启用本地化](#enabling-localization)
     - [内置消息](#built-in-messages)
 - [确定请求语言](#determining-the-locale)
@@ -11,15 +15,28 @@
 - [获取翻译](#retrieving-translations)
 - [翻译错误消息](#translating-errors)
 - [在 HTTP 之外使用](#outside-http)
+- [API 参考](#api-reference)
 
-<a id="introduction"></a>
-## 简介
+<a id="example-usage"></a>
+## 示例用法
 
-Tenon 的本地化功能可以让同一个 API 根据请求的语言返回不同语言的提示文案，最常见的用途就是翻译错误响应中的 `detail` 字段。
+```yaml
+# locales/zh-CN.yaml
+article.not_found: 文章不存在
+```
 
-在开始之前，有一点需要明确：本地化只影响**展示文案**。错误码、错误分类等业务语义永远保持不变，客户端应当始终根据 `code` 判断错误，而把 `detail` 直接展示给用户。
+```go
+//go:embed *.yaml
+var files embed.FS
 
-Tenon 的本地化基于 [go-i18n](https://github.com/nicksnyder/go-i18n)。`i18n` 包负责把框架内置的消息和你的翻译文件组合成一个原生的 go-i18n `Bundle`，并在请求的 context 中携带协商出的语言。
+languages, err := i18n.New("zh-CN", files)
+if err != nil {
+    return err
+}
+router.Use(httpx.Defaults(cfg.HTTP, nil, languages)...)
+```
+
+返回 `article.not_found` 业务错误的接口，`detail` 就是“文章不存在”；请求带 `Accept-Language: en` 而 `en.yaml` 中有这条消息时，返回英文。
 
 <a id="enabling-localization"></a>
 ## 启用本地化
@@ -28,7 +45,7 @@ Tenon 的本地化基于 [go-i18n](https://github.com/nicksnyder/go-i18n)。`i18
 
 ```go
 router := chi.NewRouter()
-router.Use(httpx.Defaults(a.cfg.HTTP, nil, nil)...)
+router.Use(httpx.Defaults(cfg.HTTP, nil, nil)...)
 api := rest.New(rest.Options{Router: router})
 ```
 
@@ -107,7 +124,7 @@ func NewAPI(cfg httpx.Config) (*rest.API, error) {
 `i18n.New` 的第一个参数是默认语言，之后可以传入任意多个文件系统，框架会读取其中所有的 YAML 翻译文件。内置消息总是最先加载，不需要你手动添加。
 
 > [!NOTE]
-> `i18n.New` 返回的是原生的 go-i18n `Bundle`，它本身是可修改的。请在启动阶段完成所有修改，开始处理请求后只读取它。
+> `i18n.New` 返回原生的 go-i18n `Bundle`，它可以修改。在启动阶段完成所有修改，开始处理请求后只读取它。
 
 <a id="overriding-built-in-messages"></a>
 ### 覆盖内置消息
@@ -180,3 +197,42 @@ func (n *Notifier) ArticlePublished(ctx context.Context, a *Article, author *Use
 ```
 
 `i18n.Match` 接受 `Accept-Language` 格式的偏好，在语言目录中协商，匹配失败时返回默认语言。它可以接收多个值，gRPC 拦截器可以直接传入 `metadata.ValueFromIncomingContext(ctx, "accept-language")...`。
+
+<a id="api-reference"></a>
+## API 参考
+
+包 `github.com/go-tenon/tenon/i18n`。
+
+### New
+
+```go
+func New(defaultLocale string, sources ...fs.FS) (*goi18n.Bundle, error)
+```
+
+创建语言目录：先加载内置消息，再按顺序加载 `sources` 中的全部 YAML 翻译文件，后加载的同名消息覆盖先加载的。
+
+### T
+
+```go
+func T(ctx context.Context, id string, data any) string
+```
+
+按 context 中的语言翻译。缺少译文时用默认语言；context 中没有语言或默认语言也没有时，返回 `id`。
+
+### Locale、Localizer
+
+```go
+func Locale(ctx context.Context) string
+func Localizer(ctx context.Context) *goi18n.Localizer
+```
+
+读取 context 中的语言和 go-i18n `Localizer`，没有时分别返回空字符串和 `nil`。
+
+### WithLocale、Match
+
+```go
+func WithLocale(ctx context.Context, b *goi18n.Bundle, locale string) context.Context
+func Match(b *goi18n.Bundle, prefs ...string) string
+```
+
+`Match` 按 `Accept-Language` 格式的偏好在语言目录中协商，失败时返回默认语言；`WithLocale` 把语言写入 context。HTTP 请求由 `httpx.Locale` 中间件调用它们。

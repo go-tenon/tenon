@@ -1,41 +1,67 @@
 # 错误处理
 
-- [简介](#introduction)
+接口可能遇到的失败分为三类，处理方式各不相同：
+
+| 失败类型 | 例子 | 怎么处理 |
+| --- | --- | --- |
+| **输入格式错误** | 标题为空、slug 含有空格 | 在输入类型上声明规则，框架验证，处理器不会被调用 |
+| **可预期的业务结果** | 文章不存在、slug 已被使用 | 用 `errorx` 定义带错误码的业务错误并返回 |
+| **意料之外的故障** | 数据库连不上、代码有 bug | 用 `errors.Wrap` 补充上下文后返回，客户端只收到 `500` |
+
+无论哪一类，业务代码都只需要**返回错误**。选择状态码、生成响应、记录日志，都由框架在边界完成。
+
+- [示例用法](#example-usage)
 - [一个完整的例子](#example)
     - [声明输入格式](#declaring-input)
     - [定义业务错误](#defining-errors)
-    - [在 action 中返回错误](#returning-errors)
+    - [在动作中返回错误](#returning-errors)
     - [HTTP 入口](#calling-from-handlers)
     - [客户端看到的响应](#what-clients-see)
     - [服务端日志](#what-operators-see)
 - [选择错误分类](#error-kinds)
 - [处理底层错误](#wrapping-errors)
 - [在提示中带上参数](#public-parameters)
-- [参考](#reference)
-    - [判断错误](#inspecting-errors)
-    - [响应格式](#response-format)
-    - [状态码映射](#status-mapping)
-    - [错误日志](#reporting-errors)
-    - [原生 Huma 错误](#huma-errors)
-    - [跨进程传递](#cross-process-errors)
+- [判断错误](#inspecting-errors)
+- [响应格式](#response-format)
+- [错误日志](#reporting-errors)
+- [原生 Huma 错误](#huma-errors)
+- [跨进程传递](#cross-process-errors)
+- [API 参考](#api-reference)
 
-<a id="introduction"></a>
-## 简介
+<a id="example-usage"></a>
+## 示例用法
 
-一个接口可能遇到的失败，大致分为三类，Tenon 对它们的处理方式各不相同：
+```go
+var ErrNotFound = errorx.Define(errorx.NotFound, "article.not_found")
 
-| 失败类型 | 例子 | 由谁处理 |
-| --- | --- | --- |
-| **输入格式错误** | 标题为空、slug 含有空格 | 在输入类型上声明规则，框架自动验证，处理器根本不会被调用 |
-| **可预期的业务结果** | 文章不存在、slug 已被使用 | 用 `errorx` 定义带错误码的业务错误，在 action 中返回 |
-| **意料之外的故障** | 数据库连不上、代码有 bug | 用 `errors.Wrap` 补充上下文后返回，客户端只会收到通用的 `500` |
+func (a *Get) Handle(ctx context.Context, id uuid.UUID) (*Article, error) {
+    item := new(Article)
+    err := a.db.NewSelect().Model(item).Where("id = ?", id).Scan(ctx)
+    if errors.Is(err, sql.ErrNoRows) {
+        return nil, ErrNotFound.New()
+    }
+    if err != nil {
+        return nil, errors.Wrap(err, "load article")
+    }
+    return item, nil
+}
+```
 
-无论哪一类，业务代码都只需要**返回错误**。选择 HTTP 状态码、生成错误响应、记录日志，都由框架在边界处完成。下面通过一个完整的例子，看看这三类失败分别是怎样被处理的。
+文章不存在时，接口返回：
+
+```http
+HTTP/1.1 404 Not Found
+Content-Type: application/problem+json
+
+{"title": "Not Found", "status": 404, "detail": "文章不存在", "code": "article.not_found"}
+```
+
+`errors` 是 [cockroachdb/errors](https://github.com/cockroachdb/errors)，它与标准库的 `errors` 兼容，`Wrap` 会记录堆栈。
 
 <a id="example"></a>
 ## 一个完整的例子
 
-我们要实现“修改文章”的接口 `PUT /articles/{id}`，它可能遇到以下失败：
+下面实现“修改文章”的接口 `PUT /articles/{id}`，它可能遇到以下失败：
 
 - 提交的标题为空，或者 slug 的格式不对；
 - 文章不存在；
@@ -44,14 +70,20 @@
 - 新的 slug 已被其他文章使用；
 - 数据库出现故障。
 
-文章模型 `Article` 和数据表的定义见[数据库](../database/quick-start.md#defining-models)。
+文章模型 `Article` 有 `ID`、`AuthorID`、`Title`、`Slug`、`Content`、`Status` 几个字段。
 
 <a id="declaring-input"></a>
 ### 声明输入格式
 
-格式上的要求直接写在输入类型的结构体标签上。不符合要求的请求会被框架拦截，并返回 `422`。“修改文章”的 [action](../concepts/actions.md) 放在 `internal/article/update.go` 中，它的输入类型由路径参数和请求体组成，请求体是文章模块提交的数据 `Changes`，验证规则写在 `Changes` 上，见[模块内共享的代码](../concepts/actions.md#shared-code)：
+格式上的要求直接写在输入类型的结构体标签上。不符合要求的请求会被框架拦截，并返回 `422`。输入类型由路径参数和请求体组成，请求体 `Changes` 上写着验证规则：
 
 ```go
+type Changes struct {
+    Title   string `json:"title" minLength:"1" maxLength:"200"`
+    Slug    string `json:"slug" maxLength:"100" pattern:"^[a-z0-9]+(-[a-z0-9]+)*$" patternDescription:"小写字母、数字和连字符"`
+    Content string `json:"content"`
+}
+
 type UpdateInput struct {
     ID   uuid.UUID `path:"id"`
     Body Changes
@@ -66,10 +98,6 @@ type UpdateInput struct {
 需要查询数据或依赖业务状态才能判断的失败，用 `errorx.Define` 定义为业务错误。第一个参数是**分类**，决定了它的性质；第二个参数是**错误码**：
 
 ```go
-package article
-
-import "github.com/go-tenon/tenon/errorx"
-
 var (
     ErrNotFound   = errorx.Define(errorx.NotFound, "article.not_found")
     ErrForbidden  = errorx.Define(errorx.PermissionDenied, "article.forbidden")
@@ -81,23 +109,11 @@ var (
 错误码推荐使用 `资源.原因` 的形式，全部小写，单词之间用下划线连接。错误码在整个应用中必须唯一。
 
 <a id="returning-errors"></a>
-### 在 action 中返回错误
+### 在动作中返回错误
 
-下面是 `update.go` 中的 `Update` action 和它的 `Handle` 方法。读取、检查和更新在同一个事务中完成，原因见[授权](../security/authorization.md#checking-in-transactions)：
+下面是[业务动作](../concepts/actions.md) `Update` 和它的 `Handle` 方法。读取、检查和更新在同一个事务中完成，原因见[授权](../security/authorization.md#checking-in-transactions)：
 
 ```go
-import (
-    "context"
-    "database/sql"
-
-    "github.com/cockroachdb/errors"
-    "github.com/google/uuid"
-    "github.com/uptrace/bun"
-
-    "github.com/go-tenon/tenon/errorx"
-    "github.com/go-tenon/tenon/identity"
-)
-
 type Update struct {
     db *bun.DB
 }
@@ -149,7 +165,7 @@ func (a *Update) Handle(ctx context.Context, subject identity.Subject, id uuid.U
 <a id="calling-from-handlers"></a>
 ### HTTP 入口
 
-HTTP 入口不需要做任何错误转换，直接返回 `Handle` 的错误即可。在同一个 `update.go` 中加入 `HTTP` 方法：
+HTTP 入口不做任何错误转换，直接返回 `Handle` 的错误：
 
 ```go
 func (a *Update) HTTP(ctx context.Context, in *UpdateInput) (*ArticleOutput, error) {
@@ -162,7 +178,7 @@ func (a *Update) HTTP(ctx context.Context, in *UpdateInput) (*ArticleOutput, err
 }
 ```
 
-共享的 `ArticleOutput` 和 `toDTO` 定义在 `dto.go` 中，完整代码见[共享响应结构](../http/routing.md#shared-responses)。接着在 `routes.go` 的 `Register` 函数中加入下面的路由声明，`api`、`requireArticles` 和 `db` 都由 `Register` 的参数传入：
+`ArticleOutput` 和 `toDTO` 是几个接口共用的响应结构，见[共享响应结构](../http/routing.md#shared-responses)。注册路由：
 
 ```go
 op := huma.Operation{
@@ -244,7 +260,7 @@ Content-Type: application/problem+json
 load article: dial tcp 10.0.0.5:5432: connect: connection refused
 (1) attached stack trace
   -- stack trace:
-  | example.com/blog/internal/article.(*Update).Handle.func1
+  | example.com/app/internal/article.(*Update).Handle.func1
   |     /app/internal/article/update.go:42
   | ...
 Wraps: (2) load article
@@ -317,11 +333,8 @@ article.slug_taken: "slug“{{.slug}}”已被使用"
 return ErrTooFrequent.New(errorx.RetryAfter(30 * time.Second))
 ```
 
-<a id="reference"></a>
-## 参考
-
 <a id="inspecting-errors"></a>
-### 判断错误
+## 判断错误
 
 业务错误兼容 Go 标准的错误处理方式。即使被多层包装，也可以用 `errors.Is` 判断它是否来自某个错误模板：
 
@@ -339,7 +352,7 @@ errorx.KindOf(err) // errorx.Conflict，不是业务错误时为 errorx.Internal
 ```
 
 <a id="response-format"></a>
-### 响应格式
+## 响应格式
 
 错误响应直接使用 [Huma](https://huma.rocks) 的错误结构，即 [Problem Details](https://www.rfc-editor.org/rfc/rfc9457) 格式，`Content-Type` 为 `application/problem+json`。Tenon 只为业务错误增加了 `code` 字段：
 
@@ -358,8 +371,82 @@ errorx.KindOf(err) // errorx.Conflict，不是业务错误时为 errorx.Internal
 > [!WARNING]
 > `detail` 可能随语言和版本变化，请不要根据它做逻辑判断。
 
+<a id="reporting-errors"></a>
+## 错误日志
+
+Tenon 遵循“**只在边界记录一次**”的原则：业务代码只负责补充上下文并返回错误，不需要自己记录错误日志，否则同一个错误会在日志中出现很多遍。
+
+| 日志 | 何时记录 | 内容 |
+| --- | --- | --- |
+| 访问日志 | 每个请求 | 方法、状态码、耗时；业务错误还包含 `code` |
+| 错误日志 | 仅 `5xx` | `error` 分组：消息、错误码和完整的错误链（`%+v` 格式，含堆栈） |
+
+需要为访问日志追加其他字段时，调用 [`httpx.AddAccessLogAttrs`](#api-reference)。日志的配置方式见[日志](logging.md)。
+
+<a id="huma-errors"></a>
+## 原生 Huma 错误
+
+处理器也可以直接返回 Huma 的错误，例如 `huma.Error404NotFound("article does not exist")`。它们会被原样输出，保留你写的 `detail`，但没有 `code`，也不会被翻译。需要稳定的错误码时，请使用 `errorx`。
+
+<a id="cross-process-errors"></a>
+## 跨进程传递
+
+通过 gRPC、消息队列等方式在服务之间传递错误时，可以使用 `cockroachdb/errors` 的编解码功能。`errorx` 已经注册了编解码器，还原后错误码、分类、参数和 `errors.Is` 的结果都保持不变：
+
+```go
+encoded := errors.EncodeError(ctx, err)     // 发送方
+decoded := errors.DecodeError(ctx, encoded) // 接收方
+errors.Is(decoded, article.ErrNotFound)     // true
+```
+
+参数以 JSON 形式传输，还原后数值类型会变为 `float64`。
+
+<a id="api-reference"></a>
+## API 参考
+
+包 `github.com/go-tenon/tenon/errorx`。
+
+### Define
+
+```go
+func Define(kind Kind, code string) *Template
+```
+
+定义一个业务错误模板，通常是包级变量。`code` 推荐写成 `资源.原因`，全部小写，在应用中唯一。
+
+### Template
+
+```go
+func (t *Template) New(opts ...Option) error
+func (t *Template) Wrap(cause error, opts ...Option) error
+func (t *Template) Code() string
+func (t *Template) Kind() Kind
+```
+
+`New` 创建一次具体的失败，`Wrap` 同时保留底层原因。只有 `Unavailable` 和 `Internal` 两类在调用处记录堆栈。`errors.Is(err, tmpl)` 按错误码匹配。
+
+### Option
+
+```go
+func Public(key string, value any) Option
+func RetryAfter(d time.Duration) Option
+```
+
+`Public` 附加可以出现在提示文案中的参数；`RetryAfter` 附加建议的等待时间，HTTP 响应带上 `Retry-After` 头。
+
+### 读取错误
+
+```go
+func CodeOf(err error) string
+func KindOf(err error) Kind
+func PublicOf(err error) map[string]any
+func RetryAfterOf(err error) time.Duration
+```
+
+沿错误链找到业务错误并读取对应的值。不是业务错误时，`CodeOf` 返回空字符串，`KindOf` 返回 `Internal`。
+
 <a id="status-mapping"></a>
-### 状态码映射
+### Kind 与状态码
 
 | 分类 | HTTP 状态 |
 | --- | --- |
@@ -372,32 +459,10 @@ errorx.KindOf(err) // errorx.Conflict，不是业务错误时为 errorx.Internal
 | `errorx.Unavailable` | 503 Service Unavailable |
 | `errorx.Internal` 及其他错误 | 500 Internal Server Error |
 
-<a id="reporting-errors"></a>
-### 错误日志
-
-Tenon 遵循“**只在边界记录一次**”的原则：业务代码只负责补充上下文并返回错误，不需要自己记录错误日志，否则同一个错误会在日志中出现很多遍。
-
-| 日志 | 何时记录 | 内容 |
-| --- | --- | --- |
-| 访问日志 | 每个请求 | 方法、状态码、耗时；业务错误还包含 `code` |
-| 错误日志 | 仅 `5xx` | `error` 分组：消息、错误码和完整的错误链（`%+v` 格式，含堆栈） |
-
-需要为访问日志追加其他字段时，可以在处理过程中调用 `httpx.AddAccessLogAttrs(ctx, attrs...)`。日志的配置方式见[日志](logging.md)。
-
-<a id="huma-errors"></a>
-### 原生 Huma 错误
-
-处理器也可以直接返回 Huma 的错误，例如 `huma.Error404NotFound("article does not exist")`。它们会被原样输出，保留你写的 `detail`，但没有 `code`，也不会被翻译。需要稳定的错误码时，请使用 `errorx`。
-
-<a id="cross-process-errors"></a>
-### 跨进程传递
-
-通过 gRPC、消息队列等方式在服务之间传递错误时，可以使用 `cockroachdb/errors` 的编解码功能。`errorx` 已经注册了编解码器，还原后错误码、分类、参数和 `errors.Is` 的结果都保持不变：
+### httpx.AddAccessLogAttrs
 
 ```go
-encoded := errors.EncodeError(ctx, err)     // 发送方
-decoded := errors.DecodeError(ctx, encoded) // 接收方
-errors.Is(decoded, article.ErrNotFound)     // true
+func AddAccessLogAttrs(ctx context.Context, attrs ...slog.Attr)
 ```
 
-参数以 JSON 形式传输，还原后数值类型会变为 `float64`。
+为当前请求的访问日志追加字段，同名字段后写覆盖先写。

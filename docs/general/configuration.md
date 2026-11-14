@@ -1,41 +1,39 @@
 # 配置
 
-- [简介](#introduction)
+配置是 `config` 目录中的 YAML 文件，加载到你定义的一个结构体中。拿到的是类型明确、已经校验过的普通结构体，传给需要它的组件即可。配置在部署时决定，修改后要重启；管理员在运行时修改的值（站点名称、是否开放注册）用[设置](../features/settings.md)。
+
+- [示例用法](#example-usage)
 - [加载配置](#loading-configuration)
 - [按环境覆盖配置](#overriding-configuration)
 - [环境变量](#environment-variables)
     - [.env 文件](#env-files)
 - [默认值与校验](#defaults-and-validation)
 - [检查配置](#inspecting-configuration)
+- [API 参考](#api-reference)
 
-<a id="introduction"></a>
-## 简介
-
-Tenon 的配置是 YAML 文件，放在项目根目录的 `config` 目录中，加载到你定义的一个 Go 结构体中。加载完成后，你拿到的是一个类型明确、已经校验过的普通结构体，可以直接传给 action 和其他组件使用。
-
-配置在部署时决定，修改后要重启。站点名称、是否开放注册这类由管理员在运行时修改的值，请使用[设置](../features/settings.md)。
-
-```text
-blog/
-├── .env                 本地开发用的环境变量（不提交）
-├── config/
-│   ├── app.yaml         基础配置
-│   └── prod.yaml        生产环境的差异
-└── internal/
-```
+<a id="example-usage"></a>
+## 示例用法
 
 ```yaml
 # config/app.yaml
 http:
   addr: ${HTTP_ADDR:-:8080}
 
-logs:
-  level: ${LOG_LEVEL:-info}
-
 database:
   dsn: ${DATABASE_URL}
   max_conns: 20
 ```
+
+```go
+type Config struct {
+    HTTP     httpx.Config    `yaml:"http"`
+    Database database.Config `yaml:"database"`
+}
+
+cfg, err := config.Load[Config]("config/app.yaml")
+```
+
+`${DATABASE_URL}` 从环境变量读取；没有写的字段（例如 HTTP 超时）使用框架的默认值；写错字段名、缺少必填项都会在加载时报错。
 
 <a id="loading-configuration"></a>
 ## 加载配置
@@ -43,14 +41,6 @@ database:
 为整个配置文件定义一个根结构体，用 `yaml` 标签声明字段名。框架为常用组件预定义了配置类型，直接放进根结构体即可：
 
 ```go
-package settings
-
-import (
-    "github.com/go-tenon/tenon/database"
-    "github.com/go-tenon/tenon/httpx"
-    "github.com/go-tenon/tenon/logging"
-)
-
 type Config struct {
     HTTP     httpx.Config    `yaml:"http"`
     Logs     logging.Config  `yaml:"logs"`
@@ -61,12 +51,10 @@ type Config struct {
 然后用 `config.Load` 加载它：
 
 ```go
-cfg, err := config.Load[settings.Config]("config/app.yaml")
+cfg, err := config.Load[Config]("config/app.yaml")
 ```
 
 使用[命令行](commands.md)时不需要自己调用 `config.Load`：命令会按 `--config` 选项加载配置，默认是 `config/app.yaml`。
-
-不需要手动填写默认值：框架预定义的配置类型会在加载时自动填充自己的默认值，见[默认值](#defaults-and-validation)。
 
 | 类型 | 配置段 | 字段说明 |
 | --- | --- | --- |
@@ -75,7 +63,7 @@ cfg, err := config.Load[settings.Config]("config/app.yaml")
 | `database.Config` | `database` | [数据库配置](../database/quick-start.md#configuration) |
 | `filesystem.Config` | `filesystem` | [文件存储配置](../libraries/filesystem.md#configuration) |
 
-应用自己的配置（例如业务开关、第三方服务地址）同样定义成结构体，作为新字段加入 `Config`。例如博客需要把文章中的图片上传到对象存储：
+应用自己的配置（例如业务开关、第三方服务地址）同样定义成结构体，作为新字段加入 `Config`。例如把图片上传到对象存储：
 
 ```go
 type StorageConfig struct {
@@ -94,12 +82,13 @@ type Config struct {
 ```yaml
 storage:
   endpoint: ${STORAGE_ENDPOINT}
-  bucket: blog-images
+  bucket: images
 ```
 
-`config.Load` 会依次完成：填充默认值、展开环境变量、把文件内容解码到结构体、调用 `Validate` 校验。
+`config.Load` 依次：填充默认值、展开环境变量、把文件解码到结构体、调用 `Validate` 校验。
 
-解码是严格的：文件中出现结构体里没有的字段（包括拼错的段名）或类型不匹配时，会直接报错并指出文件和行号。
+> [!NOTE]
+> 解码是严格的：文件中出现结构体里没有的字段（包括拼错的段名）或类型不匹配时，直接报错并指出文件和行号。
 
 <a id="overriding-configuration"></a>
 ## 按环境覆盖配置
@@ -122,7 +111,7 @@ database:
 在代码中加载时，同样按顺序传入：
 
 ```go
-cfg, err := config.Load[settings.Config]("config/app.yaml", "config/prod.yaml")
+cfg, err := config.Load[Config]("config/app.yaml", "config/prod.yaml")
 ```
 
 合并规则与[默认值](#defaults-and-validation)相同：后面的文件中没有写的字段保留前面的值，写了的字段覆盖前面的值；map 按键合并，slice 整体替换。每个文件都会单独检查未知字段，`Validate` 只在全部文件合并后执行一次，所以基础文件可以把某个必填值留给环境文件补齐。
@@ -169,10 +158,11 @@ DATABASE_URL=postgres://app:secret@localhost:5432/app
 if err := config.LoadEnv(".env"); err != nil && !errors.Is(err, fs.ErrNotExist) {
     return err
 }
-cfg, err := config.Load[settings.Config]("config/app.yaml")
+cfg, err := config.Load[Config]("config/app.yaml")
 ```
 
-`.env` 由 [godotenv](https://github.com/joho/godotenv) 解析。值中如果有 `$`（例如密码），请用单引号包起来，否则会被当成变量引用：`DB_PASSWORD='s3cr$ET'`。
+> [!WARNING]
+> `.env` 由 [godotenv](https://github.com/joho/godotenv) 解析。值中有 `$` 时（例如密码）用单引号包起来，否则会被当成变量引用：`DB_PASSWORD='s3cr$ET'`。
 
 <a id="defaults-and-validation"></a>
 ## 默认值与校验
@@ -181,7 +171,7 @@ cfg, err := config.Load[settings.Config]("config/app.yaml")
 
 ```go
 func (c *StorageConfig) SetDefaults() {
-    c.Bucket = "blog-images"
+    c.Bucket = "images"
 }
 ```
 
@@ -234,3 +224,48 @@ type HTTPConfig struct {
 ```
 
 `config show` 的输出包括默认值、多个文件合并的结果和展开后的环境变量，可以用来确认最终生效的配置。配置文件缺失或校验失败时，命令以 `ExitConfig` 退出，见 [config 命令](commands.md#config-command)。
+
+<a id="api-reference"></a>
+## API 参考
+
+包 `github.com/go-tenon/tenon/config`。
+
+### Load
+
+```go
+func Load[T any](files ...string) (T, error)
+```
+
+按顺序加载 `files` 到同一个 `T` 上，后面的覆盖前面的。先对各字段调用 `SetDefaults`，再逐个文件展开环境变量并严格解码，最后调用 `Validate`。
+
+### LoadEnv
+
+```go
+func LoadEnv(path string) error
+```
+
+把 dotenv 文件中的变量写入进程环境，已设置的变量不覆盖。文件不存在时返回的错误满足 `errors.Is(err, fs.ErrNotExist)`。
+
+### Defaulter
+
+```go
+type Defaulter interface{ SetDefaults() }
+```
+
+配置类型实现它来提供默认值，从内到外调用。
+
+### Validator
+
+```go
+type Validator interface{ Validate() error }
+```
+
+配置类型实现它来校验，子字段先于父结构体，所有错误汇总返回。
+
+### command.Config
+
+```go
+func Config[C any]() *cobra.Command
+```
+
+包 `github.com/go-tenon/tenon/command`。构造 `config check` 和 `config show` 命令，`C` 是根配置结构体。

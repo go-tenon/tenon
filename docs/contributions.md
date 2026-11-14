@@ -85,7 +85,7 @@ Redis 的锁、限流、在线成员和广播的测试对单机 Redis 和集群�
 <a id="doc-tests"></a>
 ### 文档用法测试
 
-`internal/checks/doctest` 把文档中博客示例的完整文件（正文写明「完整的 `internal/...`」的代码块）提取出来，和 `internal/checks/doctest/testdata/blog` 中的占位包一起编译；修改这些文件或框架 API 时，测试会指出文档中不再能编译的代码。新增一个完整文件时，把它加入 `blog_test.go` 的 `blogFiles`。
+`internal/checks/doctest` 编译文档中的代码。已改写为参考页的目录（`standalone_test.go` 的 `standaloneDirs`）中，每个以 `package` 开头的代码块单独编译；其余文档中的博客示例文件仍由 `blog_test.go` 提取出来，和 `testdata/blog` 中的占位包一起编译。修改框架 API 时，测试会指出文档中不再能编译的代码。
 
 <a id="continuous-integration"></a>
 ## 持续集成

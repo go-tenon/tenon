@@ -9,14 +9,14 @@
 <a id="infrastructure"></a>
 ## 启动基础设施
 
-博客会用到四个服务：
+一个常规项目会用到四个服务：
 
-| 服务 | 用途 | 从哪一章开始用 |
+| 服务 | 用途 | 在哪里用到 |
 | --- | --- | --- |
 | PostgreSQL | 业务数据 | 第 3 章 |
-| Redis | 登录限流，之后还有锁 | 第 6 章 |
-| Memcached | 缓存 | 第 9 章 |
-| NSQ | 队列 | 第 10 章 |
+| Redis | 限流、锁 | 第 6 章、[限流](../libraries/rate-limiting.md) |
+| Memcached | 缓存 | [缓存](../libraries/cache.md) |
+| NSQ | 队列 | [队列](../libraries/queue.md) |
 
 在项目根目录创建 `compose.yaml`，一次全部启动：
 
@@ -182,7 +182,7 @@ func Serve(ctx context.Context, cfg Config) error {
 
 - `App` 保存各部分共用的资源，现在只有数据库连接池。之后每章需要新的资源时，在 `open` 中打开它，保存到 `App` 中。
 - `open` 打开资源，同时把关闭操作登记到 `stack`。进程退出时，资源按打开的相反顺序关闭。打开到一半失败时，已经打开的也会关闭。
-- `run` 打开资源，装配进程要运行的各个部分，然后一直运行到收到停止信号（`Ctrl-C` 或 `SIGTERM`）。`Serve` 只运行 HTTP 服务；第 10 章加上处理队列任务的 worker 时，再写一个只运行 worker 的 `Work`。
+- `run` 打开资源，装配进程要运行的各个部分，然后一直运行到收到停止信号（`Ctrl-C` 或 `SIGTERM`）。`Serve` 只运行 HTTP 服务；加上处理队列任务的 worker 时，再写一个只运行 worker 的 `Work`，见[队列](../libraries/queue.md#running-workers)。
 
 新建 `internal/bootstrap/http.go`，装配 HTTP 服务：
 

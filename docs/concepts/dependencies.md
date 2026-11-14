@@ -1,34 +1,21 @@
 # 依赖装配
 
-- [简介](#introduction)
+Tenon 没有服务容器、全局注册表，也没有基于反射的自动注入。业务代码通过构造函数参数声明它需要什么，入口按顺序创建这些依赖并传进去。读入口的代码就能看清应用由哪些部分组成，缺少依赖时编译不通过，资源由谁打开、由谁关闭也一目了然。
+
 - [构造函数注入](#constructor-injection)
 - [在入口中组装应用](#assembling-the-application)
+    - [多个运行部分](#running-parts)
+    - [只在执行时装配的命令](#deferred-commands)
 - [关闭资源](#closing-resources)
-    - [使用 cleanup.Stack](#using-cleanup-stack)
-    - [清理的执行规则](#cleanup-rules)
 - [在测试中替换依赖](#replacing-dependencies-in-tests)
-
-<a id="introduction"></a>
-## 简介
-
-很多框架使用“服务容器”来管理依赖：你把服务注册到容器中，框架在需要时自动创建并注入。Tenon 选择了另一种方式——**显式装配**。
-
-在 Tenon 中，没有容器、没有全局注册表，也没有基于反射的自动注入。每个 [action](actions.md) 和服务通过构造函数参数声明它需要什么，应用的入口负责按顺序创建这些依赖并把它们传进去。这种方式的好处是：
-
-- 阅读入口代码就能看清应用由哪些部分组成、它们是如何连接的；
-- 编译器会检查每一个依赖，缺少依赖的代码无法通过编译；
-- 资源由谁创建、由谁关闭非常清楚。
+- [API 参考](#api-reference)
 
 <a id="constructor-injection"></a>
 ## 构造函数注入
 
-action 在构造函数中接收它需要的依赖，并保存在结构体字段中。例如，需要访问数据库的“获取文章”：
+[业务动作](actions.md)在构造函数中接收依赖，保存在字段中：
 
 ```go
-package article
-
-import "github.com/uptrace/bun"
-
 type Get struct {
     db *bun.DB
 }
@@ -36,103 +23,139 @@ type Get struct {
 func NewGet(db *bun.DB) *Get {
     return &Get{db: db}
 }
-```
 
-注意这里直接接收的是 Bun 的 `*bun.DB`，而不是框架包装过的类型。在 Tenon 中，你使用的始终是社区组件的原生对象。
-
-它的方法通过第一个参数 `ctx context.Context` 接收请求的取消信号和截止时间，并把它继续传给数据库查询等下游调用：
-
-```go
-func (a *Get) Handle(ctx context.Context, subject identity.Subject, id uuid.UUID) (*Article, error) {
-    var item Article
-    err := a.db.NewSelect().Model(&item).Where("id = ?", id).Scan(ctx)
+func (a *Get) Handle(ctx context.Context, id uuid.UUID) (*Article, error) {
+    item := new(Article)
+    err := a.db.NewSelect().Model(item).Where("id = ?", id).Scan(ctx)
     // ...
 }
 ```
 
-构造函数只保存依赖，不使用它们。这样生成 OpenAPI 文档时，路由可以用 `nil` 依赖照常注册，见[处理器](../http/routing.md#handlers)。
+依赖是社区组件的原生类型，这里是 Bun 的 `*bun.DB`，而不是框架包装过的类型。方法的第一个参数是 `ctx`，把请求的取消信号和截止时间传给数据库查询等下游调用。
+
+> [!IMPORTANT]
+> 构造函数只保存依赖，不使用它们。生成 OpenAPI 文档、列出路由和声明命令时，动作会用零值依赖构造，见[只在执行时装配的命令](#deferred-commands)。
 
 <a id="assembling-the-application"></a>
 ## 在入口中组装应用
 
-应用的入口（通常是 `internal/bootstrap` 包）负责创建所有依赖，并按正确的顺序把它们连接起来。博客应用把入口分成两部分：`App` 装配各个运行部分共用的资源，每个运行部分（HTTP 服务、[队列 worker](../libraries/queue.md#running-workers) 等）是 `App` 的一个方法。下面是完整的 `internal/bootstrap/app.go`：
+入口先创建被依赖的对象，再创建依赖它们的对象。下面是一个只有一个接口的完整程序：
 
 ```go
-package bootstrap
+package main
 
 import (
     "context"
-    "log/slog"
+    "net/http"
 
-    "example.com/blog/internal/settings"
+    "github.com/danielgtaylor/huma/v2"
+    "github.com/go-chi/chi/v5"
+    "github.com/uptrace/bun"
+
     "github.com/go-tenon/tenon/cleanup"
     "github.com/go-tenon/tenon/command"
     "github.com/go-tenon/tenon/database"
-    "github.com/go-tenon/tenon/lock"
-    "github.com/go-tenon/tenon/lock/redislock"
-    "github.com/go-tenon/tenon/logging"
-    "github.com/go-tenon/tenon/queue"
-    "github.com/go-tenon/tenon/telemetry"
-    "github.com/redis/rueidis"
-    "github.com/uptrace/bun"
-    "go.opentelemetry.io/otel/metric"
-    "go.opentelemetry.io/otel/trace"
+    "github.com/go-tenon/tenon/httpx"
+    "github.com/go-tenon/tenon/httpx/rest"
 )
 
-// App 是各个运行部分共用的资源，每个进程只装配一次。
-type App struct {
-    cfg      settings.Config
-    db       *bun.DB
-    rdb      rueidis.Client
-    locker   *lock.Locker
-    failed   *queue.FailedJobs
-    meters   metric.MeterProvider
-    tracers  trace.TracerProvider
+type Config struct {
+    HTTP     httpx.Config    `yaml:"http"`
+    Database database.Config `yaml:"database"`
 }
 
-// open 开启推送，安装全局日志器，连接数据库和 Redis，把关闭操作登记到 stack。
-func open(ctx context.Context, cfg settings.Config, stack *cleanup.Stack) (*App, error) {
-    tel, err := telemetry.Open(ctx, cfg.Telemetry)
-    if err != nil {
-        return nil, err
-    }
-    stack.MustAdd("telemetry", tel.Shutdown)
-    slog.SetDefault(logging.New(cfg.Logs, logging.Export(tel.Logs)))
+// Count 是一个业务动作：统计文章数。
+type Count struct{ db *bun.DB }
 
-    db, err := database.Open(ctx, cfg.Database, database.WithTelemetry(tel.Meters, tel.Tracers))
-    if err != nil {
-        return nil, err
-    }
-    stack.MustAdd("database", func(context.Context) error {
-        return db.Close()
-    })
+func NewCount(db *bun.DB) *Count { return &Count{db: db} }
 
-    opt, err := rueidis.ParseURL(cfg.Redis.URL)
-    if err != nil {
-        return nil, err
+type CountOutput struct {
+    Body struct {
+        Total int64 `json:"total"`
     }
-    rdb, err := rueidis.NewClient(opt)
-    if err != nil {
-        return nil, err
-    }
-    stack.MustAdd("redis", func(context.Context) error {
-        rdb.Close()
-        return nil
-    })
+}
 
-    return &App{
-        cfg:      cfg,
-        db:       db,
-        rdb:      rdb,
-        locker:   lock.New(redislock.New(rdb)),
-        failed:   queue.NewFailedJobs(db),
-        meters:   tel.Meters,
-        tracers:  tel.Tracers,
+func (a *Count) HTTP(ctx context.Context, _ *struct{}) (*CountOutput, error) {
+    n, err := a.db.NewSelect().Table("articles").Count(ctx)
+    if err != nil {
+        return nil, err
+    }
+    out := &CountOutput{}
+    out.Body.Total = int64(n)
+    return out, nil
+}
+
+func serve(ctx context.Context, cfg Config) (err error) {
+    var stack cleanup.Stack
+    defer func() { err = stack.CloseWith(context.Background(), err) }()
+
+    db, err := database.Open(ctx, cfg.Database)
+    if err != nil {
+        return err
+    }
+    stack.MustAdd("database", func(context.Context) error { return db.Close() })
+
+    router := chi.NewRouter()
+    router.Use(httpx.Defaults(cfg.HTTP, nil, nil)...)
+    api := rest.New(rest.Options{Title: "Blog API", Version: "1.0.0", Router: router})
+    count := huma.Operation{
+        OperationID: "article-count",
+        Method:      http.MethodGet,
+        Path:        "/articles/count",
+    }
+    rest.Public()(&count)
+    rest.Register(api, count, NewCount(db).HTTP)
+
+    return httpx.ListenAndServe(ctx, cfg.HTTP, router, httpx.ServeOptions{})
+}
+
+func main() {
+    root := command.Root("api", "博客")
+    root.AddCommand(command.Run("serve", "启动 HTTP 服务", serve))
+    command.Execute(root)
+}
+```
+
+- `command.Run` 加载配置，收到停止信号时取消 `ctx`；
+- 数据库打开后立即把关闭操作登记到 `stack`，`serve` 返回时关闭；
+- `httpx.ListenAndServe` 在排空请求之后才返回，所以正在处理的请求不会因为数据库先关闭而失败。
+
+每个路由都要声明访问策略，这里用 `rest.Public()` 声明为公开接口，需要登录的接口见[认证](../security/authentication.md)。
+
+<a id="running-parts"></a>
+### 多个运行部分
+
+应用变大后，入口通常放在 `internal/bootstrap` 包中，分成两部分：`App` 保存各部分共用的资源，由 `open` 打开；HTTP 服务、[队列 worker](../libraries/queue.md#running-workers)、[定时任务调度器](../libraries/scheduling.md#running-the-scheduler)各是 `App` 的一个方法。[入门教程](../tutorial/02-infrastructure.md#assembling)按这个结构写出了完整的 `app.go` 和 `http.go`：
+
+```go
+// open 打开各部分共用的资源，把关闭操作登记到 stack。
+func open(ctx context.Context, cfg Config, stack *cleanup.Stack) (*App, error) {
+    db, err := database.Open(ctx, cfg.Database)
+    if err != nil {
+        return nil, err
+    }
+    stack.MustAdd("database", func(context.Context) error { return db.Close() })
+    return &App{cfg: cfg, db: db}, nil
+}
+
+// HTTP 装配 HTTP 服务并取得监听端口，返回运行它的函数。
+func (a *App) HTTP(d *command.Daemon) (func(context.Context) error, error) {
+    router := chi.NewRouter()
+    // ... 中间件与路由
+    ln, err := d.Listen("tcp", a.cfg.HTTP.Addr)
+    if err != nil {
+        return nil, err
+    }
+    return func(ctx context.Context) error {
+        return httpx.Serve(ctx, a.cfg.HTTP, ln, router, httpx.ServeOptions{})
     }, nil
 }
+```
 
-// run 装配 App 和 parts，然后在同一个进程中运行 parts，直到收到停止信号。
-func run(ctx context.Context, cfg settings.Config, parts ...func(*App, *command.Daemon) (func(context.Context) error, error)) (err error) {
+`run` 先装配全部部分，再用 `command.Daemon` 同时运行它们：
+
+```go
+func run(ctx context.Context, cfg Config, parts ...func(*App, *command.Daemon) (func(context.Context) error, error)) (err error) {
     d, err := command.NewDaemon(nil)
     if err != nil {
         return err
@@ -140,9 +163,7 @@ func run(ctx context.Context, cfg settings.Config, parts ...func(*App, *command.
     defer d.Stop()
 
     var stack cleanup.Stack
-    defer func() {
-        err = stack.CloseWith(context.Background(), err)
-    }()
+    defer func() { err = stack.CloseWith(context.Background(), err) }()
 
     app, err := open(ctx, cfg, &stack)
     if err != nil {
@@ -157,155 +178,69 @@ func run(ctx context.Context, cfg settings.Config, parts ...func(*App, *command.
     return d.Run(ctx, runs...)
 }
 
-// Serve 只运行 HTTP 服务，serve 命令调用它。
-func Serve(ctx context.Context, cfg settings.Config) error {
-    return run(ctx, cfg, (*App).HTTP)
-}
-
-// Start 在一个进程中运行 HTTP 服务、队列 worker 和定时任务调度器，start 命令调用它。
-func Start(ctx context.Context, cfg settings.Config) error {
+func Serve(ctx context.Context, cfg Config) error { return run(ctx, cfg, (*App).HTTP) }
+func Start(ctx context.Context, cfg Config) error {
     return run(ctx, cfg, (*App).HTTP, (*App).Worker, (*App).Scheduler)
 }
 ```
 
-`telemetry.Open` 把日志、指标和链路推送到配置的接收端，没有配置时什么也不做，见[可观测性](../general/telemetry.md#setup)。它最先登记，最后关闭，其他资源关闭时记录的日志也能推送出去。`rdb` 是 [Redis](../libraries/redis.md) 客户端，`locker` 是用它保存的[原子锁](../libraries/locks.md)，[调度器](../libraries/scheduling.md#multiple-instances)用它在多个实例之间去重。`failed` 是[队列](../libraries/queue.md)的[失败任务](../libraries/queue.md#failed-jobs)表，后台页面和[查看失败任务的命令](../libraries/queue.md#stats-command)用它。`Worker` 和 `Scheduler` 两个运行部分分别在[队列](../libraries/queue.md#running-workers)和[定时任务](../libraries/scheduling.md#running-the-scheduler)两章中介绍。
+每个部分分两步：先装配好它需要的一切，包括取得监听端口；再返回运行它的函数。装配阶段的错误（路由冲突、端口被占用）在开始运行之前就返回，[不停机升级](../installation/deployment.md#zero-downtime-upgrades)时出错的新版本不会接管服务。`d.Run` 让各部分共用一个 `ctx`，一个出错时其余的一起停止。
 
-HTTP 服务在 `internal/bootstrap/http.go` 中：
+> [!TIP]
+> 多个部分都用到的资源（数据库、Redis、缓存）放进 `open`；只有一个部分用到的（例如 HTTP 中间件）在它自己的方法里创建。
+
+<a id="deferred-commands"></a>
+### 只在执行时装配的命令
+
+构造命令行时还没有加载配置，也没有打开数据库。`command.Bind` 先用零值的 `App` 声明命令，执行其中一个命令时再调用 `open`，用装配好的 `App` 重新声明并执行，命令返回后关闭资源：
 
 ```go
-package bootstrap
-
-import (
-    "context"
-
-    "example.com/blog/internal/article"
-    "example.com/blog/internal/auth"
-    "example.com/blog/internal/user"
-    "github.com/go-chi/chi/v5"
-    "github.com/go-tenon/tenon/command"
-    "github.com/go-tenon/tenon/httpx"
-    "github.com/go-tenon/tenon/httpx/rest"
-    "github.com/go-tenon/tenon/identity"
-    "github.com/uptrace/bun"
-)
-
-// API 是应用的 API 选项，serve、openapi 和 routes 命令共用它。API 只接受博客用户这一套账号。
-var API = rest.Options{Title: "Blog API", Version: "1.0.0", Accounts: identity.Accounts{user.Type: nil}}
-
-// Routes 注册应用的全部路由，serve、openapi 和 routes 命令共用它。
-func Routes(api *rest.API, validate rest.TokenValidator, db *bun.DB) {
-    article.Register(api, rest.RequireBearer(api, validate, "articles"), db)
-}
-
-// DocRoutes 在文档模式下注册路由。文档模式不调用处理器和 token 校验器，
-// 所以不需要配置和数据库。
-func DocRoutes(api *rest.API) {
-    Routes(api, auth.Validator(auth.Config{}), nil)
-}
-
-// DocRouter 在文档模式下构造全部路由，routes 命令用它列出路由表。
-func DocRouter() chi.Routes {
-    router := chi.NewRouter()
-    opts := API
-    opts.Mode, opts.Router = rest.ModeOpenAPI, router
-    DocRoutes(rest.New(opts))
-    return router
-}
-
-// HTTP 安装中间件、注册路由并取得监听端口，返回的函数运行 HTTP 服务，直到 ctx 被取消。
-func (a *App) HTTP(d *command.Daemon) (func(context.Context) error, error) {
-    router := chi.NewRouter()
-    router.Use(httpx.Telemetry(a.meters, a.tracers))
-    router.Use(httpx.Defaults(a.cfg.HTTP, nil, nil)...)
-    router.Use(httpx.Timeout(a.cfg.HTTP.Timeout))
-    opts := API
-    opts.Router = router
-    api := rest.New(opts)
-    Routes(api, auth.Validator(a.cfg.Auth), a.db)
-
-    ln, err := d.Listen("tcp", a.cfg.HTTP.Addr)
-    if err != nil {
-        return nil, err
-    }
-    return func(ctx context.Context) error {
-        return httpx.Serve(ctx, a.cfg.HTTP, ln, api.Handler(), httpx.ServeOptions{})
-    }, nil
+func Commands() []*cobra.Command {
+    return command.Bind(open, func(a *App) []*cobra.Command {
+        return []*cobra.Command{
+            article.Commands(a.db),
+        }
+    })
 }
 ```
 
-其中 `settings.Config` 是应用的[配置结构](../general/configuration.md#loading-configuration)，`auth.Validator` 是 token 校验器（见[认证](../security/authentication.md#token-validators)），`article` 是应用自己的业务包（见[路由](../http/routing.md#organizing-routes)）。路由声明保留在各模块的 `routes.go`，`bootstrap.Routes` 统一调用各模块的 `Register`，让 `serve`、`openapi` 和 [routes](../general/commands.md#routes-command) 命令复用同一份声明。后两个命令分别通过 `DocRoutes`、`DocRouter` 在文档模式下注册，传入的 `db` 为 `nil`，不打开运行时资源。
-
-整个过程就是普通的函数调用：先创建被依赖的对象，再创建依赖它们的对象。数据库、缓存、锁这类多个运行部分都用到的资源放进 `open`；只有某个部分用到的，例如 HTTP 中间件，在它自己的方法里创建。`run` 返回之前，`defer` 中的 `stack.CloseWith` 不会执行，因此正在处理的请求不会因为数据库提前关闭而失败。请求处理与停机的完整顺序见[请求生命周期](lifecycle.md)。
-
-每个运行部分分两步：方法先装配好它需要的一切，包括取得监听端口，再返回运行它的函数。`run` 装配完全部部分之后才调用 `d.Run`，`d.Run` 报告进程已经就绪，再用 `command.Concurrently` 同时运行它们，让它们共用一个 `ctx`，一个出错时其余的一起停止。装配阶段的错误（例如路由冲突、端口被占用）在开始运行之前就返回，[不停机升级](../installation/deployment.md#zero-downtime-upgrades)时出错的新版本不会接管服务。把 HTTP 服务、队列和定时任务放在一个进程中运行，见[在一个进程中运行多个部分](../general/commands.md#running-together)。
-
-> [!TIP]
-> 入口只打开当前命令真正需要的资源。例如 `serve` 命令需要数据库和 HTTP 监听，而 `openapi`、`routes` 命令不需要这些资源，它们直接使用 `API` 和 `DocRoutes`，不调用 `open`。
+`--help` 和参数错误不会打开数据库。写法和注意事项见[命令行](../general/commands.md#custom-commands)。
 
 <a id="closing-resources"></a>
 ## 关闭资源
 
-<a id="using-cleanup-stack"></a>
-### 使用 cleanup.Stack
+只有一两个资源时，`defer` 就够了。资源多了以后，`cleanup.Stack` 保证：
 
-如果只有一两个资源，直接使用 `defer` 关闭就足够了。当资源变多时，你会希望：后打开的资源先关闭；启动到一半失败时，已经打开的资源也能被释放；关闭时产生的错误不会被吞掉。`cleanup.Stack` 正是为此设计的。
-
-下面是一个完整的例子，它打开数据库、执行传入的函数，最后关闭数据库：
+- 按**登记的逆序**关闭，后打开的先关闭；
+- 打开到一半失败时，已经打开的也会关闭；
+- 每个清理函数只执行一次，关闭时的错误和运行时的错误合并返回，`errors.Is` 能匹配其中任何一个；
+- 清理使用的 context 保留传入 context 的值和截止时间，但不继承它的取消信号：收到停止信号后清理仍能进行。没有截止时间时，清理总共最多 10 秒。
 
 ```go
-package bootstrap
+var stack cleanup.Stack
+defer func() { err = stack.CloseWith(context.Background(), err) }()
 
-import (
-    "context"
-
-    "github.com/go-tenon/tenon/cleanup"
-    "github.com/go-tenon/tenon/database"
-    "github.com/uptrace/bun"
-)
-
-func WithDatabase(ctx context.Context, cfg database.Config,
-    run func(*bun.DB) error,
-) (err error) {
-    var stack cleanup.Stack
-    defer func() {
-        err = stack.CloseWith(context.Background(), err)
-    }()
-
-    db, err := database.Open(ctx, cfg)
-    if err != nil {
-        return err
-    }
-    stack.MustAdd("database", func(context.Context) error {
-        return db.Close()
-    })
-    return run(db)
+rdb, err := rueidis.NewClient(opt)
+if err != nil {
+    return err
 }
+stack.MustAdd("redis", func(context.Context) error {
+    rdb.Close()
+    return nil
+})
 ```
 
-`cleanup.Stack` 的零值即可直接使用。每成功打开一个资源，就用 `MustAdd`（或返回错误的 `Add`）登记一个具名的清理函数。
-
-<a id="cleanup-rules"></a>
-### 清理的执行规则
-
-- 清理函数按**登记的逆序**执行，后打开的资源先关闭；
-- 每个清理函数只执行一次；
-- `CloseWith` 会把运行时的错误和所有清理错误合并后返回，`errors.Is` 依然可以匹配其中任何一个；
-- 清理时使用的 context 保留传入 context 中的值和截止时间，但不会继承它的取消信号——即使应用因为收到信号而取消，清理工作也能继续执行；
-- 如果传入的 context 没有截止时间，清理的总时长默认为 10 秒。清理函数应当遵守这个 context。
-
 > [!NOTE]
-> `cleanup.Stack` 设计为由入口串行使用：在构建阶段登记，在退出阶段关闭。不要在多个 goroutine 中同时操作它。
+> `cleanup.Stack` 由入口串行使用：构建阶段登记，退出阶段关闭。不要在多个 goroutine 中同时操作它。
 
 <a id="replacing-dependencies-in-tests"></a>
 ## 在测试中替换依赖
 
-在 Tenon 中，大多数测试可以直接使用真实的依赖，例如用 `dbtest` 创建一个真实的测试数据库（见[测试](../testing/overview.md#database-tests)）。
+大多数测试直接使用真实的依赖，例如用 `dbtest` 创建一个真实的测试数据库，见[测试](../testing/overview.md#database-tests)。
 
-当你确实需要替换某个依赖时（例如把文章配图上传到对象存储），遵循 Go 的惯例：**由使用方定义接口**。在业务包中声明一个只包含所需方法的小接口，action 的构造函数接收这个接口：
+确实需要替换一个依赖时（例如对象存储），由使用方定义一个只包含所需方法的小接口，构造函数接收这个接口：
 
 ```go
-package article
-
 type ImageStore interface {
     Put(ctx context.Context, key string, data []byte) error
 }
@@ -315,7 +250,7 @@ func NewSetCover(db *bun.DB, images ImageStore) *SetCover {
 }
 ```
 
-在测试中传入一个简单的内存实现即可，不需要真实的对象存储：
+测试中传入一个内存实现：
 
 ```go
 type memoryImages map[string][]byte
@@ -328,4 +263,57 @@ func (m memoryImages) Put(_ context.Context, key string, data []byte) error {
 setCover := article.NewSetCover(db, memoryImages{})
 ```
 
-不需要为每个依赖预先定义接口，只在真正需要替换实现时再引入。
+不必为每个依赖预先定义接口，真正需要替换时再引入。
+
+<a id="api-reference"></a>
+## API 参考
+
+### cleanup.Stack
+
+包 `github.com/go-tenon/tenon/cleanup`。零值可用。
+
+```go
+func (s *Stack) Add(name string, fn func(context.Context) error) error
+func (s *Stack) MustAdd(name string, fn func(context.Context) error)
+```
+
+登记一个具名的清理函数，名称出现在错误信息中。`Stack` 已经关闭时 `Add` 返回错误，`MustAdd` panic。
+
+```go
+func (s *Stack) Close(ctx context.Context) error
+func (s *Stack) CloseWith(ctx context.Context, runErr error) error
+```
+
+按逆序执行全部清理函数，返回合并的错误。`CloseWith` 把 `runErr` 一起合并，适合在 `defer` 中使用。
+
+### command.Daemon
+
+包 `github.com/go-tenon/tenon/command`。
+
+```go
+func NewDaemon(logger *slog.Logger) (*Daemon, error)
+func (d *Daemon) Listen(network, addr string) (net.Listener, error)
+func (d *Daemon) Run(ctx context.Context, runs ...func(context.Context) error) error
+func (d *Daemon) Stop()
+```
+
+常驻进程：`Listen` 取得监听端口，`Run` 报告就绪后同时运行 `runs`，直到停止。在 systemd 的 `Type=notify-reload` 服务中运行时，`Run` 向 systemd 报告就绪，收到 `SIGHUP` 时不停机升级，见[部署](../installation/deployment.md#zero-downtime-upgrades)；不在其中时，`Run` 等同于 `command.Concurrently`。一个进程只创建一个 `Daemon`，所有 `Listen` 都在 `Run` 之前调用，退出前调用 `Stop`。
+
+### command.Concurrently
+
+```go
+func Concurrently(ctx context.Context, runs ...func(context.Context) error) error
+```
+
+同时运行 `runs`，它们收到同一个派生的 `ctx`。`ctx` 被取消或任何一个函数返回时，派生的 `ctx` 随之取消。在停止之前就返回 `nil` 的函数视为异常退出，返回值包含 `command.ErrStoppedEarly`。
+
+### command.Bind
+
+```go
+func Bind[C, D any](
+    open func(ctx context.Context, cfg C, stack *cleanup.Stack) (*D, error),
+    declare func(*D) []*cobra.Command,
+) []*cobra.Command
+```
+
+返回 `declare` 声明的命令，依赖推迟到执行时装配，见[只在执行时装配的命令](#deferred-commands)。
