@@ -7,6 +7,7 @@
     - [集成测试](#integration-tests)
     - [架构测试](#architecture-tests)
     - [文档用法测试](#doc-tests)
+    - [前端包](#js-packages)
 - [持续集成](#continuous-integration)
 - [编码风格](#coding-style)
 - [编写文档](#writing-documentation)
@@ -20,6 +21,7 @@
 ## 开发环境
 
 - Go，版本以仓库 [go.mod](go.mod) 中的声明为准；
+- [Bun](https://bun.sh)，用于 `js` 中的前端包和脚手架的测试，版本与 CI 相同（1.4.4）；
 - Docker，用于在本地启动集成测试所需的服务。
 
 <a id="running-tests"></a>
@@ -87,17 +89,33 @@ Redis 的锁、限流、在线成员和广播的测试对单机 Redis 和集群�
 
 `internal/checks/doctest` 编译文档中的代码：除入门教程外，每个以 `package` 开头的代码块都是完整文件，单独放进临时 module 编译；其余片段只用于阅读。入门教程由 `cmd/tenon` 的 `TestTutorial` 在 CI 的 scaffold 任务中按章节做一遍。修改框架 API 时，测试会指出文档中需要同步修改的代码。
 
+<a id="js-packages"></a>
+### 前端包
+
+`js` 是前端包的 Bun workspace，例如 `js/client` 是 `@go-tenon/client`。它们不发布到 npm，随 Go 模块分发：应用中的 `tenon` 把框架版本中的 `js` 复制到项目的 `.tenon/js`，见[框架的前端包](docs/installation/tooling.md#framework-packages)。在 `js` 目录中运行：
+
+```bash
+bun install --frozen-lockfile
+bun run check       # Biome
+bun run typecheck   # 每个包的 tsc --noEmit
+bun run test        # Vitest
+```
+
+`@go-tenon/client` 不依赖 DOM：它的 `tsconfig.json` 中 `lib` 没有 `dom`，用到 `window`、`document` 等浏览器 API 时类型检查失败。在生成的项目中试用改动时，用 `tenon init --tenon <框架目录>` 生成项目，`tenon dev` 每次启动时复制本地的 `js`。
+
 <a id="continuous-integration"></a>
 ## 持续集成
 
-CI 配置位于 [.github/workflows/ci.yml](.github/workflows/ci.yml)，每次推送和 Pull Request 都会同时运行两个 job：
+CI 配置位于 [.github/workflows/ci.yml](.github/workflows/ci.yml)，每次推送和 Pull Request 都会同时运行四个 job：
 
 - `lint` 依次执行：
   1. `gofmt` 格式检查；
   2. `go vet ./...`；
   3. `golangci-lint run`，配置在 [.golangci.yml](.golangci.yml)；
   4. 在 `web/ui` 中重新运行 `go tool templ generate`，确认提交的 `_templ.go` 是最新的。
+- `js` 在 `js` 中安装依赖，运行 Biome、类型检查和测试，见[前端包](#js-packages)。
 - `test` 执行 `go test ./...`，使用 PostgreSQL 18、Redis 8、Memcached、nsqd、Gotenberg 和 Qdrant 服务容器。
+- `scaffold` 运行 `TestInitEndToEnd` 和 `TestTutorial`，见[文档用法测试](#doc-tests)。
 
 `go test` 同时运行多个包，整体耗时取决于最慢的那个包。每次判断都要查询数据库或调用服务的测试只用少量样本：把统计性质留给纯函数的测试，经过服务的测试只用少量数据检查接线，例如 `feature` 的放量。
 

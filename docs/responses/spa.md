@@ -122,33 +122,24 @@ bun run dev   # package.json 中是 "dev": "go tool tenon dev"
 [tenon build](../installation/tooling.md#build) 先构建全部前端，再构建 Go：
 
 ```bash
-bun run build   # 即 go tool tenon build：bun install --frozen-lockfile，每个前端 bun run build，go build -trimpath -o bin/api ./cmd/api
+bun run build   # 即 go tool tenon build：复制框架的前端包，bun install --frozen-lockfile，每个前端 bun run build，go build -trimpath -o bin/api ./cmd/api
 ```
 
 `--frozen-lockfile` 要求 `bun.lock` 与各个 `package.json` 一致，CI 中安装的依赖与本地完全相同。CI 用 [setup-bun](https://github.com/oven-sh/setup-bun) 安装 Bun。
 
-[Docker 镜像](../installation/deployment.md#docker)中加一个 Bun 阶段，把它的产物复制进 Go 的构建阶段：
+[Docker 镜像](../installation/deployment.md#docker)的构建阶段中装上 Bun，用 `tenon build` 构建。前端依赖的框架前端包由 `tenon` 从 Go 模块中复制（见[框架的前端包](../installation/tooling.md#framework-packages)），所以前端要在 Go 的构建阶段中构建：
 
 ```dockerfile
-FROM oven/bun:1 AS frontend
-WORKDIR /src
-COPY package.json bun.lock ./
-COPY apps apps
-COPY packages packages
-RUN bun install --frozen-lockfile
-RUN bun run --filter './apps/*' build
-
 FROM golang:1.27 AS build
+COPY --from=oven/bun:1 /usr/local/bin/bun /usr/local/bin/bun
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-COPY --from=frontend /src/apps/web/dist apps/web/dist
-COPY --from=frontend /src/apps/admin/dist apps/admin/dist
-RUN CGO_ENABLED=0 go build -trimpath -o /out/api ./cmd/api && mkdir /out/storage
+RUN CGO_ENABLED=0 go tool tenon build -o /out/api && mkdir /out/storage
 ```
 
-每个前端复制一次它的 `dist`。后面的运行阶段不变。只运行 Go 测试和 lint 的 CI 任务放一个空页面让程序能编译即可：
+后面的运行阶段不变。只运行 Go 测试和 lint 的 CI 任务放一个空页面让程序能编译即可：
 
 ```bash
 for app in apps/*/; do mkdir -p "$app/dist" && touch "$app/dist/index.html"; done

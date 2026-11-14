@@ -62,7 +62,7 @@ bun run build
 ```text
 todo/
 ├── go.mod                 tool github.com/go-tenon/tenon/cmd/tenon：开发工具随框架的版本固定；ignore node_modules
-├── package.json           Bun workspace（apps/web、packages/client）；dev、build、generate、typecheck 脚本
+├── package.json           Bun workspace（.tenon/js/client、apps/web、packages/client）；dev、build、generate、typecheck 脚本
 ├── config/app.yaml        监听地址等应用配置
 ├── cmd/api/main.go        程序入口：命令行、serve 和 routes
 ├── internal/todo/todo.go  示例资源：待办事项的四个接口，数据保存在内存中
@@ -74,8 +74,9 @@ todo/
 │   └── src/
 │       ├── App.tsx        待办列表页面
 │       └── client.ts      创建调用接口的客户端
-└── packages/client/       共用的客户端包 @todo/client
-    └── src/api/           /api 的 TypeScript 客户端，由 tenon generate 生成
+├── packages/client/       共用的客户端包 @todo/client
+│   └── src/api/           /api 的 TypeScript 客户端，由 tenon generate 生成
+└── .tenon/                tenon 生成的内容，不提交：框架的前端包 js/、开发服务器的地址 dev.yaml
 ```
 
 Go 代码在 `cmd` 和 `internal` 中，前端在 `apps` 中，每个前端一个目录；生成的客户端在 `packages/client` 中，前端用 `@todo/client/api` 导入。构建时前端打进二进制，部署时通常带上这一个文件和配置目录即可。用 [tenon add frontend](tooling.md#add-frontend) 再加一个前端，例如运营后台。目录约定见[目录结构](../concepts/structure.md)。

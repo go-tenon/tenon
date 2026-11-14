@@ -5,7 +5,7 @@ on:
     branches: [main]
   pull_request:
 
-# 检查、测试和脚手架是并行的 job：检查只用 Go 工具链，测试与检查同时开始。
+# 检查、前端包、测试和脚手架是并行的 job：检查只用 Go 工具链，测试与检查同时开始。
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -30,6 +30,31 @@ jobs:
       # 提交的 templ 代码必须是最新生成的。
       - name: Generated code
         run: cd web/ui && go tool templ generate && git diff --exit-code -- .
+
+  # js 中的前端包：Biome 检查、类型检查和测试。
+  js:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: js
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Check
+        run: bun run check
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Test
+        run: bun run test
 
   # tenon init 生成的项目能安装、生成客户端、类型检查、构建并运行（TestInitEndToEnd）；
   # 按 docs/tutorial 做一遍入门教程，用教程的 compose.yaml 启动基础设施（TestTutorial）。
