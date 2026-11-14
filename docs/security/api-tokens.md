@@ -466,7 +466,7 @@ func (h *handlers) logout(ctx context.Context, _ *struct{}) (*LogoutOutput, erro
 }
 ```
 
-`LogoutOutput` 只有 `SetCookie` 一个字段。登录处理器在 `Password` 成功后调用 `h.jwt.Login`，再 `return session(pair, in.Body.Cookie), nil`。`RefreshCookie.Set` 在宽限期内的重复刷新（`pair.Refresh` 为空）时返回 `nil`，浏览器中保留的就是最新的那个。前端的写法见 [API 客户端](../responses/clients.md#creating-the-client)，完整的例子见[编辑后台](account-examples.md#editor-api)。
+`LogoutOutput` 只有 `SetCookie` 一个字段。登录处理器在 `Password` 成功后调用 `h.jwt.Login`，再 `return session(pair, in.Body.Cookie), nil`。`RefreshCookie.Set` 在宽限期内的重复刷新（`pair.Refresh` 为空）时返回 `nil`，浏览器中保留的就是最新的那个。前端的写法见 [API 客户端](../responses/clients.md#creating-the-client)，完整的例子见[单账号后台](admin-example.md#auth-api)。
 
 部署方式决定还要做什么：
 
