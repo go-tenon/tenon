@@ -92,7 +92,7 @@ Redis 的锁、限流、在线成员和广播的测试对单机 Redis 和集群�
 <a id="js-packages"></a>
 ### 前端包
 
-`js` 是前端包的 Bun workspace，例如 `js/client` 是 `@go-tenon/client`。它们不发布到 npm，随 Go 模块分发：应用中的 `tenon` 把框架版本中的 `js` 复制到项目的 `.tenon/js`，见[框架的前端包](docs/installation/tooling.md#framework-packages)。在 `js` 目录中运行：
+`js` 是前端包的 Bun workspace：`js/client` 是 `@go-tenon/client`，`js/shell` 是 `@go-tenon/shell`。它们不发布到 npm，随 Go 模块分发：应用中的 `tenon` 把框架版本中的 `js` 复制到项目的 `.tenon/js`，见[框架的前端包](docs/installation/tooling.md#framework-packages)。在 `js` 目录中运行：
 
 ```bash
 bun install --frozen-lockfile
@@ -101,7 +101,7 @@ bun run typecheck   # 每个包的 tsc --noEmit
 bun run test        # Vitest
 ```
 
-`@go-tenon/client` 不依赖 DOM：它的 `tsconfig.json` 中 `lib` 没有 `dom`，用到 `window`、`document` 等浏览器 API 时类型检查失败。在生成的项目中试用改动时，用 `tenon init --tenon <框架目录>` 生成项目，`tenon dev` 每次启动时复制本地的 `js`。
+`@go-tenon/client` 不依赖 DOM：它的 `tsconfig.json` 中 `lib` 没有 `dom`，用到 `window`、`document` 等浏览器 API 时类型检查失败。`@go-tenon/shell` 用于网页，依赖 React、TanStack Router 和 TanStack Query，都是 peer 依赖；开发和测试用到的包（React、Testing Library、happy-dom、Vite 等）写在 `js/package.json` 的 `devDependencies` 中，不写在包自己的 `package.json` 里，否则会随包复制到项目中被安装。需要 DOM 的测试文件在开头写 `// @vitest-environment happy-dom`。在生成的项目中试用改动时，用 `tenon init --tenon <框架目录>` 生成项目，`tenon dev` 每次启动时复制本地的 `js`。
 
 <a id="continuous-integration"></a>
 ## 持续集成
