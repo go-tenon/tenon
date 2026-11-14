@@ -1,22 +1,5 @@
 # 邮件
 
-- [简介](#introduction)
-- [装配发送器](#assembling-mailer)
-- [编写邮件模板](#writing-templates)
-    - [布局](#layouts)
-    - [翻译](#translations)
-- [发送邮件](#sending-mail)
-- [邮件消息](#messages)
-- [测试](#testing)
-- [使用 SMTP](#smtp)
-- [使用 Resend](#resend)
-- [使用 Amazon SES](#ses)
-- [多个发送器](#failover)
-- [自定义发送器](#custom-mailers)
-
-<a id="introduction"></a>
-## 简介
-
 `mail` 包定义了邮件消息 `mail.Message`，以及只有一个方法的发送接口：
 
 ```go
@@ -37,7 +20,40 @@ type Mailer interface {
 
 业务代码只依赖 `mail.Mailer`，换驱动只需要改入口。
 
-本章为博客应用加一个功能：文章发布后，给编辑部发一封通知邮件。
+- [示例用法](#example-usage)
+- [装配发送器](#assembling-mailer)
+- [编写邮件模板](#writing-templates)
+    - [布局](#layouts)
+    - [翻译](#translations)
+- [发送邮件](#sending-mail)
+- [邮件消息](#messages)
+- [测试](#testing)
+- [使用 SMTP](#smtp)
+- [使用 Resend](#resend)
+- [使用 Amazon SES](#ses)
+- [多个发送器](#failover)
+- [自定义发送器](#custom-mailers)
+- [API 参考](#api-reference)
+
+<a id="example-usage"></a>
+## 示例用法
+
+```go
+mailer := logmail.New(nil) // 开发时写进日志；生产环境换成 smtp.New、resend.New 或 ses.New
+
+templates, err := mail.NewTemplates(emails.FS)
+if err != nil {
+    return err
+}
+msg, err := templates.Render(ctx, "article_published", map[string]any{"Title": "Hello"})
+if err != nil {
+    return err
+}
+msg.To = []mail.Address{{Name: "编辑部", Email: "editors@example.com"}}
+err = mailer.Send(ctx, msg)
+```
+
+需要重试的邮件交给[队列](queue.md#publishing-jobs)发送。
 
 <a id="assembling-mailer"></a>
 ## 装配发送器
@@ -75,10 +91,10 @@ mail:
 
 `mail.Address` 在配置中写成一个字符串，`"名字 <邮箱>"` 或只写邮箱都可以。
 
-然后在[入口](../concepts/dependencies.md#assembling-the-application)中创建发送器，传给发布文章的 action：
+然后在入口创建发送器，传给需要发邮件的业务动作：
 
 ```go
-func newMailer(cfg settings.MailConfig) (mail.Mailer, error) {
+func newMailer(cfg MailConfig) (mail.Mailer, error) {
     switch cfg.Driver {
     case "smtp":
         return smtp.New(cfg.SMTP)
@@ -99,8 +115,6 @@ if err != nil {
 }
 publish := article.NewPublish(db, mailer, emails, cfg.Mail.Editors)
 ```
-
-[发布文章](../concepts/actions.md#writing-actions)的 `Publish` 多了三个依赖，`article.Register` 构造它的地方也要把它们传进去。
 
 `emails` 是下一节加载的邮件模板。`logmail.New(nil)` 使用 `slog.Default()`，每封邮件记录为一条 `mail sent` 日志，包含收件人、主题和正文，开发时可以直接从日志里复制邮件中的链接。
 
@@ -163,7 +177,7 @@ if err != nil {
 <html>
 <body style="font-family: sans-serif">
   {{template "content" .}}
-  <p style="color: #888">博客编辑部</p>
+  <p style="color: #888">编辑部</p>
 </body>
 </html>
 ```
@@ -225,7 +239,7 @@ func (a *Publish) Handle(ctx context.Context, subject identity.Subject, id uuid.
 func (a *Publish) notifyEditors(ctx context.Context, item *Article) error {
     msg, err := a.emails.Render(ctx, "article_published", map[string]any{
         "Title": item.Title,
-        "URL":   "https://blog.example.com/" + item.Slug,
+        "URL":   "https://example.com/" + item.Slug,
     })
     if err != nil {
         return errors.Wrapf(err, "render notification for article %s", item.ID)
@@ -249,7 +263,7 @@ func (a *Publish) notifyEditors(ctx context.Context, item *Article) error {
 除了模板填好的字段，`mail.Message` 还可以设置：
 
 ```go
-msg.From = mail.Address{Name: "博客", Email: "news@example.com"} // 为空时使用驱动配置的发件人
+msg.From = mail.Address{Name: "示例", Email: "news@example.com"} // 为空时使用驱动配置的发件人
 msg.Cc = []mail.Address{{Email: "chief@example.com"}}
 msg.Bcc = []mail.Address{{Email: "archive@example.com"}}
 msg.ReplyTo = mail.Address{Email: "support@example.com"}
@@ -296,7 +310,7 @@ func TestPublishNotifiesEditors(t *testing.T) {
 mail:
   driver: smtp
   smtp:
-    from: 博客 <no-reply@example.com>
+    from: 示例 <no-reply@example.com>
     host: smtp.example.com
     port: 587
     username: ${SMTP_USERNAME}
@@ -324,7 +338,7 @@ mail:
 mail:
   driver: resend
   resend:
-    from: 博客 <no-reply@example.com>
+    from: 示例 <no-reply@example.com>
     api_key: ${RESEND_API_KEY}
 ```
 
@@ -351,7 +365,7 @@ mailer, err := resend.NewWithClient(client, cfg.Mail.Resend.From)
 mail:
   driver: ses
   ses:
-    from: 博客 <no-reply@example.com>
+    from: 示例 <no-reply@example.com>
     region: us-east-1
 ```
 
@@ -395,7 +409,7 @@ mailer := mail.Failover([]mail.Named{
 }, mail.FailoverOptions{})
 ```
 
-它本身也是 `mail.Mailer`，交给 action 和 `login` 的方式不变。
+它本身也是 `mail.Mailer`，交给业务动作和 `login` 的方式不变。
 
 - 按顺序尝试，第一个成功的为准；全部失败时返回合并的错误，每个都带着发送器的名称。
 - 邮件本身不合法（`mail.ErrInvalid`），或者 `ctx` 已经取消、超时时，不再尝试后面的发送器。
@@ -421,3 +435,63 @@ func (m *PostmarkMailer) Send(ctx context.Context, msg mail.Message) error {
     // 调用 Postmark API
 }
 ```
+
+<a id="api-reference"></a>
+## API 参考
+
+### mail.Mailer
+
+```go
+type Mailer interface {
+    Send(ctx context.Context, msg Message) error
+}
+```
+
+包 `github.com/go-tenon/tenon/mail`。消息不合法时返回 `ErrInvalid`。
+
+### 发送器
+
+| 构造函数 | 说明 |
+| --- | --- |
+| `smtp.New(cfg smtp.Config)` | 包 `mail/smtp`，通过 SMTP 服务器发送 |
+| `resend.New(cfg resend.Config)` | 包 `mail/resend`，通过 Resend API 发送；`NewWithClient` 用已有的客户端 |
+| `ses.New(cfg ses.Config)` | 包 `mail/ses`，通过 Amazon SES 发送；`NewWithClient` 用已有的客户端 |
+| `logmail.New(logger *slog.Logger)` | 包 `mail/logmail`，记录为日志，开发时使用 |
+| `mailtest` | 包 `mail/mailtest`，在内存中记录发出的邮件，见[测试](#testing) |
+
+### Failover
+
+```go
+func Failover(mailers []Named, opts FailoverOptions) Mailer
+```
+
+按顺序尝试多个发送器，失败的在冷却时间内跳过；遇到 `ErrInvalid` 或 `ctx` 取消时不再换下一个。见[故障切换](#failover)。
+
+### Templates
+
+```go
+func NewTemplates(fsys fs.FS) (*Templates, error)
+func (t *Templates) Render(ctx context.Context, name string, data any) (Message, error)
+```
+
+加载 `fsys` 中的全部模板，模板有错时返回错误。`Render` 渲染主题和正文，`ctx` 中的语言用于翻译。见[编写邮件模板](#writing-templates)。
+
+### Message
+
+| 字段 | 说明 |
+| --- | --- |
+| `From`、`ReplyTo Address` | 发件人和回复地址，`From` 为空时用驱动配置的默认发件人 |
+| `To`、`Cc`、`Bcc []Address` | 收件人 |
+| `Subject`、`HTML`、`Text string` | 主题和正文 |
+| `Attachments []Attachment` | 附件 |
+| `Headers map[string]string` | 额外的邮件头 |
+
+`Message` 可以完整地编码为 JSON，便于交给队列发送。
+
+### WithIdempotencyKey
+
+```go
+func WithIdempotencyKey(ctx context.Context, key string) context.Context
+```
+
+包 `mail/resend`。重试同一封邮件时，Resend 按这个键去重。

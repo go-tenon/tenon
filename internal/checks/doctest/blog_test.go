@@ -81,17 +81,6 @@ import (
 	"github.com/go-tenon/tenon/search"
 )
 `},
-	{"internal/bootstrap/mailer.go", "libraries/mail.md", "func newMailer(", `package bootstrap
-
-import (
-	"example.com/blog/internal/settings"
-	"github.com/go-tenon/tenon/mail"
-	"github.com/go-tenon/tenon/mail/logmail"
-	"github.com/go-tenon/tenon/mail/resend"
-	"github.com/go-tenon/tenon/mail/ses"
-	"github.com/go-tenon/tenon/mail/smtp"
-)
-`},
 }
 
 var goBlock = regexp.MustCompile("(?s)```go\n(.*?)```")

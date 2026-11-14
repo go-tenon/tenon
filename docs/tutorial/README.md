@@ -12,4 +12,4 @@
 6. [作者登录](06-login.md)：邮箱和密码，HttpOnly cookie，命令行建号
 7. [草稿与发布](07-drafts.md)：给表加列，授权，事务中检查
 
-读完后可以继续阅读：[缓存](../libraries/cache.md)、[队列](../libraries/queue.md)、[定时任务](../libraries/scheduling.md)、[文件存储与上传](../libraries/filesystem.md)、[测试](../testing/overview.md)、[部署](../installation/deployment.md)。
+读完后可以继续阅读：[缓存](../libraries/cache.md)、[队列](../libraries/queue.md)、[定时任务](../libraries/scheduling.md)、[文件存储](../libraries/filesystem.md)、[测试](../testing/overview.md)、[部署](../installation/deployment.md)。

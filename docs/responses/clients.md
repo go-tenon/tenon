@@ -190,7 +190,7 @@ for await (const ev of api.article.events({}, { signal: stop.signal, lastEventId
 <a id="uploading-files"></a>
 ### 上传文件
 
-[服务端上传接口](../libraries/filesystem.md#rest-upload)的表单字段生成为 `<OperationId>Form`，文件字段的类型是 `Blob`，`File` 可以直接传入：
+[服务端上传接口](../libraries/file-uploads.md#rest-upload)的表单字段生成为 `<OperationId>Form`，文件字段的类型是 `Blob`，`File` 可以直接传入：
 
 ```ts
 const uploaded = await api.file.upload({ file: input.files[0] })
@@ -418,7 +418,7 @@ events := c.Article.Events(wire.WithLastEventID(ctx, lastID), article.EventsInpu
 <a id="go-client-uploads"></a>
 ### 上传文件
 
-`RawBody` 为 `huma.MultipartFormFiles[T]` 的接口（见[服务端上传接口](../libraries/filesystem.md#rest-upload)），表单 `T` 作为最后一个参数；`huma.FormFile` 字段是 `wire.File`，其余字段原样保留。表单是匿名结构体时，类型以输入类型的名字加 `Form` 命名：
+`RawBody` 为 `huma.MultipartFormFiles[T]` 的接口（见[服务端上传接口](../libraries/file-uploads.md#rest-upload)），表单 `T` 作为最后一个参数；`huma.FormFile` 字段是 `wire.File`，其余字段原样保留。表单是匿名结构体时，类型以输入类型的名字加 `Form` 命名：
 
 ```go
 f, err := os.Open("cover.png")

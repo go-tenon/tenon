@@ -1,19 +1,5 @@
 # 生成 PDF
 
-- [简介](#introduction)
-- [启动 Gotenberg](#running-gotenberg)
-- [编写模板](#writing-templates)
-    - [纸张、边距与页码](#page-setup)
-    - [样式和图片](#assets)
-- [下载 PDF](#downloading)
-- [作为邮件附件](#mail-attachments)
-- [后台生成](#background-generation)
-- [测试](#testing)
-- [部署](#deployment)
-
-<a id="introduction"></a>
-## 简介
-
 PDF 用写页面的方式编写：一个 templ 组件加一份 CSS，交给 Chromium 打印。发票、合同、报表都可以这样生成，模板在浏览器中打开就能预览。
 
 `pdf` 包定义了文档和生成器：
@@ -31,7 +17,32 @@ type Renderer interface {
 
 `pdf/gotenberg` 实现 `Renderer`，调用 [Gotenberg](https://gotenberg.dev) 服务中的 Chromium。浏览器运行在独立的容器中，崩溃、内存占用、排队和定期重启都由 Gotenberg 负责；它的镜像带有 Noto CJK 字体，中文不需要额外配置。
 
-本章为博客应用增加“下载文章 PDF”。
+- [示例用法](#example-usage)
+- [启动 Gotenberg](#running-gotenberg)
+- [编写模板](#writing-templates)
+    - [纸张、边距与页码](#page-setup)
+    - [样式和图片](#assets)
+- [下载 PDF](#downloading)
+- [作为邮件附件](#mail-attachments)
+- [后台生成](#background-generation)
+- [测试](#testing)
+- [部署](#deployment)
+- [API 参考](#api-reference)
+
+<a id="example-usage"></a>
+## 示例用法
+
+```go
+renderer, err := gotenberg.New(cfg.PDF) // 连接 Gotenberg 服务
+if err != nil {
+    return err
+}
+
+data, err := renderer.Render(ctx, pdf.Document{
+    HTML:   views.Invoice(invoice), // templ 组件，一个完整的 HTML 页面
+    Assets: assets,                 // 样式表、图片，HTML 中只写文件名
+})
+```
 
 <a id="running-gotenberg"></a>
 ## 启动 Gotenberg
@@ -97,7 +108,7 @@ templ Article(a *article.Article) {
 			<link rel="stylesheet" href="article.css"/>
 		</head>
 		<body>
-			<header class="running"><img src="logo.svg" height="16"/> 示例博客</header>
+			<header class="running"><img src="logo.svg" height="16"/> 示例</header>
 			<h1>{ a.Title }</h1>
 			if a.PublishedAt != nil {
 				<p class="meta">发布于 { a.PublishedAt.Format("2006-01-02") }</p>
@@ -167,11 +178,9 @@ var assets, _ = fs.Sub(files, "assets")
 <a id="downloading"></a>
 ## 下载 PDF
 
-`download.go` 中的 action 先用 `article.Get` 读取文章，同样只允许作者本人看到草稿，再生成 PDF：
+`download.go` 中的业务动作先用 `article.Get` 读取文章，同样只允许作者本人看到草稿，再生成 PDF：
 
 ```go
-package articlepdf
-
 type Download struct {
     get *article.Get
     pdf pdf.Renderer
@@ -296,3 +305,39 @@ services:
 - **不要把 Gotenberg 暴露到公网**，只让应用访问它。
 - 默认最多同时生成 6 份，其余排队；单次请求的时限是 30 秒。分别用 `--chromium-max-concurrency`、`--api-timeout` 调整，见 [Gotenberg 文档](https://gotenberg.dev)。
 - 模板中有用户填写的图片地址时，Chromium 会去访问这些地址。在服务中加上 `command: [gotenberg, --chromium-deny-private-ips]` 可以禁止它访问内网地址，被拒绝的图片不显示，PDF 照常生成。开启后，文件存储的公开地址也不能是内网地址。
+
+<a id="api-reference"></a>
+## API 参考
+
+### pdf.Renderer
+
+```go
+type Renderer interface {
+    Render(ctx context.Context, doc Document) ([]byte, error)
+}
+```
+
+包 `github.com/go-tenon/tenon/pdf`。服务不可用时返回 `ErrUnavailable`（分类 `Unavailable`）。
+
+### pdf.Document
+
+| 字段 | 说明 |
+| --- | --- |
+| `HTML templ.Component` | 完整的 HTML 页面，`<title>` 成为 PDF 的标题 |
+| `Assets fs.FS` | 页面引用的样式表、图片、字体，只能有顶层文件，见[样式与图片](#assets) |
+
+### gotenberg.New
+
+```go
+func New(cfg Config) (*Renderer, error)
+```
+
+包 `github.com/go-tenon/tenon/pdf/gotenberg`。字段见[启动 Gotenberg](#running-gotenberg)。
+
+### pdftest.New
+
+```go
+func New() *Renderer
+```
+
+包 `github.com/go-tenon/tenon/pdf/pdftest`。不生成 PDF，只记录渲染出的 HTML，见[测试](#testing)。

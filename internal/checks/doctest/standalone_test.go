@@ -13,7 +13,7 @@ import (
 // standaloneDirs 是已按参考页写法改写的文档目录或文件。这些文档中以 package 或构建标签开头的
 // 代码块都是完整文件，必须能单独编译，不依赖其他代码块或其他文档。
 var standaloneDirs = []string{"concepts", "general", "http", "responses", "database", "testing", "installation",
-	"libraries/cache.md", "libraries/locks.md", "libraries/rate-limiting.md", "libraries/redis.md", "libraries/queue.md", "libraries/scheduling.md"}
+	"libraries"}
 
 // TestStandaloneBlocks 把每个完整文件放进临时 module 中自己的目录，用 go vet 检查（包含编译）。
 func TestStandaloneBlocks(t *testing.T) {
