@@ -14,7 +14,7 @@
 <a id="introduction"></a>
 ## 简介
 
-本章面向 Tenon 框架本身的开发者。如果你只是在自己的应用中使用 Tenon，可以跳过这一章，应用的测试方法请参阅[测试](testing.md)。
+本章面向 Tenon 框架本身的开发者。如果你只是在自己的应用中使用 Tenon，可以跳过这一章，应用的测试方法请参阅[测试](testing/overview.md)。
 
 <a id="development-environment"></a>
 ## 开发环境
@@ -74,13 +74,13 @@ Redis 的锁、限流、在线成员和广播的测试对单机 Redis 和集群�
 <a id="architecture-tests"></a>
 ### 架构测试
 
-`internal/checks/archtest` 检查框架各个包的分层和依赖方向。每个包属于[四层](directory-structure.md#framework-packages)之一：基础、基础设施、入口、功能。包只能引用同层或更低层的包，并且每一个引用都要列在测试的 `rules` 中，例如 `database` 只能引用 `errorx`；基础层还不能引用 HTTP、数据库和命令行组件。
+`internal/checks/archtest` 检查框架各个包的分层和依赖方向。每个包属于[四层](concepts/structure.md#framework-packages)之一：基础、基础设施、入口、功能。包只能引用同层或更低层的包，并且每一个引用都要列在测试的 `rules` 中，例如 `database` 只能引用 `errorx`；基础层还不能引用 HTTP、数据库和命令行组件。
 
 规则的键是包路径，对它的子包同样生效；子包需要更多依赖时单独写一条规则，例如 `sheet` 只引用 `errorx` 和 `form`，`sheet/imports` 另外引用 `operation` 和 `filesystem`。如果你的修改引入了新的包依赖，请先确认它符合分层，再相应地更新规则；不再用到的依赖也要从规则中删除，否则测试会失败。
 
 `internal/checks/migrationstest` 检查各个包内嵌的迁移能通过 `publish` 命令原样发布。新增带迁移的包时在它的 `sources` 中登记，遗漏时测试会失败。
 
-`internal/checks/clocktest` 检查框架的 SQL 和迁移不读取数据库的时钟，例如 `NOW()`、`CURRENT_TIMESTAMP`：时间都由 Go 算出后作为参数传入。这样 [testing/synctest](testing.md#controlling-time) 的假时钟对整个框架有效，测试和时间有关的行为时用 `time.Sleep` 推进时间，不要给包加可替换的时钟。
+`internal/checks/clocktest` 检查框架的 SQL 和迁移不读取数据库的时钟，例如 `NOW()`、`CURRENT_TIMESTAMP`：时间都由 Go 算出后作为参数传入。这样 [testing/synctest](testing/overview.md#controlling-time) 的假时钟对整个框架有效，测试和时间有关的行为时用 `time.Sleep` 推进时间，不要给包加可替换的时钟。
 
 <a id="doc-tests"></a>
 ### 文档用法测试
@@ -107,7 +107,7 @@ CI 不运行 `-race`，它让整个流程慢了好几倍。提交之前，请在
 ## 编码风格
 
 - 代码使用 `gofmt` 格式化；
-- 遵循[目录结构](directory-structure.md#naming-conventions)中的命名约定；
+- 遵循[目录结构](concepts/structure.md#naming-conventions)中的命名约定；
 - 优先暴露社区组件的原生类型（`*bun.DB`、`*slog.Logger`、`*cobra.Command` 等），而不是再包装一层；
 - 数据库句柄有两种约定：存储（`apitoken.NewStore`、`lock.NewDatabase` 等）接收 `bun.IDB`，可以用连接池或业务事务构造；自己开启事务的服务（`operation`、`sheet/imports`、`sheet/exports`、`filesystem`）接收 `*bun.DB`，要与业务数据一起提交的方法另外接收 `tx bun.IDB` 参数，或提供 `WithDB`；
 - 不引入全局状态，所有依赖都通过参数显式传递。
@@ -115,11 +115,56 @@ CI 不运行 `-race`，它让整个流程慢了好几倍。提交之前，请在
 <a id="writing-documentation"></a>
 ## 编写文档
 
-用户文档位于 `docs` 目录，组织结构和写作风格如下：
+用户文档位于 `docs` 目录，按主题分成若干子目录，每个子目录有一个 `README.md` 索引页，列出本组的每一页和一句话说明。[入门教程](tutorial/README.md)从零做出一个博客。其余页面都是参考页：每页单独可读，示例不依赖教程中的博客。
 
-- 每篇文档以 `# 标题` 开头，紧接着是本页的目录列表，第一节通常是“简介”；
-- 每个 `##`、`###` 标题前放一个 `<a id="英文锚点"></a>`，目录和跨文档链接都使用这些锚点；
+参考页的结构：
+
+````markdown
+# 缓存
+
+一两句话说明它解决什么问题，什么时候用。
+
+- [示例用法](#example-usage)
+- [配置](#configuration)
+- ……
+- [API 参考](#api-reference)
+
+<a id="example-usage"></a>
+## 示例用法
+
+一个 10 行左右、最常见的用法。
+
+<a id="configuration"></a>
+## 配置
+
+配置字段，每个字段一个小标题或一行表格。
+
+## 各个主题……
+## 命令行（如果有）
+## 测试（如果有）
+
+<a id="api-reference"></a>
+## API 参考
+
+### `cachex.New`
+
+```go
+func New[T any](c *memcache.Client, opts Options) *Cache[T]
+```
+
+- `c`：……
+- `opts`：……
+
+返回……
+````
+
+写作约定：
+
+- 每个 `##`、`###` 标题前放一个 `<a id="英文锚点"></a>`，页内目录和跨页链接都使用这些锚点；
 - 使用第二人称“你”，先说明“为什么”，再说明“怎么做”；
-- 补充说明使用 `> [!NOTE]`，实用建议使用 `> [!TIP]`，需要特别注意的风险使用 `> [!WARNING]`；
-- 代码示例要么是可以直接保存运行的完整文件，要么是片段——片段中出现的变量从哪里来，正文需要交代清楚；
-- 新增文档后，记得在 [docs/README.md](README.md) 的目录中添加链接：应用普遍用到的基础设施放在“深入了解”，自带数据表、按需引入的业务功能放在“应用功能”，AI 相关的放在“AI”；新增的包同时加入[框架包一览](directory-structure.md#framework-packages)中同一分类的表格。
+- 示例短小，一个示例只说明一件事。片段中用到的变量（`db`、`logger`、`api` 等）用一句话交代来源，不必给出完整的程序；
+- 以 `package` 开头的代码块是完整文件，必须能单独编译；
+- 补充说明用 `> [!NOTE]`，实用建议用 `> [!TIP]`，必须遵守的约定用 `> [!IMPORTANT]`，会造成数据丢失或安全问题的风险用 `> [!WARNING]`；
+- 不重复上游库的文档，直接链接过去；
+- 每页控制在 150–400 行，过长时按主题拆成同一目录下的几页；
+- 新增一页时，把它加入本组的 `README.md` 和 [docs/README.md](README.md)；新增的包同时加入[框架包一览](concepts/structure.md#framework-packages)中同一分类的表格。

@@ -222,4 +222,4 @@ button + button {
 
 现在谁都可以写文章、删文章。下一章加上作者登录。
 
-深入了解：[客户端代码](../clients.md)、[单页应用](../spa.md)。
+深入了解：[客户端代码](../responses/clients.md)、[单页应用](../responses/spa.md)。

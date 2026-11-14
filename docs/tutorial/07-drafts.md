@@ -698,4 +698,4 @@ time {
 
 登录后写一篇文章，它出现在“我的文章”中，标着草稿，首页还看不到。点“发布”，回到首页就有了。再用 `user create` 创建第二个作者，登录后它看不到第一个作者的草稿，也改不了第一个作者的文章。
 
-深入了解：[授权](../authorization.md)、[数据库事务](../database.md#transactions)。
+深入了解：[授权](../security/authorization.md)、[数据库事务](../database/quick-start.md#transactions)。

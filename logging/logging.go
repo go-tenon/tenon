@@ -35,7 +35,7 @@ type Config struct {
 	// Level 支持 debug、info、warn、error，以及 info+2 这类偏移写法。
 	Level slog.Level `yaml:"level"`
 	// Levels 按 component 字段覆盖 Level，例如 {http: warn, billing: debug}；
-	// 框架组件的 component 见 docs/logging.md。
+	// 框架组件的 component 见 docs/general/logging.md。
 	Levels map[string]slog.Level `yaml:"levels"`
 	// Format 为 json 或 text，空值视为 json。json 供日志系统采集；
 	// text 供本地开发阅读，输出到终端时着色（遵守 NO_COLOR），不是严格的 logfmt。

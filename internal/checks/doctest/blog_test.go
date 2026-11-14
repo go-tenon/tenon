@@ -18,47 +18,47 @@ type docFile struct {
 
 // blogFiles 是要编译的完整文件。其余的包在 testdata/blog 中只声明用到的部分。
 var blogFiles = []docFile{
-	{"cmd/api/main.go", "commands.md"},
-	{"internal/cli/cli.go", "commands.md"},
-	{"internal/bootstrap/seed.go", "migrations.md"},
-	{"internal/auth/auth.go", "authentication.md"},
-	{"internal/auth/permissions.go", "authorization.md"},
-	{"internal/bootstrap/app.go", "dependencies.md"},
-	{"internal/bootstrap/http.go", "dependencies.md"},
-	{"internal/mailjob/mailjob.go", "queue.md"},
-	{"internal/bootstrap/worker.go", "queue.md"},
-	{"internal/bootstrap/scheduler.go", "scheduling.md"},
-	{"internal/auth/social/social.go", "social-login.md"},
-	{"internal/auth/authhttp/web_social.go", "social-login.md"},
-	{"internal/auth/authhttp/social.go", "social-login.md"},
-	{"internal/article/publish.go", "actions.md"},
-	{"internal/article/get.go", "routing.md"},
-	{"internal/article/routes.go", "routing.md"},
-	{"internal/article/dto.go", "routing.md"},
-	{"internal/article/import.go", "import-export.md"},
-	{"internal/article/export.go", "import-export.md"},
-	{"internal/article/queue_import.go", "import-export.md"},
-	{"internal/article/queue_export.go", "import-export.md"},
-	{"internal/article/bulk_publish.go", "operations.md"},
-	{"internal/article/search.go", "search.md"},
-	{"internal/article/tools.go", "mcp.md"},
-	{"internal/attachment/vector.go", "vector.md"},
-	{"internal/article/article_test.go", "testing.md"},
-	{"internal/article/commands_test.go", "testing.md"},
-	{"internal/article/commands.go", "actions.md"},
-	{"internal/bootstrap/commands.go", "actions.md"},
-	{"internal/editor/editor.go", "account-examples.md"},
-	{"internal/reader/reader.go", "account-examples.md"},
-	{"internal/accounts/accounts.go", "account-examples.md"},
-	{"internal/editor/editorapi/routes.go", "account-examples.md"},
-	{"internal/reader/readerapi/routes.go", "account-examples.md"},
+	{"cmd/api/main.go", "general/commands.md"},
+	{"internal/cli/cli.go", "general/commands.md"},
+	{"internal/bootstrap/seed.go", "database/migrations.md"},
+	{"internal/auth/auth.go", "security/authentication.md"},
+	{"internal/auth/permissions.go", "security/authorization.md"},
+	{"internal/bootstrap/app.go", "concepts/dependencies.md"},
+	{"internal/bootstrap/http.go", "concepts/dependencies.md"},
+	{"internal/mailjob/mailjob.go", "libraries/queue.md"},
+	{"internal/bootstrap/worker.go", "libraries/queue.md"},
+	{"internal/bootstrap/scheduler.go", "libraries/scheduling.md"},
+	{"internal/auth/social/social.go", "security/social-login.md"},
+	{"internal/auth/authhttp/web_social.go", "security/social-login.md"},
+	{"internal/auth/authhttp/social.go", "security/social-login.md"},
+	{"internal/article/publish.go", "concepts/actions.md"},
+	{"internal/article/get.go", "http/routing.md"},
+	{"internal/article/routes.go", "http/routing.md"},
+	{"internal/article/dto.go", "http/routing.md"},
+	{"internal/article/import.go", "features/import-export.md"},
+	{"internal/article/export.go", "features/import-export.md"},
+	{"internal/article/queue_import.go", "features/import-export.md"},
+	{"internal/article/queue_export.go", "features/import-export.md"},
+	{"internal/article/bulk_publish.go", "features/operations.md"},
+	{"internal/article/search.go", "features/search.md"},
+	{"internal/article/tools.go", "ai/mcp.md"},
+	{"internal/attachment/vector.go", "ai/vector.md"},
+	{"internal/article/article_test.go", "testing/overview.md"},
+	{"internal/article/commands_test.go", "testing/overview.md"},
+	{"internal/article/commands.go", "concepts/actions.md"},
+	{"internal/bootstrap/commands.go", "concepts/actions.md"},
+	{"internal/editor/editor.go", "security/account-examples.md"},
+	{"internal/reader/reader.go", "security/account-examples.md"},
+	{"internal/accounts/accounts.go", "security/account-examples.md"},
+	{"internal/editor/editorapi/routes.go", "security/account-examples.md"},
+	{"internal/reader/readerapi/routes.go", "security/account-examples.md"},
 }
 
 // blogFragments 是文档中没有 package 和 import 的片段，补上它们后作为文件编译。
 var blogFragments = []struct {
 	path, doc, prefix, header string
 }{
-	{"internal/article/publish_command.go", "actions.md", "// Command 处理 article publish", `package article
+	{"internal/article/publish_command.go", "concepts/actions.md", "// Command 处理 article publish", `package article
 
 import (
 	"fmt"
@@ -73,7 +73,7 @@ import (
 // system 在文档中与 Job 一起给出。
 var system identity.Subject
 `},
-	{"internal/article/import_template.go", "import-export.md", "type TemplateInput struct", `package article
+	{"internal/article/import_template.go", "features/import-export.md", "type TemplateInput struct", `package article
 
 import (
 	"context"
@@ -83,11 +83,11 @@ import (
 	"github.com/go-tenon/tenon/sheet"
 )
 `},
-	{"internal/article/list_query.go", "responses.md", "type ListQuery struct", `package article
+	{"internal/article/list_query.go", "responses/responses.md", "type ListQuery struct", `package article
 
 import "github.com/go-tenon/tenon/page"
 `},
-	{"internal/article/list.go", "responses.md", "// orders 是", `package article
+	{"internal/article/list.go", "responses/responses.md", "// orders 是", `package article
 
 import (
 	"context"
@@ -110,7 +110,7 @@ func toDTOs(items []Article) []ArticleDTO {
 	return out
 }
 `},
-	{"internal/attachment/find.go", "vector.md", "type Find struct", `package attachment
+	{"internal/attachment/find.go", "ai/vector.md", "type Find struct", `package attachment
 
 import (
 	"context"
@@ -120,7 +120,7 @@ import (
 	"github.com/go-tenon/tenon/vector"
 )
 `},
-	{"internal/article/publish_tool.go", "mcp.md", "type PublishArgs struct", `package article
+	{"internal/article/publish_tool.go", "ai/mcp.md", "type PublishArgs struct", `package article
 
 import (
 	"context"
@@ -130,7 +130,7 @@ import (
 	"github.com/go-tenon/tenon/identity"
 )
 `},
-	{"internal/article/search_tool.go", "mcp.md", "type SearchArgs struct", `package article
+	{"internal/article/search_tool.go", "ai/mcp.md", "type SearchArgs struct", `package article
 
 import (
 	"context"
@@ -139,7 +139,7 @@ import (
 	"github.com/go-tenon/tenon/search"
 )
 `},
-	{"internal/bootstrap/mailer.go", "mail.md", "func newMailer(", `package bootstrap
+	{"internal/bootstrap/mailer.go", "libraries/mail.md", "func newMailer(", `package bootstrap
 
 import (
 	"example.com/blog/internal/settings"

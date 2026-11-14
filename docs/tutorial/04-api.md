@@ -447,4 +447,4 @@ curl -X POST localhost:8080/api/articles -H 'Content-Type: application/json' \
 
 这时首页还在调用已经删除的待办接口，下一章把它换成文章页面。
 
-深入了解：[路由](../routing.md)、[验证](../validation.md)、[响应](../responses.md)、[错误处理](../errors.md)、[业务动作](../actions.md)、[本地化](../localization.md)。
+深入了解：[路由](../http/routing.md)、[验证](../http/validation.md)、[响应](../responses/responses.md)、[错误处理](../general/errors.md)、[业务动作](../concepts/actions.md)、[本地化](../general/localization.md)。

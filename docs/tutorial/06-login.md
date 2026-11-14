@@ -942,4 +942,4 @@ export function ArticleList({ onEdit }: { onEdit?: (a: Article) => void }) {
 
 现在任何作者都能修改别人的文章，所有文章写完就公开。下一章加上作者和草稿。
 
-深入了解：[登录与注册](../login.md)、[API 令牌](../api-tokens.md)、[认证](../authentication.md)、[命令行](../commands.md)。
+深入了解：[登录与注册](../security/login.md)、[API 令牌](../security/api-tokens.md)、[认证](../security/authentication.md)、[命令行](../general/commands.md)。

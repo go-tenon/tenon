@@ -49,7 +49,7 @@ func checkSlot(ctx context.Context, db bun.IDB, slot string) error {
 	}
 	if status.String == "lost" {
 		return errors.Newf("queue: replication slot %s is lost (exceeded max_slot_wal_keep_size): "+
-			"jobs published since are gone; see docs/deployment.md to recreate it", slot)
+			"jobs published since are gone; see docs/installation/deployment.md to recreate it", slot)
 	}
 	return nil
 }

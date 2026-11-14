@@ -1,0 +1,317 @@
+# 定时任务
+
+- [简介](#introduction)
+- [定义任务](#defining-tasks)
+    - [表达式](#expressions)
+    - [时区](#timezones)
+- [运行调度器](#running-the-scheduler)
+- [多个实例](#multiple-instances)
+- [防止重叠](#preventing-overlaps)
+- [失败与停止](#failures-and-shutdown)
+- [查看任务](#listing-tasks)
+    - [列出任务的命令](#schedules-command)
+    - [执行记录](#run-history)
+    - [后台页面](#admin-pages)
+    - [手动执行](#running-manually)
+- [清理框架数据](#framework-cleanups)
+- [测试](#testing)
+
+<a id="introduction"></a>
+## 简介
+
+过期的 token、验证码和失败任务都会在数据库中留下过期的行，需要定期清理；应用自己也常有定时的工作，例如每天凌晨生成报表。`schedule` 包按 cron 表达式定时执行这些任务，精度到秒。
+
+调度器只负责「按时触发」：任务就是一个 `func(ctx context.Context) error`，在调度器所在的进程中执行。部署多个实例时，同一个任务的同一次触发只会在一个实例上执行。
+
+<a id="defining-tasks"></a>
+## 定义任务
+
+`schedule.New` 创建调度器，`Add` 注册任务。名称在调度器中唯一，也是锁名的一部分，最长 `schedule.MaxNameLength`（225）字节：
+
+```go
+sched := schedule.New(locker, cfg.Schedule, nil)
+sched.Add("articles:publish-scheduled", "* * * * *", article.NewPublishScheduled(db).Handle)
+```
+
+任务通常是 [action](../concepts/actions.md#as-scheduled-tasks) 的 `Handle` 方法：发布到期文章的 `PublishScheduled` 不需要参数，它的 `Handle` 正好是任务的签名。`schedule.Describe` 为任务加一句说明，在[查看任务](#listing-tasks)时展示。
+
+`locker` 是[原子锁](locks.md)，调度器用它在多个实例之间去重、防止任务重叠，见[多个实例](#multiple-instances)。第二个参数是配置段，见[失败与停止](#failures-and-shutdown)；第三个参数是日志器，`nil` 时使用 `slog.Default()`。
+
+[原子锁](locks.md#running-once)一章中，每个实例都要自己定时调用 `PublishScheduled` 并用锁避免重复执行；交给调度器之后，`PublishScheduled` 里的 `locker.Do` 可以去掉，它也不再需要 `locker` 依赖，调度器已经保证每次只在一个实例上执行。
+
+<a id="expressions"></a>
+### 表达式
+
+| 写法 | 含义 |
+| --- | --- |
+| `*/5 * * * *` | 标准的 5 段 cron 表达式，分钟精度，在第 0 秒触发 |
+| `*/10 * * * * *` | 6 段，第一段是秒：每 10 秒 |
+| `@hourly`、`@daily`、`@weekly`、`@monthly`、`@everysecond` | 预定义写法，`@daily` 即 `0 0 * * *` |
+| `@every 15s`、`@every 90s` | 固定间隔，至少 1 秒，必须是整秒 |
+
+cron 表达式的完整语法（包括 `L`、`W`、`#` 等）见 [gronx](https://github.com/adhocore/gronx#cron-expression)。`@every` 按 Unix 时间对齐，例如 `@every 15s` 总是在第 0、15、30、45 秒触发，与进程何时启动无关，因此所有实例算出的触发时刻都一样。
+
+表达式不合法、名称重复或过长时，`Add` 直接 panic，应用在启动时就会发现。
+
+<a id="timezones"></a>
+### 时区
+
+cron 表达式按 `time.Local` 计算，Go 程序从环境变量 `TZ` 读取它，例如 `TZ=Asia/Shanghai`。容器镜像通常是 UTC，单个任务需要按其他时区计算时，使用 `schedule.In`：
+
+```go
+shanghai, err := time.LoadLocation("Asia/Shanghai")
+// ...
+sched.Add("reports:daily", "0 3 * * *", reports.Generate, schedule.In(shanghai))
+```
+
+<a id="running-the-scheduler"></a>
+## 运行调度器
+
+调度器是 `App` 的一个运行部分（见[依赖装配](../concepts/dependencies.md#assembling-the-application)）。下面是博客应用完整的 `internal/bootstrap/scheduler.go`，`a.locker` 是 `open` 中创建的[原子锁](locks.md#redis-store)。注册任务单独写在 `tasks` 中，调度器运行它，[查看任务](#listing-tasks)的命令和后台页面也用它，任务只定义一次。指标和链路的选项也在这里设置，查看任务时不执行任务，它们不起作用：
+
+```go
+package bootstrap
+
+import (
+    "context"
+    "time"
+
+    "example.com/blog/internal/article"
+    "example.com/blog/internal/settings"
+    "github.com/go-tenon/tenon/command"
+    "github.com/go-tenon/tenon/schedule"
+)
+
+// tasks 创建调度器并注册全部定时任务。
+func (a *App) tasks() *schedule.Scheduler {
+    sched := schedule.New(a.locker, a.cfg.Schedule, nil,
+        schedule.WithTelemetry(a.meters, a.tracers))
+    sched.Add("articles:publish-scheduled", "* * * * *", article.NewPublishScheduled(a.db).Handle,
+        schedule.Describe("发布到了预定时间的文章"))
+    sched.Add("queue:prune-failed", "@daily", schedule.Cleanup(a.failed.Cleanup(30*24*time.Hour), 1000),
+        schedule.Describe("删除 30 天前的失败任务"))
+    return sched
+}
+
+// Scheduler 装配调度器，返回的函数按时执行定时任务，直到 ctx 被取消。
+func (a *App) Scheduler(*command.Daemon) (func(context.Context) error, error) {
+    return a.tasks().Run, nil
+}
+
+// Schedule 只运行调度器，schedule 命令调用它。
+func Schedule(ctx context.Context, cfg settings.Config) error {
+    return run(ctx, cfg, (*App).Scheduler)
+}
+```
+
+`Run` 每秒检查一次到期的任务，每个任务在自己的 goroutine 中执行，一个任务执行很久不会耽误其他任务按时触发。
+
+在根命令中注册 `schedule` 命令；`app.go` 中的 `Start` 已经包含调度器，见[在一个进程中运行多个部分](../general/commands.md#running-together)：
+
+```go
+root.AddCommand(command.Run("schedule", "执行定时任务", bootstrap.Schedule))
+```
+
+<a id="multiple-instances"></a>
+## 多个实例
+
+部署多个实例时，每个实例上的调度器都会在同一时刻触发同一个任务。调度器在执行之前取得一把锁，锁名包含任务名和触发时刻，例如 `schedule:queue:prune-failed:1794366000`，只有取得锁的实例执行这一次触发。锁不会主动释放，一分钟后过期，所以各实例的时钟偏差小于一分钟时就不会重复执行。
+
+所有进程共用同一个 [Redis 锁存储](locks.md#redis-store)，去重就覆盖全部实例。单机部署也一样：[不停机升级](../installation/deployment.md#upgrade-overlap)时新旧两个调度器会同时运行。过期的锁由 Redis 自动删除。
+
+只想在每个实例上各执行一次的任务，例如清理本机的临时目录，使用 `schedule.EveryInstance()`：
+
+```go
+sched.Add("tmp:cleanup", "@hourly", cleanTmpDir, schedule.EveryInstance())
+```
+
+<a id="preventing-overlaps"></a>
+## 防止重叠
+
+任务上一次还没结束时，下一次触发会被跳过并记录一条 `info` 日志，不论上一次在哪个实例上执行。调度器在任务执行期间持有锁 `schedule:<任务名>:running`，每 20 秒续期一次，持有它的实例崩溃时，锁在一分钟内过期。
+
+确实需要并行执行的任务，使用 `schedule.AllowOverlap()`。
+
+一个任务卡住（例如等待一个不会返回的外部请求）时，它会一直持有这把锁，之后的触发都被跳过。`schedule.Timeout` 限制每次执行的时长：
+
+```go
+sched.Add("reports:daily", "0 3 * * *", reports.Generate, schedule.Timeout(30*time.Minute))
+```
+
+超过时长时，任务的 `ctx` 以 `schedule.ErrTimeout` 取消，这次执行记为失败，锁随之释放，下一次触发照常执行。任务要把 `ctx` 传给数据库查询、HTTP 请求等调用，才能及时结束；不理会 `ctx` 的任务会一直运行到自己返回。
+
+<a id="failures-and-shutdown"></a>
+## 失败与停止
+
+任务返回错误或 panic 时，调度器记录一条 `error` 日志，下一次照常触发，不会重试。需要重试的工作，在任务中把它[发布到队列](queue.md#publishing-jobs)：
+
+```go
+sched.Add("reports:daily", "0 3 * * *", func(ctx context.Context) error {
+    return report.Generate.Publish(ctx, a.db, time.Now().AddDate(0, 0, -1)) // queue.Topic[time.Time]
+})
+```
+
+队列负责重试、记录失败，耗时的工作也不会占用调度器所在的进程。
+
+调度器的日志带有 `component=schedule` 字段，任务的 `ctx` 中带有 `task` 字段，用 `slog.InfoContext(ctx, ...)` 记录的日志会自动带上它。`schedule.WithTelemetry` 让调度器报告每次执行的耗时、结果和被跳过的次数，用来发现长时间没有成功执行的任务；每次执行还是一条链路的起点，见[定时任务的指标和链路](../general/telemetry.md#schedule)。
+
+调度器不补跑错过的触发：进程暂停或调度落后不到一分钟时，错过的触发会补上，同一个任务只补一次；部署、重启期间错过的触发直接跳过。收到停止信号后，调度器不再触发新任务，等待执行中的任务结束，最多等待 `shutdown_timeout`，超时后取消它们的 `ctx`。这个时间在应用配置的调度段中设置：
+
+```go
+type Config struct {
+    // ...
+    Schedule schedule.Config `yaml:"schedule"`
+}
+```
+
+```yaml
+schedule:
+  shutdown_timeout: 30s # 默认值；为 0 时立即取消执行中的任务
+```
+
+<a id="listing-tasks"></a>
+## 查看任务
+
+`Tasks` 返回注册的全部任务：名称、说明、表达式、时区和选项（包括 `Timeout`）。它只读取任务的定义，不需要运行调度器，所以在任何进程中都可以调用：
+
+```go
+for _, t := range a.tasks().Tasks() {
+    t.Name, t.Description, t.Expr  // "reports:daily"、"生成前一天的报表"、"0 3 * * *"
+    t.Next(time.Now())             // 下一次执行的时间
+    t.Prev(time.Now())             // 上一次应当执行的时间
+}
+```
+
+`Next` 和 `Prev` 按表达式计算，结果与调度器实际触发的时刻一致；`@every` 按 Unix 时间对齐，与调度器何时启动无关。
+
+`Running` 报告每个任务此刻是否正在执行，在任何一个实例上都算。它查询任务执行期间持有的锁 `schedule:<任务名>:running`，所以同样不需要运行调度器，但要和调度器共用锁存储：
+
+```go
+running, err := sched.Running(ctx) // 任务名 → 是否正在执行
+running["reports:daily"]
+```
+
+使用 `EveryInstance` 或 `AllowOverlap` 的任务不在锁存储中登记执行状态，不出现在结果中。
+
+<a id="schedules-command"></a>
+### 列出任务的命令
+
+`schedulecmd.New` 返回 `schedules` 命令，列出全部任务。它和其他需要数据库的命令一样在 [bootstrap.Commands](../concepts/actions.md#as-commands) 中声明，传入的是注册任务的方法 `a.tasks`：声明命令时 `App` 还没有装配，执行时才调用它：
+
+```go
+schedulecmd.New(a.tasks),
+```
+
+执行 `./bin/api schedules`：
+
+```text
+TASK                        EXPRESSION    NEXT RUN             IN        RUNNING  DESCRIPTION
+articles:publish-scheduled  * * * * *     2026-11-11 17:01:00  42s       no       发布到了预定时间的文章
+locks:cleanup               @hourly       2026-11-11 18:00:00  59m42s    yes      删除过期的锁
+queue:prune-failed          @daily        2026-11-12 00:00:00  6h59m42s  no       删除 30 天前的失败任务
+```
+
+`RUNNING` 是任务此刻是否在任何一个实例上执行；使用 `EveryInstance` 或 `AllowOverlap` 的任务不登记执行状态，显示为 `-`。
+
+<a id="run-history"></a>
+### 执行记录
+
+上一次什么时候执行、结果如何，是运行时的数据：部署多个实例时，每次触发在哪个实例上执行并不确定。需要执行记录时，用 `schedule.WithObserver` 接收执行事件，写进自己的表，`WithTelemetry` 也建立在它之上：
+
+| 事件 | 时机 |
+| --- | --- |
+| `TaskStarted` | 本实例开始执行 |
+| `TaskSucceeded` | 执行完成 |
+| `TaskFailed` | 返回错误或 panic，`Err` 是原因 |
+| `TaskSkipped` | 应当在本实例执行却被跳过，`SkipReason` 是 `overlap`（上一次还没结束）或 `lock_failed`（锁存储出错） |
+
+`Tick` 是这次触发的时刻，即任务应当执行的时间；`Started` 是实际开始的时间，两者之差是调度延迟。由其他实例执行的触发不报告。结束事件在释放执行锁之后发出，Observer 收到它时 `Running` 已经返回 `false`。Observer 在执行任务的 goroutine 中同步调用，写一行数据库很快，更重的工作请缓冲后批量处理。
+
+<a id="admin-pages"></a>
+### 后台页面
+
+后台页面由 HTTP 进程提供，它同样调用 `a.tasks()` 拿到任务的定义，再从[执行记录](#run-history)中读取每个任务上一次的结果，例如应用自己的表中每个任务最新的一行（`r`、`ok`）：
+
+```go
+sched := a.tasks()
+running, err := sched.Running(ctx)
+// ...
+for _, t := range sched.Tasks() {
+    r, ok := lastRuns[t.Name] // 应用从自己的执行记录中查出
+
+    // 应当执行的时间过去了一分钟，这次触发却没有执行记录，也没有正在执行：这次触发丢了，
+    // 例如调度器停止或部署期间。
+    prev := t.Prev(time.Now())
+    missed := (!ok || prev.After(r.Tick)) && time.Since(prev) > time.Minute && !running[t.Name]
+}
+```
+
+页面上可以展示每个任务的说明、表达式、下一次执行的时间、上一次的结果和耗时，并把错过的触发标出来。
+
+<a id="running-manually"></a>
+### 手动执行
+
+后台页面上的「立即执行」不要在 HTTP 进程中直接调用任务：耗时的任务会占用请求，HTTP 实例也可能有很多个。把它[发布到队列](queue.md#publishing-jobs)，由 worker 执行：
+
+```go
+// article 包中：
+var PublishScheduledJob = queue.Topic[struct{}]("articles.publish-scheduled")
+
+// 后台页面：
+err := article.PublishScheduledJob.Publish(ctx, a.db, struct{}{})
+
+// Worker 中：
+article.PublishScheduledJob.Handle(w, func(ctx context.Context, _ struct{}) error {
+    return article.NewPublishScheduled(a.db).Handle(ctx)
+})
+```
+
+任务和队列处理函数调用的是同一个 action，手动执行和定时执行的效果相同。手动执行不受[防止重叠](#preventing-overlaps)的限制，需要互斥的任务在 action 中自己使用[原子锁](locks.md)。
+
+<a id="framework-cleanups"></a>
+## 清理框架数据
+
+框架中保存在数据库里的数据都提供 `func(ctx, limit)` 形式的清理函数，每次最多删除 `limit` 条过期的行：有固定过期时间的是 `Cleanup` 方法本身，按保留期删除的由 `Cleanup(保留期)` 返回。`schedule.Cleanup` 把它包装成任务：反复调用，直到一次删除的数量少于 `limit`。
+
+| 数据 | 清理方法 | 建议频率 |
+| --- | --- | --- |
+| [API 令牌](../security/api-tokens.md#cleanup) | `apitoken.Store` 的 `Cleanup` | 每小时 |
+| [登录验证码](../security/login.md#cleanup) | 每套账号的 `login.Realm` 的 `Cleanup` | 每小时 |
+| [未绑定的 passkey](../security/login.md#passkeys) | `passkey.Store` 的 `Cleanup` | 每天 |
+| [文件](filesystem.md#cleanup) | 文件服务的 `Cleanup` | 每 5 分钟 |
+| [操作日志](../features/activity.md#retention) | `activity.Cleanup(db, 保留期)` | 每天 |
+| [通知](../features/notifications.md#retention) | `notification.Cleanup(db, 保留期)` | 每天 |
+| [推送设备](../features/push.md#cleanup) | `push.Cleanup(db, 保留期)` | 每天 |
+| [后台操作](../features/operations.md#cleanup)（包括导入和导出） | `operation.New(db)` 的 `Cleanup(保留期)` | 每天 |
+| [OAuth 授权码](../security/oauth-server.md#assembling) | `oauthserver.New(…)` 的 `Cleanup` | 每小时 |
+| [OAuth 动态注册的客户端](../security/oauth-server.md#dynamic-registration) | `oauthserver.New(…)` 的 `CleanupClients(保留期)` | 每天 |
+| [Webhook 投递记录](../features/webhooks.md#retention) | `webhook.Cleanup(db, 保留期)` | 每天 |
+| [失败任务](queue.md#failed-jobs) | `queue.NewFailedJobs(db).Cleanup(保留期)` | 每天 |
+
+锁、限流和在线成员保存在 Redis 中，过期的键由 Redis 自动删除，不需要注册清理任务。
+
+<a id="testing"></a>
+## 测试
+
+`RunDue` 执行在指定时刻到期的任务，等它们结束后返回合并的错误，用来确定性地验证调度配置。[`locktest.NewStore()`](locks.md#testing) 是测试用的内存锁存储：
+
+```go
+func TestDailyReport(t *testing.T) {
+    sched := schedule.New(lock.New(locktest.NewStore()), schedule.DefaultConfig(), nil)
+    var ran bool
+    sched.Add("reports:daily", "0 3 * * *", func(context.Context) error {
+        ran = true
+        return nil
+    }, schedule.In(time.UTC))
+
+    sched.RunDue(ctx, time.Date(2026, 11, 11, 2, 59, 0, 0, time.UTC))
+    if ran {
+        t.Fatal("ran before 03:00")
+    }
+    if err := sched.RunDue(ctx, time.Date(2026, 11, 11, 3, 0, 0, 0, time.UTC)); err != nil || !ran {
+        t.Fatalf("ran=%v err=%v", ran, err)
+    }
+}
+```
+
+任务本身是普通的函数，直接调用它测试即可。

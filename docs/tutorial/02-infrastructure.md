@@ -35,7 +35,7 @@ services:
     ports: ["127.0.0.1:5432:5432"]
     volumes: [postgres:/var/lib/postgresql]
     healthcheck:
-      test: pg_isready -U blog
+      test: pg_isready -U blog -h 127.0.0.1
       interval: 1s
       retries: 60
 
@@ -316,4 +316,4 @@ curl localhost:8080/readyz
 
 停止 PostgreSQL（`docker compose stop postgres`）再请求一次，返回 `503`，`database` 变为 `failed`。再 `docker compose start postgres`，恢复正常。
 
-深入了解：[配置](../configuration.md)、[依赖装配](../dependencies.md)、[健康检查](../lifecycle.md#health-checks)。
+深入了解：[配置](../general/configuration.md)、[依赖装配](../concepts/dependencies.md)、[健康检查](../concepts/lifecycle.md#health-checks)。
