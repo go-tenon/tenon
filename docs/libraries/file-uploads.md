@@ -96,7 +96,7 @@ imgproxy:
   salt: ${IMGPROXY_SALT:-}
 ```
 
-把 `imgproxy.Config` 放进根配置结构体（`yaml:"imgproxy"`），在入口创建，`New` 不访问网络：
+把 `imgproxy.Config` 放进根配置结构体（`yaml:"imgproxy"`）。[`config.Load`](../general/configuration.md#loading-configuration) 会在启动时校验它；在入口创建一次，之后生成地址都复用。`New` 不访问网络：
 
 ```go
 images, err := imgproxy.New(cfg.Imgproxy)

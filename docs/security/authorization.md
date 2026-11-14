@@ -1,6 +1,6 @@
 # 授权
 
-[认证](authentication.md)确认了调用者是谁，接下来还需要回答：这个调用者**能不能**执行当前的操作？这就是授权。
+[认证](authentication.md)确认了调用者是谁，接下来还需要回答：这个调用者**能不能**执行当前的操作？这就是授权。路由上声明权限的最短例子见[单账号后台](admin-example.md#protecting-routes)；按租户分配角色见[运营后台与多租户](saas-example.md)。
 
 Tenon 的授权分为三层：
 

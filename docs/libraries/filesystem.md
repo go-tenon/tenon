@@ -166,6 +166,8 @@ S3 按上传时声明的 `Content-Type` 返回文件。请让 `public_url` 使�
 <a id="assembling-files"></a>
 ## 装配文件服务
 
+串起来看：`Load` 校验 `filesystem` 段 → 在入口打开要用的磁盘 → `filesystem.New` 一次 → 上传 / 确认 / 读取都走这个服务。
+
 `filesystem.New` 接收数据库、配置和打开好的磁盘。磁盘 map 的键是磁盘名，与配置中的 `local`、`s3` 对应，会写入 `files.disk` 字段，之后读取文件时按这个名字找到磁盘：
 
 ```go

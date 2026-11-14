@@ -4,7 +4,7 @@
 
 账号表属于应用。应用的 `users` 表只保存业务字段；登录标识、密码哈希和验证码保存在框架的 `auth_*` 表中，按 [`identity.Ref`](authentication.md#key-concepts) 引用账号。一个账号可以有多个邮箱、手机号，也可以没有密码只用验证码登录。
 
-每套[账号体系](authentication.md#account-systems)各用一个 `login.Realm`。两套账号从建表到接口的完整代码见[完整示例](account-examples.md)。
+每套[账号体系](authentication.md#account-systems)各用一个 `login.Realm`。单账号后台见[单账号后台](admin-example.md)；运营 + 租户两套账号见[运营后台与多租户](saas-example.md)。
 
 - [示例用法](#example-usage)
 - [装配](#assembling)
@@ -59,6 +59,13 @@ plain, err := tokens.Login(ctx, out.Subject, device)
 <a id="assembling"></a>
 ## 装配
 
+`login` 没有单独的配置段；它吃的是数据库、[`Hasher`](hashing.md)、[`Crypt`](encryption.md) 和限流器这些已经装配好的依赖。串起来看：
+
+1. 发布迁移，建好 `auth_*` 表
+2. 启动时 `Load` 校验哈希、加密、Redis 等依赖的配置
+3. 在入口创建一次 `login.Realm`（每套账号体系各一个）
+4. 登录 / 注册接口调用 `Realm` 的方法；成功后再交给 [API 令牌](api-tokens.md) 签发凭据
+
 先发布 `login` 的迁移，见[发布框架迁移](../database/migrations.md#publishing-framework-migrations)：
 
 ```go
@@ -67,7 +74,7 @@ migrationCmd.AddCommand(migratecmd.Publish(
 ))
 ```
 
-在[入口](../concepts/dependencies.md#assembling-the-application)中为用户创建 `Realm`，[`Hasher`](hashing.md) 哈希密码，[`Crypt`](encryption.md) 派生验证码的密钥：
+在[入口](../concepts/dependencies.md#assembling-the-application)中为用户创建 `Realm`，`Hasher` 哈希密码，`Crypt` 派生验证码的密钥：
 
 ```go
 every15 := ratelimit.Config{Rate: 5, Interval: 15 * time.Minute, Burst: 5}
@@ -313,7 +320,7 @@ out, codes, err := staff.CompleteEnroll(ctx, in.Body.Enroll, in.Body.Code) // �
 plain, err := tokens.Login(ctx, out.Subject, device)
 ```
 
-`Enroll` 与 `Pending` 一样 15 分钟内有效，最多输错 5 次。passkey 登录本身就算二次验证，直接成功；`Register` 注册的新账号同样先启用。完整的写法见[编辑后台](account-examples.md#editor-api)。
+`Enroll` 与 `Pending` 一样 15 分钟内有效，最多输错 5 次。passkey 登录本身就算二次验证，直接成功；`Register` 注册的新账号同样先启用。后台登录接口的完整骨架见[单账号后台](admin-example.md#auth-api)。
 
 [按租户登录](#identifiers)的账号体系可以按租户的设置决定，见[按租户的登录策略](#policies)。一套账号在多个租户中使用、只有部分租户要求二次验证时，登录时还不知道要进哪个租户，改由这些租户的 Resolver 检查：`!sub.Auth.TwoFactor()` 时返回 `identity.ErrTwoFactorRequired`，请求得到 `403 auth.two_factor_required`。客户端让用户输入验证器上的数字，`CheckTwoFactor` 校验后用 token 的 `Confirm` 补上这次的方式（见[确认身份](#confirming)），再重试；账号还没有启用二次验证的，先到账号设置中启用。
 
@@ -429,7 +436,7 @@ if cfg.RequireTwoFactor && !sub.Auth.TwoFactor() {
 
 失败次数都有限制。`HasPassword` 决定显示密码框还是“发送验证码”。确认用的验证码只发给 `ref` 自己的标识，其他标识返回 `ErrNotFound`；它只用于确认身份，`VerifyCode` 拒绝它，所以二次验证始终有效。
 
-最简单的写法是客户端在敏感请求中直接带上密码或验证码，处理器先确认、再执行，见[读者注销账号](account-examples.md#reader-api)。几个敏感操作连在一起时，每次都输入密码很烦，可以改为“确认一次，一段时间内放行”：
+最简单的写法是客户端在敏感请求中直接带上密码或验证码，处理器先确认、再执行。几个敏感操作连在一起时，每次都输入密码很烦，可以改为「确认一次，一段时间内放行」：
 
 1. 敏感操作的路由加上 `rest.Confirmed(15*time.Minute)`。距离上次登录或确认超过 15 分钟时，请求返回 `403 auth.confirm_required`；
 2. 客户端弹出确认框，调用应用的确认接口：校验密码或验证码，再用 token 的 `Confirm` 记下确认时间；
@@ -504,14 +511,14 @@ err := database.RunInTx(ctx, a.db, nil, func(ctx context.Context, tx database.Tx
 
 启用或关闭二次验证、绑定或移除登录方式的写法相同。登录成功时用 `out.Subject` 作为操作者记录；登录失败没有可以确定的操作者，需要时写进日志。
 
-“新设备登录”提醒在签发凭据之前查一下已有的登录。下面是读者 App 的 `issue`，其他设备上有登录、但都不是这个 User-Agent 时提醒一次：
+「新设备登录」提醒在签发凭据之前查一下已有的登录。其他设备上有登录、但都不是这个 User-Agent 时提醒一次：
 
 ```go
-known, err := h.acc.ReaderTokens.List(ctx, out.Subject)
+known, err := h.tokens.List(ctx, out.Subject)
 if err != nil {
     return nil, err
 }
-pair, err := h.acc.ReaderJWT.Login(ctx, out.Subject, device)
+pair, err := h.jwt.Login(ctx, out.Subject, device)
 if err != nil {
     return nil, err
 }

@@ -51,6 +51,8 @@ crypt:
   key: ${APP_KEY}
 ```
 
+挂进去之后，[`config.Load`](../general/configuration.md#loading-configuration) 会在启动时校验：密钥缺失或格式不对，应用起不来。配置只描述密钥；真正加解密、签链接的是下面在入口里创建的 `Crypt`。
+
 应用密钥是 32 字节随机数的 base64，用下面的命令生成，和数据库密码一样保存在部署环境中：
 
 ```shell
@@ -59,7 +61,7 @@ openssl rand -base64 32
 
 密钥一旦用来加密了数据，就要妥善保管：没有它，已经加密的值无法解开，已经发出的链接全部失效。更换密钥见[轮换密钥](#rotating-keys)。
 
-在[入口](../concepts/dependencies.md#assembling-the-application)的 `open` 中创建 `Crypt`，保存在 `App` 中，传给需要它的业务动作和处理器。`Crypt` 可以并发使用，整个应用共用一个：
+生命周期是：启动时 `Load` 校验配置 → 在[入口](../concepts/dependencies.md#assembling-the-application)的 `open` 中创建一次 `Crypt` → 之后加解密和签链接都复用它。把它保存在 `App` 中，传给需要它的业务动作和处理器。`Crypt` 可以并发使用，整个应用共用一个：
 
 ```go
 c := crypt.New(cfg.Crypt)

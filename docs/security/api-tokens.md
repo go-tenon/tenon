@@ -66,12 +66,27 @@ api_token:
   remember_idle_timeout: 168h # 登录时选择“记住我”的空闲时长
 ```
 
-上面是默认值。登录 token 的截止时间是“签发时间 + `lifetime`”与“最近使用时间 + 空闲时长”中较早的一个。不透明的登录 token 每次使用都会延长它的有效期，收到 `401` 时让用户重新登录即可。[JWT 模式](#jwt)按同样的规则计算，只是在刷新时延长。
+上面是默认值。登录 token 的截止时间是「签发时间 + `lifetime`」与「最近使用时间 + 空闲时长」中较早的一个。不透明的登录 token 每次使用都会延长它的有效期，收到 `401` 时让用户重新登录即可。[JWT 模式](#jwt)按同样的规则计算，只是在刷新时延长。
 
 有效期在签发时写入 token：修改配置只影响之后签发的 token，已经签发的 token 仍然按签发时的有效期滑动。
 
+`apitoken.Config` 自己实现了 `Validate() error`。挂进根配置后，[`config.Load`](../general/configuration.md#loading-configuration) 会在启动时自动调用它——检查的是「有效期等配置项合不合法」，不是请求里的 Bearer token。请求时验 token 的是下一节的 `Store.Validate`，二者不要混：
+
+| | `apitoken.Config.Validate` | `Store.Validate` / `JWT.Validate` |
+| --- | --- | --- |
+| 时机 | **启动时**，加载配置之后 | **每次请求**，`RequireBearer` 调校验器时 |
+| 干什么 | 配置写得对不对 | 这串 token 对应谁、是否仍有效 |
+| 失败后果 | 应用起不来 | 返回 `401` |
+
 <a id="assembling"></a>
 ## 装配
+
+串起来看：
+
+1. 发布迁移，建好 `api_tokens` 表
+2. 启动时 `config.Load` 读出 `api_token` 段，并跑 `Config.Validate`
+3. 在入口调用 `apitoken.NewStore`（或 JWT）一次，把 `Store` 交给登录接口和路由保护
+4. 请求到来时，`RequireBearer` 调用 `tokens.Validate`（或 `jwt.Validate`）
 
 `apitoken.NewStore` 接收应用的 `*bun.DB` 和配置。使用前先发布 `api_tokens` 表的迁移，见[发布框架迁移](../database/migrations.md#publishing-framework-migrations)：
 
@@ -451,7 +466,7 @@ func (h *handlers) logout(ctx context.Context, _ *struct{}) (*LogoutOutput, erro
 }
 ```
 
-`LogoutOutput` 只有 `SetCookie` 一个字段。登录处理器在 `Password` 成功后调用 `h.jwt.Login`，再 `return session(pair, in.Body.Cookie), nil`。`RefreshCookie.Set` 在宽限期内的重复刷新（`pair.Refresh` 为空）时返回 `nil`，浏览器中保留的就是最新的那个。前端的写法见 [API 客户端](../responses/clients.md#creating-the-client)，完整的例子见[编辑后台](account-examples.md#editor-api)。
+`LogoutOutput` 只有 `SetCookie` 一个字段。登录处理器在 `Password` 成功后调用 `h.jwt.Login`，再 `return session(pair, in.Body.Cookie), nil`。`RefreshCookie.Set` 在宽限期内的重复刷新（`pair.Refresh` 为空）时返回 `nil`，浏览器中保留的就是最新的那个。前端的写法见 [API 客户端](../responses/clients.md#creating-the-client)，完整的例子见[单账号后台](admin-example.md#auth-api)。
 
 部署方式决定还要做什么：
 

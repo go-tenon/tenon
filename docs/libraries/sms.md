@@ -44,7 +44,7 @@ err := sender.Send(ctx, sms.Message{
 <a id="assembling"></a>
 ## 装配发送器
 
-和[邮件](mail.md#assembling-mailer)一样，用哪个服务商由应用的配置决定：
+和[邮件](mail.md#assembling-mailer)一样：配置段挂进根配置 → 启动时 `Load` 校验嵌套的服务商配置 → 入口按 `driver` 创建一次发送器 → 之后发送复用它。用哪个服务商由应用的配置决定：
 
 ```go
 type SMSConfig struct {
