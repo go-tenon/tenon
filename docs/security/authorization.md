@@ -34,6 +34,8 @@ Tenon 的授权分为三层：
 <a id="example-usage"></a>
 ## 示例用法
 
+授权有三种写法，从简单到复杂：在路由上要求权限、在业务规则中检查、把角色保存在数据库中：
+
 ```go
 // 路由要求权限
 rest.RequireBearer(api, tokens.Validate, "articles:write")(&op)
@@ -48,6 +50,8 @@ roles := authz.NewStore(db, auth.Permissions)
 err := roles.Assign(ctx, sub.Ref(), tenant, editorRole.ID)
 api := rest.New(rest.Options{Accounts: identity.Accounts{user.Type: roles.Resolve}})
 ```
+
+大多数接口只需要第一种。资源的归属（只有作者能修改自己的文章）要在业务规则中检查；需要让管理员在后台分配角色时，再用 `authz` 把角色和权限保存在数据库中。
 
 <a id="permissions"></a>
 ## 权限

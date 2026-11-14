@@ -20,6 +20,8 @@
 <a id="example-usage"></a>
 ## 示例用法
 
+下面加密一个第三方 API Key，读取时解密，再生成一个 24 小时内有效的签名链接：
+
 ```go
 c := crypt.New(cfg.Crypt)
 
@@ -29,6 +31,8 @@ apiKey, err := c.Decrypt(secret)      // 读取时解密
 link := c.SignURL("https://example.com/email/verify?user=42", 24*time.Hour)
 err = c.VerifyURL(r.URL) // 签名不对或已过期时返回 crypt.ErrInvalidSignature
 ```
+
+解密时依次尝试当前的密钥和 `previous_keys` 中的旧密钥，所以轮换应用密钥之后，用旧密钥加密的数据仍然能解密。签名链接被改动过或者已经过期时，`VerifyURL` 返回 `crypt.ErrInvalidSignature`，响应 `403`。
 
 <a id="configuration"></a>
 ## 配置

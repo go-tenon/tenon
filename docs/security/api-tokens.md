@@ -30,6 +30,8 @@ token 分为两类：
 <a id="example-usage"></a>
 ## 示例用法
 
+下面在登录成功后签发令牌，用它保护路由，并在退出登录时撤销它：
+
 ```go
 tokens := apitoken.NewStore(db, cfg.APIToken)
 
@@ -42,6 +44,8 @@ rest.RequireBearer(api, tokens.Validate)(&op)
 // 退出登录
 err = tokens.Revoke(ctx, sub, sub.Credential)
 ```
+
+客户端把 `plain` 放在 `Authorization: Bearer` 请求头中。数据库只保存令牌的哈希，所以 `plain` 只在签发时出现一次。用户每次使用令牌，它的有效期就向后顺延；长时间不用，令牌会自动过期。
 
 <a id="configuration"></a>
 ## 配置

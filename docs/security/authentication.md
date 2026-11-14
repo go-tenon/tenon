@@ -25,6 +25,8 @@ Tenon 不限定 token 的种类和来源。它可以是数据库中的 API Key�
 <a id="example-usage"></a>
 ## 示例用法
 
+下面创建令牌存储，声明 API 接受的账号体系，然后用 `RequireBearer` 保护一条路由：
+
 ```go
 tokens := apitoken.NewStore(db, cfg.APIToken)
 
@@ -40,6 +42,8 @@ rest.Register(api, op, NewCreate(db).HTTP)
 // 处理器中取出主体
 sub, _ := identity.FromContext(ctx)
 ```
+
+没有携带有效令牌的请求，在到达处理器之前就会得到 `401`；令牌有效但缺少 `articles:write` 权限时得到 `403`。通过认证的请求，处理器用 `identity.FromContext` 取得调用者，再交给业务动作。下面先介绍几个关键概念，再逐步介绍校验器、路由保护和多套账号体系。
 
 <a id="key-concepts"></a>
 ### 核心概念

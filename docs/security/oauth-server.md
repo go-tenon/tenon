@@ -26,6 +26,8 @@
 <a id="example-usage"></a>
 ## 示例用法
 
+下面创建授权服务器，注册它的端点和同意页需要的接口：
+
 ```go
 oauth := oauthserver.New(db, tokens, oauthserver.Options{
     Issuer:     "https://example.com",
@@ -37,6 +39,8 @@ router.Handle(oauth.MetadataPath(), oauth.Metadata())
 oauth.Routes(router)                                    // 授权、令牌端点
 oauth.Register(api, rest.RequireBearer(api, tokens.Validate)) // 同意页调用的接口
 ```
+
+之后，在 claude.ai 中添加你的 MCP 服务时，用户会被带到你的应用登录，在同意页上点“允许”，claude.ai 就拿到了一个只能访问 MCP 服务的令牌。
 
 <a id="installation"></a>
 ## 安装
