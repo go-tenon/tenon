@@ -60,7 +60,7 @@ export default defineConfig({
 go run github.com/go-tenon/tenon/cmd/tenon@main init todo
 ```
 
-在 `todo` 目录生成一个能直接运行的项目：Go 应用加 React 单页应用，带一个待办事项的示例资源，数据保存在内存中，不依赖任何外部服务。目录结构见[安装](installing.md#creating-a-project)。
+在 `todo` 目录生成一个能直接运行的项目：Go 应用加 React 单页应用，带一个待办事项的示例资源，数据保存在内存中，不依赖任何外部服务。目录结构与入口说明见[脚手架](scaffolding.md#creating-a-project)。
 
 生成后它运行 `go mod tidy`、生成 TypeScript 客户端，装了 Bun 时再运行 `bun install`。`--module` 是 Go 模块路径，`--name` 是应用的名称，默认都是目录名。目录必须不存在或为空。
 

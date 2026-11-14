@@ -2,12 +2,13 @@
 
 Tenon 是一个用于构建 HTTP API 的 Go 应用框架。登录后使用的界面是调用 API 的单页应用或 App，官网、帮助中心这类公开页面可以在服务端渲染。它为配置、路由、验证、错误处理、日志、认证、数据库和迁移提供一套统一的约定，同时让你直接使用 chi、Huma、slog、Bun、goose、Cobra 等社区组件的原生能力。
 
-第一次使用 Tenon，先读[安装](installation/installing.md)，然后跟着[入门教程](tutorial/README.md)做一个博客。之后按需查阅下面的章节，每一页都可以单独阅读。
+第一次使用 Tenon，先读[安装](installation/installing.md)写出最小 API，或用[脚手架](installation/scaffolding.md)生成完整项目，然后跟着[入门教程](tutorial/README.md)做一个博客。之后按需查阅下面的章节，每一页都可以单独阅读。
 
 ## 入门
 
 - [安装](installation/README.md)
     - [安装](installation/installing.md)
+    - [脚手架](installation/scaffolding.md)
     - [开发工具](installation/tooling.md)
     - [部署](installation/deployment.md)
 - [入门教程](tutorial/README.md)
