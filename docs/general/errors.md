@@ -1,6 +1,6 @@
 # 错误处理
 
-接口可能遇到的失败分为三类，处理方式各不相同：
+每个接口都会遇到失败：用户提交的数据不对，要找的文章不存在，或者数据库突然连不上。Tenon 把这些失败分成三类，处理方式各不相同：
 
 | 失败类型 | 例子 | 怎么处理 |
 | --- | --- | --- |
@@ -8,7 +8,7 @@
 | **可预期的业务结果** | 文章不存在、slug 已被使用 | 用 `errorx` 定义带错误码的业务错误并返回 |
 | **意料之外的故障** | 数据库连不上、代码有 bug | 用 `errors.Wrap` 补充上下文后返回，客户端只收到 `500` |
 
-无论哪一类，业务代码都只需要**返回错误**。选择状态码、生成响应、记录日志，都由框架在边界完成。
+好消息是，无论哪一类，你的业务代码都只需要**返回错误**。选择 HTTP 状态码、生成错误响应、记录日志，都由框架在边界统一完成。
 
 - [示例用法](#example-usage)
 - [一个完整的例子](#example)
@@ -31,6 +31,8 @@
 <a id="example-usage"></a>
 ## 示例用法
 
+先定义一个业务错误，然后在业务动作中返回它：
+
 ```go
 var ErrNotFound = errorx.Define(errorx.NotFound, "article.not_found")
 
@@ -47,7 +49,7 @@ func (a *Get) Handle(ctx context.Context, id uuid.UUID) (*Article, error) {
 }
 ```
 
-文章不存在时，接口返回：
+文章不存在时，客户端收到的响应是这样的：
 
 ```http
 HTTP/1.1 404 Not Found
@@ -56,12 +58,14 @@ Content-Type: application/problem+json
 {"title": "Not Found", "status": 404, "detail": "文章不存在", "code": "article.not_found"}
 ```
 
-`errors` 是 [cockroachdb/errors](https://github.com/cockroachdb/errors)，它与标准库的 `errors` 兼容，`Wrap` 会记录堆栈。
+这里有两种错误。`ErrNotFound` 是**可预期的结果**，客户端根据 `code` 决定怎么处理；数据库的其他错误是**意料之外的故障**，用 `errors.Wrap` 说明“在做什么时失败了”，客户端只会收到一个通用的 `500`。`errors` 是 [cockroachdb/errors](https://github.com/cockroachdb/errors)，它与标准库的 `errors` 兼容，`Wrap` 还会记录堆栈。
+
+下一节用一个完整的例子，看看这三类失败分别是怎样处理的。
 
 <a id="example"></a>
 ## 一个完整的例子
 
-下面实现“修改文章”的接口 `PUT /articles/{id}`，它可能遇到以下失败：
+我们来实现“修改文章”的接口 `PUT /articles/{id}`。它可能遇到这些失败：
 
 - 提交的标题为空，或者 slug 的格式不对；
 - 文章不存在；
@@ -70,12 +74,12 @@ Content-Type: application/problem+json
 - 新的 slug 已被其他文章使用；
 - 数据库出现故障。
 
-文章模型 `Article` 有 `ID`、`AuthorID`、`Title`、`Slug`、`Content`、`Status` 几个字段。
+下面一步步来处理它们。文章模型 `Article` 有 `ID`、`AuthorID`、`Title`、`Slug`、`Content`、`Status` 几个字段。
 
 <a id="declaring-input"></a>
 ### 声明输入格式
 
-格式上的要求直接写在输入类型的结构体标签上。不符合要求的请求会被框架拦截，并返回 `422`。输入类型由路径参数和请求体组成，请求体 `Changes` 上写着验证规则：
+第一类失败最简单。格式上的要求直接写在输入类型的结构体标签上，不符合要求的请求会被框架拦截并返回 `422`，你的处理器根本不会被调用。输入类型由路径参数和请求体组成，验证规则写在请求体 `Changes` 上：
 
 ```go
 type Changes struct {
@@ -95,7 +99,7 @@ type UpdateInput struct {
 <a id="defining-errors"></a>
 ### 定义业务错误
 
-需要查询数据或依赖业务状态才能判断的失败，用 `errorx.Define` 定义为业务错误。第一个参数是**分类**，决定了它的性质；第二个参数是**错误码**：
+“文章不存在”“slug 已被使用”这类失败，要查询数据或依赖业务状态才能判断，结构体标签无能为力。它们用 `errorx.Define` 定义为业务错误：
 
 ```go
 var (
@@ -106,12 +110,12 @@ var (
 )
 ```
 
-错误码推荐使用 `资源.原因` 的形式，全部小写，单词之间用下划线连接。错误码在整个应用中必须唯一。
+第一个参数是**分类**，它决定了错误的性质，以及对应的 HTTP 状态码（见[选择错误分类](#error-kinds)）；第二个参数是**错误码**，客户端根据它判断发生了什么。错误码推荐使用 `资源.原因` 的形式，全部小写，单词之间用下划线连接。错误码在整个应用中必须唯一。
 
 <a id="returning-errors"></a>
 ### 在动作中返回错误
 
-下面是[业务动作](../concepts/actions.md) `Update` 和它的 `Handle` 方法。读取、检查和更新在同一个事务中完成，原因见[授权](../security/authorization.md#checking-in-transactions)：
+接着，在[业务动作](../concepts/actions.md) `Update` 的 `Handle` 方法中返回这些错误。读取、检查和更新在同一个事务中完成，原因见[授权](../security/authorization.md#checking-in-transactions)：
 
 ```go
 type Update struct {
@@ -156,7 +160,7 @@ func (a *Update) Handle(ctx context.Context, subject identity.Subject, id uuid.U
 }
 ```
 
-注释中的三种写法覆盖了绝大多数场景：
+注意代码中标出的三种写法，它们覆盖了绝大多数场景：
 
 1. **可预期的失败**：调用错误模板的 `New`；
 2. **由底层错误引起的可预期失败**：例如唯一约束冲突，调用模板的 `Wrap`，把底层错误作为原因保留下来，方便排查。`errorx.Public` 附加的参数可以出现在提示文案中，见[在提示中带上参数](#public-parameters)；
@@ -165,7 +169,7 @@ func (a *Update) Handle(ctx context.Context, subject identity.Subject, id uuid.U
 <a id="calling-from-handlers"></a>
 ### HTTP 入口
 
-HTTP 入口不做任何错误转换，直接返回 `Handle` 的错误：
+HTTP 入口不需要做任何错误转换，直接返回 `Handle` 的错误即可：
 
 ```go
 func (a *Update) HTTP(ctx context.Context, in *UpdateInput) (*ArticleOutput, error) {
@@ -412,29 +416,53 @@ errors.Is(decoded, article.ErrNotFound)     // true
 func Define(kind Kind, code string) *Template
 ```
 
-定义一个业务错误模板，通常是包级变量。`code` 推荐写成 `资源.原因`，全部小写，在应用中唯一。
+- **参数**
+    - `kind`：错误的分类，决定 HTTP 状态码和命令行的退出码
+    - `code`：错误码，推荐写成 `资源.原因`，在应用中唯一
+- **返回**：错误模板，通常保存为包级变量
 
-### Template
+### Template.New
 
 ```go
 func (t *Template) New(opts ...Option) error
-func (t *Template) Wrap(cause error, opts ...Option) error
-func (t *Template) Code() string
-func (t *Template) Kind() Kind
 ```
 
-`New` 创建一次具体的失败，`Wrap` 同时保留底层原因。只有 `Unavailable` 和 `Internal` 两类在调用处记录堆栈。`errors.Is(err, tmpl)` 按错误码匹配。
+- **参数**
+    - `opts`：附加的信息，例如 `Public`、`RetryAfter`
+- **返回**：一次具体的失败
 
-### Option
+只有 `Unavailable` 和 `Internal` 两类会在调用处记录堆栈。`errors.Is(err, tmpl)` 按错误码匹配。
+
+### Template.Wrap
+
+```go
+func (t *Template) Wrap(cause error, opts ...Option) error
+```
+
+- **参数**
+    - `cause`：引起这次失败的底层错误，保留在错误链中
+    - `opts`：同 `New`
+- **返回**：一次具体的失败
+
+### Public
 
 ```go
 func Public(key string, value any) Option
+```
+
+- **参数**
+    - `key`、`value`：可以出现在提示文案中的参数，见[在提示中带上参数](#public-parameters)
+
+### RetryAfter
+
+```go
 func RetryAfter(d time.Duration) Option
 ```
 
-`Public` 附加可以出现在提示文案中的参数；`RetryAfter` 附加建议的等待时间，HTTP 响应带上 `Retry-After` 头。
+- **参数**
+    - `d`：建议的等待时间，HTTP 响应带上 `Retry-After` 头
 
-### 读取错误
+### CodeOf、KindOf、PublicOf、RetryAfterOf
 
 ```go
 func CodeOf(err error) string
@@ -443,7 +471,7 @@ func PublicOf(err error) map[string]any
 func RetryAfterOf(err error) time.Duration
 ```
 
-沿错误链找到业务错误并读取对应的值。不是业务错误时，`CodeOf` 返回空字符串，`KindOf` 返回 `Internal`。
+沿错误链找到业务错误，读取对应的值。不是业务错误时，`CodeOf` 返回空字符串，`KindOf` 返回 `Internal`。
 
 <a id="status-mapping"></a>
 ### Kind 与状态码
@@ -465,4 +493,7 @@ func RetryAfterOf(err error) time.Duration
 func AddAccessLogAttrs(ctx context.Context, attrs ...slog.Attr)
 ```
 
-为当前请求的访问日志追加字段，同名字段后写覆盖先写。
+- **参数**
+    - `attrs`：追加到当前请求访问日志中的字段
+
+同名的字段，后写的覆盖先写的。没有安装访问日志中间件时什么也不做。

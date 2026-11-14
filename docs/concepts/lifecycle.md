@@ -1,6 +1,8 @@
 # 请求生命周期
 
-本页说明一个 Tenon 应用怎样启动、一个请求从进入到返回经过哪些环节，以及停止时怎样不丢请求。先建立整体印象，细节在各个链接的页面里。
+了解一个工具的工作原理，用起来就会更有把握。本页从整体上介绍一个 Tenon 应用怎样启动、一个请求从进入到返回会经过哪些环节，以及应用停止时怎样做到不丢请求。
+
+如果有些概念现在还不太理解，不必担心，先建立一个整体的印象即可。每一部分的细节都在链接的页面中。
 
 - [启动](#startup)
 - [请求的处理过程](#request-flow)
@@ -11,14 +13,14 @@
 <a id="startup"></a>
 ## 启动
 
-入口拥有全部运行时资源。一个需要数据库的 API 这样启动：
+应用的入口拥有全部的运行时资源。一个需要数据库的 API 按下面的顺序启动：
 
 1. 读取并校验[配置](../general/configuration.md)；
 2. 打开数据库等资源，每打开一个，就登记对应的关闭操作；
 3. 创建 API，构造[业务动作](actions.md)并注册路由，取得监听端口；
 4. 调用 `httpx.Serve` 开始处理请求。
 
-这些都是普通的 Go 代码，写法见[依赖装配](dependencies.md)。
+这些都是普通的 Go 代码，没有隐藏的步骤，写法见[依赖装配](dependencies.md)。
 
 > [!NOTE]
 > 迁移不在启动时自动执行，而是部署时的一个独立步骤，见[迁移](../database/migrations.md)。
@@ -26,7 +28,7 @@
 <a id="request-flow"></a>
 ## 请求的处理过程
 
-安装了 `httpx.Defaults` 和 `httpx.Timeout` 之后，一个请求依次经过：
+安装了 `httpx.Defaults` 和 `httpx.Timeout` 之后，一个请求从进入到返回，会依次经过这些环节：
 
 ```text
 确定请求 ID，写入安全响应头
@@ -43,7 +45,7 @@
   → 错误转换为统一的错误响应
 ```
 
-以 `PUT /articles/{id}` 为例：
+我们以修改文章的请求 `PUT /articles/{id}` 为例，看看不同的请求会在哪一步结束：
 
 - 没有有效令牌的请求在认证这一步返回 `401`；
 - 标题为空的请求在验证输入这一步返回 `422`，处理器不会被调用；
@@ -51,12 +53,12 @@
 
 前半段是安装在 Router 上的[中间件](../http/middleware.md)，作用于所有请求；认证由路由声明的策略决定，见[认证](../security/authentication.md)；输入见[请求](../http/requests.md)和[验证](../http/validation.md)；错误的转换见[错误处理](../general/errors.md)。
 
-中间件、语言目录、日志器都在创建 API 时显式传入，同一个进程中的两个 API 可以有各自的配置。
+值得一提的是，中间件、语言目录和日志器都是在创建 API 时显式传入的。所以同一个进程中的两个 API 可以有各自不同的配置，互不影响。
 
 <a id="graceful-shutdown"></a>
 ## 平滑停止
 
-收到 `SIGTERM` 或 Ctrl+C 时，不应中断正在处理的请求。`httpx.Serve` 处理这件事：
+应用收到 `SIGTERM` 或 Ctrl+C 时，我们希望它**不要粗暴地中断**正在处理的请求。`httpx.Serve` 负责这件事：
 
 ```go
 var draining httpx.Draining
@@ -66,7 +68,7 @@ err := httpx.Serve(ctx, cfg.HTTP, ln, handler, httpx.ServeOptions{
 })
 ```
 
-`ctx` 被取消（收到停止信号，或[不停机升级](../installation/deployment.md#zero-downtime-upgrades)时交给了新进程）后，它按顺序：
+当 `ctx` 被取消时（收到停止信号，或者[不停机升级](../installation/deployment.md#zero-downtime-upgrades)时交给了新进程），它按以下顺序停止：
 
 1. 调用 `OnDraining`，让[就绪检查](#health-checks)开始返回失败；
 2. 停止接收新连接，等待正在处理的请求完成，这个过程叫**排空**；
@@ -82,12 +84,12 @@ err := httpx.Serve(ctx, cfg.HTTP, ln, handler, httpx.ServeOptions{
 <a id="health-checks"></a>
 ## 健康检查
 
-部署平台和负载均衡器用两类接口判断应用的状态：
+部署平台（如 Kubernetes）和负载均衡器通常用两类接口判断应用的状态：
 
 - **存活检查**（liveness）：进程是否还能响应，失败时平台重启它。直接返回成功，不要检查依赖：数据库故障时重启应用无济于事。
 - **就绪检查**（readiness）：现在能否处理请求，失败时停止向这个实例转发流量。它检查是否正在排空，以及必需的依赖是否可用。
 
-框架不自动注册这两个路由，路径由你决定：
+Tenon 不会自动注册这两个路由，因为路径由部署环境决定。下面把它们注册在 `/livez` 和 `/readyz`：
 
 ```go
 router.Get("/livez", func(w http.ResponseWriter, _ *http.Request) {
@@ -130,7 +132,15 @@ router.Handle("/readyz", httpx.Ready(httpx.ReadyOptions{
 func Serve(ctx context.Context, cfg Config, ln net.Listener, handler http.Handler, opts ServeOptions) error
 ```
 
-在 `ln` 上运行 `handler`，直到 `ctx` 被取消或监听出错，然后按上面的顺序平滑停止。不使用 `cfg.Addr`，但 `cfg` 仍需合法。返回时 `ln` 已关闭。
+- **参数**
+    - `ctx`：取消时开始平滑停止
+    - `cfg`：服务器的超时等参数；不使用其中的 `Addr`，但 `cfg` 仍需合法
+    - `ln`：监听端口，通常由 `command.Daemon` 取得
+    - `handler`：处理请求的 Router
+    - `opts`：见下面的 `ServeOptions`
+- **返回**：监听出错时的错误；平滑停止后返回 `nil`
+
+在 `ln` 上运行 `handler`，直到 `ctx` 被取消或监听出错，然后按[平滑停止](#graceful-shutdown)中的顺序停止。返回时 `ln` 已经关闭。
 
 ### ListenAndServe
 
@@ -138,14 +148,18 @@ func Serve(ctx context.Context, cfg Config, ln net.Listener, handler http.Handle
 func ListenAndServe(ctx context.Context, cfg Config, handler http.Handler, opts ServeOptions) error
 ```
 
-监听 `cfg.Addr`，其余与 `Serve` 相同。
+与 `Serve` 相同，只是自己监听 `cfg.Addr`。适合不需要不停机升级的简单程序。
 
 ### ServeOptions
 
-| 字段 | 说明 |
-| --- | --- |
-| `Logger *slog.Logger` | 记录排空开始和服务器停止，`nil` 时用 `slog.Default()` |
-| `OnDraining func()` | 开始排空前调用，可以为空 |
+```go
+type ServeOptions struct {
+    Logger     *slog.Logger
+    OnDraining func()
+}
+```
+
+`Logger` 记录排空开始和服务器停止，为 `nil` 时使用 `slog.Default()`。`OnDraining` 在开始排空之前调用，通常是 `Draining.Set`。
 
 ### Draining
 
@@ -154,7 +168,7 @@ func (d *Draining) Set()
 func (d *Draining) Load() bool
 ```
 
-排空标志，零值可用。`Set` 传给 `ServeOptions.OnDraining`，同一个值的地址传给 `ReadyOptions.Draining`。
+排空标志，零值即可使用。把 `Set` 传给 `ServeOptions.OnDraining`，把同一个值的地址传给 `ReadyOptions.Draining`。
 
 ### Ready
 
@@ -162,21 +176,33 @@ func (d *Draining) Load() bool
 func Ready(opts ReadyOptions) http.Handler
 ```
 
-返回就绪检查的处理器。检查的名称为空、重复或 `Ping` 为 `nil` 时 panic。
+- **参数**
+    - `opts`：见下面的 `ReadyOptions`
+- **返回**：就绪检查的处理器
+
+检查的名称为空、重复或者 `Ping` 为 `nil` 时 panic。
 
 ### ReadyOptions
 
-| 字段 | 说明 |
-| --- | --- |
-| `Draining *Draining` | 排空标志，`nil` 时不检查 |
-| `Checks []Check` | 要检查的依赖 |
-| `Timeout time.Duration` | 每项检查的超时，默认 1 秒 |
-| `Logger *slog.Logger` | 记录检查结果的变化，`nil` 时用 `slog.Default()` |
+```go
+type ReadyOptions struct {
+    Draining *Draining
+    Checks   []Check
+    Timeout  time.Duration
+    Logger   *slog.Logger
+}
+```
+
+`Draining` 为 `nil` 时不检查排空。`Timeout` 是每项检查的超时，默认 1 秒。`Logger` 记录检查结果的变化。
 
 ### Check
 
-| 字段 | 说明 |
-| --- | --- |
-| `Name string` | 出现在结果和日志中，例如 `database` |
-| `Ping func(ctx context.Context) error` | 返回错误表示不可用 |
-| `Optional bool` | 失败时只在结果中报告，不让就绪检查失败 |
+```go
+type Check struct {
+    Name     string
+    Ping     func(ctx context.Context) error
+    Optional bool
+}
+```
+
+`Name` 出现在结果和日志中；`Ping` 返回错误表示不可用；`Optional` 为 `true` 时，失败只在结果中报告，不让就绪检查失败。
