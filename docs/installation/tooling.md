@@ -77,6 +77,7 @@ go get -tool github.com/go-tenon/tenon/cmd/tenon
 {
   "name": "@todo/client",
   "exports": {
+    "./*/enums": "./src/*/enums.ts",
     "./*/messages": "./src/*/messages.ts",
     "./*/permissions": "./src/*/permissions.ts",
     "./*/queries": "./src/*/queries.ts",

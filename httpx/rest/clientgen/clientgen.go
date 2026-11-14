@@ -57,6 +57,8 @@ type Result struct {
 	Files map[string][]byte
 	// Skipped 列出没有生成的端点及原因。
 	Skipped []string
+	// Warnings 列出生成了但需要注意的问题，例如枚举缺少某种语言的显示文字。
+	Warnings []string
 }
 
 // defaultImports 是总是可以直接导入的第三方包。

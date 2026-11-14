@@ -1,11 +1,13 @@
 package clientgen_test
 
 import (
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/go-tenon/tenon/httpx/rest"
 	"github.com/go-tenon/tenon/httpx/rest/clientgen"
@@ -13,9 +15,15 @@ import (
 
 const exampleTSOut = "internal/example/ts"
 
+// exampleTranslations 是示例应用的翻译文件：文章状态的显示文字。
+var exampleTranslations = fstest.MapFS{
+	"zh-CN.yaml": {Data: []byte("article.status.draft: 草稿\narticle.status.published: 已发布\n")},
+	"en.yaml":    {Data: []byte("article.status.draft: Draft\narticle.status.published: Published\n")},
+}
+
 func generateTS(t *testing.T, api *rest.API) *clientgen.Result {
 	t.Helper()
-	res, err := clientgen.GenerateTS(api, clientgen.TSOptions{Main: exampleMain})
+	res, err := clientgen.GenerateTS(api, clientgen.TSOptions{Main: exampleMain, Translations: []fs.FS{exampleTranslations}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -24,8 +32,8 @@ func generateTS(t *testing.T, api *rest.API) *clientgen.Result {
 
 func TestGeneratedTSExampleIsUpToDate(t *testing.T) {
 	res := generateTS(t, exampleAPI(nil))
-	if len(res.Skipped) > 0 {
-		t.Fatalf("skipped %q", res.Skipped)
+	if len(res.Skipped)+len(res.Warnings) > 0 {
+		t.Fatalf("skipped %q, warnings %q", res.Skipped, res.Warnings)
 	}
 	if *update {
 		if err := clientgen.Write(exampleTSOut, res.Files); err != nil {
@@ -46,7 +54,7 @@ func TestTSClientCompiles(t *testing.T) {
 	bun := requireBun(t)
 	cmd := exec.Command(bun, "x", "-p", "typescript@5.9.3", "tsc", "--noEmit", "--strict", "--target", "es2022",
 		"--lib", "es2022,dom,dom.iterable", "--module", "esnext", "--moduleResolution", "bundler", "--verbatimModuleSyntax",
-		"api.ts", "errors.ts", "runtime.ts", "schemas.ts", "messages.ts", "permissions.ts", "queries.ts")
+		"api.ts", "errors.ts", "runtime.ts", "schemas.ts", "messages.ts", "permissions.ts", "queries.ts", "enums.ts")
 	cmd.Dir = exampleTSOut
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("tsc: %v\n%s", err, out)

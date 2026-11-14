@@ -13,10 +13,12 @@ export interface ArticleDTO {
   /** 发布时间，草稿没有这个字段 */
   published_at?: string
   slug: string
-  status: string
+  status: ArticleStatus
   tags: string[] | null
   title: string
 }
+
+export type ArticleStatus = "draft" | "published"
 
 export interface Author {
   name: string
@@ -115,7 +117,7 @@ export interface ArticleListInput {
   page?: number
   /** Items per page. */
   per_page?: number
-  status?: "draft" | "published"
+  status?: ArticleStatus
   tag?: string[] | null
   q?: string
 }

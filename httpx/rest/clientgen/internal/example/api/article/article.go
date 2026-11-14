@@ -74,7 +74,7 @@ type FeatureInputBody struct {
 // ListInput 是文章列表的筛选条件。
 type ListInput struct {
 	page.OffsetParams
-	Status Status   `query:"status" enum:"draft,published"`
+	Status Status   `query:"status"`
 	Tags   []string `query:"tag,explode"`
 	Q      string   `query:"q"`
 }
