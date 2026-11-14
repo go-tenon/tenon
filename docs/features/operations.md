@@ -303,7 +303,17 @@ event: progress
 data: {"id":"0193e7a2-7c1e-7b4a-9d2f-3c5a1e8b6f10","kind":"articles.bulk_publish","status":"running","total":100,"processed":42,"failed":1,"created_at":"2026-11-11T08:00:00Z","updated_at":"2026-11-11T08:00:07Z"}
 ```
 
-前端用 `processed / total` 显示进度条，`total` 为 0 时显示“已处理 N 个”。各字段的含义见[客户端协议](../http/protocol.md#operations)。
+前端用 `processed / total` 显示进度条，`total` 为 0 时显示“已处理 N 个”。各字段的含义见[客户端协议](../http/protocol.md#operations)。`@go-tenon/client` 的 `watchOperation` 读取事件流直到操作结束，连接断开时自动重连：
+
+```ts
+import { progressRatio, watchOperation } from "@go-tenon/client"
+
+// api.article.bulkPublishProgress 是进度接口的生成方法，返回事件流
+const done = await watchOperation((o) => api.article.bulkPublishProgress(op.id, o), {
+  onProgress: (p) => setProgress(progressRatio(p)), // total 为 0 时是 undefined
+})
+if (done.status === "failed") showError(done.error)
+```
 
 进度是状态：广播只提醒连接重新读取，连接（包括断线重连）时先推送一次当前进度，所以页面总是显示最新的进度，与[通知角标](notifications.md#realtime)的做法相同。每次读取都经过 `Get`，只有发起人能看到进度，其他人收到 `operation.ErrNotFound`。
 
