@@ -133,7 +133,7 @@ Tenon 的每个包都可以单独使用，按需引入即可。顶层的包分�
 基础        errorx  identity  config  cleanup  logging  telemetry  i18n  page  form  hashing  crypt  acquire
 ```
 
-这条规则由[架构测试](../contributions.md#architecture-tests)保证，新增的导入违反分层时测试会失败。名字以 `test` 结尾的子包（`dbtest`、`queuetest`、`mailtest` 等）是测试用的替身和工具。
+这条规则由架构测试 `internal/checks/archtest` 保证，新增的导入违反分层时测试会失败。名字以 `test` 结尾的子包（`dbtest`、`queuetest`、`mailtest` 等）是测试用的替身和工具。
 
 <a id="foundation"></a>
 ### 基础
