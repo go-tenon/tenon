@@ -2,6 +2,7 @@ package apitoken_test
 
 import (
 	"context"
+	"github.com/go-chi/chi/v5"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -53,7 +54,7 @@ func TestRefreshCookieRoundTrip(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		j, _ := newJWT(t, apitoken.JWTConfig{})
-		api := rest.New(rest.Options{Accounts: identity.Accounts{"user": nil}})
+		api := rest.New(chi.NewRouter(), rest.Options{Accounts: identity.Accounts{"user": nil}})
 		respond := func(p apitoken.Pair, cookie bool) *loginOut {
 			out := &loginOut{}
 			out.Body.AccessToken = p.Access

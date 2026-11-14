@@ -2,6 +2,7 @@ package rest_test
 
 import (
 	"context"
+	"github.com/go-chi/chi/v5"
 	"net/http"
 	"reflect"
 	"testing"
@@ -13,13 +14,13 @@ import (
 )
 
 func TestEndpointsDescribeRegisteredOperations(t *testing.T) {
-	api := rest.New(rest.Options{Mode: rest.ModeOpenAPI})
+	api := rest.New(chi.NewRouter(), rest.Options{Accounts: identity.Accounts{"user": nil}})
 	get := huma.Operation{OperationID: "count-get", Method: http.MethodGet, Path: "/counts/{id}", Summary: "取计数"}
 	rest.RequireBearer(api, func(context.Context, string) (identity.Subject, error) { return identity.Subject{}, nil })(&get)
-	rest.Register[countIn, minimalOutput](api, get, nil)
+	rest.Register(api, get, func(context.Context, *countIn) (*minimalOutput, error) { return nil, nil })
 	stream := huma.Operation{OperationID: "count-stream", Method: http.MethodGet, Path: "/count"}
 	rest.Public()(&stream)
-	rest.RegisterSSE[countIn](api, stream, map[string]any{"tick": &tick{}}, nil)
+	rest.RegisterSSE(api, stream, map[string]any{"tick": &tick{}}, func(context.Context, *countIn) (*huma.StreamResponse, error) { return nil, nil })
 
 	eps := api.Endpoints()
 	if len(eps) != 2 {

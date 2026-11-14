@@ -46,11 +46,6 @@ func (rt *Routes) Method(method, path string, h HandlerFunc) {
 }
 
 func (p *Pages) route(h HandlerFunc) http.Handler {
-	if p.opts.Mode == ModeRoutes {
-		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			http.Error(w, "web: page registered in ModeRoutes", http.StatusInternalServerError)
-		})
-	}
 	handler := p.handle(h)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r = r.WithContext(p.secure(w, r))

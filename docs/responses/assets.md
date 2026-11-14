@@ -38,10 +38,7 @@ var Static, _ = fs.Sub(files, "static")
 用 `web.NewStatic` 创建 `Static`，挂载到 `web.StaticPath`（`/static/`），再把它交给 `web.New`：
 
 ```go
-static, err := web.NewStatic(layout.Static, web.StaticOptions{DevDir: cfg.StaticDir})
-if err != nil {
-    return err
-}
+static := web.NewStatic(layout.Static, web.StaticOptions{DevDir: cfg.StaticDir})
 pages := web.New(web.Options{
     Static: static,
     // ErrorPage 等其余字段见视图一章
@@ -51,7 +48,7 @@ router.Handle(web.StaticPath+"*", static)
 router.Handle(web.AssetsPath+"*", web.Assets())
 ```
 
-`layout` 是应用的 `internal/web` 包，与框架的 `web` 包同名，导入时起了别名。`DevDir` 见[开发模式](#development)。`web.NewStatic` 在创建时读取全部文件、计算指纹。[routes 命令](../general/commands.md#routes-command)把 `/static/*` 列为公开路由。
+`layout` 是应用的 `internal/web` 包，与框架的 `web` 包同名，导入时起了别名。`DevDir` 见[开发模式](#development)。`web.NewStatic` 在创建时读取全部文件、计算指纹，读取失败时 panic：嵌入的文件在编译时就确定了，出错是构建的问题。[routes 命令](../general/commands.md#routes-command)把 `/static/*` 列为公开路由。
 
 <a id="referencing"></a>
 ## 在页面中引用
@@ -150,13 +147,13 @@ go tool tenon dev
 ### NewStatic
 
 ```go
-func NewStatic(fsys fs.FS, opts StaticOptions) (*Static, error)
+func NewStatic(fsys fs.FS, opts StaticOptions) *Static
 ```
 
 - **参数**
     - `fsys`：静态文件所在的目录，通常是 `embed.FS` 的子目录
     - `opts`：见下面的 `StaticOptions`
-- **返回**：静态文件的处理器（`http.Handler`），挂载在 `StaticPath`（`/static/`）；读取文件失败时返回错误
+- **返回**：静态文件的处理器（`http.Handler`），挂载在 `StaticPath`（`/static/`）；`fsys` 为 `nil` 或读取文件失败时 panic
 
 创建时读取全部文件并计算指纹。
 

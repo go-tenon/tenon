@@ -39,28 +39,22 @@ var Dist, _ = fs.Sub(dist, "dist")
 创建 `SPA`，挂载到根路径。API 和其他路由照常注册，chi 优先匹配更具体的路径：
 
 ```go
-spa, err := httpx.NewSPA(frontend.Dist, httpx.SPAOptions{DevServer: cfg.FrontendDevServer})
-if err != nil {
-    return err
-}
-
 router.Route("/api/v1", func(r chi.Router) {
-    opts.Router, opts.BasePath = r, "/api/v1"
-    // 注册接口，见路由一章
+    api := rest.New(r, rest.Options{Title: "Blog API", Version: "1.0.0", BasePath: "/api/v1"})
+    // 用 api 注册接口，见路由一章
 })
 router.Handle("/realtime", rt.Handler())
-router.Handle("/*", spa)
+router.Handle("/*", httpx.NewSPA(frontend.Dist, httpx.SPAOptions{DevServer: cfg.FrontendDevServer}))
 ```
 
-`NewSPA` 在创建时读取全部文件，没有 `index.html` 时返回错误。`DevServer` 见[开发](#development)。[routes 命令](../general/commands.md#routes-command)把 `/*` 列为公开路由：页面本身不需要登录，前端打开后调用 API，API 收到 `401` 时前端跳转到登录页。
+`NewSPA` 在创建时读取全部文件，没有 `index.html` 时 panic：这是构建的问题，启动时就应当发现。`DevServer` 见[开发](#development)。[routes 命令](../general/commands.md#routes-command)把 `/*` 列为公开路由：页面本身不需要登录，前端打开后调用 API，API 收到 `401` 时前端跳转到登录页。
 
 API 要放在子路由下。`rest` 给子路由设置了 JSON 格式的 `404`，写错的接口地址得到 `route not found`，不会落到前端。
 
 前端不放在根路径时，把 Vite 的 `base` 和 `SPAOptions.Base` 设为同一个路径：
 
 ```go
-spa, err := httpx.NewSPA(frontend.Dist, httpx.SPAOptions{Base: "/app/"})
-router.Handle("/app/*", spa)
+router.Handle("/app/*", httpx.NewSPA(frontend.Dist, httpx.SPAOptions{Base: "/app/"}))
 ```
 
 <a id="caching-and-routing"></a>
@@ -153,15 +147,15 @@ mkdir -p frontend/dist && touch frontend/dist/index.html
 ### NewSPA
 
 ```go
-func NewSPA(fsys fs.FS, opts SPAOptions) (*SPA, error)
+func NewSPA(fsys fs.FS, opts SPAOptions) *SPA
 ```
 
 - **参数**
     - `fsys`：构建产物所在的目录，必须包含 `index.html`，通常是 `embed.FS` 的子目录
     - `opts`：见下面的 `SPAOptions`
-- **返回**：单页应用的处理器（`http.Handler`）；没有 `index.html` 时返回错误
+- **返回**：单页应用的处理器（`http.Handler`）
 
-创建时读取全部文件。设置了 `DevServer` 时不读取 `fsys`。
+创建时读取全部文件。设置了 `DevServer` 时不读取 `fsys`。选项不合法、读取失败或没有 `index.html` 时 panic。
 
 ### SPAOptions
 

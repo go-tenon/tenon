@@ -22,21 +22,10 @@ var ErrNotFound = errorx.Define(errorx.NotFound, "web.not_found")
 // HandlerFunc 是返回错误的页面处理器。
 type HandlerFunc func(w http.ResponseWriter, r *http.Request) error
 
-// Mode 控制 Pages 的用途。
-type Mode int
-
-const (
-	// ModeServe 为运行模式：注册真正的处理器。
-	ModeServe Mode = iota
-	// ModeRoutes 为路由表模式：只登记路由，供 routes 命令列出；不需要错误组件，处理器不会被调用。
-	ModeRoutes
-)
-
-// Options 创建 Pages。运行模式下 ErrorPage 必须设置，其余可空。
+// Options 创建 Pages。ErrorPage 必须设置，其余可空。
 //
 // 一个应用可以有多个 Pages，例如官网和帮助中心：各自的主题和错误呈现。
 type Options struct {
-	Mode Mode
 	// ErrorPage 渲染整页错误，用于普通请求和整页 htmx 请求，例如 ui.ErrorPage。
 	// message 来自 httpx.ErrorDetail：业务错误的译文，或状态描述。
 	ErrorPage func(status int, message string) templ.Component
@@ -68,11 +57,8 @@ type Pages struct {
 	logger *slog.Logger
 }
 
-// New 创建 Pages。运行模式下缺少必填字段时 panic。
+// New 创建 Pages。缺少必填字段时 panic。
 func New(opts Options) *Pages {
-	if opts.Mode == ModeRoutes {
-		return &Pages{opts: opts, logger: logging.Or(opts.Logger)}
-	}
 	if opts.ErrorPage == nil {
 		panic("web: ErrorPage is required")
 	}

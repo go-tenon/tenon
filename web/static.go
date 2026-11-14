@@ -50,8 +50,17 @@ type staticFile struct {
 }
 
 // NewStatic 创建 Static，fsys 通常是 embed.FS 的子目录（fs.Sub）。
-// 生产模式下读取 fsys 中的全部文件计算指纹，读取失败时返回错误。
-func NewStatic(fsys fs.FS, opts StaticOptions) (*Static, error) {
+// 生产模式下读取 fsys 中的全部文件计算指纹。fsys 为 nil 或读取失败时 panic：嵌入的文件在编译时就确定了，
+// 出错是构建的问题，与 httpx.NewSPA 相同。
+func NewStatic(fsys fs.FS, opts StaticOptions) *Static {
+	s, err := newStatic(fsys, opts)
+	if err != nil {
+		panic(err)
+	}
+	return s
+}
+
+func newStatic(fsys fs.FS, opts StaticOptions) (*Static, error) {
 	if opts.DevDir != "" {
 		return &Static{fsys: os.DirFS(opts.DevDir), dev: true}, nil
 	}

@@ -41,7 +41,7 @@ SaaS 应用通常有三类用户：
 
 ```go
 // 路径：/t/{tenant}/articles
-api := rest.New(rest.Options{
+api := rest.New(router, rest.Options{
     Tenant:   func(ctx huma.Context) string { return ctx.Param("tenant") },
     Accounts: identity.Accounts{user.Type: roles.Resolve},
 })

@@ -73,7 +73,7 @@ func (a *Get) Handle(ctx context.Context, id uuid.UUID) (*Article, error) {
 方法的第一个参数是 `ctx`。它携带请求的取消信号和截止时间，应当一路传给数据库查询等下游调用，这样请求超时或客户端断开时，查询也会随之停止。
 
 > [!IMPORTANT]
-> 构造函数只能**保存**依赖，不能**使用**它们。生成 OpenAPI 文档、列出路由和声明命令时，业务动作会被构造，但传入的依赖都是零值，见[只在执行时装配的命令](#deferred-commands)。
+> 构造函数只能**保存**依赖，不能**使用**它们。生成 OpenAPI 文档、列出路由和声明命令时，业务动作会被构造，但传入的依赖都是零值，见[多个运行部分](#running-parts)和[只在执行时装配的命令](#deferred-commands)。
 
 <a id="assembling-the-application"></a>
 ## 在入口中组装应用
@@ -135,8 +135,8 @@ func serve(ctx context.Context, cfg Config) (err error) {
     stack.MustAdd("database", func(context.Context) error { return db.Close() })
 
     router := chi.NewRouter()
-    router.Use(httpx.Defaults(cfg.HTTP, nil, nil)...)
-    api := rest.New(rest.Options{Title: "Blog API", Version: "1.0.0", Router: router})
+    router.Use(httpx.Defaults(cfg.HTTP)...)
+    api := rest.New(router, rest.Options{Title: "Blog API", Version: "1.0.0"})
     count := huma.Operation{
         OperationID: "article-count",
         Method:      http.MethodGet,
@@ -145,7 +145,7 @@ func serve(ctx context.Context, cfg Config) (err error) {
     rest.Public()(&count)
     rest.Register(api, count, NewCount(db).HTTP)
 
-    return httpx.ListenAndServe(ctx, cfg.HTTP, router, httpx.ServeOptions{})
+    return httpx.ListenAndServe(ctx, cfg.HTTP, router)
 }
 
 func main() {
@@ -184,17 +184,30 @@ func open(ctx context.Context, cfg Config, stack *cleanup.Stack) (*App, error) {
 
 // HTTP 装配 HTTP 服务并取得监听端口，返回运行它的函数。
 func (a *App) HTTP(d *command.Daemon) (func(context.Context) error, error) {
-    router := chi.NewRouter()
-    // ... 中间件与路由
+    router := a.Router()
     ln, err := d.Listen("tcp", a.cfg.HTTP.Addr)
     if err != nil {
         return nil, err
     }
     return func(ctx context.Context) error {
-        return httpx.Serve(ctx, a.cfg.HTTP, ln, router, httpx.ServeOptions{})
+        return httpx.Serve(ctx, a.cfg.HTTP, ln, router)
     }, nil
 }
+
+// Router 构造应用的全部路由：中间件、JSON API 和页面。它只保存 App 的字段、不使用它们。
+func (a *App) Router() chi.Router {
+    router := chi.NewRouter()
+    // ... 中间件与路由
+    return router
+}
+
+// DocRouter 用默认配置和没有打开任何资源的 App 构造路由，openapi、routes、client 命令用它。
+func DocRouter() chi.Routes {
+    return (&App{cfg: config.Default[Config]()}).Router()
+}
 ```
+
+`Router` 有两个调用者：`HTTP` 用打开了资源的 `App` 运行服务；`DocRouter` 用零值的 `App` 构造同一套路由，交给 [`httpcmd.Commands`](../general/commands.md#declaring-the-cli) 生成接口文档和客户端、列出路由。所以导出的文档总是与运行的服务一致，生成文档也不需要连接数据库。代价是 `Router` 中只能保存依赖、不能使用它们：例如健康检查的 `Ping` 要写成闭包，见[健康检查](lifecycle.md#health-checks)。
 
 `run` 先装配全部部分，再用 `command.Daemon` 同时运行它们：
 

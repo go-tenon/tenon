@@ -28,7 +28,7 @@ func TestAccessLogRecordsRouteLevelAndAttrs(t *testing.T) {
 	cfg := httpx.DefaultConfig()
 	cfg.AccessLog.IgnorePaths = []string{"/healthz"}
 	router := chi.NewRouter()
-	router.Use(httpx.Defaults(cfg, rec.Logger(), nil)...)
+	router.Use(httpx.Defaults(cfg, httpx.Logger(rec.Logger()))...)
 	router.Get("/articles/{id}", func(w http.ResponseWriter, r *http.Request) {
 		httpx.AddAccessLogAttrs(r.Context(), slog.String("code", "article.missing"))
 		w.WriteHeader(http.StatusNotFound)
@@ -100,7 +100,7 @@ func TestHTTPComponentLevel(t *testing.T) {
 	var buf bytes.Buffer
 	logger := logging.New(logging.Config{Writer: &buf, Levels: map[string]slog.Level{"http": slog.LevelWarn}})
 	router := chi.NewRouter()
-	router.Use(httpx.Defaults(httpx.DefaultConfig(), logger, nil)...)
+	router.Use(httpx.Defaults(httpx.DefaultConfig(), httpx.Logger(logger))...)
 	router.Get("/ok", func(http.ResponseWriter, *http.Request) {})
 	router.Get("/missing", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNotFound) })
 	serve(router, "GET", "/ok")

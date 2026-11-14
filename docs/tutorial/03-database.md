@@ -50,7 +50,7 @@ func main() {
         migratecmd.New(migrations.FS, func(cfg bootstrap.Config) database.Config { return cfg.Database }),
     )
     // openapi、routes、client：导出接口文档、列出路由、生成客户端，go tool tenon 调用它们。
-    root.AddCommand(httpcmd.Commands(bootstrap.API, bootstrap.DocRoutes, bootstrap.DocRouter)...)
+    root.AddCommand(httpcmd.Commands(bootstrap.DocRouter)...)
     command.Execute(root)
 }
 ```

@@ -2,6 +2,7 @@ package rest_test
 
 import (
 	"context"
+	"github.com/go-chi/chi/v5"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -24,7 +25,7 @@ type tick struct {
 }
 
 func TestRegisterSSE(t *testing.T) {
-	api := rest.New(rest.Options{})
+	api := rest.New(chi.NewRouter(), rest.Options{})
 	op := huma.Operation{OperationID: "count", Method: http.MethodGet, Path: "/count"}
 	rest.Public()(&op)
 	rest.RegisterSSE(api, op, map[string]any{"tick": tick{}}, func(_ context.Context, in *countIn) (*huma.StreamResponse, error) {

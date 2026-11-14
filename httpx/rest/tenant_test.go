@@ -3,6 +3,7 @@ package rest_test
 import (
 	"context"
 	"encoding/json"
+	"github.com/go-chi/chi/v5"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -30,7 +31,7 @@ type whoOut struct {
 func tenantAPI(t *testing.T) *rest.API {
 	t.Helper()
 	members := map[string]map[string][]string{"acme": {"alice": {"articles:*"}, "reader": {"articles:*"}}, "globex": {"bound": {"articles:*"}}}
-	api := rest.New(rest.Options{
+	api := rest.New(chi.NewRouter(), rest.Options{
 		Tenant: func(ctx huma.Context) string { return ctx.Param("tenant") },
 		Accounts: identity.Accounts{"user": func(ctx context.Context, sub identity.Subject) (identity.Subject, error) {
 			switch sub.ID {

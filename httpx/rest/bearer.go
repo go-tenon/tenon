@@ -54,12 +54,12 @@ func RequireBearer(api *API, validate TokenValidator, permissions ...string) fun
 //
 // 认证通过后安装 httpx.CredentialCheck：SSE 等长连接期间定期重新执行以上检查（identity.Reestablish），
 // 凭据失效或失去权限时结束连接。
-// 每条路由只能声明一种认证方案。RequireBearer 基于它实现。运行模式下 Options.Accounts 为空时 panic。
+// 每条路由只能声明一种认证方案。RequireBearer 基于它实现。Options.Accounts 为空时 panic。
 func RequireAuth(api *API, name string, scheme *huma.SecurityScheme, authenticate Authenticator, permissions ...string) func(op *huma.Operation) {
 	if name == "" || scheme == nil || authenticate == nil {
 		panic("rest: RequireAuth requires a scheme name, a security scheme and an authenticator")
 	}
-	if api.mode == ModeServe && len(api.accounts) == 0 {
+	if len(api.accounts) == 0 {
 		panic("rest: Options.Accounts is required for authenticated operations")
 	}
 	registerScheme(api, name, scheme)

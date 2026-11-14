@@ -127,3 +127,15 @@ func TestMatch(t *testing.T) {
 		t.Fatalf("multiple values should form one list, got %q", got)
 	}
 }
+
+func TestMustNew(t *testing.T) {
+	if b := i18n.MustNew(i18n.LocaleZhCN); b == nil {
+		t.Fatal("nil bundle")
+	}
+	defer func() {
+		if recover() == nil {
+			t.Fatal("invalid default locale accepted")
+		}
+	}()
+	i18n.MustNew("not a locale!")
+}

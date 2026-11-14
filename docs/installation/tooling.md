@@ -137,10 +137,12 @@ bun run build   # 即 go tool tenon build
 <a id="app-side"></a>
 ## 应用这一侧
 
-路由是运行时注册的，`tenon generate` 要借助应用自己的 `client` 命令。应用在根命令中加入 `httpcmd.Commands`，它返回 `openapi`、`routes`、`client` 三个命令，见[命令行](../general/commands.md#declaring-the-cli)：
+路由是运行时注册的，`tenon generate` 要借助应用自己的 `client` 命令。应用在根命令中加入 `httpcmd.Commands`，它返回 `openapi`、`routes`、`client` 三个命令，参数是构造应用全部路由的函数，见[命令行](../general/commands.md#declaring-the-cli)：
 
 ```go
-root.AddCommand(httpcmd.Commands(bootstrap.API, bootstrap.DocRoutes, bootstrap.DocRouter)...)
+root.AddCommand(httpcmd.Commands(func() chi.Routes { return routes(config.Default[Config](), nil) })...)
 ```
+
+`routes` 是 `serve` 也在用的路由函数。命令用默认配置和 `nil` 依赖调用它，只读取构造出的路由，不启动服务、不连接数据库。
 
 `config/local.yaml` 设置 `frontend_dev_server: http://localhost:5173`，开发时 `httpx.SPA` 把页面请求转给 Vite，见[单页应用的开发](../responses/spa.md#development)。

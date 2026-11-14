@@ -49,8 +49,20 @@ type spaFile struct {
 const spaAssets = "assets/"
 
 // NewSPA 创建 SPA。fsys 是构建产物所在的目录，通常是 embed.FS 的子目录（fs.Sub），
-// 必须包含 index.html；创建时读取全部文件。
-func NewSPA(fsys fs.FS, opts SPAOptions) (*SPA, error) {
+// 必须包含 index.html；创建时读取全部文件。设置了 DevServer 时不读取 fsys。
+//
+// 选项不合法、fsys 读取失败或没有 index.html 时 panic：它们是构建或配置的错误，启动时就应当发现，
+// 与 Defaults 等中间件对不合法配置的处理相同。前端还没有构建时，tenon dev 和 tenon generate
+// 会先写入占位的 index.html。
+func NewSPA(fsys fs.FS, opts SPAOptions) *SPA {
+	s, err := newSPA(fsys, opts)
+	if err != nil {
+		panic(err)
+	}
+	return s
+}
+
+func newSPA(fsys fs.FS, opts SPAOptions) (*SPA, error) {
 	base := opts.Base
 	if base == "" {
 		base = "/"

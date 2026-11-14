@@ -48,7 +48,7 @@ if !subject.Can("articles:admin") && item.AuthorID != subject.ID {
 // 角色与权限保存在数据库中，按租户分配
 roles := authz.NewStore(db, auth.Permissions)
 err := roles.Assign(ctx, sub.Ref(), tenant, editorRole.ID)
-api := rest.New(rest.Options{Accounts: identity.Accounts{user.Type: roles.Resolve}})
+api := rest.New(router, rest.Options{Accounts: identity.Accounts{user.Type: roles.Resolve}})
 ```
 
 大多数接口只需要第一种。资源的归属（只有作者能修改自己的文章）要在业务规则中检查；需要让管理员在后台分配角色时，再用 `authz` 把角色和权限保存在数据库中。
@@ -163,7 +163,7 @@ err = roles.Assign(ctx, identity.Ref{Type: user.Type, ID: userID}, "", editor.ID
 
 ```go
 accounts := identity.Accounts{user.Type: roles.Resolve}
-api := rest.New(rest.Options{Accounts: accounts})
+api := rest.New(router, rest.Options{Accounts: accounts})
 rt, err := realtime.New(hub, realtime.Options{Authenticate: tokens.Validate, Accounts: accounts})
 ```
 

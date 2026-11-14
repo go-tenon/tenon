@@ -261,6 +261,16 @@ func Load[T any](files ...string) (T, error)
 
 先对各字段调用 `SetDefaults`，再逐个文件展开环境变量并严格解码，最后调用 `Validate`。
 
+### Default
+
+```go
+func Default[T any]() T
+```
+
+- **返回**：只填充了默认值的 `T`，与读取一个空文件得到的值相同，但不做校验
+
+用于不读取配置文件、又需要一份可用配置的场合，例如 [openapi、routes 命令](commands.md#openapi-command)构造应用的路由。
+
 ### LoadEnv
 
 ```go

@@ -67,7 +67,7 @@ todo/
 ├── config/
 │   ├── app.yaml           监听地址等应用配置
 │   └── local.yaml         开发时把页面请求转给 Vite（只叠加在本地）
-├── cmd/api/main.go        程序入口：CLI、serve、给开发工具用的文档命令
+├── cmd/api/main.go        程序入口：命令行、serve 和 routes
 ├── internal/todo/todo.go  示例资源：待办事项的四个接口，数据保存在内存中
 └── frontend/
     ├── frontend.go        把构建产物 dist 嵌入程序
@@ -83,7 +83,7 @@ Go 代码在 `cmd` 和 `internal` 中，前端在 `frontend` 中。构建时前�
 <a id="entrypoint"></a>
 ## 入口文件在做什么
 
-`cmd/api/main.go` 同时做三件事：装配命令行、启动 HTTP 服务、给 `go tool tenon` 提供 OpenAPI / 路由 / 客户端生成所需的元数据。读的时候按层拆开即可。
+`cmd/api/main.go` 由四部分组成：配置、命令行、`serve` 和 `routes`。
 
 ### 配置
 
@@ -96,7 +96,7 @@ type Config struct {
 
 `HTTP` 对应 `config/app.yaml` 里的 `http` 段（例如 `addr: ":8080"`）。`FrontendDevServer` 只在开发时由 `config/local.yaml` 设置，生产构建保持为空。配置如何加载与叠加见[配置](../general/configuration.md)。
 
-### 命令行：`main` 是装配台
+### 命令行
 
 ```go
 func main() {
@@ -105,7 +105,7 @@ func main() {
         command.Run("serve", "启动 HTTP 服务", serve),
         command.Config[Config](),
     )
-    root.AddCommand(httpcmd.Commands(api, docRoutes, docRouter)...)
+    root.AddCommand(httpcmd.Commands(func() chi.Routes { return routes(config.Default[Config](), nil) })...)
     command.Execute(root)
 }
 ```
@@ -117,31 +117,37 @@ func main() {
 | `command.Config[Config]()` | 挂上 `config check`、`config show`，按你的 `Config` 类型解析 YAML |
 | `httpcmd.Commands(…)` | 挂上 `openapi`、`routes`、`client`，供 `go tool tenon generate` 等使用，部署后也可单独调用 |
 
-因此 `serve` 的签名是 `func(ctx context.Context, cfg Config) error`：配置由 `command.Run` 注入。命令行约定见[命令行](../general/commands.md)。
+命令行约定见[命令行](../general/commands.md)。
 
-### 运行时：`serve`
+### serve 和 routes
 
 ```go
 func serve(ctx context.Context, cfg Config) error {
-    // 日志 → SPA（嵌入 dist，或开发时反代 Vite）→ chi 路由
-    // /api 上挂业务；其余路径交给 SPA
-    // ListenAndServe 直到 ctx 取消
+    slog.SetDefault(logging.New(logging.Config{}))
+    return httpx.ListenAndServe(ctx, cfg.HTTP, routes(cfg, todo.NewStore()))
+}
+
+func routes(cfg Config, store *todo.Store) chi.Router {
+    router := chi.NewRouter()
+    router.Use(httpx.Defaults(cfg.HTTP)...)
+    router.Route("/api", func(r chi.Router) {
+        r.Use(httpx.Timeout(cfg.HTTP.Timeout))
+        api := rest.New(r, rest.Options{Title: "todo", Version: "0.1.0", BasePath: "/api"})
+        todo.Register(api, store)
+    })
+    router.Handle("/*", httpx.NewSPA(frontend.Dist, httpx.SPAOptions{DevServer: cfg.FrontendDevServer}))
+    return router
 }
 ```
 
-`serve` 从 YAML 读监听地址、把前端嵌进同一个进程，`/api` 与页面同源（对照[安装](installing.md#entrypoint)里的最小示例）。`httpx.Defaults` 安装请求 ID、访问日志、恢复 panic 等基础中间件；`Timeout` 只装在 `/api` 上，页面路由可保持长连接。中间件说明见[中间件](../http/middleware.md)。
+`routes` 构造应用的全部路由：`/api` 下是接口，其余路径交给单页应用，页面与 API 同源。`httpx.Defaults` 安装请求 ID、访问日志、恢复 panic 等基础中间件；`Timeout` 只装在 `/api` 上，页面路由可保持长连接。中间件说明见[中间件](../http/middleware.md)。
 
-### 同一套注册，三种用法
+`routes` 有两个调用者：
 
-`todo.Register` 在入口里出现不止一次，参数不同，用途也不同：
+- `serve` 用加载的配置和真实的 `Store` 调用它，启动 HTTP 服务；
+- `openapi`、`routes`、`client` 命令用默认配置和 `nil` 调用它，只读取构造出的路由，生成文档和客户端。
 
-| 调用处 | Store / 模式 | 谁在用 |
-| --- | --- | --- |
-| `serve` 里 `todo.Register(…, todo.NewStore())` | 真实内存存储 | 浏览器和 `curl` 访问的 API |
-| `docRoutes` 里 `todo.Register(a, nil)` | `nil`：只登记路由与类型 | `openapi`、`client` 离线生成文档和 TypeScript/Go 客户端 |
-| `docRouter` | `ModeOpenAPI`，再调 `docRoutes` | `routes` 命令列出路由表 |
-
-业务接口增加时，在 `Register` 里加一条即可；`serve` 与文档命令会一起看到它。客户端生成见[客户端](../responses/clients.md)。
+`routes` 只保存 `store`、不调用它，所以传 `nil` 也能构造出完整的路由。新增资源时，在 `routes` 里加一行 `Register`，服务和生成的文档、客户端会一起看到它。客户端生成见[客户端](../responses/clients.md)。
 
 <a id="example-resource"></a>
 ## 示例资源
@@ -152,7 +158,7 @@ func serve(ctx context.Context, cfg Config) error {
 - `Register`：四个公开接口——列表、创建、修改、删除；
 - 输入输出用结构体描述，校验规则写在字段标签上（如 `minLength`），错误用 `errorx` 定义。
 
-`Register` 在 `s == nil` 时仍然注册路由，只登记路由与类型，供离线生成文档和客户端。把内存换成 PostgreSQL 的步骤见[数据库](../database/quick-start.md)和[入门教程](../tutorial/03-database.md)。
+`Register` 只保存 `s`、不调用它，所以生成文档时 `s` 是 `nil` 也能注册全部接口。把内存换成 PostgreSQL 的步骤见[数据库](../database/quick-start.md)和[入门教程](../tutorial/03-database.md)。
 
 <a id="frontend"></a>
 ## 前端与同源

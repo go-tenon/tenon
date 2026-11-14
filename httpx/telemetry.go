@@ -33,7 +33,7 @@ var durationBuckets = []float64{0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5,
 // 安装在 Defaults 之前，访问日志才能带上 trace_id，Recover 产生的 500 也会被记录：
 //
 //	router.Use(httpx.Telemetry(mp, tp))
-//	router.Use(httpx.Defaults(cfg, nil, nil)...)
+//	router.Use(httpx.Defaults(cfg)...)
 //
 // mp 或 tp 为 nil 时 panic；只需要其中一种时，另一个传 noop 实现。
 func Telemetry(mp metric.MeterProvider, tp trace.TracerProvider) func(http.Handler) http.Handler {

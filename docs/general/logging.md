@@ -185,8 +185,8 @@ func (a *Publish) Handle(ctx context.Context, subject identity.Subject, id uuid.
 安装[默认中间件](../http/middleware.md#default-middleware)后，`httpx.AccessLog` 会为每个请求记录一条[访问日志](../http/middleware.md#access-log)，`rest.New` 创建的 API 会为 5xx 错误记录诊断信息：
 
 ```go
-router.Use(httpx.Defaults(a.cfg.HTTP, nil, nil)...)
-api := rest.New(rest.Options{Router: router})
+router.Use(httpx.Defaults(a.cfg.HTTP)...)
+api := rest.New(router, rest.Options{})
 ```
 
 `httpx.AssignRequestID` 还会把[请求 ID](../http/middleware.md#request-id) 放入请求的 context。之后，只要你在业务代码中配合请求的 `ctx` 记录日志（`slog.InfoContext(ctx, ...)`），这些日志就会自动带上 `request_id` 字段：
@@ -456,7 +456,7 @@ func TestPublishLogsEvent(t *testing.T) {
 捕获的日志器同样会输出 context 字段并展开 `error`，所以也可以断言 `request_id` 或 `error.code`。整数字段的值是 `int64`，例如 `got.Attr("response.status") == int64(404)`。
 
 > [!WARNING]
-> `Capture` 修改全局状态，使用它的测试不能调用 `t.Parallel()`。并行测试请改用 `logtest.New()`，再把 `rec.Logger()` 显式传给被测组件，例如 `httpx.Defaults(cfg, rec.Logger(), nil)`。
+> `Capture` 修改全局状态，使用它的测试不能调用 `t.Parallel()`。并行测试请改用 `logtest.New()`，再把 `rec.Logger()` 显式传给被测组件，例如 `httpx.Defaults(cfg, httpx.Logger(rec.Logger()))`。
 
 <a id="api-reference"></a>
 ## API 参考

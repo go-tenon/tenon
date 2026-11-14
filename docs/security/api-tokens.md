@@ -255,7 +255,7 @@ for _, t := range list {
 token 不保存用户的权限，所以权限变化、账号停用都能立即生效。权限由 `rest.Options.Accounts` 中这套账号的 Resolver 在每个请求中按用户当前的状态加载，见[每次请求加载权限](authentication.md#resolving-subjects)：
 
 ```go
-api := rest.New(rest.Options{
+api := rest.New(router, rest.Options{
     Accounts: identity.Accounts{
         user.Type: func(ctx context.Context, sub identity.Subject) (identity.Subject, error) {
             u, err := user.Find(ctx, a.db, sub.ID)

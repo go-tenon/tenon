@@ -29,7 +29,7 @@ func TestTelemetryMetrics(t *testing.T) {
 	reader := sdkmetric.NewManualReader()
 	router := chi.NewRouter()
 	router.Use(httpx.Telemetry(sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader)), tracenoop.NewTracerProvider()))
-	router.Use(httpx.Defaults(httpx.DefaultConfig(), slog.New(slog.DiscardHandler), nil)...)
+	router.Use(httpx.Defaults(httpx.DefaultConfig(), httpx.Logger(slog.New(slog.DiscardHandler)))...)
 	router.Get("/articles/{id}", func(http.ResponseWriter, *http.Request) {})
 	router.Route("/api", func(r chi.Router) {
 		r.Post("/panic", func(http.ResponseWriter, *http.Request) { panic("boom") })
@@ -90,7 +90,7 @@ func TestTelemetryTracing(t *testing.T) {
 	logger := slog.New(logging.NewContextHandler(slog.NewJSONHandler(&logs, nil)))
 	router := chi.NewRouter()
 	router.Use(httpx.Telemetry(metricnoop.NewMeterProvider(), sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spans))))
-	router.Use(httpx.Defaults(httpx.DefaultConfig(), logger, nil)...)
+	router.Use(httpx.Defaults(httpx.DefaultConfig(), httpx.Logger(logger))...)
 	router.Get("/articles/{id}", func(http.ResponseWriter, *http.Request) {})
 	router.Get("/boom", func(http.ResponseWriter, *http.Request) { panic("boom") })
 

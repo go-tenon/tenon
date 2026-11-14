@@ -92,55 +92,42 @@ templ Layout(title string) {
 <a id="assembling-pages"></a>
 ## 装配页面
 
-在入口装配 HTTP 服务的地方（见[依赖装配](../concepts/dependencies.md#running-parts)）创建 `web.Pages`，再挂载内嵌脚本和 404 页面：
+在构造应用路由的地方（见[依赖装配](../concepts/dependencies.md#assembling-the-application)）创建 `web.Pages`，再挂载内嵌脚本和 404 页面：
 
 ```go
-func (a *App) HTTP(d *command.Daemon) (func(context.Context) error, error) {
-    static, err := web.NewStatic(layout.Static, web.StaticOptions{DevDir: cfg.StaticDir})
-    if err != nil {
-        return nil, err
-    }
+// Router 构造全部路由：页面、JSON API 和它们用到的静态文件。
+// 它只保存 App 的字段、不使用它们，所以 DocRouter 可以用一个没有打开任何资源的 App 调用它。
+func (a *App) Router() chi.Router {
+    static := web.NewStatic(layout.Static, web.StaticOptions{DevDir: a.cfg.StaticDir})
     pages := web.New(web.Options{
         Static:    static,
         ErrorPage: ui.ErrorPage,
-        Theme:     cfg.Theme,
+        Theme:     a.cfg.Theme,
     })
 
     router := chi.NewRouter()
-    router.Use(httpx.Defaults(cfg.HTTP, nil, nil)...)
+    router.Use(httpx.Defaults(a.cfg.HTTP)...)
     router.Handle(web.StaticPath+"*", static)
     router.Handle(web.AssetsPath+"*", web.Assets())
     router.Handle(ui.AssetsPath+"*", ui.Assets())
     router.NotFound(pages.NotFound)
 
     router.Route("/api/v1", func(r chi.Router) {
-        r.Use(httpx.Timeout(cfg.HTTP.Timeout))
-        opts := API
-        opts.Router, opts.BasePath = r, "/api/v1"
-        Routes(rest.New(opts), validate, a.db)
+        r.Use(httpx.Timeout(a.cfg.HTTP.Timeout))
+        api := rest.New(r, rest.Options{Title: "Blog API", Version: "1.0.0", BasePath: "/api/v1"})
+        article.Register(api, a.db)
     })
     router.Group(func(r chi.Router) {
-        r.Use(httpx.Timeout(cfg.HTTP.Timeout))
-        PageRoutes(r, pages, a.db)
+        r.Use(httpx.Timeout(a.cfg.HTTP.Timeout))
+        articleweb.Register(r, pages, a.db)
     })
-
-    ln, err := d.Listen("tcp", cfg.HTTP.Addr)
-    if err != nil {
-        return nil, err
-    }
-    return func(ctx context.Context) error {
-        return httpx.Serve(ctx, cfg.HTTP, ln, router, httpx.ServeOptions{})
-    }, nil
-}
-
-// PageRoutes 注册应用的全部页面，HTTP 方法和 DocRouter 共用它。
-func PageRoutes(r chi.Router, pages *web.Pages, db *bun.DB) {
-    articleweb.Register(r, pages, db)
+    return router
 }
 ```
 
 几点说明：
 
+- `serve` 用 `a.Router()` 运行 HTTP 服务，`openapi`、`routes` 命令用它生成文档、列出路由，见[依赖装配](../concepts/dependencies.md#assembling-the-application)。
 - 页面和 JSON API 共用一个 Router。API 挂在 `/api/v1` 下；`BasePath` 让 OpenAPI 文档中的地址带上这个前缀，见 [API 版本](../http/routing.md#api-versioning)。`rest.New` 返回 JSON 格式 404 的设置只作用于这个子路由，其余地址的 404 由 `pages.NotFound` 渲染成页面。
 - 后台等[单页应用](spa.md)也挂在这个 Router 上，例如 `router.Handle("/admin/*", spa)`。
 - `static` 提供应用自己的图片等静态文件，见[前端资源](assets.md)。`Theme` 来自配置，决定组件的风格和颜色，见[主题](components.md#themes)；`ui.Assets()` 提供它们的样式表和脚本。
@@ -165,23 +152,7 @@ func Register(r chi.Router, pages *web.Pages, db *bun.DB) {
 
 只给内部人员看的页面，把认证中间件装在传入的路由上，例如 `pages.Routes(r.With(staffOnly))`。
 
-[routes 命令](../general/commands.md#routes-command)同时列出 JSON API 和页面，页面的访问策略显示为 `public`。命令使用的 `DocRouter` 以文档模式注册全部路由，不打开数据库，页面使用 `web.ModeRoutes`：
-
-```go
-// DocRouter 在文档模式下构造全部路由，routes 命令用它。
-func DocRouter() chi.Routes {
-    router := chi.NewRouter()
-    router.Route("/api/v1", func(r chi.Router) {
-        opts := API
-        opts.Mode, opts.Router, opts.BasePath = rest.ModeOpenAPI, r, "/api/v1"
-        DocRoutes(rest.New(opts))
-    })
-    PageRoutes(router, web.New(web.Options{Mode: web.ModeRoutes}), nil)
-    return router
-}
-```
-
-`PageRoutes` 收到的依赖都是 `nil`。处理器只是被登记，不会被调用，所以不受影响。
+[routes 命令](../general/commands.md#routes-command)同时列出 JSON API 和页面，页面的访问策略显示为 `public`。命令用的 `DocRouter` 用没有打开任何资源的 `App` 调用上面的 `Router`：`articleweb.Register` 收到的 `db` 是 `nil`，处理器只是被登记，不会被调用，所以不受影响。
 
 <a id="multiple-areas"></a>
 ## 多组页面
@@ -440,12 +411,11 @@ func New(opts Options) *Pages
 
 | `Options` 字段 | 说明 |
 | --- | --- |
-| `ErrorPage func(status int, message string) templ.Component` | 整页的错误组件，运行模式下必须设置，例如 `ui.ErrorPage` |
+| `ErrorPage func(status int, message string) templ.Component` | 整页的错误组件，必须设置，例如 `ui.ErrorPage` |
 | `ErrorFragment`、`ErrorTarget` | 局部请求的错误组件和放置位置，见[错误页](#error-pages) |
 | `Theme Theme` | 组件的风格和颜色，见[主题](components.md#themes) |
 | `Static *Static` | 应用的静态文件，见[前端资源](assets.md) |
 | `CSP func(nonce string) string` | 内容安全策略，默认 `DefaultCSP` |
-| `Mode Mode` | `ModeRoutes` 只登记路由，供 `routes` 命令使用 |
 | `Logger *slog.Logger` | 记录 5xx 错误 |
 
 ### Pages

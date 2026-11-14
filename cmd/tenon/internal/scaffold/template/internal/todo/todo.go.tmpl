@@ -59,7 +59,7 @@ type IDInput struct {
 	ID int64 `path:"id"`
 }
 
-// Register 注册待办事项的接口。s 为 nil 时只登记路由（文档模式）。
+// Register 注册待办事项的接口。它只保存 s、不调用 s，生成文档时 s 是 nil。
 func Register(api *rest.API, s *Store) {
 	op := func(id, method, path, summary string) huma.Operation {
 		o := huma.Operation{OperationID: id, Method: method, Path: path, Summary: summary}

@@ -30,8 +30,7 @@ Tenon 不限定 token 的种类和来源。它可以是数据库中的 API Key�
 ```go
 tokens := apitoken.NewStore(db, cfg.APIToken)
 
-api := rest.New(rest.Options{
-    Router:   router,
+api := rest.New(router, rest.Options{
     Accounts: identity.Accounts{user.Type: nil}, // 接受哪些账号体系
 })
 
@@ -172,7 +171,7 @@ auth:
 需要认证的 API 先用 `rest.Options.Accounts` 声明它接受哪些账号体系。例如只有一套账号：
 
 ```go
-api := rest.New(rest.Options{Accounts: identity.Accounts{user.Type: nil}})
+api := rest.New(router, rest.Options{Accounts: identity.Accounts{user.Type: nil}})
 ```
 
 键是账号体系，值是这套账号的 `identity.Resolver`，`nil` 表示直接使用校验器给出的主体，见[每次请求加载权限](#resolving-subjects)。校验器给出的主体的 `Type` 不在其中时，请求与 token 无效一样返回 `401`。产品有多套账号时，每个 API 只接受它服务的那几种，见[多套账号体系](#account-systems)。没有设置 `Accounts` 就注册需要认证的路由会 panic。
@@ -249,7 +248,7 @@ Www-Authenticate: Bearer
 上面的校验器直接给出了权限。更常见的情况是：凭据只说明“这是谁”，权限来自数据库中用户的角色，而且应当随时生效。这时在 `Accounts` 中为这套账号指定 Resolver，它在认证通过后、权限检查之前运行，收到凭据给出的主体，返回本次请求的主体：
 
 ```go
-api := rest.New(rest.Options{
+api := rest.New(router, rest.Options{
     Accounts: identity.Accounts{
         user.Type: func(ctx context.Context, sub identity.Subject) (identity.Subject, error) {
             u, err := users.Get(ctx, sub.ID)
@@ -300,9 +299,18 @@ const Type identity.SubjectType = "customer"
 **2. 每个入口声明接受哪几套账号。** 运营后台的 API 只接受运营人员，商家后台的 API 只接受商家员工，App 和小程序调用的 API 只接受客户：
 
 ```go
-ops := rest.New(rest.Options{Accounts: identity.Accounts{staff.Type: roles.Resolve}})
-console := rest.New(rest.Options{Accounts: identity.Accounts{member.Type: roles.Resolve}, Tenant: fromPath})
-shop := rest.New(rest.Options{Accounts: identity.Accounts{customer.Type: customers.Resolve}, Tenant: fromHost})
+router.Route("/ops/api", func(r chi.Router) {
+    ops := rest.New(r, rest.Options{BasePath: "/ops/api", Accounts: identity.Accounts{staff.Type: roles.Resolve}})
+    // 注册运营后台的接口
+})
+router.Route("/console/api", func(r chi.Router) {
+    console := rest.New(r, rest.Options{BasePath: "/console/api", Accounts: identity.Accounts{member.Type: roles.Resolve}, Tenant: fromPath})
+    // 注册商家后台的接口
+})
+router.Route("/api", func(r chi.Router) {
+    shop := rest.New(r, rest.Options{BasePath: "/api", Accounts: identity.Accounts{customer.Type: customers.Resolve}, Tenant: fromHost})
+    // 注册 App 和小程序的接口
+})
 ```
 
 几个 API 可以共用一个 token 校验器：客户的 token 发到商家后台的 API，与无效 token 一样返回 `401`。一个入口也可以接受多套账号，例如 `identity.Accounts{member.Type: roles.Resolve, customer.Type: customers.Resolve}`，`sub.Can` 和业务动作不需要区分。[`authz`](authorization.md#roles) 按主体的类型和 ID 保存角色，可以同时服务几套账号；终端客户通常不需要角色，它的 Resolver 只要检查账号是否停用、按“数据归属本人”授权即可。
@@ -319,7 +327,7 @@ shop := rest.New(rest.Options{Accounts: identity.Accounts{customer.Type: custome
 一个 SaaS 应用中，同一个用户可能属于多个组织，在每个组织中有不同的权限。本次请求属于哪个租户由请求本身决定，例如路径中的 `/t/{tenant}`、子域名或请求头。用 `rest.Options.Tenant` 取出它：
 
 ```go
-api := rest.New(rest.Options{
+api := rest.New(router, rest.Options{
     Tenant:   func(ctx huma.Context) string { return ctx.Param("tenant") },
     Accounts: identity.Accounts{user.Type: resolve},
 })

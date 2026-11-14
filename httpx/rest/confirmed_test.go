@@ -2,6 +2,7 @@ package rest_test
 
 import (
 	"context"
+	"github.com/go-chi/chi/v5"
 	"net/http"
 	"testing"
 	"time"
@@ -15,7 +16,7 @@ import (
 // Confirmed 只能与认证方案一起使用，并在 OpenAPI 中记录有效期。行为见 apitoken 的 TestRequireConfirmed。
 func TestConfirmedDeclaration(t *testing.T) {
 	t.Parallel()
-	api := rest.New(rest.Options{Accounts: identity.Accounts{"user": nil}})
+	api := rest.New(chi.NewRouter(), rest.Options{Accounts: identity.Accounts{"user": nil}})
 	handler := func(context.Context, *struct{}) (*struct{}, error) { return nil, nil }
 
 	public := huma.Operation{OperationID: "public-confirmed", Method: http.MethodPost, Path: "/public"}

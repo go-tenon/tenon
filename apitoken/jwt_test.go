@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"encoding/json"
 	"errors"
+	"github.com/go-chi/chi/v5"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -359,7 +360,7 @@ func TestNewJWTPanics(t *testing.T) {
 func TestJWTRequireBearer(t *testing.T) {
 	t.Parallel()
 	j, _ := newJWT(t, apitoken.JWTConfig{})
-	api := rest.New(rest.Options{Accounts: identity.Accounts{"user": func(_ context.Context, sub identity.Subject) (identity.Subject, error) {
+	api := rest.New(chi.NewRouter(), rest.Options{Accounts: identity.Accounts{"user": func(_ context.Context, sub identity.Subject) (identity.Subject, error) {
 		if sub.ID == "alice" {
 			sub.Permissions = []string{"articles:read"}
 		}
@@ -387,7 +388,7 @@ func TestJWTRequireBearer(t *testing.T) {
 func TestJWTRequireBearerRecheck(t *testing.T) {
 	t.Parallel()
 	j, s := newJWT(t, apitoken.JWTConfig{})
-	api := rest.New(rest.Options{Accounts: identity.Accounts{"user": nil}})
+	api := rest.New(chi.NewRouter(), rest.Options{Accounts: identity.Accounts{"user": nil}})
 	op := huma.Operation{OperationID: "events", Method: http.MethodGet, Path: "/events"}
 	rest.RequireBearer(api, j.Validate)(&op)
 	var before, after error

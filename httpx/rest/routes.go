@@ -4,6 +4,10 @@ import (
 	"context"
 	"net/http"
 	"slices"
+	"strconv"
+	"strings"
+
+	"github.com/cockroachdb/errors"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
@@ -18,6 +22,8 @@ const AccessBearer = "bearer"
 // adapter 是 Huma 的 chi 适配器：每个操作注册为一个实现 httpx.RouteDescriber 的处理器，
 // 让 httpx.Routes 能从任意上层 Router 读出访问策略。其余行为委托给 humachi。
 type adapter struct {
+	// api 是使用这个 adapter 的 API，New 在 huma.NewAPI 之前设置，APIs 据此从路由中取回它。
+	api    *API
 	router chi.Router
 	chi    huma.Adapter
 	docs   map[string]bool
@@ -41,7 +47,7 @@ func (a *adapter) Handle(op *huma.Operation, handler func(huma.Context)) {
 	if h, ok := a.spec30[op.Path]; ok && op.Method == http.MethodGet {
 		handler = h
 	}
-	a.router.Method(op.Method, op.Path, &route{op: op, handler: handler, docs: a.docs[op.Path]})
+	a.router.Method(op.Method, op.Path, &route{op: op, handler: handler, docs: a.docs[op.Path], adapter: a})
 }
 
 // spec30 返回 3.0 文档端点的处理器。Huma 自带的处理器转换时保留 webhooks，而 3.0 没有这一项。
@@ -75,6 +81,7 @@ type route struct {
 	op      *huma.Operation
 	handler func(huma.Context)
 	docs    bool
+	adapter *adapter
 }
 
 func (rt *route) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -119,4 +126,46 @@ func docRoutes(cfg huma.Config) map[string]bool {
 		paths[cfg.SchemasPath+"/{schema}"] = true
 	}
 	return paths
+}
+
+// APIs 遍历 router（包括挂载的子路由），按首次出现的顺序返回其中用 New 创建的全部 API。
+// 不调用任何处理器。没有注册任何路由、也关闭了文档端点的 API 找不到。
+func APIs(router chi.Routes) []*API {
+	var apis []*API
+	// Walk 只会返回回调产生的错误；这里的回调始终成功。
+	_ = chi.Walk(router, func(_, _ string, handler http.Handler, _ ...func(http.Handler) http.Handler) error {
+		if rt, ok := handler.(*route); ok && !slices.Contains(apis, rt.adapter.api) {
+			apis = append(apis, rt.adapter.api)
+		}
+		return nil
+	})
+	return apis
+}
+
+// Lookup 返回 router 中 BasePath 为 basePath 的 API。basePath 为空时 router 中必须恰好有一个 API。
+func Lookup(router chi.Routes, basePath string) (*API, error) {
+	apis := APIs(router)
+	if basePath == "" {
+		switch len(apis) {
+		case 1:
+			return apis[0], nil
+		case 0:
+			return nil, errors.New("rest: no API registered in the router")
+		}
+		return nil, errors.Newf("rest: %d APIs registered in the router; choose one by base path: %s", len(apis), basePaths(apis))
+	}
+	for _, api := range apis {
+		if api.basePath == basePath {
+			return api, nil
+		}
+	}
+	return nil, errors.Newf("rest: no API with base path %q; registered: %s", basePath, basePaths(apis))
+}
+
+func basePaths(apis []*API) string {
+	paths := make([]string, len(apis))
+	for i, api := range apis {
+		paths[i] = strconv.Quote(api.basePath)
+	}
+	return strings.Join(paths, ", ")
 }

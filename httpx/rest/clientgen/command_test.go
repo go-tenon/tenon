@@ -9,20 +9,16 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/danielgtaylor/huma/v2"
+	"github.com/go-chi/chi/v5"
 
 	"github.com/go-tenon/tenon/command"
-	"github.com/go-tenon/tenon/httpx/rest"
 	"github.com/go-tenon/tenon/httpx/rest/clientgen"
-	"github.com/go-tenon/tenon/httpx/rest/clientgen/internal/example/article"
 )
 
 func runClient(t *testing.T, args ...string) (string, error) {
 	t.Helper()
 	root := command.Root("api", "test")
-	root.AddCommand(clientgen.Command(rest.Options{Title: "Blog", BasePath: "/api"}, func(api *rest.API) {
-		article.Register(api, article.NewStore(), func(op *huma.Operation) { rest.RequireBearer(api, tokens(nil).validate)(op) })
-	}))
+	root.AddCommand(clientgen.Command(func() chi.Routes { return exampleAPI(nil).Router() }))
 	var stderr bytes.Buffer
 	root.SetErr(&stderr)
 	root.SetOut(&bytes.Buffer{})

@@ -75,13 +75,13 @@ func main() {
         migratecmd.New(migrations.FS, func(cfg bootstrap.Config) database.Config { return cfg.Database }),
         command.Config[bootstrap.Config](),
     )
-    root.AddCommand(httpcmd.Commands(bootstrap.API, bootstrap.DocRoutes, bootstrap.DocRouter)...)
+    root.AddCommand(httpcmd.Commands(bootstrap.DocRouter)...)
     root.AddCommand(bootstrap.Commands()...)
     command.Execute(root)
 }
 ```
 
-`bootstrap` 中的 `Serve`、`Start`、`API`、`DocRoutes`、`DocRouter` 见[依赖装配](../concepts/dependencies.md#assembling-the-application)和[入门教程](../tutorial/02-infrastructure.md#entrypoint)，`bootstrap.Commands` 是需要数据库的命令，见[自定义命令](#custom-commands)。
+`bootstrap` 中的 `Serve`、`Start`、`DocRouter` 见[依赖装配](../concepts/dependencies.md#assembling-the-application)和[入门教程](../tutorial/02-infrastructure.md#entrypoint)，`bootstrap.Commands` 是需要数据库的命令，见[自定义命令](#custom-commands)。
 
 `command.Execute` 执行根命令。收到 `SIGINT` 或 `SIGTERM` 时，它会取消命令的 context；命令失败时，它把错误写到标准错误，并以对应的[退出码](#exit-codes)结束进程。
 
@@ -93,7 +93,7 @@ func main() {
 | `command.Config[C]()` | `config check`、`config show` | 是 |
 | `migratecmd.New(fsys, dbConfig, opts...)` | `migrate up`、`migrate status`、`migrate down`、`migrate make`；`migratecmd.Name` 构造其他数据库的命令，见[多个数据库](../database/quick-start.md#multiple-databases) | 是 |
 | `migratecmd.Publish(sources...)` | 显式挂载的 `migrate publish` | 否 |
-| `httpcmd.Commands(opts, register, router)` | `openapi`、`routes`、`client`（生成 TypeScript 或 Go 客户端，见[客户端代码](../responses/clients.md)）；也可以用 `httpcmd.OpenAPI`、`httpcmd.Routes`、`clientgen.Command` 单独装配 | 否 |
+| `httpcmd.Commands(router)` | `openapi`、`routes`、`client`（生成 TypeScript 或 Go 客户端，见[客户端代码](../responses/clients.md)）；也可以用 `httpcmd.OpenAPI`、`httpcmd.Routes`、`clientgen.Command` 单独装配 | 否 |
 | `command.Bind(open, declare)` | 应用声明的命令，例如 `article publish`，见[从命令行运行动作](../concepts/actions.md#as-commands) | 是 |
 | `queuecmd.New(db)` | `queue status`、`queue failed`、`queue slot recreate`，在 `command.Bind` 中声明，见[队列状态](../libraries/queue.md#stats-command) | 是 |
 | `schedulecmd.New(tasks, m)` | `schedules`，在 `command.Bind` 中声明，见[列出任务的命令](../libraries/scheduling.md#schedules-command) | 是 |
@@ -170,21 +170,21 @@ func Start(ctx context.Context, cfg Config) error {
 <a id="openapi-command"></a>
 ### openapi 命令
 
-`httpcmd.OpenAPI(opts, register)` 以[文档模式](../http/routing.md#exporting-openapi)和 `opts` 创建 API，调用 `register` 注册路由，然后把 OpenAPI 文档输出到标准输出：
+`httpcmd.OpenAPI(router)` 调用 `router` 构造应用的路由，用 [`rest.Lookup`](../http/routing.md#exporting-openapi) 取出其中的 API，把 OpenAPI 文档输出到标准输出：
 
 ```bash
 ./bin/api openapi > openapi.json
 ./bin/api openapi --spec 3.0 > openapi-3.0.json
 ```
 
-默认输出 OpenAPI 3.1；有的客户端生成器只支持 3.0，例如 oapi-codegen，这时加上 `--spec 3.0`。
+默认输出 OpenAPI 3.1；有的客户端生成器只支持 3.0，例如 oapi-codegen，这时加上 `--spec 3.0`。路由中有[多个 API](../http/routing.md#api-versioning) 时，用 `--base-path` 选择其中一个，例如 `--base-path /api/v2`。
 
-`bootstrap.API` 和 `bootstrap.DocRoutes` 与 `serve` 共用同一份 API 选项和路由注册（见[依赖装配](../concepts/dependencies.md#assembling-the-application)），因此导出的文档与实际运行的接口始终一致。文档模式不会调用处理器，也不会调用 token 校验器，所以这个命令不读取配置文件，也不连接数据库。
+`bootstrap.DocRouter` 用默认配置和没有打开任何资源的 `App` 调用 `serve` 也在用的路由函数（见[依赖装配](../concepts/dependencies.md#assembling-the-application)），因此导出的文档与实际运行的接口始终一致。构造路由不会调用处理器，也不会调用 token 校验器，所以这个命令不读取配置文件，也不连接数据库。
 
 <a id="routes-command"></a>
 ### routes 命令
 
-当业务模块变多时，你可以用 `routes` 查看整个应用的路由，包括 JSON API 和[页面](../responses/views.md#page-routes)，不必逐个打开模块中的 `routes.go`。`httpcmd.Routes` 的参数是构造完整路由的函数，例如[入门教程](../tutorial/02-infrastructure.md#assembling)中的 `bootstrap.DocRouter`。它在文档模式下注册路由，不需要配置文件：
+当业务模块变多时，你可以用 `routes` 查看整个应用的路由，包括 JSON API 和[页面](../responses/views.md#page-routes)，不必逐个打开模块中的 `routes.go`。`httpcmd.Routes` 的参数是构造完整路由的函数，例如[入门教程](../tutorial/02-infrastructure.md#assembling)中的 `bootstrap.DocRouter`。它不需要配置文件，也不连接数据库：
 
 ```bash
 ./bin/api routes
@@ -192,7 +192,7 @@ func Start(ctx context.Context, cfg Config) error {
 ./bin/api routes --all
 ```
 
-`--method` 不区分大小写，`--path` 按路径包含的文本匹配，两者同时使用时取交集。结果按路径、HTTP 方法排序，例如 `--path /articles` 会输出：
+`--method` 不区分大小写，`--path` 按路径包含的文本匹配，两者同时使用时取交集。用 `Handle`、`Mount` 注册、响应任意方法的路由（例如单页应用的 `/*`）合并为一行，方法显示为 `*`，按方法过滤时总是列出。结果按路径、HTTP 方法排序，例如 `--path /articles` 会输出：
 
 ```text
 METHOD  PATH                    OPERATION ID     ACCESS            SUMMARY
@@ -206,7 +206,7 @@ POST    /articles/{id}/publish  article-publish  bearer: articles  发布文章
 - **ACCESS** 展示路由声明的访问策略：`public` 表示显式公开，`bearer` 表示 JSON API 要求 Bearer token，`bearer: articles` 同时列出所需的权限，`docs` 表示 Huma 的文档端点。`unknown` 表示无法从声明确定策略（例如直接注册在 chi 上的健康检查），**不**表示允许匿名访问；
 - **OPERATION ID**、**SUMMARY** 来自 `huma.Operation`，页面路由没有，显示为 `-`。摘要中的换行会合并为空格。
 
-Huma 自动注册的 `/docs`、`/openapi.json`、`/schemas/{schema}` 等文档端点默认不显示，加上 `--all` 才会列出。列表也包含直接注册在 chi 上的原生路由和挂载的子路由；挂载的不透明 `http.Handler`（例如 `Mount("/files", handler)`）显示为 `/files/*`，无法展开其内部路由。
+Huma 自动注册的 `/docs`、`/openapi.json`、`/schemas/{schema}` 等文档端点默认不显示，加上 `--all` 才会列出。列表也包含直接注册在 chi 上的原生路由和挂载的子路由；挂载的不透明 `http.Handler`（例如 `Mount("/files", handler)`）显示为一行 `* /files/*`，无法展开其内部路由。
 
 <a id="migrate-command"></a>
 ### migrate 命令
@@ -420,12 +420,12 @@ func ExitCode(err error) int
 包 `github.com/go-tenon/tenon/command/httpcmd`。
 
 ```go
-func Commands(opts rest.Options, register func(api *rest.API), router func() chi.Routes) []*cobra.Command
-func OpenAPI(opts rest.Options, register func(api *rest.API)) *cobra.Command
+func Commands(router func() chi.Routes) []*cobra.Command
+func OpenAPI(router func() chi.Routes) *cobra.Command
 func Routes(router func() chi.Routes) *cobra.Command
 ```
 
-`Commands` 返回 `openapi`、`routes` 和 `client` 三个命令。
+`Commands` 返回 `openapi`、`routes` 和 `client` 三个命令。`router` 构造应用的全部路由，通常用默认配置和 `nil` 依赖调用 `serve` 也在用的路由函数，例如 `func() chi.Routes { return routes(config.Default[Config](), nil) }`；三个命令执行时才调用它。
 
 ### migratecmd
 

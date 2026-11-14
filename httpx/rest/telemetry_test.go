@@ -27,8 +27,8 @@ func TestServerErrorRecordedOnSpan(t *testing.T) {
 	router := chi.NewRouter()
 	router.Use(httpx.Telemetry(metricnoop.NewMeterProvider(), sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spans))))
 	logger := slog.New(slog.DiscardHandler)
-	router.Use(httpx.Defaults(httpx.DefaultConfig(), logger, nil)...)
-	api := rest.New(rest.Options{Router: router, Accounts: identity.Accounts{"user": nil}, Logger: logger})
+	router.Use(httpx.Defaults(httpx.DefaultConfig(), httpx.Logger(logger))...)
+	api := rest.New(router, rest.Options{Accounts: identity.Accounts{"user": nil}, Logger: logger})
 	for path, err := range map[string]error{
 		"/crash": errors.Wrap(errors.New("connection reset"), "load article"),
 		"/fail":  errorx.Define(errorx.NotFound, "article.not_found").New(),

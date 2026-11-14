@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/cockroachdb/errors"
 	"github.com/danielgtaylor/huma/v2"
 	"go.opentelemetry.io/otel/trace"
 
@@ -19,7 +18,6 @@ import (
 var operationID = regexp.MustCompile(`^[a-z][a-z0-9]*(-[a-z0-9]+)*$`)
 
 // Register 登记端点。op.OperationID 必须是 kebab-case，写成“资源-动作”，例如 article-publish。handler 通常是 action 的方法值，例如 article.NewPublish(db).HTTP；
-// ModeOpenAPI 只生成文档，不调用 handler，可以传 nil。
 // 处理器错误经 FromError 转换为 HTTP 错误，业务错误的 detail 按请求语言翻译。
 func Register[I, O any](api *API, op huma.Operation, handler func(context.Context, *I) (*O, error)) {
 	register(api, op, nil, handler)
@@ -53,27 +51,21 @@ func register[I, O any](api *API, op huma.Operation, events map[string]reflect.T
 			}
 		}
 	}
+	if handler == nil {
+		panic("rest: nil handler")
+	}
 	h := handler
-	if api.mode == ModeOpenAPI {
-		handler = func(context.Context, *I) (*O, error) {
-			return nil, errors.New("rest: schema-only handler invoked")
+	handler = func(ctx context.Context, in *I) (*O, error) {
+		out, err := h(ctx, in)
+		if err == nil {
+			return out, nil
 		}
-	} else {
-		if h == nil {
-			panic("rest: nil handler")
+		se := api.httpError(ctx, err)
+		if se.GetStatus() >= 500 {
+			api.logger.ErrorContext(ctx, "request failed", "error", err)
+			logging.RecordError(trace.SpanFromContext(ctx), err)
 		}
-		handler = func(ctx context.Context, in *I) (*O, error) {
-			out, err := h(ctx, in)
-			if err == nil {
-				return out, nil
-			}
-			se := api.httpError(ctx, err)
-			if se.GetStatus() >= 500 {
-				api.logger.ErrorContext(ctx, "request failed", "error", err)
-				logging.RecordError(trace.SpanFromContext(ctx), err)
-			}
-			return out, se
-		}
+		return out, se
 	}
 	api.names.bodies(reflect.TypeFor[I](), reflect.TypeFor[O]())
 	huma.Register(api.API, op, handler)

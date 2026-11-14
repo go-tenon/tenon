@@ -3,6 +3,7 @@ package apitoken_test
 import (
 	"context"
 	"errors"
+	"github.com/go-chi/chi/v5"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -450,7 +451,7 @@ func TestRequireBearer(t *testing.T) {
 	t.Parallel()
 	s := newStore(t)
 	permissions := map[string][]string{"alice": {"articles:*"}}
-	api := rest.New(rest.Options{Accounts: identity.Accounts{"user": func(_ context.Context, sub identity.Subject) (identity.Subject, error) {
+	api := rest.New(chi.NewRouter(), rest.Options{Accounts: identity.Accounts{"user": func(_ context.Context, sub identity.Subject) (identity.Subject, error) {
 		sub.Permissions = permissions[sub.ID]
 		return sub, nil
 	}}})

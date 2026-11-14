@@ -17,10 +17,10 @@ const badMain = "github.com/go-tenon/tenon/httpx/rest/clientgen/internal/example
 
 // badAPI 在示例接口之外登记一个输出类型为 O 的公开接口。
 func badAPI[O any]() *rest.API {
-	api := exampleAPI(rest.ModeOpenAPI, nil)
+	api := exampleAPI(nil)
 	op := huma.Operation{OperationID: "bad-get", Method: http.MethodGet, Path: "/bad"}
 	rest.Public()(&op)
-	rest.Register[struct{}, O](api, op, nil)
+	rest.Register(api, op, func(context.Context, *struct{}) (*O, error) { return nil, nil })
 	return api
 }
 
@@ -67,7 +67,7 @@ func TestMirrorPackageNamesMustBeUnique(t *testing.T) {
 }
 
 func TestOperationAndGroupNamesMustNotCollide(t *testing.T) {
-	api := exampleAPI(rest.ModeOpenAPI, nil)
+	api := exampleAPI(nil)
 	op := huma.Operation{OperationID: "article", Method: http.MethodGet, Path: "/article"}
 	rest.Public()(&op)
 	rest.Register(api, op, func(context.Context, *struct{}) (*struct{}, error) { return nil, nil })

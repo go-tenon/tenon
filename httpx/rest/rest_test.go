@@ -3,6 +3,7 @@ package rest_test
 import (
 	"context"
 	"encoding/json"
+	"github.com/go-chi/chi/v5"
 	"io"
 	"net"
 	"net/http"
@@ -36,13 +37,21 @@ type echoOut struct {
 	}
 }
 
-func TestOpenAPIDoesNotCallNewHandler(t *testing.T) {
-	api := rest.New(rest.Options{Title: "doc", Mode: rest.ModeOpenAPI})
-	rest.Register[pingIn, pingOut](api, huma.Operation{Security: []map[string][]string{},
-		OperationID: "ping",
-		Method:      http.MethodGet,
-		Path:        "/ping",
-	}, nil)
+// pingStore 模拟持有运行时资源的依赖：生成文档时它是 nil，处理器是它的方法值。
+type pingStore struct{ calls int }
+
+func (s *pingStore) ping(context.Context, *pingIn) (*pingOut, error) {
+	s.calls++
+	return &pingOut{}, nil
+}
+
+// 注册时只保存依赖、不调用依赖，用 nil 依赖构造的 API 就能生成文档，处理器不会被调用。
+func TestRegisterWithNilDependency(t *testing.T) {
+	api := rest.New(chi.NewRouter(), rest.Options{Title: "doc"})
+	var s *pingStore
+	op := huma.Operation{OperationID: "ping", Method: http.MethodGet, Path: "/ping"}
+	rest.Public()(&op)
+	rest.Register(api, op, s.ping)
 	doc, err := api.OpenAPIJSON()
 	if err != nil {
 		t.Fatal(err)
@@ -50,6 +59,26 @@ func TestOpenAPIDoesNotCallNewHandler(t *testing.T) {
 	if !strings.Contains(string(doc), "/ping") {
 		t.Fatalf("openapi missing /ping: %s", doc)
 	}
+}
+
+func TestNilHandlerRejected(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("nil handler accepted")
+		}
+	}()
+	op := huma.Operation{OperationID: "ping", Method: http.MethodGet, Path: "/ping"}
+	rest.Public()(&op)
+	rest.Register[pingIn, pingOut](rest.New(chi.NewRouter(), rest.Options{}), op, nil)
+}
+
+func TestNilRouterRejected(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("nil router accepted")
+		}
+	}()
+	rest.New(nil, rest.Options{})
 }
 
 func TestInstanceTransformersIsolated(t *testing.T) {
@@ -62,8 +91,8 @@ func TestInstanceTransformersIsolated(t *testing.T) {
 		seenB++
 		return v, nil
 	}
-	a := rest.New(rest.Options{Title: "a", Transformers: []huma.Transformer{markA}})
-	b := rest.New(rest.Options{Title: "b", Transformers: []huma.Transformer{markB}})
+	a := rest.New(chi.NewRouter(), rest.Options{Title: "a", Transformers: []huma.Transformer{markA}})
+	b := rest.New(chi.NewRouter(), rest.Options{Title: "b", Transformers: []huma.Transformer{markB}})
 	rest.Register(a, huma.Operation{Security: []map[string][]string{}, OperationID: "a-ping", Method: http.MethodGet, Path: "/ping"}, func(context.Context, *pingIn) (*pingOut, error) {
 		out := &pingOut{}
 		out.Body.Message = "a"
@@ -89,7 +118,7 @@ func TestInstanceTransformersIsolated(t *testing.T) {
 
 func TestPingServeAndErrorMapping(t *testing.T) {
 	errDenied := errorx.Define(errorx.PermissionDenied, "demo.denied")
-	api := rest.New(rest.Options{Title: "ping"})
+	api := rest.New(chi.NewRouter(), rest.Options{Title: "ping"})
 	rest.Register(api, huma.Operation{Security: []map[string][]string{},
 		OperationID: "ping",
 		Method:      http.MethodGet,
@@ -124,7 +153,7 @@ func TestPingServeAndErrorMapping(t *testing.T) {
 	defer cancel()
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- httpx.Serve(ctx, httpx.DefaultConfig(), ln, api.Handler(), httpx.ServeOptions{})
+		errCh <- httpx.Serve(ctx, httpx.DefaultConfig(), ln, api.Handler())
 	}()
 	base := "http://" + ln.Addr().String()
 
@@ -180,7 +209,7 @@ func TestPingServeAndErrorMapping(t *testing.T) {
 }
 
 func TestResponsesHaveNoSchemaLink(t *testing.T) {
-	api := rest.New(rest.Options{})
+	api := rest.New(chi.NewRouter(), rest.Options{})
 	rest.Register(api, huma.Operation{Security: []map[string][]string{}, OperationID: "ping", Method: http.MethodGet, Path: "/ping"}, func(context.Context, *pingIn) (*pingOut, error) { return &pingOut{}, nil })
 	rest.Register(api, huma.Operation{Security: []map[string][]string{}, OperationID: "deny", Method: http.MethodGet, Path: "/deny"}, func(context.Context, *pingIn) (*pingOut, error) {
 		return nil, errorx.Define(errorx.NotFound, "demo.missing").New()
@@ -199,7 +228,7 @@ func TestResponsesHaveNoSchemaLink(t *testing.T) {
 }
 
 func TestOpenAPI30DropsWebhooks(t *testing.T) {
-	api := rest.New(rest.Options{Mode: rest.ModeOpenAPI})
+	api := rest.New(chi.NewRouter(), rest.Options{})
 	api.OpenAPI().Webhooks = map[string]*huma.PathItem{"article.published": {Post: &huma.Operation{Summary: "x"}}}
 	doc, err := api.OpenAPI30JSON()
 	if err != nil {

@@ -3,6 +3,7 @@ package rest_test
 import (
 	"context"
 	"errors"
+	"github.com/go-chi/chi/v5"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -35,7 +36,7 @@ func TestRequireBearerInstallsCredentialCheck(t *testing.T) {
 		}
 		return subject, nil
 	}
-	api := rest.New(rest.Options{Accounts: identity.Accounts{"user": nil}})
+	api := rest.New(chi.NewRouter(), rest.Options{Accounts: identity.Accounts{"user": nil}})
 	captured := make(chan context.Context, 1)
 	op := huma.Operation{OperationID: "events", Method: http.MethodGet, Path: "/events"}
 	rest.RequireBearer(api, validate, "events")(&op)

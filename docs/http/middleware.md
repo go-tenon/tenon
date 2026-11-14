@@ -33,13 +33,17 @@ Tenon 的中间件都是标准的 `func(http.Handler) http.Handler`，安装在 
 
 ```go
 router := chi.NewRouter()
-router.Use(httpx.Defaults(cfg.HTTP, nil, nil)...)
+router.Use(httpx.Defaults(cfg.HTTP)...)
 router.Use(httpx.Timeout(cfg.HTTP.Timeout))
 
-api := rest.New(rest.Options{Router: router})
+api := rest.New(router, rest.Options{})
 ```
 
-这里使用了 `github.com/go-chi/chi/v5`。`Defaults` 的第二个参数是日志器，传 `nil` 时使用全局日志器 `slog.Default()`，见[日志](../general/logging.md#creating-a-logger)；第三个参数是语言目录，传 `nil` 时只使用框架内置的中英文消息，见[本地化](../general/localization.md#enabling-localization)。
+这里使用了 `github.com/go-chi/chi/v5`。日志写到全局日志器 `slog.Default()`，见[日志](../general/logging.md#creating-a-logger)；错误消息默认只使用框架内置的中英文，加入应用自己的翻译时传 `httpx.Languages` 选项，见[本地化](../general/localization.md#enabling-localization)：
+
+```go
+router.Use(httpx.Defaults(cfg.HTTP, httpx.Languages(languages))...)
+```
 
 `httpx.Defaults` 按以下顺序包含这些中间件。它们每一个都可以单独使用：
 
@@ -127,14 +131,14 @@ http:
 把 `httpx.Config` 放进应用的根配置结构体（`config.Load` 会自动填充默认值并校验），再把它交给 `httpx.Defaults` 和 `httpx.Serve`：
 
 ```go
-router.Use(httpx.Defaults(cfg.HTTP, nil, nil)...)
+router.Use(httpx.Defaults(cfg.HTTP)...)
 // ...
 ln, err := d.Listen("tcp", cfg.HTTP.Addr)
 // ...
-return httpx.Serve(ctx, cfg.HTTP, ln, api.Handler(), httpx.ServeOptions{})
+return httpx.Serve(ctx, cfg.HTTP, ln, api.Handler())
 ```
 
-不经过 `config.Load` 时（例如在测试中），请从 `httpx.DefaultConfig()` 开始修改。零值的 `httpx.Config{}` 不合法，`httpx.Defaults` 会 panic，`httpx.Serve` 会返回错误。
+不经过 `config.Load` 时（例如在测试中），请从 `httpx.DefaultConfig()` 开始修改；整个应用的配置用 `config.Default[Config]()`，它与读取空配置文件得到的值相同。零值的 `httpx.Config{}` 不合法，`httpx.Defaults` 会 panic，`httpx.Serve` 会返回错误。
 
 <a id="request-id"></a>
 ### 请求 ID
@@ -228,7 +232,7 @@ http:
 `httpx.RateLimit` 按客户端限制请求频率，超出时返回 `429`。它不在默认中间件中，需要时在 `httpx.Defaults` 之后安装：
 
 ```go
-router.Use(httpx.Defaults(cfg.HTTP, nil, nil)...)
+router.Use(httpx.Defaults(cfg.HTTP)...)
 router.Use(httpx.RateLimit(ratelimit.NewMemory(cfg.HTTP.RateLimit), httpx.KeyByIP))
 ```
 
@@ -350,7 +354,7 @@ http:
 应用直接对外提供服务、前面没有负责压缩的反向代理或 CDN 时，在 `httpx.Defaults` 之后安装 `httpx.Compress`：
 
 ```go
-router.Use(httpx.Defaults(cfg.HTTP, nil, nil)...)
+router.Use(httpx.Defaults(cfg.HTTP)...)
 router.Use(httpx.Compress())
 ```
 
@@ -371,7 +375,7 @@ router.Use(httpx.Compress())
 
 ```go
 router.Use(httpx.Telemetry(tel.Meters, tel.Tracers))
-router.Use(httpx.Defaults(cfg.HTTP, nil, nil)...)
+router.Use(httpx.Defaults(cfg.HTTP)...)
 ```
 
 `tel` 的创建和指标的属性见[可观测性](../general/telemetry.md#http)。
@@ -422,7 +426,7 @@ router.Use(
 var readOnly atomic.Bool // 由运维开关控制，例如收到某个信号时切换
 
 router := chi.NewRouter()
-router.Use(httpx.Defaults(cfg.HTTP, nil, nil)...)
+router.Use(httpx.Defaults(cfg.HTTP)...)
 router.Use(func(next http.Handler) http.Handler {
     return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
         if readOnly.Load() && r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -433,7 +437,7 @@ router.Use(func(next http.Handler) http.Handler {
     })
 })
 
-api := rest.New(rest.Options{Router: router})
+api := rest.New(router, rest.Options{})
 ```
 
 安装在默认中间件之后，被拒绝的写请求同样带有请求 ID、出现在访问日志中，panic 也会被恢复。
@@ -476,7 +480,7 @@ requireArticles(&legacy)
 这些中间件不依赖 `rest` 包。如果你有一个普通的 `http.Handler`（例如标准库的 `http.ServeMux`），可以用 `chi.Chain` 为它安装：
 
 ```go
-handler := chi.Chain(httpx.Defaults(cfg.HTTP, nil, nil)...).Handler(mux)
+handler := chi.Chain(httpx.Defaults(cfg.HTTP)...).Handler(mux)
 ```
 
 <a id="api-reference"></a>
@@ -487,17 +491,18 @@ handler := chi.Chain(httpx.Defaults(cfg.HTTP, nil, nil)...).Handler(mux)
 ### Defaults
 
 ```go
-func Defaults(cfg Config, logger *slog.Logger, languages *goi18n.Bundle) []func(http.Handler) http.Handler
+func Defaults(cfg Config, opts ...DefaultsOption) []func(http.Handler) http.Handler
+func Logger(l *slog.Logger) LoggerOption
+func Languages(bundle *goi18n.Bundle) DefaultsOption
 ```
 
 - **参数**
     - `cfg`：HTTP 配置，见[配置](#http-configuration)；不合法时 panic
-    - `logger`：访问日志和 panic 的日志器，为 `nil` 时使用 `slog.Default()`
-    - `languages`：语言目录，为 `nil` 时只使用框架内置的中英文消息
+    - `opts`：`Logger(l)` 让访问日志和 panic 记录写到 `l`，不传时使用 `slog.Default()`，通常只在测试中使用；`Languages(bundle)` 加入应用的语言目录，不传时只使用框架内置的中英文消息
 - **返回**：按执行顺序排列的中间件：`AssignRequestID`、`NoSniff`、`ClientIP`、`Locale`、`AccessLog`、`Recover`、`BodyLimit`、`AcquireTimeout`
 
 ```go
-router.Use(httpx.Defaults(cfg.HTTP, nil, nil)...)
+router.Use(httpx.Defaults(cfg.HTTP)...)
 ```
 
 ### 中间件

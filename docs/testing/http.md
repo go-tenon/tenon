@@ -20,7 +20,7 @@
 
 ```go
 func newTestAPI() *rest.API {
-    api := rest.New(rest.Options{Accounts: identity.Accounts{user.Type: nil}})
+    api := rest.New(chi.NewRouter(), rest.Options{Accounts: identity.Accounts{user.Type: nil}})
     tokens := map[string]identity.Subject{
         "alice-token": {Type: user.Type, ID: "alice", Permissions: []string{"articles"}},
         "guest-token": {Type: user.Type, ID: "guest"},
@@ -201,15 +201,14 @@ func TestConfigCheckReportsMissingFile(t *testing.T) {
 <a id="testing-openapi"></a>
 ## 测试 OpenAPI 文档
 
-生成文档时，路由用 `nil` 依赖注册，处理器不会被调用。用应用的 [DocRoutes](../concepts/dependencies.md#assembling-the-application) 注册全部路由并生成文档，可以确保没有哪个构造函数在注册时使用了依赖，否则测试会 panic：
+生成文档时，路由用 `nil` 依赖构造，处理器不会被调用。用应用的 [DocRouter](../concepts/dependencies.md#running-parts) 构造全部路由并生成文档，可以确保没有哪个构造函数在注册时使用了依赖，否则测试会 panic：
 
 ```go
 func TestOpenAPI(t *testing.T) {
-    opts := bootstrap.API
-    opts.Mode = rest.ModeOpenAPI
-    api := rest.New(opts)
-    bootstrap.DocRoutes(api)
-
+    api, err := rest.Lookup(bootstrap.DocRouter(), "")
+    if err != nil {
+        t.Fatal(err)
+    }
     data, err := api.OpenAPIJSON()
     if err != nil {
         t.Fatal(err)

@@ -74,7 +74,7 @@ func TestInvalidParametersPanicInsteadOfDisabling(t *testing.T) {
 		"Timeout":   func() { httpx.Timeout(httpx.TimeoutConfig{}) },
 		"RateLimit": func() { httpx.RateLimit(nil, httpx.KeyByIP) },
 		"RateKey":   func() { httpx.RateLimit(ratelimit.NewMemory(httpx.DefaultConfig().RateLimit), nil) },
-		"Defaults":  func() { httpx.Defaults(httpx.Config{}, slog.New(slog.DiscardHandler), nil) },
+		"Defaults":  func() { httpx.Defaults(httpx.Config{}, httpx.Logger(slog.New(slog.DiscardHandler))) },
 	} {
 		func() {
 			defer func() {
@@ -92,7 +92,7 @@ func TestDefaultsLogPanicAsServerError(t *testing.T) {
 	t.Parallel()
 	var logs bytes.Buffer
 	router := chi.NewRouter()
-	router.Use(httpx.Defaults(httpx.DefaultConfig(), slog.New(slog.NewJSONHandler(&logs, nil)), nil)...)
+	router.Use(httpx.Defaults(httpx.DefaultConfig(), httpx.Logger(slog.New(slog.NewJSONHandler(&logs, nil))))...)
 	router.Get("/", func(http.ResponseWriter, *http.Request) { panic("boom") })
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, httptest.NewRequest("GET", "/", nil))
@@ -140,7 +140,7 @@ func TestNilLoggerFallsBackToSlogDefault(t *testing.T) {
 	t.Cleanup(func() { slog.SetDefault(prev) })
 
 	router := chi.NewRouter()
-	router.Use(httpx.Defaults(httpx.DefaultConfig(), nil, nil)...)
+	router.Use(httpx.Defaults(httpx.DefaultConfig())...)
 	router.Get("/", func(http.ResponseWriter, *http.Request) { panic("boom") })
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, httptest.NewRequest("GET", "/", nil))
@@ -154,7 +154,7 @@ func TestDefaultsNegotiateBuiltinLocale(t *testing.T) {
 	t.Parallel()
 	var got string
 	router := chi.NewRouter()
-	router.Use(httpx.Defaults(httpx.DefaultConfig(), slog.New(slog.DiscardHandler), nil)...)
+	router.Use(httpx.Defaults(httpx.DefaultConfig(), httpx.Logger(slog.New(slog.DiscardHandler)))...)
 	router.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		got = i18n.T(r.Context(), "auth.forbidden", nil)
 	})
@@ -172,7 +172,7 @@ func TestDefaultsNegotiateBuiltinLocale(t *testing.T) {
 // Defaults 不设置请求超时：Timeout 按路由组安装，流式路由不能有超时。
 func TestDefaultsSetNoDeadline(t *testing.T) {
 	t.Parallel()
-	handler := chi.Chain(httpx.Defaults(httpx.DefaultConfig(), slog.New(slog.DiscardHandler), nil)...).
+	handler := chi.Chain(httpx.Defaults(httpx.DefaultConfig(), httpx.Logger(slog.New(slog.DiscardHandler)))...).
 		HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if _, ok := r.Context().Deadline(); ok {
 				t.Error("Defaults set a request deadline")
