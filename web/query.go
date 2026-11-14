@@ -22,7 +22,7 @@ var ErrBadQuery = errorx.Define(errorx.InvalidArgument, "web.bad_query")
 // 不同的是，查询参数都是可选的：
 //
 //   - 字段要带 omitempty，例如 `json:"q,omitempty"`；
-//   - 空值等同于没有这个参数，所以 ?status= 与不带 status 相同；
+//   - 空值等同于省略这个参数，所以 ?status= 与省略 status 相同；
 //   - 没有的参数取 default 标签的值。
 //
 // 可以嵌入 page.OffsetParams 得到 page、per_page 两个参数。验证失败时返回 ErrBadQuery，
@@ -131,7 +131,7 @@ func queryText(v reflect.Value) string {
 }
 
 // PushURL 让 htmx 在处理完这个响应后，把浏览器地址栏改为 url 并记入历史，后退时回到之前的地址。
-// 列表页的局部响应用它写入规范地址（QueryURL），元素上就不需要 hx-push-url：
+// 列表页的局部响应用它写入规范地址（QueryURL），元素上省略 hx-push-url 即可：
 // 筛选表单提交时会带上空字段（?q=&status=），由服务端推送的地址不含这些参数。必须在写出响应之前调用。
 func PushURL(w http.ResponseWriter, url string) {
 	w.Header().Set("HX-Push-Url", url)

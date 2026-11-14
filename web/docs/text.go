@@ -36,7 +36,7 @@ func text(ctx context.Context, id string) string {
 
 // label 是正文中按请求的语言替换的文案（复制按钮、提示块的标题）。正文在 New 时渲染一次，
 // 渲染时还不知道语言，所以先写入 NUL 包围的 id，每次请求再替换（localize）。
-// goldmark 把 Markdown 中的 NUL 换成 U+FFFD，正文的其他部分不会出现这样的标记。
+// goldmark 把 Markdown 中的 NUL 换成 U+FFFD，这个标记因此只出现在这里。
 func label(id string) string { return "\x00" + id + "\x00" }
 
 // localize 把 body 中的 label 替换为请求的语言的文字。

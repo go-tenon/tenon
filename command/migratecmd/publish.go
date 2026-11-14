@@ -9,7 +9,7 @@ import (
 )
 
 // Publish 创建按需注册的 publish 子命令，把 sources 中的迁移复制到 --dir。
-// 通过 New(...).AddCommand(Publish(...)) 挂载；不加载应用配置、不连接数据库。
+// 通过 New(...).AddCommand(Publish(...)) 挂载；只复制文件。
 func Publish(sources ...migrate.Source) *cobra.Command {
 	var dir string
 	cmd := leaf("publish", "把框架迁移发布到应用目录", func(cmd *cobra.Command) error {

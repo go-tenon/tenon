@@ -169,7 +169,7 @@ func TestDefaultsNegotiateBuiltinLocale(t *testing.T) {
 	}
 }
 
-// Defaults 不设置请求超时：Timeout 按路由组安装，流式路由不能有超时。
+// Defaults 中没有请求超时：Timeout 按路由组安装，流式路由不设超时。
 func TestDefaultsSetNoDeadline(t *testing.T) {
 	t.Parallel()
 	handler := chi.Chain(httpx.Defaults(httpx.DefaultConfig(), httpx.Logger(slog.New(slog.DiscardHandler)))...).

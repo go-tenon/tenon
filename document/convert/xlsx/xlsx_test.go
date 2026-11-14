@@ -349,7 +349,7 @@ func TestCorruptSheetAndNUL(t *testing.T) {
 			t.Errorf("missing %s: %v", part, err)
 		}
 	}
-	// 共享字符串从固定路径读取，不需要关系或 XML 内容类型。
+	// 共享字符串从固定路径读取，关系和 XML 内容类型都可以缺失。
 	unlisted := rezipAll(t, data, func(name, content string) (string, string) {
 		switch name {
 		case "xl/sharedStrings.xml":

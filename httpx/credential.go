@@ -23,7 +23,7 @@ func WithCredentialCheck(ctx context.Context, check CredentialCheck) context.Con
 	return context.WithValue(ctx, credentialKey{}, append(checks[:len(checks):len(checks)], check))
 }
 
-// CredentialWatcher 在凭据可能已经变化时通知长连接立即重新校验，不必等下一次定期校验。
+// CredentialWatcher 在凭据可能已经变化时通知长连接立即重新校验。
 // broadcast.Credentials 是基于广播的实现，多个实例之间也能互相通知。
 type CredentialWatcher interface {
 	// Watch 返回一个通道：sub 所用的凭据（sub.Credential）、sub 本身（sub.Ref()），

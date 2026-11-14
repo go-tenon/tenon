@@ -91,7 +91,7 @@ func (s *Store) sweep(now time.Time) {
 	s.swept = now
 }
 
-// TestStore 检查 lock.Store 实现的共同行为。newStore 每次返回一个新的、互不影响的存储。
+// TestStore 检查 lock.Store 实现的共同行为。newStore 每次返回一个新的、相互独立的存储。
 func TestStore(t *testing.T, newStore func() lock.Store) {
 	ctx := context.Background()
 
@@ -129,7 +129,7 @@ func TestStore(t *testing.T, newStore func() lock.Store) {
 		if err != nil {
 			t.Fatalf("acquire expired err=%v", err)
 		}
-		// 过期的持有者不能续期或释放新持有者的锁。
+		// 过期的持有者续期或释放都会失败，新持有者照常持有。
 		if err := stale.Refresh(ctx, time.Minute); !errors.Is(err, lock.ErrNotHeld) {
 			t.Fatalf("stale refresh err=%v", err)
 		}

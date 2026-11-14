@@ -20,7 +20,7 @@ type SPAOptions struct {
 	// Base 是单页应用挂载的路径，以 / 开头和结尾，与 Vite 的 base 相同；默认 /。
 	Base string
 	// DevServer 非空时（例如 http://localhost:5173）把全部请求转发给前端的开发服务器，
-	// 包括热更新的 WebSocket，不读取 fsys。只在开发时设置。
+	// 包括热更新的 WebSocket，跳过 fsys。只在开发时设置。
 	DevServer string
 	// FrameAncestors 是允许把页面嵌入框架的来源，例如 'self' 或 https://partner.example.com；
 	// 默认（nil）不允许任何网站嵌入，防止诱导点击。写入 HTML 文件响应的 Content-Security-Policy: frame-ancestors。
@@ -31,7 +31,7 @@ type SPAOptions struct {
 //
 // 存在的文件原样返回：assets/ 下的文件名带内容哈希，永久缓存；index.html 等其余文件按 ETag 协商。
 // 不存在的地址是前端路由，浏览器打开页面（Accept 含 text/html）时返回 index.html，
-// 其余请求（脚本、图片、fetch）和 assets/ 下缺失的文件返回 404，不会把页面当作脚本返回。
+// 其余请求（脚本、图片、fetch）和 assets/ 下缺失的文件返回 404。
 // HTML 文件带有 Content-Security-Policy: frame-ancestors，默认不允许被其他网站嵌入，见 SPAOptions.FrameAncestors。
 type SPA struct {
 	base   string
@@ -49,7 +49,7 @@ type spaFile struct {
 const spaAssets = "assets/"
 
 // NewSPA 创建 SPA。fsys 是构建产物所在的目录，通常是 embed.FS 的子目录（fs.Sub），
-// 必须包含 index.html；创建时读取全部文件。设置了 DevServer 时不读取 fsys。
+// 必须包含 index.html；创建时读取全部文件。设置了 DevServer 时跳过 fsys。
 //
 // 选项不合法、fsys 读取失败或没有 index.html 时 panic：它们是构建或配置的错误，启动时就应当发现，
 // 与 Defaults 等中间件对不合法配置的处理相同。前端还没有构建时，tenon dev 和 tenon generate

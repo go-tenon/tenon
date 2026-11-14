@@ -10,7 +10,7 @@ Tenon 的授权分为三层：
 | 资源 | 能不能操作这一条数据，例如“只能修改自己的文章” | [业务动作](../concepts/actions.md) 的 `Handle`，在读写数据的事务中 |
 | 数据范围 | 列表里应该出现哪些数据 |业务动作的 `Handle`，在构造查询时 |
 
-三层缺一不可：路由挡住明显不该访问的请求，资源级检查保证每一条数据只被正确的人修改，数据范围保证列表和搜索不会泄露别人的数据。
+三层缺一不可：路由挡住明显不该访问的请求，资源级检查保证每一条数据只被正确的人修改，数据范围保证列表和搜索只返回可见的数据。
 
 - [示例用法](#example-usage)
 - [权限](#permissions)
@@ -71,7 +71,7 @@ requireWrite := rest.RequireBearer(api, tokens.Validate, "articles:write")
 
 传入多个权限时，调用者必须全部具备；缺少任何一个时返回 `403`。路由需要的权限会出现在 OpenAPI 文档的 `x-required-permissions` 字段和 [`routes` 命令](../general/commands.md)的输出中。
 
-在路由上检查的永远是**权限**，而不是角色名：角色可以由租户自己创建和命名，代码中写死的角色名在那时就会失效。
+在路由上检查的永远是**权限**：角色可以由租户自己创建和命名，代码中写死的角色名在那时就会失效。
 
 <a id="checking-permissions"></a>
 ### 在代码中检查
@@ -87,7 +87,7 @@ if subject.Can("articles:read-drafts") {
 <a id="roles"></a>
 ## 角色
 
-`authz` 包提供基于角色的权限：权限组成角色，角色分配给用户。权限变化立即生效，不需要重新登录。它把数据存在应用的数据库中，
+`authz` 包提供基于角色的权限：权限组成角色，角色分配给用户。权限变化立即生效，当前的登录继续有效。它把数据存在应用的数据库中，
 
 使用前先发布它的迁移，见[发布框架迁移](../database/migrations.md#publishing-framework-migrations)：
 
@@ -130,7 +130,7 @@ var Permissions = authz.Catalog{
 roles := authz.NewStore(a.db, auth.Permissions)
 ```
 
-角色只能包含目录中的权限，以及能匹配目录中权限的通配符，写错权限名会在保存角色时得到错误，而不是在运行时悄悄不生效。目录也是角色编辑界面的数据来源：`roles.Catalog()` 返回全部权限和说明。
+角色只能包含目录中的权限，以及能匹配目录中权限的通配符，写错权限名会在保存角色时得到错误。目录也是角色编辑界面的数据来源：`roles.Catalog()` 返回全部权限和说明。
 
 <a id="creating-roles"></a>
 ### 创建和分配角色
@@ -151,7 +151,7 @@ err = roles.Assign(ctx, identity.Ref{Type: user.Type, ID: userID}, "", editor.ID
 | --- | --- |
 | `CreateRole`、`UpdateRole`、`DeleteRole` | 管理角色；修改立即影响拥有该角色的所有用户，删除角色同时撤销它的分配 |
 | `Role`、`Roles` | 读取角色，用于角色列表和编辑页 |
-| `Assign`、`Unassign` | 分配和撤销角色；重复分配什么也不做 |
+| `Assign`、`Unassign` | 分配和撤销角色；重复分配保持原样 |
 | `RolesOf`、`Members` | 某个用户的角色、拥有角色的全部用户 |
 
 初始角色通常在[填充数据](../database/migrations.md#seeding)的命令中创建。
@@ -187,7 +187,7 @@ resolve := func(ctx context.Context, sub identity.Subject) (identity.Subject, er
 <a id="caching-permissions"></a>
 ### 缓存权限
 
-每个请求都要加载一次权限。请求量大时，用 `authz.Cache` 把权限缓存在 [Memcached](../libraries/cache.md) 中，请求不再查询数据库：
+每个请求都要加载一次权限。请求量大时，用 `authz.Cache` 把权限缓存在 [Memcached](../libraries/cache.md) 中，请求从缓存读取权限：
 
 ```go
 roles := authz.NewStore(a.db, auth.Permissions, authz.Cache(mc, "app:prod:", time.Minute))
@@ -206,18 +206,18 @@ roles := authz.NewStore(a.db, auth.Permissions, authz.Cache(mc, "app:prod:", tim
 <a id="super-admins"></a>
 ### 超级管理员
 
-给角色授予 `*`，它就拥有全部权限，不需要额外的放行逻辑：
+给角色授予 `*`，它就拥有全部权限：
 
 ```go
 admin, err := roles.CreateRole(ctx, authz.Role{Name: "admin", Permissions: []string{"*"}})
 ```
 
-`*` 只作用于权限检查。资源级的授权函数如果要让管理员也能修改别人的文章，应当检查一个具体的权限，例如下面的 `articles:admin`，而不是判断角色。
+`*` 只作用于权限检查。资源级的授权函数如果要让管理员也能修改别人的文章，应当检查一个具体的权限，例如下面的 `articles:admin`。
 
 <a id="ownership"></a>
 ## 资源级授权：所有权
 
-具备 `articles:read` 只说明调用者可以使用文章接口，并不意味着他可以读取任意一篇文章。已发布的文章所有人都能看，但草稿只有作者本人能看。“获取文章”的 `Get`业务动作需要根据当前的主体检查：
+具备 `articles:read` 只说明调用者可以使用文章接口，能读哪一篇由文章本身决定。已发布的文章所有人都能看，但草稿只有作者本人能看。“获取文章”的 `Get`业务动作需要根据当前的主体检查：
 
 ```go
 var (
@@ -240,12 +240,12 @@ func (a *Get) Handle(ctx context.Context, subject identity.Subject, id uuid.UUID
 }
 ```
 
-请注意，主体是作为参数**显式传入** `Handle` 的，而不是在内部从 context 中读取。这样，业务动作的权限要求一目了然，在测试中也很容易构造不同身份的调用者。`find` 是文章模块中按 ID 查询的函数，见[模块内共享的代码](../concepts/actions.md#shared-code)。
+请注意，主体是作为参数**显式传入** `Handle` 的。这样，业务动作的权限要求一目了然，在测试中也很容易构造不同身份的调用者。`find` 是文章模块中按 ID 查询的函数，见[模块内共享的代码](../concepts/actions.md#shared-code)。
 
-`Handle` 一开始就拒绝空的主体 ID。这保证了即使业务动作被命令行或其他代码直接调用，也不会跳过身份检查。
+`Handle` 一开始就拒绝空的主体 ID。这保证了业务动作被命令行或其他代码直接调用时，身份检查同样有效。
 
 > [!TIP]
-> 上面对别人的草稿返回 `404` 而不是 `403`，这样不会泄露“这篇草稿存在”的信息。而修改别人已发布的文章时，文章本身是公开的，返回 `403` 更准确。你可以根据业务需要选择 `errorx.NotFound` 或 `errorx.PermissionDenied`。
+> 上面对别人的草稿返回 `404`，这样“这篇草稿存在”的信息只有作者知道。而修改别人已发布的文章时，文章本身是公开的，返回 `403` 更准确。你可以根据业务需要选择 `errorx.NotFound` 或 `errorx.PermissionDenied`。
 
 <a id="authorization-functions"></a>
 ### 编写授权函数
@@ -259,7 +259,7 @@ func CanEdit(subject identity.Subject, item *Article) bool {
 }
 ```
 
-这些函数只是普通的 Go 函数，不需要注册到任何地方，单元测试也非常简单。
+这些函数只是普通的 Go 函数，直接调用，单元测试也非常简单。
 
 <a id="checking-in-transactions"></a>
 ### 在事务中检查
@@ -313,7 +313,7 @@ var ErrAlreadyPublished = errorx.Define(errorx.Conflict, "article.already_publis
 <a id="scoping-queries"></a>
 ## 列表查询中的授权
 
-列表、搜索和导出要在**查询条件**中限定范围，而不是查出来之后再过滤：后者既浪费，又容易在分页、计数时漏掉。下面的文章列表让编辑看到全部文章，其他人只看到已发布的和自己的草稿：
+列表、搜索和导出要在**查询条件**中限定范围：查出来之后再过滤既浪费，又容易在分页、计数时漏掉。下面的文章列表让编辑看到全部文章，其他人只看到已发布的和自己的草稿：
 
 ```go
 func (a *List) Handle(ctx context.Context, subject identity.Subject, limit int64) ([]Article, error) {
@@ -336,7 +336,7 @@ func (a *List) Handle(ctx context.Context, subject identity.Subject, limit int64
 <a id="authorization-in-views"></a>
 ## 在界面中按权限显示
 
-单页应用上的按钮、菜单应当与服务端的规则一致：没有权限的用户不应看到“编辑”按钮。服务端把结论交给前端，前端不重复实现规则：
+单页应用上的按钮、菜单应当与服务端的规则一致：有权限的用户才看到“编辑”按钮。服务端把结论交给前端，规则只在服务端实现：
 
 - **全局权限**：“当前用户”接口返回主体的权限，前端用它决定菜单和全局按钮；
 - **针对某一条数据的权限**：DTO 中带上判断结果，由服务端调用同一份规则。
@@ -357,7 +357,7 @@ func toDTO(sub identity.Subject, a *Article) ArticleDTO {
 {me.permissions.includes("comments:delete") && <button onClick={clearComments}>清空评论</button>}
 ```
 
-`me.permissions` 是 `sub.Permissions`，其中可能有 `articles:*` 这样的通配符；需要判断某个具体权限时，让接口直接返回布尔值，不要在前端实现通配符匹配。隐藏按钮只是为了界面友好，不能代替服务端的检查：业务动作仍然要按上面的方式授权。
+`me.permissions` 是 `sub.Permissions`，其中可能有 `articles:*` 这样的通配符；需要判断某个具体权限时，让接口直接返回布尔值，通配符匹配只在服务端进行。隐藏按钮只是为了界面友好，安全由服务端的检查保证：业务动作仍然要按上面的方式授权。
 
 <a id="authorization-failures"></a>
 ## 授权失败的响应

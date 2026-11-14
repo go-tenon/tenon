@@ -17,7 +17,7 @@ import (
 // 多个实例共用 Redis 锁时，每次触发只执行一次。
 func TestRedisLockRunsOncePerTick(t *testing.T) {
 	rdb := redistest.Standalone.Open(t)
-	name := "test:" + rand.Text() // 锁名包含任务名，随机的任务名让重复运行的测试互不影响
+	name := "test:" + rand.Text() // 锁名包含任务名，随机的任务名让重复运行的测试相互独立
 	var n atomic.Int64
 	scheds := make([]*schedule.Scheduler, 3)
 	for i := range scheds {

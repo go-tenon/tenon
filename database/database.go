@@ -23,7 +23,7 @@ var ErrUnavailable = errorx.Define(errorx.Unavailable, "database.unavailable")
 type Config struct {
 	// DSN 是 pgx 支持的连接串，例如 postgres://user:pass@localhost:5432/app?sslmode=disable。
 	DSN string `yaml:"dsn"`
-	// MaxConns 是连接池的最大连接数。所有实例、所有进程的连接数之和不应超过数据库或 PgBouncer 的上限。
+	// MaxConns 是连接池的最大连接数。所有实例、所有进程的连接数之和要控制在数据库或 PgBouncer 的上限以内。
 	MaxConns int `yaml:"max_conns"`
 	// MinConns 是连接池保持的最少连接数，空闲时也不关闭。
 	MinConns int `yaml:"min_conns"`

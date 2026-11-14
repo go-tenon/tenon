@@ -23,7 +23,7 @@ var Deliver = queue.Topic[Job]("push.deliver")
 const MaxBatch = 1000
 
 // DefaultMaxAttempts 是 Options.MaxAttempts 不大于 0 时一个推送任务最多执行的次数。
-// 按队列的退避，最后一次约在第一次之后 6 分钟，仍在阿里云 IdempotentToken 去重的 15 分钟之内，重试不会重复推送。
+// 按队列的退避，最后一次约在第一次之后 6 分钟，仍在阿里云 IdempotentToken 去重的 15 分钟之内，重试时同一批只推送一次。
 const DefaultMaxAttempts = 5
 
 // Message 是一条推送通知。文案由应用按收件人的语言生成好再交给 Send。
@@ -35,9 +35,9 @@ type Message struct {
 	// Category 是应用自己命名的消息分类，例如 order、chat、promo。Provider 按配置把它换成各厂商要求的分类参数，
 	// 见 push/aliyun 的 Config.Categories。为空时使用名为 default 的分类。
 	Category string `json:"category,omitempty"`
-	// Badge 是 App 图标上的数字，nil 表示不修改。
+	// Badge 是 App 图标上的数字，nil 表示保持原值。
 	Badge *int `json:"badge,omitempty"`
-	// TTL 是设备离线时通知保留多久，从 Send 开始计算，超过后不再推送；0 表示使用推送服务的默认值。
+	// TTL 是设备离线时通知保留多久，从 Send 开始计算，超过后直接丢弃；0 表示使用推送服务的默认值。
 	TTL time.Duration `json:"ttl,omitempty"`
 }
 
@@ -52,7 +52,7 @@ type Job struct {
 // Send 把 msg 推送给 to 中每个收件人登记的全部设备，收件人与站内通知的相同：某个租户中的一个主体。
 //
 // db 通常是修改业务数据的事务：Send 在其中发布推送任务，事务提交后才会推送，回滚时一起取消。
-// 设备在任务执行时才查询，收件人没有登记设备时什么也不做。重复的收件人只推送一次，to 为空时什么也不做；
+// 设备在任务执行时才查询，收件人没有登记设备时直接结束。重复的收件人只推送一次，to 为空时直接返回；
 // 收件人超过 MaxBatch 个时分成多个任务。
 func Send(ctx context.Context, db bun.IDB, msg Message, to ...notification.Recipient) error {
 	if msg.Title == "" || msg.Body == "" {
@@ -85,7 +85,7 @@ func Send(ctx context.Context, db bun.IDB, msg Message, to ...notification.Recip
 
 // Batch 是交给 Provider 的一次推送：同一个平台的一批设备，不超过 MaxBatch 台。
 type Batch struct {
-	// Key 标识这一批，同一个任务重试时不变，是 UUID 格式。推送服务支持去重时用它避免重试造成重复推送。
+	// Key 标识这一批，同一个任务重试时不变，是 UUID 格式。推送服务支持去重时用它保证重试只推送一次。
 	Key string
 	// Job 是所属推送任务的 ID，同一次 Send 的各批相同，可以写入推送服务的回执，方便对照。
 	Job      uuid.UUID
@@ -96,7 +96,7 @@ type Batch struct {
 	Expires time.Time
 }
 
-// Provider 把一批通知交给推送服务，例如 push/aliyun。返回 queue.Permanent 包装的错误表示重试也不会成功，
+// Provider 把一批通知交给推送服务，例如 push/aliyun。返回 queue.Permanent 包装的错误表示重试也是徒劳，
 // 例如配置错误、参数不合法；其他错误按队列的退避重试。
 type Provider interface {
 	Push(ctx context.Context, b Batch) error
@@ -133,7 +133,7 @@ func NewDeliverer(db bun.IDB, p Provider, opts Options) *Deliverer {
 // Handle 把 Deliver 的处理函数注册到 w，最多执行 Options.MaxAttempts 次。
 //
 // 一个任务的各批依次推送。有一批失败时整个任务重试，已经成功的批次用相同的 Batch.Key 再交给 Provider，
-// 由推送服务去重；全部失败都是 queue.Permanent 时不再重试。超过 TTL 的任务直接结束。
+// 由推送服务去重；全部失败都是 queue.Permanent 时直接结束。超过 TTL 的任务直接结束。
 func (d *Deliverer) Handle(w *queue.Worker) {
 	Deliver.Handle(w, d.deliver, queue.MaxAttempts(d.maxAttempts))
 }
@@ -178,7 +178,7 @@ func (d *Deliverer) deliver(ctx context.Context, job Job) error {
 		}
 	}
 	if len(retry) > 0 {
-		// 只保留永久失败的文字：带着 queue.Permanent 的标记，整个任务会被当作永久失败而不再重试。
+		// 只保留永久失败的文字：带着 queue.Permanent 的标记，整个任务会被当作永久失败直接结束。
 		for _, err := range permanent {
 			retry = append(retry, errors.Newf("%s", err.Error()))
 		}

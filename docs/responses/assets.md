@@ -59,7 +59,7 @@ router.Handle(web.AssetsPath+"*", web.Assets())
 <img src={ web.StaticURL(ctx, "img/logo.svg") } alt="Logo"/>
 ```
 
-文件名是相对 `static` 目录的路径。页面路由和错误页渲染时，`ctx` 中带有 `Options.Static`，返回的是带指纹的地址。不存在的文件不会报错，地址也不带指纹。可以访问 `/static/` 加文件名检查文件是否存在。
+文件名是相对 `static` 目录的路径。页面路由和错误页渲染时，`ctx` 中带有 `Options.Static`，返回的是带指纹的地址。不存在的文件返回原始地址。可以访问 `/static/` 加文件名检查文件是否存在。
 
 <a id="caching"></a>
 ## 缓存
@@ -67,7 +67,7 @@ router.Handle(web.AssetsPath+"*", web.Assets())
 | 请求的地址 | 响应 |
 | --- | --- |
 | 带指纹的地址，即 `StaticURL` 返回的地址 | `Cache-Control: public, max-age=31536000, immutable`，永久缓存 |
-| 文件名已经带有内容哈希的地址，例如打包工具生成的 `bundle-86c5f2802d0bc25d.js` | 同样永久缓存，`StaticURL` 不会重复加指纹 |
+| 文件名已经带有内容哈希的地址，例如打包工具生成的 `bundle-86c5f2802d0bc25d.js` | 同样永久缓存，`StaticURL` 原样返回 |
 | 原始地址，例如 `/static/css/app.css` | `Cache-Control: no-cache` 和 `ETag`。浏览器每次都会确认，文件没有变化时返回 `304` |
 | 目录、不存在的文件 | `404` |
 
@@ -76,7 +76,7 @@ router.Handle(web.AssetsPath+"*", web.Assets())
 <a id="development"></a>
 ## 开发模式
 
-嵌入的文件只有重新编译后才会更新。开发时把 `StaticOptions.DevDir` 设为静态文件目录，`Static` 就改为直接读取磁盘：地址不带指纹，响应也不缓存，修改样式后刷新页面即可看到。
+嵌入的文件只有重新编译后才会更新。开发时把 `StaticOptions.DevDir` 设为静态文件目录，`Static` 就改为直接读取磁盘：地址是原始文件名，响应带 `no-store`，修改样式后刷新页面即可看到。
 
 `DevDir` 取自应用配置。在配置结构体中加一个字段：
 
@@ -99,7 +99,7 @@ static_dir: internal/web/static
 
 内置的样式表包含组件用到的类名和一组常用的布局工具类，见[使用组件](components.md#using-components)。设计感强的页面，例如有自己品牌风格的官网、活动页，会用到更多的类名和自己的设计令牌，这时用 [Tailwind CSS](https://tailwindcss.com) 生成应用自己的样式表。它代替内置的样式表，组件、风格与应用的类名生成在同一份样式表中。
 
-Tailwind 的 [standalone CLI](https://tailwindcss.com/blog/standalone-cli) 是一个独立的可执行文件，不需要 Node.js。从 [GitHub Releases](https://github.com/tailwindlabs/tailwindcss/releases) 下载对应平台的版本，放进 `PATH`。
+Tailwind 的 [standalone CLI](https://tailwindcss.com/blog/standalone-cli) 是一个独立的可执行文件，自带运行时。从 [GitHub Releases](https://github.com/tailwindlabs/tailwindcss/releases) 下载对应平台的版本，放进 `PATH`。
 
 样式的入口文件不放进 `static`，例如 `internal/web/app.css`：
 
@@ -113,7 +113,7 @@ Tailwind 的 [standalone CLI](https://tailwindcss.com/blog/standalone-cli) 是�
 }
 ```
 
-- 第二行导入组件和一套风格，风格与[主题](components.md#themes)的 `style` 一致。`.web-ui` 目录由[开发工具](../installation/tooling.md)从框架中复制过来，目录中带 `.gitignore`，不会被提交。
+- 第二行导入组件和一套风格，风格与[主题](components.md#themes)的 `style` 一致。`.web-ui` 目录由[开发工具](../installation/tooling.md)从框架中复制过来，目录中带 `.gitignore`，留在本地。
 - `@theme` 定义应用自己的设计令牌，之后就可以在 class 中使用 `bg-brand-500`、`font-display` 这样的工具类，见 [Tailwind 文档](https://tailwindcss.com/docs/theme)。组件的颜色变量（`bg-primary`、`text-muted-foreground` 等）同样可以使用。
 
 然后让主题使用生成的样式表：
@@ -137,7 +137,7 @@ theme:
 go tool tenon dev
 ```
 
-修改 `.templ` 后，templ 重新生成代码、重启应用；Tailwind 随之重新生成 `internal/web/static/css/app.css`，浏览器自动刷新。停止 `dev` 时，它会生成压缩的样式表。生成的 `app.css` 和 `_templ.go` 一样要提交到版本库，这样构建和 CI 不需要安装 Tailwind。
+修改 `.templ` 后，templ 重新生成代码、重启应用；Tailwind 随之重新生成 `internal/web/static/css/app.css`，浏览器自动刷新。停止 `dev` 时，它会生成压缩的样式表。生成的 `app.css` 和 `_templ.go` 一样要提交到版本库，这样构建和 CI 只需要 Go。
 
 <a id="api-reference"></a>
 ## API 参考
@@ -161,7 +161,7 @@ func NewStatic(fsys fs.FS, opts StaticOptions) *Static
 
 | 字段 | 说明 |
 | --- | --- |
-| `DevDir string` | 非空时直接读取这个目录，地址不带指纹，响应不缓存。只在开发时设置 |
+| `DevDir string` | 非空时直接读取这个目录，地址是原始文件名，响应带 `no-store`。只在开发时设置 |
 
 ### StaticURL
 
@@ -172,4 +172,4 @@ func StaticURL(ctx context.Context, name string) string
 - **参数**
     - `ctx`：渲染页面的 context，其中带有 `Static`
     - `name`：相对 `static` 目录的路径，例如 `img/logo.svg`
-- **返回**：带指纹的地址；`ctx` 中没有 `Static` 或者文件不存在时，返回不带指纹的地址
+- **返回**：带指纹的地址；`ctx` 中没有 `Static` 或者文件不存在时，返回原始地址

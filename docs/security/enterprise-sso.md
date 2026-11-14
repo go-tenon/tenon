@@ -42,7 +42,7 @@ CREATE TABLE sso_domains (
 );
 ```
 
-第三方账号在 `login` 中的提供方名称（标识的 `Kind`）统一用 `sso`。标识按租户隔离，所以每个租户各有一个 `sso` 不会冲突。
+第三方账号在 `login` 中的提供方名称（标识的 `Kind`）统一用 `sso`。标识按租户隔离，所以每个租户各有一个 `sso`。
 
 <a id="verifying-domains"></a>
 ## 验证域名
@@ -69,7 +69,7 @@ func (a *VerifyDomain) Handle(ctx context.Context, sub identity.Subject, domain 
 <a id="providers"></a>
 ## 运行时创建提供方
 
-连接由租户在运行时修改，提供方不能像 Google 那样在启动时创建。按租户取出连接，用 `oauth.Discover` 创建，并按 `(租户, updated_at)` 缓存在进程中：配置改了，键也随之改变，旧的提供方不再被使用。issuer 是租户填写的，发现文档中的地址也不可信，所以全部请求走 [`outbound`](../libraries/outbound.md) 的客户端：
+连接由租户在运行时修改，所以提供方在使用时按需创建。按租户取出连接，用 `oauth.Discover` 创建，并按 `(租户, updated_at)` 缓存在进程中：配置改了，键也随之改变，新的请求用上新的提供方。issuer 是租户填写的，发现文档中的地址按不可信的输入处理，所以全部请求走 [`outbound`](../libraries/outbound.md) 的客户端：
 
 ```go
 type Providers struct {
@@ -112,7 +112,7 @@ func (p *Providers) For(ctx context.Context, tenant string) (*oauth.Provider, er
 }
 ```
 
-缓存只保存由配置推导出来的对象，配置本身仍然每次从数据库读取，多个实例之间不会不一致。
+缓存只保存由配置推导出来的对象，配置本身仍然每次从数据库读取，多个实例之间始终一致。
 
 <a id="signing-in"></a>
 ## 登录
@@ -172,7 +172,7 @@ func idpMFA(claims map[string]any) bool {
 
 - **`TrustEmail`**：邮箱在这个租户中已经有账号时（例如公司改用 SSO 之前员工用密码注册过），`External` 直接把 SSO 账号绑定给它并登录。只有在租户验证过这个邮箱的域名时才设置，`Verified` 检查 `ext.Email` 的域名在 `sso_domains` 中属于这个租户并且 `verified_at` 不为空。
 - **自动开通**：`out.Proof` 表示还没有账号。`signUp` 是应用的注册业务动作，在事务中创建成员行并调用 `Register`，与[验证码注册](login.md#codes)相同，返回的也是 `login.Outcome`。
-- **`TwoFactor`**：IdP 做过多因素认证时，这次登录记为 `[sso, idp_mfa]`，计入二次验证；租户要求二次验证时不再要求用户在本应用中另设验证器。
+- **`TwoFactor`**：IdP 做过多因素认证时，这次登录记为 `[sso, idp_mfa]`，计入二次验证；租户要求二次验证时，这次登录已经满足要求。
 
 <a id="syncing-roles"></a>
 ## 同步角色
@@ -200,12 +200,12 @@ func (h *handlers) syncRoles(ctx context.Context, ref identity.Ref, tenant strin
 }
 ```
 
-只同步映射中出现的角色，租户管理员手动分配的其他角色不受影响。成员在 IdP 中被停用后，在下次登录之前仍然持有之前签发的 token；需要立即生效时，由 IdP 的事件或租户管理员在应用中停用成员，并[撤销令牌](api-tokens.md#revoking-tokens)。
+只同步映射中出现的角色，租户管理员手动分配的其他角色保持原样。成员在 IdP 中被停用后，在下次登录之前仍然持有之前签发的 token；需要立即生效时，由 IdP 的事件或租户管理员在应用中停用成员，并[撤销令牌](api-tokens.md#revoking-tokens)。
 
 <a id="requiring-sso"></a>
 ## 要求用 SSO 登录
 
-租户开启 `require_sso` 后，成员只能用 SSO 登录，密码和验证码都不能用。在 `PolicyFor` 中按连接的设置返回 `Methods`：
+租户开启 `require_sso` 后，成员只能用 SSO 登录。在 `PolicyFor` 中按连接的设置返回 `Methods`：
 
 ```go
 PolicyFor: func(ctx context.Context) (login.Policy, error) {

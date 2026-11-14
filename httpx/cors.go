@@ -25,7 +25,7 @@ type CORSConfig struct {
 	MaxAge time.Duration `yaml:"max_age"`
 	// Credentials 允许跨域请求携带 cookie（Access-Control-Allow-Credentials: true），只用于单页应用与 API
 	// 在同一站点的不同子域名、用 apitoken.RefreshCookie 保存 refresh token 的情况。这时 AllowedOrigins 必须逐个列出，
-	// 不能含有 *：允许携带凭据的来源都能以用户的身份调用刷新接口。
+	// 必须逐个列出具体来源：允许携带凭据的来源都能以用户的身份调用刷新接口。
 	Credentials bool `yaml:"credentials"`
 }
 
@@ -37,7 +37,7 @@ func DefaultCORSConfig() CORSConfig {
 // SetDefaults 实现 config.Defaulter。
 func (c *CORSConfig) SetDefaults() { *c = DefaultCORSConfig() }
 
-// Validate 检查来源列表不为空、每个来源是 * 或者 scheme://host[:port]（最多一个 * 通配；允许携带凭据时不能有 *），
+// Validate 检查来源列表不为空、每个来源是 * 或者 scheme://host[:port]（最多一个 * 通配；允许携带凭据时全部是具体来源），
 // 响应头名称合法，max_age 为正数。
 func (c CORSConfig) Validate() error {
 	if len(c.AllowedOrigins) == 0 {
@@ -83,7 +83,7 @@ func validOrigin(o string) error {
 // API 只用 Bearer token 认证，不使用 Cookie，因此 CORS 默认不允许携带凭据
 // （Access-Control-Allow-Credentials）：其他网站的网页拿不到用户的 token，允许任何来源（*）也是安全的。
 // 唯一的例外是浏览器中保存 refresh token 的 cookie（apitoken.RefreshCookie）：单页应用与 API 在同一站点的
-// 不同子域名时，设置 CORSConfig.Credentials 并逐个列出来源。cookie 的 Path 只包含刷新和登出接口，其他接口照常不带 cookie。
+// 不同子域名时，设置 CORSConfig.Credentials 并逐个列出来源。cookie 的 Path 只包含刷新和登出接口，只有这两个接口收到 cookie。
 //
 // 预检请求直接以 204 应答，不进入路由、认证和限流；请求头按预检请求声明的原样允许（包括 Authorization）；
 // 方法为 GET、HEAD、POST、PUT、PATCH、DELETE。错误响应同样带有 CORS 头，前端能读到错误内容。

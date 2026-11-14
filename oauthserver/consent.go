@@ -67,7 +67,7 @@ type redirectOutput struct{ Body Redirect }
 //	POST /oauth/consent            同意或拒绝，返回浏览器要跳转去的地址（oauth-consent-decide）
 //
 // 能授权的就是 auth 接受的账号体系。只接受用户本人的登录凭据：主体的 Scopes 不为 nil（个人访问令牌、OAuth 令牌），
-// 或者是代为登录时，返回 ErrRestrictedCredential。客服代为登录排查问题时，不能替用户把其他应用连上账号。
+// 或者是代为登录时，返回 ErrRestrictedCredential。把其他应用连上账号只能由用户本人完成，客服代为登录排查问题时也是如此。
 func (s *Server) Register(api *rest.API, auth func(*huma.Operation)) {
 	get := huma.Operation{
 		OperationID: "oauth-consent-get", Method: http.MethodGet, Path: ConsentPath,

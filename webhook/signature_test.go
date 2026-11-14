@@ -50,7 +50,7 @@ func TestVerify(t *testing.T) {
 	if err := webhook.Verify(secret, signed(t, secret, now, body), []byte(body)); err != nil {
 		t.Fatalf("valid: %v", err)
 	}
-	// 轮换期间请求头带有多个签名，任意一个匹配即可；不带 whsec_ 前缀的密钥同样可用。
+	// 轮换期间请求头带有多个签名，任意一个匹配即可；省略 whsec_ 前缀的密钥同样可用。
 	if err := webhook.Verify(secret[len("whsec_"):], signed(t, secret, now, body, "v1,bm90LWEtc2lnbmF0dXJl", "v2,x"), []byte(body)); err != nil {
 		t.Fatalf("multiple signatures: %v", err)
 	}

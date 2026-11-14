@@ -31,7 +31,7 @@ func main() {
 		command.Run("serve", "启动 HTTP 服务", serve),
 		command.Config[Config](),
 	)
-	// openapi、routes、client 用默认配置和 nil 依赖构造同一套路由，只读取它，不启动服务。
+	// openapi、routes、client 用默认配置和 nil 依赖构造同一套路由，从中读取路由表和接口定义。
 	root.AddCommand(httpcmd.Commands(func() chi.Routes { return routes(config.Default[Config](), nil) })...)
 	command.Execute(root)
 }
@@ -43,7 +43,7 @@ func serve(ctx context.Context, cfg Config) error {
 }
 
 // routes 是应用的全部路由：/api 下是接口，其余路径交给单页应用。
-// 它只保存依赖、不调用依赖，所以 openapi 等命令可以传 nil。
+// 它只保存依赖，处理请求时才使用，所以 openapi 等命令可以传 nil。
 func routes(cfg Config, store *todo.Store) chi.Router {
 	router := chi.NewRouter()
 	router.Use(httpx.Defaults(cfg.HTTP)...)

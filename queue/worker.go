@@ -63,7 +63,7 @@ type Worker struct {
 	handlers []*handler
 	started  bool
 
-	// stopping 在停止时置位，之后收到的任务不再开始，直接放回。lifecycle 保护它和 inflight 的计数。
+	// stopping 在停止时置位，之后收到的任务直接放回。lifecycle 保护它和 inflight 的计数。
 	lifecycle sync.RWMutex
 	stopping  bool
 	inflight  sync.WaitGroup
@@ -183,7 +183,7 @@ func (w *Worker) Run(ctx context.Context) error {
 	w.stopping = true
 	w.lifecycle.Unlock()
 	for _, c := range consumers {
-		c.Stop() // 发送 CLS：nsqd 不再投递新的任务
+		c.Stop() // 发送 CLS：nsqd 停止投递新的任务
 	}
 	w.drain()
 	background.Wait()
@@ -237,7 +237,7 @@ func (w *Worker) drain() {
 	}
 }
 
-// begin 登记一个开始处理的任务；停止之后返回 false，任务不再开始。
+// begin 登记一个开始处理的任务；停止之后返回 false，任务放回队列。
 func (w *Worker) begin() bool {
 	w.lifecycle.RLock()
 	defer w.lifecycle.RUnlock()
@@ -252,7 +252,7 @@ func (w *Worker) begin() bool {
 func (w *Worker) process(h *handler, m *nsq.Message) {
 	m.DisableAutoResponse()
 	if !w.begin() {
-		m.RequeueWithoutBackoff(0) // 停止时刚收到的任务不再开始，直接放回
+		m.RequeueWithoutBackoff(0) // 停止时刚收到的任务直接放回
 		return
 	}
 	defer w.inflight.Done()
@@ -366,7 +366,7 @@ func call(ctx context.Context, fn func(context.Context, []byte) error, payload [
 	return fn(ctx, payload)
 }
 
-// withTimeout 以 dbTimeout 调用 fn，不受 Run 和处理函数的 context 影响。
+// withTimeout 以 dbTimeout 调用 fn，独立于 Run 和处理函数的 context。
 func withTimeout(fn func(ctx context.Context) error) error {
 	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
 	defer cancel()

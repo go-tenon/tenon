@@ -159,7 +159,7 @@ type status struct {
 
 // Send 发送一条短信。号码被拒绝时返回 sms.ErrRejected，触发了号码的频率限制时返回 sms.ErrLimited；
 // 余额不足、签名或模板未审核、系统错误等返回其他错误。模板名没有配置时返回错误；
-// 短信缺少模板需要的变量时返回 sms.ErrInvalid，都不调用接口。
+// 短信缺少模板需要的变量时直接返回 sms.ErrInvalid。
 func (s *Sender) Send(ctx context.Context, msg sms.Message) error {
 	if err := msg.Validate(); err != nil {
 		return err

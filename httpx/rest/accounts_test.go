@@ -21,7 +21,7 @@ type accountOut struct {
 }
 
 // Options.Accounts 决定 API 接受哪些账号体系：每种账号由自己的 Resolver 加载，其他账号体系的凭据与无效凭据相同。
-// token 就是主体的 Ref，例如 member:alice；同一个校验器交给只接受客户的 API 也不会让成员通过。
+// token 就是主体的 Ref，例如 member:alice；同一个校验器交给只接受客户的 API 时，成员被拒绝。
 func TestAccounts(t *testing.T) {
 	validate := func(_ context.Context, token string) (identity.Subject, error) {
 		ref, err := identity.ParseRef(token)

@@ -179,7 +179,7 @@ func TestRunInTxContext(t *testing.T) {
 	err := database.RunInTx(ctx, db, nil, func(ctx context.Context, tx database.Tx) error {
 		inner := context.WithValue(ctx, ctxKey{}, "inner")
 		err := database.RunInTx(inner, tx, nil, func(ctx context.Context, sp database.Tx) error {
-			// 保存点收到调用方的 ctx，而不是外层事务的 ctx。
+			// 保存点收到的是调用方的 ctx。
 			if v := ctx.Value(ctxKey{}); v != "inner" {
 				t.Errorf("savepoint ctx value = %v", v)
 			}

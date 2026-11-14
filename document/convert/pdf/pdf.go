@@ -1,10 +1,10 @@
-// Package pdf 使用编译为 WebAssembly 的 PDFium 把 PDF 文档转换为 Markdown，不需要 cgo 或系统库。
+// Package pdf 使用编译为 WebAssembly 的 PDFium 把 PDF 文档转换为 Markdown，纯 Go 构建。
 //
 // 每一页成为一个 convert.KindPage 类的 Section。文字行按字号分组：文字最多的字号是正文，
 // 更大的短行成为标题，除非设置了 Options.NoHeadings。行距变大或字号变化处分段。
 // 阅读顺序沿用 PDFium 的文字顺序，不尝试还原多栏排版和表格。没有文字层的 PDF 得到空的 Markdown，
 // 以及每页一个空的 Section。需要密码才能打开的文档返回 convert.ErrEncrypted；
-// 只设置了所有者密码的文档照常转换，不检查权限标志。
+// 只设置了所有者密码的文档照常转换，权限标志忽略。
 //
 // Options.MaxPages 和 Options.MaxPageChars 限制文档的页数和一页的字符数，读取的行文字计入
 // Limits.MaxOutputBytes。PDFium 用一次无法中断的调用解析一页，之后才能统计它的字符。

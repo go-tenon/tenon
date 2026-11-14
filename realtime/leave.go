@@ -18,7 +18,7 @@ const DefaultPresenceGrace = 10 * time.Second
 // 连接离开时它的记录至少还有 35 秒有效；宽限期更长的话，记录会先于宽限期过期。
 const MaxPresenceGrace = 30 * time.Second
 
-// membership 决定 presence 频道的加入和离开事件何时发出，让事件按主体而不是按连接：
+// membership 决定 presence 频道的加入和离开事件何时发出，让事件按主体发出：
 //
 //   - 主体已经有其他连接在频道中时，新连接的加入不发事件；
 //   - 连接离开后在线记录保留一个宽限期，期满时主体没有其他连接才发出离开事件。
@@ -70,7 +70,7 @@ func (m *membership) leave(channel string, info *centrifuge.ClientInfo) error {
 	return nil
 }
 
-// wait 登记或更新 key 的宽限期。Realtime 已经停止时什么也不做，在线记录自行过期。
+// wait 登记或更新 key 的宽限期。Realtime 已经停止时直接返回，在线记录自行过期。
 func (m *membership) wait(key leaveKey, info *centrifuge.ClientInfo) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -130,9 +130,9 @@ func (m *membership) expire(key leaveKey, p *pendingLeave) {
 	}
 }
 
-// expel 立即删除主体在 channel 中的全部在线记录并发出离开事件，不经过宽限期。
-// 用于 Realtime.Unsubscribe：主体被移出频道，不会再回来。连接所在的实例稍后宽限期满时，
-// 发现记录已经不在，不再重复发出离开事件。
+// expel 立即删除主体在 channel 中的全部在线记录并立即发出离开事件。
+// 用于 Realtime.Unsubscribe：主体被移出频道。连接所在的实例稍后宽限期满时，
+// 发现记录已经删除，离开事件只发一次。
 func (m *membership) expel(channel string, subject identity.Ref) error {
 	entries, err := m.list(channel)
 	if err != nil {

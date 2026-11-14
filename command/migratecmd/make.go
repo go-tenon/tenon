@@ -11,7 +11,7 @@ import (
 
 // Make 创建 make 子命令，在 --dir 中按命名约定新建迁移文件，例如
 // "migrate make create_articles_table"。New 已经包含它；在还没有迁移、应用的嵌入包无法编译时，
-// 可以把它挂到独立的入口上。不加载配置、不连接数据库。
+// 可以把它挂到独立的入口上。它离线运行。
 func Make() *cobra.Command { return makeIn("migrations") }
 
 // makeIn 构造 make 命令，--dir 的默认值是 dir。

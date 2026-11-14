@@ -1,12 +1,12 @@
 # 队列
 
-有些工作不需要让用户等它完成，例如发送邮件、生成缩略图、通知第三方。如果在请求中同步完成它们，接口会变慢；邮件服务器暂时不可用时，请求还会直接失败，而且没有人会重试。
+有些工作可以在后台完成，例如发送邮件、生成缩略图、通知第三方。在请求中同步完成它们，接口会变慢；邮件服务器暂时不可用时，请求还会直接失败。交给队列，接口立即返回，失败的工作自动重试。
 
 队列解决了这个问题：接口只把工作作为一个**任务**发布出去就返回，由单独的 worker 进程取出执行。`queue` 包把任务交给 [NSQ](https://nsq.io)；执行失败的任务按退避时间自动重试，次数用完后转入失败任务表，等待人工处理。
 
 任务按 topic 分类：发布方把任务发到一个 topic，worker 为每个 topic 注册一个处理函数。
 
-Tenon 的队列有两个特点，在开始之前需要了解。第一，任务和业务数据**在同一个事务中发布**：`Publish` 把任务写进 PostgreSQL 的 WAL（预写日志），事务提交后 worker 经由逻辑复制立即读到，转发到 NSQ；事务回滚时任务一起取消。这样既不会出现「文章发布了、通知任务丢了」，也不会出现「通知发出去了、文章却回滚了」。任务不写入任何表，发布任务的事务之间不会互相等待，提交的吞吐与不发布任务时相当。
+Tenon 的队列有两个特点，在开始之前需要了解。第一，任务和业务数据**在同一个事务中发布**：`Publish` 把任务写进 PostgreSQL 的 WAL（预写日志），事务提交后 worker 经由逻辑复制立即读到，转发到 NSQ；事务回滚时任务一起取消。这样文章和通知任务总是同时生效、同时撤销。任务只写入 WAL，发布任务的事务之间各自独立，提交的吞吐与不发布任务时相当。
 
 第二，每个任务**至少执行一次**：worker 崩溃或停止超时时，正在处理的任务会交给其他 worker 重新执行，处理函数需要能安全地重复执行。任务之间不保证执行顺序。
 
@@ -60,7 +60,7 @@ err = w.Run(ctx)
 <a id="preparing"></a>
 ## 准备
 
-部署 nsqd，见 [NSQ 的安装文档](https://nsq.io/deployment/installing.html)。nsqd 默认把超出内存队列（每个 channel 10000 条）的消息写到磁盘；任务不能丢，启动时加上 `--mem-queue-size=0`，让每条消息都落盘：
+部署 nsqd，见 [NSQ 的安装文档](https://nsq.io/deployment/installing.html)。nsqd 默认把超出内存队列（每个 channel 10000 条）的消息写到磁盘；任务必须保留，启动时加上 `--mem-queue-size=0`，让每条消息都落盘：
 
 ```bash
 nsqd --data-path=/var/lib/nsqd --mem-queue-size=0
@@ -87,7 +87,7 @@ migrationCmd.AddCommand(migratecmd.Publish(
 ))
 ```
 
-部署时先执行迁移，再启动发布任务的进程：复制槽建立之前发布的任务不会被转发。
+部署时先执行迁移，再启动发布任务的进程：复制槽建立之后发布的任务才会被转发。
 
 > [!WARNING]
 > 复制槽保留 worker 还没读到的 WAL。所有 worker 都停止时，WAL 会一直累积；超过 `max_slot_wal_keep_size` 后复制槽失效，其中的任务丢失，worker 拒绝启动。不设置它则会一直累积到磁盘写满。请监控复制槽的积压并设置告警，见[部署](../installation/deployment.md#queue)。
@@ -158,7 +158,7 @@ err := PublishAt.Publish(ctx, tx, item.ID, queue.At(item.PublishAt))
 <a id="multi-step-jobs"></a>
 ### 多步任务
 
-有些工作要按顺序分几步完成，例如文章发布后先生成摘要，再推送给订阅者。不需要专门的链式 API：上一步完成后，在保存结果的事务中发布下一步：
+有些工作要按顺序分几步完成，例如文章发布后先生成摘要，再推送给订阅者。上一步完成后，在保存结果的事务中发布下一步：
 
 ```go
 // Job 生成摘要，和下一步“推送给订阅者”一起提交。
@@ -177,7 +177,7 @@ func (a *Summarize) Job(ctx context.Context, id uuid.UUID) error {
 }
 ```
 
-每一步只依赖自己的 payload，下一步需要的数据（例如上一步的结果）直接放进下一步的 payload，类型由 `queue.Topic` 检查。下一步和这一步的结果在同一个事务中提交：这一步失败重试时不会提前发出下一步，提交之后下一步也不会丢。
+每一步只依赖自己的 payload，下一步需要的数据（例如上一步的结果）直接放进下一步的 payload，类型由 `queue.Topic` 检查。下一步和这一步的结果在同一个事务中提交：这一步成功提交时才发出下一步，下一步也随之可靠送达。
 
 一组任务并行执行、全部结束后再做下一件事，用[后台操作的并行处理](../features/operations.md#fanout)。
 
@@ -197,7 +197,7 @@ mailjob.Send.Handle(w, mailer.Send)
 
 worker 是进程的一个运行部分（见[多个运行部分](../concepts/dependencies.md#running-parts)）。它做两件事：把发布的任务转发到 NSQ，以及处理已注册 topic 的任务。
 
-一个复制槽同时只能被一个连接读取，所以部署多个 worker 实例时，只有一个在转发，其余的待命，每 5 秒尝试一次；转发的实例停止或失联后，其中一个接手，从已经确认的位置继续。任务的处理不受影响，所有实例都处理任务。在入口的 `bootstrap` 包中：
+一个复制槽同时只能被一个连接读取，所以部署多个 worker 实例时，只有一个在转发，其余的待命，每 5 秒尝试一次；转发的实例停止或失联后，其中一个接手，从已经确认的位置继续。任务的处理照常进行，所有实例都处理任务。在入口的 `bootstrap` 包中：
 
 ```go
 // Worker 装配队列 worker，返回的函数转发并处理队列任务，直到 ctx 被取消。
@@ -252,14 +252,14 @@ queue:
   concurrency: 10       # 每个 topic 同时处理的任务数
   max_attempts: 10      # 最多执行的次数
   lease: 30s            # NSQ 等待处理结果的时间，见下文
-  max_defer: 1h         # NSQ 延迟消息的最长延迟，不能超过 nsqd 的 --max-req-timeout
+  max_defer: 1h         # NSQ 延迟消息的最长延迟，要小于等于 nsqd 的 --max-req-timeout
   replication_dsn: ""   # 转发任务的复制连接；数据库连接经过 PgBouncer 时设为直连 PostgreSQL 的地址
   shutdown_timeout: 30s # 停止时等待处理中的任务的最长时间
 ```
 
 `concurrency` 是每个 worker 实例的上限，部署 3 个实例时同一个 topic 最多有 30 个任务同时执行。
 
-只有一个 nsqd 时写 `nsqd` 即可。部署多个 nsqd 时，每台应用服务器把任务发布到本机的 nsqd（`nsqd` 写本机地址），worker 通过 `lookupd` 找到全部 nsqd 并消费，一个 nsqd 宕机不影响其他 nsqd 上的任务，见 [NSQ 的拓扑](https://nsq.io/deployment/topology_patterns.html)。
+只有一个 nsqd 时写 `nsqd` 即可。部署多个 nsqd 时，每台应用服务器把任务发布到本机的 nsqd（`nsqd` 写本机地址），worker 通过 `lookupd` 找到全部 nsqd 并消费，一个 nsqd 宕机时，其他 nsqd 上的任务照常处理，见 [NSQ 的拓扑](https://nsq.io/deployment/topology_patterns.html)。
 
 `concurrency` 和 `max_attempts` 是所有 topic 的默认值。个别 topic 需要不同的值时，在注册时覆盖：
 
@@ -267,7 +267,7 @@ queue:
 article.Summarize.Handle(w, summarize.Job, queue.Concurrency(2)) // 调用模型，限制并发
 ```
 
-[Webhook](../features/webhooks.md) 的投递任务就用 `queue.MaxAttempts` 把重试延长到约 2 天，不影响其他 topic。
+[Webhook](../features/webhooks.md) 的投递任务就用 `queue.MaxAttempts` 把重试延长到约 2 天，只作用于它自己的 topic。
 
 <a id="failures-and-retries"></a>
 ## 失败与重试
@@ -278,9 +278,9 @@ article.Summarize.Handle(w, summarize.Job, queue.Concurrency(2)) // 调用模型
 | --- | --- | --- | --- | --- | --- | --- |
 | 等待 | 1 秒 | 16 秒 | 81 秒 | 约 4 分钟 | 约 10 分钟 | 约 1.8 小时 |
 
-默认最多执行 10 次，从第一次失败到最后一次重试约 4.3 小时，足以跨过大多数第三方服务的故障。不超过 `max_defer` 的等待由 NSQ 完成，更长的等待存入 `queue_scheduled`。重试的任务不会阻塞同一个 topic 的其他任务。
+默认最多执行 10 次，从第一次失败到最后一次重试约 4.3 小时，足以跨过大多数第三方服务的故障。不超过 `max_defer` 的等待由 NSQ 完成，更长的等待存入 `queue_scheduled`。同一个 topic 的其他任务照常处理。
 
-有些错误重试也不会成功，例如文章已经被删除。用 `queue.Permanent` 包装这类错误，任务直接转入失败任务表：
+有些错误重试也是徒劳，例如文章已经被删除。用 `queue.Permanent` 包装这类错误，任务直接转入失败任务表：
 
 ```go
 if errors.Is(err, article.ErrNotFound) {
@@ -290,7 +290,7 @@ if errors.Is(err, article.ErrNotFound) {
 
 任务内容无法解码为处理函数的参数类型时，同样视为永久失败。
 
-第三方服务限流时往往会告诉你多久之后再试，例如 HTTP 429 响应的 `Retry-After`。用 `queue.RetryAfter` 包装错误，任务在指定的时间之后重试，而不是按上表等待：
+第三方服务限流时往往会告诉你多久之后再试，例如 HTTP 429 响应的 `Retry-After`。用 `queue.RetryAfter` 包装错误，任务在指定的时间之后重试：
 
 ```go
 if resp.StatusCode == http.StatusTooManyRequests {
@@ -306,7 +306,7 @@ if resp.StatusCode == http.StatusTooManyRequests {
 ```go
 if err != nil {
     if _, final := queue.AttemptFromContext(ctx); final {
-        markFailed(ctx, a.db, id, err) // 本次之后不再重试
+        markFailed(ctx, a.db, id, err) // 这是最后一次尝试
     }
     return err
 }
@@ -324,7 +324,7 @@ failed := queue.NewFailedJobs(db)
 
 jobs, err := failed.List(ctx, queue.FailedQuery{Topic: "mail.send", Limit: 50}) // 从新到旧
 job, err := failed.Get(ctx, id)      // job.Error 是最后一次的错误信息，包括堆栈
-err = failed.Delete(ctx, id)         // 不再需要的任务直接删除
+err = failed.Delete(ctx, id)         // 已经弃用的任务直接删除
 ```
 
 修复问题之后，用 `Retry` 重新发布任务，执行次数从 0 开始计算：
@@ -346,7 +346,7 @@ for {
 }
 ```
 
-`before` 是必填的：重试后马上又失败的任务失败时间在它之后，不会在同一轮中被反复放回。`DeleteAll(ctx, topic, before, limit)` 的用法相同。
+`before` 是必填的：重试后马上又失败的任务失败时间在它之后，每轮只放回一次。`DeleteAll(ctx, topic, before, limit)` 的用法相同。
 
 失败任务一直保留。`Cleanup` 返回删除保留期以前失败的任务的清理函数，交给[定时任务](scheduling.md#framework-cleanups)每天执行一次：
 
@@ -357,10 +357,10 @@ sched.Add("queue:prune-failed", "@daily", schedule.Cleanup(failed.Cleanup(30*24*
 <a id="leases-and-shutdown"></a>
 ## 任务的租约与停止
 
-NSQ 把任务交给 worker 后，等待处理结果的时间是 `lease`（默认 30 秒），处理期间 worker 每 10 秒自动延长一次。任务执行多久都可以，不需要为长任务调整配置。`lease` 不能超过 nsqd 的 `--max-msg-timeout`（默认 15 分钟）。
+NSQ 把任务交给 worker 后，等待处理结果的时间是 `lease`（默认 30 秒），处理期间 worker 每 10 秒自动延长一次。任务执行多久都可以，长任务也保持默认配置。`lease` 要小于等于 nsqd 的 `--max-msg-timeout`（默认 15 分钟）。
 
-- **worker 崩溃**：不再延长，`lease` 到期后 NSQ 把任务交给其他 worker。
-- **停止 worker**：收到停止信号后，worker 不再接收新任务，等待处理中的任务完成，最多等待 `shutdown_timeout`。处理函数的 `ctx` 不会因为停止信号被取消。超时仍未完成的任务立即放回 NSQ，处理函数的 `ctx` 以 `queue.ErrShuttingDown` 取消；放回的任务再次执行时计入一次执行。
+- **worker 崩溃**：延长随之停止，`lease` 到期后 NSQ 把任务交给其他 worker。
+- **停止 worker**：收到停止信号后，worker 停止接收新任务，等待处理中的任务完成，最多等待 `shutdown_timeout`。这期间处理函数的 `ctx` 保持有效。超时仍未完成的任务立即放回 NSQ，处理函数的 `ctx` 以 `queue.ErrShuttingDown` 取消；放回的任务再次执行时计入一次执行。
 
 处理函数应当把 `ctx` 传给数据库查询和外部调用，这样停止超时时能尽快退出。
 
@@ -395,7 +395,7 @@ NSQ 把任务交给 worker 后，等待处理结果的时间是 `lease`（默认
 <a id="job-events"></a>
 ### 任务事件
 
-`queue.WithObserver` 让 worker 在每次状态变化时通知你，`WithTelemetry` 也建立在它之上。需要每个任务的执行历史时，把事件写进自己的表：成功的任务不会留下记录，这类数据只能从事件中得到：
+`queue.WithObserver` 让 worker 在每次状态变化时通知你，`WithTelemetry` 也建立在它之上。需要每个任务的执行历史时，把事件写进自己的表：成功的任务只体现在事件中：
 
 ```go
 w := queue.NewWorker(a.db, a.cfg.Queue, nil,
@@ -489,14 +489,14 @@ queueweb.Register(ops, "/ops/queue", a.db, queueweb.Options{
 
 `a.verifyOps` 校验运维账号，见 [HTTP Basic 认证](../http/middleware.md#basic-auth)。`Options.Theme` 可以设置面板的[主题](../responses/components.md#themes)。
 
-- 全部重试只处理点击之前失败的任务：重试后马上又失败的任务不会在这一轮里被反复放回。它分批处理，每批 1000 条，直到处理完。
+- 全部重试只处理点击之前失败的任务：重试后马上又失败的任务在这一轮里只放回一次。它分批处理，每批 1000 条，直到处理完。
 - 每次重试和删除记一条 Info 日志，带上操作者（Basic 认证的用户名）、topic 和条数。
-- 浏览器会给跨站请求自动带上 Basic 凭据，所以面板拒绝跨站的 `POST`（`http.CrossOriginProtection`），不需要 CSRF token。
+- 浏览器会给跨站请求自动带上 Basic 凭据，所以面板拒绝跨站的 `POST`（`http.CrossOriginProtection`）。
 
 <a id="testing"></a>
 ## 测试
 
-处理函数是普通的函数，直接调用它测试即可。发布任务的一方，用 [`dbtest.Open`](../testing/overview.md) 打开执行过 `queue.Migrations()` 的测试数据库，用 `queuetest.Pending` 读出还没转发的任务。它只能看到已经提交的任务，并且不能和运行中的 worker 同时使用：
+处理函数是普通的函数，直接调用它测试即可。发布任务的一方，用 [`dbtest.Open`](../testing/overview.md) 打开执行过 `queue.Migrations()` 的测试数据库，用 `queuetest.Pending` 读出还没转发的任务。它只能看到已经提交的任务，使用时停掉 worker：
 
 ```go
 db := dbtest.Open(t, migrations.FS) // 包含已发布的 queue 迁移
@@ -596,7 +596,7 @@ func RetryAfter(err error, d time.Duration) error
 func AttemptFromContext(ctx context.Context) (attempt int, final bool)
 ```
 
-`Permanent` 标记不再重试，直接转入失败任务；`RetryAfter` 指定下次重试的时间；`AttemptFromContext` 返回这是第几次尝试、是否最后一次。见[失败与重试](#failures-and-retries)。
+`Permanent` 标记为最终失败，直接转入失败任务；`RetryAfter` 指定下次重试的时间；`AttemptFromContext` 返回这是第几次尝试、是否最后一次。见[失败与重试](#failures-and-retries)。
 
 ### FailedJobs
 

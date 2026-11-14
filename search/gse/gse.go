@@ -1,6 +1,6 @@
 // Package gse 提供按词语切分中文的 search.Tokenizer，基于 github.com/go-ego/gse 的简体和繁体中文词典。
 //
-// 与默认的 search.Bigram 相比，它按词语建索引，查询“文搜”不会再命中“全文搜索”，结果更准确；
+// 与默认的 search.Bigram 相比，它按词语建索引，查询“文搜”只命中真正含有这个词的文本，结果更准确；
 // 代价是程序大约增大 25 MB（嵌入的词典），第一次分词时加载词典需要约 0.5 秒，常驻约 300 MB 内存。
 //
 //	var Articles = search.Define[ArticleDoc]("articles", search.WithTokenizer(gse.Tokenizer))

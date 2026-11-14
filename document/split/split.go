@@ -15,7 +15,7 @@ type Options struct {
 	// Size 是目标分段长度，必须为正数。
 	Size int
 	// MaxSize 是分段长度的硬上限。零表示 Size + Size/5，略长于 Size 的小节因此保持完整，
-	// 不会留下很短的尾段；非零时不能小于 Size。
+	// 尾段长度适中；非零时必须大于等于 Size。
 	MaxSize int
 	// Overlap 是相邻分段的最大重叠，从 0 到 Size-1。
 	Overlap int
@@ -79,7 +79,7 @@ type TableHeader struct {
 }
 
 // Context 渲染标题路径和表头：标题文本用 " > " 连接（不转义），表头原样；两部分之间用一个换行分隔，
-// 为空的部分不加分隔符，都为空时返回 ""，结尾不加换行。它的长度不受 Options 限制：
+// 为空的部分省略分隔符，都为空时返回 ""，结尾没有换行。它的长度在 Options 之外单独计算：
 // 很长的标题或很宽的表头会完整地出现在它下面的每一段中，有向量长度预算的调用方需要自己截断，
 // 或者用 Headings 和 TableHeader 自己组装。
 func (c Chunk) Context() string {
@@ -169,7 +169,7 @@ func (s *Splitter) cut(l *layout, start, hard, prevEnd int) int {
 	target := ceilDiv(remaining+(pieces-1)*s.overlap, pieces)
 
 	// pick 在 [from, to] 中返回级别不低于 floor、可用的最高级边界，并且最靠近目标位置。
-	// strict 时，超过 Size 的边界必须是块边界，并且不能在下一个标题之前留下余量以内的尾巴。
+	// strict 时，超过 Size 的边界必须是块边界，并且到下一个标题之前剩下的部分要超过余量。
 	pick := func(from, to int, floor rank, strict bool) (int, rank) {
 		best, bestRank, bestDistance := -1, floor-1, 0
 		for i := from; i <= to; i++ {
@@ -210,7 +210,7 @@ func (s *Splitter) cut(l *layout, start, hard, prevEnd int) int {
 	// 完全没有边界：切在目标位置，尽量留在内容之内。
 	position := l.positionAt(base + target)
 	if position >= contentEnd && contentStart < contentEnd && !tailAlone {
-		// 把内容的最后一个字符留给下一段，避免它只剩空白。
+		// 把内容的最后一个字符留给下一段，保证它有非空白的内容。
 		_, size := utf8.DecodeLastRuneInString(l.text[:contentEnd])
 		position = contentEnd - size
 		if position <= max(start, prevEnd, contentStart) {

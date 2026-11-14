@@ -31,7 +31,7 @@ var owner = identity.Subject{Type: identity.System, ID: "cli"}
 var pollInterval = time.Second
 
 // New 返回 search 命令，db 是应用的数据库，indexes 是可以重建的索引，可以同时有全文搜索索引和向量索引，
-// 名称不能重复：
+// 名称各不相同：
 //
 //	search reindex <index>            发起重建，由 worker 执行，每秒显示一次进度，直到完成
 //	search reindex <index> --detach   发起之后立即返回

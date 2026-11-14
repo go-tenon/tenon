@@ -37,7 +37,7 @@ func (k Kind) String() string {
 	}
 }
 
-// systemic 报告分类是否代表系统故障而非可预期的业务结果。
+// systemic 报告分类是否代表系统故障（与可预期的业务结果相对）。
 func (k Kind) systemic() bool { return k == Unavailable || k == Internal }
 
 // kinds 列出全部分类，新增分类时同步追加。

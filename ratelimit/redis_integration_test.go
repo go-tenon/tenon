@@ -13,7 +13,7 @@ import (
 	"github.com/go-tenon/tenon/ratelimit/redislimit"
 )
 
-// 每个限流器使用随机 name，测试之间的键互不影响，不需要清空 Redis。
+// 每个限流器使用随机 name，测试之间的键相互独立，Redis 中的数据可以保留。
 func testName() string { return "test:ratelimit:" + rand.Text() }
 
 func TestRedis(t *testing.T) {

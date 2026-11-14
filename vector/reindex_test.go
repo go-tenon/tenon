@@ -138,7 +138,7 @@ func TestReindexSwitchesModel(t *testing.T) {
 		t.Fatalf("hits after reindex = %+v", hits)
 	}
 
-	// 切换之后不再需要旧模型；旧版本的 collection 已经删除
+	// 切换之后旧模型可以移除；旧版本的 collection 已经删除
 	only := shared.store(vector.Model{Name: "new", Dims: dims / 2, Embedder: newEmb})
 	if _, err := chunks.Search(ctx, only, vector.Query{Text: "原来的b"}); err != nil {
 		t.Fatal(err)

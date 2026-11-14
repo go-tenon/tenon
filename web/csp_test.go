@@ -62,7 +62,7 @@ func TestPagesCustomCSP(t *testing.T) {
 	}
 }
 
-// TestPagesKeepAppNonce 检查应用自己的中间件已经设置了 nonce 时，Pages 不再覆盖它。
+// TestPagesKeepAppNonce 检查应用自己的中间件已经设置了 nonce 时，Pages 沿用它。
 func TestPagesKeepAppNonce(t *testing.T) {
 	t.Parallel()
 	var nonce string

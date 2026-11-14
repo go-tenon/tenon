@@ -18,11 +18,11 @@ const File = "tenon.json"
 
 // Config 是 tenon.json。所有字段都可以省略，Load 按约定补上默认值。
 type Config struct {
-	// Schema 是编辑器补全用的 JSON Schema 地址，tenon 不读取它。
+	// Schema 是编辑器补全用的 JSON Schema 地址，只供编辑器使用。
 	Schema string `json:"$schema,omitempty"`
 	// Main 是应用入口的包，默认 ./cmd/api。
 	Main string `json:"main,omitempty"`
-	// Serve 是开发时运行应用的参数，默认 serve --config config/app.yaml,config/local.yaml（local.yaml 不存在时去掉它）。
+	// Serve 是开发时运行应用的参数，默认 serve --config config/app.yaml,config/local.yaml（local.yaml 存在时才加上它）。
 	Serve []string `json:"serve,omitempty"`
 	// URL 是应用的地址，dev 打印它，templ 的代理访问它，默认 http://localhost:8080。
 	URL string `json:"url,omitempty"`
@@ -46,11 +46,11 @@ type Frontend struct {
 	DevURL string `json:"devUrl,omitempty"`
 }
 
-// Generate 配置生成的客户端，目录为空表示不生成。
+// Generate 配置生成的客户端，设置了目录才生成。
 type Generate struct {
-	// TS 是 TypeScript 客户端的目录；有前端时默认 <frontend.dir>/src/api，"-" 表示不生成。
+	// TS 是 TypeScript 客户端的目录；有前端时默认 <frontend.dir>/src/api，"-" 表示跳过。
 	TS string `json:"ts,omitempty"`
-	// Go 是 Go 客户端的目录，例如 ../api，默认不生成。
+	// Go 是 Go 客户端的目录，例如 ../api，设置后才生成。
 	Go string `json:"go,omitempty"`
 }
 
@@ -74,7 +74,7 @@ type Tool struct {
 	Build []string `json:"build,omitempty"`
 }
 
-// Load 读取 dir 中的 tenon.json（没有时全部用默认值），补上默认值并检查。
+// Load 读取 dir 中的 tenon.json（缺省时全部用默认值），补上默认值并检查。
 func Load(dir string) (*Config, error) {
 	cfg := &Config{}
 	data, err := os.ReadFile(filepath.Join(dir, File))

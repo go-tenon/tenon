@@ -95,7 +95,7 @@ func (a *Invite) Handle(ctx context.Context, name, email string) (*Editor, error
         if err := a.logins.Attach(ctx, tx, e.Ref(), login.Email(email), false); err != nil {
             return err // 邮箱已被其他编辑使用：login.ErrTaken
         }
-        // 提交之后才发送邀请，事务回滚时不会发出邮件。
+        // 提交之后才发送邀请，邮件只在事务成功时发出。
         tx.AfterCommit(func(ctx context.Context) error {
             _, err := a.logins.SendCode(ctx, login.Reset, login.Email(email))
             return err
@@ -177,7 +177,7 @@ func (a *SignUp) Handle(ctx context.Context, proof, name string) (identity.Subje
         out, err = a.logins.Register(ctx, tx, proof, r.Ref())
         return err
     })
-    return out.Subject, err // 读者不要求二次验证，Register 总是返回 Subject
+    return out.Subject, err // 读者只用一步登录，Register 总是返回 Subject
 }
 
 // Delete 注销读者：删除账号行和全部登录凭据，再撤销全部 token。
@@ -305,7 +305,7 @@ func New(ctx context.Context, db *bun.DB, rdb rueidis.Client, cfg Config, hasher
 }
 ```
 
-两个 `Realm` 共用 `auth_*` 表：同一个邮箱可以既是编辑又是读者，彼此互不影响。两个 `apitoken.Store` 也共用 `api_tokens` 表，各自的有效期按配置签发。
+两个 `Realm` 共用 `auth_*` 表：同一个邮箱可以既是编辑又是读者，两者各自独立。两个 `apitoken.Store` 也共用 `api_tokens` 表，各自的有效期按配置签发。
 
 <a id="editor-api"></a>
 ## 编辑后台
@@ -575,7 +575,7 @@ func (h *handlers) inviteEditor(ctx context.Context, in *InviteInput) (*struct{}
 几点说明：
 
 - 待完成的登录（`pending`、`enroll`）由单页应用暂存，带到下一步的请求中；它们 15 分钟内有效，最多输错 5 次。
-- 启用二次验证在登录的过程中完成，之后签发的 token 已经经过了二次验证（`sub.Auth.TwoFactor()` 为 `true`）。Resolver 不需要再检查二次验证，也不存在“没有权限、只能去启用”的 token。
+- 启用二次验证在登录的过程中完成，之后签发的 token 已经经过了二次验证（`sub.Auth.TwoFactor()` 为 `true`）。Resolver 只需加载权限，每个 token 都是完整的。
 - `EnrollTOTP` 的最后一个参数是验证器中显示的账号名，这里用固定的文字，也可以查出编辑的邮箱。`uri` 由单页应用渲染成二维码。
 - 编辑后台只有浏览器一种客户端，refresh token 只放在 cookie 中。同时服务浏览器和 App 的接口写法见[单页应用](api-tokens.md#single-page-applications)。
 - 邀请编辑用 `rest.Confirmed`：登录本身算一次确认，登录后 15 分钟内直接放行，之后先确认密码。JWT 模式的 access token 带着确认时间，所以 `confirm` 返回新的 access token。读者注销账号则是在请求中直接带上验证码，两种写法见[确认身份](login.md#confirming)。
@@ -812,11 +812,11 @@ func (h *handlers) confirm(ctx context.Context, ref identity.Ref, in *ConfirmInp
 
 几点说明：
 
-- 读者没有启用二次验证，`VerifyCode` 和 `External` 不会返回 `Pending`。需要时与[编辑后台](#editor-api)一样处理。
+- 读者只用一步登录，`VerifyCode` 和 `External` 直接返回结果。需要二次验证时与[编辑后台](#editor-api)一样处理。
 - 发送验证码对未注册的手机号同样发送（`Policy.Register` 为 `true`），所以第 2 步才知道要注册；同一个手机号 15 分钟内最多发 5 次，见[限流与防探测](login.md#limits)。
 - Apple 的 `Nonce` 应当由服务器下发，见 [App 原生登录](social-login.md#native-sign-in)。Apple 账号对方确认过的邮箱会一并写入，所以邮箱已被其他读者使用时注册返回 `login.ErrTaken`。
 - 退出登录撤销的是这次登录的 refresh token，已签发的 access token 在 10 分钟内过期；注销账号还会让这个读者的全部登录立即无法刷新。
-- 读者没有密码，注销前用验证码或重新登录 Apple [确认身份](login.md#confirming)。确认用的验证码只发给读者自己的手机号，不能用来登录。
+- 读者没有密码，注销前用验证码或重新登录 Apple [确认身份](login.md#confirming)。确认用的验证码只发给读者自己的手机号，只用于确认身份。
 
 <a id="wiring"></a>
 ## 接入入口

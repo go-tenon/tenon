@@ -46,7 +46,7 @@ func Run[C any](use, short string, run func(ctx context.Context, cfg C) error) *
 }
 
 // LoadConfig 加载并校验 --config 指定的配置文件，失败时错误带 ExitConfig 退出码。
-// 加载前先读取工作目录下的 .env（不存在时忽略），其中的变量不会覆盖进程中已经设置的变量。
+// 加载前先读取工作目录下的 .env（不存在时忽略），进程中已经设置的变量优先。
 // cmd 必须挂在 Root 返回的根命令下。
 func LoadConfig[C any](cmd *cobra.Command) (C, error) {
 	var zero C

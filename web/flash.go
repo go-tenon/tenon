@@ -21,7 +21,7 @@ type Message struct {
 const FlashEvent = "web:flash"
 
 // trigger 让 htmx 在处理完这个响应后，在 body 上派发事件 name，detail 的各项成为 event.detail 的字段。
-// 事件派发在 body 而不是发起请求的元素上，因此该元素在这次替换中被移除时，事件依然送达。
+// 事件派发在 body 上，因此该元素在这次替换中被移除时，事件依然送达。
 func trigger(w http.ResponseWriter, name string, detail map[string]any) {
 	d := make(map[string]any, len(detail)+1)
 	for k, v := range detail {

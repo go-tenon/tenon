@@ -140,7 +140,7 @@ func TestRoutesCollapsesOpaqueMountWithoutInvokingHandler(t *testing.T) {
 
 func TestRoutesMarksOnlyHumaDocumentationEndpoints(t *testing.T) {
 	api := rest.New(chi.NewRouter(), rest.Options{})
-	// 与文档端点相似但由应用注册的路由不能被误标为 docs。
+	// 与文档端点相似但由应用注册的路由按自己的声明标记。
 	api.Router().Get("/openapi", func(http.ResponseWriter, *http.Request) {})
 	api.Router().Get("/docs/guide", func(http.ResponseWriter, *http.Request) {})
 	for _, route := range httpx.Routes(api.Router()) {

@@ -2,7 +2,7 @@
 
 了解一个工具的工作原理，用起来就会更有把握。本页从整体上介绍一个 Tenon 应用怎样启动、一个请求从进入到返回会经过哪些环节，以及应用停止时怎样做到不丢请求。
 
-如果有些概念现在还不太理解，不必担心，先建立一个整体的印象即可。每一部分的细节都在链接的页面中。
+先建立一个整体的印象即可。每一部分的细节都在链接的页面中。
 
 - [启动](#startup)
 - [请求的处理过程](#request-flow)
@@ -48,17 +48,17 @@
 我们以修改文章的请求 `PUT /articles/{id}` 为例，看看不同的请求会在哪一步结束：
 
 - 没有有效令牌的请求在认证这一步返回 `401`；
-- 标题为空的请求在验证输入这一步返回 `422`，处理器不会被调用；
+- 标题为空的请求在验证输入这一步返回 `422`，到不了处理器；
 - 处理器返回的业务错误（例如 slug 已被占用）在最后一步转换为 `409` 等响应。
 
 前半段是安装在 Router 上的[中间件](../http/middleware.md)，作用于所有请求；认证由路由声明的策略决定，见[认证](../security/authentication.md)；输入见[请求](../http/requests.md)和[验证](../http/validation.md)；错误的转换见[错误处理](../general/errors.md)。
 
-值得一提的是，中间件、语言目录和日志器都是在创建 API 时显式传入的。所以同一个进程中的两个 API 可以有各自不同的配置，互不影响。
+值得一提的是，中间件、语言目录和日志器都是在创建 API 时显式传入的。所以同一个进程中的两个 API 可以有各自独立的配置。
 
 <a id="graceful-shutdown"></a>
 ## 平滑停止
 
-应用收到 `SIGTERM` 或 Ctrl+C 时，我们希望它**不要粗暴地中断**正在处理的请求。`httpx.Serve` 负责这件事：
+应用收到 `SIGTERM` 或 Ctrl+C 时，我们希望它**先处理完**正在处理的请求。`httpx.Serve` 负责这件事：
 
 ```go
 var draining httpx.Draining
@@ -74,20 +74,20 @@ err := httpx.Serve(ctx, cfg.HTTP, ln, handler, httpx.OnDraining(draining.Set))
 
 `httpx.Serve` 返回之后，入口才关闭数据库等资源，正在处理的请求在结束前始终可以访问数据库。
 
-`ln` 通常由 `command.Daemon` 取得，见[依赖装配](dependencies.md#assembling-the-application)。不需要不停机升级的简单程序，用 `httpx.ListenAndServe` 自己监听 `cfg.Addr`。
+`ln` 通常由 `command.Daemon` 取得，见[依赖装配](dependencies.md#assembling-the-application)。简单的程序用 `httpx.ListenAndServe` 自己监听 `cfg.Addr`。
 
 > [!WARNING]
-> 平滑停止依赖 context 的传递。数据库查询和外部调用都要使用请求的 `ctx`，否则超时后它们不会停下来；忽略 context 的 goroutine 会在停机后继续运行。
+> 平滑停止依赖 context 的传递。数据库查询和外部调用都要使用请求的 `ctx`，超时后它们才能随之停下；goroutine 也要监听 context，停机时一起结束。
 
 <a id="health-checks"></a>
 ## 健康检查
 
 部署平台（如 Kubernetes）和负载均衡器通常用两类接口判断应用的状态：
 
-- **存活检查**（liveness）：进程是否还能响应，失败时平台重启它。直接返回成功，不要检查依赖：数据库故障时重启应用无济于事。
+- **存活检查**（liveness）：进程是否还能响应，失败时平台重启它。直接返回成功，只确认进程能响应：数据库故障时重启应用无济于事。
 - **就绪检查**（readiness）：现在能否处理请求，失败时停止向这个实例转发流量。它检查是否正在排空，以及必需的依赖是否可用。
 
-Tenon 不会自动注册这两个路由，因为路径由部署环境决定。下面把它们注册在 `/livez` 和 `/readyz`：
+路径由部署环境决定，所以这两个路由由应用自己注册。下面把它们注册在 `/livez` 和 `/readyz`：
 
 ```go
 router.Get("/livez", func(w http.ResponseWriter, _ *http.Request) {
@@ -105,7 +105,7 @@ router.Handle("/readyz", httpx.Ready(httpx.ReadyOptions{
 }))
 ```
 
-`draining` 与传给 `httpx.OnDraining` 的是同一个。每个 `Ping` 都写成闭包，到检查时才使用依赖：`openapi`、`routes` 命令用 `nil` 依赖构造同一套路由（见[依赖装配](dependencies.md#assembling-the-application)），`db.PingContext` 这样的方法值在 `db` 为 `nil` 时取值就会 panic。全部检查并行执行，每项最多 1 秒，超时按失败处理。必需的检查都通过时返回 `200`，否则返回 `503`；正在排空时不再检查，直接返回 `503`。响应体列出每项的结果：
+`draining` 与传给 `httpx.OnDraining` 的是同一个。每个 `Ping` 都写成闭包，到检查时才使用依赖：`openapi`、`routes` 命令用 `nil` 依赖构造同一套路由（见[依赖装配](dependencies.md#assembling-the-application)），`db.PingContext` 这样的方法值在 `db` 为 `nil` 时取值就会 panic。全部检查并行执行，每项最多 1 秒，超时按失败处理。必需的检查都通过时返回 `200`，否则返回 `503`；正在排空时直接返回 `503`。响应体列出每项的结果：
 
 ```json
 {"status":"ready","checks":{"cache":"failed","database":"ok","redis":"ok"}}
@@ -114,7 +114,7 @@ router.Handle("/readyz", httpx.Ready(httpx.ReadyOptions{
 失败的原因只记录在日志中，而且只在状态变化时记录：从通过变为失败记 `Warn`，恢复时记 `Info`。
 
 > [!IMPORTANT]
-> 只把处理请求**必需**的依赖放进检查。缓存这类坏了也能降级运行的依赖标为 `Optional`，否则缓存的一次短暂故障会让全部实例同时被摘除。只有部分接口用到的服务（PDF、向量检索等）不要放进来，它们的故障由各自的接口返回错误。
+> 只把处理请求**必需**的依赖放进检查。缓存这类坏了也能降级运行的依赖标为 `Optional`，这样缓存的短暂故障只体现在结果中，实例继续接收流量。只有部分接口用到的服务（PDF、向量检索等）的故障由各自的接口返回错误。
 
 > [!TIP]
 > 探测很频繁，在[访问日志](../http/middleware.md#http-configuration)的 `ignore_paths` 中排除这两个路径。
@@ -146,7 +146,7 @@ func Serve(ctx context.Context, cfg Config, ln net.Listener, handler http.Handle
 func ListenAndServe(ctx context.Context, cfg Config, handler http.Handler, opts ...ServeOption) error
 ```
 
-与 `Serve` 相同，只是自己监听 `cfg.Addr`。适合不需要不停机升级的简单程序。
+与 `Serve` 相同，只是自己监听 `cfg.Addr`。适合简单的程序。
 
 ### Logger、OnDraining
 
@@ -189,7 +189,7 @@ type ReadyOptions struct {
 }
 ```
 
-`Draining` 为 `nil` 时不检查排空。`Timeout` 是每项检查的超时，默认 1 秒。`Logger` 记录检查结果的变化。
+`Draining` 为 `nil` 时跳过排空检查。`Timeout` 是每项检查的超时，默认 1 秒。`Logger` 记录检查结果的变化。
 
 ### Check
 

@@ -35,7 +35,7 @@ func TestCheckCredential(t *testing.T) {
 			t.Fatalf("%v treated as revoked", err)
 		}
 	}
-	// 多个校验依次运行，返回第一个失效的错误；派生出的 context 互不影响。
+	// 多个校验依次运行，返回第一个失效的错误；派生出的 context 相互独立。
 	revoked := httpx.WithCredentialCheck(ok, func(context.Context) error { return errRevoked.New() })
 	if err := httpx.CheckCredential(revoked); !errors.Is(err, errRevoked) {
 		t.Fatalf("revoked: %v", err)
@@ -149,7 +149,7 @@ func TestSSERechecksOnSignal(t *testing.T) {
 	}
 }
 
-// Watch 返回的通道被关闭时不会空转，连接照常保持。
+// Watch 返回的通道被关闭时安静地等待，连接照常保持。
 func TestSSEIgnoresClosedWatchChannel(t *testing.T) {
 	t.Parallel()
 	var checks atomic.Int32

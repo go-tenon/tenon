@@ -113,7 +113,7 @@ func New(cfg Config, client *http.Client) (*Sender, error) {
 }
 
 // Send 发送一条短信。号码被拒绝时返回 sms.ErrRejected，触发了号码的频率限制时返回 sms.ErrLimited；
-// 余额不足、签名或模板未审核、系统错误等返回其他错误。模板名没有配置时返回错误，不调用接口。
+// 余额不足、签名或模板未审核、系统错误等返回其他错误。模板名没有配置时直接返回错误。
 func (s *Sender) Send(ctx context.Context, msg sms.Message) error {
 	if err := msg.Validate(); err != nil {
 		return err
@@ -123,7 +123,7 @@ func (s *Sender) Send(ctx context.Context, msg sms.Message) error {
 		return errors.Newf("aliyun sms: template %q is not configured", msg.Template)
 	}
 	params := url.Values{
-		// 阿里云接受带 86 前缀的国内号码，国际号码写成国家码加号码，都不带 +。
+		// 阿里云接受带 86 前缀的国内号码，国际号码写成国家码加号码，都省略 +。
 		"PhoneNumbers": {strings.TrimPrefix(msg.To, "+")},
 		"SignName":     {s.cfg.SignName},
 		"TemplateCode": {code},

@@ -35,7 +35,7 @@ type envelope struct {
 
 // bridge 用 broadcast.Hub 实现 centrifuge.Broker 和 centrifuge.Controller：
 // 频道就是 Hub 的主题，应用通过 Hub 发布的消息直接交给订阅了同名频道的客户端。
-// 每个实例本来就收到全部主题，所以按频道订阅和退订不需要做任何事。不保存历史。
+// 每个实例本来就收到全部主题，所以按频道订阅和退订直接返回。只投递实时消息。
 type bridge struct {
 	hub  *broadcast.Hub
 	node *centrifuge.Node
@@ -45,7 +45,7 @@ type bridge struct {
 	members *membership
 
 	// 控制消息和丢失消息的处理可能再向 Hub 发布（例如断开连接时的离开事件），
-	// 而 deliver 在 Hub 的投递中调用，不能发布，所以它们排队交给 run 处理，保持先后顺序。
+	// 而 deliver 在 Hub 的投递中调用，此时禁止发布，所以它们排队交给 run 处理，保持先后顺序。
 	mu    sync.Mutex
 	tasks []func()
 	wake  chan struct{}
@@ -146,7 +146,7 @@ func (b *bridge) send(ctx context.Context, e envelope) error {
 	return b.hub.PublishJSON(ctx, internalTopic, e)
 }
 
-// deliver 处理本实例从 Hub 收到的每一条消息。它在 Hub 的接收循环中调用，不能阻塞。
+// deliver 处理本实例从 Hub 收到的每一条消息。它在 Hub 的接收循环中调用，必须立即返回。
 func (b *bridge) deliver(msg broadcast.Message) {
 	if msg.Topic != internalTopic {
 		// 没有客户端订阅的主题直接跳过。JSON 协议的客户端只能接收 JSON，其他内容（例如空消息）不转发。

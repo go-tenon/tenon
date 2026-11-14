@@ -4,5 +4,5 @@
 //	db, err := database.Open(ctx, cfg.Database, database.WithTelemetry(tel.Meters, tel.Tracers))
 //
 // 超过 Config.SlowQuery 的语句记录为慢查询日志；WithTelemetry 报告每条语句的耗时指标和链路。
-// 日志和链路中的 SQL 都把字面量换成了 ?，不带参数的值。
+// 日志和链路中的 SQL 都把字面量换成了 ?，参数的值只留在应用中。
 package database

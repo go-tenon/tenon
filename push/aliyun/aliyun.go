@@ -55,14 +55,14 @@ type Config struct {
 	AccessKeySecret string `yaml:"access_key_secret"`
 	// Endpoint 是接口的域名，为空时是 DefaultEndpoint。
 	Endpoint string `yaml:"endpoint"`
-	// AppKeys 是各平台的应用在阿里云中的 AppKey，没有的平台填 0；给没有 AppKey 的平台推送时任务失败、不再重试。
+	// AppKeys 是各平台的应用在阿里云中的 AppKey，没有的平台填 0；给没有 AppKey 的平台推送时任务直接失败。
 	AppKeys AppKeys `yaml:"app_keys"`
 	// APNs 是 iOS 推送的环境：PRODUCT（默认）用于 App Store、TestFlight 和企业分发的 App，DEV 用于 Xcode 直接安装的 App。
 	APNs string `yaml:"apns"`
 	// Android 是 Android 通知的公共设置。
 	Android Android `yaml:"android"`
 	// Categories 把 push.Message.Category 换成各厂商的消息分类参数。消息没有指定分类时使用 default；
-	// 指定了这里没有的分类时任务失败、不再重试。没有配置 default 时，不指定分类的消息不带厂商分类参数，
+	// 指定了这里没有的分类时任务直接失败。没有配置 default 时，省略分类的消息也省略厂商分类参数，
 	// 厂商通常把它当作资讯营销消息，每台设备每天能收到的条数有限。
 	Categories map[string]Category `yaml:"categories"`
 }
@@ -84,7 +84,7 @@ type Android struct {
 }
 
 // Category 是一个消息分类在各厂商通道中的参数，取值见各厂商的消息分类规范，大多需要先在厂商后台申请。
-// 没有填写的厂商不带分类参数。
+// 没有填写的厂商省略分类参数。
 type Category struct {
 	// Channel 覆盖 Android.Channel，例如营销消息使用单独的通知渠道，用户可以只关闭它。
 	Channel string `yaml:"channel"`
@@ -270,7 +270,7 @@ func (p *Provider) task(b push.Batch) (*pushTask, error) {
 	return t, nil
 }
 
-// call 调用接口 action，把失败分为可以重试的和不能重试的（queue.Permanent）。
+// call 调用接口 action，把失败分为可以重试的和最终的（queue.Permanent）。
 func (p *Provider) call(ctx context.Context, action string, params url.Values) error {
 	resp, err := p.api.Call(ctx, action, params)
 	if err != nil {
@@ -286,7 +286,7 @@ func (p *Provider) call(ctx context.Context, action string, params url.Values) e
 	return queue.Permanent(err)
 }
 
-// retryable 报告失败的调用能否重试：限流、服务端错误和超时可以，其他 4xx 是配置或参数错误，重试也不会成功。
+// retryable 报告失败的调用能否重试：限流、服务端错误和超时可以，其他 4xx 是配置或参数错误，重试也是徒劳。
 func retryable(status int, code string) bool {
 	if status >= 500 || status == http.StatusTooManyRequests {
 		return true

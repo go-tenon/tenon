@@ -89,12 +89,12 @@ type Auth interface {
 	// Token 返回当前的 access token。
 	Token(ctx context.Context) (string, error)
 	// Refresh 换一对新的 token，在受保护的接口返回 401 时调用。并发请求同时 401 时只调用一次；
-	// 调用前 token 已经被换掉时不调用，直接用新 token 重试。返回错误表示需要重新登录，
+	// 调用前 token 已经被换掉时直接用新 token 重试。返回错误表示需要重新登录，
 	// 调用方收到原来的 401。
 	Refresh(ctx context.Context) error
 }
 
-// StaticToken 返回总是使用 token 的 Auth，例如不透明的 API token；它不能刷新。
+// StaticToken 返回总是使用 token 的 Auth，例如不透明的 API token；它的 Refresh 总是返回错误。
 func StaticToken(token string) Auth { return staticToken(token) }
 
 type staticToken string
@@ -110,7 +110,7 @@ type Options struct {
 	BaseURL string
 	// HTTPClient 发送请求；nil 时使用 http.DefaultClient。需要额外的请求头时在它的 Transport 中添加。
 	HTTPClient *http.Client
-	// Auth 提供受保护接口的凭据；nil 时不带凭据，受保护的接口返回 401。公开接口从不带凭据。
+	// Auth 提供受保护接口的凭据；nil 时受保护的接口返回 401。公开接口直接请求。
 	Auth Auth
 	// AppVersion 是 App 的平台和版本，例如 ios/1.4.2，写入每个请求的 X-App-Version。
 	AppVersion string
@@ -300,7 +300,7 @@ func (c *Client) roundTrip(ctx context.Context, r *Request, accept string) (*htt
 	return res, nil
 }
 
-// rewind 准备重发请求：multipart 的文件内容都实现 io.Seeker 时回到开头，否则不能重发。
+// rewind 准备重发请求：multipart 的文件内容都实现 io.Seeker 时回到开头，否则报告无法重发。
 func rewind(r *Request) bool {
 	if r.Multipart == nil {
 		return true
@@ -446,7 +446,7 @@ func (c *Client) renew(ctx context.Context, stale string) (string, bool) {
 		call = &refresh{done: make(chan struct{})}
 		c.refreshing[stale] = call
 		c.mu.Unlock()
-		// 一个调用方取消不应让一起等待的其他请求失败。
+		// 一个调用方取消时，一起等待的其他请求照常完成。
 		call.err = c.opts.Auth.Refresh(context.WithoutCancel(ctx))
 		c.mu.Lock()
 		delete(c.refreshing, stale)

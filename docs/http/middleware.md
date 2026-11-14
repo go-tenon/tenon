@@ -2,10 +2,10 @@
 
 有些事情每个请求都要做：确定请求 ID、记录访问日志、限制请求体的大小、在处理器 panic 时恢复。把它们写在每个处理器里显然不现实，中间件就是为此而生的：它包在处理器的外面，在请求到达处理器之前和之后做这些通用的事。
 
-Tenon 的中间件都是标准的 `func(http.Handler) http.Handler`，安装在 chi Router 上。`rest.New` 不会替你安装任何中间件，装哪些、按什么顺序装，都由你在代码中决定。
+Tenon 的中间件都是标准的 `func(http.Handler) http.Handler`，安装在 chi Router 上。装哪些、按什么顺序装，都由你在代码中决定，`rest.New` 只使用你装好的 Router。
 
 > [!IMPORTANT]
-> 一个中间件是否生效，只取决于代码里有没有安装它。配置文件只提供参数，不会开启或关闭中间件。参数不合法时（例如超时为 0），构造时就 panic，而不是静默跳过。
+> 一个中间件是否生效，只取决于代码里有没有安装它。配置文件只提供参数。参数不合法时（例如超时为 0），构造时就 panic。
 
 - [示例用法](#default-middleware)
 - [请求超时](#request-timeout)
@@ -58,7 +58,7 @@ router.Use(httpx.Defaults(cfg.HTTP, httpx.Languages(languages))...)
 | `BodyLimit(cfg.BodyLimit)` | 限制请求体大小，超出时返回 413 |
 | `AcquireTimeout(cfg.AcquireTimeout)` | 请求等待共享资源（例如空闲的数据库连接）最多 `acquire_timeout`，连接池用满时返回 503 并带 `Retry-After`，见[连接用满时](../database/quick-start.md#pool-exhaustion) |
 
-另外几个中间件不是每个应用都需要的，需要时在 `httpx.Defaults` 之后另行安装：
+另外几个中间件按需使用，在 `httpx.Defaults` 之后另行安装：
 
 | 中间件 | 行为 |
 | --- | --- |
@@ -66,7 +66,7 @@ router.Use(httpx.Defaults(cfg.HTTP, httpx.Languages(languages))...)
 | `RateLimit(limiter, key)` | 按客户端限流，超出时返回 429，见[限流](../libraries/rate-limiting.md) |
 | `Compress()` | 按 `Accept-Encoding` 用 zstd 或 gzip 压缩文本类响应，见[响应压缩](#compression) |
 
-你可能会担心：不装某个中间件，框架的其他部分会不会出问题？不会。没有 `AccessLog` 时，`httpx.AddAccessLogAttrs` 什么也不做；没有 `Locale` 时，错误消息不翻译，`i18n.T` 原样返回消息 ID；没有 `AssignRequestID` 时，`httpx.RequestID` 返回空字符串。
+每个中间件都可以单独省略，框架的其他部分照常工作：没有 `AccessLog` 时，`httpx.AddAccessLogAttrs` 什么也不做；没有 `Locale` 时，`i18n.T` 原样返回消息 ID；没有 `AssignRequestID` 时，`httpx.RequestID` 返回空字符串。
 
 认证不在默认中间件中，因为它是按路由启用的，见[认证](../security/authentication.md)。健康检查也由你自己注册，见[请求生命周期](../concepts/lifecycle.md#health-checks)。
 
@@ -78,7 +78,7 @@ router.Use(httpx.Defaults(cfg.HTTP, httpx.Languages(languages))...)
 
 它不在 `httpx.Defaults` 中，需要单独安装：有些应用只想给部分路由设置超时，例如只给 `/api/v1` 下的路由。
 
-[服务端推送](../responses/sse.md)不受它影响：SSE 开始推送后摆脱这个超时，连接一直保持到客户端断开，所以流式路由可以和普通路由装在同一组中间件下。
+[服务端推送](../responses/sse.md)开始推送后脱离这个超时，连接一直保持到客户端断开，所以流式路由可以和普通路由装在同一组中间件下。
 
 <a id="http-configuration"></a>
 ## 配置
@@ -126,7 +126,7 @@ http:
 | `cors.*` | `CORS` | 见[跨域请求](#cors) | 允许任何来源，预检结果缓存 2 小时 |
 | `app_version.minimum` | `AppVersion` | 见[App 最低版本](#app-version) | 不限制 |
 
-没有写出的字段使用默认值。除 `acquire_timeout` 外，所有超时和数值都必须为正数，写 `0` 或负数会在加载配置时报错；不需要某个中间件时，不安装它即可。
+没有写出的字段使用默认值。除 `acquire_timeout` 外，所有超时和数值都必须为正数，写 `0` 或负数会在加载配置时报错；要关掉某个中间件，在代码中省略它即可。
 
 把 `httpx.Config` 放进应用的根配置结构体（`config.Load` 会自动填充默认值并校验），再把它交给 `httpx.Defaults` 和 `httpx.Serve`：
 
@@ -138,7 +138,7 @@ ln, err := d.Listen("tcp", cfg.HTTP.Addr)
 return httpx.Serve(ctx, cfg.HTTP, ln, api.Handler())
 ```
 
-不经过 `config.Load` 时（例如在测试中），请从 `httpx.DefaultConfig()` 开始修改；整个应用的配置用 `config.Default[Config]()`，它与读取空配置文件得到的值相同。零值的 `httpx.Config{}` 不合法，`httpx.Defaults` 会 panic，`httpx.Serve` 会返回错误。
+不经过 `config.Load` 时（例如在测试中），请从 `httpx.DefaultConfig()` 开始修改；整个应用的配置用 `config.Default[Config]()`，它与读取空配置文件得到的值相同。`httpx.Config{}` 的零值缺少必填项，交给 `httpx.Defaults` 会 panic，交给 `httpx.Serve` 会返回错误。
 
 <a id="request-id"></a>
 ### 请求 ID
@@ -149,7 +149,7 @@ return httpx.Serve(ctx, cfg.HTTP, ln, api.Handler())
 - 作为 `request_id` 字段出现在这个请求的所有日志中，见[请求关联](../general/logging.md#request-correlation)；
 - 通过 `X-Request-ID` 响应头返回给客户端，用户反馈问题时可以直接提供它。
 
-它同时写入 chi 的 `middleware.RequestIDKey`，所以 `middleware.GetReqID(ctx)` 和读取它的社区中间件拿到的也是同一个值，不需要再安装 chi 的 `middleware.RequestID`。
+它同时写入 chi 的 `middleware.RequestIDKey`，所以 `middleware.GetReqID(ctx)` 和读取它的社区中间件拿到的也是同一个值，它可以代替 chi 的 `middleware.RequestID`。
 
 合法的 ID 是 1–128 个可打印的 ASCII 字符，不含空格。不合法时（例如超长、包含控制字符）丢弃，重新生成。
 
@@ -265,9 +265,9 @@ http:
 | `allowed_origins` | 允许的来源，`scheme://host[:port]`，可以有一个 `*` 通配；单独的 `*` 允许任何来源 | `["*"]` |
 | `expose_headers` | 还要让前端读取的响应头，`X-Request-ID`、`Content-Language`、`Retry-After`、`Location`、`Content-Disposition` 总是暴露 | 空 |
 | `max_age` | 浏览器缓存预检结果的时间，Chrome 最多缓存 2 小时 | `2h` |
-| `credentials` | 允许携带 cookie，见下文；为 `true` 时 `allowed_origins` 必须逐个列出，不能有 `*` | `false` |
+| `credentials` | 允许携带 cookie，见下文；为 `true` 时 `allowed_origins` 必须逐个列出具体来源 | `false` |
 
-API 只用 [Bearer token](../security/api-tokens.md) 认证，不使用 cookie，所以 `CORS` 默认不允许携带凭据：其他网站的网页拿不到用户的 token，允许任何来源也是安全的。唯一的例外是单页应用保存 refresh token 的 [cookie](../security/api-tokens.md#single-page-applications)：单页应用与 API 在同一站点的不同子域名（`app.example.com` 与 `api.example.com`）时，设置 `credentials: true` 并列出单页应用的来源。cookie 的 `Path` 只包含刷新和登出接口，其他接口照常收不到 cookie。请求头按预检请求声明的原样允许，`Authorization` 不需要单独配置。
+API 只用 [Bearer token](../security/api-tokens.md) 认证，所以 `CORS` 默认关闭凭据：token 只在你的前端中，允许任何来源也是安全的。唯一的例外是单页应用保存 refresh token 的 [cookie](../security/api-tokens.md#single-page-applications)：单页应用与 API 在同一站点的不同子域名（`app.example.com` 与 `api.example.com`）时，设置 `credentials: true` 并列出单页应用的来源。ookie 的 `Path` 只包含刷新和登出接口，只有这两个接口收到 cookie。请求头按预检请求声明的原样允许，`Authorization` 自动包含在内。
 
 预检请求（`OPTIONS`）直接以 `204` 应答，不进入路由、认证和限流，所以要把 `CORS` 安装在它们之前。`401`、`429` 等错误响应同样带有 CORS 头，前端能读到错误内容。
 
@@ -305,7 +305,7 @@ ops := router.With(
 <a id="app-version"></a>
 ## App 最低版本
 
-装在手机和电脑上的 App 不会全部及时升级。接口做了旧版本处理不了的变更，或者旧版本有安全问题时，要让它们停止调用接口，提示用户升级。`httpx.AppVersion` 读取 App 在每个请求中带的版本：
+装在手机和电脑上的 App 升级有快有慢。接口做了旧版本处理不了的变更，或者旧版本有安全问题时，要让它们停止调用接口，提示用户升级。`httpx.AppVersion` 读取 App 在每个请求中带的版本：
 
 ```http
 X-App-Version: ios/1.4.2
@@ -366,7 +366,7 @@ router.Use(httpx.Compress())
 - 已经带 `Content-Encoding` 的响应，例如[界面组件](../responses/components.md)预先压缩的样式表和脚本；
 - `Range` 请求的部分响应。
 
-[服务端推送](../responses/sse.md)和 [WebSocket](../libraries/realtime.md) 不受影响：`text/event-stream` 直接写出，每条事件立即送达；带 `Upgrade` 请求头的握手原样交给处理器。[静态资源](../responses/assets.md)的 `ETag` 保持不变，浏览器协商时照常得到 `304`。
+[服务端推送](../responses/sse.md)和 [WebSocket](../libraries/realtime.md) 照常工作：`text/event-stream` 直接写出，每条事件立即送达；带 `Upgrade` 请求头的握手原样交给处理器。[静态资源](../responses/assets.md)的 `ETag` 保持不变，浏览器协商时照常得到 `304`。
 
 <a id="metrics"></a>
 ## 指标
@@ -472,12 +472,12 @@ requireArticles(&legacy)
 路由中间件在 Router 上的全局中间件之后、处理器之前执行。
 
 > [!TIP]
-> 认证请不要自己写路由中间件，而是使用 [`rest.RequireBearer`](../security/authentication.md#protecting-routes)。它在检查凭据的同时，还会在 OpenAPI 文档中标记该路由需要认证，确保运行行为和文档一致。
+> 认证使用 [`rest.RequireBearer`](../security/authentication.md#protecting-routes)。它在检查凭据的同时，还会在 OpenAPI 文档中标记该路由需要认证，确保运行行为和文档一致。
 
 <a id="plain-handlers"></a>
 ## 用于普通 HTTP 处理器
 
-这些中间件不依赖 `rest` 包。如果你有一个普通的 `http.Handler`（例如标准库的 `http.ServeMux`），可以用 `chi.Chain` 为它安装：
+这些中间件可以脱离 `rest` 包使用。如果你有一个普通的 `http.Handler`（例如标准库的 `http.ServeMux`），可以用 `chi.Chain` 为它安装：
 
 ```go
 handler := chi.Chain(httpx.Defaults(cfg.HTTP)...).Handler(mux)
@@ -549,4 +549,4 @@ func WriteProblem(w http.ResponseWriter, status int, detail string)
 func DefaultConfig() Config
 ```
 
-全部字段为默认值的配置。不经过 `config.Load` 时（例如测试中）从它开始修改。
+全部字段为默认值的配置。直接构造配置时（例如测试中）从它开始修改。

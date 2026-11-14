@@ -30,7 +30,7 @@ var (
 )
 
 // Cluster 让多个实例上的 Runs 协作：任何实例都可以查看、续传、插话和取消其他实例上的运行，
-// 部署多个实例时不再需要按对话做粘性路由。
+// 部署多个实例时请求可以落在任意实例上。
 //
 // 对话正在运行时，运行所在的实例持有 locker 中这个对话的锁，其他实例据此判断对话是否忙；
 // 运行的事件经由 hub 广播，其他实例的 Runs.Get 返回它的镜像。hub 和 locker 由应用创建和关闭，
@@ -158,7 +158,7 @@ func chunks(evs []wireEvent) [][]wireEvent {
 	return out
 }
 
-// compact 合并连续的同类文本增量，快照因此和回答的长度相当，而不是和增量的个数相当。
+// compact 合并连续的同类文本增量，快照因此和回答的长度相当。
 func compact(evs []Event) []Event {
 	var out []Event
 	for _, ev := range evs {
@@ -219,7 +219,7 @@ func (o *owner) serve(r *Run) {
 	r.own = o
 	sub := o.c.hub.Subscribe(o.c.ctlTopic(o.key))
 	go func() {
-		<-o.closing // close 之后不再回应控制请求
+		<-o.closing // close 之后停止回应控制请求
 		sub.Close()
 	}()
 	go o.publishLoop()
@@ -245,7 +245,7 @@ func (o *owner) publishLoop() {
 			err := o.lk.Refresh(ctx, lockTTL)
 			cancel()
 			if errors.Is(err, lock.ErrNotHeld) {
-				// 锁已经过期，其他实例可能开始了新的运行：停止这一次，避免两次运行同时写入对话。
+				// 锁已经过期，其他实例可能开始了新的运行：停止这一次，对话同一时刻只有一个写入者。
 				o.c.rs.logger.Error("conversation lock lost; canceling run", "session_id", o.key.SessionID)
 				o.run.Cancel()
 			} else if err != nil {
@@ -292,7 +292,7 @@ func (o *owner) control(sub *broadcast.Subscription) {
 		for msg := range sub.C() {
 			select {
 			case <-o.closing:
-				return // 已被新的运行取代或已过保留期：不再回应，即使订阅还没来得及关闭
+				return // 已被新的运行取代或已过保留期：直接返回，即使订阅还没来得及关闭
 			default:
 			}
 			var c ctlMsg
@@ -414,7 +414,7 @@ func (c *cluster) mirror(ctx context.Context, rs *Runs, key session.Key, want st
 			return nil, err
 		}
 	}
-	sub := c.hub.Subscribe(c.runTopic(key)) // 先订阅再请求快照，期间的事件不会漏掉
+	sub := c.hub.Subscribe(c.runTopic(key)) // 先订阅再请求快照，期间的事件也能收到
 	req := uuid.NewString()
 	if err := c.publish(c.ctlTopic(key), ctlMsg{Kind: "snapshot", Req: req}); err != nil {
 		sub.Close()

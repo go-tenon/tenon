@@ -62,10 +62,10 @@ type Sort struct {
 	Desc  bool
 }
 
-// Asc 按过滤字段 field 从小到大排序，没有值的排在最后。field 不能是切片。
+// Asc 按过滤字段 field 从小到大排序，没有值的排在最后。field 是单值字段。
 func Asc(field string) Sort { return Sort{Field: field} }
 
-// Desc 按过滤字段 field 从大到小排序，没有值的排在最后。field 不能是切片。
+// Desc 按过滤字段 field 从大到小排序，没有值的排在最后。field 是单值字段。
 func Desc(field string) Sort { return Sort{Field: field, Desc: true} }
 
 // Search 在 db 中查询 ix，返回 q.Page 指定的一页结果。

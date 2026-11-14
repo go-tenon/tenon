@@ -23,7 +23,7 @@ func TestEnroll(t *testing.T) {
 	e.account(t, ctx, "c1", "c1@example.com", "correct horse")
 	e.account(t, free, "c2", "c2@example.com", "correct horse")
 
-	// 不要求的租户照常登录。
+	// 其他租户照常登录。
 	if out, err := e.realm.Password(free, login.Email("c2@example.com"), "correct horse"); err != nil || out.Subject.ID != "c2" {
 		t.Fatalf("not required: %+v %v", out, err)
 	}
@@ -96,7 +96,7 @@ func TestRequireTwoFactorExternal(t *testing.T) {
 		t.Fatalf("register: %+v %v", reg, err)
 	}
 
-	// 不要求时，第三方登录照旧不要求第二步。
+	// 未强制时，第三方登录照旧一步完成。
 	free := newRealm(t, login.Options{})
 	if err := free.realm.Attach(ctx, free.db, ref("c1"), github, true); err != nil {
 		t.Fatal(err)
@@ -169,7 +169,7 @@ func TestPolicyMethods(t *testing.T) {
 	if out, err := e.realm.External(ctx, login.External{Provider: "acme_sso", Subject: "u2"}); err != nil || out.Subject.ID != "c2" {
 		t.Fatalf("allowed provider: %+v %v", out, err)
 	}
-	// 找回密码不是登录，不受限制；其他租户不受影响。
+	// 找回密码属于另一个流程，始终允许；其他租户照常。
 	if _, err := e.realm.SendCode(ctx, login.Reset, login.Email("c2@example.com")); err != nil {
 		t.Fatalf("reset: %v", err)
 	}

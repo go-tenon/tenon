@@ -64,7 +64,7 @@ blog/
     └── src/
         ├── App.tsx        页面
         ├── client.ts      创建调用接口的客户端
-        └── api/           生成的客户端，不要手改
+        └── api/           生成的客户端
 ```
 
 Go 代码在 `cmd` 和 `internal` 中，前端代码在 `frontend` 中。构建时前端被打包进 Go 程序，部署时只有一个二进制文件。

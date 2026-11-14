@@ -67,7 +67,7 @@ func testLimiter(t *testing.T, newLimiter func(ratelimit.Config) ratelimit.Limit
 }
 
 // refillsWithoutConsuming 检查容量为 1 的限流器 l：取得配额后的连续调用都被拒绝且不消耗配额，
-// 等待 Retry-After 之后配额回满。调用耗时超过 interval 的 3/4、结果不能说明问题时返回 false。
+// 等待 Retry-After 之后配额回满。调用耗时超过 interval 的 3/4、结果失去意义时返回 false。
 func refillsWithoutConsuming(t *testing.T, l ratelimit.Limiter, interval time.Duration) bool {
 	t.Helper()
 	ctx := context.Background()

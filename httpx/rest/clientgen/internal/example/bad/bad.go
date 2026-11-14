@@ -1,4 +1,4 @@
-// Package bad 是 clientgen 测试用的、不能生成客户端的类型。
+// Package bad 是 clientgen 测试用的、无法生成客户端的类型。
 package bad
 
 import (
@@ -22,7 +22,7 @@ type MoneyOutput struct {
 	}
 }
 
-// RowOutput 用到了不能复制、也没有允许导入的第三方类型。
+// RowOutput 用到了一个无法复制、也没有列入允许导入的第三方类型。
 type RowOutput struct {
 	Body struct {
 		Deleted bun.NullTime `json:"deleted"`

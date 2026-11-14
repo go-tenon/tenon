@@ -21,10 +21,10 @@ var (
 	// ErrInvalid 表示短信本身不合法：号码不是 E.164 格式、模板名为空、变量名为空。换哪个服务商都一样。
 	ErrInvalid = errors.New("sms: invalid message")
 	// ErrRejected 表示服务商拒绝向这个号码发送：号码不存在或格式不被接受、停机、在黑名单中、用户退订。
-	// 换服务商也发不到，Failover 不会换用下一个。
+	// 换服务商也发不到，Failover 直接返回。
 	ErrRejected = errorx.Define(errorx.InvalidArgument, "sms.rejected")
 	// ErrLimited 表示触发了服务商对这个号码的频率限制，例如同一号码 30 秒内只能收一条。
-	// 这是服务商的防刷保护，Failover 不会换用下一个服务商绕过它。
+	// 这是服务商的防刷保护，Failover 直接返回，尊重这个限制。
 	ErrLimited = errorx.Define(errorx.ResourceExhausted, "sms.limited")
 )
 

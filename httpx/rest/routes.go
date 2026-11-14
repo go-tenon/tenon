@@ -129,7 +129,7 @@ func docRoutes(cfg huma.Config) map[string]bool {
 }
 
 // APIs 遍历 router（包括挂载的子路由），按首次出现的顺序返回其中用 New 创建的全部 API。
-// 不调用任何处理器。没有注册任何路由、也关闭了文档端点的 API 找不到。
+// 只读取路由表。找得到的是注册了路由或开启了文档端点的 API。
 func APIs(router chi.Routes) []*API {
 	var apis []*API
 	// Walk 只会返回回调产生的错误；这里的回调始终成功。

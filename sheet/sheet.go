@@ -15,7 +15,7 @@
 //		// rec.Line、rec.Data、rec.Errors
 //	}
 //
-// 导出时，Columns 描述每一列，Writer 边写边输出，不需要把整张表放在内存中：
+// 导出时，Columns 描述每一列，Writer 边写边输出，内存占用与表的大小无关：
 //
 //	w := sheet.NewWriter(out, sheet.XLSX)
 //	w.Write(columns.Header()...)

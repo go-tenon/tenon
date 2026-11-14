@@ -1,8 +1,8 @@
 # 全文搜索
 
-`search` 包在应用自己的数据库中提供全文搜索：按关键词查找文章，带过滤、排序、分页、分面统计和命中词高亮，不需要额外部署搜索服务。
+`search` 包在应用自己的数据库中提供全文搜索：按关键词查找文章，带过滤、排序、分页、分面统计和命中词高亮，全部在 PostgreSQL 中完成。
 
-中文是重点。PostgreSQL 自带的全文检索不切分中文，zhparser 之类的扩展在托管数据库上通常装不了。`search` 在应用中分词，把切分好的词写入 `tsvector`，不依赖数据库扩展。
+中文是重点。`search` 在应用中分词，把切分好的词写入 `tsvector`，只用到 PostgreSQL 自带的全文检索，托管数据库上同样可用。
 
 这个包不监听模型的保存自动同步：批量更新和原生 SQL 会绕过模型事件，索引就悄悄过期了。同步由业务动作在修改数据的事务中显式发起，通过数据库队列执行，事务回滚时同步也一起取消。
 
@@ -161,7 +161,7 @@ func (a *Search) HTTP(ctx context.Context, in *SearchInput) (*SearchOutput, erro
 | `filter` | 过滤、排序和分面用的值 | 字符串、布尔、整数、浮点数、`time.Time`、实现 `encoding.TextMarshaler` 的类型（如 `uuid.UUID`），以及它们的切片（多个值）和指针（`nil` 为没有值） |
 | `tenant` | 文档所在的租户，见[多租户](#tenancy) | `string` |
 
-查询、高亮和分面都按字段的 JSON 名称引用字段，例如 `author_id`。文档整体编码为 JSON 保存在索引中，搜索结果直接解码出 `SearchDoc`，不需要再查一次文章表，所以文档只放展示结果需要的字段。标签写错时 `Define` 直接 panic，程序启动时就能发现。
+查询、高亮和分面都按字段的 JSON 名称引用字段，例如 `author_id`。文档整体编码为 JSON 保存在索引中，搜索结果直接解码出 `SearchDoc`，所以文档只放展示结果需要的字段。标签写错时 `Define` 直接 panic，程序启动时就能发现。
 
 <a id="syncing"></a>
 ## 同步
@@ -186,7 +186,7 @@ article.SearchIndex.Handle(w, a.db, article.LoadSearchDocs, article.ScanSearchKe
 - 同一个 key 的同步依次执行，后执行的一定读到更新的数据。`LoadFunc` 执行期间持有这个 key 的锁，所以它只应读取数据。
 - 删除文章同样调用 `Sync`，`LoadSearchDocs` 读不到文章，索引中的文档随之删除。
 - 一个文档最多索引前 `search.MaxTerms`（16383）个词，大约一万多字，之后的文字搜不到。更长的内容按[一个 key 多个文档](#multiple-documents)切分。
-- 文档无法建索引时（例如过滤字段的值超过 191 字节），任务不再重试，直接转入[失败任务表](../libraries/queue.md#failed-jobs)。
+- 文档无法建索引时（例如过滤字段的值超过 191 字节），任务直接转入[失败任务表](../libraries/queue.md#failed-jobs)。
 
 修改了 `SearchDoc` 的字段或者[分词器](#tokenizers)之后，已有的文档要按新的方式重新写入，见[重建索引](#reindexing)。
 
@@ -198,7 +198,7 @@ article.SearchIndex.Handle(w, a.db, article.LoadSearchDocs, article.ScanSearchKe
 <a id="refreshing"></a>
 ### 立即同步
 
-`Refresh` 不经过队列，立即同步并返回，适合测试和需要马上能搜到的场合：
+`Refresh` 直接同步并返回，适合测试和需要马上能搜到的场合：
 
 ```go
 err := article.SearchIndex.Refresh(ctx, db, article.LoadSearchDocs, item.ID.String())
@@ -224,16 +224,16 @@ $ ./bin/api search reindex articles
 重建完成：12000 个 key，其中 0 个无法建索引
 ```
 
-重建由 worker 执行，命令只负责发起和显示进度，按 Ctrl-C 只停止查看；加上 `--detach` 发起后立即返回。重建写入索引的一个新版本，完成之前查询仍然使用原来的版本，用户不会搜到半个索引：
+重建由 worker 执行，命令只负责发起和显示进度，按 Ctrl-C 只停止查看；加上 `--detach` 发起后立即返回。重建写入索引的一个新版本，完成之前查询仍然使用原来的版本，用户始终搜到完整的索引：
 
-- 发起之后，同步同时写入原来的版本和新版本，重建期间修改的文章不会漏掉。
-- 重建任务用 `ScanSearchKeys` 每次列出 500 个 key，逐个用 `LoadSearchDocs` 读取并写入新版本。`ScanSearchKeys` 返回的 key 读不到文档也没关系，它不会被写入。
+- 发起之后，同步同时写入原来的版本和新版本，重建期间修改的文章也会写进新版本。
+- 重建任务用 `ScanSearchKeys` 每次列出 500 个 key，逐个用 `LoadSearchDocs` 读取并写入新版本。`ScanSearchKeys` 返回的 key 读不到文档时直接跳过。
 - 每处理完一批保存一次进度。worker 重启或者任务出错重试时，从上次保存的地方继续。
 - 全部写入后，新版本成为查询使用的版本，原来版本的数据随后删除。
 
 重建期间查询的仍是原来的数据：新加的过滤字段在其中没有值；换了分词器时，查询按新的方式分词，可能搜不全原来的数据。新加的过滤字段可以分两次部署：先部署只修改 `SearchDoc` 的版本并重建，再部署用到这个字段的查询。
 
-同一个索引再次发起重建时，正在进行的重建被取代，它的操作变为失败，错误码是 `search.reindex_superseded`。一个文档无法建索引时，这个 key 计为失败，不影响其他 key。
+同一个索引再次发起重建时，正在进行的重建被取代，它的操作变为失败，错误码是 `search.reindex_superseded`。一个文档无法建索引时，这个 key 计为失败，其他 key 照常处理。
 
 重建是一个[后台操作](operations.md)，类型是 `search.reindex.articles`。在管理后台发起时直接调用 `Reindex`，操作属于发起的管理员，出现在这个管理员的操作列表中：
 
@@ -274,9 +274,9 @@ q.Filter = search.And(
 )
 ```
 
-值按字段的类型比较，数字和时间按大小而不是按文字。切片字段只要有一个值满足条件就算满足，`Not(Eq("tags", "go"))` 表示没有一个标签是 `go`。
+值按字段的类型比较，数字和时间按大小比较。切片字段只要有一个值满足条件就算满足，`Not(Eq("tags", "go"))` 表示没有一个标签是 `go`。
 
-`Sort` 按 `filter` 字段排序，可以有多个；没有值的文档排在最后。切片字段不能排序。设置了 `Sort` 时先按它排序，再按相关度。
+`Sort` 按 `filter` 字段排序，可以有多个；没有值的文档排在最后。排序只用于单值字段。设置了 `Sort` 时先按它排序，再按相关度。
 
 <a id="facets"></a>
 ### 分面
@@ -293,7 +293,7 @@ res, err := SearchIndex.Search(ctx, db, search.Query{Text: in.Q, Facets: []strin
 <a id="highlighting"></a>
 ### 高亮
 
-有查询文本时，`Hit.Highlights` 给出命中的文本字段的摘要。摘要按命中与否分成若干段，不需要拼接 HTML，页面中把命中的部分放进 `<mark>`：
+有查询文本时，`Hit.Highlights` 给出命中的文本字段的摘要。摘要按命中与否分成若干段，页面中把命中的部分放进 `<mark>`：
 
 ```templ
 templ snippet(s search.Snippet) {
@@ -324,12 +324,12 @@ type TicketDoc struct {
 res, err := TicketIndex.Search(ctx, db, search.Query{Text: in.Q, Tenant: sub.Tenant})
 ```
 
-忘记传入租户时查到的是平台本身的文档，不会泄露其他租户的数据。没有 `tenant` 字段的索引传入租户会返回错误。
+忘记传入租户时查到的是平台本身的文档，各租户的数据始终隔离。没有 `tenant` 字段的索引传入租户会返回错误。
 
 <a id="tokenizers"></a>
 ## 分词
 
-默认的 `search.Bigram` 不需要词典：中文、日文和韩文按相邻的两个字切分，“全文搜索”切分为“全文”“文搜”“搜索”；其他文字按连续的字母和数字切分，转为小写，全角转为半角。它不认识词语，查询“文搜”也会命中“全文搜索”，召回多、精度一般，对大多数站内搜索已经够用。
+默认的 `search.Bigram` 按字切分：中文、日文和韩文按相邻的两个字切分，“全文搜索”切分为“全文”“文搜”“搜索”；其他文字按连续的字母和数字切分，转为小写，全角转为半角。因此查询“文搜”也会命中“全文搜索”，召回多、精度一般，对大多数站内搜索已经够用。
 
 需要按词语切分时使用 `search/gse`，它基于 [gse](https://github.com/go-ego/gse) 的中文词典：
 

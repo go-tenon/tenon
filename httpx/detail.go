@@ -15,7 +15,7 @@ import (
 //
 // 业务错误以错误码为消息 ID，按 Locale 协商的语言翻译，errorx.Public 参数作为模板数据；
 // 当前语言缺少译文时使用默认语言，都没有时返回 StatusOf(err) 的状态描述。
-// 其他错误一律返回状态描述，内部错误信息不会出现在结果中。
+// 其他错误一律返回状态描述，内部错误信息只留在日志中。
 //
 // 业务错误码会写入访问日志的 code 字段；有 Locale 但缺少译文时另外标记 untranslated。
 func ErrorDetail(ctx context.Context, err error) string {

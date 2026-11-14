@@ -101,11 +101,11 @@ func main() {
 	log.Printf("shadcn-templ %s: %s, %d extras, %d stylesheets", version, core, len(extras), len(styles))
 }
 
-// chromaSkip 是 chroma 样式中不需要的规则：背景用主题颜色（docs.css），不输出行号和高亮行。
+// chromaSkip 是 chroma 样式中跳过的规则：背景用主题颜色（docs.css），行号和高亮行省略。
 var chromaSkip = []string{"Background", "PreWrapper", "Line", "LineLink", "LineTableTD", "LineTable", "LineHighlight", "LineNumbersTable", "LineNumbers", "CodeLine"}
 
 // writeChroma 生成 css/docs-chroma.css：web/docs 代码块的高亮颜色，亮色是 chroma 的 github，暗色是 github-dark。
-// 亮色的规则只在没有 .dark 时生效：暗色样式没有覆盖的 token 使用正文颜色，而不是亮色的深色。
+// 亮色的规则只在没有 .dark 时生效：暗色样式没有覆盖的 token 使用正文颜色。
 func writeChroma() {
 	f := chromahtml.New(chromahtml.WithClasses(true))
 	var b strings.Builder
@@ -125,7 +125,7 @@ func writeChroma() {
 }
 
 // writeClasses 从组件源码（.templ、手写的 .go、.js）中提取空白和引号分隔的词，去重后写入 css/classes.txt。
-// Tailwind 只需要类名候选，不需要源码；这样应用的 Tailwind 不必知道模块缓存中的路径。
+// Tailwind 只需要类名候选；这样应用的 Tailwind 只读取应用自己的文件。
 func writeClasses(dir string) {
 	files, _ := filepath.Glob(filepath.Join(dir, "components/*/*"))
 	own, _ := filepath.Glob("*.templ")
@@ -237,7 +237,7 @@ func tailwind(style string) string {
 	return write("style-"+style, ".css", b)
 }
 
-// write 把 data 以 gzip 压缩写入 assets/<prefix>-<哈希><ext>.gz，返回不带 .gz 的文件名。
+// write 把 data 以 gzip 压缩写入 assets/<prefix>-<哈希><ext>.gz，返回去掉 .gz 的文件名。
 // gzip 头不含时间和文件名，同样的内容总是得到同样的文件。
 func write(prefix, ext string, data []byte) string {
 	sum := sha256.Sum256(data)

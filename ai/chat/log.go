@@ -41,7 +41,7 @@ func (a slogAdapter) Errorf(format string, args ...any) {
 	a.log(slog.LevelError, fmt.Sprintf(format, args...))
 }
 
-// Fatal 和 Fatalf 只记录错误，不退出进程：框架组件不应终止应用。
+// Fatal 和 Fatalf 只记录错误，进程继续运行：应用的生命周期由应用自己决定。
 func (a slogAdapter) Fatal(args ...any) { a.log(slog.LevelError, fmt.Sprint(args...)) }
 func (a slogAdapter) Fatalf(format string, args ...any) {
 	a.log(slog.LevelError, fmt.Sprintf(format, args...))

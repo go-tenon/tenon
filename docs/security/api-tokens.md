@@ -45,7 +45,7 @@ rest.RequireBearer(api, tokens.Validate)(&op)
 err = tokens.Revoke(ctx, sub, sub.Credential)
 ```
 
-客户端把 `plain` 放在 `Authorization: Bearer` 请求头中。数据库只保存令牌的哈希，所以 `plain` 只在签发时出现一次。用户每次使用令牌，它的有效期就向后顺延；长时间不用，令牌会自动过期。
+客户端把 `plain` 放在 `Authorization: Bearer` 请求头中。数据库只保存令牌的哈希，所以 `plain` 只在签发时出现一次。用户每次使用令牌，它的有效期就向后顺延；空闲超过时限，令牌自动过期。
 
 <a id="configuration"></a>
 ## 配置
@@ -66,7 +66,7 @@ api_token:
   remember_idle_timeout: 168h # 登录时选择“记住我”的空闲时长
 ```
 
-上面是默认值。登录 token 的截止时间是“签发时间 + `lifetime`”与“最近使用时间 + 空闲时长”中较早的一个。不透明的登录 token 不需要刷新：每次使用都会延长它的有效期，收到 `401` 时让用户重新登录即可。[JWT 模式](#jwt)按同样的规则计算，只是在刷新时延长。
+上面是默认值。登录 token 的截止时间是“签发时间 + `lifetime`”与“最近使用时间 + 空闲时长”中较早的一个。不透明的登录 token 每次使用都会延长它的有效期，收到 `401` 时让用户重新登录即可。[JWT 模式](#jwt)按同样的规则计算，只是在刷新时延长。
 
 有效期在签发时写入 token：修改配置只影响之后签发的 token，已经签发的 token 仍然按签发时的有效期滑动。
 
@@ -88,7 +88,7 @@ tokens := apitoken.NewStore(a.db, a.cfg.APIToken)
 requireArticles := rest.RequireBearer(api, tokens.Validate, "articles")
 ```
 
-产品有多套账号、需要不同的有效期时，例如商家员工空闲 1 天失效、移动端的客户 90 天才过期，每套账号用自己的配置创建一个 `Store` 签发。它们共用 `api_tokens` 表，`Validate` 不读取配置，用其中任何一个校验都可以：
+产品有多套账号、需要不同的有效期时，例如商家员工空闲 1 天失效、移动端的客户 90 天才过期，每套账号用自己的配置创建一个 `Store` 签发。它们共用 `api_tokens` 表，`Validate` 只读表，用其中任何一个校验都可以：
 
 ```go
 merchantTokens := apitoken.NewStore(a.db, a.cfg.MerchantToken)
@@ -220,7 +220,7 @@ rest.Register(api, op, createToken(tokens))
 | `Tenant` | 不为空时，令牌只能在这个租户中使用 |
 | `ExpiresAt` | 过期时间，零值表示不过期 |
 
-令牌能做的是**用户当前的权限与 `Scopes` 的交集**：`Scopes` 写了 `*`，也不会超出用户本人的权限；用户被收回权限后，令牌随之收窄，不需要重新创建。个人访问令牌不按空闲时间过期，也不受 `RevokeOthers` 影响。
+令牌能做的是**用户当前的权限与 `Scopes` 的交集**：`Scopes` 写了 `*`，也以用户本人的权限为上限；用户被收回权限后，令牌随之收窄。个人访问令牌按 `ExpiresAt` 过期，`RevokeOthers` 保留它。
 
 <a id="listing-tokens"></a>
 ## 设备与令牌列表
@@ -252,7 +252,7 @@ for _, t := range list {
 <a id="loading-permissions"></a>
 ## 加载权限
 
-token 不保存用户的权限，所以权限变化、账号停用都能立即生效。权限由 `rest.Options.Accounts` 中这套账号的 Resolver 在每个请求中按用户当前的状态加载，见[每次请求加载权限](authentication.md#resolving-subjects)：
+token 只标识用户，权限在每个请求中重新加载，所以权限变化、账号停用都能立即生效。权限由 `rest.Options.Accounts` 中这套账号的 Resolver 在每个请求中按用户当前的状态加载，见[每次请求加载权限](authentication.md#resolving-subjects)：
 
 ```go
 api := rest.New(router, rest.Options{
@@ -273,18 +273,18 @@ api := rest.New(router, rest.Options{
 })
 ```
 
-个人访问令牌的 `Scopes` 由 `Validate` 填入，Resolver 不需要处理：`sub.Can` 同时检查两者。
+个人访问令牌的 `Scopes` 由 `Validate` 填入，`sub.Can` 同时检查权限和 `Scopes`。
 
 <a id="jwt"></a>
 ## JWT 模式
 
-不透明的登录 token 每个请求都要查一次表。JWT 模式改为签发一对凭据：请求带短期的 access token（JWT），校验只验签名和有效期，不访问数据库；access token 过期后，用 refresh token 换一对新的。适合请求量大、或者有其他服务也要校验 token 的场景。权限仍由 Resolver 在每个请求中[加载](#loading-permissions)，使用 `authz` 时可以[缓存权限](authorization.md#caching-permissions)，请求就不再访问数据库。
+不透明的登录 token 每个请求都要查一次表。JWT 模式改为签发一对凭据：请求带短期的 access token（JWT），校验只验签名和有效期，在内存中完成；access token 过期后，用 refresh token 换一对新的。适合请求量大、或者有其他服务也要校验 token 的场景。权限仍由 Resolver 在每个请求中[加载](#loading-permissions)，使用 `authz` 时可以[缓存权限](authorization.md#caching-permissions)，请求就完全在内存中完成。
 
 每次登录仍然是 `api_tokens` 中的一行，[设备列表](#listing-tokens)、[撤销](#revoking-tokens)、[过期清理](#cleanup)都照常使用。区别在于撤销的效果：refresh token 立即失效，已经签发的 access token 在有效期（默认 10 分钟）内仍然可以发起请求。撤销需要立即生效的账号体系继续用不透明 token。两种方式可以在同一个应用中并存，例如运营后台和商家后台用不透明 token，客户 App 用 JWT。
 
-[SSE](../responses/sse.md#revoked-credentials) 和[实时连接](../libraries/realtime.md#revocation)这类长连接不受这个限制：复查凭据时 `JWT.Validate` 按登录 ID 查一次表，撤销后连接和不透明 token 一样，最多 30 秒内结束，调用 `Recheck*` 时立即结束。复查只看登录是否还在，不看 access token 是否过期，所以已经建立的连接不会每 10 分钟断开一次。断线后重连时 access token 可能已经过期，实时连接的客户端要设置 [`getToken`](../libraries/realtime.md#tokens) 换新的。
+[SSE](../responses/sse.md#revoked-credentials) 和[实时连接](../libraries/realtime.md#revocation)这类长连接另有机制：复查凭据时 `JWT.Validate` 按登录 ID 查一次表，撤销后连接和不透明 token 一样，最多 30 秒内结束，调用 `Recheck*` 时立即结束。复查只看登录是否还在，所以已经建立的连接可以一直保持，跨过 access token 的有效期。断线后重连时 access token 可能已经过期，实时连接的客户端要设置 [`getToken`](../libraries/realtime.md#tokens) 换新的。
 
-用 `Store` 创建 `apitoken.JWT`。`HMACKeys` 从[应用密钥](encryption.md#configuration)派生签名密钥，不需要另外配置：
+用 `Store` 创建 `apitoken.JWT`。`HMACKeys` 从[应用密钥](encryption.md#configuration)派生签名密钥：
 
 ```go
 customerTokens := apitoken.NewStore(a.db, a.cfg.CustomerToken)
@@ -313,7 +313,7 @@ pair, err := customerJWT.Refresh(ctx, in.Body.RefreshToken)
 
 ### 轮换与被盗识别
 
-refresh token 每次刷新都会更换。上一个 token 在轮换后的 30 秒内（`JWTConfig.Grace`）仍然可以刷新，但只得到新的 access token，这样客户端同时发起的几次刷新不会互相作废。超过宽限期还有人用上一个 token 刷新，说明它被另一方持有：框架撤销这次登录，双方都需要重新登录，然后调用 `OnReuse`：
+refresh token 每次刷新都会更换。上一个 token 在轮换后的 30 秒内（`JWTConfig.Grace`）仍然可以刷新，但只得到新的 access token，这样客户端同时发起的几次刷新都能成功。超过宽限期还有人用上一个 token 刷新，说明它被另一方持有：框架撤销这次登录，双方都需要重新登录，然后调用 `OnReuse`：
 
 ```go
 customerJWT := apitoken.NewJWT(customerTokens, apitoken.JWTConfig{
@@ -326,7 +326,7 @@ customerJWT := apitoken.NewJWT(customerTokens, apitoken.JWTConfig{
 
 ### access token 的内容
 
-access token 只包含签发时确定的信息，**不包含权限**；权限仍由 `rest.Options.Accounts` 中的 Resolver 在每个请求中[加载](#loading-permissions)。Resolver 查库时，请求仍会访问数据库；不需要权限的入口可以把 Resolver 设为 `nil`。
+access token 只包含签发时确定的身份信息，**权限另行加载**；权限仍由 `rest.Options.Accounts` 中的 Resolver 在每个请求中[加载](#loading-permissions)。Resolver 查库时，请求仍会访问数据库；只认身份的入口可以把 Resolver 设为 `nil`。
 
 | claim | 内容 | 校验后的主体 |
 | --- | --- | --- |
@@ -365,12 +365,12 @@ OAuth 令牌只能用于授权时的资源：`Validate` 不接受它，`Validate
 mcpx.HandlerOptions{Validate: tokens.ValidateFor("https://example.com/mcp") /* … */}
 ```
 
-它出现在 `List` 中，`ClientName` 用于“已连接的应用”页面，`Revoke` 断开连接；`RevokeOthers` 不影响它，`RevokeSubject` 一并撤销。客户端交回令牌时，授权服务器调用 `RevokeToken`。
+它出现在 `List` 中，`ClientName` 用于“已连接的应用”页面，`Revoke` 断开连接；`RevokeOthers` 保留它，`RevokeSubject` 一并撤销。客户端交回令牌时，授权服务器调用 `RevokeToken`。
 
 <a id="cleanup"></a>
 ## 过期清理
 
-过期的 token 不会再通过校验，但行仍然留在表中。`Store` 不在后台启动清理协程，而是提供 `Cleanup`，每次最多删除 `limit` 个过期 token，可以注册为[定时任务](../libraries/scheduling.md)：
+过期的 token 校验失败，但行仍然留在表中。`Store` 提供 `Cleanup` 来清理，每次最多删除 `limit` 个过期 token，可以注册为[定时任务](../libraries/scheduling.md)：
 
 ```go
 n, err := tokens.Cleanup(ctx, 1000)
@@ -382,10 +382,10 @@ n, err := tokens.Cleanup(ctx, 1000)
 浏览器中的单页应用（例如 React）使用 [JWT 模式](#jwt)，并把 refresh token 放进 cookie：
 
 - access token 只保存在内存中，请求照常带 `Authorization: Bearer`；
-- refresh token 保存在 `apitoken.RefreshCookie` 描述的 cookie 中：`HttpOnly`，页面上的脚本读不到；`SameSite=Strict`，其他站点发起的请求不带它；`Path` 只包含刷新和登出接口，其他请求也不带它；
+- refresh token 保存在 `apitoken.RefreshCookie` 描述的 cookie 中：`HttpOnly`，页面上的脚本读不到；`SameSite=Strict`，只随本站发起的请求发送；`Path` 只包含刷新和登出接口，只随这两个请求发送；
 - 打开页面（包括刷新页面、新标签页）时先调用一次刷新接口拿到 access token，失败就显示登录页。
 
-这样 XSS 只能在页面打开期间借用用户的权限，拿不走长期有效的凭据。API 本身仍然只认 Bearer：cookie 不是 API 的凭据，所以不需要跨站请求伪造的防护。
+这样 XSS 最多在页面打开期间借用用户的权限，长期有效的凭据始终在 cookie 中。API 本身仍然只认 Bearer，cookie 只用于刷新，所以 API 天然免疫跨站请求伪造。
 
 不透明的登录 token 没有 refresh token，放进 cookie 就成了 API 的凭据，所以浏览器中的单页应用不使用它。App、桌面端、小程序和脚本照常在请求体中传递 refresh token，或者使用不透明 token。同一组接口可以同时服务两种客户端：登录时请求体带 `cookie: true` 的写 cookie，否则把 refresh token 放在响应体中；刷新时请求体中有 refresh token 就用它，没有就读 cookie：
 
@@ -457,7 +457,7 @@ func (h *handlers) logout(ctx context.Context, _ *struct{}) (*LogoutOutput, erro
 
 | 单页应用与 API | 需要的设置 |
 | --- | --- |
-| 同源，例如由 [`httpx.SPA`](../responses/spa.md) 提供 | 不需要 |
+| 同源，例如由 [`httpx.SPA`](../responses/spa.md) 提供 | 保持默认 |
 | 同一站点的不同子域名，例如 `app.example.com` 与 `api.example.com` | API 的 [CORS](../http/middleware.md#cors) 设置 `credentials: true`，逐个列出来源；`RefreshCookie.Domain` 设为 `example.com`；前端刷新时 `credentials: "include"` |
 | 不同站点，例如 `example.com` 与 `example-api.io` | 浏览器拦截第三方 cookie，用不了 cookie。退回请求体方式，refresh token 只能放在 `localStorage` 中，页面上的脚本都能读到，要格外防范 XSS |
 

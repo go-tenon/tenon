@@ -19,7 +19,7 @@ var _ ratelimit.Limiter = (*Limiter)(nil)
 
 // Limiter 把每个 key 的理论到达时间（tat）存为一个 Redis 键，键名是 name:key。
 // 算法与 ratelimit.Memory 相同；一次 Allow 是一次脚本调用，时间取 Redis 服务端时钟。
-// 键在配额回满时过期，由 Redis 自动删除，不需要清理。
+// 键在配额回满时过期，由 Redis 自动删除。
 type Limiter struct {
 	rdb    rueidis.Client
 	prefix string
@@ -48,7 +48,7 @@ func New(rdb rueidis.Client, name string, cfg ratelimit.Config) *Limiter {
 	}
 }
 
-// allow 放行时把 tat 推后 step 并返回 0，拒绝时不修改并返回需要等待的微秒数。
+// allow 放行时把 tat 推后 step 并返回 0，拒绝时保持原值并返回需要等待的微秒数。
 // 时间以微秒计，当前的 Unix 微秒数在 Lua 的双精度数中可以精确表示。
 var allow = rueidis.NewLuaScript(`
 local t = redis.call("TIME")

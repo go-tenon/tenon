@@ -217,7 +217,7 @@ func TestSendErrors(t *testing.T) {
 	if err := strict.Send(ctx, msg); err == nil {
 		t.Error("starttls not enforced")
 	}
-	// go-mail 不会在未加密的连接上发送明文密码。
+	// go-mail 只在加密的连接上发送密码。
 	cfg = config(srv.port())
 	cfg.Username, cfg.Password = "user", "secret"
 	plain, _ := smtp.New(cfg)

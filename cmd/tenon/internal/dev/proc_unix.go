@@ -14,7 +14,7 @@ func interruptGroup(cmd *exec.Cmd) {
 	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGINT) }
 }
 
-// ownGroup 让应用在自己的进程组中运行：终端的 Ctrl+C 不会直接打断它，由 dev 平滑停止。
+// ownGroup 让应用在自己的进程组中运行：终端的 Ctrl+C 只送到 dev，由 dev 平滑停止它。
 func ownGroup(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 }

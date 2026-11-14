@@ -31,8 +31,8 @@ type attemptKey struct{}
 type attemptInfo struct{ n, max int }
 
 // AttemptFromContext 返回处理中的任务本次是第几次执行（从 1 开始），以及这是否是最后一次：
-// 本次返回错误时不再重试，任务转入失败任务表。处理函数据此在放弃之前记下最终结果，例如把投递记录标记为失败。
-// 返回 Permanent 包装的错误时无论第几次都不再重试，不需要再看 final。ctx 不是任务处理函数的 context 时返回 0 和 false。
+// 本次返回错误时任务转入失败任务表。处理函数据此在放弃之前记下最终结果，例如把投递记录标记为失败。
+// 返回 Permanent 包装的错误时无论第几次都直接结束，与 final 无关。ctx 不是任务处理函数的 context 时返回 0 和 false。
 func AttemptFromContext(ctx context.Context) (attempt int, final bool) {
 	a, ok := ctx.Value(attemptKey{}).(attemptInfo)
 	if !ok {
@@ -41,7 +41,7 @@ func AttemptFromContext(ctx context.Context) (attempt int, final bool) {
 	return a.n, a.n >= a.max
 }
 
-// Permanent 标记不应重试的错误，例如参数非法或数据已被删除。err 为 nil 时返回 nil。
+// Permanent 标记最终的错误，例如参数非法或数据已被删除。err 为 nil 时返回 nil。
 func Permanent(err error) error {
 	if err == nil {
 		return nil
@@ -62,7 +62,7 @@ func IsPermanent(err error) bool {
 
 // RetryAfter 标记应当在 d 之后重试的错误，代替按执行次数计算的退避时间，
 // 例如第三方接口返回 429 并给出了 Retry-After。d 不大于 0 时立即重试。
-// 重试仍然计入执行次数，次数用完时照常转入失败任务表；同时被 Permanent 包装时不再重试。err 为 nil 时返回 nil。
+// 重试仍然计入执行次数，次数用完时照常转入失败任务表；同时被 Permanent 包装时直接结束。err 为 nil 时返回 nil。
 func RetryAfter(err error, d time.Duration) error {
 	if err == nil {
 		return nil

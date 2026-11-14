@@ -39,9 +39,9 @@ func Private(authorize Authorizer) Rule {
 	return Rule{authorize: authorize}
 }
 
-// ClientPublish 返回允许客户端直接向频道发布消息的规则，用于「正在输入」这类不经过服务器业务逻辑的提示。
+// ClientPublish 返回允许客户端直接向频道发布消息的规则，用于「正在输入」这类由客户端直接转发的提示。
 // 只有已经订阅频道的客户端可以发布。这类消息只发给 WebSocket 客户端，Hub 的订阅收不到；
-// 内容由客户端决定，服务器不做校验，接收方不应当把它当作可信的数据。
+// 内容由客户端决定，接收方按不可信的数据处理。
 func (r Rule) ClientPublish() Rule {
 	r.publish = true
 	return r

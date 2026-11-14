@@ -44,7 +44,7 @@ for _, c := range splitter.Split(doc.Markdown) {
 }
 ```
 
-转换和切分都不访问模型，也不需要网络。得到的分段通常交给[向量检索](vector.md)计算向量，每一段都记着它在原文中的位置和所在的标题，回答问题时可以引用出处。
+转换和切分都在本地完成。得到的分段通常交给[向量检索](vector.md)计算向量，每一段都记着它在原文中的位置和所在的标题，回答问题时可以引用出处。
 
 <a id="converting"></a>
 ## 转换文档
@@ -67,7 +67,7 @@ doc, err := converters.Convert(ctx, format, convert.Input{Reader: r, Name: file.
 
 `doc.Markdown` 是转换结果，`doc.Sections` 是各页（幻灯片、工作表）在其中的区间。转换器可以并发使用；PDF 默认最多同时转换 2 份，用 `all.Options{PDF: pdf.Options{Workers: 4}}` 调整。
 
-中文的纯文本、CSV 和 HTML 有时是 GBK 编码。没有 BOM、也没有声明编码的输入不是合法的 UTF-8 时，用 `Fallback` 解码：
+中文的纯文本、CSV 和 HTML 有时是 GBK 编码。没有 BOM、也没有声明编码的输入，UTF-8 解码失败时改用 `Fallback`：
 
 ```go
 converters := all.New(all.Options{Fallback: simplifiedchinese.GB18030})
@@ -76,7 +76,7 @@ converters := all.New(all.Options{Fallback: simplifiedchinese.GB18030})
 <a id="choosing-converters"></a>
 ### 选择转换器
 
-PDF 转换器使用编译为 WebAssembly 的 PDFium，不需要 cgo，但会让程序大几 MB；Excel 和 HTML 也各自引入了第三方库。只需要部分格式时，自己创建 `convert.Registry`，只注册需要的转换器，没有引入的子包不会编译进程序：
+PDF 转换器使用编译为 WebAssembly 的 PDFium，纯 Go 构建，程序会大几 MB；Excel 和 HTML 也各自引入了第三方库。只需要部分格式时，自己创建 `convert.Registry`，只注册需要的转换器，程序中只包含引入了的子包：
 
 ```go
 var converters convert.Registry
@@ -84,7 +84,7 @@ converters.Register(text.New(text.Options{}), convert.Text, convert.Markdown)
 converters.Register(docx.New(docx.Options{}), convert.DOCX)
 ```
 
-`Registry` 的零值就可以使用。它不会关闭注册的转换器，自己注册的 `pdf.Converter` 要自己关闭。
+`Registry` 的零值就可以使用。注册的转换器由调用者关闭，自己注册的 `pdf.Converter` 要自己关闭。
 
 <a id="limits"></a>
 ### 上限
@@ -99,7 +99,7 @@ converters.Register(docx.New(docx.Options{}), convert.DOCX)
 | `pdf.Options.MaxPages` | PDF 的页数 | 10000 |
 | `pdf.Options.MaxPageChars` | PDF 一页的字符数 | 1 Mi |
 
-零值取默认值，负数表示不限制。`all.Options.Limits` 设置所有转换器的上限，每个转换器自己的 `Options.Limits` 可以覆盖其中的字段。输出在生成过程中就计入上限，不会先生成远超上限的内容再失败。
+零值取默认值，负数表示不限制。`all.Options.Limits` 设置所有转换器的上限，每个转换器自己的 `Options.Limits` 可以覆盖其中的字段。输出在生成过程中就计入上限，超出时立即停止。
 
 <a id="errors"></a>
 ### 错误
@@ -113,7 +113,7 @@ converters.Register(docx.New(docx.Options{}), convert.DOCX)
 | `convert.ErrCorrupt` | 文档已损坏，或者不是声明的格式；二进制格式的空文件也是这种错误 |
 | `convert.ErrTooLarge` | 超出了上面的某个上限，`errors.As` 取出 `*convert.LimitError` 可以知道是哪一个 |
 
-在队列任务中遇到这四种错误时，用 `queue.Permanent` 标记，重试也不会成功，见[下文](#processing-uploads)。读取失败、PDFium 启动失败等其他错误照常重试。
+在队列任务中遇到这四种错误时，用 `queue.Permanent` 标记，这类错误重试也是徒劳，见[下文](#processing-uploads)。读取失败、PDFium 启动失败等其他错误照常重试。
 
 <a id="splitting"></a>
 ## 切分 Markdown
@@ -133,14 +133,14 @@ for _, chunk := range splitter.Split(doc.Markdown) {
 | 选项 | 含义 |
 | --- | --- |
 | `Size` | 目标长度，必填 |
-| `MaxSize` | 长度的硬上限，默认 `Size + Size/5`：略长于 `Size` 的小节保持完整，不会留下很短的尾段 |
+| `MaxSize` | 长度的硬上限，默认 `Size + Size/5`：略长于 `Size` 的小节保持完整，尾段长度适中 |
 | `Overlap` | 与上一段重叠的上限，必须小于 `Size`；在标题处或找不到合适的边界时不重叠 |
 
-长度按码点计算，一个汉字和一个英文字母都算 1，与模型的 token 数并不相等。中文资料的 `Size` 通常取 300 到 800。`Splitter` 不可变，可以在多个 goroutine 中共用。
+长度按码点计算，一个汉字和一个英文字母都算 1，与模型的 token 数是两回事。中文资料的 `Size` 通常取 300 到 800。`Splitter` 不可变，可以在多个 goroutine 中共用。
 
 切分器用 [goldmark](https://github.com/yuin/goldmark) 按 CommonMark 和 GFM 表格识别块结构，另外识别 YAML front matter；用 goldmark 渲染同一份 Markdown 时，两边认定的标题和表格相同。准确的规则、每条保证和病态输入的上限见 `document/split` 的包文档（`go doc github.com/go-tenon/tenon/document/split`）。
 
-与常见的切分器相比：langchaingo 的 `MarkdownTextSplitter` 会重新渲染 Markdown，默认的分隔符也切不开没有空格的中文段落；eino-ext 的标题切分器会去掉每行的首尾空白和空行，代码缩进因此丢失，表格分段也不带表头；两者都不记录分段在原文中的位置。
+`Splitter` 原样保留文本，包括代码缩进、空行和表格的表头，能切开没有空格的中文段落，并记录每个分段在原文中的位置。
 
 <a id="chunk-context"></a>
 ### 分段的上下文
@@ -153,7 +153,7 @@ for _, chunk := range splitter.Split(doc.Markdown) {
 付款应在验收后 30 日内完成……
 ```
 
-正文 `Text` 保持原样，存储和展示时仍然用它。上下文的长度不受 `Size` 限制，很长的标题会完整地出现在它下面的每一段中；模型对输入长度有要求时，自己用 `Headings` 拼接或截断。
+正文 `Text` 保持原样，存储和展示时仍然用它。上下文的长度在 `Size` 之外单独计算，很长的标题会完整地出现在它下面的每一段中；模型对输入长度有要求时，自己用 `Headings` 拼接或截断。
 
 <a id="locating-pages"></a>
 ### 定位原文的页
@@ -197,7 +197,7 @@ func (a *Index) Job(ctx context.Context, job IndexJob) error {
     format, _ := convert.FormatOf(file.Filename)
     doc, err := a.converters.Convert(ctx, format, convert.Input{Reader: r, Name: file.Filename})
     if errorx.KindOf(err) == errorx.InvalidArgument {
-        return queue.Permanent(err) // 加密、损坏、太大：重试也不会成功
+        return queue.Permanent(err) // 加密、损坏、太大：重试也是徒劳
     }
     if err != nil {
         return err
@@ -246,9 +246,9 @@ func (a *Index) Job(ctx context.Context, job IndexJob) error {
 
 几点限制：
 
-- PDF 不还原多栏排版和表格；没有文字层的扫描件得到空的 Markdown，需要 OCR 时先用其他服务识别。只设置了权限密码、打开不需要密码的 PDF 照常转换。
+- PDF 只提取文字层，多栏排版和表格变成连续的文字；没有文字层的扫描件得到空的 Markdown，需要 OCR 时先用其他服务识别。只设置了权限密码、可以直接打开的 PDF 照常转换。
 - 不支持旧的二进制格式 `.doc`、`.xls`、`.ppt`，返回 `convert.ErrUnsupported`。
-- 不提取图片，也不调用任何模型。
+- 只提取文字，全部在本地完成。
 
 `convert.Converter` 只有一个方法，其他格式可以自己实现并注册到 `Registry`，输出 Markdown 后照样用 `split` 切分。
 

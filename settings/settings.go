@@ -44,7 +44,7 @@ type row struct {
 }
 
 // Group 是一组设置，整组保存为 settings 表中的一行 JSON。T 是一个结构体，字段用 json 标签命名。
-// Group 可以并发使用；Tenant 和 WithDB 返回副本，不修改原来的 Group。
+// Group 可以并发使用；Tenant 和 WithDB 返回副本，原来的 Group 保持原样。
 type Group[T any] struct {
 	db       bun.IDB
 	name     string
@@ -58,7 +58,7 @@ type Group[T any] struct {
 // db 必须已执行 settings 迁移。
 //
 // 以下情况 panic，启动时就能发现：db 为 nil；name 为空或包含空白；T 不是结构体；
-// T 或嵌套的结构体中有字段带 omitempty 或 omitzero（零值不会保存，读取时会被默认值覆盖）。
+// T 或嵌套的结构体中有字段带 omitempty 或 omitzero（零值会从 JSON 中省略，读取时又被默认值覆盖）。
 func New[T any](db bun.IDB, name string, defaults T) *Group[T] {
 	if db == nil {
 		panic("settings: nil database")
@@ -88,8 +88,8 @@ func (g *Group[T]) WithDB(db bun.IDB) *Group[T] {
 	return &cp
 }
 
-// Tenant 返回读写租户 id 的设置的副本。租户的设置与全局设置互不影响：租户没有保存过时使用默认值，
-// 不回落到全局设置。id 为空或包含空白时，副本的每个方法都返回 ErrInvalid，不会当作全局设置。
+// Tenant 返回读写租户 id 的设置的副本。租户的设置与全局设置各自独立：租户没有保存过时使用默认值。
+// id 为空或包含空白时，副本的每个方法都返回 ErrInvalid。
 func (g *Group[T]) Tenant(id string) *Group[T] {
 	cp := *g
 	cp.tenant, cp.scoped = id, true
@@ -124,8 +124,8 @@ func (g *Group[T]) Save(ctx context.Context, v T) error {
 	return g.save(ctx, g.db, v)
 }
 
-// Update 在事务中读出设置，交给 fn 修改后保存。并发的 Update 依次执行，不会丢失修改。
-// fn 返回错误时不保存，Update 返回这个错误。g 使用的数据库是 database.RunInTx 的事务时以保存点执行。
+// Update 在事务中读出设置，交给 fn 修改后保存。并发的 Update 依次执行，每次修改都会保留。
+// fn 返回错误时放弃保存，Update 返回这个错误。g 使用的数据库是 database.RunInTx 的事务时以保存点执行。
 func (g *Group[T]) Update(ctx context.Context, fn func(*T) error) error {
 	if err := g.check(); err != nil {
 		return err
@@ -154,7 +154,7 @@ func (g *Group[T]) Update(ctx context.Context, fn func(*T) error) error {
 	})
 }
 
-// Reset 删除保存的设置，之后 Get 返回默认值。没有保存过时什么也不做。
+// Reset 删除保存的设置，之后 Get 返回默认值。没有保存过时直接返回。
 func (g *Group[T]) Reset(ctx context.Context) error {
 	if err := g.check(); err != nil {
 		return err
@@ -266,7 +266,7 @@ func merge(s shape, def, stored json.RawMessage) (json.RawMessage, error) {
 	return json.Marshal(d)
 }
 
-// validKey 报告名称不为空，也不包含空白。
+// validKey 报告名称非空且不含空白。
 func validKey(s string) bool {
 	return s != "" && !strings.ContainsFunc(s, unicode.IsSpace)
 }

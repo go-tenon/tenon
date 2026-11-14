@@ -34,7 +34,7 @@ CREATE INDEX articles_author_id_idx ON articles (author_id);
 ALTER TABLE articles DROP COLUMN author_id, DROP COLUMN published_at;
 ```
 
-表中已经有数据时，不能直接加一个 `NOT NULL` 的列：先允许为空，补上数据，再加约束。`published_at` 为空就是草稿。
+表中已经有数据时，加 `NOT NULL` 的列分三步：先允许为空，补上数据，再加约束。`published_at` 为空就是草稿。
 
 ```bash
 go run ./cmd/api migrate up
@@ -43,7 +43,7 @@ go run ./cmd/api migrate up
 <a id="rules"></a>
 ## 谁能做什么
 
-规则写在动作里，而不是路由上：路由只知道“要登录”，动作才知道“是不是这篇文章的作者”。动作的 `Handle` 接收调用者 `identity.Subject`，命令行、队列任务和测试都能以任何身份调用它。
+规则写在动作里：路由只知道“要登录”，动作才知道“是不是这篇文章的作者”。动作的 `Handle` 接收调用者 `identity.Subject`，命令行、队列任务和测试都能以任何身份调用它。
 
 在 `internal/article/article.go` 中加上两个字段、两个错误，以及修改前读取文章用的 `findOwn`：
 
@@ -95,7 +95,7 @@ type Changes struct {
 }
 
 // findOwn 读取 sub 自己的文章，用于修改、删除和发布：别人的文章返回 ErrForbidden。
-// 在事务中调用并加上 FOR UPDATE，检查和修改之间文章不会被别人改掉。
+// 在事务中调用并加上 FOR UPDATE，检查和修改之间文章被锁住。
 func findOwn(ctx context.Context, tx bun.IDB, sub identity.Subject, id uuid.UUID) (*Article, error) {
     item := new(Article)
     err := tx.NewSelect().Model(item).Where("id = ?", id).For("UPDATE").Scan(ctx)
@@ -402,7 +402,7 @@ import (
     "github.com/go-tenon/tenon/identity"
 )
 
-// Publish 发布草稿：只有作者能发布，不能重复发布。
+// Publish 发布草稿：只有作者能发布，每篇只发布一次。
 type Publish struct{ db *bun.DB }
 
 func NewPublish(db *bun.DB) *Publish { return &Publish{db: db} }

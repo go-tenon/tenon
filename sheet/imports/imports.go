@@ -132,7 +132,7 @@ func (s *Service) load(ctx context.Context, id uuid.UUID) (*Import, error) {
 	return imp, nil
 }
 
-// Failures 按行号返回 imp 中没有导入的行，最多 limit 行。imp 通常来自 Get，Failures 不再检查发起人。
+// Failures 按行号返回 imp 中没有导入的行，最多 limit 行。imp 通常来自 Get，发起人已在 Get 中检查。
 func (s *Service) Failures(ctx context.Context, imp *Import, limit int) ([]Failure, error) {
 	list := []Failure{}
 	err := s.db.NewSelect().Model(&list).Where("import_id = ?", imp.ID).OrderExpr("line").Limit(int64(limit)).Scan(ctx)
@@ -140,7 +140,7 @@ func (s *Service) Failures(ctx context.Context, imp *Import, limit int) ([]Failu
 }
 
 // WriteFailures 把 imp 中没有导入的行写成表格：原来的表头加上一列错误，每一行是原始单元格加上 Failure.Message。
-// 用户改正之后可以把这个文件重新导入，多出的错误列会被忽略。WriteFailures 不会关闭 w。
+// 用户改正之后可以把这个文件重新导入，多出的错误列自动略过。w 由调用者关闭。
 func (s *Service) WriteFailures(ctx context.Context, imp *Import, w *sheet.Writer) error {
 	row := make([]any, len(imp.Header)+1)
 	for i, h := range imp.Header {

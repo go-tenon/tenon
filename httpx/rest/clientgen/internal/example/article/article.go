@@ -97,7 +97,7 @@ type UpdateInput struct {
 // PublishInput 是发布文章的参数。
 type PublishInput struct {
 	ID uuid.UUID `path:"id"`
-	// IdempotencyKey 让重试不会重复发布。
+	// IdempotencyKey 让重试只发布一次。
 	IdempotencyKey string `header:"Idempotency-Key"`
 }
 

@@ -55,7 +55,7 @@ msg.To = []mail.Address{{Name: "编辑部", Email: "editors@example.com"}}
 err = mailer.Send(ctx, msg)
 ```
 
-开发时用 `logmail` 把邮件写进日志，你可以直接从日志中复制邮件里的链接；上线时换成 SMTP、Resend 或 SES，业务代码不需要任何修改。`Send` 是同步的，发送失败不会重试，需要可靠送达的邮件交给[队列](queue.md#publishing-jobs)发送。
+开发时用 `logmail` 把邮件写进日志，你可以直接从日志中复制邮件里的链接；上线时换成 SMTP、Resend 或 SES，业务代码保持原样。`Send` 是同步的，只发送一次，需要可靠送达的邮件交给[队列](queue.md#publishing-jobs)发送。
 
 <a id="assembling-mailer"></a>
 ## 装配发送器
@@ -120,7 +120,7 @@ publish := article.NewPublish(db, mailer, emails, cfg.Mail.Editors)
 
 `emails` 是下一节加载的邮件模板。`logmail.New(nil)` 使用 `slog.Default()`，每封邮件记录为一条 `mail sent` 日志，包含收件人、主题和正文，开发时可以直接从日志里复制邮件中的链接。
 
-发送器不持有长连接，不需要登记到 `cleanup.Stack`。
+发送器只持有配置，创建后直接使用即可。
 
 <a id="writing-templates"></a>
 ## 编写邮件模板
@@ -166,7 +166,7 @@ if err != nil {
 }
 ```
 
-`NewTemplates` 在启动时解析全部模板，缺少主题、缺少正文或语法错误都会在这里报错，而不是等到发送时。返回的 `*mail.Templates` 可以被多个请求同时使用。
+`NewTemplates` 在启动时解析全部模板，缺少主题、缺少正文或语法错误都会在启动时报错。返回的 `*mail.Templates` 可以被多个请求同时使用。
 
 <a id="layouts"></a>
 ### 布局
@@ -193,7 +193,7 @@ if err != nil {
 {{template "_layout.html" .}}
 ```
 
-`.html` 模板会按 HTML 规则转义数据，文章标题中的 `<` 不会破坏邮件结构。
+`.html` 模板会按 HTML 规则转义数据，文章标题中的 `<` 按文字显示。
 
 <a id="translations"></a>
 ### 翻译
@@ -254,10 +254,10 @@ func (a *Publish) notifyEditors(ctx context.Context, item *Article) error {
 `Publish` 的事务部分见[授权](../security/authorization.md#checking-in-transactions)。这里有两点要注意：
 
 - **在事务提交之后发送**。在事务里发送，事务回滚时邮件已经发出去了。[AfterCommit](../database/quick-start.md#after-commit) 登记的回调在提交成功之后才执行。
-- **发送失败不影响发布**。文章已经发布成功，回调返回的错误只记录日志，不让接口返回错误。
+- **发送失败时发布照样成功**。文章已经发布成功，回调返回的错误只记录日志，接口照常返回。
 
 > [!NOTE]
-> `Send` 是同步的：接口要等邮件服务器响应才返回，发送失败也不会重试。需要可靠送达的邮件可以交给[队列](queue.md#publishing-jobs)发送，`mail.Message` 可以完整地序列化为 JSON。
+> `Send` 是同步的：接口要等邮件服务器响应才返回，并且只发送一次。需要可靠送达的邮件可以交给[队列](queue.md#publishing-jobs)发送，`mail.Message` 可以完整地序列化为 JSON。
 
 <a id="messages"></a>
 ## 邮件消息
@@ -329,7 +329,7 @@ mail:
 | `tls` | `starttls` | `starttls`：连接后必须升级到 TLS；`tls`：直接建立 TLS 连接，通常用于 465 端口；`none`：不加密 |
 | `timeout` | `10s` | 连接和每次读写的超时 |
 
-每次 `Send` 都会建立一个新连接。设置了 `username` 时必须使用 `starttls` 或 `tls`，go-mail 不会在未加密的连接上发送密码。
+每次 `Send` 都会建立一个新连接。设置了 `username` 时必须使用 `starttls` 或 `tls`，go-mail 只在加密的连接上发送密码。
 
 本地开发可以用 [Mailpit](https://mailpit.axllent.org) 在浏览器里查看发出的邮件，配置为 `host: localhost`、`port: 1025`、`tls: none`。
 
@@ -378,9 +378,9 @@ mail:
 | `access_key`、`secret_key` | 为空时使用 AWS 默认凭证链 |
 | `configuration_set` | 可选，发送时使用的配置集 |
 
-部署在 EC2、ECS 或 EKS 上时不用填密钥，给实例或任务的 IAM 角色授予 `ses:SendEmail` 和 `ses:SendRawEmail` 即可。SES 也提供 SMTP 端点，可以用 `mail/smtp` 发送，但需要另外生成 SMTP 密码。
+部署在 EC2、ECS 或 EKS 上时省略密钥，给实例或任务的 IAM 角色授予 `ses:SendEmail` 和 `ses:SendRawEmail` 即可。SES 也提供 SMTP 端点，可以用 `mail/smtp` 发送，但需要另外生成 SMTP 密码。
 
-驱动把邮件生成 MIME 原文后交给 SES，附件和自定义头与 SMTP 驱动一致；Bcc 只作为收件人传给 SES，不会写进邮件头。SES 没有幂等键，重试可能重复发送。
+驱动把邮件生成 MIME 原文后交给 SES，附件和自定义头与 SMTP 驱动一致；Bcc 只作为收件人传给 SES，对其他收件人保密。SES 没有幂等键，重试可能重复发送。
 
 新账号处于沙箱模式，只能发给已验证的地址，正式使用前需要申请移出沙箱。退信和投诉通过配置集的事件目标发到 SNS 或 EventBridge，由应用自己处理。
 
@@ -414,8 +414,8 @@ mailer := mail.Failover([]mail.Named{
 它本身也是 `mail.Mailer`，交给业务动作和 `login` 的方式不变。
 
 - 按顺序尝试，第一个成功的为准；全部失败时返回合并的错误，每个都带着发送器的名称。
-- 邮件本身不合法（`mail.ErrInvalid`），或者 `ctx` 已经取消、超时时，不再尝试后面的发送器。
-- 一个发送器失败后，`Cooldown`（默认 1 分钟）内排到最后，这期间的邮件直接从下一个开始，不必每封都先等它超时；冷却期过后重新先试它，恢复了就继续用。这个状态只在本进程中。
+- 邮件本身不合法（`mail.ErrInvalid`），或者 `ctx` 已经取消、超时时，直接返回错误。
+- 一个发送器失败后，`Cooldown`（默认 1 分钟）内排到最后，这期间的邮件直接从下一个开始；冷却期过后重新先试它，恢复了就继续用。这个状态只在本进程中。
 - 换用后面的发送器时记录一条 `Warn` 日志（`mail sent by a fallback mailer`），带着失败的发送器和原因；冷却后恢复时记录 `Info`。
 
 两点需要注意：
@@ -467,7 +467,7 @@ type Mailer interface {
 func Failover(mailers []Named, opts FailoverOptions) Mailer
 ```
 
-按顺序尝试多个发送器，失败的在冷却时间内跳过；遇到 `ErrInvalid` 或 `ctx` 取消时不再换下一个。见[故障切换](#failover)。
+按顺序尝试多个发送器，失败的在冷却时间内跳过；遇到 `ErrInvalid` 或 `ctx` 取消时直接返回。见[故障切换](#failover)。
 
 ### Templates
 

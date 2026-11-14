@@ -1,5 +1,5 @@
 // web/ui 的衔接脚本：把框架的事件交给 shadcn-templ 组件，并按需加载扩展组件。
-// 每一项只在页面用到对应部件时生效：不用 Toaster 的页面自己监听 web:flash。
+// 每一项只在页面用到对应部件时生效：没有 Toaster 的页面自己监听 web:flash。
 (function () {
   var script = document.currentScript;
 
@@ -57,7 +57,7 @@
     confirming = null;
   });
 
-  // 请求进行中：发起请求的按钮，或提交表单的按钮，带上 aria-busy 并禁用，请求结束后恢复，避免重复提交。
+  // 请求进行中：发起请求的按钮，或提交表单的按钮，带上 aria-busy 并禁用，请求结束后恢复，每次只提交一次。
   // 元素自己写了 hx-disable 时由 htmx 处理。
   document.addEventListener(
     "submit",
@@ -73,7 +73,7 @@
     var el = null;
     if (src.matches("button, [data-slot=button]")) el = src;
     else if (src.tagName === "FORM") {
-      el = src._webUISubmitter || null; // 只处理由提交触发的请求，输入时自动搜索的表单不受影响
+      el = src._webUISubmitter || null; // 只处理由提交触发的请求，输入时自动搜索的表单照常发送
       src._webUISubmitter = null;
     }
     if (!el || el.disabled || el.getAttribute("aria-busy") === "true") return;

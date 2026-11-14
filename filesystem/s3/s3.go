@@ -65,7 +65,7 @@ func Open(ctx context.Context, cfg filesystem.S3Config) (*Disk, error) {
 			o.BaseEndpoint = aws.String(cfg.Endpoint)
 		}
 		o.UsePathStyle = cfg.PathStyle
-		// 只在必需时计算校验和，预签名请求不要求客户端额外携带校验和头。
+		// 只在必需时计算校验和，预签名请求只需原样上传。
 		o.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
 	})
 	if _, err := client.HeadBucket(ctx, &awss3.HeadBucketInput{Bucket: aws.String(cfg.Bucket)}); err != nil {

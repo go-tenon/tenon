@@ -24,8 +24,8 @@ const StaticPath = "/static/"
 
 // StaticOptions 配置 NewStatic。
 type StaticOptions struct {
-	// DevDir 非空时改为直接读取这个目录（开发模式）：地址不带指纹，响应不缓存，
-	// 修改文件后刷新页面即可看到，不需要重新编译。生产环境留空，使用 NewStatic 的 fsys。
+	// DevDir 非空时改为直接读取这个目录（开发模式）：地址是原始文件名，响应带 no-store，
+	// 修改文件后刷新页面即可看到。生产环境留空，使用 NewStatic 的 fsys。
 	DevDir string
 }
 
@@ -35,7 +35,7 @@ type StaticOptions struct {
 // （css/app.css → /static/css/app.3f2a9c1d.css），这种地址的响应可以永久缓存；
 // 内容变化后指纹随之变化，浏览器自然取到新文件。文件名本身已带内容哈希的
 // （打包工具生成的，例如 shadcn-templ-86c5f2802d0bc25d.js）同样永久缓存。
-// 不带指纹的原始地址仍然可以访问，响应带 ETag，浏览器每次协商。
+// 原始地址仍然可以访问，响应带 ETag，浏览器每次协商。
 type Static struct {
 	fsys fs.FS
 	dev  bool

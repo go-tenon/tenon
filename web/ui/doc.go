@@ -1,5 +1,5 @@
 // Package ui 内置 shadcn-templ 组件的样式和脚本，把 web 的页面接到组件上：
-// 不需要安装 Tailwind、shadcn-templ 命令行，也不需要写衔接脚本。
+// 样式、脚本和衔接逻辑随包提供，直接 import 即可使用。
 //
 // 组件直接 import shadcn-templ，例如 github.com/axadrn/shadcn-templ/v2/components/button；
 // 版本由框架的 go.mod 固定，样式表和脚本按这个版本预先生成（ShadcnTemplVersion）。
@@ -8,13 +8,13 @@
 //   - Head、Page：按 web.ThemeFrom 的主题加载样式表、主题变量、htmx、Alpine 和组件脚本；
 //   - Toaster：用 toast 显示局部请求的错误（web.FlashEvent）；
 //   - Confirm：hx-confirm 弹出确认对话框，代替浏览器的确认框；
-//   - 请求进行中的按钮自动禁用并显示加载图标（衔接脚本，不需要组件）；
+//   - 请求进行中的按钮自动禁用并显示加载图标（衔接脚本，任何按钮都适用）；
 //   - ErrorPage：web.Options.ErrorPage 的默认实现。
 //   - TextField、SelectField、CheckboxField 等表单字段：读取 web.Form 的输入和错误；
 //   - Pagination：page.Offset 的分页导航；SortHead：点击排序的表头；Empty：没有数据时的提示。
 //   - ThemeToggle：暗色模式开关。
 //
-// 每一项都可以不用：例如用自己的提示组件监听 web:flash，或者自己写 <html> 只调用 Head。
+// 每一项都可以换成自己的写法：例如用自己的提示组件监听 web:flash，或者自己写 <html> 只调用 Head。
 //
 //	pages := web.New(web.Options{
 //		ErrorPage: ui.ErrorPage,

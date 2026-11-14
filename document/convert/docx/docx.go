@@ -21,7 +21,7 @@ import (
 // maxListDepth 是 Word 支持的最深列表级别，从 0 开始计。
 const maxListDepth = 8
 
-// linkTarget 编码尖括号链接地址中不能出现的字符。
+// linkTarget 编码尖括号链接地址中禁止的字符。
 var linkTarget = strings.NewReplacer("<", "%3C", ">", "%3E", "\n", "%0A")
 
 // styleInfo 是段落样式提供的信息：父样式、标题级别和编号。

@@ -49,11 +49,11 @@ sched := schedule.New(locker, cfg.Schedule, nil)
 sched.Add("articles:publish-scheduled", "* * * * *", article.NewPublishScheduled(db).Handle)
 ```
 
-任务通常是[业务动作](../concepts/actions.md#as-scheduled-tasks)的 `Handle` 方法：发布到期文章的 `PublishScheduled` 不需要参数，它的 `Handle` 正好是任务的签名。`schedule.Describe` 为任务加一句说明，在[查看任务](#listing-tasks)时展示。
+任务通常是[业务动作](../concepts/actions.md#as-scheduled-tasks)的 `Handle` 方法：发布到期文章的 `PublishScheduled` 只接收 `ctx`，它的 `Handle` 正好是任务的签名。`schedule.Describe` 为任务加一句说明，在[查看任务](#listing-tasks)时展示。
 
 `locker` 是[原子锁](locks.md)，调度器用它在多个实例之间去重、防止任务重叠，见[多个实例](#multiple-instances)。第二个参数是配置段，见[失败与停止](#failures-and-shutdown)；第三个参数是日志器，`nil` 时使用 `slog.Default()`。
 
-[原子锁](locks.md#running-once)一章中，每个实例都要自己定时调用 `PublishScheduled` 并用锁避免重复执行；交给调度器之后，`PublishScheduled` 里的 `locker.Do` 可以去掉，它也不再需要 `locker` 依赖，调度器已经保证每次只在一个实例上执行。
+[原子锁](locks.md#running-once)一章中，每个实例都要自己定时调用 `PublishScheduled` 并用锁去重；交给调度器之后，`PublishScheduled` 里的 `locker.Do` 和 `locker` 依赖都可以去掉，调度器已经保证每次只在一个实例上执行。
 
 <a id="expressions"></a>
 ### 表达式
@@ -108,7 +108,7 @@ func Schedule(ctx context.Context, cfg Config) error {
 }
 ```
 
-`Run` 每秒检查一次到期的任务，每个任务在自己的 goroutine 中执行，一个任务执行很久不会耽误其他任务按时触发。
+`Run` 每秒检查一次到期的任务，每个任务在自己的 goroutine 中执行，一个任务执行很久时，其他任务照常按时触发。
 
 在根命令中注册 `schedule` 命令；`app.go` 中的 `Start` 已经包含调度器，见[在一个进程中运行多个部分](../general/commands.md#running-together)：
 
@@ -119,7 +119,7 @@ root.AddCommand(command.Run("schedule", "执行定时任务", bootstrap.Schedule
 <a id="multiple-instances"></a>
 ## 多个实例
 
-部署多个实例时，每个实例上的调度器都会在同一时刻触发同一个任务。调度器在执行之前取得一把锁，锁名包含任务名和触发时刻，例如 `schedule:queue:prune-failed:1794366000`，只有取得锁的实例执行这一次触发。锁不会主动释放，一分钟后过期，所以各实例的时钟偏差小于一分钟时就不会重复执行。
+部署多个实例时，每个实例上的调度器都会在同一时刻触发同一个任务。调度器在执行之前取得一把锁，锁名包含任务名和触发时刻，例如 `schedule:queue:prune-failed:1794366000`，只有取得锁的实例执行这一次触发。锁一分钟后自然过期，所以各实例的时钟偏差小于一分钟时，每次触发只执行一次。
 
 所有进程共用同一个 [Redis 锁存储](locks.md#redis-store)，去重就覆盖全部实例。单机部署也一样：[不停机升级](../installation/deployment.md#upgrade-overlap)时新旧两个调度器会同时运行。过期的锁由 Redis 自动删除。
 
@@ -136,7 +136,7 @@ sched.Add("tmp:cleanup", "@hourly", cleanTmpDir, schedule.EveryInstance())
 
 确实需要并行执行的任务，使用 `schedule.AllowOverlap()`。
 
-一个任务卡住（例如等待一个不会返回的外部请求）时，它会一直持有这把锁，之后的触发都被跳过。`schedule.Timeout` 限制每次执行的时长：
+一个任务卡住（例如一直等待一个外部请求）时，它会一直持有这把锁，之后的触发都被跳过。`schedule.Timeout` 限制每次执行的时长：
 
 ```go
 sched.Add("reports:daily", "0 3 * * *", reports.Generate, schedule.Timeout(30*time.Minute))
@@ -147,7 +147,7 @@ sched.Add("reports:daily", "0 3 * * *", reports.Generate, schedule.Timeout(30*ti
 <a id="failures-and-shutdown"></a>
 ## 失败与停止
 
-任务返回错误或 panic 时，调度器记录一条 `error` 日志，下一次照常触发，不会重试。需要重试的工作，在任务中把它[发布到队列](queue.md#publishing-jobs)：
+任务返回错误或 panic 时，调度器记录一条 `error` 日志，等下一次照常触发。需要重试的工作，在任务中把它[发布到队列](queue.md#publishing-jobs)：
 
 ```go
 sched.Add("reports:daily", "0 3 * * *", func(ctx context.Context) error {
@@ -155,11 +155,11 @@ sched.Add("reports:daily", "0 3 * * *", func(ctx context.Context) error {
 })
 ```
 
-队列负责重试、记录失败，耗时的工作也不会占用调度器所在的进程。
+队列负责重试、记录失败，耗时的工作也在 worker 中执行。
 
 调度器的日志带有 `component=schedule` 字段，任务的 `ctx` 中带有 `task` 字段，用 `slog.InfoContext(ctx, ...)` 记录的日志会自动带上它。`schedule.WithTelemetry` 让调度器报告每次执行的耗时、结果和被跳过的次数，用来发现长时间没有成功执行的任务；每次执行还是一条链路的起点，见[定时任务的指标和链路](../general/telemetry.md#schedule)。
 
-调度器不补跑错过的触发：进程暂停或调度落后不到一分钟时，错过的触发会补上，同一个任务只补一次；部署、重启期间错过的触发直接跳过。收到停止信号后，调度器不再触发新任务，等待执行中的任务结束，最多等待 `shutdown_timeout`，超时后取消它们的 `ctx`。这个时间在应用配置的调度段中设置：
+调度器只补一分钟以内的触发：进程暂停或调度落后不到一分钟时，错过的触发会补上，同一个任务只补一次；部署、重启期间错过的触发直接跳过。收到停止信号后，调度器停止触发新任务，等待执行中的任务结束，最多等待 `shutdown_timeout`，超时后取消它们的 `ctx`。这个时间在应用配置的调度段中设置：
 
 ```go
 type Config struct {
@@ -176,7 +176,7 @@ schedule:
 <a id="listing-tasks"></a>
 ## 查看任务
 
-`Tasks` 返回注册的全部任务：名称、说明、表达式、时区和选项（包括 `Timeout`）。它只读取任务的定义，不需要运行调度器，所以在任何进程中都可以调用：
+`Tasks` 返回注册的全部任务：名称、说明、表达式、时区和选项（包括 `Timeout`）。它只读取任务的定义，所以在任何进程中都可以调用：
 
 ```go
 for _, t := range a.tasks().Tasks() {
@@ -188,7 +188,7 @@ for _, t := range a.tasks().Tasks() {
 
 `Next` 和 `Prev` 按表达式计算，结果与调度器实际触发的时刻一致；`@every` 按 Unix 时间对齐，与调度器何时启动无关。
 
-`Running` 报告每个任务此刻是否正在执行，在任何一个实例上都算。它查询任务执行期间持有的锁 `schedule:<任务名>:running`，所以同样不需要运行调度器，但要和调度器共用锁存储：
+`Running` 报告每个任务此刻是否正在执行，在任何一个实例上都算。它查询任务执行期间持有的锁 `schedule:<任务名>:running`，所以同样可以在任何进程中调用，只要和调度器共用锁存储：
 
 ```go
 running, err := sched.Running(ctx) // 任务名 → 是否正在执行
@@ -220,7 +220,7 @@ queue:prune-failed          @daily        2026-11-12 00:00:00  6h59m42s  no     
 <a id="run-history"></a>
 ### 执行记录
 
-上一次什么时候执行、结果如何，是运行时的数据：部署多个实例时，每次触发在哪个实例上执行并不确定。需要执行记录时，用 `schedule.WithObserver` 接收执行事件，写进自己的表，`WithTelemetry` 也建立在它之上：
+上一次什么时候执行、结果如何，是运行时的数据：部署多个实例时，每次触发由先取得锁的实例执行。需要执行记录时，用 `schedule.WithObserver` 接收执行事件，写进自己的表，`WithTelemetry` 也建立在它之上：
 
 | 事件 | 时机 |
 | --- | --- |
@@ -255,7 +255,7 @@ for _, t := range sched.Tasks() {
 <a id="running-manually"></a>
 ### 手动执行
 
-后台页面上的「立即执行」不要在 HTTP 进程中直接调用任务：耗时的任务会占用请求，HTTP 实例也可能有很多个。把它[发布到队列](queue.md#publishing-jobs)，由 worker 执行：
+后台页面上的「立即执行」把任务[发布到队列](queue.md#publishing-jobs)，由 worker 执行：耗时的任务会占用请求，HTTP 实例也可能有很多个。
 
 ```go
 // article 包中：
@@ -270,7 +270,7 @@ article.PublishScheduledJob.Handle(w, func(ctx context.Context, _ struct{}) erro
 })
 ```
 
-任务和队列处理函数调用的是同一个业务动作，手动执行和定时执行的效果相同。手动执行不受[防止重叠](#preventing-overlaps)的限制，需要互斥的任务在业务动作中自己使用[原子锁](locks.md)。
+任务和队列处理函数调用的是同一个业务动作，手动执行和定时执行的效果相同。手动执行绕过[防止重叠](#preventing-overlaps)，需要互斥的任务在业务动作中自己使用[原子锁](locks.md)。
 
 <a id="framework-cleanups"></a>
 ## 清理框架数据
@@ -292,7 +292,7 @@ article.PublishScheduledJob.Handle(w, func(ctx context.Context, _ struct{}) erro
 | [Webhook 投递记录](../features/webhooks.md#retention) | `webhook.Cleanup(db, 保留期)` | 每天 |
 | [失败任务](queue.md#failed-jobs) | `queue.NewFailedJobs(db).Cleanup(保留期)` | 每天 |
 
-锁、限流和在线成员保存在 Redis 中，过期的键由 Redis 自动删除，不需要注册清理任务。
+锁、限流和在线成员保存在 Redis 中，过期的键由 Redis 自动删除。
 
 <a id="testing"></a>
 ## 测试
@@ -369,7 +369,7 @@ func (s *Scheduler) Add(name, expr string, run func(ctx context.Context) error, 
 | `In(loc *time.Location)` | 按这个时区解释表达式，见[时区](#timezones) |
 | `Timeout(d time.Duration)` | 执行超时，超过后取消任务的 `ctx`，记为 `ErrTimeout` |
 | `AllowOverlap()` | 上一次还没结束时也触发，见[防止重叠](#preventing-overlaps) |
-| `EveryInstance()` | 每个实例都执行，不用锁去重 |
+| `EveryInstance()` | 每个实例都执行，跳过锁 |
 
 ### Cleanup
 

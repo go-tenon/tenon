@@ -170,7 +170,7 @@ func TestClusterMirrorDetectsSilentInstance(t *testing.T) {
 	if err != nil || remote == nil {
 		t.Fatalf("mirror %v, %v", remote, err)
 	}
-	// 运行所在的实例长时间没有消息（这里关掉了心跳）：镜像以错误结束，而不是一直等待。
+	// 运行所在的实例长时间没有消息（这里关掉了心跳）：镜像按时以错误结束。
 	got, _ := collect(t, remote, "")
 	if len(got) != 1 || !strings.HasPrefix(got[0], "error") {
 		t.Fatalf("events %q", got)

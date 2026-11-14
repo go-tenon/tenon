@@ -72,7 +72,7 @@ func TestOAuthToken(t *testing.T) {
 		t.Fatalf("listed %+v", found)
 	}
 
-	// “退出其他设备”不影响已连接的应用。
+	// “退出其他设备”保留已连接的应用。
 	if _, err := s.RevokeOthers(ctx, alice); err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +80,7 @@ func TestOAuthToken(t *testing.T) {
 		t.Fatalf("after RevokeOthers: %v", err)
 	}
 
-	// 客户端交回令牌（RFC 7009）。不是 OAuth 令牌时什么也不做。
+	// 客户端交回令牌（RFC 7009）。不是 OAuth 令牌时直接返回。
 	if err := s.RevokeToken(ctx, pat); err != nil {
 		t.Fatal(err)
 	}

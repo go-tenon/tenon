@@ -23,7 +23,7 @@ type Config struct {
 	// MaxAttempts 是任务最多处理的次数，用完后转入失败任务表。
 	MaxAttempts int `yaml:"max_attempts"`
 	// Lease 是 NSQ 等待处理结果的时间（msg_timeout）。处理期间每 Lease/3 自动延长；
-	// 进程崩溃时任务在 Lease 之后被重新投递。不能超过 nsqd 的 --max-msg-timeout（默认 15 分钟）。
+	// 进程崩溃时任务在 Lease 之后被重新投递。要小于等于 nsqd 的 --max-msg-timeout（默认 15 分钟）。
 	Lease time.Duration `yaml:"lease"`
 	// MaxDefer 是 NSQ 延迟消息的最长延迟，必须不超过 nsqd 的 --max-req-timeout（默认 1 小时）。
 	// 更晚执行的任务和重试先存入 queue_scheduled，快到时间时再转发。

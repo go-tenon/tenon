@@ -47,7 +47,7 @@ func TestConfirm(t *testing.T) {
 			t.Fatalf("confirmed auth %+v", sub.Auth)
 		}
 
-		// 不经过本人登录的凭据没有验证情况，也不能确认身份。
+		// 个人访问令牌等凭据的验证情况为零值，确认身份时被拒绝。
 		personal := create(t, s, signedIn("password"), apitoken.Personal{Name: "脚本", Scopes: read})
 		psub, _ := valid(t, s, personal)
 		if !psub.Auth.Time.IsZero() || psub.Auth.Methods != nil {

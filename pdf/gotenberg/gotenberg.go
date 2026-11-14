@@ -2,7 +2,7 @@
 //
 // 每次生成把 HTML 作为 index.html、Assets 中的文件一起上传到 /forms/chromium/convert/html，
 // 并固定带上这些参数：A4 作为默认纸张，preferCssPageSize 让 CSS @page 生效，printBackground
-// 打印背景色，failOnResourceLoadingFailed 让引用的文件加载失败时报错而不是生成没有样式的 PDF。
+// 打印背景色，failOnResourceLoadingFailed 让引用的文件加载失败时报错。
 package gotenberg
 
 import (

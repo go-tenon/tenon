@@ -59,7 +59,7 @@ func TestGetSaveReset(t *testing.T) {
 	assert.Equal(t, defaults, get(t, site), "defaults before any save")
 
 	s := get(t, site)
-	s.Exts[0] = "gif" // 修改返回值不影响默认值
+	s.Exts[0] = "gif" // 修改返回值时默认值保持原样
 	s.Limits["posts"] = 99
 	assert.Equal(t, defaults, get(t, site))
 

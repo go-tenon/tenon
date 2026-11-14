@@ -39,7 +39,7 @@ func GetArticle(ctx context.Context, id uuid.UUID) (*Article, error) {
 }
 ```
 
-这也能工作，直到你开始写测试。测试想用一个独立的测试数据库，就得在测试开始前修改全局的 `DB`，而并行运行的测试会互相覆盖它。再往后，有的命令根本不需要数据库，却因为某个包在初始化时用到了 `DB` 而不得不连接它；读代码的人也很难回答“这个函数到底用到了哪些资源”。
+这也能工作，直到你开始写测试。测试想用一个独立的测试数据库，就得在测试开始前修改全局的 `DB`，而并行运行的测试会互相覆盖它。再往后，只是打印帮助的命令，也会因为某个包在初始化时用到了 `DB` 而去连接数据库；读代码的人也很难回答“这个函数到底用到了哪些资源”。
 
 构造函数注入把这些问题一次解决了。依赖写在构造函数的参数里，谁需要什么一目了然；入口在启动时创建一次连接池，传给所有需要它的代码；测试只要传入另一个连接池即可：
 
@@ -68,12 +68,12 @@ func (a *Get) Handle(ctx context.Context, id uuid.UUID) (*Article, error) {
 }
 ```
 
-注意这里接收的是 Bun 的 `*bun.DB`，而不是框架包装过的类型。在 Tenon 中，你使用的始终是社区组件的原生对象，学到的用法在别处同样适用。
+注意这里接收的是 Bun 原生的 `*bun.DB`。在 Tenon 中，你使用的始终是社区组件的原生对象，学到的用法在别处同样适用。
 
 方法的第一个参数是 `ctx`。它携带请求的取消信号和截止时间，应当一路传给数据库查询等下游调用，这样请求超时或客户端断开时，查询也会随之停止。
 
 > [!IMPORTANT]
-> 构造函数只能**保存**依赖，不能**使用**它们。生成 OpenAPI 文档、列出路由和声明命令时，业务动作会被构造，但传入的依赖都是零值，见[多个运行部分](#running-parts)和[只在执行时装配的命令](#deferred-commands)。
+> 构造函数只**保存**依赖，执行时才**使用**它们。生成 OpenAPI 文档、列出路由和声明命令时，业务动作会被构造，但传入的依赖都是零值，见[多个运行部分](#running-parts)和[只在执行时装配的命令](#deferred-commands)。
 
 <a id="assembling-the-application"></a>
 ## 在入口中组装应用
@@ -207,7 +207,7 @@ func DocRouter() chi.Routes {
 }
 ```
 
-`Router` 有两个调用者：`HTTP` 用打开了资源的 `App` 运行服务；`DocRouter` 用零值的 `App` 构造同一套路由，交给 [`httpcmd.Commands`](../general/commands.md#declaring-the-cli) 生成接口文档和客户端、列出路由。所以导出的文档总是与运行的服务一致，生成文档也不需要连接数据库。代价是 `Router` 中只能保存依赖、不能使用它们：例如健康检查的 `Ping` 要写成闭包，见[健康检查](lifecycle.md#health-checks)。
+`Router` 有两个调用者：`HTTP` 用打开了资源的 `App` 运行服务；`DocRouter` 用零值的 `App` 构造同一套路由，交给 [`httpcmd.Commands`](../general/commands.md#declaring-the-cli) 生成接口文档和客户端、列出路由。所以导出的文档总是与运行的服务一致，生成文档只需要源代码。相应地，`Router` 中只保存依赖，处理请求时才使用它们：例如健康检查的 `Ping` 要写成闭包，见[健康检查](lifecycle.md#health-checks)。
 
 `run` 先装配全部部分，再用 `command.Daemon` 同时运行它们：
 
@@ -241,7 +241,7 @@ func Start(ctx context.Context, cfg Config) error {
 }
 ```
 
-你会注意到，每个部分都分两步：先装配好它需要的一切，包括取得监听端口；再返回运行它的函数。这样做的好处是，路由冲突、端口被占用这类错误在开始运行之前就会返回，[不停机升级](../installation/deployment.md#zero-downtime-upgrades)时，有问题的新版本根本不会接管服务。
+你会注意到，每个部分都分两步：先装配好它需要的一切，包括取得监听端口；再返回运行它的函数。这样做的好处是，路由冲突、端口被占用这类错误在开始运行之前就会返回，[不停机升级](../installation/deployment.md#zero-downtime-upgrades)时，旧版本继续服务，直到新版本装配成功。
 
 `d.Run` 让各部分共用同一个 `ctx`，其中一个出错时，其余的会一起停止。
 
@@ -263,12 +263,12 @@ func Commands() []*cobra.Command {
 }
 ```
 
-`--help` 和参数错误不会打开数据库。写法和注意事项见[命令行](../general/commands.md#custom-commands)。
+`--help` 和参数错误在打开数据库之前就返回。写法和注意事项见[命令行](../general/commands.md#custom-commands)。
 
 <a id="closing-resources"></a>
 ## 关闭资源
 
-只有一两个资源时，用 `defer` 关闭就足够了。资源多了以后，事情会变得复杂：后打开的资源应当先关闭；启动到一半失败时，已经打开的资源也要释放；关闭时出现的错误不能被吞掉。`cleanup.Stack` 就是为此设计的。
+只有一两个资源时，用 `defer` 关闭就足够了。资源多了以后，事情会变得复杂：后打开的资源应当先关闭；启动到一半失败时，已经打开的资源也要释放；关闭时出现的错误要报告出来。`cleanup.Stack` 就是为此设计的。
 
 每成功打开一个资源，就登记一个关闭它的函数：
 
@@ -291,7 +291,7 @@ stack.MustAdd("redis", func(context.Context) error {
 关闭时使用的 context 保留传入 context 的值和截止时间，但**不继承它的取消信号**。这一点很重要：应用正是因为收到停止信号才退出的，如果关闭操作也随之取消，资源就来不及正常关闭了。传入的 context 没有截止时间时，关闭总共最多用 10 秒。
 
 > [!NOTE]
-> `cleanup.Stack` 由入口串行使用：在构建阶段登记，在退出阶段关闭。不要在多个 goroutine 中同时操作它。
+> `cleanup.Stack` 由入口串行使用：在构建阶段登记，在退出阶段关闭，始终在同一个 goroutine 中操作。
 
 <a id="replacing-dependencies-in-tests"></a>
 ## 在测试中替换依赖
@@ -323,7 +323,7 @@ func (m memoryImages) Put(_ context.Context, key string, data []byte) error {
 setCover := article.NewSetCover(db, memoryImages{})
 ```
 
-不需要为每个依赖预先定义接口。等到真正需要替换实现时再引入，代码会简单得多。
+接口在真正需要替换实现时再引入，代码会简单得多。
 
 <a id="api-reference"></a>
 ## API 参考
@@ -338,7 +338,7 @@ func (s *Stack) MustAdd(name string, fn func(context.Context) error)
     - `name`：资源的名称，出现在错误信息中
     - `fn`：关闭资源的函数
 
-包 `github.com/go-tenon/tenon/cleanup`，`Stack` 的零值可以直接使用。登记一个关闭函数；`Stack` 已经关闭时 panic。`Add` 与它相同，只是返回错误而不是 panic。
+包 `github.com/go-tenon/tenon/cleanup`，`Stack` 的零值可以直接使用。登记一个关闭函数；`Stack` 已经关闭时 panic。`Add` 与它相同，只是以返回错误代替 panic。
 
 ### cleanup.Stack.CloseWith
 
@@ -351,7 +351,7 @@ func (s *Stack) CloseWith(ctx context.Context, runErr error) error
     - `runErr`：运行时的错误，与关闭时的错误合并
 - **返回**：合并后的错误，没有错误时为 `nil`
 
-按登记的逆序执行全部关闭函数。适合在 `defer` 中使用；不需要合并运行时的错误时用 `Close(ctx)`。
+按登记的逆序执行全部关闭函数。适合在 `defer` 中使用；只关闭资源时用 `Close(ctx)`。
 
 ### command.Daemon
 

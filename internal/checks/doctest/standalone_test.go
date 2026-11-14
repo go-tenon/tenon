@@ -14,7 +14,7 @@ import (
 var goBlock = regexp.MustCompile("(?s)```go\n(.*?)```")
 
 // TestStandaloneBlocks 编译 docs 中（入门教程除外）每个以 package 或构建标签开头的代码块：
-// 它们都是完整文件，必须能单独编译，不依赖其他代码块或其他文档。每个代码块放进临时 module 中
+// 它们都是完整文件，必须能单独编译，自成一体。每个代码块放进临时 module 中
 // 自己的目录，用 go vet 检查（包含编译）。入门教程的文件由 cmd/tenon 的 TestTutorial 按章节验证。
 func TestStandaloneBlocks(t *testing.T) {
 	root, err := filepath.Abs("../../..")

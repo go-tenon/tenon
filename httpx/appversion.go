@@ -113,7 +113,7 @@ func validPlatform(s string) bool {
 	return true
 }
 
-// validVersion 接受不带 v 前缀的语义化版本，可以省略次版本号和修订号，例如 1、1.4、1.4.0-beta.1+45。
+// validVersion 接受省略 v 前缀的语义化版本，可以省略次版本号和修订号，例如 1、1.4、1.4.0-beta.1+45。
 func validVersion(s string) bool {
 	return s != "" && s[0] >= '0' && s[0] <= '9' && semver.IsValid("v"+s)
 }

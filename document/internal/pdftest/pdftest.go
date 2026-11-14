@@ -35,7 +35,7 @@ func Build(t testing.TB, pages [][]Text, userPassword string) []byte {
 	return buildPDF(pages, userPassword, false)
 }
 
-// BuildOwnerOnly 写出一个打开时不需要密码、但带有所有者密码的 PDF，内容流用 RC4 加密。
+// BuildOwnerOnly 写出一个可以直接打开、但带有所有者密码的 PDF，内容流用 RC4 加密。
 func BuildOwnerOnly(pages [][]Text) []byte {
 	return buildPDF(pages, "", true)
 }

@@ -70,7 +70,7 @@ func NewDeliverer(db bun.IDB, opts Options) *Deliverer {
 // Handle 把 Deliver 的处理函数注册到 w，最多请求 Options.MaxAttempts 次。w 必须使用 Send 发布任务的数据库队列。
 //
 // 端点返回 2xx 时投递成功；其他状态码、超时和网络错误按队列的退避重试；
-// 端点地址被 outbound 拒绝（内网地址）时不再重试，投递记录直接标记为失败。
+// 端点地址被 outbound 拒绝（内网地址）时投递记录直接标记为失败。
 // 429 和 503 带有 Retry-After 时按它等待。最后一次仍然失败时投递记录标记为失败，任务正常结束，
 // 不进入失败任务表：端点出错是接收方的问题，投递记录就是它的处理结果，需要时用 Resend 重发。
 func (d *Deliverer) Handle(w *queue.Worker) {
@@ -117,7 +117,7 @@ func (d *Deliverer) deliver(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
-// finish 把一次尝试的结果写回投递记录。记录已经不是 pending 时（例如重复的任务已经处理过）不做修改。
+// finish 把一次尝试的结果写回投递记录。记录已经离开 pending 时（例如重复的任务已经处理过）保持原样。
 func (d *Deliverer) finish(ctx context.Context, del *Delivery, status Status, code int, lastError string, attempted bool) error {
 	upd := d.db.NewUpdate().Model((*Delivery)(nil)).
 		Set("status = ?", status).Set("response_status = ?", code).Set("last_error = ?", lastError).

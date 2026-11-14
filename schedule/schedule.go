@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	// tickTTL 是“这一次触发由谁执行”的锁的有效期。各实例的时钟偏差小于它时不会重复执行。
+	// tickTTL 是“这一次触发由谁执行”的锁的有效期。各实例的时钟偏差小于它时每次触发只执行一次。
 	tickTTL = time.Minute
 	// runningTTL 是“任务正在执行”的锁的有效期，执行期间每 runningTTL/3 续期。
 	runningTTL = time.Minute
@@ -70,7 +70,7 @@ func In(loc *time.Location) TaskOption { return func(t *task) { t.loc = loc } }
 var ErrTimeout = errors.New("schedule: task timed out")
 
 // Timeout 限制每次执行的时长：超过 d 时以 ErrTimeout 取消任务的 ctx，这次执行记为失败，错误满足 errors.Is(err, ErrTimeout)。
-// 卡住的任务因此不会一直占着执行锁、让之后的触发都被跳过。任务需要遵守 ctx 才能及时结束。d 不大于 0 时 panic。
+// 卡住的任务因此按时释放执行锁，之后的触发照常进行。任务需要遵守 ctx 才能及时结束。d 不大于 0 时 panic。
 func Timeout(d time.Duration) TaskOption {
 	if d <= 0 {
 		panic(fmt.Sprintf("schedule: timeout must be positive, got %v", d))
@@ -137,7 +137,7 @@ func (s *Scheduler) Add(name, expr string, run func(ctx context.Context) error, 
 // Run 每秒检查一次到期的任务并执行，直到 ctx 被取消。
 //
 // 调度落后（例如进程被暂停）不到一分钟时补算错过的触发，同一个任务只补执行一次；
-// 落后更久时跳过错过的触发。ctx 取消后不再触发新任务，等待执行中的任务结束，
+// 落后更久时跳过错过的触发。ctx 取消后停止触发新任务，等待执行中的任务结束，
 // 最多等待 Config.ShutdownTimeout，超时后取消它们的 ctx。Run 只能调用一次；没有注册任务时返回错误。
 func (s *Scheduler) Run(ctx context.Context) error {
 	tasks, err := s.start()

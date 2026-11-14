@@ -58,7 +58,7 @@ redis.call("ZREM", KEYS[1], ARGV[1])
 redis.call("HDEL", KEYS[2], ARGV[1])
 return 0`)
 	// list 先删除已经过期的连接（每次最多 1000 个），再返回其余连接和它们的数据，整个过程是原子的。
-	// 续期过的连接分数已经大于当前时间，不会被误删。返回值是连接 ID 和数据交替排列的数组。
+	// 续期过的连接分数已经大于当前时间，因此保留。返回值是连接 ID 和数据交替排列的数组。
 	list = rueidis.NewLuaScript(`
 local expired = redis.call("ZRANGEBYSCORE", KEYS[1], "-inf", ARGV[1], "LIMIT", 0, 1000)
 if #expired > 0 then

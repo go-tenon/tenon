@@ -1,8 +1,8 @@
 # 测试：HTTP 与命令
 
-测试 HTTP 接口时，不需要真正监听端口：用 `httptest` 创建请求和响应记录器，然后直接调用 `api.Handler()` 即可。
+测试 HTTP 接口时，在进程内完成：用 `httptest` 创建请求和响应记录器，然后直接调用 `api.Handler()` 即可。
 
-有一点很重要：请调用应用自己的路由注册函数，而不是在测试中重新声明路由。这样，测试覆盖的就是真实的路由配置、认证和输入验证；如果有人改坏了 `routes.go`，测试会发现它。命令的测试也一样，在进程内执行真实的根命令。
+有一点很重要：请调用应用自己的路由注册函数。这样，测试覆盖的就是真实的路由配置、认证和输入验证；如果有人改坏了 `routes.go`，测试会发现它。命令的测试也一样，在进程内执行真实的根命令。
 
 - [HTTP 测试](#http-tests)
     - [测试认证与错误响应](#testing-auth-and-errors)
@@ -14,7 +14,7 @@
 <a id="http-tests"></a>
 ## HTTP 测试
 
-测试 HTTP 接口时，不需要真正监听端口。用 `httptest` 创建请求和响应记录器，然后直接调用 `api.Handler()` 即可。
+测试 HTTP 接口时，在进程内完成。用 `httptest` 创建请求和响应记录器，然后直接调用 `api.Handler()` 即可。
 
 测试文件按业务动作命名。下面测试[创建文章](../http/routing.md#http-actions)的 HTTP 入口：
 
@@ -31,7 +31,7 @@ func newTestAPI() *rest.API {
         }
         return identity.Subject{}, identity.ErrUnauthenticated.New()
     }
-    // 这些请求在调用 Handle 之前就会被拒绝，所以不需要数据库
+    // 这些请求在调用 Handle 之前就会被拒绝，所以 db 传 nil
     article.Register(api, rest.RequireBearer(api, validate, "articles"), nil)
     return api
 }
@@ -81,12 +81,12 @@ func TestCreateRejectsBadRequests(t *testing.T) {
 }
 ```
 
-这个测试用表格列出了三种在调用 `Handle` 之前就会被拒绝的请求：没有 token、缺少权限、输入格式不对。它们不会触及数据库，所以 `db` 可以传 `nil`，测试运行得很快。
+这个测试用表格列出了三种在调用 `Handle` 之前就会被拒绝的请求：没有 token、缺少权限、输入格式不对。它们止步于数据库之前，所以 `db` 可以传 `nil`，测试运行得很快。
 
 <a id="testing-auth-and-errors"></a>
 ### 测试认证与错误响应
 
-请通过完整的 `api.Handler()` 来测试认证、验证错误和越权访问，而不是直接调用处理器函数。这样测试才能覆盖认证中间件、输入验证和错误转换的完整过程。一组典型的接口测试包括：
+请通过完整的 `api.Handler()` 来测试认证、验证错误和越权访问。这样测试才能覆盖认证中间件、输入验证和错误转换的完整过程。一组典型的接口测试包括：
 
 - 不带 `Authorization` 头的请求返回 `401`；
 - 缺少权限的 token 返回 `403`；
@@ -152,7 +152,7 @@ func TestPages(t *testing.T) {
 <a id="command-tests"></a>
 ## 命令测试
 
-测试命令行时，不需要启动新的进程。根命令是原生的 `*cobra.Command`，用 Cobra 的 `SetOut`、`SetArgs` 把输出重定向到 `bytes.Buffer` 并指定参数，然后执行命令并检查输出和退出码。下面测试应用真实的根命令，`newRoot` 是 `main.go` 中组装根命令的函数，见[命令行](../general/commands.md#declaring-the-cli)：
+测试命令行时，同样在进程内完成。根命令是原生的 `*cobra.Command`，用 Cobra 的 `SetOut`、`SetArgs` 把输出重定向到 `bytes.Buffer` 并指定参数，然后执行命令并检查输出和退出码。下面测试应用真实的根命令，`newRoot` 是 `main.go` 中组装根命令的函数，见[命令行](../general/commands.md#declaring-the-cli)：
 
 ```go
 func run(args ...string) (string, error) {
@@ -196,12 +196,12 @@ func TestConfigCheckReportsMissingFile(t *testing.T) {
 }
 ```
 
-前两个测试确认 `openapi`、`routes` 命令可以离线查看真实的接口声明，不需要配置文件；最后一个测试确认配置文件缺失时，`config check` 以 `ExitConfig` 退出。
+前两个测试确认 `openapi`、`routes` 命令可以离线查看真实的接口声明；最后一个测试确认配置文件缺失时，`config check` 以 `ExitConfig` 退出。
 
 <a id="testing-openapi"></a>
 ## 测试 OpenAPI 文档
 
-生成文档时，路由用 `nil` 依赖构造，处理器不会被调用。用应用的 [DocRouter](../concepts/dependencies.md#running-parts) 构造全部路由并生成文档，可以确保没有哪个构造函数在注册时使用了依赖，否则测试会 panic：
+生成文档时，路由用 `nil` 依赖构造，处理器只被登记。用应用的 [DocRouter](../concepts/dependencies.md#running-parts) 构造全部路由并生成文档，可以确保每个构造函数在注册时都只保存依赖，使用了依赖的会让测试 panic：
 
 ```go
 func TestOpenAPI(t *testing.T) {

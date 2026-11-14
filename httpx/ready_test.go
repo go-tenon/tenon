@@ -104,7 +104,7 @@ func TestReady(t *testing.T) {
 		t.Fatalf("failure record %+v", r)
 	}
 
-	// 排空时不再执行检查，直接不就绪。
+	// 排空时跳过检查，直接返回未就绪。
 	draining.Set()
 	if code, body = probe(t, h); code != http.StatusServiceUnavailable || body.Status != "draining" || body.Checks != nil {
 		t.Fatalf("draining: %d %+v", code, body)

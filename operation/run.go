@@ -67,7 +67,7 @@ func (r *Run) Save(ctx context.Context, write func(ctx context.Context, tx datab
 
 // Complete 结束操作：在一个事务中保存进度、调用 write（可以为 nil）和 saved，操作变为 completed。
 // 结果要和完成状态一起提交时使用，例如导出的下载地址：用户看到 completed 时一定能看到地址。
-// 调用之后回调应当返回 nil。不调用 Complete 时，回调返回 nil 后 Run 自动结束操作。
+// 调用之后回调应当返回 nil。省略 Complete 时，回调返回 nil 后 Run 自动结束操作。
 func (r *Run) Complete(ctx context.Context, write func(ctx context.Context, tx database.Tx) error) error {
 	return r.save(ctx, r.next(StatusCompleted), write)
 }
@@ -139,9 +139,9 @@ func (r *Run) save(ctx context.Context, next Operation, write func(ctx context.C
 //
 // 每次保存（变为 running、r.Save、r.Complete、结束）都在同一个事务中调用 saved（可以为 nil），op 是保存后的操作。
 // 用 tx.AfterCommit 广播进度，供 SSE 推送给正在查看的用户；op.Finished 为 true 时操作已经结束，
-// 例如在这个事务中发送通知。结束的事务提交后 saved 不会再被调用，所以通知不会重复，也不会漏发。
+// 例如在这个事务中发送通知。saved 在结束的事务中最后调用一次，所以通知恰好发送一次。
 //
-// 操作不存在（例如已被 Cleanup 删除）或者已经结束时，Run 什么也不做，返回 nil。
+// 操作不存在（例如已被 Cleanup 删除）或者已经结束时，Run 直接返回 nil。
 func (s *Service) Run(ctx context.Context, id uuid.UUID,
 	fn func(ctx context.Context, r *Run) error,
 	saved func(ctx context.Context, tx database.Tx, op *Operation) error,

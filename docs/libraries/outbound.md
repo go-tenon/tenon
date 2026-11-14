@@ -80,7 +80,7 @@ func (a *Preview) fetch(ctx context.Context, link string) (*LinkPreview, error) 
 | `AnyPort` | 允许任何端口，地址检查仍然生效 |
 | `Allow` | 额外允许的网段，先于内置的拒绝规则检查，用于有意访问的内部服务 |
 
-客户端跟随重定向（最多 10 次），每一跳都经过同样的检查。不需要跟随时，设置返回的客户端的 `CheckRedirect`。
+客户端跟随重定向（最多 10 次），每一跳都经过同样的检查。要关闭跟随时，设置返回的客户端的 `CheckRedirect`。
 
 <a id="local-development"></a>
 ### 本地开发
@@ -98,16 +98,16 @@ client := outbound.New(opts)
 <a id="handling-refusals"></a>
 ## 处理被拒绝的请求
 
-被拒绝的请求返回的错误可以用 `errors.Is(err, outbound.ErrForbidden)` 识别。目标地址不会变成公网地址，重试也没有用，应当直接告诉用户：
+被拒绝的请求返回的错误可以用 `errors.Is(err, outbound.ErrForbidden)` 识别。目标地址是固定的，应当直接告诉用户：
 
 ```go
 resp, err := a.client.Do(req)
 if errors.Is(err, outbound.ErrForbidden) {
-    return nil, ErrInvalidLink.Wrap(err) // 400：这个链接不能预览
+    return nil, ErrInvalidLink.Wrap(err) // 400：这个链接无法预览
 }
 ```
 
-拒绝发生在建立连接之前，不会向目标发出任何数据。
+拒绝发生在建立连接之前，目标收不到任何数据。
 
 <a id="retrying"></a>
 ## 重试
@@ -122,7 +122,7 @@ previews.Transport = outbound.Retry(previews.Transport, outbound.RetryOptions{})
 为了不把一次失败变成两次扣款，它只重试可以安全重复的请求：
 
 - 方法是 HTTP 规范中幂等的 GET、HEAD、OPTIONS、TRACE、PUT、DELETE，或者请求带有 `Idempotency-Key`（`X-Idempotency-Key`）请求头，并且请求体可以重新读取：用 `bytes`、`strings` 创建的请求体可以，直接传入的流不行；
-- 连接失败，或者响应状态码是 429、502、503、504。`ErrForbidden`、域名不存在和证书错误不会因为重试而成功，直接返回。
+- 连接失败，或者响应状态码是 429、502、503、504。`ErrForbidden`、域名不存在和证书错误直接返回。
 
 | 选项 | 作用 |
 | --- | --- |
@@ -132,7 +132,7 @@ previews.Transport = outbound.Retry(previews.Transport, outbound.RetryOptions{})
 
 客户端的 `Timeout` 和请求的 context 限制包括重试在内的总时长，剩余时间不够等到下一次时，直接返回最后一次的结果。
 
-重试让用户多等，只适合当前请求就需要结果的场景。要保证送达的请求，例如通知第三方订单已支付，放进[队列](queue.md)的任务中：任务失败后由队列重试，进程重启也不会丢失。[Webhook](../features/webhooks.md) 的投递就是这样做的。
+重试让用户多等，只适合当前请求就需要结果的场景。要保证送达的请求，例如通知第三方订单已支付，放进[队列](queue.md)的任务中：任务失败后由队列重试，进程重启后照样执行。[Webhook](../features/webhooks.md) 的投递就是这样做的。
 
 <a id="proxies"></a>
 ## 代理
@@ -143,10 +143,10 @@ previews.Transport = outbound.Retry(previews.Transport, outbound.RetryOptions{})
 ## 在其他组件中使用
 
 - [Webhook](../features/webhooks.md#private-addresses) 的投递默认使用 `outbound` 的客户端，端口不限。
-- [AI 助手](../ai/chat.md)的模型地址来自应用自己的配置或供应商表，默认不做限制：接入内网自建的模型服务是正常的需求。允许租户填写模型地址时，把客户端传给模型：
+- [AI 助手](../ai/chat.md)的模型地址来自应用自己的配置或供应商表，默认允许任何地址：接入内网自建的模型服务是正常的需求。允许租户填写模型地址时，把客户端传给模型：
 
   ```go
-  client := outbound.New(outbound.Options{AnyPort: true, Timeout: -1}) // 流式响应不能有总超时
+  client := outbound.New(outbound.Options{AnyPort: true, Timeout: -1}) // 流式响应关闭总超时
   llm := chat.NewModel(cfg, openai.WithOpenAIOptions(option.WithHTTPClient(client)))
   media := aiopenai.New(cfg, aiopenai.WithHTTPClient(client))
   ```
@@ -157,7 +157,7 @@ previews.Transport = outbound.Retry(previews.Transport, outbound.RetryOptions{})
 <a id="testing"></a>
 ## 测试
 
-`outbound/outboundtest` 提供不连接网络的 `http.RoundTripper`：按方法和地址登记响应，记录发出的每个请求。把它的 `Client()` 交给业务动作，就可以测试链接预览，不需要真的去请求 `example.com`：
+`outbound/outboundtest` 提供离线的 `http.RoundTripper`：按方法和地址登记响应，记录发出的每个请求。把它的 `Client()` 交给业务动作，就可以离线测试链接预览：
 
 ```go
 func TestPreview(t *testing.T) {
@@ -188,7 +188,7 @@ func TestPreview(t *testing.T) {
 | `Handler(h)`、`HandlerFunc(f)` | 用 `http.Handler` 生成响应，可以检查请求，或者等待 `r.Context()` 结束模拟慢响应 |
 | `.Header(key, value)` | 设置响应头，例如 `Status(429).Header("Retry-After", "1")` |
 
-它替换的是传输层，`outbound` 的地址检查不会执行。测试被拒绝的链接时，让请求返回 `ErrForbidden`：
+它替换的是传输层，`outbound` 的地址检查随之跳过。测试被拒绝的链接时，让请求返回 `ErrForbidden`：
 
 ```go
 fake.On("https://internal.example.com/*").Reply(outboundtest.Fail(outbound.ErrForbidden))
@@ -197,9 +197,9 @@ _, err := preview.fetch(t.Context(), "https://internal.example.com/admin")
 assert.ErrorIs(t, err, ErrInvalidLink)
 ```
 
-`Sent(pattern)` 返回匹配的请求，`Requests()` 返回全部请求。记录的请求带有完整的请求体，用 `JSON(&v)` 或 `Form()` 解析。没有登记的请求返回错误，并且在测试结束时让测试失败，代码不会在测试中悄悄访问外网。
+`Sent(pattern)` 返回匹配的请求，`Requests()` 返回全部请求。记录的请求带有完整的请求体，用 `JSON(&v)` 或 `Form()` 解析。没有登记的请求返回错误，并且在测试结束时让测试失败，测试中的每个请求都有登记。
 
-第三方 SDK 通常有传入 `*http.Client` 的选项，同样可以用它测试，不需要 SDK 支持修改服务地址：
+第三方 SDK 通常有传入 `*http.Client` 的选项，同样可以用它测试：
 
 ```go
 fake.On("POST https://api.resend.com/emails").Reply(outboundtest.JSON(200, map[string]string{"id": "em_1"}))
@@ -243,7 +243,7 @@ func Retry(next http.RoundTripper, opts RetryOptions) http.RoundTripper
 | --- | --- |
 | `Attempts int` | 包括第一次在内的最多尝试次数，默认 3 |
 | `Backoff time.Duration` | 第一次重试前的等待，之后翻倍并加上抖动，默认 200ms |
-| `MaxWait time.Duration` | 两次尝试之间最长的等待，默认 5s；`Retry-After` 超过它时不再重试 |
+| `MaxWait time.Duration` | 两次尝试之间最长的等待，默认 5s；`Retry-After` 超过它时直接返回 |
 
 ### outboundtest
 

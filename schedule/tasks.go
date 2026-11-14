@@ -27,14 +27,14 @@ type Task struct {
 }
 
 // Next 返回 after 之后（不含 after 所在的这一秒）任务下一次到期的时刻，时区为 Location。
-// 表达式不会再到期时（例如指定了已经过去的年份）返回零值。
+// 表达式已经没有下一次时（例如指定了已经过去的年份）返回零值。
 func (t Task) Next(after time.Time) time.Time { return t.when.next(after, t.Location) }
 
 // Prev 返回 before 或之前任务最后一次到期的时刻，时区为 Location。与执行记录比较，可以发现应当执行却没有执行的触发，
 // 例如调度器停止或部署期间错过的触发。表达式从未到期时返回零值。
 func (t Task) Prev(before time.Time) time.Time { return t.when.prev(before, t.Location) }
 
-// Tasks 按注册顺序返回全部任务。它只读取任务的定义，不需要运行调度器：
+// Tasks 按注册顺序返回全部任务。它只读取任务的定义，任何进程都可以调用：
 // HTTP 进程和命令可以创建同样的调度器，用它展示任务和下一次执行时间。
 func (s *Scheduler) Tasks() []Task {
 	s.mu.Lock()

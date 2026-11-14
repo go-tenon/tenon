@@ -21,14 +21,14 @@ const presenceTTL = 60 * time.Second
 const presenceTimeout = 5 * time.Second
 
 // PresenceAuthorizer 决定 sub 能否加入 presence 频道。info 是其他成员能看到的资料，例如名字和头像，
-// 会编码为 JSON，nil 表示没有资料；不要放入不该公开的字段。错误的含义与 Authorizer 相同。
+// 会编码为 JSON，nil 表示没有资料；只放可以公开的字段。错误的含义与 Authorizer 相同。
 type PresenceAuthorizer func(ctx context.Context, sub identity.Subject, p Params) (info any, allowed bool, err error)
 
 // Presence 返回 presence 频道的规则：与 Private 一样只有 authorize 同意的主体可以订阅，
 // 此外订阅者是频道的在线成员，彼此可以看到：客户端 SDK 能取得成员列表，并在成员加入、离开时收到事件。
 // 服务端用 Realtime.Members 查询。authorize 为 nil 时 panic。
 //
-// 加入和离开事件按主体发出：主体的第一个连接加入时发出加入事件，之后的连接（例如另一个标签页）不再发；
+// 加入和离开事件按主体发出：主体的第一个连接加入时发出加入事件，之后的连接（例如另一个标签页）保持安静；
 // 连接离开后在线记录保留 Options.PresenceGrace，期满时主体没有其他连接才发出离开事件。
 // 所以网络闪断后重连、刷新页面，其他成员都看不到离开和加入。客户端主动取消订阅同样经过宽限期；Realtime.Unsubscribe 把主体移出频道，离开事件立即发出。
 //
@@ -54,7 +54,7 @@ type PresenceEntry struct {
 type PresenceStore interface {
 	// Add 写入或续期 e.Channel 中连接 e.Client 的记录，ttl 之后过期。
 	Add(ctx context.Context, e PresenceEntry, ttl time.Duration) error
-	// Remove 删除 channel 中连接 client 的记录，不存在时什么也不做。
+	// Remove 删除 channel 中连接 client 的记录，不存在时直接返回。
 	Remove(ctx context.Context, channel, client string) error
 	// List 返回 channel 中没有过期的记录。
 	List(ctx context.Context, channel string) ([]PresenceEntry, error)

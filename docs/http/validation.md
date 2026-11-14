@@ -1,6 +1,6 @@
 # 验证
 
-验证客户端传入的数据，是每个 API 都要面对的工作。在 Tenon 中，验证规则直接写在[输入类型](requests.md)的结构体标签上。Huma 会在调用处理器**之前**完成验证，不合格的请求根本不会到达你的处理器。
+验证客户端传入的数据，是每个 API 都要面对的工作。在 Tenon 中，验证规则直接写在[输入类型](requests.md)的结构体标签上。Huma 会在调用处理器**之前**完成验证，到达处理器的都是合格的请求。
 
 这种方式还有一个额外的好处：验证规则会自动出现在 OpenAPI 文档中，前端开发者看到的约束，与服务端实际执行的约束完全一致。
 
@@ -28,7 +28,7 @@ type CreateInput struct {
 }
 ```
 
-就是这样！当客户端发送的标题为空，或者 slug 含有空格、大写字母时，Huma 会返回一个 `422` 错误响应，你的处理器不会被调用。修改文章的接口和[页面表单](../responses/forms.md)也使用同一个 `Changes`，所以规则只需要写一次。
+就是这样！当客户端发送的标题为空，或者 slug 含有空格、大写字母时，Huma 直接返回一个 `422` 错误响应。修改文章的接口和[页面表单](../responses/forms.md)也使用同一个 `Changes`，所以规则只需要写一次。
 
 <a id="available-validation-rules"></a>
 ## 可用的验证规则
@@ -42,10 +42,10 @@ type CreateInput struct {
 | `format` | 字符串 | 预定义格式，例如 `email`、`uri`、`uuid`、`date-time`、`ipv4` |
 | `enum` | 字符串、数字 | 允许的取值，用逗号分隔，例如 `enum:"draft,published"` |
 | `minimum`、`maximum` | 数字 | 最小值、最大值（包含边界） |
-| `exclusiveMinimum`、`exclusiveMaximum` | 数字 | 最小值、最大值（不包含边界） |
+| `exclusiveMinimum`、`exclusiveMaximum` | 数字 | 最小值、最大值（开区间） |
 | `multipleOf` | 数字 | 必须是指定数字的倍数 |
 | `minItems`、`maxItems` | 数组 | 最少、最多元素个数 |
-| `uniqueItems` | 数组 | 元素不能重复 |
+| `uniqueItems` | 数组 | 元素各不相同 |
 | `default` | 任意 | 客户端省略时使用的默认值 |
 | `required` | 任意 | 显式声明是否必填 |
 
@@ -104,9 +104,9 @@ type PatchInput struct {
 
 客户端根据 `location` 把 `message` 显示在对应的表单字段旁边，需要自己的文案时按 `code` 处理。
 
-验证错误本身不带 `code` 字段，`code` 只出现在 `errors` 的每一项中，见[错误响应格式](../general/errors.md#response-format)。
+验证错误的 `code` 写在 `errors` 的每一项中，见[错误响应格式](../general/errors.md#response-format)。
 
-如果路由需要认证，认证会先于验证执行。因此，一个没有携带凭据且请求体也不合法的请求，会得到 `401` 而不是 `422`。
+如果路由需要认证，认证会先于验证执行。因此，一个没有携带凭据且请求体也不合法的请求，得到的是 `401`。
 
 <a id="validation-messages"></a>
 ### 验证提示
@@ -133,7 +133,7 @@ type PatchInput struct {
 <a id="business-validation"></a>
 ## 业务规则验证
 
-结构体标签适合描述格式上的约束，例如长度、范围和格式。而“slug 不能与其他文章重复”、“已发布的文章不能修改 slug”这类需要查询数据或依赖业务状态的规则，放在[业务动作](../concepts/actions.md)的 `Handle` 中检查，并返回一个[业务错误](../general/errors.md)：
+结构体标签适合描述格式上的约束，例如长度、范围和格式。而“slug 全站唯一”、“文章发布后 slug 固定”这类需要查询数据或依赖业务状态的规则，放在[业务动作](../concepts/actions.md)的 `Handle` 中检查，并返回一个[业务错误](../general/errors.md)：
 
 ```go
 var ErrSlugLocked = errorx.Define(errorx.InvalidArgument, "article.slug_locked")
@@ -150,4 +150,4 @@ func (a *Update) Handle(ctx context.Context, subject identity.Subject, id uuid.U
 `errorx.InvalidArgument` 分类的错误同样会被转换为 `422` 响应，但它没有 `errors` 数组，而是带有 `code` 字段 `article.slug_locked`，客户端可以据此给出准确的提示。完整的例子见[错误处理](../general/errors.md#example)。
 
 > [!TIP]
-> `Handle` 也会被命令行、队列或测试直接调用，绕过 HTTP 层的验证。必须成立的约束（例如标题不能为空）在 `Handle` 中再检查一次。
+> `Handle` 也会被命令行、队列或测试直接调用，绕过 HTTP 层的验证。必须成立的约束（例如标题必填）在 `Handle` 中再检查一次。

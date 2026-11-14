@@ -31,7 +31,7 @@ type Options struct {
 	Comma rune
 	// NoHeader 把第一条记录当作数据。
 	NoHeader bool
-	// LazyQuotes 允许不带引号的字段中出现引号，以及带引号的字段中出现未转义的引号。
+	// LazyQuotes 允许无引号的字段中出现引号，以及带引号的字段中出现未转义的引号。
 	LazyQuotes bool
 }
 

@@ -186,7 +186,7 @@ social:
 
 - OpenID Connect 提供方的账号来自 ID token：`oauth.Discover` 校验它的签名、签发者、受众、有效期和 nonce，读取 `sub`、`email`、`email_verified` 和 `name`。接入 Microsoft 或企业的身份系统时只需要换掉 `Issuer`。
 - 只支持 OAuth 2.0 的提供方，由应用写一个函数用换到的 token 读取账号，例如上面的 `githubAccount`；`client` 会在请求中带上 token。
-- 第三方返回的用户 ID 才是账号的唯一标识：GitHub 是数字 `id`，OpenID Connect 是 `sub`，微信是 `unionid`。用户名和邮箱都可能变化，不要用作 `Subject`。
+- 第三方返回的用户 ID 才是账号的唯一标识：GitHub 是数字 `id`，OpenID Connect 是 `sub`，微信是 `unionid`。用户名和邮箱都可能变化，所以只用 ID 作为 `Subject`。
 - `oauth.Discover` 会请求发现文档，校验 ID token 的公钥按需下载并缓存，所以提供方在启动时创建一次，之后一直复用。
 - 全部出站请求使用 `Config.Client`，默认是 `http.DefaultClient`。Issuer 来自租户后台填写的企业 SSO 时，要传入 [`outbound`](../libraries/outbound.md) 的客户端，拒绝访问内网地址。
 
@@ -205,18 +205,18 @@ out, err := users.External(ctx, ext)
 | `out.Proof` | 还没有绑定 | 注册新账号，或者让用户登录已有账号后[绑定](#linking-accounts) |
 | `out.Pending`、`out.Enroll` | 账号体系要求[二次验证](login.md#requiring-two-factor) | 与密码登录相同，先完成第二步或先启用 |
 
-注册与[验证码注册](login.md#codes)相同：应用的注册业务动作在事务中创建账号行，再把 `out.Proof` 交给 `Register`。第三方账号作为登录标识写入，第三方确认过（`EmailVerified`）的邮箱也一并写入，之后用户也可以用这个邮箱收验证码登录。第三方账号登录不再要求[二次验证](login.md#two-factor)，由提供方负责验证身份；账号体系[强制二次验证](login.md#requiring-two-factor)时除外。
+注册与[验证码注册](login.md#codes)相同：应用的注册业务动作在事务中创建账号行，再把 `out.Proof` 交给 `Register`。第三方账号作为登录标识写入，第三方确认过（`EmailVerified`）的邮箱也一并写入，之后用户也可以用这个邮箱收验证码登录。第三方账号登录时跳过[二次验证](login.md#two-factor)这一步，由提供方负责验证身份；账号体系[强制二次验证](login.md#requiring-two-factor)时除外。
 
 `ext.Claims` 是 ID token 的全部声明（`Account` 读取的提供方由应用自己填写），例如企业 IdP 的 `groups`，应用可以在每次登录时据此同步角色。提供方在这次登录中做过多因素认证时（各家写在 `amr` 等声明中，写法不同），应用确认后设置 `ext.TwoFactor = true`，这次登录记为 `[提供方, idp_mfa]`，计入二次验证。只对信任其 MFA 的提供方这样做，例如租户自己的企业 IdP。
 
 **框架不按邮箱把第三方账号自动关联到已有账号。** 否则任何人都可以在一个不验证邮箱的第三方平台上填上别人的邮箱，借此登录别人的账号。注册时邮箱已属于其他账号，`Register` 返回 `login.ErrTaken`：提示用户先用原来的方式登录，再绑定这个第三方账号。
 
-例外是租户验证过邮箱域名的企业 IdP：应用确认这个连接属于当前租户、租户验证过 `ext.Email` 的域名之后，设置 `ext.TrustEmail = true`，`External` 就把第三方账号直接绑定给这个邮箱已有的账号并登录。公司改用 SSO 后，员工原来的账号因此自动关联。Google、GitHub 等公共提供方永远不要设置它，见[企业单点登录](enterprise-sso.md)。
+例外是租户验证过邮箱域名的企业 IdP：应用确认这个连接属于当前租户、租户验证过 `ext.Email` 的域名之后，设置 `ext.TrustEmail = true`，`External` 就把第三方账号直接绑定给这个邮箱已有的账号并登录。公司改用 SSO 后，员工原来的账号因此自动关联。只对验证过域名的企业 IdP 设置它，Google、GitHub 等公共提供方保持默认，见[企业单点登录](enterprise-sso.md)。
 
 <a id="spa-login"></a>
 ## 在单页应用中登录
 
-单页应用不保存 client secret，也不必知道各家的授权地址，由 API 生成跳转地址：
+client secret 和各家的授权地址都留在服务端，由 API 为单页应用生成跳转地址：
 
 1. 登录页上的“使用 GitHub 登录”调用 `POST /auth/github/start`，`Start` 生成跳转地址和 `oauth.Flow`（state、nonce 和 PKCE verifier）。单页应用把 `flow` 存进 `sessionStorage`，然后整页跳转到第三方；
 2. 用户同意授权后，第三方带着授权码和 state 跳回单页应用的回调页 `/admin/auth/github/callback`，也就是 `RedirectURL`；
@@ -408,7 +408,7 @@ App 带着 `proof` 调用[注册接口](login.md#codes)，与验证码注册是�
 <a id="native-sign-in"></a>
 ### App 原生登录
 
-App 也可以使用系统或第三方 SDK 提供的原生登录，例如 Google 登录和 Sign in with Apple。SDK 直接返回 ID token，不经过授权码，App 把它放在 `id_token` 中交给同一个接口，由 `IDToken` 校验。
+App 也可以使用系统或第三方 SDK 提供的原生登录，例如 Google 登录和 Sign in with Apple。SDK 直接返回 ID token，App 把它放在 `id_token` 中交给同一个接口，由 `IDToken` 校验。
 
 SDK 签发的 ID token 的受众是 App 自己的 client ID，它与网页使用的不同，所以要列在 `oauth.Config.Audiences` 中，见上面的 `GoogleAppClientIDs`。
 
@@ -437,7 +437,7 @@ if err := h.users.Link(ctx, h.db, sub.Ref(), out.Proof); err != nil {
 }
 ```
 
-`Identifiers` 列出账号的全部登录标识，第三方账号的 `Kind` 是提供方的名称；`Detach` 解除绑定，不能解除最后一种登录方式，见[管理登录方式](login.md#managing)。设置了 [`PerTenant`](login.md#identifiers) 的账号体系，第三方账号同样按租户隔离：同一个 Google 账号可以在两个租户中各绑定一个账号。
+`Identifiers` 列出账号的全部登录标识，第三方账号的 `Kind` 是提供方的名称；`Detach` 解除绑定，账号始终保留至少一种登录方式，见[管理登录方式](login.md#managing)。设置了 [`PerTenant`](login.md#identifiers) 的账号体系，第三方账号同样按租户隔离：同一个 Google 账号可以在两个租户中各绑定一个账号。
 
 <a id="sign-in-with-apple"></a>
 ## Sign in with Apple

@@ -44,7 +44,7 @@ func validate(dst any) error {
 // path 是 YAML 字段路径，例如 http.trusted_proxies[0]。
 //
 // 内嵌字段（例如 `yaml:",inline"`）的方法会提升到外层结构体，此时只调用外层一次，
-// 避免同一方法执行两遍；外层自己定义了该方法时也只调用外层，与 Go 的方法覆盖语义一致。
+// 每个方法只执行一遍；外层自己定义了该方法时也只调用外层，与 Go 的方法覆盖语义一致。
 func walk[I any](v reflect.Value, path string, visit func(I, string)) {
 	walkValue(v, path, visit, false)
 }

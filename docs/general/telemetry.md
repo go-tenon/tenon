@@ -2,7 +2,7 @@
 
 应用上线之后，你需要知道它运行得怎么样：每秒处理多少请求、哪个接口变慢了、错误是从哪里来的。可观测性就是回答这些问题的能力，它通常由三类数据组成：**指标**、**链路**和**日志**。
 
-Tenon 使用 [OpenTelemetry](https://opentelemetry.io/docs/languages/go/) 报告这些数据。框架的 HTTP 服务、数据库连接池、队列、调度器、限流器、MCP 服务和实时频道都可以报告指标，前五个还报告链路。`telemetry` 包把指标、链路和应用的日志一起推送到一个 OTLP 接收端，例如 [OpenObserve](https://openobserve.ai/)，不需要另外部署收集器。
+Tenon 使用 [OpenTelemetry](https://opentelemetry.io/docs/languages/go/) 报告这些数据。框架的 HTTP 服务、数据库连接池、队列、调度器、限流器、MCP 服务和实时频道都可以报告指标，前五个还报告链路。`telemetry` 包把指标、链路和应用的日志一起推送到一个 OTLP 接收端，例如 [OpenObserve](https://openobserve.ai/)，应用直接推送。
 
 和 Tenon 的其他功能一样，指标和链路都需要显式开启：把 `MeterProvider`、`TracerProvider` 交给需要报告的组件，没有传入的组件就不报告。Redis、Memcached 等依赖由各自的生态报告，例如 rueidis 的 [rueidisotel](https://pkg.go.dev/github.com/redis/rueidis/rueidisotel)，把同一个 Provider 交给它们即可。
 
@@ -42,7 +42,7 @@ router.Use(httpx.Telemetry(tel.Meters, tel.Tracers))
 router.Use(httpx.Defaults(cfg.HTTP)...)
 ```
 
-这样，日志、数据库语句和 HTTP 请求的指标与链路都会推送到配置的接收端。接收端的地址为空时什么也不推送，所以本地开发不需要任何配置。
+这样，日志、数据库语句和 HTTP 请求的指标与链路都会推送到配置的接收端。接收端的地址为空时关闭推送，所以本地开发保持默认配置即可。
 
 <a id="setup"></a>
 ## 配置
@@ -58,18 +58,18 @@ telemetry:
   version: ${APP_VERSION:-}
 ```
 
-- `endpoint` 是基础地址，日志、指标、链路分别发往其下的 `/v1/logs`、`/v1/metrics`、`/v1/traces`。为空时不推送，本地开发不用配置。
+- `endpoint` 是基础地址，日志、指标、链路分别发往其下的 `/v1/logs`、`/v1/metrics`、`/v1/traces`。为空时关闭推送，本地开发保持为空。
 - `headers` 附加到每个请求，通常是认证信息。
-- `service` 为空时取可执行文件名；`version` 为空时取构建信息中的模块版本。日志、指标、链路都用这里的服务名和版本，`logs` 段不再重复。
+- `service` 为空时取可执行文件名；`version` 为空时取构建信息中的模块版本。日志、指标、链路都用这里的服务名和版本，`logs` 段沿用它们。
 - `sample_ratio` 是新链路的采样比例，默认 `1`，即全部记录。请求带着调用方的链路进来时，跟随调用方的决定。
 
 把 `telemetry.Config` 放进[根配置](configuration.md#loading-configuration)，在入口中**最先**打开它，如[示例用法](#example-usage)。`tel.Shutdown` 最先登记、最后执行，发出缓冲中的数据，其他资源关闭时记录的日志也能推送出去。
 
 `logging.Export` 让日志同时推送出去，经过和标准错误上同样的级别和格式化。`ctx` 中有 span 时，日志记录带上它的链路，日志平台可以从一条日志跳到它所在的链路。标准错误上的日志照常输出，启动阶段的错误和接收端不可用时的排查都靠它。只想推送指标和链路时，不传 `logging.Export` 即可。
 
-三种数据共用一组资源属性：`service.name`、`service.version`、`service.instance.id`、主机名和进程号。`service.instance.id` 每个进程随机生成，同一服务的 `serve`、`work` 进程和多个副本靠它区分，指标不会写进同一条序列。
+三种数据共用一组资源属性：`service.name`、`service.version`、`service.instance.id`、主机名和进程号。`service.instance.id` 每个进程随机生成，同一服务的 `serve`、`work` 进程和多个副本靠它区分，各自写进自己的指标序列。
 
-推送在后台批量进行，接收端变慢不会阻塞请求，缓冲满时丢弃新数据。推送失败记录为 `component=telemetry` 的错误日志。
+推送在后台批量进行，请求照常处理，缓冲满时丢弃新数据。推送失败记录为 `component=telemetry` 的错误日志。
 
 <a id="custom-providers"></a>
 ### 自己创建 Provider
@@ -81,7 +81,7 @@ telemetry:
 
 每个组件在一处同时接收 `MeterProvider` 和 `TracerProvider`。只需要其中一种时，另一个传 OpenTelemetry 的 noop 实现（`go.opentelemetry.io/otel/metric/noop`、`go.opentelemetry.io/otel/trace/noop`）。
 
-框架按 [W3C Trace Context](https://www.w3.org/TR/trace-context/) 读写链路，不需要设置全局的 propagator。
+框架按 [W3C Trace Context](https://www.w3.org/TR/trace-context/) 读写链路，内置了 propagator。
 
 <a id="http"></a>
 ### HTTP 请求
@@ -97,7 +97,7 @@ router.Use(httpx.Defaults(cfg.HTTP)...)
 | --- | --- | --- |
 | `http.server.request.duration` | 直方图，秒 | `http.request.method`、`http.response.status_code`、`http.route`、`url.scheme`；5xx 时还有 `error.type` |
 
-属性遵循 OpenTelemetry 的 [HTTP 语义约定](https://opentelemetry.io/docs/specs/semconv/http/http-metrics/)，现成的 HTTP 仪表盘可以直接使用。`http.route` 是路由模板，例如 `/articles/{id}`；没有匹配到路由的请求不带这个属性，非标准的请求方法记为 `_OTHER`，客户端无法通过构造路径或方法制造大量的指标序列。
+属性遵循 OpenTelemetry 的 [HTTP 语义约定](https://opentelemetry.io/docs/specs/semconv/http/http-metrics/)，现成的 HTTP 仪表盘可以直接使用。`http.route` 是路由模板，例如 `/articles/{id}`；匹配到路由的请求才带这个属性，非标准的请求方法记为 `_OTHER`，指标序列的数量因此由应用的路由决定。
 
 每个请求还是一个服务端 span，名称是方法和路由模板，例如 `GET /articles/{id}`。请求头带有 `traceparent` 时（例如来自前端或另一个服务），span 接在调用方的链路之后；`5xx` 的请求标记为错误，错误链记录为 span 上的 exception 事件，见[错误追踪](#error-tracking)。处理器从请求的 `ctx` 中拿到这个 span，自己创建的 span 都接在它下面。耗时指标也用这个 `ctx` 记录，日志平台可以从一个慢请求的数据点跳到它的链路。
 
@@ -120,7 +120,7 @@ db, err := database.Open(ctx, cfg.Database, database.WithTelemetry(tel.Meters, t
 
 `ctx` 中有 span 时，每条语句是它之下的一个 span，名称是操作和表，例如 `SELECT articles`：一个慢请求的链路里能看到它执行了哪些语句、各用了多久，事务的 `BEGIN`、`COMMIT` 也在其中。队列转发任务、调度器加锁这类后台查询不属于任何请求，只计入指标，不产生链路。
 
-span 的 `db.query.text` 是把字面量换成 `?` 之后的 SQL，例如 `SELECT … WHERE ("a"."id" = ?)`。Bun 把参数直接写进 SQL，换掉之后手机号、token 这类值不会发往链路平台。超过[慢查询](../database/quick-start.md#slow-queries)阈值的语句同样以这种形式记录到日志。
+span 的 `db.query.text` 是把字面量换成 `?` 之后的 SQL，例如 `SELECT … WHERE ("a"."id" = ?)`。Bun 把参数直接写进 SQL，换掉之后手机号、token 这类值只留在应用中。超过[慢查询](../database/quick-start.md#slow-queries)阈值的语句同样以这种形式记录到日志。
 
 <a id="queue"></a>
 ### 队列
@@ -131,7 +131,7 @@ w := queue.NewWorker(db, cfg.Queue, nil, queue.WithTelemetry(tel.Meters, tel.Tra
 
 worker 报告每个任务的等待时长 `queue.job.wait` 和处理耗时 `queue.job.duration`，各指标的含义见[队列的指标](../libraries/queue.md#metrics)。积压的任务数由 nsqd 统计，见[队列状态](../libraries/queue.md#stats-command)。
 
-发布任务时把 `ctx` 中的链路写入任务的元数据（`traceparent`），不需要任何设置。worker 为每次执行创建一个 `process <topic>` span，接在发布任务的 span 之后：发布文章的请求和随后发送通知邮件的任务出现在同一条链路中，中间隔了多久、邮件为什么失败都能看到。每次重试是一个新的 span，失败、重试和租约丢失时标记为错误。
+发布任务时自动把 `ctx` 中的链路写入任务的元数据（`traceparent`）。worker 为每次执行创建一个 `process <topic>` span，接在发布任务的 span 之后：发布文章的请求和随后发送通知邮件的任务出现在同一条链路中，中间隔了多久、邮件为什么失败都能看到。每次重试是一个新的 span，失败、重试和租约丢失时标记为错误。
 
 指标和 span 都用 [消息语义约定](https://opentelemetry.io/docs/specs/semconv/messaging/) 的 `messaging.system`（驱动名）和 `messaging.destination.name`（topic）区分队列，按同一个字段就能筛出一个 topic 的指标和链路。
 
@@ -175,7 +175,7 @@ srv := mcpx.New(mcpx.Options{Name: "app"}, mcpx.WithTelemetry(tel.Meters, tel.Tr
 | --- | --- | --- |
 | `mcp.server.operation.duration` | 直方图，秒 | `mcp.method.name`（`tools/call`、`tools/list`、`initialize` 等）、`gen_ai.tool.name`、`gen_ai.operation.name`（工具调用为 `execute_tool`）、`mcp.protocol.version`、`network.transport`（HTTP 为 `tcp`，stdio 为 `pipe`）；出错时还有 `error.type` |
 
-属性遵循 OpenTelemetry 的 [MCP 语义约定](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/mcp.md)，规范目前还在 Development 阶段。工具报告错误时 `error.type` 是 `tool_error`，用它可以统计哪个工具常常失败；调用不存在或没有权限的工具属于调用方的问题，不算出错。`gen_ai.tool.name` 只记录登记过的工具，模型编造的名称不会产生新的指标序列。
+属性遵循 OpenTelemetry 的 [MCP 语义约定](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/mcp.md)，规范目前还在 Development 阶段。工具报告错误时 `error.type` 是 `tool_error`，用它可以统计哪个工具常常失败；调用不存在或没有权限的工具属于调用方的问题，单独统计。`gen_ai.tool.name` 只记录登记过的工具，指标序列的数量保持固定。
 
 每个请求是一个 server span，名称是方法和工具名，例如 `tools/call article_publish`，接在 HTTP 请求的 span 之下。客户端在请求的 `params._meta` 中带了 `traceparent` 时，span 接在客户端的链路之后，并链接到 HTTP 请求的 span。
 
@@ -194,7 +194,7 @@ srv := mcpx.New(mcpx.Options{Name: "app"}, mcpx.WithTelemetry(tel.Meters, tel.Tr
 
 `ctx` 中有 span 时，用它记录的日志自动带上 `trace_id` 和 `span_id`，包括访问日志、队列和调度器的日志，以及处理函数里 `slog.InfoContext(ctx, ...)` 记录的业务日志。在链路追踪系统中可以按 `trace_id` 找到一条链路的全部日志。
 
-用 [`logging.Export`](#setup) 推送的日志把链路写在记录本身，而不是作为 `trace_id` 字段，日志平台据此在日志和链路之间跳转。
+用 [`logging.Export`](#setup) 推送的日志把链路写在记录本身，日志平台据此在日志和链路之间跳转。
 
 <a id="error-tracking"></a>
 ## 错误追踪
@@ -207,7 +207,7 @@ srv := mcpx.New(mcpx.Options{Name: "app"}, mcpx.WithTelemetry(tel.Meters, tel.Tr
 | `exception.type` | [错误码](errors.md)；没有时是最内层错误的类型，例如 `*pgconn.PgError` |
 | `exception.stacktrace` | `%+v` 格式的完整错误链，包含错误**创建处**的堆栈；普通错误没有堆栈时省略 |
 
-`4xx` 是调用方的问题，不记录。按 `exception` 事件聚合错误的链路平台（例如 [SigNoz](https://signoz.io)、[Uptrace](https://uptrace.dev)）据此列出出现过哪些错误、各自的次数和趋势，点进去就是堆栈和整条链路。[Sentry](https://sentry.io) 通过 OTLP 接收链路时，目前还不能可靠地把这些事件变成 Issue，不推荐用它做错误追踪。
+只记录 `5xx`，`4xx` 是调用方的问题。按 `exception` 事件聚合错误的链路平台（例如 [SigNoz](https://signoz.io)、[Uptrace](https://uptrace.dev)）据此列出出现过哪些错误、各自的次数和趋势，点进去就是堆栈和整条链路。[Sentry](https://sentry.io) 通过 OTLP 接收链路时，把这些事件变成 Issue 目前还不可靠，错误追踪推荐用前两者。
 
 用户看到的 `5xx` 错误页和提示上有请求编号，它就是访问日志和错误日志中的 `request_id`：按它找到这个请求的日志，日志中的 `trace_id` 再跳到链路。
 
@@ -260,7 +260,7 @@ func Open(ctx context.Context, cfg Config) (*Providers, error)
     - `cfg`：推送的配置，见[配置](#setup)
 - **返回**：日志、指标和链路的 Provider
 
-包 `github.com/go-tenon/tenon/telemetry`。开启推送时，同时开始报告 Go 运行时指标。`cfg.Endpoint` 为空时返回不记录也不推送的 Provider，调用方不需要区分。
+包 `github.com/go-tenon/tenon/telemetry`。开启推送时，同时开始报告 Go 运行时指标。`cfg.Endpoint` 为空时返回空操作的 Provider，调用方按同样的方式使用它。
 
 ### telemetry.Providers
 

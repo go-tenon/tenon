@@ -1,6 +1,6 @@
 // Command tenon 是 Tenon 应用的开发工具：init 生成新项目，dev 运行应用和前端工具，build 构建前端和二进制，
 // generate 生成客户端。
-// 它读取项目根目录的 tenon.json（可以没有，全部用约定的默认值）。应用把它加入 go.mod 的工具，版本随框架固定：
+// 它读取项目根目录的 tenon.json（可选，缺省时全部用约定的默认值）。应用把它加入 go.mod 的工具，版本随框架固定：
 //
 //	go get -tool github.com/go-tenon/tenon/cmd/tenon
 //	go tool tenon dev
@@ -32,7 +32,7 @@ func initCommand() *cobra.Command {
 	var opts scaffold.Options
 	cmd := &cobra.Command{
 		Use:   "init <dir>",
-		Short: "生成新项目：Go 应用加 React 单页应用，不依赖任何外部服务",
+		Short: "生成新项目：Go 应用加 React 单页应用，生成后即可运行",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			dir := args[0]

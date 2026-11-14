@@ -1,5 +1,5 @@
 // Package aliyunapi 以 V3 签名（ACS3-HMAC-SHA256）调用阿里云 RPC 风格的 OpenAPI，供 push/aliyun 和 sms/aliyun 使用。
-// 不依赖阿里云的 SDK：请求随 ctx 取消，http.Client 可以替换为 outboundtest 的客户端。
+// 直接调用阿里云的 HTTP 接口：请求随 ctx 取消，http.Client 可以替换为 outboundtest 的客户端。
 package aliyunapi
 
 import (

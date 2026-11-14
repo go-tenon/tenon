@@ -59,8 +59,8 @@ type Options struct {
 // New 在 r 上创建 chi + Huma API，并让 r 上未匹配的路由与方法返回 Problem Details。
 // New 不安装任何中间件：在调用前用 r.Use 安装，例如 httpx.Defaults。
 //
-// 注册路由时只保存依赖、不调用依赖，openapi、routes、client 命令就能用零值的依赖构造同一套路由，
-// 不启动服务、不连接数据库，见 command/httpcmd。用 APIs 或 Lookup 可以从构造好的路由中取回 API。
+// 注册路由时只保存依赖，处理请求时才使用，openapi、routes、client 命令就能用零值的依赖离线构造同一套路由，
+// 见 command/httpcmd。用 APIs 或 Lookup 可以从构造好的路由中取回 API。
 func New(r chi.Router, opts Options) *API {
 	if r == nil {
 		panic("rest: nil router")
@@ -84,11 +84,11 @@ func New(r chi.Router, opts Options) *API {
 	cfg := huma.DefaultConfig(opts.Title, opts.Version)
 	// 默认的唯一创建钩子会在响应体加入 $schema 字段并设置 Link 响应头，对 API 使用者价值不大，不启用。
 	cfg.CreateHooks = nil
-	// schema 名带包名，不同包的同名类型（例如 article.Changes 和 comment.Changes）不会冲突，见 schemaNames。
+	// schema 名带包名，不同包的同名类型（例如 article.Changes 和 comment.Changes）各有自己的名字，见 schemaNames。
 	names := &schemaNames{anon: map[reflect.Type]string{}}
 	cfg.OpenAPI.Components.Schemas = huma.NewMapRegistry("#/components/schemas/", names.name)
 	// Huma 产生的错误由 localizeErrors 转为 ErrorModel，因此文档统一描述为 ErrorModel；
-	// 不覆盖全局 huma.NewError，避免影响同一进程中的其他 Huma API。
+	// 全局的 huma.NewError 保持原样，同一进程中的其他 Huma API 照常工作。
 	cfg.OpenAPI.Components.Schemas.RegisterTypeAlias(reflect.TypeOf(huma.ErrorModel{}), reflect.TypeOf(ErrorModel{}))
 	cfg.OpenAPI.Components.Schemas.RegisterTypeAlias(reflect.TypeOf(huma.ErrorDetail{}), reflect.TypeOf(ErrorDetail{}))
 	// localizeErrors 排在最前，应用的 Transformer 看到的已经是翻译后的 ErrorModel。

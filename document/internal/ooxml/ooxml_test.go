@@ -38,7 +38,7 @@ func TestReadPartDepth(t *testing.T) {
 	if node.Text != "deep" {
 		t.Fatalf("innermost text = %q", node.Text)
 	}
-	// 嵌套深得多时直接失败，不会递归穿过它。
+	// 嵌套深得多时直接失败，递归在上限处停止。
 	for _, depth := range []int{ooxml.MaxDepth + 1, 1 << 20} {
 		_, err := open(t, nested(depth, ""), -1).ReadPart(context.Background(), "part.xml")
 		if !errors.Is(err, convert.ErrCorrupt) {

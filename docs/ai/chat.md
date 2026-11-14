@@ -4,14 +4,14 @@
 
 agent 本身由 [trpc-agent-go](https://github.com/trpc-group/trpc-agent-go) 提供：模型、工具、提示词、记忆、多 agent 协作都直接使用它的 API，见[它的文档](https://trpc-group.github.io/trpc-agent-go/)。`ai/chat` 补上 Web 应用还需要的部分：
 
-- **后台运行**：一次回答可能持续几分钟，不受 HTTP 请求的时限约束。用户刷新页面或网络断开后，生成过程不受影响，重新连接后接着收到剩余的内容。
-- **中途插话**：模型还在查资料时，用户可以继续发消息，不需要等它答完，也不会打断它。
+- **后台运行**：一次回答可能持续几分钟，在 HTTP 请求之外运行。用户刷新页面或网络断开后，生成过程照常继续，重新连接后接着收到剩余的内容。
+- **中途插话**：模型还在查资料时，用户可以随时继续发消息，模型照常完成手头的工作。
 - **审批**：退款、发布这类操作，模型调用工具后先停下，由人确认后才执行。审批可以在几小时后、在另一个进程中进行。
 - **前端协议**：实现 Vercel AI SDK 的 UI 消息流协议，前端直接使用 `useChat`。
 - **图片、语音和向量**：生成图片、合成和识别语音、计算向量、重排，接口统一，测试时有替身。
-- **决策**：用专门的决策模型做分类、路由和打分，得到概率而不是文本。
+- **决策**：用专门的决策模型做分类、路由和打分，得到概率。
 
-后两项在 `ai` 包中，不依赖 `ai/chat`：只用到它们的应用不会链接 trpc-agent-go。
+后两项在 `ai` 包中，与 `ai/chat` 相互独立：只用到它们的应用保持精简。
 
 - [示例用法](#example-usage)
 - [准备数据表](#preparing-tables)
@@ -58,7 +58,7 @@ return chat.UIStream(run), nil
 
 回答在后台运行，页面刷新或断线后用 `chat.UIResume` 接着读；需要审批的工具调用先暂停，等用户批准。
 
-`Submit` 在后台开始一次运行就返回，回答的内容通过 `UIStream` 以 Vercel AI SDK 的协议推给前端。即使用户刷新了页面，生成过程也不受影响，用 `UIResume` 就能接着读到剩余的内容。下面先准备数据表，再逐步介绍装配、对话接口和审批。
+`Submit` 在后台开始一次运行就返回，回答的内容通过 `UIStream` 以 Vercel AI SDK 的协议推给前端。即使用户刷新了页面，生成过程也照常继续，用 `UIResume` 就能接着读到剩余的内容。下面先准备数据表，再逐步介绍装配、对话接口和审批。
 
 <a id="preparing-tables"></a>
 ## 准备数据表
@@ -103,7 +103,7 @@ stack.MustAdd("ai", func(ctx context.Context) error {
 ```
 
 - `chat.SetLogger` 让 trpc-agent-go 的日志写进应用的日志，带 `component=ai` 字段，可以[单独设置级别](../general/logging.md#component-levels)。
-- `chat.NewSessions` 把对话保存在应用的 PostgreSQL 中，直接使用应用的连接池，`sessions.Close` 不会关闭它。
+- `chat.NewSessions` 把对话保存在应用的 PostgreSQL 中，直接使用应用的连接池，连接池由应用自己关闭。
 - `chat.RequireApproval` 列出需要审批的工具，见[审批](#approval)。
 - `runs.Shutdown` 让进程停止时进行中的回答说完，见[部署](#deployment)；`runs.Close` 取消剩下的运行并关闭 runner。它们登记在数据库之后，所以会先于数据库关闭。
 
@@ -143,11 +143,11 @@ ai:
   max_retries: 2 # 可省略，默认就是 2；-1 表示不重试
 ```
 
-模型请求和普通的 HTTP 请求一样，遇到暂时的失败会重试几次，仍然失败就返回错误，不会排队等待：
+模型请求和普通的 HTTP 请求一样，遇到暂时的失败会重试几次，仍然失败就直接返回错误：
 
 - 连接失败、`408`、`409`、`429` 和 `5xx` 时重试。服务端给出 `Retry-After`（1 分钟以内）就按它等待，否则指数退避：0.5 秒起，每次翻倍，最长 8 秒。
 - 重试用完后返回错误。对话中，这次回答以 `error` 事件结束，用户可以重新发送；在[队列](../libraries/queue.md)任务中调用模型时，失败由任务的重试策略接着处理。
-- 模型已经开始流式返回内容后出错不会重试：已经推给用户的半段回答无法撤回，这次回答以错误结束。
+- 模型已经开始流式返回内容后出错时直接结束：已经推给用户的半段回答无法撤回，这次回答以错误结束。
 
 `max_retries` 同样作用于[图片、语音和向量](#media)的请求。
 
@@ -168,7 +168,7 @@ agent := llmagent.New("writer",
 
 `chat.NewModel` 不访问网络，各模型共用进程的 HTTP 连接池，每次调用时创建也没有额外开销。后台修改后，下一次调用模型就使用新的配置；审批后继续和插话后补跑的那一轮同样经过这里。
 
-Claude、Gemini 等其他接口的模型直接使用 trpc-agent-go 的对应包创建，`ai/chat` 的其余部分不受影响。
+Claude、Gemini 等其他接口的模型直接使用 trpc-agent-go 的对应包创建，`ai/chat` 的其余部分保持原样。
 
 <a id="choosing-agents"></a>
 ### 按对话选择 agent
@@ -204,7 +204,7 @@ runs := chat.NewRuns("luway", nil, sessions,
 <a id="conversation-api"></a>
 ## 对话接口
 
-助手的接口使用 [Vercel AI SDK](https://ai-sdk.dev) 的 [UI 消息流协议](https://ai-sdk.dev/docs/ai-sdk-ui/stream-protocol)，前端直接使用它的 `useChat`（React、Vue、Svelte 都有），流式显示、工具调用、审批和断线续传都不需要自己实现。
+助手的接口使用 [Vercel AI SDK](https://ai-sdk.dev) 的 [UI 消息流协议](https://ai-sdk.dev/docs/ai-sdk-ui/stream-protocol)，前端直接使用它的 `useChat`（React、Vue、Svelte 都有），流式显示、工具调用、审批和断线续传都现成可用。
 
 每个对话用一个 ID 标识，由 `useChat` 生成。对话属于当前登录的编辑，`Runs` 的方法都以主体 ID 和对话 ID 定位它，一个编辑无法读取其他人的对话。
 
@@ -261,7 +261,7 @@ func (h *Handlers) Stop(ctx context.Context, in *ConversationInput) (*struct{}, 
     sub, _ := identity.FromContext(ctx)
     run, err := h.runs.Get(ctx, sub.Ref().String(), in.ID)
     if err != nil || run == nil {
-        return nil, err // 没有进行中的回答时什么也不做
+        return nil, err // 没有进行中的回答时直接返回
     }
     run.Cancel()
     return nil, nil
@@ -300,12 +300,12 @@ const { messages, sendMessage, addToolApprovalResponse } = useChat({
 });
 ```
 
-`Runs.Submit` 在后台开始一次运行后立即返回，运行不会因为请求结束而停止。它也不受 [`httpx.Timeout`](../http/middleware.md#request-timeout) 的影响，助手的路由和其他 API 装在同一组中间件下即可。对话正在回答时再次提交，`Submit` 返回 `chat.ErrBusy`（`409`）。
+`Runs.Submit` 在后台开始一次运行后立即返回，运行独立于请求，请求结束后照常继续。它也独立于 [`httpx.Timeout`](../http/middleware.md#request-timeout)，助手的路由和其他 API 装在同一组中间件下即可。对话正在回答时再次提交，`Submit` 返回 `chat.ErrBusy`（`409`）。
 
 <a id="stopping"></a>
 ### 停止回答
 
-用户点击「停止」时，前端调用停止接口，不要只调用 `useChat` 的 `stop()`：
+用户点击「停止」时，前端调用停止接口：
 
 ```tsx
 const { status } = useChat({ /* 同上 */ });
@@ -317,14 +317,14 @@ async function stopAnswer() {
 {(status === 'submitted' || status === 'streaming') && <button onClick={stopAnswer}>停止</button>}
 ```
 
-`stop()` 只断开浏览器的连接。回答在服务端后台运行，不随连接断开而停止：模型继续生成、继续调用工具、继续消耗 token，刷新页面后回答又接着出现。停止接口在服务端取消这次运行，消息流以 `abort` 结束，`useChat` 随之回到空闲状态，不需要再调用 `stop()`。
+`stop()` 只断开浏览器的连接。回答在服务端后台运行，连接断开后照常继续：模型继续生成、继续调用工具、继续消耗 token，刷新页面后回答又接着出现。停止接口在服务端取消这次运行，消息流以 `abort` 结束，`useChat` 随之自动回到空闲状态。
 
 停止之后：
 
 - 已经生成的内容保留在对话中，用户可以接着发消息；
-- 模型的请求和正在执行的工具收到取消的 `ctx`，工具应当把它传给数据库查询和外部调用，才能尽快停下；已经完成的工具调用（例如已经发出的邮件）不会撤销；
+- 模型的请求和正在执行的工具收到取消的 `ctx`，工具应当把它传给数据库查询和外部调用，才能尽快停下；已经完成的工具调用（例如已经发出的邮件）保持生效；
 - 部署了[多个实例](#multiple-instances)时，停止请求落在哪个实例上都可以，`Cancel` 转发给运行所在的实例，立即生效；
-- 回答已经结束时调用停止接口什么也不做，前端不需要判断竞态。
+- 回答已经结束时调用停止接口直接返回，前端可以随时调用。
 
 <a id="steering"></a>
 ### 中途插话
@@ -338,7 +338,7 @@ await fetch(`/api/v1/assistant/chat/${conversationId}/steer`, { method: 'POST', 
 - 模型正在调用工具时，消息在这批工具调用结束后、模型下一次思考之前进入对话。模型会同时看到工具的结果和这条新消息。
 - 模型已经在给出最终回答时，它先答完，然后接着回答这条消息。
 
-两种情况下，消息都不会打断模型，也不会丢失。消息进入对话时，回答中出现一个 `steering-message` 片段，前端把它显示在对话中。对话没有在回答时，`Runs.Steer` 返回 `chat.ErrFinished`，前端改用 `sendMessage`。
+两种情况下，消息都完整送达，模型照常完成当前的步骤。消息进入对话时，回答中出现一个 `steering-message` 片段，前端把它显示在对话中。对话没有在回答时，`Runs.Steer` 返回 `chat.ErrFinished`，前端改用 `sendMessage`。
 
 <a id="reconnecting"></a>
 ### 断线重连
@@ -350,15 +350,15 @@ await fetch(`/api/v1/assistant/chat/${conversationId}/steer`, { method: 'POST', 
 <a id="appending-messages"></a>
 ### 加入其他消息
 
-对话中有时需要加入不是模型生成的消息：人写的回复、系统通知（「订单已发货」）、从邮件等其他渠道同步来的消息。`Runs.Append` 把它写进对话，模型在之后的回答中能看到：
+对话中有时需要加入其他来源的消息：人写的回复、系统通知（「订单已发货」）、从邮件等其他渠道同步来的消息。`Runs.Append` 把它写进对话，模型在之后的回答中能看到：
 
 ```go
 err := runs.Append(ctx, userID, conversationID, "staff:42", model.NewAssistantMessage("已为你补发，请留意短信"))
 ```
 
-第三个参数是作者，由应用决定怎样命名。trpc-agent-go 把作者不是当前 agent 的消息作为用户消息交给模型；创建 agent 时加上 `llmagent.WithAddContextPrefix(true)`，消息前会带上 `[staff:42] said:`，模型才知道这句话是谁说的。
+第三个参数是作者，由应用决定怎样命名。trpc-agent-go 把其他作者的消息作为用户消息交给模型；创建 agent 时加上 `llmagent.WithAddContextPrefix(true)`，消息前会带上 `[staff:42] said:`，模型才知道这句话是谁说的。
 
-`UIMessages` 把这样的消息作为单独的一条返回，`metadata.author` 是作者，不会并入前后的回答，前端据此用不同的样式显示：
+`UIMessages` 把这样的消息作为单独的一条返回，`metadata.author` 是作者，与前后的回答分开，前端据此用不同的样式显示：
 
 ```tsx
 {message.metadata?.author ? <StaffBubble message={message} /> : <Bubble message={message} />}
@@ -368,12 +368,12 @@ err := runs.Append(ctx, userID, conversationID, "staff:42", model.NewAssistantMe
 
 - 对话正在回答时返回 `chat.ErrBusy`，回答过程中要让模型看到用户的新消息用[插话](#steering)；有等待[审批](#approval)的工具调用时返回 `chat.ErrAwaitingApproval`。部署了多个实例时，这两种判断都对整个集群生效。
 - trpc-agent-go 丢弃对话中第一条用户消息之前的内容，所以对话里还没有用户消息时，只能加入 `user` 角色的消息，否则返回错误。
-- `Append` 只写入对话，不会推送给已经打开的页面。需要实时显示时，由应用通过[广播](../libraries/broadcasting.md)通知页面，页面重新读取 `GET /assistant/chat/{id}/messages`。
+- `Append` 只写入对话。需要在已经打开的页面上实时显示时，由应用通过[广播](../libraries/broadcasting.md)通知页面，页面重新读取 `GET /assistant/chat/{id}/messages`。
 
 <a id="approval"></a>
 ## 审批
 
-`chat.RequireApproval` 列出的工具，模型调用时不会执行。运行在其他工具执行完后停下，消息流为每个调用发出 `tool-approval-request`，`useChat` 中这个工具片段的状态变为 `approval-requested`，前端显示确认按钮：
+`chat.RequireApproval` 列出的工具，模型调用时先等待审批。运行在其他工具执行完后停下，消息流为每个调用发出 `tool-approval-request`，`useChat` 中这个工具片段的状态变为 `approval-requested`，前端显示确认按钮：
 
 ```tsx
 {part.state === 'approval-requested' && (
@@ -388,12 +388,12 @@ err := runs.Append(ctx, userID, conversationID, "staff:42", model.NewAssistantMe
 
 待审批的调用保存在对话中，所以审批可以在任何时候、在任何一个实例上进行。页面重新打开时，`Runs.UIMessages` 返回的历史中这些调用仍然处于 `approval-requested` 状态。不使用 `useChat` 时，用 `Runs.Pending` 读出它们，用 `Runs.Approve` 和 `Runs.Reject` 逐个处理。
 
-对话等待审批期间不能发送新消息，`Submit` 返回 `chat.ErrAwaitingApproval`（`409`），因为模型在得到调用结果之前不能回答新问题。等待审批前已经插入、还没有进入对话的消息，在审批之后的运行中送达。
+对话等待审批期间，`Submit` 返回 `chat.ErrAwaitingApproval`（`409`），因为模型要先得到调用结果，才能回答新问题。等待审批前已经插入、还没有进入对话的消息，在审批之后的运行中送达。
 
 <a id="own-history"></a>
 ## 使用应用自己的消息表
 
-上面的对话保存在 `agent_` 开头的会话表中，适合「一个用户和一个助手」的对话。群聊、客服会话、从外部渠道接入的对话，消息往往已经保存在产品自己的消息表里：有多个参与者、消息序号、已读状态、编辑和删除。这时让 `Runs` 直接使用应用的表，不再保存第二份：
+上面的对话保存在 `agent_` 开头的会话表中，适合「一个用户和一个助手」的对话。群聊、客服会话、从外部渠道接入的对话，消息往往已经保存在产品自己的消息表里：有多个参与者、消息序号、已读状态、编辑和删除。这时让 `Runs` 直接使用应用的表，消息只保存一份：
 
 ```go
 runs := chat.NewRuns("luway", agent, nil, chat.UseHistory(chatHistory{db}))
@@ -415,7 +415,7 @@ type HistoryStore interface {
 
 `chat.Conversation` 是 `Runs` 方法传入的 `userID` 和对话 ID。`Load` 返回交给模型的消息和一个游标，游标由应用定义，通常是读到的最大消息序号；这一轮产生的消息交给 `Save` 时，`Entry.After` 就是这个游标。
 
-`Load` 要按**逻辑顺序**返回消息：`Save` 保存的消息排在它的 `After` 之后，而不是按写入时间。原因是模型回答期间，其他人可能还在发言：
+`Load` 要按**逻辑顺序**返回消息：`Save` 保存的消息排在它的 `After` 之后。原因是模型回答期间，其他人可能还在发言：
 
 | 写入顺序 | 逻辑顺序 |
 | --- | --- |
@@ -473,7 +473,7 @@ if mentionsAssistant(msg) {
 ```
 
 - AI 没有在回答时，`Notify` 开始一次运行，上下文由 `Load` 读出。
-- AI 正在回答时（在任何一个实例上），`Notify` 记下通知，这次回答结束后再运行一轮，期间写入的消息都在新一轮的上下文中。回答期间无论来多少条消息、通知多少次，都只多运行一轮，不会返回 `ErrBusy`。
+- AI 正在回答时（在任何一个实例上），`Notify` 记下通知，这次回答结束后再运行一轮，期间写入的消息都在新一轮的上下文中。回答期间无论来多少条消息、通知多少次，都只多运行一轮，`Notify` 总是成功。
 - 有等待审批的工具调用时返回 `chat.ErrAwaitingApproval`。
 
 `Notify` 返回处理通知的运行。正在生成的回答用 `chat.UIStream(run)` 推给前端，群里的每个成员都可以用 `runs.Get(ctx, "", conversationID)` 接上它；回答的每条完整消息保存之后，由应用像普通消息一样通过[广播](../libraries/broadcasting.md)推送。
@@ -544,14 +544,14 @@ posts, err = ai.RerankBy(ctx, openai.New(cfg.Rerank), query, posts, func(p artic
 }, 5)
 ```
 
-重排不是 OpenAI 定义的接口，而是 Cohere 和 Jina 的 `POST {BaseURL}/rerank`，硅基流动、OpenRouter、vLLM 等都沿用了它，`ai/openai` 和 `ai/openrouter` 都按这个格式调用。Cohere 自己的地址填 `https://api.cohere.com/v2`。
+重排用的是 Cohere 和 Jina 的 `POST {BaseURL}/rerank`，硅基流动、OpenRouter、vLLM 等都沿用了它，`ai/openai` 和 `ai/openrouter` 都按这个格式调用。Cohere 自己的地址填 `https://api.cohere.com/v2`。
 
-生成图片和语音通常要十几秒到几十秒，不需要立即返回结果时，放进[队列](../libraries/queue.md)执行。
+生成图片和语音通常要十几秒到几十秒，可以在后台完成的放进[队列](../libraries/queue.md)执行。
 
 <a id="decisions"></a>
 ## 决策
 
-工单该分给哪个团队、评论是不是垃圾信息、问题有多严重，这类判断交给决策模型。它不生成文本，而是读一份材料，回答你定义的问题，给出概率。与让对话模型输出 JSON 相比，它快得多、便宜得多，结果也稳定，可以按概率设定阈值。
+工单该分给哪个团队、评论是不是垃圾信息、问题有多严重，这类判断交给决策模型。它读一份材料，回答你定义的问题，给出概率。它快、便宜，结果稳定，可以按概率设定阈值。
 
 `ai.Decider` 回答三种问题：
 
@@ -584,7 +584,7 @@ if res.Answers["page"].Yes(0.8) {
 ```
 
 - 概率在不同模型之间不可比，阈值要用自己的样本为每个模型确定。
-- 模型可能拒绝回答某个问题，这时回答的 `Refused` 为 true，`Yes` 返回 false，其余问题不受影响。
+- 模型可能拒绝回答某个问题，这时回答的 `Refused` 为 true，`Yes` 返回 false，其余问题照常回答。
 - `Images` 一起判断图片；给图片设置 `Name`，问题里就能用名字指代它，例如“front 中的商品是否破损”。
 
 从业务数据中选一项时使用 `ai.DecideBy`，概率低于阈值或模型拒答时返回 false：
@@ -611,8 +611,8 @@ decider := systemone.New(ai.ModelConfig{Model: "decision-model-preview", BaseURL
 <a id="deployment"></a>
 ## 部署
 
-- **停机**：清理资源时，`runs.Shutdown` 不再开始新的回答（返回 `chat.ErrShuttingDown`，即 `503`），等进行中的回答说完，超过时限的才取消；取消的回答已经生成的部分保留在对话中，用户可以继续对话。等待期间 HTTP 服务已经停止，浏览器的消息流会断开：部署了[多个实例](#multiple-instances)时，浏览器重连到其他实例继续接收这次回答；单实例时，回答说完后保存在对话中，页面重新加载时可以看到。`Shutdown` 用的时间要计入部署平台的停止宽限期，见[平滑停止](../installation/deployment.md#graceful-shutdown)。
-- **后台任务**：不需要实时显示的 AI 工作（例如生成摘要、给文章打标签）交给[队列](../libraries/queue.md)执行，在处理函数中直接调用 trpc-agent-go 的 `runner.Run`。队列任务[至少执行一次](../libraries/queue.md)，这些工具需要能安全地重复执行。
+- **停机**：清理资源时，`runs.Shutdown` 停止接受新的回答（返回 `chat.ErrShuttingDown`，即 `503`），等进行中的回答说完，超过时限的才取消；取消的回答已经生成的部分保留在对话中，用户可以继续对话。等待期间 HTTP 服务已经停止，浏览器的消息流会断开：部署了[多个实例](#multiple-instances)时，浏览器重连到其他实例继续接收这次回答；单实例时，回答说完后保存在对话中，页面重新加载时可以看到。`Shutdown` 用的时间要计入部署平台的停止宽限期，见[平滑停止](../installation/deployment.md#graceful-shutdown)。
+- **后台任务**：在后台完成的 AI 工作（例如生成摘要、给文章打标签）交给[队列](../libraries/queue.md)执行，在处理函数中直接调用 trpc-agent-go 的 `runner.Run`。队列任务[至少执行一次](../libraries/queue.md)，这些工具需要能安全地重复执行。
 
 <a id="multiple-instances"></a>
 ### 多个实例
@@ -628,16 +628,16 @@ runs := chat.NewRuns("app", agent, sessions,
 
 `hub` 是[广播](../libraries/broadcasting.md#creating-the-hub)的 Hub，`locker` 是[原子锁](../libraries/locks.md)，都在 `open` 中创建，所有实例必须使用同一个 Redis。
 
-- 对话正在运行时，运行所在的实例持有这个对话的锁。其他实例上的 `Submit`、`Start` 因此返回 `chat.ErrBusy`，不会同时运行两次。
+- 对话正在运行时，运行所在的实例持有这个对话的锁。其他实例上的 `Submit`、`Start` 因此返回 `chat.ErrBusy`，每个对话同一时刻只运行一次。
 - 运行的事件每 50 毫秒批量广播一次。其他实例上的 `Runs.Get` 先向运行所在的实例要一份目前为止的快照，再接收之后的事件，返回的 `Run` 用法与本地的相同；`Steer` 和 `Cancel` 转发给运行所在的实例，`Steer` 等待它的回执。
 - 运行所在的实例意外退出时，锁在 30 秒内过期；镜像 15 秒收不到消息就以一个 `error` 事件结束，浏览器重新续传时得到最新的状态。
 
-审批读写的是对话存储，本来就不依赖实例。
+审批读写的是对话存储，任何实例都能处理。
 
 <a id="running-on-workers"></a>
 ### 在 worker 中运行
 
-默认情况下，回答在接到请求的 HTTP 实例上运行。把它们交给 worker 进程，HTTP 实例的部署和扩缩容就不会打断回答，AI 的负载也不占用 HTTP 进程：
+默认情况下，回答在接到请求的 HTTP 实例上运行。把它们交给 worker 进程，HTTP 实例部署和扩缩容时回答照常继续，AI 的负载也由 worker 承担：
 
 ```go
 runs := chat.NewRuns("app", agent, sessions,
@@ -661,11 +661,11 @@ func (a *App) Worker(d *command.Daemon) (func(context.Context) error, error) {
 }
 ```
 
-HTTP 实例上的 `Submit`、`Start`、`Notify`、`Approve`、`Reject` 把请求转交给某一个 worker，在那里开始运行，返回的是这次运行的镜像，`UIStream`、插话、停止的用法都不变。多个 worker 同时 `Serve` 时，每个请求只由其中一个处理；需要审批的工具也在 worker 上执行。用 `start` 在一个进程中运行全部部分时，同一个进程里的 `Serve` 接手请求，不需要改代码。
+HTTP 实例上的 `Submit`、`Start`、`Notify`、`Approve`、`Reject` 把请求转交给某一个 worker，在那里开始运行，返回的是这次运行的镜像，`UIStream`、插话、停止的用法都不变。多个 worker 同时 `Serve` 时，每个请求只由其中一个处理；需要审批的工具也在 worker 上执行。用 `start` 在一个进程中运行全部部分时，同一个进程里的 `Serve` 接手请求，代码保持原样。
 
 - **没有 worker：** 请求经由广播转交、不排队。没有 worker 在 `Serve`，或者它们都在停止时，返回 `chat.ErrNoWorker`（`503`），由前端稍后重试。
-- **停止与崩溃：** worker 收到停止信号后不再接手新的请求，进行中的回答由 `runs.Shutdown` 等它说完。worker 崩溃时进行中的回答随之结束，不会在其他实例上接着运行，这与在 HTTP 进程中运行时相同。
-- **运行选项：** `agent.RunOption` 不能跨进程传递，传入时返回 `chat.ErrRunOptions`。需要的设置放在 worker 创建的 agent 上。
+- **停止与崩溃：** worker 收到停止信号后停止接手新的请求，进行中的回答由 `runs.Shutdown` 等它说完。worker 崩溃时进行中的回答随之结束，这与在 HTTP 进程中运行时相同。
+- **运行选项：** `agent.RunOption` 只在本进程内有效，传入时返回 `chat.ErrRunOptions`。需要的设置放在 worker 创建的 agent 上。
 
 <a id="testing"></a>
 ## 测试

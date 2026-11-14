@@ -23,7 +23,7 @@ type Named struct {
 // FailoverOptions 是 Failover 的选项，零值可用。
 type FailoverOptions struct {
 	// Cooldown 是一个发送器失败后被排到最后的时长：这段时间内的邮件直接从下一个发送器开始，
-	// 不必每封都先等它超时。过后重新按顺序尝试，它恢复了就继续使用。不大于 0 时为 DefaultCooldown。
+	// 这期间的邮件直接从下一个开始。过后重新按顺序尝试，它恢复了就继续使用。不大于 0 时为 DefaultCooldown。
 	Cooldown time.Duration
 	// Logger 记录换用后面的发送器和发送器恢复，nil 表示 slog.Default()。
 	Logger *slog.Logger
@@ -32,7 +32,7 @@ type FailoverOptions struct {
 // Failover 返回依次尝试 mailers 的 Mailer：前一个发送失败时换下一个，第一个成功的为准，全部失败时返回合并的错误。
 // 用于验证码这类同步发送、有人在等的邮件：主要的服务故障、限流或额度用完时，邮件仍然能经备用的服务发出。
 //
-// 邮件本身不合法（ErrInvalid）或 ctx 已经取消、超时时不再尝试后面的发送器，直接返回错误。
+// 邮件本身不合法（ErrInvalid）或 ctx 已经取消、超时时直接返回错误。
 // 失败的发送器在 Cooldown 内排到最后，这期间先用其他发送器；其他的也都失败时仍然会尝试它。
 // 状态只在本进程中，用于省掉对已知故障的服务的等待。
 //
@@ -88,7 +88,7 @@ func (f *failover) Send(ctx context.Context, msg Message) error {
 			return nil
 		}
 		errs = append(errs, errors.Wrapf(err, "mail: %s", m.Name))
-		// 邮件不合法时换哪个发送器都一样；调用方已经不再等待时也不必再试。
+		// 邮件不合法时换哪个发送器都一样；调用方已经放弃时直接返回。
 		if errors.Is(err, ErrInvalid) || ctx.Err() != nil {
 			break
 		}

@@ -1,5 +1,5 @@
 // Package scaffold 生成新项目：template 目录中的每个 .tmpl 文件按 Options 渲染后写入目标目录。
-// 模板的分隔符是 [[ ]]，不与 JSX 的 {{ }} 冲突；gitignore.tmpl 写成 .gitignore。
+// 模板的分隔符是 [[ ]]，与 JSX 的 {{ }} 区分开；gitignore.tmpl 写成 .gitignore。
 package scaffold
 
 import (
@@ -27,12 +27,12 @@ type Options struct {
 	Module, Name string
 	// TenonVersion 是 go.mod 中要求的框架版本。
 	TenonVersion string
-	// TenonDir 不为空时，go.mod 用 replace 指向这个本地的框架目录（开发框架本身时使用）。
+	// 设置了 TenonDir 时，go.mod 用 replace 指向这个本地的框架目录（开发框架本身时使用）。
 	TenonDir  string
 	GoVersion string
 }
 
-// Write 把模板渲染到 dir。dir 必须不存在或为空。
+// Write 把模板渲染到 dir。dir 必须是空目录或尚未创建。
 func Write(dir string, opts Options) error {
 	if opts.GoVersion == "" {
 		opts.GoVersion = GoVersion

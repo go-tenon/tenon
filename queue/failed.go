@@ -56,7 +56,7 @@ func (f *FailedJobs) Retry(ctx context.Context, id uuid.UUID) error {
 }
 
 // RetryAll 重新发布最多 limit 条 topic 中、before 之前失败的任务，返回重新发布的条数。
-// topic 为空时包括全部 topic。只处理 before 之前失败的任务，重试后马上又失败的任务不会在同一轮中被反复放回：
+// topic 为空时包括全部 topic。只处理 before 之前失败的任务，重试后马上又失败的任务在同一轮中只放回一次：
 // 后台页面上的「全部重试」传入点击时的时间，反复调用直到返回的条数小于 limit。
 //
 // 每一批在一个事务中删除失败记录并重新发布，与 Retry 的保证相同。

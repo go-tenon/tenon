@@ -58,7 +58,7 @@ migratecmd.Publish(
 事件先声明再发送。声明写明事件的名称和内容的类型，放在模块的 `webhooks.go` 中：
 
 ```go
-// PublishedHook 是 article.published 事件的内容。它是给租户系统的公开接口，字段一旦发布就不要随意修改。
+// PublishedHook 是 article.published 事件的内容。它是给租户系统的公开接口，字段一旦发布就保持稳定。
 type PublishedHook struct {
     ID          uuid.UUID `json:"id"`
     Title       string    `json:"title"`
@@ -82,7 +82,7 @@ err := database.RunInTx(ctx, a.db, nil, func(ctx context.Context, tx database.Tx
 
 `Send` 找出 `subject.Tenant` 中订阅了这个事件的端点，为每个端点写入一条投递记录，并在同一个事务中发布投递任务：事务提交后才会投递，回滚时一起取消。租户没有配置端点时什么也不写，所以可以放心地在每个事件上调用它。
 
-事件内容用专门的结构体，不要直接传入数据库模型：模型以后加的字段会悄悄发给所有租户，改名也会破坏他们的集成。
+事件内容用专门的结构体：数据库模型以后加的字段会悄悄发给所有租户，改名也会破坏他们的集成。
 
 <a id="request-format"></a>
 ### 请求的格式
@@ -154,7 +154,7 @@ export async function POST(req: Request): Promise<Response> {
 | 查看、修改、停用 | `webhook.GetEndpoint`、`webhook.UpdateEndpoint`（`Disabled: true` 停用） |
 | 删除端点和它的投递记录 | `webhook.DeleteEndpoint(ctx, db, sub.Tenant, id)` |
 
-和[成员管理](../security/tenancy.md#managing-members)一样，**租户只能取自 `sub.Tenant`**，不能来自表单。
+和[成员管理](../security/tenancy.md#managing-members)一样，**租户只能取自 `sub.Tenant`**。
 
 `Events` 是订阅的事件：完整的类型如 `article.published`，以 `.*` 结尾的前缀如 `article.*`，或者 `*` 表示全部。可订阅的事件由应用决定，在模块中列出来，订阅表单用它显示选项，提交时用它校验：
 
@@ -170,7 +170,7 @@ var WebhookEvents = []string{"article.published", "article.deleted"}
 <a id="rotating-secrets"></a>
 ### 轮换密钥
 
-密钥泄露或定期更换时，调用 `webhook.RotateSecret`。之后 24 小时内，每个请求同时带有新旧两个密钥的签名，租户先换上新密钥，旧密钥到期后自动失效，中间不会有请求校验失败。
+密钥泄露或定期更换时，调用 `webhook.RotateSecret`。之后 24 小时内，每个请求同时带有新旧两个密钥的签名，租户先换上新密钥，旧密钥到期后自动失效，切换期间的请求始终能通过校验。
 
 <a id="deliveries"></a>
 ### 投递记录与重发
@@ -200,7 +200,7 @@ d, err := webhook.Resend(ctx, a.db, sub.Tenant, deliveryID)
 webhook.NewDeliverer(a.db, webhook.Options{}).Handle(w)
 ```
 
-`webhook.Options` 的零值即可：每次请求 10 秒超时，不跟随重定向，每次投递最多请求 16 次，最后一次重试约在 2 天后。重试次数只作用于投递任务，不受 `queue` 段 `max_attempts` 的影响，需要时用 `Options.MaxAttempts` 修改。
+`webhook.Options` 的零值即可：每次请求 10 秒超时，重定向直接作为结果，每次投递最多请求 16 次，最后一次重试约在 2 天后。重试次数只作用于投递任务，独立于 `queue` 段的 `max_attempts`，需要时用 `Options.MaxAttempts` 修改。
 
 <a id="retries"></a>
 ### 重试
@@ -211,14 +211,14 @@ webhook.NewDeliverer(a.db, webhook.Options{}).Handle(w)
 | 其他状态码（包括 3xx）、超时、连接失败 | 按队列的[退避时间](../libraries/queue.md#failures-and-retries)重试，第 n 次失败后约等 n⁴ 秒 |
 | 429、503 带有 `Retry-After` | 按它的要求等待后重试 |
 | 最后一次仍然失败 | 投递记录标记为 `failed` |
-| 端点已停用 | 不再发送，投递记录标记为 `failed` |
+| 端点已停用 | 停止发送，投递记录标记为 `failed` |
 
-最后一次失败的投递**不进入**[失败任务表](../libraries/queue.md#failed-jobs)：接收方出错不是你的系统故障，不应该触发你的告警。投递记录就是它的结果，租户在页面上看到并重发。
+最后一次失败的投递只记在投递记录中，与[失败任务表](../libraries/queue.md#failed-jobs)分开：接收方出错属于对方的系统，你的告警保持安静。投递记录就是它的结果，租户在页面上看到并重发。
 
 <a id="private-addresses"></a>
 ### 拒绝内网地址
 
-端点地址由租户填写。部署在云上时，有人可能填 `http://169.254.169.254/` 或内网服务的地址，借你的 worker 访问它们。`Deliverer` 默认使用 [outbound](../libraries/outbound.md) 的客户端：内网、回环等地址在建立连接之前就被拒绝，端口不限。被拒绝的投递不再重试，直接标记为失败，`last_error` 中写明原因。
+端点地址由租户填写。部署在云上时，有人可能填 `http://169.254.169.254/` 或内网服务的地址，借你的 worker 访问它们。`Deliverer` 默认使用 [outbound](../libraries/outbound.md) 的客户端：内网、回环等地址在建立连接之前就被拒绝，端口不限。被拒绝的投递直接标记为失败，`last_error` 中写明原因。
 
 本地开发时接收方往往运行在本机，传入放行回环地址的客户端：
 
@@ -267,8 +267,8 @@ func (h *Handlers) ResendWebhook(w http.ResponseWriter, r *http.Request) {
 
 - 签名针对原始请求体计算，必须先读出原始字节再校验，校验之后再解析 JSON。
 - 对方会重发，同一个事件可能收到多次。任务处理前按 `webhook-id` 去重，例如插入一张以它为主键的表，冲突时跳过。
-- 处理器不做业务逻辑，尽快返回，对方等待超时也会重发。
-- webhook 路由直接注册在 chi 上，不经过 API 的认证，由签名确认来源，与[接收 Telegram 的消息](notifications.md#telegram)相同。
+- 处理器只验签并发布任务，尽快返回，业务逻辑放在任务中：对方等待超时也会重发。
+- webhook 路由直接注册在 chi 上，由签名确认来源，与[接收 Telegram 的消息](notifications.md#telegram)相同。
 
 不按这个规范签名的服务，用它们自己 SDK 中的校验函数，接收的流程不变：Stripe 是 `stripe-go` 的 `webhook.ConstructEvent`（包名与本包相同，导入时起个别名），GitHub 是 `go-github` 的 `github.ValidatePayloadFromBody`。
 

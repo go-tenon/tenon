@@ -90,7 +90,7 @@ func NewWithClient(client *sesv2.Client, from mail.Address) (*Mailer, error) {
 func (m *Mailer) Client() *sesv2.Client { return m.client }
 
 // Send 校验邮件，生成 MIME 原文，再调用 SES 的发送接口。
-// 收件人（包括 Bcc）放在 Destination 中，Bcc 不会出现在邮件头里。
+// 收件人（包括 Bcc）放在 Destination 中，Bcc 对其他收件人保密。
 func (m *Mailer) Send(ctx context.Context, msg mail.Message) error {
 	msg = msg.WithDefaultFrom(m.from)
 	if err := msg.Validate(); err != nil {

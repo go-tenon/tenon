@@ -38,7 +38,7 @@ func (s Server) Open(t testing.TB) rueidis.Client {
 }
 
 // OpenNamed 与 Open 相同，但客户端的每条连接都以 name 作为 CLIENT SETNAME，
-// 测试据此只断开自己的连接，不影响并行运行的其他测试。
+// 测试据此只断开自己的连接，并行运行的其他测试照常进行。
 func (s Server) OpenNamed(t testing.TB, name string) rueidis.Client {
 	t.Helper()
 	url := os.Getenv(s.env)

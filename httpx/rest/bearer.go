@@ -50,7 +50,7 @@ func RequireBearer(api *API, validate TokenValidator, permissions ...string) fun
 //   - authenticate 识别调用者：没有凭据或凭据无效返回 401，认证后端故障返回对应的 5xx；
 //   - 主体的 Tenant 由凭据设置且与本次请求的租户（identity.TenantFromContext）不同时返回 403；
 //   - 主体的 Type 不在 Options.Accounts 中时返回 401，否则调用这套账号的 Resolver 得到本次请求的主体，见 Options.Accounts；
-//   - 主体不能执行 permissions 中的某项权限时返回 403。
+//   - 主体缺少 permissions 中的某项权限时返回 403。
 //
 // 认证通过后安装 httpx.CredentialCheck：SSE 等长连接期间定期重新执行以上检查（identity.Reestablish），
 // 凭据失效或失去权限时结束连接。
@@ -112,7 +112,7 @@ func RequireAuth(api *API, name string, scheme *huma.SecurityScheme, authenticat
 				writeError(api, ctx, problem(api, ctx, identity.ErrConfirmRequired.New()))
 				return
 			}
-			// 长连接期间（例如 SSE）重新执行全部检查：凭据被撤销、主体变化、不再是租户成员或失去权限时结束连接。
+			// 长连接期间（例如 SSE）重新执行全部检查：凭据被撤销、主体变化、退出租户或失去权限时结束连接。
 			recheck := func(c context.Context) error {
 				return identity.Reestablish(c, sub, auth, resolve, required...)
 			}

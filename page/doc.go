@@ -13,7 +13,7 @@
 //		ScanAndCount(ctx)
 //	body := page.NewOffset(toDTOs(rows), in.OffsetParams, total)
 //
-// 游标分页从上一页的最后一条继续读取，不受并发写入影响，适合信息流和数据量大的列表。
+// 游标分页从上一页的最后一条继续读取，并发写入时结果依然连续，适合信息流和数据量大的列表。
 // 游标是排序位置的不透明编码，结构由应用定义：
 //
 //	type articleKey struct {

@@ -199,7 +199,7 @@ func (h *handlers) deleteAll(w http.ResponseWriter, r *http.Request) error {
 }
 
 // bulk 分批处理 topic（查询参数，为空时是全部 topic）中点击之前失败的任务，直到处理完，再渲染列表并显示条数。
-// 只处理点击之前失败的任务：重试之后马上又失败的任务不会在这一轮中被反复放回。
+// 只处理点击之前失败的任务：重试之后马上又失败的任务在这一轮中只放回一次。
 func (h *handlers) bulk(w http.ResponseWriter, r *http.Request, action string, do func(ctx context.Context, topic string, before time.Time, limit int) (int, error)) error {
 	ctx := r.Context()
 	topic := r.URL.Query().Get("topic")

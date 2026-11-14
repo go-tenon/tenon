@@ -9,7 +9,7 @@ import (
 // lineEndings 把 CRLF 和单独的 CR 转为 LF，并去掉 NUL 字节。
 var lineEndings = strings.NewReplacer("\r\n", "\n", "\r", "\n", "\x00", "")
 
-// Paragraph 转义原文，使任何一行都不会开始一个 Markdown 块结构：换行转为 LF，去掉 NUL 字节和缩进，
+// Paragraph 转义原文，使每一行都是普通段落文字：换行转为 LF，去掉 NUL 字节和缩进，
 // 行首的标记加反斜杠转义。
 func Paragraph(text string) string {
 	lines := strings.Split(lineEndings.Replace(text), "\n")

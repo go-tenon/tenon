@@ -31,7 +31,7 @@ type shared struct{ db *sql.DB }
 var install sync.Once
 
 // installBuilder 包装 trpc-agent-go 的全局 client builder：参数中带有 shared 时使用应用的连接池，
-// 否则交给原来的 builder，不影响应用中其他直接使用 trpc-agent-go 的地方。
+// 否则交给原来的 builder，应用中其他直接使用 trpc-agent-go 的地方保持原样。
 func installBuilder() {
 	prev := storage.GetClientBuilder()
 	storage.SetClientBuilder(func(ctx context.Context, opts ...storage.ClientBuilderOpt) (storage.Client, error) {

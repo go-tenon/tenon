@@ -33,8 +33,8 @@ const timeLayout = "2006-01-02 15:04:05"
 //	切片                            各项以逗号连接
 //	指针                            指向的值
 //
-// CSV 以 UTF-8 BOM 开头，Excel 打开不会乱码。以 = + - @ 开头又不是数字的文本前面加一个 '，
-// 防止 Excel 把它当作公式执行；XLSX 中的文本不会被当作公式，原样写出。
+// CSV 以 UTF-8 BOM 开头，Excel 打开时中文显示正常。以 = + - @ 开头的非数字文本前面加一个 '，
+// Excel 把它当作普通文本；XLSX 中的文本按文本类型原样写出。
 // XLSX 的表头加粗并冻结在第一行。
 type Writer struct {
 	err    error
@@ -107,7 +107,7 @@ func (w *Writer) Write(cells ...any) error {
 	return w.err
 }
 
-// Close 写出剩余的内容，不会关闭传给 NewWriter 的 io.Writer。
+// Close 写出剩余的内容，传给 NewWriter 的 io.Writer 由调用者关闭。
 func (w *Writer) Close() error {
 	if w.csv != nil {
 		if w.err == nil {

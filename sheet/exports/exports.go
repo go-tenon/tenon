@@ -138,7 +138,7 @@ func (w *Writer) Write(cells ...any) error {
 	return w.r.Save(w.ctx, nil)
 }
 
-// SetTotal 设置预计的行数并立即保存，前端据此显示进度百分比。不调用时 Total 为 0。
+// SetTotal 设置预计的行数并立即保存，前端据此显示进度百分比。省略时 Total 为 0。
 func (w *Writer) SetTotal(n int) error {
 	w.r.SetTotal(n)
 	return w.r.Save(w.ctx, nil)
@@ -155,7 +155,7 @@ func (w *Writer) SetTotal(n int) error {
 //
 // write 返回带错误码的业务错误（例如 sheet.ErrUnknownColumn）时导出变为 failed，Error 是错误码；
 // 其他错误照常返回给队列，重试时从头重新导出。队列的最后一次执行仍然出错时导出变为 failed，Error 是 operation.failed。
-// 导出不存在（例如已被清理）或者已经结束时，Process 什么也不做，返回 nil。
+// 导出不存在（例如已被清理）或者已经结束时，Process 直接返回 nil。
 func (s *Service) Process(ctx context.Context, id uuid.UUID,
 	write func(ctx context.Context, exp *Export, w *Writer) error,
 	saved func(ctx context.Context, tx database.Tx, exp *Export) error,

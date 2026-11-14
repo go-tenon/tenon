@@ -70,7 +70,7 @@ func TestExternalDoesNotMergeByEmail(t *testing.T) {
 	if out, err := e.realm.External(ctx, apple); err != nil || out.Subject.Ref() != ref("c1") {
 		t.Fatalf("after link: %+v %v", out, err)
 	}
-	// 第三方账号已绑定到别人：另一个账号不能再绑定。
+	// 第三方账号已绑定到别人：另一个账号绑定时被拒绝。
 	out, _ = e.realm.External(ctx, login.External{Provider: "github", Subject: "7"})
 	if _, err := e.realm.Register(ctx, e.db, out.Proof, ref("c2")); err != nil {
 		t.Fatal(err)
@@ -83,7 +83,7 @@ func TestExternalDoesNotMergeByEmail(t *testing.T) {
 	}
 }
 
-// 第三方账号登录不要求二次验证；PerTenant 时第三方账号同样按租户隔离。
+// 第三方账号登录跳过二次验证；PerTenant 时第三方账号同样按租户隔离。
 func TestExternalTwoFactorAndTenants(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

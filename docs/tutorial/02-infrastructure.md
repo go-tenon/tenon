@@ -70,7 +70,7 @@ volumes:
 docker compose up -d --wait
 ```
 
-`--wait` 等到服务都准备好才返回。数据保存在 Docker 的卷中，`docker compose down` 停止服务时不会丢；加上 `-v` 才会连数据一起删除。
+`--wait` 等到服务都准备好才返回。数据保存在 Docker 的卷中，`docker compose down` 停止服务时保留；加上 `-v` 才会连数据一起删除。
 
 <a id="configuration"></a>
 ## 配置
@@ -86,7 +86,7 @@ database:
   dsn: ${DATABASE_URL:-postgres://blog:blog@localhost:5432/blog?sslmode=disable}
 ```
 
-`${DATABASE_URL:-…}` 读取环境变量 `DATABASE_URL`，没有设置时使用后面的默认值。开发时直接用默认值连接上面启动的 PostgreSQL，生产环境用环境变量覆盖它，配置文件不用改。项目根目录的 `.env` 文件中的变量也会被读取，它不提交到版本库。
+`${DATABASE_URL:-…}` 读取环境变量 `DATABASE_URL`，没有设置时使用后面的默认值。开发时直接用默认值连接上面启动的 PostgreSQL，生产环境用环境变量覆盖它，配置文件保持原样。项目根目录的 `.env` 文件中的变量也会被读取，它只留在本地。
 
 配置文件对应一个 Go 结构体。新建 `internal/bootstrap/config.go`：
 
@@ -252,7 +252,7 @@ func DocRouter() chi.Routes {
 - `/livez` 和 `/readyz` 是健康检查，部署平台用它们判断进程是否存活、能否接收请求。`/readyz` 检查数据库，数据库连不上或正在排空时返回 `503`。
 - `/api` 下是 JSON 接口，`rest.New` 在这个子路由上创建 API。现在还是模板的待办接口，第 4 章换成文章。
 - 其余请求交给单页应用：开发时转给 Vite，部署时读取嵌入程序的构建产物。
-- `DocRouter` 不连接任何服务就能构造全部路由，`tenon` 用它生成接口文档和客户端、列出路由。所以 `Router` 中只能保存 `App` 的字段，不能在构造路由时使用它们。数据库检查写成闭包也是这个原因：`a.db` 是 `nil` 时，`a.db.PingContext` 这个表达式本身就会 panic，闭包要到检查时才取它。
+- `DocRouter` 离线构造全部路由，`tenon` 用它生成接口文档和客户端、列出路由。所以 `Router` 中只保存 `App` 的字段，处理请求时才使用它们。数据库检查写成闭包也是这个原因：`a.db` 是 `nil` 时，`a.db.PingContext` 这个表达式本身就会 panic，闭包要到检查时才取它。
 
 <a id="entrypoint"></a>
 ## 入口

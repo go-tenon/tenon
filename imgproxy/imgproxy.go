@@ -1,5 +1,5 @@
 // Package imgproxy 生成 imgproxy 的图片地址：把文件的公开地址和缩放参数拼成一个签名的 URL，
-// 由 imgproxy 按需缩放、转换格式，不保存额外的文件。
+// 由 imgproxy 按需缩放、转换格式，存储中只有原图。
 //
 //	images, err := imgproxy.New(cfg.Imgproxy)
 //	thumb := images.URL(file.URL, imgproxy.Options{Width: 300, Height: 200, Resize: imgproxy.Fill})
@@ -26,7 +26,7 @@ import (
 //	  key: ${IMGPROXY_KEY}
 //	  salt: ${IMGPROXY_SALT}
 type Config struct {
-	// URL 是 imgproxy 的公开地址。为空时不经过 imgproxy，URL 返回原图地址。
+	// URL 是 imgproxy 的公开地址。为空时 URL 直接返回原图地址。
 	URL string `yaml:"url"`
 	// Key 和 Salt 是签名用的密钥和盐，十六进制，与 imgproxy 的 IMGPROXY_KEY、IMGPROXY_SALT 相同。
 	// 为空时生成不签名的地址（insecure），只适合开发环境。

@@ -1,9 +1,9 @@
 # OAuth 授权服务器
 
-[MCP 服务](../ai/mcp.md)可以用[个人访问令牌](api-tokens.md#personal-access-tokens)连接 Claude Code、Cursor，它们允许填写请求头。claude.ai（网页、桌面、手机）和 ChatGPT 的远程连接器不能填请求头，它们走 MCP 规定的 OAuth 流程：用户在浏览器中登录你的应用，在同意页上点“允许”，客户端拿到令牌。`oauthserver` 是这个流程中的授权服务器。
+[MCP 服务](../ai/mcp.md)可以用[个人访问令牌](api-tokens.md#personal-access-tokens)连接 Claude Code、Cursor，它们允许填写请求头。claude.ai（网页、桌面、手机）和 ChatGPT 的远程连接器走 MCP 规定的 OAuth 流程：用户在浏览器中登录你的应用，在同意页上点“允许”，客户端拿到令牌。`oauthserver` 是这个流程中的授权服务器。
 
 - 遵循 OAuth 2.1 和 [MCP 授权规范](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization)：授权码 + PKCE S256，授权服务器元数据（RFC 8414），授权响应带 `iss`（RFC 9207），令牌绑定资源（RFC 8707）。
-- 客户端不需要事先登记：claude.ai、ChatGPT 的 client_id 是一个 https 地址，授权时从这个地址取回客户端的名称和回调地址（Client ID Metadata Document）。
+- 客户端即来即用：claude.ai、ChatGPT 的 client_id 是一个 https 地址，授权时从这个地址取回客户端的名称和回调地址（Client ID Metadata Document）。
 - 令牌是 [`apitoken`](api-tokens.md) 的 OAuth 令牌：只能用于授权时的 MCP 服务，权限是用户本人的权限与同意的范围的交集，按使用滑动过期，出现在用户的令牌列表中，可以随时撤销。
 
 同意页是应用的[单页应用](../responses/spa.md)中的一个页面：授权端点校验请求后跳到同意页，同意页用登录 token 调用两个接口，读取请求、提交用户的选择。所以能授权的是这两个接口接受的账号体系。例子中授权的是编辑：他们在编辑后台登录，在 Claude 中查找和发布文章。
@@ -106,7 +106,7 @@ oauth.Register(api, rest.RequireBearer(api, tokens.Validate)) // 编辑后台用
 
 范围是客户端申请的权限，同意页逐项列出 `Description`。名称通常就是[权限目录](authorization.md#permission-catalog)中的权限：令牌的 `Scopes` 是用户同意的范围，`Subject.Can` 同时检查用户本人的权限和它，与个人访问令牌相同。所以一个只有查看权限的编辑授权了 `articles:write`，令牌也发布不了文章。
 
-客户端不传 `scope` 时申请全部范围。只把适合交给 AI 的权限放进来，删除文章、管理成员这类操作不要提供。
+客户端省略 `scope` 时申请全部范围。只把适合交给 AI 的权限放进来，删除文章、管理成员这类操作留在应用内。
 
 <a id="mcp"></a>
 ### 挂到 MCP 服务
@@ -125,7 +125,7 @@ router.Handle("/mcp", mcpx.Handler(tools, mcpx.HandlerOptions{
 
 - `mcpx.ResourceMetadata` 是受保护资源元数据（RFC 9728），挂在 `/.well-known/oauth-protected-resource/mcp`，指向授权服务器。
 - 设置了 `Resource` 后，未认证的请求得到 `401` 和 `WWW-Authenticate: Bearer resource_metadata="…"`，客户端由此开始授权。
-- `tokens.ValidateFor(res.URL)` 只接受发给这个地址的 OAuth 令牌，个人访问令牌照常可用。JSON API 用的 `tokens.Validate` 不接受 OAuth 令牌：给 Claude 的令牌不能拿来调用其他接口。
+- `tokens.ValidateFor(res.URL)` 只接受发给这个地址的 OAuth 令牌，个人访问令牌照常可用。JSON API 用的 `tokens.Validate` 拒绝 OAuth 令牌：给 Claude 的令牌只能用于 MCP。
 
 <a id="flow"></a>
 ## 授权流程
@@ -138,15 +138,15 @@ router.Handle("/mcp", mcpx.Handler(tools, mcpx.HandlerOptions{
 4. 编辑点“允许”，浏览器带着授权码回到 Claude；Claude 用授权码和 PKCE 的 verifier 换取令牌。
 5. Claude 带着令牌调用 MCP 工具，以这个编辑的身份执行。
 
-用户点“拒绝”时，Claude 收到 `access_denied`。授权请求本身有问题时：client_id 或回调地址不对的，不能跳回去，授权端点跳到同意页并带上 `error` 参数，值是错误码 `oauth.invalid_client` 或 `oauth.invalid_redirect_uri`；其他问题（缺少 PKCE、未知的范围）带着错误直接跳回客户端。
+用户点“拒绝”时，Claude 收到 `access_denied`。授权请求本身有问题时：client_id 或回调地址不对的，授权端点跳到同意页并带上 `error` 参数，值是错误码 `oauth.invalid_client` 或 `oauth.invalid_redirect_uri`；其他问题（缺少 PKCE、未知的范围）带着错误直接跳回客户端。
 
 <a id="clients"></a>
 ## 客户端
 
-- **https 地址形式的 client_id**（Client ID Metadata Document）：claude.ai、ChatGPT、Claude Code 都用这种方式。授权时用[出站请求](../libraries/outbound.md)取回这个地址上的 JSON，检查其中的 `client_id` 与地址完全相同、`redirect_uris` 包含本次的回调地址。不需要任何登记，取回的地址拒绝内网地址。
+- **https 地址形式的 client_id**（Client ID Metadata Document）：claude.ai、ChatGPT、Claude Code 都用这种方式。授权时用[出站请求](../libraries/outbound.md)取回这个地址上的 JSON，检查其中的 `client_id` 与地址完全相同、`redirect_uris` 包含本次的回调地址。即来即用，取回的地址拒绝内网地址。
 - **预先登记的客户端**：自研的 agent 在 `Options.Clients` 中登记 ID、名称和回调地址。
 
-只支持公开客户端（不用客户端密钥，靠 PKCE 保证安全）。回调地址按完整地址匹配；本机地址（`localhost`、`127.0.0.1`）忽略端口，Claude Code 每次用不同的端口接收回调。
+只支持公开客户端（靠 PKCE 保证安全）。回调地址按完整地址匹配；本机地址（`localhost`、`127.0.0.1`）忽略端口，Claude Code 每次用不同的端口接收回调。
 
 <a id="dynamic-registration"></a>
 ### 动态客户端注册
@@ -162,13 +162,13 @@ oauthserver.Options{
 
 开启后元数据中有 `registration_endpoint`，客户端 `POST /oauth/register` 提交名称和回调地址，得到 `dcr_` 开头的 client_id，之后的授权与其他客户端相同。只登记公开客户端，回调地址必须是 https 地址或本机的 http 地址，最多 10 个。
 
-注册接口不需要认证，任何人都能调用：用[限流](../libraries/rate-limiting.md)按 IP 限制它，并定时删除长期没有用于授权的注册：
+注册接口是公开的，任何人都能调用：用[限流](../libraries/rate-limiting.md)按 IP 限制它，并定时删除长期没有用于授权的注册：
 
 ```go
 sched.Add("oauth:cleanup-clients", "@daily", schedule.Cleanup(oauth.CleanupClients(90*24*time.Hour), 1000))
 ```
 
-删除注册不影响已经签发的令牌，客户端下次连接时重新注册。
+删除注册时，已经签发的令牌继续有效，客户端下次连接时重新注册。
 
 <a id="tokens"></a>
 ## 令牌
@@ -177,7 +177,7 @@ sched.Add("oauth:cleanup-clients", "@daily", schedule.Cleanup(oauth.CleanupClien
 
 - **不发刷新令牌**，令牌按使用滑动过期：30 天内用过就继续有效，最长 1 年。到期后客户端让用户重新授权一次。每次请求都查库校验，撤销立即生效。
 - 出现在用户的[令牌列表](api-tokens.md#listing-tokens)中，`ClientName` 是授权时的应用名，用来做“已连接的应用”页面；用 `Revoke` 断开连接。
-- “退出其他设备”（`RevokeOthers`）不影响已连接的应用；封禁账号、修改密码时的 `RevokeSubject` 一并撤销它们。
+- “退出其他设备”（`RevokeOthers`）保留已连接的应用；封禁账号、修改密码时的 `RevokeSubject` 一并撤销它们。
 
 <a id="consent-page"></a>
 ## 同意页
@@ -208,7 +208,7 @@ function Consent() {
   const decide = useMutation({
     mutationFn: async (approve: boolean) => {
       const { url } = await api.oauth.consentDecide({ request, approve })
-      location.assign(url) // 回到 Claude；整页跳转，不经过前端路由
+      location.assign(url) // 回到 Claude；整页跳转
     },
   })
 
@@ -231,7 +231,7 @@ function Consent() {
 - **登录**：同意页和编辑后台的其他页面一样要求登录。没有登录时，编辑后台照常跳到登录页，登录后回到原地址（包括 `request` 参数）。
 - **只接受用户本人的登录 token**：个人访问令牌和 OAuth 令牌带有权限限制，[代为登录](authentication.md#impersonation)的 token 是客服在操作，它们都不代表用户本人，调用这两个接口返回 `403 oauth.restricted_credential`。
 - **重新校验**：`request` 就是原始的授权参数，两个接口每次都重新校验，被改过的请求返回 `422`（`oauth.invalid_client`、`oauth.invalid_redirect_uri` 或 `oauth.invalid_request`）。
-- **不能被嵌入框架**：同意页要防止诱导点击。`httpx.SPA` 默认带 `frame-ancestors 'none'`，见[单页应用](../responses/spa.md)；放开了它时，至少不要放开同意页所在的路由。
+- **禁止嵌入框架**：同意页要防止诱导点击。`httpx.SPA` 默认带 `frame-ancestors 'none'`，见[单页应用](../responses/spa.md)；放开了它时，同意页所在的路由仍然保持禁止。
 
 <a id="deployment"></a>
 ## 部署

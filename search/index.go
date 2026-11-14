@@ -17,11 +17,11 @@ import (
 // validName 是索引名称的格式，它也是同步任务 topic 的一部分。
 var validName = regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]{0,62}$`)
 
-// MaxTerms 是一个文档最多索引的词数，之后的文字不能被搜到。更长的文档应当切分为多个文档，见 LoadFunc。
+// MaxTerms 是一个文档最多索引的词数，超出的部分不进入索引。更长的文档应当切分为多个文档，见 LoadFunc。
 // 它也是 PostgreSQL tsvector 的最大位置，并使 tsvector 不超过 1 MB 的上限。
 const MaxTerms = 16383
 
-// errInvalid 标记无法建索引的文档，例如过滤字段的值太长。重试也不会成功，同步任务直接转入失败任务表。
+// errInvalid 标记无法建索引的文档，例如过滤字段的值太长。重试也是徒劳，同步任务直接转入失败任务表。
 var errInvalid = errors.New("search: invalid document")
 
 // Index 是一个搜索索引，D 是它的文档类型。用 Define 声明为包级变量，同步、重建和查询都通过它。
@@ -99,7 +99,7 @@ type LoadFunc[D any] func(ctx context.Context, tx bun.IDB, key string) ([]D, err
 
 // Sync 发布 keys 的同步任务。db 通常是修改数据的事务：事务提交后才同步，回滚时一起取消。
 //
-// 任务只带 key，处理时用 LoadFunc 重新读取当前的数据，所以重复、乱序执行的结果都一样。key 不能为空。
+// 任务只带 key，处理时用 LoadFunc 重新读取当前的数据，所以重复、乱序执行的结果都一样。key 必填。
 func (ix *Index[D]) Sync(ctx context.Context, db bun.IDB, keys ...string) error {
 	for _, key := range keys {
 		if err := checkKey(key); err != nil {
@@ -111,7 +111,7 @@ func (ix *Index[D]) Sync(ctx context.Context, db bun.IDB, keys ...string) error 
 
 // Handle 把同步任务和重建任务（见 Reindex）的处理函数注册到 w，
 // db 是索引所在的数据库，load 读取一个 key 的文档，scan 在重建时列出所有的 key。opts 调整同步任务的处理。
-// 文档无法建索引（例如过滤字段的值太长）时同步任务不再重试，直接转入失败任务表。
+// 文档无法建索引（例如过滤字段的值太长）时同步任务直接转入失败任务表。
 func (ix *Index[D]) Handle(w *queue.Worker, db *bun.DB, load LoadFunc[D], scan ScanFunc, opts ...queue.HandleOption) {
 	if db == nil || load == nil || scan == nil {
 		panic("search: nil database, load or scan function")
@@ -153,7 +153,7 @@ func checkKey(key string) error {
 // refresh 在一个事务中同步 key：build 为 0 时写入 versions 返回的版本，否则只写入重建的版本 build。
 func (ix *Index[D]) refresh(ctx context.Context, db bun.IDB, load LoadFunc[D], key string, build int) error {
 	err := db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		// 先锁住这个 key：同一个 key 的同步依次执行，后执行的读到的数据更新，不会被先读到旧数据的覆盖
+		// 先锁住这个 key：同一个 key 的同步依次执行，后执行的读到的数据更新，最终保存的总是最新的数据
 		if err := lockKey(ctx, tx, ix.name, key); err != nil {
 			return err
 		}

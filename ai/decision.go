@@ -21,7 +21,7 @@ const (
 
 // ChoiceOption 是选择题的一个选项。
 type ChoiceOption struct {
-	// Value 是选项的值，同一个问题中不能重复。
+	// Value 是选项的值，在同一个问题中唯一。
 	Value string
 	// Description 说明什么情况下选它。
 	Description string
@@ -44,7 +44,7 @@ func Levels(labels ...string) []Level {
 
 // Question 是决策中的一个问题，用 YesNo、Choice 或 Score 创建。
 type Question struct {
-	// Name 标识问题，答案按它取用，同一次决策中不能重复。
+	// Name 标识问题，答案按它取用，在同一次决策中唯一。
 	Name string
 	Kind QuestionKind
 	// Instructions 是问题本身。
@@ -199,12 +199,12 @@ type Decision struct {
 	InputTokens, OutputTokens int
 }
 
-// Decider 回答关于一份材料的是非、选择和打分问题，给出概率而不是生成文本。
+// Decider 回答关于一份材料的是非、选择和打分问题，给出概率。
 type Decider interface {
 	Decide(ctx context.Context, req DecisionRequest) (Decision, error)
 }
 
-// DecideBy 让 d 从 items 中选出最符合 instructions 的一项，option 给出每一项的值和说明，值不能重复。
+// DecideBy 让 d 从 items 中选出最符合 instructions 的一项，option 给出每一项的值和说明，值各不相同。
 // 选中项的概率低于 threshold 或模型拒答时返回 false。
 func DecideBy[T any](ctx context.Context, d Decider, instructions string, input any, items []T, option func(T) ChoiceOption, threshold float64) (T, bool, error) {
 	var zero T

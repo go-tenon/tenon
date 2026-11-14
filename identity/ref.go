@@ -39,7 +39,7 @@ func (t SubjectType) Validate() error {
 // Ref 引用一个主体：哪一套账号体系（Type）中的哪一个（ID）。
 //
 // ID 是不透明的字符串，只需在同一个 Type 内唯一：不同账号体系的表可以各自使用自增 ID、UUID 或外部系统的标识，
-// 框架保存主体的地方都同时记录 Type 和 ID，ID 相同的两个账号不会混淆。
+// 框架保存主体的地方都同时记录 Type 和 ID，ID 相同的两个账号也能区分。
 type Ref struct {
 	Type SubjectType
 	ID   string

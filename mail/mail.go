@@ -95,7 +95,7 @@ type Message struct {
 }
 
 // Validate 检查邮件可以发送：至少一个收件人、主题非空且为单行、HTML 与 Text 至少一个、
-// 地址合法，附件有文件名，头部名称和取值不含换行。From 为空时不检查，由驱动补上默认发件人。
+// 地址合法，附件有文件名，头部名称和取值不含换行。From 为空时跳过，由驱动补上默认发件人。
 func (m Message) Validate() error {
 	var errs []error
 	if len(m.To) == 0 {

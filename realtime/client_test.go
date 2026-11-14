@@ -317,7 +317,7 @@ func (c *client) read(d time.Duration) error {
 	}
 }
 
-// loop 在后台读取连接：coder/websocket 在读取的 context 结束时会关闭连接，所以读取不带超时。
+// loop 在后台读取连接：coder/websocket 在读取的 context 结束时会关闭连接，所以读取不设超时。
 func (c *client) loop() {
 	defer close(c.in)
 	for {

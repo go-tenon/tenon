@@ -16,6 +16,6 @@
 //	    article.NewPublish(db).Tool)
 //	router.Handle("/mcp", mcpx.Handler(srv, mcpx.HandlerOptions{Validate: tokens.Validate, Accounts: accounts}))
 //
-// 服务不保存会话，每个请求独立处理，多个实例之间不需要共享任何状态。
+// 服务是无状态的，每个请求独立处理，可以落在任意实例上。
 // mcpx/mcpxtest 在测试中以指定的主体调用工具。
 package mcpx

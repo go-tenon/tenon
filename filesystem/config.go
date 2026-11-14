@@ -80,7 +80,7 @@ func (c Config) validateLimits() error {
 // IsZero 报告本地磁盘是否未配置。
 func (c LocalConfig) IsZero() bool { return c == LocalConfig{} }
 
-// Validate 检查目录和公开基址；未配置时不检查。
+// Validate 检查目录和公开基址；未配置时跳过。
 func (c LocalConfig) Validate() error {
 	if c.IsZero() {
 		return nil
@@ -101,7 +101,7 @@ func (c LocalConfig) Validate() error {
 // IsZero 报告 S3 磁盘是否未配置。
 func (c S3Config) IsZero() bool { return c == S3Config{} }
 
-// Validate 检查桶、公开基址、端点和静态凭证；未配置时不检查。
+// Validate 检查桶、公开基址、端点和静态凭证；未配置时跳过。
 func (c S3Config) Validate() error {
 	if c.IsZero() {
 		return nil

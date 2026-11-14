@@ -83,7 +83,7 @@ func TestCacheSharedAcrossInstances(t *testing.T) {
 		t.Fatalf("after update role: perms=%s", got)
 	}
 
-	// 不同命名空间的缓存互不影响。
+	// 不同命名空间的缓存相互独立。
 	other := authz.NewStore(db, catalog, cached(t, mc))
 	if got := perms(t, other, bob, "acme"); got != "articles:read,articles:write" {
 		t.Fatalf("other namespace: perms=%s", got)
@@ -135,7 +135,7 @@ func TestCacheInTransaction(t *testing.T) {
 	}
 }
 
-// 不能确定何时提交的事务不能与缓存一起使用。
+// 与缓存一起使用的事务必须能确定何时提交。
 func TestCacheRejectsPlainTx(t *testing.T) {
 	t.Parallel()
 	db := dbtest.Open(t, authz.Migrations())

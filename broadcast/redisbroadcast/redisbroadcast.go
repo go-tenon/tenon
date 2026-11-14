@@ -21,8 +21,8 @@ var _ broadcast.Backend = (*Backend)(nil)
 var pingInterval = 15 * time.Second
 
 // Backend 把所有主题的消息发布到同一个 Redis 频道，每个实例订阅这个频道后在本地按主题分发。
-// 频道用分片 Pub/Sub（SPUBLISH、SSUBSCRIBE）：集群中消息只经过频道所在槽的节点，不会转发给全部节点。
-// Redis Pub/Sub 不保存消息：订阅连接中断，或者频道所在的槽迁移到别的节点，期间发布的消息会丢失。
+// 频道用分片 Pub/Sub（SPUBLISH、SSUBSCRIBE）：集群中消息只经过频道所在槽的节点。
+// Redis Pub/Sub 只转发在线的消息：订阅连接中断，或者频道所在的槽迁移到别的节点，期间发布的消息会丢失。
 // Backend 因此报告丢失，Hub 随之以 broadcast.ErrLost 结束全部订阅，客户端重连后由应用补发。
 type Backend struct {
 	rdb     rueidis.Client
@@ -41,7 +41,7 @@ func New(rdb rueidis.Client, channel string) *Backend {
 	return &Backend{rdb: rdb, channel: channel}
 }
 
-// Publish 实现 broadcast.Backend。消息编码为“主题\n数据”，主题中不会出现换行。
+// Publish 实现 broadcast.Backend。消息编码为“主题\n数据”，主题中没有换行。
 func (b *Backend) Publish(ctx context.Context, msg broadcast.Message) error {
 	return b.rdb.Do(ctx, b.rdb.B().Spublish().Channel(b.channel).Message(msg.Topic+"\n"+string(msg.Data)).Build()).Error()
 }
@@ -72,7 +72,7 @@ func (b *Backend) Listen(ctx context.Context, deliver func(broadcast.Message), l
 func (b *Backend) listen(ctx context.Context, deliver func(broadcast.Message)) (subscribed bool, err error) {
 	c, release := b.rdb.Dedicate()
 	defer release()
-	// 槽迁移到别的节点时，原来的节点主动发送 sunsubscribe。hook 在连接的读循环中执行，不能阻塞。
+	// 槽迁移到别的节点时，原来的节点主动发送 sunsubscribe。hook 在连接的读循环中执行，必须立即返回。
 	moved := make(chan struct{}, 1)
 	closed := c.SetPubSubHooks(rueidis.PubSubHooks{
 		OnMessage: func(m rueidis.PubSubMessage) {

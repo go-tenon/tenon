@@ -19,7 +19,7 @@ import (
 // 用于生成 OpenAPI 文档。
 //
 // 处理器先完成检查和准备，出错时照常返回错误，客户端收到 Problem Details；
-// 准备好后返回 SSE(fn)，fn 在连接上写出事件，不受 httpx.Timeout 的超时限制。
+// 准备好后返回 SSE(fn)，fn 在连接上写出事件，脱离 httpx.Timeout 的超时限制。
 func RegisterSSE[I any](api *API, op huma.Operation, events map[string]any, handler func(context.Context, *I) (*huma.StreamResponse, error)) {
 	addEventStream(api, &op, events)
 	types := make(map[string]reflect.Type, len(events))
@@ -62,7 +62,7 @@ func addEventStream(api *API, op *huma.Operation, events map[string]any) {
 		}
 		required := []string{"data"}
 		if name != "" && name != "message" {
-			// 默认的 message 事件不带 event 字段。
+			// 默认的 message 事件省略 event 字段。
 			required = append(required, "event")
 		}
 		schemas = append(schemas, &huma.Schema{

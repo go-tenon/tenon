@@ -92,7 +92,7 @@ func (d dev) serve(ctx context.Context) error {
 
 // build 编译应用到 bin，失败时打印错误并返回 false。
 func (d dev) build(ctx context.Context, bin string) bool {
-	// -mod=mod：新导入的包带来新的依赖时自动补全 go.mod，不用先停下来 go mod tidy。
+	// -mod=mod：新导入的包带来新的依赖时自动补全 go.mod，开发中途即可使用新依赖。
 	cmd := exec.CommandContext(ctx, "go", "build", "-mod=mod", "-o", bin, d.cfg.Main)
 	cmd.Stdout, cmd.Stderr = d.out, d.errOut
 	if err := cmd.Run(); err != nil {
@@ -110,7 +110,7 @@ func (d dev) start(bin string) (*exec.Cmd, chan error) {
 	cmd.Stdout, cmd.Stderr = d.out, d.errOut
 	cmd.Env = os.Environ()
 	if d.cfg.Templ != nil {
-		// 与 templ generate --watch 的 --cmd 相同：生成的代码从 _templ.txt 读取文本，只改文字时不必重新编译。
+		// 与 templ generate --watch 的 --cmd 相同：生成的代码从 _templ.txt 读取文本，只改文字时直接生效，跳过重新编译。
 		root, _ := filepath.Abs(".")
 		if resolved, err := filepath.EvalSymlinks(root); err == nil {
 			root = resolved
@@ -127,7 +127,7 @@ func (d dev) start(bin string) (*exec.Cmd, chan error) {
 	return cmd, exited
 }
 
-// stop 平滑停止应用：发送 SIGTERM，stopTimeout 之后强制结束。应用已经退出时什么也不做。
+// stop 平滑停止应用：发送 SIGTERM，stopTimeout 之后强制结束。应用已经退出时直接返回。
 func (d dev) stop(app *exec.Cmd, exited chan error) {
 	if app == nil {
 		return

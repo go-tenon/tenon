@@ -18,7 +18,7 @@
 <a id="replacing-files"></a>
 ## 替换文件
 
-更换封面时，在同一个事务中确认新文件、删除旧文件。新旧 ID 相同时什么也不用做：
+更换封面时，在同一个事务中确认新文件、删除旧文件。新旧 ID 相同时直接返回：
 
 ```go
 if newCoverID == article.CoverID {
@@ -68,7 +68,7 @@ for i := range images {
 <a id="processing-files"></a>
 ## 确认后异步处理
 
-需要在上传后处理文件（例如提取元数据、生成视频封面）时，在确认文件的同一个事务中发布一个[队列](queue.md)任务。任务和文件状态一起提交，事务回滚时任务也不会执行：
+需要在上传后处理文件（例如提取元数据、生成视频封面）时，在确认文件的同一个事务中发布一个[队列](queue.md)任务。任务和文件状态一起提交，事务回滚时任务随之撤销：
 
 ```go
 err := database.RunInTx(ctx, db, nil, func(ctx context.Context, tx database.Tx) error {
@@ -86,7 +86,7 @@ err := database.RunInTx(ctx, db, nil, func(ctx context.Context, tx database.Tx) 
 <a id="thumbnails"></a>
 ## 图片缩略图
 
-框架不生成也不保存缩略图。文件都有公开地址，缩略图交给 [imgproxy](https://imgproxy.net)：`imgproxy` 包把文件地址和尺寸拼成一个签名的 URL，imgproxy 收到请求时下载原图，缩放后返回，结果由 CDN 缓存。
+文件都有公开地址，缩略图交给 [imgproxy](https://imgproxy.net)：`imgproxy` 包把文件地址和尺寸拼成一个签名的 URL，imgproxy 收到请求时下载原图，缩放后返回，结果由 CDN 缓存。
 
 ```yaml
 # config/app.yaml
@@ -113,7 +113,7 @@ out.CoverThumbURL = images.URL(cover.URL, coverThumb)
 
 - `Resize` 默认是 `imgproxy.Fit`，保持比例缩到宽高以内；`imgproxy.Fill` 裁掉多余部分，结果正好是给定尺寸。宽或高为 0 时按另一边等比计算。图片比目标尺寸小时不放大。
 - `Format` 是输出格式，例如 `webp`、`avif`，为空时保持原格式。
-- `url` 为空时 `URL` 原样返回原图地址，开发环境不需要启动 imgproxy。
+- `url` 为空时 `URL` 原样返回原图地址，开发环境直接使用原图。
 - `key` 和 `salt` 是十六进制的签名密钥和盐，与 imgproxy 的 `IMGPROXY_KEY`、`IMGPROXY_SALT` 相同，可以用 `openssl rand -hex 32` 生成。不填时生成不签名的地址，任何人都能让你的 imgproxy 处理任意图片，生产环境必须填写。
 
 imgproxy 按地址下载原图。S3 磁盘的公开地址是绝对 URL，可以直接使用；本地磁盘的 `public_url` 是 `/storage` 这样的路径时，用 `IMGPROXY_BASE_URL` 设置应用的地址，imgproxy 会把它拼在相对地址前面：
@@ -149,7 +149,7 @@ internal/file/
 └── dto.go                 共享的输入输出类型
 ```
 
-这些业务动作的业务都由框架的文件服务完成，它们只有 HTTP 入口，不需要单独的 `Handle`。
+这些业务动作的业务都由框架的文件服务完成，它们只有 HTTP 入口。
 
 <a id="rest-routes"></a>
 ### 路由
@@ -164,7 +164,7 @@ internal/file/
 | `POST /files/{id}/multipart/{uploadID}/complete` | `CompleteMultipart` | 合并分片 |
 | `DELETE /files/{id}/multipart/{uploadID}` | `AbortMultipart` | 放弃分片上传 |
 
-只使用本地磁盘时，保留第一个路由即可。`Confirm` 不需要单独的接口，它在使用文件的业务接口中调用，见[在业务接口中确认](#rest-confirm)。
+只使用本地磁盘时，保留第一个路由即可。`Confirm` 在使用文件的业务接口中调用，见[在业务接口中确认](#rest-confirm)。
 
 `routes.go` 声明这些路由。所有接口都需要登录，`requireUser` 由入口传入，例如 `rest.RequireBearer(api, validateToken)`：
 
@@ -246,7 +246,7 @@ func Register(api *rest.API, requireUser func(*huma.Operation), files *filesyste
 file.Register(api, rest.RequireBearer(api, validateToken), fileService)
 ```
 
-`dto.go` 定义共享的输入和输出。响应体直接使用 `filesystem.File` 等类型，它们自带 JSON 标签，`File` 的 JSON 中包含公开地址 `url`，但不包含上传者信息：
+`dto.go` 定义共享的输入和输出。响应体直接使用 `filesystem.File` 等类型，它们自带 JSON 标签，`File` 的 JSON 中包含公开地址 `url`，上传者信息只留在服务端：
 
 ```go
 type FileIDInput struct {
@@ -484,9 +484,9 @@ func (a *Create) Handle(ctx context.Context, subject identity.Subject, c Changes
 <a id="rest-limits"></a>
 ### 请求体大小与超时
 
-服务端上传的请求体通常远大于普通接口。[默认中间件](../http/middleware.md#default-middleware)中的 `BodyLimit` 把请求体限制在 1 MiB，[请求超时](../http/middleware.md#request-timeout)也会限制上传时长。需要为 `/files` 单独放宽，做法见[自行组装中间件](../http/middleware.md#custom-stack)。上限至少应为 `max_upload_size` 加上表单的少量额外开销。Huma 不限制 `multipart/form-data` 请求体的大小，不需要再设置 `Operation.MaxBodyBytes`。
+服务端上传的请求体通常远大于普通接口。[默认中间件](../http/middleware.md#default-middleware)中的 `BodyLimit` 把请求体限制在 1 MiB，[请求超时](../http/middleware.md#request-timeout)也会限制上传时长。需要为 `/files` 单独放宽，做法见[自行组装中间件](../http/middleware.md#custom-stack)。上限至少应为 `max_upload_size` 加上表单的少量额外开销。`multipart/form-data` 请求体的大小只由这里的中间件限制，`Operation.MaxBodyBytes` 保持默认即可。
 
-直传接口只收发少量 JSON，使用默认限制即可，文件正文不经过应用服务器。
+直传接口只收发少量 JSON，使用默认限制即可，文件正文直接传到存储。
 
 <a id="rest-errors"></a>
 ### 错误响应

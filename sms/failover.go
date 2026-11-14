@@ -22,7 +22,7 @@ type Named struct {
 
 // FailoverOptions 是 Failover 的选项，零值可用。
 type FailoverOptions struct {
-	// Cooldown 是一个服务商失败后被排到最后的时长：这段时间内的短信直接从下一个开始，不必每条都先等它超时。
+	// Cooldown 是一个服务商失败后被排到最后的时长：这段时间内的短信直接从下一个开始。
 	// 过后重新按顺序尝试，它恢复了就继续使用。不大于 0 时为 DefaultCooldown。
 	Cooldown time.Duration
 	// Logger 记录换用后面的服务商和服务商恢复，nil 表示 slog.Default()。
@@ -33,7 +33,7 @@ type FailoverOptions struct {
 // 用于验证码这类同步发送、用户在等的短信：一个服务商故障、余额不足或签名模板出问题时，短信仍然能经另一家发出。
 // 每个服务商都要配置好同名的模板。
 //
-// 以下情况不再尝试后面的服务商：短信不合法（ErrInvalid）；服务商拒绝这个号码（ErrRejected），换哪家都发不到；
+// 以下情况直接返回错误：短信不合法（ErrInvalid）；服务商拒绝这个号码（ErrRejected），换哪家都发不到；
 // 触发了服务商对这个号码的频率限制（ErrLimited），换一家发会绕过防刷保护；ctx 已经取消或超时。
 // 失败的服务商在 Cooldown 内排到最后，其他的也都失败时仍然会尝试它。状态只在本进程中。
 //
@@ -98,7 +98,7 @@ func (f *failover) Send(ctx context.Context, msg Message) error {
 	return errors.Join(errs...)
 }
 
-// final 报告 err 是否与服务商无关、换一家也不会成功（或不应该换）。
+// final 报告 err 是否与服务商无关、换一家也是同样的结果（或者应当就此停止）。
 func final(ctx context.Context, err error) bool {
 	return errors.Is(err, ErrInvalid) || errors.Is(err, ErrRejected) || errors.Is(err, ErrLimited) || ctx.Err() != nil
 }

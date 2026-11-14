@@ -387,7 +387,7 @@ func TestTenantBinding(t *testing.T) {
 	}
 }
 
-// 不同账号体系中 ID 相同的主体互不影响：列表、撤销都按类型和 ID 一起区分。
+// 不同账号体系中 ID 相同的主体相互独立：列表、撤销都按类型和 ID 一起区分。
 func TestAccountSystems(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

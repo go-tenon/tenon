@@ -9,7 +9,7 @@ import (
 )
 
 // Topic 是带有 payload 类型的 topic 名称，发布和处理任务都通过它。把它声明为包级变量，
-// 发布和处理共用同一个声明，topic 名称和 payload 类型就不会在两处写得不一致：
+// 发布和处理共用同一个声明，topic 名称和 payload 类型只写一次：
 //
 //	var PublishAt = queue.Topic[uuid.UUID]("articles.publish")
 //
@@ -26,7 +26,7 @@ func (t Topic[T]) Publish(ctx context.Context, db bun.IDB, payload T, opts ...Pu
 	return publish(ctx, db, string(t), []T{payload}, opts...)
 }
 
-// PublishAll 与 Publish 相同，每个 payload 发布为一个任务，批量写入。payloads 为空时什么也不做。
+// PublishAll 与 Publish 相同，每个 payload 发布为一个任务，批量写入。payloads 为空时直接返回。
 func (t Topic[T]) PublishAll(ctx context.Context, db bun.IDB, payloads []T, opts ...PublishOption) error {
 	return publish(ctx, db, string(t), payloads, opts...)
 }

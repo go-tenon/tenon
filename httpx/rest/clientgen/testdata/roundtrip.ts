@@ -22,7 +22,7 @@ async function rejects(p: Promise<unknown>, what: string): Promise<import("../in
   throw new Error("unreachable")
 }
 
-// 公开的接口不带 token。
+// 公开的接口直接请求。
 const anonymous = createClient({ baseURL, language: () => "en" })
 check((await anonymous.ping()).ok === true, "ping")
 let err = await rejects(anonymous.article.create({ title: "x", slug: "x" }), "anonymous create")

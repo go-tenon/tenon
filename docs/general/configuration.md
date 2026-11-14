@@ -39,7 +39,7 @@ type Config struct {
 cfg, err := config.Load[Config]("config/app.yaml")
 ```
 
-就这么简单。`${DATABASE_URL}` 会从环境变量中读取；文件中没有写的字段（例如 HTTP 的超时）使用框架的默认值；如果写错了字段名，或者缺少必填项，加载时就会报错，应用不会带着错误的配置启动。
+就这么简单。`${DATABASE_URL}` 会从环境变量中读取；文件中没有写的字段（例如 HTTP 的超时）使用框架的默认值；如果写错了字段名，或者缺少必填项，加载时就会报错，应用只带着正确的配置启动。
 
 <a id="loading-configuration"></a>
 ## 加载配置
@@ -70,7 +70,7 @@ cfg, err := config.Load[Config]("config/app.yaml")
 ```
 
 > [!TIP]
-> 使用[命令行](commands.md)时，你不需要自己调用 `config.Load`：命令会按 `--config` 选项加载配置，默认是 `config/app.yaml`。
+> 使用[命令行](commands.md)时，命令会按 `--config` 选项加载配置，默认是 `config/app.yaml`。
 
 应用自己的配置，例如第三方服务的地址，同样定义成结构体，作为新的字段加入 `Config`。假设你要把图片上传到对象存储：
 
@@ -140,7 +140,7 @@ cfg, err := config.Load[Config]("config/app.yaml", "config/prod.yaml")
 <a id="environment-variables"></a>
 ## 环境变量
 
-密码、密钥这类值不应该写在配置文件中。配置文件中的值可以引用进程的环境变量，部署时由部署平台提供：
+密码、密钥这类值放在环境变量中。配置文件中的值可以引用进程的环境变量，部署时由部署平台提供：
 
 | 写法 | 行为 |
 | --- | --- |
@@ -149,7 +149,7 @@ cfg, err := config.Load[Config]("config/app.yaml", "config/prod.yaml")
 | `${NAME:-}` | 允许变量未设置，此时使用空字符串 |
 | `$${NAME}` | 转义，得到字面量 `${NAME}` |
 
-变量在 YAML 解析之后才展开，所以变量的内容只会成为字段的值，不会改变文件的结构。
+变量在 YAML 解析之后才展开，所以变量的内容只会成为字段的值，文件的结构保持原样。
 
 <a id="env-files"></a>
 ### .env 文件
@@ -166,7 +166,7 @@ DATABASE_URL=postgres://app:secret@localhost:5432/app
 
 读取 `.env` 时有两条规则：
 
-- **进程环境优先**：进程中已经设置的变量（包括空字符串）不会被 `.env` 覆盖。部署时直接用环境变量覆盖即可。
+- **进程环境优先**：进程中已经设置的变量（包括空字符串）优先于 `.env`。部署时直接用环境变量覆盖即可。
 - **文件可以不存在**：生产环境通常没有 `.env`，变量全部由部署平台提供。但如果文件存在而语法有错，命令会以 `ExitConfig` 退出。
 
 不使用命令行时，先用 `config.LoadEnv` 读取 `.env`，再调用 `config.Load`：
@@ -267,9 +267,9 @@ func Load[T any](files ...string) (T, error)
 func Default[T any]() T
 ```
 
-- **返回**：只填充了默认值的 `T`，与读取一个空文件得到的值相同，但不做校验
+- **返回**：只填充了默认值的 `T`，与读取一个空文件得到的值相同，跳过校验
 
-用于不读取配置文件、又需要一份可用配置的场合，例如 [openapi、routes 命令](commands.md#openapi-command)构造应用的路由。
+用于离线时需要一份可用配置的场合，例如 [openapi、routes 命令](commands.md#openapi-command)构造应用的路由。
 
 ### LoadEnv
 
@@ -281,7 +281,7 @@ func LoadEnv(path string) error
     - `path`：dotenv 文件的路径
 - **返回**：文件不存在时，返回的错误满足 `errors.Is(err, fs.ErrNotExist)`
 
-把文件中的变量写入进程环境，已经设置的变量不会被覆盖。
+把文件中的变量写入进程环境，已经设置的变量保持原值。
 
 ### Defaulter
 

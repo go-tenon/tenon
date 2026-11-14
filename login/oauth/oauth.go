@@ -90,7 +90,7 @@ func Discover(ctx context.Context, cfg Config) (*Provider, error) {
 	if cfg.Issuer == "" {
 		return nil, errors.New("oauth: Config.Issuer is required")
 	}
-	// 发现文档之后的公钥下载使用这个 ctx，不能随请求取消。
+	// 发现文档之后的公钥下载使用这个 ctx，它独立于请求。
 	provider, err := oidc.NewProvider(cfg.with(context.WithoutCancel(ctx)), cfg.Issuer)
 	if err != nil {
 		return nil, errors.Wrapf(err, "oauth: discover %s", cfg.Issuer)

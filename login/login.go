@@ -66,7 +66,7 @@ type Options struct {
 	PolicyFor func(ctx context.Context) (Policy, error)
 	// Resolve 在登录成功、签发凭据之前调用一次，通常与入口的 identity.Accounts 中这套账号的 Resolver 相同：
 	// 返回错误（例如账号已停用）时登录失败，返回的 Permissions 等字段带入 Outcome.Subject。
-	// Type、ID、Tenant 不能被它修改。为 nil 时不调用。
+	// Type、ID、Tenant 始终取自原主体。为 nil 时跳过。
 	Resolve identity.Resolver
 	// CodeLength 是验证码的位数（数字），默认 6。
 	CodeLength int
@@ -156,7 +156,7 @@ type Policy struct {
 	// PasswordKinds 是可以与密码一起登录的标识类型，默认 email、phone、username。
 	PasswordKinds []string
 	// PasswordPolicy 检查新密码，不符合时返回错误（通常是 ErrWeakPassword）。
-	// 默认要求 8 到 128 个字符，并且首尾没有空白。已设置的密码不受之后修改的策略影响。
+	// 默认要求 8 到 128 个字符，并且首尾没有空白。已设置的密码继续有效，新策略只在下次设置密码时检查。
 	// Hasher 使用 bcrypt 时，超过 72 字节的密码同样返回 ErrWeakPassword。
 	PasswordPolicy func(password string) error
 	// RequireTwoFactor 为 true 时必须使用二次验证，例如运营人员，或者要求成员使用二次验证的租户。
@@ -165,7 +165,7 @@ type Policy struct {
 	RequireTwoFactor bool
 	// Methods 是允许的登录方式，名称与 identity.Auth.Methods 相同：password、email、phone、第三方提供方的名称、passkey。
 	// nil 表示不限制；例如租户要求只用自己的企业 IdP 登录时，只列出这个提供方。不允许的方式返回 ErrMethodNotAllowed：
-	// Password、SendCode（SignIn）、VerifyCode（登录）和 External 都检查它。二次验证的第二步不受限制。
+	// Password、SendCode（SignIn）、VerifyCode（登录）和 External 都检查它。二次验证的第二步始终允许。
 	Methods []string
 }
 

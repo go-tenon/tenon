@@ -7,7 +7,7 @@
 //
 // 同步与 search 包相同，分两步。修改数据的事务中用 Sync 发布同步任务，事务提交后才同步，回滚时一起取消；
 // worker 用 Handle 处理任务，LoadFunc 在同步事务中读取 key 当前的文档，计算向量后写入 Qdrant，
-// 没有文档时从索引中删除。文本没有变化的文档沿用原来的向量，不再调用模型：
+// 没有文档时从索引中删除。文本没有变化的文档沿用原来的向量，省去一次模型调用：
 //
 //	err := database.RunInTx(ctx, db, nil, func(ctx context.Context, tx database.Tx) error {
 //	    // ... 替换附件的分段
@@ -21,7 +21,7 @@
 //	hits, err := Chunks.Search(ctx, store, vector.Query{Text: question, Tenant: sub.Tenant, Limit: 20})
 //
 // 换了模型或者计算向量的文本之后，用 Reindex 重建：重建用 Store 的模型写入索引的新版本（一个新的 collection），
-// 期间同步同时写入新旧两个版本，完成后切换，查询不会看到建了一半的索引。每个版本记录了建立它的模型，
+// 期间同步同时写入新旧两个版本，完成后切换，查询始终看到完整的索引。每个版本记录了建立它的模型，
 // 写入和查询总是用这个模型；换模型期间用 WithPrevious 传入旧模型。search/searchcmd 的 search reindex 命令
 // 也能重建向量索引。
 package vector

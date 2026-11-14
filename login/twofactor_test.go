@@ -81,7 +81,7 @@ func TestTOTPSetup(t *testing.T) {
 		u.Query().Get("secret") != setup.Secret || u.Query().Get("issuer") != "Blog" || len(setup.Secret) != 32 {
 		t.Fatalf("setup=%+v", setup)
 	}
-	// 尚未确认：登录不要求二次验证。
+	// 尚未确认：登录一步完成。
 	if out, err := e.realm.Password(ctx, login.Email("c1@example.com"), "correct horse"); err != nil || out.Pending != "" {
 		t.Fatalf("login before confirm: %+v %v", out, err)
 	}
@@ -129,7 +129,7 @@ func TestTwoFactorLogin(t *testing.T) {
 	_, err = e.realm.TwoFactor(ctx, pending, a.code())
 	is(t, err, login.ErrInvalidProof)
 
-	// 同一个验证码不能用两次。
+	// 每个验证码只能用一次。
 	_, err = e.realm.TwoFactor(ctx, e.pending(t, ctx, "c1@example.com", "correct horse"), a.code())
 	is(t, err, login.ErrInvalidCode)
 
@@ -191,7 +191,7 @@ func TestTwoFactorLogin(t *testing.T) {
 	is(t, err, login.ErrTwoFactorDisabled)
 }
 
-// 找回密码不会绕过二次验证：它不登录，用新密码登录时仍要二次验证。
+// 找回密码绕不过二次验证：它只重置密码，用新密码登录时仍要二次验证。
 func TestResetKeepsTwoFactor(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -243,7 +243,7 @@ func TestTOTPReplay(t *testing.T) {
 	if ok != 1 {
 		t.Fatalf("%d checks passed", ok)
 	}
-	// 允许前后各一个时间步的时钟误差，但不能早于已用过的那一步。
+	// 允许前后各一个时间步的时钟误差，但必须晚于已用过的那一步。
 	e.clock.add(-30 * time.Second)
 	_, err := e.realm.CheckTwoFactor(ctx, ref("c1"), a.code())
 	is(t, err, login.ErrInvalidCode)
@@ -306,7 +306,7 @@ func TestAuthMethods(t *testing.T) {
 		t.Errorf("register: %q", got)
 	}
 
-	// Options.Resolve 不能改变验证情况。
+	// 验证情况始终取自凭据，Options.Resolve 改了也无效。
 	forged := newRealm(t, login.Options{Resolve: func(_ context.Context, sub identity.Subject) (identity.Subject, error) {
 		sub.Auth = identity.Auth{Methods: []string{"passkey"}}
 		return sub, nil

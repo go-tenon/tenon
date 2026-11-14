@@ -140,7 +140,7 @@ func (a *BulkPublish) Job(ctx context.Context, req BulkPublishRequest) error {
             case err == nil, errors.Is(err, ErrAlreadyPublished):
                 r.Add(1, 0)
             case errorx.CodeOf(err) != "":
-                r.Add(1, 1) // 文章已被删除、不是作者：只影响这一篇
+                r.Add(1, 1) // 文章已被删除、调用者不是作者：只记这一篇失败
             default:
                 return err // 数据库不可用等，队列稍后重试
             }
@@ -187,7 +187,7 @@ func (a *BulkPublish) Progress(ctx context.Context, in *OperationIDInput) (*huma
         return nil, err // 还没有开始推送，客户端照常收到 404
     }
     return rest.SSE(func(s *httpx.Stream) error {
-        events := a.hub.Subscribe(operationTopic(in.ID)) // 先订阅，再查询，中间保存的进度不会漏掉
+        events := a.hub.Subscribe(operationTopic(in.ID)) // 先订阅，再查询，中间保存的进度也能收到
         defer events.Close()
         for {
             op, err := a.ops.Get(s.Context(), subject, in.ID)
@@ -213,9 +213,9 @@ func (a *BulkPublish) Progress(ctx context.Context, in *OperationIDInput) (*huma
 }
 ```
 
-`Start` 登记一个 `pending` 状态的操作。kind 由应用定义，写成“模块.动作”，任务中心据此显示操作的名称。操作和任务在同一个事务中写入，事务回滚时都不会留下。
+`Start` 登记一个 `pending` 状态的操作。kind 由应用定义，写成“模块.动作”，任务中心据此显示操作的名称。操作和任务在同一个事务中写入，事务回滚时一起撤销。
 
-任务的 payload 带着发起人：`Publish` 按它的权限检查每一篇文章。`op.Owner()` 只有 ID、类型和租户，没有权限，不能代替 payload 中的主体。
+任务的 payload 带着发起人：`Publish` 按它的权限检查每一篇文章。`op.Owner()` 只有 ID、类型和租户，权限以 payload 中的主体为准。
 
 <a id="running"></a>
 ## 执行操作
@@ -232,13 +232,13 @@ article.BulkPublishJob.Handle(w, article.NewBulkPublish(a.db, a.hub, a.ops, arti
 
 | 错误 | 结果 |
 | --- | --- |
-| 带错误码的业务错误 | 操作变为 `failed`，`Error` 是错误码，任务不再重试 |
+| 带错误码的业务错误 | 操作变为 `failed`，`Error` 是错误码，任务就此结束 |
 | 其他错误，例如数据库不可用 | 任务稍后重试，从上次保存的进度继续，没有保存的进度丢弃 |
 | 队列的最后一次重试仍然出错，或者错误被 `queue.Permanent` 标记 | 操作变为 `failed`，`Error` 是 `operation.failed` |
 
 批量发布中一篇文章的业务错误只影响这一篇，所以回调把它记为失败的单位，自己不返回错误；`completed` 的操作中可能有失败的单位，看 `Failed`。
 
-重试时 `r.Operation()` 是上次保存的操作，`Processed` 就是已经处理过的篇数，回调从下一篇继续。每篇保存一次，所以已经发布的文章不会重复发布。单位很多时可以每 100 个保存一次，这时重试会再处理最多 99 个单位，要保证处理能够重复执行。
+重试时 `r.Operation()` 是上次保存的操作，`Processed` 就是已经处理过的篇数，回调从下一篇继续。每篇保存一次，所以每篇文章只发布一次。单位很多时可以每 100 个保存一次，这时重试会再处理最多 99 个单位，要保证处理能够重复执行。
 
 `Save` 的参数是与进度一起提交的写入，例如导入把失败的行和处理到的行号写在里面：进度和这些数据要么一起保存，要么都没有保存。结果要和完成状态一起提交时用 `r.Complete(ctx, write)` 结束操作，例如导出的下载地址。同一个操作的两次执行同时保存时（例如任务的租约过期后被另一个 worker 领取），后保存的那次返回错误，回调应当停下。
 
@@ -284,17 +284,17 @@ func (a *Summarize) Job(ctx context.Context, u operation.Unit[SummarizeUnit]) er
 | 处理函数返回 | 单位 |
 | --- | --- |
 | nil | 成功，`Processed` 加一 |
-| 带错误码的业务错误 | 失败，`Processed`、`Failed` 各加一，不再重试 |
+| 带错误码的业务错误 | 失败，`Processed`、`Failed` 各加一，就此结束 |
 | 其他错误 | 队列重试；最后一次仍然出错时失败，任务转入[失败任务表](../libraries/queue.md#failed-jobs)，之后重试成功时 `Failed` 减一 |
 
-一个单位失败不会取消其他单位。每个单位结束时都在一个事务中调用 `saved`，最后一个单位结束时 `op.Finished()` 为 `true`，在这里发送通知或发布下一步任务；操作结束之后不再调用 `saved`，重试失败任务修正计数时也不会重复通知。已经成功的单位再次投递时不会再执行。
+一个单位失败时其他单位照常执行。每个单位结束时都在一个事务中调用 `saved`，最后一个单位结束时 `op.Finished()` 为 `true`，在这里发送通知或发布下一步任务；`saved` 在操作结束时最后调用一次，重试失败任务修正计数时通知也只发一次。已经成功的单位再次投递时直接跳过。
 
 每个单位都要锁住操作的行记下结果。单位很多又很快时，用 `Run` 在一个任务中处理更合适。
 
 <a id="progress"></a>
 ## 进度推送
 
-`Run` 每次保存进度（变为 `running`、每次 `Save`、结束）都在同一个事务中调用 `saved`。例子中的 `saved` 用 [AfterCommit](../database/quick-start.md#after-commit) 在提交后发布广播，提醒正在查看进度的连接；操作结束时在这个事务中发送[通知](notifications.md)，通知和状态一起提交，不会重复发送，也不会漏发。
+`Run` 每次保存进度（变为 `running`、每次 `Save`、结束）都在同一个事务中调用 `saved`。例子中的 `saved` 用 [AfterCommit](../database/quick-start.md#after-commit) 在提交后发布广播，提醒正在查看进度的连接；操作结束时在这个事务中发送[通知](notifications.md)，通知和状态一起提交，恰好发送一次。
 
 `Progress` 用 [`rest.RegisterSSE`](../responses/sse.md) 注册，连接后每次保存进度都会收到一个 `progress` 事件：
 
@@ -305,7 +305,7 @@ data: {"id":"0193e7a2-7c1e-7b4a-9d2f-3c5a1e8b6f10","kind":"articles.bulk_publish
 
 前端用 `processed / total` 显示进度条，`total` 为 0 时显示“已处理 N 个”。
 
-进度是状态而不是事件：广播只提醒连接重新读取，连接（包括断线重连）时先推送一次当前进度，所以漏掉的广播没有影响，与[通知角标](notifications.md#realtime)的做法相同。每次读取都经过 `Get`，只有发起人能看到进度，其他人收到 `operation.ErrNotFound`。
+进度是状态：广播只提醒连接重新读取，连接（包括断线重连）时先推送一次当前进度，所以页面总是显示最新的进度，与[通知角标](notifications.md#realtime)的做法相同。每次读取都经过 `Get`，只有发起人能看到进度，其他人收到 `operation.ErrNotFound`。
 
 <a id="listing"></a>
 ## 任务中心
@@ -321,7 +321,7 @@ ops, err := a.ops.List(ctx, subject, operation.Query{Limit: 20})
 <a id="cleanup"></a>
 ## 清理
 
-操作不会自动删除。用[定时任务](../libraries/scheduling.md#framework-cleanups)定期删除旧的操作，导入、导出的记录和导入的失败行随之删除：
+用[定时任务](../libraries/scheduling.md#framework-cleanups)定期删除旧的操作，导入、导出的记录和导入的失败行随之删除：
 
 ```go
 sched.Add("operations:cleanup", "0 3 * * *", schedule.Cleanup(a.ops.Cleanup(30*24*time.Hour), 1000))

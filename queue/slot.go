@@ -16,7 +16,7 @@ const (
 	// MessagePrefix 是任务在 WAL 中的逻辑解码消息（pg_logical_emit_message）的前缀，后面接 topic 名，
 	// 内容是发给 NSQ 的消息。
 	MessagePrefix = "mygoravel.queue:"
-	// Publication 是逻辑复制使用的 publication。它不包含任何表，只因为 pgoutput 插件要求指定一个。
+	// Publication 是逻辑复制使用的 publication。它是空的，pgoutput 插件要求指定一个。
 	Publication = "mygoravel_queue"
 )
 

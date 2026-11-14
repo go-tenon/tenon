@@ -242,7 +242,7 @@ func TestProcessResumesAndRecordsFailures(t *testing.T) {
 		t.Fatalf("saves: %+v", rec.saves)
 	}
 
-	// 已经结束的导入再处理一次什么也不做。
+	// 已经结束的导入再处理一次直接返回。
 	if err := imports.Process(ctx, e.imports, imp.ID, rec.row, rec.saved); err != nil || len(rec.saves) != 6 {
 		t.Fatalf("again: %v %d", err, len(rec.saves))
 	}

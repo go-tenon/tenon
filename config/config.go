@@ -33,8 +33,8 @@ func Load[T any](files ...string) (T, error) {
 	return cfg, nil
 }
 
-// Default 返回只填充了默认值的 T：与 Load 读取一个空文件得到的值相同，但不做 Validate。
-// 用于不读取配置文件、又需要一份可用配置的场合，例如 openapi、routes 命令构造应用的路由：
+// Default 返回只填充了默认值的 T：与 Load 读取一个空文件得到的值相同，跳过 Validate。
+// 用于离线时需要一份可用配置的场合，例如 openapi、routes 命令构造应用的路由：
 //
 //	httpcmd.Commands(func() chi.Routes { return routes(config.Default[Config](), nil) })
 func Default[T any]() T {

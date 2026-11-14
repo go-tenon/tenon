@@ -5,7 +5,7 @@ on:
     branches: [main]
   pull_request:
 
-# 检查、测试和脚手架是并行的 job：检查不需要服务容器，测试不等检查做完。
+# 检查、测试和脚手架是并行的 job：检查只用 Go 工具链，测试与检查同时开始。
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -98,7 +98,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 服务容器不能传启动参数，Redis 集群、nsqd 和 PostgreSQL 在这里启动。
+      # 服务容器只接受镜像的默认参数，Redis 集群、nsqd 和 PostgreSQL 在这里启动。
       # 集群由三个主节点组成，节点向客户端报告 127.0.0.1，所以端口原样映射。
       - name: Start Redis cluster
         run: |

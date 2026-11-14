@@ -77,7 +77,7 @@ type IDInput struct {
 
 - `Article` 的 `bun` 标签对应数据表的列，`json` 标签是接口返回的字段，同一个结构体两边都用。
 - 业务错误用 `errorx.Define` 定义：第一个参数是分类，决定 HTTP 状态码（`NotFound` 是 404，`Conflict` 是 409）；第二个参数是错误码，客户端按它判断发生了什么。
-- `Changes` 是提交的内容。字段上的标签就是校验规则，不符合时接口返回 `422`，列出每个字段的问题，处理函数不会被调用。
+- `Changes` 是提交的内容。字段上的标签就是校验规则，不符合时接口直接返回 `422`，列出每个字段的问题。
 
 <a id="actions"></a>
 ## 动作
@@ -197,7 +197,7 @@ func (a *Create) HTTP(ctx context.Context, in *CreateInput) (*ArticleOutput, err
 }
 ```
 
-新建和修改都可能遇到 slug 重复。不必先查一次再插入，那样并发时仍然可能重复：直接插入，由唯一约束拒绝，再把约束冲突转换为业务错误 `ErrSlugTaken`。`errorx.Public` 附加的参数会出现在给用户看的提示中。
+新建和修改都可能遇到 slug 重复。直接插入，由唯一约束拒绝（先查一次再插入的话，并发时仍然可能重复），再把约束冲突转换为业务错误 `ErrSlugTaken`。`errorx.Public` 附加的参数会出现在给用户看的提示中。
 
 `Create` 把业务逻辑放在 `Handle` 中，`HTTP` 只负责从请求中取出参数、把结果包装成响应。以后的命令行、队列任务和测试都直接调用 `Handle`。
 
@@ -313,7 +313,7 @@ func Register(api *rest.API, db *bun.DB) {
 }
 ```
 
-`OperationID` 是接口的名字，生成的客户端按它分组：`article-list` 就是前端的 `api.article.list()`。每个接口都要声明访问策略，现在都是公开的 `rest.Public()`；忘记声明时应用启动就会报错，不会意外地发布一个没有保护的接口。第 6 章加上登录后，写文章的接口改为需要登录。
+`OperationID` 是接口的名字，生成的客户端按它分组：`article-list` 就是前端的 `api.article.list()`。每个接口都要声明访问策略，现在都是公开的 `rest.Public()`；忘记声明时应用启动就会报错。第 6 章加上登录后，写文章的接口改为需要登录。
 
 <a id="messages"></a>
 ## 错误提示

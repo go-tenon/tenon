@@ -2,9 +2,9 @@
 
 正式的产品几乎都需要回答“谁在什么时候改了这篇文章”。`activity` 包把每一次操作保存为 `activity_log` 表中的一行：谁（actor）在哪个租户中对什么（target）做了什么（event），供产品界面按对象或按操作人查看历史。
 
-操作日志和[日志](../general/logging.md)解决的是不同的问题：日志是给运维看的，写到标准输出或日志平台，产品界面查不到；操作日志是业务数据，在业务事务中写入，与业务修改一起提交或回滚，不会出现“文章没改成，记录却写进去了”的情况。
+操作日志和[日志](../general/logging.md)解决的是不同的问题：日志是给运维看的，写到标准输出或日志平台，产品界面查不到；操作日志是业务数据，在业务事务中写入，与业务修改一起提交或回滚，记录总是与业务数据一致。
 
-这个包不监听模型的保存自动记录：Bun 不跟踪哪些字段被修改了，批量更新也绕过模型，而且业务真正关心的是“文章已发布”，不是“status 列变了”。每条记录都由业务动作显式写入。
+每条记录都由业务动作显式写入：业务真正关心的是“文章已发布”这样的事件，批量更新也同样能记录。
 
 - [示例用法](#example-usage)
 - [安装](#installation)
@@ -87,12 +87,12 @@ func (a *Publish) Handle(ctx context.Context, subject identity.Subject, id uuid.
 | `RequestID` | 本次请求的[请求 ID](../http/middleware.md#request-id)，可以用它在日志中找到这次请求的全部日志 |
 | `CreatedAt` | 当前时间 |
 
-`Record` 必须使用事务 `tx`，而不是 `a.db`，否则事务回滚时记录不会被撤销，见[事务](../database/quick-start.md#transactions)。
+`Record` 必须使用事务 `tx`，记录才会随事务一起回滚，见[事务](../database/quick-start.md#transactions)。
 
 <a id="events-and-properties"></a>
 ### 事件与属性
 
-`Event` 是发生了什么，建议写成 `对象.动作` 的形式，例如 `article.published`、`member.invited`。它同时也是显示时的[翻译](#displaying)消息 ID，因此不要在里面拼接变量。
+`Event` 是发生了什么，建议写成 `对象.动作` 的形式，例如 `article.published`、`member.invited`。它同时也是显示时的[翻译](#displaying)消息 ID，因此它是固定的字符串，变量放进属性。
 
 `TargetType` 和 `TargetID` 是被操作的对象，查看一篇文章的历史就是按它们查询。没有具体对象的操作（例如修改租户设置）可以不填。
 
@@ -104,7 +104,7 @@ Properties: map[string]any{
 },
 ```
 
-不要写入密码哈希、令牌这类敏感数据。读取时，JSON 中的数字是 `float64`，较大的整数 ID 请保存为字符串。
+属性只写可以展示的数据，密码哈希、令牌这类敏感数据留在原处。读取时，JSON 中的数字是 `float64`，较大的整数 ID 请保存为字符串。
 
 <a id="jobs"></a>
 ### 队列与定时任务
@@ -134,7 +134,7 @@ list, err := activity.List(ctx, a.db, activity.Query{
 | `Limit` | 返回的条数，默认 50 |
 | `Before` | 翻页：传入上一页最后一条记录的 `ID`，返回比它更早的记录 |
 
-查看历史本身也需要授权，通常是能查看文章的人才能查看它的历史，见[授权](../security/authorization.md)。`List` 不能满足的查询，例如按时间范围导出，可以直接用 Bun 查询，`activity.Activity` 就是这张表的模型：
+查看历史本身也需要授权，通常是能查看文章的人才能查看它的历史，见[授权](../security/authorization.md)。`List` 之外的查询，例如按时间范围导出，可以直接用 Bun 查询，`activity.Activity` 就是这张表的模型：
 
 ```go
 var list []activity.Activity
@@ -150,7 +150,7 @@ err := a.db.NewSelect().Model(&list).
 <a id="displaying"></a>
 ### 显示
 
-记录中保存的是事件和属性，而不是一句写好的描述，显示时再用[本地化](../general/localization.md)翻译成当前语言：
+记录中保存的是事件和属性，显示时再用[本地化](../general/localization.md)翻译成当前语言：
 
 ```yaml
 # locales/zh-CN.yaml
@@ -161,7 +161,7 @@ article.published: "发布了文章《{{.title}}》"
 text := i18n.T(ctx, a.Event, a.Properties)
 ```
 
-这样修改文案、增加语言都不需要修改已有的记录。操作人的名字同样在显示时按 `a.Actor()` 查询，用户改名后历史中显示的是新名字。
+这样修改文案、增加语言时，已有的记录保持原样。操作人的名字同样在显示时按 `a.Actor()` 查询，用户改名后历史中显示的是新名字。
 
 <a id="retention"></a>
 ## 保留期限

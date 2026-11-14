@@ -29,7 +29,7 @@ type Check struct {
 
 // ReadyOptions 是 Ready 的选项。
 type ReadyOptions struct {
-	// Draining 是 Serve 开始排空时设置的标志，与传给 OnDraining 的是同一个；为 nil 时不检查。
+	// Draining 是 Serve 开始排空时设置的标志，与传给 OnDraining 的是同一个；为 nil 时跳过排空检查。
 	Draining *Draining
 	// Checks 是要检查的依赖。只放处理请求必需的依赖，以及标为 Optional 的降级依赖。
 	Checks []Check
@@ -51,8 +51,8 @@ type readyResult struct {
 // 有一项失败时返回 503。响应体列出每项的结果，例如 {"status":"ready","checks":{"database":"ok","cache":"failed"}}；
 // 失败的原因不出现在响应中，而是记录在日志里。
 //
-// 日志只记录变化：一项检查从通过变为失败时记录 Warn 和原因，恢复时记录 Info，平台每隔几秒的探测不会让日志刷屏。
-// 不理会 ctx 的 Ping 也不会拖住响应，超时后结果按失败处理。名称为空、重复或 Ping 为 nil 时 panic。
+// 日志只记录变化：一项检查从通过变为失败时记录 Warn 和原因，恢复时记录 Info，平台每隔几秒的探测因此只在状态变化时留下日志。
+// 响应按时返回，不理会 ctx 的 Ping 超时后按失败处理。名称为空、重复或 Ping 为 nil 时 panic。
 func Ready(opts ReadyOptions) http.Handler {
 	seen := map[string]bool{}
 	for _, c := range opts.Checks {

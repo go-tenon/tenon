@@ -2,7 +2,7 @@
 
 App 在后台或者没有打开时，只能靠系统的推送通道把消息送到用户面前。iOS 走 APNs，海外的 Android 走 FCM；国内的 Android 没有统一的通道，要分别接入华为、荣耀、小米、OPPO、vivo、魅族的厂商通道，再按各家的规则给消息分类。`push` 包把这件事交给[阿里云移动推送](https://help.aliyun.com/zh/document_detail/434629.html)：各通道的接入和密钥由阿里云管理，框架负责“推给谁”和“怎么可靠地推”。
 
-- **设备由服务端登记**：App 登录后把推送 SDK 给出的设备标识交给你的接口，接口把设备记在当前用户名下，同时记下这次登录的凭据。客户端不能把自己登记成别人，退出登录时连同凭据一起删除，这台设备就不再收到推送。
+- **设备由服务端登记**：App 登录后把推送 SDK 给出的设备标识交给你的接口，接口把设备记在当前用户名下，同时记下这次登录的凭据。设备只能登记在当前用户名下，退出登录时连同凭据一起删除，这台设备的推送随之停止。
 - **推送随事务提交**：`push.Send` 在业务事务中发布推送任务，事务提交后才推送，回滚时一起取消，与[站内通知](notifications.md)、[webhook](webhooks.md) 的写法相同。一次通知发往哪些渠道，仍由业务动作显式写出来。
 
 - [示例用法](#example-usage)
@@ -80,7 +80,7 @@ App 集成阿里云的推送 SDK 和各厂商通道的依赖，按[阿里云的�
 
 - **创建通知渠道**：Android 8 及以上要先创建 NotificationChannel，ID 与配置中的 `android.channel` 一致。
 - **辅助弹窗 Activity**：经厂商通道送达的通知被点击时，系统打开 `android.activity` 指定的 Activity，在其中读出 `Data` 并跳转。
-- **不要调用 SDK 的 `bindAccount`**：账号由服务端登记，App 只把 `deviceId` 交给服务端。
+- **账号由服务端登记**：App 从 SDK 取得 `deviceId` 交给服务端即可，账号与设备的关系保存在应用的表中。
 
 <a id="registering-devices"></a>
 ## 登记设备
@@ -103,7 +103,7 @@ func (h *handlers) registerDevice(ctx context.Context, in *DeviceInput) (*struct
 }
 ```
 
-一台设备同时只属于一个用户：同一部手机换了账号登录，设备改为登记给新的读者，旧账号不会再收到推送。读者在多台设备上登录时，每台都会收到。
+一台设备同时只属于一个用户：同一部手机换了账号登录，设备改为登记给新的读者，推送只发给新账号。读者在多台设备上登录时，每台都会收到。
 
 `Register` 同时记下主体的租户和 `sub.Credential`（这次登录的 token ID）。[多租户](../security/tenancy.md)应用中，发给一个租户的推送只到达在这个租户中登记的设备。
 
@@ -156,7 +156,7 @@ err := database.RunInTx(ctx, a.db, nil, func(ctx context.Context, tx database.Tx
 })
 ```
 
-收件人与[站内通知](notifications.md#recipients)的相同：某个租户中的一个主体，同一个变量可以同时交给 `notification.Send` 和 `push.Send`。`Send` 只发布任务，设备在任务执行时才查询；收件人没有登记设备时什么也不做。重复的收件人只推送一次，超过 1000 个时分成多个任务。
+收件人与[站内通知](notifications.md#recipients)的相同：某个租户中的一个主体，同一个变量可以同时交给 `notification.Send` 和 `push.Send`。`Send` 只发布任务，设备在任务执行时才查询；收件人没有登记设备时直接结束。重复的收件人只推送一次，超过 1000 个时分成多个任务。
 
 <a id="messages"></a>
 ### 消息
@@ -166,15 +166,15 @@ err := database.RunInTx(ctx, a.db, nil, func(ctx context.Context, tx database.Tx
 | `Title`、`Body` | 通知的标题和正文，必填。文案由应用按收件人的语言生成，见[本地化](../general/localization.md) |
 | `Data` | 随通知带给 App 的键值，用户点击后 App 据此打开对应的页面 |
 | `Category` | [消息分类](#categories)，为空时是 `default` |
-| `Badge` | App 图标上的数字，`nil` 表示不修改。iOS 和鸿蒙可以设为 0 清除；Android 只支持 1 到 99，并且只在华为、荣耀和 vivo 手机上生效 |
-| `TTL` | 设备离线时通知保留多久，从 `Send` 开始计算；阿里云最长 72 小时。队列积压超过 TTL 的推送不再发出，适合验证码、限时活动这类过时就没有意义的消息 |
+| `Badge` | App 图标上的数字，`nil` 表示保持原值。iOS 和鸿蒙可以设为 0 清除；Android 只支持 1 到 99，并且只在华为、荣耀和 vivo 手机上生效 |
+| `TTL` | 设备离线时通知保留多久，从 `Send` 开始计算；阿里云最长 72 小时。队列积压超过 TTL 的推送直接丢弃，适合验证码、限时活动这类有时效的消息 |
 
-通知不带内容以外的敏感信息：锁屏界面上任何人都看得到。需要展示私密内容时，`Body` 写“你有一条新消息”，App 打开后再从接口读取。
+通知只写可以公开的内容：锁屏界面上任何人都看得到。需要展示私密内容时，`Body` 写“你有一条新消息”，App 打开后再从接口读取。
 
 <a id="categories"></a>
 ### 消息分类
 
-国内厂商把通知分成两类：**服务与通讯**（订单、聊天、订阅更新）不限条数、正常提醒；**资讯营销**每台设备每天只能收到很少几条（华为一般应用每天 2 条），并且静默展示。不带分类参数的消息，厂商通常按资讯营销处理。
+国内厂商把通知分成两类：**服务与通讯**（订单、聊天、订阅更新）条数宽松、正常提醒；**资讯营销**每台设备每天只能收到很少几条（华为一般应用每天 2 条），并且静默展示。省略分类参数的消息，厂商通常按资讯营销处理。
 
 分类参数各家不同，大多需要先在厂商后台申请。`Message.Category` 是应用自己起的名字，配置中的 `categories` 把它换成各家的参数：
 
@@ -191,7 +191,7 @@ categories:
 | `xiaomi` | 小米推送后台申请的 channel ID，每个应用最多 8 个 |
 | `channel` | 覆盖 `android.channel`，例如营销消息用单独的通知渠道，用户可以只关闭它 |
 
-推送营销消息时写 `Category: "promo"`。指定了配置中没有的分类时，推送任务失败、不再重试，在[失败任务](../libraries/queue.md#failed-jobs)中可以看到原因。
+推送营销消息时写 `Category: "promo"`。指定了配置中没有的分类时，推送任务直接失败，在[失败任务](../libraries/queue.md#failed-jobs)中可以看到原因。
 
 <a id="delivering"></a>
 ## 运行推送
@@ -212,8 +212,8 @@ push.NewDeliverer(db, provider, push.Options{}).Handle(w)
 ### 重试与去重
 
 - 限流、阿里云服务端错误和网络错误按队列的退避重试，默认最多 5 次，约 6 分钟。
-- AccessKey、AppKey、参数错误等重试也不会成功的错误，直接转入失败任务。
-- 一个任务中有一批失败时整个任务重试。已经成功的批次再次调用时带着相同的 `IdempotentToken`，阿里云在 15 分钟内只推送一次，用户不会收到重复的通知。
+- AccessKey、AppKey、参数错误等配置类的错误，直接转入失败任务。
+- 一个任务中有一批失败时整个任务重试。已经成功的批次再次调用时带着相同的 `IdempotentToken`，阿里云在 15 分钟内只推送一次，用户只收到一条通知。
 
 <a id="overseas"></a>
 ## 海外用户
@@ -225,7 +225,7 @@ push.NewDeliverer(db, provider, push.Options{}).Handle(w)
 <a id="testing"></a>
 ## 测试
 
-只检查发布了哪些推送时，不需要运行 worker，用 `queuetest.Pending` 读出还没处理的推送任务：
+只检查发布了哪些推送时，用 `queuetest.Pending` 读出还没处理的推送任务：
 
 ```go
 jobs := queuetest.Pending(t, db, push.Deliver)

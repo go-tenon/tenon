@@ -33,7 +33,7 @@ func AccessLog(cfg AccessLogConfig, logger *slog.Logger) func(http.Handler) http
 		WithTraceID:  false,
 		WithSpanID:   false,
 		WithClientIP: true,
-		// request_id 已由 context 字段输出，不再重复记录 slog-chi 的 id 字段。
+		// request_id 已由 context 字段输出，slog-chi 的 id 字段随之省略。
 		WithRequestID:     false,
 		WithCustomMessage: func(http.ResponseWriter, *http.Request) string { return "http request" },
 		Filters:           []slogchi.Filter{slogchi.IgnorePath(cfg.IgnorePaths...)},
@@ -56,7 +56,7 @@ func componentLogger(logger *slog.Logger) *slog.Logger {
 }
 
 // implicitOK 在处理器未写出任何响应时显式写出 200，使访问日志记录的状态码与客户端收到的一致。
-// 升级连接（例如 WebSocket）不处理。
+// 升级连接（例如 WebSocket）直接放行。
 func implicitOK(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		next.ServeHTTP(w, r)

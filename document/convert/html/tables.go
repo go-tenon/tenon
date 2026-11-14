@@ -247,7 +247,7 @@ func rowCells(tr *xhtml.Node) []*xhtml.Node {
 }
 
 // spans 返回单元格截断后的 colspan 和 rowspan。rowspan 为 0 时延伸到行组末尾（还剩 remaining 行），
-// 任何合并都不会越过行组。
+// 合并始终限制在行组之内。
 func spans(cell *xhtml.Node, remaining int) (int, int) {
 	colspan, rowspan := 1, 1
 	for _, attr := range cell.Attr {

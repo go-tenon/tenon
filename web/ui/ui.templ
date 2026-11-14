@@ -22,7 +22,7 @@ type PageProps struct {
 }
 
 // Page 是一个完整的 HTML 文档：<html> 带当前主题的风格，<head> 由 Head 生成，children 是 <body> 的内容。
-// 需要完全控制文档结构时不用 Page，自己写 <html class={ ui.Class(ctx) }> 并调用 Head。
+// 需要完全控制文档结构时，自己写 <html class={ ui.Class(ctx) }> 并调用 Head。
 templ Page(p PageProps) {
 	<!DOCTYPE html>
 	<html lang={ lang(ctx, p) } class={ Class(ctx) }>

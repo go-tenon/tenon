@@ -1,8 +1,8 @@
 # 界面组件
 
-按钮、表格、下拉菜单、对话框这些界面组件来自 [shadcn-templ](https://github.com/axadrn/shadcn-templ)，它是 [shadcn/ui](https://ui.shadcn.com) 的 templ 移植版。框架在 go.mod 中固定了它的版本，`web/ui` 包内置了这个版本的样式表和组件脚本：应用直接 import 组件，不需要安装 shadcn-templ 的命令行，也不需要 Tailwind。
+按钮、表格、下拉菜单、对话框这些界面组件来自 [shadcn-templ](https://github.com/axadrn/shadcn-templ)，它是 [shadcn/ui](https://ui.shadcn.com) 的 templ 移植版。框架在 go.mod 中固定了它的版本，`web/ui` 包内置了这个版本的样式表和组件脚本：应用直接 import 组件即可使用，样式随包提供。
 
-`web/ui` 把组件接到[页面](views.md)上：按主题加载样式表和脚本；局部请求的错误显示为 toast；`hx-confirm` 弹出确认对话框；提供表单字段、分页、排序表头、空状态这几个与 `web` 配合的组件。这些衔接都可以不用，换成应用自己的写法，见[不同区域的界面](#areas)。组件中的文字（分页的“上一页”、确认框的“取消”等）按请求的语言显示，见[本地化](../general/localization.md#built-in-messages)。
+`web/ui` 把组件接到[页面](views.md)上：按主题加载样式表和脚本；局部请求的错误显示为 toast；`hx-confirm` 弹出确认对话框；提供表单字段、分页、排序表头、空状态这几个与 `web` 配合的组件。这些衔接都可以换成应用自己的写法，见[不同区域的界面](#areas)。组件中的文字（分页的“上一页”、确认框的“取消”等）按请求的语言显示，见[本地化](../general/localization.md#built-in-messages)。
 
 - [示例用法](#example-usage)
 - [主题](#themes)
@@ -111,7 +111,7 @@ templ Layout(title string) {
 - `ui.Confirm()` 是 `hx-confirm` 的确认对话框，见[确认对话框](#confirming)。
 - `ui.Toaster()` 把局部请求的错误显示为 toast，页面内容保持不变，见[错误页](views.md#error-pages)。
 
-需要完全控制文档结构时，不用 `ui.Page`，自己写 `<html class={ ui.Class(ctx) }>`，在 `<head>` 中调用 `@ui.Head()`。
+需要完全控制文档结构时，自己写 `<html class={ ui.Class(ctx) }>`，在 `<head>` 中调用 `@ui.Head()`。
 
 <a id="using-components"></a>
 ## 使用组件
@@ -133,7 +133,7 @@ import "github.com/axadrn/shadcn-templ/v2/components/button"
 
 表单使用 `ui.TextField`、`ui.SelectField` 等字段组件，它们读取 `web.Form` 的输入和错误，见[渲染表单](forms.md#rendering-forms)。自己组合 `field`、`input` 等组件时注意：组件的样式按 `data-invalid="true"`、`aria-invalid="true"` 切换，属性的值必须是 `"true"`，没有错误时不写这个属性。
 
-不用 Tailwind 时，页面能用的工具类是组件用到的类名，加上一组常用的布局工具类：间距、flex、grid、宽高、文字大小和对齐、主题颜色，以及它们在 `sm`、`md`、`lg` 断点上的变体，完整列表见框架的 `web/ui/css/safelist.css`。用到其他类名时，用 [Tailwind](assets.md#tailwind) 生成样式表。
+使用内置样式表时，页面能用的工具类是组件用到的类名，加上一组常用的布局工具类：间距、flex、grid、宽高、文字大小和对齐、主题颜色，以及它们在 `sm`、`md`、`lg` 断点上的变体，完整列表见框架的 `web/ui/css/safelist.css`。用到其他类名时，用 [Tailwind](assets.md#tailwind) 生成样式表。
 
 <a id="confirming"></a>
 ## 确认对话框
@@ -160,14 +160,14 @@ import "github.com/axadrn/shadcn-templ/v2/components/button"
 <a id="busy-buttons"></a>
 ## 请求进行中
 
-按钮发出的 htmx 请求、以及提交按钮提交的表单，在请求结束之前，按钮会被禁用并带上 `aria-busy="true"`，图标换成旋转的圈。用户不会重复提交，应用也不用写任何代码。由输入自动触发的请求（例如列表页的搜索框）不受影响。
+按钮发出的 htmx 请求、以及提交按钮提交的表单，在请求结束之前，按钮会被禁用并带上 `aria-busy="true"`，图标换成旋转的圈。每次只提交一次，全部自动完成。由输入自动触发的请求（例如列表页的搜索框）照常发送。
 
-元素上写了 htmx 的 `hx-disable` 时，按它指定的元素禁用，不再自动处理。
+元素上写了 htmx 的 `hx-disable` 时，按它指定的元素禁用。
 
 <a id="extra-components"></a>
 ## 按需加载的组件
 
-大部分组件的脚本在一个文件中，随页面加载。体积大且不常用的几个组件（`calendar`、`carousel`、`chart`、`drawer`、`input-otp`、`message-scroller`、`questionnaire`、`resizable`）单独成文件，页面上出现这些组件时才加载，包括 htmx 后来放进页面的。使用它们不需要任何设置。
+大部分组件的脚本在一个文件中，随页面加载。体积大且不常用的几个组件（`calendar`、`carousel`、`chart`、`drawer`、`input-otp`、`message-scroller`、`questionnaire`、`resizable`）单独成文件，页面上出现这些组件时才自动加载，包括 htmx 后来放进页面的。
 
 <a id="areas"></a>
 ## 不同区域的界面
@@ -189,15 +189,15 @@ help:
 
 `web/ui` 的每一项衔接都可以换掉：
 
-- 不用 `ui.Toaster()`，自己监听 `web:flash` 事件显示局部请求的错误，见[错误页](views.md#error-pages)；
+- 自己监听 `web:flash` 事件显示局部请求的错误，代替 `ui.Toaster()`，见[错误页](views.md#error-pages)；
 - 设置 `web.Options.ErrorFragment`，局部请求的错误换成自己的片段；
-- 不用 `ui.Page`，自己写 `<html>`，见[布局](#layouts)；
+- 自己写 `<html>` 代替 `ui.Page`，见[布局](#layouts)；
 - 用 [Tailwind](assets.md#tailwind) 给设计感强的页面写自己的样式，与组件共用一套主题变量。
 
 <a id="upgrading"></a>
 ## 升级组件
 
-shadcn-templ 的版本随框架升级，`ui.ShadcnTemplVersion` 是当前版本。不要在应用的 go.mod 中单独升级 shadcn-templ：组件的 HTML 与内置的样式表、脚本必须配套，版本不一致时 `ui.Assets()` 会 panic。
+shadcn-templ 的版本随框架升级，`ui.ShadcnTemplVersion` 是当前版本。shadcn-templ 由框架统一升级：组件的 HTML 与内置的样式表、脚本必须配套，版本不一致时 `ui.Assets()` 会 panic。
 
 需要改动某个组件时，把它的源码复制进应用，修改后 import 应用自己的版本。组件的外观来自风格样式表中的 `cn-*` 类名，复制出来的组件仍然使用内置的样式。
 
@@ -205,8 +205,8 @@ shadcn-templ 的版本随框架升级，`ui.ShadcnTemplVersion` 是当前版本�
 ## 注意事项
 
 - **给对话框固定的 `ID`。** 组件没有 `ID` 时会生成随机值，同一个对话框重新渲染后就对不上了。
-- **对话框不要放在 `<table>` 里。** 对话框渲染的是 `<div>`，浏览器解析 HTML 时会把 `<tbody>` 中的 `<div>` 移到表格外面。
-- **templ 会拦截字符串形式的事件处理器。** `templ.Attributes{"onclick": "…"}` 渲染出来是一段注释，不会执行。在元素上写 `data-*` 属性，在应用的脚本中用事件委托处理，这样也符合[内容安全策略](views.md#content-security-policy)。
+- **对话框放在 `<table>` 外面。** 对话框渲染的是 `<div>`，浏览器解析 HTML 时会把 `<tbody>` 中的 `<div>` 移到表格外面。
+- **templ 会拦截字符串形式的事件处理器。** `templ.Attributes{"onclick": "…"}` 渲染出来是一段注释。事件处理写成：在元素上写 `data-*` 属性，在应用的脚本中用事件委托处理，这样也符合[内容安全策略](views.md#content-security-policy)。
 
 <a id="api-reference"></a>
 ## API 参考

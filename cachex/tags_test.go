@@ -11,7 +11,7 @@ import (
 	"github.com/go-tenon/tenon/cachex"
 )
 
-// Invalidate 一个 tag 后，带有它的值重新加载；其他 tag 不受影响，tag 在 Cache 之间共享。
+// Invalidate 一个 tag 后，带有它的值重新加载；其他 tag 保持有效，tag 在 Cache 之间共享。
 func TestTags(t *testing.T) {
 	ctx := context.Background()
 	mc := openMemcached(t)
@@ -74,7 +74,7 @@ func TestTagEvicted(t *testing.T) {
 	if err := f.Delete("cachex:tag:t"); err != nil {
 		t.Fatal(err)
 	}
-	// 版本不存在时 Invalidate 什么也不用做。
+	// 版本不存在时 Invalidate 直接返回。
 	if err := c.Invalidate(ctx, "t"); err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func TestTagEvicted(t *testing.T) {
 	}
 }
 
-// 加载期间 Invalidate：之后的 Remember 不等待这次加载，它写入的旧值也不会被使用。
+// 加载期间 Invalidate：之后的 Remember 发起新的加载，这次加载写入的旧值随即作废。
 func TestInvalidateDuringLoad(t *testing.T) {
 	ctx := context.Background()
 	c := cachex.New[*article](newFake(), "article:", time.Minute)

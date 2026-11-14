@@ -15,7 +15,7 @@ type Renderer interface {
 }
 ```
 
-`pdf/gotenberg` 实现 `Renderer`，调用 [Gotenberg](https://gotenberg.dev) 服务中的 Chromium。浏览器运行在独立的容器中，崩溃、内存占用、排队和定期重启都由 Gotenberg 负责；它的镜像带有 Noto CJK 字体，中文不需要额外配置。
+`pdf/gotenberg` 实现 `Renderer`，调用 [Gotenberg](https://gotenberg.dev) 服务中的 Chromium。浏览器运行在独立的容器中，崩溃、内存占用、排队和定期重启都由 Gotenberg 负责；它的镜像带有 Noto CJK 字体，中文直接可用。
 
 - [示例用法](#example-usage)
 - [启动 Gotenberg](#running-gotenberg)
@@ -57,7 +57,7 @@ data, err := renderer.Render(ctx, pdf.Document{
 docker run --rm -p 3000:3000 gotenberg/gotenberg:9-chromium
 ```
 
-`9-chromium` 是只带 Chromium 的版本。不带后缀的完整镜像还包含用来转换 Office 文档的 LibreOffice，这里用不到。
+`9-chromium` 是只带 Chromium 的版本，体积更小。完整镜像 `9` 还包含用来转换 Office 文档的 LibreOffice。
 
 把 `gotenberg.Config` 放进应用的根配置结构体：
 
@@ -161,7 +161,7 @@ thead { display: table-header-group; } /* 表格跨页时重复表头 */
 <a id="assets"></a>
 ### 样式和图片
 
-`Assets` 中的文件和页面一起上传，**HTML 中只写文件名**，例如 `href="article.css"`、`src="logo.svg"`。`Assets` 只能包含顶层文件，不能有子目录。把它们嵌入程序：
+`Assets` 中的文件和页面一起上传，**HTML 中只写文件名**，例如 `href="article.css"`、`src="logo.svg"`。`Assets` 只包含顶层文件。把它们嵌入程序：
 
 ```go
 //go:embed assets
@@ -170,7 +170,7 @@ var files embed.FS
 var assets, _ = fs.Sub(files, "assets")
 ```
 
-引用的文件加载失败（文件名写错、不在 `Assets` 中）时，`Render` 返回错误，而不是生成一份没有样式的 PDF。
+引用的文件加载失败（文件名写错、不在 `Assets` 中）时，`Render` 返回错误。
 
 其他图片的来源：
 
@@ -232,7 +232,7 @@ func (a *Download) HTTP(ctx context.Context, in *DownloadInput) (*DownloadOutput
 }
 ```
 
-想让浏览器直接打开而不是下载，把 `attachment` 换成 `inline`。路由的注册方式见[组织路由](../http/routing.md#organizing-routes)。
+想让浏览器直接打开，把 `attachment` 换成 `inline`。路由的注册方式见[组织路由](../http/routing.md#organizing-routes)。
 
 生成失败时：
 
@@ -266,7 +266,7 @@ Gotenberg 暂时不可用时，任务返回错误，按队列的规则稍后重�
 <a id="testing"></a>
 ## 测试
 
-`pdftest.Renderer` 渲染并记录 HTML，返回一页空白的 PDF，不需要 Gotenberg：
+`pdftest.Renderer` 渲染并记录 HTML，返回一页空白的 PDF：
 
 ```go
 func TestDownload(t *testing.T) {
@@ -306,9 +306,9 @@ services:
 
 使用 systemd 部署时，同样用 Docker 在同一台机器上运行 Gotenberg。几点注意：
 
-- **不要把 Gotenberg 暴露到公网**，只让应用访问它。
+- **Gotenberg 只在内网提供服务**，只让应用访问它。
 - 默认最多同时生成 6 份，其余排队；单次请求的时限是 30 秒。分别用 `--chromium-max-concurrency`、`--api-timeout` 调整，见 [Gotenberg 文档](https://gotenberg.dev)。
-- 模板中有用户填写的图片地址时，Chromium 会去访问这些地址。在服务中加上 `command: [gotenberg, --chromium-deny-private-ips]` 可以禁止它访问内网地址，被拒绝的图片不显示，PDF 照常生成。开启后，文件存储的公开地址也不能是内网地址。
+- 模板中有用户填写的图片地址时，Chromium 会去访问这些地址。在服务中加上 `command: [gotenberg, --chromium-deny-private-ips]` 可以禁止它访问内网地址，被拒绝的图片留空，PDF 照常生成。开启后，文件存储的公开地址也要是公网地址。
 
 <a id="api-reference"></a>
 ## API 参考

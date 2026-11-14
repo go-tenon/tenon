@@ -34,10 +34,10 @@ type hooks struct {
 // AfterCommit 登记一个回调，在最外层事务提交成功之后执行；事务或登记它的保存点回滚时丢弃。
 //
 // 回调按登记顺序在 RunInTx 返回之前同步执行，收到的 ctx 是 RunInTx 的 ctx 去掉取消信号，
-// 请求结束不会打断它。回调返回错误或 panic 时用 slog.Default() 记录 Error 日志，其余回调照常执行，
+// 它独立于请求的生命周期。回调返回错误或 panic 时用 slog.Default() 记录 Error 日志，其余回调照常执行，
 // RunInTx 仍然返回 nil，因为数据已经提交。
 //
-// 回调只保存在内存中：提交之后、执行之前进程退出，回调就不会执行。
+// 回调只保存在内存中：提交之后、执行之前进程退出，回调随之丢失。
 // 适合广播、删除缓存这类尽力而为的操作；必须执行的任务请在事务中用 queue.Database(tx) 发布。
 //
 // 事务结束之后再调用 AfterCommit 会 panic。
@@ -62,7 +62,7 @@ func (tx Tx) AfterCommit(fn func(ctx context.Context) error) {
 //
 // db 是 *bun.DB 或 bun.Conn 时开启一个新事务。db 是外层 RunInTx 的 Tx 时以保存点执行：
 // 保存点内登记的回调等外层事务提交后才执行，保存点回滚时丢弃；此时 opts 必须为 nil。
-// db 不能是不由 RunInTx 开启的 bun.Tx，因为无法知道它何时提交。
+// db 是 bun.Tx 时必须由 RunInTx 开启，RunInTx 才知道它何时提交。
 func RunInTx(ctx context.Context, db bun.IDB, opts *sql.TxOptions, fn func(ctx context.Context, tx Tx) error) error {
 	switch parent := db.(type) {
 	case Tx:
@@ -112,7 +112,7 @@ func (tx Tx) savepoint(ctx context.Context, opts *sql.TxOptions, fn func(ctx con
 	return nil
 }
 
-// finish 结束这一层：之后不能再登记回调。keep 不小于 0 时只保留前 keep 个回调；
+// finish 结束这一层：之后登记回调会 panic。keep 不小于 0 时只保留前 keep 个回调；
 // 返回保留的回调。
 func (s *scope) finish(keep int) []func(context.Context) error {
 	h := s.hooks

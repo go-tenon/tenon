@@ -27,7 +27,7 @@ const shadcnTemplModule = "github.com/axadrn/shadcn-templ/v2"
 // 文件以 gzip 压缩保存，不接受 gzip 的客户端收到解压后的内容。
 //
 // 程序中的 shadcn-templ 与资源生成时的版本（ShadcnTemplVersion）不同时 panic：
-// 组件的 HTML 与样式、脚本不配套。应用不要在自己的 go.mod 中升级 shadcn-templ，随框架升级。
+// 组件的 HTML 与样式、脚本不配套。shadcn-templ 由框架统一升级。
 func Assets() http.Handler {
 	if info, ok := debug.ReadBuildInfo(); ok {
 		for _, dep := range info.Deps {

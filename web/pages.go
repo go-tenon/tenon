@@ -45,7 +45,7 @@ type Options struct {
 	//		return strings.Replace(web.DefaultCSP(nonce), "frame-ancestors 'none'", "frame-ancestors https://partner.example.com", 1)
 	//	},
 	//
-	// 页面响应同时带有 Referrer-Policy: same-origin，跳转到其他网站时不带上本站的地址。
+	// 页面响应同时带有 Referrer-Policy: same-origin，本站的地址只在站内传递。
 	CSP func(nonce string) string
 	// Logger 记录 5xx 错误；nil 表示 slog.Default()。
 	Logger *slog.Logger

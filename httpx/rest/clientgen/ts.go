@@ -32,7 +32,7 @@ type TSOptions struct {
 	Rename map[string]string
 }
 
-// GenerateTS 从 api 登记的端点生成 TypeScript 客户端，不依赖任何 npm 包：
+// GenerateTS 从 api 登记的端点生成独立的 TypeScript 客户端：
 //
 //   - api.ts：OpenAPI 中的类型，以及 createClient。接口按 operationId 分组，article-publish 生成
 //     client.article.publish；路径参数按顺序作为参数，查询参数、请求头和请求体合成最后一个参数；
@@ -253,7 +253,7 @@ func (t *tsGen) analyze(ep rest.Endpoint, events *strings.Builder) (*tsOp, error
 	return o, nil
 }
 
-// browserHeader 报告请求头是否由浏览器自己设置、脚本不能设置，例如 User-Agent、Cookie。
+// browserHeader 报告请求头是否由浏览器自己设置、脚本无权设置，例如 User-Agent、Cookie。
 // 服务端读取它们（例如登录时记录设备），客户端的方法不把它们作为参数。
 func browserHeader(name string) bool {
 	switch strings.ToLower(name) {

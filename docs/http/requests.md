@@ -1,6 +1,6 @@
 # 请求
 
-在 Tenon 中，你不需要手动读取 `http.Request`，也不需要自己把字符串转换成整数或 UUID。每条路由都有一个**输入类型**：一个普通的 Go 结构体，字段上的标签说明这个值从哪里来。Huma 会在调用处理器之前读取请求、转换类型并完成[验证](validation.md)，处理器拿到的就是一个已经填好的结构体。
+在 Tenon 中，每条路由都有一个**输入类型**：一个普通的 Go 结构体，字段上的标签说明这个值从哪里来。Huma 会在调用处理器之前读取请求、转换类型并完成[验证](validation.md)，处理器拿到的就是一个已经填好的结构体。
 
 - [示例用法](#introduction)
 - [定义输入类型](#input-types)
@@ -34,7 +34,7 @@ func (a *Update) HTTP(ctx context.Context, in *UpdateInput) (*ArticleOutput, err
 }
 ```
 
-请求 `PUT /articles/0193…?dry_run=true` 到达时，`in.ID` 已经是解析好的 `uuid.UUID`，`in.DryRun` 是 `true`，`in.Body.Title` 也已经通过了长度检查。如果路径中的 ID 不是合法的 UUID，或者标题为空，请求会被拒绝，处理器根本不会被调用。下面逐一介绍每种来源。
+请求 `PUT /articles/0193…?dry_run=true` 到达时，`in.ID` 已经是解析好的 `uuid.UUID`，`in.DryRun` 是 `true`，`in.Body.Title` 也已经通过了长度检查。如果路径中的 ID 不是合法的 UUID，或者标题为空，请求在到达处理器之前就被拒绝。下面逐一介绍每种来源。
 
 <a id="input-types"></a>
 ## 定义输入类型
@@ -67,10 +67,10 @@ type SearchArticlesInput struct {
 客户端请求 `/articles?limit=50` 时，`in.Limit` 为 50；省略 `limit` 时为默认值 20；传入 500 时，请求会被拒绝。查询参数默认是可选的。
 
 > [!NOTE]
-> 上面的写法会把超出范围的 `limit` 当作错误拒绝。想把它截断为 100 时，不要声明 `maximum`，在业务动作中处理，并在接口描述中说明。
+> 上面的写法会把超出范围的 `limit` 当作错误拒绝。想把它截断为 100 时，省略 `maximum`，在业务动作中截断，并在接口描述中说明。
 
 > [!TIP]
-> 列表接口的分页参数不需要自己声明，嵌入 `page.OffsetParams` 或 `page.CursorParams` 即可，见[分页](../responses/responses.md#pagination)。
+> 列表接口的分页参数嵌入 `page.OffsetParams` 或 `page.CursorParams` 即可，见[分页](../responses/responses.md#pagination)。
 
 <a id="headers"></a>
 ### 请求头
@@ -84,7 +84,7 @@ type RequestInput struct {
 ```
 
 > [!TIP]
-> `Authorization` 头不需要自己读取。使用 `rest.RequireBearer` 保护路由后，认证通过的身份可以直接从 context 中获取，见[认证](../security/authentication.md)。
+> `Authorization` 头由 `rest.RequireBearer` 读取。用它保护路由后，认证通过的身份可以直接从 context 中获取，见[认证](../security/authentication.md)。
 
 <a id="json-body"></a>
 ### JSON 请求体

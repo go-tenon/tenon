@@ -2,7 +2,7 @@
 
 迁移就像是数据库的版本控制：它记录了表结构的每一次变化，让团队中的每个人、每个部署环境都能把数据库升级到相同的结构。
 
-Tenon 使用 [goose](https://github.com/pressly/goose) 管理迁移。迁移是应用目录中的普通 SQL 文件，它们被嵌入到二进制中，在发布时通过命令**显式**执行。服务启动时**不会**自动执行迁移：多个实例同时启动时，谁来执行迁移、执行失败了怎么办，都是难以回答的问题，把迁移作为发布的一个独立步骤要简单得多。
+Tenon 使用 [goose](https://github.com/pressly/goose) 管理迁移。迁移是应用目录中的普通 SQL 文件，它们被嵌入到二进制中，在发布时通过命令**显式**执行。迁移是发布中的一个独立步骤，由 `migrate up` 执行一次：多个实例同时启动时，由谁执行、失败了怎么办都很清楚。
 
 - [示例用法](#introduction)
 - [编写迁移](#writing-migrations)
@@ -55,7 +55,7 @@ DROP TABLE articles;
 go run ./cmd/api migrate make create_articles_table
 ```
 
-命令输出新文件的路径，例如 `migrations/20261111090000_create_articles_table.sql`。文件名是 UTC 时间戳加名称，版本保证大于目录中已有的迁移，所以新迁移总是排在最后。命令不加载配置、不连接数据库；`--dir` 默认是 `migrations`。
+命令输出新文件的路径，例如 `migrations/20261111090000_create_articles_table.sql`。文件名是 UTC 时间戳加名称，版本保证大于目录中已有的迁移，所以新迁移总是排在最后。命令只生成文件；`--dir` 默认是 `migrations`。
 
 命令会从名称推断表名并生成骨架：
 
@@ -94,7 +94,7 @@ CREATE TABLE articles (
 DROP TABLE articles;
 ```
 
-这里显式声明了三个时间字段，与[文章模型](quick-start.md#defining-models)保持一致。时间列不设数据库默认值，`created_at` 和 `updated_at` 由[模型钩子](quick-start.md#timestamps)写入；允许为空的 `deleted_at` 配合 Bun 的[软删除标签](quick-start.md#soft-deletes)使用。模型标签不会自动修改数据库表结构。
+这里显式声明了三个时间字段，与[文章模型](quick-start.md#defining-models)保持一致。时间列不设数据库默认值，`created_at` 和 `updated_at` 由[模型钩子](quick-start.md#timestamps)写入；允许为空的 `deleted_at` 配合 Bun 的[软删除标签](quick-start.md#soft-deletes)使用。表结构只由迁移修改。
 
 默认情况下，每个迁移文件在一个事务中执行，失败时整体回滚。
 
@@ -109,7 +109,7 @@ package migrations
 
 import "embed"
 
-// 模式写成 * 而不是 *.sql：还没有迁移时也能编译，embed.go 不是 .sql，不会被当作迁移。
+// 模式写成 *：还没有迁移时也能编译；goose 只读取其中的 .sql 文件。
 //
 //go:embed *
 var FS embed.FS
@@ -138,7 +138,7 @@ root.AddCommand(migrationCmd)
 go run ./cmd/api migrate publish --dir migrations
 ```
 
-`--dir` 默认是当前工作目录下的 `migrations`。命令只输出本次新生成的文件名；再次运行且没有新增迁移时，没有输出。发布过程不加载应用配置，不连接数据库或存储，也不执行 SQL。
+`--dir` 默认是当前工作目录下的 `migrations`。命令只输出本次新生成的文件名；再次运行且没有新增迁移时，输出为空。发布过程只复制文件。
 
 每个发布文件的第一行包含稳定的来源标记，例如：
 
@@ -146,12 +146,12 @@ go run ./cmd/api migrate publish --dir migrations
 -- mygoravel: filesystem/0001_create_files
 ```
 
-发布器通过这个标记识别已有迁移。你可以在首次执行前调整 SQL 或重命名文件，但应保留标记；再次发布不会覆盖你的修改。升级框架后，再次运行命令只会发布新增的来源迁移。
+发布器通过这个标记识别已有迁移。你可以在首次执行前调整 SQL 或重命名文件，但应保留标记；再次发布时你的修改保持原样。升级框架后，再次运行命令只会发布新增的来源迁移。
 
-新文件的版本是当前 UTC 时间戳；目录中已有更大的版本时，从最大版本加一开始，因此新迁移总是排在已有迁移之后。目标文件已存在时发布器报错而不会覆盖。发布中途遇到 I/O 错误时，已完成的文件会保留，修复后重试即可。
+新文件的版本是当前 UTC 时间戳；目录中已有更大的版本时，从最大版本加一开始，因此新迁移总是排在已有迁移之后。目标文件已存在时发布器报错，已有文件保持原样。发布中途遇到 I/O 错误时，已完成的文件会保留，修复后重试即可。
 
 > [!NOTE]
-> 发布完成后，需要审查和提交 SQL，再重新构建应用，将新文件嵌入二进制。然后运行 `migrate up`。已经在任何环境执行过的迁移不能修改，后续调整必须新增迁移。`CheckPublished` 继续用于检查应用自身的历史基线，不用于比较框架源 SQL 与应用定制后的 SQL。
+> 发布完成后，需要审查和提交 SQL，再重新构建应用，将新文件嵌入二进制。然后运行 `migrate up`。已经在任何环境执行过的迁移保持原样，后续调整一律新增迁移。`CheckPublished` 只检查应用自身的历史基线。
 
 自定义命令或工具也可以直接调用 `migrate.Publish("migrations", sources...)`；`sources` 是应用显式选择的 `[]migrate.Source`。每个来源的 `Name` 是稳定的包标识，`FS` 根目录直接包含带数字版本的 SQL。来源按传入顺序发布，同一来源的文件按数字版本排序。
 
@@ -242,21 +242,21 @@ func seed(db *bun.DB) *cobra.Command {
 }
 ```
 
-示例数据通过[业务动作](../concepts/actions.md)写入，而不是直接插入表中，这样它们和真实请求创建的数据经过相同的验证与规则，表结构变化时也不需要单独维护。slug 的唯一约束让命令可以重复执行：已经存在的文章会被跳过。
+示例数据通过[业务动作](../concepts/actions.md)写入，这样它们和真实请求创建的数据经过相同的验证与规则，表结构变化时随业务动作一起更新。slug 的唯一约束让命令可以重复执行：已经存在的文章会被跳过。
 
-`seed` 不是某一个动作的入口，它组合了 `Create` 和 `Publish` 两个动作，直接调用它们的 `Handle`。在本地准备数据库：
+`seed` 组合了 `Create` 和 `Publish` 两个动作，直接调用它们的 `Handle`。在本地准备数据库：
 
 ```bash
 go run ./cmd/api migrate up
 go run ./cmd/api seed
 ```
 
-`seed` 只用于开发环境，不要把它加入部署流程。需要大量随机数据时，可以用 [gofakeit](https://github.com/brianvoe/gofakeit) 生成 `article.Changes`。测试不依赖这些数据，每个测试在自己的数据库中准备数据，见[测试业务动作](../testing/database.md#testing-actions)。
+`seed` 只用于开发环境。需要大量随机数据时，可以用 [gofakeit](https://github.com/brianvoe/gofakeit) 生成 `article.Changes`。测试各自准备数据，每个测试在自己的数据库中创建，见[测试业务动作](../testing/database.md#testing-actions)。
 
 <a id="published-migrations"></a>
 ## 修改已发布的迁移
 
-一旦迁移被发布到任何环境，就**不要再修改它**。已经执行过的迁移不会再次执行，修改它只会让不同环境的数据库结构变得不一致。如果需要修正，请新建一个迁移。
+一旦迁移被发布到任何环境，它就**固定下来**。已经执行过的迁移只执行一次，修改它会让不同环境的数据库结构变得不一致。需要修正时，请新建一个迁移。
 
 <a id="checking-in-ci"></a>
 ### 在 CI 中检查
@@ -278,12 +278,12 @@ err := migrate.CheckPublished("migrations", "baseline/migrations")
 
 1. 先添加新结构（例如新增一列），新旧代码都能正常工作；
 2. 部署使用新结构的应用代码；
-3. 在后续的版本中，移除不再使用的旧结构。
+3. 在后续的版本中，移除已经弃用的旧结构。
 
 <a id="recovering-non-transactional-migrations"></a>
 ## 非事务迁移失败后的恢复
 
-某些操作不能在事务中执行，例如 `CREATE INDEX CONCURRENTLY`。这时需要在迁移文件中使用 goose 的 `-- +goose NO TRANSACTION` 指令。
+某些操作必须在事务之外执行，例如 `CREATE INDEX CONCURRENTLY`。这时需要在迁移文件中使用 goose 的 `-- +goose NO TRANSACTION` 指令。
 
 > [!WARNING]
 > 非事务迁移失败时，可能已有部分语句生效，而迁移的版本号却没有更新。此时直接重新执行可能会失败或造成重复的变更。

@@ -10,7 +10,7 @@ import (
 
 type ctxKey struct{}
 
-// WithAttrs 返回携带 attrs 的新 context；多次调用累加，父 context 不受影响。
+// WithAttrs 返回携带 attrs 的新 context；多次调用累加，父 context 保持原样。
 func WithAttrs(ctx context.Context, attrs ...slog.Attr) context.Context {
 	if len(attrs) == 0 {
 		return ctx

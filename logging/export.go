@@ -13,7 +13,7 @@ const scopeName = "github.com/go-tenon/tenon/logging"
 
 // Export 把日志同时交给 OpenTelemetry 的 lp，通常是 telemetry.Open 返回的 Logs，由它推送到日志平台。
 // 导出的日志和基础输出经过同样的级别、Pipe 和格式化；ctx 中的 span 写入记录的链路字段，
-// 日志平台可以从日志跳到链路，trace_id、span_id 不再作为属性重复。服务名和版本由 lp 的 resource 表示。
+// 日志平台可以从日志跳到链路，trace_id、span_id 写在记录本身。服务名和版本由 lp 的 resource 表示。
 func Export(lp log.LoggerProvider) Option {
 	return func(o *options) { o.export = lp }
 }

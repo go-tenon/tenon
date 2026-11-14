@@ -1,6 +1,6 @@
 # 客户端代码
 
-前端、App 和其他服务调用你的 JSON API 时，请求和响应的类型不需要再手写一遍。手写的类型迟早会和服务端不一致：服务端加了一个字段，前端不知道；服务端改了一个字段名，前端要到运行时才发现。Tenon 的 `client` 命令从路由声明直接生成 TypeScript 和 Go 客户端：函数按 operationId 分组，类型和服务端一致，业务错误码是常量。其他语言用 [openapi 命令](../general/commands.md#openapi-command)导出的 OpenAPI 文档生成。
+前端、App 和其他服务调用你的 JSON API 时，请求和响应的类型直接从服务端生成，与服务端始终一致：服务端加了字段、改了字段名，重新生成后前端的编译器就会提示。Tenon 的 `client` 命令从路由声明直接生成 TypeScript 和 Go 客户端：函数按 operationId 分组，类型和服务端一致，业务错误码是常量。其他语言用 [openapi 命令](../general/commands.md#openapi-command)导出的 OpenAPI 文档生成。
 
 - [示例用法](#introduction)
 - [生成的名称](#generated-names)
@@ -85,7 +85,7 @@ go tool tenon generate   # 等价于 go run ./cmd/api client --ts frontend/src/a
 | `errors.ts` | 服务端用 [`errorx.Define`](../general/errors.md#defining-errors) 定义的错误码，按包分组，例如 `ArticleErrors.SlugTaken` |
 | `runtime.ts` | 发送请求、刷新 access token、`ApiError`、事件流和下载 |
 
-生成的代码不依赖任何 npm 包，也不需要 Node 或 Bun 参与生成。重新生成时只删除带生成标记的文件，目录中手写的文件保持不变。把它们提交到仓库，CI 中重新生成后用 `git diff --exit-code` 检查是否忘了更新。
+生成的代码是独立的 TypeScript，由 Go 程序直接生成。重新生成时只删除带生成标记的文件，目录中手写的文件保持不变。把它们提交到仓库，CI 中重新生成后用 `git diff --exit-code` 检查是否忘了更新。
 
 开发时 [tenon dev](../installation/tooling.md#dev) 在每次重新编译后自动生成，改了 Go 接口，前端的类型随之更新。
 
@@ -98,7 +98,7 @@ go tool tenon generate   # 等价于 go run ./cmd/api client --ts frontend/src/a
 import { createClient } from "./api/api"
 import { router } from "./router"
 
-// 刷新接口靠 cookie 认证，不带 access token。单页应用与 API 在不同的子域名时需要 credentials: "include"。
+// 刷新接口靠 cookie 认证。单页应用与 API 在不同的子域名时需要 credentials: "include"。
 const plain = createClient({ baseURL: "/api", credentials: "include" })
 
 export const api = createClient({
@@ -116,10 +116,10 @@ export const api = createClient({
 - 打开页面（包括刷新页面、新标签页）时先调用一次 `await api.refresh()`，返回 `true` 表示已经登录，决定显示登录页还是应用。
 - 登录接口返回后调用 `api.setAccessToken(out.access_token)`；登出调用 `DELETE /auth/session`，服务端撤销这次登录并清除 cookie，再调用 `api.setAccessToken("")`。
 - 几个请求同时收到 `401` 时，只调用一次 `refresh`，它们都等这一次的结果。刷新失败（返回空值或抛出错误）时调用 `onSignedOut`，原来的 `401` 抛给调用方。
-- 公开的接口（[`rest.Public`](../http/routing.md#access-policies)）从不带 token，`401` 时也不刷新。
+- 公开的接口（[`rest.Public`](../http/routing.md#access-policies)）直接请求，`401` 原样返回给调用者。
 - 请求带上 `Accept-Language`（默认是浏览器的语言，`language` 可以覆盖），错误的 `detail` 按它翻译。App 的 WebView 设置 `appVersion`，作为 [`X-App-Version`](#app-version) 发送。
 
-`/auth/login`、`/auth/refresh` 是应用自己注册的公开接口，写法见[单页应用](../security/api-tokens.md#single-page-applications)。App、桌面端（Electron、Tauri）和小程序不用 cookie：登录时不传 `cookie`，refresh token 在响应体中，保存在系统的钥匙串中，`refresh` 把它放进请求体。
+`/auth/login`、`/auth/refresh` 是应用自己注册的公开接口，写法见[单页应用](../security/api-tokens.md#single-page-applications)。App、桌面端（Electron、Tauri）和小程序用响应体传递：登录时省略 `cookie`，refresh token 在响应体中，保存在系统的钥匙串中，`refresh` 把它放进请求体。
 
 <a id="calling-endpoints"></a>
 ### 调用接口
@@ -224,7 +224,7 @@ function Article({ id }: { id: string }) {
 }
 ```
 
-[实时频道](../libraries/realtime.md#subscribing)收到消息后，让对应的查询失效，由 TanStack Query 重新获取，不要把消息内容合并进缓存：
+[实时频道](../libraries/realtime.md#subscribing)收到消息后，让对应的查询失效，由 TanStack Query 重新获取，缓存始终来自接口：
 
 ```ts
 articles.on("publication", () => queryClient.invalidateQueries({ queryKey: ["article"] }))
@@ -264,7 +264,7 @@ if errors.Is(err, article.ErrSlugTaken) {
 }
 ```
 
-接口还是同一套 JSON API，Go 客户端只是又一个调用方。和 OpenAPI 生成的代码相比，类型与服务端同名、同包（`article.Changes` 而不是 `ArticleChanges`），业务错误码是可以 `errors.Is` 的常量。
+接口还是同一套 JSON API，Go 客户端只是又一个调用方。和 OpenAPI 生成的代码相比，类型与服务端同名、同包（例如 `article.Changes`），业务错误码是可以 `errors.Is` 的常量。
 
 <a id="generating-go-client"></a>
 ### 生成客户端
@@ -281,7 +281,7 @@ if errors.Is(err, article.ErrSlugTaken) {
 go run ./cmd/api client --out ../api
 ```
 
-类型声明和错误码从源码复制，所以命令要在源码目录中运行；它用 `nil` 依赖构造应用的路由，不读取配置，也不连接数据库。输出目录通常是 [go.work](https://go.dev/ref/mod#workspaces) 中的另一个模块，调用方只依赖它，不会把服务端的依赖带进 App：
+类型声明和错误码从源码复制，所以命令要在源码目录中运行；它用 `nil` 依赖构造应用的路由，离线运行。输出目录通常是 [go.work](https://go.dev/ref/mod#workspaces) 中的另一个模块，调用方只依赖它，App 保持精简：
 
 ```text
 blog/
@@ -296,7 +296,7 @@ blog/
 └── app/             调用方，例如 mygo App
 ```
 
-目录名就是根包的包名。重新生成时，不再生成的文件会被删除，你自己放进去的文件保持不变。把生成的代码提交到仓库，CI 中重新生成后用 `git diff --exit-code` 检查是否忘了更新，与 [openapi.json](#checking-changes) 的做法相同。
+目录名就是根包的包名。重新生成时，只删除上次生成、这次已经移除的文件，你自己放进去的文件保持不变。把生成的代码提交到仓库，CI 中重新生成后用 `git diff --exit-code` 检查是否忘了更新，与 [openapi.json](#checking-changes) 的做法相同。
 
 返回原始字节或非 SSE 流的接口、`RawBody` 不是 `huma.MultipartFormFiles` 的接口不生成，命令把它们列在标准错误中。
 
@@ -354,14 +354,14 @@ case errors.Is(err, wire.ErrUpgradeRequired):
 <a id="go-client-auth"></a>
 ### 认证
 
-`Options.Auth` 提供受保护接口的 Bearer token；公开的接口从不带 token。不透明的 [API token](../security/api-tokens.md) 用 `wire.StaticToken(token)`。[JWT 模式](../security/api-tokens.md#jwt)实现 `wire.Auth` 的两个方法，下面是[读者 App](../security/account-examples.md) 的实现：
+`Options.Auth` 提供受保护接口的 Bearer token；公开的接口直接请求。不透明的 [API token](../security/api-tokens.md) 用 `wire.StaticToken(token)`。[JWT 模式](../security/api-tokens.md#jwt)实现 `wire.Auth` 的两个方法，下面是[读者 App](../security/account-examples.md) 的实现：
 
 ```go
 type tokens struct {
     mu      sync.Mutex
     access  string
     refresh string
-    public  *api.Client // 不带 Auth，调用公开的刷新接口
+    public  *api.Client // 只调用公开的刷新接口
 }
 
 func (t *tokens) Token(context.Context) (string, error) {
@@ -409,7 +409,7 @@ for ev, err := range c.Article.Events(ctx, article.EventsInput{}) {
 }
 ```
 
-服务端结束响应、收到 `data: [DONE]`、`ctx` 取消或者你跳出循环时，迭代结束。服务端新增的、客户端还不认识的事件被跳过，旧版本的 App 不受影响。连接中断时不会自动重连：需要接着上次的位置继续时，把最后一个事件的 `ID` 用 `wire.WithLastEventID` 放进 `ctx`，请求会带上 `Last-Event-ID`：
+服务端结束响应、收到 `data: [DONE]`、`ctx` 取消或者你跳出循环时，迭代结束。服务端新增的、客户端还不认识的事件被跳过，旧版本的 App 照常工作。连接中断时由调用方决定是否重连：需要接着上次的位置继续时，把最后一个事件的 `ID` 用 `wire.WithLastEventID` 放进 `ctx`，请求会带上 `Last-Event-ID`：
 
 ```go
 events := c.Article.Events(wire.WithLastEventID(ctx, lastID), article.EventsInput{})
@@ -431,7 +431,7 @@ uploaded, err := c.File.Upload(ctx, file.UploadInputForm{
 })
 ```
 
-请求体边读边发送，不会把文件整个读进内存。`Body` 为 `nil` 的文件不发送。受保护的接口返回 `401` 时，文件内容实现了 `io.Seeker`（例如 `*os.File`、`bytes.Reader`）就在刷新凭据后从头重传；否则只刷新凭据，调用方收到 `401`，再调用一次即可。
+请求体边读边发送，内存占用与文件大小无关。`Body` 为 `nil` 的文件跳过。受保护的接口返回 `401` 时，文件内容实现了 `io.Seeker`（例如 `*os.File`、`bytes.Reader`）就在刷新凭据后从头重传；否则只刷新凭据，调用方收到 `401`，再调用一次即可。
 
 <a id="copied-types"></a>
 ### 复制的类型
@@ -471,9 +471,9 @@ uploaded, err := c.File.Upload(ctx, file.UploadInputForm{
 X-App-Version: android/2.3.1
 ```
 
-从第一个发布的版本就开始发送。没有带它的版本，服务端无法拦截，只能等它们自然消失。平台名自己决定，常用 `ios`、`android`、`macos`、`windows`、`linux`；版本就是商店中显示的版本号，例如 `2.3.1`。浏览器中的单页应用总是最新的，不用发送。
+从第一个发布的版本就开始发送。带了它的版本，服务端才能按版本拦截。平台名自己决定，常用 `ios`、`android`、`macos`、`windows`、`linux`；版本就是商店中显示的版本号，例如 `2.3.1`。浏览器中的单页应用总是最新的，可以省略。
 
-收到 `426`、`code` 为 `app.upgrade_required` 时，App 停在升级页面，打开应用商店或开始自动更新，不再重试请求。`detail` 是可以展示给用户的提示。
+收到 `426`、`code` 为 `app.upgrade_required` 时，App 停在升级页面，打开应用商店或开始自动更新，等升级后再请求。`detail` 是可以展示给用户的提示。
 
 <a id="checking-changes"></a>
 ## 检查接口变更
@@ -501,14 +501,14 @@ oasdiff breaking openapi.json base.json --unmatch-path '.*' --fail-on ERR
 PUT /articles/{id} added the new required request property `slug`
 ```
 
-oasdiff 只比较请求和响应的结构。schema 改名不改变结构，它不会报告，但生成的类型名会变，前端重新生成类型后由编译器发现。
+oasdiff 只比较请求和响应的结构。schema 改名时结构相同，由前端重新生成类型后的编译器发现。
 
 <a id="api-reference"></a>
 ## API 参考
 
 ### client 命令
 
-由 `httpcmd.Commands` 加入应用的命令行，在服务端的源码目录中运行，用 `nil` 依赖构造应用的路由、取出其中的 API，不读取配置，也不连接数据库。
+由 `httpcmd.Commands` 加入应用的命令行，在服务端的源码目录中运行，用 `nil` 依赖构造应用的路由、取出其中的 API，离线运行。
 
 | 选项 | 说明 |
 | --- | --- |

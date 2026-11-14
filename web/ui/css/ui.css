@@ -1,6 +1,6 @@
 /* web/ui 的样式源：shadcn-templ 组件和默认主题（neutral）。
  *
- * 每套风格一个入口 style-<风格>.css（生成），导入本文件和该风格。不用 Tailwind 的页面加载 web/ui
+ * 每套风格一个入口 style-<风格>.css（生成），导入本文件和该风格。使用内置样式表的页面加载 web/ui
  * 预编译的样式表；用 Tailwind 的应用在自己的入口中导入风格入口，只生成一份样式表：
  *
  *   @import "tailwindcss";
@@ -13,7 +13,7 @@
 @import "./vendor/shadcn-tailwind.css";
 @import "./docs.css";
 
-/* shadcn-templ 组件和 web/ui 组件中的类名（生成）。风格中的 @apply 直接生成样式，不需要扫描。
+/* shadcn-templ 组件和 web/ui 组件中的类名（生成）。风格中的 @apply 直接生成样式，无需扫描。
    本目录不引用目录之外的文件，可以整体复制到应用中。 */
 @source "./classes.txt";
 

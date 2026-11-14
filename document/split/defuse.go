@@ -10,7 +10,7 @@ import "bytes"
 //   - 表格中缺少单元格的行会补齐到分隔行的列数，几十 KB 的输入就能分配几 GB。
 //
 // defuse 在交给 goldmark 的副本上原地改写这些输入，长度不变，所以语法树中的偏移仍然对应原文。
-// 正常的文档不受影响；被改写的病态输入只是结构识别得不同，切分的保证照样成立。
+// 正常的文档保持原样；被改写的病态输入只是结构识别得不同，切分的保证照样成立。
 
 const (
 	// maxNesting 是一行开头最多识别的容器标记数（引用的 > 和列表标记），再多的部分按文本处理。
@@ -76,7 +76,7 @@ func defuse(source []byte) {
 
 // capNesting 返回一行开头的容器标记之后的位置；last 是这一行最后一个非空白字节之后的位置。
 // 标记超过 maxNesting 个，或者缩进超过 maxIndent 列时，把那里的字节改成字母，这一行剩下的部分成为文本；
-// 从那里开始是分隔线时保持不变，分隔线不会再嵌套。
+// 从那里开始是分隔线时保持不变，分隔线只有一层。
 func capNesting(line []byte, last int) int {
 	position, column := 0, 0
 	for depth := 0; ; depth++ {
@@ -152,7 +152,7 @@ func isThematicBreakBytes(s []byte) bool {
 }
 
 // isDelimiterRow 宽松地判断 content 是否像表格的分隔行：只含 '-'、'|'、':' 和空白，并且有 '-' 和 '|'。
-// 它只用来估算补齐的单元格数，不必与 goldmark 完全一致。
+// 它只用来估算补齐的单元格数，与 goldmark 大致一致即可。
 func isDelimiterRow(content []byte) bool {
 	if !bytes.Contains(content, []byte("-")) || !bytes.Contains(content, []byte("|")) {
 		return false

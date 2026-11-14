@@ -23,7 +23,7 @@ var validPrefix = regexp.MustCompile(`^[a-z0-9_.-]{0,32}$`)
 // Model 是计算向量的模型。
 type Model struct {
 	// Name 是模型的名称，例如 text-embedding-3-small。它和 Dims 一起记录在索引的每个版本中：
-	// 不同模型、不同维度的向量都不能比较，一个版本的写入和查询总是使用建立它的模型和维度。
+	// 向量只在同一个模型、同一个维度之间比较，一个版本的写入和查询总是使用建立它的模型和维度。
 	Name string
 	// Dims 是向量的维度，与模型输出的一致。同一个模型可以输出不同的维度，例如 openai.WithDimensions。
 	Dims int
@@ -93,7 +93,7 @@ func (s *Store) addModel(m Model) {
 	s.models[id] = m
 }
 
-// modelID 标识一个模型：同一个模型可以输出不同维度的向量（例如 openai.WithDimensions），不同维度的向量也不能比较。
+// modelID 标识一个模型：同一个模型可以输出不同维度的向量（例如 openai.WithDimensions），每个维度单独比较。
 type modelID struct {
 	name string
 	dims int
@@ -160,7 +160,7 @@ func (s *Store) load(ctx context.Context, collection string, sc *schema, create 
 		return c, false, err
 	}
 	c.hybrid = info.GetConfig().GetParams().GetSparseVectorsConfig().GetMap()[vectorSparse] != nil
-	// 文档类型新增的过滤字段也在这里建立索引；已经存在的索引不受影响
+	// 文档类型新增的过滤字段也在这里建立索引；已经存在的索引保持原样
 	if err := s.createFieldIndexes(ctx, collection, sc); err != nil {
 		return c, false, err
 	}

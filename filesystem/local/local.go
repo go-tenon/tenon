@@ -63,7 +63,7 @@ func (d *Disk) URL(key string) string { return d.baseURL + "/" + escapeKey(key) 
 //
 // 文件和应用同源，类型由扩展名决定，而扩展名来自上传者提交的文件名。为了不让上传的文件在应用的源下执行脚本，
 // 所有响应都带 X-Content-Type-Options: nosniff；HTML、SVG、XML 这类浏览器会执行脚本的类型，
-// 还会加上 Content-Security-Policy: sandbox 并作为附件下载。<img> 中引用的 SVG 不受影响。
+// 还会加上 Content-Security-Policy: sandbox 并作为附件下载。<img> 中引用的 SVG 照常显示。
 func (d *Disk) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	d.handler.ServeHTTP(&safeWriter{ResponseWriter: w}, r)
 }

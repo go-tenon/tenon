@@ -31,7 +31,7 @@ func Class(ctx context.Context) string {
 
 // Head 输出当前主题（web.ThemeFrom）的 <head> 内容：
 //
-//   - Mode 为 system 时，在首次绘制前按用户的选择或系统设置加上 dark，避免闪烁；
+//   - Mode 为 system 时，在首次绘制前按用户的选择或系统设置加上 dark，页面一出现就是正确的配色；
 //   - 样式表：Theme.Stylesheet（web.StaticURL），为空时为 Theme.Style 预编译的样式表；
 //   - 主题变量：Radius、Font、Vars、DarkVars；
 //   - web.Scripts 的 htmx、Alpine，组件脚本和衔接脚本。
@@ -77,7 +77,7 @@ func Head() templ.Component {
 const modeScript = `(function(){var t=null;try{t=localStorage.getItem("theme")}catch(e){}if(t==="dark"||(!t&&matchMedia("(prefers-color-scheme: dark)").matches))document.documentElement.classList.add("dark")})()`
 
 // themeCSS 返回覆盖默认主题的 CSS，没有覆盖时为空。不合法的变量（见 web.ThemeVarValid）被忽略，
-// 所以值不能闭合 <style>。
+// 所以值中禁止闭合 <style> 的字符。
 func themeCSS(t web.Theme) string {
 	light := maps.Clone(t.Vars)
 	if light == nil {

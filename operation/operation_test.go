@@ -192,14 +192,14 @@ func TestRun(t *testing.T) {
 		t.Fatalf("completed: %+v", got)
 	}
 
-	// 已经结束的操作不再执行。
+	// 已经结束的操作直接返回。
 	if err := e.ops.Run(ctx, op.ID, func(context.Context, *operation.Run) error {
 		t.Error("finished operation ran again")
 		return nil
 	}, nil); err != nil {
 		t.Fatal(err)
 	}
-	// 不存在的操作（例如已被清理）什么也不做。
+	// 不存在的操作（例如已被清理）直接返回。
 	if err := e.ops.Run(ctx, uuid.Must(uuid.NewV7()), func(context.Context, *operation.Run) error {
 		t.Error("missing operation ran")
 		return nil
@@ -293,7 +293,7 @@ func TestComplete(t *testing.T) {
 		if err := r.Save(ctx, nil); err == nil {
 			t.Error("saved after complete")
 		}
-		return errors.New("late error") // 结果已经保存，不再变为 failed
+		return errors.New("late error") // 结果已经保存，状态保持 completed
 	}, rec.saved)
 	if err == nil {
 		t.Fatal("late error dropped")

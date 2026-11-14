@@ -16,7 +16,7 @@ import (
 	"github.com/go-tenon/tenon/queue/queuetest"
 )
 
-// 只有提交的任务被发布：事务回滚、保存点回滚中的任务都不会出现；不在事务中发布时立即生效。
+// 只有提交的任务被发布：事务回滚、保存点回滚中的任务随之撤销；在事务之外发布时立即生效。
 func TestPendingCommittedOnly(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
@@ -103,7 +103,7 @@ func TestRelayFailover(t *testing.T) {
 	}
 }
 
-// 复制槽不存在（没有执行迁移或被删除）时 Run 返回错误，不会悄悄丢失任务。
+// 复制槽不存在（没有执行迁移或被删除）时 Run 返回错误，问题在启动时就暴露出来。
 func TestRunWithoutSlot(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)

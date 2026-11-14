@@ -9,5 +9,5 @@
 //	sched.Add("metrics:flush", "@every 15s", metrics.Flush)
 //	err := sched.Run(ctx)
 //
-// 任务失败只记录日志，不会重试；需要重试的工作应在任务中发布到队列。
+// 任务失败只记录日志，等下一次触发；需要重试的工作应在任务中发布到队列。
 package schedule

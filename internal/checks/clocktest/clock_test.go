@@ -1,4 +1,4 @@
-// Package clocktest 检查框架中的 SQL 不读取数据库的时钟：时间都由 Go 的 time.Now 算出，作为参数传给数据库。
+// Package clocktest 检查框架中的 SQL 用到的时间都由 Go 的 time.Now 算出，作为参数传给数据库。
 // 这样 testing/synctest 的假时钟对整个框架生效，测试中 time.Sleep 一小时，数据库中的过期判断也跟着走。
 package clocktest
 

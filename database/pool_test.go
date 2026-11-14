@@ -93,7 +93,7 @@ func TestAcquireTimeout(t *testing.T) {
 		t.Fatalf("waiting query: %v", err)
 	}
 
-	// 有空闲连接时，时限不影响语句本身的执行。
+	// 有空闲连接时，语句照常执行完毕。
 	if _, err := db.NewRaw("SELECT pg_sleep(0.3)").Exec(ctx); err != nil {
 		t.Fatalf("slow query under acquire timeout: %v", err)
 	}

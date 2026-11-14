@@ -35,7 +35,7 @@ const (
 // batchSize 是一次写入 Qdrant 的最多文档数。
 const batchSize = 256
 
-// errInvalid 标记无法建索引的文档，例如计算向量的文本为空。重试也不会成功，同步任务直接转入失败任务表。
+// errInvalid 标记无法建索引的文档，例如计算向量的文本为空。重试也是徒劳，同步任务直接转入失败任务表。
 var errInvalid = errors.New("vector: invalid document")
 
 // pointSpace 是 point ID 的 UUID 命名空间：同一个 key 的同一个位置总是同一个 ID，重复写入覆盖原来的。
@@ -51,11 +51,11 @@ type Index[D any] struct {
 
 // Define 声明名为 name 的索引。文档类型 D 的字段用 vector 标签说明用途：
 //
-//   - embed：计算向量的文本，string，有且只有一个。只用来计算向量、不需要保存的文本可以是 json:"-"，
+//   - embed：计算向量的文本，string，有且只有一个。只用来计算向量的文本可以是 json:"-"，
 //     例如 split.Chunk.TextWithContext() 的结果。
 //   - filter：过滤用的值，可以是字符串、布尔、整数、浮点数、time.Time、
 //     实现 encoding.TextMarshaler 的类型（例如 uuid.UUID），以及它们的切片（多个值）和指针（nil 为没有值）。
-//     字段的 JSON 名称不能以 _ 开头，不能包含 .、[、]。
+//     开头的 _ 以及名称中的 .、[、] 留给框架和查询语法，字段的 JSON 名称避开它们。
 //   - tenant：文档所在的租户，string。有它时查询总是限定在 Query.Tenant 中。
 //
 // 例如：
@@ -122,7 +122,7 @@ type LoadFunc[D any] func(ctx context.Context, tx bun.IDB, key string) ([]D, err
 
 // Sync 发布 keys 的同步任务。db 通常是修改数据的事务：事务提交后才同步，回滚时一起取消。
 //
-// 任务只带 key，处理时用 LoadFunc 重新读取当前的数据，所以重复、乱序执行的结果都一样。key 不能为空。
+// 任务只带 key，处理时用 LoadFunc 重新读取当前的数据，所以重复、乱序执行的结果都一样。key 必填。
 func (ix *Index[D]) Sync(ctx context.Context, db bun.IDB, keys ...string) error {
 	for _, key := range keys {
 		if err := checkKey(key); err != nil {
@@ -134,7 +134,7 @@ func (ix *Index[D]) Sync(ctx context.Context, db bun.IDB, keys ...string) error 
 
 // Handle 把同步任务和重建任务（见 Reindex）的处理函数注册到 w，
 // load 读取一个 key 的文档，scan 在重建时列出所有的 key。opts 调整同步任务的处理。
-// 文档无法建索引（例如计算向量的文本为空）时同步任务不再重试，直接转入失败任务表。
+// 文档无法建索引（例如计算向量的文本为空）时同步任务直接转入失败任务表。
 func (ix *Index[D]) Handle(w *queue.Worker, s *Store, load LoadFunc[D], scan ScanFunc, opts ...queue.HandleOption) {
 	if s == nil || load == nil || scan == nil {
 		panic("vector: nil store, load or scan function")
@@ -156,7 +156,7 @@ func (ix *Index[D]) Handle(w *queue.Worker, s *Store, load LoadFunc[D], scan Sca
 // 重建期间同时写入查询使用的版本和正在重建的版本。
 //
 // 每个 key 在一个事务中同步：锁住 key，读取文档，计算文本有变化的文档的向量，写入 Qdrant，删除多出的文档。
-// 计算向量期间事务保持打开，同一个 key 的同步依次执行，先读到旧数据的不会覆盖后读到新数据的。
+// 计算向量期间事务保持打开，同一个 key 的同步依次执行，最终保存的总是最新的数据。
 func (ix *Index[D]) Refresh(ctx context.Context, s *Store, load LoadFunc[D], keys ...string) error {
 	for _, key := range keys {
 		if err := checkKey(key); err != nil {
@@ -181,7 +181,7 @@ func checkKey(key string) error {
 // refresh 在一个事务中同步 key：build 为 0 时写入 indexVersions 返回的版本，否则只写入重建的版本 build。
 func (ix *Index[D]) refresh(ctx context.Context, s *Store, load LoadFunc[D], key string, build int) error {
 	err := s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		// 先锁住这个 key：同一个 key 的同步依次执行，后执行的读到的数据更新，不会被先读到旧数据的覆盖
+		// 先锁住这个 key：同一个 key 的同步依次执行，后执行的读到的数据更新，最终保存的总是最新的数据
 		_, err := tx.NewRaw(`INSERT INTO vector_keys (index_name, doc_key, synced_at) VALUES (?, ?, ?) `+
 			`ON CONFLICT (index_name, doc_key) DO UPDATE SET synced_at = excluded.synced_at`,
 			ix.name, key, time.Now().UTC()).Exec(ctx)
@@ -219,7 +219,7 @@ func (ix *Index[D]) refresh(ctx context.Context, s *Store, load LoadFunc[D], key
 // write 把 key 在版本 version 中原有的文档替换为 entries，用建立这个版本的模型计算向量。
 func (ix *Index[D]) write(ctx context.Context, s *Store, version int, key string, entries []entry) error {
 	collection := s.collection(ix.name, version)
-	// 重建可能在读取版本之后切换并删除了 version：这时会重新创建它，写入的文档不会被查询，
+	// 重建可能在读取版本之后切换并删除了 version：这时会重新创建它，写入的文档只在这个孤立的版本中，
 	// 下一次重建开始时随其他废弃的版本一起删除
 	c, _, err := s.open(ctx, collection, ix.schema, true)
 	if err != nil {

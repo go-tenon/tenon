@@ -1,6 +1,6 @@
 # 功能开关
 
-功能开关让新功能先在一小部分人中上线：开发时只给员工开启，然后开放给几个试用的租户，再按比例放量，最后全量上线。出了问题可以立即全部关闭，不用重新部署。
+功能开关让新功能先在一小部分人中上线：开发时只给员工开启，然后开放给几个试用的租户，再按比例放量，最后全量上线。出了问题可以立即全部关闭，代码保持原样。
 
 `feature` 包分两部分：
 
@@ -74,7 +74,7 @@ var NewEditor = feature.Flag{
 
 | 字段 | 说明 |
 | --- | --- |
-| `Name` | 保存在设置中的名称，不能包含空白，发布后不要再改 |
+| `Name` | 保存在设置中的名称，只用非空白字符，发布后保持固定 |
 | `Description` | 在后台页面中显示 |
 | `ByTenant` | 按比例放量时按租户计算，同一租户的人看到的结果相同；为 `false` 时按用户计算 |
 | `Default` | 没有任何设置命中时的结果。上面只给有 `platform:staff` 权限的员工开启；为 `nil` 时关闭 |
@@ -105,7 +105,7 @@ func (a *Edit) Handle(ctx context.Context, subject identity.Subject, id uuid.UUI
 }
 ```
 
-每次 `Active` 是一次带索引的查询。读取设置出错时，它记录一条 Error 日志并返回 `Default` 的结果，不会让请求失败。
+每次 `Active` 是一次带索引的查询。读取设置出错时，它记录一条 Error 日志并返回 `Default` 的结果，请求照常处理。
 
 <a id="checking-in-pages"></a>
 ### 一次检查多个开关
@@ -124,7 +124,7 @@ out.Body.Features = map[string]bool{
 <a id="background-jobs"></a>
 ### 后台任务
 
-[队列任务](../security/tenancy.md#tenant-jobs)使用 `system(tenant)` 这样类型为 `identity.System` 的主体。它不是某个用户，所以租户的设置和按租户放量对它有效，用户的设置和按用户放量不适用。
+[队列任务](../security/tenancy.md#tenant-jobs)使用 `system(tenant)` 这样类型为 `identity.System` 的主体。它代表系统，所以只有租户的设置和按租户放量对它有效。
 
 <a id="changing-settings"></a>
 ## 修改设置
@@ -179,7 +179,7 @@ return database.RunInTx(ctx, a.db, nil, func(ctx context.Context, tx database.Tx
 | 5 | 都没有 | `Default` 的结果 |
 
 - 全员的 `On` 和 `Off` 优先于一切，所以 `Off` 能真正地紧急关闭：之前单独开启过的租户也会关闭。清除这条设置后，单独设置重新生效。
-- `Percent(0)` 和 `Off` 不同：`Percent(0)` 时单独开启的租户仍然开启，`Default` 则不再使用。
+- `Percent(0)` 和 `Off` 不同：`Percent(0)` 时单独开启的租户仍然开启，`Default` 则被忽略。
 - 没有用户 ID 的主体（例如未登录的访客）不在 100 以下的比例中；`ByTenant` 的开关同理看租户 ID。
 - 用户的设置在他所属的每个租户中都生效。
 
@@ -259,7 +259,7 @@ func (s *Store) Prune(ctx context.Context) (int, error)
 func (s *Store) WithDB(db bun.IDB) *Store
 ```
 
-`Active` 检查一个开关，`For` 一次读出主体的全部开关（`Flags.Active` 不再查库）。`Set`、`Clear` 修改一个范围上的设置，`Prune` 删除已不在 `Catalog` 中的开关的设置。
+`Active` 检查一个开关，`For` 一次读出主体的全部开关（之后的 `Flags.Active` 在内存中判断）。`Set`、`Clear` 修改一个范围上的设置，`Prune` 删除已不在 `Catalog` 中的开关的设置。
 
 ### Scope、State
 

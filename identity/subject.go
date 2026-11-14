@@ -23,11 +23,11 @@ type Subject struct {
 	Tenant       string   // 本次请求所在的租户，"" 表示平台本身；由凭据设置时，凭据只能在这个租户中使用
 	Permissions  []string // 主体在 Tenant 中拥有的权限，支持通配符，见 Can
 	Scopes       []string // 凭据的权限限制，支持通配符；nil 表示不限制，空切片表示什么都不允许
-	Auth         Auth     // 凭据是怎么得到的：登录时通过的验证方式和最近一次验证身份的时间；不经过登录的凭据为零值
+	Auth         Auth     // 凭据是怎么得到的：登录时通过的验证方式和最近一次验证身份的时间；个人访问令牌等凭据为零值
 }
 
 // Auth 记录一次登录怎样验证了主体的身份，由凭据保存（见 apitoken），对应 OIDC 的 amr 和 auth_time。
-// 个人访问令牌、OAuth 令牌、代为登录等不经过本人登录的凭据为零值，过不了 rest.Confirmed 和二次验证的要求。
+// 个人访问令牌、OAuth 令牌、代为登录等凭据为零值，过不了 rest.Confirmed 和二次验证的要求。
 type Auth struct {
 	// Methods 是这次登录依次通过的验证方式，之后确认身份时补充新的方式，例如：
 	// password；email、phone（验证码发到哪里）；totp、recovery（二次验证）；passkey；第三方提供方的名称，如 google，
@@ -57,7 +57,7 @@ func (s Subject) Ref() Ref { return Ref{Type: s.Type, ID: s.ID} }
 //
 // 权限是以冒号分隔的名称，例如 articles:write。授予时可以用 * 作为最后一段，
 // 匹配以前面各段开头的全部权限：articles:* 匹配 articles:write 和 articles:comments:delete，
-// 单独的 * 匹配全部权限。perm 本身不应包含通配符。
+// 单独的 * 匹配全部权限。perm 本身是具体的权限名。
 func (s Subject) Can(perm string) bool {
 	return Grants(s.Permissions, perm) && (s.Scopes == nil || Grants(s.Scopes, perm))
 }

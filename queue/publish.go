@@ -86,7 +86,7 @@ func publish[T any](ctx context.Context, db bun.IDB, topic string, payloads []T,
 }
 
 // emit 把发给 NSQ 的消息 bodies 写入 WAL：事务性的逻辑解码消息只有在事务提交后才会被解码，回滚时一起丢弃。
-// 它们不写入任何表，只是一条 WAL 记录，所以发布任务的事务之间不会互相等待。
+// 它们只是一条 WAL 记录，所以发布任务的事务之间各自独立。
 func emit(ctx context.Context, db bun.IDB, topic string, bodies [][]byte) error {
 	for start := 0; start < len(bodies); start += emitBatch {
 		batch := bodies[start:min(start+emitBatch, len(bodies))]

@@ -19,7 +19,7 @@ type Part struct {
 }
 
 // Snippet 是一个文本字段的摘要，按顺序分为命中和未命中查询的部分。截取时首尾加上省略号。
-// 页面按 Part 渲染，命中的部分放在 <mark> 中，不需要拼接 HTML。
+// 页面按 Part 渲染，命中的部分放在 <mark> 中。
 type Snippet []Part
 
 // String 返回摘要的文字。

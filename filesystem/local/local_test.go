@@ -120,7 +120,7 @@ func TestOpenRequiresConfig(t *testing.T) {
 	}
 }
 
-// 上传的 HTML、SVG 在应用的源下打开时不能执行脚本：按 Content-Type 加上 sandbox 并作为附件下载；
+// 上传的 HTML、SVG 在应用的源下打开时脚本被禁用：按 Content-Type 加上 sandbox 并作为附件下载；
 // 内容嗅探为 HTML 的无扩展名文件同样处理。所有响应都禁止浏览器再次嗅探。
 func TestServeHTTPSecurityHeaders(t *testing.T) {
 	ctx := context.Background()

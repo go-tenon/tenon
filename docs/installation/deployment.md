@@ -18,7 +18,7 @@
 - [维护窗口](#maintenance-windows)
     - [在反向代理上返回 503](#maintenance-at-the-proxy)
     - [维护步骤](#maintenance-steps)
-    - [不必整站停服时](#without-downtime)
+    - [只停部分功能时](#without-downtime)
 - [日志](#logging)
 - [PgBouncer](#pgbouncer)
 - [队列](#queue)
@@ -41,7 +41,7 @@ Go 应用会被编译成一个独立的二进制文件。对于根目录包含 `
 go build -trimpath -o bin/api .
 ```
 
-如果入口位于 `cmd/api`，则把构建目标改为 `./cmd/api`。`-trimpath` 会去掉二进制中的本地路径信息。PostgreSQL 驱动是纯 Go 实现，可以用 `CGO_ENABLED=0` 构建不依赖系统库的静态二进制。
+如果入口位于 `cmd/api`，则把构建目标改为 `./cmd/api`。`-trimpath` 会去掉二进制中的本地路径信息。PostgreSQL 驱动是纯 Go 实现，可以用 `CGO_ENABLED=0` 构建静态链接的二进制。
 
 由于迁移文件、翻译文件、[静态文件](../responses/assets.md)和[单页应用](../responses/spa.md)都已通过 `embed` 嵌入，部署时只需要这一个二进制文件和 `config` 目录。构建前确认 templ 生成的代码和 Tailwind 生成的样式表（如果使用）都是最新的：二者都提交在版本库中，修改 `.templ` 后忘记重新生成，二进制里就是旧的页面。单页应用要先构建前端，见[构建与发布](../responses/spa.md#building)。请将 `go.mod` 和 `go.sum` 提交到版本库，并记录每次构建对应的提交，以便出现问题时准确定位版本。
 
@@ -89,7 +89,7 @@ CONFIG=--config=config/app.yaml,config/prod.yaml
 
 `start` 在一个进程中运行 HTTP 服务、队列 worker 和定时任务调度器，也可以用 `serve`、`work`、`schedule` 分别启动它们，见下一节。
 
-数据库密码、token 等敏感信息建议通过部署平台的环境变量或密钥管理功能提供，在配置文件中用 `${DATABASE_URL}` 这样的方式引用，而不是直接写入文件。生产环境通常不放 `.env` 文件。
+数据库密码、token 等敏感信息建议通过部署平台的环境变量或密钥管理功能提供，在配置文件中用 `${DATABASE_URL}` 这样的方式引用。生产环境的变量通常全部由部署平台提供。
 
 <a id="process-forms"></a>
 ## 选择运行形态
@@ -106,12 +106,12 @@ CONFIG=--config=config/app.yaml,config/prod.yaml
 两种形态都可以运行多个实例：
 
 - **HTTP 服务**按常规做法放在负载均衡之后。
-- **队列 worker** 竞争领取任务，每个任务只会被一个实例领取，增减实例不需要协调。
-- **调度器**通过锁保证每次触发只执行一次，前提是所有实例共用同一个数据库或 Redis 锁存储，见[多个实例](../libraries/scheduling.md#multiple-instances)。单独部署 `schedule` 时，运行两个实例可以避免单点。
+- **队列 worker** 竞争领取任务，每个任务只由一个实例领取，可以随时增减实例。
+- **调度器**通过锁保证每次触发只执行一次，前提是所有实例共用同一个数据库或 Redis 锁存储，见[多个实例](../libraries/scheduling.md#multiple-instances)。单独部署 `schedule` 时，运行两个实例互为备份。
 
 worker 和调度器不监听端口，部署平台按进程是否存活判断它们的状态；它们出错退出时进程以非 0 状态结束，由平台重启。
 
-所有部分共用同一个数据库连接池。估算 `max_conns` 时，要把 HTTP 请求、队列各 topic 的 `concurrency` 和同时执行的定时任务都算进去；分开部署时按各自的负载分别设置，所有实例的连接数之和不应超过数据库的上限。
+所有部分共用同一个数据库连接池。估算 `max_conns` 时，要把 HTTP 请求、队列各 topic 的 `concurrency` 和同时执行的定时任务都算进去；分开部署时按各自的负载分别设置，所有实例的连接数之和要控制在数据库的上限以内。
 
 <a id="systemd"></a>
 ## 使用 systemd 运行
@@ -162,7 +162,7 @@ sudo systemctl enable --now blog@start                          # 一体运行
 sudo systemctl enable --now blog@serve blog@work blog@schedule  # 或者分开运行
 ```
 
-从一体改为分开时，先 `sudo systemctl disable --now blog@start`，再启用另外三个。单独部署实时连接时再启用 `blog@realtime`，只改了接口的版本用 `sudo systemctl reload blog@serve` 升级，实时连接不受影响。
+从一体改为分开时，先 `sudo systemctl disable --now blog@start`，再启用另外三个。单独部署实时连接时再启用 `blog@realtime`，只改了接口的版本用 `sudo systemctl reload blog@serve` 升级，实时连接保持在线。
 
 几处设置的用意：
 
@@ -203,13 +203,13 @@ done
 ```
 
 - 新二进制先写到 `api.new`，用它检查配置，再改名覆盖。直接写入正在运行的二进制会因为 `Text file busy` 失败。
-- `run` 用 `systemd-run` 执行一次性命令，它使用和服务相同的用户、环境变量和工作目录，以命令的退出码结束，失败时脚本就此停止。不要把迁移写进 unit 的 `ExecStartPre`：这样进程每次崩溃重启都会再执行一次迁移，分开运行时三个实例还会同时执行。
+- `run` 用 `systemd-run` 执行一次性命令，它使用和服务相同的用户、环境变量和工作目录，以命令的退出码结束，失败时脚本就此停止。迁移在发布脚本中执行一次：写进 unit 的 `ExecStartPre` 的话，进程每次崩溃重启都会再执行一次迁移，分开运行时三个实例还会同时执行。
 - `reload` 让每个 unit 不停机地换成新版本，见下一节。新版本起不来时旧版本继续运行，`reload` 仍然返回成功，所以脚本检查 `Status` 行：以 `upgrade failed` 开头就是升级失败，后面是原因。
 
 <a id="zero-downtime-upgrades"></a>
 ## 不停机升级
 
-`systemctl reload` 时，正在运行的进程用磁盘上的新二进制启动一个新进程，把监听端口交给它。新进程按[依赖装配](../concepts/dependencies.md#assembling-the-application)的顺序打开数据库、装配全部运行部分，然后报告就绪；旧进程这时才开始平滑停止：排空请求，等待处理中的队列任务和定时任务。监听端口始终没有关闭，升级期间的请求不会失败。
+`systemctl reload` 时，正在运行的进程用磁盘上的新二进制启动一个新进程，把监听端口交给它。新进程按[依赖装配](../concepts/dependencies.md#assembling-the-application)的顺序打开数据库、装配全部运行部分，然后报告就绪；旧进程这时才开始平滑停止：排空请求，等待处理中的队列任务和定时任务。监听端口始终保持打开，升级期间的请求照常完成。
 
 新进程在报告就绪之前退出，或者一分钟内没有就绪，就会被结束，旧进程继续服务。配置写错、数据库连不上、路由冲突、定时任务的表达式写错，都属于这种情况。
 
@@ -234,9 +234,9 @@ done
 ### 限制
 
 - `reload` 重新读取配置文件，但新进程继承旧进程的环境变量，修改 `/etc/blog/env` 或 unit 文件之后要执行 `restart`。
-- 新进程在报告就绪之后崩溃，systemd 按 `Restart=` 用磁盘上的新二进制重启它，不会回到旧版本。
+- 新进程在报告就绪之后崩溃，systemd 按 `Restart=` 用磁盘上的新二进制重启它，运行的仍是新版本。
 - 旧进程排空期间，`systemctl status` 显示的主进程仍是旧进程，它退出后才换成新进程。
-- 机器重启、内核升级仍然会中断服务。需要避免这种中断时，部署多台机器放在负载均衡之后。
+- 机器重启、内核升级仍然会中断服务。要在这些时候持续服务，部署多台机器放在负载均衡之后。
 
 <a id="docker"></a>
 ## 使用 Docker 运行
@@ -263,8 +263,8 @@ CMD ["start"]
 
 - **`ENTRYPOINT` 必须使用 exec 形式**，也就是 JSON 数组。这样应用就是容器中的 1 号进程，能直接收到 `docker stop` 发送的 `SIGTERM`。如果写成 `ENTRYPOINT ./api start` 这样的 shell 形式，信号会发给 shell，应用收不到，宽限期一到就被强制终止。
 - **`--config` 写在 `ENTRYPOINT` 中**，`docker run blog migrate up` 这样的命令也会使用同样的配置。在命令后面再传 `--config`，会追加到这两个文件之后。
-- **distroless 镜像带有 CA 证书和时区数据**，访问 HTTPS 接口、调度器使用 `In(loc)` 都不需要额外安装。
-- **`storage` 用于本地磁盘，要挂载卷。** 镜像中预先建好这个目录并交给 `nonroot` 用户，否则新建的命名卷属于 root，应用无法写入。使用 S3 磁盘时，容器不需要任何卷。
+- **distroless 镜像带有 CA 证书和时区数据**，访问 HTTPS 接口、调度器使用 `In(loc)` 直接可用。
+- **`storage` 用于本地磁盘，要挂载卷。** 镜像中预先建好这个目录并交给 `nonroot` 用户，否则新建的命名卷属于 root，应用无法写入。使用 S3 磁盘时，容器可以完全无状态。
 
 用 Docker Compose 分开运行，并在启动前执行迁移：
 
@@ -299,7 +299,7 @@ services:
     command: [schedule]
 ```
 
-`stop_grace_period` 不能省略：Docker 默认只等 10 秒就发送 `SIGKILL`，比队列和调度器默认的 `shutdown_timeout` 还短。一体运行时把三个服务换成一个运行 `start` 的服务即可；单独部署实时连接时，再加一个运行 `realtime` 的服务。
+`stop_grace_period` 必须写上：Docker 默认只等 10 秒就发送 `SIGKILL`，比队列和调度器默认的 `shutdown_timeout` 还短。一体运行时把三个服务换成一个运行 `start` 的服务即可；单独部署实时连接时，再加一个运行 `realtime` 的服务。
 
 容器中不使用 `reload`：镜像不可变，升级就是换一个新容器。需要不中断服务时，让部署平台先启动新容器，等 `/readyz` 返回成功再停止旧容器，例如 [Kamal](https://kamal-deploy.org)、Docker Swarm 的 `update_config.order: start-first`、Kubernetes 的 `maxUnavailable: 0`。新旧容器同时运行时，同样要满足[上一节](#upgrade-overlap)的条件。
 
@@ -329,24 +329,24 @@ nsqadmin 只监听本机，通过 SSH 隧道或内网访问。
 <a id="health-checks"></a>
 ## 健康检查
 
-Tenon 不会自动注册健康检查路由，你可以根据部署平台的要求自行注册，并在平台中配置相应的路径：
+健康检查路由由应用按部署平台的要求自行注册，并在平台中配置相应的路径：
 
 - **存活检查**（例如 `/livez`）：只确认进程可以响应；
 - **就绪检查**（例如 `/readyz`）：确认服务没有在排空，并且必需的依赖可用，用 `httpx.Ready`。
 
-具体写法见[请求生命周期](../concepts/lifecycle.md#health-checks)。存活检查失败时平台会重启进程，所以它不检查任何依赖；数据库故障时，就绪检查让实例暂时不接收流量，等数据库恢复后自动重新加入。
+具体写法见[请求生命周期](../concepts/lifecycle.md#health-checks)。存活检查失败时平台会重启进程，所以它只确认进程能响应；数据库故障时，就绪检查让实例暂时不接收流量，等数据库恢复后自动重新加入。
 
 <a id="graceful-shutdown"></a>
 ## 平滑停止
 
-部署平台在停止实例时通常会发送 `SIGTERM`。请确保这个信号能传递到应用进程——例如在容器中直接以应用二进制作为入口进程，而不是通过一个不转发信号的 shell 脚本启动。
+部署平台在停止实例时通常会发送 `SIGTERM`。请确保这个信号能传递到应用进程——例如在容器中直接以应用二进制作为入口进程。用 shell 脚本启动时，脚本要用 `exec` 把信号交给应用。
 
 收到信号后，`httpx.Serve` 会开始排空请求，详见[请求生命周期](../concepts/lifecycle.md#graceful-shutdown)。配置停机时间时请注意：
 
 - `http.shutdown_timeout` 决定了排空请求的最长时间；`queue.shutdown_timeout` 决定了 worker 等待处理中任务的最长时间；`schedule.shutdown_timeout` 决定了调度器等待执行中任务的最长时间；
-- 一体运行时三者同时开始停止，停机时间取其中最长的一个，而不是相加；
+- 一体运行时三者同时开始停止，停机时间取其中最长的一个；
 - 使用 [AI 助手](../ai/chat.md#deployment)时，HTTP 服务停止之后，清理资源时还要等进行中的回答说完，这段时间（文档示例中是 1 分钟）与上面的停机时间相加；
-- 部署平台的停止宽限期（systemd 的 `TimeoutStopSec`、Docker 的 `stop_grace_period`、Kubernetes 的 `terminationGracePeriodSeconds`）应当大于上面的停机时间加上关闭数据库等资源所需的时间，否则进程可能在清理完成前被强制终止。超时未完成的队列任务会在其他实例上重新执行，定时任务不会补跑。
+- 部署平台的停止宽限期（systemd 的 `TimeoutStopSec`、Docker 的 `stop_grace_period`、Kubernetes 的 `terminationGracePeriodSeconds`）应当大于上面的停机时间加上关闭数据库等资源所需的时间，否则进程可能在清理完成前被强制终止。超时未完成的队列任务会在其他实例上重新执行，错过的定时任务等下一次触发。
 
 <a id="reverse-proxies"></a>
 ## 反向代理与网络
@@ -360,7 +360,7 @@ TLS 终止和响应压缩通常在反向代理中配置。全站使用 HTTPS 后
 <a id="maintenance-windows"></a>
 ## 维护窗口
 
-按[发布流程](#release-process)发布不需要停服：迁移对新旧版本都兼容，`reload` 不停机地换上新版本。所以 Tenon 不提供停服维护的命令。少数情况下确实要停一段时间：
+按[发布流程](#release-process)发布时服务持续在线：迁移对新旧版本都兼容，`reload` 在运行中换上新版本。少数情况下确实要停一段时间，由反向代理返回维护响应：
 
 - 数据库本身要维护，例如升级主版本、迁移到新的实例；
 - 一次变更无法拆成[对新旧版本都兼容](../database/migrations.md#zero-downtime-changes)的几步；
@@ -371,7 +371,7 @@ TLS 终止和响应压缩通常在反向代理中配置。全站使用 HTTPS 后
 <a id="maintenance-at-the-proxy"></a>
 ### 在反向代理上返回 503
 
-下面的 nginx 配置在每个请求上检查一个标记文件，文件存在就进入维护，办公网络的地址不受影响：
+下面的 nginx 配置在每个请求上检查一个标记文件，文件存在就进入维护，办公网络的地址照常访问：
 
 ```nginx
 geo $maintenance_bypass {
@@ -402,14 +402,14 @@ server {
 }
 ```
 
-开始和结束维护就是创建和删除这个文件，不需要重新加载 nginx：
+开始和结束维护就是创建和删除这个文件，nginx 立即生效：
 
 ```bash
 sudo touch /etc/nginx/blog.maintenance  # 开始维护
 sudo rm /etc/nginx/blog.maintenance     # 结束维护
 ```
 
-- **响应格式与应用的[错误响应](../general/errors.md#what-clients-see)相同。** 前端按 `code` 为 `maintenance` 显示维护提示，按 `Retry-After` 的秒数稍后重试。运维后台的使用者在办公网络中，不会看到这个响应。
+- **响应格式与应用的[错误响应](../general/errors.md#what-clients-see)相同。** 前端按 `code` 为 `maintenance` 显示维护提示，按 `Retry-After` 的秒数稍后重试。运维后台的使用者在办公网络中，照常访问应用。
 - **只拦截 nginx 自己返回的 `503`。** 没有开启 `proxy_intercept_errors` 时，应用返回的 `503`（例如停机时拒绝新的 [AI 回答](../ai/chat.md#deployment)）原样传给客户端。
 - **放行按客户端地址判断。** nginx 前面还有负载均衡时，先用 [realip](https://nginx.org/en/docs/http/ngx_http_realip_module.html) 模块还原客户端地址，否则所有请求都来自负载均衡的地址。
 - **有多台 nginx 时**，每一台都要创建标记文件。使用云负载均衡时，改用它自带的固定响应规则，例如 AWS ALB 的 `fixed-response` 动作。
@@ -431,14 +431,14 @@ sudo rm /etc/nginx/blog.maintenance
 ```
 
 - **先挡住请求，再停止进程。** 顺序反过来时，进程停止后、标记生效前的请求会得到 `502`。
-- **worker 和调度器也要停止。** 它们不经过反向代理，数据库维护期间会不断出错，不兼容的变更期间还可能用旧代码处理新数据。停止时 worker 等待处理中的任务完成，未执行的任务留在队列中，恢复后继续执行。
-- **停止期间错过的定时任务不会补跑**，见[失败与停止](../libraries/scheduling.md#failures-and-shutdown)。每天只执行一次的任务，恢复后需要[手动执行](../libraries/scheduling.md#running-manually)一次。
+- **worker 和调度器也要停止。** 它们直接连接数据库，数据库维护期间会不断出错，不兼容的变更期间还可能用旧代码处理新数据。停止时 worker 等待处理中的任务完成，未执行的任务留在队列中，恢复后继续执行。
+- **停止期间错过的定时任务等下一次触发**，见[失败与停止](../libraries/scheduling.md#failures-and-shutdown)。每天只执行一次的任务，恢复后需要[手动执行](../libraries/scheduling.md#running-manually)一次。
 - **检查通过后再结束维护。** 标记文件还在时，办公网络已经能访问新版本，确认无误再删除文件。
 
 使用 Docker Compose 时，`docker compose stop` 和 `docker compose up -d` 分别对应上面的停止和启动。
 
 <a id="without-downtime"></a>
-### 不必整站停服时
+### 只停部分功能时
 
 很多时候只需要挡住一部分功能，其余的照常服务：
 
@@ -481,7 +481,7 @@ max_prepared_statements = 200   ; pgx 默认使用命名的预编译语句，需
 - **迁移**：goose 用会话级的 advisory lock 防止多个实例同时迁移。迁移命令的 `dbConfig` 取一个直连地址，例如配置中单独的 `migrate_database` 段。
 - **队列的复制连接**：设置 `queue.replication_dsn`，见[队列](#queue)。
 
-PgBouncer 的连接数不改变数据库的处理能力：`default_pool_size` 仍然要按数据库的 CPU 和磁盘设置。应用自己的连接池用满时，请求按 [`acquire_timeout`](../database/quick-start.md#pool-exhaustion) 快速失败；PgBouncer 到数据库的连接用满时，语句在 PgBouncer 中排队，不受这个时限约束，用 PgBouncer 的 `query_wait_timeout` 限制排队时间（例如 `5`，单位秒）。
+数据库的处理能力由数据库本身决定：`default_pool_size` 仍然要按数据库的 CPU 和磁盘设置。应用自己的连接池用满时，请求按 [`acquire_timeout`](../database/quick-start.md#pool-exhaustion) 快速失败；PgBouncer 到数据库的连接用满时，语句在 PgBouncer 中排队，排队时间由 PgBouncer 的 `query_wait_timeout` 限制（例如 `5`，单位秒）。
 
 <a id="queue"></a>
 ## 队列
@@ -497,7 +497,7 @@ PgBouncer 的连接数不改变数据库的处理能力：`default_pool_size` �
 | `wal_sender_timeout` | `10s` | 转发的 worker 失联后多久释放复制槽，由待命的 worker 接手 |
 | `max_replication_slots`、`max_wal_senders` | 默认的 10 足够 | 每个数据库一个槽、一个复制连接 |
 
-数据库连接经过 [PgBouncer](#pgbouncer) 时，配置 `queue.replication_dsn` 直连 PostgreSQL：复制协议不能经过连接池。
+数据库连接经过 [PgBouncer](#pgbouncer) 时，配置 `queue.replication_dsn` 直连 PostgreSQL：复制协议要求直接连接。
 
 <a id="queue-monitoring"></a>
 ### 监控积压
@@ -528,12 +528,12 @@ FROM pg_replication_slots WHERE slot_name LIKE 'mygoravel_queue_%';
 
 复制槽可用时这个命令拒绝执行：重建会丢弃其中还没转发的任务。确实需要时加上 `--force`。
 
-从丢失到重建期间发布的任务不会被转发：从业务数据中找出没有完成的工作重新发布，例如状态停在“发送中”的记录。
+从丢失到重建期间发布的任务随之丢失：从业务数据中找出没有完成的工作重新发布，例如状态停在“发送中”的记录。
 
 <a id="backups"></a>
 ## 备份与恢复
 
-应用的数据保存在两个地方：数据库，以及[文件存储](../libraries/filesystem.md)使用的磁盘，两者都要备份。Memcached 中的缓存、Redis 中的锁和限流计数丢失后会重新生成，不需要备份；Qdrant 中的[向量](../ai/vector.md)由数据库中的数据算出，也不需要备份。
+应用的数据保存在两个地方：数据库，以及[文件存储](../libraries/filesystem.md)使用的磁盘，两者都要备份。Memcached 中的缓存、Redis 中的锁和限流计数丢失后会重新生成；Qdrant 中的[向量](../ai/vector.md)由数据库中的数据算出，可以重建。备份只需要覆盖数据库和文件存储。
 
 Tenon 不提供备份命令。只有数据库自己的备份机制能持续备份并恢复到任意时间点；在应用中定时导出，数据量大时很慢，还会丢掉两次导出之间写入的数据。
 
@@ -542,7 +542,7 @@ Tenon 不提供备份命令。只有数据库自己的备份机制能持续备�
 
 使用托管数据库（RDS、Cloud SQL 等）时，开启自动备份和时间点恢复（PITR）；自建时用 [pgBackRest](https://pgbackrest.org) 或 [WAL-G](https://github.com/wal-g/wal-g) 持续归档 WAL。
 
-库很小时，用 `pg_dump` 定时导出也可以，但只能恢复到导出的那一刻。`pg_dump` 的主版本不能低于数据库服务器的主版本。
+库很小时，用 `pg_dump` 定时导出也可以，但只能恢复到导出的那一刻。`pg_dump` 的主版本要等于或高于数据库服务器的主版本。
 
 <a id="file-backups"></a>
 ### 文件
@@ -555,16 +555,16 @@ Tenon 不提供备份命令。只有数据库自己的备份机制能持续备�
 <a id="after-restoring"></a>
 ### 恢复之后
 
-数据库回到了过去，但已经发出去的邮件、已经调用过的外部接口不会跟着撤回。恢复后要注意：
+数据库回到了过去，已经发出去的邮件、已经调用过的外部接口仍然生效。恢复后要注意：
 
-- **重建队列的复制槽。** 备份不包含复制槽，恢复后 worker 因为找不到它而拒绝启动，按[重建复制槽](#queue-recovery)处理。做备份时还没转发的任务随之丢失，从业务数据中找出没有完成的工作重新发布；备份之后执行过的任务（`queue_scheduled` 中的、失败后重新发布的）恢复后可能再执行一次，处理函数本来就需要能安全地重复执行。
+- **重建队列的复制槽。** 复制槽在备份之外，恢复后 worker 因为找不到它而拒绝启动，按[重建复制槽](#queue-recovery)处理。做备份时还没转发的任务随之丢失，从业务数据中找出没有完成的工作重新发布；备份之后执行过的任务（`queue_scheduled` 中的、失败后重新发布的）恢复后可能再执行一次，处理函数本来就需要能安全地重复执行。
 - **向量索引比数据库新。** Qdrant 中还有备份之后才写入的文档，检索可能返回数据库中已经不存在的内容。逐个[重建向量索引](../ai/vector.md#reindexing)：新版本只包含数据库中现有的数据，切换后旧版本整个删除。
 - **撤销过的凭据又能用了。** 备份之后撤销的 [API token](../security/api-tokens.md#revoking-tokens)，恢复后会重新生效。如果这段时间里有用户被封禁或改过密码，恢复后对这些用户再调用一次 `RevokeSubject`。无法逐个确认时，删除 `api_tokens` 中 `kind = 'login'` 的行，让所有人重新登录；这段时间里撤销过的个人访问令牌需要再撤销一次。
 
 <a id="restore-drills"></a>
 ### 恢复演练
 
-没有恢复过的备份并不可靠。请定期把备份恢复到一个临时数据库，再用同一个二进制连上去检查：
+恢复过的备份才可靠。请定期把备份恢复到一个临时数据库，再用同一个二进制连上去检查：
 
 ```bash
 ./bin/api migrate status --config=config/app.yaml,config/restore.yaml

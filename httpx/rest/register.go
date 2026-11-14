@@ -90,7 +90,7 @@ type Endpoint struct {
 	Path        string
 	Summary     string
 	Description string
-	// Public 表示端点用 Public 声明，不需要凭据。
+	// Public 表示端点用 Public 声明，任何人都可以访问。
 	Public bool
 	// Input 和 Output 是处理器的输入、输出类型（不是指针）。
 	Input  reflect.Type

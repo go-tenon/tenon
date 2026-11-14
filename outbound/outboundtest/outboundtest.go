@@ -1,4 +1,4 @@
-// Package outboundtest 提供不连接网络的 http.RoundTripper，用于测试发出 HTTP 请求的代码：
+// Package outboundtest 提供离线的 http.RoundTripper，用于测试发出 HTTP 请求的代码：
 // 按方法和地址登记响应，记录发出的每个请求，没有登记的请求让测试失败。
 //
 //	fake := outboundtest.New(t)
@@ -8,7 +8,7 @@
 //	sent := fake.Sent("POST https://api.stripe.com/v1/refunds")
 //
 // 它替换的是传输层，被测代码只要接收 *http.Client（或者 SDK 的 WithHTTPClient 选项）就能使用，
-// 不需要把服务地址改成本机测试服务器的地址。
+// 服务地址保持原样。
 package outboundtest
 
 import (
@@ -25,7 +25,7 @@ import (
 	"testing"
 )
 
-// Transport 是不连接网络的 http.RoundTripper，可并发使用。
+// Transport 是离线的 http.RoundTripper，可并发使用。
 type Transport struct {
 	t         testing.TB
 	mu        sync.Mutex
@@ -209,7 +209,7 @@ func Text(status int, body string) Response {
 // Status 返回状态码为 status、没有响应体的响应。
 func Status(status int) Response { return reply(status, "", nil) }
 
-// Fail 让请求返回 err 而不是响应，用于模拟连接失败、超时（context.DeadlineExceeded）
+// Fail 让请求返回 err，用于模拟连接失败、超时（context.DeadlineExceeded）
 // 或者 outbound.ErrForbidden。客户端返回的错误用 errors.Is 能识别 err。
 func Fail(err error) Response {
 	return func(*http.Request) (*http.Response, error) { return nil, err }

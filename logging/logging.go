@@ -112,7 +112,7 @@ func Fanout(handlers ...slog.Handler) Option {
 //	context 字段 → 组件级别 → Pipe 中间件 → 格式化 → 基础输出 + Fanout 输出 + Export
 //
 // 格式化默认包含 ErrorFormatter；cfg.TimeZone 非空时还会把时间值转换到该时区。
-// New 不修改 slog.Default，通常在入口处用 slog.SetDefault 安装它。cfg 不合法时 panic。
+// New 只返回日志器，通常在入口处用 slog.SetDefault 安装它。cfg 不合法时 panic。
 func New(cfg Config, opts ...Option) *slog.Logger {
 	if err := cfg.Validate(); err != nil {
 		panic(fmt.Errorf("logging: %w", err))

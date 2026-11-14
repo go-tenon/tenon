@@ -72,7 +72,7 @@ func TestCommandRequiresOut(t *testing.T) {
 	}
 }
 
-// --ts 生成 TypeScript 客户端，删除上次生成、这次不再生成的 .ts 文件，保留手写的文件。
+// --ts 生成 TypeScript 客户端，删除上次生成、这次已经移除的 .ts 文件，保留手写的文件。
 func TestCommandWritesTSClient(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "api")
 	if err := os.MkdirAll(out, 0o755); err != nil {
