@@ -193,7 +193,7 @@ func (h *handlers) impersonate(ctx context.Context, in *ImpersonateInput) (*Impe
     if _, isMember, err := h.roles.Permissions(ctx, targetRef, in.Body.TenantID); err != nil {
         return nil, err
     } else if !isMember {
-        return nil, errorx.New(errorx.NotFound, "member.not_found") // 不是该租户成员 → 404
+        return nil, ErrMemberNotFound.New() // 包内 errorx.Define(errorx.NotFound, "member.not_found")
     }
 
     target := identity.Subject{
