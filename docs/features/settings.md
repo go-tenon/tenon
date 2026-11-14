@@ -1,6 +1,16 @@
 # 设置
 
-- [简介](#introduction)
+[配置](../general/configuration.md)在部署时决定，改了要重启；设置由管理员在运行时修改，例如站点名称、是否开放注册、每个租户的发票抬头。
+
+`settings` 包把一组设置声明成一个结构体，默认值写在代码中，整组保存为 `settings` 表中的一行 JSON。读取时把保存的 JSON 合并到默认值上：
+
+- 新增字段不需要迁移，读取时使用默认值；
+- 删除的字段被忽略，下次保存时去掉；
+- 只有字段改名或改类型时，才需要写一条迁移转换保存的 JSON。
+
+读取时不缓存，每次 `Get` 是一次主键查询，修改后所有实例立即生效。
+
+- [示例用法](#example-usage)
 - [安装](#installation)
 - [声明设置](#defining-settings)
 - [读取设置](#reading-settings)
@@ -13,19 +23,25 @@
     - [调用凭据](#access-tokens)
 - [后台页面与接口](#admin-pages)
 - [测试](#testing)
+- [API 参考](#api-reference)
 
-<a id="introduction"></a>
-## 简介
+<a id="example-usage"></a>
+## 示例用法
 
-[配置](../general/configuration.md)在部署时决定，改了要重启；设置由管理员在运行时修改，例如站点名称、是否开放注册、每个租户的发票抬头。
+```go
+type Site struct {
+    Name         string `json:"name" minLength:"1"`
+    Registration bool   `json:"registration"`
+}
 
-`settings` 包把一组设置声明成一个结构体，默认值写在代码中，整组保存为 `settings` 表中的一行 JSON。读取时把保存的 JSON 合并到默认值上：
+var SiteSettings = settings.New(db, "site", Site{Name: "我的站点", Registration: true})
 
-- 新增字段不需要迁移，读取时使用默认值；
-- 删除的字段被忽略，下次保存时去掉；
-- 只有字段改名或改类型时，才需要写一条迁移转换保存的 JSON。
-
-读取时不缓存，每次 `Get` 是一次主键查询，修改后所有实例立即生效。
+site, err := SiteSettings.Get(ctx) // 没有保存过时就是默认值
+err = SiteSettings.Update(ctx, func(s *Site) error {
+    s.Registration = false
+    return nil
+})
+```
 
 <a id="installation"></a>
 ## 安装
@@ -41,11 +57,9 @@ migratecmd.Publish(
 <a id="defining-settings"></a>
 ## 声明设置
 
-设置和使用它的业务放在一起。下面是 `internal/site/settings.go`：
+设置和使用它的业务放在一起。例如 `settings.go`：
 
 ```go
-package site
-
 type Settings struct {
     Name          string   `json:"name" minLength:"1" maxLength:"60"`
     SignupOpen    bool     `json:"signup_open"`
@@ -59,7 +73,7 @@ var Defaults = Settings{
 }
 ```
 
-在[入口](../concepts/dependencies.md#assembling-the-application)的 `open` 中创建 `Group`，保存在 `App` 中，再传给需要它的 action：
+在[入口](../concepts/dependencies.md#assembling-the-application)的 `open` 中创建 `Group`，保存在 `App` 中，再传给需要它的业务动作：
 
 ```go
 siteSettings := settings.New(db, "site", site.Defaults)
@@ -286,3 +300,28 @@ func TestRegisterWhenSignupClosed(t *testing.T) {
     // ...
 }
 ```
+
+<a id="api-reference"></a>
+## API 参考
+
+包 `github.com/go-tenon/tenon/settings`。
+
+```go
+func New[T any](db bun.IDB, name string, defaults T) *Group[T]
+func (g *Group[T]) Get(ctx context.Context) (T, error)
+func (g *Group[T]) Save(ctx context.Context, v T) error
+func (g *Group[T]) Update(ctx context.Context, fn func(*T) error) error
+func (g *Group[T]) Reset(ctx context.Context) error
+func (g *Group[T]) Tenant(id string) *Group[T]
+func (g *Group[T]) WithDB(db bun.IDB) *Group[T]
+func Migrations() fs.FS
+```
+
+| 方法 | 说明 |
+| --- | --- |
+| `Get` | 读取保存的 JSON，合并到默认值上 |
+| `Save` | 按 Huma 标签验证后整组保存，不合法时返回 `ErrInvalid` |
+| `Update` | 加锁读取、修改、保存 |
+| `Reset` | 删除保存的值，回到默认值 |
+| `Tenant` | 这个租户的设置，不回退到平台的设置 |
+| `WithDB` | 在事务中读写 |

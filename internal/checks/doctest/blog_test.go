@@ -23,12 +23,6 @@ var blogFiles = []docFile{
 	{"internal/auth/social/social.go", "security/social-login.md"},
 	{"internal/auth/authhttp/web_social.go", "security/social-login.md"},
 	{"internal/auth/authhttp/social.go", "security/social-login.md"},
-	{"internal/article/import.go", "features/import-export.md"},
-	{"internal/article/export.go", "features/import-export.md"},
-	{"internal/article/queue_import.go", "features/import-export.md"},
-	{"internal/article/queue_export.go", "features/import-export.md"},
-	{"internal/article/bulk_publish.go", "features/operations.md"},
-	{"internal/article/search.go", "features/search.md"},
 	{"internal/article/tools.go", "ai/mcp.md"},
 	{"internal/attachment/vector.go", "ai/vector.md"},
 	{"internal/editor/editor.go", "security/account-examples.md"},
@@ -42,16 +36,6 @@ var blogFiles = []docFile{
 var blogFragments = []struct {
 	path, doc, prefix, header string
 }{
-	{"internal/article/import_template.go", "features/import-export.md", "type TemplateInput struct", `package article
-
-import (
-	"context"
-
-	"github.com/danielgtaylor/huma/v2"
-
-	"github.com/go-tenon/tenon/sheet"
-)
-`},
 	{"internal/attachment/find.go", "ai/vector.md", "type Find struct", `package attachment
 
 import (

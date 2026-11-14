@@ -1,6 +1,12 @@
 # 全文搜索
 
-- [简介](#introduction)
+`search` 包在应用自己的数据库中提供全文搜索：按关键词查找文章，带过滤、排序、分页、分面统计和命中词高亮，不需要额外部署搜索服务。
+
+中文是重点。PostgreSQL 自带的全文检索不切分中文，zhparser 之类的扩展在托管数据库上通常装不了。`search` 在应用中分词，把切分好的词写入 `tsvector`，不依赖数据库扩展。
+
+这个包不监听模型的保存自动同步：批量更新和原生 SQL 会绕过模型事件，索引就悄悄过期了。同步由业务动作在修改数据的事务中显式发起，通过数据库队列执行，事务回滚时同步也一起取消。
+
+- [示例用法](#example-usage)
 - [安装](#installation)
 - [声明索引](#defining-indexes)
 - [同步](#syncing)
@@ -13,15 +19,29 @@
     - [高亮](#highlighting)
     - [多租户](#tenancy)
 - [分词](#tokenizers)
+- [API 参考](#api-reference)
 
-<a id="introduction"></a>
-## 简介
+<a id="example-usage"></a>
+## 示例用法
 
-`search` 包在应用自己的数据库中提供全文搜索：按关键词查找文章，带过滤、排序、分页、分面统计和命中词高亮，不需要额外部署搜索服务。
+```go
+type SearchDoc struct {
+    ID       uuid.UUID `json:"id"`
+    Title    string    `json:"title" search:"text,boost"`
+    Content  string    `json:"content" search:"text"`
+    AuthorID string    `json:"author_id" search:"filter"`
+}
 
-中文是重点。PostgreSQL 自带的全文检索不切分中文，zhparser 之类的扩展在托管数据库上通常装不了。`search` 在应用中分词，把切分好的词写入 `tsvector`，不依赖数据库扩展。
+var SearchIndex = search.Define[SearchDoc]("articles")
 
-这个包不监听模型的保存自动同步：批量更新和原生 SQL 会绕过模型事件，索引就悄悄过期了。同步由 action 在修改数据的事务中显式发起，通过数据库队列执行，事务回滚时同步也一起取消。
+// 修改文章的事务中发起同步，提交后由 worker 更新索引
+err := SearchIndex.Sync(ctx, tx, item.ID.String())
+
+res, err := SearchIndex.Search(ctx, db, search.Query{
+    Text:   "数据库 迁移",
+    Filter: search.Eq("author_id", "alice"),
+})
+```
 
 <a id="installation"></a>
 ## 安装
@@ -39,24 +59,9 @@ migratecmd.Publish(
 <a id="defining-indexes"></a>
 ## 声明索引
 
-索引的文档是一个结构体，字段的 `search` 标签说明它的用途。下面是博客应用完整的 `internal/article/search.go`，声明文章索引、读取文档和列出 key 的函数，以及搜索接口：
+索引的文档是一个结构体，字段的 `search` 标签说明它的用途。例如 `search.go`，声明文章索引、读取文档和列出 key 的函数，以及搜索接口：
 
 ```go
-package article
-
-import (
-    "context"
-    "time"
-
-    "github.com/cockroachdb/errors"
-    "github.com/google/uuid"
-    "github.com/uptrace/bun"
-
-    "github.com/go-tenon/tenon/page"
-    "github.com/go-tenon/tenon/queue"
-    "github.com/go-tenon/tenon/search"
-)
-
 // SearchDoc 是文章在搜索索引中的文档，只放展示搜索结果需要的字段。
 type SearchDoc struct {
     ID          uuid.UUID `json:"id"`
@@ -157,7 +162,7 @@ func (a *Search) HTTP(ctx context.Context, in *SearchInput) (*SearchOutput, erro
 <a id="syncing"></a>
 ## 同步
 
-修改文章的 action 在事务中调用 `Sync`，例如[发布文章](../concepts/actions.md#writing-actions)的 `Handle` 在事务的最后加上一行：
+修改文章的业务动作在事务中调用 `Sync`，例如[发布文章](../concepts/actions.md#writing-actions)的 `Handle` 在事务的最后加上一行：
 
 ```go
 err := database.RunInTx(ctx, a.db, nil, func(ctx context.Context, tx database.Tx) error {
@@ -331,3 +336,44 @@ var SearchIndex = search.Define[SearchDoc]("articles", search.WithTokenizer(gse.
 建索引时它还输出长词中包含的短词（“搜索引擎”还输出“搜索”“引擎”），查询短词也能命中。代价是程序增大约 25 MB，第一次分词时加载词典约 0.5 秒，常驻内存约 300 MB。
 
 也可以实现 `search.Tokenizer` 接入其他分词方式，`search.Split` 处理了字母、数字和标点，只需要提供切分中日韩文字的函数。更换分词器之后要[重建索引](#reindexing)。
+
+<a id="api-reference"></a>
+## API 参考
+
+包 `github.com/go-tenon/tenon/search`。
+
+### Define
+
+```go
+func Define[D any](name string, opts ...Option) *Index[D]
+func WithTokenizer(t Tokenizer) Option
+```
+
+声明一个索引，`D` 字段的 `search` 标签说明用途，见[定义索引](#defining-indexes)。中文默认按双字切分，`search/gse` 提供按词语切分的分词器。
+
+### Index
+
+```go
+func (ix *Index[D]) Sync(ctx context.Context, db bun.IDB, keys ...string) error
+func (ix *Index[D]) Refresh(ctx context.Context, db bun.IDB, load LoadFunc[D], keys ...string) error
+func (ix *Index[D]) Search(ctx context.Context, db bun.IDB, q Query) (*Result[D], error)
+func (ix *Index[D]) Handle(w *queue.Worker, db *bun.DB, load LoadFunc[D], scan ScanFunc, opts ...queue.HandleOption)
+func (ix *Index[D]) Reindex(ctx context.Context, tx bun.IDB, ops *operation.Service, owner identity.Subject) (*operation.Operation, error)
+```
+
+`Sync` 在事务中发起同步，`Refresh` 立即同步。`Handle` 在 worker 中处理同步和重建，`load` 读取一个 key 的文档，`scan` 列出全部 key。`Query` 的字段：`Text`、`Tenant`、`Filter`、`Sort`、`Facets`、`Page`。`Reindex` 不停服重建，见[重建索引](#reindexing)。
+
+### 过滤与排序
+
+```go
+func Eq(field string, value any) Filter
+func In[T any](field string, values ...T) Filter
+func Gt, Gte, Lt, Lte(field string, value any) Filter
+func And(filters ...Filter) Filter
+func Or(filters ...Filter) Filter
+func Not(f Filter) Filter
+func Asc(field string) Sort
+func Desc(field string) Sort
+```
+
+过滤条件只能用于 `search:"filter"` 的字段，见[过滤与排序](#filtering-and-sorting)。

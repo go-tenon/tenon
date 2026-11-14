@@ -1,6 +1,10 @@
 # Webhook
 
-- [简介](#introduction)
+SaaS 的租户常常要把你的应用接进他们自己的系统：文章发布后同步到公司官网，订单付款后通知 ERP。webhook 就是在事件发生时，向租户配置的地址发一个 HTTP 请求。
+
+`webhook` 包负责发送这一端：租户管理自己的**端点**（接收地址和订阅的事件），业务代码发出事件，worker 签名并投递，失败时重试，每次投递都留下**投递记录**供租户排查。签名遵循 [Standard Webhooks](https://www.standardwebhooks.com/) 规范，租户可以直接用 Svix 等现成的库校验。它也提供 `Verify`，用来校验别人按这个规范发给你的 webhook。
+
+- [示例用法](#example-usage)
 - [安装](#installation)
 - [发送事件](#sending)
     - [请求的格式](#request-format)
@@ -14,15 +18,23 @@
 - [接收 webhook](#receiving)
 - [测试](#testing)
 - [保留期限](#retention)
+- [API 参考](#api-reference)
 
-<a id="introduction"></a>
-## 简介
+<a id="example-usage"></a>
+## 示例用法
 
-SaaS 的租户常常要把你的应用接进他们自己的系统：文章发布后同步到公司官网，订单付款后通知 ERP。webhook 就是在事件发生时，向租户配置的地址发一个 HTTP 请求。
+```go
+var Published = webhook.Event[PublishedHook]{Name: "article.published", Summary: "文章发布后推送"}
 
-`webhook` 包负责发送这一端：租户管理自己的**端点**（接收地址和订阅的事件），业务代码发出事件，worker 签名并投递，失败时重试，每次投递都留下**投递记录**供租户排查。签名遵循 [Standard Webhooks](https://www.standardwebhooks.com/) 规范，租户可以直接用 Svix 等现成的库校验。它也提供 `Verify`，用来校验别人按这个规范发给你的 webhook。
+// 在业务事务中发送，提交后由 worker 签名并投递给订阅了它的端点
+err := database.RunInTx(ctx, db, nil, func(ctx context.Context, tx database.Tx) error {
+    // ... 发布文章
+    return Published.Send(ctx, tx, subject, PublishedHook{ID: item.ID, Title: item.Title})
+})
 
-本章的例子：文章发布后，通知租户配置的端点。
+// worker 进程中注册投递
+webhook.NewDeliverer(db, webhook.Options{}).Handle(w)
+```
 
 <a id="installation"></a>
 ## 安装
@@ -39,11 +51,9 @@ migratecmd.Publish(
 <a id="sending"></a>
 ## 发送事件
 
-事件先声明再发送。声明写明事件的名称和内容的类型，放在 `internal/article/webhooks.go` 中：
+事件先声明再发送。声明写明事件的名称和内容的类型，放在模块的 `webhooks.go` 中：
 
 ```go
-package article
-
 // PublishedHook 是 article.published 事件的内容。它是给租户系统的公开接口，字段一旦发布就不要随意修改。
 type PublishedHook struct {
     ID          uuid.UUID `json:"id"`
@@ -284,3 +294,55 @@ req.Header.Set(webhook.HeaderSignature, sig)
 ```go
 sched.Add("webhooks:cleanup", "0 4 * * *", schedule.Cleanup(webhook.Cleanup(a.db, 30*24*time.Hour), 1000))
 ```
+
+<a id="api-reference"></a>
+## API 参考
+
+包 `github.com/go-tenon/tenon/webhook`。
+
+### Event
+
+```go
+type Event[T any] struct {
+    Name    string
+    Summary string
+}
+
+func (e Event[T]) Send(ctx context.Context, db bun.IDB, subject identity.Subject, data T) error
+func Document(doc *huma.OpenAPI, events ...Documented)
+```
+
+`Send` 给主体所在租户中订阅了这个事件的每个端点登记一次投递。`Document` 把事件写入 OpenAPI 文档的 `webhooks`。
+
+### 端点
+
+```go
+func CreateEndpoint(ctx context.Context, db bun.IDB, tenant string, in EndpointInput) (*Endpoint, error)
+func UpdateEndpoint(ctx context.Context, db bun.IDB, tenant string, id uuid.UUID, in EndpointInput) (*Endpoint, error)
+func GetEndpoint(ctx context.Context, db bun.IDB, tenant string, id uuid.UUID) (*Endpoint, error)
+func ListEndpoints(ctx context.Context, db bun.IDB, tenant string) ([]Endpoint, error)
+func DeleteEndpoint(ctx context.Context, db bun.IDB, tenant string, id uuid.UUID) error
+func RotateSecret(ctx context.Context, db bun.IDB, tenant string, id uuid.UUID) (*Endpoint, error)
+```
+
+### 投递
+
+```go
+func NewDeliverer(db bun.IDB, opts Options) *Deliverer
+func (d *Deliverer) Handle(w *queue.Worker)
+func ListDeliveries(ctx context.Context, db bun.IDB, q DeliveryQuery) ([]Delivery, error)
+func GetDelivery(ctx context.Context, db bun.IDB, tenant string, id uuid.UUID) (*Delivery, error)
+func Resend(ctx context.Context, db bun.IDB, tenant string, id uuid.UUID) (*Delivery, error)
+func Cleanup(db bun.IDB, keep time.Duration) func(ctx context.Context, limit int) (int, error)
+```
+
+`Options.Client` 默认是[出站请求](../libraries/outbound.md)的客户端。
+
+### 签名
+
+```go
+func Sign(secret, id string, timestamp time.Time, body []byte) (string, error)
+func Verify(secret string, header http.Header, body []byte) error
+```
+
+按 Standard Webhooks 签名和校验。`Verify` 用于接收别人发来的 webhook，失败时返回 `ErrInvalidSignature`。

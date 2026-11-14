@@ -1,6 +1,15 @@
 # 功能开关
 
-- [简介](#introduction)
+功能开关让新功能先在一小部分人中上线：开发时只给员工开启，然后开放给几个试用的租户，再按比例放量，最后全量上线。出了问题可以立即全部关闭，不用重新部署。
+
+`feature` 包分两部分：
+
+- **开关在代码中声明**，带有一个默认规则，例如“只给员工开启”；
+- **设置保存在数据库中**，由运营人员修改：全员开启、关闭或按比例放量，单独开启或关闭某个租户、某个用户。
+
+检查开关时只读不写，也不缓存：修改设置后，所有实例的下一次检查立即生效。按比例放量用开关名和用户（或租户）ID 的哈希决定，同一个人每次的结果相同，把比例从 10% 提高到 50% 时，原来的 10% 仍然开启。
+
+- [示例用法](#example-usage)
 - [安装](#installation)
 - [声明开关](#defining-flags)
 - [检查开关](#checking-flags)
@@ -11,20 +20,24 @@
     - [后台页面](#admin-pages)
 - [删除开关](#removing-flags)
 - [测试](#testing)
+- [API 参考](#api-reference)
 
-<a id="introduction"></a>
-## 简介
+<a id="example-usage"></a>
+## 示例用法
 
-功能开关让新功能先在一小部分人中上线：开发时只给员工开启，然后开放给几个试用的租户，再按比例放量，最后全量上线。出了问题可以立即全部关闭，不用重新部署。
+```go
+var NewEditor = feature.Flag{Name: "articles.new-editor", Description: "新版文章编辑器"}
 
-`feature` 包分两部分：
+flags := feature.NewStore(db, feature.Catalog{NewEditor})
 
-- **开关在代码中声明**，带有一个默认规则，例如“只给员工开启”；
-- **设置保存在数据库中**，由运营人员修改：全员开启、关闭或按比例放量，单独开启或关闭某个租户、某个用户。
+if flags.Active(ctx, subject, NewEditor) {
+    // 新版编辑器
+}
 
-检查开关时只读不写，也不缓存：修改设置后，所有实例的下一次检查立即生效。按比例放量用开关名和用户（或租户）ID 的哈希决定，同一个人每次的结果相同，把比例从 10% 提高到 50% 时，原来的 10% 仍然开启。
-
-本章为博客应用上线一个新版文章编辑器。
+// 后台：给一个租户开启，或者按比例放量
+err := flags.Set(ctx, NewEditor, feature.Tenant("acme"), feature.On)
+err = flags.Set(ctx, NewEditor, feature.Everyone, feature.Percent(10))
+```
 
 <a id="installation"></a>
 ## 安装
@@ -42,11 +55,9 @@ migratecmd.Publish(
 <a id="defining-flags"></a>
 ## 声明开关
 
-开关和使用它的业务放在一起。下面是 `internal/article/features.go`：
+开关和使用它的业务放在一起。例如 `features.go`：
 
 ```go
-package article
-
 var NewEditor = feature.Flag{
     Name:        "articles.new-editor",
     Description: "新版文章编辑器",
@@ -79,7 +90,7 @@ features := feature.NewStore(db, feature.Catalog{
 <a id="checking-flags"></a>
 ## 检查开关
 
-在 action 中用 `Active` 检查，它返回 `bool`：
+在业务动作中用 `Active` 检查，它返回 `bool`：
 
 ```go
 func (a *Edit) Handle(ctx context.Context, subject identity.Subject, id uuid.UUID) (*EditView, error) {
@@ -104,7 +115,7 @@ out.Body.Features = map[string]bool{
 }
 ```
 
-`flags` 只在本次请求中使用。前端只拿到开关的结果，判断仍在服务端：接口和 action 照常用 `Active` 检查，不信任前端传来的开关状态。
+`flags` 只在本次请求中使用。前端只拿到开关的结果，判断仍在服务端：接口和业务动作照常用 `Active` 检查，不信任前端传来的开关状态。
 
 <a id="background-jobs"></a>
 ### 后台任务
@@ -214,3 +225,47 @@ func TestEditWithNewEditor(t *testing.T) {
     // ...
 }
 ```
+
+<a id="api-reference"></a>
+## API 参考
+
+包 `github.com/go-tenon/tenon/feature`。
+
+### Flag、Catalog
+
+| `Flag` 字段 | 说明 |
+| --- | --- |
+| `Name string` | 开关名，例如 `articles.new-editor` |
+| `Description string` | 在后台页面中显示 |
+| `ByTenant bool` | 按租户放量，同一租户的人结果一致；否则按主体放量 |
+| `Default func(ctx, sub identity.Subject) bool` | 没有任何设置命中时的结果，`nil` 表示关闭 |
+
+`Catalog` 是应用声明的全部开关。
+
+### Store
+
+```go
+func NewStore(db bun.IDB, catalog Catalog) *Store
+func (s *Store) Active(ctx context.Context, sub identity.Subject, f Flag) bool
+func (s *Store) For(ctx context.Context, sub identity.Subject) Flags
+func (s *Store) Set(ctx context.Context, f Flag, scope Scope, state State) error
+func (s *Store) Clear(ctx context.Context, f Flag, scope Scope) error
+func (s *Store) Settings(ctx context.Context, f Flag) ([]Setting, error)
+func (s *Store) Prune(ctx context.Context) (int, error)
+func (s *Store) WithDB(db bun.IDB) *Store
+```
+
+`Active` 检查一个开关，`For` 一次读出主体的全部开关（`Flags.Active` 不再查库）。`Set`、`Clear` 修改一个范围上的设置，`Prune` 删除已不在 `Catalog` 中的开关的设置。
+
+### Scope、State
+
+```go
+var Everyone Scope
+func Tenant(id string) Scope
+func Subject(ref identity.Ref) Scope
+
+var On, Off State
+func Percent(n int) State
+```
+
+范围从窄到宽是主体、租户、全体，最窄的设置生效；`Off` 设在全体上是紧急关闭。见[判断的顺序](#evaluation-order)。

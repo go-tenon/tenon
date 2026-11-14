@@ -1,6 +1,12 @@
 # 操作日志
 
-- [简介](#introduction)
+正式的产品几乎都需要回答“谁在什么时候改了这篇文章”。`activity` 包把每一次操作保存为 `activity_log` 表中的一行：谁（actor）在哪个租户中对什么（target）做了什么（event），供产品界面按对象或按操作人查看历史。
+
+操作日志和[日志](../general/logging.md)解决的是不同的问题：日志是给运维看的，写到标准输出或日志平台，产品界面查不到；操作日志是业务数据，在业务事务中写入，与业务修改一起提交或回滚，不会出现“文章没改成，记录却写进去了”的情况。
+
+这个包不监听模型的保存自动记录：Bun 不跟踪哪些字段被修改了，批量更新也绕过模型，而且业务真正关心的是“文章已发布”，不是“status 列变了”。每条记录都由业务动作显式写入。
+
+- [示例用法](#example-usage)
 - [安装](#installation)
 - [记录操作](#recording)
     - [事件与属性](#events-and-properties)
@@ -8,15 +14,25 @@
 - [查看操作日志](#listing)
     - [显示](#displaying)
 - [保留期限](#retention)
+- [API 参考](#api-reference)
 
-<a id="introduction"></a>
-## 简介
+<a id="example-usage"></a>
+## 示例用法
 
-正式的产品几乎都需要回答“谁在什么时候改了这篇文章”。`activity` 包把每一次操作保存为 `activity_log` 表中的一行：谁（actor）在哪个租户中对什么（target）做了什么（event），供产品界面按对象或按操作人查看历史。
+```go
+err := database.RunInTx(ctx, db, nil, func(ctx context.Context, tx database.Tx) error {
+    // ... 发布文章
+    return activity.Record(ctx, tx, subject, activity.Activity{
+        Event:      "article.published",
+        TargetType: "article",
+        TargetID:   item.ID.String(),
+        Properties: map[string]any{"title": item.Title},
+    })
+})
 
-操作日志和[日志](../general/logging.md)解决的是不同的问题：日志是给运维看的，写到标准输出或日志平台，产品界面查不到；操作日志是业务数据，在业务事务中写入，与业务修改一起提交或回滚，不会出现“文章没改成，记录却写进去了”的情况。
-
-这个包不监听模型的保存自动记录：Bun 不跟踪哪些字段被修改了，批量更新也绕过模型，而且业务真正关心的是“文章已发布”，不是“status 列变了”。每条记录都由 action 显式写入。
+// 一篇文章的历史
+list, err := activity.List(ctx, db, activity.Query{TargetType: "article", TargetID: id.String()})
+```
 
 <a id="installation"></a>
 ## 安装
@@ -34,7 +50,7 @@ migratecmd.Publish(
 <a id="recording"></a>
 ## 记录操作
 
-在 action 修改数据的事务中调用 `activity.Record`。下面是[业务动作](../concepts/actions.md#writing-actions)一章中发布文章的 `Handle`，事务的最后加上一条记录：
+在业务动作修改数据的事务中调用 `activity.Record`。下面是[业务动作](../concepts/actions.md#writing-actions)一章中发布文章的 `Handle`，事务的最后加上一条记录：
 
 ```go
 func (a *Publish) Handle(ctx context.Context, subject identity.Subject, id uuid.UUID) (*Article, error) {
@@ -153,3 +169,27 @@ sched.Add("activity:cleanup", "0 4 * * *", schedule.Cleanup(activity.Cleanup(a.d
 ```
 
 保留多久取决于产品和合规要求。需要长期保存的场景，可以在删除之前把旧记录导出到对象存储或数据仓库。
+
+<a id="api-reference"></a>
+## API 参考
+
+包 `github.com/go-tenon/tenon/activity`。
+
+```go
+func Record(ctx context.Context, db bun.IDB, actor identity.Subject, a Activity) error
+func List(ctx context.Context, db bun.IDB, q Query) ([]Activity, error)
+func Cleanup(db bun.IDB, keep time.Duration) func(ctx context.Context, limit int) (int, error)
+func Migrations() fs.FS
+```
+
+`Record` 写入一条记录，操作人、租户、代为登录的人和请求 ID 取自 `actor` 和 `ctx`；必须传入业务事务。`List` 按对象或操作人查询，按时间倒序。
+
+`Activity` 是 `activity_log` 表的 Bun 模型：
+
+| 字段 | 说明 |
+| --- | --- |
+| `Event` | 发生了什么，例如 `article.published` |
+| `TargetType`、`TargetID` | 被操作的对象，可以为空 |
+| `Properties` | 展示这条记录需要的其他数据，保存为 JSON |
+| `Actor()`、`Impersonator()` | 操作人；代为登录时实际操作的人 |
+| `Tenant`、`RequestID`、`CreatedAt` | 自动填写 |

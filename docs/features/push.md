@@ -1,6 +1,11 @@
 # 移动推送
 
-- [简介](#introduction)
+App 在后台或者没有打开时，只能靠系统的推送通道把消息送到用户面前。iOS 走 APNs，海外的 Android 走 FCM；国内的 Android 没有统一的通道，要分别接入华为、荣耀、小米、OPPO、vivo、魅族的厂商通道，再按各家的规则给消息分类。`push` 包把这件事交给[阿里云移动推送](https://help.aliyun.com/zh/document_detail/434629.html)：各通道的接入和密钥由阿里云管理，框架负责“推给谁”和“怎么可靠地推”。
+
+- **设备由服务端登记**：App 登录后把推送 SDK 给出的设备标识交给你的接口，接口把设备记在当前用户名下，同时记下这次登录的凭据。客户端不能把自己登记成别人，退出登录时连同凭据一起删除，这台设备就不再收到推送。
+- **推送随事务提交**：`push.Send` 在业务事务中发布推送任务，事务提交后才推送，回滚时一起取消，与[站内通知](notifications.md)、[webhook](webhooks.md) 的写法相同。一次通知发往哪些渠道，仍由业务动作显式写出来。
+
+- [示例用法](#example-usage)
 - [安装](#installation)
     - [阿里云控制台](#aliyun-console)
     - [App 端](#app-side)
@@ -14,16 +19,21 @@
 - [海外用户](#overseas)
 - [测试](#testing)
 - [清理](#cleanup)
+- [API 参考](#api-reference)
 
-<a id="introduction"></a>
-## 简介
+<a id="example-usage"></a>
+## 示例用法
 
-App 在后台或者没有打开时，只能靠系统的推送通道把消息送到用户面前。iOS 走 APNs，海外的 Android 走 FCM；国内的 Android 没有统一的通道，要分别接入华为、荣耀、小米、OPPO、vivo、魅族的厂商通道，再按各家的规则给消息分类。`push` 包把这件事交给[阿里云移动推送](https://help.aliyun.com/zh/document_detail/434629.html)：各通道的接入和密钥由阿里云管理，框架负责“推给谁”和“怎么可靠地推”。
+```go
+// App 登录后登记设备
+err := push.Register(ctx, db, sub, push.Android, token)
 
-- **设备由服务端登记**：App 登录后把推送 SDK 给出的设备标识交给你的接口，接口把设备记在当前用户名下，同时记下这次登录的凭据。客户端不能把自己登记成别人，退出登录时连同凭据一起删除，这台设备就不再收到推送。
-- **推送随事务提交**：`push.Send` 在业务事务中发布推送任务，事务提交后才推送，回滚时一起取消，与[站内通知](notifications.md)、[webhook](webhooks.md) 的写法相同。一次通知发往哪些渠道，仍由 action 显式写出来。
+// 在业务事务中发送，提交后由 worker 推送
+err = push.Send(ctx, tx, push.Message{Title: "新文章", Body: item.Title}, recipients...)
 
-本章的例子沿用[读者 App](../security/account-examples.md#reader-api)：编辑发布文章后，推送给订阅了这个栏目的读者。
+// worker 进程中注册投递
+push.NewDeliverer(db, provider, push.Options{}).Handle(w)
+```
 
 <a id="installation"></a>
 ## 安装
@@ -241,3 +251,30 @@ App 每次启动都会重新登记，长期没有更新的设备通常已经卸�
 ```go
 sched.Add("push:cleanup", "@daily", schedule.Cleanup(push.Cleanup(a.db, 90*24*time.Hour), 1000))
 ```
+
+<a id="api-reference"></a>
+## API 参考
+
+包 `github.com/go-tenon/tenon/push`。
+
+```go
+func Register(ctx context.Context, db bun.IDB, sub identity.Subject, platform Platform, token string) error
+func Unregister(ctx context.Context, db bun.IDB, sub identity.Subject, credential string) (int, error)
+func UnregisterOthers(ctx context.Context, db bun.IDB, sub identity.Subject) (int, error)
+func UnregisterSubject(ctx context.Context, db bun.IDB, ref identity.Ref) (int, error)
+func Send(ctx context.Context, db bun.IDB, msg Message, to ...notification.Recipient) error
+func NewDeliverer(db bun.IDB, p Provider, opts Options) *Deliverer
+func (d *Deliverer) Handle(w *queue.Worker)
+func Cleanup(db bun.IDB, keep time.Duration) func(ctx context.Context, limit int) (int, error)
+func Migrations() fs.FS
+```
+
+| 函数 | 说明 |
+| --- | --- |
+| `Register` | 把设备登记在主体名下，同时记下这次登录的凭据 |
+| `Unregister`、`UnregisterOthers`、`UnregisterSubject` | 退出这次登录、退出其他设备、停用账号时删除设备 |
+| `Send` | 在事务中发布推送任务，提交后投递 |
+| `NewDeliverer` | 在 worker 中按平台分批推送，`Provider` 是 `push/aliyun` 等实现 |
+| `Cleanup` | 删除长期不活跃的设备 |
+
+`Message` 的字段：`Title`、`Body`、`Data`、`Category`（换算成各厂商的消息分类）、`Badge`、`TTL`。测试用 `push/pushtest` 记录推送。
