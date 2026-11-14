@@ -722,81 +722,74 @@ go run ./cmd/api user create --name 小明 --email ming@example.com --password s
 <a id="frontend"></a>
 ## 前端
 
-现在，把 `apps/web/src/client.ts` 改成下面这样。客户端自己保管 access token，请求时带上它；接口返回 `401` 时调用一次 `refresh` 换新的，再重试原来的请求：
+前端用 `@go-tenon/client` 的会话保管登录凭据：access token 只放在页面的内存中，refresh token 在 HttpOnly cookie 中。打开页面时，会话用 cookie 换一个 access token；受保护的接口返回 `401` 时再换一次，然后重试原来的请求。
+
+把 `apps/web/src/client.ts` 改成下面这样：
 
 ```ts title="apps/web/src/client.ts"
-import { QueryClient } from "@tanstack/react-query"
+import { createSession } from "@go-tenon/client"
 import { createClient } from "@blog/client/api"
 
-export const queryClient = new QueryClient()
-
-// 刷新接口靠 cookie 认证，用一个单独的客户端调用它。
+// 刷新接口靠 cookie 认证，用一个不带 access token 的客户端调用它。
 const plain = createClient({ baseURL: "/api" })
 
+// session 保管登录凭据；refresh 用 cookie 换一个新的 access token。
+export const session = createSession({ refresh: () => plain.auth.refresh() })
+
 // api 是 tenon generate 生成的客户端（src/api），接口改了以后 tenon dev 会自动重新生成。
-// access token 只放在内存中；受保护的接口返回 401 时，先用 cookie 换一个新的再重试。
-export const api = createClient({
-  baseURL: "/api",
-  auth: {
-    refresh: async () => (await plain.auth.refresh()).access_token,
-    // 刷新也失败了：登录已过期或已退出，显示为未登录
-    onSignedOut: () => queryClient.setQueryData(["me"], null),
-  },
-})
+// 受保护的接口返回 401 时，它通过 session.auth 换一个新的 access token 再重试；登录、退出时 session 更新它的 token。
+export const api = createClient({ baseURL: "/api", auth: session.auth })
+session.connect(api)
 ```
 
-`queryClient` 移到这里，`apps/web/src/main.tsx` 改为使用它：
+再把会话交给应用。把 `apps/web/src/app.ts` 改成下面这样：
 
-```tsx title="apps/web/src/main.tsx"
-import { StrictMode } from "react"
-import { createRoot } from "react-dom/client"
-import { QueryClientProvider } from "@tanstack/react-query"
-import { App } from "./App"
-import { queryClient } from "./client"
-import "./app.css"
+```ts title="apps/web/src/app.ts"
+import { createApp } from "@go-tenon/shell"
+import { session } from "./client"
+import { routeTree } from "./routeTree.gen"
 
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <App />
-    </QueryClientProvider>
-  </StrictMode>,
-)
-```
+export const app = createApp({ id: "web", routeTree, session })
 
-接着，新建 `apps/web/src/session.ts`，`useMe` 是当前登录的作者，没有登录时为 `null`：
-
-```ts title="apps/web/src/session.ts"
-import { useQuery } from "@tanstack/react-query"
-import { api } from "./client"
-
-// useMe 返回当前登录的作者，未登录时为 null。打开页面时先刷新一次，用 cookie 换 access token。
-export function useMe() {
-  return useQuery({
-    queryKey: ["me"],
-    queryFn: async () => ((await api.refresh()) ? api.user.me() : null),
-    staleTime: Infinity,
-  })
+declare module "@tanstack/react-router" {
+  interface Register {
+    router: typeof app.router
+  }
 }
 ```
 
-新建登录表单 `apps/web/src/Login.tsx`：
+应用在打开第一个页面之前恢复登录状态：cookie 还有效时，刷新页面后仍然是登录的。
 
-```tsx title="apps/web/src/Login.tsx"
+<a id="login-page"></a>
+### 登录页
+
+新建登录页 `apps/web/src/routes/login.tsx`，地址是 `/login`：
+
+```tsx title="apps/web/src/routes/login.tsx"
 import { useState, type FormEvent } from "react"
 import { useMutation } from "@tanstack/react-query"
+import { createFileRoute } from "@tanstack/react-router"
 import { isApiError } from "@blog/client/api"
-import { api, queryClient } from "./client"
+import { app } from "../app"
+import { api, session } from "../client"
 
-export function Login({ onDone }: { onDone: () => void }) {
+export const Route = createFileRoute("/login")({
+  // ?redirect= 是登录前想去的页面
+  validateSearch: (search: Record<string, unknown>): { redirect?: string } => ({
+    redirect: typeof search.redirect === "string" ? search.redirect : undefined,
+  }),
+  component: Login,
+})
+
+function Login() {
+  const { redirect } = Route.useSearch()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const login = useMutation({
     mutationFn: () => api.auth.login({ email, password }),
-    onSuccess: async (session) => {
-      api.setAccessToken(session.access_token)
-      await queryClient.invalidateQueries({ queryKey: ["me"] })
-      onDone()
+    onSuccess: async (body) => {
+      await session.signIn(body)
+      await app.redirectAfterSignIn(redirect)
     },
   })
 
@@ -813,78 +806,111 @@ export function Login({ onDone }: { onDone: () => void }) {
       <label>
         密码 <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
       </label>
-      <div>
-        <button disabled={login.isPending}>登录</button>
-        <button type="button" onClick={onDone}>
-          取消
-        </button>
-      </div>
+      <button disabled={login.isPending}>登录</button>
     </form>
   )
 }
 ```
 
-在 `apps/web/src/App.tsx` 中显示登录、退出按钮，登录后才能写文章：
+登录成功后，`session.signIn` 保存 access token，`app.redirectAfterSignIn` 回到登录前想去的页面，没有时回到首页。回跳地址只接受本站的相对路径，别人构造的 `?redirect=https://evil.example` 会被忽略。
 
-```tsx title="apps/web/src/App.tsx"
-import { useState } from "react"
-import { useMutation } from "@tanstack/react-query"
-import type { Article } from "@blog/client/api"
-import { ArticleEditor } from "./ArticleEditor"
-import { ArticleList } from "./ArticleList"
-import { api, queryClient } from "./client"
-import { Login } from "./Login"
-import { useMe } from "./session"
+<a id="requiring-login"></a>
+### 需要登录的页面
 
-// 页面上同时只显示一样东西：文章列表、编辑器或登录表单。
-type View = { name: "list" } | { name: "edit"; article?: Article } | { name: "login" }
+写文章和修改文章需要登录。在这两个页面的路由上加上 `beforeLoad: requireAuth`：没有登录时，先跳到登录页，并带上原来的地址。把 `apps/web/src/routes/write.tsx` 改成下面这样：
 
-export function App() {
-  const me = useMe()
-  const [view, setView] = useState<View>({ name: "list" })
-  const logout = useMutation({
-    mutationFn: () => api.auth.logout(),
-    onSettled: () => {
-      api.setAccessToken("")
-      queryClient.setQueryData(["me"], null)
-    },
-  })
-  const home = () => setView({ name: "list" })
+```tsx title="apps/web/src/routes/write.tsx"
+import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { requireAuth } from "@go-tenon/shell"
+import { ArticleEditor } from "../ArticleEditor"
+
+export const Route = createFileRoute("/write")({ beforeLoad: requireAuth, component: Write })
+
+function Write() {
+  const navigate = useNavigate()
+  return <ArticleEditor onDone={() => navigate({ to: "/" })} />
+}
+```
+
+`apps/web/src/routes/articles/$id.edit.tsx` 中也加上：
+
+```tsx title="apps/web/src/routes/articles/$id.edit.tsx"
+import { useQuery } from "@tanstack/react-query"
+import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { requireAuth } from "@go-tenon/shell"
+import { ArticleEditor } from "../../ArticleEditor"
+import { api } from "../../client"
+
+export const Route = createFileRoute("/articles/$id/edit")({ beforeLoad: requireAuth, component: EditArticle })
+
+function EditArticle() {
+  const { id } = Route.useParams()
+  const navigate = useNavigate()
+  const article = useQuery({ queryKey: ["article", id], queryFn: () => api.article.get(id) })
+
+  if (article.isPending) return <p>加载中…</p>
+  if (article.error) return <p className="error">{article.error.message}</p>
+  return <ArticleEditor article={article.data} onDone={() => navigate({ to: "/" })} />
+}
+```
+
+页面上的检查只是为了让没有登录的人先去登录，真正的保护仍然在服务端：接口要求登录，没有 token 时返回 `401`。
+
+<a id="header"></a>
+### 页头
+
+页头显示当前的作者和退出按钮，没有登录时显示登录链接。把 `apps/web/src/routes/__root.tsx` 改成下面这样：
+
+```tsx title="apps/web/src/routes/__root.tsx"
+import { useMutation, useQuery } from "@tanstack/react-query"
+import { createRootRouteWithContext, Link, Outlet } from "@tanstack/react-router"
+import { type RouterContext, useSignedIn } from "@go-tenon/shell"
+import { api, session } from "../client"
+
+export const Route = createRootRouteWithContext<RouterContext>()({ component: Layout })
+
+function Layout() {
+  const signedIn = useSignedIn()
+  const me = useQuery({ queryKey: ["me"], queryFn: () => api.user.me(), enabled: signedIn })
+  const logout = useMutation({ mutationFn: () => api.auth.logout(), onSettled: () => session.signOut() })
 
   return (
     <main>
       <header>
-        <h1 onClick={home}>博客</h1>
-        {me.data ? (
-          <span>
-            {me.data.name}
-            <button onClick={() => setView({ name: "edit" })}>写文章</button>
+        <h1>
+          <Link to="/">博客</Link>
+        </h1>
+        {signedIn ? (
+          <nav>
+            <span>{me.data?.name}</span>
+            <Link to="/write">写文章</Link>
             <button onClick={() => logout.mutate()}>退出</button>
-          </span>
+          </nav>
         ) : (
-          me.data === null &&
-          view.name !== "login" && <button onClick={() => setView({ name: "login" })}>登录</button>
+          <Link to="/login">登录</Link>
         )}
       </header>
-      {view.name === "list" && (
-        <ArticleList onEdit={me.data ? (article) => setView({ name: "edit", article }) : undefined} />
-      )}
-      {view.name === "edit" && <ArticleEditor article={view.article} onDone={home} />}
-      {view.name === "login" && <Login onDone={home} />}
+      <Outlet />
     </main>
   )
 }
 ```
 
-`apps/web/src/ArticleList.tsx` 中，没有登录时不显示编辑和删除按钮：
+`useSignedIn` 在登录、退出时更新。退出时 `session.signOut()` 清除 access token，退出接口清除 cookie；正在看的页面需要登录时，应用随即跳到登录页。登录、退出时，TanStack Query 中缓存的数据也被清空，上一个作者的数据不会出现在下一个作者的页面上。
 
-```tsx title="apps/web/src/ArticleList.tsx"
+最后，首页在没有登录时不显示编辑和删除。把 `apps/web/src/routes/index.tsx` 改成下面这样：
+
+```tsx title="apps/web/src/routes/index.tsx"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { createFileRoute, Link } from "@tanstack/react-router"
+import { useSignedIn } from "@go-tenon/shell"
 import type { Article } from "@blog/client/api"
-import { api } from "./client"
+import { api } from "../client"
 
-// onEdit 为空时（未登录）不显示编辑和删除按钮。
-export function ArticleList({ onEdit }: { onEdit?: (a: Article) => void }) {
+export const Route = createFileRoute("/")({ component: ArticleList })
+
+function ArticleList() {
+  const signedIn = useSignedIn()
   const queryClient = useQueryClient()
   const articles = useQuery({ queryKey: ["article", "list"], queryFn: () => api.article.list() })
   const remove = useMutation({
@@ -901,9 +927,11 @@ export function ArticleList({ onEdit }: { onEdit?: (a: Article) => void }) {
         <li key={a.id}>
           <h2>{a.title}</h2>
           <p>{a.content.slice(0, 120)}</p>
-          {onEdit && (
+          {signedIn && (
             <div>
-              <button onClick={() => onEdit(a)}>编辑</button>
+              <Link to="/articles/$id/edit" params={{ id: a.id }}>
+                编辑
+              </Link>
               <button onClick={() => confirm(`删除“${a.title}”？`) && remove.mutate(a)}>删除</button>
             </div>
           )}
@@ -914,8 +942,8 @@ export function ArticleList({ onEdit }: { onEdit?: (a: Article) => void }) {
 }
 ```
 
-打开 http://localhost:8080，用刚才创建的账号登录，写一篇文章。刷新页面，仍然是登录状态：页面用 cookie 换到了新的 access token。退出后，编辑按钮消失了。
+打开 http://localhost:8080/write，页面先跳到登录页。用刚才创建的账号登录，回到了写文章的页面。写一篇文章，再刷新页面，仍然是登录状态：页面用 cookie 换到了新的 access token。退出后，编辑按钮消失了。
 
 作者现在可以登录了。不过，任何作者都能修改别人的文章，所有文章写完就立即公开。下一章，我们给文章加上作者和草稿。
 
-深入了解：[登录与注册](../security/login.md)、[API 令牌](../security/api-tokens.md)、[认证](../security/authentication.md)、[命令行](../general/commands.md)。
+深入了解：[登录与注册](../security/login.md)、[API 令牌](../security/api-tokens.md)、[认证](../security/authentication.md)、[应用骨架](../responses/app-shell.md)、[命令行](../general/commands.md)。

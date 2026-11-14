@@ -24,12 +24,14 @@ import (
     "io/fs"
 )
 
-//go:embed dist
+//go:embed all:dist
 var dist embed.FS
 
 // Dist 是 Vite 的构建产物，包含 index.html 和 assets 目录。
 var Dist, _ = fs.Sub(dist, "dist")
 ```
+
+`all:` 不能省略：`go:embed` 默认跳过以 `_` 和 `.` 开头的文件，而 Vite 拆分出的代码文件可能以 `_` 开头，例如路由 `$id.edit.tsx` 对应 `_id.edit-<hash>.js`。省略 `all:` 时这些文件不在程序中，打开对应的页面得到 `404`，只有构建后才会出现，`tenon dev` 中看不出来。
 
 `dist` 不提交到版本库。没有 `dist` 时直接 `go build` 会失败（`pattern dist: no matching files found`）；`tenon dev` 和 `tenon generate` 会先写一个占位的 `index.html`，发布时用 [tenon build](../installation/tooling.md#build)，它总是先构建前端，见[构建与发布](#building)。
 

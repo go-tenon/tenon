@@ -18,21 +18,24 @@ func TestWrite(t *testing.T) {
 	}
 	for _, f := range []string{".gitignore", "go.mod", "package.json", "config/app.yaml", "cmd/api/main.go", "internal/todo/todo.go",
 		"packages/client/package.json", "apps/web/package.json", "apps/web/vite.config.ts", "apps/web/tsconfig.json",
-		"apps/web/frontend.go", "apps/web/index.html", "apps/web/src/main.tsx", "apps/web/src/App.tsx", "apps/web/src/client.ts"} {
+		"apps/web/frontend.go", "apps/web/index.html", "apps/web/src/main.tsx", "apps/web/src/app.ts", "apps/web/src/client.ts",
+		"apps/web/src/routes/__root.tsx", "apps/web/src/routes/index.tsx", "apps/web/src/routeTree.gen.ts"} {
 		if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
 			t.Errorf("%s: %v", f, err)
 		}
 	}
 	for f, want := range map[string]string{
-		"package.json":                 `"name": "todo"`,
-		"packages/client/package.json": `"name": "@todo/client"`,
-		"apps/web/package.json":        `"@todo/client": "workspace:*"`,
-		"apps/web/vite.config.ts":      `base: "/"`,
-		"apps/web/frontend.go":         "package web\n",
-		"apps/web/index.html":          "<title>Todo</title>",
-		"apps/web/src/App.tsx":         `from "@todo/client/api"`, // 示例页面覆盖前端模板的 App.tsx
-		"go.mod":                       "\nignore node_modules\n",
-		".gitignore":                   ".tenon/",
+		"package.json":                  `"name": "todo"`,
+		"packages/client/package.json":  `"name": "@todo/client"`,
+		"./package.json":                `".tenon/js/shell"`,
+		"apps/web/package.json":         `"@go-tenon/shell": "workspace:*"`,
+		"apps/web/vite.config.ts":       `base: "/"`,
+		"apps/web/frontend.go":          "//go:embed all:dist\n",
+		"apps/web/index.html":           "<title>Todo</title>",
+		"apps/web/src/routes/index.tsx": `from "@todo/client/api"`, // 示例页面覆盖前端模板的首页
+		"apps/web/src/app.ts":           `createApp({ id: "web", routeTree })`,
+		"go.mod":                        "\nignore node_modules\n",
+		".gitignore":                    ".tenon/",
 	} {
 		if b, _ := os.ReadFile(filepath.Join(dir, f)); !strings.Contains(string(b), want) {
 			t.Errorf("%s missing %q:\n%s", f, want, b)
@@ -85,10 +88,11 @@ func TestWriteFrontend(t *testing.T) {
 	}
 	dir := filepath.Join(root, "apps", "admin-console")
 	for name, want := range map[string]string{
-		"package.json":   `"name": "@helpdesk/admin-console"`,
-		"vite.config.ts": `base: "/admin/"`,
-		"frontend.go":    "package adminconsole\n",
-		"src/App.tsx":    "<h1>admin-console</h1>",
+		"package.json":         `"name": "@helpdesk/admin-console"`,
+		"vite.config.ts":       `base: "/admin/"`,
+		"frontend.go":          "package adminconsole\n",
+		"src/routes/index.tsx": "<h1>admin-console</h1>",
+		"src/app.ts":           `id: "admin-console"`,
 	} {
 		if b, _ := os.ReadFile(filepath.Join(dir, name)); !strings.Contains(string(b), want) {
 			t.Errorf("%s missing %q:\n%s", name, want, b)

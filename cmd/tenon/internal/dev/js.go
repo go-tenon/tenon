@@ -2,6 +2,7 @@ package dev
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"slices"
@@ -15,6 +16,9 @@ const JSDir = ".tenon/js"
 
 // SyncJS 把项目 dir 使用的框架版本中 js 下的前端包复制到 dir/JSDir，替换已有的内容。框架被 replace 到本地目录时
 // 复制本地的代码。changed 报告各包的 package.json 是否有变化：有变化时要重新 bun install。
+//
+// 各包自己的 node_modules 保留：Bun 把包的依赖链接放在其中（例如 @go-tenon/shell 的 react），
+// package.json 没有变化时不会重新 bun install，删掉它包就找不到依赖。
 func SyncJS(dir string) (changed bool, err error) {
 	fw, err := frameworkDir(dir)
 	if err != nil {
@@ -27,17 +31,24 @@ func SyncJS(dir string) (changed bool, err error) {
 	if err != nil {
 		return false, errors.Wrapf(err, "dev: %s has no front-end packages", fw)
 	}
-	if err := os.RemoveAll(dst); err != nil {
-		return false, errors.Wrap(err, "dev: sync front-end packages")
-	}
+	packages := map[string]bool{}
 	for _, e := range entries {
 		if !e.IsDir() || e.Name() == "node_modules" {
 			continue
 		}
-		if _, err := os.Stat(filepath.Join(src, e.Name(), "package.json")); err != nil {
-			continue
+		if _, err := os.Stat(filepath.Join(src, e.Name(), "package.json")); err == nil {
+			packages[e.Name()] = true
 		}
-		if err := copyTree(filepath.Join(src, e.Name()), filepath.Join(dst, e.Name())); err != nil {
+	}
+	// 框架中已经没有的包整个删除，其余的包删除 node_modules 之外的内容，再复制新的。
+	existing, _ := os.ReadDir(dst)
+	for _, e := range existing {
+		if err := clearPackage(filepath.Join(dst, e.Name()), packages[e.Name()]); err != nil {
+			return false, errors.Wrap(err, "dev: sync front-end packages")
+		}
+	}
+	for name := range packages {
+		if err := copyInto(filepath.Join(src, name), filepath.Join(dst, name)); err != nil {
 			return false, errors.Wrap(err, "dev: sync front-end packages")
 		}
 	}
@@ -46,6 +57,53 @@ func SyncJS(dir string) (changed bool, err error) {
 	}
 	after := manifests(dst)
 	return !slices.EqualFunc(before, after, func(a, b []byte) bool { return bytes.Equal(a, b) }), nil
+}
+
+// NeedsInstall 报告项目 dir 是否需要 bun install：没有 node_modules，或者某个框架前端包声明了依赖
+// （例如 @go-tenon/shell 的 react），但它自己的 node_modules 不存在（例如刚 clone 的项目，.tenon 被 .gitignore 忽略）。
+func NeedsInstall(dir string) bool {
+	if _, err := os.Stat(filepath.Join(dir, "node_modules")); err != nil {
+		return true
+	}
+	root := filepath.Join(dir, filepath.FromSlash(JSDir))
+	entries, _ := os.ReadDir(root)
+	for _, e := range entries {
+		b, err := os.ReadFile(filepath.Join(root, e.Name(), "package.json"))
+		if err != nil {
+			continue
+		}
+		var m struct {
+			Dependencies     map[string]string `json:"dependencies"`
+			PeerDependencies map[string]string `json:"peerDependencies"`
+		}
+		if json.Unmarshal(b, &m) != nil || len(m.Dependencies)+len(m.PeerDependencies) == 0 {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(root, e.Name(), "node_modules")); err != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// clearPackage 删除包目录 dir；keepDeps 为 true 时保留其中的 node_modules。
+func clearPackage(dir string, keepDeps bool) error {
+	if !keepDeps {
+		return os.RemoveAll(dir)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if e.Name() == "node_modules" {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(dir, e.Name())); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // manifests 返回 dir 中各包的 package.json，按包名排序；把包名写在内容前面，增删包也算变化。

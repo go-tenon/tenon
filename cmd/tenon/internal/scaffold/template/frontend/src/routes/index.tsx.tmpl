@@ -1,0 +1,14 @@
+import { createFileRoute } from "@tanstack/react-router"
+
+export const Route = createFileRoute("/")({
+  staticData: { title: "首页" },
+  component: Home,
+})
+
+function Home() {
+  return (
+    <main>
+      <h1>[[.Title]]</h1>
+    </main>
+  )
+}

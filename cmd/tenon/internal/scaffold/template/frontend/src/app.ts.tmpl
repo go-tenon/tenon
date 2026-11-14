@@ -1,0 +1,12 @@
+import { createApp } from "@go-tenon/shell"
+import { routeTree } from "./routeTree.gen"
+
+// app 装配路由和 TanStack Query，见框架文档的“应用骨架”。
+// 页面在 src/routes 中，一个文件一个页面；需要登录时传入 @go-tenon/client 的会话（session）。
+export const app = createApp({ id: "[[.Name]]", routeTree })
+
+declare module "@tanstack/react-router" {
+  interface Register {
+    router: typeof app.router
+  }
+}

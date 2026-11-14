@@ -120,8 +120,8 @@ func (d dev) check() error {
 	return nil
 }
 
-// prepare 在启动监听进程之前运行一次：把框架的前端包复制到 .tenon/js（见 SyncJS），没有 node_modules 或前端包的
-// package.json 变了时在根目录 bun install，确保每个前端的 dist 存在（见 EnsureDist），
+// prepare 在启动监听进程之前运行一次：把框架的前端包复制到 .tenon/js（见 SyncJS），前端包的 package.json 变了
+// 或者缺少依赖（见 NeedsInstall）时在根目录 bun install，确保每个前端的 dist 存在（见 EnsureDist），
 // 写入前端开发服务器的地址（见 DevConfig），把框架 web/ui 的样式源复制到 Tailwind 入口旁边。
 func (d dev) prepare() error {
 	if len(d.cfg.Frontends) > 0 {
@@ -129,7 +129,7 @@ func (d dev) prepare() error {
 		if err != nil {
 			return err
 		}
-		if _, err := os.Stat("node_modules"); changed || errors.Is(err, fs.ErrNotExist) {
+		if changed || NeedsInstall(".") {
 			if err := d.exec(".", "bun", "install"); err != nil {
 				return err
 			}
@@ -422,6 +422,11 @@ func copyTree(src, dst string) error {
 	if err := os.RemoveAll(dst); err != nil {
 		return err
 	}
+	return copyInto(src, dst)
+}
+
+// copyInto 把 src 复制到 dst，覆盖同名的文件，跳过 project.SkipDir 中的目录（例如 node_modules）。
+func copyInto(src, dst string) error {
 	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err

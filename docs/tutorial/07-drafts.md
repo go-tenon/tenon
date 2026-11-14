@@ -482,15 +482,26 @@ func Register(api *rest.API, requireUser func(*huma.Operation), db *bun.DB) {
 <a id="frontend"></a>
 ## 前端
 
-首页 `apps/web/src/ArticleList.tsx` 只列出已发布的文章，点标题阅读全文：
+前端有四个页面变了：
 
-```tsx title="apps/web/src/ArticleList.tsx"
+| 文件 | 地址 | 页面 |
+| --- | --- | --- |
+| `routes/index.tsx` | `/` | 首页：已发布的文章，所有人都能看到 |
+| `routes/articles/$id.index.tsx` | `/articles/<文章 ID>` | 阅读一篇文章 |
+| `routes/mine.tsx` | `/mine` | 我的文章，包括草稿：编辑、发布、删除 |
+| `routes/write.tsx`、`routes/articles/$id.edit.tsx` | | 保存后回到“我的文章” |
+
+首页 `apps/web/src/routes/index.tsx` 只列出已发布的文章，点标题阅读全文：
+
+```tsx title="apps/web/src/routes/index.tsx"
 import { useQuery } from "@tanstack/react-query"
-import type { Article } from "@blog/client/api"
-import { api } from "./client"
+import { createFileRoute, Link } from "@tanstack/react-router"
+import { api } from "../client"
+
+export const Route = createFileRoute("/")({ component: ArticleList })
 
 // ArticleList 是首页：已发布的文章，所有人都能看到。
-export function ArticleList({ onOpen }: { onOpen: (a: Article) => void }) {
+function ArticleList() {
   const articles = useQuery({ queryKey: ["article", "list"], queryFn: () => api.article.list() })
 
   if (articles.isPending) return <p>加载中…</p>
@@ -501,7 +512,9 @@ export function ArticleList({ onOpen }: { onOpen: (a: Article) => void }) {
       {articles.data.items.map((a) => (
         <li key={a.id}>
           <h2>
-            <a onClick={() => onOpen(a)}>{a.title}</a>
+            <Link to="/articles/$id" params={{ id: a.id }}>
+              {a.title}
+            </Link>
           </h2>
           <time>{new Date(a.published_at!).toLocaleDateString()}</time>
           <p>{a.content.slice(0, 120)}</p>
@@ -512,31 +525,44 @@ export function ArticleList({ onOpen }: { onOpen: (a: Article) => void }) {
 }
 ```
 
-接着，新建 `apps/web/src/ArticleView.tsx` 显示一篇文章：
+接着，新建阅读页 `apps/web/src/routes/articles/$id.index.tsx`。文件名中的 `.index` 表示 `/articles/<文章 ID>` 这个地址本身；如果写成 `$id.tsx`，第 5 章的修改页 `$id.edit.tsx` 会成为它的下级页面，显示在它的里面：
 
-```tsx title="apps/web/src/ArticleView.tsx"
-import type { Article } from "@blog/client/api"
+```tsx title="apps/web/src/routes/articles/$id.index.tsx"
+import { useQuery } from "@tanstack/react-query"
+import { createFileRoute } from "@tanstack/react-router"
+import { api } from "../../client"
 
-export function ArticleView({ article }: { article: Article }) {
+export const Route = createFileRoute("/articles/$id/")({ component: ArticleView })
+
+function ArticleView() {
+  const { id } = Route.useParams()
+  const article = useQuery({ queryKey: ["article", id], queryFn: () => api.article.get(id) })
+
+  if (article.isPending) return <p>加载中…</p>
+  if (article.error) return <p className="error">{article.error.message}</p>
   return (
     <article>
-      <h2>{article.title}</h2>
-      {article.published_at && <time>{new Date(article.published_at).toLocaleString()}</time>}
-      <p className="content">{article.content}</p>
+      <h2>{article.data.title}</h2>
+      {article.data.published_at && <time>{new Date(article.data.published_at).toLocaleString()}</time>}
+      <p className="content">{article.data.content}</p>
     </article>
   )
 }
 ```
 
-接着，新建 `apps/web/src/MyArticles.tsx`，作者在这里编辑、发布、删除：
+接着，新建 `apps/web/src/routes/mine.tsx`，作者在这里编辑、发布、删除。它需要登录：
 
-```tsx title="apps/web/src/MyArticles.tsx"
+```tsx title="apps/web/src/routes/mine.tsx"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { createFileRoute, Link } from "@tanstack/react-router"
+import { requireAuth } from "@go-tenon/shell"
 import type { Article } from "@blog/client/api"
-import { api } from "./client"
+import { api } from "../client"
+
+export const Route = createFileRoute("/mine")({ beforeLoad: requireAuth, component: MyArticles })
 
 // MyArticles 是当前作者的全部文章，包括草稿：编辑、发布、删除。
-export function MyArticles({ onEdit }: { onEdit: (a: Article) => void }) {
+function MyArticles() {
   const queryClient = useQueryClient()
   const articles = useQuery({ queryKey: ["article", "mine"], queryFn: () => api.article.mine() })
   // 修改后让所有 ["article", …] 查询失效：我的文章和首页都会重新获取
@@ -553,7 +579,9 @@ export function MyArticles({ onEdit }: { onEdit: (a: Article) => void }) {
         <li key={a.id}>
           <h2>{a.title}</h2>
           <p>{a.published_at ? `发布于 ${new Date(a.published_at).toLocaleString()}` : "草稿"}</p>
-          <button onClick={() => onEdit(a)}>编辑</button>
+          <Link to="/articles/$id/edit" params={{ id: a.id }}>
+            编辑
+          </Link>
           {!a.published_at && <button onClick={() => publish.mutate(a)}>发布</button>}
           <button onClick={() => confirm(`删除“${a.title}”？`) && remove.mutate(a)}>删除</button>
         </li>
@@ -563,61 +591,78 @@ export function MyArticles({ onEdit }: { onEdit: (a: Article) => void }) {
 }
 ```
 
-在 `apps/web/src/App.tsx` 中加上阅读和“我的文章”：
+新写的文章是草稿，不出现在首页。写文章和修改文章的页面，保存后改为回到“我的文章”。把 `apps/web/src/routes/write.tsx` 改成下面这样：
 
-```tsx title="apps/web/src/App.tsx"
-import { useState } from "react"
-import { useMutation } from "@tanstack/react-query"
-import type { Article } from "@blog/client/api"
-import { ArticleEditor } from "./ArticleEditor"
-import { ArticleList } from "./ArticleList"
-import { ArticleView } from "./ArticleView"
-import { api, queryClient } from "./client"
-import { Login } from "./Login"
-import { MyArticles } from "./MyArticles"
-import { useMe } from "./session"
+```tsx title="apps/web/src/routes/write.tsx"
+import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { requireAuth } from "@go-tenon/shell"
+import { ArticleEditor } from "../ArticleEditor"
 
-// 页面上同时只显示一样东西。
-type View =
-  | { name: "home" }
-  | { name: "read"; article: Article }
-  | { name: "mine" }
-  | { name: "edit"; article?: Article }
-  | { name: "login" }
+export const Route = createFileRoute("/write")({ beforeLoad: requireAuth, component: Write })
 
-export function App() {
-  const me = useMe()
-  const [view, setView] = useState<View>({ name: "home" })
-  const logout = useMutation({
-    mutationFn: () => api.auth.logout(),
-    onSettled: () => {
-      api.setAccessToken("")
-      queryClient.setQueryData(["me"], null)
-      setView({ name: "home" })
-    },
-  })
+function Write() {
+  const navigate = useNavigate()
+  return <ArticleEditor onDone={() => navigate({ to: "/mine" })} />
+}
+```
+
+修改页也要改：公开的读取接口现在只返回已发布的文章，草稿读不到。修改页改为从“我的文章”中找到这篇文章，它与 `/mine` 页面共用同一个查询。把 `apps/web/src/routes/articles/$id.edit.tsx` 改成下面这样：
+
+```tsx title="apps/web/src/routes/articles/$id.edit.tsx"
+import { useQuery } from "@tanstack/react-query"
+import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { requireAuth } from "@go-tenon/shell"
+import { ArticleEditor } from "../../ArticleEditor"
+import { api } from "../../client"
+
+export const Route = createFileRoute("/articles/$id/edit")({ beforeLoad: requireAuth, component: EditArticle })
+
+function EditArticle() {
+  const { id } = Route.useParams()
+  const navigate = useNavigate()
+  const mine = useQuery({ queryKey: ["article", "mine"], queryFn: () => api.article.mine() })
+
+  if (mine.isPending) return <p>加载中…</p>
+  if (mine.error) return <p className="error">{mine.error.message}</p>
+  const article = mine.data.items.find((a) => a.id === id)
+  if (!article) return <p className="error">没有找到这篇文章。</p>
+  return <ArticleEditor article={article} onDone={() => navigate({ to: "/mine" })} />
+}
+```
+
+最后，在页头 `apps/web/src/routes/__root.tsx` 中加上“我的文章”：
+
+```tsx title="apps/web/src/routes/__root.tsx"
+import { useMutation, useQuery } from "@tanstack/react-query"
+import { createRootRouteWithContext, Link, Outlet } from "@tanstack/react-router"
+import { type RouterContext, useSignedIn } from "@go-tenon/shell"
+import { api, session } from "../client"
+
+export const Route = createRootRouteWithContext<RouterContext>()({ component: Layout })
+
+function Layout() {
+  const signedIn = useSignedIn()
+  const me = useQuery({ queryKey: ["me"], queryFn: () => api.user.me(), enabled: signedIn })
+  const logout = useMutation({ mutationFn: () => api.auth.logout(), onSettled: () => session.signOut() })
 
   return (
     <main>
       <header>
-        <h1 onClick={() => setView({ name: "home" })}>博客</h1>
-        {me.data && (
+        <h1>
+          <Link to="/">博客</Link>
+        </h1>
+        {signedIn ? (
           <nav>
-            {me.data.name}
-            <button onClick={() => setView({ name: "mine" })}>我的文章</button>
-            <button onClick={() => setView({ name: "edit" })}>写文章</button>
+            <span>{me.data?.name}</span>
+            <Link to="/mine">我的文章</Link>
+            <Link to="/write">写文章</Link>
             <button onClick={() => logout.mutate()}>退出</button>
           </nav>
-        )}
-        {me.data === null && view.name !== "login" && (
-          <button onClick={() => setView({ name: "login" })}>登录</button>
+        ) : (
+          <Link to="/login">登录</Link>
         )}
       </header>
-      {view.name === "home" && <ArticleList onOpen={(article) => setView({ name: "read", article })} />}
-      {view.name === "read" && <ArticleView article={view.article} />}
-      {view.name === "mine" && <MyArticles onEdit={(article) => setView({ name: "edit", article })} />}
-      {view.name === "edit" && <ArticleEditor article={view.article} onDone={() => setView({ name: "mine" })} />}
-      {view.name === "login" && <Login onDone={() => setView({ name: "home" })} />}
+      <Outlet />
     </main>
   )
 }
@@ -670,17 +715,22 @@ header {
   padding: 0.5rem;
 }
 
+a {
+  color: #0b57d0;
+}
+
+h1 a {
+  color: inherit;
+  text-decoration: none;
+}
+
+a + button,
 button + button {
   margin-left: 0.5rem;
 }
 
 .error {
   color: #c00;
-}
-
-h1,
-.articles a {
-  cursor: pointer;
 }
 
 nav {

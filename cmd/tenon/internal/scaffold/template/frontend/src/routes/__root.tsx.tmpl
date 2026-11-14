@@ -1,0 +1,5 @@
+import { createRootRouteWithContext, Outlet } from "@tanstack/react-router"
+import type { RouterContext } from "@go-tenon/shell"
+
+// 根路由：所有页面的外层。页头、导航等写在这里，<Outlet /> 是当前的页面。
+export const Route = createRootRouteWithContext<RouterContext>()({ component: Outlet })

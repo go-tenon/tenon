@@ -58,11 +58,13 @@ blog/
 ├── apps/web/                    前端
 │   ├── frontend.go              把构建好的页面嵌入程序
 │   ├── index.html
-│   ├── package.json             React、TanStack Query、Vite
+│   ├── package.json             React、TanStack Router、TanStack Query、Vite
 │   ├── vite.config.ts
 │   └── src/
-│       ├── App.tsx              页面
-│       └── client.ts            创建调用接口的客户端
+│       ├── main.tsx             渲染应用
+│       ├── app.ts               装配路由和 TanStack Query
+│       ├── client.ts            创建调用接口的客户端
+│       └── routes/              页面，一个文件一个页面
 └── packages/client/src/api/     生成的客户端
 ```
 

@@ -1,11 +1,12 @@
 # 5. 文章页面
 
-上一章的接口已经可以在 `/api/docs` 中调用了，但用户需要的是页面。这一章，我们用 React 和 TanStack Query 写文章列表和编辑器。你会看到，前端调用接口的代码和类型都是生成的。
+上一章的接口已经可以在 `/api/docs` 中调用了，但用户需要的是页面。这一章，我们用 React、TanStack Router 和 TanStack Query 写文章列表和编辑器。你会看到，前端调用接口的代码和类型都是生成的。
 
 - [生成的客户端](#client)
+- [页面与路由](#routes)
 - [文章列表](#list)
 - [编辑器](#editor)
-- [页面](#app)
+- [写文章与修改](#app)
 
 <a id="client"></a>
 ## 生成的客户端
@@ -24,17 +25,58 @@ bun run typecheck
 
 `apps/web/src/client.ts` 创建客户端，模板中已经写好了，接口都在 `/api` 下。
 
+<a id="routes"></a>
+## 页面与路由
+
+前端用 [TanStack Router](https://tanstack.com/router) 基于文件的路由：`apps/web/src/routes` 中一个文件是一个页面，文件名就是地址。这一章有三个页面：
+
+| 文件 | 地址 | 页面 |
+| --- | --- | --- |
+| `routes/index.tsx` | `/` | 文章列表 |
+| `routes/write.tsx` | `/write` | 写文章 |
+| `routes/articles/$id.edit.tsx` | `/articles/<文章 ID>/edit` | 修改文章，`$id` 是路径参数 |
+
+`tenon dev` 运行时，新增或删除页面文件后，路由树 `src/routeTree.gen.ts` 会自动重新生成，不要手动修改它。`bun run typecheck` 也会先重新生成它。
+
+`routes/__root.tsx` 是所有页面的外层，页头写在这里，`<Outlet />` 是当前的页面。把 `apps/web/src/routes/__root.tsx` 改成下面这样：
+
+```tsx title="apps/web/src/routes/__root.tsx"
+import { createRootRouteWithContext, Link, Outlet } from "@tanstack/react-router"
+import type { RouterContext } from "@go-tenon/shell"
+
+export const Route = createRootRouteWithContext<RouterContext>()({ component: Layout })
+
+function Layout() {
+  return (
+    <main>
+      <header>
+        <h1>
+          <Link to="/">博客</Link>
+        </h1>
+        <Link to="/write">写文章</Link>
+      </header>
+      <Outlet />
+    </main>
+  )
+}
+```
+
+`<Link>` 的 `to` 和路径参数都有类型检查：写错地址，或者漏了 `$id`，`bun run typecheck` 会报出来。
+
 <a id="list"></a>
 ## 文章列表
 
-页面用 [TanStack Query](https://tanstack.com/query) 调用接口：`useQuery` 读取数据，负责加载状态、缓存和重新获取；`useMutation` 修改数据。新建 `apps/web/src/ArticleList.tsx`：
+页面用 [TanStack Query](https://tanstack.com/query) 调用接口：`useQuery` 读取数据，负责加载状态、缓存和重新获取；`useMutation` 修改数据。把首页 `apps/web/src/routes/index.tsx` 改成文章列表：
 
-```tsx title="apps/web/src/ArticleList.tsx"
+```tsx title="apps/web/src/routes/index.tsx"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { createFileRoute, Link } from "@tanstack/react-router"
 import type { Article } from "@blog/client/api"
-import { api } from "./client"
+import { api } from "../client"
 
-export function ArticleList({ onEdit }: { onEdit: (a: Article) => void }) {
+export const Route = createFileRoute("/")({ component: ArticleList })
+
+function ArticleList() {
   const queryClient = useQueryClient()
   const articles = useQuery({ queryKey: ["article", "list"], queryFn: () => api.article.list() })
   const remove = useMutation({
@@ -51,7 +93,9 @@ export function ArticleList({ onEdit }: { onEdit: (a: Article) => void }) {
         <li key={a.id}>
           <h2>{a.title}</h2>
           <p>{a.content.slice(0, 120)}</p>
-          <button onClick={() => onEdit(a)}>编辑</button>
+          <Link to="/articles/$id/edit" params={{ id: a.id }}>
+            编辑
+          </Link>
           <button onClick={() => confirm(`删除“${a.title}”？`) && remove.mutate(a)}>删除</button>
         </li>
       ))}
@@ -65,7 +109,7 @@ export function ArticleList({ onEdit }: { onEdit: (a: Article) => void }) {
 <a id="editor"></a>
 ## 编辑器
 
-让我们新建 `apps/web/src/ArticleEditor.tsx`，新建和修改文章共用它：
+写文章和修改文章共用一个编辑器。它不是页面，放在 `routes` 之外；保存或取消后去哪里，由使用它的页面决定。让我们新建 `apps/web/src/ArticleEditor.tsx`：
 
 ```tsx title="apps/web/src/ArticleEditor.tsx"
 import { useState, type FormEvent } from "react"
@@ -73,6 +117,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { isApiError, type Article, type ArticleChanges } from "@blog/client/api"
 import { api } from "./client"
 
+// ArticleEditor 编辑 article；没有 article 时写一篇新文章。保存或取消后调用 onDone。
 export function ArticleEditor({ article, onDone }: { article?: Article; onDone: () => void }) {
   const queryClient = useQueryClient()
   const [changes, setChanges] = useState<ArticleChanges>({
@@ -135,34 +180,46 @@ export function ArticleEditor({ article, onDone }: { article?: Article; onDone: 
 提示都来自服务端，校验规则只写在服务端。
 
 <a id="app"></a>
-## 页面
+## 写文章与修改
 
-现在，把 `apps/web/src/App.tsx` 改成下面这样，在列表和编辑器之间切换：
+现在加上两个页面。新建 `apps/web/src/routes/write.tsx`，地址是 `/write`：
 
-```tsx title="apps/web/src/App.tsx"
-import { useState } from "react"
-import type { Article } from "@blog/client/api"
-import { ArticleEditor } from "./ArticleEditor"
-import { ArticleList } from "./ArticleList"
+```tsx title="apps/web/src/routes/write.tsx"
+import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { ArticleEditor } from "../ArticleEditor"
 
-export function App() {
-  // 正在编辑的文章："new" 是新文章，null 表示显示列表
-  const [editing, setEditing] = useState<Article | "new" | null>(null)
-  return (
-    <main>
-      <header>
-        <h1>博客</h1>
-        {editing === null && <button onClick={() => setEditing("new")}>写文章</button>}
-      </header>
-      {editing === null ? (
-        <ArticleList onEdit={setEditing} />
-      ) : (
-        <ArticleEditor article={editing === "new" ? undefined : editing} onDone={() => setEditing(null)} />
-      )}
-    </main>
-  )
+export const Route = createFileRoute("/write")({ component: Write })
+
+function Write() {
+  const navigate = useNavigate()
+  return <ArticleEditor onDone={() => navigate({ to: "/" })} />
 }
 ```
+
+`useNavigate` 返回跳转的函数：保存或取消后回到首页。
+
+修改文章的页面先按地址中的 `$id` 读取文章，再交给编辑器。新建 `apps/web/src/routes/articles/$id.edit.tsx`：
+
+```tsx title="apps/web/src/routes/articles/$id.edit.tsx"
+import { useQuery } from "@tanstack/react-query"
+import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { ArticleEditor } from "../../ArticleEditor"
+import { api } from "../../client"
+
+export const Route = createFileRoute("/articles/$id/edit")({ component: EditArticle })
+
+function EditArticle() {
+  const { id } = Route.useParams()
+  const navigate = useNavigate()
+  const article = useQuery({ queryKey: ["article", id], queryFn: () => api.article.get(id) })
+
+  if (article.isPending) return <p>加载中…</p>
+  if (article.error) return <p className="error">{article.error.message}</p>
+  return <ArticleEditor article={article.data} onDone={() => navigate({ to: "/" })} />
+}
+```
+
+`Route.useParams()` 读出路径参数，类型由文件名推导出来。每个页面有自己的地址：刷新页面、浏览器的前进后退、把地址发给别人，都会回到同一个页面。
 
 再换一份样式 `apps/web/src/app.css`：
 
@@ -198,6 +255,16 @@ header {
   border-bottom: 1px solid #eee;
 }
 
+a {
+  color: #0b57d0;
+  cursor: pointer;
+}
+
+h1 a {
+  color: inherit;
+  text-decoration: none;
+}
+
 .editor label {
   display: block;
   margin: 0.75rem 0 0.25rem;
@@ -211,7 +278,9 @@ header {
   padding: 0.5rem;
 }
 
-button + button {
+a + button,
+button + button,
+nav > * + * {
   margin-left: 0.5rem;
 }
 
@@ -224,4 +293,4 @@ button + button {
 
 现在博客有了可以使用的页面，但谁都可以写文章、删文章。下一章，我们加上作者登录。
 
-深入了解：[客户端代码](../responses/clients.md)、[单页应用](../responses/spa.md)。
+深入了解：[客户端代码](../responses/clients.md)、[单页应用](../responses/spa.md)、[应用骨架](../responses/app-shell.md)。

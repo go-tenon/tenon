@@ -96,17 +96,17 @@ go get -tool github.com/go-tenon/tenon/cmd/tenon
 
 ```json
 {
-  "workspaces": [".tenon/js/client", "apps/web", "packages/client"]
+  "workspaces": [".tenon/js/client", ".tenon/js/shell", "apps/web", "packages/client"]
 }
 ```
 
 ```json
 {
-  "dependencies": { "@go-tenon/client": "workspace:*" }
+  "dependencies": { "@go-tenon/client": "workspace:*", "@go-tenon/shell": "workspace:*" }
 }
 ```
 
-`.tenon` 不提交到版本库。升级框架（`go get github.com/go-tenon/tenon@<版本>`）后，下一次 `tenon dev` 复制新版本的包，包的 `package.json` 变了时重新 `bun install`。框架被 `replace` 到本地目录时复制本地的代码，修改框架的前端包后重新运行 `tenon dev` 即可。刚 clone 的项目先运行一次 `tenon dev`、`build` 或 `generate`，再单独运行 `bun install`。
+`.tenon` 不提交到版本库。升级框架（`go get github.com/go-tenon/tenon@<版本>`）后，下一次 `tenon dev` 复制新版本的包，包的 `package.json` 变了，或者包的依赖还没有安装（例如刚 clone 的项目）时，`dev`、`generate` 自动运行 `bun install`，`build` 总是运行它。每个包自己的 `node_modules` 是 Bun 链接的依赖，复制时保留。框架被 `replace` 到本地目录时复制本地的代码，修改框架的前端包后重新运行 `tenon dev` 即可。
 
 <a id="init"></a>
 ## tenon init

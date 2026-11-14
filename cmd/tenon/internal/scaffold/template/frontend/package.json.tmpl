@@ -5,16 +5,20 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsr generate && tsc --noEmit"
   },
   "dependencies": {
     "@go-tenon/client": "workspace:*",
+    "@go-tenon/shell": "workspace:*",
     "@[[.Scope]]/client": "workspace:*",
-    "@tanstack/react-query": "^5.85.0",
+    "@tanstack/react-query": "^5.105.0",
+    "@tanstack/react-router": "^1.170.46",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
+    "@tanstack/router-cli": "^1.167.46",
+    "@tanstack/router-plugin": "^1.168.48",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^5.0.0",
