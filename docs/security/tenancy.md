@@ -160,7 +160,7 @@ func (a *Create) Handle(ctx context.Context, subject identity.Subject, c Changes
 
 - `Handle` 和模块内的查询函数总是接收 `identity.Subject`，不单独接收租户 ID；
 - 按 ID 查询时也带上 `tenant_id`，不要先按 ID 查出来再比较；
-- 为每个 action 写一个“其他租户访问不到”的测试，例如用租户 B 的主体读取租户 A 的文章，期望 `404`，见[测试 action](../testing/overview.md#testing-actions)；
+- 为每个 action 写一个“其他租户访问不到”的测试，例如用租户 B 的主体读取租户 A 的文章，期望 `404`，见[测试 action](../testing/database.md#testing-actions)；
 - 使用 PostgreSQL 时，可以再加上[行级安全策略](https://www.postgresql.org/docs/current/ddl-rowsecurity.html)作为兜底：在事务开始时 `SET LOCAL app.tenant_id`，由策略限制每个查询只能看到这个租户的行。
 
 <a id="background-work"></a>

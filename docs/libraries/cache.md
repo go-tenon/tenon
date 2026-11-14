@@ -239,7 +239,7 @@ func newTestCache(t *testing.T) *cachex.Cache[*article.Article] {
 get := article.NewGet(db, newTestCache(t))
 ```
 
-数据库仍使用 [dbtest](../testing/overview.md#database-tests)。合并加载、抖动和降级由框架测试，应用值得覆盖的是自己的规则：
+数据库仍使用 [dbtest](../testing/database.md#database-tests)。合并加载、抖动和降级由框架测试，应用值得覆盖的是自己的规则：
 
 - 第一次读取查询数据库并写入缓存，第二次命中缓存；
 - 发布文章后缓存被删除，再次读取得到新状态；

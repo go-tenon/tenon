@@ -202,7 +202,7 @@ n, err := store.Prune(ctx)
 <a id="testing"></a>
 ## 测试
 
-在[测试数据库](../testing/overview.md#database-tests)上使用真实的 `Store`，需要开启时调用 `Set`：
+在[测试数据库](../testing/database.md#database-tests)上使用真实的 `Store`，需要开启时调用 `Set`：
 
 ```go
 func TestEditWithNewEditor(t *testing.T) {

@@ -233,7 +233,7 @@ Tenon 还为你生成了接口文档。在浏览器中打开 `http://localhost:8
 <a id="next-steps"></a>
 ## 下一步
 
-现在你已经有了一个可以运行的应用，接下来可以根据需要逐步加入更多能力：
+现在你已经有了一个可以运行的应用。跟着[入门教程](../tutorial/README.md)从 `tenon init` 做出一个完整的博客，或者按需加入更多能力：
 
 - 用[数据库](../database/quick-start.md)连接 PostgreSQL，把示例中的内存存储换成数据表，用[迁移](../database/migrations.md)管理表结构；
 - 用[配置](../general/configuration.md)把监听地址、日志级别等参数放进 YAML 文件；

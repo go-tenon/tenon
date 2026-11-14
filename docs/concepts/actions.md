@@ -366,7 +366,7 @@ article.Commands(a.db, onPublished)
 
 `article.Register` 和 `article.Commands` 各多一个参数，用来构造 `Publish`。这里的钩子没有依赖，所以是一个变量；钩子需要依赖时，在 `open` 中构造这个列表，保存在 `App` 中。
 
-测试 `Publish` 时不传钩子，或者传一个记录调用的函数；测试 `points.ArticlePublished` 时，在测试事务中直接调用它，见[测试](../testing/overview.md#testing-actions)。
+测试 `Publish` 时不传钩子，或者传一个记录调用的函数；测试 `points.ArticlePublished` 时，在测试事务中直接调用它，见[测试](../testing/database.md#testing-actions)。
 
 <a id="what-hooks-do"></a>
 ### 钩子里做什么
@@ -404,6 +404,6 @@ article.Commands(a.db, onPublished)
 - **构造函数只保存依赖**。生成 OpenAPI 文档、[查看路由](../http/routing.md#listing-routes)和[声明命令](#as-commands)时，动作会被构造，但传入的依赖都是零值，方法不会被调用。
 - **字段只保存依赖**。动作被并发调用，请求数据只放在参数和局部变量中。
 - **`Handle` 是唯一的业务入口**。入口方法只做转换：读取参数和主体、调用 `Handle`、转换结果和错误。入口方法按来源命名：`HTTP`、`Job`、`Command`。
-- **测试 `Handle`**。业务规则直接调用 `Handle` 测试，入口的认证和验证通过 HTTP 测试覆盖，见[测试](../testing/overview.md#testing-actions)。
+- **测试 `Handle`**。业务规则直接调用 `Handle` 测试，入口的认证和验证通过 HTTP 测试覆盖，见[测试](../testing/database.md#testing-actions)。
 
 这些是推荐的约定，框架不检查它们。简单的接口可以直接用函数作为处理器，见[基本路由](../http/routing.md#basic-routing)。

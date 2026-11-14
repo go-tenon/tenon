@@ -18,7 +18,6 @@ type docFile struct {
 
 // blogFiles 是要编译的完整文件。其余的包在 testdata/blog 中只声明用到的部分。
 var blogFiles = []docFile{
-	{"internal/bootstrap/seed.go", "database/migrations.md"},
 	{"internal/auth/auth.go", "security/authentication.md"},
 	{"internal/auth/permissions.go", "security/authorization.md"},
 	{"internal/mailjob/mailjob.go", "libraries/queue.md"},
@@ -35,8 +34,6 @@ var blogFiles = []docFile{
 	{"internal/article/search.go", "features/search.md"},
 	{"internal/article/tools.go", "ai/mcp.md"},
 	{"internal/attachment/vector.go", "ai/vector.md"},
-	{"internal/article/article_test.go", "testing/overview.md"},
-	{"internal/article/commands_test.go", "testing/overview.md"},
 	{"internal/editor/editor.go", "security/account-examples.md"},
 	{"internal/reader/reader.go", "security/account-examples.md"},
 	{"internal/accounts/accounts.go", "security/account-examples.md"},

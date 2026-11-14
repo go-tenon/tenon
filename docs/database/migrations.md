@@ -1,6 +1,8 @@
 # 数据库：迁移
 
-- [简介](#introduction)
+迁移是数据库的版本控制：记录表结构的每一次变化，让每个开发者和部署环境都能升级到相同的结构。Tenon 用 [goose](https://github.com/pressly/goose) 管理迁移。迁移是应用目录中的普通 SQL 文件，嵌入二进制，在发布时通过命令显式执行——服务启动时**不会**自动执行迁移。
+
+- [示例用法](#introduction)
 - [编写迁移](#writing-migrations)
     - [迁移文件结构](#migration-structure)
 - [嵌入迁移文件](#embedding-migrations)
@@ -13,13 +15,28 @@
     - [在 CI 中检查](#checking-in-ci)
     - [零停机变更](#zero-downtime-changes)
 - [非事务迁移失败后的恢复](#recovering-non-transactional-migrations)
+- [API 参考](#api-reference)
 
 <a id="introduction"></a>
-## 简介
+## 示例用法
 
-迁移就像是数据库的版本控制：它记录了表结构的每一次变化，让团队成员和每个部署环境都能把数据库升级到相同的结构。
+```bash
+go run ./cmd/api migrate make create_articles_table   # 新建 migrations/20261113080000_create_articles_table.sql
+go run ./cmd/api migrate up                            # 执行全部未执行的迁移
+go run ./cmd/api migrate status
+```
 
-Tenon 使用 [goose](https://github.com/pressly/goose) 管理迁移。迁移是应用目录中的普通 SQL 文件，它们会被嵌入到二进制中，在发布时通过命令显式执行——API 服务启动时**不会**自动执行迁移。
+```sql
+-- +goose Up
+CREATE TABLE articles (
+    id    uuid PRIMARY KEY,
+    title text NOT NULL,
+    slug  text NOT NULL UNIQUE
+);
+
+-- +goose Down
+DROP TABLE articles;
+```
 
 <a id="writing-migrations"></a>
 ## 编写迁移
@@ -183,23 +200,9 @@ err = migrate.Up(ctx, provider)
 - **每个环境都必须有的数据**，例如角色或分类，写进迁移的 `Up` 部分。它们和表结构一起受版本控制，在每个环境中只执行一次。
 - **只在开发和演示时需要的数据**，例如几篇示例文章，写成一个应用自己的 `seed` 命令。
 
-下面是博客应用的 `internal/bootstrap/seed.go`，它以 alice 的身份创建并发布两篇文章。`db` 由 [bootstrap.Commands](../concepts/actions.md#as-commands) 在命令执行时装配：
+下面的 `seed` 命令以 alice 的身份创建并发布两篇文章。它用 `command.Bind` 声明，`db` 在命令执行时才打开，见[只在执行时装配的命令](../concepts/dependencies.md#deferred-commands)：
 
 ```go
-package bootstrap
-
-import (
-    "errors"
-
-    "github.com/spf13/cobra"
-    "github.com/uptrace/bun"
-
-    "example.com/blog/internal/article"
-    "example.com/blog/internal/user"
-    "github.com/go-tenon/tenon/command"
-    "github.com/go-tenon/tenon/identity"
-)
-
 func seed(db *bun.DB) *cobra.Command {
     return &cobra.Command{
         Use:   "seed",
@@ -229,16 +232,16 @@ func seed(db *bun.DB) *cobra.Command {
 }
 ```
 
-示例数据通过 [action](../concepts/actions.md) 写入，而不是直接插入表中，这样它们和真实请求创建的数据经过相同的验证与规则，表结构变化时也不需要单独维护。slug 的唯一约束让命令可以重复执行：已经存在的文章会被跳过。
+示例数据通过[业务动作](../concepts/actions.md)写入，而不是直接插入表中，这样它们和真实请求创建的数据经过相同的验证与规则，表结构变化时也不需要单独维护。slug 的唯一约束让命令可以重复执行：已经存在的文章会被跳过。
 
-`seed` 不是某一个 action 的入口，它组合了 `Create` 和 `Publish` 两个动作，直接调用它们的 `Handle`。在本地准备数据库：
+`seed` 不是某一个动作的入口，它组合了 `Create` 和 `Publish` 两个动作，直接调用它们的 `Handle`。在本地准备数据库：
 
 ```bash
 go run ./cmd/api migrate up
 go run ./cmd/api seed
 ```
 
-`seed` 只用于开发环境，不要把它加入部署流程。需要大量随机数据时，可以用 [gofakeit](https://github.com/brianvoe/gofakeit) 生成 `article.Changes`。测试不依赖这些数据，每个测试在自己的数据库中准备数据，见[测试 action](../testing/overview.md#testing-actions)。
+`seed` 只用于开发环境，不要把它加入部署流程。需要大量随机数据时，可以用 [gofakeit](https://github.com/brianvoe/gofakeit) 生成 `article.Changes`。测试不依赖这些数据，每个测试在自己的数据库中准备数据，见[测试业务动作](../testing/database.md#testing-actions)。
 
 <a id="published-migrations"></a>
 ## 修改已发布的迁移
@@ -282,3 +285,47 @@ err := migrate.CheckPublished("migrations", "baseline/migrations")
 3. 确认数据库处于迁移前或迁移后的一致状态后，再重新执行迁移。
 
 为了降低风险，建议每个非事务迁移只包含一条语句。
+
+<a id="api-reference"></a>
+## API 参考
+
+命令见[migrate 命令](../general/commands.md#migrate-command)。包 `github.com/go-tenon/tenon/database/migrate`：
+
+### NewProvider、Up
+
+```go
+func NewProvider(db *bun.DB, fsys fs.FS) (*goose.Provider, error)
+func Up(ctx context.Context, p *goose.Provider) error
+```
+
+用嵌入的迁移文件创建 goose 的 Provider；`Up` 执行全部未执行的迁移。用法见[在代码中执行迁移](#creating-a-provider)。
+
+### Create
+
+```go
+func Create(dir, name string) (string, error)
+```
+
+在 `dir` 中新建以时间戳开头的迁移文件，返回路径。`migrate make` 调用它。
+
+### Source、Publish
+
+```go
+type Source struct {
+    Name string
+    FS   fs.FS
+}
+
+func Publish(dir string, sources ...Source) ([]string, error)
+```
+
+把功能包自带的迁移复制到应用的 `dir` 中，只复制尚未发布的来源，返回新写入的文件。见[发布框架迁移](#publishing-framework-migrations)。
+
+### CheckPublished、CheckFS
+
+```go
+func CheckPublished(dir, baseline string) error
+func CheckFS(live, baseline fs.FS) error
+```
+
+比较当前的迁移和基线（例如主分支上的版本），已经发布的迁移被修改或删除时返回错误。见[在 CI 中检查](#checking-in-ci)。

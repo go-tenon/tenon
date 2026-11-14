@@ -236,7 +236,7 @@ stack.MustAdd("redis", func(context.Context) error {
 <a id="replacing-dependencies-in-tests"></a>
 ## 在测试中替换依赖
 
-大多数测试直接使用真实的依赖，例如用 `dbtest` 创建一个真实的测试数据库，见[测试](../testing/overview.md#database-tests)。
+大多数测试直接使用真实的依赖，例如用 `dbtest` 创建一个真实的测试数据库，见[测试](../testing/database.md#database-tests)。
 
 确实需要替换一个依赖时（例如对象存储），由使用方定义一个只包含所需方法的小接口，构造函数接收这个接口：
 

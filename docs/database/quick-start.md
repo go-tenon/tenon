@@ -1,6 +1,8 @@
 # 数据库：快速入门
 
-- [简介](#introduction)
+Tenon 只支持 PostgreSQL，使用 [pgx](https://github.com/jackc/pgx) 驱动和 [Bun](https://bun.uptrace.dev) 构建查询，迁移用 [goose](https://github.com/pressly/goose)，见[迁移](migrations.md)。`database` 包打开一个配置好的连接池（[pgxpool](https://pkg.go.dev/github.com/jackc/pgx/v5/pgxpool)），返回原生的 `*bun.DB`；查询、事务都直接用 Bun 的 API，见 [Bun 文档](https://bun.uptrace.dev/guide/)。`database` 另外提供事务提交后的回调、约束错误的判断和慢查询日志。
+
+- [示例用法](#introduction)
 - [配置](#configuration)
     - [连接用满时](#pool-exhaustion)
 - [连接数据库](#connecting)
@@ -18,17 +20,39 @@
 - [只读副本](#read-replicas)
 - [多个数据库](#multiple-databases)
 - [测试](#testing)
+- [API 参考](#api-reference)
 
 <a id="introduction"></a>
-## 简介
+## 示例用法
 
-几乎每个 API 都需要与数据库交互。Tenon 只支持 PostgreSQL，并使用以下组件：
+```go
+db, err := database.Open(ctx, cfg.Database)
+if err != nil {
+    return err
+}
+defer db.Close()
 
-- [pgx](https://github.com/jackc/pgx)：PostgreSQL 驱动；
-- [Bun](https://bun.uptrace.dev)：SQL 优先的 Go ORM，负责查询构建和模型映射；
-- [goose](https://github.com/pressly/goose)：数据库迁移，见[迁移](migrations.md)。
+var items []Article
+err = db.NewSelect().Model(&items).
+    Where("status = ?", "published").
+    OrderExpr("published_at DESC").
+    Limit(20).
+    Scan(ctx)
+```
 
-`database` 包负责打开一个配置好的连接池（[pgxpool](https://pkg.go.dev/github.com/jackc/pgx/v5/pgxpool)），返回原生的 `*bun.DB`。之后的查询、事务等操作都直接使用 Bun 的 API，你可以随时参考 [Bun 官方文档](https://bun.uptrace.dev/guide/)。
+在事务中修改，提交之后再做不能回滚的事：
+
+```go
+err := database.RunInTx(ctx, db, nil, func(ctx context.Context, tx database.Tx) error {
+    if _, err := tx.NewUpdate().Model(item).Column("status").WherePK().Exec(ctx); err != nil {
+        return err
+    }
+    tx.AfterCommit(func(ctx context.Context) error {
+        return hub.Publish(ctx, "articles", data)
+    })
+    return nil
+})
+```
 
 <a id="configuration"></a>
 ## 配置
@@ -111,7 +135,7 @@ func Check(ctx context.Context, dsn string) error {
 
 连接池参数为 `0` 时使用默认值，所以 `database.Config{DSN: dsn}` 也能直接打开。为 `ctx` 设置一个截止时间，可以避免数据库不可达时启动过程无限等待。
 
-在应用中，连接池应当在入口打开**一次**，然后传给所有需要它的 [action](../concepts/actions.md)，在应用退出时关闭，见[依赖装配](../concepts/dependencies.md)。报告每条语句的耗时指标和链路用 `database.WithTelemetry`，见[可观测性](../general/telemetry.md#database)。
+在应用中，连接池在入口打开**一次**，传给所有需要它的[业务动作](../concepts/actions.md)，在应用退出时关闭，见[依赖装配](../concepts/dependencies.md)。报告每条语句的耗时指标和链路用 `database.WithTelemetry`，见[可观测性](../general/telemetry.md#database)。
 
 <a id="slow-queries"></a>
 ### 慢查询
@@ -127,7 +151,7 @@ WARN slow query component=database duration=1.284s db.operation.name=SELECT db.c
 <a id="defining-models"></a>
 ## 定义模型
 
-模型是一个带有 `bun` 标签的普通 Go 结构体，描述数据表的列与字段之间的映射。本文档以一个博客的文章为例：
+模型是一个带有 `bun` 标签的普通 Go 结构体，描述数据表的列与字段之间的映射，例如文章：
 
 ```go
 package article
@@ -177,18 +201,9 @@ item := &Article{ID: uuid.Must(uuid.NewV7()), AuthorID: subject.ID}
 
 如果你希望创建、修改记录时自动维护时间戳，可以在模型上实现 Bun 的 [`BeforeAppendModel`](https://bun.uptrace.dev/guide/hooks.html#beforeappendmodel) 钩子。Bun 会在构建插入或更新语句前调用它，无需在 `database.Open` 中注册。
 
-在 `article` 包中新增 `model_hooks.go`，为上面的 `Article` 实现钩子：
+为上面的 `Article` 实现钩子：
 
 ```go
-package article
-
-import (
-    "context"
-    "time"
-
-    "github.com/uptrace/bun"
-)
-
 var _ bun.BeforeAppendModelHook = (*Article)(nil)
 
 func (a *Article) BeforeAppendModel(ctx context.Context, query bun.Query) error {
@@ -263,7 +278,7 @@ CREATE UNIQUE INDEX articles_slug_key ON articles (slug) WHERE deleted_at IS NUL
 <a id="running-queries"></a>
 ## 执行查询
 
-在 action 中，使用注入的 `db` 构建查询：
+在业务动作中，用构造函数传入的 `db` 构建查询：
 
 ```go
 var item Article
@@ -324,7 +339,7 @@ err := database.RunInTx(ctx, db, nil, func(ctx context.Context, tx database.Tx) 
 <a id="after-commit"></a>
 ### 提交后执行
 
-广播事件、删除缓存、调用外部服务这类操作不能随事务回滚，应当在事务提交之后执行：提前广播，浏览器可能收到一条随后被回滚的通知；提前删除缓存，并发的读请求会把还没提交的旧数据重新写进缓存。在事务中用 `tx.AfterCommit` 登记它们。下面在[发布文章](../concepts/actions.md#writing-actions)的事务中登记一次[广播](../libraries/broadcasting.md#publishing-events)，`a.hub` 由 action 的构造函数传入：
+广播事件、删除缓存、调用外部服务这类操作不能随事务回滚，应当在事务提交之后执行：提前广播，浏览器可能收到一条随后被回滚的通知；提前删除缓存，并发的读请求会把还没提交的旧数据重新写进缓存。在事务中用 `tx.AfterCommit` 登记它们。下面在[发布文章](../concepts/actions.md#writing-actions)的事务中登记一次[广播](../libraries/broadcasting.md#publishing-events)，`a.hub` 由构造函数传入：
 
 ```go
 err := database.RunInTx(ctx, a.db, nil, func(ctx context.Context, tx database.Tx) error {
@@ -366,7 +381,7 @@ for attempt := 1; ; attempt++ {
 <a id="constraint-errors"></a>
 ## 处理约束错误
 
-数据库约束是保证数据一致性的最后一道防线。当插入的数据违反唯一约束时，例如两篇文章使用了相同的 slug，你通常希望返回一个 `409 Conflict`，而不是 `500`。下面是“创建文章”的 `Create` action 的 `Handle`，`articles_slug_key` 是[迁移](migrations.md#migration-structure)中定义的唯一约束：
+数据库约束是保证数据一致性的最后一道防线。当插入的数据违反唯一约束时，例如两篇文章使用了相同的 slug，你通常希望返回一个 `409 Conflict`，而不是 `500`。下面是“创建文章”的 `Handle`，`articles_slug_key` 是[迁移](migrations.md#migration-structure)中定义的唯一约束：
 
 ```go
 func (a *Create) Handle(ctx context.Context, subject identity.Subject, c Changes) (*Article, error) {
@@ -411,7 +426,7 @@ replica, err := database.Open(ctx, cfg.Replica, database.Name("replica"), databa
 
 `ReadOnly` 让副本的会话默认只读：误把写操作交给它时，立即得到 `database.IsReadOnly` 能识别的错误。`Name` 是连接池指标中的名字，区分主库和副本。有多个副本时，在它们前面放一个负载均衡（云数据库的只读地址、HAProxy 等），`replica.dsn` 指向它。
 
-哪些读取交给副本，由 action 在构造函数中声明。文章列表能容忍几百毫秒的复制延迟，交给副本；发布文章要在事务中读取并修改，用主库：
+哪些读取交给副本，由业务动作在构造函数中声明。文章列表能容忍几百毫秒的复制延迟，交给副本；发布文章要在事务中读取并修改，用主库：
 
 ```go
 list := article.NewList(a.replica)
@@ -430,7 +445,7 @@ publish := article.NewPublish(a.db, a.emails)
 <a id="multiple-databases"></a>
 ## 多个数据库
 
-按模块拆分的数据库，例如把埋点事件放进单独的分析库，同样是一个连接池。在配置中加一段，在入口打开，传给这个模块的 action：
+按模块拆分的数据库，例如把埋点事件放进单独的分析库，同样是一个连接池。在配置中加一段，在入口打开，传给这个模块的业务动作：
 
 ```yaml
 analytics:
@@ -461,4 +476,71 @@ mig.AddCommand(migratecmd.New(analyticsmigrations.FS, func(c Config) database.Co
 <a id="testing"></a>
 ## 测试
 
-`database/dbtest` 包可以为每个测试创建一个独立的真实数据库，执行迁移后交给测试使用，测试结束时自动删除。详见[测试](../testing/overview.md#database-tests)。
+`database/dbtest` 包可以为每个测试创建一个独立的真实数据库，执行迁移后交给测试使用，测试结束时自动删除。详见[测试](../testing/database.md#database-tests)。
+
+<a id="api-reference"></a>
+## API 参考
+
+包 `github.com/go-tenon/tenon/database`。
+
+### Open
+
+```go
+func Open(ctx context.Context, cfg Config, opts ...Option) (*bun.DB, error)
+```
+
+创建连接池并 Ping，失败时关闭已打开的资源，Ping 失败返回 `ErrUnavailable`。
+
+### Option
+
+```go
+func WithTelemetry(mp metric.MeterProvider, tp trace.TracerProvider) Option
+func WithLogger(l *slog.Logger) Option
+func Name(name string) Option
+func ReadOnly() Option
+```
+
+`WithTelemetry` 报告每条语句的指标和链路；`WithLogger` 指定慢查询的日志器；`Name` 是连接池在指标中的名称，默认 `primary`；`ReadOnly` 让会话默认只读，用于[只读副本](#read-replicas)。
+
+### Config、DefaultConfig
+
+```go
+func DefaultConfig() Config
+```
+
+字段见[配置](#configuration)。
+
+### RunInTx
+
+```go
+func RunInTx(ctx context.Context, db bun.IDB, opts *sql.TxOptions, fn func(ctx context.Context, tx Tx) error) error
+```
+
+在事务中执行 `fn`：返回错误时回滚，返回 `nil` 时提交，然后执行 `AfterCommit` 登记的回调。`db` 是外层 `RunInTx` 的 `Tx` 时以保存点执行，回调等外层事务提交后才执行，此时 `opts` 必须为 `nil`。
+
+### Tx.AfterCommit
+
+```go
+func (tx Tx) AfterCommit(fn func(ctx context.Context) error)
+```
+
+登记提交后执行的回调。事务回滚时丢弃；回调返回的错误记录为 Error 日志，不影响已经提交的事务。
+
+### 约束错误
+
+```go
+func IsUniqueViolation(err error, constraints ...string) bool
+func IsForeignKeyViolation(err error) bool
+func IsCheckViolation(err error) bool
+func IsDeadlock(err error) bool
+func IsReadOnly(err error) bool
+```
+
+判断 PostgreSQL 返回的错误。`IsUniqueViolation` 传入约束名时只匹配这些约束。
+
+### 错误
+
+| 错误 | 分类 | 何时返回 |
+| --- | --- | --- |
+| `ErrUnavailable` | `Unavailable` | `Open` 时连不上数据库 |
+| `ErrBusy` | `Unavailable` | 取连接超过 [`acquire` 的时限](#pool-exhaustion) |
