@@ -224,7 +224,13 @@ func RegisterSSE[I any](api *API, op huma.Operation, events map[string]any, hand
 func SSE(fn func(s *httpx.Stream) error) *huma.StreamResponse
 ```
 
-`RegisterSSE` 登记以 `text/event-stream` 响应的接口；处理器返回 `SSE(fn)` 后开始推送，`fn` 返回时连接结束。
+- **参数**
+    - `api`、`op`：与 `rest.Register` 相同
+    - `events`：事件名到事件数据类型的映射，用于生成 OpenAPI 文档和客户端
+    - `handler`：处理器，检查完请求后返回 `rest.SSE(fn)`
+- **返回**：`SSE` 返回交给 Huma 的流式响应
+
+处理器返回 `SSE(fn)` 之后开始推送，`fn` 返回时连接结束。在此之前返回的错误照常转换为错误响应。
 
 ### httpx.Stream
 

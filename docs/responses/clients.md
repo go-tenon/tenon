@@ -1,6 +1,6 @@
 # 客户端代码
 
-前端、App 和其他服务调用 JSON API 时，请求和响应的类型不需要手写。`client` 命令从路由声明直接生成 TypeScript 和 Go 客户端：函数按 operationId 分组，类型和服务端一致，业务错误码是常量。其他语言用 [openapi 命令](../general/commands.md#openapi-command)导出的 OpenAPI 文档生成。
+前端、App 和其他服务调用你的 JSON API 时，请求和响应的类型不需要再手写一遍。手写的类型迟早会和服务端不一致：服务端加了一个字段，前端不知道；服务端改了一个字段名，前端要到运行时才发现。Tenon 的 `client` 命令从路由声明直接生成 TypeScript 和 Go 客户端：函数按 operationId 分组，类型和服务端一致，业务错误码是常量。其他语言用 [openapi 命令](../general/commands.md#openapi-command)导出的 OpenAPI 文档生成。
 
 - [示例用法](#introduction)
 - [生成的名称](#generated-names)

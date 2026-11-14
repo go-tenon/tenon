@@ -1,6 +1,8 @@
 # 响应
 
-和[请求](../http/requests.md)一样，响应由一个 Go 结构体描述，称为**输出类型**：`Body` 字段是 JSON 响应体，带 `header` 标签的字段是响应头，`Status` 字段决定状态码。处理器返回输出和 `nil` 错误即成功，返回错误时由框架转换为[统一的错误响应](../general/errors.md)。列表接口用 `page` 包分页。
+和[请求](../http/requests.md)一样，响应也由一个 Go 结构体描述，称为**输出类型**：`Body` 字段是 JSON 响应体，带 `header` 标签的字段是响应头，`Status` 字段决定状态码。处理器成功时返回输出和 `nil` 错误；失败时返回错误，框架会把它转换为[统一的错误响应](../general/errors.md)。
+
+本页先介绍怎样返回一个对象，再介绍列表接口最常用的分页、筛选和排序。
 
 - [示例用法](#creating-responses)
     - [JSON 响应](#json-responses)
@@ -358,7 +360,13 @@ func (o Offset[T]) LastPage() int
 func (o Offset[T]) Links(onEachSide int) []int
 ```
 
-固定分页的响应体，`items` 为空时编码为 `[]`。`LastPage` 和 `Links` 用于渲染页码导航。
+- **参数**（`NewOffset`）
+    - `items`：当前页的数据
+    - `p`：请求中的分页参数
+    - `total`：全部数据的条数，通常由 `ScanAndCount` 得到
+- **返回**：固定分页的响应体
+
+`items` 为空时编码为 `[]` 而不是 `null`。`LastPage` 和 `Links` 用于在页面中渲染页码导航。
 
 ### CursorParams
 
@@ -375,4 +383,10 @@ func (p CursorParams) Limit() int64
 func NewCursor[T any](items []T, p CursorParams, key func(T) any) Cursor[T]
 ```
 
-截掉多读的一条，用 `key` 返回的排序位置编码 `next_cursor`。响应体为 `items` 和可选的 `next_cursor`。
+- **参数**
+    - `items`：按 `p.Limit()` 读出的数据，比一页多一条
+    - `p`：请求中的游标分页参数
+    - `key`：返回一条数据的排序位置，编码到 `next_cursor` 中
+- **返回**：游标分页的响应体：`items` 和可选的 `next_cursor`
+
+截掉多读的那一条，并用当前页最后一条的排序位置生成 `next_cursor`。

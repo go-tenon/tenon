@@ -1,6 +1,8 @@
 # 路由
 
-路由把一个 HTTP 方法和路径交给处理器。Tenon 的路由建立在 [Huma](https://huma.rocks) 之上：每条路由由一个 `huma.Operation`、一个**输入类型**和一个**输出类型**组成，Huma 据此解析参数、验证输入，并生成 OpenAPI 文档。
+路由决定一个 HTTP 请求由谁处理：它把一个 HTTP 方法和路径交给一个处理器函数。
+
+Tenon 的路由建立在 [Huma](https://huma.rocks) 之上。每条路由由三部分组成：一个 `huma.Operation` 描述路由本身，一个**输入类型**描述请求，一个**输出类型**描述响应。因为请求和响应的结构都写在 Go 类型中，Huma 可以替你解析参数、验证输入，并生成准确的 OpenAPI 文档。
 
 - [示例用法](#basic-routing)
     - [路由声明](#operations)
@@ -25,6 +27,8 @@
 
 <a id="basic-routing"></a>
 ## 示例用法
+
+下面是一个只有一个接口的完整程序，你可以把它保存为 `main.go` 直接运行：
 
 ```go
 package main
@@ -67,17 +71,29 @@ func main() {
 }
 ```
 
+启动之后，在另一个终端请求它：
+
 ```bash
 curl localhost:8080/ping
 # {"message":"pong"}
 ```
 
-`http://localhost:8080/docs` 是可交互的接口文档。实际的应用用 `httpx.Serve` 平滑停止，并安装[默认中间件](middleware.md#default-middleware)。
+我们按顺序看一下这段代码：
+
+1. `rest.New` 创建一个 API，`Title` 和 `Version` 会出现在生成的接口文档中；
+2. `huma.Operation` 声明路由：唯一的 `OperationID`、HTTP 方法、路径和一句话说明；
+3. `rest.Public()` 把这条路由声明为公开的，不需要登录；
+4. `rest.Register` 把处理器 `ping` 注册到这条路由上。
+
+打开 `http://localhost:8080/docs`，你还能看到自动生成的、可交互的接口文档。
+
+> [!NOTE]
+> 为了简短，这个例子直接使用了 `http.ListenAndServe`。实际的应用用 `httpx.Serve` 平滑停止，并安装[默认中间件](middleware.md#default-middleware)，见[依赖装配](../concepts/dependencies.md#assembling-the-application)。
 
 <a id="operations"></a>
 ### 路由声明
 
-一条完整的路由声明包含以下几项：
+现在来看一条路由声明包含哪些内容：
 
 | 声明 | 作用 |
 | --- | --- |
@@ -89,12 +105,12 @@ curl localhost:8080/ping
 | 访问策略 | `rest.Public()` 或 `rest.RequireBearer(...)`，必须选择一个 |
 | 处理器 | 处理请求的函数，通常是[业务动作](../concepts/actions.md)的 `HTTP` 方法 |
 
-由于请求和响应的结构都写在 Go 类型中，Huma 可以据此自动完成参数解析、输入验证，并生成准确的 OpenAPI 文档。输入和输出类型的写法分别见[请求](requests.md)和[响应](../responses/responses.md)。
+输入和输出类型的写法分别在[请求](requests.md)和[响应](../responses/responses.md)中介绍。
 
 <a id="handlers"></a>
 ### 处理器
 
-处理器的签名始终是：
+无论哪条路由，处理器的签名始终是这样的：
 
 ```go
 func(ctx context.Context, in *Input) (*Output, error)
@@ -112,7 +128,7 @@ API 有两种运行模式：
 <a id="registration-checks"></a>
 ### 注册时的检查
 
-`rest.Register` 会在注册时检查以下问题，一旦发现就直接 panic，让错误在应用启动时立刻暴露：
+路由的错误越早发现越好。`rest.Register` 会在注册时检查以下问题，一旦发现就直接 panic，让错误在应用启动时（甚至在 CI 中导出文档时）立刻暴露，而不是上线后才发现：
 
 - 路由没有声明访问策略（没有调用 `Public` 或 `RequireBearer`）；
 - `OperationID` 为空或不是 kebab-case，例如 `articleCreate`；
@@ -122,7 +138,7 @@ API 有两种运行模式：
 <a id="route-parameters"></a>
 ## 路由参数
 
-路径中用花括号声明参数，并在输入类型中用 `path` 标签读取：
+很多路由的路径中包含参数，例如文章的 ID。在路径中用花括号声明参数，然后在输入类型中用 `path` 标签读取它：
 
 ```go
 type GetArticleInput struct {
@@ -141,27 +157,29 @@ Huma 会把路径中的值转换为字段的类型（这里是 `github.com/googl
 <a id="access-policies"></a>
 ## 访问策略
 
-Tenon 要求每条路由都**显式**声明访问策略，避免因为疏忽而把需要保护的接口暴露出去。
+忘记保护一个接口，是最常见也最危险的错误之一：它不会报错，只会悄悄地把数据暴露出去。所以 Tenon 要求每条路由都**显式**声明访问策略，没有声明的路由在注册时就会 panic。
 
-公开路由在注册前调用 `rest.Public()`：
+公开的路由，在注册之前调用 `rest.Public()`：
 
 ```go
 rest.Public()(&op)
 ```
 
-需要认证的路由使用 `rest.RequireBearer`，并可以要求调用者具备指定的权限：
+需要登录的路由使用 `rest.RequireBearer`，还可以要求调用者具备指定的权限：
 
 ```go
 requireArticles := rest.RequireBearer(api, validateToken, "articles")
 requireArticles(&op)
 ```
 
-`validateToken` 是你提供的 token 校验函数。`RequireBearer` 会同时完成两件事：在运行时检查请求的 `Authorization` 头，以及在 OpenAPI 文档中标记这条路由需要认证。完整用法见[认证](../security/authentication.md)。
+`validateToken` 是你提供的令牌校验函数。`RequireBearer` 同时完成两件事：在运行时检查请求的 `Authorization` 头；在 OpenAPI 文档中标记这条路由需要认证。这样，接口的实际行为和文档始终一致。完整的用法见[认证](../security/authentication.md)。
 
 <a id="organizing-routes"></a>
 ## 组织路由
 
-业务代码按[业务动作](../concepts/actions.md)组织，每个动作一个文件，HTTP 入口是动作的 `HTTP` 方法。每个业务模块再用一个 `routes.go` 集中声明自己的路由，在这里能看到路径、方法和访问策略：
+示例用法中只有一条路由，直接写在 `main` 中就好。但真实的应用有几十上百条路由，全部堆在一处很快就难以维护。
+
+在 Tenon 中，业务代码按[业务动作](../concepts/actions.md)组织，每个动作一个文件，HTTP 入口是动作的 `HTTP` 方法。每个业务模块再用一个 `routes.go` 集中声明自己的路由。想知道文章模块有哪些接口、各自需要什么权限，打开 `routes.go` 就一目了然：
 
 ```text
 internal/article/
@@ -176,7 +194,7 @@ internal/article/
 <a id="module-registration"></a>
 ### 模块内注册
 
-`routes.go` 与动作同属一个包，提供模块的 `Register` 入口。它只声明路由，把动作的 `HTTP` 方法注册为处理器：
+`routes.go` 与业务动作同属一个包，提供模块的 `Register` 入口。它只做一件事：声明路由，并把业务动作的 `HTTP` 方法注册为处理器：
 
 ```go
 // Register 注册文章模块的全部路由。
@@ -319,7 +337,7 @@ func toDTO(a *Article) ArticleDTO {
 <a id="api-versioning"></a>
 ## API 版本
 
-只提供 JSON API 的应用通常直接挂在根路径，由部署决定前缀，例如 `https://api.example.com/v1`。和[页面](../responses/views.md)共用一个 Router 时，把 API 挂在带版本号的子路由下，并把同一个前缀设为 `BasePath`：
+只提供 JSON API 的应用，通常直接挂在根路径上，由部署决定前缀，例如 `https://api.example.com/v1`。但如果 API 要和[页面](../responses/views.md)或单页应用共用一个 Router，就需要把它挂在带版本号的子路由下，并把同一个前缀设为 `BasePath`：
 
 ```go
 router.Route("/api/v1", func(r chi.Router) {
@@ -435,7 +453,11 @@ api.Router().Get("/livez", func(w http.ResponseWriter, r *http.Request) {
 func New(opts Options) *API
 ```
 
-创建 API，不安装任何中间件。
+- **参数**
+    - `opts`：见下面的 `Options`
+- **返回**：API 实例
+
+`New` 不安装任何中间件，中间件要在传入 `Router` 之前安装，见[中间件](middleware.md)。
 
 ### Options
 
@@ -457,7 +479,16 @@ func New(opts Options) *API
 func Register[I, O any](api *API, op huma.Operation, handler func(context.Context, *I) (*O, error))
 ```
 
-注册一条路由。运行模式挂载处理器，文档模式只生成文档。发现[注册时的检查](#registration-checks)中的问题时 panic。
+- **参数**
+    - `api`：由 `New` 创建的 API
+    - `op`：路由声明，已经用 `Public` 或 `RequireBearer` 声明了访问策略
+    - `handler`：处理器，通常是业务动作的 `HTTP` 方法
+
+运行模式下把处理器挂载到路由上，文档模式下只生成文档。发现[注册时的检查](#registration-checks)中的问题时 panic。
+
+```go
+rest.Register(api, op, NewPublish(db).HTTP)
+```
 
 ### Public、RequireBearer
 
@@ -466,7 +497,13 @@ func Public() func(op *huma.Operation)
 func RequireBearer(api *API, validate TokenValidator, permissions ...string) func(op *huma.Operation)
 ```
 
-访问策略，在 `Register` 之前作用于 `op`。`RequireBearer` 要求有效的 Bearer 令牌和全部 `permissions`。
+- **参数**
+    - `api`：路由所在的 API
+    - `validate`：令牌校验器，例如 `tokens.Validate`
+    - `permissions`：调用者必须具备的全部权限
+- **返回**：作用于路由声明的函数，在 `Register` 之前调用
+
+`Public` 把路由声明为公开的；`RequireBearer` 要求有效的 Bearer 令牌，并且调用者具备全部 `permissions`。
 
 ### API
 

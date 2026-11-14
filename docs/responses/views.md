@@ -52,7 +52,7 @@ site.Get("/hello/{name}", func(w http.ResponseWriter, r *http.Request) error {
 })
 ```
 
-处理器返回的错误由 `pages` 呈现为错误页，与 JSON API 的状态码一致。
+访问 `/hello/tenon`，你会看到一个带有框架主题的页面。处理器返回的错误由 `pages` 呈现为错误页，状态码与 JSON API 一致。下面几节依次介绍布局、装配、路由和局部更新。
 
 <a id="installing-templ"></a>
 ## 安装 templ

@@ -29,7 +29,7 @@ if err != nil {
 site.Register(pages.Routes(router))
 ```
 
-`content/intro.md` 的地址是 `/help/intro`。
+就是这样。`content/intro.md` 会出现在 `/help/intro`，`content` 中的目录结构就是侧边栏。下面介绍怎样编写这些 Markdown 文件。
 
 <a id="writing"></a>
 ## 编写文档
@@ -198,7 +198,11 @@ site, err := docs.New(opts)
 func New(opts Options) (*Site, error)
 ```
 
-读取并渲染全部文档。front matter 不合法、目录超过两层、地址重复、链接指向不存在的文件时返回错误。
+- **参数**
+    - `opts`：见下面的 `Options`
+- **返回**：文档站点；front matter 不合法、目录超过两层、地址重复、链接指向不存在的文件时返回错误
+
+创建时读取并渲染全部文档，之后每个请求只套用页面模板。
 
 ### Options
 

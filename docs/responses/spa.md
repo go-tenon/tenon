@@ -1,6 +1,6 @@
 # 单页应用
 
-用 React、Vue 等写的单页应用，可以和 API 打进同一个二进制：Vite 的构建产物通过 `embed` 嵌入程序，由 `httpx.SPA` 提供。页面和 API 同源，不需要配置 CORS，部署时只有一个二进制文件。
+用 React、Vue 等写的单页应用，可以和 API 打包进同一个二进制文件：Vite 的构建产物通过 `embed` 嵌入程序，由 `httpx.SPA` 提供。页面和 API 同源，不需要配置 CORS，部署时只有一个二进制文件。
 
 单页应用调用 [JSON API](../http/routing.md)，请求带 Bearer 令牌（见[单页应用的登录](../security/api-tokens.md#single-page-applications)），客户端由 `client --ts` 从路由生成，见[客户端代码](clients.md#typescript)。后台和用户端都是单页应用；不需要登录的公开页面可以[在服务端渲染](views.md)，两者共用一个 Router。`tenon init` 生成的项目已经按本页的方式组织好。
 
@@ -156,7 +156,12 @@ mkdir -p frontend/dist && touch frontend/dist/index.html
 func NewSPA(fsys fs.FS, opts SPAOptions) (*SPA, error)
 ```
 
-`fsys` 是构建产物所在的目录，必须包含 `index.html`。创建时读取全部文件。`*SPA` 是 `http.Handler`。
+- **参数**
+    - `fsys`：构建产物所在的目录，必须包含 `index.html`，通常是 `embed.FS` 的子目录
+    - `opts`：见下面的 `SPAOptions`
+- **返回**：单页应用的处理器（`http.Handler`）；没有 `index.html` 时返回错误
+
+创建时读取全部文件。设置了 `DevServer` 时不读取 `fsys`。
 
 ### SPAOptions
 
