@@ -1,9 +1,16 @@
 # 日志
 
-Tenon 用 Go 标准库的 [`log/slog`](https://pkg.go.dev/log/slog) 记录结构化日志，全局日志器就是 `slog.Default()`。`logging` 包在 slog 之上做三件事：按配置构造日志器；让日志自动带上请求 ID 等关联字段；把 [slog-formatter](https://github.com/samber/slog-formatter) 和 [slog-multi](https://github.com/samber/slog-multi) 接入处理链。除此之外，用的都是标准的 slog API。
+Tenon 使用 Go 标准库的 [`log/slog`](https://pkg.go.dev/log/slog) 记录结构化日志，全局日志器就是 `slog.Default()`。框架的组件和你的业务代码都通过它记录日志，不需要把日志器层层传递。
+
+`logging` 包在 slog 之上只做三件事：按配置构造日志器；让日志自动带上请求 ID 等关联字段；把 [slog-formatter](https://github.com/samber/slog-formatter) 和 [slog-multi](https://github.com/samber/slog-multi) 接入处理链，用来格式化字段和输出到多个地方。除此之外，你使用的都是标准的 slog API。
 
 - [示例用法](#example-usage)
 - [配置](#creating-a-logger)
+    - [level](#config-level)
+    - [format](#formats)
+    - [time_zone](#config-time-zone)
+    - [add_source](#config-add-source)
+    - [输出位置](#config-writer)
     - [按组件设置级别](#component-levels)
 - [写入日志](#writing-log-messages)
 - [上下文信息](#contextual-information)
@@ -25,13 +32,13 @@ Tenon 用 Go 标准库的 [`log/slog`](https://pkg.go.dev/log/slog) 记录结构
 <a id="example-usage"></a>
 ## 示例用法
 
-在入口安装一次：
+在应用的入口安装一次全局日志器：
 
 ```go
 slog.SetDefault(logging.New(cfg.Logs))
 ```
 
-之后框架组件（访问日志、panic 恢复、5xx 诊断）和业务代码都通过它记录，不需要层层传递日志器：
+之后，框架组件（访问日志、panic 恢复、5xx 诊断）和你的业务代码都通过它记录日志。在业务代码中，直接使用 slog 的包级函数：
 
 ```go
 slog.InfoContext(ctx, "article published", "article_id", item.ID)
@@ -41,10 +48,12 @@ slog.InfoContext(ctx, "article published", "article_id", item.ID)
 {"time":"…","level":"INFO","msg":"article published","request_id":"9F2K…","article_id":"0f8c…"}
 ```
 
+注意输出中的 `request_id`：你并没有写它，是因为传入了请求的 `ctx`，日志自动带上了这个请求的 ID，见[请求关联](#request-correlation)。
+
 <a id="creating-a-logger"></a>
 ## 配置
 
-日志级别、格式来自 `logging.Config`，通常放在配置文件的 `logs` 段：
+日志的级别、格式等需要按环境调整的值来自 `logging.Config`，通常放在配置文件的 `logs` 段：
 
 ```yaml
 logs:
@@ -53,26 +62,17 @@ logs:
   time_zone: UTC
 ```
 
-| 字段 | 说明 | 默认值 |
-| --- | --- | --- |
-| `level` | 最低记录级别：`debug`、`info`、`warn`、`error` | `info` |
-| `format` | `json` 或 `text`，见[输出格式](#formats) | `json` |
-| `add_source` | 是否记录源码位置 | `false` |
-| `time_zone` | 日志时间使用的时区，例如 `UTC`、`Asia/Shanghai`；同时作用于字段中的时间值 | 本地时区 |
-| `levels` | 按组件覆盖 `level`，见[按组件设置级别](#component-levels) | 无 |
+把 `logging.Config` 放进应用的根配置结构体，`config.Load` 会自动填充默认值并校验。`logging.Config` 的零值也可以直接使用，所以不写 `logs` 段也能得到合理的日志。下面逐个介绍这些字段。
 
-把 `logging.Config` 放进应用的根配置结构体（`config.Load` 会自动填充默认值并校验），然后在入口处构造并安装：
+<a id="config-level"></a>
+### level
 
-```go
-slog.SetDefault(logging.New(cfg.Logs))
-```
-
-`logging.Config` 的零值可以直接使用，不写 `logs` 段也能得到合理的日志。
-
-日志中没有服务名和版本：推送到日志平台时，它们由 [`telemetry`](telemetry.md#setup) 段配置，作为资源属性附在每条日志上；采集标准错误时，由采集端按 systemd unit 或容器区分来源。
+记录日志的最低级别：`debug`、`info`、`warn` 或 `error`，默认是 `info`。低于这个级别的日志会被丢弃。只想调整一部分日志的级别时，见[按组件设置级别](#component-levels)。
 
 <a id="formats"></a>
-两种输出格式分别面向机器和人：
+### format
+
+输出格式，`json` 或 `text`，默认是 `json`。两种格式分别面向机器和人：
 
 - `json`：每行一个 JSON 对象，供日志系统采集和检索。生产环境使用它。
 - `text`：本地开发时阅读，基于 [tint](https://github.com/lmittmann/tint)。时间显示到毫秒，级别缩写为 `DBG`、`INF`、`WRN`、`ERR`，分组字段以 `.` 连接：
@@ -89,19 +89,34 @@ slog.SetDefault(logging.New(cfg.Logs))
 > [!TIP]
 > 让 AI agent 读取或分析日志时，请使用 `json`：字段完整、结构明确。agent 执行命令时通常不在终端中，`text` 也不会带颜色码；如果 agent 工具分配了伪终端，设置 `NO_COLOR=1` 可以避免输出转义码。
 
-没有设置 `time_zone` 时使用进程的本地时区，它由 `TZ` 环境变量或 `/etc/localtime` 决定：开发机上通常是 `+08:00`，容器中往往是 UTC。时间始终带有时区偏移，不会产生歧义；多个环境混合检索时，建议统一设为 `UTC`。
+<a id="config-time-zone"></a>
+### time_zone
 
-日志默认输出到标准错误，这样当同一个程序作为命令行工具使用时（例如 `openapi` 命令），标准输出可以完整地留给命令结果。需要改变输出位置时（例如测试中写入缓冲区），在代码中设置 `Writer` 字段，它不会从配置文件读取：
+日志时间使用的时区，例如 `UTC`、`Asia/Shanghai`，同时作用于字段中的时间值。没有设置时使用进程的本地时区，它由 `TZ` 环境变量或 `/etc/localtime` 决定：开发机上通常是 `+08:00`，容器中往往是 UTC。
+
+时间始终带有时区偏移，不会产生歧义。不过，多个环境的日志混合检索时，建议统一设为 `UTC`。
+
+<a id="config-add-source"></a>
+### add_source
+
+是否记录产生日志的源码位置，默认是 `false`。
+
+<a id="config-writer"></a>
+### 输出位置
+
+日志默认输出到标准错误。这样，当同一个程序作为命令行工具使用时（例如 `openapi` 命令），标准输出可以完整地留给命令的结果。需要改变输出位置时（例如在测试中写入缓冲区），在代码中设置 `Writer` 字段，它不会从配置文件中读取：
 
 ```go
 var buf bytes.Buffer
 cfg.Logs.Writer = &buf
 ```
 
-`slog.SetDefault` 还会让标准库 `log` 包的输出也经过这个日志器，第三方库通过 `log.Printf` 打印的内容同样会变成结构化日志。
+日志中没有服务名和版本。推送到日志平台时，它们由 [`telemetry`](telemetry.md#setup) 段配置，作为资源属性附在每条日志上；采集标准错误时，由采集端按 systemd unit 或容器区分来源。
+
+另外，`slog.SetDefault` 还会让标准库 `log` 包的输出也经过这个日志器，所以第三方库用 `log.Printf` 打印的内容同样会变成结构化日志。
 
 > [!NOTE]
-> `logging.New` 本身不修改全局状态，是否安装为全局日志器由入口决定。框架组件的日志器参数为 `nil` 时使用 `slog.Default()`，因此也可以只给某个组件传入单独的日志器，例如 `rest.Options{Logger: auditLogger}`；需要关闭某个组件的日志时，传入 `slog.New(slog.DiscardHandler)`。
+> `logging.New` 本身不修改全局状态，是否安装为全局日志器由入口决定。框架组件的日志器参数为 `nil` 时使用 `slog.Default()`，因此你也可以只给某个组件传入单独的日志器，例如 `rest.Options{Logger: auditLogger}`；需要关闭某个组件的日志时，传入 `slog.New(slog.DiscardHandler)`。
 
 <a id="component-levels"></a>
 ### 按组件设置级别
@@ -275,7 +290,7 @@ logging.Format(
 | Formatter | 作用 |
 | --- | --- |
 | `FormatByKey(key, fn)` | 改写指定字段名的值，包括嵌套分组中的同名字段 |
-| `FormatByType[T](../fn)` | 改写某个类型的值，无论字段名是什么 |
+| `FormatByType[T](fn)` | 改写某个类型的值，无论字段名是什么 |
 | `FormatByKind(kind, fn)` | 改写某种 `slog.Kind` 的值 |
 | `TimeFormatter(layout, loc)` | 按指定格式输出时间值 |
 | `UnixTimestampFormatter(precision)` | 把时间值输出为 Unix 时间戳 |
@@ -454,7 +469,16 @@ func TestPublishLogsEvent(t *testing.T) {
 func New(cfg Config, opts ...Option) *slog.Logger
 ```
 
-按配置构造日志器，不修改全局状态。默认启用 `ErrorFormatter`，输出到 `cfg.Writer`（默认标准错误）。
+- **参数**
+    - `cfg`：日志的配置，见[配置](#creating-a-logger)
+    - `opts`：扩展处理链的选项，见下面的 `Option`
+- **返回**：构造好的日志器
+
+不修改全局状态。默认启用 `ErrorFormatter`，输出到 `cfg.Writer`（默认是标准错误）。
+
+```go
+slog.SetDefault(logging.New(cfg.Logs))
+```
 
 ### Option
 

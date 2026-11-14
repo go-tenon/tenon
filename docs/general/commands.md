@@ -1,6 +1,8 @@
 # 命令行
 
-`command` 包基于 [Cobra](https://github.com/spf13/cobra) 提供应用的命令：启动服务、执行迁移、检查配置、导出接口文档、查看路由。每个命令都是一个独立的 `*cobra.Command`，应用按需装配到根命令上，用不到的不会出现。
+一个 API 应用除了启动 HTTP 服务，通常还要执行一些运维任务：检查配置、执行数据库迁移、导出接口文档、查看路由。`command` 包基于 [Cobra](https://github.com/spf13/cobra) 提供这些命令。
+
+每个命令都是一个独立的 `*cobra.Command`，应用按需把它们装配到根命令上，用不到的命令不会出现。
 
 - [示例用法](#example-usage)
 - [装配命令行](#declaring-the-cli)
@@ -18,6 +20,8 @@
 
 <a id="example-usage"></a>
 ## 示例用法
+
+下面是一个只有两个命令的完整程序：
 
 ```go
 package main
@@ -46,12 +50,14 @@ func main() {
 }
 ```
 
+运行它：
+
 ```bash
 go run . hello --config config/app.yaml
 go run . config show
 ```
 
-`command.Run` 先读取 `.env`、加载并校验 `--config` 指定的配置，再调用你的函数；收到 `SIGINT`、`SIGTERM` 时取消 `ctx`。
+`hello` 打印配置文件中的 `greeting`。`command.Run` 替你做了几件事：读取 `.env`，加载并校验 `--config` 指定的配置，然后才调用你的函数；进程收到 `SIGINT`、`SIGTERM` 时，它会取消 `ctx`。`config show` 则输出加载后的完整配置。
 
 <a id="declaring-the-cli"></a>
 ## 装配命令行
@@ -336,7 +342,12 @@ func Root(name, short string) *cobra.Command
 func Execute(root *cobra.Command)
 ```
 
-`Root` 返回带 `--config` 选项的根命令，未知命令、未知选项和多余参数标记为 `ExitUsage`。`Execute` 执行它：停止信号取消命令的 context，失败时把错误写到标准错误，以 `ExitCode(err)` 退出。
+- **参数**
+    - `name`：程序名，出现在帮助信息中
+    - `short`：一句话说明
+- **返回**：带 `--config` 选项的根命令
+
+未知命令、未知选项和多余参数都标记为 `ExitUsage`。`Execute` 执行根命令：收到停止信号时取消命令的 context；命令失败时把错误写到标准错误，并以 `ExitCode(err)` 退出进程。
 
 ### Run
 
@@ -344,7 +355,13 @@ func Execute(root *cobra.Command)
 func Run[C any](use, short string, run func(ctx context.Context, cfg C) error) *cobra.Command
 ```
 
-加载配置后执行 `run`。
+- **参数**
+    - `use`：命令名，例如 `serve`
+    - `short`：一句话说明
+    - `run`：命令要做的事，收到加载并校验后的配置
+- **返回**：命令
+
+`run` 的 `ctx` 在进程收到 `SIGINT`、`SIGTERM` 时被取消，常驻进程据此退出。
 
 ### Config
 
@@ -352,7 +369,9 @@ func Run[C any](use, short string, run func(ctx context.Context, cfg C) error) *
 func Config[C any]() *cobra.Command
 ```
 
-`config check` 与 `config show`。
+- **返回**：`config` 命令，包含 `check` 和 `show` 两个子命令
+
+`C` 是应用的根配置结构体。
 
 ### LoadConfig
 
@@ -360,7 +379,11 @@ func Config[C any]() *cobra.Command
 func LoadConfig[C any](cmd *cobra.Command) (C, error)
 ```
 
-在自定义命令中读取 `.env`、按 `--config` 加载并校验配置，失败时带 `ExitConfig`。
+- **参数**
+    - `cmd`：当前执行的命令，用来读取 `--config` 选项
+- **返回**：加载并校验后的配置；失败时返回的错误带 `ExitConfig` 退出码
+
+在自定义命令中读取 `.env`，再按 `--config` 加载配置，见[自定义命令](#custom-commands)。
 
 ### Bind
 
@@ -386,7 +409,7 @@ func AsExitError(code int, err error) error
 func ExitCode(err error) int
 ```
 
-为错误标记退出码；取出错误对应的退出码，规则见[退出码](#exit-codes)。
+`AsExitError` 为错误标记一个退出码，覆盖默认的规则；`ExitCode` 取出错误对应的退出码。规则见[退出码](#exit-codes)。
 
 ### Daemon、Concurrently
 

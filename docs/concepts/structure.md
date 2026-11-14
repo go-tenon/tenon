@@ -1,6 +1,8 @@
 # 目录结构
 
-Tenon 不要求固定的目录结构，也不会按目录位置自动发现任何东西：路由、命令、队列任务都在代码里显式注册。下面是推荐的结构，`tenon init` 生成的项目和[入门教程](../tutorial/README.md)都按它组织。
+要用好 Tenon，先要了解一个应用是怎样组织的：代码放在哪里，哪些文件由框架生成，哪些由你编写。
+
+Tenon 并不强制固定的目录结构，也不会根据目录的位置自动发现任何东西：路由、命令和队列任务都在代码里显式注册。所以，本页介绍的是一种**推荐**的结构。`tenon init` 生成的项目和[入门教程](../tutorial/README.md)都按它组织，你可以从它开始，再按团队的习惯调整。
 
 - [默认目录](#application-layout)
     - [cmd](#the-cmd-directory)
@@ -18,6 +20,8 @@ Tenon 不要求固定的目录结构，也不会按目录位置自动发现任�
 
 <a id="application-layout"></a>
 ## 默认目录
+
+一个完整的应用通常是这样的：
 
 ```text
 blog/
@@ -41,17 +45,17 @@ blog/
 └── frontend/              单页应用的源码，以及嵌入构建产物的 frontend.go
 ```
 
-一开始只需要 `cmd` 和一个业务包，其他目录等到有代码要放时再建。
+不必一开始就建齐这些目录。一个刚起步的应用只需要 `cmd` 和一个业务包，其他目录等到真正有代码要放时再创建。下面依次介绍每个目录的作用。
 
 <a id="the-cmd-directory"></a>
 ### cmd
 
-每个子目录对应一个可执行文件，`cmd/api` 构建出 API 服务。`main.go` 只组装根命令并执行，见[命令行](../general/commands.md#declaring-the-cli)。
+`cmd` 存放应用的进程入口，每个子目录对应一个可执行文件，例如 `cmd/api` 构建出 API 服务。入口文件应当尽量短小：它只组装根命令并执行，具体做什么都交给 `bootstrap`，见[命令行](../general/commands.md#declaring-the-cli)。
 
 <a id="the-bootstrap-directory"></a>
 ### internal/bootstrap
 
-把应用组装起来的代码：配置结构、打开数据库等资源、创建 HTTP 服务、注册路由和命令。这些都是普通的函数调用，见[依赖装配](dependencies.md)。
+`bootstrap` 包负责把应用“组装”起来：定义配置结构，打开数据库等资源，创建 HTTP 服务，注册路由和命令。在 Tenon 中，这些都是普通的函数调用，没有任何隐藏的魔法，详见[依赖装配](dependencies.md)。它通常包含这几个文件：
 
 | 文件 | 内容 |
 | --- | --- |
@@ -65,7 +69,7 @@ blog/
 <a id="business-packages"></a>
 ### 业务包
 
-每个业务模块是 `internal` 下的一个包，包名用单数，例如 `article`。包里是[业务动作](actions.md)：每个动作一个文件，包含它的依赖、业务规则和各个入口方法。
+每个业务模块是 `internal` 下的一个包，包名用单数，例如 `article`。包里的代码按[业务动作](actions.md)组织：每个动作一个文件，包含它的依赖、业务规则和各个入口方法。一个业务包通常是这样的：
 
 | 文件 | 内容 |
 | --- | --- |
@@ -74,7 +78,7 @@ blog/
 | `routes.go` | 本模块的路由：路径、方法、访问策略 |
 | `commands.go` | 本模块的命令 |
 
-模块里没有包揽所有操作的 `Service`。动作多到一个目录难以浏览时，按子领域拆成新的包，例如 `internal/comment`，而不是在包内再建子目录。
+你会发现模块里没有一个包揽所有操作的 `Service`：动作多了，只是文件多了，每个文件仍然只关心一件事。当动作多到一个目录难以浏览时，按子领域拆成新的包，例如把评论拆到 `internal/comment`，而不是在包内再建子目录。
 
 > [!NOTE]
 > 服务端渲染的页面放在子包中，例如 `article/articleweb`。templ 组件要导入 `article` 的类型，放在同一个包里会循环导入。
@@ -82,20 +86,25 @@ blog/
 <a id="the-migrations-directory"></a>
 ### migrations
 
-SQL 迁移文件，由 `embed.go` 嵌入程序，部署时用 `migrate up` 执行，见[迁移](../database/migrations.md)。
+`migrations` 存放 SQL 迁移文件。它们由 `embed.go` 嵌入程序，部署时用 `migrate up` 执行，详见[迁移](../database/migrations.md)。
 
 <a id="the-locales-directory"></a>
 ### locales
 
-`en.yaml`、`zh-CN.yaml` 等翻译文件，见[本地化](../general/localization.md)。
+如果应用需要多语言的提示文案，把 `en.yaml`、`zh-CN.yaml` 等翻译文件放在这里，详见[本地化](../general/localization.md)。
 
 <a id="the-frontend-directory"></a>
 ### frontend
 
-单页应用的源码。`frontend.go` 把构建产物嵌入程序，部署时只有一个二进制文件，见[单页应用](../responses/spa.md)。`frontend/src/api` 是生成的 TypeScript 客户端，不要手改，见[客户端代码](../responses/clients.md)。
+`frontend` 是单页应用的源码。`frontend.go` 把构建产物嵌入程序，所以部署时仍然只有一个二进制文件，见[单页应用](../responses/spa.md)。
+
+> [!NOTE]
+> `frontend/src/api` 中是生成的 TypeScript 客户端，每次修改接口后都会重新生成，请不要手动修改，见[客户端代码](../responses/clients.md)。
 
 <a id="naming-conventions"></a>
 ## 命名约定
+
+遵循统一的命名约定，团队成员和前端开发者就更容易猜到一样东西叫什么：
 
 | 对象 | 约定 | 示例 |
 | --- | --- | --- |
@@ -115,7 +124,7 @@ SQL 迁移文件，由 `embed.go` 嵌入程序，部署时用 `migrate up` 执�
 <a id="framework-packages"></a>
 ## 框架包一览
 
-每个包都可以单独使用。顶层的包分为四层，只能导入同层或更低层的包：
+Tenon 的每个包都可以单独使用，按需引入即可。顶层的包分为四层，每个包只能导入同层或更低层的包：
 
 ```text
 功能        apitoken  login  oauthserver  authz  notification  push  activity  feature  settings  operation  webhook  search  vector  sheet/imports  sheet/exports  ai
@@ -124,7 +133,7 @@ SQL 迁移文件，由 `embed.go` 嵌入程序，部署时用 `migrate up` 执�
 基础        errorx  identity  config  cleanup  logging  telemetry  i18n  page  form  hashing  crypt  acquire
 ```
 
-分层由[架构测试](../contributions.md#architecture-tests)保证。名字以 `test` 结尾的子包（`dbtest`、`queuetest`、`mailtest` 等）是测试用的替身和工具。
+这条规则由[架构测试](../contributions.md#architecture-tests)保证，新增的导入违反分层时测试会失败。名字以 `test` 结尾的子包（`dbtest`、`queuetest`、`mailtest` 等）是测试用的替身和工具。
 
 <a id="foundation"></a>
 ### 基础

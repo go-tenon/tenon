@@ -1,8 +1,10 @@
 # 可观测性
 
-框架的 HTTP 服务、数据库连接池、队列、调度器、限流器、MCP 服务和实时频道都可以报告 [OpenTelemetry](https://opentelemetry.io/docs/languages/go/) 指标，前五个还报告链路。`telemetry` 包把指标、链路和应用的日志一起推送到一个 OTLP 接收端，例如 [OpenObserve](https://openobserve.ai/)，不需要另外部署收集器。
+应用上线之后，你需要知道它运行得怎么样：每秒处理多少请求、哪个接口变慢了、错误是从哪里来的。可观测性就是回答这些问题的能力，它通常由三类数据组成：**指标**、**链路**和**日志**。
 
-指标和链路都需要显式开启：把 `MeterProvider`、`TracerProvider` 交给要报告的组件，没有传入的组件不报告。Redis、Memcached 等依赖由各自的生态报告，例如 rueidis 的 [rueidisotel](https://pkg.go.dev/github.com/redis/rueidis/rueidisotel)，把同一个 Provider 交给它们即可。
+Tenon 使用 [OpenTelemetry](https://opentelemetry.io/docs/languages/go/) 报告这些数据。框架的 HTTP 服务、数据库连接池、队列、调度器、限流器、MCP 服务和实时频道都可以报告指标，前五个还报告链路。`telemetry` 包把指标、链路和应用的日志一起推送到一个 OTLP 接收端，例如 [OpenObserve](https://openobserve.ai/)，不需要另外部署收集器。
+
+和 Tenon 的其他功能一样，指标和链路都需要显式开启：把 `MeterProvider`、`TracerProvider` 交给需要报告的组件，没有传入的组件就不报告。Redis、Memcached 等依赖由各自的生态报告，例如 rueidis 的 [rueidisotel](https://pkg.go.dev/github.com/redis/rueidis/rueidisotel)，把同一个 Provider 交给它们即可。
 
 - [示例用法](#example-usage)
 - [配置](#setup)
@@ -24,6 +26,8 @@
 <a id="example-usage"></a>
 ## 示例用法
 
+在入口中最先打开 `telemetry`，再把它的 Provider 交给其他组件：
+
 ```go
 tel, err := telemetry.Open(ctx, cfg.Telemetry)
 if err != nil {
@@ -38,7 +42,7 @@ router.Use(httpx.Telemetry(tel.Meters, tel.Tracers))
 router.Use(httpx.Defaults(cfg.HTTP, nil, nil)...)
 ```
 
-日志、数据库语句和 HTTP 请求的指标与链路都推送到 `cfg.Telemetry.Endpoint`；它为空时什么也不推送，本地开发不用配置。
+这样，日志、数据库语句和 HTTP 请求的指标与链路都会推送到配置的接收端。接收端的地址为空时什么也不推送，所以本地开发不需要任何配置。
 
 <a id="setup"></a>
 ## 配置
@@ -252,7 +256,11 @@ increase(schedule_task_duration_seconds_count{schedule_task="reports:daily", sch
 func Open(ctx context.Context, cfg Config) (*Providers, error)
 ```
 
-包 `github.com/go-tenon/tenon/telemetry`。按配置创建推送日志、指标和链路的 Provider，同时开始报告 Go 运行时指标。`cfg.Endpoint` 为空时返回 noop 实现。
+- **参数**
+    - `cfg`：推送的配置，见[配置](#setup)
+- **返回**：日志、指标和链路的 Provider
+
+包 `github.com/go-tenon/tenon/telemetry`。开启推送时，同时开始报告 Go 运行时指标。`cfg.Endpoint` 为空时返回不记录也不推送的 Provider，调用方不需要区分。
 
 ### telemetry.Providers
 

@@ -1,9 +1,10 @@
 # 业务动作
 
-Tenon 推荐把业务逻辑写成**动作**（动作）：每个业务动作是一个类型，单独放在一个文件中，例如“发布文章”是 `article/publish.go` 中的 `article.Publish`。这个文件包含这个动作的全部代码：依赖、业务规则，以及 HTTP 接口、队列任务、命令行等入口方法。
+业务动作（action）是 Tenon 推荐的组织业务逻辑的方式：每个业务动作是一个类型，单独放在一个文件中。例如“发布文章”就是 `article/publish.go` 中的 `article.Publish`，这个文件包含发布文章所需的全部代码：依赖、业务规则，以及 HTTP 接口、队列任务、命令行等各个入口。
 
-这个模式不需要框架支持：没有 `Action` 接口，没有反射，也不按方法名自动发现。入口方法是普通的 Go 方法，注册路由或任务时作为方法值传入，签名由编译器检查。模块中也没有包揽所有操作的 `Service`：新增一个动作就新增一个文件。
+这个模式不需要框架的任何支持：没有 `Action` 接口，没有反射，也不按方法名自动发现。你写的就是普通的 Go 类型和方法。
 
+- [为什么按动作组织](#why)
 - [编写动作](#writing-actions)
 - [模块内共享的代码](#shared-code)
 - [从不同入口运行](#entry-points)
@@ -20,10 +21,27 @@ Tenon 推荐把业务逻辑写成**动作**（动作）：每个业务动作是�
 - [数据对象](#data-objects)
 - [约定](#conventions)
 
+<a id="why"></a>
+## 为什么按动作组织
+
+很多项目会为每个业务对象写一个 Service，例如 `ArticleService`，把创建、修改、发布、删除文章的方法都放在里面。一开始这样很清楚。
+
+但业务会不断增长。几个月后，`ArticleService` 有了二十个方法和十几个依赖：发布要发邮件，所以它依赖邮件服务；导入要读表格，所以它依赖文件存储；统计要查缓存……每个方法只用到其中一两个依赖，但构造这个 Service 时必须把它们全部准备好。想修改“发布文章”的规则，你得在一个上千行的文件中找到它，还要小心别影响其他方法。
+
+按动作组织则把每个业务动作拆成独立的类型：
+
+```go
+type Publish struct {
+    db *bun.DB
+}
+```
+
+`Publish` 只依赖它真正需要的东西。修改“发布文章”时，只需要看 `publish.go` 一个文件；新增一个业务动作，就新增一个文件，不会让某个类型越来越大。
+
 <a id="writing-actions"></a>
 ## 编写动作
 
-“发布文章”的 `publish.go`。`Article`、`ErrNotFound` 等在同一个包的 `article.go` 中，见[下一节](#shared-code)：
+一个业务动作由三部分组成：保存依赖的结构体、构造函数，以及执行业务的 `Handle` 方法。下面是完整的“发布文章”。`Article`、`ErrNotFound` 等定义在同一个包的 `article.go` 中，见[下一节](#shared-code)：
 
 ```go
 // Publish 发布文章。
@@ -62,7 +80,13 @@ func (a *Publish) Handle(ctx context.Context, subject identity.Subject, id uuid.
     }
     return item, nil
 }
+```
 
+`Handle` 就是这个业务动作本身。注意它的参数：调用者的身份 `subject` 是**显式传入**的，而不是从 context 中读取。这样，命令行、队列任务和测试都可以直接调用它，传入合适的身份即可，见[授权](../security/authorization.md#ownership)。
+
+接着，给它加上 HTTP 入口。HTTP 入口也是一个方法，通常叫 `HTTP`：
+
+```go
 type PublishInput struct {
     ID uuid.UUID `path:"id"`
 }
@@ -78,14 +102,12 @@ func (a *Publish) HTTP(ctx context.Context, in *PublishInput) (*ArticleOutput, e
 }
 ```
 
-`Handle` 是动作本身。它只接收业务参数，调用者的身份作为参数 `subject` 显式传入，不从 context 中读取，因此命令行、队列和测试都能直接调用它，见[授权](../security/authorization.md#ownership)。
-
-`HTTP` 是这个动作的 HTTP 入口：它从输入类型中取出参数、从 context 中取出主体，调用 `Handle`，再把结果转换为响应。它不包含业务规则，`Handle` 返回的业务错误原样返回，由框架转换为对应的状态码，见[错误处理](../general/errors.md)。
+`HTTP` 只做转换：从输入中取出参数，从 context 中取出调用者，调用 `Handle`，再把结果转换为响应。它不包含任何业务规则。`Handle` 返回的业务错误原样返回，由框架转换为对应的状态码，见[错误处理](../general/errors.md)。
 
 <a id="shared-code"></a>
 ## 模块内共享的代码
 
-多个动作共用的东西放在 `article.go` 中：模型、业务错误、提交的数据，以及包内的查询和授权函数：
+几个业务动作共用的东西，放在与包同名的 `article.go` 中：模型、业务错误、提交的数据，以及包内的查询和授权函数：
 
 ```go
 var (
@@ -122,17 +144,20 @@ func CanEdit(subject identity.Subject, item *Article) bool {
 }
 ```
 
-模型的定义见[定义模型](../database/quick-start.md#defining-models)，业务错误见[定义业务错误](../general/errors.md#defining-errors)。`find` 不导出，它只是动作之间共享的实现细节；`CanEdit` 是授权规则，页面要用同一份规则决定显示哪些按钮，所以导出，见[授权函数](../security/authorization.md#authorization-functions)。不要因为两个动作有几行相似的代码就急着提取函数；规则真正相同时再提取。
+`find` 没有导出，因为它只是业务动作之间共享的实现细节。`CanEdit` 则是一条授权规则，页面也要用同一条规则决定显示哪些按钮，所以导出，见[授权函数](../security/authorization.md#authorization-functions)。模型的写法见[定义模型](../database/quick-start.md#defining-models)，业务错误见[定义业务错误](../general/errors.md#defining-errors)。
+
+> [!TIP]
+> 不要因为两个业务动作有几行相似的代码就急着提取函数。等到规则真正相同时再提取，否则修改其中一个时，另一个也会被意外改变。
 
 <a id="entry-points"></a>
 ## 从不同入口运行
 
-同一个动作可以从多个入口运行。每个入口是动作上的一个方法，在注册的地方作为方法值传入。
+同一个业务动作往往要从多个地方触发：HTTP 接口、队列任务、定时任务、命令行，甚至 AI 客户端。每个入口都是业务动作上的一个方法，在注册的地方作为方法值传入。下面依次介绍这些入口。
 
 <a id="as-http"></a>
 ### HTTP 接口
 
-模块的 `routes.go` 声明路由，把动作的 `HTTP` 方法注册为处理器：
+模块的 `routes.go` 声明路由，并把 `HTTP` 方法注册为处理器：
 
 ```go
 publish := huma.Operation{
@@ -145,12 +170,14 @@ requireArticles(&publish)
 rest.Register(api, publish, NewPublish(db).HTTP)
 ```
 
-`routes.go` 的完整代码见[模块内注册](../http/routing.md#module-registration)。动作在注册时构造一次，之后它的方法被所有请求并发调用。
+业务动作在注册时构造一次，之后它的方法会被所有请求并发调用。`routes.go` 的完整写法见[模块内注册](../http/routing.md#module-registration)。
 
 <a id="as-jobs"></a>
 ### 队列任务
 
-定时发布一篇文章时，把文章 ID 作为任务发布到队列，到时间后由 worker 调用 `Publish`。在 `publish.go` 中加入任务的 topic 和处理方法：
+假设作者可以设置定时发布：到了指定的时间，文章自动发布。这时，你可以把文章 ID 作为任务发布到队列，到时间后由 worker 调用 `Publish`。
+
+在 `publish.go` 中加入任务的 topic 和处理方法：
 
 ```go
 // PublishAt 是定时发布的任务，payload 是文章 ID。
@@ -172,31 +199,36 @@ func (a *Publish) Job(ctx context.Context, id uuid.UUID) error {
 }
 ```
 
-`queue.Topic` 把 topic 名称和 payload 类型绑在一起，发布和处理共用这一个声明。多租户应用中，payload 还要带上租户，`system` 按租户构造，见[后台任务](../security/tenancy.md#tenant-jobs)。设置定时发布的动作在写入发布时间的同一个事务中发布任务：
+`queue.Topic` 把 topic 的名称和 payload 的类型绑在一起，发布方和处理方共用这一个声明，名称写错或者类型不一致时都无法编译。设置定时发布的业务动作在写入发布时间的同一个事务中发布任务：
 
 ```go
 err := PublishAt.Publish(ctx, tx, item.ID, queue.At(publishAt))
 ```
 
-worker 注册处理方法，见[启动 worker](../libraries/queue.md#running-workers)：
+最后，在 worker 中注册处理方法，见[启动 worker](../libraries/queue.md#running-workers)：
 
 ```go
 article.PublishAt.Handle(w, article.NewPublish(a.db).Job)
 ```
 
+> [!NOTE]
+> 多租户应用中，payload 还要带上租户，`system` 也要按租户构造，见[后台任务](../security/tenancy.md#tenant-jobs)。
+
 <a id="as-scheduled-tasks"></a>
 ### 定时任务
 
-调度器的任务是 `func(ctx context.Context) error`。`Handle` 正好是这个签名的动作可以直接注册，例如[定时任务](../libraries/scheduling.md#defining-tasks)一章中发布到期文章的 `PublishScheduled`：
+调度器的任务是一个 `func(ctx context.Context) error`。如果业务动作的 `Handle` 正好是这个签名，就可以直接注册。例如每分钟发布一次到期文章的 `PublishScheduled`：
 
 ```go
 sched.Add("articles:publish-scheduled", "* * * * *", article.NewPublishScheduled(a.db).Handle)
 ```
 
+调度器的用法见[定时任务](../libraries/scheduling.md#defining-tasks)。
+
 <a id="as-commands"></a>
 ### 命令行
 
-运维时常常需要手动执行一个动作，例如立即发布一篇文章。命令行入口是 `Command` 方法，签名就是 Cobra 的 `RunE`。它在 `publish.go` 中，和 `Job` 一样以[队列任务](#as-jobs)一节的 `system` 身份调用 `Handle`：
+运维时常常需要手动执行一个业务动作，例如立即发布某一篇文章。命令行的入口是 `Command` 方法，它的签名就是 Cobra 的 `RunE`。和 `Job` 一样，它以[队列任务](#as-jobs)一节中的 `system` 身份调用 `Handle`：
 
 ```go
 // Command 处理 article publish <id>，输出发布后的文章 slug。
@@ -214,9 +246,9 @@ func (a *Publish) Command(cmd *cobra.Command, args []string) error {
 }
 ```
 
-`Handle` 返回的业务错误原样返回，框架按错误分类转换为[退出码](../general/commands.md#exit-codes)，例如文章不存在时以 1 退出。
+`Handle` 返回的业务错误原样返回即可，框架会按错误的分类转换为[退出码](../general/commands.md#exit-codes)。例如文章不存在时，命令以 1 退出。
 
-模块的命令在 `commands.go` 中声明，它和 `routes.go` 一样只描述入口：命令名、参数和选项：
+模块的命令在 `commands.go` 中声明。和 `routes.go` 一样，它只描述入口：命令名、参数和选项：
 
 ```go
 // Commands 声明 article 模块的命令，入口调用它。
@@ -232,7 +264,7 @@ func Commands(db *bun.DB) *cobra.Command {
 }
 ```
 
-构造命令行时还没有加载配置，也没有打开数据库。入口用 `command.Bind` 声明模块的命令：执行时才装配依赖，见[只在执行时装配的命令](dependencies.md#deferred-commands)：
+这里有一个问题：构造命令行时，配置还没有加载，数据库也没有打开，`db` 从哪里来？入口用 `command.Bind` 解决这个问题，它让依赖推迟到执行命令时才装配，见[只在执行时装配的命令](dependencies.md#deferred-commands)：
 
 ```go
 func Commands() []*cobra.Command {
@@ -242,19 +274,20 @@ func Commands() []*cobra.Command {
 }
 ```
 
-[装配命令行](../general/commands.md#declaring-the-cli)时把它们加到根命令上，之后就可以这样运行：
+把这些命令[加到根命令上](../general/commands.md#declaring-the-cli)之后，就可以这样运行：
 
 ```bash
 ./bin/api article publish 0193e7a2-7c1e-7b4a-9d2f-3c5a1e8b6f10
+# hello-world
 ```
 
 > [!IMPORTANT]
-> 声明时传入的依赖都是零值，所以 `Commands` 和动作的构造函数只能保存依赖、不能使用它们。`RunE` 用 `cmd.Flags().GetString` 这类方法读取选项，不要用 `StringVar` 绑定的变量：执行的是重新声明的命令，绑定的变量不会被解析。
+> 声明命令时传入的依赖都是零值，所以 `Commands` 和业务动作的构造函数只能**保存**依赖，不能**使用**它们。同样的原因，`RunE` 要用 `cmd.Flags().GetString` 这类方法读取选项，不要用 `StringVar` 绑定的变量：真正执行的是重新声明的命令，绑定的变量不会被解析。
 
 <a id="as-tools"></a>
 ### AI 工具
 
-让 Claude、Cursor 这类 AI 客户端调用一个动作时，入口是 `Tool` 方法，签名是 `func(ctx, In) (Out, error)`，参数类型的标签与 REST 的请求体相同：
+如果你想让 Claude、Cursor 这类 AI 客户端调用一个业务动作，入口是 `Tool` 方法。它的签名是 `func(ctx, In) (Out, error)`，参数类型的标签与 REST 的请求体相同：
 
 ```go
 // Tool 处理 MCP 工具 article_publish。
@@ -269,20 +302,18 @@ func (a *Publish) Tool(ctx context.Context, in PublishArgs) (*ArticleDTO, error)
 }
 ```
 
-模块在 `tools.go` 中用 `mcpx.Register` 登记工具，声明名称、说明和需要的权限，见 [MCP 服务](../ai/mcp.md)。
+工具的名称、说明和需要的权限在模块的 `tools.go` 中登记，详见 [MCP 服务](../ai/mcp.md)。
 
 <a id="direct-calls"></a>
 ### 页面、其他动作和脚本
 
-其他地方直接调用 `Handle`。[页面处理器](../responses/views.md#rendering-pages)持有它用到的动作；[填充数据](../database/migrations.md#seeding)的 `seed` 命令组合了多个动作，它不是某一个动作的入口，所以直接调用 `Create` 和 `Publish` 的 `Handle`：
+除了上面这些入口，其他地方直接调用 `Handle` 即可。例如[页面处理器](../responses/views.md#rendering-pages)持有它用到的业务动作；[填充数据](../database/migrations.md#seeding)的 `seed` 命令组合了“创建”和“发布”两个动作，它不是某一个动作的入口，所以直接调用它们的 `Handle`：
 
 ```go
 item, err := article.NewCreate(db).Handle(ctx, alice, changes)
 ```
 
-页面处理器不放在 `article` 包中，因为 templ 组件要导入 `article` 包的类型，放在一起会造成循环导入。
-
-一个动作需要另一个动作时，通过构造函数接收它，而不是在内部构造。例如[导入文章](../features/import-export.md#import-action)时复用 `Create` 的规则：
+一个业务动作需要另一个业务动作时，通过构造函数接收它，而不是在内部构造。例如[导入文章](../features/import-export.md#import-action)复用“创建文章”的规则：
 
 ```go
 type Import struct {
@@ -294,15 +325,22 @@ func NewImport(create *Create) *Import {
 }
 ```
 
+> [!NOTE]
+> 页面处理器不放在 `article` 包中，而是放在子包 `articleweb` 中。templ 组件要导入 `article` 包的类型，放在同一个包里会造成循环导入。
+
 <a id="follow-ups"></a>
 ## 同步的后续动作
 
-一个动作完成后，其他模块常常要跟着做点什么，例如文章发布后，积分模块给作者加积分。Tenon 没有事件分发器：动作声明一个钩子类型，bootstrap 把其他模块的函数传进来。`article` 不导入 `points`，发布文章会触发什么都写在装配代码里，不需要到处查找监听器。
+一个业务动作完成后，其他模块常常要跟着做点什么。例如文章发布后，积分模块要给作者加 10 积分。
+
+最直接的写法是在 `Publish` 中调用积分模块。但这样 `article` 就依赖了 `points`，以后每加一个后续动作，都要修改“发布文章”。很多框架用事件分发器解决这个问题，但这又带来了另一个问题：发布一篇文章到底会触发哪些事情，你得在整个项目里搜索监听器才能知道。
+
+Tenon 的做法介于两者之间：业务动作声明一个**钩子类型**，入口把其他模块的函数传进来。`article` 不导入 `points`，而发布文章会触发什么，都写在入口的装配代码里，一眼就能看到。
 
 <a id="declaring-hooks"></a>
 ### 声明钩子
 
-在 `publish.go` 中声明钩子类型，构造函数接收一组钩子：
+在 `publish.go` 中声明钩子的类型，并让构造函数接收一组钩子：
 
 ```go
 // PublishedHook 在发布文章的事务中执行，此时文章已经更新。返回错误时整个发布回滚。
@@ -318,7 +356,7 @@ func NewPublish(db *bun.DB, onPublished ...PublishedHook) *Publish {
 }
 ```
 
-`Handle` 在更新文章之后依次调用它们：
+然后，`Handle` 在更新文章之后依次调用它们：
 
 ```go
         _, err = tx.NewUpdate().Model(item).Column("status", "published_at", "updated_at").WherePK().Exec(ctx)
@@ -333,9 +371,9 @@ func NewPublish(db *bun.DB, onPublished ...PublishedHook) *Publish {
         return nil
 ```
 
-钩子和文章的更新在同一个事务中，一起提交，一起回滚。钩子返回的业务错误原样传给调用者，HTTP 接口照常把它转换为状态码。
+钩子和文章的更新在同一个事务中，一起提交，也一起回滚。钩子返回的业务错误会原样传给调用者，HTTP 接口照常把它转换为状态码。
 
-钩子由下游模块提供，例如 `internal/points/article.go`：
+钩子由下游的模块提供，例如积分模块的 `points/article.go`：
 
 ```go
 // ArticlePublished 给发布文章的作者加 10 积分。
@@ -344,14 +382,15 @@ func ArticlePublished(ctx context.Context, tx database.Tx, item *article.Article
 }
 ```
 
-`points` 导入 `article`，`article` 不导入 `points`，所以不会循环导入。钩子需要依赖时，写成某个类型的方法，传入方法值，与 `HTTP`、`Job` 这些入口方法一样。
+`points` 导入 `article`，而 `article` 不导入 `points`，所以不会出现循环导入。钩子需要依赖时，把它写成某个类型的方法，再传入方法值，就像 `HTTP`、`Job` 这些入口方法一样。
 
-发布之前必须先通过另一个模块的检查时，例如内容审核，这个检查是 `Publish` 的依赖，而不是后续动作：在 `article` 中声明一个小接口，由构造函数接收，见[构造函数注入](dependencies.md#constructor-injection)。
+> [!NOTE]
+> 如果发布之前必须先通过另一个模块的检查（例如内容审核），这个检查就不是后续动作，而是 `Publish` 的依赖：在 `article` 中声明一个小接口，由构造函数接收，见[构造函数注入](dependencies.md#constructor-injection)。
 
 <a id="wiring-hooks"></a>
 ### 在 bootstrap 中连接
 
-`Publish` 在路由、worker 和命令中都会构造，每一处都要传入同样的钩子，否则通过[定时发布](#as-jobs)的文章就不会加积分。在 bootstrap 中给钩子列表起一个名字，各处都使用它：
+`Publish` 在路由、worker 和命令中都会被构造。每一处都要传入同样的钩子，否则通过[定时发布](#as-jobs)的文章就不会加积分。为了不漏掉，在 bootstrap 中给钩子列表起一个名字，各处都使用它：
 
 ```go
 // onPublished 是发布文章时在同一个事务中执行的钩子，构造 article.Publish 的地方都传入它。
@@ -364,14 +403,14 @@ article.PublishAt.Handle(w, article.NewPublish(a.db, onPublished...).Job)
 article.Commands(a.db, onPublished)
 ```
 
-`article.Register` 和 `article.Commands` 各多一个参数，用来构造 `Publish`。这里的钩子没有依赖，所以是一个变量；钩子需要依赖时，在 `open` 中构造这个列表，保存在 `App` 中。
+`article.Register` 和 `article.Commands` 各多了一个参数，用来构造 `Publish`。这里的钩子没有依赖，所以是一个变量；如果钩子需要依赖，就在 `open` 中构造这个列表，保存在 `App` 中。
 
-测试 `Publish` 时不传钩子，或者传一个记录调用的函数；测试 `points.ArticlePublished` 时，在测试事务中直接调用它，见[测试](../testing/database.md#testing-actions)。
+测试 `Publish` 时可以不传钩子，或者传一个记录调用的函数；测试 `points.ArticlePublished` 时，在测试事务中直接调用它，见[测试](../testing/database.md#testing-actions)。
 
 <a id="what-hooks-do"></a>
 ### 钩子里做什么
 
-钩子执行时，事务还持有文章的行锁，所以钩子里只做必须和发布一起成功的写入。其他后续动作按能否等待、能否回滚选择写法：
+钩子执行时，事务还持有文章的行锁，所以钩子里只应该做**必须和发布一起成功**的写入。其他后续动作，按它能否等待、能否回滚选择写法：
 
 | 后续动作 | 写法 |
 | --- | --- |
@@ -379,31 +418,34 @@ article.Commands(a.db, onPublished)
 | 可以稍后执行、失败要重试，例如通知关注者 | 在钩子中用 `tx` 发布[队列任务](../libraries/queue.md)：`Topic.Publish(ctx, tx, …)`，事务提交后才投递 |
 | 不能回滚的副作用，例如广播、删除缓存 | 在钩子中用 [`tx.AfterCommit`](../database/quick-start.md#after-commit) 登记 |
 
-不要在钩子中用 `*bun.DB` 开启另一个事务：它看不到还没提交的文章，发布回滚时它的写入也不会撤销。
+> [!WARNING]
+> 不要在钩子中用 `*bun.DB` 开启另一个事务。它看不到还没有提交的文章；而发布回滚时，它的写入也不会被撤销。
 
 <a id="data-objects"></a>
 ## 数据对象
 
-验证规则、请求数据和响应数据都由普通的 Go 结构体描述，不需要专门的数据对象：
+你可能会问：验证规则、请求数据和响应数据放在哪里？在 Tenon 中，它们都由普通的 Go 结构体描述，不需要专门的“数据对象”：
 
 | 用途 | 写法 |
 | --- | --- |
 | 验证并读取请求 | 带验证标签的结构体，例如 `Changes`；HTTP 输入类型写成 `Body Changes`，见[请求](../http/requests.md#json-body) |
-| 页面表单 | 同一个结构体：`web.ParseForm[article.Changes](../r)`，见[表单](../responses/forms.md) |
+| 页面表单 | 同一个结构体：`web.ParseForm[article.Changes](r)`，见[表单](../responses/forms.md) |
 | 表格导入 | 同一个结构体：`sheet.Decode[article.Changes](ctx, r)`，见[导入与导出](../features/import-export.md) |
 | 业务参数 | `Handle` 直接接收 `Changes`，验证标签对它没有影响 |
 | 响应 | `ArticleDTO` 和转换函数 `toDTO`，见[共享响应结构](../http/routing.md#shared-responses) |
 | 前端类型 | 由导出的 OpenAPI 文档生成，见[客户端代码](../responses/clients.md) |
 
-`Changes` 只在一处声明，JSON 接口、页面表单和业务代码都使用它，验证规则不会在几个地方写得不一致。转换函数是普通的函数，字段改名时编译器会发现遗漏。
+`Changes` 只声明一次，JSON 接口、页面表单和业务代码都使用它，验证规则就不会在几个地方写得不一致。转换函数也只是普通的函数，字段改名时，编译器会发现遗漏的地方。
 
 <a id="conventions"></a>
 ## 约定
 
-- **命名**：类型名是动词，包名已经说明了对象，例如 `article.Publish`、`article.Create`；文件名与类型名对应，例如 `publish.go`。
-- **构造函数只保存依赖**。生成 OpenAPI 文档、[查看路由](../http/routing.md#listing-routes)和[声明命令](#as-commands)时，动作会被构造，但传入的依赖都是零值，方法不会被调用。
-- **字段只保存依赖**。动作被并发调用，请求数据只放在参数和局部变量中。
-- **`Handle` 是唯一的业务入口**。入口方法只做转换：读取参数和主体、调用 `Handle`、转换结果和错误。入口方法按来源命名：`HTTP`、`Job`、`Command`。
-- **测试 `Handle`**。业务规则直接调用 `Handle` 测试，入口的认证和验证通过 HTTP 测试覆盖，见[测试](../testing/database.md#testing-actions)。
+最后，总结一下编写业务动作时的几条约定：
 
-这些是推荐的约定，框架不检查它们。简单的接口可以直接用函数作为处理器，见[基本路由](../http/routing.md#basic-routing)。
+- **命名**：类型名是动词，包名已经说明了对象，例如 `article.Publish`、`article.Create`；文件名与类型名对应，例如 `publish.go`。
+- **构造函数只保存依赖**：生成 OpenAPI 文档、[查看路由](../http/routing.md#listing-routes)和[声明命令](#as-commands)时，业务动作会被构造，但传入的依赖都是零值，方法不会被调用。
+- **字段只保存依赖**：业务动作会被并发调用，请求的数据只能放在参数和局部变量中。
+- **`Handle` 是唯一的业务入口**：入口方法只做转换，按来源命名为 `HTTP`、`Job`、`Command`、`Tool`。
+- **测试 `Handle`**：业务规则直接调用 `Handle` 测试，入口的认证和验证通过 HTTP 测试覆盖，见[测试](../testing/database.md#testing-actions)。
+
+这些都是推荐的约定，框架并不检查它们。简单的接口也可以直接用一个函数作为处理器，见[路由](../http/routing.md#basic-routing)。
