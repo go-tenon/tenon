@@ -1,6 +1,6 @@
 # 邮件
 
-`mail` 包定义了邮件消息 `mail.Message`，以及只有一个方法的发送接口：
+发送邮件是大多数应用都需要的功能：验证码、通知、找回密码。Tenon 的 `mail` 包定义了邮件消息 `mail.Message`，以及只有一个方法的发送接口：
 
 ```go
 type Mailer interface {
@@ -38,6 +38,8 @@ type Mailer interface {
 <a id="example-usage"></a>
 ## 示例用法
 
+下面用模板渲染一封邮件，然后发送它：
+
 ```go
 mailer := logmail.New(nil) // 开发时写进日志；生产环境换成 smtp.New、resend.New 或 ses.New
 
@@ -53,7 +55,7 @@ msg.To = []mail.Address{{Name: "编辑部", Email: "editors@example.com"}}
 err = mailer.Send(ctx, msg)
 ```
 
-需要重试的邮件交给[队列](queue.md#publishing-jobs)发送。
+开发时用 `logmail` 把邮件写进日志，你可以直接从日志中复制邮件里的链接；上线时换成 SMTP、Resend 或 SES，业务代码不需要任何修改。`Send` 是同步的，发送失败不会重试，需要可靠送达的邮件交给[队列](queue.md#publishing-jobs)发送。
 
 <a id="assembling-mailer"></a>
 ## 装配发送器
@@ -474,7 +476,13 @@ func NewTemplates(fsys fs.FS) (*Templates, error)
 func (t *Templates) Render(ctx context.Context, name string, data any) (Message, error)
 ```
 
-加载 `fsys` 中的全部模板，模板有错时返回错误。`Render` 渲染主题和正文，`ctx` 中的语言用于翻译。见[编写邮件模板](#writing-templates)。
+- **参数**
+    - `fsys`（`NewTemplates`）：存放模板的文件系统，通常是 `embed.FS`
+    - `name`（`Render`）：邮件的名称，例如 `article_published`
+    - `data`（`Render`）：模板数据
+- **返回**：渲染好主题和正文的邮件，收件人由你填写；模板有错时返回错误
+
+`NewTemplates` 在创建时加载并检查全部模板。`Render` 用 `ctx` 中的语言翻译模板中的文案，见[编写邮件模板](#writing-templates)。
 
 ### Message
 

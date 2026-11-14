@@ -1,6 +1,8 @@
 # 出站请求
 
-有些请求的地址由用户填写：租户的 [webhook](../features/webhooks.md) 端点、文章中链接的预览、AI 助手要抓取的网页。如果直接用 `http.DefaultClient` 去请求，有人可以填 `http://169.254.169.254/latest/meta-data/` 读取云服务器的元数据（其中可能有临时密钥），或者填 `http://10.0.0.5:6379/` 访问内网服务。这类攻击叫服务端请求伪造（SSRF）。
+`outbound` 包创建一个只能访问公网地址的 HTTP 客户端，用来请求由用户填写的地址。
+
+为什么需要它？有些请求的地址由用户填写：租户的 [webhook](../features/webhooks.md) 端点、文章中链接的预览、AI 助手要抓取的网页。如果直接用 `http.DefaultClient` 去请求，有人可以填 `http://169.254.169.254/latest/meta-data/` 读取云服务器的元数据（其中可能有临时密钥），或者填 `http://10.0.0.5:6379/` 访问内网服务。这类攻击叫服务端请求伪造（SSRF）。
 
 `outbound` 包创建只能访问公网地址的 `*http.Client`。地址在域名解析之后、建立连接之前检查，检查的是真正要连接的 IP，所以下面这些绕过方式都无效：
 
@@ -24,6 +26,8 @@
 <a id="example-usage"></a>
 ## 示例用法
 
+用法和普通的 `http.Client` 一样，只是创建方式不同：
+
 ```go
 client := outbound.New(outbound.Options{Timeout: 5 * time.Second})
 
@@ -32,6 +36,8 @@ if errors.Is(err, outbound.ErrForbidden) {
     return ErrBadLink.New() // 地址指向内网、回环或元数据接口
 }
 ```
+
+用户填写的地址指向内网、回环或云服务器的元数据接口时，连接在建立之前就被拒绝，错误满足 `errors.Is(err, outbound.ErrForbidden)`，你可以把它转换为一个对用户友好的业务错误。
 
 <a id="creating-clients"></a>
 ## 创建客户端
@@ -211,6 +217,10 @@ mailer, err := resend.NewWithClient(client, from)
 ```go
 func New(opts Options) *http.Client
 ```
+
+- **参数**
+    - `opts`：见下表，零值可用
+- **返回**：只能访问公网地址的 `*http.Client`
 
 | `Options` 字段 | 说明 |
 | --- | --- |

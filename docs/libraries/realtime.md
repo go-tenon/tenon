@@ -1,6 +1,8 @@
 # 实时频道
 
-[服务端推送](../responses/sse.md)适合服务器单向推送：通知角标、进度、AI 的流式回答。聊天、在线状态、「对方正在输入」这类场景需要双向的连接、在线成员和移动端 SDK，`realtime` 包为此在进程内嵌入 [Centrifuge](https://github.com/centrifugal/centrifuge)，提供 WebSocket 实时频道。客户端使用 Centrifuge 的[官方 SDK](https://centrifugal.dev/docs/transports/client_sdk)：浏览器的 centrifuge-js，以及 Swift、Java、Dart 等。
+实时频道是基于 WebSocket 的双向连接，客户端订阅频道，服务端向频道发布消息。
+
+[服务端推送](../responses/sse.md)适合服务器单向推送：通知角标、进度、AI 的流式回答。聊天、在线状态、“对方正在输入”这类场景需要双向的连接、在线成员和移动端 SDK，`realtime` 包为此在进程内嵌入 [Centrifuge](https://github.com/centrifugal/centrifuge)，提供 WebSocket 实时频道。客户端使用 Centrifuge 的[官方 SDK](https://centrifugal.dev/docs/transports/client_sdk)：浏览器的 centrifuge-js，以及 Swift、Java、Dart 等。
 
 频道就是[广播](broadcasting.md)的主题。业务代码照常通过 `hub.PublishJSON` 发布，SSE 处理器和 WebSocket 客户端都会收到；多个实例之间由 Hub 的后端传递消息，不需要另外部署服务。
 
@@ -23,6 +25,8 @@
 <a id="example-usage"></a>
 ## 示例用法
 
+服务端创建 `Realtime`，登记一个公开频道，挂载 WebSocket 的处理器：
+
 ```go
 rt, err := realtime.New(hub, realtime.Options{Authenticate: tokens.Validate})
 if err != nil {
@@ -35,6 +39,8 @@ router.Handle("/realtime", rt.Handler())
 err = hub.PublishJSON(ctx, "articles", ArticlePublished{ID: id})
 ```
 
+浏览器用 centrifuge-js 订阅这个频道：
+
 ```ts
 import { Centrifuge } from "centrifuge"
 
@@ -42,6 +48,8 @@ const client = new Centrifuge("wss://example.com/realtime", { getToken })
 client.newSubscription("articles").on("publication", (ctx) => console.log(ctx.data)).subscribe()
 client.connect()
 ```
+
+之后，业务代码发布到 Hub 的 `articles` 主题的每一条消息，都会实时出现在浏览器的控制台中。下面依次介绍频道、认证和在线成员。
 
 <a id="creating"></a>
 ## 创建 Realtime
@@ -336,7 +344,12 @@ location / {
 func New(hub *broadcast.Hub, opts Options) (*Realtime, error)
 ```
 
-每个进程一个，接收 `hub` 上的全部消息。
+- **参数**
+    - `hub`：广播的 Hub，频道就是它的主题
+    - `opts`：见下面的 `Options`
+- **返回**：`Realtime`；选项不合法时返回错误
+
+每个进程创建一个，接收 `hub` 上的全部消息。
 
 ### Options
 

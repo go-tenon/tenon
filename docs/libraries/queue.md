@@ -1,12 +1,14 @@
 # 队列
 
-有些工作不需要让用户等它完成，例如发送邮件、生成缩略图、通知第三方。`queue` 包把这些工作作为任务交给 [NSQ](https://nsq.io)，由单独的 worker 进程取出执行；执行失败的任务按退避时间自动重试，次数用完后转入失败任务表，等待人工处理。
+有些工作不需要让用户等它完成，例如发送邮件、生成缩略图、通知第三方。如果在请求中同步完成它们，接口会变慢；邮件服务器暂时不可用时，请求还会直接失败，而且没有人会重试。
+
+队列解决了这个问题：接口只把工作作为一个**任务**发布出去就返回，由单独的 worker 进程取出执行。`queue` 包把任务交给 [NSQ](https://nsq.io)；执行失败的任务按退避时间自动重试，次数用完后转入失败任务表，等待人工处理。
 
 任务按 topic 分类：发布方把任务发到一个 topic，worker 为每个 topic 注册一个处理函数。
 
-任务和业务数据**在同一个事务中发布**：`Publish` 把任务写进 PostgreSQL 的 WAL（预写日志），事务提交后 worker 经由逻辑复制立即读到，转发到 NSQ；事务回滚时任务一起取消。这样既不会出现「文章发布了、通知任务丢了」，也不会出现「通知发出去了、文章却回滚了」。任务不写入任何表，发布任务的事务之间不会互相等待，提交的吞吐与不发布任务时相当。
+Tenon 的队列有两个特点，在开始之前需要了解。第一，任务和业务数据**在同一个事务中发布**：`Publish` 把任务写进 PostgreSQL 的 WAL（预写日志），事务提交后 worker 经由逻辑复制立即读到，转发到 NSQ；事务回滚时任务一起取消。这样既不会出现「文章发布了、通知任务丢了」，也不会出现「通知发出去了、文章却回滚了」。任务不写入任何表，发布任务的事务之间不会互相等待，提交的吞吐与不发布任务时相当。
 
-每个任务**至少执行一次**：worker 崩溃或停止超时时，正在处理的任务会交给其他 worker 重新执行，处理函数需要能安全地重复执行。任务之间不保证执行顺序。
+第二，每个任务**至少执行一次**：worker 崩溃或停止超时时，正在处理的任务会交给其他 worker 重新执行，处理函数需要能安全地重复执行。任务之间不保证执行顺序。
 
 - [示例用法](#example-usage)
 - [准备](#preparing)
@@ -31,6 +33,8 @@
 <a id="example-usage"></a>
 ## 示例用法
 
+下面在注册用户的同时发布一个“发送欢迎邮件”的任务，并在 worker 中处理它：
+
 ```go
 // 声明 topic：名称和任务内容的类型
 var SendWelcome = queue.Topic[uuid.UUID]("users.send_welcome")
@@ -50,6 +54,8 @@ SendWelcome.Handle(w, func(ctx context.Context, id uuid.UUID) error {
 })
 err = w.Run(ctx)
 ```
+
+注册用户的事务提交之后，任务才会被投递；事务回滚了，任务也就不存在。worker 收到任务后调用处理函数，返回错误时，任务稍后会自动重试。下面先准备 NSQ 和 PostgreSQL，再逐步介绍发布、处理和失败的任务。
 
 <a id="preparing"></a>
 ## 准备
@@ -527,6 +533,31 @@ func (t Topic[T]) Handle(w *Worker, fn func(ctx context.Context, payload T) erro
 ```
 
 `Publish` 把 payload 编码为 JSON，写入 `db` 的 WAL，`db` 是事务时随事务提交。`Handle` 在 worker 上注册处理函数。
+
+### Topic.Publish
+
+```go
+func (t Topic[T]) Publish(ctx context.Context, db bun.IDB, payload T, opts ...PublishOption) error
+```
+
+- **参数**
+    - `db`：业务事务；传入连接池时立即发布
+    - `payload`：任务的内容，编码为 JSON
+    - `opts`：`Delay` 或 `At`，见[延迟执行](#delayed-jobs)
+- **返回**：写入失败时的错误
+
+任务写入 `db` 的 WAL，`db` 是事务时随事务一起提交。
+
+### Topic.Handle
+
+```go
+func (t Topic[T]) Handle(w *Worker, fn func(ctx context.Context, payload T) error, opts ...HandleOption)
+```
+
+- **参数**
+    - `w`：worker
+    - `fn`：处理函数；返回 `nil` 表示完成，返回错误表示稍后重试
+    - `opts`：`Concurrency`、`MaxAttempts`
 
 ### PublishOption
 

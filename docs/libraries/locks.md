@@ -1,10 +1,13 @@
 # 原子锁
 
-应用部署多个实例时，同一段逻辑可能在多个实例上同时执行，例如定时任务在每个实例上都会触发。原子锁保证同一时刻只有一个持有者执行它。
+原子锁保证同一段逻辑在同一时刻只有一个持有者在执行。
 
-`lock` 包提供带过期时间的锁：取得锁后在有效期内独占，持有者崩溃时锁到期自动失效，不会永远卡住。
+只部署一个实例时，你很少需要考虑这个问题。但部署多个实例之后，同一段逻辑可能在几个实例上同时执行：比如每个实例都会触发“生成站点地图”，结果同一份工作做了好几遍，甚至互相覆盖。原子锁让其中一个实例取得锁并执行，其他实例发现锁已被占用，直接跳过。
 
-锁只负责「谁来执行」。并发修改同一行数据时，应优先使用带条件的更新或 `SELECT ... FOR UPDATE`，由数据库保证一致，不需要原子锁。
+`lock` 包提供的锁都有过期时间：取得锁之后，在有效期内独占它；如果持有者在执行中崩溃，锁到期后会自动失效，不会永远卡住。
+
+> [!NOTE]
+> 锁只负责“谁来执行”。如果你要解决的是并发修改同一行数据，请优先使用带条件的更新或 `SELECT ... FOR UPDATE`，由数据库保证一致，不需要原子锁。
 
 - [示例用法](#example-usage)
 - [装配锁](#assembling-locks)
@@ -19,6 +22,8 @@
 <a id="example-usage"></a>
 ## 示例用法
 
+下面的代码保证每天的报表只由一个实例生成：
+
 ```go
 locker := lock.New(redislock.New(rdb))
 
@@ -29,6 +34,8 @@ if errors.Is(err, lock.ErrNotAcquired) {
     return nil // 其他实例正在执行
 }
 ```
+
+`Do` 先尝试取得名为 `reports:daily` 的锁，有效期一分钟。取得了，就执行传入的函数，结束后释放锁；锁已经被别的实例占用时，它不执行函数，而是返回 `lock.ErrNotAcquired`。
 
 <a id="assembling-locks"></a>
 ## 装配锁
@@ -162,6 +169,20 @@ locker := lock.New(locktest.NewStore())
 ```go
 func New(store Store) *Locker
 ```
+
+### Locker.Do
+
+```go
+func (l *Locker) Do(ctx context.Context, name string, ttl time.Duration, fn func(ctx context.Context) error) error
+```
+
+- **参数**
+    - `name`：锁名，例如 `articles:publish-scheduled`
+    - `ttl`：锁的有效期，应当比 `fn` 预计的执行时间长
+    - `fn`：取得锁之后执行的函数
+- **返回**：`fn` 返回的错误；锁被占用时返回 `ErrNotAcquired`；`fn` 执行超过 `ttl`、锁已被别人取得时，返回值包含 `ErrNotHeld`
+
+释放锁不受 `ctx` 取消的影响。
 
 ### Locker
 

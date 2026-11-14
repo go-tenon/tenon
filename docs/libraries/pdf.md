@@ -1,6 +1,6 @@
 # 生成 PDF
 
-PDF 用写页面的方式编写：一个 templ 组件加一份 CSS，交给 Chromium 打印。发票、合同、报表都可以这样生成，模板在浏览器中打开就能预览。
+`pdf` 包把一个 HTML 页面生成为 PDF。你用写页面的方式编写 PDF：一个 templ 组件加一份 CSS，交给 Chromium 打印。发票、合同、报表都可以这样生成，模板在浏览器中打开就能预览。
 
 `pdf` 包定义了文档和生成器：
 
@@ -32,6 +32,8 @@ type Renderer interface {
 <a id="example-usage"></a>
 ## 示例用法
 
+下面把一张发票生成为 PDF：
+
 ```go
 renderer, err := gotenberg.New(cfg.PDF) // 连接 Gotenberg 服务
 if err != nil {
@@ -43,6 +45,8 @@ data, err := renderer.Render(ctx, pdf.Document{
     Assets: assets,                 // 样式表、图片，HTML 中只写文件名
 })
 ```
+
+`views.Invoice` 是一个普通的 templ 组件，纸张大小、边距和页眉页脚都用 CSS 设置。`Render` 返回 PDF 的字节，你可以把它作为下载返回，或者保存到[文件存储](filesystem.md)。下面先启动 Gotenberg，再介绍怎样编写页面。
 
 <a id="running-gotenberg"></a>
 ## 启动 Gotenberg
@@ -317,7 +321,11 @@ type Renderer interface {
 }
 ```
 
-包 `github.com/go-tenon/tenon/pdf`。服务不可用时返回 `ErrUnavailable`（分类 `Unavailable`）。
+- **参数**（`Render`）
+    - `doc`：要生成的文档，见下面的 `Document`
+- **返回**：PDF 的字节；生成服务不可用时返回 `ErrUnavailable`（分类 `Unavailable`，响应 `503`）
+
+包 `github.com/go-tenon/tenon/pdf`。
 
 ### pdf.Document
 
