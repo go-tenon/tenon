@@ -286,16 +286,18 @@ rest.RegisterSSE(api, op, chat.UIEvents, h.Chat)
 前端按这些接口配置 `useChat`：
 
 ```tsx
+import { chatControls, chatTransport } from "@go-tenon/client";
+import { session } from "./client"; // createSession 创建的会话，见客户端代码
+
+const authed = session.fetch(fetch); // 带上 access token，401 时刷新再重试
+const chat = chatControls('/api/v1/assistant/chat', authed);
+
 const { messages, sendMessage, addToolApprovalResponse } = useChat({
   id: conversationId,
-  messages: initialMessages, // 来自 GET /assistant/chat/{id}/messages
+  messages: initialMessages, // await chat.messages(conversationId)
   resume: true,
-  transport: new DefaultChatTransport({
-    api: '/api/v1/assistant/chat',
-    headers: { Authorization: `Bearer ${token}` },
-    // 历史保存在服务端，只发送最后一条消息
-    prepareSendMessagesRequest: ({ id, messages }) => ({ body: { id, message: messages.at(-1) } }),
-  }),
+  // 历史保存在服务端，chatTransport 只发送最后一条消息
+  transport: new DefaultChatTransport(chatTransport('/api/v1/assistant/chat', authed)),
   sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
 });
 ```
@@ -311,7 +313,7 @@ const { messages, sendMessage, addToolApprovalResponse } = useChat({
 const { status } = useChat({ /* 同上 */ });
 
 async function stopAnswer() {
-  await fetch(`/api/v1/assistant/chat/${conversationId}/stop`, { method: 'POST', headers });
+  await chat.stop(conversationId);
 }
 
 {(status === 'submitted' || status === 'streaming') && <button onClick={stopAnswer}>停止</button>}
@@ -332,7 +334,7 @@ async function stopAnswer() {
 回答进行中，`useChat` 的 `sendMessage` 会等这次回答结束后才发送。要让模型在回答过程中就看到新消息，前端改为调用插话接口：
 
 ```ts
-await fetch(`/api/v1/assistant/chat/${conversationId}/steer`, { method: 'POST', body: JSON.stringify({ text }), headers })
+await chat.steer(conversationId, text)
 ```
 
 - 模型正在调用工具时，消息在这批工具调用结束后、模型下一次思考之前进入对话。模型会同时看到工具的结果和这条新消息。

@@ -168,16 +168,14 @@ token 无效、属于其他账号体系，或 Resolver 拒绝主体时，连接�
 使用 [JWT 模式](../security/api-tokens.md#jwt)时，SDK 传入 access token，并设置 `getToken`：
 
 ```js
-import { api } from './client';
+import { realtimeAuth } from '@go-tenon/client';
+import { session } from './client';
 
-const centrifuge = new Centrifuge('wss://api.example.com/realtime', {
-    token: api.getAccessToken(),
-    // 刷新后返回新的 access token；返回空字符串表示需要重新登录
-    getToken: async () => (await api.refresh()) ? api.getAccessToken() : '',
-});
+// { token, getToken }：连接时用当前的 access token；过期后通过会话刷新，失败时返回空字符串，SDK 停止重连
+const centrifuge = new Centrifuge('wss://api.example.com/realtime', { ...realtimeAuth(session) });
 ```
 
-`api` 是[生成的 API 客户端](../responses/clients.md#creating-the-client)，`refresh` 用 refresh token 换新的 access token。断线一段时间后重连，access token 可能已经过期，这时连接返回 109（token 已过期），SDK 调用 `getToken` 换新的再连。已经建立的连接跨过 access token 的有效期继续保持：复查只检查这次登录是否已被撤销。
+`session` 是 `@go-tenon/client` 的会话，见[创建客户端](../responses/clients.md#creating-the-client)，刷新与 API 请求共用同一次。断线一段时间后重连，access token 可能已经过期，这时连接返回 109（token 已过期），SDK 调用 `getToken` 换新的再连。已经建立的连接跨过 access token 的有效期继续保持：复查只检查这次登录是否已被撤销。
 
 这个处理不限于 JWT：`Authenticate` 返回的错误匹配 `identity.ErrExpired` 时，连接返回 109；连接期间复查遇到它时以 3005 断开，SDK 重连时同样换新的 token。
 

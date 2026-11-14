@@ -71,10 +71,13 @@ func TestInitEndToEnd(t *testing.T) {
 	}
 	// 框架的前端包从本地框架复制到 .tenon/js，作为 workspace 成员，前端能导入它。
 	// 生成的查询选项、校验规则、验证提示和权限从客户端包的子路径导入。
-	imports := "import { createSession, describeError, validate } from \"@go-tenon/client\"\nimport { createQueries } from \"@todo/client/api/queries\"\nimport { schemas } from \"@todo/client/api/schemas\"\n" +
+	imports := "import { chatTransport, createSession, describeError, realtimeAuth, uploadFile, validate } from \"@go-tenon/client\"\nimport { createQueries } from \"@todo/client/api/queries\"\nimport { schemas } from \"@todo/client/api/schemas\"\n" +
 		"import { messages } from \"@todo/client/api/messages\"\nimport { permissions } from \"@todo/client/api/permissions\"\nimport { enums } from \"@todo/client/api/enums\"\n" +
 		"import { api } from \"../../web/src/client\"\n" +
 		"const session = createSession({ refresh: async () => ({ access_token: \"a\", expires_at: \"\" }) })\nsession.connect(api)\n" +
+		// 浏览器的 fetch 和 File 可以直接交给按形状声明的参数；session.fetch(fetch) 仍是 typeof fetch，可以交给 AI SDK。
+		"const authed: typeof fetch = session.fetch(fetch)\n" +
+		"export const flows = [realtimeAuth(session), chatTransport(\"/api/chat\", authed), (file: File) => uploadFile(file, { prepare: async () => ({ id: \"f\" }), sign: async () => ({ url: \"\", method: \"PUT\" }) })]\n" +
 		"export const probe = [createQueries(api, { scope: session.scope }).todo.list(), validate(schemas.todo.create.body, {}, { messages }), describeError(null), permissions, enums]\n"
 	if err := os.WriteFile(filepath.Join(dir, "apps", "admin", "src", "framework.ts"), []byte(imports), 0o644); err != nil {
 		t.Fatal(err)

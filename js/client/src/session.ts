@@ -1,6 +1,7 @@
 // 会话：按客户端协议保存和刷新登录凭据，并记录当前的身份。一个会话可以连接多个 API 的客户端。
 
 import { isApiErrorLike } from "./errors"
+import { type FetchLike, globalFetch, headerRecord } from "./fetch"
 
 /** 登录、刷新和确认身份接口的响应体（apitoken.Session）。 */
 export interface SessionBody {
@@ -63,6 +64,11 @@ export interface Session {
   scope(): readonly unknown[]
   /** 当前的 access token，例如交给实时频道的 SDK。 */
   accessToken(): string
+  /**
+   * 返回带认证的 fetch，用于不经过生成客户端的请求，例如 AI 对话的消息流、对象存储之外的上传接口：
+   * 请求带上 Authorization: Bearer；收到 401 时刷新一次（与其他请求共用同一次刷新），再重试。默认包装全局的 fetch。
+   */
+  fetch<F extends FetchLike = FetchLike>(base?: F): F
   /** 订阅身份的变化（登录、退出、切换身份），返回取消订阅的函数。 */
   subscribe(listener: () => void): () => void
 }
@@ -155,6 +161,23 @@ export function createSession(options: SessionOptions): Session {
     generation: () => gen,
     scope: () => (current ? [current.account, current.tenant ?? ""] : []),
     accessToken: () => token,
+    fetch<F extends FetchLike = FetchLike>(base?: F): F {
+      const send: FetchLike = base ?? globalFetch()
+      const wrapped: FetchLike = async (url, init = {}) => {
+        const attempt = (t: string) => {
+          const headers = headerRecord(init.headers)
+          if (t) headers.Authorization = `Bearer ${t}`
+          return send(url, { ...init, headers })
+        }
+        const used = token
+        const res = await attempt(used)
+        if (res.status !== 401) return res
+        // 等待期间其他请求可能已经换了 token：直接用新的重试。
+        const next = token !== used ? token : await refresh()
+        return next ? attempt(next) : res
+      }
+      return wrapped as F
+    },
     subscribe(listener) {
       listeners.add(listener)
       return () => listeners.delete(listener)

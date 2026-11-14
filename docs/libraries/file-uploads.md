@@ -427,26 +427,30 @@ func (a *DirectUpload) AbortMultipart(ctx context.Context, in *UploadIDInput) (*
 }
 ```
 
-浏览器端的完整流程如下。小于 5GiB 的文件可以走单次上传，这里统一用分片演示；`api` 是带上登录 token 调用应用接口、返回 JSON 的函数：
+客户端用 `@go-tenon/client` 的 `uploadFile` 执行完整的流程，各个步骤是[生成客户端](../responses/clients.md)的方法：
 
-```js
-const file = input.files[0]
-const record = await api('POST', '/files/prepare', { filename: file.name, content_type: file.type, size: file.size })
-const upload = await api('POST', `/files/${record.id}/multipart`)
+```ts
+import { uploadFile } from "@go-tenon/client"
 
-const parts = []
-for (let n = 1; n <= upload.part_count; n++) {
-  const chunk = file.slice((n - 1) * upload.part_size, n * upload.part_size)
-  const signed = await api('POST', `/files/${record.id}/multipart/${upload.upload_id}/parts/${n}/sign`)
-  const res = await fetch(signed.url, { method: signed.method, headers: signed.headers, body: chunk })
-  parts.push({ number: n, etag: res.headers.get('ETag') })
-}
-
-await api('POST', `/files/${record.id}/multipart/${upload.upload_id}/complete`, { parts })
+const record = await uploadFile(input.files[0], {
+  prepare: (body) => api.file.prepare(body),
+  sign: (id) => api.file.signPut(id),
+  multipart: {
+    create: (id) => api.file.multipartCreate(id),
+    signPart: (id, uploadId, n) => api.file.multipartSignPart(id, uploadId, n),
+    complete: (id, uploadId, parts) => api.file.multipartComplete(id, uploadId, { parts }),
+    abort: (id, uploadId) => api.file.multipartAbort(id, uploadId),
+  },
+}, { onProgress: ({ loaded, total }) => setProgress(loaded / total), signal })
 // 把 record.id 提交给业务接口，例如作为文章封面
 ```
 
-每一片在上传前才签名，可以并发上传多片；某一片失败时，重新签名并重传这一片即可。
+- 文件不超过 `multipartThreshold`（默认 64 MiB）时签名一次，用一个请求上传；更大的文件分片上传，默认 4 片并发，每一片在上传前才签名。
+- 某一片失败时重新签名并重传这一片（默认 2 次）；仍然失败或被 `signal` 取消时放弃分片会话。
+- 合并时要提交每一片的 `ETag`，它是对象存储的响应头：bucket 的 CORS 规则要允许 `PUT`，并在 `ExposeHeaders` 中列出 `ETag`，否则浏览器中的脚本读不到它，`uploadFile` 报错。
+- 只使用本地磁盘时不提供 `multipart`，或者用服务端上传接口。
+
+步骤的格式见[客户端协议](../http/protocol.md#uploads)。
 
 <a id="rest-confirm"></a>
 ### 在业务接口中确认

@@ -393,6 +393,17 @@ const errors = validate(schemas.article.create.body, values, { components, messa
 
 框架的测试用同一批输入分别在前端和服务端校验，保证两边的结果相同。`oneOf`、`anyOf`、`not` 不在前端校验，以服务端的结果为准。
 
+**其他协议。** 会话提供带认证的 `session.fetch(fetch)`，用于不经过生成客户端的请求：带上 access token，`401` 时与其他请求共用一次刷新再重试。基于它和会话的还有：
+
+| 函数 | 用途 | 见 |
+| --- | --- | --- |
+| `realtimeAuth(session)` | Centrifuge SDK 的 `token` 和 `getToken` | [实时频道](../libraries/realtime.md#tokens) |
+| `uploadFile(file, steps)` | 直传到对象存储：单次或分片、重试、进度和取消 | [上传接口](../libraries/file-uploads.md#rest-direct-upload) |
+| `watchOperation(open)` | 读取后台操作的进度直到结束，断线重连 | [后台操作](../features/operations.md#progress) |
+| `chatTransport`、`chatControls` | `useChat` 的 transport，以及停止、插话、历史 | [AI 助手](../ai/chat.md#conversation-api) |
+
+不经过生成客户端的请求失败时抛出 `HttpError`，形状与生成客户端的 `ApiError` 相同，`describeError` 照常分类。
+
 **分页。** `toPageParams`、`toTableState` 在表格状态（`pageIndex` 从 0 开始）和查询参数（`page` 从 1 开始）之间转换；`parsePageParams` 从地址读取分页，不合法的值取默认值，`per_page` 不超过 100；`parseSort`、`formatSort` 处理 `-created` 这样的排序参数。
 
 <a id="other-ts-tools"></a>
