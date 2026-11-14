@@ -31,6 +31,7 @@ echo "$(basename "$0") $* @$(basename "$PWD")" >> "$DEVCMD_LOG"
 if [ "$1 $2" = "tool -n" ]; then echo /fake/templ; exit 0; fi
 if [ "$1 $2" = "list -m" ]; then echo "$DEVCMD_FRAMEWORK"; exit 0; fi
 if [ "$1 $2 $3" = "build -mod=mod -o" ]; then
+	[ -n "$DEVCMD_BUILD_DELAY" ] && sleep "$DEVCMD_BUILD_DELAY"
 	if grep -rqs BROKEN --include=*.go .; then echo "main.go:1: syntax error" >&2; exit 1; fi
 	cat > "$4" <<'APP'
 #!/bin/sh
@@ -194,6 +195,23 @@ func TestDevStopsWhenAWatcherExits(t *testing.T) {
 		t.Errorf("err = %v", err)
 	}
 	waitFor(t, "app stopped", func() bool { return strings.Contains(read(log), "app stopped") })
+}
+
+// 首次编译期间修改的 Go 代码在应用启动后触发一次重启，不会因为监听晚于编译开始而被漏掉。
+func TestDevRestartsForChangesDuringFirstBuild(t *testing.T) {
+	dir, log := setup(t, "go")
+	t.Setenv("DEVCMD_BUILD_DELAY", "0.5")
+	cfg := load(t)
+	stop := start(t, cfg, &syncBuffer{}, &syncBuffer{})
+	count := func(s string) int { return strings.Count(read(log), s) }
+	waitFor(t, "first build", func() bool { return count("go build") == 1 })
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\n\nfunc main() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "restart", func() bool { return count("app stopped") == 1 && count("app serve") == 2 })
+	if err := stop(); err != nil {
+		t.Fatalf("dev returned %v", err)
+	}
 }
 
 func TestDevMissingTools(t *testing.T) {

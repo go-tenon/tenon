@@ -337,7 +337,11 @@ func concurrently(ctx context.Context, fns ...func(context.Context) error) error
 
 // watch 每隔 every 取一次 state，变化并且稳定下来（连续两次相同）后调用 changed。
 func watch(ctx context.Context, state func() string, every time.Duration, changed func()) error {
-	last := state()
+	return watchFrom(ctx, state(), state, every, changed)
+}
+
+// watchFrom 与 watch 相同，但以调用方事先记下的 last 作为初始状态：记下之后、开始轮询之前的变化同样会报告。
+func watchFrom(ctx context.Context, last string, state func() string, every time.Duration, changed func()) error {
 	t := time.NewTicker(every)
 	defer t.Stop()
 	pending := false
