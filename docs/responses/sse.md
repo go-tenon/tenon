@@ -44,7 +44,7 @@ data: {"n":2}
 ...
 ```
 
-`rest.RegisterSSE` 的参数和 `rest.Register` 相同，多一个事件表：键是事件名，值是事件数据的类型，用于生成 OpenAPI 文档和[客户端代码](clients.md#event-streams)。连接由 `httpx.SSE` 管理：心跳、超时、停机和断线重连。有两种用法：
+事件流的报文格式、心跳和重连规则见[客户端协议](../http/protocol.md#event-streams)。`rest.RegisterSSE` 的参数和 `rest.Register` 相同，多一个事件表：键是事件名，值是事件数据的类型，用于生成 OpenAPI 文档和[客户端代码](clients.md#event-streams)。连接由 `httpx.SSE` 管理：心跳、超时、停机和断线重连。有两种用法：
 
 | 用法 | 客户端 | 适合 |
 | --- | --- | --- |

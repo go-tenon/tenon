@@ -368,7 +368,7 @@ errorx.KindOf(err) // errorx.Conflict，不是业务错误时为 errorx.Internal
 | `code` | 稳定的错误码，**只有业务错误包含** |
 | `errors` | 字段级的错误明细，**只有输入格式错误包含**，每一项带有违反的规则 `code` 和翻译后的 `message`，见[验证](../http/validation.md#validation-error-response) |
 
-客户端可以这样区分错误：有 `code` 时按 `code` 处理；有 `errors` 时把提示显示在对应字段旁边；两者都没有时（路由不存在、服务端故障等）按 `status` 处理。
+客户端可以这样区分错误：有 `code` 时按 `code` 处理；有 `errors` 时把提示显示在对应字段旁边；两者都没有时（路由不存在、服务端故障等）按 `status` 处理。各状态码和框架定义的错误码的处理方式见[客户端协议](../http/protocol.md#errors)。
 
 `detail` 的内容：启用本地化时，以错误码为消息 ID 翻译，找不到翻译时使用状态码描述并记录一条警告日志；未启用本地化时，使用状态码描述，例如 `Not Found`。
 

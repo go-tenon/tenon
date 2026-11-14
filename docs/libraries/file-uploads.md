@@ -164,7 +164,7 @@ internal/file/
 | `POST /files/{id}/multipart/{uploadID}/complete` | `CompleteMultipart` | 合并分片 |
 | `DELETE /files/{id}/multipart/{uploadID}` | `AbortMultipart` | 放弃分片上传 |
 
-只使用本地磁盘时，保留第一个路由即可。`Confirm` 在使用文件的业务接口中调用，见[在业务接口中确认](#rest-confirm)。
+客户端按这些接口上传的步骤见[客户端协议](../http/protocol.md#uploads)。只使用本地磁盘时，保留第一个路由即可。`Confirm` 在使用文件的业务接口中调用，见[在业务接口中确认](#rest-confirm)。
 
 `routes.go` 声明这些路由。所有接口都需要登录，`requireUser` 由入口传入，例如 `rest.RequireBearer(api, validateToken)`：
 
