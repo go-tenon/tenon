@@ -3,8 +3,13 @@
 
 /** 创建客户端的选项。 */
 export interface ClientOptions {
-  /** 接口的地址前缀，与服务端的 BasePath 相同，例如 /api 或 https://api.example.com/api。 */
-  baseURL: string
+  /**
+   * 接口的地址前缀，与服务端的 BasePath 相同，例如 /api 或 https://api.example.com/api。
+   * 传函数时每次请求读取一次，例如租户在路径中：() => `/api/t/${tenant}`。
+   */
+  baseURL: string | (() => string)
+  /** 每次请求附加的请求头，例如 () => ({ "X-Tenant": tenant })；值为空时不发送。接口自己的请求头优先。 */
+  headers?: () => Record<string, string | undefined>
   /** 认证。不设置时只能调用公开的接口。 */
   auth?: AuthOptions
   /**
@@ -251,8 +256,8 @@ export class Runtime {
 
   private fetchOnce(req: Request, signal?: AbortSignal): Promise<Response> {
     const headers = new Headers()
-    for (const [name, value] of Object.entries(req.headers ?? {})) {
-      if (value !== undefined && value !== null) headers.set(name, String(value))
+    for (const [name, value] of Object.entries({ ...this.options.headers?.(), ...req.headers })) {
+      if (value !== undefined && value !== null && value !== "") headers.set(name, String(value))
     }
     const language = this.options.language ? this.options.language() : globalThis.navigator?.language
     if (language && !headers.has("Accept-Language")) headers.set("Accept-Language", language)
@@ -267,7 +272,8 @@ export class Runtime {
     }
     if (!headers.has("Accept")) headers.set("Accept", "application/json")
     const fetcher = this.options.fetch ?? globalThis.fetch.bind(globalThis)
-    return fetcher(url(this.options.baseURL, req.path, req.query), {
+    const base = typeof this.options.baseURL === "function" ? this.options.baseURL() : this.options.baseURL
+    return fetcher(url(base, req.path, req.query), {
       method: req.method,
       headers,
       body,

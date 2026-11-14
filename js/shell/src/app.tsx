@@ -13,6 +13,7 @@ import {
   useMatches,
 } from "@tanstack/react-router"
 import { createContext, type ReactNode, useContext, useMemo, useSyncExternalStore } from "react"
+import { useBadges } from "./badges"
 import { breadcrumbs, buildMenu, type Crumb, firstPage, type MenuItem, routeInfos } from "./menu"
 import "./meta"
 import { safeRedirect } from "./redirect"
@@ -65,6 +66,27 @@ export interface AppOptions<TRouteTree extends AnyRoute> {
   /** 不传时创建一个：4xx 不重试，其他错误重试 2 次。 */
   queryClient?: QueryClient
   router?: AppRouterOptions
+  /** 多租户应用的租户切换，见 useTenant。 */
+  tenancy?: TenancyOptions
+}
+
+/** 一个租户。 */
+export interface Tenant {
+  id: string
+  name: string
+}
+
+/** 租户切换的选项。 */
+export interface TenancyOptions {
+  /** 当前用户所属的全部租户，通常调用 roles.Tenants 对应的接口。 */
+  tenants: () => Promise<Tenant[]>
+  /**
+   * 切换到租户 id 之后去哪里：
+   *   - 租户在路径中（/t/{tenant}/…）：返回新租户的首页，例如 `/t/${id}/`；
+   *   - 租户在子域名中：返回完整的地址，例如 `https://${id}.example.com/`，整页跳转；
+   *   - 租户在请求头中（X-Tenant）：不设置，留在当前页面，重新读取数据。
+   */
+  home?: (id: string) => string
 }
 
 /** createApp 返回的应用。 */
@@ -87,6 +109,8 @@ export interface App<TRouteTree extends AnyRoute = AnyRoute> {
   guard(location: Pick<ParsedLocation, "href">): Promise<void>
   /** 登录成功后调用：回到 redirect（只接受同源的相对路径），没有时去 homePath。 */
   redirectAfterSignIn(redirect?: unknown): Promise<void>
+  /** 租户切换的选项；单租户应用为空。 */
+  readonly tenancy?: TenancyOptions
 }
 
 function defaultQueryClient(): QueryClient {
@@ -140,6 +164,7 @@ export function createApp<TRouteTree extends AnyRoute>(options: AppOptions<TRout
     router,
     storage: appStorage(options.id),
     loginPath,
+    tenancy: options.tenancy,
     ready: () => {
       if (!restoring) restoring = session.restore().catch(() => false)
       return restoring
@@ -193,13 +218,17 @@ export function createApp<TRouteTree extends AnyRoute>(options: AppOptions<TRout
 /**
  * 渲染应用：QueryClientProvider、应用上下文和 RouterProvider。
  *
+ * 登录、退出、切换账号或租户时（会话的代次变化）重新挂载页面：页面中按身份计算的查询（例如 queryKey 中的
+ * session.scope()）重新读取，上一个身份的页面状态不会留下。布局状态保存在应用中，不受影响。
+ *
  *   createRoot(document.getElementById("root")!).render(<AppRoot app={app} />)
  */
 export function AppRoot<TRouteTree extends AnyRoute>({ app }: { app: App<TRouteTree> }): ReactNode {
+  const generation = useSyncExternalStore(app.session.subscribe, app.session.generation)
   return (
     <QueryClientProvider client={app.queryClient}>
       <AppContext.Provider value={app as unknown as App}>
-        <RouterProvider router={app.router as unknown as Router<AnyRoute>} />
+        <RouterProvider key={generation} router={app.router as unknown as Router<AnyRoute>} />
       </AppContext.Provider>
     </QueryClientProvider>
   )
@@ -253,7 +282,8 @@ export function useSignedIn(): boolean {
 export function useMenu(): MenuItem[] {
   const app = useApp()
   const can = useCan()
-  return useMemo(() => buildMenu(routeInfos(app.router.routesById), can), [app, can])
+  const badges = useBadges(app)
+  return useMemo(() => buildMenu(routeInfos(app.router.routesById), can, badges), [app, can, badges])
 }
 
 /** 当前位置的面包屑。 */

@@ -28,6 +28,20 @@ check((await anonymous.ping()).ok === true, "ping")
 let err = await rejects(anonymous.article.create({ title: "x", slug: "x" }), "anonymous create")
 check(err.status === 401 && isApiError(err, IdentityErrors.Unauthenticated), "401", err)
 
+// 函数形式的 baseURL 每次请求读取；headers 每次请求附加，空值不发送。
+let seen: { url: string; tenant: string | null; empty: boolean } | undefined
+const tenanted = createClient({
+  baseURL: () => baseURL,
+  headers: () => ({ "X-Tenant": "acme", "X-Empty": undefined }),
+  fetch: async (input, init) => {
+    const headers = new Headers(init?.headers)
+    seen = { url: String(input), tenant: headers.get("X-Tenant"), empty: headers.has("X-Empty") }
+    return fetch(input, init)
+  },
+})
+await tenanted.article.list()
+check(seen?.tenant === "acme" && !seen.empty && seen.url.startsWith(`${baseURL}/articles`), "headers and baseURL function", seen)
+
 // 受保护的接口收到 401 时刷新：并发的请求只刷新一次，然后重试。
 let refreshes = 0
 const api = createClient({
