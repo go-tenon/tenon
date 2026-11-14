@@ -1,7 +1,10 @@
 # 依赖装配
 
-Tenon 没有服务容器、全局注册表，也没有基于反射的自动注入。业务代码通过构造函数参数声明它需要什么，入口按顺序创建这些依赖并传进去。读入口的代码就能看清应用由哪些部分组成，缺少依赖时编译不通过，资源由谁打开、由谁关闭也一目了然。
+应用中的每一部分都依赖别的东西：业务动作需要数据库，发送通知需要邮件服务，限流需要 Redis。依赖装配说的就是这件事：这些依赖由谁创建、怎样交到需要它们的代码手里、最后由谁关闭。
 
+Tenon 的做法很简单：业务代码通过**构造函数的参数**声明它需要什么，应用的**入口**按顺序创建这些依赖并传进去。没有服务容器，没有全局注册表，也没有基于反射的自动注入。
+
+- [为什么这样做](#why)
 - [构造函数注入](#constructor-injection)
 - [在入口中组装应用](#assembling-the-application)
     - [多个运行部分](#running-parts)
@@ -10,10 +13,35 @@ Tenon 没有服务容器、全局注册表，也没有基于反射的自动注�
 - [在测试中替换依赖](#replacing-dependencies-in-tests)
 - [API 参考](#api-reference)
 
-<a id="constructor-injection"></a>
-## 构造函数注入
+<a id="why"></a>
+## 为什么这样做
 
-[业务动作](actions.md)在构造函数中接收依赖，保存在字段中：
+举一个例子会更清楚。假设“获取文章”需要查询数据库，最直接的写法是在用到的地方自己打开连接：
+
+```go
+func GetArticle(ctx context.Context, id uuid.UUID) (*Article, error) {
+    db, err := database.Open(ctx, loadConfig().Database)
+    if err != nil {
+        return nil, err
+    }
+    defer db.Close()
+    // 查询文章……
+}
+```
+
+这样能工作，但每个请求都会打开一个新的连接池，很快就会把数据库的连接用光。于是你把连接池放进一个全局变量，在启动时打开一次：
+
+```go
+var DB *bun.DB // 在 main 中赋值
+
+func GetArticle(ctx context.Context, id uuid.UUID) (*Article, error) {
+    // 使用 DB 查询文章……
+}
+```
+
+这也能工作，直到你开始写测试。测试想用一个独立的测试数据库，就得在测试开始前修改全局的 `DB`，而并行运行的测试会互相覆盖它。再往后，有的命令根本不需要数据库，却因为某个包在初始化时用到了 `DB` 而不得不连接它；读代码的人也很难回答“这个函数到底用到了哪些资源”。
+
+构造函数注入把这些问题一次解决了。依赖写在构造函数的参数里，谁需要什么一目了然；入口在启动时创建一次连接池，传给所有需要它的代码；测试只要传入另一个连接池即可：
 
 ```go
 type Get struct {
@@ -23,7 +51,16 @@ type Get struct {
 func NewGet(db *bun.DB) *Get {
     return &Get{db: db}
 }
+```
 
+此外，缺少依赖时代码根本无法编译；资源由谁打开、由谁关闭，看入口的代码就清楚了。
+
+<a id="constructor-injection"></a>
+## 构造函数注入
+
+[业务动作](actions.md)在构造函数中接收依赖，并保存在结构体的字段中。它的方法使用这些字段：
+
+```go
 func (a *Get) Handle(ctx context.Context, id uuid.UUID) (*Article, error) {
     item := new(Article)
     err := a.db.NewSelect().Model(item).Where("id = ?", id).Scan(ctx)
@@ -31,15 +68,17 @@ func (a *Get) Handle(ctx context.Context, id uuid.UUID) (*Article, error) {
 }
 ```
 
-依赖是社区组件的原生类型，这里是 Bun 的 `*bun.DB`，而不是框架包装过的类型。方法的第一个参数是 `ctx`，把请求的取消信号和截止时间传给数据库查询等下游调用。
+注意这里接收的是 Bun 的 `*bun.DB`，而不是框架包装过的类型。在 Tenon 中，你使用的始终是社区组件的原生对象，学到的用法在别处同样适用。
+
+方法的第一个参数是 `ctx`。它携带请求的取消信号和截止时间，应当一路传给数据库查询等下游调用，这样请求超时或客户端断开时，查询也会随之停止。
 
 > [!IMPORTANT]
-> 构造函数只保存依赖，不使用它们。生成 OpenAPI 文档、列出路由和声明命令时，动作会用零值依赖构造，见[只在执行时装配的命令](#deferred-commands)。
+> 构造函数只能**保存**依赖，不能**使用**它们。生成 OpenAPI 文档、列出路由和声明命令时，业务动作会被构造，但传入的依赖都是零值，见[只在执行时装配的命令](#deferred-commands)。
 
 <a id="assembling-the-application"></a>
 ## 在入口中组装应用
 
-入口先创建被依赖的对象，再创建依赖它们的对象。下面是一个只有一个接口的完整程序：
+入口负责创建所有的依赖。顺序很自然：先创建被依赖的对象，再创建依赖它们的对象。下面是一个只有一个接口的完整程序，你可以直接运行它：
 
 ```go
 package main
@@ -116,16 +155,21 @@ func main() {
 }
 ```
 
-- `command.Run` 加载配置，收到停止信号时取消 `ctx`；
-- 数据库打开后立即把关闭操作登记到 `stack`，`serve` 返回时关闭；
-- `httpx.ListenAndServe` 在排空请求之后才返回，所以正在处理的请求不会因为数据库先关闭而失败。
+我们按顺序看一下这段代码做了什么：
 
-每个路由都要声明访问策略，这里用 `rest.Public()` 声明为公开接口，需要登录的接口见[认证](../security/authentication.md)。
+1. `command.Run` 加载配置文件，在收到停止信号时取消 `ctx`；
+2. `serve` 打开数据库，并**立即**把关闭操作登记到 `stack`，`serve` 返回时它会被执行；
+3. 创建 Router 和 API，构造业务动作 `Count`，把它的 `HTTP` 方法注册为处理器；
+4. `httpx.ListenAndServe` 开始处理请求，直到收到停止信号。
+
+`httpx.ListenAndServe` 会等正在处理的请求全部完成之后才返回，所以数据库总是在最后一个请求结束之后才关闭。
+
+每个路由都要声明访问策略，这里用 `rest.Public()` 声明为公开接口。需要登录的接口见[认证](../security/authentication.md)。
 
 <a id="running-parts"></a>
 ### 多个运行部分
 
-应用变大后，入口通常放在 `internal/bootstrap` 包中，分成两部分：`App` 保存各部分共用的资源，由 `open` 打开；HTTP 服务、[队列 worker](../libraries/queue.md#running-workers)、[定时任务调度器](../libraries/scheduling.md#running-the-scheduler)各是 `App` 的一个方法。[入门教程](../tutorial/02-infrastructure.md#assembling)按这个结构写出了完整的 `app.go` 和 `http.go`：
+应用变大以后，入口通常放在 `internal/bootstrap` 包中，并分成两部分：`App` 保存各部分共用的资源，由 `open` 打开；HTTP 服务、[队列 worker](../libraries/queue.md#running-workers)、[定时任务调度器](../libraries/scheduling.md#running-the-scheduler)各是 `App` 的一个方法。[入门教程](../tutorial/02-infrastructure.md#assembling)按这个结构写出了完整的 `app.go` 和 `http.go`：
 
 ```go
 // open 打开各部分共用的资源，把关闭操作登记到 stack。
@@ -184,7 +228,9 @@ func Start(ctx context.Context, cfg Config) error {
 }
 ```
 
-每个部分分两步：先装配好它需要的一切，包括取得监听端口；再返回运行它的函数。装配阶段的错误（路由冲突、端口被占用）在开始运行之前就返回，[不停机升级](../installation/deployment.md#zero-downtime-upgrades)时出错的新版本不会接管服务。`d.Run` 让各部分共用一个 `ctx`，一个出错时其余的一起停止。
+你会注意到，每个部分都分两步：先装配好它需要的一切，包括取得监听端口；再返回运行它的函数。这样做的好处是，路由冲突、端口被占用这类错误在开始运行之前就会返回，[不停机升级](../installation/deployment.md#zero-downtime-upgrades)时，有问题的新版本根本不会接管服务。
+
+`d.Run` 让各部分共用同一个 `ctx`，其中一个出错时，其余的会一起停止。
 
 > [!TIP]
 > 多个部分都用到的资源（数据库、Redis、缓存）放进 `open`；只有一个部分用到的（例如 HTTP 中间件）在它自己的方法里创建。
@@ -209,12 +255,9 @@ func Commands() []*cobra.Command {
 <a id="closing-resources"></a>
 ## 关闭资源
 
-只有一两个资源时，`defer` 就够了。资源多了以后，`cleanup.Stack` 保证：
+只有一两个资源时，用 `defer` 关闭就足够了。资源多了以后，事情会变得复杂：后打开的资源应当先关闭；启动到一半失败时，已经打开的资源也要释放；关闭时出现的错误不能被吞掉。`cleanup.Stack` 就是为此设计的。
 
-- 按**登记的逆序**关闭，后打开的先关闭；
-- 打开到一半失败时，已经打开的也会关闭；
-- 每个清理函数只执行一次，关闭时的错误和运行时的错误合并返回，`errors.Is` 能匹配其中任何一个；
-- 清理使用的 context 保留传入 context 的值和截止时间，但不继承它的取消信号：收到停止信号后清理仍能进行。没有截止时间时，清理总共最多 10 秒。
+每成功打开一个资源，就登记一个关闭它的函数：
 
 ```go
 var stack cleanup.Stack
@@ -230,15 +273,19 @@ stack.MustAdd("redis", func(context.Context) error {
 })
 ```
 
+`CloseWith` 会按**登记的逆序**执行这些函数，每个只执行一次，并把运行时的错误和所有关闭时的错误合并返回，`errors.Is` 可以匹配其中任何一个。
+
+关闭时使用的 context 保留传入 context 的值和截止时间，但**不继承它的取消信号**。这一点很重要：应用正是因为收到停止信号才退出的，如果关闭操作也随之取消，资源就来不及正常关闭了。传入的 context 没有截止时间时，关闭总共最多用 10 秒。
+
 > [!NOTE]
-> `cleanup.Stack` 由入口串行使用：构建阶段登记，退出阶段关闭。不要在多个 goroutine 中同时操作它。
+> `cleanup.Stack` 由入口串行使用：在构建阶段登记，在退出阶段关闭。不要在多个 goroutine 中同时操作它。
 
 <a id="replacing-dependencies-in-tests"></a>
 ## 在测试中替换依赖
 
-大多数测试直接使用真实的依赖，例如用 `dbtest` 创建一个真实的测试数据库，见[测试](../testing/database.md#database-tests)。
+在 Tenon 中，大多数测试直接使用真实的依赖，例如用 `dbtest` 为每个测试创建一个真实的数据库，见[测试](../testing/database.md#database-tests)。这比模拟数据库更可靠，也更简单。
 
-确实需要替换一个依赖时（例如对象存储），由使用方定义一个只包含所需方法的小接口，构造函数接收这个接口：
+当你确实需要替换某个依赖时（例如不想在测试中真的上传到对象存储），遵循 Go 的惯例：**由使用方定义接口**。在业务包中声明一个只包含所需方法的小接口，构造函数接收这个接口：
 
 ```go
 type ImageStore interface {
@@ -250,7 +297,7 @@ func NewSetCover(db *bun.DB, images ImageStore) *SetCover {
 }
 ```
 
-测试中传入一个内存实现：
+测试中传入一个简单的内存实现即可：
 
 ```go
 type memoryImages map[string][]byte
@@ -263,32 +310,37 @@ func (m memoryImages) Put(_ context.Context, key string, data []byte) error {
 setCover := article.NewSetCover(db, memoryImages{})
 ```
 
-不必为每个依赖预先定义接口，真正需要替换时再引入。
+不需要为每个依赖预先定义接口。等到真正需要替换实现时再引入，代码会简单得多。
 
 <a id="api-reference"></a>
 ## API 参考
 
-### cleanup.Stack
-
-包 `github.com/go-tenon/tenon/cleanup`。零值可用。
+### cleanup.Stack.MustAdd
 
 ```go
-func (s *Stack) Add(name string, fn func(context.Context) error) error
 func (s *Stack) MustAdd(name string, fn func(context.Context) error)
 ```
 
-登记一个具名的清理函数，名称出现在错误信息中。`Stack` 已经关闭时 `Add` 返回错误，`MustAdd` panic。
+- **参数**
+    - `name`：资源的名称，出现在错误信息中
+    - `fn`：关闭资源的函数
+
+包 `github.com/go-tenon/tenon/cleanup`，`Stack` 的零值可以直接使用。登记一个关闭函数；`Stack` 已经关闭时 panic。`Add` 与它相同，只是返回错误而不是 panic。
+
+### cleanup.Stack.CloseWith
 
 ```go
-func (s *Stack) Close(ctx context.Context) error
 func (s *Stack) CloseWith(ctx context.Context, runErr error) error
 ```
 
-按逆序执行全部清理函数，返回合并的错误。`CloseWith` 把 `runErr` 一起合并，适合在 `defer` 中使用。
+- **参数**
+    - `ctx`：保留它的值和截止时间，不继承它的取消信号
+    - `runErr`：运行时的错误，与关闭时的错误合并
+- **返回**：合并后的错误，没有错误时为 `nil`
+
+按登记的逆序执行全部关闭函数。适合在 `defer` 中使用；不需要合并运行时的错误时用 `Close(ctx)`。
 
 ### command.Daemon
-
-包 `github.com/go-tenon/tenon/command`。
 
 ```go
 func NewDaemon(logger *slog.Logger) (*Daemon, error)
@@ -297,7 +349,12 @@ func (d *Daemon) Run(ctx context.Context, runs ...func(context.Context) error) e
 func (d *Daemon) Stop()
 ```
 
-常驻进程：`Listen` 取得监听端口，`Run` 报告就绪后同时运行 `runs`，直到停止。在 systemd 的 `Type=notify-reload` 服务中运行时，`Run` 向 systemd 报告就绪，收到 `SIGHUP` 时不停机升级，见[部署](../installation/deployment.md#zero-downtime-upgrades)；不在其中时，`Run` 等同于 `command.Concurrently`。一个进程只创建一个 `Daemon`，所有 `Listen` 都在 `Run` 之前调用，退出前调用 `Stop`。
+包 `github.com/go-tenon/tenon/command`。常驻进程：`Listen` 取得监听端口，`Run` 报告就绪后同时运行 `runs`，直到停止。
+
+在 systemd 的 `Type=notify-reload` 服务中运行时，`Run` 向 systemd 报告就绪，收到 `SIGHUP` 时不停机升级，见[部署](../installation/deployment.md#zero-downtime-upgrades)；不在其中时，`Run` 等同于 `command.Concurrently`。
+
+> [!IMPORTANT]
+> 一个进程只创建一个 `Daemon`。所有的 `Listen` 都要在 `Run` 之前调用，进程退出前调用 `Stop`。
 
 ### command.Concurrently
 
@@ -305,7 +362,11 @@ func (d *Daemon) Stop()
 func Concurrently(ctx context.Context, runs ...func(context.Context) error) error
 ```
 
-同时运行 `runs`，它们收到同一个派生的 `ctx`。`ctx` 被取消或任何一个函数返回时，派生的 `ctx` 随之取消。在停止之前就返回 `nil` 的函数视为异常退出，返回值包含 `command.ErrStoppedEarly`。
+- **参数**
+    - `runs`：同时运行的函数，它们收到同一个派生的 `ctx`
+- **返回**：合并后的错误
+
+`ctx` 被取消或者任何一个函数返回时，派生的 `ctx` 随之取消，其余的函数据此停止。在停止之前就返回 `nil` 的函数视为异常退出，返回值包含 `command.ErrStoppedEarly`。
 
 ### command.Bind
 
@@ -316,4 +377,9 @@ func Bind[C, D any](
 ) []*cobra.Command
 ```
 
-返回 `declare` 声明的命令，依赖推迟到执行时装配，见[只在执行时装配的命令](#deferred-commands)。
+- **参数**
+    - `open`：执行命令时装配依赖的函数，与 `serve` 用的是同一个
+    - `declare`：声明命令的函数；构造命令行时收到零值的 `*D`
+- **返回**：声明的命令
+
+依赖推迟到执行时才装配，见[只在执行时装配的命令](#deferred-commands)。
