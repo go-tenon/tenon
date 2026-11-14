@@ -69,7 +69,17 @@ func TestInitEndToEnd(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// 框架的前端包从本地框架复制到 .tenon/js，作为 workspace 成员，前端能导入它。
+	if err := os.WriteFile(filepath.Join(dir, "apps", "admin", "src", "framework.ts"), []byte("import \"@go-tenon/client\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(filepath.Join(dir, ".tenon")); err != nil {
+		t.Fatal(err)
+	}
 	sh("go", "tool", "tenon", "generate")
+	if _, err := os.Stat(filepath.Join(dir, ".tenon", "js", "client", "package.json")); err != nil {
+		t.Fatalf("front-end packages not synced: %v", err)
+	}
 	sh("bun", "run", "typecheck")
 	sh("go", "vet", "./...")
 	sh("go", "tool", "tenon", "build")

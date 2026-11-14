@@ -120,11 +120,16 @@ func (d dev) check() error {
 	return nil
 }
 
-// prepare 在启动监听进程之前运行一次：没有 node_modules 时在根目录 bun install，确保每个前端的 dist 存在（见 EnsureDist），
+// prepare 在启动监听进程之前运行一次：把框架的前端包复制到 .tenon/js（见 SyncJS），没有 node_modules 或前端包的
+// package.json 变了时在根目录 bun install，确保每个前端的 dist 存在（见 EnsureDist），
 // 写入前端开发服务器的地址（见 DevConfig），把框架 web/ui 的样式源复制到 Tailwind 入口旁边。
 func (d dev) prepare() error {
 	if len(d.cfg.Frontends) > 0 {
-		if _, err := os.Stat("node_modules"); errors.Is(err, fs.ErrNotExist) {
+		changed, err := SyncJS(".")
+		if err != nil {
+			return err
+		}
+		if _, err := os.Stat("node_modules"); changed || errors.Is(err, fs.ErrNotExist) {
 			if err := d.exec(".", "bun", "install"); err != nil {
 				return err
 			}
@@ -385,18 +390,40 @@ func goSource(path string) bool {
 
 // copyUI 把框架的 web/ui/css 复制到 dst，替换已有的内容。框架的位置由 go list 给出（通常在模块缓存中）。
 func copyUI(dst string) error {
-	out, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", framework).Output()
-	dir := strings.TrimSpace(string(out))
-	if err != nil || dir == "" {
-		return errors.Newf("devcmd: cannot locate %s with go list: %v", framework, err)
+	dir, err := frameworkDir(".")
+	if err != nil {
+		return err
 	}
-	src := filepath.Join(dir, "web", "ui", "css")
+	if err := copyTree(filepath.Join(dir, "web", "ui", "css"), dst); err != nil {
+		return errors.Wrap(err, "dev: copy ui styles")
+	}
+	return errors.Wrap(os.WriteFile(filepath.Join(dst, ".gitignore"), []byte("*\n"), 0o644), "dev: copy ui styles")
+}
+
+// frameworkDir 返回项目 dir 使用的框架源码目录：通常在模块缓存中，replace 到本地时是本地的目录。
+func frameworkDir(dir string) (string, error) {
+	cmd := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", framework)
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	fw := strings.TrimSpace(string(out))
+	if err != nil || fw == "" {
+		return "", errors.Newf("dev: cannot locate %s with go list: %v", framework, err)
+	}
+	return fw, nil
+}
+
+// copyTree 把 src 复制到 dst，先删除 dst 中已有的内容。跳过隐藏目录、node_modules 和 dist。
+// 复制出的文件可写：模块缓存中的文件是只读的。
+func copyTree(src, dst string) error {
 	if err := os.RemoveAll(dst); err != nil {
-		return errors.Wrap(err, "devcmd: remove ui styles")
+		return err
 	}
-	err = filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
+	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
+		}
+		if d.IsDir() && path != src && project.SkipDir(d.Name()) {
+			return filepath.SkipDir
 		}
 		rel, _ := filepath.Rel(src, path)
 		target := filepath.Join(dst, rel)
@@ -409,8 +436,4 @@ func copyUI(dst string) error {
 		}
 		return os.WriteFile(target, b, 0o644)
 	})
-	if err != nil {
-		return errors.Wrap(err, "devcmd: copy ui styles")
-	}
-	return errors.Wrap(os.WriteFile(filepath.Join(dst, ".gitignore"), []byte("*\n"), 0o644), "devcmd: copy ui styles")
 }

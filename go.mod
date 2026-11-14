@@ -2,6 +2,9 @@ module github.com/go-tenon/tenon
 
 go 1.27.4
 
+// js 中前端包的依赖。
+ignore node_modules
+
 require (
 	code.dny.dev/ssrf v0.3.0
 	github.com/JohannesKaufmann/html-to-markdown/v2 v2.5.2

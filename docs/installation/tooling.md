@@ -80,6 +80,25 @@ go get -tool github.com/go-tenon/tenon/cmd/tenon
 }
 ```
 
+<a id="framework-packages"></a>
+### 框架的前端包
+
+框架的前端包（`@go-tenon/client` 等）随 Go 模块分发，不从 npm 安装：它们的源码在框架的 `js` 目录中，版本就是 `go.mod` 中的框架版本。`tenon` 在用到前端依赖之前（`init`、`add frontend`、`dev`、`build`、`generate`）把它们复制到项目的 `.tenon/js/<包>`，项目把它们列入 Bun workspace，前端用 `workspace:*` 依赖：
+
+```json
+{
+  "workspaces": [".tenon/js/client", "apps/web", "packages/client"]
+}
+```
+
+```json
+{
+  "dependencies": { "@go-tenon/client": "workspace:*" }
+}
+```
+
+`.tenon` 不提交到版本库。升级框架（`go get github.com/go-tenon/tenon@<版本>`）后，下一次 `tenon dev` 复制新版本的包，包的 `package.json` 变了时重新 `bun install`。框架被 `replace` 到本地目录时复制本地的代码，修改框架的前端包后重新运行 `tenon dev` 即可。刚 clone 的项目先运行一次 `tenon dev`、`build` 或 `generate`，再单独运行 `bun install`。
+
 <a id="init"></a>
 ## tenon init
 
@@ -117,7 +136,7 @@ bun run dev   # 即 go tool tenon dev
 
 它同时运行：
 
-- **Vite**：为每个前端选一个空闲端口，在前端目录中运行 `bun run dev --port <端口> --strictPort`。启动前根目录没有 `node_modules` 时先 `bun install`；前端没有 `dist` 时写一个占位的 `index.html`，`go:embed` 才能编译通过，开发时页面来自 Vite。
+- **Vite**：为每个前端选一个空闲端口，在前端目录中运行 `bun run dev --port <端口> --strictPort`。启动前把[框架的前端包](#framework-packages)复制到 `.tenon/js`，根目录没有 `node_modules` 或这些包的 `package.json` 变了时 `bun install`；前端没有 `dist` 时写一个占位的 `index.html`，`go:embed` 才能编译通过，开发时页面来自 Vite。
 - **应用**：等全部 Vite 能访问后，把 `main` 编译到临时目录，用 `serve` 中的参数运行，并在最后追加 `--config .tenon/dev.yaml`。这个文件中是各前端开发服务器的地址（`dev_servers`），应用的 `httpx.SPA` 把页面请求转给对应的 Vite，见[应用这一侧](#app-side)。浏览器打开应用的地址，页面和 API 同源，热更新照常工作。
 - **重新编译**：模块中的 `.go` 文件（测试除外）、`go.mod`、`go.sum` 变化后重新编译。成功时平滑停止旧进程（`SIGTERM`），启动新的，再运行一次 [`generate`](#generate)，前端的类型随接口一起更新；失败时打印编译错误，旧进程继续运行。跳过隐藏目录、`node_modules`、`vendor`、`testdata` 和 `dist`。
 - **服务端渲染的页面**（模块中有 `.templ` 文件时）：`go tool templ generate --watch`，在 `templ.proxyPort`（默认 7331）代理应用并注入自动刷新的脚本，这时打开 http://localhost:7331。只改了文字时直接生效，跳过重新编译。`templ.static` 目录中的文件变化时也刷新浏览器。
@@ -132,7 +151,7 @@ bun run dev   # 即 go tool tenon dev
 bun run build   # 即 go tool tenon build
 ```
 
-有前端时先在根目录运行一次 `bun install --frozen-lockfile`，再在每个前端目录中运行 `bun run build`，最后 `go build -trimpath -o bin/api ./cmd/api`。`-o` 指定输出的二进制，`GOOS`、`GOARCH` 等环境变量照常生效。`--frozen-lockfile` 要求 `bun.lock` 与各个 `package.json` 一致，CI 中安装的依赖与本地完全相同。Docker 镜像的写法见[构建与发布](../responses/spa.md#building)。
+有前端时先复制[框架的前端包](#framework-packages)，在根目录运行一次 `bun install --frozen-lockfile`，再在每个前端目录中运行 `bun run build`，最后 `go build -trimpath -o bin/api ./cmd/api`。`-o` 指定输出的二进制，`GOOS`、`GOARCH` 等环境变量照常生效。`--frozen-lockfile` 要求 `bun.lock` 与各个 `package.json` 一致，CI 中安装的依赖与本地完全相同。Docker 镜像的写法见[构建与发布](../responses/spa.md#building)。
 
 <a id="generate"></a>
 ## tenon generate

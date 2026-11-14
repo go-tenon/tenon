@@ -247,6 +247,9 @@ func TestDevSPA(t *testing.T) {
 			t.Errorf("log missing %q:\n%s", want, l)
 		}
 	}
+	if _, err := os.Stat(filepath.Join(dir, ".tenon", "js", "client", "package.json")); err != nil {
+		t.Errorf("front-end packages not synced: %v", err)
+	}
 	devYAML := read(filepath.Join(dir, ".tenon", "dev.yaml"))
 	for _, f := range []string{"admin", "web"} {
 		if !strings.Contains(devYAML, "  "+f+": http://localhost:") {
@@ -296,6 +299,39 @@ func TestDevSPA(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "dev: 打开 http://localhost:8080") {
 		t.Errorf("output = %q", out.String())
+	}
+}
+
+// SyncJS 把框架 js 中的包复制到 .tenon/js，跳过 node_modules；package.json 有变化时报告 changed。
+func TestSyncJS(t *testing.T) {
+	dir, _ := setup(t, "go")
+	changed, err := dev.SyncJS(".")
+	if err != nil || !changed {
+		t.Fatalf("first sync: changed %v, %v", changed, err)
+	}
+	pkg := filepath.Join(dir, ".tenon", "js", "client", "package.json")
+	if b, _ := os.ReadFile(pkg); !strings.Contains(string(b), `"name": "@go-tenon/client"`) {
+		t.Fatalf("package.json:\n%s", b)
+	}
+	for _, p := range []string{".tenon/js/client/src/index.ts", ".tenon/.gitignore"} {
+		if _, err := os.Stat(filepath.Join(dir, p)); err != nil {
+			t.Error(err)
+		}
+	}
+	for _, p := range []string{".tenon/js/node_modules", ".tenon/js/client/node_modules", ".tenon/js/package.json"} {
+		if _, err := os.Stat(filepath.Join(dir, p)); !os.IsNotExist(err) {
+			t.Errorf("%s copied", p)
+		}
+	}
+	if changed, err := dev.SyncJS("."); err != nil || changed {
+		t.Fatalf("second sync: changed %v, %v", changed, err)
+	}
+	// 项目中的副本被改动后恢复为框架的版本，并报告变化。
+	if err := os.WriteFile(pkg, []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if changed, err := dev.SyncJS("."); err != nil || !changed {
+		t.Fatalf("after edit: changed %v, %v", changed, err)
 	}
 }
 

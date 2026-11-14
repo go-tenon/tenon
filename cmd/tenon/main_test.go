@@ -10,8 +10,9 @@ import (
 	"testing"
 )
 
-// fake 记录参数；go build -mod=mod -o BIN（generate 编译应用）写出一个记录参数的伪造应用。
+// fake 记录参数；go list -m 输出框架的目录；go build -mod=mod -o BIN（generate 编译应用）写出一个记录参数的伪造应用。
 const fake = `#!/bin/sh
+if [ "$1 $2" = "list -m" ]; then echo "$TENON_FRAMEWORK"; exit 0; fi
 echo "$(basename "$0") $* @$(basename "$PWD")" >> "$TENON_LOG"
 if [ "$1 $2 $3" = "build -mod=mod -o" ]; then
 	printf '#!/bin/sh\necho "app $*" >> "$TENON_LOG"\n' > "$4"; chmod +x "$4"
@@ -37,6 +38,8 @@ func newProject(t *testing.T, files map[string]string, tools ...string) string {
 	}
 	log := filepath.Join(dir, ".log")
 	t.Setenv("TENON_LOG", log)
+	framework, _ := filepath.Abs("../..")
+	t.Setenv("TENON_FRAMEWORK", framework)
 	t.Setenv("PATH", bin+":/usr/bin:/bin")
 	t.Chdir(dir)
 	return log
@@ -92,8 +95,10 @@ func TestGenerate(t *testing.T) {
 			t.Fatalf("log missing %q:\n%s", want, l)
 		}
 	}
-	if _, err := os.Stat("apps/web/dist/index.html"); err != nil {
-		t.Errorf("dist placeholder: %v", err)
+	for _, f := range []string{"apps/web/dist/index.html", ".tenon/js/client/package.json"} {
+		if _, err := os.Stat(f); err != nil {
+			t.Errorf("%s: %v", f, err)
+		}
 	}
 	newProject(t, nil, "go")
 	if err := execute(t, "generate"); err == nil || !strings.Contains(err.Error(), "nothing to generate") {
@@ -105,7 +110,7 @@ func TestAddFrontend(t *testing.T) {
 	newProject(t, map[string]string{
 		"go.mod":       "module example.com/helpdesk\n\ngo 1.27\n",
 		"package.json": "{\n  \"name\": \"helpdesk\",\n  \"workspaces\": [\"apps/web\", \"packages/client\"]\n}\n",
-	}, "bun")
+	}, "go", "bun")
 	cmd := root()
 	var out bytes.Buffer
 	cmd.SetArgs([]string{"add", "frontend", "admin"})
@@ -115,10 +120,11 @@ func TestAddFrontend(t *testing.T) {
 		t.Fatal(err, out.String())
 	}
 	for name, want := range map[string]string{
-		"apps/admin/package.json":    `"name": "@helpdesk/admin"`,
-		"apps/admin/vite.config.ts":  `base: "/admin/"`,
-		"apps/admin/dist/index.html": "前端还没有构建",
-		"package.json":               `"apps/admin",`,
+		"apps/admin/package.json":       `"name": "@helpdesk/admin"`,
+		"apps/admin/vite.config.ts":     `base: "/admin/"`,
+		"apps/admin/dist/index.html":    "前端还没有构建",
+		"package.json":                  `"apps/admin",`,
+		".tenon/js/client/package.json": `"name": "@go-tenon/client"`,
 	} {
 		if b, _ := os.ReadFile(name); !strings.Contains(string(b), want) {
 			t.Errorf("%s missing %q:\n%s", name, want, b)

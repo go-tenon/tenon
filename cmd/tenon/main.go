@@ -69,14 +69,19 @@ func initCommand() *cobra.Command {
 			if err := dev.EnsureDist(&project.Config{Frontends: []project.Frontend{{Name: "web", Dir: filepath.Join(dir, "apps", "web")}}}); err != nil {
 				return err
 			}
-			steps := [][]string{{"go", "mod", "tidy"}, {"go", "run", "./cmd/api", "client", "--ts", project.ClientSrc}}
+			for _, s := range [][]string{{"go", "mod", "tidy"}, {"go", "run", "./cmd/api", "client", "--ts", project.ClientSrc}} {
+				if err := run(cmd, dir, s[0], s[1:]...); err != nil {
+					return err
+				}
+			}
+			// 前端依赖框架的前端包，bun install 之前先复制它们。
+			if _, err := dev.SyncJS(dir); err != nil {
+				return err
+			}
 			_, err := exec.LookPath("bun")
 			hasBun := err == nil
 			if hasBun {
-				steps = append(steps, []string{"bun", "install"})
-			}
-			for _, s := range steps {
-				if err := run(cmd, dir, s[0], s[1:]...); err != nil {
+				if err := run(cmd, dir, "bun", "install"); err != nil {
 					return err
 				}
 			}
@@ -180,6 +185,9 @@ func addFrontendCommand() *cobra.Command {
 			if err := dev.EnsureDist(&project.Config{Frontends: []project.Frontend{{Name: name, Dir: path.Join(project.AppsDir, name)}}}); err != nil {
 				return err
 			}
+			if _, err := dev.SyncJS("."); err != nil {
+				return err
+			}
 			if _, err := exec.LookPath("bun"); err == nil {
 				if err := run(cmd, ".", "bun", "install"); err != nil {
 					return err
@@ -229,6 +237,9 @@ func buildCommand() *cobra.Command {
 				return err
 			}
 			if len(cfg.Frontends) > 0 {
+				if _, err := dev.SyncJS("."); err != nil {
+					return err
+				}
 				if err := run(cmd, ".", "bun", "install", "--frozen-lockfile"); err != nil {
 					return err
 				}
@@ -269,6 +280,12 @@ func generateCommand() *cobra.Command {
 			defer func() { _ = os.RemoveAll(tmp) }()
 			if err := dev.EnsureDist(cfg); err != nil {
 				return err
+			}
+			// 生成之后通常接着做类型检查，前端依赖的框架前端包要已经就位。
+			if len(cfg.Frontends) > 0 {
+				if _, err := dev.SyncJS("."); err != nil {
+					return err
+				}
 			}
 			bin := filepath.Join(tmp, "app")
 			if err := run(cmd, ".", "go", "build", "-mod=mod", "-o", bin, cfg.Main); err != nil {

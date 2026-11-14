@@ -42,7 +42,8 @@ blog/
 ├── migrations/            SQL 迁移和 embed.go
 ├── locales/               翻译文件和 embed.go
 ├── apps/                  前端，每个一个目录，例如 web、admin
-└── packages/client/       生成的 TypeScript 客户端
+├── packages/client/       生成的 TypeScript 客户端
+└── .tenon/                tenon 生成的内容，不提交
 ```
 
 一个刚起步的应用只需要 `cmd` 和一个业务包，其他目录等到真正有代码要放时再创建。下面依次介绍每个目录的作用。
