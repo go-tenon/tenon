@@ -21,13 +21,18 @@
     "@tanstack/react-router": "^1.170.0",
     "react": "^19.1.0",
     "vite": ">=7",
-    "@types/react": "^19.1.0"
+    "@types/react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "@types/react-dom": "^19.1.0"
   },
   "peerDependenciesMeta": {
     "vite": {
       "optional": true
     },
     "@types/react": {
+      "optional": true
+    },
+    "@types/react-dom": {
       "optional": true
     }
   }

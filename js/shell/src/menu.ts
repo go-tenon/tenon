@@ -20,6 +20,8 @@ export interface MenuItem {
   icon?: string
   /** 页面的路径；分组的路径是它自己的路由的路径。 */
   path: string
+  /** 徽标：数字、文字，或者 true 表示小红点，见 useMenuBadge。 */
+  badge?: number | string | boolean
   children?: MenuItem[]
 }
 
@@ -51,7 +53,11 @@ export function routeInfos(routesById: Record<string, unknown>): RouteInfo[] {
  * 生成菜单：带 title 的路由按路由树嵌套（没有标题的布局路由被跳过），按 order 再按路径排序。
  * menu 为 false、带路径参数、或 can 返回 false 的路由连同下级不出现；过滤后没有下级的分组也不出现。
  */
-export function buildMenu(routes: RouteInfo[], can: (permission: string) => boolean = () => true): MenuItem[] {
+export function buildMenu(
+  routes: RouteInfo[],
+  can: (permission: string) => boolean = () => true,
+  badges: ReadonlyMap<string, number | string | boolean> = new Map(),
+): MenuItem[] {
   const byId = new Map(routes.map((r) => [r.id, r]))
   const titled = (r: RouteInfo | undefined) => Boolean(r?.staticData?.title)
   const parentOf = (r: RouteInfo): string | undefined => {
@@ -78,6 +84,8 @@ export function buildMenu(routes: RouteInfo[], can: (permission: string) => bool
     for (const r of (children.get(parent) ?? []).filter(visible).sort(order)) {
       const item: MenuItem = { id: r.id, title: r.staticData?.title ?? "", path: normalizePath(r.path) }
       if (r.staticData?.icon) item.icon = r.staticData.icon
+      const badge = badges.get(r.id)
+      if (badge !== undefined) item.badge = badge
       if (children.has(r.id)) {
         const sub = build(r.id)
         if (sub.length === 0) continue // 分组中没有可以进入的页面

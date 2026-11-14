@@ -8,6 +8,8 @@
 - [登录检查](#requiring-sign-in)
 - [权限](#permissions)
 - [菜单与面包屑](#menu-and-breadcrumbs)
+- [布局约定](#layouts)
+- [租户](#tenants)
 - [表单](#forms)
 - [列表](#lists)
 - [新版本提示](#new-version)
@@ -100,7 +102,7 @@ createRoot(document.getElementById("root")!).render(
 
 - 没有登录功能的应用不传 `session`，应用一直是未登录的。
 - `id` 区分同一个域名下的前端，例如 `web` 和 `admin`，见[本地存储](#storage)。
-- QueryClient 对 `4xx` 不重试，其他错误重试 2 次；登录、退出、切换账号或租户时清空缓存。也可以传入自己的 `queryClient`。
+- QueryClient 对 `4xx` 不重试，其他错误重试 2 次；登录、退出、切换账号或租户时清空缓存，并重新挂载页面：页面中按身份计算的查询重新读取。也可以传入自己的 `queryClient`。
 - `router` 传给 Router 的其他选项，例如外观提供的 `defaultErrorComponent`、`defaultNotFoundComponent`。
 
 根路由用 `createRootRouteWithContext<RouterContext>()` 创建，各路由的 `beforeLoad` 通过 `context.app` 使用应用：
@@ -202,6 +204,122 @@ const crumbs = useBreadcrumbs() // [{ title, path }]
 - 带 `title` 的路由按路由树嵌套，跳过没有标题的布局路由；按 `order`、再按路径排序。
 - 没有权限、`menu: false`、带路径参数的页面不出现；其中没有页面的分组也不出现。
 - `firstPage(menu)` 是第一个可以进入的页面；`pageUnder(menu, path)` 是某个分组下第一个可以进入的页面，例如点击面包屑中的分组时跳转到它。
+
+<a id="layouts"></a>
+## 布局约定
+
+一个布局读取导航模型和布局状态，把插槽放到自己的位置上；页面只往插槽中放内容，不关心当前是哪一种布局。侧栏、顶部导航、图标栏等具体的布局由运营后台的 antd 外观和 shadcn 外观按这个约定实现，项目也可以自己写，只要遵守这个约定，页面、多标签和权限过滤都照常工作。
+
+**区域**用布局路由选择：一组页面共用一个布局，不同的组用不同的布局，例如 `_app` 用侧栏，`_settings` 用设置布局，`_auth` 用登录布局。
+
+<a id="navigation"></a>
+### 导航模型
+
+```tsx
+const { menu, active, modules, module, secondary, crumbs } = useNavigation()
+```
+
+| 字段 | 内容 |
+| --- | --- |
+| `menu` | 按权限过滤后的菜单树，见[菜单与面包屑](#menu-and-breadcrumbs) |
+| `active` | 当前位置在菜单中的路径：从第一级到最深一级的菜单项 id，用于高亮当前项、展开所在的分组。详情页这类不在菜单中的页面，高亮它所在的分组 |
+| `modules`、`module` | 第一级菜单和当前所在的那一项，“顶栏 + 侧栏”、“图标栏 + 二级面板”用它们 |
+| `secondary` | 当前第一级下的菜单，用于二级导航、二级面板 |
+| `crumbs` | 面包屑 |
+
+菜单项的徽标（例如未读通知数）是运行时才知道的，由页面或功能模块登记，菜单项上带上 `badge`：
+
+```tsx
+useMenuBadge("/_app/notifications", unread) // 组件卸载、值为 0 或空时去掉
+```
+
+<a id="slots"></a>
+### 插槽
+
+布局用 `<Slot>` 放置插槽，页面用 `<Fill>` 往插槽放内容，离开页面时自动移除。同一个插槽可以有多份内容，按放入的顺序排列：
+
+```tsx
+// 布局
+<header>
+  <Slot name="brand" />
+  <Slot name="actions" />
+  <Slot name="user" />
+</header>
+{useSlotFilled("aside") && <aside><Slot name="aside" /></aside>}
+
+// 页面
+<Fill name="actions"><Button>写文章</Button></Fill>
+```
+
+| 插槽 | 内容 |
+| --- | --- |
+| `brand`、`user`、`tenant`、`search`、`footer` | 品牌、用户菜单、租户切换、搜索与命令面板入口、页脚，通常由应用在布局路由中放一次 |
+| `actions`、`aside` | 顶栏操作、侧边面板，随页面变化 |
+| `nav`、`subnav` | 主导航、二级导航，通常由布局按 `useNavigation` 自己渲染 |
+| `tabs` | 标签栏 |
+
+内容用 portal 放进插槽，仍在页面自己的组件树中：读取页面的状态和上下文，随页面一起更新。`useSlotFilled(name)` 报告插槽中是否有内容，例如没有侧边面板时不留出位置。
+
+<a id="layout-state"></a>
+### 布局状态
+
+```tsx
+const [state, setState] = useLayoutState()
+// state.collapsed、state.secondaryWidth、state.aside、state.maximized、state.density、state.navOpen
+setState({ collapsed: !state.collapsed })
+```
+
+布局状态保存在[本地存储](#storage)中，按账号区分：换个账号登录各是各的。`navOpen`（窄屏时导航抽屉打开）只在当前页面有效，不保存。`useNarrow()` 报告是否是窄屏（默认宽度小于 768px），布局据此把主导航收进抽屉或底部标签栏。
+
+项目允许用户切换布局时（例如在侧栏和顶部导航之间），布局路由用 `useLayoutVariant` 决定当前用哪一种，第一种是默认的；用户选过、并且在允许的范围内时用用户的选择：
+
+```tsx
+const [variant, setVariant] = useLayoutVariant(["side", "top"])
+return variant === "top" ? <TopLayout /> : <SideLayout />
+```
+
+<a id="tenants"></a>
+## 租户
+
+多租户应用中，当前租户是会话身份中的 `tenant`。`createApp` 的 `tenancy` 提供租户列表和切换后的去处，`useTenant` 用于顶栏的租户菜单：
+
+```tsx
+export const app = createApp({
+  id: "console",
+  routeTree,
+  session,
+  tenancy: {
+    tenants: () => api.tenant.list(), // 当前用户所属的全部租户 [{ id, name }]
+    home: (id) => `/t/${id}/`, // 切换后去哪里，见下表
+  },
+})
+
+const { current, tenant, tenants, switchTo } = useTenant()
+```
+
+切换时先更新会话的身份：TanStack Query 的缓存随之清空，页面重新挂载，上一个租户的数据不会出现。然后按后端[确定租户](../security/tenancy.md#identifying-tenants)的方式跳转：
+
+| 后端怎样确定租户 | `home` | 切换后 |
+| --- | --- | --- |
+| 路径 `/t/{tenant}/…` | 返回新租户的首页，例如 `` (id) => `/t/${id}/` `` | 去新租户的首页，不停留在原来的页面：页面中的资源属于原来的租户 |
+| 子域名 | 返回完整的地址，例如 `` (id) => `https://${id}.example.com/` `` | 整页跳转 |
+| 请求头 `X-Tenant` | 不设置 | 留在当前页面，按新租户重新读取数据 |
+
+客户端按同样的方式把租户带给接口：请求头方式用 `createClient` 的 `headers`，路径方式用函数形式的 `baseURL`，见[客户端代码](clients.md#creating-the-client)：
+
+```ts
+const tenant = () => session.identity()?.tenant
+export const api = createClient({ baseURL: "/api", auth: session.auth, headers: () => ({ "X-Tenant": tenant() }) })
+// 路径方式：createClient({ baseURL: () => `/api/t/${tenant()}`, auth: session.auth })
+```
+
+租户在路径中时，用户也可能直接打开另一个租户的地址。租户布局路由的 `beforeLoad` 调用 `enterTenant`，会话的身份随之切换：
+
+```tsx
+export const Route = createFileRoute("/t/$tenant")({
+  beforeLoad: ({ context, params }) => enterTenant(context.app, params.tenant),
+})
+```
 
 <a id="forms"></a>
 ## 表单
@@ -326,6 +444,10 @@ app.storage.get<{ collapsed: boolean }>("sider")
 | `ForbiddenError`、`isForbidden` | 缺少权限时抛出的错误 |
 | `useApp`、`useSignedIn`、`useCan`、`useMenu`、`useBreadcrumbs` | 在 `AppRoot` 之内使用 |
 | `buildMenu`、`firstPage`、`pageUnder`、`breadcrumbs` | 菜单和面包屑的纯函数，外观可以直接使用 |
+| `useNavigation`、`useMenuBadge` | 布局的导航模型；登记菜单项的徽标 |
+| `Slot`、`Fill`、`useSlotFilled` | 插槽 |
+| `useLayoutState`、`useLayoutVariant`、`useNarrow` | 布局状态、用户选择的布局、窄屏 |
+| `useTenant`、`switchTenant`、`enterTenant` | 当前租户、切换租户 |
 | `resolver`、`antdRule`、`formValidator` | 用生成的规则校验表单：react-hook-form、antd Form、其他表单库 |
 | `setServerErrors`、`serverErrors` | 把服务端的错误设置到表单的字段 |
 | `useUnsavedChanges(dirty, options)` | 有未保存的修改时离开前询问 |

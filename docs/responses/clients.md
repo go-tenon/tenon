@@ -134,6 +134,7 @@ session.connect(api)
 - 一个会话可以连接多个 API 的客户端（`session.connect`），例如同一次登录调用 `/api` 和 `/api/admin`。
 - 公开的接口（[`rest.Public`](../http/routing.md#access-policies)）直接请求，`401` 原样返回给调用者。
 - 请求带上 `Accept-Language`（默认是浏览器的语言，`language` 可以覆盖），错误的 `detail` 按它翻译。App 的 WebView 设置 `appVersion`，作为 [`X-App-Version`](#app-version) 发送。
+- `headers` 是每次请求附加的请求头，每次请求时读取，值为空时不发送，接口自己的请求头优先，例如租户在请求头中时 `headers: () => ({ "X-Tenant": session.identity()?.tenant })`。`baseURL` 也可以是函数，例如租户在路径中时 `` baseURL: () => `/api/t/${tenant}` ``。见[租户](app-shell.md#tenants)。
 
 `/auth/login`、`/auth/refresh` 是应用自己注册的公开接口，写法见[单页应用](../security/api-tokens.md#single-page-applications)。App、桌面端和小程序用响应体传递：登录时省略 `cookie`，refresh token 在响应体中，保存在系统的安全存储中。给 `createSession` 传入存储，`refresh` 收到保存的 refresh token，把它放进请求体：
 
