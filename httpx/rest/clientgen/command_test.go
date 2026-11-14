@@ -19,7 +19,7 @@ import (
 func runClient(t *testing.T, args ...string) (string, error) {
 	t.Helper()
 	root := command.Root("api", "test")
-	root.AddCommand(clientgen.Command(func() chi.Routes { return exampleAPI(nil).Router() }))
+	root.AddCommand(clientgen.Command(func() chi.Routes { return exampleAPI(nil).Router() }, exampleTranslations))
 	var stderr bytes.Buffer
 	root.SetErr(&stderr)
 	root.SetOut(&bytes.Buffer{})

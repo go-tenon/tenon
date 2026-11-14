@@ -87,6 +87,25 @@ func TestTSMetadata(t *testing.T) {
 	}
 }
 
+// 枚举的显示文字：一种语言只有部分取值有显示文字，或者所有语言都没有时警告。
+func TestTSEnumWarnings(t *testing.T) {
+	for name, c := range map[string]struct {
+		translations fstest.MapFS
+		want         string
+	}{
+		"partial": {fstest.MapFS{"zh-CN.yaml": {Data: []byte("article.status.draft: 草稿\n")}}, "enum ArticleStatus has no zh-CN label for published"},
+		"none":    {fstest.MapFS{}, "enum ArticleStatus has no labels"},
+	} {
+		res, err := clientgen.GenerateTS(exampleAPI(nil), clientgen.TSOptions{Main: exampleMain, Translations: []fs.FS{c.translations}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], c.want) {
+			t.Errorf("%s: warnings %q", name, res.Warnings)
+		}
+	}
+}
+
 // 权限目录写入 OpenAPI 的 x-tenon-permissions，按名称排序。
 func TestPermissionsInOpenAPI(t *testing.T) {
 	data, err := adminAPI(catalog, "notes:write").OpenAPIJSON()

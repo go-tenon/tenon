@@ -46,11 +46,7 @@ export const schemas = {
             "type": "string"
           },
           "status": {
-            "enum": [
-              "draft",
-              "published"
-            ],
-            "type": "string"
+            "$ref": "#/components/schemas/ArticleStatus"
           },
           "tag": {
             "items": {
@@ -75,6 +71,13 @@ export const schemas = {
 
 /** schemas 中 $ref 引用的命名类型，键是 OpenAPI 中的名称。 */
 export const components = {
+  ArticleStatus: {
+    "enum": [
+      "draft",
+      "published"
+    ],
+    "type": "string"
+  },
   Changes: {
     "additionalProperties": false,
     "properties": {

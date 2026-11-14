@@ -74,6 +74,9 @@ func Command(router func() chi.Routes, translations ...fs.FS) *cobra.Command {
 					for _, s := range res.Skipped {
 						fmt.Fprintln(cmd.ErrOrStderr(), "skipped "+s)
 					}
+					for _, w := range res.Warnings {
+						fmt.Fprintln(cmd.ErrOrStderr(), "warning: "+w)
+					}
 					if err := Write(filepath.Join(ts, dirs[i]), res.Files); err != nil {
 						return err
 					}

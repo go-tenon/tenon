@@ -9,6 +9,7 @@
 - [必填与可选字段](#required-and-optional-fields)
 - [验证错误响应](#validation-error-response)
     - [验证提示](#validation-messages)
+- [带显示文字的枚举](#enums)
 - [业务规则验证](#business-validation)
 
 <a id="validation-quickstart"></a>
@@ -129,6 +130,49 @@ type PatchInput struct {
 完整的列表见框架的 `i18n/locales/zh-CN.yaml`，以 `validation.` 开头。在应用的翻译文件中写同名消息即可覆盖，见[本地化](../general/localization.md)。[页面表单](../responses/forms.md#validation-messages)的提示与 API 相同。
 
 少数无法识别的消息没有 `code`，`message` 保持 Huma 的英文原文，例如 `oneOf` 等组合规则。没有安装 `httpx.Locale` 中间件时，所有提示都是英文原文，`code` 照常返回。
+
+<a id="enums"></a>
+## 带显示文字的枚举
+
+状态、类型这类字段只接受几个固定的值，界面上还要显示成文字，例如 `draft` 显示为“草稿”。用 `enum` 包声明它，取值、校验和显示文字只写一次：
+
+```go
+package article
+
+import (
+    "github.com/danielgtaylor/huma/v2"
+
+    "github.com/go-tenon/tenon/enum"
+    "github.com/go-tenon/tenon/httpx/rest"
+)
+
+// Status 是文章的状态。
+type Status string
+
+const (
+    Draft     Status = "draft"
+    Published Status = "published"
+)
+
+// Statuses 是文章的全部状态，显示文字是 article.status.<状态> 的消息。
+var Statuses = enum.New("article.status", Draft, Published)
+
+// Schema 让 OpenAPI 中的 Status 引用命名类型 ArticleStatus。
+func (Status) Schema(r huma.Registry) *huma.Schema { return rest.EnumSchema(r, Statuses) }
+```
+
+显示文字写在[翻译文件](../general/localization.md#translation-files)中，消息 ID 是前缀加取值：
+
+```yaml
+# locales/zh-CN.yaml
+article.status.draft: 草稿
+article.status.published: 已发布
+```
+
+- 字段的类型是 `Status` 时，请求体和查询参数只接受声明的取值，其他值返回 `422`，错误码 `validation.one_of`。不需要再写 `enum` 标签。
+- `rest.EnumSchema` 把它登记为 OpenAPI 的命名类型，名称由前缀得出（`article.status` 是 `ArticleStatus`），带有全部取值和 `x-tenon-enum`（消息前缀）。生成的客户端得到取值的联合类型和各语言的显示文字，见[客户端的枚举](../responses/clients.md#ts-enums)。两个枚举得出同一个名称时 panic。
+- `Statuses.Label(ctx, v)` 按请求的语言返回显示文字，没有翻译时返回取值本身，例如在页面中显示状态；`Statuses.Values()` 按声明的顺序返回全部取值，例如生成下拉框的选项；`Statuses.Valid(v)` 判断取值是否合法。
+- `Schema` 方法是 Huma 的 `SchemaProvider`：类型自己声明 schema，不需要在装配时逐个登记。
 
 <a id="business-validation"></a>
 ## 业务规则验证

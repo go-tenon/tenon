@@ -271,6 +271,15 @@ func quoteTag(tag string) string {
 // marshalers 是自定义 JSON 编码的方法，带这些方法的类型要原样导入。
 var marshalers = []string{"MarshalJSON", "UnmarshalJSON", "MarshalText", "UnmarshalText", "Schema", "TransformSchema"}
 
+// schemaOnly 报告方法是否只影响 OpenAPI 文档和校验，不影响 JSON 编码。
+func schemaOnly(method string) bool { return method == "Schema" || method == "TransformSchema" }
+
+// isString 报告 named 的底层类型是否是 string。
+func isString(named *types.Named) bool {
+	b, ok := named.Underlying().(*types.Basic)
+	return ok && b.Kind() == types.String
+}
+
 // drain 复制队列中的全部类型。
 func (g *generator) drain() error {
 	for len(g.queue) > 0 {
@@ -294,7 +303,11 @@ func (g *generator) copyType(obj *types.TypeName) error {
 		return errors.Newf("clientgen: %s.%s is not a named type", obj.Pkg().Name(), obj.Name())
 	}
 	for i := range named.NumMethods() {
-		if name := named.Method(i).Name(); slices.Contains(marshalers, name) {
+		name := named.Method(i).Name()
+		if schemaOnly(name) && isString(named) {
+			continue // 例如 rest.EnumSchema 的枚举：方法只影响 OpenAPI，复制类型和常量得到同样的 JSON
+		}
+		if slices.Contains(marshalers, name) {
 			return errors.Newf("clientgen: %s.%s has method %s, so copying its fields would not produce the same JSON; "+
 				"move it to a package the client can import (--import) or use plain fields", obj.Pkg().Name(), obj.Name(), name)
 		}

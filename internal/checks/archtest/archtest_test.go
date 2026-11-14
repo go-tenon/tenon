@@ -40,6 +40,7 @@ var rules = map[string]rule{
 	"config":    {layerFoundation, nil},
 	"errorx":    {layerFoundation, nil},
 	"i18n":      {layerFoundation, nil},
+	"enum":      {layerFoundation, []string{"i18n"}},
 	"hashing":   {layerFoundation, nil},
 	"identity":  {layerFoundation, []string{"errorx"}},
 	"logging":   {layerFoundation, []string{"errorx"}},
@@ -69,8 +70,8 @@ var rules = map[string]rule{
 	"filesystem":         {layerInfrastructure, []string{"errorx", "identity"}},
 	"sheet":              {layerInfrastructure, []string{"errorx", "form"}},
 
-	"httpx":                {layerEntry, []string{"acquire", "errorx", "form", "i18n", "identity", "logging", "ratelimit"}},
-	"httpx/rest/clientgen": {layerEntry, []string{"command", "errorx", "httpx", "i18n", "identity", "page"}},
+	"httpx":                {layerEntry, []string{"acquire", "enum", "errorx", "form", "i18n", "identity", "logging", "ratelimit"}},
+	"httpx/rest/clientgen": {layerEntry, []string{"command", "enum", "errorx", "httpx", "i18n", "identity", "page"}},
 	"web":                  {layerEntry, []string{"errorx", "form", "httpx", "i18n", "logging"}},
 	"realtime":             {layerEntry, []string{"broadcast", "httpx", "identity", "logging"}},
 	"mcpx":                 {layerEntry, []string{"errorx", "httpx", "identity", "logging"}},

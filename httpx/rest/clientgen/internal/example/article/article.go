@@ -14,6 +14,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
+	"github.com/go-tenon/tenon/enum"
 	"github.com/go-tenon/tenon/errorx"
 	"github.com/go-tenon/tenon/httpx"
 	"github.com/go-tenon/tenon/httpx/rest"
@@ -29,6 +30,12 @@ const (
 	// StatusPublished 是已经发布的文章。
 	StatusPublished Status = "published"
 )
+
+// Statuses 是文章的全部状态，显示文字是 article.status.<状态> 的消息。
+var Statuses = enum.New("article.status", StatusDraft, StatusPublished)
+
+// Schema 让 OpenAPI 中的 Status 引用命名类型 ArticleStatus。
+func (Status) Schema(r huma.Registry) *huma.Schema { return rest.EnumSchema(r, Statuses) }
 
 var (
 	// ErrNotFound 表示文章不存在。
@@ -104,7 +111,7 @@ type PublishInput struct {
 // ListInput 是文章列表的筛选条件。
 type ListInput struct {
 	page.OffsetParams
-	Status Status   `query:"status" enum:"draft,published"`
+	Status Status   `query:"status"`
 	Tags   []string `query:"tag,explode"`
 	Q      string   `query:"q"`
 }

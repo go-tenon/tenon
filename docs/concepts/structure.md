@@ -133,7 +133,7 @@ Tenon 的每个包都可以单独使用，按需引入即可。顶层的包分�
 功能        apitoken  login  oauthserver  authz  notification  push  activity  feature  settings  operation  webhook  search  vector  sheet/imports  sheet/exports  ai
 入口        httpx  web  realtime  mcpx  command
 基础设施    database  queue  schedule  cachex  lock  ratelimit  captcha  broadcast  filesystem  imgproxy  mail  sms  pdf  outbound  sheet  document
-基础        errorx  identity  config  cleanup  logging  telemetry  i18n  page  form  hashing  crypt  acquire
+基础        errorx  identity  config  cleanup  logging  telemetry  i18n  enum  page  form  hashing  crypt  acquire
 ```
 
 这条规则由架构测试 `internal/checks/archtest` 保证，新增的导入违反分层时测试会失败。名字以 `test` 结尾的子包（`dbtest`、`queuetest`、`mailtest` 等）是测试用的替身和工具。
@@ -149,6 +149,7 @@ Tenon 的每个包都可以单独使用，按需引入即可。顶层的包分�
 | `cleanup` | 按逆序关闭入口打开的资源 | [关闭资源](dependencies.md#closing-resources) |
 | `config` | 读取 YAML、展开环境变量、校验 | [配置](../general/configuration.md) |
 | `crypt` | 用应用密钥加密、签名链接 | [加密与签名链接](../security/encryption.md) |
+| `enum` | 带显示文字的枚举：取值、校验和按语言翻译的显示文字 | [带显示文字的枚举](../http/validation.md#enums) |
 | `errorx` | 带稳定错误码和分类的业务错误 | [错误处理](../general/errors.md) |
 | `form` | 按 Huma 标签转换、验证文本字段，表单和表格导入共用 | [表单](../responses/forms.md) |
 | `hashing` | 密码哈希 | [哈希](../security/hashing.md) |
