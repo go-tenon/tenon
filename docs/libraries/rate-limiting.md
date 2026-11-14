@@ -1,19 +1,34 @@
 # 限流
 
-- [简介](#introduction)
+限流用来防止某个客户端或某项操作过于频繁：例如每个 IP 每秒最多 10 个请求，或者同一个邮箱每分钟最多尝试登录 5 次。
+
+`ratelimit` 包与传输方式无关。同一个限流器既可以作为 HTTP 中间件按请求限流，也可以在处理器、命令或任务中直接调用。
+
+- [示例用法](#example-usage)
 - [限流器](#limiters)
 - [限制请求频率](#http-middleware)
     - [限流的 key](#rate-limit-key)
 - [在处理器中限流](#in-handlers)
 - [Redis 限流器](#redis-limiter)
 - [指标](#metrics)
+- [API 参考](#api-reference)
 
-<a id="introduction"></a>
-## 简介
+<a id="example-usage"></a>
+## 示例用法
 
-限流用来防止某个客户端或某项操作过于频繁：例如每个 IP 每秒最多 10 个请求，或者同一个邮箱每分钟最多尝试登录 5 次。
+```go
+logins := redislimit.New(rdb, "app:login", ratelimit.Config{Rate: 5, Interval: time.Minute, Burst: 5})
 
-`ratelimit` 包与传输方式无关。同一个限流器既可以作为 HTTP 中间件按请求限流，也可以在处理器、命令或任务中直接调用。
+if err := logins.Allow(ctx, email); err != nil {
+    return err // ratelimit.ErrExceeded：响应 429，带 Retry-After
+}
+```
+
+按客户端地址限制全部请求：
+
+```go
+router.Use(httpx.RateLimit(redislimit.New(rdb, "app:http", cfg.HTTP.RateLimit), httpx.KeyByIP))
+```
 
 <a id="limiters"></a>
 ## 限流器
@@ -55,11 +70,11 @@ ratelimit.Config{
 `httpx.RateLimit` 把限流器安装为中间件。配额用完时返回 `429 Too Many Requests`，并通过 `Retry-After` 响应头告诉客户端多少秒后重试。限流不在默认中间件中，需要时在 `httpx.Defaults` 之后安装：
 
 ```go
-router.Use(httpx.Defaults(a.cfg.HTTP, nil, nil)...)
-router.Use(httpx.RateLimit(ratelimit.NewMemory(a.cfg.HTTP.RateLimit), httpx.KeyByIP))
+router.Use(httpx.Defaults(cfg.HTTP, nil, nil)...)
+router.Use(httpx.RateLimit(ratelimit.NewMemory(cfg.HTTP.RateLimit), httpx.KeyByIP))
 ```
 
-`a.cfg.HTTP.RateLimit` 来自 `http.rate_limit` 配置段，下面是它的默认值：
+`cfg.HTTP.RateLimit` 来自 `http.rate_limit` 配置段，下面是它的默认值：
 
 ```yaml
 http:
@@ -87,7 +102,7 @@ skipHealth := func(r *http.Request) string {
     }
     return httpx.KeyByIP(r)
 }
-router.Use(httpx.RateLimit(ratelimit.NewMemory(a.cfg.HTTP.RateLimit), skipHealth))
+router.Use(httpx.RateLimit(ratelimit.NewMemory(cfg.HTTP.RateLimit), skipHealth))
 ```
 
 中间件运行在路由匹配和认证之前，只能使用请求本身携带的信息。不要用 `Authorization` 等未经校验的请求头做 key：客户端每次换一个值就能得到一份新配额。需要按用户限流时，请[在处理器中限流](#in-handlers)。
@@ -95,7 +110,7 @@ router.Use(httpx.RateLimit(ratelimit.NewMemory(a.cfg.HTTP.RateLimit), skipHealth
 <a id="in-handlers"></a>
 ## 在处理器中限流
 
-博客文章可以设置[访问口令](../security/hashing.md#hashing-passwords)。为了防止口令被暴力猜测，同一篇文章每分钟最多尝试 5 次。只需在校验口令的处理器开头调用限流器：
+例如文章可以设置[访问口令](../security/hashing.md#hashing-passwords)。为了防止口令被暴力猜测，同一篇文章每分钟最多尝试 5 次。只需在校验口令的处理器开头调用限流器：
 
 ```go
 func (h *Handlers) Unlock(w http.ResponseWriter, r *http.Request) error {
@@ -113,7 +128,7 @@ func (h *Handlers) Unlock(w http.ResponseWriter, r *http.Request) error {
 入口中创建限流器并传给登录处理器：
 
 ```go
-attempts := redislimit.New(rdb, "blog:passcode", ratelimit.Config{Rate: 5, Interval: time.Minute, Burst: 5})
+attempts := redislimit.New(rdb, "app:passcode", ratelimit.Config{Rate: 5, Interval: time.Minute, Burst: 5})
 ```
 
 校验口令需要多个实例共享计数，否则攻击者把请求分散到各个实例，就能得到成倍的尝试次数，所以这里使用 [Redis 限流器](#redis-limiter)。
@@ -126,15 +141,15 @@ attempts := redislimit.New(rdb, "blog:passcode", ratelimit.Config{Rate: 5, Inter
 ```go
 import "github.com/go-tenon/tenon/ratelimit/redislimit"
 
-attempts := redislimit.New(rdb, "blog:passcode", ratelimit.Config{Rate: 5, Interval: time.Minute, Burst: 5})
+attempts := redislimit.New(rdb, "app:passcode", ratelimit.Config{Rate: 5, Interval: time.Minute, Burst: 5})
 ```
 
-每个 key 对应一个 Redis 键，键名是 `name:key`，例如 `blog:passcode:42`；多个应用共用一个 Redis 时，在 `name` 中带上应用的命名空间。每次 `Allow` 是一次原子的脚本调用，时间取自 Redis 服务端时钟，多个实例并发调用时计数也是精确的。键在配额回满时自动过期，不需要迁移，也不需要清理。
+每个 key 对应一个 Redis 键，键名是 `name:key`，例如 `app:passcode:42`；多个应用共用一个 Redis 时，在 `name` 中带上应用的命名空间。每次 `Allow` 是一次原子的脚本调用，时间取自 Redis 服务端时钟，多个实例并发调用时计数也是精确的。键在配额回满时自动过期，不需要迁移，也不需要清理。
 
 Redis 的写入很快，也适合多个实例共享的全局限流：
 
 ```go
-router.Use(httpx.RateLimit(redislimit.New(a.rdb, "blog:http", a.cfg.HTTP.RateLimit), httpx.KeyByIP))
+router.Use(httpx.RateLimit(redislimit.New(rdb, "app:http", cfg.HTTP.RateLimit), httpx.KeyByIP))
 ```
 
 这时 Redis 不可用会让所有请求都得到 `503`。如果宁可短时间不限流也要保证可用，请继续使用内存限流器。
@@ -145,7 +160,7 @@ router.Use(httpx.RateLimit(redislimit.New(a.rdb, "blog:http", a.cfg.HTTP.RateLim
 被拒绝的请求返回 `429`，已经出现在 [HTTP 请求的指标](../general/telemetry.md#http)中，按路由就能看出哪个接口被限流。还看不出来的是：被哪个限流器拒绝、拒绝占全部调用的比例、存储是否出错，以及 HTTP 之外的调用。用 `ratelimit.Observe` 包装限流器，`a.meters` 是入口中[创建](../general/telemetry.md#setup)的 `MeterProvider`：
 
 ```go
-logins := redislimit.New(a.rdb, "blog:login", ratelimit.Config{Rate: 5, Interval: time.Minute, Burst: 5})
+logins := redislimit.New(rdb, "app:login", ratelimit.Config{Rate: 5, Interval: time.Minute, Burst: 5})
 attempts := ratelimit.Observe(a.meters, "login", logins)
 ```
 
@@ -169,3 +184,56 @@ sum(rate(ratelimit_requests_total{ratelimit_name="login", ratelimit_result="exce
 比例平时接近 0、突然升高，通常是有人在暴力尝试；一直偏高则可能是配额定得太紧。
 
 `key`（IP、邮箱、用户 ID）不进入指标，否则指标的数量会随客户端增长。要知道被限流的是谁，查看访问日志中状态为 `429` 的请求。
+
+<a id="api-reference"></a>
+## API 参考
+
+### ratelimit.Limiter
+
+```go
+type Limiter interface {
+    Allow(ctx context.Context, key string) error
+}
+```
+
+为 `key` 消耗一次配额。配额用完时返回 `ErrExceeded`（分类 `ResourceExhausted`，带 `RetryAfter`）；存储出错时返回其他错误。
+
+### ratelimit.Config
+
+| 字段 | 说明 |
+| --- | --- |
+| `Rate int` | 每个 `Interval` 补充的配额 |
+| `Interval time.Duration` | 补充 `Rate` 个配额的周期 |
+| `Burst int` | 允许连续使用的最大配额，即令牌桶容量 |
+
+### ratelimit.NewMemory
+
+```go
+func NewMemory(cfg Config) *Memory
+```
+
+进程内的限流器，计数不在实例之间共享。
+
+### redislimit.New
+
+```go
+func New(rdb rueidis.Client, name string, cfg ratelimit.Config) *Limiter
+```
+
+包 `github.com/go-tenon/tenon/ratelimit/redislimit`。计数保存在 Redis 中，所有实例共享；`name` 是键的前缀。
+
+### ratelimit.Observe
+
+```go
+func Observe(mp metric.MeterProvider, name string, l Limiter) Limiter
+```
+
+包装限流器，报告 `ratelimit.requests` 指标，见[指标](#metrics)。
+
+### httpx.RateLimit
+
+```go
+func RateLimit(limiter ratelimit.Limiter, key KeyFunc) func(http.Handler) http.Handler
+```
+
+按 `key(r)` 限制请求的中间件，`httpx.KeyByIP` 按客户端地址。

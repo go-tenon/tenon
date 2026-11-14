@@ -20,9 +20,6 @@ type docFile struct {
 var blogFiles = []docFile{
 	{"internal/auth/auth.go", "security/authentication.md"},
 	{"internal/auth/permissions.go", "security/authorization.md"},
-	{"internal/mailjob/mailjob.go", "libraries/queue.md"},
-	{"internal/bootstrap/worker.go", "libraries/queue.md"},
-	{"internal/bootstrap/scheduler.go", "libraries/scheduling.md"},
 	{"internal/auth/social/social.go", "security/social-login.md"},
 	{"internal/auth/authhttp/web_social.go", "security/social-login.md"},
 	{"internal/auth/authhttp/social.go", "security/social-login.md"},
