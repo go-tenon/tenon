@@ -1,6 +1,6 @@
 # 前端规范
 
-本文规定 Tenon 应用的前端技术选型、目录结构和编码规范。一个产品的后端和全部前端放在同一个仓库中，每个前端按它的使用场景选择组件库。
+本文规定 Tenon 应用的前端技术选型、目录结构和编码规范。一个产品的后端和全部前端放在同一个仓库中，每个前端按它的使用场景选择组件库。本文的技术选型和编码规范针对网页端；桌面端、移动端不限定使用 React，见[以后增加的端](#future-clients)。
 
 - [技术选型](#stack)
     - [按端选择组件库](#ui-library)
@@ -116,14 +116,16 @@ helpdesk/
 ├── packages/              多个端共用的包
 │   ├── client/            生成的客户端和不依赖 DOM 的共用逻辑
 │   ├── ui/                多个 shadcn 端共用的组件
-│   ├── tokens/            颜色、圆角、字体等设计值
-│   └── i18n/              前端文案
+│   ├── tokens/            颜色、圆角、字体等设计值，源文件是 JSON
+│   └── i18n/              前端文案，源文件是 JSON
 └── docs/
     └── adr/               架构决策记录
 ```
 
 - 每个端是 `apps/` 下的一个目录。网页端有自己的 `package.json`、`vite.config.ts`、`AGENTS.md`，以及嵌入自己 `dist` 的 `frontend.go`。
 - `packages/` 中的包在有两个以上的端使用时才建立。`client` 从第一个前端起就有；`ui` 在第二个 shadcn 端出现时从前端中抽出；`tokens`、`i18n` 在需要跨端统一设计值或支持多语言时建立。
+- `tokens` 和 `i18n` 的源文件与编程语言无关（设计值用 W3C Design Tokens 格式的 JSON，文案用 JSON），TypeScript 包只是读取它们的一种方式。其他语言的端从同一份源文件生成自己的代码。
+- `apps/` 中的端可以使用任何工具链。只有 JavaScript 的端加入 Bun workspace（在根目录的 `workspaces` 中逐个列出）；其他工具链的端（如 Flutter、Go）在自己的目录中管理依赖，Go 写的客户端是独立的 Go module，本地用 `go.work` 关联。
 - 框架工具（`tenon.json`、`tenon dev`、`tenon build`、`tenon generate`）需要支持多个前端和多个 API，这部分单独开 PR 实现。
 
 `packages/client` 的结构：
@@ -279,9 +281,16 @@ apps/admin/
 <a id="future-clients"></a>
 ## 以后增加的端
 
-桌面端、移动端的技术尚未确定，在第一个需要它们的产品中写决策记录选择。无论选择什么，它们都放在 `apps/` 中（如 `apps/desktop`、`apps/mobile`），并遵守：
+桌面端、移动端的技术尚未确定，也不限定使用 React：可能是 Flutter、Go 编写的客户端、原生（Swift、Kotlin）或 React Native。在第一个需要它们的产品中写决策记录选择，放在 `apps/` 中（如 `apps/desktop`、`apps/mobile`）。
+
+为了让任何技术都能接入，后端和共用资源现在遵守：
 
 1. 业务规则、权限和校验都在 Go 中，所有端都只是 API 的调用方。
-2. 每个 API 的 OpenAPI 文档提交到仓库，不兼容的修改通过新的 `BasePath` 发布。
-3. 共用逻辑，不共用界面。TypeScript 的端（如 React Native、Tauri）直接使用 `packages/client`、`tokens`、`i18n`；其他语言的端（如 Flutter、原生、Wails 中的 Go）从 OpenAPI 生成自己的客户端，设计值从 `packages/tokens` 生成。
-4. App 从第一个版本起发送 [`X-App-Version`](../docs/responses/clients.md#app-version)。
+2. 每个 API 的 OpenAPI 文档提交到仓库，它是各端与后端之间唯一的契约；不兼容的修改通过新的 `BasePath` 发布。任何语言都可以从它生成客户端，`tenon generate` 已经能生成 TypeScript 和 Go 的客户端。
+3. 框架的约定（错误格式、分页、令牌刷新、实时频道、服务端推送与 AI 对话的消息流、上传、App 版本）以与语言无关的协议写在 Tenon 文档中，TypeScript 的 `@go-tenon/client` 只是第一个实现。
+4. 每个功能都能用 Bearer 令牌访问，刷新令牌可以放在请求体中，不依赖只有浏览器才有的 cookie 和同源机制。
+5. 实时消息用 Centrifuge（有 JavaScript、Dart、Swift、Java、Go 等官方 SDK），推送用[移动推送](../docs/features/push.md)。
+6. 设计值和文案的源文件是 JSON，不绑定某种语言。
+7. App 从第一个版本起发送 [`X-App-Version`](../docs/responses/clients.md#app-version)。
+
+共用逻辑，不共用界面：TypeScript 的端直接使用 `packages/client`；其他语言的端从 OpenAPI 生成客户端，按第 3 条的协议实现运行时。
