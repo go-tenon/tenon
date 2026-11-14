@@ -58,6 +58,8 @@ export interface ErrorModel {
   errors?: ErrorDetail[] | null
   /** A URI reference that identifies the specific occurrence of the problem. */
   instance?: string
+  /** Public parameters of a business error, e.g. methods for auth.method_required. Present only when the error has any. */
+  params?: Record<string, unknown>
   /** HTTP status code */
   status?: number
   /** A short, human-readable summary of the problem type. This value should not change between occurrences of the error. */

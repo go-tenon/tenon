@@ -61,7 +61,7 @@ OpenAPI 文档中有三个框架的扩展字段：根上的 `x-tenon-permissions
 失败的请求返回 4xx 或 5xx 状态码，响应体是 [Problem Details](https://www.rfc-editor.org/rfc/rfc9457) 格式，`Content-Type: application/problem+json`：
 
 ```json
-{"title": "Conflict", "status": 409, "detail": "slug“hello-world”已被使用", "code": "article.slug_taken"}
+{"title": "Conflict", "status": 409, "detail": "slug“hello-world”已被使用", "code": "article.slug_taken", "params": {"slug": "hello-world"}}
 ```
 
 | 字段 | 说明 |
@@ -70,6 +70,7 @@ OpenAPI 文档中有三个框架的扩展字段：根上的 `x-tenon-permissions
 | `title` | 状态码的标准描述 |
 | `detail` | 展示给用户的文案，按 `Accept-Language` 翻译。可能随语言和版本变化，不用于判断 |
 | `code` | 稳定的错误码，只有业务错误包含，例如 `article.slug_taken` |
+| `params` | 业务错误的参数，只有带参数的业务错误包含，例如 `auth.method_required` 的 `{"methods": ["acme_sso"]}`。每个错误码的参数是固定的，可以用于处理错误 |
 | `errors` | 字段错误的明细，只有请求格式错误包含 |
 
 客户端按这个顺序判断：

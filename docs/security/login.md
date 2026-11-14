@@ -420,7 +420,13 @@ if cfg.RequireTwoFactor && !sub.Auth.TwoFactor() {
 }
 ```
 
-请求得到 `403 auth.method_required`，公开参数 `methods` 列出可以用的方式，客户端让用户用其中一种重新登录。企业 SSO 的完整写法见[企业单点登录](enterprise-sso.md)。
+请求得到 `403 auth.method_required`，公开参数 `methods` 列出可以用的方式，出现在响应的 `params` 中：
+
+```json
+{"title": "Forbidden", "status": 403, "detail": "请用企业账号登录", "code": "auth.method_required", "params": {"methods": ["acme_sso"]}}
+```
+
+客户端让用户用其中一种重新登录，例如用 `@go-tenon/client` 时读取 `describeError(err).params.methods`。企业 SSO 的完整写法见[企业单点登录](enterprise-sso.md)。
 
 <a id="confirming"></a>
 ## 确认身份
