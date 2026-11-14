@@ -334,13 +334,21 @@ async function stopAnswer() {
 回答进行中，`useChat` 的 `sendMessage` 会等这次回答结束后才发送。要让模型在回答过程中就看到新消息，前端改为调用插话接口：
 
 ```ts
-await chat.steer(conversationId, text)
+import { describeError } from "@go-tenon/client";
+
+try {
+  await chat.steer(conversationId, text);
+} catch (err) {
+  // 回答已经结束：作为新消息发送
+  if (describeError(err).code === "ai.finished") sendMessage({ text });
+  else throw err;
+}
 ```
 
 - 模型正在调用工具时，消息在这批工具调用结束后、模型下一次思考之前进入对话。模型会同时看到工具的结果和这条新消息。
 - 模型已经在给出最终回答时，它先答完，然后接着回答这条消息。
 
-两种情况下，消息都完整送达，模型照常完成当前的步骤。消息进入对话时，回答中出现一个 `steering-message` 片段，前端把它显示在对话中。对话没有在回答时，`Runs.Steer` 返回 `chat.ErrFinished`，前端改用 `sendMessage`。
+两种情况下，消息都完整送达，模型照常完成当前的步骤。消息进入对话时，回答中出现一个 `steering-message` 片段，前端把它显示在对话中。对话没有在回答时（包括请求到达时回答恰好结束），`Runs.Steer` 返回 `chat.ErrFinished`，客户端得到 `409`，错误码 `ai.finished`，前端改用 `sendMessage`。部署了多个实例时，从其他实例插话的结果相同。
 
 <a id="reconnecting"></a>
 ### 断线重连
@@ -733,7 +741,7 @@ func (rs *Runs) Close() error
 | --- | --- |
 | `Submit` | 处理前端发来的 Vercel AI SDK 请求，开始一次回答 |
 | `Start`、`Send` | 在代码中开始一次回答 |
-| `Steer` | 回答进行中插话 |
+| `Steer` | 回答进行中插话；没有进行中的回答时返回 `ErrFinished`（`409 ai.finished`） |
 | `Get` | 进行中的回答，断线后接着读 |
 | `Pending`、`Approve`、`Reject` | 审批工具调用 |
 | `UIMessages` | 对话的历史消息，供页面显示 |

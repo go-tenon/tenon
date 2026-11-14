@@ -127,7 +127,7 @@ func (r *Run) notify(ctx context.Context) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.finished {
-		return ErrFinished
+		return ErrFinished.New()
 	}
 	r.notified = true
 	return nil

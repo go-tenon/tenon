@@ -16,6 +16,7 @@ sms.rejected: 无法向这个手机号发送短信，请检查号码
 sms.limited: 这个手机号接收短信过于频繁，请稍后再试
 ai.busy: 对话正在进行，请稍后再试
 ai.awaiting_approval: 对话正在等待审批，请先处理待审批的操作
+ai.finished: 回答已经结束
 ai.not_pending: 没有这个待审批的操作
 apitoken.not_found: 令牌不存在
 login.invalid_credentials: 账号或密码不正确

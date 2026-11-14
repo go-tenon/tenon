@@ -90,7 +90,7 @@ func (w *wireError) decode() error {
 		}
 		return errorx.Define(errorx.Kind(w.Kind), w.Code).New(opts...)
 	}
-	for _, known := range []error{ErrFinished, ErrNeedsHistory, ErrNeedsSessions, ErrRunOptions} {
+	for _, known := range []error{ErrNeedsHistory, ErrNeedsSessions, ErrRunOptions} {
 		if w.Message == known.Error() {
 			return known
 		}
