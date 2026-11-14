@@ -167,7 +167,7 @@ func getJSON(ctx context.Context, client *http.Client, url string, v any) error 
 }
 ```
 
-把 `social.Config` 加入应用的根配置结构体，配置段为 `social`：
+把上面的 `Config`（或等价字段）加入应用的根配置结构体，配置段为 `social`：
 
 ```yaml
 social:
@@ -181,6 +181,14 @@ social:
   client_redirect_urls:
     - https://app.example.com/auth/callback
 ```
+
+生命周期是：
+
+1. 启动时 [`config.Load`](../general/configuration.md#loading-configuration) 读出 `social` 段
+2. 在入口调用一次 `Providers(ctx, cfg.Social)`，得到 `map[string]*oauth.Provider`（Google 的发现文档也在这里拉）
+3. 登录 / 回调接口按名称取出提供方使用——不要每个请求都 `Discover` 一遍
+
+需要在启动时就拦住空 `client_id` 之类的配置错误时，给 `Config` 加上 `Validate() error`，`Load` 会自动调用，见[配置校验](../general/configuration.md#loading-configuration)。
 
 几点说明：
 

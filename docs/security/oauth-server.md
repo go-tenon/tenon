@@ -57,6 +57,8 @@ migratecmd.Publish(
 <a id="assembling"></a>
 ## 装配
 
+串起来看：发布迁移 → 启动时准备好 `apitoken.Store`（或 JWT）→ 在入口创建一次 `oauthserver.Server` 并挂路由 → 授权 / 令牌 / 同意页请求走这些端点。
+
 创建授权服务器，端点挂在应用的根上，同意页的两个接口注册在编辑后台的 API 上：
 
 ```go

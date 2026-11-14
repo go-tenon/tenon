@@ -60,6 +60,8 @@ err = mailer.Send(ctx, msg)
 <a id="assembling-mailer"></a>
 ## 装配发送器
 
+串起来看：把邮件段挂进根配置 → 启动时 `Load` 校验嵌套的 `smtp` / `resend` / `ses` 配置 → 在入口按 `driver` 创建一次发送器 → 业务动作复用它发信。
+
 在应用配置中加入邮件段。选哪个驱动由应用自己决定，这里用一个 `driver` 字段区分：
 
 ```go
@@ -91,7 +93,7 @@ mail:
   editors: 编辑部 <editors@example.com>
 ```
 
-`mail.Address` 在配置中写成一个字符串，`"名字 <邮箱>"` 或只写邮箱都可以。
+`mail.Address` 在配置中写成一个字符串，`"名字 <邮箱>"` 或只写邮箱都可以。嵌套的 `smtp.Config` 等框架类型自带 `Validate`：挂进根配置后，[`config.Load`](../general/configuration.md#loading-configuration) 会在启动时检查它们。`driver` 本身是应用字段——想在启动时拒绝未知驱动，给 `MailConfig` 也写一个 `Validate`。
 
 然后在入口创建发送器，传给需要发邮件的业务动作：
 

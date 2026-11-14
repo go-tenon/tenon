@@ -59,6 +59,13 @@ plain, err := tokens.Login(ctx, out.Subject, device)
 <a id="assembling"></a>
 ## 装配
 
+`login` 没有单独的配置段；它吃的是数据库、[`Hasher`](hashing.md)、[`Crypt`](encryption.md) 和限流器这些已经装配好的依赖。串起来看：
+
+1. 发布迁移，建好 `auth_*` 表
+2. 启动时 `Load` 校验哈希、加密、Redis 等依赖的配置
+3. 在入口创建一次 `login.Realm`（每套账号体系各一个）
+4. 登录 / 注册接口调用 `Realm` 的方法；成功后再交给 [API 令牌](api-tokens.md) 签发凭据
+
 先发布 `login` 的迁移，见[发布框架迁移](../database/migrations.md#publishing-framework-migrations)：
 
 ```go
@@ -67,7 +74,7 @@ migrationCmd.AddCommand(migratecmd.Publish(
 ))
 ```
 
-在[入口](../concepts/dependencies.md#assembling-the-application)中为用户创建 `Realm`，[`Hasher`](hashing.md) 哈希密码，[`Crypt`](encryption.md) 派生验证码的密钥：
+在[入口](../concepts/dependencies.md#assembling-the-application)中为用户创建 `Realm`，`Hasher` 哈希密码，`Crypt` 派生验证码的密钥：
 
 ```go
 every15 := ratelimit.Config{Rate: 5, Interval: 15 * time.Minute, Burst: 5}

@@ -50,6 +50,8 @@ type Config struct {
 }
 ```
 
+挂进去之后，[`config.Load`](../general/configuration.md#loading-configuration) 会自动填充默认值并调用 `Validate`——驱动名写错、参数不合法时，应用直接起不来。配置本身不参与登录请求；真正算哈希的是下一节在入口里创建的 `Hasher`。
+
 下面是全部配置项及其默认值，通常保持默认即可：
 
 ```yaml
@@ -68,7 +70,7 @@ argon2id 的默认值是 OWASP 推荐的最低配置。参数越大越难暴力�
 <a id="hashing-passwords"></a>
 ## 哈希与校验密码
 
-在[入口](../concepts/dependencies.md#assembling-the-application)的 `open` 中创建 `Hasher`，交给 [`login.New`](login.md#assembling) 和其他需要它的业务动作：
+生命周期是：启动时 `Load` 校验配置 → 在[入口](../concepts/dependencies.md#assembling-the-application)的 `open` 中创建一次 `Hasher` → 之后每次设密码 / 登录校验都复用它。把它交给 [`login.New`](login.md#assembling) 和其他需要它的业务动作：
 
 ```go
 hasher := hashing.New(cfg.Hashing)

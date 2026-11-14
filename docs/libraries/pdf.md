@@ -73,9 +73,11 @@ gotenberg:
   url: ${GOTENBERG_URL:-http://localhost:3000}
 ```
 
+挂进去之后，[`config.Load`](../general/configuration.md#loading-configuration) 会在启动时校验配置。真正连 Gotenberg、渲染 PDF 的是下面在入口创建的生成器。
+
 Gotenberg 用 `--api-enable-basic-auth` 开启了基本认证时，再填写 `username` 和 `password`。
 
-在[入口](../concepts/dependencies.md#assembling-the-application)的 `open` 中创建生成器，保存在 `App` 中。`gotenberg.New` 不访问网络：
+在[入口](../concepts/dependencies.md#assembling-the-application)的 `open` 中创建一次生成器，保存在 `App` 中，之后渲染都复用它。`gotenberg.New` 不访问网络：
 
 ```go
 renderer, err := gotenberg.New(cfg.Gotenberg)
