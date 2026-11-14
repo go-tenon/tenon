@@ -16,6 +16,8 @@
 <a id="example-usage"></a>
 ## 示例用法
 
+下面读取上传的 Excel 文件，逐行解码并验证：
+
 ```go
 type ArticleRow struct {
     Title string `json:"title" sheet:"标题" minLength:"1"`

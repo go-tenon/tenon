@@ -19,6 +19,8 @@
 <a id="example-usage"></a>
 ## 示例用法
 
+下面在发起批量发布时登记一个操作，然后在队列任务中执行它、报告进度：
+
 ```go
 ops := operation.New(db)
 
@@ -36,6 +38,8 @@ err = ops.Run(ctx, op.ID, func(ctx context.Context, r *operation.Run) error {
     return nil
 }, nil)
 ```
+
+`Start` 在业务事务中登记操作，状态是 `pending`；任务开始执行后变为 `running`，每次 `Add` 都推进进度；回调返回 `nil` 时操作完成。用户在“任务中心”中就能看到这次批量发布的进度和结果。
 
 <a id="installation"></a>
 ## 安装

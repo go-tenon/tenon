@@ -28,6 +28,8 @@
 <a id="example-usage"></a>
 ## 示例用法
 
+下面声明一组站点设置，读取它，再修改其中一项：
+
 ```go
 type Site struct {
     Name         string `json:"name" minLength:"1"`
@@ -42,6 +44,8 @@ err = SiteSettings.Update(ctx, func(s *Site) error {
     return nil
 })
 ```
+
+`New` 的第三个参数是默认值。管理员还没有保存过任何设置时，`Get` 返回的就是它；保存之后，`Get` 把保存的值合并到默认值上返回。所以以后给 `Site` 新增一个字段，不需要写迁移。
 
 <a id="installation"></a>
 ## 安装

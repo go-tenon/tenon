@@ -24,6 +24,8 @@
 <a id="example-usage"></a>
 ## 示例用法
 
+下面声明一个索引，在修改文章时同步它，然后按关键词搜索：
+
 ```go
 type SearchDoc struct {
     ID       uuid.UUID `json:"id"`
@@ -42,6 +44,8 @@ res, err := SearchIndex.Search(ctx, db, search.Query{
     Filter: search.Eq("author_id", "alice"),
 })
 ```
+
+`search` 标签说明每个字段的用途：`text` 参与全文匹配，`boost` 让标题中的命中排得更靠前，`filter` 可以用来过滤。`Sync` 在修改文章的事务中发起同步，提交之后由 worker 更新索引。下面先发布迁移，再逐步介绍索引、同步和搜索。
 
 <a id="installation"></a>
 ## 安装

@@ -20,6 +20,8 @@
 <a id="example-usage"></a>
 ## 示例用法
 
+下面在发布文章的同时通知作者，然后读取作者自己的通知：
+
 ```go
 // 在业务事务中发送，与业务修改一起提交
 err := database.RunInTx(ctx, db, nil, func(ctx context.Context, tx database.Tx) error {
@@ -35,6 +37,8 @@ err := database.RunInTx(ctx, db, nil, func(ctx context.Context, tx database.Tx) 
 list, err := notification.List(ctx, db, notification.Query{Recipient: notification.RecipientOf(sub)})
 n, err := notification.UnreadCount(ctx, db, notification.RecipientOf(sub))
 ```
+
+通知在业务事务中写入，与文章的发布一起提交，所以不会出现“文章没发布成功，通知却发出去了”。读取时传入收件人，`List` 只返回属于这个收件人的通知，读不到别人的。下面先发布迁移，再详细介绍发送、读取和实时推送未读数。
 
 <a id="installation"></a>
 ## 安装
@@ -355,8 +359,21 @@ sched.Add("notifications:cleanup", "0 4 * * *", schedule.Cleanup(notification.Cl
 
 包 `github.com/go-tenon/tenon/notification`。所有函数都接收 `bun.IDB`，可以传连接池或事务。
 
+### Send
+
 ```go
 func Send(ctx context.Context, db bun.IDB, n Notification, to ...Recipient) ([]Notification, error)
+```
+
+- **参数**
+    - `db`：业务事务，通知与业务修改一起提交
+    - `n`：通知的内容，填写 `Event` 和 `Data`
+    - `to`：收件人，通常用 `RecipientOf(subject)` 得到
+- **返回**：为每个收件人写入的通知
+
+### 其他函数
+
+```go
 func List(ctx context.Context, db bun.IDB, q Query) ([]Notification, error)
 func Get(ctx context.Context, db bun.IDB, r Recipient, id uuid.UUID) (*Notification, error)
 func UnreadCount(ctx context.Context, db bun.IDB, r Recipient) (int, error)
@@ -370,7 +387,6 @@ func Migrations() fs.FS
 
 | 函数 | 说明 |
 | --- | --- |
-| `Send` | 给每个收件人写一条通知，返回写入的通知 |
 | `List`、`Get` | 读取收件人自己的通知，读不到别人的 |
 | `UnreadCount` | 未读数 |
 | `MarkRead`、`MarkAllRead`、`Delete` | 只作用于收件人自己的通知 |
