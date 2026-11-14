@@ -38,7 +38,7 @@ func TestExpressions(t *testing.T) {
 	}{
 		{"0 3 * * *", []time.Time{base}, []time.Time{base.Add(time.Second), base.Add(time.Minute)}},
 		{"*/10 * * * * *", []time.Time{base, base.Add(10 * time.Second)}, []time.Time{base.Add(5 * time.Second)}},
-		{"@hourly", []time.Time{base}, []time.Time{base.Add(time.Minute)}},
+		{"@hourly", []time.Time{base}, []time.Time{base.Add(time.Second), base.Add(time.Minute)}},
 		{"@every 15s", []time.Time{base, base.Add(15 * time.Second), base.Add(45 * time.Second)}, []time.Time{base.Add(10 * time.Second)}},
 		{"@every 90s", []time.Time{base, base.Add(90 * time.Second)}, []time.Time{base.Add(time.Minute)}},
 	}
