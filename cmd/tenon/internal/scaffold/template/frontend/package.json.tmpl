@@ -1,14 +1,14 @@
 {
-  "name": "[[.Name]]",
+  "name": "@[[.Scope]]/[[.Name]]",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "go tool tenon dev",
-    "build": "go tool tenon build",
-    "generate": "go tool tenon generate",
+    "dev": "vite",
+    "build": "vite build",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@[[.Scope]]/client": "workspace:*",
     "@tanstack/react-query": "^5.85.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"

@@ -1,0 +1,15 @@
+{
+  "name": "[[.Slug]]",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/web",
+    "packages/client"
+  ],
+  "scripts": {
+    "dev": "go tool tenon dev",
+    "build": "go tool tenon build",
+    "generate": "go tool tenon generate",
+    "typecheck": "bun run --filter './apps/*' typecheck"
+  }
+}

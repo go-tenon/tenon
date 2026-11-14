@@ -31,7 +31,7 @@
 ## 示例用法
 
 ```bash
-go run ./cmd/api client --ts frontend/src/api   # TypeScript
+go run ./cmd/api client --ts packages/client/src   # TypeScript：每个 API 一个目录
 go run ./cmd/api client --out ../api            # Go
 ```
 
@@ -73,11 +73,13 @@ if errors.Is(err, article.ErrSlugTaken) {
 <a id="generating-types"></a>
 ### 生成客户端
 
-[tenon generate](../installation/tooling.md#generate) 从路由生成 TypeScript 客户端，有前端时默认写到 `frontend/src/api`。它编译应用，运行应用的 `client` 命令（见 [httpcmd.Commands](../installation/tooling.md#app-side)），与 [Go 客户端](#generating-go-client)是同一个命令：
+[tenon generate](../installation/tooling.md#generate) 从路由生成 TypeScript 客户端：项目中有共用的客户端包 `packages/client` 时，每个 API 生成到 `packages/client/src/<名称>`，名称默认是 `BasePath` 的最后一段，例如 `/api` 是 `api`、`/api/admin` 是 `admin`，见[前端与 API](../installation/tooling.md#conventions)。它编译应用，运行应用的 `client` 命令（见 [httpcmd.Commands](../installation/tooling.md#app-side)），与 [Go 客户端](#generating-go-client)是同一个命令：
 
 ```bash
-go tool tenon generate   # 等价于 go run ./cmd/api client --ts frontend/src/api
+go tool tenon generate   # 等价于 go run ./cmd/api client --ts packages/client/src
 ```
+
+前端从客户端包的子路径导入，例如 `@blog/client/api`。下面的例子都是 `/api` 的客户端。
 
 | 文件 | 内容 |
 | --- | --- |
@@ -92,10 +94,10 @@ go tool tenon generate   # 等价于 go run ./cmd/api client --ts frontend/src/a
 <a id="creating-the-client"></a>
 ### 创建客户端
 
-单页应用用 [JWT 模式](../security/api-tokens.md#jwt)登录，refresh token 保存在 [HttpOnly cookie](../security/api-tokens.md#single-page-applications) 中。access token 只放在内存里，由客户端保管：请求自动带上它；受保护的接口返回 `401` 时调用一次 `auth.refresh` 换新的，再重试请求。下面是 `frontend/src/client.ts`：
+单页应用用 [JWT 模式](../security/api-tokens.md#jwt)登录，refresh token 保存在 [HttpOnly cookie](../security/api-tokens.md#single-page-applications) 中。access token 只放在内存里，由客户端保管：请求自动带上它；受保护的接口返回 `401` 时调用一次 `auth.refresh` 换新的，再重试请求。下面是 `apps/web/src/client.ts`：
 
 ```ts
-import { createClient } from "./api/api"
+import { createClient } from "@blog/client/api"
 import { router } from "./router"
 
 // 刷新接口靠 cookie 认证。单页应用与 API 在不同的子域名时需要 credentials: "include"。
@@ -151,7 +153,7 @@ created.headers.location // 有响应头的接口返回 { body, headers }
 非 2xx 的响应抛出 `ApiError`：`status` 是状态码，`code` 是业务错误码，`detail` 是可以展示给用户的说明，`fields` 是 `422` 时每个字段的问题（[翻译后的提示和规则 `code`](../http/validation.md#validation-error-response)），`requestId` 用来报告问题。业务错误码用 `errors.ts` 中的常量判断：
 
 ```ts
-import { ArticleErrors, isApiError } from "./api/api"
+import { ArticleErrors, isApiError } from "@blog/client/api"
 
 try {
   await api.article.create(changes)
@@ -202,7 +204,7 @@ const uploaded = await api.file.upload({ file: input.files[0] })
 [文件存储](../libraries/filesystem.md)中的文件有公开地址，`<a href>`、`<img src>` 直接使用。返回 `huma.StreamResponse` 的接口生成为下载，例如[导入失败的行](../features/import-export.md)，返回 `{ blob, filename }`，`saveBlob` 让浏览器保存它：
 
 ```ts
-import { saveBlob } from "./api/api"
+import { saveBlob } from "@blog/client/api"
 
 const { blob, filename } = await api.article.failures(id, { format: "xlsx" })
 saveBlob(blob, filename || "failures.xlsx")
@@ -269,10 +271,10 @@ if errors.Is(err, article.ErrSlugTaken) {
 <a id="generating-go-client"></a>
 ### 生成客户端
 
-`client` 命令由 [`httpcmd.Commands`](../installation/tooling.md#app-side) 加入命令行。在 `tenon.json` 中写上输出目录，`tenon generate` 和 `tenon dev` 就会一起生成 Go 客户端：
+`client` 命令由 [`httpcmd.Commands`](../installation/tooling.md#app-side) 加入命令行。在 `tenon.json` 中按 `BasePath` 写上输出目录，`tenon generate` 和 `tenon dev` 就会一起生成这个 API 的 Go 客户端：
 
 ```json
-{ "generate": { "go": "../api" } }
+{ "apis": { "/api": { "go": "../api" } } }
 ```
 
 也可以在服务端的源码目录中直接运行，`--out` 是输出目录：
@@ -512,12 +514,13 @@ oasdiff 只比较请求和响应的结构。schema 改名时结构相同，由�
 
 | 选项 | 说明 |
 | --- | --- |
-| `--ts <dir>` | TypeScript 客户端的输出目录，例如 `frontend/src/api` |
+| `--ts <dir>` | TypeScript 客户端的输出目录，每个 API 写到其中以名称命名的子目录，例如 `packages/client/src` |
+| `--name <path>=<name>` | 按 `BasePath` 指定 TypeScript 客户端的目录名，默认是 `BasePath` 的最后一段，可重复；两个 API 名称相同时报错 |
 | `--out <dir>` | Go 客户端的输出目录，目录名是根包的包名，例如 `../api` |
 | `--main <pkg>` | 应用的主包，在它的依赖中查找错误码；默认是当前程序 |
 | `--import <pkg>` | 生成的 Go 代码可以直接导入的包（含子包），可重复；默认只有 `github.com/google/uuid` |
 | `--rename <path>=<name>` | 服务端包路径对应的镜像包名，可重复 |
-| `--base-path <path>` | 路由中有[多个 API](../http/routing.md#api-versioning) 时，按 `BasePath` 选择一个，例如 `/api/v2` |
+| `--base-path <path>` | 只生成 `BasePath` 为它的 API，例如 `/api/v2`；路由中有[多个 API](../http/routing.md#api-versioning) 时 `--out` 需要它 |
 
 ### clientgen
 

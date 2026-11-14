@@ -52,16 +52,21 @@ func execute(t *testing.T, args ...string) error {
 }
 
 func TestBuild(t *testing.T) {
-	log := newProject(t, map[string]string{"frontend/index.html": "", "package.json": "{}"}, "go", "bun")
+	log := newProject(t, map[string]string{"package.json": "{}", "apps/web/vite.config.ts": "", "apps/admin/vite.config.ts": ""}, "go", "bun")
 	if err := execute(t, "build"); err != nil {
 		t.Fatal(err)
 	}
-	want := "bun install --frozen-lockfile @" // 根目录有 package.json：在根目录安装和构建
+	// 在根目录安装一次，逐个构建前端，最后编译应用。
 	l, _ := os.ReadFile(log)
 	lines := strings.Split(strings.TrimSpace(string(l)), "\n")
-	if len(lines) != 3 || !strings.HasPrefix(lines[0], want) || !strings.HasPrefix(lines[1], "bun x vite build @") ||
-		!strings.HasPrefix(lines[2], "go build -trimpath -o bin/api ./cmd/api @") {
+	want := []string{"bun install --frozen-lockfile @", "bun run build @admin", "bun run build @web", "go build -trimpath -o bin/api ./cmd/api @"}
+	if len(lines) != len(want) {
 		t.Fatalf("log:\n%s", l)
+	}
+	for i, w := range want {
+		if !strings.HasPrefix(lines[i], w) {
+			t.Fatalf("log:\n%s", l)
+		}
 	}
 }
 
@@ -76,15 +81,62 @@ func TestBuildWithoutFrontend(t *testing.T) {
 }
 
 func TestGenerate(t *testing.T) {
-	log := newProject(t, map[string]string{"frontend/index.html": "", "tenon.json": `{"generate": {"go": "../api"}}`}, "go")
+	log := newProject(t, map[string]string{"apps/web/vite.config.ts": "", "packages/client/package.json": "{}",
+		"tenon.json": `{"apis": {"/api/v1": {"name": "public", "go": "../api"}}}`}, "go")
 	if err := execute(t, "generate"); err != nil {
 		t.Fatal(err)
 	}
-	if l, _ := os.ReadFile(log); !strings.Contains(string(l), "app client --ts frontend/src/api --out ../api") {
-		t.Fatalf("log:\n%s", l)
+	l, _ := os.ReadFile(log)
+	for _, want := range []string{"app client --ts packages/client/src --name /api/v1=public\n", "app client --base-path /api/v1 --out ../api\n"} {
+		if !strings.Contains(string(l), want) {
+			t.Fatalf("log missing %q:\n%s", want, l)
+		}
+	}
+	if _, err := os.Stat("apps/web/dist/index.html"); err != nil {
+		t.Errorf("dist placeholder: %v", err)
 	}
 	newProject(t, nil, "go")
 	if err := execute(t, "generate"); err == nil || !strings.Contains(err.Error(), "nothing to generate") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestAddFrontend(t *testing.T) {
+	newProject(t, map[string]string{
+		"go.mod":       "module example.com/helpdesk\n\ngo 1.27\n",
+		"package.json": "{\n  \"name\": \"helpdesk\",\n  \"workspaces\": [\"apps/web\", \"packages/client\"]\n}\n",
+	}, "bun")
+	cmd := root()
+	var out bytes.Buffer
+	cmd.SetArgs([]string{"add", "frontend", "admin"})
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err, out.String())
+	}
+	for name, want := range map[string]string{
+		"apps/admin/package.json":    `"name": "@helpdesk/admin"`,
+		"apps/admin/vite.config.ts":  `base: "/admin/"`,
+		"apps/admin/dist/index.html": "前端还没有构建",
+		"package.json":               `"apps/admin",`,
+	} {
+		if b, _ := os.ReadFile(name); !strings.Contains(string(b), want) {
+			t.Errorf("%s missing %q:\n%s", name, want, b)
+		}
+	}
+	for _, want := range []string{`router.Handle("/admin/*", httpx.NewSPA(admin.Dist, httpx.SPAOptions{Base: "/admin/", DevServer: cfg.DevServers["admin"]}))`,
+		`"example.com/helpdesk/apps/admin"`} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("output missing %q:\n%s", want, out.String())
+		}
+	}
+	for args, want := range map[string]string{
+		"add frontend admin":           "already exists",
+		"add frontend Admin":           "must match",
+		"add frontend ops --base /ops": "must start and end with /",
+	} {
+		if err := execute(t, strings.Fields(args)...); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: err = %v", args, err)
+		}
 	}
 }

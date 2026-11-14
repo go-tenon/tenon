@@ -21,10 +21,10 @@ import (
 	"github.com/go-tenon/tenon/cmd/tenon/internal/project"
 )
 
-// fake 是伪造的命令：记录参数；监听模式（--watch、bun x vite）一直运行，直到收到 SIGINT。
+// fake 是伪造的命令：记录参数和所在的目录；监听模式（--watch、bun run dev）一直运行，直到收到 SIGINT。
 // go build -mod=mod -o BIN 写出一个伪造的应用：serve 一直运行到 SIGTERM，其他子命令记录后退出；源码中有 BROKEN 时编译失败。
 const fake = `#!/bin/sh
-echo "$(basename "$0") $*" >> "$DEVCMD_LOG"
+echo "$(basename "$0") $* @$(basename "$PWD")" >> "$DEVCMD_LOG"
 if [ "$1 $2" = "tool -n" ]; then echo /fake/templ; exit 0; fi
 if [ "$1 $2" = "list -m" ]; then echo "$DEVCMD_FRAMEWORK"; exit 0; fi
 if [ "$1 $2 $3" = "build -mod=mod -o" ]; then
@@ -40,7 +40,7 @@ APP
 	exit 0
 fi
 case "$*" in
-*--watch*|"x vite"*--strictPort*)
+*--watch*|"run dev"*--strictPort*)
 	trap 'echo "stopped $(basename "$0")" >> "$DEVCMD_LOG"; exit 0' INT
 	while :; do sleep 0.02; done ;;
 esac
@@ -147,7 +147,7 @@ func TestDevPages(t *testing.T) {
 	l := read(log)
 	for _, want := range []string{
 		"go tool -n templ",
-		"--proxy=http://localhost:8080 --proxyport=" + port + " --open-browser=false\n",
+		"--proxy=http://localhost:8080 --proxyport=" + port + " --open-browser=false @",
 		"app serve --config config/app.yaml templ=true",
 		"tailwindcss -i web/app.css -o web/static/app.css --watch=always",
 	} {
@@ -169,7 +169,7 @@ func TestDevPages(t *testing.T) {
 		t.Fatalf("dev returned %v", err)
 	}
 	l = read(log)
-	for _, want := range []string{"stopped go", "app stopped", "stopped tailwindcss", "stopped esbuild", "go tool templ generate\n", "--minify"} {
+	for _, want := range []string{"stopped go", "app stopped", "stopped tailwindcss", "stopped esbuild", "go tool templ generate @", "--minify"} {
 		if !strings.Contains(l, want) {
 			t.Errorf("log missing %q after stop:\n%s", want, l)
 		}
@@ -199,7 +199,10 @@ func TestDevMissingTools(t *testing.T) {
 	cfg := load(t)
 	for name, edit := range map[string]func(*project.Config){
 		"tailwindcss not found": func(c *project.Config) { c.Tailwind = &project.Tailwind{Input: "a", Output: "b"} },
-		"bun not found":         func(c *project.Config) { c.Frontend = &project.Frontend{Dir: "frontend"} },
+		"bun not found":         func(c *project.Config) { c.Frontends = []project.Frontend{{Name: "web", Dir: "apps/web"}} },
+		"has no --config": func(c *project.Config) {
+			c.Frontends, c.Serve = []project.Frontend{{Name: "web", Dir: "apps/web"}}, []string{"serve"}
+		},
 	} {
 		c := *cfg
 		edit(&c)
@@ -209,42 +212,52 @@ func TestDevMissingTools(t *testing.T) {
 	}
 }
 
-// 单页应用：没有 node_modules 时先安装，没有 dist 时写入占位页；运行 vite 和应用；改了 Go 代码后重新编译、重启并生成客户端；
-// 编译失败时旧进程继续运行；测试文件和前端的变化不触发重新编译。
+// 单页应用：没有 node_modules 时在根目录安装，没有 dist 时写入占位页；为每个前端选端口运行 vite，把地址写入 .tenon/dev.yaml
+// 交给应用；改了 Go 代码后重新编译、重启并生成客户端；编译失败时旧进程继续运行；测试文件和前端的变化不触发重新编译。
 func TestDevSPA(t *testing.T) {
 	defer dev.SetPollInterval(20 * time.Millisecond)()
+	defer dev.SetFrontendWait(50 * time.Millisecond)() // 伪造的 vite 不监听端口
 	dir, log := setup(t, "go", "bun")
-	if err := os.MkdirAll(filepath.Join(dir, "frontend"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "frontend", "index.html"), nil, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte("{}"), 0o644); err != nil {
-		t.Fatal(err)
+	for name, content := range map[string]string{
+		"package.json":                 "{}",
+		"apps/web/vite.config.ts":      "",
+		"apps/admin/vite.config.ts":    "",
+		"packages/client/package.json": "{}",
+	} {
+		p := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	cfg := load(t)
-	vite := httptest.NewServer(http.NotFoundHandler()) // 代替 Vite 的开发服务器：dev 等它能访问后再启动应用
-	defer vite.Close()
-	cfg.Frontend.DevURL = vite.URL
 	var out, errOut syncBuffer
 	stop := start(t, cfg, &out, &errOut)
 
 	count := func(s string) int { return strings.Count(read(log), s) }
 	waitFor(t, "app, generate and vite", func() bool {
-		return count("app serve") == 1 && count("app client --ts frontend/src/api") == 1 && count("bun x vite --port") == 1
+		return count("app serve") == 1 && count("app client --ts packages/client/src") == 1 && count("bun run dev --port") == 2
 	})
 	l := read(log)
-	for _, want := range []string{"bun install\n", "app serve --config config/app.yaml templ=\n"} {
+	for _, want := range []string{"bun install @" + filepath.Base(dir) + "\n", "app serve --config config/app.yaml --config .tenon/dev.yaml templ=\n",
+		"--strictPort @web\n", "--strictPort @admin\n"} {
 		if !strings.Contains(l, want) {
 			t.Errorf("log missing %q:\n%s", want, l)
 		}
 	}
-	if count("bun x vite build") != 0 {
-		t.Errorf("built before start:\n%s", l)
+	devYAML := read(filepath.Join(dir, ".tenon", "dev.yaml"))
+	for _, f := range []string{"admin", "web"} {
+		if !strings.Contains(devYAML, "  "+f+": http://localhost:") {
+			t.Errorf("dev.yaml missing %s:\n%s", f, devYAML)
+		}
+		if b, err := os.ReadFile(filepath.Join(dir, "apps", f, "dist", "index.html")); err != nil || string(b) != dev.Placeholder {
+			t.Errorf("%s dist placeholder = %q, %v", f, b, err)
+		}
 	}
-	if b, err := os.ReadFile(filepath.Join(dir, "frontend", "dist", "index.html")); err != nil || string(b) != dev.Placeholder {
-		t.Errorf("dist placeholder = %q, %v", b, err)
+	if count("bun run build") != 0 {
+		t.Errorf("built before start:\n%s", l)
 	}
 	if strings.Contains(l, "go tool") {
 		t.Errorf("templ used without .templ files:\n%s", l)
@@ -262,7 +275,7 @@ func TestDevSPA(t *testing.T) {
 		t.Fatalf("app restarted after a failed build:\n%s", read(log))
 	}
 	before := count("go build")
-	for _, f := range []string{"main_test.go", "frontend/app.tsx", "node_modules/x/x.go"} {
+	for _, f := range []string{"main_test.go", "apps/web/src/app.tsx", "node_modules/x/x.go", ".tenon/x.go"} {
 		p := filepath.Join(dir, f)
 		_ = os.MkdirAll(filepath.Dir(p), 0o755)
 		if err := os.WriteFile(p, []byte("package main\n"), 0o644); err != nil {
@@ -278,7 +291,7 @@ func TestDevSPA(t *testing.T) {
 		t.Fatalf("dev returned %v", err)
 	}
 	l = read(log)
-	if !strings.Contains(l, "stopped bun") || count("app stopped") != 2 || count("bun x vite build") != 1 {
+	if count("stopped bun") != 2 || count("app stopped") != 2 || count("bun run build @admin") != 1 || count("bun run build @web") != 1 {
 		t.Errorf("after stop:\n%s", l)
 	}
 	if !strings.Contains(out.String(), "dev: 打开 http://localhost:8080") {

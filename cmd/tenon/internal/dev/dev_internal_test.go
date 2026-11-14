@@ -28,16 +28,16 @@ func TestHostPort(t *testing.T) {
 
 func TestWatchersAndBuilds(t *testing.T) {
 	cfg := &project.Config{
-		URL:      "http://localhost:8080",
-		Frontend: &project.Frontend{Dir: "frontend", DevURL: "http://localhost:5173"},
-		Templ:    &project.Templ{ProxyPort: 7331},
-		Tailwind: &project.Tailwind{Input: "web/app.css", Output: "web/static/app.css"},
-		Tools:    []project.Tool{{Watch: []string{"esbuild", "--watch"}, Build: []string{"esbuild"}}},
+		URL:       "http://localhost:8080",
+		Frontends: []project.Frontend{{Name: "admin", Dir: "apps/admin"}, {Name: "web", Dir: "apps/web"}},
+		Templ:     &project.Templ{ProxyPort: 7331},
+		Tailwind:  &project.Tailwind{Input: "web/app.css", Output: "web/static/app.css"},
+		Tools:     []project.Tool{{Watch: []string{"esbuild", "--watch"}, Build: []string{"esbuild"}}},
 	}
-	t.Chdir(t.TempDir()) // 没有根目录的 package.json：在前端目录中运行 vite
-	d := dev{cfg: cfg}
+	d := dev{cfg: cfg, servers: map[string]string{"admin": "http://localhost:5174", "web": "http://localhost:5173"}}
 	want := []watcher{
-		{"frontend", []string{"bun", "x", "vite", "--port", "5173", "--strictPort"}},
+		{"apps/admin", []string{"bun", "run", "dev", "--port", "5174", "--strictPort"}},
+		{"apps/web", []string{"bun", "run", "dev", "--port", "5173", "--strictPort"}},
 		{".", []string{"go", "tool", "templ", "generate", "--watch", "--proxy=http://localhost:8080", "--proxyport=7331", "--open-browser=false"}},
 		{".", []string{"tailwindcss", "-i", "web/app.css", "-o", "web/static/app.css", "--watch=always"}},
 		{".", []string{"esbuild", "--watch"}},
@@ -47,25 +47,64 @@ func TestWatchersAndBuilds(t *testing.T) {
 	}
 	wantBuilds := []watcher{
 		{".", []string{"go", "tool", "templ", "generate"}},
-		{"frontend", []string{"bun", "x", "vite", "build"}},
+		{"apps/admin", []string{"bun", "run", "build"}},
+		{"apps/web", []string{"bun", "run", "build"}},
 		{".", []string{"tailwindcss", "-i", "web/app.css", "-o", "web/static/app.css", "--minify"}},
 		{".", []string{"esbuild"}},
 	}
 	if got := d.builds(); !slices.EqualFunc(got, wantBuilds, func(a, b watcher) bool { return a.dir == b.dir && slices.Equal(a.args, b.args) }) {
 		t.Errorf("builds = %q", got)
 	}
-	// 根目录有 package.json 时在根目录运行 vite。
-	if err := os.WriteFile("package.json", []byte("{}"), 0o644); err != nil {
+}
+
+// 有前端时追加 --config .tenon/dev.yaml，其中按名称写着开发服务器的地址；没有前端时 serve 的参数不变。
+func TestDevConfig(t *testing.T) {
+	t.Chdir(t.TempDir())
+	cfg := &project.Config{Serve: []string{"serve", "--config", "config/app.yaml"}}
+	if got := (dev{cfg: cfg}).serveArgs(); strings.Join(got, " ") != "serve --config config/app.yaml" {
+		t.Errorf("without frontends: %q", got)
+	}
+	cfg.Frontends = []project.Frontend{{Name: "web", Dir: "apps/web"}, {Name: "admin", Dir: "apps/admin"}}
+	servers, err := devServers(cfg.Frontends)
+	if err != nil || len(servers) != 2 || servers["web"] == servers["admin"] || !strings.HasPrefix(servers["web"], "http://localhost:") {
+		t.Fatalf("servers %q, %v", servers, err)
+	}
+	d := dev{cfg: cfg, servers: servers}
+	if got := d.serveArgs(); strings.Join(got, " ") != "serve --config config/app.yaml --config "+DevConfig {
+		t.Errorf("serve args %q", got)
+	}
+	if strings.Join(cfg.Serve, " ") != "serve --config config/app.yaml" {
+		t.Error("serveArgs changed cfg.Serve")
+	}
+	if err := writeDevConfig(servers); err != nil {
 		t.Fatal(err)
 	}
-	if d.watchers()[0].dir != "." {
-		t.Error("vite not run in the project root")
+	b, _ := os.ReadFile(DevConfig)
+	want := "dev_servers:\n  admin: " + servers["admin"] + "\n  web: " + servers["web"] + "\n"
+	if !strings.HasSuffix(string(b), want) {
+		t.Errorf("dev.yaml:\n%s", b)
 	}
-	if got := GenerateArgs(&project.Config{Generate: &project.Generate{TS: "frontend/src/api", Go: "../api"}}); strings.Join(got, " ") != "client --ts frontend/src/api --out ../api" {
-		t.Errorf("generate args %q", got)
+	if b, _ := os.ReadFile(filepath.Join(filepath.Dir(DevConfig), ".gitignore")); string(b) != "*\n" {
+		t.Errorf(".gitignore %q", b)
 	}
-	if GenerateArgs(&project.Config{Generate: &project.Generate{}}) != nil {
-		t.Error("generate without targets")
+}
+
+func TestGenerations(t *testing.T) {
+	cfg := &project.Config{Client: true, APIs: map[string]*project.API{
+		"/api/v1":    {Name: "public", Go: "../api"},
+		"/api/admin": {Go: "../admin"},
+	}}
+	got := Generations(cfg)
+	want := [][]string{
+		{"client", "--ts", "packages/client/src", "--name", "/api/v1=public"},
+		{"client", "--base-path", "/api/admin", "--out", "../admin"},
+		{"client", "--base-path", "/api/v1", "--out", "../api"},
+	}
+	if !slices.EqualFunc(got, want, slices.Equal) {
+		t.Errorf("generations = %q", got)
+	}
+	if got := Generations(&project.Config{}); got != nil {
+		t.Errorf("without client package: %q", got)
 	}
 }
 
@@ -73,7 +112,7 @@ func TestWatchersAndBuilds(t *testing.T) {
 func TestGoSourceSnapshot(t *testing.T) {
 	dir := t.TempDir()
 	for _, f := range []string{"main.go", "go.mod", "go.sum", "a_test.go", "README.md", "internal/x.go",
-		".git/x.go", "frontend/node_modules/y.go", "testdata/z.go", "frontend/dist/w.go", "frontend/frontend.go"} {
+		".git/x.go", "apps/web/node_modules/y.go", "testdata/z.go", "apps/web/dist/w.go", "apps/web/frontend.go"} {
 		path := filepath.Join(dir, f)
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)
@@ -88,7 +127,7 @@ func TestGoSourceSnapshot(t *testing.T) {
 		rel, _ := filepath.Rel(dir, strings.Fields(line)[0])
 		files = append(files, rel)
 	}
-	want := []string{"frontend/frontend.go", "go.mod", "go.sum", "internal/x.go", "main.go"}
+	want := []string{"apps/web/frontend.go", "go.mod", "go.sum", "internal/x.go", "main.go"}
 	if !slices.Equal(files, want) {
 		t.Errorf("files = %q", files)
 	}

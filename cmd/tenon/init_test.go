@@ -15,8 +15,8 @@ import (
 	"time"
 )
 
-// TestInitEndToEnd 用 init 生成项目（指向本地的框架），然后类型检查、tenon build、运行二进制，
-// 通过 HTTP 走一遍页面和待办事项的增删改查。它需要 bun 和网络，编译、安装依赖很占 CPU，会干扰其他包中
+// TestInitEndToEnd 用 init 生成项目（指向本地的框架），用 add frontend 加入第二个前端并挂载，然后类型检查、
+// tenon build、运行二进制，通过 HTTP 检查两个前端的页面和深链接，走一遍待办事项的增删改查。它需要 bun 和网络，编译、安装依赖很占 CPU，会干扰其他包中
 // 计时的测试，所以只在设置了 TENON_SCAFFOLD_TEST=1 时运行（CI 的 scaffold 任务）：
 //
 //	TENON_SCAFFOLD_TEST=1 go test -run TestInitEndToEnd ./cmd/tenon/
@@ -49,8 +49,22 @@ func TestInitEndToEnd(t *testing.T) {
 			t.Fatalf("%s %v: %v\n%s", name, args, err, b)
 		}
 	}
-	// 刚 clone 的项目没有 dist（被 .gitignore 忽略）和生成的客户端：generate 先构建前端再编译应用。
-	for _, p := range []string{"frontend/dist", "frontend/src/api"} {
+	// 第二个前端挂在 /admin/：按 add frontend 的提示修改路由。
+	sh("go", "tool", "tenon", "add", "frontend", "admin")
+	mainGo := filepath.Join(dir, "cmd", "api", "main.go")
+	src, err := os.ReadFile(mainGo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mount := `	router.Handle("/admin/*", httpx.NewSPA(admin.Dist, httpx.SPAOptions{Base: "/admin/", DevServer: cfg.DevServers["admin"]}))` + "\n"
+	code := strings.Replace(string(src), `	router.Handle("/*"`, mount+`	router.Handle("/*"`, 1)
+	code = strings.Replace(code, `	"example.com/todo/apps/web"`, "\t\"example.com/todo/apps/admin\"\n\t\"example.com/todo/apps/web\"", 1)
+	if err := os.WriteFile(mainGo, []byte(code), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// 刚 clone 的项目没有 dist（被 .gitignore 忽略）和生成的客户端：generate 先写占位页再编译应用。
+	for _, p := range []string{"apps/web/dist", "apps/admin/dist", "packages/client/src/api"} {
 		if err := os.RemoveAll(filepath.Join(dir, p)); err != nil {
 			t.Fatal(err)
 		}
@@ -77,6 +91,14 @@ func TestInitEndToEnd(t *testing.T) {
 	page := get(t, base+"/")
 	if !strings.Contains(page, "<title>Todo</title>") || !strings.Contains(page, "/assets/") {
 		t.Fatalf("page:\n%s", page)
+	}
+	for _, url := range []string{base + "/admin/", base + "/admin/users/42"} {
+		if page := getHTML(t, url); !strings.Contains(page, "<title>admin</title>") || !strings.Contains(page, "/admin/assets/") {
+			t.Fatalf("%s:\n%s", url, page)
+		}
+	}
+	if page := getHTML(t, base+"/todos/42"); !strings.Contains(page, "<title>Todo</title>") {
+		t.Fatalf("deep link:\n%s", page)
 	}
 	if res := send(t, http.MethodPost, base+"/api/todos", `{"title":"买牛奶"}`); res.status != http.StatusCreated || res.body["title"] != "买牛奶" {
 		t.Fatalf("create: %+v", res)
@@ -117,6 +139,21 @@ func send(t *testing.T, method, url, body string) response {
 func get(t *testing.T, url string) string {
 	t.Helper()
 	res, err := http.Get(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	var b bytes.Buffer
+	_, _ = b.ReadFrom(res.Body)
+	return b.String()
+}
+
+// getHTML 像浏览器打开页面一样请求 url：前端路由的地址返回 index.html。
+func getHTML(t *testing.T, url string) string {
+	t.Helper()
+	req, _ := http.NewRequest(http.MethodGet, url, nil)
+	req.Header.Set("Accept", "text/html")
+	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}

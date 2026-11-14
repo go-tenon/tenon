@@ -10,7 +10,7 @@
     - [业务包](#business-packages)
     - [migrations](#the-migrations-directory)
     - [locales](#the-locales-directory)
-    - [frontend](#the-frontend-directory)
+    - [apps 和 packages](#the-frontend-directory)
 - [命名约定](#naming-conventions)
 - [框架包一览](#framework-packages)
     - [基础](#foundation)
@@ -27,13 +27,12 @@
 blog/
 ├── go.mod
 ├── tenon.json             开发工具的配置，可以没有
-├── package.json           前端依赖与 dev、build、generate 脚本
-├── vite.config.ts
+├── package.json           Bun workspace 与 dev、build、generate 脚本
 ├── compose.yaml           本机开发用的 PostgreSQL、Redis 等
 ├── .env                   本机的环境变量，不提交
 ├── config/
 │   ├── app.yaml           配置
-│   └── local.yaml         只在本机开发时叠加的配置
+│   └── local.yaml         只在本机开发时叠加的配置，可以没有
 ├── cmd/api/main.go        程序入口
 ├── internal/
 │   ├── bootstrap/         装配：配置结构、打开资源、HTTP 服务、命令
@@ -42,7 +41,8 @@ blog/
 │   └── user/
 ├── migrations/            SQL 迁移和 embed.go
 ├── locales/               翻译文件和 embed.go
-└── frontend/              单页应用的源码，以及嵌入构建产物的 frontend.go
+├── apps/                  前端，每个一个目录，例如 web、admin
+└── packages/client/       生成的 TypeScript 客户端
 ```
 
 一个刚起步的应用只需要 `cmd` 和一个业务包，其他目录等到真正有代码要放时再创建。下面依次介绍每个目录的作用。
@@ -94,12 +94,14 @@ blog/
 如果应用需要多语言的提示文案，把 `en.yaml`、`zh-CN.yaml` 等翻译文件放在这里，详见[本地化](../general/localization.md)。
 
 <a id="the-frontend-directory"></a>
-### frontend
+### apps 和 packages
 
-`frontend` 是单页应用的源码。`frontend.go` 把构建产物嵌入程序，所以部署时仍然只有一个二进制文件，见[单页应用](../responses/spa.md)。
+`apps` 中每个目录是一个前端，例如用户端 `apps/web`、运营后台 `apps/admin`，目录名是前端的名称。每个前端的 `frontend.go` 把构建产物嵌入程序，所以部署时仍然只有一个二进制文件，见[单页应用](../responses/spa.md)。用 [tenon add frontend](../installation/tooling.md#add-frontend) 加入新的前端。
+
+`packages` 中是多个前端共用的包。`packages/client` 是共用的客户端包，前端用 `@<作用域>/client/<名称>` 导入它，见[前端与 API](../installation/tooling.md#conventions)。
 
 > [!NOTE]
-> `frontend/src/api` 中是生成的 TypeScript 客户端，每次修改接口后都会重新生成，见[客户端代码](../responses/clients.md)。
+> `packages/client/src` 中每个 API 一个目录，是生成的 TypeScript 客户端，每次修改接口后都会重新生成，见[客户端代码](../responses/clients.md)。
 
 <a id="naming-conventions"></a>
 ## 命名约定

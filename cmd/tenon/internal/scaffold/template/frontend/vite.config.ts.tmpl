@@ -1,0 +1,8 @@
+import { defineConfig } from "vite"
+import react from "@vitejs/plugin-react"
+
+// 构建到 dist，由 frontend.go 嵌入程序。base 与 Go 中挂载这个前端的路径相同。
+export default defineConfig({
+  base: "[[.Base]]",
+  plugins: [react()],
+})
