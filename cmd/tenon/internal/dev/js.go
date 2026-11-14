@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/cockroachdb/errors"
 )
@@ -48,7 +49,7 @@ func SyncJS(dir string) (changed bool, err error) {
 		}
 	}
 	for name := range packages {
-		if err := copyInto(filepath.Join(src, name), filepath.Join(dst, name)); err != nil {
+		if err := copyInto(filepath.Join(src, name), filepath.Join(dst, name), isTest); err != nil {
 			return false, errors.Wrap(err, "dev: sync front-end packages")
 		}
 	}
@@ -80,6 +81,16 @@ func NeedsInstall(dir string) bool {
 			continue
 		}
 		if _, err := os.Stat(filepath.Join(root, e.Name(), "node_modules")); err != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// isTest 报告 name 是否是包的测试文件（例如 form.test.tsx）：它们只在框架中运行，可能依赖项目中没有的包，不复制。
+func isTest(name string) bool {
+	for _, ext := range []string{".test.ts", ".test.tsx"} {
+		if strings.HasSuffix(name, ext) {
 			return true
 		}
 	}

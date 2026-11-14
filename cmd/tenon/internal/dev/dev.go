@@ -422,11 +422,12 @@ func copyTree(src, dst string) error {
 	if err := os.RemoveAll(dst); err != nil {
 		return err
 	}
-	return copyInto(src, dst)
+	return copyInto(src, dst, nil)
 }
 
-// copyInto 把 src 复制到 dst，覆盖同名的文件，跳过 project.SkipDir 中的目录（例如 node_modules）。
-func copyInto(src, dst string) error {
+// copyInto 把 src 复制到 dst，覆盖同名的文件，跳过 project.SkipDir 中的目录（例如 node_modules），
+// 以及 skip 返回 true 的文件（skip 为 nil 时不跳过）。
+func copyInto(src, dst string, skip func(name string) bool) error {
 	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -438,6 +439,9 @@ func copyInto(src, dst string) error {
 		target := filepath.Join(dst, rel)
 		if d.IsDir() {
 			return os.MkdirAll(target, 0o755)
+		}
+		if skip != nil && skip(d.Name()) {
+			return nil
 		}
 		b, err := os.ReadFile(path)
 		if err != nil {
