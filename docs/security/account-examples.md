@@ -1,16 +1,6 @@
 # 完整示例：编辑后台与读者 App
 
-- [简介](#introduction)
-- [两张账号表](#account-tables)
-- [装配](#assembling)
-- [编辑后台](#editor-api)
-- [读者 App](#reader-api)
-- [接入入口](#wiring)
-
-<a id="introduction"></a>
-## 简介
-
-本章把[登录与注册](login.md)、[第三方登录](social-login.md)和 [API 令牌](api-tokens.md)串起来，给出两套账号体系从建表到接口的完整代码。博客上线读者 App 之后，账号分成两套：
+本页把[登录与注册](login.md)、[第三方登录](social-login.md)和 [API 令牌](api-tokens.md)串起来，给出两套账号体系从建表到接口的完整代码。以一个内容产品为例，上线读者 App 之后，账号分成两套：
 
 | | 编辑后台 | 读者 App |
 | --- | --- | --- |
@@ -22,10 +12,16 @@
 
 两套账号的登录凭据都保存在框架的 `auth_*` 表中，`editors`、`readers` 表只有业务字段。下面的五个文件都是完整的代码。
 
+- [两张账号表](#account-tables)
+- [装配](#assembling)
+- [编辑后台](#editor-api)
+- [读者 App](#reader-api)
+- [接入入口](#wiring)
+
 <a id="account-tables"></a>
 ## 两张账号表
 
-下面是完整的 `internal/editor/editor.go`。`Resolve` 在每个请求中重新读取编辑，停用后立即失效；`Invite` 创建账号、写入邮箱，在事务提交后发送设置密码的邮件：
+例如 `editor.go`。`Resolve` 在每个请求中重新读取编辑，停用后立即失效；`Invite` 创建账号、写入邮箱，在事务提交后发送设置密码的邮件：
 
 ```go
 package editor
@@ -112,7 +108,7 @@ func (a *Invite) Handle(ctx context.Context, name, email string) (*Editor, error
 
 邀请就是对一个还没有密码的账号发起[找回密码](login.md#reset)：编辑设置密码后，邮箱随之标为已验证。
 
-下面是完整的 `internal/reader/reader.go`。读者自助注册，`SignUp` 在事务中创建账号行，再用完成凭证挂上已验证的手机号或 Apple 账号；`Delete` 注销账号：
+例如 `reader.go`。读者自助注册，`SignUp` 在事务中创建账号行，再用完成凭证挂上已验证的手机号或 Apple 账号；`Delete` 注销账号：
 
 ```go
 package reader
@@ -215,32 +211,9 @@ func (a *Delete) Handle(ctx context.Context, ref identity.Ref) error {
 <a id="assembling"></a>
 ## 装配
 
-下面是完整的 `internal/accounts/accounts.go`，它为两套账号各创建一个 [`login.Realm`](login.md#assembling)：编辑只能用邮箱和密码登录，验证码通过邮件发出邀请链接；读者开放注册，验证码通过[短信](../libraries/sms.md)发送，模板 `login_code` 在短信服务商处申请。读者的 API 令牌使用 [JWT 模式](api-tokens.md#jwt)：
+例如 `accounts.go`，它为两套账号各创建一个 [`login.Realm`](login.md#assembling)：编辑只能用邮箱和密码登录，验证码通过邮件发出邀请链接；读者开放注册，验证码通过[短信](../libraries/sms.md)发送，模板 `login_code` 在短信服务商处申请。读者的 API 令牌使用 [JWT 模式](api-tokens.md#jwt)：
 
 ```go
-package accounts
-
-import (
-    "context"
-    "net/url"
-    "time"
-
-    "github.com/redis/rueidis"
-    "github.com/uptrace/bun"
-
-    "example.com/blog/internal/editor"
-    "example.com/blog/internal/reader"
-    "github.com/go-tenon/tenon/apitoken"
-    "github.com/go-tenon/tenon/crypt"
-    "github.com/go-tenon/tenon/hashing"
-    "github.com/go-tenon/tenon/login"
-    "github.com/go-tenon/tenon/login/oauth"
-    "github.com/go-tenon/tenon/mail"
-    "github.com/go-tenon/tenon/ratelimit"
-    "github.com/go-tenon/tenon/ratelimit/redislimit"
-    "github.com/go-tenon/tenon/sms"
-)
-
 type Config struct {
     // PasswordURL 是编辑后台单页应用中设置密码页面的地址，邀请邮件中的链接指向它。
     PasswordURL string          `yaml:"password_url"`
@@ -278,8 +251,8 @@ func New(ctx context.Context, db *bun.DB, rdb rueidis.Client, cfg Config, hasher
         Resolve: editor.Resolve(db),
         // 编辑只用邮箱和密码登录，必须使用二次验证：还没有启用的，登录时先启用。
         Policy:   login.Policy{PasswordKinds: []string{login.KindEmail}, RequireTwoFactor: true},
-        Attempts: redislimit.New(rdb, "blog:login:editor:attempts", every15),
-        Sends:         redislimit.New(rdb, "blog:login:editor:sends", every15),
+        Attempts: redislimit.New(rdb, "app:login:editor:attempts", every15),
+        Sends:         redislimit.New(rdb, "app:login:editor:sends", every15),
         Send: func(ctx context.Context, code login.Code) error {
             link := cfg.PasswordURL + "?" + url.Values{"request": {code.RequestID}, "code": {code.Code}}.Encode()
             return mailer.Send(ctx, mail.Message{
@@ -295,8 +268,8 @@ func New(ctx context.Context, db *bun.DB, rdb rueidis.Client, cfg Config, hasher
         Hasher:   hasher,
         Crypt:    c,
         Resolve:  reader.Resolve(db),
-        Attempts: redislimit.New(rdb, "blog:login:reader:attempts", every15),
-        Sends:    redislimit.New(rdb, "blog:login:reader:sends", every15),
+        Attempts: redislimit.New(rdb, "app:login:reader:attempts", every15),
+        Sends:    redislimit.New(rdb, "app:login:reader:sends", every15),
         Send: func(ctx context.Context, code login.Code) error {
             return texts.Send(ctx, sms.Message{
                 To:       code.To.Value,
@@ -345,27 +318,9 @@ func New(ctx context.Context, db *bun.DB, rdb rueidis.Client, cfg Config, hasher
 4. 打开页面时和 access token 过期后 `POST /auth/refresh`，用 cookie 换新的 access token；退出登录 `DELETE /auth/session`，同时清除 cookie；
 5. 邀请其他编辑（`POST /editors`）要求 15 分钟内确认过身份。超过时返回 `403 auth.confirm_required`，单页应用弹出密码框，`POST /account/confirm` 得到新的 access token 后重试。
 
-“必须启用二次验证”由 `accounts` 中的 `Policy.RequireTwoFactor` 保证：没有经过二次验证的编辑拿不到 token。下面是完整的 `internal/editor/editorapi/routes.go`：
+“必须启用二次验证”由 `accounts` 中的 `Policy.RequireTwoFactor` 保证：没有经过二次验证的编辑拿不到 token。例如 `routes.go`：
 
 ```go
-package editorapi
-
-import (
-    "context"
-    "net/http"
-    "time"
-
-    "github.com/danielgtaylor/huma/v2"
-    "github.com/uptrace/bun"
-
-    "example.com/blog/internal/accounts"
-    "example.com/blog/internal/editor"
-    "github.com/go-tenon/tenon/apitoken"
-    "github.com/go-tenon/tenon/httpx/rest"
-    "github.com/go-tenon/tenon/identity"
-    "github.com/go-tenon/tenon/login"
-)
-
 type LoginInput struct {
     UserAgent string `header:"User-Agent"`
     Body      struct {
@@ -637,27 +592,9 @@ func (h *handlers) inviteEditor(ctx context.Context, in *InviteInput) (*struct{}
 5. access token 过期后 `POST /auth/refresh`；退出登录用 access token 调用 `DELETE /auth/session`；
 6. 注销账号前先确认身份：有手机号的读者 `POST /account/confirm-code` 收到验证码，带着它调用 `DELETE /account`；只用 Apple 登录的读者重新登录一次 Apple，带上新的 ID token。
 
-下面是完整的 `internal/reader/readerapi/routes.go`：
+例如 `routes.go`：
 
 ```go
-package readerapi
-
-import (
-    "context"
-    "net/http"
-    "time"
-
-    "github.com/danielgtaylor/huma/v2"
-    "github.com/uptrace/bun"
-
-    "example.com/blog/internal/accounts"
-    "example.com/blog/internal/reader"
-    "github.com/go-tenon/tenon/apitoken"
-    "github.com/go-tenon/tenon/httpx/rest"
-    "github.com/go-tenon/tenon/identity"
-    "github.com/go-tenon/tenon/login"
-)
-
 type SendCodeInput struct {
     Body struct {
         Phone string `json:"phone" pattern:"^\\+[1-9][0-9]{6,14}$" doc:"E.164 格式，例如 +8613800138000"`

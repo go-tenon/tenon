@@ -1,6 +1,15 @@
 # 认证
 
-- [简介](#introduction)
+很多 API 都需要知道“是谁在调用”。Tenon 内置了基于 Bearer Token 的认证：客户端在请求头中携带 `Authorization: Bearer <token>`，框架调用你提供的校验函数确认身份，然后把身份信息交给处理器。
+
+JSON API 只使用 Bearer token，不使用会话。需要登录的一端，无论是后台、网页、桌面客户端还是移动端，都调用 JSON API；网页和后台是[单页应用](../responses/spa.md)。服务端渲染的[页面](../responses/views.md)只用于不需要登录的公开内容。
+
+Tenon 不限定 token 的种类和来源。它可以是数据库中的 API Key，也可以是由认证服务签发的 JWT——你只需要写一个函数，告诉框架这个 token 对应谁。
+
+> [!NOTE]
+> 认证回答的是“调用者是谁”，而“调用者能不能做这件事”属于授权，请参阅[授权](authorization.md)。
+
+- [示例用法](#example-usage)
     - [核心概念](#key-concepts)
 - [编写 Token 校验器](#token-validators)
 - [保护路由](#protecting-routes)
@@ -11,20 +20,26 @@
 - [代为登录](#impersonation)
 - [获取已认证的主体](#retrieving-the-subject)
 - [管理凭据](#managing-credentials)
+- [API 参考](#api-reference)
 
-<a id="introduction"></a>
-## 简介
+<a id="example-usage"></a>
+## 示例用法
 
-很多 API 都需要知道“是谁在调用”。Tenon 内置了基于 Bearer Token 的认证：客户端在请求头中携带 `Authorization: Bearer <token>`，框架调用你提供的校验函数确认身份，然后把身份信息交给处理器。
+```go
+tokens := apitoken.NewStore(db, cfg.APIToken)
 
-JSON API 只使用 Bearer token，不使用会话。需要登录的一端，无论是后台、网页、桌面客户端还是移动端，都调用 JSON API；网页和后台是[单页应用](../responses/spa.md)。服务端渲染的[页面](../responses/views.md)只用于不需要登录的公开内容。
+api := rest.New(rest.Options{
+    Router:   router,
+    Accounts: identity.Accounts{user.Type: nil}, // 接受哪些账号体系
+})
 
-本章讲每个请求如何确认调用者。用户如何用密码或验证码登录、注册和找回密码，见[登录与注册](login.md)；运营后台和用户 App 两套账号的完整代码见[完整示例](account-examples.md)。
+op := huma.Operation{OperationID: "article-create", Method: http.MethodPost, Path: "/articles"}
+rest.RequireBearer(api, tokens.Validate, "articles:write")(&op)
+rest.Register(api, op, NewCreate(db).HTTP)
 
-Tenon 不限定 token 的种类和来源。它可以是数据库中的 API Key，也可以是由认证服务签发的 JWT——你只需要写一个函数，告诉框架这个 token 对应谁。
-
-> [!NOTE]
-> 认证回答的是“调用者是谁”，而“调用者能不能做这件事”属于授权，请参阅[授权](authorization.md)。
+// 处理器中取出主体
+sub, _ := identity.FromContext(ctx)
+```
 
 <a id="key-concepts"></a>
 ### 核心概念
@@ -57,7 +72,7 @@ type Subject struct {
 | `Scopes` | 本次请求所用凭据被限制在内的权限，例如只读令牌的 `articles:read`；`nil` 表示不限制 |
 | `Auth` | 这次登录怎样验证了身份：`Methods` 是通过的方式，如 `[password totp]`，`Time` 是最近一次验证的时间（登录或[确认身份](login.md#confirming)）；`Auth.TwoFactor()` 报告是否经过了二次验证。个人访问令牌、代为登录等不经过本人登录的凭据为零值 |
 
-`Type` 和 `ID` 合起来是 `identity.Ref`，用 `sub.Ref()` 取得。框架保存主体的地方——令牌、角色、操作日志、通知等——都同时记录两者，所以 `ID` 只需在同一种 `Type` 中唯一：员工表和客户表可以各自使用自增 ID，互不混淆。博客应用只有一套账号，在用户模块 `internal/user/user.go` 中声明它的类型：
+`Type` 和 `ID` 合起来是 `identity.Ref`，用 `sub.Ref()` 取得。框架保存主体的地方——令牌、角色、操作日志、通知等——都同时记录两者，所以 `ID` 只需在同一种 `Type` 中唯一：员工表和客户表可以各自使用自增 ID，互不混淆。只有一套账号的应用，例如在用户模块 `internal/user/user.go` 中声明它的类型：
 
 ```go
 const Type identity.SubjectType = "user"
@@ -76,23 +91,9 @@ type TokenValidator func(ctx context.Context, token string) (identity.Subject, e
 <a id="token-validators"></a>
 ## 编写 Token 校验器
 
-下面是博客应用完整的 `internal/auth/auth.go`。为了便于理解，它把可用的 token 直接写在配置文件中，每个 token 对应一个调用者和它的权限：
+下面的校验器为了便于理解，把可用的 token 直接写在配置文件中，每个 token 对应一个调用者和它的权限：
 
 ```go
-package auth
-
-import (
-    "context"
-    "errors"
-
-    "example.com/blog/internal/user"
-    "github.com/go-tenon/tenon/errorx"
-    "github.com/go-tenon/tenon/httpx/rest"
-    "github.com/go-tenon/tenon/identity"
-)
-
-var ErrUnauthenticated = errorx.Define(errorx.Unauthenticated, "auth.unauthenticated")
-
 // Credential 是一个 API token 及其代表的调用者。
 type Credential struct {
     Token       string   `yaml:"token"`
@@ -127,7 +128,7 @@ func Validator(cfg Config) rest.TokenValidator {
     return func(_ context.Context, token string) (identity.Subject, error) {
         cred, ok := byToken[token]
         if !ok {
-            return identity.Subject{}, ErrUnauthenticated.New()
+            return identity.Subject{}, identity.ErrUnauthenticated.New()
         }
         return identity.Subject{
             Type:        user.Type,
@@ -139,7 +140,7 @@ func Validator(cfg Config) rest.TokenValidator {
 }
 ```
 
-在配置文件中这样写，并把 `auth.Config` 加入应用的[根配置结构体](../general/configuration.md#loading-configuration)（字段名为 `Auth`，配置段为 `auth`）：
+在配置文件中这样写，并把这个 `Config` 加入应用的[根配置结构体](../general/configuration.md#loading-configuration)（字段名为 `Auth`，配置段为 `auth`）：
 
 ```yaml
 auth:
@@ -164,7 +165,7 @@ auth:
 <a id="protecting-routes"></a>
 ## 保护路由
 
-需要认证的 API 先用 `rest.Options.Accounts` 声明它接受哪些账号体系。博客只有一套账号：
+需要认证的 API 先用 `rest.Options.Accounts` 声明它接受哪些账号体系。例如只有一套账号：
 
 ```go
 api := rest.New(rest.Options{Accounts: identity.Accounts{user.Type: nil}})
@@ -174,7 +175,7 @@ api := rest.New(rest.Options{Accounts: identity.Accounts{user.Type: nil}})
 
 使用 `rest.RequireBearer` 为路由启用认证。它的参数是 API 实例、校验器，以及调用者必须能执行的权限。
 
-下面是注册“获取文章”接口的片段：`api` 由 `rest.New` 创建，`validate` 是入口中用 `auth.Validator(a.cfg.Auth)` 创建的校验器，`db` 是入口打开的数据库。`Get` action 的定义见[路由](../http/routing.md#http-actions)：
+下面是注册“获取文章”接口的片段：`api` 由 `rest.New` 创建，`validate` 是令牌校验器，例如 [`tokens.Validate`](api-tokens.md)，`db` 是入口打开的数据库。`Get`业务动作的定义见[路由](../http/routing.md#http-actions)：
 
 ```go
 requireArticles := rest.RequireBearer(api, validate, "articles")
@@ -197,7 +198,7 @@ rest.Register(api, op, NewGet(db).HTTP)
 
 需要认证的响应还会自动加上 `Cache-Control: no-store`，防止响应被中间代理缓存。
 
-`RequireBearer` 基于更通用的 `rest.RequireAuth` 实现。需要其他认证方式（例如从自定义请求头读取 API Key）时，可以用 `RequireAuth` 声明自己的 OpenAPI 安全方案和认证函数，认证失败的响应与本章相同。
+`RequireBearer` 基于更通用的 `rest.RequireAuth` 实现。需要其他认证方式（例如从自定义请求头读取 API Key）时，可以用 `RequireAuth` 声明自己的 OpenAPI 安全方案和认证函数，认证失败的响应与上面相同。
 
 > [!TIP]
 > 不需要认证的路由也必须显式调用 `rest.Public()(&op)`。忘记声明访问策略的路由会在注册时 panic，因此你不会意外地发布一个未受保护的接口。
@@ -252,7 +253,7 @@ api := rest.New(rest.Options{
                 return identity.Subject{}, err
             }
             if u.Disabled {
-                return identity.Subject{}, auth.ErrUnauthenticated.New()
+                return identity.Subject{}, identity.ErrUnauthenticated.New()
             }
             sub.Permissions = u.Permissions
             return sub, nil
@@ -300,7 +301,7 @@ console := rest.New(rest.Options{Accounts: identity.Accounts{member.Type: roles.
 shop := rest.New(rest.Options{Accounts: identity.Accounts{customer.Type: customers.Resolve}, Tenant: fromHost})
 ```
 
-几个 API 可以共用一个 token 校验器：客户的 token 发到商家后台的 API，与无效 token 一样返回 `401`。一个入口也可以接受多套账号，例如 `identity.Accounts{member.Type: roles.Resolve, customer.Type: customers.Resolve}`，`sub.Can` 和 action 不需要区分。[`authz`](authorization.md#roles) 按主体的类型和 ID 保存角色，可以同时服务几套账号；终端客户通常不需要角色，它的 Resolver 只要检查账号是否停用、按“数据归属本人”授权即可。
+几个 API 可以共用一个 token 校验器：客户的 token 发到商家后台的 API，与无效 token 一样返回 `401`。一个入口也可以接受多套账号，例如 `identity.Accounts{member.Type: roles.Resolve, customer.Type: customers.Resolve}`，`sub.Can` 和业务动作不需要区分。[`authz`](authorization.md#roles) 按主体的类型和 ID 保存角色，可以同时服务几套账号；终端客户通常不需要角色，它的 Resolver 只要检查账号是否停用、按“数据归属本人”授权即可。
 
 **3. 每套账号有自己的登录方式和令牌有效期。** 每套账号用一个 [`login.Realm`](login.md) 管理登录标识和密码，例如运营人员只能由管理员创建、必须用密码登录，客户可以用手机验证码自助注册；令牌用各自的配置创建 `apitoken.Store` 签发，见[装配](api-tokens.md#assembling)。
 
@@ -369,28 +370,28 @@ plain, err := tokens.Login(ctx, target, device)
           return identity.Subject{}, err
       }
       if !identity.Grants(perms, "users:impersonate") {
-          return identity.Subject{}, auth.ErrUnauthenticated.New()
+          return identity.Subject{}, identity.ErrUnauthenticated.New()
       }
   }
   return roles.Resolve(ctx, sub)
   ```
 
 - **谁可以被代为登录**：通常不允许代为登录其他运营人员，在 `Impersonate` 中用 `roles.Permissions(ctx, target.Ref(), "")` 确认目标在平台中没有角色；
-- **哪些操作不允许代为执行**：修改密码和邮箱、管理设备和令牌、付款等，在对应的 action 中拒绝 `!subject.Impersonator.IsZero()` 的主体。代为登录期间创建的[个人访问令牌](api-tokens.md#personal-access-tokens)会记录 `Impersonator`，令牌的每次使用都归于这个操作者。[OAuth 授权](oauth-server.md)的同意接口由框架注册，它已经拒绝代为登录的主体；
+- **哪些操作不允许代为执行**：修改密码和邮箱、管理设备和令牌、付款等，在对应的业务动作中拒绝 `!subject.Impersonator.IsZero()` 的主体。代为登录期间创建的[个人访问令牌](api-tokens.md#personal-access-tokens)会记录 `Impersonator`，令牌的每次使用都归于这个操作者。[OAuth 授权](oauth-server.md)的同意接口由框架注册，它已经拒绝代为登录的主体；
 - **审计**：[操作日志](../features/activity.md)自动记下 `Impersonator`；自己写日志时同样同时写下两者，例如 `slog.InfoContext(ctx, "article published", "subject", subject.Ref().String(), "impersonator", subject.Impersonator.String())`。
 
 <a id="retrieving-the-subject"></a>
 ## 获取已认证的主体
 
-认证通过后，主体会被放入请求的 context。在处理器中使用 `identity.FromContext` 读取它，再传给 action 的 `Handle`。
+认证通过后，主体会被放入请求的 context。在处理器中使用 `identity.FromContext` 读取它，再传给业务动作的 `Handle`。
 
-例如，你可以把 `internal/article/get.go` 中[获取文章](../http/routing.md#http-actions)的 `HTTP` 方法改为下面这样，显式拒绝没有主体的请求。`auth.ErrUnauthenticated` 定义在本章的 `internal/auth/auth.go` 中：
+例如把[获取文章](../http/routing.md#http-actions)的 `HTTP` 方法改为下面这样，显式拒绝没有主体的请求：
 
 ```go
 func (a *Get) HTTP(ctx context.Context, in *GetInput) (*ArticleOutput, error) {
     subject, ok := identity.FromContext(ctx)
     if !ok {
-        return nil, auth.ErrUnauthenticated.New()
+        return nil, identity.ErrUnauthenticated.New()
     }
     item, err := a.Handle(ctx, subject, in.ID)
     if err != nil {
@@ -402,7 +403,7 @@ func (a *Get) HTTP(ctx context.Context, in *GetInput) (*ArticleOutput, error) {
 
 对于受 `RequireBearer` 保护的路由，`ok` 总是为 `true`。保留这个检查可以防止路由配置被误改为公开后，处理器在没有身份的情况下继续执行。
 
-另一种做法是让 `Handle` 拒绝空的主体，见[授权](authorization.md#ownership)。这样即使路由被误改为公开，请求也会在 `Handle` 中被拒绝，`HTTP` 就可以简单地写成 `subject, _ := identity.FromContext(ctx)`，[路由](../http/routing.md#organizing-routes)一章中的 action 就是这样做的。
+另一种做法是让 `Handle` 拒绝空的主体，见[授权](authorization.md#ownership)。这样即使路由被误改为公开，请求也会在 `Handle` 中被拒绝，`HTTP` 就可以简单地写成 `subject, _ := identity.FromContext(ctx)`，[路由](../http/routing.md#organizing-routes)一章中的业务动作就是这样做的。
 
 <a id="managing-credentials"></a>
 ## 管理凭据
@@ -410,3 +411,57 @@ func (a *Get) HTTP(ctx context.Context, in *GetInput) (*ArticleOutput, error) {
 上面把 token 写在配置文件中的做法适合内部服务或少量固定的调用方。面向用户的 API 使用 [API 令牌](api-tokens.md)：单页应用和 App 登录后得到一个滑动过期的 token，或者一对 [JWT access token 和 refresh token](api-tokens.md#jwt)，用户也可以为脚本创建个人访问令牌，`Store.Validate` 或 `JWT.Validate` 直接作为校验器使用。
 
 使用外部认证服务签发的 JWT 时，在校验器中用成熟的库验证签名、签发者和有效期，再把结果转换为 `identity.Subject`。无论采用哪种凭据，路由和业务代码都不需要改变。用 GitHub、Google 等账号登录见[第三方登录](social-login.md)；用户注册、找回密码等功能由应用自己实现。
+
+<a id="api-reference"></a>
+## API 参考
+
+### identity.Subject
+
+```go
+type Subject struct {
+    Type         SubjectType
+    ID           string
+    Impersonator Ref
+    Method       string
+    Credential   string
+    Tenant       string
+    Permissions  []string
+    Scopes       []string
+    Auth         Auth
+}
+
+func FromContext(ctx context.Context) (Subject, bool)
+func (s Subject) Can(perm string) bool
+func (s Subject) Ref() Ref
+```
+
+包 `github.com/go-tenon/tenon/identity`。字段见[关键概念](#key-concepts)；`Can` 同时检查 `Permissions` 和 `Scopes`，支持通配符。
+
+### identity.Accounts、Resolver
+
+```go
+type Accounts map[SubjectType]Resolver
+type Resolver func(ctx context.Context, sub Subject) (Subject, error)
+```
+
+API 接受的账号体系，以及认证通过后加载主体的函数，见[解析主体](#resolving-subjects)。
+
+### rest.RequireBearer、RequireAuth
+
+```go
+func RequireBearer(api *API, validate TokenValidator, permissions ...string) func(op *huma.Operation)
+func RequireAuth(api *API, name string, scheme *huma.SecurityScheme, authenticate Authenticator, permissions ...string) func(op *huma.Operation)
+func Confirmed(maxAge time.Duration) func(op *huma.Operation)
+```
+
+包 `github.com/go-tenon/tenon/httpx/rest`。`RequireBearer` 要求 `Authorization: Bearer` 令牌；`RequireAuth` 用于其他认证方式；`Confirmed` 要求最近 `maxAge` 内确认过身份，见[确认身份](login.md#confirming)。
+
+### 错误
+
+| 错误 | 状态码 | 含义 |
+| --- | --- | --- |
+| `identity.ErrUnauthenticated` | 401 | 没有凭据或凭据无效 |
+| `identity.ErrForbidden` | 403 | 缺少所需的权限 |
+| `identity.ErrExpired` | 401 | 令牌过期，客户端刷新后重试 |
+
+完整的情况见[认证失败](#failed-authentication)。

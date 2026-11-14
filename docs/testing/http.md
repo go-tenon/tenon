@@ -19,10 +19,16 @@
 ```go
 func newTestAPI() *rest.API {
     api := rest.New(rest.Options{Accounts: identity.Accounts{user.Type: nil}})
-    validate := auth.Validator(auth.Config{Credentials: []auth.Credential{
-        {Token: "alice-token", SubjectID: "alice", Permissions: []string{"articles"}},
-        {Token: "guest-token", SubjectID: "guest"},
-    }})
+    tokens := map[string]identity.Subject{
+        "alice-token": {Type: user.Type, ID: "alice", Permissions: []string{"articles"}},
+        "guest-token": {Type: user.Type, ID: "guest"},
+    }
+    validate := func(_ context.Context, token string) (identity.Subject, error) {
+        if sub, ok := tokens[token]; ok {
+            return sub, nil
+        }
+        return identity.Subject{}, identity.ErrUnauthenticated.New()
+    }
     // 这些请求在调用 Handle 之前就会被拒绝，所以不需要数据库
     article.Register(api, rest.RequireBearer(api, validate, "articles"), nil)
     return api

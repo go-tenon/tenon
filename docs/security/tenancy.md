@@ -1,23 +1,5 @@
 # 多租户
 
-- [简介](#introduction)
-- [确定租户](#identifying-tenants)
-- [成员与角色](#members)
-    - [创建租户](#creating-tenants)
-    - [成员管理](#managing-members)
-    - [切换租户](#switching-tenants)
-- [租户数据隔离](#data-isolation)
-- [后台任务](#background-work)
-    - [队列任务](#tenant-jobs)
-    - [定时任务](#tenant-scheduled-tasks)
-- [缓存、广播与其他资源](#other-resources)
-- [运营后台](#platform)
-- [租户的客户](#customers)
-- [令牌与租户](#tokens)
-
-<a id="introduction"></a>
-## 简介
-
 SaaS 应用通常有三类用户：
 
 | 用户 | 例子 | 在 Tenon 中 | 通常使用 |
@@ -34,7 +16,21 @@ SaaS 应用通常有三类用户：
 2. 按用户在这个租户中的**角色**加载权限；
 3. 业务代码只读写**这个租户的数据**。
 
-前两件由框架和 [`authz`](authorization.md#roles) 完成，第三件是 [action](../concepts/actions.md) 必须遵守的约定。
+前两件由框架和 [`authz`](authorization.md#roles) 完成，第三件是 [业务动作](../concepts/actions.md) 必须遵守的约定。
+
+- [确定租户](#identifying-tenants)
+- [成员与角色](#members)
+    - [创建租户](#creating-tenants)
+    - [成员管理](#managing-members)
+    - [切换租户](#switching-tenants)
+- [租户数据隔离](#data-isolation)
+- [后台任务](#background-work)
+    - [队列任务](#tenant-jobs)
+    - [定时任务](#tenant-scheduled-tasks)
+- [缓存、广播与其他资源](#other-resources)
+- [运营后台](#platform)
+- [租户的客户](#customers)
+- [令牌与租户](#tokens)
 
 <a id="identifying-tenants"></a>
 ## 确定租户
@@ -78,13 +74,13 @@ Tenant: func(ctx huma.Context) string { return ctx.Header("X-Tenant") },
 
 ```go
 owner, err := roles.CreateRole(ctx, authz.Role{Name: "owner", Permissions: []string{"*"}})
-member, err := roles.CreateRole(ctx, authz.Role{Name: "member", Permissions: []string{auth.ArticlesRead, auth.ArticlesWrite}})
+member, err := roles.CreateRole(ctx, authz.Role{Name: "member", Permissions: []string{"articles:read", "articles:write"}})
 ```
 
 <a id="creating-tenants"></a>
 ### 创建租户
 
-租户本身是应用的数据，例如一张 `tenants` 表。用户创建组织时，在同一个 action 中把他设为所有者：
+租户本身是应用的数据，例如一张 `tenants` 表。用户创建组织时，在同一个业务动作中把他设为所有者：
 
 ```go
 func (a *Create) Handle(ctx context.Context, subject identity.Subject, name string) (*Tenant, error) {
@@ -137,7 +133,7 @@ CREATE TABLE articles (
 CREATE INDEX articles_tenant_created ON articles (tenant_id, created_at);
 ```
 
-action 从主体中取租户，每一个查询都加上这个条件，写入时也从主体中取。模块内共享的 `find` 接收主体，而不是单独的租户 ID：
+业务动作从主体中取租户，每一个查询都加上这个条件，写入时也从主体中取。模块内共享的 `find` 接收主体，而不是单独的租户 ID：
 
 ```go
 func find(ctx context.Context, db bun.IDB, subject identity.Subject, id uuid.UUID) (*Article, error) {
@@ -160,13 +156,13 @@ func (a *Create) Handle(ctx context.Context, subject identity.Subject, c Changes
 
 - `Handle` 和模块内的查询函数总是接收 `identity.Subject`，不单独接收租户 ID；
 - 按 ID 查询时也带上 `tenant_id`，不要先按 ID 查出来再比较；
-- 为每个 action 写一个“其他租户访问不到”的测试，例如用租户 B 的主体读取租户 A 的文章，期望 `404`，见[测试 action](../testing/database.md#testing-actions)；
+- 为每个业务动作写一个“其他租户访问不到”的测试，例如用租户 B 的主体读取租户 A 的文章，期望 `404`，见[测试业务动作](../testing/database.md#testing-actions)；
 - 使用 PostgreSQL 时，可以再加上[行级安全策略](https://www.postgresql.org/docs/current/ddl-rowsecurity.html)作为兜底：在事务开始时 `SET LOCAL app.tenant_id`，由策略限制每个查询只能看到这个租户的行。
 
 <a id="background-work"></a>
 ## 后台任务
 
-请求中的租户来自 `Tenant` 选项，队列和定时任务没有请求，租户只能由任务自己带着。worker 不会恢复任何上下文：action 从参数 `subject` 中取租户，所以只要构造出带租户的主体，`Handle` 的写法与请求中完全相同。
+请求中的租户来自 `Tenant` 选项，队列和定时任务没有请求，租户只能由任务自己带着。worker 不会恢复任何上下文：业务动作从参数 `subject` 中取租户，所以只要构造出带租户的主体，`Handle` 的写法与请求中完全相同。
 
 <a id="tenant-jobs"></a>
 ### 队列任务
@@ -237,7 +233,7 @@ func (a *ScheduleDigests) Handle(ctx context.Context) error {
 
 | 资源 | 做法 |
 | --- | --- |
-| [缓存](../libraries/cache.md) | 键带上租户：`blog:article:v1:<tenant>:<id>`。缓存一章的 `load` 只按 ID 读取，命中后会跳过 `find` 的租户条件，把其他租户的文章返回出去；它要和 `find` 一样接收主体，用 `subject.Tenant` 组成键 |
+| [缓存](../libraries/cache.md) | 键带上租户：`app:article:v1:<tenant>:<id>`。缓存一章的 `load` 只按 ID 读取，命中后会跳过 `find` 的租户条件，把其他租户的文章返回出去；它要和 `find` 一样接收主体，用 `subject.Tenant` 组成键 |
 | [广播](../libraries/broadcasting.md) | 主题带上租户：`t:<tenant>:articles`。SSE 处理器用 `sub.Tenant` 订阅，不要从查询参数中取租户；[实时频道](../libraries/realtime.md#private-channels)的授权函数把频道名中的租户与 `sub.Tenant` 比较 |
 | [限流](../libraries/rate-limiting.md) | 按用户或 IP 的限流不用改；按租户限额时，key 用 `tenant:<id>` |
 | [锁](../libraries/locks.md) | 锁名中的 ID 全局唯一（如 UUID）时不用改；按 slug 等租户内唯一的值加锁时，带上租户 |
@@ -260,7 +256,7 @@ err = roles.Assign(ctx, staff, "", platformAdmin.ID) // staff 是运营人员的
 客服需要进入租户排查问题时，在所有租户（`authz.AllTenants`）中给他分配一个只读的全局角色，他在每个租户中都拥有这个角色的权限：
 
 ```go
-support, err := roles.CreateRole(ctx, authz.Role{Name: "support", Permissions: []string{auth.ArticlesRead, auth.ArticlesReadDrafts}})
+support, err := roles.CreateRole(ctx, authz.Role{Name: "support", Permissions: []string{"articles:read", "articles:read-drafts"}})
 err = roles.Assign(ctx, staff, authz.AllTenants, support.ID)
 ```
 
@@ -296,7 +292,7 @@ plain, err := customerTokens.Login(ctx, out.Subject, device) // out.Subject.Tena
 ```go
 plain, err := tokens.Create(ctx, sub, apitoken.Personal{
     Name:   "acme 报表",
-    Scopes: []string{auth.ArticlesRead},
+    Scopes: []string{"articles:read"},
     Tenant: sub.Tenant,
 })
 ```

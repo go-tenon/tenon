@@ -1,17 +1,5 @@
 # 第三方登录
 
-- [简介](#introduction)
-- [提供方](#providers)
-- [登录与注册](#signing-in)
-- [在单页应用中登录](#spa-login)
-- [在 App 中登录](#api-login)
-    - [App 原生登录](#native-sign-in)
-- [账号关联](#linking-accounts)
-- [Sign in with Apple](#sign-in-with-apple)
-
-<a id="introduction"></a>
-## 简介
-
 用户可以用 Google、GitHub 等账号登录，分两步：
 
 1. `login/oauth` 与第三方交互，得到第三方确认过的账号 `login.External`：OpenID Connect 提供方（Google、Apple、Microsoft、企业的身份系统）用 `oauth.Discover`，只支持 OAuth 2.0 的提供方（GitHub、微信）用 `oauth.New`；
@@ -25,12 +13,40 @@
 | [App](#api-login) | App 自己跳转到第三方，把授权码交给 API | `Exchange` |
 | [App 原生登录](#native-sign-in) | SDK 直接返回 ID token | `IDToken` |
 
-本章为博客的编辑后台加上 Google 和 GitHub 登录，读者 App 可以用它们注册。
+- [示例用法](#example-usage)
+- [提供方](#providers)
+- [登录与注册](#signing-in)
+- [在单页应用中登录](#spa-login)
+- [在 App 中登录](#api-login)
+    - [App 原生登录](#native-sign-in)
+- [账号关联](#linking-accounts)
+- [Sign in with Apple](#sign-in-with-apple)
+- [API 参考](#api-reference)
+
+<a id="example-usage"></a>
+## 示例用法
+
+```go
+google, err := oauth.Discover(ctx, oauth.Config{
+    Provider:     "google",
+    Issuer:       "https://accounts.google.com",
+    ClientID:     cfg.Google.ClientID,
+    ClientSecret: cfg.Google.ClientSecret,
+    RedirectURL:  "https://example.com/auth/google/callback",
+})
+
+// 开始：跳到 Google，flow 保存在客户端（例如 cookie）
+authURL, flow := google.Start()
+
+// 回调：换取第三方账号，交给 Realm 登录或注册
+ext, err := google.Finish(ctx, flow, r.URL.Query())
+out, err := users.External(ctx, ext)
+```
 
 <a id="providers"></a>
 ## 提供方
 
-先在第三方开放平台登记应用，得到 client ID 和 client secret，并登记回调地址。下面是完整的 `internal/auth/social/social.go`：
+先在第三方开放平台登记应用，得到 client ID 和 client secret，并登记回调地址。例如 `social.go`：
 
 ```go
 package social
@@ -157,7 +173,7 @@ social:
   github:
     client_id: ${GITHUB_CLIENT_ID}
     client_secret: ${GITHUB_CLIENT_SECRET}
-  redirect_url: https://blog.example.com/admin/auth/{provider}/callback
+  redirect_url: https://example.com/admin/auth/{provider}/callback
   client_redirect_urls:
     - https://app.example.com/auth/callback
 ```
@@ -185,7 +201,7 @@ out, err := users.External(ctx, ext)
 | `out.Proof` | 还没有绑定 | 注册新账号，或者让用户登录已有账号后[绑定](#linking-accounts) |
 | `out.Pending`、`out.Enroll` | 账号体系要求[二次验证](login.md#requiring-two-factor) | 与密码登录相同，先完成第二步或先启用 |
 
-注册与[验证码注册](login.md#codes)相同：应用的注册 action 在事务中创建账号行，再把 `out.Proof` 交给 `Register`。第三方账号作为登录标识写入，第三方确认过（`EmailVerified`）的邮箱也一并写入，之后用户也可以用这个邮箱收验证码登录。第三方账号登录不再要求[二次验证](login.md#two-factor)，由提供方负责验证身份；账号体系[强制二次验证](login.md#requiring-two-factor)时除外。
+注册与[验证码注册](login.md#codes)相同：应用的注册业务动作在事务中创建账号行，再把 `out.Proof` 交给 `Register`。第三方账号作为登录标识写入，第三方确认过（`EmailVerified`）的邮箱也一并写入，之后用户也可以用这个邮箱收验证码登录。第三方账号登录不再要求[二次验证](login.md#two-factor)，由提供方负责验证身份；账号体系[强制二次验证](login.md#requiring-two-factor)时除外。
 
 `ext.Claims` 是 ID token 的全部声明（`Account` 读取的提供方由应用自己填写），例如企业 IdP 的 `groups`，应用可以在每次登录时据此同步角色。提供方在这次登录中做过多因素认证时（各家写在 `amr` 等声明中，写法不同），应用确认后设置 `ext.TwoFactor = true`，这次登录记为 `[提供方, idp_mfa]`，计入二次验证。只对信任其 MFA 的提供方这样做，例如租户自己的企业 IdP。
 
@@ -203,25 +219,9 @@ out, err := users.External(ctx, ext)
 3. 回调页把地址中的查询参数和保存的 `flow` 交给 `POST /auth/github/finish`，`Finish` 比较 state，用授权码和 verifier 换取 token，读取账号；
 4. API 签发 [JWT](api-tokens.md#jwt)，refresh token 写入 [HttpOnly cookie](api-tokens.md#single-page-applications)。编辑必须使用[二次验证](login.md#requiring-two-factor)，所以多数时候 `finish` 返回的是 `pending`（或者还没有启用时的 `enroll`），单页应用接着走与密码登录相同的第二步。
 
-编辑后台不开放注册，第三方账号还没有绑定时返回 `social.ErrNotLinked`，编辑先用密码登录，再在账号设置中[绑定](#linking-accounts)。下面是完整的 `internal/auth/authhttp/web_social.go`：
+编辑后台不开放注册，第三方账号还没有绑定时返回 `social.ErrNotLinked`，编辑先用密码登录，再在账号设置中[绑定](#linking-accounts)。例如 `web_social.go`：
 
 ```go
-package authhttp
-
-import (
-    "context"
-    "net/http"
-    "net/url"
-
-    "github.com/danielgtaylor/huma/v2"
-
-    "example.com/blog/internal/auth/social"
-    "github.com/go-tenon/tenon/apitoken"
-    "github.com/go-tenon/tenon/httpx/rest"
-    "github.com/go-tenon/tenon/login"
-    "github.com/go-tenon/tenon/login/oauth"
-)
-
 type StartInput struct {
     Provider string `path:"provider"`
 }
@@ -331,25 +331,9 @@ App 自己完成跳转：
 3. 客户端把授权码、verifier、nonce 和回调地址交给 API；
 4. API 用 client secret 换取 token，读取账号，签发 [API 令牌](api-tokens.md)。
 
-读者 App 可以用第三方账号注册：还没有绑定时，API 返回注册凭证和第三方提供的名称，App 进入注册页预填。下面是完整的 `internal/auth/authhttp/social.go`：
+读者 App 可以用第三方账号注册：还没有绑定时，API 返回注册凭证和第三方提供的名称，App 进入注册页预填。例如 `social.go`：
 
 ```go
-package authhttp
-
-import (
-    "context"
-    "net"
-    "net/http"
-
-    "github.com/danielgtaylor/huma/v2"
-
-    "example.com/blog/internal/auth/social"
-    "github.com/go-tenon/tenon/apitoken"
-    "github.com/go-tenon/tenon/httpx/rest"
-    "github.com/go-tenon/tenon/login"
-    "github.com/go-tenon/tenon/login/oauth"
-)
-
 type SocialTokenInput struct {
     Provider  string `path:"provider"`
     UserAgent string `header:"User-Agent"`
@@ -462,7 +446,7 @@ apple, err := oauth.Discover(ctx, oauth.Config{
     Issuer:       "https://appleid.apple.com",
     ClientID:     cfg.Apple.ServiceID,
     ClientSecret: cfg.Apple.ClientSecret,
-    RedirectURL:  "https://blog.example.com/auth/apple/callback", // 服务器上的转发地址，见下文
+    RedirectURL:  "https://example.com/auth/apple/callback", // 服务器上的转发地址，见下文
     Scopes:       []string{"openid", "email", "name"},
     NoPKCE:       true,
     FormPost:     true,
@@ -487,3 +471,30 @@ router.Post("/auth/apple/callback", func(w http.ResponseWriter, r *http.Request)
 ```
 
 `RedirectURL` 是这个服务器地址。授权码只能使用一次，有效期很短，与第三方用查询参数直接跳回时一样出现在地址中；`user` 字段（第一次授权时的姓名）随之带到回调页，单页应用把它一起交给注册接口。
+
+<a id="api-reference"></a>
+## API 参考
+
+包 `github.com/go-tenon/tenon/login/oauth`。
+
+### Discover、New
+
+```go
+func Discover(ctx context.Context, cfg Config) (*Provider, error)
+func New(cfg Config, endpoint oauth2.Endpoint, account Account) (*Provider, error)
+```
+
+`Discover` 用于支持 OpenID Connect 的提供方（Google、Apple、企业 IdP），从 `Issuer` 读取配置；`New` 用于只支持 OAuth 2.0 的提供方（GitHub），`account` 用访问令牌读取账号信息。
+
+### Provider
+
+```go
+func (p *Provider) Start() (string, Flow)
+func (p *Provider) Finish(ctx context.Context, f Flow, params url.Values) (login.External, error)
+func (p *Provider) Exchange(ctx context.Context, g Grant) (login.External, error)
+func (p *Provider) IDToken(ctx context.Context, raw, nonce string) (login.External, error)
+func (p *Provider) Name() string
+func ParseFlow(s string) (Flow, error)
+```
+
+`Start` 返回跳转地址和这次流程的状态；`Finish` 校验回调并取得账号；`Exchange` 用于 App 自己完成授权后交来的授权码；`IDToken` 用于 App 原生登录得到的 ID token。结果交给 [`login.Realm.External`](login.md#api-reference)。

@@ -1,20 +1,36 @@
 # 哈希
 
-- [简介](#introduction)
-- [配置](#configuration)
-- [哈希与校验密码](#hashing-passwords)
-- [重新哈希](#rehashing)
-
-<a id="introduction"></a>
-## 简介
-
 密码不能明文保存，也不能用 SHA-256 这类快速哈希保存。`hashing` 包用专为密码设计的慢哈希算法生成哈希：默认是 argon2id，也可以选择 bcrypt。
 
 哈希使用 PHC 字符串格式，例如 `$argon2id$v=19$m=19456,t=2,p=1$<盐>$<哈希>`。算法、参数和随机盐都编码在字符串中，保存在一个文本列里即可。这个格式与 PHP 的 `password_hash` 互通，从 PHP 应用迁移过来的密码哈希可以直接校验。
 
 以后还要读出明文的值（例如第三方 API Key）不能哈希，要用[加密](encryption.md#encrypting-data)。
 
-账号的密码由[登录与注册](login.md)保存和校验，包括下面的重新哈希，不需要直接调用本章的方法。应用自己保存其他需要校验的口令时才直接使用 `Hasher`，本章以博客文章的访问口令为例：作者可以给文章设一个口令，读者输入正确才能阅读。
+账号的密码由[登录与注册](login.md)保存和校验，包括下面的重新哈希，不需要直接调用本页的方法。应用自己保存其他需要校验的口令时才直接使用 `Hasher`，本页以文章的访问口令为例：作者可以给文章设一个口令，读者输入正确才能阅读。
+
+- [示例用法](#example-usage)
+- [配置](#configuration)
+- [哈希与校验密码](#hashing-passwords)
+- [重新哈希](#rehashing)
+- [API 参考](#api-reference)
+
+<a id="example-usage"></a>
+## 示例用法
+
+```go
+hasher := hashing.New(cfg.Hashing)
+
+hash, err := hasher.Make(passcode)
+if err != nil {
+    return err
+}
+
+if hasher.Check(input, hash) {
+    if hasher.NeedsRehash(hash) {
+        hash, err = hasher.Make(input) // 参数调高后，下次校验成功时换成新的哈希
+    }
+}
+```
 
 <a id="configuration"></a>
 ## 配置
@@ -46,7 +62,7 @@ argon2id 的默认值是 OWASP 推荐的最低配置。参数越大越难暴力�
 <a id="hashing-passwords"></a>
 ## 哈希与校验密码
 
-在[入口](../concepts/dependencies.md#assembling-the-application)的 `open` 中创建 `Hasher`，交给 [`login.New`](login.md#assembling) 和其他需要它的 action：
+在[入口](../concepts/dependencies.md#assembling-the-application)的 `open` 中创建 `Hasher`，交给 [`login.New`](login.md#assembling) 和其他需要它的业务动作：
 
 ```go
 hasher := hashing.New(cfg.Hashing)
@@ -94,3 +110,26 @@ if a.hasher.NeedsRehash(art.PasscodeHash) {
 ```
 
 `login` 在密码登录成功时就是这样做的，用户在下次登录时自然迁移到新的算法和参数。从其他系统导入账号时，把旧的 bcrypt 或 argon2id 哈希原样写入 `auth_passwords` 表即可。
+
+<a id="api-reference"></a>
+## API 参考
+
+包 `github.com/go-tenon/tenon/hashing`。
+
+### New
+
+```go
+func New(cfg Config) *Hasher
+```
+
+`Config` 选择算法（默认 Argon2id，可选 bcrypt）和各自的参数，见[配置](#configuration)。
+
+### Hasher
+
+```go
+func (h *Hasher) Make(password string) (string, error)
+func (h *Hasher) Check(password, hash string) bool
+func (h *Hasher) NeedsRehash(hash string) bool
+```
+
+`Make` 生成带算法和参数的哈希；bcrypt 下密码超过 72 字节时返回 `ErrPasswordTooLong`。`Check` 用哈希中记录的算法校验。`NeedsRehash` 在哈希的算法或参数与当前配置不同时为真。

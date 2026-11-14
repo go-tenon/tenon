@@ -273,7 +273,7 @@ CMD ["start"]
 x-app: &app
   image: blog:${APP_VERSION}
   environment:
-    APP_URL: https://blog.example.com
+    APP_URL: https://example.com
     DATABASE_URL: ${DATABASE_URL}
   restart: unless-stopped
   stop_grace_period: 45s
@@ -426,7 +426,7 @@ sudo systemctl stop 'blog@*'
 # 维护数据库；换上新二进制并执行迁移，见“发布新版本”
 
 sudo systemctl start blog@serve blog@work blog@schedule
-curl -fsS https://blog.example.com/readyz  # 在办公网络中检查
+curl -fsS https://example.com/readyz  # 在办公网络中检查
 sudo rm /etc/nginx/blog.maintenance
 ```
 

@@ -110,7 +110,7 @@ func serve(ctx context.Context, cfg Config) (err error) {
 }
 
 func main() {
-    root := command.Root("api", "博客")
+    root := command.Root("api", "示例")
     root.AddCommand(command.Run("serve", "启动 HTTP 服务", serve))
     command.Execute(root)
 }
