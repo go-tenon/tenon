@@ -50,6 +50,7 @@
 | 构建 | Vite，构建产物嵌入 Go 程序，见[单页应用](../docs/responses/spa.md) |
 | 路由 | TanStack Router，文件路由 |
 | 服务端数据 | TanStack Query + `tenon generate` 生成的客户端 |
+| 框架套件 | `@go-tenon/client`、`@go-tenon/shell`；antd 的端加 `@go-tenon/admin`，shadcn 的端用 registry `@tenon`，见[前端套件规划](frontend-kit.md) |
 | 图表 | ECharts |
 | AI 对话 | `@ai-sdk/react` 的 `useChat`，对接 [AI 助手](../docs/ai/chat.md) |
 | 富文本 | Tiptap |
