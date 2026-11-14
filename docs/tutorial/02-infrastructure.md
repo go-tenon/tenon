@@ -1,5 +1,9 @@
 # 2. 基础设施与装配
 
+上一章生成的项目把数据保存在内存中，重启就没了。一个真正的应用需要数据库，通常还需要 Redis、缓存和队列。
+
+这一章，我们用 Docker 一次启动这些服务，为应用加上配置，并把应用的装配整理到 `internal/bootstrap` 包中。之后的每一章都会在这个结构上添加内容。
+
 - [启动基础设施](#infrastructure)
 - [配置](#configuration)
 - [装配应用](#assembling)
@@ -111,7 +115,7 @@ type Config struct {
 
 模板把所有代码都放在 `main.go` 中。应用会越来越大：数据库、Redis、缓存、队列……还会有多个进程，例如处理队列任务的 worker。我们把装配集中到 `internal/bootstrap` 包中。
 
-新建 `internal/bootstrap/app.go`：
+让我们新建 `internal/bootstrap/app.go`：
 
 ```go title="internal/bootstrap/app.go"
 package bootstrap
@@ -184,7 +188,7 @@ func Serve(ctx context.Context, cfg Config) error {
 - `open` 打开资源，同时把关闭操作登记到 `stack`。进程退出时，资源按打开的相反顺序关闭。打开到一半失败时，已经打开的也会关闭。
 - `run` 打开资源，装配进程要运行的各个部分，然后一直运行到收到停止信号（`Ctrl-C` 或 `SIGTERM`）。`Serve` 只运行 HTTP 服务；加上处理队列任务的 worker 时，再写一个只运行 worker 的 `Work`，见[队列](../libraries/queue.md#running-workers)。
 
-新建 `internal/bootstrap/http.go`，装配 HTTP 服务：
+接着，新建 `internal/bootstrap/http.go`，装配 HTTP 服务：
 
 ```go title="internal/bootstrap/http.go"
 package bootstrap
@@ -266,7 +270,7 @@ func (a *App) HTTP(d *command.Daemon) (func(context.Context) error, error) {
 <a id="entrypoint"></a>
 ## 入口
 
-把 `cmd/api/main.go` 改成下面这样。它只声明有哪些命令，具体做什么都在 `bootstrap` 中：
+现在，把 `cmd/api/main.go` 改成下面这样。它只声明有哪些命令，具体做什么都在 `bootstrap` 中：
 
 ```go title="cmd/api/main.go"
 // Command api 是博客的入口。
@@ -315,5 +319,9 @@ curl localhost:8080/readyz
 ```
 
 停止 PostgreSQL（`docker compose stop postgres`）再请求一次，返回 `503`，`database` 变为 `failed`。再 `docker compose start postgres`，恢复正常。
+
+这一章没有添加新的功能，但打下了以后各章的基础：配置从文件和环境变量中加载，资源在 `open` 中打开、在退出时关闭，HTTP 服务能平滑停止，部署平台能检查它是否就绪。
+
+下一章，我们创建第一张数据表。
 
 深入了解：[配置](../general/configuration.md)、[依赖装配](../concepts/dependencies.md)、[健康检查](../concepts/lifecycle.md#health-checks)。
