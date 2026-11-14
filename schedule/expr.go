@@ -10,7 +10,8 @@ import (
 
 // when 判断任务在某一秒是否到期。
 type when struct {
-	cron  string        // cron 表达式，every 为 0 时使用
+	// cron 是带秒的 cron 表达式，every 为 0 时使用。5 段的表达式和 @hourly 等预定义写法在前面补上秒 0。
+	cron  string
 	every time.Duration // @every 的间隔，按 Unix 时间对齐
 }
 
@@ -27,10 +28,17 @@ func parse(expr string) (when, error) {
 		}
 		return when{every: every}, nil
 	}
-	if !gronx.IsValid(expr) {
+	// 补上秒：gronx 从 v1.20.7 起把 5 段表达式的秒当作 *，这一分钟的每一秒都算到期，Next、Prev 也随之改变。
+	// 写出秒 0 之后，5 段表达式只在第 0 秒到期。
+	segs, err := gronx.Segments(expr)
+	if err != nil {
 		return when{}, errors.Newf("schedule: invalid cron expression %q", expr)
 	}
-	return when{cron: expr}, nil
+	cron := strings.Join(segs, " ")
+	if !gronx.IsValid(cron) {
+		return when{}, errors.Newf("schedule: invalid cron expression %q", expr)
+	}
+	return when{cron: cron}, nil
 }
 
 // due 报告任务在 t 这一秒是否到期，cron 表达式按 loc 计算。
