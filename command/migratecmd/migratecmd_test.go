@@ -76,7 +76,7 @@ func TestHelpWithoutSubcommand(t *testing.T) {
 	}
 }
 
-// 另一个数据库的迁移命令挂在 migrate 下，迁移各自的数据库，互不影响。
+// 另一个数据库的迁移命令挂在 migrate 下，迁移各自的数据库，相互独立。
 func TestNamedDatabase(t *testing.T) {
 	type twoDBs struct {
 		Database  database.Config `yaml:"database"`

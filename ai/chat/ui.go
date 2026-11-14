@@ -162,7 +162,7 @@ func (m UIMessage) text() string {
 }
 
 // UIStream 以 UI 消息流推送运行的事件，直到运行结束。run 为 nil 时只发送一个空的回复。
-// 它不受 httpx.Timeout 的超时限制，见 httpx.SSE。
+// 它脱离 httpx.Timeout 的超时限制，见 httpx.SSE。
 func UIStream(run *Run) *huma.StreamResponse {
 	return &huma.StreamResponse{Body: func(hctx huma.Context) {
 		r, w := humachi.Unwrap(hctx)

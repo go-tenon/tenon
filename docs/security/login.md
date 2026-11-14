@@ -2,7 +2,7 @@
 
 `login` 包回答“这个人是谁”：用登录标识和密码登录、用验证码登录或注册、找回密码、绑定和更换邮箱或手机号。得到 `identity.Subject` 之后，由 API 签发凭据：[`tokens.Login`](api-tokens.md#login-and-logout) 或 [`JWT.Login`](api-tokens.md#jwt)。单页应用、App 和后台都通过这些接口登录。
 
-框架不拥有账号表。应用的 `users` 表只保存业务字段，不需要 `email`、`password_hash` 这类列；登录标识、密码哈希和验证码保存在框架的 `auth_*` 表中，按 [`identity.Ref`](authentication.md#key-concepts) 引用账号。一个账号可以有多个邮箱、手机号，也可以没有密码只用验证码登录。
+账号表属于应用。应用的 `users` 表只保存业务字段；登录标识、密码哈希和验证码保存在框架的 `auth_*` 表中，按 [`identity.Ref`](authentication.md#key-concepts) 引用账号。一个账号可以有多个邮箱、手机号，也可以没有密码只用验证码登录。
 
 每套[账号体系](authentication.md#account-systems)各用一个 `login.Realm`。两套账号从建表到接口的完整代码见[完整示例](account-examples.md)。
 
@@ -130,7 +130,7 @@ func sendCode(mailer mail.Mailer, emails *mail.Templates) func(context.Context, 
 | --- | --- |
 | `login.Email(s)` | 去掉首尾空白，转为小写 |
 | `login.Phone(s)` | 必须是 E.164 格式，例如 `+8613800138000`，由应用把用户输入的号码转换成这个格式 |
-| `login.Username(s)` | 去掉首尾空白，转为小写，不能包含空白 |
+| `login.Username(s)` | 去掉首尾空白，转为小写，中间不允许空白 |
 
 格式不正确时返回 `login.ErrInvalidIdentifier`。[第三方登录](social-login.md)的账号也是一种标识，类型是提供方的名称。
 
@@ -222,7 +222,7 @@ if _, err := tokens.RevokeSubject(ctx, who); err != nil {
 }
 ```
 
-新密码按 `Policy.PasswordPolicy` 检查，默认要求 8 到 128 个字符、首尾没有空白，不符合时返回 `login.ErrWeakPassword`。接收验证码的邮箱同时标为已验证，它的登录失败计数清零。找回密码后通常撤销这个账号的全部 token，见[撤销令牌](api-tokens.md#revoking-tokens)。`ResetPassword` 不登录，用户接着用新密码登录，启用了[二次验证](#two-factor)的账号仍然要通过二次验证，所以只拿到邮箱不能绕过它。没有设置过密码的账号同样可以用这个流程设置密码。
+新密码按 `Policy.PasswordPolicy` 检查，默认要求 8 到 128 个字符、首尾没有空白，不符合时返回 `login.ErrWeakPassword`。接收验证码的邮箱同时标为已验证，它的登录失败计数清零。找回密码后通常撤销这个账号的全部 token，见[撤销令牌](api-tokens.md#revoking-tokens)。`ResetPassword` 只重置密码，用户接着用新密码登录，启用了[二次验证](#two-factor)的账号仍然要通过二次验证，所以只拿到邮箱绕不过它。没有设置过密码的账号同样可以用这个流程设置密码。
 
 <a id="managing"></a>
 ## 管理登录方式
@@ -240,7 +240,7 @@ err := database.RunInTx(ctx, a.db, nil, func(ctx context.Context, tx database.Tx
 })
 ```
 
-`Detach` 和 `RemovePassword` 不会让账号失去全部登录方式，那样会返回 `login.ErrLastMethod`。能登录的方式有三种：第三方账号和 passkey；设置了 `Options.Send` 时的邮箱和手机号（用验证码登录）；有密码时的 `PasswordKinds` 标识。例如只剩用户名的账号不能删除密码。
+`Detach` 和 `RemovePassword` 始终为账号保留至少一种登录方式，移除最后一种时返回 `login.ErrLastMethod`。能登录的方式有三种：第三方账号和 passkey；设置了 `Options.Send` 时的邮箱和手机号（用验证码登录）；有密码时的 `PasswordKinds` 标识。例如只剩用户名的账号要保留密码。
 
 | 方法 | 用途 |
 | --- | --- |
@@ -269,7 +269,7 @@ codes, err := users.ConfirmTOTP(ctx, a.db, sub.Ref(), in.Code)
 
 恢复码在手机丢失时代替验证器，每个只能用一次。它们只在这里和 `RegenerateRecoveryCodes` 返回明文，页面要提示用户保存下来；`RecoveryCodesLeft` 返回剩余个数，用完之前提醒用户重新生成。
 
-启用后，`Password` 和验证码登录不再直接返回 `out.Subject`，而是返回 `out.Pending`：第一步已经通过，等待二次验证。客户端带着它和验证器上的数字（或一个恢复码）调用登录的第二步：
+启用后，`Password` 和验证码登录返回 `out.Pending`：第一步已经通过，等待二次验证。客户端带着它和验证器上的数字（或一个恢复码）调用登录的第二步：
 
 ```go
 out, err := users.Password(ctx, login.Email(in.Body.Email), in.Body.Password)
@@ -291,7 +291,7 @@ if err != nil {
 plain, err := tokens.Login(ctx, out.Subject, device)
 ```
 
-`Pending` 15 分钟内有效，最多输错 5 次，之后要重新登录。同一个验证码不能用两次；验证器与服务器的时钟允许相差 30 秒。`DisableTwoFactor` 关闭二次验证，之前先[确认身份](#confirming)。
+`Pending` 15 分钟内有效，最多输错 5 次，之后要重新登录。每个验证码只能用一次；验证器与服务器的时钟允许相差 30 秒。`DisableTwoFactor` 关闭二次验证，之前先[确认身份](#confirming)。
 
 <a id="requiring-two-factor"></a>
 ### 强制二次验证
@@ -320,7 +320,7 @@ plain, err := tokens.Login(ctx, out.Subject, device)
 <a id="passkeys"></a>
 ## Passkey
 
-Passkey（通行密钥，WebAuthn）用手机或电脑的指纹、面容、设备密码登录：不需要密码，私钥不离开设备，也不会被钓鱼网站骗走。`login/passkey` 把每个 passkey 作为一个登录标识（`Kind` 为 `passkey`）加到 `Realm` 上，所以它与邮箱、第三方账号一样可以绑定、解除、按租户隔离；用 passkey 登录不再要求[二次验证](#two-factor)，它本身就同时验证了设备和使用者。
+Passkey（通行密钥，WebAuthn）用手机或电脑的指纹、面容、设备密码登录：私钥只留在设备中，与网站域名绑定，钓鱼网站拿不到。`login/passkey` 把每个 passkey 作为一个登录标识（`Kind` 为 `passkey`）加到 `Realm` 上，所以它与邮箱、第三方账号一样可以绑定、解除、按租户隔离；用 passkey 登录时跳过[二次验证](#two-factor)这一步，它本身就同时验证了设备和使用者。
 
 发布 `passkey` 的迁移（`passkey.Migrations()`），在入口中为用户创建：
 
@@ -332,11 +332,11 @@ passkeys, err := passkey.New(a.db, users, a.crypt, passkey.Config{
 })
 ```
 
-`RPID` 是 passkey 绑定的域名，之后不能更改，否则已经创建的 passkey 全部失效。`Origins` 是允许发起登录的网页地址；Android App 加上 `android:apk-key-hash:<签名证书的哈希>`，iOS App 通过关联域名使用网站的地址。
+`RPID` 是 passkey 绑定的域名，要长期固定：改了它，已经创建的 passkey 全部失效。`Origins` 是允许发起登录的网页地址；Android App 加上 `android:apk-key-hash:<签名证书的哈希>`，iOS App 通过关联域名使用网站的地址。
 
-每个操作分两步：`Begin*` 返回交给浏览器或 App 的 `Options` 和一个 `Token`，客户端完成后把结果连同 `Token` 交给 `Finish*`。`Token` 是用应用密钥加密的这次操作的状态，5 分钟内有效，服务器不需要保存它。
+每个操作分两步：`Begin*` 返回交给浏览器或 App 的 `Options` 和一个 `Token`，客户端完成后把结果连同 `Token` 交给 `Finish*`。`Token` 是用应用密钥加密的这次操作的状态，5 分钟内有效，由客户端带回。
 
-**登录**不需要先输入账号，浏览器列出这个网站的 passkey 让用户选择：
+**登录**时浏览器直接列出这个网站的 passkey 让用户选择：
 
 ```go
 c, err := passkeys.BeginLogin(ctx) // 返回 c 给客户端
@@ -368,9 +368,9 @@ proof, err := passkeys.FinishRegistration(ctx, in.Body.Token, in.Body.Credential
 err = users.Link(ctx, a.db, sub.Ref(), proof)
 ```
 
-`email` 是系统在保存 passkey 时显示的账号名，`in.Body.Name` 是给这个 passkey 起的名称，例如“iPhone”。同一个账号已有的 passkey 不会在同一个设备上重复创建。
+`email` 是系统在保存 passkey 时显示的账号名，`in.Body.Name` 是给这个 passkey 起的名称，例如“iPhone”。同一个账号在每个设备上只创建一个 passkey。
 
-账号设置中，`List` 列出账号的 passkey（名称、是否在设备之间同步、最近使用时间），`Rename` 改名，`Remove` 移除；不能移除最后一种登录方式。签名计数倒退（疑似 passkey 被复制）时登录失败。创建后没有绑定到账号的 passkey，以及账号[注销](#forget)后留下的公钥，由 `passkeys.Cleanup` 定时删除。
+账号设置中，`List` 列出账号的 passkey（名称、是否在设备之间同步、最近使用时间），`Rename` 改名，`Remove` 移除；账号始终保留至少一种登录方式。签名计数倒退（疑似 passkey 被复制）时登录失败。创建后没有绑定到账号的 passkey，以及账号[注销](#forget)后留下的公钥，由 `passkeys.Cleanup` 定时删除。
 
 <a id="policies"></a>
 ## 按租户的登录策略
@@ -400,7 +400,7 @@ customers := login.New(a.db, login.Options{
 })
 ```
 
-`Methods` 列出允许的登录方式，名称与 `sub.Auth.Methods` 相同：`password`、`email`、`phone`、第三方提供方的名称、`passkey`。不允许的方式在 `Password`、`SendCode`（`SignIn`）、`VerifyCode` 和 `External` 中返回 `403 login.method_not_allowed`，公开参数 `method` 是这种方式。找回密码、二次验证的第二步不受限制。
+`Methods` 列出允许的登录方式，名称与 `sub.Auth.Methods` 相同：`password`、`email`、`phone`、第三方提供方的名称、`passkey`。不允许的方式在 `Password`、`SendCode`（`SignIn`）、`VerifyCode` 和 `External` 中返回 `403 login.method_not_allowed`，公开参数 `method` 是这种方式。找回密码、二次验证的第二步始终允许。
 
 一套账号在多个租户中使用（不设置 `PerTenant`）时，登录时还不知道要进哪个租户，`PolicyFor` 拿不到租户。这时由租户的 Resolver 在进入租户时检查这次登录用的方式：
 
@@ -427,7 +427,7 @@ if cfg.RequireTwoFactor && !sub.Auth.TwoFactor() {
 | 二次验证 | `CheckTwoFactor(ctx, ref, code)` 校验验证器上的数字或恢复码，返回用到的方式 |
 | passkey、第三方账号 | 再登录一次，`out.Subject.Ref()` 等于 `ref` 即可 |
 
-失败次数都有限制。`HasPassword` 决定显示密码框还是“发送验证码”。确认用的验证码只发给 `ref` 自己的标识，其他标识返回 `ErrNotFound`；它不能用来登录，`VerifyCode` 不接受它，所以不会绕过二次验证。
+失败次数都有限制。`HasPassword` 决定显示密码框还是“发送验证码”。确认用的验证码只发给 `ref` 自己的标识，其他标识返回 `ErrNotFound`；它只用于确认身份，`VerifyCode` 拒绝它，所以二次验证始终有效。
 
 最简单的写法是客户端在敏感请求中直接带上密码或验证码，处理器先确认、再执行，见[读者注销账号](account-examples.md#reader-api)。几个敏感操作连在一起时，每次都输入密码很烦，可以改为“确认一次，一段时间内放行”：
 
@@ -451,7 +451,7 @@ rest.RequireBearer(api, tokens.Validate)(&op)
 rest.Confirmed(15 * time.Minute)(&op)
 ```
 
-`Confirm` 的方式参数是这次确认用到的方式：密码为 `login.MethodPassword`，验证码为标识的类型（如 `login.KindPhone`），二次验证为 `CheckTwoFactor` 的返回值。[JWT 模式](api-tokens.md#jwt)用 `jwt.Confirm`，它返回新的 access token，客户端替换后重试。个人访问令牌和代为登录的 token 不能确认身份，访问 `Confirmed` 的路由总是 `403`。
+`Confirm` 的方式参数是这次确认用到的方式：密码为 `login.MethodPassword`，验证码为标识的类型（如 `login.KindPhone`），二次验证为 `CheckTwoFactor` 的返回值。[JWT 模式](api-tokens.md#jwt)用 `jwt.Confirm`，它返回新的 access token，客户端替换后重试。个人访问令牌和代为登录的 token 访问 `Confirmed` 的路由总是 `403`。
 
 登录本身也算一次确认。登录得到的 `out.Subject.Auth` 记下了这次通过的验证方式（如 `password`、`password totp`、`email`、`passkey`、`google`）和时间，token 保存它们，之后每个请求的主体都带着，见[认证](authentication.md#key-concepts)。
 
@@ -468,7 +468,7 @@ if err := a.staff.Attach(ctx, tx, member.Ref(), login.Email(in.Email), false); e
 _, err := a.staff.SendCode(ctx, login.Reset, login.Email(in.Email))
 ```
 
-员工通过邀请邮件中的链接设置密码，邮箱随之标为已验证。`Attach` 不经过验证码，未验证的标识同样占用唯一性，所以只用于管理员建号这类可信的场景；自助注册一律通过验证码。
+员工通过邀请邮件中的链接设置密码，邮箱随之标为已验证。`Attach` 直接写入标识，未验证的标识同样占用唯一性，所以只用于管理员建号这类可信的场景；自助注册一律通过验证码。
 
 <a id="forget"></a>
 ## 注销账号
@@ -516,7 +516,7 @@ if err != nil {
     return nil, err
 }
 if len(known) > 0 && !slices.ContainsFunc(known, func(t apitoken.Token) bool { return t.UserAgent == device.UserAgent }) {
-    // 发邮件、短信或站内通知，带上时间和 IP，提醒用户不是本人时去设备列表退出这台设备
+    // 发邮件、短信或站内通知，带上时间和 IP，提醒用户如果不是本人，去设备列表退出这台设备
 }
 ```
 
@@ -533,7 +533,7 @@ refresh token 被另一方使用时，框架撤销这次登录并调用 [`OnReus
 
 `Attempts` 和 `Sends` 用 [`redislimit`](../libraries/rate-limiting.md#redis-limiter)，多个实例共享计数；每套账号用各自的名字。按 IP 的限流不在 `login` 中，需要时在登录接口上安装 [`httpx.RateLimit`](../libraries/rate-limiting.md#http-middleware)。
 
-为了不暴露哪些邮箱注册过：密码登录对“邮箱不存在”和“密码错误”返回同一个错误，耗时相同；找回密码和不开放注册时的验证码不发给未注册的邮箱，但同样返回请求 ID。验证码在库中只保存由应用密钥派生的 HMAC，数据库泄露也不能在有效期内穷举出验证码；完成凭证只保存 SHA-256。
+为了保护“哪些邮箱注册过”这一信息：密码登录对“邮箱不存在”和“密码错误”返回同一个错误，耗时相同；找回密码和不开放注册时的验证码不发给未注册的邮箱，但同样返回请求 ID。验证码在库中只保存由应用密钥派生的 HMAC，数据库泄露时验证码仍然安全；完成凭证只保存 SHA-256。
 
 <a id="captcha"></a>
 ### 人机验证
@@ -578,9 +578,9 @@ func requestCode(users *login.Realm, bots *captcha.Verifier) func(context.Contex
 }
 ```
 
-没有通过时返回 `captcha.ErrFailed`（`422`），前端重置组件，让用户重新验证。token 只能校验一次，重复提交同一个 token 也会得到这个错误。Turnstile 连不上时返回 `captcha.ErrUnavailable`（`503`），请求不会被放行。
+没有通过时返回 `captcha.ErrFailed`（`422`），前端重置组件，让用户重新验证。每个 token 只能校验一次，重复提交同一个 token 也会得到这个错误。Turnstile 连不上时返回 `captcha.ErrUnavailable`（`503`），请求被拒绝。
 
-`hostnames` 和业务动作保证 token 来自自己的站点和这张表单：在注册页得到的 token，不能拿来提交联系表单。评论、联系表单等其他公开表单的做法相同，只是各用自己的业务动作。密码登录已经按账号限流，不需要人机验证。
+`hostnames` 和业务动作保证 token 来自自己的站点和这张表单：在注册页得到的 token 只能用于注册。评论、联系表单等其他公开表单的做法相同，只是各用自己的业务动作。密码登录已经按账号限流，可以省掉人机验证。
 
 使用 hCaptcha 时把 `endpoint` 设为 `https://api.hcaptcha.com/siteverify`，业务动作传空字符串，因为 hCaptcha 不返回它。本地开发可以使用 Cloudflare 提供的[测试密钥](https://developers.cloudflare.com/turnstile/troubleshooting/testing/)。测试中把 [`outboundtest`](../libraries/outbound.md#testing) 的客户端传给 `captcha.New`，按需登记 `captcha.Turnstile` 地址的响应：
 
@@ -595,7 +595,7 @@ bots, err := captcha.New(captcha.Config{Secret: "test"}, fake.Client())
 <a id="sms-cost"></a>
 ### 短信费用
 
-`Sends` 和人机验证之外，验证码用短信发送时再给费用设一个上限：在 `Send` 中先过一个全局限流器，超出后不再发送。`Send` 返回的错误由 `SendCode` 原样返回，这次的验证记录同时删除：
+`Sends` 和人机验证之外，验证码用短信发送时再给费用设一个上限：在 `Send` 中先过一个全局限流器，超出后停止发送。`Send` 返回的错误由 `SendCode` 原样返回，这次的验证记录同时删除：
 
 ```go
 smsBudget := redislimit.New(rdb, "app:sms:budget", ratelimit.Config{Rate: 5000, Interval: 24 * time.Hour, Burst: 5000})
@@ -618,7 +618,7 @@ readers := login.New(db, login.Options{
 <a id="cleanup"></a>
 ## 清理
 
-过期和已用过的验证码不会再通过验证，但行仍然留在表中。`Cleanup` 每次最多删除 `limit` 条，可以注册为[定时任务](../libraries/scheduling.md)：
+过期和已用过的验证码校验失败，但行仍然留在表中。`Cleanup` 每次最多删除 `limit` 条，可以注册为[定时任务](../libraries/scheduling.md)：
 
 ```go
 n, err := users.Cleanup(ctx, 1000)

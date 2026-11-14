@@ -56,7 +56,7 @@ func (rt *Realtime) authenticator(token string) identity.Authenticator {
 }
 
 // check 重新校验连接的凭据，只有确定已经失效时返回断开的方式：token 只是过期时以 DisconnectExpired 断开，
-// SDK 重连时收到“token 已过期”，换新的 token；其他情况以 DisconnectInvalidToken 断开，SDK 不再重连。
+// SDK 重连时收到“token 已过期”，换新的 token；其他情况以 DisconnectInvalidToken 断开，SDK 停止重连。
 func (rt *Realtime) check(ctx context.Context, conn *connection) *centrifuge.Disconnect {
 	ctx, cancel := context.WithTimeout(ctx, credentialTimeout)
 	defer cancel()

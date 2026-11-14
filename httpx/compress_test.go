@@ -166,7 +166,7 @@ func TestCompressServeContent(t *testing.T) {
 	}
 }
 
-// SSE 的响应头立即送达，每条事件随即送达，不经过压缩缓冲。
+// SSE 的响应头立即送达，每条事件随即送达，跳过压缩缓冲。
 func TestCompressSSE(t *testing.T) {
 	t.Parallel()
 	send := make(chan string)

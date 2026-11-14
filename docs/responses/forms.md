@@ -125,7 +125,7 @@ func (h *Handlers) Subscribe(w http.ResponseWriter, r *http.Request) error {
 
 验证失败时，处理器返回 `422` 和重新渲染的表单。htmx 4 默认会替换 4xx 响应，表单上的 `hx-swap="outerMorph"` 用新表单替换旧表单：
 
-- `Value` 返回用户提交的原始文本。即使在数字字段里填了 `abc`，回填的也是 `abc`，而不是转换失败后的零值；
+- `Value` 返回用户提交的原始文本。即使在数字字段里填了 `abc`，回填的也是 `abc`；
 - morph 只更新变化的部分，输入框的焦点和 Alpine 的状态都会保留，见[前端状态](views.md#client-state)。
 
 <a id="business-validation"></a>
@@ -147,7 +147,7 @@ if err := h.subscribe.Handle(r.Context(), f.Data); errors.Is(err, subscriber.Err
 <a id="validation-messages"></a>
 ## 验证提示
 
-验证提示按请求协商的语言翻译，框架内置了中文和英文，例如 `minLength:"1"` 的字段为空时提示“不能为空”，`pattern` 加 `patternDescription` 时提示“必须是”加描述。JSON API 的验证错误使用同一套提示，完整的规则和覆盖方法见[验证提示](../http/validation.md#validation-messages)。没有安装 `httpx.Locale` 中间件时，提示是 Huma 的英文原文。
+验证提示按请求协商的语言翻译，框架内置了中文和英文，例如 `minLength:"1"` 的字段为空时提示“不能为空”，`pattern` 加 `patternDescription` 时提示“必须是”加描述。JSON API 的验证错误使用同一套提示，完整的规则和覆盖方法见[验证提示](../http/validation.md#validation-messages)。没有安装 `httpx.Locale` 中间件时，提示用 Huma 的英文原文。
 
 <a id="api-reference"></a>
 ## API 参考

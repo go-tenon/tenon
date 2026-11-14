@@ -29,7 +29,7 @@ const DaemonPIDFile = "daemon.pid"
 // 在 systemd 的 notify 类服务（Type=notify-reload）中运行时，Run 向 systemd 报告就绪。
 // 同时设置了 RuntimeDirectory= 时还支持升级：收到 SIGHUP 会用磁盘上的二进制启动新进程，
 // 把 Listen 取得的监听 socket 交给它，等它的 Run 报告就绪后，本进程的 Run 像收到停止信号
-// 一样平滑停止。监听 socket 一直打开，连接不会被拒绝。新进程在就绪之前退出或超过一分钟，
+// 一样平滑停止。监听 socket 一直打开，连接全部被接收。新进程在就绪之前退出或超过一分钟，
 // 本进程继续运行，systemd 状态中的 Status 行以 "upgrade failed" 开头。
 //
 // 新进程把 PID 写入 RuntimeDirectory 中的 DaemonPIDFile，旧进程退出后 systemd 从这个文件
@@ -37,7 +37,7 @@ const DaemonPIDFile = "daemon.pid"
 // 退出后再升级。
 //
 // 不在 notify 类服务中时（没有 NOTIFY_SOCKET），Listen 是普通监听，Run 等同于 Concurrently，
-// 不处理 SIGHUP。
+// SIGHUP 保持默认行为。
 //
 // 一个进程只创建一个 Daemon。所有 Listen 都要在 Run 之前调用，进程退出前调用 Stop。
 type Daemon struct {

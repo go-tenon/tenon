@@ -102,7 +102,7 @@ func lacks(t *testing.T, s string, unwanted ...string) {
 func TestTextField(t *testing.T) {
 	f := submitted(t)
 
-	// 有错误：字段与输入框标记为无效，显示错误提示而不是说明。
+	// 有错误：字段与输入框标记为无效，显示错误提示，代替说明。
 	out := render(t, ui.TextField(f, "title", "标题", ui.FieldProps{Description: "最多 200 字"}))
 	contains(t, out, `data-invalid="true"`, `for="title"`, `data-slot="field-error"`, html.EscapeString(f.Error("title")))
 	contains(t, tag(t, out, "title"), `name="title"`, `type="text"`, `aria-invalid="true"`)

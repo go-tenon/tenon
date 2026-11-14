@@ -113,7 +113,7 @@ func start(t *testing.T, cfg *project.Config, out, errOut *syncBuffer) func() er
 	}
 }
 
-// 服务端渲染的页面：templ 不带 --cmd，应用带 TEMPL_DEV_MODE；静态文件变化时刷新浏览器；Tailwind 先复制样式源。
+// 服务端渲染的页面：templ 省略 --cmd，应用带 TEMPL_DEV_MODE；静态文件变化时刷新浏览器；Tailwind 先复制样式源。
 func TestDevPages(t *testing.T) {
 	dir, log := setup(t, "go", "tailwindcss", "esbuild")
 	var reloads atomic.Int32

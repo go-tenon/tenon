@@ -16,7 +16,7 @@
 <a id="background-imports"></a>
 ## 后台导入
 
-文件有几万行时，一次请求处理不完，用户也不应该一直等着。`sheet/imports` 包把导入放到[队列](../libraries/queue.md)中：用户上传文件后马上得到一个导入 ID，前端用它查询进度；任务每处理 100 行保存一次进度，重试时从中断的地方继续；没有导入的行保存下来，用户可以下载、改正后重新导入；结束时在同一个事务中通知用户。
+文件有几万行时，处理放到后台，用户可以先去做别的事。`sheet/imports` 包把导入放到[队列](../libraries/queue.md)中：用户上传文件后马上得到一个导入 ID，前端用它查询进度；任务每处理 100 行保存一次进度，重试时从中断的地方继续；没有导入的行保存下来，用户可以下载、改正后重新导入；结束时在同一个事务中通知用户。
 
 一次导入是一个[后台操作](operations.md)：状态和进度记在 `operations` 表中，`imports` 表记录上传的文件和处理到的行号，`import_failures` 表记录没有导入的行。和文件、队列的迁移一起[发布](../database/migrations.md#publishing-framework-migrations)，`operation` 排在 `imports` 之前：
 
@@ -132,7 +132,7 @@ func (a *QueueImport) Progress(ctx context.Context, in *ImportIDInput) (*huma.St
         return nil, err // 还没有开始推送，客户端照常收到 404
     }
     return rest.SSE(func(s *httpx.Stream) error {
-        events := a.hub.Subscribe(operationTopic(in.ID)) // 先订阅，再查询，中间保存的进度不会漏掉
+        events := a.hub.Subscribe(operationTopic(in.ID)) // 先订阅，再查询，中间保存的进度也能收到
         defer events.Close()
         for {
             imp, err := a.importer.Get(s.Context(), subject, in.ID)
@@ -175,7 +175,7 @@ func (a *QueueImport) Failures(ctx context.Context, in *ImportFailuresInput) (*h
 }
 ```
 
-`Start` 确认上传的文件（见[确认文件](../libraries/filesystem.md#confirming-files)），检查它是 `.csv` 或 `.xlsx`，记下请求的语言，返回 `pending` 状态的导入。任务和导入记录在同一个事务中写入，事务回滚时都不会留下。
+`Start` 确认上传的文件（见[确认文件](../libraries/filesystem.md#confirming-files)），检查它是 `.csv` 或 `.xlsx`，记下请求的语言，返回 `pending` 状态的导入。任务和导入记录在同一个事务中写入，事务回滚时一起撤销。
 
 <a id="processing-imports"></a>
 ### 处理导入
@@ -196,12 +196,12 @@ article.ImportJob.Handle(w, article.NewQueueImport(a.db, a.hub, a.importer, arti
 | 回调返回带错误码的业务错误 | 同样记为没有导入的行，提示是错误码的译文 |
 | 回调返回其他错误，例如数据库不可用 | 保存进度后返回错误，队列稍后重试，从这一行继续 |
 
-验证提示和错误的译文使用登记导入时请求的语言。缺少必需的列、文件损坏等整个文件的问题，导入直接变为 `failed`，`Error` 是错误码；队列的最后一次重试仍然出错时，导入同样变为 `failed`，`Error` 是 `operation.failed`。导入结束时上传的文件被删除，由文件存储的 `Cleanup` 回收，下载失败的行不需要它。
+验证提示和错误的译文使用登记导入时请求的语言。缺少必需的列、文件损坏等整个文件的问题，导入直接变为 `failed`，`Error` 是错误码；队列的最后一次重试仍然出错时，导入同样变为 `failed`，`Error` 是 `operation.failed`。导入结束时上传的文件被删除，由文件存储的 `Cleanup` 回收，失败的行另有保存。
 
-`Process` 每次保存进度时都在同一个事务中调用 `saved`：导入变为 `running` 时一次，读出表头时一次，之后每 100 行一次，结束时再一次。`saved` 用 [AfterCommit](../database/quick-start.md#after-commit) 在提交之后向 `operationTopic`（见[后台操作](operations.md#starting)）发布广播，提醒正在查看进度的连接，见[进度与失败的行](#progress-and-failures)。导入变为 `completed` 或 `failed` 时，`saved` 在这个事务中发送通知，通知和状态一起提交，不会重复发送，也不会漏发。`notification.Send` 的用法见[通知](notifications.md)。
+`Process` 每次保存进度时都在同一个事务中调用 `saved`：导入变为 `running` 时一次，读出表头时一次，之后每 100 行一次，结束时再一次。`saved` 用 [AfterCommit](../database/quick-start.md#after-commit) 在提交之后向 `operationTopic`（见[后台操作](operations.md#starting)）发布广播，提醒正在查看进度的连接，见[进度与失败的行](#progress-and-failures)。导入变为 `completed` 或 `failed` 时，`saved` 在这个事务中发送通知，通知和状态一起提交，恰好发送一次。`notification.Send` 的用法见[通知](notifications.md)。
 
 > [!WARNING]
-> 进度每 100 行保存一次。worker 在两次保存之间崩溃时，这些行会在重试时再次交给回调，所以回调要能重复执行。示例中的 `row` 遇到已被占用的 slug 会把这一行记为失败，不会重复创建文章；没有唯一字段的数据，可以先按业务字段查找，存在时更新。
+> 进度每 100 行保存一次。worker 在两次保存之间崩溃时，这些行会在重试时再次交给回调，所以回调要能重复执行。示例中的 `row` 遇到已被占用的 slug 会把这一行记为失败，每篇文章只创建一次；没有唯一字段的数据，可以先按业务字段查找，存在时更新。
 
 <a id="progress-and-failures"></a>
 ### 进度与失败的行
@@ -240,16 +240,16 @@ data: {"id":"0193e7a2-7c1e-7b4a-9d2f-3c5a1e8b6f10","kind":"articles.import","sta
 
 前端用 `processed / total` 显示进度条，`processed` 包括没有导入的 `failed` 行；收到 `completed` 或 `failed` 后连接关闭，再显示结果和下载失败行的链接。
 
-进度是状态而不是事件：广播只提醒连接重新读取，连接（包括断线重连）时先推送一次当前进度，所以中间漏掉的广播没有影响，也不需要按 `Last-Event-ID` 补发，与[通知角标](notifications.md#realtime)的做法相同。worker 和 SSE 连接在不同的实例上时，广播由 Hub 的后端送达，见[广播](../libraries/broadcasting.md)。每次读取都经过 `Get`，只有发起导入的人能看到进度，其他人收到 `operation.ErrNotFound`。
+进度是状态：广播只提醒连接重新读取，连接（包括断线重连）时先推送一次当前进度，所以页面总是显示最新的进度，与[通知角标](notifications.md#realtime)的做法相同。worker 和 SSE 连接在不同的实例上时，广播由 Hub 的后端送达，见[广播](../libraries/broadcasting.md)。每次读取都经过 `Get`，只有发起导入的人能看到进度，其他人收到 `operation.ErrNotFound`。
 
-浏览器的 `EventSource` 不能设置 `Authorization` 请求头，使用 Bearer 令牌的前端用 `fetch` 读取事件流，见[客户端代码的事件流](../responses/clients.md#event-streams)。
+使用 Bearer 令牌的前端用 `fetch` 读取事件流（浏览器的 `EventSource` 由浏览器决定请求头），见[客户端代码的事件流](../responses/clients.md#event-streams)。
 
-`WriteFailures` 写出的表格是原来的表头加上一列“错误”，每一行是原始单元格和这一行的错误，例如 `标题: 不能为空`。用户在这个文件里改正后可以直接重新导入，多出的错误列会被忽略。需要在页面上直接显示失败的行时，用 `Failures` 读取前几行。
+`WriteFailures` 写出的表格是原来的表头加上一列“错误”，每一行是原始单元格和这一行的错误，例如 `标题: 不能为空`。用户在这个文件里改正后可以直接重新导入，多出的错误列自动略过。需要在页面上直接显示失败的行时，用 `Failures` 读取前几行。
 
 <a id="cleanup"></a>
 ### 清理
 
-导入记录和失败的行不会自动删除。[清理后台操作](operations.md#cleanup)时，导入和它的失败行随操作一起删除，不需要单独的清理任务。
+导入记录和失败的行由[清理后台操作](operations.md#cleanup)一起删除。
 
 <a id="background-exports"></a>
 ## 后台导出
@@ -410,7 +410,7 @@ func (a *QueueExport) Progress(ctx context.Context, in *ExportIDInput) (*huma.St
 
 `Handle` 在登记之前检查列名，不存在的列直接返回 `sheet.ErrUnknownColumn`。导出记录和任务在同一个事务中写入。
 
-任务的 payload 带着发起导出的主体：`Export` 按它的权限限定[查询范围](../security/authorization.md#scoping-queries)，导出的是用户提交请求时能看到的数据，多租户应用中主体也带着租户。`exp.Owner()` 只有 ID、类型和租户，没有权限，所以不能代替 payload 中的主体。
+任务的 payload 带着发起导出的主体：`Export` 按它的权限限定[查询范围](../security/authorization.md#scoping-queries)，导出的是用户提交请求时能看到的数据，多租户应用中主体也带着租户。`exp.Owner()` 只有 ID、类型和租户，权限以 payload 中的主体为准。
 
 <a id="processing-exports"></a>
 ### 处理导出

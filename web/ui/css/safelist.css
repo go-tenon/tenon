@@ -1,5 +1,5 @@
-/* 只用于预编译样式表：不装 Tailwind 的区域可以使用的常用布局工具类（间距、flex、grid、尺寸、文字、主题颜色），
-   断点 sm、md、lg。使用 Tailwind 的区域按实际用到的类名生成，不需要它。 */
+/* 只用于预编译样式表：使用内置样式表的区域可以使用的常用布局工具类（间距、flex、grid、尺寸、文字、主题颜色），
+   断点 sm、md、lg。使用 Tailwind 的区域按实际用到的类名生成自己的样式表。 */
 @source inline("{,sm:,md:,lg:}{p,px,py,pt,pr,pb,pl,m,mx,my,mt,mr,mb,ml,gap,gap-x,gap-y,space-x,space-y}-{0,0.5,1,1.5,2,2.5,3,4,5,6,8,10,12,16,20,24}");
 @source inline("{,sm:,md:,lg:}{flex,inline-flex,grid,block,inline-block,hidden,contents}");
 @source inline("{,sm:,md:,lg:}{flex-row,flex-col,flex-wrap,flex-1,shrink-0,grow,items-start,items-center,items-end,items-stretch,justify-start,justify-center,justify-end,justify-between,self-start,self-center,self-end}");

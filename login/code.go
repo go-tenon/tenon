@@ -229,7 +229,7 @@ func (r *Realm) attempt(ctx context.Context, requestID, code string, accept func
 	if err != nil {
 		return nil, errors.Wrap(err, "login: find code")
 	}
-	// 先记一次尝试再比较，并发的猜测也不会超过次数限制。
+	// 先记一次尝试再比较，并发的猜测也计入次数限制。
 	n, err := affected(r.db.NewUpdate().Model((*challengeRow)(nil)).Set("attempts = attempts + 1").
 		Where("id = ?", rid).Where("attempts < ?", r.opts.CodeAttempts).
 		Where("proof_hash IS NULL AND completed_at IS NULL").Exec(ctx))

@@ -204,7 +204,7 @@ func (r *Realm) forgetTwoFactor(ctx context.Context, db bun.IDB, subjectID strin
 }
 
 // CheckTwoFactor 校验 ref 的 TOTP 验证码或恢复码，返回用到的方式（MethodTOTP 或 MethodRecovery），
-// 恢复码用过即作废，同一个 TOTP 验证码也不能用两次。用于敏感操作前再次确认身份，返回的方式交给 apitoken 的 Confirm。
+// 恢复码用过即作废，同一个 TOTP 验证码也只能用一次。用于敏感操作前再次确认身份，返回的方式交给 apitoken 的 Confirm。
 // 不正确时返回 ErrInvalidCode，未启用时返回 ErrTwoFactorDisabled；
 // 失败次数由 Options.Attempts 限制，成功后清零。
 func (r *Realm) CheckTwoFactor(ctx context.Context, ref identity.Ref, code string) (string, error) {

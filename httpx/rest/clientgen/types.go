@@ -268,7 +268,7 @@ func quoteTag(tag string) string {
 	return "`" + tag + "`"
 }
 
-// marshalers 是让 JSON 编码不再由字段决定的方法，带这些方法的类型不能复制。
+// marshalers 是自定义 JSON 编码的方法，带这些方法的类型要原样导入。
 var marshalers = []string{"MarshalJSON", "UnmarshalJSON", "MarshalText", "UnmarshalText", "Schema", "TransformSchema"}
 
 // drain 复制队列中的全部类型。

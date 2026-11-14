@@ -103,7 +103,7 @@ func TestEstablishKeepsCredentialFields(t *testing.T) {
 	if !reflect.DeepEqual(sub, want) {
 		t.Fatalf("%+v", sub)
 	}
-	// 凭据的限制仍然生效：Resolver 丢掉 Scopes 不会放宽权限。
+	// 凭据的限制仍然生效：Resolver 丢掉 Scopes，权限照样受它约束。
 	if _, err := identity.Establish(context.Background(), auth, rebuilt, "articles:write"); !errors.Is(err, identity.ErrForbidden) {
 		t.Fatalf("scopes ignored: %v", err)
 	}
@@ -153,7 +153,7 @@ func TestReestablish(t *testing.T) {
 		t.Fatalf("permission removed: %v", err)
 	}
 	perms = []string{"events"}
-	// 凭据换了主体，或不再是代为登录。
+	// 凭据换了主体，或者代为登录已经结束。
 	now = identity.Subject{Type: "user", ID: "bob", Impersonator: support}
 	if err := check(); !errors.Is(err, identity.ErrUnauthenticated) {
 		t.Fatalf("another subject: %v", err)

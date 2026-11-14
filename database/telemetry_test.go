@@ -94,7 +94,7 @@ func TestTelemetry(t *testing.T) {
 		found.Status().Code != 0 {
 		t.Fatalf("select span %s %v %v", found.Name(), a, found.Status())
 	}
-	// 参数的值不会出现在链路中。
+	// 链路中只有语句的形状，参数的值被替换掉。
 	if text := a["db.query.text"].AsString(); strings.Contains(text, "pg_class'") || !strings.Contains(text, "relname = ?") {
 		t.Fatalf("query text %q", text)
 	}

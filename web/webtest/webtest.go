@@ -22,7 +22,7 @@ import (
 // Origin 是请求的地址。使用 https，带 Secure 的 cookie 同样能发送。
 const Origin = "https://example.com"
 
-// Client 向 h 发送请求，不监听端口。它像浏览器一样保存响应设置的 cookie，之后的请求带上它们。不能并发使用。
+// Client 在进程内向 h 发送请求。它像浏览器一样保存响应设置的 cookie，之后的请求带上它们。只在一个 goroutine 中使用。
 type Client struct {
 	t   testing.TB
 	h   http.Handler
@@ -106,7 +106,7 @@ func (c *Client) send(method, path string, form url.Values, opts []Option) *Resp
 }
 
 // Do 发送 r：带上保存的 cookie，保存响应设置的 cookie。r 的地址应当以 Origin 开头，例如由 httptest.NewRequest 创建，
-// 用于 multipart 表单等 Get、Post 不能表达的请求。
+// 用于 multipart 表单等 Get、Post 之外的请求。
 func (c *Client) Do(r *http.Request) *Response {
 	c.t.Helper()
 	for _, ck := range c.jar.Cookies(r.URL) {

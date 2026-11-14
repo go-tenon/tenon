@@ -25,7 +25,7 @@
 go run github.com/go-tenon/tenon/cmd/tenon@main init todo
 ```
 
-`--module` 指定 Go 模块路径，`--name` 指定应用名称，默认都是目录名。目录必须不存在或为空。
+`--module` 指定 Go 模块路径，`--name` 指定应用名称，默认都是目录名。目录必须是空目录或尚未创建。
 
 生成后它会运行 `go mod tidy`、生成 TypeScript 客户端；本机装了 Bun 时再运行 `bun install`。`go.mod` 要求的框架版本就是这次运行 `init` 的版本：用 `@main` 时是 main 分支当前提交，用 `@v1.2.0` 时是该标签。开发框架本身时可用 `--tenon <框架目录>`，`go.mod` 会用 `replace` 指向本地副本。更多选项见[开发工具](tooling.md#init)。
 
@@ -147,7 +147,7 @@ func routes(cfg Config, store *todo.Store) chi.Router {
 - `serve` 用加载的配置和真实的 `Store` 调用它，启动 HTTP 服务；
 - `openapi`、`routes`、`client` 命令用默认配置和 `nil` 调用它，只读取构造出的路由，生成文档和客户端。
 
-`routes` 只保存 `store`、不调用它，所以传 `nil` 也能构造出完整的路由。新增资源时，在 `routes` 里加一行 `Register`，服务和生成的文档、客户端会一起看到它。客户端生成见[客户端](../responses/clients.md)。
+`routes` 只保存 `store`，处理请求时才调用它，所以传 `nil` 也能构造出完整的路由。新增资源时，在 `routes` 里加一行 `Register`，服务和生成的文档、客户端会一起看到它。客户端生成见[客户端](../responses/clients.md)。
 
 <a id="example-resource"></a>
 ## 示例资源
@@ -158,7 +158,7 @@ func routes(cfg Config, store *todo.Store) chi.Router {
 - `Register`：四个公开接口——列表、创建、修改、删除；
 - 输入输出用结构体描述，校验规则写在字段标签上（如 `minLength`），错误用 `errorx` 定义。
 
-`Register` 只保存 `s`、不调用它，所以生成文档时 `s` 是 `nil` 也能注册全部接口。把内存换成 PostgreSQL 的步骤见[数据库](../database/quick-start.md)和[入门教程](../tutorial/03-database.md)。
+`Register` 只保存 `s`，处理请求时才调用它，所以生成文档时 `s` 是 `nil` 也能注册全部接口。把内存换成 PostgreSQL 的步骤见[数据库](../database/quick-start.md)和[入门教程](../tutorial/03-database.md)。
 
 <a id="frontend"></a>
 ## 前端与同源

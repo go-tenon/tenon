@@ -28,7 +28,7 @@ import (
 )
 
 // ErrForbidden 表示目标地址不允许访问：内网、回环等特殊地址，或者端口不在允许的范围内。
-// 请求返回的错误可以用 errors.Is 识别它，重试也不会成功。
+// 请求返回的错误可以用 errors.Is 识别它，重试也是徒劳。
 var ErrForbidden = errors.New("outbound: destination not allowed")
 
 // DefaultTimeout 是 Options.Timeout 为零时整个请求的超时，包括读取响应体。
@@ -51,7 +51,7 @@ type Options struct {
 // 只是在建立每个连接之前检查地址，并且不使用代理：经过 HTTP_PROXY 等代理时，连接的是代理的地址，
 // 无法检查真正的目标。需要经代理访问外网的部署，请在代理上做同样的限制。
 //
-// 客户端跟随重定向（最多 10 次），每次重定向建立的连接同样经过检查；不需要跟随时设置 CheckRedirect。
+// 客户端跟随重定向（最多 10 次），每次重定向建立的连接同样经过检查；要关闭跟随时设置 CheckRedirect。
 func New(opts Options) *http.Client {
 	dialer := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second, Control: control(opts)}
 	transport := http.DefaultTransport.(*http.Transport).Clone()

@@ -303,7 +303,7 @@ func TestFlow(t *testing.T) {
 		t.Fatalf("consent: %d %v", status, c)
 	}
 
-	// 个人访问令牌有权限限制，不代表用户本人，不能用来授权。
+	// 个人访问令牌有权限限制，代表的是令牌本身，授权时被拒绝。
 	personal, err := e.tokens.Create(context.Background(), editor, apitoken.Personal{Name: "script", Scopes: []string{"*"}})
 	if err != nil {
 		t.Fatal(err)
@@ -315,7 +315,7 @@ func TestFlow(t *testing.T) {
 		t.Fatalf("personal token decide: %d %v", status, body)
 	}
 
-	// 代为登录的 token 不代表用户本人，客服不能替用户授权其他应用。
+	// 代为登录的 token 代表的是客服，替用户授权其他应用时被拒绝。
 	impersonated := identity.Subject{Type: editor.Type, ID: "e2", Impersonator: identity.Ref{Type: "staff", ID: "s1"}}
 	support, err := e.tokens.Login(context.Background(), impersonated, apitoken.Device{})
 	if err != nil {
@@ -347,7 +347,7 @@ func TestFlow(t *testing.T) {
 	if code != http.StatusOK || !strings.Contains(out, `\"id\":\"e1\"`) || !strings.Contains(out, `articles:read`) {
 		t.Fatalf("mcp call: %d %s", code, out)
 	}
-	// 令牌不能用于 REST（Validate）。
+	// 令牌用于 REST（Validate）时被拒绝。
 	if _, err := e.tokens.Validate(context.Background(), token); err == nil {
 		t.Fatal("OAuth token accepted by Validate")
 	}
@@ -361,7 +361,7 @@ func TestFlow(t *testing.T) {
 		t.Fatalf("list %+v %v", list, err)
 	}
 
-	// 客户端撤销令牌（RFC 7009）后不能再用。
+	// 客户端撤销令牌（RFC 7009）后随即失效。
 	req := httptest.NewRequest(http.MethodPost, issuer+oauthserver.RevokePath, strings.NewReader(url.Values{"token": {token}}.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()
@@ -413,7 +413,7 @@ func TestAuthorizeErrors(t *testing.T) {
 	t.Parallel()
 	e := setup(t)
 
-	// 不能确认回调地址属于这个客户端：不跳回，把错误码交给同意页。
+	// 回调地址无法确认属于这个客户端：错误码交给同意页。
 	for name, tc := range map[string]struct {
 		edit func(url.Values)
 		want string
@@ -556,7 +556,7 @@ func TestTokenRetry(t *testing.T) {
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "access_token") {
 		t.Fatalf("basic auth: %d %s", w.Code, w.Body)
 	}
-	// 兑换成功后不能再用。
+	// 兑换成功后随即作废。
 	if status, body := e.exchange(t, tokenForm(c)); status != http.StatusBadRequest || body["error"] != "invalid_grant" {
 		t.Fatalf("reused: %d %v", status, body)
 	}

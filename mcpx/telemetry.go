@@ -75,7 +75,7 @@ func (s *Server) observe(ctx context.Context, method string, req mcp.Request, ne
 	name := method
 	if p, ok := req.GetParams().(*mcp.CallToolParamsRaw); ok && method == "tools/call" {
 		attrs = append(attrs, attrOperation.String("execute_tool"))
-		// 只有登记过的工具名才作为属性和 span 名，模型编造的名称不会制造新的指标序列。
+		// 只有登记过的工具名才作为属性和 span 名，指标序列的数量因此保持固定。
 		if _, known := s.tools[p.Name]; known {
 			attrs = append(attrs, attrTool.String(p.Name))
 			name += " " + p.Name

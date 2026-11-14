@@ -38,7 +38,7 @@ list, err := notification.List(ctx, db, notification.Query{Recipient: notificati
 n, err := notification.UnreadCount(ctx, db, notification.RecipientOf(sub))
 ```
 
-通知在业务事务中写入，与文章的发布一起提交，所以不会出现“文章没发布成功，通知却发出去了”。读取时传入收件人，`List` 只返回属于这个收件人的通知，读不到别人的。下面先发布迁移，再详细介绍发送、读取和实时推送未读数。
+通知在业务事务中写入，与文章的发布一起提交，所以通知总是对应已经发布的文章。读取时传入收件人，`List` 只返回属于这个收件人的通知。下面先发布迁移，再详细介绍发送、读取和实时推送未读数。
 
 <a id="installation"></a>
 ## 安装
@@ -62,7 +62,7 @@ migratecmd.Publish(
 err := database.RunInTx(ctx, a.db, nil, func(ctx context.Context, tx database.Tx) error {
     // ……读取、检查并更新文章，与原来相同
     if item.AuthorID == subject.ID {
-        return nil // 作者自己发布的，不用通知
+        return nil // 作者自己发布的，跳过
     }
     n := notification.Notification{
         Event: "article.published_by_admin",
@@ -74,7 +74,7 @@ err := database.RunInTx(ctx, a.db, nil, func(ctx context.Context, tx database.Tx
 })
 ```
 
-`Send` 为每个收件人写入一条通知，重复的收件人只写一次，没有收件人时什么也不做。`ID`（UUIDv7，按时间递增）和 `CreatedAt` 由 `Send` 填写。它返回写入的通知，[实时推送](#realtime)会用到。
+`Send` 为每个收件人写入一条通知，重复的收件人只写一次，没有收件人时直接返回。`ID`（UUIDv7，按时间递增）和 `CreatedAt` 由 `Send` 填写。它返回写入的通知，[实时推送](#realtime)会用到。
 
 <a id="recipients"></a>
 ### 收件人
@@ -86,7 +86,7 @@ err := database.RunInTx(ctx, a.db, nil, func(ctx context.Context, tx database.Tx
 <a id="events-and-data"></a>
 ### 事件与数据
 
-和[操作日志](activity.md#events-and-properties)一样，通知只保存事件和数据，显示时再翻译，修改文案、增加语言都不需要修改已有的通知：
+和[操作日志](activity.md#events-and-properties)一样，通知只保存事件和数据，显示时再翻译，修改文案、增加语言时，已有的通知保持原样：
 
 ```yaml
 # locales/zh-CN.yaml
@@ -123,7 +123,7 @@ func (h *Handlers) Index(ctx context.Context, in *IndexInput) (*IndexOutput, err
 | `Limit` | 返回的条数，默认 50 |
 | `Before` | 翻页：传入上一页最后一条通知的 `ID`，返回比它更早的通知 |
 
-`toDTOs` 用 `i18n.T(ctx, n.Event, n.Data)` 生成每条通知的文案，`n.Read()` 报告它是否已读。所有函数都只读写传入的收件人自己的通知，其他人的通知 ID 会被忽略或返回 `notification.ErrNotFound`，不需要另外授权。
+`toDTOs` 用 `i18n.T(ctx, n.Event, n.Data)` 生成每条通知的文案，`n.Read()` 报告它是否已读。所有函数都只读写传入的收件人自己的通知，其他人的通知 ID 会被忽略或返回 `notification.ErrNotFound`，授权已经包含在内。
 
 `notification.Notification` 就是这张表的 Bun 模型，其他查询可以直接用 Bun 编写，条件请以 `tenant, recipient_type, recipient_id` 开头，与索引一致。
 
@@ -174,7 +174,7 @@ return mailjob.Send.Publish(ctx, tx, msg)
 
 Slack、Telegram 等渠道都按邮件的方式实现：在事务中把消息交给队列，由一个任务调用第三方接口；短信由 [`sms`](../libraries/sms.md) 发送，`sms.Message` 可以完整地序列化为 JSON 交给队列。下面以 Telegram 为例，框架不提供它的客户端，[Bot API](https://core.telegram.org/bots/api) 发一条消息只是一次 HTTP 请求。
 
-**绑定。** bot 不能主动给陌生人发消息，用户要先在 Telegram 中启动它，应用才能拿到他的 `chat_id`：
+**绑定。** bot 只能给启动过它的用户发消息，用户要先在 Telegram 中启动它，应用才能拿到他的 `chat_id`：
 
 1. 设置页的「绑定 Telegram」生成一个一次性 token（保存在表中，10 分钟过期），跳转到 `https://t.me/<bot 用户名>?start=<token>`。token 只能由 `A-Za-z0-9_-` 组成，最长 64 个字符。
 2. 用户点击「Start」后，Telegram 把消息 `/start <token>` 推送到应用的 webhook。
@@ -204,11 +204,11 @@ func (h *Handlers) Webhook(w http.ResponseWriter, r *http.Request) {
             }
         }
     }
-    w.WriteHeader(http.StatusOK) // 不是 200 时 Telegram 会一直重发
+    w.WriteHeader(http.StatusOK) // 返回 200，Telegram 才停止重发
 }
 ```
 
-webhook 直接注册在 chi 上，不经过 API 的认证，由请求头中的 `secret` 确认来源。webhook 的地址和 `secret` 用 `setWebhook` 注册一次，可以写成一个[命令](../general/commands.md)。
+webhook 直接注册在 chi 上，由请求头中的 `secret` 确认来源。webhook 的地址和 `secret` 用 `setWebhook` 注册一次，可以写成一个[命令](../general/commands.md)。
 
 **发送。** 发布文章时，作者绑定了 Telegram，就在同一个事务中把消息交给队列，文案用作者绑定时的语言渲染：
 
@@ -273,7 +273,7 @@ func (a *Send) Job(ctx context.Context, m Message) error {
 }
 ```
 
-- 用户屏蔽 bot 后再发送会返回 403，这时删除绑定，以后不再给他发。
+- 用户屏蔽 bot 后再发送会返回 403，这时删除绑定，推送随之停止。
 - 用 HTML 格式时，文案中的文章标题等内容要先经过 `html.EscapeString`，否则一个 `<` 就会让消息被拒绝。
 - Telegram 限制同一个聊天每秒约 1 条、全部聊天每秒约 30 条，超出时返回 429 和 `retry_after`，由 [`queue.RetryAfter`](../libraries/queue.md#failures-and-retries) 按它的要求等待。给大量用户群发时，再用[限流](../libraries/rate-limiting.md)控制发送速度。
 - `a.api` 平时是 `https://api.telegram.org`，测试时换成 `httptest.Server` 的地址。
@@ -309,7 +309,7 @@ func inboxTopic(r notification.Recipient) string {
 
 主题只能由字母、数字和 `_ - : .` 组成，租户和用户 ID 中有其他字符时，先做转换。
 
-[事件流接口](../responses/sse.md#long-lived-connections)订阅当前用户的主题。角标是状态而不是事件：连接（包括断线重连）时先推送一次当前的未读数，之后每收到一条广播就重新查询，因此不需要按 `Last-Event-ID` 补发：
+[事件流接口](../responses/sse.md#long-lived-connections)订阅当前用户的主题。角标是状态：连接（包括断线重连）时先推送一次当前的未读数，之后每收到一条广播就重新查询，因此角标总是最新的：
 
 ```go
 type Badge struct {

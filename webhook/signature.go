@@ -34,7 +34,7 @@ const secretPrefix = "whsec_"
 // newSecret 生成端点的签名密钥：whsec_ 加 24 字节随机数的 base64。
 func newSecret() string {
 	key := make([]byte, 24)
-	_, _ = rand.Read(key) // crypto/rand.Read 不会返回错误
+	_, _ = rand.Read(key) // crypto/rand.Read 总是成功
 	return secretPrefix + base64.StdEncoding.EncodeToString(key)
 }
 

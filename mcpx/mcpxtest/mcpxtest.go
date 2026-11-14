@@ -31,7 +31,7 @@ type Client struct {
 	session *mcp.ClientSession
 }
 
-// Connect 以 sub 的身份连接 s。sub 原样作为每个请求的主体，包括 Tenant、Permissions 和 Scopes。sub.ID 不能为空。
+// Connect 以 sub 的身份连接 s。sub 原样作为每个请求的主体，包括 Tenant、Permissions 和 Scopes。sub.ID 必填。
 func Connect(t testing.TB, s *mcpx.Server, sub identity.Subject) *Client {
 	t.Helper()
 	h := mcpx.Handler(s, mcpx.HandlerOptions{

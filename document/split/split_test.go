@@ -26,7 +26,7 @@ func mustNew(t testing.TB, opts Options) *Splitter {
 	return s
 }
 
-// measure 不依赖实现，按 CRLF 和单独的 CR 各算一个的方式统计码点。
+// measure 独立于实现，按 CRLF 和单独的 CR 各算一个的方式统计码点。
 func measure(s string) int {
 	n := 0
 	for i := 0; i < len(s); {

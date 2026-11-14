@@ -4,7 +4,7 @@
 
 `settings` 包把一组设置声明成一个结构体，默认值写在代码中，整组保存为 `settings` 表中的一行 JSON。读取时把保存的 JSON 合并到默认值上：
 
-- 新增字段不需要迁移，读取时使用默认值；
+- 新增字段直接生效，读取时使用默认值；
 - 删除的字段被忽略，下次保存时去掉；
 - 只有字段改名或改类型时，才需要写一条迁移转换保存的 JSON。
 
@@ -45,7 +45,7 @@ err = SiteSettings.Update(ctx, func(s *Site) error {
 })
 ```
 
-`New` 的第三个参数是默认值。管理员还没有保存过任何设置时，`Get` 返回的就是它；保存之后，`Get` 把保存的值合并到默认值上返回。所以以后给 `Site` 新增一个字段，不需要写迁移。
+`New` 的第三个参数是默认值。管理员还没有保存过任何设置时，`Get` 返回的就是它；保存之后，`Get` 把保存的值合并到默认值上返回。所以以后给 `Site` 新增一个字段，直接改结构体即可。
 
 <a id="installation"></a>
 ## 安装
@@ -83,7 +83,7 @@ var Defaults = Settings{
 siteSettings := settings.New(db, "site", site.Defaults)
 ```
 
-名称 `"site"` 保存在表中，发布后不要再改。以下情况 `New` 会 panic，启动时就能发现：名称为空或包含空白、类型不是结构体、字段带有 `omitempty` 或 `omitzero`。最后一条是因为零值不会写进 JSON，读取时又会被默认值覆盖：`SignupOpen` 默认为 `true`，关闭之后再读又变回 `true`。
+名称 `"site"` 保存在表中，发布后保持固定。以下情况 `New` 会 panic，启动时就能发现：名称为空或包含空白、类型不是结构体、字段带有 `omitempty` 或 `omitzero`。最后一条是因为带这些标签的零值会从 JSON 中省略，读取时又会被默认值覆盖：`SignupOpen` 默认为 `true`，关闭之后再读又变回 `true`。
 
 <a id="reading-settings"></a>
 ## 读取设置
@@ -101,7 +101,7 @@ func (a *Register) Handle(ctx context.Context, in RegisterInput) (*User, error) 
 }
 ```
 
-没有保存过时 `Get` 返回默认值。每次返回的是新的值，修改它不影响下一次读取。读取出错时 `Get` 返回错误，不会悄悄退回默认值：已经关闭的注册不会因为数据库抖动重新开放。
+没有保存过时 `Get` 返回默认值。每次返回的是新的值，可以随意修改。读取出错时 `Get` 返回错误：已经关闭的注册在数据库抖动时仍然保持关闭。
 
 <a id="changing-settings"></a>
 ## 修改设置
@@ -125,7 +125,7 @@ err := a.site.Update(ctx, func(s *site.Settings) error {
 })
 ```
 
-`fn` 返回错误时不保存，`Update` 原样返回这个错误。
+`fn` 返回错误时放弃保存，`Update` 原样返回这个错误。
 
 <a id="logging-changes"></a>
 ### 记录操作日志
@@ -152,7 +152,7 @@ return database.RunInTx(ctx, a.db, nil, func(ctx context.Context, tx database.Tx
 s, err := a.blog.Tenant(subject.Tenant).Get(ctx)
 ```
 
-租户的设置和全局设置互不影响：租户没有保存过时使用代码中的默认值，**不会**回落到全局设置。租户 ID 为空时每个方法都返回 `settings.ErrInvalid`，不会误读成全局设置，所以未登录的请求要先确定租户再读取。
+租户的设置和全局设置各自独立：租户没有保存过时使用代码中的默认值。租户 ID 为空时每个方法都返回 `settings.ErrInvalid`，所以未登录的请求要先确定租户再读取。
 
 <a id="changing-fields"></a>
 ## 修改字段
@@ -160,8 +160,8 @@ s, err := a.blog.Tenant(subject.Tenant).Get(ctx)
 | 修改 | 需要做什么 |
 | --- | --- |
 | 新增字段 | 在 `Defaults` 中给出默认值。已保存的设置读取时使用它 |
-| 删除字段 | 什么也不用做。旧字段留在 JSON 中，下次保存时去掉 |
-| 新增嵌套结构体的字段 | 什么也不用做。嵌套的结构体逐个字段合并 |
+| 删除字段 | 直接删除。旧字段留在 JSON 中，下次保存时去掉 |
+| 新增嵌套结构体的字段 | 直接新增。嵌套的结构体逐个字段合并 |
 | 改名、改类型 | 写一条迁移转换保存的 JSON |
 
 只有结构体逐个字段合并。切片、map 和指针整体使用保存的值：默认的 `BannedWords` 是 `["spam"]`、保存的是 `[]` 时，读到的是 `[]`。
@@ -177,14 +177,14 @@ WHERE name = 'site' AND payload ? 'moderate';
 
 改了类型又没有迁移时，`Get` 返回错误，例如 `settings: decode "site": json: cannot unmarshal number into Go struct field ...`。
 
-一组设置不再使用时，删掉代码，再写一条迁移 `DELETE FROM settings WHERE name = 'site'`。
+一组设置弃用时，删掉代码，再写一条迁移 `DELETE FROM settings WHERE name = 'site'`。
 
 <a id="system-state"></a>
 ## 系统写入的状态
 
-有些数据不是管理员填写的，而是配置之后由系统写入、在页面上只读显示的。例如接入微信开放平台的第三方平台之后：微信每 10 分钟推送一次验证票据，平台凭据每 2 小时刷新一次，页面要显示“已连接”还是“等待推送”。
+有些数据由系统在配置之后写入，在页面上只读显示。例如接入微信开放平台的第三方平台之后：微信每 10 分钟推送一次验证票据，平台凭据每 2 小时刷新一次，页面要显示“已连接”还是“等待推送”。
 
-全局只有一份的状态也用 `Group` 保存，但要遵守一条规则：**一组只有一个写入者**。管理员填写的配置、推送回调写入的票据、刷新的凭据分成三组，各写各的，不会互相覆盖：
+全局只有一份的状态也用 `Group` 保存，但要遵守一条规则：**一组只有一个写入者**。管理员填写的配置、推送回调写入的票据、刷新的凭据分成三组，各写各的：
 
 ```go
 type Ticket struct {
@@ -203,7 +203,7 @@ token := settings.New(db, "wechat.token", ComponentToken{}) // 只有刷新凭�
 err := a.ticket.Save(ctx, Ticket{Value: ev.ComponentVerifyTicket, ReceivedAt: time.Now()})
 ```
 
-**只保存事实，状态在读取时推算**。不要保存“已连接”这样的状态值，它会过时；保存收到票据的时间、凭据的到期时间、最近一次失败的时间和原因，显示时再判断：
+**只保存事实，状态在读取时推算**。保存收到票据的时间、凭据的到期时间、最近一次失败的时间和原因，显示时再判断：
 
 ```go
 switch {
@@ -218,12 +218,12 @@ default:
 }
 ```
 
-状态结构体同样不能带 `omitempty`：用零值表示“还没有发生”，不要用带 `omitempty` 的指针。
+状态结构体同样省略 `omitempty`：用零值表示“还没有发生”。
 
-`Group` 只适合全局或每个租户只有一份的状态。下面两类状态不要放进 `Group`：
+`Group` 只适合全局或每个租户只有一份的状态。下面两类状态放在别处：
 
-- **每个授权方各有一份的状态**，例如每个授权的公众号的 appid、刷新令牌、权限、昵称、取消授权的时间。它们要按 appid 查找、按租户列出，是业务实体，放在业务自己的表中，例如 `wechat_authorizers`。刷新令牌丢失后只能让公众号重新授权，不能放进可能被淘汰的[缓存](../libraries/cache.md)。
-- **一次授权流程中的临时数据**，例如发起授权时生成的 state。把租户和过期时间放进回跳地址，用[签名链接](../security/encryption.md#signed-urls)签名，回跳时校验，不需要保存。
+- **每个授权方各有一份的状态**，例如每个授权的公众号的 appid、刷新令牌、权限、昵称、取消授权的时间。它们要按 appid 查找、按租户列出，是业务实体，放在业务自己的表中，例如 `wechat_authorizers`。刷新令牌丢失后只能让公众号重新授权，所以它保存在数据库中，与[缓存](../libraries/cache.md)分开。
+- **一次授权流程中的临时数据**，例如发起授权时生成的 state。把租户和过期时间放进回跳地址，用[签名链接](../security/encryption.md#signed-urls)签名，回跳时校验。
 
 <a id="access-tokens"></a>
 ### 调用凭据
@@ -264,7 +264,7 @@ func (a *Token) Get(ctx context.Context) (string, error) {
 
 刷新失败时 `fn` 仍然返回 `nil`，让失败原因和时间保存下来；旧凭据还没过期就继续使用。
 
-其他实例在 `Update` 处等待，锁释放后读到新的凭据，不会重复刷新。调用微信接口期间一直持有行锁和一个数据库连接，所以只适合这种几小时才刷新一次、每次耗时很短的场景。
+其他实例在 `Update` 处等待，锁释放后读到新的凭据，凭据只刷新一次。调用微信接口期间一直持有行锁和一个数据库连接，所以只适合这种几小时才刷新一次、每次耗时很短的场景。
 
 <a id="admin-pages"></a>
 ## 后台页面与接口

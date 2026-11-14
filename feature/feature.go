@@ -67,7 +67,7 @@ const (
 // Everyone 是全员的设置。
 var Everyone = Scope{}
 
-// Tenant 是租户 id 的设置。id 为空时 Set 和 Clear 返回 ErrInvalid，不会当作全员。
+// Tenant 是租户 id 的设置。id 为空时 Set 和 Clear 返回 ErrInvalid。
 func Tenant(id string) Scope { return Scope{kind: tenantScope, tenant: id} }
 
 // Subject 是主体 ref 的设置，在主体所属的每个租户中都生效。ref 不合法（见 identity.Ref.Validate）时
@@ -286,7 +286,7 @@ func (s *Store) Set(ctx context.Context, f Flag, scope Scope, state State) error
 	return errors.Wrap(err, "feature: set")
 }
 
-// Clear 删除 f 在 scope 上的设置，恢复按后面的规则判断。没有这条设置时什么也不做。
+// Clear 删除 f 在 scope 上的设置，恢复按后面的规则判断。没有这条设置时直接返回。
 func (s *Store) Clear(ctx context.Context, f Flag, scope Scope) error {
 	if err := checkScope(scope); err != nil {
 		return err
@@ -355,7 +355,7 @@ func scopeOf(r row) Scope {
 	return Everyone
 }
 
-// validKey 报告名称不为空，也不包含空白。
+// validKey 报告名称非空且不含空白。
 func validKey(s string) bool {
 	return s != "" && !strings.ContainsFunc(s, unicode.IsSpace)
 }

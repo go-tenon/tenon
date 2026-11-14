@@ -148,7 +148,7 @@ func TestRenderUnreachable(t *testing.T) {
 
 func TestRenderCanceled(t *testing.T) {
 	t.Parallel()
-	// 处理器一直不响应，直到测试结束。不能只等 r.Context()：请求体还没读完时，
+	// 处理器一直挂起，直到测试结束。只等 r.Context() 不够：请求体还没读完时，
 	// net/http 发现不了客户端已经断开，处理器会一直阻塞，srv.Close 也就等不到它返回。
 	release := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

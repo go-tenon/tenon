@@ -230,7 +230,7 @@ type Create struct {
 
 func NewCreate(db *bun.DB, logins *login.Realm) *Create { return &Create{db: db, logins: logins} }
 
-// Handle 在一个事务中创建账号、写入邮箱和密码，任何一步失败都不会留下半个账号。
+// Handle 在一个事务中创建账号、写入邮箱和密码，任何一步失败时整体回滚。
 // 邮箱已被使用时返回 login.ErrTaken，密码不符合要求时返回 login.ErrWeakPassword。
 func (a *Create) Handle(ctx context.Context, name, email, password string) (*User, error) {
     u := &User{ID: newID(), Name: name, CreatedAt: time.Now().UTC()}
@@ -264,7 +264,7 @@ func (a *Create) Command(cmd *cobra.Command, _ []string) error {
 }
 ```
 
-账号、邮箱和密码在一个事务中写入，任何一步失败都不会留下半个账号。`Command` 是这个动作的命令行入口。新建 `internal/user/commands.go` 声明命令：
+账号、邮箱和密码在一个事务中写入，任何一步失败时整体回滚。`Command` 是这个动作的命令行入口。新建 `internal/user/commands.go` 声明命令：
 
 ```go title="internal/user/commands.go"
 package user
@@ -397,7 +397,7 @@ import (
     "github.com/go-tenon/tenon/login"
 )
 
-// refreshCookie 只发给 /api/auth 下的接口，其他请求不带它。
+// refreshCookie 只发给 /api/auth 下的接口。
 var refreshCookie = apitoken.RefreshCookie{Name: "blog_refresh", Path: "/api/auth"}
 
 type LoginInput struct {
@@ -490,7 +490,7 @@ func Register(api *rest.API, requireUser func(*huma.Operation), users *login.Rea
 - 刷新：用 cookie 中的 refresh token 换一对新的，旧的随之作废。
 - 退出：撤销这次登录，清除 cookie。
 
-cookie 只发给 `/api/auth` 下的接口，其他请求不带它。
+cookie 只发给 `/api/auth` 下的接口。
 
 <a id="assembling"></a>
 ## 装配
@@ -734,7 +734,7 @@ import { createClient } from "./api/api"
 
 export const queryClient = new QueryClient()
 
-// 刷新接口靠 cookie 认证，用一个不带 access token 的客户端调用它。
+// 刷新接口靠 cookie 认证，用一个单独的客户端调用它。
 const plain = createClient({ baseURL: "/api" })
 
 // api 是 tenon generate 生成的客户端（src/api），接口改了以后 tenon dev 会自动重新生成。

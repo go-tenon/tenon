@@ -65,7 +65,7 @@ type redirectError struct {
 func (e *redirectError) Error() string { return e.code + ": " + e.description }
 
 // parse 校验授权请求。client_id 或 redirect_uri 不对时返回 ErrInvalidClient、ErrInvalidRedirect：
-// 不能确认回调地址属于这个客户端，不能跳回去；其他问题返回 *redirectError，可以带着 req 跳回客户端。
+// 回调地址无法确认属于这个客户端，错误留在同意页；其他问题返回 *redirectError，可以带着 req 跳回客户端。
 func (s *Server) parse(ctx context.Context, values url.Values) (*authRequest, error) {
 	params := url.Values{}
 	for _, name := range authParams {
@@ -111,7 +111,7 @@ func (s *Server) parse(ctx context.Context, values url.Values) (*authRequest, er
 }
 
 // authorize 校验授权请求，把它交给单页应用的同意页：合法的请求编码为 request 参数；
-// 能跳回客户端的错误直接带着 error 跳回；client_id 或 redirect_uri 不对时不能跳回，把错误码交给同意页显示。
+// 能跳回客户端的错误直接带着 error 跳回；client_id 或 redirect_uri 不对时把错误码交给同意页显示。
 func (s *Server) authorize(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	req, err := s.parse(r.Context(), r.URL.Query())

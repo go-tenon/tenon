@@ -19,7 +19,7 @@ type Backend interface {
 	Publish(ctx context.Context, msg Message) error
 	// Listen 把所有实例发布的消息按发布顺序交给 deliver，直到 ctx 结束后返回。
 	// 实现自行处理重连；可能丢失了消息时（例如与服务器的连接中断）调用 lost，然后继续接收。
-	// deliver 和 lost 不会阻塞，可以在任意 goroutine 中调用。
+	// deliver 和 lost 立即返回，可以在任意 goroutine 中调用。
 	Listen(ctx context.Context, deliver func(Message), lost func(error))
 }
 
@@ -36,7 +36,7 @@ var (
 const MaxTopicLength = 200
 
 // ValidateTopic 检查主题：非空，最长 MaxTopicLength 字节，只含字母、数字和 _ - : .，
-// 且 . 不能在开头、结尾或连续出现。主题同时是实时频道的名称，这些规则让它可以直接出现在 URL 和日志中。
+// 且 . 的两侧都是其他字符。主题同时是实时频道的名称，这些规则让它可以直接出现在 URL 和日志中。
 func ValidateTopic(topic string) error {
 	if topic == "" || len(topic) > MaxTopicLength {
 		return errors.Newf("broadcast: topic must be 1 to %d bytes", MaxTopicLength)

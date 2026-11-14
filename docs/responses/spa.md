@@ -1,8 +1,8 @@
 # 单页应用
 
-用 React、Vue 等写的单页应用，可以和 API 打包进同一个二进制文件：Vite 的构建产物通过 `embed` 嵌入程序，由 `httpx.SPA` 提供。页面和 API 同源，不需要配置 CORS，部署时只有一个二进制文件。
+用 React、Vue 等写的单页应用，可以和 API 打包进同一个二进制文件：Vite 的构建产物通过 `embed` 嵌入程序，由 `httpx.SPA` 提供。页面和 API 同源，部署时只有一个二进制文件。
 
-单页应用调用 [JSON API](../http/routing.md)，请求带 Bearer 令牌（见[单页应用的登录](../security/api-tokens.md#single-page-applications)），客户端由 `client --ts` 从路由生成，见[客户端代码](clients.md#typescript)。后台和用户端都是单页应用；不需要登录的公开页面可以[在服务端渲染](views.md)，两者共用一个 Router。`tenon init` 生成的项目已经按本页的方式组织好。
+单页应用调用 [JSON API](../http/routing.md)，请求带 Bearer 令牌（见[单页应用的登录](../security/api-tokens.md#single-page-applications)），客户端由 `client --ts` 从路由生成，见[客户端代码](clients.md#typescript)。后台和用户端都是单页应用；公开页面可以[在服务端渲染](views.md)，两者共用一个 Router。`tenon init` 生成的项目已经按本页的方式组织好。
 
 - [嵌入构建产物](#embedding)
 - [挂载](#mounting)
@@ -47,9 +47,9 @@ router.Handle("/realtime", rt.Handler())
 router.Handle("/*", httpx.NewSPA(frontend.Dist, httpx.SPAOptions{DevServer: cfg.FrontendDevServer}))
 ```
 
-`NewSPA` 在创建时读取全部文件，没有 `index.html` 时 panic：这是构建的问题，启动时就应当发现。`DevServer` 见[开发](#development)。[routes 命令](../general/commands.md#routes-command)把 `/*` 列为公开路由：页面本身不需要登录，前端打开后调用 API，API 收到 `401` 时前端跳转到登录页。
+`NewSPA` 在创建时读取全部文件，没有 `index.html` 时 panic：这是构建的问题，启动时就应当发现。`DevServer` 见[开发](#development)。[routes 命令](../general/commands.md#routes-command)把 `/*` 列为公开路由：页面本身公开，前端打开后调用 API，API 收到 `401` 时前端跳转到登录页。
 
-API 要放在子路由下。`rest` 给子路由设置了 JSON 格式的 `404`，写错的接口地址得到 `route not found`，不会落到前端。
+API 要放在子路由下。`rest` 给子路由设置了 JSON 格式的 `404`，写错的接口地址得到 `route not found`。
 
 前端不放在根路径时，把 Vite 的 `base` 和 `SPAOptions.Base` 设为同一个路径：
 
@@ -65,17 +65,17 @@ router.Handle("/app/*", httpx.NewSPA(frontend.Dist, httpx.SPAOptions{Base: "/app
 | `assets/` 下的文件，例如 `/assets/index-GpEN3EET.js` | Vite 生成的文件名带内容哈希，`Cache-Control: public, max-age=31536000, immutable`，永久缓存 |
 | `/`、`/index.html`，以及 `public` 目录中的文件，例如 `/favicon.svg` | `Cache-Control: no-cache` 和 `ETag`，浏览器每次确认，没有变化时返回 `304` |
 | 不存在的地址，浏览器打开页面（`Accept` 含 `text/html`） | 前端路由，例如 `/articles/42`：返回 `index.html`，由 TanStack Router 渲染 |
-| 不存在的地址，其他请求 | `404`。缺失的脚本、图片和写错地址的 `fetch` 不会收到 HTML |
+| 不存在的地址，其他请求 | `404`。缺失的脚本、图片和写错地址的 `fetch` 得到的都是 `404` |
 | `assets/` 下不存在的文件 | `404` |
 
-HTML 文件带有 `Content-Security-Policy: frame-ancestors 'none'`，其他网站不能把应用嵌入框架、诱导用户点击。需要被嵌入时，在 `SPAOptions.FrameAncestors` 中列出允许的来源，例如 `[]string{"https://partner.example.com"}`。
+HTML 文件带有 `Content-Security-Policy: frame-ancestors 'none'`，只有本站能把应用嵌入框架，防止诱导点击。需要被嵌入时，在 `SPAOptions.FrameAncestors` 中列出允许的来源，例如 `[]string{"https://partner.example.com"}`。
 
 `index.html` 不缓存，发布新版本后，用户下次打开页面就会加载新的脚本。已经打开的页面仍在运行旧版本，它的脚本在 `assets/` 中按需加载的分块，在新版本中已经不存在了，会得到 `404`。TanStack Router 按路由懒加载时，可以在路由的 `errorComponent` 中提示刷新页面。
 
 <a id="development"></a>
 ## 开发
 
-开发时前端由 Vite 的开发服务器提供，修改代码后浏览器立即更新。把 `SPAOptions.DevServer` 设为它的地址，`SPA` 就把收到的请求全部转发给它，包括热更新的 WebSocket。浏览器仍然打开应用的地址，页面和 API 与生产环境一样同源，Vite 不需要配置代理。
+开发时前端由 Vite 的开发服务器提供，修改代码后浏览器立即更新。把 `SPAOptions.DevServer` 设为它的地址，`SPA` 就把收到的请求全部转发给它，包括热更新的 WebSocket。浏览器仍然打开应用的地址，页面和 API 与生产环境一样同源。
 
 `DevServer` 取自应用配置。在配置结构体中加一个字段：
 
@@ -99,9 +99,9 @@ frontend_dev_server: http://localhost:5173
 bun run dev   # package.json 中是 "dev": "go tool tenon dev"
 ```
 
-修改 Go 代码后应用自动重新编译、重启，并重新生成 [TypeScript 客户端](clients.md#typescript)，前端的热更新不受影响。按约定的[目录结构](../concepts/structure.md)组织时不需要任何配置，见 [tenon dev](../installation/tooling.md#dev)。
+修改 Go 代码后应用自动重新编译、重启，并重新生成 [TypeScript 客户端](clients.md#typescript)，前端的热更新照常进行。按约定的[目录结构](../concepts/structure.md)组织时零配置，见 [tenon dev](../installation/tooling.md#dev)。
 
-设置了 `DevServer` 时，`NewSPA` 不读取构建产物，但 `dist` 仍然要存在，程序才能编译。`tenon dev` 第一次启动时，没有 `node_modules` 就先运行 `bun install`，没有 `dist` 就写一个占位页；停止后构建一次，`dist` 是最新的。Vite 没有启动时，页面返回 `502`，内容是连接错误。
+设置了 `DevServer` 时，`NewSPA` 跳过构建产物，但 `dist` 仍然要存在，程序才能编译。`tenon dev` 第一次启动时，没有 `node_modules` 就先运行 `bun install`，没有 `dist` 就写一个占位页；停止后构建一次，`dist` 是最新的。Vite 没有启动时，页面返回 `502`，内容是连接错误。
 
 <a id="building"></a>
 ## 构建与发布
@@ -133,7 +133,7 @@ COPY --from=frontend /src/frontend/dist frontend/dist
 RUN CGO_ENABLED=0 go build -trimpath -o /out/api ./cmd/api && mkdir /out/storage
 ```
 
-后面的运行阶段不变。只运行 Go 测试和 lint 的 CI 任务不必构建前端，放一个空页面让程序能编译即可：
+后面的运行阶段不变。只运行 Go 测试和 lint 的 CI 任务放一个空页面让程序能编译即可：
 
 ```bash
 mkdir -p frontend/dist && touch frontend/dist/index.html
@@ -155,12 +155,12 @@ func NewSPA(fsys fs.FS, opts SPAOptions) *SPA
     - `opts`：见下面的 `SPAOptions`
 - **返回**：单页应用的处理器（`http.Handler`）
 
-创建时读取全部文件。设置了 `DevServer` 时不读取 `fsys`。选项不合法、读取失败或没有 `index.html` 时 panic。
+创建时读取全部文件。设置了 `DevServer` 时跳过 `fsys`。选项不合法、读取失败或没有 `index.html` 时 panic。
 
 ### SPAOptions
 
 | 字段 | 说明 |
 | --- | --- |
 | `Base string` | 挂载的路径，以 `/` 开头和结尾，与 Vite 的 `base` 相同；默认 `/` |
-| `DevServer string` | 非空时把全部请求转发给前端的开发服务器，不读取 `fsys`。只在开发时设置 |
+| `DevServer string` | 非空时把全部请求转发给前端的开发服务器，跳过 `fsys`。只在开发时设置 |
 | `FrameAncestors []string` | 允许把页面嵌入框架的来源；默认不允许 |

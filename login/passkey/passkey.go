@@ -1,12 +1,12 @@
-// Package passkey 用 passkey（WebAuthn）登录：手机、电脑的指纹、面容或设备密码，不需要密码，也不怕钓鱼。
+// Package passkey 用 passkey（WebAuthn）登录：手机、电脑的指纹、面容或设备密码，私钥与域名绑定，钓鱼网站拿不到。
 //
 // 一个 passkey 是 login.Realm 中的一个登录标识，Kind 为 "passkey"，Value 是 credential ID：
 // 注册得到完成凭证，交给 Realm.Link（已登录的用户添加 passkey）或 Realm.Register（用 passkey 注册新账号）；
-// 登录经过 Realm.External，所以租户隔离、Options.Resolve、“不能移除最后一种登录方式”都与其他标识相同，
-// 也不再要求二次验证——passkey 本身就同时验证了设备和用户。本包只另外保存公钥，见 Migrations。
+// 登录经过 Realm.External，所以租户隔离、Options.Resolve、“始终保留至少一种登录方式”都与其他标识相同，
+// 也跳过二次验证——passkey 本身就同时验证了设备和用户。本包只另外保存公钥，见 Migrations。
 //
 // 每个仪式分两步：Begin* 返回交给浏览器或 App 的选项和一个 token，Finish* 收到客户端的结果和这个 token。
-// token 是用应用密钥加密的仪式状态，几分钟内有效，不需要服务器保存。
+// token 是用应用密钥加密的仪式状态，几分钟内有效，由客户端带回。
 package passkey
 
 import (
@@ -34,7 +34,7 @@ import (
 	"github.com/go-tenon/tenon/login"
 )
 
-// Kind 是 passkey 在 login.Realm 中的登录标识类型。应用的第三方登录提供方不要使用这个名称。
+// Kind 是 passkey 在 login.Realm 中的登录标识类型。这个名称留给 passkey。
 const Kind = "passkey"
 
 var (
@@ -59,7 +59,7 @@ func Migrations() fs.FS {
 
 // Config 是依赖方（Relying Party）的配置。
 type Config struct {
-	// RPID 是 passkey 绑定的域名，例如 example.com；passkey 可以在它和它的子域名上使用，之后不能更改。
+	// RPID 是 passkey 绑定的域名，例如 example.com；passkey 可以在它和它的子域名上使用，要长期固定。
 	RPID string
 	// RPName 是浏览器和系统在创建 passkey 时显示的名称，通常是应用的名称。
 	RPName string
@@ -155,14 +155,14 @@ func (u *user) WebAuthnDisplayName() string                { return u.name }
 func (u *user) WebAuthnCredentials() []webauthn.Credential { return u.credentials }
 
 // BeginRegistration 开始创建 passkey。ref 是已登录的主体（添加 passkey），零值表示用 passkey 注册新账号；
-// name 是创建时系统显示的账号名，例如邮箱或用户名。已登录主体已有的 passkey 不会被重复创建在同一个设备上。
+// name 是创建时系统显示的账号名，例如邮箱或用户名。已登录主体在每个设备上只创建一个 passkey。
 func (s *Store) BeginRegistration(ctx context.Context, ref identity.Ref, name string) (Ceremony, error) {
 	u := &user{name: name}
 	if ref.IsZero() {
 		u.id = make([]byte, 32)
 		rand.Read(u.id)
 	} else {
-		// 同一个账号的 passkey 使用同一个用户句柄，同一个设备上再次创建时替换而不是新增一条。
+		// 同一个账号的 passkey 使用同一个用户句柄，同一个设备上再次创建时替换原来的那条。
 		m := hmac.New(sha256.New, s.userKeys[0])
 		m.Write([]byte(ref.String()))
 		u.id = m.Sum(nil)
@@ -226,7 +226,7 @@ func (s *Store) FinishRegistration(ctx context.Context, token string, response [
 	return out.Proof, nil
 }
 
-// BeginLogin 开始用 passkey 登录。不需要先输入账号：浏览器列出这个网站的 passkey 供用户选择，
+// BeginLogin 开始用 passkey 登录。浏览器直接列出这个网站的 passkey 供用户选择，
 // 也可以在登录框中自动填充（conditional mediation）。
 func (s *Store) BeginLogin(ctx context.Context) (Ceremony, error) {
 	assertion, session, err := s.wa.BeginDiscoverableLogin()

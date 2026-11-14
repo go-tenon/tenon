@@ -287,7 +287,7 @@ func TestLoadReturnsZeroOnError(t *testing.T) {
 	}
 }
 
-// Default 与读取空文件的 Load 一样填充默认值（子字段先于父结构体），但不读取文件、不校验。
+// Default 与读取空文件的 Load 一样填充默认值（子字段先于父结构体），但离线完成，跳过校验。
 func TestDefault(t *testing.T) {
 	if got := config.Default[appConfig](); !reflect.DeepEqual(got, defaults()) {
 		t.Fatalf("got %+v", got)

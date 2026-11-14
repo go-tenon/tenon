@@ -20,13 +20,13 @@ var bare = []string{
 // schemaNames 生成 OpenAPI 中的 schema 名，也是客户端生成器生成的类型名。
 //
 // 名称是包名加类型名，例如 article.Changes 为 ArticleChanges、comment.Changes 为 CommentChanges，
-// 不同包的同名类型因此不会冲突；类型名已经以包名开头时不重复，例如 article.ArticleDTO 仍为 ArticleDTO。
+// 不同包的同名类型因此各有自己的名字；类型名已经以包名开头时只保留一次，例如 article.ArticleDTO 仍为 ArticleDTO。
 // 泛型实参按同样的规则拼接，例如 page.Offset[article.ArticleDTO] 为 OffsetArticleDTO。
 // main 包、框架和 Huma 的类型只用类型名。
 //
 // 匿名类型使用 Huma 给出的 hint。输入、输出类型中匿名结构体字段的 hint 是外层类型名加字段名，
 // 例如 article.RejectInput 的匿名 Body 为 RejectInputBody；Register 事先用 bodies 登记带包名的名称
-// ArticleRejectInputBody，comment.RejectInput 的匿名 Body 就不会与它冲突。
+// ArticleRejectInputBody，comment.RejectInput 的匿名 Body 则是 CommentRejectInputBody。
 type schemaNames struct {
 	mu   sync.Mutex
 	anon map[reflect.Type]string

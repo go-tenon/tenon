@@ -91,7 +91,7 @@ func (l *Locker) Wait(ctx context.Context, name string, ttl, timeout time.Durati
 // Do 取得 name 上的锁后执行 fn，结束后释放锁。锁被占用时不执行 fn，返回 ErrNotAcquired。
 //
 // fn 执行时间超过 ttl 时锁可能已被他人取得，此时返回值包含 ErrNotHeld。
-// 释放不受 ctx 取消影响。
+// 释放独立于 ctx 的取消。
 func (l *Locker) Do(ctx context.Context, name string, ttl time.Duration, fn func(ctx context.Context) error) error {
 	lk, err := l.Acquire(ctx, name, ttl)
 	if err != nil {
@@ -101,8 +101,8 @@ func (l *Locker) Do(ctx context.Context, name string, ttl time.Duration, fn func
 	return errors.Join(fnErr, lk.Release(context.WithoutCancel(ctx)))
 }
 
-// Held 报告 name 上的锁当前是否被持有，不取得也不影响它。结果只反映查询的那一刻，
-// 用于展示状态，不能代替 Acquire 判断能否执行。
+// Held 报告 name 上的锁当前是否被持有，只读取状态。结果只反映查询的那一刻，
+// 用于展示状态，判断能否执行仍用 Acquire。
 func (l *Locker) Held(ctx context.Context, name string) (bool, error) {
 	ok, err := l.store.Held(ctx, name)
 	return ok, errors.Wrapf(err, "lock: check %q", name)
@@ -112,7 +112,7 @@ func (l *Locker) Held(ctx context.Context, name string) (bool, error) {
 func (lk *Lock) Name() string { return lk.name }
 
 // Refresh 把锁的过期时间重设为从现在起 ttl，用于延长长任务持有的锁。
-// 锁已不再由本持有者持有时返回 ErrNotHeld。
+// 锁已转给他人或过期时返回 ErrNotHeld。
 func (lk *Lock) Refresh(ctx context.Context, ttl time.Duration) error {
 	if ttl <= 0 {
 		return errors.New("lock: ttl must be positive")
@@ -127,7 +127,7 @@ func (lk *Lock) Refresh(ctx context.Context, ttl time.Duration) error {
 	return nil
 }
 
-// Release 释放锁。锁已不再由本持有者持有时返回 ErrNotHeld，不影响当前持有者。
+// Release 释放锁。锁已转给他人或过期时返回 ErrNotHeld，当前持有者照常持有。
 func (lk *Lock) Release(ctx context.Context) error {
 	ok, err := lk.store.Release(ctx, lk.name, lk.owner)
 	if err != nil {

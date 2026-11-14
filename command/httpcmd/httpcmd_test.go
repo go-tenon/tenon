@@ -93,7 +93,7 @@ func versioned() chi.Routes {
 
 func TestOpenAPI(t *testing.T) {
 	root := newRoot(httpcmd.OpenAPI(appRoutes(t)))
-	// openapi 不读取配置文件
+	// openapi 离线运行，配置文件缺失也无妨
 	out, _, err := execute(root, "openapi", "--config", filepath.Join(t.TempDir(), "missing.yaml"))
 	if err != nil {
 		t.Fatal(err)

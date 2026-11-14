@@ -26,7 +26,7 @@ type tokenError struct {
 }
 
 // token 处理授权码换令牌。授权码在校验全部通过后才删除：客户端换一种认证方式重试（例如 golang.org/x/oauth2
-// 先用 Basic 认证、失败后改放表单）时，同一个授权码仍然可以使用；兑换成功后不能再用。
+// 先用 Basic 认证、失败后改放表单）时，同一个授权码仍然可以使用；兑换成功后随即作废。
 func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Pragma", "no-cache")

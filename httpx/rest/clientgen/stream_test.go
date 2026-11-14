@@ -123,7 +123,7 @@ func TestUpload(t *testing.T) {
 		t.Fatal(cover, err, auth.refreshes.Load())
 	}
 
-	// 不能 Seek：凭据已经刷新，但请求不重传，调用方再调用一次即可。
+	// 无法 Seek：凭据已经刷新，请求原样返回 401，调用方再调用一次即可。
 	auth = &rotating{current: "stale", next: "secret"}
 	once := api.New(api.Options{BaseURL: base, Auth: auth})
 	if _, err := once.Article.Cover(ctx, id, form(io.MultiReader(bytes.NewReader(png)))); !errors.Is(err, identity.ErrUnauthenticated) {

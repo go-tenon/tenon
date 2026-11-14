@@ -163,11 +163,11 @@ func ScanChunkKeys(ctx context.Context, db bun.IDB, after string, limit int) ([]
 
 | 标签 | 用途 | 字段类型 |
 | --- | --- | --- |
-| `embed` | 计算向量的文本，有且只有一个；只用来计算、不需要保存时写 `json:"-"` | `string` |
+| `embed` | 计算向量的文本，有且只有一个；只用来计算时写 `json:"-"` | `string` |
 | `filter` | 过滤用的值，见[过滤](#filtering) | 字符串、布尔、整数、浮点数、`time.Time`、实现 `encoding.TextMarshaler` 的类型（如 `uuid.UUID`），以及它们的切片和指针 |
 | `tenant` | 文档所在的租户，见[多租户](#tenancy) | `string` |
 
-一个 key 可以对应多个文档：这里以附件 ID 为 key，每个分段一个文档。文档整体编码为 JSON 保存在 Qdrant 中，检索结果直接解码出 `ChunkDoc`，不需要再查一次分段表。标签写错时 `Define` 直接 panic，程序启动时就能发现。
+一个 key 可以对应多个文档：这里以附件 ID 为 key，每个分段一个文档。文档整体编码为 JSON 保存在 Qdrant 中，检索结果直接解码出 `ChunkDoc`。标签写错时 `Define` 直接 panic，程序启动时就能发现。
 
 <a id="syncing"></a>
 ## 同步
@@ -191,7 +191,7 @@ attachment.Chunks.Handle(w, a.vectors, attachment.LoadChunks, attachment.ScanChu
 
 - 同一个 key 的同步依次执行，后执行的一定读到更新的数据。为此锁要一直持有到写完 Qdrant，计算向量期间同步事务也保持打开，所以 `LoadFunc` 只应读取数据，转换、切分文件这类耗时的处理放在之前的任务中完成。
 - 删除附件同样调用 `Sync`，`LoadChunks` 读不到分段，索引中的文档随之删除。
-- 计算向量的文本为空时，任务不再重试，直接转入[失败任务表](../libraries/queue.md#failed-jobs)。模型服务出错时，任务按队列的规则重试。
+- 计算向量的文本为空时，任务直接转入[失败任务表](../libraries/queue.md#failed-jobs)。模型服务出错时，任务按队列的规则重试。
 - 索引的每个版本是 Qdrant 中的一个 collection，第一次写入时自动创建，同时给过滤字段建立索引；之后新增过滤字段时，进程启动后第一次同步会补建索引。
 
 <a id="reusing-vectors"></a>
@@ -202,7 +202,7 @@ attachment.Chunks.Handle(w, a.vectors, attachment.LoadChunks, attachment.ScanChu
 <a id="refreshing"></a>
 ### 立即同步
 
-`Refresh` 不经过队列，立即同步并返回，适合测试和需要马上能查到的场合：
+`Refresh` 直接同步并返回，适合测试和需要马上能查到的场合：
 
 ```go
 err := attachment.Chunks.Refresh(ctx, vectors, attachment.LoadChunks, fileID.String())
@@ -229,7 +229,7 @@ $ ./bin/api search reindex attachment-chunks
 
 重建写入索引的一个新版本，也就是一个新的 collection，完成之前查询仍然使用原来的版本：
 
-- 发起之后，同步同时写入原来的版本和新版本，重建期间修改的附件不会漏掉。
+- 发起之后，同步同时写入原来的版本和新版本，重建期间修改的附件也会写进新版本。
 - 重建任务用 `ScanChunkKeys` 每次列出 500 个 key，逐个用 `LoadChunks` 读取，计算向量后写入新版本。进度保存在操作中，任务重试时从上次保存的地方继续。
 - 全部写入后，新版本成为查询使用的版本，原来版本的 collection 随后删除。
 
@@ -273,7 +273,7 @@ vector.And(
 - 多值字段（切片）只要有一个值满足条件就算满足。
 - 值会转换为字段的类型，例如 `int` 字段可以传 `int64`。字段不存在、类型不对时 `Search` 返回错误。
 
-Qdrant 在检索的同时过滤，返回的是满足条件的文档中最接近的 `Limit` 条，不会像先检索、再过滤那样把结果滤掉一大半。
+Qdrant 在检索的同时过滤，返回的是满足条件的文档中最接近的 `Limit` 条，结果数量稳定。
 
 <a id="tenancy"></a>
 ### 多租户
@@ -284,9 +284,9 @@ Qdrant 在检索的同时过滤，返回的是满足条件的文档中最接近�
 hits, err := Chunks.Search(ctx, a.vectors, vector.Query{Text: question, Tenant: sub.Tenant})
 ```
 
-`Tenant` 为空表示平台本身，也只查询租户为空的文档，不会查到所有租户的。没有 `tenant` 字段的索引，传入租户时返回错误。
+`Tenant` 为空表示平台本身，只查询租户为空的文档。没有 `tenant` 字段的索引，传入租户时返回错误。
 
-有租户字段的索引，Qdrant 中的数据按租户存放，HNSW 图也按租户分别建立，不建全局的图，所以查询一个租户的速度不受其他租户数据量的影响。
+有租户字段的索引，Qdrant 中的数据按租户存放，HNSW 图也按租户分别建立，所以查询一个租户的速度只取决于它自己的数据量。
 
 <a id="hybrid-search"></a>
 ### 混合检索
@@ -299,9 +299,9 @@ var Chunks = vector.Define[ChunkDoc]("attachment-chunks", vector.Hybrid(search.B
 
 - 同步时，`embed` 字段的文本除了交给模型，还用[分词器](../features/search.md#tokenizers)切分，按 BM25 的词频部分算出稀疏向量，和模型的向量存在同一个文档上。IDF 由 Qdrant 按整个索引统计，有租户字段时也是所有租户一起统计。
 - 检索时，查询文本同样切分，语义和关键词两路各取若干候选，带着相同的过滤条件和租户，再在 Qdrant 中按两路的排名用 RRF 融合。只在一路中靠前的文档也能排进结果。
-- 中文用 `search.Bigram` 就能用，不需要词典；需要按词语切分时换成 `search/gse`。
+- 中文用 `search.Bigram` 就能用；需要按词语切分时换成 `search/gse`。
 
-混合索引的 `Hit.Score` 是 RRF 分数，不再是余弦相似度，只能比较同一次查询的结果；`MinScore` 只过滤语义那一路的候选。
+混合索引的 `Hit.Score` 是 RRF 分数，只能比较同一次查询的结果；`MinScore` 只过滤语义那一路的候选。
 
 给已有的索引加上或去掉 `Hybrid`、换分词器之后，要[重建索引](#reindexing)。重建完成之前，原来的版本照常写入和查询，只是还没有关键词那一路。
 
@@ -323,7 +323,7 @@ hits, err = ai.RerankBy(ctx, a.reranker, question, hits, func(h vector.Hit[Chunk
 <a id="changing-models"></a>
 ## 换模型
 
-不同模型算出的向量不能比较。索引的每个版本都记录了建立它的模型名称和维度，写入和查询这个版本时总是用这个模型计算向量。`Store` 中没有这个模型时，同步和检索都返回错误，而不会把两种向量混在一起。
+向量只在同一个模型算出的结果之间比较。索引的每个版本都记录了建立它的模型名称和维度，写入和查询这个版本时总是用这个模型计算向量。`Store` 中没有这个模型时，同步和检索都返回错误，每个版本始终只有一种向量。
 
 名称或维度变了都算换模型，例如同一个模型用 `openai.WithDimensions` 从 3072 维改为 1024 维。换模型分三步：
 
@@ -340,7 +340,7 @@ hits, err = ai.RerankBy(ctx, a.reranker, question, hits, func(h vector.Hit[Chunk
 2. 执行 `search reindex attachment-chunks`。新版本用新模型建立，重建期间的修改同时用两个模型计算。
 3. 重建完成后，去掉 `WithPrevious` 和旧模型的配置，再部署一次。
 
-Qdrant 中的数据都可以从数据库重新算出来，所以不必和数据库一起备份。丢失后重建索引即可，只是要再付一次计算向量的费用。
+Qdrant 中的数据都可以从数据库重新算出来，丢失后重建索引即可，只是要再付一次计算向量的费用。
 
 <a id="testing"></a>
 ## 测试
@@ -403,7 +403,7 @@ func (ix *Index[D]) Handle(w *queue.Worker, s *Store, load LoadFunc[D], scan Sca
 func (ix *Index[D]) Reindex(ctx context.Context, tx bun.IDB, ops *operation.Service, owner identity.Subject) (*operation.Operation, error)
 ```
 
-与[全文搜索](../features/search.md#api-reference)的 `Index` 用法相同。`Query` 的字段：`Text`（不能为空）、`Tenant`、`Filter`、`Limit`、`MinScore`。
+与[全文搜索](../features/search.md#api-reference)的 `Index` 用法相同。`Query` 的字段：`Text`（必填）、`Tenant`、`Filter`、`Limit`、`MinScore`。
 
 ### 过滤
 

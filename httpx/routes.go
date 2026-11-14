@@ -49,7 +49,7 @@ var anyMethods = []string{
 
 // Routes 遍历 router（包括挂载的子路由），返回按路径、方法排序的路由表。
 // 处理器实现 RouteDescriber 时使用它的描述，否则 Access 为 AccessUnknown。
-// 不调用任何处理器；挂载的不透明 http.Handler 显示为一条 /prefix/* 路由，方法为 AnyMethod。
+// 只读取路由表；挂载的不透明 http.Handler 显示为一条 /prefix/* 路由，方法为 AnyMethod。
 func Routes(router chi.Routes) []Route {
 	var routes []Route
 	// Walk 只会返回回调产生的错误；这里的回调始终成功。

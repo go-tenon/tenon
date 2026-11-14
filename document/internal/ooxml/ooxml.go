@@ -153,7 +153,7 @@ func Open(data []byte, maxExpanded int64) (*Package, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", convert.ErrCorrupt, err)
 	}
-	// 不同的读取器对同名的两个条目以哪个为准并不一致，所以重复的条目视为损坏。
+	// 不同的读取器对同名的两个条目各取其一，所以重复的条目视为损坏。
 	names := map[string]bool{}
 	for _, entry := range archive.File {
 		name := strings.ToLower(strings.ReplaceAll(entry.Name, `\`, "/"))
@@ -385,7 +385,7 @@ func (p *Package) XMLParts(ctx context.Context) ([]string, error) {
 			if item.Attr("TargetMode") == "External" {
 				continue
 			}
-			// 不同的读取器在去掉点号路径段之前还是之后把反斜杠转为斜杠并不一致，所以两种解析结果都记录。
+			// 不同的读取器在去掉点号路径段之前还是之后把反斜杠转为斜杠各有做法，所以两种解析结果都记录。
 			raw := item.Attr("Target")
 			always := xmlRelationships[path.Base(item.Attr("Type"))]
 			cleaned := strings.ReplaceAll(raw, `\`, "/")

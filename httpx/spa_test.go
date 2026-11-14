@@ -168,7 +168,7 @@ func TestSPADevServer(t *testing.T) {
 		io.WriteString(w, "vite "+r.Method+" "+r.URL.Path)
 	}))
 	defer vite.Close()
-	// 开发模式不读取 fsys，前端还没有构建也可以启动。
+	// 开发模式跳过 fsys，前端还没有构建也可以启动。
 	s := httpx.NewSPA(nil, httpx.SPAOptions{DevServer: vite.URL})
 	for _, path := range []string{"/", "/@vite/client", "/src/main.tsx", "/articles/42"} {
 		rr := spaGet(s, http.MethodGet, path, "")

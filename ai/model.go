@@ -13,7 +13,7 @@ type ModelConfig struct {
 	APIKey string `yaml:"api_key"`
 	// MaxRetries 是请求失败后最多重试的次数：连接失败、408、409、429 和 5xx 时，按服务端的 Retry-After
 	// 或指数退避（0.5 秒起，最长 8 秒）等待后重试，用完后返回错误。0 使用默认的 2 次，-1 表示不重试。
-	// 模型已经开始流式返回内容后出错不会重试。
+	// 模型已经开始流式返回内容后出错时直接返回错误。
 	MaxRetries int `yaml:"max_retries"`
 }
 

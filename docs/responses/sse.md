@@ -99,7 +99,7 @@ rest.RegisterSSE(api, op, map[string]any{"progress": PublishProgress{}},
 
 `s.Context()` 在客户端断开或服务器开始停机时取消，传给业务动作，让它们随之停止。
 
-浏览器的 `EventSource` 只能发 GET 请求，也不能带 `Authorization` 请求头。单页应用用 `fetch` 读取响应流，见[客户端代码的事件流](clients.md#event-streams)。
+浏览器的 `EventSource` 只能发 GET 请求，请求头由浏览器决定。单页应用用 `fetch` 读取响应流，见[客户端代码的事件流](clients.md#event-streams)。
 
 <a id="long-lived-connections"></a>
 ## 长连接
@@ -135,7 +135,7 @@ rest.RegisterSSE(api, op, map[string]any{"published": ArticlePublished{}},
 
 `hub` 是 `broadcast.Hub`。发布文章的请求可能在另一个实例上，Hub 把事件送到每个实例，见[广播](../libraries/broadcasting.md)。
 
-`httpx.SSE` 每 15 秒发送一次心跳，让代理不会因为连接空闲而断开它，也能尽早发现已经断开的客户端。
+`httpx.SSE` 每 15 秒发送一次心跳，让代理保持连接，也能尽早发现已经断开的客户端。
 
 <a id="reconnecting"></a>
 ### 断线重连
@@ -147,17 +147,17 @@ rest.RegisterSSE(api, op, map[string]any{"published": ArticlePublished{}},
 
 SSE 接口和其他接口注册在同一个 API 上，认证方式相同，例如 `rest.RequireBearer(api, tokens.Validate, "articles")`。
 
-开始推送之后，连接不再受请求时限的约束：
+开始推送之后，连接脱离请求时限：
 
-- [`httpx.Timeout`](../http/middleware.md#request-timeout) 的超时不再取消 `s.Context()`，它只在客户端断开或服务器停机时取消。
-- 服务器配置中的 `http.write_timeout` 同样会切断长连接，SSE 会为当前请求取消它，不需要修改配置。
+- `s.Context()` 只在客户端断开或服务器停机时取消，[`httpx.Timeout`](../http/middleware.md#request-timeout) 的超时与它无关。
+- 服务器配置中的 `http.write_timeout` 同样会切断长连接，SSE 会为当前请求取消它，配置保持原样。
 
-停机时，`httpx.Serve` 一开始排空，`s.Done()` 就会关闭，处理器返回，连接结束，客户端随后重连到其他实例。所以打开着的长连接不会让停机等满 `shutdown_timeout`，见[平滑停止](../concepts/lifecycle.md#graceful-shutdown)。
+停机时，`httpx.Serve` 一开始排空，`s.Done()` 就会关闭，处理器返回，连接结束，客户端随后重连到其他实例。所以打开着的长连接随排空一起结束，停机很快完成，见[平滑停止](../concepts/lifecycle.md#graceful-shutdown)。
 
 <a id="revoked-credentials"></a>
 ## 凭据失效
 
-长连接只在建立时经过认证。之后 API token 被[撤销](../security/api-tokens.md#revoking-tokens)、用户被停用或失去所需的权限，已经建立的连接也不应该继续收到消息。
+长连接只在建立时经过认证。之后 API token 被[撤销](../security/api-tokens.md#revoking-tokens)、用户被停用或失去所需的权限，已经建立的连接也要随之结束。
 
 `rest.RequireBearer` 在认证通过后，会在请求中登记一个重新校验函数。SSE 每 30 秒运行一次：
 
@@ -167,7 +167,7 @@ SSE 接口和其他接口注册在同一个 API 上，认证方式相同，例�
 | token 校验不通过、主体变了、Resolver 返回 4xx 类错误、缺少所需的 scope | 结束 |
 | 暂时无法判断，例如数据库故障、Resolver 返回 5xx 类错误 | 保持，30 秒后再查 |
 
-连接结束后，客户端重连时按普通请求重新认证，得到 `401`。所以凭据失效后，最多 30 秒连接就会断开，处理器不需要自己检查。
+连接结束后，客户端重连时按普通请求重新认证，得到 `401`。所以凭据失效后，最多 30 秒连接就会断开，检查由框架完成。
 
 复查会重新运行 token 校验器和 [`Options.Accounts`](../security/authentication.md#resolving-subjects) 中的 Resolver。校验器有副作用时（例如 `apitoken` 延长登录 token 的有效期），长连接期间也会每 30 秒发生一次。校验器可以用 `identity.Rechecking(ctx)` 区分复查和新的请求：[JWT 模式](../security/api-tokens.md#jwt)平时只验签名，复查时查询登录是否已被撤销。自己实现认证中间件时，用 `httpx.WithCredentialCheck` 登记同样的校验函数，SSE 会照样运行它。
 
@@ -209,7 +209,7 @@ Hub 经由 Redis 在实例之间传递消息，见[后端](../libraries/broadcas
 <a id="deployment"></a>
 ## 部署
 
-- **代理缓冲**：nginx 默认会缓冲响应，SSE 响应带 `X-Accel-Buffering: no` 关闭它，不需要修改 nginx 配置。其他代理请确认它们不缓冲 `text/event-stream` 响应。
+- **代理缓冲**：nginx 默认会缓冲响应，SSE 响应带 `X-Accel-Buffering: no` 关闭它，nginx 配置保持原样。其他代理请确认它们对 `text/event-stream` 响应直接转发。
 - **HTTP/2**：使用 HTTP/1.1 时，浏览器对同一个站点最多同时打开 6 个连接。每个打开的标签页都占用一条长连接，标签页多了以后，新的请求会一直等待。生产环境请在反向代理上启用 HTTP/2。
 
 <a id="api-reference"></a>

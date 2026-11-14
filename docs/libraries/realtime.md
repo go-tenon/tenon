@@ -4,7 +4,7 @@
 
 [服务端推送](../responses/sse.md)适合服务器单向推送：通知角标、进度、AI 的流式回答。聊天、在线状态、“对方正在输入”这类场景需要双向的连接、在线成员和移动端 SDK，`realtime` 包为此在进程内嵌入 [Centrifuge](https://github.com/centrifugal/centrifuge)，提供 WebSocket 实时频道。客户端使用 Centrifuge 的[官方 SDK](https://centrifugal.dev/docs/transports/client_sdk)：浏览器的 centrifuge-js，以及 Swift、Java、Dart 等。
 
-频道就是[广播](broadcasting.md)的主题。业务代码照常通过 `hub.PublishJSON` 发布，SSE 处理器和 WebSocket 客户端都会收到；多个实例之间由 Hub 的后端传递消息，不需要另外部署服务。
+频道就是[广播](broadcasting.md)的主题。业务代码照常通过 `hub.PublishJSON` 发布，SSE 处理器和 WebSocket 客户端都会收到；多个实例之间由 Hub 的后端传递消息。
 
 - [示例用法](#example-usage)
 - [创建 Realtime](#creating)
@@ -75,9 +75,9 @@ stack.MustAdd("realtime", rt.Shutdown)
 rt.Channel("articles", realtime.Public())
 ```
 
-[发布文章](broadcasting.md#publishing-events)的业务动作不需要修改：它发布到 `articles` 主题的事件，现在也会发给订阅了 `articles` 频道的客户端。
+[发布文章](broadcasting.md#publishing-events)的业务动作保持原样：它发布到 `articles` 主题的事件，现在也会发给订阅了 `articles` 频道的客户端。
 
-登记规则就是把一个主题公开给客户端。没有匹配规则的频道一律不能订阅，所以 Hub 上的其他主题不会因此暴露。消息的内容必须是 JSON。
+登记规则就是把一个主题公开给客户端。客户端只能订阅有匹配规则的频道，所以 Hub 上的其他主题只在服务端可见。消息的内容必须是 JSON。
 
 <a id="private-channels"></a>
 ### 私有频道
@@ -98,7 +98,7 @@ rt.Channel("article:{id}", realtime.Private(func(ctx context.Context, sub identi
 }))
 ```
 
-没有登录的连接不能订阅私有频道。授权函数返回 5xx 类错误时，SDK 会稍后重新订阅。
+私有频道只对登录的连接开放。授权函数返回 5xx 类错误时，SDK 会稍后重新订阅。
 
 授权只在订阅时进行。主体之后失去访问权限时，调用 `rt.Unsubscribe(sub.Ref(), channel)` 取消他在所有实例上的订阅。
 
@@ -136,7 +136,7 @@ centrifuge.connect();
 ## 认证
 
 <a id="tokens"></a>
-连接用 API 令牌认证。浏览器的 WebSocket 不能设置 `Authorization` 请求头，所以 SDK 在连接时传入 token，由 `Options.Authenticate` 校验，它通常就是 [API 令牌](../security/api-tokens.md)的校验器。token 不保存权限，`Options.Accounts` 中这套账号的 Resolver 加载它，与 API 的 [`rest.Options.Accounts`](../security/authorization.md#resolving-permissions) 相同；token 属于其他账号体系时连接被拒绝。设置了 `Authenticate` 就必须设置 `Accounts`：
+连接用 API 令牌认证。浏览器的 WebSocket 由浏览器决定请求头，所以 SDK 在连接时传入 token，由 `Options.Authenticate` 校验，它通常就是 [API 令牌](../security/api-tokens.md)的校验器。token 只标识用户，权限由 `Options.Accounts` 中这套账号的 Resolver 加载，与 API 的 [`rest.Options.Accounts`](../security/authorization.md#resolving-permissions) 相同；token 属于其他账号体系时连接被拒绝。设置了 `Authenticate` 就必须设置 `Accounts`：
 
 ```go
 rt, err := realtime.New(hub, realtime.Options{
@@ -146,7 +146,7 @@ rt, err := realtime.New(hub, realtime.Options{
 router.Handle("/realtime", rt.Handler())
 ```
 
-连接不受[请求超时](../http/middleware.md#request-timeout)的影响。浏览器发起的连接只接受同源请求，其他来源的单页应用需要连接时，把它加入 `Options.TrustedOrigins`。
+连接独立于[请求超时](../http/middleware.md#request-timeout)。浏览器发起的连接只接受同源请求，其他来源的单页应用需要连接时，把它加入 `Options.TrustedOrigins`。
 
 ```js
 const centrifuge = new Centrifuge('wss://api.example.com/realtime', { token: apiToken });
@@ -163,7 +163,7 @@ rt, err := realtime.New(hub, realtime.Options{
 router.Handle("/t/{tenant}/realtime", rt.Handler())
 ```
 
-token 无效、属于其他账号体系，或 Resolver 拒绝主体时，连接以 3500 关闭，SDK 不再重连。连接期间两者每 30 秒重新运行一次，token 被撤销、用户被停用或移出租户后连接结束。没有 token 的连接是匿名的，只能订阅公开频道。
+token 无效、属于其他账号体系，或 Resolver 拒绝主体时，连接以 3500 关闭，SDK 停止重连。连接期间两者每 30 秒重新运行一次，token 被撤销、用户被停用或移出租户后连接结束。没有 token 的连接是匿名的，只能订阅公开频道。
 
 使用 [JWT 模式](../security/api-tokens.md#jwt)时，SDK 传入 access token，并设置 `getToken`：
 
@@ -177,14 +177,14 @@ const centrifuge = new Centrifuge('wss://api.example.com/realtime', {
 });
 ```
 
-`api` 是[生成的 API 客户端](../responses/clients.md#creating-the-client)，`refresh` 用 refresh token 换新的 access token。断线一段时间后重连，access token 可能已经过期，这时连接返回 109（token 已过期），SDK 调用 `getToken` 换新的再连。已经建立的连接不受 access token 过期的影响：复查只检查这次登录是否已被撤销。
+`api` 是[生成的 API 客户端](../responses/clients.md#creating-the-client)，`refresh` 用 refresh token 换新的 access token。断线一段时间后重连，access token 可能已经过期，这时连接返回 109（token 已过期），SDK 调用 `getToken` 换新的再连。已经建立的连接跨过 access token 的有效期继续保持：复查只检查这次登录是否已被撤销。
 
 这个处理不限于 JWT：`Authenticate` 返回的错误匹配 `identity.ErrExpired` 时，连接返回 109；连接期间复查遇到它时以 3005 断开，SDK 重连时同样换新的 token。
 
 <a id="revocation"></a>
 ### 撤销后断开
 
-连接期间每 30 秒重新校验一次凭据，与 [SSE](../responses/sse.md#revoked-credentials) 相同。需要撤销后立即断开时，把 [`broadcast.Credentials`](../responses/sse.md#immediate-revocation) 交给 `Options.Credentials`，之后退出登录、撤销 token 时照常调用 `Recheck*`，不需要为实时连接多做什么。
+连接期间每 30 秒重新校验一次凭据，与 [SSE](../responses/sse.md#revoked-credentials) 相同。需要撤销后立即断开时，把 [`broadcast.Credentials`](../responses/sse.md#immediate-revocation) 交给 `Options.Credentials`，之后退出登录、撤销 token 时照常调用 `Recheck*`，实时连接随之生效。
 
 <a id="presence"></a>
 ## 在线成员
@@ -216,10 +216,10 @@ editing.subscribe();
 
 加入和离开事件按人发出，不按连接：
 
-- **多个标签页只算一次。** 一个人的第一个连接加入时发出 `join`，之后的连接不再发；最后一个连接离开后才发出 `leave`。`presence()` 返回的仍然是每个连接一项，显示时按 `user` 合并。
+- **多个标签页只算一次。** 一个人的第一个连接加入时发出 `join`，之后的连接保持安静；最后一个连接离开后才发出 `leave`。`presence()` 返回的仍然是每个连接一项，显示时按 `user` 合并。
 - **离开有宽限期。** 连接离开后，成员在列表中保留 10 秒，期间重新加入就没有任何事件。所以网络闪断后重连、刷新页面，其他人都看不到离开又加入。宽限期由 `Options.PresenceGrace` 设置，最长 30 秒，负数表示离开后立即发出 `leave`。客户端主动取消订阅同样经过宽限期；`rt.Unsubscribe` 把人移出频道，`leave` 立即发出。
 - **事件可能重复。** 例如两个标签页同时打开时可能各发一次 `join`。按 `ctx.info.user` 处理，重复的事件就没有影响。
-- **实例停止或崩溃时没有 `leave`。** 重连到其他实例的成员保持在线；没有重连的成员在一分钟内从列表中消失。页面应当定期调用 `presence()` 刷新，不要只依赖事件。
+- **实例停止或崩溃时没有 `leave`。** 重连到其他实例的成员保持在线；没有重连的成员在一分钟内从列表中消失。页面应当在事件之外定期调用 `presence()` 刷新。
 
 服务端用 `rt.Members` 查询在线成员，同一个主体的多个连接合并为一项。例如分配工作时只考虑在线的人：
 
@@ -237,12 +237,12 @@ members, err := rt.Members(ctx, "editing:"+id.String())
 rt, err := realtime.New(hub, realtime.Options{Presence: redispresence.New(rdb, "app:presence:")})
 ```
 
-没有 presence 频道的应用不需要设置它，`rt.Members` 返回空列表。测试中用 `realtimetest.NewPresence()`，它把在线记录保存在内存中；同一个交给多个 `Realtime`，就模拟了共用存储的多个实例。
+没有 presence 频道的应用省略它，`rt.Members` 返回空列表。测试中用 `realtimetest.NewPresence()`，它把在线记录保存在内存中；同一个交给多个 `Realtime`，就模拟了共用存储的多个实例。
 
 <a id="client-publish"></a>
 ## 客户端发布
 
-「正在输入」这类提示不需要经过业务逻辑，可以让客户端直接发布。在规则上加 `ClientPublish()`：
+「正在输入」这类提示可以让客户端直接发布。在规则上加 `ClientPublish()`：
 
 ```go
 rt.Channel("typing:{article}", realtime.Private(canEdit).ClientPublish())
@@ -253,12 +253,12 @@ typing.publish({ typing: true });
 typing.on('publication', (ctx) => showTyping(ctx.info.user)); // ctx.info 是发布者，由服务器填写
 ```
 
-只有已经订阅频道的客户端可以发布，发布者自己也会收到。这类消息只发给 WebSocket 客户端，`hub.Subscribe` 收不到。内容由客户端决定、服务器不校验，接收方只应当信任 `ctx.info`，不要把 `ctx.data` 当作可信的数据；需要保存或校验的内容仍然通过接口提交。
+只有已经订阅频道的客户端可以发布，发布者自己也会收到。这类消息只发给 WebSocket 客户端，`hub.Subscribe` 收不到。内容由客户端决定，接收方只信任 `ctx.info`，`ctx.data` 按不可信的数据处理；需要保存或校验的内容仍然通过接口提交。
 
 <a id="reconnecting"></a>
 ## 断线与重连
 
-消息只发给当前在线的订阅，最多一次，不保存历史。SDK 在连接断开后自动重连并重新订阅，但断线期间的消息不会补发。所以每次订阅成功后，都从应用自己的接口取回最新的数据：
+消息只发给当前在线的订阅，最多一次，只投递实时消息。SDK 在连接断开后自动重连并重新订阅，断线期间的消息由页面重新取数据弥补。所以每次订阅成功后，都从应用自己的接口取回最新的数据：
 
 ```js
 articles.on('subscribed', async () => {
@@ -267,21 +267,21 @@ articles.on('subscribed', async () => {
 });
 ```
 
-`subscribed` 在首次订阅和每次重连后都会触发，页面因此不需要区分两种情况。与 [SSE 的断线补发](broadcasting.md#replaying-missed-events)一样，数据以应用的表为准。Hub 的后端可能丢了消息时（例如与 Redis 的连接中断过），本实例的客户端会被断开并重连，走的是同一条路径。
+`subscribed` 在首次订阅和每次重连后都会触发，页面用同一段代码处理两种情况。与 [SSE 的断线补发](broadcasting.md#replaying-missed-events)一样，数据以应用的表为准。Hub 的后端可能丢了消息时（例如与 Redis 的连接中断过），本实例的客户端会被断开并重连，走的是同一条路径。
 
 <a id="deployment"></a>
 ## 部署
 
-- 所有实例使用相同的 Hub 后端和相同的 `Options.Presence`。连接可以落在任意实例上，不需要会话保持。
+- 所有实例使用相同的 Hub 后端和相同的 `Options.Presence`。连接可以落在任意实例上。
 - 反向代理要转发 WebSocket 的升级请求，例如 nginx 需要 `proxy_http_version 1.1`、`proxy_set_header Upgrade $http_upgrade` 和 `proxy_set_header Connection "upgrade"`。服务器每 25 秒发送一次心跳，代理的空闲超时要大于它。
 - 实例之间的控制消息由 Centrifuge 编码。升级框架时如果 Centrifuge 的版本有变化，先查看它的发布说明是否要求所有实例同时升级。
 
-只使用[服务端推送](../responses/sse.md)的应用不会链接 Centrifuge。
+Centrifuge 只链接进使用了 `realtime` 的应用。
 
 <a id="separate-process"></a>
 ### 单独部署实时连接
 
-`serve` 和 `start` 都挂载了 `/realtime`，起步阶段不需要别的安排。WebSocket 是长连接：每次升级，旧进程停止时断开它上面的全部连接，客户端在同一时刻重连。接口发布频繁、连接很多时，把实时连接交给单独的一组 `realtime` 进程，升级接口就不再打扰它们，大量空闲连接也不和接口争抢资源。
+`serve` 和 `start` 都挂载了 `/realtime`，起步阶段直接使用即可。WebSocket 是长连接：每次升级，旧进程停止时断开它上面的全部连接，客户端在同一时刻重连。接口发布频繁、连接很多时，把实时连接交给单独的一组 `realtime` 进程，升级接口时它们保持在线，大量空闲连接也与接口分开占用资源。
 
 `realtime` 进程运行与 `serve` 相同的路由，只是监听另一个地址。把[装配页面](../responses/views.md#assembling-pages)中 `HTTP` 方法的内容移到 `serveOn`，两个部分共用：
 
@@ -319,8 +319,8 @@ location / {
 }
 ```
 
-- 只改了接口和页面时，[升级](../installation/deployment.md#zero-downtime-upgrades) `serve` 即可，实时连接不受影响；改了频道规则、授权函数，或者升级了框架，再升级 `realtime`。
-- `start` 不包含 `Realtime`，因为 `HTTP` 已经挂载了实时频道。
+- 只改了接口和页面时，[升级](../installation/deployment.md#zero-downtime-upgrades) `serve` 即可，实时连接保持在线；改了频道规则、授权函数，或者升级了框架，再升级 `realtime`。
+- `start` 中的 `HTTP` 已经挂载了实时频道，`Realtime` 只在单独部署时使用。
 - `realtime` 进程同样可以运行多个实例，它们与 `serve`、`work` 共用 Hub 后端，业务代码在哪个进程中发布都一样。
 
 <a id="metrics"></a>

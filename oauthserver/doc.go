@@ -5,7 +5,7 @@
 // 令牌是 apitoken 的 OAuth 令牌，只能用于授权时的资源，权限是用户本人的权限与同意的范围的交集，
 // 在“已连接的应用”中可以撤销。
 //
-// 客户端不需要事先登记：client_id 是 https 地址时，按 Client ID Metadata Document 取回客户端的名称和回调地址；
+// 客户端即来即用：client_id 是 https 地址时，按 Client ID Metadata Document 取回客户端的名称和回调地址；
 // 自研的客户端在 Options.Clients 中预先登记。只支持公开客户端（token_endpoint_auth_method 为 none）和授权码流程，
 // 不发刷新令牌：令牌按使用滑动过期，到期后客户端重新授权。
 //

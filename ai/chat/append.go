@@ -20,12 +20,12 @@ const appendExtension = "mygoravel.ai.appended"
 // author 标明消息来自谁，例如 "staff:42"、"system"。模型在之后的回答中看到它：trpc-agent-go 把
 // 作者不是当前 agent 的消息作为用户消息交给模型，agent 用 llmagent.WithAddContextPrefix(true) 创建时
 // 带上 "[author] said:" 前缀，模型才知道是谁说的。
-// UIMessages 把它作为单独的一条消息返回，metadata.author 是 author，不会并入前后的回答。
-// msg 的角色是 user 或 assistant，内容不能为空。trpc-agent-go 丢弃第一条用户消息之前的内容，
+// UIMessages 把它作为单独的一条消息返回，metadata.author 是 author，与前后的回答分开。
+// msg 的角色是 user 或 assistant，内容必填。trpc-agent-go 丢弃第一条用户消息之前的内容，
 // 所以对话中还没有用户消息时，msg 必须是 user 角色。
 //
 // 对话正在回答时返回 ErrBusy（回答过程中加入用户的消息用 Steer）；有等待审批的工具调用时返回
-// ErrAwaitingApproval：工具调用和它的结果之间不能插入其他消息。
+// ErrAwaitingApproval：工具调用和它的结果必须紧挨着。
 func (rs *Runs) Append(ctx context.Context, userID, sessionID, author string, msg model.Message) error {
 	switch {
 	case author == "":

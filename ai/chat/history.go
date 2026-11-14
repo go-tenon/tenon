@@ -14,7 +14,7 @@ import (
 type HistoryStore interface {
 	// Load 返回交给模型的上下文，以及标记它读到哪里的游标。
 	//
-	// 消息按逻辑顺序排列：Save 保存的每一条排在它的 Entry.After 所指的位置之后，而不是按写入时间。
+	// 消息按逻辑顺序排列：Save 保存的每一条排在它的 Entry.After 所指的位置之后。
 	// 模型回答期间其他人发的消息因此排在回答之后，下一轮会接着回应它们。最后一条是这次运行要回应的消息：
 	// 用户或其他参与者说的话，或者审批后工具调用的结果；最后一条是模型的回答时不运行。
 	//
@@ -23,7 +23,7 @@ type HistoryStore interface {
 	Load(ctx context.Context, c Conversation) (History, error)
 
 	// Save 保存进入对话的一条消息：Start、Submit 和插话发送的用户消息，模型的回答（可能带工具调用），
-	// 工具调用的结果，以及 Approve、Reject 的结果。应用自己写入、再用 Notify 触发运行的消息不会交给 Save。
+	// 工具调用的结果，以及 Approve、Reject 的结果。应用自己写入、再用 Notify 触发运行的消息由应用保存。
 	Save(ctx context.Context, c Conversation, e Entry) error
 }
 

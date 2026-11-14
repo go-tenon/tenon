@@ -186,7 +186,7 @@ func startHelper(t *testing.T, runtimeDir bool) *helper {
 	if testing.Short() {
 		t.Skip("starts subprocesses")
 	}
-	dir, err := os.MkdirTemp("", "daemon") // unix socket 路径有长度限制，不用 t.TempDir()
+	dir, err := os.MkdirTemp("", "daemon") // unix socket 路径有长度限制，所以用更短的 os.MkdirTemp
 	if err != nil {
 		t.Fatal(err)
 	}

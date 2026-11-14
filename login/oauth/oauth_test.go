@@ -395,7 +395,7 @@ func TestPlainOAuth2(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(got, login.External{Provider: "github", Subject: "42", Name: "alice"}) {
 		t.Fatalf("finish: %+v %v", got, err)
 	}
-	// 客户端自己完成授权时不需要 nonce。
+	// 客户端自己完成授权时 nonce 可以省略。
 	verifier := oauth2.GenerateVerifier()
 	q := url.Values{"client_id": {clientID}, "redirect_uri": {appRedirect}, "state": {"s"},
 		"code_challenge": {oauth2.S256ChallengeFromVerifier(verifier)}, "code_challenge_method": {"S256"}}

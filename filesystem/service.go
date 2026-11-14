@@ -123,7 +123,7 @@ func (s *Service) Upload(ctx context.Context, owner identity.Subject, in FileInp
 }
 
 // Confirm 核对对象已完整上传并符合 accept，然后把 temporary 文件转为 ready。重复确认返回原记录，
-// 同样要符合 accept。只有上传者本人可以确认，避免引用他人上传的临时文件。
+// 同样要符合 accept。只有上传者本人可以确认，每个临时文件只被它的上传者引用。
 // 不符合 accept 时返回 ErrNotAccepted，文件保持 temporary，到期后被 Cleanup 回收。
 func (s *Service) Confirm(ctx context.Context, owner identity.Subject, id uuid.UUID, accept Accept) (File, error) {
 	r, err := s.owned(ctx, owner, id)
@@ -160,7 +160,7 @@ func (s *Service) Confirm(ctx context.Context, owner identity.Subject, id uuid.U
 	return r, nil
 }
 
-// Get 返回未删除的文件记录。服务不做业务授权，调用前由应用检查访问权限。
+// Get 返回未删除的文件记录。业务授权由应用在调用前检查。
 func (s *Service) Get(ctx context.Context, id uuid.UUID) (File, error) {
 	var r File
 	err := s.db.NewSelect().Model(&r).Where("f.id = ?", id).Where("f.status <> ?", StatusDeleted).Scan(ctx)

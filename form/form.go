@@ -96,7 +96,7 @@ var (
 )
 
 // Schema 返回 Decode 验证 t 时使用的 schema，例如用于查看哪些字段是必填的（Required）。
-// 返回值被缓存并共享，不要修改它。
+// 返回值被缓存并共享，只读。
 func Schema(t reflect.Type) *huma.Schema {
 	if s, ok := schemas.Load(t); ok {
 		return s.(*huma.Schema)
@@ -108,7 +108,7 @@ func Schema(t reflect.Type) *huma.Schema {
 	return s
 }
 
-// qualifiedName 用完整导入路径命名 schema，不同包的同名类型（例如 article.Changes 和 comment.Changes）不会冲突。
+// qualifiedName 用完整导入路径命名 schema，不同包的同名类型（例如 article.Changes 和 comment.Changes）各有自己的名字。
 // 这些名称只在本包内部使用，不出现在 OpenAPI 文档中。
 func qualifiedName(t reflect.Type, hint string) string {
 	for t.Kind() == reflect.Pointer {

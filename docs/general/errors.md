@@ -4,7 +4,7 @@
 
 | 失败类型 | 例子 | 怎么处理 |
 | --- | --- | --- |
-| **输入格式错误** | 标题为空、slug 含有空格 | 在输入类型上声明规则，框架验证，处理器不会被调用 |
+| **输入格式错误** | 标题为空、slug 含有空格 | 在输入类型上声明规则，框架验证，在处理器之前返回 |
 | **可预期的业务结果** | 文章不存在、slug 已被使用 | 用 `errorx` 定义带错误码的业务错误并返回 |
 | **意料之外的故障** | 数据库连不上、代码有 bug | 用 `errors.Wrap` 补充上下文后返回，客户端只收到 `500` |
 
@@ -70,7 +70,7 @@ Content-Type: application/problem+json
 - 提交的标题为空，或者 slug 的格式不对；
 - 文章不存在；
 - 当前用户不是文章的作者；
-- 文章已经发布，却试图修改它的 slug（已发布文章的网址不应改变）；
+- 文章已经发布，却试图修改它的 slug（已发布文章的网址要保持稳定）；
 - 新的 slug 已被其他文章使用；
 - 数据库出现故障。
 
@@ -79,7 +79,7 @@ Content-Type: application/problem+json
 <a id="declaring-input"></a>
 ### 声明输入格式
 
-第一类失败最简单。格式上的要求直接写在输入类型的结构体标签上，不符合要求的请求会被框架拦截并返回 `422`，你的处理器根本不会被调用。输入类型由路径参数和请求体组成，验证规则写在请求体 `Changes` 上：
+第一类失败最简单。格式上的要求直接写在输入类型的结构体标签上，不符合要求的请求会被框架拦截并返回 `422`，到达处理器的都是合格的输入。输入类型由路径参数和请求体组成，验证规则写在请求体 `Changes` 上：
 
 ```go
 type Changes struct {
@@ -169,7 +169,7 @@ func (a *Update) Handle(ctx context.Context, subject identity.Subject, id uuid.U
 <a id="calling-from-handlers"></a>
 ### HTTP 入口
 
-HTTP 入口不需要做任何错误转换，直接返回 `Handle` 的错误即可：
+HTTP 入口直接返回 `Handle` 的错误即可，转换由框架完成：
 
 ```go
 func (a *Update) HTTP(ctx context.Context, in *UpdateInput) (*ArticleOutput, error) {
@@ -240,7 +240,7 @@ Content-Type: application/problem+json
 
 注意 `422` 可能来自两种情况：输入格式错误带有 `errors` 数组，业务规则不允许（`article.slug_locked`）则带有 `code`。客户端只要先看有没有 `code`，就能区分它们。
 
-**意料之外的故障**时，客户端只会收到一个通用的 `500`，不会看到任何内部信息：
+**意料之外的故障**时，客户端只会收到一个通用的 `500`，内部信息只留在日志中：
 
 ```http
 HTTP/1.1 500 Internal Server Error
@@ -281,19 +281,19 @@ Error types: (1) *withstack.withStack (2) *errutil.withPrefix (3) *net.OpError
 
 | 分类 | 什么时候使用 | 例子 |
 | --- | --- | --- |
-| `errorx.InvalidArgument` | 输入格式正确，但不符合业务规则 | 已发布文章的 slug 不能修改 |
+| `errorx.InvalidArgument` | 输入格式正确，但违反业务规则 | 修改已发布文章的 slug |
 | `errorx.Unauthenticated` | 不知道调用者是谁 | 缺少或无效的 token |
 | `errorx.PermissionDenied` | 知道是谁，但无权执行 | 修改别人的文章 |
 | `errorx.NotFound` | 资源不存在 | 文章已被删除 |
 | `errorx.Conflict` | 与当前状态冲突 | slug 已被其他文章使用 |
 | `errorx.ResourceExhausted` | 配额或频率超出限制，等待后重试可能成功 | 登录尝试过于频繁，见[限流](../libraries/rate-limiting.md) |
 | `errorx.Unavailable` | 依赖暂时不可用，稍后重试可能成功 | 图片存储服务超时 |
-| `errorx.Internal` | 不应该发生的内部错误 | 数据出现了不一致 |
+| `errorx.Internal` | 意料之外的内部错误 | 数据出现了不一致 |
 
 除最后两种外都是可预期的业务结果，不记录堆栈。最后两种属于系统故障，`New` 和 `Wrap` 会额外记录调用处的堆栈，见下一节。
 
 > [!TIP]
-> 能用结构体标签描述的格式要求，例如“标题不能为空”、“长度不超过 200”，请写在输入类型上，由框架自动验证。`errorx` 用于那些需要查询数据或依赖业务状态才能判断的规则。
+> 能用结构体标签描述的格式要求，例如“标题必填”、“长度最多 200”，请写在输入类型上，由框架自动验证。`errorx` 用于那些需要查询数据或依赖业务状态才能判断的规则。
 
 <a id="wrapping-errors"></a>
 ## 处理底层错误
@@ -310,7 +310,7 @@ if _, err := a.update.Handle(ctx, subject, id, changes); err != nil {
 ```
 
 > [!WARNING]
-> 请不要只用 `fmt.Errorf` 传递数据库驱动、标准库返回的原始错误。它们本身不带堆栈，到了错误日志中就只剩一行文本，无法知道是在哪里失败的。
+> 数据库驱动、标准库返回的原始错误用 `errors.Wrap` 包装后再返回。它们本身只有一行文本，`errors.Wrap` 在这里记下堆栈，错误日志中才看得到失败的位置；`fmt.Errorf` 只拼接文本。
 
 <a id="public-parameters"></a>
 ## 在提示中带上参数
@@ -329,7 +329,7 @@ article.slug_taken: "slug“{{.slug}}”已被使用"
 
 响应中的 `detail` 就会变成 `slug“hello-world”已被使用`。
 
-之所以叫“公开”参数，是因为它们会出现在给用户看的文案中，请只附加可以展示给调用者的信息。参数不会作为独立字段出现在响应中。
+之所以叫“公开”参数，是因为它们会出现在给用户看的文案中，请只附加可以展示给调用者的信息。参数只出现在文案中。
 
 如果失败在等待一段时间后就会消失，例如[限流](../libraries/rate-limiting.md)，用 `errorx.RetryAfter` 附加建议的等待时间，HTTP 响应会带上 `Retry-After` 响应头（秒，向上取整）：
 
@@ -373,12 +373,12 @@ errorx.KindOf(err) // errorx.Conflict，不是业务错误时为 errorx.Internal
 `detail` 的内容：启用本地化时，以错误码为消息 ID 翻译，找不到翻译时使用状态码描述并记录一条警告日志；未启用本地化时，使用状态码描述，例如 `Not Found`。
 
 > [!WARNING]
-> `detail` 可能随语言和版本变化，请不要根据它做逻辑判断。
+> `detail` 可能随语言和版本变化，逻辑判断请依据 `code`。
 
 <a id="reporting-errors"></a>
 ## 错误日志
 
-Tenon 遵循“**只在边界记录一次**”的原则：业务代码只负责补充上下文并返回错误，不需要自己记录错误日志，否则同一个错误会在日志中出现很多遍。
+Tenon 遵循“**只在边界记录一次**”的原则：业务代码只负责补充上下文并返回错误，错误日志由边界统一记录，同一个错误在日志中只出现一次。
 
 | 日志 | 何时记录 | 内容 |
 | --- | --- | --- |
@@ -390,7 +390,7 @@ Tenon 遵循“**只在边界记录一次**”的原则：业务代码只负责�
 <a id="huma-errors"></a>
 ## 原生 Huma 错误
 
-处理器也可以直接返回 Huma 的错误，例如 `huma.Error404NotFound("article does not exist")`。它们会被原样输出，保留你写的 `detail`，但没有 `code`，也不会被翻译。需要稳定的错误码时，请使用 `errorx`。
+处理器也可以直接返回 Huma 的错误，例如 `huma.Error404NotFound("article does not exist")`。它们会被原样输出，保留你写的 `detail`，不带 `code`，按原文输出。需要稳定的错误码时，请使用 `errorx`。
 
 <a id="cross-process-errors"></a>
 ## 跨进程传递
@@ -496,4 +496,4 @@ func AddAccessLogAttrs(ctx context.Context, attrs ...slog.Attr)
 - **参数**
     - `attrs`：追加到当前请求访问日志中的字段
 
-同名的字段，后写的覆盖先写的。没有安装访问日志中间件时什么也不做。
+同名的字段，后写的覆盖先写的。只在安装了访问日志中间件时生效。

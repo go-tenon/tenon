@@ -23,7 +23,7 @@ type payload struct {
 	N int `json:"n"`
 }
 
-// jobs 是大多数测试使用的 topic。每个测试的 Worker 有自己的随机前缀，同名的 topic 互不影响。
+// jobs 是大多数测试使用的 topic。每个测试的 Worker 有自己的随机前缀，同名的 topic 相互独立。
 var jobs = queue.Topic[payload]("jobs")
 
 func openDB(t *testing.T) *bun.DB {
@@ -428,7 +428,7 @@ func TestCompetingWorkers(t *testing.T) {
 	}
 }
 
-// 处理时间超过租约时自动延长，任务不会被重新投递。
+// 处理时间超过租约时自动延长，任务只投递一次。
 func TestLeaseIsExtended(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)

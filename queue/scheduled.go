@@ -13,7 +13,7 @@ import (
 // scheduleBatch 是调度一次移交的最多任务数。
 const scheduleBatch = 500
 
-// schedule 把任务写入 queue_scheduled，到时间再由 dispatch 交回 WAL。同一个任务已经在表中时什么也不做：
+// schedule 把任务写入 queue_scheduled，到时间再由 dispatch 交回 WAL。同一个任务已经在表中时直接返回：
 // relay 在确认位置之前崩溃时会再次收到同一批任务。
 func schedule(ctx context.Context, db bun.IDB, rows []scheduledRow) error {
 	if len(rows) == 0 {
@@ -24,7 +24,7 @@ func schedule(ctx context.Context, db bun.IDB, rows []scheduledRow) error {
 }
 
 // scheduleInterval 返回检查 queue_scheduled 的间隔：任务在离执行不超过 MaxDefer/2 时移交，
-// 每 MaxDefer/4 检查一次，所以不会错过；最长 30 秒。
+// 每 MaxDefer/4 检查一次，所以每个任务都能按时取出；最长 30 秒。
 func (w *Worker) scheduleInterval() time.Duration {
 	return min(w.cfg.MaxDefer/4, 30*time.Second)
 }
@@ -47,7 +47,7 @@ func (w *Worker) dispatchLoop(ctx context.Context) {
 }
 
 // dispatch 在一个事务中锁住一批离执行不超过 MaxDefer/2 的任务，把它们写入 WAL 后删除，返回移交的条数。
-// 写入 WAL 与删除在同一个事务中，任务不会丢失也不会重复；relay 收到后按剩余时间交给 NSQ 延迟投递。
+// 写入 WAL 与删除在同一个事务中，任务恰好交回一次；relay 收到后按剩余时间交给 NSQ 延迟投递。
 func (w *Worker) dispatch(ctx context.Context) (int, error) {
 	var n int
 	err := w.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {

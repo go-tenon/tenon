@@ -28,7 +28,7 @@ type LoggerOption struct{ logger *slog.Logger }
 func (o LoggerOption) applyDefaults(d *defaultsOptions) { d.logger = o.logger }
 func (o LoggerOption) applyServe(s *serveOptions)       { s.logger = o.logger }
 
-// Logger 让 Defaults 的访问日志和 panic 记录、Serve 的排空和停止记录写到 l，而不是 slog.Default()。
+// Logger 让 Defaults 的访问日志和 panic 记录、Serve 的排空和停止记录写到 l，默认是 slog.Default()。
 // 通常只在测试中使用：应用用 slog.SetDefault 设置全局的记录器。
 func Logger(l *slog.Logger) LoggerOption { return LoggerOption{logger: l} }
 

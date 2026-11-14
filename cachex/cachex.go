@@ -1,13 +1,13 @@
 // Package cachex 在 Memcached 之上提供 cache-aside 读取。Remember 先读缓存，没有时加载并写回，并处理三个常见问题：
 //
 //   - 击穿：热点键过期的瞬间，同一个进程中同一个键的并发加载合并为一次；
-//   - 雪崩：写入时过期时间加上随机抖动，同一批写入的键不会在同一时刻一起过期；
+//   - 雪崩：写入时过期时间加上随机抖动，同一批写入的键在不同时刻过期；
 //   - 穿透：用 Missing 声明表示「不存在」的错误后，不存在的数据也会缓存约一分钟。
 //
 // 一次修改影响很多键时，例如修改角色影响所有拥有它的用户，读取时给值加上 tag，修改后用 Invalidate 让带有这个 tag 的值一起失效。
 //
 // 值编码为 JSON 存进 Memcached，客户端是应用共用的 *memcache.Client（github.com/bradfitz/gomemcache）。
-// 缓存读写失败或缓存中的内容无法解码时直接加载，结果照常返回：查询缓存随时可以从数据库重建，不应让请求失败。
+// 缓存读写失败或缓存中的内容无法解码时直接加载，结果照常返回：查询缓存随时可以从数据库重建，请求照常成功。
 //
 //	articles := cachex.New[*article.Article](mc, "blog:article:v1:", 10*time.Minute, cachex.Missing(article.ErrNotFound.New))
 //	item, err := articles.Remember(ctx, id.String(), func(ctx context.Context) (*article.Article, error) {
@@ -41,7 +41,7 @@ const (
 	missingTTL = time.Minute
 	// jitter 是过期时间随机增加的最大比例。
 	jitter = 0.1
-	// missingMarker 是缓存中表示「不存在」的内容。它不是合法的 JSON，不会与值混淆。
+	// missingMarker 是缓存中表示「不存在」的内容。它是非法的 JSON，与值区分开。
 	missingMarker = "!missing"
 	// logInterval 是每个 Cache 记录缓存故障日志的最小间隔。
 	logInterval = time.Minute
@@ -81,7 +81,7 @@ type options struct {
 }
 
 // Missing 声明加载时表示「不存在」的错误：加载返回的错误与 newErr() 匹配（errors.Is）时，缓存约一分钟，
-// 期间 Remember 不再加载，直接返回 newErr() 创建的新错误，不存在的 key 就不会每次都查数据库。
+// 期间 Remember 直接返回 newErr() 创建的新错误，不存在的 key 也能命中缓存。
 // 其他错误不缓存。errorx 的错误按错误码匹配，传入模板的 New 方法即可，例如 article.ErrNotFound.New。
 // newErr 为 nil 时 panic。
 func Missing(newErr func() error) Option {
@@ -116,8 +116,8 @@ func New[T any](mc Client, prefix string, ttl time.Duration, opts ...Option) *Ca
 // 加载继续，其他调用者照常得到结果。load 的错误原样返回给所有等待的调用者，
 // 除了 Missing 声明的错误都不缓存；load 中的 panic 转为错误。
 //
-// tags 给值加上标签，Invalidate 其中任何一个之后，缓存的值不再使用。tag 的版本和值在同一次请求中读取；
-// 版本在加载之前读取，所以 Invalidate 返回之后，Remember 不会返回在 Invalidate 之前开始加载的值。
+// tags 给值加上标签，Invalidate 其中任何一个之后，缓存的值随之失效。tag 的版本和值在同一次请求中读取；
+// 版本在加载之前读取，所以 Invalidate 返回之后，Remember 只返回在 Invalidate 之后开始加载的值。
 // 读取 tag 的版本失败时直接加载，结果不写入缓存。同一个 key 每次应传入相同的 tags。
 func (c *Cache[T]) Remember(ctx context.Context, key string, load func(ctx context.Context) (T, error), tags ...string) (T, error) {
 	key = c.storedKey(key)
@@ -133,7 +133,7 @@ func (c *Cache[T]) Remember(ctx context.Context, key string, load func(ctx conte
 		}
 		c.logs.warn(ctx, "decode cached value failed", "key", key, "error", err)
 	}
-	// 版本不同的加载不共用：版本变化之后的 Remember 不能等待变化之前开始的加载。
+	// 加载只在版本相同时共用：版本变化之后的 Remember 发起新的加载。
 	flight := strconv.FormatUint(c.forgets.Load(), 10) + "\x00" + header + key
 	select {
 	case r := <-c.group.DoChan(flight, func() (any, error) { return c.fill(ctx, key, header, store, load) }):
@@ -147,7 +147,7 @@ func (c *Cache[T]) Remember(ctx context.Context, key string, load func(ctx conte
 	}
 }
 
-// Forget 删除 key 的值，例如数据修改之后。正在进行的加载不会被之后的 Remember 共用。
+// Forget 删除 key 的值，例如数据修改之后。之后的 Remember 发起新的加载。
 // 缓存的删除失败时返回错误。
 func (c *Cache[T]) Forget(ctx context.Context, key string) error {
 	key = c.storedKey(key)
@@ -164,7 +164,7 @@ func (c *Cache[T]) Forget(ctx context.Context, key string) error {
 func (c *Cache[T]) Invalidate(ctx context.Context, tags ...string) error {
 	var errs []error
 	for _, tag := range tags {
-		// 版本不存在（从未读取或已被淘汰）时不用处理：之后的 Remember 会创建一个随机的新版本，与缓存中的值都不一致。
+		// 版本不存在（从未读取或已被淘汰）时直接返回：之后的 Remember 会创建一个随机的新版本，与缓存中的值都不一致。
 		if _, err := c.mc.Increment(tagKey(tag), 1); err != nil && !errors.Is(err, memcache.ErrCacheMiss) {
 			errs = append(errs, errors.Wrapf(err, "cachex: invalidate %q", tag))
 		}
@@ -182,7 +182,7 @@ func tagKey(tag string) string {
 	return legalized(tagPrefix + tag)
 }
 
-// legalized 返回 key 本身，不能直接作为 Memcached 的键时换成摘要。
+// legalized 返回 key 本身，超出 Memcached 键的规则时换成摘要。
 func legalized(key string) string {
 	if legalKey(key) {
 		return key
@@ -306,7 +306,7 @@ func (c *Cache[T]) write(ctx context.Context, key, raw string, ttl time.Duration
 	}
 }
 
-// call 调用 load，把 panic 转为错误：并发等待的调用者不能被一次 panic 拖垮。
+// call 调用 load，把 panic 转为错误：并发等待的调用者都收到这个错误。
 func call[T any](ctx context.Context, load func(ctx context.Context) (T, error)) (v T, err error) {
 	defer func() {
 		if r := recover(); r != nil {

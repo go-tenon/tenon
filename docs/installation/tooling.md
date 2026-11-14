@@ -21,7 +21,7 @@
 <a id="installation"></a>
 ## 安装
 
-用 [tenon init](#init) 生成的项目已经装好了。已有的项目把 `tenon` 加入 `go.mod` 的工具，版本随框架一起固定，不需要另外安装：
+用 [tenon init](#init) 生成的项目已经装好了。已有的项目把 `tenon` 加入 `go.mod` 的工具，版本随框架一起固定：
 
 ```bash
 go get -tool github.com/go-tenon/tenon/cmd/tenon
@@ -60,7 +60,7 @@ export default defineConfig({
 go run github.com/go-tenon/tenon/cmd/tenon@main init todo
 ```
 
-在 `todo` 目录生成一个能直接运行的项目：Go 应用加 React 单页应用，带一个待办事项的示例资源，数据保存在内存中，不依赖任何外部服务。目录结构与入口说明见[脚手架](scaffolding.md#creating-a-project)。
+在 `todo` 目录生成一个能直接运行的项目：Go 应用加 React 单页应用，带一个待办事项的示例资源，数据保存在内存中，生成后即可运行。目录结构与入口说明见[脚手架](scaffolding.md#creating-a-project)。
 
 生成后它运行 `go mod tidy`、生成 TypeScript 客户端，装了 Bun 时再运行 `bun install`。`--module` 是 Go 模块路径，`--name` 是应用的名称，默认都是目录名。目录必须不存在或为空。
 
@@ -75,10 +75,10 @@ bun run dev   # 即 go tool tenon dev
 
 它同时运行：
 
-- **Vite**：在 `package.json` 所在的目录运行 `bun x vite`（不经过 `package.json` 的 `dev` 脚本，那个名字留给 `tenon dev` 自己）。启动前没有 `node_modules` 时先 `bun install`；没有 `dist` 时写一个占位的 `index.html`，`go:embed` 才能编译通过，开发时页面来自 Vite，用不到它。
+- **Vite**：在 `package.json` 所在的目录运行 `bun x vite`（直接启动 Vite，`package.json` 的 `dev` 脚本留给 `tenon dev` 自己）。启动前没有 `node_modules` 时先 `bun install`；没有 `dist` 时写一个占位的 `index.html`，`go:embed` 才能编译通过，开发时页面来自 Vite。
 - **应用**：等 Vite 能访问后，把 `main` 编译到临时目录，用 `serve` 中的参数运行。应用的 `httpx.SPA` 把页面请求转给 Vite（`config/local.yaml` 中的 `frontend_dev_server`），浏览器打开应用的地址，页面和 API 同源，热更新照常工作。
 - **重新编译**：模块中的 `.go` 文件（测试除外）、`go.mod`、`go.sum` 变化后重新编译。成功时平滑停止旧进程（`SIGTERM`），启动新的，再运行一次 [`generate`](#generate)，前端的类型随接口一起更新；失败时打印编译错误，旧进程继续运行。跳过隐藏目录、`node_modules`、`vendor`、`testdata` 和 `dist`。
-- **服务端渲染的页面**（模块中有 `.templ` 文件时）：`go tool templ generate --watch`，在 `templ.proxyPort`（默认 7331）代理应用并注入自动刷新的脚本，这时打开 http://localhost:7331。只改了文字时不必重新编译。`templ.static` 目录中的文件变化时也刷新浏览器。
+- **服务端渲染的页面**（模块中有 `.templ` 文件时）：`go tool templ generate --watch`，在 `templ.proxyPort`（默认 7331）代理应用并注入自动刷新的脚本，这时打开 http://localhost:7331。只改了文字时直接生效，跳过重新编译。`templ.static` 目录中的文件变化时也刷新浏览器。
 - **Tailwind 和其他工具**：见 [tenon.json](#configuration)。
 
 启动前检查用到的命令是否已安装：Go、Bun、templ（`go get -tool github.com/a-h/templ/cmd/templ`）、Tailwind。按 `Ctrl-C` 停止后，它平滑停止应用，再运行 `templ generate`、`vite build`、`tailwindcss --minify` 和各工具的 `build`，把监听模式的输出恢复为正式版本。
@@ -143,6 +143,6 @@ bun run build   # 即 go tool tenon build
 root.AddCommand(httpcmd.Commands(func() chi.Routes { return routes(config.Default[Config](), nil) })...)
 ```
 
-`routes` 是 `serve` 也在用的路由函数。命令用默认配置和 `nil` 依赖调用它，只读取构造出的路由，不启动服务、不连接数据库。
+`routes` 是 `serve` 也在用的路由函数。命令用默认配置和 `nil` 依赖调用它，只读取构造出的路由。
 
 `config/local.yaml` 设置 `frontend_dev_server: http://localhost:5173`，开发时 `httpx.SPA` 把页面请求转给 Vite，见[单页应用的开发](../responses/spa.md#development)。

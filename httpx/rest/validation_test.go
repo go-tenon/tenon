@@ -98,7 +98,7 @@ func TestValidationErrorsTranslated(t *testing.T) {
 		t.Fatalf("errors: %v", got)
 	}
 
-	// 业务错误不受影响。
+	// 业务错误保持原样。
 	status, p = post(api, "?limit=1", `{"title":"ok","slug":"ok","email":"a@example.com"}`)
 	if status != http.StatusConflict || p.Code != "article.slug_taken" || p.Errors != nil {
 		t.Fatalf("%d %+v", status, p)

@@ -33,7 +33,7 @@ const chunk = 100
 // 导入结束时上传的文件被删除，由 filesystem 的 Cleanup 回收；下载失败的行只用到表头和失败行。
 //
 // 每次保存进度都在同一个事务中调用 saved（可以为 nil），imp 是保存后的导入，用法见 operation.Service.Run。
-// 导入不存在（例如已被清理）或者已经结束时，Process 什么也不做，返回 nil。
+// 导入不存在（例如已被清理）或者已经结束时，Process 直接返回 nil。
 func Process[T any](ctx context.Context, s *Service, id uuid.UUID,
 	row func(ctx context.Context, imp *Import, rec *sheet.Record[T]) error,
 	saved func(ctx context.Context, tx database.Tx, imp *Import) error,

@@ -2,7 +2,7 @@
 
 业务动作（action）是 Tenon 推荐的组织业务逻辑的方式：每个业务动作是一个类型，单独放在一个文件中。例如“发布文章”就是 `article/publish.go` 中的 `article.Publish`，这个文件包含发布文章所需的全部代码：依赖、业务规则，以及 HTTP 接口、队列任务、命令行等各个入口。
 
-这个模式不需要框架的任何支持：没有 `Action` 接口，没有反射，也不按方法名自动发现。你写的就是普通的 Go 类型和方法。
+这个模式只用到普通的 Go 类型和方法：每个动作由构造函数创建，由调用者显式调用。
 
 - [为什么按动作组织](#why)
 - [编写动作](#writing-actions)
@@ -36,7 +36,7 @@ type Publish struct {
 }
 ```
 
-`Publish` 只依赖它真正需要的东西。修改“发布文章”时，只需要看 `publish.go` 一个文件；新增一个业务动作，就新增一个文件，不会让某个类型越来越大。
+`Publish` 只依赖它真正需要的东西。修改“发布文章”时，只需要看 `publish.go` 一个文件；新增一个业务动作，就新增一个文件，每个类型都保持很小。
 
 <a id="writing-actions"></a>
 ## 编写动作
@@ -53,7 +53,7 @@ func NewPublish(db *bun.DB) *Publish {
     return &Publish{db: db}
 }
 
-// Handle 发布一篇草稿：只有作者能发布，不能重复发布。
+// Handle 发布一篇草稿：只有作者能发布，每篇只发布一次。
 func (a *Publish) Handle(ctx context.Context, subject identity.Subject, id uuid.UUID) (*Article, error) {
     item := new(Article)
     err := database.RunInTx(ctx, a.db, nil, func(ctx context.Context, tx database.Tx) error {
@@ -82,7 +82,7 @@ func (a *Publish) Handle(ctx context.Context, subject identity.Subject, id uuid.
 }
 ```
 
-`Handle` 就是这个业务动作本身。注意它的参数：调用者的身份 `subject` 是**显式传入**的，而不是从 context 中读取。这样，命令行、队列任务和测试都可以直接调用它，传入合适的身份即可，见[授权](../security/authorization.md#ownership)。
+`Handle` 就是这个业务动作本身。注意它的参数：调用者的身份 `subject` 是**显式传入**的。这样，命令行、队列任务和测试都可以直接调用它，传入合适的身份即可，见[授权](../security/authorization.md#ownership)。
 
 接着，给它加上 HTTP 入口。HTTP 入口也是一个方法，通常叫 `HTTP`：
 
@@ -102,7 +102,7 @@ func (a *Publish) HTTP(ctx context.Context, in *PublishInput) (*ArticleOutput, e
 }
 ```
 
-`HTTP` 只做转换：从输入中取出参数，从 context 中取出调用者，调用 `Handle`，再把结果转换为响应。它不包含任何业务规则。`Handle` 返回的业务错误原样返回，由框架转换为对应的状态码，见[错误处理](../general/errors.md)。
+`HTTP` 只做转换：从输入中取出参数，从 context 中取出调用者，调用 `Handle`，再把结果转换为响应。业务规则全部在 `Handle` 中。`Handle` 返回的业务错误原样返回，由框架转换为对应的状态码，见[错误处理](../general/errors.md)。
 
 <a id="shared-code"></a>
 ## 模块内共享的代码
@@ -147,7 +147,7 @@ func CanEdit(subject identity.Subject, item *Article) bool {
 `find` 没有导出，因为它只是业务动作之间共享的实现细节。`CanEdit` 则是一条授权规则，页面也要用同一条规则决定显示哪些按钮，所以导出，见[授权函数](../security/authorization.md#authorization-functions)。模型的写法见[定义模型](../database/quick-start.md#defining-models)，业务错误见[定义业务错误](../general/errors.md#defining-errors)。
 
 > [!TIP]
-> 不要因为两个业务动作有几行相似的代码就急着提取函数。等到规则真正相同时再提取，否则修改其中一个时，另一个也会被意外改变。
+> 两个业务动作的规则真正相同时，再提取公共函数。只是几行代码相似时各写各的，修改其中一个时另一个保持原样。
 
 <a id="entry-points"></a>
 ## 从不同入口运行
@@ -193,7 +193,7 @@ func (a *Publish) Job(ctx context.Context, id uuid.UUID) error {
     case errors.Is(err, ErrAlreadyPublished):
         return nil
     case errors.Is(err, ErrNotFound):
-        return queue.Permanent(err) // 文章已被删除，不再重试
+        return queue.Permanent(err) // 文章已被删除，任务到此结束
     }
     return err
 }
@@ -282,7 +282,7 @@ func Commands() []*cobra.Command {
 ```
 
 > [!IMPORTANT]
-> 声明命令时传入的依赖都是零值，所以 `Commands` 和业务动作的构造函数只能**保存**依赖，不能**使用**它们。同样的原因，`RunE` 要用 `cmd.Flags().GetString` 这类方法读取选项，不要用 `StringVar` 绑定的变量：真正执行的是重新声明的命令，绑定的变量不会被解析。
+> 声明命令时传入的依赖都是零值，所以 `Commands` 和业务动作的构造函数只**保存**依赖，执行时才**使用**它们。同样的原因，`RunE` 用 `cmd.Flags().GetString` 这类方法读取选项：真正执行的是重新声明的命令，其中用 `StringVar` 绑定的变量始终是零值。
 
 <a id="as-tools"></a>
 ### AI 工具
@@ -307,13 +307,13 @@ func (a *Publish) Tool(ctx context.Context, in PublishArgs) (*ArticleDTO, error)
 <a id="direct-calls"></a>
 ### 页面、其他动作和脚本
 
-除了上面这些入口，其他地方直接调用 `Handle` 即可。例如[页面处理器](../responses/views.md#rendering-pages)持有它用到的业务动作；[填充数据](../database/migrations.md#seeding)的 `seed` 命令组合了“创建”和“发布”两个动作，它不是某一个动作的入口，所以直接调用它们的 `Handle`：
+除了上面这些入口，其他地方直接调用 `Handle` 即可。例如[页面处理器](../responses/views.md#rendering-pages)持有它用到的业务动作；[填充数据](../database/migrations.md#seeding)的 `seed` 命令组合了“创建”和“发布”两个动作，直接调用它们的 `Handle`：
 
 ```go
 item, err := article.NewCreate(db).Handle(ctx, alice, changes)
 ```
 
-一个业务动作需要另一个业务动作时，通过构造函数接收它，而不是在内部构造。例如[导入文章](../features/import-export.md#import-action)复用“创建文章”的规则：
+一个业务动作需要另一个业务动作时，通过构造函数接收它。例如[导入文章](../features/import-export.md#import-action)复用“创建文章”的规则：
 
 ```go
 type Import struct {
@@ -382,15 +382,15 @@ func ArticlePublished(ctx context.Context, tx database.Tx, item *article.Article
 }
 ```
 
-`points` 导入 `article`，而 `article` 不导入 `points`，所以不会出现循环导入。钩子需要依赖时，把它写成某个类型的方法，再传入方法值，就像 `HTTP`、`Job` 这些入口方法一样。
+`points` 导入 `article`，依赖只有这一个方向。钩子需要依赖时，把它写成某个类型的方法，再传入方法值，就像 `HTTP`、`Job` 这些入口方法一样。
 
 > [!NOTE]
-> 如果发布之前必须先通过另一个模块的检查（例如内容审核），这个检查就不是后续动作，而是 `Publish` 的依赖：在 `article` 中声明一个小接口，由构造函数接收，见[构造函数注入](dependencies.md#constructor-injection)。
+> 如果发布之前必须先通过另一个模块的检查（例如内容审核），这个检查就是 `Publish` 的依赖：在 `article` 中声明一个小接口，由构造函数接收，见[构造函数注入](dependencies.md#constructor-injection)。
 
 <a id="wiring-hooks"></a>
 ### 在 bootstrap 中连接
 
-`Publish` 在路由、worker 和命令中都会被构造。每一处都要传入同样的钩子，否则通过[定时发布](#as-jobs)的文章就不会加积分。为了不漏掉，在 bootstrap 中给钩子列表起一个名字，各处都使用它：
+`Publish` 在路由、worker 和命令中都会被构造。每一处都要传入同样的钩子，通过[定时发布](#as-jobs)的文章才会加积分。在 bootstrap 中给钩子列表起一个名字，各处都使用它：
 
 ```go
 // onPublished 是发布文章时在同一个事务中执行的钩子，构造 article.Publish 的地方都传入它。
@@ -416,15 +416,15 @@ article.Commands(a.db, onPublished)
 | --- | --- |
 | 必须和发布一起成功，例如加积分 | 在钩子中用 `tx` 写入 |
 | 可以稍后执行、失败要重试，例如通知关注者 | 在钩子中用 `tx` 发布[队列任务](../libraries/queue.md)：`Topic.Publish(ctx, tx, …)`，事务提交后才投递 |
-| 不能回滚的副作用，例如广播、删除缓存 | 在钩子中用 [`tx.AfterCommit`](../database/quick-start.md#after-commit) 登记 |
+| 回滚时撤销不了的副作用，例如广播、删除缓存 | 在钩子中用 [`tx.AfterCommit`](../database/quick-start.md#after-commit) 登记 |
 
 > [!WARNING]
-> 不要在钩子中用 `*bun.DB` 开启另一个事务。它看不到还没有提交的文章；而发布回滚时，它的写入也不会被撤销。
+> 钩子中的写入都使用传入的 `tx`。另开的事务看不到还没有提交的文章，发布回滚时它的写入也会留下来。
 
 <a id="data-objects"></a>
 ## 数据对象
 
-你可能会问：验证规则、请求数据和响应数据放在哪里？在 Tenon 中，它们都由普通的 Go 结构体描述，不需要专门的“数据对象”：
+你可能会问：验证规则、请求数据和响应数据放在哪里？在 Tenon 中，它们都由普通的 Go 结构体描述：
 
 | 用途 | 写法 |
 | --- | --- |
@@ -435,7 +435,7 @@ article.Commands(a.db, onPublished)
 | 响应 | `ArticleDTO` 和转换函数 `toDTO`，见[共享响应结构](../http/routing.md#shared-responses) |
 | 前端类型 | 由导出的 OpenAPI 文档生成，见[客户端代码](../responses/clients.md) |
 
-`Changes` 只声明一次，JSON 接口、页面表单和业务代码都使用它，验证规则就不会在几个地方写得不一致。转换函数也只是普通的函数，字段改名时，编译器会发现遗漏的地方。
+`Changes` 只声明一次，JSON 接口、页面表单和业务代码都使用它，验证规则只有一份。转换函数也只是普通的函数，字段改名时，编译器会发现遗漏的地方。
 
 <a id="conventions"></a>
 ## 约定
@@ -443,9 +443,9 @@ article.Commands(a.db, onPublished)
 最后，总结一下编写业务动作时的几条约定：
 
 - **命名**：类型名是动词，包名已经说明了对象，例如 `article.Publish`、`article.Create`；文件名与类型名对应，例如 `publish.go`。
-- **构造函数只保存依赖**：生成 OpenAPI 文档、[查看路由](../http/routing.md#listing-routes)和[声明命令](#as-commands)时，业务动作会被构造，但传入的依赖都是零值，方法不会被调用。
+- **构造函数只保存依赖**：生成 OpenAPI 文档、[查看路由](../http/routing.md#listing-routes)和[声明命令](#as-commands)时，业务动作会被构造，但传入的依赖都是零值，方法在执行时才被调用。
 - **字段只保存依赖**：业务动作会被并发调用，请求的数据只能放在参数和局部变量中。
 - **`Handle` 是唯一的业务入口**：入口方法只做转换，按来源命名为 `HTTP`、`Job`、`Command`、`Tool`。
 - **测试 `Handle`**：业务规则直接调用 `Handle` 测试，入口的认证和验证通过 HTTP 测试覆盖，见[测试](../testing/database.md#testing-actions)。
 
-这些都是推荐的约定，框架并不检查它们。简单的接口也可以直接用一个函数作为处理器，见[路由](../http/routing.md#basic-routing)。
+这些都是推荐的约定，由团队自己遵守。简单的接口也可以直接用一个函数作为处理器，见[路由](../http/routing.md#basic-routing)。

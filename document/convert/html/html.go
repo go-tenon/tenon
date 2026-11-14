@@ -93,7 +93,7 @@ func (c *Converter) Convert(ctx context.Context, in convert.Input) (convert.Docu
 		options = append(options, converter.WithDomain(in.BaseURL))
 	}
 	output, err := c.converter.ConvertNode(doc, options...)
-	// 转换库不检查 ctx，所以在它返回之后检查一次取消。
+	// 转换库忽略 ctx，所以在它返回之后检查一次取消。
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return convert.Document{}, ctxErr
 	}

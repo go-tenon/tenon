@@ -70,7 +70,7 @@ func TestSlotMigrationEndsSubscriptions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 原子槽迁移（Redis 8.4）在目标节点上发起，槽里的键随之迁移，并行运行的其他测试不受影响。
+	// 原子槽迁移（Redis 8.4）在目标节点上发起，槽里的键随之迁移，并行运行的其他测试照常进行。
 	moved := false
 	for addr, node := range rdb.Nodes() {
 		if addr == owner {
@@ -161,7 +161,7 @@ func TestNewPanics(t *testing.T) {
 	}
 }
 
-// killPubSub 断开名为 name 的客户端的订阅连接，不影响并行运行的其他测试。集群中逐个节点查找。
+// killPubSub 断开名为 name 的客户端的订阅连接，并行运行的其他测试照常进行。集群中逐个节点查找。
 func killPubSub(rdb rueidis.Client, name string) error {
 	ctx := context.Background()
 	killed := 0

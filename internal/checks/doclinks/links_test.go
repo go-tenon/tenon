@@ -17,7 +17,7 @@ var (
 )
 
 // TestRelativeLinks 检查 README.md、DEVELOPMENT.md 和 docs 下全部文档中的相对链接：指向的文件存在，
-// 带锚点时目标文档中有 <a id="锚点"></a>。代码块和行内代码中的内容不检查。
+// 带锚点时目标文档中有 <a id="锚点"></a>。代码块和行内代码中的内容跳过。
 func TestRelativeLinks(t *testing.T) {
 	root := "../../.."
 	files := []string{filepath.Join(root, "README.md"), filepath.Join(root, "DEVELOPMENT.md")}

@@ -371,7 +371,7 @@ func TestDeliverErrors(t *testing.T) {
 		t.Fatalf("temporary failure: %v, %d batches", err, len(fake.Batches()))
 	}
 
-	// 只有永久失败时不再重试。
+	// 只有永久失败时直接结束。
 	fake = failOn(push.Android, queue.Permanent(errors.New("bad app key")))
 	err = push.NewDeliverer(db, fake, push.Options{}).DeliverNow(ctx, job)
 	if !queue.IsPermanent(err) || len(fake.Batches()) != 1 {

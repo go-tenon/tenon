@@ -30,7 +30,7 @@ type Store struct {
 	next  int64
 }
 
-// NewStore 创建空的 Store。items 不是 nil，列表为空时返回 [] 而不是 null。
+// NewStore 创建空的 Store。items 初始化为空切片，列表为空时返回 []。
 func NewStore() *Store { return &Store{items: []Todo{}} }
 
 type ListOutput struct {
@@ -50,8 +50,8 @@ type TodoOutput struct {
 type UpdateInput struct {
 	ID   int64 `path:"id"`
 	Body struct {
-		Title string `json:"title,omitempty" maxLength:"200" doc:"新的标题，为空时不修改"`
-		Done  *bool  `json:"done,omitempty" doc:"是否完成，不传时不修改"`
+		Title string `json:"title,omitempty" maxLength:"200" doc:"新的标题，为空时保留原值"`
+		Done  *bool  `json:"done,omitempty" doc:"是否完成，省略时保留原值"`
 	}
 }
 
@@ -59,7 +59,7 @@ type IDInput struct {
 	ID int64 `path:"id"`
 }
 
-// Register 注册待办事项的接口。它只保存 s、不调用 s，生成文档时 s 是 nil。
+// Register 注册待办事项的接口。它只保存 s，处理请求时才调用，所以生成文档时 s 可以是 nil。
 func Register(api *rest.API, s *Store) {
 	op := func(id, method, path, summary string) huma.Operation {
 		o := huma.Operation{OperationID: id, Method: method, Path: path, Summary: summary}

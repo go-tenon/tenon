@@ -60,7 +60,7 @@ Tenant: func(ctx huma.Context) string { return ctx.Header("X-Tenant") },
 
 取出的租户在每个请求开始时写入 context，公开的路由也一样，业务代码用 `identity.TenantFromContext` 读取。取不到时租户是 `""`，即平台本身。租户使用自定义域名、需要查表才能确定时，在 chi 中间件中完成查找并拒绝未知的域名，`Tenant` 只读取查找结果。
 
-`roles.Resolve` 加载用户在这个租户中的权限，并写入 `sub.Tenant`。用户在这个租户中没有任何角色时返回 `404`：不是成员的人无法分辨这个租户是否存在。
+`roles.Resolve` 加载用户在这个租户中的权限，并写入 `sub.Tenant`。用户在这个租户中没有任何角色时返回 `404`：租户是否存在只有成员知道。
 
 <a id="members"></a>
 ## 成员与角色
@@ -110,14 +110,14 @@ func (a *Create) Handle(ctx context.Context, subject identity.Subject, name stri
 
 调整角色或移出成员之后，调用 [`RecheckSubject`](../responses/sse.md#immediate-revocation) 让这个人已经打开的长连接立即按新的权限校验。
 
-**租户 ID 只能来自 `sub.Tenant`，不能来自表单或请求体**，否则管理员可以操作其他租户。`Assign` 会拒绝把其他租户的角色分配到本租户，但无法知道调用者是否有权管理这个租户，这由路由上的 `members:manage` 和 `sub.Tenant` 保证。
+**租户 ID 只能来自 `sub.Tenant`**：取自表单或请求体的话，管理员就能操作其他租户。`Assign` 会拒绝把其他租户的角色分配到本租户；调用者是否有权管理这个租户，由路由上的 `members:manage` 和 `sub.Tenant` 保证。
 
-全局角色中可能有只供运营使用的角色。租户的角色列表中不应出现它们时，在展示和分配前按名称过滤。即使分配了，权限也只在这个租户中生效，不会扩散到平台或其他租户。
+全局角色中可能有只供运营使用的角色。要在租户的角色列表中隐藏它们时，在展示和分配前按名称过滤。即使分配了，权限也只在这个租户中生效。
 
 <a id="switching-tenants"></a>
 ### 切换租户
 
-`roles.Tenants(ctx, sub.Ref())` 返回用户所属的全部租户，用于登录后的租户选择页或顶部的切换菜单。切换只是跳转到另一个租户的地址，例如从 `/t/acme` 到 `/t/globex`，令牌不需要改变。
+`roles.Tenants(ctx, sub.Ref())` 返回用户所属的全部租户，用于登录后的租户选择页或顶部的切换菜单。切换只是跳转到另一个租户的地址，例如从 `/t/acme` 到 `/t/globex`，令牌保持不变。
 
 <a id="data-isolation"></a>
 ## 租户数据隔离
@@ -135,7 +135,7 @@ CREATE TABLE articles (
 CREATE INDEX articles_tenant_created ON articles (tenant_id, created_at);
 ```
 
-业务动作从主体中取租户，每一个查询都加上这个条件，写入时也从主体中取。模块内共享的 `find` 接收主体，而不是单独的租户 ID：
+业务动作从主体中取租户，每一个查询都加上这个条件，写入时也从主体中取。模块内共享的 `find` 接收整个主体：
 
 ```go
 func find(ctx context.Context, db bun.IDB, subject identity.Subject, id uuid.UUID) (*Article, error) {
@@ -157,14 +157,14 @@ func (a *Create) Handle(ctx context.Context, subject identity.Subject, c Changes
 这是多租户应用中最重要的约定：漏掉一个条件，就会把一个租户的数据暴露给另一个租户。几个习惯可以降低风险：
 
 - `Handle` 和模块内的查询函数总是接收 `identity.Subject`，不单独接收租户 ID；
-- 按 ID 查询时也带上 `tenant_id`，不要先按 ID 查出来再比较；
+- 按 ID 查询时也带上 `tenant_id`，在查询条件中限定；
 - 为每个业务动作写一个“其他租户访问不到”的测试，例如用租户 B 的主体读取租户 A 的文章，期望 `404`，见[测试业务动作](../testing/database.md#testing-actions)；
 - 使用 PostgreSQL 时，可以再加上[行级安全策略](https://www.postgresql.org/docs/current/ddl-rowsecurity.html)作为兜底：在事务开始时 `SET LOCAL app.tenant_id`，由策略限制每个查询只能看到这个租户的行。
 
 <a id="background-work"></a>
 ## 后台任务
 
-请求中的租户来自 `Tenant` 选项，队列和定时任务没有请求，租户只能由任务自己带着。worker 不会恢复任何上下文：业务动作从参数 `subject` 中取租户，所以只要构造出带租户的主体，`Handle` 的写法与请求中完全相同。
+请求中的租户来自 `Tenant` 选项，队列和定时任务没有请求，租户只能由任务自己带着。worker 只依据任务参数：业务动作从参数 `subject` 中取租户，所以只要构造出带租户的主体，`Handle` 的写法与请求中完全相同。
 
 <a id="tenant-jobs"></a>
 ### 队列任务
@@ -202,9 +202,9 @@ err := PublishAt.Publish(ctx, tx, PublishJob{Tenant: subject.Tenant, ID: item.ID
 <a id="tenant-scheduled-tasks"></a>
 ### 定时任务
 
-[发布到期文章](../libraries/scheduling.md#defining-tasks)的 `PublishScheduled` 用一条 `UPDATE` 处理所有到期的文章，不区分租户，也不需要主体，多租户时不用改。
+[发布到期文章](../libraries/scheduling.md#defining-tasks)的 `PublishScheduled` 用一条 `UPDATE` 处理所有租户到期的文章，多租户时保持原样。
 
-需要逐个租户执行的任务，例如每天给每个租户发一份摘要，不要在定时任务里循环处理：一个租户出错会中断其他租户，执行时间也随租户数量增长。定时任务只为每个租户发布一个队列任务，由 worker 并行处理，各自重试：
+需要逐个租户执行的任务，例如每天给每个租户发一份摘要，由定时任务为每个租户发布一个队列任务，worker 并行处理，各自重试。这样一个租户出错只影响它自己，执行时间也与租户数量无关：
 
 ```go
 // SendDigest 是一个租户的每日摘要，payload 是租户 ID。
@@ -236,11 +236,11 @@ func (a *ScheduleDigests) Handle(ctx context.Context) error {
 | 资源 | 做法 |
 | --- | --- |
 | [缓存](../libraries/cache.md) | 键带上租户：`app:article:v1:<tenant>:<id>`。缓存一章的 `load` 只按 ID 读取，命中后会跳过 `find` 的租户条件，把其他租户的文章返回出去；它要和 `find` 一样接收主体，用 `subject.Tenant` 组成键 |
-| [广播](../libraries/broadcasting.md) | 主题带上租户：`t:<tenant>:articles`。SSE 处理器用 `sub.Tenant` 订阅，不要从查询参数中取租户；[实时频道](../libraries/realtime.md#private-channels)的授权函数把频道名中的租户与 `sub.Tenant` 比较 |
-| [限流](../libraries/rate-limiting.md) | 按用户或 IP 的限流不用改；按租户限额时，key 用 `tenant:<id>` |
-| [锁](../libraries/locks.md) | 锁名中的 ID 全局唯一（如 UUID）时不用改；按 slug 等租户内唯一的值加锁时，带上租户 |
-| [Webhook](../features/webhooks.md) | 不用改。端点属于租户，`Event.Send` 只发给 `subject.Tenant` 的端点 |
-| [文件](../libraries/filesystem.md) | 不用改。文件记录的是上传者，引用文件的业务行（如文章的封面）有 `tenant_id`，读写都经过业务行的租户检查 |
+| [广播](../libraries/broadcasting.md) | 主题带上租户：`t:<tenant>:articles`。SSE 处理器用 `sub.Tenant` 订阅；[实时频道](../libraries/realtime.md#private-channels)的授权函数把频道名中的租户与 `sub.Tenant` 比较 |
+| [限流](../libraries/rate-limiting.md) | 按用户或 IP 的限流保持原样；按租户限额时，key 用 `tenant:<id>` |
+| [锁](../libraries/locks.md) | 锁名中的 ID 全局唯一（如 UUID）时保持原样；按 slug 等租户内唯一的值加锁时，带上租户 |
+| [Webhook](../features/webhooks.md) | 保持原样。端点属于租户，`Event.Send` 只发给 `subject.Tenant` 的端点 |
+| [文件](../libraries/filesystem.md) | 保持原样。文件记录的是上传者，引用文件的业务行（如文章的封面）有 `tenant_id`，读写都经过业务行的租户检查 |
 
 
 <a id="platform"></a>
@@ -253,7 +253,7 @@ platformAdmin, err := roles.CreateRole(ctx, authz.Role{Name: "platform-admin", P
 err = roles.Assign(ctx, staff, "", platformAdmin.ID) // staff 是运营人员的 identity.Ref
 ```
 
-平台和租户的权限互不相通：在平台中的角色不会带来任何租户中的权限，反之亦然。
+平台和租户的权限各自独立：平台中的角色只在平台生效，租户中的角色只在该租户生效。
 
 客服需要进入租户排查问题时，在所有租户（`authz.AllTenants`）中给他分配一个只读的全局角色，他在每个租户中都拥有这个角色的权限：
 

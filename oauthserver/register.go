@@ -129,7 +129,7 @@ func (s *Server) registered(ctx context.Context, id string) (*client, error) {
 }
 
 // CleanupClients 返回删除超过 keep 没有用于授权的动态注册客户端的清理函数，每次最多删除 limit 个，用于定时任务。
-// 已签发的令牌不受影响；客户端之后再连接时重新注册。keep 不大于 0 时 panic。
+// 已签发的令牌继续有效；客户端之后再连接时重新注册。keep 不大于 0 时 panic。
 func (s *Server) CleanupClients(keep time.Duration) func(ctx context.Context, limit int) (int, error) {
 	if keep <= 0 {
 		panic("oauthserver: keep must be positive")

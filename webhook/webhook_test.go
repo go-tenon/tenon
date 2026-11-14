@@ -404,7 +404,7 @@ func TestDeliver(t *testing.T) {
 	}
 }
 
-// 默认客户端拒绝内网地址：投递直接标记为失败，不再重试，接收方收不到请求。
+// 默认客户端拒绝内网地址：投递直接标记为失败，请求在建立连接之前就被拦下。
 func TestDeliverRefusesPrivateAddresses(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)

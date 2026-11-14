@@ -191,7 +191,7 @@ func TestReplaceAndReuse(t *testing.T) {
 		t.Fatalf("documents after replace = %v", got)
 	}
 
-	// 什么都没变时不调用模型（上面的查询计算了查询文本的向量）
+	// 什么都没变时省去模型调用（上面的查询计算了查询文本的向量）
 	before := len(f.emb.Requests())
 	f.put(t, "a", chunkDoc{Text: "三"}, chunkDoc{Text: "四"}, chunkDoc{Text: "四"})
 	if n := len(f.emb.Requests()); n != before {
@@ -296,7 +296,7 @@ func TestModelMismatch(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 同一个 collection、没有配置建立它的模型的 Store：不能写入，也不能查询
+	// 同一个 collection、没有配置建立它的模型的 Store：写入和查询都返回错误
 	for _, m := range []vector.Model{{Name: "new", Dims: dims, Embedder: f.emb}, {Name: "old", Dims: dims * 2, Embedder: f.emb}} {
 		changed := shared.store(m)
 		if err := chunks.Refresh(ctx, changed, f.src.load, "a"); err == nil || !strings.Contains(err.Error(), "chunks_v1") {

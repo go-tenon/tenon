@@ -215,7 +215,7 @@ func TestMarkReadOnlyAffectsOwnUnreadNotifications(t *testing.T) {
 		t.Fatal("expected 2 unread")
 	}
 
-	// bob 的 ID 被忽略；没有 ID 时什么也不做。
+	// bob 的 ID 被忽略；没有 ID 时直接返回。
 	if err := notification.MarkRead(ctx, db, alice, forAlice[0].ID, forBob[0].ID); err != nil {
 		t.Fatal(err)
 	}

@@ -71,6 +71,6 @@ func TestRecordError(t *testing.T) {
 
 	record(nil)
 
-	// 不在记录的 span 什么也不做。
+	// 不在记录的 span 直接返回。
 	logging.RecordError(trace.SpanFromContext(context.Background()), errors.New("x"))
 }

@@ -15,7 +15,7 @@ import (
 // DefaultLimit 是 List 在 Query.Limit 不大于 0 时返回的条数。
 const DefaultLimit = 50
 
-// Activity 是一条操作记录，也是 activity_log 表的 Bun 模型，List 不能满足的查询可以直接用 Bun 编写。
+// Activity 是一条操作记录，也是 activity_log 表的 Bun 模型，List 之外的查询可以直接用 Bun 编写。
 type Activity struct {
 	bun.BaseModel `bun:"table:activity_log,alias:al"`
 

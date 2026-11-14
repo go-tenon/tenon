@@ -88,7 +88,7 @@ func TestAppendCreatesConversation(t *testing.T) {
 	t.Parallel()
 	rs := newRuns(t, chattest.NewModel(), nil)
 	ctx := context.Background()
-	// trpc-agent-go 丢弃第一条用户消息之前的内容：拒绝，而不是悄悄丢掉。
+	// trpc-agent-go 丢弃第一条用户消息之前的内容：这里直接拒绝。
 	if err := rs.Append(ctx, "u1", "new", "system", model.NewAssistantMessage("欢迎")); err == nil {
 		t.Fatal("assistant message accepted as the first message")
 	}

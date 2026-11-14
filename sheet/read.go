@@ -89,7 +89,7 @@ func (r *Reader) Rows() iter.Seq2[Row, error] {
 	}
 }
 
-// Close 释放读取 XLSX 时占用的资源，不会关闭传给 NewReader 的 io.Reader。
+// Close 释放读取 XLSX 时占用的资源，传给 NewReader 的 io.Reader 由调用者关闭。
 func (r *Reader) Close() error {
 	if r.close == nil {
 		return nil

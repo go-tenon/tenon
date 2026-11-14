@@ -84,7 +84,7 @@ curl localhost:8080/ping
 
 1. `rest.New` 在 chi 路由上创建一个 API，`Title` 和 `Version` 会出现在生成的接口文档中；
 2. `huma.Operation` 声明路由：唯一的 `OperationID`、HTTP 方法、路径和一句话说明；
-3. `rest.Public()` 把这条路由声明为公开的，不需要登录；
+3. `rest.Public()` 把这条路由声明为公开的，任何人都可以访问；
 4. `rest.Register` 把处理器 `ping` 注册到这条路由上。
 
 打开 `http://localhost:8080/docs`，你还能看到自动生成的、可交互的接口文档。
@@ -125,7 +125,7 @@ func(ctx context.Context, in *Input) (*Output, error)
 <a id="registration-checks"></a>
 ### 注册时的检查
 
-路由的错误越早发现越好。`rest.Register` 会在注册时检查以下问题，一旦发现就直接 panic，让错误在应用启动时（甚至在 CI 中导出文档时）立刻暴露，而不是上线后才发现：
+路由的错误越早发现越好。`rest.Register` 会在注册时检查以下问题，一旦发现就直接 panic，让错误在应用启动时（甚至在 CI 中导出文档时）立刻暴露：
 
 - 路由没有声明访问策略（没有调用 `Public` 或 `RequireBearer`）；
 - `OperationID` 为空或不是 kebab-case，例如 `articleCreate`；
@@ -154,7 +154,7 @@ Huma 会把路径中的值转换为字段的类型（这里是 `github.com/googl
 <a id="access-policies"></a>
 ## 访问策略
 
-忘记保护一个接口，是最常见也最危险的错误之一：它不会报错，只会悄悄地把数据暴露出去。所以 Tenon 要求每条路由都**显式**声明访问策略，没有声明的路由在注册时就会 panic。
+忘记保护一个接口，是最常见也最危险的错误之一：它会悄无声息地把数据暴露出去。所以 Tenon 要求每条路由都**显式**声明访问策略，没有声明的路由在注册时就会 panic。
 
 公开的路由，在注册之前调用 `rest.Public()`：
 
@@ -226,7 +226,7 @@ func Register(api *rest.API, requireArticles func(*huma.Operation), db *bun.DB) 
 }
 ```
 
-`Register` 接收模块的动作需要的依赖，在注册时构造它们。生成 OpenAPI 或查看路由时，`db` 为 `nil`，处理器不会被调用。
+`Register` 接收模块的动作需要的依赖，在注册时构造它们。生成 OpenAPI 或查看路由时，`db` 为 `nil`，处理器只被登记。
 
 入口在组装应用时调用它，并决定这些路由的访问策略。`validateToken` 是令牌校验器，见[认证](../security/authentication.md)：
 
@@ -287,7 +287,7 @@ type CreateInput struct {
 }
 ```
 
-每个 `HTTP` 方法只做三件事：从输入和 context 中取出参数、调用 `Handle`、把结果转换为输出。业务规则，包括“只有作者能发布”、“不能重复发布”，都在 `Handle` 中。不同动作使用各自的输入类型，后续可以独立增加字段或验证规则。
+每个 `HTTP` 方法只做三件事：从输入和 context 中取出参数、调用 `Handle`、把结果转换为输出。业务规则，包括“只有作者能发布”、“每篇只发布一次”，都在 `Handle` 中。不同动作使用各自的输入类型，后续可以独立增加字段或验证规则。
 
 <a id="shared-responses"></a>
 ### 共享响应结构
@@ -316,20 +316,20 @@ func toDTO(a *Article) ArticleDTO {
 }
 ```
 
-`ArticleDTO` 决定了 API 返回哪些字段。不要把模型 `Article` 直接作为响应体：给模型加一个内部字段，就会意外地把它暴露给客户端。请求和响应类型的详细写法分别见[请求](requests.md)和[响应](../responses/responses.md)。
+`ArticleDTO` 决定了 API 返回哪些字段。响应体始终用 DTO：模型 `Article` 直接作为响应体的话，给模型加一个内部字段，就会意外地把它暴露给客户端。请求和响应类型的详细写法分别见[请求](requests.md)和[响应](../responses/responses.md)。
 
-请求和响应中的具名类型在 OpenAPI 文档中以包名加类型名命名，类型名已经以包名开头时不重复：`article.Changes` 为 `ArticleChanges`，`comment.Changes` 为 `CommentChanges`，`article.ArticleDTO` 仍为 `ArticleDTO`；匿名的请求体以外层类型的名称加字段名命名，例如 `article.RejectInput` 的 `Body` 为 `ArticleRejectInputBody`。所以每个包都可以用 `Changes` 这样的短名，前端[生成的类型](../responses/clients.md#generated-names)也不会重名。
+请求和响应中的具名类型在 OpenAPI 文档中以包名加类型名命名，类型名已经以包名开头时只保留一次：`article.Changes` 为 `ArticleChanges`，`comment.Changes` 为 `CommentChanges`，`article.ArticleDTO` 仍为 `ArticleDTO`；匿名的请求体以外层类型的名称加字段名命名，例如 `article.RejectInput` 的 `Body` 为 `ArticleRejectInputBody`。所以每个包都可以用 `Changes` 这样的短名，前端[生成的类型](../responses/clients.md#generated-names)也不会重名。
 
 <a id="listing-routes"></a>
 ### 查看全部路由
 
-模块增多之后，你可以通过应用的 `routes` 命令查看全局路由表，无需逐个打开模块。按[命令行](../general/commands.md#routes-command)一章安装命令后，执行：
+模块增多之后，你可以通过应用的 `routes` 命令查看全局路由表。按[命令行](../general/commands.md#routes-command)一章安装命令后，执行：
 
 ```bash
 ./bin/api routes
 ```
 
-该命令用默认配置和 `nil` 依赖调用应用构造路由的函数，离线生成路由表，不需要启动 HTTP 服务或连接数据库。路由的真实声明仍保存在各模块的 `routes.go` 中，查看命令不需要另一份手工维护的路由清单。
+该命令用默认配置和 `nil` 依赖调用应用构造路由的函数，离线生成路由表。路由表直接来自各模块 `routes.go` 中的声明。
 
 <a id="api-versioning"></a>
 ## API 版本
@@ -383,21 +383,21 @@ Go 类型只能说明字段的类型和取值规则，字段的含义和示例�
 ```go
 type Changes struct {
     Title   string `json:"title" minLength:"1" maxLength:"200" example:"Hello World"`
-    Slug    string `json:"slug" maxLength:"100" pattern:"^[a-z0-9]+(-[a-z0-9]+)*$" patternDescription:"小写字母、数字和连字符" doc:"文章地址中的标识，全站唯一；发布后不能修改" example:"hello-world"`
+    Slug    string `json:"slug" maxLength:"100" pattern:"^[a-z0-9]+(-[a-z0-9]+)*$" patternDescription:"小写字母、数字和连字符" doc:"文章地址中的标识，全站唯一；发布后固定" example:"hello-world"`
     Content string `json:"content" example:"这是我的第一篇文章。"`
 }
 ```
 
 `/docs` 中这个接口的请求示例就会是 `{"title":"Hello World","slug":"hello-world","content":"这是我的第一篇文章。"}`，调用方可以直接修改后发送。路径参数、查询参数和请求头的写法相同，例如 `` ID uuid.UUID `path:"id" example:"0193a5c2-7d1e-7b3a-9f61-2c4e8d0a1b2c"` ``；响应体的写法见[共享响应结构](#shared-responses)中的 `ArticleDTO`。
 
-`doc` 只写类型和规则看不出来的约定。`minLength`、`pattern`、`enum` 等验证规则本身就会出现在文档中，不需要在 `doc` 里重复。
+`doc` 只写类型和规则看不出来的约定。`minLength`、`pattern`、`enum` 等验证规则本身就会出现在文档中。
 
-`example` 的值按字段类型解析：数字写 `example:"50"`，数组和对象写 JSON，例如 `example:"[\"go\",\"api\"]"`。值和类型不符时，`rest.Register` 在注册时 panic，执行 `routes` 或 `openapi` 命令就能发现。这些标签只写入文档，不影响验证和 JSON 编码。
+`example` 的值按字段类型解析：数字写 `example:"50"`，数组和对象写 JSON，例如 `example:"[\"go\",\"api\"]"`。值和类型不符时，`rest.Register` 在注册时 panic，执行 `routes` 或 `openapi` 命令就能发现。这些标签只写入文档。
 
 <a id="exporting-openapi"></a>
 ### 离线导出
 
-很多时候，你希望在不启动服务、不连接数据库的情况下生成 OpenAPI 文档，例如在 CI 中检查接口变更，或者为前端[生成客户端代码](../responses/clients.md)。只需用默认配置和 `nil` 依赖调用构造路由的同一个函数，再用 `rest.Lookup` 取出其中的 API：
+很多时候，你希望离线生成 OpenAPI 文档，例如在 CI 中检查接口变更，或者为前端[生成客户端代码](../responses/clients.md)。只需用默认配置和 `nil` 依赖调用构造路由的同一个函数，再用 `rest.Lookup` 取出其中的 API：
 
 ```go
 // routes 是 serve 也在用的路由函数，见依赖装配
@@ -427,7 +427,7 @@ api.Router().Get("/livez", func(w http.ResponseWriter, r *http.Request) {
 })
 ```
 
-这类路由同样会经过 Router 上安装的中间件（例如请求 ID、访问日志、panic 恢复），但不会出现在 OpenAPI 文档中，也没有类型化的输入验证。对于业务接口，请使用 `rest.Register`。
+这类路由同样会经过 Router 上安装的中间件（例如请求 ID、访问日志、panic 恢复），但它们只在 Router 上，OpenAPI 文档和类型化的输入验证都属于 `rest.Register`。业务接口使用 `rest.Register`。
 
 <a id="native-huma-register"></a>
 ### 使用原生 huma.Register
@@ -490,7 +490,7 @@ func APIs(router chi.Routes) []*API
 func Lookup(router chi.Routes, basePath string) (*API, error)
 ```
 
-`APIs` 遍历 `router`（包括挂载的子路由），按出现的顺序返回其中用 `New` 创建的全部 API，不调用任何处理器。`Lookup` 返回 `BasePath` 为 `basePath` 的那个；`basePath` 为空时，`router` 中必须恰好有一个 API。`openapi`、`client` 命令用它从应用的路由中取出 API，见[离线导出](#exporting-openapi)。
+`APIs` 遍历 `router`（包括挂载的子路由），按出现的顺序返回其中用 `New` 创建的全部 API，只读取路由表。`Lookup` 返回 `BasePath` 为 `basePath` 的那个；`basePath` 为空时，`router` 中必须恰好有一个 API。`openapi`、`client` 命令用它从应用的路由中取出 API，见[离线导出](#exporting-openapi)。
 
 ### Public、RequireBearer
 

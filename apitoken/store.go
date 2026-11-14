@@ -53,7 +53,7 @@ type Device struct {
 	UserAgent string
 }
 
-// Token 是已签发 token 的信息，不包含 token 本身。
+// Token 是已签发 token 的信息，token 明文只在签发时返回。
 type Token struct {
 	ID           string
 	Kind         Kind
@@ -83,7 +83,7 @@ const (
 
 // Store 是基于 Bun 的 token 存储，Migrations 提供表结构。可以并发使用。
 //
-// Config 只在 Login 签发时使用：登录 token 的空闲时长和最长期限写入 token 本身，Validate、List、Revoke 等不读取它。
+// Config 只在 Login 签发时使用：登录 token 的空闲时长和最长期限写入 token 本身，Validate、List、Revoke 等只读表。
 // 所以多个 Store 可以共用一张表，例如每套账号体系用自己的 Config 创建一个 Store 签发 token，
 // 校验交给其中任何一个都得到相同的结果。
 //
@@ -218,7 +218,7 @@ type Grant struct {
 }
 
 // Authorize 为 sub 签发 OAuth 令牌，返回 token 明文，明文只在这里返回一次。sub.Tenant 不为空时令牌只能在这个租户中使用。
-// 令牌只由 ValidateFor(g.Resource) 接受；它出现在 List 中，可以用 Revoke 撤销，不受 RevokeOthers 影响。
+// 令牌只由 ValidateFor(g.Resource) 接受；它出现在 List 中，可以用 Revoke 撤销，RevokeOthers 保留它。
 func (s *Store) Authorize(ctx context.Context, sub identity.Subject, g Grant) (string, error) {
 	if g.ClientID == "" || g.Resource == "" {
 		return "", errors.New("apitoken: an OAuth grant needs a client ID and a resource")
@@ -274,7 +274,7 @@ func (s *Store) issue(ctx context.Context, sub identity.Subject, r *row, now tim
 // 两者的 Permissions 都为空，由 Resolve 加载。token 不存在、已撤销或已过期时返回 ErrInvalid。
 //
 // 距上次记录使用超过一分钟时，更新最近使用时间，并延长登录 token 的有效期。
-// JWT 模式的 refresh token 不能直接作为 Bearer 凭据，OAuth 令牌只能用于它的资源（见 ValidateFor），两者校验都返回 ErrInvalid。
+// JWT 模式的 refresh token 只用于刷新，OAuth 令牌只能用于它的资源（见 ValidateFor），两者在这里校验都返回 ErrInvalid。
 func (s *Store) Validate(ctx context.Context, token string) (identity.Subject, error) {
 	return s.validate(ctx, token, "")
 }
@@ -338,11 +338,11 @@ func (s *Store) validate(ctx context.Context, token, resource string) (identity.
 
 // Confirm 记录 sub 本次请求所用的登录（sub.Credential）此刻再次验证了身份，例如用户重新输入了密码（login.Realm.Confirm），
 // methods 是这次用到的验证方式，补充到登录的 Auth.Methods 中；之后 rest.Confirmed 的路由在有效期内放行。
-// 用二次验证确认后，没有经过二次验证的登录也变为经过了（identity.Auth.TwoFactor），不需要重新登录。
+// 用二次验证确认后，没有经过二次验证的登录也变为经过了（identity.Auth.TwoFactor），当前的登录继续有效。
 //
 // 不透明的登录 token 下一个请求就生效；JWT 模式用 JWT.Confirm，它同时返回带有新验证情况的 access token。
 // sub.Credential 不是 sub 的登录（个人访问令牌、OAuth 令牌）时返回 ErrNotFound；代为登录的 token 返回 identity.ErrForbidden，
-// 实际操作的人不是主体本人。methods 不能为空。
+// 实际操作的人不是主体本人。methods 必填。
 func (s *Store) Confirm(ctx context.Context, sub identity.Subject, methods ...string) error {
 	_, err := s.confirm(ctx, sub, methods, KindLogin, KindRefresh)
 	return err
@@ -433,7 +433,7 @@ func (s *Store) Revoke(ctx context.Context, sub identity.Subject, id string) err
 }
 
 // RevokeToken 按明文撤销一个 OAuth 令牌，用于 OAuth 的撤销端点（RFC 7009）：客户端断开连接时交回令牌。
-// 令牌不存在、已过期或不是 OAuth 令牌时什么也不做，返回 nil。
+// 令牌不存在、已过期或不是 OAuth 令牌时直接返回 nil。
 func (s *Store) RevokeToken(ctx context.Context, token string) error {
 	if token == "" {
 		return nil
@@ -444,7 +444,7 @@ func (s *Store) RevokeToken(ctx context.Context, token string) error {
 }
 
 // RevokeOthers 撤销 sub 除本次请求所用 token（sub.Credential）以外的全部登录 token（包括 JWT 模式的登录），返回撤销的个数，
-// 例如“退出其他设备”。个人访问令牌不受影响。sub.Credential 不是 sub 的 token 时，撤销它的全部登录 token。
+// 例如“退出其他设备”。个人访问令牌保持有效。sub.Credential 不是 sub 的 token 时，撤销它的全部登录 token。
 func (s *Store) RevokeOthers(ctx context.Context, sub identity.Subject) (int, error) {
 	if sub.ID == "" {
 		return 0, errors.New("apitoken: subject ID is required")
@@ -522,10 +522,10 @@ func hash(token string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// joinScopes 把 scope 存为空格分隔的字符串；scope 不能为空，也不能包含空白。
+// joinScopes 把 scope 存为空格分隔的字符串；scope 必须非空且不含空白。
 func joinScopes(scopes []string) (string, error) { return joinWords(scopes, "scope") }
 
-// joinWords 把 words 存为空格分隔的字符串；每一项不能为空，也不能包含空白。what 用于错误信息。
+// joinWords 把 words 存为空格分隔的字符串；每一项必须非空且不含空白。what 用于错误信息。
 func joinWords(words []string, what string) (string, error) {
 	for _, w := range words {
 		if w == "" || strings.ContainsFunc(w, unicode.IsSpace) {

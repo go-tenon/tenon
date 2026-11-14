@@ -52,7 +52,7 @@ func testRedisStoreKeyExpires(t *testing.T, rdb rueidis.Client) {
 	}
 }
 
-// prefixed 给锁名加上随机前缀，让每次契约测试使用独立的键，不需要清空 Redis。
+// prefixed 给锁名加上随机前缀，让每次契约测试使用独立的键，Redis 中的数据可以保留。
 type prefixed struct {
 	lock.Store
 	prefix string

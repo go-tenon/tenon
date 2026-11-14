@@ -7,7 +7,7 @@
 //	    return nil, err // captcha.ErrFailed → 422；captcha.ErrUnavailable → 503
 //	}
 //
-// 校验服务连不上时返回 ErrUnavailable，请求不会被放行。
+// 校验服务连不上时返回 ErrUnavailable，请求被拒绝。
 package captcha
 
 import (
@@ -54,7 +54,7 @@ const maxToken = 2048
 type Config struct {
 	// Secret 是服务端密钥（secret key），不是前端组件使用的 site key。
 	Secret string `yaml:"secret"`
-	// Hostnames 是允许的站点域名，验证结果中的 hostname 必须是其中之一；为空时不检查。
+	// Hostnames 是允许的站点域名，验证结果中的 hostname 必须是其中之一；为空时跳过。
 	// App 中的 Turnstile 返回的 hostname 不是网站域名，同时用于 App 时需要把它也列进来。
 	Hostnames []string `yaml:"hostnames"`
 	// Endpoint 是校验接口的地址，为空时是 Turnstile。
@@ -108,8 +108,8 @@ type result struct {
 
 // Verify 校验前端组件交给表单的 token。
 //
-// action 是前端组件设置的 action（Turnstile 的 data-action），用来区分表单：注册页的 token 不能拿来提交联系表单。
-// 为空时不检查；hCaptcha 不返回 action，需要传空字符串。remoteIP 是客户端地址，可以为空。
+// action 是前端组件设置的 action（Turnstile 的 data-action），用来区分表单：注册页的 token 只能用于注册。
+// 为空时跳过；hCaptcha 的结果中没有 action，传空字符串。remoteIP 是客户端地址，可以为空。
 //
 // token 只能校验一次，第二次校验返回 ErrFailed，所以同一个请求中只调用一次。
 // 没有通过时返回 ErrFailed；校验服务不可用时返回 ErrUnavailable；密钥错误返回普通错误，由日志报告配置问题。

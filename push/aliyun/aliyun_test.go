@@ -165,13 +165,13 @@ func TestCategories(t *testing.T) {
 		t.Fatalf("task %v", task)
 	}
 
-	// 没有配置的分类：不再重试，也不发出请求。
+	// 没有配置的分类：直接失败，请求也省去。
 	b.Message.Category = "chat"
 	if err := p.Push(context.Background(), b); !queue.IsPermanent(err) {
 		t.Fatalf("unknown category: %v", err)
 	}
 
-	// 没有配置 default 时，不指定分类的消息不带厂商参数。
+	// 没有配置 default 时，省略分类的消息也省略厂商参数。
 	cfg := config()
 	delete(cfg.Categories, "default")
 	p, fake = newProvider(t, cfg)

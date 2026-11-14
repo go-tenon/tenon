@@ -16,10 +16,10 @@ import (
 // New 返回 schedules 命令，按注册顺序列出每个任务的名称、表达式、下一次执行的时间、距现在多久、
 // 是否正在执行（在任何一个实例上），以及说明。
 // 不登记执行状态的任务（EveryInstance、AllowOverlap）的执行状态显示为 -，
-// 不会再执行的任务的下一次执行时间显示为 -。
+// 已经没有下一次的任务，下一次执行时间显示为 -。
 //
 // tasks 返回注册了全部任务的调度器，命令执行时才调用，通常是应用中注册任务的方法，例如 a.tasks。
-// 它和其他需要数据库的命令一样在 command.Bind 中声明，声明时 App 还没有装配，所以传入的是方法而不是调度器。
+// 它和其他需要数据库的命令一样在 command.Bind 中声明，声明时 App 还没有装配，所以传入的是方法。
 func New(tasks func() *schedule.Scheduler) *cobra.Command {
 	return &cobra.Command{
 		Use:   "schedules",

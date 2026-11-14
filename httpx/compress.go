@@ -14,11 +14,11 @@ import (
 // 小于 1 KiB 的响应、已经带 Content-Encoding 的响应（例如 web/ui 预先压缩的资源）
 // 和 Range 请求的响应也不压缩。
 //
-// 流式响应不受影响：text/event-stream（SSE）直接写出，不经过压缩缓冲；
+// 流式响应照常工作：text/event-stream（SSE）直接写出，跳过压缩缓冲；
 // 带 Upgrade 请求头的请求（WebSocket）原样交给下一个处理器。
 //
 // 压缩的响应保留原来的 ETag，条件请求仍然返回 304；同时去掉 Accept-Ranges。
-// 应用前面的反向代理或 CDN 已经负责压缩时，不需要安装它。
+// 应用前面的反向代理或 CDN 已经负责压缩时，省略它即可。
 func Compress() func(http.Handler) http.Handler {
 	wrap, err := gzhttp.NewWrapper(gzhttp.ContentTypeFilter(compressible))
 	if err != nil {
@@ -60,7 +60,7 @@ func compressible(contentType string) bool {
 func streaming(mediaType string) bool { return mediaType == "text/event-stream" }
 
 // compressWriter 在响应开始时按 Content-Type 选择出口：流式响应直接写到原始 ResponseWriter，
-// 其余经过 gzhttp。gzhttp 会推迟 WriteHeader，而且在没有内容时 Flush 什么也不做，
+// 其余经过 gzhttp。gzhttp 会推迟 WriteHeader，而且在没有内容时 Flush 直接返回，
 // SSE 先发出响应头再等事件的做法经过它会让客户端迟迟收不到响应头。
 type compressWriter struct {
 	gz, raw http.ResponseWriter
@@ -97,7 +97,7 @@ func (w *compressWriter) FlushError() error { return http.NewResponseController(
 func (w *compressWriter) Flush() { _ = w.FlushError() }
 
 // Unwrap 供 http.ResponseController 和 realtime 查找底层能力。响应开始之前返回原始 ResponseWriter，
-// 例如 SSE 在设置响应头之前取消写超时，这时还不能确定出口。
+// 例如 SSE 在设置响应头之前取消写超时，这时出口还未确定。
 func (w *compressWriter) Unwrap() http.ResponseWriter {
 	if w.out != nil {
 		return w.out

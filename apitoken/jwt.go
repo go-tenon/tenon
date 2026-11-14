@@ -30,7 +30,7 @@ type Keys struct {
 	public []jose.JSONWebKey
 }
 
-// HMACKeys 用 HMAC-SHA256（HS256）签名，密钥由应用密钥派生，不需要另外配置。
+// HMACKeys 用 HMAC-SHA256（HS256）签名，密钥由应用密钥派生。
 // crypt.Config.PreviousKeys 派生的密钥仍可校验，轮换应用密钥后已签发的 access token 继续有效。
 // 只有持有应用密钥的服务能校验 token；其他服务也要校验时用 Ed25519Keys。
 func HMACKeys(c *crypt.Crypt) Keys {
@@ -47,7 +47,7 @@ func HMACKeys(c *crypt.Crypt) Keys {
 }
 
 // Ed25519Keys 用 key 签名（EdDSA），previous 是轮换前的公钥，仍可校验。
-// 公钥由 JWT.JWKS 公开，其他服务取得后可以自行校验 access token，不需要访问数据库和应用密钥。
+// 公钥由 JWT.JWKS 公开，其他服务取得后可以只凭公钥校验 access token。
 // 用 ed25519.GenerateKey 生成密钥，私钥按应用的方式保管（例如配置文件中的 base64）。key 无效时 panic。
 func Ed25519Keys(key ed25519.PrivateKey, previous ...ed25519.PublicKey) Keys {
 	if len(key) != ed25519.PrivateKeySize {
@@ -304,13 +304,13 @@ const leeway = 5 * time.Second
 //
 // 长连接复查时（identity.Rechecking 报告为 true）改为确认登录仍然存在：按 sid 查一次 api_tokens，
 // 登录被撤销或过期时返回 ErrInvalid，所以撤销后 SSE、实时连接在下一次复查时结束；
-// access token 本身过期不影响复查，连接不会每个 TTL 断开一次。
+// 复查只看登录是否还在，连接跨过 access token 的 TTL 继续保持。
 //
 // 返回的主体 Method 为 bearer，Credential 为登录的 ID（与 Store.List 的 Token.ID 相同，可以交给 Store.Revoke），
 // Tenant、Impersonator 与签发时相同，Scopes、Permissions 为空。无效或过期时返回 ErrInvalid；
 // 只是过期时返回的错误同时匹配 identity.ErrExpired，实时连接据此让客户端 SDK 换新的 access token 重连。
 //
-// 不是 JWT 的 token 交给 Store.Validate，所以同一个 API 也接受个人访问令牌和不透明的登录 token；refresh token 不能用作凭据。
+// 不是 JWT 的 token 交给 Store.Validate，所以同一个 API 也接受个人访问令牌和不透明的登录 token；refresh token 只用于刷新。
 func (j *JWT) Validate(ctx context.Context, token string) (identity.Subject, error) {
 	if strings.Count(token, ".") != 2 {
 		return j.store.Validate(ctx, token)

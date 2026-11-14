@@ -71,7 +71,7 @@ func parseSchema(typ reflect.Type) (*schema, error) {
 		var err error
 		switch tag {
 		case "embed":
-			// 只用来计算向量的文本不必保存，可以是 json:"-"
+			// 只用来计算向量的文本可以是 json:"-"
 			if sf.Type.Kind() != reflect.String {
 				err = errors.New("embed field must be a string")
 			}

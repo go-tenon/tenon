@@ -523,7 +523,7 @@ func isInt(t types.Type) bool {
 }
 
 // bodyRef 返回请求体、响应体或表单类型在文件 f 中的写法。匿名结构体在 owner 的镜像包中生成为
-// <owner><suffix>，例如 RefreshInputBody，调用方不必重复写出带 tag 的结构体。
+// <owner><suffix>，例如 RefreshInputBody，调用方直接使用这个具名类型。
 func (g *generator) bodyRef(owner *types.TypeName, body types.Type, suffix, kind string, f *file) (string, error) {
 	st, ok := body.(*types.Struct)
 	if !ok {
@@ -580,7 +580,7 @@ func (g *generator) override(obj *types.TypeName, keep fieldFilter, at int, body
 	return f.use(m.path, m.name) + "." + obj.Name(), nil
 }
 
-// locals 是生成的方法中使用的局部名称，参数名不能与它们相同。
+// locals 是生成的方法中使用的局部名称，参数名要避开它们。
 var locals = []string{"ctx", "out", "err", "q", "h", "in", "body", "form", "res", "w", "ev", "yield", "g", "c"}
 
 // method 把端点渲染为方法；SSE 端点还生成它的事件结构体。

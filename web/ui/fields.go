@@ -20,7 +20,7 @@ type Form interface {
 type Option struct {
 	Value string
 	Label string
-	// Disabled 让这个选项不能选择。
+	// Disabled 禁用这个选项。
 	Disabled bool
 }
 

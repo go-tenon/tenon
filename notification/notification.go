@@ -31,7 +31,7 @@ func RecipientOf(s identity.Subject) Recipient {
 }
 
 // Notification 是发给一个收件人的一条通知，也是 notifications 表的 Bun 模型，
-// 本包的函数不能满足的查询可以直接用 Bun 编写。
+// 本包函数之外的查询可以直接用 Bun 编写。
 type Notification struct {
 	bun.BaseModel `bun:"table:notifications,alias:n"`
 
@@ -56,7 +56,7 @@ func (n Notification) Read() bool { return !n.ReadAt.IsZero() }
 // Send 在 db 中为每个收件人写入一条通知，返回写入的通知。db 通常是业务修改所在的事务，
 // 通知与修改一起提交或回滚。
 //
-// n 只需要填写 Event 和 Data，其余字段由 Send 填写。重复的收件人只写入一条，没有收件人时什么也不做。
+// n 只需要填写 Event 和 Data，其余字段由 Send 填写。重复的收件人只写入一条，没有收件人时直接返回。
 func Send(ctx context.Context, db bun.IDB, n Notification, to ...Recipient) ([]Notification, error) {
 	if n.Event == "" {
 		return nil, errors.New("notification: empty event")

@@ -43,7 +43,7 @@ const insertBatch = 1000
 //
 // 可以调用多次，例如发布不同 topic 的单位，或者在单位的处理函数中继续加入单位。在别处分批加入时要注意，
 // 已经加入的单位可能在下一批加入之前全部结束，操作随之结束。items 为空、操作不存在或者已经结束时返回错误。
-// 用 Fanout 执行的操作不要再交给 Service.Run。
+// 用 Fanout 执行的操作只由 Fanout 推进。
 func Fanout[T any](ctx context.Context, tx bun.IDB, id uuid.UUID, topic queue.Topic[Unit[T]], items ...T) error {
 	if len(items) == 0 {
 		return errors.New("operation: fanout without items")
@@ -80,16 +80,16 @@ func Fanout[T any](ctx context.Context, tx bun.IDB, id uuid.UUID, topic queue.To
 //	SummarizeJob.Handle(w, operation.HandleUnit(ops, summarize.Unit, saved))
 //
 // fn 收到单位所属的操作和业务数据。fn 返回 nil 时单位成功，Processed 加一。
-// fn 返回带错误码的业务错误时单位失败，Processed 和 Failed 各加一，任务不再重试。
+// fn 返回带错误码的业务错误时单位失败，Processed 和 Failed 各加一，任务就此结束。
 // 其他错误交给队列重试；队列的最后一次执行仍然出错，或者错误被 queue.Permanent 标记时单位失败，任务转入失败任务表，
 // 之后用 queue.FailedJobs 重试并成功时 Failed 减一。
 //
-// 已经成功的单位再次投递（例如确认任务之前进程崩溃）时不再调用 fn；操作已被删除时同样直接返回。
+// 已经成功的单位再次投递（例如确认任务之前进程崩溃）时跳过 fn；操作已被删除时同样直接返回。
 // fn 仍然要能重复执行：fn 返回之后、记下结果之前进程崩溃，这个单位会再执行一次。
 //
 // 每个单位的结果都在一个事务中记下，同一个事务调用 saved（可以为 nil），用法见 Service.Run。
-// 最后一个单位结束时操作变为 completed，op.Finished() 为 true；操作结束之后 saved 不再被调用，
-// 包括重试失败任务修正计数的时候，所以结束通知不会重复。
+// 最后一个单位结束时操作变为 completed，op.Finished() 为 true；saved 在操作结束时最后调用一次，
+// 重试失败任务修正计数时也是如此，所以结束通知只发一次。
 func HandleUnit[T any](s *Service,
 	fn func(ctx context.Context, op *Operation, data T) error,
 	saved func(ctx context.Context, tx database.Tx, op *Operation) error,
@@ -126,7 +126,7 @@ func HandleUnit[T any](s *Service,
 }
 
 // settle 在一个事务中记下单位的结果：成功时删除单位，失败时标记为 failed，并更新操作的计数。
-// 锁住操作的行，同一个操作的单位依次记下结果。单位已经成功、已经记为失败又失败，或者操作已被删除时什么也不做。
+// 锁住操作的行，同一个操作的单位依次记下结果。单位已经成功、已经记为失败又失败，或者操作已被删除时直接返回。
 func (s *Service) settle(ctx context.Context, opID, unitID uuid.UUID, failed bool,
 	saved func(ctx context.Context, tx database.Tx, op *Operation) error,
 ) error {

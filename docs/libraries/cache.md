@@ -1,8 +1,8 @@
 # 缓存
 
-Tenon 的缓存建立在 [Memcached](https://memcached.org) 之上。对于查询代价高、读多写少的数据，你可以把查询结果放进缓存，之后的请求直接从缓存读取，不必每次都访问数据库。
+Tenon 的缓存建立在 [Memcached](https://memcached.org) 之上。对于查询代价高、读多写少的数据，你可以把查询结果放进缓存，之后的请求直接从缓存读取。
 
-Memcached 只做缓存这一件事：内存满了就淘汰最久没用的数据，多个实例共享同一份缓存，缓存丢了也能随时从数据库重建。因此，锁、限流计数这类**不能被淘汰**的数据不要放在这里，它们属于 [Redis](redis.md)。
+Memcached 只做缓存这一件事：内存满了就淘汰最久没用的数据，多个实例共享同一份缓存，缓存丢了也能随时从数据库重建。因此，锁、限流计数这类**必须保留**的数据放在 [Redis](redis.md) 中。
 
 Tenon 不封装 Memcached 客户端，而是直接使用社区的 [gomemcache](https://github.com/bradfitz/gomemcache)。在它之上，`cachex` 包提供“先读缓存，没有就查库再写回”的读取方式，并替你处理热点过期、集中过期和不存在的数据这几个常见问题。
 
@@ -106,7 +106,7 @@ func NewGet(db *bun.DB, articles *cachex.Cache[*Article]) *Get {
 ```
 
 > [!IMPORTANT]
-> `cachex.New` 遇到 `nil` 客户端会 panic，所以要在入口中创建 `Cache`，而不是在模块的 `Register` 中创建：[生成 OpenAPI 文档](../http/routing.md#exporting-openapi)时，`Register` 收到的依赖都是 `nil`。
+> `cachex.New` 遇到 `nil` 客户端会 panic，所以要在入口中创建 `Cache`，再传给模块的 `Register`：[生成 OpenAPI 文档](../http/routing.md#exporting-openapi)时，`Register` 收到的依赖都是 `nil`。
 
 同一种值只创建一个 `Cache`，读取和删除都使用它。
 
@@ -139,14 +139,14 @@ func (a *Get) Handle(ctx context.Context, subject identity.Subject, id uuid.UUID
 注意，传给 `Remember` 的只是文章 ID。`cachex` 会在它前面加上创建时的前缀，实际的缓存键是 `app:article:v1:<id>`。
 
 > [!WARNING]
-> 草稿同样会被缓存。所以命中缓存之后，**仍然要检查访问权限**，否则就可能把别人的草稿返回给当前用户。修改数据时的权限检查则应当使用事务中读取的数据，不要依赖缓存，见[在事务中检查](../security/authorization.md#checking-in-transactions)。
+> 草稿同样会被缓存。所以命中缓存之后，**仍然要检查访问权限**，草稿只返回给作者本人。修改数据时的权限检查使用事务中读取的数据，见[在事务中检查](../security/authorization.md#checking-in-transactions)。
 
-每次读取得到的都是独立的一份，修改它不会影响缓存中的值，也不会影响其他请求。
+每次读取得到的都是独立的一份，可以随意修改。
 
 <a id="when-cache-fails"></a>
 ### 缓存出错时
 
-查询缓存随时可以从数据库重建，因此 `Remember` 不会因为缓存出错而让请求失败：
+查询缓存随时可以从数据库重建，因此缓存出错时 `Remember` 照常返回结果：
 
 | 情况 | `Remember` 的处理 |
 | --- | --- |
@@ -170,13 +170,13 @@ Memcached 不可用时，每个请求都会遇到读取失败。为了不让日�
 
 **雪崩**：同一批写入的大量缓存在同一时刻过期，数据库瞬间承受所有的加载。`Remember` 写入时会把过期时间随机增加至多 10%，让它们错开过期。
 
-**穿透**：请求一个不存在的 ID 时，缓存里永远不会有它，每次请求都会查询数据库。为了避免这种情况，在创建 `Cache` 时用 `cachex.Missing` 声明“不存在”的错误：
+**穿透**：请求一个不存在的 ID 时，每次请求都会查询数据库。在创建 `Cache` 时用 `cachex.Missing` 声明“不存在”的错误，这样的请求也能命中缓存：
 
 ```go
 cachex.Missing(article.ErrNotFound.New)
 ```
 
-之后，加载函数返回的错误与它匹配（`errors.Is`）时，这个结果也会被缓存约一分钟，期间直接返回一个新的同类错误，不再查询数据库。`errorx` 的错误按错误码匹配，所以传入错误模板的 `New` 方法即可，上面的 `find` 不需要任何修改。其他错误不会被缓存。
+之后，加载函数返回的错误与它匹配（`errors.Is`）时，这个结果也会被缓存约一分钟，期间直接返回一个新的同类错误。`errorx` 的错误按错误码匹配，所以传入错误模板的 `New` 方法即可，上面的 `find` 保持原样。只有匹配的错误会被缓存。
 
 <a id="invalidation"></a>
 ## 删除缓存
@@ -198,12 +198,12 @@ err := database.RunInTx(ctx, a.db, nil, func(ctx context.Context, tx database.Tx
 删除失败时，框架会记录一条 Error 日志，但数据库的修改仍然是成功的。
 
 > [!NOTE]
-> 这样的缓存是**最终一致**的。在删除之前就已经开始的一次加载，可能会在删除之后才把它读到的旧值写回缓存，这个旧值会一直保留到过期。所以过期时间应当是有限的；对于不能接受短暂旧数据的场景，请直接读取数据库，或者使用下一节的 tag。
+> 这样的缓存是**最终一致**的。在删除之前就已经开始的一次加载，可能会在删除之后才把它读到的旧值写回缓存，这个旧值会一直保留到过期。所以过期时间应当是有限的；要求数据即时一致的场景，请直接读取数据库，或者使用下一节的 tag。
 
 <a id="tags"></a>
 ## 一次删除一批：tag
 
-有时一次修改会影响很多缓存。例如文章列表按页缓存，发布一篇新文章会影响每一页，但你并不知道缓存了哪几页，也就无法逐个删除。
+有时一次修改会影响很多缓存。例如文章列表按页缓存，发布一篇新文章会影响每一页，而缓存了哪几页是未知的。
 
 这时可以给缓存加上 tag。`Remember` 最后的参数就是这个值的 tag：
 
@@ -221,9 +221,9 @@ tx.AfterCommit(func(ctx context.Context) error {
 })
 ```
 
-tag 本质上是一个版本号。`Remember` 读取值的同时读取它的 tag 的版本，版本变了就重新加载；`Invalidate` 只是把版本加一，所以它不需要知道有哪些键。
+tag 本质上是一个版本号。`Remember` 读取值的同时读取它的 tag 的版本，版本变了就重新加载；`Invalidate` 只是把版本加一，与有哪些键无关。
 
-与 `Forget` 不同，tag 不会出现上一节所说的短暂旧数据：`Invalidate` 返回之后，`Remember` 不会再返回在它之前开始加载的值。代价是每次读取都要额外读取 tag 的版本，而且一个值带的 tag 越多，任何一个 tag 失效都会让它重新加载。
+tag 是即时一致的：`Invalidate` 返回之后，`Remember` 只返回在它之后加载的值。代价是每次读取都要额外读取 tag 的版本，而且一个值带的 tag 越多，任何一个 tag 失效都会让它重新加载。
 
 > [!NOTE]
 > tag 不属于某一个 `Cache`。使用同一个 Memcached 的 `Cache` 之间可以共用 tag，所以请给 tag 加上应用的命名空间，例如 `app:articles`。
@@ -233,11 +233,11 @@ tag 本质上是一个版本号。`Remember` 读取值的同时读取它的 tag 
 
 一个缓存键建议由四部分组成：命名空间、资源类型、格式版本和资源 ID，例如 `app:article:v1:<id>`。前三部分作为前缀传给 `cachex.New`，读取和删除时只需要传入 ID。每一部分都有它的用处：
 
-- **命名空间**区分不同的应用和部署环境。多个环境共用一个 Memcached 时，它们的缓存不会互相覆盖。
-- **格式版本**用于修改缓存内容的结构。把 `v1` 改为 `v2` 后，新代码不会读到旧格式的值，旧的键过期后自然消失。
+- **命名空间**区分不同的应用和部署环境。多个环境共用一个 Memcached 时，它们的缓存各自独立。
+- **格式版本**用于修改缓存内容的结构。把 `v1` 改为 `v2` 后，新代码只读新格式的值，旧的键过期后自然消失。
 - **租户**：多租户应用的键还要带上租户，例如传入 `<tenant>:<id>`，见[缓存、广播与其他资源](../security/tenancy.md#other-resources)。
 
-Memcached 的键最长 250 字节，并且不能包含空白和控制字符。超出这些限制的键（例如很长的搜索条件）会被 `cachex` 换成 SHA-256 摘要，你不需要自己处理。值以 JSON 编码保存。
+Memcached 的键最长 250 字节，只能使用可见字符。超出这些限制的键（例如很长的搜索条件）由 `cachex` 自动换成 SHA-256 摘要。值以 JSON 编码保存。
 
 <a id="deployment"></a>
 ## 部署
@@ -261,14 +261,14 @@ mc := memcache.NewFromSelector(ring)
 这样增加一个节点时，只有约 1/(N+1) 的键会换节点；去掉一个节点时，也只影响它自己的键。节点在环上的位置只由地址字符串决定，所以**所有实例的地址写法必须一致**，顺序则无关紧要。
 
 > [!NOTE]
-> 某个节点不可用时，它负责的键会读写超时，`cachex` 照常从数据库加载，但不会自动把这些键换到别的节点上。
+> 某个节点不可用时，它负责的键会读写超时，`cachex` 照常从数据库加载，这些键仍然固定在原来的节点上。
 
-**内存。** 内存满时，Memcached 会淘汰最久没用的数据。这正是缓存需要的行为，不需要额外的配置。
+**内存。** 内存满时，Memcached 会淘汰最久没用的数据。这正是缓存需要的行为，保持默认配置即可。
 
 <a id="testing"></a>
 ## 测试
 
-测试缓存逻辑时，请连接真实的 Memcached。和[数据库测试](../testing/database.md#database-tests)一样，通过环境变量取得服务器的地址，并让每个测试使用随机的前缀，这样并行运行的测试互不影响：
+测试缓存逻辑时，请连接真实的 Memcached。和[数据库测试](../testing/database.md#database-tests)一样，通过环境变量取得服务器的地址，并让每个测试使用随机的前缀，这样并行运行的测试相互隔离：
 
 ```go
 func newTestCache(t *testing.T) *cachex.Cache[*article.Article] {

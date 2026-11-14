@@ -20,8 +20,8 @@ type Document struct {
 	// HTML 渲染出整个页面。纸张、边距和页码用 CSS @page 设置，没有 @page size 时为 A4；
 	// PDF 的标题取自 <title>。
 	HTML templ.Component
-	// Assets 是页面引用的样式、图片和字体，可以为 nil。只能包含顶层文件，不能有子目录，
-	// 也不能有 index.html；HTML 中按文件名引用，例如 href="invoice.css"。
+	// Assets 是页面引用的样式、图片和字体，可以为 nil。只包含顶层文件，
+	// index.html 留给页面本身；HTML 中按文件名引用，例如 href="invoice.css"。
 	Assets fs.FS
 }
 

@@ -29,7 +29,7 @@ type Theme struct {
 	Radius string `yaml:"radius"`
 	// Font 是正文字体，CSS font-family 的值。字体文件由应用作为静态文件提供。
 	Font string `yaml:"font"`
-	// Vars 覆盖亮色主题的 CSS 变量，键不带 --，例如 primary、primary-foreground、ring。
+	// Vars 覆盖亮色主题的 CSS 变量，键省略 --，例如 primary、primary-foreground、ring。
 	Vars map[string]string `yaml:"vars"`
 	// DarkVars 覆盖暗色主题的 CSS 变量。
 	DarkVars map[string]string `yaml:"dark_vars"`
@@ -43,7 +43,7 @@ var (
 	themeBadValue = regexp.MustCompile(`[<>{};]`)
 )
 
-// Validate 检查主题，在配置校验中调用。值不能包含 <、>、{、}、;，它们会被写进页面的 <style>。
+// Validate 检查主题，在配置校验中调用。值中禁止 <、>、{、}、;，它们会被写进页面的 <style>。
 func (t Theme) Validate() error {
 	var errs []error
 	if t.Style != "" && !slices.Contains(Styles, t.Style) {

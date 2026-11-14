@@ -4,10 +4,10 @@
 
 只部署一个实例时，你很少需要考虑这个问题。但部署多个实例之后，同一段逻辑可能在几个实例上同时执行：比如每个实例都会触发“生成站点地图”，结果同一份工作做了好几遍，甚至互相覆盖。原子锁让其中一个实例取得锁并执行，其他实例发现锁已被占用，直接跳过。
 
-`lock` 包提供的锁都有过期时间：取得锁之后，在有效期内独占它；如果持有者在执行中崩溃，锁到期后会自动失效，不会永远卡住。
+`lock` 包提供的锁都有过期时间：取得锁之后，在有效期内独占它；如果持有者在执行中崩溃，锁到期后会自动失效。
 
 > [!NOTE]
-> 锁只负责“谁来执行”。如果你要解决的是并发修改同一行数据，请优先使用带条件的更新或 `SELECT ... FOR UPDATE`，由数据库保证一致，不需要原子锁。
+> 锁只负责“谁来执行”。如果你要解决的是并发修改同一行数据，请优先使用带条件的更新或 `SELECT ... FOR UPDATE`，由数据库保证一致。
 
 - [示例用法](#example-usage)
 - [装配锁](#assembling-locks)
@@ -78,10 +78,10 @@ func (a *PublishScheduled) Handle(ctx context.Context) error {
 
 锁名是任意字符串，建议用 `领域:动作` 的形式，需要按对象加锁时带上 ID，例如 `articles:42:render`。
 
-释放锁不受 `ctx` 取消影响：请求或命令被取消后，`Do` 仍会释放锁。
+释放锁独立于 `ctx`：请求或命令被取消后，`Do` 仍会释放锁。
 
 > [!TIP]
-> 按时触发的任务交给[调度器](scheduling.md)执行时，调度器已经保证每次触发只在一个实例上执行，任务里不需要再加锁。锁适合调度器之外的场景，例如下面的重新生成站点地图。
+> 按时触发的任务交给[调度器](scheduling.md)执行时，调度器已经保证每次触发只在一个实例上执行，任务里直接执行即可。锁适合调度器之外的场景，例如下面的重新生成站点地图。
 
 <a id="waiting-for-locks"></a>
 ## 等待锁
@@ -102,7 +102,7 @@ if fresh, err := sitemapFresh(ctx); err != nil || fresh {
 return generateSitemap(ctx)
 ```
 
-取得锁之后要再检查一次：等待的请求拿到锁时，前一个请求通常已经生成好了。读缓存时同一个进程内的并发加载由 [cachex](cache.md#hot-keys) 合并，不需要自己加锁。
+取得锁之后要再检查一次：等待的请求拿到锁时，前一个请求通常已经生成好了。读缓存时同一个进程内的并发加载由 [cachex](cache.md#hot-keys) 合并。
 
 `Wait` 每 100 毫秒重试一次，`ctx` 取消时立即返回 `ctx` 的错误。
 
@@ -119,14 +119,14 @@ if err := lk.Refresh(ctx, time.Minute); err != nil {
 }
 ```
 
-锁过期并被他人取得后，原持有者的 `Refresh` 和 `Release` 都返回 `lock.ErrNotHeld`，不会影响新的持有者。`Do` 在函数返回后释放锁，此时得到 `ErrNotHeld` 也会一并返回，提示任务超过了有效期。
+锁过期并被他人取得后，原持有者的 `Refresh` 和 `Release` 都返回 `lock.ErrNotHeld`，新的持有者照常持有。`Do` 在函数返回后释放锁，此时得到 `ErrNotHeld` 也会一并返回，提示任务超过了有效期。
 
-`locker.Held(ctx, name)` 报告锁此刻是否被持有，不取得也不影响它，适合在后台页面展示状态，例如[定时任务是否正在执行](scheduling.md#listing-tasks)。它的结果只反映查询的那一刻，不能代替 `Acquire` 判断能否执行。
+`locker.Held(ctx, name)` 只读取锁此刻是否被持有，适合在后台页面展示状态，例如[定时任务是否正在执行](scheduling.md#listing-tasks)。它的结果只反映查询的那一刻，判断能否执行仍用 `Acquire`。
 
 <a id="redis-store"></a>
 ## Redis 存储
 
-每把锁是一个 Redis 键：键名就是锁名，值是持有者标识，键的过期时间就是锁的有效期。过期由 Redis 计算，不依赖各实例的时钟；过期的键由 Redis 自动删除，不需要迁移，也不需要定期清理。多个应用共用一个 Redis 时，在锁名前加上应用的命名空间，例如 `app:articles:publish-scheduled`。Redis 必须配置 `noeviction`，否则内存紧张时锁会被淘汰，见 [Redis](redis.md)。
+每把锁是一个 Redis 键：键名就是锁名，值是持有者标识，键的过期时间就是锁的有效期。过期由 Redis 计算，与各实例的时钟无关；过期的键由 Redis 自动删除。多个应用共用一个 Redis 时，在锁名前加上应用的命名空间，例如 `app:articles:publish-scheduled`。Redis 必须配置 `noeviction`，锁才能在内存紧张时保留下来，见 [Redis](redis.md)。
 
 锁只写在一个 Redis 主节点上。使用哨兵或集群时，主节点故障切换可能丢失刚写入的锁，短时间内出现两个持有者；对互斥要求严格的操作，请在数据库事务中用 `SELECT ... FOR UPDATE` 锁住相关的行。
 
@@ -149,7 +149,7 @@ type Store interface {
 <a id="testing"></a>
 ## 测试
 
-`locktest.NewStore()` 是测试用的内存存储，只在同一个进程内互斥，不需要 Redis：
+`locktest.NewStore()` 是测试用的内存存储，只在同一个进程内互斥：
 
 ```go
 import "github.com/go-tenon/tenon/lock/locktest"
@@ -182,7 +182,7 @@ func (l *Locker) Do(ctx context.Context, name string, ttl time.Duration, fn func
     - `fn`：取得锁之后执行的函数
 - **返回**：`fn` 返回的错误；锁被占用时返回 `ErrNotAcquired`；`fn` 执行超过 `ttl`、锁已被别人取得时，返回值包含 `ErrNotHeld`
 
-释放锁不受 `ctx` 取消的影响。
+释放锁独立于 `ctx`。
 
 ### Locker
 

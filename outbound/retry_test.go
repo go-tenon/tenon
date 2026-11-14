@@ -170,7 +170,7 @@ func TestRetryOnlyReplayable(t *testing.T) {
 			t.Fatalf("keyed = %d", n)
 		}
 
-		// 请求体不能重新读取时不重试。
+		// 请求体无法重新读取时直接返回。
 		req := newRequest(t, "PUT", "https://example.com/stream", "data")
 		req.GetBody = nil
 		if code, _, _ := timed(t, c, req); code != 503 {

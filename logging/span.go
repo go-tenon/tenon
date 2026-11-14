@@ -17,8 +17,8 @@ import (
 //   - exception.type 是错误码，没有时是最内层错误的类型，例如 *pgconn.PgError；
 //   - exception.stacktrace 是 %+v 输出的完整错误链，包含错误创建处的堆栈；与 message 相同时省略。
 //
-// 链路平台据此按类型聚合错误、展示堆栈。它不修改 span 的状态，调用方按自己的语义设置。
-// err 为 nil 或 span 不在记录时什么也不做。
+// 链路平台据此按类型聚合错误、展示堆栈。span 的状态由调用方按自己的语义设置。
+// err 为 nil 或 span 不在记录时直接返回。
 //
 // span.RecordError 记录的类型是最外层包装的类型（例如 *withstack.withStack），堆栈是调用它的位置，
 // 因此框架的组件都使用本函数。

@@ -58,10 +58,10 @@ return &ArticleOutput{Body: toDTO(item)}, nil
 }
 ```
 
-草稿还没有发布时间，`published_at` 字段会被省略。`doc`、`example` 和 `enum` 标签只写入接口文档，不影响编码，见[说明与示例](../http/routing.md#describing-apis)。
+草稿还没有发布时间，`published_at` 字段会被省略。`doc`、`example` 和 `enum` 标签只写入接口文档，见[说明与示例](../http/routing.md#describing-apis)。
 
 > [!TIP]
-> 建议为响应定义专门的 DTO 结构，而不是直接返回数据库模型。这样你可以自由地调整数据库结构，而不会意外地改变 API，也不会把内部字段暴露给客户端。
+> 建议为响应定义专门的 DTO 结构。这样你可以自由地调整数据库结构，API 保持稳定，内部字段也只留在服务端。
 
 <a id="status-codes"></a>
 ### 状态码
@@ -110,7 +110,7 @@ return &CreatedArticleOutput{
 <a id="collections-and-times"></a>
 ## 集合与时间
 
-列表为空时，应当返回 `[]` 而不是 `null`，这样客户端可以直接遍历而无需判空。在 Go 中，`nil` slice 会被编码为 `null`，所以请初始化一个空 slice：
+列表为空时，应当返回 `[]`，这样客户端可以直接遍历。在 Go 中，`nil` slice 会被编码为 `null`，所以请初始化一个空 slice：
 
 ```go
 items := make([]ArticleDTO, 0)
@@ -179,7 +179,7 @@ return &ListArticlesOutput{Body: page.NewOffset(toDTOs(rows), in.OffsetParams, t
 <a id="cursor-pagination"></a>
 ### 游标分页
 
-游标分页从上一页的最后一条继续读取，翻页过程中有新数据写入也不会出现重复或遗漏。把 `page.CursorParams` 嵌入输入类型，用 `page.Cursor[T]` 作为响应体：
+游标分页从上一页的最后一条继续读取，翻页过程中有新数据写入，结果仍然连续、完整。把 `page.CursorParams` 嵌入输入类型，用 `page.Cursor[T]` 作为响应体：
 
 ```go
 type ListPublishedInput struct {
@@ -226,7 +226,7 @@ return &ListPublishedOutput{Body: body}, nil
 2. `in.Limit()` 比 `per_page` 多一条，多读的这一条用来判断是否还有下一页。
 3. `page.NewCursor` 截掉多读的一条，并把当前页最后一条的排序位置编码为 `next_cursor`。
 
-客户端把 `next_cursor` 原样作为下一次请求的 `cursor` 参数传回；到达最后一页时，响应中不包含 `next_cursor`：
+客户端把 `next_cursor` 原样作为下一次请求的 `cursor` 参数传回；到达最后一页时，响应中省略 `next_cursor`：
 
 ```json
 {
@@ -238,7 +238,7 @@ return &ListPublishedOutput{Body: body}, nil
 > [!WARNING]
 > 排序必须**确定且唯一**，例如 `ORDER BY published_at DESC, id DESC`，并且 `WHERE` 中的比较方向要与排序一致。只按 `published_at` 排序时，同一时间发布的文章可能在翻页时重复或遗漏。
 
-两种分页的响应在没有数据时都返回 `"items": []`，不会出现 `null`。
+两种分页的响应在没有数据时都返回 `"items": []`。
 
 <a id="filtering-and-sorting"></a>
 ### 筛选与排序
@@ -306,7 +306,7 @@ func (a *List) HTTP(ctx context.Context, in *ListQuery) (*ListOutput, error) {
 
 几点说明：
 
-- `sort` 的值已经由 `enum` 检查过，`orders[q.Sort]` 一定能查到，客户端传来的字符串不会进入 SQL。增加排序方式时，`enum` 和 `orders` 一起修改。
+- `sort` 的值已经由 `enum` 检查过，`orders[q.Sort]` 一定能查到，SQL 中只出现 `orders` 里写好的表达式。增加排序方式时，`enum` 和 `orders` 一起修改。
 - 每种排序都以 `id` 结尾，原因与游标分页相同：只按 `title` 排序时，标题相同的文章在两次查询之间的顺序不固定，翻页时可能重复或遗漏。
 - 参数为空时不添加对应的条件。按调用者限定范围的条件（例如只看到自己的草稿）写在同一个查询中，见[列表查询中的授权](../security/authorization.md#scoping-queries)。
 - `LIKE` 只适合简单的标题匹配。需要分词、按相关度排序时，使用[搜索](../features/search.md)。
@@ -315,7 +315,7 @@ func (a *List) HTTP(ctx context.Context, in *ListQuery) (*ListOutput, error) {
 <a id="returning-errors"></a>
 ## 返回错误
 
-业务失败时，处理器直接返回 `error` 即可，不需要在输出类型中设计错误字段：
+业务失败时，处理器直接返回 `error` 即可，输出类型只描述成功的结果：
 
 ```go
 item, err := a.Handle(ctx, subject, in.ID)
@@ -366,7 +366,7 @@ func (o Offset[T]) Links(onEachSide int) []int
     - `total`：全部数据的条数，通常由 `ScanAndCount` 得到
 - **返回**：固定分页的响应体
 
-`items` 为空时编码为 `[]` 而不是 `null`。`LastPage` 和 `Links` 用于在页面中渲染页码导航。
+`items` 为空时编码为 `[]`。`LastPage` 和 `Links` 用于在页面中渲染页码导航。
 
 ### CursorParams
 

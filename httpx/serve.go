@@ -80,7 +80,7 @@ func Serve(ctx context.Context, cfg Config, ln net.Listener, handler http.Handle
 	close(draining)
 	logger.Info("http server draining")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
-	// Shutdown 开始之后才读到的请求，net/http 不处理就关闭连接。所以先停止接收新连接，
+	// Shutdown 开始之后才读到的请求，net/http 直接关闭连接。所以先停止接收新连接，
 	// 等已经接收的连接读到第一个请求，再开始 Shutdown。升级时监听 socket 交给了新进程，
 	// 旧进程直到这一刻都在接收连接。
 	if !returned {

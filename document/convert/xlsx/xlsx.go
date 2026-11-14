@@ -24,7 +24,7 @@ import (
 // Options 配置 Excel 转换器，零值即默认配置。
 type Options struct {
 	convert.Limits
-	// RawValues 显示单元格中保存的原始值，而不是按数字格式格式化后的值。
+	// RawValues 显示单元格中保存的原始值，跳过数字格式。
 	RawValues bool
 	// IncludeHidden 也转换隐藏的工作表。
 	IncludeHidden bool
@@ -125,7 +125,7 @@ func (c *Converter) render(ctx context.Context, data []byte, limits convert.Limi
 }
 
 // checkExpanded 在各条目声明的大小之和超过 maxExpanded 时返回 expanded 类的 LimitError；
-// maxExpanded < 0 表示不限制。zip 读取器保证任何条目解压后都不会超过声明的大小。
+// maxExpanded < 0 表示不限制。zip 读取器保证每个条目解压后都在声明的大小以内。
 func checkExpanded(entries []*zip.File, maxExpanded int64) error {
 	if maxExpanded < 0 {
 		return nil

@@ -185,7 +185,7 @@ func TestProcess(t *testing.T) {
 		t.Fatalf("file content: %v %d", r.Header(), n)
 	}
 
-	// 已经结束的导出再处理一次什么也不做。
+	// 已经结束的导出再处理一次直接返回。
 	if err := e.exports.Process(ctx, exp.ID, rows(3), rec.saved); err != nil || len(rec.progress()) != len(want) {
 		t.Fatalf("again: %v %v", err, rec.progress())
 	}
@@ -195,7 +195,7 @@ func TestProcessErrors(t *testing.T) {
 	ctx := context.Background()
 	e := newEnv(t)
 
-	// 业务错误使导出失败，不再重试。
+	// 业务错误使导出失败，任务就此结束。
 	exp := e.start(t, sheet.CSV)
 	rec := &recorder{}
 	unknown := func(context.Context, *exports.Export, *exports.Writer) error {
@@ -217,7 +217,7 @@ func TestProcessErrors(t *testing.T) {
 		t.Fatalf("saves: %v", p)
 	}
 
-	// 其他错误返回给队列，重试时从头开始，行数不会重复累计。
+	// 其他错误返回给队列，重试时从头开始，行数从零重新累计。
 	exp = e.start(t, sheet.CSV)
 	down := errors.New("database down")
 	flaky := func(ctx context.Context, exp *exports.Export, w *exports.Writer) error {

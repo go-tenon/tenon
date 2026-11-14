@@ -1,6 +1,6 @@
 # 文件存储
 
-文件存储负责保存用户上传的文件，例如文章的封面、头像和附件。`filesystem` 用一张 `files` 表记录应用中的每个文件，文件正文保存在**磁盘**上：本地目录或 S3 兼容的对象存储。所有磁盘都通过公开地址访问，地址就是磁盘的 `public_url` 拼接对象键，读取文件不需要签名。
+文件存储负责保存用户上传的文件，例如文章的封面、头像和附件。`filesystem` 用一张 `files` 表记录应用中的每个文件，文件正文保存在**磁盘**上：本地目录或 S3 兼容的对象存储。所有磁盘都通过公开地址访问，地址就是磁盘的 `public_url` 拼接对象键，可以直接读取。
 
 一个文件的生命周期是：
 
@@ -8,7 +8,7 @@
 2. **确认**：业务真正使用这个文件时（例如保存文章、更新头像）调用 `Confirm`，文件变为 `ready`。
 3. **回收**：超过 `temp_ttl` 仍未确认的文件，以及已删除的文件，由清理任务 `Cleanup` 从存储中删除。
 
-为什么要分“上传”和“确认”两步？设想用户在编辑文章时上传了一张封面，然后放弃了编辑。如果上传即生效，这张图片就永远留在存储里，没有任何记录引用它。先上传、后确认，放弃的临时文件会被自动回收，不会在存储中留下垃圾。
+为什么要分“上传”和“确认”两步？设想用户在编辑文章时上传了一张封面，然后放弃了编辑。先上传、后确认，放弃的临时文件会被自动回收，存储中只留下被引用的文件。
 
 使用前先发布 `files` 表的迁移，见[发布框架迁移](../database/migrations.md#publishing-framework-migrations)：
 
@@ -96,7 +96,7 @@ type Config struct {
 }
 ```
 
-`disks` 下只需要填写用到的磁盘，没有填写的磁盘保持零值，表示不使用，也不会被校验。`default_disk` 必须是已经配置的磁盘。加载时 `config.Load` 会检查每个磁盘的配置，错误会指出具体位置，例如 `filesystem.disks.s3: bucket is required`。
+`disks` 下只需要填写用到的磁盘，没有填写的磁盘保持零值，表示停用，跳过校验。`default_disk` 必须是已经配置的磁盘。加载时 `config.Load` 会检查每个磁盘的配置，错误会指出具体位置，例如 `filesystem.disks.s3: bucket is required`。
 
 `filesystem` 段本身的字段：
 
@@ -135,9 +135,9 @@ router.Handle("/storage/*", disk)
 
 它会去掉 `public_url` 的路径前缀，再按对象键读取文件；不列目录，也不暴露正在写入的临时文件。文件按扩展名设置 `Content-Type`，并支持 `Range` 和缓存校验。
 
-文件与应用同源，而扩展名来自上传者提交的文件名。因此磁盘为所有响应加上 `X-Content-Type-Options: nosniff`；HTML、SVG、XML 这类在浏览器中可以执行脚本的类型，还会加上 `Content-Security-Policy: sandbox` 并作为附件下载，上传的网页无法在应用的源下运行脚本。`<img>` 中引用的 SVG 不受影响。
+文件与应用同源，而扩展名来自上传者提交的文件名。因此磁盘为所有响应加上 `X-Content-Type-Options: nosniff`；HTML、SVG、XML 这类在浏览器中可以执行脚本的类型，还会加上 `Content-Security-Policy: sandbox` 并作为附件下载，上传的网页无法在应用的源下运行脚本。`<img>` 中引用的 SVG 照常显示。
 
-写入先落到同目录的临时文件，完整写入后再原子重命名，上传失败不会留下半个文件。多个进程共享同一个本地磁盘时，它们需要挂载同一个目录。
+写入先落到同目录的临时文件，完整写入后再原子重命名，磁盘上只出现完整的文件。多个进程共享同一个本地磁盘时，它们需要挂载同一个目录。
 
 <a id="s3-disk"></a>
 ### S3 磁盘
@@ -186,12 +186,12 @@ if err != nil {
 }
 ```
 
-只使用一种磁盘时，只打开并传入那一个。把 `fileService` 传给需要文件的[业务动作](../concepts/actions.md)。文件服务不注册路由，也不启动后台任务：上传接口和权限检查由应用决定，清理由[清理任务](#cleanup)执行。
+只使用一种磁盘时，只打开并传入那一个。把 `fileService` 传给需要文件的[业务动作](../concepts/actions.md)。上传接口和权限检查由应用决定，清理由[清理任务](#cleanup)执行，文件服务只提供方法。
 
 <a id="server-upload"></a>
 ## 通过应用服务器上传
 
-最简单的方式是让应用服务器接收文件并写入磁盘。`Upload` 适用于所有磁盘，正文以流的方式写入，不会整体读进内存：
+最简单的方式是让应用服务器接收文件并写入磁盘。`Upload` 适用于所有磁盘，正文以流的方式写入，内存占用与文件大小无关：
 
 ```go
 file, header, err := r.FormFile("file")
@@ -210,7 +210,7 @@ if err != nil {
 }
 ```
 
-`owner` 是当前请求的 `identity.Subject`，见[认证](../security/authentication.md)。正文的实际长度必须正好等于 `Size`，否则返回 `filesystem.ErrInvalid`，磁盘上也不会留下文件。`Disk` 为空时使用 `default_disk`，也可以指定 `Disk: "s3"`。
+`owner` 是当前请求的 `identity.Subject`，见[认证](../security/authentication.md)。正文的实际长度必须正好等于 `Size`，否则返回 `filesystem.ErrInvalid`，写入的内容随之删除。`Disk` 为空时使用 `default_disk`，也可以指定 `Disk: "s3"`。
 
 返回的 `filesystem.File` 已经带有公开地址 `record.URL`，可以直接返回给前端预览。它的 `JSON` 形式如下：
 
@@ -233,7 +233,7 @@ if err != nil {
 <a id="direct-upload"></a>
 ## 客户端直传
 
-使用 S3 磁盘时，客户端可以拿着签名地址把文件直接传到 S3，正文不经过应用服务器。先用 `Prepare` 登记文件，再根据大小选择单次上传或分片上传：
+使用 S3 磁盘时，客户端可以拿着签名地址把文件直接传到 S3。先用 `Prepare` 登记文件，再根据大小选择单次上传或分片上传：
 
 ```go
 record, err := fileService.Prepare(ctx, owner, filesystem.FileInput{
@@ -275,9 +275,9 @@ upload, err := fileService.CreateMultipart(ctx, owner, record.ID)
 // upload.UploadID、upload.PartSize、upload.PartCount
 ```
 
-分片大小默认 16MiB，超大文件会自动放大，保证不超过 S3 的 10000 片上限，不需要配置。除最后一片外，每片正好 `PartSize` 字节。会话 ID 不保存在数据库中，由客户端保存并在后续请求中带回。
+分片大小默认 16MiB，超大文件会自动放大，保证在 S3 的 10000 片上限以内。除最后一片外，每片正好 `PartSize` 字节。会话 ID 由客户端保存并在后续请求中带回。
 
-每一片上传前，单独为它签名，签名后立即使用，因此网络再慢也不会遇到签名过期：
+每一片上传前，单独为它签名，签名后立即使用，因此网络再慢签名也始终有效：
 
 ```go
 signed, err := fileService.SignPart(ctx, owner, record.ID, uploadID, number) // number 从 1 开始
@@ -349,7 +349,7 @@ if err != nil {
 // record.URL
 ```
 
-`Get` 只按 ID 查询，不检查归属；需要权限控制的数据应由业务在调用前检查。如果只需要拼地址，也可以把 `key` 保存在业务表中，用磁盘的 `URL(key)` 生成。
+`Get` 只按 ID 查询；需要权限控制的数据由业务在调用前检查。如果只需要拼地址，也可以把 `key` 保存在业务表中，用磁盘的 `URL(key)` 生成。
 
 需要在服务端处理文件内容（例如生成缩略图）时，用 `Open` 读取正文，调用方负责关闭：
 
@@ -395,7 +395,7 @@ err := database.RunInTx(ctx, db, nil, func(ctx context.Context, tx database.Tx) 
 n, err := fileService.Cleanup(ctx, 500)
 ```
 
-`Cleanup` 被设计为定时任务：每次处理一批，可以反复执行，多个实例同时执行也是安全的。某条记录清理失败时，它会推迟 5 分钟再重试，错误合并返回，不影响其他记录。正在被确认的文件不会被误删：清理和确认通过带条件的更新互斥，只有一方能成功。
+`Cleanup` 被设计为定时任务：每次处理一批，可以反复执行，多个实例同时执行也是安全的。某条记录清理失败时，它会推迟 5 分钟再重试，错误合并返回，其他记录照常处理。清理和确认通过带条件的更新互斥，只有一方能成功，正在被确认的文件因此安全。
 
 用[定时任务](scheduling.md#framework-cleanups)每 5 分钟执行一次：
 

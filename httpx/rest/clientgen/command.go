@@ -14,7 +14,7 @@ import (
 
 // Command 构造 client 命令：调用 router 构造应用的路由，用 rest.Lookup 找到其中的 API（有多个时用 --base-path 选择），
 // 在 --out 目录生成 Go 客户端，在 --ts 目录生成 TypeScript 客户端（见 GenerateTS），两者至少给出一个。
-// 不读取配置，不调用处理器；需要在应用源码目录中运行（例如 go run ./cmd/api client --out ../api），
+// 离线运行，只登记处理器；需要在应用源码目录中运行（例如 go run ./cmd/api client --out ../api），
 // 因为类型声明和错误码从源码复制。
 //
 // --main 默认是当前程序的主包；--import 允许客户端直接导入的包，可重复；--rename 指定镜像包名，例如

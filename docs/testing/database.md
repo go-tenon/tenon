@@ -1,6 +1,6 @@
 # 测试：数据库与业务动作
 
-测试数据库代码时，你可能会想模拟数据库。但模拟的数据库永远不会像真的那样报出唯一约束冲突、死锁或者类型错误。最可靠的方式，是使用与生产相同的 PostgreSQL。`dbtest.Open` 为**每个测试**创建一个独立的临时数据库，执行迁移，测试结束时删除，测试之间互不干扰，可以并行运行。业务规则直接调用业务动作的 `Handle` 测试。
+测试数据库代码最可靠的方式，是使用与生产相同的 PostgreSQL：唯一约束冲突、死锁和类型错误都和线上一样出现。`dbtest.Open` 为**每个测试**创建一个独立的临时数据库，执行迁移，测试结束时删除，测试之间相互隔离，可以并行运行。业务规则直接调用业务动作的 `Handle` 测试。
 
 - [数据库测试](#database-tests)
     - [创建测试数据库](#creating-test-databases)
@@ -25,10 +25,10 @@ db := dbtest.Open(t, migrations.FS)
 
 `dbtest.Open` 返回一个已执行迁移的 `*bun.DB`，你可以把它直接传给业务动作的构造函数。迁移参数传 `nil` 时会创建一个空数据库。
 
-`dbtest` 通过环境变量 `POSTGRES_TEST_URL` 获取一个管理员连接，该账户需要有创建和删除数据库的权限。没有设置这个变量时，测试会直接失败，而不是被跳过——这样可以避免数据库测试在 CI 中被悄悄忽略。
+`dbtest` 通过环境变量 `POSTGRES_TEST_URL` 获取一个管理员连接，该账户需要有创建和删除数据库的权限。没有设置这个变量时，测试直接失败——这样 CI 中的数据库测试一定真正运行过。
 
 > [!WARNING]
-> 请为这个变量使用专门的测试数据库实例，不要指向任何存放真实数据的数据库。
+> 请为这个变量使用专门的测试数据库实例，与存放真实数据的数据库分开。
 
 <a id="running-database-tests-locally"></a>
 ### 在本地运行数据库测试
@@ -86,7 +86,7 @@ export MEMCACHED_TEST_ADDR='127.0.0.1:51211'
 go test -race -count=1 ./...
 ```
 
-每个测试使用自己的临时库，服务可以一直开着反复运行测试。数据放在 tmpfs 中，执行 `docker compose -f compose.test.yml down -v` 清理后不会留下任何数据。
+每个测试使用自己的临时库，服务可以一直开着反复运行测试。数据放在 tmpfs 中，执行 `docker compose -f compose.test.yml down -v` 清理后数据全部消失。
 
 Redis 的集成测试见 [Redis](../libraries/redis.md#testing)。
 
@@ -112,7 +112,7 @@ func TestDraftVisibilityAndPublishing(t *testing.T) {
     if _, err := get.Handle(ctx, bob, item.ID); !errors.Is(err, article.ErrNotFound) {
         t.Fatalf("bob read a draft: %v", err)
     }
-    // 只有作者能发布，而且不能重复发布
+    // 只有作者能发布，而且每篇只发布一次
     if _, err := publish.Handle(ctx, bob, item.ID); !errors.Is(err, article.ErrForbidden) {
         t.Fatalf("bob published: %v", err)
     }
@@ -126,7 +126,7 @@ func TestDraftVisibilityAndPublishing(t *testing.T) {
     if _, err := get.Handle(ctx, bob, item.ID); err != nil {
         t.Fatal(err)
     }
-    // slug 不能重复
+    // slug 全站唯一
     _, err = create.Handle(ctx, bob, article.Changes{Title: "Another", Slug: "hello-world"})
     if !errors.Is(err, article.ErrSlugTaken) {
         t.Fatalf("duplicate slug: %v", err)
@@ -139,7 +139,7 @@ func TestDraftVisibilityAndPublishing(t *testing.T) {
 <a id="testing-action-commands"></a>
 ### 测试命令入口
 
-业务动作的[命令入口](../concepts/actions.md#as-commands)通过模块的 `Commands` 测试。它返回原生的 `*cobra.Command`，直接传入测试数据库即可，不需要配置文件，也不经过 `command.Bind`：
+业务动作的[命令入口](../concepts/actions.md#as-commands)通过模块的 `Commands` 测试。它返回原生的 `*cobra.Command`，直接传入测试数据库即可：
 
 ```go
 func TestPublishCommand(t *testing.T) {
@@ -194,7 +194,7 @@ func Open(t testing.TB, migrations fs.FS) *bun.DB
     - `migrations`：要执行的迁移，为 `nil` 时是一个空数据库
 - **返回**：已经执行了迁移的临时数据库
 
-管理员连接取自环境变量 `POSTGRES_TEST_URL`，没有设置时测试失败，而不是被跳过。
+管理员连接取自环境变量 `POSTGRES_TEST_URL`，没有设置时测试直接失败。
 
 ```go
 db := dbtest.Open(t, migrations.FS)

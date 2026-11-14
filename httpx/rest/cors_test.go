@@ -14,7 +14,7 @@ import (
 	"github.com/go-tenon/tenon/identity"
 )
 
-// 预检请求在路由之前应答：只注册了 GET 和 POST 的路径不会返回 405，认证也不会拦住它。
+// 预检请求在路由之前应答：只注册了 GET 和 POST 的路径也返回 204，认证放行它。
 func TestCORSPreflightBeforeRoutes(t *testing.T) {
 	cfg := httpx.DefaultCORSConfig()
 	cfg.AllowedOrigins = []string{"https://app.example.com"}

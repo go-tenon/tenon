@@ -67,7 +67,7 @@ var ErrSlotHealthy = errors.New("queue: replication slot is healthy; recreating 
 // Worker 拒绝启动，用它恢复。槽存在且可用时返回 ErrSlotHealthy，force 为 true 时仍然重建，丢弃其中还没转发的任务。
 // 有 Worker 正在使用槽时失败。
 //
-// 从丢失到重建期间发布的任务不会被转发，需要从业务数据中找出没有完成的工作重新发布。
+// 从丢失到重建期间发布的任务随之丢失，需要从业务数据中找出没有完成的工作重新发布。
 func RecreateSlot(ctx context.Context, db bun.IDB, force bool) error {
 	s, err := ReadStatus(ctx, db)
 	if err != nil {

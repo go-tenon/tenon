@@ -66,7 +66,7 @@ ratelimit.Config{
 | `ratelimit.NewMemory(cfg)` | 进程内存，每个实例分别计数 | 每个请求都要经过的全局限流 |
 | `redislimit.New(rdb, name, cfg)` | Redis，多个实例共享 | 登录、验证码等需要多实例共享计数的操作，以及全局限流 |
 
-两者的算法相同，换实现不会改变限流结果。
+两者的算法相同，换实现时限流结果一致。
 
 <a id="http-middleware"></a>
 ## 限制请求频率
@@ -88,7 +88,7 @@ http:
     burst: 20
 ```
 
-内存限流器会自动删除已经回满的 key，内存占用只与最近活跃的客户端数量有关，不需要另行配置上限。
+内存限流器会自动删除已经回满的 key，内存占用只与最近活跃的客户端数量有关。
 
 限流器返回存储错误时，中间件返回 `503`，并把错误写入访问日志的 `error` 字段。
 
@@ -97,7 +97,7 @@ http:
 
 `RateLimit` 的第二个参数决定按什么维度计数。`httpx.KeyByIP` 按客户端地址计数，它使用 `ClientIP` 解析后的地址，所以部署在反向代理之后时，请同时配置[可信代理](../http/middleware.md#trusted-proxies)，否则所有请求都会被算到代理头上。
 
-你也可以传入自己的函数。函数返回空字符串时，这个请求不受限流：
+你也可以传入自己的函数。函数返回空字符串时，这个请求直接放行：
 
 ```go
 skipHealth := func(r *http.Request) string {
@@ -109,7 +109,7 @@ skipHealth := func(r *http.Request) string {
 router.Use(httpx.RateLimit(ratelimit.NewMemory(cfg.HTTP.RateLimit), skipHealth))
 ```
 
-中间件运行在路由匹配和认证之前，只能使用请求本身携带的信息。不要用 `Authorization` 等未经校验的请求头做 key：客户端每次换一个值就能得到一份新配额。需要按用户限流时，请[在处理器中限流](#in-handlers)。
+中间件运行在路由匹配和认证之前，只能使用请求本身携带的信息。key 要取客户端改不了的值，例如 IP：用 `Authorization` 等未经校验的请求头做 key 的话，客户端每次换一个值就能得到一份新配额。需要按用户限流时，请[在处理器中限流](#in-handlers)。
 
 <a id="in-handlers"></a>
 ## 在处理器中限流
@@ -148,7 +148,7 @@ import "github.com/go-tenon/tenon/ratelimit/redislimit"
 attempts := redislimit.New(rdb, "app:passcode", ratelimit.Config{Rate: 5, Interval: time.Minute, Burst: 5})
 ```
 
-每个 key 对应一个 Redis 键，键名是 `name:key`，例如 `app:passcode:42`；多个应用共用一个 Redis 时，在 `name` 中带上应用的命名空间。每次 `Allow` 是一次原子的脚本调用，时间取自 Redis 服务端时钟，多个实例并发调用时计数也是精确的。键在配额回满时自动过期，不需要迁移，也不需要清理。
+每个 key 对应一个 Redis 键，键名是 `name:key`，例如 `app:passcode:42`；多个应用共用一个 Redis 时，在 `name` 中带上应用的命名空间。每次 `Allow` 是一次原子的脚本调用，时间取自 Redis 服务端时钟，多个实例并发调用时计数也是精确的。键在配额回满时自动过期。
 
 Redis 的写入很快，也适合多个实例共享的全局限流：
 
@@ -168,7 +168,7 @@ logins := redislimit.New(rdb, "app:login", ratelimit.Config{Rate: 5, Interval: t
 attempts := ratelimit.Observe(a.meters, "login", logins)
 ```
 
-把 `attempts` 交给 [`login.Options.Attempts`](../security/login.md#limits)。第二个参数是指标中的名称，与存储的 `name` 分开：Redis 限流器的 `name` 往往带着应用的前缀，指标中不需要。任何 `Limiter` 都可以包装，包括中间件使用的内存限流器。
+把 `attempts` 交给 [`login.Options.Attempts`](../security/login.md#limits)。第二个参数是指标中的名称，与存储的 `name` 分开：Redis 限流器的 `name` 往往带着应用的前缀，指标中只用简短的名称。任何 `Limiter` 都可以包装，包括中间件使用的内存限流器。
 
 每次 `Allow` 计入计数器 `ratelimit.requests`，属性 `ratelimit.name` 是名称，`ratelimit.result` 是结果：
 

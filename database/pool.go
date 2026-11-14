@@ -24,7 +24,7 @@ const busyRetryAfter = time.Second
 
 // connector 是交给 database/sql 的 driver.Connector：每次取连接时从 pgxpool 取一个，
 // 按 ctx 中 acquire.WithTimeout 设置的时限限制等待，超过时返回 ErrBusy，并记录等待时长和超时次数。
-// 时限只作用于取连接，不影响语句本身的执行。httpx 为每个请求设置时限；队列任务和命令不设置，排队等待连接。
+// 时限只作用于取连接，语句本身的执行时间由 ctx 控制。httpx 为每个请求设置时限；队列任务和命令排队等待连接。
 type connector struct {
 	driver.Connector
 	pool     *pgxpool.Pool

@@ -25,7 +25,7 @@ type state struct {
 // indexVersions 返回同步要写入的版本：查询使用的版本，以及正在重建的版本（如果有）。
 //
 // 它在锁住 key 之后读取，不加锁：一个同步如果在重建登记之前读到没有 building，重建任务处理这个 key 时
-// 要等它提交，之后重新读取数据，不会漏掉它的修改；登记之后开始的同步一定读到 building。
+// 要等它提交，之后重新读取数据，它的修改因此包含在内；登记之后开始的同步一定读到 building。
 func indexVersions(ctx context.Context, db bun.IDB, index string) ([]int, error) {
 	st, err := readState(ctx, db, index, false)
 	if err != nil {

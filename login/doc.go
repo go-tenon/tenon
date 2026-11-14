@@ -10,5 +10,5 @@
 //
 // 验证码分两步：SendCode 发出短验证码并返回请求 ID；VerifyCode 校验后，已注册的标识直接登录，
 // 其余情况返回一次性的完成凭证（Outcome.Proof），交给 Register、ResetPassword 或 Link。
-// 框架不调用应用来创建账号：应用的注册 action 在自己的事务中建账号行，再用 Register 把已验证的标识挂上去。
+// 账号由应用创建：应用的注册 action 在自己的事务中建账号行，再用 Register 把已验证的标识挂上去。
 package login

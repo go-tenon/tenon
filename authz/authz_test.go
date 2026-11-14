@@ -121,7 +121,7 @@ func TestRoles(t *testing.T) {
 		t.Fatalf("malformed id: %v", err)
 	}
 
-	// 修改名称和权限；租户不能修改。
+	// 修改名称和权限；租户保持不变。
 	updated, err := s.UpdateRole(ctx, authz.Role{ID: reviewer.ID, Tenant: "", Name: "auditor", Permissions: []string{"comments:delete"}})
 	if err != nil || updated.Tenant != "acme" {
 		t.Fatalf("update=%+v err=%v", updated, err)
@@ -162,7 +162,7 @@ func testAssignAndResolve(t *testing.T, s *authz.Store) {
 	mustAssign(t, s, alice, "acme", owner.ID)
 	mustAssign(t, s, bob, "acme", member.ID)
 	mustAssign(t, s, bob, "acme", moderator.ID)
-	mustAssign(t, s, bob, "acme", moderator.ID) // 重复分配什么也不做
+	mustAssign(t, s, bob, "acme", moderator.ID) // 重复分配保持原样
 	mustAssign(t, s, bob, "globex", member.ID)
 	mustAssign(t, s, guest, "acme", empty.ID)
 	mustAssign(t, s, staff, authz.AllTenants, support.ID)

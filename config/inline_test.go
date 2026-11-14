@@ -68,7 +68,7 @@ func TestInlineEmbeddedConfig(t *testing.T) {
 	if err == nil {
 		t.Fatal("invalid config accepted")
 	}
-	// 提升到外层的 Validate 只执行一次，错误不会重复。
+	// 提升到外层的 Validate 只执行一次，错误只报告一次。
 	if n := strings.Count(err.Error(), "size must be positive"); n != 1 {
 		t.Fatalf("size error reported %d times: %v", n, err)
 	}

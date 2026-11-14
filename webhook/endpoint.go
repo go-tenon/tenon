@@ -71,7 +71,7 @@ type EndpointInput struct {
 	URL         string
 	Events      []string
 	Description string
-	Disabled    bool // 停用的端点不再收到新事件，已有的投递在下次尝试时标记为失败
+	Disabled    bool // 停用的端点停止接收新事件，已有的投递在下次尝试时标记为失败
 }
 
 func (in EndpointInput) check() error {

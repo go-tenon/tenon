@@ -129,7 +129,7 @@ func TestStartStreamsAnswer(t *testing.T) {
 func TestToolCallsAndBusy(t *testing.T) {
 	t.Parallel()
 	m := chattest.NewModel(
-		// 只有思考过程、没有正文的回复：流式发出的思考过程不应从完整消息中重复发送。
+		// 只有思考过程、没有正文的回复：流式发出的思考过程在完整消息中只出现一次。
 		chattest.Reply{Reasoning: "查一下", Calls: []chattest.Call{{Name: "get_order", Args: orderArgs{"A1"}}}},
 		chattest.Text("已签收"),
 	)

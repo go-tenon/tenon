@@ -2,7 +2,7 @@
 
 一个 API 应用除了启动 HTTP 服务，通常还要执行一些运维任务：检查配置、执行数据库迁移、导出接口文档、查看路由。`command` 包基于 [Cobra](https://github.com/spf13/cobra) 提供这些命令。
 
-每个命令都是一个独立的 `*cobra.Command`，应用按需把它们装配到根命令上，用不到的命令不会出现。
+每个命令都是一个独立的 `*cobra.Command`，应用按需把它们装配到根命令上，命令行里只有装配了的命令。
 
 - [示例用法](#example-usage)
 - [装配命令行](#declaring-the-cli)
@@ -98,7 +98,7 @@ func main() {
 | `queuecmd.New(db)` | `queue status`、`queue failed`、`queue slot recreate`，在 `command.Bind` 中声明，见[队列状态](../libraries/queue.md#stats-command) | 是 |
 | `schedulecmd.New(tasks, m)` | `schedules`，在 `command.Bind` 中声明，见[列出任务的命令](../libraries/scheduling.md#schedules-command) | 是 |
 
-迁移命令和 HTTP 命令分别放在 `command/migratecmd`、`command/httpcmd` 两个子包中。开发时用的 `dev`、`build`、`generate` 不在应用中，由[开发工具](../installation/tooling.md) `go tool tenon` 提供。`command` 本身不依赖 HTTP 和数据库组件，只导入它的应用不会链接 Huma、pgx 和 goose。
+迁移命令和 HTTP 命令分别放在 `command/migratecmd`、`command/httpcmd` 两个子包中。开发时用的 `dev`、`build`、`generate` 由[开发工具](../installation/tooling.md) `go tool tenon` 提供。`command` 本身只导入基础层的包和 Cobra 等少量第三方库，只用到它的应用保持精简。
 
 不提供 HTTP API 的应用，例如一个只消费消息队列的常驻进程，只装配它需要的命令即可：
 
@@ -156,12 +156,12 @@ func Start(ctx context.Context, cfg Config) error {
 | `start` | 以上三者，在同一个进程中 |
 | `realtime` | 只承接[实时频道](../libraries/realtime.md)的连接，可选，见[单独部署实时连接](../libraries/realtime.md#separate-process) |
 
-小型部署只运行 `start`：一个进程、一份配置、一套资源。业务量增长后改为分别部署 `serve`、`work` 和 `schedule`，各自按负载增减实例，代码不用改。`start` 也可以部署多个实例：worker 竞争领取任务，调度器通过锁保证[每次触发只执行一次](../libraries/scheduling.md#multiple-instances)。
+小型部署只运行 `start`：一个进程、一份配置、一套资源。业务量增长后改为分别部署 `serve`、`work` 和 `schedule`，各自按负载增减实例，代码保持原样。`start` 也可以部署多个实例：worker 竞争领取任务，调度器通过锁保证[每次触发只执行一次](../libraries/scheduling.md#multiple-instances)。
 
 `run` 先装配全部部分，再用 `d.Run` 同时运行它们（内部是 `command.Concurrently`）：
 
-- 一个部分装配失败（例如端口被占用）时，`run` 直接返回错误，哪个部分都不会开始运行，进程以非 0 状态退出。
-- 收到停止信号时，各部分同时平滑停止：HTTP 服务排空请求，worker 停止领取并等待处理中的任务，调度器不再触发并等待执行中的任务。全部返回之后才关闭数据库。
+- 一个部分装配失败（例如端口被占用）时，`run` 在任何部分开始运行之前就返回错误，进程以非 0 状态退出。
+- 收到停止信号时，各部分同时平滑停止：HTTP 服务排空请求，worker 停止领取并等待处理中的任务，调度器停止触发并等待执行中的任务。全部返回之后才关闭数据库。
 - 一个部分运行时出错退出，其余部分随之停止，进程以非 0 状态退出。
 - 一个部分在收到停止信号之前就正常返回，同样视为异常，错误中包含 `command.ErrStoppedEarly`，交给 systemd、Kubernetes 等重启。
 
@@ -179,12 +179,12 @@ func Start(ctx context.Context, cfg Config) error {
 
 默认输出 OpenAPI 3.1；有的客户端生成器只支持 3.0，例如 oapi-codegen，这时加上 `--spec 3.0`。路由中有[多个 API](../http/routing.md#api-versioning) 时，用 `--base-path` 选择其中一个，例如 `--base-path /api/v2`。
 
-`bootstrap.DocRouter` 用默认配置和没有打开任何资源的 `App` 调用 `serve` 也在用的路由函数（见[依赖装配](../concepts/dependencies.md#assembling-the-application)），因此导出的文档与实际运行的接口始终一致。构造路由不会调用处理器，也不会调用 token 校验器，所以这个命令不读取配置文件，也不连接数据库。
+`bootstrap.DocRouter` 用默认配置和没有打开任何资源的 `App` 调用 `serve` 也在用的路由函数（见[依赖装配](../concepts/dependencies.md#assembling-the-application)），因此导出的文档与实际运行的接口始终一致。构造路由只登记处理器和 token 校验器，所以这个命令离线运行，只需要源代码。
 
 <a id="routes-command"></a>
 ### routes 命令
 
-当业务模块变多时，你可以用 `routes` 查看整个应用的路由，包括 JSON API 和[页面](../responses/views.md#page-routes)，不必逐个打开模块中的 `routes.go`。`httpcmd.Routes` 的参数是构造完整路由的函数，例如[入门教程](../tutorial/02-infrastructure.md#assembling)中的 `bootstrap.DocRouter`。它不需要配置文件，也不连接数据库：
+当业务模块变多时，你可以用 `routes` 查看整个应用的路由，包括 JSON API 和[页面](../responses/views.md#page-routes)。`httpcmd.Routes` 的参数是构造完整路由的函数，例如[入门教程](../tutorial/02-infrastructure.md#assembling)中的 `bootstrap.DocRouter`。它离线运行：
 
 ```bash
 ./bin/api routes
@@ -228,7 +228,7 @@ VERSION         STATE    APPLIED AT           FILE
 20261112100000  pending  -                    20261112100000_create_article_tags_table.sql
 ```
 
-`make` 生成迁移文件的骨架，不加载配置、不连接数据库；其他命令会加载配置、连接数据库，并在结束后关闭连接。数据库连不上时以 `ExitUnavailable` 退出，部署脚本可以据此重试。迁移文件的编写与嵌入见[迁移](../database/migrations.md)。应用连接多个数据库时，用 `migratecmd.Name` 为其他数据库构造 `migrate <name> …` 命令，见[多个数据库](../database/quick-start.md#multiple-databases)。
+`make` 只生成迁移文件的骨架；其他命令会加载配置、连接数据库，并在结束后关闭连接。数据库连不上时以 `ExitUnavailable` 退出，部署脚本可以据此重试。迁移文件的编写与嵌入见[迁移](../database/migrations.md)。应用连接多个数据库时，用 `migratecmd.Name` 为其他数据库构造 `migrate <name> …` 命令，见[多个数据库](../database/quick-start.md#multiple-databases)。
 
 需要文件上传等功能自带的 SQL 时，可在 `migratecmd.New` 返回的命令上显式添加 `migratecmd.Publish(sources...)`。其中 `sources` 是应用选择的 `[]migrate.Source`，例如 `migrate.Source{Name: "filesystem", FS: filesystem.Migrations()}`。注册后可以执行：
 
@@ -236,7 +236,7 @@ VERSION         STATE    APPLIED AT           FILE
 go run ./cmd/api migrate publish --dir migrations
 ```
 
-这个命令只将尚未发布的 SQL 拷贝到应用目录，不加载配置、不连接数据库、不执行迁移。`--dir` 默认是 `migrations`；每个新增文件输出一行，重复执行不覆盖已有来源。注册代码、空项目首次发布方式及升级流程见[发布框架迁移](../database/migrations.md#publishing-framework-migrations)。
+这个命令只将尚未发布的 SQL 拷贝到应用目录，执行迁移仍用 `migrate up`。`--dir` 默认是 `migrations`；每个新增文件输出一行，重复执行时保留已有来源。注册代码、空项目首次发布方式及升级流程见[发布框架迁移](../database/migrations.md#publishing-framework-migrations)。
 
 <a id="config-command"></a>
 ### config 命令
@@ -279,7 +279,7 @@ root.AddCommand(&cobra.Command{
 
 选项使用 Cobra 原生的 `Flags` 定义。命令的 context 通过 `cmd.Context()` 获取，进程收到停止信号时它会被取消。需要恰好 n 个位置参数时，用 `command.ExactArgs(n)`，参数个数不对同样以 `ExitUsage` 失败。
 
-需要应用资源的命令不必这样手动加载配置和打开数据库，用 `command.Bind` 声明，执行时才装配：
+需要应用资源的命令用 `command.Bind` 声明，执行时才装配：
 
 ```go
 // bootstrap.Commands 返回需要 App 的命令。
@@ -438,4 +438,4 @@ func Publish(sources ...migrate.Source) *cobra.Command
 func Make() *cobra.Command
 ```
 
-`New` 返回 `migrate` 及其 `up`、`status`、`down`、`make` 子命令；`Name` 为另一个数据库构造 `migrate <name> …`；`Publish` 返回 `migrate publish`；`Make` 单独返回 `migrate make`，不需要配置。
+`New` 返回 `migrate` 及其 `up`、`status`、`down`、`make` 子命令；`Name` 为另一个数据库构造 `migrate <name> …`；`Publish` 返回 `migrate publish`；`Make` 单独返回 `migrate make`，它离线运行。

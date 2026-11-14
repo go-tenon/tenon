@@ -78,7 +78,7 @@ type layout struct {
 	contentEnds map[int]int // contentEndBefore 的缓存
 }
 
-// markdown 按 CommonMark 和 GFM 表格解析块结构，可以并发使用。它不做行内解析：
+// markdown 按 CommonMark 和 GFM 表格解析块结构，可以并发使用。它只解析块结构：
 // 切分只需要块结构，行内代码由 codeSpans 逐行识别，也就避开了行内解析在病态输入上的超线性开销。
 var markdown = parser.NewParser(
 	parser.WithBlockParsers(parser.DefaultBlockParsers()...),

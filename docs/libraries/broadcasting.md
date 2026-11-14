@@ -37,7 +37,7 @@ for m := range sub.C() {
 }
 ```
 
-发布时不需要知道哪些实例上有订阅者，Hub 经由 Redis 把消息送到每个实例，再交给本实例上订阅了这个主题的连接。
+发布时只管发布，Hub 经由 Redis 把消息送到每个实例，再交给本实例上订阅了这个主题的连接。
 
 <a id="creating-the-hub"></a>
 ## 创建 Hub
@@ -74,7 +74,7 @@ tx.AfterCommit(func(ctx context.Context) error {
 
 - **发布领域事件。** 每个连接收到后按自己的需要转换：同一条消息，不同的人看到的内容、语言可能不同。事件应当小，大的内容只带 ID，由收到的一方查询。
 - **在事务提交之后发布。** `Publish` 不参与数据库事务，提交之前发布，客户端可能收到一条随后被回滚的通知。
-- **发布失败不影响业务结果。** 通知是尽力而为的，文章已经发布成功，发布事件失败时框架记录一条 Error 日志。
+- **发布失败时业务结果照旧。** 通知是尽力而为的，文章已经发布成功，发布事件失败时框架记录一条 Error 日志。
 
 主题由字母、数字和 `_ - : .` 组成，最长 200 字节。多租户应用中主题要带上租户，见[缓存、广播与其他资源](../security/tenancy.md#other-resources)。
 
@@ -106,11 +106,11 @@ for {
 <a id="replaying-missed-events"></a>
 ### 断线补发
 
-连接断开期间的事件不会再投递。[长连接](../responses/sse.md#long-lived-connections)的处理器为每个事件带上了 ID，客户端重连时通过 `Last-Event-ID` 发回最后收到的 ID。文章的 ID 是 UUIDv7，按时间排序，所以补发就是查询这个 ID 之后发布的文章。`publishedAfter` 是查询之后发布的文章的业务动作 `article.PublishedAfter`：
+连接断开期间的事件由客户端重连时补发。[长连接](../responses/sse.md#long-lived-connections)的处理器为每个事件带上了 ID，客户端重连时通过 `Last-Event-ID` 发回最后收到的 ID。文章的 ID 是 UUIDv7，按时间排序，所以补发就是查询这个 ID 之后发布的文章。`publishedAfter` 是查询之后发布的文章的业务动作 `article.PublishedAfter`：
 
 ```go
 return rest.SSE(func(s *httpx.Stream) error {
-    sub := hub.Subscribe("articles") // 先订阅，再查询，中间发布的文章不会漏掉
+    sub := hub.Subscribe("articles") // 先订阅，再查询，中间发布的文章也能收到
     defer sub.Close()
     if last, err := uuid.Parse(s.LastEventID()); err == nil {
         missed, err := publishedAfter.Handle(s.Context(), last)
@@ -142,14 +142,14 @@ hub := broadcast.New(redisbroadcast.New(rdb, "app:broadcast"), nil)
 
 频道名区分不同的应用，同一个应用的实例必须相同。单机部署也要经由 Redis 传递：[不停机升级](../installation/deployment.md#upgrade-overlap)或滚动发布时新旧进程短暂并存，旧进程中还没结束的请求和任务发布的事件，要送到已经重连到新进程的浏览器。
 
-单机和[集群](redis.md#cluster)都可以使用。集群中频道按名称落在一个槽上，消息只经过负责这个槽的节点，不会转发给所有节点。
+单机和[集群](redis.md#cluster)都可以使用。集群中频道按名称落在一个槽上，消息只经过负责这个槽的节点。
 
-Redis Pub/Sub 不保存消息：订阅连接中断，或者集群把频道所在的槽迁移到别的节点时，期间发布的消息就丢了。后端发现这两种情况，会结束本实例的全部订阅，让浏览器重连补发，见下一节。
+Redis Pub/Sub 只转发在线的消息：订阅连接中断，或者集群把频道所在的槽迁移到别的节点时，期间发布的消息就丢了。后端发现这两种情况，会结束本实例的全部订阅，让浏览器重连补发，见下一节。
 
 <a id="delivery-guarantees"></a>
 ## 投递保证
 
-消息只投递给当前在线的订阅，最多一次。Hub 宁可结束订阅，也不会悄悄丢掉消息：
+消息只投递给当前在线的订阅，最多一次。消息可能送不到时，Hub 结束订阅，让客户端补发：
 
 | 原因 | `sub.Err()` | 发生时 |
 | --- | --- | --- |
@@ -157,14 +157,14 @@ Redis Pub/Sub 不保存消息：订阅连接中断，或者集群把频道所在
 | 后端可能丢了消息 | `broadcast.ErrLost` | 与 Redis 的连接中断过 |
 | 订阅被关闭 | `broadcast.ErrClosed` | 调用了 `sub.Close()` 或 `hub.Close()` |
 
-订阅结束后，处理器返回、连接结束，浏览器重连并按 `Last-Event-ID` [补发](#replaying-missed-events)，消息因此既不会丢，也不会乱序。一个订阅跟不上，不会影响其他订阅。
+订阅结束后，处理器返回、连接结束，浏览器重连并按 `Last-Event-ID` [补发](#replaying-missed-events)，消息因此完整、有序。一个订阅跟不上，只结束它自己。
 
 每个实例从后端收到全部主题的消息，再在本地按主题分发。
 
 <a id="testing"></a>
 ## 测试
 
-`broadcasttest.NewBackend()` 是测试用的内存后端，不需要数据库。同一个后端上的多个 Hub 互相收到消息，相当于多个实例；Hub 开始接收时会先收到后端创建以来发布的全部消息，所以刚创建 Hub 就发布的消息也不会错过：
+`broadcasttest.NewBackend()` 是测试用的内存后端。同一个后端上的多个 Hub 互相收到消息，相当于多个实例；Hub 开始接收时会先收到后端创建以来发布的全部消息，所以刚创建 Hub 就发布的消息也能收到：
 
 ```go
 import "github.com/go-tenon/tenon/broadcast/broadcasttest"

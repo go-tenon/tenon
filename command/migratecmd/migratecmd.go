@@ -40,7 +40,7 @@ func Name(name string) Option {
 
 // New 构造 migrate 命令及其 up、status、down、make 子命令。fsys 的根目录直接包含 SQL 迁移文件，
 // dbConfig 从应用配置中取出数据库配置。数据库连不上时以 ExitUnavailable 退出；
-// make 不加载配置、不连接数据库。应用连接多个数据库时，其他数据库的命令用 Name 构造。
+// make 离线运行。应用连接多个数据库时，其他数据库的命令用 Name 构造。
 func New[C any](fsys fs.FS, dbConfig func(cfg C) database.Config, opts ...Option) *cobra.Command {
 	var o options
 	for _, opt := range opts {
@@ -112,7 +112,7 @@ func printResults(out io.Writer, results []*goose.MigrationResult) {
 			fmt.Fprintf(tw, "%s\t%s\t%s\n", r.Direction, path.Base(r.Source.Path), r.Duration.Round(time.Millisecond))
 		}
 	}
-	_ = tw.Flush() // 写的是命令的输出，与 Fprintf 一样不处理错误
+	_ = tw.Flush() // 写的是命令的输出，与 Fprintf 一样忽略错误
 }
 
 // leaf 构造不接受位置参数的命令。

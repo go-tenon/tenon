@@ -26,13 +26,13 @@ import (
 var (
 	// ErrBusy 表示对话正在运行，新消息应当用 Run.Steer 插入。
 	ErrBusy = errorx.Define(errorx.Conflict, "ai.busy")
-	// ErrAwaitingApproval 表示对话中有等待审批的工具调用，处理它们之前不能发送新消息。
+	// ErrAwaitingApproval 表示对话中有等待审批的工具调用，处理完它们才能发送新消息。
 	ErrAwaitingApproval = errorx.Define(errorx.Conflict, "ai.awaiting_approval")
 	// ErrNotPending 表示要审批的工具调用不存在或已经处理过。
 	ErrNotPending = errorx.Define(errorx.NotFound, "ai.not_pending")
-	// ErrFinished 表示运行已经结束，不能再插入消息，应当开始新的运行。
+	// ErrFinished 表示运行已经结束，应当开始新的运行。
 	ErrFinished = errors.New("chat: run finished")
-	// ErrShuttingDown 表示本实例正在停止，不再开始新的运行（503）。客户端稍后重试，
+	// ErrShuttingDown 表示本实例正在停止，拒绝开始新的运行（503）。客户端稍后重试，
 	// 多实例部署时会落到其他实例上。
 	ErrShuttingDown = errorx.Define(errorx.Unavailable, "ai.shutting_down")
 )
@@ -62,7 +62,7 @@ type Runs struct {
 	runs      map[session.Key]*Run
 	appending map[session.Key]bool // Append 正在写入的对话，期间不开始运行
 	wg        sync.WaitGroup
-	draining  bool // Shutdown 或 Close 开始后不再开始新的运行
+	draining  bool // Shutdown 或 Close 开始后拒绝新的运行
 }
 
 // Option 配置 Runs。
@@ -150,7 +150,7 @@ func NewRuns(app string, ag agent.Agent, sessions session.Service, opts ...Optio
 	if ag != nil {
 		rs.runner = runner.NewRunner(app, ag, runnerOpts...)
 	} else {
-		// 每一轮用 agent.WithAgent 指定 AgentFor 选出的 agent，默认的 agent 不会被用到。
+		// 每一轮用 agent.WithAgent 指定 AgentFor 选出的 agent，默认的 agent 只作为占位。
 		rs.runner = runner.NewRunnerWithAgentFactory(app, app, func(context.Context, agent.RunOptions) (agent.Agent, error) {
 			return nil, errors.New("chat: no agent chosen for the run")
 		}, runnerOpts...)
@@ -158,7 +158,7 @@ func NewRuns(app string, ag agent.Agent, sessions session.Service, opts ...Optio
 	return rs
 }
 
-// Shutdown 平滑停止本实例上的运行：不再开始新的运行（Start、Submit、Approve、Reject 返回 ErrShuttingDown），
+// Shutdown 平滑停止本实例上的运行：拒绝开始新的运行（Start、Submit、Approve、Reject 返回 ErrShuttingDown），
 // 进行中的运行继续直到结束；ctx 结束时仍未结束的运行被取消，已经生成的内容保留在对话中。
 // 进行中的运行可以照常插话；多实例部署时，其他实例在此期间仍能镜像和转发它们。
 //
@@ -253,7 +253,7 @@ func (rs *Runs) Send(ctx context.Context, userID, sessionID string, msg model.Me
 
 // Start 在后台开始一次运行，把 msg 发给 agent。对话不存在时自动创建。
 //
-// 运行不受 ctx 取消的影响，但保留其中的值（例如日志字段）。对话正在运行时返回 ErrBusy，
+// 运行独立于 ctx 的取消，但保留其中的值（例如日志字段）。对话正在运行时返回 ErrBusy，
 // 等待审批时返回 ErrAwaitingApproval。
 func (rs *Runs) Start(ctx context.Context, userID, sessionID string, msg model.Message, opts ...agent.RunOption) (*Run, error) {
 	if rs.workers {
@@ -328,7 +328,7 @@ func (rs *Runs) startOwned(ctx context.Context, key session.Key, own *owner, msg
 		prev = nil
 	}
 	if ok && prev != nil && prev.own != nil {
-		// 上一次运行被这次取代，它的 owner 不再回应控制请求；否则它会一直订阅控制主题。
+		// 上一次运行被这次取代，它的 owner 停止回应控制请求，并结束对控制主题的订阅。
 		prev.own.close()
 	}
 	runCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
@@ -422,7 +422,7 @@ func (rs *Runs) Steer(ctx context.Context, userID, sessionID string, msg model.M
 	return r.Steer(ctx, msg)
 }
 
-// Pending 从会话存储读出对话中等待审批的工具调用，不依赖运行所在的进程。
+// Pending 从会话存储读出对话中等待审批的工具调用，任何进程都可以调用。
 func (rs *Runs) Pending(ctx context.Context, userID, sessionID string) ([]ToolCall, error) {
 	_, pending, err := rs.pending(ctx, rs.key(userID, sessionID))
 	if err != nil {
@@ -481,7 +481,7 @@ func (rs *Runs) rejectLocal(ctx context.Context, userID, sessionID, callID, reas
 }
 
 func (rs *Runs) resolve(ctx context.Context, key session.Key, callID string, opts []agent.RunOption, result func(ToolCall) string) (*Run, error) {
-	// 先取得对话的锁再执行批准的工具：对话正忙时返回 ErrBusy，工具不会执行，重试也不会执行两次。
+	// 先取得对话的锁再执行批准的工具：对话正忙时返回 ErrBusy，工具保持待执行，重试时也只执行一次。
 	own, err := rs.own(ctx, key)
 	if err != nil {
 		return nil, err
@@ -797,7 +797,7 @@ func (r *Run) round(ctx context.Context, msg *model.Message, reqID string, opts 
 	cleanup = func() {}
 	opts = append(opts, agent.WithRequestID(reqID))
 	if rs.history != nil && msg != nil {
-		// 先保存输入：选择 agent 失败时，用户的消息也不会丢失。
+		// 先保存输入：选择 agent 失败时，用户的消息也已经保存。
 		if err := rs.save(ctx, r.key, Entry{Message: *msg, RunID: r.ID}); err != nil {
 			return nil, "", cleanup, err
 		}
@@ -849,9 +849,9 @@ func (r *Run) fail(ctx context.Context, err error) {
 // consume 把 trpc-agent-go 的事件转换为 Event，返回运行是否出错。
 // cursor 是这一轮读取历史的游标，使用 UseHistory 时随产生的消息交给 Save。
 func (r *Run) consume(ctx context.Context, ch <-chan *event.Event, cursor string, calls map[string]ToolCall, answered map[string]bool) (failed bool) {
-	// 当前这条回答的思考过程和正文是否已经以增量发出；已发出的部分不再从完整消息中重复发送。
+	// 当前这条回答的思考过程和正文是否已经以增量发出；完整消息中只发送还没发出的部分。
 	var streamedReasoning, streamedText bool
-	// save 在使用 UseHistory 时保存进入对话的完整消息；保存失败时停止运行，之后的消息不再保存。
+	// save 在使用 UseHistory 时保存进入对话的完整消息；保存失败时停止运行，对话停在最后一次成功保存的位置。
 	var saveErr error
 	save := func(m model.Message) {
 		if saveErr != nil {

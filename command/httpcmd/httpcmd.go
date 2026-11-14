@@ -1,6 +1,6 @@
 // Package httpcmd 提供与 HTTP 路由有关的命令：openapi 输出 JSON API 的 OpenAPI 文档，
 // routes 输出 JSON API 和页面的路由表，client 生成 TypeScript 和 Go 客户端（tenon generate 调用它）。
-// 它们都从应用构造的路由中读取信息，不读取配置，不启动服务，不调用处理器。Commands 一次返回这三个命令。
+// 它们都从应用构造的路由中读取信息，离线运行，只登记处理器。Commands 一次返回这三个命令。
 package httpcmd
 
 import (
@@ -22,7 +22,7 @@ import (
 //
 //	root.AddCommand(httpcmd.Commands(func() chi.Routes { return routes(Config{}, nil) })...)
 //
-// 注册路由时只保存依赖、不调用依赖，用零值构造才不会出错；违反时命令 panic，堆栈指向使用依赖的地方。
+// 注册路由时只保存依赖，处理请求时才使用，用零值构造才能成功；违反时命令 panic，堆栈指向使用依赖的地方。
 func Commands(router func() chi.Routes) []*cobra.Command {
 	return []*cobra.Command{OpenAPI(router), Routes(router), clientgen.Command(router)}
 }

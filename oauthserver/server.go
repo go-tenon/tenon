@@ -23,7 +23,7 @@ import (
 	"github.com/go-tenon/tenon/outbound"
 )
 
-// 授权请求本身有问题、不能跳回客户端时的错误：授权端点把错误码交给同意页（ConsentURL?error=…），同意页的接口返回 422。
+// 授权请求本身有问题、留在本站显示的错误：授权端点把错误码交给同意页（ConsentURL?error=…），同意页的接口返回 422。
 var (
 	// ErrInvalidClient 表示 client_id 不是预先登记的客户端，也取不回有效的客户端元数据文档。
 	ErrInvalidClient = errorx.Define(errorx.InvalidArgument, "oauth.invalid_client")
@@ -56,7 +56,7 @@ type Scope struct {
 // Options 是 New 的选项。
 type Options struct {
 	// Issuer 是授权服务器的标识，也是各端点的地址前缀，例如 https://blog.example.com。
-	// 必须是 https 地址（本机开发可以用 http://localhost），不能带查询参数。应用部署在路径之下时带上路径，
+	// 必须是不带查询参数的 https 地址（本机开发可以用 http://localhost）。应用部署在路径之下时带上路径，
 	// 例如 https://example.com/blog：Routes 挂在这个路径上，元数据仍然在域名的根上，见 MetadataPath。
 	Issuer string
 	// Resources 是令牌可以用于的资源，例如 MCP 服务的地址 https://blog.example.com/mcp，至少一个。
@@ -64,7 +64,7 @@ type Options struct {
 	Resources []string
 	// Scopes 是客户端可以申请的范围，至少一个。客户端不传 scope 时申请全部范围。
 	Scopes []Scope
-	// Clients 是预先登记的客户端。https 地址形式的 client_id 不需要登记，按 Client ID Metadata Document 取回。
+	// Clients 是预先登记的客户端。https 地址形式的 client_id 即来即用，按 Client ID Metadata Document 取回。
 	Clients []Client
 	// ConsentURL 是单页应用中同意页的地址，必须设置，例如 /oauth/consent，也可以是完整的 https 地址。
 	// 授权端点校验请求后跳到这里，附上 request 参数；请求无法跳回客户端时附上 error 参数（错误码，例如 oauth.invalid_client）。
@@ -72,7 +72,7 @@ type Options struct {
 	ConsentURL string
 	// DynamicRegistration 开启动态客户端注册（RFC 7591）：客户端在 POST /oauth/register 登记自己，得到 client_id。
 	// MCP 规范已把它标为过时，claude.ai 和 ChatGPT 都优先使用 Client ID Metadata Document，只在授权服务器不支持时才注册；
-	// 需要兼容只支持注册的客户端时开启。注册接口不需要认证，应当为它限流，并定时调用 CleanupClients。
+	// 需要兼容只支持注册的客户端时开启。注册接口是公开的，应当为它限流，并定时调用 CleanupClients。
 	DynamicRegistration bool
 	// TokenLifetime 是令牌的最长有效期，TokenIdleTimeout 是最长空闲时间，到期后客户端重新授权。
 	// 不大于 0 时分别为 DefaultTokenLifetime、DefaultTokenIdleTimeout。

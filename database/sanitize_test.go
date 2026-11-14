@@ -35,7 +35,7 @@ func TestSanitizeTruncates(t *testing.T) {
 	if len(got) != maxQueryText+3 || !strings.HasSuffix(got, "...") || !strings.HasPrefix(got, "SELECT col, ") {
 		t.Fatalf("len %d, %q", len(got), got[len(got)-10:])
 	}
-	// 截断不会切开多字节字符。
+	// 截断保持多字节字符完整。
 	got = sanitize("SELECT " + strings.Repeat("名", 1000))
 	if !strings.HasSuffix(got, "...") || strings.ContainsRune(got, '�') {
 		t.Fatalf("%q", got[len(got)-10:])

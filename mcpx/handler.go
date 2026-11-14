@@ -38,8 +38,8 @@ type HandlerOptions struct {
 // 并带 WWW-Authenticate: Bearer，凭据绑定了其他租户或缺少 Permissions 返回 403，认证后端故障返回 5xx。
 // 主体写入 ctx，工具中用 identity.FromContext 取出。
 //
-// 服务不保存会话：每个请求独立处理，响应是 JSON，多个实例之间不需要粘性会话或共享存储。
-// 因此服务端不能主动向客户端发请求（sampling、elicitation）或发送进度通知。
+// 服务是无状态的：每个请求独立处理，响应是 JSON，可以落在任意实例上。
+// 因此通信总是由客户端发起，sampling、elicitation 和进度通知这类由服务端发起的消息随之关闭。
 // 请求体大小、超时、限流、访问日志和链路沿用挂载它的路由上的中间件。
 // Validate 为 nil、Accounts 为空或名称不合法时 panic。
 func Handler(s *Server, opts HandlerOptions) http.Handler {
@@ -66,7 +66,7 @@ func Handler(s *Server, opts HandlerOptions) http.Handler {
 		JSONResponse: true,
 		Logger:       s.sdkLogger(),
 		// 防 DNS 重绑定的检查拒绝经本机地址到达、Host 却不是本机的请求，部署在反向代理之后时每个请求都会被拒绝。
-		// 它保护的是没有认证、只监听本机的服务；这里每个请求都要带 Bearer token，不需要它。
+		// 它保护的是没有认证、只监听本机的服务；这里每个请求都要带 Bearer token，已经足够。
 		DisableLocalhostProtection: true,
 	})
 	permissions := append([]string(nil), opts.Permissions...)

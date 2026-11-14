@@ -86,7 +86,7 @@ type Providers struct {
 // 指标中还有 Go 运行时的内存、GC、goroutine 等指标（go.memory.used、go.goroutine.count 等）。
 // 用完后调用 Shutdown 发出缓冲中的数据。
 //
-// cfg.Endpoint 为空时返回不记录也不推送的 Provider，调用方不需要区分。
+// cfg.Endpoint 为空时返回空操作的 Provider，调用方按同样的方式使用它。
 //
 // 开启推送时，Open 设置 OpenTelemetry 的全局错误处理：导出失败用 slog.Default() 记录为 component=telemetry 的错误日志。
 func Open(ctx context.Context, cfg Config) (*Providers, error) {
@@ -158,7 +158,7 @@ func Open(ctx context.Context, cfg Config) (*Providers, error) {
 	}, nil
 }
 
-// Shutdown 发出缓冲中的数据并停止推送；ctx 到期时放弃剩余的数据。没有开启推送时什么也不做。
+// Shutdown 发出缓冲中的数据并停止推送；ctx 到期时放弃剩余的数据。没有开启推送时直接返回。
 func (p *Providers) Shutdown(ctx context.Context) error {
 	var errs []error
 	for _, fn := range p.shutdown {

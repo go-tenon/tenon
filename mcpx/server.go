@@ -73,7 +73,7 @@ func New(opts Options, options ...ServerOption) *Server {
 	return s
 }
 
-// sdkLogger 返回交给 SDK 的日志器，只保留 Warn 及以上：服务不保存会话，SDK 为每个请求记录的连接、断开都是噪音。
+// sdkLogger 返回交给 SDK 的日志器，只保留 Warn 及以上：服务是无状态的，SDK 为每个请求记录的连接、断开都是噪音。
 func (s *Server) sdkLogger() *slog.Logger {
 	return slog.New(warnOnly{s.logger.Handler()})
 }
@@ -89,11 +89,11 @@ func (h warnOnly) WithAttrs(attrs []slog.Attr) slog.Handler {
 func (h warnOnly) WithGroup(name string) slog.Handler { return warnOnly{h.Handler.WithGroup(name)} }
 
 // SDK 返回底层的 *mcp.Server，用于直接添加 resource、prompt 等本包没有包装的功能。
-// 用它添加的工具不经过本包的权限检查和参数校验。
+// 用它添加的工具绕过本包的权限检查和参数校验。
 func (s *Server) SDK() *mcp.Server { return s.sdk }
 
 // Tool 描述一个工具。模型只看得到 Name、Title、Description、参数的说明和注解，
-// 它们决定了模型会不会、会怎样调用这个工具，像写给新同事的说明一样写清楚。
+// 它们决定了模型是否以及怎样调用这个工具，像写给新同事的说明一样写清楚。
 type Tool struct {
 	// Name 是工具名，小写字母开头，只有小写字母、数字和下划线，最长 64 个字符，例如 article_publish。
 	Name string
@@ -104,7 +104,7 @@ type Tool struct {
 	// Permissions 是调用这个工具需要的全部权限，用 identity.Subject.Can 检查：
 	// 主体缺少其中任何一项时，工具不出现在列表中，调用时与不存在的工具相同。
 	Permissions []string
-	// ReadOnly 表示工具不修改任何数据。客户端通常不需要用户确认就调用只读工具。
+	// ReadOnly 表示工具只读取数据。客户端通常直接调用只读工具。
 	ReadOnly bool
 	// Destructive 表示工具会删除或覆盖数据，客户端据此在调用前请用户确认。ReadOnly 时忽略。
 	Destructive bool
@@ -115,7 +115,7 @@ type Tool struct {
 // Register 把 fn 登记为工具 t。fn 通常是 action 的方法值，例如 article.NewPublish(db).Tool。
 //
 // I 必须是结构体，它的 JSON Schema 和校验规则按 Huma 的标签生成（doc、minLength、enum、format 等），
-// 与 REST 的请求体相同，同一个类型可以同时用作两者。参数不符合 schema 时 fn 不会被调用，
+// 与 REST 的请求体相同，同一个类型可以同时用作两者。参数不符合 schema 时直接返回，
 // 模型收到各字段的错误。O 是结构体或 map 时生成 outputSchema，结果同时以结构化内容和 JSON 文本返回；
 // 其他类型（例如切片）只以 JSON 文本返回。
 //
@@ -236,7 +236,7 @@ func invalid(problems []string) *mcp.CallToolResult {
 }
 
 // authorize 是接收请求的中间件：工具列表只返回主体有权限的工具；调用没有权限的工具与调用不存在的工具相同。
-// 主体来自 ctx（Handler 或 stdio 入口写入）；没有主体时只能使用不需要权限的工具。
+// 主体来自 ctx（Handler 或 stdio 入口写入）；没有主体时只能使用公开的工具。
 func (s *Server) authorize(next mcp.MethodHandler) mcp.MethodHandler {
 	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
 		sub, _ := identity.FromContext(ctx)

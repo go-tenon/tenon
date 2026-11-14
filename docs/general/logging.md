@@ -1,6 +1,6 @@
 # 日志
 
-Tenon 使用 Go 标准库的 [`log/slog`](https://pkg.go.dev/log/slog) 记录结构化日志，全局日志器就是 `slog.Default()`。框架的组件和你的业务代码都通过它记录日志，不需要把日志器层层传递。
+Tenon 使用 Go 标准库的 [`log/slog`](https://pkg.go.dev/log/slog) 记录结构化日志，全局日志器就是 `slog.Default()`。框架的组件和你的业务代码都通过它记录日志。
 
 `logging` 包在 slog 之上只做三件事：按配置构造日志器；让日志自动带上请求 ID 等关联字段；把 [slog-formatter](https://github.com/samber/slog-formatter) 和 [slog-multi](https://github.com/samber/slog-multi) 接入处理链，用来格式化字段和输出到多个地方。除此之外，你使用的都是标准的 slog API。
 
@@ -84,17 +84,17 @@ logs:
 
   输出到终端时，时间变暗、级别按颜色区分。输出到管道、文件或 CI 时自动去掉颜色；设置 `NO_COLOR=1` 也会关闭颜色（见 [no-color.org](https://no-color.org)）。
 
-`text` 不是严格的 [logfmt](https://brandur.org/logfmt)，不要让日志系统解析它。确实需要 logfmt 时，用 `logging.Fanout(slog.NewTextHandler(w, nil))` 追加一个输出，见[多个输出](#multiple-outputs)。
+`text` 是给人看的格式，日志系统解析用 `json`。确实需要 logfmt 时，用 `logging.Fanout(slog.NewTextHandler(w, nil))` 追加一个输出，见[多个输出](#multiple-outputs)。
 
 > [!TIP]
-> 让 AI agent 读取或分析日志时，请使用 `json`：字段完整、结构明确。agent 执行命令时通常不在终端中，`text` 也不会带颜色码；如果 agent 工具分配了伪终端，设置 `NO_COLOR=1` 可以避免输出转义码。
+> 让 AI agent 读取或分析日志时，请使用 `json`：字段完整、结构明确。agent 执行命令时通常不在终端中，`text` 输出纯文本；如果 agent 工具分配了伪终端，设置 `NO_COLOR=1` 关闭颜色码。
 
 <a id="config-time-zone"></a>
 ### time_zone
 
 日志时间使用的时区，例如 `UTC`、`Asia/Shanghai`，同时作用于字段中的时间值。没有设置时使用进程的本地时区，它由 `TZ` 环境变量或 `/etc/localtime` 决定：开发机上通常是 `+08:00`，容器中往往是 UTC。
 
-时间始终带有时区偏移，不会产生歧义。不过，多个环境的日志混合检索时，建议统一设为 `UTC`。
+时间始终带有时区偏移，含义明确。不过，多个环境的日志混合检索时，建议统一设为 `UTC`。
 
 <a id="config-add-source"></a>
 ### add_source
@@ -104,7 +104,7 @@ logs:
 <a id="config-writer"></a>
 ### 输出位置
 
-日志默认输出到标准错误。这样，当同一个程序作为命令行工具使用时（例如 `openapi` 命令），标准输出可以完整地留给命令的结果。需要改变输出位置时（例如在测试中写入缓冲区），在代码中设置 `Writer` 字段，它不会从配置文件中读取：
+日志默认输出到标准错误。这样，当同一个程序作为命令行工具使用时（例如 `openapi` 命令），标准输出可以完整地留给命令的结果。需要改变输出位置时（例如在测试中写入缓冲区），在代码中设置 `Writer` 字段，它只能在代码中设置：
 
 ```go
 var buf bytes.Buffer
@@ -116,7 +116,7 @@ cfg.Logs.Writer = &buf
 另外，`slog.SetDefault` 还会让标准库 `log` 包的输出也经过这个日志器，所以第三方库用 `log.Printf` 打印的内容同样会变成结构化日志。
 
 > [!NOTE]
-> `logging.New` 本身不修改全局状态，是否安装为全局日志器由入口决定。框架组件的日志器参数为 `nil` 时使用 `slog.Default()`，因此你也可以只给某个组件传入单独的日志器，例如 `rest.Options{Logger: auditLogger}`；需要关闭某个组件的日志时，传入 `slog.New(slog.DiscardHandler)`。
+> `logging.New` 只返回日志器，是否安装为全局日志器由入口决定。框架组件的日志器参数为 `nil` 时使用 `slog.Default()`，因此你也可以只给某个组件传入单独的日志器，例如 `rest.Options{Logger: auditLogger}`；需要关闭某个组件的日志时，传入 `slog.New(slog.DiscardHandler)`。
 
 <a id="component-levels"></a>
 ### 按组件设置级别
@@ -174,7 +174,7 @@ func (a *Publish) Handle(ctx context.Context, subject identity.Subject, id uuid.
 
 如果某个动作需要单独的日志器（例如写入审计日志），像接收数据库一样通过构造函数接收 `*slog.Logger` 即可，见[依赖装配](../concepts/dependencies.md#constructor-injection)。
 
-字段名应当保持稳定，例如始终使用 `article_id` 而不是有时写 `articleId`，这样才方便在日志系统中检索和聚合。
+字段名应当保持稳定，例如始终使用 `article_id`，这样才方便在日志系统中检索和聚合。
 
 <a id="contextual-information"></a>
 ## 上下文信息
@@ -208,12 +208,12 @@ api := rest.New(router, rest.Options{})
 ctx = logging.WithAttrs(ctx, slog.String("component", "article"))
 ```
 
-多次调用 `WithAttrs` 会累加字段，并且不会影响父 context。
+多次调用 `WithAttrs` 会累加字段，父 context 保持原样。
 
 <a id="error-logging"></a>
 ## 错误日志
 
-业务代码通常**不需要**自己记录错误日志，只需添加上下文并返回错误。Tenon 会在 HTTP 边界为每个 `5xx` 错误记录一条诊断日志。如果每一层都记录一次，同一个错误就会在日志中出现很多遍，反而难以排查。
+业务代码只需添加上下文并返回错误。Tenon 会在 HTTP 边界为每个 `5xx` 错误记录一条诊断日志。如果每一层都记录一次，同一个错误就会在日志中出现很多遍，反而难以排查。
 
 | 日志 | 记录者 | 内容 |
 | --- | --- | --- |
@@ -239,7 +239,7 @@ slog.ErrorContext(ctx, "sync feed failed", "feed_id", id, "error", err)
 | `code` | [错误码](errors.md)，没有时省略 |
 | `stack` | `%+v` 格式的完整错误链，包含错误**创建处**的堆栈；与 `message` 相同（普通错误没有堆栈）时省略 |
 
-不需要再手写 `fmt.Sprintf("%+v", err)`。详见[错误处理](errors.md#reporting-errors)。在链路上记录同一个错误用 `logging.RecordError`，属性与这些字段对应，见[错误追踪](telemetry.md#error-tracking)。
+详见[错误处理](errors.md#reporting-errors)。在链路上记录同一个错误用 `logging.RecordError`，属性与这些字段对应，见[错误追踪](telemetry.md#error-tracking)。
 
 <a id="pipeline"></a>
 ## 扩展处理链
@@ -277,7 +277,7 @@ slog.SetDefault(logging.New(cfg.Logs,
 ```go
 logging.Format(
     slogformatter.FormatByType(func(d time.Duration) slog.Value {
-        return slog.StringValue(d.String()) // 输出 "52.4ms" 而不是纳秒数
+        return slog.StringValue(d.String()) // 输出 "52.4ms"
     }),
     slogformatter.FormatByType(func(u *account.User) slog.Value {
         return slog.GroupValue(slog.String("id", u.ID), slog.String("name", u.Name))
@@ -297,7 +297,7 @@ logging.Format(
 | `PIIFormatter(key)`、`IPAddressFormatter(key)` | 脱敏，见[敏感信息脱敏](#redacting-sensitive-data) |
 
 > [!NOTE]
-> slog-formatter 自带的 `ErrorFormatter` 记录的是**写日志那一行**的堆栈，而不是错误创建处的堆栈。请使用框架默认启用的 `logging.ErrorFormatter`，不要再追加前者。
+> slog-formatter 自带的 `ErrorFormatter` 记录的是**写日志那一行**的堆栈。框架默认启用的 `logging.ErrorFormatter` 记录错误创建处的堆栈，请只使用它。
 
 <a id="multiple-outputs"></a>
 ### 多个输出
@@ -413,7 +413,7 @@ logging.Format(slogformatter.FormatByKey("phone", func(v slog.Value) slog.Value 
 }))
 ```
 
-按类型定义日志表示，可以让某个类型无论出现在哪个字段名下都不会泄露敏感内容：
+按类型定义日志表示，可以让某个类型无论出现在哪个字段名下都隐藏敏感内容：
 
 ```go
 logging.Format(slogformatter.FormatByType(func(u *account.User) slog.Value {
@@ -424,7 +424,7 @@ logging.Format(slogformatter.FormatByType(func(u *account.User) slog.Value {
 <a id="redaction-caveats"></a>
 ### 注意事项
 
-- 规则**只按字段名或类型匹配，不检查内容**。直接拼接进日志消息的文本不会被处理，所以敏感数据请始终作为结构化字段传入，不要写进消息。
+- 规则**只按字段名或类型匹配**。规则只作用于结构化字段，所以敏感数据请始终作为结构化字段传入。
 - 访问日志开启 `request_header` 后，`Authorization`、`Cookie` 等认证相关的请求头始终隐藏，见[访问日志](../http/middleware.md#access-log)。其他需要隐藏的请求头，用 `FormatByKey` 按请求头名称处理即可，它会进入嵌套的分组匹配字段名，例如 `slogformatter.FormatByKey("X-Api-Key", ...)`。
 
 <a id="testing-logs"></a>
@@ -456,7 +456,7 @@ func TestPublishLogsEvent(t *testing.T) {
 捕获的日志器同样会输出 context 字段并展开 `error`，所以也可以断言 `request_id` 或 `error.code`。整数字段的值是 `int64`，例如 `got.Attr("response.status") == int64(404)`。
 
 > [!WARNING]
-> `Capture` 修改全局状态，使用它的测试不能调用 `t.Parallel()`。并行测试请改用 `logtest.New()`，再把 `rec.Logger()` 显式传给被测组件，例如 `httpx.Defaults(cfg, httpx.Logger(rec.Logger()))`。
+> `Capture` 修改全局状态，使用它的测试串行运行。并行测试请改用 `logtest.New()`，再把 `rec.Logger()` 显式传给被测组件，例如 `httpx.Defaults(cfg, httpx.Logger(rec.Logger()))`。
 
 <a id="api-reference"></a>
 ## API 参考
@@ -474,7 +474,7 @@ func New(cfg Config, opts ...Option) *slog.Logger
     - `opts`：扩展处理链的选项，见下面的 `Option`
 - **返回**：构造好的日志器
 
-不修改全局状态。默认启用 `ErrorFormatter`，输出到 `cfg.Writer`（默认是标准错误）。
+只返回日志器，全局状态由调用者设置。默认启用 `ErrorFormatter`，输出到 `cfg.Writer`（默认是标准错误）。
 
 ```go
 slog.SetDefault(logging.New(cfg.Logs))
@@ -498,7 +498,7 @@ func WithAttrs(ctx context.Context, attrs ...slog.Attr) context.Context
 func ContextAttrs(ctx context.Context) []slog.Attr
 ```
 
-把字段放进 context，之后用这个 context 记录的日志都带上它们。多次调用累加，不影响父 context。`ContextAttrs` 读取已放入的字段。
+把字段放进 context，之后用这个 context 记录的日志都带上它们。多次调用累加，父 context 保持原样。`ContextAttrs` 读取已放入的字段。
 
 ### AttrComponent
 

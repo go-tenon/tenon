@@ -6,8 +6,8 @@
 //
 // 内置转换器遵守同样的规则：
 //
-//   - 输出是合法的 UTF-8，换行为 LF，没有 BOM 和 NUL 字节；除格式本身的需要外，内容不做裁剪或改写。
-//   - Section 按最终的 Markdown 记录，之后不再改写 Markdown。一个 Section 包括为它生成的全部内容，
+//   - 输出是合法的 UTF-8，换行为 LF，没有 BOM 和 NUL 字节；除格式本身的需要外，内容保持原样。
+//   - Section 按最终的 Markdown 记录，此后 Markdown 固定。一个 Section 包括为它生成的全部内容，
 //     例如生成的标题；内置转换器的 Section 互不重叠，它们之间的文本不属于任何 Section。
 //     没有文字的页、幻灯片和工作表保留一个空的 Section，编号保持稳定。
 //   - 会形成 Markdown 结构的原文会被转义：行首的 #、>、列表标记、代码围栏和表格中的竖线。
@@ -18,12 +18,12 @@
 //     （DOCX、PPTX、XLSX、PDF）的空输入是 ErrCorrupt。没有文字层的 PDF 得到空的 Markdown，
 //     以及每页一个空的 Section。
 //   - 原件最多读取 MaxBytes+1 字节以发现超限。输出在生成过程中计入上限：每个块、每行表格、每行文字
-//     加入时就检查，文档不会先生成远超上限的内容再失败。由第三方库生成输出时，先限制交给它的输入。
+//     加入时就检查，超出时立即停止。由第三方库生成输出时，先限制交给它的输入。
 //   - Word 和 PowerPoint 的 XML 解析为最多 256 层嵌套的树，更深的是 ErrCorrupt；每个元素在自身字节之外
 //     再计 64 字节到 MaxExpandedBytes，解析后的树最多约为上限的两倍。Excel 的 XML 在交给表格库之前
 //     做同样的深度检查。
 //   - 在读取之间、等待 worker 时、XML 记号和 PDF 字符的批次之间，以及每页、每张幻灯片、每个工作表、
-//     每行或每个块之间检查取消。阻塞中的 Read 或单次第三方调用不会被打断。
+//     每行或每个块之间检查取消。阻塞中的 Read 或单次第三方调用结束后才检查。
 //   - 内置转换器可以并发使用。自定义转换器自己负责并发安全，Registry 在调用它之前释放锁。
 //
 // 因此 split 得到的分段字节区间，可以用 Document.SectionsIn 映射回原件的页、幻灯片或工作表。
@@ -41,7 +41,7 @@ import (
 	"github.com/go-tenon/tenon/errorx"
 )
 
-// Format 是规范化的文件扩展名：小写、不带点、别名已经换成标准名称。用 ParseFormat 或 FormatOf 得到它。
+// Format 是规范化的文件扩展名：小写、省略点、别名已经换成标准名称。用 ParseFormat 或 FormatOf 得到它。
 type Format string
 
 // 内置转换器支持的格式。
@@ -86,7 +86,7 @@ func FormatOf(filename string) (Format, bool) {
 
 // Input 是一份原件。
 type Input struct {
-	// Reader 提供文档内容，转换器不会关闭它。
+	// Reader 提供文档内容，由调用者关闭。
 	Reader io.Reader
 	// Name 可选，在错误信息中标识这份文档。
 	Name string
@@ -151,7 +151,7 @@ func (f ConverterFunc) Convert(ctx context.Context, in Input) (Document, error) 
 }
 
 // Registry 把格式映射到转换器。零值可以直接使用，也可以并发使用。格式经过 ParseFormat 规范化，
-// 后注册的替换先注册的。Registry 不会关闭它持有的转换器。
+// 后注册的替换先注册的。它持有的转换器由调用者关闭。
 type Registry struct {
 	mu         sync.RWMutex
 	converters map[Format]Converter
@@ -240,7 +240,7 @@ func (l Limits) Effective() Limits {
 
 // 转换器报告的错误。转换器用 %w 包装它们，并在错误链中保留底层原因。
 // 前四个属于 errorx.InvalidArgument：action 直接返回时得到 422 和翻译好的提示，
-// 在队列任务中应当用 queue.Permanent 标记，重试也不会成功。
+// 在队列任务中应当用 queue.Permanent 标记，重试也是徒劳。
 var (
 	// ErrUnsupported 表示没有这种格式的转换器。
 	ErrUnsupported = errorx.Define(errorx.InvalidArgument, "document.unsupported_format")

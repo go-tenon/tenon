@@ -9,8 +9,8 @@ import (
 // refresh token 放在这个 cookie 中：
 //
 //   - HttpOnly：页面上的脚本读不到它，XSS 拿不走长期有效的凭据；
-//   - SameSite=Strict：其他站点发起的请求不会带上它；
-//   - Path 只包含刷新和登出接口：其他请求也不会带上它，它不是 API 的凭据，API 仍然只认 Authorization: Bearer。
+//   - SameSite=Strict：只随本站发起的请求发送；
+//   - Path 只包含刷新和登出接口：只随这两个请求发送，它只用于刷新，API 仍然只认 Authorization: Bearer。
 //
 // 只用于和 API 属于同一站点的浏览器单页应用（同源，或 app.example.com 与 api.example.com）。
 // App、桌面端、小程序和脚本仍在请求体中传递 refresh token。

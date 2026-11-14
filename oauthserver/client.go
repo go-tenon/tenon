@@ -17,7 +17,7 @@ const maxMetadata = 64 << 10
 
 // Client 是预先登记的客户端，例如自研的 agent。
 type Client struct {
-	// ID 是客户端 ID，不能是 https 地址（https 地址的 client_id 按 Client ID Metadata Document 处理）。
+	// ID 是客户端 ID，使用 https 地址以外的字符串（https 地址的 client_id 按 Client ID Metadata Document 处理）。
 	ID string
 	// Name 显示在同意页上。
 	Name string

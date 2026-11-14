@@ -82,7 +82,7 @@ func TestFanout(t *testing.T) {
 			return errors.Newf("wrong operation %+v", op)
 		}
 		if item == "gone" {
-			return errBadFile.New() // 业务错误：这个单位失败，不再重试
+			return errBadFile.New() // 业务错误：这个单位失败，就此结束
 		}
 		return nil
 	}, rec.saved))
@@ -123,7 +123,7 @@ func TestHandleUnitSkipsSettledUnits(t *testing.T) {
 	if len(units) != 2 {
 		t.Fatalf("units: %+v", units)
 	}
-	// 第一个单位投递两次（例如确认之前进程崩溃），第二次不再执行。
+	// 第一个单位投递两次（例如确认之前进程崩溃），第二次直接跳过。
 	for _, u := range []operation.Unit[string]{units[0], units[0], units[1]} {
 		if err := handle(ctx, u); err != nil {
 			t.Fatal(err)
@@ -135,14 +135,14 @@ func TestHandleUnitSkipsSettledUnits(t *testing.T) {
 	if got := e.get(t, op.ID); got.Status != operation.StatusCompleted || got.Processed != 2 {
 		t.Fatalf("completed: %+v", got)
 	}
-	// 已经结束的操作不能再加入单位。
+	// 已经结束的操作拒绝加入新单位。
 	if err := operation.Fanout(ctx, e.db, op.ID, unitTopic, "late"); err == nil {
 		t.Fatal("fanout to finished operation")
 	}
 	if err := operation.Fanout(ctx, e.db, op.ID, unitTopic); err == nil {
 		t.Fatal("fanout without items")
 	}
-	// 操作被删除后，剩下的任务什么也不做。
+	// 操作被删除后，剩下的任务直接返回。
 	other := e.fanout(t, "x")
 	units = e.claimNew(t, &seen)
 	if _, err := e.db.NewDelete().Model((*operation.Operation)(nil)).Where("id = ?", other.ID).Exec(ctx); err != nil {
@@ -153,7 +153,7 @@ func TestHandleUnitSkipsSettledUnits(t *testing.T) {
 	}
 }
 
-// claimNew 返回 unitTopic 中第 *seen 个以后发布的任务，不经过 NSQ，并把 *seen 推进到末尾。
+// claimNew 返回 unitTopic 中第 *seen 个以后发布的任务，用 queuetest.Pending 直接读出，并把 *seen 推进到末尾。
 func (e env) claimNew(t *testing.T, seen *int) []operation.Unit[string] {
 	t.Helper()
 	all := queuetest.Pending(t, e.db, unitTopic)
@@ -185,7 +185,7 @@ func TestRetryFailedUnit(t *testing.T) {
 	}
 	saves := len(rec.progress())
 
-	// 服务恢复后重试失败任务，计数随之修正，但不再调用 saved。
+	// 服务恢复后重试失败任务，计数随之修正，saved 保持只调用过一次。
 	mu.Lock()
 	down = false
 	mu.Unlock()

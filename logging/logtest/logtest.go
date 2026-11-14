@@ -5,7 +5,7 @@
 //	if !rec.Has(slog.LevelError, "request failed") { t.Fatal(rec.Records()) }
 //	status := rec.Find("http request").Attr("response.status")
 //
-// Capture 修改全局状态，使用它的测试不能 t.Parallel()；并行测试改用 New，
+// Capture 修改全局状态，使用它的测试串行运行；并行测试改用 New，
 // 并把 Recorder.Logger() 显式传给被测组件。
 package logtest
 

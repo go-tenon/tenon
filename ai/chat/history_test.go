@@ -24,7 +24,7 @@ import (
 )
 
 // messageTable 模拟应用自己的消息表：seq 是写入顺序，after 是 Save 时带回的游标。
-// Load 按逻辑顺序返回：Save 保存的消息排在它的游标之后，而不是按写入时间。
+// Load 按逻辑顺序返回：Save 保存的消息排在它的游标之后。
 type messageTable struct {
 	mu      sync.Mutex
 	rows    map[chat.Conversation][]row

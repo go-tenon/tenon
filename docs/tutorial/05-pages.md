@@ -1,6 +1,6 @@
 # 5. 文章页面
 
-上一章的接口已经可以在 `/api/docs` 中调用了，但用户需要的是页面。这一章，我们用 React 和 TanStack Query 写文章列表和编辑器。你会看到，前端调用接口的代码和类型都不需要手写。
+上一章的接口已经可以在 `/api/docs` 中调用了，但用户需要的是页面。这一章，我们用 React 和 TanStack Query 写文章列表和编辑器。你会看到，前端调用接口的代码和类型都是生成的。
 
 - [生成的客户端](#client)
 - [文章列表](#list)
@@ -16,7 +16,7 @@
 - `api.article.list()`、`api.article.create(changes)` 等方法，按 `OperationID` 分组；
 - `ArticleErrors.SlugTaken` 等错误码常量。
 
-不用手写请求，也不用手写类型。Go 接口改了，前端的类型随之改变，用错的地方类型检查会报出来：
+请求和类型都是生成的。Go 接口改了，前端的类型随之改变，用错的地方类型检查会报出来：
 
 ```bash
 bun run typecheck
@@ -132,7 +132,7 @@ export function ArticleEditor({ article, onDone }: { article?: Article; onDone: 
 - `422` 时 `fields` 中每个字段一条提示，`location` 是 `body.title` 这样的位置，显示在对应的输入框下面；
 - 其他业务错误，例如 slug 已被使用，`detail` 是翻译好的提示，显示在表单上方。
 
-提示都来自服务端，前端不用再写一遍校验规则。
+提示都来自服务端，校验规则只写在服务端。
 
 <a id="app"></a>
 ## 页面

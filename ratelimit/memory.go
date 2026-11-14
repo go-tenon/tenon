@@ -9,7 +9,7 @@ import (
 // Memory 在进程内存中计数，多实例部署时每个实例分别计数。
 //
 // 已回满的 key 与从未出现过的 key 等价，Memory 在调用 Allow 时顺带删除它们，
-// 因此内存只与最近一个 Burst 周期内活跃的 key 数有关，不需要另行清理。
+// 因此内存只与最近一个 Burst 周期内活跃的 key 数有关，自动清理。
 type Memory struct {
 	gcra
 
@@ -23,7 +23,7 @@ func NewMemory(cfg Config) *Memory {
 	return &Memory{gcra: newGCRA("NewMemory", cfg), tats: map[string]time.Time{}, swept: time.Now()}
 }
 
-// Allow 实现 Limiter，不会返回存储错误。
+// Allow 实现 Limiter，在内存中完成，总是成功。
 func (m *Memory) Allow(_ context.Context, key string) error {
 	now := time.Now()
 	m.mu.Lock()
@@ -37,7 +37,7 @@ func (m *Memory) Allow(_ context.Context, key string) error {
 	return nil
 }
 
-// Reset 实现 Limiter，不会返回错误。
+// Reset 实现 Limiter，总是成功。
 func (m *Memory) Reset(_ context.Context, key string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

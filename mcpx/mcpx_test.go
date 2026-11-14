@@ -106,7 +106,7 @@ func TestToolsFilteredBySubject(t *testing.T) {
 		}
 	}
 
-	// 看不到的工具也不能调用，与不存在的工具相同。
+	// 看不到的工具调用时被拒绝，与不存在的工具相同。
 	_, hidden := mcpxtest.Connect(t, srv, bot).Call("article_publish", map[string]any{"id": uuid.NewString()})
 	_, missing := mcpxtest.Connect(t, srv, bot).Call("article_delete", map[string]any{})
 	if hidden == nil || missing == nil || strings.ReplaceAll(hidden.Error(), "article_publish", "X") != strings.ReplaceAll(missing.Error(), "article_delete", "X") {

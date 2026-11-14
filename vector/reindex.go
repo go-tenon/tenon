@@ -21,7 +21,7 @@ var errSuperseded = errorx.Define(errorx.Conflict, "vector.reindex_superseded")
 const ReindexBatch = 500
 
 // ScanFunc 按应用自己的稳定顺序（例如主键）返回 after 之后的最多 limit 个 key；after 为空时从头开始，
-// 返回空时结束。重建用它列出所有可能有文档的 key，每个 key 再用 LoadFunc 读取，读不到文档的 key 不会写入。
+// 返回空时结束。重建用它列出所有可能有文档的 key，每个 key 再用 LoadFunc 读取，读不到文档的 key 直接跳过。
 type ScanFunc func(ctx context.Context, db bun.IDB, after string, limit int) ([]string, error)
 
 // Reindex 登记 owner 发起的重建，在 tx 中发布重建任务，返回 pending 状态的操作，操作的类型是 vector.reindex.<name>。
@@ -30,13 +30,13 @@ type ScanFunc func(ctx context.Context, db bun.IDB, after string, limit int) ([]
 //
 // 重建用 Store 的模型（New 的 model）建立索引的一个新版本，查询在完成之前仍然使用原来的版本：
 //
-//   - 事务提交后，同步同时写入原来的版本和新版本，各用建立它的模型计算向量，重建期间的修改不会丢失；
+//   - 事务提交后，同步同时写入原来的版本和新版本，各用建立它的模型计算向量，重建期间的修改两边都有；
 //   - 重建任务用 ScanFunc 列出所有的 key，逐个读取并写入新版本，进度记在操作中，任务重试时从上次保存的地方继续；
 //   - 全部写入后新版本成为查询使用的版本，原来版本的 collection 随后删除。
 //
-// 新版本中文本相同的文档不能沿用原来版本的向量，每个文档都要重新计算一次。
+// 新版本中每个文档都用新的模型重新计算一次向量。
 // 正在进行的重建被新的重建取代，它的操作变为 failed，Error 是 vector.reindex_superseded。
-// 文档无法建索引的 key 计为失败的单位，不影响其他 key。
+// 文档无法建索引的 key 计为失败的单位，其他 key 照常处理。
 func (ix *Index[D]) Reindex(ctx context.Context, tx bun.IDB, ops *operation.Service, owner identity.Subject) (*operation.Operation, error) {
 	op, err := ops.Start(ctx, tx, owner, "vector.reindex."+ix.name)
 	if err != nil {
@@ -122,6 +122,6 @@ func (ix *Index[D]) rebuild(ctx context.Context, s *Store, ops *operation.Servic
 	if err != nil {
 		return err
 	}
-	// 切换之后删除原来的版本；失败时任务重试，Run 不再执行已经结束的操作，直接回到这里
+	// 切换之后删除原来的版本；失败时任务重试，Run 跳过已经结束的操作，直接回到这里
 	return s.dropStale(ctx, ix.name)
 }

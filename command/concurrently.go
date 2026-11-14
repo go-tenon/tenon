@@ -17,7 +17,7 @@ var ErrStoppedEarly = errors.New("command: stopped before shutdown")
 // 返回值包含 ErrStoppedEarly，进程以非 0 状态退出，交给 systemd、Kubernetes 等重启。
 // 停止过程中返回的 context.Canceled 不计为错误。
 //
-// 返回值合并了全部错误；没有错误时返回 nil。函数中的 panic 不会被恢复。
+// 返回值合并了全部错误；没有错误时返回 nil。函数中的 panic 照常向上传递。
 func Concurrently(ctx context.Context, runs ...func(context.Context) error) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()

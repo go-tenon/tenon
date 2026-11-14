@@ -18,7 +18,7 @@ type RetryOptions struct {
 	Attempts int
 	// Backoff 是第一次重试前的等待时间，之后每次翻倍并加上随机抖动，零值为 200ms。
 	Backoff time.Duration
-	// MaxWait 是两次尝试之间最长的等待时间，零值为 5s。响应的 Retry-After 超过它时不再重试，直接返回这个响应。
+	// MaxWait 是两次尝试之间最长的等待时间，零值为 5s。响应的 Retry-After 超过它时直接返回这个响应。
 	MaxWait time.Duration
 }
 
@@ -26,7 +26,7 @@ type RetryOptions struct {
 //
 //   - 只重试 GET、HEAD、OPTIONS、TRACE、PUT、DELETE，以及带有 Idempotency-Key 或 X-Idempotency-Key 请求头的请求，
 //     并且请求体可以重新读取（http.NewRequest 用 bytes、strings 创建的请求体都可以）；
-//   - 只在连接失败，或者响应状态码是 429、502、503、504 时重试；ErrForbidden、域名不存在、证书错误不会因为重试而成功，直接返回；
+//   - 只在连接失败，或者响应状态码是 429、502、503、504 时重试；ErrForbidden、域名不存在、证书错误直接返回；
 //   - 响应带有 Retry-After 时按它等待；
 //   - 等待受请求的 context 限制：剩余时间不够等到下一次时，直接返回最后一次的结果。http.Client 的 Timeout 同样限制包括重试在内的总时长。
 //

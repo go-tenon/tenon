@@ -169,8 +169,8 @@ type watcher struct {
 func (d dev) watchers() []watcher {
 	var ws []watcher
 	if d.cfg.Frontend != nil {
-		// 直接运行 vite，不经过 package.json 的 dev 脚本：那个名字留给 tenon dev 自己。
-		// 端口固定为 devUrl 的端口，被占用时直接失败：应用只会把请求转给这个地址，不能让 Vite 换一个端口。
+		// 直接运行 vite：package.json 的 dev 脚本留给 tenon dev 自己。
+		// 端口固定为 devUrl 的端口，被占用时直接失败：应用只把请求转给这个地址，Vite 必须使用它。
 		ws = append(ws, watcher{FrontendRoot(d.cfg), append([]string{"bun", "x", "vite"}, vitePort(d.cfg.Frontend.DevURL)...)})
 	}
 	if t := d.cfg.Templ; t != nil {

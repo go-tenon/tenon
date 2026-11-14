@@ -79,7 +79,7 @@ type env struct {
 	clock *clock
 }
 
-// newRealm 创建测试用的 Realm：限流器在内存中，宽松到不影响其他测试，限流本身在 TestAttemptsLimit 中检查。
+// newRealm 创建测试用的 Realm：限流器在内存中，宽松到其他测试都能通过，限流本身在 TestAttemptsLimit 中检查。
 // realmLimiter 返回一个宽松的内存限流器，供测试中另外创建的 Realm 使用。
 func (e *env) realmLimiter() ratelimit.Limiter {
 	return ratelimit.NewMemory(ratelimit.Config{Rate: 1000, Interval: time.Minute, Burst: 1000})
@@ -190,7 +190,7 @@ func TestPassword(t *testing.T) {
 			if sub.ID == "blocked" {
 				return identity.Subject{}, errors.New("blocked")
 			}
-			// Resolver 不能改变是谁、在哪个租户。
+			// 是谁、在哪个租户始终取自凭据，Resolver 改了也无效。
 			return identity.Subject{Type: "staff", ID: "mallory", Tenant: "other", Permissions: []string{"orders:read"}}, nil
 		},
 	})
@@ -210,7 +210,7 @@ func TestPassword(t *testing.T) {
 		t.Fatalf("resolved=%+v", resolved)
 	}
 
-	// 密码错误、标识不存在、没有密码、标识类型不能用于密码登录，都是同一个错误。
+	// 密码错误、标识不存在、没有密码、标识类型不允许密码登录，都是同一个错误。
 	e.account(t, ctx, "c2", "nopass@example.com", "")
 	for id, password := range map[login.Identifier]string{
 		login.Email("alice@example.com"):  "wrong",
@@ -251,7 +251,7 @@ func TestAttemptsLimit(t *testing.T) {
 	}
 	_, err := e.realm.Password(ctx, alice, "correct horse")
 	is(t, err, ratelimit.ErrExceeded)
-	// 计数按标识，其他标识不受影响；大小写不同仍是同一个标识。
+	// 计数按标识，其他标识照常；大小写不同仍是同一个标识。
 	_, err = e.realm.Password(ctx, login.Email("ALICE@example.com"), "correct horse")
 	is(t, err, ratelimit.ErrExceeded)
 	_, err = e.realm.Password(ctx, login.Email("bob@example.com"), "x")
@@ -300,7 +300,7 @@ func TestSignInWithCode(t *testing.T) {
 	if err != nil || out.Subject.Ref() != ref("c1") || out.Proof != "" {
 		t.Fatalf("verify: %+v %v", out, err)
 	}
-	// 登录后标识标为已验证，验证码不能再用。
+	// 登录后标识标为已验证，验证码随即作废。
 	list, _ := e.realm.Identifiers(ctx, ref("c1"))
 	if len(list) != 1 || !list[0].Verified {
 		t.Fatalf("identifiers=%+v", list)
@@ -323,7 +323,7 @@ func TestSignInWithCode(t *testing.T) {
 	_, err = e.realm.VerifyCode(ctx, requestID, c.Code)
 	is(t, err, login.ErrInvalidCode)
 
-	// 发送之后标识被移除：不能登录。
+	// 发送之后标识被移除：登录失败。
 	requestID, c = e.code(t, ctx, login.SignIn, phone)
 	if err := e.realm.Attach(ctx, e.db, ref("c1"), login.Email("c1@example.com"), true); err != nil {
 		t.Fatal(err)
@@ -373,7 +373,7 @@ func TestConfirmCode(t *testing.T) {
 		return requestID, c
 	}
 	requestID, c := send()
-	// 确认用的验证码不能用来登录，也不能替别人确认；这些尝试不消耗次数。
+	// 确认用的验证码只用于确认本人的身份，用来登录或替别人确认都会失败；这些尝试保留次数。
 	for range 3 {
 		_, err = e.realm.VerifyCode(ctx, requestID, c.Code)
 		is(t, err, login.ErrInvalidCode)
@@ -388,7 +388,7 @@ func TestConfirmCode(t *testing.T) {
 	}
 	is(t, e.realm.ConfirmCode(ctx, ref("c1"), requestID, c.Code), login.ErrInvalidCode)
 
-	// 登录用的验证码不能用来确认身份。
+	// 登录用的验证码只用于登录，确认身份时失败。
 	requestID, c = e.code(t, ctx, login.SignIn, phone)
 	is(t, e.realm.ConfirmCode(ctx, ref("c1"), requestID, c.Code), login.ErrInvalidCode)
 
@@ -399,7 +399,7 @@ func TestConfirmCode(t *testing.T) {
 	}
 	is(t, e.realm.ConfirmCode(ctx, ref("c1"), requestID, c.Code), login.ErrInvalidCode)
 
-	// 发送之后标识被移除：不能确认。
+	// 发送之后标识被移除：确认失败。
 	requestID, c = send()
 	if err := e.realm.Attach(ctx, e.db, ref("c1"), login.Email("c1@example.com"), true); err != nil {
 		t.Fatal(err)
@@ -509,7 +509,7 @@ func TestRegister(t *testing.T) {
 		t.Fatalf("proof consumed by the failed registration: %v", err)
 	}
 
-	// Reset 的凭证不能用于注册；凭证过期后无效。
+	// Reset 的凭证只用于找回密码，注册时失败；凭证过期后无效。
 	_, err = e.realm.Register(ctx, e.db, e.proof(t, ctx, login.Reset, email), ref("c13"))
 	is(t, err, login.ErrInvalidProof)
 	late := e.proof(t, ctx, login.SignIn, login.Email("late@example.com"))
@@ -773,7 +773,7 @@ func TestPasswordManagement(t *testing.T) {
 	if ok, _ := e.realm.HasPassword(ctx, ref("c1")); ok {
 		t.Fatal("password not removed")
 	}
-	// 其他账号体系的主体不能交给这个 Realm。
+	// 这个 Realm 只接受自己账号体系的主体。
 	if err := e.realm.SetPassword(ctx, e.db, identity.Ref{Type: "staff", ID: "s1"}, "correct horse"); err == nil {
 		t.Fatal("staff subject accepted by the customer realm")
 	}
@@ -795,7 +795,7 @@ func TestLastMethod(t *testing.T) {
 	}
 	is(t, e.realm.RemovePassword(ctx, e.db, ref("c1")), login.ErrLastMethod)
 
-	// 有了邮箱，可以用验证码登录，密码可以删除；之后用户名和邮箱都不能移除最后能登录的那个。
+	// 有了邮箱，可以用验证码登录，密码可以删除；之后用户名和邮箱中最后能登录的那个，移除时被拒绝。
 	if err := e.realm.Attach(ctx, e.db, ref("c1"), login.Email("alice@example.com"), true); err != nil {
 		t.Fatal(err)
 	}
@@ -820,7 +820,7 @@ func TestLastMethod(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 没有设置 Options.Send 时邮箱不能接收验证码，只能和密码一起使用。
+	// 没有设置 Options.Send 时邮箱只能和密码一起使用。
 	e.account(t, ctx, "c2", "bob@example.com", "correct horse")
 	noSend := login.New(e.db, login.Options{Type: customer, Hasher: hasher(4), Crypt: crypt.New(crypt.Config{Key: appKey}), Attempts: e.realmLimiter(), Sends: e.realmLimiter()})
 	is(t, noSend.RemovePassword(ctx, e.db, ref("c2")), login.ErrLastMethod)

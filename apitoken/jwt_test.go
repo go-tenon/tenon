@@ -90,7 +90,7 @@ func TestJWTLoginAndValidate(t *testing.T) {
 			t.Fatalf("list=%+v err=%v", list, err)
 		}
 
-		// refresh token 不能作为 Bearer 凭据；不是 JWT 的 token 交给 Store.Validate，同一个 API 也接受个人访问令牌。
+		// refresh token 作为 Bearer 凭据时被拒绝；不是 JWT 的 token 交给 Store.Validate，同一个 API 也接受个人访问令牌。
 		if _, ok := valid(t, s, p.Refresh); ok {
 			t.Fatal("refresh token accepted as an opaque bearer token")
 		}
@@ -118,7 +118,7 @@ func TestJWTLoginAndValidate(t *testing.T) {
 		if _, err := j.Validate(ctx, p.Access+"x"); !errors.Is(err, apitoken.ErrInvalid) || errors.Is(err, identity.ErrExpired) {
 			t.Fatalf("tampered access token: %v", err)
 		}
-		// 长连接复查由登录本身决定：登录还在，过期的 access token 不会让连接断开。
+		// 长连接复查由登录本身决定：登录还在，连接跨过 access token 的有效期继续保持。
 		if err := recheck(j, got, p.Access); err != nil {
 			t.Fatalf("recheck of a live login: %v", err)
 		}
@@ -174,7 +174,7 @@ func TestJWTRefresh(t *testing.T) {
 		if _, err := j.Refresh(ctx, cur.Refresh); !errors.Is(err, apitoken.ErrInvalid) {
 			t.Fatalf("login survived reuse: %v", err)
 		}
-		// 更早的 token 只是无效，不再触发 OnReuse。
+		// 更早的 token 只是无效，OnReuse 只触发一次。
 		if _, err := j.Refresh(ctx, first.Refresh); !errors.Is(err, apitoken.ErrInvalid) || len(reused) != 1 {
 			t.Fatalf("old token: %v reused=%d", err, len(reused))
 		}
@@ -341,7 +341,7 @@ func TestNewJWTPanics(t *testing.T) {
 		"nil store":    func() { apitoken.NewJWT(nil, apitoken.JWTConfig{Keys: keys}) },
 		"no keys":      func() { apitoken.NewJWT(s, apitoken.JWTConfig{}) },
 		"negative ttl": func() { apitoken.NewJWT(s, apitoken.JWTConfig{Keys: keys, TTL: -time.Second}) },
-		// testConfig 空闲 1 小时，不能短于 access token 的有效期。
+		// testConfig 空闲 1 小时，要大于等于 access token 的有效期。
 		"ttl beyond idle": func() { apitoken.NewJWT(s, apitoken.JWTConfig{Keys: keys, TTL: time.Hour}) },
 		"bad ed25519":     func() { apitoken.Ed25519Keys(ed25519.PrivateKey("short")) },
 	} {

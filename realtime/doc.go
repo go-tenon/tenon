@@ -10,5 +10,5 @@
 //	hub.PublishJSON(ctx, "chat:"+id, MessageSent{...})
 //
 // 频道就是 broadcast.Hub 的主题，多个实例之间由 Hub 的后端传递消息。
-// 消息最多投递一次，不保存历史：客户端断线重连后，从应用自己的接口取回期间的数据。
+// 消息最多投递一次，只投递实时消息：客户端断线重连后，从应用自己的接口取回期间的数据。
 package realtime

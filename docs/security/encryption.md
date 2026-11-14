@@ -2,7 +2,7 @@
 
 `crypt` 包用一个应用密钥做两件事：
 
-- **加密**以后还要读出明文的值，例如租户填写的模型服务商 API Key、第三方平台的 refresh token。这类值不能像密码那样[哈希](hashing.md)，因为调用第三方接口时要用到明文。
+- **加密**以后还要读出明文的值，例如租户填写的模型服务商 API Key、第三方平台的 refresh token。调用第三方接口时要用到明文，所以这类值加密保存，密码则用[哈希](hashing.md)。
 - **签名链接**：给邮件里的链接加上过期时间和签名，用户点开时确认链接是本站生成的、没有被改过、没有过期。例如邮箱验证、退订通知。
 
 加密使用 AES-256-GCM，签名使用 HMAC-SHA256，两者的子密钥都从应用密钥用 HKDF 派生，互不相同。
@@ -57,7 +57,7 @@ crypt:
 openssl rand -base64 32
 ```
 
-密钥一旦用来加密了数据，就不能丢失或随意更换：没有它，已经加密的值无法解开，已经发出的链接全部失效。更换密钥见[轮换密钥](#rotating-keys)。
+密钥一旦用来加密了数据，就要妥善保管：没有它，已经加密的值无法解开，已经发出的链接全部失效。更换密钥见[轮换密钥](#rotating-keys)。
 
 在[入口](../concepts/dependencies.md#assembling-the-application)的 `open` 中创建 `Crypt`，保存在 `App` 中，传给需要它的业务动作和处理器。`Crypt` 可以并发使用，整个应用共用一个：
 
@@ -101,7 +101,7 @@ if err != nil {
 model := chat.NewModel(ai.ModelConfig{Model: p.Model, BaseURL: p.BaseURL, APIKey: key})
 ```
 
-密文被改过，或者加密它的密钥已经不在配置中时，`Decrypt` 返回 `crypt.ErrDecrypt`。它不是业务错误，接口返回 500 并记录日志。
+密文被改过，或者加密它的密钥已经不在配置中时，`Decrypt` 返回 `crypt.ErrDecrypt`。它属于内部错误，接口返回 500 并记录日志。
 
 <a id="signed-urls"></a>
 ## 签名链接
@@ -115,7 +115,7 @@ link := a.crypt.SignURL("https://example.com/email/verify/"+u.ID+"?email="+url.Q
 msg, err := a.emails.Render(ctx, "verify_email", map[string]any{"URL": link})
 ```
 
-签名覆盖路径和其余全部查询参数，改了其中任何一处，签名就对不上；路径本身区分了链接的用途，验证邮箱的签名用不到别的地址上。签名**不覆盖**协议和域名：经过反向代理后，处理器看到的地址可能是 `http://10.0.0.5:8080/...`，校验结果不受影响。
+签名覆盖路径和其余全部查询参数，改了其中任何一处，签名就对不上；路径本身区分了链接的用途，验证邮箱的签名用不到别的地址上。签名**只覆盖**路径和查询参数：经过反向代理后，处理器看到的地址可能是 `http://10.0.0.5:8080/...`，校验结果照样正确。
 
 签名只防篡改，不加密：链接中的参数谁都能看到。
 
@@ -137,9 +137,9 @@ func (h *Handlers) VerifyEmail(w http.ResponseWriter, r *http.Request) error {
 }
 ```
 
-验证链接从邮件中打开，不需要登录，所以它是一个[公开页面](../responses/views.md)。
+验证链接从邮件中打开，任何人都能访问，所以它是一个[公开页面](../responses/views.md)。
 
-`VerifyURL` 只证明这个链接是本站发出的。链接发出之后数据可能变了，业务动作仍要按当前数据判断：上面的 `verifyEmail` 要确认用户当前的邮箱仍是链接中的 `email`，用户在此期间又改过邮箱，旧链接就不再生效。
+`VerifyURL` 只证明这个链接是本站发出的。链接发出之后数据可能变了，业务动作仍要按当前数据判断：上面的 `verifyEmail` 要确认用户当前的邮箱仍是链接中的 `email`，用户在此期间又改过邮箱，旧链接就随之失效。
 
 签名不对时返回 `crypt.ErrInvalidSignature`，过期时返回 `crypt.ErrExpired`。两者都是 `errorx.PermissionDenied`，页面呈现 403 [错误页](../responses/views.md#error-pages)，提示“链接无效”或“链接已过期”。过期页可以提供重新发送的入口：
 

@@ -109,7 +109,7 @@ func Replica(t testing.TB, db *bun.DB) *bun.DB {
 	return replica
 }
 
-// dropSlots 删除数据库 name 的逻辑复制槽：数据库有槽时 DROP DATABASE 失败，WITH (FORCE) 也不会删除它们。
+// dropSlots 删除数据库 name 的逻辑复制槽：数据库有槽时 DROP DATABASE 失败，WITH (FORCE) 也保留它们。
 // 正在使用槽的连接先被结束，它们释放槽之后才能删除，所以重试到全部删除或 ctx 结束。
 func dropSlots(ctx context.Context, db *bun.DB, name string) error {
 	for {

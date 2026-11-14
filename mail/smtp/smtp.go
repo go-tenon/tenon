@@ -21,7 +21,7 @@ const (
 )
 
 // Config 是 SMTP 发送配置。Username 为空时不认证；认证需要 starttls 或 tls，
-// go-mail 不会在未加密的连接上发送密码。
+// go-mail 只在加密的连接上发送密码。
 type Config struct {
 	From     mail.Address  `yaml:"from"` // 默认发件人
 	Host     string        `yaml:"host"`
@@ -65,7 +65,7 @@ type Mailer struct {
 
 var _ mail.Mailer = (*Mailer)(nil)
 
-// New 创建 SMTP 发送器，不会立即连接服务器。
+// New 创建 SMTP 发送器，发送时才连接服务器。
 func New(cfg Config) (*Mailer, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, errors.Wrap(err, "smtp")

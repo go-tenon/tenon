@@ -13,25 +13,25 @@
 <a id="meet-tenon"></a>
 ## 认识 Tenon
 
-Tenon 是一个用于构建 HTTP API 的 Go 应用框架。它为配置加载、路由、请求验证、错误响应、日志、认证、数据库访问、迁移和命令行工具提供了一套统一的约定，让你把精力放在业务本身，而不是反复拼装基础设施。
+Tenon 是一个用于构建 HTTP API 的 Go 应用框架。它为配置加载、路由、请求验证、错误响应、日志、认证、数据库访问、迁移和命令行工具提供了一套统一的约定，让你把精力放在业务本身。
 
-和很多“大而全”的框架不同，Tenon 不会把社区组件藏在自己的抽象后面。路由使用 [chi](https://github.com/go-chi/chi) 和 [Huma](https://huma.rocks)，日志使用标准库 `log/slog`，并通过 [slog-multi](https://github.com/samber/slog-multi)、[slog-formatter](https://github.com/samber/slog-formatter) 和 [slog-chi](https://github.com/samber/slog-chi) 扩展，数据库使用 [Bun](https://bun.uptrace.dev) 与 pgx，迁移使用 [goose](https://github.com/pressly/goose)，命令行使用 [Cobra](https://github.com/spf13/cobra)。Tenon 负责把它们以一致的方式连接起来，你学到的每一项技能都是这些组件本身的技能。
+Tenon 直接使用成熟的社区组件，并保留它们原本的接口。路由使用 [chi](https://github.com/go-chi/chi) 和 [Huma](https://huma.rocks)，日志使用标准库 `log/slog`，并通过 [slog-multi](https://github.com/samber/slog-multi)、[slog-formatter](https://github.com/samber/slog-formatter) 和 [slog-chi](https://github.com/samber/slog-chi) 扩展，数据库使用 [Bun](https://bun.uptrace.dev) 与 pgx，迁移使用 [goose](https://github.com/pressly/goose)，命令行使用 [Cobra](https://github.com/spf13/cobra)。Tenon 负责把它们以一致的方式连接起来，你学到的每一项技能都是这些组件本身的技能。
 
 <a id="why-tenon"></a>
 ### 为什么选择 Tenon
 
 **依赖一目了然。** Tenon 没有服务容器，也没有全局注册表。数据库连接、缓存都通过普通的 Go 构造函数参数传递，日志直接使用标准库的 `slog.Default()`，阅读入口文件就能知道应用由哪些部分组成。
 
-**约定开箱即用。** 每个请求都会自动获得请求 ID；所有错误都使用统一的 [Problem Details](https://www.rfc-editor.org/rfc/rfc9457) 格式返回；每条路由都必须显式声明是公开的还是需要认证的——忘记声明会在启动时就报错，而不是上线后才发现接口没有受保护。
+**约定开箱即用。** 每个请求都会自动获得请求 ID；所有错误都使用统一的 [Problem Details](https://www.rfc-editor.org/rfc/rfc9457) 格式返回；每条路由都必须显式声明是公开的还是需要认证的——忘记声明会在启动时就报错。
 
 **按需引入。** 每个包都可以单独使用。一个最小的 API 只需要路由相关的包；需要数据库、缓存或本地化时，再逐步加入。
 
-**接口文档自动生成。** 路由的输入输出由 Go 类型描述，OpenAPI 文档随代码自动生成，并且可以在不连接数据库的情况下离线导出。
+**接口文档自动生成。** 路由的输入输出由 Go 类型描述，OpenAPI 文档随代码自动生成，并且可以离线导出，只需要源代码。
 
 <a id="api-only"></a>
 ## 只写一个 API
 
-不需要前端时，不必使用脚手架。从一个空目录开始，写一个最小的 API 即可。环境要求只有 Go 1.27.4 或更高版本（精确的工具链要求以框架的 [go.mod](../../go.mod) 为准）。
+只写 API 时，从一个空目录开始，写一个最小的入口即可。环境要求只有 Go 1.27.4 或更高版本（精确的工具链要求以框架的 [go.mod](../../go.mod) 为准）。
 
 <a id="installing-tenon"></a>
 ### 安装 Tenon
@@ -130,7 +130,7 @@ func main() {
 3. 在 `127.0.0.1:8080` 上监听；
 4. 收到 Ctrl+C 或 `SIGTERM` 时，等待正在处理的请求完成后退出。
 
-现在不必理解每一行代码，[路由](../http/routing.md)和[请求生命周期](../concepts/lifecycle.md)章节会详细解释它们。
+每一行代码的含义在[路由](../http/routing.md)和[请求生命周期](../concepts/lifecycle.md)章节中详细解释。
 
 <a id="running"></a>
 ### 启动服务

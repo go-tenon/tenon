@@ -14,7 +14,7 @@ const module = "github.com/go-tenon/tenon"
 type layer int
 
 const (
-	// 基础：错误、身份、配置、日志等，不依赖数据库、传输和命令组件。
+	// 基础：错误、身份、配置、日志等，只依赖同层的包。
 	layerFoundation layer = iota + 1
 	// 基础设施：数据库、队列、锁、文件、邮件等，与入口无关。
 	layerInfrastructure
@@ -226,7 +226,7 @@ func TestRulesRespectLayers(t *testing.T) {
 }
 
 // TestDependencyRulesAreUsed 确保 rules 中没有用不到的条目：放行了却没有用到的引用，
-// 以后被悄悄用上时不会有人注意到。
+// 以后被悄悄用上时，测试就发现不了它。
 func TestDependencyRulesAreUsed(t *testing.T) {
 	used := map[string]map[string]bool{}
 	for pkg, imps := range imports(t) {
@@ -315,7 +315,7 @@ func TestDependencyRules(t *testing.T) {
 	}
 }
 
-// TestLocalFilesDoesNotLinkS3 确保仅使用本地文件服务不会链接 S3 SDK。
+// TestLocalFilesDoesNotLinkS3 确保仅使用本地文件服务的应用，依赖中排除了 S3 SDK。
 func TestLocalFilesDoesNotLinkS3(t *testing.T) {
 	out, err := exec.Command("go", "list", "-deps", module+"/filesystem/local").CombinedOutput()
 	if err != nil {
@@ -328,7 +328,7 @@ func TestLocalFilesDoesNotLinkS3(t *testing.T) {
 	}
 }
 
-// TestOnlyRealtimeLinksCentrifuge 确保不使用 WebSocket 实时频道的应用不会链接 Centrifuge：
+// TestOnlyRealtimeLinksCentrifuge 确保 Centrifuge 只出现在使用 WebSocket 实时频道的应用中：
 // 广播、SSE 和 AI 的集群协作都只依赖 broadcast。
 func TestOnlyRealtimeLinksCentrifuge(t *testing.T) {
 	for _, pkg := range []string{"/broadcast", "/broadcast/redisbroadcast", "/httpx/rest", "/web", "/ai", "/ai/chat"} {
@@ -344,8 +344,8 @@ func TestOnlyRealtimeLinksCentrifuge(t *testing.T) {
 	}
 }
 
-// TestDocumentCoreIsLight 确保只切分 Markdown 或只用文本转换器的应用不会链接 PDF、Excel 和 HTML 的依赖，
-// 它们分别在 document/convert/pdf、xlsx 和 html 中；只用 PDF 转换器时也不会链接 Excel 和 HTML 的依赖。
+// TestDocumentCoreIsLight 确保只切分 Markdown 或只用文本转换器的应用，依赖中排除了 PDF、Excel 和 HTML 的依赖，
+// 它们分别在 document/convert/pdf、xlsx 和 html 中；只用 PDF 转换器时也排除了 Excel 和 HTML 的依赖。
 func TestDocumentCoreIsLight(t *testing.T) {
 	heavy := []string{"github.com/klippa-app/go-pdfium", "github.com/tetratelabs/wazero", "github.com/xuri/excelize", "github.com/JohannesKaufmann/html-to-markdown"}
 	for pkg, allowed := range map[string][]string{
@@ -386,7 +386,7 @@ func TestSearchCoreIsLight(t *testing.T) {
 	}
 }
 
-// TestAICoreIsLight 确保只用到模型能力（图片、语音、向量、重排、决策）的应用不会链接对话式 agent 的依赖：
+// TestAICoreIsLight 确保只用到模型能力（图片、语音、向量、重排、决策）的应用，依赖中排除了对话式 agent 的依赖：
 // trpc-agent-go 及其带来的 gRPC、Huma 和数据库组件都只由 ai/chat 引入。
 func TestAICoreIsLight(t *testing.T) {
 	heavy := []string{module + "/ai/chat", "trpc.group/trpc-go", "google.golang.org/grpc", "github.com/danielgtaylor/huma", "github.com/uptrace/bun", module + "/httpx", module + "/broadcast", module + "/lock"}
@@ -405,7 +405,7 @@ func TestAICoreIsLight(t *testing.T) {
 	}
 }
 
-// TestMailCoreDoesNotLinkDrivers 确保只用 mail 核心包（例如在测试中用 mailtest）不会链接各驱动的 SDK。
+// TestMailCoreDoesNotLinkDrivers 确保只用 mail 核心包（例如在测试中用 mailtest）时，依赖中排除了各驱动的 SDK。
 func TestMailCoreDoesNotLinkDrivers(t *testing.T) {
 	for _, pkg := range []string{module + "/mail", module + "/mail/mailtest", module + "/mail/logmail"} {
 		out, err := exec.Command("go", "list", "-deps", pkg).CombinedOutput()
@@ -420,7 +420,7 @@ func TestMailCoreDoesNotLinkDrivers(t *testing.T) {
 	}
 }
 
-// TestAPIDoesNotLinkTempl 确保 JSON API 与认证、授权不会链接 templ，templ 只由 web 引入。
+// TestAPIDoesNotLinkTempl 确保 templ 只由 web 引入，JSON API 与认证、授权的依赖中排除了它。
 func TestAPIDoesNotLinkTempl(t *testing.T) {
 	for _, pkg := range []string{module + "/httpx", module + "/httpx/rest", module + "/apitoken", module + "/authz", module + "/oauthserver"} {
 		out, err := exec.Command("go", "list", "-deps", pkg).CombinedOutput()
@@ -452,7 +452,7 @@ func TestCoreDoesNotLinkRedis(t *testing.T) {
 }
 
 // TestCommandCoreIsLight 确保只用 command 核心包的应用（例如常驻 worker）
-// 不会链接 HTTP API 和数据库组件；它们分别在 command/httpcmd 和 command/migratecmd 中。
+// 依赖中排除了 HTTP API 和数据库组件；它们分别在 command/httpcmd 和 command/migratecmd 中。
 func TestCommandCoreIsLight(t *testing.T) {
 	out, err := exec.Command("go", "list", "-deps", module+"/command").CombinedOutput()
 	if err != nil {

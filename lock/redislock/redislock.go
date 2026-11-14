@@ -16,7 +16,7 @@ import (
 var _ lock.Store = (*Store)(nil)
 
 // Store 把每个锁保存为一个 Redis 键：键名就是锁名，值是持有者，键的过期时间就是锁的有效期。
-// 过期由 Redis 服务端计算，不依赖各实例的时钟；过期的键由 Redis 自动删除，不需要清理。
+// 过期由 Redis 服务端计算，与各实例的时钟无关；过期的键由 Redis 自动删除。
 type Store struct {
 	rdb rueidis.Client
 }
@@ -29,7 +29,7 @@ func New(rdb rueidis.Client) *Store {
 	return &Store{rdb: rdb}
 }
 
-// Refresh 和 Release 先比较持有者再修改，用脚本保证两步之间不会被其他持有者插入。
+// Refresh 和 Release 先比较持有者再修改，用脚本保证两步原子地完成。
 var (
 	refresh = rueidis.NewLuaScript(`
 if redis.call("GET", KEYS[1]) == ARGV[1] then

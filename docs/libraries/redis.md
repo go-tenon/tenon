@@ -2,13 +2,13 @@
 
 Redis 在 Tenon 中负责多个实例之间的**协调**。Tenon 的每个组件只做它最擅长的事：业务数据在 PostgreSQL，缓存在 [Memcached](cache.md)，任务在[队列](queue.md)。Redis 用它的数据结构做多个实例之间的协调：[原子锁](locks.md)、[限流](rate-limiting.md)、[实时推送](realtime.md)的在线成员和[广播](broadcasting.md)，以及计数器这类需要原子更新的小数据。
 
-这些数据被淘汰就会出错，例如锁被挤掉后两个实例同时执行任务。所以 Redis 要配置为内存满时拒绝写入，而不是淘汰键：
+这些数据被淘汰就会出错，例如锁被挤掉后两个实例同时执行任务。所以 Redis 要配置为内存满时拒绝写入：
 
 ```text
 maxmemory-policy noeviction
 ```
 
-也因为这个原因，缓存不放在这个 Redis 里：缓存需要内存满时淘汰旧数据，两种策略不能共用一个实例。
+也因为这个原因，缓存放在单独的 Memcached 里：缓存需要内存满时淘汰旧数据，两种策略各用一个实例。
 
 Tenon 不封装 Redis 客户端，约定统一使用 [rueidis](https://github.com/redis/rueidis)。[实时推送](realtime.md)依赖的 Centrifuge 也使用它，整个应用只有一个 Redis 客户端库。和数据库一样，客户端在入口创建一次，通过构造函数传给需要它的服务。
 
@@ -95,7 +95,7 @@ stack.MustAdd("redis", func(context.Context) error {
 <a id="cluster"></a>
 ## 集群
 
-连接集群不需要改代码，只改 URL：写出几个节点的地址，不写 DB 编号：
+连接集群只改 URL：写出几个节点的地址，省略 DB 编号：
 
 ```yaml
 redis:
@@ -158,14 +158,14 @@ func viewsKey(id uuid.UUID) string {
 
 - 命令用 `rdb.B()` 构造，`Do` 执行；`AsInt64()`、`ToString()` 等方法在取值时转换类型。
 - 键不存在时，`Get` 返回的错误满足 `rueidis.IsRedisNil`。用它把“没有数据”和真正的故障区分开。
-- 键名以应用的命名空间开头，多个应用共用一个 Redis 时不会互相覆盖。
+- 键名以应用的命名空间开头，多个应用共用一个 Redis 时各自独立。
 
 Lua 脚本用 `rueidis.NewLuaScript`，其他用法见 [rueidis 文档](https://github.com/redis/rueidis)。
 
 <a id="using-with-components"></a>
 ## 在其他组件中使用
 
-把同一个 `rdb` 传给需要 Redis 的组件，不要为每个组件各建一个客户端：
+把同一个 `rdb` 传给需要 Redis 的组件，全应用共用一个客户端：
 
 - **原子锁**：`redislock.New(rdb)`，见[原子锁](locks.md#redis-store)；
 - **限流**：`redislimit.New(rdb, name, cfg)`，见[限流](rate-limiting.md#redis-limiter)；
@@ -216,9 +216,9 @@ func TestViews(t *testing.T) {
 }
 ```
 
-每个测试使用新生成的 ID，测试之间的键不会冲突，因此可以并行运行，也不需要清空数据。没有设置 `REDIS_TEST_URL` 时测试会直接失败，而不是被跳过，以免在 CI 中被悄悄忽略。
+每个测试使用新生成的 ID，测试之间的键各不相同，因此可以并行运行，数据保留也无妨。没有设置 `REDIS_TEST_URL` 时测试直接失败，CI 中的测试因此一定真正运行过。
 
 > [!WARNING]
-> 请让 `REDIS_TEST_URL` 指向专门的测试实例，不要指向存放真实数据的 Redis。
+> 请让 `REDIS_TEST_URL` 指向专门的测试实例，与存放真实数据的 Redis 分开。
 
 本地用 `compose.test.yml` 把 Redis 和 PostgreSQL 一起启动，见[在本地运行数据库测试](../testing/database.md#running-database-tests-locally)。

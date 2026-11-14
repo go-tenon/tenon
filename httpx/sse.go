@@ -23,7 +23,7 @@ const credentialTimeout = 10 * time.Second
 
 // SSE 以 text/event-stream 响应请求，并在 fn 返回前保持连接。
 //
-// 长连接不受请求时限约束：它取消本请求的写超时（http.Server.WriteTimeout），也不受 Timeout
+// 长连接脱离请求时限：它取消本请求的写超时（http.Server.WriteTimeout），也脱离 Timeout
 // 中间件的超时影响，所以流式路由可以和普通路由装在同一组中间件下。它设置 X-Accel-Buffering: no
 // 让 nginx 不缓冲，并在 fn 运行期间每 15 秒发送一次心跳。
 //
@@ -48,7 +48,7 @@ func SSE(w http.ResponseWriter, r *http.Request, fn func(s *Stream) error) error
 		return err
 	}
 
-	// 流已经开始，请求的处理时限不再适用：摆脱 Timeout 的超时，客户端断开时仍然结束。
+	// 流已经开始，脱离请求的处理时限和 Timeout 的超时，客户端断开时仍然结束。
 	ctx, cancel := withoutTimeout(r.Context())
 	defer cancel()
 	if drain := DrainStarted(r.Context()); drain != nil {
@@ -104,7 +104,7 @@ func SSE(w http.ResponseWriter, r *http.Request, fn func(s *Stream) error) error
 	err := fn(s)
 	cancel()
 	<-heartbeat
-	// 处理器返回后不能再写响应：等进行中的写入结束，之后的写入一律失败。
+	// 处理器返回时响应随之结束：等进行中的写入结束，之后的写入一律失败。
 	s.mu.Lock()
 	s.closed = true
 	s.mu.Unlock()

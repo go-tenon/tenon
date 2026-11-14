@@ -70,7 +70,7 @@ func (e *ErrorModel) GetHeaders() http.Header { return e.headers }
 //   - 业务错误转为带 code 的 ErrorModel，detail 为 HTTP 状态描述，
 //     带 errorx.RetryAfter 时设置 Retry-After 响应头（秒，向上取整）；
 //   - 其他 huma.StatusError（例如 huma.Error404NotFound）即使被包装也原样返回；
-//   - 其余错误转为通用 500，内部错误信息不会进入响应。
+//   - 其余错误转为通用 500，内部错误信息只留在日志中。
 func FromError(err error) huma.StatusError {
 	if err == nil {
 		return nil

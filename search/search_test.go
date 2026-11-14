@@ -354,7 +354,7 @@ func TestUpdateDeleteAndChunks(t *testing.T) {
 	expectKeys(t, find(t, db, search.Query{}), "file")
 	expectKeys(t, find(t, db, search.Query{Text: "安装"}))
 
-	// 其他索引中同一个 key 不受影响
+	// 其他索引中同一个 key 保持原样
 	res2, err := other.Search(ctx, db, search.Query{Text: "旧标题"})
 	if err != nil || res2.Total != 1 {
 		t.Fatalf("other index = %+v, %v", res2, err)

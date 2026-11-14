@@ -284,7 +284,7 @@ func TestPasskey(t *testing.T) {
 	}
 	is(t, e.passkeys.Rename(ctx, ref("c2"), list[1].ID, "x"), passkey.ErrNotFound)
 
-	// 移除：设备上的 passkey 不能再登录；最后一种登录方式不能移除。
+	// 移除：设备上的 passkey 随即失效；最后一种登录方式移除时被拒绝。
 	is(t, e.passkeys.Remove(ctx, e.db, ref("c2"), list[1].ID), passkey.ErrNotFound)
 	if err := e.passkeys.Remove(ctx, e.db, ref("c1"), list[1].ID); err != nil {
 		t.Fatal(err)
@@ -331,7 +331,7 @@ func TestPasskeyRejects(t *testing.T) {
 	_, err = e.passkeys.FinishLogin(ctx, c.Token, other.get(t, c))
 	is(t, err, passkey.ErrInvalid)
 
-	// 注册后没有绑定的 passkey 不能登录，一天后被清理。
+	// 注册后没有绑定的 passkey 登录时被拒绝，一天后被清理。
 	stray := newDevice(t)
 	rc, _ := e.passkeys.BeginRegistration(ctx, identity.Ref{}, "x")
 	if _, err := e.passkeys.FinishRegistration(ctx, rc.Token, stray.create(t, rc), "stray"); err != nil {
@@ -364,7 +364,7 @@ func TestPasskeyTenants(t *testing.T) {
 	}
 	_, err := e.signIn(t, globex, d)
 	is(t, err, passkey.ErrInvalid)
-	// 在一个租户中发起的仪式不能在另一个租户中完成。
+	// 在一个租户中发起的仪式只能在同一个租户中完成。
 	c, _ := e.passkeys.BeginLogin(acme)
 	_, err = e.passkeys.FinishLogin(globex, c.Token, d.get(t, c))
 	is(t, err, passkey.ErrInvalid)

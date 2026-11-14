@@ -49,7 +49,7 @@ func (o Offset[T]) LastPage() int {
 
 // Links 返回分页导航中要显示的页码：首页、末页和当前页两侧各 onEachSide 页，
 // 中间省略的部分用 0 表示。例如第 10 页、共 20 页、onEachSide 为 1 时返回 [1 0 9 10 11 0 20]。
-// 只隔一页时直接显示那一页，不用省略号。
+// 只隔一页时直接显示那一页。
 func (o Offset[T]) Links(onEachSide int) []int {
 	last := o.LastPage()
 	var links []int

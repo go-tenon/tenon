@@ -9,7 +9,7 @@ import (
 	"github.com/go-tenon/tenon/mail"
 )
 
-// Build 生成带 Message-ID 和 Date 的消息。Bcc 只记录为收件人，写出时不会出现在头部。
+// Build 生成带 Message-ID 和 Date 的消息。Bcc 只记录为收件人，写出时对其他收件人保密。
 func Build(msg mail.Message) (*gomail.Msg, error) {
 	gm := gomail.NewMsg(gomail.WithNoDefaultUserAgent())
 	if err := gm.FromFormat(msg.From.Name, msg.From.Email); err != nil {

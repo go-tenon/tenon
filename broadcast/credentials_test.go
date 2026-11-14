@@ -72,7 +72,7 @@ func TestCredentialsWatch(t *testing.T) {
 	signaled(t, ch, true, "first of merged")
 	signaled(t, ch, false, "merged")
 
-	// ID 不能为空。
+	// ID 必填。
 	if creds.RecheckCredential(bg, "") == nil || creds.RecheckSubject(bg, identity.Ref{}) == nil {
 		t.Fatal("empty id accepted")
 	}
@@ -136,7 +136,7 @@ func TestCredentialsWatchResubscribesAfterLoss(t *testing.T) {
 	signaled(t, ch, true, "after resubscribe")
 }
 
-// Hub 关闭后 Watch 不再重新订阅。
+// Hub 关闭后 Watch 停止重新订阅。
 func TestCredentialsWatchStopsWhenHubCloses(t *testing.T) {
 	hub := broadcast.New(broadcasttest.NewBackend(), nil)
 	creds := broadcast.NewCredentials(hub)

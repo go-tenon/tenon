@@ -3,10 +3,10 @@
 // 生成的客户端按 operationId 分组（article-publish 生成 Client.Article.Publish），
 // 接口用到的类型按服务端的包复制（internal/article.Changes 生成为 <out>/article.Changes），
 // errorx.Define 定义的错误码生成为可以用 errors.Is 判断的常量。生成的代码只依赖标准库、
-// 允许直接导入的包（默认 github.com/google/uuid）和随代码生成的运行时 <out>/wire，不依赖 Tenon。
+// 允许直接导入的包（默认 github.com/google/uuid）和随代码生成的运行时 <out>/wire，可以独立于 Tenon 使用。
 //
 // GenerateTS 生成 TypeScript 客户端：类型取自 OpenAPI 文档，分组和错误码与 Go 客户端相同，运行时随代码生成，
-// 不依赖任何 npm 包。
+// 是独立的 TypeScript。
 package clientgen
 
 import (
@@ -44,7 +44,7 @@ type Options struct {
 	Main string
 	// Dir 是加载源码的工作目录，空表示当前目录。
 	Dir string
-	// Imports 是在标准库和 github.com/google/uuid 之外，客户端可以直接导入、不必复制的包，
+	// Imports 是在标准库和 github.com/google/uuid 之外，客户端可以直接导入的包，
 	// 也包括它们的子包，例如 github.com/uptrace/bun 也允许 github.com/uptrace/bun/schema。
 	Imports []string
 	// Rename 把服务端包的导入路径映射为镜像包名，用于两个包同名的情况。
@@ -140,7 +140,7 @@ func (g *generator) load() error {
 			packages.NeedTypes | packages.NeedSyntax | packages.NeedTypesInfo | packages.NeedModule,
 		Dir:  g.opts.Dir,
 		Fset: g.fset,
-		// 只需要声明：去掉函数体，加载快很多。去掉后出现的“导入未使用”等错误不影响声明的类型。
+		// 只需要声明：去掉函数体，加载快很多。去掉后出现的“导入未使用”等错误可以忽略，声明的类型照样完整。
 		ParseFile: func(fset *token.FileSet, filename string, src []byte) (*ast.File, error) {
 			f, err := parser.ParseFile(fset, filename, src, parser.ParseComments|parser.SkipObjectResolution)
 			if f != nil {

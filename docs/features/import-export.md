@@ -61,7 +61,7 @@ type Changes struct {
 }
 ```
 
-表头与字段的 json 标签或 sheet 标签中的任意一个名称相同，这一列就对应这个字段。比较时不区分大小写，并忽略空白、连字符和下划线，所以 `Published At`、`published_at` 都能对应 `json:"published_at"`。sheet 标签可以用逗号写多个名称，第一个是[模板](#templates)中使用的列名。不需要导入的字段写 `sheet:"-"`。
+表头与字段的 json 标签或 sheet 标签中的任意一个名称相同，这一列就对应这个字段。比较时忽略大小写、空白、连字符和下划线，所以 `Published At`、`published_at` 都能对应 `json:"published_at"`。sheet 标签可以用逗号写多个名称，第一个是[模板](#templates)中使用的列名。跳过的字段写 `sheet:"-"`。
 
 表格中多余的列被忽略。必填字段（没有 `omitempty` 的字段）找不到对应的列时，整个文件被拒绝，错误是 `sheet.ErrMissingColumns`，提示中列出缺少的列名。
 
@@ -92,7 +92,7 @@ type ImportFailure struct {
     Errors map[string]string `json:"errors"`
 }
 
-// Handle 逐行创建文章。每一行单独提交，一行失败不影响其他行；只有文件无法读取或数据库出错时返回错误。
+// Handle 逐行创建文章。每一行单独提交，一行失败时其他行照常导入；只有文件无法读取或数据库出错时返回错误。
 func (a *Import) Handle(ctx context.Context, subject identity.Subject, r *sheet.Reader) (ImportResult, error) {
     result := ImportResult{Failures: []ImportFailure{}}
     records, err := sheet.Decode[Changes](ctx, r)
@@ -172,7 +172,7 @@ func (a *Import) HTTP(ctx context.Context, in *ImportInput) (*ImportOutput, erro
 }
 ```
 
-每一行单独提交，前面导入成功的行不会因为后面的失败而回滚，用户修改失败的行后重新导入即可。如果业务要求全部成功才导入，先遍历一次只做验证，全部有效后再在一个事务中写入。
+每一行单独提交，成功的行就此保存，用户修改失败的行后重新导入即可。如果业务要求全部成功才导入，先遍历一次只做验证，全部有效后再在一个事务中写入。
 
 在 `routes.go` 中注册路由：
 
@@ -215,7 +215,7 @@ func (a *Import) Template(ctx context.Context, in *TemplateInput) (*huma.StreamR
 `sheet.NewReader` 读出第一个非空行作为表头，`Rows` 和 `Decode` 跳过空行，单元格的值去掉首尾空白。
 
 - **XLSX** 读取第一个工作表。单元格的值是 Excel 中显示的文本，例如日期按单元格设置的格式显示，布尔值是 `TRUE`、`FALSE`。整个文件会被读入内存，所以上传接口要限制文件大小，用完调用 `Close`。
-- **CSV** 去掉开头的 BOM；内容不是 UTF-8 时按 GB18030 解码，Excel 中文版另存的 CSV 就是这种编码。分隔符按表头一行在逗号、分号和制表符中自动选择。
+- **CSV** 去掉开头的 BOM；内容按 UTF-8 解码，解码失败时改用 GB18030，Excel 中文版另存的 CSV 就是这种编码。分隔符按表头一行在逗号、分号和制表符中自动选择。
 
 转换规则与[表单](../responses/forms.md#defining-forms)相同，例如数字字段的空单元格视为未填写，布尔字段接受 `true`、`false`、`1`、`0`（不区分大小写）。切片字段的单元格按逗号拆分为多个值，中文逗号也可以。
 
@@ -310,7 +310,7 @@ func download(name string, format sheet.Format, write func(w *sheet.Writer) erro
 }
 ```
 
-导出与[列表查询](../security/authorization.md#scoping-queries)一样，在查询条件中限定 subject 能看到的范围。`Handle` 接收 `sheet.RowWriter`，这里传入的是 `*sheet.Writer`，[后台导出](background-import-export.md#background-exports)时传入记录进度的 `exports.Writer`，查询和写表的代码只有一份。`q.Rows` 用游标逐行读取，`Writer` 边读边写，导出不会把整张表放进内存。
+导出与[列表查询](../security/authorization.md#scoping-queries)一样，在查询条件中限定 subject 能看到的范围。`Handle` 接收 `sheet.RowWriter`，这里传入的是 `*sheet.Writer`，[后台导出](background-import-export.md#background-exports)时传入记录进度的 `exports.Writer`，查询和写表的代码只有一份。`q.Rows` 用游标逐行读取，`Writer` 边读边写，内存占用与表的大小无关。
 
 `GET /articles/export?format=csv&columns=title,published_at` 只导出标题和发布时间两列，顺序与 `columns` 一致。`Select` 在开始写响应之前检查列名，不存在的列返回 `sheet.ErrUnknownColumn`。
 
@@ -333,7 +333,7 @@ func download(name string, format sheet.Format, write func(w *sheet.Writer) erro
 
 时间按它自己的时区显示。数据库读出的时间通常是 UTC，要显示为用户的当地时间，在 `Value` 中转换，例如 `a.PublishedAt.In(loc)`。状态等枚举值可以在 `Value` 中用 `i18n.T` 翻译成文字，此时 `Value` 需要 context，把 `exportColumns` 改为接收 `ctx` 的函数即可。
 
-写出的 CSV 以 UTF-8 BOM 开头，Excel 打开时中文不会乱码。以 `=`、`+`、`-`、`@` 开头又不是数字的文本，前面会加一个 `'`，防止 Excel 把它当作公式执行；代价是 `+86 138…` 这样的电话号码在 CSV 中会带上这个 `'`。XLSX 中的文本不会被当作公式，原样写出。XLSX 的表头加粗并冻结在第一行。
+写出的 CSV 以 UTF-8 BOM 开头，Excel 打开时中文显示正常。以 `=`、`+`、`-`、`@` 开头的非数字文本，前面会加一个 `'`，Excel 把它当作普通文本；代价是 `+86 138…` 这样的电话号码在 CSV 中会带上这个 `'`。XLSX 中的文本按文本类型原样写出。XLSX 的表头加粗并冻结在第一行。
 
 <a id="api-reference"></a>
 ## API 参考

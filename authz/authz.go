@@ -23,13 +23,13 @@ import (
 )
 
 // AllTenants 是分配角色时表示“所有租户”的域，例如让运营人员在每个租户中都有只读支持权限。
-// 它不包含平台本身（""）。
+// 平台本身（""）另行处理。
 const AllTenants = "*"
 
 var (
 	// ErrNotMember 表示主体在本次请求的租户中没有任何角色。Resolve 返回它，请求得到 404，不暴露租户是否存在。
 	ErrNotMember = errorx.Define(errorx.NotFound, "authz.not_member")
-	// ErrRoleNotFound 表示角色不存在，或不能在该租户中查看。
+	// ErrRoleNotFound 表示角色不存在，或在该租户中不可见。
 	ErrRoleNotFound = errorx.Define(errorx.NotFound, "authz.role_not_found")
 	// ErrRoleExists 表示同一租户中已有同名角色。
 	ErrRoleExists = errorx.Define(errorx.Conflict, "authz.role_exists")
@@ -81,7 +81,7 @@ type grant struct {
 // Option 是 NewStore 的选项。
 type Option func(*Store)
 
-// Cache 把主体在每个域中的权限缓存在 Memcached 中，Resolve 和 Permissions 不再每次查询数据库。
+// Cache 把主体在每个域中的权限缓存在 Memcached 中，Resolve 和 Permissions 优先读取缓存。
 // mc 是应用共用的 Memcached 客户端；prefix 是命名空间，例如 "blog:prod:"，共用一个 Memcached 的应用和环境各不相同，
 // 否则会读到别的数据库中的权限；ttl 是缓存的过期时间，必须为正。
 //
@@ -90,7 +90,7 @@ type Option func(*Store)
 // Store 建在 database.Tx 上时，改为在外层事务提交之后执行（Tx.AfterCommit），建在其他事务上时 NewStore panic。
 // 失效失败时修改照常成功，记录 Error 日志，旧的权限最多保留 ttl。绕过 Store 直接修改表时同样最多保留 ttl。
 //
-// 修改角色和分配的每个 Store 都要使用同一个 mc 和 prefix 的 Cache，否则不会使缓存失效。
+// 修改角色和分配的每个 Store 都要使用同一个 mc 和 prefix 的 Cache，缓存才会随修改失效。
 func Cache(mc cachex.Client, prefix string, ttl time.Duration) Option {
 	c := cachex.New[grant](mc, prefix+"authz:v1:permissions:", ttl)
 	return func(s *Store) { s.cache, s.prefix = c, prefix }
@@ -215,7 +215,7 @@ func domains(tenant string) []string {
 	return []string{tenant, AllTenants}
 }
 
-// CreateRole 创建角色，返回带 ID 的角色。权限必须在目录中，同一租户中的角色名不能重复。
+// CreateRole 创建角色，返回带 ID 的角色。权限必须在目录中，同一租户中的角色名唯一。
 func (s *Store) CreateRole(ctx context.Context, r Role) (Role, error) {
 	if err := s.checkRole(r); err != nil {
 		return Role{}, err
@@ -242,7 +242,7 @@ func (s *Store) CreateRole(ctx context.Context, r Role) (Role, error) {
 	return r, nil
 }
 
-// UpdateRole 修改角色的名称、说明和权限；r.ID 指定角色，角色所属的租户不能修改。
+// UpdateRole 修改角色的名称、说明和权限；r.ID 指定角色，角色所属的租户保持不变。
 // 修改立即影响所有拥有这个角色的主体。
 func (s *Store) UpdateRole(ctx context.Context, r Role) (Role, error) {
 	id, err := uuid.Parse(r.ID)
@@ -369,7 +369,7 @@ func (s *Store) loadRoles(ctx context.Context, q *bun.SelectQuery) ([]Role, erro
 	return roles, nil
 }
 
-// Assign 在 tenant 中把角色分配给主体 ref；已经分配时什么也不做。
+// Assign 在 tenant 中把角色分配给主体 ref；已经分配时直接返回。
 // tenant 为 "" 表示平台，AllTenants 表示所有租户。租户自定义的角色只能在该租户中分配，
 // AllTenants 中只能分配全局角色，否则返回 ErrInvalid；角色不存在时返回 ErrRoleNotFound。
 func (s *Store) Assign(ctx context.Context, ref identity.Ref, tenant, roleID string) error {
@@ -409,7 +409,7 @@ func (s *Store) Assign(ctx context.Context, ref identity.Ref, tenant, roleID str
 	return nil
 }
 
-// Unassign 撤销主体 ref 在 tenant 中的角色；没有分配时什么也不做。
+// Unassign 撤销主体 ref 在 tenant 中的角色；没有分配时直接返回。
 func (s *Store) Unassign(ctx context.Context, ref identity.Ref, tenant, roleID string) error {
 	rid, err := uuid.Parse(roleID)
 	if err != nil {
@@ -571,7 +571,7 @@ func (s *Store) known(perm string) bool {
 	return false
 }
 
-// checkName 检查名称不为空，也不包含空白。
+// checkName 检查名称非空且不含空白。
 func checkName(name, field string) error {
 	if name == "" || strings.ContainsFunc(name, unicode.IsSpace) {
 		return ErrInvalid.New(errorx.Public("field", field))

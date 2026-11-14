@@ -33,7 +33,7 @@ type envelope struct {
 	Attempts int `json:"attempts,omitempty"`
 }
 
-// scheduledRow 是 queue_scheduled 中的一行：执行时间离现在超过 Config.MaxDefer、暂时不能交给 NSQ 的任务。
+// scheduledRow 是 queue_scheduled 中的一行：执行时间离现在超过 Config.MaxDefer、等时间临近再交给 NSQ 的任务。
 type scheduledRow struct {
 	bun.BaseModel `bun:"table:queue_scheduled,alias:s"`
 

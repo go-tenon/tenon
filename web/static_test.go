@@ -44,7 +44,7 @@ func TestStaticURLFingerprints(t *testing.T) {
 		t.Errorf("same content should get the same fingerprint: %s %s", css, s.URL("css/theme.css"))
 	}
 	for name, want := range map[string]string{
-		"js/bundle-86c5f2802d0bc25d.js": "/static/js/bundle-86c5f2802d0bc25d.js", // 已带哈希，不再加指纹
+		"js/bundle-86c5f2802d0bc25d.js": "/static/js/bundle-86c5f2802d0bc25d.js", // 已带哈希，原样返回
 		"missing.css":                   "/static/missing.css",
 	} {
 		if got := s.URL(name); got != want {

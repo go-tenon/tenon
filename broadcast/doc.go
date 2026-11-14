@@ -4,7 +4,7 @@
 // Subscribe 订阅一个或多个主题。每个实例只从 Backend 接收一次，再分发给本实例的全部订阅。
 //
 // 消息只投递给当前在线的订阅，最多一次。订阅跟不上（缓冲区满），或 Backend 可能丢了消息时，
-// Hub 结束受影响的订阅，而不是悄悄丢弃消息：长连接随之结束，客户端重连后由应用按
+// Hub 结束受影响的订阅：长连接随之结束，客户端重连后由应用按
 // Last-Event-ID 从自己的数据（例如消息表）补发。
 //
 // Backend：子包 redisbroadcast 使用 Redis Pub/Sub；broadcasttest 提供测试用的内存 Backend。

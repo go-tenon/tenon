@@ -151,7 +151,7 @@ func TestTxRollbackUniqueAndCancel(t *testing.T) {
 	}
 }
 
-// 迁移失败时回滚整个迁移，已执行的建表不会留下。
+// 迁移失败时回滚整个迁移，已执行的建表一并撤销。
 func TestFailedMigrationRollsBack(t *testing.T) {
 	t.Parallel()
 	db := dbtest.Open(t, nil)

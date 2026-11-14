@@ -97,13 +97,13 @@ func TestFailoverStopsEarly(t *testing.T) {
 	primary, backup := mailtest.New(), mailtest.New()
 	m := mail.Failover([]mail.Named{{Name: "resend", Mailer: primary}, {Name: "ses", Mailer: backup}}, mail.FailoverOptions{})
 
-	// 邮件不合法：换哪个发送器都一样，不再尝试。
+	// 邮件不合法：换哪个发送器都一样，直接返回。
 	bad := message()
 	bad.Subject = ""
 	if err := m.Send(ctx, bad); !errors.Is(err, mail.ErrInvalid) {
 		t.Fatalf("invalid: %v", err)
 	}
-	// 调用方已经不再等待：不再尝试。
+	// 调用方已经放弃：直接返回。
 	canceled, cancel := context.WithCancel(ctx)
 	cancel()
 	if err := m.Send(canceled, message()); !errors.Is(err, context.Canceled) {

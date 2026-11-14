@@ -17,7 +17,7 @@ import (
 var (
 	// ErrNoWorker 表示没有调用 Serve 的实例接收请求，例如 worker 都没有运行或正在停止（503）。
 	ErrNoWorker = errorx.Define(errorx.Unavailable, "ai.no_worker")
-	// ErrRunOptions 表示使用 RunOnWorkers 时传入了运行选项：agent.RunOption 不能跨实例传递。
+	// ErrRunOptions 表示使用 RunOnWorkers 时传入了运行选项：agent.RunOption 只在本进程内有效。
 	ErrRunOptions = errors.New("chat: run options cannot be sent to workers; set them on the agent")
 )
 
@@ -32,10 +32,10 @@ var beforeDone func(*Run)
 // 事件、插话、停止的用法与本地的运行相同。需要 Cluster，否则 NewRuns panic。
 //
 // 请求经由广播转交、不排队：没有实例在 Serve 时返回 ErrNoWorker（503），由客户端稍后重试。
-// worker 停止时等待进行中的运行结束（见 Shutdown），崩溃时进行中的运行随之结束，不会在其他实例上恢复，
+// worker 停止时等待进行中的运行结束（见 Shutdown），崩溃时进行中的运行随之结束，
 // 这与在 HTTP 进程中运行时相同。
 //
-// 运行选项不能跨实例传递，传入时返回 ErrRunOptions；需要的话在 worker 创建的 agent 上设置。
+// 运行选项只在本进程内有效，传入时返回 ErrRunOptions；需要的话在 worker 创建的 agent 上设置。
 func RunOnWorkers() Option { return func(rs *Runs) { rs.workers = true } }
 
 const (
@@ -154,7 +154,7 @@ func (rs *Runs) dispatch(ctx context.Context, req dispatchReq, opts []agent.RunO
 }
 
 // Serve 接收 RunOnWorkers 实例转交的请求，在本实例开始运行，直到 ctx 取消后返回 nil。
-// 多个实例同时 Serve 时，每个请求只由其中一个处理。Shutdown 开始后不再接收请求，由其他实例处理；
+// 多个实例同时 Serve 时，每个请求只由其中一个处理。Shutdown 开始后停止接收请求，由其他实例处理；
 // 进行中的运行在 Shutdown 中等待结束。需要 Cluster。
 func (rs *Runs) Serve(ctx context.Context) error {
 	if rs.cluster == nil {
@@ -187,7 +187,7 @@ func (rs *Runs) Serve(ctx context.Context) error {
 	}
 }
 
-// serveOne 接手并处理一个请求。其他实例已经接手，或者本实例正在停止时什么也不做。
+// serveOne 接手并处理一个请求。其他实例已经接手，或者本实例正在停止时直接返回。
 func (rs *Runs) serveOne(req dispatchReq) {
 	rs.mu.Lock()
 	draining := rs.draining

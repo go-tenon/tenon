@@ -1,7 +1,7 @@
 // Package openrouter 通过 OpenRouter 生成图片、合成语音、识别语音、计算向量、重排和决策。
 //
 // 语音、向量和重排使用与 ai/openai 相同的接口；图片使用 OpenRouter 自己的 /images 接口，
-// 按宽高比例而不是像素尺寸指定大小；决策使用 ai/systemone 的 System One 格式。
+// 按宽高比例指定大小；决策使用 ai/systemone 的 System One 格式。
 package openrouter
 
 import (

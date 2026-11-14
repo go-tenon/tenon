@@ -1,6 +1,6 @@
 # 视图
 
-需要登录的界面——后台、用户端、[OAuth 同意页](../security/oauth-server.md#consent-page)——都是[单页应用](spa.md)，调用 JSON API。官网、文章页、帮助中心这类**公开页面**适合在服务端渲染：搜索引擎直接读到内容，首屏不用等脚本加载。
+需要登录的界面——后台、用户端、[OAuth 同意页](../security/oauth-server.md#consent-page)——都是[单页应用](spa.md)，调用 JSON API。官网、文章页、帮助中心这类**公开页面**适合在服务端渲染：搜索引擎直接读到内容，首屏随 HTML 一起到达。
 
 - [templ](https://templ.guide) 把 `.templ` 文件编译成带类型参数的 Go 函数，错误在编译期就能发现；
 - [htmx 4](https://four.htmx.org) 用 HTML 属性声明“点这里就请求某个地址，把返回的片段放到某个位置”，服务端只管返回 HTML；
@@ -63,7 +63,7 @@ templ 的运行时库随 `web` 包引入，只需要把它的命令行工具加�
 go get -tool github.com/a-h/templ/cmd/templ
 ```
 
-修改 `.templ` 文件后运行 `go tool templ generate`，它会在旁边生成同名的 `_templ.go` 文件。生成的文件请一起提交，这样构建和 CI 不需要安装 templ。开发时可以用 `go tool templ generate --watch` 自动重新生成，编辑器插件见 [templ 文档](https://templ.guide/quick-start/installation)。
+修改 `.templ` 文件后运行 `go tool templ generate`，它会在旁边生成同名的 `_templ.go` 文件。生成的文件请一起提交，这样构建和 CI 只需要 Go。开发时可以用 `go tool templ generate --watch` 自动重新生成，编辑器插件见 [templ 文档](https://templ.guide/quick-start/installation)。
 
 <a id="layouts"></a>
 ## 布局
@@ -87,7 +87,7 @@ templ Layout(title string) {
 
 `ui.Page` 输出完整的 HTML 文档，`<head>` 中按[主题](components.md#themes)加载样式表、htmx、Alpine 和组件脚本。`ui.Toaster()` 把局部请求的错误显示为 toast，见[错误页](#error-pages)。错误页用 `ui.ErrorPage`，见[装配页面](#assembling-pages)。
 
-这些都可以换成自己的组件：自己写 `<html>` 时，在 `<head>` 中调用 `@ui.Head()`；不用 `web/ui` 时，`@web.Scripts()` 只输出 htmx 与 Alpine 的 `<script>` 标签，样式由应用自己提供。
+这些都可以换成自己的组件：自己写 `<html>` 时，在 `<head>` 中调用 `@ui.Head()`；自己提供样式时，`@web.Scripts()` 只输出 htmx 与 Alpine 的 `<script>` 标签，样式由应用自己提供。
 
 <a id="assembling-pages"></a>
 ## 装配页面
@@ -152,7 +152,7 @@ func Register(r chi.Router, pages *web.Pages, db *bun.DB) {
 
 只给内部人员看的页面，把认证中间件装在传入的路由上，例如 `pages.Routes(r.With(staffOnly))`。
 
-[routes 命令](../general/commands.md#routes-command)同时列出 JSON API 和页面，页面的访问策略显示为 `public`。命令用的 `DocRouter` 用没有打开任何资源的 `App` 调用上面的 `Router`：`articleweb.Register` 收到的 `db` 是 `nil`，处理器只是被登记，不会被调用，所以不受影响。
+[routes 命令](../general/commands.md#routes-command)同时列出 JSON API 和页面，页面的访问策略显示为 `public`。命令用的 `DocRouter` 用没有打开任何资源的 `App` 调用上面的 `Router`：`articleweb.Register` 收到的 `db` 是 `nil`，处理器只是被登记。
 
 <a id="multiple-areas"></a>
 ## 多组页面
@@ -275,7 +275,7 @@ func sortURL(q article.ListQuery) func(sort string) string {
 }
 ```
 
-列表区域把筛选表单也包含在内。区域每次整体替换，表单里的排序字段就总是当前的状态；搜索框带 `hx-preserve`，替换时保留原来的元素，用户可以连续输入，不会丢失焦点。htmx 4 的属性默认不继承，区域上的 `hx-target`、`hx-swap` 要加 `:inherited`，表单和链接才会沿用它们：
+列表区域把筛选表单也包含在内。区域每次整体替换，表单里的排序字段就总是当前的状态；搜索框带 `hx-preserve`，替换时保留原来的元素，用户可以连续输入，焦点保持在搜索框。htmx 4 的属性默认只作用于元素本身，区域上的 `hx-target`、`hx-swap` 要加 `:inherited`，表单和链接才会沿用它们：
 
 ```templ
 templ ArticleTable(q article.ListQuery, list page.Offset[article.Article]) {
@@ -325,7 +325,7 @@ templ ArticleTable(q article.ListQuery, list page.Offset[article.Article]) {
 
 局部请求的错误需要别的样子时，设置 `Options.ErrorFragment` 和 `ErrorTarget`：错误用 `ErrorFragment` 渲染，通过 `HX-Retarget` 放进 `ErrorTarget` 选择的元素，例如页面顶部的一条横幅。
 
-传给组件的 `message` 与 JSON API 的 `detail` 相同：业务错误按错误码翻译，其他错误只是状态描述，内部错误信息不会出现在页面上。5xx 错误会记录日志和[链路上的错误](../general/telemetry.md#error-tracking)；`ui.ErrorPage` 和局部请求的提示还显示请求编号（`web.ErrorReference`，例如“请求编号：9F2K…”），用户报告问题时附上它，按它在日志中找到这个请求。自己写错误组件时同样可以调用 `web.ErrorReference(ctx)`。
+传给组件的 `message` 与 JSON API 的 `detail` 相同：业务错误按错误码翻译，其他错误只是状态描述，内部错误信息只留在日志中。5xx 错误会记录日志和[链路上的错误](../general/telemetry.md#error-tracking)；`ui.ErrorPage` 和局部请求的提示还显示请求编号（`web.ErrorReference`，例如“请求编号：9F2K…”），用户报告问题时附上它，按它在日志中找到这个请求。自己写错误组件时同样可以调用 `web.ErrorReference(ctx)`。
 
 htmx 4 默认会替换 4xx 和 5xx 响应，表单验证失败时返回 `422` 和带错误提示的表单即可，见[表单](forms.md#redisplaying-forms)。
 
@@ -353,7 +353,7 @@ web.Redirect(w, r, web.LocalPath(r.URL.Query().Get("next"), "/"))
 <a id="client-state"></a>
 ## 前端状态
 
-只影响页面显示、不需要服务端参与的交互交给 Alpine。例如文章页的“目录”折叠区：
+只影响页面显示的交互交给 Alpine。例如文章页的“目录”折叠区：
 
 ```templ
 <nav x-data="{ open: false }">
@@ -372,7 +372,7 @@ htmx 用 `outerMorph` 或 `innerMorph` 替换内容时，内嵌的 hx-alpine-com
 <a id="content-security-policy"></a>
 ## 内容安全策略
 
-内容安全策略（CSP）告诉浏览器只执行带有正确 nonce 的脚本，即使页面中被注入了 `<script>`，它也不会执行。`Pages` 为每个页面响应（包括错误页）生成一个随机的 nonce，写进 `Content-Security-Policy` 响应头和 templ 的 context，默认的策略是 `web.DefaultCSP`：
+内容安全策略（CSP）告诉浏览器只执行带有正确 nonce 的脚本，被注入页面的 `<script>` 没有 nonce，浏览器拒绝执行。`Pages` 为每个页面响应（包括错误页）生成一个随机的 nonce，写进 `Content-Security-Policy` 响应头和 templ 的 context，默认的策略是 `web.DefaultCSP`：
 
 ```text
 script-src 'self' 'nonce-…' 'unsafe-eval'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'
@@ -380,10 +380,10 @@ script-src 'self' 'nonce-…' 'unsafe-eval'; object-src 'none'; base-uri 'none';
 
 - `ui.Head()` 读取 context 中的 nonce，给它输出的 `<script>`、`<style>` 带上它；其中的 `web.Scripts()` 还设置了 htmx 的 `inlineScriptNonce`，htmx 执行交换进来的脚本时也使用这个 nonce。
 - 布局中自己写的内联脚本，以及其他网站的脚本（例如[人机验证](../security/login.md#captcha)的组件），要加上 `nonce={ templ.GetNonce(ctx) }`。
-- `'self'` 允许加载本站的脚本文件，包括[静态文件](assets.md)。样式、图片、字体和 iframe 不受限制。
+- `'self'` 允许加载本站的脚本文件，包括[静态文件](assets.md)。样式、图片、字体和 iframe 可以来自任何来源。
 - `frame-ancestors 'none'` 禁止其他网站把页面嵌入框架，诱导用户点击。
 
-页面响应同时带有 `Referrer-Policy: same-origin`，点开其他网站的链接时，不会带上本站页面的地址。
+页面响应同时带有 `Referrer-Policy: same-origin`，点开其他网站的链接时，本站页面的地址只在站内传递。
 
 Alpine 的表达式（`x-data`、`x-on` 等）和 htmx 的 `hx-on` 在运行时编译执行，需要 `'unsafe-eval'`。去掉它之后，这两类属性都会失效。只用 htmx 属性和[界面组件](components.md)、不写 Alpine 表达式的页面可以用 `Options.CSP` 去掉它。
 
@@ -396,7 +396,7 @@ CSP: func(nonce string) string {
 ```
 
 > [!WARNING]
-> 不要把应用的脚本写在 `<body>` 里。用户点后退时，htmx 会重新请求整页并替换 `body`，其中的脚本会再执行一次，事件监听器就注册了两遍。应用的脚本放进静态文件，在 `<head>` 中加载：`<script defer src={ web.StaticURL(ctx, "js/app.js") }></script>`。
+> 应用的脚本放进静态文件，在 `<head>` 中加载。写在 `<body>` 里的话，用户点后退时，htmx 会重新请求整页并替换 `body`，其中的脚本会再执行一次，事件监听器就注册了两遍。写法是：`<script defer src={ web.StaticURL(ctx, "js/app.js") }></script>`。
 
 <a id="api-reference"></a>
 ## API 参考

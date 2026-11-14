@@ -46,7 +46,7 @@ func (s *Service) CreateMultipart(ctx context.Context, owner identity.Subject, i
 	return Multipart{UploadID: uploadID, PartSize: size, PartCount: int((r.Size + size - 1) / size)}, nil
 }
 
-// SignPart 为第 number 片签名，绑定该片应有的长度。每片上传前调用，签名立即使用不会过期。
+// SignPart 为第 number 片签名，绑定该片应有的长度。每片上传前调用，签名立即使用，始终有效。
 func (s *Service) SignPart(ctx context.Context, owner identity.Subject, id uuid.UUID, uploadID string, number int32) (SignedRequest, error) {
 	r, direct, err := s.direct(ctx, owner, id)
 	if err != nil {

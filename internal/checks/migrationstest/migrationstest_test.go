@@ -99,7 +99,7 @@ func TestEveryPackageIsListed(t *testing.T) {
 	}
 }
 
-// TestPublishThroughPublicCommand 确保内嵌的 SQL 能通过公开的 publish 命令原样发布，重复发布不再写入。
+// TestPublishThroughPublicCommand 确保内嵌的 SQL 能通过公开的 publish 命令原样发布，重复发布时文件保持原样。
 func TestPublishThroughPublicCommand(t *testing.T) {
 	for dir, src := range sources {
 		t.Run(dir, func(t *testing.T) {

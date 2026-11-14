@@ -45,7 +45,7 @@ func Email(address string) Identifier { return Identifier{Kind: KindEmail, Value
 // Phone 返回手机号标识，必须是 E.164 格式，例如 +8613800138000；应用负责把用户的输入转换成这个格式。
 func Phone(e164 string) Identifier { return Identifier{Kind: KindPhone, Value: e164} }
 
-// Username 返回用户名标识，保存前去掉首尾空白并转为小写，不能包含空白。
+// Username 返回用户名标识，保存前去掉首尾空白并转为小写，中间不允许空白。
 func Username(name string) Identifier { return Identifier{Kind: KindUsername, Value: name} }
 
 // String 返回 kind:value。
@@ -124,7 +124,7 @@ func (r *Realm) attach(ctx context.Context, db bun.IDB, tenant string, id Identi
 	if verified {
 		row.VerifiedAt = now
 	}
-	// 已存在时什么也不做，再读出标识的主体判断。
+	// 已存在时保持原样，再读出标识的主体判断。
 	if _, err := db.NewInsert().Model(row).On("CONFLICT (subject_type, tenant, kind, value) DO NOTHING").Exec(ctx); err != nil {
 		return errors.Wrap(err, "login: attach identifier")
 	}
@@ -148,7 +148,7 @@ func (r *Realm) markVerified(ctx context.Context, db bun.IDB, tenant string, id 
 	return errors.Wrap(err, "login: verify identifier")
 }
 
-// Attach 把登录标识 id 直接写给 ref，不经过验证码，用于管理员创建账号、用户名注册等可信的场景；
+// Attach 把登录标识 id 直接写给 ref，跳过验证码，用于管理员创建账号、用户名注册等可信的场景；
 // 自助注册应使用 SendCode 和 Register。verified 表示标识是否已证明持有。
 // PerTenant 时标识写入 identity.TenantFromContext(ctx)。标识已属于其他主体时返回 ErrTaken。
 //
@@ -165,7 +165,7 @@ func (r *Realm) Attach(ctx context.Context, db bun.IDB, ref identity.Ref, id Ide
 }
 
 // Lookup 返回 identity.TenantFromContext(ctx)（PerTenant 时）中标识 id 所属的主体，不存在时返回 ErrNotFound。
-// 用于管理后台按邮箱查找账号等；不要用它在登录前判断标识是否注册，那会暴露哪些标识已注册。
+// 用于管理后台按邮箱查找账号等；它只用于登录之后的流程：登录前用它判断标识是否注册，会暴露哪些标识已注册。
 func (r *Realm) Lookup(ctx context.Context, id Identifier) (identity.Ref, error) {
 	id, err := id.Normalize()
 	if err != nil {
@@ -238,7 +238,7 @@ func (r *Realm) Detach(ctx context.Context, db bun.IDB, ref identity.Ref, id Ide
 }
 
 // lockIdentifiers 返回主体的全部登录标识，并在事务中锁住这些行，
-// 使并发的 Detach、RemovePassword 不会各自通过检查、合起来移除全部登录方式。
+// 使并发的 Detach、RemovePassword 依次检查，账号始终保留至少一种登录方式。
 func (r *Realm) lockIdentifiers(ctx context.Context, db bun.IDB, subjectID string) ([]Identifier, error) {
 	var rows []identifierRow
 	err := db.NewSelect().Model(&rows).Column("kind", "value").

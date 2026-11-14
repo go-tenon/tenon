@@ -24,7 +24,7 @@ var durationBuckets = []float64{0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5,
 // Telemetry 为每个请求创建一个 OpenTelemetry 服务端 span，并记录指标 http.server.request.duration（直方图，秒）。
 // 属性遵循 OpenTelemetry 的 HTTP 语义约定：http.request.method、http.response.status_code、url.scheme、
 // http.route（chi 的路由模板，例如 /articles/{id}），5xx 时还有 error.type，span 标记为错误。
-// 没有匹配到路由的请求不带 http.route，不会把任意路径变成指标的属性值；非标准的方法记为 _OTHER。
+// 匹配到路由的请求才带 http.route，属性值只来自应用的路由；非标准的方法记为 _OTHER。
 //
 // span 的名称是方法和路由模板，例如 GET /articles/{id}。请求头带有 W3C traceparent 时，span 接在调用方的链路之后。
 // 处理器和之后的中间件从请求的 context 中拿到这个 span：用它记录的日志带有 trace_id 和 span_id，
@@ -84,7 +84,7 @@ func Telemetry(mp metric.MeterProvider, tp trace.TracerProvider) func(http.Handl
 	}
 }
 
-// method 返回标准方法名；其他方法记为 _OTHER，避免客户端随意构造的方法名成为属性值。
+// method 返回标准方法名；其他方法记为 _OTHER，属性值只有固定的几种。
 func method(m string) string {
 	switch m {
 	case http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodPatch,

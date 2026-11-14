@@ -11,7 +11,7 @@ import (
 	"github.com/cockroachdb/errors"
 )
 
-// Write 把 files 写入目录 out，并删除上次生成、这次不再生成的文件（第一行是 Header 的 .go、.ts 文件）
+// Write 把 files 写入目录 out，并删除上次生成、这次已经移除的文件（第一行是 Header 的 .go、.ts 文件）
 // 以及因此变空的目录。out 中的其他文件保持不变。
 func Write(out string, files map[string][]byte) error {
 	var stale []string

@@ -45,7 +45,7 @@ func (s *pingStore) ping(context.Context, *pingIn) (*pingOut, error) {
 	return &pingOut{}, nil
 }
 
-// 注册时只保存依赖、不调用依赖，用 nil 依赖构造的 API 就能生成文档，处理器不会被调用。
+// 注册时只保存依赖，处理请求时才使用，用 nil 依赖构造的 API 就能生成文档，处理器只被登记。
 func TestRegisterWithNilDependency(t *testing.T) {
 	api := rest.New(chi.NewRouter(), rest.Options{Title: "doc"})
 	var s *pingStore

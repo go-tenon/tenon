@@ -59,7 +59,7 @@ func Name(name string) Option {
 }
 
 // ReadOnly 让连接池的会话默认只读（default_transaction_read_only=on），用于只读副本：
-// 误写时立即得到 PostgreSQL 的错误（SQLSTATE 25006），而不是在副本上才失败或悄悄写进主库。
+// 误写时立即得到 PostgreSQL 的错误（SQLSTATE 25006）。
 func ReadOnly() Option {
 	return func(o *options) { o.readOnly = true }
 }
@@ -74,7 +74,7 @@ func ReadOnly() Option {
 //
 // ctx 中有 span 时，每条语句是它之下的一个 client span，名称是操作和表，例如 SELECT articles：
 // 请求、队列任务中的查询出现在它们的链路中；后台轮询这类没有上级 span 的查询只计入指标。span 的 db.query.text 是把字面量换成 ? 之后的 SQL，
-// 参数的值不会发往链路平台。
+// 参数的值只留在应用中。
 //
 // 连接池报告 db.client.connection.count（属性 db.client.connection.state 为 idle 或 used）、db.client.connection.max、
 // db.client.connection.wait_time（直方图，秒）和 db.client.connection.timeouts（取连接超过 acquire 时限的次数），
@@ -157,7 +157,7 @@ func (h *queryHook) BeforeQuery(ctx context.Context, e *bun.QueryEvent) context.
 	e.Stash[spanKey{}] = span
 	if op == "BEGIN" {
 		// Bun 把这里返回的 ctx 保存为事务的 ctx，COMMIT 和 ROLLBACK 用它执行：
-		// 返回原来的 ctx，它们才会和事务中的语句一样接在调用方之下，而不是接在已经结束的 BEGIN 之下。
+		// 返回原来的 ctx，它们才会和事务中的语句一样接在调用方之下。
 		return ctx
 	}
 	return spanCtx

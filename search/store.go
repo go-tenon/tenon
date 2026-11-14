@@ -11,7 +11,7 @@ import (
 )
 
 // 全文检索使用 search_entries.tokens：一个 tsvector，带 GIN 索引。
-// 分词在 Go 中完成，直接写入 tsvector 的词，不经过 PostgreSQL 自己的分词规则（大小写、词干、停用词）。
+// 分词在 Go 中完成，直接写入 tsvector 的词，大小写、词干、停用词都按 Go 中的规则处理。
 
 // maxPositions 是 tsvector 中一个词最多记录的位置数。位置最大为 MaxTerms。
 const maxPositions = 256

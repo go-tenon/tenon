@@ -12,7 +12,7 @@ import (
 // 禁止插件和 <base>，禁止页面被嵌入任何网站的框架。
 //
 // 'unsafe-eval' 是 Alpine 的表达式（x-data、x-on 等）和 htmx 的 hx-on 所需要的，它们在运行时编译执行。
-// 样式、图片、字体、iframe 等其他资源不受限制。需要补充时在它之后追加指令，见 Options.CSP。
+// 样式、图片、字体、iframe 等其他资源可以来自任何来源。需要补充时在它之后追加指令，见 Options.CSP。
 func DefaultCSP(nonce string) string {
 	return "script-src 'self' 'nonce-" + nonce + "' 'unsafe-eval'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
 }

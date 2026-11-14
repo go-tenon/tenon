@@ -54,7 +54,7 @@ type Device struct {
 // App 在登录后、以及每次启动时调用，token 是推送服务的客户端 SDK 给出的设备标识。
 //
 // 一台设备同时只属于一个主体：已经登记给别人的设备改为登记给 sub，例如在同一台手机上换了账号。
-// 同时记下 sub.Credential，撤销这个凭据时用 Unregister 一起删除，退出登录的设备不再收到推送。
+// 同时记下 sub.Credential，撤销这个凭据时用 Unregister 一起删除，退出登录的设备的推送随之停止。
 func Register(ctx context.Context, db bun.IDB, sub identity.Subject, platform Platform, token string) error {
 	if err := sub.Ref().Validate(); err != nil {
 		return errors.Wrap(err, "push")

@@ -30,7 +30,7 @@ import (
 //
 //	router.Use(httpx.Defaults(cfg.HTTP, httpx.Languages(languages))...)
 //
-// Timeout 不在其中：它按路由组安装，SSE 等流式路由不能有请求超时。
+// Timeout 单独安装：它按路由组安装，SSE 等流式路由不设请求超时。
 // RateLimit 等可选中间件同样需要时在其后另行安装；需要不同组合时，直接挑选单个中间件自行组装。
 func Defaults(cfg Config, opts ...DefaultsOption) []func(http.Handler) http.Handler {
 	var o defaultsOptions
@@ -50,8 +50,8 @@ func Defaults(cfg Config, opts ...DefaultsOption) []func(http.Handler) http.Hand
 }
 
 // AcquireTimeout 让请求等待共享资源最多 d（acquire.WithTimeout），例如数据库连接池中的空闲连接：
-// 连接池用满时，请求在 d 之后以 database.ErrBusy 失败，响应 503 并带 Retry-After，而不是排队到请求超时。
-// d 为 0 时什么也不做。
+// 连接池用满时，请求在 d 之后以 database.ErrBusy 失败，响应 503 并带 Retry-After，排队时间因此有上限。
+// d 为 0 时直接放行。
 func AcquireTimeout(d time.Duration) func(http.Handler) http.Handler {
 	if d < 0 {
 		panic("httpx: AcquireTimeout: negative timeout")
@@ -181,7 +181,7 @@ func BodyLimit(cfg BodyLimitConfig) func(http.Handler) http.Handler {
 }
 
 // Timeout 为请求 context 设置 cfg.Duration 的超时。它只取消 context，由处理器决定如何响应。
-// SSE 开始推送后不受它限制，见 SSE。cfg 不合法时 panic。
+// SSE 开始推送后脱离它的限制，见 SSE。cfg 不合法时 panic。
 func Timeout(cfg TimeoutConfig) func(http.Handler) http.Handler {
 	mustValid("Timeout", cfg.Validate())
 	d := cfg.Duration
@@ -198,7 +198,7 @@ func Timeout(cfg TimeoutConfig) func(http.Handler) http.Handler {
 // untimedKey 保存 Timeout 设置超时之前的 context，供 SSE 摆脱超时。
 type untimedKey struct{}
 
-// withoutTimeout 返回一个保留 ctx 中所有值、但不受 Timeout 超时影响的 context：
+// withoutTimeout 返回一个保留 ctx 中所有值、但脱离 Timeout 超时的 context：
 // 它仍在客户端断开或服务器关闭时取消。stop 释放相关资源。
 func withoutTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
 	untimed, ok := ctx.Value(untimedKey{}).(context.Context)

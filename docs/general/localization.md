@@ -123,9 +123,9 @@ func NewAPI(cfg httpx.Config) (*rest.API, error) {
 }
 ```
 
-`i18n.New` 的第一个参数是默认语言，之后可以传入任意多个文件系统，框架会读取其中所有的 YAML 翻译文件。内置消息总是最先加载，不需要你手动添加。
+`i18n.New` 的第一个参数是默认语言，之后可以传入任意多个文件系统，框架会读取其中所有的 YAML 翻译文件。内置消息总是最先自动加载。
 
-翻译文件嵌入在二进制中时，加载失败只可能是文件本身写错了，属于构建的问题。这时可以用 `i18n.MustNew`，它出错时 panic，构造路由的函数就不必返回错误：
+翻译文件嵌入在二进制中时，加载失败只可能是文件本身写错了，属于构建的问题。这时可以用 `i18n.MustNew`，它出错时 panic，构造路由的函数就可以直接返回路由：
 
 ```go
 router.Use(httpx.Defaults(cfg, httpx.Languages(i18n.MustNew("en", localeFiles)))...)
@@ -156,7 +156,7 @@ message := i18n.T(ctx, "article.slug_locked", nil)
 message = i18n.T(ctx, "article.slug_taken", map[string]any{"slug": slug})
 ```
 
-第三个参数是模板数据，不需要时传 `nil`。请求语言中缺少这条消息时，`i18n.T` 返回默认语言的译文；默认语言也没有，或者 context 中没有语言（例如不经过 HTTP 的后台任务）时，返回消息 ID 本身。
+第三个参数是模板数据，没有时传 `nil`。请求语言中缺少这条消息时，`i18n.T` 返回默认语言的译文；默认语言也没有，或者 context 中没有语言（例如队列中的后台任务）时，返回消息 ID 本身。
 
 复数形式等高级功能，通过 `i18n.Localizer(ctx)` 取得当前请求的 go-i18n `Localizer` 直接使用，请参阅 [go-i18n 文档](https://github.com/nicksnyder/go-i18n)：
 
@@ -240,7 +240,7 @@ func T(ctx context.Context, id string, data any) string
 
 - **参数**
     - `id`：消息 ID，例如业务错误码
-    - `data`：模板数据，不需要时传 `nil`
+    - `data`：模板数据，没有时传 `nil`
 - **返回**：翻译后的文案
 
 按 context 中的语言翻译。缺少译文时使用默认语言；context 中没有语言，或者默认语言也没有这条消息时，返回 `id` 本身。

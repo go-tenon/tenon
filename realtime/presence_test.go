@@ -16,7 +16,7 @@ import (
 	"github.com/go-tenon/tenon/realtime/redispresence"
 )
 
-// editors 是测试用的 presence 规则：carol 不能加入，其他人以自己的名字加入。
+// editors 是测试用的 presence 规则：拒绝 carol，其他人以自己的名字加入。
 func editors(_ context.Context, sub identity.Subject, p realtime.Params) (any, bool, error) {
 	if sub.ID == "carol" {
 		return nil, false, nil
@@ -83,7 +83,7 @@ func TestPresenceChannel(t *testing.T) {
 		t.Fatalf("members after alice left = %+v, %v", members, err)
 	}
 
-	// 没有加入的连接不能读取成员；规则拒绝的主体和匿名连接不能加入；其他频道没有成员列表。
+	// 加入了的连接才能读取成员；规则拒绝的主体和匿名连接被拒绝加入；其他频道没有成员列表。
 	carol := mustConnect(t, n.url, "carol", nil)
 	if _, err := carol.presence("editing:7"); err == nil || err.Code != 103 {
 		t.Fatalf("presence without subscribing: %+v", err)
@@ -102,7 +102,7 @@ func TestPresenceChannel(t *testing.T) {
 
 // 两个实例使用 Redis 的广播和在线成员存储：成员互相可见，重连到另一个实例时没有事件，
 // 在另一个实例上取消订阅时立即发出 leave，而且只发一次。
-// 取消订阅的控制消息在 Hub 的投递中到达，离开事件又要发布到 Hub，这里确认两者不会互相等待。
+// 取消订阅的控制消息在 Hub 的投递中到达，离开事件又要发布到 Hub，这里确认两者都能完成。
 func TestPresenceAcrossInstancesOnRedis(t *testing.T) {
 	t.Parallel()
 	rdb := redistest.Standalone.Open(t)
@@ -135,7 +135,7 @@ func TestPresenceAcrossInstancesOnRedis(t *testing.T) {
 
 	// alice 换到另一个实例：先在 b 上订阅，再关闭 a 上的连接。bob 看不到加入（a 上还有她的记录），
 	// 也看不到离开（a 的宽限期满时 b 上有她的记录），alice 也收不到自己的 join。
-	// 先建新连接再关旧连接，结果不依赖重连有多快；如果先断开再重连，重连慢于宽限期时离开事件是正确的。
+	// 先建新连接再关旧连接，结果与重连的快慢无关；如果先断开再重连，重连慢于宽限期时离开事件是正确的。
 	if kind, m := bob.membership(); kind != "join" || m.User != "user:bob" {
 		t.Fatalf("bob's own join = %s %+v", kind, m)
 	}
@@ -154,7 +154,7 @@ func TestPresenceAcrossInstancesOnRedis(t *testing.T) {
 	if kind, m := alice.membership(); kind != "leave" || m.User != "user:bob" {
 		t.Fatalf("leave from the other instance = %s %+v", kind, m)
 	}
-	// 连接所在的实例宽限期满时不再重复发出 leave。
+	// 连接所在的实例宽限期满时，leave 只发一次。
 	alice.noMembership(700 * time.Millisecond)
 	if members, err := b.rt.Members(context.Background(), "editing:7"); err != nil || len(members) != 1 || members[0].Subject.ID != "alice" {
 		t.Fatalf("members after unsubscribe = %+v, %v", members, err)
@@ -322,7 +322,7 @@ func TestPresenceGraceIsCapped(t *testing.T) {
 func TestPresenceChannelNeedsStore(t *testing.T) {
 	t.Parallel()
 	n := start(t, broadcasttest.NewBackend(), realtime.Options{}, nil)
-	// 没有 presence 频道时不需要存储：没有在线成员，Unsubscribe 照常工作。
+	// 没有 presence 频道时可以省略存储：没有在线成员，Unsubscribe 照常工作。
 	if m, err := n.rt.Members(context.Background(), "editing:7"); err != nil || len(m) != 0 {
 		t.Fatalf("members without a store = %+v, %v", m, err)
 	}

@@ -207,7 +207,7 @@ func TestAcrossInstances(t *testing.T) {
 	}
 	broadcasttest.Receive(t, sub)
 
-	// 其他频道的消息不会发给它们。
+	// 它们只收到自己频道的消息。
 	publish(t, a.hub, "room:2", map[string]int{"n": 2})
 	cb.noPush(100 * time.Millisecond)
 
@@ -284,7 +284,7 @@ func TestChannelRules(t *testing.T) {
 	for channel, code := range map[string]int{
 		"chat:of-alice": 103, // 私有频道需要登录
 		"unknown":       102, // 没有匹配的规则
-		"cred.s.abc":    102, // Hub 的其他主题不会因此暴露
+		"cred.s.abc":    102, // Hub 的其他主题保持私有
 		"bad channel":   102,
 	} {
 		if reply := anonymous.subscribe(channel); reply.Error == nil || reply.Error.Code != code {
@@ -520,7 +520,7 @@ func TestRevokedTokenDisconnects(t *testing.T) {
 	n := start(t, broadcasttest.NewBackend(), realtime.Options{Authenticate: store.validate, Credentials: creds}, nil)
 	alice, bob := mustConnect(t, n.url, "alice", nil), mustConnect(t, n.url, "bob", nil)
 
-	// 后端故障时的复查不会断开连接。
+	// 后端故障时的复查保持连接。
 	store.setDown(true)
 	if err := creds.RecheckSubject(context.Background(), identity.Ref{Type: "user", ID: "alice"}); err != nil {
 		t.Fatal(err)
@@ -535,7 +535,7 @@ func TestRevokedTokenDisconnects(t *testing.T) {
 	if code := alice.closed(); code != 3500 {
 		t.Fatalf("revoked connection closed with %d", code)
 	}
-	// 其他连接不受影响。
+	// 其他连接保持在线。
 	n.rt.Channel("articles", realtime.Public())
 	bob.mustSubscribe("articles")
 }
