@@ -1,6 +1,8 @@
 # 中间件
 
-中间件在请求到达处理器之前和之后做通用的事：确定请求 ID、记录访问日志、限制请求体大小、恢复 panic。Tenon 的中间件都是标准的 `func(http.Handler) http.Handler`，安装在 chi Router 上；`rest.New` 不会替你安装任何中间件。
+有些事情每个请求都要做：确定请求 ID、记录访问日志、限制请求体的大小、在处理器 panic 时恢复。把它们写在每个处理器里显然不现实，中间件就是为此而生的：它包在处理器的外面，在请求到达处理器之前和之后做这些通用的事。
+
+Tenon 的中间件都是标准的 `func(http.Handler) http.Handler`，安装在 chi Router 上。`rest.New` 不会替你安装任何中间件，装哪些、按什么顺序装，都由你在代码中决定。
 
 > [!IMPORTANT]
 > 一个中间件是否生效，只取决于代码里有没有安装它。配置文件只提供参数，不会开启或关闭中间件。参数不合法时（例如超时为 0），构造时就 panic，而不是静默跳过。
@@ -27,7 +29,7 @@
 <a id="default-middleware"></a>
 ## 示例用法
 
-`httpx.Defaults` 返回每个应用都应该安装的基础中间件。先把它们和[请求超时](#request-timeout)安装到 Router 上，再把 Router 交给 `rest.New`：
+大多数应用只需要这三行。`httpx.Defaults` 返回每个应用都应该安装的基础中间件，先把它们和[请求超时](#request-timeout)安装到 Router 上，再把 Router 交给 `rest.New`：
 
 ```go
 router := chi.NewRouter()
@@ -39,7 +41,7 @@ api := rest.New(rest.Options{Router: router})
 
 这里使用了 `github.com/go-chi/chi/v5`。`Defaults` 的第二个参数是日志器，传 `nil` 时使用全局日志器 `slog.Default()`，见[日志](../general/logging.md#creating-a-logger)；第三个参数是语言目录，传 `nil` 时只使用框架内置的中英文消息，见[本地化](../general/localization.md#enabling-localization)。
 
-`httpx.Defaults` 按以下顺序包含这些中间件，每一个都可以单独使用：
+`httpx.Defaults` 按以下顺序包含这些中间件。它们每一个都可以单独使用：
 
 | 中间件 | 行为 |
 | --- | --- |
@@ -52,7 +54,7 @@ api := rest.New(rest.Options{Router: router})
 | `BodyLimit(cfg.BodyLimit)` | 限制请求体大小，超出时返回 413 |
 | `AcquireTimeout(cfg.AcquireTimeout)` | 请求等待共享资源（例如空闲的数据库连接）最多 `acquire_timeout`，连接池用满时返回 503 并带 `Retry-After`，见[连接用满时](../database/quick-start.md#pool-exhaustion) |
 
-以下中间件是可选的，需要时在 `httpx.Defaults` 之后另行安装：
+另外几个中间件不是每个应用都需要的，需要时在 `httpx.Defaults` 之后另行安装：
 
 | 中间件 | 行为 |
 | --- | --- |
@@ -60,7 +62,7 @@ api := rest.New(rest.Options{Router: router})
 | `RateLimit(limiter, key)` | 按客户端限流，超出时返回 429，见[限流](../libraries/rate-limiting.md) |
 | `Compress()` | 按 `Accept-Encoding` 用 zstd 或 gzip 压缩文本类响应，见[响应压缩](#compression) |
 
-框架的其他部分不依赖这些中间件是否安装。没有 `AccessLog` 时，`httpx.AddAccessLogAttrs` 什么也不做；没有 `Locale` 时，错误消息不翻译，`i18n.T` 原样返回消息 ID；没有 `AssignRequestID` 时，`httpx.RequestID` 返回空字符串。
+你可能会担心：不装某个中间件，框架的其他部分会不会出问题？不会。没有 `AccessLog` 时，`httpx.AddAccessLogAttrs` 什么也不做；没有 `Locale` 时，错误消息不翻译，`i18n.T` 原样返回消息 ID；没有 `AssignRequestID` 时，`httpx.RequestID` 返回空字符串。
 
 认证不在默认中间件中，因为它是按路由启用的，见[认证](../security/authentication.md)。健康检查也由你自己注册，见[请求生命周期](../concepts/lifecycle.md#health-checks)。
 
@@ -488,7 +490,15 @@ handler := chi.Chain(httpx.Defaults(cfg.HTTP, nil, nil)...).Handler(mux)
 func Defaults(cfg Config, logger *slog.Logger, languages *goi18n.Bundle) []func(http.Handler) http.Handler
 ```
 
-按顺序返回 `AssignRequestID`、`NoSniff`、`ClientIP`、`Locale`、`AccessLog`、`Recover`、`BodyLimit`、`AcquireTimeout`。`cfg` 不合法时 panic；`logger` 为 `nil` 时用 `slog.Default()`；`languages` 为 `nil` 时只用内置消息。
+- **参数**
+    - `cfg`：HTTP 配置，见[配置](#http-configuration)；不合法时 panic
+    - `logger`：访问日志和 panic 的日志器，为 `nil` 时使用 `slog.Default()`
+    - `languages`：语言目录，为 `nil` 时只使用框架内置的中英文消息
+- **返回**：按执行顺序排列的中间件：`AssignRequestID`、`NoSniff`、`ClientIP`、`Locale`、`AccessLog`、`Recover`、`BodyLimit`、`AcquireTimeout`
+
+```go
+router.Use(httpx.Defaults(cfg.HTTP, nil, nil)...)
+```
 
 ### 中间件
 

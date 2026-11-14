@@ -1,6 +1,6 @@
 # 请求
 
-处理器不直接读取 `http.Request`。每条路由有一个**输入类型**：普通的 Go 结构体，字段标签说明值从哪里来。Huma 在调用处理器之前读取请求、转换类型并完成[验证](validation.md)，处理器拿到的是已经填好的结构体。
+在 Tenon 中，你不需要手动读取 `http.Request`，也不需要自己把字符串转换成整数或 UUID。每条路由都有一个**输入类型**：一个普通的 Go 结构体，字段上的标签说明这个值从哪里来。Huma 会在调用处理器之前读取请求、转换类型并完成[验证](validation.md)，处理器拿到的就是一个已经填好的结构体。
 
 - [示例用法](#introduction)
 - [定义输入类型](#input-types)
@@ -17,6 +17,8 @@
 <a id="introduction"></a>
 ## 示例用法
 
+下面的输入类型同时读取了路径参数、查询参数、请求头和 JSON 请求体：
+
 ```go
 type UpdateInput struct {
     ID      uuid.UUID `path:"id"`
@@ -31,6 +33,8 @@ func (a *Update) HTTP(ctx context.Context, in *UpdateInput) (*ArticleOutput, err
     // in.ID 已经是 uuid.UUID，in.Body.Title 已经通过验证
 }
 ```
+
+请求 `PUT /articles/0193…?dry_run=true` 到达时，`in.ID` 已经是解析好的 `uuid.UUID`，`in.DryRun` 是 `true`，`in.Body.Title` 也已经通过了长度检查。如果路径中的 ID 不是合法的 UUID，或者标题为空，请求会被拒绝，处理器根本不会被调用。下面逐一介绍每种来源。
 
 <a id="input-types"></a>
 ## 定义输入类型

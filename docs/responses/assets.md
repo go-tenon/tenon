@@ -153,7 +153,12 @@ go tool tenon dev
 func NewStatic(fsys fs.FS, opts StaticOptions) (*Static, error)
 ```
 
-读取 `fsys` 中的全部文件并计算指纹。`*Static` 是 `http.Handler`，挂载在 `StaticPath`（`/static/`）。
+- **参数**
+    - `fsys`：静态文件所在的目录，通常是 `embed.FS` 的子目录
+    - `opts`：见下面的 `StaticOptions`
+- **返回**：静态文件的处理器（`http.Handler`），挂载在 `StaticPath`（`/static/`）；读取文件失败时返回错误
+
+创建时读取全部文件并计算指纹。
 
 ### StaticOptions
 
@@ -167,4 +172,7 @@ func NewStatic(fsys fs.FS, opts StaticOptions) (*Static, error)
 func StaticURL(ctx context.Context, name string) string
 ```
 
-返回 `name`（相对 `static` 目录的路径）带指纹的地址。`ctx` 中没有 `Static`，或者文件不存在时，返回不带指纹的地址。
+- **参数**
+    - `ctx`：渲染页面的 context，其中带有 `Static`
+    - `name`：相对 `static` 目录的路径，例如 `img/logo.svg`
+- **返回**：带指纹的地址；`ctx` 中没有 `Static` 或者文件不存在时，返回不带指纹的地址

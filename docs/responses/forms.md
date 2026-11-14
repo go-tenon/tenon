@@ -1,6 +1,6 @@
 # 表单
 
-页面中的表单和 JSON API 使用同一套[验证](../http/validation.md)规则：在结构体字段上写 Huma 的标签。`web.ParseForm` 解析浏览器提交的表单，按标签验证，并保留用户的原始输入，验证失败时可以原样回填。
+公开页面中常常有表单，例如订阅新文章、联系我们。页面中的表单和 JSON API 使用同一套[验证](../http/validation.md)规则：在结构体字段上写 Huma 的标签。`web.ParseForm` 解析浏览器提交的表单，按标签验证，并保留用户的原始输入，验证失败时可以原样回填。
 
 - [示例用法](#example-usage)
 - [定义表单](#defining-forms)
@@ -31,6 +31,8 @@ func (h *Handlers) Subscribe(w http.ResponseWriter, r *http.Request) error {
     return web.Render(w, r, http.StatusOK, views.Subscribed(f.Data.Email))
 }
 ```
+
+`ParseForm` 解析并验证提交的表单。验证没有通过时，返回 `422` 和重新渲染的表单，表单中保留着用户填写的内容和每个字段的错误提示；通过时，`f.Data` 就是解码后的数据。下面依次介绍怎样定义、渲染和处理表单。
 
 <a id="defining-forms"></a>
 ## 定义表单
@@ -159,7 +161,12 @@ func ParseForm[T any](r *http.Request) (*Form[T], error)
 func NewForm[T any](data T) *Form[T]
 ```
 
-`ParseForm` 解析请求体并验证，只有请求体无法解析时返回错误（`ErrBadForm`）。`NewForm` 用已有的数据创建表单，例如编辑页的初始值。
+- **参数**
+    - `r`：提交表单的请求
+    - `data`（`NewForm`）：表单的初始值，例如编辑页中已有的数据
+- **返回**：表单；只有请求体无法解析时，`ParseForm` 才返回错误（`ErrBadForm`，响应 `422`）
+
+验证失败不算错误：用 `f.Valid()` 判断，失败时重新渲染表单即可。
 
 ### Form
 
