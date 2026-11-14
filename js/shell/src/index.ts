@@ -1,0 +1,7 @@
+// @go-tenon/shell 是应用骨架的逻辑：装配 Router、QueryClient 和会话，登录与权限检查、菜单、面包屑和新版本提示。
+// 它依赖 React、TanStack Router、TanStack Query 和 @go-tenon/client，不依赖组件库：外观由 @go-tenon/admin 和 shadcn registry 渲染。
+export * from "./app"
+export * from "./menu"
+export * from "./redirect"
+export * from "./storage"
+export * from "./version"
