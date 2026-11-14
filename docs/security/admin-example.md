@@ -123,7 +123,6 @@ package adminauth
 import (
     "context"
     "net/http"
-    "time"
 
     "github.com/danielgtaylor/huma/v2"
 
@@ -147,10 +146,7 @@ type RefreshInput struct {
 
 type SessionOutput struct {
     SetCookie *http.Cookie `header:"Set-Cookie"`
-    Body      struct {
-        AccessToken string    `json:"access_token"`
-        ExpiresAt   time.Time `json:"expires_at"`
-    }
+    Body      apitoken.Session
 }
 
 type LogoutOutput struct {
@@ -165,8 +161,8 @@ type handlers struct {
 }
 
 func (h *handlers) session(pair apitoken.Pair) *SessionOutput {
-    out := &SessionOutput{SetCookie: h.cookie.Set(pair)}
-    out.Body.AccessToken, out.Body.ExpiresAt = pair.Access, pair.ExpiresAt
+    out := &SessionOutput{}
+    out.Body, out.SetCookie = h.cookie.Session(pair)
     return out
 }
 

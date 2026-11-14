@@ -102,7 +102,7 @@ type PatchInput struct {
 | `value` | 服务端收到的值 |
 | `code` | 违反的规则，见[验证提示](#validation-messages)，不随语言变化 |
 
-客户端根据 `location` 把 `message` 显示在对应的表单字段旁边，需要自己的文案时按 `code` 处理。
+客户端根据 `location` 把 `message` 显示在对应的表单字段旁边，需要自己的文案时按 `code` 处理，见[客户端协议](protocol.md#errors)。
 
 验证错误的 `code` 写在 `errors` 的每一项中，见[错误响应格式](../general/errors.md#response-format)。
 

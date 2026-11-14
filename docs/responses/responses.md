@@ -129,7 +129,7 @@ items := make([]ArticleDTO, 0)
 | 响应体 | `items`、`page`、`per_page`、`total` | `items`、`next_cursor` |
 | 适用场景 | 需要页码和总数，例如后台表格 | 信息流、数据量大或写入频繁的列表 |
 
-两种分页的 `per_page` 都默认为 20、最大为 100，超出范围的请求会被拒绝并返回 `422`。
+两种分页的 `per_page` 都默认为 20、最大为 100，超出范围的请求会被拒绝并返回 `422`。客户端一侧的约定见[客户端协议](../http/protocol.md#pagination)。
 
 <a id="offset-pagination"></a>
 ### 固定分页

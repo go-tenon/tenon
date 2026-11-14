@@ -387,7 +387,6 @@ package auth
 import (
     "context"
     "net/http"
-    "time"
 
     "github.com/danielgtaylor/huma/v2"
 
@@ -415,10 +414,7 @@ type RefreshInput struct {
 // SessionOutput 返回 access token，refresh token 写入 cookie。
 type SessionOutput struct {
     SetCookie *http.Cookie `header:"Set-Cookie"`
-    Body      struct {
-        AccessToken string    `json:"access_token"`
-        ExpiresAt   time.Time `json:"expires_at"`
-    }
+    Body      apitoken.Session
 }
 
 type LogoutOutput struct {
@@ -432,8 +428,8 @@ type handlers struct {
 }
 
 func session(pair apitoken.Pair) *SessionOutput {
-    out := &SessionOutput{SetCookie: refreshCookie.Set(pair)}
-    out.Body.AccessToken, out.Body.ExpiresAt = pair.Access, pair.ExpiresAt
+    out := &SessionOutput{}
+    out.Body, out.SetCookie = refreshCookie.Session(pair)
     return out
 }
 

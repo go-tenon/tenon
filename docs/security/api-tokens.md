@@ -318,7 +318,7 @@ pair, err := customerJWT.Login(ctx, sub, device)
 pair, err := customerJWT.Refresh(ctx, in.Body.RefreshToken)
 ```
 
-客户端的规则：
+客户端的规则（完整的约定见[客户端协议](../http/protocol.md#sessions)）：
 
 - 请求带 `Authorization: Bearer <access token>`；access token 过期或收到 `401` 时，用 refresh token 刷新，再重试请求。
 - 刷新返回新的 refresh token 时替换保存的那一个；返回的 refresh token 为空时，继续使用已保存的。
@@ -418,28 +418,21 @@ type LoginInput struct {
 
 type RefreshInput struct {
     Cookie string `cookie:"blog_refresh"`
-    Body   struct {
-        RefreshToken string `json:"refresh_token,omitempty" doc:"App 传入；浏览器留空，使用 cookie"`
-    }
+    Body   apitoken.RefreshRequest
 }
 
 type SessionOutput struct {
     SetCookie *http.Cookie `header:"Set-Cookie"`
-    Body      struct {
-        AccessToken  string    `json:"access_token"`
-        RefreshToken string    `json:"refresh_token,omitempty" doc:"为空时继续使用已保存的 refresh token；浏览器总是为空"`
-        ExpiresAt    time.Time `json:"expires_at"`
-    }
+    Body      apitoken.Session
 }
 
 // session 把一对凭据交给客户端：浏览器的 refresh token 写入 cookie，其他客户端的放在响应体中。
 func session(pair apitoken.Pair, cookie bool) *SessionOutput {
     out := &SessionOutput{}
-    out.Body.AccessToken, out.Body.ExpiresAt = pair.Access, pair.ExpiresAt
     if cookie {
-        out.SetCookie = refreshCookie.Set(pair)
+        out.Body, out.SetCookie = refreshCookie.Session(pair)
     } else {
-        out.Body.RefreshToken = pair.Refresh
+        out.Body = apitoken.NewSession(pair)
     }
     return out
 }
@@ -466,7 +459,7 @@ func (h *handlers) logout(ctx context.Context, _ *struct{}) (*LogoutOutput, erro
 }
 ```
 
-`LogoutOutput` 只有 `SetCookie` 一个字段。登录处理器在 `Password` 成功后调用 `h.jwt.Login`，再 `return session(pair, in.Body.Cookie), nil`。`RefreshCookie.Set` 在宽限期内的重复刷新（`pair.Refresh` 为空）时返回 `nil`，浏览器中保留的就是最新的那个。前端的写法见 [API 客户端](../responses/clients.md#creating-the-client)，完整的例子见[单账号后台](admin-example.md#auth-api)。
+`LogoutOutput` 只有 `SetCookie` 一个字段。登录处理器在 `Password` 成功后调用 `h.jwt.Login`，再 `return session(pair, in.Body.Cookie), nil`。`apitoken.Session` 和 `apitoken.RefreshRequest` 是框架固定的请求体和响应体格式，客户端都按它们读写，见[客户端协议](../http/protocol.md#sessions)。`RefreshCookie.Session` 在宽限期内的重复刷新（`pair.Refresh` 为空）时不返回 cookie，浏览器中保留的就是最新的那个。前端的写法见 [API 客户端](../responses/clients.md#creating-the-client)，完整的例子见[单账号后台](admin-example.md#auth-api)。
 
 部署方式决定还要做什么：
 

@@ -176,11 +176,9 @@ type ImpersonateInput struct {
 
 type ImpersonateOutput struct {
     Body struct {
-        AccessToken  string    `json:"access_token"`
-        RefreshToken string    `json:"refresh_token"` // 交给租户后台前端设 cookie，不要放进 URL
-        ExpiresAt    time.Time `json:"expires_at"`
-        TenantID     string    `json:"tenant_id"`
-        ConsolePath  string    `json:"console_path"` // 例如 /t/acme/app
+        apitoken.Session        // refresh_token 交给租户后台前端设 cookie，不要放进 URL
+        TenantID         string `json:"tenant_id"`
+        ConsolePath      string `json:"console_path"` // 例如 /t/acme/app
     }
 }
 
@@ -206,8 +204,8 @@ func (h *handlers) impersonate(ctx context.Context, in *ImpersonateInput) (*Impe
         return nil, err
     }
     out := &ImpersonateOutput{}
-    out.Body.AccessToken, out.Body.RefreshToken = pair.Access, pair.Refresh
-    out.Body.ExpiresAt, out.Body.TenantID = pair.ExpiresAt, in.Body.TenantID
+    out.Body.Session = apitoken.NewSession(pair)
+    out.Body.TenantID = in.Body.TenantID
     out.Body.ConsolePath = "/t/" + in.Body.TenantID + "/app"
     return out, nil
 }

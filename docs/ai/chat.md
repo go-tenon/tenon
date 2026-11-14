@@ -208,7 +208,7 @@ runs := chat.NewRuns("luway", nil, sessions,
 
 每个对话用一个 ID 标识，由 `useChat` 生成。对话属于当前登录的编辑，`Runs` 的方法都以主体 ID 和对话 ID 定位它，一个编辑无法读取其他人的对话。
 
-服务端提供五个接口：
+服务端提供五个接口，各接口的请求和响应见[客户端协议](../http/protocol.md#ai-chat)：
 
 ```go
 type ChatInput struct {

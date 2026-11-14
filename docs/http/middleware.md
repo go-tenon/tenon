@@ -320,7 +320,7 @@ Content-Type: application/problem+json
 {"title": "Upgrade Required", "status": 426, "detail": "当前版本过低，请升级到 1.4.0 或更高版本", "code": "app.upgrade_required"}
 ```
 
-App 收到 `app.upgrade_required` 时显示升级页面，打开应用商店或开始自动更新。请求头格式错误时返回 `400`。没有这个请求头的请求放行，例如浏览器、单页应用和用 [API token](../security/api-tokens.md) 调用的第三方；没有设置最低版本的平台也放行。
+App 收到 `app.upgrade_required` 时显示升级页面，打开应用商店或开始自动更新，见[客户端协议](protocol.md#app-version)。请求头格式错误时返回 `400`。没有这个请求头的请求放行，例如浏览器、单页应用和用 [API token](../security/api-tokens.md) 调用的第三方；没有设置最低版本的平台也放行。
 
 `AppVersion` 只安装在 API 的路由组上，放在 `CORS` 之后，WebView 中的页面才能读到 `426` 的内容：
 

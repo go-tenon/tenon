@@ -130,7 +130,7 @@ articles.subscribe();
 centrifuge.connect();
 ```
 
-订阅被拒绝时，订阅对象触发 `unsubscribed` 事件，`ctx.code` 为 103（没有权限）或 102（没有这个频道）。
+订阅被拒绝时，订阅对象触发 `unsubscribed` 事件，`ctx.code` 为 103（没有权限）或 102（没有这个频道）。其他语言的 SDK 遵守同样的约定，见[客户端协议](../http/protocol.md#realtime)。
 
 <a id="authentication"></a>
 ## 认证
