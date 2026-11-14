@@ -29,7 +29,14 @@ type resumeInput struct {
 	ID string `path:"id"`
 }
 
-// chatServer 按 useChat 的约定注册 POST /chat 和 GET /chat/{id}/stream。
+type steerInput struct {
+	ID   string `path:"id"`
+	Body struct {
+		Text string `json:"text"`
+	}
+}
+
+// chatServer 按 useChat 的约定注册 POST /chat 和 GET /chat/{id}/stream，以及插话接口 POST /chat/{id}/steer。
 func chatServer(t *testing.T, rs *chat.Runs) string {
 	t.Helper()
 	api := rest.New(chi.NewRouter(), rest.Options{})
@@ -50,6 +57,11 @@ func chatServer(t *testing.T, rs *chat.Runs) string {
 			return nil, err
 		}
 		return chat.UIResume(run), nil
+	})
+	steer := huma.Operation{OperationID: "chat-steer", Method: http.MethodPost, Path: "/chat/{id}/steer"}
+	rest.Public()(&steer)
+	rest.Register(api, steer, func(ctx context.Context, in *steerInput) (*struct{}, error) {
+		return nil, rs.Steer(ctx, "u1", in.ID, model.NewUserMessage(in.Body.Text))
 	})
 	srv := httptest.NewServer(api.Handler())
 	t.Cleanup(srv.Close)
@@ -100,6 +112,22 @@ func postChat(t *testing.T, url string, body any) *http.Response {
 		t.Fatal(err)
 	}
 	return resp
+}
+
+// postSteer 调用插话接口，返回状态码和错误码。
+func postSteer(t *testing.T, url, id, text string) (int, string) {
+	t.Helper()
+	b, _ := json.Marshal(map[string]string{"text": text})
+	resp, err := http.Post(url+"/chat/"+id+"/steer", "application/json", bytes.NewReader(b))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var problem struct {
+		Code string `json:"code"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&problem)
+	return resp.StatusCode, problem.Code
 }
 
 func userMessage(text string) map[string]any {
@@ -181,8 +209,8 @@ func TestUIStreamRejectAndSteer(t *testing.T) {
 
 	resp := postChat(t, url, map[string]any{"id": "c1", "message": userMessage("查 A1")})
 	time.Sleep(100 * time.Millisecond)
-	if err := rs.Steer(context.Background(), "u1", "c1", model.NewUserMessage("顺便退款")); err != nil {
-		t.Fatal(err)
+	if status, code := postSteer(t, url, "c1", "顺便退款"); status != http.StatusNoContent {
+		t.Fatalf("steer: %d %s", status, code)
 	}
 	got := chunks(t, resp)
 	want := []string{
@@ -202,6 +230,14 @@ func TestUIStreamRejectAndSteer(t *testing.T) {
 	got = chunks(t, postChat(t, url, map[string]any{"id": "c1", "message": reject}))
 	if strings.Join(got[:2], "|") != "start|tool-output-denied:r1" || len(refunded.done) != 0 {
 		t.Fatalf("after reject got %q, refunded %v", got, refunded.done)
+	}
+
+	// 回答已经结束：插话得到 409 ai.finished，前端改为发送新消息。
+	if status, code := postSteer(t, url, "c1", "太晚了"); status != http.StatusConflict || code != "ai.finished" {
+		t.Fatalf("steer after finish: %d %q", status, code)
+	}
+	if status, code := postSteer(t, url, "c9", "没有这个对话"); status != http.StatusConflict || code != "ai.finished" {
+		t.Fatalf("steer without run: %d %q", status, code)
 	}
 
 	history, _ := rs.UIMessages(context.Background(), "u1", "c1")

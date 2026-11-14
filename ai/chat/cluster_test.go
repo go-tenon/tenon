@@ -19,6 +19,7 @@ import (
 	"github.com/go-tenon/tenon/broadcast"
 	"github.com/go-tenon/tenon/broadcast/broadcasttest"
 	"github.com/go-tenon/tenon/broadcast/redisbroadcast"
+	"github.com/go-tenon/tenon/errorx"
 	"github.com/go-tenon/tenon/internal/redistest"
 	"github.com/go-tenon/tenon/lock"
 	"github.com/go-tenon/tenon/lock/locktest"
@@ -104,10 +105,18 @@ func mirrorScenario(t *testing.T, m *chattest.Model, a, b *chat.Runs) {
 		t.Fatalf("steer did not reach the model: %s", messagesOf(m.LastRequest()))
 	}
 
-	// 运行结束、锁释放后，另一个实例上没有运行，可以开始新的。
+	// 运行结束后，经镜像插话得到 ErrFinished，它是 409 的业务错误。
+	if err := remote.Steer(ctx, model.NewUserMessage("太晚了")); !errors.Is(err, chat.ErrFinished) || errorx.KindOf(err) != errorx.Conflict {
+		t.Fatalf("steer mirror after finish: %v", err)
+	}
+
+	// 运行结束、锁释放后，另一个实例上没有运行，可以开始新的；插话同样得到 ErrFinished。
 	time.Sleep(300 * time.Millisecond)
 	if r, err := b.Get(ctx, "u1", "c1"); err != nil || r != nil {
 		t.Fatalf("after finish: %v %v", r, err)
+	}
+	if err := b.Steer(ctx, "u1", "c1", model.NewUserMessage("太晚了")); !errors.Is(err, chat.ErrFinished) {
+		t.Fatalf("steer other instance after finish: %v", err)
 	}
 }
 

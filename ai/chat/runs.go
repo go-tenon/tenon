@@ -30,8 +30,8 @@ var (
 	ErrAwaitingApproval = errorx.Define(errorx.Conflict, "ai.awaiting_approval")
 	// ErrNotPending 表示要审批的工具调用不存在或已经处理过。
 	ErrNotPending = errorx.Define(errorx.NotFound, "ai.not_pending")
-	// ErrFinished 表示运行已经结束，应当开始新的运行。
-	ErrFinished = errors.New("chat: run finished")
+	// ErrFinished 表示运行已经结束（409），应当开始新的运行：回答结束后插话时，前端改为发送新消息。
+	ErrFinished = errorx.Define(errorx.Conflict, "ai.finished")
 	// ErrShuttingDown 表示本实例正在停止，拒绝开始新的运行（503）。客户端稍后重试，
 	// 多实例部署时会落到其他实例上。
 	ErrShuttingDown = errorx.Define(errorx.Unavailable, "ai.shutting_down")
@@ -417,7 +417,7 @@ func (rs *Runs) Steer(ctx context.Context, userID, sessionID string, msg model.M
 		return err
 	}
 	if r == nil {
-		return ErrFinished
+		return ErrFinished.New()
 	}
 	return r.Steer(ctx, msg)
 }
@@ -654,7 +654,7 @@ func (r *Run) Steer(ctx context.Context, msg model.Message) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.finished {
-		return ErrFinished
+		return ErrFinished.New()
 	}
 	r.steered = append(r.steered, msg)
 	if r.reqID != "" {

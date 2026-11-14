@@ -619,7 +619,7 @@ func (m *mirror) steer(ctx context.Context, msg model.Message) error {
 // request 把插话或通知转发给运行所在的实例，等待它的回执。运行已经结束时返回 ErrFinished。
 func (m *mirror) request(ctx context.Context, c ctlMsg) error {
 	if m.run.isFinished() {
-		return ErrFinished
+		return ErrFinished.New()
 	}
 	req := uuid.NewString()
 	ch := make(chan string, 1)
@@ -643,12 +643,12 @@ func (m *mirror) request(ctx context.Context, c ctlMsg) error {
 		case "":
 			return nil
 		case "finished":
-			return ErrFinished
+			return ErrFinished.New()
 		default:
 			return errors.New(reply)
 		}
 	case <-m.run.done:
-		return ErrFinished
+		return ErrFinished.New()
 	case <-timer.C:
 		return errors.Newf("chat: %s: the running instance did not reply", c.Kind)
 	case <-ctx.Done():
