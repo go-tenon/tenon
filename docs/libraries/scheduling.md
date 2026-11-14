@@ -1,8 +1,10 @@
 # 定时任务
 
-过期的 token、验证码和失败任务都会在数据库中留下过期的行，需要定期清理；应用自己也常有定时的工作，例如每天凌晨生成报表。`schedule` 包按 cron 表达式定时执行这些任务，精度到秒。
+应用中总有一些需要按时执行的工作：过期的令牌、验证码和失败任务会在数据库中留下过期的行，需要定期清理；应用自己也常有定时的工作，例如每天凌晨生成报表。
 
-调度器只负责「按时触发」：任务就是一个 `func(ctx context.Context) error`，在调度器所在的进程中执行。部署多个实例时，同一个任务的同一次触发只会在一个实例上执行。
+过去，你可能会为每一项工作在服务器上写一条 crontab。但这样一来，定时任务散落在代码之外，部署多台服务器时还要小心别让它们重复执行。`schedule` 包让你在代码中声明定时任务，按 cron 表达式执行，精度到秒。
+
+调度器只负责“按时触发”：任务就是一个 `func(ctx context.Context) error`，在调度器所在的进程中执行。部署多个实例时，同一个任务的同一次触发只会在一个实例上执行。
 
 - [示例用法](#example-usage)
 - [定义任务](#defining-tasks)
@@ -24,6 +26,8 @@
 <a id="example-usage"></a>
 ## 示例用法
 
+下面注册了两个定时任务，然后运行调度器：
+
 ```go
 sched := schedule.New(locker, cfg.Schedule, nil)
 sched.Add("reports:daily", "0 0 2 * * *", buildDailyReport, // 每天 02:00:00
@@ -33,7 +37,7 @@ sched.Add("articles:publish-scheduled", "@every 1m", publishScheduled.Handle)
 err := sched.Run(ctx) // 一直运行到 ctx 被取消
 ```
 
-部署多个实例时，`locker` 保证每次触发只有一个实例执行。
+`Add` 注册任务：任务名、cron 表达式和要执行的函数。`0 0 2 * * *` 表示每天 02:00:00 执行（第一段是秒），`@every 1m` 表示每分钟一次。部署多个实例时，`locker` 保证每一次触发只有一个实例真正执行。
 
 <a id="defining-tasks"></a>
 ## 定义任务
@@ -342,6 +346,20 @@ func (s *Scheduler) Running(ctx context.Context) (map[string]bool, error)
 ```
 
 `Add` 注册任务，名称为空或重复、表达式无效，或在 `Run` 之后调用时 panic。`Run` 每秒检查到期的任务。`RunDue` 执行在时刻 `t` 到期的任务，用于测试。`Tasks` 和 `Running` 供[查看任务](#listing-tasks)使用。
+
+### Scheduler.Add
+
+```go
+func (s *Scheduler) Add(name, expr string, run func(ctx context.Context) error, opts ...TaskOption)
+```
+
+- **参数**
+    - `name`：任务名，在调度器中唯一，也用作锁名的一部分
+    - `expr`：cron 表达式，见[表达式](#expressions)
+    - `run`：要执行的函数
+    - `opts`：见下面的 `TaskOption`
+
+名称为空或重复、表达式无效，或者在 `Run` 之后调用时 panic。
 
 ### TaskOption
 

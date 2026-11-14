@@ -31,6 +31,8 @@
 <a id="example-usage"></a>
 ## 示例用法
 
+下面为用户创建一个 `Realm`，用邮箱和密码登录，再为登录成功的用户签发令牌：
+
 ```go
 users := login.New(db, login.Options{
     Type:     user.Type,
@@ -51,6 +53,8 @@ if out.Pending != "" {
 }
 plain, err := tokens.Login(ctx, out.Subject, device)
 ```
+
+`Password` 校验邮箱和密码。登录成功时，`out.Subject` 就是这个用户；如果账号启用了二次验证，`out.Pending` 不为空，客户端还要提交验证器上的数字。最后，由 [API 令牌](api-tokens.md) 签发凭据。
 
 <a id="assembling"></a>
 ## 装配

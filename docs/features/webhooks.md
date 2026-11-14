@@ -23,6 +23,8 @@ SaaS 的租户常常要把你的应用接进他们自己的系统：文章发布
 <a id="example-usage"></a>
 ## 示例用法
 
+下面声明一个事件，在发布文章时发送它，并在 worker 中投递：
+
 ```go
 var Published = webhook.Event[PublishedHook]{Name: "article.published", Summary: "文章发布后推送"}
 
@@ -35,6 +37,8 @@ err := database.RunInTx(ctx, db, nil, func(ctx context.Context, tx database.Tx) 
 // worker 进程中注册投递
 webhook.NewDeliverer(db, webhook.Options{}).Handle(w)
 ```
+
+`Send` 只是登记：它在业务事务中为每个订阅了这个事件的端点写一条投递记录，事务提交之后，worker 签名并发出 HTTP 请求，失败时按退避时间重试。
 
 <a id="installation"></a>
 ## 安装
@@ -299,6 +303,18 @@ sched.Add("webhooks:cleanup", "0 4 * * *", schedule.Cleanup(webhook.Cleanup(a.db
 ## API 参考
 
 包 `github.com/go-tenon/tenon/webhook`。
+
+### Event.Send
+
+```go
+func (e Event[T]) Send(ctx context.Context, db bun.IDB, subject identity.Subject, data T) error
+```
+
+- **参数**
+    - `db`：业务事务，事务提交后才投递
+    - `subject`：发生事件的主体，按它所在的租户找到订阅了这个事件的端点
+    - `data`：事件的内容，编码为 JSON 放在请求体的 `data` 中
+- **返回**：登记失败时的错误
 
 ### Event
 

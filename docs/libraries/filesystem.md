@@ -1,6 +1,6 @@
 # 文件存储
 
-`filesystem` 用一张 `files` 表记录应用中的每个文件，文件正文保存在**磁盘**上：本地目录或 S3 兼容的对象存储。所有磁盘都通过公开地址访问，地址就是磁盘的 `public_url` 拼接对象键，读取文件不需要签名。
+文件存储负责保存用户上传的文件，例如文章的封面、头像和附件。`filesystem` 用一张 `files` 表记录应用中的每个文件，文件正文保存在**磁盘**上：本地目录或 S3 兼容的对象存储。所有磁盘都通过公开地址访问，地址就是磁盘的 `public_url` 拼接对象键，读取文件不需要签名。
 
 一个文件的生命周期是：
 
@@ -8,7 +8,7 @@
 2. **确认**：业务真正使用这个文件时（例如保存文章、更新头像）调用 `Confirm`，文件变为 `ready`。
 3. **回收**：超过 `temp_ttl` 仍未确认的文件，以及已删除的文件，由清理任务 `Cleanup` 从存储中删除。
 
-先上传、后确认，用户上传后放弃表单时，临时文件会自动回收，不会在存储中留下垃圾。
+为什么要分“上传”和“确认”两步？设想用户在编辑文章时上传了一张封面，然后放弃了编辑。如果上传即生效，这张图片就永远留在存储里，没有任何记录引用它。先上传、后确认，放弃的临时文件会被自动回收，不会在存储中留下垃圾。
 
 使用前先发布 `files` 表的迁移，见[发布框架迁移](../database/migrations.md#publishing-framework-migrations)：
 
@@ -37,6 +37,8 @@ migrationCmd.AddCommand(migratecmd.Publish(
 
 <a id="example-usage"></a>
 ## 示例用法
+
+打开磁盘，创建文件服务，然后上传并确认一个文件：
 
 ```go
 disk, err := local.Open(cfg.Filesystem.Disks.Local)
@@ -440,7 +442,11 @@ sched.Add("files:cleanup", "*/5 * * * *", schedule.Cleanup(fileService.Cleanup, 
 func New(db *bun.DB, cfg Config, disks map[string]Disk) (*Service, error)
 ```
 
-创建文件服务，`disks` 的键是磁盘名，对应配置中的磁盘。
+- **参数**
+    - `db`：保存 `files` 表的数据库
+    - `cfg`：文件存储的配置，见[配置](#configuration)
+    - `disks`：打开好的磁盘，键是磁盘名，与配置中的名字对应
+- **返回**：文件服务；配置与磁盘不一致时返回错误
 
 ### 上传与确认
 

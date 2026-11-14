@@ -1,5 +1,7 @@
 # 安装
 
+本页介绍 Tenon 是什么，然后带你创建第一个应用：用 `tenon init` 生成一个带前端的完整项目，或者从一个空目录开始，只写一个最小的 API。
+
 - [认识 Tenon](#meet-tenon)
     - [为什么选择 Tenon](#why-tenon)
 - [创建应用](#creating-an-application)

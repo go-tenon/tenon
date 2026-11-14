@@ -1,6 +1,8 @@
 # 测试：快速入门
 
-所有依赖都是显式传入的，测试中可以直接构造 API、业务动作和命令，不需要启动整个应用。Tenon 不引入额外的测试框架，直接用 Go 标准库的 `testing`、`net/http/httptest` 和 `go test`；需要真实依赖的地方（PostgreSQL、Redis）用真实的服务，每个测试一个隔离的数据库。
+Tenon 在设计时就考虑了测试。所有的依赖都是显式传入的，所以在测试中，你可以直接构造 API、业务动作和命令，而不需要启动整个应用。
+
+Tenon 不引入额外的测试框架，直接使用 Go 标准库的 `testing`、`net/http/httptest` 和 `go test` 命令。需要数据库、Redis 的地方，使用真实的服务而不是模拟：每个测试一个隔离的数据库，测试的结果和生产环境的行为一致。
 
 - [示例用法](#introduction)
 - [运行测试](#running-tests)
@@ -29,7 +31,7 @@ func TestPublish(t *testing.T) {
 }
 ```
 
-数据库测试见[数据库与业务动作](database.md)，HTTP 接口、页面和命令的测试见 [HTTP 与命令](http.md)。
+这个测试创建一篇文章再发布它，用的是真实的业务动作和真实的数据库。本页介绍运行测试、准备数据和控制时间等基础；数据库测试的细节见[数据库与业务动作](database.md)，HTTP 接口、页面和命令的测试见 [HTTP 与命令](http.md)。
 
 <a id="running-tests"></a>
 ## 运行测试

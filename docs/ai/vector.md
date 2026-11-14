@@ -24,6 +24,8 @@
 <a id="example-usage"></a>
 ## 示例用法
 
+下面创建向量存储，声明一个索引，在修改数据时同步它，然后按语义检索：
+
 ```go
 store := vector.New(db, qdrantClient, vector.Model{Name: "text-embedding-3-small", Dims: 1536, Embedder: embedder})
 
@@ -34,6 +36,8 @@ err := Chunks.Sync(ctx, tx, fileID.String())
 
 hits, err := Chunks.Search(ctx, store, vector.Query{Text: "如何退款", Limit: 5})
 ```
+
+`Sync` 在业务事务中发起同步，提交之后由 worker 重新读取数据、计算向量，写入 Qdrant。检索时，`Search` 用同一个模型把问题转换为向量，找出最接近的几段。
 
 <a id="installation"></a>
 ## 安装

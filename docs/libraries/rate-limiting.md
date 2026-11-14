@@ -1,8 +1,8 @@
 # 限流
 
-限流用来防止某个客户端或某项操作过于频繁：例如每个 IP 每秒最多 10 个请求，或者同一个邮箱每分钟最多尝试登录 5 次。
+限流用来防止某个客户端或某项操作过于频繁，例如每个 IP 每秒最多 10 个请求，或者同一个邮箱每分钟最多尝试登录 5 次。没有限流的登录接口，可以被脚本以每秒上千次的速度猜测密码；没有限流的公开接口，一个失控的客户端就能拖垮整个服务。
 
-`ratelimit` 包与传输方式无关。同一个限流器既可以作为 HTTP 中间件按请求限流，也可以在处理器、命令或任务中直接调用。
+`ratelimit` 包与传输方式无关：同一个限流器，既可以作为 HTTP 中间件按请求限流，也可以在处理器、命令或任务中直接调用。
 
 - [示例用法](#example-usage)
 - [限流器](#limiters)
@@ -16,6 +16,8 @@
 <a id="example-usage"></a>
 ## 示例用法
 
+下面限制同一个邮箱每分钟最多尝试登录 5 次：
+
 ```go
 logins := redislimit.New(rdb, "app:login", ratelimit.Config{Rate: 5, Interval: time.Minute, Burst: 5})
 
@@ -24,7 +26,9 @@ if err := logins.Allow(ctx, email); err != nil {
 }
 ```
 
-按客户端地址限制全部请求：
+超出限制时，`Allow` 返回 `ratelimit.ErrExceeded`，接口照常返回它，客户端收到 `429` 和建议的等待时间。
+
+也可以把限流器作为中间件，按客户端地址限制全部请求：
 
 ```go
 router.Use(httpx.RateLimit(redislimit.New(rdb, "app:http", cfg.HTTP.RateLimit), httpx.KeyByIP))
@@ -196,7 +200,11 @@ type Limiter interface {
 }
 ```
 
-为 `key` 消耗一次配额。配额用完时返回 `ErrExceeded`（分类 `ResourceExhausted`，带 `RetryAfter`）；存储出错时返回其他错误。
+- **参数**（`Allow`）
+    - `key`：限流的对象，例如客户端地址或邮箱
+- **返回**：配额用完时返回 `ErrExceeded`（分类 `ResourceExhausted`，带建议的等待时间，HTTP 响应 `429`）；存储出错时返回其他错误
+
+每次调用为 `key` 消耗一次配额。
 
 ### ratelimit.Config
 
@@ -220,7 +228,13 @@ func NewMemory(cfg Config) *Memory
 func New(rdb rueidis.Client, name string, cfg ratelimit.Config) *Limiter
 ```
 
-包 `github.com/go-tenon/tenon/ratelimit/redislimit`。计数保存在 Redis 中，所有实例共享；`name` 是键的前缀。
+- **参数**
+    - `rdb`：Redis 客户端
+    - `name`：限流器的名称，也是 Redis 键的前缀，例如 `app:login`
+    - `cfg`：配额，见上面的 `Config`
+- **返回**：限流器
+
+包 `github.com/go-tenon/tenon/ratelimit/redislimit`。计数保存在 Redis 中，所有实例共享。
 
 ### ratelimit.Observe
 

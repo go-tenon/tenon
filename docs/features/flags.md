@@ -25,6 +25,8 @@
 <a id="example-usage"></a>
 ## 示例用法
 
+下面声明一个开关，在代码中检查它，然后在后台把它开放给一个租户：
+
 ```go
 var NewEditor = feature.Flag{Name: "articles.new-editor", Description: "新版文章编辑器"}
 
@@ -38,6 +40,8 @@ if flags.Active(ctx, subject, NewEditor) {
 err := flags.Set(ctx, NewEditor, feature.Tenant("acme"), feature.On)
 err = flags.Set(ctx, NewEditor, feature.Everyone, feature.Percent(10))
 ```
+
+没有任何设置时，`Active` 使用开关在代码中声明的默认规则；有了设置，就按[判断顺序](#evaluation-order)决定结果。所以你可以先只给员工开启，再给几个租户试用，然后按比例放量，最后全量上线。出了问题时，把全员设为 `Off`，所有人立即关闭。
 
 <a id="installation"></a>
 ## 安装
@@ -268,4 +272,4 @@ var On, Off State
 func Percent(n int) State
 ```
 
-范围从窄到宽是主体、租户、全体，最窄的设置生效；`Off` 设在全体上是紧急关闭。见[判断的顺序](#evaluation-order)。
+全员的 `On`、`Off` 优先于一切，其次是用户、租户的单独设置，然后是全员的 `Percent(n)`，最后是默认规则，见[判断顺序](#evaluation-order)。

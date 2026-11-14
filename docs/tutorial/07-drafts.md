@@ -1,15 +1,17 @@
 # 7. 草稿与发布
 
-- [加列](#migration)
-- [谁能做什么](#rules)
-- [动作](#actions)
-- [前端](#frontend)
-
-这一章定下文章的规则：
+这是入门教程的最后一章。上一章加上了登录，但所有作者的权限都一样。这一章，我们定下文章的规则：
 
 - 每篇文章有作者，只有作者能修改、删除它；
 - 新写的文章是草稿，只有作者能看到；
 - 作者发布后，所有人都能看到。
+
+我们先给文章表加上作者和发布时间两列，再把这些规则写进业务动作，最后修改前端。
+
+- [加列](#migration)
+- [谁能做什么](#rules)
+- [动作](#actions)
+- [前端](#frontend)
 
 <a id="migration"></a>
 ## 加列
@@ -384,7 +386,7 @@ func (a *Delete) HTTP(ctx context.Context, in *IDInput) (*struct{}, error) {
 }
 ```
 
-新建 `internal/article/publish.go`，发布草稿：
+让我们新建 `internal/article/publish.go`，发布草稿：
 
 ```go title="internal/article/publish.go"
 package article
@@ -510,7 +512,7 @@ export function ArticleList({ onOpen }: { onOpen: (a: Article) => void }) {
 }
 ```
 
-新建 `frontend/src/ArticleView.tsx` 显示一篇文章：
+接着，新建 `frontend/src/ArticleView.tsx` 显示一篇文章：
 
 ```tsx title="frontend/src/ArticleView.tsx"
 import type { Article } from "./api/api"
@@ -526,7 +528,7 @@ export function ArticleView({ article }: { article: Article }) {
 }
 ```
 
-新建 `frontend/src/MyArticles.tsx`，作者在这里编辑、发布、删除：
+接着，新建 `frontend/src/MyArticles.tsx`，作者在这里编辑、发布、删除：
 
 ```tsx title="frontend/src/MyArticles.tsx"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -697,5 +699,9 @@ time {
 ```
 
 登录后写一篇文章，它出现在“我的文章”中，标着草稿，首页还看不到。点“发布”，回到首页就有了。再用 `user create` 创建第二个作者，登录后它看不到第一个作者的草稿，也改不了第一个作者的文章。
+
+恭喜你完成了入门教程！回顾一下，你已经用到了一个常规项目需要的大部分东西：配置与装配、数据库与迁移、接口与校验、业务错误与本地化、React 页面与生成的客户端、登录与授权。
+
+接下来，你可以按需阅读各个参考页：例如用[缓存](../libraries/cache.md)加快首页，用[队列](../libraries/queue.md)在发布后给订阅者发邮件，用[定时任务](../libraries/scheduling.md)定时发布文章，最后参考[部署](../installation/deployment.md)把博客上线。
 
 深入了解：[授权](../security/authorization.md)、[数据库事务](../database/quick-start.md#transactions)。

@@ -18,6 +18,8 @@ SaaS 应用通常有三类用户：
 
 前两件由框架和 [`authz`](authorization.md#roles) 完成，第三件是 [业务动作](../concepts/actions.md) 必须遵守的约定。
 
+本页从请求怎样确定租户讲起，然后依次介绍成员与角色、按租户隔离数据，以及后台任务、缓存这些容易漏掉租户的地方。
+
 - [确定租户](#identifying-tenants)
 - [成员与角色](#members)
     - [创建租户](#creating-tenants)

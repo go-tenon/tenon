@@ -24,6 +24,8 @@ App 在后台或者没有打开时，只能靠系统的推送通道把消息送�
 <a id="example-usage"></a>
 ## 示例用法
 
+下面是推送的三个环节：登记设备、发送推送、投递推送：
+
 ```go
 // App 登录后登记设备
 err := push.Register(ctx, db, sub, push.Android, token)
@@ -34,6 +36,8 @@ err = push.Send(ctx, tx, push.Message{Title: "新文章", Body: item.Title}, rec
 // worker 进程中注册投递
 push.NewDeliverer(db, provider, push.Options{}).Handle(w)
 ```
+
+App 登录之后调用你的接口登记设备；业务代码在事务中调用 `push.Send`，提交之后才真正推送；worker 中的 `Deliverer` 按平台分批调用阿里云移动推送。下面依次介绍这三个环节。
 
 <a id="installation"></a>
 ## 安装

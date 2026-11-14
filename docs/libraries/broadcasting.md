@@ -1,6 +1,8 @@
 # 广播
 
-[服务端推送](../responses/sse.md)让一个连接上的客户端收到消息。部署多个实例时，发布消息的请求和要收到消息的客户端往往在不同实例上：编辑 A 在实例 1 上发布了文章，编辑 B 的长连接在实例 2 上。`broadcast` 包负责把消息送到每个实例，再交给这个实例上订阅了它的连接。
+广播把一条消息送到每一个实例，让各个实例上订阅了它的连接都能收到。
+
+只部署一个实例时，[服务端推送](../responses/sse.md)直接把消息写给连接上的客户端就行了。但部署多个实例之后，发布消息的请求和要收到消息的客户端往往在不同实例上：编辑 A 在实例 1 上发布了文章，编辑 B 的长连接在实例 2 上。`broadcast` 包负责把消息送到每个实例，再交给这个实例上订阅了它的连接。
 
 它与传输方式无关：同一个 Hub 既可以推给 SSE 连接，也可以推给[实时频道](realtime.md)的 WebSocket 客户端。消息按主题（topic）分发，例如 `articles`、`room:42`。
 
@@ -17,6 +19,8 @@
 <a id="example-usage"></a>
 ## 示例用法
 
+下面在一个实例上订阅 `articles` 主题，在任意实例上发布：
+
 ```go
 hub := broadcast.New(redisbroadcast.New(rdb, "app:broadcast"), nil)
 defer hub.Close()
@@ -32,6 +36,8 @@ for m := range sub.C() {
     // m.Topic、m.Data
 }
 ```
+
+发布时不需要知道哪些实例上有订阅者，Hub 经由 Redis 把消息送到每个实例，再交给本实例上订阅了这个主题的连接。
 
 <a id="creating-the-hub"></a>
 ## 创建 Hub
@@ -182,7 +188,12 @@ msg := broadcasttest.Receive(t, sub)
 func New(backend Backend, logger *slog.Logger) *Hub
 ```
 
-创建 Hub，在后台开始接收消息。每个进程一个。
+- **参数**
+    - `backend`：在实例之间传递消息的后端，通常是 `redisbroadcast.New(rdb, channel)`
+    - `logger`：为 `nil` 时使用 `slog.Default()`
+- **返回**：Hub，创建后就在后台开始接收消息
+
+每个进程创建一个，所有长连接共用。
 
 ### Hub
 

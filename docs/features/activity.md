@@ -19,6 +19,8 @@
 <a id="example-usage"></a>
 ## 示例用法
 
+下面在发布文章的事务中记下一条操作日志，然后查询这篇文章的历史：
+
 ```go
 err := database.RunInTx(ctx, db, nil, func(ctx context.Context, tx database.Tx) error {
     // ... 发布文章
@@ -33,6 +35,8 @@ err := database.RunInTx(ctx, db, nil, func(ctx context.Context, tx database.Tx) 
 // 一篇文章的历史
 list, err := activity.List(ctx, db, activity.Query{TargetType: "article", TargetID: id.String()})
 ```
+
+`Record` 写入的记录与文章的修改在同一个事务中，一起提交，一起回滚。操作人、租户和请求 ID 自动取自 `subject` 和 `ctx`，你只需要说明发生了什么、对象是谁。
 
 <a id="installation"></a>
 ## 安装
@@ -175,14 +179,29 @@ sched.Add("activity:cleanup", "0 4 * * *", schedule.Cleanup(activity.Cleanup(a.d
 
 包 `github.com/go-tenon/tenon/activity`。
 
+### Record
+
 ```go
 func Record(ctx context.Context, db bun.IDB, actor identity.Subject, a Activity) error
+```
+
+- **参数**
+    - `db`：业务事务，必须与业务修改是同一个事务
+    - `actor`：操作人，租户和代为登录的人也取自它
+    - `a`：记录的内容，填写 `Event`、`TargetType`、`TargetID` 和 `Properties`
+- **返回**：写入失败时的错误
+
+请求 ID 和创建时间自动填写。
+
+### 其他函数
+
+```go
 func List(ctx context.Context, db bun.IDB, q Query) ([]Activity, error)
 func Cleanup(db bun.IDB, keep time.Duration) func(ctx context.Context, limit int) (int, error)
 func Migrations() fs.FS
 ```
 
-`Record` 写入一条记录，操作人、租户、代为登录的人和请求 ID 取自 `actor` 和 `ctx`；必须传入业务事务。`List` 按对象或操作人查询，按时间倒序。
+`List` 按对象或操作人查询，按时间倒序；`Cleanup` 删除早于 `keep` 的记录，交给定时任务。
 
 `Activity` 是 `activity_log` 表的 Bun 模型：
 

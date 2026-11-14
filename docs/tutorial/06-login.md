@@ -1,5 +1,7 @@
 # 6. 作者登录
 
+到目前为止，任何人都可以写文章。这一章，我们让作者用邮箱和密码登录，只有登录之后才能写文章。这一章的内容比较多：我们要建账号表、加一个创建账号的命令、写登录接口，最后在前端加上登录页。
+
 - [怎么登录](#how-it-works)
 - [配置](#configuration)
 - [数据表](#tables)
@@ -7,8 +9,6 @@
 - [登录接口](#auth)
 - [装配](#assembling)
 - [前端](#frontend)
-
-这一章让作者用邮箱和密码登录，登录后才能写文章。
 
 <a id="how-it-works"></a>
 ## 怎么登录
@@ -155,7 +155,7 @@ DROP TABLE users;
 <a id="users"></a>
 ## 作者账号
 
-新建 `internal/user/user.go`：
+让我们新建 `internal/user/user.go`：
 
 ```go title="internal/user/user.go"
 // Package user 是博客的作者账号。邮箱和密码保存在 login 的表中，users 表只有业务字段。
@@ -375,7 +375,7 @@ func Register(api *rest.API, requireUser func(*huma.Operation), db *bun.DB) {
 <a id="auth"></a>
 ## 登录接口
 
-新建 `internal/auth/auth.go`，提供登录、刷新和退出：
+接着，新建 `internal/auth/auth.go`，提供登录、刷新和退出：
 
 ```go title="internal/auth/auth.go"
 // Package auth 是登录、刷新和登出的接口。
@@ -746,7 +746,7 @@ go run ./cmd/api user create --name 小明 --email ming@example.com --password s
 <a id="frontend"></a>
 ## 前端
 
-把 `frontend/src/client.ts` 改成下面这样。客户端自己保管 access token，请求时带上它；接口返回 `401` 时调用一次 `refresh` 换新的，再重试原来的请求：
+现在，把 `frontend/src/client.ts` 改成下面这样。客户端自己保管 access token，请求时带上它；接口返回 `401` 时调用一次 `refresh` 换新的，再重试原来的请求：
 
 ```ts title="frontend/src/client.ts"
 import { QueryClient } from "@tanstack/react-query"
@@ -788,7 +788,7 @@ createRoot(document.getElementById("root")!).render(
 )
 ```
 
-新建 `frontend/src/session.ts`，`useMe` 是当前登录的作者，没有登录时为 `null`：
+接着，新建 `frontend/src/session.ts`，`useMe` 是当前登录的作者，没有登录时为 `null`：
 
 ```ts title="frontend/src/session.ts"
 import { useQuery } from "@tanstack/react-query"
@@ -940,6 +940,6 @@ export function ArticleList({ onEdit }: { onEdit?: (a: Article) => void }) {
 
 打开 http://localhost:8080，用刚才创建的账号登录，写一篇文章。刷新页面，仍然是登录状态：页面用 cookie 换到了新的 access token。退出后，编辑按钮消失了。
 
-现在任何作者都能修改别人的文章，所有文章写完就公开。下一章加上作者和草稿。
+作者现在可以登录了。不过，任何作者都能修改别人的文章，所有文章写完就立即公开。下一章，我们给文章加上作者和草稿。
 
 深入了解：[登录与注册](../security/login.md)、[API 令牌](../security/api-tokens.md)、[认证](../security/authentication.md)、[命令行](../general/commands.md)。

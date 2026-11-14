@@ -26,6 +26,8 @@
 <a id="example-usage"></a>
 ## 示例用法
 
+下面创建 Google 登录的提供方，开始登录，在回调中取得 Google 确认过的账号：
+
 ```go
 google, err := oauth.Discover(ctx, oauth.Config{
     Provider:     "google",
@@ -42,6 +44,8 @@ authURL, flow := google.Start()
 ext, err := google.Finish(ctx, flow, r.URL.Query())
 out, err := users.External(ctx, ext)
 ```
+
+`Start` 返回跳转到 Google 的地址；用户在 Google 登录并同意之后，浏览器回到你的回调地址，`Finish` 校验回调并取得账号。`users.External` 把这个账号当作一种登录标识：已经绑定过就直接登录，还没有就返回注册凭证。
 
 <a id="providers"></a>
 ## 提供方

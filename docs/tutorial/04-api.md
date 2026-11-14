@@ -1,12 +1,12 @@
 # 4. 文章接口
 
+有了文章表，现在可以写接口了。这一章，我们为文章写五个接口：列表、读取、新建、修改和删除。在这个过程中，你会写出第一个业务动作，并看到 Tenon 怎样验证输入、返回业务错误。
+
 - [模型](#model)
 - [动作](#actions)
 - [注册路由](#routes)
 - [错误提示](#messages)
 - [试一试](#trying)
-
-这一章为文章写五个接口：列表、读取、新建、修改、删除。
 
 <a id="model"></a>
 ## 模型
@@ -281,7 +281,7 @@ func (a *Delete) HTTP(ctx context.Context, in *IDInput) (*struct{}, error) {
 <a id="routes"></a>
 ## 注册路由
 
-新建 `internal/article/routes.go`，把各个动作注册为接口：
+让我们新建 `internal/article/routes.go`，把各个动作注册为接口：
 
 ```go title="internal/article/routes.go"
 package article
@@ -445,6 +445,8 @@ curl -X POST localhost:8080/api/articles -H 'Content-Type: application/json' \
   {"message":"不能为空","location":"body.title","value":"","code":"validation.filled"}]}
 ```
 
-这时首页还在调用已经删除的待办接口，下一章把它换成文章页面。
+到这里，文章的五个接口都可以用了：提交的数据会被验证，找不到文章时返回带错误码的 `404`，错误提示是中文的。
+
+不过，首页还在调用已经删除的待办接口。下一章，我们把它换成文章页面。
 
 深入了解：[路由](../http/routing.md)、[验证](../http/validation.md)、[响应](../responses/responses.md)、[错误处理](../general/errors.md)、[业务动作](../concepts/actions.md)、[本地化](../general/localization.md)。

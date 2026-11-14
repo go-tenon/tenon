@@ -1,5 +1,7 @@
 # 5. 文章页面
 
+上一章的接口已经可以在 `/api/docs` 中调用了，但用户需要的是页面。这一章，我们用 React 和 TanStack Query 写文章列表和编辑器。你会看到，前端调用接口的代码和类型都不需要手写。
+
 - [生成的客户端](#client)
 - [文章列表](#list)
 - [编辑器](#editor)
@@ -63,7 +65,7 @@ export function ArticleList({ onEdit }: { onEdit: (a: Article) => void }) {
 <a id="editor"></a>
 ## 编辑器
 
-新建 `frontend/src/ArticleEditor.tsx`，新建和修改文章共用它：
+让我们新建 `frontend/src/ArticleEditor.tsx`，新建和修改文章共用它：
 
 ```tsx title="frontend/src/ArticleEditor.tsx"
 import { useState, type FormEvent } from "react"
@@ -135,7 +137,7 @@ export function ArticleEditor({ article, onDone }: { article?: Article; onDone: 
 <a id="app"></a>
 ## 页面
 
-把 `frontend/src/App.tsx` 改成下面这样，在列表和编辑器之间切换：
+现在，把 `frontend/src/App.tsx` 改成下面这样，在列表和编辑器之间切换：
 
 ```tsx title="frontend/src/App.tsx"
 import { useState } from "react"
@@ -220,6 +222,6 @@ button + button {
 
 打开 http://localhost:8080，写一篇文章，再修改、删除它。试试提交空标题，或者两篇文章用同一个 slug。
 
-现在谁都可以写文章、删文章。下一章加上作者登录。
+现在博客有了可以使用的页面，但谁都可以写文章、删文章。下一章，我们加上作者登录。
 
 深入了解：[客户端代码](../responses/clients.md)、[单页应用](../responses/spa.md)。

@@ -22,6 +22,8 @@
 <a id="example-usage"></a>
 ## 示例用法
 
+下面把一份 PDF 转换为 Markdown，再切分成段：
+
 ```go
 registry := all.New(all.Options{})
 format, ok := convert.FormatOf("manual.pdf")
@@ -41,6 +43,8 @@ for _, c := range splitter.Split(doc.Markdown) {
     // c.Text 是一个分段，c.Headings 是它所在的各级标题
 }
 ```
+
+转换和切分都不访问模型，也不需要网络。得到的分段通常交给[向量检索](vector.md)计算向量，每一段都记着它在原文中的位置和所在的标题，回答问题时可以引用出处。
 
 <a id="converting"></a>
 ## 转换文档

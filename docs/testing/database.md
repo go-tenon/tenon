@@ -1,6 +1,6 @@
 # 测试：数据库与业务动作
 
-测试数据库代码时，最可靠的方式是用与生产相同的 PostgreSQL。`dbtest.Open` 为**每个测试**创建一个独立的临时数据库，执行迁移，测试结束时删除，测试之间互不干扰，可以并行运行。业务规则直接调用业务动作的 `Handle` 测试。
+测试数据库代码时，你可能会想模拟数据库。但模拟的数据库永远不会像真的那样报出唯一约束冲突、死锁或者类型错误。最可靠的方式，是使用与生产相同的 PostgreSQL。`dbtest.Open` 为**每个测试**创建一个独立的临时数据库，执行迁移，测试结束时删除，测试之间互不干扰，可以并行运行。业务规则直接调用业务动作的 `Handle` 测试。
 
 - [数据库测试](#database-tests)
     - [创建测试数据库](#creating-test-databases)
@@ -189,7 +189,16 @@ func TestPublishCommand(t *testing.T) {
 func Open(t testing.TB, migrations fs.FS) *bun.DB
 ```
 
-创建临时数据库，执行 `migrations`（为 `nil` 时是空数据库），测试结束时删除。管理员连接取自 `POSTGRES_TEST_URL`，没有设置时测试失败。
+- **参数**
+    - `t`：当前测试，测试结束时删除数据库
+    - `migrations`：要执行的迁移，为 `nil` 时是一个空数据库
+- **返回**：已经执行了迁移的临时数据库
+
+管理员连接取自环境变量 `POSTGRES_TEST_URL`，没有设置时测试失败，而不是被跳过。
+
+```go
+db := dbtest.Open(t, migrations.FS)
+```
 
 ### Replica
 

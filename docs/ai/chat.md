@@ -38,6 +38,8 @@ agent 本身由 [trpc-agent-go](https://github.com/trpc-group/trpc-agent-go) 提
 <a id="example-usage"></a>
 ## 示例用法
 
+下面创建一个写作助手，在接口中开始一次回答，并把生成过程流式推给前端：
+
 ```go
 agent := llmagent.New("writer",
     llmagent.WithModel(chat.NewModel(cfg.AI)),
@@ -55,6 +57,8 @@ return chat.UIStream(run), nil
 ```
 
 回答在后台运行，页面刷新或断线后用 `chat.UIResume` 接着读；需要审批的工具调用先暂停，等用户批准。
+
+`Submit` 在后台开始一次运行就返回，回答的内容通过 `UIStream` 以 Vercel AI SDK 的协议推给前端。即使用户刷新了页面，生成过程也不受影响，用 `UIResume` 就能接着读到剩余的内容。下面先准备数据表，再逐步介绍装配、对话接口和审批。
 
 <a id="preparing-tables"></a>
 ## 准备数据表

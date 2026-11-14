@@ -29,6 +29,8 @@
 <a id="example-usage"></a>
 ## 示例用法
 
+下面创建一个 MCP 服务，把“发布文章”登记为工具，并挂载到 `/mcp`：
+
 ```go
 srv := mcpx.New(mcpx.Options{Name: "app", Instructions: "文章管理。"})
 
@@ -43,6 +45,8 @@ router.Handle("/mcp", mcpx.Handler(srv, mcpx.HandlerOptions{
     Accounts: identity.Accounts{user.Type: nil},
 }))
 ```
+
+AI 客户端连接 `/mcp` 时带着 Bearer 令牌。`mcpx` 按令牌找到调用者，只列出它有权限使用的工具；调用 `article_publish` 时，参数按 `PublishArgs` 的标签校验，然后交给业务动作的 `Tool` 方法。
 
 <a id="writing-tools"></a>
 ## 编写工具
