@@ -1,6 +1,8 @@
 # 数据库：迁移
 
-迁移是数据库的版本控制：记录表结构的每一次变化，让每个开发者和部署环境都能升级到相同的结构。Tenon 用 [goose](https://github.com/pressly/goose) 管理迁移。迁移是应用目录中的普通 SQL 文件，嵌入二进制，在发布时通过命令显式执行——服务启动时**不会**自动执行迁移。
+迁移就像是数据库的版本控制：它记录了表结构的每一次变化，让团队中的每个人、每个部署环境都能把数据库升级到相同的结构。
+
+Tenon 使用 [goose](https://github.com/pressly/goose) 管理迁移。迁移是应用目录中的普通 SQL 文件，它们被嵌入到二进制中，在发布时通过命令**显式**执行。服务启动时**不会**自动执行迁移：多个实例同时启动时，谁来执行迁移、执行失败了怎么办，都是难以回答的问题，把迁移作为发布的一个独立步骤要简单得多。
 
 - [示例用法](#introduction)
 - [编写迁移](#writing-migrations)
@@ -20,11 +22,15 @@
 <a id="introduction"></a>
 ## 示例用法
 
+用 `migrate make` 新建一个迁移：
+
 ```bash
 go run ./cmd/api migrate make create_articles_table   # 新建 migrations/20261113080000_create_articles_table.sql
 go run ./cmd/api migrate up                            # 执行全部未执行的迁移
 go run ./cmd/api migrate status
 ```
+
+在生成的文件中写上建表和回滚的 SQL：
 
 ```sql
 -- +goose Up
@@ -37,6 +43,8 @@ CREATE TABLE articles (
 -- +goose Down
 DROP TABLE articles;
 ```
+
+`migrate up` 执行全部还没有执行过的迁移，`migrate status` 列出每个迁移的状态。下面详细介绍怎样编写、嵌入和运行迁移。
 
 <a id="writing-migrations"></a>
 ## 编写迁移
@@ -63,6 +71,8 @@ go run ./cmd/api migrate make create_articles_table
 ### 迁移文件结构
 
 每个迁移文件包含两部分：`Up` 描述如何应用这次变更，`Down` 描述如何撤销它。下面是补全后的 `create_articles_table`：
+
+在生成的文件中写上建表和回滚的 SQL：
 
 ```sql
 -- +goose Up

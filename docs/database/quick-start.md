@@ -1,6 +1,8 @@
 # 数据库：快速入门
 
-Tenon 只支持 PostgreSQL，使用 [pgx](https://github.com/jackc/pgx) 驱动和 [Bun](https://bun.uptrace.dev) 构建查询，迁移用 [goose](https://github.com/pressly/goose)，见[迁移](migrations.md)。`database` 包打开一个配置好的连接池（[pgxpool](https://pkg.go.dev/github.com/jackc/pgx/v5/pgxpool)），返回原生的 `*bun.DB`；查询、事务都直接用 Bun 的 API，见 [Bun 文档](https://bun.uptrace.dev/guide/)。`database` 另外提供事务提交后的回调、约束错误的判断和慢查询日志。
+几乎每个 API 都需要与数据库交互。Tenon 只支持 PostgreSQL，并使用社区中成熟的组件：[pgx](https://github.com/jackc/pgx) 是驱动，[Bun](https://bun.uptrace.dev) 负责构建查询和映射模型，[goose](https://github.com/pressly/goose) 管理迁移（见[迁移](migrations.md)）。
+
+`database` 包只负责打开一个配置好的连接池（[pgxpool](https://pkg.go.dev/github.com/jackc/pgx/v5/pgxpool)），返回原生的 `*bun.DB`。之后的查询、事务都直接使用 Bun 的 API，你随时可以参考 [Bun 的文档](https://bun.uptrace.dev/guide/)。在此之上，`database` 另外提供几样 Bun 没有的东西：事务提交后的回调、约束错误的判断，以及慢查询日志。
 
 - [示例用法](#introduction)
 - [配置](#configuration)
@@ -25,6 +27,8 @@ Tenon 只支持 PostgreSQL，使用 [pgx](https://github.com/jackc/pgx) 驱动�
 <a id="introduction"></a>
 ## 示例用法
 
+打开连接池，然后用 Bun 查询：
+
 ```go
 db, err := database.Open(ctx, cfg.Database)
 if err != nil {
@@ -40,7 +44,7 @@ err = db.NewSelect().Model(&items).
     Scan(ctx)
 ```
 
-在事务中修改，提交之后再做不能回滚的事：
+修改数据时使用事务。像下面这样，在事务中更新文章，并登记一个提交之后才执行的广播：
 
 ```go
 err := database.RunInTx(ctx, db, nil, func(ctx context.Context, tx database.Tx) error {
@@ -53,6 +57,8 @@ err := database.RunInTx(ctx, db, nil, func(ctx context.Context, tx database.Tx) 
     return nil
 })
 ```
+
+如果事务回滚了，广播就不会发出，浏览器也就不会收到一条随后被撤销的通知。下面几节依次介绍配置、模型、查询和事务的细节。
 
 <a id="configuration"></a>
 ## 配置
@@ -489,7 +495,12 @@ mig.AddCommand(migratecmd.New(analyticsmigrations.FS, func(c Config) database.Co
 func Open(ctx context.Context, cfg Config, opts ...Option) (*bun.DB, error)
 ```
 
-创建连接池并 Ping，失败时关闭已打开的资源，Ping 失败返回 `ErrUnavailable`。
+- **参数**
+    - `cfg`：数据库配置，见[配置](#configuration)
+    - `opts`：可选的设置，见下面的 `Option`
+- **返回**：Bun 的数据库对象；连不上数据库时返回 `ErrUnavailable`
+
+创建连接池并立即 Ping 数据库，失败时关闭已经打开的资源。
 
 ### Option
 
@@ -516,7 +527,13 @@ func DefaultConfig() Config
 func RunInTx(ctx context.Context, db bun.IDB, opts *sql.TxOptions, fn func(ctx context.Context, tx Tx) error) error
 ```
 
-在事务中执行 `fn`：返回错误时回滚，返回 `nil` 时提交，然后执行 `AfterCommit` 登记的回调。`db` 是外层 `RunInTx` 的 `Tx` 时以保存点执行，回调等外层事务提交后才执行，此时 `opts` 必须为 `nil`。
+- **参数**
+    - `db`：连接池，或者外层 `RunInTx` 的 `Tx`
+    - `opts`：隔离级别等事务选项，不需要时传 `nil`
+    - `fn`：在事务中执行的函数
+- **返回**：`fn` 返回的错误，或者提交失败的错误
+
+`fn` 返回错误时回滚，返回 `nil` 时提交，然后执行 `AfterCommit` 登记的回调。`db` 是外层 `RunInTx` 的 `Tx` 时，以保存点执行，登记的回调等外层事务提交之后才执行，此时 `opts` 必须为 `nil`。
 
 ### Tx.AfterCommit
 
