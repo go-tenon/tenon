@@ -9,6 +9,8 @@
     - [不使用的库](#not-used)
 - [目录结构](#layout)
     - [仓库](#repository)
+    - [分层规则](#layering)
+    - [架构决策记录](#adr)
     - [一个前端的内部](#frontend-layout)
     - [命名](#naming)
 - [编码规范](#conventions)
@@ -92,34 +94,68 @@
 <a id="repository"></a>
 ### 仓库
 
-Go 模块和 Bun workspace 都在仓库根目录。只有一个前端的项目用 `frontend/` 目录，结构与 `tenon init` 生成的一致；有多个前端时用下面的结构：
+仓库分三部分：根目录是 Go 后端，`apps/` 是各个端，`packages/` 是多个端共用的 TypeScript 包。只有一个前端的项目用 `frontend/` 目录，结构与 `tenon init` 生成的一致；有多个前端时用下面的结构：
 
 ```text
 helpdesk/
 ├── go.mod                 用 ignore 指令排除 node_modules
+├── cmd/                   后端：Tenon 约定的目录
+├── internal/
+├── config/
 ├── package.json           Bun workspace（apps/*、packages/*）；dev、build、generate 脚本
 ├── bun.lock
 ├── biome.json
 ├── tenon.json
-├── AGENTS.md              各个前端的用户、组件库、挂载路径和调用的 API
+├── AGENTS.md              各个端的用户、技术栈、挂载路径和调用的 API
 ├── .mcp.json
-├── cmd/
-├── internal/
-├── config/
-├── apps/
+├── apps/                  每个端一个目录
 │   ├── admin/             运营后台（antd）
 │   ├── console/           租户控制台（shadcn）
 │   └── widget/            访客端（shadcn）
-└── packages/
-    ├── api-admin/         生成的客户端，对应一个 API 的 BasePath
-    ├── api-v1/
-    └── ui/                多个 shadcn 前端共用的组件
+├── packages/              多个端共用的包
+│   ├── client/            生成的客户端和不依赖 DOM 的共用逻辑
+│   ├── ui/                多个 shadcn 端共用的组件
+│   ├── tokens/            颜色、圆角、字体等设计值
+│   └── i18n/              前端文案
+└── docs/
+    └── adr/               架构决策记录
 ```
 
-- 每个前端是 `apps/` 下的一个目录，有自己的 `package.json`、`vite.config.ts`、`AGENTS.md`，以及嵌入自己 `dist` 的 `frontend.go`。
-- 每个 API（`rest.New` 的一个 `BasePath`）生成一个客户端包，放在 `packages/api-<名称>`。前端只依赖自己调用的 API 的包。
-- 只有一个 shadcn 前端时，组件放在这个前端自己的 `src/components/ui` 中；有多个时放到 `packages/ui`，用 shadcn 的 monorepo 结构管理。
+- 每个端是 `apps/` 下的一个目录。网页端有自己的 `package.json`、`vite.config.ts`、`AGENTS.md`，以及嵌入自己 `dist` 的 `frontend.go`。
+- `packages/` 中的包在有两个以上的端使用时才建立。`client` 从第一个前端起就有；`ui` 在第二个 shadcn 端出现时从前端中抽出；`tokens`、`i18n` 在需要跨端统一设计值或支持多语言时建立。
 - 框架工具（`tenon.json`、`tenon dev`、`tenon build`、`tenon generate`）需要支持多个前端和多个 API，这部分单独开 PR 实现。
+
+`packages/client` 的结构：
+
+```text
+packages/client/src/
+├── api/
+│   ├── admin/             生成的 /api/admin 客户端
+│   └── v1/                生成的 /api/v1 客户端
+├── session.ts             令牌的保存与刷新，存储由调用方传入
+├── errors.ts              接口错误的类型与判断
+├── pagination.ts          page、per_page 与表格状态的转换
+└── index.ts
+```
+
+每个 API（`rest.New` 的一个 `BasePath`）生成到 `api/<名称>`，通过子路径导出（`@helpdesk/client/api/admin`）。一个端只导入自己调用的 API。
+
+<a id="layering"></a>
+### 分层规则
+
+| 层 | 可以依赖 | 不可以依赖 |
+| --- | --- | --- |
+| `apps/*` | `packages/*` | 其他 `apps/*` |
+| `packages/ui` | `packages/tokens`、`packages/i18n` | `packages/client`、任何 `apps/*` |
+| `packages/client` | React、TanStack Query、`packages/i18n` | DOM 与浏览器 API（`window`、`document`、`localStorage`）、`react-dom`、`packages/ui`、任何组件库 |
+| `packages/tokens`、`packages/i18n` | 无 | 其他任何包 |
+
+平台相关的能力（存储、跳转、WebSocket 的创建）由端在创建时传给 `client`。规则用 Biome 的 `noRestrictedImports`、`noRestrictedGlobals` 和一个检查导入关系的测试强制执行。
+
+<a id="adr"></a>
+### 架构决策记录
+
+影响多个端或难以撤回的决定写在 `docs/adr/NNNN-<标题>.md` 中：背景、决定、后果、状态。新的决定推翻旧的决定时，旧记录标注被哪一份取代，不删除。引入表外的库、增加一个端、选择桌面端或移动端的技术，都先写一份决策记录。
 
 <a id="frontend-layout"></a>
 ### 一个前端的内部
@@ -158,7 +194,7 @@ apps/admin/
 | --- | --- | --- |
 | 前端目录 | 按使用的人命名，小写 | `admin`、`console`、`widget` |
 | 前端的包名 | `@<项目名>/<前端目录>` | `@helpdesk/admin` |
-| 客户端包 | `@<项目名>/api-<名称>` | `@helpdesk/api-admin` |
+| 共用包 | `@<项目名>/<包目录>` | `@helpdesk/client`、`@helpdesk/ui` |
 | 文件 | kebab-case | `user-list-page.tsx` |
 | 组件 | PascalCase，一个文件导出一个页面级组件 | `UserListPage` |
 | hooks | `use` 开头的 camelCase | `useCurrentUser` |
@@ -178,8 +214,8 @@ apps/admin/
 <a id="data"></a>
 ### 接口与服务端数据
 
-- 所有请求都通过生成的客户端发出，不手写接口的类型和地址。修改接口后由 `tenon dev` 或 `tenon generate` 重新生成。
-- 每个领域的 query key 和请求函数集中在 `features/<领域>/queries.ts`，用 `queryOptions` 定义，页面和路由预加载复用同一份。
+- 所有请求都通过 `@<项目名>/client` 中生成的客户端发出，不手写接口的类型和地址。修改接口后由 `tenon dev` 或 `tenon generate` 重新生成。
+- 每个领域的 query key 和请求函数集中在 `features/<领域>/queries.ts`，用 `queryOptions` 定义，页面和路由预加载复用同一份。有第二个端调用同一组接口时，把它移到 `packages/client`。
 - 修改数据后，让相关的查询失效，不手动修改缓存，除非是有意的乐观更新。
 - 接口错误用生成客户端的 `isApiError` 判断：校验错误按 `errors[].location` 显示在对应字段旁；业务错误按 `code` 处理；401 统一跳转登录。
 - 列表使用服务端分页，参数为 `page`、`per_page`，见[分页](../docs/responses/responses.md#pagination)。
@@ -217,7 +253,7 @@ apps/admin/
 
 | 代码 | 来源 | 是否提交 |
 | --- | --- | --- |
-| `packages/api-*`（或单前端的 `src/api`） | `tenon generate` | 提交，CI 重新生成后检查差异 |
+| `packages/client/src/api/*`（或单前端的 `src/api`） | `tenon generate` | 提交，CI 重新生成后检查差异 |
 | `routeTree.gen.ts` | TanStack Router 的 Vite 插件 | 不提交，开发和构建时生成 |
 | `components/ui` | shadcn CLI 添加，之后由项目维护 | 提交 |
 
@@ -242,11 +278,9 @@ apps/admin/
 <a id="future-clients"></a>
 ## 以后增加的端
 
-桌面端、移动端和其他新的端同样放在 `apps/` 中。为了以后选择原生或跨平台方案时不需要改后端，现在遵守：
+桌面端、移动端的技术尚未确定，在第一个需要它们的产品中写决策记录选择。无论选择什么，它们都放在 `apps/` 中（如 `apps/desktop`、`apps/mobile`），并遵守：
 
 1. 业务规则、权限和校验都在 Go 中，所有端都只是 API 的调用方。
 2. 每个 API 的 OpenAPI 文档提交到仓库，不兼容的修改通过新的 `BasePath` 发布。
-3. 生成的客户端包和与界面无关的工具函数不依赖 DOM 和浏览器 API。
+3. 共用逻辑，不共用界面。TypeScript 的端（如 React Native、Tauri）直接使用 `packages/client`、`tokens`、`i18n`；其他语言的端（如 Flutter、原生、Wails 中的 Go）从 OpenAPI 生成自己的客户端，设计值从 `packages/tokens` 生成。
 4. App 从第一个版本起发送 [`X-App-Version`](../docs/responses/clients.md#app-version)。
-
-具体的方案在第一个需要它的产品中选择，届时再补充到本文。
