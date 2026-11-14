@@ -99,16 +99,16 @@ import (
     "github.com/go-tenon/tenon/httpx"
 )
 
-// Config 是应用的配置：config/app.yaml，开发时再叠加 config/local.yaml。
+// Config 是应用的配置：config/app.yaml。
 type Config struct {
     HTTP     httpx.Config    `yaml:"http"`
     Database database.Config `yaml:"database"`
-    // FrontendDevServer 非空时把页面请求转给 Vite 的开发服务器，只在 config/local.yaml 中设置。
-    FrontendDevServer string `yaml:"frontend_dev_server"`
+    // DevServers 是各前端开发服务器的地址，只在 tenon dev 时有值。
+    DevServers map[string]string `yaml:"dev_servers"`
 }
 ```
 
-`httpx.Config`、`database.Config` 是框架定义的配置段，没有写的字段使用默认值，例如数据库的连接池大小。加载时会检查配置：缺少必填项、写错字段名都会在启动时报错，并指出是哪一项。`config/local.yaml` 只在开发时叠加在 `app.yaml` 之上，它设置的 `frontend_dev_server` 对应 `FrontendDevServer`。
+`httpx.Config`、`database.Config` 是框架定义的配置段，没有写的字段使用默认值，例如数据库的连接池大小。加载时会检查配置：缺少必填项、写错字段名都会在启动时报错，并指出是哪一项。`DevServers` 由 `tenon dev` 填写：它把各前端开发服务器的地址写入 `.tenon/dev.yaml`，叠加在 `app.yaml` 之上，`httpx.SPA` 把页面请求转给对应的开发服务器。
 
 <a id="assembling"></a>
 ## 装配应用
@@ -204,7 +204,7 @@ import (
     "github.com/go-tenon/tenon/httpx"
     "github.com/go-tenon/tenon/httpx/rest"
 
-    "example.com/blog/frontend"
+    "example.com/blog/apps/web"
     "example.com/blog/internal/todo"
 )
 
@@ -238,7 +238,7 @@ func (a *App) Router(draining *httpx.Draining) chi.Router {
         api := rest.New(r, rest.Options{Title: "Blog API", Version: "1.0.0", BasePath: "/api"})
         todo.Register(api, todo.NewStore())
     })
-    router.Handle("/*", httpx.NewSPA(frontend.Dist, httpx.SPAOptions{DevServer: a.cfg.FrontendDevServer}))
+    router.Handle("/*", httpx.NewSPA(web.Dist, httpx.SPAOptions{DevServer: a.cfg.DevServers["web"]}))
     return router
 }
 

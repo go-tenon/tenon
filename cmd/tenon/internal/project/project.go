@@ -1,4 +1,4 @@
-// Package project 读取项目根目录的 tenon.json，补上约定的默认值。
+// Package project 读取项目根目录的 tenon.json，补上约定的默认值，并发现项目中的前端。
 package project
 
 import (
@@ -10,11 +10,28 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 )
 
 // File 是项目配置文件的名字。
 const File = "tenon.json"
+
+// AppsDir 是前端所在的目录：其中每个带 vite.config 的子目录是一个前端，子目录名是前端的名称。
+const AppsDir = "apps"
+
+// ClientDir 是共用的客户端包；有它的 package.json 时，每个 API 的 TypeScript 客户端生成到 ClientSrc/<名称>。
+const (
+	ClientDir = "packages/client"
+	ClientSrc = ClientDir + "/src"
+)
+
+// viteConfigs 是 Vite 配置文件的名字，有其中之一的目录是一个前端。
+var viteConfigs = []string{"vite.config.ts", "vite.config.mts", "vite.config.js", "vite.config.mjs"}
+
+// Name 是前端和 API 客户端的名称：小写字母开头，由小写字母、数字和连字符组成。
+var Name = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 
 // Config 是 tenon.json。所有字段都可以省略，Load 按约定补上默认值。
 type Config struct {
@@ -26,32 +43,35 @@ type Config struct {
 	Serve []string `json:"serve,omitempty"`
 	// URL 是应用的地址，dev 打印它，templ 的代理访问它，默认 http://localhost:8080。
 	URL string `json:"url,omitempty"`
-	// Frontend 是单页应用；项目中有 frontend/index.html 时默认启用。
-	Frontend *Frontend `json:"frontend,omitempty"`
-	// Generate 是每次重新编译成功后生成的客户端。
-	Generate *Generate `json:"generate,omitempty"`
+	// APIs 按 BasePath 覆盖 API 客户端的约定，例如改名或生成 Go 客户端。没有写的 API 按约定生成。
+	APIs map[string]*API `json:"apis,omitempty"`
 	// Templ 是服务端渲染的页面；项目中有 .templ 文件时默认启用。
 	Templ *Templ `json:"templ,omitempty"`
 	// Tailwind 是用 Tailwind 生成的样式表，可空。
 	Tailwind *Tailwind `json:"tailwind,omitempty"`
 	// Tools 是与应用一起运行的其他工具，可空。
 	Tools []Tool `json:"tools,omitempty"`
+
+	// Frontends 是 apps 中的前端，按名称排序。由 Load 从目录中发现，不在 tenon.json 中。
+	Frontends []Frontend `json:"-"`
+	// Client 报告项目中是否有共用的客户端包 packages/client。由 Load 发现，不在 tenon.json 中。
+	Client bool `json:"-"`
 }
 
-// Frontend 是 Vite 项目。
-type Frontend struct {
-	// Dir 是前端源码的目录，其中有 index.html 和 frontend.go（go:embed dist），默认 frontend。
-	Dir string `json:"dir,omitempty"`
-	// DevURL 是 Vite 开发服务器的地址，默认 http://localhost:5173。dev 等它能访问后再启动应用。
-	DevURL string `json:"devUrl,omitempty"`
-}
-
-// Generate 配置生成的客户端，设置了目录才生成。
-type Generate struct {
-	// TS 是 TypeScript 客户端的目录；有前端时默认 <frontend.dir>/src/api，"-" 表示跳过。
-	TS string `json:"ts,omitempty"`
+// API 覆盖一个 API 客户端的约定。
+type API struct {
+	// Name 是 TypeScript 客户端的目录名，默认是 BasePath 的最后一段，例如 /api/admin 是 admin。
+	Name string `json:"name,omitempty"`
 	// Go 是 Go 客户端的目录，例如 ../api，设置后才生成。
 	Go string `json:"go,omitempty"`
+}
+
+// Frontend 是一个 Vite 项目。
+type Frontend struct {
+	// Name 是前端的名称，即 apps 中的目录名。应用按它取开发服务器的地址。
+	Name string
+	// Dir 是前端的目录，例如 apps/web，其中有 frontend.go（go:embed dist）。
+	Dir string
 }
 
 // Templ 配置服务端渲染页面的开发。
@@ -74,7 +94,7 @@ type Tool struct {
 	Build []string `json:"build,omitempty"`
 }
 
-// Load 读取 dir 中的 tenon.json（缺省时全部用默认值），补上默认值并检查。
+// Load 读取 dir 中的 tenon.json（缺省时全部用默认值），补上默认值、发现前端并检查。
 func Load(dir string) (*Config, error) {
 	cfg := &Config{}
 	data, err := os.ReadFile(filepath.Join(dir, File))
@@ -90,20 +110,19 @@ func Load(dir string) (*Config, error) {
 		}
 	}
 	cfg.defaults(dir)
+	if err := cfg.discover(dir); err != nil {
+		return nil, err
+	}
 	return cfg, cfg.check()
 }
 
 func (c *Config) defaults(dir string) {
-	exists := func(p string) bool {
-		_, err := os.Stat(filepath.Join(dir, filepath.FromSlash(p)))
-		return err == nil
-	}
 	if c.Main == "" {
 		c.Main = "./cmd/api"
 	}
 	if c.Serve == nil {
 		configs := "config/app.yaml"
-		if exists("config/local.yaml") {
+		if exists(dir, "config/local.yaml") {
 			configs += ",config/local.yaml"
 		}
 		c.Serve = []string{"serve", "--config", configs}
@@ -111,32 +130,35 @@ func (c *Config) defaults(dir string) {
 	if c.URL == "" {
 		c.URL = "http://localhost:8080"
 	}
-	if c.Frontend == nil && exists("frontend/index.html") {
-		c.Frontend = &Frontend{}
-	}
-	if f := c.Frontend; f != nil {
-		if f.Dir == "" {
-			f.Dir = "frontend"
-		}
-		if f.DevURL == "" {
-			f.DevURL = "http://localhost:5173"
-		}
-	}
-	if c.Generate == nil {
-		c.Generate = &Generate{}
-	}
-	switch {
-	case c.Generate.TS == "-":
-		c.Generate.TS = ""
-	case c.Generate.TS == "" && c.Frontend != nil:
-		c.Generate.TS = path.Join(c.Frontend.Dir, "src", "api")
-	}
 	if c.Templ == nil && hasTempl(dir) {
 		c.Templ = &Templ{}
 	}
 	if c.Templ != nil && c.Templ.ProxyPort == 0 {
 		c.Templ.ProxyPort = 7331
 	}
+}
+
+// discover 找出 apps 中的前端和共用的客户端包。
+func (c *Config) discover(dir string) error {
+	entries, err := os.ReadDir(filepath.Join(dir, AppsDir))
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	for _, e := range entries {
+		if !e.IsDir() || SkipDir(e.Name()) {
+			continue
+		}
+		fdir := path.Join(AppsDir, e.Name())
+		if !slices.ContainsFunc(viteConfigs, func(f string) bool { return exists(dir, path.Join(fdir, f)) }) {
+			continue
+		}
+		if !Name.MatchString(e.Name()) {
+			return fmt.Errorf("%s: frontend name %q must match %s", fdir, e.Name(), Name)
+		}
+		c.Frontends = append(c.Frontends, Frontend{Name: e.Name(), Dir: fdir})
+	}
+	c.Client = exists(dir, path.Join(ClientDir, "package.json"))
+	return nil
 }
 
 func (c *Config) check() error {
@@ -151,12 +173,33 @@ func (c *Config) check() error {
 	if !strings.HasPrefix(c.URL, "http://") && !strings.HasPrefix(c.URL, "https://") {
 		return fmt.Errorf("%s: url %q must start with http:// or https://", File, c.URL)
 	}
+	for base, api := range c.APIs {
+		if !strings.HasPrefix(base, "/") {
+			return fmt.Errorf("%s: apis key %q must be a base path starting with /", File, base)
+		}
+		if api == nil {
+			return fmt.Errorf("%s: apis[%q] is empty", File, base)
+		}
+		if api.Name != "" && !Name.MatchString(api.Name) {
+			return fmt.Errorf("%s: apis[%q].name %q must match %s", File, base, api.Name, Name)
+		}
+	}
 	return nil
+}
+
+// HasConfigFlag 报告 serve 的参数中是否传了 --config。
+func HasConfigFlag(args []string) bool {
+	return slices.ContainsFunc(args, func(a string) bool { return a == "--config" || strings.HasPrefix(a, "--config=") })
 }
 
 // SkipDir 报告扫描项目时是否跳过这个目录：隐藏目录、依赖、测试数据和前端的构建产物。
 func SkipDir(name string) bool {
 	return strings.HasPrefix(name, ".") || name == "node_modules" || name == "vendor" || name == "testdata" || name == "dist"
+}
+
+func exists(dir, p string) bool {
+	_, err := os.Stat(filepath.Join(dir, filepath.FromSlash(p)))
+	return err == nil
 }
 
 // hasTempl 报告 dir 中是否有 .templ 文件。

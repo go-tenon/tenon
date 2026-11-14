@@ -10,7 +10,7 @@
 <a id="client"></a>
 ## 生成的客户端
 
-`tenon dev` 每次重新编译后都会重新生成 `frontend/src/api`。上一章加了文章接口，现在里面已经有：
+`tenon dev` 每次重新编译后都会重新生成 `packages/client/src/api`。上一章加了文章接口，现在里面已经有：
 
 - `Article`、`ArticleChanges` 等类型，与 Go 的结构体对应；
 - `api.article.list()`、`api.article.create(changes)` 等方法，按 `OperationID` 分组；
@@ -22,16 +22,16 @@
 bun run typecheck
 ```
 
-`frontend/src/client.ts` 创建客户端，模板中已经写好了，接口都在 `/api` 下。
+`apps/web/src/client.ts` 创建客户端，模板中已经写好了，接口都在 `/api` 下。
 
 <a id="list"></a>
 ## 文章列表
 
-页面用 [TanStack Query](https://tanstack.com/query) 调用接口：`useQuery` 读取数据，负责加载状态、缓存和重新获取；`useMutation` 修改数据。新建 `frontend/src/ArticleList.tsx`：
+页面用 [TanStack Query](https://tanstack.com/query) 调用接口：`useQuery` 读取数据，负责加载状态、缓存和重新获取；`useMutation` 修改数据。新建 `apps/web/src/ArticleList.tsx`：
 
-```tsx title="frontend/src/ArticleList.tsx"
+```tsx title="apps/web/src/ArticleList.tsx"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import type { Article } from "./api/api"
+import type { Article } from "@blog/client/api"
 import { api } from "./client"
 
 export function ArticleList({ onEdit }: { onEdit: (a: Article) => void }) {
@@ -65,12 +65,12 @@ export function ArticleList({ onEdit }: { onEdit: (a: Article) => void }) {
 <a id="editor"></a>
 ## 编辑器
 
-让我们新建 `frontend/src/ArticleEditor.tsx`，新建和修改文章共用它：
+让我们新建 `apps/web/src/ArticleEditor.tsx`，新建和修改文章共用它：
 
-```tsx title="frontend/src/ArticleEditor.tsx"
+```tsx title="apps/web/src/ArticleEditor.tsx"
 import { useState, type FormEvent } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { isApiError, type Article, type ArticleChanges } from "./api/api"
+import { isApiError, type Article, type ArticleChanges } from "@blog/client/api"
 import { api } from "./client"
 
 export function ArticleEditor({ article, onDone }: { article?: Article; onDone: () => void }) {
@@ -137,11 +137,11 @@ export function ArticleEditor({ article, onDone }: { article?: Article; onDone: 
 <a id="app"></a>
 ## 页面
 
-现在，把 `frontend/src/App.tsx` 改成下面这样，在列表和编辑器之间切换：
+现在，把 `apps/web/src/App.tsx` 改成下面这样，在列表和编辑器之间切换：
 
-```tsx title="frontend/src/App.tsx"
+```tsx title="apps/web/src/App.tsx"
 import { useState } from "react"
-import type { Article } from "./api/api"
+import type { Article } from "@blog/client/api"
 import { ArticleEditor } from "./ArticleEditor"
 import { ArticleList } from "./ArticleList"
 
@@ -164,9 +164,9 @@ export function App() {
 }
 ```
 
-再换一份样式 `frontend/src/app.css`：
+再换一份样式 `apps/web/src/app.css`：
 
-```css title="frontend/src/app.css"
+```css title="apps/web/src/app.css"
 body {
   margin: 0;
   font-family: system-ui, sans-serif;

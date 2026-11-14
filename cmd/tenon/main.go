@@ -1,5 +1,5 @@
-// Command tenon 是 Tenon 应用的开发工具：init 生成新项目，dev 运行应用和前端工具，build 构建前端和二进制，
-// generate 生成客户端。
+// Command tenon 是 Tenon 应用的开发工具：init 生成新项目，add frontend 加入新的前端，dev 运行应用和前端工具，
+// build 构建前端和二进制，generate 生成客户端。
 // 它读取项目根目录的 tenon.json（可选，缺省时全部用约定的默认值）。应用把它加入 go.mod 的工具，版本随框架固定：
 //
 //	go get -tool github.com/go-tenon/tenon/cmd/tenon
@@ -10,13 +10,16 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path"
 	"path/filepath"
+	"regexp"
 	"runtime/debug"
+	"strings"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -58,14 +61,15 @@ func initCommand() *cobra.Command {
 				return fmt.Errorf("cannot tell which version of %s to use; run go run %s/cmd/tenon@latest init, or pass --tenon <checkout>", framework, framework)
 			}
 			opts.TenonVersion = version
+			opts.Slug = scaffold.Slug(base)
 			if err := scaffold.Write(dir, opts); err != nil {
 				return err
 			}
 			// 生成客户端要编译应用，嵌入的 dist 要先存在。
-			if err := dev.EnsureDist(&project.Config{Frontend: &project.Frontend{Dir: filepath.Join(dir, "frontend")}}); err != nil {
+			if err := dev.EnsureDist(&project.Config{Frontends: []project.Frontend{{Name: "web", Dir: filepath.Join(dir, "apps", "web")}}}); err != nil {
 				return err
 			}
-			steps := [][]string{{"go", "mod", "tidy"}, {"go", "run", "./cmd/api", "client", "--ts", "frontend/src/api"}}
+			steps := [][]string{{"go", "mod", "tidy"}, {"go", "run", "./cmd/api", "client", "--ts", project.ClientSrc}}
 			_, err := exec.LookPath("bun")
 			hasBun := err == nil
 			if hasBun {
@@ -125,8 +129,75 @@ func root() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	root.AddCommand(initCommand(), devCommand(), buildCommand(), generateCommand())
+	add := &cobra.Command{Use: "add", Short: "给项目加入新的部分"}
+	add.AddCommand(addFrontendCommand())
+	root.AddCommand(initCommand(), add, devCommand(), buildCommand(), generateCommand())
 	return root
+}
+
+// moduleLine 是 go.mod 中的 module 行。
+var moduleLine = regexp.MustCompile(`(?m)^module\s+(\S+)`)
+
+func addFrontendCommand() *cobra.Command {
+	var base string
+	cmd := &cobra.Command{
+		Use:   "frontend <name>",
+		Short: "在 apps/<name> 中生成一个 React 前端，加入 Bun workspace",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := args[0]
+			if !project.Name.MatchString(name) {
+				return fmt.Errorf("frontend name %q must match %s", name, project.Name)
+			}
+			if base == "" {
+				base = "/" + name + "/"
+			}
+			if !strings.HasPrefix(base, "/") || !strings.HasSuffix(base, "/") {
+				return fmt.Errorf("--base %q must start and end with /", base)
+			}
+			var pkg struct {
+				Name string `json:"name"`
+			}
+			data, err := os.ReadFile("package.json")
+			if err == nil {
+				err = json.Unmarshal(data, &pkg)
+			}
+			if err != nil || pkg.Name == "" {
+				return fmt.Errorf("run add frontend in the project root: package.json with a name is required (%v)", err)
+			}
+			goMod, err := os.ReadFile("go.mod")
+			m := moduleLine.FindSubmatch(goMod)
+			if err != nil || m == nil {
+				return fmt.Errorf("run add frontend in the project root: go.mod with a module line is required (%v)", err)
+			}
+			f := scaffold.Frontend{Scope: pkg.Name, Name: name, Base: base, Title: name}
+			if err := scaffold.WriteFrontend(".", f); err != nil {
+				return err
+			}
+			if err := scaffold.AddWorkspace(".", path.Join(project.AppsDir, name)); err != nil {
+				return err
+			}
+			if err := dev.EnsureDist(&project.Config{Frontends: []project.Frontend{{Name: name, Dir: path.Join(project.AppsDir, name)}}}); err != nil {
+				return err
+			}
+			if _, err := exec.LookPath("bun"); err == nil {
+				if err := run(cmd, ".", "bun", "install"); err != nil {
+					return err
+				}
+			}
+			pattern := base + "*"
+			fmt.Fprintf(cmd.OutOrStdout(), `
+已生成 apps/%[1]s。在路由中挂载它，放在挂载 /* 的那一行之前：
+
+	router.Handle(%[2]q, httpx.NewSPA(%[3]s.Dist, httpx.SPAOptions{Base: %[4]q, DevServer: cfg.DevServers[%[1]q]}))
+
+并导入 %[5]q。
+`, name, pattern, f.Package(), base, string(m[1])+"/apps/"+name)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&base, "base", "", "前端挂载的路径，以 / 开头和结尾，默认 /<name>/")
+	return cmd
 }
 
 func load() (*project.Config, error) { return project.Load(".") }
@@ -157,13 +228,14 @@ func buildCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if cfg.Frontend != nil {
-				root := dev.FrontendRoot(cfg)
-				if err := run(cmd, root, "bun", "install", "--frozen-lockfile"); err != nil {
+			if len(cfg.Frontends) > 0 {
+				if err := run(cmd, ".", "bun", "install", "--frozen-lockfile"); err != nil {
 					return err
 				}
-				if err := run(cmd, root, "bun", "x", "vite", "build"); err != nil {
-					return err
+				for _, f := range cfg.Frontends {
+					if err := run(cmd, f.Dir, "bun", "run", "build"); err != nil {
+						return err
+					}
 				}
 			}
 			if out == "" {
@@ -179,16 +251,16 @@ func buildCommand() *cobra.Command {
 func generateCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "generate",
-		Short: "编译应用，按 tenon.json 生成 TypeScript 和 Go 客户端",
+		Short: "编译应用，为每个 API 生成 TypeScript 客户端，按 tenon.json 生成 Go 客户端",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := load()
 			if err != nil {
 				return err
 			}
-			args := dev.GenerateArgs(cfg)
-			if args == nil {
-				return fmt.Errorf("nothing to generate: set generate.ts or generate.go in %s", project.File)
+			runs := dev.Generations(cfg)
+			if len(runs) == 0 {
+				return fmt.Errorf("nothing to generate: no %s/package.json, and no API in %s sets go", project.ClientDir, project.File)
 			}
 			tmp, err := os.MkdirTemp("", "tenon-")
 			if err != nil {
@@ -202,7 +274,12 @@ func generateCommand() *cobra.Command {
 			if err := run(cmd, ".", "go", "build", "-mod=mod", "-o", bin, cfg.Main); err != nil {
 				return err
 			}
-			return run(cmd, ".", bin, args...)
+			for _, args := range runs {
+				if err := run(cmd, ".", bin, args...); err != nil {
+					return err
+				}
+			}
+			return nil
 		},
 	}
 }

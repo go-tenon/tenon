@@ -352,7 +352,7 @@ import (
     "github.com/go-tenon/tenon/httpx/rest"
     "github.com/go-tenon/tenon/i18n"
 
-    "example.com/blog/frontend"
+    "example.com/blog/apps/web"
     "example.com/blog/internal/article"
     "example.com/blog/locales"
 )
@@ -387,7 +387,7 @@ func (a *App) Router(draining *httpx.Draining) chi.Router {
         api := rest.New(r, rest.Options{Title: "Blog API", Version: "1.0.0", BasePath: "/api"})
         article.Register(api, a.db)
     })
-    router.Handle("/*", httpx.NewSPA(frontend.Dist, httpx.SPAOptions{DevServer: a.cfg.FrontendDevServer}))
+    router.Handle("/*", httpx.NewSPA(web.Dist, httpx.SPAOptions{DevServer: a.cfg.DevServers["web"]}))
     return router
 }
 

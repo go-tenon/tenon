@@ -14,15 +14,16 @@ import (
 	"github.com/go-tenon/tenon/httpx/rest"
 	"github.com/go-tenon/tenon/logging"
 
-	"[[.Module]]/frontend"
+	"[[.Module]]/apps/web"
 	"[[.Module]]/internal/todo"
 )
 
-// Config 是应用的配置：config/app.yaml，开发时再叠加 config/local.yaml。
+// Config 是应用的配置：config/app.yaml。
 type Config struct {
 	HTTP httpx.Config `yaml:"http"`
-	// FrontendDevServer 非空时把页面请求转给 Vite 的开发服务器，只在 config/local.yaml 中设置。
-	FrontendDevServer string `yaml:"frontend_dev_server"`
+	// DevServers 是各前端开发服务器的地址，按前端的名称（apps 中的目录名）。只在 tenon dev 时有值：
+	// 它把地址写入 .tenon/dev.yaml，SPA 把页面请求转给对应的开发服务器。
+	DevServers map[string]string `yaml:"dev_servers"`
 }
 
 func main() {
@@ -52,6 +53,6 @@ func routes(cfg Config, store *todo.Store) chi.Router {
 		api := rest.New(r, rest.Options{Title: "[[.Name]]", Version: "0.1.0", BasePath: "/api"})
 		todo.Register(api, store)
 	})
-	router.Handle("/*", httpx.NewSPA(frontend.Dist, httpx.SPAOptions{DevServer: cfg.FrontendDevServer}))
+	router.Handle("/*", httpx.NewSPA(web.Dist, httpx.SPAOptions{DevServer: cfg.DevServers["web"]}))
 	return router
 }

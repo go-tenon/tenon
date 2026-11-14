@@ -3,6 +3,7 @@ package dev
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	neturl "net/url"
@@ -10,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"time"
 
 	"github.com/cockroachdb/errors"
@@ -52,10 +54,7 @@ func (d dev) serve(ctx context.Context) error {
 		}
 		d.generate(ctx, bin)
 	}
-	if f := d.cfg.Frontend; f != nil {
-		// 先等 Vite 起来：应用把页面请求转给它，太早打开会看到连接错误。
-		waitHTTP(ctx, f.DevURL, 30*time.Second)
-	}
+	d.waitFrontends(ctx)
 	restart()
 
 	changes := make(chan struct{}, 1)
@@ -77,10 +76,7 @@ func (d dev) serve(ctx context.Context) error {
 			return ctx.Err()
 		case <-changes:
 			fmt.Fprintln(d.out, "dev: Go 代码有变化，重新编译")
-			if f := d.cfg.Frontend; f != nil {
-				// 先等 Vite 起来：应用把页面请求转给它，太早打开会看到连接错误。
-				waitHTTP(ctx, f.DevURL, 30*time.Second)
-			}
+			d.waitFrontends(ctx)
 			restart()
 		case err := <-exited:
 			// 应用自己退出（例如启动时配置错误）：等下一次修改后再启动。
@@ -106,7 +102,7 @@ func (d dev) build(ctx context.Context, bin string) bool {
 
 // start 运行编译出的应用；exited 在它退出时收到结果。
 func (d dev) start(bin string) (*exec.Cmd, chan error) {
-	cmd := exec.Command(bin, d.cfg.Serve...)
+	cmd := exec.Command(bin, d.serveArgs()...)
 	cmd.Stdout, cmd.Stderr = d.out, d.errOut
 	cmd.Env = os.Environ()
 	if d.cfg.Templ != nil {
@@ -143,32 +139,47 @@ func (d dev) stop(app *exec.Cmd, exited chan error) {
 	_ = err // 停止是 dev 自己要求的，退出状态不重要
 }
 
-// generate 用编译出的程序生成客户端，失败时只打印错误。
-func (d dev) generate(ctx context.Context, bin string) {
-	args := GenerateArgs(d.cfg)
-	if args == nil {
-		return
-	}
-	cmd := exec.CommandContext(ctx, bin, args...)
-	cmd.Stdout, cmd.Stderr = d.out, d.errOut
-	if err := cmd.Run(); err != nil && ctx.Err() == nil {
-		fmt.Fprintf(d.errOut, "dev: 生成客户端失败：%v\n", err)
+// frontendWait 是等一个前端的开发服务器能访问的时限。
+var frontendWait = 30 * time.Second
+
+// waitFrontends 等每个前端的开发服务器能访问：应用把页面请求转给它们，太早打开会看到连接错误。
+func (d dev) waitFrontends(ctx context.Context) {
+	for _, f := range d.cfg.Frontends {
+		waitHTTP(ctx, d.servers[f.Name], frontendWait)
 	}
 }
 
-// GenerateArgs 返回生成客户端时运行应用的参数；不生成任何客户端时为 nil。
-func GenerateArgs(cfg *project.Config) []string {
-	if cfg.Generate.TS == "" && cfg.Generate.Go == "" {
-		return nil
+// generate 用编译出的程序生成客户端，失败时只打印错误。
+func (d dev) generate(ctx context.Context, bin string) {
+	for _, args := range Generations(d.cfg) {
+		cmd := exec.CommandContext(ctx, bin, args...)
+		cmd.Stdout, cmd.Stderr = d.out, d.errOut
+		if err := cmd.Run(); err != nil && ctx.Err() == nil {
+			fmt.Fprintf(d.errOut, "dev: 生成客户端失败：%v\n", err)
+		}
 	}
-	args := []string{"client"}
-	if cfg.Generate.TS != "" {
-		args = append(args, "--ts", cfg.Generate.TS)
+}
+
+// Generations 返回生成客户端时运行应用的参数，每一项运行一次：有 packages/client 时为全部 API 生成 TypeScript 客户端，
+// tenon.json 中设置了 go 的 API 各生成一个 Go 客户端。不生成任何客户端时为空。
+func Generations(cfg *project.Config) [][]string {
+	bases := slices.Sorted(maps.Keys(cfg.APIs))
+	var runs [][]string
+	if cfg.Client {
+		args := []string{"client", "--ts", project.ClientSrc}
+		for _, base := range bases {
+			if name := cfg.APIs[base].Name; name != "" {
+				args = append(args, "--name", base+"="+name)
+			}
+		}
+		runs = append(runs, args)
 	}
-	if cfg.Generate.Go != "" {
-		args = append(args, "--out", cfg.Generate.Go)
+	for _, base := range bases {
+		if out := cfg.APIs[base].Go; out != "" {
+			runs = append(runs, []string{"client", "--base-path", base, "--out", out})
+		}
 	}
-	return args
+	return runs
 }
 
 // waitHTTP 等 url 能访问（任何响应都算），最多等 limit。

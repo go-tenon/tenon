@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/go-tenon/tenon/command"
+	"github.com/go-tenon/tenon/httpx/rest"
 	"github.com/go-tenon/tenon/httpx/rest/clientgen"
 )
 
@@ -72,9 +73,10 @@ func TestCommandRequiresOut(t *testing.T) {
 	}
 }
 
-// --ts 生成 TypeScript 客户端，删除上次生成、这次已经移除的 .ts 文件，保留手写的文件。
+// --ts 把每个 API 的 TypeScript 客户端写到以 API 名称命名的子目录，删除上次生成、这次已经移除的 .ts 文件，保留手写的文件。
 func TestCommandWritesTSClient(t *testing.T) {
-	out := filepath.Join(t.TempDir(), "api")
+	root := t.TempDir()
+	out := filepath.Join(root, "api") // BasePath /api 的客户端
 	if err := os.MkdirAll(out, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +85,7 @@ func TestCommandWritesTSClient(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	stderr, err := runClient(t, "client", "--ts", out, "--main", exampleMain)
+	stderr, err := runClient(t, "client", "--ts", root, "--main", exampleMain)
 	if err != nil || stderr != "" {
 		t.Fatal(err, stderr)
 	}
@@ -94,5 +96,43 @@ func TestCommandWritesTSClient(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(out, "old.ts")); !os.IsNotExist(err) {
 		t.Error("stale generated file must be removed", err)
+	}
+
+	// --name 按 BasePath 改名。
+	if _, err := runClient(t, "client", "--ts", root, "--name", "/api=public", "--main", exampleMain); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "public", "api.ts")); err != nil {
+		t.Error(err)
+	}
+}
+
+func TestTSDirs(t *testing.T) {
+	api := func(base string) *rest.API {
+		return rest.New(chi.NewRouter(), rest.Options{Title: "x", BasePath: base})
+	}
+	apis := []*rest.API{api("/api"), api("/api/admin"), api("/api/v1/")}
+	dirs, err := clientgen.TSDirs(apis, nil)
+	if err != nil || strings.Join(dirs, " ") != "api admin v1" {
+		t.Fatalf("dirs %q, %v", dirs, err)
+	}
+	if dirs, err := clientgen.TSDirs(apis, map[string]string{"/api/v1/": "public"}); err != nil || dirs[2] != "public" {
+		t.Fatalf("renamed %q, %v", dirs, err)
+	}
+	for name, c := range map[string]struct {
+		apis  []*rest.API
+		names map[string]string
+		want  string
+	}{
+		"duplicate":  {[]*rest.API{api("/api/v1"), api("/admin/v1")}, nil, `both named "v1"`},
+		"invalid":    {[]*rest.API{api("/API")}, nil, "must match"},
+		"empty base": {[]*rest.API{api("")}, nil, "must match"},
+		"bad rename": {apis, map[string]string{"/api": "Public"}, "must match"},
+		"relative":   {apis, map[string]string{"api": "x"}, "must start with /"},
+		"no API":     {nil, nil, "no API"},
+	} {
+		if _, err := clientgen.TSDirs(c.apis, c.names); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: err = %v", name, err)
+		}
 	}
 }

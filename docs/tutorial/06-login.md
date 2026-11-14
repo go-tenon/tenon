@@ -62,7 +62,7 @@ import (
     "github.com/go-tenon/tenon/httpx"
 )
 
-// Config 是应用的配置：config/app.yaml，开发时再叠加 config/local.yaml。
+// Config 是应用的配置：config/app.yaml。
 type Config struct {
     HTTP     httpx.Config    `yaml:"http"`
     Database database.Config `yaml:"database"`
@@ -71,8 +71,8 @@ type Config struct {
     Crypt   crypt.Config    `yaml:"crypt"`
     Hashing hashing.Config  `yaml:"hashing"`
     Token   apitoken.Config `yaml:"token"`
-    // FrontendDevServer 非空时把页面请求转给 Vite 的开发服务器，只在 config/local.yaml 中设置。
-    FrontendDevServer string `yaml:"frontend_dev_server"`
+    // DevServers 是各前端开发服务器的地址，只在 tenon dev 时有值。
+    DevServers map[string]string `yaml:"dev_servers"`
 }
 
 type RedisConfig struct {
@@ -624,7 +624,7 @@ import (
     "github.com/go-tenon/tenon/i18n"
     "github.com/go-tenon/tenon/identity"
 
-    "example.com/blog/frontend"
+    "example.com/blog/apps/web"
     "example.com/blog/internal/article"
     "example.com/blog/internal/auth"
     "example.com/blog/internal/user"
@@ -667,7 +667,7 @@ func (a *App) Router(draining *httpx.Draining) chi.Router {
         user.Register(api, requireUser, a.db)
         article.Register(api, requireUser, a.db)
     })
-    router.Handle("/*", httpx.NewSPA(frontend.Dist, httpx.SPAOptions{DevServer: a.cfg.FrontendDevServer}))
+    router.Handle("/*", httpx.NewSPA(web.Dist, httpx.SPAOptions{DevServer: a.cfg.DevServers["web"]}))
     return router
 }
 
@@ -726,11 +726,11 @@ go run ./cmd/api user create --name 小明 --email ming@example.com --password s
 <a id="frontend"></a>
 ## 前端
 
-现在，把 `frontend/src/client.ts` 改成下面这样。客户端自己保管 access token，请求时带上它；接口返回 `401` 时调用一次 `refresh` 换新的，再重试原来的请求：
+现在，把 `apps/web/src/client.ts` 改成下面这样。客户端自己保管 access token，请求时带上它；接口返回 `401` 时调用一次 `refresh` 换新的，再重试原来的请求：
 
-```ts title="frontend/src/client.ts"
+```ts title="apps/web/src/client.ts"
 import { QueryClient } from "@tanstack/react-query"
-import { createClient } from "./api/api"
+import { createClient } from "@blog/client/api"
 
 export const queryClient = new QueryClient()
 
@@ -749,9 +749,9 @@ export const api = createClient({
 })
 ```
 
-`queryClient` 移到这里，`frontend/src/main.tsx` 改为使用它：
+`queryClient` 移到这里，`apps/web/src/main.tsx` 改为使用它：
 
-```tsx title="frontend/src/main.tsx"
+```tsx title="apps/web/src/main.tsx"
 import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 import { QueryClientProvider } from "@tanstack/react-query"
@@ -768,9 +768,9 @@ createRoot(document.getElementById("root")!).render(
 )
 ```
 
-接着，新建 `frontend/src/session.ts`，`useMe` 是当前登录的作者，没有登录时为 `null`：
+接着，新建 `apps/web/src/session.ts`，`useMe` 是当前登录的作者，没有登录时为 `null`：
 
-```ts title="frontend/src/session.ts"
+```ts title="apps/web/src/session.ts"
 import { useQuery } from "@tanstack/react-query"
 import { api } from "./client"
 
@@ -784,12 +784,12 @@ export function useMe() {
 }
 ```
 
-新建登录表单 `frontend/src/Login.tsx`：
+新建登录表单 `apps/web/src/Login.tsx`：
 
-```tsx title="frontend/src/Login.tsx"
+```tsx title="apps/web/src/Login.tsx"
 import { useState, type FormEvent } from "react"
 import { useMutation } from "@tanstack/react-query"
-import { isApiError } from "./api/api"
+import { isApiError } from "@blog/client/api"
 import { api, queryClient } from "./client"
 
 export function Login({ onDone }: { onDone: () => void }) {
@@ -828,12 +828,12 @@ export function Login({ onDone }: { onDone: () => void }) {
 }
 ```
 
-在 `frontend/src/App.tsx` 中显示登录、退出按钮，登录后才能写文章：
+在 `apps/web/src/App.tsx` 中显示登录、退出按钮，登录后才能写文章：
 
-```tsx title="frontend/src/App.tsx"
+```tsx title="apps/web/src/App.tsx"
 import { useState } from "react"
 import { useMutation } from "@tanstack/react-query"
-import type { Article } from "./api/api"
+import type { Article } from "@blog/client/api"
 import { ArticleEditor } from "./ArticleEditor"
 import { ArticleList } from "./ArticleList"
 import { api, queryClient } from "./client"
@@ -880,11 +880,11 @@ export function App() {
 }
 ```
 
-`frontend/src/ArticleList.tsx` 中，没有登录时不显示编辑和删除按钮：
+`apps/web/src/ArticleList.tsx` 中，没有登录时不显示编辑和删除按钮：
 
-```tsx title="frontend/src/ArticleList.tsx"
+```tsx title="apps/web/src/ArticleList.tsx"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import type { Article } from "./api/api"
+import type { Article } from "@blog/client/api"
 import { api } from "./client"
 
 // onEdit 为空时（未登录）不显示编辑和删除按钮。

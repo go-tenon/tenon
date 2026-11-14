@@ -42,7 +42,7 @@ bun run dev
 在浏览器打开 **8080**。应用把页面请求转发给本机的 Vite（见下方[前端与同源](#frontend)）；远程开发时转发或访问远端的 8080 即可。
 
 - **修改前端代码**：页面会热更新。
-- **修改 Go 代码**：应用自动重新编译、重启，`frontend/src/api` 里的客户端也会跟着重新生成。比如给 `Todo` 加一个字段，前端立刻就能用到它的类型。
+- **修改 Go 代码**：应用自动重新编译、重启，`packages/client/src/api` 里的客户端也会跟着重新生成。比如给 `Todo` 加一个字段，前端立刻就能用到它的类型。
 
 `bun run dev` 运行的是 [`go tool tenon dev`](tooling.md#dev)，细节见[开发工具](tooling.md)。
 
@@ -61,24 +61,24 @@ bun run build
 
 ```text
 todo/
-├── go.mod                 tool github.com/go-tenon/tenon/cmd/tenon：开发工具随框架的版本固定
-├── package.json           dev、build、generate 脚本；React、TanStack Query、Vite
-├── vite.config.ts         root 指向 frontend
-├── config/
-│   ├── app.yaml           监听地址等应用配置
-│   └── local.yaml         开发时把页面请求转给 Vite（只叠加在本地）
+├── go.mod                 tool github.com/go-tenon/tenon/cmd/tenon：开发工具随框架的版本固定；ignore node_modules
+├── package.json           Bun workspace（apps/web、packages/client）；dev、build、generate、typecheck 脚本
+├── config/app.yaml        监听地址等应用配置
 ├── cmd/api/main.go        程序入口：命令行、serve 和 routes
 ├── internal/todo/todo.go  示例资源：待办事项的四个接口，数据保存在内存中
-└── frontend/
-    ├── frontend.go        把构建产物 dist 嵌入程序
-    ├── index.html
-    └── src/
-        ├── App.tsx        待办列表页面
-        ├── client.ts      创建调用接口的客户端
-        └── api/           生成的 TypeScript 客户端
+├── apps/web/              前端 web，挂在 /
+│   ├── frontend.go        把构建产物 dist 嵌入程序
+│   ├── index.html
+│   ├── package.json       React、TanStack Query、Vite；dev、build、typecheck 脚本
+│   ├── vite.config.ts
+│   └── src/
+│       ├── App.tsx        待办列表页面
+│       └── client.ts      创建调用接口的客户端
+└── packages/client/       共用的客户端包 @todo/client
+    └── src/api/           /api 的 TypeScript 客户端，由 tenon generate 生成
 ```
 
-Go 代码在 `cmd` 和 `internal` 中，前端在 `frontend` 中。构建时前端打进二进制，部署时通常带上这一个文件和配置目录即可。目录约定见[目录结构](../concepts/structure.md)。
+Go 代码在 `cmd` 和 `internal` 中，前端在 `apps` 中，每个前端一个目录；生成的客户端在 `packages/client` 中，前端用 `@todo/client/api` 导入。构建时前端打进二进制，部署时通常带上这一个文件和配置目录即可。用 [tenon add frontend](tooling.md#add-frontend) 再加一个前端，例如运营后台。目录约定见[目录结构](../concepts/structure.md)。
 
 <a id="entrypoint"></a>
 ## 入口文件在做什么
@@ -89,12 +89,12 @@ Go 代码在 `cmd` 和 `internal` 中，前端在 `frontend` 中。构建时前�
 
 ```go
 type Config struct {
-    HTTP              httpx.Config `yaml:"http"`
-    FrontendDevServer string       `yaml:"frontend_dev_server"`
+    HTTP       httpx.Config      `yaml:"http"`
+    DevServers map[string]string `yaml:"dev_servers"`
 }
 ```
 
-`HTTP` 对应 `config/app.yaml` 里的 `http` 段（例如 `addr: ":8080"`）。`FrontendDevServer` 只在开发时由 `config/local.yaml` 设置，生产构建保持为空。配置如何加载与叠加见[配置](../general/configuration.md)。
+`HTTP` 对应 `config/app.yaml` 里的 `http` 段（例如 `addr: ":8080"`）。`DevServers` 是各前端开发服务器的地址，只在开发时由 `tenon dev` 写入 `.tenon/dev.yaml`，生产环境中为空。配置如何加载与叠加见[配置](../general/configuration.md)。
 
 ### 命令行
 
@@ -135,7 +135,7 @@ func routes(cfg Config, store *todo.Store) chi.Router {
         api := rest.New(r, rest.Options{Title: "todo", Version: "0.1.0", BasePath: "/api"})
         todo.Register(api, store)
     })
-    router.Handle("/*", httpx.NewSPA(frontend.Dist, httpx.SPAOptions{DevServer: cfg.FrontendDevServer}))
+    router.Handle("/*", httpx.NewSPA(web.Dist, httpx.SPAOptions{DevServer: cfg.DevServers["web"]}))
     return router
 }
 ```
@@ -165,11 +165,11 @@ func routes(cfg Config, store *todo.Store) chi.Router {
 
 开发时：
 
-1. Vite 在 `5173` 上提供页面与热更新（默认只监听本机回环地址）；
-2. Go 在 `8080` 上提供 `/api`，并通过 `SPAOptions.DevServer`（来自 `local.yaml` 的 `frontend_dev_server`）把其余请求——包括 HMR 的 WebSocket——转发给 Vite；
+1. 每个前端的 Vite 在 `tenon dev` 选好的端口上提供页面与热更新（只监听本机回环地址）；
+2. Go 在 `8080` 上提供 `/api`，并通过 `SPAOptions.DevServer`（来自 `.tenon/dev.yaml` 的 `dev_servers`）把页面请求——包括 HMR 的 WebSocket——转发给对应的 Vite；
 3. 浏览器始终访问 `http://localhost:8080`（或远端机器的 `8080`），页面与 API 同源。
 
-发布时：`tenon build` 把 Vite 的产物写进 `frontend/dist`，由 `frontend/frontend.go` 的 `embed` 打进二进制；`DevServer` 为空，`SPA` 直接提供静态文件。细节见[单页应用](../responses/spa.md)。
+发布时：`tenon build` 把每个前端的产物写进它的 `dist`，例如 `apps/web/dist`，由同目录 `frontend.go` 的 `embed` 打进二进制；`DevServer` 为空，`SPA` 直接提供静态文件。细节见[单页应用](../responses/spa.md)。
 
 <a id="next-steps"></a>
 ## 下一步

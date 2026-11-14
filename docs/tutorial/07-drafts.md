@@ -482,11 +482,11 @@ func Register(api *rest.API, requireUser func(*huma.Operation), db *bun.DB) {
 <a id="frontend"></a>
 ## 前端
 
-首页 `frontend/src/ArticleList.tsx` 只列出已发布的文章，点标题阅读全文：
+首页 `apps/web/src/ArticleList.tsx` 只列出已发布的文章，点标题阅读全文：
 
-```tsx title="frontend/src/ArticleList.tsx"
+```tsx title="apps/web/src/ArticleList.tsx"
 import { useQuery } from "@tanstack/react-query"
-import type { Article } from "./api/api"
+import type { Article } from "@blog/client/api"
 import { api } from "./client"
 
 // ArticleList 是首页：已发布的文章，所有人都能看到。
@@ -512,10 +512,10 @@ export function ArticleList({ onOpen }: { onOpen: (a: Article) => void }) {
 }
 ```
 
-接着，新建 `frontend/src/ArticleView.tsx` 显示一篇文章：
+接着，新建 `apps/web/src/ArticleView.tsx` 显示一篇文章：
 
-```tsx title="frontend/src/ArticleView.tsx"
-import type { Article } from "./api/api"
+```tsx title="apps/web/src/ArticleView.tsx"
+import type { Article } from "@blog/client/api"
 
 export function ArticleView({ article }: { article: Article }) {
   return (
@@ -528,11 +528,11 @@ export function ArticleView({ article }: { article: Article }) {
 }
 ```
 
-接着，新建 `frontend/src/MyArticles.tsx`，作者在这里编辑、发布、删除：
+接着，新建 `apps/web/src/MyArticles.tsx`，作者在这里编辑、发布、删除：
 
-```tsx title="frontend/src/MyArticles.tsx"
+```tsx title="apps/web/src/MyArticles.tsx"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import type { Article } from "./api/api"
+import type { Article } from "@blog/client/api"
 import { api } from "./client"
 
 // MyArticles 是当前作者的全部文章，包括草稿：编辑、发布、删除。
@@ -563,12 +563,12 @@ export function MyArticles({ onEdit }: { onEdit: (a: Article) => void }) {
 }
 ```
 
-在 `frontend/src/App.tsx` 中加上阅读和“我的文章”：
+在 `apps/web/src/App.tsx` 中加上阅读和“我的文章”：
 
-```tsx title="frontend/src/App.tsx"
+```tsx title="apps/web/src/App.tsx"
 import { useState } from "react"
 import { useMutation } from "@tanstack/react-query"
-import type { Article } from "./api/api"
+import type { Article } from "@blog/client/api"
 import { ArticleEditor } from "./ArticleEditor"
 import { ArticleList } from "./ArticleList"
 import { ArticleView } from "./ArticleView"
@@ -623,9 +623,9 @@ export function App() {
 }
 ```
 
-`frontend/src/app.css` 加几条样式：
+`apps/web/src/app.css` 加几条样式：
 
-```css title="frontend/src/app.css"
+```css title="apps/web/src/app.css"
 body {
   margin: 0;
   font-family: system-ui, sans-serif;

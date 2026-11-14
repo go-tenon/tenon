@@ -39,7 +39,7 @@ bun run dev
 
 - 运行 Vite。修改前端代码，页面立即热更新；
 - 编译并运行 Go 应用。修改 Go 代码，应用自动重新编译、重启；
-- 每次重新编译后，重新生成 `frontend/src/api` 中的 TypeScript 客户端。Go 接口加了一个字段，前端马上就能用到它的类型。
+- 每次重新编译后，重新生成 `packages/client/src/api` 中的 TypeScript 客户端。Go 接口加了一个字段，前端马上就能用到它的类型。
 
 页面和接口在同一个地址下：`/api` 是 JSON 接口，其余的请求交给前端。接口文档在 http://localhost:8080/api/docs，试着在这里调用一下 `todo-create`。
 
@@ -50,24 +50,23 @@ bun run dev
 
 ```text
 blog/
-├── go.mod                 tool github.com/go-tenon/tenon/cmd/tenon：开发工具的版本随框架固定
-├── package.json           dev、build、generate 脚本，React、TanStack Query、Vite
-├── vite.config.ts         前端源码在 frontend 中
-├── config/
-│   ├── app.yaml           应用的配置
-│   └── local.yaml         只在本机开发时使用：把页面请求转给 Vite
-├── cmd/api/main.go        程序入口：serve 命令启动 HTTP 服务
-├── internal/todo/todo.go  示例接口
-└── frontend/
-    ├── frontend.go        把构建好的页面嵌入程序
-    ├── index.html
-    └── src/
-        ├── App.tsx        页面
-        ├── client.ts      创建调用接口的客户端
-        └── api/           生成的客户端
+├── go.mod                       tool github.com/go-tenon/tenon/cmd/tenon：开发工具的版本随框架固定
+├── package.json                 Bun workspace；dev、build、generate 脚本
+├── config/app.yaml              应用的配置
+├── cmd/api/main.go              程序入口：serve 命令启动 HTTP 服务
+├── internal/todo/todo.go        示例接口
+├── apps/web/                    前端
+│   ├── frontend.go              把构建好的页面嵌入程序
+│   ├── index.html
+│   ├── package.json             React、TanStack Query、Vite
+│   ├── vite.config.ts
+│   └── src/
+│       ├── App.tsx              页面
+│       └── client.ts            创建调用接口的客户端
+└── packages/client/src/api/     生成的客户端
 ```
 
-Go 代码在 `cmd` 和 `internal` 中，前端代码在 `frontend` 中。构建时前端被打包进 Go 程序，部署时只有一个二进制文件。
+Go 代码在 `cmd` 和 `internal` 中，前端代码在 `apps/web` 中。生成的客户端在 `packages/client` 中，前端用 `@blog/client/api` 导入它。构建时前端被打包进 Go 程序，部署时只有一个二进制文件。
 
 到这里，你已经有了一个可以运行的应用：修改前端代码，页面立即更新；修改 Go 代码，应用自动重启。
 

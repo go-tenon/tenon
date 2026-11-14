@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
+	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -27,12 +29,20 @@ const UIDir = ".web-ui"
 
 const framework = "github.com/go-tenon/tenon"
 
+// DevConfig 是 tenon dev 写给应用的配置：各前端开发服务器的地址（dev_servers），追加在 serve 的 --config 之后。
+const DevConfig = ".tenon/dev.yaml"
+
 // Run 在当前目录运行开发模式，直到 ctx 取消；停止后生成正式的代码、样式表和前端构建产物。
 func Run(ctx context.Context, cfg *project.Config, out, errOut io.Writer) error {
 	d := dev{cfg: cfg, out: shared(out), errOut: shared(errOut)}
 	if err := d.check(); err != nil {
 		return err
 	}
+	servers, err := devServers(cfg.Frontends)
+	if err != nil {
+		return err
+	}
+	d.servers = servers
 	if err := d.prepare(); err != nil {
 		return err
 	}
@@ -41,7 +51,7 @@ func Run(ctx context.Context, cfg *project.Config, out, errOut io.Writer) error 
 	} else {
 		fmt.Fprintf(d.out, "dev: 打开 %s\n", cfg.URL)
 	}
-	err := concurrently(ctx, d.runs()...)
+	err = concurrently(ctx, d.runs()...)
 	// 停止后恢复正式的生成结果：templ 的 watch 模式生成的代码读取 _templ.txt，工具的输出也没有压缩。
 	return errors.Join(err, d.finish())
 }
@@ -49,6 +59,8 @@ func Run(ctx context.Context, cfg *project.Config, out, errOut io.Writer) error 
 type dev struct {
 	cfg         *project.Config
 	out, errOut io.Writer
+	// servers 是各前端开发服务器的地址，按前端的名称。
+	servers map[string]string
 }
 
 // shared 让多个子进程可以同时写 w。*os.File 直接交给子进程，它们能识别终端、输出颜色。
@@ -70,19 +82,15 @@ func (l *lockedWriter) Write(p []byte) (int, error) {
 	return l.w.Write(p)
 }
 
-// FrontendRoot 返回运行 Vite 的目录：项目根目录有 package.json 时是它，否则是前端目录。
-func FrontendRoot(cfg *project.Config) string {
-	if _, err := os.Stat("package.json"); err == nil {
-		return "."
-	}
-	return cfg.Frontend.Dir
-}
-
 // check 确认用到的命令都已安装：go；有前端时 bun；有 templ 时 go.mod 中的 templ 工具；Tailwind 和其他工具。
+// 有前端时 serve 的参数中要有 --config，前端的地址追加在它之后。
 func (d dev) check() error {
 	need := []string{"go"}
-	if d.cfg.Frontend != nil {
+	if len(d.cfg.Frontends) > 0 {
 		need = append(need, "bun")
+		if !project.HasConfigFlag(d.cfg.Serve) {
+			return errors.Newf("dev: serve in %s has no --config; tenon dev appends --config %s to pass the frontend dev servers", project.File, DevConfig)
+		}
 	}
 	if d.cfg.Tailwind != nil {
 		need = append(need, "tailwindcss")
@@ -112,15 +120,17 @@ func (d dev) check() error {
 	return nil
 }
 
-// prepare 在启动监听进程之前运行一次：没有 node_modules 时 bun install，确保 dist 存在（见 EnsureDist），
-// 把框架 web/ui 的样式源复制到 Tailwind 入口旁边。
+// prepare 在启动监听进程之前运行一次：没有 node_modules 时在根目录 bun install，确保每个前端的 dist 存在（见 EnsureDist），
+// 写入前端开发服务器的地址（见 DevConfig），把框架 web/ui 的样式源复制到 Tailwind 入口旁边。
 func (d dev) prepare() error {
-	if f := d.cfg.Frontend; f != nil {
-		root := FrontendRoot(d.cfg)
-		if _, err := os.Stat(filepath.Join(root, "node_modules")); errors.Is(err, fs.ErrNotExist) {
-			if err := d.exec(root, "bun", "install"); err != nil {
+	if len(d.cfg.Frontends) > 0 {
+		if _, err := os.Stat("node_modules"); errors.Is(err, fs.ErrNotExist) {
+			if err := d.exec(".", "bun", "install"); err != nil {
 				return err
 			}
+		}
+		if err := writeDevConfig(d.servers); err != nil {
+			return err
 		}
 	}
 	if err := EnsureDist(d.cfg); err != nil {
@@ -139,17 +149,61 @@ const Placeholder = "<!doctype html><p>前端还没有构建：运行 bun run de
 // 嵌入 dist 的代码才能编译。不运行 vite build：它可能依赖还没生成的客户端，开发时页面也来自 Vite 的开发服务器，
 // 构建发布时 build 会先构建前端。
 func EnsureDist(cfg *project.Config) error {
-	if cfg.Frontend == nil {
-		return nil
+	for _, f := range cfg.Frontends {
+		dist := filepath.Join(f.Dir, "dist")
+		if _, err := os.Stat(dist); !errors.Is(err, fs.ErrNotExist) {
+			if err != nil {
+				return err
+			}
+			continue
+		}
+		if err := os.MkdirAll(dist, 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(dist, "index.html"), []byte(Placeholder), 0o644); err != nil {
+			return err
+		}
 	}
-	dist := filepath.Join(cfg.Frontend.Dir, "dist")
-	if _, err := os.Stat(dist); !errors.Is(err, fs.ErrNotExist) {
-		return err
+	return nil
+}
+
+// devServers 为每个前端选一个空闲端口，返回开发服务器的地址。
+func devServers(frontends []project.Frontend) (map[string]string, error) {
+	servers := map[string]string{}
+	for _, f := range frontends {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			return nil, errors.Wrap(err, "dev: pick a port for the frontend dev server")
+		}
+		_, port, _ := net.SplitHostPort(ln.Addr().String())
+		_ = ln.Close()
+		servers[f.Name] = "http://localhost:" + port
 	}
-	if err := os.MkdirAll(dist, 0o755); err != nil {
-		return err
+	return servers, nil
+}
+
+// writeDevConfig 把开发服务器的地址写入 DevConfig，应用读到 dev_servers 后把页面请求转给它们。
+func writeDevConfig(servers map[string]string) error {
+	if err := os.MkdirAll(filepath.Dir(DevConfig), 0o755); err != nil {
+		return errors.Wrap(err, "dev: write dev config")
 	}
-	return os.WriteFile(filepath.Join(dist, "index.html"), []byte(Placeholder), 0o644)
+	if err := os.WriteFile(filepath.Join(filepath.Dir(DevConfig), ".gitignore"), []byte("*\n"), 0o644); err != nil {
+		return errors.Wrap(err, "dev: write dev config")
+	}
+	var b strings.Builder
+	b.WriteString("# tenon dev 生成：各前端开发服务器的地址。\ndev_servers:\n")
+	for _, name := range slices.Sorted(maps.Keys(servers)) {
+		fmt.Fprintf(&b, "  %s: %s\n", name, servers[name])
+	}
+	return errors.Wrap(os.WriteFile(DevConfig, []byte(b.String()), 0o644), "dev: write dev config")
+}
+
+// serveArgs 返回运行应用的参数：有前端时在 serve 之后追加 --config DevConfig。
+func (d dev) serveArgs() []string {
+	if len(d.cfg.Frontends) == 0 {
+		return d.cfg.Serve
+	}
+	return append(slices.Clone(d.cfg.Serve), "--config", DevConfig)
 }
 
 func (d dev) exec(dir string, args ...string) error {
@@ -168,10 +222,9 @@ type watcher struct {
 // watchers 返回与应用一起运行的监听进程。
 func (d dev) watchers() []watcher {
 	var ws []watcher
-	if d.cfg.Frontend != nil {
-		// 直接运行 vite：package.json 的 dev 脚本留给 tenon dev 自己。
-		// 端口固定为 devUrl 的端口，被占用时直接失败：应用只把请求转给这个地址，Vite 必须使用它。
-		ws = append(ws, watcher{FrontendRoot(d.cfg), append([]string{"bun", "x", "vite"}, vitePort(d.cfg.Frontend.DevURL)...)})
+	for _, f := range d.cfg.Frontends {
+		// 前端 package.json 的 dev 脚本运行 vite。端口固定为选好的端口，被占用时直接失败：应用只把请求转给这个地址。
+		ws = append(ws, watcher{f.Dir, []string{"bun", "run", "dev", "--port", port(d.servers[f.Name]), "--strictPort"}})
 	}
 	if t := d.cfg.Templ; t != nil {
 		ws = append(ws, watcher{".", []string{"go", "tool", "templ", "generate", "--watch",
@@ -187,13 +240,10 @@ func (d dev) watchers() []watcher {
 	return ws
 }
 
-// vitePort 返回让 Vite 监听 devURL 的端口的参数；devURL 没有端口时为空。
-func vitePort(devURL string) []string {
-	u, err := url.Parse(devURL)
-	if err != nil || u.Port() == "" {
-		return nil
-	}
-	return []string{"--port", u.Port(), "--strictPort"}
+// port 返回地址中的端口。
+func port(addr string) string {
+	_, p, _ := net.SplitHostPort(strings.TrimPrefix(addr, "http://"))
+	return p
 }
 
 // builds 返回停止后运行的生成命令。
@@ -202,8 +252,8 @@ func (d dev) builds() []watcher {
 	if d.cfg.Templ != nil {
 		bs = append(bs, watcher{".", []string{"go", "tool", "templ", "generate"}})
 	}
-	if d.cfg.Frontend != nil {
-		bs = append(bs, watcher{FrontendRoot(d.cfg), []string{"bun", "x", "vite", "build"}})
+	for _, f := range d.cfg.Frontends {
+		bs = append(bs, watcher{f.Dir, []string{"bun", "run", "build"}})
 	}
 	if t := d.cfg.Tailwind; t != nil {
 		bs = append(bs, watcher{".", []string{"tailwindcss", "-i", t.Input, "-o", t.Output, "--minify"}})
