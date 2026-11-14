@@ -82,6 +82,16 @@ func TestInitEndToEnd(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "apps", "admin", "src", "framework.ts"), []byte(imports), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// 带路径参数的页面：拆分出的代码文件以 _ 开头（_id-<hash>.js），要能被嵌入并提供。
+	userPage := "import { createFileRoute } from \"@tanstack/react-router\"\n\n" +
+		"export const Route = createFileRoute(\"/users/$id\")({ staticData: { title: \"用户\" }, component: User })\n\n" +
+		"function User() {\n  const { id } = Route.useParams()\n  return <p>user {id}</p>\n}\n"
+	if err := os.MkdirAll(filepath.Join(dir, "apps", "admin", "src", "routes", "users"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "apps", "admin", "src", "routes", "users", "$id.tsx"), []byte(userPage), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.RemoveAll(filepath.Join(dir, ".tenon")); err != nil {
 		t.Fatal(err)
 	}
@@ -118,6 +128,26 @@ func TestInitEndToEnd(t *testing.T) {
 	}
 	if page := getHTML(t, base+"/todos/42"); !strings.Contains(page, "<title>Todo</title>") {
 		t.Fatalf("deep link:\n%s", page)
+	}
+	// 构建产物中的每个文件都被嵌入程序：包括以 _ 开头的代码文件（frontend.go 用 go:embed all:dist）。
+	assets, err := os.ReadDir(filepath.Join(dir, "apps", "admin", "dist", "assets"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	underscore := false
+	for _, a := range assets {
+		underscore = underscore || strings.HasPrefix(a.Name(), "_")
+		res, err := http.Get(base + "/admin/assets/" + a.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = res.Body.Close()
+		if res.StatusCode != http.StatusOK {
+			t.Errorf("/admin/assets/%s: %d", a.Name(), res.StatusCode)
+		}
+	}
+	if !underscore {
+		t.Errorf("no code-split file starting with _ in apps/admin/dist/assets: %v", assets)
 	}
 	if res := send(t, http.MethodPost, base+"/api/todos", `{"title":"买牛奶"}`); res.status != http.StatusCreated || res.body["title"] != "买牛奶" {
 		t.Fatalf("create: %+v", res)

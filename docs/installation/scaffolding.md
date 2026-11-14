@@ -62,24 +62,27 @@ bun run build
 ```text
 todo/
 ├── go.mod                 tool github.com/go-tenon/tenon/cmd/tenon：开发工具随框架的版本固定；ignore node_modules
-├── package.json           Bun workspace（.tenon/js/client、apps/web、packages/client）；dev、build、generate、typecheck 脚本
+├── package.json           Bun workspace（.tenon/js/client、.tenon/js/shell、apps/web、packages/client）；dev、build、generate、typecheck 脚本
 ├── config/app.yaml        监听地址等应用配置
 ├── cmd/api/main.go        程序入口：命令行、serve 和 routes
 ├── internal/todo/todo.go  示例资源：待办事项的四个接口，数据保存在内存中
 ├── apps/web/              前端 web，挂在 /
 │   ├── frontend.go        把构建产物 dist 嵌入程序
 │   ├── index.html
-│   ├── package.json       React、TanStack Query、Vite；dev、build、typecheck 脚本
-│   ├── vite.config.ts
+│   ├── package.json       React、TanStack Router、TanStack Query、Vite；dev、build、typecheck 脚本
+│   ├── vite.config.ts     路由插件、React、新版本提示
 │   └── src/
-│       ├── App.tsx        待办列表页面
-│       └── client.ts      创建调用接口的客户端
+│       ├── main.tsx       渲染应用
+│       ├── app.ts         用 @go-tenon/shell 的 createApp 装配路由和 TanStack Query
+│       ├── client.ts      创建调用接口的客户端
+│       ├── routes/        页面，一个文件一个：__root.tsx 是所有页面的外层，index.tsx 是待办列表
+│       └── routeTree.gen.ts  由 routes 生成的路由树
 ├── packages/client/       共用的客户端包 @todo/client
 │   └── src/api/           /api 的 TypeScript 客户端，由 tenon generate 生成
 └── .tenon/                tenon 生成的内容，不提交：框架的前端包 js/、开发服务器的地址 dev.yaml
 ```
 
-Go 代码在 `cmd` 和 `internal` 中，前端在 `apps` 中，每个前端一个目录；生成的客户端在 `packages/client` 中，前端用 `@todo/client/api` 导入。构建时前端打进二进制，部署时通常带上这一个文件和配置目录即可。用 [tenon add frontend](tooling.md#add-frontend) 再加一个前端，例如运营后台。目录约定见[目录结构](../concepts/structure.md)。
+Go 代码在 `cmd` 和 `internal` 中，前端在 `apps` 中，每个前端一个目录；生成的客户端在 `packages/client` 中，前端用 `@todo/client/api` 导入。构建时前端打进二进制，部署时通常带上这一个文件和配置目录即可。用 [tenon add frontend](tooling.md#add-frontend) 再加一个前端，例如运营后台。目录约定见[目录结构](../concepts/structure.md)，页面与路由见[应用骨架](../responses/app-shell.md)。
 
 <a id="entrypoint"></a>
 ## 入口文件在做什么

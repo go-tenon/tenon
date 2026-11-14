@@ -1,9 +1,15 @@
 import { useState, type FormEvent } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { isApiError, type Todo } from "@[[.Slug]]/client/api"
-import { api } from "./client"
+import { createFileRoute } from "@tanstack/react-router"
+import { api } from "../client"
 
-export function App() {
+export const Route = createFileRoute("/")({
+  staticData: { title: "待办" },
+  component: Todos,
+})
+
+function Todos() {
   const queryClient = useQueryClient()
   const todos = useQuery({ queryKey: ["todo"], queryFn: () => api.todo.list() })
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["todo"] })

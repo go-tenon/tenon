@@ -1,6 +1,6 @@
 // 应用装配：把 Router、QueryClient 和会话接到一起，提供登录检查、权限检查、菜单和面包屑。
 
-import { clearOnIdentityChange, describeError, type Session } from "@go-tenon/client"
+import { clearOnIdentityChange, createSession, describeError, type Session } from "@go-tenon/client"
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query"
 import {
   type AnyRoute,
@@ -12,7 +12,7 @@ import {
   type StaticDataRouteOption,
   useMatches,
 } from "@tanstack/react-router"
-import { createContext, type ReactNode, useContext, useMemo } from "react"
+import { createContext, type ReactNode, useContext, useMemo, useSyncExternalStore } from "react"
 import { breadcrumbs, buildMenu, type Crumb, firstPage, type MenuItem, routeInfos } from "./menu"
 import "./meta"
 import { safeRedirect } from "./redirect"
@@ -54,8 +54,8 @@ export interface AppOptions<TRouteTree extends AnyRoute> {
   id: string
   /** 路由插件生成的 routeTree.gen.ts 中的 routeTree。 */
   routeTree: TRouteTree
-  /** @go-tenon/client 的会话，由应用创建并连接各个 API 的客户端。 */
-  session: Session
+  /** @go-tenon/client 的会话，由应用创建并连接各个 API 的客户端。没有登录功能的应用不传，一直是未登录。 */
+  session?: Session
   /** 登录页的路径，默认 /login。没有登录时跳到这里，带上 ?redirect=<原来的地址>。 */
   loginPath?: string
   /** 登录后没有回跳地址时的去处；默认是菜单中第一个可以进入的页面，没有时为 /。 */
@@ -106,7 +106,7 @@ const AppContext = createContext<App | null>(null)
 
 /** 创建应用。 */
 export function createApp<TRouteTree extends AnyRoute>(options: AppOptions<TRouteTree>): App<TRouteTree> {
-  const { session } = options
+  const session = options.session ?? signedOutSession()
   const queryClient = options.queryClient ?? defaultQueryClient()
   const loginPath = options.loginPath ?? "/login"
   let restoring: Promise<boolean> | undefined
@@ -174,6 +174,16 @@ export function createApp<TRouteTree extends AnyRoute>(options: AppOptions<TRout
     } as never)
   }
 
+  // 首次加载任何页面之前恢复登录状态：公开页面的页头也能知道是否已经登录。
+  const root = router.routeTree as AnyRoute
+  const rootBefore = root.options.beforeLoad
+  root.update({
+    beforeLoad: async (ctx: unknown) => {
+      await app.ready()
+      return rootBefore?.(ctx as never)
+    },
+  } as never)
+
   // 登录、退出、切换身份：清空缓存，重新运行守卫（例如退出后离开受保护的页面）。
   clearOnIdentityChange(session, queryClient)
   session.subscribe(() => void router.invalidate())
@@ -210,6 +220,15 @@ export function requireAuth({
   return context.app.guard(location)
 }
 
+/** 没有登录功能的应用使用的会话：刷新总是失败，一直是未登录。 */
+function signedOutSession(): Session {
+  return createSession({
+    refresh: async () => {
+      throw { status: 401, fields: [] }
+    },
+  })
+}
+
 /** 当前的应用，在 AppRoot 之内使用。 */
 export function useApp(): App {
   const app = useContext(AppContext)
@@ -222,6 +241,12 @@ export function useCan(): (permission: string) => boolean {
   const app = useApp()
   const { data } = useQuery({ ...app.permissionsQuery(), enabled: app.signedIn() })
   return useMemo(() => (permission: string) => data?.has(permission) ?? false, [data])
+}
+
+/** 是否已经登录：登录、退出时更新，例如页头在“登录”和“退出”之间切换。 */
+export function useSignedIn(): boolean {
+  const { session } = useApp()
+  return useSyncExternalStore(session.subscribe, () => session.accessToken() !== "")
 }
 
 /** 按当前身份的权限过滤后的菜单。 */

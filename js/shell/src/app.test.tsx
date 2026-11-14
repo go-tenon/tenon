@@ -18,6 +18,7 @@ import {
   useBreadcrumbs,
   useCan,
   useMenu,
+  useSignedIn,
 } from "./app"
 
 const body = (access: string): SessionBody => ({ access_token: access, expires_at: "2026-11-11T08:10:00Z" })
@@ -36,13 +37,22 @@ function Layout() {
   )
 }
 
+function Root() {
+  return (
+    <>
+      <header data-testid="signed-in">{String(useSignedIn())}</header>
+      <Outlet />
+    </>
+  )
+}
+
 function Problem({ error }: ErrorComponentProps) {
   return <p>{isForbidden(error) ? `403 ${error.permission}` : "error"}</p>
 }
 
 /** 根 → 登录页、受保护布局 _app → 首页、用户管理（需要权限）。 */
 function setup(options: { signedIn: boolean; permissions?: string[] }) {
-  const root = createRootRouteWithContext<RouterContext>()({ component: Outlet })
+  const root = createRootRouteWithContext<RouterContext>()({ component: Root })
   const login = createRoute({ getParentRoute: () => root, path: "/login", component: () => <p>login page</p> })
   const layout = createRoute({ getParentRoute: () => root, id: "_app", beforeLoad: requireAuth, component: Layout })
   const home = createRoute({
@@ -75,7 +85,7 @@ function setup(options: { signedIn: boolean; permissions?: string[] }) {
   return { app, session, permissions, refresh }
 }
 
-async function go(app: ReturnType<typeof setup>["app"], href: string) {
+async function go(app: { router: { navigate(opts: { href: string }): Promise<unknown> } }, href: string) {
   await act(() => app.router.navigate({ href }))
 }
 
@@ -116,11 +126,40 @@ describe("createApp", () => {
     expect(permissions).toHaveBeenCalledTimes(1) // 缓存在 queryClient 中
   })
 
-  it("退出后重新运行守卫，离开受保护的页面", async () => {
+  it("退出后重新运行守卫，离开受保护的页面；公开页面的 useSignedIn 随之更新", async () => {
     const { app, session } = setup({ signedIn: true })
     render(<AppRoot app={app} />)
     expect(await screen.findByText("home page")).toBeTruthy()
+    expect(screen.getByTestId("signed-in").textContent).toBe("true")
     await act(() => session.signOut())
+    expect(await screen.findByText("login page")).toBeTruthy()
+    expect(screen.getByTestId("signed-in").textContent).toBe("false")
+  })
+
+  it("首次渲染公开页面之前恢复登录状态", async () => {
+    const { app, refresh } = setup({ signedIn: true })
+    app.router.history.push("/login")
+    render(<AppRoot app={app} />)
+    expect(await screen.findByText("login page")).toBeTruthy()
+    expect(screen.getByTestId("signed-in").textContent).toBe("true")
+    expect(refresh).toHaveBeenCalledTimes(1)
+  })
+
+  it("不传会话时一直是未登录：公开页面照常显示，受保护的页面跳到登录页", async () => {
+    const root = createRootRouteWithContext<RouterContext>()({ component: Root })
+    const open = createRoute({ getParentRoute: () => root, path: "/", component: () => <p>open page</p> })
+    const login = createRoute({ getParentRoute: () => root, path: "/login", component: () => <p>login page</p> })
+    const layout = createRoute({ getParentRoute: () => root, id: "_app", beforeLoad: requireAuth })
+    const secret = createRoute({ getParentRoute: () => layout, path: "/secret", component: () => <p>secret</p> })
+    const app = createApp({
+      id: "plain",
+      routeTree: root.addChildren([open, login, layout.addChildren([secret])]),
+      router: { history: createMemoryHistory({ initialEntries: ["/"] }) },
+    })
+    render(<AppRoot app={app} />)
+    expect(await screen.findByText("open page")).toBeTruthy()
+    expect(screen.getByTestId("signed-in").textContent).toBe("false")
+    await go(app, "/secret")
     expect(await screen.findByText("login page")).toBeTruthy()
   })
 

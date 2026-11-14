@@ -353,6 +353,32 @@ func TestSyncJS(t *testing.T) {
 	if changed, err := dev.SyncJS("."); err != nil || !changed {
 		t.Fatalf("after edit: changed %v, %v", changed, err)
 	}
+
+	// 包自己的 node_modules（Bun 的依赖链接）保留；包中多出的文件、框架中已经没有的包被删除。
+	for p, content := range map[string]string{
+		".tenon/js/shell/node_modules/react/package.json": "{}",
+		".tenon/js/shell/src/stale.ts":                    "",
+		".tenon/js/old/package.json":                      "{}",
+	} {
+		full := filepath.Join(dir, p)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := dev.SyncJS("."); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".tenon/js/shell/node_modules/react/package.json")); err != nil {
+		t.Errorf("dependency links removed: %v", err)
+	}
+	for _, p := range []string{".tenon/js/shell/src/stale.ts", ".tenon/js/old"} {
+		if _, err := os.Stat(filepath.Join(dir, p)); !os.IsNotExist(err) {
+			t.Errorf("%s not removed", p)
+		}
+	}
 }
 
 // syncBuffer 是可以同时读写的 bytes.Buffer：dev 的子进程写入时，测试在读取。
@@ -371,4 +397,31 @@ func (s *syncBuffer) String() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.b.String()
+}
+
+func TestNeedsInstall(t *testing.T) {
+	dir := t.TempDir()
+	write := func(p, content string) {
+		t.Helper()
+		full := filepath.Join(dir, p)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !dev.NeedsInstall(dir) {
+		t.Error("no node_modules: want install")
+	}
+	write("node_modules/.keep", "")
+	write(".tenon/js/client/package.json", `{"name":"@go-tenon/client"}`)
+	write(".tenon/js/shell/package.json", `{"name":"@go-tenon/shell","peerDependencies":{"react":"^19"}}`)
+	if !dev.NeedsInstall(dir) {
+		t.Error("shell has dependencies but no node_modules: want install")
+	}
+	write(".tenon/js/shell/node_modules/react/package.json", "{}")
+	if dev.NeedsInstall(dir) {
+		t.Error("everything installed: want no install")
+	}
 }

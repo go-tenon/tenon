@@ -15,7 +15,9 @@
 <a id="installing"></a>
 ## 安装
 
-`@go-tenon/shell` 与 `@go-tenon/client` 一样随框架分发：`tenon dev` 把它复制到项目的 `.tenon/js/shell`。把它加入根目录 `package.json` 的 `workspaces`，前端依赖它：
+`tenon init` 和 `tenon add frontend` 生成的前端已经按本节配置好：`src/app.ts` 创建应用，页面在 `src/routes` 中。下面是各部分的作用，给已有的前端加上它时照着做。
+
+`@go-tenon/shell` 与 `@go-tenon/client` 一样随框架分发，`tenon` 把它复制到项目的 `.tenon/js/shell`（见[框架的前端包](../installation/tooling.md#framework-packages)）。它列在根目录 `package.json` 的 `workspaces` 中，前端依赖它：
 
 ```json
 {
@@ -26,12 +28,16 @@
     "@tanstack/react-router": "^1.170.0"
   },
   "devDependencies": {
-    "@tanstack/router-plugin": "^1.168.0"
+    "@tanstack/router-cli": "^1.167.46",
+    "@tanstack/router-plugin": "^1.168.48"
+  },
+  "scripts": {
+    "typecheck": "tsr generate && tsc --noEmit"
   }
 }
 ```
 
-页面使用 TanStack Router [基于文件的路由](https://tanstack.com/router/latest/docs/framework/react/routing/file-based-routing)：`src/routes` 中一个文件是一个页面，Vite 插件生成路由树 `src/routeTree.gen.ts`。`vite.config.ts` 加上路由插件（放在 React 插件之前）和[新版本提示](#new-version)的插件：
+页面使用 TanStack Router [基于文件的路由](https://tanstack.com/router/latest/docs/framework/react/routing/file-based-routing)：`src/routes` 中一个文件是一个页面，Vite 插件生成路由树 `src/routeTree.gen.ts`。路由树在 `tenon dev`、`tenon build` 运行 Vite 时自动更新；`typecheck` 先用 `tsr generate` 重新生成它，新加了页面但没有运行 `tenon dev` 时类型检查也是对的。`vite.config.ts` 加上路由插件（放在 React 插件之前）和[新版本提示](#new-version)的插件：
 
 ```ts
 import { tanstackRouter } from "@tanstack/router-plugin/vite"
@@ -90,6 +96,7 @@ createRoot(document.getElementById("root")!).render(
 )
 ```
 
+- 没有登录功能的应用不传 `session`，应用一直是未登录的。
 - `id` 区分同一个域名下的前端，例如 `web` 和 `admin`，见[本地存储](#storage)。
 - QueryClient 对 `4xx` 不重试，其他错误重试 2 次；登录、退出、切换账号或租户时清空缓存。也可以传入自己的 `queryClient`。
 - `router` 传给 Router 的其他选项，例如外观提供的 `defaultErrorComponent`、`defaultNotFoundComponent`。
@@ -137,7 +144,7 @@ import { createFileRoute } from "@tanstack/react-router"
 export const Route = createFileRoute("/_app")({ beforeLoad: requireAuth, component: Layout })
 ```
 
-- 打开页面后第一次检查时恢复登录状态（`session.restore()`，用 cookie 换 access token），之后不再重复。
+- 打开第一个页面之前恢复登录状态（`session.restore()`，用 cookie 换 access token），之后不再重复；公开页面的页头也知道是否已经登录。
 - 没有登录时跳到 `loginPath`（默认 `/login`），带上 `?redirect=<原来的地址>`。
 - 退出（`session.signOut()`）、切换身份时重新运行检查，离开需要登录的页面。
 
@@ -150,6 +157,13 @@ async function onSuccess(body: SessionBody) {
   await session.signIn(body)
   await app.redirectAfterSignIn(redirect)
 }
+```
+
+页头这类位置用 `useSignedIn()` 判断是否已经登录，登录、退出时随之更新：
+
+```tsx
+const signedIn = useSignedIn()
+return signedIn ? <button onClick={() => session.signOut()}>退出</button> : <Link to="/login">登录</Link>
 ```
 
 回跳地址只接受同源的相对路径，`//evil.com`、`https://evil.com` 等都被忽略，防止开放重定向；登录页本身也被忽略。没有可用的回跳地址时，去 `homePath`；没有设置 `homePath` 时，去菜单中第一个可以进入的页面。
@@ -222,7 +236,7 @@ app.storage.get<{ collapsed: boolean }>("sider")
 | `app.redirectAfterSignIn(redirect)` | 登录后回到原来的地址 |
 | `app.permissions()`、`app.permissionsQuery()` | 当前身份的权限；交给 `useQuery` 的查询选项 |
 | `ForbiddenError`、`isForbidden` | 缺少权限时抛出的错误 |
-| `useApp`、`useCan`、`useMenu`、`useBreadcrumbs` | 在 `AppRoot` 之内使用 |
+| `useApp`、`useSignedIn`、`useCan`、`useMenu`、`useBreadcrumbs` | 在 `AppRoot` 之内使用 |
 | `buildMenu`、`firstPage`、`pageUnder`、`breadcrumbs` | 菜单和面包屑的纯函数，外观可以直接使用 |
 | `safeRedirect(redirect, fallback)` | 只接受同源相对路径的回跳地址 |
 | `useNewVersion`、`watchVersion` | 新版本提示 |

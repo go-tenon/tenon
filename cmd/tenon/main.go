@@ -281,10 +281,16 @@ func generateCommand() *cobra.Command {
 			if err := dev.EnsureDist(cfg); err != nil {
 				return err
 			}
-			// 生成之后通常接着做类型检查，前端依赖的框架前端包要已经就位。
+			// 生成之后通常接着做类型检查，前端依赖的框架前端包要已经就位，包的依赖要已经安装。
 			if len(cfg.Frontends) > 0 {
-				if _, err := dev.SyncJS("."); err != nil {
+				changed, err := dev.SyncJS(".")
+				if err != nil {
 					return err
+				}
+				if _, berr := exec.LookPath("bun"); berr == nil && (changed || dev.NeedsInstall(".")) {
+					if err := run(cmd, ".", "bun", "install"); err != nil {
+						return err
+					}
 				}
 			}
 			bin := filepath.Join(tmp, "app")

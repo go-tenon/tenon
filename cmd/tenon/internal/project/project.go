@@ -70,7 +70,7 @@ type API struct {
 type Frontend struct {
 	// Name 是前端的名称，即 apps 中的目录名。应用按它取开发服务器的地址。
 	Name string
-	// Dir 是前端的目录，例如 apps/web，其中有 frontend.go（go:embed dist）。
+	// Dir 是前端的目录，例如 apps/web，其中有 frontend.go（go:embed all:dist）。
 	Dir string
 }
 
