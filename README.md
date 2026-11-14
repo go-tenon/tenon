@@ -56,7 +56,3 @@ go get github.com/go-tenon/tenon@main
 | 保护接口 | [认证](docs/security/authentication.md) · [登录与注册](docs/security/login.md) · [授权](docs/security/authorization.md) · [哈希](docs/security/hashing.md) · [加密与签名链接](docs/security/encryption.md) · [限流](docs/libraries/rate-limiting.md) · [人机验证](docs/security/login.md#captcha) |
 | 使用数据库 | [数据库](docs/database/quick-start.md) · [迁移](docs/database/migrations.md) |
 | 测试与上线 | [测试](docs/testing/overview.md) · [部署](docs/installation/deployment.md) |
-
-## 参与开发
-
-欢迎参与 Tenon 的开发！运行测试、CI 和文档写作约定请参阅[贡献指南](docs/contributions.md)。
