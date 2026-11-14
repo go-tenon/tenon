@@ -19,6 +19,8 @@
 
 每个 API 的接口和数据结构由 OpenAPI 3.1 文档描述，用应用的 [openapi 命令](../general/commands.md#openapi-command)导出；只支持 3.0 的生成器使用 `--spec 3.0`。一个应用可以有多个 API，按 `BasePath` 区分，例如 `/api/admin`、`/api/v1`。不兼容的修改通过新的 `BasePath` 发布，旧的 API 继续服务已经发布的客户端。
 
+OpenAPI 文档中有两个框架的扩展字段：根上的 `x-tenon-permissions` 是应用的权限目录（`name`、`description`），每个操作上的 `x-required-permissions` 是调用它需要的全部权限。
+
 接口的路径由应用决定。登录、刷新、上传、AI 对话这类接口的请求体、响应体和语义由本页规定，具体是哪个路径由应用告诉客户端，例如在创建客户端时传入。
 
 数据格式：

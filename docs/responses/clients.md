@@ -13,6 +13,8 @@
     - [上传文件](#uploading-files)
     - [下载文件](#downloading-files)
     - [TanStack Query](#tanstack)
+    - [校验规则与验证提示](#validation-rules)
+    - [权限](#ts-permissions)
     - [其他工具](#other-ts-tools)
 - [Go 客户端](#go)
     - [生成客户端](#generating-go-client)
@@ -79,13 +81,17 @@ if errors.Is(err, article.ErrSlugTaken) {
 go tool tenon generate   # 等价于 go run ./cmd/api client --ts packages/client/src
 ```
 
-前端从客户端包的子路径导入，例如 `@blog/client/api`。下面的例子都是 `/api` 的客户端。
+前端从客户端包的子路径导入：`@blog/client/api` 是 `api.ts`，`@blog/client/api/queries` 等是同一目录中的其他文件。下面的例子都是 `/api` 的客户端。
 
 | 文件 | 内容 |
 | --- | --- |
 | `api.ts` | OpenAPI 中的全部类型、每个接口的输入类型、事件流的事件类型，以及 `createClient` |
 | `errors.ts` | 服务端用 [`errorx.Define`](../general/errors.md#defining-errors) 定义的错误码，按包分组，例如 `ArticleErrors.SlugTaken` |
 | `runtime.ts` | 发送请求、刷新 access token、`ApiError`、事件流和下载 |
+| `queries.ts` | TanStack Query 的查询和修改选项，见 [TanStack Query](#tanstack) |
+| `schemas.ts` | 每个接口的请求体和查询参数的校验规则，见[校验规则与验证提示](#validation-rules) |
+| `messages.ts` | 各语言的验证提示模板，见[校验规则与验证提示](#validation-rules) |
+| `permissions.ts` | 权限目录和每个接口要求的权限，见[权限](#ts-permissions) |
 
 生成的代码是独立的 TypeScript，由 Go 程序直接生成。重新生成时只删除带生成标记的文件，目录中手写的文件保持不变。把它们提交到仓库，CI 中重新生成后用 `git diff --exit-code` 检查是否忘了更新。
 
@@ -213,37 +219,97 @@ saveBlob(blob, filename || "failures.xlsx")
 <a id="tanstack"></a>
 ### TanStack Query
 
-客户端的方法直接作为 `queryFn`、`mutationFn`，错误抛出 `ApiError`，TanStack Query 照常处理。修改数据后按前缀让相关的查询失效：
+`queries.ts` 的 `createQueries` 为每个接口生成 TanStack Query 的选项，不需要手写 query key：
+
+```ts
+import { createQueries } from "@blog/client/api/queries"
+
+export const queries = createQueries(api, {
+  queryClient,
+  scope: () => [session.userId, session.tenant], // 切换账号或租户后，旧的缓存不再命中
+})
+```
+
+| 接口 | 生成的选项 | 交给 |
+| --- | --- | --- |
+| GET | `queries.article.get(id)` 返回 `{ queryKey, queryFn }` | `useQuery`、`queryClient.prefetchQuery`、路由的 loader |
+| 其他方法 | `queries.article.publish()` 返回 `{ mutationFn, onSuccess }` | `useMutation` |
 
 ```tsx
 function Article({ id }: { id: string }) {
-  const { data, error } = useQuery({ queryKey: ["article", id], queryFn: () => api.article.get(id) })
-  const publish = useMutation({
-    mutationFn: () => api.article.publish(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["article"] }), // 文章列表和所有文章详情
-  })
+  const { data, error } = useQuery(queries.article.get(id))
+  const publish = useMutation(queries.article.publish()) // publish.mutate([id, { idempotencyKey }])
   // ……
 }
 ```
 
+- query key 是 `[...scope, API 名称, 分组, 接口, ...参数]`，例如 `[42, "acme", "api", "article", "get", "0193…"]`。分组是 operationId 的第一段，API 名称是客户端的目录名。
+- 修改成功后，同一分组的查询全部失效：`article-publish` 让文章列表和所有文章详情重新获取。需要不同的行为时，在 `useMutation` 中覆盖 `onSuccess`。
+- `mutationFn` 的参数：方法只有一个参数时就是这个参数；有多个参数时（例如路径参数加请求体）是参数组成的数组。
+- `queries.article.key()` 是分组的 key 前缀，`queries.key()` 是整个 API 的。
+- 事件流和下载接口没有生成的选项，直接调用客户端的方法。
+
+生成的选项是普通对象，不依赖 TanStack Query 的包，Vue、Solid 等版本的 TanStack Query 同样可以使用。
+
 [实时频道](../libraries/realtime.md#subscribing)收到消息后，让对应的查询失效，由 TanStack Query 重新获取，缓存始终来自接口：
 
 ```ts
-articles.on("publication", () => queryClient.invalidateQueries({ queryKey: ["article"] }))
+articles.on("publication", () => queryClient.invalidateQueries({ queryKey: queries.article.key() }))
 ```
 
 [固定分页](responses.md#offset-pagination)的列表由服务端分页。TanStack Table 的 `pageIndex` 从 0 开始，`page` 从 1 开始；把 `items` 和 `total` 交给表格，并开启 `manualPagination`：
 
 ```ts
 const { data } = useQuery({
-  queryKey: ["article", "list", pagination],
-  queryFn: () => api.article.list({ page: pagination.pageIndex + 1, per_page: pagination.pageSize }),
+  ...queries.article.list({ page: pagination.pageIndex + 1, per_page: pagination.pageSize }),
   placeholderData: keepPreviousData, // 翻页时保留上一页，表格不闪烁
 })
 // 表格：data = data?.items ?? []，rowCount = data?.total，manualPagination = true
 ```
 
 列表的查询参数放进路由的 search params 时，用生成的 `ArticleListInput` 作为 `validateSearch` 的类型，地址和接口的参数是同一个类型。
+
+<a id="validation-rules"></a>
+### 校验规则与验证提示
+
+`schemas.ts` 中是每个接口的请求体（`body`）和查询参数（`query`）的校验规则，取自 OpenAPI 的 JSON Schema，只保留类型、结构和校验规则（`minLength`、`pattern`、`enum`、`required` 等）。请求体通常引用命名类型，它们在 `components` 中：
+
+```ts
+import { schemas, components } from "@blog/client/api/schemas"
+
+schemas.article.create.body // { $ref: "#/components/schemas/Changes" }
+components.Changes.properties.slug // { type: "string", minLength: 1, pattern: "^[a-z0-9-]+$", patternDescription: "小写字母、数字和连字符" }
+```
+
+`messages.ts` 中是各语言的验证提示模板，键是[验证错误](../http/validation.md#validation-messages)的 `code`，与服务端返回的提示相同：
+
+```ts
+import { messages } from "@blog/client/api/messages"
+
+messages["zh-CN"]["validation.min_length"] // "至少 {{.Min}} 个字符"
+```
+
+前端校验表单时用这两份数据，得到的错误码和提示与服务端一致，不需要手写校验规则。修改 Go 结构体的标签后重新生成，前端的规则随之改变。
+
+应用在自己的翻译文件中覆盖了验证提示时，用 `httpcmd.Translations` 把翻译文件交给命令，生成的提示也使用覆盖后的文案：
+
+```go
+root.AddCommand(httpcmd.Commands(routes, httpcmd.Translations(locales.FS))...)
+```
+
+<a id="ts-permissions"></a>
+### 权限
+
+`permissions.ts` 中是权限目录和每个接口要求的权限：
+
+```ts
+import { permissions, required, type Permission } from "@blog/client/api/permissions"
+
+permissions["articles:write"] // "撰写和修改自己的文章"
+required.article.create // ["articles:write"]
+```
+
+权限目录来自 `rest.Options.Permissions`，见[声明权限目录](../security/authorization.md#permission-catalog)；没有设置时，只包含接口要求的权限。设置了权限目录时，接口要求的权限必须在目录中，否则生成失败。`Permission` 是全部权限名的联合类型，前端按权限显示菜单和按钮时，写错的权限名在类型检查时报错。
 
 <a id="other-ts-tools"></a>
 ### 其他工具
@@ -514,7 +580,7 @@ oasdiff 只比较请求和响应的结构。schema 改名时结构相同，由�
 
 | 选项 | 说明 |
 | --- | --- |
-| `--ts <dir>` | TypeScript 客户端的输出目录，每个 API 写到其中以名称命名的子目录，例如 `packages/client/src` |
+| `--ts <dir>` | TypeScript 客户端的输出目录，每个 API 写到其中以名称命名的子目录，例如 `packages/client/src`。应用的翻译文件由 `httpcmd.Translations` 传入，见[校验规则与验证提示](#validation-rules) |
 | `--name <path>=<name>` | 按 `BasePath` 指定 TypeScript 客户端的目录名，默认是 `BasePath` 的最后一段，可重复；两个 API 名称相同时报错 |
 | `--out <dir>` | Go 客户端的输出目录，目录名是根包的包名，例如 `../api` |
 | `--main <pkg>` | 应用的主包，在它的依赖中查找错误码；默认是当前程序 |

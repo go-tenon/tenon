@@ -72,6 +72,44 @@ func load(b *goi18n.Bundle, src fs.FS) error {
 	})
 }
 
+// Templates 按与 New 相同的顺序读取框架内置消息和 sources 中的翻译文件，返回每种语言（文件名中的语言标签，
+// 例如 zh-CN）中每个消息 ID 的原始模板，后加载的覆盖先加载的；有复数形式的消息取 other。
+// 用于把消息交给不经过 Bundle 的程序，例如 tenon generate 为前端生成验证提示。
+func Templates(sources ...fs.FS) (map[string]map[string]string, error) {
+	unmarshal := map[string]goi18n.UnmarshalFunc{"yaml": yaml.Unmarshal, "yml": yaml.Unmarshal}
+	out := map[string]map[string]string{}
+	for _, src := range append([]fs.FS{builtin}, sources...) {
+		err := fs.WalkDir(src, ".", func(p string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return err
+			}
+			if ext := strings.ToLower(path.Ext(p)); ext != ".yaml" && ext != ".yml" {
+				return nil
+			}
+			data, err := fs.ReadFile(src, p)
+			if err != nil {
+				return err
+			}
+			mf, err := goi18n.ParseMessageFileBytes(data, path.Base(p), unmarshal)
+			if err != nil {
+				return errors.Wrapf(err, "i18n: load %s", p)
+			}
+			tag := mf.Tag.String()
+			if out[tag] == nil {
+				out[tag] = map[string]string{}
+			}
+			for _, m := range mf.Messages {
+				out[tag][m.ID] = m.Other
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
 // Match 按语言偏好在 b 中协商语言，匹配失败时返回默认语言。
 // prefs 使用 Accept-Language 格式（如 "en-US,en;q=0.9"），多个值视为同一列表依次拼接，
 // 可直接传入 HTTP 头或 gRPC metadata 中的全部取值。

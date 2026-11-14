@@ -2,6 +2,7 @@ package clientgen
 
 import (
 	"fmt"
+	"io/fs"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -27,9 +28,11 @@ var clientDirName = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 // --name /api/v1=public；两个 API 名称相同时报错。--out 生成 Go 客户端，路由中有多个 API 时用 --base-path 选择一个；
 // --base-path 同样把 --ts 限定为这一个 API。
 //
+// translations 是应用的翻译文件（与 i18n.New 的 sources 相同），生成的验证提示中它们覆盖框架内置的文案。
+//
 // --main 默认是当前程序的主包；--import 允许客户端直接导入的包，可重复；--rename 指定镜像包名，例如
 // --rename example.com/blog/internal/session=usersession。没有生成的端点及原因输出到标准错误。
-func Command(router func() chi.Routes) *cobra.Command {
+func Command(router func() chi.Routes, translations ...fs.FS) *cobra.Command {
 	var gen Options
 	var ts, basePath string
 	var names map[string]string
@@ -64,7 +67,7 @@ func Command(router func() chi.Routes) *cobra.Command {
 					return command.AsExitError(command.ExitUsage, err)
 				}
 				for i, api := range apis {
-					res, err := GenerateTS(api, TSOptions{Main: gen.Main, Dir: gen.Dir, Rename: gen.Rename})
+					res, err := GenerateTS(api, TSOptions{Name: dirs[i], Translations: translations, Main: gen.Main, Dir: gen.Dir, Rename: gen.Rename})
 					if err != nil {
 						return err
 					}

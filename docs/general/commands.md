@@ -93,7 +93,7 @@ func main() {
 | `command.Config[C]()` | `config check`、`config show` | 是 |
 | `migratecmd.New(fsys, dbConfig, opts...)` | `migrate up`、`migrate status`、`migrate down`、`migrate make`；`migratecmd.Name` 构造其他数据库的命令，见[多个数据库](../database/quick-start.md#multiple-databases) | 是 |
 | `migratecmd.Publish(sources...)` | 显式挂载的 `migrate publish` | 否 |
-| `httpcmd.Commands(router)` | `openapi`、`routes`、`client`（生成 TypeScript 或 Go 客户端，见[客户端代码](../responses/clients.md)）；也可以用 `httpcmd.OpenAPI`、`httpcmd.Routes`、`clientgen.Command` 单独装配 | 否 |
+| `httpcmd.Commands(router, opts...)` | `openapi`、`routes`、`client`（生成 TypeScript 或 Go 客户端，见[客户端代码](../responses/clients.md)）；`httpcmd.Translations(locales.FS)` 传入应用的翻译文件，生成的验证提示与服务端相同。也可以用 `httpcmd.OpenAPI`、`httpcmd.Routes`、`clientgen.Command` 单独装配 | 否 |
 | `command.Bind(open, declare)` | 应用声明的命令，例如 `article publish`，见[从命令行运行动作](../concepts/actions.md#as-commands) | 是 |
 | `queuecmd.New(db)` | `queue status`、`queue failed`、`queue slot recreate`，在 `command.Bind` 中声明，见[队列状态](../libraries/queue.md#stats-command) | 是 |
 | `schedulecmd.New(tasks, m)` | `schedules`，在 `command.Bind` 中声明，见[列出任务的命令](../libraries/scheduling.md#schedules-command) | 是 |

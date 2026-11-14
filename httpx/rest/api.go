@@ -4,6 +4,8 @@ import (
 	"log/slog"
 	"net/http"
 	"reflect"
+	"slices"
+	"strings"
 
 	"github.com/cockroachdb/errors"
 	"github.com/danielgtaylor/huma/v2"
@@ -54,6 +56,9 @@ type Options struct {
 	// Credentials 让 RequireAuth 保护的长连接（例如 SSE）在收到复查信号时立即重新校验凭据，
 	// 撤销 token、停用用户后连接随即结束；nil 时只按 30 秒的间隔定期校验。通常是 broadcast.NewCredentials 的返回值。
 	Credentials httpx.CredentialWatcher
+	// Permissions 是应用的权限目录，例如 authz.Catalog。它写入 OpenAPI 文档的 x-tenon-permissions（按名称排序），
+	// 客户端据此生成权限常量和说明；路由需要的权限另外写在每个操作的 x-required-permissions 中。nil 时不写。
+	Permissions []identity.Permission
 }
 
 // New 在 r 上创建 chi + Huma API，并让 r 上未匹配的路由与方法返回 Problem Details。
@@ -93,6 +98,13 @@ func New(r chi.Router, opts Options) *API {
 	cfg.OpenAPI.Components.Schemas.RegisterTypeAlias(reflect.TypeOf(huma.ErrorDetail{}), reflect.TypeOf(ErrorDetail{}))
 	// localizeErrors 排在最前，应用的 Transformer 看到的已经是翻译后的 ErrorModel。
 	cfg.Transformers = append([]huma.Transformer{localizeErrors}, opts.Transformers...)
+	if len(opts.Permissions) > 0 {
+		perms := slices.SortedFunc(slices.Values(opts.Permissions), func(a, b identity.Permission) int { return strings.Compare(a.Name, b.Name) })
+		if cfg.OpenAPI.Extensions == nil {
+			cfg.OpenAPI.Extensions = map[string]any{}
+		}
+		cfg.OpenAPI.Extensions["x-tenon-permissions"] = perms
+	}
 	if opts.BasePath != "" {
 		cfg.OpenAPI.Servers = []*huma.Server{{URL: opts.BasePath}}
 	}
