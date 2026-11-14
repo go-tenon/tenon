@@ -19,7 +19,7 @@ import (
 var files embed.FS
 
 // GoVersion 是生成的 go.mod 中的 go 版本，与框架要求的最低版本相同。
-const GoVersion = "1.27.3"
+const GoVersion = "1.27.4"
 
 // Options 是模板的参数。
 type Options struct {

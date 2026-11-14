@@ -12,7 +12,7 @@
 <a id="requirements"></a>
 ## 环境要求
 
-- Go 1.27.3 或更高版本
+- Go 1.27.4 或更高版本
 - [Bun](https://bun.sh)：安装前端依赖、运行 Vite
 - Docker：从下一章开始，用它在本机启动 PostgreSQL、Redis、Memcached 和 NSQ
 

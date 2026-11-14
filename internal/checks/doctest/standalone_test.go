@@ -63,7 +63,7 @@ func TestStandaloneBlocks(t *testing.T) {
 		t.Skip("no complete files")
 	}
 
-	writeFile(t, dir, "go.mod", "module example.com/docs\n\ngo 1.27.3\n\nrequire github.com/go-tenon/tenon v0.0.0\n\nreplace github.com/go-tenon/tenon => "+root+"\n")
+	writeFile(t, dir, "go.mod", "module example.com/docs\n\ngo 1.27.4\n\nrequire github.com/go-tenon/tenon v0.0.0\n\nreplace github.com/go-tenon/tenon => "+root+"\n")
 	sum, err := os.ReadFile(filepath.Join(root, "go.sum"))
 	if err != nil {
 		t.Fatal(err)
