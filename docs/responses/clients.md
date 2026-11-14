@@ -171,7 +171,7 @@ created.headers.location // 有响应头的接口返回 { body, headers }
 <a id="ts-errors"></a>
 ### 错误
 
-非 2xx 的响应抛出 `ApiError`：`status` 是状态码，`code` 是业务错误码，`detail` 是可以展示给用户的说明，`fields` 是 `422` 时每个字段的问题（[翻译后的提示和规则 `code`](../http/validation.md#validation-error-response)），`requestId` 用来报告问题。业务错误码用 `errors.ts` 中的常量判断：
+非 2xx 的响应抛出 `ApiError`：`status` 是状态码，`code` 是业务错误码，`detail` 是可以展示给用户的说明，`fields` 是 `422` 时每个字段的问题（[翻译后的提示和规则 `code`](../http/validation.md#validation-error-response)），`params` 是业务错误的[公开参数](../general/errors.md#public-parameters)（没有时是空对象），`requestId` 用来报告问题，`retryAfter` 是建议的等待秒数。业务错误码用 `errors.ts` 中的常量判断：
 
 ```ts
 import { ArticleErrors, isApiError } from "@blog/client/api"
@@ -361,6 +361,9 @@ switch (info.kind) {
   case "rate_limited":
     toast(`请 ${info.retryAfter} 秒后重试`)
     break
+  case "method_required":
+    showLogin({ methods: info.params.methods as string[] }) // 用其中一种方式重新登录
+    break
   case "business":
     toast(info.message) // 按 info.code 处理时，用 errors.ts 中的常量
     break
@@ -497,7 +500,7 @@ for _, a := range list.Items { // page.Offset[article.ArticleDTO]
 <a id="go-client-errors"></a>
 ### 错误
 
-非 2xx 的响应返回 `*wire.Error`：`Status` 是状态码，`Code` 是业务错误码，`Detail` 是可以展示给用户的说明，`Fields` 是 `422` 时每个字段的问题（[翻译后的提示和规则 `code`](../http/validation.md#validation-error-response)），`RequestID` 用来报告问题。
+非 2xx 的响应返回 `*wire.Error`：`Status` 是状态码，`Code` 是业务错误码，`Detail` 是可以展示给用户的说明，`Fields` 是 `422` 时每个字段的问题（[翻译后的提示和规则 `code`](../http/validation.md#validation-error-response)），`Params` 是业务错误的[公开参数](../general/errors.md#public-parameters)，`RequestID` 用来报告问题，`RetryAfter` 是 `Retry-After` 响应头建议的等待时间。
 
 服务端用 [`errorx.Define`](../general/errors.md#defining-errors) 定义的错误码，在对应的包中生成为同名常量，用 `errors.Is` 判断：
 

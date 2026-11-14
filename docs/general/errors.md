@@ -329,7 +329,13 @@ article.slug_taken: "slug“{{.slug}}”已被使用"
 
 响应中的 `detail` 就会变成 `slug“hello-world”已被使用`。
 
-之所以叫“公开”参数，是因为它们会出现在给用户看的文案中，请只附加可以展示给调用者的信息。参数只出现在文案中。
+参数同时出现在 HTTP 错误响应的 `params` 中，客户端可以读取它们来处理错误，例如 `auth.method_required` 的 `methods` 列出可以用的登录方式：
+
+```json
+{"title": "Conflict", "status": 409, "detail": "slug“hello-world”已被使用", "code": "article.slug_taken", "params": {"slug": "hello-world"}}
+```
+
+之所以叫“公开”参数，是因为它们会出现在给用户看的文案和响应体中，请只附加可以展示给调用者的信息。参数的值要能序列化为 JSON；不能序列化时响应省略 `params`，并记录一条警告。
 
 如果失败在等待一段时间后就会消失，例如[限流](../libraries/rate-limiting.md)，用 `errorx.RetryAfter` 附加建议的等待时间，HTTP 响应会带上 `Retry-After` 响应头（秒，向上取整）：
 
@@ -358,7 +364,7 @@ errorx.KindOf(err) // errorx.Conflict，不是业务错误时为 errorx.Internal
 <a id="response-format"></a>
 ## 响应格式
 
-错误响应直接使用 [Huma](https://huma.rocks) 的错误结构，即 [Problem Details](https://www.rfc-editor.org/rfc/rfc9457) 格式，`Content-Type` 为 `application/problem+json`。Tenon 只为业务错误增加了 `code` 字段：
+错误响应直接使用 [Huma](https://huma.rocks) 的错误结构，即 [Problem Details](https://www.rfc-editor.org/rfc/rfc9457) 格式，`Content-Type` 为 `application/problem+json`。Tenon 为业务错误增加了 `code` 和 `params` 字段：
 
 | 字段 | 说明 |
 | --- | --- |
@@ -366,6 +372,7 @@ errorx.KindOf(err) // errorx.Conflict，不是业务错误时为 errorx.Internal
 | `title` | 状态码的标准描述 |
 | `detail` | 展示给用户的文案 |
 | `code` | 稳定的错误码，**只有业务错误包含** |
+| `params` | [公开参数](#public-parameters)，**只有带参数的业务错误包含** |
 | `errors` | 字段级的错误明细，**只有输入格式错误包含**，每一项带有违反的规则 `code` 和翻译后的 `message`，见[验证](../http/validation.md#validation-error-response) |
 
 客户端可以这样区分错误：有 `code` 时按 `code` 处理；有 `errors` 时把提示显示在对应字段旁边；两者都没有时（路由不存在、服务端故障等）按 `status` 处理。各状态码和框架定义的错误码的处理方式见[客户端协议](../http/protocol.md#errors)。

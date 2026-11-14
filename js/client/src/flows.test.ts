@@ -127,14 +127,19 @@ describe("chat", () => {
   it("chatControls 按约定的路径请求，失败时抛出可以分类的错误", async () => {
     const { fetch, calls } = fakeFetch((url) =>
       url.endsWith("/steer")
-        ? response(409, { status: 409, code: "ai.finished", detail: "回答已经结束" })
+        ? response(409, { status: 409, code: "ai.finished", detail: "回答已经结束", params: { id: "c1" } })
         : response(200, [{ id: "m1" }]),
     )
     const c = chatControls("/api/assistant/chat", fetch)
     await c.stop("c 1")
     expect(await c.messages("c1")).toEqual([{ id: "m1" }])
     const err = await c.steer("c1", "再短一点").catch((e) => e)
-    expect(describeError(err)).toMatchObject({ kind: "business", code: "ai.finished", message: "回答已经结束" })
+    expect(describeError(err)).toMatchObject({
+      kind: "business",
+      code: "ai.finished",
+      message: "回答已经结束",
+      params: { id: "c1" },
+    })
     expect(calls.map((x) => `${x.init.method} ${x.url}`)).toEqual([
       "POST /api/assistant/chat/c%201/stop",
       "GET /api/assistant/chat/c1/messages",

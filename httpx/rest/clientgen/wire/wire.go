@@ -43,8 +43,12 @@ type Error struct {
 	Detail string
 	// Fields 是输入格式错误（422）时每个字段的问题。
 	Fields []FieldError
+	// Params 是业务错误的公开参数，例如 auth.method_required 的 methods；没有时为 nil。
+	Params map[string]any
 	// RequestID 是响应头 X-Request-ID，报告问题时提供给服务端排查。
 	RequestID string
+	// RetryAfter 是响应头 Retry-After 建议的等待时间，出现在 429 和部分 503 中；没有时为 0。
+	RetryAfter time.Duration
 }
 
 // FieldError 是一个输入字段的问题。
@@ -481,19 +485,34 @@ func drain(res *http.Response) {
 }
 
 func decodeError(res *http.Response) error {
-	e := &Error{Status: res.StatusCode, RequestID: res.Header.Get("X-Request-ID")}
+	e := &Error{Status: res.StatusCode, RequestID: res.Header.Get("X-Request-ID"), RetryAfter: retryAfter(res.Header.Get("Retry-After"))}
 	var problem struct {
-		Detail string       `json:"detail"`
-		Code   string       `json:"code"`
-		Errors []FieldError `json:"errors"`
+		Detail string         `json:"detail"`
+		Code   string         `json:"code"`
+		Errors []FieldError   `json:"errors"`
+		Params map[string]any `json:"params"`
 	}
 	if json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(&problem) == nil {
-		e.Code, e.Detail, e.Fields = Code(problem.Code), problem.Detail, problem.Errors
+		e.Code, e.Detail, e.Fields, e.Params = Code(problem.Code), problem.Detail, problem.Errors, problem.Params
 	}
 	if e.Detail == "" {
 		e.Detail = http.StatusText(res.StatusCode)
 	}
 	return e
+}
+
+// retryAfter 解析 Retry-After：秒数或 HTTP 日期；无法解析或已经过去时返回 0。
+func retryAfter(v string) time.Duration {
+	if v == "" {
+		return 0
+	}
+	if n, err := strconv.Atoi(v); err == nil {
+		return max(time.Duration(n)*time.Second, 0)
+	}
+	if t, err := http.ParseTime(v); err == nil {
+		return max(time.Until(t), 0)
+	}
+	return 0
 }
 
 // PathValue 把路径参数转换为转义后的路径片段。

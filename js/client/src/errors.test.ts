@@ -26,6 +26,13 @@ describe("describeError", () => {
     expect(describeError(apiError(429, { retryAfter: 30 })).retryAfter).toBe(30)
   })
 
+  it("带上公开参数，没有时是空对象", () => {
+    const err = apiError(403, { code: "auth.method_required", params: { methods: ["acme_sso"] } })
+    expect(describeError(err)).toMatchObject({ kind: "method_required", params: { methods: ["acme_sso"] } })
+    expect(describeError(apiError(404)).params).toEqual({})
+    expect(describeError(new TypeError("offline")).params).toEqual({})
+  })
+
   it("按形状识别 ApiError", () => {
     expect(isApiErrorLike(apiError(500))).toBe(true)
     expect(isApiErrorLike({ status: 500 })).toBe(false)

@@ -46,7 +46,9 @@ check(hi.body.tags !== undefined, "second create", hi)
 
 // 业务错误和字段错误。
 err = await rejects(api.article.create({ title: "Again", slug: "hello" }), "duplicate slug")
-check(err.status === 409 && isApiError(err, ArticleErrors.SlugTaken) && err.detail !== undefined, "slug taken", err)
+check(err.status === 409 && isApiError(err, ArticleErrors.SlugTaken) && err.detail !== undefined && err.params.slug === "hello", "slug taken", err)
+err = await rejects(api.article.create({ title: "", slug: "Bad Slug" }), "invalid")
+check(Object.keys(err.params).length === 0, "no params", err.params)
 err = await rejects(api.article.create({ title: "", slug: "Bad Slug" }), "invalid")
 check(err.status === 422 && err.fields.some((f) => f.location === "body.title"), "field errors", err.fields)
 err = await rejects(api.article.get("00000000-0000-0000-0000-000000000000"), "missing")

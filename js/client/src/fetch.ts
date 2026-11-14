@@ -68,6 +68,7 @@ export class HttpError extends Error {
   readonly code?: string
   readonly detail?: string
   readonly fields: { location?: string; message: string; code?: string; value?: unknown }[]
+  readonly params: Record<string, unknown>
   readonly requestId?: string
   readonly retryAfter?: number
 
@@ -79,6 +80,9 @@ export class HttpError extends Error {
     this.code = typeof body?.code === "string" ? body.code : undefined
     this.detail = detail
     this.fields = Array.isArray(body?.errors) ? (body.errors as HttpError["fields"]) : []
+    const params = body?.params
+    this.params =
+      typeof params === "object" && params !== null && !Array.isArray(params) ? (params as Record<string, unknown>) : {}
     this.requestId = headers?.get("X-Request-ID") ?? undefined
     const retryAfter = Number(headers?.get("Retry-After") ?? "")
     this.retryAfter = retryAfter > 0 ? retryAfter : undefined

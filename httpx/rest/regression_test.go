@@ -326,3 +326,45 @@ func TestSchemaNamesFromDifferentPackagesDoNotCollide(t *testing.T) {
 		}
 	}
 }
+
+func TestBusinessErrorParams(t *testing.T) {
+	api := rest.New(chi.NewRouter(), rest.Options{Accounts: identity.Accounts{"user": nil}})
+	register := func(path string, err error) {
+		op := huma.Operation{OperationID: strings.TrimPrefix(path, "/"), Method: "POST", Path: path}
+		rest.Public()(&op)
+		rest.Register(api, op, func(context.Context, *echoIn) (*echoOut, error) { return nil, err })
+	}
+	method := errorx.Define(errorx.PermissionDenied, "auth.method_required")
+	register("/params", method.New(errorx.Public("methods", []string{"acme_sso"})))
+	register("/plain", method.New())
+	register("/unencodable", method.New(errorx.Public("callback", func() {})))
+	schema := api.OpenAPI().Paths["/params"].Post.Responses["default"].Content["application/problem+json"].Schema
+
+	for path, want := range map[string]string{
+		"/params":      `{"methods":["acme_sso"]}`,
+		"/plain":       "",
+		"/unencodable": "",
+	} {
+		req := httptest.NewRequest("POST", path, strings.NewReader(`{"secret":"valid"}`))
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		api.Handler().ServeHTTP(rr, req)
+		var obj map[string]any
+		if err := json.Unmarshal(rr.Body.Bytes(), &obj); err != nil {
+			t.Fatal(err)
+		}
+		result := &huma.ValidateResult{}
+		huma.Validate(api.OpenAPI().Components.Schemas, schema, &huma.PathBuffer{}, huma.ModeReadFromServer, obj, result)
+		if len(result.Errors) > 0 {
+			t.Fatalf("%s: response violates documented schema: %v; %s", path, result.Errors, rr.Body.String())
+		}
+		got := ""
+		if p, ok := obj["params"]; ok {
+			b, _ := json.Marshal(p)
+			got = string(b)
+		}
+		if rr.Code != 403 || obj["code"] != "auth.method_required" || got != want {
+			t.Fatalf("%s: %d %s", path, rr.Code, rr.Body.String())
+		}
+	}
+}

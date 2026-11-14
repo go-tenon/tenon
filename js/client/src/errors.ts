@@ -18,6 +18,8 @@ export interface ApiErrorLike {
   code?: string
   detail?: string
   fields: FieldError[]
+  /** 业务错误的公开参数。 */
+  params?: Record<string, unknown>
   requestId?: string
   retryAfter?: number
 }
@@ -55,6 +57,8 @@ export interface ErrorInfo {
   /** 展示给用户的文案，已经按请求的语言翻译；网络错误等没有服务端文案时为空。 */
   message?: string
   fields: FieldError[]
+  /** 业务错误的公开参数，例如 method_required 时的 methods；没有时是空对象。 */
+  params: Record<string, unknown>
   retryAfter?: number
   requestId?: string
 }
@@ -69,9 +73,9 @@ const forbiddenCodes: Record<string, ErrorKind> = {
 export function describeError(err: unknown): ErrorInfo {
   if (!isApiErrorLike(err)) {
     const name = typeof err === "object" && err !== null ? (err as { name?: unknown }).name : undefined
-    if (name === "AbortError") return { kind: "aborted", fields: [] }
-    if (err instanceof TypeError) return { kind: "network", fields: [] }
-    return { kind: "unknown", fields: [] }
+    if (name === "AbortError") return { kind: "aborted", fields: [], params: {} }
+    if (err instanceof TypeError) return { kind: "network", fields: [], params: {} }
+    return { kind: "unknown", fields: [], params: {} }
   }
   const info: ErrorInfo = {
     kind: "unknown",
@@ -79,6 +83,7 @@ export function describeError(err: unknown): ErrorInfo {
     code: err.code,
     message: err.detail,
     fields: err.fields,
+    params: err.params ?? {},
     retryAfter: err.retryAfter,
     requestId: err.requestId,
   }

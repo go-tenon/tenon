@@ -64,6 +64,8 @@ export class ApiError extends Error {
   readonly detail?: string
   /** 422 时每个字段的问题。 */
   readonly fields: FieldError[]
+  /** 业务错误的公开参数，例如 auth.method_required 的 methods；没有时是空对象。 */
+  readonly params: Record<string, unknown>
   /** 请求编号，用户报告问题时附上它。 */
   readonly requestId?: string
   /** 建议的等待秒数，来自 Retry-After 响应头，出现在 429 和部分 503 中。 */
@@ -77,9 +79,14 @@ export class ApiError extends Error {
     this.code = typeof body?.code === "string" ? body.code : undefined
     this.detail = detail
     this.fields = Array.isArray(body?.errors) ? (body.errors as FieldError[]) : []
+    this.params = isRecord(body?.params) ? body.params : {}
     this.requestId = requestId
     this.retryAfter = retryAfter
   }
+}
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v)
 }
 
 /** 报告 err 是否是 ApiError；给出 code 时还要求业务错误码相同。 */

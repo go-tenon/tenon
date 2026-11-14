@@ -69,8 +69,9 @@ func TestRoundTrip(t *testing.T) {
 		t.Fatalf("created %+v", created)
 	}
 
-	if _, err := c.Article.Create(ctx, changes); !errors.Is(err, article.ErrSlugTaken) || errors.Is(err, article.ErrNotFound) {
-		t.Fatalf("duplicate slug: %v", err)
+	if _, err := c.Article.Create(ctx, changes); !errors.Is(err, article.ErrSlugTaken) || errors.Is(err, article.ErrNotFound) ||
+		!errors.As(err, &apiErr) || apiErr.Params["slug"] != changes.Slug {
+		t.Fatalf("duplicate slug: %#v", err)
 	}
 	_, err = c.Article.Create(ctx, article.Changes{Slug: "Bad Slug"})
 	if !errors.As(err, &apiErr) || apiErr.Status != 422 || apiErr.Code != "" || len(apiErr.Fields) != 2 {

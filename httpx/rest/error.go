@@ -2,6 +2,7 @@ package rest
 
 import (
 	"context"
+	"encoding/json"
 	"math"
 	"net/http"
 	"strconv"
@@ -17,11 +18,13 @@ import (
 
 // ErrorModel 在 Huma 原生 Problem Details 上增加业务错误码和字段错误的验证规则。
 //
-// 只有业务错误带 code。Huma 产生的错误在写出前由 localizeErrors 转为本类型：
+// 只有业务错误带 code 和 params。Huma 产生的错误在写出前由 localizeErrors 转为本类型：
 // 字段错误带上验证规则，提示按请求的语言翻译。OpenAPI 统一用本类型描述错误响应。
 type ErrorModel struct {
 	huma.ErrorModel
 	Code string `json:"code,omitempty" doc:"Stable business error code. Present only on business errors."`
+	// Params 是 errorx.Public 附加的公开参数，客户端据此处理错误，例如 auth.method_required 的 methods。
+	Params map[string]any `json:"params,omitempty" doc:"Public parameters of a business error, e.g. methods for auth.method_required. Present only when the error has any."`
 	// Errors 覆盖 huma.ErrorModel 的同名字段。
 	Errors []*ErrorDetail `json:"errors,omitempty" doc:"Field errors. Present only on validation errors."`
 
@@ -67,8 +70,8 @@ func localizeErrors(hctx huma.Context, _ string, v any) (any, error) {
 func (e *ErrorModel) GetHeaders() http.Header { return e.headers }
 
 // FromError 将处理器错误转换为 HTTP 错误，nil 输入返回 nil：
-//   - 业务错误转为带 code 的 ErrorModel，detail 为 HTTP 状态描述，
-//     带 errorx.RetryAfter 时设置 Retry-After 响应头（秒，向上取整）；
+//   - 业务错误转为带 code 的 ErrorModel，detail 为 HTTP 状态描述，公开参数写入 params
+//     （无法序列化为 JSON 时省略），带 errorx.RetryAfter 时设置 Retry-After 响应头（秒，向上取整）；
 //   - 其他 huma.StatusError（例如 huma.Error404NotFound）即使被包装也原样返回；
 //   - 其余错误转为通用 500，内部错误信息只留在日志中。
 func FromError(err error) huma.StatusError {
@@ -88,6 +91,11 @@ func FromError(err error) huma.StatusError {
 		ErrorModel: huma.ErrorModel{Status: status, Title: http.StatusText(status), Detail: http.StatusText(status)},
 		Code:       code,
 	}
+	if params := errorx.PublicOf(err); len(params) > 0 {
+		if _, jerr := json.Marshal(params); jerr == nil {
+			m.Params = params
+		}
+	}
 	if d := errorx.RetryAfterOf(err); d > 0 {
 		m.headers = http.Header{"Retry-After": {strconv.Itoa(int(math.Ceil(d.Seconds())))}}
 	}
@@ -100,6 +108,9 @@ func (a *API) httpError(ctx context.Context, err error) huma.StatusError {
 	se := FromError(err)
 	if m, ok := se.(*ErrorModel); ok && m.Code != "" {
 		m.Detail = httpx.ErrorDetail(ctx, err)
+		if m.Params == nil && len(errorx.PublicOf(err)) > 0 {
+			a.logger.WarnContext(ctx, "public error params are not JSON-serializable; omitted from response", "code", m.Code)
+		}
 	}
 	return se
 }
