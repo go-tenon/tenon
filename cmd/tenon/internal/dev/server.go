@@ -54,22 +54,25 @@ func (d dev) serve(ctx context.Context) error {
 		}
 		d.generate(ctx, bin)
 	}
-	d.waitFrontends(ctx)
-	restart()
-
+	// 在首次编译之前记下源文件的状态并开始监听：编译、启动和生成客户端期间的修改在启动后触发一次重启，
+	// 而不是成为初始状态的一部分、一直不生效。
 	changes := make(chan struct{}, 1)
-	every := pollInterval
 	watching := make(chan struct{})
 	defer func() { <-watching }()
+	last := snapshot(".", goSource)
 	go func() {
 		defer close(watching)
-		_ = watch(ctx, func() string { return snapshot(".", goSource) }, every, func() {
+		_ = watchFrom(ctx, last, func() string { return snapshot(".", goSource) }, pollInterval, func() {
 			select {
 			case changes <- struct{}{}:
 			default:
 			}
 		})
 	}()
+
+	d.waitFrontends(ctx)
+	restart()
+
 	for {
 		select {
 		case <-ctx.Done():
