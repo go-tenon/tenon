@@ -35,11 +35,7 @@ article.not_found: 文章不存在
 //go:embed *.yaml
 var files embed.FS
 
-languages, err := i18n.New("zh-CN", files)
-if err != nil {
-    return err
-}
-router.Use(httpx.Defaults(cfg.HTTP, nil, languages)...)
+router.Use(httpx.Defaults(cfg.HTTP, httpx.Languages(i18n.MustNew("zh-CN", files)))...)
 ```
 
 现在，返回 `article.not_found` 业务错误的接口，响应中的 `detail` 就是“文章不存在”。如果请求带着 `Accept-Language: en`，而 `en.yaml` 中也有这条消息，返回的就是英文。
@@ -47,15 +43,15 @@ router.Use(httpx.Defaults(cfg.HTTP, nil, languages)...)
 <a id="enabling-localization"></a>
 ## 启用本地化
 
-本地化默认就是开启的。`httpx.Defaults` 的第三个参数是语言目录，传 `nil` 时使用框架内置的消息，默认语言为 `zh-CN`：
+本地化默认就是开启的。不传 `httpx.Languages` 选项时，`httpx.Defaults` 使用框架内置的消息，默认语言为 `zh-CN`：
 
 ```go
 router := chi.NewRouter()
-router.Use(httpx.Defaults(cfg.HTTP, nil, nil)...)
-api := rest.New(rest.Options{Router: router})
+router.Use(httpx.Defaults(cfg.HTTP)...)
+api := rest.New(router, rest.Options{})
 ```
 
-这样，框架内置的错误码已经会按请求语言翻译。需要自己的翻译或其他默认语言时，用 `i18n.New` 创建语言目录再传进去，见[加载翻译](#loading-translations)。
+这样，框架内置的错误码已经会按请求语言翻译。需要自己的翻译或其他默认语言时，用 `i18n.New` 创建语言目录，通过 `httpx.Languages` 传进去，见[加载翻译](#loading-translations)。
 
 <a id="built-in-messages"></a>
 ### 内置消息
@@ -122,12 +118,18 @@ func NewAPI(cfg httpx.Config) (*rest.API, error) {
         return nil, err
     }
     router := chi.NewRouter()
-    router.Use(httpx.Defaults(cfg, nil, languages)...)
-    return rest.New(rest.Options{Router: router}), nil
+    router.Use(httpx.Defaults(cfg, httpx.Languages(languages))...)
+    return rest.New(router, rest.Options{}), nil
 }
 ```
 
 `i18n.New` 的第一个参数是默认语言，之后可以传入任意多个文件系统，框架会读取其中所有的 YAML 翻译文件。内置消息总是最先加载，不需要你手动添加。
+
+翻译文件嵌入在二进制中时，加载失败只可能是文件本身写错了，属于构建的问题。这时可以用 `i18n.MustNew`，它出错时 panic，构造路由的函数就不必返回错误：
+
+```go
+router.Use(httpx.Defaults(cfg, httpx.Languages(i18n.MustNew("en", localeFiles)))...)
+```
 
 > [!NOTE]
 > `i18n.New` 返回原生的 go-i18n `Bundle`，它可以修改。在启动阶段完成所有修改，开始处理请求后只读取它。
@@ -221,6 +223,14 @@ func New(defaultLocale string, sources ...fs.FS) (*goi18n.Bundle, error)
 - **返回**：语言目录；翻译文件格式错误时返回错误
 
 先加载框架内置的消息，再按顺序加载 `sources` 中的全部 YAML 翻译文件，后加载的同名消息覆盖先加载的。
+
+### MustNew
+
+```go
+func MustNew(defaultLocale string, sources ...fs.FS) *goi18n.Bundle
+```
+
+与 `New` 相同，出错时 panic。用于嵌入二进制的翻译文件，见[加载翻译](#loading-translations)。
 
 ### T
 

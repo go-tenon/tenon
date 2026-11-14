@@ -18,7 +18,7 @@ import (
 )
 
 func TestRoutesIncludesTypedNativeAndHiddenRoutesWithoutRuntime(t *testing.T) {
-	api := rest.New(rest.Options{Mode: rest.ModeOpenAPI})
+	api := rest.New(chi.NewRouter(), rest.Options{Accounts: identity.Accounts{"user": nil}})
 	handler := func(context.Context, *pingIn) (*pingOut, error) {
 		t.Fatal("route inspection invoked a handler")
 		return nil, nil
@@ -94,7 +94,7 @@ func TestRoutesIncludesTypedNativeAndHiddenRoutesWithoutRuntime(t *testing.T) {
 }
 
 func TestRoutesDoesNotInferNativeSecurity(t *testing.T) {
-	api := rest.New(rest.Options{Mode: rest.ModeOpenAPI})
+	api := rest.New(chi.NewRouter(), rest.Options{})
 	api.OpenAPI().Security = []map[string][]string{{"api-key": {}}}
 	huma.Register(api.API, huma.Operation{
 		OperationID: "native", Method: http.MethodGet, Path: "/native",
@@ -115,10 +115,10 @@ func TestRoutesDoesNotInferNativeSecurity(t *testing.T) {
 	}
 }
 
-func TestRoutesExpandsOpaqueMountMethodsWithoutInvokingHandler(t *testing.T) {
+func TestRoutesCollapsesOpaqueMountWithoutInvokingHandler(t *testing.T) {
 	for _, mount := range []string{"/opaque", "/opaque/"} {
 		t.Run(mount, func(t *testing.T) {
-			api := rest.New(rest.Options{Mode: rest.ModeOpenAPI})
+			api := rest.New(chi.NewRouter(), rest.Options{})
 			api.Router().Mount(mount, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 				t.Fatal("route inspection invoked the mounted handler")
 			}))
@@ -129,15 +129,8 @@ func TestRoutesExpandsOpaqueMountMethodsWithoutInvokingHandler(t *testing.T) {
 					got = append(got, route)
 				}
 			}
-			var want []httpx.Route
-			for _, method := range []string{
-				http.MethodConnect, http.MethodDelete, http.MethodGet, http.MethodHead,
-				http.MethodOptions, http.MethodPatch, http.MethodPost, http.MethodPut,
-				"QUERY", http.MethodTrace,
-			} {
-				want = append(want, httpx.Route{Method: method, Path: "/opaque/*", Access: "unknown"})
-			}
-			// chi 隐藏 /opaque 和 /opaque/ 的挂载占位项，只展开通配路径上的方法。
+			want := []httpx.Route{{Method: httpx.AnyMethod, Path: "/opaque/*", Access: "unknown"}}
+			// chi 隐藏 /opaque 和 /opaque/ 的挂载占位项；通配路径上的全部方法合并为一条。
 			if !reflect.DeepEqual(got, want) {
 				t.Fatalf("mount routes = %#v, want %#v", got, want)
 			}
@@ -146,7 +139,7 @@ func TestRoutesExpandsOpaqueMountMethodsWithoutInvokingHandler(t *testing.T) {
 }
 
 func TestRoutesMarksOnlyHumaDocumentationEndpoints(t *testing.T) {
-	api := rest.New(rest.Options{Mode: rest.ModeOpenAPI})
+	api := rest.New(chi.NewRouter(), rest.Options{})
 	// 与文档端点相似但由应用注册的路由不能被误标为 docs。
 	api.Router().Get("/openapi", func(http.ResponseWriter, *http.Request) {})
 	api.Router().Get("/docs/guide", func(http.ResponseWriter, *http.Request) {})
@@ -162,10 +155,10 @@ func TestRoutesUnderMountedAPI(t *testing.T) {
 	router := chi.NewRouter()
 	var api *rest.API
 	router.Route("/api/v1", func(r chi.Router) {
-		api = rest.New(rest.Options{Mode: rest.ModeOpenAPI, Router: r, BasePath: "/api/v1"})
+		api = rest.New(r, rest.Options{BasePath: "/api/v1"})
 		op := huma.Operation{OperationID: "ping", Method: http.MethodGet, Path: "/ping"}
 		rest.Public()(&op)
-		rest.Register[pingIn, pingOut](api, op, nil)
+		rest.Register(api, op, func(context.Context, *pingIn) (*pingOut, error) { return nil, nil })
 	})
 	router.Get("/health", func(http.ResponseWriter, *http.Request) {})
 	routes := httpx.Routes(router)
@@ -186,7 +179,7 @@ func TestRoutesUnderMountedAPI(t *testing.T) {
 func TestDocsPageUsesBasePath(t *testing.T) {
 	router := chi.NewRouter()
 	router.Route("/api/v1", func(r chi.Router) {
-		rest.New(rest.Options{Accounts: identity.Accounts{"user": nil}, Router: r, BasePath: "/api/v1"})
+		rest.New(r, rest.Options{Accounts: identity.Accounts{"user": nil}, BasePath: "/api/v1"})
 	})
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/v1/docs", nil))
@@ -197,5 +190,33 @@ func TestDocsPageUsesBasePath(t *testing.T) {
 	router.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/v1/openapi.json", nil))
 	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `"url":"/api/v1"`) {
 		t.Fatalf("openapi status=%d", rr.Code)
+	}
+}
+
+// APIs 按出现顺序找出路由中的全部 API，每个只出现一次；只有文档端点的 API 也能找到。
+func TestAPIsFindsEveryAPIInRouter(t *testing.T) {
+	router := chi.NewRouter()
+	var v1, v2 *rest.API
+	router.Route("/v1", func(r chi.Router) {
+		v1 = rest.New(r, rest.Options{BasePath: "/v1"})
+		for _, id := range []string{"a-get", "b-get"} {
+			op := huma.Operation{OperationID: id, Method: http.MethodGet, Path: "/" + id}
+			rest.Public()(&op)
+			rest.Register(v1, op, func(context.Context, *pingIn) (*pingOut, error) { return nil, nil })
+		}
+	})
+	router.Route("/v2", func(r chi.Router) { v2 = rest.New(r, rest.Options{BasePath: "/v2"}) })
+	router.Get("/livez", func(http.ResponseWriter, *http.Request) {})
+	if got := rest.APIs(router); !slices.Equal(got, []*rest.API{v1, v2}) {
+		t.Fatalf("APIs = %v", got)
+	}
+	if api, err := rest.Lookup(router, "/v2"); err != nil || api != v2 || api.BasePath() != "/v2" {
+		t.Fatal(api, err)
+	}
+	if _, err := rest.Lookup(router, ""); err == nil {
+		t.Fatal("ambiguous lookup accepted")
+	}
+	if got := rest.APIs(chi.NewRouter()); len(got) != 0 {
+		t.Fatalf("APIs of empty router = %v", got)
 	}
 }

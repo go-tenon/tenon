@@ -62,7 +62,7 @@ func daemonHelper() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM)
 	defer stop()
 	err = d.Run(ctx, func(ctx context.Context) error {
-		err := httpx.Serve(ctx, httpx.DefaultConfig(), ln, handler, httpx.ServeOptions{})
+		err := httpx.Serve(ctx, httpx.DefaultConfig(), ln, handler)
 		time.Sleep(500 * time.Millisecond) // 模拟等待处理中的任务
 		return err
 	})

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/go-chi/chi/v5"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -31,7 +32,7 @@ type resumeInput struct {
 // chatServer 按 useChat 的约定注册 POST /chat 和 GET /chat/{id}/stream。
 func chatServer(t *testing.T, rs *chat.Runs) string {
 	t.Helper()
-	api := rest.New(rest.Options{})
+	api := rest.New(chi.NewRouter(), rest.Options{})
 	post := huma.Operation{OperationID: "chat", Method: http.MethodPost, Path: "/chat"}
 	rest.Public()(&post)
 	rest.RegisterSSE(api, post, chat.UIEvents, func(ctx context.Context, in *chatInput) (*huma.StreamResponse, error) {

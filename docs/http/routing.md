@@ -39,6 +39,7 @@ import (
     "net/http"
 
     "github.com/danielgtaylor/huma/v2"
+    "github.com/go-chi/chi/v5"
 
     "github.com/go-tenon/tenon/httpx/rest"
 )
@@ -56,7 +57,8 @@ func ping(ctx context.Context, _ *struct{}) (*PingOutput, error) {
 }
 
 func main() {
-    api := rest.New(rest.Options{Title: "Hello API", Version: "1.0.0"})
+    router := chi.NewRouter()
+    api := rest.New(router, rest.Options{Title: "Hello API", Version: "1.0.0"})
 
     op := huma.Operation{
         OperationID: "ping",
@@ -67,7 +69,7 @@ func main() {
     rest.Public()(&op)
     rest.Register(api, op, ping)
 
-    log.Fatal(http.ListenAndServe(":8080", api.Handler()))
+    log.Fatal(http.ListenAndServe(":8080", router))
 }
 ```
 
@@ -80,7 +82,7 @@ curl localhost:8080/ping
 
 我们按顺序看一下这段代码：
 
-1. `rest.New` 创建一个 API，`Title` 和 `Version` 会出现在生成的接口文档中；
+1. `rest.New` 在 chi 路由上创建一个 API，`Title` 和 `Version` 会出现在生成的接口文档中；
 2. `huma.Operation` 声明路由：唯一的 `OperationID`、HTTP 方法、路径和一句话说明；
 3. `rest.Public()` 把这条路由声明为公开的，不需要登录；
 4. `rest.Register` 把处理器 `ping` 注册到这条路由上。
@@ -118,12 +120,7 @@ func(ctx context.Context, in *Input) (*Output, error)
 
 业务接口的处理器通常是[业务动作](../concepts/actions.md)的方法值，例如 `article.NewPublish(db).HTTP`。
 
-API 有两种运行模式：
-
-- **运行模式**（`rest.ModeServe`，默认）：处理器挂载到路由上；
-- **文档模式**（`rest.ModeOpenAPI`）：只生成接口文档，**不会调用处理器**，也可以传 `nil`。
-
-文档模式下路由照常注册，动作也会被构造，只是传入的数据库等依赖都是 `nil`。只要构造函数只保存依赖、不使用它们，就可以在没有任何外部依赖的环境中（例如 CI）导出接口文档，详见[离线导出](#exporting-openapi)。
+处理器只在请求到来时调用，注册时它只是被保存下来。所以构造动作时传入的数据库等依赖可以是 `nil`：只要构造函数只保存依赖、不使用它们，就可以在没有任何外部依赖的环境中（例如 CI）构造出全部路由、导出接口文档，详见[离线导出](#exporting-openapi)。
 
 <a id="registration-checks"></a>
 ### 注册时的检查
@@ -332,7 +329,7 @@ func toDTO(a *Article) ArticleDTO {
 ./bin/api routes
 ```
 
-该命令复用应用的路由注册入口，离线生成路由表，不需要启动 HTTP 服务或连接数据库。路由的真实声明仍保存在各模块的 `routes.go` 中，查看命令不需要另一份手工维护的路由清单。
+该命令用默认配置和 `nil` 依赖调用应用构造路由的函数，离线生成路由表，不需要启动 HTTP 服务或连接数据库。路由的真实声明仍保存在各模块的 `routes.go` 中，查看命令不需要另一份手工维护的路由清单。
 
 <a id="api-versioning"></a>
 ## API 版本
@@ -342,9 +339,7 @@ func toDTO(a *Article) ArticleDTO {
 ```go
 router.Route("/api/v1", func(r chi.Router) {
     r.Use(httpx.Timeout(cfg.HTTP.Timeout))
-    opts := API
-    opts.Router, opts.BasePath = r, "/api/v1"
-    Routes(rest.New(opts))
+    Routes(rest.New(r, rest.Options{Title: "Blog API", Version: "1.0.0", BasePath: "/api/v1"}))
 })
 ```
 
@@ -355,11 +350,11 @@ router.Route("/api/v1", func(r chi.Router) {
 ```go
 router.Route("/api/v2", func(r chi.Router) {
     r.Use(httpx.Timeout(cfg.HTTP.Timeout))
-    opts := APIv2
-    opts.Router, opts.BasePath = r, "/api/v2"
-    RoutesV2(rest.New(opts))
+    RoutesV2(rest.New(r, rest.Options{Title: "Blog API", Version: "2.0.0", BasePath: "/api/v2"}))
 })
 ```
+
+一个应用中有多个 API 时，[`openapi`](../general/commands.md#openapi-command) 和 [`client`](../responses/clients.md) 命令用 `--base-path` 选择其中一个，例如 `./bin/api openapi --base-path /api/v2`。
 
 <a id="openapi"></a>
 ## OpenAPI 文档
@@ -402,19 +397,18 @@ type Changes struct {
 <a id="exporting-openapi"></a>
 ### 离线导出
 
-很多时候，你希望在不启动服务、不连接数据库的情况下生成 OpenAPI 文档，例如在 CI 中检查接口变更，或者为前端[生成客户端代码](../responses/clients.md)。只需在创建 API 时指定文档模式，然后调用同一个注册函数：
+很多时候，你希望在不启动服务、不连接数据库的情况下生成 OpenAPI 文档，例如在 CI 中检查接口变更，或者为前端[生成客户端代码](../responses/clients.md)。只需用默认配置和 `nil` 依赖调用构造路由的同一个函数，再用 `rest.Lookup` 取出其中的 API：
 
 ```go
-api := rest.New(rest.Options{
-    Title: "Hello API", Version: "1.0.0",
-    Mode:  rest.ModeOpenAPI,
-})
-Routes(api) // 与运行时相同的注册函数
-
+// routes 是 serve 也在用的路由函数，见依赖装配
+api, err := rest.Lookup(routes(config.Default[Config](), nil), "")
+if err != nil {
+    return err
+}
 data, err := api.OpenAPIJSON()
 ```
 
-`data` 就是 OpenAPI 文档的 JSON 内容。因为运行模式和文档模式使用的是同一份路由声明，导出的文档与实际运行的接口始终保持一致。
+`data` 就是 OpenAPI 文档的 JSON 内容。`Lookup` 的第二个参数是 `BasePath`，路由中只有一个 API 时传空字符串。因为服务运行和导出文档用的是同一个路由函数，导出的文档与实际运行的接口始终保持一致。
 
 > [!TIP]
 > 应用的 [`openapi` 命令](../general/commands.md#openapi-command)就是这样导出的：`./bin/api openapi > openapi.json`。
@@ -438,7 +432,7 @@ api.Router().Get("/livez", func(w http.ResponseWriter, r *http.Request) {
 <a id="native-huma-register"></a>
 ### 使用原生 huma.Register
 
-`rest.API` 内嵌了 `huma.API`，因此你也可以调用 Huma 原生的 `huma.Register`。不过这样做会绕过 Tenon 的访问策略检查、业务错误转换和文档模式支持，这些都需要你自己处理。除非有特殊需求，否则推荐使用 `rest.Register`。
+`rest.API` 内嵌了 `huma.API`，因此你也可以调用 Huma 原生的 `huma.Register`。不过这样做会绕过 Tenon 的访问策略检查和业务错误转换，这些都需要你自己处理。除非有特殊需求，否则推荐使用 `rest.Register`。
 
 `rest.New` 不安装任何中间件，中间件的安装方式请参阅[中间件](middleware.md)。
 
@@ -450,23 +444,22 @@ api.Router().Get("/livez", func(w http.ResponseWriter, r *http.Request) {
 ### New
 
 ```go
-func New(opts Options) *API
+func New(r chi.Router, opts Options) *API
 ```
 
 - **参数**
+    - `r`：挂载路由的 chi 路由，通常是 `router.Route("/api", …)` 中的子路由；为 `nil` 时 panic
     - `opts`：见下面的 `Options`
 - **返回**：API 实例
 
-`New` 不安装任何中间件，中间件要在传入 `Router` 之前安装，见[中间件](middleware.md)。
+`New` 不安装任何中间件，中间件要在调用之前用 `r.Use` 安装，见[中间件](middleware.md)。`api.Router()` 和 `api.Handler()` 返回 `r`，`api.BasePath()` 返回 `opts.BasePath`。
 
 ### Options
 
 | 字段 | 说明 |
 | --- | --- |
 | `Title`、`Version` | 写入 OpenAPI 文档 |
-| `Mode` | `ModeServe`（默认）或 `ModeOpenAPI` |
-| `Router chi.Router` | 挂载路由的 Router，`nil` 时新建一个。中间件在传入前安装 |
-| `BasePath` | API 挂载的路径前缀，写入 OpenAPI 的 `servers` |
+| `BasePath` | API 挂载的路径前缀，写入 OpenAPI 的 `servers`；一个应用有多个 API 时，命令按它选择 |
 | `Logger *slog.Logger` | 记录 5xx 错误，`nil` 时用 `slog.Default()` |
 | `Transformers []huma.Transformer` | 追加在 Huma 默认的 Transformer 之后 |
 | `Accounts identity.Accounts` | 接受的账号体系，见[认证](../security/authentication.md) |
@@ -484,11 +477,20 @@ func Register[I, O any](api *API, op huma.Operation, handler func(context.Contex
     - `op`：路由声明，已经用 `Public` 或 `RequireBearer` 声明了访问策略
     - `handler`：处理器，通常是业务动作的 `HTTP` 方法
 
-运行模式下把处理器挂载到路由上，文档模式下只生成文档。发现[注册时的检查](#registration-checks)中的问题时 panic。
+把处理器挂载到路由上，并写入 OpenAPI 文档。`handler` 为 `nil` 或发现[注册时的检查](#registration-checks)中的问题时 panic。
 
 ```go
 rest.Register(api, op, NewPublish(db).HTTP)
 ```
+
+### APIs、Lookup
+
+```go
+func APIs(router chi.Routes) []*API
+func Lookup(router chi.Routes, basePath string) (*API, error)
+```
+
+`APIs` 遍历 `router`（包括挂载的子路由），按出现的顺序返回其中用 `New` 创建的全部 API，不调用任何处理器。`Lookup` 返回 `BasePath` 为 `basePath` 的那个；`basePath` 为空时，`router` 中必须恰好有一个 API。`openapi`、`client` 命令用它从应用的路由中取出 API，见[离线导出](#exporting-openapi)。
 
 ### Public、RequireBearer
 

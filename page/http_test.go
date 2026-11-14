@@ -3,6 +3,7 @@ package page_test
 import (
 	"context"
 	"encoding/json"
+	"github.com/go-chi/chi/v5"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -34,7 +35,7 @@ type listCursorOut struct {
 
 func newAPI() *rest.API {
 	all := []itemDTO{{1}, {2}, {3}, {4}, {5}}
-	api := rest.New(rest.Options{Title: "page"})
+	api := rest.New(chi.NewRouter(), rest.Options{Title: "page"})
 	rest.Register(api, huma.Operation{Security: []map[string][]string{},
 		OperationID: "list-offset", Method: http.MethodGet, Path: "/offset",
 	}, func(_ context.Context, in *listOffsetIn) (*listOffsetOut, error) {

@@ -83,7 +83,7 @@ func TestRateLimitBackendFailureAndProxyResolvedClient(t *testing.T) {
 	cfg := httpx.DefaultConfig()
 	cfg.ClientIP.TrustedProxies = []netip.Prefix{netip.MustParsePrefix("10.0.0.0/8")}
 	router := chi.NewRouter()
-	router.Use(httpx.Defaults(cfg, slog.New(slog.NewJSONHandler(&logs, nil)), nil)...)
+	router.Use(httpx.Defaults(cfg, httpx.Logger(slog.New(slog.NewJSONHandler(&logs, nil))))...)
 	router.With(httpx.RateLimit(memory(1, time.Hour, 1), httpx.KeyByIP)).Get("/", func(http.ResponseWriter, *http.Request) {})
 	router.With(httpx.RateLimit(failingLimiter{}, httpx.KeyByIP)).Get("/broken", func(http.ResponseWriter, *http.Request) {})
 	viaProxy := func(path, client string) int {

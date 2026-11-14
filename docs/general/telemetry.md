@@ -39,7 +39,7 @@ slog.SetDefault(logging.New(cfg.Logs, logging.Export(tel.Logs)))
 db, err := database.Open(ctx, cfg.Database, database.WithTelemetry(tel.Meters, tel.Tracers))
 // ...
 router.Use(httpx.Telemetry(tel.Meters, tel.Tracers))
-router.Use(httpx.Defaults(cfg.HTTP, nil, nil)...)
+router.Use(httpx.Defaults(cfg.HTTP)...)
 ```
 
 这样，日志、数据库语句和 HTTP 请求的指标与链路都会推送到配置的接收端。接收端的地址为空时什么也不推送，所以本地开发不需要任何配置。
@@ -90,7 +90,7 @@ telemetry:
 
 ```go
 router.Use(httpx.Telemetry(tel.Meters, tel.Tracers))
-router.Use(httpx.Defaults(cfg.HTTP, nil, nil)...)
+router.Use(httpx.Defaults(cfg.HTTP)...)
 ```
 
 | 指标 | 类型 | 属性 |

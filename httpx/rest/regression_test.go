@@ -28,16 +28,12 @@ import (
 )
 
 func TestMissingSecurityRejectedBeforeFactory(t *testing.T) {
-	for _, mode := range []rest.Mode{rest.ModeServe, rest.ModeOpenAPI} {
-		func() {
-			defer func() {
-				if recover() == nil {
-					t.Fatal("unmarked endpoint accepted")
-				}
-			}()
-			rest.Register(rest.New(rest.Options{Accounts: identity.Accounts{"user": nil}, Mode: mode}), huma.Operation{OperationID: "missing", Method: "GET", Path: "/missing"}, func(context.Context, *pingIn) (*pingOut, error) { t.Fatal("handler ran"); return nil, nil })
-		}()
-	}
+	defer func() {
+		if recover() == nil {
+			t.Fatal("unmarked endpoint accepted")
+		}
+	}()
+	rest.Register(rest.New(chi.NewRouter(), rest.Options{Accounts: identity.Accounts{"user": nil}}), huma.Operation{OperationID: "missing", Method: "GET", Path: "/missing"}, func(context.Context, *pingIn) (*pingOut, error) { t.Fatal("handler ran"); return nil, nil })
 }
 func TestWrappedErrorsAndMapping(t *testing.T) {
 	if got := rest.FromError(fmt.Errorf("outer: %w", errors.WithStack(huma.Error404NotFound("safe")))); got.GetStatus() != 404 {
@@ -51,7 +47,7 @@ func TestWrappedErrorsAndMapping(t *testing.T) {
 	}
 }
 func TestErrorResponsesMatchDocumentedSchema(t *testing.T) {
-	api := rest.New(rest.Options{Accounts: identity.Accounts{"user": nil}})
+	api := rest.New(chi.NewRouter(), rest.Options{Accounts: identity.Accounts{"user": nil}})
 	register := func(path string, err error) {
 		op := huma.Operation{OperationID: strings.TrimPrefix(path, "/"), Method: "POST", Path: path}
 		rest.Public()(&op)
@@ -152,7 +148,7 @@ func TestLocalizedBusinessErrorUsesPublicParams(t *testing.T) {
 }
 
 func TestBearerRejectsEmptySubjectAndDocumentsNoOAuthScopes(t *testing.T) {
-	api := rest.New(rest.Options{Accounts: identity.Accounts{"user": nil}})
+	api := rest.New(chi.NewRouter(), rest.Options{Accounts: identity.Accounts{"user": nil}})
 	op := huma.Operation{OperationID: "auth", Method: http.MethodGet, Path: "/auth"}
 	rest.RequireBearer(api, func(context.Context, string) (identity.Subject, error) { return identity.Subject{}, nil }, "orders")(&op)
 	if len(op.Security[0]["bearer"]) != 0 {
@@ -172,25 +168,21 @@ func TestBearerRejectsEmptySubjectAndDocumentsNoOAuthScopes(t *testing.T) {
 }
 
 func TestConflictingRouteRejectedBeforeBinding(t *testing.T) {
-	for _, mode := range []rest.Mode{rest.ModeServe, rest.ModeOpenAPI} {
-		api := rest.New(rest.Options{Accounts: identity.Accounts{"user": nil}, Mode: mode})
-		first := huma.Operation{OperationID: "first", Method: "GET", Path: "/same"}
-		rest.Public()(&first)
-		rest.Register(api, first, func(context.Context, *pingIn) (*pingOut, error) { return &pingOut{}, nil })
-		second := huma.Operation{OperationID: "second", Method: "GET", Path: "/same"}
-		rest.Public()(&second)
-		func() {
-			defer func() {
-				if recover() == nil {
-					t.Fatal("route silently overwritten")
-				}
-			}()
-			rest.Register(api, second, func(context.Context, *pingIn) (*pingOut, error) {
-				t.Fatal("conflict executed handler")
-				return nil, nil
-			})
-		}()
-	}
+	api := rest.New(chi.NewRouter(), rest.Options{Accounts: identity.Accounts{"user": nil}})
+	first := huma.Operation{OperationID: "first", Method: "GET", Path: "/same"}
+	rest.Public()(&first)
+	rest.Register(api, first, func(context.Context, *pingIn) (*pingOut, error) { return &pingOut{}, nil })
+	second := huma.Operation{OperationID: "second", Method: "GET", Path: "/same"}
+	rest.Public()(&second)
+	defer func() {
+		if recover() == nil {
+			t.Fatal("route silently overwritten")
+		}
+	}()
+	rest.Register(api, second, func(context.Context, *pingIn) (*pingOut, error) {
+		t.Fatal("conflict executed handler")
+		return nil, nil
+	})
 }
 func TestLanguageAndLoggerAreInstanceLocal(t *testing.T) {
 	var aLog, bLog bytes.Buffer
@@ -273,13 +265,12 @@ func withDefaults(opts rest.Options) *rest.API { return withLanguages(opts, nil)
 // withLanguages 与 withDefaults 相同，但使用 languages 作为语言目录。
 func withLanguages(opts rest.Options, languages *goi18n.Bundle) *rest.API {
 	router := chi.NewRouter()
-	router.Use(httpx.Defaults(httpx.DefaultConfig(), opts.Logger, languages)...)
-	opts.Router = router
-	return rest.New(opts)
+	router.Use(httpx.Defaults(httpx.DefaultConfig(), httpx.Logger(opts.Logger), httpx.Languages(languages))...)
+	return rest.New(router, opts)
 }
 
 func TestNewInstallsNoMiddleware(t *testing.T) {
-	api := rest.New(rest.Options{Accounts: identity.Accounts{"user": nil}})
+	api := rest.New(chi.NewRouter(), rest.Options{Accounts: identity.Accounts{"user": nil}})
 	op := huma.Operation{OperationID: "ping", Method: "GET", Path: "/ping"}
 	rest.Public()(&op)
 	rest.Register(api, op, func(ctx context.Context, _ *pingIn) (*pingOut, error) {
@@ -305,12 +296,12 @@ func TestOperationIDMustBeKebabCase(t *testing.T) {
 			}()
 			op := huma.Operation{OperationID: id, Method: "GET", Path: "/x"}
 			rest.Public()(&op)
-			rest.Register(rest.New(rest.Options{Mode: rest.ModeOpenAPI}), op, func(context.Context, *pingIn) (*pingOut, error) { return nil, nil })
+			rest.Register(rest.New(chi.NewRouter(), rest.Options{}), op, func(context.Context, *pingIn) (*pingOut, error) { return nil, nil })
 		}()
 	}
 	op := huma.Operation{OperationID: "publish-article-v2", Method: "GET", Path: "/x"}
 	rest.Public()(&op)
-	rest.Register(rest.New(rest.Options{Mode: rest.ModeOpenAPI}), op, func(context.Context, *pingIn) (*pingOut, error) { return nil, nil })
+	rest.Register(rest.New(chi.NewRouter(), rest.Options{}), op, func(context.Context, *pingIn) (*pingOut, error) { return nil, nil })
 }
 
 // Source 与 log/slog.Source 同名。
@@ -319,7 +310,7 @@ type Source struct {
 }
 
 func TestSchemaNamesFromDifferentPackagesDoNotCollide(t *testing.T) {
-	api := rest.New(rest.Options{Mode: rest.ModeOpenAPI})
+	api := rest.New(chi.NewRouter(), rest.Options{})
 	type slogOut struct{ Body slog.Source }
 	type localOut struct{ Body Source }
 	a := huma.Operation{OperationID: "slog-source", Method: "GET", Path: "/slog"}

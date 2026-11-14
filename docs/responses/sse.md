@@ -179,7 +179,7 @@ SSE 接口和其他接口注册在同一个 API 上，认证方式相同，例�
 ```go
 creds := broadcast.NewCredentials(hub)
 accounts := identity.Accounts{user.Type: roles.Resolve}
-api := rest.New(rest.Options{Accounts: accounts, Credentials: creds})
+api := rest.New(router, rest.Options{Accounts: accounts, Credentials: creds})
 ```
 
 凭据变化之后，调用对应的方法：

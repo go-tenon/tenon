@@ -3,6 +3,7 @@ package clientgen_test
 import (
 	"context"
 	"flag"
+	"github.com/go-chi/chi/v5"
 	"io/fs"
 	"log/slog"
 	"os"
@@ -34,9 +35,9 @@ func (t tokens) validate(_ context.Context, token string) (identity.Subject, err
 	return identity.Subject{Type: "user", ID: "alice"}, nil
 }
 
-func exampleAPI(mode rest.Mode, valid tokens) *rest.API {
+func exampleAPI(valid tokens) *rest.API {
 	// 往返测试故意触发 500，不输出它的错误日志。
-	api := rest.New(rest.Options{Title: "Blog", Mode: mode, BasePath: "/api", Accounts: identity.Accounts{"user": nil},
+	api := rest.New(chi.NewRouter(), rest.Options{Title: "Blog", BasePath: "/api", Accounts: identity.Accounts{"user": nil},
 		Logger: slog.New(slog.DiscardHandler)})
 	article.Register(api, article.NewStore(), func(op *huma.Operation) { rest.RequireBearer(api, valid.validate)(op) })
 	return api
@@ -58,7 +59,7 @@ func generate(t *testing.T, api *rest.API, opts clientgen.Options) *clientgen.Re
 }
 
 func TestGeneratedExampleIsUpToDate(t *testing.T) {
-	res := generate(t, exampleAPI(rest.ModeOpenAPI, nil), clientgen.Options{})
+	res := generate(t, exampleAPI(nil), clientgen.Options{})
 	if len(res.Skipped) > 0 {
 		t.Fatalf("skipped %q", res.Skipped)
 	}

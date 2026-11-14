@@ -36,7 +36,7 @@ func serve(t *testing.T, valid tokens) string {
 }
 
 func exampleAPIOn(router chi.Router, valid tokens) *rest.API {
-	api := exampleAPI(rest.ModeServe, valid)
+	api := exampleAPI(valid)
 	router.Mount("/", api.Handler())
 	return api
 }

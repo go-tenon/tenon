@@ -286,3 +286,13 @@ func TestLoadReturnsZeroOnError(t *testing.T) {
 		t.Fatalf("cfg=%+v err=%v", cfg, err)
 	}
 }
+
+// Default 与读取空文件的 Load 一样填充默认值（子字段先于父结构体），但不读取文件、不校验。
+func TestDefault(t *testing.T) {
+	if got := config.Default[appConfig](); !reflect.DeepEqual(got, defaults()) {
+		t.Fatalf("got %+v", got)
+	}
+	if got := config.Default[outerDefaults](); got.Inner != (innerDefaults{Value: "inner", Other: "outer"}) || got.Ptr != nil {
+		t.Fatalf("got %+v", got)
+	}
+}

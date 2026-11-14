@@ -74,7 +74,7 @@ ratelimit.Config{
 `httpx.RateLimit` 把限流器安装为中间件。配额用完时返回 `429 Too Many Requests`，并通过 `Retry-After` 响应头告诉客户端多少秒后重试。限流不在默认中间件中，需要时在 `httpx.Defaults` 之后安装：
 
 ```go
-router.Use(httpx.Defaults(cfg.HTTP, nil, nil)...)
+router.Use(httpx.Defaults(cfg.HTTP)...)
 router.Use(httpx.RateLimit(ratelimit.NewMemory(cfg.HTTP.RateLimit), httpx.KeyByIP))
 ```
 

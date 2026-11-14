@@ -21,7 +21,7 @@ func startServer(t *testing.T, cfg httpx.Config, handler http.Handler) (string, 
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- httpx.Serve(ctx, cfg, ln, handler, httpx.ServeOptions{}) }()
+	go func() { done <- httpx.Serve(ctx, cfg, ln, handler) }()
 	stopped := false
 	stop := func() time.Duration {
 		if stopped {

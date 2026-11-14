@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/go-chi/chi/v5"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -185,7 +186,7 @@ func registerFileRoutes(api *rest.API, auth func(*huma.Operation), files *filesy
 func TestRESTUploadAndConfirm(t *testing.T) {
 	t.Parallel()
 	e := newEnv(t)
-	api := rest.New(rest.Options{Accounts: identity.Accounts{"user": nil}, Title: "test"})
+	api := rest.New(chi.NewRouter(), rest.Options{Accounts: identity.Accounts{"user": nil}, Title: "test"})
 	users := map[string]identity.Subject{"alice": alice, "bob": bob}
 	auth := rest.RequireBearer(api, func(_ context.Context, token string) (identity.Subject, error) {
 		return users[token], nil

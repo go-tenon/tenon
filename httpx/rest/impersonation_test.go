@@ -2,6 +2,7 @@ package rest_test
 
 import (
 	"context"
+	"github.com/go-chi/chi/v5"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -21,7 +22,7 @@ type impersonationOut struct {
 
 // Resolve 新建主体返回时，凭据决定的字段（主体、认证方式、凭据 ID、限制、代为登录者）仍然取自凭据。
 func TestResolveKeepsCredentialFields(t *testing.T) {
-	api := rest.New(rest.Options{
+	api := rest.New(chi.NewRouter(), rest.Options{
 		Accounts: identity.Accounts{"user": func(_ context.Context, sub identity.Subject) (identity.Subject, error) {
 			return identity.Subject{Type: "staff", ID: "mallory", Permissions: []string{"*"}, Impersonator: identity.Ref{Type: "staff", ID: "forged"}, Scopes: nil}, nil
 		}},

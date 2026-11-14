@@ -63,9 +63,7 @@
 ```go
 var draining httpx.Draining
 
-err := httpx.Serve(ctx, cfg.HTTP, ln, handler, httpx.ServeOptions{
-    OnDraining: draining.Set,
-})
+err := httpx.Serve(ctx, cfg.HTTP, ln, handler, httpx.OnDraining(draining.Set))
 ```
 
 当 `ctx` 被取消时（收到停止信号，或者[不停机升级](../installation/deployment.md#zero-downtime-upgrades)时交给了新进程），它按以下顺序停止：
@@ -98,7 +96,7 @@ router.Get("/livez", func(w http.ResponseWriter, _ *http.Request) {
 router.Handle("/readyz", httpx.Ready(httpx.ReadyOptions{
     Draining: &draining,
     Checks: []httpx.Check{
-        {Name: "database", Ping: db.PingContext},
+        {Name: "database", Ping: func(ctx context.Context) error { return db.PingContext(ctx) }},
         {Name: "redis", Ping: func(ctx context.Context) error {
             return rdb.Do(ctx, rdb.B().Ping().Build()).Error()
         }},
@@ -107,7 +105,7 @@ router.Handle("/readyz", httpx.Ready(httpx.ReadyOptions{
 }))
 ```
 
-`draining` 与传给 `ServeOptions.OnDraining` 的是同一个。全部检查并行执行，每项最多 1 秒，超时按失败处理。必需的检查都通过时返回 `200`，否则返回 `503`；正在排空时不再检查，直接返回 `503`。响应体列出每项的结果：
+`draining` 与传给 `httpx.OnDraining` 的是同一个。每个 `Ping` 都写成闭包，到检查时才使用依赖：`openapi`、`routes` 命令用 `nil` 依赖构造同一套路由（见[依赖装配](dependencies.md#assembling-the-application)），`db.PingContext` 这样的方法值在 `db` 为 `nil` 时取值就会 panic。全部检查并行执行，每项最多 1 秒，超时按失败处理。必需的检查都通过时返回 `200`，否则返回 `503`；正在排空时不再检查，直接返回 `503`。响应体列出每项的结果：
 
 ```json
 {"status":"ready","checks":{"cache":"failed","database":"ok","redis":"ok"}}
@@ -129,7 +127,7 @@ router.Handle("/readyz", httpx.Ready(httpx.ReadyOptions{
 ### Serve
 
 ```go
-func Serve(ctx context.Context, cfg Config, ln net.Listener, handler http.Handler, opts ServeOptions) error
+func Serve(ctx context.Context, cfg Config, ln net.Listener, handler http.Handler, opts ...ServeOption) error
 ```
 
 - **参数**
@@ -137,7 +135,7 @@ func Serve(ctx context.Context, cfg Config, ln net.Listener, handler http.Handle
     - `cfg`：服务器的超时等参数；不使用其中的 `Addr`，但 `cfg` 仍需合法
     - `ln`：监听端口，通常由 `command.Daemon` 取得
     - `handler`：处理请求的 Router
-    - `opts`：见下面的 `ServeOptions`
+    - `opts`：见下面的 `Logger`、`OnDraining`
 - **返回**：监听出错时的错误；平滑停止后返回 `nil`
 
 在 `ln` 上运行 `handler`，直到 `ctx` 被取消或监听出错，然后按[平滑停止](#graceful-shutdown)中的顺序停止。返回时 `ln` 已经关闭。
@@ -145,21 +143,19 @@ func Serve(ctx context.Context, cfg Config, ln net.Listener, handler http.Handle
 ### ListenAndServe
 
 ```go
-func ListenAndServe(ctx context.Context, cfg Config, handler http.Handler, opts ServeOptions) error
+func ListenAndServe(ctx context.Context, cfg Config, handler http.Handler, opts ...ServeOption) error
 ```
 
 与 `Serve` 相同，只是自己监听 `cfg.Addr`。适合不需要不停机升级的简单程序。
 
-### ServeOptions
+### Logger、OnDraining
 
 ```go
-type ServeOptions struct {
-    Logger     *slog.Logger
-    OnDraining func()
-}
+func Logger(l *slog.Logger) LoggerOption
+func OnDraining(fn func()) ServeOption
 ```
 
-`Logger` 记录排空开始和服务器停止，为 `nil` 时使用 `slog.Default()`。`OnDraining` 在开始排空之前调用，通常是 `Draining.Set`。
+`Serve` 和 `ListenAndServe` 的选项。`Logger` 让排空开始和服务器停止记录到 `l`，不传时使用 `slog.Default()`；它也可以传给 [`Defaults`](../http/middleware.md#default-middleware)。`OnDraining` 在开始排空之前调用 `fn`，通常是 `Draining.Set`。
 
 ### Draining
 
@@ -168,7 +164,7 @@ func (d *Draining) Set()
 func (d *Draining) Load() bool
 ```
 
-排空标志，零值即可使用。把 `Set` 传给 `ServeOptions.OnDraining`，把同一个值的地址传给 `ReadyOptions.Draining`。
+排空标志，零值即可使用。把 `Set` 传给 `OnDraining`，把同一个值的地址传给 `ReadyOptions.Draining`。
 
 ### Ready
 

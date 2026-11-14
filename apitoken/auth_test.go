@@ -3,6 +3,7 @@ package apitoken_test
 import (
 	"context"
 	"errors"
+	"github.com/go-chi/chi/v5"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -116,7 +117,7 @@ func TestRequireConfirmed(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		s := newStore(t)
-		api := rest.New(rest.Options{Accounts: identity.Accounts{"user": nil}})
+		api := rest.New(chi.NewRouter(), rest.Options{Accounts: identity.Accounts{"user": nil}})
 		op := huma.Operation{OperationID: "account-delete", Method: http.MethodDelete, Path: "/account"}
 		rest.Confirmed(15 * time.Minute)(&op)
 		rest.RequireBearer(api, s.Validate)(&op)

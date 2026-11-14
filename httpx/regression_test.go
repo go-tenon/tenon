@@ -34,7 +34,7 @@ func TestUnexpectedListenerExitDrainsRequests(t *testing.T) {
 	})
 	done := make(chan error, 1)
 	go func() {
-		done <- httpx.Serve(context.Background(), shutdownIn(time.Second), ln, handler, httpx.ServeOptions{OnDraining: func() { close(draining) }})
+		done <- httpx.Serve(context.Background(), shutdownIn(time.Second), ln, handler, httpx.OnDraining(func() { close(draining) }))
 	}()
 	requestDone := make(chan struct{})
 	go func() {
@@ -83,7 +83,7 @@ func TestShutdownBudgetCancelsActiveRequest(t *testing.T) {
 			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { close(entered); <-r.Context().Done(); close(canceled) })
 			done := make(chan error, 1)
 			go func() {
-				done <- httpx.Serve(ctx, shutdownIn(budget), ln, handler, httpx.ServeOptions{})
+				done <- httpx.Serve(ctx, shutdownIn(budget), ln, handler)
 			}()
 			go func() {
 				resp, err := http.Get("http://" + ln.Addr().String())
@@ -179,7 +179,7 @@ func TestRequestTimeoutReachesHandler(t *testing.T) {
 }
 
 func defaults(cfg httpx.Config) func(http.Handler) http.Handler {
-	return chi.Chain(httpx.Defaults(cfg, slog.New(slog.DiscardHandler), nil)...).Handler
+	return chi.Chain(httpx.Defaults(cfg, httpx.Logger(slog.New(slog.DiscardHandler)))...).Handler
 }
 
 func shutdownIn(d time.Duration) httpx.Config {

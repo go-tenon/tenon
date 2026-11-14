@@ -126,10 +126,7 @@ func TestPageWithTheme(t *testing.T) {
 
 // Theme.Stylesheet 换成应用用 Tailwind 生成的样式表。
 func TestThemeStylesheet(t *testing.T) {
-	static, err := web.NewStatic(fstest.MapFS{"css/app.css": {Data: []byte("body{}")}}, web.StaticOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	static := web.NewStatic(fstest.MapFS{"css/app.css": {Data: []byte("body{}")}}, web.StaticOptions{})
 	h := pages(t, web.Theme{Style: "maia", Stylesheet: "css/app.css"}, static, func() templ.Component { return ui.Page(ui.PageProps{}) })
 	_, html := body(t, h, httptest.NewRequest("GET", "/", nil))
 	links := linkHref.FindAllStringSubmatch(html, -1)

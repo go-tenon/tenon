@@ -65,7 +65,7 @@ func TestAppVersionRejectionIsLocalizedLoggedAndReadableCrossOrigin(t *testing.T
 	cfg := httpx.DefaultConfig()
 	cfg.AppVersion = appVersionConfig()
 	router := chi.NewRouter()
-	router.Use(httpx.Defaults(cfg, slog.New(slog.NewJSONHandler(&logs, nil)), nil)...)
+	router.Use(httpx.Defaults(cfg, httpx.Logger(slog.New(slog.NewJSONHandler(&logs, nil))))...)
 	router.Route("/api", func(r chi.Router) {
 		r.Use(httpx.CORS(cfg.CORS), httpx.AppVersion(cfg.AppVersion))
 		r.Get("/articles", func(http.ResponseWriter, *http.Request) {})

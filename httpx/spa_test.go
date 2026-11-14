@@ -24,11 +24,7 @@ func spaFS() fstest.MapFS {
 
 func newSPA(t *testing.T, opts httpx.SPAOptions) *httpx.SPA {
 	t.Helper()
-	s, err := httpx.NewSPA(spaFS(), opts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return s
+	return httpx.NewSPA(spaFS(), opts)
 }
 
 func spaGet(h http.Handler, method, path, accept string) *httptest.ResponseRecorder {
@@ -141,7 +137,7 @@ func TestSPABase(t *testing.T) {
 	}
 }
 
-func TestNewSPAErrors(t *testing.T) {
+func TestNewSPAPanics(t *testing.T) {
 	t.Parallel()
 	for name, c := range map[string]struct {
 		fsys fs.FS
@@ -155,9 +151,14 @@ func TestNewSPAErrors(t *testing.T) {
 		"empty frame":    {spaFS(), httpx.SPAOptions{FrameAncestors: []string{""}}},
 		"frame with ;":   {spaFS(), httpx.SPAOptions{FrameAncestors: []string{"https://a.example; script-src *"}}},
 	} {
-		if _, err := httpx.NewSPA(c.fsys, c.opts); err == nil {
-			t.Errorf("%s: expected error", name)
-		}
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("%s: expected panic", name)
+				}
+			}()
+			httpx.NewSPA(c.fsys, c.opts)
+		}()
 	}
 }
 
@@ -168,10 +169,7 @@ func TestSPADevServer(t *testing.T) {
 	}))
 	defer vite.Close()
 	// 开发模式不读取 fsys，前端还没有构建也可以启动。
-	s, err := httpx.NewSPA(nil, httpx.SPAOptions{DevServer: vite.URL})
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := httpx.NewSPA(nil, httpx.SPAOptions{DevServer: vite.URL})
 	for _, path := range []string{"/", "/@vite/client", "/src/main.tsx", "/articles/42"} {
 		rr := spaGet(s, http.MethodGet, path, "")
 		if rr.Code != 200 || rr.Body.String() != "vite GET "+path {

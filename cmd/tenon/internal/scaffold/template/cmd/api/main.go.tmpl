@@ -1,4 +1,4 @@
-// Command api 是[[.Name]]的入口：serve 启动 HTTP 服务，openapi、routes、client 供 go tool tenon 使用。
+// Command api 是[[.Name]]的入口：serve 启动 HTTP 服务，openapi、routes、client 供 go tool tenon 生成文档和客户端。
 package main
 
 import (
@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-tenon/tenon/command"
 	"github.com/go-tenon/tenon/command/httpcmd"
+	"github.com/go-tenon/tenon/config"
 	"github.com/go-tenon/tenon/httpx"
 	"github.com/go-tenon/tenon/httpx/rest"
 	"github.com/go-tenon/tenon/logging"
@@ -24,48 +25,33 @@ type Config struct {
 	FrontendDevServer string `yaml:"frontend_dev_server"`
 }
 
-// api 是 JSON API 的选项，挂在 /api 下。
-var api = rest.Options{Title: "[[.Name]]", Version: "0.1.0", BasePath: "/api"}
-
 func main() {
 	root := command.Root("api", "[[.Name]]")
 	root.AddCommand(
 		command.Run("serve", "启动 HTTP 服务", serve),
 		command.Config[Config](),
 	)
-	root.AddCommand(httpcmd.Commands(api, docRoutes, docRouter)...)
+	// openapi、routes、client 用默认配置和 nil 依赖构造同一套路由，只读取它，不启动服务。
+	root.AddCommand(httpcmd.Commands(func() chi.Routes { return routes(config.Default[Config](), nil) })...)
 	command.Execute(root)
 }
 
-// serve 挂载 /api 和单页应用，直到收到停止信号。
+// serve 启动 HTTP 服务，直到收到停止信号。
 func serve(ctx context.Context, cfg Config) error {
 	slog.SetDefault(logging.New(logging.Config{}))
-	spa, err := httpx.NewSPA(frontend.Dist, httpx.SPAOptions{DevServer: cfg.FrontendDevServer})
-	if err != nil {
-		return err
-	}
-	router := chi.NewRouter()
-	router.Use(httpx.Defaults(cfg.HTTP, nil, nil)...)
-	router.Route("/api", func(r chi.Router) {
-		r.Use(httpx.Timeout(cfg.HTTP.Timeout))
-		opts := api
-		opts.Router = r
-		todo.Register(rest.New(opts), todo.NewStore())
-	})
-	router.Handle("/*", spa)
-	return httpx.ListenAndServe(ctx, cfg.HTTP, router, httpx.ServeOptions{})
+	return httpx.ListenAndServe(ctx, cfg.HTTP, routes(cfg, todo.NewStore()))
 }
 
-// docRoutes 以文档模式注册全部接口，openapi 和 client 命令用它。
-func docRoutes(a *rest.API) { todo.Register(a, nil) }
-
-// docRouter 在文档模式下构造全部路由，routes 命令用它。
-func docRouter() chi.Routes {
+// routes 是应用的全部路由：/api 下是接口，其余路径交给单页应用。
+// 它只保存依赖、不调用依赖，所以 openapi 等命令可以传 nil。
+func routes(cfg Config, store *todo.Store) chi.Router {
 	router := chi.NewRouter()
+	router.Use(httpx.Defaults(cfg.HTTP)...)
 	router.Route("/api", func(r chi.Router) {
-		opts := api
-		opts.Mode, opts.Router = rest.ModeOpenAPI, r
-		docRoutes(rest.New(opts))
+		r.Use(httpx.Timeout(cfg.HTTP.Timeout))
+		api := rest.New(r, rest.Options{Title: "[[.Name]]", Version: "0.1.0", BasePath: "/api"})
+		todo.Register(api, store)
 	})
+	router.Handle("/*", httpx.NewSPA(frontend.Dist, httpx.SPAOptions{DevServer: cfg.FrontendDevServer}))
 	return router
 }

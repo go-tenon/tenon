@@ -3,6 +3,7 @@ package rest_test
 import (
 	"context"
 	"encoding/json"
+	"github.com/go-chi/chi/v5"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -117,7 +118,7 @@ func TestValidationErrorsEnglish(t *testing.T) {
 
 func TestValidationErrorsWithoutLocale(t *testing.T) {
 	// 没有安装 httpx.Locale：提示保持 Huma 的原文，仍然带有规则。
-	api := rest.New(rest.Options{})
+	api := rest.New(chi.NewRouter(), rest.Options{})
 	op := huma.Operation{OperationID: "article-create", Method: http.MethodPost, Path: "/articles"}
 	rest.Public()(&op)
 	rest.Register(api, op, func(context.Context, *articleIn) (*pingOut, error) { return &pingOut{}, nil })

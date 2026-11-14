@@ -14,21 +14,11 @@ import (
 	"github.com/go-tenon/tenon/logging"
 )
 
-// Mode 控制登记行为。
-type Mode int
-
-const (
-	// ModeServe 为运行模式：挂载处理器。
-	ModeServe Mode = iota
-	// ModeOpenAPI 为文档模式：生成 schema，使用内部占位处理器。
-	ModeOpenAPI
-)
-
-// API 包装 huma.API，携带模式与实例级策略。
+// API 包装 huma.API，携带实例级策略。
 type API struct {
 	huma.API
-	mode     Mode
 	router   chi.Router
+	basePath string
 	logger   *slog.Logger
 	accounts identity.Accounts
 	watcher  httpx.CredentialWatcher
@@ -41,17 +31,14 @@ type API struct {
 type Options struct {
 	Title   string
 	Version string
-	Mode    Mode
 	// Logger 记录 5xx 错误；nil 表示 slog.Default()。
 	Logger *slog.Logger
 	// Transformers 追加在 Huma 默认 Transformer 之后。
 	Transformers []huma.Transformer
 	// BasePath 是 API 挂载的路径前缀，例如挂在 router.Route("/api", ...) 中时为 /api。
-	// 它写入 OpenAPI 的 servers，文档页和客户端据此拼出完整地址；路由本身仍按 Router 注册。
+	// 它写入 OpenAPI 的 servers，文档页和客户端据此拼出完整地址；路由本身仍按传给 New 的路由注册。
+	// 一个应用有多个 API 时，openapi、client 命令用 --base-path 按它选择。
 	BasePath string
-	// Router 可选；nil 时使用 chi.NewRouter()。
-	// New 不安装任何中间件：在传入前用 Router.Use 安装，例如 httpx.Defaults。
-	Router chi.Router
 	// Tenant 从请求中取出本次请求所在的租户，例如路径参数 ctx.Param("tenant")、子域名或请求头；
 	// 结果在每个操作（包括公开的操作）开始时写入 identity.WithTenant。nil 表示始终是平台本身（""）。
 	Tenant func(ctx huma.Context) string
@@ -62,15 +49,22 @@ type Options struct {
 	// 例如不是租户成员时返回 errorx.NotFound 得到 404；5xx 类错误响应对应的状态码。
 	// 返回的主体中 Type、ID、Method、Credential、Scopes、Impersonator 总是取自凭据。
 	//
-	// 运行模式下注册需要认证的操作（RequireAuth、RequireBearer）时必须设置；名称不合法时 New panic。
+	// 注册需要认证的操作（RequireAuth、RequireBearer）时必须设置；名称不合法时 New panic。
 	Accounts identity.Accounts
 	// Credentials 让 RequireAuth 保护的长连接（例如 SSE）在收到复查信号时立即重新校验凭据，
 	// 撤销 token、停用用户后连接随即结束；nil 时只按 30 秒的间隔定期校验。通常是 broadcast.NewCredentials 的返回值。
 	Credentials httpx.CredentialWatcher
 }
 
-// New 创建 chi + Huma API，并让未匹配的路由与方法返回 Problem Details。
-func New(opts Options) *API {
+// New 在 r 上创建 chi + Huma API，并让 r 上未匹配的路由与方法返回 Problem Details。
+// New 不安装任何中间件：在调用前用 r.Use 安装，例如 httpx.Defaults。
+//
+// 注册路由时只保存依赖、不调用依赖，openapi、routes、client 命令就能用零值的依赖构造同一套路由，
+// 不启动服务、不连接数据库，见 command/httpcmd。用 APIs 或 Lookup 可以从构造好的路由中取回 API。
+func New(r chi.Router, opts Options) *API {
+	if r == nil {
+		panic("rest: nil router")
+	}
 	if err := opts.Accounts.Validate(); err != nil {
 		panic(errors.Wrap(err, "rest"))
 	}
@@ -80,10 +74,6 @@ func New(opts Options) *API {
 	}
 	if opts.Version == "" {
 		opts.Version = "0.0.0"
-	}
-	r := opts.Router
-	if r == nil {
-		r = chi.NewRouter()
 	}
 	r.NotFound(func(w http.ResponseWriter, _ *http.Request) {
 		httpx.WriteProblem(w, http.StatusNotFound, "route not found")
@@ -106,17 +96,21 @@ func New(opts Options) *API {
 	if opts.BasePath != "" {
 		cfg.OpenAPI.Servers = []*huma.Server{{URL: opts.BasePath}}
 	}
-	h := huma.NewAPI(cfg, newAdapter(r, cfg))
+	adapter := newAdapter(r, cfg)
+	api := &API{router: r, basePath: opts.BasePath, logger: opts.Logger, accounts: opts.Accounts, watcher: opts.Credentials, names: names}
+	// Huma 在 NewAPI 中就注册文档端点，因此先让 adapter 指向 api，文档端点也能取回它。
+	adapter.api = api
+	api.API = huma.NewAPI(cfg, adapter)
 	if tenant := opts.Tenant; tenant != nil {
-		h.UseMiddleware(func(ctx huma.Context, next func(huma.Context)) {
+		api.UseMiddleware(func(ctx huma.Context, next func(huma.Context)) {
 			next(huma.WithContext(ctx, identity.WithTenant(ctx.Context(), tenant(ctx))))
 		})
 	}
-	return &API{API: h, mode: opts.Mode, router: r, logger: opts.Logger, accounts: opts.Accounts, watcher: opts.Credentials, names: names}
+	return api
 }
 
-// Mode 返回当前模式。
-func (a *API) Mode() Mode { return a.mode }
+// BasePath 返回 Options.BasePath。
+func (a *API) BasePath() string { return a.basePath }
 
 // Router 返回底层 chi 路由，可作为 http.Handler。
 func (a *API) Router() chi.Router { return a.router }

@@ -5,7 +5,7 @@
 // 并呈现处理器返回的错误：错误按 errorx 分类映射状态码，整页请求渲染错误页，
 // 局部 htmx 请求的错误作为提示随 FlashEvent 送达（或渲染 Options.ErrorFragment）；
 // htmx 请求收到的 3xx 跳转自动改写为 HX-Redirect。一个应用可以有多组 Pages，各有 Theme 和错误呈现。
-// 页面路由实现 httpx.RouteDescriber，routes 命令可以列出它们；ModeRoutes 只登记路由，不需要错误组件。
+// 页面路由实现 httpx.RouteDescriber，routes 命令可以列出它们。
 //
 // Render 渲染组件，ParseForm 解码并按 Huma 标签验证表单，ParseQuery、QueryURL、PushURL 处理列表页的查询参数，
 // Assets 与 Scripts 提供内嵌的 htmx、hx-sse、hx-alpine-compat 与 Alpine.js（Scripts 给标签带上 CSP nonce）；

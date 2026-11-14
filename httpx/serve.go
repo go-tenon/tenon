@@ -2,7 +2,6 @@ package httpx
 
 import (
 	"context"
-	"log/slog"
 	"net"
 	"net/http"
 	"sync"
@@ -12,16 +11,8 @@ import (
 	"github.com/cockroachdb/errors"
 )
 
-// ServeOptions 是 Serve 的运行时依赖。
-type ServeOptions struct {
-	// Logger 记录排空开始和服务器停止；nil 表示 slog.Default()。
-	Logger *slog.Logger
-	// OnDraining 在开始排空前调用（例如撤销 ready）；可空。
-	OnDraining func()
-}
-
 // ListenAndServe 监听 cfg.Addr，并按 cfg 运行 handler，直到 ctx 取消。
-func ListenAndServe(ctx context.Context, cfg Config, handler http.Handler, opts ServeOptions) error {
+func ListenAndServe(ctx context.Context, cfg Config, handler http.Handler, opts ...ServeOption) error {
 	if ctx == nil {
 		return errors.New("httpx: nil context")
 	}
@@ -33,16 +24,17 @@ func ListenAndServe(ctx context.Context, cfg Config, handler http.Handler, opts 
 	if err != nil {
 		return errors.Wrap(err, "httpx: listen")
 	}
-	return Serve(ctx, cfg, ln, handler, opts)
+	return Serve(ctx, cfg, ln, handler, opts...)
 }
 
 // Serve 在 ln 上按 cfg 运行 handler（不使用 cfg.Addr 监听，但 cfg 仍需合法），直到 ctx 取消或监听异常。
 //
 // Serve 返回时 ln 已关闭，包括因参数错误提前返回的情况。
 //
-// 停止时：先调用 OnDraining，再关闭 DrainStarted 返回的通道，然后在 cfg.ShutdownTimeout 内排空请求；
+// 排空开始和服务器停止记录到 slog.Default()，用 Logger 选项改变。
+// 停止时：先调用 OnDraining 选项给出的函数，再关闭 DrainStarted 返回的通道，然后在 cfg.ShutdownTimeout 内排空请求；
 // 超时则取消请求 context 并强制关闭。调用方在 Serve 返回后关闭数据库等请求依赖。
-func Serve(ctx context.Context, cfg Config, ln net.Listener, handler http.Handler, opts ServeOptions) error {
+func Serve(ctx context.Context, cfg Config, ln net.Listener, handler http.Handler, opts ...ServeOption) error {
 	if ln == nil {
 		return errors.New("httpx: nil listener")
 	}
@@ -58,7 +50,11 @@ func Serve(ctx context.Context, cfg Config, ln net.Listener, handler http.Handle
 		_ = ln.Close()
 		return errors.Wrap(err, "httpx: config")
 	}
-	logger := componentLogger(opts.Logger)
+	var o serveOptions
+	for _, opt := range opts {
+		opt.applyServe(&o)
+	}
+	logger := componentLogger(o.logger)
 	srv := cfg.server(handler)
 	var fresh freshConns
 	srv.ConnState = fresh.track
@@ -78,8 +74,8 @@ func Serve(ctx context.Context, cfg Config, ln net.Listener, handler http.Handle
 		returned = true
 	case <-ctx.Done():
 	}
-	if opts.OnDraining != nil {
-		opts.OnDraining()
+	if o.onDraining != nil {
+		o.onDraining()
 	}
 	close(draining)
 	logger.Info("http server draining")

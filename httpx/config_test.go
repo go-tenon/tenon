@@ -39,7 +39,7 @@ func TestListenAndServeStopsOnCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- httpx.ListenAndServe(ctx, addr("127.0.0.1:0"), http.NotFoundHandler(), httpx.ServeOptions{})
+		done <- httpx.ListenAndServe(ctx, addr("127.0.0.1:0"), http.NotFoundHandler())
 	}()
 	time.Sleep(20 * time.Millisecond)
 	cancel()
@@ -60,7 +60,7 @@ func TestListenAndServeReportsListenError(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer busy.Close()
-	err = httpx.ListenAndServe(context.Background(), addr(busy.Addr().String()), http.NotFoundHandler(), httpx.ServeOptions{})
+	err = httpx.ListenAndServe(context.Background(), addr(busy.Addr().String()), http.NotFoundHandler())
 	if err == nil || !strings.Contains(err.Error(), "listen") {
 		t.Fatal("expected listen error", err)
 	}
@@ -68,7 +68,7 @@ func TestListenAndServeReportsListenError(t *testing.T) {
 
 func TestServeRejectsInvalidConfig(t *testing.T) {
 	t.Parallel()
-	err := httpx.ListenAndServe(context.Background(), httpx.Config{Addr: "127.0.0.1:0"}, http.NotFoundHandler(), httpx.ServeOptions{})
+	err := httpx.ListenAndServe(context.Background(), httpx.Config{Addr: "127.0.0.1:0"}, http.NotFoundHandler())
 	if err == nil || !strings.Contains(err.Error(), "must be positive") {
 		t.Fatal("zero timeouts must be rejected, not defaulted", err)
 	}
@@ -80,7 +80,7 @@ func TestServeClosesListenerOnInvalidConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if httpx.Serve(context.Background(), httpx.Config{}, ln, http.NotFoundHandler(), httpx.ServeOptions{}) == nil {
+	if httpx.Serve(context.Background(), httpx.Config{}, ln, http.NotFoundHandler()) == nil {
 		t.Fatal("invalid config accepted")
 	}
 	if _, err := ln.Accept(); err == nil {

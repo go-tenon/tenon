@@ -830,9 +830,8 @@ if err != nil {
 }
 
 router.Route("/admin/api", func(r chi.Router) {
-    admin := rest.New(rest.Options{
+    admin := rest.New(r, rest.Options{
         Title:    "Blog Admin API",
-        Router:   r,
         BasePath: "/admin/api",
         Accounts: identity.Accounts{editor.Type: editor.Resolve(a.db)},
     })
@@ -841,9 +840,8 @@ router.Route("/admin/api", func(r chi.Router) {
 router.Handle("/admin/*", adminSPA) // 编辑后台的单页应用，见单页应用一章
 
 router.Route("/api", func(r chi.Router) {
-    api := rest.New(rest.Options{
+    api := rest.New(r, rest.Options{
         Title:    "Blog Reader API",
-        Router:   r,
         BasePath: "/api",
         Accounts: identity.Accounts{reader.Type: reader.Resolve(a.db)},
     })

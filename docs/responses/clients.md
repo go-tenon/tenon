@@ -281,7 +281,7 @@ if errors.Is(err, article.ErrSlugTaken) {
 go run ./cmd/api client --out ../api
 ```
 
-类型声明和错误码从源码复制，所以命令要在源码目录中运行；它以文档模式注册路由，不读取配置，也不连接数据库。输出目录通常是 [go.work](https://go.dev/ref/mod#workspaces) 中的另一个模块，调用方只依赖它，不会把服务端的依赖带进 App：
+类型声明和错误码从源码复制，所以命令要在源码目录中运行；它用 `nil` 依赖构造应用的路由，不读取配置，也不连接数据库。输出目录通常是 [go.work](https://go.dev/ref/mod#workspaces) 中的另一个模块，调用方只依赖它，不会把服务端的依赖带进 App：
 
 ```text
 blog/
@@ -508,7 +508,7 @@ oasdiff 只比较请求和响应的结构。schema 改名不改变结构，它�
 
 ### client 命令
 
-由 `httpcmd.Commands` 加入应用的命令行，在服务端的源码目录中运行，以文档模式注册路由，不读取配置，也不连接数据库。
+由 `httpcmd.Commands` 加入应用的命令行，在服务端的源码目录中运行，用 `nil` 依赖构造应用的路由、取出其中的 API，不读取配置，也不连接数据库。
 
 | 选项 | 说明 |
 | --- | --- |
@@ -517,13 +517,14 @@ oasdiff 只比较请求和响应的结构。schema 改名不改变结构，它�
 | `--main <pkg>` | 应用的主包，在它的依赖中查找错误码；默认是当前程序 |
 | `--import <pkg>` | 生成的 Go 代码可以直接导入的包（含子包），可重复；默认只有 `github.com/google/uuid` |
 | `--rename <path>=<name>` | 服务端包路径对应的镜像包名，可重复 |
+| `--base-path <path>` | 路由中有[多个 API](../http/routing.md#api-versioning) 时，按 `BasePath` 选择一个，例如 `/api/v2` |
 
 ### clientgen
 
 包 `github.com/go-tenon/tenon/httpx/rest/clientgen`。
 
 ```go
-func Command(opts rest.Options, register func(api *rest.API)) *cobra.Command
+func Command(router func() chi.Routes) *cobra.Command
 func Generate(api *rest.API, opts Options) (*Result, error)
 func GenerateTS(api *rest.API, opts TSOptions) (*Result, error)
 ```

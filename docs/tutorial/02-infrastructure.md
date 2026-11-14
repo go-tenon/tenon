@@ -200,6 +200,7 @@ import (
     "github.com/go-chi/chi/v5"
 
     "github.com/go-tenon/tenon/command"
+    "github.com/go-tenon/tenon/config"
     "github.com/go-tenon/tenon/httpx"
     "github.com/go-tenon/tenon/httpx/rest"
 
@@ -207,65 +208,51 @@ import (
     "example.com/blog/internal/todo"
 )
 
-// API 是 JSON API 的选项，挂在 /api 下。serve、openapi、client 命令共用它。
-var API = rest.Options{Title: "Blog API", Version: "1.0.0", BasePath: "/api"}
-
-// Routes 注册全部接口，serve 和生成文档共用它。
-func Routes(api *rest.API, a *App) {
-    todo.Register(api, todo.NewStore())
-}
-
-// DocRoutes 以文档模式注册全部接口，openapi 和 client 命令用它。文档模式只登记路由，
-// 不调用处理器，所以用一个没有打开任何资源的 App。
-func DocRoutes(api *rest.API) { Routes(api, &App{}) }
-
-// DocRouter 在文档模式下构造全部路由，routes 命令用它。
-func DocRouter() chi.Routes {
-    router := chi.NewRouter()
-    router.Route("/api", func(r chi.Router) {
-        opts := API
-        opts.Mode, opts.Router = rest.ModeOpenAPI, r
-        DocRoutes(rest.New(opts))
-    })
-    return router
-}
-
-// HTTP 装配 HTTP 服务：健康检查、/api 下的接口和单页应用。
+// HTTP 装配 HTTP 服务，serve 命令运行它。
 func (a *App) HTTP(d *command.Daemon) (func(context.Context) error, error) {
-    spa, err := httpx.NewSPA(frontend.Dist, httpx.SPAOptions{DevServer: a.cfg.FrontendDevServer})
-    if err != nil {
-        return nil, err
-    }
     var draining httpx.Draining
-    router := chi.NewRouter()
-    router.Use(httpx.Defaults(a.cfg.HTTP, nil, nil)...)
-    router.Get("/livez", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
-    router.Handle("/readyz", httpx.Ready(httpx.ReadyOptions{
-        Draining: &draining,
-        Checks:   []httpx.Check{{Name: "database", Ping: a.db.PingContext}},
-    }))
-    router.Route("/api", func(r chi.Router) {
-        r.Use(httpx.Timeout(a.cfg.HTTP.Timeout))
-        opts := API
-        opts.Router = r
-        Routes(rest.New(opts), a)
-    })
-    router.Handle("/*", spa)
-
+    router := a.Router(&draining)
     ln, err := d.Listen("tcp", a.cfg.HTTP.Addr)
     if err != nil {
         return nil, err
     }
     return func(ctx context.Context) error {
-        return httpx.Serve(ctx, a.cfg.HTTP, ln, router, httpx.ServeOptions{OnDraining: draining.Set})
+        return httpx.Serve(ctx, a.cfg.HTTP, ln, router, httpx.OnDraining(draining.Set))
     }, nil
+}
+
+// Router 构造应用的全部路由：健康检查、/api 下的接口和单页应用。
+// 它只保存 App 的字段、不使用它们，所以 DocRouter 可以用一个没有打开任何资源的 App 调用它。
+func (a *App) Router(draining *httpx.Draining) chi.Router {
+    router := chi.NewRouter()
+    router.Use(httpx.Defaults(a.cfg.HTTP)...)
+    router.Get("/livez", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
+    router.Handle("/readyz", httpx.Ready(httpx.ReadyOptions{
+        Draining: draining,
+        Checks: []httpx.Check{
+            {Name: "database", Ping: func(ctx context.Context) error { return a.db.PingContext(ctx) }},
+        },
+    }))
+    router.Route("/api", func(r chi.Router) {
+        r.Use(httpx.Timeout(a.cfg.HTTP.Timeout))
+        api := rest.New(r, rest.Options{Title: "Blog API", Version: "1.0.0", BasePath: "/api"})
+        todo.Register(api, todo.NewStore())
+    })
+    router.Handle("/*", httpx.NewSPA(frontend.Dist, httpx.SPAOptions{DevServer: a.cfg.FrontendDevServer}))
+    return router
+}
+
+// DocRouter 用默认配置和没有打开任何资源的 App 构造路由，openapi、routes、client 命令用它。
+func DocRouter() chi.Routes {
+    return (&App{cfg: config.Default[Config]()}).Router(nil)
 }
 ```
 
-- `/livez` 和 `/readyz` 是健康检查，部署平台用它们判断进程是否存活、能否接收请求。`/readyz` 检查数据库，数据库连不上时返回 `503`。
-- `/api` 下是 JSON 接口，`Routes` 注册它们。现在还是模板的待办接口，第 4 章换成文章。
-- 其余请求交给 `httpx.SPA`：开发时转给 Vite，部署时读取嵌入程序的构建产物。
-- `DocRoutes` 和 `DocRouter` 不连接任何服务就能注册全部路由，`tenon` 用它们生成接口文档和客户端。所以 `Routes` 中只能保存 `App` 的字段，不能在注册时使用它们。
+- `HTTP` 监听端口，返回运行服务的函数。收到停止信号时，服务先把 `draining` 置位，再排空正在处理的请求。
+- `/livez` 和 `/readyz` 是健康检查，部署平台用它们判断进程是否存活、能否接收请求。`/readyz` 检查数据库，数据库连不上或正在排空时返回 `503`。
+- `/api` 下是 JSON 接口，`rest.New` 在这个子路由上创建 API。现在还是模板的待办接口，第 4 章换成文章。
+- 其余请求交给单页应用：开发时转给 Vite，部署时读取嵌入程序的构建产物。
+- `DocRouter` 不连接任何服务就能构造全部路由，`tenon` 用它生成接口文档和客户端、列出路由。所以 `Router` 中只能保存 `App` 的字段，不能在构造路由时使用它们。数据库检查写成闭包也是这个原因：`a.db` 是 `nil` 时，`a.db.PingContext` 这个表达式本身就会 panic，闭包要到检查时才取它。
 
 <a id="entrypoint"></a>
 ## 入口
@@ -290,7 +277,7 @@ func main() {
         command.Config[bootstrap.Config](),
     )
     // openapi、routes、client：导出接口文档、列出路由、生成客户端，go tool tenon 调用它们。
-    root.AddCommand(httpcmd.Commands(bootstrap.API, bootstrap.DocRoutes, bootstrap.DocRouter)...)
+    root.AddCommand(httpcmd.Commands(bootstrap.DocRouter)...)
     command.Execute(root)
 }
 ```

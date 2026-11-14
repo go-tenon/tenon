@@ -23,7 +23,7 @@ func generateTS(t *testing.T, api *rest.API) *clientgen.Result {
 }
 
 func TestGeneratedTSExampleIsUpToDate(t *testing.T) {
-	res := generateTS(t, exampleAPI(rest.ModeOpenAPI, nil))
+	res := generateTS(t, exampleAPI(nil))
 	if len(res.Skipped) > 0 {
 		t.Fatalf("skipped %q", res.Skipped)
 	}

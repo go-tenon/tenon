@@ -8,7 +8,7 @@
 // 请求量大时用 Cache 选项把权限缓存在 Memcached 中，修改之后缓存立即失效。
 //
 //	store := authz.NewStore(db, catalog)
-//	api := rest.New(rest.Options{Tenant: tenantOf, Accounts: identity.Accounts{Member: store.Resolve}})
+//	api := rest.New(router, rest.Options{Tenant: tenantOf, Accounts: identity.Accounts{Member: store.Resolve}})
 //	role, err := store.CreateRole(ctx, authz.Role{Name: "editor", Permissions: []string{"articles:*"}})
 //	err = store.Assign(ctx, identity.Ref{Type: Member, ID: userID}, tenantID, role.ID)
 package authz

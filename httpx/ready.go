@@ -29,7 +29,7 @@ type Check struct {
 
 // ReadyOptions 是 Ready 的选项。
 type ReadyOptions struct {
-	// Draining 是 Serve 开始排空时设置的标志，与 ServeOptions.OnDraining 用同一个；为 nil 时不检查。
+	// Draining 是 Serve 开始排空时设置的标志，与传给 OnDraining 的是同一个；为 nil 时不检查。
 	Draining *Draining
 	// Checks 是要检查的依赖。只放处理请求必需的依赖，以及标为 Optional 的降级依赖。
 	Checks []Check

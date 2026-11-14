@@ -3,6 +3,7 @@ package httpx_test
 import (
 	"context"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"strings"
@@ -40,7 +41,7 @@ func TestServeDrainsBeforeCleanup(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	errCh := make(chan error, 1)
 	go func() {
-		err := httpx.Serve(ctx, shutdownIn(time.Second), ln, mux, httpx.ServeOptions{})
+		err := httpx.Serve(ctx, shutdownIn(time.Second), ln, mux)
 		errCh <- stack.CloseWith(context.Background(), err)
 	}()
 
@@ -101,7 +102,7 @@ func TestDrainStartedEndsLongRequests(t *testing.T) {
 	})
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- httpx.Serve(ctx, shutdownIn(5*time.Second), ln, handler, httpx.ServeOptions{}) }()
+	go func() { done <- httpx.Serve(ctx, shutdownIn(5*time.Second), ln, handler) }()
 	go func() {
 		if resp, err := http.Get("http://" + ln.Addr().String()); err == nil {
 			resp.Body.Close()
@@ -136,7 +137,7 @@ func TestServeAnswersRequestsOnAcceptedConns(t *testing.T) {
 	go func() {
 		errCh <- httpx.Serve(ctx, httpx.DefaultConfig(), counted, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			_, _ = io.WriteString(w, "ok")
-		}), httpx.ServeOptions{})
+		}))
 	}()
 
 	conn, err := net.Dial("tcp", ln.Addr().String())
@@ -176,4 +177,25 @@ func (l *countingListener) Accept() (net.Conn, error) {
 		close(l.accepted)
 	}
 	return c, err
+}
+
+// Logger 选项让 Serve 的排空和停止记录写到指定的记录器；OnDraining 在排空之前调用。
+func TestServeOptions(t *testing.T) {
+	t.Parallel()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var logs strings.Builder
+	var drained atomic.Bool
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err = httpx.Serve(ctx, httpx.DefaultConfig(), ln, http.NotFoundHandler(),
+		httpx.Logger(slog.New(slog.NewTextHandler(&logs, nil))), httpx.OnDraining(func() { drained.Store(true) }))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !drained.Load() || !strings.Contains(logs.String(), "http server draining") || !strings.Contains(logs.String(), "http server stopped") {
+		t.Fatalf("drained=%v logs=%s", drained.Load(), logs.String())
+	}
 }

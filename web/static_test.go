@@ -31,11 +31,7 @@ func staticFS() fstest.MapFS {
 
 func newStatic(t *testing.T) *web.Static {
 	t.Helper()
-	s, err := web.NewStatic(staticFS(), web.StaticOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return s
+	return web.NewStatic(staticFS(), web.StaticOptions{})
 }
 
 func TestStaticURLFingerprints(t *testing.T) {
@@ -55,7 +51,7 @@ func TestStaticURLFingerprints(t *testing.T) {
 			t.Errorf("URL(%q) = %s, want %s", name, got, want)
 		}
 	}
-	other, _ := web.NewStatic(fstest.MapFS{"css/app.css": {Data: []byte("body{color:blue}")}}, web.StaticOptions{})
+	other := web.NewStatic(fstest.MapFS{"css/app.css": {Data: []byte("body{color:blue}")}}, web.StaticOptions{})
 	if other.URL("css/app.css") == css {
 		t.Error("fingerprint did not change with content")
 	}
@@ -122,10 +118,7 @@ func TestStaticDevDir(t *testing.T) {
 	if err := os.WriteFile(css, []byte("v1"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	s, err := web.NewStatic(staticFS(), web.StaticOptions{DevDir: dir})
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := web.NewStatic(staticFS(), web.StaticOptions{DevDir: dir})
 	if u := s.URL("css/app.css"); u != "/static/css/app.css" {
 		t.Errorf("dev URL = %s", u)
 	}
@@ -145,9 +138,12 @@ func TestStaticDevDir(t *testing.T) {
 }
 
 func TestStaticNilFS(t *testing.T) {
-	if _, err := web.NewStatic(nil, web.StaticOptions{}); err == nil {
-		t.Error("nil fs accepted")
-	}
+	defer func() {
+		if recover() == nil {
+			t.Error("nil fs accepted")
+		}
+	}()
+	web.NewStatic(nil, web.StaticOptions{})
 }
 
 // 页面和错误页的组件通过 StaticURL 取到带指纹的地址；没有设置 Options.Static 时退回原始地址。

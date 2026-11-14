@@ -29,7 +29,7 @@ func TestBusyDatabase(t *testing.T) {
 
 	cfg := httpx.DefaultConfig()
 	cfg.AcquireTimeout = 200 * time.Millisecond
-	api := rest.New(rest.Options{Title: "busy"})
+	api := rest.New(chi.NewRouter(), rest.Options{Title: "busy"})
 	rest.Register(api, huma.Operation{Security: []map[string][]string{}, OperationID: "ping", Method: http.MethodGet, Path: "/ping"},
 		func(ctx context.Context, _ *pingIn) (*pingOut, error) {
 			if _, err := db.NewRaw("SELECT 1").Exec(ctx); err != nil {
@@ -40,7 +40,7 @@ func TestBusyDatabase(t *testing.T) {
 			return out, nil
 		})
 	router := chi.NewRouter()
-	router.Use(httpx.Defaults(cfg, slog.New(slog.DiscardHandler), nil)...)
+	router.Use(httpx.Defaults(cfg, httpx.Logger(slog.New(slog.DiscardHandler)))...)
 	router.Mount("/", api.Handler())
 
 	get := func() *httptest.ResponseRecorder {

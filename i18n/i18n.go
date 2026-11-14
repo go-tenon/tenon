@@ -41,6 +41,18 @@ func New(defaultLocale string, sources ...fs.FS) (*goi18n.Bundle, error) {
 	return b, nil
 }
 
+// MustNew 与 New 相同，出错时 panic。用于嵌入程序的翻译文件：它们在编译时就确定了，
+// 出错是构建的错误，可以在构造路由时直接加载：
+//
+//	router.Use(httpx.Defaults(cfg.HTTP, httpx.Languages(i18n.MustNew("zh-CN", locales.FS)))...)
+func MustNew(defaultLocale string, sources ...fs.FS) *goi18n.Bundle {
+	b, err := New(defaultLocale, sources...)
+	if err != nil {
+		panic(err)
+	}
+	return b
+}
+
 func load(b *goi18n.Bundle, src fs.FS) error {
 	return fs.WalkDir(src, ".", func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {

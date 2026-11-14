@@ -2,6 +2,7 @@ package rest_test
 
 import (
 	"context"
+	"github.com/go-chi/chi/v5"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -35,8 +36,8 @@ func TestAccounts(t *testing.T) {
 			return sub, nil
 		}
 	}
-	console := rest.New(rest.Options{Accounts: identity.Accounts{"member": grant("articles:*"), "staff": nil}})
-	shop := rest.New(rest.Options{Accounts: identity.Accounts{"customer": grant("orders:read")}})
+	console := rest.New(chi.NewRouter(), rest.Options{Accounts: identity.Accounts{"member": grant("articles:*"), "staff": nil}})
+	shop := rest.New(chi.NewRouter(), rest.Options{Accounts: identity.Accounts{"customer": grant("orders:read")}})
 	for _, api := range []*rest.API{console, shop} {
 		op := huma.Operation{OperationID: "who", Method: http.MethodGet, Path: "/who"}
 		rest.RequireBearer(api, validate)(&op)
@@ -85,12 +86,9 @@ func TestAccountsRequired(t *testing.T) {
 		f()
 	}
 	panics("authenticated operation without Accounts", func() {
-		rest.RequireBearer(rest.New(rest.Options{}), validate)
+		rest.RequireBearer(rest.New(chi.NewRouter(), rest.Options{}), validate)
 	})
 	panics("invalid account type", func() {
-		rest.New(rest.Options{Accounts: identity.Accounts{"Member": nil}})
+		rest.New(chi.NewRouter(), rest.Options{Accounts: identity.Accounts{"Member": nil}})
 	})
-	// 文档模式不运行处理器，不需要 Accounts。
-	op := huma.Operation{OperationID: "who", Method: http.MethodGet, Path: "/who"}
-	rest.RequireBearer(rest.New(rest.Options{Mode: rest.ModeOpenAPI}), validate)(&op)
 }
