@@ -1,6 +1,10 @@
 # 服务端推送
 
-- [简介](#introduction)
+有些界面需要服务端主动推送内容：长时间任务的进度、其他人刚发布的文章、聊天消息。Tenon 使用 [Server-Sent Events](https://developer.mozilla.org/docs/Web/API/Server-sent_events)（SSE）：服务端保持一个 HTTP 响应不结束，持续写出事件，每个事件的数据是一行 JSON。
+
+SSE 只负责服务端到客户端。客户端发给服务端的仍然是普通请求，认证、验证和限流都和其他接口一样。需要在线成员、“正在输入”或移动端 SDK 时，用基于 WebSocket 的[实时频道](../libraries/realtime.md)。
+
+- [示例用法](#introduction)
 - [流式响应](#streaming-responses)
 - [长连接](#long-lived-connections)
     - [断线重连](#reconnecting)
@@ -8,15 +12,39 @@
 - [凭据失效](#revoked-credentials)
     - [立即断开](#immediate-revocation)
 - [部署](#deployment)
+- [API 参考](#api-reference)
 
 <a id="introduction"></a>
-## 简介
+## 示例用法
 
-有些界面需要服务端主动推送内容：长时间任务的进度、其他人刚发布的文章、聊天消息。Tenon 使用 [Server-Sent Events](https://developer.mozilla.org/docs/Web/API/Server-sent_events)（SSE）：服务端保持一个 HTTP 响应不结束，持续写出事件，每个事件的数据是一行 JSON。
+```go
+type Tick struct {
+    N int `json:"n"`
+}
 
-SSE 只负责服务端到客户端。客户端发给服务端的仍然是普通请求，所以认证、验证和限流都和其他接口一样。需要在线成员、「正在输入」或移动端 SDK 时，使用基于 WebSocket 的[实时频道](../libraries/realtime.md)。
+rest.RegisterSSE(api, op, map[string]any{"tick": Tick{}},
+    func(ctx context.Context, _ *struct{}) (*huma.StreamResponse, error) {
+        return rest.SSE(func(s *httpx.Stream) error {
+            for n := 1; n <= 3; n++ {
+                if err := s.SendJSON(httpx.Event{Name: "tick"}, Tick{N: n}); err != nil {
+                    return nil // 客户端已经离开
+                }
+            }
+            return nil
+        }), nil
+    })
+```
 
-`rest.RegisterSSE` 注册事件流接口。它的参数和 `rest.Register` 相同，多一个事件表：键是事件名，值是事件数据的类型，用于生成 OpenAPI 文档和[客户端代码](clients.md#event-streams)。连接由 `httpx.SSE` 管理：心跳、超时、停机和断线重连。有两种用法：
+```text
+event: tick
+data: {"n":1}
+
+event: tick
+data: {"n":2}
+...
+```
+
+`rest.RegisterSSE` 的参数和 `rest.Register` 相同，多一个事件表：键是事件名，值是事件数据的类型，用于生成 OpenAPI 文档和[客户端代码](clients.md#event-streams)。连接由 `httpx.SSE` 管理：心跳、超时、停机和断线重连。有两种用法：
 
 | 用法 | 客户端 | 适合 |
 | --- | --- | --- |
@@ -26,7 +54,7 @@ SSE 只负责服务端到客户端。客户端发给服务端的仍然是普通�
 <a id="streaming-responses"></a>
 ## 流式响应
 
-博客的编辑后台可以批量发布草稿。每发布一篇文章都要给订阅者发送邮件（见[邮件](../libraries/mail.md)），整批可能需要几十秒。用流式响应，每发布完一篇就推送一条进度。`publish` 是 `article.NewPublish(db)`：
+例如批量发布草稿，整批可能需要几十秒。用流式响应，每发布完一篇就推送一条进度。`publish` 是“发布文章”的[业务动作](../concepts/actions.md)：
 
 ```go
 type PublishBatchRequest struct {
@@ -69,14 +97,14 @@ rest.RegisterSSE(api, op, map[string]any{"progress": PublishProgress{}},
 
 处理器先完成检查，出错时照常返回错误；返回 `rest.SSE` 之后才开始推送，之后返回的错误只会记录日志。`SendJSON` 把值编码为一行 JSON，`Send` 发送原样的文本。
 
-`s.Context()` 在客户端断开或服务器开始停机时取消，传给 action，让它们随之停止。
+`s.Context()` 在客户端断开或服务器开始停机时取消，传给业务动作，让它们随之停止。
 
 浏览器的 `EventSource` 只能发 GET 请求，也不能带 `Authorization` 请求头。单页应用用 `fetch` 读取响应流，见[客户端代码的事件流](clients.md#event-streams)。
 
 <a id="long-lived-connections"></a>
 ## 长连接
 
-编辑后台的每个页面都显示「其他编辑刚刚发布了什么」。界面打开时连接一个事件流接口，处理器订阅[广播](../libraries/broadcasting.md)的 `articles` 主题，收到一条就推送一条，直到 `s.Done()` 关闭：
+例如每个页面都显示“其他编辑刚刚发布了什么”。界面打开时连接一个事件流接口，处理器订阅[广播](../libraries/broadcasting.md)的 `articles` 主题，收到一条就推送一条，直到 `s.Done()` 关闭：
 
 ```go
 rest.RegisterSSE(api, op, map[string]any{"published": ArticlePublished{}},
@@ -146,7 +174,7 @@ SSE 接口和其他接口注册在同一个 API 上，认证方式相同，例�
 <a id="immediate-revocation"></a>
 ### 立即断开
 
-30 秒对大多数场景已经足够。需要撤销后立即断开时，用[广播](../libraries/broadcasting.md)提醒所有实例上的长连接马上校验。在[入口](../concepts/dependencies.md#assembling-the-application)中基于 Hub 创建 `broadcast.Credentials`，交给 API：
+30 秒对大多数场景已经足够。需要撤销后立即断开时，用[广播](../libraries/broadcasting.md)提醒所有实例上的长连接马上校验。在入口中基于 Hub 创建 `broadcast.Credentials`，交给 API：
 
 ```go
 creds := broadcast.NewCredentials(hub)
@@ -162,7 +190,7 @@ api := rest.New(rest.Options{Accounts: accounts, Credentials: creds})
 | `RecheckSubject(ctx, ref)` | 主体 `ref`（`identity.Ref`）的全部连接 | 退出其他设备、修改密码、停用账号、调整角色、移出租户 |
 | `RecheckTenant(ctx, tenant)` | 请求所在租户为 `tenant` 的全部连接 | 修改角色的权限 |
 
-例如设备列表中的“退出这台设备”，`a.creds` 由 action 的构造函数传入：
+例如设备列表中的“退出这台设备”，`a.creds` 由业务动作的构造函数传入：
 
 ```go
 if err := a.tokens.Revoke(ctx, subject, id); err != nil {
@@ -183,3 +211,60 @@ Hub 经由 Redis 在实例之间传递消息，见[后端](../libraries/broadcas
 
 - **代理缓冲**：nginx 默认会缓冲响应，SSE 响应带 `X-Accel-Buffering: no` 关闭它，不需要修改 nginx 配置。其他代理请确认它们不缓冲 `text/event-stream` 响应。
 - **HTTP/2**：使用 HTTP/1.1 时，浏览器对同一个站点最多同时打开 6 个连接。每个打开的标签页都占用一条长连接，标签页多了以后，新的请求会一直等待。生产环境请在反向代理上启用 HTTP/2。
+
+<a id="api-reference"></a>
+## API 参考
+
+### rest.RegisterSSE、rest.SSE
+
+包 `github.com/go-tenon/tenon/httpx/rest`。
+
+```go
+func RegisterSSE[I any](api *API, op huma.Operation, events map[string]any, handler func(context.Context, *I) (*huma.StreamResponse, error))
+func SSE(fn func(s *httpx.Stream) error) *huma.StreamResponse
+```
+
+`RegisterSSE` 登记以 `text/event-stream` 响应的接口；处理器返回 `SSE(fn)` 后开始推送，`fn` 返回时连接结束。
+
+### httpx.Stream
+
+包 `github.com/go-tenon/tenon/httpx`。
+
+```go
+func (s *Stream) SendJSON(ev Event, v any) error
+func (s *Stream) Send(ev Event, data string) error
+func (s *Stream) Context() context.Context
+func (s *Stream) Done() <-chan struct{}
+func (s *Stream) LastEventID() string
+```
+
+`SendJSON` 把 `v` 编码为一行 JSON 发送，`Send` 发送原样的文本，客户端离开时返回错误。`Context` 在客户端断开或服务器停机时取消，`Done` 同时关闭。`LastEventID` 是重连时客户端发回的最后一个事件 ID。
+
+### httpx.Event
+
+| 字段 | 说明 |
+| --- | --- |
+| `Name string` | 事件名，为空时是默认的 `message` 事件 |
+| `ID string` | 客户端重连时通过 `Last-Event-ID` 发回 |
+| `Retry time.Duration` | 覆盖客户端的重连延迟 |
+
+### httpx.SSE
+
+```go
+func SSE(w http.ResponseWriter, r *http.Request, fn func(s *Stream) error) error
+```
+
+在普通的 `http.Handler` 中使用 SSE，心跳、超时和停机的处理与上面相同。
+
+### broadcast.Credentials
+
+包 `github.com/go-tenon/tenon/broadcast`。
+
+```go
+func NewCredentials(hub *Hub) *Credentials
+func (c *Credentials) RecheckCredential(ctx context.Context, id string) error
+func (c *Credentials) RecheckSubject(ctx context.Context, ref identity.Ref) error
+func (c *Credentials) RecheckTenant(ctx context.Context, tenant string) error
+```
+
+见[立即断开](#immediate-revocation)。

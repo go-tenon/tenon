@@ -27,9 +27,6 @@ var blogFiles = []docFile{
 	{"internal/auth/social/social.go", "security/social-login.md"},
 	{"internal/auth/authhttp/web_social.go", "security/social-login.md"},
 	{"internal/auth/authhttp/social.go", "security/social-login.md"},
-	{"internal/article/get.go", "http/routing.md"},
-	{"internal/article/routes.go", "http/routing.md"},
-	{"internal/article/dto.go", "http/routing.md"},
 	{"internal/article/import.go", "features/import-export.md"},
 	{"internal/article/export.go", "features/import-export.md"},
 	{"internal/article/queue_import.go", "features/import-export.md"},
@@ -60,33 +57,6 @@ import (
 
 	"github.com/go-tenon/tenon/sheet"
 )
-`},
-	{"internal/article/list_query.go", "responses/responses.md", "type ListQuery struct", `package article
-
-import "github.com/go-tenon/tenon/page"
-`},
-	{"internal/article/list.go", "responses/responses.md", "// orders 是", `package article
-
-import (
-	"context"
-
-	"github.com/cockroachdb/errors"
-	"github.com/uptrace/bun"
-
-	"github.com/go-tenon/tenon/identity"
-	"github.com/go-tenon/tenon/page"
-)
-
-// List 和 toDTOs 在文档中没有给出。
-type List struct{ db *bun.DB }
-
-func toDTOs(items []Article) []ArticleDTO {
-	out := make([]ArticleDTO, len(items))
-	for i := range items {
-		out[i] = toDTO(&items[i])
-	}
-	return out
-}
 `},
 	{"internal/attachment/find.go", "ai/vector.md", "type Find struct", `package attachment
 

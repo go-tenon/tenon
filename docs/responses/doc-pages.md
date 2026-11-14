@@ -1,6 +1,8 @@
 # 文档页
 
-- [简介](#introduction)
+产品的帮助中心、团队内部的操作手册，内容都是一篇篇说明文字。`web/docs` 把一个目录中的 Markdown 文件变成带导航的文档页：左侧是按目录生成的侧边栏，正文右侧是本页目录，顶栏有站内搜索，切换页面时 htmx 只替换正文区域。页面用当前区域的[主题](components.md#themes)渲染，不需要写模板。
+
+- [示例用法](#example-usage)
 - [编写文档](#writing)
     - [排序与标题](#ordering)
 - [挂载到路由](#mounting)
@@ -10,31 +12,36 @@
 - [搜索](#search)
 - [开发时预览](#development)
 - [注意事项](#caveats)
+- [API 参考](#api-reference)
 
-<a id="introduction"></a>
-## 简介
+<a id="example-usage"></a>
+## 示例用法
 
-产品的帮助中心、团队内部的操作手册，内容都是一篇篇说明文字。`web/docs` 把一个目录中的 Markdown 文件变成带导航的文档页：
+```go
+//go:embed content
+var files embed.FS
 
-- 左侧是按目录生成的侧边栏，正文右侧是本页目录；
-- 顶栏有站内搜索；
-- 切换页面时，htmx 只替换正文区域。
+content, _ := fs.Sub(files, "content")
+site, err := docs.New(docs.Options{Content: content, Prefix: "/help", Title: "帮助中心"})
+if err != nil {
+    return err
+}
+site.Register(pages.Routes(router))
+```
 
-页面用当前区域的[主题](components.md#themes)渲染，不需要写模板。
-
-本章给博客加上面向读者的帮助中心，地址是 `/help`。
+`content/intro.md` 的地址是 `/help/intro`。
 
 <a id="writing"></a>
 ## 编写文档
 
-文档放在 `internal/help/content` 中。目录结构就是侧边栏：
+文档放在一个目录中，例如 `internal/help/content`。目录结构就是侧边栏：
 
 ```
 internal/help/content/
   _index.md               /help，首页
   intro.md                /help/intro
   writing/
-    _index.md             侧边栏的分组「写作」；有正文时也是一页 /help/writing
+    _index.md             侧边栏的分组“写作”；有正文时也是一页 /help/writing
     drafts.md             /help/writing/drafts
     images/editor.png     正文中用相对路径引用
   account/
@@ -73,7 +80,7 @@ order: 2
 <a id="mounting"></a>
 ## 挂载到路由
 
-把内容嵌入程序。下面是 `internal/help/help.go`：
+把内容嵌入程序，例如 `internal/help/help.go`：
 
 ```go
 package help
@@ -90,14 +97,14 @@ var files embed.FS
 var Content, _ = fs.Sub(files, "content")
 ```
 
-在 `HTTP` 方法中创建文档，注册到[页面路由](views.md#page-routes)上：
+创建文档，注册到[页面路由](views.md#page-routes)上：
 
 ```go
 site, err := docs.New(docs.Options{
     Content: help.Content,
     Prefix:  "/help",
-    Title:   "Blog 帮助中心",
-    Actions: helpActions(), // 顶栏右侧的内容，例如「返回首页」的链接
+    Title:   "帮助中心",
+    Actions: helpActions(), // 顶栏右侧的内容，例如“返回首页”的链接
 })
 if err != nil {
     return err
@@ -166,8 +173,8 @@ type Config struct {
 
 ```go
 opts := docs.Options{Content: help.Content, Prefix: "/help", Title: "Blog 帮助中心"}
-if a.cfg.HelpDir != "" {
-    opts.Content, opts.Reload = os.DirFS(a.cfg.HelpDir), true
+if cfg.HelpDir != "" {
+    opts.Content, opts.Reload = os.DirFS(cfg.HelpDir), true
 }
 site, err := docs.New(opts)
 ```
@@ -179,3 +186,36 @@ site, err := docs.New(opts)
 
 - 多种语言的文档各自是一个 `docs.Site`，例如 `/help` 和 `/en/help`。
 - 侧边栏和本页目录的文字（「本页目录」「上一页」等）随请求的语言变化，正文不变。
+
+<a id="api-reference"></a>
+## API 参考
+
+包 `github.com/go-tenon/tenon/web/docs`。
+
+### New
+
+```go
+func New(opts Options) (*Site, error)
+```
+
+读取并渲染全部文档。front matter 不合法、目录超过两层、地址重复、链接指向不存在的文件时返回错误。
+
+### Options
+
+| 字段 | 说明 |
+| --- | --- |
+| `Content fs.FS` | 文档目录 |
+| `Prefix string` | 挂载的路径，例如 `/help` |
+| `Title string` | 顶栏的标题 |
+| `Logo ui.Icon` | 顶栏的图标 |
+| `Actions templ.Component` | 顶栏右侧的内容 |
+| `HTML bool` | 允许 Markdown 中的原始 HTML，默认不允许 |
+| `Reload bool` | 每个请求重新读取文档，只在开发时设置 |
+
+### Site.Register
+
+```go
+func (s *Site) Register(r *web.Routes)
+```
+
+在页面路由上注册文档页和 `Prefix/_search` 搜索页。

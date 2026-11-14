@@ -1,24 +1,18 @@
 # 验证
 
-- [简介](#introduction)
-- [快速上手](#validation-quickstart)
+验证规则直接写在[输入类型](requests.md)的结构体标签上。Huma 在调用处理器**之前**完成验证，不合格的请求不会到达处理器；同样的规则会出现在 OpenAPI 文档中，前端看到的约束与服务端执行的一致。
+
+- [示例用法](#validation-quickstart)
 - [可用的验证规则](#available-validation-rules)
 - [必填与可选字段](#required-and-optional-fields)
 - [验证错误响应](#validation-error-response)
     - [验证提示](#validation-messages)
 - [业务规则验证](#business-validation)
 
-<a id="introduction"></a>
-## 简介
-
-验证客户端传入的数据，是每个 API 都要面对的工作。在 Tenon 中，验证规则直接写在[输入类型](requests.md)的结构体标签上。Huma 会在调用处理器**之前**完成验证，验证失败的请求根本不会到达你的处理器。
-
-这种方式还有一个额外的好处：验证规则会自动出现在 OpenAPI 文档中，前端开发者看到的约束与服务端实际执行的约束完全一致。
-
 <a id="validation-quickstart"></a>
-## 快速上手
+## 示例用法
 
-假设我们要实现一个创建文章的接口：标题必填，长度不超过 200 个字符；slug 只能包含小写字母、数字和连字符。规则写在文章模块提交的数据 `Changes` 上，创建文章的输入类型把它作为请求体：
+标题必填，最多 200 个字符；slug 只能包含小写字母、数字和连字符：
 
 ```go
 type Changes struct {
@@ -32,7 +26,7 @@ type CreateInput struct {
 }
 ```
 
-就是这样！当客户端发送的标题为空、slug 含有空格或大写字母时，Huma 会自动返回一个 `422` 错误响应，你的处理器不会被调用。修改文章的接口和[页面表单](../responses/forms.md)使用同一个 `Changes`，规则只写一次。
+标题为空、slug 含有空格或大写字母时，Huma 返回 `422`，处理器不会被调用。修改文章的接口和[页面表单](../responses/forms.md)用同一个 `Changes`，规则只写一次。
 
 <a id="available-validation-rules"></a>
 ## 可用的验证规则
@@ -137,7 +131,7 @@ type PatchInput struct {
 <a id="business-validation"></a>
 ## 业务规则验证
 
-结构体标签适合描述格式上的约束，例如长度、范围和格式。而“slug 不能与其他文章重复”、“已发布的文章不能修改 slug”这类需要查询数据或依赖业务状态的规则，应该放在 [action](../concepts/actions.md) 的 `Handle` 中检查，并返回一个[业务错误](../general/errors.md)：
+结构体标签适合描述格式上的约束，例如长度、范围和格式。而“slug 不能与其他文章重复”、“已发布的文章不能修改 slug”这类需要查询数据或依赖业务状态的规则，放在[业务动作](../concepts/actions.md)的 `Handle` 中检查，并返回一个[业务错误](../general/errors.md)：
 
 ```go
 var ErrSlugLocked = errorx.Define(errorx.InvalidArgument, "article.slug_locked")
@@ -154,4 +148,4 @@ func (a *Update) Handle(ctx context.Context, subject identity.Subject, id uuid.U
 `errorx.InvalidArgument` 分类的错误同样会被转换为 `422` 响应，但它没有 `errors` 数组，而是带有 `code` 字段 `article.slug_locked`，客户端可以据此给出准确的提示。完整的例子见[错误处理](../general/errors.md#example)。
 
 > [!TIP]
-> `Handle` 也可能被命令行、队列或测试直接调用，绕过 HTTP 层的验证。对于必须成立的约束（例如标题不能为空），在 `Handle` 中再检查一次是一个好习惯。
+> `Handle` 也会被命令行、队列或测试直接调用，绕过 HTTP 层的验证。必须成立的约束（例如标题不能为空）在 `Handle` 中再检查一次。

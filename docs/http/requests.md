@@ -1,6 +1,8 @@
 # 请求
 
-- [简介](#introduction)
+处理器不直接读取 `http.Request`。每条路由有一个**输入类型**：普通的 Go 结构体，字段标签说明值从哪里来。Huma 在调用处理器之前读取请求、转换类型并完成[验证](validation.md)，处理器拿到的是已经填好的结构体。
+
+- [示例用法](#introduction)
 - [定义输入类型](#input-types)
     - [路径参数](#path-parameters)
     - [查询参数](#query-parameters)
@@ -10,18 +12,23 @@
 - [请求体大小与超时](#limits)
     - [请求体大小](#body-size)
     - [超时与取消](#timeouts)
+- [API 参考](#api-reference)
 
 <a id="introduction"></a>
-## 简介
-
-在 Tenon 中，你不需要手动读取 `http.Request`。每条路由都有一个**输入类型**——一个普通的 Go 结构体，字段上的标签说明这个值从哪里来。Huma 会在调用处理器之前读取请求、转换类型并完成[验证](validation.md)，你的处理器拿到的就是一个已经填好的结构体。
-
-例如，在[获取文章](routing.md#http-actions)的 `Get.HTTP` 方法中，输入已经完成类型转换。它和 `GetInput` 一起定义在 `internal/article/get.go` 中；共享的 `ArticleOutput` 定义在同包的 `dto.go` 中。下面只展示方法签名和读取输入的位置：
+## 示例用法
 
 ```go
-func (a *Get) HTTP(ctx context.Context, in *GetInput) (*ArticleOutput, error) {
-    // in.ID 已经是解析好的 uuid.UUID
-    // ……调用 a.Handle 并返回输出
+type UpdateInput struct {
+    ID      uuid.UUID `path:"id"`
+    DryRun  bool      `query:"dry_run"`
+    Version string    `header:"X-App-Version"`
+    Body    struct {
+        Title string `json:"title" minLength:"1" maxLength:"200"`
+    }
+}
+
+func (a *Update) HTTP(ctx context.Context, in *UpdateInput) (*ArticleOutput, error) {
+    // in.ID 已经是 uuid.UUID，in.Body.Title 已经通过验证
 }
 ```
 
@@ -56,7 +63,7 @@ type SearchArticlesInput struct {
 客户端请求 `/articles?limit=50` 时，`in.Limit` 为 50；省略 `limit` 时为默认值 20；传入 500 时，请求会被拒绝。查询参数默认是可选的。
 
 > [!NOTE]
-> 上面的写法会把超出范围的 `limit` 当作错误拒绝。如果你希望把它悄悄截断为 100，就不要声明 `maximum`，而是在 action 中处理，并在接口描述中说明这一行为。
+> 上面的写法会把超出范围的 `limit` 当作错误拒绝。想把它截断为 100 时，不要声明 `maximum`，在业务动作中处理，并在接口描述中说明。
 
 > [!TIP]
 > 列表接口的分页参数不需要自己声明，嵌入 `page.OffsetParams` 或 `page.CursorParams` 即可，见[分页](../responses/responses.md#pagination)。
@@ -78,7 +85,7 @@ type RequestInput struct {
 <a id="json-body"></a>
 ### JSON 请求体
 
-输入结构体中名为 `Body` 的字段表示请求体。创建文章的请求体是文章模块的 `Changes`，验证规则写在它的字段上，见[数据对象](../concepts/actions.md#data-objects)：
+输入结构体中名为 `Body` 的字段表示请求体。请求体的类型通常是模块共用的结构体，验证规则写在它的字段上，见[数据对象](../concepts/actions.md#data-objects)：
 
 ```go
 type Changes struct {
@@ -155,3 +162,29 @@ http:
 超时后，请求的 context 会被取消。为了让超时真正生效，请把处理器收到的 `ctx` 一路传给数据库查询和外部 HTTP 调用。
 
 除了请求 context 的超时，服务器本身还有读写超时：`read_header_timeout`、`read_timeout`、`write_timeout` 和 `idle_timeout`。完整字段见 [HTTP 配置](middleware.md#http-configuration)。
+
+<a id="api-reference"></a>
+## API 参考
+
+输入类型的字段标签由 Huma 定义，完整列表见 [Huma 文档](https://huma.rocks/features/request-inputs/)。常用的：
+
+| 标签 | 说明 |
+| --- | --- |
+| `path:"name"` | 路径参数，总是必填 |
+| `query:"name"` | 查询参数，默认可选 |
+| `header:"Name"` | 请求头，默认可选 |
+| `cookie:"name"` | cookie |
+| 字段名 `Body` | 请求体，其中的字段默认必填 |
+| `default:"v"` | 缺省时的值 |
+| `required:"true"` | 把可选的参数改为必填 |
+| `doc:"..."`、`example:"..."` | 写入接口文档，见[说明与示例](routing.md#describing-apis) |
+
+验证规则的标签见[验证](validation.md#available-validation-rules)。
+
+### httpx.RequestID
+
+```go
+func RequestID(ctx context.Context) string
+```
+
+当前请求的 ID，没有安装 `AssignRequestID` 时返回空字符串。

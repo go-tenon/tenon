@@ -12,7 +12,7 @@ import (
 
 // standaloneDirs 是已按参考页写法改写的文档目录。这些文档中以 package 或构建标签开头的
 // 代码块都是完整文件，必须能单独编译，不依赖其他代码块或其他文档。
-var standaloneDirs = []string{"concepts", "general"}
+var standaloneDirs = []string{"concepts", "general", "http", "responses"}
 
 // TestStandaloneBlocks 把每个完整文件放进临时 module 中自己的目录，用 go vet 检查（包含编译）。
 func TestStandaloneBlocks(t *testing.T) {
@@ -43,7 +43,9 @@ func TestStandaloneBlocks(t *testing.T) {
 					name = "x_test.go"
 				}
 				pkg := strings.NewReplacer("/", "_", ".md", "", "-", "_").Replace(rel)
-				writeFile(t, dir, filepath.Join(pkg, fmt.Sprintf("b%d", i), name), body)
+				blockDir := filepath.Join(pkg, fmt.Sprintf("b%d", i))
+				writeFile(t, dir, filepath.Join(blockDir, name), body)
+				embedPlaceholders(t, filepath.Join(dir, blockDir), body)
 				n++
 			}
 			return nil
@@ -68,5 +70,24 @@ func TestStandaloneBlocks(t *testing.T) {
 	cmd.Env = append(os.Environ(), "GOFLAGS=-mod=mod", "GOWORK=off")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("go vet: %v\n%s", err, out)
+	}
+}
+
+// embedPlaceholders 为代码块中 //go:embed 引用的文件和目录创建占位文件，让它能编译。
+func embedPlaceholders(t *testing.T, dir, body string) {
+	t.Helper()
+	for _, line := range strings.Split(body, "\n") {
+		patterns, ok := strings.CutPrefix(strings.TrimSpace(line), "//go:embed ")
+		if !ok {
+			continue
+		}
+		for _, p := range strings.Fields(patterns) {
+			p = strings.TrimPrefix(p, "all:")
+			if strings.ContainsAny(p, "*?[") {
+				writeFile(t, dir, strings.NewReplacer("*", "x", "?", "x").Replace(p), "")
+			} else {
+				writeFile(t, dir, filepath.Join(p, "placeholder.txt"), "")
+			}
+		}
 	}
 }

@@ -1,24 +1,41 @@
 # 表单
 
-- [简介](#introduction)
+页面中的表单和 JSON API 使用同一套[验证](../http/validation.md)规则：在结构体字段上写 Huma 的标签。`web.ParseForm` 解析浏览器提交的表单，按标签验证，并保留用户的原始输入，验证失败时可以原样回填。
+
+- [示例用法](#example-usage)
 - [定义表单](#defining-forms)
 - [渲染表单](#rendering-forms)
 - [处理提交](#handling-submissions)
 - [验证失败后重新显示](#redisplaying-forms)
 - [业务规则验证](#business-validation)
 - [验证提示](#validation-messages)
+- [API 参考](#api-reference)
 
-<a id="introduction"></a>
-## 简介
+<a id="example-usage"></a>
+## 示例用法
 
-页面中的表单和 JSON API 使用同一套[验证](../http/validation.md)规则：在结构体字段上写 Huma 的标签。`web.ParseForm` 解析浏览器提交的表单，按标签验证，并保留用户的原始输入，验证失败时可以原样回填。
+```go
+type SubscribeInput struct {
+    Email string `json:"email" format:"email" maxLength:"254"`
+}
 
-本章接着[视图](views.md)一章，在文章页底部加上订阅新文章的表单。
+func (h *Handlers) Subscribe(w http.ResponseWriter, r *http.Request) error {
+    f, err := web.ParseForm[SubscribeInput](r)
+    if err != nil {
+        return err
+    }
+    if !f.Valid() {
+        return web.Render(w, r, http.StatusUnprocessableEntity, views.SubscribeForm(f))
+    }
+    // f.Data.Email 已经通过验证
+    return web.Render(w, r, http.StatusOK, views.Subscribed(f.Data.Email))
+}
+```
 
 <a id="defining-forms"></a>
 ## 定义表单
 
-表单结构体与 API 的请求体写法相同，字段名取 `json` 标签，也就是 HTML 中 `<input>` 的 `name`。订阅表单直接使用订阅模块的 `SubscribeInput`，它也是订阅接口的请求体和 `Subscribe` action 的参数，验证规则只写一次，见[数据对象](../concepts/actions.md#data-objects)：
+表单结构体与 API 的请求体写法相同，字段名取 `json` 标签，也就是 HTML 中 `<input>` 的 `name`。订阅表单直接使用订阅模块的 `SubscribeInput`，它也是订阅接口的请求体和业务动作的参数，验证规则只写一次，见[数据对象](../concepts/actions.md#data-objects)：
 
 ```go
 type SubscribeInput struct {
@@ -97,7 +114,7 @@ func (h *Handlers) Subscribe(w http.ResponseWriter, r *http.Request) error {
 }
 ```
 
-只有请求体无法解析时，`ParseForm` 才返回错误（`web.ErrBadForm`，响应 `422`）。订阅成功后，`Subscribed` 片段替换表单，显示「确认邮件已发到 …」。需要整页跳转时用 `web.Redirect`，见[跳转](views.md#redirects)。
+只有请求体无法解析时，`ParseForm` 才返回错误（`web.ErrBadForm`，响应 `422`）。订阅成功后，`Subscribed` 片段替换表单，显示“确认邮件已发到 …”。需要整页跳转时用 `web.Redirect`，见[跳转](views.md#redirects)。
 
 公开的表单要防止被脚本反复提交：用[限流](../libraries/rate-limiting.md)按 IP 限制这个路由，必要时加上[人机验证](../security/login.md#captcha)。
 
@@ -112,7 +129,7 @@ func (h *Handlers) Subscribe(w http.ResponseWriter, r *http.Request) error {
 <a id="business-validation"></a>
 ## 业务规则验证
 
-需要查询数据的规则在 action 中检查，并返回[业务错误](../http/validation.md#business-validation)，例如这个邮箱已经订阅过。把它放到对应字段旁边时，用 `SetError`：
+需要查询数据的规则在业务动作中检查，并返回[业务错误](../http/validation.md#business-validation)，例如这个邮箱已经订阅过。把它放到对应字段旁边时，用 `SetError`：
 
 ```go
 if err := h.subscribe.Handle(r.Context(), f.Data); errors.Is(err, subscriber.ErrAlreadySubscribed) {
@@ -129,3 +146,44 @@ if err := h.subscribe.Handle(r.Context(), f.Data); errors.Is(err, subscriber.Err
 ## 验证提示
 
 验证提示按请求协商的语言翻译，框架内置了中文和英文，例如 `minLength:"1"` 的字段为空时提示“不能为空”，`pattern` 加 `patternDescription` 时提示“必须是”加描述。JSON API 的验证错误使用同一套提示，完整的规则和覆盖方法见[验证提示](../http/validation.md#validation-messages)。没有安装 `httpx.Locale` 中间件时，提示是 Huma 的英文原文。
+
+<a id="api-reference"></a>
+## API 参考
+
+包 `github.com/go-tenon/tenon/web`。
+
+### ParseForm、NewForm
+
+```go
+func ParseForm[T any](r *http.Request) (*Form[T], error)
+func NewForm[T any](data T) *Form[T]
+```
+
+`ParseForm` 解析请求体并验证，只有请求体无法解析时返回错误（`ErrBadForm`）。`NewForm` 用已有的数据创建表单，例如编辑页的初始值。
+
+### Form
+
+```go
+type Form[T any] struct {
+    Data T
+    // ...
+}
+
+func (f *Form[T]) Valid() bool
+func (f *Form[T]) Value(field string) string
+func (f *Form[T]) Values(field string) []string
+func (f *Form[T]) Checked(field string) bool
+func (f *Form[T]) Error(field string) string
+func (f *Form[T]) Errors() map[string]string
+func (f *Form[T]) SetError(field, message string)
+```
+
+`Data` 是解码后的数据。`Value`、`Values` 返回用户提交的原始文本，`Checked` 报告复选框是否勾选，用于回填；`Error` 返回字段的错误提示；`SetError` 给字段加上业务错误。`field` 是 `json` 标签中的名称。
+
+### form.Decode
+
+```go
+func Decode[T any](ctx context.Context, values map[string][]string) (T, map[string]string)
+```
+
+包 `github.com/go-tenon/tenon/form`。按字段类型转换并验证文本值，返回数据和字段错误。`ParseForm` 和[表格导入](../features/import-export.md)都用它。

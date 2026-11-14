@@ -1,6 +1,16 @@
 # 视图
 
-- [简介](#introduction)
+需要登录的界面——后台、用户端、[OAuth 同意页](../security/oauth-server.md#consent-page)——都是[单页应用](spa.md)，调用 JSON API。官网、文章页、帮助中心这类**公开页面**适合在服务端渲染：搜索引擎直接读到内容，首屏不用等脚本加载。
+
+- [templ](https://templ.guide) 把 `.templ` 文件编译成带类型参数的 Go 函数，错误在编译期就能发现；
+- [htmx 4](https://four.htmx.org) 用 HTML 属性声明“点这里就请求某个地址，把返回的片段放到某个位置”，服务端只管返回 HTML；
+- [Alpine.js](https://alpinejs.dev) 处理纯前端的小交互，例如折叠区。
+
+`web` 包把它们接到框架上：渲染组件、呈现错误、处理 htmx 的跳转、设置内容安全策略，并内嵌了 htmx 与 Alpine 的脚本。现成的按钮、表格、分页见[界面组件](components.md)，表单见[表单](forms.md)。
+
+页面没有会话，也没有登录：页面路由都是公开的。只给内部人员看的页面用 [HTTP Basic 认证](../http/middleware.md#basic-auth)等中间件保护，或者只在内网开放。
+
+- [示例用法](#example-usage)
 - [安装 templ](#installing-templ)
 - [布局](#layouts)
 - [装配页面](#assembling-pages)
@@ -13,23 +23,36 @@
 - [跳转](#redirects)
 - [前端状态](#client-state)
 - [内容安全策略](#content-security-policy)
+- [API 参考](#api-reference)
 
-<a id="introduction"></a>
-## 简介
+<a id="example-usage"></a>
+## 示例用法
 
-需要登录的界面——后台、用户端、[OAuth 同意页](../security/oauth-server.md#consent-page)——都是[单页应用](spa.md)，调用 [JSON API](../http/routing.md)，用 Bearer token 认证。官网、文章页、帮助中心这类**公开页面**适合在服务端渲染：搜索引擎直接读到内容，首屏不用等脚本加载：
+```templ
+// views/hello.templ
+package views
 
-- [templ](https://templ.guide) 把 `.templ` 文件编译成带类型参数的 Go 函数，相当于 Blade 组件，错误在编译期就能发现；
-- [htmx 4](https://four.htmx.org) 用 HTML 属性声明「点这里就请求某个地址，把返回的片段放到某个位置」，服务端只管返回 HTML；
-- [Alpine.js](https://alpinejs.dev) 处理纯前端的小交互，例如折叠区、计数。
+import "github.com/go-tenon/tenon/web/ui"
 
-按钮、表格、分页这些现成的组件，见[界面组件](components.md)。
+templ Hello(name string) {
+	@ui.Page(ui.PageProps{Title: "你好"}) {
+		<h1>你好，{ name }</h1>
+	}
+}
+```
 
-`web` 包负责把它们接到框架上：渲染 templ 组件、呈现错误、处理 htmx 的跳转、设置内容安全策略，并内嵌了 htmx 与 Alpine 的脚本。`web/ui` 包内置了界面组件的样式表和脚本，按主题加载，不需要安装 Tailwind。
+```go
+pages := web.New(web.Options{ErrorPage: ui.ErrorPage})
+router.Handle(web.AssetsPath+"*", web.Assets())
+router.Handle(ui.AssetsPath+"*", ui.Assets())
 
-页面没有会话，也没有登录：页面路由都是公开的。只给内部人员看的页面，例如[文档页](doc-pages.md)中的操作手册，用 [HTTP Basic 认证](../http/middleware.md#basic-auth)等中间件保护，或者只在内网开放。
+site := pages.Routes(router)
+site.Get("/hello/{name}", func(w http.ResponseWriter, r *http.Request) error {
+    return web.Render(w, r, http.StatusOK, views.Hello(chi.URLParam(r, "name")))
+})
+```
 
-本章把博客读者看到的首页、文章列表和文章页做成服务端渲染的页面。表单见[表单](forms.md)。
+处理器返回的错误由 `pages` 呈现为错误页，与 JSON API 的状态码一致。
 
 <a id="installing-templ"></a>
 ## 安装 templ
@@ -45,7 +68,7 @@ go get -tool github.com/a-h/templ/cmd/templ
 <a id="layouts"></a>
 ## 布局
 
-网站的页面共用一个布局。下面是 `internal/web/layout.templ`：
+网站的页面共用一个布局，例如 `layout.templ`：
 
 ```templ
 package web
@@ -69,44 +92,44 @@ templ Layout(title string) {
 <a id="assembling-pages"></a>
 ## 装配页面
 
-在入口的 [`HTTP` 方法](../concepts/dependencies.md#assembling-the-application)中创建 `web.Pages`，再挂载内嵌脚本和 404 页面。下面是 `internal/bootstrap/http.go` 中 `HTTP` 方法的新写法：
+在入口装配 HTTP 服务的地方（见[依赖装配](../concepts/dependencies.md#running-parts)）创建 `web.Pages`，再挂载内嵌脚本和 404 页面：
 
 ```go
 func (a *App) HTTP(d *command.Daemon) (func(context.Context) error, error) {
-    static, err := web.NewStatic(layout.Static, web.StaticOptions{DevDir: a.cfg.StaticDir})
+    static, err := web.NewStatic(layout.Static, web.StaticOptions{DevDir: cfg.StaticDir})
     if err != nil {
         return nil, err
     }
     pages := web.New(web.Options{
         Static:    static,
         ErrorPage: ui.ErrorPage,
-        Theme:     a.cfg.Theme,
+        Theme:     cfg.Theme,
     })
 
     router := chi.NewRouter()
-    router.Use(httpx.Defaults(a.cfg.HTTP, nil, nil)...)
+    router.Use(httpx.Defaults(cfg.HTTP, nil, nil)...)
     router.Handle(web.StaticPath+"*", static)
     router.Handle(web.AssetsPath+"*", web.Assets())
     router.Handle(ui.AssetsPath+"*", ui.Assets())
     router.NotFound(pages.NotFound)
 
     router.Route("/api/v1", func(r chi.Router) {
-        r.Use(httpx.Timeout(a.cfg.HTTP.Timeout))
+        r.Use(httpx.Timeout(cfg.HTTP.Timeout))
         opts := API
         opts.Router, opts.BasePath = r, "/api/v1"
-        Routes(rest.New(opts), auth.Validator(a.cfg.Auth), a.db)
+        Routes(rest.New(opts), validate, a.db)
     })
     router.Group(func(r chi.Router) {
-        r.Use(httpx.Timeout(a.cfg.HTTP.Timeout))
+        r.Use(httpx.Timeout(cfg.HTTP.Timeout))
         PageRoutes(r, pages, a.db)
     })
 
-    ln, err := d.Listen("tcp", a.cfg.HTTP.Addr)
+    ln, err := d.Listen("tcp", cfg.HTTP.Addr)
     if err != nil {
         return nil, err
     }
     return func(ctx context.Context) error {
-        return httpx.Serve(ctx, a.cfg.HTTP, ln, router, httpx.ServeOptions{})
+        return httpx.Serve(ctx, cfg.HTTP, ln, router, httpx.ServeOptions{})
     }, nil
 }
 
@@ -126,11 +149,9 @@ func PageRoutes(r chi.Router, pages *web.Pages, db *bun.DB) {
 <a id="page-routes"></a>
 ## 注册页面路由
 
-页面路由通过 `pages.Routes` 注册。下面是 `internal/article/articleweb/routes.go`：
+页面路由通过 `pages.Routes` 注册，例如文章模块的页面放在子包 `articleweb` 中：
 
 ```go
-package articleweb
-
 func Register(r chi.Router, pages *web.Pages, db *bun.DB) {
     h := &Handlers{list: article.NewList(db), get: article.NewGetBySlug(db)}
     site := pages.Routes(r)
@@ -168,8 +189,8 @@ func DocRouter() chi.Routes {
 一个应用可以有几组页面，例如官网和帮助中心，各用一个 `web.Pages`，挂在各自的子路由上，各有自己的主题和错误呈现：
 
 ```go
-site := web.New(web.Options{ErrorPage: ui.ErrorPage, Theme: a.cfg.Site.Theme, Static: static})
-help := web.New(web.Options{ErrorPage: ui.ErrorPage, Theme: a.cfg.Help.Theme})
+site := web.New(web.Options{ErrorPage: ui.ErrorPage, Theme: cfg.Site.Theme, Static: static})
+help := web.New(web.Options{ErrorPage: ui.ErrorPage, Theme: cfg.Help.Theme})
 router.Group(func(r chi.Router) {
     articleweb.Register(r, site, a.db)
 })
@@ -184,7 +205,7 @@ router.Route("/help", func(r chi.Router) {
 <a id="rendering-pages"></a>
 ## 渲染页面
 
-处理器调用 action 的 `Handle`，再用 `web.Render` 渲染组件。返回的错误交给 `pages` 呈现：
+处理器调用业务动作的 `Handle`，再用 `web.Render` 渲染组件。返回的错误交给 `pages` 呈现：
 
 ```go
 func (h *Handlers) Show(w http.ResponseWriter, r *http.Request) error {
@@ -196,16 +217,16 @@ func (h *Handlers) Show(w http.ResponseWriter, r *http.Request) error {
 }
 ```
 
-访客没有登录，传给 action 的主体是零值：action 按匿名访客授权，例如只返回已发布的文章。
+访客没有登录，传给业务动作的主体是零值，按匿名访客授权，例如只返回已发布的文章。
 
 `web.Render` 先把组件渲染到缓冲区，成功后再写出。组件用请求的 context 渲染，所以组件里可以直接用 `i18n.T(ctx, ...)` 翻译文案，见[本地化](../general/localization.md)。templ 组件里的 `ctx` 就是这个 context。
 
-页面和 JSON API 调用的是同一组 [action](../concepts/actions.md)，业务规则和[授权](../security/authorization.md)完全相同。
+页面和 JSON API 调用的是同一组[业务动作](../concepts/actions.md)，业务规则和[授权](../security/authorization.md)完全相同。
 
 <a id="partial-updates"></a>
 ## 局部更新
 
-htmx 让页面上的元素直接发请求，并把响应的 HTML 放到指定位置。例如文章页底部的「相关文章」在页面显示出来之后再加载，不拖慢首屏：
+htmx 让页面上的元素直接发请求，并把响应的 HTML 放到指定位置。例如文章页底部的“相关文章”在页面显示出来之后再加载，不拖慢首屏：
 
 ```templ
 <section hx-get={ "/articles/" + item.Slug + "/related" } hx-trigger="revealed" hx-swap="outerHTML"></section>
@@ -262,7 +283,7 @@ func (h *Handlers) List(w http.ResponseWriter, r *http.Request) error {
 }
 ```
 
-`article.List` 是列表 action，按筛选条件和排序查询当前页，同时返回总数，代码见[筛选与排序](responses.md#filtering-and-sorting)；匿名访客只能看到已发布的文章。筛选、排序、翻页都只替换列表区域，`web.PushURL` 让 htmx 把地址栏改为这个状态的地址。
+`article.List` 是列表的业务动作，按筛选条件和排序查询当前页，同时返回总数，代码见[筛选与排序](responses.md#filtering-and-sorting)；匿名访客只能看到已发布的文章。筛选、排序、翻页都只替换列表区域，`web.PushURL` 让 htmx 把地址栏改为这个状态的地址。
 
 链接由 `web.QueryURL` 生成，它是 `ParseQuery` 的逆操作。零值和等于 `default` 的参数会被省略，同一个状态总是得到同一个地址。在视图包中写几个小函数：
 
@@ -312,7 +333,7 @@ templ ArticleTable(q article.ListQuery, list page.Offset[article.Article]) {
 
 `ui.SortHead` 是可以点击排序的表头：点击按这一列升序，再点击改为降序，当前排序的列显示方向箭头并带 `aria-sort`；`DescFirst` 让第一次点击按降序，适合时间、数量。它按 `q.Sort` 判断当前的方向（`title` 为升序，`-title` 为降序），用 `sortURL(q)` 生成下一次点击的地址。`ListQuery` 的 `enum` 要包含每一列的两个方向，例如 `title,-title,created,-created`。
 
-`ui.Empty` 是没有数据时的提示，children 可以放操作，例如「清除搜索」链接。
+`ui.Empty` 是没有数据时的提示，children 可以放操作，例如“清除搜索”链接。
 
 `ui.Pagination` 显示上一页、下一页、首页、末页，以及当前页两侧各 1 页，中间省略；只有一页时不显示。`HTMX` 让链接同时带 `hx-get`，沿用区域上的 `hx-target`；链接也写了 `href`，不支持 htmx 的场景（例如在新标签页打开）也能正常访问。自己写分页导航时，`list.Links(1)` 返回要显示的页码，省略的部分用 `0` 表示，例如 `[1 0 9 10 11 0 20]`，`list.LastPage()` 是最后一页的页码。
 
@@ -361,7 +382,7 @@ web.Redirect(w, r, web.LocalPath(r.URL.Query().Get("next"), "/"))
 <a id="client-state"></a>
 ## 前端状态
 
-只影响页面显示、不需要服务端参与的交互交给 Alpine。例如文章页的「目录」折叠区：
+只影响页面显示、不需要服务端参与的交互交给 Alpine。例如文章页的“目录”折叠区：
 
 ```templ
 <nav x-data="{ open: false }">
@@ -405,3 +426,68 @@ CSP: func(nonce string) string {
 
 > [!WARNING]
 > 不要把应用的脚本写在 `<body>` 里。用户点后退时，htmx 会重新请求整页并替换 `body`，其中的脚本会再执行一次，事件监听器就注册了两遍。应用的脚本放进静态文件，在 `<head>` 中加载：`<script defer src={ web.StaticURL(ctx, "js/app.js") }></script>`。
+
+<a id="api-reference"></a>
+## API 参考
+
+包 `github.com/go-tenon/tenon/web`。
+
+### New
+
+```go
+func New(opts Options) *Pages
+```
+
+| `Options` 字段 | 说明 |
+| --- | --- |
+| `ErrorPage func(status int, message string) templ.Component` | 整页的错误组件，运行模式下必须设置，例如 `ui.ErrorPage` |
+| `ErrorFragment`、`ErrorTarget` | 局部请求的错误组件和放置位置，见[错误页](#error-pages) |
+| `Theme Theme` | 组件的风格和颜色，见[主题](components.md#themes) |
+| `Static *Static` | 应用的静态文件，见[前端资源](assets.md) |
+| `CSP func(nonce string) string` | 内容安全策略，默认 `DefaultCSP` |
+| `Mode Mode` | `ModeRoutes` 只登记路由，供 `routes` 命令使用 |
+| `Logger *slog.Logger` | 记录 5xx 错误 |
+
+### Pages
+
+```go
+func (p *Pages) Routes(r chi.Router) *Routes
+func (p *Pages) NotFound(w http.ResponseWriter, r *http.Request)
+func (p *Pages) Error(w http.ResponseWriter, r *http.Request, err error)
+```
+
+`Routes` 返回注册页面路由的对象，它有 `Get`、`Post` 等方法，接收 `func(w http.ResponseWriter, r *http.Request) error`。`NotFound` 渲染 404 页面；`Error` 在中间件中呈现错误。
+
+### 渲染与 htmx
+
+```go
+func Render(w http.ResponseWriter, r *http.Request, status int, c templ.Component) error
+func IsHTMX(r *http.Request) bool
+func IsPartial(r *http.Request) bool
+func PushURL(w http.ResponseWriter, url string)
+func Redirect(w http.ResponseWriter, r *http.Request, url string)
+func LocalPath(path, fallback string) string
+```
+
+`Render` 渲染到缓冲区，成功后再写出。`IsPartial` 在 htmx 请求的目标不是整个 `body` 时为真。`Redirect` 对 htmx 请求写 `HX-Redirect`，否则返回 `303`。`LocalPath` 在 `path` 不是本站路径时返回 `fallback`。
+
+### 查询参数
+
+```go
+func ParseQuery[T any](r *http.Request) (T, error)
+func QueryURL(path string, q any) string
+```
+
+按 `json` 标签和 Huma 的规则解析查询参数，不合法时返回 `ErrBadQuery`；`QueryURL` 是它的逆操作，省略零值和等于 `default` 的参数。
+
+### 其他
+
+```go
+func ErrorReference(ctx context.Context) string
+func DefaultCSP(nonce string) string
+func StaticURL(ctx context.Context, name string) string
+func Assets() http.Handler
+func Scripts() templ.Component
+```
+
+`ErrorReference` 是错误页上显示的请求编号；`StaticURL` 返回带指纹的静态文件地址；`Assets` 提供内嵌的 htmx 与 Alpine，挂在 `AssetsPath`；`Scripts` 输出加载它们的 `<script>` 标签。

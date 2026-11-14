@@ -1,20 +1,15 @@
 # 单页应用
 
-- [简介](#introduction)
+用 React、Vue 等写的单页应用，可以和 API 打进同一个二进制：Vite 的构建产物通过 `embed` 嵌入程序，由 `httpx.SPA` 提供。页面和 API 同源，不需要配置 CORS，部署时只有一个二进制文件。
+
+单页应用调用 [JSON API](../http/routing.md)，请求带 Bearer 令牌（见[单页应用的登录](../security/api-tokens.md#single-page-applications)），客户端由 `client --ts` 从路由生成，见[客户端代码](clients.md#typescript)。后台和用户端都是单页应用；不需要登录的公开页面可以[在服务端渲染](views.md)，两者共用一个 Router。`tenon init` 生成的项目已经按本页的方式组织好。
+
 - [嵌入构建产物](#embedding)
 - [挂载](#mounting)
 - [缓存与前端路由](#caching-and-routing)
 - [开发](#development)
 - [构建与发布](#building)
-
-<a id="introduction"></a>
-## 简介
-
-用 React、Vue 等写的单页应用，可以和 API 打进同一个二进制：Vite 的构建产物通过 `embed` 嵌入程序，由 `httpx.SPA` 提供。页面和 API 同源，不需要配置 CORS，部署时仍然只有一个二进制文件。
-
-单页应用调用 [JSON API](../http/routing.md)，请求带 Bearer token（access token 只在内存中，refresh token 在 HttpOnly cookie 中，见[单页应用的登录](../security/api-tokens.md#single-page-applications)），客户端由 `client --ts` 从路由生成，见[客户端代码](clients.md#typescript)。后台和用户端都是单页应用；不需要登录的公开页面可以[在服务端渲染](views.md)，两者共用一个 Router。
-
-本章给博客加上读者使用的前端：React 加 TanStack Router，放在应用根目录的 `frontend` 中，是一个普通的 Vite 项目。依赖和脚本用 [Bun](https://bun.sh) 管理，构建工具仍然是 Vite。
+- [API 参考](#api-reference)
 
 <a id="embedding"></a>
 ## 嵌入构建产物
@@ -41,10 +36,10 @@ var Dist, _ = fs.Sub(dist, "dist")
 <a id="mounting"></a>
 ## 挂载
 
-在 `HTTP` 方法中创建 `SPA`，挂载到根路径。API 和其他路由照常注册，chi 优先匹配更具体的路径：
+创建 `SPA`，挂载到根路径。API 和其他路由照常注册，chi 优先匹配更具体的路径：
 
 ```go
-spa, err := httpx.NewSPA(frontend.Dist, httpx.SPAOptions{DevServer: a.cfg.FrontendDevServer})
+spa, err := httpx.NewSPA(frontend.Dist, httpx.SPAOptions{DevServer: cfg.FrontendDevServer})
 if err != nil {
     return err
 }
@@ -88,7 +83,7 @@ HTML 文件带有 `Content-Security-Policy: frame-ancestors 'none'`，其他网�
 
 开发时前端由 Vite 的开发服务器提供，修改代码后浏览器立即更新。把 `SPAOptions.DevServer` 设为它的地址，`SPA` 就把收到的请求全部转发给它，包括热更新的 WebSocket。浏览器仍然打开应用的地址，页面和 API 与生产环境一样同源，Vite 不需要配置代理。
 
-`DevServer` 取自应用配置。在 `settings.Config` 中加一个字段：
+`DevServer` 取自应用配置。在配置结构体中加一个字段：
 
 ```go
 type Config struct {
@@ -149,3 +144,24 @@ RUN CGO_ENABLED=0 go build -trimpath -o /out/api ./cmd/api && mkdir /out/storage
 ```bash
 mkdir -p frontend/dist && touch frontend/dist/index.html
 ```
+
+<a id="api-reference"></a>
+## API 参考
+
+包 `github.com/go-tenon/tenon/httpx`。
+
+### NewSPA
+
+```go
+func NewSPA(fsys fs.FS, opts SPAOptions) (*SPA, error)
+```
+
+`fsys` 是构建产物所在的目录，必须包含 `index.html`。创建时读取全部文件。`*SPA` 是 `http.Handler`。
+
+### SPAOptions
+
+| 字段 | 说明 |
+| --- | --- |
+| `Base string` | 挂载的路径，以 `/` 开头和结尾，与 Vite 的 `base` 相同；默认 `/` |
+| `DevServer string` | 非空时把全部请求转发给前端的开发服务器，不读取 `fsys`。只在开发时设置 |
+| `FrameAncestors []string` | 允许把页面嵌入框架的来源；默认不允许 |
