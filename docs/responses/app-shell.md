@@ -1,6 +1,6 @@
 # 应用骨架
 
-`@go-tenon/shell` 是[单页应用](spa.md)骨架的逻辑：把 TanStack Router、TanStack Query 和[会话](clients.md#client-runtime)接到一起，提供登录检查、按权限进入页面、菜单、面包屑和新版本提示。它不依赖组件库：同一份逻辑由运营后台的 antd 外观和 shadcn 外观渲染，外观只负责界面。
+`@go-tenon/shell` 是[单页应用](spa.md)骨架的逻辑：把 TanStack Router、TanStack Query 和[会话](clients.md#client-runtime)接到一起，提供登录检查、按权限进入页面、菜单、面包屑、表单、列表和新版本提示。它不依赖组件库：同一份逻辑由运营后台的 antd 外观和 shadcn 外观渲染，外观只负责界面。
 
 - [安装](#installing)
 - [创建应用](#creating-the-app)
@@ -8,6 +8,8 @@
 - [登录检查](#requiring-sign-in)
 - [权限](#permissions)
 - [菜单与面包屑](#menu-and-breadcrumbs)
+- [表单](#forms)
+- [列表](#lists)
 - [新版本提示](#new-version)
 - [本地存储](#storage)
 - [API 参考](#api-reference)
@@ -201,6 +203,92 @@ const crumbs = useBreadcrumbs() // [{ title, path }]
 - 没有权限、`menu: false`、带路径参数的页面不出现；其中没有页面的分组也不出现。
 - `firstPage(menu)` 是第一个可以进入的页面；`pageUnder(menu, path)` 是某个分组下第一个可以进入的页面，例如点击面包屑中的分组时跳转到它。
 
+<a id="forms"></a>
+## 表单
+
+表单在前端用生成的 `schemas.ts` 和 `messages.ts` 校验：规则、提示的文字都与服务端相同，见[校验规则与验证提示](clients.md#validation-rules)。服务端返回的字段错误显示在对应的输入框下面。shell 不提供表单组件，只对接 react-hook-form 和 antd Form。
+
+用 react-hook-form 时，交给 `useForm` 一个 `resolver`：
+
+```tsx
+import { resolver, setServerErrors } from "@go-tenon/shell"
+import { components, schemas } from "@blog/client/api/schemas"
+import { messages } from "@blog/client/api/messages"
+
+const rules = { components, messages, language: "zh-CN" }
+
+function ArticleForm() {
+  const form = useForm<ArticleChanges>({ resolver: resolver(schemas.article.create.body, rules) })
+  const [formError, setFormError] = useState<string>()
+  const save = useMutation({
+    mutationFn: (changes: ArticleChanges) => api.article.create(changes),
+    onError: (err) => setFormError(setServerErrors(err, form)?.message),
+  })
+  return <form onSubmit={form.handleSubmit((v) => save.mutate(v))}>…</form>
+}
+```
+
+用 antd Form 时，每个 `Form.Item` 用同一条规则，出错时把 Form 实例交给 `setServerErrors`：
+
+```tsx
+const rule = antdRule(schemas.article.create.body, rules)
+
+<Form form={form} onFinish={(v) => save.mutate(v, { onError: (err) => setServerErrors(err, form) })}>
+  <Form.Item name="title" rules={[rule]}><Input /></Form.Item>
+  <Form.Item name={["items", 0, "name"]} rules={[rule]}><Input /></Form.Item>
+</Form>
+```
+
+- 字段的路径用点连接，例如 `items.0.name`，与服务端错误的位置 `body.items[0].name` 对应。
+- `setServerErrors` 把请求体的字段错误设置到对应字段，返回不属于某个字段的错误（例如 slug 已被使用、断网），它是 `describeError` 的结果：`message` 是服务端翻译好的提示，断网等没有服务端提示时为空，按 `kind` 显示。
+- `serverErrors(err)` 只拆分，不设置：`{ fields, form }`；`formValidator(schema, rules)` 返回校验整个表单的函数，其他表单库可以用它们对接。
+
+有未保存的修改时，`useUnsavedChanges` 在离开页面前询问，刷新或关闭浏览器时由浏览器提示。保存成功后先调用 `release`，跳转时不再询问：
+
+```tsx
+const unsaved = useUnsavedChanges(form.formState.isDirty)
+const save = useMutation({
+  mutationFn: …,
+  onSuccess: () => {
+    unsaved.release()
+    void navigate({ to: "/articles" })
+  },
+})
+```
+
+默认用浏览器的确认框，`useUnsavedChanges(dirty, { confirm })` 换成组件库的对话框（`confirm` 返回 `true` 时离开）。
+
+<a id="lists"></a>
+## 列表
+
+列表的查询条件、排序和分页保存在地址中：刷新页面、分享链接、浏览器前进后退都回到同一个列表。地址中的参数与接口相同（`page`、`per_page`、`sort` 和各筛选条件），可以直接交给生成的客户端：
+
+```tsx
+import { listSearch, useList, useSelection } from "@go-tenon/shell"
+import type { ArticleListInput } from "@blog/client/api"
+import { components, schemas } from "@blog/client/api/schemas"
+
+export const Route = createFileRoute("/_app/articles/")({
+  validateSearch: listSearch<ArticleListInput>(schemas.article.list.query, { components }),
+  component: Articles,
+})
+
+function Articles() {
+  const list = useList(Route)
+  const articles = useQuery({ queryKey: ["article", "list", list.params], queryFn: () => api.article.list(list.params) })
+  const selection = useSelection<string>(list.params)
+  // list.page、list.perPage、list.sort、list.filters
+  // list.setFilters({ status: "draft" })、list.setPage(2)、list.setSort("-created")、list.reset()
+  // list.tableState：TanStack Table、ProTable 用的 { pageIndex, pageSize, sorting }
+}
+```
+
+- `listSearch` 按生成的查询参数规则解析地址：值转换为规则中的类型（数字、布尔值、数组），不合法的值、不认识的参数、空值和等于默认值的值都去掉。
+- 修改查询条件、排序或每页条数时回到第一页；等于默认值的参数不写进地址。
+- `useSelection` 是批量操作的选中项，`resetOn`（例如 `list.params`）变化时清空：换了查询条件或页码后，原来选中的行已经不在眼前。
+
+游标分页的游标不放进地址，“加载更多”用 TanStack Query 的 [useInfiniteQuery](https://tanstack.com/query/latest/docs/framework/react/guides/infinite-queries)，`getNextPageParam` 取响应的 `next_cursor`。
+
 <a id="new-version"></a>
 ## 新版本提示
 
@@ -238,6 +326,11 @@ app.storage.get<{ collapsed: boolean }>("sider")
 | `ForbiddenError`、`isForbidden` | 缺少权限时抛出的错误 |
 | `useApp`、`useSignedIn`、`useCan`、`useMenu`、`useBreadcrumbs` | 在 `AppRoot` 之内使用 |
 | `buildMenu`、`firstPage`、`pageUnder`、`breadcrumbs` | 菜单和面包屑的纯函数，外观可以直接使用 |
+| `resolver`、`antdRule`、`formValidator` | 用生成的规则校验表单：react-hook-form、antd Form、其他表单库 |
+| `setServerErrors`、`serverErrors` | 把服务端的错误设置到表单的字段 |
+| `useUnsavedChanges(dirty, options)` | 有未保存的修改时离开前询问 |
+| `listSearch(querySchema, options)`、`useList(Route)` | 列表的查询条件、排序和分页保存在地址中 |
+| `useSelection(resetOn)` | 列表的选中项 |
 | `safeRedirect(redirect, fallback)` | 只接受同源相对路径的回跳地址 |
 | `useNewVersion`、`watchVersion` | 新版本提示 |
 | `tenonVersion(options)` | `@go-tenon/shell/vite` 中的构建插件 |
