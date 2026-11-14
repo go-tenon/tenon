@@ -70,7 +70,7 @@ var rules = map[string]rule{
 	"sheet":              {layerInfrastructure, []string{"errorx", "form"}},
 
 	"httpx":                {layerEntry, []string{"acquire", "errorx", "form", "i18n", "identity", "logging", "ratelimit"}},
-	"httpx/rest/clientgen": {layerEntry, []string{"command", "errorx", "httpx", "page"}},
+	"httpx/rest/clientgen": {layerEntry, []string{"command", "errorx", "httpx", "i18n", "identity", "page"}},
 	"web":                  {layerEntry, []string{"errorx", "form", "httpx", "i18n", "logging"}},
 	"realtime":             {layerEntry, []string{"broadcast", "httpx", "identity", "logging"}},
 	"mcpx":                 {layerEntry, []string{"errorx", "httpx", "identity", "logging"}},

@@ -5,6 +5,7 @@ package httpcmd
 
 import (
 	"fmt"
+	"io/fs"
 	"strings"
 	"text/tabwriter"
 
@@ -23,8 +24,29 @@ import (
 //	root.AddCommand(httpcmd.Commands(func() chi.Routes { return routes(Config{}, nil) })...)
 //
 // 注册路由时只保存依赖，处理请求时才使用，用零值构造才能成功；违反时命令 panic，堆栈指向使用依赖的地方。
-func Commands(router func() chi.Routes) []*cobra.Command {
-	return []*cobra.Command{OpenAPI(router), Routes(router), clientgen.Command(router)}
+//
+// 应用有自己的翻译文件时用 Translations 传入，client 命令生成的验证提示与服务端相同：
+//
+//	httpcmd.Commands(routes, httpcmd.Translations(locales.FS))
+func Commands(router func() chi.Routes, opts ...Option) []*cobra.Command {
+	var o options
+	for _, opt := range opts {
+		opt(&o)
+	}
+	return []*cobra.Command{OpenAPI(router), Routes(router), clientgen.Command(router, o.translations...)}
+}
+
+// Option 是 Commands 的选项。
+type Option func(*options)
+
+type options struct {
+	translations []fs.FS
+}
+
+// Translations 传入应用的翻译文件，与 i18n.New 的 sources 相同。client 命令为 TypeScript 客户端生成验证提示时，
+// 它们覆盖框架内置的文案。
+func Translations(sources ...fs.FS) Option {
+	return func(o *options) { o.translations = append(o.translations, sources...) }
 }
 
 // OpenAPI 构造 openapi 命令：调用 router 构造路由，用 rest.Lookup 找到其中的 API，

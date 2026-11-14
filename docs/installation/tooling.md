@@ -76,9 +76,17 @@ go get -tool github.com/go-tenon/tenon/cmd/tenon
 ```json
 {
   "name": "@todo/client",
-  "exports": { "./*": "./src/*/api.ts" }
+  "exports": {
+    "./*/messages": "./src/*/messages.ts",
+    "./*/permissions": "./src/*/permissions.ts",
+    "./*/queries": "./src/*/queries.ts",
+    "./*/schemas": "./src/*/schemas.ts",
+    "./*": "./src/*/api.ts"
+  }
 }
 ```
+
+`@todo/client/api` 是 `api.ts`，`@todo/client/api/queries` 是同一目录中的 `queries.ts`，生成的文件见[客户端代码](../responses/clients.md#generating-types)。
 
 <a id="framework-packages"></a>
 ### 框架的前端包

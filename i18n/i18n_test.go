@@ -139,3 +139,25 @@ func TestMustNew(t *testing.T) {
 	}()
 	i18n.MustNew("not a locale!")
 }
+
+func TestTemplates(t *testing.T) {
+	app := fstest.MapFS{
+		"zh-CN.yaml": {Data: []byte("validation.filled: 必须填写\narticle.slug_taken: \"slug“{{.slug}}”已被使用\"\n")},
+		"ja.yaml":    {Data: []byte("validation.filled: 入力してください\n")},
+	}
+	got, err := i18n.Templates(app)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct{ lang, id, want string }{
+		{"zh-CN", "validation.filled", "必须填写"},                // 应用覆盖内置
+		{"zh-CN", "validation.min_length", "至少 {{.Min}} 个字符"}, // 原始模板，不渲染
+		{"zh-CN", "article.slug_taken", "slug“{{.slug}}”已被使用"},
+		{"en", "validation.filled", "This field must not be empty"},
+		{"ja", "validation.filled", "入力してください"},
+	} {
+		if got[c.lang][c.id] != c.want {
+			t.Errorf("%s %s = %q, want %q", c.lang, c.id, got[c.lang][c.id], c.want)
+		}
+	}
+}

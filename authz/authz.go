@@ -38,12 +38,10 @@ var (
 )
 
 // Permission 是权限目录中的一项。
-type Permission struct {
-	Name        string // 以冒号分隔的权限名，例如 articles:write
-	Description string // 在角色编辑界面中显示的说明
-}
+type Permission = identity.Permission
 
 // Catalog 是应用在代码中声明的全部权限。Store 只接受目录中的权限，以及能匹配目录中权限的通配符。
+// 它也可以交给 rest.Options.Permissions，写入 OpenAPI，客户端据此生成权限常量。
 type Catalog []Permission
 
 // Role 是一组权限。

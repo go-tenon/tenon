@@ -109,4 +109,20 @@ const confirming = createClient({
 })
 check((await confirming.ping()).ok === true && confirms === 1 && calls === 2, "confirm and retry", { calls, confirms })
 
+// createQueries：查询选项调用客户端，key 带作用域和 API 名称；修改成功后让同一分组的查询失效。
+const { createQueries } = (await import(process.env.CLIENT!.replace(/api\.ts$/, "queries.ts"))) as typeof import("../internal/example/ts/queries")
+const invalidated: unknown[][] = []
+const queries = createQueries(api, {
+  scope: () => ["tenant-1"],
+  queryClient: { invalidateQueries: ({ queryKey }) => invalidated.push([...queryKey]) },
+})
+const listQuery = queries.article.list({ q: "Hel" })
+check(JSON.stringify(listQuery.queryKey) === JSON.stringify(["tenant-1", "api", "article", "list", { q: "Hel" }]), "query key", listQuery.queryKey)
+check((await listQuery.queryFn()).items.some((a) => a.slug === "hello"), "queryFn")
+const create = queries.article.create()
+const created = await create.mutationFn({ title: "Query", slug: "query" })
+await create.onSuccess()
+check(created.body.slug === "query", "mutationFn", created)
+check(JSON.stringify(invalidated) === JSON.stringify([["tenant-1", "api", "article"]]), "invalidate", invalidated)
+
 console.log("roundtrip ok")

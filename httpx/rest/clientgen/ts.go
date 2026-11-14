@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"go/token"
+	"io/fs"
 	"maps"
 	"net/http"
 	"reflect"
@@ -17,6 +18,7 @@ import (
 	"golang.org/x/tools/go/packages"
 
 	"github.com/go-tenon/tenon/httpx/rest"
+	"github.com/go-tenon/tenon/i18n"
 )
 
 //go:embed ts/runtime.ts
@@ -24,6 +26,10 @@ var tsRuntime string
 
 // TSOptions 配置 TypeScript 客户端的生成。
 type TSOptions struct {
+	// Name 是这个 API 的客户端名称（目录名），写在 query key 中；空表示 api。
+	Name string
+	// Translations 是应用的翻译文件，与 i18n.New 的 sources 相同；messages.ts 中它们覆盖框架内置的验证提示。
+	Translations []fs.FS
 	// Main 与 Options.Main 相同：在主包依赖的、属于应用模块和 Tenon 的包中查找 errorx.Define 定义的错误码。
 	Main string
 	// Dir 是加载源码的工作目录，空表示当前目录。
@@ -37,7 +43,11 @@ type TSOptions struct {
 //   - api.ts：OpenAPI 中的类型，以及 createClient。接口按 operationId 分组，article-publish 生成
 //     client.article.publish；路径参数按顺序作为参数，查询参数、请求头和请求体合成最后一个参数；
 //   - errors.ts：errorx.Define 定义的错误码，按包分组，例如 ArticleErrors.SlugTaken；
-//   - runtime.ts：发送请求、刷新 access token、ApiError、事件流和下载。
+//   - runtime.ts：发送请求、刷新 access token、ApiError、事件流和下载；
+//   - schemas.ts：每个接口的请求体和查询参数的校验规则（JSON Schema 的子集）；
+//   - messages.ts：各语言的验证提示模板，框架内置的文案加上 Translations 中的覆盖；
+//   - permissions.ts：权限目录（rest.Options.Permissions）和每个接口要求的权限；
+//   - queries.ts：TanStack Query 的查询和修改选项。
 //
 // 类型来自 Huma 生成的 OpenAPI 文档，与 openapi.json 一致。
 func GenerateTS(api *rest.API, opts TSOptions) (*Result, error) {
@@ -63,15 +73,39 @@ func GenerateTS(api *rest.API, opts TSOptions) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	res.Files["api.ts"] = []byte(Header + "\n\n" + apiTS)
-	res.Files["errors.ts"] = []byte(Header + "\n\n" + errorsTS)
-	res.Files["runtime.ts"] = []byte(Header + "\n\n" + tsRuntime)
+	schemasTS, err := t.schemasTS()
+	if err != nil {
+		return nil, err
+	}
+	templates, err := i18n.Templates(opts.Translations...)
+	if err != nil {
+		return nil, errors.Wrap(err, "clientgen: translations")
+	}
+	permissionsTS, err := t.permissionsTS()
+	if err != nil {
+		return nil, err
+	}
+	name := opts.Name
+	if name == "" {
+		name = "api"
+	}
+	queriesTS, err := t.queriesTS(name)
+	if err != nil {
+		return nil, err
+	}
+	for file, src := range map[string]string{
+		"api.ts": apiTS, "errors.ts": errorsTS, "runtime.ts": tsRuntime, "schemas.ts": schemasTS,
+		"messages.ts": messagesTS(templates), "permissions.ts": permissionsTS, "queries.ts": queriesTS,
+	} {
+		res.Files[file] = []byte(Header + "\n\n" + src)
+	}
 	return res, nil
 }
 
 type tsGen struct {
 	api      *rest.API
 	registry huma.Registry
+	groups   map[string][]*tsOp // 按分组的接口，由 client 填写；"" 是没有分组的接口
 }
 
 // errors 生成 errors.ts：每个包一个常量对象，键是去掉 Err 前缀的变量名。
@@ -144,6 +178,7 @@ func (t *tsGen) client(res *Result) (string, error) {
 		}
 		groups[o.group] = append(groups[o.group], o)
 	}
+	t.groups = groups
 	reserved := []string{"setAccessToken", "getAccessToken", "refresh"}
 	for _, o := range groups[""] {
 		if _, ok := groups[o.method]; ok || slices.Contains(reserved, o.method) {
