@@ -22,11 +22,9 @@ Tenon 的队列有两个特点，在开始之前需要了解。第一，任务�
     - [失败任务](#failed-jobs)
 - [任务的租约与停止](#leases-and-shutdown)
 - [日志](#logging)
-- [观测](#observability)
-    - [指标](#metrics)
-    - [任务事件](#job-events)
-    - [队列状态](#stats-command)
-    - [队列面板](#panel)
+- [任务事件](#job-events)
+- [队列状态](#stats-command)
+- [队列面板](#panel)
 - [测试](#testing)
 - [API 参考](#api-reference)
 
@@ -138,7 +136,7 @@ func (a *Publish) Handle(ctx context.Context, subject identity.Subject, id uuid.
 
 事务提交时 PostgreSQL 通知 worker，任务随即被转发到 NSQ。`PublishAll` 一次发布多个同类任务，批量写入。
 
-每个任务有一个 UUIDv7 作为 ID。`ctx` 中的 `request_id` 和 OpenTelemetry 链路会随任务保存，处理任务时还原到处理函数的 `ctx` 中，见[日志](#logging)和[链路追踪](../general/telemetry.md#queue)。
+每个任务有一个 UUIDv7 作为 ID。`ctx` 中的 `request_id` 会随任务保存，处理任务时还原到处理函数的 `ctx` 中，见[日志](#logging)。
 
 <a id="delayed-jobs"></a>
 ### 延迟执行
@@ -207,8 +205,7 @@ func (a *App) Worker(*command.Daemon) (func(context.Context) error, error) {
         return nil, err
     }
 
-    w := queue.NewWorker(a.db, a.cfg.Queue, nil,
-        queue.WithTelemetry(a.meters, a.tracers))
+    w := queue.NewWorker(a.db, a.cfg.Queue, nil)
     mailjob.Send.Handle(w, mailer.Send)
     return w.Run, nil
 }
@@ -369,33 +366,12 @@ NSQ 把任务交给 worker 后，等待处理结果的时间是 `lease`（默认
 
 队列的日志带有 `component=queue` 字段，可以[单独设置级别](../general/logging.md#component-levels)。任务失败后等待重试记录为 `warn`，转入失败任务表记录为 `error`，日志中包含 topic、错误和下次重试的等待时间。NSQ 客户端的警告和错误也记在这里。
 
-处理函数的 `ctx` 中带有 `message_id`（任务 ID）、`attempt`（第几次执行），以及发布时的 `request_id`。使用 `slog.InfoContext(ctx, ...)` 记录的日志会自动带上它们，可以把一个请求和它产生的任务串起来。使用链路追踪时，任务的执行还会出现在发布它的请求的链路中，见[链路追踪](../general/telemetry.md#queue)。
-
-<a id="observability"></a>
-## 观测
-
-<a id="metrics"></a>
-### 指标
-
-指标使用 OpenTelemetry 的接口，`a.meters`、`a.tracers` 是入口中创建的 Provider，见[推送](../general/telemetry.md#setup)。[`Worker`](#running-workers) 创建 worker 时用 `queue.WithTelemetry` 传入它们，记录每个任务的等待时长和处理耗时，并为每次执行创建 span，见[队列的链路](../general/telemetry.md#queue)。
-
-| 指标 | 类型 | 属性 | 含义 |
-| --- | --- | --- | --- |
-| `queue.job.wait` | 直方图，秒 | | 任务从可以执行到开始处理等了多久 |
-| `queue.job.duration` | 直方图，秒 | `queue.job.outcome` | 处理耗时；按结果计数就是吞吐和失败率 |
-| `queue.relay.jobs` | 计数 | `queue.relay.route` | 从 WAL 读到并转发的任务：`published` 立即交给 NSQ，`deferred` 作为延迟消息，`scheduled` 存入 `queue_scheduled` |
-| `queue.relay.active` | 仪表 | | 这个实例正在转发时为 1 |
-| `queue.relay.lag` | 仪表，字节 | | 复制槽中还没确认的 WAL，见[监控积压](../installation/deployment.md#queue-monitoring) |
-| `queue.scheduled.jobs` | 仪表 | | `queue_scheduled` 中等待的任务数 |
-
-`queue.job.*` 带有 `messaging.system`（`nsq`）和 `messaging.destination.name`（topic）属性，与队列的 span 相同。`queue.job.outcome` 是 `succeeded`、`retrying`、`failed`、`released`，与[任务事件](#job-events)对应。NSQ 重新投递的任务（等待不超过 `max_defer` 的重试、放回的任务）给不出可以执行的时间，不记录等待时长。导出到 Prometheus 后，点换成下划线，单位成为后缀，例如 `queue_job_wait_seconds`。
-
-每个 worker 实例都在采集时查询一次复制槽，报告 `queue.relay.lag` 和 `queue.scheduled.jobs`；所有实例的 `queue.relay.active` 之和为 0 时没有实例在转发，WAL 会一直累积，应当告警。NSQ 中积压的任务数由 nsqd 统计，见[队列状态](#stats-command)。HTTP 请求和定时任务的指标见[可观测性](../general/telemetry.md)。
+处理函数的 `ctx` 中带有 `message_id`（任务 ID）、`attempt`（第几次执行），以及发布时的 `request_id`。使用 `slog.InfoContext(ctx, ...)` 记录的日志会自动带上它们，可以把一个请求和它产生的任务串起来。
 
 <a id="job-events"></a>
-### 任务事件
+## 任务事件
 
-`queue.WithObserver` 让 worker 在每次状态变化时通知你，`WithTelemetry` 也建立在它之上。需要每个任务的执行历史时，把事件写进自己的表：成功的任务只体现在事件中：
+`queue.WithObserver` 让 worker 在每次状态变化时通知你。需要每个任务的执行历史时，把事件写进自己的表：成功的任务只体现在事件中：
 
 ```go
 w := queue.NewWorker(a.db, a.cfg.Queue, nil,
@@ -426,7 +402,7 @@ w := queue.NewWorker(a.db, a.cfg.Queue, nil,
 除 `JobStarted` 外，事件都在结果写回之后报告，`Started` 是交给处理函数的时间，`Duration` 是处理耗时，`Err` 是失败原因。`e.Job.AvailableAt` 是任务本次可以执行的时间，给不出时为零值。Observer 在处理任务的 goroutine 中同步调用，耗时会占用并发名额：上面的写库很快没有问题，更重的工作请缓冲后批量处理。
 
 <a id="stats-command"></a>
-### 队列状态
+## 队列状态
 
 每个 topic 积压、处理中、延迟中的任务数由 nsqd 统计，在 [nsqadmin](https://nsq.io/components/nsqadmin.html) 中查看，也可以在那里暂停一个 topic 的消费；接入监控系统用 nsqd 的 [statsd 输出](https://nsq.io/components/nsqd.html#statsd--graphite-integration)。还没转发的任务在复制槽中，积压的字节数用 `pg_replication_slots` 查询，见[部署](../installation/deployment.md#queue)；延迟超过 `max_defer` 的任务在 `queue_scheduled` 中。
 
@@ -465,7 +441,7 @@ ID                                    TOPIC      ATTEMPTS  FAILED AT            
 ```
 
 <a id="panel"></a>
-### 队列面板
+## 队列面板
 
 `queue/queueweb` 把同样的内容做成网页，只读写队列已有的数据：
 
@@ -473,7 +449,7 @@ ID                                    TOPIC      ATTEMPTS  FAILED AT            
 - **失败任务**：按 topic 筛选、翻页；详情页显示格式化的 payload、元数据、完整的错误和堆栈；单条重试或删除，按 topic 全部重试或全部删除；
 - **延迟任务**：`queue_scheduled` 中等待的任务，按执行时间排列。
 
-吞吐、耗时等[指标](#metrics)交给 Grafana，各 topic 的积压和消费者交给 nsqadmin，面板只在页头放它们的链接；重建复制槽只能用 `queue slot recreate`。面板不新增任何表。
+吞吐、耗时等指标交给 Grafana（见[可观测性](../general/telemetry.md#queue)），各 topic 的积压和消费者交给 nsqadmin，面板只在页头放它们的链接；重建复制槽只能用 `queue slot recreate`。面板不新增任何表。
 
 面板是框架自带的[服务端渲染页面](../responses/views.md)，认证由应用决定，通常是 [HTTP Basic 认证](../http/middleware.md#basic-auth)。挂在 HTTP 进程的路由上：
 
@@ -586,7 +562,7 @@ func WithTelemetry(mp metric.MeterProvider, tp trace.TracerProvider) WorkerOptio
 func WithObserver(o Observer) WorkerOption
 ```
 
-`Run` 转发发布的任务并处理已注册的 topic，直到 `ctx` 被取消。`WithObserver` 接收[任务事件](#job-events)。
+`Run` 转发发布的任务并处理已注册的 topic，直到 `ctx` 被取消。`WithTelemetry` 见[可观测性](../general/telemetry.md#queue)；`WithObserver` 接收[任务事件](#job-events)。
 
 ### 处理函数的返回值
 

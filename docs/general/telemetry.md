@@ -129,7 +129,18 @@ span 的 `db.query.text` 是把字面量换成 `?` 之后的 SQL，例如 `SELEC
 w := queue.NewWorker(db, cfg.Queue, nil, queue.WithTelemetry(tel.Meters, tel.Tracers))
 ```
 
-worker 报告每个任务的等待时长 `queue.job.wait` 和处理耗时 `queue.job.duration`，各指标的含义见[队列的指标](../libraries/queue.md#metrics)。积压的任务数由 nsqd 统计，见[队列状态](../libraries/queue.md#stats-command)。
+| 指标 | 类型 | 属性 | 含义 |
+| --- | --- | --- | --- |
+| `queue.job.wait` | 直方图，秒 | | 任务从可以执行到开始处理等了多久 |
+| `queue.job.duration` | 直方图，秒 | `queue.job.outcome` | 处理耗时；按结果计数就是吞吐和失败率 |
+| `queue.relay.jobs` | 计数 | `queue.relay.route` | 从 WAL 读到并转发的任务：`published` 立即交给 NSQ，`deferred` 作为延迟消息，`scheduled` 存入 `queue_scheduled` |
+| `queue.relay.active` | 仪表 | | 这个实例正在转发时为 1 |
+| `queue.relay.lag` | 仪表，字节 | | 复制槽中还没确认的 WAL，见[监控积压](../installation/deployment.md#queue-monitoring) |
+| `queue.scheduled.jobs` | 仪表 | | `queue_scheduled` 中等待的任务数 |
+
+`queue.job.*` 带有 `messaging.system`（`nsq`）和 `messaging.destination.name`（topic）属性，与队列的 span 相同。`queue.job.outcome` 是 `succeeded`、`retrying`、`failed`、`released`，与[任务事件](../libraries/queue.md#job-events)对应。NSQ 重新投递的任务（等待不超过 `max_defer` 的重试、放回的任务）给不出可以执行的时间，不记录等待时长。导出到 Prometheus 后，点换成下划线，单位成为后缀，例如 `queue_job_wait_seconds`。
+
+每个 worker 实例都在采集时查询一次复制槽，报告 `queue.relay.lag` 和 `queue.scheduled.jobs`；所有实例的 `queue.relay.active` 之和为 0 时没有实例在转发，WAL 会一直累积，应当告警。NSQ 中积压的任务数由 nsqd 统计，见[队列状态](../libraries/queue.md#stats-command)。
 
 发布任务时自动把 `ctx` 中的链路写入任务的元数据（`traceparent`）。worker 为每次执行创建一个 `process <topic>` span，接在发布任务的 span 之后：发布文章的请求和随后发送通知邮件的任务出现在同一条链路中，中间隔了多久、邮件为什么失败都能看到。每次重试是一个新的 span，失败、重试和租约丢失时标记为错误。
 
@@ -154,15 +165,20 @@ sched := schedule.New(locker, cfg.Schedule, nil, schedule.WithTelemetry(tel.Mete
 <a id="ratelimit"></a>
 ### 限流
 
+被拒绝的请求返回 `429`，已经出现在 [HTTP 请求的指标](#http)中，按路由就能看出哪个接口被限流。还看不出来的是：被哪个限流器拒绝、拒绝占全部调用的比例、存储是否出错，以及 HTTP 之外的调用。用 `ratelimit.Observe` 包装限流器：
+
 ```go
-attempts := ratelimit.Observe(tel.Meters, "login", redislimit.New(rdb, "app:login", cfg))
+logins := redislimit.New(rdb, "app:login", ratelimit.Config{Rate: 5, Interval: time.Minute, Burst: 5})
+attempts := ratelimit.Observe(tel.Meters, "login", logins)
 ```
+
+把 `attempts` 交给 [`login.Options.Attempts`](../security/login.md#limits)。第二个参数是指标中的名称，与存储的 `name` 分开：Redis 限流器的 `name` 往往带着应用的前缀，指标中只用简短的名称。任何 `Limiter` 都可以包装，包括中间件使用的内存限流器。
 
 | 指标 | 类型 | 属性 | 含义 |
 | --- | --- | --- | --- |
 | `ratelimit.requests` | 计数器 | `ratelimit.name`、`ratelimit.result` | 每次 `Allow` 的结果：`allowed`、`exceeded`（配额用完）或 `error`（存储出错） |
 
-被拒绝的请求同时以 `429` 出现在 HTTP 请求的指标中。用法和查询示例见[限流的指标](../libraries/rate-limiting.md#metrics)。
+`ctx` 被取消或超时导致的错误不计入，它们来自调用方。`key`（IP、邮箱、用户 ID）不进入指标，否则指标的数量会随客户端增长。要知道被限流的是谁，查看访问日志中状态为 `429` 的请求。
 
 <a id="mcp"></a>
 ### MCP 服务
@@ -182,7 +198,12 @@ srv := mcpx.New(mcpx.Options{Name: "app"}, mcpx.WithTelemetry(tel.Meters, tel.Tr
 <a id="realtime"></a>
 ### 实时频道
 
-设置 `realtime.Options.MeterProvider` 后报告本实例的连接数 `realtime.connections` 和订阅数 `realtime.subscriptions`，见[实时频道的指标](../libraries/realtime.md#metrics)。
+设置 `realtime.Options.MeterProvider` 后报告本实例的连接与订阅：
+
+| 指标 | 类型 | 含义 |
+| --- | --- | --- |
+| `realtime.connections` | 仪表 | 本实例当前的连接数 |
+| `realtime.subscriptions` | 仪表 | 这些连接的订阅数 |
 
 <a id="runtime"></a>
 ### Go 运行时
@@ -245,6 +266,9 @@ sum(rate(ratelimit_requests_total{ratelimit_name="login", ratelimit_result="exce
 
 # 每天凌晨的报表任务 25 小时内没有成功过
 increase(schedule_task_duration_seconds_count{schedule_task="reports:daily", schedule_task_outcome="succeeded"}[25h]) == 0
+
+# 没有实例在转发队列任务（WAL 会一直累积）
+sum(queue_relay_active) == 0
 ```
 
 <a id="api-reference"></a>

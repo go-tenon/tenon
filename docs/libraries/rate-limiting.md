@@ -10,7 +10,6 @@
     - [限流的 key](#rate-limit-key)
 - [在处理器中限流](#in-handlers)
 - [Redis 限流器](#redis-limiter)
-- [指标](#metrics)
 - [API 参考](#api-reference)
 
 <a id="example-usage"></a>
@@ -158,37 +157,6 @@ router.Use(httpx.RateLimit(redislimit.New(rdb, "app:http", cfg.HTTP.RateLimit), 
 
 这时 Redis 不可用会让所有请求都得到 `503`。如果宁可短时间不限流也要保证可用，请继续使用内存限流器。
 
-<a id="metrics"></a>
-## 指标
-
-被拒绝的请求返回 `429`，已经出现在 [HTTP 请求的指标](../general/telemetry.md#http)中，按路由就能看出哪个接口被限流。还看不出来的是：被哪个限流器拒绝、拒绝占全部调用的比例、存储是否出错，以及 HTTP 之外的调用。用 `ratelimit.Observe` 包装限流器，`a.meters` 是入口中[创建](../general/telemetry.md#setup)的 `MeterProvider`：
-
-```go
-logins := redislimit.New(rdb, "app:login", ratelimit.Config{Rate: 5, Interval: time.Minute, Burst: 5})
-attempts := ratelimit.Observe(a.meters, "login", logins)
-```
-
-把 `attempts` 交给 [`login.Options.Attempts`](../security/login.md#limits)。第二个参数是指标中的名称，与存储的 `name` 分开：Redis 限流器的 `name` 往往带着应用的前缀，指标中只用简短的名称。任何 `Limiter` 都可以包装，包括中间件使用的内存限流器。
-
-每次 `Allow` 计入计数器 `ratelimit.requests`，属性 `ratelimit.name` 是名称，`ratelimit.result` 是结果：
-
-| 结果 | 含义 |
-| --- | --- |
-| `allowed` | 放行 |
-| `exceeded` | 配额用完，返回 `ErrExceeded` |
-| `error` | 存储出错，例如 Redis 不可用；中间件此时返回 `503` |
-
-`ctx` 被取消或超时导致的错误不计入，它们来自调用方。导出到 Prometheus 后是 `ratelimit_requests_total`，例如登录被拒绝的比例：
-
-```promql
-sum(rate(ratelimit_requests_total{ratelimit_name="login", ratelimit_result="exceeded"}[5m]))
-  / sum(rate(ratelimit_requests_total{ratelimit_name="login"}[5m]))
-```
-
-比例平时接近 0、突然升高，通常是有人在暴力尝试；一直偏高则可能是配额定得太紧。
-
-`key`（IP、邮箱、用户 ID）不进入指标，否则指标的数量会随客户端增长。要知道被限流的是谁，查看访问日志中状态为 `429` 的请求。
-
 <a id="api-reference"></a>
 ## API 参考
 
@@ -242,7 +210,7 @@ func New(rdb rueidis.Client, name string, cfg ratelimit.Config) *Limiter
 func Observe(mp metric.MeterProvider, name string, l Limiter) Limiter
 ```
 
-包装限流器，报告 `ratelimit.requests` 指标，见[指标](#metrics)。
+包装限流器，报告 `ratelimit.requests` 指标，见[可观测性](../general/telemetry.md#ratelimit)。
 
 ### httpx.RateLimit
 

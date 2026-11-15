@@ -18,7 +18,6 @@ Tenon 的中间件都是标准的 `func(http.Handler) http.Handler`，安装在 
 - [HTTP Basic 认证](#basic-auth)
 - [App 最低版本](#app-version)
 - [响应压缩](#compression)
-- [指标](#metrics)
 - [自行组装](#custom-stack)
 - [自定义中间件](#custom-middleware)
     - [全局中间件](#chi-middleware)
@@ -219,8 +218,6 @@ http:
 | `request_header`、`response_header` | 记录请求头、响应头 | `false` |
 | `request_body`、`response_body` | 记录请求体、响应体，各最多 64 KiB | `false` |
 
-安装了 [`httpx.Telemetry`](../general/telemetry.md#http) 时，访问日志和其他日志一样自动带有 `trace_id` 和 `span_id`。
-
 记录请求头时，`Authorization`、`Cookie`、`X-Auth-Token`、`X-CSRF-Token`、`X-XSRF-Token` 始终隐藏，记录响应头时 `Set-Cookie` 始终隐藏。还需要隐藏其他字段时，见[敏感信息脱敏](../general/logging.md#redacting-sensitive-data)。
 
 > [!NOTE]
@@ -368,18 +365,6 @@ router.Use(httpx.Compress())
 
 [服务端推送](../responses/sse.md)和 [WebSocket](../libraries/realtime.md) 照常工作：`text/event-stream` 直接写出，每条事件立即送达；带 `Upgrade` 请求头的握手原样交给处理器。[静态资源](../responses/assets.md)的 `ETag` 保持不变，浏览器协商时照常得到 `304`。
 
-<a id="metrics"></a>
-## 指标
-
-`httpx.Telemetry` 为每个请求创建 OpenTelemetry span，并把耗时记录为指标 `http.server.request.duration`，按方法、状态码和路由模板区分。它安装在 `httpx.Defaults` 之前，访问日志才能带上 `trace_id`，panic 转换成的 `500` 也会被记录：
-
-```go
-router.Use(httpx.Telemetry(tel.Meters, tel.Tracers))
-router.Use(httpx.Defaults(cfg.HTTP)...)
-```
-
-`tel` 的创建和指标的属性见[可观测性](../general/telemetry.md#http)。
-
 <a id="custom-stack"></a>
 ## 自行组装
 
@@ -523,7 +508,7 @@ router.Use(httpx.Defaults(cfg.HTTP)...)
 | `BasicAuth(realm string, verify func(ctx context.Context, user, password string) (bool, error))` | [HTTP Basic 认证](#basic-auth) |
 | `AppVersion(cfg AppVersionConfig)` | [App 最低版本](#app-version) |
 | `Compress()` | [响应压缩](#compression) |
-| `Telemetry(mp metric.MeterProvider, tp trace.TracerProvider)` | [指标](#metrics) |
+| `Telemetry(mp metric.MeterProvider, tp trace.TracerProvider)` | 请求指标与链路，见[可观测性](../general/telemetry.md#http) |
 
 ### 读取请求信息
 

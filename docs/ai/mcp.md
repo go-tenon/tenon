@@ -21,7 +21,6 @@
     - [认证与权限](#authentication)
 - [连接客户端](#connecting-clients)
 - [本地 stdio](#stdio)
-- [观测](#observability)
 - [测试](#testing)
 - [其他功能](#other-features)
 - [API 参考](#api-reference)
@@ -183,7 +182,7 @@ router.Handle("/mcp", mcpx.Handler(srv, mcpx.HandlerOptions{
 }))
 ```
 
-`Instructions` 在连接时交给模型，说明这个服务是做什么的、工具之间怎么配合。`/mcp` 在同一个路由上，[访问日志](../general/logging.md)、[链路](../general/telemetry.md)、超时和请求体大小限制都照常生效；访问日志带有 `mcp.tool` 字段，记录调用的是哪个工具。
+`Instructions` 在连接时交给模型，说明这个服务是做什么的、工具之间怎么配合。`/mcp` 在同一个路由上，[访问日志](../general/logging.md)、超时和请求体大小限制都照常生效；访问日志带有 `mcp.tool` 字段，记录调用的是哪个工具。
 
 <a id="authentication"></a>
 ### 认证与权限
@@ -251,17 +250,6 @@ claude mcp add blog -- /srv/blog/bin/blog mcp serve --config /srv/blog/config/ap
 
 stdio 的标准输出就是协议通道，日志照常写到标准错误，两者各走各的通道。
 
-<a id="observability"></a>
-## 观测
-
-`mcpx.WithTelemetry` 报告每个请求的耗时指标和链路，属性遵循 OpenTelemetry 的 [MCP 语义约定](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/mcp.md)：
-
-```go
-srv := mcpx.New(mcpx.Options{Name: "app"}, mcpx.WithTelemetry(a.meters, a.tracers))
-```
-
-每个请求是一个 span，名称是方法和工具名，例如 `tools/call article_publish`，挂在 HTTP 请求的 span 之下，工具中执行的[数据库语句](../general/telemetry.md#database)也在这条链路中。指标和各属性见[可观测性](../general/telemetry.md#mcp)。
-
 <a id="testing"></a>
 ## 测试
 
@@ -308,7 +296,7 @@ func New(opts Options, options ...ServerOption) *Server
 func WithTelemetry(mp metric.MeterProvider, tp trace.TracerProvider) ServerOption
 ```
 
-`Options` 的字段：`Name`（服务名）、`Instructions`（给模型的说明）、`Logger`。
+`Options` 的字段：`Name`（服务名）、`Instructions`（给模型的说明）、`Logger`。`WithTelemetry` 见[可观测性](../general/telemetry.md#mcp)。
 
 ### Register
 
