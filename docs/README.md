@@ -31,7 +31,6 @@ Tenon 是一个用于构建 HTTP API 的 Go 应用框架。登录后使用的界
     - [配置](general/configuration.md)
     - [错误处理](general/errors.md)
     - [日志](general/logging.md)
-    - [可观测性](general/telemetry.md)
     - [本地化](general/localization.md)
     - [命令行](general/commands.md)
 
@@ -110,6 +109,7 @@ Tenon 是一个用于构建 HTTP API 的 Go 应用框架。登录后使用的界
 
 ## 进阶
 
+- [可观测性](general/telemetry.md)：OpenTelemetry 指标、链路与推送
 - [测试](testing/README.md)
     - [快速入门](testing/overview.md)
     - [数据库与业务动作](testing/database.md)

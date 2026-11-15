@@ -156,7 +156,7 @@ func (a *Get) Handle(ctx context.Context, subject identity.Subject, id uuid.UUID
 | 加载函数返回错误 | 原样返回，不写缓存（`Missing` 声明的错误除外） |
 | 写回失败（例如值超过 1 MB） | 记录 `warn` 日志，照常返回加载的结果 |
 
-Memcached 不可用时，每个请求都会遇到读取失败。为了不让日志刷屏，每个 `Cache` 每分钟最多记录一条，并附上这期间省略的条数。出错的次数可以通过[指标](../general/telemetry.md)观察。
+Memcached 不可用时，每个请求都会遇到读取失败。为了不让日志刷屏，每个 `Cache` 每分钟最多记录一条，并附上这期间省略的条数。
 
 > [!NOTE]
 > 这种“出错就当没有缓存”的处理，只适用于可以丢弃的查询缓存。这也是 Memcached 只存放这类数据的原因：令牌保存在数据库中，限流计数和锁保存在 [Redis](redis.md) 中。

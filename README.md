@@ -33,7 +33,8 @@ go get github.com/go-tenon/tenon@main
 | 渲染公开页面 | [视图](docs/responses/views.md) · [表单](docs/responses/forms.md) · [界面组件](docs/responses/components.md) · [文档页](docs/responses/doc-pages.md) |
 | 推送实时消息 | [服务端推送](docs/responses/sse.md) · [广播](docs/libraries/broadcasting.md) · [实时频道](docs/libraries/realtime.md) |
 | 查看全部路由 | [routes 命令](docs/general/commands.md#routes-command) |
-| 处理错误与日志 | [错误处理](docs/general/errors.md) · [日志](docs/general/logging.md) · [可观测性](docs/general/telemetry.md) |
+| 处理错误与日志 | [错误处理](docs/general/errors.md) · [日志](docs/general/logging.md) |
+| 指标、链路与推送 | [可观测性](docs/general/telemetry.md) |
 | 在后台执行任务 | [队列](docs/libraries/queue.md) · [定时任务](docs/libraries/scheduling.md) |
 | 防止任务重复执行 | [原子锁](docs/libraries/locks.md) |
 | 上传和管理文件 | [文件存储](docs/libraries/filesystem.md) · [上传接口](docs/libraries/file-uploads.md) |

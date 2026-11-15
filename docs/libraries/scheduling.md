@@ -83,13 +83,12 @@ sched.Add("reports:daily", "0 3 * * *", reports.Generate, schedule.In(shanghai))
 <a id="running-the-scheduler"></a>
 ## 运行调度器
 
-调度器是进程的一个运行部分（见[多个运行部分](../concepts/dependencies.md#running-parts)）。在入口的 `bootstrap` 包中，`a.locker` 是入口创建的[原子锁](locks.md#redis-store)。注册任务单独写在 `tasks` 中，调度器运行它，[查看任务](#listing-tasks)的命令和后台页面也用它，任务只定义一次。指标和链路的选项也在这里设置，查看任务时不执行任务，它们不起作用：
+调度器是进程的一个运行部分（见[多个运行部分](../concepts/dependencies.md#running-parts)）。在入口的 `bootstrap` 包中，`a.locker` 是入口创建的[原子锁](locks.md#redis-store)。注册任务单独写在 `tasks` 中，调度器运行它，[查看任务](#listing-tasks)的命令和后台页面也用它，任务只定义一次：
 
 ```go
 // tasks 创建调度器并注册全部定时任务。
 func (a *App) tasks() *schedule.Scheduler {
-    sched := schedule.New(a.locker, a.cfg.Schedule, nil,
-        schedule.WithTelemetry(a.meters, a.tracers))
+    sched := schedule.New(a.locker, a.cfg.Schedule, nil)
     sched.Add("articles:publish-scheduled", "* * * * *", article.NewPublishScheduled(a.db).Handle,
         schedule.Describe("发布到了预定时间的文章"))
     sched.Add("queue:prune-failed", "@daily", schedule.Cleanup(a.failed.Cleanup(30*24*time.Hour), 1000),
@@ -157,7 +156,7 @@ sched.Add("reports:daily", "0 3 * * *", func(ctx context.Context) error {
 
 队列负责重试、记录失败，耗时的工作也在 worker 中执行。
 
-调度器的日志带有 `component=schedule` 字段，任务的 `ctx` 中带有 `task` 字段，用 `slog.InfoContext(ctx, ...)` 记录的日志会自动带上它。`schedule.WithTelemetry` 让调度器报告每次执行的耗时、结果和被跳过的次数，用来发现长时间没有成功执行的任务；每次执行还是一条链路的起点，见[定时任务的指标和链路](../general/telemetry.md#schedule)。
+调度器的日志带有 `component=schedule` 字段，任务的 `ctx` 中带有 `task` 字段，用 `slog.InfoContext(ctx, ...)` 记录的日志会自动带上它。
 
 调度器只补一分钟以内的触发：进程暂停或调度落后不到一分钟时，错过的触发会补上，同一个任务只补一次；部署、重启期间错过的触发直接跳过。收到停止信号后，调度器停止触发新任务，等待执行中的任务结束，最多等待 `shutdown_timeout`，超时后取消它们的 `ctx`。这个时间在应用配置的调度段中设置：
 
@@ -220,7 +219,7 @@ queue:prune-failed          @daily        2026-11-12 00:00:00  6h59m42s  no     
 <a id="run-history"></a>
 ### 执行记录
 
-上一次什么时候执行、结果如何，是运行时的数据：部署多个实例时，每次触发由先取得锁的实例执行。需要执行记录时，用 `schedule.WithObserver` 接收执行事件，写进自己的表，`WithTelemetry` 也建立在它之上：
+上一次什么时候执行、结果如何，是运行时的数据：部署多个实例时，每次触发由先取得锁的实例执行。需要执行记录时，用 `schedule.WithObserver` 接收执行事件，写进自己的表：
 
 | 事件 | 时机 |
 | --- | --- |
@@ -333,7 +332,7 @@ func WithTelemetry(mp metric.MeterProvider, tp trace.TracerProvider) SchedulerOp
 func WithObserver(o Observer) SchedulerOption
 ```
 
-`locker` 用于在多个实例之间去重。`WithObserver` 接收每次执行的事件，见[执行记录](#run-history)。
+`locker` 用于在多个实例之间去重。`WithTelemetry` 见[可观测性](../general/telemetry.md#schedule)；`WithObserver` 接收每次执行的事件，见[执行记录](#run-history)。
 
 ### Scheduler
 

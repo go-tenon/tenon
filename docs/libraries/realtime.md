@@ -19,7 +19,6 @@
 - [断线与重连](#reconnecting)
 - [部署](#deployment)
     - [单独部署实时连接](#separate-process)
-- [指标](#metrics)
 - [API 参考](#api-reference)
 
 <a id="example-usage"></a>
@@ -321,16 +320,6 @@ location / {
 - `start` 中的 `HTTP` 已经挂载了实时频道，`Realtime` 只在单独部署时使用。
 - `realtime` 进程同样可以运行多个实例，它们与 `serve`、`work` 共用 Hub 后端，业务代码在哪个进程中发布都一样。
 
-<a id="metrics"></a>
-## 指标
-
-设置 `Options.MeterProvider` 后记录两个[指标](../general/telemetry.md)：
-
-| 指标 | 类型 | 含义 |
-| --- | --- | --- |
-| `realtime.connections` | 仪表 | 本实例当前的连接数 |
-| `realtime.subscriptions` | 仪表 | 这些连接的订阅数 |
-
 <a id="api-reference"></a>
 ## API 参考
 
@@ -360,7 +349,7 @@ func New(hub *broadcast.Hub, opts Options) (*Realtime, error)
 | `TrustedOrigins []string` | 允许跨站建立连接的来源，默认只接受同源的浏览器连接 |
 | `Presence PresenceStore` | 在线成员的存储，presence 频道必须设置，见[保存在线成员](#presence-stores) |
 | `PresenceGrace time.Duration` | 离开后保留在线记录的时间，默认 10 秒，最长 30 秒 |
-| `MeterProvider metric.MeterProvider` | 报告连接数和订阅数，见[指标](#metrics) |
+| `MeterProvider metric.MeterProvider` | 报告连接数和订阅数，见[可观测性](../general/telemetry.md#realtime) |
 | `Logger *slog.Logger` | 日志器 |
 
 ### Realtime

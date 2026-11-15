@@ -111,7 +111,7 @@ if err != nil {
 ctx = acquire.WithTimeout(ctx, time.Second)
 ```
 
-[默认中间件](../http/middleware.md#default-middleware)为每个请求按 `http.acquire_timeout`（默认 1 秒）设置它。`acquire` 包只在 context 中传递“最多愿意等多久去拿一个共享资源”，数据库连接池读取它，HTTP 中间件与数据库各自独立。时限只作用于取连接，语句本身的执行时间由请求超时控制。队列任务和命令排队等待连接是正常情况，所以只有 HTTP 请求设置它。连接池的使用情况和超时次数见[指标](../general/telemetry.md#database)。
+[默认中间件](../http/middleware.md#default-middleware)为每个请求按 `http.acquire_timeout`（默认 1 秒）设置它。`acquire` 包只在 context 中传递“最多愿意等多久去拿一个共享资源”，数据库连接池读取它，HTTP 中间件与数据库各自独立。时限只作用于取连接，语句本身的执行时间由请求超时控制。队列任务和命令排队等待连接是正常情况，所以只有 HTTP 请求设置它。
 
 <a id="connecting"></a>
 ## 连接数据库
@@ -141,7 +141,7 @@ func Check(ctx context.Context, dsn string) error {
 
 连接池参数为 `0` 时使用默认值，所以 `database.Config{DSN: dsn}` 也能直接打开。为 `ctx` 设置一个截止时间，数据库不可达时启动过程会按时结束。
 
-在应用中，连接池在入口打开**一次**，传给所有需要它的[业务动作](../concepts/actions.md)，在应用退出时关闭，见[依赖装配](../concepts/dependencies.md)。报告每条语句的耗时指标和链路用 `database.WithTelemetry`，见[可观测性](../general/telemetry.md#database)。
+在应用中，连接池在入口打开**一次**，传给所有需要它的[业务动作](../concepts/actions.md)，在应用退出时关闭，见[依赖装配](../concepts/dependencies.md)。
 
 <a id="slow-queries"></a>
 ### 慢查询
@@ -426,11 +426,10 @@ func (a *Create) Handle(ctx context.Context, subject identity.Subject, c Changes
 读多写少的应用可以把一部分读取交给只读副本，减轻主库的压力。副本是主库之外的另一个连接池，用 `database.ReadOnly` 打开，在入口和主库一起创建：
 
 ```go
-replica, err := database.Open(ctx, cfg.Replica, database.Name("replica"), database.ReadOnly(),
-    database.WithTelemetry(tel.Meters, tel.Tracers))
+replica, err := database.Open(ctx, cfg.Replica, database.Name("replica"), database.ReadOnly())
 ```
 
-`ReadOnly` 让副本的会话默认只读：误把写操作交给它时，立即得到 `database.IsReadOnly` 能识别的错误。`Name` 是连接池指标中的名字，区分主库和副本。有多个副本时，在它们前面放一个负载均衡（云数据库的只读地址、HAProxy 等），`replica.dsn` 指向它。
+`ReadOnly` 让副本的会话默认只读：误把写操作交给它时，立即得到 `database.IsReadOnly` 能识别的错误。`Name` 是连接池的名字，区分主库和副本。有多个副本时，在它们前面放一个负载均衡（云数据库的只读地址、HAProxy 等），`replica.dsn` 指向它。
 
 哪些读取交给副本，由业务动作在构造函数中声明。文章列表能容忍几百毫秒的复制延迟，交给副本；发布文章要在事务中读取并修改，用主库：
 
@@ -511,7 +510,7 @@ func Name(name string) Option
 func ReadOnly() Option
 ```
 
-`WithTelemetry` 报告每条语句的指标和链路；`WithLogger` 指定慢查询的日志器；`Name` 是连接池在指标中的名称，默认 `primary`；`ReadOnly` 让会话默认只读，用于[只读副本](#read-replicas)。
+`WithTelemetry` 报告每条语句的指标和链路，见[可观测性](../general/telemetry.md#database)；`WithLogger` 指定慢查询的日志器；`Name` 是连接池的名称，默认 `primary`；`ReadOnly` 让会话默认只读，用于[只读副本](#read-replicas)。
 
 ### Config、DefaultConfig
 

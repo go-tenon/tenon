@@ -451,16 +451,7 @@ sudo rm /etc/nginx/blog.maintenance
 <a id="logging"></a>
 ## 日志
 
-`logging.New` 默认输出到标准错误，使用 JSON 格式。配置了 [`telemetry`](../general/telemetry.md#setup) 时，日志还会和指标、链路一起推送到日志平台，标准错误上的日志照常输出。服务名和版本只在 `telemetry` 段配置，版本号默认取自构建信息，也可以在部署时通过环境变量指定：
-
-```yaml
-telemetry:
-  endpoint: ${OTLP_ENDPOINT:-}
-  service: blog
-  version: ${APP_VERSION:-}
-```
-
-排查问题时，可以使用响应头 `X-Request-ID` 中的请求 ID，在日志中找到同一请求的访问日志和错误诊断。详见[日志](../general/logging.md)。
+`logging.New` 默认输出到标准错误，使用 JSON 格式。把日志、指标和链路推送到平台见[可观测性](../general/telemetry.md#setup)。排查问题时，可以使用响应头 `X-Request-ID` 中的请求 ID，在日志中找到同一请求的访问日志和错误诊断。详见[日志](../general/logging.md)。
 
 <a id="pgbouncer"></a>
 ## PgBouncer
@@ -502,7 +493,7 @@ max_prepared_statements = 200   ; pgx 默认使用命名的预编译语句，需
 <a id="queue-monitoring"></a>
 ### 监控积压
 
-复制槽保留 worker 还没读到的 WAL。worker 全部停止、nsqd 不可用时，积压会一直增长。用 `queue status` 查看，或者用 worker 报告的[指标](../libraries/queue.md#metrics)告警：所有实例的 `queue.relay.active` 之和为 0，或者 `queue.relay.lag` 超过 `max_slot_wal_keep_size` 的一半。worker 全部停止时没有人报告指标，所以还要在数据库一侧监控，槽的名字是 `queue.SlotName(数据库名)`：
+复制槽保留 worker 还没读到的 WAL。worker 全部停止、nsqd 不可用时，积压会一直增长。用 `queue status` 查看，或者用 worker 报告的[指标](../general/telemetry.md#queue)告警：所有实例的 `queue.relay.active` 之和为 0，或者 `queue.relay.lag` 超过 `max_slot_wal_keep_size` 的一半。worker 全部停止时没有人报告指标，所以还要在数据库一侧监控，槽的名字是 `queue.SlotName(数据库名)`：
 
 ```sql
 SELECT slot_name, active, wal_status,
