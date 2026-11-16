@@ -10,7 +10,8 @@ import {
   validate,
 } from "@go-tenon/client"
 import { useBlocker } from "@tanstack/react-router"
-import { useCallback, useEffect, useRef } from "react"
+import { useCallback, useContext, useEffect, useRef } from "react"
+import { TabPaneContext } from "./tabcontext"
 
 /** 校验的选项：生成的 components、messages，以及提示的语言。 */
 export type FormRulesOptions = Pick<ValidateOptions, "components" | "messages" | "language">
@@ -154,6 +155,9 @@ export interface UnsavedChanges {
  * 有未保存的修改（dirty 为 true）时：在应用内离开页面前询问，刷新或关闭浏览器时由浏览器提示。
  * dirty 来自表单库，例如 react-hook-form 的 formState.isDirty、antd 的 form.isFieldsTouched()。
  *
+ * 页面在标签中时（见 TabsOutlet），切换标签会保留页面的状态，所以不询问；改为登记这个标签有未保存的修改，
+ * 在关闭、刷新这个标签，以及 confirmDiscard（退出登录、切换租户）时询问。
+ *
  *   const unsaved = useUnsavedChanges(form.formState.isDirty)
  *   onSuccess: () => { unsaved.release(); navigate({ to: "/articles" }) }
  */
@@ -163,16 +167,22 @@ export function useUnsavedChanges(dirty: boolean, options: UnsavedChangesOptions
   useEffect(() => {
     if (dirty) state.current.released = false
   }, [dirty])
+  const pane = useContext(TabPaneContext)
+  const setTabDirty = pane?.setDirty
+  useEffect(() => {
+    setTabDirty?.(dirty)
+  }, [setTabDirty, dirty])
   const ask = options.confirm ?? (() => window.confirm(options.message ?? "有未保存的修改，确定离开吗？"))
   useBlocker({
     shouldBlockFn: async () => {
-      if (!state.current.dirty || state.current.released) return false
+      if (pane || !state.current.dirty || state.current.released) return false
       return !(await ask())
     },
-    enableBeforeUnload: () => state.current.dirty && !state.current.released,
+    enableBeforeUnload: () => !pane && state.current.dirty && !state.current.released,
   })
   const release = useCallback(() => {
     state.current.released = true
-  }, [])
+    setTabDirty?.(false)
+  }, [setTabDirty])
   return { release }
 }

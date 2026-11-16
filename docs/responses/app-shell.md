@@ -1,6 +1,6 @@
 # 应用骨架
 
-`@go-tenon/shell` 是[单页应用](spa.md)骨架的逻辑：把 TanStack Router、TanStack Query 和[会话](clients.md#client-runtime)接到一起，提供登录检查、按权限进入页面、菜单、面包屑、表单、列表和新版本提示。它不依赖组件库：同一份逻辑由运营后台的 antd 外观和 shadcn 外观渲染，外观只负责界面。
+`@go-tenon/shell` 是[单页应用](spa.md)骨架的逻辑：把 TanStack Router、TanStack Query 和[会话](clients.md#client-runtime)接到一起，提供登录检查、按权限进入页面、菜单、面包屑、布局约定、多标签、租户切换、表单、列表和新版本提示。它不依赖组件库：同一份逻辑由运营后台的 antd 外观和 shadcn 外观渲染，外观只负责界面。
 
 - [安装](#installing)
 - [创建应用](#creating-the-app)
@@ -9,6 +9,7 @@
 - [权限](#permissions)
 - [菜单与面包屑](#menu-and-breadcrumbs)
 - [布局约定](#layouts)
+- [多标签](#tabs)
 - [租户](#tenants)
 - [表单](#forms)
 - [列表](#lists)
@@ -278,6 +279,72 @@ const [variant, setVariant] = useLayoutVariant(["side", "top"])
 return variant === "top" ? <TopLayout /> : <SideLayout />
 ```
 
+<a id="tabs"></a>
+## 多标签
+
+运营后台常用多标签：打开的页面排成一行标签，切换标签时页面保留原来的状态（填了一半的表单、翻到的页、滚动位置）。多标签按需开启，在布局路由中用 `TabsOutlet` 代替 `Outlet`，标签栏由外观放在 `tabs` 插槽中：
+
+```tsx
+function Layout() {
+  useTabShortcuts() // 可选：Alt+W 关闭当前标签，Alt+← / Alt+→ 切换
+  return (
+    <SideLayout>
+      <Slot name="tabs" />
+      <TabsOutlet max={10} />
+    </SideLayout>
+  )
+}
+```
+
+布局之下的每个页面是一个标签，标签的标识是页面路由加路径参数：`/users/1` 和 `/users/2` 是两个标签，查询参数随标签保存，切回时恢复。标签的标题是页面路由的 `staticData.title`，页面可以用 `useTabTitle` 改成具体的名称；`staticData.tab` 为 `false` 的页面不进入标签，照常显示：
+
+```tsx
+export const Route = createFileRoute("/_app/articles/$id")({
+  staticData: { title: "文章" },
+  component: ArticlePage,
+})
+
+function ArticlePage() {
+  const { id } = Route.useParams() // 标准的 hooks：读到的总是这个标签自己的参数
+  const article = useQuery(…)
+  useTabTitle(article.data && `文章：${article.data.title}`)
+}
+```
+
+页面照常使用 Router 的标准 hooks（`Route.useParams()`、`useSearch()`、`useLocation()` 等），不需要知道自己是否在标签中：每个标签有自己的路由上下文，隐藏的标签读到的是它最后一次显示时的状态。隐藏的标签放在 React 的 `<Activity mode="hidden">` 中，组件状态保留，effect 暂停：隐藏期间不发出请求，切回时照常恢复。页面需要知道自己是否显示时（例如暂停轮询）用 `useTabActive()`。
+
+> [!NOTE]
+> 标签自己的路由上下文依赖 TanStack Router 内部的 `router.stores`。升级 TanStack Router 时，`js/shell/src/tabs.test.tsx` 检查它是否仍然可用。`<Activity>` 需要 React 19.2。
+
+`useTabs()` 返回标签和操作，外观据此渲染标签栏：
+
+```tsx
+const { tabs, active, activate, close, closeOthers, closeRight, closeAll, refresh, pin, unpin, move } = useTabs()
+// tabs：[{ key, title, icon, href, pinned, dirty, active, closable }]
+```
+
+| 操作 | 规则 |
+| --- | --- |
+| 打开 | 打开新页面时加在最后；已经打开的页面回到它的标签 |
+| 关闭 | 关闭当前标签时显示右边的，没有时显示左边的。固定的标签、唯一的标签不能关闭 |
+| 关闭其他、右边、全部 | 固定的标签总是保留；关闭全部时没有固定的标签，保留当前标签 |
+| 固定 | 固定的标签排在最左边；拖动排序（`move`）只在同一组中移动 |
+| 刷新 | 重新挂载这个标签的页面 |
+| 数量上限 | 超过 `max`（默认 10）时关闭最久没用的标签，固定的、有未保存修改的除外 |
+| 保存 | 标签按账号保存在本地存储中：刷新浏览器后恢复标签栏，页面在打开时才加载。登录、退出、切换账号后按新的账号重新开始 |
+
+在标签中，[`useUnsavedChanges`](#forms) 不在切换标签时询问（切换标签会保留页面的状态），而是把标签标记为有未保存的修改（`dirty`）。关闭、刷新这个标签时询问，刷新或关闭浏览器时由浏览器提示。退出登录前用 `confirmDiscard` 统一询问，切换租户时 `switchTenant` 已经询问：
+
+```tsx
+async function signOut() {
+  if (!(await confirmDiscard(app))) return
+  await api.auth.logout()
+  await session.signOut()
+}
+```
+
+默认用浏览器的确认框，`<TabsOutlet confirm={(message) => …} />` 换成组件库的对话框。
+
 <a id="tenants"></a>
 ## 租户
 
@@ -297,7 +364,7 @@ export const app = createApp({
 const { current, tenant, tenants, switchTo } = useTenant()
 ```
 
-切换时先更新会话的身份：TanStack Query 的缓存随之清空，页面重新挂载，上一个租户的数据不会出现。然后按后端[确定租户](../security/tenancy.md#identifying-tenants)的方式跳转：
+切换前，标签中有未保存的修改时先询问（见[多标签](#tabs)），用户选择留下时 `switchTo` 返回 `false`。切换时先更新会话的身份：TanStack Query 的缓存随之清空，页面重新挂载，上一个租户的数据不会出现。然后按后端[确定租户](../security/tenancy.md#identifying-tenants)的方式跳转：
 
 | 后端怎样确定租户 | `home` | 切换后 |
 | --- | --- | --- |
@@ -374,7 +441,7 @@ const save = useMutation({
 })
 ```
 
-默认用浏览器的确认框，`useUnsavedChanges(dirty, { confirm })` 换成组件库的对话框（`confirm` 返回 `true` 时离开）。
+默认用浏览器的确认框，`useUnsavedChanges(dirty, { confirm })` 换成组件库的对话框（`confirm` 返回 `true` 时离开）。页面在[标签](#tabs)中时，切换标签不询问，关闭标签时才询问。
 
 <a id="lists"></a>
 ## 列表
@@ -447,6 +514,8 @@ app.storage.get<{ collapsed: boolean }>("sider")
 | `useNavigation`、`useMenuBadge` | 布局的导航模型；登记菜单项的徽标 |
 | `Slot`、`Fill`、`useSlotFilled` | 插槽 |
 | `useLayoutState`、`useLayoutVariant`、`useNarrow` | 布局状态、用户选择的布局、窄屏 |
+| `TabsOutlet`、`useTabs`、`useTab`、`useTabActive`、`useTabTitle`、`useTabShortcuts` | 多标签 |
+| `confirmDiscard(app)` | 有未保存的修改时询问是否放弃，例如退出登录前 |
 | `useTenant`、`switchTenant`、`enterTenant` | 当前租户、切换租户 |
 | `resolver`、`antdRule`、`formValidator` | 用生成的规则校验表单：react-hook-form、antd Form、其他表单库 |
 | `setServerErrors`、`serverErrors` | 把服务端的错误设置到表单的字段 |
