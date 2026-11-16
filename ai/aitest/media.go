@@ -14,6 +14,8 @@ import (
 	"sync"
 	"unicode"
 
+	"github.com/cockroachdb/errors"
+
 	"github.com/go-tenon/tenon/ai"
 )
 
@@ -138,40 +140,86 @@ func (f *Transcriber) FailWith(err error) { f.s.failWith(err) }
 // Requests 返回目前收到的请求。
 func (f *Transcriber) Requests() []ai.TranscriptionRequest { return f.s.recorded() }
 
-// Embedder 实现 ai.Embedder，由文本的哈希生成单位长度的向量：相同的文本总是得到相同的向量，不同的文本几乎正交。
+// Embedder 实现 ai.Embedder，由输入内容（文字和媒体的字节）的哈希生成单位长度的向量：相同的内容总是得到相同的向量，
+// 不同的内容几乎正交。Same 可以让两项不同的内容得到相同的向量，例如一段描述和它描述的图片，用来测试以文搜图。
 type Embedder struct {
-	dims int
-	s    script[[]string, [][]float32]
+	dims  int
+	mu    sync.Mutex
+	alias map[string]string // 内容的键到代替它计算向量的内容的键
+	s     script[ai.EmbedRequest, [][]float32]
 }
 
 // NewEmbedder 创建生成 dims 维向量的 Embedder。
 func NewEmbedder(dims int) *Embedder {
-	e := &Embedder{dims: dims}
-	e.s = script[[]string, [][]float32]{name: "embedding", fallback: func(texts []string) [][]float32 {
-		out := make([][]float32, len(texts))
-		for i, t := range texts {
-			out[i] = Vector(t, dims)
+	e := &Embedder{dims: dims, alias: map[string]string{}}
+	e.s = script[ai.EmbedRequest, [][]float32]{name: "embedding", fallback: func(req ai.EmbedRequest) [][]float32 {
+		out := make([][]float32, len(req.Inputs))
+		for i, c := range req.Inputs {
+			out[i] = vectorOf(e.key(c), dims)
 		}
 		return out
 	}}
 	return e
 }
 
+// Same 让 others 都得到与 c 相同的向量。
+func (f *Embedder) Same(c ai.Content, others ...ai.Content) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, o := range others {
+		f.alias[contentKey(o)] = contentKey(c)
+	}
+}
+
+func (f *Embedder) key(c ai.Content) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	k := contentKey(c)
+	if a, ok := f.alias[k]; ok {
+		return a
+	}
+	return k
+}
+
 // Embed 实现 ai.Embedder。
-func (f *Embedder) Embed(_ context.Context, texts []string) ([][]float32, error) {
-	return f.s.call(append([]string(nil), texts...))
+func (f *Embedder) Embed(_ context.Context, req ai.EmbedRequest) ([][]float32, error) {
+	for i, c := range req.Inputs {
+		if err := c.Validate(); err != nil {
+			return nil, errors.Wrapf(err, "aitest: input %d", i)
+		}
+	}
+	req.Inputs = append([]ai.Content(nil), req.Inputs...)
+	return f.s.call(req)
 }
 
 // FailWith 让之后的请求都返回 err，传 nil 恢复。
 func (f *Embedder) FailWith(err error) { f.s.failWith(err) }
 
-// Requests 返回每次请求的文本。
-func (f *Embedder) Requests() [][]string { return f.s.recorded() }
+// Requests 返回目前收到的请求。
+func (f *Embedder) Requests() []ai.EmbedRequest { return f.s.recorded() }
 
-// Vector 返回 Embedder 为 text 生成的 dims 维向量，用于在测试中构造期望值。
-func Vector(text string, dims int) []float32 {
+// Vector 返回 NewEmbedder 为 c 生成的 dims 维向量（不考虑 Same），用于在测试中构造期望值。
+func Vector(c ai.Content, dims int) []float32 { return vectorOf(contentKey(c), dims) }
+
+// contentKey 把内容编码为字符串：只有一段文字时就是这段文字，其余按段写出种类、MIME 类型和内容。
+func contentKey(c ai.Content) string {
+	if len(c) == 1 && c[0].Media == nil {
+		return c[0].Text
+	}
+	var b strings.Builder
+	for _, p := range c {
+		if p.Media != nil {
+			fmt.Fprintf(&b, "\x00media:%s:%d:%s", p.Media.MIME, len(p.Media.Data), p.Media.Data)
+		} else {
+			fmt.Fprintf(&b, "\x00text:%d:%s", len(p.Text), p.Text)
+		}
+	}
+	return b.String()
+}
+
+func vectorOf(key string, dims int) []float32 {
 	h := fnv.New64a()
-	_, _ = h.Write([]byte(text))
+	_, _ = h.Write([]byte(key))
 	seed := h.Sum64()
 	r := rand.New(rand.NewPCG(seed, seed>>1|1))
 	v := make([]float32, dims)
@@ -190,13 +238,13 @@ func Vector(text string, dims int) []float32 {
 
 // RerankRequest 是 Reranker 收到的一次请求。
 type RerankRequest struct {
-	Query string
-	Docs  []string
+	Query ai.Content
+	Docs  []ai.Content
 	Limit int
 }
 
 // Reranker 实现 ai.Reranker，按顺序返回预设的结果，并记录收到的请求。
-// 没有预设结果时，按查询中的字符在文档中出现的比例打分，分数相同的保持原来的顺序；有预设时用完后返回错误。
+// 没有预设结果时，按查询文字中的字符在文档文字中出现的比例打分，分数相同的保持原来的顺序；有预设时用完后返回错误。
 type Reranker struct {
 	s script[RerankRequest, []ai.Ranked]
 }
@@ -208,7 +256,7 @@ func NewReranker(results ...[]ai.Ranked) *Reranker {
 
 func overlap(req RerankRequest) []ai.Ranked {
 	chars := map[rune]bool{}
-	for _, r := range req.Query {
+	for _, r := range req.Query.Text() {
 		if !unicode.IsSpace(r) {
 			chars[unicode.ToLower(r)] = true
 		}
@@ -216,7 +264,7 @@ func overlap(req RerankRequest) []ai.Ranked {
 	out := make([]ai.Ranked, len(req.Docs))
 	for i, d := range req.Docs {
 		hits := 0
-		lower := strings.ToLower(d)
+		lower := strings.ToLower(d.Text())
 		for r := range chars {
 			if strings.ContainsRune(lower, r) {
 				hits++
@@ -235,8 +283,8 @@ func overlap(req RerankRequest) []ai.Ranked {
 }
 
 // Rerank 实现 ai.Reranker。
-func (f *Reranker) Rerank(_ context.Context, query string, docs []string, limit int) ([]ai.Ranked, error) {
-	return f.s.call(RerankRequest{Query: query, Docs: append([]string(nil), docs...), Limit: limit})
+func (f *Reranker) Rerank(_ context.Context, query ai.Content, docs []ai.Content, limit int) ([]ai.Ranked, error) {
+	return f.s.call(RerankRequest{Query: query, Docs: append([]ai.Content(nil), docs...), Limit: limit})
 }
 
 // FailWith 让之后的请求都返回 err，传 nil 恢复。

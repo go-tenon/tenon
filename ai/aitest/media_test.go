@@ -54,15 +54,29 @@ func TestSpeakerAndTranscriber(t *testing.T) {
 
 func TestEmbedder(t *testing.T) {
 	e := aitest.NewEmbedder(16)
-	vecs, err := e.Embed(t.Context(), []string{"猫", "狗", "猫"})
+	req := ai.EmbedRequest{Inputs: []ai.Content{ai.Text("猫"), ai.Text("狗"), ai.Text("猫")}}
+	vecs, err := e.Embed(t.Context(), req)
 	require.NoError(t, err)
 	require.Len(t, vecs, 3)
 	assert.Len(t, vecs[0], 16)
 	assert.Equal(t, vecs[0], vecs[2])
-	assert.Equal(t, aitest.Vector("狗", 16), vecs[1])
+	assert.Equal(t, aitest.Vector(ai.Text("狗"), 16), vecs[1])
 	assert.InDelta(t, 1, dot(vecs[0], vecs[0]), 1e-5)
 	assert.Less(t, dot(vecs[0], vecs[1]), float32(0.9))
-	assert.Equal(t, [][]string{{"猫", "狗", "猫"}}, e.Requests())
+	assert.Equal(t, []ai.EmbedRequest{req}, e.Requests())
+
+	// 图片按内容计算向量；Same 让描述和图片得到相同的向量。
+	cat := ai.Content{ai.MediaPart(ai.Media{Data: []byte("CAT"), MIME: "image/png"})}
+	dog := ai.Content{ai.MediaPart(ai.Media{Data: []byte("DOG"), MIME: "image/png"})}
+	e.Same(ai.Text("一只猫"), cat)
+	vecs, err = e.Embed(t.Context(), ai.EmbedRequest{Inputs: []ai.Content{cat, dog, ai.Text("一只猫")}, Purpose: ai.ForQuery})
+	require.NoError(t, err)
+	assert.Equal(t, vecs[2], vecs[0])
+	assert.Equal(t, aitest.Vector(dog, 16), vecs[1])
+	assert.Less(t, dot(vecs[0], vecs[1]), float32(0.9))
+
+	_, err = e.Embed(t.Context(), ai.EmbedRequest{Inputs: []ai.Content{{}}})
+	assert.ErrorContains(t, err, "empty content")
 }
 
 func dot(a, b []float32) float32 {
@@ -74,19 +88,19 @@ func dot(a, b []float32) float32 {
 }
 
 func TestReranker(t *testing.T) {
-	docs := []string{"Django 框架", "Rails 是 Ruby 框架", "React 前端库"}
+	docs := []ai.Content{ai.Text("Django 框架"), ai.Text("Rails 是 Ruby 框架"), ai.Text("React 前端库")}
 	rr := aitest.NewReranker()
-	got, err := rr.Rerank(t.Context(), "Ruby 框架", docs, 2)
+	got, err := rr.Rerank(t.Context(), ai.Text("Ruby 框架"), docs, 2)
 	require.NoError(t, err)
 	require.Len(t, got, 2)
 	assert.Equal(t, 1, got[0].Index)
 	assert.Equal(t, 1.0, got[0].Score)
 	assert.Equal(t, ai.Ranked{Index: 0, Score: 2.0 / 6}, got[1]) // “框架”命中查询的 6 个字符中的 2 个
-	assert.Equal(t, []aitest.RerankRequest{{Query: "Ruby 框架", Docs: docs, Limit: 2}}, rr.Requests())
+	assert.Equal(t, []aitest.RerankRequest{{Query: ai.Text("Ruby 框架"), Docs: docs, Limit: 2}}, rr.Requests())
 
 	preset := []ai.Ranked{{Index: 2, Score: 0.9}}
 	rr = aitest.NewReranker(preset)
-	got, err = rr.Rerank(t.Context(), "q", docs, 0)
+	got, err = rr.Rerank(t.Context(), ai.Text("q"), docs, 0)
 	require.NoError(t, err)
 	assert.Equal(t, preset, got)
 }

@@ -292,7 +292,11 @@ func (s *Store) embed(ctx context.Context, collection string, c collectionInfo, 
 		}
 	}
 	if len(texts) > 0 {
-		vecs, err := m.Embedder.Embed(ctx, texts)
+		inputs := make([]ai.Content, len(texts))
+		for i, t := range texts {
+			inputs[i] = ai.Text(t)
+		}
+		vecs, err := m.Embedder.Embed(ctx, ai.EmbedRequest{Inputs: inputs, Purpose: ai.ForDocument})
 		if err != nil {
 			return nil, errors.Wrap(err, "vector: embed")
 		}

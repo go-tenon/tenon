@@ -6,7 +6,7 @@ import (
 	"github.com/cockroachdb/errors"
 )
 
-// Media 是一段图片或音频。
+// Media 是一段图片、音频或视频。
 type Media struct {
 	// Data 是文件内容。
 	Data []byte
@@ -75,9 +75,28 @@ type Transcriber interface {
 	Transcribe(ctx context.Context, req TranscriptionRequest) (string, error)
 }
 
-// Embedder 把文本转换为向量，返回的向量与 texts 一一对应。
+// Purpose 是计算向量的用途。不少模型对查询和文档区别对待（例如给查询加上检索的指令），查询时要标明。
+type Purpose string
+
+// 计算向量的用途。
+const (
+	// ForDocument 给要被检索的文档计算向量，为空时也是它。
+	ForDocument Purpose = "document"
+	// ForQuery 给查询计算向量。
+	ForQuery Purpose = "query"
+)
+
+// EmbedRequest 是一次计算向量的请求。
+type EmbedRequest struct {
+	// Inputs 是要计算向量的输入，每一项得到一个向量。
+	Inputs []Content
+	// Purpose 是用途，为空时是 ForDocument。
+	Purpose Purpose
+}
+
+// Embedder 计算向量，返回的向量与 req.Inputs 一一对应。模型不接受某项输入时返回 ErrUnsupportedInput。
 type Embedder interface {
-	Embed(ctx context.Context, texts []string) ([][]float32, error)
+	Embed(ctx context.Context, req EmbedRequest) ([][]float32, error)
 }
 
 // Ranked 是重排后的一项。
@@ -89,18 +108,19 @@ type Ranked struct {
 }
 
 // Reranker 按与 query 的相关度给 docs 排序，返回最相关的 limit 项，按相关度从高到低排列；limit 不大于 0 时返回全部。
+// 模型不接受某项输入时返回 ErrUnsupportedInput。
 type Reranker interface {
-	Rerank(ctx context.Context, query string, docs []string, limit int) ([]Ranked, error)
+	Rerank(ctx context.Context, query Content, docs []Content, limit int) ([]Ranked, error)
 }
 
-// RerankBy 用 r 给 items 排序，text 取出每一项用于比较的文本，返回最相关的 limit 项。
-func RerankBy[T any](ctx context.Context, r Reranker, query string, items []T, text func(T) string, limit int) ([]T, error) {
+// RerankBy 用 r 给 items 排序，content 取出每一项用于比较的内容，返回最相关的 limit 项。
+func RerankBy[T any](ctx context.Context, r Reranker, query Content, items []T, content func(T) Content, limit int) ([]T, error) {
 	if len(items) == 0 {
 		return nil, nil
 	}
-	docs := make([]string, len(items))
+	docs := make([]Content, len(items))
 	for i, it := range items {
-		docs[i] = text(it)
+		docs[i] = content(it)
 	}
 	ranked, err := r.Rerank(ctx, query, docs, limit)
 	if err != nil {

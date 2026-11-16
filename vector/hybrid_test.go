@@ -68,7 +68,7 @@ func TestHybridReusesVectors(t *testing.T) {
 	f.putHybrid(t, "a", chunkDoc{Text: "一段文字"}, chunkDoc{Text: "另一段"})
 	before := len(f.emb.Requests())
 	f.putHybrid(t, "a", chunkDoc{Text: "另一段"}, chunkDoc{Text: "一段文字"}, chunkDoc{Text: "新的一段"})
-	if got := f.emb.Requests(); len(got) != before+1 || !slices.Equal(got[before], []string{"新的一段"}) {
+	if got := f.emb.Requests(); len(got) != before+1 || !slices.Equal(inputTexts(got[before]), []string{"新的一段"}) {
 		t.Fatalf("embedding requests = %v", got)
 	}
 	if got := sorted(texts(f.searchHybrid(t, vector.Query{Text: "一段"}))); len(got) != 3 {
