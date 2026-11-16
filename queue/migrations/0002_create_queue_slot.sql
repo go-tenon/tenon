@@ -5,10 +5,10 @@
 
 -- +goose NO TRANSACTION
 -- +goose Up
-CREATE PUBLICATION mygoravel_queue;
-SELECT pg_create_logical_replication_slot('mygoravel_queue_' || left(md5(current_database()), 16), 'pgoutput', false, false, true);
+CREATE PUBLICATION tenon_queue;
+SELECT pg_create_logical_replication_slot('tenon_queue_' || left(md5(current_database()), 16), 'pgoutput', false, false, true);
 
 -- +goose Down
 SELECT pg_drop_replication_slot(slot_name) FROM pg_replication_slots
-WHERE slot_name = 'mygoravel_queue_' || left(md5(current_database()), 16);
-DROP PUBLICATION IF EXISTS mygoravel_queue;
+WHERE slot_name = 'tenon_queue_' || left(md5(current_database()), 16);
+DROP PUBLICATION IF EXISTS tenon_queue;

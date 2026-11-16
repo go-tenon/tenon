@@ -216,7 +216,7 @@ worker 全部停止时，就没有人报告指标了，所以还要在数据库�
 ```sql
 SELECT slot_name, active, wal_status,
        pg_wal_lsn_diff(pg_current_wal_lsn(), confirmed_flush_lsn) AS lag_bytes
-FROM pg_replication_slots WHERE slot_name LIKE 'mygoravel_queue_%';
+FROM pg_replication_slots WHERE slot_name LIKE 'tenon_queue_%';
 ```
 
 `active` 为 `false` 说明没有 worker 在转发；`wal_status` 变成 `unreserved` 说明槽即将失效。长时间运行的事务也会让 WAL 无法释放。

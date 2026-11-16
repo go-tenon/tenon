@@ -15,7 +15,7 @@ import (
 	"github.com/cockroachdb/errors"
 )
 
-const sourceMarker = "-- mygoravel: "
+const sourceMarker = "-- tenon: "
 
 var sourceName = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
 
@@ -35,7 +35,7 @@ type publication struct {
 }
 
 // Publish 把 sources 中尚未发布的迁移复制到 dir，返回本次写入的文件名。
-// 每个文件首行写入来源标记（如 "-- mygoravel: files/0001_create_files"），
+// 每个文件首行写入来源标记（如 "-- tenon: files/0001_create_files"），
 // 目录中已有相同标记的迁移会被跳过，应用可以自由修改或重命名已发布的文件。
 // 新文件的版本取当前 UTC 时间戳，并保证大于目录中已有的最大版本。
 func Publish(dir string, sources ...Source) ([]string, error) {

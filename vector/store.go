@@ -134,8 +134,8 @@ func (s *Store) collection(index string, version int) string {
 
 // metadata 中记录模型的键。
 const (
-	metaModel = "mygoravel.model"
-	metaDims  = "mygoravel.dims"
+	metaModel = "tenon.model"
+	metaDims  = "tenon.dims"
 )
 
 // collectionInfo 是 collection 的结构，写入和查询它都按这个结构：索引的每个版本保持建立时的模型和结构，

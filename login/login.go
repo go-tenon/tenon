@@ -121,8 +121,8 @@ func New(db bun.IDB, opts Options) *Realm {
 	return &Realm{
 		db:           db,
 		opts:         opts,
-		codeKeys:     opts.Crypt.Derive("mygoravel login code v1"),
-		recoveryKeys: opts.Crypt.Derive("mygoravel login recovery v1"),
+		codeKeys:     opts.Crypt.Derive("tenon login code v1"),
+		recoveryKeys: opts.Crypt.Derive("tenon login recovery v1"),
 		dummy: sync.OnceValue(func() string {
 			h, _ := hasher.Make("tenon login dummy password")
 			return h

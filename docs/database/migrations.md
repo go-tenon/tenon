@@ -146,7 +146,7 @@ go run ./cmd/api migrate publish --dir migrations
 每个发布文件的第一行包含稳定的来源标记，例如：
 
 ```sql
--- mygoravel: filesystem/0001_create_files
+-- tenon: filesystem/0001_create_files
 ```
 
 发布器通过这个标记识别已有迁移。你可以在首次执行前调整 SQL 或重命名文件，但应保留标记；再次发布时你的修改保持原样。升级框架后，再次运行命令只会发布新增的来源迁移。

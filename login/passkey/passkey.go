@@ -121,7 +121,7 @@ func New(db bun.IDB, realm *login.Realm, c *crypt.Crypt, cfg Config) (*Store, er
 	}
 	return &Store{
 		db: db, realm: realm, crypt: c, wa: wa, timeout: cfg.Timeout,
-		userKeys: c.Derive("mygoravel passkey user v1"), now: time.Now,
+		userKeys: c.Derive("tenon passkey user v1"), now: time.Now,
 	}, nil
 }
 

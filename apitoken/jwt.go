@@ -35,7 +35,7 @@ type Keys struct {
 // 只有持有应用密钥的服务能校验 token；其他服务也要校验时用 Ed25519Keys。
 func HMACKeys(c *crypt.Crypt) Keys {
 	k := Keys{alg: jose.HS256, verify: map[string]any{}, public: []jose.JSONWebKey{}}
-	for i, key := range c.Derive("mygoravel apitoken jwt v1") {
+	for i, key := range c.Derive("tenon apitoken jwt v1") {
 		sum := sha256.Sum256(key)
 		kid := base64.RawURLEncoding.EncodeToString(sum[:12])
 		k.verify[kid] = key

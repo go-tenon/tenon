@@ -12,7 +12,7 @@ import (
 )
 
 // appendExtension 标记由 Runs.Append 加入、不是模型生成的消息，值是作者。
-const appendExtension = "mygoravel.ai.appended"
+const appendExtension = "tenon.ai.appended"
 
 // Append 在对话中加入一条不是模型生成的消息，例如人写的回复、系统通知、从其他渠道同步来的消息。
 // 对话不存在时自动创建。
