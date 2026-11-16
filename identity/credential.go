@@ -3,7 +3,7 @@ package identity
 import "context"
 
 // TokenValidator 校验调用者出示的 token（例如 Authorization: Bearer 中的值）并返回凭据给出的主体。
-// ctx 是本次调用的 context。token 无效时返回 ID 为空的主体或 4xx 类错误，只是过期时返回匹配 ErrExpired 的错误；
+// ctx 是本次调用的 context。token 无效时返回 ID 为空的主体或不是系统故障的错误，只是过期时返回匹配 ErrExpired 的错误；
 // 认证后端故障时返回 Failed 报告为 true 的错误。
 //
 // 它与传输方式无关：rest.RequireBearer、mcpx.Handler 和 realtime 的连接使用同一个校验器，

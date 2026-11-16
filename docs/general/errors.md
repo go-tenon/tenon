@@ -6,9 +6,9 @@
 | --- | --- | --- |
 | **输入格式错误** | 标题为空、slug 含有空格 | 在输入类型上声明规则，框架验证，在处理器之前返回 |
 | **可预期的业务结果** | 文章不存在、slug 已被使用 | 用 `errorx` 定义带错误码的业务错误并返回 |
-| **意料之外的故障** | 数据库连不上、代码有 bug | 用 `errors.Wrap` 补充上下文后返回，客户端只收到 `500` |
+| **意料之外的故障** | 数据库连不上、代码有 bug | 用 `errors.Wrap` 补充上下文后返回，调用方只看到一个通用的错误，例如 HTTP 接口返回 `500` |
 
-好消息是，无论哪一类，你的业务代码都只需要**返回错误**。选择 HTTP 状态码、生成错误响应、记录日志，都由框架在边界（请求进出程序的地方）统一完成。
+好消息是，无论哪一类，你的业务代码都只需要**返回错误**。把错误转换为 HTTP 状态码或命令的退出码、生成错误响应、记录日志，都由框架在入口（调用进出程序的地方）统一完成。
 
 阅读前需要了解：[错误的包装与判断](../concepts/go-primer.md#errors)；[入门教程第 4 章](../tutorial/04-api.md)中的业务错误。
 
@@ -21,10 +21,11 @@
     - [客户端看到的响应](#what-clients-see)
     - [服务端日志](#what-operators-see)
 - [选择错误分类](#error-kinds)
+    - [在其他入口中](#entry-mapping)
 - [处理底层错误](#wrapping-errors)
 - [在提示中带上参数](#public-parameters)
 - [判断错误](#inspecting-errors)
-- [响应格式](#response-format)
+- [HTTP 响应格式](#response-format)
 - [错误日志](#reporting-errors)
 - [常见问题](#troubleshooting)
 - [进阶](#advanced)
@@ -114,7 +115,7 @@ var (
 )
 ```
 
-第一个参数是**分类**，它决定了错误的性质，以及对应的 HTTP 状态码（见[选择错误分类](#error-kinds)）；第二个参数是**错误码**，客户端根据它判断发生了什么。错误码推荐使用 `资源.原因` 的形式，全部小写，单词之间用下划线连接。错误码在整个应用中必须唯一。
+第一个参数是**分类**，它决定了错误的性质，以及各个入口怎样呈现它，例如 HTTP 状态码（见[选择错误分类](#error-kinds)）；第二个参数是**错误码**，客户端根据它判断发生了什么。错误码推荐使用 `资源.原因` 的形式，全部小写，单词之间用下划线连接。错误码在整个应用中必须唯一。
 
 <a id="returning-errors"></a>
 ### 在动作中返回错误
@@ -253,24 +254,33 @@ Error types: (1) *withstack.withStack (2) *errutil.withPrefix (3) *net.OpError
 <a id="error-kinds"></a>
 ## 选择错误分类
 
-分类描述的是失败的**性质**，与调用方式无关：同一个错误在 HTTP 接口中会被转换为下表中的状态码，在命令行中会被转换为[退出码](commands.md#exit-codes)。定义错误时，选择最贴切的一个即可：
+分类描述的是失败的**性质**，与调用方式无关。业务代码只选择分类，每个入口再把它转换为自己的形式：HTTP 接口转换为状态码，命令行转换为[退出码](commands.md#exit-codes)。定义错误时，选择最贴切的一个即可：
 
 <a id="status-mapping"></a>
 
-| 分类 | 状态码 | 什么时候使用 | 例子 |
-| --- | --- | --- | --- |
-| `errorx.InvalidArgument` | 422 | 输入格式正确，但违反业务规则 | 修改已发布文章的 slug |
-| `errorx.Unauthenticated` | 401 | 不知道调用者是谁 | 缺少或无效的 token |
-| `errorx.PermissionDenied` | 403 | 知道是谁，但无权执行 | 修改别人的文章 |
-| `errorx.NotFound` | 404 | 资源不存在 | 文章已被删除 |
-| `errorx.Conflict` | 409 | 与当前状态冲突 | slug 已被其他文章使用 |
-| `errorx.ResourceExhausted` | 429 | 配额或频率超出限制，等待后重试可能成功 | 登录尝试过于频繁，见[限流](../libraries/rate-limiting.md) |
-| `errorx.Unavailable` | 503 | 依赖暂时不可用，稍后重试可能成功 | 图片存储服务超时 |
-| `errorx.Internal` | 500 | 意料之外的内部错误 | 数据出现了不一致 |
+| 分类 | 什么时候使用 | 例子 | HTTP 状态码 | 退出码 |
+| --- | --- | --- | --- | --- |
+| `errorx.InvalidArgument` | 输入格式正确，但违反业务规则 | 修改已发布文章的 slug | 422 | 1 |
+| `errorx.Unauthenticated` | 不知道调用者是谁 | 缺少或无效的 token | 401 | 1 |
+| `errorx.PermissionDenied` | 知道是谁，但无权执行 | 修改别人的文章 | 403 | 1 |
+| `errorx.NotFound` | 资源不存在 | 文章已被删除 | 404 | 1 |
+| `errorx.Conflict` | 与当前状态冲突 | slug 已被其他文章使用 | 409 | 1 |
+| `errorx.ResourceExhausted` | 配额或频率超出限制，等待后重试可能成功 | 登录尝试过于频繁，见[限流](../libraries/rate-limiting.md) | 429 | 1 |
+| `errorx.Unavailable` | 依赖暂时不可用，稍后重试可能成功 | 图片存储服务超时 | 503 | 4 |
+| `errorx.Internal` | 意料之外的内部错误 | 数据出现了不一致 | 500 | 5 |
 
-不是业务错误的其他错误，一律按 `Internal` 处理，返回 500。
+不是业务错误的其他错误，一律按 `Internal` 处理。
 
-除最后两种外都是可预期的业务结果，不记录堆栈。最后两种属于系统故障，`New` 和 `Wrap` 会额外记录调用处的堆栈，见下一节。
+除最后两种外都是可预期的业务结果，不记录堆栈。最后两种属于**系统故障**，`New` 和 `Wrap` 会额外记录调用处的堆栈，见下一节。入口需要区分这两类时，用 `errorx.KindOf(err).Systemic()` 判断，不要借用 HTTP 状态码。
+
+<a id="entry-mapping"></a>
+### 在其他入口中
+
+其他入口同样只看分类，不需要业务代码做任何事：
+
+- **MCP 工具**：业务错误作为工具的错误结果返回给模型，内容是错误码和翻译后的消息；系统故障只返回通用的提示和请求 ID，原因记录在错误日志中，见 [MCP 服务](../ai/mcp.md)。
+- **实时频道**：订阅授权返回系统故障时，客户端稍后重新订阅；返回其他错误时拒绝订阅，见[实时频道](../libraries/realtime.md)。
+- **队列任务**：不按分类处理。处理函数返回任何错误，任务都会稍后重试；重试也无济于事的错误（例如文章已被删除）由处理函数用 `queue.Permanent` 标记，见[失败与重试](../background/queue.md#failures-and-retries)。
 
 <a id="wrapping-errors"></a>
 ## 处理底层错误
@@ -328,7 +338,7 @@ if errors.Is(err, article.ErrSlugTaken) {
 也可以用 `errorx.CodeOf`、`errorx.KindOf` 直接读取错误码和分类，见 [API 参考](#api-reference)。
 
 <a id="response-format"></a>
-## 响应格式
+## HTTP 响应格式
 
 错误响应直接使用 [Huma](https://huma.rocks) 的错误结构，即 [Problem Details](https://www.rfc-editor.org/rfc/rfc9457) 格式，`Content-Type` 为 `application/problem+json`。Tenon 为业务错误增加了 `code` 和 `params` 字段：
 
@@ -348,7 +358,7 @@ if errors.Is(err, article.ErrSlugTaken) {
 <a id="reporting-errors"></a>
 ## 错误日志
 
-Tenon 遵循“**只在边界记录一次**”的原则：业务代码只负责补充上下文并返回错误，错误日志由边界统一记录，同一个错误在日志中只出现一次。
+Tenon 遵循“**只在入口记录一次**”的原则：业务代码只负责补充上下文并返回错误，错误日志由入口统一记录，同一个错误在日志中只出现一次。HTTP 接口记录下面两种日志：
 
 | 日志 | 何时记录 | 内容 |
 | --- | --- | --- |

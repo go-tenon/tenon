@@ -210,7 +210,7 @@ func DocRouter() chi.Routes {
 }
 ```
 
-`Router` 有两个调用者：`HTTP` 用打开了资源的 `App` 运行服务；`DocRouter` 用零值的 `App` 构造同一套路由，交给 [`httpcmd.Commands`](../general/commands.md#declaring-the-cli) 生成接口文档和客户端、列出路由。所以导出的文档总是与运行的服务一致，生成文档只需要源代码。相应地，`Router` 中只保存依赖，处理请求时才使用它们：例如健康检查的 `Ping` 要写成闭包，见[健康检查](lifecycle.md#health-checks)。
+`Router` 有两个调用者：`HTTP` 用打开了资源的 `App` 运行服务；`DocRouter` 用零值的 `App` 构造同一套路由，交给 [`httpcmd.Commands`](../general/commands.md#declaring-the-cli) 生成接口文档和客户端、列出路由。所以导出的文档总是与运行的服务一致，生成文档只需要源代码。相应地，`Router` 中只保存依赖，处理请求时才使用它们：例如健康检查的 `Ping` 要写成闭包，见[健康检查](../http/lifecycle.md#health-checks)。
 
 `run` 先装配全部部分，再用 `command.Daemon` 同时运行它们：
 

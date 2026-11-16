@@ -254,7 +254,7 @@ Tenon 的每个包都可以单独使用，按需引入即可。顶层的包分�
 
 | 包 | 用途 | 文档 |
 | --- | --- | --- |
-| `httpx` | 中间件、平滑停机、就绪检查、单页应用 | [中间件](../http/middleware.md)、[请求生命周期](lifecycle.md) |
+| `httpx` | 中间件、平滑停机、就绪检查、单页应用 | [中间件](../http/middleware.md)、[HTTP 服务的生命周期](../http/lifecycle.md) |
 | `httpx/rest` | 基于 Huma 的路由注册、错误转换与 OpenAPI | [路由](../http/routing.md) |
 | `httpx/rest/clientgen` | 从路由生成 TypeScript 与 Go 客户端 | [客户端代码](../http/clients.md) |
 | `web` | 服务端渲染的公开页面：组件、错误页、表单、静态文件 | [视图](../web/views.md) |

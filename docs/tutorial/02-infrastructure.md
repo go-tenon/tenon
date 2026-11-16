@@ -346,4 +346,4 @@ curl localhost:8080/readyz
 
 下一章，我们创建第一张数据表。
 
-深入了解：[配置](../general/configuration.md)、[依赖装配](../concepts/dependencies.md)、[健康检查](../concepts/lifecycle.md#health-checks)。
+深入了解：[配置](../general/configuration.md)、[依赖装配](../concepts/dependencies.md)、[健康检查](../http/lifecycle.md#health-checks)。

@@ -49,11 +49,11 @@ Tenon 是一个用 Go 构建后端服务的框架。业务逻辑写成[业务动
 
 ## 第二阶段：基础
 
-先了解一个 Tenon 项目由哪些部分组成，一个请求是怎样被处理的：
+先了解一个 Tenon 项目由哪些部分组成，运行时经历哪些阶段：
 
 - [Go 知识准备](concepts/go-primer.md)：文档中常见、入门教程不一定讲到的 Go 写法
 - [目录结构](concepts/structure.md)：项目中的目录各放什么
-- [请求生命周期](concepts/lifecycle.md)：一个 HTTP 请求从进入到返回经过哪些环节
+- [应用生命周期](concepts/lifecycle.md)：启动、运行的部分、一次调用的 context、平滑停止与健康检查
 
 然后逐一深入。先是每个应用都会用到、与入口无关的部分：
 
@@ -67,6 +67,7 @@ Tenon 是一个用 Go 构建后端服务的框架。业务逻辑写成[业务动
 
 再是 HTTP 接口：
 
+- [HTTP 服务的生命周期](http/lifecycle.md)：一个请求从进入到返回经过哪些环节，排空与就绪检查
 - [路由](http/routing.md)：把一个地址交给一个处理函数
 - [接口文档](http/openapi.md)：自动生成的 OpenAPI 文档，说明与示例，API 版本
 - [请求](http/requests.md)：读取路径参数、查询参数、请求头和请求体

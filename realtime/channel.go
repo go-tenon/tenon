@@ -15,7 +15,8 @@ import (
 type Params map[string]string
 
 // Authorizer 决定 sub 能否订阅频道，p 是频道名中占位符的值。ctx 带有连接建立时请求的值（例如租户）和主体。
-// 返回 false 或 4xx 类错误表示拒绝；返回 5xx 类错误表示暂时无法判断，客户端稍后会重新订阅。
+// 返回 false 或不是系统故障的错误表示拒绝；返回系统故障（errorx.Unavailable、errorx.Internal 类错误或普通错误）
+// 表示暂时无法判断，客户端稍后会重新订阅。
 type Authorizer func(ctx context.Context, sub identity.Subject, p Params) (bool, error)
 
 // Rule 是一类频道的订阅规则，由 Public、Private 或 Presence 创建。

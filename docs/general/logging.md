@@ -11,7 +11,7 @@ Tenon 使用 Go 标准库的 [`log/slog`](https://pkg.go.dev/log/slog) 记录**�
 - [示例用法](#example-usage)
 - [写入日志](#writing-log-messages)
 - [上下文信息](#contextual-information)
-    - [请求关联](#request-correlation)
+    - [调用关联](#request-correlation)
     - [添加自定义字段](#custom-context-fields)
 - [错误日志](#error-logging)
 - [配置](#creating-a-logger)
@@ -71,7 +71,17 @@ func (a *Publish) Handle(ctx context.Context, subject identity.Subject, id uuid.
 ## 上下文信息
 
 <a id="request-correlation"></a>
-### 请求关联
+### 调用关联
+
+每个入口在调用业务代码之前，都会把这次调用的关联字段放进 `ctx`。业务代码只要配合传入的 `ctx` 记录日志（`slog.InfoContext(ctx, ...)`），日志就会自动带上它们，不需要知道调用来自哪个入口：
+
+| 入口 | 自动带上的字段 |
+| --- | --- |
+| HTTP 接口 | `request_id` |
+| 队列任务 | `message_id`（任务 ID）、`attempt`（第几次执行），以及发布任务时 `ctx` 中的 `request_id` |
+| 定时任务 | `task`（任务名） |
+
+队列任务带着发布方的 `request_id`，所以一个请求和它产生的任务可以串起来，见[队列的日志](../background/queue-monitoring.md#logging)。下面以 HTTP 接口为例说明这些字段从哪里来。
 
 安装[默认中间件](../http/middleware.md#default-middleware)后，`httpx.AccessLog` 会为每个请求记录一条[访问日志](../http/middleware.md#access-log)，`rest.New` 创建的 API 会为 5xx 错误记录诊断信息：
 
@@ -86,7 +96,7 @@ api := rest.New(router, rest.Options{})
 {"level":"INFO","msg":"article published","request_id":"9F2K…","article_id":"0f8c…","author_id":"alice"}
 ```
 
-这样，同一个请求的访问日志、错误诊断和业务日志都可以通过 `request_id` 关联起来。部署在反向代理之后时，还可以沿用代理生成的请求 ID，把代理日志也关联进来。
+这样，同一个请求的访问日志、错误诊断、业务日志，以及它发布的队列任务的日志，都可以通过 `request_id` 关联起来。部署在反向代理之后时，还可以沿用代理生成的请求 ID，把代理日志也关联进来。
 
 `ctx` 中有 OpenTelemetry 的 span 时，日志还会自动带上 `trace_id` 和 `span_id`，在链路追踪系统中可以从一个 span 直接找到它的日志，见[链路与日志](telemetry.md#trace-logs)。
 

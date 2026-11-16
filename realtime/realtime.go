@@ -29,8 +29,8 @@ const credentialTimeout = 10 * time.Second
 type Options struct {
 	// Authenticate 校验客户端 SDK 连接时传入的 token，返回主体，通常与 rest.RequireBearer 使用同一个校验器。
 	// SPA 和移动端用它认证：浏览器的 WebSocket 由浏览器决定请求头。ctx 是连接请求的 context。
-	// 返回 4xx 类错误或 ID 为空的主体表示 token 无效；错误匹配 identity.ErrExpired 时表示 token 只是过期，
-	// 连接返回 109（token 已过期），SDK 调用 getToken 换新的再连；返回 5xx 类错误表示暂时无法判断，客户端稍后重连。
+	// 返回不是系统故障的错误或 ID 为空的主体表示 token 无效；错误匹配 identity.ErrExpired 时表示 token 只是过期，
+	// 连接返回 109（token 已过期），SDK 调用 getToken 换新的再连；返回系统故障（identity.Failed 报告为 true）表示暂时无法判断，客户端稍后重连。
 	// 连接期间用同一个 token 定期重新调用，token 被撤销后连接结束。
 	//
 	// nil 时带 token 的连接一律拒绝。
@@ -38,7 +38,7 @@ type Options struct {
 	// Accounts 是用 token 连接时接受的账号体系，以及每一种的 Resolver：按 Authenticate 给出的主体的 Type
 	// 调用对应的 Resolver，得到这个连接的主体，例如按 identity.TenantFromContext 加载用户在租户中的权限，
 	// 通常与 rest.Options.Accounts 相同；Type 不在其中的 token 被拒绝，Resolver 为 nil 时直接使用 Authenticate 给出的主体。
-	// Resolver 返回 errorx.Unauthenticated 类错误或 ID 为空的主体表示主体已失效，其他 4xx 类错误同样拒绝连接；
+	// Resolver 返回 errorx.Unauthenticated 类错误或 ID 为空的主体表示主体已失效，其他不是系统故障的错误同样拒绝连接；
 	// 连接期间与 Authenticate 一起定期重新调用，用户被停用或移出租户后连接结束。
 	//
 	// 设置了 Authenticate 时必须设置；名称不合法时 New panic。

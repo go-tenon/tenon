@@ -2,9 +2,17 @@
 
 想先看能跑通的后台登录，读[单账号后台](admin-example.md)；运营 + 租户 + 代登录读[运营后台与多租户](saas-example.md)。本页拆开讲主体、校验器和路由保护。
 
-简单说：很多 API 需要知道「是谁在调用」。
+简单说：很多操作需要知道「是谁在调用」。
 
-Tenon 用 Bearer Token 做这件事。客户端在请求头里带上 `Authorization: Bearer <token>`，框架拿你写的校验函数认出这个人，再把身份交给后面的处理器。
+认证的结果是一个**主体**（`identity.Subject`）：入口认出调用者后把它写入 context，业务代码从 context 中取出它，不关心调用来自哪个入口。各入口用同一个**校验器**（`identity.TokenValidator`）认出调用者：
+
+| 入口 | 凭据从哪里来 |
+| --- | --- |
+| HTTP 接口、[MCP 服务](../ai/mcp.md) | 请求头 `Authorization: Bearer <token>` |
+| [实时频道](../libraries/realtime.md) | 客户端建立连接时传入的 token |
+| 队列任务、定时任务、命令行 | 没有外部凭据，由代码构造调用者，见[队列任务](../concepts/actions.md#as-jobs) |
+
+这一页以 HTTP 接口为例：客户端在请求头里带上 `Authorization: Bearer <token>`，框架拿你写的校验函数认出这个人，再把身份交给后面的处理器。
 
 阅读前需要了解：[路由](../http/routing.md)；[context](../concepts/go-primer.md#context)；[入门教程第 6 章](../tutorial/06-login.md#how-it-works)解释了 token。多套账号、多租户和代为登录见[认证进阶](authentication-advanced.md)。
 
@@ -200,8 +208,8 @@ auth:
 | 校验器返回 | 结果 |
 | --- | --- |
 | 有效的主体（`ID` 非空） | 认证通过 |
-| `errorx.Unauthenticated` 等 4xx 类错误，或 `ID` 为空的主体 | `401` |
-| `errorx.Unavailable` 等 5xx 类错误 | 对应的 `5xx`，例如认证服务暂时不可用时返回 `503` |
+| `errorx.Unauthenticated` 等不是系统故障的错误，或 `ID` 为空的主体 | `401` |
+| `errorx.Unavailable`、`errorx.Internal` 类错误或普通错误（[系统故障](../general/errors.md#error-kinds)） | 对应的 `5xx`，例如认证服务暂时不可用时返回 `503` |
 
 <a id="protecting-routes"></a>
 ## 保护路由
@@ -257,7 +265,7 @@ rest.Register(api, op, NewGet(db).HTTP)
 | 缺少所需权限 | 403 | `auth.forbidden` |
 | 路由要求最近确认过身份（[`rest.Confirmed`](login-security.md#confirming)），而凭据太久没确认 | 403 | `auth.confirm_required` |
 | Resolver 要求这次登录经过二次验证，返回 `identity.ErrTwoFactorRequired` | 403 | `auth.two_factor_required` |
-| 校验器返回 5xx 类错误 | 与错误分类对应，例如 503 | 无 |
+| 校验器返回系统故障 | 与错误分类对应，例如 503 | 无 |
 
 有一点值得注意：无论校验器内部返回什么错误码，客户端看到的 401 都是统一的 `auth.unauthenticated`——具体原因只记在服务端，避免把「为什么不行」泄露给外面。`401` 响应会带 `WWW-Authenticate: Bearer`。校验器返回 5xx 时，响应的 `detail` 是 `authentication unavailable`，真实错误码写在框架诊断日志里。
 
@@ -314,8 +322,8 @@ api := rest.New(router, rest.Options{
 | --- | --- |
 | 主体 | 权限检查和处理器都用它 |
 | `errorx.Unauthenticated` 类错误，或 `ID` 为空的主体 | `401`，和凭据无效一样 |
-| 其他 4xx 类错误 | 按错误分类响应，错误码就是你定义的业务错误码；例如不是租户成员时返回 `errorx.NotFound`，得到 `404` |
-| 5xx 类错误 | 与校验器的 5xx 相同 |
+| 其他不是系统故障的错误 | 按错误分类响应，错误码就是你定义的业务错误码；例如不是租户成员时返回 `errorx.NotFound`，得到 `404` |
+| 系统故障 | 与校验器返回系统故障时相同 |
 
 Resolver 只负责补权限和租户。返回主体里的 `Type`、`ID`、`Method`、`Credential`、`Scopes`、`Impersonator`、`Auth` 始终来自凭据——你可以改收到的主体再返回，也可以新建一个主体返回，结果一样：身份还是凭据里的那个人。
 
@@ -360,11 +368,11 @@ func (a *Get) HTTP(ctx context.Context, in *GetInput) (*ArticleOutput, error) {
 
 **带了 token 仍然得到 401**
 
-依次检查：请求头是否是 `Authorization: Bearer <token>` 的格式；校验器是否返回了 `ID` 为空的主体或 4xx 类错误；主体的 `Type` 是否在这个 API 的 `Accounts` 中，见[认证失败的响应](#failed-authentication)。
+依次检查：请求头是否是 `Authorization: Bearer <token>` 的格式；校验器是否返回了 `ID` 为空的主体或不是系统故障的错误；主体的 `Type` 是否在这个 API 的 `Accounts` 中，见[认证失败的响应](#failed-authentication)。
 
 **认证服务暂时不可用时，接口返回 503**
 
-校验器返回了 5xx 类错误（例如数据库不可用），框架按错误的分类返回对应的状态码，而不是把用户当作未登录。这是预期的行为。
+校验器返回了系统故障（例如数据库不可用），框架按错误的分类返回对应的状态码，而不是把用户当作未登录。这是预期的行为。
 
 **注册路由时 panic**
 
