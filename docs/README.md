@@ -188,6 +188,7 @@ Tenon 是一个用 Go 构建后端服务的框架。业务逻辑写成[业务动
 - [前端观测](general/frontend-observability.md)：浏览器中的错误、页面和链路
 - [数据库进阶](database/advanced.md)：慢查询、软删除、隔离级别、只读副本、多个数据库
 - [Go 客户端](http/go-client.md)：其他 Go 服务和工具调用你的 API
+- [提供和调用端点](rpc/endpoints.md)：其他服务经由 NATS 调用你的业务动作
 - [RPC 协议](rpc/protocol.md)（草案）：其他服务经由 NATS 调用业务动作的线路约定
 - [部署](installation/deployment.md)：构建、配置和上线
 - [自检](installation/doctor.md)：检查运行环境，给出修改方法

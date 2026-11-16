@@ -194,7 +194,7 @@ Tenon 的每个包都可以单独使用，按需引入即可。顶层的包分�
 
 ```text
 功能        apitoken  login  oauthserver  authz  notification  push  activity  feature  settings  operation  privacy  privacy/export  webhook  search  vector  sheet/imports  sheet/exports  ai
-入口        httpx  web  realtime  mcpx  command
+入口        httpx  web  realtime  mcpx  natsrpc  command
 基础设施    database  natsx  queue  schedule  cachex  lock  ratelimit  captcha  broadcast  filesystem  imgproxy  mail  sms  pdf  outbound  sheet  document
 基础        errorx  identity  config  cleanup  logging  telemetry  health  doctor  i18n  enum  page  form  hashing  crypt  acquire
 ```
@@ -264,6 +264,7 @@ Tenon 的每个包都可以单独使用，按需引入即可。顶层的包分�
 | `web/ui`、`web/docs` | 界面组件；Markdown 文档页 | [界面组件](../web/components.md)、[文档页](../web/doc-pages.md) |
 | `realtime` | 嵌入 Centrifuge 的 WebSocket 频道 | [实时频道](../libraries/realtime.md) |
 | `mcpx` | 把动作作为 MCP 工具提供给 AI 客户端 | [MCP 服务](../ai/mcp.md) |
+| `natsrpc` | 把动作作为 RPC 端点，其他服务经由 NATS 同步调用 | [提供和调用端点](../rpc/endpoints.md) |
 | `command` | 根命令、`Bind`、`Daemon`、退出码；`httpcmd`、`migratecmd` 等内置命令 | [命令行](../general/commands.md) |
 | `queue/queueweb` | 队列面板 | [队列面板](../background/queue-monitoring.md#panel) |
 | `cmd/tenon` | 开发工具 `go tool tenon` | [开发工具](../installation/tooling.md) |

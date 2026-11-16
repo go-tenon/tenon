@@ -19,6 +19,7 @@ import (
 	"github.com/go-tenon/tenon/errorx"
 	"github.com/go-tenon/tenon/httpx"
 	"github.com/go-tenon/tenon/identity"
+	"github.com/go-tenon/tenon/internal/apischema"
 	"github.com/go-tenon/tenon/logging"
 )
 
@@ -138,22 +139,22 @@ func Register[I, O any](s *Server, t Tool, fn func(context.Context, I) (O, error
 	if _, ok := s.tools[t.Name]; ok {
 		panic("mcpx: duplicate tool " + strconv.Quote(t.Name))
 	}
-	in := newSchema(reflect.TypeFor[I](), huma.ModeWriteToServer)
-	if in.typ != "object" {
+	in := apischema.New(reflect.TypeFor[I](), huma.ModeWriteToServer)
+	if in.Type != "object" {
 		panic("mcpx: tool " + strconv.Quote(t.Name) + " input must be a struct")
 	}
-	out := newSchema(reflect.TypeFor[O](), huma.ModeReadFromServer)
+	out := apischema.New(reflect.TypeFor[O](), huma.ModeReadFromServer)
 	t.Permissions = slices.Clone(t.Permissions)
 	tool := &mcp.Tool{
 		Name:        t.Name,
 		Title:       t.Title,
 		Description: t.Description,
-		InputSchema: in.json,
+		InputSchema: in.JSON,
 		Annotations: annotations(t),
 	}
-	structured := out.typ == "object"
+	structured := out.Type == "object"
 	if structured {
-		tool.OutputSchema = out.json
+		tool.OutputSchema = out.JSON
 	}
 	name := t.Name
 	s.sdk.AddTool(tool, func(ctx context.Context, req *mcp.CallToolRequest) (_ *mcp.CallToolResult, err error) {
@@ -163,7 +164,7 @@ func Register[I, O any](s *Server, t Tool, fn func(context.Context, I) (O, error
 		}
 		httpx.AddAccessLogAttrs(ctx, slog.String("mcp.tool", name))
 		var input I
-		if problems := in.validate(req.Params.Arguments, &input); len(problems) > 0 {
+		if problems := validate(in, req.Params.Arguments, &input); len(problems) > 0 {
 			return invalid(problems), nil
 		}
 		output, err := call(ctx, fn, input)
@@ -232,6 +233,25 @@ func (s *Server) failure(ctx context.Context, tool string, err error) *mcp.CallT
 		}
 	}
 	return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: text}}}
+}
+
+// validate 校验工具的参数并解码到 dst，返回每个问题的描述，例如 "id: expected string to be RFC 4122 uuid"。
+func validate(s *apischema.Schema, raw json.RawMessage, dst any) []string {
+	details, err := s.Validate(raw, dst, "")
+	switch {
+	case errors.Is(err, apischema.ErrInvalidJSON):
+		return []string{"arguments are " + err.Error()}
+	case err != nil:
+		return []string{err.Error()}
+	}
+	problems := make([]string, len(details))
+	for i, d := range details {
+		problems[i] = d.Message
+		if d.Location != "" {
+			problems[i] = d.Location + ": " + d.Message
+		}
+	}
+	return problems
 }
 
 // invalid 返回参数校验失败的结果，每行一个字段的错误。
