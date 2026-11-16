@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// 资源模型：用 clientgen 示例 API 生成的代码（resources.ts、api.ts、queries.ts、schemas.ts、enums.ts）。
+// 资源和设置的模型：用 clientgen 示例 API 生成的代码（resources.ts、settings.ts、api.ts、queries.ts、schemas.ts、enums.ts）。
 import { createSession } from "@go-tenon/client"
 import { QueryClient } from "@tanstack/react-query"
 import { createMemoryHistory, createRootRouteWithContext, createRoute, Outlet } from "@tanstack/react-router"
@@ -8,9 +8,11 @@ import { useEffect } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { createClient } from "../../../httpx/rest/clientgen/internal/example/ts/api"
 import { enums } from "../../../httpx/rest/clientgen/internal/example/ts/enums"
+import { messages } from "../../../httpx/rest/clientgen/internal/example/ts/messages"
 import { createQueries } from "../../../httpx/rest/clientgen/internal/example/ts/queries"
 import { resources } from "../../../httpx/rest/clientgen/internal/example/ts/resources"
 import { components, schemas } from "../../../httpx/rest/clientgen/internal/example/ts/schemas"
+import { settings } from "../../../httpx/rest/clientgen/internal/example/ts/settings"
 import { AppRoot, createApp, type RouterContext } from "./app"
 import { formValidator } from "./form"
 import {
@@ -19,8 +21,11 @@ import {
   type ResourceList,
   type ResourceModel,
   resourceModel,
+  type Settings,
+  settingsModel,
   useResourceList,
   useResourceMutations,
+  useSettings,
 } from "./resource"
 
 afterEach(() => {
@@ -193,5 +198,86 @@ describe("useResourceList", () => {
     })
     await screen.findByText("你好")
     expect(calls.filter((c) => c.method === "GET")).toHaveLength(2) // 删除后重新读取列表
+  })
+})
+
+describe("验证提示", () => {
+  it("kit 带上 messages 时，资源和设置表单的提示是翻译好的文字，否则是错误码", () => {
+    const k = kit().kit
+    const article = resourceModel(resources.article, { ...k, messages })
+    expect(formValidator(article.formSchema("create"), article.ruleOptions)({ title: "" }).title).toBe("不能为空")
+    const blog = settingsModel(settings.blog, { ...k, messages })
+    expect(formValidator(blog.formSchema(), blog.ruleOptions)({ name: "" }).name).toBe("不能为空")
+    const bare = settingsModel(settings.blog, k)
+    expect(formValidator(bare.formSchema(), bare.ruleOptions)({ name: "" }).name).toBe("validation.filled")
+  })
+})
+
+describe("settingsModel", () => {
+  it("表单字段带显示文字和枚举的选项；校验规则是保存接口的请求体", () => {
+    const m = settingsModel(settings.blog, kit().kit)
+    expect(m.title).toBe("博客设置")
+    expect(m.form.map((f) => [f.name, f.label, f.kind])).toEqual([
+      ["name", "博客名称", "text"],
+      ["comments", "开放评论", "boolean"],
+      ["default_status", "新文章的状态", "select"],
+    ])
+    expect(m.form[2]?.options).toEqual([
+      { value: "draft", label: "草稿" },
+      { value: "published", label: "已发布" },
+    ])
+    expect(
+      formValidator(m.formSchema(), m.ruleOptions)({ name: "", comments: true, default_status: "draft" }),
+    ).toHaveProperty("name")
+    expect(settingsModel(settings.blog, kit("en").kit).form[0]?.label).toBe("Blog name")
+    expect(m.allowed(() => false, "update")).toBe(true) // 示例的接口不要求权限
+  })
+
+  it("useSettings 读取设置作为表单的初始值，保存后重新读取", async () => {
+    let saved = { name: "博客", comments: false, default_status: "draft", extra: "不在表单中" }
+    const calls: Call[] = []
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(String(input), "http://x")
+        const method = init?.method ?? "GET"
+        const body = init?.body ? JSON.parse(String(init.body)) : undefined
+        calls.push({ method, url: url.pathname, body })
+        if (method === "PUT") saved = { ...saved, ...body }
+        return Response.json(saved)
+      }),
+    )
+    const session = createSession({ refresh: async () => ({ access_token: "t", expires_at: "" }) })
+    await session.signIn({ access_token: "t", expires_at: "" }, { account: "u1" })
+    const model = settingsModel(settings.blog, kit().kit)
+    let view: Settings | undefined
+    const root = createRootRouteWithContext<RouterContext>()({
+      component: function Page() {
+        const v = useSettings(model)
+        useEffect(() => {
+          view = v
+        })
+        return <p>{String(v.values?.name ?? "")}</p>
+      },
+    })
+    const app = createApp({
+      id: "settings",
+      routeTree: root,
+      session,
+      router: { history: createMemoryHistory({ initialEntries: ["/"] }) },
+    })
+    render(<AppRoot app={app} />)
+    await screen.findByText("博客")
+    expect(view?.values).toEqual({ name: "博客", comments: false, default_status: "draft" })
+    expect(view?.canSave).toBe(true)
+    await act(async () => {
+      await view?.save({ name: "新的名称", comments: true, default_status: "published" })
+    })
+    await screen.findByText("新的名称")
+    expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+      "GET /api/settings",
+      "PUT /api/settings",
+      "GET /api/settings",
+    ])
   })
 })

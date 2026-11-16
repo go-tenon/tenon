@@ -28,6 +28,7 @@ type API struct {
 
 	endpoints []Endpoint
 	resources []Resource
+	settings  []Settings
 }
 
 // Options 创建 API。

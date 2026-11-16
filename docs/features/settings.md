@@ -272,7 +272,7 @@ func (a *Token) Get(ctx context.Context) (string, error) {
 <a id="admin-pages"></a>
 ## 后台页面与接口
 
-框架不提供设置页面。设置的结构体可以直接作为 [JSON API](../http/routing.md) 的请求体和响应体，Huma 按字段的标签生成文档并校验。字段都没有 `omitempty`，所以请求体必须给出全部字段，正好对应 `Save` 整组保存：
+设置的结构体可以直接作为 [JSON API](../http/routing.md) 的请求体和响应体，Huma 按字段的标签生成文档并校验。字段都没有 `omitempty`，所以请求体必须给出全部字段，正好对应 `Save` 整组保存：
 
 ```go
 type SiteSettingsBody struct {
@@ -289,6 +289,8 @@ func (a *SaveSettings) HTTP(ctx context.Context, in *SiteSettingsBody) (*SiteSet
 ```
 
 [运营后台](../security/tenancy.md#platform)修改设置的接口直接用同一个结构体作为请求体，验证规则只写一次。修改设置的路由用权限保护，例如只允许有 `platform:settings` 权限的运营人员访问；租户管理员只能修改 `Tenant(sub.Tenant)` 的设置。
+
+再用 `api.Settings` 把读取和保存的两个接口声明为一个设置页面，后台就不需要为它写表单：两套外观的 `SettingsForm` 按声明渲染，字段的输入方式、校验规则和显示文字都来自接口和翻译文件，可以用“保存”按钮，也可以修改后自动保存，见[设置页面](../responses/resources.md#settings)。
 
 <a id="testing"></a>
 ## 测试

@@ -214,6 +214,30 @@
       ],
       "dependencies": ["@tanstack/react-table@^8.21.3", "react-hook-form@^7.91.0"],
       "files": ["resource-page.tsx", "data-table.tsx", "page.tsx", "form.tsx", "dialogs.tsx"]
+    },
+    {
+      "name": "tenon-settings-form",
+      "type": "registry:block",
+      "title": "设置表单",
+      "description": "SettingsForm：按 rest.API.Settings 的声明渲染一组设置的表单，可以用“保存”按钮或自动保存；逻辑来自 @go-tenon/shell 的 settingsModel。",
+      "registryDependencies": [
+        "alert-dialog",
+        "badge",
+        "button",
+        "card",
+        "checkbox",
+        "dialog",
+        "dropdown-menu",
+        "input",
+        "label",
+        "select",
+        "sheet",
+        "skeleton",
+        "table",
+        "textarea"
+      ],
+      "files": ["settings-form.tsx", "resource-page.tsx", "data-table.tsx", "page.tsx", "form.tsx", "dialogs.tsx"],
+      "dependencies": ["@tanstack/react-table@^8.21.3", "react-hook-form@^7.91.0"]
     }
   ]
 }

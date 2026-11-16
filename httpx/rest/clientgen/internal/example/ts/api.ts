@@ -24,6 +24,12 @@ export interface Author {
   name: string
 }
 
+export interface BlogSettings {
+  comments: boolean
+  default_status: ArticleStatus
+  name: string
+}
+
 export interface Changes {
   slug: string
   tags?: string[] | null
@@ -214,6 +220,23 @@ export function createClient(options: ClientOptions) {
        */
       update: (id: string, body: Changes): Promise<ArticleDTO> =>
         rt.request<ArticleDTO>({ method: "PUT", path: `/articles/${encodeURIComponent(id)}`, body }),
+    },
+    /** operationId 以 blog- 开头的接口。 */
+    blog: {
+      /**
+       * 博客设置
+       *
+       * GET /settings
+       */
+      settingsGet: (): Promise<BlogSettings> =>
+        rt.request<BlogSettings>({ method: "GET", path: `/settings` }),
+      /**
+       * 保存博客设置
+       *
+       * PUT /settings
+       */
+      settingsUpdate: (body: BlogSettings): Promise<BlogSettings> =>
+        rt.request<BlogSettings>({ method: "PUT", path: `/settings`, body }),
     },
   }
 }

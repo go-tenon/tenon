@@ -169,3 +169,49 @@ func TestTSResource(t *testing.T) {
 		t.Errorf("warnings %q", res.Warnings)
 	}
 }
+
+type siteSettings struct {
+	Name       string `json:"name" minLength:"1"`
+	SignupOpen bool   `json:"signup_open"`
+}
+
+type siteSettingsOut struct{ Body siteSettings }
+type siteSettingsIn struct{ Body siteSettings }
+
+// 设置：两个接口的位置和要求的权限、表单字段、显示文字；缺少显示文字时返回警告。
+func TestTSSettings(t *testing.T) {
+	api := rest.New(chi.NewRouter(), rest.Options{Title: "Admin", Accounts: identity.Accounts{"staff": nil}, Permissions: catalog})
+	validate := func(context.Context, string) (identity.Subject, error) {
+		return identity.Subject{Type: "staff", ID: "a"}, nil
+	}
+	get := huma.Operation{OperationID: "site-settings-get", Method: http.MethodGet, Path: "/settings/site"}
+	rest.RequireBearer(api, validate, "notes:admin")(&get)
+	rest.Register(api, get, func(context.Context, *struct{}) (*siteSettingsOut, error) { return nil, nil })
+	update := huma.Operation{OperationID: "site-settings-update", Method: http.MethodPut, Path: "/settings/site"}
+	rest.RequireBearer(api, validate, "notes:write")(&update)
+	rest.Register(api, update, func(context.Context, *siteSettingsIn) (*siteSettingsOut, error) { return nil, nil })
+	api.Settings(rest.Settings{Name: "site", Get: "site-settings-get", Update: "site-settings-update"})
+
+	res, err := clientgen.GenerateTS(api, clientgen.TSOptions{Main: exampleMain, Translations: []fs.FS{fstest.MapFS{
+		"zh-CN.yaml": {Data: []byte("site.title: 站点设置\nsite.fields.name: 站点名称\n")},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(res.Files["settings.ts"])
+	for _, want := range []string{
+		`operations: { get: ["site", "settingsGet"], update: ["site", "settingsUpdate"] }`,
+		`permissions: { get: ["notes:admin"], update: ["notes:write"] }`,
+		`{ name: "name", type: "string", required: true }`,
+		`{ name: "signup_open", type: "boolean", required: true }`,
+		`title: "站点设置"`,
+		`fields: { name: "站点名称" }`,
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("settings.ts missing %s:\n%s", want, src)
+		}
+	}
+	if len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "settings site has no zh-CN label for site.fields.signup_open") {
+		t.Errorf("warnings %q", res.Warnings)
+	}
+}
