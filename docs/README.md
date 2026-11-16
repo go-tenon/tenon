@@ -20,6 +20,7 @@ Tenon 是一个用 Go 构建后端服务的框架。业务逻辑写成[业务动
 | 命令行 | 运维和一次性的操作 | [命令行](general/commands.md) |
 | MCP 工具 | 供 Claude、Cursor 等 AI 客户端调用 | [MCP 服务](ai/mcp.md) |
 | 实时频道 | WebSocket，把消息推给在线的用户 | [实时频道](libraries/realtime.md) |
+| RPC（开发中） | 其他服务经由 NATS 同步调用，调用方可以用任何语言 | [RPC](rpc/README.md) |
 
 单页应用和手机 App 是 HTTP 接口的调用方，见[前端](frontend/README.md)。
 
@@ -187,6 +188,7 @@ Tenon 是一个用 Go 构建后端服务的框架。业务逻辑写成[业务动
 - [前端观测](general/frontend-observability.md)：浏览器中的错误、页面和链路
 - [数据库进阶](database/advanced.md)：慢查询、软删除、隔离级别、只读副本、多个数据库
 - [Go 客户端](http/go-client.md)：其他 Go 服务和工具调用你的 API
+- [RPC 协议](rpc/protocol.md)（草案）：其他服务经由 NATS 调用业务动作的线路约定
 - [部署](installation/deployment.md)：构建、配置和上线
 - [自检](installation/doctor.md)：检查运行环境，给出修改方法
 - [运维](installation/operations.md)：不停机升级、维护窗口、备份与恢复
