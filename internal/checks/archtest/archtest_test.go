@@ -65,7 +65,7 @@ var rules = map[string]rule{
 	"sms/tencent": {layerInfrastructure, []string{"outbound", "sms"}},
 	// 阿里云 OpenAPI 的签名和调用，push/aliyun 和 sms/aliyun 共用。
 	"internal/aliyunapi": {layerInfrastructure, nil},
-	"queue":              {layerInfrastructure, []string{"logging"}},
+	"queue":              {layerInfrastructure, []string{"errorx", "logging"}},
 	"cachex":             {layerInfrastructure, []string{"logging"}},
 	"schedule":           {layerInfrastructure, []string{"lock", "logging"}},
 	"broadcast":          {layerInfrastructure, []string{"identity", "logging"}},

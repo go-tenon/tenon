@@ -240,7 +240,7 @@ func (l Limits) Effective() Limits {
 
 // 转换器报告的错误。转换器用 %w 包装它们，并在错误链中保留底层原因。
 // 前四个属于 errorx.InvalidArgument：action 直接返回时得到 422 和翻译好的提示，
-// 在队列任务中应当用 queue.Permanent 标记，重试也是徒劳。
+// 在队列任务中返回时，任务不再重试，直接转入失败任务表（见 queue.IsPermanent）。
 var (
 	// ErrUnsupported 表示没有这种格式的转换器。
 	ErrUnsupported = errorx.Define(errorx.InvalidArgument, "document.unsupported_format")

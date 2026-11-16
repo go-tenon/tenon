@@ -280,7 +280,7 @@ Error types: (1) *withstack.withStack (2) *errutil.withPrefix (3) *net.OpError
 
 - **MCP 工具**：业务错误作为工具的错误结果返回给模型，内容是错误码和翻译后的消息；系统故障只返回通用的提示和请求 ID，原因记录在错误日志中，见 [MCP 服务](../ai/mcp.md)。
 - **实时频道**：订阅授权返回系统故障时，客户端稍后重新订阅；返回其他错误时拒绝订阅，见[实时频道](../libraries/realtime.md)。
-- **队列任务**：不按分类处理。处理函数返回任何错误，任务都会稍后重试；重试也无济于事的错误（例如文章已被删除）由处理函数用 `queue.Permanent` 标记，见[失败与重试](../background/queue.md#failures-and-retries)。
+- **队列任务**：系统故障和 `ResourceExhausted` 稍后重试，带有 `RetryAfter` 时按给出的时间重试；其他业务错误重试的结果不会不同，任务直接转入失败任务表，见[失败与重试](../background/queue.md#failures-and-retries)。
 
 <a id="wrapping-errors"></a>
 ## 处理底层错误

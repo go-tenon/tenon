@@ -37,8 +37,8 @@ const dbTimeout = 30 * time.Second
 // 执行时间离现在超过 Config.MaxDefer 的任务存入 queue_scheduled，快到时间时再写回 WAL；所有 Worker 都检查它，互不重复。
 //
 // 处理：每个 topic 一个 NSQ 消费者，同时处理的任务不超过它的并发数，同一个应用的 Worker 使用同一个 channel，
-// 每个任务只交给其中一个。处理函数返回 nil 时确认任务；返回错误时按退避时间重试，次数用完或错误被 Permanent
-// 标记时转入失败任务表。处理期间每 Lease/3 延长一次租约。
+// 每个任务只交给其中一个。处理函数返回 nil 时确认任务；返回错误时按退避时间重试，次数用完或 IsPermanent
+// 报告为 true 时转入失败任务表。处理期间每 Lease/3 延长一次租约。
 //
 // Run 的 ctx 取消后，先停止接收新任务和转发，再等待处理中的任务完成，最多等待 Config.ShutdownTimeout；
 // 超时仍未完成的任务立即放回 NSQ，处理函数的 context 以 ErrShuttingDown 取消。Run 在这一切完成后返回，

@@ -118,7 +118,7 @@ converters.Register(docx.New(docx.Options{}), convert.DOCX)
 | `convert.ErrCorrupt` | 文档已损坏，或者不是声明的格式；二进制格式的空文件也是这种错误 |
 | `convert.ErrTooLarge` | 超出了上面的某个上限，`errors.As` 取出 `*convert.LimitError` 可以知道是哪一个 |
 
-在队列任务中遇到这四种错误时，用 `queue.Permanent` 标记，这类错误重试也是徒劳，见[下文](#processing-uploads)。读取失败、PDFium 启动失败等其他错误照常重试。
+队列任务直接返回这四种错误即可：重试也是徒劳，任务不再重试，直接转入失败任务表，见[下文](#processing-uploads)。读取失败、PDFium 启动失败等其他错误照常重试。
 
 <a id="splitting"></a>
 ## 切分 Markdown
@@ -201,11 +201,8 @@ func (a *Index) Job(ctx context.Context, job IndexJob) error {
     defer r.Close()
     format, _ := convert.FormatOf(file.Filename)
     doc, err := a.converters.Convert(ctx, format, convert.Input{Reader: r, Name: file.Filename})
-    if errorx.KindOf(err) == errorx.InvalidArgument {
-        return queue.Permanent(err) // 加密、损坏、太大：重试也是徒劳
-    }
     if err != nil {
-        return err
+        return err // 加密、损坏、太大等业务错误不重试，读取失败等系统故障稍后重试
     }
 
     chunks := a.splitter.Split(doc.Markdown)

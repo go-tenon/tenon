@@ -32,8 +32,9 @@ func (t Topic[T]) PublishAll(ctx context.Context, db bun.IDB, payloads []T, opts
 }
 
 // Handle 把 fn 注册为这个 topic 在 w 上的处理函数。payload 按 JSON 解码为 T，解码失败视为永久失败。
-// fn 返回 nil 时任务完成；返回错误时按退避时间重试，返回 RetryAfter 包装的错误时在指定的时间之后重试，
-// 返回 Permanent 包装的错误或次数用完时转入失败任务表。fn 中的 panic 视为返回错误。
+// fn 返回 nil 时任务完成；返回系统故障时按退避时间重试，返回 RetryAfter 包装的错误时在指定的时间之后重试；
+// 返回 IsPermanent 报告为 true 的错误（Permanent 包装的错误、NotFound 等业务错误）或次数用完时转入失败任务表。
+// fn 中的 panic 视为返回错误。
 //
 // 同一个 topic 只能注册一次。topic 不合法、重复注册或者在 w.Run 之后调用时 panic。
 func (t Topic[T]) Handle(w *Worker, fn func(ctx context.Context, payload T) error, opts ...HandleOption) {
