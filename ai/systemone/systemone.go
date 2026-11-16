@@ -84,7 +84,7 @@ func state(req ai.DecisionRequest) any {
 		if img.Name != "" {
 			parts = append(parts, img.Name+":")
 		}
-		parts = append(parts, object{{"type", "image_url"}, {"image_url", object{{"url", openai.DataURL(img)}}}})
+		parts = append(parts, object{{"type", "image_url"}, {"image_url", object{{"url", img.DataURL()}}}})
 	}
 	return parts
 }

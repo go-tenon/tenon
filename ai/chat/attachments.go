@@ -32,42 +32,18 @@ const attachmentLabel = "[attachment "
 
 func labelOf(id string) string { return attachmentLabel + id + "]" }
 
-// attachmentOf 把消息的一部分转换为附件；文字或空的部分返回 false。
+// attachmentOf 把消息的一部分转换为附件，ID 由内容（以链接发送的是链接）计算；文字和没有内容的部分返回 false。
 func attachmentOf(p model.ContentPart) (Attachment, bool) {
-	var a Attachment
-	switch {
-	case p.Image != nil:
-		a = Attachment{Media: ai.Media{Data: p.Image.Data, MIME: fullType("image", p.Image.Format)}, URL: p.Image.URL}
-	case p.Audio != nil:
-		a = Attachment{Media: ai.Media{Data: p.Audio.Data, MIME: audioMIME(p.Audio.Format)}, URL: p.Audio.URL}
-	case p.Video != nil:
-		a = Attachment{Media: ai.Media{Data: p.Video.Data, MIME: fullType("video", p.Video.Format)}, URL: p.Video.URL}
-	case p.File != nil:
-		a = Attachment{Media: ai.Media{Data: p.File.Data, MIME: p.File.MimeType, Name: p.File.Name}, URL: p.File.URL}
-	default:
+	m, link, ok := mediaOf(p)
+	if !ok {
 		return Attachment{}, false
 	}
-	switch {
-	case a.URL != "":
-		sum := sha256.Sum256([]byte(a.URL))
-		a.ID = hex.EncodeToString(sum[:])[:12]
-	case len(a.Media.Data) > 0:
-		sum := sha256.Sum256(a.Media.Data)
-		a.ID = hex.EncodeToString(sum[:])[:12]
-	default:
-		return Attachment{}, false
+	key := m.Data
+	if link != "" {
+		key = []byte(link)
 	}
-	return a, true
-}
-
-func audioMIME(format string) string {
-	switch format {
-	case "mp3":
-		return "audio/mpeg"
-	case "wav":
-		return "audio/wav"
-	}
-	return fullType("audio", format)
+	sum := sha256.Sum256(key)
+	return Attachment{ID: hex.EncodeToString(sum[:])[:12], Media: m, URL: link}, true
 }
 
 // labelAttachments 在用户消息的每个附件前面加上 [attachment <ID>]，模型调用工具时用 ID 指明附件。
