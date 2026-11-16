@@ -218,7 +218,7 @@ http:
 | `request_header`、`response_header` | 记录请求头、响应头 | `false` |
 | `request_body`、`response_body` | 记录请求体、响应体，各最多 64 KiB | `false` |
 
-记录请求头时，`Authorization`、`Cookie`、`X-Auth-Token`、`X-CSRF-Token`、`X-XSRF-Token` 始终隐藏，记录响应头时 `Set-Cookie` 始终隐藏。还需要隐藏其他字段时，见[敏感信息脱敏](../general/logging.md#redacting-sensitive-data)。
+记录请求头时，`Authorization`、`Cookie`、`X-Auth-Token`、`X-CSRF-Token`、`X-XSRF-Token` 始终隐藏，记录响应头时 `Set-Cookie` 始终隐藏。还需要隐藏其他字段时，见[敏感信息脱敏](../general/logging-advanced.md#redacting-sensitive-data)。
 
 > [!NOTE]
 > 处理器没有写出任何响应时，客户端收到的是 `200`。`AccessLog` 会显式写出这个 `200`，让日志中的状态码与客户端看到的一致。

@@ -4,6 +4,8 @@ Tenon 应用的配置保存在 `config` 目录的 YAML 文件中，加载到你�
 
 配置在部署时决定，修改后需要重启应用。站点名称、是否开放注册这类由管理员在运行时修改的值不属于配置，请使用[设置](../features/settings.md)。
 
+阅读前需要了解：YAML 的基本写法（`键: 值`，用缩进表示层级）；[结构体标签](../concepts/go-primer.md#struct-tags)。
+
 - [示例用法](#example-usage)
 - [加载配置](#loading-configuration)
 - [按环境覆盖配置](#overriding-configuration)
@@ -11,6 +13,7 @@ Tenon 应用的配置保存在 `config` 目录的 YAML 文件中，加载到你�
     - [.env 文件](#env-files)
 - [默认值与校验](#defaults-and-validation)
 - [检查配置](#inspecting-configuration)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="example-usage"></a>
@@ -243,6 +246,29 @@ type HTTPConfig struct {
 ```
 
 `config show` 的输出包括默认值、多个文件合并的结果和展开后的环境变量，`--format json` 输出 JSON。发布之前运行 `config check`，可以尽早发现缺失的环境变量或写错的字段。配置文件缺失或校验失败时，这两个命令都以 `ExitConfig` 退出，见 [config 命令](commands.md#config-command)。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**启动时报错 `line 2: field adr not found in type httpx.Config`**
+
+配置文件中有结构体里没有的字段，通常是拼错了字段名或段名，或者缩进错了，把字段放到了别的段下。报错中有文件名和行号。
+
+**报错 `environment variable NAME is not set`**
+
+配置文件中用了 `${NAME}`，而进程环境和 `.env` 中都没有这个变量。设置它；允许不设置时，改为 `${NAME:-默认值}`。
+
+**`.env` 中的值没有生效**
+
+检查三点：命令是否在项目根目录执行（`.env` 从工作目录读取）；进程环境中是否已经有同名的变量（进程环境优先，包括空字符串）；值中的 `$` 是否用单引号包起来了。
+
+**环境文件中写的列表没有和基础文件合并**
+
+slice 是整体替换的：后面的文件写了这个列表，就完全代替前面的。把完整的列表写在后面的文件中。
+
+**不确定最终生效的配置是什么**
+
+运行 `config show`，见[检查配置](#inspecting-configuration)。
 
 <a id="api-reference"></a>
 ## API 参考
