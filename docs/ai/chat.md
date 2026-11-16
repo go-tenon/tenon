@@ -302,6 +302,8 @@ const { messages, sendMessage, addToolApprovalResponse } = useChat({
 });
 ```
 
+React 前端可以直接用 `@go-tenon/shell/chat` 的 [`useAssistantChat`](../responses/app-shell.md#ai-chat)，它按上面的方式配置好 `useChat`，还处理了插话和停止；运营后台的 [`AssistantChat`](../responses/admin.md#features) 是现成的对话界面。
+
 `Runs.Submit` 在后台开始一次运行后立即返回，运行独立于请求，请求结束后照常继续。它也独立于 [`httpx.Timeout`](../http/middleware.md#request-timeout)，助手的路由和其他 API 装在同一组中间件下即可。对话正在回答时再次提交，`Submit` 返回 `chat.ErrBusy`（`409`）。
 
 <a id="stopping"></a>
@@ -348,7 +350,7 @@ try {
 - 模型正在调用工具时，消息在这批工具调用结束后、模型下一次思考之前进入对话。模型会同时看到工具的结果和这条新消息。
 - 模型已经在给出最终回答时，它先答完，然后接着回答这条消息。
 
-两种情况下，消息都完整送达，模型照常完成当前的步骤。消息进入对话时，回答中出现一个 `steering-message` 片段，前端把它显示在对话中。对话没有在回答时（包括请求到达时回答恰好结束），`Runs.Steer` 返回 `chat.ErrFinished`，客户端得到 `409`，错误码 `ai.finished`，前端改用 `sendMessage`。部署了多个实例时，从其他实例插话的结果相同。
+两种情况下，消息都完整送达，模型照常完成当前的步骤。消息进入对话时，回答中出现一个数据片段 `data-steering`（`data` 是 `{"text": "…"}`），`useChat` 把它作为回答的一个 part，前端把它显示为一条用户消息，历史中也是如此。对话没有在回答时（包括请求到达时回答恰好结束），`Runs.Steer` 返回 `chat.ErrFinished`，客户端得到 `409`，错误码 `ai.finished`，前端改用 `sendMessage`。部署了多个实例时，从其他实例插话的结果相同。
 
 <a id="reconnecting"></a>
 ### 断线重连

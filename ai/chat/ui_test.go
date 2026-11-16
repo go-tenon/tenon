@@ -95,8 +95,8 @@ func chunks(t *testing.T, resp *http.Response) []string {
 				s += ":" + v.(string)
 			}
 		}
-		if parts, ok := c["parts"].([]any); ok {
-			s += ":" + parts[0].(map[string]any)["text"].(string)
+		if data, ok := c["data"].(map[string]any); ok {
+			s += ":" + data["text"].(string)
 		}
 		out = append(out, s)
 	}
@@ -215,7 +215,7 @@ func TestUIStreamRejectAndSteer(t *testing.T) {
 	got := chunks(t, resp)
 	want := []string{
 		"start", "start-step", "tool-input-available:get_order", "tool-output-available:g1",
-		"finish-step", "steering-message:顺便退款",
+		"finish-step", "data-steering:顺便退款",
 		"start-step", "tool-input-available:refund_order", "tool-approval-request:r1",
 		"finish-step", "finish:tool-calls", "[DONE]",
 	}
@@ -242,7 +242,7 @@ func TestUIStreamRejectAndSteer(t *testing.T) {
 
 	history, _ := rs.UIMessages(context.Background(), "u1", "c1")
 	b, _ := json.Marshal(history)
-	for _, s := range []string{`"type":"steering-message"`, `"state":"output-denied"`, `"approval":{"id":"r1","approved":false,"reason":"不需要"}`} {
+	for _, s := range []string{`"type":"data-steering","id":`, `"data":{"text":"顺便退款"}`, `"state":"output-denied"`, `"approval":{"id":"r1","approved":false,"reason":"不需要"}`} {
 		if !strings.Contains(string(b), s) {
 			t.Fatalf("history lacks %s: %s", s, b)
 		}

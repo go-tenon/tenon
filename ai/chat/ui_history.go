@@ -45,7 +45,7 @@ func (rs *Runs) UIMessages(ctx context.Context, userID, sessionID string) ([]UIM
 			case model.RoleUser:
 				text := UIPart{Type: "text", Text: m.Content}
 				if _, steer := ev.Extensions[steerExtension]; steer && assistant >= 0 {
-					out[assistant].Parts = append(out[assistant].Parts, UIPart{Type: "steering-message", ID: ev.ID, Parts: []UIPart{text}})
+					out[assistant].Parts = append(out[assistant].Parts, UIPart{Type: "data-steering", ID: ev.ID, Data: UISteering{Text: m.Content}})
 					continue
 				}
 				out = append(out, UIMessage{ID: ev.ID, Role: "user", Parts: []UIPart{text}})
