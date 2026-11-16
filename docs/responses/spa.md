@@ -81,7 +81,7 @@ export default defineConfig({
 | 不存在的地址，其他请求 | `404`。缺失的脚本、图片和写错地址的 `fetch` 得到的都是 `404` |
 | `assets/` 下不存在的文件 | `404` |
 
-HTML 文件带有 `Content-Security-Policy: frame-ancestors 'none'`，只有本站能把应用嵌入框架，防止诱导点击。需要被嵌入时，在 `SPAOptions.FrameAncestors` 中列出允许的来源，例如 `[]string{"https://partner.example.com"}`。
+HTML 文件带有 `Content-Security-Policy: frame-ancestors 'none'`，只有本站能把应用嵌入框架，防止诱导点击。需要被嵌入时，在 `SPAOptions.FrameAncestors` 中列出允许的来源，例如 `[]string{"https://partner.example.com"}`；允许的来源因请求而不同时（例如按租户放行它登记的域名）用 `FrameAncestorsFunc`，见[嵌入第三方网站](embed.md#frame-ancestors)。
 
 `index.html` 不缓存，发布新版本后，用户下次打开页面就会加载新的脚本。已经打开的页面仍在运行旧版本，它的脚本在 `assets/` 中按需加载的分块，在新版本中已经不存在了，会得到 `404`。TanStack Router 按路由懒加载时，可以在路由的 `errorComponent` 中提示刷新页面。
 

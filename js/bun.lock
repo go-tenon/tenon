@@ -75,6 +75,18 @@
       "name": "@go-tenon/client",
       "version": "0.0.0",
     },
+    "embed": {
+      "name": "@go-tenon/embed",
+      "version": "0.0.0",
+      "peerDependencies": {
+        "@types/react": "^19.1.0",
+        "react": "^19.2.0",
+      },
+      "optionalPeers": [
+        "@types/react",
+        "react",
+      ],
+    },
     "registry": {
       "name": "@go-tenon/registry",
       "version": "0.0.0",
@@ -207,6 +219,8 @@
     "@go-tenon/admin": ["@go-tenon/admin@workspace:admin"],
 
     "@go-tenon/client": ["@go-tenon/client@workspace:client"],
+
+    "@go-tenon/embed": ["@go-tenon/embed@workspace:embed"],
 
     "@go-tenon/registry": ["@go-tenon/registry@workspace:registry"],
 

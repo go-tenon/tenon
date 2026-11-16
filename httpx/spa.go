@@ -25,6 +25,10 @@ type SPAOptions struct {
 	// FrameAncestors 是允许把页面嵌入框架的来源，例如 'self' 或 https://partner.example.com；
 	// 默认（nil）不允许任何网站嵌入，防止诱导点击。写入 HTML 文件响应的 Content-Security-Policy: frame-ancestors。
 	FrameAncestors []string
+	// FrameAncestorsFunc 按请求给出允许嵌入的来源，例如按 URL 中的租户读取它登记的域名，用于嵌入第三方网站的页面
+	// （见 @go-tenon/embed）。每个 HTML 响应调用一次；不合法的来源被忽略，没有合法的来源时不允许嵌入。
+	// 不能与 FrameAncestors 同时设置。
+	FrameAncestorsFunc func(r *http.Request) []string
 }
 
 // SPA 提供打包进二进制的单页应用，例如 Vite 的构建产物 dist。可以并发使用。
@@ -36,8 +40,10 @@ type SPAOptions struct {
 type SPA struct {
 	base   string
 	frames string
-	files  map[string]spaFile
-	proxy  *httputil.ReverseProxy
+	// framesFunc 按请求计算 frame-ancestors，见 SPAOptions.FrameAncestorsFunc。
+	framesFunc func(r *http.Request) []string
+	files      map[string]spaFile
+	proxy      *httputil.ReverseProxy
 }
 
 type spaFile struct {
@@ -70,10 +76,13 @@ func newSPA(fsys fs.FS, opts SPAOptions) (*SPA, error) {
 	if !strings.HasPrefix(base, "/") || !strings.HasSuffix(base, "/") {
 		return nil, errors.Newf("httpx: SPA base %q must start and end with /", base)
 	}
-	s := &SPA{base: base, frames: "frame-ancestors 'none'"}
+	s := &SPA{base: base, frames: "frame-ancestors 'none'", framesFunc: opts.FrameAncestorsFunc}
+	if len(opts.FrameAncestors) > 0 && opts.FrameAncestorsFunc != nil {
+		return nil, errors.New("httpx: set either SPA FrameAncestors or FrameAncestorsFunc, not both")
+	}
 	if len(opts.FrameAncestors) > 0 {
 		for _, origin := range opts.FrameAncestors {
-			if origin == "" || strings.ContainsAny(origin, " \t\r\n;,") {
+			if !validFrameAncestor(origin) {
 				return nil, errors.Newf("httpx: invalid SPA frame ancestor %q", origin)
 			}
 		}
@@ -156,10 +165,32 @@ func (s *SPA) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.Set("Cache-Control", "no-cache")
 	}
 	if strings.HasSuffix(name, ".html") {
-		h.Set("Content-Security-Policy", s.frames)
+		h.Set("Content-Security-Policy", s.framesFor(r))
 	}
 	h.Set("ETag", f.etag)
 	http.ServeContent(w, r, name, time.Time{}, bytes.NewReader(f.data))
+}
+
+// validFrameAncestor 报告 origin 能否写入 frame-ancestors：非空，没有空白和分隔符。
+func validFrameAncestor(origin string) bool {
+	return origin != "" && !strings.ContainsAny(origin, " \t\r\n;,")
+}
+
+// framesFor 返回这个请求的 frame-ancestors 指令。
+func (s *SPA) framesFor(r *http.Request) string {
+	if s.framesFunc == nil {
+		return s.frames
+	}
+	var allowed []string
+	for _, origin := range s.framesFunc(r) {
+		if validFrameAncestor(origin) {
+			allowed = append(allowed, origin)
+		}
+	}
+	if len(allowed) == 0 {
+		return "frame-ancestors 'none'"
+	}
+	return "frame-ancestors " + strings.Join(allowed, " ")
 }
 
 // DescribeRoute 实现 RouteDescriber：单页应用的页面和文件是公开路由，登录由前端和 API 处理。

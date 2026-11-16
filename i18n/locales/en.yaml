@@ -161,3 +161,4 @@ webhook.delivery_not_found: Delivery not found
 webhook.invalid_url: The webhook URL must be an absolute http or https URL
 webhook.invalid_events: Subscribe to at least one event with a valid name
 webhook.invalid_signature: Invalid webhook signature
+widget.invalid_identity: The signed identity is invalid or has expired

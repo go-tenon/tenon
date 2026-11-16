@@ -130,7 +130,7 @@ blog/
 Tenon 的每个包都可以单独使用，按需引入即可。顶层的包分为四层，每个包只能导入同层或更低层的包：
 
 ```text
-功能        apitoken  login  oauthserver  authz  notification  push  activity  feature  settings  operation  webhook  search  vector  sheet/imports  sheet/exports  ai
+功能        apitoken  login  oauthserver  authz  notification  push  activity  feature  settings  operation  webhook  widget  search  vector  sheet/imports  sheet/exports  ai
 入口        httpx  web  realtime  mcpx  command
 基础设施    database  queue  schedule  cachex  lock  ratelimit  captcha  broadcast  filesystem  imgproxy  mail  sms  pdf  outbound  sheet  document
 基础        errorx  identity  config  cleanup  logging  telemetry  i18n  enum  page  form  hashing  crypt  acquire
@@ -221,6 +221,7 @@ Tenon 的每个包都可以单独使用，按需引入即可。顶层的包分�
 | `operation` | 后台操作的状态与进度 | [后台操作](../features/operations.md) |
 | `sheet/imports`、`sheet/exports` | 后台导入与导出表格 | [导入与导出](../features/import-export.md) |
 | `webhook` | 按 Standard Webhooks 推送事件 | [Webhook](../features/webhooks.md) |
+| `widget` | 嵌入第三方网站的挂件：宿主网站签名的用户身份 | [嵌入第三方网站](../responses/embed.md) |
 | `search` | PostgreSQL 全文搜索 | [全文搜索](../features/search.md) |
 | `vector` | Qdrant 向量检索 | [向量检索](../ai/vector.md) |
 | `ai`、`ai/chat` | 模型能力接口；对话式 agent | [AI 助手](../ai/chat.md) |

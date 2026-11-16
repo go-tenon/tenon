@@ -5,6 +5,7 @@
   "workspaces": [
     "admin",
     "client",
+    "embed",
     "registry",
     "shell"
   ],

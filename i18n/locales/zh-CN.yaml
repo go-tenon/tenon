@@ -161,3 +161,4 @@ webhook.delivery_not_found: 投递记录不存在
 webhook.invalid_url: Webhook 地址必须是 http 或 https 的完整地址
 webhook.invalid_events: 至少订阅一个事件，事件名的格式要正确
 webhook.invalid_signature: Webhook 签名不正确
+widget.invalid_identity: 身份签名无效或已过期

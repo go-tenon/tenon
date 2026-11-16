@@ -119,6 +119,27 @@ func TestSPAFrameAncestors(t *testing.T) {
 	if got := spaGet(s, http.MethodGet, "/", htmlAccept).Header().Get("Content-Security-Policy"); got != "frame-ancestors 'self' https://partner.example.com" {
 		t.Errorf("custom CSP %q", got)
 	}
+
+	// 按请求计算：例如按路径中的租户读取它登记的域名；不合法的来源被忽略，没有合法的来源时不允许嵌入。
+	s = newSPA(t, httpx.SPAOptions{FrameAncestorsFunc: func(r *http.Request) []string {
+		switch r.URL.Query().Get("tenant") {
+		case "acme":
+			return []string{"https://acme.example.com", "bad; script-src *"}
+		case "bad":
+			return []string{"https://x.example.com ,https://y.example.com"}
+		}
+		return nil
+	}})
+	for path, want := range map[string]string{
+		"/?tenant=acme":             "frame-ancestors https://acme.example.com",
+		"/?tenant=bad":              "frame-ancestors 'none'",
+		"/?tenant=nobody":           "frame-ancestors 'none'",
+		"/assets/index-BjXc12aB.js": "",
+	} {
+		if got := spaGet(s, http.MethodGet, path, htmlAccept).Header().Get("Content-Security-Policy"); got != want {
+			t.Errorf("func %s: CSP %q, want %q", path, got, want)
+		}
+	}
 }
 
 func TestSPABase(t *testing.T) {
@@ -150,6 +171,8 @@ func TestNewSPAPanics(t *testing.T) {
 		"bad dev server": {nil, httpx.SPAOptions{DevServer: "localhost:5173"}},
 		"empty frame":    {spaFS(), httpx.SPAOptions{FrameAncestors: []string{""}}},
 		"frame with ;":   {spaFS(), httpx.SPAOptions{FrameAncestors: []string{"https://a.example; script-src *"}}},
+		"both frames": {spaFS(), httpx.SPAOptions{FrameAncestors: []string{"'self'"},
+			FrameAncestorsFunc: func(*http.Request) []string { return nil }}},
 	} {
 		func() {
 			defer func() {
