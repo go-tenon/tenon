@@ -4,6 +4,10 @@
 
 `vector` 包把向量保存在 [Qdrant](https://qdrant.tech) 中，不放进 PostgreSQL。数据仍然以数据库为准，Qdrant 中只是由它算出来的副本。用法与[全文搜索](../features/search.md)相同：业务动作在修改数据的事务中调用 `Sync`，队列任务重新读取数据、计算向量，然后写入 Qdrant。事务回滚时，同步也一起取消。
 
+**向量**是一组数字，由嵌入模型（embedding model）根据文字的意思算出来，意思相近的文字，向量也相近。
+
+阅读前需要了解：[全文搜索](../features/search.md)（用法相同）；[队列](../libraries/queue.md)；[文档转换与切分](documents.md)。
+
 - [示例用法](#example-usage)
 - [安装](#installation)
 - [连接 Qdrant](#connecting)
@@ -19,6 +23,7 @@
     - [重排](#reranking)
 - [换模型](#changing-models)
 - [测试](#testing)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="example-usage"></a>
@@ -96,7 +101,7 @@ vectors := vector.New(db, qc, vector.Model{
 })
 ```
 
-`Store` 持有数据库，同步时用它锁住 key、读取文档。`Model` 用来计算向量：`Dims` 必须与模型输出的维度一致；`Embedder` 是 [ai.Embedder](chat.md#media)，分段多时用 `openai.WithBatchSize` 分批请求。
+`Store` 持有数据库，同步时用它锁住 key、读取文档。`Model` 用来计算向量：`Dims` 必须与模型输出的维度一致；`Embedder` 是 [ai.Embedder](chat-advanced.md#media)，分段多时用 `openai.WithBatchSize` 分批请求。
 
 多个应用共用一个 Qdrant 时，用 `vector.WithPrefix("blog_")` 给 collection 名称加前缀。
 
@@ -308,7 +313,7 @@ var Chunks = vector.Define[ChunkDoc]("attachment-chunks", vector.Hybrid(search.B
 <a id="reranking"></a>
 ### 重排
 
-向量检索擅长找出大致相关的分段，排序却不够精细。多取一些候选，再用[重排模型](chat.md#media)排出最相关的几段交给模型：
+向量检索擅长找出大致相关的分段，排序却不够精细。多取一些候选，再用[重排模型](chat-advanced.md#media)排出最相关的几段交给模型：
 
 ```go
 hits, err := a.find.Find(ctx, articleID, question)
@@ -345,7 +350,7 @@ Qdrant 中的数据都可以从数据库重新算出来，丢失后重建索引�
 <a id="testing"></a>
 ## 测试
 
-`vector/vectortest` 创建连接测试 Qdrant 的 `Store`，地址来自环境变量 `QDRANT_TEST_ADDR`（例如 `127.0.0.1:6334`）。每次调用使用随机的 collection 前缀，测试结束时删除。计算向量用 [aitest.Embedder](chat.md#testing)，相同的文本总是得到相同的向量：
+`vector/vectortest` 创建连接测试 Qdrant 的 `Store`，地址来自环境变量 `QDRANT_TEST_ADDR`（例如 `127.0.0.1:6334`）。每次调用使用随机的 collection 前缀，测试结束时删除。计算向量用 [aitest.Embedder](chat-advanced.md#testing)，相同的文本总是得到相同的向量：
 
 ```go
 func TestFind(t *testing.T) {
@@ -368,6 +373,25 @@ func TestFind(t *testing.T) {
 ```
 
 `aitest.Embedder` 给不同的文本几乎正交的向量，只有原文完全相同的查询才排在第一。它只能用来测试同步、过滤和租户是否正确，测不了语义检索的效果。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**写入向量时报错维度不一致**
+
+`Model.Dims` 必须与嵌入模型输出的维度一致。换了模型时同时修改它，并重建索引。
+
+**修改了数据，检索结果还是旧的**
+
+修改数据的事务中没有调用 `Sync`，或者 worker 没有运行，同步任务还没有执行。
+
+**换了嵌入模型后，检索结果变得很差**
+
+已有的向量还是旧模型算的，和新模型的向量不能比较。换模型后要重建索引，见[重建索引](#reindexing)。
+
+**重建操作变为失败，错误码 `vector.reindex_superseded`**
+
+同一个索引又发起了一次重建，前一次被取代了。等最新的一次完成即可。
 
 <a id="api-reference"></a>
 ## API 参考
