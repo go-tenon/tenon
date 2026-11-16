@@ -181,6 +181,8 @@ const save = useMutation({
 
 默认用浏览器的确认框，`useUnsavedChanges(dirty, { confirm })` 换成组件库的对话框（`confirm` 返回 `true` 时离开）。页面在[标签](#tabs)中时，切换标签不询问，关闭标签时才询问。
 
+**自动保存。** 设置这类页面可以不要“保存”按钮，修改后自动保存。`createAutoSaver(initial, { save, validate, delay })` 是与表单库无关的部分：把值的变化交给 `change`，它在用户停下 `delay`（默认 600 毫秒）后保存；校验不通过、与上次保存成功的值相同时不保存；保存一次只进行一个，期间的变化在完成后再保存一次；`stop` 立即保存还在等待的变化，`discard` 放弃它们。`status()` 和 `subscribe` 给出状态（`pending`、`saving`、`saved`、`error`）。shadcn 外观的 `useAutoSave` 用它接上 react-hook-form，见 [shadcn registry](registry.md#blocks)；antd Form 可以在 `onValuesChange` 中调用 `change`。
+
 <a id="lists"></a>
 ## 列表
 

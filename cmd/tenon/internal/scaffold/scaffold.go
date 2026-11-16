@@ -128,7 +128,7 @@ var ShadcnMCP = map[string]any{"command": "bunx", "args": []any{"shadcn@4.23.0",
 var ConsoleRegistryItems = []string{
 	"tenon-sidebar-layout", "tenon-topnav-layout", "tenon-mixed-layout", "tenon-rail-layout", "tenon-page-layouts", "tenon-tab-bar",
 	"tenon-color-mode", "tenon-user-menu", "tenon-tenant-switcher", "tenon-command-menu", "tenon-dialogs",
-	"tenon-page", "tenon-data-table", "tenon-form", "tenon-login-form", "tenon-resource-page",
+	"tenon-page", "tenon-split-view", "tenon-data-table", "tenon-form", "tenon-login-form", "tenon-resource-page",
 }
 
 // registryImport 匹配 registry 源码中对项目内文件的导入，例如 "@/components/ui/button"、"@/hooks/use-mobile"。

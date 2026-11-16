@@ -64,8 +64,9 @@ bunx shadcn@4.23.0 add ./.tenon/js/registry/r/tenon-rail-layout.json
 | `tenon-command-menu` | `CommandMenu` | ⌘K 搜索并打开菜单中的页面 |
 | `tenon-dialogs` | `ConfirmProvider`、`useConfirm`、`NewVersionNotice` | 返回 Promise 的确认对话框；新版本提示 |
 | `tenon-page` | `PageHeader`、`PageLoading`、`PageError`、`PageEmpty`、`SidePanel` | 页头、加载、出错、空状态、右侧抽屉 |
+| `tenon-split-view` | `SplitView` | 列表加详情的分栏：分隔条可以拖动或用方向键调整，宽度按账号保存；窄屏时只显示一侧 |
 | `tenon-data-table` | `DataTable`、`ListToolbar`、`RowActions`、`StatusBadge` | 资源表格：服务端分页、排序和搜索保存在地址中，批量选择，行操作 |
-| `tenon-form` | `useApiForm`、`Field`、`FormError` | react-hook-form 加上生成的校验规则，服务端的字段错误显示在输入框下面 |
+| `tenon-form` | `useApiForm`、`Field`、`FormError`、`useAutoSave`、`AutoSaveStatus` | react-hook-form 加上生成的校验规则，服务端的字段错误显示在输入框下面；自动保存 |
 | `tenon-login-form` | `LoginForm` | 登录表单 |
 | `tenon-resource-page` | `ResourcePage`、`ResourceForm`、`FieldValue` | 按[资源](resources.md#console)的定义渲染列表、筛选、表单和操作，console 模板已经带着 |
 | `tenon-notifications` | `NotificationBell`、`OperationCenter`、`OperationProgress` | 通知铃铛（未读数、列表、标记已读）、后台任务的进度，见[通知](app-shell-features.md#notifications)和[后台操作](app-shell-features.md#operations) |
@@ -112,6 +113,38 @@ const { form, onSubmit, formError, pending } = useApiForm<ArticleChanges>({
 ```
 
 前端按生成的规则校验，提示与服务端相同；有未保存的修改时离开前询问，保存成功后不再询问。
+
+设置这类页面适合自动保存，不需要“保存”按钮。`useAutoSave` 在值变化、用户停下 600 毫秒后保存：校验不通过时不保存；与上次保存成功的值相同时不保存；保存一次只进行一个，期间的修改在完成后再保存一次；离开页面时立即保存还在等待的修改。服务端返回的字段错误同样显示在输入框下面：
+
+```tsx
+const form = useForm<SiteSettings>({ resolver: resolver(schemas.settings.update.body, rules), defaultValues })
+const autosave = useAutoSave(form, {
+  schema: schemas.settings.update.body,
+  rules,
+  save: (values) => api.settings.update(values),
+})
+
+<PageHeader>
+  <AutoSaveStatus status={autosave.status} />
+</PageHeader>
+```
+
+`AutoSaveStatus` 显示“有未保存的修改”“保存中…”“已保存”“保存失败”。数据重新加载后调用 `autosave.markSaved(values)`，表单之外的改动（例如调整了成员）用 `autosave.saveNow(true)` 立即保存。
+
+列表加详情的页面用 `SplitView`：左侧是列表，右侧是选中项的详情，通常是子路由的 `Outlet`。窄屏时只显示一侧，选中了一项时显示详情：
+
+```tsx
+function Articles() {
+  const { id } = useParams({ strict: false })
+  return (
+    <SplitView id="articles" pane={<ArticleList />} narrow={id ? "main" : "pane"}>
+      {id ? <Outlet /> : <PageEmpty>选择一篇文章</PageEmpty>}
+    </SplitView>
+  )
+}
+```
+
+左侧的宽度由 `@go-tenon/shell` 的 `useResizable` 管理，按账号保存；分隔条可以拖动，也可以聚焦后用方向键、Home、End 调整，双击恢复默认宽度。
 
 <a id="assistant-chat"></a>
 AI 对话按 shadcn/ui 的 [AI Elements](https://ui.shadcn.com/docs/ai-elements) 组合：消息列表是 Message Scroller，用户的消息是 Bubble，思考过程和工具调用是 Trace，需要审批的工具调用是 Confirmation（Item 加上“批准”“拒绝”），输入框是 Prompt Input（InputGroup）。逻辑来自 [`@go-tenon/shell/chat`](app-shell-features.md#ai-chat)：
