@@ -221,14 +221,14 @@ func TestEmbedVideo(t *testing.T) {
 
 func TestEmbedCombinedBatch(t *testing.T) {
 	// qwen2.5-vl-embedding 把一次请求中的所有项融合为一个向量。
-	c, got := newClient(t, func(request) (int, any) {
+	c, _ := newClient(t, func(request) (int, any) {
 		return http.StatusOK, map[string]any{"output": map[string]any{"embeddings": []map[string]any{{"index": 0, "embedding": []float64{1}, "type": "vl"}}}}
 	})
 	_, err := c.Embed(t.Context(), ai.EmbedRequest{Inputs: []ai.Content{ai.Text("a"), ai.Text("b")}})
 	assert.ErrorContains(t, err, `returned 1 embeddings for 2 inputs`)
 	assert.ErrorContains(t, err, "dashscope.WithBatchSize(1)")
 
-	c, got = newClient(t, embeddings("vl"), dashscope.WithBatchSize(1))
+	c, got := newClient(t, embeddings("vl"), dashscope.WithBatchSize(1))
 	vecs, err := c.Embed(t.Context(), ai.EmbedRequest{Inputs: []ai.Content{ai.Text("a"), ai.Text("b")}})
 	require.NoError(t, err)
 	assert.Len(t, vecs, 2)
