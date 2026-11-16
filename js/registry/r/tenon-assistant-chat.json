@@ -5,8 +5,8 @@
   "title": "AI 对话",
   "description": "AssistantChat、AssistantButton：按 shadcn/ui 的 AI Elements 组合，接好 tenon 的对话接口（消息流、历史、停止、插话、审批），逻辑来自 @go-tenon/shell/chat。",
   "dependencies": [
-    "ai@^7.0.159",
-    "@ai-sdk/react@^4.0.163",
+    "ai@^7.0.173",
+    "@ai-sdk/react@^4.0.177",
     "streamdown@^2.7.1"
   ],
   "registryDependencies": [

@@ -5,8 +5,8 @@
   "title": "设置表单",
   "description": "SettingsForm：按 rest.API.Settings 的声明渲染一组设置的表单，可以用“保存”按钮或自动保存；逻辑来自 @go-tenon/shell 的 settingsModel。",
   "dependencies": [
-    "@tanstack/react-table@^8.21.3",
-    "react-hook-form@^7.91.0"
+    "@tanstack/react-table@^9.3.1",
+    "react-hook-form@^7.92.0"
   ],
   "registryDependencies": [
     "alert-dialog",

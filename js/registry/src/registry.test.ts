@@ -6,6 +6,13 @@ import { build, manifest, tenonDir } from "../build"
 
 const root = join(import.meta.dirname, "..")
 
+// js/package.json 中锁定的版本：组件就是用这些版本开发和测试的。
+const workspace = JSON.parse(readFileSync(join(root, "..", "package.json"), "utf8")) as {
+  dependencies?: Record<string, string>
+  devDependencies?: Record<string, string>
+}
+const pinned: Record<string, string> = { ...workspace.devDependencies, ...workspace.dependencies }
+
 // 项目模板（console）已经带着的包，条目不需要再写进 dependencies。
 const provided = new Set([
   "react",
@@ -23,6 +30,18 @@ describe("registry", () => {
     expect(readdirSync(join(root, "r")).sort()).toEqual([...built.keys()].sort())
     for (const [name, content] of built) {
       expect(readFileSync(join(root, "r", name), "utf8"), name).toBe(content)
+    }
+  })
+
+  it("条目的 npm 依赖与 js/package.json 锁定的版本一致", () => {
+    // shadcn add 按这里的版本安装：版本落后时，会把项目中已经升级的包降回去，例如 TanStack Table 9 降回 8。
+    for (const item of manifest(root).items) {
+      for (const dep of item.dependencies ?? []) {
+        const at = dep.lastIndexOf("@")
+        const [pkg, range] = [dep.slice(0, at), dep.slice(at + 1)]
+        expect(pinned[pkg], `${item.name}: ${pkg} 不在 js/package.json 中`).toBeDefined()
+        expect(range, `${item.name}: ${pkg}`).toBe(`^${pinned[pkg]}`)
+      }
     }
   })
 
