@@ -15,9 +15,25 @@
       "name": "tenon-topnav-layout",
       "type": "registry:block",
       "title": "顶部导航布局",
-      "description": "导航在顶栏，内容居中或全宽，窄屏时导航收进抽屉。",
+      "description": "导航在顶栏，内容居中或全宽；窄屏时导航收进抽屉，或者用 narrowNav=\"bottom\" 放到底部标签栏。",
       "registryDependencies": ["button", "dropdown-menu", "sheet", "breadcrumb"],
-      "files": ["topnav-layout.tsx", "nav.tsx", "tab-bar.tsx"]
+      "files": ["topnav-layout.tsx", "bottom-nav.tsx", "nav.tsx", "tab-bar.tsx"]
+    },
+    {
+      "name": "tenon-mixed-layout",
+      "type": "registry:block",
+      "title": "顶栏 + 侧栏布局",
+      "description": "第一级菜单（模块）在顶栏，当前模块下的菜单在侧栏；窄屏时侧栏变为抽屉，显示完整的菜单。",
+      "registryDependencies": ["sidebar", "separator", "breadcrumb", "button", "dropdown-menu", "tooltip"],
+      "files": ["mixed-layout.tsx", "sidebar-layout.tsx", "nav.tsx", "tab-bar.tsx"]
+    },
+    {
+      "name": "tenon-bottom-nav",
+      "type": "registry:block",
+      "title": "底部标签栏",
+      "description": "窄屏时第一级菜单固定在屏幕底部，适合第一级菜单不多的用户端。",
+      "registryDependencies": ["breadcrumb"],
+      "files": ["bottom-nav.tsx", "nav.tsx"]
     },
     {
       "name": "tenon-rail-layout",

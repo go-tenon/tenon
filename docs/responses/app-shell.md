@@ -274,6 +274,8 @@ setState({ collapsed: !state.collapsed })
 
 布局状态保存在[本地存储](#storage)中，按账号区分：换个账号登录各是各的。`navOpen`（窄屏时导航抽屉打开）只在当前页面有效，不保存。`useNarrow()` 报告是否是窄屏（默认宽度小于 768px），布局据此把主导航收进抽屉或底部标签栏。
 
+底部标签栏的内容由 `useBottomNav(max = 5)` 给出：第一级菜单，最多 `max` 项，分组进入它下面第一个可以进入的页面，每一项带着是否是当前位置（`active`）和徽标。它只适合第一级菜单不多的前端，例如用户端；shadcn 的外观见 [BottomNav](registry.md#blocks)。
+
 项目允许用户切换布局时（例如在侧栏和顶部导航之间），布局路由用 `useLayoutVariant` 决定当前用哪一种，第一种是默认的；用户选过、并且在允许的范围内时用用户的选择：
 
 ```tsx
@@ -340,6 +342,7 @@ app.storage.get<{ collapsed: boolean }>("sider")
 | `useNavigation`、`useMenuBadge` | 布局的导航模型；登记菜单项的徽标 |
 | `Slot`、`Fill`、`useSlotFilled` | 插槽 |
 | `useLayoutState`、`useLayoutVariant`、`useNarrow` | 布局状态、用户选择的布局、窄屏 |
+| `useBottomNav`、`bottomNav` | 窄屏时底部标签栏的项 |
 | `TabsOutlet`、`useTabs`、`useTab`、`useTabActive`、`useTabTitle`、`useTabShortcuts` | 多标签 |
 | `confirmDiscard(app)` | 有未保存的修改时询问是否放弃，例如退出登录前 |
 | `useTenant`、`switchTenant`、`enterTenant` | 当前租户、切换租户 |
