@@ -212,7 +212,7 @@ for _, flag := range store.Catalog() {
 n, err := store.Prune(ctx)
 ```
 
-新旧版本同时运行时（例如[不停机升级](../installation/deployment.md#zero-downtime-upgrades)），等旧版本退出后再执行，否则旧版本中的开关会暂时退回 `Default`。
+新旧版本同时运行时（例如[不停机升级](../installation/operations.md#zero-downtime-upgrades)），等旧版本退出后再执行，否则旧版本中的开关会暂时退回 `Default`。
 
 <a id="testing"></a>
 ## 测试

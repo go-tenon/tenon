@@ -1,95 +1,113 @@
 # 脚手架
 
-`tenon init` 生成一个能直接运行的项目：Go API、React 单页应用、开发与构建脚本，以及一个内存里的待办事项示例。最小 API 见[安装](installing.md#api-only)。
+在[安装](installing.md)中，我们手写了一个只有 `/ping` 的程序。真实的项目还需要配置文件、命令行、前端页面、开发时的自动重启……一个个手写很费时间。`tenon init` 一次生成这些，得到一个能直接运行的项目：一个 Go 写的 API，一个 React 写的网页，以及一个待办事项的例子把两者连起来。
 
-- [环境要求](#requirements)
+这一页先生成项目、运行起来，动手改一改，再回头看它由哪些部分组成。
+
+阅读前需要了解：[安装](installing.md)。
+
+- [准备工作](#requirements)
 - [生成项目](#creating-a-project)
-- [开发](#developing)
-- [构建](#building)
+- [运行开发环境](#developing)
+- [动手改一改](#changing)
 - [项目里有什么](#layout)
-- [入口文件在做什么](#entrypoint)
-- [示例资源](#example-resource)
-- [前端与同源](#frontend)
+- [入口文件](#entrypoint)
+- [前端与 API 同源](#frontend)
+- [构建](#building)
+- [常见问题](#troubleshooting)
 - [下一步](#next-steps)
 
 <a id="requirements"></a>
-## 环境要求
+## 准备工作
 
-- Go 1.27.4 或更高版本（精确的工具链要求以框架的 [go.mod](../../go.mod) 为准）
-- [Bun](https://bun.sh)，用来安装前端依赖、运行 Vite
+除了 Go 1.27.4 或更高的版本，还需要 [Bun](https://bun.sh)。Bun 是一个 JavaScript 运行环境，这里用它安装前端的依赖、运行前端的开发服务器。按 Bun 官网的说明安装后，查看版本：
+
+```bash
+bun --version
+```
 
 <a id="creating-a-project"></a>
 ## 生成项目
+
+在你想放项目的位置运行（`todo` 是新项目的目录名）：
 
 ```bash
 go run github.com/go-tenon/tenon/cmd/tenon@main init todo
 ```
 
-`--module` 指定 Go 模块路径，`--name` 指定应用名称，默认都是目录名。目录必须是空目录或尚未创建。
+这条命令会：
 
-生成后它会运行 `go mod tidy`、生成 TypeScript 客户端；本机装了 Bun 时再运行 `bun install`。`go.mod` 要求的框架版本就是这次运行 `init` 的版本：用 `@main` 时是 main 分支当前提交，用 `@v1.2.0` 时是该标签。开发框架本身时可用 `--tenon <框架目录>`，`go.mod` 会用 `replace` 指向本地副本。更多选项见[开发工具](tooling.md#init)。
+1. 创建 `todo` 目录，写入项目的全部文件。目录必须不存在或者是空的。
+2. 运行 `go mod tidy` 下载 Go 依赖，`bun install` 安装前端依赖。
+3. 根据接口生成前端调用接口用的 TypeScript 代码（下文的“客户端”）。
+
+Go module 的路径和应用的名称默认都是目录名，可以用 `--module` 和 `--name` 指定，例如 `--module github.com/acme/todo`。其他选项见[开发工具](tooling.md#init)。
+
+项目的 `go.mod` 中记录了生成时使用的 Tenon 版本：用 `@main` 生成时是主分支当时的提交，用 `@v1.2.0` 时是这个版本。
 
 <a id="developing"></a>
-## 开发
+## 运行开发环境
+
+进入项目目录，启动开发环境：
 
 ```bash
 cd todo
 bun run dev
 ```
 
-打开 `http://localhost:8080`，就能添加、勾选、删除待办事项。接口文档在 `http://localhost:8080/api/docs`。
+在浏览器中打开 <http://localhost:8080>，可以添加、勾选、删除待办事项。接口文档在 <http://localhost:8080/api/docs>。
 
-在浏览器打开 **8080**。应用把页面请求转发给本机的 Vite（见下方[前端与同源](#frontend)）；远程开发时转发或访问远端的 8080 即可。
+`bun run dev` 运行的是 `go tool tenon dev`。它同时启动两个程序：Go 写的 API，以及前端的开发服务器 Vite。你只需要访问 8080 端口，页面和接口都在这里，原因见下文的[前端与 API 同源](#frontend)。
 
-- **修改前端代码**：页面会热更新。
-- **修改 Go 代码**：应用自动重新编译、重启，`packages/client/src/api` 里的客户端也会跟着重新生成。比如给 `Todo` 加一个字段，前端立刻就能用到它的类型。
+<a id="changing"></a>
+## 动手改一改
 
-`bun run dev` 运行的是 [`go tool tenon dev`](tooling.md#dev)，细节见[开发工具](tooling.md)。
+保持 `bun run dev` 运行，试着修改代码。
 
-<a id="building"></a>
-## 构建
+**修改前端。** 打开 `apps/web/src/routes/index.tsx`，改一下页面上的文字，保存。浏览器中的页面立刻更新，不需要刷新，这叫热更新。
 
-```bash
-bun run build
-./bin/api serve --config config/app.yaml
-```
+**修改 Go 代码。** 打开 `internal/todo/todo.go`，给返回的错误提示或者某个字段的校验规则做一点修改，保存。终端中会看到程序被重新编译、重新启动。
 
-`bun run build` 先构建前端，再把它嵌入 Go 程序。得到的 `bin/api` 是单一二进制，部署见[部署](deployment.md)。
+修改接口的输入或输出时，开发环境还会重新生成前端的客户端（`packages/client/src/api`）。例如给 `Todo` 加一个字段，前端的代码马上就能用到这个字段，写错字段名时编辑器会立刻提示。
 
 <a id="layout"></a>
 ## 项目里有什么
 
+项目可以分成三部分：Go 写的后端、React 写的前端，以及根据它们自动生成的代码。
+
 ```text
 todo/
-├── go.mod                 tool github.com/go-tenon/tenon/cmd/tenon：开发工具随框架的版本固定；ignore node_modules
-├── package.json           Bun workspace（.tenon/js/client、.tenon/js/shell、apps/web、packages/client、packages/theme）；dev、build、generate、typecheck 脚本
-├── config/app.yaml        监听地址等应用配置
-├── cmd/api/main.go        程序入口：命令行、serve 和 routes
-├── internal/todo/todo.go  示例资源：待办事项的四个接口，数据保存在内存中
-├── apps/web/              前端 web，挂在 /
-│   ├── frontend.go        把构建产物 dist 嵌入程序
-│   ├── index.html
-│   ├── package.json       React、TanStack Router、TanStack Query、Vite；dev、build、typecheck 脚本
-│   ├── vite.config.ts     路由插件、React、新版本提示
+├── go.mod                 Go module；Tenon 的开发工具也记在这里，版本与框架相同
+├── package.json           前端的 workspace，以及 dev、build、generate 等脚本
+├── config/app.yaml        应用的配置，例如监听地址
+├── cmd/api/main.go        程序的入口
+├── internal/todo/todo.go  待办事项：类型、数据（保存在内存中）和四个接口
+├── apps/web/              前端：React 写的网页，挂在 / 下
+│   ├── frontend.go        把前端的构建结果打包进 Go 程序
+│   ├── vite.config.ts     前端构建工具 Vite 的配置
 │   └── src/
-│       ├── main.tsx       渲染应用
-│       ├── app.ts         用 @go-tenon/shell 的 createApp 装配路由和 TanStack Query
+│       ├── main.tsx       前端的入口
+│       ├── app.ts         创建前端应用：路由、登录状态等
 │       ├── client.ts      创建调用接口的客户端
-│       ├── routes/        页面，一个文件一个：__root.tsx 是所有页面的外层，index.tsx 是待办列表
-│       └── routeTree.gen.ts  由 routes 生成的路由树
-├── theme/                 设计令牌：tokens.json 定义品牌色、圆角等；theme.go 把它嵌入程序
-├── packages/client/       共用的客户端包 @todo/client
-│   └── src/api/           /api 的 TypeScript 客户端，由 tenon generate 生成
-├── packages/theme/        由设计令牌生成的主题包 @todo/theme：tokens.css 和 antd 的令牌
-└── .tenon/                tenon 生成的内容，不提交：框架的前端包 js/、开发服务器的地址 dev.yaml
+│       └── routes/        页面：一个文件一个页面
+├── theme/                 品牌色、圆角等设计参数（设计令牌）
+├── packages/client/       生成的 TypeScript 客户端，前端用它调用接口
+├── packages/theme/        由设计令牌生成的样式
+└── .tenon/                开发工具生成的内容，不提交到代码仓库
 ```
 
-Go 代码在 `cmd` 和 `internal` 中，前端在 `apps` 中，每个前端一个目录；生成的客户端在 `packages/client` 中，前端用 `@todo/client/api` 导入。构建时前端打进二进制，部署时通常带上这一个文件和配置目录即可。用 [tenon add frontend](tooling.md#add-frontend) 再加一个前端，例如运营后台。目录约定见[目录结构](../concepts/structure.md)，页面与路由见[应用骨架](../responses/app-shell.md)，品牌色和圆角见[设计令牌](../responses/theme.md)。
+刚开始只需要关心三个地方：
+
+- **`internal/`**：业务代码。`internal/todo` 是一个例子，你的业务也按模块放在这里，例如 `internal/article`。
+- **`cmd/api/main.go`**：程序的入口，把业务模块注册到路由上。
+- **`apps/web/src/routes/`**：前端页面。
+
+`packages/` 和 `.tenon/` 由工具生成，不需要手动修改。各个目录的详细约定见[目录结构](../concepts/structure.md)。
 
 <a id="entrypoint"></a>
-## 入口文件在做什么
+## 入口文件
 
-`cmd/api/main.go` 由四部分组成：配置、命令行、`serve` 和 `routes`。
+打开 `cmd/api/main.go`。它和[安装](installing.md#graceful-shutdown)第三步的程序做的是同一件事：创建路由器、安装中间件、注册接口、启动服务、收到信号后平稳地停止。不同的是它多了三样东西：配置文件、命令行和前端页面。我们分段来看。
 
 ### 配置
 
@@ -100,7 +118,7 @@ type Config struct {
 }
 ```
 
-`HTTP` 对应 `config/app.yaml` 里的 `http` 段（例如 `addr: ":8080"`）。`DevServers` 是各前端开发服务器的地址，只在开发时由 `tenon dev` 写入 `.tenon/dev.yaml`，生产环境中为空。配置如何加载与叠加见[配置](../general/configuration.md)。
+`Config` 描述了配置文件 `config/app.yaml` 的结构。`HTTP` 对应文件中的 `http` 段，例如 `addr: ":8080"`。安装那一页中写在代码里的监听地址，现在放进了配置文件，改地址不需要重新编译。`DevServers` 只在开发时由 `tenon dev` 填写，生产环境中为空。配置的写法见[配置](../general/configuration.md)。
 
 ### 命令行
 
@@ -116,14 +134,13 @@ func main() {
 }
 ```
 
-| 片段 | 作用 |
-| --- | --- |
-| `command.Root` | 根命令，带共用的 `--config` |
-| `command.Run("serve", …, serve)` | 创建 `serve`：先读 `.env`、加载并校验配置，再调用 `serve(ctx, cfg)`；收到停止信号时取消 `ctx` |
-| `command.Config[Config]()` | 挂上 `config check`、`config show`，按你的 `Config` 类型解析 YAML |
-| `httpcmd.Commands(…)` | 挂上 `openapi`、`routes`、`client`，供 `go tool tenon generate` 等使用，部署后也可单独调用 |
+程序现在有了子命令。`go run ./cmd/api serve` 启动服务，`go run ./cmd/api config check` 检查配置文件，以后还可以加上 `migrate`（数据库迁移）等命令：
 
-命令行约定见[命令行](../general/commands.md)。
+- **`command.Run("serve", …, serve)`** 创建 `serve` 命令。它先读取并检查配置，再调用 `serve` 函数；收到停止信号时取消 ctx，和安装那一页的第三步一样。
+- **`command.Config[Config]()`** 加上 `config check`、`config show` 两个命令。
+- **`httpcmd.Commands`** 加上 `openapi`（导出接口文档）、`routes`（列出全部路由）、`client`（生成客户端）。开发工具用它们生成前端的客户端。
+
+命令行的写法见[命令行](../general/commands.md)。
 
 ### serve 和 routes
 
@@ -146,41 +163,65 @@ func routes(cfg Config, store *todo.Store) chi.Router {
 }
 ```
 
-`routes` 构造应用的全部路由：`/api` 下是接口，其余路径交给单页应用，页面与 API 同源。`httpx.Defaults` 安装请求 ID、访问日志、恢复 panic 等基础中间件；`Timeout` 只装在 `/api` 上，页面路由可保持长连接。中间件说明见[中间件](../http/middleware.md)。
+`serve` 和安装那一页的 `run` 几乎一样，只是把创建路由的部分拆到了 `routes` 中。`routes` 做了三件事：
 
-`routes` 有两个调用者：
+1. 安装默认的中间件，和安装那一页的第二步相同。
+2. 在 `/api` 下创建 API，注册待办事项的接口。超时中间件只装在 `/api` 上，因为接口应当很快返回，而页面相关的连接可能保持很久。
+3. 其余的地址（`/*`）都交给前端页面，见下一节。
 
-- `serve` 用加载的配置和真实的 `Store` 调用它，启动 HTTP 服务；
-- `openapi`、`routes`、`client` 命令用默认配置和 `nil` 调用它，只读取构造出的路由，生成文档和客户端。
+为什么要把 `routes` 单独拆出来？因为它有两个调用者：
 
-`routes` 只保存 `store`，处理请求时才调用它，所以传 `nil` 也能构造出完整的路由。新增资源时，在 `routes` 里加一行 `Register`，服务和生成的文档、客户端会一起看到它。客户端生成见[客户端](../responses/clients.md)。
+- `serve` 用真实的配置和数据调用它，启动服务；
+- `openapi`、`client` 等命令用默认配置和 `nil` 调用它，只为了读出有哪些接口，生成文档和客户端，不需要真的连接数据库。
 
-<a id="example-resource"></a>
-## 示例资源
-
-`internal/todo/todo.go` 是一个自包含的资源包：
-
-- `Todo`、`Store`：领域类型与内存存储（可并发）；
-- `Register`：四个公开接口——列表、创建、修改、删除；
-- 输入输出用结构体描述，校验规则写在字段标签上（如 `minLength`），错误用 `errorx` 定义。
-
-`Register` 只保存 `s`，处理请求时才调用它，所以生成文档时 `s` 是 `nil` 也能注册全部接口。把内存换成 PostgreSQL 的步骤见[数据库](../database/quick-start.md)和[入门教程](../tutorial/03-database.md)。
+`todo.Register` 只是把 `store` 保存下来，处理请求时才使用它，所以传 `nil` 也能注册全部接口。以后你新增一个业务模块，只需要在 `routes` 中加一行 `Register`，服务、接口文档和客户端都会看到它。
 
 <a id="frontend"></a>
-## 前端与同源
+## 前端与 API 同源
 
-开发时：
+浏览器有一条安全规则：一个网页只能自由地调用**同源**的接口。同源指协议、域名和端口都相同，例如 `http://localhost:8080` 上的页面调用 `http://localhost:8080/api/todos`。如果页面在 5173 端口、接口在 8080 端口，就是跨域，需要额外配置，并且登录用的 cookie 也会受限。
 
-1. 每个前端的 Vite 在 `tenon dev` 选好的端口上提供页面与热更新（只监听本机回环地址）；
-2. Go 在 `8080` 上提供 `/api`，并通过 `SPAOptions.DevServer`（来自 `.tenon/dev.yaml` 的 `dev_servers`）把页面请求——包括 HMR 的 WebSocket——转发给对应的 Vite；
-3. 浏览器始终访问 `http://localhost:8080`（或远端机器的 `8080`），页面与 API 同源。
+所以项目让页面和接口都在同一个端口上：
 
-发布时：`tenon build` 把每个前端的产物写进它的 `dist`，例如 `apps/web/dist`，由同目录 `frontend.go` 的 `embed` 打进二进制；`DevServer` 为空，`SPA` 直接提供静态文件。细节见[单页应用](../responses/spa.md)。
+- **开发时**：前端的开发服务器 Vite 在另一个端口上运行，但你不直接访问它。Go 程序在 8080 端口上处理 `/api` 的请求，把其余的请求（页面、热更新）转发给 Vite。浏览器始终只访问 8080。
+- **发布时**：前端被构建成静态文件，放进 `apps/web/dist`，再由 `frontend.go` 打包进 Go 程序（见 [embed](../concepts/go-primer.md#embed)）。Go 程序直接提供这些文件，不再需要 Vite。
+
+细节见[单页应用](../responses/spa.md)。
+
+<a id="building"></a>
+## 构建
+
+准备上线时，构建出一个可执行文件：
+
+```bash
+bun run build
+./bin/api serve --config config/app.yaml
+```
+
+`bun run build` 先构建前端，再编译 Go 程序，前端打包在其中。部署时只需要带上 `bin/api` 和配置文件，见[部署](deployment.md)。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**`tenon init` 报错目录不是空的**
+
+`init` 只往空目录或不存在的目录中写入，避免覆盖已有的文件。换一个目录名，或者先清空目录。
+
+**`bun: command not found`**
+
+还没有安装 Bun，或者安装后没有重新打开终端，见[准备工作](#requirements)。
+
+**打开 8080 后页面一片空白**
+
+前端的开发服务器还在启动，等终端中出现 Vite 就绪的提示后刷新页面。一直空白时，看终端中有没有前端的报错。
+
+**前端代码中找不到新加的字段**
+
+客户端没有重新生成。开发环境运行时会自动生成；没有运行开发环境时，手动运行 `bun run generate`。
 
 <a id="next-steps"></a>
 ## 下一步
 
-- 跟着[入门教程](../tutorial/README.md)把待办事项换成博客，并接上数据库、登录与草稿；
-- 阅读[开发工具](tooling.md)，了解 `dev` / `build` / `generate` 与 `tenon.json`；
-- 部署见[部署](deployment.md)；
-- 更小的入口见[只写一个 API](installing.md#api-only)。
+- 跟着[入门教程](../tutorial/README.md)把待办事项换成博客：接上数据库、加上登录和草稿；
+- 了解 `dev`、`build`、`generate` 这几个命令的细节，读[开发工具](tooling.md)；
+- 准备上线时读[部署](deployment.md)。

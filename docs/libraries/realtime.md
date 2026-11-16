@@ -228,7 +228,7 @@ members, err := rt.Members(ctx, "editing:"+id.String())
 <a id="presence-stores"></a>
 ### 保存在线成员
 
-在线成员保存在所有实例共用的存储中，登记 presence 频道之前必须设置 `Options.Presence`，否则 `rt.Channel` 会 panic。只有一个实例时也一样：[不停机升级](../installation/deployment.md#zero-downtime-upgrades)时新旧进程同时运行，双方要看到同一份在线成员。在线成员保存在 [Redis](redis.md) 中：
+在线成员保存在所有实例共用的存储中，登记 presence 频道之前必须设置 `Options.Presence`，否则 `rt.Channel` 会 panic。只有一个实例时也一样：[不停机升级](../installation/operations.md#zero-downtime-upgrades)时新旧进程同时运行，双方要看到同一份在线成员。在线成员保存在 [Redis](redis.md) 中：
 
 ```go
 rt, err := realtime.New(hub, realtime.Options{Presence: redispresence.New(rdb, "app:presence:")})
@@ -316,7 +316,7 @@ location / {
 }
 ```
 
-- 只改了接口和页面时，[升级](../installation/deployment.md#zero-downtime-upgrades) `serve` 即可，实时连接保持在线；改了频道规则、授权函数，或者升级了框架，再升级 `realtime`。
+- 只改了接口和页面时，[升级](../installation/operations.md#zero-downtime-upgrades) `serve` 即可，实时连接保持在线；改了频道规则、授权函数，或者升级了框架，再升级 `realtime`。
 - `start` 中的 `HTTP` 已经挂载了实时频道，`Realtime` 只在单独部署时使用。
 - `realtime` 进程同样可以运行多个实例，它们与 `serve`、`work` 共用 Hub 后端，业务代码在哪个进程中发布都一样。
 

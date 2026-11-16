@@ -120,7 +120,7 @@ root.AddCommand(command.Run("schedule", "执行定时任务", bootstrap.Schedule
 
 部署多个实例时，每个实例上的调度器都会在同一时刻触发同一个任务。调度器在执行之前取得一把锁，锁名包含任务名和触发时刻，例如 `schedule:queue:prune-failed:1794366000`，只有取得锁的实例执行这一次触发。锁一分钟后自然过期，所以各实例的时钟偏差小于一分钟时，每次触发只执行一次。
 
-所有进程共用同一个 [Redis 锁存储](locks.md#redis-store)，去重就覆盖全部实例。单机部署也一样：[不停机升级](../installation/deployment.md#upgrade-overlap)时新旧两个调度器会同时运行。过期的锁由 Redis 自动删除。
+所有进程共用同一个 [Redis 锁存储](locks.md#redis-store)，去重就覆盖全部实例。单机部署也一样：[不停机升级](../installation/operations.md#upgrade-overlap)时新旧两个调度器会同时运行。过期的锁由 Redis 自动删除。
 
 只想在每个实例上各执行一次的任务，例如清理本机的临时目录，使用 `schedule.EveryInstance()`：
 
