@@ -49,3 +49,35 @@ func TestContent(t *testing.T) {
 	assert.ErrorIs(t, err, ai.ErrUnsupportedInput)
 	assert.ErrorContains(t, err, "input 1 has media")
 }
+
+func TestDataURL(t *testing.T) {
+	png := ai.Media{Data: []byte("PNG"), MIME: "image/png"}
+	assert.Equal(t, "data:image/png;base64,UE5H", png.DataURL())
+	got, err := ai.ParseDataURL(png.DataURL())
+	require.NoError(t, err)
+	assert.Equal(t, png, got)
+
+	got, err = ai.ParseDataURL("data:text/plain;charset=utf-8,%E4%BD%A0%E5%A5%BD")
+	require.NoError(t, err)
+	assert.Equal(t, ai.Media{Data: []byte("你好"), MIME: "text/plain"}, got)
+
+	for _, bad := range []string{"image/png;base64,UE5H", "data:image/png;base64", "data:image/png;base64,***", "data:;;;,x"} {
+		_, err := ai.ParseDataURL(bad)
+		assert.ErrorContains(t, err, "malformed data URL", bad)
+	}
+}
+
+func TestTopRanked(t *testing.T) {
+	results := []ai.Ranked{{Index: 0, Score: 0.2}, {Index: 2, Score: 0.9}, {Index: 1, Score: 0.2}}
+	got, err := ai.TopRanked(results, 3, 2)
+	require.NoError(t, err)
+	assert.Equal(t, []ai.Ranked{{Index: 2, Score: 0.9}, {Index: 0, Score: 0.2}}, got)
+	assert.Equal(t, 0, results[0].Index, "results is not modified")
+
+	got, err = ai.TopRanked(results, 3, 0)
+	require.NoError(t, err)
+	assert.Len(t, got, 3)
+
+	_, err = ai.TopRanked(results, 2, 0)
+	assert.ErrorContains(t, err, "rerank index 2 out of range")
+}

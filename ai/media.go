@@ -2,6 +2,11 @@ package ai
 
 import (
 	"context"
+	"encoding/base64"
+	"mime"
+	"net/url"
+	"sort"
+	"strings"
 
 	"github.com/cockroachdb/errors"
 )
@@ -14,6 +19,43 @@ type Media struct {
 	MIME string
 	// Name 是可选的名称。决策时写在图片前面，问题可以用它指代这张图片，例如“front 中的商品是否有破损”。
 	Name string
+}
+
+// DataURL 把内容编码为 data URL，例如 data:image/png;base64,…。
+func (m Media) DataURL() string {
+	return "data:" + m.MIME + ";base64," + base64.StdEncoding.EncodeToString(m.Data)
+}
+
+// ParseDataURL 解析 data:[<MIME 类型>][;base64],<内容>，返回内容和 MIME 类型。
+func ParseDataURL(s string) (Media, error) {
+	rest, ok := strings.CutPrefix(s, "data:")
+	header, payload, comma := strings.Cut(rest, ",")
+	if !ok || !comma {
+		return Media{}, errors.New("ai: malformed data URL")
+	}
+	header, isBase64 := strings.CutSuffix(header, ";base64")
+	var m Media
+	if header != "" {
+		t, _, err := mime.ParseMediaType(header)
+		if err != nil {
+			return Media{}, errors.Wrap(err, "ai: malformed data URL")
+		}
+		m.MIME = t
+	}
+	if isBase64 {
+		data, err := base64.StdEncoding.DecodeString(payload)
+		if err != nil {
+			return Media{}, errors.Wrap(err, "ai: malformed data URL")
+		}
+		m.Data = data
+		return m, nil
+	}
+	data, err := url.PathUnescape(payload)
+	if err != nil {
+		return Media{}, errors.Wrap(err, "ai: malformed data URL")
+	}
+	m.Data = []byte(data)
+	return m, nil
 }
 
 // Aspect 是图片的宽高比例。
@@ -111,6 +153,22 @@ type Ranked struct {
 // 模型不接受某项输入时返回 ErrUnsupportedInput。
 type Reranker interface {
 	Rerank(ctx context.Context, query Content, docs []Content, limit int) ([]Ranked, error)
+}
+
+// TopRanked 整理重排模型返回的 results，供 Reranker 的实现使用：检查 Index 都在 docs 个文档的范围内，
+// 按 Score 从高到低排序（分数相同的保持原来的顺序），limit 大于 0 时只保留前 limit 项。
+func TopRanked(results []Ranked, docs, limit int) ([]Ranked, error) {
+	for _, r := range results {
+		if r.Index < 0 || r.Index >= docs {
+			return nil, errors.Newf("ai: rerank index %d out of range", r.Index)
+		}
+	}
+	out := append([]Ranked(nil), results...)
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Score > out[j].Score })
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
 }
 
 // RerankBy 用 r 给 items 排序，content 取出每一项用于比较的内容，返回最相关的 limit 项。

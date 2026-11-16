@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"sort"
 	"strings"
 
 	"github.com/cockroachdb/errors"
@@ -337,18 +336,12 @@ func (c *Client) Rerank(ctx context.Context, query ai.Content, docs []ai.Content
 	if err := c.client.Post(ctx, "rerank", p, &resp); err != nil {
 		return nil, errors.Wrap(err, "ai/openai: rerank")
 	}
-	out := make([]ai.Ranked, 0, len(resp.Results))
-	for _, r := range resp.Results {
-		if r.Index < 0 || r.Index >= len(docs) {
-			return nil, errors.Newf("ai/openai: rerank index %d out of range", r.Index)
-		}
-		out = append(out, ai.Ranked{Index: r.Index, Score: r.RelevanceScore})
+	out := make([]ai.Ranked, len(resp.Results))
+	for i, r := range resp.Results {
+		out[i] = ai.Ranked{Index: r.Index, Score: r.RelevanceScore}
 	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].Score > out[j].Score })
-	if p.TopN > 0 && len(out) > p.TopN {
-		out = out[:p.TopN]
-	}
-	return out, nil
+	ranked, err := ai.TopRanked(out, len(docs), limit)
+	return ranked, errors.Wrap(err, "ai/openai: rerank")
 }
 
 var extensions = map[string]string{

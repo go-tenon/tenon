@@ -2,7 +2,6 @@ package openai
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"strconv"
 	"strings"
@@ -13,11 +12,6 @@ import (
 )
 
 var _ ai.Decider = (*Client)(nil)
-
-// DataURL 把图片编码为 data URL。
-func DataURL(m ai.Media) string {
-	return "data:" + m.MIME + ";base64," + base64.StdEncoding.EncodeToString(m.Data)
-}
 
 type decisionAnswer struct {
 	Type          string  `json:"type"`
@@ -86,7 +80,7 @@ func decisionInput(req ai.DecisionRequest) any {
 		if img.Name != "" {
 			parts = append(parts, map[string]any{"type": "input_text", "text": img.Name + ":"})
 		}
-		parts = append(parts, map[string]any{"type": "input_image", "image_url": DataURL(img)})
+		parts = append(parts, map[string]any{"type": "input_image", "image_url": img.DataURL()})
 	}
 	return []map[string]any{{"role": "user", "content": parts}}
 }

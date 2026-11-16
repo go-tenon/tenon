@@ -81,7 +81,7 @@ func (c *Client) Image(ctx context.Context, req ai.ImageRequest) (ai.Media, erro
 	for _, ref := range req.References {
 		var r imageRef
 		r.Type = "image_url"
-		r.ImageURL.URL = openai.DataURL(ref)
+		r.ImageURL.URL = ref.DataURL()
 		p.InputReferences = append(p.InputReferences, r)
 	}
 	var resp imageResponse

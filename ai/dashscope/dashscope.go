@@ -7,10 +7,8 @@ package dashscope
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"io"
-	"sort"
 	"strings"
 
 	"github.com/cockroachdb/errors"
@@ -89,6 +87,9 @@ func New(cfg ai.ModelConfig, opts ...Option) *Client {
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = defaultBaseURL
 	}
+	if c.batchSize <= 0 {
+		c.batchSize = DefaultBatchSize
+	}
 	c.native = strings.TrimSuffix(strings.TrimSuffix(cfg.BaseURL, "/"), compatiblePath)
 	c.Client = openai.New(cfg, c.openaiOpts...)
 	return c
@@ -132,7 +133,7 @@ func itemOf(c ai.Content) (item, error) {
 		return item{}, errors.Wrap(ai.ErrUnsupportedInput, "more than one media in an input")
 	}
 	if len(media) == 1 {
-		url := "data:" + media[0].MIME + ";base64," + base64.StdEncoding.EncodeToString(media[0].Data)
+		url := media[0].DataURL()
 		switch media[0].Modality() {
 		case ai.ModalityImage:
 			it.Image = url
@@ -207,12 +208,8 @@ func (c *Client) Embed(ctx context.Context, req ai.EmbedRequest) ([][]float32, e
 			params.Instruct = c.instruct
 		}
 	}
-	size := c.batchSize
-	if size <= 0 {
-		size = DefaultBatchSize
-	}
 	out := make([][]float32, len(items))
-	for _, b := range batches(items, size) {
+	for _, b := range batches(items, c.batchSize) {
 		start, part := b[0], items[b[0]:b[1]]
 		body := embedBody{Model: c.Model(), Parameters: params}
 		body.Input.Contents = part
@@ -305,18 +302,12 @@ func (c *Client) Rerank(ctx context.Context, query ai.Content, docs []ai.Content
 	if err := c.post(ctx, rerankPath, body, &resp); err != nil {
 		return nil, errors.Wrap(err, "ai/dashscope: rerank")
 	}
-	out := make([]ai.Ranked, 0, len(resp.Output.Results))
-	for _, r := range resp.Output.Results {
-		if r.Index < 0 || r.Index >= len(docs) {
-			return nil, errors.Newf("ai/dashscope: rerank index %d out of range", r.Index)
-		}
-		out = append(out, ai.Ranked{Index: r.Index, Score: r.RelevanceScore})
+	out := make([]ai.Ranked, len(resp.Output.Results))
+	for i, r := range resp.Output.Results {
+		out[i] = ai.Ranked{Index: r.Index, Score: r.RelevanceScore}
 	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].Score > out[j].Score })
-	if limit > 0 && len(out) > limit {
-		out = out[:limit]
-	}
-	return out, nil
+	ranked, err := ai.TopRanked(out, len(docs), limit)
+	return ranked, errors.Wrap(err, "ai/dashscope: rerank")
 }
 
 // Decide 实现 ai.Decider，使用百炼的 System One 接口。
