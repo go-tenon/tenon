@@ -4,6 +4,8 @@
 
 这个模式只用到普通的 Go 类型和方法：每个动作由构造函数创建，由调用者显式调用。
 
+阅读前需要了解：[依赖装配](dependencies.md)；[入门教程第 4 章](../tutorial/04-api.md#actions)写过几个简单的动作。
+
 - [为什么按动作组织](#why)
 - [编写动作](#writing-actions)
 - [模块内共享的代码](#shared-code)
@@ -20,6 +22,7 @@
     - [钩子里做什么](#what-hooks-do)
 - [数据对象](#data-objects)
 - [约定](#conventions)
+- [常见问题](#troubleshooting)
 
 <a id="why"></a>
 ## 为什么按动作组织
@@ -28,15 +31,7 @@
 
 但业务会不断增长。几个月后，`ArticleService` 有了二十个方法和十几个依赖：发布要发邮件，所以它依赖邮件服务；导入要读表格，所以它依赖文件存储；统计要查缓存……每个方法只用到其中一两个依赖，但构造这个 Service 时必须把它们全部准备好。想修改“发布文章”的规则，你得在一个上千行的文件中找到它，还要小心别影响其他方法。
 
-按动作组织则把每个业务动作拆成独立的类型：
-
-```go
-type Publish struct {
-    db *bun.DB
-}
-```
-
-`Publish` 只依赖它真正需要的东西。修改“发布文章”时，只需要看 `publish.go` 一个文件；新增一个业务动作，就新增一个文件，每个类型都保持很小。
+按动作组织则把每个业务动作拆成独立的类型，例如“发布文章”是一个只保存数据库连接的 `Publish` 结构体（见下一节），它只依赖它真正需要的东西。修改“发布文章”时，只需要看 `publish.go` 一个文件；新增一个业务动作，就新增一个文件，每个类型都保持很小。
 
 <a id="writing-actions"></a>
 ## 编写动作
@@ -264,17 +259,7 @@ func Commands(db *bun.DB) *cobra.Command {
 }
 ```
 
-这里有一个问题：构造命令行时，配置还没有加载，数据库也没有打开，`db` 从哪里来？入口用 `command.Bind` 解决这个问题，它让依赖推迟到执行命令时才装配，见[只在执行时装配的命令](dependencies.md#deferred-commands)：
-
-```go
-func Commands() []*cobra.Command {
-    return command.Bind(open, func(a *App) []*cobra.Command {
-        return []*cobra.Command{article.Commands(a.db)}
-    })
-}
-```
-
-把这些命令[加到根命令上](../general/commands.md#declaring-the-cli)之后，就可以这样运行：
+这里有一个问题：构造命令行时，配置还没有加载，数据库也没有打开，`db` 从哪里来？入口用 `command.Bind` 把依赖推迟到执行命令时才装配，写法见[只在执行时装配的命令](dependencies.md#deferred-commands)。把这些命令[加到根命令上](../general/commands.md#declaring-the-cli)之后，就可以这样运行：
 
 ```bash
 ./bin/api article publish 0193e7a2-7c1e-7b4a-9d2f-3c5a1e8b6f10
@@ -282,7 +267,7 @@ func Commands() []*cobra.Command {
 ```
 
 > [!IMPORTANT]
-> 声明命令时传入的依赖都是零值，所以 `Commands` 和业务动作的构造函数只**保存**依赖，执行时才**使用**它们。同样的原因，`RunE` 用 `cmd.Flags().GetString` 这类方法读取选项：真正执行的是重新声明的命令，其中用 `StringVar` 绑定的变量始终是零值。
+> 声明命令时传入的依赖都是零值，真正执行的是用装配好的依赖重新声明的命令。所以 `RunE` 要用 `cmd.Flags().GetString` 这类方法读取选项，用 `StringVar` 绑定的变量始终是零值。
 
 <a id="as-tools"></a>
 ### AI 工具
@@ -440,12 +425,24 @@ article.Commands(a.db, onPublished)
 <a id="conventions"></a>
 ## 约定
 
-最后，总结一下编写业务动作时的几条约定：
-
-- **命名**：类型名是动词，包名已经说明了对象，例如 `article.Publish`、`article.Create`；文件名与类型名对应，例如 `publish.go`。
-- **构造函数只保存依赖**：生成 OpenAPI 文档、[查看路由](../http/routing.md#listing-routes)和[声明命令](#as-commands)时，业务动作会被构造，但传入的依赖都是零值，方法在执行时才被调用。
-- **字段只保存依赖**：业务动作会被并发调用，请求的数据只能放在参数和局部变量中。
+- **命名**：类型名是动词，包名已经说明了对象，例如 `article.Publish`；文件名与类型名对应，例如 `publish.go`。
+- **构造函数和字段只保存依赖**，见下面的常见问题。
 - **`Handle` 是唯一的业务入口**：入口方法只做转换，按来源命名为 `HTTP`、`Job`、`Command`、`Tool`。
 - **测试 `Handle`**：业务规则直接调用 `Handle` 测试，入口的认证和验证通过 HTTP 测试覆盖，见[测试](../testing/database.md#testing-actions)。
 
-这些都是推荐的约定，由团队自己遵守。简单的接口也可以直接用一个函数作为处理器，见[路由](../http/routing.md#basic-routing)。
+这些是推荐的约定，不是强制的。简单的接口也可以直接用一个函数作为处理器，见[路由](../http/routing.md#basic-routing)。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**`openapi`、`routes` 或 `--help` 时 panic**
+
+构造函数或 `Register` 中使用了依赖。生成文档、[查看路由](../http/routing.md#listing-routes)和[声明命令](#as-commands)时，动作会被构造，但传入的依赖都是零值。构造函数只保存依赖，方法执行时才使用它们。
+
+**并发请求时数据错乱：一个请求读到了另一个请求的数据**
+
+把请求的数据存到了动作的字段中。同一个动作会被很多请求同时调用，请求的数据只能放在参数和局部变量中。用 `go test -race` 可以发现这类问题。
+
+**一个动作需要调用另一个动作**
+
+把另一个动作作为依赖，通过构造函数传入，调用它的 `Handle`，见[页面、其他动作和脚本](#direct-calls)。

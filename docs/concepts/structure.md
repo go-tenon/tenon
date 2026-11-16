@@ -1,9 +1,12 @@
 # 目录结构
 
-要用好 Tenon，先要了解一个应用是怎样组织的：代码放在哪里，哪些文件由框架生成，哪些由你编写。
+这一页介绍一个 Tenon 应用的代码放在哪里：每个目录放什么，哪些文件由工具生成、哪些由你编写，以及框架的各个包分别做什么。读完之后，你在其他文档中看到一段代码，就知道它应该放在项目的哪个位置。
 
-路由、命令和队列任务都在代码里显式注册，目录结构由你决定。本页介绍的是一种**推荐**的结构。`tenon init` 生成的项目和[入门教程](../tutorial/README.md)都按它组织，你可以从它开始，再按团队的习惯调整。
+Tenon 不会按目录自动发现代码：路由、命令和队列任务都在代码中明确地注册，所以目录怎样组织由你决定。这一页介绍的是一种**推荐**的结构，`tenon init` 生成的项目和[入门教程](../tutorial/README.md)都按它组织。你可以从它开始，再按团队的习惯调整。
 
+阅读前需要了解：[脚手架](../installation/scaffolding.md)。
+
+- [从小项目开始](#starting-small)
 - [默认目录](#application-layout)
     - [cmd](#the-cmd-directory)
     - [internal/bootstrap](#the-bootstrap-directory)
@@ -11,17 +14,44 @@
     - [migrations](#the-migrations-directory)
     - [locales](#the-locales-directory)
     - [apps 和 packages](#the-frontend-directory)
+- [新增一个业务模块](#adding-a-module)
 - [命名约定](#naming-conventions)
+- [常见问题](#troubleshooting)
 - [框架包一览](#framework-packages)
     - [基础](#foundation)
     - [基础设施](#infrastructure)
     - [入口](#entry)
     - [功能](#features)
 
+<a id="starting-small"></a>
+## 从小项目开始
+
+`tenon init` 生成的项目只有几个目录：
+
+```text
+todo/
+├── config/app.yaml        配置
+├── cmd/api/main.go        程序的入口
+├── internal/todo/         一个业务模块
+├── apps/web/              前端
+└── packages/client/       生成的 TypeScript 客户端
+```
+
+刚开始时，所有的装配代码都在 `cmd/api/main.go` 中。随着应用变大，会依次出现新的目录：
+
+| 什么时候 | 新增 | 见 |
+| --- | --- | --- |
+| 接上数据库 | `compose.yaml`、`migrations/`，装配代码从 `main.go` 移到 `internal/bootstrap/` | [教程第 2、3 章](../tutorial/02-infrastructure.md) |
+| 写业务错误的提示 | `locales/` | [教程第 4 章](../tutorial/04-api.md#messages) |
+| 加上登录 | `internal/auth/`、`internal/user/`，以及保存密钥的 `.env` | [教程第 6 章](../tutorial/06-login.md) |
+| 加上后台 | `apps/admin/` | [教程第 8 章](../tutorial/08-admin.md) |
+
+不需要一开始就建好所有目录，等到真正有代码要放时再创建。
+
 <a id="application-layout"></a>
 ## 默认目录
 
-一个完整的应用通常是这样的：
+一个功能完整的应用通常是这样的：
 
 ```text
 blog/
@@ -46,7 +76,9 @@ blog/
 └── .tenon/                tenon 生成的内容，不提交
 ```
 
-一个刚起步的应用只需要 `cmd` 和一个业务包，其他目录等到真正有代码要放时再创建。下面依次介绍每个目录的作用。
+为什么业务代码放在 `internal` 下？这是 Go 的规则：`internal` 目录中的包只能被同一个 module 中的代码导入，其他项目无法导入它们。应用的代码本来就不是给别人用的库，放在 `internal` 下，以后修改时不用担心影响别人。
+
+下面依次介绍每个目录的作用。
 
 <a id="the-cmd-directory"></a>
 ### cmd
@@ -104,6 +136,20 @@ blog/
 > [!NOTE]
 > `packages/client/src` 中每个 API 一个目录，是生成的 TypeScript 客户端，每次修改接口后都会重新生成，见[客户端代码](../responses/clients.md)。
 
+<a id="adding-a-module"></a>
+## 新增一个业务模块
+
+以给博客加上评论为例，看看一个新模块会涉及哪些目录：
+
+1. **表结构**：`go run ./cmd/api migrate make create_comments_table`，在 `migrations/` 中写建表语句。
+2. **业务代码**：新建 `internal/comment/`。`comment.go` 放模型和业务错误，`create.go`、`delete.go` 等每个动作一个文件，见[业务动作](actions.md)。
+3. **路由**：在 `internal/comment/routes.go` 中写 `Register` 函数，注册本模块的接口。
+4. **装配**：在 `internal/bootstrap/http.go` 的路由中调用 `comment.Register`，把需要的依赖（例如数据库）传进去，见[依赖装配](dependencies.md)。
+5. **错误提示**：在 `locales/zh-CN.yaml` 中加上新错误码的提示。
+6. **前端**：开发环境重新生成客户端后，在 `apps/web/src/routes/` 中写页面，用 `api.comment.create()` 调用接口。
+
+除了第 4 步要改 `bootstrap`，其他改动都在新模块自己的目录中。这就是按业务分包的好处：一个模块的代码集中在一起，删除这个功能时，删掉这个目录和 `bootstrap` 中的一行即可。
+
 <a id="naming-conventions"></a>
 ## 命名约定
 
@@ -124,10 +170,27 @@ blog/
 | 业务错误码 | `资源.原因` | `article.not_found` |
 | 缩写 | 全大写 | `ID`、`HTTP`、`URL`、`TTL` |
 
+<a id="troubleshooting"></a>
+## 常见问题
+
+**编译报错 `import cycle not allowed`**
+
+两个包互相导入了对方。常见的情况是：`article` 导入了 `user`，`user` 又导入了 `article`。把两边都要用的部分移到其中一个包中，或者移到一个新的、更底层的包中；也可以让一方通过接口或函数参数拿到它需要的东西，而不是直接导入对方，见[依赖装配](dependencies.md)。
+
+**其他项目导入不了我的包，报错 `use of internal package ... not allowed`**
+
+`internal` 下的包只能在本 module 中导入。确实要共享的代码，移到 `internal` 之外的目录。
+
+**新加的业务模块的接口没有出现在接口文档中**
+
+还没有在 `internal/bootstrap/http.go` 中调用它的 `Register`。Tenon 不会自动发现包，每个模块都要在装配时注册。
+
 <a id="framework-packages"></a>
 ## 框架包一览
 
-Tenon 的每个包都可以单独使用，按需引入即可。顶层的包分为四层，每个包只能导入同层或更低层的包：
+这一节是参考资料，不需要一次读完，用到某个功能时再回来查。
+
+Tenon 的每个包都可以单独使用，按需引入即可。顶层的包分为四层，每个包只能导入同层或更低层的包。例如“基础”层的 `errorx` 不会导入“基础设施”层的 `database`，所以你在任何地方使用 `errorx` 都不会意外地引入数据库：
 
 ```text
 功能        apitoken  login  oauthserver  authz  notification  push  activity  feature  settings  operation  webhook  search  vector  sheet/imports  sheet/exports  ai
