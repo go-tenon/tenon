@@ -178,10 +178,12 @@ func (d *Disk) Delete(ctx context.Context, key string) error {
 	return wrap("delete object", err)
 }
 
-// SignPut 签发单次上传地址，绑定长度和类型。
+// SignPut 签发单次上传地址，绑定长度和类型。地址只能创建对象，不能覆盖（If-None-Match: *）：
+// 文件确认之后，还在有效期内的地址不能再替换已经校验过的内容。
 func (d *Disk) SignPut(ctx context.Context, key, contentType string, size int64, ttl time.Duration) (filesystem.SignedRequest, error) {
 	out, err := d.presigner.PresignPutObject(ctx, &awss3.PutObjectInput{
 		Bucket: aws.String(d.bucket), Key: aws.String(key), ContentType: optional(contentType), ContentLength: aws.Int64(size),
+		IfNoneMatch: aws.String("*"),
 	}, awss3.WithPresignExpires(ttl))
 	if err != nil {
 		return filesystem.SignedRequest{}, wrap("presign put", err)
@@ -215,7 +217,7 @@ func (d *Disk) SignPart(ctx context.Context, key, uploadID string, number int32,
 	return signed(out.URL, out.Method, out.SignedHeader), nil
 }
 
-// CompleteMultipart 合并分片；ETag 和分片大小由 S3 校验。
+// CompleteMultipart 合并分片；ETag 和分片大小由 S3 校验。与 SignPut 一样只能创建对象，对象已存在时失败。
 func (d *Disk) CompleteMultipart(ctx context.Context, key, uploadID string, parts []filesystem.Part) error {
 	completed := make([]types.CompletedPart, len(parts))
 	for i, p := range parts {
@@ -223,7 +225,7 @@ func (d *Disk) CompleteMultipart(ctx context.Context, key, uploadID string, part
 	}
 	_, err := d.client.CompleteMultipartUpload(ctx, &awss3.CompleteMultipartUploadInput{
 		Bucket: aws.String(d.bucket), Key: aws.String(key), UploadId: aws.String(uploadID),
-		MultipartUpload: &types.CompletedMultipartUpload{Parts: completed},
+		MultipartUpload: &types.CompletedMultipartUpload{Parts: completed}, IfNoneMatch: aws.String("*"),
 	})
 	return wrap("complete multipart", err)
 }

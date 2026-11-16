@@ -161,7 +161,7 @@ S3 按上传时声明的 `Content-Type` 返回文件。请让 `public_url` 使�
 
 已经有原生 SDK 客户端时，可以用 `s3.New(client, bucket, publicURL)` 创建磁盘；`disk.Client()` 返回原生客户端，供你使用未封装的 S3 功能。
 
-浏览器直传还需要为桶配置 CORS：允许你的站点来源、`PUT` 方法和签名返回的请求头，并暴露 `ETag` 响应头（分片上传需要读取它）。
+浏览器直传还需要为桶配置 CORS：允许你的站点来源、`PUT` 方法和签名返回的请求头（`Content-Type`、`If-None-Match`），并暴露 `ETag` 响应头（分片上传需要读取它）。直传要求存储支持条件写入，见[直传](direct-uploads.md#no-overwrite)。
 
 <a id="assembling-files"></a>
 ## 装配文件服务
