@@ -1,17 +1,30 @@
 // AI 对话的外观：按 shadcn/ui 的 AI Elements（Chat、Message、Reasoning、Tool、Confirmation、Prompt Input）组合。
-// 逻辑在 @go-tenon/shell/chat：消息流、历史、断线续传、停止、插话和审批。
+// 逻辑在 @go-tenon/shell/chat：消息流、历史、断线续传、停止、插话、审批和附件。
 // 用到时安装 AI SDK：bun add ai @ai-sdk/react
 
 import { describeError } from "@go-tenon/client"
 import {
   type AssistantOptions,
+  AttachmentError,
+  type AttachmentOptions,
+  type Attachments,
+  fileParts,
   type PendingApproval,
   useAssistantChat,
   useAssistantHistory,
+  useAttachments,
 } from "@go-tenon/shell/chat"
-import type { UIMessage } from "ai"
-import { ArrowUp, Bot, CircleCheck, CircleX, LoaderCircle, Square, Wrench } from "lucide-react"
-import { type FormEvent, type KeyboardEvent, type ReactNode, useState } from "react"
+import type { FileUIPart, UIMessage } from "ai"
+import { ArrowUp, Bot, CircleCheck, CircleX, FileText, LoaderCircle, Paperclip, Square, Wrench, X } from "lucide-react"
+import {
+  type ClipboardEvent,
+  type DragEvent,
+  type FormEvent,
+  type KeyboardEvent,
+  type ReactNode,
+  useRef,
+  useState,
+} from "react"
 import { Markdown } from "@/components/tenon/markdown"
 import { Bubble, BubbleContent } from "@/components/ui/bubble"
 import { Button } from "@/components/ui/button"
@@ -50,6 +63,8 @@ export interface AssistantChatProps extends AssistantOptions {
   toolTitles?: Record<string, string>
   /** 渲染一条消息中的其他 part（例如应用自己的 data-* 片段）；返回 undefined 时不显示。 */
   renderPart?: (part: Part, message: UIMessage) => ReactNode
+  /** 附件的类型、大小和上传方式；false 时不能发送附件。默认允许 4 MiB 以内的图片和 PDF，以 data URL 发送。 */
+  attachments?: AttachmentOptions | false
   className?: string
 }
 
@@ -224,6 +239,66 @@ const textOf = (parts: Part[]) =>
     .map((p) => (p as { text: string }).text)
     .join("")
 
+/** 用户消息中的文件：图片显示缩略图，其他文件显示文件名，可以下载。 */
+function SentFiles({ files }: { files: FileUIPart[] }): ReactNode {
+  return (
+    <div className="flex flex-wrap justify-end gap-2">
+      {files.map((f, i) => {
+        const name = f.filename ?? (f.mediaType.startsWith("image/") ? "图片" : "文件")
+        // data URL 不能在新标签中打开，改为下载。
+        const link = f.url.startsWith("data:") ? { download: name } : { target: "_blank", rel: "noreferrer" }
+        return f.mediaType.startsWith("image/") ? (
+          // 消息中的文件不会变化，用位置作为 key 是稳定的。
+          <a key={i} href={f.url} {...link}>
+            <img src={f.url} alt={name} className="max-h-40 max-w-60 rounded-lg border object-cover" />
+          </a>
+        ) : (
+          <a
+            key={i}
+            href={f.url}
+            {...link}
+            className="flex max-w-60 items-center gap-2 rounded-lg border px-3 py-2 text-sm"
+          >
+            <FileText className="size-4 shrink-0" />
+            <span className="truncate">{name}</span>
+          </a>
+        )
+      })}
+    </div>
+  )
+}
+
+/** 待发送的附件：图片显示缩略图，其他文件显示文件名，都可以移除。 */
+function PendingFiles({ attachments }: { attachments: Attachments }): ReactNode {
+  return (
+    <div className="flex w-full flex-wrap gap-2">
+      {attachments.items.map((a) => (
+        <div key={a.id} className="relative flex h-14 items-center rounded-md border bg-background">
+          {a.preview ? (
+            <img src={a.preview} alt={a.file.name} className="size-14 rounded-md object-cover" />
+          ) : (
+            <span className="flex max-w-40 items-center gap-2 px-3 text-sm">
+              <FileText className="size-4 shrink-0" />
+              <span className="truncate">{a.file.name}</span>
+            </span>
+          )}
+          <button
+            type="button"
+            aria-label={`移除 ${a.file.name}`}
+            onClick={() => attachments.remove(a.id)}
+            className="absolute -top-1.5 -right-1.5 rounded-full border bg-background p-0.5 text-muted-foreground hover:text-foreground"
+          >
+            <X className="size-3" />
+          </button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/** 错误的说明：附件的问题直接显示，其他按接口错误描述。 */
+const messageOf = (err: unknown) => (err instanceof AttachmentError ? err.message : describeError(err).message)
+
 /** 等待审批的工具调用：显示参数，批准或拒绝。 */
 function Confirmations({
   pending,
@@ -263,28 +338,54 @@ function Conversation({
   placeholder = "输入消息，Enter 发送",
   toolTitles = {},
   renderPart,
+  attachments: attachmentOptions,
   className,
   ...options
 }: AssistantChatProps & { messages: UIMessage[] }): ReactNode {
-  const chat = useAssistantChat({ ...options, messages })
+  const canAttach = attachmentOptions !== false
+  const chat = useAssistantChat({ ...options, messages, attachments: attachmentOptions || undefined })
+  const attachments = useAttachments(attachmentOptions || undefined)
+  const picker = useRef<HTMLInputElement>(null)
+  const [dragging, setDragging] = useState(false)
   const [text, setText] = useState("")
   const [error, setError] = useState<unknown>()
   const turns = toTurns(chat.messages)
   const streamingKey = chat.status === "streaming" ? turns[turns.length - 1]?.key : undefined
   const awaiting = chat.pending.length > 0
 
+  const files = attachments.files
+  // 插话只能是文字：回答进行中不能发送附件。
+  const canSend = !awaiting && (text.trim() !== "" || files.length > 0) && !(chat.busy && files.length > 0)
   const submit = async (e?: FormEvent) => {
     e?.preventDefault()
     const value = text
-    if (!value.trim() || awaiting) return
+    if (!canSend) return
     setText("")
+    attachments.clear()
     setError(undefined)
     try {
-      await chat.send(value)
+      await chat.send(value, files)
     } catch (err) {
       setError(err)
       setText(value)
+      attachments.add(files)
     }
+  }
+  const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
+    if (!canAttach || e.clipboardData.files.length === 0) return
+    e.preventDefault()
+    attachments.add(e.clipboardData.files)
+  }
+  const onDragOver = (e: DragEvent) => {
+    if (!canAttach || !e.dataTransfer.types.includes("Files")) return
+    e.preventDefault()
+    setDragging(true)
+  }
+  const onDrop = (e: DragEvent) => {
+    setDragging(false)
+    if (!canAttach || e.dataTransfer.files.length === 0) return
+    e.preventDefault()
+    attachments.add(e.dataTransfer.files)
   }
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -294,7 +395,20 @@ function Conversation({
   }
   const failure = error ?? chat.error
   return (
-    <div className={cn("flex h-full min-h-0 flex-col gap-3", className)}>
+    <section
+      aria-label="AI 对话"
+      className={cn(
+        "flex h-full min-h-0 flex-col gap-3 rounded-lg",
+        dragging && "outline-2 outline-primary outline-dashed",
+        className,
+      )}
+      onDragOver={onDragOver}
+      onDragLeave={(e) => {
+        // 经过子元素时也会触发，只有离开对话区域时才取消高亮。
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false)
+      }}
+      onDrop={onDrop}
+    >
       {turns.length === 0 ? (
         <Empty className="flex-1">
           <EmptyHeader>
@@ -314,10 +428,13 @@ function Conversation({
                   <MessageScrollerItem key={t.key} messageId={t.key} scrollAnchor={t.role === "user"}>
                     {t.role === "user" ? (
                       <Message align="end">
-                        <MessageContent>
-                          <Bubble align="end" variant="muted">
-                            <BubbleContent className="whitespace-pre-wrap">{textOf(t.parts)}</BubbleContent>
-                          </Bubble>
+                        <MessageContent className="items-end gap-2">
+                          {fileParts(t.parts).length > 0 && <SentFiles files={fileParts(t.parts)} />}
+                          {textOf(t.parts) && (
+                            <Bubble align="end" variant="muted">
+                              <BubbleContent className="whitespace-pre-wrap">{textOf(t.parts)}</BubbleContent>
+                            </Bubble>
+                          )}
                         </MessageContent>
                       </Message>
                     ) : (
@@ -345,22 +462,56 @@ function Conversation({
         </MessageScrollerProvider>
       )}
       <Confirmations pending={chat.pending} respond={chat.respond} toolTitles={toolTitles} />
-      {failure ? (
+      {failure || attachments.error ? (
         <p role="alert" className="text-sm text-destructive">
-          {describeError(failure).message}
+          {attachments.error ?? messageOf(failure)}
         </p>
       ) : null}
       <form onSubmit={(e) => void submit(e)}>
         <InputGroup>
+          {files.length > 0 && (
+            <InputGroupAddon align="block-start">
+              <PendingFiles attachments={attachments} />
+            </InputGroupAddon>
+          )}
           <InputGroupTextarea
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={onKeyDown}
+            onPaste={onPaste}
             placeholder={chat.busy ? "回答进行中，输入的内容会插入这次回答" : placeholder}
             disabled={awaiting}
             aria-label="消息"
           />
-          <InputGroupAddon align="block-end" className="justify-end gap-1">
+          <InputGroupAddon align="block-end" className="gap-1">
+            {canAttach && (
+              <>
+                <input
+                  ref={picker}
+                  type="file"
+                  multiple
+                  hidden
+                  accept={attachments.accept}
+                  aria-label="选择文件"
+                  onChange={(e) => {
+                    attachments.add(e.target.files ?? [])
+                    e.target.value = "" // 同一个文件移除后可以再次选择
+                  }}
+                />
+                <InputGroupButton
+                  type="button"
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label="添加附件"
+                  title={chat.busy ? "回答进行中不能发送文件" : "添加图片或文件"}
+                  disabled={chat.busy || awaiting}
+                  onClick={() => picker.current?.click()}
+                >
+                  <Paperclip />
+                </InputGroupButton>
+              </>
+            )}
+            <span className="flex-1" />
             {chat.busy && (
               <InputGroupButton
                 type="button"
@@ -372,19 +523,13 @@ function Conversation({
                 <Square />
               </InputGroupButton>
             )}
-            <InputGroupButton
-              type="submit"
-              size="icon-sm"
-              variant="default"
-              aria-label="发送"
-              disabled={!text.trim() || awaiting}
-            >
+            <InputGroupButton type="submit" size="icon-sm" variant="default" aria-label="发送" disabled={!canSend}>
               <ArrowUp />
             </InputGroupButton>
           </InputGroupAddon>
         </InputGroup>
       </form>
-    </div>
+    </section>
   )
 }
 

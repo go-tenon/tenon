@@ -169,6 +169,8 @@ bun add ai@^7.0.159 @ai-sdk/react@^4.0.163 @ant-design/x@^2.10.0 @ant-design/x-m
 
 `toolTitles` 是工具的显示名称；应用自己的 `data-*` 片段用 `renderPart` 渲染。
 
+输入框左侧的回形针按钮和粘贴都可以添加附件，待发送的附件显示在输入框上方，可以逐个移除，只有附件也可以发送；发送后附件显示在用户的消息中。回答进行中不能添加附件。`attachments` 设置类型、大小和上传方式，`false` 时不能添加附件，见[附件](app-shell-features.md#chat-attachments)。
+
 <a id="agents"></a>
 ## 给 AI 编程助手的约定
 

@@ -41,6 +41,7 @@ beforeAll(() => {
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+  vi.restoreAllMocks()
 })
 
 async function mount(children: () => ReactNode) {
@@ -259,5 +260,71 @@ describe("AssistantChat", () => {
     expect(screen.getByText("退款")).toBeTruthy() // 工具调用的一行
     const approval = (posts[1] as { message: { parts: { approval?: { approved: boolean } }[] } }).message.parts
     expect(approval.some((p) => p.approval?.approved === true)).toBe(true)
+  })
+
+  it("附件：选择、预览、移除，发送后显示在用户消息中；不支持的文件给出原因；历史中的附件照常显示", async () => {
+    const posts: { message: { parts: { type: string; url?: string; filename?: string }[] } }[] = []
+    vi.spyOn(URL, "createObjectURL").mockImplementation(() => "blob:preview")
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {})
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url.endsWith("/messages")) {
+          return Response.json([
+            {
+              id: "u0",
+              role: "user",
+              parts: [{ type: "file", mediaType: "application/pdf", filename: "合同.pdf", url: "https://x/合同.pdf" }],
+            },
+          ])
+        }
+        if (url.endsWith("/stream")) return new Response(null, { status: 204 })
+        posts.push(JSON.parse(String(init?.body)))
+        return uiStream([
+          { type: "text-start", id: "t1" },
+          { type: "text-delta", id: "t1", delta: "是一只猫" },
+          { type: "text-end", id: "t1" },
+        ])
+      }),
+    )
+    await mount(() => <AssistantChat api="/api/chat" id="c1" />)
+    const old = await screen.findByText("合同.pdf")
+    expect(old.closest("a")?.getAttribute("href")).toBe("https://x/合同.pdf")
+
+    const picker = screen.getByLabelText("选择文件") as HTMLInputElement
+    expect(picker.accept).toBe("image/*,application/pdf")
+    const cat = new File(["PNG"], "cat.png", { type: "image/png" })
+    const notes = new File(["hi"], "notes.txt", { type: "text/plain" })
+    fireEvent.change(picker, { target: { files: [cat, notes] } })
+    expect((await screen.findByAltText("cat.png")).getAttribute("src")).toBe("blob:preview")
+    expect(screen.getByRole("alert").textContent).toBe("不支持这种文件：notes.txt")
+
+    // 移除后再选，只有文件也可以发送。
+    fireEvent.click(screen.getByRole("button", { name: "移除 cat.png" }))
+    expect(screen.queryByAltText("cat.png")).toBeNull()
+    expect(screen.getByRole("button", { name: "发送" }).hasAttribute("disabled")).toBe(true)
+    fireEvent.change(picker, { target: { files: [cat] } })
+    await screen.findByAltText("cat.png")
+    fireEvent.click(screen.getByRole("button", { name: "发送" }))
+    await screen.findByText("是一只猫")
+    expect(posts[0]?.message.parts).toEqual([
+      { type: "file", mediaType: "image/png", filename: "cat.png", url: `data:image/png;base64,${btoa("PNG")}` },
+    ])
+    // 发送后待发送的附件清空，用户消息中显示图片。
+    expect(screen.queryByRole("button", { name: "移除 cat.png" })).toBeNull()
+    expect(screen.getByAltText("cat.png").getAttribute("src")).toBe(`data:image/png;base64,${btoa("PNG")}`)
+  })
+
+  it("attachments={false} 时没有附件按钮", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) =>
+        String(input).endsWith("/messages") ? Response.json([]) : new Response(null, { status: 204 }),
+      ),
+    )
+    await mount(() => <AssistantChat api="/api/chat" id="c1" attachments={false} />)
+    await screen.findByRole("textbox", { name: "消息" })
+    expect(screen.queryByRole("button", { name: "添加附件" })).toBeNull()
   })
 })

@@ -1,20 +1,24 @@
-// AI 对话的外观（Ant Design X）：消息、思考过程、工具调用、等待审批的工具调用、插话和停止。
+// AI 对话的外观（Ant Design X）：消息、思考过程、工具调用、等待审批的工具调用、插话、停止和附件。
 // 这是单独的入口 @go-tenon/admin/chat：只有用到 AI 对话的前端才需要安装 ai、@ai-sdk/react、
 // @ant-design/x 和 @ant-design/x-markdown。逻辑在 @go-tenon/shell/chat。
 
-import { CheckOutlined, CloseOutlined, RobotOutlined, ToolOutlined } from "@ant-design/icons"
-import { Bubble, type BubbleItemType, Sender, Think, ThoughtChain, Welcome } from "@ant-design/x"
+import { CheckOutlined, CloseOutlined, PaperClipOutlined, RobotOutlined, ToolOutlined } from "@ant-design/icons"
+import { Bubble, type BubbleItemType, FileCard, Sender, Think, ThoughtChain, Welcome } from "@ant-design/x"
 import XMarkdown from "@ant-design/x-markdown"
 import { describeError } from "@go-tenon/client"
 import {
   type AssistantOptions,
+  AttachmentError,
+  type AttachmentOptions,
+  fileParts,
   type PendingApproval,
   useAssistantChat,
   useAssistantHistory,
+  useAttachments,
 } from "@go-tenon/shell/chat"
-import type { UIMessage } from "ai"
+import type { FileUIPart, UIMessage } from "ai"
 import { Alert, Button, Card, Drawer, Flex, Space, Spin, Typography } from "antd"
-import { type ReactNode, useState } from "react"
+import { type ReactNode, useRef, useState } from "react"
 
 /** AssistantChat 的选项。 */
 export interface AssistantChatProps extends AssistantOptions {
@@ -27,6 +31,8 @@ export interface AssistantChatProps extends AssistantOptions {
   renderPart?: (part: UIMessage["parts"][number], message: UIMessage) => ReactNode
   /** 对话区域的高度，默认 100%（由外层决定）。 */
   height?: number | string
+  /** 附件的类型、大小和上传方式；false 时不能发送附件。默认允许 4 MiB 以内的图片和 PDF，以 data URL 发送。 */
+  attachments?: AttachmentOptions | false
 }
 
 type Part = UIMessage["parts"][number]
@@ -160,6 +166,35 @@ const textOf = (parts: Part[]) =>
     .map((p) => (p as { text: string }).text)
     .join("")
 
+const kindOf = (mediaType: string) => (mediaType.startsWith("image/") ? "image" : "file")
+
+/** 用户消息中的文件：图片显示缩略图，其他文件显示文件名，点击打开或下载。 */
+function SentFiles({ files }: { files: FileUIPart[] }): ReactNode {
+  const open = (f: FileUIPart) => {
+    const a = document.createElement("a")
+    a.href = f.url
+    // data URL 不能在新标签中打开，改为下载。
+    if (f.url.startsWith("data:")) a.download = f.filename ?? "附件"
+    else a.target = "_blank"
+    a.rel = "noreferrer"
+    a.click()
+  }
+  return (
+    <FileCard.List
+      items={files.map((f, i) => ({
+        key: i,
+        name: f.filename ?? (kindOf(f.mediaType) === "image" ? "图片" : "文件"),
+        type: kindOf(f.mediaType),
+        src: kindOf(f.mediaType) === "image" ? f.url : undefined,
+        onClick: kindOf(f.mediaType) === "image" ? undefined : () => open(f),
+      }))}
+    />
+  )
+}
+
+/** 错误的说明：附件的问题直接显示，其他按接口错误描述。 */
+const messageOf = (err: unknown) => (err instanceof AttachmentError ? err.message : describeError(err).message)
+
 /** 等待审批的工具调用：显示参数，批准或拒绝。 */
 function Approvals({
   pending,
@@ -203,9 +238,13 @@ function Conversation({
   toolTitles = {},
   renderPart,
   height = "100%",
+  attachments: attachmentOptions,
   ...options
 }: AssistantChatProps & { messages: UIMessage[] }): ReactNode {
-  const chat = useAssistantChat({ ...options, messages })
+  const canAttach = attachmentOptions !== false
+  const chat = useAssistantChat({ ...options, messages, attachments: attachmentOptions || undefined })
+  const attachments = useAttachments(attachmentOptions || undefined)
+  const picker = useRef<HTMLInputElement>(null)
   const [text, setText] = useState("")
   const [error, setError] = useState<unknown>()
   const bubbles = toBubbles(chat.messages)
@@ -217,7 +256,10 @@ function Conversation({
     variant: b.role === "user" ? "filled" : "borderless",
     content:
       b.role === "user" ? (
-        textOf(b.parts)
+        <Flex vertical gap={8} align="end">
+          {fileParts(b.parts).length > 0 && <SentFiles files={fileParts(b.parts)} />}
+          {textOf(b.parts) || null}
+        </Flex>
       ) : (
         <AssistantParts
           parts={b.parts}
@@ -231,15 +273,21 @@ function Conversation({
   if (chat.status === "submitted")
     items.push({ key: "loading", role: "ai", placement: "start", content: "", loading: true })
 
+  const files = attachments.files
+  const awaiting = chat.pending.length > 0
+  // 插话只能是文字：回答进行中不能发送附件。
+  const canSend = !awaiting && (text.trim() !== "" || files.length > 0) && !(chat.busy && files.length > 0)
   const submit = async (value: string) => {
-    if (!value.trim()) return
+    if (!canSend) return
     setText("")
+    attachments.clear()
     setError(undefined)
     try {
-      await chat.send(value)
+      await chat.send(value, files)
     } catch (err) {
       setError(err)
       setText(value)
+      attachments.add(files)
     }
   }
   const failure = error ?? chat.error
@@ -253,7 +301,23 @@ function Conversation({
         )}
       </div>
       <Approvals pending={chat.pending} respond={chat.respond} toolTitles={toolTitles} />
-      {failure ? <Alert type="error" showIcon title={describeError(failure).message} /> : null}
+      {failure || attachments.error ? (
+        <Alert type="error" showIcon title={attachments.error ?? messageOf(failure)} />
+      ) : null}
+      {canAttach && (
+        <input
+          ref={picker}
+          type="file"
+          multiple
+          hidden
+          accept={attachments.accept}
+          aria-label="选择文件"
+          onChange={(e) => {
+            attachments.add(e.target.files ?? [])
+            e.target.value = "" // 同一个文件移除后可以再次选择
+          }}
+        />
+      )}
       <Sender
         value={text}
         onChange={setText}
@@ -262,7 +326,40 @@ function Conversation({
         // 回答进行中也可以发送：消息插入这次回答（插话）。
         onSubmit={(v) => void submit(v)}
         onCancel={() => void chat.stop()}
-        disabled={chat.pending.length > 0}
+        disabled={awaiting}
+        onPasteFile={canAttach ? (list) => attachments.add(list) : undefined}
+        header={
+          // 只在有附件时渲染：清空后立即消失，不留下收起中的面板。
+          files.length > 0 && (
+            <Sender.Header title="附件" open closable={false}>
+              <FileCard.List
+                items={attachments.items.map((a) => ({
+                  key: a.id,
+                  name: a.file.name,
+                  byte: a.file.size,
+                  type: a.preview ? "image" : "file",
+                  src: a.preview,
+                }))}
+                removable
+                onRemove={(item) => attachments.remove(String(item.key))}
+              />
+            </Sender.Header>
+          )
+        }
+        prefix={
+          canAttach ? (
+            <Button
+              type="text"
+              aria-label="添加附件"
+              title={chat.busy ? "回答进行中不能发送文件" : "添加图片或文件"}
+              icon={<PaperClipOutlined />}
+              disabled={chat.busy || awaiting}
+              onClick={() => picker.current?.click()}
+            />
+          ) : undefined
+        }
+        // 只有附件、没有文字时也可以发送。
+        suffix={(node, { components: { SendButton } }) => (chat.busy ? node : <SendButton disabled={!canSend} />)}
       />
     </Flex>
   )

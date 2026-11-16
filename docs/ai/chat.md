@@ -273,7 +273,7 @@ React 前端可以直接用 `@go-tenon/shell/chat` 的 [`useAssistantChat`](../f
 <a id="files"></a>
 ### 发送图片和文件
 
-`useChat` 的 `sendMessage` 可以带上文件，`Submit` 把它们和文字一起交给模型，模型直接看到图片、听到音频、读到 PDF：
+`useChat` 的 `sendMessage` 可以带上文件，`Submit` 把它们和文字一起交给模型，模型直接看到图片、听到音频、读到 PDF。使用 `@go-tenon/shell/chat` 时，`send(text, files)` 在发送前检查文件的类型和大小，现成的对话界面带有附件按钮，见[附件](../frontend/app-shell-features.md#chat-attachments)。直接使用 `useChat` 时：
 
 ```tsx
 <form onSubmit={(e) => {
@@ -295,7 +295,15 @@ React 前端可以直接用 `@go-tenon/shell/chat` 的 [`useAssistantChat`](../f
 
 文件片段的 `url` 有两种写法：
 
-- **data URL**：`useChat` 发送 `FileList` 时的默认做法，文件内容在请求体中。默认的[请求体上限](../http/requests.md#body-size)是 1 MiB，助手的路由要按允许的文件大小放宽。文件内容也随对话一起保存在对话存储中，页面打开时 `UIMessages` 原样返回。
+- **data URL**：`useChat` 发送 `FileList` 时的默认做法，文件内容在请求体中，比文件大约三分之一。默认的[请求体上限](../http/requests.md#body-size)是 1 MiB，要按允许的文件大小放宽，`@go-tenon/shell/chat` 的默认限制对应 8 MiB：
+
+  ```yaml
+  http:
+    body_limit:
+      max_bytes: 8388608 # 8 MiB
+  ```
+
+  文件内容也随对话一起保存在对话存储中，页面打开时 `UIMessages` 原样返回。
 - **http(s) 链接**：文件先[上传](../libraries/direct-uploads.md)到 S3 等处，消息中只放链接。链接原样交给模型服务，由模型服务下载，所以它必须能从公网访问，例如有效期足够长的签名地址；应用的服务端不访问它。适合较大的文件，请求体和对话存储都保持精简。
 
 其他写法（例如 `blob:`）和缺少 `mediaType` 的文件返回 `422`。不使用 `useChat` 时，自己构造带 `ContentParts` 的 `model.Message` 交给 `Runs.Start`，例如用 `msg.AddImageData(data, "auto", "png")`。
