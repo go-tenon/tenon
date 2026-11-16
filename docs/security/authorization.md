@@ -426,9 +426,10 @@ func (s *Store) RolesOf(ctx context.Context, ref identity.Ref, tenant string) ([
 func (s *Store) Members(ctx context.Context, tenant string) ([]Member, error)
 func (s *Store) RemoveMember(ctx context.Context, ref identity.Ref, tenant string) (int, error)
 func (s *Store) Tenants(ctx context.Context, ref identity.Ref) ([]string, error)
+func (s *Store) Erase(ctx context.Context, db bun.IDB, ref identity.Ref) error
 ```
 
-`Resolve` 作为 `identity.Accounts` 的 Resolver，按请求所在的租户加载主体的权限；不是租户成员时返回 `ErrNotMember`（404）。`Role.Tenant` 为空的是全局角色，可以在任何租户中分配。
+`Erase` 在 `db` 中撤销主体在所有域中的角色，登记到[注销账号](../features/privacy.md#framework-sources)。`Resolve` 作为 `identity.Accounts` 的 Resolver，按请求所在的租户加载主体的权限；不是租户成员时返回 `ErrNotMember`（404）。`Role.Tenant` 为空的是全局角色，可以在任何租户中分配。
 
 ### identity.Subject.Can
 

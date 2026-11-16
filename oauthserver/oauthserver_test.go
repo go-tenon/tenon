@@ -602,3 +602,27 @@ func withPath(o *oauthserver.Options) {
 	o.Resources = []string{issuer + "/blog/mcp"}
 	o.ConsentURL = "/blog/oauth/consent"
 }
+
+// Erase 删除主体尚未换取令牌的授权码，之后用它换令牌失败。
+func TestErase(t *testing.T) {
+	t.Parallel()
+	e := setup(t)
+	ctx := context.Background()
+	c := e.approve(t, authorizeQuery(nil), true).Query().Get("code")
+	other := identity.Ref{Type: editor.Type, ID: "someone-else"}
+	if err := oauthserver.Erase(ctx, e.db, other); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := e.db.NewSelect().Table("oauth_codes").Count(ctx); err != nil || n != 1 {
+		t.Fatalf("codes after erasing another subject: %d, %v", n, err)
+	}
+	if err := oauthserver.Erase(ctx, e.db, editor.Ref()); err != nil {
+		t.Fatal(err)
+	}
+	if status, body := e.exchange(t, tokenForm(c)); status != http.StatusBadRequest || body["error"] != "invalid_grant" {
+		t.Fatalf("exchange after erase: %d %v", status, body)
+	}
+	if err := oauthserver.Erase(ctx, e.db, identity.Ref{}); err == nil {
+		t.Fatal("expected error for empty subject")
+	}
+}

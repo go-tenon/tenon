@@ -159,6 +159,18 @@ func (s *Service) List(ctx context.Context, owner identity.Subject, q Query) ([]
 	return list, errors.Wrap(err, "operation: list")
 }
 
+// Erase 在 db 中删除主体 ref 在所有租户中发起的操作，用于注销账号。引用操作的表（导入、导出、批量处理的单位）
+// 通过外键级联删除；导出生成的文件是临时文件，到期后由 filesystem 回收。
+// db 通常是注销所在的事务，签名与 privacy.Source 的 Erase 相同。
+func Erase(ctx context.Context, db bun.IDB, ref identity.Ref) error {
+	if err := ref.Validate(); err != nil {
+		return errors.Wrap(err, "operation")
+	}
+	_, err := db.NewDelete().Model((*Operation)(nil)).
+		Where("owner_type = ? AND owner_id = ?", ref.Type, ref.ID).Exec(ctx)
+	return errors.Wrap(err, "operation: erase")
+}
+
 // Cleanup 返回删除创建时间早于 keep 之前的操作的函数，每次最多删除 limit 个，返回删除的个数。
 // 引用操作的表（例如导入的失败行）通过外键级联删除。可以直接交给 schedule.Cleanup。
 func (s *Service) Cleanup(keep time.Duration) func(ctx context.Context, limit int) (int, error) {

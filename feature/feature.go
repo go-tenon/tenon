@@ -297,6 +297,17 @@ func (s *Store) Clear(ctx context.Context, f Flag, scope Scope) error {
 	return errors.Wrap(err, "feature: clear")
 }
 
+// Erase 在 db 中删除为主体 ref 单独做的全部开关设置（Subject 作用域），用于注销账号。
+// db 通常是注销所在的事务，签名与 privacy.Source 的 Erase 相同。
+func Erase(ctx context.Context, db bun.IDB, ref identity.Ref) error {
+	if err := ref.Validate(); err != nil {
+		return errors.Wrap(err, "feature")
+	}
+	_, err := db.NewDelete().Model((*row)(nil)).
+		Where("subject_type = ? AND subject_id = ?", ref.Type, ref.ID).Exec(ctx)
+	return errors.Wrap(err, "feature: erase")
+}
+
 // Settings 返回 f 的全部设置：全员在前，然后是各租户、各主体；租户按 ID 排序，主体按类型和 ID 排序。
 func (s *Store) Settings(ctx context.Context, f Flag) ([]Setting, error) {
 	var rows []row

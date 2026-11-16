@@ -18,6 +18,7 @@ import (
 	"github.com/go-tenon/tenon/apitoken"
 	"github.com/go-tenon/tenon/errorx"
 	"github.com/go-tenon/tenon/httpx"
+	"github.com/go-tenon/tenon/identity"
 	"github.com/go-tenon/tenon/logging"
 	"github.com/go-tenon/tenon/mcpx"
 	"github.com/go-tenon/tenon/outbound"
@@ -276,6 +277,17 @@ func (s *Server) Cleanup(ctx context.Context, limit int) (int, error) {
 	}
 	n, err := res.RowsAffected()
 	return int(n), errors.Wrap(err, "oauthserver: cleanup")
+}
+
+// Erase 在 db 中删除主体 ref 尚未换取令牌的授权码，用于注销账号；它的令牌由 apitoken.Erase 删除。
+// db 通常是注销所在的事务，签名与 privacy.Source 的 Erase 相同。
+func Erase(ctx context.Context, db bun.IDB, ref identity.Ref) error {
+	if err := ref.Validate(); err != nil {
+		return errors.Wrap(err, "oauthserver")
+	}
+	_, err := db.NewDelete().Model((*code)(nil)).
+		Where("subject_type = ? AND subject_id = ?", ref.Type, ref.ID).Exec(ctx)
+	return errors.Wrap(err, "oauthserver: erase")
 }
 
 //go:embed migrations

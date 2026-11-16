@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"sync"
 
+	"github.com/cockroachdb/errors"
 	"github.com/uptrace/bun"
 	"trpc.group/trpc-go/trpc-agent-go/session"
 	tpg "trpc.group/trpc-go/trpc-agent-go/session/postgres"
@@ -86,3 +87,28 @@ func (c client) Transaction(ctx context.Context, fn storage.TxFunc) (err error) 
 }
 
 func (client) Close() error { return nil }
+
+// sessionTables 是 Migrations 中按 user_id 保存对话的表。
+var sessionTables = []string{
+	"agent_session_states", "agent_session_events", "agent_session_track_events",
+	"agent_session_summaries", "agent_user_states",
+}
+
+// EraseUser 在 db 中删除 userID 在全部应用（app_name）中的对话、摘要和用户状态，用于注销账号。
+// trpc-agent-go 删除对话时只标记 deleted_at，EraseUser 直接删除这些行。
+// userID 是 Runs 的方法收到的 userID，由应用约定，例如主体的 ID；登记到 privacy 时包一层：
+//
+//	{Name: "ai_sessions", Erase: func(ctx context.Context, db bun.IDB, ref identity.Ref) error {
+//	    return chat.EraseUser(ctx, db, ref.ID)
+//	}}
+func EraseUser(ctx context.Context, db bun.IDB, userID string) error {
+	if userID == "" {
+		return errors.New("chat: erase user: empty user ID")
+	}
+	for _, table := range sessionTables {
+		if _, err := db.NewDelete().TableExpr(table).Where("user_id = ?", userID).Exec(ctx); err != nil {
+			return errors.Wrapf(err, "chat: erase user from %s", table)
+		}
+	}
+	return nil
+}

@@ -253,18 +253,20 @@ _, err := a.staff.SendCode(ctx, login.Reset, login.Email(in.Email))
 <a id="forget"></a>
 ## 注销账号
 
-`Forget` 删除账号的全部登录标识、密码、二次验证和验证码。在注销账号的事务中与删除账号行一起调用，再撤销 token：
+`Forget` 删除账号的全部登录标识、密码、二次验证和验证码，注销后这个邮箱可以重新注册。它的签名与 `privacy.Source` 的 `Erase` 相同，直接登记到[注销账号](../features/privacy.md)，与账号行、token、推送设备等数据在冷静期结束后一起删除：
 
 ```go
-err := database.RunInTx(ctx, a.db, nil, func(ctx context.Context, tx database.Tx) error {
-    if _, err := tx.NewDelete().Model((*User)(nil)).Where("id = ?", sub.ID).Exec(ctx); err != nil {
-        return err
-    }
-    return a.users.Forget(ctx, tx, sub.Ref())
+deletions := privacy.New(db, privacy.Options{
+    Grace: 15 * 24 * time.Hour,
+    Sources: []privacy.Source{
+        {Name: "users", Erase: user.Erase},
+        {Name: "login", Erase: users.Forget},
+        {Name: "api_tokens", Erase: apitoken.Erase},
+    },
 })
 ```
 
-注销后，这个邮箱可以重新注册。
+申请、冷静期、撤销和执行删除见[注销账号](../features/privacy.md)。
 
 <a id="security-events"></a>
 ## 操作日志与安全提醒

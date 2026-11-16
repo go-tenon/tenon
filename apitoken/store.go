@@ -466,6 +466,18 @@ func (s *Store) RevokeSubject(ctx context.Context, ref identity.Ref) (int, error
 		Where("subject_type = ? AND subject_id = ?", ref.Type, ref.ID).Exec(ctx))
 }
 
+// Erase 在 db 中删除主体 ref 的全部 token，包括个人访问令牌和 OAuth 令牌，用于注销账号。
+// db 通常是注销所在的事务，签名与 privacy.Source 的 Erase 相同。与 RevokeSubject 一样，
+// JWT 模式下已签发的 access token 在 TTL 内仍然可以发起请求。
+func Erase(ctx context.Context, db bun.IDB, ref identity.Ref) error {
+	if err := ref.Validate(); err != nil {
+		return errors.Wrap(err, "apitoken")
+	}
+	_, err := affected(db.NewDelete().Model((*row)(nil)).
+		Where("subject_type = ? AND subject_id = ?", ref.Type, ref.ID).Exec(ctx))
+	return err
+}
+
 // Cleanup 删除最多 limit 个已过期的 token，返回删除的个数。由应用定时调用。
 func (s *Store) Cleanup(ctx context.Context, limit int) (int, error) {
 	if limit <= 0 {

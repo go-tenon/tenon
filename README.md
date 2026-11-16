@@ -45,6 +45,7 @@ go get github.com/go-tenon/tenon@main
 | 给用户发站内通知 | [通知](docs/features/notifications.md) |
 | 给 App 发推送通知 | [移动推送](docs/features/push.md) |
 | 记录谁改了什么 | [操作日志](docs/features/activity.md) |
+| 让用户注销账号、删除个人数据 | [注销账号](docs/features/privacy.md) |
 | 逐步放量、紧急关闭新功能 | [功能开关](docs/features/flags.md) |
 | 让管理员修改站点名称、注册开关等设置 | [设置](docs/features/settings.md) |
 | 导入导出 Excel 和 CSV | [导入与导出](docs/features/import-export.md) |

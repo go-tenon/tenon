@@ -135,3 +135,47 @@ func wait(t *testing.T, r *chat.Run) {
 		t.Fatal("run did not finish")
 	}
 }
+
+// TestEraseUser 删除一个用户在全部应用中的会话和用户状态，不影响其他用户。
+func TestEraseUser(t *testing.T) {
+	t.Parallel()
+	db := dbtest.Open(t, chat.Migrations())
+	ctx := context.Background()
+	s := newSessions(t, db, false)
+	t.Cleanup(func() { _ = s.Close() })
+	for _, key := range []session.Key{
+		{AppName: "blog", UserID: "u1", SessionID: "s1"},
+		{AppName: "shop", UserID: "u1", SessionID: "s2"},
+		{AppName: "blog", UserID: "u2", SessionID: "s3"},
+	} {
+		if _, err := s.CreateSession(ctx, key, session.StateMap{"k": []byte("v")}); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.UpdateUserState(ctx, session.UserKey{AppName: key.AppName, UserID: key.UserID}, session.StateMap{"name": []byte("x")}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rows := func(userID string) int {
+		total := 0
+		for _, table := range []string{"agent_session_states", "agent_user_states"} {
+			n, err := db.NewSelect().TableExpr(table).Where("user_id = ?", userID).Count(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			total += int(n)
+		}
+		return total
+	}
+	if rows("u1") != 4 || rows("u2") != 2 {
+		t.Fatalf("before: u1=%d u2=%d", rows("u1"), rows("u2"))
+	}
+	if err := chat.EraseUser(ctx, db, "u1"); err != nil {
+		t.Fatal(err)
+	}
+	if rows("u1") != 0 || rows("u2") != 2 {
+		t.Fatalf("after: u1=%d u2=%d", rows("u1"), rows("u2"))
+	}
+	if err := chat.EraseUser(ctx, db, ""); err == nil {
+		t.Fatal("expected error for empty user ID")
+	}
+}

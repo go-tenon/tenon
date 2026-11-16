@@ -100,6 +100,7 @@ var rules = map[string]rule{
 	"settings":          {layerFeature, []string{"database", "errorx"}},
 	"activity":          {layerFeature, []string{"identity", "logging"}},
 	"operation":         {layerFeature, []string{"database", "errorx", "i18n", "identity", "queue"}},
+	"privacy":           {layerFeature, []string{"database", "errorx", "identity"}},
 	"webhook":           {layerFeature, []string{"errorx", "identity", "outbound", "queue"}},
 	"push":              {layerFeature, []string{"errorx", "identity", "notification", "queue"}},
 	"push/aliyun":       {layerFeature, []string{"internal/aliyunapi", "outbound", "push", "queue"}},

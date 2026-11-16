@@ -337,6 +337,7 @@ func (s *Server) MetadataPath() string
 func (s *Server) Resource(resource string) mcpx.Resource
 func (s *Server) Cleanup(ctx context.Context, limit int) (int, error)
 func (s *Server) CleanupClients(keep time.Duration) func(ctx context.Context, limit int) (int, error)
+func Erase(ctx context.Context, db bun.IDB, ref identity.Ref) error
 ```
 
-`Routes` 注册授权和令牌端点；`Register` 注册同意页调用的两个接口；`Metadata` 是授权服务器元数据；`Resource` 返回交给 `mcpx` 的受保护资源说明。签发的令牌用 `tokens.ValidateFor(resource)` 校验。
+包级函数 `Erase` 删除主体还没有换成令牌的授权码，登记到[注销账号](../features/privacy.md#framework-sources)。`Routes` 注册授权和令牌端点；`Register` 注册同意页调用的两个接口；`Metadata` 是授权服务器元数据；`Resource` 返回交给 `mcpx` 的受保护资源说明。签发的令牌用 `tokens.ValidateFor(resource)` 校验。

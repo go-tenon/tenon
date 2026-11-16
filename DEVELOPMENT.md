@@ -126,7 +126,7 @@ CI 运行普通的 `go test`，`-race` 会让整个流程慢好几倍。提交�
 - 代码使用 `gofmt` 格式化；
 - 遵循[目录结构](docs/concepts/structure.md#naming-conventions)中的命名约定；
 - 直接暴露社区组件的原生类型（`*bun.DB`、`*slog.Logger`、`*cobra.Command` 等）；
-- 数据库句柄有两种约定：存储（`apitoken.NewStore`、`feature.NewStore` 等）接收 `bun.IDB`，可以用连接池或业务事务构造；自己开启事务的服务（`operation`、`sheet/imports`、`sheet/exports`、`filesystem`）接收 `*bun.DB`，要与业务数据一起提交的方法另外接收 `tx bun.IDB` 参数，或提供 `WithDB`；
+- 数据库句柄有两种约定：存储（`apitoken.NewStore`、`feature.NewStore` 等）接收 `bun.IDB`，可以用连接池或业务事务构造；自己开启事务的服务（`operation`、`sheet/imports`、`sheet/exports`、`filesystem`、`privacy`）接收 `*bun.DB`，要与业务数据一起提交的方法另外接收 `tx bun.IDB` 参数，或提供 `WithDB`；
 - 所有依赖都通过参数显式传递，包级变量只用于只读的值（错误模板、正则表达式等）。
 
 <a id="api-contract"></a>

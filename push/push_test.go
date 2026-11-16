@@ -425,3 +425,21 @@ func TestDeliverThroughQueue(t *testing.T) {
 		t.Fatalf("tokens %v", got)
 	}
 }
+
+func TestErase(t *testing.T) {
+	t.Parallel()
+	db := dbtest.Open(t, migrations(t))
+	ctx := context.Background()
+	register(t, db, alice, push.Android, "phone")
+	register(t, db, identity.Subject{Type: alice.Type, ID: alice.ID, Tenant: "globex", Credential: "token-a2"}, push.IOS, "pad")
+	register(t, db, bob, push.Android, "bob")
+	if err := push.Erase(ctx, db, alice.Ref()); err != nil {
+		t.Fatal(err)
+	}
+	if got := devices(t, db); len(got) != 1 || got["bob"].SubjectID != bob.ID {
+		t.Fatalf("after erase %+v", got)
+	}
+	if err := push.Erase(ctx, db, identity.Ref{}); err == nil {
+		t.Fatal("expected error for empty subject")
+	}
+}
