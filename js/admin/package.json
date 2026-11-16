@@ -27,7 +27,8 @@
     "@ant-design/x": "^2.10.0",
     "@ant-design/x-markdown": "^2.10.0",
     "ai": "^7.0.159",
-    "@ai-sdk/react": "^4.0.163"
+    "@ai-sdk/react": "^4.0.163",
+    "dayjs": "^1.11.11"
   },
   "peerDependenciesMeta": {
     "@types/react": {
