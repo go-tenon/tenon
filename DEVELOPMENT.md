@@ -10,6 +10,7 @@
     - [前端包](#js-packages)
 - [持续集成](#continuous-integration)
 - [编码风格](#coding-style)
+- [接口契约](#api-contract)
 - [编写文档](#writing-documentation)
 
 <a id="introduction"></a>
@@ -127,6 +128,16 @@ CI 运行普通的 `go test`，`-race` 会让整个流程慢好几倍。提交�
 - 直接暴露社区组件的原生类型（`*bun.DB`、`*slog.Logger`、`*cobra.Command` 等）；
 - 数据库句柄有两种约定：存储（`apitoken.NewStore`、`feature.NewStore` 等）接收 `bun.IDB`，可以用连接池或业务事务构造；自己开启事务的服务（`operation`、`sheet/imports`、`sheet/exports`、`filesystem`）接收 `*bun.DB`，要与业务数据一起提交的方法另外接收 `tx bun.IDB` 参数，或提供 `WithDB`；
 - 所有依赖都通过参数显式传递，包级变量只用于只读的值（错误模板、正则表达式等）。
+
+<a id="api-contract"></a>
+## 接口契约
+
+API 的客户端不只是网页：App、桌面端和其他服务都可能调用它，用的语言也不一定是 TypeScript 或 Go。[客户端协议](docs/http/protocol.md)是写给这些客户端的，框架的改动不能让它们只能用某一种语言、只能在浏览器中实现：
+
+- 认证只用 `Authorization: Bearer`，不依赖 Cookie 这类只有浏览器才有的机制；原生应用登录走授权码 + PKCE（[OAuth 服务端](docs/security/oauth-server.md)）；
+- 改动线路上的行为（请求头、状态码、错误响应、分页、事件流、实时频道等）时，同时更新客户端协议。规则以服务端和这一页为准，生成的运行时（`runtime.ts`、`wire/wire.go`）只是它的实现，不能只写在运行时里；
+- 客户端需要的元数据先放进语言无关的来源：接口的信息写进 OpenAPI，框架的扩展字段如 `x-tenon-permissions`、`x-required-permissions`、`x-tenon-enum`；OpenAPI 表达不了的，例如 `errorx.Define` 的错误码和验证提示的翻译，由 `clientgen` 中各语言共用的部分收集。各语言的生成器只负责输出，不自己从 Go 代码推导别的生成器拿不到的信息；
+- `@go-tenon/client` 不依赖 DOM，是其他语言实现客户端时的参考；只在网页中成立的功能放在 `@go-tenon/shell`。
 
 <a id="writing-documentation"></a>
 ## 编写文档
