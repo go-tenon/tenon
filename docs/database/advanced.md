@@ -17,6 +17,7 @@
 - [隔离级别与死锁](#isolation-and-deadlocks)
 - [只读副本](#read-replicas)
 - [多个数据库](#multiple-databases)
+- [常见问题](#troubleshooting)
 
 <a id="slow-queries"></a>
 ## 慢查询
@@ -143,3 +144,26 @@ mig.AddCommand(migratecmd.New(analyticsmigrations.FS, func(c Config) database.Co
 - **没有跨库的事务。** 两个库的修改需要一起成功时，在一个库的事务中发布[任务](../libraries/queue.md)，由任务修改另一个库，任务至少执行一次。
 - **任务在哪个库发布，就要有一个用这个库的 worker 转发**：队列把任务写进发布它的事务所在数据库的 WAL。通常只在主库发布任务；某个模块必须在自己的库中发布时，`work` 进程为这个库再创建一个 `queue.Worker`。
 - 框架包的迁移（队列、权限等）发布到使用它们的那个库，通常是主库。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**日志中出现大量 `slow query`**
+
+执行时间达到 `slow_query`（默认 1 秒）的语句都会记录。按日志中的 `query` 找到语句，用 `EXPLAIN ANALYZE` 查看执行计划，通常是缺少索引；按 `request_id` 找到是哪个请求执行的，见[慢查询](#slow-queries)。
+
+**事务报错 `deadlock detected`**
+
+两个事务按不同的顺序锁住了同一批行，互相等待。让所有事务按相同的顺序加锁（例如按 ID 排序），并在出现死锁时重试，见[隔离级别与死锁](#isolation-and-deadlocks)。
+
+**刚写入的数据，从副本中读不到**
+
+副本上的数据比主库晚一点。写入之后马上要读的场景（例如保存后跳转到详情页）读主库，见[只读副本](#read-replicas)。
+
+**发给副本的语句报错只读**
+
+副本的会话是只读的，写操作要交给主库。用 `database.IsReadOnly` 可以识别这个错误。
+
+**拆库后，某个库中发布的任务一直没有执行**
+
+任务在哪个库发布，就要有一个用这个库的 worker 转发，见[多个数据库](#multiple-databases)。

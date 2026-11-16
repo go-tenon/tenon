@@ -9,6 +9,7 @@
 - [HTTP Basic 认证](#basic-auth)
 - [App 最低版本](#app-version)
 - [响应压缩](#compression)
+- [常见问题](#troubleshooting)
 
 <a id="rate-limiting"></a>
 ## 限流
@@ -151,3 +152,22 @@ router.Use(httpx.Compress())
 - `Range` 请求的部分响应。
 
 [服务端推送](../responses/sse.md)和 [WebSocket](../libraries/realtime.md) 照常工作：`text/event-stream` 直接写出，每条事件立即送达；带 `Upgrade` 请求头的握手原样交给处理器。[静态资源](../responses/assets.md)的 `ETag` 保持不变，浏览器协商时照常得到 `304`。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**浏览器报跨域错误，但服务端已经安装了 `CORS`**
+
+`CORS` 要安装在路由、认证和限流之前，预检请求（`OPTIONS`）才能直接应答，见[跨域请求](#cors)。
+
+**跨域请求带不上 cookie**
+
+`CORS` 默认关闭凭据。只有单页应用与 API 在同一站点的不同子域名、需要发送 refresh token 的 cookie 时才开启，见[跨域请求](#cors)。
+
+**内部页面返回 503，而不是要求输入密码**
+
+Basic 认证的 `verify` 函数返回了错误，日志中有一条 Error 记录，见 [HTTP Basic 认证](#basic-auth)。
+
+**App 收到 426**
+
+App 的版本低于这个平台的最低版本，显示升级页面即可。请求头格式错误时返回 400，见 [App 最低版本](#app-version)。
