@@ -209,7 +209,7 @@ func Work(ctx context.Context, cfg Config) error {
 
 发布的任务要等 worker 转发才会执行，所以部署时**至少运行一个 worker**。`w.Run` 连不上 nsqd 时返回错误；运行后一直到进程收到停止信号，然后停止接收任务，等处理中的任务写回结果才返回；数据库由 `run` 在所有部分都返回之后才关闭。
 
-worker 可以和 HTTP 服务、调度器[运行在同一个进程中](../general/commands.md#running-together)，任务量大了再单独部署，按任务量增减实例数。多个 worker 同时运行是安全的：转发时互不重复，同一个应用的 worker 使用同一个 channel，每个任务只交给其中一个。
+worker 可以和 HTTP 服务、调度器[运行在同一个进程中](../general/commands.md#running-together)，任务量大了再单独部署，按任务量增减实例数；单独部署时的健康检查见[没有 HTTP 服务的进程](../http/lifecycle.md#probe-listener)。多个 worker 同时运行是安全的：转发时互不重复，同一个应用的 worker 使用同一个 channel，每个任务只交给其中一个。
 
 <a id="configuration"></a>
 ### 配置

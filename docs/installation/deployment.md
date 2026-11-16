@@ -126,7 +126,7 @@ CONFIG=--config=config/app.yaml,config/prod.yaml
 | 一起运行 | `start` | 刚上线、规模不大：只有一个进程，部署和监控最简单 |
 | 分开运行 | `serve`、`work`、`schedule` | 任务很多，或者耗时的任务拖慢了接口：各自按负载增减实例 |
 
-建议从 `start` 开始，确实需要时再分开。分开时只需要把 `start` 换成三组分别运行 `serve`、`work`、`schedule` 的实例。
+建议从 `start` 开始，确实需要时再分开。分开时只需要把 `start` 换成三组分别运行 `serve`、`work`、`schedule` 的实例；`work` 和 `schedule` 的健康检查见[健康检查](#health-checks)。
 
 每一部分都可以运行多个实例：
 
@@ -343,6 +343,8 @@ Redis 要配置 `noeviction`：内存满时报错，而不是悄悄删掉锁和�
 - **就绪检查**（例如 `/readyz`）：程序现在能处理请求吗？它检查程序没有在停止，并且数据库等必需的依赖可用。失败时负载均衡暂时不把请求交给这个实例，等依赖恢复后自动重新加入。
 
 这两个地址由应用自己注册，写法见[健康检查](../http/lifecycle.md#health-checks)；再在部署平台中填写对应的路径。
+
+分开运行时，`work` 和 `schedule` 的进程没有 HTTP 服务。在 Kubernetes 这类平台上，给它们设置环境变量 `PROBE_ADDR`，在单独的端口上提供同样的两个路径，见[没有 HTTP 服务的进程](../http/lifecycle.md#probe-listener)。用 systemd 运行时不需要，systemd 通过就绪通知和退出状态管理进程。
 
 <a id="graceful-shutdown"></a>
 ## 平滑停止

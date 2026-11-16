@@ -120,6 +120,8 @@ func Schedule(ctx context.Context, cfg Config) error {
 root.AddCommand(command.Run("schedule", "执行定时任务", bootstrap.Schedule))
 ```
 
+单独部署调度器时的健康检查见[没有 HTTP 服务的进程](../http/lifecycle.md#probe-listener)。
+
 <a id="multiple-instances"></a>
 ## 多个实例
 
