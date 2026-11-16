@@ -129,10 +129,10 @@ func (p *Pages) Error(w http.ResponseWriter, r *http.Request, err error) {
 }
 
 // ErrorReference 返回给用户看的请求编号，例如“请求编号：9F2K…”，按请求的语言翻译；
-// 没有请求 ID（未安装 httpx.AssignRequestID）时返回空字符串。
+// 没有请求 ID（logging.RequestID 为空，例如未安装 httpx.AssignRequestID）时返回空字符串。
 // 5xx 错误的提示和 ui.ErrorPage 带上它：用户报告问题时附上编号，按它在日志中找到这个请求和错误的堆栈。
 func ErrorReference(ctx context.Context) string {
-	id := httpx.RequestID(ctx)
+	id := logging.RequestID(ctx)
 	if id == "" {
 		return ""
 	}

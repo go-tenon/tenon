@@ -222,7 +222,7 @@ func (s *Server) failure(ctx context.Context, tool string, err error) *mcp.CallT
 		if errorx.KindOf(err) == errorx.Unavailable {
 			text = "service temporarily unavailable, try again later"
 		}
-		if id := httpx.RequestID(ctx); id != "" {
+		if id := logging.RequestID(ctx); id != "" {
 			text += " (request " + id + ")"
 		}
 	}

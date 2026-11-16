@@ -17,6 +17,7 @@ import (
 
 	"github.com/go-tenon/tenon/httpx"
 	"github.com/go-tenon/tenon/i18n"
+	"github.com/go-tenon/tenon/logging"
 	"github.com/go-tenon/tenon/ratelimit"
 )
 
@@ -24,7 +25,7 @@ func TestAssignRequestIDReusesOnlyValidInbound(t *testing.T) {
 	t.Parallel()
 	var seen string
 	handler := httpx.AssignRequestID(httpx.DefaultRequestIDConfig())(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		seen = httpx.RequestID(r.Context())
+		seen = logging.RequestID(r.Context())
 		if middleware.GetReqID(r.Context()) != seen {
 			t.Fatal("chi request id differs")
 		}
@@ -52,7 +53,7 @@ func TestAssignRequestIDReadsConfiguredHeader(t *testing.T) {
 	t.Parallel()
 	var seen string
 	handler := httpx.AssignRequestID(httpx.RequestIDConfig{Header: "X-Amzn-Trace-Id"})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		seen = httpx.RequestID(r.Context())
+		seen = logging.RequestID(r.Context())
 	}))
 	req := httptest.NewRequest("GET", "/", nil)
 	req.Header.Set("X-Amzn-Trace-Id", "Root=1-abc")

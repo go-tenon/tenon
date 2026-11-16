@@ -140,7 +140,7 @@ type UpdateInput struct {
 `httpx.AssignRequestID` 中间件会为每个请求确定一个 ID：如果请求头 `X-Request-ID` 已经携带合法的值（1–128 个可打印 ASCII 字符，不含空格，通常由网关生成），就沿用它，否则生成新的 ID。读取哪个请求头可以配置，见[请求 ID](middleware.md#request-id)。在处理器或业务代码中，可以通过请求的 context 读取它：
 
 ```go
-requestID := httpx.RequestID(ctx)
+requestID := logging.RequestID(ctx)
 ```
 
 同一个 ID 会出现在响应头 `X-Request-ID` 以及这个请求的所有日志中。当用户反馈问题时，请他们提供这个 ID，你就能在日志中找到对应的请求。
@@ -218,10 +218,10 @@ http:
 
 验证规则的标签见[验证](validation.md#available-validation-rules)。
 
-### httpx.RequestID
+### logging.RequestID
 
 ```go
 func RequestID(ctx context.Context) string
 ```
 
-当前请求的 ID，没有安装 `AssignRequestID` 时返回空字符串。
+当前请求的 ID，没有安装 `AssignRequestID` 时返回空字符串。它属于 `logging` 包，在这个请求发布的队列任务中读到的也是同一个 ID，见[调用关联](../general/logging.md#request-correlation)。

@@ -3,4 +3,5 @@
 // New 加载框架内置消息与应用的翻译文件，返回原生 Bundle；后加载的同名消息覆盖先加载的。
 // httpx.Locale 中间件按 Accept-Language 协商语言并调用 WithLocale，
 // 之后通过 T、Localizer 与 Locale 在请求范围内翻译。
+// ErrorMessage 按错误码翻译业务错误，HTTP 响应、MCP 工具结果和其他入口共用同一条译文。
 package i18n
