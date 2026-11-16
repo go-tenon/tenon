@@ -61,6 +61,7 @@ bunx shadcn@4.23.0 add ./.tenon/js/registry/r/tenon-rail-layout.json
 | `tenon-data-table` | `DataTable`、`ListToolbar`、`RowActions`、`StatusBadge` | 资源表格：服务端分页、排序和搜索保存在地址中，批量选择，行操作 |
 | `tenon-form` | `useApiForm`、`Field`、`FormError` | react-hook-form 加上生成的校验规则，服务端的字段错误显示在输入框下面 |
 | `tenon-login-form` | `LoginForm` | 登录表单 |
+| `tenon-resource-page` | `ResourcePage`、`ResourceForm`、`FieldValue` | 按[资源](resources.md#console)的定义渲染列表、筛选、表单和操作，console 模板已经带着 |
 | `tenon-notifications` | `NotificationBell`、`OperationCenter`、`OperationProgress` | 通知铃铛（未读数、列表、标记已读）、后台任务的进度，见[通知](app-shell.md#notifications)和[后台操作](app-shell.md#operations) |
 | `tenon-markdown` | `Markdown` | 消息的 Markdown：[Streamdown](https://streamdown.ai) 渲染流式输出，代码块用 shadcn 的 Code Block，带语法高亮和复制按钮 |
 | `tenon-assistant-chat` | `AssistantChat`、`AssistantButton` | AI 对话，见下文 |
