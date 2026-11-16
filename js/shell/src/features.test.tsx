@@ -559,6 +559,72 @@ describe("useAssistantComposer", () => {
   })
 })
 
+function ComposerChat({ onValue }: { onValue: (v: { chat: AssistantChat; composer: AssistantComposer }) => void }) {
+  const chat = useAssistantChat({ api: "/api/chat", id: "c1", messages: history })
+  const composer = useAssistantComposer(chat)
+  useEffect(() => {
+    onValue({ chat, composer })
+  })
+  return null
+}
+
+describe("发送失败", () => {
+  it("服务端没有收下消息：撤回这条消息，恢复文字和附件，error 是原因", async () => {
+    vi.spyOn(URL, "createObjectURL").mockImplementation(() => "blob:x")
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {})
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input).endsWith("/stream")) return new Response(null, { status: 204 })
+        return new Response(
+          JSON.stringify({ status: 409, code: "ai.awaiting_approval", detail: "有工具调用等待审批" }),
+          {
+            status: 409,
+            headers: { "Content-Type": "application/problem+json" },
+          },
+        )
+      }),
+    )
+    let v: { chat: AssistantChat; composer: AssistantComposer } | undefined
+    await mount(() => <ComposerChat onValue={(x) => (v = x)} />)
+    await waitFor(() => expect(v).toBeDefined())
+    act(() => v?.composer.setText("看图"))
+    act(() => v?.composer.attachments.add([new File(["PNG"], "a.png", { type: "image/png" })]))
+    await act(() => v?.composer.submit() ?? Promise.resolve())
+    await waitFor(() => expect(v?.composer.error).toBeDefined())
+    expect(v?.composer.text).toBe("看图")
+    expect(v?.composer.attachments.files.map((f) => f.name)).toEqual(["a.png"])
+    expect(v?.chat.messages.map((m) => m.id)).toEqual(["u0"]) // 没发出去的消息撤回了
+    expect(v?.composer.error).toBe("有工具调用等待审批")
+  })
+
+  it("回答开始后才出错：消息留在对话中，输入框不恢复", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input).endsWith("/stream")) return new Response(null, { status: 204 })
+        const body = new ReadableStream({
+          start(ctl) {
+            ctl.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ type: "start", messageId: "a1" })}\n\n`))
+            ctl.error(new TypeError("network error"))
+          },
+        })
+        return new Response(body, {
+          headers: { "Content-Type": "text/event-stream", "x-vercel-ai-ui-message-stream": "v1" },
+        })
+      }),
+    )
+    let v: { chat: AssistantChat; composer: AssistantComposer } | undefined
+    await mount(() => <ComposerChat onValue={(x) => (v = x)} />)
+    await waitFor(() => expect(v).toBeDefined())
+    act(() => v?.composer.setText("讲个故事"))
+    await act(() => v?.composer.submit() ?? Promise.resolve())
+    await waitFor(() => expect(v?.chat.error).toBeDefined())
+    expect(v?.composer.text).toBe("")
+    expect(v?.chat.messages.map((m) => m.role)).toEqual(["user", "user"]) // 服务端收下了，消息不撤回
+  })
+})
+
 describe("useAttachments", () => {
   it("加入符合限制的文件，拒绝其余的并给出原因；图片有预览，移除和清空时释放", async () => {
     const created: string[] = []

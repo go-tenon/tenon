@@ -124,6 +124,20 @@ describe("chat", () => {
     })
   })
 
+  it("chatTransport 的响应不是 2xx 时抛出 HttpError", async () => {
+    const { fetch } = fakeFetch((url) =>
+      url.endsWith("/stream") ? response(204) : response(409, { status: 409, code: "ai.busy", detail: "对话正在回答" }),
+    )
+    const t = chatTransport("/api/chat", fetch)
+    await expect(t.fetch("/api/chat", { method: "POST" })).rejects.toMatchObject({
+      name: "HttpError",
+      status: 409,
+      code: "ai.busy",
+      detail: "对话正在回答",
+    })
+    expect((await t.fetch("/api/chat/c1/stream")).status).toBe(204)
+  })
+
   it("chatControls 按约定的路径请求，失败时抛出可以分类的错误", async () => {
     const { fetch, calls } = fakeFetch((url) =>
       url.endsWith("/steer")
