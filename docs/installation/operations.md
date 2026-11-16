@@ -43,7 +43,7 @@
 <a id="upgrade-overlap"></a>
 ### 新旧进程同时运行
 
-新进程就绪之后，旧进程还要一段时间才能处理完手上的工作：请求最多 `http.shutdown_timeout`，队列任务最多 `queue.shutdown_timeout`，进行中的 [AI 回答](../ai/chat.md#deployment)可能更久。这段时间里，新旧两个版本同时在运行，就像临时多部署了一个实例：
+新进程就绪之后，旧进程还要一段时间才能处理完手上的工作：请求最多 `http.shutdown_timeout`，队列任务最多 `queue.shutdown_timeout`，进行中的 [AI 回答](../ai/chat-advanced.md#deployment)可能更久。这段时间里，新旧两个版本同时在运行，就像临时多部署了一个实例：
 
 | 部分 | 升级时 | 需要你注意的 |
 | --- | --- | --- |

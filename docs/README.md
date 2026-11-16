@@ -136,6 +136,7 @@ Tenon 是一个用 Go 构建 HTTP API 的框架。用户登录后使用的界面
 
 - AI：
     - [AI 助手](ai/chat.md)
+    - [AI 助手进阶](ai/chat-advanced.md)
     - [MCP 服务](ai/mcp.md)
     - [文档转换与切分](ai/documents.md)
     - [向量检索](ai/vector.md)
