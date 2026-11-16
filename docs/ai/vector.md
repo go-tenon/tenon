@@ -4,7 +4,7 @@
 
 `vector` 包把向量保存在 [Qdrant](https://qdrant.tech) 中，不放进 PostgreSQL。数据仍然以数据库为准，Qdrant 中只是由它算出来的副本。用法与[全文搜索](../features/search.md)相同：业务动作在修改数据的事务中调用 `Sync`，队列任务重新读取数据、计算向量，然后写入 Qdrant。事务回滚时，同步也一起取消。
 
-**向量**是一组数字，由嵌入模型（embedding model）根据文字的意思算出来，意思相近的文字，向量也相近。
+**向量**是一组数字，由嵌入模型（embedding model）根据文字的意思算出来，意思相近的文字，向量也相近。多模态的嵌入模型还能给图片算向量，文字和图片放在同一个空间里比较，于是可以用文字搜图片、用图片搜图片，见[图片](#images)。
 
 阅读前需要了解：[全文搜索](../features/search.md)（用法相同）；[队列](../background/queue.md)；[文档转换与切分](documents.md)。
 
@@ -21,6 +21,8 @@
     - [多租户](#tenancy)
     - [混合检索](#hybrid-search)
     - [重排](#reranking)
+- [图片](#images)
+    - [以图搜图](#image-queries)
 - [换模型](#changing-models)
 - [测试](#testing)
 - [常见问题](#troubleshooting)
@@ -39,7 +41,7 @@ var Chunks = vector.Define[ChunkDoc]("attachment_chunks")
 // 修改数据的事务中发起同步，提交后由 worker 计算向量并写入 Qdrant
 err := Chunks.Sync(ctx, tx, fileID.String())
 
-hits, err := Chunks.Search(ctx, store, vector.Query{Text: "如何退款", Limit: 5})
+hits, err := Chunks.Search(ctx, store, vector.Query{Input: vector.Text("如何退款"), Limit: 5})
 ```
 
 `Sync` 在业务事务中发起同步，提交之后由 worker 重新读取数据、计算向量，写入 Qdrant。检索时，`Search` 用同一个模型把问题转换为向量，找出最接近的几段。
@@ -168,7 +170,7 @@ func ScanChunkKeys(ctx context.Context, db bun.IDB, after string, limit int) ([]
 
 | 标签 | 用途 | 字段类型 |
 | --- | --- | --- |
-| `embed` | 计算向量的文本，有且只有一个；只用来计算时写 `json:"-"` | `string` |
+| `embed` | 计算向量的内容，有且只有一个；只用来计算时写 `json:"-"` | `string`，或者 `vector.Content`（文字和图片，见[图片](#images)） |
 | `filter` | 过滤用的值，见[过滤](#filtering) | 字符串、布尔、整数、浮点数、`time.Time`、实现 `encoding.TextMarshaler` 的类型（如 `uuid.UUID`），以及它们的切片和指针 |
 | `tenant` | 文档所在的租户，见[多租户](#tenancy) | `string` |
 
@@ -196,13 +198,13 @@ attachment.Chunks.Handle(w, a.vectors, attachment.LoadChunks, attachment.ScanChu
 
 - 同一个 key 的同步依次执行，后执行的一定读到更新的数据。为此锁要一直持有到写完 Qdrant，计算向量期间同步事务也保持打开，所以 `LoadFunc` 只应读取数据，转换、切分文件这类耗时的处理放在之前的任务中完成。
 - 删除附件同样调用 `Sync`，`LoadChunks` 读不到分段，索引中的文档随之删除。
-- 计算向量的文本为空时，任务直接转入[失败任务表](../background/queue-monitoring.md#failed-jobs)。模型服务出错时，任务按队列的规则重试。
+- 计算向量的内容为空、引用的图片不存在、模型不接受这种内容（例如只接受文字的模型遇到图片）时，任务直接转入[失败任务表](../background/queue-monitoring.md#failed-jobs)。模型服务出错时，任务按队列的规则重试。
 - 索引的每个版本是 Qdrant 中的一个 collection，第一次写入时自动创建，同时给过滤字段建立索引；之后新增过滤字段时，进程启动后第一次同步会补建索引。
 
 <a id="reusing-vectors"></a>
 ### 沿用向量
 
-计算向量要花钱。同步时先查出这个 key 已有的文档，计算向量的文本与已有文档相同的直接沿用原来的向量，只把新的文本交给模型；同一次同步中相同的文本只计算一次。作者改了附件中的一句话，只有那一段重新计算，即使后面的分段位置都变了。
+计算向量要花钱。同步时先查出这个 key 已有的文档，计算向量的内容与已有文档相同的直接沿用原来的向量，只把新的内容交给模型；同一次同步中相同的内容只计算一次。作者改了附件中的一句话，只有那一段重新计算，即使后面的分段位置都变了。图片按文件 ID 比较，没有变化的图片连文件都不读。
 
 <a id="refreshing"></a>
 ### 立即同步
@@ -253,7 +255,7 @@ func NewFind(vectors *vector.Store) *Find { return &Find{vectors: vectors} }
 // Find 返回文章附件中与问题最相关的分段。
 func (a *Find) Find(ctx context.Context, articleID uuid.UUID, question string) ([]vector.Hit[ChunkDoc], error) {
     return Chunks.Search(ctx, a.vectors, vector.Query{
-        Text:   question,
+        Input:  vector.Text(question),
         Filter: vector.Eq("article_id", articleID),
         Limit:  20,
     })
@@ -286,7 +288,7 @@ Qdrant 在检索的同时过滤，返回的是满足条件的文档中最接近�
 文档类型有 `tenant` 字段时，检索总是限定在 `Query.Tenant` 中，传入 `sub.Tenant`：
 
 ```go
-hits, err := Chunks.Search(ctx, a.vectors, vector.Query{Text: question, Tenant: sub.Tenant})
+hits, err := Chunks.Search(ctx, a.vectors, vector.Query{Input: vector.Text(question), Tenant: sub.Tenant})
 ```
 
 `Tenant` 为空表示平台本身，只查询租户为空的文档。没有 `tenant` 字段的索引，传入租户时返回错误。
@@ -324,6 +326,84 @@ hits, err = ai.RerankBy(ctx, a.reranker, ai.Text(question), hits, func(h vector.
     return ai.Text(h.Doc.Text)
 }, 5)
 ```
+
+<a id="images"></a>
+## 图片
+
+用多模态的嵌入模型，商品图片、照片也能建索引：用户输入“红色连衣裙”，找出图片是红色连衣裙的商品。模型见[图片向量](chat-advanced.md#image-embeddings)，下面用百炼的 `qwen3-vl-embedding`。
+
+`Model.Inputs` 声明模型接受图片，`WithFiles` 让 `Store` 读取[文件存储](../libraries/filesystem.md)中的图片：
+
+```go
+vectors := vector.New(db, qc, vector.Model{
+    Name:     cfg.Embedding.Model, // qwen3-vl-embedding
+    Dims:     1024,
+    Embedder: dashscope.New(cfg.Embedding, dashscope.WithDimensions(1024)),
+    Inputs:   []ai.Modality{ai.ModalityText, ai.ModalityImage},
+}, vector.WithFiles(files))
+```
+
+文档的 `embed` 字段用 `vector.Content`，图片用 `FilePart` 引用文件 ID。商品的标题一个文档，每张图片一个文档：
+
+```go
+type ProductDoc struct {
+    Title  string         `json:"title"`
+    Kind   string         `json:"kind" vector:"filter"` // title 或 image
+    Tenant string         `json:"-" vector:"tenant"`
+    Embed  vector.Content `json:"-" vector:"embed"`
+}
+
+var Products = vector.Define[ProductDoc]("products")
+
+func LoadProducts(ctx context.Context, tx bun.IDB, key string) ([]ProductDoc, error) {
+    p, err := getProduct(ctx, tx, key) // 读取商品和它的图片
+    if errors.Is(err, sql.ErrNoRows) {
+        return nil, nil
+    }
+    if err != nil {
+        return nil, err
+    }
+    docs := []ProductDoc{{Title: p.Title, Kind: "title", Tenant: p.Tenant, Embed: vector.Text(p.Title)}}
+    for _, img := range p.ImageIDs {
+        docs = append(docs, ProductDoc{Title: p.Title, Kind: "image", Tenant: p.Tenant,
+            Embed: vector.Content{vector.FilePart(img)}})
+    }
+    return docs, nil
+}
+```
+
+- `FilePart` 只记文件 ID，`LoadFunc` 不用读图片。同步时文件 ID 没有变化的文档沿用原来的向量，既不读文件也不调用模型；只有新的图片才通过 `WithFiles` 读出内容交给模型。文件存储中替换文件会产生新的 ID，所以同一个 ID 的内容不会变。
+- 文字和图片也可以放在一个文档中，融合为一个向量：`vector.Content{vector.TextPart(p.Title), vector.FilePart(p.CoverID)}`。只有能融合的模型支持，见[图片向量](chat-advanced.md#image-embeddings)。
+- `Content` 编码为 JSON 时，图片只有文件 ID；检索结果通常不需要它，像上面一样写 `json:"-"`。
+- 图片超过 `vector.MaxFileSize`（32 MiB）、文件已删除、模型的 `Inputs` 没有图片时，同步任务转入失败任务表。
+- 混合索引中，只有图片的文档没有关键词，只参与语义那一路。
+
+一个商品有好几个文档，按文档检索时同一个商品会出现多次。`GroupByKey` 让每个 key 只返回最接近的一个文档：
+
+```go
+hits, err := Products.Search(ctx, a.vectors, vector.Query{
+    Input:      vector.Text("红色连衣裙"),
+    Tenant:     sub.Tenant,
+    GroupByKey: true,
+    Limit:      20, // 20 个商品
+})
+```
+
+以文搜图的相似度普遍偏低，一段文字与它描述的图片可能只有 0.5 左右，比两段意思相反的文字之间还低，合适的 `MinScore` 很难定，按排名取前几个即可。
+
+<a id="image-queries"></a>
+### 以图搜图
+
+查询也可以是图片：用户上传的图片用 `MediaPart`，文件存储中已有的图片用 `FilePart`，例如“找相似商品”：
+
+```go
+hits, err := Products.Search(ctx, a.vectors, vector.Query{
+    Input:      vector.Content{vector.MediaPart(ai.Media{Data: data, MIME: "image/jpeg"})},
+    GroupByKey: true,
+})
+```
+
+查询的内容同样按 `Model.Inputs` 检查，只接受文字的模型收到图片时 `Search` 直接返回错误，不调用模型。
 
 <a id="changing-models"></a>
 ## 换模型
@@ -374,6 +454,17 @@ func TestFind(t *testing.T) {
 
 `aitest.Embedder` 给不同的文本几乎正交的向量，只有原文完全相同的查询才排在第一。它只能用来测试同步、过滤和租户是否正确，测不了语义检索的效果。
 
+测试图片检索时，`vectortest.New` 的最后一个参数传入 `vector.WithFiles`，可以是真实的文件服务，也可以是实现 `vector.Files` 的内存替身；再用 `Same` 让一段描述和它描述的图片得到相同的向量：
+
+```go
+emb := aitest.NewEmbedder(64)
+emb.Same(ai.Text("红色连衣裙"), ai.Content{ai.MediaPart(redDress)})
+vectors := vectortest.New(t, db, vector.Model{Name: "test", Dims: 64, Embedder: emb,
+    Inputs: []ai.Modality{ai.ModalityText, ai.ModalityImage}}, vector.WithFiles(files))
+```
+
+`aitest.Embedder` 按图片的 `MIME` 类型和内容计算向量，`Same` 中的图片与文件服务读出的内容相同即可。
+
 <a id="troubleshooting"></a>
 ## 常见问题
 
@@ -404,9 +495,22 @@ func TestFind(t *testing.T) {
 func New(db *bun.DB, client *qdrant.Client, model Model, opts ...Option) *Store
 func WithPrefix(prefix string) Option
 func WithPrevious(models ...Model) Option
+func WithFiles(files Files) Option
 ```
 
-`Model` 的字段：`Name`、`Dims`、`Embedder`（`ai.Embedder` 的实现）。`WithPrevious` 在更换模型期间保留旧模型，见[更换模型](#reindexing)。
+`Model` 的字段：`Name`、`Dims`、`Embedder`（`ai.Embedder` 的实现）、`Inputs`（接受的输入种类，为空时只接受文字）。`WithPrevious` 在更换模型期间保留旧模型，见[更换模型](#reindexing)。`WithFiles` 传入读取 `FilePart` 的文件存储，通常是 `*filesystem.Service`。
+
+### Content
+
+```go
+type Content []Part
+func Text(s string) Content
+func TextPart(s string) Part
+func FilePart(id uuid.UUID) Part
+func MediaPart(m ai.Media) Part
+```
+
+计算向量的内容，见[图片](#images)。
 
 ### Define
 
@@ -427,7 +531,7 @@ func (ix *Index[D]) Handle(w *queue.Worker, s *Store, load LoadFunc[D], scan Sca
 func (ix *Index[D]) Reindex(ctx context.Context, tx bun.IDB, ops *operation.Service, owner identity.Subject) (*operation.Operation, error)
 ```
 
-与[全文搜索](../features/search.md#api-reference)的 `Index` 用法相同。`Query` 的字段：`Text`（必填）、`Tenant`、`Filter`、`Limit`、`MinScore`。
+与[全文搜索](../features/search.md#api-reference)的 `Index` 用法相同。`Query` 的字段：`Input`（必填，文字查询用 `vector.Text(q)`）、`Tenant`、`Filter`、`Limit`、`MinScore`、`GroupByKey`。
 
 ### 过滤
 

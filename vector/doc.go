@@ -7,7 +7,7 @@
 //
 // 同步与 search 包相同，分两步。修改数据的事务中用 Sync 发布同步任务，事务提交后才同步，回滚时一起取消；
 // worker 用 Handle 处理任务，LoadFunc 在同步事务中读取 key 当前的文档，计算向量后写入 Qdrant，
-// 没有文档时从索引中删除。文本没有变化的文档沿用原来的向量，省去一次模型调用：
+// 没有文档时从索引中删除。内容没有变化的文档沿用原来的向量，省去一次模型调用：
 //
 //	err := database.RunInTx(ctx, db, nil, func(ctx context.Context, tx database.Tx) error {
 //	    // ... 替换附件的分段
@@ -16,9 +16,12 @@
 //
 //	Chunks.Handle(w, store, loadChunks, scanChunkKeys)
 //
-// Search 计算查询文本的向量，返回语义最接近的文档；用 Hybrid 声明的混合索引同时按关键词检索，两路按排名融合：
+// Search 计算查询内容的向量，返回语义最接近的文档；用 Hybrid 声明的混合索引同时按关键词检索，两路按排名融合：
 //
-//	hits, err := Chunks.Search(ctx, store, vector.Query{Text: question, Tenant: sub.Tenant, Limit: 20})
+//	hits, err := Chunks.Search(ctx, store, vector.Query{Input: vector.Text(question), Tenant: sub.Tenant, Limit: 20})
+//
+// 用多模态向量模型时，文档和查询还可以是图片：embed 字段用 Content，图片用 FilePart 引用文件存储中的文件，
+// 只在需要计算向量时读取，Store 用 WithFiles 读取它们；Model.Inputs 声明模型接受图片。
 //
 // 换了模型或者计算向量的文本之后，用 Reindex 重建：重建用 Store 的模型写入索引的新版本（一个新的 collection），
 // 期间同步同时写入新旧两个版本，完成后切换，查询始终看到完整的索引。每个版本记录了建立它的模型，
