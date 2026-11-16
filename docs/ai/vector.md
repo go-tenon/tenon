@@ -405,6 +405,8 @@ hits, err := Products.Search(ctx, a.vectors, vector.Query{
 
 查询的内容同样按 `Model.Inputs` 检查，只接受文字的模型收到图片时 `Search` 直接返回错误，不调用模型。
 
+用户在 AI 助手中发来照片时，工具用 `chat.FindAttachment` 取出照片再检索，见[在工具中使用附件](chat.md#attachments-in-tools)。
+
 <a id="changing-models"></a>
 ## 换模型
 

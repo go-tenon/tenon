@@ -171,6 +171,7 @@ database.busy: 服务繁忙，请稍后再试
 database.unavailable: 服务暂时不可用，请稍后再试
 doctor.failed: 服务暂时不可用，请稍后再试
 ai.bad_request: 没有可以回答的消息
+ai.attachment_not_found: 对话中没有这个附件
 ai.no_worker: AI 助手暂时不可用，请稍后再试
 ai.shutting_down: 服务正在重启，请稍后再试
 filesystem.invalid: 上传的文件不完整

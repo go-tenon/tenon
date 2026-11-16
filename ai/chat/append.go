@@ -38,6 +38,7 @@ func (rs *Runs) Append(ctx context.Context, userID, sessionID, author string, ms
 	if rs.history != nil {
 		return ErrNeedsSessions
 	}
+	msg = labelAttachments(msg)
 	key := rs.key(userID, sessionID)
 
 	// 加入期间不让这个对话开始运行：本实例用 appending 标记，其他实例用对话锁。
