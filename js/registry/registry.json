@@ -152,6 +152,29 @@
       ],
       "dependencies": ["ai@^7.0.159", "@ai-sdk/react@^4.0.163", "streamdown@^2.7.1"],
       "files": ["assistant-chat.tsx", "markdown.tsx"]
+    },
+    {
+      "name": "tenon-resource-page",
+      "type": "registry:block",
+      "title": "资源页面",
+      "description": "ResourcePage：按 @go-tenon/shell 的资源模型渲染列表（DataTable）、搜索和筛选、新建和修改的对话框（react-hook-form，校验与服务端相同）、删除和其他操作，按权限显示按钮。",
+      "registryDependencies": [
+        "alert-dialog",
+        "badge",
+        "button",
+        "checkbox",
+        "dialog",
+        "dropdown-menu",
+        "input",
+        "label",
+        "select",
+        "sheet",
+        "skeleton",
+        "table",
+        "textarea"
+      ],
+      "dependencies": ["@tanstack/react-table@^8.21.3", "react-hook-form@^7.91.0"],
+      "files": ["resource-page.tsx", "data-table.tsx", "page.tsx", "form.tsx", "dialogs.tsx"]
     }
   ]
 }

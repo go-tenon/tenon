@@ -69,11 +69,11 @@ var AntdMCP = map[string]any{"command": "bunx", "args": []any{"@ant-design/cli@6
 var ShadcnMCP = map[string]any{"command": "bunx", "args": []any{"shadcn@4.23.0", "mcp"}}
 
 // ConsoleRegistryItems 是 console 模板从 tenon 的 shadcn registry（框架的 js/registry，复制在项目的 .tenon/js/registry）
-// 加入前端的条目：布局、部件、页面、资源表格和表单。通知、Markdown 和 AI 对话需要其他 npm 包，用到时用 shadcn add 加入。
+// 加入前端的条目：布局、部件、页面、资源表格、表单和资源页面。通知、Markdown 和 AI 对话需要其他 npm 包，用到时用 shadcn add 加入。
 var ConsoleRegistryItems = []string{
 	"tenon-sidebar-layout", "tenon-topnav-layout", "tenon-rail-layout", "tenon-page-layouts", "tenon-tab-bar",
 	"tenon-color-mode", "tenon-user-menu", "tenon-tenant-switcher", "tenon-command-menu", "tenon-dialogs",
-	"tenon-page", "tenon-data-table", "tenon-form", "tenon-login-form",
+	"tenon-page", "tenon-data-table", "tenon-form", "tenon-login-form", "tenon-resource-page",
 }
 
 // registryImport 匹配 registry 源码中对项目内文件的导入，例如 "@/components/ui/button"、"@/hooks/use-mobile"。

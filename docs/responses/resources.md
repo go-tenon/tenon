@@ -8,6 +8,7 @@
 - [生成的定义](#generated)
 - [前端的资源模型](#model)
 - [运营后台中的资源页面](#admin)
+- [控制台中的资源页面](#console)
 - [API 参考](#api-reference)
 
 <a id="declaring"></a>
@@ -174,6 +175,28 @@ export const Route = createFileRoute("/_app/articles")({
 
 `inputs` 中的组件收到 `id`、`value`、`onChange`，`id` 要放在控件上，表单项的标签才能指向它。`FieldValue`、`defaultInput` 和 `ResourceForm` 也单独导出，可以在自己写的页面中使用。
 
+<a id="console"></a>
+## 控制台中的资源页面
+
+shadcn 的外观是 registry 中的 `tenon-resource-page`，console 模板已经带着它（`src/components/tenon/resource-page.tsx`）。用法与运营后台相同，同一个模型：
+
+```tsx
+import { ResourcePage } from "@/components/tenon/resource-page"
+
+export const Route = createFileRoute("/_app/articles")({
+  staticData: { title: "文章", icon: "folder" },
+  validateSearch: articles.listSearch,
+  component: () => <ResourcePage model={articles} route={Route} />,
+})
+```
+
+- 列表是 [`DataTable`](registry.md#blocks)：服务端分页，可以排序的列点击列头排序，状态写进地址；搜索框在输入停顿后更新，枚举的筛选条件是下拉选择。
+- 新建和修改在对话框中，表单是 react-hook-form 加上生成的校验规则（[`useApiForm`](registry.md#blocks)）。输入组件按字段的类型选择：文字、数字、复选框、下拉、多选、标签（逗号分隔）、日期、日期时间。
+- 删除和带 `Confirm` 的操作用 `useConfirm` 询问，根路由中要有 `ConfirmProvider`。
+- 覆盖方式与运营后台相同：`render`、`inputs`（组件收到 `id`、`value`、`onChange`、`invalid`）、`rowActions`、`actions`。
+
+组件复制在项目中，外观归项目所有，可以直接修改；逻辑仍然来自 `@go-tenon/shell` 的资源模型，随框架升级。
+
 <a id="api-reference"></a>
 ## API 参考
 
@@ -186,3 +209,4 @@ export const Route = createFileRoute("/_app/articles")({
 | `resourceModel(def, kit, queryClient)` | `@go-tenon/shell`：资源模型 |
 | `useResourceList`、`useResourceItem`、`useResourceMutations`、`formValues` | `@go-tenon/shell`：列表、详情、修改、表单的初始值 |
 | `ResourcePage`、`ResourceForm`、`FieldValue`、`defaultInput` | `@go-tenon/admin`：antd 的资源页面 |
+| `tenon-resource-page` | registry：shadcn 的资源页面，导出的名称与 antd 的相同 |
