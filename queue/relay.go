@@ -193,12 +193,11 @@ func (w *Worker) stream(ctx context.Context) error {
 	}
 }
 
-// forward 把任务交给 JetStream：已经到时间的直接发布；不超过 MaxDefer 的作为定时消息，到时间由 JetStream 发布；
-// 更晚的写入 queue_scheduled，快到时间时再写回 WAL。全部被 JetStream 确认后才返回。
+// forward 把任务交给 JetStream：已经到时间的直接发布，没到时间的作为定时消息，到时间由 JetStream 发布。
+// 全部被 JetStream 确认后才返回。
 func (w *Worker) forward(ctx context.Context, jobs []relayed) error {
 	now := time.Now()
 	var futures []jetstream.PubAckFuture
-	var later []scheduledRow
 	published, deferred := 0, 0
 	for _, j := range jobs {
 		var head struct {
@@ -210,17 +209,12 @@ func (w *Worker) forward(ctx context.Context, jobs []relayed) error {
 			w.logger.Error("drop malformed job", "topic", j.topic, "error", err)
 			continue
 		}
-		delay := head.AvailableAt.Sub(now)
-		if delay > w.cfg.MaxDefer {
-			later = append(later, scheduledRow{ID: head.ID, Topic: j.topic, Body: j.body, AvailableAt: head.AvailableAt.UTC(), CreatedAt: now.UTC()})
-			continue
-		}
 		f, err := w.publishAsync(j.topic, j.body, msgID(head.ID, head.Attempts, head.AvailableAt), head.AvailableAt)
 		if err != nil {
 			return errors.Wrapf(err, "queue: publish to %q", j.topic)
 		}
 		futures = append(futures, f)
-		if delay > 0 {
+		if head.AvailableAt.After(now) {
 			deferred++
 		} else {
 			published++
@@ -231,9 +225,5 @@ func (w *Worker) forward(ctx context.Context, jobs []relayed) error {
 	}
 	w.countRelayed(ctx, routePublished, published)
 	w.countRelayed(ctx, routeDeferred, deferred)
-	if err := schedule(ctx, w.db, later); err != nil {
-		return err
-	}
-	w.countRelayed(ctx, routeScheduled, len(later))
 	return nil
 }

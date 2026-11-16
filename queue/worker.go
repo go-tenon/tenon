@@ -35,7 +35,7 @@ const dbTimeout = 30 * time.Second
 //
 // 转发：Topic.Publish 把任务写入 WAL，Worker 经由逻辑复制槽（SlotName）在事务提交后立即读到，发布到 JetStream 后
 // 确认位置。一个槽同时只能被一个连接使用，多个 Worker 中只有一个在转发，其余的待命，它停止后由其中一个接手。
-// 执行时间离现在超过 Config.MaxDefer 的任务存入 queue_scheduled，快到时间时再写回 WAL；所有 Worker 都检查它，互不重复。
+// 还没到执行时间的任务作为 JetStream 的定时消息发布，到时间由 JetStream 投递。
 //
 // 处理：每个 topic 一个 JetStream consumer，同一个应用的所有 Worker 共用它，每个任务只交给其中一个；
 // 每个 Worker 同时处理的任务不超过 topic 的并发数。处理函数返回 nil 时确认任务；返回错误时按退避时间重试，
@@ -183,7 +183,6 @@ func (w *Worker) Run(ctx context.Context) error {
 
 	var background, fetching sync.WaitGroup
 	background.Go(func() { w.relay(ctx) })
-	background.Go(func() { w.dispatchLoop(ctx) })
 	for i, h := range handlers {
 		fetching.Go(func() { w.consume(ctx, h, consumers[i]) })
 	}
@@ -352,17 +351,17 @@ func (w *Worker) process(h *handler, m jetstream.Msg) {
 	}
 }
 
-// nack 安排重试，或者把任务转入失败任务表。重试是一条新的消息，执行次数记在 envelope 中：
-// 不超过 MaxDefer 的交给 JetStream 定时投递，更晚的存入 queue_scheduled。安排好之后才确认这一条。
+// nack 安排重试，或者把任务转入失败任务表。重试是一条新的定时消息，执行次数记在 envelope 中，
+// 安排好之后才确认这一条。
 func (w *Worker) nack(ctx context.Context, m jetstream.Msg, j Job, env envelope, cause error, maxAttempts int, started time.Time) {
 	if !IsPermanent(cause) && j.Attempt < maxAttempts {
 		delay := retryDelay(cause, j.Attempt)
 		later := env
 		later.AvailableAt, later.Attempts = time.Now().Add(delay).UTC(), j.Attempt
-		if err := withTimeout(func(ctx context.Context) error { return w.retryLater(ctx, j.Topic, later, delay) }); err != nil {
+		if err := withTimeout(func(ctx context.Context) error { return w.retryLater(ctx, j.Topic, later) }); err != nil {
 			// 安排不了时让 JetStream 稍后重新投递这一条，执行次数照样增加。
 			w.logger.ErrorContext(ctx, "schedule retry failed", "topic", j.Topic, "error", err)
-			nakAfter(m, min(delay, w.cfg.MaxDefer))
+			nakAfter(m, min(delay, maxNakDelay))
 			return
 		}
 		_ = m.Ack()
@@ -375,7 +374,7 @@ func (w *Worker) nack(ctx context.Context, m jetstream.Msg, j Job, env envelope,
 	if err := withTimeout(func(ctx context.Context) error { return w.failed.record(ctx, record) }); err != nil {
 		// 失败任务写不进去时不确认：稍后重新投递，再次失败时再写。
 		w.logger.ErrorContext(ctx, "move job to failed jobs failed", "topic", j.Topic, "error", err)
-		nakAfter(m, min(w.cfg.MaxDefer, time.Minute))
+		nakAfter(m, time.Minute)
 		return
 	}
 	_ = m.Ack()
@@ -383,17 +382,18 @@ func (w *Worker) nack(ctx context.Context, m jetstream.Msg, j Job, env envelope,
 	w.observe(ctx, Event{Kind: JobFailed, Job: j, Started: started, Duration: time.Since(started), Err: cause})
 }
 
-// retryLater 安排 env 在 env.AvailableAt 再次执行：delay 不超过 MaxDefer 时交给 JetStream，否则存入 queue_scheduled。
-func (w *Worker) retryLater(ctx context.Context, topic string, env envelope, delay time.Duration) error {
-	if delay > w.cfg.MaxDefer {
-		return w.postpone(ctx, topic, env)
-	}
+// retryLater 安排 env 在 env.AvailableAt 再次执行：作为定时消息交给 JetStream。
+func (w *Worker) retryLater(ctx context.Context, topic string, env envelope) error {
 	body, err := json.Marshal(env)
 	if err != nil {
 		return err
 	}
 	return w.publish(ctx, topic, body, msgID(env.ID, env.Attempts, env.AvailableAt), env.AvailableAt)
 }
+
+// maxNakDelay 是重试安排不了时，放回的消息最多等多久再次投递：比退避时间短时任务提前执行，
+// 但不会因为一次 NATS 故障搁置一整天。
+const maxNakDelay = time.Hour
 
 // nakAfter 让 JetStream 在 d 之后重新投递 m。
 func nakAfter(m jetstream.Msg, d time.Duration) {
@@ -402,15 +402,6 @@ func nakAfter(m jetstream.Msg, d time.Duration) {
 	} else {
 		_ = m.Nak()
 	}
-}
-
-// postpone 把 env 存入 queue_scheduled，快到 env.AvailableAt 时再写回 WAL。
-func (w *Worker) postpone(ctx context.Context, topic string, env envelope) error {
-	body, err := json.Marshal(env)
-	if err != nil {
-		return err
-	}
-	return schedule(ctx, w.db, []scheduledRow{{ID: env.ID, Topic: topic, Body: body, AvailableAt: env.AvailableAt, CreatedAt: time.Now().UTC()}})
 }
 
 // jobContext 返回处理函数的 context：还原发布方的链路和 request_id，附上任务 ID、执行次数。

@@ -16,6 +16,7 @@
     - [监控积压](#queue-monitoring)
     - [主备切换](#queue-failover)
     - [重建复制槽](#queue-recovery)
+    - [JetStream 中的任务](#queue-jetstream)
 - [备份与恢复](#backups)
     - [数据库](#database-backups)
     - [文件](#file-backups)
@@ -241,10 +242,18 @@ FROM pg_replication_slots WHERE slot_name LIKE 'tenon_queue_%';
 
 从丢失到重建期间发出的任务会随之丢失。从业务数据中找出没有完成的工作重新发出，例如状态停在“发送中”的记录。
 
+<a id="queue-jetstream"></a>
+### JetStream 中的任务
+
+转发之后，任务保存在 NATS JetStream 的 stream 中，直到处理完成。延迟任务和等待重试的任务也在这里，以定时消息的形式等到执行时间，可能是几天甚至几个月以后。stream 丢了，这些任务也就丢了，所以：
+
+- **生产环境用 NATS 集群，`queue.replicas` 设为 3。** 一台服务器损坏时任务不丢失。单个服务器（`replicas: 1`）只适合开发和测试。
+- **不要给 stream 设置 `max_age`，容量上限配合 `discard: new`。** `max_age` 会在执行时间之前删除定时消息；容量满时丢弃最早的消息（discard old）删除的也是任务。worker 启动时检查这两项，发现时拒绝启动。用 `discard: new` 时，容量满了之后发布失败，任务留在复制槽中，有空间后再转发。
+
 <a id="backups"></a>
 ## 备份与恢复
 
-应用的数据保存在两个地方：数据库，以及[文件存储](../libraries/filesystem.md)使用的磁盘或对象存储，两者都要备份。其他地方的数据丢了可以重新生成：Memcached 中的缓存会重新生成，NATS 中的在线成员会随连接续期恢复，Qdrant 中的[向量](../ai/vector.md)可以根据数据库中的数据重建。
+应用的数据保存在两个地方：数据库，以及[文件存储](../libraries/filesystem.md)使用的磁盘或对象存储，两者都要备份。JetStream 中的任务靠多副本保护，见[JetStream 中的任务](#queue-jetstream)。其他地方的数据丢了可以重新生成：Memcached 中的缓存会重新生成，NATS 中的在线成员会随连接续期恢复，Qdrant 中的[向量](../ai/vector.md)可以根据数据库中的数据重建。
 
 Tenon 不提供备份命令：只有数据库自己的备份机制能持续备份、恢复到任意时间点；在程序中定时导出，数据量大时很慢，还会丢掉两次导出之间写入的数据。
 

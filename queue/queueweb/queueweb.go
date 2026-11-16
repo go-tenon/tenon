@@ -99,7 +99,6 @@ func Register(r chi.Router, prefix string, db *bun.DB, opts Options) {
 		rt.Get("/failed/{id}", h.failedShow)
 		rt.Post("/failed/{id}/retry", h.retry)
 		rt.Post("/failed/{id}/delete", h.delete)
-		rt.Get("/scheduled", h.scheduled)
 		if h.admin != nil {
 			rt.Post("/topics/{topic}/pause", h.pause)
 			rt.Post("/topics/{topic}/resume", h.resume)
@@ -289,29 +288,6 @@ func (h *handlers) bulk(w http.ResponseWriter, r *http.Request, action string, d
 	h.logger.InfoContext(ctx, "failed jobs "+action, "user", httpx.BasicUser(ctx), "topic", topic, "count", total)
 	q := FailedQuery{Topic: topic, OffsetParams: page.OffsetParams{Page: 1, PerPage: defaultPerPage}}
 	return h.renderFailed(w, r, q, t(ctx, "queueweb."+action, bulkDone[action], map[string]any{"n": total}))
-}
-
-// ScheduledQuery 是延迟任务列表的查询参数。
-type ScheduledQuery struct {
-	page.OffsetParams
-}
-
-func (h *handlers) scheduled(w http.ResponseWriter, r *http.Request) error {
-	ctx := r.Context()
-	q, err := web.ParseQuery[ScheduledQuery](r)
-	if err != nil {
-		return err
-	}
-	st, err := queue.ReadStatus(ctx, h.db)
-	if err != nil {
-		return err
-	}
-	jobs, err := queue.ListScheduled(ctx, h.db, queue.ScheduledQuery{Limit: q.PerPage, Offset: int(q.Offset())})
-	if err != nil {
-		return err
-	}
-	v := scheduledView{base: h.base, list: page.NewOffset(jobs, q.OffsetParams, int64(st.Scheduled))}
-	return web.Render(w, r, http.StatusOK, layout(h.frame(navScheduled), scheduledSection(v)))
 }
 
 func (h *handlers) frame(current nav) frame {

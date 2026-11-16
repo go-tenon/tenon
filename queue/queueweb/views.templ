@@ -17,7 +17,6 @@ templ layout(f frame, body templ.Component) {
 				<nav class="flex gap-4 text-sm">
 					@navLink(f, navOverview, f.base+"/", t(ctx, "queueweb.overview", "Overview"))
 					@navLink(f, navFailed, f.base+"/failed", t(ctx, "queueweb.failed", "Failed jobs"))
-					@navLink(f, navScheduled, f.base+"/scheduled", t(ctx, "queueweb.scheduled", "Scheduled jobs"))
 				</nav>
 				<div class="ml-auto flex items-center gap-4 text-sm">
 					for _, l := range f.links {
@@ -75,14 +74,6 @@ templ overviewSection(v overviewView) {
 					@row(t(ctx, "queueweb.lag", "Lag"), formatBytes(v.status.Lag))
 				}
 			}
-			@card(t(ctx, "queueweb.scheduled", "Scheduled jobs")) {
-				if v.streamReady() {
-					@row(t(ctx, "queueweb.deferred", "In JetStream"), strconv.Itoa(v.stream.Deferred))
-				}
-				@row(t(ctx, "queueweb.scheduled_db", "In PostgreSQL"), strconv.Itoa(v.status.Scheduled))
-				@row(t(ctx, "queueweb.next", "Next in PostgreSQL"), formatTime(v.status.NextScheduled))
-				<a href={ templ.SafeURL(v.base + "/scheduled") } class="mt-2 inline-block text-sm underline">{ t(ctx, "queueweb.view", "View") }</a>
-			}
 			if v.jetStream {
 				@card("JetStream") {
 					if v.streamErr != nil {
@@ -95,6 +86,7 @@ templ overviewSection(v overviewView) {
 						@row("Stream", v.stream.Stream)
 						@row(t(ctx, "queueweb.messages", "Messages"), strconv.FormatUint(v.stream.Messages, 10)+" ("+formatBytes(int64(v.stream.Bytes))+")")
 						@row(t(ctx, "queueweb.replicas", "Replicas"), replicas(v.stream))
+						@row(t(ctx, "queueweb.deferred", "Scheduled"), strconv.Itoa(v.stream.Deferred))
 					}
 				}
 			}
@@ -291,35 +283,4 @@ templ jobDetail(base string, j queue.FailedJob, payload string) {
 			<pre class="overflow-x-auto text-xs whitespace-pre-wrap">{ j.Error }</pre>
 		}
 	</article>
-}
-
-templ scheduledSection(v scheduledView) {
-	<section class="flex flex-col gap-4">
-		<p class="text-sm text-muted-foreground">{ t(ctx, "queueweb.scheduled_note", "Jobs scheduled further out than max_defer wait in PostgreSQL and are listed here; sooner ones are held by JetStream and only counted on the overview.") }</p>
-		if len(v.list.Items) == 0 {
-			@ui.Empty(ui.EmptyProps{Icon: icon.Clock, Title: t(ctx, "queueweb.no_scheduled", "No scheduled jobs")})
-		} else {
-			<table class="w-full text-sm">
-				<thead>
-					<tr class="border-b text-left text-muted-foreground">
-						<th class="py-2 pr-4 font-medium">{ t(ctx, "queueweb.available_at", "Runs at") }</th>
-						<th class="py-2 pr-4 font-medium">Topic</th>
-						<th class="py-2 pr-4 font-medium">ID</th>
-						<th class="py-2 font-medium">Payload</th>
-					</tr>
-				</thead>
-				<tbody>
-					for _, j := range v.list.Items {
-						<tr class="border-b align-top">
-							<td class="py-2 pr-4 whitespace-nowrap">{ formatTime(j.AvailableAt) }</td>
-							<td class="py-2 pr-4 font-mono">{ j.Topic }</td>
-							<td class="py-2 pr-4 font-mono text-xs">{ j.ID.String() }</td>
-							<td class="py-2 break-all font-mono text-xs">{ firstLine(string(j.Payload)) }</td>
-						</tr>
-					}
-				</tbody>
-			</table>
-		}
-		@ui.Pagination(v.list, ui.PaginationProps{URL: v.pageURL})
-	</section>
 }
