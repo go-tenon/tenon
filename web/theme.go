@@ -6,6 +6,8 @@ import (
 	"slices"
 
 	"github.com/cockroachdb/errors"
+
+	"github.com/go-tenon/tenon/theme"
 )
 
 // Styles 是 web/ui 内置的组件风格，即 shadcn 的 8 套风格。
@@ -72,6 +74,35 @@ func (t Theme) Validate() error {
 // name 是小写字母、数字和连字符，value 不含 <、>、{、}、;。
 func ThemeVarValid(name, value string) bool {
 	return themeVarName.MatchString(name) && !themeBadValue.MatchString(value)
+}
+
+// WithTokens 用设计令牌（项目的 theme/tokens.json，见 theme 包）填充主题：圆角、字体和亮色、暗色的 CSS 变量。
+// 配置中写了的值优先，例如 vars 中的 sidebar 覆盖令牌算出的值。品牌只在令牌中定义一次，
+// 公开页面与 shadcn、antd 的前端使用同一套颜色：
+//
+//	web.New(web.Options{Theme: cfg.Theme.WithTokens(apptheme.Tokens)})
+func (t Theme) WithTokens(tokens *theme.Tokens) Theme {
+	if tokens == nil {
+		return t
+	}
+	light, dark := tokens.CSSVars()
+	if t.Radius == "" {
+		t.Radius = light["radius"]
+	}
+	if t.Font == "" {
+		t.Font = light["font-sans"]
+	}
+	delete(light, "radius")
+	delete(light, "font-sans")
+	merge := func(base, override map[string]string) map[string]string {
+		for k, v := range override {
+			base[k] = v
+		}
+		return base
+	}
+	t.Vars = merge(light, t.Vars)
+	t.DarkVars = merge(dark, t.DarkVars)
+	return t
 }
 
 type themeKey struct{}

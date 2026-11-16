@@ -124,6 +124,9 @@ func (d dev) check() error {
 // 或者缺少依赖（见 NeedsInstall）时在根目录 bun install，确保每个前端的 dist 存在（见 EnsureDist），
 // 写入前端开发服务器的地址（见 DevConfig），把框架 web/ui 的样式源复制到 Tailwind 入口旁边。
 func (d dev) prepare() error {
+	if _, err := GenerateTheme("."); err != nil {
+		return err
+	}
 	if len(d.cfg.Frontends) > 0 {
 		changed, err := SyncJS(".")
 		if err != nil {
@@ -281,6 +284,23 @@ func (d dev) runs() []func(context.Context) error {
 			return watch(ctx, func() string { return snapshot(t.Static, nil) }, 250*time.Millisecond, d.reload)
 		})
 	}
+	// 设计令牌变化后重新生成前端的主题包，Vite 随之更新页面。令牌写错时只打印错误，改对后再生成。
+	runs = append(runs, func(ctx context.Context) error {
+		file := func(string) string {
+			info, err := os.Stat(ThemeFile)
+			if err != nil {
+				return ""
+			}
+			return info.ModTime().String() + strconv.FormatInt(info.Size(), 10)
+		}
+		return watch(ctx, func() string { return file(ThemeFile) }, 250*time.Millisecond, func() {
+			if ok, err := GenerateTheme("."); err != nil {
+				fmt.Fprintf(d.errOut, "dev: %v\n", err)
+			} else if ok {
+				fmt.Fprintln(d.out, "dev: 设计令牌有变化，已重新生成 "+ThemeDir)
+			}
+		})
+	})
 	return runs
 }
 

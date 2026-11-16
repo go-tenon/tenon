@@ -8,7 +8,7 @@
 | `tenon add frontend` | 给项目加一个前端 |
 | `tenon dev` | 一起运行全部前端的 Vite 和应用。修改 Go 代码后重新编译、平滑重启，并重新生成客户端；修改前端代码后由 Vite 热更新 |
 | `tenon build` | 先构建全部前端，再编译应用，前端的构建产物嵌入二进制 |
-| `tenon generate` | 生成 TypeScript 和 Go 客户端 |
+| `tenon generate` | 生成 TypeScript 和 Go 客户端，以及设计令牌的主题包 |
 
 `serve`、`work`、`migrate`、`routes`、`openapi` 这些运行时的命令在应用自己的二进制中，部署后照样可用，见[命令行](../general/commands.md)。前端和 API 按目录约定发现，见[前端与 API](#conventions)；`tenon.json` 只在需要改变默认行为时才写。
 
@@ -147,6 +147,7 @@ bun run dev   # 即 go tool tenon dev
 
 - **Vite**：为每个前端选一个空闲端口，在前端目录中运行 `bun run dev --port <端口> --strictPort`。启动前把[框架的前端包](#framework-packages)复制到 `.tenon/js`，根目录没有 `node_modules` 或这些包的 `package.json` 变了时 `bun install`；前端没有 `dist` 时写一个占位的 `index.html`，`go:embed` 才能编译通过，开发时页面来自 Vite。
 - **应用**：等全部 Vite 能访问后，把 `main` 编译到临时目录，用 `serve` 中的参数运行，并在最后追加 `--config .tenon/dev.yaml`。这个文件中是各前端开发服务器的地址（`dev_servers`），应用的 `httpx.SPA` 把页面请求转给对应的 Vite，见[应用这一侧](#app-side)。浏览器打开应用的地址，页面和 API 同源，热更新照常工作。
+- **设计令牌**：`theme/tokens.json` 变化后重新生成 `packages/theme`，Vite 随之更新页面；令牌写错时只打印错误。见[设计令牌](../responses/theme.md)。
 - **重新编译**：模块中的 `.go` 文件（测试除外）、`go.mod`、`go.sum` 变化后重新编译。成功时平滑停止旧进程（`SIGTERM`），启动新的，再运行一次 [`generate`](#generate)，前端的类型随接口一起更新；失败时打印编译错误，旧进程继续运行。跳过隐藏目录、`node_modules`、`vendor`、`testdata` 和 `dist`。
 - **服务端渲染的页面**（模块中有 `.templ` 文件时）：`go tool templ generate --watch`，在 `templ.proxyPort`（默认 7331）代理应用并注入自动刷新的脚本，这时打开 http://localhost:7331。只改了文字时直接生效，跳过重新编译。`templ.static` 目录中的文件变化时也刷新浏览器。
 - **Tailwind 和其他工具**：见 [tenon.json](#configuration)。
@@ -165,7 +166,7 @@ bun run build   # 即 go tool tenon build
 <a id="generate"></a>
 ## tenon generate
 
-编译应用（前端没有 `dist` 时同样先写占位页），用它的 `client` 命令生成客户端：有 `packages/client/package.json` 时为每个 API 生成 TypeScript 客户端，见[客户端代码](../responses/clients.md#typescript)；`tenon.json` 中设置了 `go` 的 API 生成 Go 客户端，见 [Go 客户端](../responses/clients.md#go)。`tenon dev` 每次重新编译成功后会自动运行它。把生成的代码提交到仓库，CI 中重新生成后用 `git diff --exit-code` 检查是否忘了更新。
+编译应用（前端没有 `dist` 时同样先写占位页），用它的 `client` 命令生成客户端：有 `packages/client/package.json` 时为每个 API 生成 TypeScript 客户端，见[客户端代码](../responses/clients.md#typescript)；`tenon.json` 中设置了 `go` 的 API 生成 Go 客户端，见 [Go 客户端](../responses/clients.md#go)。有 `theme/tokens.json` 时还生成前端的主题包 `packages/theme`，见[设计令牌](../responses/theme.md)。`tenon dev` 每次重新编译成功后会自动运行它；`tenon build` 构建前端之前也生成主题包。把生成的代码提交到仓库，CI 中重新生成后用 `git diff --exit-code` 检查是否忘了更新。
 
 <a id="configuration"></a>
 ## tenon.json
