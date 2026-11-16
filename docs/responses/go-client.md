@@ -112,7 +112,7 @@ case errors.Is(err, wire.ErrUpgradeRequired):
 <a id="go-client-auth"></a>
 ## 认证
 
-`Options.Auth` 提供受保护接口的 Bearer token；公开的接口直接请求。不透明的 [API token](../security/api-tokens.md) 用 `wire.StaticToken(token)`。[JWT 模式](../security/api-tokens.md#jwt)实现 `wire.Auth` 的两个方法，下面是把 refresh token 放在内存里的客户端写法（浏览器后台更常见的是 HttpOnly cookie，见[单账号后台](../security/admin-example.md#auth-api)）：
+`Options.Auth` 提供受保护接口的 Bearer token；公开的接口直接请求。不透明的 [API token](../security/api-tokens.md) 用 `wire.StaticToken(token)`。[JWT 模式](../security/jwt.md#jwt)实现 `wire.Auth` 的两个方法，下面是把 refresh token 放在内存里的客户端写法（浏览器后台更常见的是 HttpOnly cookie，见[单账号后台](../security/admin-example.md#auth-api)）：
 
 ```go
 type tokens struct {

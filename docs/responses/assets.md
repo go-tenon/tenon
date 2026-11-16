@@ -153,7 +153,7 @@ script-src 'self' 'nonce-…' 'unsafe-eval'; object-src 'none'; base-uri 'none';
 ```
 
 - `ui.Head()` 读取 context 中的 nonce，给它输出的 `<script>`、`<style>` 带上它；其中的 `web.Scripts()` 还设置了 htmx 的 `inlineScriptNonce`，htmx 执行交换进来的脚本时也使用这个 nonce。
-- 布局中自己写的内联脚本，以及其他网站的脚本（例如[人机验证](../security/login.md#captcha)的组件），要加上 `nonce={ templ.GetNonce(ctx) }`。
+- 布局中自己写的内联脚本，以及其他网站的脚本（例如[人机验证](../security/login-security.md#captcha)的组件），要加上 `nonce={ templ.GetNonce(ctx) }`。
 - `'self'` 允许加载本站的脚本文件，包括[静态文件](#static-files)。样式、图片、字体和 iframe 可以来自任何来源。
 - `frame-ancestors 'none'` 禁止其他网站把页面嵌入框架，诱导用户点击。
 

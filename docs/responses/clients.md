@@ -95,7 +95,7 @@ go tool tenon generate   # 等价于 go run ./cmd/api client --ts packages/clien
 <a id="creating-the-client"></a>
 ### 创建客户端
 
-单页应用用 [JWT 模式](../security/api-tokens.md#jwt)登录，refresh token 保存在 [HttpOnly cookie](../security/api-tokens.md#single-page-applications) 中。access token 只放在内存里：请求自动带上它，受保护的接口返回 `401` 时刷新一次，再重试请求。框架的 `@go-tenon/client` 提供会话 `createSession`，按[客户端协议](../http/protocol.md#sessions)保存和刷新凭据。下面是 `apps/web/src/client.ts`：
+单页应用用 [JWT 模式](../security/jwt.md#jwt)登录，refresh token 保存在 [HttpOnly cookie](../security/jwt.md#single-page-applications) 中。access token 只放在内存里：请求自动带上它，受保护的接口返回 `401` 时刷新一次，再重试请求。框架的 `@go-tenon/client` 提供会话 `createSession`，按[客户端协议](../http/protocol.md#sessions)保存和刷新凭据。下面是 `apps/web/src/client.ts`：
 
 ```ts
 import { createSession } from "@go-tenon/client"
@@ -128,7 +128,7 @@ session.connect(api)
 - 请求带上 `Accept-Language`（默认是浏览器的语言，`language` 可以覆盖），错误的 `detail` 按它翻译。App 的 WebView 设置 `appVersion`，作为 [`X-App-Version`](#app-version) 发送。
 - `headers` 是每次请求附加的请求头，每次请求时读取，值为空时不发送，接口自己的请求头优先，例如租户在请求头中时 `headers: () => ({ "X-Tenant": session.identity()?.tenant })`。`baseURL` 也可以是函数，例如租户在路径中时 `` baseURL: () => `/api/t/${tenant}` ``。见[租户](app-shell-features.md#tenants)。
 
-`/auth/login`、`/auth/refresh` 是应用自己注册的公开接口，写法见[单页应用](../security/api-tokens.md#single-page-applications)。App、桌面端和小程序用响应体传递：登录时省略 `cookie`，refresh token 在响应体中，保存在系统的安全存储中。给 `createSession` 传入存储，`refresh` 收到保存的 refresh token，把它放进请求体：
+`/auth/login`、`/auth/refresh` 是应用自己注册的公开接口，写法见[单页应用](../security/jwt.md#single-page-applications)。App、桌面端和小程序用响应体传递：登录时省略 `cookie`，refresh token 在响应体中，保存在系统的安全存储中。给 `createSession` 传入存储，`refresh` 收到保存的 refresh token，把它放进请求体：
 
 ```ts
 const session = createSession({
@@ -240,7 +240,7 @@ saveBlob(blob, filename || "failures.xlsx")
 | Android | openapi-generator 的 `kotlin`，或 [Kiota](https://learn.microsoft.com/openapi/kiota/) |
 | Python 脚本 | [openapi-python-client](https://github.com/openapi-generators/openapi-python-client) |
 
-生成的客户端同样需要处理认证：请求带 `Authorization: Bearer`，JWT 模式按[客户端的规则](../security/api-tokens.md#jwt)刷新，错误按 `code` 区分。
+生成的客户端同样需要处理认证：请求带 `Authorization: Bearer`，JWT 模式按[客户端的规则](../security/jwt.md#jwt)刷新，错误按 `code` 区分。
 
 <a id="app-version"></a>
 ## App 版本

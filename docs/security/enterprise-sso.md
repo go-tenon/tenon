@@ -7,9 +7,13 @@ B2B 产品的企业客户通常要求员工用公司自己的身份系统登录�
 - IdP 中的分组同步为租户中的角色；
 - 租户可以要求成员只能用 SSO 登录，并要求 IdP 做过多因素认证。
 
-框架提供其中的通用部分：[`login/oauth`](social-login.md) 完成 OpenID Connect 流程，[`login.Realm`](login.md) 管理登录标识和[按租户的登录策略](login.md#policies)，[`authz`](authorization.md) 管理角色。连接配置、域名验证和登录页由应用编写，本页按顺序给出一套完整的写法。
+框架提供其中的通用部分：[`login/oauth`](social-login.md) 完成 OpenID Connect 流程，[`login.Realm`](login.md) 管理登录标识和[按租户的登录策略](login-security.md#policies)，[`authz`](authorization.md) 管理角色。连接配置、域名验证和登录页由应用编写，本页按顺序给出一套完整的写法。
 
 例子中的成员账号按租户登录（`PerTenant: true`），租户取自子域名，例如 `acme.app.example.com`；同一个人在两个租户中是两个账号。单页应用的登录接口写法与[第三方登录](social-login.md#spa-login)相同。
+
+几个术语：**IdP**（身份提供方）是企业管理员工账号的系统；**单点登录**（SSO）指员工用 IdP 的账号登录各个应用，不再为每个应用单独设密码；**OpenID Connect** 是应用和 IdP 之间约定登录流程的标准协议。
+
+阅读前需要了解：[第三方登录](social-login.md)；[多租户](tenancy.md)；[授权](authorization.md)。
 
 - [连接与域名](#connections)
 - [验证域名](#verifying-domains)
@@ -18,6 +22,7 @@ B2B 产品的企业客户通常要求员工用公司自己的身份系统登录�
 - [同步角色](#syncing-roles)
 - [要求用 SSO 登录](#requiring-sso)
 - [不支持的](#not-supported)
+- [常见问题](#troubleshooting)
 
 <a id="connections"></a>
 ## 连接与域名
@@ -221,7 +226,7 @@ PolicyFor: func(ctx context.Context) (login.Policy, error) {
 },
 ```
 
-之后 `Password`、`SendCode` 在这个租户中返回 `403 login.method_not_allowed`，登录页据此只显示 SSO 按钮。账号在多个租户中通用、登录时不知道租户的产品，改由租户的 Resolver 检查 `sub.Auth.Methods`，返回 `identity.ErrMethodRequired`，见[按租户的登录策略](login.md#policies)。
+之后 `Password`、`SendCode` 在这个租户中返回 `403 login.method_not_allowed`，登录页据此只显示 SSO 按钮。账号在多个租户中通用、登录时不知道租户的产品，改由租户的 Resolver 检查 `sub.Auth.Methods`，返回 `identity.ErrMethodRequired`，见[按租户的登录策略](login-security.md#policies)。
 
 <a id="not-supported"></a>
 ## 不支持的
@@ -229,3 +234,22 @@ PolicyFor: func(ctx context.Context) (login.Policy, error) {
 - **SAML**：Okta、Entra ID、Google Workspace、Ping 都支持 OpenID Connect，先用它。确实需要 SAML 的客户再单独接入。
 - **SCIM**：IdP 主动推送账号的创建和停用。本页的写法在登录时同步，加上应用中的停用和撤销，能覆盖大部分情况。
 - **IdP 发起的登录**：在 IdP 的应用列表中点图标时，IdP 跳到应用的登录地址，应用照常发起上面的流程即可。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**员工输入公司邮箱后，没有跳到公司的登录页**
+
+这个邮箱的域名还没有在 `sso_domains` 中验证，登录页按普通账号处理，见[验证域名](#verifying-domains)。
+
+**添加 `gmail.com` 这样的域名时被拒绝**
+
+公共邮箱域名在添加时就拒绝，否则一个租户可以借此接管别人的账号。
+
+**租户修改了 SSO 配置，登录时仍然用旧的配置**
+
+提供方按 `(租户, updated_at)` 缓存，修改配置时要更新 `updated_at`，见[运行时创建提供方](#providers)。
+
+**连接 IdP 时报错地址被拒绝**
+
+发现文档中的地址按不可信的输入处理，请求经过[出站请求](../libraries/outbound.md)的检查，内网地址会被拒绝。

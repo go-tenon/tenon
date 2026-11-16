@@ -285,7 +285,7 @@ article.PublishScheduledJob.Handle(w, func(ctx context.Context, _ struct{}) erro
 | --- | --- | --- |
 | [API 令牌](../security/api-tokens.md#cleanup) | `apitoken.Store` 的 `Cleanup` | 每小时 |
 | [登录验证码](../security/login.md#cleanup) | 每套账号的 `login.Realm` 的 `Cleanup` | 每小时 |
-| [未绑定的 passkey](../security/login.md#passkeys) | `passkey.Store` 的 `Cleanup` | 每天 |
+| [未绑定的 passkey](../security/login-security.md#passkeys) | `passkey.Store` 的 `Cleanup` | 每天 |
 | [文件](filesystem.md#cleanup) | 文件服务的 `Cleanup` | 每 5 分钟 |
 | [操作日志](../features/activity.md#retention) | `activity.Cleanup(db, 保留期)` | 每天 |
 | [通知](../features/notifications.md#retention) | `notification.Cleanup(db, 保留期)` | 每天 |
