@@ -256,6 +256,7 @@ func (rs *Runs) Send(ctx context.Context, userID, sessionID string, msg model.Me
 // 运行独立于 ctx 的取消，但保留其中的值（例如日志字段）。对话正在运行时返回 ErrBusy，
 // 等待审批时返回 ErrAwaitingApproval。
 func (rs *Runs) Start(ctx context.Context, userID, sessionID string, msg model.Message, opts ...agent.RunOption) (*Run, error) {
+	msg = labelAttachments(msg)
 	if rs.workers {
 		return rs.dispatch(ctx, dispatchReq{Op: opStart, UserID: userID, Session: sessionID, Message: &msg}, opts)
 	}
@@ -648,6 +649,7 @@ type Run struct {
 // Steer 在运行中途插入一条用户消息。它在当前这批工具调用结束后、下一次请求模型之前进入对话；
 // 如果模型已经在给出最终回答，回答结束后运行会带着这条消息继续。运行已经结束时返回 ErrFinished。
 func (r *Run) Steer(ctx context.Context, msg model.Message) error {
+	msg = labelAttachments(msg)
 	if r.remote != nil {
 		return r.remote.steer(ctx, msg)
 	}

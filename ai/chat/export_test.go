@@ -1,6 +1,10 @@
 package chat
 
-import "time"
+import (
+	"time"
+
+	"trpc.group/trpc-go/trpc-agent-go/model"
+)
 
 // SetClusterTiming 供测试调整多实例协作的时间参数，返回恢复函数。
 func SetClusterTiming(ping, idle time.Duration) func() {
@@ -22,3 +26,6 @@ func SetBeforeDone(f func(*Run)) func() {
 	beforeDone = f
 	return func() { beforeDone = old }
 }
+
+// LabelAttachments 供测试检查附件的标签。
+func LabelAttachments(m model.Message) model.Message { return labelAttachments(m) }
