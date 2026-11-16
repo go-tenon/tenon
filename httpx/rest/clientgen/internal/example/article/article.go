@@ -197,6 +197,12 @@ func Register(api *rest.API, s *Store, auth func(*huma.Operation)) {
 	rest.Register(api, op("article-cover", http.MethodPost, "/articles/{id}/cover", "上传封面", true), s.cover)
 	rest.Register(api, op("ping", http.MethodGet, "/ping", "", false), ping)
 	rest.Register(api, op("article-preview", http.MethodPost, "/articles/preview", "预览链接", false), preview)
+	// 文章的后台页面：显示文字是 article.title、article.fields.<字段>、article.actions.<操作> 的消息。
+	api.Resource(rest.Resource{
+		Name: "article", List: "article-list", Get: "article-get", Create: "article-create", Update: "article-update", Delete: "article-delete",
+		Columns: []string{"title", "status", "published_at", "featured"}, Search: "q", Filters: []string{"status"},
+		Actions: []rest.Action{{Name: "publish", Operation: "article-publish", Confirm: true}},
+	})
 }
 
 // PreviewInput 记录预览者的浏览器：User-Agent 由浏览器设置，TS 客户端不把它作为参数。

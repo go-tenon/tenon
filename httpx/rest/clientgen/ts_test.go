@@ -15,10 +15,14 @@ import (
 
 const exampleTSOut = "internal/example/ts"
 
-// exampleTranslations 是示例应用的翻译文件：文章状态的显示文字。
+// exampleTranslations 是示例应用的翻译文件：文章状态和文章资源的显示文字。
 var exampleTranslations = fstest.MapFS{
-	"zh-CN.yaml": {Data: []byte("article.status.draft: 草稿\narticle.status.published: 已发布\n")},
-	"en.yaml":    {Data: []byte("article.status.draft: Draft\narticle.status.published: Published\n")},
+	"zh-CN.yaml": {Data: []byte("article.status.draft: 草稿\narticle.status.published: 已发布\n" +
+		"article.title: 文章\narticle.fields.title: 标题\narticle.fields.status: 状态\narticle.fields.published_at: 发布时间\n" +
+		"article.fields.featured: 精选\narticle.fields.slug: 链接名\narticle.fields.tags: 标签\narticle.actions.publish: 发布\n")},
+	"en.yaml": {Data: []byte("article.status.draft: Draft\narticle.status.published: Published\n" +
+		"article.title: Articles\narticle.fields.title: Title\narticle.fields.status: Status\narticle.fields.published_at: Published at\n" +
+		"article.fields.featured: Featured\narticle.fields.slug: Slug\narticle.fields.tags: Tags\narticle.actions.publish: Publish\n")},
 }
 
 func generateTS(t *testing.T, api *rest.API) *clientgen.Result {
