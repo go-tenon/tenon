@@ -22,6 +22,7 @@
     - [恢复之后](#after-restoring)
     - [恢复演练](#restore-drills)
 - [升级依赖](#upgrading)
+- [常见问题](#troubleshooting)
 
 <a id="zero-downtime-upgrades"></a>
 ## 不停机升级
@@ -293,3 +294,26 @@ go test -race ./...
 `-race` 检查多个 goroutine 同时读写同一个变量的问题，这类问题平时很难发现。框架需要的 Go 版本以它的 [go.mod](../../go.mod) 为准，框架自己的数据库集成测试使用 PostgreSQL 18。你的应用额外引入的组件应当固定版本，并有各自的集成测试。
 
 如果在 CI 中启用了[已发布迁移检查](../database/migrations.md#checking-in-ci)，它还会确认升级过程中没有意外修改已经发布的迁移。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**`systemctl reload` 之后，服务还是旧版本**
+
+新进程启动失败，旧进程继续服务，`reload` 仍然返回成功。看 `systemctl status` 的状态文字，以 `upgrade failed` 开头就是升级失败，日志中有原因，见[不停机升级](#zero-downtime-upgrades)。
+
+**升级期间，数据库连接数超过了上限**
+
+新旧进程同时运行时，两个连接池都占着连接。`max_conns` 的两倍应当在数据库的连接上限之内，见[新旧进程同时运行](#upgrade-overlap)。
+
+**开始维护后，用户看到的是 502 而不是维护提示**
+
+先停止了程序，再创建标记文件。顺序要反过来：先挡住请求，再停止程序，见[维护步骤](#maintenance-steps)。
+
+**接入 PgBouncer 后，迁移或队列报错**
+
+迁移和队列的复制连接需要在一个连接上保持状态，不能经过 transaction 模式的 PgBouncer，要直接连接 PostgreSQL，见[数据库连接不够用：PgBouncer](#pgbouncer)。
+
+**恢复备份后，worker 拒绝启动**
+
+复制槽不在备份中。按[重建复制槽](#queue-recovery)处理，再按[恢复之后](#after-restoring)检查其他事项。

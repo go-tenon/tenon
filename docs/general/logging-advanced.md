@@ -16,6 +16,7 @@
     - [自定义规则](#custom-redaction)
     - [注意事项](#redaction-caveats)
 - [测试日志](#testing-logs)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="pipeline"></a>
@@ -234,6 +235,21 @@ func TestPublishLogsEvent(t *testing.T) {
 
 > [!WARNING]
 > `Capture` 修改全局状态，使用它的测试串行运行。并行测试请改用 `logtest.New()`，再把 `rec.Logger()` 显式传给被测组件，例如 `httpx.Defaults(cfg, httpx.Logger(rec.Logger()))`。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**错误日志中的堆栈指向写日志的那一行**
+
+用了 slog-formatter 自带的 `ErrorFormatter`。只使用框架默认启用的 `logging.ErrorFormatter`，它记录错误创建处的堆栈，见[格式化字段](#formatting)。
+
+**日志中出现了密码或 token**
+
+框架默认不脱敏任何字段。用 `logging.Format` 加上脱敏规则，规则对所有输出都生效，见[敏感信息脱敏](#redacting-sensitive-data)。
+
+**测试中断言 `response.status` 失败**
+
+捕获的整数字段是 `int64`，要写成 `int64(404)` 再比较，见[测试日志](#testing-logs)。
 
 <a id="api-reference"></a>
 ## API 参考
