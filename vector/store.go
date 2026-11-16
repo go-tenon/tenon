@@ -3,6 +3,7 @@ package vector
 import (
 	"context"
 	"regexp"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -27,8 +28,29 @@ type Model struct {
 	Name string
 	// Dims 是向量的维度，与模型输出的一致。同一个模型可以输出不同的维度，例如 openai.WithDimensions。
 	Dims int
-	// Embedder 计算向量，通常是 openai.New(cfg.Embedding)。
+	// Embedder 计算向量，通常是 openai.New(cfg.Embedding)；有图片时用多模态向量模型，例如 dashscope.New(cfg.Embedding)。
 	Embedder ai.Embedder
+	// Inputs 是模型接受的输入种类，为空时只接受文字。文档或查询中有模型不接受的内容时，不调用模型直接返回错误。
+	Inputs []ai.Modality
+}
+
+// check 检查模型接受 c 中的每一种内容，不接受时返回标记了 errInvalid 的错误。
+func (m Model) check(c ai.Content) error {
+	inputs := m.Inputs
+	if len(inputs) == 0 {
+		inputs = []ai.Modality{ai.ModalityText}
+	}
+	for _, media := range c.Media() {
+		if media.Modality() == "" {
+			return errors.Mark(errors.Newf("vector: unsupported media type %q", media.MIME), errInvalid)
+		}
+	}
+	for _, k := range c.Modalities() {
+		if !slices.Contains(inputs, k) {
+			return errors.Mark(errors.Newf("vector: model %q does not accept %s input (Model.Inputs)", m.Name, k), errInvalid)
+		}
+	}
+	return nil
 }
 
 // Store 把索引保存在 Qdrant 中。它持有应用的数据库，用来在同步时锁住 key、读取文档、记录索引的版本。
@@ -39,6 +61,7 @@ type Store struct {
 	model  Model             // 建立新版本使用的模型
 	models map[modelID]Model // 所有模型：model 和 WithPrevious 传入的旧模型
 	prefix string
+	files  Files
 
 	opening singleflight.Group
 	mu      sync.Mutex
@@ -52,6 +75,11 @@ type Option func(*Store)
 // prefix 由小写字母、数字、_、.、- 组成，最长 32 字节。
 func WithPrefix(prefix string) Option {
 	return func(s *Store) { s.prefix = prefix }
+}
+
+// WithFiles 让 Store 读取 FilePart 引用的文件，通常传入 *filesystem.Service。文档或查询中有 FilePart 时需要它。
+func WithFiles(files Files) Option {
+	return func(s *Store) { s.files = files }
 }
 
 // WithPrevious 传入换模型之前使用的模型。名称或维度不同都算换了模型，例如同一个模型从 3072 维改为 1024 维。
@@ -271,8 +299,11 @@ func (s *Store) createFieldIndexes(ctx context.Context, name string, sc *schema)
 	return nil
 }
 
-// embed 给 entries 填入 m 计算的向量，返回它们的 point：文本与这个 key 在 collection 中已有的某个文档相同时
-// 沿用它的向量，其余的去掉重复后一次交给模型计算。
+// embedBytes 是一次交给模型的媒体内容的大约上限，超过时分批计算。测试中可以调小。
+var embedBytes = 64 << 20
+
+// embed 给 entries 填入 m 计算的向量，返回它们的 point：内容与这个 key 在 collection 中已有的某个文档相同时
+// 沿用它的向量，其余的去掉重复后读取引用的文件交给模型计算；读出的媒体内容超过 embedBytes 时分批计算。
 // 有稀疏向量的 collection 中，point 同时带上 entries 的稀疏向量（索引没有声明 Hybrid 时没有）。
 func (s *Store) embed(ctx context.Context, collection string, c collectionInfo, key string, entries []entry) ([]*qdrant.PointStruct, error) {
 	m, hybrid := c.model, c.hybrid
@@ -288,38 +319,63 @@ func (s *Store) embed(ctx context.Context, collection string, c collectionInfo, 
 	if err != nil {
 		return nil, err
 	}
-	var texts []string
-	var missing []string // texts 对应的哈希
-	for _, e := range entries {
-		if _, ok := known[e.hash]; !ok {
-			known[e.hash] = nil
-			texts, missing = append(texts, e.text), append(missing, e.hash)
-		}
-	}
-	if len(texts) > 0 {
-		inputs := make([]ai.Content, len(texts))
-		for i, t := range texts {
-			inputs[i] = ai.Text(t)
+	// 引用的文件只在需要计算时读取，读出的内容累计到 embedBytes 就先计算一批，视频多时内存不会无限增长
+	var inputs []ai.Content
+	var missing []string // inputs 对应的哈希
+	size := 0
+	flush := func() error {
+		if len(inputs) == 0 {
+			return nil
 		}
 		vecs, err := m.Embedder.Embed(ctx, ai.EmbedRequest{Inputs: inputs, Purpose: ai.ForDocument})
-		if err != nil {
-			return nil, errors.Wrap(err, "vector: embed")
+		if errors.Is(err, ai.ErrUnsupportedInput) {
+			return errors.Mark(errors.Wrap(err, "vector: embed"), errInvalid)
 		}
-		if len(vecs) != len(texts) {
-			return nil, errors.Newf("vector: embedder returned %d vectors for %d texts", len(vecs), len(texts))
+		if err != nil {
+			return errors.Wrap(err, "vector: embed")
+		}
+		if len(vecs) != len(inputs) {
+			return errors.Newf("vector: embedder returned %d vectors for %d inputs", len(vecs), len(inputs))
 		}
 		for i, v := range vecs {
 			if len(v) != m.Dims {
-				return nil, errors.Newf("vector: embedder returned %d dimensions, model %q has %d", len(v), m.Name, m.Dims)
+				return errors.Newf("vector: embedder returned %d dimensions, model %q has %d", len(v), m.Name, m.Dims)
 			}
 			known[missing[i]] = v
 		}
+		inputs, missing, size = nil, nil, 0
+		return nil
+	}
+	for i, e := range entries {
+		if _, ok := known[e.hash]; ok {
+			continue
+		}
+		known[e.hash] = nil
+		in, err := e.content.resolve(ctx, s.files)
+		if err != nil {
+			return nil, errors.Wrapf(err, "vector: document %d", i)
+		}
+		if err := m.check(in); err != nil {
+			return nil, errors.Wrapf(err, "vector: document %d", i)
+		}
+		inputs, missing = append(inputs, in), append(missing, e.hash)
+		for _, media := range in.Media() {
+			size += len(media.Data)
+		}
+		if size >= embedBytes {
+			if err := flush(); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if err := flush(); err != nil {
+		return nil, err
 	}
 	for i, e := range entries {
 		e.point.Vectors = qdrant.NewVectorsDense(known[e.hash])
 		if hybrid {
 			named := map[string]*qdrant.Vector{vectorDense: qdrant.NewVectorDense(known[e.hash])}
-			if len(e.sparse.indices) > 0 { // 没有切分出词的文本只有稠密向量
+			if len(e.sparse.indices) > 0 { // 没有切分出词的文档（例如只有图片）只有稠密向量
 				named[vectorSparse] = qdrant.NewVectorSparse(e.sparse.indices, e.sparse.values)
 			}
 			e.point.Vectors = qdrant.NewVectorsMap(named)

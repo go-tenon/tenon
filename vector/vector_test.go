@@ -150,24 +150,24 @@ func sorted(s []string) []string {
 func TestSearch(t *testing.T) {
 	t.Parallel()
 	f := setup(t)
-	if hits := f.search(t, vector.Query{Text: "还没有同步"}); len(hits) != 0 {
+	if hits := f.search(t, vector.Query{Input: vector.Text("还没有同步")}); len(hits) != 0 {
 		t.Fatalf("hits before any sync = %v", hits)
 	}
 	f.put(t, "a", chunkDoc{File: "a", Text: "付款条件"}, chunkDoc{File: "a", Text: "交货时间"})
 	f.put(t, "b", chunkDoc{File: "b", Text: "违约责任"})
 
 	// aitest.Embedder 给相同的文本相同的向量，不同的文本几乎正交：查询原文时它排在第一，相似度为 1
-	hits := f.search(t, vector.Query{Text: "交货时间"})
+	hits := f.search(t, vector.Query{Input: vector.Text("交货时间")})
 	if len(hits) != 3 || hits[0].Doc.Text != "交货时间" || hits[0].Key != "a" || hits[0].Score < 0.999 {
 		t.Fatalf("hits = %+v", hits)
 	}
 	if hits[1].Score >= hits[0].Score {
 		t.Fatalf("hits are not ordered by score: %+v", hits)
 	}
-	if hits := f.search(t, vector.Query{Text: "交货时间", Limit: 1}); len(hits) != 1 {
+	if hits := f.search(t, vector.Query{Input: vector.Text("交货时间"), Limit: 1}); len(hits) != 1 {
 		t.Fatalf("limit 1 returned %d hits", len(hits))
 	}
-	if hits := f.search(t, vector.Query{Text: "交货时间", MinScore: 0.9}); !slices.Equal(texts(hits), []string{"交货时间"}) {
+	if hits := f.search(t, vector.Query{Input: vector.Text("交货时间"), MinScore: 0.9}); !slices.Equal(texts(hits), []string{"交货时间"}) {
 		t.Fatalf("min score hits = %v", texts(hits))
 	}
 	if _, err := chunks.Search(context.Background(), f.store, vector.Query{}); err == nil {
@@ -188,7 +188,7 @@ func TestReplaceAndReuse(t *testing.T) {
 	if got := f.emb.Requests(); len(got) != 2 || !slices.Equal(inputTexts(got[1]), []string{"四"}) {
 		t.Fatalf("embedding requests = %v", got)
 	}
-	if got := sorted(texts(f.search(t, vector.Query{Text: "一"}))); !slices.Equal(got, []string{"三", "四", "四"}) {
+	if got := sorted(texts(f.search(t, vector.Query{Input: vector.Text("一")}))); !slices.Equal(got, []string{"三", "四", "四"}) {
 		t.Fatalf("documents after replace = %v", got)
 	}
 
@@ -200,7 +200,7 @@ func TestReplaceAndReuse(t *testing.T) {
 	}
 
 	f.put(t, "a")
-	if hits := f.search(t, vector.Query{Text: "一"}); len(hits) != 0 {
+	if hits := f.search(t, vector.Query{Input: vector.Text("一")}); len(hits) != 0 {
 		t.Fatalf("documents after delete = %v", texts(hits))
 	}
 	var n int
@@ -245,7 +245,7 @@ func TestFilters(t *testing.T) {
 		{"not", vector.Not(vector.Eq("pages", 1)), []string{"a2"}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			got := sorted(texts(f.search(t, vector.Query{Text: "a1", Filter: c.filter})))
+			got := sorted(texts(f.search(t, vector.Query{Input: vector.Text("a1"), Filter: c.filter})))
 			if !slices.Equal(got, c.want) && !(len(got) == 0 && len(c.want) == 0) {
 				t.Fatalf("got %v, want %v", got, c.want)
 			}
@@ -259,7 +259,7 @@ func TestFilters(t *testing.T) {
 		"bool range":      vector.Lt("public", true),
 		"time wrong type": vector.Eq("published_at", "2026-11-01"),
 	} {
-		if _, err := chunks.Search(context.Background(), f.store, vector.Query{Text: "a1", Filter: filter}); err == nil {
+		if _, err := chunks.Search(context.Background(), f.store, vector.Query{Input: vector.Text("a1"), Filter: filter}); err == nil {
 			t.Errorf("%s: filter accepted", name)
 		}
 	}
@@ -272,7 +272,7 @@ func TestTenant(t *testing.T) {
 	f.put(t, "b", chunkDoc{Tenant: "t2", Text: "同一段话"})
 	f.put(t, "c", chunkDoc{Text: "同一段话"})
 	for tenant, want := range map[string]string{"t1": "a", "t2": "b", "": "c"} {
-		hits := f.search(t, vector.Query{Text: "同一段话", Tenant: tenant})
+		hits := f.search(t, vector.Query{Input: vector.Text("同一段话"), Tenant: tenant})
 		if len(hits) != 1 || hits[0].Key != want {
 			t.Fatalf("tenant %q hits = %+v", tenant, hits)
 		}
@@ -281,7 +281,7 @@ func TestTenant(t *testing.T) {
 	plain := vector.Define[struct {
 		Text string `json:"text" vector:"embed"`
 	}]("plain")
-	if _, err := plain.Search(context.Background(), f.store, vector.Query{Text: "x", Tenant: "t1"}); err == nil {
+	if _, err := plain.Search(context.Background(), f.store, vector.Query{Input: vector.Text("x"), Tenant: "t1"}); err == nil {
 		t.Fatal("tenant on an index without a tenant field accepted")
 	}
 }
@@ -303,7 +303,7 @@ func TestModelMismatch(t *testing.T) {
 		if err := chunks.Refresh(ctx, changed, f.src.load, "a"); err == nil || !strings.Contains(err.Error(), "chunks_v1") {
 			t.Fatalf("refresh with model %+v: %v", m, err)
 		}
-		if _, err := chunks.Search(ctx, changed, vector.Query{Text: "一"}); err == nil {
+		if _, err := chunks.Search(ctx, changed, vector.Query{Input: vector.Text("一")}); err == nil {
 			t.Fatalf("search with model %+v succeeded", m)
 		}
 	}
@@ -405,13 +405,13 @@ func TestSyncThroughQueue(t *testing.T) {
 	chunks.Handle(w, f.store, f.src.load, f.src.scan)
 	queuetest.Run(t, w)
 	deadline := time.Now().Add(10 * time.Second)
-	for len(f.search(t, vector.Query{Text: "队列同步"})) == 0 {
+	for len(f.search(t, vector.Query{Input: vector.Text("队列同步")})) == 0 {
 		if time.Now().After(deadline) {
 			t.Fatal("document was not synced")
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	if got := texts(f.search(t, vector.Query{Text: "队列同步"})); !slices.Equal(got, []string{"队列同步"}) {
+	if got := texts(f.search(t, vector.Query{Input: vector.Text("队列同步")})); !slices.Equal(got, []string{"队列同步"}) {
 		t.Fatalf("documents = %v", got)
 	}
 }
@@ -441,7 +441,7 @@ func TestConcurrentRefresh(t *testing.T) {
 		t.Fatal(err)
 	}
 	want, _ := f.src.load(context.Background(), nil, "a")
-	got := sorted(texts(f.search(t, vector.Query{Text: "版本"})))
+	got := sorted(texts(f.search(t, vector.Query{Input: vector.Text("版本")})))
 	if !slices.Equal(got, sorted([]string{want[0].Text, want[1].Text})) {
 		t.Fatalf("documents = %v, want %v", got, want)
 	}

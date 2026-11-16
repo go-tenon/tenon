@@ -18,7 +18,7 @@
     - [实现 HistoryStore](#history-store)
     - [群聊中的 AI](#group-chat)
 - [图片、语音和向量](#media)
-    - [图片向量](#image-embeddings)
+    - [图片和视频向量](#image-embeddings)
 - [决策](#decisions)
 - [部署](#deployment)
     - [多个实例](#multiple-instances)
@@ -189,7 +189,7 @@ if mentionsAssistant(msg) {
 
 [OpenRouter](https://openrouter.ai) 使用 `ai/openrouter`，用法与 `ai/openai` 相同。它的语音和向量是 OpenAI 兼容接口，图片则使用 OpenRouter 自己的接口，所以单独提供一个包；`BaseURL` 可以不填。
 
-[阿里云百炼](https://help.aliyun.com/zh/model-studio/)使用 `ai/dashscope`，`BaseURL` 与对话模型相同，填兼容接口的地址（`https://dashscope.aliyuncs.com/compatible-mode/v1` 或工作空间的地址）。它的向量和重排使用百炼的原生接口，支持图片，其余能力与 `ai/openai` 相同，见下文的[图片向量](#image-embeddings)。
+[阿里云百炼](https://help.aliyun.com/zh/model-studio/)使用 `ai/dashscope`，`BaseURL` 与对话模型相同，填兼容接口的地址（`https://dashscope.aliyuncs.com/compatible-mode/v1` 或工作空间的地址）。它的向量和重排使用百炼的原生接口，支持图片和视频，其余能力与 `ai/openai` 相同，见下文的[图片和视频向量](#image-embeddings)。
 
 `openai.Client` 的 `OpenAI()` 返回底层的 openai-go 客户端，已经设置好地址和密钥，可以用它调用厂商自己的其他接口。
 
@@ -245,9 +245,9 @@ posts, err = ai.RerankBy(ctx, openai.New(cfg.Rerank), ai.Text(query), posts, fun
 重排用的是 Cohere 和 Jina 的 `POST {BaseURL}/rerank`，硅基流动、OpenRouter、vLLM 等都沿用了它，`ai/openai` 和 `ai/openrouter` 都按这个格式调用，只接受文字。Cohere 自己的地址填 `https://api.cohere.com/v2`。百炼的重排地址不同，用 `ai/dashscope`。
 
 <a id="image-embeddings"></a>
-### 图片向量
+### 图片和视频向量
 
-OpenAI 兼容的向量接口只接受文字。以文搜图、以图搜图需要多模态向量模型，`ai/dashscope` 调用百炼的多模态向量接口：
+OpenAI 兼容的向量接口只接受文字。以文搜图、以图搜图、按描述找视频需要多模态向量模型，`ai/dashscope` 调用百炼的多模态向量接口：
 
 ```go
 emb := dashscope.New(cfg.Embedding, dashscope.WithDimensions(1024)) // Model: qwen3-vl-embedding
@@ -261,15 +261,18 @@ docs, err := emb.Embed(ctx, ai.EmbedRequest{Inputs: []ai.Content{
 query, err := emb.Embed(ctx, ai.EmbedRequest{Inputs: []ai.Content{ai.Text("红色连衣裙")}, Purpose: ai.ForQuery})
 ```
 
-- 每项输入可以是一段文字、一张图片，或一段文字加一张图片，不接受音频和视频。一次最多 20 项，超过时分批请求（`dashscope.WithBatchSize`）。
-- 文字和图片放在一起时，只有 `qwen3-vl-embedding`、`qwen2.5-vl-embedding` 能融合为一个向量。`tongyi-embedding-vision-plus`、`multimodal-embedding-v1` 会悄悄只取其中一种，`Embed` 发现后返回 `ai.ErrUnsupportedInput`。
+- 每项输入可以是一段文字、一张图片、一段视频，或一段文字加一张图片（一段视频）。百炼没有音频向量模型，音频返回 `ai.ErrUnsupportedInput`。
+- 一次请求最多 20 项、一段视频（`qwen3-vl-embedding`、`multimodal-embedding-v1` 一次只接受一段视频），超过时自动分成多次请求；`dashscope.WithBatchSize` 调整项数。
+- `qwen2.5-vl-embedding` 把一次请求中的所有项融合为一个向量，要用 `dashscope.WithBatchSize(1)`；不设时 `Embed` 返回错误，不会存下错误的向量。
+- 文字和图片（视频）放在一起时，只有 `qwen3-vl-embedding`、`qwen2.5-vl-embedding` 能融合为一个向量。`tongyi-embedding-vision-plus`、`multimodal-embedding-v1` 会悄悄只取其中一种，`Embed` 发现后返回 `ai.ErrUnsupportedInput`。
+- 视频以内容发送，不需要公网能访问的地址。`qwen3-vl-embedding` 要求视频在 24 KB 到约 50 MB 之间，`tongyi-embedding-vision-plus` 和 `qwen3-vl-embedding` 都实测可用。
 - 查询（`ai.ForQuery`）附带检索指令，用 `dashscope.WithQueryInstruct` 修改或去掉，`qwen3-vl-embedding` 这类模型用它提高检索的准确度，其他模型忽略它。
 - `WithDimensions` 指定维度，`qwen3-vl-embedding` 默认 2560 维；`multimodal-embedding-v1` 不支持，总是 1024 维。
 - 只有文字的向量模型（例如 `qwen3.7-text-embedding`）不能用这个接口，用 `ai/openai` 调用兼容接口。
 
-跨模态的相似度和同种内容之间的不在一个水平上：一段文字与它描述的图片的余弦相似度，可能和两段意思相反的文字（例如“红色”和“蓝色”）差不多高。以文搜图时按排名取结果，不要用固定的相似度阈值。
+跨模态的相似度和同种内容之间的不在一个水平上：一段文字与它描述的图片的余弦相似度，可能和两段意思相反的文字（例如“红色”和“蓝色”）差不多高；文字与它描述的视频之间更低，实测只有 0.1～0.4。以文搜图、搜视频时按排名取结果，不要用固定的相似度阈值。
 
-`dashscope.New` 的重排可以用文字重排模型（例如 `qwen3.7-text-rerank`），也可以用多模态重排模型（`qwen3-vl-rerank`），后者的查询和文档可以是图片：
+`dashscope.New` 的重排可以用文字重排模型（例如 `qwen3.7-text-rerank`），也可以用多模态重排模型（`qwen3-vl-rerank`），后者的查询和文档可以是图片或视频：
 
 ```go
 ranked, err := dashscope.New(cfg.Rerank).Rerank(ctx, ai.Content{ai.MediaPart(photo)}, candidates, 10)

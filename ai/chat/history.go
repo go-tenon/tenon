@@ -161,6 +161,9 @@ type transcript struct {
 func (rs *Runs) load(ctx context.Context, key session.Key) (transcript, error) {
 	if rs.history != nil {
 		h, err := rs.history.Load(ctx, rs.conversation(key))
+		for i, m := range h.Messages {
+			h.Messages[i] = labelAttachments(m) // 应用保存的消息可能没有附件的标签
+		}
 		return transcript{msgs: h.Messages, cursor: h.Cursor}, errors.Wrap(err, "chat: load history")
 	}
 	sess, err := rs.sessions.GetSession(ctx, key)

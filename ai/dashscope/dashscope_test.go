@@ -112,7 +112,7 @@ func TestEmbedRejects(t *testing.T) {
 	assert.Len(t, vecs, 1)
 	_, err = c.Embed(t.Context(), ai.EmbedRequest{Inputs: []ai.Content{{ai.TextPart("红色"), ai.MediaPart(pngImage)}}})
 	assert.ErrorIs(t, err, ai.ErrUnsupportedInput)
-	assert.ErrorContains(t, err, `cannot combine text and an image in input 0 (got a "image" embedding)`)
+	assert.ErrorContains(t, err, `cannot combine text and media in input 0 (got a "image" embedding)`)
 
 	// 不发请求就拒绝的输入。
 	c, got := newClient(t, embeddings("vl"))
@@ -131,7 +131,10 @@ func TestEmbedRejects(t *testing.T) {
 
 func TestEmbedErrors(t *testing.T) {
 	c, _ := newClient(t, func(request) (int, any) {
-		return http.StatusOK, map[string]any{"output": map[string]any{"embeddings": []map[string]any{{"index": 0, "embedding": []float64{1}}}}}
+		// 两个向量的序号相同，第二项没有向量。
+		return http.StatusOK, map[string]any{"output": map[string]any{"embeddings": []map[string]any{
+			{"index": 0, "embedding": []float64{1}}, {"index": 0, "embedding": []float64{2}},
+		}}}
 	})
 	_, err := c.Embed(t.Context(), ai.EmbedRequest{Inputs: []ai.Content{ai.Text("a"), ai.Text("b")}})
 	assert.ErrorContains(t, err, "no embedding returned for input 1")
@@ -177,9 +180,71 @@ func TestRerank(t *testing.T) {
 
 	_, err = c.Rerank(t.Context(), ai.Text("q"), []ai.Content{ai.Text("a")}, 0)
 	assert.ErrorContains(t, err, "rerank index 2 out of range")
-	_, err = c.Rerank(t.Context(), ai.Text("q"), []ai.Content{{ai.MediaPart(ai.Media{Data: []byte("x"), MIME: "video/mp4"})}}, 0)
+	_, err = c.Rerank(t.Context(), ai.Text("q"), []ai.Content{{ai.MediaPart(ai.Media{Data: []byte("x"), MIME: "audio/mpeg"})}}, 0)
 	assert.ErrorIs(t, err, ai.ErrUnsupportedInput)
 	assert.ErrorContains(t, err, "rerank document 0")
+}
+
+var mp4Video = ai.Media{Data: []byte("MP4"), MIME: "video/mp4"}
+
+const mp4URL = "data:video/mp4;base64,TVA0"
+
+func TestEmbedVideo(t *testing.T) {
+	c, got := newClient(t, embeddings("vl"))
+	inputs := []ai.Content{
+		ai.Text("花"),
+		{ai.MediaPart(mp4Video)},
+		{ai.MediaPart(mp4Video)},
+		{ai.TextPart("一朵花"), ai.MediaPart(mp4Video)},
+		{ai.MediaPart(pngImage)},
+	}
+	vecs, err := c.Embed(t.Context(), ai.EmbedRequest{Inputs: inputs})
+	require.NoError(t, err)
+	assert.Len(t, vecs, 5)
+	// 每次请求最多一段视频。
+	var contents [][]any
+	for _, r := range *got {
+		contents = append(contents, r.Body["input"].(map[string]any)["contents"].([]any))
+	}
+	assert.Equal(t, [][]any{
+		{map[string]any{"text": "花"}, map[string]any{"video": mp4URL}},
+		{map[string]any{"video": mp4URL}},
+		{map[string]any{"text": "一朵花", "video": mp4URL}, map[string]any{"image": pngURL}},
+	}, contents)
+
+	// 没有把文字和视频融合为一个向量。
+	c, _ = newClient(t, embeddings("text"))
+	_, err = c.Embed(t.Context(), ai.EmbedRequest{Inputs: []ai.Content{{ai.TextPart("花"), ai.MediaPart(mp4Video)}}})
+	assert.ErrorIs(t, err, ai.ErrUnsupportedInput)
+	assert.ErrorContains(t, err, "cannot combine text and media in input 0")
+}
+
+func TestEmbedCombinedBatch(t *testing.T) {
+	// qwen2.5-vl-embedding 把一次请求中的所有项融合为一个向量。
+	c, _ := newClient(t, func(request) (int, any) {
+		return http.StatusOK, map[string]any{"output": map[string]any{"embeddings": []map[string]any{{"index": 0, "embedding": []float64{1}, "type": "vl"}}}}
+	})
+	_, err := c.Embed(t.Context(), ai.EmbedRequest{Inputs: []ai.Content{ai.Text("a"), ai.Text("b")}})
+	assert.ErrorContains(t, err, `returned 1 embeddings for 2 inputs`)
+	assert.ErrorContains(t, err, "dashscope.WithBatchSize(1)")
+
+	c, got := newClient(t, embeddings("vl"), dashscope.WithBatchSize(1))
+	vecs, err := c.Embed(t.Context(), ai.EmbedRequest{Inputs: []ai.Content{ai.Text("a"), ai.Text("b")}})
+	require.NoError(t, err)
+	assert.Len(t, vecs, 2)
+	assert.Len(t, *got, 2)
+}
+
+func TestRerankVideo(t *testing.T) {
+	c, got := newClient(t, func(request) (int, any) {
+		return http.StatusOK, map[string]any{"output": map[string]any{"results": []map[string]any{{"index": 0, "relevance_score": 0.7}}}}
+	})
+	_, err := c.Rerank(t.Context(), ai.Text("一朵花"), []ai.Content{{ai.MediaPart(mp4Video)}}, 0)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]any{
+		"query":     map[string]any{"text": "一朵花"},
+		"documents": []any{map[string]any{"video": mp4URL}},
+	}, (*got)[0].Body["input"])
 }
 
 func TestCompatibleAPI(t *testing.T) {

@@ -42,21 +42,21 @@ func TestHybridKeywords(t *testing.T) {
 	// aitest.Embedder 给不同的文本几乎正交的向量，语义那一路的排序是随机的：
 	// 只有关键词命中的分段在两路中都有排名，总是排在第一
 	for _, q := range []string{"X-2000", "x-2000 保修", "保修期多久"} {
-		hits := f.searchHybrid(t, vector.Query{Text: q, Limit: 1})
+		hits := f.searchHybrid(t, vector.Query{Input: vector.Text(q), Limit: 1})
 		if len(hits) != 1 || hits[0].Key != "a" {
 			t.Fatalf("%q: hits = %+v", q, hits)
 		}
 	}
 	// 没有切分出词的查询只走语义那一路，结果仍然完整
-	if hits := f.searchHybrid(t, vector.Query{Text: "！？"}); len(hits) != 4 {
+	if hits := f.searchHybrid(t, vector.Query{Input: vector.Text("！？")}); len(hits) != 4 {
 		t.Fatalf("query without terms returned %d hits", len(hits))
 	}
 	// 原文完全相同的查询在两路中都排第一
-	if hits := f.searchHybrid(t, vector.Query{Text: "发票随货寄出"}); hits[0].Doc.Text != "发票随货寄出" {
+	if hits := f.searchHybrid(t, vector.Query{Input: vector.Text("发票随货寄出")}); hits[0].Doc.Text != "发票随货寄出" {
 		t.Fatalf("exact text hits = %v", texts(hits))
 	}
 	// 过滤对两路都生效
-	hits := f.searchHybrid(t, vector.Query{Text: "X-2000", Filter: vector.Eq("file", "b")})
+	hits := f.searchHybrid(t, vector.Query{Input: vector.Text("X-2000"), Filter: vector.Eq("file", "b")})
 	if got := sorted(texts(hits)); !slices.Equal(got, []string{"发票随货寄出", "退货需要在七天内申请"}) {
 		t.Fatalf("filtered hits = %v", got)
 	}
@@ -71,7 +71,7 @@ func TestHybridReusesVectors(t *testing.T) {
 	if got := f.emb.Requests(); len(got) != before+1 || !slices.Equal(inputTexts(got[before]), []string{"新的一段"}) {
 		t.Fatalf("embedding requests = %v", got)
 	}
-	if got := sorted(texts(f.searchHybrid(t, vector.Query{Text: "一段"}))); len(got) != 3 {
+	if got := sorted(texts(f.searchHybrid(t, vector.Query{Input: vector.Text("一段")}))); len(got) != 3 {
 		t.Fatalf("documents = %v", got)
 	}
 }
@@ -93,7 +93,7 @@ func TestHybridReindex(t *testing.T) {
 	if err := hybrid.Refresh(ctx, f.store, f.src.load, "c"); err != nil {
 		t.Fatal(err)
 	}
-	if hits, err := hybrid.Search(ctx, f.store, vector.Query{Text: "售后服务热线全天开放"}); err != nil || len(hits) != 3 || hits[0].Key != "c" {
+	if hits, err := hybrid.Search(ctx, f.store, vector.Query{Input: vector.Text("售后服务热线全天开放")}); err != nil || len(hits) != 3 || hits[0].Key != "c" {
 		t.Fatalf("search before reindex = %+v, %v", hits, err)
 	}
 
@@ -113,7 +113,7 @@ func TestHybridReindex(t *testing.T) {
 		t.Fatalf("operation = %+v", op)
 	}
 	for _, q := range []string{"X-2000", "七天"} {
-		hits, err := hybrid.Search(ctx, f.store, vector.Query{Text: q, Limit: 1})
+		hits, err := hybrid.Search(ctx, f.store, vector.Query{Input: vector.Text(q), Limit: 1})
 		want := map[string]string{"X-2000": "a", "七天": "b"}[q]
 		if err != nil || len(hits) != 1 || hits[0].Key != want {
 			t.Fatalf("%q after reindex = %+v, %v", q, hits, err)

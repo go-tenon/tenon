@@ -8,7 +8,7 @@
 //	router.Handle(web.AssetsPath+"*", web.Assets())
 //	router.Handle(ui.AssetsPath+"*", ui.Assets())
 //	ops := router.With(httpx.BasicAuth("ops", verifyOps))
-//	admin := queue.NewAdmin(cfg.Queue, logger) // 进程退出前 admin.Close()
+//	admin := queue.NewAdmin(nc, cfg.Queue) // nc 是应用的 NATS 连接，见 natsx.Connect
 //	queueweb.Register(ops, "/ops/queue", db, queueweb.Options{
 //		Admin: admin,
 //		Links: map[string]string{"Grafana": cfg.GrafanaURL},

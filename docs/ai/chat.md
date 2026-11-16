@@ -308,6 +308,38 @@ React 前端可以直接用 `@go-tenon/shell/chat` 的 [`useAssistantChat`](../f
 
 其他写法（例如 `blob:`）和缺少 `mediaType` 的文件返回 `422`。不使用 `useChat` 时，自己构造带 `ContentParts` 的 `model.Message` 交给 `Runs.Start`，例如用 `msg.AddImageData(data, "auto", "png")`。
 
+<a id="attachments-in-tools"></a>
+#### 在工具中使用附件
+
+模型能看到图片，但调用工具时只能传 JSON 参数，传不了图片本身。用户发来一张照片问“有没有类似的商品”，工具要拿到这张照片才能[以图搜图](vector.md#image-queries)。
+
+为此，`Runs` 在用户消息的每个附件前面写上 `[attachment 3f2a9c1e7b04]`，模型调用工具时把这个 ID 作为参数传入，工具用 `chat.FindAttachment` 取出附件：
+
+```go
+type SimilarArgs struct {
+    AttachmentID string `json:"attachment_id" jsonschema:"description=用户发送的图片，消息中 [attachment …] 里的 ID"`
+}
+
+func NewSimilarProducts(vectors *vector.Store) tool.Tool {
+    return function.NewFunctionTool(func(ctx context.Context, args SimilarArgs) ([]product.Summary, error) {
+        a, err := chat.FindAttachment(ctx, args.AttachmentID)
+        if err != nil {
+            return nil, err // 错误交给模型
+        }
+        hits, err := product.Products.Search(ctx, vectors, vector.Query{
+            Input:      vector.Content{vector.MediaPart(a.Media)},
+            GroupByKey: true,
+        })
+        // ……
+    }, function.WithName("similar_products"), function.WithDescription("按用户发送的图片查找相似的商品"))
+}
+```
+
+- ID 由附件的内容计算，同一个附件在对话中始终是同一个 ID，之前几轮发送的附件也能找到。`chat.Attachments(ctx)` 列出对话中所有的附件。
+- 标签只给模型看：`UIMessages` 返回的历史中没有它，调用方传入的消息也不会被修改。`Start`、`Submit`、`Send`、`Steer`、`Append` 收到的消息，以及 `UseHistory` 读出的历史，都会加上标签，应用自己保存的消息不用处理。
+- 以链接发送的附件没有内容，`Attachment.URL` 是它的地址。
+- ID 不存在时返回 `chat.ErrAttachmentNotFound`，错误作为工具的结果交给模型，模型可以据此改正 ID。工具收到的 ID 带着 `[attachment …]` 外壳时也能找到。
+
 <a id="stopping"></a>
 ### 停止回答
 

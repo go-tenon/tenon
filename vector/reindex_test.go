@@ -103,7 +103,7 @@ func TestReindexSwitchesModel(t *testing.T) {
 
 	// 换了模型：新版本用 new 建立，重建完成之前查询和同步当前版本仍用 old
 	changed := shared.store(vector.Model{Name: "new", Dims: dims / 2, Embedder: newEmb}, vector.WithPrevious(oldModel))
-	if hits, err := chunks.Search(ctx, changed, vector.Query{Text: "原来的a"}); err != nil || len(hits) != 3 || hits[0].Key != "a" {
+	if hits, err := chunks.Search(ctx, changed, vector.Query{Input: vector.Text("原来的a")}); err != nil || len(hits) != 3 || hits[0].Key != "a" {
 		t.Fatalf("search before reindex = %+v, %v", hits, err)
 	}
 	if n := len(newEmb.Requests()); n != 0 {
@@ -130,7 +130,7 @@ func TestReindexSwitchesModel(t *testing.T) {
 	if v := version(t, f.db); v != 2 {
 		t.Fatalf("version = %d, want 2", v)
 	}
-	hits, err := chunks.Search(ctx, changed, vector.Query{Text: "没有同步过的d"})
+	hits, err := chunks.Search(ctx, changed, vector.Query{Input: vector.Text("没有同步过的d")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,14 +140,14 @@ func TestReindexSwitchesModel(t *testing.T) {
 
 	// 切换之后旧模型可以移除；旧版本的 collection 已经删除
 	only := shared.store(vector.Model{Name: "new", Dims: dims / 2, Embedder: newEmb})
-	if _, err := chunks.Search(ctx, only, vector.Query{Text: "原来的b"}); err != nil {
+	if _, err := chunks.Search(ctx, only, vector.Query{Input: vector.Text("原来的b")}); err != nil {
 		t.Fatal(err)
 	}
 	eventually(t, "old version to be dropped", func() bool { return !shared.exists(t, "chunks_v1") })
 	if !shared.exists(t, "chunks_v2") {
 		t.Fatal("version 2 is missing")
 	}
-	if _, err := chunks.Search(ctx, old, vector.Query{Text: "x"}); err == nil {
+	if _, err := chunks.Search(ctx, old, vector.Query{Input: vector.Text("x")}); err == nil {
 		t.Fatal("search with only the old model succeeded after the switch")
 	}
 }
@@ -170,7 +170,7 @@ func TestReindexSuperseded(t *testing.T) {
 	if v := version(t, f.db); v != 3 {
 		t.Fatalf("version = %d, want 3", v)
 	}
-	if got := sorted(texts(f.search(t, vector.Query{Text: "一"}))); !slices.Equal(got, []string{"一", "二"}) {
+	if got := sorted(texts(f.search(t, vector.Query{Input: vector.Text("一")}))); !slices.Equal(got, []string{"一", "二"}) {
 		t.Fatalf("documents = %v", got)
 	}
 }
@@ -185,7 +185,7 @@ func TestReindexInvalidDocument(t *testing.T) {
 	if op := waitOperation(t, f.db, id); op.Status != operation.StatusCompleted || op.Processed != 2 || op.Failed != 1 {
 		t.Fatalf("operation = %+v, want completed with 1 failed", op)
 	}
-	if got := texts(f.search(t, vector.Query{Text: "一"})); !slices.Equal(got, []string{"一"}) {
+	if got := texts(f.search(t, vector.Query{Input: vector.Text("一")})); !slices.Equal(got, []string{"一"}) {
 		t.Fatalf("documents = %v", got)
 	}
 }
@@ -204,7 +204,7 @@ func TestReindexChangesDimensions(t *testing.T) {
 
 	// 同一个模型改用更少的维度：名称相同、维度不同的旧模型用 WithPrevious 传入
 	changed := shared.store(vector.Model{Name: "embedding", Dims: dims / 2, Embedder: reduced}, vector.WithPrevious(fullModel))
-	if hits, err := chunks.Search(ctx, changed, vector.Query{Text: "原来的a"}); err != nil || len(hits) != 1 {
+	if hits, err := chunks.Search(ctx, changed, vector.Query{Input: vector.Text("原来的a")}); err != nil || len(hits) != 1 {
 		t.Fatalf("search before reindex = %+v, %v", hits, err)
 	}
 	id := startReindex(t, f.db)
@@ -217,7 +217,7 @@ func TestReindexChangesDimensions(t *testing.T) {
 		t.Fatalf("operation = %+v", op)
 	}
 	only := shared.store(vector.Model{Name: "embedding", Dims: dims / 2, Embedder: reduced})
-	hits, err := chunks.Search(ctx, only, vector.Query{Text: "重建期间的b"})
+	hits, err := chunks.Search(ctx, only, vector.Query{Input: vector.Text("重建期间的b")})
 	if err != nil || len(hits) != 2 || hits[0].Key != "b" {
 		t.Fatalf("search after reindex = %+v, %v", hits, err)
 	}

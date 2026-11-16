@@ -113,7 +113,7 @@ var rules = map[string]rule{
 	"search":            {layerFeature, []string{"database", "errorx", "identity", "operation", "page", "queue"}},
 	"search/gse":        {layerFeature, []string{"search"}},
 	"search/searchcmd":  {layerFeature, []string{"command", "database", "identity", "operation"}},
-	"vector":            {layerFeature, []string{"ai", "database", "doctor", "errorx", "identity", "operation", "queue", "search"}},
+	"vector":            {layerFeature, []string{"ai", "database", "doctor", "errorx", "filesystem", "identity", "operation", "queue", "search"}},
 	"vector/vectortest": {layerFeature, []string{"vector"}},
 	"ai":                {layerFeature, nil},
 	"ai/chat":           {layerFeature, []string{"ai", "broadcast", "errorx", "httpx", "lock", "logging"}},
