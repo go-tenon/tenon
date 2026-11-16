@@ -54,8 +54,9 @@ type Frontend struct {
 
 // Templates 是 tenon add frontend 的 --template 可选的模板：
 //   - default：React、TanStack Router 和 @go-tenon/shell 的最小前端；
-//   - admin：运营后台，antd 和 ProComponents，带登录页、侧栏布局和多标签（@go-tenon/admin）。
-var Templates = []string{"default", "admin"}
+//   - admin：运营后台，antd 和 ProComponents，带登录页、侧栏布局和多标签（@go-tenon/admin）；
+//   - console：shadcn 和 Tailwind 的控制台，带登录页、侧栏布局、多标签和 tenon registry 的组件。
+var Templates = []string{"default", "admin", "console"}
 
 // AdminPackage 是 admin 模板依赖的框架前端包在项目中的位置，加入 Bun workspace。
 // 默认不加入：Bun 会安装包的 peer 依赖，不用 antd 的项目不应该因此装上 antd。
@@ -63,6 +64,44 @@ const AdminPackage = ".tenon/js/admin"
 
 // AntdMCP 是 admin 模板写入项目 .mcp.json 的 antd MCP 服务：@ant-design/cli 的版本与模板中的 antd 相同。
 var AntdMCP = map[string]any{"command": "bunx", "args": []any{"@ant-design/cli@6.6.8", "mcp"}}
+
+// ShadcnMCP 是 console 模板写入项目 .mcp.json 的 shadcn MCP 服务，版本与模板中的 shadcn 相同。
+var ShadcnMCP = map[string]any{"command": "bunx", "args": []any{"shadcn@4.23.0", "mcp"}}
+
+// RegistryFiles 是 console 模板从 tenon 的 shadcn registry（框架的 js/registry，复制在项目的 .tenon/js/registry）
+// 加入前端的文件：shadcn 的组件、tenon 的组件和它们用到的 hooks、cn。
+var RegistryFiles = []string{"src/components/ui", "src/components/tenon", "src/hooks", "src/lib/utils.ts"}
+
+// InstallRegistry 把 registry（项目中 .tenon/js/registry 的位置）中的 RegistryFiles 复制到前端目录 dir，
+// 与 shadcn add 加入的内容相同；跳过测试文件，已有的文件不覆盖。
+func InstallRegistry(registry, dir string) error {
+	for _, rel := range RegistryFiles {
+		src := filepath.Join(registry, filepath.FromSlash(rel))
+		err := filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return err
+			}
+			name := d.Name()
+			if strings.HasSuffix(name, ".test.ts") || strings.HasSuffix(name, ".test.tsx") {
+				return nil
+			}
+			r, _ := filepath.Rel(registry, p)
+			target := filepath.Join(dir, r)
+			if _, err := os.Stat(target); err == nil {
+				return nil
+			}
+			data, err := os.ReadFile(p)
+			if err != nil {
+				return err
+			}
+			return writeFile(target, data)
+		})
+		if err != nil {
+			return fmt.Errorf("scaffold: install registry: %w", err)
+		}
+	}
+	return nil
+}
 
 // Package 是嵌入构建产物的 Go 包名：前端的名称去掉连字符。
 func (f Frontend) Package() string { return strings.ReplaceAll(f.Name, "-", "") }
@@ -101,6 +140,8 @@ func WriteFrontend(root string, f Frontend) error {
 		return render("template/frontend", dir, f)
 	case "admin":
 		return render("template/admin", dir, f)
+	case "console":
+		return render("template/console", dir, f)
 	}
 	return fmt.Errorf("template %q is not one of %v", f.Template, Templates)
 }

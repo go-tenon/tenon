@@ -142,6 +142,7 @@ router.Handle("/admin/*", httpx.NewSPA(admin.Dist, httpx.SPAOptions{Base: "/admi
 | --- | --- |
 | `default`（默认） | React、TanStack Router 和[应用骨架](../responses/app-shell.md)的最小前端 |
 | `admin` | 用 antd 写的运营后台：登录页、侧栏布局、多标签、用户菜单，以及给 AI 编程助手的约定，见[运营后台](../responses/admin.md) |
+| `console` | 用 shadcn 和 Tailwind 写的控制台：登录页、内嵌式侧栏布局、多标签、⌘K，组件来自 tenon 的 shadcn registry，见 [shadcn registry 与控制台](../responses/registry.md) |
 
 ```bash
 go tool tenon add frontend admin --template admin

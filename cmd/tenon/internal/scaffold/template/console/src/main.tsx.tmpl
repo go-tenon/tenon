@@ -1,0 +1,16 @@
+import { StrictMode } from "react"
+import { createRoot } from "react-dom/client"
+import { AppRoot } from "@go-tenon/shell"
+import { app } from "./app"
+import "./index.css"
+// 设计令牌（theme/tokens.json）在 shadcn 的默认变量之后加载：品牌色、圆角等覆盖默认值。
+import "@[[.Scope]]/theme/tokens.css"
+
+const root = document.getElementById("root")
+if (!root) throw new Error("index.html 中缺少 <div id=\"root\">")
+
+createRoot(root).render(
+  <StrictMode>
+    <AppRoot app={app} />
+  </StrictMode>,
+)

@@ -1,0 +1,14 @@
+import { fileURLToPath } from "node:url"
+import { defineConfig } from "vite"
+import react from "@vitejs/plugin-react"
+import tailwindcss from "@tailwindcss/vite"
+import { tanstackRouter } from "@tanstack/router-plugin/vite"
+import { tenonVersion } from "@go-tenon/shell/vite"
+
+// 构建到 dist，由 frontend.go 嵌入程序。base 与 Go 中挂载这个前端的路径相同。
+// @/ 是 shadcn 组件的路径别名（components.json）。
+export default defineConfig({
+  base: "[[.Base]]",
+  plugins: [tanstackRouter({ target: "react", autoCodeSplitting: true }), react(), tailwindcss(), tenonVersion()],
+  resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
+})

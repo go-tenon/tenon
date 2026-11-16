@@ -1,0 +1,42 @@
+# [[.Name]]
+
+这是用 shadcn 和 Tailwind 写的前端，挂在 `[[.Base]]`。
+
+## 允许使用的库
+
+- 界面用 **shadcn**（`src/components/ui`，基于 Radix）和 **Tailwind CSS**，图标用 `lucide-react`。
+- 不用 antd：`bun run lint` 会拒绝这些导入。
+- 缺少的 shadcn 组件用 `bunx shadcn@4.23.0 add <名称>` 加入。项目根目录的 `.mcp.json` 中有 shadcn 的 MCP 服务，可以查询组件和示例。
+- 框架提供的组件在 `src/components/tenon`：布局、标签栏、用户菜单、⌘K、资源表格、表单、对话框。它们来自 tenon 的 shadcn registry，已经在项目中，可以直接修改。其他的用 `bunx shadcn@4.23.0 add ./.tenon/js/registry/r/<名称>.json` 加入。
+
+## 写法
+
+- **页面**：`src/routes` 中一个文件一个页面，需要登录的页面放在 `src/routes/_app/` 下。标题、图标、菜单顺序、权限写在路由的 `staticData` 中，菜单、面包屑、标签栏和权限检查都来自这里：
+
+  ```tsx
+  export const Route = createFileRoute("/_app/articles/")({
+    staticData: { title: "文章", icon: "file-text", order: 10, permission: "articles:read" },
+    validateSearch: listSearch<ArticleListInput>(schemas.article.list.query, { components }),
+    component: Articles,
+  })
+  ```
+
+  `icon` 是名字，映射在 `src/components/tenon/nav.tsx` 的 `icons` 中。
+- **接口**：用生成的客户端 `@[[.Scope]]/client/api`，不要手写 fetch（`src/auth.ts` 中的登录接口除外）。读取用 TanStack Query。
+- **页面结构**：`PageHeader` 放标题和操作；加载、出错、空状态用 `PageLoading`、`PageError`、`PageEmpty`。
+- **列表**：`DataTable` 和 `ListToolbar`（`src/components/tenon/data-table.tsx`），状态用 `useList(Route)`，分页、排序、搜索保存在地址中。
+- **表单**：`useApiForm` 和 `Field`（`src/components/tenon/form.tsx`），校验规则用生成的 `schemas.ts`，与服务端相同；提交失败时字段错误显示在输入框下面。
+- **危险操作**：先 `await confirm({ title, destructive: true })`（`useConfirm`）。
+- **按钮权限**：`useCan()("articles:write")`。前端的检查只决定显示什么，接口仍由服务端检查。
+- **顶栏的操作**：`<Fill name="actions">…</Fill>`，不要直接修改布局。
+- 颜色用 Tailwind 的语义类（`bg-primary`、`text-muted-foreground` 等），品牌色来自设计令牌 `theme/tokens.json`，不要写死颜色值。
+- 文案用中文。
+
+## 检查
+
+```bash
+bun run typecheck
+bun run lint
+```
+
+框架的文档：应用骨架（`@go-tenon/shell`）、设计令牌、shadcn registry。
