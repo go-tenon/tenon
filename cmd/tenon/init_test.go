@@ -50,7 +50,7 @@ func TestInitEndToEnd(t *testing.T) {
 		}
 	}
 	// 第二个前端挂在 /admin/：按 add frontend 的提示修改路由。
-	sh("go", "tool", "tenon", "add", "frontend", "admin")
+	sh("go", "tool", "tenon", "add", "frontend", "admin", "--template", "admin")
 	mainGo := filepath.Join(dir, "cmd", "api", "main.go")
 	src, err := os.ReadFile(mainGo)
 	if err != nil {

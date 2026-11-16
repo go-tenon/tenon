@@ -5,6 +5,7 @@ package scaffold
 import (
 	"bytes"
 	"embed"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -47,7 +48,21 @@ type Frontend struct {
 	Base string
 	// Title 是页面标题。
 	Title string
+	// Template 是前端的模板，见 Templates；为空时是 default。
+	Template string
 }
+
+// Templates 是 tenon add frontend 的 --template 可选的模板：
+//   - default：React、TanStack Router 和 @go-tenon/shell 的最小前端；
+//   - admin：运营后台，antd 和 ProComponents，带登录页、侧栏布局和多标签（@go-tenon/admin）。
+var Templates = []string{"default", "admin"}
+
+// AdminPackage 是 admin 模板依赖的框架前端包在项目中的位置，加入 Bun workspace。
+// 默认不加入：Bun 会安装包的 peer 依赖，不用 antd 的项目不应该因此装上 antd。
+const AdminPackage = ".tenon/js/admin"
+
+// AntdMCP 是 admin 模板写入项目 .mcp.json 的 antd MCP 服务：@ant-design/cli 的版本与模板中的 antd 相同。
+var AntdMCP = map[string]any{"command": "bunx", "args": []any{"@ant-design/cli@6.6.8", "mcp"}}
 
 // Package 是嵌入构建产物的 Go 包名：前端的名称去掉连字符。
 func (f Frontend) Package() string { return strings.ReplaceAll(f.Name, "-", "") }
@@ -81,7 +96,40 @@ func WriteFrontend(root string, f Frontend) error {
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
-	return render("template/frontend", dir, f)
+	switch f.Template {
+	case "", "default":
+		return render("template/frontend", dir, f)
+	case "admin":
+		return render("template/admin", dir, f)
+	}
+	return fmt.Errorf("template %q is not one of %v", f.Template, Templates)
+}
+
+// AddMCPServer 在 root/.mcp.json 的 mcpServers 中加入 name，已有同名的服务时不修改；文件不存在时新建。
+func AddMCPServer(root, name string, server map[string]any) error {
+	p := filepath.Join(root, ".mcp.json")
+	doc := map[string]any{}
+	if data, err := os.ReadFile(p); err == nil {
+		if err := json.Unmarshal(data, &doc); err != nil {
+			return fmt.Errorf(".mcp.json: %w", err)
+		}
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	servers, _ := doc["mcpServers"].(map[string]any)
+	if servers == nil {
+		servers = map[string]any{}
+	}
+	if _, ok := servers[name]; ok {
+		return nil
+	}
+	servers[name] = server
+	doc["mcpServers"] = servers
+	data, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(p, append(data, '\n'), 0o644)
 }
 
 // workspaces 是 package.json 中的 workspaces 数组。

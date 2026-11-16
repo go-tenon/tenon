@@ -137,3 +137,62 @@ func TestSlug(t *testing.T) {
 		}
 	}
 }
+
+func TestWriteAdminFrontend(t *testing.T) {
+	root := t.TempDir()
+	f := scaffold.Frontend{Scope: "helpdesk", Name: "ops", Base: "/ops/", Title: "运营后台", Template: "admin"}
+	if err := scaffold.WriteFrontend(root, f); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(root, "apps", "ops")
+	for name, want := range map[string]string{
+		"package.json":              `"@go-tenon/admin": "workspace:*"`,
+		"vite.config.ts":            `base: "/ops/"`,
+		"frontend.go":               "package ops\n",
+		"AGENTS.md":                 "挂在 `/ops/`",
+		"biome.json":                "noRestrictedImports",
+		"src/app.ts":                `id: "ops"`,
+		"src/routes/__root.tsx":     `import { antd } from "@helpdesk/theme"`,
+		"src/routes/_app.tsx":       "beforeLoad: requireAuth",
+		"src/routes/login.tsx":      `<AuthLayout title="运营后台">`,
+		"src/routes/_app/index.tsx": "欢迎使用运营后台",
+		"src/routeTree.gen.ts":      "LoginRouteImport",
+	} {
+		if b, _ := os.ReadFile(filepath.Join(dir, name)); !strings.Contains(string(b), want) {
+			t.Errorf("%s missing %q:\n%s", name, want, b)
+		}
+	}
+	if err := scaffold.WriteFrontend(t.TempDir(), scaffold.Frontend{Name: "x", Template: "vue"}); err == nil {
+		t.Error("unknown template accepted")
+	}
+}
+
+func TestAddMCPServer(t *testing.T) {
+	root := t.TempDir()
+	read := func() string {
+		b, _ := os.ReadFile(filepath.Join(root, ".mcp.json"))
+		return string(b)
+	}
+	if err := scaffold.AddMCPServer(root, "antd", scaffold.AntdMCP); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(); !strings.Contains(got, `"@ant-design/cli@6.6.8"`) {
+		t.Fatalf(".mcp.json:\n%s", got)
+	}
+	// 已有的服务和其他字段保留；同名的服务不覆盖。
+	if err := os.WriteFile(filepath.Join(root, ".mcp.json"), []byte(`{"mcpServers": {"antd": {"command": "mine"}, "db": {"command": "db"}}, "other": 1}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := scaffold.AddMCPServer(root, "antd", scaffold.AntdMCP); err != nil {
+		t.Fatal(err)
+	}
+	if err := scaffold.AddMCPServer(root, "shadcn", map[string]any{"command": "x"}); err != nil {
+		t.Fatal(err)
+	}
+	got := read()
+	for _, want := range []string{`"command": "mine"`, `"db"`, `"other": 1`, `"shadcn"`} {
+		if !strings.Contains(got, want) {
+			t.Errorf(".mcp.json missing %s:\n%s", want, got)
+		}
+	}
+}

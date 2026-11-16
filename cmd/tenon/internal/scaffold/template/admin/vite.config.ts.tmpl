@@ -1,0 +1,12 @@
+import { defineConfig } from "vite"
+import react from "@vitejs/plugin-react"
+import { tanstackRouter } from "@tanstack/router-plugin/vite"
+import { tenonVersion } from "@go-tenon/shell/vite"
+
+// 构建到 dist，由 frontend.go 嵌入程序。base 与 Go 中挂载这个前端的路径相同。
+// tanstackRouter 由 src/routes 生成路由树 src/routeTree.gen.ts，要放在 react 之前；
+// tenonVersion 写入 version.json，发布新版本后提示打开着的页面刷新。
+export default defineConfig({
+  base: "[[.Base]]",
+  plugins: [tanstackRouter({ target: "react", autoCodeSplitting: true }), react(), tenonVersion()],
+})
