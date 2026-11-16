@@ -5,6 +5,8 @@ package natsbroadcast
 
 import (
 	"context"
+	"crypto/rand"
+	"fmt"
 	"strings"
 	"time"
 
@@ -57,10 +59,33 @@ func validPrefix(s string) bool {
 	return true
 }
 
+// chunkHeader 标记分片发送的消息的一片："<消息 ID> <序号> <总片数>"，序号从 0 开始。
+const chunkHeader = "Tenon-Chunk"
+
+// chunkHeadroom 是每一片给 subject 和消息头留出的字节数。
+const chunkHeadroom = 4 << 10
+
 // Publish 实现 broadcast.Backend。消息由连接在后台发送；连接中断期间先缓存在客户端，重新连上后发出。
-// 消息的大小受服务器的 max_payload 限制，默认 1MB。
+//
+// 超过服务器 max_payload（默认 1MB）的消息分成多片依次发送，订阅方收齐后拼回原来的消息再交给 Hub，例如带附件的
+// AI 对话转交给 worker。同一个连接发布的消息按顺序到达，所以各片不会乱序；缺了一片时整条消息丢弃。
 func (b *Backend) Publish(_ context.Context, msg broadcast.Message) error {
-	return errors.Wrap(b.nc.Publish(b.prefix+"."+msg.Topic, msg.Data), "natsbroadcast: publish")
+	subject := b.prefix + "." + msg.Topic
+	size := int(b.nc.MaxPayload()) - chunkHeadroom
+	if len(msg.Data) <= size || size <= 0 {
+		return errors.Wrap(b.nc.Publish(subject, msg.Data), "natsbroadcast: publish")
+	}
+	id := rand.Text()
+	total := (len(msg.Data) + size - 1) / size
+	for i := range total {
+		part := nats.NewMsg(subject)
+		part.Header.Set(chunkHeader, fmt.Sprintf("%s %d %d", id, i, total))
+		part.Data = msg.Data[i*size : min((i+1)*size, len(msg.Data))]
+		if err := b.nc.PublishMsg(part); err != nil {
+			return errors.Wrap(err, "natsbroadcast: publish")
+		}
+	}
+	return nil
 }
 
 // Listen 实现 broadcast.Backend：订阅 <prefix>.>，连接断开、重新连上和订阅跟不上时报告丢失。
@@ -112,11 +137,15 @@ func (b *Backend) listen(ctx context.Context, deliver func(broadcast.Message), l
 		return false, errors.Wrap(err, "natsbroadcast: subscribe")
 	}
 	defer func() { _ = sub.Unsubscribe() }()
+	chunks := assembler{}
 	for {
 		msg, err := sub.NextMsgWithContext(ctx)
 		switch {
 		case err == nil:
-			deliver(broadcast.Message{Topic: msg.Subject[len(b.prefix)+1:], Data: msg.Data})
+			data, ok := chunks.add(msg, time.Now())
+			if ok {
+				deliver(broadcast.Message{Topic: msg.Subject[len(b.prefix)+1:], Data: data})
+			}
 		case errors.Is(err, nats.ErrSlowConsumer):
 			// 客户端的缓冲区满了，丢弃过消息；订阅仍然有效。
 			lost(errors.Wrap(err, "natsbroadcast"))
@@ -124,4 +153,54 @@ func (b *Backend) listen(ctx context.Context, deliver func(broadcast.Message), l
 			return true, errors.Wrap(err, "natsbroadcast: receive")
 		}
 	}
+}
+
+// 正在拼接的消息最多保留 chunkTTL，最多 maxPending 条：发布方中途停下、订阅晚于第一片开始时，残片不会一直占着内存。
+const (
+	chunkTTL   = 30 * time.Second
+	maxPending = 16
+)
+
+// assembler 把分片发送的消息拼回原样。只在接收消息的协程中使用，不需要加锁。
+type assembler map[string]*pending
+
+type pending struct {
+	data    []byte
+	next    int // 下一片的序号
+	total   int
+	started time.Time
+}
+
+// add 处理收到的一条消息：没有分片的直接返回；分片的收齐后返回整条消息，否则 ok 为 false。
+func (a assembler) add(msg *nats.Msg, now time.Time) (data []byte, ok bool) {
+	header := msg.Header.Get(chunkHeader)
+	if header == "" {
+		return msg.Data, true
+	}
+	var id string
+	var i, total int
+	if _, err := fmt.Sscanf(header, "%s %d %d", &id, &i, &total); err != nil || total <= 0 || i < 0 || i >= total {
+		return nil, false
+	}
+	for k, p := range a {
+		if now.Sub(p.started) > chunkTTL {
+			delete(a, k)
+		}
+	}
+	p := a[id]
+	switch {
+	case i == 0 && len(a) < maxPending:
+		p = &pending{total: total, started: now}
+		a[id] = p
+	case p == nil || i != p.next || total != p.total:
+		delete(a, id) // 没有收到第一片（订阅晚于发布开始）或者中间缺了一片：整条消息丢弃
+		return nil, false
+	}
+	p.data = append(p.data, msg.Data...)
+	p.next++
+	if p.next < p.total {
+		return nil, false
+	}
+	delete(a, id)
+	return p.data, true
 }

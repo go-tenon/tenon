@@ -149,7 +149,7 @@ hub := broadcast.New(natsbroadcast.New(nc, "app.broadcast"), nil)
 
 NATS 的发布订阅只转发在线的消息：连接中断期间其他实例发布的消息就丢了；本实例处理不过来、NATS 客户端的缓冲区满了时，也会丢弃消息。后端发现这些情况（连接断开时和重新连上时各一次），会结束本实例的全部订阅，让浏览器重连补发，见下一节。用 `natsx.Connect` 创建的连接一直重连，见[连接 NATS](nats.md#connecting)。
 
-一条消息的大小受 NATS 服务器的 `max_payload` 限制，默认 1MB。广播的事件应当小，大的内容只带 ID。
+超过 NATS 服务器 `max_payload`（默认 1MB）的消息，`natsbroadcast` 分成多片依次发送，订阅方收齐后拼回整条消息，例如 [AI 助手](../ai/chat-advanced.md#multiple-instances)把带附件的消息转交给 worker。缺了一片时整条消息丢弃。分片只是兜底：推给浏览器的事件应当小，大的内容只带 ID，由前端自己去读。
 
 <a id="delivery-guarantees"></a>
 ## 投递保证
