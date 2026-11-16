@@ -60,7 +60,7 @@ export QDRANT_TEST_ADDR='127.0.0.1:56334'
 go test -race -count=1 ./...
 ```
 
-Redis 的锁、限流、在线成员和广播的测试对单机 Redis 和集群各运行一遍。集群由 `internal/redistest/cluster.sh` 在一个容器里启动，包含三个主节点。
+Redis 的锁和限流的测试对单机 Redis 和集群各运行一遍。集群由 `internal/redistest/cluster.sh` 在一个容器里启动，包含三个主节点。
 
 框架的测试默认并行运行：顶层测试的第一行调用 `t.Parallel()`。修改全局状态的测试串行运行，例如使用 `t.Setenv`、`slog.SetDefault` 或包内 `export_test.go` 中缩短间隔的 `Set*` 函数的测试，以及比较耗时和内存分配量的测试。Go 先依次运行这些测试，再运行并行的测试，两者先后进行。
 

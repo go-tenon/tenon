@@ -6,7 +6,7 @@
 
 它与传输方式无关：同一个 Hub 既可以推给 SSE 连接，也可以推给[实时频道](realtime.md)的 WebSocket 客户端。消息按主题（topic）分发，例如 `articles`、`room:42`。
 
-阅读前需要了解：[服务端推送](../http/sse.md)；[Redis](redis.md)；[提交后执行](../database/quick-start.md#after-commit)。
+阅读前需要了解：[服务端推送](../http/sse.md)；[NATS](nats.md)；[提交后执行](../database/quick-start.md#after-commit)。
 
 - [示例用法](#example-usage)
 - [创建 Hub](#creating-the-hub)
@@ -25,7 +25,7 @@
 下面在一个实例上订阅 `articles` 主题，在任意实例上发布：
 
 ```go
-hub := broadcast.New(redisbroadcast.New(rdb, "app:broadcast"), nil)
+hub := broadcast.New(natsbroadcast.New(nc, "app.broadcast"), nil)
 defer hub.Close()
 
 // 一个实例上订阅
@@ -40,7 +40,7 @@ for m := range sub.C() {
 }
 ```
 
-发布时只管发布，Hub 经由 Redis 把消息送到每个实例，再交给本实例上订阅了这个主题的连接。
+发布时只管发布，Hub 经由 NATS 把消息送到每个实例，再交给本实例上订阅了这个主题的连接。
 
 <a id="creating-the-hub"></a>
 ## 创建 Hub
@@ -48,7 +48,7 @@ for m := range sub.C() {
 每个进程创建一个 `broadcast.Hub`，所有长连接共用。在入口创建它，并登记关闭：
 
 ```go
-hub := broadcast.New(redisbroadcast.New(rdb, "app:broadcast"), nil)
+hub := broadcast.New(natsbroadcast.New(nc, "app.broadcast"), nil)
 stack.MustAdd("broadcast", func(context.Context) error { return hub.Close() })
 ```
 
@@ -137,17 +137,19 @@ return rest.SSE(func(s *httpx.Stream) error {
 <a id="backends"></a>
 ## 后端
 
-实例之间的消息经由 Redis 的分片 Pub/Sub（`SPUBLISH`、`SSUBSCRIBE`，需要 Redis 7 或更新的版本）传递，`rdb` 是[入口中创建的 Redis 客户端](redis.md#connecting)：
+实例之间的消息经由 NATS 的发布订阅传递，只用 NATS 的核心功能，不需要 JetStream。`nc` 是[入口中创建的 NATS 连接](nats.md#connecting)：
 
 ```go
-hub := broadcast.New(redisbroadcast.New(rdb, "app:broadcast"), nil)
+hub := broadcast.New(natsbroadcast.New(nc, "app.broadcast"), nil)
 ```
 
-频道名区分不同的应用，同一个应用的实例必须相同。单机部署也要经由 Redis 传递：[不停机升级](../installation/operations.md#upgrade-overlap)或滚动发布时新旧进程短暂并存，旧进程中还没结束的请求和任务发布的事件，要送到已经重连到新进程的浏览器。
+第二个参数是 subject 的前缀：主题 `room:42` 的消息发布到 `app.broadcast.room:42`，每个实例订阅 `app.broadcast.>`。前缀区分不同的应用和环境，同一个应用的实例必须相同。单机部署也要经由 NATS 传递：[不停机升级](../installation/operations.md#upgrade-overlap)或滚动发布时新旧进程短暂并存，旧进程中还没结束的请求和任务发布的事件，要送到已经重连到新进程的浏览器。
 
-单机和[集群](redis.md#cluster)都可以使用。集群中频道按名称落在一个槽上，消息只经过负责这个槽的节点。
+单台服务器和 NATS 集群都可以使用，集群中连到任何一台服务器都能收到全部消息。
 
-Redis Pub/Sub 只转发在线的消息：订阅连接中断，或者集群把频道所在的槽迁移到别的节点时，期间发布的消息就丢了。后端发现这两种情况，会结束本实例的全部订阅，让浏览器重连补发，见下一节。
+NATS 的发布订阅只转发在线的消息：连接中断期间其他实例发布的消息就丢了；本实例处理不过来、NATS 客户端的缓冲区满了时，也会丢弃消息。后端发现这些情况（连接断开时和重新连上时各一次），会结束本实例的全部订阅，让浏览器重连补发，见下一节。连接要设置为一直重连，见[连接 NATS](nats.md#connecting)。
+
+一条消息的大小受 NATS 服务器的 `max_payload` 限制，默认 1MB。广播的事件应当小，大的内容只带 ID。
 
 <a id="delivery-guarantees"></a>
 ## 投递保证
@@ -157,7 +159,7 @@ Redis Pub/Sub 只转发在线的消息：订阅连接中断，或者集群把频
 | 原因 | `sub.Err()` | 发生时 |
 | --- | --- | --- |
 | 订阅跟不上 | `broadcast.ErrSlow` | 订阅的缓冲区（64 条）已满，例如浏览器网络很慢 |
-| 后端可能丢了消息 | `broadcast.ErrLost` | 与 Redis 的连接中断过 |
+| 后端可能丢了消息 | `broadcast.ErrLost` | 与 NATS 的连接中断过，或者 NATS 客户端丢弃过消息 |
 | 订阅被关闭 | `broadcast.ErrClosed` | 调用了 `sub.Close()` 或 `hub.Close()` |
 
 订阅结束后，处理器返回、连接结束，浏览器重连并按 `Last-Event-ID` [补发](#replaying-missed-events)，消息因此完整、有序。一个订阅跟不上，只结束它自己。
@@ -185,7 +187,7 @@ msg := broadcasttest.Receive(t, sub)
 
 **订阅了，但收不到其他实例上发布的消息**
 
-各实例的 Hub 要用同一个 Redis 和同一个频道名。Redis 需要 7 或更新的版本，分片 Pub/Sub 才能使用，见[后端](#backends)。
+各实例的 Hub 要连到同一套 NATS，并使用同一个 subject 前缀，见[后端](#backends)。连接不能使用 `nats.NoEcho()`，否则发布者所在的实例收不到自己发布的消息。
 
 **客户端收到了一条随后被回滚的通知**
 
@@ -193,7 +195,7 @@ msg := broadcasttest.Receive(t, sub)
 
 **断线重连后丢了几条消息**
 
-Redis Pub/Sub 只转发在线的消息。客户端重连时按 `Last-Event-ID` 从应用的数据中补发；补发时先订阅、再查询，见[断线补发](#replaying-missed-events)。
+NATS 的发布订阅只转发在线的消息。客户端重连时按 `Last-Event-ID` 从应用的数据中补发；补发时先订阅、再查询，见[断线补发](#replaying-missed-events)。
 
 **发布时报错主题不合法**
 
@@ -211,7 +213,7 @@ func New(backend Backend, logger *slog.Logger) *Hub
 ```
 
 - **参数**
-    - `backend`：在实例之间传递消息的后端，通常是 `redisbroadcast.New(rdb, channel)`
+    - `backend`：在实例之间传递消息的后端，通常是 `natsbroadcast.New(nc, prefix)`
     - `logger`：为 `nil` 时使用 `slog.Default()`
 - **返回**：Hub，创建后就在后台开始接收消息
 
@@ -246,13 +248,13 @@ func (s *Subscription) Close()
 | `Topic string` | 主题 |
 | `Data []byte` | 消息内容 |
 
-### redisbroadcast.New
+### natsbroadcast.New
 
 ```go
-func New(rdb rueidis.Client, channel string) *Backend
+func New(nc *nats.Conn, prefix string) *Backend
 ```
 
-包 `github.com/go-tenon/tenon/broadcast/redisbroadcast`。经由 Redis 的 Pub/Sub 在实例之间传递消息，`channel` 是使用的频道名。
+包 `github.com/go-tenon/tenon/broadcast/natsbroadcast`。经由 NATS 的发布订阅在实例之间传递消息，主题 `topic` 的消息发布到 `<prefix>.<topic>`。`nc` 为 `nil`，或者 `prefix` 不是不含通配符的 subject（例如 `app.broadcast`）时 panic。
 
 ### NewCredentials
 

@@ -50,7 +50,7 @@ type PresenceEntry struct {
 }
 
 // PresenceStore 保存 presence 频道的在线记录，所有实例共用。实现必须可以并发使用。
-// DatabasePresence 和 redispresence.Store 是两种实现。
+// natspresence.Store 是 NATS 实现；不设置时不支持 presence 频道。
 type PresenceStore interface {
 	// Add 写入或续期 e.Channel 中连接 e.Client 的记录，ttl 之后过期。
 	Add(ctx context.Context, e PresenceEntry, ttl time.Duration) error

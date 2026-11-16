@@ -1,6 +1,6 @@
 # Redis
 
-Redis 在 Tenon 中负责多个实例之间的**协调**。Tenon 的每个组件只做它最擅长的事：业务数据在 PostgreSQL，缓存在 [Memcached](cache.md)，任务在[队列](../background/queue.md)。Redis 用它的数据结构做多个实例之间的协调：[原子锁](locks.md)、[限流](rate-limiting.md)、[实时推送](realtime.md)的在线成员和[广播](broadcasting.md)，以及计数器这类需要原子更新的小数据。
+Redis 在 Tenon 中负责多个实例之间的**协调**。Tenon 的每个组件只做它最擅长的事：业务数据在 PostgreSQL，缓存在 [Memcached](cache.md)，任务、[广播](broadcasting.md)和[实时频道](realtime.md)的在线成员在 [NATS](nats.md)。Redis 用它的数据结构做多个实例之间的协调：[原子锁](locks.md)、[限流](rate-limiting.md)，以及计数器这类需要原子更新的小数据。
 
 这些数据被淘汰就会出错，例如锁被挤掉后两个实例同时执行任务。所以 Redis 要配置为内存满时拒绝写入：
 
@@ -10,7 +10,7 @@ maxmemory-policy noeviction
 
 也因为这个原因，缓存放在单独的 Memcached 里：缓存需要内存满时淘汰旧数据，两种策略各用一个实例。
 
-Tenon 不封装 Redis 客户端，约定统一使用 [rueidis](https://github.com/redis/rueidis)。[实时推送](realtime.md)依赖的 Centrifuge 也使用它，整个应用只有一个 Redis 客户端库。和数据库一样，客户端在入口创建一次，通过构造函数传给需要它的服务。
+Tenon 不封装 Redis 客户端，约定统一使用 [rueidis](https://github.com/redis/rueidis)。和数据库一样，客户端在入口创建一次，通过构造函数传给需要它的服务。
 
 阅读前需要了解：[依赖装配](../concepts/dependencies.md)；Redis 的基本概念（键、过期时间）。
 
@@ -107,11 +107,7 @@ redis:
 
 `NewClient` 从这些节点读取集群的拓扑，之后按键所在的槽把命令发到对应的节点；只写一个地址也能连上，多写几个是为了其中一个不可达时仍能启动。
 
-框架的组件都可以在集群上使用，CI 对单机和集群各运行一遍它们的测试：
-
-- 锁和限流的每次操作只涉及一个键；
-- 在线成员的每个频道有两个键，频道名写在花括号里（`<prefix>{<channel>}:exp`），两个键落在同一个槽，脚本可以同时操作它们；
-- 广播使用分片 Pub/Sub，见[广播](broadcasting.md#backends)。
+框架的组件（锁和限流）都可以在集群上使用，它们的每次操作只涉及一个键，CI 对单机和集群各运行一遍它们的测试。
 
 应用自己的命令也要遵守集群的限制：一条命令或一个 Lua 脚本涉及的所有键必须在同一个槽，否则 Redis 返回 `CROSSSLOT` 错误。需要一起操作的键，把相同的部分写在花括号里，例如 `app:{user:42}:views` 和 `app:{user:42}:likes`。
 
@@ -171,9 +167,9 @@ Lua 脚本用 `rueidis.NewLuaScript`，其他用法见 [rueidis 文档](https://
 把同一个 `rdb` 传给需要 Redis 的组件，全应用共用一个客户端：
 
 - **原子锁**：`redislock.New(rdb)`，见[原子锁](locks.md#redis-store)；
-- **限流**：`redislimit.New(rdb, name, cfg)`，见[限流](rate-limiting.md#redis-limiter)；
-- **广播**：`redisbroadcast.New(rdb, channel)`，见[广播](broadcasting.md#backends)；
-- **在线成员**：`redispresence.New(rdb, prefix)`，见[实时推送](realtime.md#presence)。
+- **限流**：`redislimit.New(rdb, name, cfg)`，见[限流](rate-limiting.md#redis-limiter)。
+
+广播和实时频道的在线成员使用 NATS，见 [NATS](nats.md#using-with-components)。
 
 <a id="testing"></a>
 ## 测试

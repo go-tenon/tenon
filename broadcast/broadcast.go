@@ -28,7 +28,7 @@ var (
 	ErrClosed = errors.New("broadcast: subscription closed")
 	// ErrSlow 表示订阅的缓冲区已满：订阅者处理消息太慢，继续投递就要丢消息。
 	ErrSlow = errors.New("broadcast: subscriber too slow")
-	// ErrLost 表示 Backend 可能丢失了消息，例如与 Redis 的连接中断过。
+	// ErrLost 表示 Backend 可能丢失了消息，例如与 NATS 的连接中断过。
 	ErrLost = errors.New("broadcast: messages may have been lost")
 )
 

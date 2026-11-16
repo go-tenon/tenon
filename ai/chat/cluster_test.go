@@ -18,8 +18,9 @@ import (
 	"github.com/go-tenon/tenon/ai/chat/chattest"
 	"github.com/go-tenon/tenon/broadcast"
 	"github.com/go-tenon/tenon/broadcast/broadcasttest"
-	"github.com/go-tenon/tenon/broadcast/redisbroadcast"
+	"github.com/go-tenon/tenon/broadcast/natsbroadcast"
 	"github.com/go-tenon/tenon/errorx"
+	"github.com/go-tenon/tenon/internal/natstest"
 	"github.com/go-tenon/tenon/internal/redistest"
 	"github.com/go-tenon/tenon/lock"
 	"github.com/go-tenon/tenon/lock/locktest"
@@ -62,15 +63,15 @@ func TestClusterMirrorsRunOnOtherInstance(t *testing.T) {
 	mirrorScenario(t, m, a, b)
 }
 
-// TestClusterOnRedis 用 Redis 广播和 Redis 锁运行同一个场景。
-func TestClusterOnRedis(t *testing.T) {
+// TestClusterOnNATSAndRedis 用 NATS 广播和 Redis 锁运行同一个场景，与生产环境的组合相同。
+func TestClusterOnNATSAndRedis(t *testing.T) {
 	t.Parallel()
 	rdb := redistest.Standalone.Open(t)
 	m := chattest.NewModel(
 		chattest.Reply{Reasoning: "先查", Text: "我查 一下", Calls: []chattest.Call{{ID: "g1", Name: "get_order", Args: orderArgs{"A1"}}}},
 		chattest.Text("都 查好了"),
 	)
-	a, b := twoInstancesOn(t, m, []tool.Tool{getOrder(400 * time.Millisecond)}, redisbroadcast.New(rdb, "test:chat:"+rand.Text()), redislock.New(rdb))
+	a, b := twoInstancesOn(t, m, []tool.Tool{getOrder(400 * time.Millisecond)}, natsbroadcast.New(natstest.Connect(t), "test.chat."+strings.ToLower(rand.Text())), redislock.New(rdb))
 	mirrorScenario(t, m, a, b)
 }
 

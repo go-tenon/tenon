@@ -16,3 +16,4 @@
 - [生成 PDF](pdf.md)：用 templ 和 CSS 生成 PDF
 - [出站请求](outbound.md)：安全地请求外部 HTTP 服务
 - [Redis](redis.md)：rueidis 客户端与使用约定
+- [NATS](nats.md)：广播与在线成员共用的 NATS 连接

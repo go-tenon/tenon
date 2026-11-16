@@ -16,11 +16,11 @@ import (
 
 	"github.com/go-tenon/tenon/broadcast"
 	"github.com/go-tenon/tenon/broadcast/broadcasttest"
-	"github.com/go-tenon/tenon/broadcast/redisbroadcast"
+	"github.com/go-tenon/tenon/broadcast/natsbroadcast"
 	"github.com/go-tenon/tenon/errorx"
 	"github.com/go-tenon/tenon/httpx"
 	"github.com/go-tenon/tenon/identity"
-	"github.com/go-tenon/tenon/internal/redistest"
+	"github.com/go-tenon/tenon/internal/natstest"
 	"github.com/go-tenon/tenon/realtime"
 )
 
@@ -678,11 +678,11 @@ func TestChannelPatterns(t *testing.T) {
 	}
 }
 
-func TestAcrossInstancesOnRedis(t *testing.T) {
+func TestAcrossInstancesOnNATS(t *testing.T) {
 	t.Parallel()
-	rdb, channel := redistest.Standalone.Open(t), "test:realtime:"+rand.Text()
-	a := start(t, redisbroadcast.New(rdb, channel), realtime.Options{}, nil)
-	b := start(t, redisbroadcast.New(rdb, channel), realtime.Options{}, nil)
+	prefix := "test.realtime." + strings.ToLower(rand.Text())
+	a := start(t, natsbroadcast.New(natstest.Connect(t), prefix), realtime.Options{}, nil)
+	b := start(t, natsbroadcast.New(natstest.Connect(t), prefix), realtime.Options{}, nil)
 	broadcasttest.Ready(t, a.hub, b.hub)
 	for _, n := range []*node{a, b} {
 		n.rt.Channel("room:{id}", realtime.Public().ClientPublish())

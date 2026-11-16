@@ -7,9 +7,9 @@
 // Hub 结束受影响的订阅：长连接随之结束，客户端重连后由应用按
 // Last-Event-ID 从自己的数据（例如消息表）补发。
 //
-// Backend：子包 redisbroadcast 使用 Redis Pub/Sub；broadcasttest 提供测试用的内存 Backend。
+// Backend：子包 natsbroadcast 使用 NATS 发布订阅；broadcasttest 提供测试用的内存 Backend。
 //
-//	hub := broadcast.New(redisbroadcast.New(rdb, "blog:broadcast"), nil)
+//	hub := broadcast.New(natsbroadcast.New(nc, "blog.broadcast"), nil)
 //	defer hub.Close()
 //	err := hub.PublishJSON(ctx, "room:42", event)
 //

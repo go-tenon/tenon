@@ -3,17 +3,20 @@ package realtime_test
 import (
 	"context"
 	"crypto/rand"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/nats-io/nats.go/jetstream"
+
 	"github.com/go-tenon/tenon/broadcast"
 	"github.com/go-tenon/tenon/broadcast/broadcasttest"
-	"github.com/go-tenon/tenon/broadcast/redisbroadcast"
+	"github.com/go-tenon/tenon/broadcast/natsbroadcast"
 	"github.com/go-tenon/tenon/identity"
-	"github.com/go-tenon/tenon/internal/redistest"
+	"github.com/go-tenon/tenon/internal/natstest"
 	"github.com/go-tenon/tenon/realtime"
+	"github.com/go-tenon/tenon/realtime/natspresence"
 	"github.com/go-tenon/tenon/realtime/realtimetest"
-	"github.com/go-tenon/tenon/realtime/redispresence"
 )
 
 // editors 是测试用的 presence 规则：拒绝 carol，其他人以自己的名字加入。
@@ -100,18 +103,28 @@ func TestPresenceChannel(t *testing.T) {
 	}
 }
 
-// 两个实例使用 Redis 的广播和在线成员存储：成员互相可见，重连到另一个实例时没有事件，
+// 两个实例使用 NATS 的广播和在线成员存储：成员互相可见，重连到另一个实例时没有事件，
 // 在另一个实例上取消订阅时立即发出 leave，而且只发一次。
 // 取消订阅的控制消息在 Hub 的投递中到达，离开事件又要发布到 Hub，这里确认两者都能完成。
-func TestPresenceAcrossInstancesOnRedis(t *testing.T) {
+func TestPresenceAcrossInstancesOnNATS(t *testing.T) {
 	t.Parallel()
-	rdb := redistest.Standalone.Open(t)
-	prefix := "test:realtime:" + rand.Text()
-	presence := redispresence.New(rdb, prefix+":presence:")
+	nc := natstest.Connect(t)
+	name := rand.Text()
+	bucket := "test_presence_" + name
+	presence, err := natspresence.New(context.Background(), nc, natspresence.Options{Bucket: bucket})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if js, err := jetstream.New(nc); err == nil {
+			_ = js.DeleteKeyValue(context.Background(), bucket)
+		}
+	})
+	prefix := "test.realtime." + strings.ToLower(name)
 	store := &tokens{}
 	opts := realtime.Options{Authenticate: store.validate, Presence: presence, PresenceGrace: 300 * time.Millisecond}
-	a := start(t, redisbroadcast.New(rdb, prefix), opts, nil)
-	b := start(t, redisbroadcast.New(rdb, prefix), opts, nil)
+	a := start(t, natsbroadcast.New(natstest.Connect(t), prefix), opts, nil)
+	b := start(t, natsbroadcast.New(natstest.Connect(t), prefix), opts, nil)
 	broadcasttest.Ready(t, a.hub, b.hub)
 	for _, n := range []*node{a, b} {
 		n.rt.Channel("editing:{article}", realtime.Presence(editors))
