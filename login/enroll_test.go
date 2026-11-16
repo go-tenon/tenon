@@ -91,7 +91,7 @@ func TestRequireTwoFactorExternal(t *testing.T) {
 		t.Fatalf("idp mfa: %+v %v", mfa, err)
 	}
 
-	reg, err := e.realm.Register(ctx, e.db, e.proof(t, ctx, login.SignIn, login.Email("new@example.com")), ref("c2"))
+	reg, err := e.register(ctx, e.db, e.proof(t, ctx, login.SignIn, login.Email("new@example.com")), ref("c2"))
 	if err != nil || reg.Enroll == "" || reg.Subject.ID != "" {
 		t.Fatalf("register: %+v %v", reg, err)
 	}

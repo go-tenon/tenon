@@ -180,20 +180,26 @@ plain, err := tokens.Login(ctx, out.Subject, device)
 框架不替应用创建账号。应用的注册业务动作在自己的事务中插入 `users` 行，再调用 `Register`，把已验证的邮箱挂到这个账号上：
 
 ```go
-func (a *SignUp) Handle(ctx context.Context, in SignUpInput) (identity.Subject, error) {
-    var out login.Outcome
+func (a *SignUp) Handle(ctx context.Context, in SignUpInput) (login.Outcome, error) {
+    var reg login.Registration
     err := database.RunInTx(ctx, a.db, nil, func(ctx context.Context, tx database.Tx) error {
         u := &User{ID: uuid.Must(uuid.NewV7()).String(), Name: in.Name}
         if _, err := tx.NewInsert().Model(u).Exec(ctx); err != nil {
             return err
         }
         var err error
-        out, err = a.users.Register(ctx, tx, in.Proof, u.Ref(), login.WithPassword(in.Password))
+        reg, err = a.users.Register(ctx, tx, in.Proof, u.Ref(), login.WithPassword(in.Password))
         return err
     })
-    return out.Subject, err
+    if err != nil {
+        return login.Outcome{}, err
+    }
+    // 事务提交之后：调用 Options.Resolve，得到可以签发凭据的 out.Subject
+    return a.users.CompleteRegister(ctx, reg)
 }
 ```
+
+`Register` 在事务中写入，`CompleteRegister` 在事务提交之后调用 `Options.Resolve` 并返回 `Outcome`。分成两步是因为 `Resolve` 通常从连接池读取账号，在事务中调用时读不到还没有提交的 `users` 行。`Outcome.Subject` 的 `Auth` 记下注册时验证的方式；账号体系[强制二次验证](login-security.md#requiring-two-factor)时返回的是 `Outcome.Enroll`，先启用二次验证再签发凭据。
 
 [第三方登录](social-login.md#signing-in)得到的注册凭证也交给同一个注册业务动作。注册需要什么资料、要不要同意协议都由应用决定。任何一步失败，账号行和凭证的使用一起回滚，客户端可以修正后用同一个凭证重试。两个人同时用同一个邮箱注册时，后完成的得到 `login.ErrTaken`。`WithPassword` 可以省略，只用验证码登录的账号没有密码。
 
@@ -360,7 +366,8 @@ func Username(name string) Identifier
 ### 注册与找回
 
 ```go
-func (r *Realm) Register(ctx context.Context, db bun.IDB, proof string, ref identity.Ref, opts ...RegisterOption) (Outcome, error)
+func (r *Realm) Register(ctx context.Context, db bun.IDB, proof string, ref identity.Ref, opts ...RegisterOption) (Registration, error)
+func (r *Realm) CompleteRegister(ctx context.Context, reg Registration) (Outcome, error)
 func (r *Realm) ResetPassword(ctx context.Context, proof, password string) (identity.Ref, error)
 func (r *Realm) Attach(ctx context.Context, db bun.IDB, ref identity.Ref, id Identifier, verified bool) error
 ```

@@ -19,7 +19,7 @@ func TestExternal(t *testing.T) {
 	if err != nil || out.Proof == "" || !out.Subject.Ref().IsZero() {
 		t.Fatalf("first sign-in: %+v %v", out, err)
 	}
-	reg, err := e.realm.Register(ctx, e.db, out.Proof, ref("c1"))
+	reg, err := e.register(ctx, e.db, out.Proof, ref("c1"))
 	if err != nil || reg.Subject.Ref() != ref("c1") {
 		t.Fatalf("register: %+v %v", reg, err)
 	}
