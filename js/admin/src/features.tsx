@@ -1,18 +1,21 @@
-// 顶栏上的通知铃铛、后台操作的任务中心，以及页面中的操作进度。逻辑在 @go-tenon/shell，这里只负责外观。
+// 顶栏上的通知铃铛、后台操作的任务中心、页面中的操作进度和操作日志。逻辑在 @go-tenon/shell，这里只负责外观。
 
 import { BellOutlined, CloseOutlined, SyncOutlined } from "@ant-design/icons"
 import {
+  type ActivityItem,
+  type ActivitySource,
   dismissOperation,
   type NotificationItem,
   type NotificationsSource,
   type TrackedOperation,
+  useActivity,
   useApp,
   useNotifications,
   useOperation,
   useOperations,
 } from "@go-tenon/shell"
 import { useRouter } from "@tanstack/react-router"
-import { Badge, Button, Empty, List, Popover, Progress, Space, Spin, Typography, theme } from "antd"
+import { Alert, Badge, Button, Empty, List, Popover, Progress, Space, Spin, Timeline, Typography, theme } from "antd"
 import { type ReactNode, useState } from "react"
 
 const timeFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "short", timeStyle: "short" })
@@ -213,5 +216,73 @@ export function OperationCenter({ width = 360 }: { width?: number }): ReactNode 
         </Badge>
       </Button>
     </Popover>
+  )
+}
+
+/** ActivityTimelineProps 的选项。 */
+export interface ActivityTimelineProps {
+  /** 操作记录的接口，见 useActivity。 */
+  source: ActivitySource
+  /** 点击一条记录：默认有 href 时打开它。 */
+  onOpen?: (item: ActivityItem) => void
+  /** 没有记录时的说明，默认“还没有操作记录”。 */
+  empty?: ReactNode
+}
+
+/**
+ * 操作日志的时间线：从新到旧，每条是发生了什么、谁、什么时候；代为登录时注明实际操作的人。放在详情页或抽屉中：
+ *
+ *	<ActivityTimeline source={{ key: ["article", id], list: (before) => api.article.history(id, { before }) }} />
+ */
+export function ActivityTimeline({ source, onOpen, empty = "还没有操作记录" }: ActivityTimelineProps): ReactNode {
+  const a = useActivity(source)
+  const router = useRouter()
+  if (a.loading) return <Spin style={{ display: "block", padding: 24 }} />
+  if (a.error && a.items.length === 0) {
+    return (
+      <Alert
+        type="error"
+        showIcon
+        message="操作记录读取失败"
+        action={
+          <Button size="small" onClick={() => void a.refresh()}>
+            重试
+          </Button>
+        }
+      />
+    )
+  }
+  if (a.items.length === 0) return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={empty} />
+  const open = (item: ActivityItem) => {
+    if (onOpen) onOpen(item)
+    else if (item.href) void router.navigate({ href: item.href })
+  }
+  return (
+    <>
+      <Timeline
+        items={a.items.map((item) => ({
+          key: item.id,
+          children: (
+            <Space direction="vertical" size={0}>
+              {item.href || onOpen ? (
+                <Typography.Link onClick={() => open(item)}>{item.text}</Typography.Link>
+              ) : (
+                <Typography.Text>{item.text}</Typography.Text>
+              )}
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                {[item.actor ?? "系统", item.impersonator && `（${item.impersonator} 代为操作）`, when(item.created_at)]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </Typography.Text>
+            </Space>
+          ),
+        }))}
+      />
+      {a.hasMore && (
+        <Button block onClick={a.loadMore}>
+          加载更多
+        </Button>
+      )}
+    </>
   )
 }

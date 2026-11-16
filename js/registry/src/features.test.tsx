@@ -14,6 +14,7 @@ import { createMemoryHistory, createRootRouteWithContext, createRoute, Outlet } 
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { type ReactNode, useEffect } from "react"
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest"
+import { ActivityTimeline } from "@/components/tenon/activity"
 import { AssistantChat } from "@/components/tenon/assistant-chat"
 import { Markdown } from "@/components/tenon/markdown"
 import { NotificationBell, OperationCenter, OperationProgress } from "@/components/tenon/notifications"
@@ -95,6 +96,46 @@ function Start({ open }: { open: OperationStream }) {
   useEffect(() => trackOperation(app, { id: "op1", title: "批量发布 4 篇文章", open }), [app, open])
   return <OperationProgress id="op1" />
 }
+
+describe("ActivityTimeline", () => {
+  it("从新到旧显示发生了什么、谁、代为操作的人；加载更多；点击打开页面", async () => {
+    const list = vi.fn(async (before?: string) =>
+      before
+        ? [{ id: "a1", text: "创建了文章《你好》", created_at: "2026-11-14T08:00:00Z" }]
+        : [
+            {
+              id: "a2",
+              text: "发布了文章《你好》",
+              actor: "小明",
+              impersonator: "客服小李",
+              created_at: "2026-11-15T08:00:00Z",
+              href: "/articles/1",
+            },
+          ],
+    )
+    await mount(() => <ActivityTimeline source={{ list, pageSize: 1 }} />)
+    await screen.findByText("发布了文章《你好》")
+    expect(screen.getByText(/小明 · （客服小李 代为操作）/)).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "加载更多" }))
+    await screen.findByText("创建了文章《你好》")
+    expect(screen.getByText(/^系统 · /)).toBeTruthy() // 没有操作人的是系统的操作
+    fireEvent.click(screen.getByRole("button", { name: "发布了文章《你好》" }))
+    await screen.findByText("article page")
+  })
+
+  it("读取失败时显示，点击重试；没有记录", async () => {
+    let fail = true
+    const list = vi.fn(async () => {
+      if (fail) throw { status: 403, fields: [] }
+      return []
+    })
+    await mount(() => <ActivityTimeline source={{ list }} />)
+    const retry = await screen.findByRole("button", { name: "重试" })
+    fail = false
+    fireEvent.click(retry)
+    await screen.findByText("还没有操作记录")
+  })
+})
 
 describe("后台操作", () => {
   it("任务中心列出操作和进度，结束后可以移除；页面中的进度", async () => {

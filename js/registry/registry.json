@@ -146,6 +146,14 @@
       "files": ["notifications.tsx"]
     },
     {
+      "name": "tenon-activity",
+      "type": "registry:block",
+      "title": "操作日志的时间线",
+      "description": "ActivityTimeline：一个对象的历史或一个人的操作记录，从新到旧分页，代为登录时注明实际操作的人；逻辑来自 @go-tenon/shell 的 useActivity。",
+      "registryDependencies": ["button", "empty", "skeleton"],
+      "files": ["activity.tsx"]
+    },
+    {
       "name": "tenon-markdown",
       "type": "registry:block",
       "title": "消息的 Markdown",

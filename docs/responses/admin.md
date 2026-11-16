@@ -156,6 +156,7 @@ function Layout() {
 | `NotificationBell` | 铃铛，角标是未读数；点开是通知列表、“全部已读”和“加载更多”。点击一条通知标记已读并打开它的 `href`，`onOpen` 可以改为自己处理 |
 | `OperationCenter` | 任务中心：角标是进行中的操作数，点开是 `trackOperation` 登记的操作和进度，结束的可以移除。没有登记过操作时不显示 |
 | `OperationProgress` | 页面中一个操作的进度：`<OperationProgress id={op.id} />` |
+| `ActivityTimeline` | [操作日志](../features/activity.md#history-page)的时间线：从新到旧分页，代为登录时注明实际操作的人；读取失败时可以重试 |
 | `AssistantChat` | AI 对话（[Ant Design X](https://x.ant.design)）：回答用 Markdown 渲染（`@ant-design/x-markdown`），思考过程可以展开，工具调用列出参数和结果；需要审批的调用显示“批准”和“拒绝”，等待审批时不能发送；回答进行中输入的内容插入这次回答，停止按钮停止回答；插话显示为单独的用户消息 |
 | `AssistantButton` | 顶栏的按钮，点开是侧边的 `AssistantChat` |
 
@@ -202,6 +203,7 @@ bun add ai@^7.0.159 @ai-sdk/react@^4.0.163 @ant-design/x@^2.10.0 @ant-design/x-m
 | `LoginPage`、`RouteError`、`NotFoundPage`、`ForbiddenPage` | 页面 |
 | `UserMenu`、`TenantSwitcher`、`NewVersionNotice` | 顶栏的部件 |
 | `NotificationBell`、`OperationCenter`、`OperationProgress`、`OperationProgressBar` | 通知和后台任务 |
+| `ActivityTimeline` | 操作日志 |
 | `AssistantChat`、`AssistantButton` | `@go-tenon/admin/chat` 中的 AI 对话 |
 | `ResourcePage`、`ResourceForm`、`FieldValue`、`defaultInput` | [资源](resources.md#admin)的页面 |
 | `defaultIcons` | 默认登记的图标 |
