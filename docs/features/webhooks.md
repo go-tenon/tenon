@@ -114,7 +114,7 @@ webhook-signature: v1,K5oZfzN95Z9UVu1EsfQmfVNQhnkZ2pj9o9NDN/H/pI4=
 在注册全部路由的 `bootstrap.Routes`（见[依赖装配](../concepts/dependencies.md#assembling-the-application)）中用 `webhook.Document` 列出全部事件，[openapi 命令](../general/commands.md#openapi-command)导出的文档就会在 `webhooks` 中描述它们：
 
 ```go
-func Routes(api *rest.API, validate rest.TokenValidator, db *bun.DB) {
+func Routes(api *rest.API, validate identity.TokenValidator, db *bun.DB) {
     article.Register(api, rest.RequireBearer(api, validate, "articles"), db)
     webhook.Document(api.OpenAPI(), article.Published)
 }

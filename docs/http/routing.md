@@ -395,7 +395,7 @@ func New(r chi.Router, opts Options) *API
 | `Transformers []huma.Transformer` | 追加在 Huma 默认的 Transformer 之后 |
 | `Accounts identity.Accounts` | 接受的账号体系，见[认证](../security/authentication.md) |
 | `Tenant func(huma.Context) string` | 从请求取出租户，见[多租户](../security/tenancy.md) |
-| `Credentials httpx.CredentialWatcher` | 长连接复查凭据的信号，见[服务端推送](../responses/sse.md#immediate-revocation) |
+| `Credentials identity.CredentialWatcher` | 长连接复查凭据的信号，见[服务端推送](../responses/sse.md#immediate-revocation) |
 
 ### Register
 
@@ -427,7 +427,7 @@ func Lookup(router chi.Routes, basePath string) (*API, error)
 
 ```go
 func Public() func(op *huma.Operation)
-func RequireBearer(api *API, validate TokenValidator, permissions ...string) func(op *huma.Operation)
+func RequireBearer(api *API, validate identity.TokenValidator, permissions ...string) func(op *huma.Operation)
 ```
 
 - **参数**

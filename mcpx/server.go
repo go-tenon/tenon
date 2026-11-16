@@ -214,12 +214,12 @@ func call[I, O any](ctx context.Context, fn func(context.Context, I) (O, error),
 // failure 把 fn 返回的错误转换为工具的错误结果：业务错误给出错误码和翻译后的消息，其他错误只给出请求 ID。
 func (s *Server) failure(ctx context.Context, tool string, err error) *mcp.CallToolResult {
 	var text string
-	if code := errorx.CodeOf(err); code != "" && httpx.StatusOf(err) < 500 {
+	if code := errorx.CodeOf(err); code != "" && !errorx.KindOf(err).Systemic() {
 		text = code + ": " + httpx.ErrorDetail(ctx, err)
 	} else {
 		s.logger.ErrorContext(ctx, "tool failed", "mcp.tool", tool, "error", err)
 		text = "internal error"
-		if httpx.StatusOf(err) == 503 {
+		if errorx.KindOf(err) == errorx.Unavailable {
 			text = "service temporarily unavailable, try again later"
 		}
 		if id := httpx.RequestID(ctx); id != "" {

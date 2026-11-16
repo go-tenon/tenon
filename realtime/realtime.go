@@ -15,7 +15,6 @@ import (
 	"go.opentelemetry.io/otel/metric"
 
 	"github.com/go-tenon/tenon/broadcast"
-	"github.com/go-tenon/tenon/httpx"
 	"github.com/go-tenon/tenon/identity"
 	"github.com/go-tenon/tenon/logging"
 )
@@ -35,7 +34,7 @@ type Options struct {
 	// 连接期间用同一个 token 定期重新调用，token 被撤销后连接结束。
 	//
 	// nil 时带 token 的连接一律拒绝。
-	Authenticate func(ctx context.Context, token string) (identity.Subject, error)
+	Authenticate identity.TokenValidator
 	// Accounts 是用 token 连接时接受的账号体系，以及每一种的 Resolver：按 Authenticate 给出的主体的 Type
 	// 调用对应的 Resolver，得到这个连接的主体，例如按 identity.TenantFromContext 加载用户在租户中的权限，
 	// 通常与 rest.Options.Accounts 相同；Type 不在其中的 token 被拒绝，Resolver 为 nil 时直接使用 Authenticate 给出的主体。
@@ -51,7 +50,7 @@ type Options struct {
 	// Credentials 让连接在收到复查信号时立即重新校验凭据，撤销 token、退出登录后连接随即结束；
 	// nil 时只按 30 秒的间隔定期校验。通常是 broadcast.NewCredentials 的返回值，
 	// 与 rest.Options.Credentials 相同。
-	Credentials httpx.CredentialWatcher
+	Credentials identity.CredentialWatcher
 	// TrustedOrigins 是允许跨站建立连接的来源，例如 https://app.example.com。
 	// 浏览器发起的连接默认只接受同源请求，没有 Origin 请求头的客户端（移动端、服务器）全部放行。
 	TrustedOrigins []string

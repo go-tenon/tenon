@@ -60,7 +60,7 @@ type Error struct {
 // 其余分类是可预期的业务结果，由错误码定位，不附加堆栈。
 func (t *Template) New(opts ...Option) error {
 	e := t.instance(nil, opts)
-	if t.kind.systemic() {
+	if t.kind.Systemic() {
 		return errors.WithStackDepth(e, 1)
 	}
 	return e
@@ -69,7 +69,7 @@ func (t *Template) New(opts ...Option) error {
 // Wrap 包装 cause 创建失败实例，堆栈规则与 New 相同。
 func (t *Template) Wrap(cause error, opts ...Option) error {
 	e := t.instance(cause, opts)
-	if t.kind.systemic() {
+	if t.kind.Systemic() {
 		return errors.WithStackDepth(e, 1)
 	}
 	return e

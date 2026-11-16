@@ -366,10 +366,10 @@ func New(hub *broadcast.Hub, opts Options) (*Realtime, error)
 
 | 字段 | 说明 |
 | --- | --- |
-| `Authenticate func(ctx, token string) (identity.Subject, error)` | 校验客户端 SDK 传入的令牌，通常与 `rest.RequireBearer` 用同一个校验器，见[认证](#authentication) |
+| `Authenticate identity.TokenValidator` | 校验客户端 SDK 传入的令牌，通常与 `rest.RequireBearer` 用同一个校验器，见[认证](#authentication) |
 | `Accounts identity.Accounts` | 接受的账号体系，通常与 `rest.Options.Accounts` 相同；设置了 `Authenticate` 时必须设置 |
 | `Tenant func(r *http.Request) string` | 取出连接所在的租户 |
-| `Credentials httpx.CredentialWatcher` | 撤销凭据后立即断开，见[撤销后断开](#revocation) |
+| `Credentials identity.CredentialWatcher` | 撤销凭据后立即断开，见[撤销后断开](#revocation) |
 | `TrustedOrigins []string` | 允许跨站建立连接的来源，默认只接受同源的浏览器连接 |
 | `Presence PresenceStore` | 在线成员的存储，presence 频道必须设置，见[保存在线成员](#presence-stores) |
 | `PresenceGrace time.Duration` | 离开后保留在线记录的时间，默认 10 秒，最长 30 秒 |

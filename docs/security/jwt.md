@@ -30,7 +30,7 @@ customerJWT := apitoken.NewJWT(customerTokens, apitoken.JWTConfig{Keys: apitoken
 requireCustomer := rest.RequireBearer(api, customerJWT.Validate)
 ```
 
-`JWT.Validate` 也是 `rest.TokenValidator`。不是 JWT 的 token 交给 `Store.Validate`，所以同一个 API 仍然接受[个人访问令牌](api-tokens.md#personal-access-tokens)。
+`JWT.Validate` 也是 `identity.TokenValidator`。不是 JWT 的 token 交给 `Store.Validate`，所以同一个 API 仍然接受[个人访问令牌](api-tokens.md#personal-access-tokens)。
 
 登录时用 `customerJWT.Login` 代替 `Store.Login`，返回 `Pair`；刷新接口是公开的，客户端提交 refresh token。浏览器中的单页应用把 refresh token 放在 cookie 中，见[单页应用](#single-page-applications)：
 

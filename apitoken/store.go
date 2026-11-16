@@ -269,7 +269,7 @@ func (s *Store) issue(ctx context.Context, sub identity.Subject, r *row, now tim
 	return plain, nil
 }
 
-// Validate 实现 rest.TokenValidator，校验登录 token 和个人访问令牌：返回 token 代表的主体，Method 为 bearer，Credential 为 token 的 ID，
+// Validate 实现 identity.TokenValidator，校验登录 token 和个人访问令牌：返回 token 代表的主体，Method 为 bearer，Credential 为 token 的 ID，
 // Tenant 为 token 绑定的租户，Impersonator 为签发时的代为登录者。登录 token 的 Scopes 为 nil，个人访问令牌的 Scopes 是创建时的限制；
 // 两者的 Permissions 都为空，由 Resolve 加载。token 不存在、已撤销或已过期时返回 ErrInvalid。
 //

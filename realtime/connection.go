@@ -4,12 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"net/http"
 	"time"
 
 	"github.com/centrifugal/centrifuge"
 
-	"github.com/go-tenon/tenon/httpx"
 	"github.com/go-tenon/tenon/identity"
 )
 
@@ -136,7 +134,7 @@ func (rt *Realtime) authorize(ctx context.Context, conn *connection, channel str
 		allowed, err = rule.authorize(ctx, conn.sub, params)
 	}
 	switch {
-	case err != nil && httpx.StatusOf(err) >= http.StatusInternalServerError:
+	case identity.Failed(err):
 		if ctx.Err() == nil || context.Cause(ctx) == context.DeadlineExceeded {
 			rt.logger.ErrorContext(ctx, "channel authorization failed", "channel", channel, "error", err)
 		}

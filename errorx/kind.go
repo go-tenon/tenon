@@ -37,8 +37,10 @@ func (k Kind) String() string {
 	}
 }
 
-// systemic 报告分类是否代表系统故障（与可预期的业务结果相对）。
-func (k Kind) systemic() bool { return k == Unavailable || k == Internal }
+// Systemic 报告分类是否代表系统故障（Unavailable、Internal），与可预期的业务结果相对。
+// 各入口据此决定是否记录错误日志、是否向调用者隐藏细节、长连接是否保持，
+// 不必借用 HTTP 状态码判断：errorx.KindOf(err).Systemic()。
+func (k Kind) Systemic() bool { return k == Unavailable || k == Internal }
 
 // kinds 列出全部分类，新增分类时同步追加。
 var kinds = []Kind{InvalidArgument, Unauthenticated, PermissionDenied, NotFound, Conflict, ResourceExhausted, Unavailable, Internal}

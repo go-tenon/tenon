@@ -104,11 +104,13 @@ const Type identity.SubjectType = "user"
 
 `sub.Can(perm)` 要两边都放行才返回 `true`。路由检查、业务服务、页面都用它判断。权限名用冒号分段；授予时最后一段可以写 `*`：`articles:*` 包含 `articles:read` 和 `articles:write`，单独的 `*` 表示全部权限。
 
-**校验器（TokenValidator）** 是你提供的函数：输入一串 token，输出一个主体（或错误）：
+**校验器（`identity.TokenValidator`）** 是你提供的函数：输入一串 token，输出一个主体（或错误）：
 
 ```go
 type TokenValidator func(ctx context.Context, token string) (identity.Subject, error)
 ```
+
+它和传输方式无关，定义在 `identity` 包中：REST 接口的 `rest.RequireBearer`、[MCP 服务](../ai/mcp.md)和[实时频道](../libraries/realtime.md)都使用同一个校验器。
 
 <a id="token-validators"></a>
 ## 编写 Token 校验器
@@ -154,7 +156,7 @@ func (c Config) Validate() error {
 
 // Validator 用配置造出一个「请求时用的」TokenValidator。
 // 启动时调用一次；返回的闭包会在之后的每个受保护请求里被调用。
-func Validator(cfg Config) rest.TokenValidator {
+func Validator(cfg Config) identity.TokenValidator {
     byToken := make(map[string]Credential, len(cfg.Credentials))
     for _, cred := range cfg.Credentials {
         byToken[cred.Token] = cred
@@ -409,7 +411,7 @@ API 接受的账号体系，以及认证通过后加载主体的函数，见[每
 ### rest.RequireBearer、RequireAuth
 
 ```go
-func RequireBearer(api *API, validate TokenValidator, permissions ...string) func(op *huma.Operation)
+func RequireBearer(api *API, validate identity.TokenValidator, permissions ...string) func(op *huma.Operation)
 func RequireAuth(api *API, name string, scheme *huma.SecurityScheme, authenticate Authenticator, permissions ...string) func(op *huma.Operation)
 func Confirmed(maxAge time.Duration) func(op *huma.Operation)
 ```

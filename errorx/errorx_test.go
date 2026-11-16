@@ -156,3 +156,20 @@ func TestEveryKindSurvivesRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+func TestSystemic(t *testing.T) {
+	for _, kind := range []errorx.Kind{errorx.InvalidArgument, errorx.Unauthenticated, errorx.PermissionDenied, errorx.NotFound, errorx.Conflict, errorx.ResourceExhausted} {
+		if kind.Systemic() {
+			t.Fatalf("%v reported as systemic", kind)
+		}
+	}
+	for _, kind := range []errorx.Kind{errorx.Unavailable, errorx.Internal} {
+		if !kind.Systemic() {
+			t.Fatalf("%v not reported as systemic", kind)
+		}
+	}
+	// 不是业务错误的普通错误按 Internal 处理。
+	if !errorx.KindOf(errors.New("db down")).Systemic() {
+		t.Fatal("plain error must be systemic")
+	}
+}
