@@ -294,8 +294,11 @@ func (s *Store) createFieldIndexes(ctx context.Context, name string, sc *schema)
 	return nil
 }
 
+// embedBytes 是一次交给模型的媒体内容的大约上限，超过时分批计算。测试中可以调小。
+var embedBytes = 64 << 20
+
 // embed 给 entries 填入 m 计算的向量，返回它们的 point：内容与这个 key 在 collection 中已有的某个文档相同时
-// 沿用它的向量，其余的去掉重复后读取引用的文件，一次交给模型计算。
+// 沿用它的向量，其余的去掉重复后读取引用的文件交给模型计算；读出的媒体内容超过 embedBytes 时分批计算。
 // 有稀疏向量的 collection 中，point 同时带上 entries 的稀疏向量（索引没有声明 Hybrid 时没有）。
 func (s *Store) embed(ctx context.Context, collection string, c collectionInfo, key string, entries []entry) ([]*qdrant.PointStruct, error) {
 	m, hybrid := c.model, c.hybrid
@@ -311,8 +314,33 @@ func (s *Store) embed(ctx context.Context, collection string, c collectionInfo, 
 	if err != nil {
 		return nil, err
 	}
+	// 引用的文件只在需要计算时读取，读出的内容累计到 embedBytes 就先计算一批，视频多时内存不会无限增长
 	var inputs []ai.Content
 	var missing []string // inputs 对应的哈希
+	size := 0
+	flush := func() error {
+		if len(inputs) == 0 {
+			return nil
+		}
+		vecs, err := m.Embedder.Embed(ctx, ai.EmbedRequest{Inputs: inputs, Purpose: ai.ForDocument})
+		if errors.Is(err, ai.ErrUnsupportedInput) {
+			return errors.Mark(errors.Wrap(err, "vector: embed"), errInvalid)
+		}
+		if err != nil {
+			return errors.Wrap(err, "vector: embed")
+		}
+		if len(vecs) != len(inputs) {
+			return errors.Newf("vector: embedder returned %d vectors for %d inputs", len(vecs), len(inputs))
+		}
+		for i, v := range vecs {
+			if len(v) != m.Dims {
+				return errors.Newf("vector: embedder returned %d dimensions, model %q has %d", len(v), m.Name, m.Dims)
+			}
+			known[missing[i]] = v
+		}
+		inputs, missing, size = nil, nil, 0
+		return nil
+	}
 	for i, e := range entries {
 		if _, ok := known[e.hash]; ok {
 			continue
@@ -326,24 +354,17 @@ func (s *Store) embed(ctx context.Context, collection string, c collectionInfo, 
 			return nil, errors.Wrapf(err, "vector: document %d", i)
 		}
 		inputs, missing = append(inputs, in), append(missing, e.hash)
-	}
-	if len(inputs) > 0 {
-		vecs, err := m.Embedder.Embed(ctx, ai.EmbedRequest{Inputs: inputs, Purpose: ai.ForDocument})
-		if errors.Is(err, ai.ErrUnsupportedInput) {
-			return nil, errors.Mark(errors.Wrap(err, "vector: embed"), errInvalid)
+		for _, media := range in.Media() {
+			size += len(media.Data)
 		}
-		if err != nil {
-			return nil, errors.Wrap(err, "vector: embed")
-		}
-		if len(vecs) != len(inputs) {
-			return nil, errors.Newf("vector: embedder returned %d vectors for %d inputs", len(vecs), len(inputs))
-		}
-		for i, v := range vecs {
-			if len(v) != m.Dims {
-				return nil, errors.Newf("vector: embedder returned %d dimensions, model %q has %d", len(v), m.Name, m.Dims)
+		if size >= embedBytes {
+			if err := flush(); err != nil {
+				return nil, err
 			}
-			known[missing[i]] = v
 		}
+	}
+	if err := flush(); err != nil {
+		return nil, err
 	}
 	for i, e := range entries {
 		e.point.Vectors = qdrant.NewVectorsDense(known[e.hash])
