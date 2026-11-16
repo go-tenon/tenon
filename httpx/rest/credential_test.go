@@ -54,23 +54,23 @@ func TestRequireBearerInstallsCredentialCheck(t *testing.T) {
 	ctx := <-captured
 	set := func(f func()) { mu.Lock(); f(); mu.Unlock() }
 
-	if err := httpx.CheckCredential(ctx); err != nil {
+	if err := identity.CheckCredential(ctx); err != nil {
 		t.Fatalf("valid token: %v", err)
 	}
 	set(func() { down = true })
-	if err := httpx.CheckCredential(ctx); err != nil {
+	if err := identity.CheckCredential(ctx); err != nil {
 		t.Fatalf("validator unavailable treated as revoked: %v", err)
 	}
 	set(func() { down = false; subject.Permissions = nil })
-	if err := httpx.CheckCredential(ctx); httpx.StatusOf(err) != http.StatusForbidden {
+	if err := identity.CheckCredential(ctx); httpx.StatusOf(err) != http.StatusForbidden {
 		t.Fatalf("scope removed: %v", err)
 	}
 	set(func() { subject.Permissions = []string{"events"}; subject.ID = "bob" })
-	if err := httpx.CheckCredential(ctx); httpx.StatusOf(err) != http.StatusUnauthorized {
+	if err := identity.CheckCredential(ctx); httpx.StatusOf(err) != http.StatusUnauthorized {
 		t.Fatalf("subject changed: %v", err)
 	}
 	set(func() { subject.ID = "alice"; valid = false })
-	if err := httpx.CheckCredential(ctx); err == nil || errors.Is(err, context.Canceled) || httpx.StatusOf(err) != http.StatusUnauthorized {
+	if err := identity.CheckCredential(ctx); err == nil || errors.Is(err, context.Canceled) || httpx.StatusOf(err) != http.StatusUnauthorized {
 		t.Fatalf("revoked token: %v", err)
 	}
 }

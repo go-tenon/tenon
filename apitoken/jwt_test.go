@@ -21,7 +21,6 @@ import (
 	"github.com/go-tenon/tenon/apitoken"
 	"github.com/go-tenon/tenon/crypt"
 	"github.com/go-tenon/tenon/database/dbtest"
-	"github.com/go-tenon/tenon/httpx"
 	"github.com/go-tenon/tenon/httpx/rest"
 	"github.com/go-tenon/tenon/identity"
 )
@@ -393,12 +392,12 @@ func TestJWTRequireBearerRecheck(t *testing.T) {
 	rest.RequireBearer(api, j.Validate)(&op)
 	var before, after error
 	rest.Register(api, op, func(ctx context.Context, _ *struct{}) (*struct{}, error) {
-		before = httpx.CheckCredential(ctx)
+		before = identity.CheckCredential(ctx)
 		sub, _ := identity.FromContext(ctx)
 		if err := s.Revoke(ctx, sub, sub.Credential); err != nil {
 			t.Fatal(err)
 		}
-		after = httpx.CheckCredential(ctx)
+		after = identity.CheckCredential(ctx)
 		return nil, nil
 	})
 	req := httptest.NewRequest(http.MethodGet, "/events", nil)

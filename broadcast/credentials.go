@@ -10,7 +10,7 @@ import (
 	"github.com/go-tenon/tenon/identity"
 )
 
-// Credentials 通知所有实例上的长连接立即重新校验凭据，实现 httpx.CredentialWatcher。
+// Credentials 通知所有实例上的长连接立即重新校验凭据，实现 identity.CredentialWatcher。
 // 把它设置为 rest.Options.Credentials 和 realtime.Options.Credentials，
 // 撤销 token、停用用户或修改权限之后调用对应的 Recheck 方法，受影响的 SSE 连接随即复查，
 // 凭据已经失效的连接结束。
@@ -68,7 +68,7 @@ func (c *Credentials) RecheckTenant(ctx context.Context, tenant string) error {
 	return c.hub.Publish(ctx, credTopic(tenantTopic, tenant), nil)
 }
 
-// Watch 实现 httpx.CredentialWatcher：关注 sub.Credential、sub.Ref() 和 identity.TenantFromContext(ctx)，
+// Watch 实现 identity.CredentialWatcher：关注 sub.Credential、sub.Ref() 和 identity.TenantFromContext(ctx)，
 // 收到对应的 Recheck 时向返回的通道发送信号，多个信号在读取前合并为一个。
 // 订阅因为跟不上或 Backend 可能丢了消息而结束时，先发一个信号（期间的提醒可能丢了），再重新订阅。
 // ctx 结束或 Hub 关闭后停止关注。

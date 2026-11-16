@@ -14,9 +14,6 @@ import (
 	"github.com/go-tenon/tenon/logging"
 )
 
-// TokenValidator 校验 bearer token 并返回主体。ctx 是请求的 context。
-type TokenValidator func(ctx context.Context, token string) (identity.Subject, error)
-
 // Authenticator 从请求中识别调用者，供 RequireAuth 使用。
 // 请求没有携带凭据时返回 ID 为空的主体或 errorx.Unauthenticated 错误；后端故障时返回 5xx 类错误。
 type Authenticator func(ctx huma.Context) (identity.Subject, error)
@@ -28,7 +25,7 @@ const (
 
 // RequireBearer 要求请求携带有效的 Authorization: Bearer token，校验器返回有效主体，
 // 并且主体能执行 permissions 中的全部权限（identity.Subject.Can）。
-func RequireBearer(api *API, validate TokenValidator, permissions ...string) func(op *huma.Operation) {
+func RequireBearer(api *API, validate identity.TokenValidator, permissions ...string) func(op *huma.Operation) {
 	if validate == nil {
 		panic("rest: nil token validator")
 	}
@@ -52,7 +49,7 @@ func RequireBearer(api *API, validate TokenValidator, permissions ...string) fun
 //   - 主体的 Type 不在 Options.Accounts 中时返回 401，否则调用这套账号的 Resolver 得到本次请求的主体，见 Options.Accounts；
 //   - 主体缺少 permissions 中的某项权限时返回 403。
 //
-// 认证通过后安装 httpx.CredentialCheck：SSE 等长连接期间定期重新执行以上检查（identity.Reestablish），
+// 认证通过后安装 identity.CredentialCheck：SSE 等长连接期间定期重新执行以上检查（identity.Reestablish），
 // 凭据失效或失去权限时结束连接。
 // 每条路由只能声明一种认证方案。RequireBearer 基于它实现。Options.Accounts 为空时 panic。
 func RequireAuth(api *API, name string, scheme *huma.SecurityScheme, authenticate Authenticator, permissions ...string) func(op *huma.Operation) {
@@ -116,9 +113,9 @@ func RequireAuth(api *API, name string, scheme *huma.SecurityScheme, authenticat
 			recheck := func(c context.Context) error {
 				return identity.Reestablish(c, sub, auth, resolve, required...)
 			}
-			reqCtx := httpx.WithCredentialCheck(identity.WithSubject(ctx.Context(), sub), recheck)
+			reqCtx := identity.WithCredentialCheck(identity.WithSubject(ctx.Context(), sub), recheck)
 			if api.watcher != nil {
-				reqCtx = httpx.WithCredentialWatcher(reqCtx, api.watcher)
+				reqCtx = identity.WithCredentialWatcher(reqCtx, api.watcher)
 			}
 			next(huma.WithContext(ctx, reqCtx))
 		})

@@ -299,7 +299,7 @@ func (j *JWT) sign(r *row, now time.Time) (Pair, error) {
 // leeway 是校验 access token 的 exp、iat 时允许的时钟偏差，容忍多个实例之间的时钟误差。
 const leeway = 5 * time.Second
 
-// Validate 实现 rest.TokenValidator：access token 只校验签名和有效期（允许 5 秒时钟偏差），不访问数据库。
+// Validate 实现 identity.TokenValidator：access token 只校验签名和有效期（允许 5 秒时钟偏差），不访问数据库。
 // 主体的 Auth 取自 access token 的 amr、auth_time，即签发时登录的验证情况。
 //
 // 长连接复查时（identity.Rechecking 报告为 true）改为确认登录仍然存在：按 sid 查一次 api_tokens，

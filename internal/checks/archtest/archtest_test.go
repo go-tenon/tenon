@@ -75,7 +75,7 @@ var rules = map[string]rule{
 	"httpx":                {layerEntry, []string{"acquire", "enum", "errorx", "form", "i18n", "identity", "logging", "ratelimit"}},
 	"httpx/rest/clientgen": {layerEntry, []string{"command", "enum", "errorx", "httpx", "i18n", "identity", "page"}},
 	"web":                  {layerEntry, []string{"errorx", "form", "httpx", "i18n", "logging", "theme"}},
-	"realtime":             {layerEntry, []string{"broadcast", "httpx", "identity", "logging"}},
+	"realtime":             {layerEntry, []string{"broadcast", "identity", "logging"}},
 	"mcpx":                 {layerEntry, []string{"errorx", "httpx", "identity", "logging"}},
 	"mcpx/mcpxtest":        {layerEntry, []string{"identity", "mcpx"}},
 	"mcpx/mcpcmd":          {layerEntry, []string{"command", "identity", "mcpx"}},

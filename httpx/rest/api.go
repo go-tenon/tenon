@@ -23,7 +23,7 @@ type API struct {
 	basePath string
 	logger   *slog.Logger
 	accounts identity.Accounts
-	watcher  httpx.CredentialWatcher
+	watcher  identity.CredentialWatcher
 	names    *schemaNames
 
 	endpoints []Endpoint
@@ -56,7 +56,7 @@ type Options struct {
 	Accounts identity.Accounts
 	// Credentials 让 RequireAuth 保护的长连接（例如 SSE）在收到复查信号时立即重新校验凭据，
 	// 撤销 token、停用用户后连接随即结束；nil 时只按 30 秒的间隔定期校验。通常是 broadcast.NewCredentials 的返回值。
-	Credentials httpx.CredentialWatcher
+	Credentials identity.CredentialWatcher
 	// Permissions 是应用的权限目录，例如 authz.Catalog。它写入 OpenAPI 文档的 x-tenon-permissions（按名称排序），
 	// 客户端据此生成权限常量和说明；路由需要的权限另外写在每个操作的 x-required-permissions 中。nil 时不写。
 	Permissions []identity.Permission

@@ -111,6 +111,5 @@ func Failed(err error) bool {
 	if err == nil {
 		return false
 	}
-	kind := errorx.KindOf(err)
-	return kind == errorx.Unavailable || kind == errorx.Internal
+	return errorx.KindOf(err).Systemic()
 }

@@ -97,7 +97,7 @@ migrationCmd.AddCommand(migratecmd.Publish(
 ))
 ```
 
-`Store.Validate` 的签名就是 `rest.TokenValidator`，可以直接用来保护路由：
+`Store.Validate` 的签名就是 `identity.TokenValidator`，可以直接用来保护路由：
 
 ```go
 tokens := apitoken.NewStore(a.db, a.cfg.APIToken)

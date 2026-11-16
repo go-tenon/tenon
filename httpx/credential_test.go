@@ -2,7 +2,6 @@ package httpx_test
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"sync/atomic"
 	"testing"
@@ -18,39 +17,12 @@ var (
 	errUnavailable = errorx.Define(errorx.Unavailable, "users.unavailable")
 )
 
-func TestCheckCredential(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	if err := httpx.CheckCredential(ctx); err != nil {
-		t.Fatalf("no checks: %v", err)
-	}
-	ok := httpx.WithCredentialCheck(ctx, func(context.Context) error { return nil })
-	if err := httpx.CheckCredential(ok); err != nil {
-		t.Fatalf("passing check: %v", err)
-	}
-	// 暂时无法判断（5xx 类、普通错误）不算失效。
-	for _, err := range []error{errUnavailable.New(), errors.New("db down")} {
-		c := httpx.WithCredentialCheck(ok, func(context.Context) error { return err })
-		if got := httpx.CheckCredential(c); got != nil {
-			t.Fatalf("%v treated as revoked", err)
-		}
-	}
-	// 多个校验依次运行，返回第一个失效的错误；派生出的 context 相互独立。
-	revoked := httpx.WithCredentialCheck(ok, func(context.Context) error { return errRevoked.New() })
-	if err := httpx.CheckCredential(revoked); !errors.Is(err, errRevoked) {
-		t.Fatalf("revoked: %v", err)
-	}
-	if err := httpx.CheckCredential(ok); err != nil {
-		t.Fatalf("parent context changed: %v", err)
-	}
-}
-
 func TestSSEEndsWhenCredentialRevoked(t *testing.T) {
 	defer httpx.SetCredentialInterval(50 * time.Millisecond)()
 	var revoked, unavailable atomic.Bool
 	ended := make(chan struct{})
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := httpx.WithCredentialCheck(r.Context(), func(context.Context) error {
+		ctx := identity.WithCredentialCheck(r.Context(), func(context.Context) error {
 			switch {
 			case unavailable.Load():
 				return errUnavailable.New()
@@ -95,7 +67,7 @@ func (w *fakeWatcher) Watch(_ context.Context, sub identity.Subject) <-chan stru
 	return w.ch
 }
 
-// 安装了 CredentialWatcher 时，收到信号立即复查，不等定期校验。
+// 安装了 identity.CredentialWatcher 时，收到信号立即复查，不等定期校验。
 func TestSSERechecksOnSignal(t *testing.T) {
 	t.Parallel()
 	var revoked atomic.Bool
@@ -104,14 +76,14 @@ func TestSSERechecksOnSignal(t *testing.T) {
 	ended := make(chan struct{})
 	handler := http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		ctx := identity.WithSubject(r.Context(), identity.Subject{ID: "alice", Credential: "t1"})
-		ctx = httpx.WithCredentialCheck(ctx, func(context.Context) error {
+		ctx = identity.WithCredentialCheck(ctx, func(context.Context) error {
 			checks.Add(1)
 			if revoked.Load() {
 				return errRevoked.New()
 			}
 			return nil
 		})
-		ctx = httpx.WithCredentialWatcher(ctx, w)
+		ctx = identity.WithCredentialWatcher(ctx, w)
 		_ = httpx.SSE(rw, r.WithContext(ctx), func(s *httpx.Stream) error {
 			<-s.Done()
 			close(ended)
@@ -158,8 +130,8 @@ func TestSSEIgnoresClosedWatchChannel(t *testing.T) {
 	ended := make(chan struct{})
 	handler := http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		ctx := identity.WithSubject(r.Context(), identity.Subject{ID: "alice"})
-		ctx = httpx.WithCredentialCheck(ctx, func(context.Context) error { checks.Add(1); return nil })
-		ctx = httpx.WithCredentialWatcher(ctx, w)
+		ctx = identity.WithCredentialCheck(ctx, func(context.Context) error { checks.Add(1); return nil })
+		ctx = identity.WithCredentialWatcher(ctx, w)
 		_ = httpx.SSE(rw, r.WithContext(ctx), func(s *httpx.Stream) error {
 			<-s.Done()
 			close(ended)

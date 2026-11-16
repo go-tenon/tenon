@@ -15,8 +15,8 @@ import (
 // HandlerOptions 是 Handler 的选项。
 type HandlerOptions struct {
 	// Validate 校验请求头 Authorization: Bearer 中的 token，必填。与 REST 用同一个校验器，
-	// 例如 apitoken.Store 的 Validate，或者 rest.TokenValidator 类型的值。
-	Validate func(ctx context.Context, token string) (identity.Subject, error)
+	// 例如 apitoken.Store 的 Validate。
+	Validate identity.TokenValidator
 	// Accounts 是接受的账号体系和各自的 Resolver，与 rest.Options.Accounts 相同，必填。
 	Accounts identity.Accounts
 	// Tenant 从请求中取出本次请求所在的租户，例如子域名或请求头；nil 表示平台本身（""）。
