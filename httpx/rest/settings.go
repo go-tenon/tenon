@@ -55,7 +55,7 @@ func (a *API) checkSettings(s *Settings) error {
 		return fmt.Errorf("a resource has the same name; their labels would clash")
 	}
 	if s.Get == "" || s.Update == "" {
-		return fmt.Errorf("Get and Update operations are required")
+		return fmt.Errorf("both the get and update operations are required")
 	}
 	get, err := a.resourceOp(s.Get, http.MethodGet)
 	if err != nil {

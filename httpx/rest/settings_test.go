@@ -65,7 +65,7 @@ func TestSettingsRejects(t *testing.T) {
 		want string
 	}{
 		{rest.Settings{Name: "Site", Get: "site-settings-get", Update: "site-settings-update"}, "kebab-case"},
-		{rest.Settings{Name: "site", Get: "site-settings-get"}, "Get and Update operations are required"},
+		{rest.Settings{Name: "site", Get: "site-settings-get"}, "both the get and update operations are required"},
 		{rest.Settings{Name: "site", Get: "missing", Update: "site-settings-update"}, "not registered"},
 		{rest.Settings{Name: "site", Get: "site-settings-update", Update: "site-settings-update"}, "must be GET"},
 		{rest.Settings{Name: "site", Get: "site-settings-get", Update: "site-settings-get"}, "must not be GET"},
