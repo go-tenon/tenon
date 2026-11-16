@@ -132,7 +132,7 @@ CI 运行普通的 `go test`，`-race` 会让整个流程慢好几倍。提交�
 <a id="api-contract"></a>
 ## 接口契约
 
-API 的客户端不只是网页：App、桌面端和其他服务都可能调用它，用的语言也不一定是 TypeScript 或 Go。[客户端协议](docs/http/protocol.md)是写给这些客户端的，框架的改动不能让它们只能用某一种语言、只能在浏览器中实现：
+API 的客户端不只是网页：App、桌面端和其他服务都可能调用它，用的语言也不一定是 TypeScript 或 Go。[客户端协议](docs/http/protocol.md)和 [RPC 协议](docs/rpc/protocol.md)是写给这些客户端的，框架的改动不能让它们只能用某一种语言、只能在浏览器中实现：
 
 - 认证只用 `Authorization: Bearer`，不依赖 Cookie 这类只有浏览器才有的机制；原生应用登录走授权码 + PKCE（[OAuth 服务端](docs/security/oauth-server.md)）；
 - 改动线路上的行为（请求头、状态码、错误响应、分页、事件流、实时频道等）时，同时更新客户端协议。规则以服务端和这一页为准，生成的运行时（`runtime.ts`、`wire/wire.go`）只是它的实现，不能只写在运行时里；
