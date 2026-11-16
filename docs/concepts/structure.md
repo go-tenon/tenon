@@ -243,7 +243,7 @@ Tenon 的每个包都可以单独使用，按需引入即可。顶层的包分�
 | `sms` | 短信；`aliyun`、`tencent` 发送，`logsms` 用于开发 | [短信](../libraries/sms.md) |
 | `pdf` | 把 templ 页面生成为 PDF，`pdf/gotenberg` 生成 | [生成 PDF](../libraries/pdf.md) |
 | `outbound` | 只能访问公网地址的 HTTP 客户端 | [出站请求](../libraries/outbound.md) |
-| `captcha` | 服务端校验 Turnstile、hCaptcha | [人机验证](../security/login.md#captcha) |
+| `captcha` | 服务端校验 Turnstile、hCaptcha | [人机验证](../security/login-security.md#captcha) |
 | `sheet` | 读写 CSV 和 Excel，按结构体解码并验证每一行 | [导入与导出](../features/import-export.md) |
 | `document` | `convert` 把文件转为 Markdown，`split` 切分 Markdown | [文档转换与切分](../ai/documents.md) |
 

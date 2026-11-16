@@ -118,7 +118,7 @@ func (h *Handlers) Subscribe(w http.ResponseWriter, r *http.Request) error {
 
 只有请求体无法解析时，`ParseForm` 才返回错误（`web.ErrBadForm`，响应 `422`）。订阅成功后，`Subscribed` 片段替换表单，显示“确认邮件已发到 …”。需要整页跳转时用 `web.Redirect`，见[跳转](views.md#redirects)。
 
-公开的表单要防止被脚本反复提交：用[限流](../libraries/rate-limiting.md)按 IP 限制这个路由，必要时加上[人机验证](../security/login.md#captcha)。
+公开的表单要防止被脚本反复提交：用[限流](../libraries/rate-limiting.md)按 IP 限制这个路由，必要时加上[人机验证](../security/login-security.md#captcha)。
 
 <a id="redisplaying-forms"></a>
 ## 验证失败后重新显示

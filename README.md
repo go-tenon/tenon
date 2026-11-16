@@ -54,6 +54,6 @@ go get github.com/go-tenon/tenon@main
 | 构建 AI 助手 | [AI 助手](docs/ai/chat.md) · [服务端推送](docs/responses/sse.md) |
 | 让 Claude、Cursor 调用业务操作 | [MCP 服务](docs/ai/mcp.md) · [OAuth 授权服务器](docs/security/oauth-server.md) |
 | 让 AI 引用 PDF、Word 等文档 | [文档转换与切分](docs/ai/documents.md) · [向量检索](docs/ai/vector.md) |
-| 保护接口 | [认证](docs/security/authentication.md) · [登录与注册](docs/security/login.md) · [授权](docs/security/authorization.md) · [哈希](docs/security/hashing.md) · [加密与签名链接](docs/security/encryption.md) · [限流](docs/libraries/rate-limiting.md) · [人机验证](docs/security/login.md#captcha) |
+| 保护接口 | [认证](docs/security/authentication.md) · [登录与注册](docs/security/login.md) · [授权](docs/security/authorization.md) · [哈希](docs/security/hashing.md) · [加密与签名链接](docs/security/encryption.md) · [限流](docs/libraries/rate-limiting.md) · [人机验证](docs/security/login-security.md#captcha) |
 | 使用数据库 | [数据库](docs/database/quick-start.md) · [迁移](docs/database/migrations.md) |
 | 测试与上线 | [测试](docs/testing/overview.md) · [部署](docs/installation/deployment.md) |

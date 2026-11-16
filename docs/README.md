@@ -121,14 +121,18 @@ Tenon 是一个用 Go 构建 HTTP API 的框架。用户登录后使用的界面
 
 - [认证](security/authentication.md)：怎样知道“这个请求是谁发的”
 - [登录与注册](security/login.md)：邮箱和密码、验证码、找回密码
+- [登录的安全功能](security/login-security.md)：二次验证、Passkey、人机验证
 - [API 令牌](security/api-tokens.md)：给程序和第三方使用的令牌
+- [JWT 与单页应用的登录](security/jwt.md)：浏览器中的登录方式
 - [授权](security/authorization.md)：角色与权限，“这个人能不能做这件事”
 - [哈希](security/hashing.md)：安全地保存密码
 - [加密与签名链接](security/encryption.md)：保护敏感数据和链接
 - [单账号后台](security/admin-example.md)：一个完整的例子
 - [第三方登录](security/social-login.md)：用微信、GitHub 等账号登录
+- [在 App 中使用第三方登录](security/social-login-apps.md)：App 登录与 Sign in with Apple
 - [企业单点登录](security/enterprise-sso.md)：用企业自己的账号系统登录
 - [OAuth 授权服务器](security/oauth-server.md)：让第三方应用代表用户调用你的接口
+- [认证进阶](security/authentication-advanced.md)：多套账号、多租户与代为登录
 - [多租户](security/tenancy.md)：一套系统同时服务多个客户
 - [运营后台与多租户](security/saas-example.md)：一个完整的例子
 

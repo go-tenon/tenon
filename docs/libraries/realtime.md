@@ -164,7 +164,7 @@ router.Handle("/t/{tenant}/realtime", rt.Handler())
 
 token 无效、属于其他账号体系，或 Resolver 拒绝主体时，连接以 3500 关闭，SDK 停止重连。连接期间两者每 30 秒重新运行一次，token 被撤销、用户被停用或移出租户后连接结束。没有 token 的连接是匿名的，只能订阅公开频道。
 
-使用 [JWT 模式](../security/api-tokens.md#jwt)时，SDK 传入 access token，并设置 `getToken`：
+使用 [JWT 模式](../security/jwt.md#jwt)时，SDK 传入 access token，并设置 `getToken`：
 
 ```js
 import { realtimeAuth } from '@go-tenon/client';

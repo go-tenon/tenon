@@ -51,7 +51,7 @@ http:
 | `max_age` | 浏览器缓存预检结果的时间，Chrome 最多缓存 2 小时 | `2h` |
 | `credentials` | 允许携带 cookie，见下文；为 `true` 时 `allowed_origins` 必须逐个列出具体来源 | `false` |
 
-API 只用 [Bearer token](../security/api-tokens.md) 认证，所以 `CORS` 默认关闭凭据：token 只在你的前端中，允许任何来源也是安全的。唯一的例外是单页应用保存 refresh token 的 [cookie](../security/api-tokens.md#single-page-applications)：单页应用与 API 在同一站点的不同子域名（`app.example.com` 与 `api.example.com`）时，设置 `credentials: true` 并列出单页应用的来源。ookie 的 `Path` 只包含刷新和登出接口，只有这两个接口收到 cookie。请求头按预检请求声明的原样允许，`Authorization` 自动包含在内。
+API 只用 [Bearer token](../security/api-tokens.md) 认证，所以 `CORS` 默认关闭凭据：token 只在你的前端中，允许任何来源也是安全的。唯一的例外是单页应用保存 refresh token 的 [cookie](../security/jwt.md#single-page-applications)：单页应用与 API 在同一站点的不同子域名（`app.example.com` 与 `api.example.com`）时，设置 `credentials: true` 并列出单页应用的来源。ookie 的 `Path` 只包含刷新和登出接口，只有这两个接口收到 cookie。请求头按预检请求声明的原样允许，`Authorization` 自动包含在内。
 
 预检请求（`OPTIONS`）直接以 `204` 应答，不进入路由、认证和限流，所以要把 `CORS` 安装在它们之前。`401`、`429` 等错误响应同样带有 CORS 头，前端能读到错误内容。
 

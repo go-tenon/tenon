@@ -10,10 +10,15 @@
 
 账号的密码由[登录与注册](login.md)保存和校验，包括下面的重新哈希。应用自己保存其他需要校验的口令时才直接使用 `Hasher`，本页以文章的访问口令为例：作者可以给文章设一个口令，读者输入正确才能阅读。
 
+几个术语：**哈希**是单向的计算，从结果推不出原文；**盐**是每次随机生成、和密码一起计算的一段数据，让相同的密码得到不同的哈希。
+
+阅读前需要了解：[配置](../general/configuration.md)；[依赖装配](../concepts/dependencies.md)。
+
 - [示例用法](#example-usage)
 - [配置](#configuration)
 - [哈希与校验密码](#hashing-passwords)
 - [重新哈希](#rehashing)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="example-usage"></a>
@@ -118,6 +123,25 @@ if a.hasher.NeedsRehash(art.PasscodeHash) {
 ```
 
 `login` 在密码登录成功时就是这样做的，用户在下次登录时自然迁移到新的算法和参数。从其他系统导入账号时，把旧的 bcrypt 或 argon2id 哈希原样写入 `auth_passwords` 表即可。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**启动时报错哈希的配置不合法**
+
+驱动名写错了，或者参数超出了允许的范围，`Validate` 在启动时拒绝它，见[配置](#configuration)。
+
+**用 bcrypt 时，长密码报错 `hashing.ErrPasswordTooLong`**
+
+bcrypt 只处理前 72 字节。在输入中用 `maxLength:"72"` 限制长度，或者改用 argon2id。
+
+**登录变慢了**
+
+哈希参数调得太高。在生产机器上测一下，把单次哈希控制在几十到几百毫秒。
+
+**从 PHP 迁移过来的密码能不能用**
+
+可以。PHC 格式与 PHP 的 `password_hash` 互通，旧的哈希可以直接校验，用户下次登录时按[重新哈希](#rehashing)换成新参数。
 
 <a id="api-reference"></a>
 ## API 参考
