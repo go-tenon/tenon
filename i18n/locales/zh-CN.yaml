@@ -115,7 +115,7 @@ queueweb.confirm_delete: 删除这条失败任务？
 queueweb.confirm_delete_all: 删除这些失败任务？
 queueweb.confirm_retry_all: 重新发布这些失败任务？
 queueweb.confirm_retry_all_description: 此刻之前失败的任务会重新发布，执行次数从 0 开始。
-queueweb.count: 条数
+queueweb.deferred: JetStream 中
 queueweb.delete: 删除
 queueweb.delete_all: 全部删除
 queueweb.deleted: 已删除 {{.n}} 条失败任务
@@ -123,21 +123,40 @@ queueweb.details: 详情
 queueweb.error: 错误
 queueweb.failed: 失败任务
 queueweb.failed_at: 失败时间
+queueweb.failed_count: 失败
 queueweb.idle: 没有 Worker 在转发
+queueweb.in_flight: 处理中
 queueweb.lag: 积压
-queueweb.next: 最早执行
+queueweb.last_delivered: 最近投递
+queueweb.messages: 消息
+queueweb.next: 数据库中最早执行
 queueweb.no_failed: 没有失败任务
+queueweb.no_handler: 没有注册处理函数
 queueweb.no_scheduled: 没有延迟任务
+queueweb.no_topics: 还没有 topic
 queueweb.overview: 概览
+queueweb.pause: 暂停 1 小时
+queueweb.paused_until: 暂停至 {{.t}}
+queueweb.pending: 待处理
+queueweb.redelivered: 重新投递
 queueweb.relay: 转发
 queueweb.relaying: 正在转发
+queueweb.replicas: 副本
+queueweb.resume: 恢复
 queueweb.retried: 已重新发布 {{.n}} 条失败任务
 queueweb.retry: 重试
 queueweb.retry_all: 全部重试
 queueweb.scheduled: 延迟任务
+queueweb.scheduled_db: 数据库中
+queueweb.scheduled_note: 这里列出存在数据库中、执行时间较晚的延迟任务；不超过 max_defer 的由 JetStream 定时投递，只在概览中统计条数。
 queueweb.slot: 复制槽
 queueweb.slot_missing: 不存在：运行 queue slot recreate
 queueweb.slot_name: 名称
+queueweb.stalled: 没有 Worker 在处理
+queueweb.state: 状态
+queueweb.state_ok: 正常
+queueweb.stream_error: 无法读取 JetStream
+queueweb.stream_missing: 还没有创建：启动一个 Worker
 queueweb.title: 队列
 queueweb.view: 查看
 queueweb.wal_status: WAL 状态

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -35,7 +36,53 @@ type frame struct {
 type overviewView struct {
 	base   string
 	status queue.Status
-	counts []queue.TopicCount
+	// jetStream 报告是否设置了 Options.Admin；stream 是读到的状态，读不到时 streamErr 不为 nil。
+	jetStream bool
+	stream    queue.StreamStatus
+	streamErr error
+	topics    []topicRow
+}
+
+// streamReady 报告是否读到了 stream 的状态。
+func (v overviewView) streamReady() bool {
+	return v.jetStream && v.streamErr == nil && v.stream.Exists
+}
+
+// topicRow 是概览中 topic 表格的一行：JetStream 中的状态和失败任务数。
+type topicRow struct {
+	queue.TopicStatus
+	inStream bool // JetStream 中有这个 topic：没有时只有失败任务数
+	failed   int
+}
+
+// topicRows 合并 JetStream 中的 topic 和有失败任务的 topic，按名字排序。
+func topicRows(topics []queue.TopicStatus, counts []queue.TopicCount) []topicRow {
+	byTopic := map[string]*topicRow{}
+	for _, t := range topics {
+		byTopic[t.Topic] = &topicRow{TopicStatus: t, inStream: true}
+	}
+	for _, c := range counts {
+		row, ok := byTopic[c.Topic]
+		if !ok {
+			row = &topicRow{TopicStatus: queue.TopicStatus{Topic: c.Topic}}
+			byTopic[c.Topic] = row
+		}
+		row.failed = c.Count
+	}
+	rows := make([]topicRow, 0, len(byTopic))
+	for _, row := range byTopic {
+		rows = append(rows, *row)
+	}
+	slices.SortFunc(rows, func(a, b topicRow) int { return strings.Compare(a.Topic, b.Topic) })
+	return rows
+}
+
+// cell 是 JetStream 中的数，topic 不在 JetStream 中时为 "-"。
+func (r topicRow) cell(n int) string {
+	if !r.inStream {
+		return "-"
+	}
+	return strconv.Itoa(n)
 }
 
 type failedView struct {
@@ -134,4 +181,13 @@ func total(counts []queue.TopicCount) int {
 		n += c.Count
 	}
 	return n
+}
+
+// replicas 是副本数，集群中加上 leader。
+func replicas(st queue.StreamStatus) string {
+	s := strconv.Itoa(st.Replicas)
+	if st.Leader != "" {
+		s += " (leader " + st.Leader + ")"
+	}
+	return s
 }

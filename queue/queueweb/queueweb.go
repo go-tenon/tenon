@@ -1,6 +1,6 @@
-// Package queueweb 是队列的运维面板：复制槽和延迟任务的状态、各 topic 的失败任务，以及重试和删除失败任务。
-// 它只读写 queue 已有的数据，不新增存储：吞吐、耗时这类指标看 OpenTelemetry（Grafana），
-// JetStream 中各 topic 的积压看 NATS 的监控，面板只放它们的链接。
+// Package queueweb 是队列的运维面板：复制槽和延迟任务的状态，JetStream 中各 topic 等待处理、处理中和失败的任务，
+// 重试和删除失败任务，暂停和恢复 topic 的处理。它只读写 queue 已有的数据，不新增存储：吞吐、耗时这类指标看
+// OpenTelemetry（Grafana），面板只放它的链接。
 //
 // 面板是服务端渲染的页面，认证由应用决定，通常是 httpx.BasicAuth；它自己拒绝跨站的非安全请求，
 // 因为浏览器会自动带上 Basic 凭据。应用还要挂载 web.Assets 和 ui.Assets：
@@ -8,11 +8,13 @@
 //	router.Handle(web.AssetsPath+"*", web.Assets())
 //	router.Handle(ui.AssetsPath+"*", ui.Assets())
 //	ops := router.With(httpx.BasicAuth("ops", verifyOps))
+//	admin := queue.NewAdmin(cfg.Queue, logger) // 进程退出前 admin.Close()
 //	queueweb.Register(ops, "/ops/queue", db, queueweb.Options{
-//		Links: map[string]string{"Grafana": cfg.GrafanaURL, "NATS": cfg.NATSDashboardURL},
+//		Admin: admin,
+//		Links: map[string]string{"Grafana": cfg.GrafanaURL},
 //	})
 //
-// 重试和删除各记一条 Info 日志，带上操作者（httpx.BasicUser）、topic 和条数。
+// 重试、删除、暂停和恢复各记一条 Info 日志，带上操作者（httpx.BasicUser）、topic 和条数。
 package queueweb
 
 import (
@@ -45,6 +47,9 @@ var bulkDone = map[string]string{"retried": "Retried {{.n}} failed jobs", "delet
 
 // Options 是 Register 的选项，都可以为零值。
 type Options struct {
+	// Admin 读取 JetStream 中的状态：设置后概览显示 stream、定时消息和各 topic 等待处理、处理中的任务，
+	// 并且可以暂停和恢复 topic。为 nil 时只显示数据库一侧的状态。NATS 不可用时页面照常显示数据库一侧的状态。
+	Admin *queue.Admin
 	// Links 是页头右侧的外部链接，键是显示的名称，例如 Grafana、NATS；地址为空的项不显示。
 	Links map[string]string
 	// Theme 是面板的外观，见 web.Theme。
@@ -59,6 +64,7 @@ type handlers struct {
 	base   string
 	links  []link
 	logger *slog.Logger
+	admin  *queue.Admin
 }
 
 type link struct{ name, url string }
@@ -72,6 +78,7 @@ func Register(r chi.Router, prefix string, db *bun.DB, opts Options) {
 	h := &handlers{
 		db: db, failed: queue.NewFailedJobs(db), base: strings.TrimSuffix(prefix, "/"),
 		logger: logging.Or(opts.Logger).With(logging.AttrComponent, "queueweb"),
+		admin:  opts.Admin,
 	}
 	for name, url := range opts.Links {
 		if url != "" {
@@ -93,23 +100,87 @@ func Register(r chi.Router, prefix string, db *bun.DB, opts Options) {
 		rt.Post("/failed/{id}/retry", h.retry)
 		rt.Post("/failed/{id}/delete", h.delete)
 		rt.Get("/scheduled", h.scheduled)
+		if h.admin != nil {
+			rt.Post("/topics/{topic}/pause", h.pause)
+			rt.Post("/topics/{topic}/resume", h.resume)
+		}
 	})
 }
 
 func (h *handlers) overview(w http.ResponseWriter, r *http.Request) error {
-	st, err := queue.ReadStatus(r.Context(), h.db)
+	v, err := h.overviewView(r.Context())
 	if err != nil {
 		return err
 	}
-	counts, err := h.failed.Counts(r.Context())
-	if err != nil {
-		return err
-	}
-	v := overviewView{base: h.base, status: st, counts: counts}
 	if web.IsPartial(r) {
 		return web.Render(w, r, http.StatusOK, overviewSection(v))
 	}
 	return web.Render(w, r, http.StatusOK, layout(h.frame(navOverview), overviewSection(v)))
+}
+
+// overviewView 读取概览的数据。JetStream 的状态读不到时记在 streamErr 中，数据库一侧照常显示。
+func (h *handlers) overviewView(ctx context.Context) (overviewView, error) {
+	st, err := queue.ReadStatus(ctx, h.db)
+	if err != nil {
+		return overviewView{}, err
+	}
+	counts, err := h.failed.Counts(ctx)
+	if err != nil {
+		return overviewView{}, err
+	}
+	v := overviewView{base: h.base, status: st, jetStream: h.admin != nil}
+	if v.jetStream {
+		ctx, cancel := context.WithTimeout(ctx, adminTimeout)
+		v.stream, v.streamErr = h.admin.Status(ctx)
+		cancel()
+		if v.streamErr != nil {
+			h.logger.WarnContext(ctx, "read jetstream status failed", "error", v.streamErr)
+		}
+	}
+	v.topics = topicRows(v.stream.Topics, counts)
+	return v, nil
+}
+
+// adminTimeout 是读取 JetStream 状态、暂停和恢复 topic 的超时：NATS 不可用时页面不至于一直等待。
+const adminTimeout = 3 * time.Second
+
+func (h *handlers) pause(w http.ResponseWriter, r *http.Request) error {
+	until := time.Now().Add(pauseFor)
+	return h.topicAction(w, r, "paused", func(ctx context.Context, topic string) error {
+		return h.admin.Pause(ctx, topic, until)
+	})
+}
+
+func (h *handlers) resume(w http.ResponseWriter, r *http.Request) error {
+	return h.topicAction(w, r, "resumed", h.admin.Resume)
+}
+
+// pauseFor 是面板上暂停一个 topic 的时长，再次暂停时从当时起算。更长的暂停用 queue.Admin.Pause。
+const pauseFor = time.Hour
+
+// topicAction 对路径中的 topic 执行 do，记日志后重新渲染概览；不是 htmx 请求时回到概览。
+func (h *handlers) topicAction(w http.ResponseWriter, r *http.Request, action string, do func(ctx context.Context, topic string) error) error {
+	ctx := r.Context()
+	topic := chi.URLParam(r, "topic")
+	actx, cancel := context.WithTimeout(ctx, adminTimeout)
+	err := do(actx, topic)
+	cancel()
+	if errors.Is(err, queue.ErrTopicNotFound) {
+		return web.ErrNotFound.Wrap(err)
+	}
+	if err != nil {
+		return err
+	}
+	h.logger.InfoContext(ctx, "topic "+action, "user", httpx.BasicUser(ctx), "topic", topic)
+	if !web.IsHTMX(r) {
+		web.Redirect(w, r, h.base+"/")
+		return nil
+	}
+	v, err := h.overviewView(ctx)
+	if err != nil {
+		return err
+	}
+	return web.Render(w, r, http.StatusOK, overviewSection(v))
 }
 
 // FailedQuery 是失败任务列表的查询参数。

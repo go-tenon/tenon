@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/go-tenon/tenon/database/dbtest"
 	"github.com/go-tenon/tenon/queue"
 	"github.com/go-tenon/tenon/queue/queuecmd"
+	"github.com/go-tenon/tenon/queue/queuetest"
 )
 
 // run 执行命令，返回每行按空白分隔的字段。
@@ -31,7 +33,11 @@ func run(t *testing.T, db bun.IDB, args ...string) [][]string {
 }
 
 func execute(db bun.IDB, args ...string) (string, error) {
-	cmd := queuecmd.New(db)
+	return executeWith(db, nil, args...)
+}
+
+func executeWith(db bun.IDB, opts []queuecmd.Option, args ...string) (string, error) {
+	cmd := queuecmd.New(db, opts...)
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -123,4 +129,54 @@ func TestStatusAndRecreate(t *testing.T) {
 		t.Fatalf("state after recreate %q", s)
 	}
 	run(t, db, "slot", "recreate", "--force")
+}
+
+// WithJetStream 时 status 还输出 stream 和各 topic 的状态。
+func TestStatusJetStream(t *testing.T) {
+	db := dbtest.Open(t, queue.Migrations())
+	cfg := queuetest.Config(t)
+	opts := []queuecmd.Option{queuecmd.WithJetStream(cfg)}
+	out, err := executeWith(db, opts, "status")
+	if err != nil || !strings.Contains(out, "not created yet") {
+		t.Fatalf("before the worker ran: %v\n%s", err, out)
+	}
+
+	release := make(chan struct{})
+	w := queue.NewWorker(db, cfg, slog.New(slog.DiscardHandler))
+	queue.Topic[int]("mail").Handle(w, func(context.Context, int) error {
+		<-release
+		return nil
+	})
+	queuetest.Run(t, w)
+	t.Cleanup(func() { close(release) }) // 在 Worker 停止之前放行处理中的任务
+	ctx := context.Background()
+	if err := queue.Topic[int]("mail").Publish(ctx, db, 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := queue.Topic[int]("orphan").Publish(ctx, db, 1); err != nil {
+		t.Fatal(err)
+	}
+	topics := map[string][]string{}
+	deadline := time.Now().Add(5 * time.Second)
+	for len(topics) < 2 || topics["mail"][2] != "1" {
+		if time.Now().After(deadline) {
+			t.Fatalf("topics %q\n%s", topics, out)
+		}
+		time.Sleep(50 * time.Millisecond)
+		if out, err = executeWith(db, opts, "status"); err != nil {
+			t.Fatal(err)
+		}
+		topics = map[string][]string{}
+		_, table, _ := strings.Cut(out, "TOPIC")
+		for line := range strings.Lines(table) {
+			if f := strings.Fields(line); len(f) >= 6 && f[0] != "PENDING" {
+				topics[f[0]] = f
+			}
+		}
+	}
+	// 最后一列是状态；LAST DELIVERED 是日期和时间两个字段，没有时是 "-"。
+	if !strings.Contains(out, cfg.Stream) || topics["mail"][6] != "ok" || topics["orphan"][1] != "1" ||
+		!strings.HasPrefix(strings.Join(topics["orphan"][5:], " "), "no handler") {
+		t.Fatalf("status\n%s", out)
+	}
 }

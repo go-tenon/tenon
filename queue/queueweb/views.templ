@@ -59,38 +59,135 @@ templ row(label, value string) {
 
 // overviewSection 每 5 秒刷新一次自己。
 templ overviewSection(v overviewView) {
-	<section id="overview" class="grid gap-4 md:grid-cols-3" hx-get={ v.base + "/" } hx-trigger="every 5s" hx-swap="outerHTML">
-		@card(t(ctx, "queueweb.slot", "Replication slot")) {
-			@row(t(ctx, "queueweb.slot_name", "Name"), v.status.Slot)
-			if !v.status.Exists {
-				<p class="py-1 text-sm text-destructive">{ t(ctx, "queueweb.slot_missing", "Missing: run queue slot recreate") }</p>
-			} else {
-				if v.status.Active {
-					@row(t(ctx, "queueweb.relay", "Relay"), t(ctx, "queueweb.relaying", "Relaying")+" (pid "+strconv.Itoa(v.status.ActivePID)+")")
+	<section id="overview" class="flex flex-col gap-4" hx-get={ v.base + "/" } hx-trigger="every 5s" hx-swap="outerHTML">
+		<div class="grid gap-4 md:grid-cols-3">
+			@card(t(ctx, "queueweb.slot", "Replication slot")) {
+				@row(t(ctx, "queueweb.slot_name", "Name"), v.status.Slot)
+				if !v.status.Exists {
+					<p class="py-1 text-sm text-destructive">{ t(ctx, "queueweb.slot_missing", "Missing: run queue slot recreate") }</p>
 				} else {
-					@row(t(ctx, "queueweb.relay", "Relay"), t(ctx, "queueweb.idle", "No worker relaying"))
+					if v.status.Active {
+						@row(t(ctx, "queueweb.relay", "Relay"), t(ctx, "queueweb.relaying", "Relaying")+" (pid "+strconv.Itoa(v.status.ActivePID)+")")
+					} else {
+						@row(t(ctx, "queueweb.relay", "Relay"), t(ctx, "queueweb.idle", "No worker relaying"))
+					}
+					@row(t(ctx, "queueweb.wal_status", "WAL status"), v.status.WALStatus)
+					@row(t(ctx, "queueweb.lag", "Lag"), formatBytes(v.status.Lag))
 				}
-				@row(t(ctx, "queueweb.wal_status", "WAL status"), v.status.WALStatus)
-				@row(t(ctx, "queueweb.lag", "Lag"), formatBytes(v.status.Lag))
 			}
-		}
-		@card(t(ctx, "queueweb.scheduled", "Scheduled jobs")) {
-			@row(t(ctx, "queueweb.count", "Count"), strconv.Itoa(v.status.Scheduled))
-			@row(t(ctx, "queueweb.next", "Next"), formatTime(v.status.NextScheduled))
-			<a href={ templ.SafeURL(v.base + "/scheduled") } class="mt-2 inline-block text-sm underline">{ t(ctx, "queueweb.view", "View") }</a>
-		}
-		@card(t(ctx, "queueweb.failed", "Failed jobs")) {
-			if len(v.counts) == 0 {
-				<p class="py-1 text-sm text-muted-foreground">{ t(ctx, "queueweb.no_failed", "No failed jobs") }</p>
+			@card(t(ctx, "queueweb.scheduled", "Scheduled jobs")) {
+				if v.streamReady() {
+					@row(t(ctx, "queueweb.deferred", "In JetStream"), strconv.Itoa(v.stream.Deferred))
+				}
+				@row(t(ctx, "queueweb.scheduled_db", "In PostgreSQL"), strconv.Itoa(v.status.Scheduled))
+				@row(t(ctx, "queueweb.next", "Next in PostgreSQL"), formatTime(v.status.NextScheduled))
+				<a href={ templ.SafeURL(v.base + "/scheduled") } class="mt-2 inline-block text-sm underline">{ t(ctx, "queueweb.view", "View") }</a>
 			}
-			for _, c := range v.counts {
-				<a href={ templ.SafeURL(failedView{base: v.base}.topicURL(c.Topic)) } class="flex justify-between gap-4 py-1 text-sm hover:underline">
-					<span class="font-mono">{ c.Topic }</span>
-					<span class="font-mono">{ strconv.Itoa(c.Count) }</span>
-				</a>
+			if v.jetStream {
+				@card("JetStream") {
+					if v.streamErr != nil {
+						<p class="py-1 text-sm text-destructive">{ t(ctx, "queueweb.stream_error", "Cannot read JetStream") }</p>
+						<p class="py-1 break-all font-mono text-xs text-muted-foreground">{ firstLine(v.streamErr.Error()) }</p>
+					} else if !v.stream.Exists {
+						@row("Stream", v.stream.Stream)
+						<p class="py-1 text-sm text-muted-foreground">{ t(ctx, "queueweb.stream_missing", "Not created yet: start a worker") }</p>
+					} else {
+						@row("Stream", v.stream.Stream)
+						@row(t(ctx, "queueweb.messages", "Messages"), strconv.FormatUint(v.stream.Messages, 10)+" ("+formatBytes(int64(v.stream.Bytes))+")")
+						@row(t(ctx, "queueweb.replicas", "Replicas"), replicas(v.stream))
+					}
+				}
 			}
-		}
+		</div>
+		@topicsTable(v)
 	</section>
+}
+
+templ topicsTable(v overviewView) {
+	if len(v.topics) == 0 {
+		if v.jetStream {
+			@ui.Empty(ui.EmptyProps{Icon: icon.Inbox, Title: t(ctx, "queueweb.no_topics", "No topics yet")})
+		} else {
+			@ui.Empty(ui.EmptyProps{Icon: icon.CircleCheck, Title: t(ctx, "queueweb.no_failed", "No failed jobs")})
+		}
+	} else {
+		<table class="w-full text-sm">
+			<thead>
+				<tr class="border-b text-left text-muted-foreground">
+					<th class="py-2 pr-4 font-medium whitespace-nowrap">Topic</th>
+					<th class="py-2 pr-4 font-medium whitespace-nowrap">{ t(ctx, "queueweb.pending", "Pending") }</th>
+					<th class="py-2 pr-4 font-medium whitespace-nowrap">{ t(ctx, "queueweb.in_flight", "In flight") }</th>
+					<th class="py-2 pr-4 font-medium whitespace-nowrap">{ t(ctx, "queueweb.redelivered", "Redelivered") }</th>
+					<th class="py-2 pr-4 font-medium whitespace-nowrap">{ t(ctx, "queueweb.failed_count", "Failed") }</th>
+					<th class="py-2 pr-4 font-medium whitespace-nowrap">{ t(ctx, "queueweb.last_delivered", "Last delivered") }</th>
+					<th class="py-2 pr-4 font-medium whitespace-nowrap">{ t(ctx, "queueweb.state", "State") }</th>
+					if v.streamReady() {
+						<th class="py-2 font-medium"></th>
+					}
+				</tr>
+			</thead>
+			<tbody>
+				for _, r := range v.topics {
+					<tr class="border-b align-top">
+						<td class="py-2 pr-4 font-mono">{ r.Topic }</td>
+						<td class="py-2 pr-4 font-mono">{ r.cell(int(r.Pending)) }</td>
+						<td class="py-2 pr-4 font-mono">{ r.cell(r.InFlight) }</td>
+						<td class="py-2 pr-4 font-mono">{ r.cell(r.Redelivered) }</td>
+						<td class="py-2 pr-4 font-mono">
+							if r.failed > 0 {
+								<a href={ templ.SafeURL(failedView{base: v.base}.topicURL(r.Topic)) } class="underline">{ strconv.Itoa(r.failed) }</a>
+							} else {
+								0
+							}
+						</td>
+						<td class="py-2 pr-4 whitespace-nowrap">{ formatTime(r.LastDelivered) }</td>
+						<td class="py-2 pr-4">
+							@topicState(r)
+						</td>
+						if v.streamReady() {
+							<td class="py-2 text-right">
+								if r.Handled {
+									@topicButton(v.base, r)
+								}
+							</td>
+						}
+					</tr>
+				}
+			</tbody>
+		</table>
+	}
+}
+
+templ topicState(r topicRow) {
+	switch {
+		case !r.inStream:
+			<span class="text-muted-foreground">-</span>
+		case !r.Handled:
+			<span class="text-destructive">{ t(ctx, "queueweb.no_handler", "No handler registered") }</span>
+		case r.Paused():
+			<span class="text-muted-foreground">{ t(ctx, "queueweb.paused_until", "Paused until {{.t}}", map[string]any{"t": formatTime(r.PausedUntil)}) }</span>
+		case r.Stalled():
+			<span class="text-destructive">{ t(ctx, "queueweb.stalled", "No worker fetching") }</span>
+		default:
+			<span>{ t(ctx, "queueweb.state_ok", "OK") }</span>
+	}
+}
+
+// topicButton 暂停或恢复 topic，完成后替换概览。
+templ topicButton(base string, r topicRow) {
+	if r.Paused() {
+		@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm, Attributes: templ.Attributes{
+			"hx-post": base + "/topics/" + r.Topic + "/resume", "hx-target": "#overview", "hx-swap": "outerHTML",
+		}}) {
+			{ t(ctx, "queueweb.resume", "Resume") }
+		}
+	} else {
+		@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm, Attributes: templ.Attributes{
+			"hx-post": base + "/topics/" + r.Topic + "/pause", "hx-target": "#overview", "hx-swap": "outerHTML",
+		}}) {
+			{ t(ctx, "queueweb.pause", "Pause 1 hour") }
+		}
+	}
 }
 
 templ failedSection(v failedView) {
@@ -198,6 +295,7 @@ templ jobDetail(base string, j queue.FailedJob, payload string) {
 
 templ scheduledSection(v scheduledView) {
 	<section class="flex flex-col gap-4">
+		<p class="text-sm text-muted-foreground">{ t(ctx, "queueweb.scheduled_note", "Jobs scheduled further out than max_defer wait in PostgreSQL and are listed here; sooner ones are held by JetStream and only counted on the overview.") }</p>
 		if len(v.list.Items) == 0 {
 			@ui.Empty(ui.EmptyProps{Icon: icon.Clock, Title: t(ctx, "queueweb.no_scheduled", "No scheduled jobs")})
 		} else {

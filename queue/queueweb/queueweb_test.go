@@ -41,6 +41,12 @@ var ops = webtest.Header("Authorization", "Basic "+base64.StdEncoding.EncodeToSt
 
 func setup(t *testing.T) (*bun.DB, *webtest.Client) {
 	t.Helper()
+	return setupWith(t, nil)
+}
+
+// setupWith 与 setup 相同，面板用 admin 读取 JetStream。
+func setupWith(t *testing.T, admin *queue.Admin) (*bun.DB, *webtest.Client) {
+	t.Helper()
 	db := dbtest.Open(t, queue.Migrations())
 	verify := func(_ context.Context, user, password string) (bool, error) {
 		return user == "ops" && password == "s3cret", nil
@@ -51,6 +57,7 @@ func setup(t *testing.T) (*bun.DB, *webtest.Client) {
 	queueweb.Register(router.With(httpx.BasicAuth("ops", verify)), "/ops/queue", db, queueweb.Options{
 		Links:  map[string]string{"Grafana": "https://grafana.example.com/d/queue", "NATS": ""},
 		Logger: slog.New(slog.DiscardHandler),
+		Admin:  admin,
 	})
 	return db, webtest.New(t, router)
 }
@@ -163,4 +170,79 @@ func dbName(t *testing.T, db *bun.DB) string {
 		t.Fatal(err)
 	}
 	return name
+}
+
+// 设置了 Admin 时，概览显示 JetStream 中的 stream 和各 topic，可以暂停和恢复 topic。
+func TestOverviewJetStream(t *testing.T) {
+	t.Parallel()
+	cfg := queuetest.Config(t)
+	admin := queue.NewAdmin(cfg, slog.New(slog.DiscardHandler))
+	t.Cleanup(admin.Close)
+	db, c := setupWith(t, admin)
+	if page := c.Get("/ops/queue/", ops).Text(); !strings.Contains(page, "Not created yet") {
+		t.Fatalf("before the worker ran:\n%s", page)
+	}
+
+	release := make(chan struct{})
+	w := queue.NewWorker(db, cfg, slog.New(slog.DiscardHandler))
+	queue.Topic[int]("mail").Handle(w, func(context.Context, int) error {
+		<-release
+		return nil
+	})
+	queuetest.Run(t, w)
+	t.Cleanup(func() { close(release) })
+	ctx := context.Background()
+	for _, topic := range []string{"mail", "orphan"} {
+		if err := queue.Topic[int](topic).Publish(ctx, db, 1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	insertFailed(t, db, "mail", time.Minute)
+
+	var page string
+	deadline := time.Now().Add(5 * time.Second)
+	for !strings.Contains(page, "No handler registered") || !strings.Contains(page, ">OK<") {
+		if time.Now().After(deadline) {
+			t.Fatalf("overview:\n%s", page)
+		}
+		time.Sleep(50 * time.Millisecond)
+		page = c.Get("/ops/queue/", ops, webtest.HTMX).Text()
+	}
+	if !strings.Contains(page, cfg.Stream) || !strings.Contains(page, `href="/ops/queue/failed?topic=mail"`) ||
+		!strings.Contains(page, `hx-post="/ops/queue/topics/mail/pause"`) || strings.Contains(page, "topics/orphan/pause") {
+		t.Fatalf("overview:\n%s", page)
+	}
+
+	res := c.Post("/ops/queue/topics/mail/pause", nil, ops, webtest.HTMX)
+	if res.Code != http.StatusOK || !strings.Contains(res.Text(), "Paused until") || !strings.Contains(res.Text(), "topics/mail/resume") {
+		t.Fatalf("pause: %d\n%s", res.Code, res.Text())
+	}
+	res = c.Post("/ops/queue/topics/mail/resume", nil, ops, webtest.HTMX)
+	if res.Code != http.StatusOK || strings.Contains(res.Text(), "Paused until") {
+		t.Fatalf("resume: %d\n%s", res.Code, res.Text())
+	}
+	if res := c.Post("/ops/queue/topics/missing/pause", nil, ops, webtest.HTMX); res.Code != http.StatusNotFound {
+		t.Fatalf("pause a missing topic: %d", res.Code)
+	}
+	if res := c.Post("/ops/queue/topics/mail/pause", url.Values{}, ops, webtest.Header("Sec-Fetch-Site", "cross-site")); res.Code != http.StatusForbidden {
+		t.Fatalf("cross-site pause: %d", res.Code)
+	}
+}
+
+// NATS 不可用时概览照常显示数据库一侧的状态；没有设置 Admin 时没有暂停的地址。
+func TestOverviewWithoutJetStream(t *testing.T) {
+	t.Parallel()
+	cfg := queue.DefaultConfig()
+	cfg.URL = "nats://127.0.0.1:1"
+	admin := queue.NewAdmin(cfg, slog.New(slog.DiscardHandler))
+	t.Cleanup(admin.Close)
+	db, c := setupWith(t, admin)
+	res := c.Get("/ops/queue/", ops)
+	if res.Code != http.StatusOK || !strings.Contains(res.Text(), "Cannot read JetStream") || !strings.Contains(res.Text(), queue.SlotName(dbName(t, db))) {
+		t.Fatalf("overview: %d\n%s", res.Code, res.Text())
+	}
+	_, c = setup(t)
+	if res := c.Post("/ops/queue/topics/mail/pause", nil, ops, webtest.HTMX); res.Code != http.StatusNotFound {
+		t.Fatalf("pause without admin: %d", res.Code)
+	}
 }

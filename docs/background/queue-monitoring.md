@@ -98,15 +98,15 @@ w := queue.NewWorker(a.db, a.cfg.Queue, nil,
 <a id="stats-command"></a>
 ## 队列状态
 
-每个 topic 积压、处理中、重新投递的任务数由 NATS 统计。每个 topic 是 stream 中的一个 consumer，名字是 topic 把 `.` 换成 `_`，用 [nats 命令行](https://docs.nats.io/using-nats/nats-tools/nats_cli)查看：`nats consumer report jobs` 列出 stream `jobs` 中每个 topic 的积压（Unprocessed）和处理中（Ack Pending）的任务，`nats stream info jobs` 显示 stream 占用的磁盘。`nats consumer pause jobs mail_send 1h` 暂停一个 topic 的消费。接入监控系统用 [prometheus-nats-exporter](https://github.com/nats-io/prometheus-nats-exporter) 采集 NATS 的监控端口。还没转发的任务在复制槽中，积压的字节数用 `pg_replication_slots` 查询，见[部署](../installation/operations.md#queue)；延迟超过 `max_defer` 的任务在 `queue_scheduled` 中。
+任务在三个地方等待：还没转发的在 PostgreSQL 的复制槽中；延迟超过 `max_defer` 的在 `queue_scheduled` 表中；其余的在 JetStream 中，包括等待处理、处理中和定时投递的任务。`queue` 命令和[队列面板](#panel)把它们放在一起显示。
 
-`queuecmd.New` 返回 `queue` 命令，查看数据库一侧的状态和失败任务。它和其他需要数据库的命令一样在 [bootstrap.Commands](../concepts/actions.md#as-commands) 中声明：
+`queuecmd.New` 返回 `queue` 命令。它和其他需要数据库的命令一样在 [bootstrap.Commands](../concepts/actions.md#as-commands) 中声明，`queuecmd.WithJetStream` 让它同时显示 JetStream 中的状态，执行命令时才连接 NATS：
 
 ```go
-queuecmd.New(a.db),
+queuecmd.New(a.db, queuecmd.WithJetStream(a.cfg.Queue)),
 ```
 
-`queue status` 显示复制槽是否有 worker 在转发、积压了多少 WAL，以及 `queue_scheduled` 中等待的任务：
+`queue status` 显示复制槽是否有 worker 在转发、积压了多少 WAL、`queue_scheduled` 中等待的任务，以及 JetStream 中的 stream 和每个 topic：
 
 ```bash
 ./bin/api queue status
@@ -119,9 +119,25 @@ wal status      reserved
 lag             12.4 KiB
 scheduled       3
 next scheduled  2026-11-14 09:00:00
+stream          jobs
+messages        28 (7.4 KiB)
+replicas        1
+deferred        5
+
+TOPIC         PENDING  IN FLIGHT  REDELIVERED  LAST DELIVERED       STATE
+mail.send     9        3          0            2026-11-12 09:41:07  ok
+report.daily  7        0          0            -                    paused until 2026-11-12 10:30:00
+sms.send      4        0          0            -                    no handler: no worker has registered this topic
 ```
 
-`state` 为 `idle` 时没有 worker 在转发；为 `missing` 或 `lost` 时 worker 拒绝启动，用 `queue slot recreate` 重建复制槽，见[重建复制槽](../installation/operations.md#queue-recovery)。
+- `state` 为 `idle` 时没有 worker 在转发；为 `missing` 或 `lost` 时 worker 拒绝启动，用 `queue slot recreate` 重建复制槽，见[重建复制槽](../installation/operations.md#queue-recovery)。
+- `scheduled` 是 `queue_scheduled` 中的任务，`deferred` 是 JetStream 中定时投递的任务，即延迟不超过 `max_defer` 的任务和重试。
+- `PENDING` 是等待处理的任务，`IN FLIGHT` 是已经交给 worker、还没完成的任务，`REDELIVERED` 是租约到期或停止时放回、再次投递的任务。
+- `STATE` 为 `no handler` 时，没有 worker 为这个 topic 注册处理函数，任务一直等待，通常是忘了注册或者 topic 名写错了；为 `stalled` 时有任务在等待，却没有 worker 在领取，通常是 worker 全部停止了。
+
+连不上 NATS 时，命令照常输出数据库一侧的状态，然后以错误退出。
+
+stream 和 consumer 也可以用 [nats 命令行](https://docs.nats.io/using-nats/nats-tools/nats_cli)查看，每个 topic 的 consumer 名是把 `.` 换成 `_` 的 topic 名，例如 `nats consumer info jobs mail_send`。接入监控系统用 [prometheus-nats-exporter](https://github.com/nats-io/prometheus-nats-exporter) 采集 NATS 的监控端口。
 
 `queue failed` 从新到旧列出失败任务，错误信息只显示第一行，完整的错误和堆栈用 `FailedJobs.Get` 查看：
 
@@ -139,11 +155,16 @@ ID                                    TOPIC      ATTEMPTS  FAILED AT            
 
 `queue/queueweb` 把同样的内容做成网页，只读写队列已有的数据：
 
-- **概览**：复制槽是否有 worker 在转发、WAL 状态和积压、`queue_scheduled` 中的任务数和最早的执行时间、各 topic 的失败任务数，每 5 秒刷新一次；
+- **概览**，每 5 秒刷新一次：
+    - 复制槽是否有 worker 在转发、WAL 状态和积压；
+    - 延迟任务：JetStream 中定时投递的条数，`queue_scheduled` 中的条数和最早的执行时间；
+    - JetStream 的 stream：消息数、占用的存储、副本数；
+    - 每个 topic 一行：等待处理、处理中、重新投递和失败的任务数，最近一次投递的时间，状态与 `queue status` 的 `STATE` 相同；
+- **暂停和恢复 topic**：概览中每个 topic 有“暂停 1 小时”按钮，暂停的 topic 有“恢复”按钮，见下文；
 - **失败任务**：按 topic 筛选、翻页；详情页显示格式化的 payload、元数据、完整的错误和堆栈；单条重试或删除，按 topic 全部重试或全部删除；
-- **延迟任务**：`queue_scheduled` 中等待的任务，按执行时间排列。
+- **延迟任务**：`queue_scheduled` 中等待的任务，按执行时间排列。JetStream 中定时投递的任务只统计条数。
 
-吞吐、耗时等指标交给 Grafana（见[可观测性](../general/telemetry.md#queue)），各 topic 的积压交给 NATS 的监控，面板只在页头放它们的链接；重建复制槽只能用 `queue slot recreate`。面板不新增任何表。
+吞吐、耗时等指标交给 Grafana（见[可观测性](../general/telemetry.md#queue)），面板只在页头放它的链接；重建复制槽只能用 `queue slot recreate`。面板不新增任何表。
 
 面板是框架自带的[服务端渲染页面](../web/views.md)，认证由应用决定，通常是 [HTTP Basic 认证](../http/optional-middleware.md#basic-auth)。挂在 HTTP 进程的路由上：
 
@@ -151,16 +172,25 @@ ID                                    TOPIC      ATTEMPTS  FAILED AT            
 router.Handle(web.AssetsPath+"*", web.Assets())
 router.Handle(ui.AssetsPath+"*", ui.Assets())
 
+// 第一次打开面板时才连接 NATS，之后保持连接
+admin := queue.NewAdmin(a.cfg.Queue, nil)
+stack.MustAdd("queue admin", func(context.Context) error {
+    admin.Close()
+    return nil
+})
+
 ops := router.With(httpx.BasicAuth("ops", a.verifyOps))
 queueweb.Register(ops, "/ops/queue", a.db, queueweb.Options{
-    Links: map[string]string{"Grafana": a.cfg.GrafanaURL, "NATS": a.cfg.NATSDashboardURL},
+    Admin: admin,
+    Links: map[string]string{"Grafana": a.cfg.GrafanaURL},
 })
 ```
 
-`a.verifyOps` 校验运维账号，见 [HTTP Basic 认证](../http/optional-middleware.md#basic-auth)。`Options.Theme` 可以设置面板的[主题](../web/components.md#themes)。
+`stack` 是入口的 [cleanup.Stack](../concepts/dependencies.md#closing-resources)，进程退出时断开连接。`a.verifyOps` 校验运维账号，见 [HTTP Basic 认证](../http/optional-middleware.md#basic-auth)。`Options.Theme` 可以设置面板的[主题](../web/components.md#themes)。不设置 `Admin` 时，面板只显示数据库一侧的状态，也没有暂停按钮；NATS 不可用时，JetStream 一栏显示错误，其余照常显示。
 
 - 全部重试只处理点击之前失败的任务：重试后马上又失败的任务在这一轮里只放回一次。它分批处理，每批 1000 条，直到处理完。
-- 每次重试和删除记一条 Info 日志，带上操作者（Basic 认证的用户名）、topic 和条数。
+- 暂停一个 topic 后，任务照常发布和保存，worker 不再领取新的任务，处理中的任务不受影响；worker 重启后仍然暂停，一小时后自动恢复。下游服务出了故障时先暂停对应的 topic，免得任务大量失败转入失败任务表。需要更长的暂停时调用 `admin.Pause(ctx, topic, until)`。
+- 每次重试、删除、暂停和恢复记一条 Info 日志，带上操作者（Basic 认证的用户名）、topic 和条数。
 - 浏览器会给跨站请求自动带上 Basic 凭据，所以面板拒绝跨站的 `POST`（`http.CrossOriginProtection`）。
 
 <a id="troubleshooting"></a>
@@ -173,6 +203,14 @@ queueweb.Register(ops, "/ops/queue", a.db, queueweb.Options{
 **点了“全部重试”，同一批任务反复被放回**
 
 `RetryAll` 的 `before` 要用点击之前的时间：重试后马上又失败的任务，失败时间在 `before` 之后，不会在同一轮中再被放回。
+
+**topic 的状态是“没有注册处理函数”**
+
+有任务发布到了这个 topic，但没有 worker 为它注册处理函数，任务会一直等待。检查 worker 是否调用了这个 topic 的 `Handle`，以及发布和处理两边的 topic 名是否一致；两边共用同一个 `queue.Topic` 声明就不会写错。
+
+**topic 的状态是“没有 Worker 在处理”**
+
+有任务在等待，却没有 worker 领取它们，通常是所有 worker 都停止了。worker 刚处理完一批、还没有再次领取的瞬间也可能这样显示，持续出现时检查 worker 是否在运行。
 
 **`queue status` 显示积压一直在增长**
 
