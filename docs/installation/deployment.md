@@ -306,6 +306,16 @@ services:
 
 一起运行时，把三个服务换成一个运行 `start` 的服务即可。
 
+发布新版本时，先单独执行迁移，再替换容器：
+
+```bash
+docker compose pull
+docker compose run --rm migrate
+docker compose up -d
+```
+
+不能只执行 `up -d`：它先停止旧的容器，再等 `migrate` 完成，迁移在这一步失败时，旧的已经停了，新的不会启动，服务就中断了。单独执行的迁移失败时，旧版本照常运行，修好之后再执行一遍即可。`up -d` 中的 `migrate` 会再执行一次，这时已经没有要执行的迁移。
+
 应用用到的其他服务也放进同一个 compose 文件。框架会用到 PostgreSQL（业务数据、锁、限流）、[Memcached](../libraries/cache.md)（缓存）和 [NATS](../libraries/nats.md)（任务队列、广播、在线成员）：
 
 ```yaml
