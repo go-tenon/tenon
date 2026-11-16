@@ -4,6 +4,8 @@
 
 Tenon 使用 [goose](https://github.com/pressly/goose) 管理迁移。迁移是应用目录中的普通 SQL 文件，它们被嵌入到二进制中，在发布时通过命令**显式**执行。迁移是发布中的一个独立步骤，由 `migrate up` 执行一次：多个实例同时启动时，由谁执行、失败了怎么办都很清楚。
 
+阅读前需要了解：SQL 的 `CREATE TABLE`、`ALTER TABLE`；[入门教程第 3 章](../tutorial/03-database.md)写过第一个迁移；[embed](../concepts/go-primer.md#embed)。
+
 - [示例用法](#introduction)
 - [编写迁移](#writing-migrations)
     - [迁移文件结构](#migration-structure)
@@ -17,6 +19,7 @@ Tenon 使用 [goose](https://github.com/pressly/goose) 管理迁移。迁移是�
     - [在 CI 中检查](#checking-in-ci)
     - [零停机变更](#zero-downtime-changes)
 - [非事务迁移失败后的恢复](#recovering-non-transactional-migrations)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="introduction"></a>
@@ -94,7 +97,7 @@ CREATE TABLE articles (
 DROP TABLE articles;
 ```
 
-这里显式声明了三个时间字段，与[文章模型](quick-start.md#defining-models)保持一致。时间列不设数据库默认值，`created_at` 和 `updated_at` 由[模型钩子](quick-start.md#timestamps)写入；允许为空的 `deleted_at` 配合 Bun 的[软删除标签](quick-start.md#soft-deletes)使用。表结构只由迁移修改。
+这里显式声明了三个时间字段，与[文章模型](quick-start.md#defining-models)保持一致。时间列不设数据库默认值，`created_at` 和 `updated_at` 由[模型钩子](quick-start.md#timestamps)写入；允许为空的 `deleted_at` 配合 Bun 的[软删除标签](advanced.md#soft-deletes)使用。表结构只由迁移修改。
 
 默认情况下，每个迁移文件在一个事务中执行，失败时整体回滚。
 
@@ -280,6 +283,16 @@ err := migrate.CheckPublished("migrations", "baseline/migrations")
 2. 部署使用新结构的应用代码；
 3. 在后续的版本中，移除已经弃用的旧结构。
 
+以把 `articles.body` 改名为 `content` 为例，一次 `ALTER TABLE articles RENAME COLUMN body TO content` 会让还在运行的旧版本立即找不到 `body` 列。改为分三次发布：
+
+| 发布 | 迁移 | 代码 |
+| --- | --- | --- |
+| 第一次 | 新增 `content` 列，把 `body` 的数据复制过去 | 同时写 `body` 和 `content`，读 `body` |
+| 第二次 | 无 | 只读写 `content` |
+| 第三次 | 删除 `body` 列 | 不变 |
+
+每一次发布时，同时运行的新旧两个版本用到的列都存在。
+
 <a id="recovering-non-transactional-migrations"></a>
 ## 非事务迁移失败后的恢复
 
@@ -295,6 +308,25 @@ err := migrate.CheckPublished("migrations", "baseline/migrations")
 3. 确认数据库处于迁移前或迁移后的一致状态后，再重新执行迁移。
 
 为了降低风险，建议每个非事务迁移只包含一条语句。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**修改了一个已经执行过的迁移，`migrate up` 没有任何变化**
+
+数据库记录着这个迁移已经执行过，不会再执行。开发时可以先 `migrate down` 撤销再 `migrate up`；已经发布的迁移不要修改，写一个新的迁移，见[修改已发布的迁移](#published-migrations)。
+
+**新建的迁移文件没有被执行**
+
+迁移文件通过 `embed` 打包进程序，修改后要重新编译：`go run` 会自动编译，用 `./bin/api` 时要先重新构建。另外检查文件是否在 `migrations` 目录中、扩展名是否是 `.sql`。
+
+**`migrate up` 报错 `detected 1 missing (out-of-order) migration lower than …`**
+
+两个分支各自新建了迁移，合并后出现了一个时间更早、但还没有执行的迁移。goose 拒绝乱序执行。如果这个迁移还没有发布到其他环境，用 `migrate make` 重新生成一个新的时间戳，把内容移过去，删掉旧文件。
+
+**迁移执行到一半失败了**
+
+普通的迁移在事务中执行，失败时整体回滚，修正 SQL 后再执行即可。使用了 `-- +goose NO TRANSACTION` 的迁移见[非事务迁移失败后的恢复](#recovering-non-transactional-migrations)。
 
 <a id="api-reference"></a>
 ## API 参考

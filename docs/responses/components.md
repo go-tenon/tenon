@@ -2,6 +2,8 @@
 
 按钮、表格、下拉菜单、对话框这些界面组件来自 [shadcn-templ](https://github.com/axadrn/shadcn-templ)，它是 [shadcn/ui](https://ui.shadcn.com) 的 templ 移植版。框架在 go.mod 中固定了它的版本，`web/ui` 包内置了这个版本的样式表和组件脚本：应用直接 import 组件即可使用，样式随包提供。
 
+阅读前需要了解：[视图](views.md)。
+
 `web/ui` 把组件接到[页面](views.md)上：按主题加载样式表和脚本；局部请求的错误显示为 toast；`hx-confirm` 弹出确认对话框；提供表单字段、分页、排序表头、空状态这几个与 `web` 配合的组件。这些衔接都可以换成应用自己的写法，见[不同区域的界面](#areas)。组件中的文字（分页的“上一页”、确认框的“取消”等）按请求的语言显示，见[本地化](../general/localization.md#built-in-messages)。
 
 - [示例用法](#example-usage)
@@ -14,6 +16,7 @@
 - [不同区域的界面](#areas)
 - [升级组件](#upgrading)
 - [注意事项](#caveats)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="example-usage"></a>
@@ -206,7 +209,26 @@ shadcn-templ 的版本随框架升级，`ui.ShadcnTemplVersion` 是当前版本�
 
 - **给对话框固定的 `ID`。** 组件没有 `ID` 时会生成随机值，同一个对话框重新渲染后就对不上了。
 - **对话框放在 `<table>` 外面。** 对话框渲染的是 `<div>`，浏览器解析 HTML 时会把 `<tbody>` 中的 `<div>` 移到表格外面。
-- **templ 会拦截字符串形式的事件处理器。** `templ.Attributes{"onclick": "…"}` 渲染出来是一段注释。事件处理写成：在元素上写 `data-*` 属性，在应用的脚本中用事件委托处理，这样也符合[内容安全策略](views.md#content-security-policy)。
+- **templ 会拦截字符串形式的事件处理器。** `templ.Attributes{"onclick": "…"}` 渲染出来是一段注释。事件处理写成：在元素上写 `data-*` 属性，在应用的脚本中用事件委托处理，这样也符合[内容安全策略](assets.md#content-security-policy)。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**组件没有样式**
+
+页面没有输出 `ui.Head()`。用 `ui.Page` 生成文档，或者自己写 `<html>` 时在 `<head>` 中调用 `@ui.Head()`，见[布局](#layouts)。
+
+**`hx-confirm` 弹出的是浏览器自带的确认框**
+
+布局中没有放 `ui.Confirm()`，见[确认对话框](#confirming)。
+
+**自己组合的输入框，没有错误时也显示为红色**
+
+`data-invalid`、`aria-invalid` 的值必须是 `"true"`，没有错误时不写这个属性，而不是写成 `"false"`，见[使用组件](#using-components)。
+
+**配置中的 `style` 写错了，页面没有报错**
+
+在配置的 `Validate` 中调用 `cfg.Theme.Validate()`，写错时启动就会报错，见[主题](#themes)。
 
 <a id="api-reference"></a>
 ## API 参考
@@ -227,6 +249,7 @@ func ThemeToggle() templ.Component
 
 `Page` 输出完整的 HTML 文档；自己写 `<html>` 时在 `<head>` 中调用 `Head`。`Assets` 提供样式表和脚本，挂载在 `AssetsPath`。`ErrorPage` 用作 `web.Options.ErrorPage`。`Toaster` 显示局部请求的错误和提示。
 
+<a id="list-components"></a>
 ### 列表
 
 ```go
@@ -235,7 +258,11 @@ func SortHead(current, key, label string, url func(sort string) string, props ..
 func Empty(p EmptyProps) templ.Component
 ```
 
-分页导航、可排序的表头、空状态，用法见[列表页](views.md#list-pages)。
+分页导航、可排序的表头、空状态，完整的例子见[列表页](views.md#list-pages)。
+
+- `SortHead` 是可以点击排序的表头：点击按这一列升序，再点击改为降序，当前排序的列显示方向箭头并带 `aria-sort`；`DescFirst` 让第一次点击按降序，适合时间、数量。它按 `current` 判断当前的方向（`title` 为升序，`-title` 为降序），用 `url` 生成下一次点击的地址。
+- `Empty` 是没有数据时的提示，children 可以放操作，例如“清除搜索”链接。
+- `Pagination` 显示上一页、下一页、首页、末页，以及当前页两侧各 1 页，中间省略；只有一页时不显示。`HTMX` 让链接同时带 `hx-get`，沿用区域上的 `hx-target`；链接也写了 `href`，不支持 htmx 的场景（例如在新标签页打开）也能正常访问。自己写分页导航时，`list.Links(1)` 返回要显示的页码，省略的部分用 `0` 表示，例如 `[1 0 9 10 11 0 20]`，`list.LastPage()` 是最后一页的页码。
 
 ### 表单字段
 

@@ -4,6 +4,8 @@
 
 本页先介绍怎样返回一个对象，再介绍列表接口最常用的分页、筛选和排序。
 
+阅读前需要了解：[请求](../http/requests.md)；[泛型](../concepts/go-primer.md#generics)（分页的 `page.Offset[T]`）。
+
 - [示例用法](#creating-responses)
     - [JSON 响应](#json-responses)
     - [状态码](#status-codes)
@@ -14,6 +16,7 @@
     - [游标分页](#cursor-pagination)
     - [筛选与排序](#filtering-and-sorting)
 - [返回错误](#returning-errors)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="creating-responses"></a>
@@ -325,6 +328,29 @@ if err != nil {
 ```
 
 `rest.Register` 会把错误转换为统一格式的错误响应，并选择合适的状态码。如何定义业务错误、它们如何映射到 HTTP 状态码，请参阅[错误处理](../general/errors.md)。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**空列表返回了 `null`，前端遍历时报错**
+
+`nil` slice 被编码为 `null`。初始化一个空 slice，或者用 `page.Offset`、`page.Cursor`，它们在没有数据时返回 `"items": []`，见[集合与时间](#collections-and-times)。
+
+**翻页时出现重复的数据，或者漏掉了一条**
+
+排序不是确定且唯一的。在排序的最后加上 `id`，例如 `ORDER BY published_at DESC, id DESC`，见[游标分页](#cursor-pagination)。
+
+**`per_page=200` 返回 422**
+
+`per_page` 最大为 100。需要更多数据时分多次请求。
+
+**游标翻页返回 422，错误码 `page.invalid_cursor`**
+
+客户端修改了游标，或者用了另一种排序的游标。游标要原样传回；需要让用户选择排序的列表用固定分页。
+
+**响应中的时间差了几个小时**
+
+业务和数据库中混用了本地时间和 UTC。统一使用 UTC，只在展示时转换为用户的时区。
 
 <a id="api-reference"></a>
 ## API 参考
