@@ -141,7 +141,7 @@ jobs:
       # 队列用 JetStream 保存任务，-js 开启它。
       - name: Start NATS
         run: |
-          docker run -d --name nats -p 127.0.0.1:4222:4222 nats:2.12-alpine nats-server -js -m 8222
+          docker run -d --name nats -p 127.0.0.1:4222:4222 nats:2.15-alpine nats-server -js -m 8222
           for i in $(seq 1 30); do docker exec nats wget -qO- http://127.0.0.1:8222/healthz && exit 0; sleep 1; done
           docker logs nats
           exit 1
