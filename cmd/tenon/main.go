@@ -148,7 +148,7 @@ func root() *cobra.Command {
 var moduleLine = regexp.MustCompile(`(?m)^module\s+(\S+)`)
 
 func addFrontendCommand() *cobra.Command {
-	var base, template string
+	var base, template, layout string
 	cmd := &cobra.Command{
 		Use:   "frontend <name>",
 		Short: "在 apps/<name> 中生成一个 React 前端，加入 Bun workspace",
@@ -182,7 +182,7 @@ func addFrontendCommand() *cobra.Command {
 			if !slices.Contains(scaffold.Templates, template) {
 				return fmt.Errorf("--template %q is not one of %v", template, scaffold.Templates)
 			}
-			f := scaffold.Frontend{Scope: pkg.Name, Name: name, Base: base, Title: name, Template: template}
+			f := scaffold.Frontend{Scope: pkg.Name, Name: name, Base: base, Title: name, Template: template, Layout: layout}
 			if err := scaffold.WriteFrontend(".", f); err != nil {
 				return err
 			}
@@ -233,6 +233,7 @@ func addFrontendCommand() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&base, "base", "", "前端挂载的路径，以 / 开头和结尾，默认 /<name>/")
 	cmd.Flags().StringVar(&template, "template", "default", "前端的模板：default；admin（antd 的运营后台）；console（shadcn 的控制台）")
+	cmd.Flags().StringVar(&layout, "layout", "", "默认布局，只用于 admin 和 console 模板。admin："+strings.Join(scaffold.Layouts["admin"], "、")+"；console："+strings.Join(scaffold.Layouts["console"], "、")+"。默认是第一种")
 	return cmd
 }
 

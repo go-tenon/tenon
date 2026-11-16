@@ -154,6 +154,15 @@ router.Handle("/admin/*", httpx.NewSPA(admin.Dist, httpx.SPAOptions{Base: "/admi
 
 `--base` 可以指定其他的挂载路径，以 `/` 开头和结尾。`apps/admin` 必须还不存在。
 
+`--layout` 选择默认布局，只用于 `admin` 和 `console` 模板：
+
+| 模板 | 可选的布局（第一种是默认的） |
+| --- | --- |
+| `admin` | `side`（侧栏）、`top`（顶部导航）、`mix`（顶栏 + 侧栏）、`rail`（图标栏 + 二级面板）、`centered`（居中窄栏） |
+| `console` | `inset`（内嵌式侧栏）、`side`、`floating`（浮起的侧栏）、`top`、`mix`、`rail`、`centered` |
+
+拿不准用哪一种时不用纠结：两个模板都带一个“布局”页面，列出全部布局，点“使用”就能在浏览器中切换整个应用的布局，对照着选。选定之后在 `src/layouts.ts` 中把它放在第一位，只保留需要的布局，再删除这个页面，见[运营后台](../responses/admin.md#template)。
+
 <a id="troubleshooting"></a>
 ## 常见问题
 

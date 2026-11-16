@@ -831,7 +831,7 @@ go run ./cmd/api user admin --email ming@example.com
 go tool tenon add frontend admin --template admin
 ```
 
-它在 `apps/admin` 中生成登录页、侧栏布局和首页，登录调用的正是第 6 章的 `/api/auth` 接口。重新生成客户端：
+它在 `apps/admin` 中生成登录页、侧栏布局和首页，登录调用的正是第 6 章的 `/api/auth` 接口。另外还有一个“布局”页面，可以在浏览器中切换几种后台布局，对照着选；不需要时删除 `src/routes/_app/layouts.tsx` 即可，见[运营后台](../responses/admin.md#template)。重新生成客户端：
 
 ```bash
 go tool tenon generate
@@ -933,7 +933,7 @@ function Users() {
 
 1. 在“角色”中新建一个“编辑”角色，权限选择“管理角色”；
 2. 在“作者”中修改小红，角色选择“编辑”；
-3. 退出，用小红登录：侧栏中只有“角色”。直接请求 `/api/users` 得到 `403`。
+3. 退出，用小红登录：侧栏中有“角色”，没有“作者”。直接请求 `/api/users` 得到 `403`。
 
 以后在 Go 中给资源加一列（例如作者的文章数），重新生成后后台就会显示它，页面代码不用修改。
 

@@ -1,0 +1,46 @@
+import { createFileRoute } from "@tanstack/react-router"
+import { useLayoutVariant } from "@go-tenon/shell"
+import { Button, Card, List, Tag, Typography } from "antd"
+import { layoutInfo, layouts } from "../../layouts"
+
+// 布局页面：项目初期对照选择布局。确定之后，在 src/layouts.ts 中只保留需要的布局，并删除这个文件。
+export const Route = createFileRoute("/_app/layouts")({
+  staticData: { title: "布局", icon: "appstore", order: 100 },
+  component: Layouts,
+})
+
+function Layouts() {
+  const [current, setLayout] = useLayoutVariant(layouts)
+  return (
+    <Card>
+      <Typography.Title level={4}>布局</Typography.Title>
+      <Typography.Paragraph type="secondary">
+        点“使用”切换整个应用的布局，选择保存在这个浏览器中。确定之后，在 src/layouts.ts 中把它放在第一位，
+        只保留需要的布局，并删除这个页面（src/routes/_app/layouts.tsx）。
+      </Typography.Paragraph>
+      <List
+        dataSource={[...layouts]}
+        renderItem={(name) => (
+          <List.Item
+            actions={[
+              name === current ? (
+                <Tag key="current" color="processing">
+                  当前
+                </Tag>
+              ) : (
+                <Button key="use" onClick={() => setLayout(name)}>
+                  使用
+                </Button>
+              ),
+            ]}
+          >
+            <List.Item.Meta
+              title={`${layoutInfo[name].title}（${name}）`}
+              description={layoutInfo[name].description}
+            />
+          </List.Item>
+        )}
+      />
+    </Card>
+  )
+}

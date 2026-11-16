@@ -37,12 +37,16 @@ apps/admin/
 └── src/
     ├── app.ts             createApp：会话、权限、404 和错误页
     ├── auth.ts            登录、刷新、登出和当前用户的接口
+    ├── layouts.ts         可以使用的布局，第一种是默认的
     └── routes/
         ├── __root.tsx     AdminProvider（设计令牌）和新版本提示
         ├── login.tsx      登录页
-        ├── _app.tsx       需要登录的布局：侧栏、多标签、用户菜单、租户切换
-        └── _app/index.tsx 首页
+        ├── _app.tsx       需要登录的布局：按当前布局渲染，多标签、用户菜单、租户切换
+        ├── _app/index.tsx 首页
+        └── _app/layouts.tsx 布局页面：对照选择布局，选定后删除
 ```
+
+**选择布局。** `src/layouts.ts` 列出这个前端可以使用的布局，第一种是默认的，由 `tenon add frontend` 的 `--layout` 决定（见[开发工具](../installation/tooling.md#add-frontend)）。`_app.tsx` 用 [`useLayoutVariant`](app-shell.md#layouts) 取得当前的布局并渲染它。“布局”页面列出全部布局，点“使用”切换，选择保存在这个浏览器中。项目初期用它对照选择；选定之后，在 `layouts.ts` 中把它放在第一位，只保留需要的布局（保留几种时，用户可以在它们之间切换），再删除 `_app/layouts.tsx`。
 
 `src/auth.ts` 按约定的路径调用登录相关的接口：`POST /api/auth/login`、`/api/auth/refresh`、`/api/auth/logout` 和 `GET /api/me`（返回 `{ name, permissions? }`）。应用按[教程第 6 章](../tutorial/06-login.md)的写法注册它们后，登录就能使用；接口名或路径不同时只改这个文件。没有登录时打开任何页面都会跳到登录页，登录后回到原来的页面。
 

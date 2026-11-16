@@ -137,9 +137,11 @@ func TestAddFrontend(t *testing.T) {
 		}
 	}
 	for args, want := range map[string]string{
-		"add frontend admin":           "already exists",
-		"add frontend Admin":           "must match",
-		"add frontend ops --base /ops": "must start and end with /",
+		"add frontend admin":                               "already exists",
+		"add frontend Admin":                               "must match",
+		"add frontend ops --base /ops":                     "must start and end with /",
+		"add frontend ops --layout side":                   `template "default" has no layouts`,
+		"add frontend ops --template admin --layout inset": `layout "inset" is not one of`,
 	} {
 		if err := execute(t, strings.Fields(args)...); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%s: err = %v", args, err)

@@ -1,0 +1,42 @@
+import { createFileRoute } from "@tanstack/react-router"
+import { useLayoutVariant } from "@go-tenon/shell"
+import { PageHeader } from "@/components/tenon/page"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
+import { layoutInfo, layouts } from "../../layouts"
+
+// 布局页面：项目初期对照选择布局。确定之后，在 src/layouts.ts 中只保留需要的布局，并删除这个文件。
+export const Route = createFileRoute("/_app/layouts")({
+  staticData: { title: "布局", icon: "appstore", order: 100 },
+  component: Layouts,
+})
+
+function Layouts() {
+  const [current, setLayout] = useLayoutVariant(layouts)
+  return (
+    <div className="flex flex-col gap-4">
+      <PageHeader description="点“使用”切换整个应用的布局，选择保存在这个浏览器中。确定之后，在 src/layouts.ts 中把它放在第一位，只保留需要的布局，并删除这个页面（src/routes/_app/layouts.tsx）。" />
+      <Card>
+        <CardContent className="flex flex-col divide-y">
+          {layouts.map((name) => (
+            <div key={name} className="flex items-center gap-4 py-3">
+              <div className="flex-1">
+                <div className="font-medium">
+                  {layoutInfo[name].title}（{name}）
+                </div>
+                <div className="text-sm text-muted-foreground">{layoutInfo[name].description}</div>
+              </div>
+              {name === current ? (
+                <span className="text-sm text-primary">当前</span>
+              ) : (
+                <Button variant="outline" size="sm" onClick={() => setLayout(name)}>
+                  使用
+                </Button>
+              )}
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
