@@ -206,7 +206,7 @@ db := dbtest.Open(t, migrations.FS)
 func Replica(t testing.TB, db *bun.DB) *bun.DB
 ```
 
-返回同一个测试数据库的只读连接池，模拟[只读副本](../database/quick-start.md#read-replicas)。
+返回同一个测试数据库的只读连接池，模拟[只读副本](../database/advanced.md#read-replicas)。
 
 ### URL
 

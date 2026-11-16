@@ -139,6 +139,7 @@ Tenon 是一个用 Go 构建 HTTP API 的框架。用户登录后使用的界面
     - [向量检索](ai/vector.md)
 - [可观测性](general/telemetry.md)：指标、链路和日志推送到观测平台
 - [前端观测](general/frontend-observability.md)：浏览器中的错误、页面和链路
+- [数据库进阶](database/advanced.md)：慢查询、软删除、隔离级别、只读副本、多个数据库
 - [部署](installation/deployment.md)：构建、配置和上线
 - [运维](installation/operations.md)：不停机升级、维护窗口、备份与恢复
 

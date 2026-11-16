@@ -120,7 +120,7 @@ db, err := database.Open(ctx, cfg.Database, database.WithTelemetry(tel.Meters, t
 
 `ctx` 中有 span 时，每条语句是它之下的一个 span，名称是操作和表，例如 `SELECT articles`：一个慢请求的链路里能看到它执行了哪些语句、各用了多久，事务的 `BEGIN`、`COMMIT` 也在其中。队列转发任务、调度器加锁这类后台查询不属于任何请求，只计入指标，不产生链路。
 
-span 的 `db.query.text` 是把字面量换成 `?` 之后的 SQL，例如 `SELECT … WHERE ("a"."id" = ?)`。Bun 把参数直接写进 SQL，换掉之后手机号、token 这类值只留在应用中。超过[慢查询](../database/quick-start.md#slow-queries)阈值的语句同样以这种形式记录到日志。
+span 的 `db.query.text` 是把字面量换成 `?` 之后的 SQL，例如 `SELECT … WHERE ("a"."id" = ?)`。Bun 把参数直接写进 SQL，换掉之后手机号、token 这类值只留在应用中。超过[慢查询](../database/advanced.md#slow-queries)阈值的语句同样以这种形式记录到日志。
 
 <a id="queue"></a>
 ### 队列
