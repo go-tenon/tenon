@@ -226,6 +226,7 @@ import (
 
     "github.com/go-tenon/tenon/command"
     "github.com/go-tenon/tenon/config"
+    "github.com/go-tenon/tenon/health"
     "github.com/go-tenon/tenon/httpx"
     "github.com/go-tenon/tenon/httpx/rest"
 
@@ -254,7 +255,7 @@ func (a *App) Router(draining *httpx.Draining) chi.Router {
     router.Get("/livez", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
     router.Handle("/readyz", httpx.Ready(httpx.ReadyOptions{
         Draining: draining,
-        Checks: []httpx.Check{
+        Checks: []health.Check{
             {Name: "database", Ping: func(ctx context.Context) error { return a.db.PingContext(ctx) }},
         },
     }))

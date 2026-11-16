@@ -42,6 +42,7 @@ var rules = map[string]rule{
 	"i18n":      {layerFoundation, nil},
 	"enum":      {layerFoundation, []string{"i18n"}},
 	"hashing":   {layerFoundation, nil},
+	"health":    {layerFoundation, []string{"logging"}},
 	"identity":  {layerFoundation, []string{"errorx"}},
 	"logging":   {layerFoundation, []string{"errorx"}},
 	"page":      {layerFoundation, []string{"errorx"}},
@@ -72,7 +73,7 @@ var rules = map[string]rule{
 	"filesystem":         {layerInfrastructure, []string{"errorx", "identity"}},
 	"sheet":              {layerInfrastructure, []string{"errorx", "form"}},
 
-	"httpx":                {layerEntry, []string{"acquire", "enum", "errorx", "form", "i18n", "identity", "logging", "ratelimit"}},
+	"httpx":                {layerEntry, []string{"acquire", "enum", "errorx", "form", "health", "i18n", "identity", "logging", "ratelimit"}},
 	"httpx/rest/clientgen": {layerEntry, []string{"command", "enum", "errorx", "httpx", "i18n", "identity", "page"}},
 	"web":                  {layerEntry, []string{"errorx", "form", "httpx", "i18n", "logging", "theme"}},
 	"realtime":             {layerEntry, []string{"broadcast", "identity", "logging"}},

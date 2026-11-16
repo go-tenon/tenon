@@ -13,6 +13,7 @@ import (
 
 	"github.com/cockroachdb/errors"
 
+	"github.com/go-tenon/tenon/health"
 	"github.com/go-tenon/tenon/httpx"
 	"github.com/go-tenon/tenon/logging/logtest"
 )
@@ -51,7 +52,7 @@ func TestReady(t *testing.T) {
 	rec := logtest.New()
 	h := httpx.Ready(httpx.ReadyOptions{
 		Draining: &draining,
-		Checks: []httpx.Check{
+		Checks: []health.Check{
 			{Name: "database", Ping: check(&dbDown)},
 			{Name: "cache", Ping: check(&cacheDown), Optional: true},
 		},
@@ -116,7 +117,7 @@ func TestReadyTimeoutAndPanic(t *testing.T) {
 	block := make(chan struct{})
 	defer close(block)
 	h := httpx.Ready(httpx.ReadyOptions{
-		Checks: []httpx.Check{
+		Checks: []health.Check{
 			// 不理会 ctx 的检查，例如 gomemcache 的 Ping。
 			{Name: "stuck", Ping: func(context.Context) error { <-block; return nil }},
 			{Name: "slow", Ping: func(ctx context.Context) error { <-ctx.Done(); return ctx.Err() }},
@@ -153,7 +154,7 @@ func TestReadyWithoutChecks(t *testing.T) {
 func TestReadyPanicsOnBadChecks(t *testing.T) {
 	t.Parallel()
 	ok := func(context.Context) error { return nil }
-	for name, checks := range map[string][]httpx.Check{
+	for name, checks := range map[string][]health.Check{
 		"no name":   {{Ping: ok}},
 		"no ping":   {{Name: "database"}},
 		"duplicate": {{Name: "database", Ping: ok}, {Name: "database", Ping: ok}},
