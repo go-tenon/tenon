@@ -1,7 +1,7 @@
 // Package queuetest 在测试中运行连接测试 NATS 的 queue.Worker。
 //
 //	db := dbtest.Open(t, migrations.FS) // 包含已发布的 queue 迁移
-//	w := queue.NewWorker(db, queuetest.Config(t), nil)
+//	w := queue.NewWorker(db, queuetest.Conn(t), queuetest.Config(t), nil)
 //	article.PublishJob.Handle(w, publish)
 //	queuetest.Run(t, w)
 package queuetest
@@ -18,23 +18,42 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 
+	"github.com/go-tenon/tenon/natsx"
 	"github.com/go-tenon/tenon/queue"
 )
 
 // EnvURL 是测试 NATS 的地址所在的环境变量，例如 nats://127.0.0.1:4222。服务器需要开启 JetStream。
 const EnvURL = "NATS_TEST_URL"
 
-// Config 返回连接测试 NATS 的 Worker 配置，环境变量未设置时使测试失败。
-// 每次调用使用随机的 stream，并行的测试和反复运行的测试互不干扰，测试结束时删除它；
-// 租约和停止等待较短，任务很快重试，测试结束时很快停下。
-func Config(t testing.TB) queue.Config {
+// url 返回测试 NATS 的地址，环境变量未设置时使测试失败。
+func url(t testing.TB) string {
 	t.Helper()
 	url := os.Getenv(EnvURL)
 	if url == "" {
 		t.Fatalf("%s is required for this test", EnvURL)
 	}
+	return url
+}
+
+// Conn 返回连接测试 NATS 的连接，环境变量未设置时使测试失败，测试结束时关闭。
+// 交给 queue.NewWorker 和 queue.NewAdmin；先于 Run 调用，连接就在 Worker 停止之后才关闭。
+func Conn(t testing.TB) *nats.Conn {
+	t.Helper()
+	nc, err := natsx.Connect(natsx.Config{URL: url(t)}, "queuetest", nil)
+	if err != nil {
+		t.Fatalf("queuetest: %v", err)
+	}
+	t.Cleanup(nc.Close)
+	return nc
+}
+
+// Config 返回测试用的 Worker 配置，环境变量未设置时使测试失败。
+// 每次调用使用随机的 stream，并行的测试和反复运行的测试互不干扰，测试结束时删除它；
+// 租约和停止等待较短，任务很快重试，测试结束时很快停下。
+func Config(t testing.TB) queue.Config {
+	t.Helper()
+	url := url(t)
 	cfg := queue.DefaultConfig()
-	cfg.URL = url
 	cfg.Stream = "t" + strings.ToLower(rand.Text()[:10])
 	cfg.Lease = 5 * time.Second
 	cfg.ShutdownTimeout = time.Second

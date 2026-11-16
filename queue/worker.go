@@ -45,13 +45,14 @@ const dbTimeout = 30 * time.Second
 // 超时仍未完成的任务立即放回 JetStream，处理函数的 context 以 ErrShuttingDown 取消。Run 在这一切完成后返回，
 // 之后可以关闭数据库。
 //
-//	w := queue.NewWorker(db, cfg, logger)
+//	w := queue.NewWorker(db, nc, cfg, logger)
 //	SendMail.Handle(w, mailer.Send)
 //	err := w.Run(ctx)
 type Worker struct {
 	db        *bun.DB
+	nc        *nats.Conn          // 应用的连接，Worker 不关闭它
 	slot      string              // 逻辑复制槽，Run 开始时确定
-	js        jetstream.JetStream // Run 开始时连接
+	js        jetstream.JetStream // Run 开始时创建
 	failed    *FailedJobs
 	cfg       Config
 	logger    *slog.Logger
@@ -84,18 +85,22 @@ type handler struct {
 // WorkerOption 调整 NewWorker 创建的 Worker。
 type WorkerOption func(*Worker)
 
-// NewWorker 创建 Worker。db 是发布任务的数据库，必须已执行 Migrations 中的迁移；
-// cfg 是 NATS 的地址和各 topic 的默认设置；logger 记录任务失败和 NATS 的错误，nil 时使用 slog.Default()。
-// db 为 nil 或 cfg 不合法时 panic。
-func NewWorker(db *bun.DB, cfg Config, logger *slog.Logger, opts ...WorkerOption) *Worker {
+// NewWorker 创建 Worker。db 是发布任务的数据库，必须已执行 Migrations 中的迁移；nc 是 natsx.Connect 返回的连接，
+// 可以与广播等组件共用，Worker 不关闭它；cfg 是 stream 和各 topic 的默认设置；
+// logger 记录任务失败，nil 时使用 slog.Default()。db 或 nc 为 nil、cfg 不合法时 panic。
+func NewWorker(db *bun.DB, nc *nats.Conn, cfg Config, logger *slog.Logger, opts ...WorkerOption) *Worker {
 	if db == nil {
 		panic("queue: nil database")
+	}
+	if nc == nil {
+		panic("queue: nil nats connection")
 	}
 	if err := cfg.Validate(); err != nil {
 		panic(errors.Wrap(err, "queue"))
 	}
 	w := &Worker{
 		db:      db,
+		nc:      nc,
 		failed:  NewFailedJobs(db),
 		cfg:     cfg,
 		logger:  logging.Or(logger).With(logging.AttrComponent, "queue"),
@@ -156,14 +161,11 @@ func (w *Worker) Run(ctx context.Context) error {
 		return err
 	}
 
-	nc, js, err := connect(w.cfg, w.logger)
+	js, err := jetstream.New(w.nc, jetstream.WithPublishAsyncTimeout(publishTimeout))
 	if err != nil {
-		return err
+		return errors.Wrap(err, "queue: jetstream")
 	}
-	defer func() {
-		_ = nc.FlushTimeout(time.Second) // 发出最后的确认
-		nc.Close()
-	}()
+	defer func() { _ = w.nc.FlushTimeout(time.Second) }() // 发出最后的确认；连接由应用关闭
 	w.js = js
 	consumers := make([]jetstream.Consumer, len(handlers))
 	setupCtx, cancel := context.WithTimeout(context.Background(), setupTimeout)

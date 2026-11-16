@@ -400,7 +400,7 @@ func TestSyncThroughQueue(t *testing.T) {
 		t.Fatal("rollback returned nil")
 	}
 
-	w := queue.NewWorker(f.db, queuetest.Config(t), nil)
+	w := queue.NewWorker(f.db, queuetest.Conn(t), queuetest.Config(t), nil)
 	chunks.Handle(w, f.store, f.src.load, f.src.scan)
 	queuetest.Run(t, w)
 	deadline := time.Now().Add(10 * time.Second)

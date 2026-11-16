@@ -279,7 +279,7 @@ func Commands() []*cobra.Command {
 var stack cleanup.Stack
 defer func() { err = stack.CloseWith(context.Background(), err) }()
 
-nc, err := nats.Connect(url)
+nc, err := natsx.Connect(cfg.NATS, "blog", nil)
 if err != nil {
     return err
 }

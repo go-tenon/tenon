@@ -46,7 +46,7 @@ type Store struct {
 	kv jetstream.KeyValue
 }
 
-// New 创建 bucket（已经存在时按 opts 更新它）并返回存储。nc 由应用创建，可以与其他组件共用，
+// New 创建 bucket（已经存在时按 opts 更新它）并返回存储。nc 通常是 natsx.Connect 返回的连接，与队列等组件共用，
 // 服务器需要开启 JetStream。nc 为 nil 或 Bucket 不合法时 panic。
 func New(ctx context.Context, nc *nats.Conn, opts Options) (*Store, error) {
 	if nc == nil {

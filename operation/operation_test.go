@@ -381,7 +381,7 @@ func runQueue(t *testing.T, e env, fn func(ctx context.Context, id uuid.UUID) er
 	topic := queue.Topic[uuid.UUID]("operation.test")
 	cfg := queuetest.Config(t)
 	cfg.MaxAttempts = 2
-	w := queue.NewWorker(e.db, cfg, slog.New(slog.DiscardHandler))
+	w := queue.NewWorker(e.db, queuetest.Conn(t), cfg, slog.New(slog.DiscardHandler))
 	topic.Handle(w, fn)
 	ctx, cancel := context.WithCancel(context.Background())
 	stopped := make(chan error, 1)

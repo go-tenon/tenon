@@ -404,7 +404,7 @@ func TestDeliverThroughQueue(t *testing.T) {
 		}
 		return nil
 	}}
-	w := queue.NewWorker(db, queuetest.Config(t), nil)
+	w := queue.NewWorker(db, queuetest.Conn(t), queuetest.Config(t), nil)
 	push.NewDeliverer(db, fake, push.Options{}).Handle(w)
 	queuetest.Run(t, w)
 

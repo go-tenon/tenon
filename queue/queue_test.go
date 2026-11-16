@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/uptrace/bun"
 
@@ -39,7 +38,7 @@ func openDB(t *testing.T) *bun.DB {
 // start 运行一个 Worker，register 在运行前注册处理函数；返回的函数停止 Worker 并等待它返回。
 func start(t *testing.T, db *bun.DB, cfg queue.Config, register func(w *queue.Worker), opts ...queue.WorkerOption) (stop func()) {
 	t.Helper()
-	w := queue.NewWorker(db, cfg, slog.New(slog.DiscardHandler), opts...)
+	w := queue.NewWorker(db, queuetest.Conn(t), cfg, slog.New(slog.DiscardHandler), opts...)
 	register(w)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -122,7 +121,6 @@ func TestConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, change := range map[string]func(*queue.Config){
-		"no url":          func(c *queue.Config) { c.URL = "" },
 		"no stream":       func(c *queue.Config) { c.Stream = "" },
 		"dotted stream":   func(c *queue.Config) { c.Stream = "blog.jobs" },
 		"zero replicas":   func(c *queue.Config) { c.Replicas = 0 },
@@ -574,7 +572,7 @@ func TestHandleOptions(t *testing.T) {
 func TestWorkerRegistration(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	newWorker := func() *queue.Worker { return queue.NewWorker(db, queuetest.Config(t), nil) }
+	newWorker := func() *queue.Worker { return queue.NewWorker(db, queuetest.Conn(t), queuetest.Config(t), nil) }
 	noop := func(context.Context, payload) error { return nil }
 	mustPanic := func(name string, fn func()) {
 		t.Helper()
@@ -585,7 +583,8 @@ func TestWorkerRegistration(t *testing.T) {
 		}()
 		fn()
 	}
-	mustPanic("nil database", func() { queue.NewWorker(nil, queue.DefaultConfig(), nil) })
+	mustPanic("nil database", func() { queue.NewWorker(nil, queuetest.Conn(t), queue.DefaultConfig(), nil) })
+	mustPanic("nil connection", func() { queue.NewWorker(db, nil, queue.DefaultConfig(), nil) })
 	mustPanic("invalid topic", func() { queue.Topic[payload]("a b").Handle(newWorker(), noop) })
 	mustPanic("empty segment", func() { queue.Topic[payload]("a..b").Handle(newWorker(), noop) })
 	mustPanic("same consumer", func() {
@@ -614,10 +613,10 @@ func TestWorkerRegistration(t *testing.T) {
 	}
 	mustPanic("Handle after Run", func() { queue.Topic[payload]("other").Handle(w, noop) })
 
-	cfg := queuetest.Config(t)
-	cfg.URL = "nats://127.0.0.1:1"
-	if err := queue.NewWorker(db, cfg, nil).Run(context.Background()); err == nil {
-		t.Error("Run without a reachable NATS server succeeded")
+	closed := queuetest.Conn(t)
+	closed.Close()
+	if err := queue.NewWorker(db, closed, queuetest.Config(t), nil).Run(context.Background()); err == nil {
+		t.Error("Run on a closed NATS connection succeeded")
 	}
 }
 
@@ -684,12 +683,7 @@ func TestConsumerRecreated(t *testing.T) {
 	if n := <-got; n != 1 {
 		t.Fatalf("handled %d", n)
 	}
-	nc, err := nats.Connect(cfg.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer nc.Close()
-	js, err := jetstream.New(nc)
+	js, err := jetstream.New(queuetest.Conn(t))
 	if err != nil {
 		t.Fatal(err)
 	}

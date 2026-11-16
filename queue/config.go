@@ -8,13 +8,9 @@ import (
 )
 
 // Config 是 Worker 的配置，对应配置文件的 queue 段。Concurrency 和 MaxAttempts 是各 topic 的默认值，
-// 注册处理函数时可以用同名的 HandleOption 覆盖。
+// 注册处理函数时可以用同名的 HandleOption 覆盖。NATS 的地址和凭据不在这里：连接由应用用 natsx.Connect 创建，
+// 交给 NewWorker 和 NewAdmin。
 type Config struct {
-	// URL 是 NATS 服务器的地址，集群的多个地址用逗号分隔，例如 "nats://10.0.0.1:4222,nats://10.0.0.2:4222"。
-	// 用户名和密码可以写在地址中：nats://user:password@host:4222。服务器需要开启 JetStream。
-	URL string `yaml:"url"`
-	// Credentials 是 NATS 凭据文件（.creds）的路径，服务器使用 JWT 认证时设置，为空时不使用。
-	Credentials string `yaml:"credentials"`
 	// Stream 是保存任务的 JetStream stream 的名字，也是任务 subject 的第一段：topic mail.send 的任务
 	// 发布到 <stream>.job.mail.send。多个应用或环境共用 NATS 时用它区分。由 1 到 32 个字母、数字、'_' 或 '-' 组成。
 	// Worker 启动时创建这个 stream，已经存在时检查它的设置。
@@ -38,11 +34,10 @@ type Config struct {
 	ShutdownTimeout time.Duration `yaml:"shutdown_timeout"`
 }
 
-// DefaultConfig 返回默认配置：本机 NATS，stream 为 jobs，单副本，并发 10，最多处理 10 次，租约 30 秒，
+// DefaultConfig 返回默认配置：stream 为 jobs，单副本，并发 10，最多处理 10 次，租约 30 秒，
 // 最长定时 1 小时，停止时最多等待 30 秒。
 func DefaultConfig() Config {
 	return Config{
-		URL:             "nats://127.0.0.1:4222",
 		Stream:          "jobs",
 		Replicas:        1,
 		Concurrency:     10,
@@ -59,9 +54,6 @@ func (c *Config) SetDefaults() { *c = DefaultConfig() }
 // Validate 检查各项为正数，shutdown_timeout 可以为 0。
 func (c Config) Validate() error {
 	var errs []error
-	if c.URL == "" {
-		errs = append(errs, errors.New("url is required"))
-	}
 	if !validStream(c.Stream) {
 		errs = append(errs, errors.Newf("stream %q must be 1 to 32 letters, digits, '_' or '-'", c.Stream))
 	}

@@ -111,7 +111,7 @@ func TestRunWithoutSlot(t *testing.T) {
 	if _, err := db.ExecContext(ctx, "SELECT pg_drop_replication_slot(slot_name) FROM pg_replication_slots WHERE database = current_database()"); err != nil {
 		t.Fatal(err)
 	}
-	w := queue.NewWorker(db, queuetest.Config(t), slog.New(slog.DiscardHandler))
+	w := queue.NewWorker(db, queuetest.Conn(t), queuetest.Config(t), slog.New(slog.DiscardHandler))
 	err := w.Run(ctx)
 	if err == nil || !strings.Contains(err.Error(), "run the queue migrations") {
 		t.Fatalf("err %v", err)

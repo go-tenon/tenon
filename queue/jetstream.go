@@ -3,7 +3,6 @@ package queue
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"slices"
 	"strings"
 	"time"
@@ -23,48 +22,6 @@ const (
 	// 接手的 Worker 重新发布同一批任务，窗口内的重复被 JetStream 丢弃。
 	duplicateWindow = 10 * time.Minute
 )
-
-// connect 连接 NATS。连接断开后一直重连，期间的错误记在 logger 中。
-func connect(cfg Config, logger *slog.Logger) (*nats.Conn, jetstream.JetStream, error) {
-	opts := []nats.Option{
-		nats.Name("tenon-queue"),
-		nats.MaxReconnects(-1),
-		nats.ReconnectWait(time.Second),
-		nats.DisconnectErrHandler(func(_ *nats.Conn, err error) {
-			if err != nil {
-				logger.Warn("nats: disconnected", "error", err)
-			}
-		}),
-		nats.ReconnectHandler(func(nc *nats.Conn) { logger.Info("nats: reconnected", "server", nc.ConnectedUrlRedacted()) }),
-		nats.ErrorHandler(func(_ *nats.Conn, _ *nats.Subscription, err error) { logger.Error("nats: " + err.Error()) }),
-	}
-	if cfg.Credentials != "" {
-		opts = append(opts, nats.UserCredentials(cfg.Credentials))
-	}
-	nc, err := nats.Connect(cfg.URL, opts...)
-	if err != nil {
-		return nil, nil, errors.Wrapf(err, "queue: connect to nats %s", redactURL(cfg.URL))
-	}
-	js, err := jetstream.New(nc, jetstream.WithPublishAsyncTimeout(publishTimeout))
-	if err != nil {
-		nc.Close()
-		return nil, nil, errors.Wrap(err, "queue: jetstream")
-	}
-	return nc, js, nil
-}
-
-// redactURL 去掉地址中的用户名和密码，用于错误信息。
-func redactURL(s string) string {
-	urls := strings.Split(s, ",")
-	for i, u := range urls {
-		if scheme, rest, ok := strings.Cut(u, "://"); ok {
-			if _, host, ok := strings.Cut(rest, "@"); ok {
-				urls[i] = scheme + "://***@" + host
-			}
-		}
-	}
-	return strings.Join(urls, ",")
-}
 
 // streamConfig 返回任务的 stream 的设置：工作队列（任务确认后删除）、存在磁盘上、允许定时消息。
 func (c Config) streamConfig() jetstream.StreamConfig {

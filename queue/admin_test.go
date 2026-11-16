@@ -3,7 +3,6 @@ package queue_test
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"testing"
 	"time"
 
@@ -16,8 +15,7 @@ func TestAdmin(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
 	cfg := queuetest.Config(t)
-	admin := queue.NewAdmin(cfg, slog.New(slog.DiscardHandler))
-	t.Cleanup(admin.Close)
+	admin := queue.NewAdmin(queuetest.Conn(t), cfg)
 	ctx := context.Background()
 
 	st, err := admin.Status(ctx)
@@ -105,13 +103,12 @@ func TestAdmin(t *testing.T) {
 	}
 }
 
-// 连不上 NATS 时 Status 返回错误，之后可以再试。
+// 连接不可用时 Status 返回错误，之后可以再试。
 func TestAdminUnreachable(t *testing.T) {
 	t.Parallel()
-	cfg := queue.DefaultConfig()
-	cfg.URL = "nats://127.0.0.1:1"
-	admin := queue.NewAdmin(cfg, nil)
-	defer admin.Close()
+	nc := queuetest.Conn(t)
+	nc.Close()
+	admin := queue.NewAdmin(nc, queue.DefaultConfig())
 	for range 2 {
 		if _, err := admin.Status(context.Background()); err == nil {
 			t.Fatal("status without NATS succeeded")

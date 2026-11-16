@@ -176,15 +176,14 @@ func dbName(t *testing.T, db *bun.DB) string {
 func TestOverviewJetStream(t *testing.T) {
 	t.Parallel()
 	cfg := queuetest.Config(t)
-	admin := queue.NewAdmin(cfg, slog.New(slog.DiscardHandler))
-	t.Cleanup(admin.Close)
+	admin := queue.NewAdmin(queuetest.Conn(t), cfg)
 	db, c := setupWith(t, admin)
 	if page := c.Get("/ops/queue/", ops).Text(); !strings.Contains(page, "Not created yet") {
 		t.Fatalf("before the worker ran:\n%s", page)
 	}
 
 	release := make(chan struct{})
-	w := queue.NewWorker(db, cfg, slog.New(slog.DiscardHandler))
+	w := queue.NewWorker(db, queuetest.Conn(t), cfg, slog.New(slog.DiscardHandler))
 	queue.Topic[int]("mail").Handle(w, func(context.Context, int) error {
 		<-release
 		return nil
@@ -232,10 +231,9 @@ func TestOverviewJetStream(t *testing.T) {
 // NATS 不可用时概览照常显示数据库一侧的状态；没有设置 Admin 时没有暂停的地址。
 func TestOverviewWithoutJetStream(t *testing.T) {
 	t.Parallel()
-	cfg := queue.DefaultConfig()
-	cfg.URL = "nats://127.0.0.1:1"
-	admin := queue.NewAdmin(cfg, slog.New(slog.DiscardHandler))
-	t.Cleanup(admin.Close)
+	nc := queuetest.Conn(t)
+	nc.Close()
+	admin := queue.NewAdmin(nc, queue.DefaultConfig())
 	db, c := setupWith(t, admin)
 	res := c.Get("/ops/queue/", ops)
 	if res.Code != http.StatusOK || !strings.Contains(res.Text(), "Cannot read JetStream") || !strings.Contains(res.Text(), queue.SlotName(dbName(t, db))) {

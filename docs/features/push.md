@@ -241,7 +241,7 @@ if len(jobs) != 1 || jobs[0].Message.Title != "新文章" {
 
 ```go
 fake := &pushtest.Provider{}
-w := queue.NewWorker(db, queuetest.Config(t), nil)
+w := queue.NewWorker(db, queuetest.Conn(t), queuetest.Config(t), nil)
 push.NewDeliverer(db, fake, push.Options{}).Handle(w)
 queuetest.Run(t, w)
 // ……发布文章，等待推送
