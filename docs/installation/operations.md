@@ -247,7 +247,8 @@ FROM pg_replication_slots WHERE slot_name LIKE 'tenon_queue_%';
 
 转发之后，任务保存在 NATS JetStream 的 stream 中，直到处理完成。延迟任务和等待重试的任务也在这里，以定时消息的形式等到执行时间，可能是几天甚至几个月以后。stream 丢了，这些任务也就丢了，所以：
 
-- **生产环境用 NATS 集群，`queue.replicas` 设为 3。** 一台服务器损坏时任务不丢失。单个服务器（`replicas: 1`）只适合开发和测试。
+- **副本数决定磁盘损坏时丢多少。** NATS 集群中把 `queue.replicas` 设为 3，一台服务器损坏时任务不丢失。单个服务器（`replicas: 1`）的磁盘损坏时，还没处理的任务连同全部延迟任务和重试都会丢失，只能从磁盘快照恢复到快照时的状态；用单机时开启云盘的自动快照。
+- **定时消息占用 NATS 的内存。** 每条约 0.75KB，100 万条远期任务约 750MB。业务会大量安排远期任务（例如给每个用户一条 30 天后的提醒）时，按条数预留 NATS 的内存，或者改为用[定时任务](../background/scheduling.md)到时间再查询、发布。
 - **不要给 stream 设置 `max_age`，容量上限配合 `discard: new`。** `max_age` 会在执行时间之前删除定时消息；容量满时丢弃最早的消息（discard old）删除的也是任务。worker 启动时检查这两项，发现时拒绝启动。用 `discard: new` 时，容量满了之后发布失败，任务留在复制槽中，有空间后再转发。
 
 <a id="backups"></a>
