@@ -61,7 +61,7 @@ func (r *Realm) Password(ctx context.Context, id Identifier, password string) (O
 		return Outcome{}, err
 	}
 	if r.opts.Hasher.NeedsRehash(hash) {
-		if err := r.storePassword(ctx, r.db, owner, password, false); err != nil {
+		if err := r.rehash(ctx, owner, hash, password); err != nil {
 			return Outcome{}, err
 		}
 	}
@@ -101,6 +101,18 @@ func (r *Realm) storePassword(ctx context.Context, db bun.IDB, subjectID, passwo
 	row := &passwordRow{SubjectType: string(r.opts.Type), SubjectID: subjectID, Hash: hash, ChangedAt: r.now().UTC()}
 	_, err = upsert(db.NewInsert().Model(row), "subject_type, subject_id", "hash", "changed_at").Exec(ctx)
 	return errors.Wrap(err, "login: save password")
+}
+
+// rehash 按当前配置重新哈希已经校验过的密码。只在保存的哈希仍是 old 时更新：校验之后密码被修改或删除时
+// 不覆盖，否则修改前的密码又能登录。密码本身没有变，changed_at 保持不变。
+func (r *Realm) rehash(ctx context.Context, subjectID, old, password string) error {
+	hash, err := r.opts.Hasher.Make(password)
+	if err != nil {
+		return errors.Wrap(err, "login: hash password")
+	}
+	_, err = r.db.NewUpdate().Model((*passwordRow)(nil)).Set("hash = ?", hash).
+		Where("subject_type = ? AND subject_id = ? AND hash = ?", r.opts.Type, subjectID, old).Exec(ctx)
+	return errors.Wrap(err, "login: rehash password")
 }
 
 // checkPassword 按登录策略的 PasswordPolicy 检查新密码。
