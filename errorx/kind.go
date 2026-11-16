@@ -41,16 +41,3 @@ func (k Kind) String() string {
 // 各入口据此决定是否记录错误日志、是否向调用者隐藏细节、长连接是否保持，
 // 不必借用 HTTP 状态码判断：errorx.KindOf(err).Systemic()。
 func (k Kind) Systemic() bool { return k == Unavailable || k == Internal }
-
-// kinds 列出全部分类，新增分类时同步追加。
-var kinds = []Kind{InvalidArgument, Unauthenticated, PermissionDenied, NotFound, Conflict, ResourceExhausted, Unavailable, Internal}
-
-// parseKind 是 String 的逆运算，未知名称返回 Internal。
-func parseKind(s string) Kind {
-	for _, k := range kinds {
-		if k.String() == s {
-			return k
-		}
-	}
-	return Internal
-}
