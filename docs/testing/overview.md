@@ -4,6 +4,8 @@ Tenon 在设计时就考虑了测试。所有的依赖都是显式传入的，�
 
 Tenon 直接使用 Go 标准库的 `testing`、`net/http/httptest` 和 `go test` 命令。需要数据库、Redis 的地方，使用真实的服务：每个测试一个隔离的数据库，测试的结果和生产环境的行为一致。
 
+阅读前需要了解：Go 的 `testing` 包和 `go test` 的基本用法；[依赖装配](../concepts/dependencies.md)；[业务动作](../concepts/actions.md)。
+
 - [示例用法](#introduction)
 - [运行测试](#running-tests)
 - [准备测试数据](#test-data)
@@ -11,6 +13,7 @@ Tenon 直接使用 Go 标准库的 `testing`、`net/http/httptest` 和 `go test`
 - [测试配置](#testing-configuration)
 - [测试平滑停止](#testing-shutdown)
 - [各组件的测试工具](#test-helpers)
+- [常见问题](#troubleshooting)
 
 <a id="introduction"></a>
 ## 示例用法
@@ -168,3 +171,22 @@ func TestLoadConfig(t *testing.T) {
 | `outbound/outboundtest` | 登记外部 HTTP 服务的响应，检查发出的请求 | [出站请求](../libraries/outbound.md#testing) |
 | `login/logintest` | 读取发出的验证码，计算二次验证的数字 | [登录与注册](../security/login.md#testing) |
 | `queue/queuetest`、`mail/mailtest`、`sms/smstest`、`pdf/pdftest` 等 | 各组件的替身 | 各组件页面的“测试”一节 |
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**`go test -race` 报告 `DATA RACE`**
+
+有两个 goroutine 同时读写同一个变量，至少一个是写。常见的原因是业务动作的字段中保存了请求的数据，见[业务动作的常见问题](../concepts/actions.md#troubleshooting)。
+
+**在 `synctest.Test` 中，查询的结果和时间对不上**
+
+只有 Go 程序中的时钟是假的。查询用到的时间要由 Go 算出后作为参数传入，不要在 SQL 中用 `now()`，见[控制时间](#controlling-time)。
+
+**用了 `t.Setenv` 的测试报错不能并行**
+
+`t.Setenv` 会修改进程的环境变量，使用它的测试不能调用 `t.Parallel`。
+
+**测试中需要“两天前发布”的文章**
+
+用 `synctest` 推进时间后再调用 `Publish`，不要直接往数据库里写时间，见[准备测试数据](#test-data)。

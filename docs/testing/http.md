@@ -4,17 +4,18 @@
 
 有一点很重要：请调用应用自己的路由注册函数。这样，测试覆盖的就是真实的路由配置、认证和输入验证；如果有人改坏了 `routes.go`，测试会发现它。命令的测试也一样，在进程内执行真实的根命令。
 
+阅读前需要了解：[测试：快速入门](overview.md)；[路由](../http/routing.md)；[命令行](../general/commands.md)。
+
 - [HTTP 测试](#http-tests)
     - [测试认证与错误响应](#testing-auth-and-errors)
 - [页面测试](#page-tests)
 - [命令测试](#command-tests)
 - [测试 OpenAPI 文档](#testing-openapi)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="http-tests"></a>
 ## HTTP 测试
-
-测试 HTTP 接口时，在进程内完成。用 `httptest` 创建请求和响应记录器，然后直接调用 `api.Handler()` 即可。
 
 测试文件按业务动作命名。下面测试[创建文章](../http/routing.md#http-actions)的 HTTP 入口：
 
@@ -218,6 +219,25 @@ func TestOpenAPI(t *testing.T) {
 ```
 
 你还可以把生成的文档与仓库中保存的 `openapi.json` 进行比较，这样每次接口变更都会在代码审查中清晰可见。
+<a id="troubleshooting"></a>
+## 常见问题
+
+**测试中请求返回 404，但接口确实存在**
+
+测试中没有调用应用自己的路由注册函数，或者请求的路径缺少子路由的前缀（例如 `/api`）。用 `routes` 命令查看实际的路径。
+
+**测试 OpenAPI 文档时 panic**
+
+有构造函数或 `Register` 在注册时使用了依赖，而生成文档时依赖是 `nil`。构造函数只保存依赖，见[依赖装配](../concepts/dependencies.md#constructor-injection)。
+
+**页面测试中，确认对话框、提示没有出现**
+
+`webtest` 不运行浏览器中的脚本，这些交互由框架的组件保证。测试服务端的响应即可。
+
+**命令测试的输出是空的**
+
+命令把结果写到了 `os.Stdout`，而不是 `cmd.OutOrStdout()`。改用后者，测试中用 `SetOut` 才能捕获，见[输入与输出](../general/commands.md#input-and-output)。
+
 <a id="api-reference"></a>
 ## API 参考
 

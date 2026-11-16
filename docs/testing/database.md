@@ -2,11 +2,14 @@
 
 测试数据库代码最可靠的方式，是使用与生产相同的 PostgreSQL：唯一约束冲突、死锁和类型错误都和线上一样出现。`dbtest.Open` 为**每个测试**创建一个独立的临时数据库，执行迁移，测试结束时删除，测试之间相互隔离，可以并行运行。业务规则直接调用业务动作的 `Handle` 测试。
 
+阅读前需要了解：[测试：快速入门](overview.md)；[迁移](../database/migrations.md)。
+
 - [数据库测试](#database-tests)
     - [创建测试数据库](#creating-test-databases)
     - [在本地运行数据库测试](#running-database-tests-locally)
 - [测试业务动作](#testing-actions)
     - [测试命令入口](#testing-action-commands)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="database-tests"></a>
@@ -14,8 +17,6 @@
 
 <a id="creating-test-databases"></a>
 ### 创建测试数据库
-
-测试数据库代码时，最可靠的方式是使用与生产相同的真实数据库。`dbtest.Open` 会为**每个测试**创建一个独立的临时数据库，执行你的迁移，并在测试结束时删除它。测试之间互不干扰，可以放心地并行运行。
 
 在测试中：
 
@@ -177,6 +178,21 @@ func TestPublishCommand(t *testing.T) {
 命令入口只负责解析参数和输出，业务规则仍然在上面的 `Handle` 测试中覆盖。
 
 优先使用真实的依赖。只有在确实需要隔离某项外部能力时（例如对象存储），才在业务包中定义一个小接口，并在测试中提供简单的实现，见[依赖装配](../concepts/dependencies.md#replacing-dependencies-in-tests)。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**测试失败，提示没有设置 `POSTGRES_TEST_URL`**
+
+数据库测试需要一个可以创建和删除数据库的管理员连接。启动测试用的 PostgreSQL，设置这个环境变量，见[在本地运行数据库测试](#running-database-tests-locally)。
+
+**测试很慢**
+
+每个测试都会创建数据库并执行迁移。用 `t.Parallel()` 让测试并行运行；只检查认证和输入验证的 HTTP 测试不需要数据库，`db` 传 `nil` 即可。
+
+**测试结束后，PostgreSQL 中留下了很多临时数据库**
+
+测试进程被强行结束时来不及删除。用 tmpfs 保存测试数据库的数据，`docker compose -f compose.test.yml down -v` 后全部清除。
 
 <a id="api-reference"></a>
 ## API 参考
