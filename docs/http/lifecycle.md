@@ -139,6 +139,7 @@ router.Handle("/readyz", httpx.Ready(httpx.ReadyOptions{
 func (a *App) checks() []health.Check {
     return []health.Check{
         {Name: "database", Ping: func(ctx context.Context) error { return a.db.PingContext(ctx) }},
+        {Name: "nats", Ping: natsx.Ping(a.nc)},
     }
 }
 
@@ -177,7 +178,7 @@ probe_addr: ${PROBE_ADDR:-}
 
 - **只在需要的平台上打开。** 容器中每个进程有自己的网络，设置 `PROBE_ADDR=:8080`，探测的端口和路径与 HTTP 服务相同，部署配置可以照搬。用 systemd 在同一台机器上运行 `work` 和 `schedule` 时不设置它：两个进程会争用同一个端口，而 systemd 通过 [`command.Daemon`](../concepts/dependencies.md#running-parts) 的就绪通知和退出状态管理进程，用不到 HTTP 探测。
 - **`serve` 和 `start` 不需要它**，HTTP 服务自己就有这两个路由。
-- **检查项按进程的需要选择。** worker 和调度器都需要数据库；HTTP 服务独有的依赖不必放进来。
+- **检查项按进程的需要选择。** worker 需要数据库和 NATS（任务从 NATS 取来），调度器需要数据库（锁在数据库中）；HTTP 服务独有的依赖不必放进来。`a.nc` 是入口中创建的 [NATS 连接](../libraries/nats.md#connecting)，`natsx.Ping` 在它正在重连时检查失败。
 - `httpx.Serve` 沿用 `http` 段的超时设置，停止时探测端口和其他部分同时开始关闭。
 
 <a id="troubleshooting"></a>
