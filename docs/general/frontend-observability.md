@@ -6,7 +6,14 @@
 - 浏览器的请求带上 `traceparent`，服务端的链路接在浏览器之后，从一个前端错误可以跳到它引起的后端链路；
 - 构建时生成 source map，但不放进 `dist`：它们等于源码，不能随应用一起公开，由 CI 上传给观测平台，用来还原压缩后的堆栈。
 
+两个术语：
+
+- **`traceparent`**：一个请求头，写着这个请求属于哪条链路。服务端看到它，就把自己的链路接在后面。
+- **source map**：前端代码在构建时被压缩，报错的堆栈中只有 `index-3f2a.js:1:20345` 这样的位置。source map 记录压缩后的位置对应源码的哪一行，观测平台用它还原出可读的堆栈。
+
 下面以 [OpenObserve](https://openobserve.ai/) 的浏览器 SDK 为例。其他平台（例如 Sentry）的做法相同，换成它的 SDK 即可。
+
+阅读前需要了解：[可观测性](telemetry.md)；[应用骨架](../responses/app-shell.md)中的 `createApp`。
 
 - [安装 SDK](#installing)
 - [页面中的错误](#route-errors)
@@ -14,6 +21,7 @@
 - [前后端的链路](#tracing)
 - [Source map](#source-maps)
 - [隐私与内容安全策略](#privacy)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="installing"></a>
@@ -134,7 +142,7 @@ if (observing) {
 
 `allowedTracingUrls` 中的请求带上 W3C 的 `traceparent` 请求头，框架的 HTTP 服务[接在调用方的链路之后](telemetry.md#http)。后端把链路推送到同一个 OpenObserve（[配置](telemetry.md#setup)中的 `telemetry.endpoint`），错误详情中的 Trace Correlation 就能跳到后端的链路：慢在哪个查询、哪个下游服务出了错。
 
-前端和 API 同源（`/api`）时不涉及跨域。API 在其他域名时，[CORS](../http/middleware.md#cors) 要允许 `traceparent` 和 `tracestate` 请求头，否则浏览器在预检时去掉它们。
+前端和 API 同源（`/api`）时不涉及跨域。API 在其他域名时，[CORS](../http/optional-middleware.md#cors) 要允许 `traceparent` 和 `tracestate` 请求头，否则浏览器在预检时去掉它们。
 
 <a id="source-maps"></a>
 ## Source map
@@ -168,6 +176,21 @@ curl -fsS -X POST "https://o2.example.com/api/default/sourcemaps" \
 - `defaultPrivacyLevel` 保持 `mask-user-input`：会话回放中输入框的内容被遮盖。后台页面中展示的业务数据同样会被录下，按需要用 `mask`，或者只对出错的会话开启回放（`sessionReplaySampleRate: 0`，出错时调用 `startSessionReplayRecording()`）。
 - `trackUserInteractions` 记录被点击的元素的文字，可能包含业务数据，确有需要时再开。
 - 给前端加了内容安全策略（CSP）时：`connect-src` 要包含 OpenObserve 的地址；会话回放用 Web Worker，需要 `worker-src blob:`，否则录制静默失败。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**观测平台中的堆栈仍然是压缩后的位置**
+
+source map 没有上传，或者上传时的版本号与页面上报的版本不一致。检查 CI 中上传 source map 的步骤，见 [Source map](#source-maps)。
+
+**前端错误跳不到后端的链路**
+
+接口请求没有带上 `traceparent`，或者服务端没有安装 `httpx.Telemetry`，见[前后端的链路](#tracing)。
+
+**浏览器控制台报错上报请求被内容安全策略拒绝**
+
+观测平台的地址没有加入 `connect-src`，见[隐私与内容安全策略](#privacy)。
 
 <a id="api-reference"></a>
 ## API 参考

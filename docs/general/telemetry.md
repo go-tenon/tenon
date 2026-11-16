@@ -1,14 +1,22 @@
 # 可观测性
 
-应用上线之后，你需要知道它运行得怎么样：每秒处理多少请求、哪个接口变慢了、错误是从哪里来的。可观测性就是回答这些问题的能力，它通常由三类数据组成：**指标**、**链路**和**日志**。
+应用上线之后，你需要知道它运行得怎么样：每秒处理多少请求、哪个接口变慢了、错误是从哪里来的。可观测性就是回答这些问题的能力，它通常由三类数据组成：
 
-Tenon 使用 [OpenTelemetry](https://opentelemetry.io/docs/languages/go/) 报告这些数据。框架的 HTTP 服务、数据库连接池、队列、调度器、限流器、MCP 服务和实时频道都可以报告指标，前五个还报告链路。`telemetry` 包把指标、链路和应用的日志一起推送到一个 OTLP 接收端，例如 [OpenObserve](https://openobserve.ai/)，应用直接推送。
+- **指标**（metrics）：随时间变化的数字，例如每秒的请求数、请求耗时的分布、数据库连接池的使用量。适合画图和设置告警。
+- **链路**（traces）：一个请求经过了哪些步骤，每一步花了多长时间。一条链路由多个 **span** 组成，每个 span 是一个步骤，例如一次 HTTP 请求、其中的一条 SQL 语句。适合查找一个请求为什么慢。
+- **日志**（logs）：程序记录的一条条事件，见[日志](logging.md)。
 
-和 Tenon 的其他功能一样，指标和链路都需要显式开启：把 `MeterProvider`、`TracerProvider` 交给需要报告的组件，没有传入的组件就不报告。Redis、Memcached 等依赖由各自的生态报告，例如 rueidis 的 [rueidisotel](https://pkg.go.dev/github.com/redis/rueidis/rueidisotel)，把同一个 Provider 交给它们即可。
+Tenon 使用 [OpenTelemetry](https://opentelemetry.io/docs/languages/go/) 报告这些数据。OpenTelemetry 是收集这三类数据的开放标准，它的推送协议叫 **OTLP**，大多数观测平台都能接收。框架的 HTTP 服务、数据库连接池、队列、调度器、限流器、MCP 服务和实时频道都可以报告指标，前五个还报告链路。`telemetry` 包把指标、链路和应用的日志一起推送到一个 OTLP 接收端，例如 [OpenObserve](https://openobserve.ai/)。
+
+指标和链路都需要显式开启。OpenTelemetry 中，创建指标和链路的对象叫 **Provider**（`MeterProvider`、`TracerProvider`）：把它们交给需要报告的组件，没有传入的组件就不报告。Redis、Memcached 等依赖由各自的生态报告，例如 rueidis 的 [rueidisotel](https://pkg.go.dev/github.com/redis/rueidis/rueidisotel)，把同一个 Provider 交给它们即可。
+
+阅读前需要了解：[日志](logging.md)；[依赖装配](../concepts/dependencies.md)。
 
 - [示例用法](#example-usage)
 - [配置](#setup)
     - [自己创建 Provider](#custom-providers)
+- [链路与日志](#trace-logs)
+- [错误追踪](#error-tracking)
 - [框架组件](#components)
     - [HTTP 请求](#http)
     - [数据库](#database)
@@ -18,9 +26,8 @@ Tenon 使用 [OpenTelemetry](https://opentelemetry.io/docs/languages/go/) 报告
     - [MCP 服务](#mcp)
     - [实时频道](#realtime)
     - [Go 运行时](#runtime)
-- [链路与日志](#trace-logs)
-- [错误追踪](#error-tracking)
 - [告警示例](#alerting)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="example-usage"></a>
@@ -75,6 +82,42 @@ telemetry:
 ### 自己创建 Provider
 
 框架组件只依赖 OpenTelemetry 的接口，不一定要用 `telemetry`。需要尾部采样（只保留出错或慢的链路）、同时发往多个后端，或者让 Prometheus 来抓取时，用 OpenTelemetry 的 SDK 自己创建 Provider，或者推送到 [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/) 由它处理。日志用 `logging.Export` 接入任意 `LoggerProvider`。
+
+<a id="trace-logs"></a>
+## 链路与日志
+
+`ctx` 中有 span 时，用它记录的日志自动带上 `trace_id` 和 `span_id`，包括访问日志、队列和调度器的日志，以及处理函数里 `slog.InfoContext(ctx, ...)` 记录的业务日志。在链路追踪系统中可以按 `trace_id` 找到一条链路的全部日志。
+
+用 [`logging.Export`](#setup) 推送的日志把链路写在记录本身，日志平台据此在日志和链路之间跳转。
+
+<a id="error-tracking"></a>
+## 错误追踪
+
+浏览器中的错误见[前端观测](frontend-observability.md)：它们由前端的 SDK 收集，与这里的服务端链路关联。
+
+组件把出错的执行记录为 span 上的 `exception` 事件：HTTP 请求的 `5xx`（包括 panic 和[页面](../responses/views.md#error-pages)的错误）、失败和重试的队列任务、失败的定时任务、出错的数据库语句和 MCP 调用。事件的属性与[错误日志](logging.md#error-logging)的字段一一对应：
+
+| 属性 | 内容 |
+| --- | --- |
+| `exception.message` | `err.Error()` |
+| `exception.type` | [错误码](errors.md)；没有时是最内层错误的类型，例如 `*pgconn.PgError` |
+| `exception.stacktrace` | `%+v` 格式的完整错误链，包含错误**创建处**的堆栈；普通错误没有堆栈时省略 |
+
+只记录 `5xx`，`4xx` 是调用方的问题。按 `exception` 事件聚合错误的链路平台（例如 [SigNoz](https://signoz.io)、[Uptrace](https://uptrace.dev)）据此列出出现过哪些错误、各自的次数和趋势，点进去就是堆栈和整条链路。[Sentry](https://sentry.io) 通过 OTLP 接收链路时，把这些事件变成 Issue 目前还不可靠，错误追踪推荐用前两者。
+
+用户看到的 `5xx` 错误页和提示上有请求编号，它就是访问日志和错误日志中的 `request_id`：按它找到这个请求的日志，日志中的 `trace_id` 再跳到链路。
+
+自己创建的 span 记录错误时用 `logging.RecordError`，属性与框架的组件一致。`span.RecordError` 记录的类型是最外层包装的类型，堆栈是调用它的位置，看不出错误从哪里来：
+
+```go
+ctx, span := tracer.Start(ctx, "sync feed")
+defer span.End()
+if err := sync(ctx); err != nil {
+    logging.RecordError(span, err)
+    span.SetStatus(codes.Error, "sync failed")
+    return err
+}
+```
 
 <a id="components"></a>
 ## 框架组件
@@ -210,42 +253,6 @@ srv := mcpx.New(mcpx.Options{Name: "app"}, mcpx.WithTelemetry(tel.Meters, tel.Tr
 
 `telemetry.Open` 开启推送时，还报告进程自身的 Go 运行时指标，例如内存 `go.memory.used`、goroutine 数 `go.goroutine.count`、GC 的目标堆大小 `go.memory.gc.goal`，名称遵循 OpenTelemetry 的 [Go 运行时语义约定](https://opentelemetry.io/docs/specs/semconv/runtime/go-metrics/)。内存持续增长、goroutine 泄漏都能从这里看出来。
 
-<a id="trace-logs"></a>
-## 链路与日志
-
-`ctx` 中有 span 时，用它记录的日志自动带上 `trace_id` 和 `span_id`，包括访问日志、队列和调度器的日志，以及处理函数里 `slog.InfoContext(ctx, ...)` 记录的业务日志。在链路追踪系统中可以按 `trace_id` 找到一条链路的全部日志。
-
-用 [`logging.Export`](#setup) 推送的日志把链路写在记录本身，日志平台据此在日志和链路之间跳转。
-
-<a id="error-tracking"></a>
-## 错误追踪
-
-浏览器中的错误见[前端观测](frontend-observability.md)：它们由前端的 SDK 收集，与这里的服务端链路关联。
-
-组件把出错的执行记录为 span 上的 `exception` 事件：HTTP 请求的 `5xx`（包括 panic 和[页面](../responses/views.md#error-pages)的错误）、失败和重试的队列任务、失败的定时任务、出错的数据库语句和 MCP 调用。事件的属性与[错误日志](logging.md#error-logging)的字段一一对应：
-
-| 属性 | 内容 |
-| --- | --- |
-| `exception.message` | `err.Error()` |
-| `exception.type` | [错误码](errors.md)；没有时是最内层错误的类型，例如 `*pgconn.PgError` |
-| `exception.stacktrace` | `%+v` 格式的完整错误链，包含错误**创建处**的堆栈；普通错误没有堆栈时省略 |
-
-只记录 `5xx`，`4xx` 是调用方的问题。按 `exception` 事件聚合错误的链路平台（例如 [SigNoz](https://signoz.io)、[Uptrace](https://uptrace.dev)）据此列出出现过哪些错误、各自的次数和趋势，点进去就是堆栈和整条链路。[Sentry](https://sentry.io) 通过 OTLP 接收链路时，把这些事件变成 Issue 目前还不可靠，错误追踪推荐用前两者。
-
-用户看到的 `5xx` 错误页和提示上有请求编号，它就是访问日志和错误日志中的 `request_id`：按它找到这个请求的日志，日志中的 `trace_id` 再跳到链路。
-
-自己创建的 span 记录错误时用 `logging.RecordError`，属性与框架的组件一致。`span.RecordError` 记录的类型是最外层包装的类型，堆栈是调用它的位置，看不出错误从哪里来：
-
-```go
-ctx, span := tracer.Start(ctx, "sync feed")
-defer span.End()
-if err := sync(ctx); err != nil {
-    logging.RecordError(span, err)
-    span.SetStatus(codes.Error, "sync failed")
-    return err
-}
-```
-
 <a id="alerting"></a>
 ## 告警示例
 
@@ -272,6 +279,25 @@ increase(schedule_task_duration_seconds_count{schedule_task="reports:daily", sch
 # 没有实例在转发队列任务（WAL 会一直累积）
 sum(queue_relay_active) == 0
 ```
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**观测平台中没有任何数据**
+
+先看 `telemetry.endpoint` 是否为空：为空时不推送。再看标准错误中有没有 `component=telemetry` 的错误日志，通常是地址或认证信息写错了。
+
+**有日志和链路，但看不到数据库或队列的指标**
+
+这个组件没有拿到 Provider。检查是否把 `tel.Meters`、`tel.Tracers` 传给了它，例如 `database.WithTelemetry`，见[框架组件](#components)。
+
+**日志中没有 `trace_id`**
+
+记录日志时没有传入请求的 `ctx`，或者没有安装 `httpx.Telemetry`，ctx 中没有 span。
+
+**程序退出前最后一段时间的数据丢失**
+
+`tel.Shutdown` 没有执行，或者没有最先登记。它最先登记、最后执行，退出时才能发出缓冲中的数据，见[配置](#setup)。
 
 <a id="api-reference"></a>
 ## API 参考

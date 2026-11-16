@@ -2,7 +2,9 @@
 
 路由决定一个 HTTP 请求由谁处理：它把一个 HTTP 方法和路径交给一个处理器函数。
 
-Tenon 的路由建立在 [Huma](https://huma.rocks) 之上。每条路由由三部分组成：一个 `huma.Operation` 描述路由本身，一个**输入类型**描述请求，一个**输出类型**描述响应。因为请求和响应的结构都写在 Go 类型中，Huma 可以替你解析参数、验证输入，并生成准确的 OpenAPI 文档。
+Tenon 的路由建立在 [Huma](https://huma.rocks) 之上。每条路由由三部分组成：一个 `huma.Operation` 描述路由本身，一个**输入类型**描述请求，一个**输出类型**描述响应。因为请求和响应的结构都写在 Go 类型中，Huma 可以替你解析参数、验证输入，并生成准确的 OpenAPI 文档（见[接口文档](openapi.md)）。
+
+阅读前需要了解：[安装](../installation/installing.md)中的第一个接口；[context](../concepts/go-primer.md#context)、[结构体标签](../concepts/go-primer.md#struct-tags)。
 
 - [示例用法](#basic-routing)
     - [路由声明](#operations)
@@ -15,16 +17,11 @@ Tenon 的路由建立在 [Huma](https://huma.rocks) 之上。每条路由由三�
     - [动作的 HTTP 入口](#http-actions)
     - [共享响应结构](#shared-responses)
     - [查看全部路由](#listing-routes)
-- [API 版本](#api-versioning)
-- [OpenAPI 文档](#openapi)
-    - [在线查看](#viewing-docs)
-    - [说明与示例](#describing-apis)
-    - [离线导出](#exporting-openapi)
 - [使用原生 chi 与 Huma](#native-apis)
     - [注册普通 HTTP 处理器](#plain-handlers)
     - [使用原生 huma.Register](#native-huma-register)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
-
 <a id="basic-routing"></a>
 ## 示例用法
 
@@ -120,7 +117,7 @@ func(ctx context.Context, in *Input) (*Output, error)
 
 业务接口的处理器通常是[业务动作](../concepts/actions.md)的方法值，例如 `article.NewPublish(db).HTTP`。
 
-处理器只在请求到来时调用，注册时它只是被保存下来。所以构造动作时传入的数据库等依赖可以是 `nil`：只要构造函数只保存依赖、不使用它们，就可以在没有任何外部依赖的环境中（例如 CI）构造出全部路由、导出接口文档，详见[离线导出](#exporting-openapi)。
+处理器只在请求到来时调用，注册时它只是被保存下来。所以构造动作时传入的数据库等依赖可以是 `nil`：只要构造函数只保存依赖、不使用它们，就可以在没有任何外部依赖的环境中（例如 CI）构造出全部路由、导出接口文档，详见[离线导出](openapi.md#exporting-openapi)。
 
 <a id="registration-checks"></a>
 ### 注册时的检查
@@ -215,14 +212,7 @@ func Register(api *rest.API, requireArticles func(*huma.Operation), db *bun.DB) 
     requireArticles(&get)
     rest.Register(api, get, NewGet(db).HTTP)
 
-    publish := huma.Operation{
-        OperationID: "article-publish",
-        Method:      http.MethodPost,
-        Path:        "/articles/{id}/publish",
-        Summary:     "发布文章",
-    }
-    requireArticles(&publish)
-    rest.Register(api, publish, NewPublish(db).HTTP)
+    // publish 等其他路由的写法相同
 }
 ```
 
@@ -331,88 +321,6 @@ func toDTO(a *Article) ArticleDTO {
 
 该命令用默认配置和 `nil` 依赖调用应用构造路由的函数，离线生成路由表。路由表直接来自各模块 `routes.go` 中的声明。
 
-<a id="api-versioning"></a>
-## API 版本
-
-只提供 JSON API 的应用，通常直接挂在根路径上，由部署决定前缀，例如 `https://api.example.com/v1`。但如果 API 要和[页面](../responses/views.md)或单页应用共用一个 Router，就需要把它挂在带版本号的子路由下，并把同一个前缀设为 `BasePath`：
-
-```go
-router.Route("/api/v1", func(r chi.Router) {
-    r.Use(httpx.Timeout(cfg.HTTP.Timeout))
-    Routes(rest.New(r, rest.Options{Title: "Blog API", Version: "1.0.0", BasePath: "/api/v1"}))
-})
-```
-
-路由按子路由注册，接口地址是 `/api/v1/articles`。`BasePath` 写入 OpenAPI 文档的 `servers`，文档页 `/api/v1/docs` 和生成的客户端据此拼出完整地址；`routes` 命令显示的也是完整路径。
-
-需要不兼容的修改时，新版本挂在另一个子路由下，用自己的 `rest.API`。两个版本各有一份 OpenAPI 文档，共用同一套业务动作：
-
-```go
-router.Route("/api/v2", func(r chi.Router) {
-    r.Use(httpx.Timeout(cfg.HTTP.Timeout))
-    RoutesV2(rest.New(r, rest.Options{Title: "Blog API", Version: "2.0.0", BasePath: "/api/v2"}))
-})
-```
-
-一个应用中有多个 API 时，[`openapi`](../general/commands.md#openapi-command) 和 [`client`](../responses/clients.md) 命令用 `--base-path` 选择其中一个，例如 `./bin/api openapi --base-path /api/v2`。
-
-<a id="openapi"></a>
-## OpenAPI 文档
-
-<a id="viewing-docs"></a>
-### 在线查看
-
-应用运行时，Huma 会自动提供接口文档：
-
-- `/docs`：可交互的接口文档页面；
-- `/openapi.json`：OpenAPI 3.1 文档。
-
-<a id="describing-apis"></a>
-### 说明与示例
-
-Go 类型只能说明字段的类型和取值规则，字段的含义和示例值需要你自己写进声明：
-
-| 写在哪里 | 写什么 | 在文档中成为 |
-| --- | --- | --- |
-| `huma.Operation` | `Summary` 一句话说明，`Description` 写更长的说明，支持 Markdown | 路由的标题和说明 |
-| 字段的 `doc` 标签 | 字段的含义，以及类型和验证规则看不出来的约定 | 字段的 `description` |
-| 字段的 `example` 标签 | 一个典型的值 | 字段的 `examples` |
-
-不写 `example` 时，文档页只能按类型填 `"string"`、`0` 这样的占位值。给创建文章的请求体加上示例：
-
-```go
-type Changes struct {
-    Title   string `json:"title" minLength:"1" maxLength:"200" example:"Hello World"`
-    Slug    string `json:"slug" maxLength:"100" pattern:"^[a-z0-9]+(-[a-z0-9]+)*$" patternDescription:"小写字母、数字和连字符" doc:"文章地址中的标识，全站唯一；发布后固定" example:"hello-world"`
-    Content string `json:"content" example:"这是我的第一篇文章。"`
-}
-```
-
-`/docs` 中这个接口的请求示例就会是 `{"title":"Hello World","slug":"hello-world","content":"这是我的第一篇文章。"}`，调用方可以直接修改后发送。路径参数、查询参数和请求头的写法相同，例如 `` ID uuid.UUID `path:"id" example:"0193a5c2-7d1e-7b3a-9f61-2c4e8d0a1b2c"` ``；响应体的写法见[共享响应结构](#shared-responses)中的 `ArticleDTO`。
-
-`doc` 只写类型和规则看不出来的约定。`minLength`、`pattern`、`enum` 等验证规则本身就会出现在文档中。
-
-`example` 的值按字段类型解析：数字写 `example:"50"`，数组和对象写 JSON，例如 `example:"[\"go\",\"api\"]"`。值和类型不符时，`rest.Register` 在注册时 panic，执行 `routes` 或 `openapi` 命令就能发现。这些标签只写入文档。
-
-<a id="exporting-openapi"></a>
-### 离线导出
-
-很多时候，你希望离线生成 OpenAPI 文档，例如在 CI 中检查接口变更，或者为前端[生成客户端代码](../responses/clients.md)。只需用默认配置和 `nil` 依赖调用构造路由的同一个函数，再用 `rest.Lookup` 取出其中的 API：
-
-```go
-// routes 是 serve 也在用的路由函数，见依赖装配
-api, err := rest.Lookup(routes(config.Default[Config](), nil), "")
-if err != nil {
-    return err
-}
-data, err := api.OpenAPIJSON()
-```
-
-`data` 就是 OpenAPI 文档的 JSON 内容。`Lookup` 的第二个参数是 `BasePath`，路由中只有一个 API 时传空字符串。因为服务运行和导出文档用的是同一个路由函数，导出的文档与实际运行的接口始终保持一致。
-
-> [!TIP]
-> 应用的 [`openapi` 命令](../general/commands.md#openapi-command)就是这样导出的：`./bin/api openapi > openapi.json`。
-
 <a id="native-apis"></a>
 ## 使用原生 chi 与 Huma
 
@@ -435,6 +343,29 @@ api.Router().Get("/livez", func(w http.ResponseWriter, r *http.Request) {
 `rest.API` 内嵌了 `huma.API`，因此你也可以调用 Huma 原生的 `huma.Register`。不过这样做会绕过 Tenon 的访问策略检查和业务错误转换，这些都需要你自己处理。除非有特殊需求，否则推荐使用 `rest.Register`。
 
 `rest.New` 不安装任何中间件，中间件的安装方式请参阅[中间件](middleware.md)。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**启动时 panic：`endpoint must explicitly declare Public, RequireBearer or another RequireAuth scheme`**
+
+注册路由之前没有声明访问策略。公开的接口加上 `rest.Public()(&op)`，需要登录的见[访问策略](#access-policies)。
+
+**启动时 panic：`rest: duplicate operation ID or conflicting route`**
+
+两个路由用了同一个 `OperationID`，或者方法和路径完全相同。`OperationID` 是接口的名字，生成客户端时用作方法名，必须唯一。
+
+**启动时 panic：`rest: operation ID must be kebab-case`**
+
+`OperationID` 要写成小写字母和连字符，按 `资源-动作` 命名，例如 `article-create`。
+
+**请求返回 404，但路由明明注册了**
+
+检查三点：方法是否一致（`GET` 和 `POST` 是两个路由）；路径是否包含子路由的前缀，例如挂在 `/api` 下时要访问 `/api/articles`；路径区分大小写。用 [`routes` 命令](#listing-routes)列出实际注册的全部路由。
+
+**请求返回 422：`required path parameter is missing`**
+
+输入类型中字段的 `path` 标签与路径中 `{}` 里的名字不一致，例如路径写的是 `{id}`，标签写成了 `path:"ID"`。名字区分大小写。
 
 <a id="api-reference"></a>
 ## API 参考
@@ -490,7 +421,7 @@ func APIs(router chi.Routes) []*API
 func Lookup(router chi.Routes, basePath string) (*API, error)
 ```
 
-`APIs` 遍历 `router`（包括挂载的子路由），按出现的顺序返回其中用 `New` 创建的全部 API，只读取路由表。`Lookup` 返回 `BasePath` 为 `basePath` 的那个；`basePath` 为空时，`router` 中必须恰好有一个 API。`openapi`、`client` 命令用它从应用的路由中取出 API，见[离线导出](#exporting-openapi)。
+`APIs` 遍历 `router`（包括挂载的子路由），按出现的顺序返回其中用 `New` 创建的全部 API，只读取路由表。`Lookup` 返回 `BasePath` 为 `basePath` 的那个；`basePath` 为空时，`router` 中必须恰好有一个 API。`openapi`、`client` 命令用它从应用的路由中取出 API，见[离线导出](openapi.md#exporting-openapi)。
 
 ### Public、RequireBearer
 

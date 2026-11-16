@@ -8,7 +8,9 @@
 | **可预期的业务结果** | 文章不存在、slug 已被使用 | 用 `errorx` 定义带错误码的业务错误并返回 |
 | **意料之外的故障** | 数据库连不上、代码有 bug | 用 `errors.Wrap` 补充上下文后返回，客户端只收到 `500` |
 
-好消息是，无论哪一类，你的业务代码都只需要**返回错误**。选择 HTTP 状态码、生成错误响应、记录日志，都由框架在边界统一完成。
+好消息是，无论哪一类，你的业务代码都只需要**返回错误**。选择 HTTP 状态码、生成错误响应、记录日志，都由框架在边界（请求进出程序的地方）统一完成。
+
+阅读前需要了解：[错误的包装与判断](../concepts/go-primer.md#errors)；[入门教程第 4 章](../tutorial/04-api.md)中的业务错误。
 
 - [示例用法](#example-usage)
 - [一个完整的例子](#example)
@@ -24,8 +26,10 @@
 - [判断错误](#inspecting-errors)
 - [响应格式](#response-format)
 - [错误日志](#reporting-errors)
-- [原生 Huma 错误](#huma-errors)
-- [跨进程传递](#cross-process-errors)
+- [常见问题](#troubleshooting)
+- [进阶](#advanced)
+    - [原生 Huma 错误](#huma-errors)
+    - [跨进程传递](#cross-process-errors)
 - [API 参考](#api-reference)
 
 <a id="example-usage"></a>
@@ -182,20 +186,7 @@ func (a *Update) HTTP(ctx context.Context, in *UpdateInput) (*ArticleOutput, err
 }
 ```
 
-`ArticleOutput` 和 `toDTO` 是几个接口共用的响应结构，见[共享响应结构](../http/routing.md#shared-responses)。注册路由：
-
-```go
-op := huma.Operation{
-    OperationID: "article-update",
-    Method:      http.MethodPut,
-    Path:        "/articles/{id}",
-    Summary:     "修改文章",
-}
-requireArticles(&op)
-rest.Register(api, op, NewUpdate(db).HTTP)
-```
-
-`requireArticles` 要求请求携带有效的 token，见[认证](../security/authentication.md)。
+`ArticleOutput` 和 `toDTO` 是几个接口共用的响应结构，见[共享响应结构](../http/routing.md#shared-responses)。注册路由时，这个接口要求请求携带有效的 token，见[认证](../security/authentication.md)。
 
 <a id="what-clients-see"></a>
 ### 客户端看到的响应
@@ -212,22 +203,7 @@ rest.Register(api, op, NewUpdate(db).HTTP)
 | slug 已被其他文章使用 | 409 | `article.slug_taken` |
 | 数据库故障 | 500 | 无 |
 
-**输入格式错误**时，响应中的 `errors` 数组逐条指出哪个字段有什么问题，客户端可以把提示显示在对应的表单字段旁边：
-
-```http
-HTTP/1.1 422 Unprocessable Entity
-Content-Type: application/problem+json
-
-{
-  "title": "Unprocessable Entity",
-  "status": 422,
-  "detail": "提交的内容有误",
-  "errors": [
-    {"message": "必须是小写字母、数字和连字符", "location": "body.slug", "value": "Hello World", "code": "validation.pattern_description"},
-    {"message": "不能为空", "location": "body.title", "value": "", "code": "validation.filled"}
-  ]
-}
-```
+**输入格式错误**时，响应中的 `errors` 数组逐条指出哪个字段有什么问题，客户端可以把提示显示在对应的表单字段旁边，响应的样子见[验证](../http/validation.md#validation-error-response)。
 
 **业务错误**的响应带有 `code` 字段，客户端根据它决定如何处理；`detail` 是展示给用户的文案，启用[本地化](localization.md)后会按请求的语言翻译：
 
@@ -277,23 +253,24 @@ Error types: (1) *withstack.withStack (2) *errutil.withPrefix (3) *net.OpError
 <a id="error-kinds"></a>
 ## 选择错误分类
 
-分类描述的是失败的**性质**，与调用方式无关：同一个错误在 HTTP 接口中会被转换为[状态码](#status-mapping)，在命令行中会被转换为[退出码](commands.md#exit-codes)。定义错误时，选择最贴切的一个即可：
+分类描述的是失败的**性质**，与调用方式无关：同一个错误在 HTTP 接口中会被转换为下表中的状态码，在命令行中会被转换为[退出码](commands.md#exit-codes)。定义错误时，选择最贴切的一个即可：
 
-| 分类 | 什么时候使用 | 例子 |
-| --- | --- | --- |
-| `errorx.InvalidArgument` | 输入格式正确，但违反业务规则 | 修改已发布文章的 slug |
-| `errorx.Unauthenticated` | 不知道调用者是谁 | 缺少或无效的 token |
-| `errorx.PermissionDenied` | 知道是谁，但无权执行 | 修改别人的文章 |
-| `errorx.NotFound` | 资源不存在 | 文章已被删除 |
-| `errorx.Conflict` | 与当前状态冲突 | slug 已被其他文章使用 |
-| `errorx.ResourceExhausted` | 配额或频率超出限制，等待后重试可能成功 | 登录尝试过于频繁，见[限流](../libraries/rate-limiting.md) |
-| `errorx.Unavailable` | 依赖暂时不可用，稍后重试可能成功 | 图片存储服务超时 |
-| `errorx.Internal` | 意料之外的内部错误 | 数据出现了不一致 |
+<a id="status-mapping"></a>
+
+| 分类 | 状态码 | 什么时候使用 | 例子 |
+| --- | --- | --- | --- |
+| `errorx.InvalidArgument` | 422 | 输入格式正确，但违反业务规则 | 修改已发布文章的 slug |
+| `errorx.Unauthenticated` | 401 | 不知道调用者是谁 | 缺少或无效的 token |
+| `errorx.PermissionDenied` | 403 | 知道是谁，但无权执行 | 修改别人的文章 |
+| `errorx.NotFound` | 404 | 资源不存在 | 文章已被删除 |
+| `errorx.Conflict` | 409 | 与当前状态冲突 | slug 已被其他文章使用 |
+| `errorx.ResourceExhausted` | 429 | 配额或频率超出限制，等待后重试可能成功 | 登录尝试过于频繁，见[限流](../libraries/rate-limiting.md) |
+| `errorx.Unavailable` | 503 | 依赖暂时不可用，稍后重试可能成功 | 图片存储服务超时 |
+| `errorx.Internal` | 500 | 意料之外的内部错误 | 数据出现了不一致 |
+
+不是业务错误的其他错误，一律按 `Internal` 处理，返回 500。
 
 除最后两种外都是可预期的业务结果，不记录堆栈。最后两种属于系统故障，`New` 和 `Wrap` 会额外记录调用处的堆栈，见下一节。
-
-> [!TIP]
-> 能用结构体标签描述的格式要求，例如“标题必填”、“长度最多 200”，请写在输入类型上，由框架自动验证。`errorx` 用于那些需要查询数据或依赖业务状态才能判断的规则。
 
 <a id="wrapping-errors"></a>
 ## 处理底层错误
@@ -301,13 +278,7 @@ Error types: (1) *withstack.withStack (2) *errutil.withPrefix (3) *net.OpError
 处理数据库、网络、文件等底层错误时，遵循一条简单的原则：**把堆栈留给意料之外的故障，把简洁的错误码留给可预期的结果。**
 
 - 如果底层错误代表一种**可预期的结果**，用错误模板的 `Wrap` 把它转换为业务错误，就像上面例子中的唯一约束冲突。业务错误不记录堆栈，错误码已经足以说明发生了什么；
-- 如果**无法归类**，在它刚进入你的代码时用 `errors.Wrap` 包装，堆栈就记录在这里。之后每经过一层，都可以再用 `errors.Wrap` 补充上下文：
-
-```go
-if _, err := a.update.Handle(ctx, subject, id, changes); err != nil {
-    return errors.Wrap(err, "import article")
-}
-```
+- 如果**无法归类**，在它刚进入你的代码时用 `errors.Wrap` 包装，堆栈就记录在这里。之后每经过一层，都可以再用 `errors.Wrap(err, "import article")` 这样补充上下文。
 
 > [!WARNING]
 > 数据库驱动、标准库返回的原始错误用 `errors.Wrap` 包装后再返回。它们本身只有一行文本，`errors.Wrap` 在这里记下堆栈，错误日志中才看得到失败的位置；`fmt.Errorf` 只拼接文本。
@@ -354,12 +325,7 @@ if errors.Is(err, article.ErrSlugTaken) {
 }
 ```
 
-也可以直接读取错误码和分类：
-
-```go
-errorx.CodeOf(err) // "article.slug_taken"，不是业务错误时为空字符串
-errorx.KindOf(err) // errorx.Conflict，不是业务错误时为 errorx.Internal
-```
+也可以用 `errorx.CodeOf`、`errorx.KindOf` 直接读取错误码和分类，见 [API 参考](#api-reference)。
 
 <a id="response-format"></a>
 ## 响应格式
@@ -377,10 +343,7 @@ errorx.KindOf(err) // errorx.Conflict，不是业务错误时为 errorx.Internal
 
 客户端可以这样区分错误：有 `code` 时按 `code` 处理；有 `errors` 时把提示显示在对应字段旁边；两者都没有时（路由不存在、服务端故障等）按 `status` 处理。各状态码和框架定义的错误码的处理方式见[客户端协议](../http/protocol.md#errors)。
 
-`detail` 的内容：启用本地化时，以错误码为消息 ID 翻译，找不到翻译时使用状态码描述并记录一条警告日志；未启用本地化时，使用状态码描述，例如 `Not Found`。
-
-> [!WARNING]
-> `detail` 可能随语言和版本变化，逻辑判断请依据 `code`。
+`detail` 的内容：启用本地化时，以错误码为消息 ID 翻译，找不到翻译时使用状态码描述并记录一条警告日志；未启用本地化时，使用状态码描述，例如 `Not Found`。`detail` 可能随语言和版本变化，逻辑判断请依据 `code`。
 
 <a id="reporting-errors"></a>
 ## 错误日志
@@ -394,13 +357,31 @@ Tenon 遵循“**只在边界记录一次**”的原则：业务代码只负责�
 
 需要为访问日志追加其他字段时，调用 [`httpx.AddAccessLogAttrs`](#api-reference)。日志的配置方式见[日志](logging.md)。
 
+<a id="troubleshooting"></a>
+## 常见问题
+
+**接口返回了 500，但我以为会是 404**
+
+返回的错误不是业务错误。例如查不到数据时直接返回了 `sql.ErrNoRows`，或者用 `fmt.Errorf` 包装后丢掉了业务错误。查不到时返回 `ErrNotFound.New()`；包装业务错误时用 `errors.Wrap` 或 `%w`，`errorx` 会沿错误链找到它。
+
+**响应的 `detail` 是 `Not Found` 这样的英文，而不是翻译好的提示**
+
+没有启用本地化，或者翻译文件中缺少这个错误码。缺少翻译时日志中有一条警告，补上翻译即可，见[本地化](localization.md)。
+
+**错误日志中看不到失败发生在哪一行**
+
+底层错误没有用 `errors.Wrap` 包装就返回了，或者用的是 `fmt.Errorf`。在底层错误刚进入你的代码时用 `errors.Wrap` 包装，堆栈就记在那里。
+
+<a id="advanced"></a>
+## 进阶
+
 <a id="huma-errors"></a>
-## 原生 Huma 错误
+### 原生 Huma 错误
 
 处理器也可以直接返回 Huma 的错误，例如 `huma.Error404NotFound("article does not exist")`。它们会被原样输出，保留你写的 `detail`，不带 `code`，按原文输出。需要稳定的错误码时，请使用 `errorx`。
 
 <a id="cross-process-errors"></a>
-## 跨进程传递
+### 跨进程传递
 
 通过 gRPC、消息队列等方式在服务之间传递错误时，可以使用 `cockroachdb/errors` 的编解码功能。`errorx` 已经注册了编解码器，还原后错误码、分类、参数和 `errors.Is` 的结果都保持不变：
 
@@ -428,46 +409,23 @@ func Define(kind Kind, code string) *Template
     - `code`：错误码，推荐写成 `资源.原因`，在应用中唯一
 - **返回**：错误模板，通常保存为包级变量
 
-### Template.New
+### Template.New、Template.Wrap
 
 ```go
 func (t *Template) New(opts ...Option) error
-```
-
-- **参数**
-    - `opts`：附加的信息，例如 `Public`、`RetryAfter`
-- **返回**：一次具体的失败
-
-只有 `Unavailable` 和 `Internal` 两类会在调用处记录堆栈。`errors.Is(err, tmpl)` 按错误码匹配。
-
-### Template.Wrap
-
-```go
 func (t *Template) Wrap(cause error, opts ...Option) error
 ```
 
-- **参数**
-    - `cause`：引起这次失败的底层错误，保留在错误链中
-    - `opts`：同 `New`
-- **返回**：一次具体的失败
+返回一次具体的失败。`Wrap` 把引起失败的底层错误 `cause` 保留在错误链中。只有 `Unavailable` 和 `Internal` 两类会在调用处记录堆栈。`errors.Is(err, tmpl)` 按错误码匹配。
 
-### Public
+### Public、RetryAfter
 
 ```go
 func Public(key string, value any) Option
-```
-
-- **参数**
-    - `key`、`value`：可以出现在提示文案中的参数，见[在提示中带上参数](#public-parameters)
-
-### RetryAfter
-
-```go
 func RetryAfter(d time.Duration) Option
 ```
 
-- **参数**
-    - `d`：建议的等待时间，HTTP 响应带上 `Retry-After` 头
+`New` 和 `Wrap` 的选项。`Public` 附加可以出现在提示文案和响应中的参数，见[在提示中带上参数](#public-parameters)；`RetryAfter` 附加建议的等待时间，HTTP 响应带上 `Retry-After` 头。
 
 ### CodeOf、KindOf、PublicOf、RetryAfterOf
 
@@ -479,20 +437,6 @@ func RetryAfterOf(err error) time.Duration
 ```
 
 沿错误链找到业务错误，读取对应的值。不是业务错误时，`CodeOf` 返回空字符串，`KindOf` 返回 `Internal`。
-
-<a id="status-mapping"></a>
-### Kind 与状态码
-
-| 分类 | HTTP 状态 |
-| --- | --- |
-| `errorx.InvalidArgument` | 422 Unprocessable Entity |
-| `errorx.Unauthenticated` | 401 Unauthorized |
-| `errorx.PermissionDenied` | 403 Forbidden |
-| `errorx.NotFound` | 404 Not Found |
-| `errorx.Conflict` | 409 Conflict |
-| `errorx.ResourceExhausted` | 429 Too Many Requests |
-| `errorx.Unavailable` | 503 Service Unavailable |
-| `errorx.Internal` 及其他错误 | 500 Internal Server Error |
 
 ### httpx.AddAccessLogAttrs
 

@@ -1,11 +1,16 @@
 # 命令行
 
-一个 API 应用除了启动 HTTP 服务，通常还要执行一些运维任务：检查配置、执行数据库迁移、导出接口文档、查看路由。`command` 包基于 [Cobra](https://github.com/spf13/cobra) 提供这些命令。
+一个 API 应用除了启动 HTTP 服务，通常还要执行一些运维任务：检查配置、执行数据库迁移、导出接口文档、查看路由，或者手动执行一次业务操作，例如立即发布某篇文章。这些都写成程序的**子命令**，例如 `./bin/api serve`、`./bin/api migrate up`。
 
-每个命令都是一个独立的 `*cobra.Command`，应用按需把它们装配到根命令上，命令行里只有装配了的命令。
+`command` 包基于 [Cobra](https://github.com/spf13/cobra) 提供这些命令。Cobra 是 Go 中最常用的命令行库：一个命令是一个 `*cobra.Command` 结构体，写明命令名、说明和执行的函数；命令可以嵌套，组成 `migrate up` 这样的多级命令。`command` 包在 Cobra 之上加了几件事：加载配置、收到停止信号时取消 ctx、把错误转换为退出码。
+
+阅读前需要了解：[配置](configuration.md)；[context](../concepts/go-primer.md#context)。
 
 - [示例用法](#example-usage)
 - [装配命令行](#declaring-the-cli)
+- [自定义命令](#custom-commands)
+- [输入与输出](#input-and-output)
+- [退出码](#exit-codes)
 - [内置命令](#built-in-commands)
     - [Run：serve 与常驻进程](#run-command)
     - [在一个进程中运行多个部分](#running-together)
@@ -13,9 +18,7 @@
     - [routes 命令](#routes-command)
     - [migrate 命令](#migrate-command)
     - [config 命令](#config-command)
-- [自定义命令](#custom-commands)
-- [输入与输出](#input-and-output)
-- [退出码](#exit-codes)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="example-usage"></a>
@@ -98,160 +101,7 @@ func main() {
 | `queuecmd.New(db)` | `queue status`、`queue failed`、`queue slot recreate`，在 `command.Bind` 中声明，见[队列状态](../libraries/queue.md#stats-command) | 是 |
 | `schedulecmd.New(tasks, m)` | `schedules`，在 `command.Bind` 中声明，见[列出任务的命令](../libraries/scheduling.md#schedules-command) | 是 |
 
-迁移命令和 HTTP 命令分别放在 `command/migratecmd`、`command/httpcmd` 两个子包中。开发时用的 `dev`、`build`、`generate` 由[开发工具](../installation/tooling.md) `go tool tenon` 提供。`command` 本身只导入基础层的包和 Cobra 等少量第三方库，只用到它的应用保持精简。
-
-不提供 HTTP API 的应用，例如一个只消费消息队列的常驻进程，只装配它需要的命令即可：
-
-```go
-root := command.Root("worker", "订单事件消费者")
-root.AddCommand(
-    command.Run("run", "消费订单事件", consumer.Run),
-    migratecmd.New(migrations.FS, dbConfig),
-)
-```
-
-<a id="built-in-commands"></a>
-## 内置命令
-
-<a id="run-command"></a>
-### Run：serve 与常驻进程
-
-`command.Run` 创建一个先加载配置、再调用 `run(ctx, cfg)` 的命令。`ctx` 会在进程收到停止信号时被取消，常驻进程据此退出。`bootstrap.Serve` 装配应用并启动 HTTP 服务，见[依赖装配](../concepts/dependencies.md#assembling-the-application)，HTTP 服务会据此[平滑停止](../concepts/lifecycle.md)：
-
-```bash
-./bin/api serve                                                 # 使用 config/app.yaml
-./bin/api serve --config config/app.yaml --config config/prod.yaml
-```
-
-`Run` 不限于常驻进程，任何“读取配置然后做一件事”的命令都可以用它创建，例如数据回填、发送一次报表。
-
-<a id="running-together"></a>
-### 在一个进程中运行多个部分
-
-一个完整的应用通常有三个常驻部分：HTTP 服务、[队列 worker](../libraries/queue.md#running-workers) 和[定时任务调度器](../libraries/scheduling.md#running-the-scheduler)，分别是 `App` 的 `HTTP`、`Worker` 和 `Scheduler` 方法（见[依赖装配](../concepts/dependencies.md#assembling-the-application)）。每个命令只是选择运行哪些部分：
-
-```go
-func Serve(ctx context.Context, cfg Config) error {
-    return run(ctx, cfg, (*App).HTTP)
-}
-
-func Work(ctx context.Context, cfg Config) error {
-    return run(ctx, cfg, (*App).Worker)
-}
-
-func Schedule(ctx context.Context, cfg Config) error {
-    return run(ctx, cfg, (*App).Scheduler)
-}
-
-func Start(ctx context.Context, cfg Config) error {
-    return run(ctx, cfg, (*App).HTTP, (*App).Worker, (*App).Scheduler)
-}
-```
-
-| 命令 | 运行的部分 |
-| --- | --- |
-| `serve` | HTTP 服务 |
-| `work` | 队列 worker |
-| `schedule` | 定时任务调度器 |
-| `start` | 以上三者，在同一个进程中 |
-| `realtime` | 只承接[实时频道](../libraries/realtime.md)的连接，可选，见[单独部署实时连接](../libraries/realtime.md#separate-process) |
-
-小型部署只运行 `start`：一个进程、一份配置、一套资源。业务量增长后改为分别部署 `serve`、`work` 和 `schedule`，各自按负载增减实例，代码保持原样。`start` 也可以部署多个实例：worker 竞争领取任务，调度器通过锁保证[每次触发只执行一次](../libraries/scheduling.md#multiple-instances)。
-
-`run` 先装配全部部分，再用 `d.Run` 同时运行它们（内部是 `command.Concurrently`）：
-
-- 一个部分装配失败（例如端口被占用）时，`run` 在任何部分开始运行之前就返回错误，进程以非 0 状态退出。
-- 收到停止信号时，各部分同时平滑停止：HTTP 服务排空请求，worker 停止领取并等待处理中的任务，调度器停止触发并等待执行中的任务。全部返回之后才关闭数据库。
-- 一个部分运行时出错退出，其余部分随之停止，进程以非 0 状态退出。
-- 一个部分在收到停止信号之前就正常返回，同样视为异常，错误中包含 `command.ErrStoppedEarly`，交给 systemd、Kubernetes 等重启。
-
-各部分共用 `open` 中创建的数据库连接池，HTTP 请求和 worker 的并发任务都会占用连接，设置 [`max_conns`](../database/quick-start.md#configuration) 时要按两者之和估算。
-
-<a id="openapi-command"></a>
-### openapi 命令
-
-`httpcmd.OpenAPI(router)` 调用 `router` 构造应用的路由，用 [`rest.Lookup`](../http/routing.md#exporting-openapi) 取出其中的 API，把 OpenAPI 文档输出到标准输出：
-
-```bash
-./bin/api openapi > openapi.json
-./bin/api openapi --spec 3.0 > openapi-3.0.json
-```
-
-默认输出 OpenAPI 3.1；有的客户端生成器只支持 3.0，例如 oapi-codegen，这时加上 `--spec 3.0`。路由中有[多个 API](../http/routing.md#api-versioning) 时，用 `--base-path` 选择其中一个，例如 `--base-path /api/v2`。
-
-`bootstrap.DocRouter` 用默认配置和没有打开任何资源的 `App` 调用 `serve` 也在用的路由函数（见[依赖装配](../concepts/dependencies.md#assembling-the-application)），因此导出的文档与实际运行的接口始终一致。构造路由只登记处理器和 token 校验器，所以这个命令离线运行，只需要源代码。
-
-<a id="routes-command"></a>
-### routes 命令
-
-当业务模块变多时，你可以用 `routes` 查看整个应用的路由，包括 JSON API 和[页面](../responses/views.md#page-routes)。`httpcmd.Routes` 的参数是构造完整路由的函数，例如[入门教程](../tutorial/02-infrastructure.md#assembling)中的 `bootstrap.DocRouter`。它离线运行：
-
-```bash
-./bin/api routes
-./bin/api routes --method post --path /articles
-./bin/api routes --all
-```
-
-`--method` 不区分大小写，`--path` 按路径包含的文本匹配，两者同时使用时取交集。用 `Handle`、`Mount` 注册、响应任意方法的路由（例如单页应用的 `/*`）合并为一行，方法显示为 `*`，按方法过滤时总是列出。结果按路径、HTTP 方法排序，例如 `--path /articles` 会输出：
-
-```text
-METHOD  PATH                    OPERATION ID     ACCESS            SUMMARY
-POST    /articles               article-create   bearer: articles  创建文章
-GET     /articles/{id}          article-get      bearer: articles  获取文章
-POST    /articles/{id}/publish  article-publish  bearer: articles  发布文章
-```
-
-各列的含义：
-
-- **ACCESS** 展示路由声明的访问策略：`public` 表示显式公开，`bearer` 表示 JSON API 要求 Bearer token，`bearer: articles` 同时列出所需的权限，`docs` 表示 Huma 的文档端点。`unknown` 表示无法从声明确定策略（例如直接注册在 chi 上的健康检查），**不**表示允许匿名访问；
-- **OPERATION ID**、**SUMMARY** 来自 `huma.Operation`，页面路由没有，显示为 `-`。摘要中的换行会合并为空格。
-
-Huma 自动注册的 `/docs`、`/openapi.json`、`/schemas/{schema}` 等文档端点默认不显示，加上 `--all` 才会列出。列表也包含直接注册在 chi 上的原生路由和挂载的子路由；挂载的不透明 `http.Handler`（例如 `Mount("/files", handler)`）显示为一行 `* /files/*`，无法展开其内部路由。
-
-<a id="migrate-command"></a>
-### migrate 命令
-
-`migratecmd.New(fsys, dbConfig)` 创建四个迁移命令。`fsys` 是[嵌入的迁移文件](../database/migrations.md#embedding-migrations)，`dbConfig` 从应用配置中取出数据库配置：
-
-```bash
-./bin/api migrate up       # 执行全部未执行的迁移
-./bin/api migrate status   # 查看每个迁移的状态
-./bin/api migrate down     # 回滚最近一次迁移
-go run ./cmd/api migrate make create_articles_table  # 新建迁移文件
-```
-
-`up` 和 `down` 每完成一个迁移输出一行，`status` 输出一张表：
-
-```text
-VERSION         STATE    APPLIED AT           FILE
-20261111090000  applied  2026-11-11 09:12:03  20261111090000_create_articles_table.sql
-20261112100000  pending  -                    20261112100000_create_article_tags_table.sql
-```
-
-`make` 只生成迁移文件的骨架；其他命令会加载配置、连接数据库，并在结束后关闭连接。数据库连不上时以 `ExitUnavailable` 退出，部署脚本可以据此重试。迁移文件的编写与嵌入见[迁移](../database/migrations.md)。应用连接多个数据库时，用 `migratecmd.Name` 为其他数据库构造 `migrate <name> …` 命令，见[多个数据库](../database/advanced.md#multiple-databases)。
-
-需要文件上传等功能自带的 SQL 时，可在 `migratecmd.New` 返回的命令上显式添加 `migratecmd.Publish(sources...)`。其中 `sources` 是应用选择的 `[]migrate.Source`，例如 `migrate.Source{Name: "filesystem", FS: filesystem.Migrations()}`。注册后可以执行：
-
-```bash
-go run ./cmd/api migrate publish --dir migrations
-```
-
-这个命令只将尚未发布的 SQL 拷贝到应用目录，执行迁移仍用 `migrate up`。`--dir` 默认是 `migrations`；每个新增文件输出一行，重复执行时保留已有来源。注册代码、空项目首次发布方式及升级流程见[发布框架迁移](../database/migrations.md#publishing-framework-migrations)。
-
-<a id="config-command"></a>
-### config 命令
-
-`command.Config[C]()` 创建两个检查配置的命令，`C` 是应用的配置结构：
-
-- `config check` 只加载并校验配置，不访问网络。发布前运行它，可以尽早发现缺失的环境变量或写错的字段；
-- `config show` 输出加载后的配置，包括默认值和展开后的环境变量。默认输出 YAML，`--format json` 输出 JSON。
-
-```bash
-./bin/api config check --config config/app.yaml,config/prod.yaml
-./bin/api config show --format json
-```
-
-配置文件缺失或校验失败时，这两个命令以及所有需要读取配置的命令都以 `ExitConfig` 退出。配置的读取与校验见[配置](configuration.md)。
+开发时用的 `dev`、`build`、`generate` 不在这里，它们由[开发工具](../installation/tooling.md) `go tool tenon` 提供。命令行中只有你装配了的命令：不提供 HTTP API 的程序，例如一个只消费消息的常驻进程，只装配 `command.Run("run", ...)` 和 `migrate` 即可。
 
 <a id="custom-commands"></a>
 ## 自定义命令
@@ -329,6 +179,168 @@ func Commands() []*cobra.Command {
 ```go
 return command.AsExitError(command.ExitUnavailable, err)
 ```
+
+<a id="built-in-commands"></a>
+## 内置命令
+
+<a id="run-command"></a>
+### Run：serve 与常驻进程
+
+`command.Run` 创建一个先加载配置、再调用 `run(ctx, cfg)` 的命令。`ctx` 会在进程收到停止信号时被取消，常驻进程据此退出。`bootstrap.Serve` 装配应用并启动 HTTP 服务，见[依赖装配](../concepts/dependencies.md#assembling-the-application)，HTTP 服务会据此[平滑停止](../concepts/lifecycle.md)：
+
+```bash
+./bin/api serve                                                 # 使用 config/app.yaml
+./bin/api serve --config config/app.yaml --config config/prod.yaml
+```
+
+`Run` 不限于常驻进程，任何“读取配置然后做一件事”的命令都可以用它创建，例如数据回填、发送一次报表。
+
+<a id="running-together"></a>
+### 在一个进程中运行多个部分
+
+一个完整的应用通常有三个常驻部分：HTTP 服务、[队列 worker](../libraries/queue.md#running-workers) 和[定时任务调度器](../libraries/scheduling.md#running-the-scheduler)，分别是 `App` 的 `HTTP`、`Worker` 和 `Scheduler` 方法（见[依赖装配](../concepts/dependencies.md#assembling-the-application)）。每个命令只是选择运行哪些部分：
+
+```go
+func Serve(ctx context.Context, cfg Config) error {
+    return run(ctx, cfg, (*App).HTTP)
+}
+
+func Work(ctx context.Context, cfg Config) error {
+    return run(ctx, cfg, (*App).Worker)
+}
+
+func Schedule(ctx context.Context, cfg Config) error {
+    return run(ctx, cfg, (*App).Scheduler)
+}
+
+func Start(ctx context.Context, cfg Config) error {
+    return run(ctx, cfg, (*App).HTTP, (*App).Worker, (*App).Scheduler)
+}
+```
+
+| 命令 | 运行的部分 |
+| --- | --- |
+| `serve` | HTTP 服务 |
+| `work` | 队列 worker |
+| `schedule` | 定时任务调度器 |
+| `start` | 以上三者，在同一个进程中 |
+| `realtime` | 只承接[实时频道](../libraries/realtime.md)的连接，可选，见[单独部署实时连接](../libraries/realtime.md#separate-process) |
+
+小型部署只运行 `start`：一个进程、一份配置、一套资源。业务量增长后改为分别部署 `serve`、`work` 和 `schedule`，各自按负载增减实例，代码保持原样。`start` 也可以部署多个实例：worker 竞争领取任务，调度器通过锁保证[每次触发只执行一次](../libraries/scheduling.md#multiple-instances)。
+
+`run` 先装配全部部分，再用 `d.Run` 同时运行它们（内部是 `command.Concurrently`）：
+
+- 一个部分装配失败（例如端口被占用）时，`run` 在任何部分开始运行之前就返回错误，进程以非 0 状态退出。
+- 收到停止信号时，各部分同时平滑停止：HTTP 服务排空请求，worker 停止领取并等待处理中的任务，调度器停止触发并等待执行中的任务。全部返回之后才关闭数据库。
+- 一个部分运行时出错退出，其余部分随之停止，进程以非 0 状态退出。
+- 一个部分在收到停止信号之前就正常返回，同样视为异常，错误中包含 `command.ErrStoppedEarly`，交给 systemd、Kubernetes 等重启。
+
+各部分共用 `open` 中创建的数据库连接池，HTTP 请求和 worker 的并发任务都会占用连接，设置 [`max_conns`](../database/quick-start.md#configuration) 时要按两者之和估算。
+
+<a id="openapi-command"></a>
+### openapi 命令
+
+`httpcmd.OpenAPI(router)` 调用 `router` 构造应用的路由，用 [`rest.Lookup`](../http/openapi.md#exporting-openapi) 取出其中的 API，把 OpenAPI 文档输出到标准输出：
+
+```bash
+./bin/api openapi > openapi.json
+./bin/api openapi --spec 3.0 > openapi-3.0.json
+```
+
+默认输出 OpenAPI 3.1；有的客户端生成器只支持 3.0，例如 oapi-codegen，这时加上 `--spec 3.0`。路由中有[多个 API](../http/openapi.md#api-versioning) 时，用 `--base-path` 选择其中一个，例如 `--base-path /api/v2`。
+
+`bootstrap.DocRouter` 用默认配置和没有打开任何资源的 `App` 调用 `serve` 也在用的路由函数（见[依赖装配](../concepts/dependencies.md#assembling-the-application)），因此导出的文档与实际运行的接口始终一致。构造路由只登记处理器和 token 校验器，所以这个命令离线运行，只需要源代码。
+
+<a id="routes-command"></a>
+### routes 命令
+
+当业务模块变多时，你可以用 `routes` 查看整个应用的路由，包括 JSON API 和[页面](../responses/views.md#page-routes)。`httpcmd.Routes` 的参数是构造完整路由的函数，例如[入门教程](../tutorial/02-infrastructure.md#assembling)中的 `bootstrap.DocRouter`。它离线运行：
+
+```bash
+./bin/api routes
+./bin/api routes --method post --path /articles
+./bin/api routes --all
+```
+
+`--method` 不区分大小写，`--path` 按路径包含的文本匹配，两者同时使用时取交集。用 `Handle`、`Mount` 注册、响应任意方法的路由（例如单页应用的 `/*`）合并为一行，方法显示为 `*`，按方法过滤时总是列出。结果按路径、HTTP 方法排序，例如 `--path /articles` 会输出：
+
+```text
+METHOD  PATH                    OPERATION ID     ACCESS            SUMMARY
+POST    /articles               article-create   bearer: articles  创建文章
+GET     /articles/{id}          article-get      bearer: articles  获取文章
+POST    /articles/{id}/publish  article-publish  bearer: articles  发布文章
+```
+
+各列的含义：
+
+- **ACCESS** 展示路由声明的访问策略：`public` 表示显式公开，`bearer` 表示 JSON API 要求 Bearer token，`bearer: articles` 同时列出所需的权限，`docs` 表示 Huma 的文档端点。`unknown` 表示无法从声明确定策略（例如直接注册在 chi 上的健康检查），**不**表示允许匿名访问；
+- **OPERATION ID**、**SUMMARY** 来自 `huma.Operation`，页面路由没有，显示为 `-`。摘要中的换行会合并为空格。
+
+Huma 自动注册的 `/docs`、`/openapi.json`、`/schemas/{schema}` 等文档端点默认不显示，加上 `--all` 才会列出。列表也包含直接注册在 chi 上的原生路由和挂载的子路由；挂载的不透明 `http.Handler`（例如 `Mount("/files", handler)`）显示为一行 `* /files/*`，无法展开其内部路由。
+
+<a id="migrate-command"></a>
+### migrate 命令
+
+`migratecmd.New(fsys, dbConfig)` 创建四个迁移命令。`fsys` 是[嵌入的迁移文件](../database/migrations.md#embedding-migrations)，`dbConfig` 从应用配置中取出数据库配置：
+
+```bash
+./bin/api migrate up       # 执行全部未执行的迁移
+./bin/api migrate status   # 查看每个迁移的状态
+./bin/api migrate down     # 回滚最近一次迁移
+go run ./cmd/api migrate make create_articles_table  # 新建迁移文件
+```
+
+`up` 和 `down` 每完成一个迁移输出一行，`status` 输出一张表：
+
+```text
+VERSION         STATE    APPLIED AT           FILE
+20261111090000  applied  2026-11-11 09:12:03  20261111090000_create_articles_table.sql
+20261112100000  pending  -                    20261112100000_create_article_tags_table.sql
+```
+
+`make` 只生成迁移文件的骨架；其他命令会加载配置、连接数据库，并在结束后关闭连接。数据库连不上时以 `ExitUnavailable` 退出，部署脚本可以据此重试。迁移文件的编写与嵌入见[迁移](../database/migrations.md)。应用连接多个数据库时，用 `migratecmd.Name` 为其他数据库构造 `migrate <name> …` 命令，见[多个数据库](../database/advanced.md#multiple-databases)。
+
+需要文件上传等功能自带的 SQL 时，可在 `migratecmd.New` 返回的命令上显式添加 `migratecmd.Publish(sources...)`。其中 `sources` 是应用选择的 `[]migrate.Source`，例如 `migrate.Source{Name: "filesystem", FS: filesystem.Migrations()}`。注册后可以执行：
+
+```bash
+go run ./cmd/api migrate publish --dir migrations
+```
+
+这个命令只将尚未发布的 SQL 拷贝到应用目录，执行迁移仍用 `migrate up`。`--dir` 默认是 `migrations`；每个新增文件输出一行，重复执行时保留已有来源。注册代码、空项目首次发布方式及升级流程见[发布框架迁移](../database/migrations.md#publishing-framework-migrations)。
+
+<a id="config-command"></a>
+### config 命令
+
+`command.Config[C]()` 创建两个检查配置的命令，`C` 是应用的配置结构：
+
+- `config check` 只加载并校验配置，不访问网络。发布前运行它，可以尽早发现缺失的环境变量或写错的字段；
+- `config show` 输出加载后的配置，包括默认值和展开后的环境变量。默认输出 YAML，`--format json` 输出 JSON。
+
+```bash
+./bin/api config check --config config/app.yaml,config/prod.yaml
+./bin/api config show --format json
+```
+
+配置文件缺失或校验失败时，这两个命令以及所有需要读取配置的命令都以 `ExitConfig` 退出。配置的读取与校验见[配置](configuration.md)。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**报错 `unknown command "xxx" for "api"`，退出码 2**
+
+这个命令没有装配到根命令上。检查 `main.go` 中的 `root.AddCommand`；需要数据库的命令是否加进了 `bootstrap.Commands()`。
+
+**命令以退出码 3 结束**
+
+配置文件缺失或无效。用 `config check` 查看具体的原因；确认在项目根目录执行（`config/app.yaml` 和 `.env` 都按工作目录查找）。
+
+**自定义命令中用 `StringVar` 绑定的选项始终是空的**
+
+用 `command.Bind` 声明的命令，执行时会重新声明一次，绑定的变量属于第一次声明的命令。在 `RunE` 中用 `cmd.Flags().GetString` 读取选项，见[从命令行运行动作](../concepts/actions.md#as-commands)。
+
+**`./bin/api openapi > openapi.json` 得到的文件中混入了日志**
+
+有代码把诊断信息写到了标准输出。日志和诊断信息写到标准错误，见[输入与输出](#input-and-output)。
 
 <a id="api-reference"></a>
 ## API 参考

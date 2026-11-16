@@ -466,7 +466,7 @@ func (h *handlers) logout(ctx context.Context, _ *struct{}) (*LogoutOutput, erro
 | 单页应用与 API | 需要的设置 |
 | --- | --- |
 | 同源，例如由 [`httpx.SPA`](../responses/spa.md) 提供 | 保持默认 |
-| 同一站点的不同子域名，例如 `app.example.com` 与 `api.example.com` | API 的 [CORS](../http/middleware.md#cors) 设置 `credentials: true`，逐个列出来源；`RefreshCookie.Domain` 设为 `example.com`；前端刷新时 `credentials: "include"` |
+| 同一站点的不同子域名，例如 `app.example.com` 与 `api.example.com` | API 的 [CORS](../http/optional-middleware.md#cors) 设置 `credentials: true`，逐个列出来源；`RefreshCookie.Domain` 设为 `example.com`；前端刷新时 `credentials: "include"` |
 | 不同站点，例如 `example.com` 与 `example-api.io` | 浏览器拦截第三方 cookie，用不了 cookie。退回请求体方式，refresh token 只能放在 `localStorage` 中，页面上的脚本都能读到，要格外防范 XSS |
 
 <a id="api-reference"></a>

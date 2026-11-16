@@ -106,7 +106,7 @@ func NewGet(db *bun.DB, articles *cachex.Cache[*Article]) *Get {
 ```
 
 > [!IMPORTANT]
-> `cachex.New` 遇到 `nil` 客户端会 panic，所以要在入口中创建 `Cache`，再传给模块的 `Register`：[生成 OpenAPI 文档](../http/routing.md#exporting-openapi)时，`Register` 收到的依赖都是 `nil`。
+> `cachex.New` 遇到 `nil` 客户端会 panic，所以要在入口中创建 `Cache`，再传给模块的 `Register`：[生成 OpenAPI 文档](../http/openapi.md#exporting-openapi)时，`Register` 收到的依赖都是 `nil`。
 
 同一种值只创建一个 `Cache`，读取和删除都使用它。
 
