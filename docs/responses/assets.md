@@ -2,6 +2,8 @@
 
 [界面组件](components.md)的样式表和脚本由框架内置，`ui.Assets()` 提供。应用自己的图片、字体、脚本，以及用 Tailwind 生成的样式表，通过 `embed` 打进二进制，由 `web.Static` 提供，部署时只有一个二进制文件。
 
+阅读前需要了解：[视图](views.md)；[embed](../concepts/go-primer.md#embed)。
+
 `web.Static` 按文件内容给地址加上指纹，例如 `/static/css/app.3f2a9c1d.css`。这样的地址可以让浏览器和 CDN 永久缓存：内容一变，指纹随之改变，页面引用的就是新地址。
 
 - [存放静态文件](#static-files)
@@ -10,6 +12,8 @@
 - [缓存](#caching)
 - [开发模式](#development)
 - [用 Tailwind CSS 编写样式](#tailwind)
+- [内容安全策略](#content-security-policy)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="static-files"></a>
@@ -138,6 +142,50 @@ go tool tenon dev
 ```
 
 修改 `.templ` 后，templ 重新生成代码、重启应用；Tailwind 随之重新生成 `internal/web/static/css/app.css`，浏览器自动刷新。停止 `dev` 时，它会生成压缩的样式表。生成的 `app.css` 和 `_templ.go` 一样要提交到版本库，这样构建和 CI 只需要 Go。
+
+<a id="content-security-policy"></a>
+## 内容安全策略
+
+服务端渲染的页面由 `web.Pages` 设置内容安全策略。内容安全策略（CSP）是一个响应头，告诉浏览器只执行带有正确 nonce（每次响应随机生成的一串字符）的脚本，被注入页面的 `<script>` 没有 nonce，浏览器拒绝执行。`Pages` 为每个页面响应（包括错误页）生成一个随机的 nonce，写进 `Content-Security-Policy` 响应头和 templ 的 context，默认的策略是 `web.DefaultCSP`：
+
+```text
+script-src 'self' 'nonce-…' 'unsafe-eval'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'
+```
+
+- `ui.Head()` 读取 context 中的 nonce，给它输出的 `<script>`、`<style>` 带上它；其中的 `web.Scripts()` 还设置了 htmx 的 `inlineScriptNonce`，htmx 执行交换进来的脚本时也使用这个 nonce。
+- 布局中自己写的内联脚本，以及其他网站的脚本（例如[人机验证](../security/login.md#captcha)的组件），要加上 `nonce={ templ.GetNonce(ctx) }`。
+- `'self'` 允许加载本站的脚本文件，包括[静态文件](#static-files)。样式、图片、字体和 iframe 可以来自任何来源。
+- `frame-ancestors 'none'` 禁止其他网站把页面嵌入框架，诱导用户点击。
+
+页面响应同时带有 `Referrer-Policy: same-origin`，点开其他网站的链接时，本站页面的地址只在站内传递。
+
+Alpine 的表达式（`x-data`、`x-on` 等）和 htmx 的 `hx-on` 在运行时编译执行，需要 `'unsafe-eval'`。去掉它之后，这两类属性都会失效。只用 htmx 属性和[界面组件](components.md)、不写 Alpine 表达式的页面可以用 `Options.CSP` 去掉它。
+
+需要别的策略时设置 `Options.CSP`，它接收本次的 nonce，返回完整的策略；返回空字符串时不设置这个响应头。例如允许合作方的网站嵌入页面：
+
+```go
+CSP: func(nonce string) string {
+    return strings.Replace(web.DefaultCSP(nonce), "frame-ancestors 'none'", "frame-ancestors https://partner.example.com", 1)
+},
+```
+
+> [!WARNING]
+> 应用的脚本放进静态文件，在 `<head>` 中加载。写在 `<body>` 里的话，用户点后退时，htmx 会重新请求整页并替换 `body`，其中的脚本会再执行一次，事件监听器就注册了两遍。写法是：`<script defer src={ web.StaticURL(ctx, "js/app.js") }></script>`。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**修改了样式，刷新页面后没有变化**
+
+嵌入的文件只有重新编译后才会更新。开发时设置 `DevDir`，直接读取磁盘，见[开发模式](#development)。
+
+**页面上的图片 404**
+
+检查 `web.StaticURL` 中的路径是否相对 `static` 目录，以及文件是否在嵌入的目录中。直接访问 `/static/` 加文件名可以检查文件是否存在。
+
+**用了某个 Tailwind 类名，但没有效果**
+
+内置的样式表只包含组件用到的类名和一组常用的布局工具类。用到其他类名时，用 Tailwind 生成应用自己的样式表，见[用 Tailwind CSS 编写样式](#tailwind)。
 
 <a id="api-reference"></a>
 ## API 参考
