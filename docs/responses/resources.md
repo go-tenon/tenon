@@ -6,6 +6,7 @@
 - [显示文字](#labels)
 - [检查](#checks)
 - [生成的定义](#generated)
+- [前端的资源模型](#model)
 - [API 参考](#api-reference)
 
 <a id="declaring"></a>
@@ -97,6 +98,46 @@ resources.article.labels["zh-CN"].fields.title // "标题"
 
 `operations` 是客户端方法的位置，`schemas.ts`、`queries.ts` 中的位置相同，表单的校验规则就是 `schemas.article.create.body`。`enum` 是 `enums.ts` 中的命名类型。
 
+<a id="model"></a>
+## 前端的资源模型
+
+`@go-tenon/shell` 的 `resourceModel` 把定义和生成的客户端、校验规则、枚举接在一起，得到与组件库无关的模型，运营后台和控制台都用它渲染：
+
+```ts
+import { resourceModel } from "@go-tenon/shell"
+import { createQueries } from "@blog/client/api/queries"
+import { resources } from "@blog/client/api/resources"
+import { components, schemas } from "@blog/client/api/schemas"
+import { enums } from "@blog/client/api/enums"
+
+const kit = { client: api, queries: createQueries(api, { queryClient }), schemas, components, enums, language: "zh-CN" }
+export const articles = resourceModel(resources.article, kit, queryClient)
+```
+
+| 成员 | 说明 |
+| --- | --- |
+| `title`、`columns`、`filters`、`form`、`actions` | 带显示文字。字段有 `kind`（`text`、`number`、`boolean`、`select`、`multiselect`、`tags`、`date`、`datetime`、`json`，由类型、格式和枚举得出）、`required`、`sortable`，枚举字段有 `options` |
+| `listSearch` | 列表路由的 `validateSearch`，查询条件、排序和分页保存在地址中，规则来自列表接口的查询参数 |
+| `allowed(can, operation)` | 当前身份能否使用一个接口或操作 |
+| `listQuery`、`getQuery` | 列表和详情的查询选项，query key 与 `createQueries` 相同 |
+| `create`、`update`、`remove`、`run` | 调用生成的客户端，完成后让这个分组的查询失效 |
+| `formSchema(mode)`、`ruleOptions` | 表单的校验规则，交给 [`resolver`、`antdRule`](app-shell.md#forms) |
+| `display(field, value)` | 枚举字段显示它的文字 |
+
+在页面中：
+
+```tsx
+export const Route = createFileRoute("/_app/articles")({ validateSearch: articles.listSearch, component: Articles })
+
+function Articles() {
+  const view = useResourceList(articles, Route) // rows、total、list（地址中的状态）、can（按权限能用的按钮）
+  const { save, remove, run } = useResourceMutations(articles)
+  // ……
+}
+```
+
+`useResourceItem(model, key)` 读取一行的详情，`formValues(model, row)` 得到表单的初始值。显示文字的语言与验证提示相同：`language` 本身，没有时它的主语言，再没有时第一种语言。
+
 <a id="api-reference"></a>
 ## API 参考
 
@@ -106,3 +147,5 @@ resources.article.labels["zh-CN"].fields.title // "标题"
 | `rest.Action` | 行上的操作 |
 | `(*rest.API).Resource(r)` | 声明资源，写入 `x-tenon-resources` |
 | `(*rest.API).Resources()` | 已声明的资源，列、表单字段和 `Key` 已经补全 |
+| `resourceModel(def, kit, queryClient)` | `@go-tenon/shell`：资源模型 |
+| `useResourceList`、`useResourceItem`、`useResourceMutations`、`formValues` | `@go-tenon/shell`：列表、详情、修改、表单的初始值 |
