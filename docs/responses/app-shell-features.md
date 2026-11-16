@@ -5,7 +5,7 @@
 - **多标签**：像浏览器一样，在后台中同时打开几个页面；
 - **租户**：一个账号属于多个组织时，切换当前的组织；
 - **表单**和**列表**：提交表单、显示服务端的错误，列表的筛选、排序和分页；
-- **通知**、**后台操作**、**AI 对话**：接上框架对应的服务端功能。
+- **通知**、**后台操作**、**操作日志**、**AI 对话**：接上框架对应的服务端功能。
 
 阅读前需要了解：[应用骨架](app-shell.md)；[在 React 中调用接口](client-react.md)。
 
@@ -15,6 +15,7 @@
 - [列表](#lists)
 - [通知](#notifications)
 - [后台操作](#operations)
+- [操作日志](#activity)
 - [AI 对话](#ai-chat)
 
 <a id="tabs"></a>
@@ -252,6 +253,17 @@ trackOperation(app, {
 - `useOperations()` 是登记过的操作，新的在前；`useOperation(id)` 是一个操作。每一项有 `title`、最新的进度 `operation`、比例 `ratio`（不知道总数时为空）、`finished` 和读取失败时的 `error`。
 - 进度用 `@go-tenon/client` 的 `watchOperation` 读取，断开后自动重连，操作结束时停止。
 - 同一个 ID 只登记一次。结束后仍留在操作中心，`dismissOperation(app, id)` 移除；退出登录、切换身份时清空。
+
+<a id="activity"></a>
+## 操作日志
+
+`useActivity(source)` 是[操作日志](../features/activity.md)的模型：一个对象的历史，或者一个人的操作记录，从新到旧分页读取（`items`、`hasMore`、`loadMore`、`refresh`）。接口由应用定义，每一条是服务端翻译好的文字、操作人和时间，见[在页面中显示](../features/activity.md#history-page)：
+
+```ts
+const history = useActivity({ key: ["article", id], list: (before) => api.article.history(id, { before }).then((r) => r.items) })
+```
+
+`key` 区分不同的历史；缓存按当前身份区分。两套外观的 `ActivityTimeline` 用它渲染时间线。
 
 <a id="ai-chat"></a>
 ## AI 对话

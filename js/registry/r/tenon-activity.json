@@ -1,0 +1,20 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "tenon-activity",
+  "type": "registry:block",
+  "title": "操作日志的时间线",
+  "description": "ActivityTimeline：一个对象的历史或一个人的操作记录，从新到旧分页，代为登录时注明实际操作的人；逻辑来自 @go-tenon/shell 的 useActivity。",
+  "registryDependencies": [
+    "button",
+    "empty",
+    "skeleton"
+  ],
+  "files": [
+    {
+      "path": "src/components/tenon/activity.tsx",
+      "type": "registry:component",
+      "target": "~/src/components/tenon/activity.tsx",
+      "content": "// 操作日志的时间线：一个对象的历史，或者一个人的操作记录。逻辑在 @go-tenon/shell（useActivity），这里只负责外观。\n\nimport { type ActivityItem, type ActivitySource, useActivity } from \"@go-tenon/shell\"\nimport { useRouter } from \"@tanstack/react-router\"\nimport { CircleAlert } from \"lucide-react\"\nimport type { ReactNode } from \"react\"\nimport { Button } from \"@/components/ui/button\"\nimport { Empty, EmptyHeader, EmptyTitle } from \"@/components/ui/empty\"\nimport { Skeleton } from \"@/components/ui/skeleton\"\n\nconst timeFormat = new Intl.DateTimeFormat(undefined, { dateStyle: \"short\", timeStyle: \"short\" })\nconst when = (iso: string) => {\n  const d = new Date(iso)\n  return Number.isNaN(d.getTime()) ? iso : timeFormat.format(d)\n}\n\n/** ActivityTimeline 的选项。 */\nexport interface ActivityTimelineProps {\n  /** 操作记录的接口，见 @go-tenon/shell 的 useActivity。 */\n  source: ActivitySource\n  /** 点击一条记录：默认有 href 时打开它。 */\n  onOpen?: (item: ActivityItem) => void\n  /** 没有记录时的说明，默认“还没有操作记录”。 */\n  empty?: ReactNode\n}\n\n/**\n * 操作日志的时间线：从新到旧，每条是发生了什么、谁、什么时候；代为登录时注明实际操作的人。放在详情页或侧边面板中：\n *\n *   <ActivityTimeline source={{ key: [\"article\", id], list: (before) => api.article.history(id, { before }) }} />\n */\nexport function ActivityTimeline({ source, onOpen, empty = \"还没有操作记录\" }: ActivityTimelineProps): ReactNode {\n  const a = useActivity(source)\n  const router = useRouter()\n  if (a.loading) {\n    return (\n      <div className=\"flex flex-col gap-3\">\n        <Skeleton className=\"h-10\" />\n        <Skeleton className=\"h-10\" />\n      </div>\n    )\n  }\n  if (a.error && a.items.length === 0) {\n    return (\n      <div role=\"alert\" className=\"flex items-center gap-2 text-sm text-destructive\">\n        <CircleAlert className=\"size-4\" />\n        操作记录读取失败\n        <Button variant=\"outline\" size=\"sm\" className=\"ml-auto\" onClick={() => void a.refresh()}>\n          重试\n        </Button>\n      </div>\n    )\n  }\n  if (a.items.length === 0) {\n    return (\n      <Empty>\n        <EmptyHeader>\n          <EmptyTitle>{empty}</EmptyTitle>\n        </EmptyHeader>\n      </Empty>\n    )\n  }\n  const open = (item: ActivityItem) => {\n    if (onOpen) onOpen(item)\n    else if (item.href) void router.navigate({ href: item.href })\n  }\n  return (\n    <div className=\"flex flex-col gap-3\">\n      <ol className=\"relative flex flex-col gap-4 border-l pl-4\">\n        {a.items.map((item) => (\n          <li key={item.id} className=\"relative\">\n            <span className=\"absolute top-1.5 -left-[21px] size-2.5 rounded-full border-2 border-background bg-primary\" />\n            {item.href || onOpen ? (\n              <button type=\"button\" className=\"text-left text-sm hover:underline\" onClick={() => open(item)}>\n                {item.text}\n              </button>\n            ) : (\n              <p className=\"text-sm\">{item.text}</p>\n            )}\n            <p className=\"text-xs text-muted-foreground\">\n              {[item.actor ?? \"系统\", item.impersonator && `（${item.impersonator} 代为操作）`, when(item.created_at)]\n                .filter(Boolean)\n                .join(\" · \")}\n            </p>\n          </li>\n        ))}\n      </ol>\n      {a.hasMore && (\n        <Button variant=\"outline\" size=\"sm\" onClick={a.loadMore}>\n          加载更多\n        </Button>\n      )}\n    </div>\n  )\n}\n"
+    }
+  ]
+}

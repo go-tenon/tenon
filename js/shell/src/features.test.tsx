@@ -1,11 +1,12 @@
 // @vitest-environment happy-dom
-// 通知、后台操作和 AI 对话的模型。
+// 通知、后台操作、操作日志和 AI 对话的模型。
 import { createSession, type OperationLike, type Session } from "@go-tenon/client"
 import { createMemoryHistory, createRootRouteWithContext, Outlet } from "@tanstack/react-router"
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react"
 import type { UIMessage } from "ai"
 import { type ReactNode, useEffect } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
+import { type Activity, type ActivityItem, useActivity } from "./activity"
 import { type App, AppRoot, createApp, type RouterContext, useApp } from "./app"
 import { type AssistantChat, useAssistantChat } from "./chat"
 import { type NotificationItem, type Notifications, type NotificationsSource, useNotifications } from "./notifications"
@@ -95,6 +96,42 @@ describe("useNotifications", () => {
       />
     ))
     await waitFor(() => expect(n?.unread).toBe(5))
+  })
+})
+
+describe("useActivity", () => {
+  const record = (i: number): ActivityItem => ({
+    id: `a${i}`,
+    text: `第 ${i} 条`,
+    actor: "小明",
+    created_at: "2026-11-16T08:00:00Z",
+  })
+
+  it("从新到旧分页读取：一页满了才有下一页，before 是上一页最后一条的 ID", async () => {
+    const list = vi.fn(async (before?: string) =>
+      before === undefined ? [record(4), record(3)] : before === "a3" ? [record(2)] : [],
+    )
+    let a: Activity | undefined
+    await mount(() => (
+      <Probe use={() => useActivity({ list, key: ["article", "1"], pageSize: 2 })} onValue={(v) => (a = v)} />
+    ))
+    await waitFor(() => expect(a?.items.map((i) => i.id)).toEqual(["a4", "a3"]))
+    expect(a?.hasMore).toBe(true)
+    act(() => a?.loadMore())
+    await waitFor(() => expect(a?.items.map((i) => i.id)).toEqual(["a4", "a3", "a2"]))
+    expect(list).toHaveBeenLastCalledWith("a3")
+    expect(a?.hasMore).toBe(false)
+  })
+
+  it("refresh 重新读取第一页", async () => {
+    let n = 1
+    const list = vi.fn(async () => [record(n)])
+    let a: Activity | undefined
+    await mount(() => <Probe use={() => useActivity({ list })} onValue={(v) => (a = v)} />)
+    await waitFor(() => expect(a?.items[0]?.text).toBe("第 1 条"))
+    n = 2
+    await act(() => a?.refresh() ?? Promise.resolve())
+    await waitFor(() => expect(a?.items[0]?.text).toBe("第 2 条"))
   })
 })
 

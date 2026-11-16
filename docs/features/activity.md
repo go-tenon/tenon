@@ -15,6 +15,7 @@
     - [队列与定时任务](#jobs)
 - [查看操作日志](#listing)
     - [显示](#displaying)
+    - [在页面中显示](#history-page)
 - [保留期限](#retention)
 - [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
@@ -165,6 +166,54 @@ text := i18n.T(ctx, a.Event, a.Properties)
 ```
 
 这样修改文案、增加语言时，已有的记录保持原样。操作人的名字同样在显示时按 `a.Actor()` 查询，用户改名后历史中显示的是新名字。
+
+<a id="history-page"></a>
+### 在页面中显示
+
+框架提供了现成的时间线：运营后台（antd）的 `ActivityTimeline` 和 shadcn registry 的 `tenon-activity`，逻辑都来自 `@go-tenon/shell` 的 `useActivity`。它们读取应用自己的接口，每一条需要这些字段：
+
+| 字段 | 内容 |
+| --- | --- |
+| `id` | 记录的 ID，翻页时作为 `before` 传回 |
+| `text` | 事件的译文，即上面的 `i18n.T(ctx, a.Event, a.Properties)` |
+| `actor` | 操作人的名字；系统的操作为空，显示为“系统” |
+| `impersonator` | 代为登录时实际操作的人的名字，可以为空 |
+| `created_at` | 时间 |
+| `href` | 点击后打开的页面，可以为空 |
+
+接口按上面的 `List` 查询，`before` 是查询参数，把每条记录转换为这些字段：
+
+```go
+type HistoryItem struct {
+    ID           string    `json:"id"`
+    Text         string    `json:"text"`
+    Actor        string    `json:"actor,omitempty"`
+    Impersonator string    `json:"impersonator,omitempty"`
+    CreatedAt    time.Time `json:"created_at"`
+}
+
+// names 按 identity.Ref 查出操作人的名字，例如读取 users 表。
+items := make([]HistoryItem, 0, len(list))
+for _, a := range list {
+    items = append(items, HistoryItem{
+        ID:           a.ID.String(),
+        Text:         i18n.T(ctx, a.Event, a.Properties),
+        Actor:        names[a.Actor()],
+        Impersonator: names[a.Impersonator()],
+        CreatedAt:    a.CreatedAt,
+    })
+}
+```
+
+前端把生成的客户端方法交给时间线。`key` 区分不同的历史，同一个页面上可以有好几份：
+
+```tsx
+<ActivityTimeline
+  source={{ key: ["article", id], list: (before) => api.article.history(id, { before }).then((r) => r.items) }}
+/>
+```
+
+时间线从新到旧显示，一页满了才显示“加载更多”；读取失败时显示提示和“重试”。缓存按当前身份区分，切换账号后不会看到上一个人的数据。
 
 <a id="retention"></a>
 ## 保留期限

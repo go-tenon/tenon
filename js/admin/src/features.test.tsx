@@ -15,7 +15,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { type ReactNode, useEffect } from "react"
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest"
 import { AssistantChat } from "./chat"
-import { NotificationBell, OperationCenter, OperationProgress } from "./features"
+import { ActivityTimeline, NotificationBell, OperationCenter, OperationProgress } from "./features"
 import { AdminProvider } from "./provider"
 
 beforeAll(() => {
@@ -90,6 +90,46 @@ describe("NotificationBell", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "通知" }))
     expect((await screen.findByRole("button", { name: "全部已读" })).hasAttribute("disabled")).toBe(true)
+  })
+})
+
+describe("ActivityTimeline", () => {
+  it("从新到旧显示发生了什么、谁、代为操作的人；加载更多；点击打开页面", async () => {
+    const list = vi.fn(async (before?: string) =>
+      before
+        ? [{ id: "a1", text: "创建了文章《你好》", actor: "小明", created_at: "2026-11-14T08:00:00Z" }]
+        : [
+            {
+              id: "a2",
+              text: "发布了文章《你好》",
+              actor: "小明",
+              impersonator: "客服小李",
+              created_at: "2026-11-15T08:00:00Z",
+              href: "/articles/1",
+            },
+          ],
+    )
+    await mount(() => <ActivityTimeline source={{ list, pageSize: 1 }} />)
+    await screen.findByText("发布了文章《你好》")
+    expect(screen.getByText(/小明 · （客服小李 代为操作）/)).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "加载更多" }))
+    await screen.findByText("创建了文章《你好》")
+    expect(list).toHaveBeenLastCalledWith("a2")
+    fireEvent.click(screen.getByText("发布了文章《你好》"))
+    await screen.findByText("article page")
+  })
+
+  it("没有记录；读取失败时显示，点击重试", async () => {
+    let fail = true
+    const list = vi.fn(async () => {
+      if (fail) throw { status: 403, fields: [] } // 例如没有权限查看这段历史：4xx 不自动重试
+      return []
+    })
+    await mount(() => <ActivityTimeline source={{ list }} />)
+    const retry = await screen.findByRole("button", { name: /重\s*试/ }) // antd 在两个汉字的按钮中间加空格
+    fail = false
+    fireEvent.click(retry)
+    await screen.findByText("还没有操作记录")
   })
 })
 
