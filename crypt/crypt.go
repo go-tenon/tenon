@@ -80,7 +80,7 @@ func New(cfg Config) *Crypt {
 	c := &Crypt{}
 	for _, s := range append([]string{cfg.Key}, cfg.PreviousKeys...) {
 		master, _ := decodeKey(s)
-		block, err := aes.NewCipher(derive(master, "mygoravel crypt encrypt v1"))
+		block, err := aes.NewCipher(derive(master, "tenon crypt encrypt v1"))
 		if err != nil {
 			panic("crypt: " + err.Error())
 		}
@@ -89,7 +89,7 @@ func New(cfg Config) *Crypt {
 			panic("crypt: " + err.Error())
 		}
 		c.aeads = append(c.aeads, aead)
-		c.macKeys = append(c.macKeys, derive(master, "mygoravel crypt sign v1"))
+		c.macKeys = append(c.macKeys, derive(master, "tenon crypt sign v1"))
 		c.masters = append(c.masters, master)
 	}
 	return c
@@ -106,7 +106,7 @@ func derive(master []byte, info string) []byte {
 
 // Derive 为 purpose 用途从应用密钥派生 32 字节的子密钥，供其他包签名或加密自己的数据，例如 apitoken 签名 JWT。
 // 返回值的第一项来自当前密钥，其余依次来自 PreviousKeys：用第一项签名，校验时全部尝试，轮换应用密钥后旧数据仍然有效。
-// 不同的 purpose 得到互不相关的密钥；purpose 应包含包名和版本，例如 "mygoravel apitoken jwt v1"。
+// 不同的 purpose 得到互不相关的密钥；purpose 应包含包名和版本，例如 "tenon apitoken jwt v1"。
 func (c *Crypt) Derive(purpose string) [][]byte {
 	keys := make([][]byte, len(c.masters))
 	for i, master := range c.masters {

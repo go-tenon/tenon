@@ -15,16 +15,16 @@ import (
 const (
 	// MessagePrefix 是任务在 WAL 中的逻辑解码消息（pg_logical_emit_message）的前缀，后面接 topic 名，
 	// 内容是发给 JetStream 的消息。
-	MessagePrefix = "mygoravel.queue:"
+	MessagePrefix = "tenon.queue:"
 	// Publication 是逻辑复制使用的 publication。它是空的，pgoutput 插件要求指定一个。
-	Publication = "mygoravel_queue"
+	Publication = "tenon_queue"
 )
 
-// SlotName 返回数据库 database 中转发任务的逻辑复制槽的名字：mygoravel_queue_ 加上数据库名的 MD5 的前 16 位。
+// SlotName 返回数据库 database 中转发任务的逻辑复制槽的名字：tenon_queue_ 加上数据库名的 MD5 的前 16 位。
 // 迁移用同样的规则创建它，监控积压时按这个名字查询 pg_replication_slots。
 func SlotName(database string) string {
 	sum := md5.Sum([]byte(database))
-	return "mygoravel_queue_" + hex.EncodeToString(sum[:])[:16]
+	return "tenon_queue_" + hex.EncodeToString(sum[:])[:16]
 }
 
 // slotOf 返回 db 所在数据库的复制槽名字。

@@ -22,11 +22,11 @@ func TestPublishUpgradePreservesApplicationSQL(t *testing.T) {
 		t.Fatalf("first=%v err=%v", first, err)
 	}
 	data, err := os.ReadFile(filepath.Join(dir, first[0]))
-	if err != nil || !strings.HasPrefix(string(data), "-- mygoravel: files/0001_create_files\n") {
+	if err != nil || !strings.HasPrefix(string(data), "-- tenon: files/0001_create_files\n") {
 		t.Fatalf("data=%s err=%v", data, err)
 	}
 	// 应用可在首次部署前修改 SQL、重命名文件；来源标记使升级仍然只追加。
-	custom := "-- mygoravel: files/0001_create_files\n" + testMigration + "-- application column additions\n"
+	custom := "-- tenon: files/0001_create_files\n" + testMigration + "-- application column additions\n"
 	if err := os.Remove(filepath.Join(dir, first[0])); err != nil {
 		t.Fatal(err)
 	}

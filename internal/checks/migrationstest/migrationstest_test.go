@@ -148,7 +148,7 @@ func TestPublishThroughPublicCommand(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				want := append([]byte("-- mygoravel: "+src.Name+"/"+strings.TrimSuffix(entry.Name(), ".sql")+"\n"), original...)
+				want := append([]byte("-- tenon: "+src.Name+"/"+strings.TrimSuffix(entry.Name(), ".sql")+"\n"), original...)
 				if !bytes.Equal(published, want) {
 					t.Fatalf("published content differs from embedded SQL: %s", names[i])
 				}

@@ -113,7 +113,7 @@ queuecmd.New(a.db, queuecmd.WithJetStream(a.nc, a.cfg.Queue)),
 ```
 
 ```text
-slot            mygoravel_queue_3f2a9c1e5b7d4e60
+slot            tenon_queue_3f2a9c1e5b7d4e60
 state           relaying (pid 48213)
 wal status      reserved
 lag             12.4 KiB
