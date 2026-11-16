@@ -119,6 +119,31 @@ func Erase(ctx context.Context, db bun.IDB, ref identity.Ref) error {
 	return err
 }
 
+// Export 返回主体 ref 登记的设备，用于导出个人数据；签名与 privacy.Source 的 Export 相同。
+// 每台设备是一个对象：platform、tenant、created_at、updated_at（最近一次登记的时间）。设备 token 不导出。
+func Export(ctx context.Context, db bun.IDB, ref identity.Ref) (any, error) {
+	if err := ref.Validate(); err != nil {
+		return nil, errors.Wrap(err, "push")
+	}
+	var rows []Device
+	err := db.NewSelect().Model(&rows).
+		Where("subject_type = ? AND subject_id = ?", ref.Type, ref.ID).OrderExpr("created_at, id").Scan(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "push: export")
+	}
+	type exported struct {
+		Platform  Platform  `json:"platform"`
+		Tenant    string    `json:"tenant"`
+		CreatedAt time.Time `json:"created_at"`
+		UpdatedAt time.Time `json:"updated_at"`
+	}
+	out := make([]exported, len(rows))
+	for i, d := range rows {
+		out[i] = exported{Platform: d.Platform, Tenant: d.Tenant, CreatedAt: d.CreatedAt, UpdatedAt: d.UpdatedAt}
+	}
+	return out, nil
+}
+
 // Cleanup 返回删除超过 keep 没有再注册的设备的清理函数，每次最多删除 limit 台，用于定时任务。
 // App 每次启动时都会注册，长期没有更新的设备通常已经卸载了 App。keep 不大于 0 时 panic。
 func Cleanup(db bun.IDB, keep time.Duration) func(ctx context.Context, limit int) (int, error) {

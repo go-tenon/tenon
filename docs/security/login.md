@@ -375,6 +375,7 @@ func (r *Realm) Attach(ctx context.Context, db bun.IDB, ref identity.Ref, id Ide
 | `SetupTOTP`、`ConfirmTOTP`、`DisableTwoFactor`、`TwoFactorEnabled` | 二次验证 |
 | `RegenerateRecoveryCodes`、`RecoveryCodesLeft` | 恢复码 |
 | `Forget` | 删除账号的全部登录数据，登记到[注销账号](../features/privacy.md#framework-sources) |
+| `Export` | 导出账号的登录标识和安全设置，登记到[导出个人数据](../features/data-export.md#sources) |
 | `Cleanup` | 删除过期的验证码和凭证 |
 
 ### passkey

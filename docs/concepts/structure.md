@@ -193,7 +193,7 @@ blog/
 Tenon 的每个包都可以单独使用，按需引入即可。顶层的包分为四层，每个包只能导入同层或更低层的包。例如“基础”层的 `errorx` 不会导入“基础设施”层的 `database`，所以你在任何地方使用 `errorx` 都不会意外地引入数据库：
 
 ```text
-功能        apitoken  login  oauthserver  authz  notification  push  activity  feature  settings  operation  privacy  webhook  search  vector  sheet/imports  sheet/exports  ai
+功能        apitoken  login  oauthserver  authz  notification  push  activity  feature  settings  operation  privacy  privacy/export  webhook  search  vector  sheet/imports  sheet/exports  ai
 入口        httpx  web  realtime  mcpx  command
 基础设施    database  natsx  queue  schedule  cachex  lock  ratelimit  captcha  broadcast  filesystem  imgproxy  mail  sms  pdf  outbound  sheet  document
 基础        errorx  identity  config  cleanup  logging  telemetry  health  i18n  enum  page  form  hashing  crypt  acquire
@@ -285,6 +285,7 @@ Tenon 的每个包都可以单独使用，按需引入即可。顶层的包分�
 | `settings` | 运行时可修改的设置 | [设置](../features/settings.md) |
 | `operation` | 后台操作的状态与进度 | [后台操作](../features/operations.md) |
 | `privacy` | 注销账号：冷静期，在一个事务中删除各处的个人数据 | [注销账号](../features/privacy.md) |
+| `privacy/export` | 导出个人数据：后台打包成 zip，由本人下载 | [导出个人数据](../features/data-export.md) |
 | `sheet/imports`、`sheet/exports` | 后台导入与导出表格 | [导入与导出](../features/import-export.md) |
 | `webhook` | 按 Standard Webhooks 推送事件 | [Webhook](../features/webhooks.md) |
 | `search` | PostgreSQL 全文搜索 | [全文搜索](../features/search.md) |

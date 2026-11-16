@@ -2,6 +2,7 @@ package apitoken_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"github.com/go-chi/chi/v5"
 	"net/http"
@@ -511,5 +512,55 @@ func TestRequireBearer(t *testing.T) {
 		if rr := call(tc.token); rr.Code != tc.status {
 			t.Errorf("%s: %d %s", name, rr.Code, rr.Body)
 		}
+	}
+}
+
+// exported 把 Export 的结果编码为 JSON。
+func exported(t *testing.T) func(v any, err error) string {
+	return func(v any, err error) string {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := json.Marshal(v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(data)
+	}
+}
+
+func contains(t *testing.T, got string, want ...string) {
+	t.Helper()
+	for _, w := range want {
+		if !strings.Contains(got, w) {
+			t.Errorf("%s does not contain %s", got, w)
+		}
+	}
+}
+
+func excludes(t *testing.T, got string, unwanted ...string) {
+	t.Helper()
+	for _, w := range unwanted {
+		if strings.Contains(got, w) {
+			t.Errorf("%s contains %s", got, w)
+		}
+	}
+}
+
+func TestExport(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	db := dbtest.Open(t, apitoken.Migrations())
+	s := apitoken.NewStore(db, testConfig)
+	laptop := login(t, s, alice, apitoken.Device{IP: "203.0.113.7", UserAgent: "Firefox"})
+	ci := create(t, s, alice, apitoken.Personal{Name: "CI", Scopes: read})
+	login(t, s, identity.Subject{ID: "alice", Type: "user", Impersonator: identity.Ref{Type: "staff", ID: "s1"}}, apitoken.Device{})
+	login(t, s, bob, apitoken.Device{IP: "198.51.100.1"})
+	got := exported(t)(apitoken.Export(ctx, db, alice.Ref()))
+	contains(t, got, `"kind":"login"`, `"ip":"203.0.113.7","user_agent":"Firefox"`, `"name":"CI","scopes":["articles:read"]`, `"impersonated":true`)
+	excludes(t, got, laptop, ci, "198.51.100.1", "s1", "hash")
+	if _, err := apitoken.Export(ctx, db, identity.Ref{}); err == nil {
+		t.Fatal("expected error for empty subject")
 	}
 }

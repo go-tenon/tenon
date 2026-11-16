@@ -269,10 +269,11 @@ func Record(ctx context.Context, db bun.IDB, actor identity.Subject, a Activity)
 ```go
 func List(ctx context.Context, db bun.IDB, q Query) ([]Activity, error)
 func Cleanup(db bun.IDB, keep time.Duration) func(ctx context.Context, limit int) (int, error)
+func Export(ctx context.Context, db bun.IDB, ref identity.Ref) (any, error)
 func Migrations() fs.FS
 ```
 
-`List` 按对象或操作人查询，按时间倒序；`Cleanup` 删除早于 `keep` 的记录，交给定时任务。
+`List` 按对象或操作人查询，按时间倒序；`Cleanup` 删除早于 `keep` 的记录，交给定时任务；`Export` 返回一个人在所有租户中作为操作人的记录，登记到[导出个人数据](data-export.md#sources)。注销账号时操作日志不删除，见[保留的数据](privacy.md#retained-data)。
 
 `Activity` 是 `activity_log` 表的 Bun 模型：
 

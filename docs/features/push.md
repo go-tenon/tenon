@@ -295,6 +295,7 @@ func Unregister(ctx context.Context, db bun.IDB, sub identity.Subject, credentia
 func UnregisterOthers(ctx context.Context, db bun.IDB, sub identity.Subject) (int, error)
 func UnregisterSubject(ctx context.Context, db bun.IDB, ref identity.Ref) (int, error)
 func Erase(ctx context.Context, db bun.IDB, ref identity.Ref) error
+func Export(ctx context.Context, db bun.IDB, ref identity.Ref) (any, error)
 func Send(ctx context.Context, db bun.IDB, msg Message, to ...notification.Recipient) error
 func NewDeliverer(db bun.IDB, p Provider, opts Options) *Deliverer
 func (d *Deliverer) Handle(w *queue.Worker)
@@ -306,7 +307,7 @@ func Migrations() fs.FS
 | --- | --- |
 | `Register` | 把设备登记在主体名下，同时记下这次登录的凭据 |
 | `Unregister`、`UnregisterOthers`、`UnregisterSubject` | 退出这次登录、退出其他设备、停用账号时删除设备 |
-| `Erase` | 注销账号时删除全部设备，登记到 [注销账号](privacy.md#framework-sources) |
+| `Erase`、`Export` | 注销账号时删除全部设备，导出个人数据时列出设备（不含 token），见[注销账号](privacy.md#framework-sources)和[导出个人数据](data-export.md#sources) |
 | `Send` | 在事务中发布推送任务，提交后投递 |
 | `NewDeliverer` | 在 worker 中按平台分批推送，`Provider` 是 `push/aliyun` 等实现 |
 | `Cleanup` | 删除长期不活跃的设备 |

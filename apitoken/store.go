@@ -478,6 +478,43 @@ func Erase(ctx context.Context, db bun.IDB, ref identity.Ref) error {
 	return err
 }
 
+// Export 返回主体 ref 的全部 token（不含 token 本身和它的哈希），用于导出个人数据；签名与 privacy.Source 的 Export 相同。
+// 每个 token 是一个对象：kind、name、scopes、tenant、client、impersonated（是否由别人代为登录签发）、
+// ip、user_agent、created_at、last_used_at、expires_at，空的字段省略。
+func Export(ctx context.Context, db bun.IDB, ref identity.Ref) (any, error) {
+	if err := ref.Validate(); err != nil {
+		return nil, errors.Wrap(err, "apitoken")
+	}
+	var rows []row
+	err := db.NewSelect().Model(&rows).
+		Where("subject_type = ? AND subject_id = ?", ref.Type, ref.ID).OrderExpr("created_at, id").Scan(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "apitoken: export")
+	}
+	type exported struct {
+		Kind         Kind      `json:"kind"`
+		Name         string    `json:"name,omitempty"`
+		Scopes       []string  `json:"scopes,omitempty"`
+		Tenant       string    `json:"tenant,omitempty"`
+		Client       string    `json:"client,omitempty"`
+		Impersonated bool      `json:"impersonated,omitempty"`
+		IP           string    `json:"ip,omitempty"`
+		UserAgent    string    `json:"user_agent,omitempty"`
+		CreatedAt    time.Time `json:"created_at"`
+		LastUsedAt   time.Time `json:"last_used_at,omitzero"`
+		ExpiresAt    time.Time `json:"expires_at,omitzero"`
+	}
+	out := make([]exported, len(rows))
+	for i, r := range rows {
+		out[i] = exported{
+			Kind: r.Kind, Name: r.Name, Scopes: strings.Fields(r.Scopes), Tenant: r.Tenant, Client: r.ClientName,
+			Impersonated: r.ImpersonatorID != "", IP: r.IP, UserAgent: r.UserAgent,
+			CreatedAt: r.CreatedAt, LastUsedAt: r.LastUsedAt, ExpiresAt: r.ExpiresAt,
+		}
+	}
+	return out, nil
+}
+
 // Cleanup 删除最多 limit 个已过期的 token，返回删除的个数。由应用定时调用。
 func (s *Store) Cleanup(ctx context.Context, limit int) (int, error) {
 	if limit <= 0 {

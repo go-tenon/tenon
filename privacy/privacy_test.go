@@ -15,6 +15,7 @@ import (
 
 	"github.com/uptrace/bun"
 
+	"github.com/go-tenon/tenon/activity"
 	"github.com/go-tenon/tenon/apitoken"
 	"github.com/go-tenon/tenon/authz"
 	"github.com/go-tenon/tenon/database"
@@ -30,13 +31,14 @@ import (
 	"github.com/go-tenon/tenon/push"
 )
 
-// 框架各包的 Erase 都可以直接作为 Source.Erase 登记。
+// 框架各包的 Erase、Export 都可以直接登记到 Source。
 var _ = []privacy.Source{
-	{Name: "login", Erase: (*login.Realm)(nil).Forget},
-	{Name: "api_tokens", Erase: apitoken.Erase},
-	{Name: "roles", Erase: (*authz.Store)(nil).Erase},
-	{Name: "push", Erase: push.Erase},
-	{Name: "notifications", Erase: notification.Erase},
+	{Name: "login", Erase: (*login.Realm)(nil).Forget, Export: (*login.Realm)(nil).Export},
+	{Name: "api_tokens", Erase: apitoken.Erase, Export: apitoken.Export},
+	{Name: "roles", Erase: (*authz.Store)(nil).Erase, Export: (*authz.Store)(nil).Export},
+	{Name: "push", Erase: push.Erase, Export: push.Export},
+	{Name: "notifications", Erase: notification.Erase, Export: notification.Export},
+	{Name: "activity", Export: activity.Export},
 	{Name: "flags", Erase: feature.Erase},
 	{Name: "operations", Erase: operation.Erase},
 	{Name: "oauth_codes", Erase: oauthserver.Erase},

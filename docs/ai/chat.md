@@ -463,8 +463,9 @@ func WriteUIStream(w http.ResponseWriter, r *http.Request, run *Run) error
 func NewModel(cfg ai.ModelConfig, opts ...openai.Option) model.Model
 func NewSessions(db *bun.DB, opts ...tpg.ServiceOpt) (session.Service, error)
 func EraseUser(ctx context.Context, db bun.IDB, userID string) error
+func ExportUser(ctx context.Context, db bun.IDB, userID string) (any, error)
 func SetLogger(l *slog.Logger)
 func Migrations() fs.FS
 ```
 
-`NewModel` 用 OpenAI 兼容接口创建模型；`NewSessions` 把对话保存在应用的 PostgreSQL 中，`EraseUser` 删除一个用户的全部对话，见[注销账号](../features/privacy.md#framework-sources)。媒体、向量、重排和决策的接口在 `ai` 包中，见[媒体](chat-advanced.md#media)和[决策](chat-advanced.md#decisions)。
+`NewModel` 用 OpenAI 兼容接口创建模型；`NewSessions` 把对话保存在应用的 PostgreSQL 中，`EraseUser`、`ExportUser` 删除、导出一个用户的全部对话，见[注销账号](../features/privacy.md#framework-sources)和[导出个人数据](../features/data-export.md#sources)。媒体、向量、重排和决策的接口在 `ai` 包中，见[媒体](chat-advanced.md#media)和[决策](chat-advanced.md#decisions)。

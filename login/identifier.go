@@ -276,6 +276,45 @@ func (r *Realm) canSignIn(ctx context.Context, ids []Identifier, hasPassword boo
 	return false, nil
 }
 
+// Export 在 db 中读取 ref 的登录数据，用于导出个人数据；签名与 privacy.Source 的 Export 相同。
+// 结果是一个对象：identifiers（每个标识的 kind、value、tenant、verified、created_at）、
+// password（是否设置了密码）和 two_factor（是否启用了二次验证）。密码哈希和 TOTP 密钥不导出。
+func (r *Realm) Export(ctx context.Context, db bun.IDB, ref identity.Ref) (any, error) {
+	if err := r.check(ref); err != nil {
+		return nil, err
+	}
+	var rows []identifierRow
+	err := db.NewSelect().Model(&rows).Where("subject_type = ? AND subject_id = ?", ref.Type, ref.ID).
+		OrderExpr("created_at, kind, value").Scan(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "login: export identifiers")
+	}
+	hash, err := r.passwordHash(ctx, db, ref.ID)
+	if err != nil {
+		return nil, err
+	}
+	twoFactor, err := r.enabled(ctx, db, ref.ID)
+	if err != nil {
+		return nil, err
+	}
+	type identifier struct {
+		Kind      string    `json:"kind"`
+		Value     string    `json:"value"`
+		Tenant    string    `json:"tenant,omitempty"`
+		Verified  bool      `json:"verified"`
+		CreatedAt time.Time `json:"created_at"`
+	}
+	out := struct {
+		Identifiers []identifier `json:"identifiers"`
+		Password    bool         `json:"password"`
+		TwoFactor   bool         `json:"two_factor"`
+	}{Identifiers: make([]identifier, len(rows)), Password: hash != "", TwoFactor: twoFactor}
+	for i, row := range rows {
+		out.Identifiers[i] = identifier{Kind: row.Kind, Value: row.Value, Tenant: row.Tenant, Verified: !row.VerifiedAt.IsZero(), CreatedAt: row.CreatedAt}
+	}
+	return out, nil
+}
+
 // Forget 删除 ref 的全部登录凭据：标识、密码、二次验证和未完成的验证码，用于注销账号。
 // 应用在同一个事务中删除自己的账号行，并撤销 token。
 func (r *Realm) Forget(ctx context.Context, db bun.IDB, ref identity.Ref) error {

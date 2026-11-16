@@ -116,6 +116,38 @@ func List(ctx context.Context, db bun.IDB, q Query) ([]Activity, error) {
 	return activities, nil
 }
 
+// Export 返回主体 ref 在所有租户中作为操作人的记录，按时间从旧到新，用于导出个人数据；签名与 privacy.Source 的 Export 相同。
+// 每条记录是一个对象：tenant、event、target_type、target_id、properties、impersonated（是否由别人代为登录操作）、created_at，
+// 空的字段省略。注销账号时操作日志不删除，由 Cleanup 按保留期删除。
+func Export(ctx context.Context, db bun.IDB, ref identity.Ref) (any, error) {
+	if err := ref.Validate(); err != nil {
+		return nil, errors.Wrap(err, "activity")
+	}
+	var rows []Activity
+	err := db.NewSelect().Model(&rows).
+		Where("actor_type = ? AND actor_id = ?", ref.Type, ref.ID).OrderExpr("id").Scan(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "activity: export")
+	}
+	type exported struct {
+		Tenant       string         `json:"tenant"`
+		Event        string         `json:"event"`
+		TargetType   string         `json:"target_type,omitempty"`
+		TargetID     string         `json:"target_id,omitempty"`
+		Properties   map[string]any `json:"properties,omitempty"`
+		Impersonated bool           `json:"impersonated,omitempty"`
+		CreatedAt    time.Time      `json:"created_at"`
+	}
+	out := make([]exported, len(rows))
+	for i, a := range rows {
+		out[i] = exported{
+			Tenant: a.Tenant, Event: a.Event, TargetType: a.TargetType, TargetID: a.TargetID,
+			Properties: a.Properties, Impersonated: a.ImpersonatorID != "", CreatedAt: a.CreatedAt,
+		}
+	}
+	return out, nil
+}
+
 // Cleanup 返回删除 keep 以前的记录的清理函数，每次调用最多删除 limit 条，交给 schedule.Cleanup：
 //
 //	sched.Add("activity:cleanup", "0 4 * * *", schedule.Cleanup(activity.Cleanup(db, 180*24*time.Hour), 1000))

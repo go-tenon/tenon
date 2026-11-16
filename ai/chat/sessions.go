@@ -3,7 +3,9 @@ package chat
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"sync"
+	"time"
 
 	"github.com/cockroachdb/errors"
 	"github.com/uptrace/bun"
@@ -111,4 +113,59 @@ func EraseUser(ctx context.Context, db bun.IDB, userID string) error {
 		}
 	}
 	return nil
+}
+
+// ExportUser 在 db 中读取 userID 在全部应用中的对话，用于导出个人数据；登记到 privacy 时与 EraseUser 一样包一层。
+// 结果是一个对象：sessions（app、session_id、created_at，已删除的带 deleted_at）、
+// events（app、session_id、created_at 和 trpc-agent-go 保存的原始事件 event）、
+// summaries（对话摘要）和 user_states（用户状态的 app、key、value）。
+func ExportUser(ctx context.Context, db bun.IDB, userID string) (any, error) {
+	if userID == "" {
+		return nil, errors.New("chat: export user: empty user ID")
+	}
+	type session struct {
+		App       string    `bun:"app_name"   json:"app"`
+		SessionID string    `bun:"session_id" json:"session_id"`
+		CreatedAt time.Time `bun:"created_at" json:"created_at"`
+		DeletedAt time.Time `bun:"deleted_at" json:"deleted_at,omitzero"`
+	}
+	type event struct {
+		App       string          `bun:"app_name"   json:"app"`
+		SessionID string          `bun:"session_id" json:"session_id"`
+		CreatedAt time.Time       `bun:"created_at" json:"created_at"`
+		Event     json.RawMessage `bun:"event,type:jsonb" json:"event"`
+	}
+	type summary struct {
+		App       string          `bun:"app_name"   json:"app"`
+		SessionID string          `bun:"session_id" json:"session_id"`
+		UpdatedAt time.Time       `bun:"updated_at" json:"updated_at"`
+		Summary   json.RawMessage `bun:"summary,type:jsonb" json:"summary"`
+	}
+	type state struct {
+		App   string `bun:"app_name" json:"app"`
+		Key   string `bun:"key"      json:"key"`
+		Value string `bun:"value"    json:"value"`
+	}
+	out := struct {
+		Sessions   []session `json:"sessions"`
+		Events     []event   `json:"events"`
+		Summaries  []summary `json:"summaries"`
+		UserStates []state   `json:"user_states"`
+	}{[]session{}, []event{}, []summary{}, []state{}}
+	queries := []struct {
+		table, columns, order string
+		dest                  any
+	}{
+		{"agent_session_states", "app_name, session_id, created_at, coalesce(deleted_at, '0001-01-01') AS deleted_at", "created_at, id", &out.Sessions},
+		{"agent_session_events", "app_name, session_id, created_at, event", "created_at, id", &out.Events},
+		{"agent_session_summaries", "app_name, session_id, updated_at, coalesce(summary, 'null') AS summary", "updated_at, id", &out.Summaries},
+		{"agent_user_states", "app_name, key, coalesce(value, '') AS value", "app_name, key", &out.UserStates},
+	}
+	for _, q := range queries {
+		err := db.NewSelect().TableExpr(q.table).ColumnExpr(q.columns).Where("user_id = ?", userID).OrderExpr(q.order).Scan(ctx, q.dest)
+		if err != nil {
+			return nil, errors.Wrapf(err, "chat: export user from %s", q.table)
+		}
+	}
+	return out, nil
 }

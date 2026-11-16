@@ -47,6 +47,9 @@ operation.not_found: Operation not found
 operation.failed: The operation was interrupted, please try again
 privacy.erasure_pending: Account deletion has already been requested
 privacy.erasure_not_found: No pending account deletion
+privacy.export_in_progress: The previous export has not finished yet
+privacy.export_not_ready: The export has not finished yet
+privacy.export_expired: The exported file has expired, please export again
 search.reindex_superseded: The reindex was superseded by a later one
 vector.reindex_superseded: The reindex was superseded by a later one
 imports.errors_column: Errors
