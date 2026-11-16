@@ -67,7 +67,7 @@ services:
     ports: ["127.0.0.1:11211:11211"]
 
   nats:
-    image: nats:2.12-alpine
+    image: nats:2.15-alpine
     command: [nats-server, -js, -sd, /data]
     ports: ["127.0.0.1:4222:4222"]
     volumes: [nats:/data]

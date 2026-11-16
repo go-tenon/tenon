@@ -56,7 +56,7 @@ err = w.Run(ctx)
 <a id="preparing"></a>
 ## 准备
 
-部署 NATS 2.12 以上的版本，见 [NATS 的安装文档](https://docs.nats.io/running-a-nats-service/introduction/installation)。任务保存在 JetStream 中，启动时加上 `-js` 开启它，`-sd` 是数据目录：
+部署 NATS 2.15 或更新的版本，见 [NATS 的安装文档](https://docs.nats.io/running-a-nats-service/introduction/installation)。任务保存在 JetStream 中，启动时加上 `-js` 开启它，`-sd` 是数据目录：
 
 ```bash
 nats-server -js -sd /var/lib/nats

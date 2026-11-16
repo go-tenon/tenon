@@ -320,7 +320,7 @@ services:
     image: memcached:1.6-alpine
     command: [memcached, -m, "512"]
   nats:
-    image: nats:2.12-alpine
+    image: nats:2.15-alpine
     command: [nats-server, -js, -sd, /data, -m, "8222"]
     volumes: [nats:/data]
     ports: ["127.0.0.1:8222:8222"]
