@@ -5,7 +5,7 @@
 - **多标签**：像浏览器一样，在后台中同时打开几个页面；
 - **租户**：一个账号属于多个组织时，切换当前的组织；
 - **表单**和**列表**：提交表单、显示服务端的错误，列表的筛选、排序和分页；
-- **通知**、**后台操作**、**操作日志**、**AI 对话**：接上框架对应的服务端功能。
+- **通知**、**后台操作**、**操作日志**、**导入与导出**、**AI 对话**：接上框架对应的服务端功能。
 
 阅读前需要了解：[应用骨架](app-shell.md)；[在 React 中调用接口](client-react.md)。
 
@@ -16,6 +16,7 @@
 - [通知](#notifications)
 - [后台操作](#operations)
 - [操作日志](#activity)
+- [导入与导出](#transfer)
 - [AI 对话](#ai-chat)
 
 <a id="tabs"></a>
@@ -264,6 +265,19 @@ const history = useActivity({ key: ["article", id], list: (before) => api.articl
 ```
 
 `key` 区分不同的历史；缓存按当前身份区分。两套外观的 `ActivityTimeline` 用它渲染时间线。
+
+<a id="transfer"></a>
+## 导入与导出
+
+`useImport(source)` 和 `useExport(source)` 是[后台导入](../features/background-imports.md#import-button)、[后台导出](../features/background-exports.md#export-button)的模型。导入依次上传文件、发起导入、读取进度，导出发起后读取进度；进度登记到[后台操作](#operations)的任务中心。它们给出：
+
+- `phase`：`idle`、`uploading`（只有导入）、`starting`、`running`、`completed`、`failed`；
+- `operation`：后台操作的进度，其中 `total`、`processed`、`failed`；
+- `error`：上传、发起时的错误；
+- 导入的 `uploaded`（上传的比例）和 `downloadFailures`（有没有导入的行时才有），导出的 `file`（完成后下载的文件）；
+- `reset`：回到 `idle`，再导入一个文件。
+
+两套外观的 `ImportButton`、`ExportButton` 用它们渲染按钮和对话框。
 
 <a id="ai-chat"></a>
 ## AI 对话

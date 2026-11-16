@@ -10,8 +10,9 @@
 - [登记导出](#starting-exports)
 - [处理导出](#processing-exports)
 - [导出进度](#export-progress)
+- [在页面中使用](#export-button)
 - [常见问题](#troubleshooting)
-- [API 参考](background-imports.md#api-reference)
+- [API 参考](#api-reference)
 
 <a id="installing"></a>
 ## 安装
@@ -227,6 +228,23 @@ data: {"id":"0193e7a2-8a01-7c3e-b1d4-5e6f7a8b9c0d","kind":"articles.export","sta
 `total` 为 0 时（回调没有调用 `SetTotal`），前端显示“已导出 N 行”即可。
 
 导出记录随[后台操作的清理](operations.md#cleanup)一起删除，导出的文件已经由文件存储回收。
+
+<a id="export-button"></a>
+## 在页面中使用
+
+框架提供了现成的导出按钮：运营后台（antd）的 `ExportButton` 和 shadcn registry 的 `tenon-transfer`，逻辑来自 `@go-tenon/shell` 的 `useExport`。点击按钮发起导出，对话框显示进度，完成后显示“下载”。进度同时出现在顶栏的[任务中心](../responses/app-shell-features.md#operations)。
+
+```tsx
+<ExportButton
+  title="导出文章"
+  source={{
+    start: () => api.article.exportStart({ format: "xlsx", columns }),
+    progress: (id) => (o) => api.article.exportProgress(id, o),
+  }}
+/>
+```
+
+下载地址默认取完成时进度事件中的 `url` 和 `filename`，`sheet/exports` 的导出就是这样推送的；进度的格式不同时，用 `file` 从最后一次进度中取出下载地址。
 
 <a id="troubleshooting"></a>
 ## 常见问题
