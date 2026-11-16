@@ -58,7 +58,7 @@ return &ArticleOutput{Body: toDTO(item)}, nil
 }
 ```
 
-草稿还没有发布时间，`published_at` 字段会被省略。`doc`、`example` 和 `enum` 标签只写入接口文档，见[说明与示例](../http/routing.md#describing-apis)。
+草稿还没有发布时间，`published_at` 字段会被省略。`doc`、`example` 和 `enum` 标签只写入接口文档，见[说明与示例](../http/openapi.md#describing-apis)。
 
 > [!TIP]
 > 建议为响应定义专门的 DTO 结构。这样你可以自由地调整数据库结构，API 保持稳定，内部字段也只留在服务端。

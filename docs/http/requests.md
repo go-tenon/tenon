@@ -2,6 +2,15 @@
 
 在 Tenon 中，每条路由都有一个**输入类型**：一个普通的 Go 结构体，字段上的标签说明这个值从哪里来。Huma 会在调用处理器之前读取请求、转换类型并完成[验证](validation.md)，处理器拿到的就是一个已经填好的结构体。
 
+一个 HTTP 请求可以从四个地方携带数据：
+
+- **路径参数**：路径中的一段，例如 `/articles/{id}` 中的 `id`；
+- **查询参数**：`?` 后面的部分，例如 `/articles?limit=50`；
+- **请求头**：例如 `Authorization`、`Accept-Language`；
+- **请求体**：`POST`、`PUT` 请求发送的内容，通常是 JSON。
+
+阅读前需要了解：[路由](routing.md)；[结构体标签](../concepts/go-primer.md#struct-tags)。
+
 - [示例用法](#introduction)
 - [定义输入类型](#input-types)
     - [路径参数](#path-parameters)
@@ -12,6 +21,7 @@
 - [请求体大小与超时](#limits)
     - [请求体大小](#body-size)
     - [超时与取消](#timeouts)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="introduction"></a>
@@ -113,7 +123,7 @@ Authorization: Bearer <token>
 {"title":"Hello World","slug":"hello-world","content":"这是我的第一篇文章。"}
 ```
 
-处理器中通过 `in.Body.Title`、`in.Body.Slug` 等读取字段，或者把 `in.Body` 整个交给 `Handle`。请求体中的字段默认是**必填**的，验证规则的写法见[验证](validation.md)。给字段写说明和示例值，让它们出现在接口文档中，见[说明与示例](routing.md#describing-apis)。
+处理器中通过 `in.Body.Title`、`in.Body.Slug` 等读取字段，或者把 `in.Body` 整个交给 `Handle`。请求体中的字段默认是**必填**的，验证规则的写法见[验证](validation.md)。给字段写说明和示例值，让它们出现在接口文档中，见[说明与示例](openapi.md#describing-apis)。
 
 一个输入类型可以同时包含路径参数、查询参数、请求头和请求体：
 
@@ -167,6 +177,29 @@ http:
 
 除了请求 context 的超时，服务器本身还有读写超时：`read_header_timeout`、`read_timeout`、`write_timeout` 和 `idle_timeout`。完整字段见 [HTTP 配置](middleware.md#http-configuration)。
 
+<a id="troubleshooting"></a>
+## 常见问题
+
+**返回 422，`message` 是“不支持这个字段”（`validation.unexpected`）**
+
+请求体中有输入类型里没有的字段，通常是字段名拼错了，例如把 `title` 写成了 `titel`。`location` 指出了是哪个字段。
+
+**返回 422，`message` 是“类型不正确”（`validation.type`）**
+
+字段的类型和声明的不一致，例如字符串字段传了数字 `1`。
+
+**返回 422，`message` 是“必填”（`validation.required`）**
+
+请求体中的字段默认必填。允许不传时，在 `json` 标签中加上 `omitempty`，见[必填与可选字段](validation.md#required-and-optional-fields)。
+
+**查询参数总是默认值**
+
+检查 `query` 标签中的名字是否与 URL 中的一致，名字区分大小写。
+
+**返回 413**
+
+请求体超过了大小限制，见[请求体大小](#body-size)。
+
 <a id="api-reference"></a>
 ## API 参考
 
@@ -181,7 +214,7 @@ http:
 | 字段名 `Body` | 请求体，其中的字段默认必填 |
 | `default:"v"` | 缺省时的值 |
 | `required:"true"` | 把可选的参数改为必填 |
-| `doc:"..."`、`example:"..."` | 写入接口文档，见[说明与示例](routing.md#describing-apis) |
+| `doc:"..."`、`example:"..."` | 写入接口文档，见[说明与示例](openapi.md#describing-apis) |
 
 验证规则的标签见[验证](validation.md#available-validation-rules)。
 

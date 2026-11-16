@@ -170,14 +170,14 @@ func Start(ctx context.Context, cfg Config) error {
 <a id="openapi-command"></a>
 ### openapi 命令
 
-`httpcmd.OpenAPI(router)` 调用 `router` 构造应用的路由，用 [`rest.Lookup`](../http/routing.md#exporting-openapi) 取出其中的 API，把 OpenAPI 文档输出到标准输出：
+`httpcmd.OpenAPI(router)` 调用 `router` 构造应用的路由，用 [`rest.Lookup`](../http/openapi.md#exporting-openapi) 取出其中的 API，把 OpenAPI 文档输出到标准输出：
 
 ```bash
 ./bin/api openapi > openapi.json
 ./bin/api openapi --spec 3.0 > openapi-3.0.json
 ```
 
-默认输出 OpenAPI 3.1；有的客户端生成器只支持 3.0，例如 oapi-codegen，这时加上 `--spec 3.0`。路由中有[多个 API](../http/routing.md#api-versioning) 时，用 `--base-path` 选择其中一个，例如 `--base-path /api/v2`。
+默认输出 OpenAPI 3.1；有的客户端生成器只支持 3.0，例如 oapi-codegen，这时加上 `--spec 3.0`。路由中有[多个 API](../http/openapi.md#api-versioning) 时，用 `--base-path` 选择其中一个，例如 `--base-path /api/v2`。
 
 `bootstrap.DocRouter` 用默认配置和没有打开任何资源的 `App` 调用 `serve` 也在用的路由函数（见[依赖装配](../concepts/dependencies.md#assembling-the-application)），因此导出的文档与实际运行的接口始终一致。构造路由只登记处理器和 token 校验器，所以这个命令离线运行，只需要源代码。
 

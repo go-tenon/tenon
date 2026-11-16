@@ -42,11 +42,13 @@ Tenon 是一个用 Go 构建 HTTP API 的框架。用户登录后使用的界面
 
 - [配置](general/configuration.md)：配置文件、环境变量和多套环境
 - [路由](http/routing.md)：把一个地址交给一个处理函数
+- [接口文档](http/openapi.md)：自动生成的 OpenAPI 文档，说明与示例，API 版本
 - [请求](http/requests.md)：读取路径参数、查询参数、请求头和请求体
 - [验证](http/validation.md)：在处理请求之前检查输入
 - [响应](responses/responses.md)：返回 JSON、状态码、分页和文件
 - [错误处理](general/errors.md)：定义业务错误，返回给客户端合适的状态码和提示
-- [中间件](http/middleware.md)：在每个请求前后做的通用工作，例如超时、跨域
+- [中间件](http/middleware.md)：在每个请求前后做的通用工作，例如请求 ID、超时
+- [可选的中间件](http/optional-middleware.md)：限流、跨域、Basic 认证、App 最低版本、响应压缩
 - [日志](general/logging.md)：记录日志，在日志中找到一次请求的全部记录
 - [本地化](general/localization.md)：中英文等多种语言的提示
 - [数据库](database/quick-start.md)：连接数据库，定义模型，查询和事务

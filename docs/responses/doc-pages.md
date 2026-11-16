@@ -114,7 +114,7 @@ site.Register(pages.Routes(router))
 
 `docs.New` 读取并渲染全部文档。front matter 不合法、目录超过两层、两篇文档的地址相同、链接指向不存在的文件时返回错误，应用启动时链接全部有效。之后每个请求只是套用页面模板。
 
-文档页用这组 `Pages` 的主题和错误页。帮助中心是公开的；只给内部人员看的操作手册，把认证中间件装在传入的路由上，例如 `site.Register(pages.Routes(router.With(httpx.BasicAuth("staff", verifyStaff))))`，见 [HTTP Basic 认证](../http/middleware.md#basic-auth)。
+文档页用这组 `Pages` 的主题和错误页。帮助中心是公开的；只给内部人员看的操作手册，把认证中间件装在传入的路由上，例如 `site.Register(pages.Routes(router.With(httpx.BasicAuth("staff", verifyStaff))))`，见 [HTTP Basic 认证](../http/optional-middleware.md#basic-auth)。
 
 <a id="markdown"></a>
 ## Markdown 写法
