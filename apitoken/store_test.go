@@ -339,6 +339,27 @@ func TestRevoke(t *testing.T) {
 	}
 }
 
+func TestErase(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	db := dbtest.Open(t, apitoken.Migrations())
+	s := apitoken.NewStore(db, testConfig)
+	laptop := login(t, s, alice, apitoken.Device{})
+	ci := create(t, s, alice, apitoken.Personal{Name: "CI", Scopes: read})
+	other := login(t, s, bob, apitoken.Device{})
+	if err := apitoken.Erase(ctx, db, alice.Ref()); err != nil {
+		t.Fatal(err)
+	}
+	for token, want := range map[string]bool{laptop: false, ci: false, other: true} {
+		if _, ok := valid(t, s, token); ok != want {
+			t.Errorf("valid=%v, want %v", ok, want)
+		}
+	}
+	if err := apitoken.Erase(ctx, db, identity.Ref{}); err == nil {
+		t.Fatal("expected error for empty subject")
+	}
+}
+
 func TestCleanup(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {

@@ -181,6 +181,17 @@ func Delete(ctx context.Context, db bun.IDB, r Recipient, ids ...uuid.UUID) erro
 	return errors.Wrap(err, "notification: delete")
 }
 
+// Erase 在 db 中删除主体 ref 在所有租户中收到的通知，用于注销账号。
+// db 通常是注销所在的事务，签名与 privacy.Source 的 Erase 相同。
+func Erase(ctx context.Context, db bun.IDB, ref identity.Ref) error {
+	if err := ref.Validate(); err != nil {
+		return errors.Wrap(err, "notification")
+	}
+	_, err := db.NewDelete().Model((*Notification)(nil)).
+		Where("recipient_type = ? AND recipient_id = ?", ref.Type, ref.ID).Exec(ctx)
+	return errors.Wrap(err, "notification: erase")
+}
+
 // Cleanup 返回删除 keep 以前的通知（无论是否已读）的清理函数，每次调用最多删除 limit 条，交给 schedule.Cleanup：
 //
 //	sched.Add("notifications:cleanup", "0 4 * * *", schedule.Cleanup(notification.Cleanup(db, 90*24*time.Hour), 1000))

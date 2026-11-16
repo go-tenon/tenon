@@ -378,9 +378,10 @@ func (s *Service) Run(ctx context.Context, id uuid.UUID,
 func (s *Service) Get(ctx context.Context, owner identity.Subject, id uuid.UUID) (*Operation, error)
 func (s *Service) List(ctx context.Context, owner identity.Subject, q Query) ([]Operation, error)
 func (s *Service) Cleanup(keep time.Duration) func(ctx context.Context, limit int) (int, error)
+func Erase(ctx context.Context, db bun.IDB, ref identity.Ref) error
 ```
 
-`Start` 登记一个操作，`Run` 在任务中执行它：`fn` 返回 `nil` 时操作完成，返回错误时按[执行操作](#running)中的规则处理；每次保存进度后，`saved` 在同一个事务中执行，可以为 `nil`。`Get`、`List` 只返回 `owner` 发起的操作。
+`Start` 登记一个操作，`Run` 在任务中执行它：`fn` 返回 `nil` 时操作完成，返回错误时按[执行操作](#running)中的规则处理；每次保存进度后，`saved` 在同一个事务中执行，可以为 `nil`。`Get`、`List` 只返回 `owner` 发起的操作。包级函数 `Erase` 删除一个主体在所有租户中发起的操作，登记到[注销账号](privacy.md#framework-sources)。
 
 ### Run
 

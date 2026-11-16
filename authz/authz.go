@@ -434,6 +434,41 @@ func (s *Store) RemoveMember(ctx context.Context, ref identity.Ref, tenant strin
 	return int(n), errors.Wrap(err, "authz: remove member")
 }
 
+// Erase 在 db 中撤销主体 ref 在所有域中的全部角色，用于注销账号。db 通常是注销所在的事务，
+// 签名与 privacy.Source 的 Erase 相同。
+//
+// 有缓存时，db 是 database.Tx 则在外层事务提交之后使缓存失效，是其他事务时返回错误：
+// 提交之前删除的缓存可能被并发的读取用旧数据重新填上。
+func (s *Store) Erase(ctx context.Context, db bun.IDB, ref identity.Ref) error {
+	if err := ref.Validate(); err != nil {
+		return errors.Wrap(err, "authz")
+	}
+	tx, isTx := db.(database.Tx)
+	if s.cache != nil && !isTx {
+		switch db.(type) {
+		case bun.Tx, *bun.Tx:
+			return errors.New("authz: erase with Cache needs a database.Tx: invalidation must run after commit")
+		}
+	}
+	_, err := db.NewDelete().Model((*assignmentRow)(nil)).
+		Where("subject_type = ? AND subject_id = ?", ref.Type, ref.ID).Exec(ctx)
+	if err != nil {
+		return errors.Wrap(err, "authz: erase")
+	}
+	if s.cache == nil {
+		return nil
+	}
+	tag := s.subjectTag(ref)
+	if isTx {
+		tx.AfterCommit(func(ctx context.Context) error { return s.cache.Invalidate(ctx, tag) })
+		return nil
+	}
+	if err := s.cache.Invalidate(ctx, tag); err != nil {
+		slog.ErrorContext(ctx, "invalidate cached permissions failed", "error", err, logging.AttrComponent, "authz")
+	}
+	return nil
+}
+
 // subjectTag 是主体 ref 在所有域中的权限缓存的 tag，分配变化时失效。
 func (s *Store) subjectTag(ref identity.Ref) string {
 	return s.prefix + "authz:subject:" + lengthPrefixed(string(ref.Type), ref.ID)

@@ -119,7 +119,9 @@ func (h *handlers) registerDevice(ctx context.Context, in *DeviceInput) (*struct
 | --- | --- | --- |
 | `Revoke(ctx, sub, id)` | `push.Unregister(ctx, db, sub, id)` | 退出登录（`id` 为 `sub.Credential`）、在设备列表中移除某台设备 |
 | `RevokeOthers(ctx, sub)` | `push.UnregisterOthers(ctx, db, sub)` | 退出其他设备 |
-| `RevokeSubject(ctx, ref)` | `push.UnregisterSubject(ctx, db, ref)` | 封禁、注销账号 |
+| `RevokeSubject(ctx, ref)` | `push.UnregisterSubject(ctx, db, ref)` | 封禁账号、修改密码 |
+
+注销账号时不用自己调用：把 `apitoken.Erase` 和 `push.Erase` 登记到[注销账号](privacy.md#framework-sources)，在冷静期结束后一起删除。
 
 读者 App 的退出登录变成：
 
@@ -292,6 +294,7 @@ func Register(ctx context.Context, db bun.IDB, sub identity.Subject, platform Pl
 func Unregister(ctx context.Context, db bun.IDB, sub identity.Subject, credential string) (int, error)
 func UnregisterOthers(ctx context.Context, db bun.IDB, sub identity.Subject) (int, error)
 func UnregisterSubject(ctx context.Context, db bun.IDB, ref identity.Ref) (int, error)
+func Erase(ctx context.Context, db bun.IDB, ref identity.Ref) error
 func Send(ctx context.Context, db bun.IDB, msg Message, to ...notification.Recipient) error
 func NewDeliverer(db bun.IDB, p Provider, opts Options) *Deliverer
 func (d *Deliverer) Handle(w *queue.Worker)
@@ -303,6 +306,7 @@ func Migrations() fs.FS
 | --- | --- |
 | `Register` | 把设备登记在主体名下，同时记下这次登录的凭据 |
 | `Unregister`、`UnregisterOthers`、`UnregisterSubject` | 退出这次登录、退出其他设备、停用账号时删除设备 |
+| `Erase` | 注销账号时删除全部设备，登记到 [注销账号](privacy.md#framework-sources) |
 | `Send` | 在事务中发布推送任务，提交后投递 |
 | `NewDeliverer` | 在 worker 中按平台分批推送，`Provider` 是 `push/aliyun` 等实现 |
 | `Cleanup` | 删除长期不活跃的设备 |

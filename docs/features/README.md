@@ -13,3 +13,4 @@
 - [后台导出](background-exports.md)：在队列中导出大量数据，完成后下载
 - [Webhook](webhooks.md)：向外部系统发送事件
 - [全文搜索](search.md)：PostgreSQL 全文搜索与重建索引
+- [注销账号](privacy.md)：冷静期后删除用户在各处的个人数据

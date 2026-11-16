@@ -150,6 +150,7 @@ Tenon 是一个用 Go 构建后端服务的框架。业务逻辑写成[业务动
 - [后台导入](features/background-imports.md)、[后台导出](features/background-exports.md)：大文件在后台处理
 - [Webhook](features/webhooks.md)：把事件通知给其他系统
 - [全文搜索](features/search.md)：按关键词搜索
+- [注销账号](features/privacy.md)：冷静期后删除用户的个人数据
 
 ## 第六阶段：安全
 

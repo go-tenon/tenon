@@ -176,3 +176,68 @@ func TestCacheDown(t *testing.T) {
 		t.Fatalf("after unassign: perms=%s", got)
 	}
 }
+
+// Erase 撤销主体在所有域中的角色；在 database.Tx 中时，缓存在提交之后失效。
+func TestEraseInvalidatesAfterCommit(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	db := dbtest.Open(t, authz.Migrations())
+	s := authz.NewStore(db, catalog, cached(t, openMemcached(t)))
+	reader := mustRole(t, s, authz.Role{Name: "reader", Permissions: []string{"articles:read"}})
+	bob, alice := user("bob"), user("alice")
+	mustAssign(t, s, bob, "acme", reader.ID)
+	mustAssign(t, s, bob, "globex", reader.ID)
+	mustAssign(t, s, alice, "acme", reader.ID)
+	for _, tenant := range []string{"acme", "globex"} {
+		if got := perms(t, s, bob, tenant); got != "articles:read" {
+			t.Fatalf("%s: perms=%s", tenant, got)
+		}
+	}
+
+	err := database.RunInTx(ctx, db, nil, func(ctx context.Context, tx database.Tx) error {
+		if err := s.Erase(ctx, tx, bob); err != nil {
+			return err
+		}
+		// 提交之前读取，缓存的仍然是提交之前的权限。
+		if got := perms(t, s, bob, "acme"); got != "articles:read" {
+			t.Errorf("before commit: perms=%s", got)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tenant := range []string{"acme", "globex"} {
+		if got := perms(t, s, bob, tenant); got != "-" {
+			t.Fatalf("after commit %s: perms=%s", tenant, got)
+		}
+	}
+	if got := perms(t, s, alice, "acme"); got != "articles:read" {
+		t.Fatalf("alice: perms=%s", got)
+	}
+
+	// 不在事务中时立即失效。
+	mustAssign(t, s, alice, "globex", reader.ID)
+	if got := perms(t, s, alice, "globex"); got != "articles:read" {
+		t.Fatalf("alice globex: perms=%s", got)
+	}
+	if err := s.Erase(ctx, db, alice); err != nil {
+		t.Fatal(err)
+	}
+	if got := perms(t, s, alice, "acme"); got != "-" {
+		t.Fatalf("alice after erase: perms=%s", got)
+	}
+
+	// 有缓存时，不能确定何时提交的事务被拒绝。
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := s.Erase(ctx, tx, bob); err == nil {
+		t.Fatal("expected error for plain bun.Tx")
+	}
+	if err := s.Erase(ctx, db, identity.Ref{}); err == nil {
+		t.Fatal("expected error for empty subject")
+	}
+}

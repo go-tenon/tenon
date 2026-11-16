@@ -110,6 +110,15 @@ func UnregisterSubject(ctx context.Context, db bun.IDB, ref identity.Ref) (int, 
 	return affected(q.Exec(ctx))
 }
 
+// Erase 在 db 中删除主体 ref 的全部设备，用于注销账号。db 通常是注销所在的事务，签名与 privacy.Source 的 Erase 相同。
+func Erase(ctx context.Context, db bun.IDB, ref identity.Ref) error {
+	if err := ref.Validate(); err != nil {
+		return errors.Wrap(err, "push")
+	}
+	_, err := UnregisterSubject(ctx, db, ref)
+	return err
+}
+
 // Cleanup 返回删除超过 keep 没有再注册的设备的清理函数，每次最多删除 limit 台，用于定时任务。
 // App 每次启动时都会注册，长期没有更新的设备通常已经卸载了 App。keep 不大于 0 时 panic。
 func Cleanup(db bun.IDB, keep time.Duration) func(ctx context.Context, limit int) (int, error) {

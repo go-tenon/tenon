@@ -11,6 +11,7 @@ import (
 	"github.com/uptrace/bun"
 
 	"github.com/go-tenon/tenon/database/dbtest"
+	"github.com/go-tenon/tenon/identity"
 	"github.com/go-tenon/tenon/notification"
 )
 
@@ -295,5 +296,24 @@ func TestCleanupDeletesOldNotifications(t *testing.T) {
 	}
 	if _, err := cleanup(ctx, 0); err == nil {
 		t.Fatal("expected error for non-positive limit")
+	}
+}
+
+// Erase 删除主体在所有租户中的通知，不影响其他收件人。
+func TestErase(t *testing.T) {
+	t.Parallel()
+	db := dbtest.Open(t, notification.Migrations())
+	ctx := context.Background()
+	send(t, db, "a", alice, bob, aliceGlobex)
+	if err := notification.Erase(ctx, db, alice.Ref); err != nil {
+		t.Fatal(err)
+	}
+	for r, want := range map[notification.Recipient]string{alice: "", aliceGlobex: "", bob: "a"} {
+		if got := events(list(t, db, notification.Query{Recipient: r})); got != want {
+			t.Errorf("%+v: %q, want %q", r, got, want)
+		}
+	}
+	if err := notification.Erase(ctx, db, identity.Ref{}); err == nil {
+		t.Fatal("expected error for empty subject")
 	}
 }

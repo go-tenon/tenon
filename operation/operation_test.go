@@ -459,3 +459,25 @@ func TestCleanup(t *testing.T) {
 	}
 	e.get(t, recent.ID)
 }
+
+// Erase 删除主体在所有租户中发起的操作。
+func TestErase(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	e := newEnv(t)
+	mine := e.start(t, alice, "articles.import")
+	elsewhere := e.start(t, identity.Subject{ID: alice.ID, Type: alice.Type, Tenant: "globex"}, "articles.import")
+	other := e.start(t, bob, "articles.import")
+	if err := operation.Erase(ctx, e.db, alice.Ref()); err != nil {
+		t.Fatal(err)
+	}
+	for id, want := range map[uuid.UUID]bool{mine.ID: false, elsewhere.ID: false, other.ID: true} {
+		n, err := e.db.NewSelect().Model((*operation.Operation)(nil)).Where("id = ?", id).Count(ctx)
+		if err != nil || (n == 1) != want {
+			t.Errorf("%s: %d rows, %v", id, n, err)
+		}
+	}
+	if err := operation.Erase(ctx, e.db, identity.Ref{}); err == nil {
+		t.Fatal("expected error for empty subject")
+	}
+}

@@ -299,3 +299,22 @@ func TestNewStorePanics(t *testing.T) {
 	}
 	assert.Len(t, feature.NewStore(db, catalog).Catalog(), 2)
 }
+
+func TestErase(t *testing.T) {
+	db := dbtest.Open(t, feature.Migrations())
+	ctx := context.Background()
+	s := feature.NewStore(db, catalog)
+	set(t, s, search, feature.Subject(userRef("u1")), feature.On)
+	set(t, s, editor, feature.Subject(userRef("u1")), feature.Off)
+	set(t, s, search, feature.Subject(userRef("u2")), feature.On)
+	set(t, s, search, feature.Tenant("acme"), feature.On)
+
+	require.NoError(t, feature.Erase(ctx, db, userRef("u1")))
+	settings, err := s.Settings(ctx, search)
+	require.NoError(t, err)
+	assert.Len(t, settings, 2)
+	settings, err = s.Settings(ctx, editor)
+	require.NoError(t, err)
+	assert.Empty(t, settings)
+	assert.Error(t, feature.Erase(ctx, db, identity.Ref{}))
+}

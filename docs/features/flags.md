@@ -279,9 +279,10 @@ func (s *Store) Clear(ctx context.Context, f Flag, scope Scope) error
 func (s *Store) Settings(ctx context.Context, f Flag) ([]Setting, error)
 func (s *Store) Prune(ctx context.Context) (int, error)
 func (s *Store) WithDB(db bun.IDB) *Store
+func Erase(ctx context.Context, db bun.IDB, ref identity.Ref) error
 ```
 
-`Active` 检查一个开关，`For` 一次读出主体的全部开关（之后的 `Flags.Active` 在内存中判断）。`Set`、`Clear` 修改一个范围上的设置，`Prune` 删除已不在 `Catalog` 中的开关的设置。
+`Active` 检查一个开关，`For` 一次读出主体的全部开关（之后的 `Flags.Active` 在内存中判断）。`Set`、`Clear` 修改一个范围上的设置，`Prune` 删除已不在 `Catalog` 中的开关的设置。包级函数 `Erase` 删除为一个主体单独做的设置，登记到[注销账号](privacy.md#framework-sources)。
 
 ### Scope、State
 
