@@ -8,13 +8,12 @@ import XMarkdown from "@ant-design/x-markdown"
 import { describeError } from "@go-tenon/client"
 import {
   type AssistantOptions,
-  AttachmentError,
   type AttachmentOptions,
   fileParts,
   type PendingApproval,
   useAssistantChat,
+  useAssistantComposer,
   useAssistantHistory,
-  useAttachments,
 } from "@go-tenon/shell/chat"
 import type { FileUIPart, UIMessage } from "ai"
 import { Alert, Button, Card, Drawer, Flex, Space, Spin, Typography } from "antd"
@@ -192,9 +191,6 @@ function SentFiles({ files }: { files: FileUIPart[] }): ReactNode {
   )
 }
 
-/** 错误的说明：附件的问题直接显示，其他按接口错误描述。 */
-const messageOf = (err: unknown) => (err instanceof AttachmentError ? err.message : describeError(err).message)
-
 /** 等待审批的工具调用：显示参数，批准或拒绝。 */
 function Approvals({
   pending,
@@ -238,15 +234,12 @@ function Conversation({
   toolTitles = {},
   renderPart,
   height = "100%",
-  attachments: attachmentOptions,
   ...options
 }: AssistantChatProps & { messages: UIMessage[] }): ReactNode {
-  const canAttach = attachmentOptions !== false
-  const chat = useAssistantChat({ ...options, messages, attachments: attachmentOptions || undefined })
-  const attachments = useAttachments(attachmentOptions || undefined)
+  const chat = useAssistantChat({ ...options, messages })
+  const composer = useAssistantComposer(chat)
+  const { attachments, canAttach } = composer
   const picker = useRef<HTMLInputElement>(null)
-  const [text, setText] = useState("")
-  const [error, setError] = useState<unknown>()
   const bubbles = toBubbles(chat.messages)
   const streamingKey = chat.status === "streaming" ? bubbles[bubbles.length - 1]?.key : undefined
   const items: BubbleItemType[] = bubbles.map((b) => ({
@@ -273,24 +266,6 @@ function Conversation({
   if (chat.status === "submitted")
     items.push({ key: "loading", role: "ai", placement: "start", content: "", loading: true })
 
-  const files = attachments.files
-  const awaiting = chat.pending.length > 0
-  // 插话只能是文字：回答进行中不能发送附件。
-  const canSend = !awaiting && (text.trim() !== "" || files.length > 0) && !(chat.busy && files.length > 0)
-  const submit = async (value: string) => {
-    if (!canSend) return
-    setText("")
-    attachments.clear()
-    setError(undefined)
-    try {
-      await chat.send(value, files)
-    } catch (err) {
-      setError(err)
-      setText(value)
-      attachments.add(files)
-    }
-  }
-  const failure = error ?? chat.error
   return (
     <Flex vertical gap={12} style={{ height }}>
       <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
@@ -301,9 +276,7 @@ function Conversation({
         )}
       </div>
       <Approvals pending={chat.pending} respond={chat.respond} toolTitles={toolTitles} />
-      {failure || attachments.error ? (
-        <Alert type="error" showIcon title={attachments.error ?? messageOf(failure)} />
-      ) : null}
+      {composer.error !== undefined ? <Alert type="error" showIcon title={composer.error} /> : null}
       {canAttach && (
         <input
           ref={picker}
@@ -319,18 +292,18 @@ function Conversation({
         />
       )}
       <Sender
-        value={text}
-        onChange={setText}
+        value={composer.text}
+        onChange={composer.setText}
         placeholder={chat.busy ? "回答进行中，输入的内容会插入这次回答" : placeholder}
         loading={chat.busy}
         // 回答进行中也可以发送：消息插入这次回答（插话）。
-        onSubmit={(v) => void submit(v)}
+        onSubmit={() => void composer.submit()}
         onCancel={() => void chat.stop()}
-        disabled={awaiting}
+        disabled={composer.awaiting}
         onPasteFile={canAttach ? (list) => attachments.add(list) : undefined}
         header={
           // 只在有附件时渲染：清空后立即消失，不留下收起中的面板。
-          files.length > 0 && (
+          attachments.files.length > 0 && (
             <Sender.Header title="附件" open closable={false}>
               <FileCard.List
                 items={attachments.items.map((a) => ({
@@ -353,13 +326,15 @@ function Conversation({
               aria-label="添加附件"
               title={chat.busy ? "回答进行中不能发送文件" : "添加图片或文件"}
               icon={<PaperClipOutlined />}
-              disabled={chat.busy || awaiting}
+              disabled={chat.busy || composer.awaiting}
               onClick={() => picker.current?.click()}
             />
           ) : undefined
         }
         // 只有附件、没有文字时也可以发送。
-        suffix={(node, { components: { SendButton } }) => (chat.busy ? node : <SendButton disabled={!canSend} />)}
+        suffix={(node, { components: { SendButton } }) =>
+          chat.busy ? node : <SendButton disabled={!composer.canSend} />
+        }
       />
     </Flex>
   )

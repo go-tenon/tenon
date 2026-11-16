@@ -19,6 +19,7 @@
 - [导入与导出](#transfer)
 - [AI 对话](#ai-chat)
     - [附件](#chat-attachments)
+    - [输入框](#chat-composer)
 
 <a id="tabs"></a>
 ## 多标签
@@ -335,9 +336,30 @@ const chat = useAssistantChat({
 
 - 不设置 `upload` 时，文件以 data URL 随消息发送。data URL 比文件大约三分之一，默认限制下请求体最多约 7 MiB，服务端的[请求体上限](../http/requests.md#body-size)要放宽到 8 MiB；调整了 `maxTotalSize` 时相应调整。
 - 设置了 `upload` 时，请求体和对话存储都只有链接，适合较大的文件，例如用 `@go-tenon/client` 的 `uploadFile` [直传到 S3](../libraries/direct-uploads.md) 后签发一个读取地址。链接由模型服务下载，必须能从公网访问。
-- 附件不符合限制、或者回答进行中带附件时（插话只能是文字），`send` 抛出 `AttachmentError`，它的 `message` 可以直接显示，`reason` 是 `type`、`size`、`total`、`count` 或 `busy`。
+- `attachments: false` 时不能发送附件。
+- 附件不符合限制、回答进行中带附件（插话只能是文字）或者不能发送附件时，`send` 抛出 `AttachmentError`，它的 `message` 可以直接显示，`reason` 是 `type`、`size`、`total`、`count`、`busy` 或 `disabled`。
 
-外观用 `useAttachments(options)` 管理待发送的附件：选择、粘贴或拖入文件时 `add`，`remove` 移除一个，发送后 `clear`。不符合限制的文件不加入，`error` 是原因；`items` 中图片的 `preview` 是预览地址，移除和卸载时释放。`fileParts(message.parts)` 取出消息中的文件片段（`{ mediaType, filename, url }`），用于显示已经发送的附件。
+<a id="chat-composer"></a>
+### 输入框
+
+`useAssistantComposer(chat)` 是输入框的逻辑，外观只负责显示，现成的 `AssistantChat` 都用它：
+
+```tsx
+const chat = useAssistantChat({ api, id, messages, attachments: { accept: "image/*" } })
+const composer = useAssistantComposer(chat)
+
+<textarea value={composer.text} onChange={(e) => composer.setText(e.target.value)} disabled={composer.awaiting} />
+<button disabled={!composer.canSend} onClick={() => void composer.submit()}>发送</button>
+{composer.error && <p role="alert">{composer.error}</p>}
+```
+
+- `text`、`setText`：输入的文字。
+- `attachments`：待发送的附件（`useAttachments`），选择、粘贴或拖入文件时 `add`，`remove` 移除一个；`canAttach` 为 `false` 时（`attachments: false`）不显示添加附件的入口。不符合限制的文件不加入，`attachments.error` 是原因；`items` 中图片的 `preview` 是预览地址，移除和卸载时释放。
+- `canSend`：有文字或附件、没有等待审批的工具调用，并且回答进行中时只有文字。`awaiting` 表示有等待审批的工具调用。
+- `submit`：发送并清空输入框。`send` 抛出错误时（附件不符合限制、上传失败、插话失败）恢复文字和附件；请求本身失败时 `useChat` 不抛出错误，输入框已经清空，原因在 `error` 中。
+- `error`：附件、发送或对话出错的说明，可以直接显示。
+
+`fileParts(message.parts)` 取出消息中的文件片段（`{ mediaType, filename, url }`），用于显示已经发送的附件。
 
 <a id="troubleshooting"></a>
 ## 常见问题

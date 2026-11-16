@@ -5,14 +5,13 @@
 import { describeError } from "@go-tenon/client"
 import {
   type AssistantOptions,
-  AttachmentError,
   type AttachmentOptions,
   type Attachments,
   fileParts,
   type PendingApproval,
   useAssistantChat,
+  useAssistantComposer,
   useAssistantHistory,
-  useAttachments,
 } from "@go-tenon/shell/chat"
 import type { FileUIPart, UIMessage } from "ai"
 import { ArrowUp, Bot, CircleCheck, CircleX, FileText, LoaderCircle, Paperclip, Square, Wrench, X } from "lucide-react"
@@ -296,9 +295,6 @@ function PendingFiles({ attachments }: { attachments: Attachments }): ReactNode 
   )
 }
 
-/** 错误的说明：附件的问题直接显示，其他按接口错误描述。 */
-const messageOf = (err: unknown) => (err instanceof AttachmentError ? err.message : describeError(err).message)
-
 /** 等待审批的工具调用：显示参数，批准或拒绝。 */
 function Confirmations({
   pending,
@@ -338,38 +334,20 @@ function Conversation({
   placeholder = "输入消息，Enter 发送",
   toolTitles = {},
   renderPart,
-  attachments: attachmentOptions,
   className,
   ...options
 }: AssistantChatProps & { messages: UIMessage[] }): ReactNode {
-  const canAttach = attachmentOptions !== false
-  const chat = useAssistantChat({ ...options, messages, attachments: attachmentOptions || undefined })
-  const attachments = useAttachments(attachmentOptions || undefined)
+  const chat = useAssistantChat({ ...options, messages })
+  const composer = useAssistantComposer(chat)
+  const { attachments, canAttach } = composer
   const picker = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
-  const [text, setText] = useState("")
-  const [error, setError] = useState<unknown>()
   const turns = toTurns(chat.messages)
   const streamingKey = chat.status === "streaming" ? turns[turns.length - 1]?.key : undefined
-  const awaiting = chat.pending.length > 0
 
-  const files = attachments.files
-  // 插话只能是文字：回答进行中不能发送附件。
-  const canSend = !awaiting && (text.trim() !== "" || files.length > 0) && !(chat.busy && files.length > 0)
-  const submit = async (e?: FormEvent) => {
+  const submit = (e?: FormEvent) => {
     e?.preventDefault()
-    const value = text
-    if (!canSend) return
-    setText("")
-    attachments.clear()
-    setError(undefined)
-    try {
-      await chat.send(value, files)
-    } catch (err) {
-      setError(err)
-      setText(value)
-      attachments.add(files)
-    }
+    void composer.submit()
   }
   const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
     if (!canAttach || e.clipboardData.files.length === 0) return
@@ -390,10 +368,9 @@ function Conversation({
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault()
-      void submit()
+      submit()
     }
   }
-  const failure = error ?? chat.error
   return (
     <section
       aria-label="AI 对话"
@@ -462,25 +439,25 @@ function Conversation({
         </MessageScrollerProvider>
       )}
       <Confirmations pending={chat.pending} respond={chat.respond} toolTitles={toolTitles} />
-      {failure || attachments.error ? (
+      {composer.error !== undefined && (
         <p role="alert" className="text-sm text-destructive">
-          {attachments.error ?? messageOf(failure)}
+          {composer.error}
         </p>
-      ) : null}
-      <form onSubmit={(e) => void submit(e)}>
+      )}
+      <form onSubmit={submit}>
         <InputGroup>
-          {files.length > 0 && (
+          {attachments.files.length > 0 && (
             <InputGroupAddon align="block-start">
               <PendingFiles attachments={attachments} />
             </InputGroupAddon>
           )}
           <InputGroupTextarea
-            value={text}
-            onChange={(e) => setText(e.target.value)}
+            value={composer.text}
+            onChange={(e) => composer.setText(e.target.value)}
             onKeyDown={onKeyDown}
             onPaste={onPaste}
             placeholder={chat.busy ? "回答进行中，输入的内容会插入这次回答" : placeholder}
-            disabled={awaiting}
+            disabled={composer.awaiting}
             aria-label="消息"
           />
           <InputGroupAddon align="block-end" className="gap-1">
@@ -504,7 +481,7 @@ function Conversation({
                   variant="ghost"
                   aria-label="添加附件"
                   title={chat.busy ? "回答进行中不能发送文件" : "添加图片或文件"}
-                  disabled={chat.busy || awaiting}
+                  disabled={chat.busy || composer.awaiting}
                   onClick={() => picker.current?.click()}
                 >
                   <Paperclip />
@@ -523,7 +500,13 @@ function Conversation({
                 <Square />
               </InputGroupButton>
             )}
-            <InputGroupButton type="submit" size="icon-sm" variant="default" aria-label="发送" disabled={!canSend}>
+            <InputGroupButton
+              type="submit"
+              size="icon-sm"
+              variant="default"
+              aria-label="发送"
+              disabled={!composer.canSend}
+            >
               <ArrowUp />
             </InputGroupButton>
           </InputGroupAddon>
