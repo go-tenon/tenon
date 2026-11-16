@@ -357,6 +357,7 @@ app.storage.get<{ collapsed: boolean }>("sider")
 | `resourceModel`、`useResourceList`、`useResourceItem`、`useResourceMutations`、`formValues` | [资源](resources.md#model)的模型 |
 | `useNotifications` | 通知：未读数、列表、标记已读 |
 | `useActivity` | 操作日志：从新到旧分页读取 |
+| `useImport`、`useExport` | 后台导入与导出：上传、发起、进度和结果 |
 | `trackOperation`、`dismissOperation`、`clearOperations`、`useOperations`、`useOperation` | 后台操作的进度 |
 | `useAssistantChat`、`useAssistantHistory`、`pendingApprovals` | `@go-tenon/shell/chat` 中的 AI 对话 |
 | `useNewVersion`、`watchVersion` | 新版本提示 |

@@ -157,6 +157,7 @@ function Layout() {
 | `OperationCenter` | 任务中心：角标是进行中的操作数，点开是 `trackOperation` 登记的操作和进度，结束的可以移除。没有登记过操作时不显示 |
 | `OperationProgress` | 页面中一个操作的进度：`<OperationProgress id={op.id} />` |
 | `ActivityTimeline` | [操作日志](../features/activity.md#history-page)的时间线：从新到旧分页，代为登录时注明实际操作的人；读取失败时可以重试 |
+| `ImportButton`、`ExportButton` | [后台导入](../features/background-imports.md#import-button)、[后台导出](../features/background-exports.md#export-button)：对话框中显示上传、进度和结果，导入可以下载没有导入的行，导出完成后下载 |
 | `AssistantChat` | AI 对话（[Ant Design X](https://x.ant.design)）：回答用 Markdown 渲染（`@ant-design/x-markdown`），思考过程可以展开，工具调用列出参数和结果；需要审批的调用显示“批准”和“拒绝”，等待审批时不能发送；回答进行中输入的内容插入这次回答，停止按钮停止回答；插话显示为单独的用户消息 |
 | `AssistantButton` | 顶栏的按钮，点开是侧边的 `AssistantChat` |
 
@@ -204,6 +205,7 @@ bun add ai@^7.0.159 @ai-sdk/react@^4.0.163 @ant-design/x@^2.10.0 @ant-design/x-m
 | `UserMenu`、`TenantSwitcher`、`NewVersionNotice` | 顶栏的部件 |
 | `NotificationBell`、`OperationCenter`、`OperationProgress`、`OperationProgressBar` | 通知和后台任务 |
 | `ActivityTimeline` | 操作日志 |
+| `ImportButton`、`ExportButton` | 导入与导出 |
 | `AssistantChat`、`AssistantButton` | `@go-tenon/admin/chat` 中的 AI 对话 |
 | `ResourcePage`、`ResourceForm`、`FieldValue`、`defaultInput` | [资源](resources.md#admin)的页面 |
 | `defaultIcons` | 默认登记的图标 |

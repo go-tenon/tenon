@@ -11,6 +11,7 @@ import { type App, AppRoot, createApp, type RouterContext, useApp } from "./app"
 import { type AssistantChat, useAssistantChat } from "./chat"
 import { type NotificationItem, type Notifications, type NotificationsSource, useNotifications } from "./notifications"
 import { dismissOperation, type TrackedOperation, trackOperation, useOperations } from "./operations"
+import { type Export, type Import, useExport, useImport } from "./transfer"
 
 afterEach(() => {
   cleanup()
@@ -132,6 +133,130 @@ describe("useActivity", () => {
     n = 2
     await act(() => a?.refresh() ?? Promise.resolve())
     await waitFor(() => expect(a?.items[0]?.text).toBe("第 2 条"))
+  })
+})
+
+/** 按顺序推送进度，最后一个事件之后结束。 */
+function stream(...ops: Partial<OperationLike>[]) {
+  return async function* () {
+    for (const op of ops) {
+      yield { event: "progress", data: { id: "op", status: "running", total: 0, processed: 0, failed: 0, ...op } }
+    }
+  }
+}
+
+describe("useImport、useExport", () => {
+  it("导入：上传、发起、读取进度，结束后可以下载没有导入的行；进度出现在操作中心", async () => {
+    const failures = vi.fn(async () => {})
+    const upload = vi.fn(async (_: File, o: { onProgress?: (r: number) => void }) => {
+      o.onProgress?.(0.5)
+      return "file1"
+    })
+    const start = vi.fn(async () => ({ id: "imp1" }))
+    let imp: Import | undefined
+    let ops: readonly TrackedOperation[] = []
+    await mount(() => (
+      <>
+        <Probe
+          use={() =>
+            useImport({
+              title: "导入文章",
+              upload,
+              start,
+              progress: () =>
+                stream({ total: 10, processed: 5 }, { status: "completed", total: 10, processed: 10, failed: 2 }),
+              failures,
+            })
+          }
+          onValue={(v) => (imp = v)}
+        />
+        <Probe use={useOperations} onValue={(v) => (ops = v)} />
+      </>
+    ))
+    await waitFor(() => expect(imp?.phase).toBe("idle"))
+    await act(() => imp?.start(new File(["a"], "articles.xlsx")) ?? Promise.resolve())
+    expect(start).toHaveBeenCalledWith("file1")
+    await waitFor(() => expect(imp?.phase).toBe("completed"))
+    expect(imp?.operation?.operation?.failed).toBe(2)
+    expect(ops[0]?.title).toBe("导入文章")
+    await act(() => imp?.downloadFailures?.() ?? Promise.resolve())
+    expect(failures).toHaveBeenCalledWith("imp1")
+    act(() => imp?.reset())
+    expect(imp?.phase).toBe("idle")
+  })
+
+  it("导入：全部成功时没有下载失败行；上传出错时是 failed 并带着错误", async () => {
+    let imp: Import | undefined
+    let fail = false
+    await mount(() => (
+      <Probe
+        use={() =>
+          useImport({
+            upload: async () => {
+              if (fail) throw new Error("文件太大")
+              return "f"
+            },
+            start: async () => ({ id: "imp2" }),
+            progress: () => stream({ status: "completed", total: 1, processed: 1 }),
+            failures: async () => {},
+          })
+        }
+        onValue={(v) => (imp = v)}
+      />
+    ))
+    await waitFor(() => expect(imp).toBeDefined())
+    await act(() => imp?.start(new File(["a"], "a.csv")) ?? Promise.resolve())
+    await waitFor(() => expect(imp?.phase).toBe("completed"))
+    expect(imp?.downloadFailures).toBeUndefined()
+    act(() => imp?.reset())
+    fail = true
+    await act(() => imp?.start(new File(["a"], "a.csv")) ?? Promise.resolve())
+    expect(imp?.phase).toBe("failed")
+    expect(imp?.error).toEqual(new Error("文件太大"))
+  })
+
+  it("导出：完成后取进度事件中的下载地址；失败时是 failed", async () => {
+    let exp: Export | undefined
+    await mount(() => (
+      <Probe
+        use={() =>
+          useExport({
+            start: async () => ({ id: "exp1" }),
+            progress: () =>
+              stream({ total: 3, processed: 1 }, {
+                status: "completed",
+                total: 3,
+                processed: 3,
+                url: "/storage/x.xlsx",
+                filename: "articles.xlsx",
+              } as Partial<OperationLike>),
+          })
+        }
+        onValue={(v) => (exp = v)}
+      />
+    ))
+    await waitFor(() => expect(exp).toBeDefined())
+    await act(() => exp?.start() ?? Promise.resolve())
+    await waitFor(() => expect(exp?.phase).toBe("completed"))
+    expect(exp?.file).toEqual({ url: "/storage/x.xlsx", filename: "articles.xlsx" })
+
+    let failed: Export | undefined
+    cleanup()
+    await mount(() => (
+      <Probe
+        use={() =>
+          useExport({
+            start: async () => ({ id: "exp2" }),
+            progress: () => stream({ status: "failed", error: "export.too_large" }),
+          })
+        }
+        onValue={(v) => (failed = v)}
+      />
+    ))
+    await waitFor(() => expect(failed).toBeDefined())
+    await act(() => failed?.start() ?? Promise.resolve())
+    await waitFor(() => expect(failed?.phase).toBe("failed"))
+    expect(failed?.file).toBeUndefined()
   })
 })
 

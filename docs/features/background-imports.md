@@ -9,6 +9,7 @@
     - [处理导入](#processing-imports)
     - [进度与失败的行](#progress-and-failures)
     - [清理](#cleanup)
+    - [在页面中使用](#import-button)
 - [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
@@ -249,6 +250,35 @@ data: {"id":"0193e7a2-7c1e-7b4a-9d2f-3c5a1e8b6f10","kind":"articles.import","sta
 ### 清理
 
 导入记录和失败的行由[清理后台操作](operations.md#cleanup)一起删除。
+
+<a id="import-button"></a>
+### 在页面中使用
+
+框架提供了现成的导入按钮：运营后台（antd）的 `ImportButton` 和 shadcn registry 的 `tenon-transfer`，逻辑都来自 `@go-tenon/shell` 的 `useImport`。点击按钮打开对话框，用户选择表格后，它依次上传文件、发起导入、显示进度，结束后显示成功和没有导入的行数，有没有导入的行时可以下载它们。进度同时出现在顶栏的[任务中心](../responses/app-shell-features.md#operations)，用户关闭对话框也能看到。
+
+把上面几个接口交给它：
+
+```tsx
+<ImportButton
+  title="导入文章"
+  source={{
+    upload: async (file) => (await api.file.upload({ file })).id,
+    start: (fileId) => api.article.importStart({ file_id: fileId }),
+    progress: (id) => (o) => api.article.importProgress(id, o),
+    failures: async (id) => {
+      const { blob, filename } = await api.article.importFailures(id)
+      saveBlob(blob, filename || "failures.xlsx")
+    },
+  }}
+  template={downloadTemplate}
+  onCompleted={() => void queryClient.invalidateQueries({ queryKey: queries.article.key() })}
+/>
+```
+
+- `upload` 上传表格，返回文件 ID，这里用的是[服务端上传接口](../libraries/file-uploads.md#rest-upload)；大文件可以改用[客户端直传](../libraries/direct-uploads.md)。
+- `failures` 可以省略，省略时不提供下载。
+- `template` 是“下载导入模板”的链接，见[下载模板](import-export.md#templates)。
+- `onCompleted` 在导入完成时调用一次，通常让列表重新读取。
 
 <a id="troubleshooting"></a>
 ## 常见问题

@@ -154,6 +154,14 @@
       "files": ["activity.tsx"]
     },
     {
+      "name": "tenon-transfer",
+      "type": "registry:block",
+      "title": "导入与导出",
+      "description": "ImportButton（上传表格、后台导入、进度、下载没有导入的行）和 ExportButton（后台导出、进度、下载），逻辑来自 @go-tenon/shell 的 useImport、useExport。",
+      "registryDependencies": ["button", "dialog", "progress"],
+      "files": ["transfer.tsx"]
+    },
+    {
       "name": "tenon-markdown",
       "type": "registry:block",
       "title": "消息的 Markdown",
