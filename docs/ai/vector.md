@@ -320,8 +320,8 @@ hits, err := a.find.Find(ctx, articleID, question)
 if err != nil {
     return nil, err
 }
-hits, err = ai.RerankBy(ctx, a.reranker, question, hits, func(h vector.Hit[ChunkDoc]) string {
-    return h.Doc.Text
+hits, err = ai.RerankBy(ctx, a.reranker, ai.Text(question), hits, func(h vector.Hit[ChunkDoc]) ai.Content {
+    return ai.Text(h.Doc.Text)
 }, 5)
 ```
 

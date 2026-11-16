@@ -18,6 +18,7 @@
     - [实现 HistoryStore](#history-store)
     - [群聊中的 AI](#group-chat)
 - [图片、语音和向量](#media)
+    - [图片向量](#image-embeddings)
 - [决策](#decisions)
 - [部署](#deployment)
     - [多个实例](#multiple-instances)
@@ -177,16 +178,18 @@ if mentionsAssistant(msg) {
 | `ai.Imager` | `Image(ctx, ai.ImageRequest) (ai.Media, error)` | 按描述生成图片，给出参考图时编辑或改绘 |
 | `ai.Speaker` | `Speak(ctx, ai.SpeechRequest) (ai.Media, error)` | 把文字合成为语音 |
 | `ai.Transcriber` | `Transcribe(ctx, ai.TranscriptionRequest) (string, error)` | 把语音识别为文字 |
-| `ai.Embedder` | `Embed(ctx, texts []string) ([][]float32, error)` | 把文本转换为向量 |
-| `ai.Reranker` | `Rerank(ctx, query string, docs []string, limit int) ([]ai.Ranked, error)` | 按与查询的相关度给文档排序 |
+| `ai.Embedder` | `Embed(ctx, ai.EmbedRequest) ([][]float32, error)` | 把文字、图片转换为向量 |
+| `ai.Reranker` | `Rerank(ctx, query ai.Content, docs []ai.Content, limit int) ([]ai.Ranked, error)` | 按与查询的相关度给文档排序 |
 
-`ai.Media` 是图片或音频的内容和 MIME 类型。
+`ai.Media` 是图片、音频或视频的内容和 MIME 类型。向量和重排的输入是 `ai.Content`：一段文字（`ai.Text("…")`）、一张图片（`ai.Content{ai.MediaPart(img)}`），或者文字和图片放在一起（`ai.Content{ai.TextPart(title), ai.MediaPart(img)}`），一项得到一个向量。模型不接受某种输入时返回 `ai.ErrUnsupportedInput`，例如只支持文字的模型收到了图片。
 
 这些能力是单独的调用。在对话中让模型看图、听音频，见[发送图片和文件](chat.md#files)。
 
 `ai/openai` 通过 OpenAI 兼容接口实现这五种能力。`openai.New` 和 `chat.NewModel` 一样接收 `ai.ModelConfig`，不访问网络，可以在每次使用时按当时的配置创建。OpenAI、火山方舟、硅基流动、通义千问的兼容模式等都提供这类接口，但每家支持的能力不同，以厂商文档为准。
 
 [OpenRouter](https://openrouter.ai) 使用 `ai/openrouter`，用法与 `ai/openai` 相同。它的语音和向量是 OpenAI 兼容接口，图片则使用 OpenRouter 自己的接口，所以单独提供一个包；`BaseURL` 可以不填。
+
+[阿里云百炼](https://help.aliyun.com/zh/model-studio/)使用 `ai/dashscope`，`BaseURL` 与对话模型相同，填兼容接口的地址（`https://dashscope.aliyuncs.com/compatible-mode/v1` 或工作空间的地址）。它的向量和重排使用百炼的原生接口，支持图片，其余能力与 `ai/openai` 相同，见下文的[图片向量](#image-embeddings)。
 
 `openai.Client` 的 `OpenAI()` 返回底层的 openai-go 客户端，已经设置好地址和密钥，可以用它调用厂商自己的其他接口。
 
@@ -221,21 +224,56 @@ text, err := openai.New(cfg.Dictation).Transcribe(ctx, ai.TranscriptionRequest{
 })
 ```
 
-计算向量时一次传入多段文本。长文档先转换并切分为分段，见[文档转换与切分](documents.md)；保存和检索向量见[向量检索](vector.md)。有的厂商限制每批的数量，用 `openai.WithBatchSize` 让它分批请求；支持缩减维度的模型用 `openai.WithDimensions` 指定维度：
+计算向量时一次传入多项。长文档先转换并切分为分段，见[文档转换与切分](documents.md)；保存和检索向量见[向量检索](vector.md)。有的厂商限制每批的数量，用 `openai.WithBatchSize` 让它分批请求；支持缩减维度的模型用 `openai.WithDimensions` 指定维度：
 
 ```go
-vecs, err := openai.New(cfg.Embedding, openai.WithBatchSize(10)).Embed(ctx, []string{post.Title, post.Body})
+vecs, err := openai.New(cfg.Embedding, openai.WithBatchSize(10)).Embed(ctx, ai.EmbedRequest{
+    Inputs: []ai.Content{ai.Text(post.Title), ai.Text(post.Body)},
+})
 ```
+
+`Purpose` 标明用途：给要被检索的文档计算向量时是 `ai.ForDocument`（为空时也是它），给查询计算向量时是 `ai.ForQuery`。不少模型对二者区别对待，例如给查询加上检索的指令，查询时要标明；OpenAI 的接口不区分，`ai/openai` 忽略它。
 
 关键词搜索找到的候选，可以用重排模型按语义重新排序，只把最相关的几篇交给模型或用户。`ai.RerankBy` 直接对任意类型的列表排序：
 
 ```go
-posts, err = ai.RerankBy(ctx, openai.New(cfg.Rerank), query, posts, func(p article.Summary) string {
-    return p.Title
+posts, err = ai.RerankBy(ctx, openai.New(cfg.Rerank), ai.Text(query), posts, func(p article.Summary) ai.Content {
+    return ai.Text(p.Title)
 }, 5)
 ```
 
-重排用的是 Cohere 和 Jina 的 `POST {BaseURL}/rerank`，硅基流动、OpenRouter、vLLM 等都沿用了它，`ai/openai` 和 `ai/openrouter` 都按这个格式调用。Cohere 自己的地址填 `https://api.cohere.com/v2`。
+重排用的是 Cohere 和 Jina 的 `POST {BaseURL}/rerank`，硅基流动、OpenRouter、vLLM 等都沿用了它，`ai/openai` 和 `ai/openrouter` 都按这个格式调用，只接受文字。Cohere 自己的地址填 `https://api.cohere.com/v2`。百炼的重排地址不同，用 `ai/dashscope`。
+
+<a id="image-embeddings"></a>
+### 图片向量
+
+OpenAI 兼容的向量接口只接受文字。以文搜图、以图搜图需要多模态向量模型，`ai/dashscope` 调用百炼的多模态向量接口：
+
+```go
+emb := dashscope.New(cfg.Embedding, dashscope.WithDimensions(1024)) // Model: qwen3-vl-embedding
+
+// 商品：标题和主图融合为一个向量
+docs, err := emb.Embed(ctx, ai.EmbedRequest{Inputs: []ai.Content{
+    {ai.TextPart(p.Title), ai.MediaPart(cover)},
+}})
+
+// 用文字或用户上传的图片查询
+query, err := emb.Embed(ctx, ai.EmbedRequest{Inputs: []ai.Content{ai.Text("红色连衣裙")}, Purpose: ai.ForQuery})
+```
+
+- 每项输入可以是一段文字、一张图片，或一段文字加一张图片，不接受音频和视频。一次最多 20 项，超过时分批请求（`dashscope.WithBatchSize`）。
+- 文字和图片放在一起时，只有 `qwen3-vl-embedding`、`qwen2.5-vl-embedding` 能融合为一个向量。`tongyi-embedding-vision-plus`、`multimodal-embedding-v1` 会悄悄只取其中一种，`Embed` 发现后返回 `ai.ErrUnsupportedInput`。
+- 查询（`ai.ForQuery`）附带检索指令，用 `dashscope.WithQueryInstruct` 修改或去掉，`qwen3-vl-embedding` 这类模型用它提高检索的准确度，其他模型忽略它。
+- `WithDimensions` 指定维度，`qwen3-vl-embedding` 默认 2560 维；`multimodal-embedding-v1` 不支持，总是 1024 维。
+- 只有文字的向量模型（例如 `qwen3.7-text-embedding`）不能用这个接口，用 `ai/openai` 调用兼容接口。
+
+跨模态的相似度和同种内容之间的不在一个水平上：一段文字与它描述的图片的余弦相似度，可能和两段意思相反的文字（例如“红色”和“蓝色”）差不多高。以文搜图时按排名取结果，不要用固定的相似度阈值。
+
+`dashscope.New` 的重排可以用文字重排模型（例如 `qwen3.7-text-rerank`），也可以用多模态重排模型（`qwen3-vl-rerank`），后者的查询和文档可以是图片：
+
+```go
+ranked, err := dashscope.New(cfg.Rerank).Rerank(ctx, ai.Content{ai.MediaPart(photo)}, candidates, 10)
+```
 
 生成图片和语音通常要十几秒到几十秒，可以在后台完成的放进[队列](../background/queue.md)执行。
 
@@ -376,7 +414,7 @@ m := chattest.NewModel(
 
 ```go
 img := aitest.NewImager()            // 每次返回 aitest.PNG
-emb := aitest.NewEmbedder(1024)      // 相同的文本总是得到相同的向量
+emb := aitest.NewEmbedder(1024)      // 相同的内容总是得到相同的向量
 sp := aitest.NewSpeaker()            // 把朗读的文字当作音频内容返回
 tr := aitest.NewTranscriber("你好")  // 依次返回预设的文字
 rr := aitest.NewReranker()           // 按查询中的字符在文档中出现的比例排序
@@ -384,6 +422,12 @@ dc := aitest.NewDecider()            // 是非题 0.5，选择题选第一项，
 ```
 
 传入预设结果时按顺序返回，用完后再收到请求就返回错误；`Requests()` 返回收到的请求，`FailWith(err)` 让之后的请求失败，用于测试出错的处理。
+
+`aitest.Embedder` 给不同的内容几乎正交的向量，测不了语义。测试以文搜图时，用 `Same` 让一段描述和它描述的图片得到相同的向量：
+
+```go
+emb.Same(ai.Text("一只橘猫"), ai.Content{ai.MediaPart(catPhoto)})
+```
 
 <a id="troubleshooting"></a>
 ## 常见问题

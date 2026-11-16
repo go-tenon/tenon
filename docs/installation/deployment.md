@@ -273,6 +273,7 @@ x-app: &app
   environment:
     APP_URL: https://example.com
     DATABASE_URL: ${DATABASE_URL}
+    NATS_URL: nats://nats:4222
   restart: unless-stopped
   stop_grace_period: 45s
   depends_on:
@@ -316,6 +317,8 @@ services:
     ports: ["127.0.0.1:8222:8222"]
 # 以及顶层的 volumes: {nats: {}}
 ```
+
+容器中的 `127.0.0.1` 是容器自己，应用要用服务名访问这些服务：上面的 `x-app` 设置了 `NATS_URL`，对应配置文件中的 `nats.url: ${NATS_URL:-nats://127.0.0.1:4222}`，见[连接 NATS](../libraries/nats.md#connecting)；[缓存](../libraries/cache.md#config-servers)的 `servers` 写成 `memcached:11211`。
 
 NATS 的 `-js` 开启 JetStream，任务保存在 `/data` 中；`8222` 是它的监控端口，只监听本机，通过 SSH 隧道或内网访问。用到[生成 PDF](../libraries/pdf.md#deployment) 等功能时，再按各自的说明加上对应的服务。
 
