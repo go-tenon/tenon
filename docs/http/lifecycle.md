@@ -10,6 +10,7 @@
 - [请求的处理过程](#request-flow)
 - [平滑停止](#graceful-shutdown)
 - [健康检查](#health-checks)
+    - [没有 HTTP 服务的进程](#probe-listener)
 - [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
@@ -125,6 +126,62 @@ router.Handle("/readyz", httpx.Ready(httpx.ReadyOptions{
 
 > [!TIP]
 > 探测很频繁，在[访问日志](middleware.md#http-configuration)的 `ignore_paths` 中排除这两个路径。
+
+<a id="probe-listener"></a>
+### 没有 HTTP 服务的进程
+
+分开部署时（见[一个进程，还是三个进程](../installation/deployment.md#process-forms)），只运行 `work` 或 `schedule` 的进程没有 HTTP 服务，也就没有 `/readyz`。在 Kubernetes 这类平台上，它们同样需要健康检查：
+
+- **存活检查**让平台发现卡死的进程并重启它。
+- **就绪检查**决定滚动升级能否继续：新版本的实例连不上数据库时一直不就绪，平台暂停升级，旧版本的实例继续处理任务。worker 不接收请求，所以就绪检查只影响升级，不影响分流。
+
+给这类进程加一个运行部分 `Probes`，在单独的地址上只提供这两个路径。先把检查项提成 `App` 的方法，HTTP 服务的 `/readyz` 改为 `Checks: a.checks()`，两边共用：
+
+```go
+// checks 是就绪检查的依赖，HTTP 服务的 /readyz 和 Probes 共用。
+func (a *App) checks() []health.Check {
+    return []health.Check{
+        {Name: "database", Ping: func(ctx context.Context) error { return a.db.PingContext(ctx) }},
+    }
+}
+
+// Probes 在 cfg.ProbeAddr 上只提供存活检查和就绪检查，给没有 HTTP 服务的进程使用。
+// ProbeAddr 为空时不监听，返回的函数一直等到停止。
+func (a *App) Probes(d *command.Daemon) (func(context.Context) error, error) {
+    if a.cfg.ProbeAddr == "" {
+        return func(ctx context.Context) error { <-ctx.Done(); return nil }, nil
+    }
+    mux := http.NewServeMux()
+    mux.HandleFunc("GET /livez", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
+    mux.Handle("GET /readyz", httpx.Ready(httpx.ReadyOptions{Checks: a.checks()}))
+    ln, err := d.Listen("tcp", a.cfg.ProbeAddr)
+    if err != nil {
+        return nil, err
+    }
+    return func(ctx context.Context) error {
+        return httpx.Serve(ctx, a.cfg.HTTP, ln, mux)
+    }, nil
+}
+
+func Work(ctx context.Context, cfg Config) error {
+    return run(ctx, cfg, (*App).Worker, (*App).Probes)
+}
+
+func Schedule(ctx context.Context, cfg Config) error {
+    return run(ctx, cfg, (*App).Scheduler, (*App).Probes)
+}
+```
+
+`Config` 中加上 ``ProbeAddr string `yaml:"probe_addr"` ``，配置文件中由环境变量决定，默认不监听：
+
+```yaml
+probe_addr: ${PROBE_ADDR:-}
+```
+
+- **只在需要的平台上打开。** 容器中每个进程有自己的网络，设置 `PROBE_ADDR=:8080`，探测的端口和路径与 HTTP 服务相同，部署配置可以照搬。用 systemd 在同一台机器上运行 `work` 和 `schedule` 时不设置它：两个进程会争用同一个端口，而 systemd 通过 [`command.Daemon`](../concepts/dependencies.md#running-parts) 的就绪通知和退出状态管理进程，用不到 HTTP 探测。
+- **`serve` 和 `start` 不需要它**，HTTP 服务自己就有这两个路由。
+- **检查项按进程的需要选择。** worker 和调度器都需要数据库；HTTP 服务独有的依赖不必放进来。
+- `httpx.Serve` 沿用 `http` 段的超时设置，停止时探测端口和其他部分同时开始关闭。
 
 <a id="troubleshooting"></a>
 ## 常见问题

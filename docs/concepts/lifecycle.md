@@ -80,7 +80,7 @@
 - **存活检查**（liveness）：进程是否还能响应，失败时平台重启它。它只确认进程能响应，不检查数据库等依赖：数据库故障时重启应用无济于事。
 - **就绪检查**（readiness）：现在能否处理工作，失败时平台不再把流量转给这个实例。它检查必需的依赖是否可用。
 
-要检查哪些依赖、怎样执行检查，由与传输方式无关的 `health` 包负责；HTTP 服务用 `httpx.Ready` 把结果作为就绪检查返回，写法见[健康检查](../http/lifecycle.md#health-checks)。
+要检查哪些依赖、怎样执行检查，由与传输方式无关的 `health` 包负责；HTTP 服务用 `httpx.Ready` 把结果作为就绪检查返回，写法见[健康检查](../http/lifecycle.md#health-checks)。只运行队列 worker 或调度器的进程没有 HTTP 服务，可以另开一个只提供健康检查的端口，见[没有 HTTP 服务的进程](../http/lifecycle.md#probe-listener)。
 
 <a id="troubleshooting"></a>
 ## 常见问题
