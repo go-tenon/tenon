@@ -196,7 +196,7 @@ Tenon 的每个包都可以单独使用，按需引入即可。顶层的包分�
 功能        apitoken  login  oauthserver  authz  notification  push  activity  feature  settings  operation  webhook  search  vector  sheet/imports  sheet/exports  ai
 入口        httpx  web  realtime  mcpx  command
 基础设施    database  queue  schedule  cachex  lock  ratelimit  captcha  broadcast  filesystem  imgproxy  mail  sms  pdf  outbound  sheet  document
-基础        errorx  identity  config  cleanup  logging  telemetry  i18n  enum  page  form  hashing  crypt  acquire
+基础        errorx  identity  config  cleanup  logging  telemetry  health  i18n  enum  page  form  hashing  crypt  acquire
 ```
 
 这条规则由架构测试 `internal/checks/archtest` 保证，新增的导入违反分层时测试会失败。名字以 `test` 结尾的子包（`dbtest`、`queuetest`、`mailtest` 等）是测试用的替身和工具。
@@ -216,6 +216,7 @@ Tenon 的每个包都可以单独使用，按需引入即可。顶层的包分�
 | `errorx` | 带稳定错误码和分类的业务错误 | [错误处理](../general/errors.md) |
 | `form` | 按 Huma 标签转换、验证文本字段，表单和表格导入共用 | [表单](../web/forms.md) |
 | `hashing` | 密码哈希 | [哈希](../security/hashing.md) |
+| `health` | 检查依赖是否可用，供就绪检查使用 | [健康检查](../http/lifecycle.md#health-checks) |
 | `i18n` | 组合 go-i18n 消息目录 | [本地化](../general/localization.md) |
 | `identity` | 已认证的主体，在 context 中传递 | [认证](../security/authentication.md) |
 | `logging` | 构造 slog 日志器，传递请求关联字段 | [日志](../general/logging.md) |
@@ -254,7 +255,7 @@ Tenon 的每个包都可以单独使用，按需引入即可。顶层的包分�
 
 | 包 | 用途 | 文档 |
 | --- | --- | --- |
-| `httpx` | 中间件、平滑停机、就绪检查、单页应用 | [中间件](../http/middleware.md)、[HTTP 服务的生命周期](../http/lifecycle.md) |
+| `httpx` | 中间件、平滑停机、HTTP 就绪检查、单页应用 | [中间件](../http/middleware.md)、[HTTP 服务的生命周期](../http/lifecycle.md) |
 | `httpx/rest` | 基于 Huma 的路由注册、错误转换与 OpenAPI | [路由](../http/routing.md) |
 | `httpx/rest/clientgen` | 从路由生成 TypeScript 与 Go 客户端 | [客户端代码](../http/clients.md) |
 | `web` | 服务端渲染的公开页面：组件、错误页、表单、静态文件 | [视图](../web/views.md) |

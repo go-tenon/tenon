@@ -102,7 +102,7 @@ router.Get("/livez", func(w http.ResponseWriter, _ *http.Request) {
 })
 router.Handle("/readyz", httpx.Ready(httpx.ReadyOptions{
     Draining: &draining,
-    Checks: []httpx.Check{
+    Checks: []health.Check{
         {Name: "database", Ping: func(ctx context.Context) error { return db.PingContext(ctx) }},
         {Name: "redis", Ping: func(ctx context.Context) error {
             return rdb.Do(ctx, rdb.B().Ping().Build()).Error()
@@ -112,7 +112,7 @@ router.Handle("/readyz", httpx.Ready(httpx.ReadyOptions{
 }))
 ```
 
-`draining` 与传给 `httpx.OnDraining` 的是同一个。每个 `Ping` 都写成闭包，到检查时才使用依赖：`openapi`、`routes` 命令用 `nil` 依赖构造同一套路由（见[依赖装配](../concepts/dependencies.md#assembling-the-application)），`db.PingContext` 这样的方法值在 `db` 为 `nil` 时取值就会 panic。全部检查并行执行，每项最多 1 秒，超时按失败处理。必需的检查都通过时返回 `200`，否则返回 `503`；正在排空时直接返回 `503`。响应体列出每项的结果：
+`draining` 与传给 `httpx.OnDraining` 的是同一个。每个 `Ping` 都写成闭包，到检查时才使用依赖：`openapi`、`routes` 命令用 `nil` 依赖构造同一套路由（见[依赖装配](../concepts/dependencies.md#assembling-the-application)），`db.PingContext` 这样的方法值在 `db` 为 `nil` 时取值就会 panic。检查项 `health.Check` 和执行检查的 `health.Checker` 在与传输方式无关的 `health` 包中，`httpx.Ready` 只负责排空的判断和响应格式。全部检查并行执行，每项最多 1 秒，超时按失败处理。必需的检查都通过时返回 `200`，否则返回 `503`；正在排空时直接返回 `503`。响应体列出每项的结果：
 
 ```json
 {"status":"ready","checks":{"cache":"failed","database":"ok","redis":"ok"}}
@@ -205,7 +205,7 @@ func Ready(opts ReadyOptions) http.Handler
 ```go
 type ReadyOptions struct {
     Draining *Draining
-    Checks   []Check
+    Checks   []health.Check
     Timeout  time.Duration
     Logger   *slog.Logger
 }
@@ -213,7 +213,9 @@ type ReadyOptions struct {
 
 `Draining` 为 `nil` 时跳过排空检查。`Timeout` 是每项检查的超时，默认 1 秒。`Logger` 记录检查结果的变化。
 
-### Check
+### health.Check、health.Checker
+
+包 `github.com/go-tenon/tenon/health`。
 
 ```go
 type Check struct {
@@ -221,6 +223,19 @@ type Check struct {
     Ping     func(ctx context.Context) error
     Optional bool
 }
+
+func New(opts Options) *Checker
+func (c *Checker) Run(ctx context.Context) Report
 ```
 
 `Name` 出现在结果和日志中；`Ping` 返回错误表示不可用；`Optional` 为 `true` 时，失败只在结果中报告，不让就绪检查失败。
+
+`Checker` 是 `httpx.Ready` 内部使用的检查器，不依赖 HTTP。`Run` 并行执行全部检查，返回的 `Report` 中 `Ready` 报告必需的检查是否都通过，`Results` 列出每一项的结果和失败原因；日志只在结果变化时记录。HTTP 之外的入口需要报告健康状态时（例如 gRPC 的健康检查服务），直接使用它：
+
+```go
+checker := health.New(health.Options{Checks: checks})
+report := checker.Run(ctx)
+if !report.Ready {
+    // 按入口的协议报告“未就绪”
+}
+```
