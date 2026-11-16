@@ -324,7 +324,7 @@ services:
 
 NATS 的 `-js` 开启 JetStream，任务保存在 `/data` 中；`8222` 是它的监控端口，只监听本机，通过 SSH 隧道或内网访问。用到[生成 PDF](../libraries/pdf.md#deployment) 等功能时，再按各自的说明加上对应的服务。
 
-容器的升级方式是换一个新容器，见[不停机升级](operations.md#zero-downtime-upgrades)。
+容器的升级方式是换一个新容器，见[不停机升级](operations.md#zero-downtime-upgrades)。应用交给客户、部署在客户的服务器上时，完整的 compose 文件和升级、备份步骤见[交给客户自托管](self-hosting.md)。
 
 <a id="health-checks"></a>
 ## 健康检查
