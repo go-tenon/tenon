@@ -186,7 +186,7 @@ return command.AsExitError(command.ExitUnavailable, err)
 <a id="run-command"></a>
 ### Run：serve 与常驻进程
 
-`command.Run` 创建一个先加载配置、再调用 `run(ctx, cfg)` 的命令。`ctx` 会在进程收到停止信号时被取消，常驻进程据此退出。`bootstrap.Serve` 装配应用并启动 HTTP 服务，见[依赖装配](../concepts/dependencies.md#assembling-the-application)，HTTP 服务会据此[平滑停止](../concepts/lifecycle.md)：
+`command.Run` 创建一个先加载配置、再调用 `run(ctx, cfg)` 的命令。`ctx` 会在进程收到停止信号时被取消，常驻进程据此退出。`bootstrap.Serve` 装配应用并启动 HTTP 服务，见[依赖装配](../concepts/dependencies.md#assembling-the-application)，HTTP 服务会据此[平滑停止](../http/lifecycle.md#graceful-shutdown)：
 
 ```bash
 ./bin/api serve                                                 # 使用 config/app.yaml

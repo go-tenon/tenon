@@ -1,237 +1,94 @@
-# 请求生命周期
+# 应用生命周期
 
-这一页从整体上介绍一个 Tenon 应用的一生：它怎样启动，一个请求从进入到返回经过哪些环节，应用停止时怎样做到不中断正在处理的请求，以及部署平台怎样判断它是否正常。
+这一页从整体上介绍一个 Tenon 应用的一生：它怎样启动，运行时由哪些部分组成，一次调用的 context 里带着什么，停止时怎样做到不中断正在进行的工作，以及部署平台怎样判断它是否正常。这些对 HTTP 服务和后台任务都一样。
 
-遇到这些问题时，这一页能帮你找到原因：请求为什么返回了 401 而不是 422？停机时为什么有请求被中断？部署平台为什么认为实例没有就绪？先建立一个整体的印象即可，每一部分的细节都在链接的页面中。
+先建立一个整体的印象即可，每一部分的细节都在链接的页面中。HTTP 服务特有的部分，例如一个请求经过哪些中间件、`httpx.Serve` 怎样排空，见 [HTTP 服务的生命周期](../http/lifecycle.md)。
 
 阅读前需要了解：[安装](../installation/installing.md)中的三步程序；[context](go-primer.md#context)。
 
 - [启动](#startup)
-- [请求的处理过程](#request-flow)
+- [运行的部分](#parts)
+- [一次调用的 context](#call-context)
 - [平滑停止](#graceful-shutdown)
 - [健康检查](#health-checks)
 - [常见问题](#troubleshooting)
-- [API 参考](#api-reference)
 
 <a id="startup"></a>
 ## 启动
 
-数据库连接池、Redis 客户端这些资源都由程序的入口创建和关闭。一个需要数据库的 API 按下面的顺序启动：
+数据库连接池、Redis 客户端这些资源都由程序的入口创建和关闭。无论运行的是 HTTP 服务还是后台任务，应用都按下面的顺序启动：
 
 1. 读取并校验[配置](../general/configuration.md)；
 2. 打开数据库等资源，每打开一个，就登记对应的关闭操作；
-3. 创建 API，构造[业务动作](actions.md)并注册路由，取得监听端口；
-4. 调用 `httpx.Serve` 开始处理请求。
+3. 构造[业务动作](actions.md)，交给要运行的各个部分：HTTP 服务注册路由，worker 注册任务的处理函数，调度器登记定时任务；
+4. 同时运行这些部分，直到收到停止信号。
 
-这些都是普通的 Go 代码，没有隐藏的步骤，写法见[依赖装配](dependencies.md)。
+这些都是普通的 Go 代码，没有隐藏的步骤，写法见[依赖装配](dependencies.md#assembling-the-application)。
 
 > [!NOTE]
 > 迁移不在启动时自动执行，而是部署时的一个独立步骤，见[迁移](../database/migrations.md)。
 
-<a id="request-flow"></a>
-## 请求的处理过程
+<a id="parts"></a>
+## 运行的部分
 
-一个请求进入程序后，先经过一层层的**中间件**，再到达你的处理函数。可以把中间件想象成套在处理函数外面的一层层包装：请求从外向内穿过每一层，响应再从内向外返回。任何一层都可以直接返回响应，请求就不会再往里走。
+应用的进程由一个或几个一直运行的**部分**组成。每个部分是一种入口，把外部的调用转换为对业务动作的调用：
 
-安装了 `httpx.Defaults` 和 `httpx.Timeout` 之后，一个请求会依次经过这些环节：
+| 部分 | 做什么 | 见 |
+| --- | --- | --- |
+| HTTP 服务 | 处理接口请求和页面 | [HTTP 服务的生命周期](../http/lifecycle.md) |
+| 队列 worker | 执行后台任务 | [启动 worker](../background/queue.md#running-workers) |
+| 定时任务调度器 | 到点执行定时任务 | [运行调度器](../background/scheduling.md#running-the-scheduler) |
+| 实时频道 | 承接 WebSocket 连接，可选 | [单独部署实时连接](../libraries/realtime.md#separate-process) |
 
-```text
-确定请求 ID，写入安全响应头
-  → 解析客户端地址（只信任配置的代理）
-  → 按 Accept-Language 协商语言
-  → 开始记录访问日志
-  → panic 恢复
-  → 限制请求体大小，设置请求超时
-  → 你安装的其他中间件（例如限流）
-  → 路由匹配
-  → Bearer 认证（只在需要认证的路由上）
-  → Huma 解析并验证输入
-  → 处理器调用业务动作
-  → 错误转换为统一的错误响应
-```
+启动哪个命令，就运行哪些部分：`serve` 只运行 HTTP 服务，`start` 在一个进程中运行 HTTP 服务、worker 和调度器。只运行 `work` 和 `schedule` 的进程不对外提供 HTTP 接口，就是一个纯后台服务，见[在一个进程中运行多个部分](../general/commands.md#running-together)。
 
-其中几个环节的含义：
+同一个进程中的各部分共用第 2 步打开的资源，例如同一个数据库连接池。
 
-- **请求 ID**：给每个请求一个唯一的编号，写在响应头 `X-Request-ID` 和这个请求的每一行日志中，排查问题时按它查找。
-- **按 Accept-Language 协商语言**：浏览器在 `Accept-Language` 请求头中告诉服务端用户偏好的语言，错误提示按它翻译。
-- **panic 恢复**：处理函数中发生 panic 时，返回 `500`，而不是让整个程序崩溃。
-- **Bearer 认证**：检查请求头 `Authorization: Bearer <令牌>` 中的令牌，确认请求来自谁。
+<a id="call-context"></a>
+## 一次调用的 context
 
-顺序很重要。以修改文章的请求 `PUT /articles/{id}` 为例，看看不同的请求会在哪一步结束：
+每个入口在调用业务动作之前，都把这次调用的信息放进 `ctx`。业务代码只从 `ctx` 中读取它们，不关心调用来自哪个入口：
 
-- 没有有效令牌的请求在认证这一步返回 `401`；
-- 标题为空的请求在验证输入这一步返回 `422`，到不了处理器；
-- 处理器返回的业务错误（例如 slug 已被占用）在最后一步转换为 `409` 等响应。
+| 信息 | 读取 | HTTP 接口 | 队列任务 | 定时任务 |
+| --- | --- | --- | --- | --- |
+| 日志关联字段 | 用 `ctx` 记录日志时自动带上 | `request_id` | 发布方的 `request_id`，以及 `message_id`、`attempt` | `task` |
+| 链路 | OpenTelemetry 的 span（启用[可观测性](../general/telemetry.md)时） | 接续请求头 `traceparent` 中的链路，没有时新开始 | 接续发布方的链路 | 每次执行新开始 |
+| 调用者 | `identity.FromContext` | 认证中间件写入 | 处理函数自己构造，见[队列任务](actions.md#as-jobs) | 同左 |
+| 语言 | `i18n.Locale` | 按 `Accept-Language` 协商 | 处理函数自己写入，见[在 HTTP 之外使用](../general/localization.md#outside-http) | 同左 |
 
-所以一个没有登录、标题又为空的请求，得到的是 `401` 而不是 `422`：认证在验证输入之前。
-
-前半段是安装在 Router 上的[中间件](../http/middleware.md)，作用于所有请求；认证由路由声明的策略决定，见[认证](../security/authentication.md)；输入见[请求](../http/requests.md)和[验证](../http/validation.md)；错误的转换见[错误处理](../general/errors.md)。
-
-值得一提的是，中间件、语言目录和日志器都是在创建 API 时显式传入的。所以同一个进程中的两个 API 可以有各自独立的配置。
+所以同一个 `Handle` 方法在接口和任务中都能记录带关联字段的日志，见[日志](../general/logging.md#request-correlation)。调用者则由 `Handle` 的参数显式传入，见[编写动作](actions.md#writing-actions)。
 
 <a id="graceful-shutdown"></a>
 ## 平滑停止
 
-应用收到 `SIGTERM` 或 Ctrl+C 时，我们希望它**先处理完**正在处理的请求。`httpx.Serve` 负责这件事：
+应用收到 `SIGTERM` 或 Ctrl+C 时，我们希望它**先做完**手上的工作，而不是直接退出。入口取消 `ctx`，各部分同时开始平滑停止：
 
-```go
-var draining httpx.Draining
+- **HTTP 服务**：就绪检查开始返回失败，停止接收新连接，等正在处理的请求完成，见[平滑停止](../http/lifecycle.md#graceful-shutdown)；
+- **worker**：停止领取新任务，等处理中的任务写回结果，见[任务的租约与停止](../background/queue.md#leases-and-shutdown)；
+- **调度器**：停止触发新任务，等执行中的任务结束，见[失败与停止](../background/scheduling.md#failures-and-shutdown)。
 
-err := httpx.Serve(ctx, cfg.HTTP, ln, handler, httpx.OnDraining(draining.Set))
-```
-
-`draining` 是一个标志，表示“正在停止”。当 `ctx` 被取消时（收到停止信号，或者[不停机升级](../installation/operations.md#zero-downtime-upgrades)时交给了新进程），`httpx.Serve` 按以下顺序停止：
-
-1. 调用 `OnDraining`，让[就绪检查](#health-checks)开始返回失败；
-2. 停止接收新连接，等待正在处理的请求完成，这个过程叫**排空**；
-3. 超过 `shutdown_timeout`（默认 10 秒）仍未完成的请求，取消它们的 context 并强制关闭连接。
-
-`httpx.Serve` 返回之后，入口才关闭数据库等资源，正在处理的请求在结束前始终可以访问数据库。
-
-`ln` 通常由 `command.Daemon` 取得，见[依赖装配](dependencies.md#assembling-the-application)。简单的程序用 `httpx.ListenAndServe` 自己监听 `cfg.Addr`。
+每个部分最多等待各自配置的 `shutdown_timeout`，超时后取消还没完成的工作的 `ctx`。全部部分都返回之后，入口才按打开的逆序关闭数据库等资源，所以正在进行的工作在结束前始终可以使用它们，见[关闭资源](dependencies.md#closing-resources)。
 
 > [!WARNING]
-> 平滑停止依赖 context 的传递。数据库查询和外部调用都要使用请求的 `ctx`，超时后它们才能随之停下；goroutine 也要监听 context，停机时一起结束。
+> 平滑停止依赖 context 的传递。数据库查询和外部调用都要使用传入的 `ctx`，超时后它们才能随之停下；自己启动的 goroutine 也要监听 context，停机时一起结束。
 
 <a id="health-checks"></a>
 ## 健康检查
 
-部署平台（如 Kubernetes）和负载均衡器通常用两类接口判断应用的状态：
+部署平台（如 Kubernetes）和负载均衡器通常用两类检查判断实例的状态：
 
-- **存活检查**（liveness）：进程是否还能响应，失败时平台重启它。直接返回成功，只确认进程能响应：数据库故障时重启应用无济于事。
-- **就绪检查**（readiness）：现在能否处理请求，失败时停止向这个实例转发流量。它检查是否正在排空，以及必需的依赖是否可用。
+- **存活检查**（liveness）：进程是否还能响应，失败时平台重启它。它只确认进程能响应，不检查数据库等依赖：数据库故障时重启应用无济于事。
+- **就绪检查**（readiness）：现在能否处理工作，失败时平台不再把流量转给这个实例。它检查必需的依赖是否可用。
 
-路径由部署环境决定，所以这两个路由由应用自己注册。下面把它们注册在 `/livez` 和 `/readyz`：
-
-```go
-router.Get("/livez", func(w http.ResponseWriter, _ *http.Request) {
-    w.WriteHeader(http.StatusNoContent)
-})
-router.Handle("/readyz", httpx.Ready(httpx.ReadyOptions{
-    Draining: &draining,
-    Checks: []httpx.Check{
-        {Name: "database", Ping: func(ctx context.Context) error { return db.PingContext(ctx) }},
-        {Name: "redis", Ping: func(ctx context.Context) error {
-            return rdb.Do(ctx, rdb.B().Ping().Build()).Error()
-        }},
-        {Name: "cache", Ping: func(context.Context) error { return mc.Ping() }, Optional: true},
-    },
-}))
-```
-
-`draining` 与传给 `httpx.OnDraining` 的是同一个。每个 `Ping` 都写成闭包，到检查时才使用依赖：`openapi`、`routes` 命令用 `nil` 依赖构造同一套路由（见[依赖装配](dependencies.md#assembling-the-application)），`db.PingContext` 这样的方法值在 `db` 为 `nil` 时取值就会 panic。全部检查并行执行，每项最多 1 秒，超时按失败处理。必需的检查都通过时返回 `200`，否则返回 `503`；正在排空时直接返回 `503`。响应体列出每项的结果：
-
-```json
-{"status":"ready","checks":{"cache":"failed","database":"ok","redis":"ok"}}
-```
-
-失败的原因只记录在日志中，而且只在状态变化时记录：从通过变为失败记 `Warn`，恢复时记 `Info`。
-
-> [!IMPORTANT]
-> 只把处理请求**必需**的依赖放进检查。缓存这类坏了也能降级运行的依赖标为 `Optional`，这样缓存的短暂故障只体现在结果中，实例继续接收流量。只有部分接口用到的服务（PDF、向量检索等）的故障由各自的接口返回错误。
-
-> [!TIP]
-> 探测很频繁，在[访问日志](../http/middleware.md#http-configuration)的 `ignore_paths` 中排除这两个路径。
+HTTP 服务用 `httpx.Ready` 提供就绪检查，写法见[健康检查](../http/lifecycle.md#health-checks)。
 
 <a id="troubleshooting"></a>
 ## 常见问题
 
-**停机时日志中出现 `context canceled`，有请求失败**
-
-这些请求在 `shutdown_timeout` 内没有完成，被取消了。检查是否有很慢的请求；需要时调大 `http.shutdown_timeout`，并让部署平台等待的时间比它更长，见[平滑停止](../installation/deployment.md#graceful-shutdown)。
-
 **按 Ctrl+C 后程序要等很久才退出**
 
-有请求或 goroutine 没有响应 ctx 的取消。检查数据库查询、外部调用是否都传入了请求的 `ctx`，自己启动的 goroutine 是否在 `ctx.Done()` 时返回。
+有请求、任务或 goroutine 没有响应 `ctx` 的取消。检查数据库查询、外部调用是否都传入了 `ctx`，自己启动的 goroutine 是否在 `ctx.Done()` 时返回。最长等待时间由各部分的 `shutdown_timeout` 决定。
 
-**`/readyz` 一直返回 `503`**
+**一个部分出错退出后，整个进程都停了**
 
-看响应体中哪一项是 `failed`，再在日志中找到失败的原因。缓存这类可以降级的依赖，标为 `Optional`。
-
-**`openapi` 或 `routes` 命令 panic：`nil pointer dereference`**
-
-就绪检查中直接写了 `db.PingContext` 这样的方法值。这些命令用 `nil` 依赖构造路由，改成闭包 `func(ctx context.Context) error { return db.PingContext(ctx) }`，见上文的[健康检查](#health-checks)。
-
-<a id="api-reference"></a>
-## API 参考
-
-包 `github.com/go-tenon/tenon/httpx`。
-
-### Serve
-
-```go
-func Serve(ctx context.Context, cfg Config, ln net.Listener, handler http.Handler, opts ...ServeOption) error
-```
-
-- **参数**
-    - `ctx`：取消时开始平滑停止
-    - `cfg`：服务器的超时等参数；不使用其中的 `Addr`，但 `cfg` 仍需合法
-    - `ln`：监听端口，通常由 `command.Daemon` 取得
-    - `handler`：处理请求的 Router
-    - `opts`：见下面的 `Logger`、`OnDraining`
-- **返回**：监听出错时的错误；平滑停止后返回 `nil`
-
-在 `ln` 上运行 `handler`，直到 `ctx` 被取消或监听出错，然后按[平滑停止](#graceful-shutdown)中的顺序停止。返回时 `ln` 已经关闭。
-
-### ListenAndServe
-
-```go
-func ListenAndServe(ctx context.Context, cfg Config, handler http.Handler, opts ...ServeOption) error
-```
-
-与 `Serve` 相同，只是自己监听 `cfg.Addr`。适合简单的程序。
-
-### Logger、OnDraining
-
-```go
-func Logger(l *slog.Logger) LoggerOption
-func OnDraining(fn func()) ServeOption
-```
-
-`Serve` 和 `ListenAndServe` 的选项。`Logger` 让排空开始和服务器停止记录到 `l`，不传时使用 `slog.Default()`；它也可以传给 [`Defaults`](../http/middleware.md#default-middleware)。`OnDraining` 在开始排空之前调用 `fn`，通常是 `Draining.Set`。
-
-### Draining
-
-```go
-func (d *Draining) Set()
-func (d *Draining) Load() bool
-```
-
-排空标志，零值即可使用。把 `Set` 传给 `OnDraining`，把同一个值的地址传给 `ReadyOptions.Draining`。
-
-### Ready
-
-```go
-func Ready(opts ReadyOptions) http.Handler
-```
-
-- **参数**
-    - `opts`：见下面的 `ReadyOptions`
-- **返回**：就绪检查的处理器
-
-检查的名称为空、重复或者 `Ping` 为 `nil` 时 panic。
-
-### ReadyOptions
-
-```go
-type ReadyOptions struct {
-    Draining *Draining
-    Checks   []Check
-    Timeout  time.Duration
-    Logger   *slog.Logger
-}
-```
-
-`Draining` 为 `nil` 时跳过排空检查。`Timeout` 是每项检查的超时，默认 1 秒。`Logger` 记录检查结果的变化。
-
-### Check
-
-```go
-type Check struct {
-    Name     string
-    Ping     func(ctx context.Context) error
-    Optional bool
-}
-```
-
-`Name` 出现在结果和日志中；`Ping` 返回错误表示不可用；`Optional` 为 `true` 时，失败只在结果中报告，不让就绪检查失败。
+这是预期的行为：一个部分运行时出错，其余部分随之平滑停止，进程以非 0 状态退出，交给 systemd、Kubernetes 等重启，见[在一个进程中运行多个部分](../general/commands.md#running-together)。

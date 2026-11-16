@@ -102,7 +102,7 @@ rt.Channel("article:{id}", realtime.Private(func(ctx context.Context, sub identi
 }))
 ```
 
-私有频道只对登录的连接开放。授权函数返回 5xx 类错误时，SDK 会稍后重新订阅。
+私有频道只对登录的连接开放。授权函数返回[系统故障](../general/errors.md#error-kinds)（`errorx.Unavailable`、`errorx.Internal` 类错误或普通错误）时，SDK 会稍后重新订阅。
 
 授权只在订阅时进行。主体之后失去访问权限时，调用 `rt.Unsubscribe(sub.Ref(), channel)` 取消他在所有实例上的订阅。
 

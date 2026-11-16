@@ -285,4 +285,4 @@ Tenon 需要 Go 1.27.4 或更高的版本，见[准备工作](#prerequisites)。
 
 - 跟着[入门教程](../tutorial/README.md)做一个完整的博客：数据库、登录、前端页面都会用到；
 - 或者先用[脚手架](scaffolding.md)生成一个完整的项目，看看它由哪些部分组成；
-- 想深入了解这一页用到的每一部分，读[路由](../http/routing.md)、[中间件](../http/middleware.md)和[请求生命周期](../concepts/lifecycle.md)。
+- 想深入了解这一页用到的每一部分，读[路由](../http/routing.md)、[中间件](../http/middleware.md)和[HTTP 服务的生命周期](../http/lifecycle.md)。

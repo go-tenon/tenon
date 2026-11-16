@@ -155,7 +155,7 @@ SSE 接口和其他接口注册在同一个 API 上，认证方式相同，例�
 - `s.Context()` 只在客户端断开或服务器停机时取消，[`httpx.Timeout`](middleware.md#request-timeout) 的超时与它无关。
 - 服务器配置中的 `http.write_timeout` 同样会切断长连接，SSE 会为当前请求取消它，配置保持原样。
 
-停机时，`httpx.Serve` 一开始排空，`s.Done()` 就会关闭，处理器返回，连接结束，客户端随后重连到其他实例。所以打开着的长连接随排空一起结束，停机很快完成，见[平滑停止](../concepts/lifecycle.md#graceful-shutdown)。
+停机时，`httpx.Serve` 一开始排空，`s.Done()` 就会关闭，处理器返回，连接结束，客户端随后重连到其他实例。所以打开着的长连接随排空一起结束，停机很快完成，见[平滑停止](lifecycle.md#graceful-shutdown)。
 
 <a id="revoked-credentials"></a>
 ## 凭据失效
@@ -167,8 +167,8 @@ SSE 接口和其他接口注册在同一个 API 上，认证方式相同，例�
 | 校验结果 | 连接 |
 | --- | --- |
 | 仍然有效 | 保持 |
-| token 校验不通过、主体变了、Resolver 返回 4xx 类错误、缺少所需的 scope | 结束 |
-| 暂时无法判断，例如数据库故障、Resolver 返回 5xx 类错误 | 保持，30 秒后再查 |
+| token 校验不通过、主体变了、Resolver 返回不是系统故障的错误、缺少所需的 scope | 结束 |
+| 暂时无法判断，例如数据库故障、Resolver 返回系统故障 | 保持，30 秒后再查 |
 
 连接结束后，客户端重连时按普通请求重新认证，得到 `401`。所以凭据失效后，最多 30 秒连接就会断开，检查由框架完成。
 

@@ -27,18 +27,18 @@ var (
 	ErrMethodRequired = errorx.Define(errorx.PermissionDenied, "auth.method_required")
 )
 
-// Authenticator 识别调用者，返回凭据给出的主体。没有凭据或凭据无效时返回 ID 为空的主体或 4xx 类错误；
-// 认证后端故障时返回 errorx.Unavailable、errorx.Internal 类错误或普通错误。
+// Authenticator 识别调用者，返回凭据给出的主体。没有凭据或凭据无效时返回 ID 为空的主体，或分类不是系统故障
+// （errorx.Kind.Systemic 为 false）的错误；认证后端故障时返回 errorx.Unavailable、errorx.Internal 类错误或普通错误。
 type Authenticator func(ctx context.Context) (Subject, error)
 
 // Resolver 把凭据给出的主体转换为本次请求的主体，例如按 TenantFromContext 加载主体在租户中的权限。
-// 返回 errorx.Unauthenticated 类错误或 ID 为空的主体表示主体已失效；其他 4xx 类错误按其分类处理，
+// 返回 errorx.Unauthenticated 类错误或 ID 为空的主体表示主体已失效；其他不是系统故障的错误按其分类处理，
 // 例如不是租户成员时返回 errorx.NotFound。返回的主体中 Type、ID、Method、Credential、Scopes、Impersonator、Auth
 // 总是取自凭据，Resolver 只加载权限和租户，主体始终是凭据中的那个人。
 // 入口通过 Accounts 为每套账号体系指定 Resolver。
 type Resolver func(ctx context.Context, sub Subject) (Subject, error)
 
-// Establish 得到本次请求的主体，JSON API、页面和实时频道的入口都用它。依次：
+// Establish 得到本次调用的主体，JSON API、页面、MCP 和实时频道的入口都用它。依次：
 //
 //   - authenticate 识别调用者，没有有效的凭据时返回 ErrUnauthenticated，凭据只是过期时返回的错误同时匹配 ErrExpired；
 //   - 凭据设置了 Tenant 且与本次请求的租户（TenantFromContext）不同时返回 ErrForbidden；
@@ -46,7 +46,7 @@ type Resolver func(ctx context.Context, sub Subject) (Subject, error)
 //   - 主体缺少 permissions 中的某项权限（Subject.Can）时返回 ErrForbidden，公开参数 permission 是这项权限。
 //
 // 返回的错误分三类，由入口各自呈现：认证后端或 resolve 故障时原样返回（errorx.Unavailable、errorx.Internal
-// 类错误或普通错误，Failed 报告为 true）；ErrUnauthenticated；其他 4xx 类错误。
+// 类错误或普通错误，Failed 报告为 true）；ErrUnauthenticated；其他拒绝调用者的错误，例如 ErrForbidden。
 func Establish(ctx context.Context, authenticate Authenticator, resolve Resolver, permissions ...string) (Subject, error) {
 	cred, err := authenticate(ctx)
 	if Failed(err) {
@@ -86,7 +86,7 @@ func Establish(ctx context.Context, authenticate Authenticator, resolve Resolver
 }
 
 // Reestablish 在长连接期间重新执行 Establish，确认 was 仍然有效：凭据被撤销、凭据换了主体或代为登录者、
-// 主体退出租户或失去权限时返回 4xx 类错误，连接应当结束；Failed 报告为 true 的错误表示暂时无法判断，连接保持。
+// 主体退出租户或失去权限时返回拒绝调用者的错误（Failed 报告为 false），连接应当结束；Failed 报告为 true 的错误表示暂时无法判断，连接保持。
 // authenticate 和 resolve 收到的 ctx 中 Rechecking 报告为 true。
 func Reestablish(ctx context.Context, was Subject, authenticate Authenticator, resolve Resolver, permissions ...string) error {
 	sub, err := Establish(context.WithValue(ctx, recheckingKey{}, true), authenticate, resolve, permissions...)

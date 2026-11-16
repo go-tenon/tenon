@@ -67,7 +67,7 @@ router.Use(httpx.Defaults(cfg.HTTP, httpx.Languages(languages))...)
 
 每个中间件都可以单独省略，框架的其他部分照常工作：没有 `AccessLog` 时，`httpx.AddAccessLogAttrs` 什么也不做；没有 `Locale` 时，`i18n.T` 原样返回消息 ID；没有 `AssignRequestID` 时，`httpx.RequestID` 返回空字符串。
 
-认证不在默认中间件中，因为它是按路由启用的，见[认证](../security/authentication.md)。健康检查也由你自己注册，见[请求生命周期](../concepts/lifecycle.md#health-checks)。
+认证不在默认中间件中，因为它是按路由启用的，见[认证](../security/authentication.md)。健康检查也由你自己注册，见[健康检查](lifecycle.md#health-checks)。
 
 
 <a id="custom-middleware"></a>
