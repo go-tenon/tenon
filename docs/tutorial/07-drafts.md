@@ -6,15 +6,27 @@
 - 新写的文章是草稿，只有作者能看到；
 - 作者发布后，所有人都能看到。
 
-我们先给文章表加上作者和发布时间两列，再把这些规则写进业务动作，最后修改前端。
+**这一章要做的：** 先给文章表加上作者和发布时间两列，再把这些规则写进业务动作，最后修改前端。
+
+**你会学到：**
+
+- 给已经有数据的表加一个不能为空的列；
+- 区分“认证”和“授权”：前者确认你是谁，后者决定你能做什么；
+- 在事务中检查权限，避免检查和修改之间被别的请求插进来。
+
+阅读前需要了解：[第 6 章](06-login.md)；[数据库事务](../database/quick-start.md#transactions)是什么。
 
 - [加列](#migration)
 - [谁能做什么](#rules)
 - [动作](#actions)
 - [前端](#frontend)
+- [常见问题](#troubleshooting)
+- [小结](#summary)
 
 <a id="migration"></a>
 ## 加列
+
+第 3 章说过，已经执行过的迁移不要修改，要改表结构就写一个新的迁移：
 
 ```bash
 go run ./cmd/api migrate make add_author_and_published_at_to_articles_table
@@ -34,7 +46,14 @@ CREATE INDEX articles_author_id_idx ON articles (author_id);
 ALTER TABLE articles DROP COLUMN author_id, DROP COLUMN published_at;
 ```
 
-表中已经有数据时，加 `NOT NULL` 的列分三步：先允许为空，补上数据，再加约束。`published_at` 为空就是草稿。
+这个迁移加了两列：
+
+- **`author_id`**：文章的作者。`REFERENCES users (id)` 是**外键**：数据库保证它一定是 `users` 表中存在的某个作者。
+- **`published_at`**：发布的时间。为空就是草稿，有值就是已发布。用时间而不是一个“是否发布”的布尔值，可以同时知道文章是什么时候发布的。
+
+`author_id` 应当不能为空，但为什么不直接写 `ADD COLUMN author_id uuid NOT NULL`？因为表中已经有第 4、5 章写的文章，它们没有作者，数据库会拒绝添加这个约束。所以分三步：先加一个允许为空的列，再给旧文章补上作者，最后加上 `NOT NULL` 约束。三步在同一个迁移中，也就在同一个事务中，任何一步失败都会整体回滚。
+
+最后的 `CREATE INDEX` 为 `author_id` 建了一个**索引**。“我的文章”要按作者查询，有了索引，数据库不用逐行扫描整张表。
 
 ```bash
 go run ./cmd/api migrate up
@@ -43,7 +62,9 @@ go run ./cmd/api migrate up
 <a id="rules"></a>
 ## 谁能做什么
 
-规则写在动作里：路由只知道“要登录”，动作才知道“是不是这篇文章的作者”。动作的 `Handle` 接收调用者 `identity.Subject`，命令行、队列任务和测试都能以任何身份调用它。
+上一章做的是**认证**：确认请求来自哪个作者。这一章要做的是**授权**：决定这个作者能不能做这件事。
+
+规则写在哪里？路由上的 `requireUser` 只知道“要登录”，不知道这篇文章是谁写的；只有读出文章之后，才能判断“是不是这篇文章的作者”。所以这些规则写在动作中。动作的 `Handle` 多了一个参数 `identity.Subject`，表示“谁在调用”。HTTP 接口从请求中取出登录的作者传进去；命令行、后台任务和测试也可以传入任何身份来调用它。
 
 在 `internal/article/article.go` 中加上两个字段、两个错误，以及修改前读取文章用的 `findOwn`：
 
@@ -122,7 +143,9 @@ type IDInput struct {
 }
 ```
 
-`findOwn` 在事务中用 `FOR UPDATE` 读取文章，检查作者之后、修改之前，别的请求改不了这一行。检查用的必须是事务中刚读到的数据。
+`findOwn` 读取一篇文章，并检查调用者是不是它的作者，不是时返回 `ErrForbidden`（403）。
+
+它在事务中用 `SELECT ... FOR UPDATE` 读取文章。`FOR UPDATE` 会锁住这一行，直到事务结束：在我们检查作者之后、修改之前，别的请求改不了这一行。如果不加锁，就可能出现：我们检查时文章还是草稿，另一个请求恰好在这时发布了它，我们又按草稿的规则修改了它。所以修改时，检查用的必须是事务中刚刚加锁读到的数据。
 
 在 `locales/zh-CN.yaml` 中加上两个错误的提示：
 
@@ -136,7 +159,7 @@ article.already_published: 文章已经发布了
 <a id="actions"></a>
 ## 动作
 
-首页只列出已发布的文章。`internal/article/list.go`：
+下面逐个修改动作。首页只列出已发布的文章，在查询中加上 `published_at IS NOT NULL`。修改 `internal/article/list.go`：
 
 ```go title="internal/article/list.go"
 package article
@@ -210,7 +233,7 @@ func (a *Mine) HTTP(ctx context.Context, in *ListInput) (*ListOutput, error) {
 }
 ```
 
-读取文章的接口是公开的，只返回已发布的文章，草稿对外就像不存在一样。`internal/article/get.go`：
+读取文章的接口是公开的，只返回已发布的文章。读取草稿时返回 404，而不是 403：草稿对外就像不存在一样，别人也无法通过 403 判断出“这个 ID 有一篇草稿”。修改 `internal/article/get.go`：
 
 ```go title="internal/article/get.go"
 package article
@@ -241,7 +264,7 @@ func (a *Get) HTTP(ctx context.Context, in *IDInput) (*ArticleOutput, error) {
 }
 ```
 
-新建时记录作者。`internal/article/create.go`：
+新建时，把调用者记为作者。修改 `internal/article/create.go`：
 
 ```go title="internal/article/create.go"
 package article
@@ -292,7 +315,7 @@ func (a *Create) HTTP(ctx context.Context, in *CreateInput) (*ArticleOutput, err
 }
 ```
 
-修改和删除前用 `findOwn` 检查作者。`internal/article/update.go`：
+修改和删除时，先在事务中用 `findOwn` 检查作者。修改 `internal/article/update.go`：
 
 ```go title="internal/article/update.go"
 package article
@@ -349,7 +372,7 @@ func (a *Update) HTTP(ctx context.Context, in *UpdateInput) (*ArticleOutput, err
 }
 ```
 
-`internal/article/delete.go`：
+修改 `internal/article/delete.go`：
 
 ```go title="internal/article/delete.go"
 package article
@@ -386,7 +409,7 @@ func (a *Delete) HTTP(ctx context.Context, in *IDInput) (*struct{}, error) {
 }
 ```
 
-让我们新建 `internal/article/publish.go`，发布草稿：
+发布是一个新的动作：检查作者，确认还没有发布过，然后写入发布时间。新建 `internal/article/publish.go`：
 
 ```go title="internal/article/publish.go"
 package article
@@ -438,7 +461,7 @@ func (a *Publish) HTTP(ctx context.Context, in *IDInput) (*ArticleOutput, error)
 }
 ```
 
-在 `internal/article/routes.go` 中注册新的两个接口：
+在 `internal/article/routes.go` 中注册新的两个接口：“我的文章”和发布，它们都需要登录：
 
 ```go title="internal/article/routes.go"
 package article
@@ -473,7 +496,7 @@ func Register(api *rest.API, requireUser func(*huma.Operation), db *bun.DB) {
 }
 ```
 
-别人的文章返回 `403`：
+修改别人的文章时，返回 `403`：
 
 ```json
 {"title":"Forbidden","status":403,"detail":"只有作者能修改这篇文章","code":"article.forbidden"}
@@ -482,7 +505,7 @@ func Register(api *rest.API, requireUser func(*huma.Operation), db *bun.DB) {
 <a id="frontend"></a>
 ## 前端
 
-前端有四个页面变了：
+后端完成了，前端有这些页面要变：
 
 | 文件 | 地址 | 页面 |
 | --- | --- | --- |
@@ -550,7 +573,7 @@ function ArticleView() {
 }
 ```
 
-接着，新建 `apps/web/src/routes/mine.tsx`，作者在这里编辑、发布、删除。它需要登录：
+接着，新建 `apps/web/src/routes/mine.tsx`，作者在这里编辑、发布、删除自己的文章。它和第 6 章的写文章页面一样，用 `beforeLoad: requireAuth` 要求登录：
 
 ```tsx title="apps/web/src/routes/mine.tsx"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -748,7 +771,40 @@ time {
 }
 ```
 
-登录后写一篇文章，它出现在“我的文章”中，标着草稿，首页还看不到。点“发布”，回到首页就有了。再用 `user create` 创建第二个作者，登录后它看不到第一个作者的草稿，也改不了第一个作者的文章。
+登录后写一篇文章，它出现在“我的文章”中，标着草稿，首页还看不到。点“发布”，回到首页就有了。
+
+再创建第二个作者小红：
+
+```bash
+go run ./cmd/api user create --name 小红 --email hong@example.com --password secret123
+```
+
+用小红登录，看不到小明的草稿，也改不了小明的文章。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**迁移报错 `column "author_id" of relation "articles" contains null values`**
+
+`users` 表中还没有作者，旧文章补不上作者。先用 `user create` 创建一个作者，再执行迁移。
+
+**修改自己刚写的文章时，修改页显示找不到**
+
+公开的读取接口只返回已发布的文章。修改页要从“我的文章”中读取，见上文对 `$id.edit.tsx` 的修改。
+
+**发布时返回 `409`**
+
+文章已经发布过了。
+
+<a id="summary"></a>
+## 小结
+
+这一章，你：
+
+- 给已经有数据的表分三步加上了不能为空的列；
+- 把“只有作者能修改”“草稿只有作者能看到”这些规则写在了动作中；
+- 在事务中用 `FOR UPDATE` 加锁读取，再检查权限、修改数据；
+- 让别人的草稿返回 404，对外就像不存在一样。
 
 下一章给博客加上运营后台：用角色管理作者的权限。
 

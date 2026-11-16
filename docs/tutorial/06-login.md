@@ -1,6 +1,16 @@
 # 6. 作者登录
 
-到目前为止，任何人都可以写文章。这一章，我们让作者用邮箱和密码登录，只有登录之后才能写文章。这一章的内容比较多：我们要建账号表、加一个创建账号的命令、写登录接口，最后在前端加上登录页。
+到目前为止，任何人都可以写文章。这一章，我们让作者用邮箱和密码登录，只有登录之后才能写文章。
+
+**这一章要做的**（内容比较多，分成几步）：
+
+1. 了解登录是怎样工作的；
+2. 准备配置：Redis 和应用密钥；
+3. 建作者表，加一个创建作者的命令；
+4. 写登录、刷新、退出三个接口，让写文章的接口要求登录；
+5. 在前端加上登录页，没有登录时跳到登录页。
+
+阅读前需要了解：[第 5 章](05-pages.md)；HTTP 的 cookie 和 `Authorization` 请求头。
 
 - [怎么登录](#how-it-works)
 - [配置](#configuration)
@@ -9,29 +19,44 @@
 - [登录接口](#auth)
 - [装配](#assembling)
 - [前端](#frontend)
+- [常见问题](#troubleshooting)
+- [小结](#summary)
 
 <a id="how-it-works"></a>
 ## 怎么登录
 
-框架的两个包分工：
+登录要解决两个问题：用户第一次登录时，确认他是谁；之后的每个请求，确认它来自一个已经登录的用户。框架用两个包分别处理：
 
 - `login` 回答“这个人是谁”：保存邮箱和密码哈希，校验密码，限制输错的次数。邮箱、密码保存在框架的 `auth_*` 表中，应用的 `users` 表只有名字这样的业务字段。
 - `apitoken` 签发登录凭据。浏览器中的单页应用用一对凭据：
   - **access token**，有效期 10 分钟，只保存在页面的内存中，请求时放在 `Authorization: Bearer` 中；
   - **refresh token**，保存在 HttpOnly cookie 中，页面上的脚本读不到它，用来换新的 access token。
 
-打开页面时先用 cookie 换一个 access token，换到了就是已登录。这样即使页面被注入了脚本，也拿不走长期有效的凭据。
+几个术语：
+
+- **密码哈希**：数据库中不保存密码本身，而是保存用单向算法计算出的“指纹”。登录时对输入的密码做同样的计算，比较结果。即使数据库泄露，也得不到原始密码。
+- **token（令牌）**：登录成功后服务端签发的一段字符串，之后的请求带上它，服务端就知道请求来自谁，不需要每次都发送密码。access token 是 JWT 格式：内容带有服务端的签名，服务端不用查数据库就能验证它。
+- **HttpOnly cookie**：浏览器保存、每次请求自动带上的 cookie，并且页面上的 JavaScript 读不到它。
+
+为什么用两个 token？access token 每次请求都要带，放在页面的内存中最方便，但页面上的脚本也能读到它，所以它只有 10 分钟有效期，即使被偷走，很快也会失效。refresh token 有效期长，放在脚本读不到的 HttpOnly cookie 中，只用来换新的 access token。
+
+所以流程是：登录成功后得到一对 token；打开页面时先用 cookie 中的 refresh token 换一个 access token，换到了就是已登录；access token 过期后再换一个。
 
 <a id="configuration"></a>
 ## 配置
 
-`login` 用 Redis 记录输错密码的次数，所有实例共享。签发凭据需要一个应用密钥，生成一个写进 `.env`：
+登录需要两样新东西：
+
+- **Redis**：`login` 用它记录每个邮箱输错密码的次数，错太多次就暂时拒绝登录，防止有人不断猜密码。记在 Redis 中，多个实例共享同一个计数。
+- **应用密钥**：签发 token 时用它签名，没有密钥就无法伪造 token。
+
+生成一个随机的密钥写进 `.env`：
 
 ```bash
 echo "APP_KEY=$(openssl rand -base64 32)" >> .env
 ```
 
-`.env` 不提交到版本库，生产环境用环境变量 `APP_KEY` 设置，密钥泄露后要更换。在 `config/app.yaml` 中加上 Redis 和密钥：
+`.env` 不提交到代码仓库，生产环境用环境变量 `APP_KEY` 设置。密钥泄露后要更换，已经签发的 token 随之失效。在 `config/app.yaml` 中加上 Redis 和密钥：
 
 ```yaml title="config/app.yaml"
 # 应用的配置。${VAR:-默认值} 读取环境变量，生产环境用环境变量覆盖开发时的默认值。
@@ -83,7 +108,7 @@ type RedisConfig struct {
 <a id="tables"></a>
 ## 数据表
 
-`login` 和 `apitoken` 自带迁移，先把它们发布到 `migrations` 目录。在 `cmd/api/main.go` 中给 `migrate` 加上 `publish` 子命令；顺便加上 `bootstrap.Commands()`，下面创建作者的命令在其中：
+`login` 和 `apitoken` 需要自己的表（保存邮箱、密码哈希、签发过的 token），它们的迁移由框架提供。我们先把这些迁移复制（发布）到 `migrations` 目录中。在 `cmd/api/main.go` 中给 `migrate` 加上 `publish` 子命令；顺便加上 `bootstrap.Commands()`，下文创建作者的命令在其中：
 
 ```go title="cmd/api/main.go"
 // Command api 是博客的入口。
@@ -134,7 +159,7 @@ go mod tidy
 go run ./cmd/api migrate publish
 ```
 
-命令把迁移复制到 `migrations` 中，它们和你自己写的迁移一样提交到版本库、一起执行。再为作者建表：
+命令把迁移复制到 `migrations` 中，它们和你自己写的迁移一样提交到代码仓库、一起执行。再为作者建一张自己的表：
 
 ```bash
 go run ./cmd/api migrate make create_users_table
@@ -155,7 +180,7 @@ DROP TABLE users;
 <a id="users"></a>
 ## 作者账号
 
-让我们新建 `internal/user/user.go`：
+作者是一个新的业务模块 `internal/user`，结构和第 4 章的 `internal/article` 一样。新建 `internal/user/user.go`：
 
 ```go title="internal/user/user.go"
 // Package user 是博客的作者账号。邮箱和密码保存在 login 的表中，users 表只有业务字段。
@@ -203,7 +228,9 @@ func find(ctx context.Context, db bun.IDB, id string) (*User, error) {
 }
 ```
 
-`Type` 是这套账号的类型，登录凭据中记录着“哪种账号的哪一个”。`Ref` 把作者交给 `login` 时就用它。
+- **`Type`** 是这套账号的类型。一个应用可能有几种账号，例如作者和后台管理员，所以登录凭据中记录的是“哪种账号的哪一个”。
+- **`Ref`** 返回这个作者的引用，把作者交给 `login`、`apitoken` 时用它。
+- 作者的 ID 用 `uuid.NewV7()` 生成，这种 UUID 按时间递增，插入数据库时比完全随机的 UUID 更快。
 
 博客不开放注册，作者由管理员用命令创建。新建 `internal/user/create.go`：
 
@@ -264,7 +291,10 @@ func (a *Create) Command(cmd *cobra.Command, _ []string) error {
 }
 ```
 
-账号、邮箱和密码在一个事务中写入，任何一步失败时整体回滚。`Command` 是这个动作的命令行入口。新建 `internal/user/commands.go` 声明命令：
+- `Handle` 在一个事务中写入 `users` 表和 `login` 的表：邮箱已被使用、密码太短时，整体回滚，不会留下一个没有邮箱的作者。
+- `Command` 是这个动作的命令行入口：从命令行参数中取出名字、邮箱和密码，调用 `Handle`。这就是第 4 章说的，业务逻辑写在 `Handle` 中，HTTP 和命令行都只是调用它的方式。
+
+新建 `internal/user/commands.go` 声明命令：
 
 ```go title="internal/user/commands.go"
 package user
@@ -297,7 +327,7 @@ func Commands(db *bun.DB, logins *login.Realm) *cobra.Command {
 }
 ```
 
-命令要用到数据库，而数据库要在加载配置之后才能打开。新建 `internal/bootstrap/commands.go`，`command.Bind` 先用空的 `App` 声明命令，执行时才调用 `open` 装配，命令结束后关闭资源：
+这里有一个先后顺序的问题：命令要用到数据库，但程序启动、声明有哪些命令时，配置还没有加载，数据库还不能打开。`command.Bind` 解决这个问题：它先用空的 `App` 声明命令，等真的执行其中一个命令时，才加载配置、调用 `open` 打开资源，命令结束后关闭资源。新建 `internal/bootstrap/commands.go`：
 
 ```go title="internal/bootstrap/commands.go"
 package bootstrap
@@ -370,12 +400,13 @@ func Register(api *rest.API, requireUser func(*huma.Operation), db *bun.DB) {
 }
 ```
 
-`identity.FromContext` 取出这次请求的登录者。`requireUser` 保护的接口只有登录后才能调用，所以这里一定有。
+- `identity.FromContext` 从 ctx 中取出这次请求的登录者。登录者是验证 token 时放进 ctx 的，见 [context](../concepts/go-primer.md#context)。
+- `requireUser` 是一个保护接口的函数，和 `rest.Public()` 用法一样：被它保护的接口，只有带着有效的 access token 才能调用，所以 `Me` 中一定能取到登录者。它在下文的装配一节中创建。
 
 <a id="auth"></a>
 ## 登录接口
 
-接着，新建 `internal/auth/auth.go`，提供登录、刷新和退出：
+接着，新建 `internal/auth/auth.go`，提供登录、刷新和退出三个接口：
 
 ```go title="internal/auth/auth.go"
 // Package auth 是登录、刷新和登出的接口。
@@ -486,12 +517,12 @@ func Register(api *rest.API, requireUser func(*huma.Operation), users *login.Rea
 - 刷新：用 cookie 中的 refresh token 换一对新的，旧的随之作废。
 - 退出：撤销这次登录，清除 cookie。
 
-cookie 只发给 `/api/auth` 下的接口。
+`refreshCookie` 的 `Path` 是 `/api/auth`，浏览器只在请求 `/api/auth` 下的接口时带上这个 cookie，其他接口收不到它，减少泄露的机会。
 
 <a id="assembling"></a>
 ## 装配
 
-在 `internal/bootstrap/app.go` 的 `open` 中连接 Redis，创建 `login` 和 `apitoken`：
+现在把这些连起来。在 `internal/bootstrap/app.go` 的 `open` 中连接 Redis，创建 `login` 和 `apitoken`，保存到 `App` 中。和数据库一样，Redis 的关闭也登记到 `stack`：
 
 ```go title="internal/bootstrap/app.go"
 package bootstrap
@@ -673,7 +704,11 @@ func DocRouter() chi.Routes {
 }
 ```
 
-`rest.Options.Accounts` 声明接口接受哪些账号的凭据，`rest.RequireBearer` 返回的 `requireUser` 用来保护接口。在 `internal/article/routes.go` 中，读文章仍然公开，写文章改为需要登录：
+- `rest.Options.Accounts` 声明接口接受哪些账号的 token，现在只有作者。
+- `rest.RequireBearer` 返回 `requireUser`：被它保护的接口要求请求头中带有 `Authorization: Bearer <access token>`。它被传给 `user.Register`、`auth.Register` 和 `article.Register`。
+- `/readyz` 现在也检查 Redis，Redis 不可用时登录无法工作。
+
+在 `internal/article/routes.go` 中，读文章仍然公开，写文章改为需要登录：
 
 ```go title="internal/article/routes.go"
 package article
@@ -706,7 +741,7 @@ func Register(api *rest.API, requireUser func(*huma.Operation), db *bun.DB) {
 }
 ```
 
-执行迁移，创建一个作者：
+后端完成了。执行迁移，用新命令创建一个作者：
 
 ```bash
 go run ./cmd/api migrate up
@@ -722,7 +757,7 @@ go run ./cmd/api user create --name 小明 --email ming@example.com --password s
 <a id="frontend"></a>
 ## 前端
 
-前端用 `@go-tenon/client` 的会话保管登录凭据：access token 只放在页面的内存中，refresh token 在 HttpOnly cookie 中。打开页面时，会话用 cookie 换一个 access token；受保护的接口返回 `401` 时再换一次，然后重试原来的请求。
+前端要做的事情有：保管 access token，每次请求带上它；打开页面时用 cookie 换 access token；token 过期时再换一个。这些由 `@go-tenon/client` 的**会话**（session）完成：受保护的接口返回 `401` 时，会话用 cookie 换一个新的 access token，然后重试原来的请求，页面上的代码不用关心这些。
 
 把 `apps/web/src/client.ts` 改成下面这样：
 
@@ -812,7 +847,8 @@ function Login() {
 }
 ```
 
-登录成功后，`session.signIn` 保存 access token，`app.redirectAfterSignIn` 回到登录前想去的页面，没有时回到首页。回跳地址只接受本站的相对路径，别人构造的 `?redirect=https://evil.example` 会被忽略。
+- 登录成功后，`session.signIn` 保存 access token；`app.redirectAfterSignIn` 回到登录前想去的页面（地址中的 `?redirect=`），没有时回到首页。
+- 回跳地址只接受本站的相对路径。否则别人可以构造一个 `?redirect=https://evil.example` 的链接，让用户登录后跳到一个仿冒的网站。
 
 <a id="requiring-login"></a>
 ### 需要登录的页面
@@ -896,7 +932,9 @@ function Layout() {
 }
 ```
 
-`useSignedIn` 在登录、退出时更新。退出时 `session.signOut()` 清除 access token，退出接口清除 cookie；正在看的页面需要登录时，应用随即跳到登录页。登录、退出时，TanStack Query 中缓存的数据也被清空，上一个作者的数据不会出现在下一个作者的页面上。
+- `useSignedIn` 返回是否已登录，登录、退出时页面随之更新。
+- 退出时，`session.signOut()` 清除内存中的 access token，退出接口清除 cookie。正在看的页面需要登录时，应用随即跳到登录页。
+- 登录、退出时，TanStack Query 中缓存的数据也被清空，上一个作者的数据不会出现在下一个作者的页面上。
 
 最后，首页在没有登录时不显示编辑和删除。把 `apps/web/src/routes/index.tsx` 改成下面这样：
 
@@ -943,6 +981,40 @@ function ArticleList() {
 ```
 
 打开 http://localhost:8080/write，页面先跳到登录页。用刚才创建的账号登录，回到了写文章的页面。写一篇文章，再刷新页面，仍然是登录状态：页面用 cookie 换到了新的 access token。退出后，编辑按钮消失了。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**启动时报错缺少 `APP_KEY`**
+
+还没有生成密钥，或者 `.env` 不在项目根目录。按[配置](#configuration)一节生成。
+
+**`user create` 报错连不上 Redis**
+
+Redis 没有运行，运行 `docker compose up -d --wait`。
+
+**`user create` 报错密码不符合要求**
+
+默认的规则是：8 到 128 个字符，首尾不能有空格。换一个符合规则的密码。
+
+**登录后刷新页面，又变成未登录**
+
+refresh token 的 cookie 没有带上。检查是否通过 8080 端口访问页面：cookie 只在同源的请求中发送，直接访问前端开发服务器的端口时就没有。
+
+**登录时返回 `429`**
+
+同一个邮箱 15 分钟内输错了 5 次密码，等一会儿再试。
+
+<a id="summary"></a>
+## 小结
+
+这一章，你：
+
+- 了解了 access token 和 refresh token 的分工：一个短期有效、放在内存中，一个长期有效、放在脚本读不到的 cookie 中；
+- 用 `login` 保存邮箱和密码，并限制输错的次数；
+- 写了一个创建作者的命令，它和接口调用同一个 `Handle`；
+- 用 `requireUser` 保护了写文章的接口；
+- 在前端加上了登录页，需要登录的页面先跳到登录页。
 
 作者现在可以登录了。不过，任何作者都能修改别人的文章，所有文章写完就立即公开。下一章，我们给文章加上作者和草稿。
 
