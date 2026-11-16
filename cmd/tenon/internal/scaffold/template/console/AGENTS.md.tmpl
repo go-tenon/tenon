@@ -28,6 +28,7 @@
 - **表单**：`useApiForm` 和 `Field`（`src/components/tenon/form.tsx`），校验规则用生成的 `schemas.ts`，与服务端相同；提交失败时字段错误显示在输入框下面。
 - **危险操作**：先 `await confirm({ title, destructive: true })`（`useConfirm`）。
 - **按钮权限**：`useCan()("articles:write")`。前端的检查只决定显示什么，接口仍由服务端检查。
+- **增删改查页面**：在 Go 中用 `api.Resource` 把列表、新建、修改、删除的接口声明为资源，前端用 `ResourcePage` 一行渲染，只覆盖需要定制的列或字段。完整的例子（作者与角色的管理，包括后端的接口和权限）见 Tenon 入门教程第 8 章“后台：作者与角色”。
 - **顶栏的操作**：`<Fill name="actions">…</Fill>`，不要直接修改布局。
 - **布局**：可以使用的布局列在 `src/layouts.ts` 中，第一种是默认的，`src/routes/_app.tsx` 按当前布局渲染。换布局时改 `layouts.ts` 的顺序；`src/routes/_app/layouts.tsx` 是项目初期对照选择布局的页面，选定后删除。
 - 颜色用 Tailwind 的语义类（`bg-primary`、`text-muted-foreground` 等），品牌色来自设计令牌 `theme/tokens.json`，不要写死颜色值。
