@@ -101,9 +101,10 @@ bun install --frozen-lockfile
 bun run check       # Biome
 bun run typecheck   # 每个包的 tsc --noEmit
 bun run test        # Vitest
+bun run e2e         # Playwright，第一次运行前执行 bunx playwright install chromium
 ```
 
-`@go-tenon/client` 不依赖 DOM：它的 `tsconfig.json` 中 `lib` 没有 `dom`，用到 `window`、`document` 等浏览器 API 时类型检查失败。`@go-tenon/shell` 用于网页，依赖 React、TanStack Router 和 TanStack Query，都是 peer 依赖；开发和测试用到的包（React、Testing Library、happy-dom、Vite 等）写在 `js/package.json` 的 `devDependencies` 中，不写在包自己的 `package.json` 里，否则会随包复制到项目中被安装。需要 DOM 的测试文件在开头写 `// @vitest-environment happy-dom`。测试文件（`*.test.ts`、`*.test.tsx`）不复制到项目中，可以用只在 `js/package.json` 中的包，例如表单适配器的测试用真实的 react-hook-form 和 antd。在生成的项目中试用改动时，用 `tenon init --tenon <框架目录>` 生成项目，`tenon dev` 每次启动时复制本地的 `js`。
+`@go-tenon/client` 不依赖 DOM：它的 `tsconfig.json` 中 `lib` 没有 `dom`，用到 `window`、`document` 等浏览器 API 时类型检查失败。`@go-tenon/shell` 用于网页，依赖 React、TanStack Router 和 TanStack Query，都是 peer 依赖；开发和测试用到的包（React、Testing Library、happy-dom、Vite 等）写在 `js/package.json` 的 `devDependencies` 中，不写在包自己的 `package.json` 里，否则会随包复制到项目中被安装。需要 DOM 的测试文件在开头写 `// @vitest-environment happy-dom`。测试文件（`*.test.ts`、`*.test.tsx`）不复制到项目中，可以用只在 `js/package.json` 中的包，例如表单适配器的测试用真实的 react-hook-form 和 antd。`js/e2e` 是在真实浏览器中运行的测试：一个只用 `@go-tenon/shell` 的小应用（Vite 启动），Playwright 检查多标签与保活中 happy-dom 测不到的部分，例如浏览器的前进后退、隐藏标签暂停 effect、刷新浏览器后恢复标签栏。它没有 `package.json`，不是 workspace 中的包：每个有 `package.json` 的目录都会被复制到项目中，框架的包在它的 `vite.config.ts` 和 `tsconfig.json` 中按路径引用。在生成的项目中试用改动时，用 `tenon init --tenon <框架目录>` 生成项目，`tenon dev` 每次启动时复制本地的 `js`。
 
 <a id="continuous-integration"></a>
 ## 持续集成
@@ -115,7 +116,7 @@ CI 配置位于 [.github/workflows/ci.yml](.github/workflows/ci.yml)，每次推
   2. `go vet ./...`；
   3. `golangci-lint run`，配置在 [.golangci.yml](.golangci.yml)；
   4. 在 `web/ui` 中重新运行 `go tool templ generate`，确认提交的 `_templ.go` 是最新的。
-- `js` 在 `js` 中安装依赖，运行 Biome、类型检查和测试，见[前端包](#js-packages)。
+- `js` 在 `js` 中安装依赖，运行 Biome、类型检查、测试和 Playwright 的 E2E 测试，见[前端包](#js-packages)。
 - `test` 执行 `go test ./...`，使用 PostgreSQL 18、Redis 8、Memcached、nsqd、Gotenberg 和 Qdrant 服务容器。
 - `scaffold` 运行 `TestInitEndToEnd` 和 `TestTutorial`，见[文档用法测试](#doc-tests)。
 
