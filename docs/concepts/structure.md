@@ -262,7 +262,7 @@ Tenon 的每个包都可以单独使用，按需引入即可。顶层的包分�
 | `realtime` | 嵌入 Centrifuge 的 WebSocket 频道 | [实时频道](../libraries/realtime.md) |
 | `mcpx` | 把动作作为 MCP 工具提供给 AI 客户端 | [MCP 服务](../ai/mcp.md) |
 | `command` | 根命令、`Bind`、`Daemon`、退出码；`httpcmd`、`migratecmd` 等内置命令 | [命令行](../general/commands.md) |
-| `queue/queueweb` | 队列面板 | [队列面板](../libraries/queue.md#panel) |
+| `queue/queueweb` | 队列面板 | [队列面板](../libraries/queue-monitoring.md#panel) |
 | `cmd/tenon` | 开发工具 `go tool tenon` | [开发工具](../installation/tooling.md) |
 
 <a id="features"></a>

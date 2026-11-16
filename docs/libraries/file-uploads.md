@@ -2,15 +2,17 @@
 
 本页在[文件存储](filesystem.md)之上给出几种常见的写法：替换文件、多个有序文件、确认后异步处理、图片缩略图，以及在 REST 接口中提供服务端上传和客户端直传。文件服务本身（配置、磁盘、上传、确认、清理）见[文件存储](filesystem.md)。
 
+阅读前需要了解：[文件存储](filesystem.md)；[路由](../http/routing.md)。客户端直接上传到 S3 的接口见[客户端直传](direct-uploads.md)。
+
 - [替换文件](#replacing-files)
 - [多个有序文件](#ordered-files)
 - [确认后异步处理](#processing-files)
 - [图片缩略图](#thumbnails)
 - [在页面中上传](#pages)
 - [在 REST 接口中使用](#rest)
+- [常见问题](#troubleshooting)
     - [路由](#rest-routes)
     - [服务端上传接口](#rest-upload)
-    - [直传接口](#rest-direct-upload)
     - [在业务接口中确认](#rest-confirm)
     - [请求体大小与超时](#rest-limits)
     - [错误响应](#rest-errors)
@@ -332,126 +334,6 @@ curl -X POST https://example.com/files \
 }
 ```
 
-<a id="rest-direct-upload"></a>
-### 直传接口
-
-`direct_upload.go` 把直传相关的几个接口放在一个业务动作中，每个方法对应一个接口，都只是把参数转交给文件服务：
-
-```go
-type PrepareFileInput struct {
-    Body struct {
-        Filename    string `json:"filename" minLength:"1"`
-        ContentType string `json:"content_type,omitempty"`
-        Size        int64  `json:"size" minimum:"0"`
-    }
-}
-
-type SignPartInput struct {
-    ID       uuid.UUID `path:"id"`
-    UploadID string    `path:"uploadID"`
-    Number   int32     `path:"number" minimum:"1" maximum:"10000"`
-}
-
-type CompleteMultipartInput struct {
-    ID       uuid.UUID `path:"id"`
-    UploadID string    `path:"uploadID"`
-    Body     struct {
-        Parts []filesystem.Part `json:"parts" minItems:"1"`
-    }
-}
-
-type DirectUpload struct {
-    files *filesystem.Service
-}
-
-func NewDirectUpload(files *filesystem.Service) *DirectUpload {
-    return &DirectUpload{files: files}
-}
-
-func (a *DirectUpload) Prepare(ctx context.Context, in *PrepareFileInput) (*FileOutput, error) {
-    owner, _ := identity.FromContext(ctx)
-    file, err := a.files.Prepare(ctx, owner, filesystem.FileInput{
-        Disk:        "s3",
-        Filename:    in.Body.Filename,
-        ContentType: in.Body.ContentType,
-        Size:        in.Body.Size,
-    })
-    if err != nil {
-        return nil, err
-    }
-    return &FileOutput{Body: file}, nil
-}
-
-func (a *DirectUpload) SignPut(ctx context.Context, in *FileIDInput) (*SignedOutput, error) {
-    owner, _ := identity.FromContext(ctx)
-    signed, err := a.files.SignPut(ctx, owner, in.ID)
-    if err != nil {
-        return nil, err
-    }
-    return &SignedOutput{Body: signed}, nil
-}
-
-func (a *DirectUpload) CreateMultipart(ctx context.Context, in *FileIDInput) (*MultipartOutput, error) {
-    owner, _ := identity.FromContext(ctx)
-    upload, err := a.files.CreateMultipart(ctx, owner, in.ID)
-    if err != nil {
-        return nil, err
-    }
-    return &MultipartOutput{Body: upload}, nil
-}
-
-func (a *DirectUpload) SignPart(ctx context.Context, in *SignPartInput) (*SignedOutput, error) {
-    owner, _ := identity.FromContext(ctx)
-    signed, err := a.files.SignPart(ctx, owner, in.ID, in.UploadID, in.Number)
-    if err != nil {
-        return nil, err
-    }
-    return &SignedOutput{Body: signed}, nil
-}
-
-func (a *DirectUpload) CompleteMultipart(ctx context.Context, in *CompleteMultipartInput) (*FileOutput, error) {
-    owner, _ := identity.FromContext(ctx)
-    file, err := a.files.CompleteMultipart(ctx, owner, in.ID, in.UploadID, in.Body.Parts)
-    if err != nil {
-        return nil, err
-    }
-    return &FileOutput{Body: file}, nil
-}
-
-func (a *DirectUpload) AbortMultipart(ctx context.Context, in *UploadIDInput) (*NoContentOutput, error) {
-    owner, _ := identity.FromContext(ctx)
-    if err := a.files.AbortMultipart(ctx, owner, in.ID, in.UploadID); err != nil {
-        return nil, err
-    }
-    return &NoContentOutput{}, nil
-}
-```
-
-客户端用 `@go-tenon/client` 的 `uploadFile` 执行完整的流程，各个步骤是[生成客户端](../responses/clients.md)的方法：
-
-```ts
-import { uploadFile } from "@go-tenon/client"
-
-const record = await uploadFile(input.files[0], {
-  prepare: (body) => api.file.prepare(body),
-  sign: (id) => api.file.signPut(id),
-  multipart: {
-    create: (id) => api.file.multipartCreate(id),
-    signPart: (id, uploadId, n) => api.file.multipartSignPart(id, uploadId, n),
-    complete: (id, uploadId, parts) => api.file.multipartComplete(id, uploadId, { parts }),
-    abort: (id, uploadId) => api.file.multipartAbort(id, uploadId),
-  },
-}, { onProgress: ({ loaded, total }) => setProgress(loaded / total), signal })
-// 把 record.id 提交给业务接口，例如作为文章封面
-```
-
-- 文件不超过 `multipartThreshold`（默认 64 MiB）时签名一次，用一个请求上传；更大的文件分片上传，默认 4 片并发，每一片在上传前才签名。
-- 某一片失败时重新签名并重传这一片（默认 2 次）；仍然失败或被 `signal` 取消时放弃分片会话。
-- 合并时要提交每一片的 `ETag`，它是对象存储的响应头：bucket 的 CORS 规则要允许 `PUT`，并在 `ExposeHeaders` 中列出 `ETag`，否则浏览器中的脚本读不到它，`uploadFile` 报错。
-- 只使用本地磁盘时不提供 `multipart`，或者用服务端上传接口。
-
-步骤的格式见[客户端协议](../http/protocol.md#uploads)。
-
 <a id="rest-confirm"></a>
 ### 在业务接口中确认
 
@@ -516,3 +398,22 @@ func (a *Create) Handle(ctx context.Context, subject identity.Subject, c Changes
 ```
 
 需要本地化提示时，在翻译文件中以错误码为消息 ID 添加译文，见[本地化](../general/localization.md)。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**上传接口返回 413**
+
+请求体超过了大小限制。上传接口要单独放宽限制，见[请求体大小与超时](#rest-limits)。
+
+**保存文章时提交了封面 ID，返回错误**
+
+`Confirm` 拒绝了这个文件：不是当前用户上传的、已经过期、还没上传完，或者不符合 `Accept`。接口直接返回这个错误即可，见[在业务接口中确认](#rest-confirm)。
+
+**缩略图地址返回 403**
+
+imgproxy 的 `key`、`salt` 与应用配置中的不一致，签名校验不通过，见[图片缩略图](#thumbnails)。
+
+**本地磁盘的图片生成不了缩略图**
+
+本地磁盘的 `public_url` 是相对路径时，imgproxy 不知道去哪里下载原图。用 `IMGPROXY_BASE_URL` 设置应用的地址，见[图片缩略图](#thumbnails)。

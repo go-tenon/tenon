@@ -12,6 +12,8 @@ maxmemory-policy noeviction
 
 Tenon 不封装 Redis 客户端，约定统一使用 [rueidis](https://github.com/redis/rueidis)。[实时推送](realtime.md)依赖的 Centrifuge 也使用它，整个应用只有一个 Redis 客户端库。和数据库一样，客户端在入口创建一次，通过构造函数传给需要它的服务。
 
+阅读前需要了解：[依赖装配](../concepts/dependencies.md)；Redis 的基本概念（键、过期时间）。
+
 - [示例用法](#example-usage)
 - [安装](#installation)
 - [配置](#configuration)
@@ -20,6 +22,7 @@ Tenon 不封装 Redis 客户端，约定统一使用 [rueidis](https://github.co
 - [执行命令](#running-commands)
 - [在其他组件中使用](#using-with-components)
 - [测试](#testing)
+- [常见问题](#troubleshooting)
 
 <a id="example-usage"></a>
 ## 示例用法
@@ -222,3 +225,22 @@ func TestViews(t *testing.T) {
 > 请让 `REDIS_TEST_URL` 指向专门的测试实例，与存放真实数据的 Redis 分开。
 
 本地用 `compose.test.yml` 把 Redis 和 PostgreSQL 一起启动，见[在本地运行数据库测试](../testing/database.md#running-database-tests-locally)。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**启动时报错连不上 Redis**
+
+`NewClient` 会立即连接。检查 URL 中的地址、端口和密码，以及 Redis 是否在运行。
+
+**执行命令报错 `CROSSSLOT`**
+
+使用集群时，一条命令或一个脚本涉及的键不在同一个槽。把需要一起操作的键的相同部分写在花括号里，例如 `app:{user:42}:views`，见[集群](#cluster)。
+
+**读取不存在的键时报错**
+
+键不存在时，`Get` 返回的错误满足 `rueidis.IsRedisNil`。用它把“没有数据”和真正的故障区分开，见[执行命令](#running-commands)。
+
+**锁或限流计数莫名其妙地消失了**
+
+Redis 没有配置 `noeviction`，内存满时淘汰了这些键。按本页开头的配置设置内存策略。

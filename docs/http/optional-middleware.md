@@ -58,7 +58,7 @@ API 只用 [Bearer token](../security/api-tokens.md) 认证，所以 `CORS` 默�
 <a id="basic-auth"></a>
 ## HTTP Basic 认证
 
-[队列面板](../libraries/queue.md#panel)、内部的[文档页](../responses/doc-pages.md)这类给运维和团队成员看的页面，不值得接入应用的账号体系，用 `httpx.BasicAuth` 保护：浏览器弹出登录框，之后的请求自动带上用户名和密码。
+[队列面板](../libraries/queue-monitoring.md#panel)、内部的[文档页](../responses/doc-pages.md)这类给运维和团队成员看的页面，不值得接入应用的账号体系，用 `httpx.BasicAuth` 保护：浏览器弹出登录框，之后的请求自动带上用户名和密码。
 
 账号写在配置中，密码保存为[哈希](../security/hashing.md)，用 `hashing.Hasher` 生成和校验：
 

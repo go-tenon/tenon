@@ -135,7 +135,7 @@ roles := authz.NewStore(a.db, auth.Permissions)
 
 角色只能包含目录中的权限，以及能匹配目录中权限的通配符，写错权限名会在保存角色时得到错误。目录也是角色编辑界面的数据来源：`roles.Catalog()` 返回全部权限和说明。
 
-把目录交给 API，它写入 OpenAPI 的 `x-tenon-permissions`，生成的客户端据此得到权限常量和说明，见[客户端的权限](../responses/clients.md#ts-permissions)：
+把目录交给 API，它写入 OpenAPI 的 `x-tenon-permissions`，生成的客户端据此得到权限常量和说明，见[客户端的权限](../responses/client-react.md#ts-permissions)：
 
 ```go
 api := rest.New(r, rest.Options{Title: "Blog API", BasePath: "/api", Accounts: accounts, Permissions: auth.Permissions})

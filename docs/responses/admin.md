@@ -2,6 +2,8 @@
 
 运营后台用 [antd](https://ant.design) 和 [ProComponents](https://procomponents.ant.design) 编写，数据密度高、组件齐全。`@go-tenon/admin` 是它的外观：布局、标签栏、登录页、错误页、用户菜单、租户切换、通知、后台任务和 AI 对话。逻辑都来自[应用骨架](app-shell.md)（`@go-tenon/shell`）：导航模型、插槽、布局状态、多标签和权限，这里只负责用 antd 渲染。
 
+阅读前需要了解：[应用骨架](app-shell.md)；[入门教程第 8 章](../tutorial/08-admin.md)用 admin 模板做过一个后台。
+
 - [新建运营后台](#creating)
 - [模板里有什么](#template)
 - [全局配置](#provider)
@@ -9,6 +11,7 @@
 - [页面与部件](#pages)
 - [通知、后台任务与 AI 对话](#features)
 - [给 AI 编程助手的约定](#agents)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="creating"></a>
@@ -91,7 +94,7 @@ import { CloudOutlined } from "@ant-design/icons"
 | `FullscreenLayout` | 只保留返回和操作入口 | 编辑器、画布、数据大屏 |
 | `AuthLayout` | 卡片居中，或者左右分栏（`side`） | 登录、注册、找回密码 |
 
-`AdminLayout` 基于 ProLayout。`variant` 传数组时用户可以在这几种之间切换，选择保存在布局状态中；`tabs` 开启[多标签](app-shell.md#tabs)，标签栏放在页面上方：
+`AdminLayout` 基于 ProLayout。`variant` 传数组时用户可以在这几种之间切换，选择保存在布局状态中；`tabs` 开启[多标签](app-shell-features.md#tabs)，标签栏放在页面上方：
 
 ```tsx
 export const Route = createFileRoute("/_app")({ beforeLoad: requireAuth, component: Layout })
@@ -124,16 +127,16 @@ function Layout() {
 | `RouteError` | 交给 `createApp` 的 `router.defaultErrorComponent`：缺少权限时显示 403，其他错误显示说明和重试按钮，都在上级布局之中 |
 | `NotFoundPage`、`ForbiddenPage` | 404、403 |
 | `UserMenu` | 头像和名称，下拉中是颜色模式和退出。退出前，标签中有未保存的修改时先询问；`logout` 调用应用的登出接口 |
-| `TenantSwitcher` | 当前租户和切换，见[租户](app-shell.md#tenants)；只有一个租户时只显示名称 |
+| `TenantSwitcher` | 当前租户和切换，见[租户](app-shell-features.md#tenants)；只有一个租户时只显示名称 |
 | `NewVersionNotice` | 发布新版本后提示打开着的页面刷新，放在根路由中一次 |
 | `TabBar` | 标签栏：右键菜单（刷新、固定、关闭、关闭其他、关闭右侧、关闭全部）、拖动排序、未保存的标记。`AdminLayout` 的 `tabs` 开启时自动放置 |
 
-表单用 antd 的 `Form`，校验规则用 [`antdRule`](app-shell.md#forms)，与服务端相同；列表用 ProTable，查询条件保存在地址中，见[列表](app-shell.md#lists)。
+表单用 antd 的 `Form`，校验规则用 [`antdRule`](app-shell-features.md#forms)，与服务端相同；列表用 ProTable，查询条件保存在地址中，见[列表](app-shell-features.md#lists)。
 
 <a id="features"></a>
 ## 通知、后台任务与 AI 对话
 
-框架功能的界面，逻辑见应用骨架的[通知](app-shell.md#notifications)、[后台操作](app-shell.md#operations)和 [AI 对话](app-shell.md#ai-chat)：
+框架功能的界面，逻辑见应用骨架的[通知](app-shell-features.md#notifications)、[后台操作](app-shell-features.md#operations)和 [AI 对话](app-shell-features.md#ai-chat)：
 
 ```tsx
 <Fill name="actions">
@@ -167,6 +170,21 @@ bun add ai@^7.0.159 @ai-sdk/react@^4.0.163 @ant-design/x@^2.10.0 @ant-design/x-m
 - `AGENTS.md`：只用 antd 和 ProComponents；页面、接口、表单、列表、权限的写法；写完运行 `bun run typecheck` 和 `bun run lint`。
 - `biome.json`：`bun run lint` 拒绝导入 shadcn、Radix、Tailwind、lucide，提示改用 antd。
 - 项目根目录的 `.mcp.json` 加上 antd 的 MCP 服务（`@ant-design/cli`，版本与 antd 相同），可以查询组件的属性、令牌和示例；已有的服务不受影响。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**登录后接口都返回 404**
+
+模板按约定的路径调用登录相关的接口（`/api/auth/login`、`/api/auth/refresh`、`/api/auth/logout`、`/api/me`）。应用的路径不同时，修改 `src/auth.ts`，见[模板里有什么](#template)。
+
+**打开 `/admin/` 得到 404**
+
+前端还没有挂载到路由上。按 `tenon add frontend` 打印的代码挂载，见[挂载](spa.md#mounting)。
+
+**菜单中的图标没有显示**
+
+路由元数据中的 `icon` 名字没有登记。默认只登记了常用的十几个，用 `icons` 加上其他的，见[全局配置](#provider)。
 
 <a id="api-reference"></a>
 ## API 参考
