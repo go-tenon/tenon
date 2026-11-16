@@ -87,6 +87,9 @@ func (a *API) checkResource(r *Resource) error {
 	if slices.ContainsFunc(a.resources, func(x Resource) bool { return x.Name == r.Name }) {
 		return fmt.Errorf("declared twice")
 	}
+	if slices.ContainsFunc(a.settings, func(x Settings) bool { return x.Name == r.Name }) {
+		return fmt.Errorf("settings have the same name; their labels would clash")
+	}
 	if r.List == "" {
 		return fmt.Errorf("no List operation; it is required")
 	}

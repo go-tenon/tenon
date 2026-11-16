@@ -300,7 +300,7 @@ export function ResourceForm({
     <form onSubmit={onSubmit} className="grid gap-4" noValidate>
       <FormError error={formError} />
       {model.form.map((f) => (
-        <FormField key={f.name} form={form} field={f} input={inputs[f.name] ?? defaultInput} />
+        <ResourceFormField key={f.name} form={form} field={f} input={inputs[f.name] ?? defaultInput} />
       ))}
       <DialogFooter>
         <Button type="submit" disabled={pending}>
@@ -311,7 +311,8 @@ export function ResourceForm({
   )
 }
 
-function FormField({
+/** 表单中的一个字段：标签、输入组件和错误提示。设置的表单（SettingsForm）也用它。 */
+export function ResourceFormField({
   form,
   field,
   input: FieldInputComponent,

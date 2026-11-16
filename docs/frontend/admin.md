@@ -206,6 +206,7 @@ bun add ai@^7.0.159 @ai-sdk/react@^4.0.163 @ant-design/x@^2.10.0 @ant-design/x-m
 | `NotificationBell`、`OperationCenter`、`OperationProgress`、`OperationProgressBar` | 通知和后台任务 |
 | `ActivityTimeline` | 操作日志 |
 | `ImportButton`、`ExportButton` | 导入与导出 |
+| `SettingsForm` | 设置页面，见[设置页面](resources.md#settings) |
 | `AssistantChat`、`AssistantButton` | `@go-tenon/admin/chat` 中的 AI 对话 |
 | `ResourcePage`、`ResourceForm`、`FieldValue`、`defaultInput` | [资源](resources.md#admin)的页面 |
 | `defaultIcons` | 默认登记的图标 |

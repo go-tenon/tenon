@@ -71,6 +71,7 @@ bunx shadcn@4.23.0 add ./.tenon/js/registry/r/tenon-rail-layout.json
 | `tenon-resource-page` | `ResourcePage`、`ResourceForm`、`FieldValue` | 按[资源](resources.md#console)的定义渲染列表、筛选、表单和操作，console 模板已经带着 |
 | `tenon-notifications` | `NotificationBell`、`OperationCenter`、`OperationProgress` | 通知铃铛（未读数、列表、标记已读）、后台任务的进度，见[通知](app-shell-features.md#notifications)和[后台操作](app-shell-features.md#operations) |
 | `tenon-activity` | `ActivityTimeline` | [操作日志](../features/activity.md#history-page)的时间线：从新到旧分页，代为登录时注明实际操作的人 |
+| `tenon-settings-form` | `SettingsForm` | [设置页面](resources.md#settings)：按 `api.Settings` 的声明渲染一组设置的表单，“保存”按钮或自动保存 |
 | `tenon-transfer` | `ImportButton`、`ExportButton` | [后台导入](../features/background-imports.md#import-button)和[后台导出](../features/background-exports.md#export-button)：上传、进度、结果，下载没有导入的行或导出的文件 |
 | `tenon-markdown` | `Markdown` | 消息的 Markdown：[Streamdown](https://streamdown.ai) 渲染流式输出，代码块用 shadcn 的 Code Block，带语法高亮和复制按钮 |
 | `tenon-assistant-chat` | `AssistantChat`、`AssistantButton` | AI 对话，见下文 |

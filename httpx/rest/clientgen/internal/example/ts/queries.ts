@@ -75,5 +75,19 @@ export function createQueries(client: Client, options: QueryOptions = {}) {
         onSuccess: () => invalidate("article"),
       }),
     },
+    blog: {
+      /** blog 分组全部查询的 key 前缀。 */
+      key: () => key("blog"),
+      /** GET /settings */
+      settingsGet: (...args: Parameters<Client["blog"]["settingsGet"]>) => ({
+        queryKey: key("blog", "settingsGet", ...args),
+        queryFn: () => client.blog.settingsGet(...args),
+      }),
+      /** PUT /settings */
+      settingsUpdate: () => ({
+        mutationFn: (variables: Parameters<Client["blog"]["settingsUpdate"]>[0]) => client.blog.settingsUpdate(variables),
+        onSuccess: () => invalidate("blog"),
+      }),
+    },
   }
 }

@@ -843,6 +843,7 @@ go tool tenon generate
 import { resourceModel } from "@go-tenon/shell"
 import { createClient } from "@blog/client/api"
 import { enums } from "@blog/client/api/enums"
+import { messages } from "@blog/client/api/messages"
 import { createQueries } from "@blog/client/api/queries"
 import { resources } from "@blog/client/api/resources"
 import { components, schemas } from "@blog/client/api/schemas"
@@ -852,8 +853,8 @@ import { session } from "./auth"
 export const api = createClient({ baseURL: "/api", auth: session.auth })
 session.connect(api)
 
-// 资源模型：Go 中声明的资源，加上生成的客户端、校验规则和枚举的显示文字。
-const kit = { client: api, queries: createQueries(api), schemas, components, enums, language: "zh-CN" }
+// 资源模型：Go 中声明的资源，加上生成的客户端、校验规则、验证提示和枚举的显示文字。
+const kit = { client: api, queries: createQueries(api), schemas, components, enums, messages, language: "zh-CN" }
 export const users = resourceModel(resources.user, kit)
 export const roles = resourceModel(resources.role, kit)
 ```
