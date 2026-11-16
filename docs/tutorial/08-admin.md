@@ -1,0 +1,922 @@
+# 8. 后台：作者与角色
+
+上一章定下了文章的规则，但作者只能用命令创建，所有作者的权限也都一样。这一章给博客加上一个运营后台：管理员在后台中管理角色，给作者分配角色；作者的权限来自他的角色，修改后在下一个请求生效。
+
+后台的页面大多是增删改查。我们在 Go 中把作者和角色声明为**资源**，`tenon generate` 生成资源的定义，后台的页面按定义渲染：角色的页面没有一行页面代码，作者的页面只覆盖角色这一个字段。
+
+- [权限与角色](#permissions)
+- [角色的接口](#roles)
+- [作者的接口](#users)
+- [装配](#wiring)
+- [后台](#admin)
+
+<a id="permissions"></a>
+## 权限与角色
+
+先声明博客的全部权限。新建 `internal/auth/permissions.go`：
+
+```go title="internal/auth/permissions.go"
+package auth
+
+import (
+    "github.com/danielgtaylor/huma/v2"
+
+    "github.com/go-tenon/tenon/authz"
+    "github.com/go-tenon/tenon/enum"
+    "github.com/go-tenon/tenon/httpx/rest"
+)
+
+// Permission 是一个权限，例如 users:manage。
+type Permission string
+
+const (
+    UsersManage Permission = "users:manage"
+    RolesManage Permission = "roles:manage"
+)
+
+// Permissions 是全部权限，显示文字是翻译文件中 permission.<权限> 的消息。
+var Permissions = enum.New("permission", UsersManage, RolesManage)
+
+// Schema 让 OpenAPI 中的 Permission 只接受上面的取值：角色表单中是带显示文字的多选。
+func (Permission) Schema(r huma.Registry) *huma.Schema { return rest.EnumSchema(r, Permissions) }
+
+// Catalog 是权限目录：authz 只接受其中的权限，它也写入 OpenAPI 文档。
+var Catalog = authz.Catalog{
+    {Name: string(UsersManage), Description: "管理作者"},
+    {Name: string(RolesManage), Description: "管理角色"},
+}
+```
+
+`Catalog` 是[权限目录](../security/authorization.md#permission-catalog)：角色只能包含其中的权限，它也写入 OpenAPI 文档。`Permission` 同时是一个[枚举](../http/validation.md#enums)，接口只接受目录中的权限，后台的角色表单中它是带显示文字的多选，显示文字写在翻译文件中（见下文）。
+
+角色和分配保存在 [`authz`](../security/authorization.md#roles) 的表中。它自带迁移，在 `cmd/api/main.go` 的 `migrate publish` 中加上它；同时把翻译文件交给 `httpcmd.Commands`，生成客户端时枚举和资源的显示文字来自其中：
+
+```go title="cmd/api/main.go"
+// Command api 是博客的入口。
+package main
+
+import (
+    "github.com/spf13/cobra"
+
+    "github.com/go-tenon/tenon/apitoken"
+    "github.com/go-tenon/tenon/authz"
+    "github.com/go-tenon/tenon/command"
+    "github.com/go-tenon/tenon/command/httpcmd"
+    "github.com/go-tenon/tenon/command/migratecmd"
+    "github.com/go-tenon/tenon/database"
+    "github.com/go-tenon/tenon/database/migrate"
+    "github.com/go-tenon/tenon/login"
+
+    "example.com/blog/internal/bootstrap"
+    "example.com/blog/locales"
+    "example.com/blog/migrations"
+)
+
+func main() {
+    root := command.Root("api", "博客")
+    root.AddCommand(
+        command.Run("serve", "启动 HTTP 服务", bootstrap.Serve),
+        command.Config[bootstrap.Config](),
+        migrateCommand(),
+    )
+    // 需要数据库的命令，例如 user create
+    root.AddCommand(bootstrap.Commands()...)
+    // openapi、routes、client：导出接口文档、列出路由、生成客户端，go tool tenon 调用它们。
+    // 翻译文件交给 client 命令：枚举和资源的显示文字来自其中。
+    root.AddCommand(httpcmd.Commands(bootstrap.DocRouter, httpcmd.Translations(locales.FS))...)
+    command.Execute(root)
+}
+
+// migrateCommand 返回 migrate 命令：up、status、down、make，以及发布框架自带的迁移的 publish。
+func migrateCommand() *cobra.Command {
+    cmd := migratecmd.New(migrations.FS, func(cfg bootstrap.Config) database.Config { return cfg.Database })
+    cmd.AddCommand(migratecmd.Publish(
+        migrate.Source{Name: "login", FS: login.Migrations()},
+        migrate.Source{Name: "apitoken", FS: apitoken.Migrations()},
+        migrate.Source{Name: "authz", FS: authz.Migrations()},
+    ))
+    return cmd
+}
+```
+
+```bash
+go mod tidy
+go run ./cmd/api migrate publish
+go run ./cmd/api migrate up
+```
+
+<a id="roles"></a>
+## 角色的接口
+
+角色的接口调用 `authz.Store` 的方法：列出、创建、修改和删除。新建 `internal/role/role.go`：
+
+```go title="internal/role/role.go"
+// Package role 是角色的管理接口：角色是一组权限，分配给作者。数据保存在 authz 的表中。
+package role
+
+import (
+    "context"
+    "net/http"
+
+    "github.com/danielgtaylor/huma/v2"
+
+    "github.com/go-tenon/tenon/authz"
+    "github.com/go-tenon/tenon/httpx/rest"
+    "github.com/go-tenon/tenon/page"
+
+    "example.com/blog/internal/auth"
+)
+
+// Role 是返回给客户端的角色。
+type Role struct {
+    ID          string            `json:"id"`
+    Name        string            `json:"name"`
+    Description string            `json:"description"`
+    Permissions []auth.Permission `json:"permissions"`
+}
+
+// Changes 是创建和修改角色时提交的内容。
+type Changes struct {
+    Name        string            `json:"name" minLength:"1" maxLength:"50"`
+    Description string            `json:"description" maxLength:"200" required:"false"`
+    Permissions []auth.Permission `json:"permissions" minItems:"1"`
+}
+
+type ListInput struct {
+    page.OffsetParams
+}
+
+type ListOutput struct {
+    Body page.Offset[Role]
+}
+
+type CreateInput struct {
+    Body Changes
+}
+
+type UpdateInput struct {
+    ID   string `path:"id"`
+    Body Changes
+}
+
+type IDInput struct {
+    ID string `path:"id"`
+}
+
+type RoleOutput struct {
+    Body Role
+}
+
+type handlers struct {
+    roles *authz.Store
+}
+
+func toRole(r authz.Role) Role {
+    perms := make([]auth.Permission, len(r.Permissions))
+    for i, p := range r.Permissions {
+        perms[i] = auth.Permission(p)
+    }
+    return Role{ID: r.ID, Name: r.Name, Description: r.Description, Permissions: perms}
+}
+
+func (c Changes) role(id string) authz.Role {
+    perms := make([]string, len(c.Permissions))
+    for i, p := range c.Permissions {
+        perms[i] = string(p)
+    }
+    return authz.Role{ID: id, Name: c.Name, Description: c.Description, Permissions: perms}
+}
+
+// list 返回全部角色。角色不多，在内存中分页。
+func (h *handlers) list(ctx context.Context, in *ListInput) (*ListOutput, error) {
+    all, err := h.roles.Roles(ctx, "")
+    if err != nil {
+        return nil, err
+    }
+    start := min(int(in.Offset()), len(all))
+    end := min(start+in.PerPage, len(all))
+    items := make([]Role, 0, end-start)
+    for _, r := range all[start:end] {
+        items = append(items, toRole(r))
+    }
+    return &ListOutput{Body: page.NewOffset(items, in.OffsetParams, int64(len(all)))}, nil
+}
+
+func (h *handlers) create(ctx context.Context, in *CreateInput) (*RoleOutput, error) {
+    r, err := h.roles.CreateRole(ctx, in.Body.role(""))
+    if err != nil {
+        return nil, err
+    }
+    return &RoleOutput{Body: toRole(r)}, nil
+}
+
+func (h *handlers) update(ctx context.Context, in *UpdateInput) (*RoleOutput, error) {
+    r, err := h.roles.UpdateRole(ctx, in.Body.role(in.ID))
+    if err != nil {
+        return nil, err
+    }
+    return &RoleOutput{Body: toRole(r)}, nil
+}
+
+// delete 删除角色，同时撤销它的分配。
+func (h *handlers) delete(ctx context.Context, in *IDInput) (*struct{}, error) {
+    return nil, h.roles.DeleteRole(ctx, in.ID)
+}
+
+// Register 注册角色的接口，并声明角色的后台页面。require 要求 roles:manage 权限。
+func Register(api *rest.API, require func(*huma.Operation), roles *authz.Store) {
+    h := &handlers{roles: roles}
+    op := func(id, method, path, summary string) huma.Operation {
+        o := huma.Operation{OperationID: id, Method: method, Path: path, Summary: summary}
+        require(&o)
+        return o
+    }
+    rest.Register(api, op("role-list", http.MethodGet, "/roles", "角色列表"), h.list)
+    create := op("role-create", http.MethodPost, "/roles", "创建角色")
+    create.DefaultStatus = http.StatusCreated
+    rest.Register(api, create, h.create)
+    rest.Register(api, op("role-update", http.MethodPut, "/roles/{id}", "修改角色"), h.update)
+    rest.Register(api, op("role-delete", http.MethodDelete, "/roles/{id}", "删除角色"), h.delete)
+
+    // 角色的后台页面：列、表单字段的类型和校验规则都来自上面的接口，显示文字来自翻译文件。
+    api.Resource(rest.Resource{
+        Name: "role", List: "role-list", Create: "role-create", Update: "role-update", Delete: "role-delete",
+        Columns: []string{"name", "description", "permissions"},
+    })
+}
+```
+
+最后的 `api.Resource` 把这几个接口声明为一个[资源](../responses/resources.md)：列表显示哪些列，其他都从接口得到。表单的字段是请求体 `Changes` 的全部字段，类型、是否必填和校验规则来自它的标签，`permissions` 是 `Permission` 的数组，所以是多选。资源写入 OpenAPI 文档，`tenon generate` 据此生成前端的资源定义。
+
+`authz` 的错误（例如“已有同名角色”）已经有翻译，接口直接返回它们。
+
+<a id="users"></a>
+## 作者的接口
+
+后台列出作者、修改作者的名字和角色。新建 `internal/user/admin.go`：
+
+```go title="internal/user/admin.go"
+package user
+
+import (
+    "context"
+    "slices"
+    "time"
+
+    "github.com/uptrace/bun"
+
+    "github.com/go-tenon/tenon/authz"
+    "github.com/go-tenon/tenon/page"
+)
+
+// Author 是后台列表中的作者：Roles 是角色的 ID。
+type Author struct {
+    ID        string    `json:"id"`
+    Name      string    `json:"name"`
+    Roles     []string  `json:"roles"`
+    CreatedAt time.Time `json:"created_at"`
+}
+
+type ListInput struct {
+    page.OffsetParams
+    Q string `query:"q" doc:"按名字搜索"`
+}
+
+type ListOutput struct {
+    Body page.Offset[Author]
+}
+
+type UpdateInput struct {
+    ID   string `path:"id"`
+    Body struct {
+        Name  string   `json:"name" minLength:"1" maxLength:"50"`
+        Roles []string `json:"roles"`
+    }
+}
+
+type AuthorOutput struct {
+    Body Author
+}
+
+// Admin 是后台管理作者的动作：列出作者，修改名字和角色。
+type Admin struct {
+    db    *bun.DB
+    roles *authz.Store
+}
+
+func NewAdmin(db *bun.DB, roles *authz.Store) *Admin { return &Admin{db: db, roles: roles} }
+
+func (a *Admin) author(ctx context.Context, u *User) (Author, error) {
+    roles, err := a.roles.RolesOf(ctx, u.Ref(), "")
+    if err != nil {
+        return Author{}, err
+    }
+    ids := make([]string, len(roles))
+    for i, r := range roles {
+        ids[i] = r.ID
+    }
+    return Author{ID: u.ID, Name: u.Name, Roles: ids, CreatedAt: u.CreatedAt}, nil
+}
+
+// List 按创建时间列出作者，q 按名字搜索。
+func (a *Admin) List(ctx context.Context, in *ListInput) (*ListOutput, error) {
+    var users []User
+    q := a.db.NewSelect().Model(&users).Order("created_at").Limit(in.Limit()).Offset(in.Offset())
+    if in.Q != "" {
+        q = q.Where("name ILIKE ?", "%"+in.Q+"%")
+    }
+    total, err := q.ScanAndCount(ctx)
+    if err != nil {
+        return nil, err
+    }
+    items := make([]Author, 0, len(users))
+    for i := range users {
+        author, err := a.author(ctx, &users[i])
+        if err != nil {
+            return nil, err
+        }
+        items = append(items, author)
+    }
+    return &ListOutput{Body: page.NewOffset(items, in.OffsetParams, int64(total))}, nil
+}
+
+// Update 修改作者的名字和角色：分配新加的角色，撤销去掉的角色。权限在下一个请求生效。
+func (a *Admin) Update(ctx context.Context, in *UpdateInput) (*AuthorOutput, error) {
+    u, err := find(ctx, a.db, in.ID)
+    if err != nil {
+        return nil, err
+    }
+    u.Name = in.Body.Name
+    if _, err := a.db.NewUpdate().Model(u).Column("name").WherePK().Exec(ctx); err != nil {
+        return nil, err
+    }
+    current, err := a.author(ctx, u)
+    if err != nil {
+        return nil, err
+    }
+    for _, id := range in.Body.Roles {
+        if !slices.Contains(current.Roles, id) {
+            if err := a.roles.Assign(ctx, u.Ref(), "", id); err != nil {
+                return nil, err
+            }
+        }
+    }
+    for _, id := range current.Roles {
+        if !slices.Contains(in.Body.Roles, id) {
+            if err := a.roles.Unassign(ctx, u.Ref(), "", id); err != nil {
+                return nil, err
+            }
+        }
+    }
+    current.Name, current.Roles = u.Name, in.Body.Roles
+    return &AuthorOutput{Body: current}, nil
+}
+```
+
+`Update` 比较作者现有的角色和提交的角色，分配新加的、撤销去掉的。权限在每个请求中按作者当前的角色加载，所以修改在下一个请求就生效，作者不用重新登录。
+
+后台要知道当前作者有哪些权限，才能显示他能用的菜单和按钮。修改 `internal/user/me.go`，返回中加上权限：
+
+```go title="internal/user/me.go"
+package user
+
+import (
+    "context"
+    "time"
+
+    "github.com/uptrace/bun"
+
+    "github.com/go-tenon/tenon/identity"
+)
+
+// Me 返回当前登录的作者，以及他的权限：后台据此显示菜单和按钮。
+type Me struct{ db *bun.DB }
+
+func NewMe(db *bun.DB) *Me { return &Me{db: db} }
+
+type Profile struct {
+    ID          string    `json:"id"`
+    Name        string    `json:"name"`
+    CreatedAt   time.Time `json:"created_at"`
+    Permissions []string  `json:"permissions"`
+}
+
+type ProfileOutput struct {
+    Body Profile
+}
+
+func (a *Me) HTTP(ctx context.Context, _ *struct{}) (*ProfileOutput, error) {
+    sub, _ := identity.FromContext(ctx)
+    u, err := find(ctx, a.db, sub.ID)
+    if err != nil {
+        return nil, err
+    }
+    perms := sub.Permissions
+    if perms == nil {
+        perms = []string{}
+    }
+    return &ProfileOutput{Body: Profile{ID: u.ID, Name: u.Name, CreatedAt: u.CreatedAt, Permissions: perms}}, nil
+}
+```
+
+在 `internal/user/routes.go` 中注册后台的接口，并把作者声明为资源。作者仍然用命令创建，资源中只有列表和修改：
+
+```go title="internal/user/routes.go"
+package user
+
+import (
+    "net/http"
+
+    "github.com/danielgtaylor/huma/v2"
+    "github.com/uptrace/bun"
+
+    "github.com/go-tenon/tenon/authz"
+    "github.com/go-tenon/tenon/httpx/rest"
+)
+
+// Register 注册作者的接口。requireUser 要求登录，requireManage 还要求 users:manage 权限。
+func Register(api *rest.API, requireUser, requireManage func(*huma.Operation), db *bun.DB, roles *authz.Store) {
+    me := huma.Operation{OperationID: "user-me", Method: http.MethodGet, Path: "/me", Summary: "当前登录的作者"}
+    requireUser(&me)
+    rest.Register(api, me, NewMe(db).HTTP)
+
+    admin := NewAdmin(db, roles)
+    list := huma.Operation{OperationID: "user-list", Method: http.MethodGet, Path: "/users", Summary: "作者列表"}
+    requireManage(&list)
+    rest.Register(api, list, admin.List)
+    update := huma.Operation{OperationID: "user-update", Method: http.MethodPut, Path: "/users/{id}", Summary: "修改作者"}
+    requireManage(&update)
+    rest.Register(api, update, admin.Update)
+
+    // 作者的后台页面：作者用命令创建，后台只列出和修改。
+    api.Resource(rest.Resource{
+        Name: "user", List: "user-list", Update: "user-update",
+        Columns: []string{"name", "roles", "created_at"}, Search: "q",
+    })
+}
+```
+
+第一个管理员也用命令设置。新建 `internal/user/admin_command.go`：
+
+```go title="internal/user/admin_command.go"
+package user
+
+import (
+    "fmt"
+    "slices"
+
+    "github.com/spf13/cobra"
+
+    "github.com/go-tenon/tenon/authz"
+    "github.com/go-tenon/tenon/login"
+
+    "example.com/blog/internal/auth"
+)
+
+// adminRole 是 user admin 创建的角色，拥有全部权限。
+const adminRole = "管理员"
+
+// MakeAdmin 把作者设为管理员：没有“管理员”角色时先创建它，然后分配给这个作者。
+func MakeAdmin(logins *login.Realm, roles *authz.Store) func(*cobra.Command, []string) error {
+    return func(cmd *cobra.Command, _ []string) error {
+        ctx := cmd.Context()
+        email, _ := cmd.Flags().GetString("email")
+        ref, err := logins.Lookup(ctx, login.Email(email))
+        if err != nil {
+            return err
+        }
+        all, err := roles.Roles(ctx, "")
+        if err != nil {
+            return err
+        }
+        i := slices.IndexFunc(all, func(r authz.Role) bool { return r.Name == adminRole })
+        var role authz.Role
+        if i >= 0 {
+            role = all[i]
+        } else {
+            perms := make([]string, 0, len(auth.Catalog))
+            for _, p := range auth.Catalog {
+                perms = append(perms, p.Name)
+            }
+            if role, err = roles.CreateRole(ctx, authz.Role{Name: adminRole, Description: "全部权限", Permissions: perms}); err != nil {
+                return err
+            }
+        }
+        if err := roles.Assign(ctx, ref, "", role.ID); err != nil {
+            return err
+        }
+        _, err = fmt.Fprintln(cmd.OutOrStdout(), email, "现在是管理员")
+        return err
+    }
+}
+```
+
+在 `internal/user/commands.go` 中加上这个命令：
+
+```go title="internal/user/commands.go"
+package user
+
+import (
+    "github.com/spf13/cobra"
+    "github.com/uptrace/bun"
+
+    "github.com/go-tenon/tenon/authz"
+    "github.com/go-tenon/tenon/command"
+    "github.com/go-tenon/tenon/login"
+)
+
+// Commands 声明 user 模块的命令。
+func Commands(db *bun.DB, logins *login.Realm, roles *authz.Store) *cobra.Command {
+    group := &cobra.Command{Use: "user", Short: "管理作者账号"}
+    create := &cobra.Command{
+        Use:   "create",
+        Short: "创建作者",
+        Args:  command.NoArgs,
+        RunE:  NewCreate(db, logins).Command,
+    }
+    create.Flags().String("name", "", "名字")
+    create.Flags().String("email", "", "登录用的邮箱")
+    create.Flags().String("password", "", "密码，至少 8 个字符")
+    for _, f := range []string{"name", "email", "password"} {
+        _ = create.MarkFlagRequired(f)
+    }
+    admin := &cobra.Command{
+        Use:   "admin",
+        Short: "把作者设为管理员",
+        Args:  command.NoArgs,
+        RunE:  MakeAdmin(logins, roles),
+    }
+    admin.Flags().String("email", "", "作者登录用的邮箱")
+    _ = admin.MarkFlagRequired("email")
+    group.AddCommand(create, admin)
+    return group
+}
+```
+
+<a id="wiring"></a>
+## 装配
+
+在 `internal/bootstrap/app.go` 中创建 `authz.Store`，`internal/bootstrap/commands.go` 把它交给作者的命令：
+
+```go title="internal/bootstrap/app.go"
+package bootstrap
+
+import (
+    "context"
+    "log/slog"
+    "time"
+
+    "github.com/redis/rueidis"
+    "github.com/uptrace/bun"
+
+    "github.com/go-tenon/tenon/apitoken"
+    "github.com/go-tenon/tenon/authz"
+    "github.com/go-tenon/tenon/cleanup"
+    "github.com/go-tenon/tenon/command"
+    "github.com/go-tenon/tenon/crypt"
+    "github.com/go-tenon/tenon/database"
+    "github.com/go-tenon/tenon/hashing"
+    "github.com/go-tenon/tenon/logging"
+    "github.com/go-tenon/tenon/login"
+    "github.com/go-tenon/tenon/ratelimit"
+    "github.com/go-tenon/tenon/ratelimit/redislimit"
+
+    "example.com/blog/internal/auth"
+    "example.com/blog/internal/user"
+)
+
+// App 是各个运行部分共用的资源，每个进程只装配一次。
+type App struct {
+    cfg Config
+    db  *bun.DB
+    rdb rueidis.Client
+    // users 校验作者的邮箱和密码，jwt 签发和校验登录凭据。
+    users  *login.Realm
+    tokens *apitoken.Store
+    jwt    *apitoken.JWT
+    // roles 是作者的角色和权限。
+    roles *authz.Store
+}
+
+// open 安装日志器，连接数据库和 Redis，把关闭操作登记到 stack。
+func open(ctx context.Context, cfg Config, stack *cleanup.Stack) (*App, error) {
+    slog.SetDefault(logging.New(logging.Config{}))
+
+    db, err := database.Open(ctx, cfg.Database)
+    if err != nil {
+        return nil, err
+    }
+    stack.MustAdd("database", func(context.Context) error { return db.Close() })
+
+    opt, err := rueidis.ParseURL(cfg.Redis.URL)
+    if err != nil {
+        return nil, err
+    }
+    rdb, err := rueidis.NewClient(opt)
+    if err != nil {
+        return nil, err
+    }
+    stack.MustAdd("redis", func(context.Context) error { rdb.Close(); return nil })
+
+    keys := crypt.New(cfg.Crypt)
+    // 每个邮箱 15 分钟内最多输错 5 次密码，计数保存在 Redis 中，所有实例共享。
+    every15 := ratelimit.Config{Rate: 5, Interval: 15 * time.Minute, Burst: 5}
+    users := login.New(db, login.Options{
+        Type:     user.Type,
+        Hasher:   hashing.New(cfg.Hashing),
+        Crypt:    keys,
+        Policy:   login.Policy{PasswordKinds: []string{login.KindEmail}},
+        Attempts: redislimit.New(rdb, "blog:login:attempts", every15),
+        Sends:    redislimit.New(rdb, "blog:login:sends", every15),
+    })
+    tokens := apitoken.NewStore(db, cfg.Token)
+
+    return &App{
+        cfg: cfg, db: db, rdb: rdb,
+        users: users, tokens: tokens,
+        jwt:   apitoken.NewJWT(tokens, apitoken.JWTConfig{Keys: apitoken.HMACKeys(keys)}),
+        roles: authz.NewStore(db, auth.Catalog),
+    }, nil
+}
+
+// part 是进程中的一个运行部分，例如 HTTP 服务：装配时返回 run，run 一直运行到 ctx 被取消。
+type part func(*App, *command.Daemon) (run func(context.Context) error, err error)
+
+// run 装配 App 和 parts，然后在同一个进程中运行 parts，直到收到停止信号，最后关闭资源。
+func run(ctx context.Context, cfg Config, parts ...part) (err error) {
+    d, err := command.NewDaemon(nil)
+    if err != nil {
+        return err
+    }
+    defer d.Stop()
+
+    var stack cleanup.Stack
+    defer func() { err = stack.CloseWith(context.Background(), err) }()
+
+    app, err := open(ctx, cfg, &stack)
+    if err != nil {
+        return err
+    }
+    runs := make([]func(context.Context) error, len(parts))
+    for i, p := range parts {
+        if runs[i], err = p(app, d); err != nil {
+            return err
+        }
+    }
+    return d.Run(ctx, runs...)
+}
+
+// Serve 运行 HTTP 服务，serve 命令调用它。
+func Serve(ctx context.Context, cfg Config) error {
+    return run(ctx, cfg, (*App).HTTP)
+}
+```
+
+```go title="internal/bootstrap/commands.go"
+package bootstrap
+
+import (
+    "github.com/spf13/cobra"
+
+    "github.com/go-tenon/tenon/command"
+
+    "example.com/blog/internal/user"
+)
+
+// Commands 返回需要数据库等资源的命令。声明时 App 是零值，执行其中一个命令时才调用 open 装配。
+func Commands() []*cobra.Command {
+    return command.Bind(open, func(a *App) []*cobra.Command {
+        return []*cobra.Command{user.Commands(a.db, a.users, a.roles)}
+    })
+}
+```
+
+`internal/bootstrap/http.go` 有三处变化：
+
+- `Accounts` 中作者的 Resolver 换成 `a.roles.Resolve`，每个请求按作者的角色加载权限；`Permissions` 写入权限目录；
+- 后台的接口用带权限的 `rest.RequireBearer`，缺少权限时返回 `403`；
+- `/admin/` 交给后台的单页应用（下一节创建）。
+
+```go title="internal/bootstrap/http.go"
+package bootstrap
+
+import (
+    "context"
+    "net/http"
+
+    "github.com/go-chi/chi/v5"
+
+    "github.com/go-tenon/tenon/command"
+    "github.com/go-tenon/tenon/config"
+    "github.com/go-tenon/tenon/httpx"
+    "github.com/go-tenon/tenon/httpx/rest"
+    "github.com/go-tenon/tenon/i18n"
+    "github.com/go-tenon/tenon/identity"
+
+    "example.com/blog/apps/admin"
+    "example.com/blog/apps/web"
+    "example.com/blog/internal/article"
+    "example.com/blog/internal/auth"
+    "example.com/blog/internal/role"
+    "example.com/blog/internal/user"
+    "example.com/blog/locales"
+)
+
+// HTTP 装配 HTTP 服务，serve 命令运行它。
+func (a *App) HTTP(d *command.Daemon) (func(context.Context) error, error) {
+    var draining httpx.Draining
+    router := a.Router(&draining)
+    ln, err := d.Listen("tcp", a.cfg.HTTP.Addr)
+    if err != nil {
+        return nil, err
+    }
+    return func(ctx context.Context) error {
+        return httpx.Serve(ctx, a.cfg.HTTP, ln, router, httpx.OnDraining(draining.Set))
+    }, nil
+}
+
+// Router 构造应用的全部路由：健康检查、/api 下的接口和单页应用。
+// 它只保存 App 的字段、不使用它们，所以 DocRouter 可以用一个没有打开任何资源的 App 调用它。
+func (a *App) Router(draining *httpx.Draining) chi.Router {
+    router := chi.NewRouter()
+    router.Use(httpx.Defaults(a.cfg.HTTP, httpx.Languages(i18n.MustNew("zh-CN", locales.FS)))...)
+    router.Get("/livez", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
+    router.Handle("/readyz", httpx.Ready(httpx.ReadyOptions{
+        Draining: draining,
+        Checks: []httpx.Check{
+            {Name: "database", Ping: func(ctx context.Context) error { return a.db.PingContext(ctx) }},
+            {Name: "redis", Ping: func(ctx context.Context) error { return a.rdb.Do(ctx, a.rdb.B().Ping().Build()).Error() }},
+        },
+    }))
+    router.Route("/api", func(r chi.Router) {
+        r.Use(httpx.Timeout(a.cfg.HTTP.Timeout))
+        // Accounts 声明接口接受哪些账号的登录凭据：博客只有作者一种，每个请求按作者当前的角色加载权限。
+        // Permissions 是权限目录，它写入 OpenAPI，生成的客户端据此得到权限常量。
+        api := rest.New(r, rest.Options{Title: "Blog API", Version: "1.0.0", BasePath: "/api",
+            Accounts: identity.Accounts{user.Type: a.roles.Resolve}, Permissions: auth.Catalog})
+        // requireUser 要求请求带着作者的 access token：Authorization: Bearer <token>
+        requireUser := rest.RequireBearer(api, a.jwt.Validate)
+        // 后台的接口还要求权限，缺少时返回 403。
+        requireUsers := rest.RequireBearer(api, a.jwt.Validate, string(auth.UsersManage))
+        requireRoles := rest.RequireBearer(api, a.jwt.Validate, string(auth.RolesManage))
+        auth.Register(api, requireUser, a.users, a.tokens, a.jwt)
+        user.Register(api, requireUser, requireUsers, a.db, a.roles)
+        role.Register(api, requireRoles, a.roles)
+        article.Register(api, requireUser, a.db)
+    })
+    router.Handle("/admin/*", httpx.NewSPA(admin.Dist, httpx.SPAOptions{Base: "/admin/", DevServer: a.cfg.DevServers["admin"]}))
+    router.Handle("/*", httpx.NewSPA(web.Dist, httpx.SPAOptions{DevServer: a.cfg.DevServers["web"]}))
+    return router
+}
+
+// DocRouter 用默认配置和没有打开任何资源的 App 构造路由，openapi、routes、client 命令用它。
+func DocRouter() chi.Routes {
+    return (&App{cfg: config.Default[Config]()}).Router(nil)
+}
+```
+
+资源、字段和权限的显示文字写在 `locales/zh-CN.yaml` 中，消息键是 `<资源>.title`、`<资源>.fields.<字段>` 和 `permission.<权限>`：
+
+```yaml title="locales/zh-CN.yaml"
+article.not_found: 文章不存在
+article.slug_taken: "slug“{{.slug}}”已被使用"
+article.forbidden: 只有作者能修改这篇文章
+article.already_published: 文章已经发布了
+user.title: 作者
+user.fields.name: 名字
+user.fields.roles: 角色
+user.fields.created_at: 注册时间
+role.title: 角色
+role.fields.name: 名称
+role.fields.description: 说明
+role.fields.permissions: 权限
+"permission.users:manage": 管理作者
+"permission.roles:manage": 管理角色
+```
+
+把小明设为管理员：
+
+```bash
+go run ./cmd/api user admin --email ming@example.com
+```
+
+它创建拥有全部权限的“管理员”角色，并分配给小明。
+
+<a id="admin"></a>
+## 后台
+
+用 antd 的模板新建后台，见[运营后台](../responses/admin.md)：
+
+```bash
+go tool tenon add frontend admin --template admin
+```
+
+它在 `apps/admin` 中生成登录页、侧栏布局和首页，登录调用的正是第 6 章的 `/api/auth` 接口。重新生成客户端：
+
+```bash
+go tool tenon generate
+```
+
+`packages/client/src/api/resources.ts` 中多了 `user` 和 `role` 两个资源：列、表单字段的类型和显示文字，每个接口要求的权限。在后台中把它们和生成的客户端接在一起。新建 `apps/admin/src/resources.ts`：
+
+```ts title="apps/admin/src/resources.ts"
+import { resourceModel } from "@go-tenon/shell"
+import { createClient } from "@blog/client/api"
+import { enums } from "@blog/client/api/enums"
+import { createQueries } from "@blog/client/api/queries"
+import { resources } from "@blog/client/api/resources"
+import { components, schemas } from "@blog/client/api/schemas"
+import { session } from "./auth"
+
+// api 是生成的客户端，带着登录凭据：受保护的接口返回 401 时，它通过 session 换一个新的 access token 再重试。
+export const api = createClient({ baseURL: "/api", auth: session.auth })
+session.connect(api)
+
+// 资源模型：Go 中声明的资源，加上生成的客户端、校验规则和枚举的显示文字。
+const kit = { client: api, queries: createQueries(api), schemas, components, enums, language: "zh-CN" }
+export const users = resourceModel(resources.user, kit)
+export const roles = resourceModel(resources.role, kit)
+```
+
+角色的页面不需要写任何页面代码。新建 `apps/admin/src/routes/_app/roles.tsx`：
+
+```tsx title="apps/admin/src/routes/_app/roles.tsx"
+import { ResourcePage } from "@go-tenon/admin"
+import { createFileRoute } from "@tanstack/react-router"
+import { roles } from "../../resources"
+
+export const Route = createFileRoute("/_app/roles")({
+  staticData: { title: "角色", icon: "safety", permission: "roles:manage" },
+  validateSearch: roles.listSearch,
+  component: () => <ResourcePage model={roles} route={Route} />,
+})
+```
+
+`ResourcePage` 按定义渲染列表、新建和修改的表单、删除前的确认；`permission` 让没有 `roles:manage` 的作者看不到这个菜单。表单的校验规则与服务端相同：名称为空、没有选择权限时，提交前就会提示。
+
+作者的角色在接口中是角色的 ID，页面上应该显示和选择名称。这是唯一需要覆盖的地方。新建 `apps/admin/src/routes/_app/users.tsx`：
+
+```tsx title="apps/admin/src/routes/_app/users.tsx"
+import { type FieldInput, ResourcePage } from "@go-tenon/admin"
+import { useQuery } from "@tanstack/react-query"
+import { createFileRoute } from "@tanstack/react-router"
+import { Select, Tag } from "antd"
+import { api, users } from "../../resources"
+
+export const Route = createFileRoute("/_app/users")({
+  staticData: { title: "作者", icon: "team", permission: "users:manage" },
+  validateSearch: users.listSearch,
+  component: Users,
+})
+
+// 全部角色：角色那一列显示名称，表单中从角色里选择。
+function useRoles() {
+  return useQuery({ queryKey: ["roles", "all"], queryFn: () => api.role.list({ per_page: 100 }) })
+}
+
+function RoleTags({ ids }: { ids: string[] }) {
+  const all = useRoles().data?.items ?? []
+  return ids.map((id) => <Tag key={id}>{all.find((r) => r.id === id)?.name ?? id}</Tag>)
+}
+
+const RoleSelect: FieldInput = ({ id, value, onChange }) => {
+  const all = useRoles().data?.items ?? []
+  return (
+    <Select
+      id={id}
+      mode="multiple"
+      value={value as string[]}
+      onChange={onChange}
+      options={all.map((r) => ({ value: r.id, label: r.name }))}
+    />
+  )
+}
+
+// 作者的页面按 Go 中的声明渲染，只覆盖角色这个字段：接口中是角色的 ID，页面上显示和选择名称。
+function Users() {
+  return (
+    <ResourcePage
+      model={users}
+      route={Route}
+      render={{ roles: (ids) => <RoleTags ids={(ids as string[]) ?? []} /> }}
+      inputs={{ roles: RoleSelect }}
+    />
+  )
+}
+```
+
+其余的列（名字、注册时间）、搜索框、修改的表单和按钮都来自定义。
+
+运行 `go tool tenon dev`，打开 http://localhost:8080/admin/，用小明登录。侧栏中有“作者”和“角色”：
+
+1. 在“角色”中新建一个“编辑”角色，权限选择“管理角色”；
+2. 在“作者”中修改小红，角色选择“编辑”；
+3. 退出，用小红登录：侧栏中只有“角色”。直接请求 `/api/users` 得到 `403`。
+
+以后在 Go 中给资源加一列（例如作者的文章数），重新生成后后台就会显示它，页面代码不用修改。
+
+恭喜你完成了入门教程！回顾一下，你已经用到了一个常规项目需要的大部分东西：配置与装配、数据库与迁移、接口与校验、业务错误与本地化、React 页面与生成的客户端、登录与授权、角色与权限，以及按声明渲染的后台。
+
+接下来，你可以按需阅读各个参考页：例如用[缓存](../libraries/cache.md)加快首页，用[队列](../libraries/queue.md)在发布后给订阅者发邮件，用[定时任务](../libraries/scheduling.md)定时发布文章，最后参考[部署](../installation/deployment.md)把博客上线。
+
+深入了解：[授权](../security/authorization.md)、[资源](../responses/resources.md)、[运营后台](../responses/admin.md)。

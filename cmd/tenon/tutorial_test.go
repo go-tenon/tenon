@@ -61,6 +61,7 @@ func TestTutorial(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		p.before(name)
 		var migrations [][2]string
 		for _, m := range tutorialFile.FindAllSubmatchIndex(doc, -1) {
 			path, body := string(doc[m[2]:m[3]]), string(doc[m[4]:m[5]])
@@ -115,6 +116,14 @@ func (p *tutorial) api(args ...string) string {
 	return p.sh("go", append([]string{"run", "./cmd/api"}, args...)...)
 }
 
+// before 执行一章中写入文件之前的命令：第 8 章先用模板生成后台，再写入后台的页面。
+func (p *tutorial) before(name string) {
+	p.t.Helper()
+	if strings.HasPrefix(name, "08-") {
+		p.sh("go", "tool", "tenon", "add", "frontend", "admin", "--template", "admin")
+	}
+}
+
 // chapter 执行一章正文中的命令，然后检查项目。
 func (p *tutorial) chapter(name string, migrations [][2]string) {
 	p.t.Helper()
@@ -141,6 +150,11 @@ func (p *tutorial) chapter(name string, migrations [][2]string) {
 	}
 	if strings.HasPrefix(name, "06-") {
 		p.api("user", "create", "--name", "小明", "--email", "ming@example.com", "--password", "secret123")
+	}
+	if strings.HasPrefix(name, "08-") {
+		p.api("migrate", "publish")
+		p.api("migrate", "up")
+		p.api("user", "admin", "--email", "ming@example.com")
 	}
 	p.sh("go", "vet", "./...")
 	p.sh("go", "tool", "tenon", "generate")
@@ -229,6 +243,41 @@ func (p *tutorial) run() {
 	mine := call(t, hong, http.MethodGet, base+"/api/me/articles", "")
 	if mine.body["total"] != float64(0) {
 		t.Fatalf("hong sees ming's articles: %+v", mine)
+	}
+
+	// 第 8 章：后台的接口按角色授权，修改角色在下一个请求生效。
+	if page := get(t, base+"/admin/"); !strings.Contains(page, "/admin/assets/") {
+		t.Fatalf("admin page:\n%s", page)
+	}
+	if res := call(t, hong, http.MethodGet, base+"/api/users", ""); res.status != http.StatusForbidden {
+		t.Fatalf("hong lists users: %+v", res)
+	}
+	users := call(t, ming, http.MethodGet, base+"/api/users", "")
+	if users.status != http.StatusOK || users.body["total"] != float64(2) {
+		t.Fatalf("admin lists users: %+v", users)
+	}
+	var hongID string
+	for _, u := range users.body["items"].([]any) {
+		if u := u.(map[string]any); u["name"] == "小红" {
+			hongID, _ = u["id"].(string)
+		}
+	}
+	role := call(t, ming, http.MethodPost, base+"/api/roles", `{"name":"编辑","permissions":["roles:manage"]}`)
+	if role.status != http.StatusCreated {
+		t.Fatalf("create role: %+v", role)
+	}
+	if res := call(t, ming, http.MethodPost, base+"/api/roles", `{"name":"x","permissions":["articles:delete"]}`); res.status != http.StatusUnprocessableEntity {
+		t.Fatalf("unknown permission: %+v", res)
+	}
+	roleID, _ := role.body["id"].(string)
+	if res := call(t, ming, http.MethodPut, base+"/api/users/"+hongID, `{"name":"小红","roles":["`+roleID+`"]}`); res.status != http.StatusOK {
+		t.Fatalf("assign role: %+v", res)
+	}
+	if res := call(t, hong, http.MethodGet, base+"/api/roles", ""); res.status != http.StatusOK {
+		t.Fatalf("hong lists roles after assignment: %+v", res)
+	}
+	if res := call(t, hong, http.MethodGet, base+"/api/users", ""); res.status != http.StatusForbidden {
+		t.Fatalf("hong lists users with roles:manage only: %+v", res)
 	}
 }
 
