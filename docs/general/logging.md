@@ -79,9 +79,10 @@ func (a *Publish) Handle(ctx context.Context, subject identity.Subject, id uuid.
 | --- | --- |
 | HTTP 接口 | `request_id` |
 | 队列任务 | `message_id`（任务 ID）、`attempt`（第几次执行），以及发布任务时 `ctx` 中的 `request_id` |
-| 定时任务 | `task`（任务名） |
+| 定时任务 | `task`（任务名）、`request_id`（每次执行一个） |
+| MCP 工具 | `request_id`：经由 HTTP 时是 HTTP 请求的，以 stdio 运行时每次调用一个 |
 
-队列任务带着发布方的 `request_id`，所以一个请求和它产生的任务可以串起来，见[队列的日志](../background/queue-monitoring.md#logging)。下面以 HTTP 接口为例说明这些字段从哪里来。
+队列任务带着发布方的 `request_id`，所以一个请求（或一次定时任务）和它产生的任务可以串起来，见[队列的日志](../background/queue-monitoring.md#logging)。下面以 HTTP 接口为例说明这些字段从哪里来。
 
 安装[默认中间件](../http/middleware.md#default-middleware)后，`httpx.AccessLog` 会为每个请求记录一条[访问日志](../http/middleware.md#access-log)，`rest.New` 创建的 API 会为 5xx 错误记录诊断信息：
 

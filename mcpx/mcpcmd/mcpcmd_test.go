@@ -10,6 +10,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/go-tenon/tenon/identity"
+	"github.com/go-tenon/tenon/logging"
 	"github.com/go-tenon/tenon/mcpx"
 	"github.com/go-tenon/tenon/mcpx/mcpcmd"
 )
@@ -38,7 +39,10 @@ func TestServe(t *testing.T) {
 	defer cancel()
 	serverSide, clientSide := mcp.NewInMemoryTransports()
 	done := make(chan error, 1)
-	go func() { done <- mcpcmd.Serve(ctx, newServer(), ops, serverSide) }()
+	srv := newServer()
+	mcpx.Register(srv, mcpx.Tool{Name: "request_id", Description: "返回这次调用的请求 ID", Permissions: []string{"articles:read"}, ReadOnly: true},
+		func(ctx context.Context, _ struct{}) (string, error) { return logging.RequestID(ctx), nil })
+	go func() { done <- mcpcmd.Serve(ctx, srv, ops, serverSide) }()
 
 	session, err := mcp.NewClient(&mcp.Implementation{Name: "t", Version: "1"}, nil).Connect(ctx, clientSide, nil)
 	if err != nil {
@@ -52,7 +56,8 @@ func TestServe(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 	// 权限仍按工具的 Permissions 检查。
-	if !slices.Equal(names, []string{"whoami"}) {
+	slices.Sort(names)
+	if !slices.Equal(names, []string{"request_id", "whoami"}) {
 		t.Fatalf("tools %v", names)
 	}
 	res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "whoami", Arguments: map[string]any{}})
@@ -61,6 +66,18 @@ func TestServe(t *testing.T) {
 	}
 	if text := res.Content[0].(*mcp.TextContent).Text; text != `{"id":"ops","tenant":"acme"}` {
 		t.Fatalf("whoami %s", text)
+	}
+	// stdio 没有经过 HTTP 中间件，每次调用工具时分配一个请求 ID。
+	var ids []string
+	for range 2 {
+		res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "request_id", Arguments: map[string]any{}})
+		if err != nil || res.IsError {
+			t.Fatal(err, res)
+		}
+		ids = append(ids, res.Content[0].(*mcp.TextContent).Text)
+	}
+	if ids[0] == `""` || ids[0] == ids[1] {
+		t.Fatalf("request IDs %q", ids)
 	}
 	_ = session.Close()
 	if err := <-done; err != nil {
