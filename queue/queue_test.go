@@ -147,11 +147,11 @@ func TestPublishInTransaction(t *testing.T) {
 	got := make(chan seen, 2)
 	stop := start(t, db, queuetest.Config(t), func(w *queue.Worker) {
 		jobs.Handle(w, func(ctx context.Context, p payload) error {
-			got <- seen{p.N, attr(ctx, logging.AttrRequestID), attr(ctx, logging.AttrMessageID), attr(ctx, logging.AttrAttempt)}
+			got <- seen{p.N, logging.RequestID(ctx), attr(ctx, logging.AttrMessageID), attr(ctx, logging.AttrAttempt)}
 			return nil
 		})
 	})
-	ctx := logging.WithAttrs(context.Background(), slog.String(logging.AttrRequestID, "req-1"))
+	ctx := logging.WithRequestID(context.Background(), "req-1")
 	rollback := errors.New("rollback")
 	err := db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 		if err := jobs.Publish(ctx, tx, payload{N: 1}); err != nil {

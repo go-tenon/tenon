@@ -39,7 +39,7 @@ var rules = map[string]rule{
 	"cleanup":   {layerFoundation, nil},
 	"config":    {layerFoundation, nil},
 	"errorx":    {layerFoundation, nil},
-	"i18n":      {layerFoundation, nil},
+	"i18n":      {layerFoundation, []string{"errorx"}},
 	"enum":      {layerFoundation, []string{"i18n"}},
 	"hashing":   {layerFoundation, nil},
 	"health":    {layerFoundation, []string{"logging"}},

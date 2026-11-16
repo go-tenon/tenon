@@ -66,15 +66,8 @@ func AcquireTimeout(d time.Duration) func(http.Handler) http.Handler {
 	}
 }
 
-type requestIDKey struct{}
-
-// RequestID 返回请求标识；未安装 AssignRequestID 时返回空字符串。
-func RequestID(ctx context.Context) string {
-	id, _ := ctx.Value(requestIDKey{}).(string)
-	return id
-}
-
-// AssignRequestID 为每个请求确定请求标识，写入 context、日志字段与 X-Request-ID 响应头。
+// AssignRequestID 为每个请求确定请求标识，用 logging.WithRequestID 写入 context（日志的 request_id 字段，
+// logging.RequestID 读取），并写入 X-Request-ID 响应头。
 // 入站请求头 cfg.Header 的值合法（1–128 个可打印 ASCII 字符，不含空格）时沿用，否则生成新值。
 // 标识同时写入 chi 的 middleware.RequestIDKey，middleware.GetReqID 读到的是同一个值。cfg 不合法时 panic。
 func AssignRequestID(cfg RequestIDConfig) func(http.Handler) http.Handler {
@@ -86,9 +79,8 @@ func AssignRequestID(cfg RequestIDConfig) func(http.Handler) http.Handler {
 			if !validRequestID(id) {
 				id = rand.Text()
 			}
-			ctx := context.WithValue(r.Context(), requestIDKey{}, id)
-			ctx = context.WithValue(ctx, middleware.RequestIDKey, id)
-			ctx = logging.WithAttrs(ctx, slog.String(logging.AttrRequestID, id))
+			ctx := context.WithValue(r.Context(), middleware.RequestIDKey, id)
+			ctx = logging.WithRequestID(ctx, id)
 			w.Header().Set("X-Request-ID", id)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})

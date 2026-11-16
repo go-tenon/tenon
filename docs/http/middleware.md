@@ -65,7 +65,7 @@ router.Use(httpx.Defaults(cfg.HTTP, httpx.Languages(languages))...)
 | `RateLimit(limiter, key)` | 按客户端限流，超出时返回 429，见[限流](../libraries/rate-limiting.md) |
 | `Compress()` | 按 `Accept-Encoding` 用 zstd 或 gzip 压缩文本类响应，见[响应压缩](optional-middleware.md#compression) |
 
-每个中间件都可以单独省略，框架的其他部分照常工作：没有 `AccessLog` 时，`httpx.AddAccessLogAttrs` 什么也不做；没有 `Locale` 时，`i18n.T` 原样返回消息 ID；没有 `AssignRequestID` 时，`httpx.RequestID` 返回空字符串。
+每个中间件都可以单独省略，框架的其他部分照常工作：没有 `AccessLog` 时，`httpx.AddAccessLogAttrs` 什么也不做；没有 `Locale` 时，`i18n.T` 原样返回消息 ID；没有 `AssignRequestID` 时，`logging.RequestID` 返回空字符串。
 
 认证不在默认中间件中，因为它是按路由启用的，见[认证](../security/authentication.md)。健康检查也由你自己注册，见[健康检查](lifecycle.md#health-checks)。
 
@@ -206,8 +206,7 @@ return httpx.Serve(ctx, cfg.HTTP, ln, api.Handler())
 
 `AssignRequestID` 为每个请求确定一个 ID：入站请求头中带有合法的 ID 时沿用它，否则生成一个随机 ID。这个 ID 会：
 
-- 写入请求的 context，用 `httpx.RequestID(ctx)` 读取；
-- 作为 `request_id` 字段出现在这个请求的所有日志中，见[请求关联](../general/logging.md#request-correlation)；
+- 用 `logging.WithRequestID` 写入请求的 context，作为 `request_id` 字段出现在这个请求的所有日志中，用 `logging.RequestID(ctx)` 读取，见[调用关联](../general/logging.md#request-correlation)；
 - 通过 `X-Request-ID` 响应头返回给客户端，用户反馈问题时可以直接提供它。
 
 它同时写入 chi 的 `middleware.RequestIDKey`，所以 `middleware.GetReqID(ctx)` 和读取它的社区中间件拿到的也是同一个值，它可以代替 chi 的 `middleware.RequestID`。
@@ -403,12 +402,11 @@ router.Use(httpx.Defaults(cfg.HTTP)...)
 ### 读取请求信息
 
 ```go
-func RequestID(ctx context.Context) string
 func BasicUser(ctx context.Context) string
 func KeyByIP(r *http.Request) string
 ```
 
-请求 ID；Basic 认证通过的用户名；按客户端地址的限流键。
+Basic 认证通过的用户名；按客户端地址的限流键。请求 ID 用 [`logging.RequestID`](../general/logging.md#api-reference) 读取。
 
 ### WriteProblem
 

@@ -213,6 +213,15 @@ func (n *Notifier) ArticlePublished(ctx context.Context, a *Article, author *Use
 }
 ```
 
+业务错误也一样。HTTP 响应的 `detail` 由框架翻译；其他入口要把业务错误变成给人看的提示时，用 `i18n.ErrorMessage`，它和 HTTP 响应使用同一条译文：
+
+```go
+msg, _ := i18n.ErrorMessage(ctx, err)
+if msg == "" {
+    msg = "操作失败" // 没有错误码或没有译文时，换成这个入口自己的通用提示
+}
+```
+
 `i18n.Match` 接受 `Accept-Language` 格式的偏好，在语言目录中协商，匹配失败时返回默认语言。它可以接收多个值，gRPC 拦截器可以直接传入 `metadata.ValueFromIncomingContext(ctx, "accept-language")...`。
 
 <a id="troubleshooting"></a>
@@ -276,6 +285,20 @@ func T(ctx context.Context, id string, data any) string
 ```go
 message := i18n.T(ctx, "article.slug_taken", map[string]any{"slug": slug})
 ```
+
+### ErrorMessage
+
+```go
+func ErrorMessage(ctx context.Context, err error) (msg string, missing bool)
+```
+
+- **参数**
+    - `err`：要翻译的错误，通常是[业务错误](errors.md)
+- **返回**
+    - `msg`：译文；没有错误码、context 中没有语言，或者默认语言也没有译文时为空
+    - `missing`：当前语言缺少这条译文（使用了默认语言的译文，或者没有译文）；context 中没有语言时为 `false`
+
+以 `errorx.CodeOf(err)` 为消息 ID、[公开参数](errors.md#public-parameters)为模板数据，按 context 中的语言翻译，与 HTTP 响应的 `detail` 使用同一条译文。`msg` 为空时由入口换成自己的通用提示，例如 HTTP 响应使用状态的通用描述，见[翻译错误消息](#translating-errors)和[在 HTTP 之外使用](#outside-http)。
 
 ### Locale、Localizer
 

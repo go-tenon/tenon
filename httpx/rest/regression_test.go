@@ -25,6 +25,7 @@ import (
 	"github.com/go-tenon/tenon/httpx/rest"
 	"github.com/go-tenon/tenon/i18n"
 	"github.com/go-tenon/tenon/identity"
+	"github.com/go-tenon/tenon/logging"
 )
 
 func TestMissingSecurityRejectedBeforeFactory(t *testing.T) {
@@ -274,7 +275,7 @@ func TestNewInstallsNoMiddleware(t *testing.T) {
 	op := huma.Operation{OperationID: "ping", Method: "GET", Path: "/ping"}
 	rest.Public()(&op)
 	rest.Register(api, op, func(ctx context.Context, _ *pingIn) (*pingOut, error) {
-		if _, deadline := ctx.Deadline(); deadline || httpx.RequestID(ctx) != "" {
+		if _, deadline := ctx.Deadline(); deadline || logging.RequestID(ctx) != "" {
 			t.Fatal("rest.New installed middleware")
 		}
 		return &pingOut{}, nil

@@ -45,7 +45,7 @@ func (a Activity) Impersonator() identity.Ref {
 //
 // a 只需要填写 Event、TargetType、TargetID 和 Properties，其余字段由 Record 填写：
 // 操作人和租户来自 actor（它的 ID、Type、Impersonator 和 Tenant），队列和定时任务传入代表系统的主体；
-// RequestID 来自 ctx 中的 request_id 日志字段，HTTP 请求和由它发布的队列任务都带有这个字段。
+// RequestID 来自 logging.RequestID(ctx)，HTTP 请求和由它发布的队列任务都带有请求 ID。
 func Record(ctx context.Context, db bun.IDB, actor identity.Subject, a Activity) error {
 	id, err := uuid.NewV7()
 	if err != nil {
@@ -54,7 +54,7 @@ func Record(ctx context.Context, db bun.IDB, actor identity.Subject, a Activity)
 	a.ID, a.CreatedAt = id, time.Now().UTC()
 	a.Tenant, a.ActorType, a.ActorID = actor.Tenant, actor.Type, actor.ID
 	a.ImpersonatorType, a.ImpersonatorID = actor.Impersonator.Type, actor.Impersonator.ID
-	a.RequestID = requestID(ctx)
+	a.RequestID = logging.RequestID(ctx)
 	if a.Properties == nil {
 		a.Properties = map[string]any{}
 	}
@@ -73,15 +73,6 @@ func check(a Activity) error {
 		return errors.Newf("activity: target id %q without target type", a.TargetID)
 	}
 	return nil
-}
-
-func requestID(ctx context.Context) string {
-	for _, attr := range logging.ContextAttrs(ctx) {
-		if attr.Key == logging.AttrRequestID {
-			return attr.Value.String()
-		}
-	}
-	return ""
 }
 
 // Query 是 List 的条件。Tenant 总是生效，其余条件为空时不限制。

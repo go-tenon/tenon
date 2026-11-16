@@ -90,13 +90,15 @@ router.Use(httpx.Defaults(a.cfg.HTTP)...)
 api := rest.New(router, rest.Options{})
 ```
 
-`httpx.AssignRequestID` 还会把[请求 ID](../http/middleware.md#request-id) 放入请求的 context。之后，只要你在业务代码中配合请求的 `ctx` 记录日志（`slog.InfoContext(ctx, ...)`），这些日志就会自动带上 `request_id` 字段：
+`httpx.AssignRequestID` 还会用 `logging.WithRequestID` 把[请求 ID](../http/middleware.md#request-id) 放入请求的 context。之后，只要你在业务代码中配合请求的 `ctx` 记录日志（`slog.InfoContext(ctx, ...)`），这些日志就会自动带上 `request_id` 字段：
 
 ```json
 {"level":"INFO","msg":"article published","request_id":"9F2K…","article_id":"0f8c…","author_id":"alice"}
 ```
 
 这样，同一个请求的访问日志、错误诊断、业务日志，以及它发布的队列任务的日志，都可以通过 `request_id` 关联起来。部署在反向代理之后时，还可以沿用代理生成的请求 ID，把代理日志也关联进来。
+
+需要把请求 ID 告诉调用方时（例如出错时提示用户“报告问题时附上请求编号”），用 `logging.RequestID(ctx)` 读取。它读的就是日志中的 `request_id` 字段，所以在 HTTP 请求和它发布的队列任务中读到的是同一个值；以后新增的入口只要在开始处理时调用 `logging.WithRequestID`，日志和读取就都能用上。
 
 `ctx` 中有 OpenTelemetry 的 span 时，日志还会自动带上 `trace_id` 和 `span_id`，在链路追踪系统中可以从一个 span 直接找到它的日志，见[链路与日志](telemetry.md#trace-logs)。
 
@@ -299,6 +301,17 @@ func ContextAttrs(ctx context.Context) []slog.Attr
 ```
 
 把字段放进 context，之后用这个 context 记录的日志都带上它们。多次调用累加，父 context 保持原样。`ContextAttrs` 读取已放入的字段。
+
+### WithRequestID、RequestID
+
+```go
+func WithRequestID(ctx context.Context, id string) context.Context
+func RequestID(ctx context.Context) string
+```
+
+`WithRequestID` 把 `id` 作为请求 ID 放进 context，之后用这个 context 记录的日志都带上 `request_id` 字段；`id` 为空时原样返回 `ctx`。入口在开始处理一次调用时调用它，例如 `httpx.AssignRequestID`。
+
+`RequestID` 读取 context 中的请求 ID，没有时返回空字符串。见[调用关联](#request-correlation)。
 
 ### AttrComponent
 

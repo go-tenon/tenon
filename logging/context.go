@@ -25,6 +25,30 @@ func ContextAttrs(ctx context.Context) []slog.Attr {
 	return slices.Clone(attrs)
 }
 
+// WithRequestID 返回把 id 作为请求 ID 的新 context：它作为 request_id 字段出现在用这个 context 记录的日志中，
+// RequestID 读到的也是它。id 为空时返回 ctx。
+//
+// 入口在开始处理一次调用时设置，例如 httpx.AssignRequestID；队列把发布方的请求 ID 带到任务的 context 中，
+// 所以请求和它发布的任务共用一个请求 ID。
+func WithRequestID(ctx context.Context, id string) context.Context {
+	if id == "" {
+		return ctx
+	}
+	return WithAttrs(ctx, slog.String(AttrRequestID, id))
+}
+
+// RequestID 返回 ctx 中的请求 ID，即 WithAttrs 累加的最后一个 request_id 字段；没有时返回空字符串。
+// 出错时把它告诉调用方，用户反馈问题时凭它在日志中找到这次调用。
+func RequestID(ctx context.Context) string {
+	attrs, _ := ctx.Value(ctxKey{}).([]slog.Attr)
+	for i := len(attrs) - 1; i >= 0; i-- {
+		if attrs[i].Key == AttrRequestID {
+			return attrs[i].Value.String()
+		}
+	}
+	return ""
+}
+
 // NewContextHandler 包装 h，在处理记录时追加 context 中的字段。
 func NewContextHandler(h slog.Handler) slog.Handler {
 	if _, ok := h.(contextHandler); ok {
