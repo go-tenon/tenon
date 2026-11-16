@@ -167,6 +167,7 @@ bunx shadcn@4.23.0 add ./.tenon/js/registry/r/tenon-assistant-chat.json  # 同�
 - 回答用 `Markdown` 渲染；插话显示为单独的用户消息。
 - 回答进行中输入的内容插入这次回答，停止按钮停止回答。
 - 等待审批时不能发送，批准或拒绝后回答继续。
+- 回形针按钮、粘贴或把文件拖进对话都可以添加附件；待发送的图片显示缩略图，可以逐个移除，只有附件也可以发送。发送后附件显示在用户的消息中。回答进行中不能添加附件。`attachments` 设置类型、大小和上传方式，`false` 时不能添加附件，见[附件](app-shell-features.md#chat-attachments)。
 
 确认对话框：`ConfirmProvider` 放在根路由中，之后 `const confirm = useConfirm()`。它可以交给多标签和未保存修改的询问，代替浏览器的确认框：
 

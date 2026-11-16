@@ -8,7 +8,15 @@ import { type ReactNode, useEffect } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { type Activity, type ActivityItem, useActivity } from "./activity"
 import { type App, AppRoot, createApp, type RouterContext, useApp } from "./app"
-import { type AssistantChat, useAssistantChat } from "./chat"
+import {
+  type AssistantChat,
+  AttachmentError,
+  type Attachments,
+  acceptsFile,
+  checkAttachments,
+  useAssistantChat,
+  useAttachments,
+} from "./chat"
 import { type NotificationItem, type Notifications, type NotificationsSource, useNotifications } from "./notifications"
 import { dismissOperation, type TrackedOperation, trackOperation, useOperations } from "./operations"
 import { type Export, type Import, useExport, useImport } from "./transfer"
@@ -16,6 +24,7 @@ import { type Export, type Import, useExport, useImport } from "./transfer"
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+  vi.restoreAllMocks()
 })
 
 /** 渲染 children，返回应用和会话。 */
@@ -320,8 +329,8 @@ function uiStream(chunks: object[]): Response {
   })
 }
 
-function Chat({ onValue }: { onValue: (c: AssistantChat) => void }) {
-  const chat = useAssistantChat({ api: "/api/chat", id: "c1", messages: history })
+function Chat({ onValue, upload }: { onValue: (c: AssistantChat) => void; upload?: (f: File) => Promise<string> }) {
+  const chat = useAssistantChat({ api: "/api/chat", id: "c1", messages: history, attachments: { upload } })
   useEffect(() => {
     onValue(chat)
   })
@@ -382,6 +391,53 @@ describe("useAssistantChat", () => {
     expect((post?.body as { message?: UIMessage } | undefined)?.message?.parts).toEqual([
       { type: "text", text: "讲个故事" },
     ])
+  })
+
+  it("带文件发送：文件片段在文字前面，默认是 data URL；设置了 upload 时放链接；可以只发文件", async () => {
+    const calls = server((c) => {
+      if (c.url.endsWith("/stream")) return new Response(null, { status: 204 })
+      return uiStream([{ type: "start", messageId: "a1" }, { type: "finish" }])
+    })
+    const png = new File(["PNG"], "cat.png", { type: "image/png" })
+    let chat: AssistantChat | undefined
+    await mount(() => <Chat onValue={(c) => (chat = c)} />)
+    await waitFor(() => expect(chat).toBeDefined())
+    await act(() => chat?.send("这是什么", [png]) ?? Promise.resolve())
+    const posts = () => calls.filter((c) => c.method === "POST").map((c) => (c.body as { message: UIMessage }).message)
+    await waitFor(() => expect(posts()).toHaveLength(1))
+    expect(posts()[0]?.parts).toEqual([
+      { type: "file", mediaType: "image/png", filename: "cat.png", url: `data:image/png;base64,${btoa("PNG")}` },
+      { type: "text", text: "这是什么" },
+    ])
+    await waitFor(() => expect(chat?.busy).toBe(false))
+    await act(() => chat?.send("", [png]) ?? Promise.resolve())
+    await waitFor(() => expect(posts()).toHaveLength(2))
+    expect(posts()[1]?.parts.map((p) => p.type)).toEqual(["file"])
+
+    // 不符合限制的文件不发送。
+    const exe = new File(["MZ"], "a.exe", { type: "application/x-msdownload" })
+    await expect(chat?.send("", [exe])).rejects.toMatchObject({ reason: "type" })
+    expect(posts()).toHaveLength(2)
+  })
+
+  it("带文件发送：设置了 upload 时先上传，消息中放链接", async () => {
+    const calls = server((c) => {
+      if (c.url.endsWith("/stream")) return new Response(null, { status: 204 })
+      return uiStream([{ type: "start", messageId: "a1" }, { type: "finish" }])
+    })
+    const upload = vi.fn(async (f: File) => `https://cdn.example.com/${f.name}`)
+    let chat: AssistantChat | undefined
+    await mount(() => <Chat upload={upload} onValue={(c) => (chat = c)} />)
+    await waitFor(() => expect(chat).toBeDefined())
+    await act(() => chat?.send("看看", [new File(["%PDF"], "a.pdf", { type: "application/pdf" })]) ?? Promise.resolve())
+    const post = calls.find((c) => c.method === "POST")?.body as { message: UIMessage }
+    expect(upload).toHaveBeenCalledOnce()
+    expect(post.message.parts[0]).toEqual({
+      type: "file",
+      mediaType: "application/pdf",
+      filename: "a.pdf",
+      url: "https://cdn.example.com/a.pdf",
+    })
   })
 
   it("工具调用等待审批：审批后自动发送审批结果，回答继续", async () => {
@@ -456,10 +512,70 @@ describe("useAssistantChat", () => {
       void chat?.send("第一问")
     })
     await waitFor(() => expect(chat?.busy).toBe(true))
+    // 插话只能是文字：回答进行中带文件时不发送。
+    await expect(chat?.send("看图", [new File(["PNG"], "a.png", { type: "image/png" })])).rejects.toBeInstanceOf(
+      AttachmentError,
+    )
+    expect(calls.filter((c) => c.method === "POST")).toHaveLength(1)
     await act(() => chat?.send("补充一句") ?? Promise.resolve())
     expect(steer).toBe(1)
     expect(calls.filter((c) => c.method === "POST" && c.url === "/api/chat")).toHaveLength(2) // 改为发送新消息
     await act(() => chat?.stop() ?? Promise.resolve())
     expect(calls.some((c) => c.url === "/api/chat/c1/stop")).toBe(true)
+  })
+})
+
+describe("useAttachments", () => {
+  it("加入符合限制的文件，拒绝其余的并给出原因；图片有预览，移除和清空时释放", async () => {
+    const created: string[] = []
+    const revoked: string[] = []
+    vi.spyOn(URL, "createObjectURL").mockImplementation(() => {
+      created.push(`blob:${created.length}`)
+      return created[created.length - 1] as string
+    })
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation((u) => void revoked.push(u))
+    let a: Attachments | undefined
+    render(
+      <Probe use={() => useAttachments({ maxFiles: 3, maxFileSize: 10, maxTotalSize: 20 })} onValue={(v) => (a = v)} />,
+    )
+    const png = new File(["PNG"], "a.png", { type: "image/png" })
+    const pdf = new File(["%PDF"], "b.pdf", { type: "application/pdf" })
+    const big = new File(["x".repeat(11)], "big.png", { type: "image/png" })
+    const exe = new File(["MZ"], "c.exe", { type: "application/x-msdownload" })
+
+    act(() => a?.add([png, exe, pdf]))
+    expect(a?.files).toEqual([png, pdf])
+    expect(a?.items[0]?.preview).toBe("blob:0")
+    expect(a?.items[1]?.preview).toBeUndefined()
+    expect(a?.error).toBe("不支持这种文件：c.exe")
+
+    act(() => a?.add([big]))
+    expect(a?.error).toContain("big.png 超过了")
+    act(() => a?.add([pdf, pdf]))
+    expect(a?.files).toHaveLength(3)
+    expect(a?.error).toBe("一次最多发送 3 个文件")
+
+    act(() => a?.remove(a.items[0]?.id ?? ""))
+    expect(revoked).toEqual(["blob:0"])
+    expect(a?.files).toEqual([pdf, pdf])
+    expect(a?.error).toBeUndefined()
+    act(() => a?.clear())
+    expect(a?.files).toEqual([])
+  })
+
+  it("accept 支持扩展名、大类和完整的 MIME 类型", () => {
+    expect(acceptsFile("image/*,.pdf", { name: "a.PNG", type: "image/png" })).toBe(true)
+    expect(acceptsFile("image/*,.pdf", { name: "A.PDF", type: "" })).toBe(true)
+    expect(acceptsFile("audio/mpeg", { name: "a.mp3", type: "audio/mpeg" })).toBe(true)
+    expect(acceptsFile("image/*,.pdf", { name: "a.txt", type: "text/plain" })).toBe(false)
+  })
+})
+
+describe("checkAttachments", () => {
+  it("data URL 发送时检查总大小；设置了 upload 时不检查", () => {
+    const f = (n: number) => new File(["x".repeat(n)], `${n}.png`, { type: "image/png" })
+    expect(() => checkAttachments([f(8), f(8)], { maxTotalSize: 10 })).toThrow("文件总共不能超过")
+    expect(() => checkAttachments([f(8), f(8)], { maxTotalSize: 10, upload: async () => "https://x" })).not.toThrow()
+    expect(() => checkAttachments([f(8)], { maxTotalSize: 10 })).not.toThrow()
   })
 })

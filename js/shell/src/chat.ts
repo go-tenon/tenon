@@ -4,8 +4,13 @@
 import { useChat } from "@ai-sdk/react"
 import { type ChatPaths, chatControls, chatTransport, describeError } from "@go-tenon/client"
 import { useQuery } from "@tanstack/react-query"
-import { DefaultChatTransport, lastAssistantMessageIsCompleteWithApprovalResponses, type UIMessage } from "ai"
-import { useCallback, useMemo } from "react"
+import {
+  DefaultChatTransport,
+  type FileUIPart,
+  lastAssistantMessageIsCompleteWithApprovalResponses,
+  type UIMessage,
+} from "ai"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useApp } from "./app"
 
 /** 对话的接口：api 是发送接口的地址，例如 /api/v1/assistant/chat；其他接口按约定拼接，见 chatControls。 */
@@ -14,6 +19,192 @@ export interface AssistantOptions {
   /** 对话的 ID。 */
   id: string
   paths?: ChatPaths
+}
+
+/** 附件：允许的类型和大小，以及可选的上传。 */
+export interface AttachmentOptions {
+  /** 允许的类型，与 <input accept> 的写法相同，例如 "image/*,.pdf"；默认 image/*,application/pdf。 */
+  accept?: string
+  /** 单个文件的最大字节数，默认 4 MiB。 */
+  maxFileSize?: number
+  /**
+   * 以 data URL 发送时，一条消息中文件的总字节数上限，默认 5 MiB。data URL 比文件大约三分之一，
+   * 默认值对应 8 MiB 的请求体上限；设置了 upload 时不检查。
+   */
+  maxTotalSize?: number
+  /** 一条消息最多带几个文件，默认 5。 */
+  maxFiles?: number
+  /**
+   * 上传文件，返回模型服务能下载的链接（例如有效期足够长的签名地址），消息中只放链接。
+   * 不设置时文件以 data URL 随消息发送。
+   */
+  upload?: (file: File) => Promise<string>
+}
+
+const defaultAccept = "image/*,application/pdf"
+const defaultMaxFileSize = 4 << 20
+const defaultMaxFiles = 5
+const defaultMaxTotalSize = 5 << 20
+
+/** 附件不符合限制。message 可以直接显示给用户。 */
+export class AttachmentError extends Error {
+  constructor(
+    message: string,
+    readonly reason: "type" | "size" | "total" | "count" | "busy",
+  ) {
+    super(message)
+    this.name = "AttachmentError"
+  }
+}
+
+/** 文件是否符合 accept：.pdf 这样的扩展名、image/* 这样的大类，或完整的 MIME 类型。 */
+export function acceptsFile(accept: string, file: { name: string; type: string }): boolean {
+  const name = file.name.toLowerCase()
+  const type = file.type.toLowerCase()
+  return accept
+    .split(",")
+    .map((a) => a.trim().toLowerCase())
+    .filter(Boolean)
+    .some((a) =>
+      a.startsWith(".") ? name.endsWith(a) : a.endsWith("/*") ? type.startsWith(a.slice(0, -1)) : type === a,
+    )
+}
+
+const mib = (n: number) => `${Math.round((n / (1 << 20)) * 10) / 10} MiB`
+
+/** 检查一个文件的类型和大小，不符合时抛出 AttachmentError。 */
+function checkFile(file: File, opts: AttachmentOptions) {
+  const accept = opts.accept ?? defaultAccept
+  const maxSize = opts.maxFileSize ?? defaultMaxFileSize
+  if (!file.type || !acceptsFile(accept, file)) throw new AttachmentError(`不支持这种文件：${file.name}`, "type")
+  if (file.size > maxSize) throw new AttachmentError(`${file.name} 超过了 ${mib(maxSize)}`, "size")
+}
+
+/** 文件的总大小超过上限时的说明；设置了 upload 时不限制。 */
+function totalProblem(total: number, opts: AttachmentOptions): string | undefined {
+  const max = opts.maxTotalSize ?? defaultMaxTotalSize
+  if (opts.upload || total <= max) return undefined
+  return `文件总共不能超过 ${mib(max)}`
+}
+
+/** 检查一条消息的附件，不符合时抛出 AttachmentError。 */
+export function checkAttachments(files: readonly File[], opts: AttachmentOptions = {}) {
+  const max = opts.maxFiles ?? defaultMaxFiles
+  if (files.length > max) throw new AttachmentError(`一次最多发送 ${max} 个文件`, "count")
+  for (const f of files) checkFile(f, opts)
+  const problem = totalProblem(
+    files.reduce((n, f) => n + f.size, 0),
+    opts,
+  )
+  if (problem) throw new AttachmentError(problem, "total")
+}
+
+function dataURL(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader()
+    r.onload = () => resolve(String(r.result))
+    r.onerror = () => reject(r.error)
+    r.readAsDataURL(file)
+  })
+}
+
+/** 把文件变成消息中的文件片段：设置了 upload 时上传后放链接，否则放 data URL。 */
+export async function toFileParts(files: readonly File[], opts: AttachmentOptions = {}): Promise<FileUIPart[]> {
+  return Promise.all(
+    files.map(async (f) => ({
+      type: "file" as const,
+      mediaType: f.type,
+      filename: f.name,
+      url: opts.upload ? await opts.upload(f) : await dataURL(f),
+    })),
+  )
+}
+
+/** 待发送的一个附件。preview 是图片的预览地址（object URL），其他文件没有。 */
+export interface PendingAttachment {
+  id: string
+  file: File
+  preview?: string
+}
+
+let attachmentSeq = 0
+
+/**
+ * 待发送的附件：选择、粘贴或拖入文件时 add，逐个 remove，发送后 clear。不符合限制的文件不加入，
+ * error 是可以直接显示的原因，下一次 add、remove 或 clear 时清除。图片的预览地址在移除和卸载时释放。
+ */
+export function useAttachments({ accept, maxFileSize, maxTotalSize, maxFiles, upload }: AttachmentOptions = {}) {
+  const [items, setItems] = useState<PendingAttachment[]>([])
+  const [error, setError] = useState<string>()
+  const live = useRef(items)
+  live.current = items
+  useEffect(() => () => release(live.current), [])
+  const max = maxFiles ?? defaultMaxFiles
+
+  const add = useCallback(
+    (files: Iterable<File> | ArrayLike<File>) => {
+      let problem: string | undefined
+      const accepted: PendingAttachment[] = []
+      let total = live.current.reduce((n, a) => n + a.file.size, 0)
+      for (const file of Array.from(files)) {
+        if (live.current.length + accepted.length >= max) {
+          problem = `一次最多发送 ${max} 个文件`
+          break
+        }
+        try {
+          checkFile(file, { accept, maxFileSize })
+        } catch (err) {
+          problem = (err as Error).message
+          continue
+        }
+        const over = totalProblem(total + file.size, { maxTotalSize, upload })
+        if (over) {
+          problem = over
+          continue
+        }
+        total += file.size
+        const preview = file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined
+        accepted.push({ id: `att-${++attachmentSeq}`, file, preview })
+      }
+      setError(problem)
+      if (accepted.length) setItems((cur) => [...cur, ...accepted])
+    },
+    [max, accept, maxFileSize, maxTotalSize, upload],
+  )
+  const remove = useCallback((id: string) => {
+    setError(undefined)
+    setItems((cur) => {
+      release(cur.filter((a) => a.id === id))
+      return cur.filter((a) => a.id !== id)
+    })
+  }, [])
+  const clear = useCallback(() => {
+    setError(undefined)
+    setItems((cur) => {
+      release(cur)
+      return []
+    })
+  }, [])
+  return {
+    items,
+    files: items.map((a) => a.file),
+    error,
+    accept: accept ?? defaultAccept,
+    add,
+    remove,
+    clear,
+  }
+}
+
+function release(items: readonly PendingAttachment[]) {
+  for (const a of items) if (a.preview) URL.revokeObjectURL(a.preview)
+}
+
+export type Attachments = ReturnType<typeof useAttachments>
+
+/** 消息中的文件片段，例如显示在用户的气泡中。 */
+export function fileParts(parts: UIMessage["parts"]): FileUIPart[] {
+  return parts.filter((p): p is FileUIPart => p.type === "file")
 }
 
 /** 对话的历史：在显示对话之前读取，交给 useAssistantChat。 */
@@ -51,7 +242,13 @@ export function pendingApprovals(messages: readonly UIMessage[]): PendingApprova
  * 对话：消息、状态和操作。messages 是读取到的历史（useAssistantHistory），所以在历史读取之后再渲染用它的组件：
  * 进行中的回答随即接上（resume）。
  */
-export function useAssistantChat({ api, id, paths, messages }: AssistantOptions & { messages: UIMessage[] }) {
+export function useAssistantChat({
+  api,
+  id,
+  paths,
+  messages,
+  attachments,
+}: AssistantOptions & { messages: UIMessage[]; attachments?: AttachmentOptions }) {
   const app = useApp()
   const authed = useMemo(() => app.session.fetch(fetch), [app])
   const controls = useMemo(() => chatControls<UIMessage>(api, authed, paths), [api, authed, paths])
@@ -66,9 +263,19 @@ export function useAssistantChat({ api, id, paths, messages }: AssistantOptions 
   })
   const busy = chat.status === "submitted" || chat.status === "streaming"
 
-  /** 发送：回答进行中时插话，回答恰好已经结束（409 ai.finished）时改为发送新消息。 */
+  /**
+   * 发送：回答进行中时插话，回答恰好已经结束（409 ai.finished）时改为发送新消息。
+   * files 是附件，按 attachments 检查后随消息发送；插话只能是文字，所以回答进行中带附件时抛出 AttachmentError。
+   */
   const send = useCallback(
-    async (text: string) => {
+    async (text: string, files: readonly File[] = []) => {
+      if (files.length > 0) {
+        if (busy) throw new AttachmentError("回答进行中不能发送文件，请等回答结束", "busy")
+        checkAttachments(files, attachments)
+        const parts = await toFileParts(files, attachments)
+        await chat.sendMessage(text ? { text, files: parts } : { files: parts })
+        return
+      }
       if (!busy) {
         await chat.sendMessage({ text })
         return
@@ -80,7 +287,7 @@ export function useAssistantChat({ api, id, paths, messages }: AssistantOptions 
         await chat.sendMessage({ text })
       }
     },
-    [busy, chat, controls, id],
+    [busy, chat, controls, id, attachments],
   )
 
   /** 停止：服务端取消这次回答（客户端断开连接不会停止它），本地的消息流随之结束。 */

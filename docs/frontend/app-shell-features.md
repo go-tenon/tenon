@@ -18,6 +18,7 @@
 - [操作日志](#activity)
 - [导入与导出](#transfer)
 - [AI 对话](#ai-chat)
+    - [附件](#chat-attachments)
 
 <a id="tabs"></a>
 ## 多标签
@@ -299,7 +300,7 @@ function Assistant({ id }: { id: string }) {
 
 function Conversation({ id, messages }: { id: string; messages: UIMessage[] }) {
   const chat = useAssistantChat({ api: "/api/v1/assistant/chat", id, messages })
-  // chat.messages、chat.status、chat.busy、chat.pending、chat.send(text)、chat.stop()、chat.respond(id, approved, reason)
+  // chat.messages、chat.status、chat.busy、chat.pending、chat.send(text, files)、chat.stop()、chat.respond(id, approved, reason)
 }
 ```
 
@@ -309,6 +310,34 @@ function Conversation({ id, messages }: { id: string; messages: UIMessage[] }) {
 - `stop`：调用停止接口，服务端取消这次回答（客户端断开连接不会停止它）。
 - `pending` 是等待[审批](../ai/chat.md#approval)的工具调用（`{ id, toolName, input }`），`respond` 批准或拒绝；全部有了决定后自动发送，回答继续。
 - 插话在回答中是一个 `data-steering` part（`data` 是 `{ text }`），外观把它显示为一条用户消息。
+
+<a id="chat-attachments"></a>
+### 附件
+
+`send(text, files)` 的 `files` 是附件，和文字一起交给模型，模型直接看图、读 PDF，见[发送图片和文件](../ai/chat.md#files)。可以只有附件、没有文字。附件按 `useAssistantChat` 的 `attachments` 检查：
+
+```tsx
+const chat = useAssistantChat({
+  api: "/api/v1/assistant/chat",
+  id,
+  messages,
+  attachments: { accept: "image/*,.pdf", maxFileSize: 4 << 20 },
+})
+```
+
+| 选项 | 说明 | 默认 |
+| --- | --- | --- |
+| `accept` | 允许的类型，与 `<input accept>` 的写法相同 | `image/*,application/pdf` |
+| `maxFileSize` | 单个文件的最大字节数 | 4 MiB |
+| `maxTotalSize` | 一条消息中文件的总字节数，设置了 `upload` 时不检查 | 5 MiB |
+| `maxFiles` | 一条消息最多带几个文件 | 5 |
+| `upload` | `(file) => Promise<string>`：上传文件，返回模型服务能下载的链接，消息中只放链接 | 不设置，以 data URL 发送 |
+
+- 不设置 `upload` 时，文件以 data URL 随消息发送。data URL 比文件大约三分之一，默认限制下请求体最多约 7 MiB，服务端的[请求体上限](../http/requests.md#body-size)要放宽到 8 MiB；调整了 `maxTotalSize` 时相应调整。
+- 设置了 `upload` 时，请求体和对话存储都只有链接，适合较大的文件，例如用 `@go-tenon/client` 的 `uploadFile` [直传到 S3](../libraries/direct-uploads.md) 后签发一个读取地址。链接由模型服务下载，必须能从公网访问。
+- 附件不符合限制、或者回答进行中带附件时（插话只能是文字），`send` 抛出 `AttachmentError`，它的 `message` 可以直接显示，`reason` 是 `type`、`size`、`total`、`count` 或 `busy`。
+
+外观用 `useAttachments(options)` 管理待发送的附件：选择、粘贴或拖入文件时 `add`，`remove` 移除一个，发送后 `clear`。不符合限制的文件不加入，`error` 是原因；`items` 中图片的 `preview` 是预览地址，移除和卸载时释放。`fileParts(message.parts)` 取出消息中的文件片段（`{ mediaType, filename, url }`），用于显示已经发送的附件。
 
 <a id="troubleshooting"></a>
 ## 常见问题
