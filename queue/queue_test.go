@@ -706,3 +706,59 @@ func TestConsumerRecreated(t *testing.T) {
 		t.Fatal("job not handled after the consumer was deleted")
 	}
 }
+
+// 任务连续到达时，relay 按攒批的最长等待发出，不等攒满一批：第一个任务在发布还没结束时就已处理。
+func TestRelayDoesNotWaitForFullBatch(t *testing.T) {
+	t.Parallel()
+	db := openDB(t)
+	var mu sync.Mutex
+	var warm bool
+	var first time.Time // 第一个 N >= 1 的任务被处理的时间
+	start(t, db, queuetest.Config(t), func(w *queue.Worker) {
+		jobs.Handle(w, func(_ context.Context, p payload) error {
+			mu.Lock()
+			defer mu.Unlock()
+			if p.N == 0 {
+				warm = true
+			} else if first.IsZero() {
+				first = time.Now()
+			}
+			return nil
+		})
+	})
+	publish(t, db, 0) // 等 Worker 开始转发
+	eventually(t, 5*time.Second, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return warm
+	})
+	// 8 个发布方各自每 4ms 提交一个任务：合计约每 0.5ms 一个，远小于攒批的等待；
+	// 200ms 内约 400 个，不到一批的上限，旧的实现要等发布结束、出现空闲才发出。
+	begin := time.Now()
+	var wg sync.WaitGroup
+	for g := range 8 {
+		wg.Go(func() {
+			next := begin.Add(time.Duration(g) * time.Millisecond / 2)
+			for n := 1 + g; next.Before(begin.Add(200 * time.Millisecond)); n += 8 {
+				time.Sleep(time.Until(next))
+				if err := jobs.Publish(context.Background(), db, payload{N: n}); err != nil {
+					t.Error(err)
+					return
+				}
+				next = next.Add(4 * time.Millisecond)
+			}
+		})
+	}
+	wg.Wait()
+	finished := time.Now()
+	eventually(t, 5*time.Second, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return !first.IsZero()
+	})
+	mu.Lock()
+	defer mu.Unlock()
+	if !first.Before(finished) {
+		t.Fatalf("first job handled %v after publishing ended", first.Sub(finished))
+	}
+}

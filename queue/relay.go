@@ -18,8 +18,9 @@ import (
 const (
 	// relayBatch 是一次发给 JetStream 的最多任务数。
 	relayBatch = 500
-	// relayIdle 是攒批的最长等待：这么久没有新的任务到达，就把已经收到的发出去。
-	relayIdle = 2 * time.Millisecond
+	// relayDelay 是攒批的最长等待：一批中的第一个任务到达之后最多等这么久，就把已经收到的发出去。
+	// 任务连续到达时也按时发出，而不是攒满 relayBatch 才发。
+	relayDelay = 2 * time.Millisecond
 	// standbyInterval 是向 PostgreSQL 报告确认位置的间隔。它必须小于 wal_sender_timeout，否则连接被断开。
 	standbyInterval = 3 * time.Second
 )
@@ -88,6 +89,7 @@ func (w *Worker) stream(ctx context.Context) error {
 
 	var (
 		open, ready          []relayed // 当前事务中的任务；已提交、还没发出的任务
+		readySince           time.Time // ready 中第一个任务到达的时间
 		committed, confirmed pglogrepl.LSN
 		nextReport           = time.Now().Add(standbyInterval)
 	)
@@ -111,8 +113,8 @@ func (w *Worker) stream(ctx context.Context) error {
 	}
 	for {
 		deadline := nextReport
-		if idle := time.Now().Add(relayIdle); len(ready) > 0 && idle.Before(deadline) {
-			deadline = idle
+		if due := readySince.Add(relayDelay); len(ready) > 0 && due.Before(deadline) {
+			deadline = due
 		}
 		rctx, cancel := context.WithDeadline(ctx, deadline)
 		raw, err := conn.ReceiveMessage(rctx)
@@ -174,10 +176,13 @@ func (w *Worker) stream(ctx context.Context) error {
 						open = append(open, relayed{topic: topic, body: bytes.Clone(msg.Content)})
 					}
 				case *pglogrepl.CommitMessage:
+					if len(ready) == 0 && len(open) > 0 {
+						readySince = time.Now()
+					}
 					ready = append(ready, open...)
 					open = open[:0]
 					committed = msg.TransactionEndLSN
-					if len(ready) >= relayBatch {
+					if len(ready) >= relayBatch || len(ready) > 0 && !time.Now().Before(readySince.Add(relayDelay)) {
 						if err := flush(ctx); err != nil {
 							return err
 						}
