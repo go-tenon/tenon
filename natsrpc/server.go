@@ -41,8 +41,11 @@ type Options struct {
 	Prefix string
 	// Version 是服务的版本，格式为语义化版本，出现在服务发现中；为空时是 0.0.0。
 	Version string
-	// Description 说明这个 API，出现在服务发现中。
+	// Description 说明这个 API，出现在服务发现和 AsyncAPI 文档中。
 	Description string
+	// Permissions 是应用的权限目录，例如 authz.Catalog，与 rest.Options.Permissions 相同。
+	// 它写入 AsyncAPI 文档的 x-tenon-permissions（按名称排序），客户端据此生成权限常量和说明；nil 时不写。
+	Permissions []identity.Permission
 	// Validate 校验请求头 Authorization: Bearer 中的 token，与 REST 用同一个校验器，例如 apitoken.Store 的 Validate。
 	// Accounts 是接受的账号体系和各自的 Resolver，与 rest.Options.Accounts 相同。有需要登录的端点时两者必填。
 	Validate identity.TokenValidator
@@ -93,6 +96,8 @@ type endpoint struct {
 	subject string
 	name    string // 服务协议中的端点名：端点名中的 . 换成 _
 	input   *apischema.Schema
+	inType  reflect.Type
+	outType reflect.Type
 	empty   bool // 返回值是 struct{}：成功时响应体为空
 	handle  func(ctx context.Context, body []byte) (data []byte, fields []FieldError, err error)
 
@@ -174,6 +179,8 @@ func Register[I, O any](s *Server, e Endpoint, fn func(context.Context, I) (O, e
 		subject: s.opts.Prefix + "." + e.Name,
 		name:    name,
 		input:   input,
+		inType:  reflect.TypeFor[I](),
+		outType: reflect.TypeFor[O](),
 		empty:   reflect.TypeFor[O]() == reflect.TypeFor[struct{}](),
 	}
 	ep.handle = func(ctx context.Context, body []byte) ([]byte, []FieldError, error) {
