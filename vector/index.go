@@ -2,8 +2,6 @@ package vector
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"reflect"
 	"regexp"
@@ -27,7 +25,7 @@ var validName = regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]{0,62}$`)
 const (
 	payloadKey    = "_key"    // 文档所属的 key
 	payloadPos    = "_pos"    // 文档在 key 的文档中的位置，从 0 开始
-	payloadHash   = "_hash"   // 计算向量的文本的 SHA-256，文本不变时沿用原来的向量
+	payloadHash   = "_hash"   // 计算向量的内容的 SHA-256（见 Content.fingerprint），内容不变时沿用原来的向量
 	payloadTenant = "_tenant" // 文档所在的租户
 	payloadDoc    = "_doc"    // 编码为 JSON 的文档
 )
@@ -35,7 +33,8 @@ const (
 // batchSize 是一次写入 Qdrant 的最多文档数。
 const batchSize = 256
 
-// errInvalid 标记无法建索引的文档，例如计算向量的文本为空。重试也是徒劳，同步任务直接转入失败任务表。
+// errInvalid 标记无法建索引的文档，例如计算向量的内容为空、引用的文件不存在、模型不接受图片。
+// 重试也是徒劳，同步任务直接转入失败任务表。
 var errInvalid = errors.New("vector: invalid document")
 
 // pointSpace 是 point ID 的 UUID 命名空间：同一个 key 的同一个位置总是同一个 ID，重复写入覆盖原来的。
@@ -51,8 +50,8 @@ type Index[D any] struct {
 
 // Define 声明名为 name 的索引。文档类型 D 的字段用 vector 标签说明用途：
 //
-//   - embed：计算向量的文本，string，有且只有一个。只用来计算向量的文本可以是 json:"-"，
-//     例如 split.Chunk.TextWithContext() 的结果。
+//   - embed：计算向量的内容，有且只有一个。它是 string，或者是 Content（文字、图片，或二者放在一起，
+//     见 FilePart）。只用来计算向量的内容可以是 json:"-"，例如 split.Chunk.TextWithContext() 的结果。
 //   - filter：过滤用的值，可以是字符串、布尔、整数、浮点数、time.Time、
 //     实现 encoding.TextMarshaler 的类型（例如 uuid.UUID），以及它们的切片（多个值）和指针（nil 为没有值）。
 //     开头的 _ 以及名称中的 .、[、] 留给框架和查询语法，字段的 JSON 名称避开它们。
@@ -72,6 +71,8 @@ type Index[D any] struct {
 //
 // 过滤条件按字段的 JSON 名称引用字段。文档整体编码为 JSON 保存在索引中，查询结果直接解码出 D，
 // 所以 D 只放使用查询结果需要的字段。
+//
+// 一个 key 可以有多个文档，例如商品的标题一个文档、每张图片一个文档；Query.GroupByKey 让每个 key 只返回最接近的一个。
 //
 // 默认只按模型计算的向量检索语义，用 Hybrid 声明为混合索引后同时按关键词检索。
 //
@@ -97,7 +98,8 @@ func Define[D any](name string, opts ...IndexOption) *Index[D] {
 // IndexOption 是 Define 的选项。
 type IndexOption func(*schema)
 
-// Hybrid 把索引声明为混合索引：除了模型计算的向量，还用 tok 切分 embed 字段的文本，按 BM25 计算关键词的稀疏向量。
+// Hybrid 把索引声明为混合索引：除了模型计算的向量，还用 tok 切分 embed 字段的文字，按 BM25 计算关键词的稀疏向量。
+// 只有图片、没有文字的文档只参与语义检索。
 // 查询时语义和关键词两路分别检索，再按排名用 RRF 融合，型号、编号、人名这类语义相近却不对的结果因此排在后面。
 // tok 通常是 search.Bigram，需要按词语切分时用 search/gse。
 //
@@ -250,10 +252,10 @@ func (ix *Index[D]) write(ctx context.Context, s *Store, version int, key string
 
 // entry 是一个文档要写入 Qdrant 的内容。
 type entry struct {
-	text   string // 计算向量的文本
-	hash   string // text 的 SHA-256
-	sparse sparse // 混合索引中 text 的稀疏向量
-	point  *qdrant.PointStruct
+	content Content // 计算向量的内容
+	hash    string  // content 的指纹
+	sparse  sparse  // 混合索引中 content 的文字的稀疏向量
+	point   *qdrant.PointStruct
 }
 
 // entries 把 key 的文档转换为 point，向量留空，由 Store.embed 填入。
@@ -261,19 +263,15 @@ func (ix *Index[D]) entries(key string, docs []D) ([]entry, error) {
 	out := make([]entry, len(docs))
 	for i, d := range docs {
 		v := reflect.ValueOf(d)
-		var text string
-		if t, ok := ix.schema.embed.get(v); ok {
-			text = t.String()
-		}
-		if text == "" {
-			return nil, errors.Mark(errors.Newf("vector: document %d has no text to embed", i), errInvalid)
+		content := ix.schema.content(v)
+		if err := content.validate(); err != nil {
+			return nil, errors.Mark(errors.Wrapf(err, "vector: document %d has nothing to embed", i), errInvalid)
 		}
 		b, err := json.Marshal(d)
 		if err != nil {
 			return nil, errors.Mark(errors.Wrap(err, "vector: encode document"), errInvalid)
 		}
-		sum := sha256.Sum256([]byte(text))
-		hash := hex.EncodeToString(sum[:])
+		hash := content.fingerprint()
 		payload := map[string]*qdrant.Value{
 			payloadKey:  qdrant.NewValueString(key),
 			payloadPos:  qdrant.NewValueInt(int64(i)),
@@ -296,9 +294,9 @@ func (ix *Index[D]) entries(key string, docs []D) ([]entry, error) {
 				payload[name] = value
 			}
 		}
-		out[i] = entry{text: text, hash: hash, point: &qdrant.PointStruct{Id: pointID(key, i), Payload: payload}}
+		out[i] = entry{content: content, hash: hash, point: &qdrant.PointStruct{Id: pointID(key, i), Payload: payload}}
 		if tok := ix.schema.tokenizer; tok != nil {
-			out[i].sparse = documentSparse(tok, text)
+			out[i].sparse = documentSparse(tok, content.text())
 		}
 	}
 	return out, nil

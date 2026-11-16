@@ -23,9 +23,9 @@ import (
 // EnvAddr 是测试 Qdrant 的 gRPC 地址所在的环境变量，例如 127.0.0.1:6334。
 const EnvAddr = "QDRANT_TEST_ADDR"
 
-// New 返回连接测试 Qdrant 的 Store，环境变量未设置时使测试失败。
+// New 返回连接测试 Qdrant 的 Store，环境变量未设置时使测试失败。opts 是 vector.New 的其他选项，例如 vector.WithFiles。
 // 每次调用使用随机的 collection 前缀，并行的测试和反复运行的测试互不干扰，测试结束时删除这些 collection。
-func New(t testing.TB, db *bun.DB, model vector.Model) *vector.Store {
+func New(t testing.TB, db *bun.DB, model vector.Model, opts ...vector.Option) *vector.Store {
 	t.Helper()
 	addr := os.Getenv(EnvAddr)
 	if addr == "" {
@@ -60,5 +60,5 @@ func New(t testing.TB, db *bun.DB, model vector.Model) *vector.Store {
 			}
 		}
 	})
-	return vector.New(db, client, model, vector.WithPrefix(prefix))
+	return vector.New(db, client, model, append([]vector.Option{vector.WithPrefix(prefix)}, opts...)...)
 }

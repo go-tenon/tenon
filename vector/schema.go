@@ -14,6 +14,7 @@ import (
 )
 
 var (
+	contentType       = reflect.TypeFor[Content]()
 	timeType          = reflect.TypeFor[time.Time]()
 	textMarshalerType = reflect.TypeFor[encoding.TextMarshaler]()
 )
@@ -51,7 +52,7 @@ type schema struct {
 
 // parseSchema 解析 D 中带 vector 标签的字段：
 //
-//	embed   计算向量的文本，string，有且只有一个
+//	embed   计算向量的内容，string 或 Content，有且只有一个
 //	filter  过滤用的值
 //	tenant  文档所在的租户，string
 func parseSchema(typ reflect.Type) (*schema, error) {
@@ -71,9 +72,9 @@ func parseSchema(typ reflect.Type) (*schema, error) {
 		var err error
 		switch tag {
 		case "embed":
-			// 只用来计算向量的文本可以是 json:"-"
-			if sf.Type.Kind() != reflect.String {
-				err = errors.New("embed field must be a string")
+			// 只用来计算向量的内容可以是 json:"-"
+			if sf.Type.Kind() != reflect.String && sf.Type != contentType {
+				err = errors.New("embed field must be a string or vector.Content")
 			}
 			if s.embed != nil {
 				err = errors.New("more than one embed field")
@@ -106,6 +107,21 @@ func parseSchema(typ reflect.Type) (*schema, error) {
 		return nil, errors.Newf(`vector: document type %s has no vector:"embed" field`, typ)
 	}
 	return s, nil
+}
+
+// content 返回文档 v 的 embed 字段的内容。string 字段为空时返回空的 Content。
+func (s *schema) content(v reflect.Value) Content {
+	f, ok := s.embed.get(v)
+	if !ok {
+		return nil
+	}
+	if f.Type() == contentType {
+		return f.Interface().(Content)
+	}
+	if f.String() == "" {
+		return nil
+	}
+	return Text(f.String())
 }
 
 // checkName 检查过滤字段的 JSON 名称：_ 开头的 payload 字段由这个包使用，. 和 [ 在 Qdrant 的字段路径中有特殊含义。
