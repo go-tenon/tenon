@@ -49,7 +49,7 @@ func setup(t *testing.T) (*bun.DB, *webtest.Client) {
 	router.Handle(web.AssetsPath+"*", web.Assets())
 	router.Handle(ui.AssetsPath+"*", ui.Assets())
 	queueweb.Register(router.With(httpx.BasicAuth("ops", verify)), "/ops/queue", db, queueweb.Options{
-		Links:  map[string]string{"Grafana": "https://grafana.example.com/d/queue", "nsqadmin": ""},
+		Links:  map[string]string{"Grafana": "https://grafana.example.com/d/queue", "NATS": ""},
 		Logger: slog.New(slog.DiscardHandler),
 	})
 	return db, webtest.New(t, router)
@@ -68,7 +68,7 @@ func TestOverview(t *testing.T) {
 	res := c.Get("/ops/queue/", ops)
 	page := res.Text()
 	if res.Code != http.StatusOK || !strings.Contains(page, queue.SlotName(dbName(t, db))) || !strings.Contains(page, "https://grafana.example.com/d/queue") ||
-		strings.Contains(page, "nsqadmin") || !strings.Contains(page, `href="/ops/queue/failed?topic=mail"`) || !strings.Contains(page, `hx-trigger="every 5s"`) {
+		strings.Contains(page, "NATS") || !strings.Contains(page, `href="/ops/queue/failed?topic=mail"`) || !strings.Contains(page, `hx-trigger="every 5s"`) {
 		t.Fatalf("overview: %d\n%s", res.Code, page)
 	}
 	// 定时刷新只返回状态区域。

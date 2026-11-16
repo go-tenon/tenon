@@ -36,8 +36,8 @@ func newJobMetrics(mp metric.MeterProvider) jobMetrics {
 
 // relayRoute 是 queue.relay.jobs 的属性 queue.relay.route 的值：任务被转发的方式。
 const (
-	routePublished = "published" // 已经到时间，立即交给 NSQ
-	routeDeferred  = "deferred"  // 作为 NSQ 的延迟消息
+	routePublished = "published" // 已经到时间，立即交给 JetStream
+	routeDeferred  = "deferred"  // 作为 JetStream 的定时消息
 	routeScheduled = "scheduled" // 存入 queue_scheduled
 )
 

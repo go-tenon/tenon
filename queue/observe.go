@@ -17,7 +17,7 @@ const (
 	JobRetrying
 	// JobFailed 表示任务永久失败或次数用完，已转入失败任务表。
 	JobFailed
-	// JobReleased 表示停止等待超时，任务已放回 NSQ。
+	// JobReleased 表示停止等待超时，任务已放回 JetStream。
 	JobReleased
 )
 

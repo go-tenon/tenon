@@ -18,20 +18,20 @@ const (
 )
 
 // system 是 messaging.system 属性的值。
-const system = "nsq"
+const system = "nats"
 
 // WithTelemetry 让 Worker 报告 OpenTelemetry 指标和链路。
 //
-// 指标的属性 messaging.system 是 nsq，messaging.destination.name 是 topic：
+// 指标的属性 messaging.system 是 nats，messaging.destination.name 是 topic：
 //
-//   - queue.job.wait（直方图，秒）：任务从可以执行到开始处理等了多久。NSQ 重新投递的任务给不出可以执行的时间，不记录。
+//   - queue.job.wait（直方图，秒）：任务从可以执行到开始处理等了多久。租约到期或停止时放回、由 JetStream 重新投递的任务给不出可以执行的时间，不记录。
 //   - queue.job.duration（直方图，秒）：处理耗时，属性 queue.job.outcome 是结果：
 //     succeeded、retrying、failed、released。按结果计数就是吞吐和失败率。
 //
 // 转发的指标没有 messaging 属性：
 //
 //   - queue.relay.jobs（计数）：从 WAL 读到并转发的任务数，属性 queue.relay.route 是去向：
-//     published（立即交给 NSQ）、deferred（NSQ 延迟消息）、scheduled（存入 queue_scheduled）。
+//     published（立即交给 JetStream）、deferred（JetStream 定时消息）、scheduled（存入 queue_scheduled）。
 //   - queue.relay.active（仪表）：这个实例正在转发时为 1，否则为 0。所有实例之和为 0 时没有实例在转发，WAL 会一直累积。
 //   - queue.relay.lag（仪表，字节）：复制槽中还没确认的 WAL，每个实例采集时查询一次。
 //   - queue.scheduled.jobs（仪表）：queue_scheduled 中等待的任务数。
@@ -40,7 +40,7 @@ const system = "nsq"
 // HTTP 请求中发布的任务，执行时出现在同一条链路中。处理失败或重试时 span 标记为错误。
 // 不设置时，任务仍然带着发布方的链路：处理函数的 ctx 中是发布方的 span，处理函数自己创建的 span 接在它之后。
 //
-// NSQ 中积压的任务数由 nsqd 统计，在 nsqadmin 中查看。mp 或 tp 为 nil 时 panic；只需要其中一种时，另一个传 noop 实现。
+// JetStream 中积压的任务数由 NATS 统计，用 nats 命令行查看。mp 或 tp 为 nil 时 panic；只需要其中一种时，另一个传 noop 实现。
 func WithTelemetry(mp metric.MeterProvider, tp trace.TracerProvider) WorkerOption {
 	if mp == nil || tp == nil {
 		panic("queue: nil meter or tracer provider")

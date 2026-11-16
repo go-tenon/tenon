@@ -17,13 +17,13 @@ type Job struct {
 	Payload  []byte
 	Metadata map[string]string
 	// AvailableAt 是任务这次可以开始执行的时间：首次执行是发布时指定的时间，经由 outbox 的重试是退避后的时间；
-	// NSQ 重新投递的任务给不出，为零值。
+	// 租约到期或停止时放回、由 JetStream 重新投递的任务给不出，为零值。
 	AvailableAt time.Time
 	// Attempt 是本次是第几次执行，从 1 开始。
 	Attempt int
 }
 
-// envelope 是发给 NSQ 的消息体。
+// envelope 是发给 JetStream 的消息体。
 type envelope struct {
 	ID          uuid.UUID         `json:"id"`
 	Payload     json.RawMessage   `json:"payload"`
@@ -33,7 +33,7 @@ type envelope struct {
 	Attempts int `json:"attempts,omitempty"`
 }
 
-// scheduledRow 是 queue_scheduled 中的一行：执行时间离现在超过 Config.MaxDefer、等时间临近再交给 NSQ 的任务。
+// scheduledRow 是 queue_scheduled 中的一行：执行时间离现在超过 Config.MaxDefer、等时间临近再交给 JetStream 的任务。
 type scheduledRow struct {
 	bun.BaseModel `bun:"table:queue_scheduled,alias:s"`
 

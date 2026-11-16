@@ -1,5 +1,5 @@
 // Package queuecmd 提供 queue 命令：查看队列在数据库一侧的状态、列出失败任务、重建转发任务的复制槽。
-// NSQ 中积压的任务数由 nsqd 统计，在 nsqadmin 中查看。
+// JetStream 中积压的任务数由 NATS 统计，用 nats 命令行查看。
 package queuecmd
 
 import (
