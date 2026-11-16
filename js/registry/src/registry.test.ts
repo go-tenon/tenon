@@ -6,6 +6,17 @@ import { build, manifest, tenonDir } from "../build"
 
 const root = join(import.meta.dirname, "..")
 
+// 项目模板（console）已经带着的包，条目不需要再写进 dependencies。
+const provided = new Set([
+  "react",
+  "lucide-react",
+  "radix-ui",
+  "@go-tenon/client",
+  "@go-tenon/shell",
+  "@tanstack/react-query",
+  "@tanstack/react-router",
+])
+
 describe("registry", () => {
   it("r/ 与 src/components/tenon 一致（修改后运行 bun registry/build.ts）", () => {
     const built = build(root)
@@ -31,13 +42,17 @@ describe("registry", () => {
         for (const [, name] of src.matchAll(/from "@\/components\/tenon\/([\w-]+)"/g)) {
           expect(files.has(`${name}.tsx`), `${item.name}: ${f} imports tenon/${name}`).toBe(true)
         }
+        for (const [, name] of src.matchAll(/from "@\/hooks\/([\w-]+)"/g)) {
+          expect(ui.has(name), `${item.name}: ${f} imports hooks/${name}`).toBe(true)
+          expect(existsSync(join(root, "src/hooks", `${name}.ts`))).toBe(true)
+        }
+        // 用到的 npm 包都写在 dependencies 中，项目模板已经带着的除外。
         for (const [, pkg] of src.matchAll(/from "((?:@[\w-]+\/)?[\w-]+)/g)) {
-          if (["react-hook-form", "@tanstack/react-table"].includes(pkg)) {
-            expect(
-              item.dependencies?.some((d) => d.startsWith(`${pkg}@`)),
-              `${item.name}: ${f} imports ${pkg}`,
-            ).toBe(true)
-          }
+          if (provided.has(pkg)) continue
+          expect(
+            item.dependencies?.some((d) => d.startsWith(`${pkg}@`)),
+            `${item.name}: ${f} imports ${pkg}`,
+          ).toBe(true)
         }
       }
     }

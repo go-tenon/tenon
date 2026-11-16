@@ -68,39 +68,85 @@ var AntdMCP = map[string]any{"command": "bunx", "args": []any{"@ant-design/cli@6
 // ShadcnMCP 是 console 模板写入项目 .mcp.json 的 shadcn MCP 服务，版本与模板中的 shadcn 相同。
 var ShadcnMCP = map[string]any{"command": "bunx", "args": []any{"shadcn@4.23.0", "mcp"}}
 
-// RegistryFiles 是 console 模板从 tenon 的 shadcn registry（框架的 js/registry，复制在项目的 .tenon/js/registry）
-// 加入前端的文件：shadcn 的组件、tenon 的组件和它们用到的 hooks、cn。
-var RegistryFiles = []string{"src/components/ui", "src/components/tenon", "src/hooks", "src/lib/utils.ts"}
+// ConsoleRegistryItems 是 console 模板从 tenon 的 shadcn registry（框架的 js/registry，复制在项目的 .tenon/js/registry）
+// 加入前端的条目：布局、部件、页面、资源表格和表单。通知、Markdown 和 AI 对话需要其他 npm 包，用到时用 shadcn add 加入。
+var ConsoleRegistryItems = []string{
+	"tenon-sidebar-layout", "tenon-topnav-layout", "tenon-rail-layout", "tenon-page-layouts", "tenon-tab-bar",
+	"tenon-color-mode", "tenon-user-menu", "tenon-tenant-switcher", "tenon-command-menu", "tenon-dialogs",
+	"tenon-page", "tenon-data-table", "tenon-form", "tenon-login-form",
+}
 
-// InstallRegistry 把 registry（项目中 .tenon/js/registry 的位置）中的 RegistryFiles 复制到前端目录 dir，
-// 与 shadcn add 加入的内容相同；跳过测试文件，已有的文件不覆盖。
-func InstallRegistry(registry, dir string) error {
-	for _, rel := range RegistryFiles {
-		src := filepath.Join(registry, filepath.FromSlash(rel))
-		err := filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
-			if err != nil || d.IsDir() {
-				return err
-			}
-			name := d.Name()
-			if strings.HasSuffix(name, ".test.ts") || strings.HasSuffix(name, ".test.tsx") {
-				return nil
-			}
-			r, _ := filepath.Rel(registry, p)
-			target := filepath.Join(dir, r)
-			if _, err := os.Stat(target); err == nil {
-				return nil
-			}
-			data, err := os.ReadFile(p)
-			if err != nil {
-				return err
-			}
-			return writeFile(target, data)
-		})
+// registryImport 匹配 registry 源码中对项目内文件的导入，例如 "@/components/ui/button"、"@/hooks/use-mobile"。
+var registryImport = regexp.MustCompile(`from "@/((?:components/(?:ui|tenon)|hooks|lib)/[\w-]+)"`)
+
+// InstallRegistry 把 registry（项目中 .tenon/js/registry 的位置）中的条目 items 复制到前端目录 dir：
+// 条目的文件，以及它们导入的 shadcn 组件、tenon 组件、hooks 和 lib（逐层展开），与 shadcn add 加入的内容相同。
+// 已有的文件不覆盖。
+func InstallRegistry(registry, dir string, items []string) error {
+	var manifest struct {
+		Items []registryItem `json:"items"`
+	}
+	data, err := os.ReadFile(filepath.Join(registry, "registry.json"))
+	if err != nil {
+		return fmt.Errorf("scaffold: install registry: %w", err)
+	}
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return fmt.Errorf("scaffold: install registry: registry.json: %w", err)
+	}
+	queue := []string{"src/lib/utils.ts"}
+	for _, name := range items {
+		i := slices.IndexFunc(manifest.Items, func(it registryItem) bool { return it.Name == name })
+		if i < 0 {
+			return fmt.Errorf("scaffold: install registry: no item %q", name)
+		}
+		for _, f := range manifest.Items[i].Files {
+			queue = append(queue, "src/components/tenon/"+f)
+		}
+	}
+	seen := map[string]bool{}
+	for len(queue) > 0 {
+		rel := queue[0]
+		queue = queue[1:]
+		if seen[rel] {
+			continue
+		}
+		seen[rel] = true
+		src, err := os.ReadFile(filepath.Join(registry, filepath.FromSlash(rel)))
 		if err != nil {
 			return fmt.Errorf("scaffold: install registry: %w", err)
 		}
+		for _, m := range registryImport.FindAllStringSubmatch(string(src), -1) {
+			target, ok := registrySource(registry, "src/"+m[1])
+			if !ok {
+				return fmt.Errorf("scaffold: install registry: %s imports @/%s, which is not in the registry", rel, m[1])
+			}
+			queue = append(queue, target)
+		}
+		target := filepath.Join(dir, filepath.FromSlash(rel))
+		if _, err := os.Stat(target); err == nil {
+			continue
+		}
+		if err := writeFile(target, src); err != nil {
+			return err
+		}
 	}
 	return nil
+}
+
+// registryItem 是 registry.json 中的一个条目：files 是 src/components/tenon 中的文件名。
+type registryItem struct {
+	Name  string   `json:"name"`
+	Files []string `json:"files"`
+}
+
+// registrySource 返回导入路径（不带扩展名）对应的文件。
+func registrySource(registry, rel string) (string, bool) {
+	for _, ext := range []string{".tsx", ".ts"} {
+		if _, err := os.Stat(filepath.Join(registry, filepath.FromSlash(rel+ext))); err == nil {
+			return rel + ext, true
+		}
+	}
+	return "", false
 }
 
 // Package 是嵌入构建产物的 Go 包名：前端的名称去掉连字符。

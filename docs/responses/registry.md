@@ -14,7 +14,7 @@
 go tool tenon add frontend console --template console
 ```
 
-它在 `apps/console` 中生成一个前端：Vite、Tailwind CSS v4、shadcn（Radix 版本，`nova` 风格），带登录页、内嵌式侧栏布局、多标签、用户菜单和 ⌘K。shadcn 的组件（`src/components/ui`）和 tenon 的组件（`src/components/tenon`）从框架复制进来，不需要联网，之后可以随意修改。然后按提示在路由中挂载它（见[单页应用](spa.md#mounting)）。
+它在 `apps/console` 中生成一个前端：Vite、Tailwind CSS v4、shadcn（Radix 版本，`nova` 风格），带登录页、内嵌式侧栏布局、多标签、用户菜单和 ⌘K。下面[组件](#blocks)表中布局到登录表单的条目，连同它们用到的 shadcn 组件（`src/components/ui`）和 tenon 的组件（`src/components/tenon`），从框架复制进来，不需要联网，之后可以随意修改。通知、Markdown 和 AI 对话需要其他 npm 包，用到时再[加入](#adding)。然后按提示在路由中挂载它（见[单页应用](spa.md#mounting)）。
 
 ```text
 apps/console/
@@ -61,6 +61,9 @@ bunx shadcn@4.23.0 add ./.tenon/js/registry/r/tenon-rail-layout.json
 | `tenon-data-table` | `DataTable`、`ListToolbar`、`RowActions`、`StatusBadge` | 资源表格：服务端分页、排序和搜索保存在地址中，批量选择，行操作 |
 | `tenon-form` | `useApiForm`、`Field`、`FormError` | react-hook-form 加上生成的校验规则，服务端的字段错误显示在输入框下面 |
 | `tenon-login-form` | `LoginForm` | 登录表单 |
+| `tenon-notifications` | `NotificationBell`、`OperationCenter`、`OperationProgress` | 通知铃铛（未读数、列表、标记已读）、后台任务的进度，见[通知](app-shell.md#notifications)和[后台操作](app-shell.md#operations) |
+| `tenon-markdown` | `Markdown` | 消息的 Markdown：[Streamdown](https://streamdown.ai) 渲染流式输出，代码块用 shadcn 的 Code Block，带语法高亮和复制按钮 |
+| `tenon-assistant-chat` | `AssistantChat`、`AssistantButton` | AI 对话，见下文 |
 
 布局按[布局约定](app-shell.md#layouts)实现，插槽的位置与运营后台相同：`brand` 在侧栏顶部，`search`、`actions`、`tenant` 在顶栏右侧，`user` 在侧栏底部。路由元数据中的 `icon` 是名字，映射在 `src/components/tenon/nav.tsx` 的 `icons` 中，名字与运营后台相同，同一份路由在两套外观中都有图标。
 
@@ -102,6 +105,25 @@ const { form, onSubmit, formError, pending } = useApiForm<ArticleChanges>({
 ```
 
 前端按生成的规则校验，提示与服务端相同；有未保存的修改时离开前询问，保存成功后不再询问。
+
+<a id="assistant-chat"></a>
+AI 对话按 shadcn/ui 的 [AI Elements](https://ui.shadcn.com/docs/ai-elements) 组合：消息列表是 Message Scroller，用户的消息是 Bubble，思考过程和工具调用是 Trace，需要审批的工具调用是 Confirmation（Item 加上“批准”“拒绝”），输入框是 Prompt Input（InputGroup）。逻辑来自 [`@go-tenon/shell/chat`](app-shell.md#ai-chat)：
+
+```bash
+bunx shadcn@4.23.0 add ./.tenon/js/registry/r/tenon-assistant-chat.json  # 同时安装 ai、@ai-sdk/react、streamdown
+```
+
+```tsx
+<Fill name="actions">
+  <NotificationBell source={notifications} />
+  <OperationCenter />
+  <AssistantButton api="/api/v1/assistant/chat" id={conversationId} toolTitles={{ refund_order: "退款" }} />
+</Fill>
+```
+
+- 回答用 `Markdown` 渲染；插话显示为单独的用户消息。
+- 回答进行中输入的内容插入这次回答，停止按钮停止回答。
+- 等待审批时不能发送，批准或拒绝后回答继续。
 
 确认对话框：`ConfirmProvider` 放在根路由中，之后 `const confirm = useConfirm()`。它可以交给多标签和未保存修改的询问，代替浏览器的确认框：
 

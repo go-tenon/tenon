@@ -1,6 +1,8 @@
 package scaffold_test
 
 import (
+	"encoding/json"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -223,40 +225,76 @@ func TestWriteConsoleFrontend(t *testing.T) {
 }
 
 func TestInstallRegistry(t *testing.T) {
-	registry, dir := t.TempDir(), t.TempDir()
-	for p, content := range map[string]string{
-		"src/components/ui/button.tsx":         "button",
-		"src/components/tenon/nav.tsx":         "nav",
-		"src/components/tenon/blocks.test.tsx": "test",
-		"src/hooks/use-mobile.ts":              "hook",
-		"src/lib/utils.ts":                     "utils",
-		"src/index.css":                        "not copied",
-	} {
-		full := filepath.Join(registry, p)
-		_ = os.MkdirAll(filepath.Dir(full), 0o755)
-		if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
+	registry := filepath.Join("..", "..", "..", "..", "js", "registry")
+	dir := t.TempDir()
 	// 已有的文件不覆盖：项目修改过的组件保留。
 	_ = os.MkdirAll(filepath.Join(dir, "src/components/ui"), 0o755)
 	_ = os.WriteFile(filepath.Join(dir, "src/components/ui/button.tsx"), []byte("mine"), 0o644)
-	if err := scaffold.InstallRegistry(registry, dir); err != nil {
+	if err := scaffold.InstallRegistry(registry, dir, scaffold.ConsoleRegistryItems); err != nil {
 		t.Fatal(err)
 	}
-	for p, want := range map[string]string{
-		"src/components/ui/button.tsx": "mine",
-		"src/components/tenon/nav.tsx": "nav",
-		"src/hooks/use-mobile.ts":      "hook",
-		"src/lib/utils.ts":             "utils",
+	if b, _ := os.ReadFile(filepath.Join(dir, "src/components/ui/button.tsx")); string(b) != "mine" {
+		t.Errorf("button.tsx overwritten: %q", b)
+	}
+	// 条目的文件和它们逐层导入的文件。
+	for _, p := range []string{
+		"src/components/tenon/sidebar-layout.tsx", "src/components/tenon/nav.tsx", "src/components/tenon/data-table.tsx",
+		"src/components/ui/sidebar.tsx", "src/components/ui/sheet.tsx", "src/hooks/use-mobile.ts", "src/lib/utils.ts",
 	} {
-		if b, _ := os.ReadFile(filepath.Join(dir, p)); string(b) != want {
-			t.Errorf("%s = %q, want %q", p, b, want)
+		if _, err := os.Stat(filepath.Join(dir, p)); err != nil {
+			t.Errorf("%s not installed", p)
 		}
 	}
-	for _, p := range []string{"src/components/tenon/blocks.test.tsx", "src/index.css"} {
+	// 通知、Markdown 和 AI 对话不在 console 模板中，测试文件也不复制。
+	for _, p := range []string{
+		"src/components/tenon/assistant-chat.tsx", "src/components/tenon/markdown.tsx", "src/components/tenon/notifications.tsx",
+		"src/components/ui/code-block.tsx", "src/components/ui/message-scroller.tsx", "src/lib/highlighter.tsx",
+		"src/registry.test.ts", "src/blocks.test.tsx", "src/index.css",
+	} {
 		if _, err := os.Stat(filepath.Join(dir, p)); err == nil {
-			t.Errorf("%s copied", p)
+			t.Errorf("%s installed", p)
 		}
+	}
+
+	// 复制进来的文件用到的 npm 包，console 模板的 package.json 都带着。
+	tmpl, err := os.ReadFile(filepath.Join("template", "console", "package.json.tmpl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pkg struct {
+		Dependencies map[string]string `json:"dependencies"`
+	}
+	if err := json.Unmarshal([]byte(strings.ReplaceAll(string(tmpl), "[[.Scope]]", "x")), &pkg); err != nil {
+		t.Fatal(err)
+	}
+	imports := regexp.MustCompile(`from "((?:@[\w-]+/)?[\w-]+)`)
+	err = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		src, _ := os.ReadFile(p)
+		for _, m := range imports.FindAllStringSubmatch(string(src), -1) {
+			if _, ok := pkg.Dependencies[m[1]]; !ok && m[1] != "react" {
+				t.Errorf("%s imports %s, which the console template does not depend on", p, m[1])
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 其他条目同样逐层展开。
+	chat := t.TempDir()
+	if err := scaffold.InstallRegistry(registry, chat, []string{"tenon-assistant-chat"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{"src/components/tenon/markdown.tsx", "src/components/ui/code-block.tsx", "src/hooks/use-highlighted-code.ts", "src/lib/highlighter.tsx"} {
+		if _, err := os.Stat(filepath.Join(chat, p)); err != nil {
+			t.Errorf("chat: %s not installed", p)
+		}
+	}
+	if err := scaffold.InstallRegistry(registry, t.TempDir(), []string{"tenon-nope"}); err == nil {
+		t.Error("unknown item accepted")
 	}
 }
