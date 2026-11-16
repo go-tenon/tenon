@@ -81,6 +81,7 @@ go get -tool github.com/go-tenon/tenon/cmd/tenon
     "./*/messages": "./src/*/messages.ts",
     "./*/permissions": "./src/*/permissions.ts",
     "./*/queries": "./src/*/queries.ts",
+    "./*/resources": "./src/*/resources.ts",
     "./*/schemas": "./src/*/schemas.ts",
     "./*": "./src/*/api.ts"
   }

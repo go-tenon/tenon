@@ -14,6 +14,7 @@ import (
 	"github.com/go-tenon/tenon/httpx/rest"
 	"github.com/go-tenon/tenon/httpx/rest/clientgen"
 	"github.com/go-tenon/tenon/identity"
+	"github.com/go-tenon/tenon/page"
 )
 
 type noteInput struct {
@@ -100,7 +101,13 @@ func TestTSEnumWarnings(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], c.want) {
+		var enums []string
+		for _, w := range res.Warnings {
+			if strings.HasPrefix(w, "enum ") {
+				enums = append(enums, w)
+			}
+		}
+		if len(enums) != 1 || !strings.Contains(enums[0], c.want) {
 			t.Errorf("%s: warnings %q", name, res.Warnings)
 		}
 	}
@@ -115,5 +122,50 @@ func TestPermissionsInOpenAPI(t *testing.T) {
 	want := `"x-tenon-permissions":[{"name":"notes:admin","description":"管理所有笔记"},{"name":"notes:write","description":"写笔记"}]`
 	if !strings.Contains(string(data), want) {
 		t.Errorf("openapi.json missing %s:\n%s", want, data)
+	}
+}
+
+type noteDTO struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+}
+
+type noteListOut struct{ Body page.Offset[noteDTO] }
+
+// 资源：接口要求的权限写进 permissions；缺少显示文字时返回警告。
+func TestTSResource(t *testing.T) {
+	api := rest.New(chi.NewRouter(), rest.Options{Title: "Admin", Accounts: identity.Accounts{"staff": nil}, Permissions: catalog})
+	validate := func(context.Context, string) (identity.Subject, error) {
+		return identity.Subject{Type: "staff", ID: "a"}, nil
+	}
+	list := huma.Operation{OperationID: "note-list", Method: http.MethodGet, Path: "/notes"}
+	rest.RequireBearer(api, validate, "notes:admin")(&list)
+	rest.Register(api, list, func(context.Context, *struct{}) (*noteListOut, error) { return nil, nil })
+	create := huma.Operation{OperationID: "note-create", Method: http.MethodPost, Path: "/notes"}
+	rest.RequireBearer(api, validate, "notes:write")(&create)
+	rest.Register(api, create, func(context.Context, *noteInput) (*struct{}, error) { return nil, nil })
+	api.Resource(rest.Resource{Name: "note", List: "note-list", Create: "note-create"})
+
+	res, err := clientgen.GenerateTS(api, clientgen.TSOptions{Main: exampleMain, Translations: []fs.FS{fstest.MapFS{
+		"zh-CN.yaml": {Data: []byte("note.title: 笔记\nnote.fields.title: 标题\n")},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(res.Files["resources.ts"])
+	for _, want := range []string{
+		`list: ["note", "list"]`,
+		`list: ["notes:admin"]`,
+		`create: ["notes:write"]`,
+		`{ name: "id", type: "string", required: true }`,
+		`{ name: "title", type: "string", required: true }`,
+		`fields: { title: "标题" }`,
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("resources.ts missing %s:\n%s", want, src)
+		}
+	}
+	if len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "resource note has no zh-CN label for note.fields.id") {
+		t.Errorf("warnings %q", res.Warnings)
 	}
 }

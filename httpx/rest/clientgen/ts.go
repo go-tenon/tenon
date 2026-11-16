@@ -48,7 +48,8 @@ type TSOptions struct {
 //   - messages.ts：各语言的验证提示模板，框架内置的文案加上 Translations 中的覆盖；
 //   - permissions.ts：权限目录（rest.Options.Permissions）和每个接口要求的权限；
 //   - queries.ts：TanStack Query 的查询和修改选项；
-//   - enums.ts：rest.EnumSchema 登记的枚举的取值和各语言的显示文字。
+//   - enums.ts：rest.EnumSchema 登记的枚举的取值和各语言的显示文字；
+//   - resources.ts：rest.API.Resource 声明的资源。
 //
 // 类型来自 Huma 生成的 OpenAPI 文档，与 openapi.json 一致。
 func GenerateTS(api *rest.API, opts TSOptions) (*Result, error) {
@@ -96,9 +97,15 @@ func GenerateTS(api *rest.API, opts TSOptions) (*Result, error) {
 	}
 	enumsTS, warnings := t.enumsTS(templates)
 	res.Warnings = append(res.Warnings, warnings...)
+	resourcesTS, warnings, err := t.resourcesTS(templates)
+	if err != nil {
+		return nil, err
+	}
+	res.Warnings = append(res.Warnings, warnings...)
 	for file, src := range map[string]string{
 		"api.ts": apiTS, "errors.ts": errorsTS, "runtime.ts": tsRuntime, "schemas.ts": schemasTS,
 		"messages.ts": messagesTS(templates), "permissions.ts": permissionsTS, "queries.ts": queriesTS, "enums.ts": enumsTS,
+		"resources.ts": resourcesTS,
 	} {
 		res.Files[file] = []byte(Header + "\n\n" + src)
 	}

@@ -95,6 +95,7 @@ go tool tenon generate   # 等价于 go run ./cmd/api client --ts packages/clien
 | `messages.ts` | 各语言的验证提示模板，见[校验规则与验证提示](#validation-rules) |
 | `permissions.ts` | 权限目录和每个接口要求的权限，见[权限](#ts-permissions) |
 | `enums.ts` | 带显示文字的枚举，见[枚举](#ts-enums) |
+| `resources.ts` | 用 `api.Resource` 声明的资源，见[资源](resources.md#generated) |
 
 生成的代码是独立的 TypeScript，由 Go 程序直接生成。重新生成时只删除带生成标记的文件，目录中手写的文件保持不变。把它们提交到仓库，CI 中重新生成后用 `git diff --exit-code` 检查是否忘了更新。
 

@@ -27,6 +27,7 @@ type API struct {
 	names    *schemaNames
 
 	endpoints []Endpoint
+	resources []Resource
 }
 
 // Options 创建 API。
