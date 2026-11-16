@@ -237,7 +237,7 @@ Tenon 的每个包都可以单独使用，按需引入即可。顶层的包分�
 | `cachex` | Memcached 上的先读缓存再加载 | [缓存](../libraries/cache.md) |
 | `lock` | 带过期时间的原子锁，`lock/redislock` 是 Redis 存储 | [原子锁](../libraries/locks.md) |
 | `ratelimit` | 按键限流，`ratelimit/redislimit` 是 Redis 限流器 | [限流](../libraries/rate-limiting.md) |
-| `broadcast` | 实例之间广播消息，`broadcast/redisbroadcast` 是 Redis 后端 | [广播](../libraries/broadcasting.md) |
+| `broadcast` | 实例之间广播消息，`broadcast/natsbroadcast` 是 NATS 后端 | [广播](../libraries/broadcasting.md) |
 | `filesystem` | `files` 表、上传、公开地址；`local`、`s3` 两种磁盘 | [文件存储](../libraries/filesystem.md) |
 | `imgproxy` | 签名的 imgproxy 地址，按需缩放图片 | [图片缩略图](../libraries/file-uploads.md#thumbnails) |
 | `mail` | 邮件；`smtp`、`resend`、`ses` 发送，`logmail` 用于开发 | [邮件](../libraries/mail.md) |

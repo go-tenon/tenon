@@ -233,11 +233,17 @@ members, err := rt.Members(ctx, "editing:"+id.String())
 <a id="presence-stores"></a>
 ### 保存在线成员
 
-在线成员保存在所有实例共用的存储中，登记 presence 频道之前必须设置 `Options.Presence`，否则 `rt.Channel` 会 panic。只有一个实例时也一样：[不停机升级](../installation/operations.md#zero-downtime-upgrades)时新旧进程同时运行，双方要看到同一份在线成员。在线成员保存在 [Redis](redis.md) 中：
+在线成员保存在所有实例共用的存储中，登记 presence 频道之前必须设置 `Options.Presence`，否则 `rt.Channel` 会 panic。只有一个实例时也一样：[不停机升级](../installation/operations.md#zero-downtime-upgrades)时新旧进程同时运行，双方要看到同一份在线成员。在线成员保存在 [NATS](nats.md) JetStream 的键值存储（KV）中，`nc` 是[入口中创建的 NATS 连接](nats.md#connecting)：
 
 ```go
-rt, err := realtime.New(hub, realtime.Options{Presence: redispresence.New(rdb, "app:presence:")})
+presence, err := natspresence.New(ctx, nc, natspresence.Options{Bucket: "app_presence"})
+if err != nil {
+    return nil, err
+}
+rt, err := realtime.New(hub, realtime.Options{Presence: presence})
 ```
+
+`natspresence.New` 创建 bucket，已经存在时按选项更新它。bucket 名区分不同的应用和环境，同一个应用的实例必须相同。bucket 保存在 NATS 服务器的内存中，每个连接一条记录，连接每 25 秒续期一次；进程崩溃时来不及删除的记录在 60 秒后不再出现在在线成员中，5 分钟内由 NATS 删除。NATS 集群中把 `Replicas` 设为 3，一台服务器故障时在线记录不丢失；单副本时，丢失的记录在连接下一次续期时恢复。
 
 没有 presence 频道的应用省略它，`rt.Members` 返回空列表。测试中用 `realtimetest.NewPresence()`，它把在线记录保存在内存中；同一个交给多个 `Realtime`，就模拟了共用存储的多个实例。
 
@@ -269,7 +275,7 @@ articles.on('subscribed', async () => {
 });
 ```
 
-`subscribed` 在首次订阅和每次重连后都会触发，页面用同一段代码处理两种情况。与 [SSE 的断线补发](broadcasting.md#replaying-missed-events)一样，数据以应用的表为准。Hub 的后端可能丢了消息时（例如与 Redis 的连接中断过），本实例的客户端会被断开并重连，走的是同一条路径。
+`subscribed` 在首次订阅和每次重连后都会触发，页面用同一段代码处理两种情况。与 [SSE 的断线补发](broadcasting.md#replaying-missed-events)一样，数据以应用的表为准。Hub 的后端可能丢了消息时（例如与 NATS 的连接中断过），本实例的客户端会被断开并重连，走的是同一条路径。
 
 <a id="deployment"></a>
 ## 部署
@@ -398,10 +404,17 @@ func Presence(authorize PresenceAuthorizer) Rule
 
 公开频道、需要授权的私有频道、带在线成员的频道。`Authorizer` 收到主体和频道参数，返回是否允许订阅。
 
-### redispresence.New
+### natspresence.New
 
 ```go
-func New(rdb rueidis.Client, prefix string) *Store
+func New(ctx context.Context, nc *nats.Conn, opts natspresence.Options) (*Store, error)
 ```
 
-包 `github.com/go-tenon/tenon/realtime/redispresence`。在线成员的 Redis 存储。
+包 `github.com/go-tenon/tenon/realtime/natspresence`。在线成员的 NATS 存储。
+
+| 选项 | 说明 |
+| --- | --- |
+| `Bucket string` | KV bucket 的名字，由字母、数字、`_` 和 `-` 组成，同一个应用的实例必须相同 |
+| `Replicas int` | bucket 的副本数，不大于 0 时为 1 |
+
+创建 bucket，已经存在时按选项更新它。`nc` 为 `nil` 或 `Bucket` 不合法时 panic；服务器没有开启 JetStream 时返回错误。

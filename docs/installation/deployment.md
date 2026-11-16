@@ -309,7 +309,7 @@ services:
 
 一起运行时，把三个服务换成一个运行 `start` 的服务即可。
 
-应用用到的其他服务也放进同一个 compose 文件。框架会用到 PostgreSQL、[Redis](../libraries/redis.md)（锁、限流、广播）、[Memcached](../libraries/cache.md)（缓存）和 [NATS](../background/queue.md#preparing)（任务队列）：
+应用用到的其他服务也放进同一个 compose 文件。框架会用到 PostgreSQL、[Redis](../libraries/redis.md)（锁、限流）、[Memcached](../libraries/cache.md)（缓存）和 [NATS](../libraries/nats.md)（任务队列、广播、在线成员）：
 
 ```yaml
   redis:

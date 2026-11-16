@@ -298,7 +298,7 @@ article.PublishScheduledJob.Handle(w, func(ctx context.Context, _ struct{}) erro
 | [Webhook 投递记录](../features/webhooks.md#retention) | `webhook.Cleanup(db, 保留期)` | 每天 |
 | [失败任务](queue-monitoring.md#failed-jobs) | `queue.NewFailedJobs(db).Cleanup(保留期)` | 每天 |
 
-锁、限流和在线成员保存在 Redis 中，过期的键由 Redis 自动删除。
+锁和限流保存在 Redis 中，过期的键由 Redis 自动删除；在线成员保存在 NATS 中，过期的记录由 NATS 删除。
 
 <a id="testing"></a>
 ## 测试

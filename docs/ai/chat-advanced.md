@@ -315,7 +315,7 @@ runs := chat.NewRuns("app", agent, sessions,
 )
 ```
 
-`hub` 是[广播](../libraries/broadcasting.md#creating-the-hub)的 Hub，`locker` 是[原子锁](../libraries/locks.md)，都在 `open` 中创建，所有实例必须使用同一个 Redis。
+`hub` 是[广播](../libraries/broadcasting.md#creating-the-hub)的 Hub，`locker` 是[原子锁](../libraries/locks.md)，都在 `open` 中创建，所有实例必须共用同一套 NATS（广播）和 Redis（锁）。
 
 - 对话正在运行时，运行所在的实例持有这个对话的锁。其他实例上的 `Submit`、`Start` 因此返回 `chat.ErrBusy`，每个对话同一时刻只运行一次。
 - 运行的事件每 50 毫秒批量广播一次。其他实例上的 `Runs.Get` 先向运行所在的实例要一份目前为止的快照，再接收之后的事件，返回的 `Run` 用法与本地的相同；`Steer` 和 `Cancel` 转发给运行所在的实例，`Steer` 等待它的回执。
