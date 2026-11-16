@@ -166,6 +166,7 @@ apitoken.invalid: Your session has expired, please sign in again
 auth.expired: Your session has expired, please refresh and try again
 database.busy: The service is busy, please try again later
 database.unavailable: The service is temporarily unavailable, please try again later
+doctor.failed: The service is temporarily unavailable, please try again later
 ai.bad_request: There is no message to answer
 ai.no_worker: The assistant is temporarily unavailable, please try again later
 ai.shutting_down: The service is restarting, please try again later

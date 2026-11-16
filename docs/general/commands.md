@@ -100,6 +100,7 @@ func main() {
 | `command.Bind(open, declare)` | 应用声明的命令，例如 `article publish`，见[从命令行运行动作](../concepts/actions.md#as-commands) | 是 |
 | `queuecmd.New(db, opts...)` | `queue status`、`queue failed`、`queue slot recreate`，在 `command.Bind` 中声明；`queuecmd.WithJetStream(nc, cfg)` 让 `queue status` 同时显示 JetStream 中的任务，见[队列状态](../background/queue-monitoring.md#stats-command) | 是 |
 | `schedulecmd.New(tasks, m)` | `schedules`，在 `command.Bind` 中声明，见[列出任务的命令](../background/scheduling.md#schedules-command) | 是 |
+| `doctorcmd.New(groups...)` | `doctor`，在 `command.Bind` 中声明；`migratecmd.Check` 让 `migrate up` 在迁移之前运行同样的检查，见[自检](../installation/doctor.md) | 是 |
 
 开发时用的 `dev`、`build`、`generate` 不在这里，它们由[开发工具](../installation/tooling.md) `go tool tenon` 提供。命令行中只有你装配了的命令：不提供 HTTP API 的程序，例如一个只消费消息的常驻进程，只装配 `command.Run("run", ...)` 和 `migrate` 即可。
 

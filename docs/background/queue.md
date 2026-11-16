@@ -66,7 +66,7 @@ worker 启动时在 JetStream 中创建保存任务的 stream（默认名为 `jo
 
 单台服务器上，JetStream 默认每 2 分钟把数据同步到磁盘一次：进程崩溃不会丢失任务，但机器断电或损坏时，最近写入的任务可能丢失。生产环境用三台服务器组成[集群](https://docs.nats.io/running-a-nats-service/configuration/clustering/jetstream_clustering)，并把[配置](#configuration)中的 `replicas` 设为 3，一台服务器损坏时任务不丢失。只有一台服务器时，可以在 NATS 的配置文件中设置 `jetstream { sync_interval: always }`，每次写入都同步到磁盘，代价是吞吐下降。处理函数也要能安全地重复执行，丢失时可以从业务数据中找出没有完成的工作重新发布。
 
-PostgreSQL 需要 17 以上的版本，开启逻辑复制（`wal_level = logical`，修改后需要重启），应用的数据库用户需要 `REPLICATION` 属性（`ALTER ROLE app REPLICATION`）。其他设置和它们的作用见[运维](../installation/operations.md#queue)。云数据库在参数组中开启逻辑复制，例如 RDS 的 `rds.logical_replication`。本地开发时，[入门教程第 2 章](../tutorial/02-infrastructure.md#infrastructure)的 `compose.yaml` 已经设置好了。
+PostgreSQL 需要 17 以上的版本，开启逻辑复制（`wal_level = logical`，修改后需要重启），应用的数据库用户需要 `REPLICATION` 属性（`ALTER ROLE app REPLICATION`）。其他设置和它们的作用见[运维](../installation/operations.md#queue)。云数据库在参数组中开启逻辑复制，例如 RDS 的 `rds.logical_replication`。本地开发时，[入门教程第 2 章](../tutorial/02-infrastructure.md#infrastructure)的 `compose.yaml` 已经设置好了。`queue.Doctor` 逐项检查这些要求，不满足时给出修改方法，见[自检](../installation/doctor.md)。
 
 队列的迁移创建两张表和一个逻辑复制槽：`queue_scheduled` 保存执行时间较晚的任务，`queue_failed_jobs` 保存失败的任务；复制槽记录 worker 转发到了哪里。使用前先[发布](../database/migrations.md#publishing-framework-migrations)这些迁移：
 

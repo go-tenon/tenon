@@ -78,6 +78,8 @@ go build -trimpath -o bin/api ./cmd/api
 
 数据库连不上时，这条命令以退出码 4 结束。
 
+应用装配了[自检](doctor.md)时，再运行 `./bin/api doctor`：它检查 PostgreSQL、队列和文件存储的版本、设置与权限，例如 `wal_level` 和 `REPLICATION` 属性，每个问题都附带修改方法。
+
 数据库密码、密钥这类敏感信息不要写在配置文件中。配置文件中写 `${DATABASE_URL}`，真正的值由部署平台的环境变量或密钥管理功能提供，配置文件就可以放心地提交到代码仓库。
 
 <a id="running-migrations"></a>

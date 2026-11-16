@@ -166,6 +166,7 @@ apitoken.invalid: 登录已失效，请重新登录
 auth.expired: 登录已过期，请刷新后重试
 database.busy: 服务繁忙，请稍后再试
 database.unavailable: 服务暂时不可用，请稍后再试
+doctor.failed: 服务暂时不可用，请稍后再试
 ai.bad_request: 没有可以回答的消息
 ai.no_worker: AI 助手暂时不可用，请稍后再试
 ai.shutting_down: 服务正在重启，请稍后再试
