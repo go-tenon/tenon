@@ -1,11 +1,16 @@
 # 命令行
 
-一个 API 应用除了启动 HTTP 服务，通常还要执行一些运维任务：检查配置、执行数据库迁移、导出接口文档、查看路由。`command` 包基于 [Cobra](https://github.com/spf13/cobra) 提供这些命令。
+一个 API 应用除了启动 HTTP 服务，通常还要执行一些运维任务：检查配置、执行数据库迁移、导出接口文档、查看路由，或者手动执行一次业务操作，例如立即发布某篇文章。这些都写成程序的**子命令**，例如 `./bin/api serve`、`./bin/api migrate up`。
 
-每个命令都是一个独立的 `*cobra.Command`，应用按需把它们装配到根命令上，命令行里只有装配了的命令。
+`command` 包基于 [Cobra](https://github.com/spf13/cobra) 提供这些命令。Cobra 是 Go 中最常用的命令行库：一个命令是一个 `*cobra.Command` 结构体，写明命令名、说明和执行的函数；命令可以嵌套，组成 `migrate up` 这样的多级命令。`command` 包在 Cobra 之上加了几件事：加载配置、收到停止信号时取消 ctx、把错误转换为退出码。
+
+阅读前需要了解：[配置](configuration.md)；[context](../concepts/go-primer.md#context)。
 
 - [示例用法](#example-usage)
 - [装配命令行](#declaring-the-cli)
+- [自定义命令](#custom-commands)
+- [输入与输出](#input-and-output)
+- [退出码](#exit-codes)
 - [内置命令](#built-in-commands)
     - [Run：serve 与常驻进程](#run-command)
     - [在一个进程中运行多个部分](#running-together)
@@ -13,9 +18,7 @@
     - [routes 命令](#routes-command)
     - [migrate 命令](#migrate-command)
     - [config 命令](#config-command)
-- [自定义命令](#custom-commands)
-- [输入与输出](#input-and-output)
-- [退出码](#exit-codes)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="example-usage"></a>
@@ -98,16 +101,83 @@ func main() {
 | `queuecmd.New(db)` | `queue status`、`queue failed`、`queue slot recreate`，在 `command.Bind` 中声明，见[队列状态](../libraries/queue.md#stats-command) | 是 |
 | `schedulecmd.New(tasks, m)` | `schedules`，在 `command.Bind` 中声明，见[列出任务的命令](../libraries/scheduling.md#schedules-command) | 是 |
 
-迁移命令和 HTTP 命令分别放在 `command/migratecmd`、`command/httpcmd` 两个子包中。开发时用的 `dev`、`build`、`generate` 由[开发工具](../installation/tooling.md) `go tool tenon` 提供。`command` 本身只导入基础层的包和 Cobra 等少量第三方库，只用到它的应用保持精简。
+开发时用的 `dev`、`build`、`generate` 不在这里，它们由[开发工具](../installation/tooling.md) `go tool tenon` 提供。命令行中只有你装配了的命令：不提供 HTTP API 的程序，例如一个只消费消息的常驻进程，只装配 `command.Run("run", ...)` 和 `migrate` 即可。
 
-不提供 HTTP API 的应用，例如一个只消费消息队列的常驻进程，只装配它需要的命令即可：
+<a id="custom-commands"></a>
+## 自定义命令
+
+根命令和内置命令都是原生的 `*cobra.Command`，任意 Cobra 命令都可以一起装配。需要读取配置时，调用 `command.LoadConfig`，它使用同一个 `--config` 选项，失败时同样带 `ExitConfig` 退出码。不接受位置参数的命令，用 `command.NoArgs` 代替 `cobra.NoArgs`，多余参数就会以 `ExitUsage` 失败：
 
 ```go
-root := command.Root("worker", "订单事件消费者")
-root.AddCommand(
-    command.Run("run", "消费订单事件", consumer.Run),
-    migratecmd.New(migrations.FS, dbConfig),
-)
+root.AddCommand(&cobra.Command{
+    Use:   "ping-db",
+    Short: "检查数据库能否连通",
+    Args:  command.NoArgs,
+    RunE: func(cmd *cobra.Command, _ []string) error {
+        cfg, err := command.LoadConfig[Config](cmd)
+        if err != nil {
+            return err
+        }
+        db, err := database.Open(cmd.Context(), cfg.Database)
+        if err != nil {
+            return err // 连不上时是 database.ErrUnavailable，以 ExitUnavailable 退出
+        }
+        return db.Close()
+    },
+})
+```
+
+选项使用 Cobra 原生的 `Flags` 定义。命令的 context 通过 `cmd.Context()` 获取，进程收到停止信号时它会被取消。需要恰好 n 个位置参数时，用 `command.ExactArgs(n)`，参数个数不对同样以 `ExitUsage` 失败。
+
+需要应用资源的命令用 `command.Bind` 声明，执行时才装配：
+
+```go
+// bootstrap.Commands 返回需要 App 的命令。
+func Commands() []*cobra.Command {
+    return command.Bind(open, func(a *App) []*cobra.Command {
+        return []*cobra.Command{
+            article.Commands(a.db),
+            queuecmd.New(a.db),
+        }
+    })
+}
+```
+
+`open` 与 `serve` 用的是同一个，见[只在执行时装配的命令](../concepts/dependencies.md#deferred-commands)。执行某个业务动作的命令写成动作的 `Command` 入口，见[从命令行运行动作](../concepts/actions.md#as-commands)。
+
+<a id="input-and-output"></a>
+## 输入与输出
+
+请遵循这个约定：**标准输出只用于命令结果，诊断信息写入标准错误**。内置命令都是这样做的，因此 `./bin/api openapi > openapi.json` 之类的重定向可以得到干净的结果；日志默认也写到标准错误（见[日志](logging.md#creating-a-logger)）。
+
+自定义命令中，用 `cmd.OutOrStdout()` 和 `cmd.ErrOrStderr()` 写输出。这样在测试中可以用 Cobra 的 `SetOut`、`SetErr` 把输出重定向到缓冲区，见[命令测试](../testing/http.md#command-tests)。
+
+<a id="exit-codes"></a>
+## 退出码
+
+部署脚本和 CI 通常根据退出码判断命令是否成功，以及失败的原因：
+
+| 退出码 | 常量 | 含义 |
+| --- | --- | --- |
+| 0 | | 成功 |
+| 1 | `command.ExitFailure` | 操作被业务规则拒绝，例如输入无效或资源不存在 |
+| 2 | `command.ExitUsage` | 用法错误，例如未知命令、未知选项或多余参数 |
+| 3 | `command.ExitConfig` | 配置文件缺失或无效 |
+| 4 | `command.ExitUnavailable` | 外部依赖不可用 |
+| 5 | `command.ExitInternal` | 其他未分类的错误 |
+
+用法错误和配置错误由框架自动标记；`database.Open` 连不上数据库时返回 `database.ErrUnavailable`，它属于 `errorx.Unavailable` 分类。其他错误按[业务错误](errors.md#error-kinds)的分类转换：
+
+| 分类 | 退出码 |
+| --- | --- |
+| `errorx.Unavailable` | `ExitUnavailable`（4） |
+| `errorx.Internal` 及非业务错误 | `ExitInternal`（5） |
+| 其余分类 | `ExitFailure`（1） |
+
+因此，命令直接返回动作的错误即可。需要覆盖默认结果时，用 `command.AsExitError` 为错误标记退出码，`command.ExitCode` 则从错误中取出退出码：
+
+```go
+return command.AsExitError(command.ExitUnavailable, err)
 ```
 
 <a id="built-in-commands"></a>
@@ -253,82 +323,24 @@ go run ./cmd/api migrate publish --dir migrations
 
 配置文件缺失或校验失败时，这两个命令以及所有需要读取配置的命令都以 `ExitConfig` 退出。配置的读取与校验见[配置](configuration.md)。
 
-<a id="custom-commands"></a>
-## 自定义命令
+<a id="troubleshooting"></a>
+## 常见问题
 
-根命令和内置命令都是原生的 `*cobra.Command`，任意 Cobra 命令都可以一起装配。需要读取配置时，调用 `command.LoadConfig`，它使用同一个 `--config` 选项，失败时同样带 `ExitConfig` 退出码。不接受位置参数的命令，用 `command.NoArgs` 代替 `cobra.NoArgs`，多余参数就会以 `ExitUsage` 失败：
+**报错 `unknown command "xxx" for "api"`，退出码 2**
 
-```go
-root.AddCommand(&cobra.Command{
-    Use:   "ping-db",
-    Short: "检查数据库能否连通",
-    Args:  command.NoArgs,
-    RunE: func(cmd *cobra.Command, _ []string) error {
-        cfg, err := command.LoadConfig[Config](cmd)
-        if err != nil {
-            return err
-        }
-        db, err := database.Open(cmd.Context(), cfg.Database)
-        if err != nil {
-            return err // 连不上时是 database.ErrUnavailable，以 ExitUnavailable 退出
-        }
-        return db.Close()
-    },
-})
-```
+这个命令没有装配到根命令上。检查 `main.go` 中的 `root.AddCommand`；需要数据库的命令是否加进了 `bootstrap.Commands()`。
 
-选项使用 Cobra 原生的 `Flags` 定义。命令的 context 通过 `cmd.Context()` 获取，进程收到停止信号时它会被取消。需要恰好 n 个位置参数时，用 `command.ExactArgs(n)`，参数个数不对同样以 `ExitUsage` 失败。
+**命令以退出码 3 结束**
 
-需要应用资源的命令用 `command.Bind` 声明，执行时才装配：
+配置文件缺失或无效。用 `config check` 查看具体的原因；确认在项目根目录执行（`config/app.yaml` 和 `.env` 都按工作目录查找）。
 
-```go
-// bootstrap.Commands 返回需要 App 的命令。
-func Commands() []*cobra.Command {
-    return command.Bind(open, func(a *App) []*cobra.Command {
-        return []*cobra.Command{
-            article.Commands(a.db),
-            queuecmd.New(a.db),
-        }
-    })
-}
-```
+**自定义命令中用 `StringVar` 绑定的选项始终是空的**
 
-`open` 与 `serve` 用的是同一个，见[只在执行时装配的命令](../concepts/dependencies.md#deferred-commands)。执行某个业务动作的命令写成动作的 `Command` 入口，见[从命令行运行动作](../concepts/actions.md#as-commands)。
+用 `command.Bind` 声明的命令，执行时会重新声明一次，绑定的变量属于第一次声明的命令。在 `RunE` 中用 `cmd.Flags().GetString` 读取选项，见[从命令行运行动作](../concepts/actions.md#as-commands)。
 
-<a id="input-and-output"></a>
-## 输入与输出
+**`./bin/api openapi > openapi.json` 得到的文件中混入了日志**
 
-请遵循这个约定：**标准输出只用于命令结果，诊断信息写入标准错误**。内置命令都是这样做的，因此 `./bin/api openapi > openapi.json` 之类的重定向可以得到干净的结果；日志默认也写到标准错误（见[日志](logging.md#creating-a-logger)）。
-
-自定义命令中，用 `cmd.OutOrStdout()` 和 `cmd.ErrOrStderr()` 写输出。这样在测试中可以用 Cobra 的 `SetOut`、`SetErr` 把输出重定向到缓冲区，见[命令测试](../testing/http.md#command-tests)。
-
-<a id="exit-codes"></a>
-## 退出码
-
-部署脚本和 CI 通常根据退出码判断命令是否成功，以及失败的原因：
-
-| 退出码 | 常量 | 含义 |
-| --- | --- | --- |
-| 0 | | 成功 |
-| 1 | `command.ExitFailure` | 操作被业务规则拒绝，例如输入无效或资源不存在 |
-| 2 | `command.ExitUsage` | 用法错误，例如未知命令、未知选项或多余参数 |
-| 3 | `command.ExitConfig` | 配置文件缺失或无效 |
-| 4 | `command.ExitUnavailable` | 外部依赖不可用 |
-| 5 | `command.ExitInternal` | 其他未分类的错误 |
-
-用法错误和配置错误由框架自动标记；`database.Open` 连不上数据库时返回 `database.ErrUnavailable`，它属于 `errorx.Unavailable` 分类。其他错误按[业务错误](errors.md#error-kinds)的分类转换：
-
-| 分类 | 退出码 |
-| --- | --- |
-| `errorx.Unavailable` | `ExitUnavailable`（4） |
-| `errorx.Internal` 及非业务错误 | `ExitInternal`（5） |
-| 其余分类 | `ExitFailure`（1） |
-
-因此，命令直接返回动作的错误即可。需要覆盖默认结果时，用 `command.AsExitError` 为错误标记退出码，`command.ExitCode` 则从错误中取出退出码：
-
-```go
-return command.AsExitError(command.ExitUnavailable, err)
-```
+有代码把诊断信息写到了标准输出。日志和诊断信息写到标准错误，见[输入与输出](#input-and-output)。
 
 <a id="api-reference"></a>
 ## API 参考

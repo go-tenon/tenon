@@ -4,7 +4,15 @@
 
 在开始之前，有一点需要明确：本地化只影响**展示文案**。错误码、错误分类等业务语义始终不变，客户端应当根据 `code` 判断错误，把 `detail` 直接展示给用户。
 
-本地化基于 [go-i18n](https://github.com/nicksnyder/go-i18n)。`i18n` 包把框架内置的消息和你的翻译文件组合成一个原生的 go-i18n `Bundle`，并在请求的 context 中携带协商出的语言。
+本地化基于 [go-i18n](https://github.com/nicksnyder/go-i18n)。`i18n` 包把框架内置的消息和你的翻译文件组合成一个原生的 go-i18n `Bundle`（可以理解为“全部语言的全部翻译”），并在请求的 context 中携带为这个请求选定的语言。
+
+几个术语：
+
+- **消息 ID**：一条文案的名字，例如 `article.not_found`。代码中只写消息 ID，具体的文字写在翻译文件中。
+- **语言标签**：表示一种语言的标准写法，例如 `en`、`zh-CN`（简体中文）。
+- **语言协商**：根据浏览器发来的 `Accept-Language` 请求头（用户偏好的语言列表），从应用支持的语言中选出最合适的一种。
+
+阅读前需要了解：[错误处理](errors.md)；[embed](../concepts/go-primer.md#embed)。
 
 - [示例用法](#example-usage)
 - [启用本地化](#enabling-localization)
@@ -17,6 +25,7 @@
 - [获取翻译](#retrieving-translations)
 - [翻译错误消息](#translating-errors)
 - [在 HTTP 之外使用](#outside-http)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="example-usage"></a>
@@ -205,6 +214,25 @@ func (n *Notifier) ArticlePublished(ctx context.Context, a *Article, author *Use
 ```
 
 `i18n.Match` 接受 `Accept-Language` 格式的偏好，在语言目录中协商，匹配失败时返回默认语言。它可以接收多个值，gRPC 拦截器可以直接传入 `metadata.ValueFromIncomingContext(ctx, "accept-language")...`。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**响应的 `detail` 仍然是 `Not Found` 这样的英文**
+
+找不到这个错误码的翻译，日志中有一条警告。检查翻译文件中的消息 ID 是否与错误码完全一致，以及翻译文件是否已经加载。
+
+**明明发送了 `Accept-Language: zh-CN`，得到的却是英文**
+
+应用没有 `zh-CN` 的翻译文件，语言协商回退到了默认语言。看响应头 `Content-Language` 就知道最终选定的语言。
+
+**`{{.slug}}` 原样出现在提示中**
+
+错误没有附加名为 `slug` 的参数。用 `errorx.Public("slug", value)` 附加，名字区分大小写，见[在提示中带上参数](errors.md#public-parameters)。
+
+**加载翻译时报错 YAML 格式不对**
+
+值中有冒号、引号或以 `{` 开头时，用双引号把整个值包起来，例如 `article.slug_taken: "slug“{{.slug}}”已被使用"`。
 
 <a id="api-reference"></a>
 ## API 参考
