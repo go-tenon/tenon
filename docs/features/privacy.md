@@ -11,6 +11,7 @@
 - [登记数据](#sources)
     - [框架的数据](#framework-sources)
     - [应用自己的数据](#app-sources)
+    - [多套账号体系](#account-systems)
 - [申请注销](#requesting)
 - [冷静期](#grace-period)
 - [能否注销](#checks)
@@ -28,6 +29,7 @@
 
 ```go
 deletions := privacy.New(db, privacy.Options{
+    Type:  user.Type,           // 注销哪一套账号体系
     Grace: 15 * 24 * time.Hour, // 冷静期 15 天
     Sources: []privacy.Source{
         {Name: "users", Erase: user.Erase},          // 应用自己的用户表
@@ -45,7 +47,7 @@ e, err := deletions.Request(ctx, db, sub.Ref())
 sched.Add("privacy:erase", "*/10 * * * *", schedule.Cleanup(deletions.EraseDue, 100))
 ```
 
-`users` 是[登录](../security/login.md#assembling)的 `login.Realm`，`sched` 是[调度器](../background/scheduling.md#running-the-scheduler)。下面先发布迁移，再逐步介绍每一部分。
+`user.Type` 是用户这套账号体系的名称（`identity.SubjectType`），`users` 是它[登录](../security/login.md#assembling)用的 `login.Realm`，`sched` 是[调度器](../background/scheduling.md#running-the-scheduler)。下面先发布迁移，再逐步介绍每一部分。
 
 <a id="installation"></a>
 ## 安装
@@ -123,8 +125,25 @@ func Erase(ctx context.Context, db bun.IDB, ref identity.Ref) error {
 
 有外键约束时，登记的顺序很重要：被引用的行要在引用它的行之后删除。
 
-> [!IMPORTANT]
-> 一套应用常常有多套账号体系，例如 `user` 和 `staff`。`Erase` 收到的 `ref` 带着类型，只处理自己的账号体系：`if ref.Type != user.Type { return nil }`。框架的函数已经按类型和 ID 一起匹配。
+<a id="account-systems"></a>
+### 多套账号体系
+
+一个 `privacy.Service` 只注销 `Options.Type` 这一套账号体系的主体，与这套账号的 `login.Realm` 一一对应，各项 `Erase` 只会收到这个类型的主体。应用同时有用户（`user`）和员工（`staff`）时，各建一个服务，登记各自的数据：
+
+```go
+userDeletions := privacy.New(db, privacy.Options{Type: user.Type, Grace: 15 * 24 * time.Hour, Sources: []privacy.Source{
+    {Name: "users", Erase: user.Erase},
+    {Name: "login", Erase: users.Forget},
+    {Name: "api_tokens", Erase: apitoken.Erase},
+}})
+staffDeletions := privacy.New(db, privacy.Options{Type: staff.Type, Sources: []privacy.Source{
+    {Name: "staff", Erase: staff.Erase},
+    {Name: "login", Erase: staffRealm.Forget},
+    {Name: "api_tokens", Erase: apitoken.Erase},
+}})
+```
+
+两个服务共用 `privacy_erasures` 表，各自的 `EraseDue` 只删除自己这套账号体系的注销，两个都要交给定时任务。方法收到别的账号体系的主体时返回错误。
 
 <a id="requesting"></a>
 ## 申请注销
@@ -281,8 +300,8 @@ err := a.deletions.Erase(ctx, identity.Ref{Type: user.Type, ID: in.ID})
 **`EraseDue` 一直报 `violates foreign key constraint`。**
 登记顺序不对：引用账号行的表还有数据，账号行就被删除了。把删除引用方的那一项排在前面，或者给外键加上 `ON DELETE CASCADE`。
 
-**多套账号体系中，注销 `staff` 删除了 `user` 的数据。**
-应用的 `Erase` 只按 ID 删除，没有检查 `ref.Type`。见[应用自己的数据](#app-sources)。
+**`subject type "staff" does not belong to service "user"`。**
+把员工交给了用户的服务。每套账号体系各建一个服务，见[多套账号体系](#account-systems)。
 
 **注销后，同一个手机号能重新注册吗？**
 可以。`login.Realm.Forget` 删除了登录标识，手机号可以重新注册，得到的是一个新的账号。
@@ -300,6 +319,7 @@ func New(db *bun.DB, opts Options) *Service
 
 - **参数**
     - `db`：已执行 `Migrations` 的数据库
+    - `opts.Type`：这个服务注销的账号体系，必填
     - `opts.Grace`：冷静期，0 表示没有，不能为负数
     - `opts.Sources`：保存了主体数据的地方，至少一项；`Name` 不能为空或重复，`Check` 和 `Erase` 至少有一个
 - **返回**：可以并发使用的服务。选项不合法时 panic。
