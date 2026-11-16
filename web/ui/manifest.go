@@ -3,15 +3,15 @@
 package ui
 
 // ShadcnTemplVersion 是生成资源时 go.mod 中 shadcn-templ 的版本。
-const ShadcnTemplVersion = "v2.0.0"
+const ShadcnTemplVersion = "v2.0.1"
 
-const scriptFile = "shadcn-templ-44b085018d0ae9e8.js"
+const scriptFile = "shadcn-templ-20fa43b718fc0c7f.js"
 
 const glueFile = "glue-621e862a8c2b3799.js"
 
 // extraScripts 是按需加载的组件脚本：页面出现选择器匹配的元素时，衔接脚本加载对应文件。
 var extraScripts = map[string]string{
-	"[data-slot=\"calendar\"]":              "shadcn-templ-calendar-5c792032bf457fea.js",
+	"[data-slot=\"calendar\"]":              "shadcn-templ-calendar-e80b44fa97edf25d.js",
 	"[data-slot=\"carousel\"]":              "shadcn-templ-carousel-239093b54b01e0e9.js",
 	"script[data-templ-chart-model]":        "shadcn-templ-chart-9d1eb801ac982c26.js",
 	"[data-slot=\"drawer-viewport\"]":       "shadcn-templ-drawer-cdc3184603cf0633.js",
