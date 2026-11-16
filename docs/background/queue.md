@@ -43,8 +43,8 @@ err := database.RunInTx(ctx, db, nil, func(ctx context.Context, tx database.Tx) 
     return SendWelcome.Publish(ctx, tx, user.ID)
 })
 
-// 处理：在 worker 进程中注册
-w := queue.NewWorker(db, cfg.Queue, nil)
+// 处理：在 worker 进程中注册，nc 是应用的 NATS 连接
+w := queue.NewWorker(db, nc, cfg.Queue, nil)
 SendWelcome.Handle(w, func(ctx context.Context, id uuid.UUID) error {
     return sendWelcomeEmail(ctx, id) // 返回错误时稍后重试
 })
@@ -196,7 +196,7 @@ func (a *App) Worker(*command.Daemon) (func(context.Context) error, error) {
         return nil, err
     }
 
-    w := queue.NewWorker(a.db, a.cfg.Queue, nil)
+    w := queue.NewWorker(a.db, a.nc, a.cfg.Queue, nil)
     mailjob.Send.Handle(w, mailer.Send)
     return w.Run, nil
 }
@@ -207,30 +207,29 @@ func Work(ctx context.Context, cfg Config) error {
 }
 ```
 
-`newMailer` 见[装配发送器](../libraries/mail.md#assembling-mailer)。业务动作的任务入口也注册在这里，例如定时发布文章，见[队列任务](../concepts/actions.md#as-jobs)。在根命令中用 `command.Run("work", "处理队列任务", bootstrap.Work)` 注册它。
+`a.nc` 是入口中用 `natsx.Connect` 创建的 NATS 连接，广播等组件也用它，见[连接 NATS](../libraries/nats.md#connecting)；worker 不关闭它。`newMailer` 见[装配发送器](../libraries/mail.md#assembling-mailer)。业务动作的任务入口也注册在这里，例如定时发布文章，见[队列任务](../concepts/actions.md#as-jobs)。在根命令中用 `command.Run("work", "处理队列任务", bootstrap.Work)` 注册它。
 
-发布的任务要等 worker 转发才会执行，所以部署时**至少运行一个 worker**。`w.Run` 连不上 NATS、建不了 stream 时返回错误；运行后一直到进程收到停止信号，然后停止接收任务，等处理中的任务写回结果才返回；数据库由 `run` 在所有部分都返回之后才关闭。
+发布的任务要等 worker 转发才会执行，所以部署时**至少运行一个 worker**。`w.Run` 建不了 stream 或 consumer（例如 NATS 不可用）时返回错误；运行后一直到进程收到停止信号，然后停止接收任务，等处理中的任务写回结果才返回；数据库由 `run` 在所有部分都返回之后才关闭。
 
 worker 可以和 HTTP 服务、调度器[运行在同一个进程中](../general/commands.md#running-together)，任务量大了再单独部署，按任务量增减实例数；单独部署时的健康检查见[没有 HTTP 服务的进程](../http/lifecycle.md#probe-listener)。多个 worker 同时运行是安全的：转发时互不重复，同一个应用的 worker 共用每个 topic 的 consumer，每个任务只交给其中一个。
 
 <a id="configuration"></a>
 ### 配置
 
-在应用配置中加入队列段：
+在应用配置中加入队列段。NATS 的地址和凭据在 `nats` 段中，见[连接 NATS](../libraries/nats.md#connecting)：
 
 ```go
 type Config struct {
     // ...
+    NATS  natsx.Config `yaml:"nats"`
     Queue queue.Config `yaml:"queue"`
 }
 ```
 
-不写的项使用下面的默认值，生产环境至少要写 `url` 和 `stream`：
+不写的项使用下面的默认值，生产环境至少要写 `stream`：
 
 ```yaml
 queue:
-  url: nats://127.0.0.1:4222 # NATS 的地址，集群的多个地址用逗号分隔
-  credentials: ""            # NATS 凭据文件（.creds）的路径，服务器使用 JWT 认证时设置
   stream: jobs               # 保存任务的 stream，多个应用或环境共用 NATS 时区分
   replicas: 1                # stream 的副本数，NATS 集群中设为 3
   concurrency: 10            # 每个 topic 同时处理的任务数
@@ -244,8 +243,6 @@ queue:
 `concurrency` 是每个 worker 实例的上限，部署 3 个实例时同一个 topic 最多有 30 个任务同时执行。
 
 topic `mail.send` 的任务发布到 subject `jobs.job.mail.send`，等待投递的定时消息在 `jobs.delay.*` 中，`jobs` 是 `stream` 的值。worker 启动时创建 stream；它已经存在时，检查保留策略和 subject 是否符合要求，`replicas` 不同时更新它，运维调整过的其他设置（例如容量上限）保持不变。
-
-NATS 用户名和密码可以写在地址中（`nats://user:password@host:4222`），使用 JWT 认证时设置 `credentials`。
 
 `concurrency` 和 `max_attempts` 是所有 topic 的默认值。个别 topic 需要不同的值时，在注册时用 `queue.Concurrency`、`queue.MaxAttempts` 覆盖，例如调用模型的任务 `article.Summarize.Handle(w, summarize.Job, queue.Concurrency(2))`。
 
@@ -331,10 +328,10 @@ if jobs := queuetest.Pending(t, db, mailjob.Send); len(jobs) != 1 {
 }
 ```
 
-需要端到端运行时，`queue/queuetest` 提供连接测试 NATS 的配置：每次使用随机名字的 stream，并行的测试互不干扰，测试结束时删除它。测试 NATS 的地址由环境变量 `NATS_TEST_URL` 给出，例如 `nats://127.0.0.1:4222`：
+需要端到端运行时，`queue/queuetest` 提供连接测试 NATS 的连接和配置：每次使用随机名字的 stream，并行的测试互不干扰，测试结束时删除它。测试 NATS 的地址由环境变量 `NATS_TEST_URL` 给出，例如 `nats://127.0.0.1:4222`：
 
 ```go
-w := queue.NewWorker(db, queuetest.Config(t), nil)
+w := queue.NewWorker(db, queuetest.Conn(t), queuetest.Config(t), nil)
 article.PublishJob.Handle(w, publish.Job)
 queuetest.Run(t, w) // 测试结束时停止
 ```
@@ -425,13 +422,13 @@ func MaxAttempts(n int) HandleOption
 ### NewWorker
 
 ```go
-func NewWorker(db *bun.DB, cfg Config, logger *slog.Logger, opts ...WorkerOption) *Worker
+func NewWorker(db *bun.DB, nc *nats.Conn, cfg Config, logger *slog.Logger, opts ...WorkerOption) *Worker
 func (w *Worker) Run(ctx context.Context) error
 func WithTelemetry(mp metric.MeterProvider, tp trace.TracerProvider) WorkerOption
 func WithObserver(o Observer) WorkerOption
 ```
 
-`Run` 转发发布的任务并处理已注册的 topic，直到 `ctx` 被取消。`WithTelemetry` 见[可观测性](../general/telemetry.md#queue)；`WithObserver` 接收[任务事件](queue-monitoring.md#job-events)。
+`nc` 是 `natsx.Connect` 返回的连接，worker 不关闭它。`Run` 转发发布的任务并处理已注册的 topic，直到 `ctx` 被取消。`WithTelemetry` 见[可观测性](../general/telemetry.md#queue)；`WithObserver` 接收[任务事件](queue-monitoring.md#job-events)。
 
 ### 处理函数的返回值
 
@@ -468,11 +465,10 @@ func Migrations() fs.FS
 func ReadStatus(ctx context.Context, db bun.IDB) (Status, error)
 func RecreateSlot(ctx context.Context, db bun.IDB, force bool) error
 
-func NewAdmin(cfg Config, logger *slog.Logger) *Admin
+func NewAdmin(nc *nats.Conn, cfg Config) *Admin
 func (a *Admin) Status(ctx context.Context) (StreamStatus, error)
 func (a *Admin) Pause(ctx context.Context, topic string, until time.Time) error
 func (a *Admin) Resume(ctx context.Context, topic string) error
-func (a *Admin) Close()
 ```
 
 `Migrations` 是队列的迁移；`ReadStatus` 读取复制槽和延迟任务的状态，`Admin` 读取 JetStream 中的 stream 和各 topic、暂停和恢复 topic，`queue status` 命令和[队列面板](queue-monitoring.md#panel)用它们；`RecreateSlot` 在复制槽失效后重建，见[部署](../installation/operations.md#queue-recovery)。

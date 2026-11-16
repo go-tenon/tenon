@@ -2,7 +2,7 @@
 
 NATS 在 Tenon 中负责**消息的传递**：[队列](../background/queue.md)的任务保存在 JetStream 中；[广播](broadcasting.md)经由 NATS 的发布订阅把消息送到每个实例；[实时频道](realtime.md)的在线成员保存在 JetStream 的键值存储（KV）中。锁和限流这类低频的协调数据在 PostgreSQL 中，见[原子锁](locks.md#postgres-store)和[限流](rate-limiting.md#postgres-limiter)。
 
-Tenon 不封装 NATS 客户端，使用官方的 [nats.go](https://github.com/nats-io/nats.go)。队列的 worker 按[队列配置](../background/queue.md#configuration)自己连接；广播和在线成员使用应用在入口创建的连接，全应用共用一个。
+Tenon 使用官方的 [nats.go](https://github.com/nats-io/nats.go)，用 `natsx.Connect` 按框架的约定创建连接。每个进程一条连接，队列、广播和在线成员共用它。
 
 阅读前需要了解：[依赖装配](../concepts/dependencies.md)。
 
@@ -20,18 +20,25 @@ Tenon 不封装 NATS 客户端，使用官方的 [nats.go](https://github.com/na
 <a id="connecting"></a>
 ## 连接 NATS
 
-在入口打开共用资源的地方（见[依赖装配](../concepts/dependencies.md#running-parts)），用队列配置中的地址和凭据创建连接，并登记到 [`cleanup.Stack`](../concepts/dependencies.md#closing-resources)：
+在应用配置中加入 `nats` 段：
 
 ```go
-opts := []nats.Option{
-    nats.Name("blog"),
-    nats.MaxReconnects(-1),             // 一直重连
-    nats.PingInterval(10 * time.Second), // 尽快发现中断的连接
+type Config struct {
+    // ...
+    NATS natsx.Config `yaml:"nats"`
 }
-if cfg.Queue.Credentials != "" {
-    opts = append(opts, nats.UserCredentials(cfg.Queue.Credentials))
-}
-nc, err := nats.Connect(cfg.Queue.URL, opts...)
+```
+
+```yaml
+nats:
+  url: ${NATS_URL:-nats://127.0.0.1:4222} # 集群的多个地址用逗号分隔
+  credentials: ""                         # NATS 凭据文件（.creds）的路径，服务器使用 JWT 认证时设置
+```
+
+用户名和密码可以写在地址中（`nats://user:password@host:4222`）。在入口打开共用资源的地方（见[依赖装配](../concepts/dependencies.md#running-parts)）创建连接，并登记到 [`cleanup.Stack`](../concepts/dependencies.md#closing-resources)：
+
+```go
+nc, err := natsx.Connect(cfg.NATS, "blog", nil)
 if err != nil {
     return nil, err
 }
@@ -41,17 +48,26 @@ stack.MustAdd("nats", func(context.Context) error {
 })
 ```
 
-- **`MaxReconnects(-1)`**：nats.go 默认重连 60 次后放弃，连接就此关闭，广播从此收不到消息。让它一直重连。
-- **`PingInterval`**：默认每 2 分钟探测一次，网络静默中断时要几分钟才能发现，期间其他实例广播的消息都丢了。缩短间隔，更早发现、更早让客户端重连补发。
-- **不要使用 `nats.NoEcho()`**：广播需要发布者所在的实例也收到自己发布的消息。
+第二个参数是连接的名字，出现在 NATS 的监控中；第三个参数是日志器，`nil` 时使用 `slog.Default()`。`natsx.Connect` 立即连接，NATS 不可达时返回错误，进程在启动时就失败。连接的选项由框架决定：
 
-`nats.Connect` 会立即连接，NATS 不可达时返回错误。连接可以并发使用，整个应用共享这一个 `nc`。
+- **一直重连**：nats.go 默认重连 60 次后放弃，连接就此关闭，广播从此收不到消息。
+- **每 10 秒探测一次连接**：nats.go 默认 2 分钟，网络静默中断时要几分钟才能发现，期间其他实例广播的消息都丢了。
+- **断开、重连和异步错误记录在日志中**，带有 `component=nats`。
+
+连接可以并发使用，组件都不关闭它，由 `stack` 在所有部分停止之后关闭。
+
+就绪检查中加上 NATS，连接正在重连时检查失败：
+
+```go
+{Name: "nats", Ping: natsx.Ping(a.nc)}
+```
 
 <a id="using-with-components"></a>
 ## 在其他组件中使用
 
 把同一个 `nc` 传给需要它的组件：
 
+- **队列**：`queue.NewWorker(db, nc, cfg.Queue, logger)`、`queue.NewAdmin(nc, cfg.Queue)`，见[队列](../background/queue.md#running-workers)；
 - **广播**：`natsbroadcast.New(nc, prefix)`，见[广播](broadcasting.md#backends)；
 - **在线成员**：`natspresence.New(ctx, nc, opts)`，见[实时频道](realtime.md#presence-stores)。
 
@@ -62,18 +78,18 @@ stack.MustAdd("nats", func(context.Context) error {
 
 测试业务代码时不需要 NATS：广播用 `broadcasttest.NewBackend()`，在线成员用 `realtimetest.NewPresence()`，都是内存替身，见[广播的测试](broadcasting.md#testing)和[实时频道](realtime.md#presence-stores)。
 
-需要真实的 NATS 时，和[数据库测试](../testing/database.md#database-tests)一样，通过环境变量 `NATS_TEST_URL` 取得测试服务器的地址；每个测试使用随机的 subject 前缀和 bucket 名，测试之间互不干扰，可以并行运行。
+需要真实的 NATS 时，和[数据库测试](../testing/database.md#database-tests)一样，通过环境变量 `NATS_TEST_URL` 取得测试服务器的地址，`queuetest.Conn(t)` 用它建立连接，测试结束时关闭；每个测试使用随机的 subject 前缀和 bucket 名，测试之间互不干扰，可以并行运行。
 
 <a id="troubleshooting"></a>
 ## 常见问题
 
 **广播一段时间后再也收不到消息**
 
-连接的重连次数用完后被关闭了。创建连接时设置 `nats.MaxReconnects(-1)`，见[连接 NATS](#connecting)。
+连接被关闭了：重连次数用完，或者被提前 `Close`。用 `natsx.Connect` 创建连接，它一直重连；连接由 `stack` 在进程退出时关闭，组件不关闭它，见[连接 NATS](#connecting)。
 
 **发布者所在的实例收不到自己发布的消息**
 
-连接使用了 `nats.NoEcho()`。广播需要回显，去掉这个选项。
+连接不是用 `natsx.Connect` 创建的，并且使用了 `nats.NoEcho()`。广播需要回显，改用 `natsx.Connect`。
 
 **创建在线成员存储时报错 JetStream 不可用**
 

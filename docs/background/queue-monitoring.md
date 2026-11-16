@@ -58,7 +58,7 @@ sched.Add("queue:prune-failed", "@daily", schedule.Cleanup(failed.Cleanup(30*24*
 <a id="logging"></a>
 ## 日志
 
-队列的日志带有 `component=queue` 字段，可以[单独设置级别](../general/logging.md#component-levels)。任务失败后等待重试记录为 `warn`，转入失败任务表记录为 `error`，日志中包含 topic、错误和下次重试的等待时间。与 NATS 的连接断开、重连也记在这里。
+队列的日志带有 `component=queue` 字段，可以[单独设置级别](../general/logging.md#component-levels)。任务失败后等待重试记录为 `warn`，转入失败任务表记录为 `error`，日志中包含 topic、错误和下次重试的等待时间。与 NATS 的连接断开、重连记在 `component=nats` 的日志中，见[连接 NATS](../libraries/nats.md#connecting)。
 
 处理函数的 `ctx` 中带有 `message_id`（任务 ID）、`attempt`（第几次执行），以及发布时的 `request_id`。使用 `slog.InfoContext(ctx, ...)` 记录的日志会自动带上它们，可以把一个请求和它产生的任务串起来。
 
@@ -68,7 +68,7 @@ sched.Add("queue:prune-failed", "@daily", schedule.Cleanup(failed.Cleanup(30*24*
 `queue.WithObserver` 让 worker 在每次状态变化时通知你。需要每个任务的执行历史时，把事件写进自己的表：成功的任务只体现在事件中：
 
 ```go
-w := queue.NewWorker(a.db, a.cfg.Queue, nil,
+w := queue.NewWorker(a.db, a.nc, a.cfg.Queue, nil,
     queue.WithObserver(func(ctx context.Context, e queue.Event) {
         if e.Kind == queue.JobStarted {
             return
@@ -100,10 +100,10 @@ w := queue.NewWorker(a.db, a.cfg.Queue, nil,
 
 任务在三个地方等待：还没转发的在 PostgreSQL 的复制槽中；延迟超过 `max_defer` 的在 `queue_scheduled` 表中；其余的在 JetStream 中，包括等待处理、处理中和定时投递的任务。`queue` 命令和[队列面板](#panel)把它们放在一起显示。
 
-`queuecmd.New` 返回 `queue` 命令。它和其他需要数据库的命令一样在 [bootstrap.Commands](../concepts/actions.md#as-commands) 中声明，`queuecmd.WithJetStream` 让它同时显示 JetStream 中的状态，执行命令时才连接 NATS：
+`queuecmd.New` 返回 `queue` 命令。它和其他需要数据库的命令一样在 [bootstrap.Commands](../concepts/actions.md#as-commands) 中声明，`queuecmd.WithJetStream` 让它同时显示 JetStream 中的状态，使用应用的 NATS 连接 `a.nc`：
 
 ```go
-queuecmd.New(a.db, queuecmd.WithJetStream(a.cfg.Queue)),
+queuecmd.New(a.db, queuecmd.WithJetStream(a.nc, a.cfg.Queue)),
 ```
 
 `queue status` 显示复制槽是否有 worker 在转发、积压了多少 WAL、`queue_scheduled` 中等待的任务，以及 JetStream 中的 stream 和每个 topic：
@@ -172,12 +172,8 @@ ID                                    TOPIC      ATTEMPTS  FAILED AT            
 router.Handle(web.AssetsPath+"*", web.Assets())
 router.Handle(ui.AssetsPath+"*", ui.Assets())
 
-// 第一次打开面板时才连接 NATS，之后保持连接
-admin := queue.NewAdmin(a.cfg.Queue, nil)
-stack.MustAdd("queue admin", func(context.Context) error {
-    admin.Close()
-    return nil
-})
+// a.nc 是应用的 NATS 连接，Admin 不关闭它
+admin := queue.NewAdmin(a.nc, a.cfg.Queue)
 
 ops := router.With(httpx.BasicAuth("ops", a.verifyOps))
 queueweb.Register(ops, "/ops/queue", a.db, queueweb.Options{
@@ -186,7 +182,7 @@ queueweb.Register(ops, "/ops/queue", a.db, queueweb.Options{
 })
 ```
 
-`stack` 是入口的 [cleanup.Stack](../concepts/dependencies.md#closing-resources)，进程退出时断开连接。`a.verifyOps` 校验运维账号，见 [HTTP Basic 认证](../http/optional-middleware.md#basic-auth)。`Options.Theme` 可以设置面板的[主题](../web/components.md#themes)。不设置 `Admin` 时，面板只显示数据库一侧的状态，也没有暂停按钮；NATS 不可用时，JetStream 一栏显示错误，其余照常显示。
+`a.verifyOps` 校验运维账号，见 [HTTP Basic 认证](../http/optional-middleware.md#basic-auth)。`Options.Theme` 可以设置面板的[主题](../web/components.md#themes)。不设置 `Admin` 时，面板只显示数据库一侧的状态，也没有暂停按钮；NATS 不可用时，JetStream 一栏显示错误，其余照常显示。
 
 - 全部重试只处理点击之前失败的任务：重试后马上又失败的任务在这一轮里只放回一次。它分批处理，每批 1000 条，直到处理完。
 - 暂停一个 topic 后，任务照常发布和保存，worker 不再领取新的任务，处理中的任务不受影响；worker 重启后仍然暂停，一小时后自动恢复。下游服务出了故障时先暂停对应的 topic，免得任务大量失败转入失败任务表。需要更长的暂停时调用 `admin.Pause(ctx, topic, until)`。

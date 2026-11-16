@@ -24,7 +24,7 @@ func worker(t *testing.T, e env, maxAttempts int, handle func(ctx context.Contex
 	t.Helper()
 	cfg := queuetest.Config(t)
 	cfg.MaxAttempts = maxAttempts
-	w := queue.NewWorker(e.db, cfg, slog.New(slog.DiscardHandler))
+	w := queue.NewWorker(e.db, queuetest.Conn(t), cfg, slog.New(slog.DiscardHandler))
 	unitTopic.Handle(w, handle)
 	ctx, cancel := context.WithCancel(context.Background())
 	stopped := make(chan error, 1)

@@ -169,7 +169,7 @@ span 的 `db.query.text` 是把字面量换成 `?` 之后的 SQL，例如 `SELEC
 ### 队列
 
 ```go
-w := queue.NewWorker(db, cfg.Queue, nil, queue.WithTelemetry(tel.Meters, tel.Tracers))
+w := queue.NewWorker(db, nc, cfg.Queue, nil, queue.WithTelemetry(tel.Meters, tel.Tracers))
 ```
 
 | 指标 | 类型 | 属性 | 含义 |

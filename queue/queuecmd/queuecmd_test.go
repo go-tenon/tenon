@@ -135,14 +135,14 @@ func TestStatusAndRecreate(t *testing.T) {
 func TestStatusJetStream(t *testing.T) {
 	db := dbtest.Open(t, queue.Migrations())
 	cfg := queuetest.Config(t)
-	opts := []queuecmd.Option{queuecmd.WithJetStream(cfg)}
+	opts := []queuecmd.Option{queuecmd.WithJetStream(queuetest.Conn(t), cfg)}
 	out, err := executeWith(db, opts, "status")
 	if err != nil || !strings.Contains(out, "not created yet") {
 		t.Fatalf("before the worker ran: %v\n%s", err, out)
 	}
 
 	release := make(chan struct{})
-	w := queue.NewWorker(db, cfg, slog.New(slog.DiscardHandler))
+	w := queue.NewWorker(db, queuetest.Conn(t), cfg, slog.New(slog.DiscardHandler))
 	queue.Topic[int]("mail").Handle(w, func(context.Context, int) error {
 		<-release
 		return nil

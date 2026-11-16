@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/cockroachdb/errors"
+	"github.com/nats-io/nats.go"
 	"github.com/spf13/cobra"
 	"github.com/uptrace/bun"
 
@@ -24,13 +25,18 @@ const errorWidth = 80
 type Option func(*options)
 
 type options struct {
-	jetStream *queue.Config
+	jetStream *jetStream
+}
+
+type jetStream struct {
+	nc  *nats.Conn
+	cfg queue.Config
 }
 
 // WithJetStream 让 queue status 同时显示 JetStream 中的状态：stream 的消息和存储、定时消息、
-// 各 topic 等待处理和处理中的任务。cfg 与 Worker 的相同，命令执行时才连接 NATS。
-func WithJetStream(cfg queue.Config) Option {
-	return func(o *options) { o.jetStream = &cfg }
+// 各 topic 等待处理和处理中的任务。nc 是应用的 NATS 连接，cfg 与 Worker 的相同；和 db 一样，命令执行时才使用。
+func WithJetStream(nc *nats.Conn, cfg queue.Config) Option {
+	return func(o *options) { o.jetStream = &jetStream{nc: nc, cfg: cfg} }
 }
 
 // New 返回 queue 命令。db 是发布任务的数据库：
@@ -42,7 +48,7 @@ func WithJetStream(cfg queue.Config) Option {
 //
 // 和其他需要数据库的命令一样，在 command.Bind 中声明：New 只保存参数，命令执行时才使用它。
 //
-//	queuecmd.New(a.db, queuecmd.WithJetStream(a.cfg.Queue))
+//	queuecmd.New(a.db, queuecmd.WithJetStream(a.nc, a.cfg.Queue))
 func New(db bun.IDB, opts ...Option) *cobra.Command {
 	var o options
 	for _, opt := range opts {
@@ -80,7 +86,7 @@ func New(db bun.IDB, opts ...Option) *cobra.Command {
 			if o.jetStream == nil {
 				return w.Flush()
 			}
-			return printJetStream(cmd, w, *o.jetStream)
+			return printJetStream(cmd, w, queue.NewAdmin(o.jetStream.nc, o.jetStream.cfg))
 		},
 	}
 
@@ -157,9 +163,7 @@ func firstLine(s string) string {
 }
 
 // printJetStream 接着 w 中数据库一侧的状态输出 stream 的状态，再输出各 topic 的表格。
-func printJetStream(cmd *cobra.Command, w *tabwriter.Writer, cfg queue.Config) error {
-	admin := queue.NewAdmin(cfg, nil)
-	defer admin.Close()
+func printJetStream(cmd *cobra.Command, w *tabwriter.Writer, admin *queue.Admin) error {
 	st, err := admin.Status(cmd.Context())
 	if err != nil {
 		return errors.Join(w.Flush(), err) // 数据库一侧的状态照常输出

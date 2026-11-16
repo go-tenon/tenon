@@ -2,17 +2,13 @@ package queue
 
 import (
 	"context"
-	"log/slog"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/cockroachdb/errors"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
-
-	"github.com/go-tenon/tenon/logging"
 )
 
 // ErrTopicNotFound 表示 JetStream 中没有这个 topic 的 consumer：没有 Worker 为它注册过处理函数。
@@ -21,47 +17,28 @@ var ErrTopicNotFound = errors.New("queue: topic not found")
 // Admin 查看和调整 JetStream 中的队列：各 topic 等待处理和处理中的任务、定时消息，暂停和恢复 topic 的处理。
 // 队列面板（queueweb）和 queue 命令（queuecmd）用它；数据库一侧的状态见 ReadStatus。
 //
-// 第一次使用时连接 NATS，之后保持连接，连接失败时下一次使用再连；用完调用 Close。可以被多个 goroutine 同时使用。
+// 它使用应用的 NATS 连接，不关闭它。可以被多个 goroutine 同时使用。
 type Admin struct {
-	cfg    Config
-	logger *slog.Logger
-
-	mu sync.Mutex
-	nc *nats.Conn
-	js jetstream.JetStream
+	cfg Config
+	js  jetstream.JetStream
 }
 
-// NewAdmin 创建 Admin，cfg 与 Worker 的相同；logger 记录与 NATS 的连接断开和重连，nil 时使用 slog.Default()。
-// cfg 不合法时 panic。
-func NewAdmin(cfg Config, logger *slog.Logger) *Admin {
+// NewAdmin 创建 Admin。nc 是 natsx.Connect 返回的连接，cfg 与 Worker 的相同。nc 为 nil 或 cfg 不合法时 panic。
+func NewAdmin(nc *nats.Conn, cfg Config) *Admin {
+	if nc == nil {
+		panic("queue: nil nats connection")
+	}
 	if err := cfg.Validate(); err != nil {
 		panic(errors.Wrap(err, "queue"))
 	}
-	return &Admin{cfg: cfg, logger: logging.Or(logger).With(logging.AttrComponent, "queue")}
+	js, err := jetstream.New(nc)
+	if err != nil {
+		panic(errors.Wrap(err, "queue: jetstream")) // 只在选项不合法时出错
+	}
+	return &Admin{cfg: cfg, js: js}
 }
 
-// Close 断开与 NATS 的连接。
-func (a *Admin) Close() {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.nc != nil {
-		a.nc.Close()
-		a.nc, a.js = nil, nil
-	}
-}
-
-func (a *Admin) jetStream() (jetstream.JetStream, error) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.js == nil {
-		nc, js, err := connect(a.cfg, a.logger)
-		if err != nil {
-			return nil, err
-		}
-		a.nc, a.js = nc, js
-	}
-	return a.js, nil
-}
+func (a *Admin) jetStream() (jetstream.JetStream, error) { return a.js, nil }
 
 // StreamStatus 是队列在 JetStream 一侧的状态。
 type StreamStatus struct {

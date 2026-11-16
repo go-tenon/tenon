@@ -30,8 +30,9 @@ type Backend struct {
 // New 创建 NATS Backend。prefix 是 subject 的前缀，例如 blog.broadcast，同一个应用的实例必须相同，
 // 多个应用或环境共用 NATS 时用它区分。
 //
-// nc 由应用创建，可以与其他组件共用。它应当一直重连（nats.MaxReconnects(-1)），否则重连次数用完后
-// 广播就停止了；也不能使用 nats.NoEcho，发布者所在的实例也要收到自己发布的消息。
+// nc 通常是 natsx.Connect 返回的连接，与队列等组件共用，Backend 不关闭它。自己创建连接时，它应当一直重连
+// （nats.MaxReconnects(-1)），否则重连次数用完后广播就停止了；也不能使用 nats.NoEcho，
+// 发布者所在的实例也要收到自己发布的消息。
 // nc 为 nil，或者 prefix 不是不含通配符的 subject 时 panic。
 func New(nc *nats.Conn, prefix string) *Backend {
 	switch {
