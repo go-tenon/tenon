@@ -1,4 +1,4 @@
-// Package queuetest 在测试中运行连接测试 nsqd 的 queue.Worker。
+// Package queuetest 在测试中运行连接测试 NATS 的 queue.Worker。
 //
 //	db := dbtest.Open(t, migrations.FS) // 包含已发布的 queue 迁移
 //	w := queue.NewWorker(db, queuetest.Config(t), nil)
@@ -9,40 +9,37 @@ package queuetest
 import (
 	"context"
 	"crypto/rand"
-	"encoding/json"
-	"net/http"
-	"net/url"
+	"errors"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
+
 	"github.com/go-tenon/tenon/queue"
 )
 
-// 测试 nsqd 的地址所在的环境变量：EnvAddr 是 TCP 地址，例如 127.0.0.1:4150；EnvHTTP 是 HTTP 地址，
-// 例如 http://127.0.0.1:4151，测试结束时用它删除测试建的 topic。
-const (
-	EnvAddr = "NSQD_TEST_ADDR"
-	EnvHTTP = "NSQD_TEST_HTTP"
-)
+// EnvURL 是测试 NATS 的地址所在的环境变量，例如 nats://127.0.0.1:4222。服务器需要开启 JetStream。
+const EnvURL = "NATS_TEST_URL"
 
-// Config 返回连接测试 nsqd 的 Worker 配置，环境变量未设置时使测试失败。
-// 每次调用使用随机的 topic 前缀，并行的测试和反复运行的测试互不干扰，测试结束时删除这些 topic；
+// Config 返回连接测试 NATS 的 Worker 配置，环境变量未设置时使测试失败。
+// 每次调用使用随机的 stream，并行的测试和反复运行的测试互不干扰，测试结束时删除它；
 // 租约和停止等待较短，任务很快重试，测试结束时很快停下。
 func Config(t testing.TB) queue.Config {
 	t.Helper()
-	addr, api := os.Getenv(EnvAddr), os.Getenv(EnvHTTP)
-	if addr == "" || api == "" {
-		t.Fatalf("%s and %s are required for this test", EnvAddr, EnvHTTP)
+	url := os.Getenv(EnvURL)
+	if url == "" {
+		t.Fatalf("%s is required for this test", EnvURL)
 	}
 	cfg := queue.DefaultConfig()
-	cfg.NSQD = addr
-	cfg.Prefix = "t" + strings.ToLower(rand.Text()[:10]) + "."
+	cfg.URL = url
+	cfg.Stream = "t" + strings.ToLower(rand.Text()[:10])
 	cfg.Lease = 5 * time.Second
 	cfg.ShutdownTimeout = time.Second
-	// nsqd 定期随机抽查一部分 channel 的延迟消息，channel 越多，延迟和重试越不准时：测试建的 topic 用完即删。
-	t.Cleanup(func() { deleteTopics(t, api, cfg.Prefix) })
+	// 在 Run 注册的清理之后执行：Worker 停止之后才删除 stream。
+	t.Cleanup(func() { deleteStream(t, url, cfg.Stream) })
 	return cfg
 }
 
@@ -60,32 +57,22 @@ func Run(t testing.TB, w *queue.Worker) {
 	})
 }
 
-// deleteTopics 删除 nsqd 中以 prefix 开头的 topic。
-func deleteTopics(t testing.TB, api, prefix string) {
-	resp, err := http.Get(api + "/stats?format=json")
+// deleteStream 删除测试用的 stream，它不存在（Worker 没有运行过）时什么也不做。
+func deleteStream(t testing.TB, url, stream string) {
+	nc, err := nats.Connect(url)
 	if err != nil {
-		t.Errorf("queuetest: nsqd stats: %v", err)
+		t.Errorf("queuetest: connect to nats: %v", err)
 		return
 	}
-	defer resp.Body.Close()
-	var stats struct {
-		Topics []struct {
-			Name string `json:"topic_name"`
-		} `json:"topics"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&stats); err != nil {
-		t.Errorf("queuetest: nsqd stats: %v", err)
+	defer nc.Close()
+	js, err := jetstream.New(nc)
+	if err != nil {
+		t.Errorf("queuetest: jetstream: %v", err)
 		return
 	}
-	for _, topic := range stats.Topics {
-		if !strings.HasPrefix(topic.Name, prefix) {
-			continue
-		}
-		resp, err := http.Post(api+"/topic/delete?topic="+url.QueryEscape(topic.Name), "", nil)
-		if err != nil {
-			t.Errorf("queuetest: delete topic %s: %v", topic.Name, err)
-			continue
-		}
-		_ = resp.Body.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := js.DeleteStream(ctx, stream); err != nil && !errors.Is(err, jetstream.ErrStreamNotFound) {
+		t.Errorf("queuetest: delete stream %s: %v", stream, err)
 	}
 }

@@ -12,7 +12,8 @@ import (
 
 	"github.com/cockroachdb/errors"
 	"github.com/google/uuid"
-	"github.com/nsqio/go-nsq"
+	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/uptrace/bun"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
@@ -20,28 +21,28 @@ import (
 	"github.com/go-tenon/tenon/logging"
 )
 
-// outputBufferTimeout 是 nsqd 缓冲发给消费者的消息的最长时间。
-const outputBufferTimeout = 25 * time.Millisecond
+// fetchWait 是一次拉取任务的最长等待。连接中断、NATS 重启之后，最多这么久就重新拉取。
+const fetchWait = 5 * time.Second
 
-// ErrShuttingDown 是处理函数 context 的取消原因：停止等待超时，任务已放回 NSQ。
+// ErrShuttingDown 是处理函数 context 的取消原因：停止等待超时，任务已放回 JetStream。
 var ErrShuttingDown = errors.New("queue: shutting down")
 
-// dbTimeout 是写入失败任务、安排较晚的重试时单次数据库操作的超时。这些操作不使用 Run 的 context，
+// dbTimeout 是写入失败任务、安排重试时单次数据库或 NATS 操作的超时。这些操作不使用 Run 的 context，
 // 停止过程中仍能写回处理结果。
 const dbTimeout = 30 * time.Second
 
 // Worker 转发已发布的任务，并处理已注册 topic 的任务。
 //
-// 转发：Topic.Publish 把任务写入 WAL，Worker 经由逻辑复制槽（SlotName）在事务提交后立即读到，发布到 NSQ 后
+// 转发：Topic.Publish 把任务写入 WAL，Worker 经由逻辑复制槽（SlotName）在事务提交后立即读到，发布到 JetStream 后
 // 确认位置。一个槽同时只能被一个连接使用，多个 Worker 中只有一个在转发，其余的待命，它停止后由其中一个接手。
 // 执行时间离现在超过 Config.MaxDefer 的任务存入 queue_scheduled，快到时间时再写回 WAL；所有 Worker 都检查它，互不重复。
 //
-// 处理：每个 topic 一个 NSQ 消费者，同时处理的任务不超过它的并发数，同一个应用的 Worker 使用同一个 channel，
-// 每个任务只交给其中一个。处理函数返回 nil 时确认任务；返回错误时按退避时间重试，次数用完或 IsPermanent
-// 报告为 true 时转入失败任务表。处理期间每 Lease/3 延长一次租约。
+// 处理：每个 topic 一个 JetStream consumer，同一个应用的所有 Worker 共用它，每个任务只交给其中一个；
+// 每个 Worker 同时处理的任务不超过 topic 的并发数。处理函数返回 nil 时确认任务；返回错误时按退避时间重试，
+// 次数用完或 IsPermanent 报告为 true 时转入失败任务表。处理期间每 Lease/3 延长一次租约。
 //
 // Run 的 ctx 取消后，先停止接收新任务和转发，再等待处理中的任务完成，最多等待 Config.ShutdownTimeout；
-// 超时仍未完成的任务立即放回 NSQ，处理函数的 context 以 ErrShuttingDown 取消。Run 在这一切完成后返回，
+// 超时仍未完成的任务立即放回 JetStream，处理函数的 context 以 ErrShuttingDown 取消。Run 在这一切完成后返回，
 // 之后可以关闭数据库。
 //
 //	w := queue.NewWorker(db, cfg, logger)
@@ -49,7 +50,8 @@ const dbTimeout = 30 * time.Second
 //	err := w.Run(ctx)
 type Worker struct {
 	db        *bun.DB
-	slot      string // 逻辑复制槽，Run 开始时确定
+	slot      string              // 逻辑复制槽，Run 开始时确定
+	js        jetstream.JetStream // Run 开始时连接
 	failed    *FailedJobs
 	cfg       Config
 	logger    *slog.Logger
@@ -67,7 +69,8 @@ type Worker struct {
 	lifecycle sync.RWMutex
 	stopping  bool
 	inflight  sync.WaitGroup
-	abandon   chan struct{} // 停止等待超时，放回处理中的任务
+	running   sync.WaitGroup // 处理任务的 goroutine，包括停止后直接放回任务的
+	abandon   chan struct{}  // 停止等待超时，放回处理中的任务
 }
 
 // handler 是一个 topic 的处理函数和它的设置。
@@ -82,7 +85,7 @@ type handler struct {
 type WorkerOption func(*Worker)
 
 // NewWorker 创建 Worker。db 是发布任务的数据库，必须已执行 Migrations 中的迁移；
-// cfg 是 NSQ 的地址和各 topic 的默认设置；logger 记录任务失败和 NSQ 的错误，nil 时使用 slog.Default()。
+// cfg 是 NATS 的地址和各 topic 的默认设置；logger 记录任务失败和 NATS 的错误，nil 时使用 slog.Default()。
 // db 为 nil 或 cfg 不合法时 panic。
 func NewWorker(db *bun.DB, cfg Config, logger *slog.Logger, opts ...WorkerOption) *Worker {
 	if db == nil {
@@ -106,8 +109,8 @@ func NewWorker(db *bun.DB, cfg Config, logger *slog.Logger, opts ...WorkerOption
 
 // handle 注册 topic 的处理函数，见 Topic.Handle。
 func (w *Worker) handle(topic string, fn func(context.Context, []byte) error, opts []HandleOption) {
-	if !validName(w.cfg.Prefix + topic) {
-		panic(fmt.Sprintf("queue: topic %q must be letters, digits, '.', '_' or '-', at most 64 with the prefix", topic))
+	if !validName(topic) {
+		panic(fmt.Sprintf("queue: topic %q must be 1 to 64 letters, digits, '.', '_' or '-', without empty segments", topic))
 	}
 	h := &handler{topic: topic, fn: fn, concurrency: w.cfg.Concurrency, maxAttempts: w.cfg.MaxAttempts}
 	for _, opt := range opts {
@@ -122,12 +125,16 @@ func (w *Worker) handle(topic string, fn func(context.Context, []byte) error, op
 		if other.topic == topic {
 			panic(fmt.Sprintf("queue: topic %q handled twice", topic))
 		}
+		if consumerName(other.topic) == consumerName(topic) {
+			panic(fmt.Sprintf("queue: topics %q and %q differ only in '.' and '_' and cannot both be handled", other.topic, topic))
+		}
 	}
 	w.handlers = append(w.handlers, h)
 }
 
 // Run 转发任务、处理已注册 topic 的任务，直到 ctx 被取消，然后按 Worker 的说明停止，返回 nil。
-// 连不上 nsqd、复制槽不存在或已失效时返回错误。没有注册处理函数时只转发。第二次调用时返回错误。
+// 连不上 NATS、建不了 stream 或 consumer、复制槽不存在或已失效时返回错误。没有注册处理函数时只转发。
+// 第二次调用时返回错误。
 func (w *Worker) Run(ctx context.Context) error {
 	w.mu.Lock()
 	handlers, started := w.handlers, w.started
@@ -137,7 +144,7 @@ func (w *Worker) Run(ctx context.Context) error {
 		return errors.New("queue: Run called twice")
 	}
 
-	// 启动检查不随 ctx 取消：已经取消的 ctx 也照常启动再停止，与连接 nsqd 一致。
+	// 启动检查不随 ctx 取消：已经取消的 ctx 也照常启动再停止。
 	if err := withTimeout(func(dbCtx context.Context) error {
 		slot, err := slotOf(dbCtx, w.db)
 		if err == nil {
@@ -149,75 +156,106 @@ func (w *Worker) Run(ctx context.Context) error {
 		return err
 	}
 
-	producer, err := nsq.NewProducer(w.cfg.NSQD, nsq.NewConfig())
+	nc, js, err := connect(w.cfg, w.logger)
 	if err != nil {
-		return errors.Wrap(err, "queue: nsq producer")
+		return err
 	}
-	producer.SetLogger(nsqLogger{w.logger}, nsq.LogLevelWarning)
-	defer producer.Stop()
-	if err := producer.Ping(); err != nil {
-		return errors.Wrapf(err, "queue: connect to nsqd %s", w.cfg.NSQD)
-	}
-
-	var consumers []*nsq.Consumer
 	defer func() {
-		for _, c := range consumers {
-			c.Stop()
-			<-c.StopChan
-		}
+		_ = nc.FlushTimeout(time.Second) // 发出最后的确认
+		nc.Close()
 	}()
-	for _, h := range handlers {
-		c, err := w.consume(h)
-		if err != nil {
+	w.js = js
+	consumers := make([]jetstream.Consumer, len(handlers))
+	setupCtx, cancel := context.WithTimeout(context.Background(), setupTimeout)
+	defer cancel()
+	if err := ensureStream(setupCtx, js, w.cfg); err != nil {
+		return err
+	}
+	for i, h := range handlers {
+		if consumers[i], err = w.ensureConsumer(setupCtx, h); err != nil {
 			return err
 		}
-		consumers = append(consumers, c)
 	}
 
-	var background sync.WaitGroup
-	background.Go(func() { w.relay(ctx, producer) })
+	var background, fetching sync.WaitGroup
+	background.Go(func() { w.relay(ctx) })
 	background.Go(func() { w.dispatchLoop(ctx) })
+	for i, h := range handlers {
+		fetching.Go(func() { w.consume(ctx, h, consumers[i]) })
+	}
 	<-ctx.Done()
 
 	w.lifecycle.Lock()
 	w.stopping = true
 	w.lifecycle.Unlock()
-	for _, c := range consumers {
-		c.Stop() // 发送 CLS：nsqd 停止投递新的任务
-	}
+	fetching.Wait() // 不再拉取新的任务
 	w.drain()
+	w.running.Wait()
 	background.Wait()
 	return nil
 }
 
-// consume 为 h 创建并连接 NSQ 消费者。
-func (w *Worker) consume(h *handler) (*nsq.Consumer, error) {
-	cfg := nsq.NewConfig()
-	cfg.MaxInFlight = h.concurrency
-	cfg.MsgTimeout = w.cfg.Lease
-	cfg.MaxAttempts = 0 // 次数由 Worker 判断
-	// nsqd 把发给消费者的消息攒在缓冲区中，默认最多 250ms 才发出，任务少时每个都要等这么久。
-	// 25ms 是 nsqd 允许的最小值（--min-output-buffer-timeout）；-1 关闭缓冲会让 nsqd 偶尔停顿数十秒。
-	cfg.OutputBufferTimeout = outputBufferTimeout
-	c, err := nsq.NewConsumer(w.cfg.Prefix+h.topic, w.cfg.Channel, cfg)
+// consume 从 c 拉取 h 的任务交给处理函数，同时处理的不超过 h.concurrency 个，直到 ctx 结束。
+// 只在有空闲名额时拉取，拉取的条数等于空闲的名额：任务不在 Worker 中排队，租约从开始处理时才起作用。
+func (w *Worker) consume(ctx context.Context, h *handler, c jetstream.Consumer) {
+	slots := make(chan struct{}, h.concurrency)
+	for {
+		select {
+		case slots <- struct{}{}:
+		case <-ctx.Done():
+			return
+		}
+		n := 1
+	free:
+		for n < h.concurrency {
+			select {
+			case slots <- struct{}{}:
+				n++
+			default:
+				break free
+			}
+		}
+		got, err := w.fetch(ctx, h, c, n, slots)
+		for range n - got {
+			<-slots
+		}
+		if err == nil || ctx.Err() != nil {
+			continue
+		}
+		w.logger.Error("fetch jobs failed", "topic", h.topic, "error", err)
+		if errors.Is(err, jetstream.ErrConsumerNotFound) || errors.Is(err, jetstream.ErrConsumerDeleted) {
+			// consumer 被人删除了：重新创建，从 stream 中还没确认的任务继续。
+			setupCtx, cancel := context.WithTimeout(ctx, setupTimeout)
+			if again, err := w.ensureConsumer(setupCtx, h); err == nil {
+				c = again
+			}
+			cancel()
+		}
+		wait(ctx, time.Second)
+	}
+}
+
+// fetch 拉取最多 n 个任务，每个任务在新的 goroutine 中处理，处理完归还 slots 中的一个名额，返回拉取到的条数。
+func (w *Worker) fetch(ctx context.Context, h *handler, c jetstream.Consumer, n int, slots chan struct{}) (int, error) {
+	fetchCtx, cancel := context.WithTimeout(ctx, fetchWait)
+	defer cancel()
+	batch, err := c.Fetch(n, jetstream.FetchContext(fetchCtx))
 	if err != nil {
-		return nil, errors.Wrapf(err, "queue: nsq consumer for %q", h.topic)
+		return 0, err
 	}
-	c.SetLogger(nsqLogger{w.logger}, nsq.LogLevelWarning)
-	c.AddConcurrentHandlers(nsq.HandlerFunc(func(m *nsq.Message) error {
-		w.process(h, m)
-		return nil
-	}), h.concurrency)
-	if len(w.cfg.Lookupd) > 0 {
-		err = c.ConnectToNSQLookupds(w.cfg.Lookupd)
-	} else {
-		err = c.ConnectToNSQD(w.cfg.NSQD)
+	got := 0
+	for m := range batch.Messages() {
+		got++
+		w.running.Go(func() {
+			defer func() { <-slots }()
+			w.process(h, m)
+		})
 	}
-	if err != nil {
-		c.Stop()
-		return nil, errors.Wrapf(err, "queue: consume %q", h.topic)
+	err = batch.Error()
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) || errors.Is(err, nats.ErrTimeout) {
+		err = nil // 等待时间内没有任务
 	}
-	return c, nil
+	return got, err
 }
 
 // drain 等待处理中的任务写回结果，最多等待 ShutdownTimeout，超时后放回它们。
@@ -248,27 +286,31 @@ func (w *Worker) begin() bool {
 	return true
 }
 
-// process 执行一个任务并写回结果，期间按 Lease/3 延长租约。
-func (w *Worker) process(h *handler, m *nsq.Message) {
-	m.DisableAutoResponse()
+// process 执行一个任务并写回结果，期间按 Lease/3 延长租约。确认和放回不等待 JetStream 的回复：
+// 丢失时任务在租约到期后重新投递，与至少执行一次的约定一致。
+func (w *Worker) process(h *handler, m jetstream.Msg) {
 	if !w.begin() {
-		m.RequeueWithoutBackoff(0) // 停止时刚收到的任务直接放回
+		_ = m.Nak() // 停止时刚收到的任务直接放回
 		return
 	}
 	defer w.inflight.Done()
 
+	delivered := 1 // 这条消息第几次投递：租约到期、放回之后再次投递时增加
+	if md, err := m.Metadata(); err == nil {
+		delivered = int(md.NumDelivered)
+	}
 	var env envelope
-	if err := json.Unmarshal(m.Body, &env); err != nil {
+	if err := json.Unmarshal(m.Data(), &env); err != nil {
 		w.logger.Error("drop undecodable message", "topic", h.topic, "error", err)
 		_ = withTimeout(func(ctx context.Context) error {
-			return w.failed.record(ctx, failedJob{ID: uuid.Must(uuid.NewV7()), Topic: h.topic, Payload: m.Body,
-				Attempts: int(m.Attempts), Error: fmt.Sprintf("%+v", errors.Wrap(err, "queue: decode message")), FailedAt: time.Now().UTC()})
+			return w.failed.record(ctx, failedJob{ID: uuid.Must(uuid.NewV7()), Topic: h.topic, Payload: m.Data(),
+				Attempts: delivered, Error: fmt.Sprintf("%+v", errors.Wrap(err, "queue: decode message")), FailedAt: time.Now().UTC()})
 		})
-		m.Finish()
+		_ = m.Ack()
 		return
 	}
-	j := Job{ID: env.ID, Topic: h.topic, Payload: env.Payload, Metadata: env.Metadata, Attempt: env.Attempts + int(m.Attempts)}
-	if m.Attempts == 1 {
+	j := Job{ID: env.ID, Topic: h.topic, Payload: env.Payload, Metadata: env.Metadata, Attempt: env.Attempts + delivered}
+	if delivered == 1 {
 		j.AvailableAt = env.AvailableAt
 	}
 	ctx, cancel := context.WithCancelCause(w.jobContext(j, h.maxAttempts))
@@ -284,16 +326,16 @@ func (w *Worker) process(h *handler, m *nsq.Message) {
 		select {
 		case err := <-result:
 			if err == nil {
-				m.Finish()
+				_ = m.Ack()
 				w.observe(ctx, Event{Kind: JobSucceeded, Job: j, Started: started, Duration: time.Since(started)})
 				return
 			}
 			w.nack(ctx, m, j, env, err, h.maxAttempts, started)
 			return
 		case <-ticker.C:
-			m.Touch()
+			_ = m.InProgress()
 		case <-w.abandon:
-			m.RequeueWithoutBackoff(0)
+			_ = m.Nak()
 			w.observe(ctx, Event{Kind: JobReleased, Job: j, Started: started, Duration: time.Since(started)})
 			cancel(ErrShuttingDown)
 			return
@@ -301,25 +343,22 @@ func (w *Worker) process(h *handler, m *nsq.Message) {
 	}
 }
 
-// nack 安排重试，或者把任务转入失败任务表。不超过 MaxDefer 的重试由 NSQ 延迟投递，更晚的写回 outbox。
-func (w *Worker) nack(ctx context.Context, m *nsq.Message, j Job, env envelope, cause error, maxAttempts int, started time.Time) {
+// nack 安排重试，或者把任务转入失败任务表。重试是一条新的消息，执行次数记在 envelope 中：
+// 不超过 MaxDefer 的交给 JetStream 定时投递，更晚的存入 queue_scheduled。安排好之后才确认这一条。
+func (w *Worker) nack(ctx context.Context, m jetstream.Msg, j Job, env envelope, cause error, maxAttempts int, started time.Time) {
 	if !IsPermanent(cause) && j.Attempt < maxAttempts {
 		delay := retryDelay(cause, j.Attempt)
-		at := time.Now().Add(delay)
-		if delay > w.cfg.MaxDefer {
-			later := env
-			later.AvailableAt, later.Attempts = at.UTC(), j.Attempt
-			if err := withTimeout(func(ctx context.Context) error { return w.postpone(ctx, j.Topic, later) }); err != nil {
-				w.logger.ErrorContext(ctx, "schedule retry failed", "topic", j.Topic, "error", err)
-				m.RequeueWithoutBackoff(w.cfg.MaxDefer)
-				return
-			}
-			m.Finish()
-		} else {
-			m.RequeueWithoutBackoff(delay)
+		later := env
+		later.AvailableAt, later.Attempts = time.Now().Add(delay).UTC(), j.Attempt
+		if err := withTimeout(func(ctx context.Context) error { return w.retryLater(ctx, j.Topic, later, delay) }); err != nil {
+			// 安排不了时让 JetStream 稍后重新投递这一条，执行次数照样增加。
+			w.logger.ErrorContext(ctx, "schedule retry failed", "topic", j.Topic, "error", err)
+			nakAfter(m, min(delay, w.cfg.MaxDefer))
+			return
 		}
+		_ = m.Ack()
 		w.logger.WarnContext(ctx, "job failed, will retry", "topic", j.Topic, "retry_in", delay, "error", cause)
-		w.observe(ctx, Event{Kind: JobRetrying, Job: j, Started: started, Duration: time.Since(started), Err: cause, RetryAt: at})
+		w.observe(ctx, Event{Kind: JobRetrying, Job: j, Started: started, Duration: time.Since(started), Err: cause, RetryAt: later.AvailableAt})
 		return
 	}
 	record := failedJob{ID: j.ID, Topic: j.Topic, Payload: j.Payload, Metadata: j.Metadata,
@@ -327,12 +366,33 @@ func (w *Worker) nack(ctx context.Context, m *nsq.Message, j Job, env envelope, 
 	if err := withTimeout(func(ctx context.Context) error { return w.failed.record(ctx, record) }); err != nil {
 		// 失败任务写不进去时不确认：稍后重新投递，再次失败时再写。
 		w.logger.ErrorContext(ctx, "move job to failed jobs failed", "topic", j.Topic, "error", err)
-		m.RequeueWithoutBackoff(min(w.cfg.MaxDefer, time.Minute))
+		nakAfter(m, min(w.cfg.MaxDefer, time.Minute))
 		return
 	}
-	m.Finish()
+	_ = m.Ack()
 	w.logger.ErrorContext(ctx, "job failed", "topic", j.Topic, "error", cause)
 	w.observe(ctx, Event{Kind: JobFailed, Job: j, Started: started, Duration: time.Since(started), Err: cause})
+}
+
+// retryLater 安排 env 在 env.AvailableAt 再次执行：delay 不超过 MaxDefer 时交给 JetStream，否则存入 queue_scheduled。
+func (w *Worker) retryLater(ctx context.Context, topic string, env envelope, delay time.Duration) error {
+	if delay > w.cfg.MaxDefer {
+		return w.postpone(ctx, topic, env)
+	}
+	body, err := json.Marshal(env)
+	if err != nil {
+		return err
+	}
+	return w.publish(ctx, topic, body, msgID(env.ID, env.Attempts, env.AvailableAt), env.AvailableAt)
+}
+
+// nakAfter 让 JetStream 在 d 之后重新投递 m。
+func nakAfter(m jetstream.Msg, d time.Duration) {
+	if d > 0 {
+		_ = m.NakWithDelay(d)
+	} else {
+		_ = m.Nak()
+	}
 }
 
 // postpone 把 env 存入 queue_scheduled，快到 env.AvailableAt 时再写回 WAL。

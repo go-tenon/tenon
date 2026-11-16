@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/uptrace/bun"
 
 	"github.com/go-tenon/tenon/database/dbtest"
@@ -120,9 +122,10 @@ func TestConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, change := range map[string]func(*queue.Config){
-		"no nsqd":         func(c *queue.Config) { c.NSQD = "" },
-		"bad channel":     func(c *queue.Config) { c.Channel = "a b" },
-		"bad prefix":      func(c *queue.Config) { c.Prefix = "blog:" },
+		"no url":          func(c *queue.Config) { c.URL = "" },
+		"no stream":       func(c *queue.Config) { c.Stream = "" },
+		"dotted stream":   func(c *queue.Config) { c.Stream = "blog.jobs" },
+		"zero replicas":   func(c *queue.Config) { c.Replicas = 0 },
 		"zero lease":      func(c *queue.Config) { c.Lease = 0 },
 		"zero max defer":  func(c *queue.Config) { c.MaxDefer = 0 },
 		"zero attempts":   func(c *queue.Config) { c.MaxAttempts = 0 },
@@ -232,7 +235,7 @@ func TestPublishAll(t *testing.T) {
 	}
 }
 
-// 不超过 MaxDefer 的延迟由 NSQ 完成；更晚的任务先存入 queue_scheduled，快到时间再写回 WAL。
+// 不超过 MaxDefer 的延迟由 JetStream 的定时消息完成；更晚的任务先存入 queue_scheduled，快到时间再写回 WAL。
 func TestDelay(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
@@ -249,7 +252,7 @@ func TestDelay(t *testing.T) {
 	publish(t, db, 1, queue.Delay(500*time.Millisecond))
 	publish(t, db, 2, queue.Delay(2*time.Second))
 	eventually(t, time.Second, func() bool { return scheduledCount(t, db) == 1 }) // 只有 2 秒的任务
-	// nsqd 每 5 秒刷新一次要扫描延迟消息的 channel 列表，测试新建的 channel 上的延迟消息最多晚约 5 秒。
+	// 定时消息精确到秒，向上取整。
 	at := map[int]time.Duration{}
 	for range 2 {
 		select {
@@ -259,12 +262,12 @@ func TestDelay(t *testing.T) {
 			t.Fatalf("handled %v", at)
 		}
 	}
-	if at[1] < 500*time.Millisecond || at[1] > 7*time.Second || at[2] < 2*time.Second || at[2] > 8*time.Second {
+	if at[1] < 500*time.Millisecond || at[1] > 3*time.Second || at[2] < 2*time.Second || at[2] > 5*time.Second {
 		t.Fatalf("handled after %v", at)
 	}
 }
 
-// 失败的任务按 RetryAfter 重试：不超过 MaxDefer 时由 NSQ 延迟投递，更长的经由 queue_scheduled，执行次数接着计算。
+// 失败的任务按 RetryAfter 重试：不超过 MaxDefer 时由 JetStream 定时投递，更长的经由 queue_scheduled，执行次数接着计算。
 func TestRetry(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
@@ -309,11 +312,11 @@ func TestRetry(t *testing.T) {
 			t.Fatalf("attempt %d reported as %d", i+1, a.n)
 		}
 	}
-	// 上界宽松：测试新建的 channel 上的延迟消息最多晚约 5 秒，见 TestDelay。
-	if d := attempts[1].at.Sub(attempts[0].at); d < 200*time.Millisecond || d > 7*time.Second {
+	// 定时消息精确到秒，向上取整，见 TestDelay。
+	if d := attempts[1].at.Sub(attempts[0].at); d < 200*time.Millisecond || d > 3*time.Second {
 		t.Fatalf("second attempt after %v", d)
 	}
-	if d := attempts[2].at.Sub(attempts[1].at); d < 2*time.Second || d > 9*time.Second {
+	if d := attempts[2].at.Sub(attempts[1].at); d < 2*time.Second || d > 5*time.Second {
 		t.Fatalf("third attempt after %v", d)
 	}
 	eventually(t, 2*time.Second, func() bool {
@@ -331,8 +334,8 @@ func TestRetry(t *testing.T) {
 	if !slices.Equal(kinds, want) {
 		t.Fatalf("events %v", kinds)
 	}
-	// 首次执行和经由 queue_scheduled 的重试知道任务可以执行的时间，NSQ 重新投递的不知道。
-	if events[0].Job.AvailableAt.IsZero() || !events[2].Job.AvailableAt.IsZero() || events[4].Job.AvailableAt.IsZero() {
+	// 首次执行和重试都知道任务可以执行的时间，重试的是安排重试时算出的时间。
+	if events[0].Job.AvailableAt.IsZero() || !events[2].Job.AvailableAt.Equal(events[1].RetryAt) || events[4].Job.AvailableAt.IsZero() {
 		t.Fatalf("available at %v %v %v", events[0].Job.AvailableAt, events[2].Job.AvailableAt, events[4].Job.AvailableAt)
 	}
 	if events[0].Job.ID != events[4].Job.ID {
@@ -584,6 +587,12 @@ func TestWorkerRegistration(t *testing.T) {
 	}
 	mustPanic("nil database", func() { queue.NewWorker(nil, queue.DefaultConfig(), nil) })
 	mustPanic("invalid topic", func() { queue.Topic[payload]("a b").Handle(newWorker(), noop) })
+	mustPanic("empty segment", func() { queue.Topic[payload]("a..b").Handle(newWorker(), noop) })
+	mustPanic("same consumer", func() {
+		w := newWorker()
+		queue.Topic[payload]("mail.send").Handle(w, noop)
+		queue.Topic[payload]("mail_send").Handle(w, noop)
+	})
 	mustPanic("handled twice", func() {
 		w := newWorker()
 		jobs.Handle(w, noop)
@@ -606,9 +615,9 @@ func TestWorkerRegistration(t *testing.T) {
 	mustPanic("Handle after Run", func() { queue.Topic[payload]("other").Handle(w, noop) })
 
 	cfg := queuetest.Config(t)
-	cfg.NSQD = "127.0.0.1:1"
+	cfg.URL = "nats://127.0.0.1:1"
 	if err := queue.NewWorker(db, cfg, nil).Run(context.Background()); err == nil {
-		t.Error("Run without a reachable nsqd succeeded")
+		t.Error("Run without a reachable NATS server succeeded")
 	}
 }
 
@@ -656,5 +665,44 @@ func TestAttemptFromContextOutsideJob(t *testing.T) {
 	t.Parallel()
 	if n, final := queue.AttemptFromContext(context.Background()); n != 0 || final {
 		t.Fatalf("attempt %d final %v", n, final)
+	}
+}
+
+// consumer 被人删除后，Worker 重新创建它，继续处理任务。
+func TestConsumerRecreated(t *testing.T) {
+	t.Parallel()
+	db := openDB(t)
+	cfg := queuetest.Config(t)
+	got := make(chan int, 2)
+	start(t, db, cfg, func(w *queue.Worker) {
+		jobs.Handle(w, func(_ context.Context, p payload) error {
+			got <- p.N
+			return nil
+		})
+	})
+	publish(t, db, 1)
+	if n := <-got; n != 1 {
+		t.Fatalf("handled %d", n)
+	}
+	nc, err := nats.Connect(cfg.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer nc.Close()
+	js, err := jetstream.New(nc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := js.DeleteConsumer(context.Background(), cfg.Stream, "jobs"); err != nil {
+		t.Fatal(err)
+	}
+	publish(t, db, 2)
+	select {
+	case n := <-got:
+		if n != 2 {
+			t.Fatalf("handled %d", n)
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("job not handled after the consumer was deleted")
 	}
 }

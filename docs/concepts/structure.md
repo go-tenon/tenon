@@ -232,7 +232,7 @@ Tenon 的每个包都可以单独使用，按需引入即可。顶层的包分�
 | --- | --- | --- |
 | `database` | PostgreSQL 连接池、事务与提交后回调、约束错误 | [数据库](../database/quick-start.md) |
 | `database/migrate` | goose 迁移器，新建、发布迁移 | [迁移](../database/migrations.md) |
-| `queue` | NSQ 任务队列，数据库发件箱，重试与失败任务 | [队列](../background/queue.md) |
+| `queue` | NATS JetStream 任务队列，数据库发件箱，重试与失败任务 | [队列](../background/queue.md) |
 | `schedule` | 按 cron 表达式定时执行，多实例去重 | [定时任务](../background/scheduling.md) |
 | `cachex` | Memcached 上的先读缓存再加载 | [缓存](../libraries/cache.md) |
 | `lock` | 带过期时间的原子锁，`lock/redislock` 是 Redis 存储 | [原子锁](../libraries/locks.md) |

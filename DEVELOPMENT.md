@@ -46,7 +46,7 @@ go test -race ./...
 <a id="integration-tests"></a>
 ### 集成测试
 
-依赖外部服务的测试需要真实的 PostgreSQL、Redis、Memcached、nsqd、Gotenberg 和 Qdrant。仓库根目录的 `compose.test.yml` 启动这些服务，版本与 CI 相同，`--wait` 等到它们全部就绪才返回：
+依赖外部服务的测试需要真实的 PostgreSQL、Redis、Memcached、NATS、Gotenberg 和 Qdrant。仓库根目录的 `compose.test.yml` 启动这些服务，版本与 CI 相同，`--wait` 等到它们全部就绪才返回：
 
 ```bash
 docker compose -f compose.test.yml up -d --wait
@@ -54,8 +54,7 @@ export POSTGRES_TEST_URL='postgres://postgres:postgres@127.0.0.1:55432/postgres?
 export REDIS_TEST_URL='redis://127.0.0.1:56379/0'
 export REDIS_CLUSTER_TEST_URL='redis://127.0.0.1:56380'
 export MEMCACHED_TEST_ADDR='127.0.0.1:51211'
-export NSQD_TEST_ADDR='127.0.0.1:54150'
-export NSQD_TEST_HTTP='http://127.0.0.1:54151'
+export NATS_TEST_URL='nats://127.0.0.1:54222'
 export GOTENBERG_TEST_URL='http://127.0.0.1:53000'
 export QDRANT_TEST_ADDR='127.0.0.1:56334'
 go test -race -count=1 ./...
@@ -65,7 +64,7 @@ Redis 的锁、限流、在线成员和广播的测试对单机 Redis 和集群�
 
 框架的测试默认并行运行：顶层测试的第一行调用 `t.Parallel()`。修改全局状态的测试串行运行，例如使用 `t.Setenv`、`slog.SetDefault` 或包内 `export_test.go` 中缩短间隔的 `Set*` 函数的测试，以及比较耗时和内存分配量的测试。Go 先依次运行这些测试，再运行并行的测试，两者先后进行。
 
-没有设置这些环境变量时，集成测试直接失败。每个数据库测试使用自己的临时库，Redis 测试给每个键加随机前缀，队列测试给每个 topic、向量测试给每个 collection 加随机前缀并在结束时删除，所以服务可以一直开着反复运行测试。数据放在 tmpfs 中，测试完成后执行 `docker compose -f compose.test.yml down -v` 清理，数据全部消失。
+没有设置这些环境变量时，集成测试直接失败。每个数据库测试使用自己的临时库，Redis 测试给每个键加随机前缀，队列测试使用随机名字的 stream、向量测试给每个 collection 加随机前缀，都在结束时删除，所以服务可以一直开着反复运行测试。数据放在 tmpfs 中，测试完成后执行 `docker compose -f compose.test.yml down -v` 清理，数据全部消失。
 
 依赖数据库的测试用 `database/dbtest` 的 `Open` 为每个测试建一个临时库。
 
@@ -117,7 +116,7 @@ CI 配置位于 [.github/workflows/ci.yml](.github/workflows/ci.yml)，每次推
   3. `golangci-lint run`，配置在 [.golangci.yml](.golangci.yml)；
   4. 在 `web/ui` 中重新运行 `go tool templ generate`，确认提交的 `_templ.go` 是最新的。
 - `js` 在 `js` 中安装依赖，运行 Biome、类型检查、测试和 Playwright 的 E2E 测试，见[前端包](#js-packages)。
-- `test` 执行 `go test ./...`，使用 PostgreSQL 18、Redis 8、Memcached、nsqd、Gotenberg 和 Qdrant 服务容器。
+- `test` 执行 `go test ./...`，使用 PostgreSQL 18、Redis 8、Memcached、NATS、Gotenberg 和 Qdrant 服务容器。
 - `scaffold` 运行 `TestInitEndToEnd` 和 `TestTutorial`，见[文档用法测试](#doc-tests)。
 
 `go test` 同时运行多个包，整体耗时取决于最慢的那个包。每次判断都要查询数据库或调用服务的测试只用少量样本：把统计性质留给纯函数的测试，经过服务的测试只用少量数据检查接线，例如 `feature` 的放量。

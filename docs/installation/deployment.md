@@ -309,7 +309,7 @@ services:
 
 一起运行时，把三个服务换成一个运行 `start` 的服务即可。
 
-应用用到的其他服务也放进同一个 compose 文件。框架会用到 PostgreSQL、[Redis](../libraries/redis.md)（锁、限流、广播）、[Memcached](../libraries/cache.md)（缓存）和 [nsqd](../background/queue.md#preparing)（任务队列）：
+应用用到的其他服务也放进同一个 compose 文件。框架会用到 PostgreSQL、[Redis](../libraries/redis.md)（锁、限流、广播）、[Memcached](../libraries/cache.md)（缓存）和 [NATS](../background/queue.md#preparing)（任务队列）：
 
 ```yaml
   redis:
@@ -319,18 +319,15 @@ services:
   memcached:
     image: memcached:1.6-alpine
     command: [memcached, -m, "512"]
-  nsqd:
-    image: nsqio/nsq:v1.3.0
-    command: [/nsqd, --data-path=/data, --mem-queue-size=0]
-    volumes: [nsqd:/data]
-  nsqadmin:
-    image: nsqio/nsq:v1.3.0
-    command: [/nsqadmin, --nsqd-http-address=nsqd:4151]
-    ports: ["127.0.0.1:4171:4171"]
-# 以及顶层的 volumes: {redis: {}, nsqd: {}}
+  nats:
+    image: nats:2.12-alpine
+    command: [nats-server, -js, -sd, /data, -m, "8222"]
+    volumes: [nats:/data]
+    ports: ["127.0.0.1:8222:8222"]
+# 以及顶层的 volumes: {redis: {}, nats: {}}
 ```
 
-Redis 要配置 `noeviction`：内存满时报错，而不是悄悄删掉锁和限流计数。nsqadmin 是队列的管理页面，只监听本机，通过 SSH 隧道或内网访问。用到[生成 PDF](../libraries/pdf.md#deployment) 等功能时，再按各自的说明加上对应的服务。
+Redis 要配置 `noeviction`：内存满时报错，而不是悄悄删掉锁和限流计数。NATS 的 `-js` 开启 JetStream，任务保存在 `/data` 中；`8222` 是它的监控端口，只监听本机，通过 SSH 隧道或内网访问。用到[生成 PDF](../libraries/pdf.md#deployment) 等功能时，再按各自的说明加上对应的服务。
 
 容器的升级方式是换一个新容器，见[不停机升级](operations.md#zero-downtime-upgrades)。
 

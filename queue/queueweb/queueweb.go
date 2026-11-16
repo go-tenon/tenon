@@ -1,6 +1,6 @@
 // Package queueweb 是队列的运维面板：复制槽和延迟任务的状态、各 topic 的失败任务，以及重试和删除失败任务。
 // 它只读写 queue 已有的数据，不新增存储：吞吐、耗时这类指标看 OpenTelemetry（Grafana），
-// NSQ 各 topic 的积压和消费者看 nsqadmin，面板只放它们的链接。
+// JetStream 中各 topic 的积压看 NATS 的监控，面板只放它们的链接。
 //
 // 面板是服务端渲染的页面，认证由应用决定，通常是 httpx.BasicAuth；它自己拒绝跨站的非安全请求，
 // 因为浏览器会自动带上 Basic 凭据。应用还要挂载 web.Assets 和 ui.Assets：
@@ -9,7 +9,7 @@
 //	router.Handle(ui.AssetsPath+"*", ui.Assets())
 //	ops := router.With(httpx.BasicAuth("ops", verifyOps))
 //	queueweb.Register(ops, "/ops/queue", db, queueweb.Options{
-//		Links: map[string]string{"Grafana": cfg.GrafanaURL, "nsqadmin": cfg.NSQAdminURL},
+//		Links: map[string]string{"Grafana": cfg.GrafanaURL, "NATS": cfg.NATSDashboardURL},
 //	})
 //
 // 重试和删除各记一条 Info 日志，带上操作者（httpx.BasicUser）、topic 和条数。
@@ -45,7 +45,7 @@ var bulkDone = map[string]string{"retried": "Retried {{.n}} failed jobs", "delet
 
 // Options 是 Register 的选项，都可以为零值。
 type Options struct {
-	// Links 是页头右侧的外部链接，键是显示的名称，例如 Grafana、nsqadmin；地址为空的项不显示。
+	// Links 是页头右侧的外部链接，键是显示的名称，例如 Grafana、NATS；地址为空的项不显示。
 	Links map[string]string
 	// Theme 是面板的外观，见 web.Theme。
 	Theme web.Theme
