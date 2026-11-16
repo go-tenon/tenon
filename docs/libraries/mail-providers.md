@@ -42,6 +42,8 @@ mail:
 
 每次 `Send` 都会建立一个新连接。设置了 `username` 时必须使用 `starttls` 或 `tls`，go-mail 只在加密的连接上发送密码。
 
+`smtp.Doctor(mailer)` 连接服务器、按配置升级到 TLS 并登录，不发送邮件，失败时说明是地址、端口、TLS 方式还是用户名密码的问题，见[自检](../installation/doctor.md#framework-checks)。
+
 本地开发可以用 [Mailpit](https://mailpit.axllent.org) 在浏览器里查看发出的邮件，配置为 `host: localhost`、`port: 1025`、`tls: none`。
 
 <a id="resend"></a>

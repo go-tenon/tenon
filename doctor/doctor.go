@@ -93,25 +93,26 @@ const (
 	Skipped Status = "skipped"
 )
 
-// Result 是一项检查的结果。
-type Result struct {
+// DoctorResult 是一项检查的结果。
+type DoctorResult struct {
 	Group  string `json:"group"`
 	Check  string `json:"check"`
-	Status Status `json:"status"`
+	Status Status `json:"status" enum:"passed,warning,failed,skipped"`
 	// Summary 是问题、跳过的原因，或者检查没能完成的错误；通过时为空。
 	Summary string `json:"summary,omitempty"`
 	Fix     string `json:"fix,omitempty"`
 	Doc     string `json:"doc,omitempty"`
 }
 
-// Report 是一次自检的结果。
-type Report struct {
+// DoctorReport 是一次自检的结果。DoctorReport 和 DoctorResult 的名称带上包名：它们作为接口的响应体时，
+// 框架的类型在 OpenAPI 中不加包名，这样不会与其他包的 Report、Result 同名。
+type DoctorReport struct {
 	// Results 按传入的顺序列出每一组的每一项检查。
-	Results []Result `json:"results"`
+	Results []DoctorResult `json:"results"`
 }
 
 // Count 返回结果为 s 的检查数。
-func (r Report) Count(s Status) int {
+func (r DoctorReport) Count(s Status) int {
 	n := 0
 	for _, res := range r.Results {
 		if res.Status == s {
@@ -121,11 +122,11 @@ func (r Report) Count(s Status) int {
 	return n
 }
 
-// ErrFailed 是 Report.Err 和 Require 返回的错误的模板，分类为 Unavailable，命令以 ExitUnavailable 退出。
+// ErrFailed 是 DoctorReport.Err 和 Require 返回的错误的模板，分类为 Unavailable，命令以 ExitUnavailable 退出。
 var ErrFailed = errorx.Define(errorx.Unavailable, "doctor.failed")
 
 // Err 在有检查失败时返回 ErrFailed 分类的错误，消息列出每一项失败和修改方法；全部通过或只有提示时返回 nil。
-func (r Report) Err() error {
+func (r DoctorReport) Err() error {
 	failed := r.Count(Failed)
 	if failed == 0 {
 		return nil
@@ -146,14 +147,14 @@ func (r Report) Err() error {
 }
 
 // Run 执行全部检查。各组并行，组内按顺序；每项检查最多 CheckTimeout，panic 按失败处理。
-func Run(ctx context.Context, groups ...Group) Report {
-	results := make([][]Result, len(groups))
+func Run(ctx context.Context, groups ...Group) DoctorReport {
+	results := make([][]DoctorResult, len(groups))
 	var wg sync.WaitGroup
 	for i, g := range groups {
 		wg.Go(func() { results[i] = runGroup(ctx, g) })
 	}
 	wg.Wait()
-	var report Report
+	var report DoctorReport
 	for _, rs := range results {
 		report.Results = append(report.Results, rs...)
 	}
@@ -161,11 +162,11 @@ func Run(ctx context.Context, groups ...Group) Report {
 }
 
 // runGroup 按顺序执行一组检查。一项检查没能完成时，后面的检查跳过。
-func runGroup(ctx context.Context, g Group) []Result {
-	results := make([]Result, 0, len(g.Checks))
+func runGroup(ctx context.Context, g Group) []DoctorResult {
+	results := make([]DoctorResult, 0, len(g.Checks))
 	broken := ""
 	for _, c := range g.Checks {
-		res := Result{Group: g.Name, Check: c.Name}
+		res := DoctorResult{Group: g.Name, Check: c.Name}
 		if broken != "" {
 			res.Status, res.Summary = Skipped, "skipped because "+broken+" could not be checked"
 			results = append(results, res)

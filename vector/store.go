@@ -200,15 +200,20 @@ func (s *Store) load(ctx context.Context, collection string, sc *schema, create 
 
 // modelOf 返回建立 collection 的模型，它必须是 Store 的模型之一。
 func (s *Store) modelOf(collection string, info *qdrant.CollectionInfo) (Model, error) {
-	meta := info.GetConfig().GetMetadata()
-	name, dims := meta[metaModel].GetStringValue(), meta[metaDims].GetIntegerValue()
-	m, ok := s.models[modelID{name, int(dims)}]
+	id := builtWith(info)
+	m, ok := s.models[id]
 	if !ok {
 		return Model{}, errors.Newf("vector: collection %s was built with model %q (%d dimensions), which is not configured; "+
 			"pass it with vector.WithPrevious until a reindex with %q (%d dimensions) finishes",
-			collection, name, dims, s.model.Name, s.model.Dims)
+			collection, id.name, id.dims, s.model.Name, s.model.Dims)
 	}
 	return m, nil
+}
+
+// builtWith 返回 collection 的 metadata 中记录的模型。
+func builtWith(info *qdrant.CollectionInfo) modelID {
+	meta := info.GetConfig().GetMetadata()
+	return modelID{meta[metaModel].GetStringValue(), int(meta[metaDims].GetIntegerValue())}
 }
 
 // create 用 s.model 创建 collection。多个进程同时创建时只有一个成功，其余的沿用它。

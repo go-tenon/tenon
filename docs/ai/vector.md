@@ -473,7 +473,7 @@ vectors := vectortest.New(t, db, vector.Model{Name: "test", Dims: 64, Embedder: 
 
 **写入向量时报错维度不一致**
 
-`Model.Dims` 必须与嵌入模型输出的维度一致。换了模型时同时修改它，并重建索引。
+`Model.Dims` 必须与嵌入模型输出的维度一致。换了模型时同时修改它，并重建索引。`vector.Doctor(store, 索引名...)` 检查每个索引是用哪个模型建立的：换了模型却没有用 `WithPrevious` 传入旧模型时失败，见[自检](../installation/doctor.md#framework-checks)。
 
 **修改了数据，检索结果还是旧的**
 

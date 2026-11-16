@@ -209,7 +209,7 @@ const record = await uploadFile(input.files[0], {
 
 **浏览器上传时报跨域错误**
 
-浏览器直接请求 S3 的域名，需要在存储桶上配置 CORS，允许应用的域名用 `PUT` 上传。
+浏览器直接请求 S3 的域名，需要在存储桶上配置 CORS，允许应用的域名用 `PUT` 上传。`s3.Doctor(disk, "https://example.com")` 读取存储桶的 CORS 规则，检查它们是否允许这个来源直传，见[自检](../installation/doctor.md#framework-checks)。
 
 **上传成功了，但文件过一段时间后不见了**
 

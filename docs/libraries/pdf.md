@@ -294,7 +294,7 @@ func TestDownload(t *testing.T) {
 <a id="deployment"></a>
 ## 部署
 
-Gotenberg 和应用一起部署。在[部署](../installation/deployment.md#docker)的 compose 文件中加一个服务，应用通过 `GOTENBERG_URL` 访问它：
+Gotenberg 和应用一起部署。`gotenberg.Doctor(renderer)` 检查它在运行、能生成 PDF，用户名和密码正确，见[自检](../installation/doctor.md#framework-checks)。在[部署](../installation/deployment.md#docker)的 compose 文件中加一个服务，应用通过 `GOTENBERG_URL` 访问它：
 
 ```yaml
 x-app: &app

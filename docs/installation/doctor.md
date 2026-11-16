@@ -26,6 +26,7 @@ queue
 - [启动之前检查](#before-starting)
 - [在 Docker Compose 中使用](#with-compose)
 - [编写应用自己的检查](#custom-checks)
+- [在后台页面中显示](#admin-page)
 - [框架提供的检查](#framework-checks)
 - [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
@@ -33,7 +34,7 @@ queue
 <a id="doctor-command"></a>
 ## 装配 doctor 命令
 
-检查项按依赖分组，框架的包各自提供一组：`database.Doctor` 检查 PostgreSQL，`migrate.Doctor` 检查迁移，`queue.Doctor` 检查队列，`filesystem.Doctor` 检查文件存储。在 `bootstrap` 中把应用用到的几组放在一起，写成 `App` 的方法：
+检查项按依赖分组，框架的包各自提供一组：`database.Doctor` 检查 PostgreSQL，`migrate.Doctor` 检查迁移，`queue.Doctor` 检查队列，`filesystem.Doctor` 检查文件存储；S3、SMTP、Memcached、Gotenberg 和 Qdrant 也各有一组，见[框架提供的检查](#framework-checks)。在 `bootstrap` 中把应用用到的几组放在一起，写成 `App` 的方法：
 
 ```go
 // doctor 是应用的自检，doctor 命令和启动之前的检查共用。
@@ -187,6 +188,33 @@ func (a *App) doctor() []doctor.Group {
 
 `summary` 和 `fix` 会原样显示给运维人员，也会出现在日志和工单中，不要包含密码和密钥。
 
+<a id="admin-page"></a>
+## 在后台页面中显示
+
+自检的结果也可以放在运营后台的“系统状态”页面中，不用登录服务器就能看到。`doctor.DoctorReport` 带有 JSON 标签，可以直接作为接口的响应体，它在 OpenAPI 中的名字是 `DoctorReport`：
+
+```go
+type DoctorOutput struct {
+    Body doctor.DoctorReport
+}
+
+status := huma.Operation{
+    OperationID: "system-doctor",
+    Method:      http.MethodGet,
+    Path:        "/system/doctor",
+    Summary:     "运行环境自检",
+}
+requireOps(&status)
+rest.Register(api, status, func(ctx context.Context, _ *struct{}) (*DoctorOutput, error) {
+    return &DoctorOutput{Body: doctor.Run(ctx, a.doctor()...)}, nil
+})
+```
+
+`requireOps` 是只允许运维人员访问的[访问策略](../security/authorization.md)，例如要求 `system:read` 权限，`a.doctor()` 是[装配 doctor 命令](#doctor-command)时写的方法。每次请求都会执行全部检查，通常不到一秒；有检查失败时接口仍然返回 `200`，页面按每一项的 `status` 显示。
+
+> [!WARNING]
+> 结果中有数据库、存储和邮件服务器的地址，以及它们的报错。这个接口只能给运维人员访问，不要放在公开的页面上。
+
 <a id="framework-checks"></a>
 ## 框架提供的检查
 
@@ -215,6 +243,23 @@ func (a *App) doctor() []doctor.Group {
 
 **`filesystem.Doctor(disk)`**，组名 `storage`：`read_write` 写入一个很小的探测对象（键以 `tenon-doctor/` 开头），读回比较内容，再删除它。本地磁盘检查目录可写，S3 检查 bucket、地址和凭据。
 
+**`s3.Doctor(disk, uploadOrigins...)`**，组名 `s3`，`disk` 是 [S3 磁盘](../libraries/filesystem.md)：
+
+| 检查 | 内容 | 不满足时 |
+| --- | --- | --- |
+| `public_url` | 写入一个探测对象，从 `public_url` 下载它，内容一致 | 失败；从本机连不上 `public_url` 时只提示 |
+| `cors` | 传入了 `uploadOrigins` 时：存储桶的 CORS 规则允许这些来源用 `PUT` [直传](../libraries/direct-uploads.md)，允许请求头 `Content-Type`，暴露响应头 `ETag` | 失败；存储不提供 CORS 规则的接口、或凭据没有读取权限时跳过 |
+
+`uploadOrigins` 是调用直传的前端的来源，例如 `https://example.com`、`https://admin.example.com`；不用直传时不传，也就不检查 CORS。`public_url` 可能是只有浏览器才能访问的地址（例如经过 CDN），所以从服务器上连不上时只提示，请在浏览器中打开确认。
+
+**`smtp.Doctor(mailer)`**，组名 `smtp`：`connection` 连接服务器，按 `tls` 的设置升级到 TLS，用 `username` 和 `password` 登录，然后断开，不发送邮件。失败时区分四种原因：连不上（地址、端口、防火墙，很多云服务器禁止访问外部的 25 端口）、TLS 方式与端口不符、证书不受信任、用户名或密码被拒绝。
+
+**`cachex.Doctor(mc)`**，组名 `memcached`：`connection` 确认每一台服务器都连得上。连不上时只是提示：缓存不可用时 `Cache` 直接读取数据库，应用照常工作，只是数据库的压力变大。
+
+**`gotenberg.Doctor(renderer)`**，组名 `gotenberg`：`health` 确认 Gotenberg 和其中的 Chromium 都在运行；`render` 生成一页很小的 PDF，确认地址、用户名和密码都正确。
+
+**`vector.Doctor(store, indexes...)`**，组名 `vector`：`qdrant` 确认 Qdrant 连得上；`indexes` 中的每个索引一项，名称就是索引名，检查索引是用哪个模型建立的。换了模型却没有用 `WithPrevious` 传入旧模型时失败，这时查询会出错；仍是旧模型、又没有在[重建](../ai/vector.md#reindexing)时提示，重建之后才能去掉旧模型。索引名是 `Index.Name()`，例如 `vector.Doctor(store, attachment.Chunks.Name())`。
+
 <a id="troubleshooting"></a>
 ## 常见问题
 
@@ -229,6 +274,10 @@ func (a *App) doctor() []doctor.Group {
 **每次启动都打印 `max_slot_wal_keep_size is unlimited` 的提示**
 
 这是在提醒：所有 worker 停止时，复制槽积压的 WAL 会一直增长直到写满磁盘。给 PostgreSQL 设置上限即可，例如在 compose 中写 `command: [postgres, -c, wal_level=logical, -c, max_slot_wal_keep_size=10GB]`，见[运维](operations.md#queue)。
+
+**`s3` 组提示 `cannot reach public_url from this host`**
+
+服务器访问不到 `public_url`，例如它是只在公网解析的 CDN 域名，而服务器在内网。在浏览器中打开 `public_url` 下的一个文件：能打开就不用处理；打不开时把 `public_url` 改为存储桶或 CDN 的公开地址。
 
 **`storage` 组在 Docker 中失败：`cannot write to the storage: permission denied`**
 
@@ -264,16 +313,16 @@ func Skip(reason string) error
 
 `Problem` 是查到的问题，有 `Summary`、`Fix`、`Doc` 和 `Warning` 四个字段。被包装过的 `*Problem` 同样有效。
 
-### Run、Report
+### Run、DoctorReport
 
 ```go
-func Run(ctx context.Context, groups ...Group) Report
-func (r Report) Count(s Status) int
-func (r Report) Err() error
-func (r Report) WriteText(w io.Writer) error
+func Run(ctx context.Context, groups ...Group) DoctorReport
+func (r DoctorReport) Count(s Status) int
+func (r DoctorReport) Err() error
+func (r DoctorReport) WriteText(w io.Writer) error
 ```
 
-`Run` 执行全部检查，`Report.Results` 按传入的顺序列出每一项的 `Result`（`Group`、`Check`、`Status`、`Summary`、`Fix`、`Doc`）。`Status` 是 `doctor.Passed`、`Warning`、`Failed`、`Skipped` 之一。`Err` 在有失败时返回 `doctor.ErrFailed` 分类的错误（`errorx.Unavailable`，命令以退出码 4 结束），只有提示时返回 `nil`。`WriteText` 写出 `doctor` 命令的文本格式。
+`Run` 执行全部检查，`DoctorReport.Results` 按传入的顺序列出每一项的 `DoctorResult`（`Group`、`Check`、`Status`、`Summary`、`Fix`、`Doc`）。`Status` 是 `doctor.Passed`、`Warning`、`Failed`、`Skipped` 之一。`Err` 在有失败时返回 `doctor.ErrFailed` 分类的错误（`errorx.Unavailable`，命令以退出码 4 结束），只有提示时返回 `nil`。`WriteText` 写出 `doctor` 命令的文本格式。
 
 ### Require
 
@@ -281,7 +330,7 @@ func (r Report) WriteText(w io.Writer) error
 func Require(ctx context.Context, logger *slog.Logger, groups ...Group) error
 ```
 
-执行检查，把提示写入 `logger`（`nil` 表示 `slog.Default()`），返回 `Report.Err()`。
+执行检查，把提示写入 `logger`（`nil` 表示 `slog.Default()`），返回 `DoctorReport.Err()`。
 
 ### doctorcmd.New、migratecmd.Check
 
@@ -299,6 +348,11 @@ func database.Doctor(db *bun.DB) doctor.Group
 func migrate.Doctor(db *bun.DB, fsys fs.FS) doctor.Group
 func queue.Doctor(db *bun.DB, nc *nats.Conn, cfg queue.Config) doctor.Group
 func filesystem.Doctor(disk filesystem.Disk) doctor.Group
+func s3.Doctor(d *s3.Disk, uploadOrigins ...string) doctor.Group
+func smtp.Doctor(m *smtp.Mailer) doctor.Group
+func cachex.Doctor(mc *memcache.Client) doctor.Group
+func gotenberg.Doctor(r *gotenberg.Renderer) doctor.Group
+func vector.Doctor(s *vector.Store, indexes ...string) doctor.Group
 ```
 
 检查项见[框架提供的检查](#framework-checks)。参数在检查时才使用，可以在打开资源之前构造。

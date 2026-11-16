@@ -247,7 +247,7 @@ Memcached 的键最长 250 字节，只能使用可见字符。超出这些限�
 <a id="deployment"></a>
 ## 部署
 
-部署时有几件事需要留意。
+部署时有几件事需要留意。`cachex.Doctor(mc)` 检查每一台服务器都连得上，见[自检](../installation/doctor.md#framework-checks)。
 
 **值的大小。** Memcached 默认单个值最大 1 MB，更大的值会写入失败。这时 `cachex` 记录日志后照常返回加载的结果，相当于没有缓存。如果你要缓存很大的列表，可以只缓存 ID，或者调大 Memcached 的 `-I` 参数。
 

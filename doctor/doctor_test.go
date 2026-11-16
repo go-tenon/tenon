@@ -19,7 +19,7 @@ func returns(err error) func(context.Context) error {
 	return func(context.Context) error { return err }
 }
 
-func statuses(r doctor.Report) []string {
+func statuses(r doctor.DoctorReport) []string {
 	var out []string
 	for _, res := range r.Results {
 		out = append(out, res.Group+"/"+res.Check+"="+string(res.Status))
