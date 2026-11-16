@@ -55,16 +55,16 @@ services:
       interval: 1s
       retries: 30
 
-  nsqd:
-    image: nsqio/nsq:v1.3.0
-    command: ["/nsqd", "--mem-queue-size=0", "--data-path=/data"]
+  # 队列用 JetStream 保存任务，-js 开启它。
+  nats:
+    image: nats:2.12-alpine
+    command: [nats-server, -js, -sd, /data, -m, "8222"]
     ports:
-      - 127.0.0.1:54150:4150
-      - 127.0.0.1:54151:4151
+      - 127.0.0.1:54222:4222
     tmpfs:
       - /data
     healthcheck:
-      test: wget -qO- http://127.0.0.1:4151/ping
+      test: wget -qO- http://127.0.0.1:8222/healthz
       interval: 1s
       retries: 30
 

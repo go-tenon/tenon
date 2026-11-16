@@ -2,10 +2,12 @@ package queue
 
 import (
 	"math"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/cockroachdb/errors"
+	"github.com/google/uuid"
 
 	"github.com/go-tenon/tenon/errorx"
 )
@@ -52,5 +54,56 @@ func TestRetryDelay(t *testing.T) {
 	}
 	if got := retryDelay(Retry(base), 2); got < 14*time.Second || got > 18*time.Second {
 		t.Fatalf("Retry = %v, want backoff", got)
+	}
+}
+
+func TestNames(t *testing.T) {
+	t.Parallel()
+	for name, want := range map[string]bool{
+		"mail.send": true, "a": true, "blog.mail-send_v2": true,
+		"": false, ".a": false, "a.": false, "a..b": false, "a b": false, "a*": false, "a>": false,
+		strings.Repeat("a", 64): true, strings.Repeat("a", 65): false,
+	} {
+		if got := validName(name); got != want {
+			t.Errorf("validName(%q) = %v", name, got)
+		}
+	}
+	for name, want := range map[string]bool{"jobs": true, "blog_prod-1": true, "": false, "a.b": false, strings.Repeat("a", 33): false} {
+		if got := validStream(name); got != want {
+			t.Errorf("validStream(%q) = %v", name, got)
+		}
+	}
+	if consumerName("blog.mail.send") != "blog_mail_send" {
+		t.Error(consumerName("blog.mail.send"))
+	}
+}
+
+func TestCeilSecond(t *testing.T) {
+	t.Parallel()
+	base := time.Date(2026, 1, 1, 0, 0, 1, 0, time.UTC)
+	if got := ceilSecond(base); !got.Equal(base) {
+		t.Errorf("whole second moved to %v", got)
+	}
+	if got := ceilSecond(base.Add(time.Millisecond)); !got.Equal(base.Add(time.Second)) {
+		t.Errorf("rounded to %v", got)
+	}
+}
+
+func TestRedactURL(t *testing.T) {
+	t.Parallel()
+	got := redactURL("nats://user:secret@a:4222,nats://b:4222,tls://token@c:4222")
+	if got != "nats://***@a:4222,nats://b:4222,tls://***@c:4222" {
+		t.Error(got)
+	}
+}
+
+func TestMsgID(t *testing.T) {
+	t.Parallel()
+	id := uuid.Must(uuid.NewV7())
+	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	// 同一次执行重新发布时 ID 相同，被去重；执行次数或可以执行的时间不同时 ID 不同。
+	if msgID(id, 1, at) != msgID(id, 1, at.Add(time.Microsecond)) ||
+		msgID(id, 1, at) == msgID(id, 2, at) || msgID(id, 1, at) == msgID(id, 1, at.Add(time.Second)) {
+		t.Error("msgID must identify one execution of a job")
 	}
 }

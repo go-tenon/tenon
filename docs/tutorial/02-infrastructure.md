@@ -29,7 +29,7 @@
 | PostgreSQL | 业务数据 | 第 3 章 |
 | Redis | 限流、锁 | 第 6 章、[限流](../libraries/rate-limiting.md) |
 | Memcached | 缓存 | [缓存](../libraries/cache.md) |
-| NSQ | 队列 | [队列](../background/queue.md) |
+| NATS | 队列 | [队列](../background/queue.md) |
 
 我们用 Docker Compose 启动它们。Docker 把一个服务和它需要的运行环境打包成**镜像**，在你的电脑上以**容器**的形式运行，不需要一个个安装和配置这些软件。Docker Compose 用一个 YAML 文件描述要启动哪些容器。
 
@@ -66,15 +66,15 @@ services:
     image: memcached:1.6-alpine
     ports: ["127.0.0.1:11211:11211"]
 
-  nsqd:
-    image: nsqio/nsq:v1.3.0
-    command: [/nsqd, --mem-queue-size=0, --data-path=/data]
-    ports: ["127.0.0.1:4150:4150", "127.0.0.1:4151:4151"]
-    volumes: [nsqd:/data]
+  nats:
+    image: nats:2.12-alpine
+    command: [nats-server, -js, -sd, /data]
+    ports: ["127.0.0.1:4222:4222"]
+    volumes: [nats:/data]
 
 volumes:
   postgres:
-  nsqd:
+  nats:
 ```
 
 ```bash

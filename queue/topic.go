@@ -16,10 +16,11 @@ import (
 //	err := PublishAt.Publish(ctx, tx, item.ID, queue.At(item.PublishAt))
 //	PublishAt.Handle(w, publish.Job)
 //
-// 名称是 NSQ 的 topic，由 1 到 64 个字母、数字、'.'、'_' 或 '-' 组成，建议以应用名开头，例如 blog.mail.send。
+// 名称由 1 到 64 个字母、数字、'.'、'_' 或 '-' 组成，'.' 分隔的每一段都不为空，例如 mail.send。
+// 它是任务的 NATS subject 的一部分，不同应用的 topic 由 Config.Stream 区分。
 type Topic[T any] string
 
-// Publish 发布一个任务：把 payload 编码为 JSON，写入 db 所在数据库的 WAL，由 Worker 经由逻辑复制转发到 NSQ。
+// Publish 发布一个任务：把 payload 编码为 JSON，写入 db 所在数据库的 WAL，由 Worker 经由逻辑复制转发到 JetStream。
 // db 通常是修改业务数据的事务：事务提交后任务才会被转发，回滚时一起取消。
 // ctx 中的 request_id 日志字段和 OpenTelemetry 链路（W3C traceparent）随任务带到处理函数的 context 中。
 func (t Topic[T]) Publish(ctx context.Context, db bun.IDB, payload T, opts ...PublishOption) error {

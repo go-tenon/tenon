@@ -2,11 +2,11 @@
 
 有些工作可以在后台完成，例如发送邮件、生成缩略图、通知第三方。在请求中同步完成它们，接口会变慢；邮件服务器暂时不可用时，请求还会直接失败。交给队列，接口立即返回，失败的工作自动重试。
 
-队列解决了这个问题：接口只把工作作为一个**任务**发布出去就返回，由单独的 worker 进程取出执行。`queue` 包把任务交给 [NSQ](https://nsq.io)；执行失败的任务按退避时间自动重试，次数用完后转入失败任务表，等待人工处理。
+队列解决了这个问题：接口只把工作作为一个**任务**发布出去就返回，由单独的 worker 进程取出执行。`queue` 包把任务交给 [NATS JetStream](https://docs.nats.io/nats-concepts/jetstream)；执行失败的任务按退避时间自动重试，次数用完后转入失败任务表，等待人工处理。
 
 任务按 topic 分类：发布方把任务发到一个 topic，worker 为每个 topic 注册一个处理函数。
 
-Tenon 的队列有两个特点，在开始之前需要了解。第一，任务和业务数据**在同一个事务中发布**：`Publish` 把任务写进 PostgreSQL 的 WAL（预写日志），事务提交后 worker 经由逻辑复制立即读到，转发到 NSQ；事务回滚时任务一起取消。这样文章和通知任务总是同时生效、同时撤销。任务只写入 WAL，发布任务的事务之间各自独立，提交的吞吐与不发布任务时相当。
+Tenon 的队列有两个特点，在开始之前需要了解。第一，任务和业务数据**在同一个事务中发布**：`Publish` 把任务写进 PostgreSQL 的 WAL（预写日志），事务提交后 worker 经由逻辑复制立即读到，转发到 JetStream；事务回滚时任务一起取消。这样文章和通知任务总是同时生效、同时撤销。任务只写入 WAL，发布任务的事务之间各自独立，提交的吞吐与不发布任务时相当。
 
 第二，每个任务**至少执行一次**：worker 崩溃或停止超时时，正在处理的任务会交给其他 worker 重新执行，处理函数需要能安全地重复执行。任务之间不保证执行顺序。
 
@@ -51,18 +51,20 @@ SendWelcome.Handle(w, func(ctx context.Context, id uuid.UUID) error {
 err = w.Run(ctx)
 ```
 
-注册用户的事务提交之后，任务才会被投递；事务回滚了，任务也就不存在。worker 收到任务后调用处理函数，返回错误时，任务稍后会自动重试。下面先准备 NSQ 和 PostgreSQL，再逐步介绍发布、处理和失败的任务。
+注册用户的事务提交之后，任务才会被投递；事务回滚了，任务也就不存在。worker 收到任务后调用处理函数，返回错误时，任务稍后会自动重试。下面先准备 NATS 和 PostgreSQL，再逐步介绍发布、处理和失败的任务。
 
 <a id="preparing"></a>
 ## 准备
 
-部署 nsqd，见 [NSQ 的安装文档](https://nsq.io/deployment/installing.html)。nsqd 默认把超出内存队列（每个 channel 10000 条）的消息写到磁盘；任务必须保留，启动时加上 `--mem-queue-size=0`，让每条消息都落盘：
+部署 NATS 2.12 以上的版本，见 [NATS 的安装文档](https://docs.nats.io/running-a-nats-service/introduction/installation)。任务保存在 JetStream 中，启动时加上 `-js` 开启它，`-sd` 是数据目录：
 
 ```bash
-nsqd --data-path=/var/lib/nsqd --mem-queue-size=0
+nats-server -js -sd /var/lib/nats
 ```
 
-即使这样，nsqd 只把消息保存在本机，没有副本：nsqd 所在的机器损坏时，其中还没处理的任务会丢失；进程崩溃时，正在处理和等待重试的任务也会丢失，因为它们只在内存中。数据盘用可靠的存储，处理函数也要能安全地重复执行，丢失时可以从业务数据中找出没有完成的工作重新发布。
+worker 启动时在 JetStream 中创建保存任务的 stream（默认名为 `jobs`），每个 topic 一个 consumer，不需要手动创建。任务、正在处理的任务和等待重试的任务都保存在磁盘上，NATS 进程崩溃或重启后，没有处理完的任务会重新投递。
+
+单台服务器上，JetStream 默认每 2 分钟把数据同步到磁盘一次：进程崩溃不会丢失任务，但机器断电或损坏时，最近写入的任务可能丢失。生产环境用三台服务器组成[集群](https://docs.nats.io/running-a-nats-service/configuration/clustering/jetstream_clustering)，并把[配置](#configuration)中的 `replicas` 设为 3，一台服务器损坏时任务不丢失。只有一台服务器时，可以在 NATS 的配置文件中设置 `jetstream { sync_interval: always }`，每次写入都同步到磁盘，代价是吞吐下降。处理函数也要能安全地重复执行，丢失时可以从业务数据中找出没有完成的工作重新发布。
 
 PostgreSQL 需要 17 以上的版本，开启逻辑复制（`wal_level = logical`，修改后需要重启），应用的数据库用户需要 `REPLICATION` 属性（`ALTER ROLE app REPLICATION`）。其他设置和它们的作用见[运维](../installation/operations.md#queue)。云数据库在参数组中开启逻辑复制，例如 RDS 的 `rds.logical_replication`。本地开发时，[入门教程第 2 章](../tutorial/02-infrastructure.md#infrastructure)的 `compose.yaml` 已经设置好了。
 
@@ -96,7 +98,7 @@ import (
 var Send = queue.Topic[mail.Message]("mail.send")
 ```
 
-topic 名由字母、数字、`.`、`_`、`-` 组成，加上[配置](#configuration)中的前缀后最长 64 个字符。
+topic 名由字母、数字、`.`、`_`、`-` 组成，最长 64 个字符，`.` 分隔的每一段都不能为空。只差在 `.` 和 `_` 的两个 topic（例如 `mail.send` 和 `mail_send`）对应同一个 consumer，不能同时使用。
 
 `Publish` 把 payload 编码为 JSON，写入传入的数据库。传入事务时，任务和业务数据一起提交。例如发布文章时，通知邮件在同一个事务中渲染并发布：
 
@@ -123,7 +125,7 @@ func (a *Publish) Handle(ctx context.Context, subject identity.Subject, id uuid.
 }
 ```
 
-事务提交时 PostgreSQL 通知 worker，任务随即被转发到 NSQ。`PublishAll` 一次发布多个同类任务，批量写入。
+事务提交时 PostgreSQL 通知 worker，任务随即被转发到 JetStream。`PublishAll` 一次发布多个同类任务，批量写入。
 
 每个任务有一个 UUIDv7 作为 ID。`ctx` 中的 `request_id` 会随任务保存，处理任务时还原到处理函数的 `ctx` 中，见[日志](queue-monitoring.md#logging)。
 
@@ -138,7 +140,7 @@ var PublishAt = queue.Topic[uuid.UUID]("articles.publish")
 err := PublishAt.Publish(ctx, tx, item.ID, queue.At(item.PublishAt))
 ```
 
-离执行时间不超过 `max_defer`（默认 1 小时）的任务转发为 NSQ 的延迟消息；更晚的先存入 `queue_scheduled`，快到时间再转发，所以延迟多久都可以。NSQ 定期检查到期的延迟消息，新建的 topic 上第一批延迟消息可能晚几秒执行。
+离执行时间不超过 `max_defer`（默认 1 小时）的任务转发为 JetStream 的定时消息，到时间由 JetStream 投递，精确到秒；更晚的先存入 PostgreSQL 的 `queue_scheduled`，快到时间再转发，所以延迟多久都可以，还可以在[队列面板](queue-monitoring.md#panel)中查看。
 
 业务包自己的 topic 和处理它的业务动作声明在同一个文件中，见[队列任务](../concepts/actions.md#as-jobs)。
 
@@ -182,7 +184,7 @@ mailjob.Send.Handle(w, mailer.Send)
 <a id="running-workers"></a>
 ### 启动 worker
 
-worker 是进程的一个运行部分（见[多个运行部分](../concepts/dependencies.md#running-parts)）。它做两件事：把发布的任务转发到 NSQ，以及处理已注册 topic 的任务。
+worker 是进程的一个运行部分（见[多个运行部分](../concepts/dependencies.md#running-parts)）。它做两件事：把发布的任务转发到 JetStream，以及处理已注册 topic 的任务。
 
 一个复制槽同时只能被一个连接读取，所以部署多个 worker 实例时，只有一个在转发，其余的待命，每 5 秒尝试一次；转发的实例停止或失联后，其中一个接手，从已经确认的位置继续。任务的处理照常进行，所有实例都处理任务。在入口的 `bootstrap` 包中：
 
@@ -207,9 +209,9 @@ func Work(ctx context.Context, cfg Config) error {
 
 `newMailer` 见[装配发送器](../libraries/mail.md#assembling-mailer)。业务动作的任务入口也注册在这里，例如定时发布文章，见[队列任务](../concepts/actions.md#as-jobs)。在根命令中用 `command.Run("work", "处理队列任务", bootstrap.Work)` 注册它。
 
-发布的任务要等 worker 转发才会执行，所以部署时**至少运行一个 worker**。`w.Run` 连不上 nsqd 时返回错误；运行后一直到进程收到停止信号，然后停止接收任务，等处理中的任务写回结果才返回；数据库由 `run` 在所有部分都返回之后才关闭。
+发布的任务要等 worker 转发才会执行，所以部署时**至少运行一个 worker**。`w.Run` 连不上 NATS、建不了 stream 时返回错误；运行后一直到进程收到停止信号，然后停止接收任务，等处理中的任务写回结果才返回；数据库由 `run` 在所有部分都返回之后才关闭。
 
-worker 可以和 HTTP 服务、调度器[运行在同一个进程中](../general/commands.md#running-together)，任务量大了再单独部署，按任务量增减实例数；单独部署时的健康检查见[没有 HTTP 服务的进程](../http/lifecycle.md#probe-listener)。多个 worker 同时运行是安全的：转发时互不重复，同一个应用的 worker 使用同一个 channel，每个任务只交给其中一个。
+worker 可以和 HTTP 服务、调度器[运行在同一个进程中](../general/commands.md#running-together)，任务量大了再单独部署，按任务量增减实例数；单独部署时的健康检查见[没有 HTTP 服务的进程](../http/lifecycle.md#probe-listener)。多个 worker 同时运行是安全的：转发时互不重复，同一个应用的 worker 共用每个 topic 的 consumer，每个任务只交给其中一个。
 
 <a id="configuration"></a>
 ### 配置
@@ -223,25 +225,27 @@ type Config struct {
 }
 ```
 
-不写的项使用下面的默认值，生产环境至少要写 `nsqd` 和 `prefix`：
+不写的项使用下面的默认值，生产环境至少要写 `url` 和 `stream`：
 
 ```yaml
 queue:
-  nsqd: 127.0.0.1:4150  # nsqd 的 TCP 地址，转发任务时发布到这里
-  lookupd: []           # nsqlookupd 的 HTTP 地址；设置后从它们发现所有 nsqd 并消费
-  prefix: ""            # 加在每个 topic 前面，例如 "app."，多个应用或环境共用 nsqd 时区分
-  channel: worker       # 同一个应用的 worker 使用同一个 channel
-  concurrency: 10       # 每个 topic 同时处理的任务数
-  max_attempts: 10      # 最多执行的次数
-  lease: 30s            # NSQ 等待处理结果的时间，见下文
-  max_defer: 1h         # NSQ 延迟消息的最长延迟，要小于等于 nsqd 的 --max-req-timeout
-  replication_dsn: ""   # 转发任务的复制连接；数据库连接经过 PgBouncer 时设为直连 PostgreSQL 的地址
-  shutdown_timeout: 30s # 停止时等待处理中的任务的最长时间
+  url: nats://127.0.0.1:4222 # NATS 的地址，集群的多个地址用逗号分隔
+  credentials: ""            # NATS 凭据文件（.creds）的路径，服务器使用 JWT 认证时设置
+  stream: jobs               # 保存任务的 stream，多个应用或环境共用 NATS 时区分
+  replicas: 1                # stream 的副本数，NATS 集群中设为 3
+  concurrency: 10            # 每个 topic 同时处理的任务数
+  max_attempts: 10           # 最多执行的次数
+  lease: 30s                 # JetStream 等待处理结果的时间，见下文
+  max_defer: 1h              # 交给 JetStream 定时投递的最长延迟，更晚的存入 queue_scheduled
+  replication_dsn: ""        # 转发任务的复制连接；数据库连接经过 PgBouncer 时设为直连 PostgreSQL 的地址
+  shutdown_timeout: 30s      # 停止时等待处理中的任务的最长时间
 ```
 
 `concurrency` 是每个 worker 实例的上限，部署 3 个实例时同一个 topic 最多有 30 个任务同时执行。
 
-只有一个 nsqd 时写 `nsqd` 即可。部署多个 nsqd 时，每台应用服务器把任务发布到本机的 nsqd（`nsqd` 写本机地址），worker 通过 `lookupd` 找到全部 nsqd 并消费，一个 nsqd 宕机时，其他 nsqd 上的任务照常处理，见 [NSQ 的拓扑](https://nsq.io/deployment/topology_patterns.html)。
+topic `mail.send` 的任务发布到 subject `jobs.job.mail.send`，等待投递的定时消息在 `jobs.delay.*` 中，`jobs` 是 `stream` 的值。worker 启动时创建 stream；它已经存在时，检查保留策略和 subject 是否符合要求，`replicas` 不同时更新它，运维调整过的其他设置（例如容量上限）保持不变。
+
+NATS 用户名和密码可以写在地址中（`nats://user:password@host:4222`），使用 JWT 认证时设置 `credentials`。
 
 `concurrency` 和 `max_attempts` 是所有 topic 的默认值。个别 topic 需要不同的值时，在注册时用 `queue.Concurrency`、`queue.MaxAttempts` 覆盖，例如调用模型的任务 `article.Summarize.Handle(w, summarize.Job, queue.Concurrency(2))`。
 
@@ -254,7 +258,7 @@ queue:
 | --- | --- | --- | --- | --- | --- | --- |
 | 等待 | 1 秒 | 16 秒 | 81 秒 | 约 4 分钟 | 约 10 分钟 | 约 1.8 小时 |
 
-默认最多执行 10 次，从第一次失败到最后一次重试约 4.3 小时，足以跨过大多数第三方服务的故障。不超过 `max_defer` 的等待由 NSQ 完成，更长的等待存入 `queue_scheduled`。同一个 topic 的其他任务照常处理。
+默认最多执行 10 次，从第一次失败到最后一次重试约 4.3 小时，足以跨过大多数第三方服务的故障。不超过 `max_defer` 的等待由 JetStream 的定时消息完成，更长的等待存入 `queue_scheduled`。同一个 topic 的其他任务照常处理。
 
 是否重试由错误的[分类](../general/errors.md#error-kinds)决定：
 
@@ -304,10 +308,10 @@ if err != nil {
 <a id="leases-and-shutdown"></a>
 ## 任务的租约与停止
 
-NSQ 把任务交给 worker 后，等待处理结果的时间是 `lease`（默认 30 秒），处理期间 worker 每 10 秒自动延长一次。任务执行多久都可以，长任务也保持默认配置。`lease` 要小于等于 nsqd 的 `--max-msg-timeout`（默认 15 分钟）。
+JetStream 把任务交给 worker 后，等待处理结果的时间是 `lease`（默认 30 秒），处理期间 worker 每 10 秒自动延长一次。任务执行多久都可以，长任务也保持默认配置。worker 只在有空闲的并发名额时才领取任务，任务不会在 worker 中排队等待。
 
-- **worker 崩溃**：延长随之停止，`lease` 到期后 NSQ 把任务交给其他 worker。
-- **停止 worker**：收到停止信号后，worker 停止接收新任务，等待处理中的任务完成，最多等待 `shutdown_timeout`。这期间处理函数的 `ctx` 保持有效。超时仍未完成的任务立即放回 NSQ，处理函数的 `ctx` 以 `queue.ErrShuttingDown` 取消；放回的任务再次执行时计入一次执行。
+- **worker 崩溃**：延长随之停止，`lease` 到期后 JetStream 把任务交给其他 worker。
+- **停止 worker**：收到停止信号后，worker 停止接收新任务，等待处理中的任务完成，最多等待 `shutdown_timeout`。这期间处理函数的 `ctx` 保持有效。超时仍未完成的任务立即放回 JetStream，处理函数的 `ctx` 以 `queue.ErrShuttingDown` 取消；放回的任务再次执行时计入一次执行。
 
 处理函数应当把 `ctx` 传给数据库查询和外部调用，这样停止超时时能尽快退出。
 
@@ -327,7 +331,7 @@ if jobs := queuetest.Pending(t, db, mailjob.Send); len(jobs) != 1 {
 }
 ```
 
-需要端到端运行时，`queue/queuetest` 提供连接测试 nsqd 的配置：每次使用随机的 topic 前缀，并行的测试互不干扰，测试结束时删除这些 topic。测试 nsqd 的地址由环境变量 `NSQD_TEST_ADDR`（TCP）和 `NSQD_TEST_HTTP`（HTTP）给出：
+需要端到端运行时，`queue/queuetest` 提供连接测试 NATS 的配置：每次使用随机名字的 stream，并行的测试互不干扰，测试结束时删除它。测试 NATS 的地址由环境变量 `NATS_TEST_URL` 给出，例如 `nats://127.0.0.1:4222`：
 
 ```go
 w := queue.NewWorker(db, queuetest.Config(t), nil)
@@ -345,6 +349,10 @@ queuetest.Run(t, w) // 测试结束时停止
 **worker 启动时报错复制槽不存在或已失效**
 
 迁移没有执行，或者复制槽在恢复备份、主备切换后丢失了，见[重建复制槽](../installation/operations.md#queue-recovery)。
+
+**worker 启动时报错 stream 已经存在，设置不同**
+
+NATS 中已经有一个同名的 stream，保留策略或 subject 与队列需要的不同，通常是别的应用或手动创建的。把[配置](#configuration)中的 `stream` 换成另一个名字。
 
 **同一个任务执行了两次**
 

@@ -187,7 +187,7 @@ PgBouncer 只是让连接可以共用，数据库的处理能力仍然由数据�
 [队列](../background/queue.md)的任务和业务数据写在同一个数据库事务中，事务提交了任务才会发出，不会出现“数据保存了，任务却丢了”的情况。它的实现依赖 PostgreSQL 的两个机制：
 
 - **WAL**（预写日志）：数据库把每一次修改先写进 WAL，再写入数据文件。
-- **逻辑复制槽**：一个“读取 WAL 的书签”。worker 通过复制槽依次读出新的任务，转发给 NSQ；没有读走的部分，数据库会一直保留。
+- **逻辑复制槽**：一个“读取 WAL 的书签”。worker 通过复制槽依次读出新的任务，转发给 NATS JetStream；没有读走的部分，数据库会一直保留。
 
 所以数据库需要这些设置：
 
@@ -205,7 +205,7 @@ PgBouncer 只是让连接可以共用，数据库的处理能力仍然由数据�
 <a id="queue-monitoring"></a>
 ### 监控积压
 
-复制槽保留着 worker 还没读走的 WAL。worker 全部停止、或者 nsqd 不可用时，没读走的部分会一直增长，直到超过 `max_slot_wal_keep_size`，槽失效。
+复制槽保留着 worker 还没读走的 WAL。worker 全部停止、或者 NATS 不可用时，没读走的部分会一直增长，直到超过 `max_slot_wal_keep_size`，槽失效。
 
 日常可以用 `queue status` 命令查看，或者用 worker 报告的[指标](../general/telemetry.md#queue)设置告警：所有实例的 `queue.relay.active` 之和为 0（没有 worker 在转发），或者 `queue.relay.lag` 超过 `max_slot_wal_keep_size` 的一半。
 

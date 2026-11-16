@@ -47,7 +47,7 @@ func (w *Worker) dispatchLoop(ctx context.Context) {
 }
 
 // dispatch 在一个事务中锁住一批离执行不超过 MaxDefer/2 的任务，把它们写入 WAL 后删除，返回移交的条数。
-// 写入 WAL 与删除在同一个事务中，任务恰好交回一次；relay 收到后按剩余时间交给 NSQ 延迟投递。
+// 写入 WAL 与删除在同一个事务中，任务恰好交回一次；relay 收到后按剩余时间交给 JetStream 定时投递。
 func (w *Worker) dispatch(ctx context.Context) (int, error) {
 	var n int
 	err := w.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
@@ -77,7 +77,7 @@ func (w *Worker) dispatch(ctx context.Context) (int, error) {
 	return n, errors.Wrap(err, "queue: dispatch scheduled jobs")
 }
 
-// ScheduledJob 是 queue_scheduled 中等待的任务：执行时间离现在超过 Config.MaxDefer，快到时间时才交给 NSQ。
+// ScheduledJob 是 queue_scheduled 中等待的任务：执行时间离现在超过 Config.MaxDefer，快到时间时才交给 JetStream。
 type ScheduledJob struct {
 	ID      uuid.UUID
 	Topic   string

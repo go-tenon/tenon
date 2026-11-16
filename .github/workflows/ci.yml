@@ -122,14 +122,13 @@ jobs:
       REDIS_TEST_URL: redis://127.0.0.1:6379/0
       REDIS_CLUSTER_TEST_URL: redis://127.0.0.1:7000
       MEMCACHED_TEST_ADDR: 127.0.0.1:11211
-      NSQD_TEST_ADDR: 127.0.0.1:4150
-      NSQD_TEST_HTTP: http://127.0.0.1:4151
+      NATS_TEST_URL: nats://127.0.0.1:4222
       GOTENBERG_TEST_URL: http://127.0.0.1:3000
       QDRANT_TEST_ADDR: 127.0.0.1:6334
     steps:
       - uses: actions/checkout@v4
 
-      # 服务容器只接受镜像的默认参数，Redis 集群、nsqd 和 PostgreSQL 在这里启动。
+      # 服务容器只接受镜像的默认参数，Redis 集群、NATS 和 PostgreSQL 在这里启动。
       # 集群由三个主节点组成，节点向客户端报告 127.0.0.1，所以端口原样映射。
       - name: Start Redis cluster
         run: |
@@ -139,8 +138,13 @@ jobs:
           docker logs redis-cluster
           exit 1
 
-      - name: Start nsqd
-        run: docker run -d --name nsqd -p 4150:4150 -p 4151:4151 nsqio/nsq:v1.3.0 /nsqd --mem-queue-size=0
+      # 队列用 JetStream 保存任务，-js 开启它。
+      - name: Start NATS
+        run: |
+          docker run -d --name nats -p 127.0.0.1:4222:4222 nats:2.12-alpine nats-server -js -m 8222
+          for i in $(seq 1 30); do docker exec nats wget -qO- http://127.0.0.1:8222/healthz && exit 0; sleep 1; done
+          docker logs nats
+          exit 1
 
       # 队列用逻辑复制转发任务；每个测试数据库一个复制槽，并行测试需要很多个。
       # 包内的测试并行运行，每个测试有自己的库和连接池，连接数上限也要调高。

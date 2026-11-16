@@ -58,7 +58,7 @@ sched.Add("queue:prune-failed", "@daily", schedule.Cleanup(failed.Cleanup(30*24*
 <a id="logging"></a>
 ## 日志
 
-队列的日志带有 `component=queue` 字段，可以[单独设置级别](../general/logging.md#component-levels)。任务失败后等待重试记录为 `warn`，转入失败任务表记录为 `error`，日志中包含 topic、错误和下次重试的等待时间。NSQ 客户端的警告和错误也记在这里。
+队列的日志带有 `component=queue` 字段，可以[单独设置级别](../general/logging.md#component-levels)。任务失败后等待重试记录为 `warn`，转入失败任务表记录为 `error`，日志中包含 topic、错误和下次重试的等待时间。与 NATS 的连接断开、重连也记在这里。
 
 处理函数的 `ctx` 中带有 `message_id`（任务 ID）、`attempt`（第几次执行），以及发布时的 `request_id`。使用 `slog.InfoContext(ctx, ...)` 记录的日志会自动带上它们，可以把一个请求和它产生的任务串起来。
 
@@ -91,14 +91,14 @@ w := queue.NewWorker(a.db, a.cfg.Queue, nil,
 | `JobSucceeded` | 处理成功并已确认 |
 | `JobRetrying` | 处理失败，`RetryAt` 是下一次执行时间 |
 | `JobFailed` | 转入失败任务表 |
-| `JobReleased` | 停止等待超时，放回 NSQ |
+| `JobReleased` | 停止等待超时，放回 JetStream |
 
 除 `JobStarted` 外，事件都在结果写回之后报告，`Started` 是交给处理函数的时间，`Duration` 是处理耗时，`Err` 是失败原因。`e.Job.AvailableAt` 是任务本次可以执行的时间，给不出时为零值。Observer 在处理任务的 goroutine 中同步调用，耗时会占用并发名额：上面的写库很快没有问题，更重的工作请缓冲后批量处理。
 
 <a id="stats-command"></a>
 ## 队列状态
 
-每个 topic 积压、处理中、延迟中的任务数由 nsqd 统计，在 [nsqadmin](https://nsq.io/components/nsqadmin.html) 中查看，也可以在那里暂停一个 topic 的消费；接入监控系统用 nsqd 的 [statsd 输出](https://nsq.io/components/nsqd.html#statsd--graphite-integration)。还没转发的任务在复制槽中，积压的字节数用 `pg_replication_slots` 查询，见[部署](../installation/operations.md#queue)；延迟超过 `max_defer` 的任务在 `queue_scheduled` 中。
+每个 topic 积压、处理中、重新投递的任务数由 NATS 统计。每个 topic 是 stream 中的一个 consumer，名字是 topic 把 `.` 换成 `_`，用 [nats 命令行](https://docs.nats.io/using-nats/nats-tools/nats_cli)查看：`nats consumer report jobs` 列出 stream `jobs` 中每个 topic 的积压（Unprocessed）和处理中（Ack Pending）的任务，`nats stream info jobs` 显示 stream 占用的磁盘。`nats consumer pause jobs mail_send 1h` 暂停一个 topic 的消费。接入监控系统用 [prometheus-nats-exporter](https://github.com/nats-io/prometheus-nats-exporter) 采集 NATS 的监控端口。还没转发的任务在复制槽中，积压的字节数用 `pg_replication_slots` 查询，见[部署](../installation/operations.md#queue)；延迟超过 `max_defer` 的任务在 `queue_scheduled` 中。
 
 `queuecmd.New` 返回 `queue` 命令，查看数据库一侧的状态和失败任务。它和其他需要数据库的命令一样在 [bootstrap.Commands](../concepts/actions.md#as-commands) 中声明：
 
@@ -143,7 +143,7 @@ ID                                    TOPIC      ATTEMPTS  FAILED AT            
 - **失败任务**：按 topic 筛选、翻页；详情页显示格式化的 payload、元数据、完整的错误和堆栈；单条重试或删除，按 topic 全部重试或全部删除；
 - **延迟任务**：`queue_scheduled` 中等待的任务，按执行时间排列。
 
-吞吐、耗时等指标交给 Grafana（见[可观测性](../general/telemetry.md#queue)），各 topic 的积压和消费者交给 nsqadmin，面板只在页头放它们的链接；重建复制槽只能用 `queue slot recreate`。面板不新增任何表。
+吞吐、耗时等指标交给 Grafana（见[可观测性](../general/telemetry.md#queue)），各 topic 的积压交给 NATS 的监控，面板只在页头放它们的链接；重建复制槽只能用 `queue slot recreate`。面板不新增任何表。
 
 面板是框架自带的[服务端渲染页面](../web/views.md)，认证由应用决定，通常是 [HTTP Basic 认证](../http/optional-middleware.md#basic-auth)。挂在 HTTP 进程的路由上：
 
@@ -153,7 +153,7 @@ router.Handle(ui.AssetsPath+"*", ui.Assets())
 
 ops := router.With(httpx.BasicAuth("ops", a.verifyOps))
 queueweb.Register(ops, "/ops/queue", a.db, queueweb.Options{
-    Links: map[string]string{"Grafana": a.cfg.GrafanaURL, "nsqadmin": a.cfg.NSQAdminURL},
+    Links: map[string]string{"Grafana": a.cfg.GrafanaURL, "NATS": a.cfg.NATSDashboardURL},
 })
 ```
 
@@ -176,5 +176,5 @@ queueweb.Register(ops, "/ops/queue", a.db, queueweb.Options{
 
 **`queue status` 显示积压一直在增长**
 
-没有 worker 在转发，或者 nsqd 不可用。检查 worker 的日志和指标，见[运维](../installation/operations.md#queue-monitoring)。
+没有 worker 在转发，或者 NATS 不可用。检查 worker 的日志和指标，见[运维](../installation/operations.md#queue-monitoring)。
 

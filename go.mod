@@ -43,8 +43,8 @@ require (
 	github.com/klippa-app/go-pdfium v1.21.4
 	github.com/lmittmann/tint v1.2.1
 	github.com/modelcontextprotocol/go-sdk v1.8.0
+	github.com/nats-io/nats.go v1.55.0
 	github.com/nicksnyder/go-i18n/v2 v2.7.0
-	github.com/nsqio/go-nsq v1.1.0
 	github.com/openai/openai-go v1.12.0
 	github.com/pressly/goose/v3 v3.30.1
 	github.com/prometheus/client_golang v1.25.0
@@ -129,7 +129,6 @@ require (
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/go-webauthn/x v0.3.1 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
-	github.com/golang/snappy v1.0.0 // indirect
 	github.com/google/go-tpm v0.9.8 // indirect
 	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/google/pprof v0.0.0-20261016150608-1facf8f91b50 // indirect
@@ -149,6 +148,8 @@ require (
 	github.com/mfridman/interpolate v0.2.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/natefinch/atomic v1.0.1 // indirect
+	github.com/nats-io/nkeys v0.4.16 // indirect
+	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/pandatix/go-abnf v0.5.5 // indirect
 	github.com/panjf2000/ants/v2 v2.10.0 // indirect
 	github.com/philhofer/fwd v1.2.1 // indirect

@@ -9,7 +9,7 @@ import (
 	"github.com/uptrace/bun"
 )
 
-// Status 是队列在数据库一侧的状态：转发任务的复制槽和 queue_scheduled。NSQ 中积压的任务由 nsqd 统计。
+// Status 是队列在数据库一侧的状态：转发任务的复制槽和 queue_scheduled。JetStream 中积压的任务由 NATS 统计。
 type Status struct {
 	Slot string // 复制槽的名字，见 SlotName
 	// Exists 报告复制槽是否存在。不存在时没有执行迁移，或者槽在恢复备份、主备切换后丢失，见 RecreateSlot。
