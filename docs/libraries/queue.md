@@ -10,6 +10,8 @@ Tenon 的队列有两个特点，在开始之前需要了解。第一，任务�
 
 第二，每个任务**至少执行一次**：worker 崩溃或停止超时时，正在处理的任务会交给其他 worker 重新执行，处理函数需要能安全地重复执行。任务之间不保证执行顺序。
 
+阅读前需要了解：[数据库事务](../database/quick-start.md#transactions)；[依赖装配](../concepts/dependencies.md)。失败任务的处理、队列的监控和面板见[队列：失败任务与监控](queue-monitoring.md)。
+
 - [示例用法](#example-usage)
 - [准备](#preparing)
 - [发布任务](#publishing-jobs)
@@ -19,13 +21,9 @@ Tenon 的队列有两个特点，在开始之前需要了解。第一，任务�
     - [启动 worker](#running-workers)
     - [配置](#configuration)
 - [失败与重试](#failures-and-retries)
-    - [失败任务](#failed-jobs)
 - [任务的租约与停止](#leases-and-shutdown)
-- [日志](#logging)
-- [任务事件](#job-events)
-- [队列状态](#stats-command)
-- [队列面板](#panel)
 - [测试](#testing)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="example-usage"></a>
@@ -66,16 +64,7 @@ nsqd --data-path=/var/lib/nsqd --mem-queue-size=0
 
 即使这样，nsqd 只把消息保存在本机，没有副本：nsqd 所在的机器损坏时，其中还没处理的任务会丢失；进程崩溃时，正在处理和等待重试的任务也会丢失，因为它们只在内存中。数据盘用可靠的存储，处理函数也要能安全地重复执行，丢失时可以从业务数据中找出没有完成的工作重新发布。
 
-PostgreSQL 需要 17 以上的版本，并开启逻辑复制：
-
-```ini
-# postgresql.conf，修改 wal_level 需要重启
-wal_level = logical
-max_slot_wal_keep_size = 10GB   # 复制槽最多保留的 WAL，见下文
-wal_sender_timeout = 10s        # 转发的 worker 失联多久后由别的 worker 接手
-```
-
-应用的数据库用户需要 `REPLICATION` 属性（`ALTER ROLE app REPLICATION`）。云数据库在参数组中开启逻辑复制，例如 RDS 的 `rds.logical_replication`。
+PostgreSQL 需要 17 以上的版本，开启逻辑复制（`wal_level = logical`，修改后需要重启），应用的数据库用户需要 `REPLICATION` 属性（`ALTER ROLE app REPLICATION`）。其他设置和它们的作用见[运维](../installation/operations.md#queue)。云数据库在参数组中开启逻辑复制，例如 RDS 的 `rds.logical_replication`。本地开发时，[入门教程第 2 章](../tutorial/02-infrastructure.md#infrastructure)的 `compose.yaml` 已经设置好了。
 
 队列的迁移创建两张表和一个逻辑复制槽：`queue_scheduled` 保存执行时间较晚的任务，`queue_failed_jobs` 保存失败的任务；复制槽记录 worker 转发到了哪里。使用前先[发布](../database/migrations.md#publishing-framework-migrations)这些迁移：
 
@@ -88,7 +77,7 @@ migrationCmd.AddCommand(migratecmd.Publish(
 部署时先执行迁移，再启动发布任务的进程：复制槽建立之后发布的任务才会被转发。
 
 > [!WARNING]
-> 复制槽保留 worker 还没读到的 WAL。所有 worker 都停止时，WAL 会一直累积；超过 `max_slot_wal_keep_size` 后复制槽失效，其中的任务丢失，worker 拒绝启动。不设置它则会一直累积到磁盘写满。请监控复制槽的积压并设置告警，见[部署](../installation/operations.md#queue)。
+> 所有 worker 都停止时，复制槽中没有转发的任务会一直累积，超过上限后任务丢失。请监控积压并设置告警，见[运维](../installation/operations.md#queue-monitoring)。
 
 <a id="publishing-jobs"></a>
 ## 发布任务
@@ -136,7 +125,7 @@ func (a *Publish) Handle(ctx context.Context, subject identity.Subject, id uuid.
 
 事务提交时 PostgreSQL 通知 worker，任务随即被转发到 NSQ。`PublishAll` 一次发布多个同类任务，批量写入。
 
-每个任务有一个 UUIDv7 作为 ID。`ctx` 中的 `request_id` 会随任务保存，处理任务时还原到处理函数的 `ctx` 中，见[日志](#logging)。
+每个任务有一个 UUIDv7 作为 ID。`ctx` 中的 `request_id` 会随任务保存，处理任务时还原到处理函数的 `ctx` 中，见[日志](queue-monitoring.md#logging)。
 
 <a id="delayed-jobs"></a>
 ### 延迟执行
@@ -216,11 +205,7 @@ func Work(ctx context.Context, cfg Config) error {
 }
 ```
 
-`newMailer` 见[装配发送器](mail.md#assembling-mailer)。业务动作的任务入口也注册在这里，例如定时发布文章，见[队列任务](../concepts/actions.md#as-jobs)。在根命令中注册它：
-
-```go
-root.AddCommand(command.Run("work", "处理队列任务", bootstrap.Work))
-```
+`newMailer` 见[装配发送器](mail.md#assembling-mailer)。业务动作的任务入口也注册在这里，例如定时发布文章，见[队列任务](../concepts/actions.md#as-jobs)。在根命令中用 `command.Run("work", "处理队列任务", bootstrap.Work)` 注册它。
 
 发布的任务要等 worker 转发才会执行，所以部署时**至少运行一个 worker**。`w.Run` 连不上 nsqd 时返回错误；运行后一直到进程收到停止信号，然后停止接收任务，等处理中的任务写回结果才返回；数据库由 `run` 在所有部分都返回之后才关闭。
 
@@ -258,13 +243,7 @@ queue:
 
 只有一个 nsqd 时写 `nsqd` 即可。部署多个 nsqd 时，每台应用服务器把任务发布到本机的 nsqd（`nsqd` 写本机地址），worker 通过 `lookupd` 找到全部 nsqd 并消费，一个 nsqd 宕机时，其他 nsqd 上的任务照常处理，见 [NSQ 的拓扑](https://nsq.io/deployment/topology_patterns.html)。
 
-`concurrency` 和 `max_attempts` 是所有 topic 的默认值。个别 topic 需要不同的值时，在注册时覆盖：
-
-```go
-article.Summarize.Handle(w, summarize.Job, queue.Concurrency(2)) // 调用模型，限制并发
-```
-
-[Webhook](../features/webhooks.md) 的投递任务就用 `queue.MaxAttempts` 把重试延长到约 2 天，只作用于它自己的 topic。
+`concurrency` 和 `max_attempts` 是所有 topic 的默认值。个别 topic 需要不同的值时，在注册时用 `queue.Concurrency`、`queue.MaxAttempts` 覆盖，例如调用模型的任务 `article.Summarize.Handle(w, summarize.Job, queue.Concurrency(2))`。
 
 <a id="failures-and-retries"></a>
 ## 失败与重试
@@ -309,47 +288,7 @@ if err != nil {
 }
 ```
 
-从失败任务表[重新发布](#failed-jobs)的任务从第 1 次重新计数。
-
-<a id="failed-jobs"></a>
-### 失败任务
-
-失败任务保存在 `queue_failed_jobs` 表中，`queue.FailedJobs` 用来查看和处理它们：
-
-```go
-failed := queue.NewFailedJobs(db)
-
-jobs, err := failed.List(ctx, queue.FailedQuery{Topic: "mail.send", Limit: 50}) // 从新到旧
-job, err := failed.Get(ctx, id)      // job.Error 是最后一次的错误信息，包括堆栈
-err = failed.Delete(ctx, id)         // 已经弃用的任务直接删除
-```
-
-修复问题之后，用 `Retry` 重新发布任务，执行次数从 0 开始计算：
-
-```go
-err := failed.Retry(ctx, id) // 不存在时返回 queue.ErrFailedJobNotFound
-```
-
-同一个原因导致的失败往往有很多条，例如邮件服务宕机了一个小时。`RetryAll` 和 `DeleteAll` 按 topic 批量处理，每次最多 `limit` 条，返回处理的条数；topic 为空时包括全部 topic：
-
-```go
-// 后台页面上的「全部重试」：只处理点击之前失败的任务
-before := time.Now()
-for {
-    n, err := failed.RetryAll(ctx, "mail.send", before, 500)
-    if err != nil || n < 500 {
-        return err
-    }
-}
-```
-
-`before` 是必填的：重试后马上又失败的任务失败时间在它之后，每轮只放回一次。`DeleteAll(ctx, topic, before, limit)` 的用法相同。
-
-失败任务一直保留。`Cleanup` 返回删除保留期以前失败的任务的清理函数，交给[定时任务](scheduling.md#framework-cleanups)每天执行一次：
-
-```go
-sched.Add("queue:prune-failed", "@daily", schedule.Cleanup(failed.Cleanup(30*24*time.Hour), 1000))
-```
+从失败任务表[重新发布](queue-monitoring.md#failed-jobs)的任务从第 1 次重新计数。
 
 <a id="leases-and-shutdown"></a>
 ## 任务的租约与停止
@@ -360,114 +299,6 @@ NSQ 把任务交给 worker 后，等待处理结果的时间是 `lease`（默认
 - **停止 worker**：收到停止信号后，worker 停止接收新任务，等待处理中的任务完成，最多等待 `shutdown_timeout`。这期间处理函数的 `ctx` 保持有效。超时仍未完成的任务立即放回 NSQ，处理函数的 `ctx` 以 `queue.ErrShuttingDown` 取消；放回的任务再次执行时计入一次执行。
 
 处理函数应当把 `ctx` 传给数据库查询和外部调用，这样停止超时时能尽快退出。
-
-<a id="logging"></a>
-## 日志
-
-队列的日志带有 `component=queue` 字段，可以[单独设置级别](../general/logging.md#component-levels)。任务失败后等待重试记录为 `warn`，转入失败任务表记录为 `error`，日志中包含 topic、错误和下次重试的等待时间。NSQ 客户端的警告和错误也记在这里。
-
-处理函数的 `ctx` 中带有 `message_id`（任务 ID）、`attempt`（第几次执行），以及发布时的 `request_id`。使用 `slog.InfoContext(ctx, ...)` 记录的日志会自动带上它们，可以把一个请求和它产生的任务串起来。
-
-<a id="job-events"></a>
-## 任务事件
-
-`queue.WithObserver` 让 worker 在每次状态变化时通知你。需要每个任务的执行历史时，把事件写进自己的表：成功的任务只体现在事件中：
-
-```go
-w := queue.NewWorker(a.db, a.cfg.Queue, nil,
-    queue.WithObserver(func(ctx context.Context, e queue.Event) {
-        if e.Kind == queue.JobStarted {
-            return
-        }
-        _, err := a.db.NewInsert().Model(&JobRun{
-            JobID: e.Job.ID, Topic: e.Job.Topic, Attempt: e.Job.Attempt,
-            Status: e.Kind.String(), Duration: e.Duration, Error: errorText(e.Err),
-        }).Exec(ctx)
-        if err != nil {
-            slog.ErrorContext(ctx, "record job run failed", "error", err)
-        }
-    }))
-```
-
-这里把结束的任务写进应用自己的 `job_runs` 表，后台页面查询这张表就能看到执行历史；保留多久由应用决定，用[定时任务](scheduling.md)清理。
-
-| 事件 | 时机 |
-| --- | --- |
-| `JobStarted` | 任务交给处理函数 |
-| `JobSucceeded` | 处理成功并已确认 |
-| `JobRetrying` | 处理失败，`RetryAt` 是下一次执行时间 |
-| `JobFailed` | 转入失败任务表 |
-| `JobReleased` | 停止等待超时，放回 NSQ |
-
-除 `JobStarted` 外，事件都在结果写回之后报告，`Started` 是交给处理函数的时间，`Duration` 是处理耗时，`Err` 是失败原因。`e.Job.AvailableAt` 是任务本次可以执行的时间，给不出时为零值。Observer 在处理任务的 goroutine 中同步调用，耗时会占用并发名额：上面的写库很快没有问题，更重的工作请缓冲后批量处理。
-
-<a id="stats-command"></a>
-## 队列状态
-
-每个 topic 积压、处理中、延迟中的任务数由 nsqd 统计，在 [nsqadmin](https://nsq.io/components/nsqadmin.html) 中查看，也可以在那里暂停一个 topic 的消费；接入监控系统用 nsqd 的 [statsd 输出](https://nsq.io/components/nsqd.html#statsd--graphite-integration)。还没转发的任务在复制槽中，积压的字节数用 `pg_replication_slots` 查询，见[部署](../installation/operations.md#queue)；延迟超过 `max_defer` 的任务在 `queue_scheduled` 中。
-
-`queuecmd.New` 返回 `queue` 命令，查看数据库一侧的状态和失败任务。它和其他需要数据库的命令一样在 [bootstrap.Commands](../concepts/actions.md#as-commands) 中声明：
-
-```go
-queuecmd.New(a.db),
-```
-
-`queue status` 显示复制槽是否有 worker 在转发、积压了多少 WAL，以及 `queue_scheduled` 中等待的任务：
-
-```bash
-./bin/api queue status
-```
-
-```text
-slot            mygoravel_queue_3f2a9c1e5b7d4e60
-state           relaying (pid 48213)
-wal status      reserved
-lag             12.4 KiB
-scheduled       3
-next scheduled  2026-11-14 09:00:00
-```
-
-`state` 为 `idle` 时没有 worker 在转发；为 `missing` 或 `lost` 时 worker 拒绝启动，用 `queue slot recreate` 重建复制槽，见[重建复制槽](../installation/operations.md#queue-recovery)。
-
-`queue failed` 从新到旧列出失败任务，错误信息只显示第一行，完整的错误和堆栈用 `FailedJobs.Get` 查看：
-
-```bash
-./bin/api queue failed --topic mail.send --limit 10
-```
-
-```text
-ID                                    TOPIC      ATTEMPTS  FAILED AT            ERROR
-0193e7b1-2c4f-7d8e-9a1b-5f6c7d8e9f01  mail.send  5         2026-11-12 09:41:07  send mail: dial tcp 10.0.0.12:587: connection refused
-```
-
-<a id="panel"></a>
-## 队列面板
-
-`queue/queueweb` 把同样的内容做成网页，只读写队列已有的数据：
-
-- **概览**：复制槽是否有 worker 在转发、WAL 状态和积压、`queue_scheduled` 中的任务数和最早的执行时间、各 topic 的失败任务数，每 5 秒刷新一次；
-- **失败任务**：按 topic 筛选、翻页；详情页显示格式化的 payload、元数据、完整的错误和堆栈；单条重试或删除，按 topic 全部重试或全部删除；
-- **延迟任务**：`queue_scheduled` 中等待的任务，按执行时间排列。
-
-吞吐、耗时等指标交给 Grafana（见[可观测性](../general/telemetry.md#queue)），各 topic 的积压和消费者交给 nsqadmin，面板只在页头放它们的链接；重建复制槽只能用 `queue slot recreate`。面板不新增任何表。
-
-面板是框架自带的[服务端渲染页面](../responses/views.md)，认证由应用决定，通常是 [HTTP Basic 认证](../http/optional-middleware.md#basic-auth)。挂在 HTTP 进程的路由上：
-
-```go
-router.Handle(web.AssetsPath+"*", web.Assets())
-router.Handle(ui.AssetsPath+"*", ui.Assets())
-
-ops := router.With(httpx.BasicAuth("ops", a.verifyOps))
-queueweb.Register(ops, "/ops/queue", a.db, queueweb.Options{
-    Links: map[string]string{"Grafana": a.cfg.GrafanaURL, "nsqadmin": a.cfg.NSQAdminURL},
-})
-```
-
-`a.verifyOps` 校验运维账号，见 [HTTP Basic 认证](../http/optional-middleware.md#basic-auth)。`Options.Theme` 可以设置面板的[主题](../responses/components.md#themes)。
-
-- 全部重试只处理点击之前失败的任务：重试后马上又失败的任务在这一轮里只放回一次。它分批处理，每批 1000 条，直到处理完。
-- 每次重试和删除记一条 Info 日志，带上操作者（Basic 认证的用户名）、topic 和条数。
-- 浏览器会给跨站请求自动带上 Basic 凭据，所以面板拒绝跨站的 `POST`（`http.CrossOriginProtection`）。
 
 <a id="testing"></a>
 ## 测试
@@ -492,6 +323,25 @@ w := queue.NewWorker(db, queuetest.Config(t), nil)
 article.PublishJob.Handle(w, publish.Job)
 queuetest.Run(t, w) // 测试结束时停止
 ```
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**发布了任务，但处理函数一直没有执行**
+
+检查三点：worker 是否在运行（`work` 或 `start` 命令）；处理函数是否为这个 topic 注册了；发布任务的事务是否提交了，回滚时任务一起取消。
+
+**worker 启动时报错复制槽不存在或已失效**
+
+迁移没有执行，或者复制槽在恢复备份、主备切换后丢失了，见[重建复制槽](../installation/operations.md#queue-recovery)。
+
+**同一个任务执行了两次**
+
+任务至少执行一次：worker 崩溃或停止超时时，任务会在其他 worker 上重新执行。处理函数要能安全地重复执行，例如先检查工作是否已经完成。
+
+**任务失败后没有重试，直接进了失败任务表**
+
+处理函数返回了用 `queue.Permanent` 包装的错误，或者重试次数已经用完，见[失败与重试](#failures-and-retries)。
 
 <a id="api-reference"></a>
 ## API 参考
@@ -562,7 +412,7 @@ func WithTelemetry(mp metric.MeterProvider, tp trace.TracerProvider) WorkerOptio
 func WithObserver(o Observer) WorkerOption
 ```
 
-`Run` 转发发布的任务并处理已注册的 topic，直到 `ctx` 被取消。`WithTelemetry` 见[可观测性](../general/telemetry.md#queue)；`WithObserver` 接收[任务事件](#job-events)。
+`Run` 转发发布的任务并处理已注册的 topic，直到 `ctx` 被取消。`WithTelemetry` 见[可观测性](../general/telemetry.md#queue)；`WithObserver` 接收[任务事件](queue-monitoring.md#job-events)。
 
 ### 处理函数的返回值
 
@@ -588,7 +438,7 @@ func (f *FailedJobs) Counts(ctx context.Context) ([]TopicCount, error)
 func (f *FailedJobs) Cleanup(keep time.Duration) func(ctx context.Context, limit int) (int, error)
 ```
 
-查看、重试和删除失败任务，见[失败任务](#failed-jobs)。
+查看、重试和删除失败任务，见[失败任务](queue-monitoring.md#failed-jobs)。
 
 ### 其他
 

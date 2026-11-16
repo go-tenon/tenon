@@ -11,6 +11,8 @@
 
 服务是无状态的：每个请求独立处理，可以落在任意实例上。相应地，通信总是由客户端发起，工具应当在一次调用中完成。
 
+阅读前需要了解：[业务动作](../concepts/actions.md)（工具就是动作的一个入口）；[认证](../security/authentication.md)；[API 令牌](../security/api-tokens.md)。claude.ai 这类远程连接器需要 [OAuth 授权服务器](../security/oauth-server.md)。
+
 - [示例用法](#example-usage)
 - [编写工具](#writing-tools)
     - [参数与返回值](#arguments-and-results)
@@ -23,6 +25,7 @@
 - [本地 stdio](#stdio)
 - [测试](#testing)
 - [其他功能](#other-features)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="example-usage"></a>
@@ -283,6 +286,25 @@ func TestPublishTool(t *testing.T) {
 ## 其他功能
 
 MCP 还有 resource（只读的数据，例如编辑规范）和 prompt（预先写好的提示词模板）。`srv.SDK()` 返回底层的 `*mcp.Server`，用 SDK 的 API 直接添加它们，见 [SDK 的文档](https://pkg.go.dev/github.com/modelcontextprotocol/go-sdk/mcp)。用 SDK 直接添加的工具绕过 `mcpx` 的权限检查和参数校验，工具请用 `mcpx.Register` 登记。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**AI 客户端连接时得到 401**
+
+请求没有带有效的 token。Claude Code、Cursor 这类客户端可以填写请求头，用[个人访问令牌](../security/api-tokens.md#personal-access-tokens)；claude.ai 的远程连接器走 OAuth，见 [OAuth 授权服务器](../security/oauth-server.md)。
+
+**工具列表中少了某个工具**
+
+主体没有这个工具需要的权限，没有权限的工具既看不到也调不了。检查令牌的 `Scopes` 和用户的权限。
+
+**启动时 panic，提示工具名不合法或缺少说明**
+
+工具名重复、不合法，或者没有写说明时，`Register` 直接 panic。说明是给模型看的，决定了它什么时候调用这个工具。
+
+**模型收到 `internal error (request …)`**
+
+工具中发生了非业务错误或 panic。按请求 ID 在日志中找到完整的错误；可预期的失败用业务错误返回，模型才能据此调整做法。
 
 <a id="api-reference"></a>
 ## API 参考

@@ -66,13 +66,15 @@ Tenon 是一个用 Go 构建 HTTP API 的框架。用户登录后使用的界面
 - [依赖装配](concepts/dependencies.md)：在入口创建数据库连接等依赖，再传给业务代码
 - [业务动作](concepts/actions.md)：一个用例写成一个类型，HTTP、命令行和队列都能调用它
 - [客户端协议](http/protocol.md)：前端和 App 调用接口时遵守的约定
-- [客户端代码](responses/clients.md)：由接口生成 TypeScript 和 Go 的客户端
+- [客户端代码](responses/clients.md)：由接口生成 TypeScript 客户端
+- [在 React 中调用接口](responses/client-react.md)：TanStack Query、校验规则、权限、枚举与分页
 - [开发工具](installation/tooling.md)：`tenon dev`、`tenon generate`、`tenon build`
 
 ## 第四阶段：前端
 
 - [单页应用](responses/spa.md)：把 React 前端打包进 Go 程序
-- [应用骨架](responses/app-shell.md)：登录检查、菜单、多标签、表单和列表
+- [应用骨架](responses/app-shell.md)：登录检查、权限、菜单与布局
+- [应用骨架：页面中的常用功能](responses/app-shell-features.md)：多标签、租户、表单、列表与通知
 - [运营后台](responses/admin.md)：用 antd 搭建后台
 - [shadcn registry 与控制台](responses/registry.md)：用 shadcn 搭建界面
 - [资源](responses/resources.md)：在 Go 中声明增删改查的页面，两套界面直接渲染
@@ -94,12 +96,14 @@ Tenon 是一个用 Go 构建 HTTP API 的框架。用户登录后使用的界面
 - [原子锁](libraries/locks.md)：同一时间只让一个进程做某件事
 - [限流](libraries/rate-limiting.md)：限制一段时间内的请求次数
 - [队列](libraries/queue.md)：把耗时的工作放到后台执行
+- [队列：失败任务与监控](libraries/queue-monitoring.md)：失败任务的重试、队列的状态与面板
 - [定时任务](libraries/scheduling.md)：每天、每小时执行的工作
 - [广播](libraries/broadcasting.md)：在多个进程之间传递消息
 - [实时频道](libraries/realtime.md)：把消息推给在线的用户
 - [文件存储](libraries/filesystem.md)：本地磁盘和对象存储
 - [文件上传](libraries/file-uploads.md)：上传接口和常见用法
-- [邮件](libraries/mail.md)、[短信](libraries/sms.md)、[生成 PDF](libraries/pdf.md)
+- [客户端直传](libraries/direct-uploads.md)：大文件直接上传到 S3
+- [邮件](libraries/mail.md)、[邮件服务商](libraries/mail-providers.md)、[短信](libraries/sms.md)、[生成 PDF](libraries/pdf.md)
 - [出站请求](libraries/outbound.md)：安全地调用其他服务的接口
 
 应用中常见的功能：
@@ -111,7 +115,7 @@ Tenon 是一个用 Go 构建 HTTP API 的框架。用户登录后使用的界面
 - [操作日志](features/activity.md)：记录谁在什么时候做了什么
 - [后台操作](features/operations.md)：导入、批量处理这类耗时的操作，带进度
 - [导入与导出](features/import-export.md)：Excel 和 CSV
-- [后台导入与导出](features/background-import-export.md)：大文件在后台处理
+- [后台导入](features/background-imports.md)、[后台导出](features/background-exports.md)：大文件在后台处理
 - [Webhook](features/webhooks.md)：把事件通知给其他系统
 - [全文搜索](features/search.md)：按关键词搜索
 
@@ -121,14 +125,18 @@ Tenon 是一个用 Go 构建 HTTP API 的框架。用户登录后使用的界面
 
 - [认证](security/authentication.md)：怎样知道“这个请求是谁发的”
 - [登录与注册](security/login.md)：邮箱和密码、验证码、找回密码
+- [登录的安全功能](security/login-security.md)：二次验证、Passkey、人机验证
 - [API 令牌](security/api-tokens.md)：给程序和第三方使用的令牌
+- [JWT 与单页应用的登录](security/jwt.md)：浏览器中的登录方式
 - [授权](security/authorization.md)：角色与权限，“这个人能不能做这件事”
 - [哈希](security/hashing.md)：安全地保存密码
 - [加密与签名链接](security/encryption.md)：保护敏感数据和链接
 - [单账号后台](security/admin-example.md)：一个完整的例子
 - [第三方登录](security/social-login.md)：用微信、GitHub 等账号登录
+- [在 App 中使用第三方登录](security/social-login-apps.md)：App 登录与 Sign in with Apple
 - [企业单点登录](security/enterprise-sso.md)：用企业自己的账号系统登录
 - [OAuth 授权服务器](security/oauth-server.md)：让第三方应用代表用户调用你的接口
+- [认证进阶](security/authentication-advanced.md)：多套账号、多租户与代为登录
 - [多租户](security/tenancy.md)：一套系统同时服务多个客户
 - [运营后台与多租户](security/saas-example.md)：一个完整的例子
 
@@ -136,6 +144,7 @@ Tenon 是一个用 Go 构建 HTTP API 的框架。用户登录后使用的界面
 
 - AI：
     - [AI 助手](ai/chat.md)
+    - [AI 助手进阶](ai/chat-advanced.md)
     - [MCP 服务](ai/mcp.md)
     - [文档转换与切分](ai/documents.md)
     - [向量检索](ai/vector.md)
@@ -143,6 +152,7 @@ Tenon 是一个用 Go 构建 HTTP API 的框架。用户登录后使用的界面
 - [日志进阶](general/logging-advanced.md)：处理链、多个输出、脱敏与测试日志
 - [前端观测](general/frontend-observability.md)：浏览器中的错误、页面和链路
 - [数据库进阶](database/advanced.md)：慢查询、软删除、隔离级别、只读副本、多个数据库
+- [Go 客户端](responses/go-client.md)：其他 Go 服务和工具调用你的 API
 - [部署](installation/deployment.md)：构建、配置和上线
 - [运维](installation/operations.md)：不停机升级、维护窗口、备份与恢复
 

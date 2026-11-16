@@ -7,6 +7,8 @@
 
 加密使用 AES-256-GCM，签名使用 HMAC-SHA256，两者的子密钥都从应用密钥用 HKDF 派生，互不相同。
 
+阅读前需要了解：[配置](../general/configuration.md)；[依赖装配](../concepts/dependencies.md)。密码不要加密，用[哈希](hashing.md)。
+
 - [示例用法](#example-usage)
 - [配置](#configuration)
 - [加密数据](#encrypting-data)
@@ -15,6 +17,7 @@
     - [永不过期的链接](#permanent-urls)
 - [轮换密钥](#rotating-keys)
 - [测试](#testing)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="example-usage"></a>
@@ -181,7 +184,7 @@ crypt:
 
 之后新加密的数据和新发出的链接都使用新密钥；`Decrypt` 和 `VerifyURL` 依次尝试 `key` 和 `previous_keys`，旧数据和旧链接仍然有效。
 
-[API 令牌的 JWT 模式](api-tokens.md#jwt)用 `HMACKeys` 时，签名密钥也由应用密钥派生，轮换后旧密钥签发的 access token 在过期前仍然有效。其他包需要自己的密钥时调用 `Derive(purpose)`：它返回从 `key` 和 `previous_keys` 派生的子密钥，第一个用于签名，全部用于校验。
+[API 令牌的 JWT 模式](jwt.md#jwt)用 `HMACKeys` 时，签名密钥也由应用密钥派生，轮换后旧密钥签发的 access token 在过期前仍然有效。其他包需要自己的密钥时调用 `Derive(purpose)`：它返回从 `key` 和 `previous_keys` 派生的子密钥，第一个用于签名，全部用于校验。
 
 旧密钥要一直保留，直到用它加密的数据都换成了新密钥。框架不提供重新加密的命令：需要时写一个一次性的[命令](../general/commands.md#custom-commands)，逐行 `Decrypt` 再 `Encrypt`。密钥确实泄露时，换完数据后从 `previous_keys` 中删除旧密钥，旧链接也随之失效。
 
@@ -203,6 +206,25 @@ synctest.Test(t, func(t *testing.T) {
     assert.ErrorIs(t, c.VerifyURL(link), crypt.ErrExpired)
 })
 ```
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**启动时报错应用密钥缺失或格式不对**
+
+密钥是 32 字节随机数的 base64。用 `openssl rand -base64 32` 生成，通过环境变量提供，见[配置](#configuration)。
+
+**`Decrypt` 返回 `crypt.ErrDecrypt`**
+
+密文被改过，或者加密它的密钥已经不在配置中。轮换密钥时，把旧密钥放进 `previous_keys`，见[轮换密钥](#rotating-keys)。
+
+**签名链接打开时返回 403**
+
+链接被改过或已经过期。经过邮件客户端时，检查链接是否被截断或者改写了查询参数。
+
+**部署到新环境后，之前加密的数据都解不开了**
+
+新环境的应用密钥与原来的不同。没有原来的密钥，已经加密的值无法解开，应用密钥要和数据库一起妥善保管。
 
 <a id="api-reference"></a>
 ## API 参考

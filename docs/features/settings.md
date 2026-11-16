@@ -10,6 +10,8 @@
 
 读取时不缓存，每次 `Get` 是一次主键查询，修改后所有实例立即生效。
 
+阅读前需要了解：[配置](../general/configuration.md)（两者的区别）；[依赖装配](../concepts/dependencies.md)；[发布框架迁移](../database/migrations.md#publishing-framework-migrations)。
+
 - [示例用法](#example-usage)
 - [安装](#installation)
 - [声明设置](#defining-settings)
@@ -23,6 +25,7 @@
     - [调用凭据](#access-tokens)
 - [后台页面与接口](#admin-pages)
 - [测试](#testing)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="example-usage"></a>
@@ -304,6 +307,21 @@ func TestRegisterWhenSignupClosed(t *testing.T) {
     // ...
 }
 ```
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**启动时 panic，提示字段带有 `omitempty`**
+
+设置的字段不能带 `omitempty` 或 `omitzero`：零值会从 JSON 中省略，读取时又被默认值覆盖，例如关闭了一个默认开启的开关，读出来又变回开启。去掉这些标签，见[声明设置](#defining-settings)。
+
+**给设置的结构体改了字段名，旧的值丢了**
+
+保存的 JSON 中还是旧的字段名。改名或改类型时，写一条迁移转换保存的 JSON；新增和删除字段不需要。
+
+**两个管理员同时修改，一个人的修改被覆盖了**
+
+`Save` 是后写覆盖先写。只修改部分字段时用 `Update`，并发的修改依次执行，见[并发修改](#concurrent-updates)。
 
 <a id="api-reference"></a>
 ## API 参考

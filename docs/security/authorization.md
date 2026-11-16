@@ -2,6 +2,8 @@
 
 [认证](authentication.md)确认了调用者是谁，接下来还需要回答：这个调用者**能不能**执行当前的操作？这就是授权。路由上声明权限的最短例子见[单账号后台](admin-example.md#protecting-routes)；按租户分配角色见[运营后台与多租户](saas-example.md)。
 
+阅读前需要了解：[认证](authentication.md)；[入门教程第 7、8 章](../tutorial/07-drafts.md)用到了这一页的大部分内容。
+
 Tenon 的授权分为三层：
 
 | 层次 | 回答的问题 | 由谁检查 |
@@ -29,6 +31,7 @@ Tenon 的授权分为三层：
 - [列表查询中的授权](#scoping-queries)
 - [在界面中按权限显示](#authorization-in-views)
 - [授权失败的响应](#authorization-failures)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="example-usage"></a>
@@ -132,7 +135,7 @@ roles := authz.NewStore(a.db, auth.Permissions)
 
 角色只能包含目录中的权限，以及能匹配目录中权限的通配符，写错权限名会在保存角色时得到错误。目录也是角色编辑界面的数据来源：`roles.Catalog()` 返回全部权限和说明。
 
-把目录交给 API，它写入 OpenAPI 的 `x-tenon-permissions`，生成的客户端据此得到权限常量和说明，见[客户端的权限](../responses/clients.md#ts-permissions)：
+把目录交给 API，它写入 OpenAPI 的 `x-tenon-permissions`，生成的客户端据此得到权限常量和说明，见[客户端的权限](../responses/client-react.md#ts-permissions)：
 
 ```go
 api := rest.New(r, rest.Options{Title: "Blog API", BasePath: "/api", Accounts: accounts, Permissions: auth.Permissions})
@@ -373,6 +376,25 @@ func toDTO(sub identity.Subject, a *Article) ArticleDTO {
 -业务动作返回 `errorx.PermissionDenied` 或 `errorx.NotFound` 分类的错误时，响应对应的状态码，错误码为你定义的业务错误码，例如 `article.forbidden`。
 
 它们都使用统一的[错误响应格式](../general/errors.md#response-format)。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**有角色的用户仍然得到 403，错误码 `auth.forbidden`**
+
+用户缺少路由要求的某一个权限，传入多个权限时要全部具备。路由需要的权限可以用 `routes` 命令查看。
+
+**修改了角色的权限，用户的权限没有变化**
+
+修改角色和分配的 `Store` 没有带上同一个 `authz.Cache`，缓存没有失效，见[角色](#roles)。
+
+**创建 `Store` 时 panic，提示事务类型不对**
+
+`Store` 要建在 `database.Tx` 上，缓存才能在事务提交之后失效；建在其他事务上会 panic。
+
+**进入租户时得到 404，`ErrNotMember`**
+
+用户不是这个租户的成员。
 
 <a id="api-reference"></a>
 ## API 参考

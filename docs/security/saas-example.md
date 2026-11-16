@@ -2,6 +2,8 @@
 
 在[单账号后台](admin-example.md)之上，本页给出一套 **SaaS** 常见结构：平台运营人员、租户成员两套账号，租户后台按路径区分租户，运营可**代登录**进某个成员的租户后台排查问题。
 
+阅读前需要了解：[单账号后台](admin-example.md)；[认证进阶](authentication-advanced.md)；[多租户](tenancy.md)。
+
 | | 运营后台 | 租户后台 |
 | --- | --- | --- |
 | 账号 | `staff`，`staff` 表 | `member`，`members` 表 |
@@ -11,7 +13,7 @@
 | 权限 | 平台域 `""` 上的 `authz` 角色 | 该租户上的 `authz` 角色 |
 | 凭据 | 各自一套 JWT + refresh cookie | 同左；代登时签发带 `Impersonator` 的成员令牌 |
 
-单账号流程（邮箱密码、JWT cookie、`RequireBearer`）与[单账号后台](admin-example.md)相同，本页只写多出来的部分。租户确定、数据隔离、客户账号见[多租户](tenancy.md)；代登录约定见[认证：代为登录](authentication.md#impersonation)。
+单账号流程（邮箱密码、JWT cookie、`RequireBearer`）与[单账号后台](admin-example.md)相同，本页只写多出来的部分。租户确定、数据隔离、客户账号见[多租户](tenancy.md)；代登录约定见[认证：代为登录](authentication-advanced.md#impersonation)。
 
 - [账号表](#account-tables)
 - [装配](#assembling)
@@ -19,6 +21,7 @@
 - [租户后台](#console-api)
 - [代为登录](#impersonation)
 - [接入入口](#wiring)
+- [常见问题](#troubleshooting)
 
 <a id="account-tables"></a>
 ## 账号表
@@ -301,3 +304,18 @@ router.Route("/t/{tenant}", func(r chi.Router) {
 - 登录令牌通常不绑租户：同一成员可带同一会话进入他所属的多个租户；权限由各租户上的角色决定
 
 第三方登录、短信注册的读者 App 等仍见[第三方登录](social-login.md)与[登录与注册](login.md)；本页专注运营 + 租户 + 代登录这一条主线。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**运营的 token 调用租户后台的接口，得到 401**
+
+两套账号各自的 API 只接受自己的账号，这是预期的行为。
+
+**代登录后，租户后台仍然显示未登录**
+
+运营前端拿到 refresh token 后，要调用租户侧的交接接口，由租户后台写入自己的 cookie。不要把 token 放进查询参数。
+
+**成员的个人访问令牌访问其他租户，得到 403**
+
+令牌绑定了租户，见[令牌与租户](tenancy.md#tokens)。

@@ -8,6 +8,10 @@
 
 同意页是应用的[单页应用](../responses/spa.md)中的一个页面：授权端点校验请求后跳到同意页，同意页用登录 token 调用两个接口，读取请求、提交用户的选择。所以能授权的是这两个接口接受的账号体系。例子中授权的是编辑：他们在编辑后台登录，在 Claude 中查找和发布文章。
 
+**OAuth** 是一种授权协议：第三方应用（这里是 claude.ai 这类 AI 客户端）把用户带到你的网站，用户登录并点“允许”后，第三方拿到一个只能做有限的事、可以随时撤销的令牌，而不需要知道用户的密码。
+
+阅读前需要了解：[API 令牌](api-tokens.md)；[MCP 服务](../ai/mcp.md)。
+
 - [示例用法](#example-usage)
 - [安装](#installation)
 - [装配](#assembling)
@@ -21,6 +25,7 @@
 - [部署](#deployment)
     - [部署在路径之下](#path-prefix)
 - [测试](#testing)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="example-usage"></a>
@@ -231,7 +236,7 @@ function Consent() {
 ```
 
 - **登录**：同意页和编辑后台的其他页面一样要求登录。没有登录时，编辑后台照常跳到登录页，登录后回到原地址（包括 `request` 参数）。
-- **只接受用户本人的登录 token**：个人访问令牌和 OAuth 令牌带有权限限制，[代为登录](authentication.md#impersonation)的 token 是客服在操作，它们都不代表用户本人，调用这两个接口返回 `403 oauth.restricted_credential`。
+- **只接受用户本人的登录 token**：个人访问令牌和 OAuth 令牌带有权限限制，[代为登录](authentication-advanced.md#impersonation)的 token 是客服在操作，它们都不代表用户本人，调用这两个接口返回 `403 oauth.restricted_credential`。
 - **重新校验**：`request` 就是原始的授权参数，两个接口每次都重新校验，被改过的请求返回 `422`（`oauth.invalid_client`、`oauth.invalid_redirect_uri` 或 `oauth.invalid_request`）。
 - **禁止嵌入框架**：同意页要防止诱导点击。`httpx.SPA` 默认带 `frame-ancestors 'none'`，见[单页应用](../responses/spa.md)；放开了它时，同意页所在的路由仍然保持禁止。
 
@@ -281,6 +286,25 @@ location = /.well-known/oauth-protected-resource/blog/mcp { proxy_pass http://bl
 3. 用授权码换令牌，再用令牌调用 MCP 工具。
 
 框架自己的测试还用 MCP 官方 Go SDK 的 OAuth 客户端（`auth.NewAuthorizationCodeHandler`）走过一遍：从 `401` 开始发现元数据、授权、换取令牌到调用工具。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**claude.ai 添加连接器时，一直提示授权失败**
+
+`Issuer` 必须是 https 地址，并且外网可以访问；部署在路径之下时要带上路径，见[部署在路径之下](#path-prefix)。
+
+**MCP 客户端没有开始授权流程**
+
+MCP 服务没有设置 `Resource`，未认证的请求没有返回带 `resource_metadata` 的 `401`，客户端找不到授权服务器。
+
+**用个人访问令牌调用授权接口，得到 `403 oauth.restricted_credential`**
+
+授权接口只接受用户本人的登录 token。个人访问令牌、OAuth 令牌和代为登录的 token 都不能用。
+
+**动态注册客户端时被拒绝**
+
+回调地址必须是 https 地址或本机的 http 地址，最多 10 个。
 
 <a id="api-reference"></a>
 ## API 参考

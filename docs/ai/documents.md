@@ -7,6 +7,10 @@
 
 两步之间只靠**字节区间**联系：每个分段都是 Markdown 中的 `[Start, End)`，与转换记录的页区间求交集，就知道这一段出自第几页。分段正文与原文逐字节相同，引用时可以直接高亮原文。
 
+这一页是 [向量检索](vector.md) 的前一步：转换、切分好的分段交给向量检索建立索引。
+
+阅读前需要了解：Markdown 的基本写法；[文件存储](../libraries/filesystem.md)（上传的文件从这里读取）。
+
 - [示例用法](#example-usage)
 - [转换文档](#converting)
     - [选择转换器](#choosing-converters)
@@ -17,6 +21,7 @@
     - [定位原文的页](#locating-pages)
 - [在后台处理上传的文档](#processing-uploads)
 - [各种格式](#formats)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="example-usage"></a>
@@ -251,6 +256,25 @@ func (a *Index) Job(ctx context.Context, job IndexJob) error {
 - 只提取文字，全部在本地完成。
 
 `convert.Converter` 只有一个方法，其他格式可以自己实现并注册到 `Registry`，输出 Markdown 后照样用 `split` 切分。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**转换 `.doc` 文件时返回 `convert.ErrUnsupported`**
+
+不支持旧的二进制格式 `.doc`、`.xls`、`.ppt`。让用户另存为 `.docx`、`.xlsx`、`.pptx` 再上传。
+
+**返回 `convert.ErrEncrypted`**
+
+文档设置了打开密码，转换不了。让用户去掉密码后再上传。
+
+**返回 `convert.ErrTooLarge`**
+
+文档超出了某个上限。用 `errors.As` 取出 `*convert.LimitError`，看是哪一个上限，需要时调整 `Limits`。
+
+**切分时报错 `Overlap` 不合法**
+
+`Overlap` 必须小于 `Size`。
 
 <a id="api-reference"></a>
 ## API 参考

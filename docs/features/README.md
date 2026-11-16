@@ -9,6 +9,7 @@
 - [设置](settings.md)：以分组保存的应用、租户与用户设置
 - [后台操作](operations.md)：长时间运行的操作与进度
 - [导入与导出](import-export.md)：在一次请求中读写 Excel、CSV
-- [后台导入与导出](background-import-export.md)：大文件在队列中处理，进度与失败的行
+- [后台导入](background-imports.md)：大文件在队列中逐行导入，进度与失败的行
+- [后台导出](background-exports.md)：在队列中导出大量数据，完成后下载
 - [Webhook](webhooks.md)：向外部系统发送事件
 - [全文搜索](search.md)：PostgreSQL 全文搜索与重建索引

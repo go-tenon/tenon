@@ -356,7 +356,7 @@ Redis 要配置 `noeviction`：内存满时报错，而不是悄悄删掉锁和�
 **平台要等得够久。** 平台发出 `SIGTERM` 后只等一段时间，超时后强制结束程序。这段时间要比程序平滑停止所需的时间长：
 
 - 程序等待的时间由三项配置决定：`http.shutdown_timeout`（等待请求）、`queue.shutdown_timeout`（等待后台任务）、`schedule.shutdown_timeout`（等待定时任务）。一起运行时它们同时开始，取最长的一项。
-- 使用 [AI 助手](../ai/chat.md#deployment)时，还要等进行中的回答说完，这段时间要加上去。
+- 使用 [AI 助手](../ai/chat-advanced.md#deployment)时，还要等进行中的回答说完，这段时间要加上去。
 - 平台的等待时间（systemd 的 `TimeoutStopSec`、Docker 的 `stop_grace_period`、Kubernetes 的 `terminationGracePeriodSeconds`）应当比上面的时间再长一些，留出关闭数据库等资源的时间。
 
 即使超时被强制结束，也不会丢失工作：没有完成的队列任务会在其他实例上重新执行，错过的定时任务等下一次触发。

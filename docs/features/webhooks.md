@@ -4,6 +4,10 @@ SaaS 的租户常常要把你的应用接进他们自己的系统：文章发布
 
 `webhook` 包负责发送这一端：租户管理自己的**端点**（接收地址和订阅的事件），业务代码发出事件，worker 签名并投递，失败时重试，每次投递都留下**投递记录**供租户排查。签名遵循 [Standard Webhooks](https://www.standardwebhooks.com/) 规范，租户可以直接用 Svix 等现成的库校验。它也提供 `Verify`，用来校验别人按这个规范发给你的 webhook。
 
+**签名**让接收方确认请求确实来自你、内容没有被改过：发送方用双方共享的密钥对请求内容计算一个值（HMAC），接收方用同一个密钥再算一遍，结果相同才接受。
+
+阅读前需要了解：[队列](../libraries/queue.md)；[出站请求](../libraries/outbound.md)；[多租户](../security/tenancy.md)。
+
 - [示例用法](#example-usage)
 - [安装](#installation)
 - [发送事件](#sending)
@@ -18,6 +22,7 @@ SaaS 的租户常常要把你的应用接进他们自己的系统：文章发布
 - [接收 webhook](#receiving)
 - [测试](#testing)
 - [保留期限](#retention)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="example-usage"></a>
@@ -119,7 +124,7 @@ func Routes(api *rest.API, validate rest.TokenValidator, db *bun.DB) {
 
 每个事件描述为一个 `POST` 请求：请求体是 `{type, timestamp, data}`，`data` 的 schema 由事件内容的类型生成，名称规则与[接口的类型](../http/routing.md#shared-responses)相同（`article.PublishedHook` 为 `ArticlePublishedHook`）；请求头是上面的三个签名请求头。`openapi --spec 3.0` 导出的文档和 `/openapi-3.0.json`、`/openapi-3.0.yaml` 端点都不含 `webhooks`，3.0 没有这一项。
 
-租户可以用这份文档生成事件内容的类型。例如用 TypeScript 接收时，[openapi-typescript](../responses/clients.md#other-ts-tools) 生成的 `webhooks` 类型按事件名列出请求体，配合 Standard Webhooks 的官方库 [standardwebhooks](https://www.npmjs.com/package/standardwebhooks) 校验签名：
+租户可以用这份文档生成事件内容的类型。例如用 TypeScript 接收时，[openapi-typescript](../responses/client-react.md#other-ts-tools) 生成的 `webhooks` 类型按事件名列出请求体，配合 Standard Webhooks 的官方库 [standardwebhooks](https://www.npmjs.com/package/standardwebhooks) 校验签名：
 
 ```ts
 import { Webhook } from "standardwebhooks"
@@ -213,7 +218,7 @@ webhook.NewDeliverer(a.db, webhook.Options{}).Handle(w)
 | 最后一次仍然失败 | 投递记录标记为 `failed` |
 | 端点已停用 | 停止发送，投递记录标记为 `failed` |
 
-最后一次失败的投递只记在投递记录中，与[失败任务表](../libraries/queue.md#failed-jobs)分开：接收方出错属于对方的系统，你的告警保持安静。投递记录就是它的结果，租户在页面上看到并重发。
+最后一次失败的投递只记在投递记录中，与[失败任务表](../libraries/queue-monitoring.md#failed-jobs)分开：接收方出错属于对方的系统，你的告警保持安静。投递记录就是它的结果，租户在页面上看到并重发。
 
 <a id="private-addresses"></a>
 ### 拒绝内网地址
@@ -298,6 +303,25 @@ req.Header.Set(webhook.HeaderSignature, sig)
 ```go
 sched.Add("webhooks:cleanup", "0 4 * * *", schedule.Cleanup(webhook.Cleanup(a.db, 30*24*time.Hour), 1000))
 ```
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**租户说没有收到 webhook**
+
+先看这个端点的投递记录：每次投递的状态码和错误都在里面。常见的原因是：端点地址是内网或回环地址，被[出站请求](../libraries/outbound.md)的检查拒绝了（本地开发时用 `outbound.Options.Allow` 放行本机）；或者接收方返回了非 2xx。
+
+**接收方收到了重复的事件**
+
+投递至少一次，网络超时后会重试。接收方按 `webhook-id` 去重，见[请求的格式](#request-format)。
+
+**接收方校验签名失败**
+
+签名的内容是 `id.timestamp.body`，接收方要用原始的请求体计算，不能先解析成 JSON 再序列化。用 Standard Webhooks 的官方库校验最可靠。
+
+**事务回滚了，webhook 却发出去了**
+
+`Send` 要在业务事务中用 `tx` 调用，提交后才投递。
 
 <a id="api-reference"></a>
 ## API 参考
