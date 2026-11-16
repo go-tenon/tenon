@@ -153,7 +153,6 @@ slog.ErrorContext(ctx, "sync feed failed", "feed_id", id, "error", err)
 ```yaml
 logs:
   level: ${LOG_LEVEL:-info}
-  format: ${LOG_FORMAT:-json}
   time_zone: UTC
 ```
 
@@ -167,7 +166,7 @@ logs:
 <a id="formats"></a>
 ### format
 
-输出格式，`json` 或 `text`，默认是 `json`。两种格式分别面向机器和人：
+输出格式，`json` 或 `text`。不写时按输出自动选择：输出到终端时是 `text`，其余（文件、管道、systemd、容器）是 `json`。所以开发时在终端中运行（包括 `tenon dev`）看到的是彩色的文本，部署后由 systemd、Docker、Kubernetes 采集的是 JSON，不用为两个环境各写一份配置。两种格式分别面向机器和人：
 
 - `json`：每行一个 JSON 对象，供日志系统采集和检索。生产环境使用它。
 - `text`：本地开发时阅读，基于 [tint](https://github.com/lmittmann/tint)。时间显示到毫秒，级别缩写为 `DBG`、`INF`、`WRN`、`ERR`，分组字段以 `.` 连接：
@@ -179,10 +178,17 @@ logs:
 
   输出到终端时，时间变暗、级别按颜色区分。输出到管道、文件或 CI 时自动去掉颜色；设置 `NO_COLOR=1` 也会关闭颜色（见 [no-color.org](https://no-color.org)）。
 
+需要固定格式时显式写出，例如容器分配了终端（`docker run -t`、Compose 的 `tty: true`）时自动选择的是 `text`，而日志系统要的是 JSON：
+
+```yaml
+logs:
+  format: ${LOG_FORMAT:-json}
+```
+
 `text` 是给人看的格式，日志系统解析用 `json`。确实需要 logfmt 时，用 `logging.Fanout(slog.NewTextHandler(w, nil))` 追加一个输出，见[多个输出](logging-advanced.md#multiple-outputs)。
 
 > [!TIP]
-> 让 AI agent 读取或分析日志时，请使用 `json`：字段完整、结构明确。agent 执行命令时通常不在终端中，`text` 输出纯文本；如果 agent 工具分配了伪终端，设置 `NO_COLOR=1` 关闭颜色码。
+> 让 AI agent 读取或分析日志时，请使用 `json`：字段完整、结构明确。agent 执行命令时通常不在终端中，不写 `format` 时就是 `json`；如果 agent 工具分配了伪终端，自动选择的是 `text`，用 `LOG_FORMAT=json` 这类配置固定为 `json`。
 
 <a id="config-time-zone"></a>
 ### time_zone

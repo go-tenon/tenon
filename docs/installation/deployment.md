@@ -380,7 +380,7 @@ NATS 的 `-js` 开启 JetStream，任务保存在 `/data` 中；`8222` 是它的
 <a id="logging"></a>
 ## 日志
 
-程序默认把 JSON 格式的日志输出到标准错误，由 systemd 或 Docker 收集。用户反馈问题时，让他提供响应头 `X-Request-ID` 中的请求 ID，就能在日志中找到这次请求的全部记录，见[日志](../general/logging.md)。要把日志、指标和链路推送到观测平台，见[可观测性](../general/telemetry.md#setup)。
+程序把日志输出到标准错误，由 systemd 或 Docker 收集；标准错误不是终端时，日志默认是 JSON 格式（见[format](../general/logging.md#formats)）。用户反馈问题时，让他提供响应头 `X-Request-ID` 中的请求 ID，就能在日志中找到这次请求的全部记录，见[日志](../general/logging.md)。要把日志、指标和链路推送到观测平台，见[可观测性](../general/telemetry.md#setup)。
 
 <a id="troubleshooting"></a>
 ## 常见问题

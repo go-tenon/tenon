@@ -37,8 +37,8 @@ type Config struct {
 	// Levels 按 component 字段覆盖 Level，例如 {http: warn, billing: debug}；
 	// 框架组件的 component 见 docs/general/logging.md。
 	Levels map[string]slog.Level `yaml:"levels"`
-	// Format 为 json 或 text，空值视为 json。json 供日志系统采集；
-	// text 供本地开发阅读，输出到终端时着色（遵守 NO_COLOR），不是严格的 logfmt。
+	// Format 为 json 或 text；空值按输出自动选择：输出到终端时是 text，其余（文件、管道、systemd、容器）是 json。
+	// json 供日志系统采集；text 供本地开发阅读，输出到终端时着色（遵守 NO_COLOR），不是严格的 logfmt。
 	Format string `yaml:"format"`
 	// AddSource 在日志中附加源码位置。
 	AddSource bool `yaml:"add_source"`
@@ -48,9 +48,9 @@ type Config struct {
 	Writer io.Writer `yaml:"-"`
 }
 
-// DefaultConfig 返回默认日志配置：Info 级别、JSON 格式。
+// DefaultConfig 返回默认日志配置：Info 级别，格式按输出自动选择（终端是 text，其余是 json）。
 func DefaultConfig() Config {
-	return Config{Level: slog.LevelInfo, Format: FormatJSON}
+	return Config{Level: slog.LevelInfo}
 }
 
 // SetDefaults 实现 config.Defaulter，使 config.Load 自动填充默认值。
@@ -173,7 +173,7 @@ func baseHandler(cfg Config, loc *time.Location) slog.Handler {
 			return a
 		}
 	}
-	if cfg.Format == FormatText {
+	if textFormat(cfg.Format, terminal(w)) {
 		return tint.NewTextHandler(w, &tint.Options{
 			AddSource:   hopts.AddSource,
 			Level:       hopts.Level,
@@ -188,13 +188,24 @@ func baseHandler(cfg Config, loc *time.Location) slog.Handler {
 // textTimeFormat 是 text 格式的时间格式：带日期，跨天查看或按时间关联日志时没有歧义。
 const textTimeFormat = "2006-01-02 15:04:05.000"
 
-// colorful 报告是否为 w 输出颜色：w 是终端且未设置 NO_COLOR（https://no-color.org）。
-func colorful(w io.Writer) bool {
-	if os.Getenv("NO_COLOR") != "" {
-		return false
+// textFormat 报告是否使用 text 格式：显式指定时按指定的；没有指定时，输出到终端（开发时）用 text，
+// 其余（生产环境的文件、管道、systemd、容器）用 json。
+func textFormat(format string, terminal bool) bool {
+	if format == "" {
+		return terminal
 	}
+	return format == FormatText
+}
+
+// terminal 报告 w 是否是终端。
+func terminal(w io.Writer) bool {
 	f, ok := w.(interface{ Fd() uintptr })
 	return ok && term.IsTerminal(int(f.Fd()))
+}
+
+// colorful 报告是否为 w 输出颜色：w 是终端且未设置 NO_COLOR（https://no-color.org）。
+func colorful(w io.Writer) bool {
+	return os.Getenv("NO_COLOR") == "" && terminal(w)
 }
 
 // Or 返回 l，l 为 nil 时返回当前的 slog.Default()。框架组件用它解析可选的 Logger 参数。
