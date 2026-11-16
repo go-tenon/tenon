@@ -69,12 +69,19 @@ const forbiddenCodes: Record<string, ErrorKind> = {
   "auth.method_required": "method_required",
 }
 
+/**
+ * fetch 没有得到响应时各环境的 TypeError 信息：Chrome 的 Failed to fetch（包括按需加载代码块失败的
+ * Failed to fetch dynamically imported module）、Firefox 的 NetworkError、Safari 的 Load failed、
+ * Node 的 fetch failed、React Native 的 Network request failed。其他 TypeError 是代码中的错误。
+ */
+const networkFailure = /failed to fetch|networkerror|load failed|fetch failed|network request failed/i
+
 /** 按客户端协议分类 err。 */
 export function describeError(err: unknown): ErrorInfo {
   if (!isApiErrorLike(err)) {
     const name = typeof err === "object" && err !== null ? (err as { name?: unknown }).name : undefined
     if (name === "AbortError") return { kind: "aborted", fields: [], params: {} }
-    if (err instanceof TypeError) return { kind: "network", fields: [], params: {} }
+    if (err instanceof TypeError && networkFailure.test(err.message)) return { kind: "network", fields: [], params: {} }
     return { kind: "unknown", fields: [], params: {} }
   }
   const info: ErrorInfo = {

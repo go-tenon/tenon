@@ -103,6 +103,10 @@ func newSPA(fsys fs.FS, opts SPAOptions) (*SPA, error) {
 		if err != nil || d.IsDir() {
 			return err
 		}
+		// source map 等于源码，不提供：构建配置写错、.map 留在了 dist 中时也不会公开。
+		if strings.HasSuffix(name, ".map") {
+			return nil
+		}
 		b, err := fs.ReadFile(fsys, name)
 		if err != nil {
 			return err

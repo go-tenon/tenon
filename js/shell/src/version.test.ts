@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
-import { mkdtemp, readFile, writeFile } from "node:fs/promises"
+/// <reference types="vite/client" />
+import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { build } from "vite"
@@ -63,5 +64,31 @@ describe("tenonVersion", () => {
     const code = await readFile(join(root, "dist", script ?? ""), "utf8")
     expect(code).toMatch(/["`]abc123["`]/)
     expect(code).toMatch(/["`]\/admin\/version\.json["`]/)
+  })
+
+  it("sourcemaps：生成 hidden source map，移出 dist，放到指定的目录", async () => {
+    const root = await mkdtemp(join(tmpdir(), "tenon-sourcemaps-"))
+    await writeFile(join(root, "index.html"), '<script type="module" src="/main.js"></script>')
+    await writeFile(join(root, "main.js"), "export const answer = () => 42\nconsole.log(answer())\n")
+    // 上一次构建留下的文件：构建前清空。
+    await mkdir(join(root, "sourcemaps", "assets"), { recursive: true })
+    await writeFile(join(root, "sourcemaps", "assets", "stale.js.map"), "{}")
+    await build({ root, logLevel: "silent", plugins: [tenonVersion({ version: "v1", sourcemaps: "sourcemaps" })] })
+
+    const list = async (dir: string) =>
+      (await readdir(join(root, dir), { recursive: true })).map((f) => String(f)).sort()
+    expect((await list("dist")).filter((f) => f.endsWith(".map"))).toEqual([])
+    const maps = await list("sourcemaps")
+    expect(maps).toHaveLength(2) // assets 目录和其中的一个 .map
+    const map = maps.find((f) => f.endsWith(".js.map")) ?? ""
+    expect(map).not.toContain("stale")
+    expect(
+      JSON.parse(await readFile(join(root, "sourcemaps", map), "utf8")).sources.some((s: string) =>
+        s.includes("main.js"),
+      ),
+    ).toBe(true)
+    // 脚本中没有 sourceMappingURL：浏览器不会请求 source map。
+    const script = map.replace(/\.map$/, "")
+    expect(await readFile(join(root, "dist", script), "utf8")).not.toContain("sourceMappingURL")
   })
 })

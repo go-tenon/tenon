@@ -602,5 +602,6 @@ app.storage.get<{ collapsed: boolean }>("sider")
 | `trackOperation`、`dismissOperation`、`clearOperations`、`useOperations`、`useOperation` | 后台操作的进度 |
 | `useAssistantChat`、`useAssistantHistory`、`pendingApprovals` | `@go-tenon/shell/chat` 中的 AI 对话 |
 | `useNewVersion`、`watchVersion` | 新版本提示 |
-| `tenonVersion(options)` | `@go-tenon/shell/vite` 中的构建插件 |
+| `onError`（`createApp` 的选项）、`useReportError`、`shouldReport` | 页面出错时报告给前端观测的 SDK，见[前端观测](../general/frontend-observability.md#route-errors) |
+| `tenonVersion(options)` | `@go-tenon/shell/vite` 中的构建插件；`sourcemaps` 生成 source map 并移出 `dist`，见[前端观测](../general/frontend-observability.md#source-maps) |
 | `appStorage(id)` | 按应用隔离的本地存储 |

@@ -1,18 +1,23 @@
 // 应用装配：把 Router、QueryClient 和会话接到一起，提供登录检查、权限检查、菜单和面包屑。
 
-import { clearOnIdentityChange, createSession, describeError, type Session } from "@go-tenon/client"
+import { clearOnIdentityChange, createSession, describeError, type ErrorInfo, type Session } from "@go-tenon/client"
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query"
 import {
   type AnyRoute,
   createRouter,
+  ErrorComponent,
+  type ErrorComponentProps,
+  type ErrorRouteComponent,
   type ParsedLocation,
   type Router,
   RouterProvider,
   redirect,
   type StaticDataRouteOption,
+  useMatch,
   useMatches,
+  useRouterState,
 } from "@tanstack/react-router"
-import { createContext, type ReactNode, useContext, useMemo, useSyncExternalStore } from "react"
+import { createContext, type ReactNode, useContext, useEffect, useMemo, useSyncExternalStore } from "react"
 import { useBadges } from "./badges"
 import { breadcrumbs, buildMenu, type Crumb, firstPage, type MenuItem, routeInfos } from "./menu"
 import "./meta"
@@ -68,6 +73,32 @@ export interface AppOptions<TRouteTree extends AnyRoute> {
   router?: AppRouterOptions
   /** 多租户应用的租户切换，见 useTenant。 */
   tenancy?: TenancyOptions
+  /**
+   * 页面出错时调用，交给前端观测的 SDK，例如 openobserveLogs.logger.error。路由的错误组件接住的错误
+   * （渲染、loader 中抛出的）不会冒泡到 window，SDK 自动捕获不到，所以框架在这里报告。缺少权限、请求被取消、
+   * 5xx 以外的接口错误是预期的，不报告，见 shouldReport。
+   */
+  onError?: (error: unknown, report: ErrorReport) => void
+}
+
+/** onError 收到的信息。 */
+export interface ErrorReport {
+  /** 出错的路由，例如 /_app/articles/$id；按它聚合同一个页面的错误。 */
+  routeId: string
+  pathname: string
+  /** 错误的分类；接口的错误带有 requestId，可以在服务端的日志和链路中查到这个请求。 */
+  error: ErrorInfo
+}
+
+/**
+ * 页面中的错误是否需要报告：没有 HTTP 状态的错误（代码中的错误、代码块加载失败）和 5xx 报告；
+ * 缺少权限、请求被取消和其他接口错误（未登录、校验失败、不存在等）是预期的，不报告。
+ */
+export function shouldReport(error: unknown): boolean {
+  if (isForbidden(error)) return false
+  const info = describeError(error)
+  if (info.kind === "aborted") return false
+  return info.status === undefined || info.status >= 500
 }
 
 /** 一个租户。 */
@@ -111,6 +142,8 @@ export interface App<TRouteTree extends AnyRoute = AnyRoute> {
   redirectAfterSignIn(redirect?: unknown): Promise<void>
   /** 租户切换的选项；单租户应用为空。 */
   readonly tenancy?: TenancyOptions
+  /** 报告一个错误（交给 AppOptions.onError）：同一个错误只报告一次，不需要报告的错误被忽略。 */
+  reportError(error: unknown, where: { routeId: string; pathname: string }): void
 }
 
 function defaultQueryClient(): QueryClient {
@@ -128,6 +161,29 @@ function defaultQueryClient(): QueryClient {
 
 const AppContext = createContext<App | null>(null)
 
+/**
+ * 在错误组件中报告错误，交给 AppOptions.onError。默认的错误组件已经调用了它；路由自己写了 errorComponent 时，
+ * 在其中调用：useReportError(error)。
+ */
+export function useReportError(error: unknown): void {
+  const app = useContext(AppContext)
+  // shell 不知道应用的路由树，match 的类型中没有具体的 routeId，这里只读取它。
+  const match = useMatch({ strict: false }) as { routeId?: string } | undefined
+  const routeId = match?.routeId
+  const pathname = useRouterState({ select: (s) => s.location.pathname })
+  useEffect(() => {
+    app?.reportError(error, { routeId: routeId ?? "", pathname })
+  }, [app, error, routeId, pathname])
+}
+
+/** 包装错误组件：先报告错误，再显示原来的组件。 */
+function reporting(Component: ErrorRouteComponent): ErrorRouteComponent {
+  return function ReportingError(props: ErrorComponentProps) {
+    useReportError(props.error)
+    return <Component {...props} />
+  }
+}
+
 /** 创建应用。 */
 export function createApp<TRouteTree extends AnyRoute>(options: AppOptions<TRouteTree>): App<TRouteTree> {
   const session = options.session ?? signedOutSession()
@@ -138,8 +194,24 @@ export function createApp<TRouteTree extends AnyRoute>(options: AppOptions<TRout
   const app = {} as App<TRouteTree>
   // 前端挂在子路径（例如 /admin/）时，路由的 basepath 默认是 Vite 的 base：页面中的地址、跳转和登录回跳都不含它。
   const basepath = options.router?.basepath ?? (import.meta.env?.BASE_URL || "/")
+  // 同一个错误对象只报告一次：错误组件可能多次渲染（包括 React 的严格模式）。
+  const reported = new WeakSet<object>()
+  const reportError: App["reportError"] = (error, where) => {
+    if (!options.onError || !shouldReport(error)) return
+    if (typeof error === "object" && error !== null) {
+      if (reported.has(error)) return
+      reported.add(error)
+    }
+    try {
+      options.onError(error, { ...where, error: describeError(error) })
+    } catch (err) {
+      console.error("onError failed", err)
+    }
+  }
   const router = createRouter({
     ...options.router,
+    // 默认的错误组件先报告错误，再显示外观层的组件（没有时是 TanStack Router 的默认组件）。
+    defaultErrorComponent: reporting(options.router?.defaultErrorComponent ?? ErrorComponent),
     basepath,
     routeTree: options.routeTree,
     context: { app },
@@ -168,6 +240,7 @@ export function createApp<TRouteTree extends AnyRoute>(options: AppOptions<TRout
     storage: appStorage(options.id),
     loginPath,
     tenancy: options.tenancy,
+    reportError,
     ready: () => {
       if (!restoring) restoring = session.restore().catch(() => false)
       return restoring
