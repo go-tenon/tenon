@@ -12,7 +12,7 @@ import (
 )
 
 // Tx 是 RunInTx 开启的事务。它嵌入 bun.Tx，可以直接传给接收 bun.IDB 的函数，
-// 例如 activity.Record、notification.Send 和 queue.Database；
+// 例如 activity.Record、notification.Send 和 queue.Topic 的 Publish；
 // 另外可以用 AfterCommit 登记事务提交之后才执行的操作。
 type Tx struct {
 	bun.Tx
@@ -38,7 +38,7 @@ type hooks struct {
 // RunInTx 仍然返回 nil，因为数据已经提交。
 //
 // 回调只保存在内存中：提交之后、执行之前进程退出，回调随之丢失。
-// 适合广播、删除缓存这类尽力而为的操作；必须执行的任务请在事务中用 queue.Database(tx) 发布。
+// 适合广播、删除缓存这类尽力而为的操作；必须执行的任务请在事务中用 queue.Topic 的 Publish 发布。
 //
 // 事务结束之后再调用 AfterCommit 会 panic。
 func (tx Tx) AfterCommit(fn func(ctx context.Context) error) {

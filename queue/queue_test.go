@@ -28,7 +28,7 @@ type payload struct {
 	N int `json:"n"`
 }
 
-// jobs 是大多数测试使用的 topic。每个测试的 Worker 有自己的随机前缀，同名的 topic 相互独立。
+// jobs 是大多数测试使用的 topic。每个测试的 Worker 有自己的随机 stream，同名的 topic 相互独立。
 var jobs = queue.Topic[payload]("jobs")
 
 func openDB(t *testing.T) *bun.DB {

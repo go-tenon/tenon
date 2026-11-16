@@ -4,7 +4,7 @@
 
 中文是重点。`search` 在应用中分词，把切分好的词写入 `tsvector`，只用到 PostgreSQL 自带的全文检索，托管数据库上同样可用。
 
-这个包不监听模型的保存自动同步：批量更新和原生 SQL 会绕过模型事件，索引就悄悄过期了。同步由业务动作在修改数据的事务中显式发起，通过数据库队列执行，事务回滚时同步也一起取消。
+这个包不监听模型的保存自动同步：批量更新和原生 SQL 会绕过模型事件，索引就悄悄过期了。同步由业务动作在修改数据的事务中显式发起，作为[队列](../background/queue.md)任务和数据一起发布，事务回滚时同步也一起取消。
 
 **全文搜索**和 `LIKE` 不同：它先把文字切分成词，按词建立索引，搜索时按词匹配，并按相关度排序。中文没有空格分隔词语，所以需要**分词**。
 
@@ -55,7 +55,7 @@ res, err := SearchIndex.Search(ctx, db, search.Query{
 <a id="installation"></a>
 ## 安装
 
-把 `search` 的迁移加入[发布命令](../database/migrations.md#publishing-framework-migrations)，发布后执行 `migrate up`。同步任务通过数据库队列执行，重建索引的进度记在[后台操作](operations.md)中，所以还需要它们的迁移：
+把 `search` 的迁移加入[发布命令](../database/migrations.md#publishing-framework-migrations)，发布后执行 `migrate up`。同步任务由[队列](../background/queue.md)执行，重建索引的进度记在[后台操作](operations.md)中，所以还需要它们的迁移：
 
 ```go
 migratecmd.Publish(

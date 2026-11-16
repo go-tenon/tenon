@@ -48,7 +48,7 @@ webhook.NewDeliverer(db, webhook.Options{}).Handle(w)
 <a id="installation"></a>
 ## 安装
 
-webhook 的投递任务使用[数据库队列](../background/queue.md)，把两者的迁移都加入[发布命令](../database/migrations.md#publishing-framework-migrations)，发布后执行 `migrate up`：
+webhook 的投递任务由[队列](../background/queue.md)执行，把两者的迁移都加入[发布命令](../database/migrations.md#publishing-framework-migrations)，发布后执行 `migrate up`：
 
 ```go
 migratecmd.Publish(
