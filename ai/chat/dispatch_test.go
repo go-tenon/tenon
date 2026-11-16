@@ -1,7 +1,9 @@
 package chat_test
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
 	"errors"
 	"strings"
 	"testing"
@@ -17,6 +19,8 @@ import (
 	"github.com/go-tenon/tenon/ai/chat/chattest"
 	"github.com/go-tenon/tenon/broadcast"
 	"github.com/go-tenon/tenon/broadcast/broadcasttest"
+	"github.com/go-tenon/tenon/broadcast/natsbroadcast"
+	"github.com/go-tenon/tenon/internal/natstest"
 	"github.com/go-tenon/tenon/lock"
 	"github.com/go-tenon/tenon/lock/locktest"
 )
@@ -31,8 +35,14 @@ type deployment struct {
 // newDeployment 创建部署。web 的模型没有任何回复，被调用就会出错：运行必须发生在 worker 上。
 func newDeployment(t *testing.T, workerModel *chattest.Model, tools []tool.Tool, workers int, opts ...chat.Option) *deployment {
 	t.Helper()
+	return newDeploymentOn(t, broadcasttest.NewBackend(), workerModel, tools, workers, opts...)
+}
+
+// newDeploymentOn 与 newDeployment 相同，广播使用 backend。
+func newDeploymentOn(t *testing.T, backend broadcast.Backend, workerModel *chattest.Model, tools []tool.Tool, workers int, opts ...chat.Option) *deployment {
+	t.Helper()
 	sessions := inmemory.NewSessionService()
-	hub := broadcast.New(broadcasttest.NewBackend(), nil)
+	hub := broadcast.New(backend, nil)
 	locker := lock.New(locktest.NewStore())
 	newRuns := func(m *chattest.Model, extra ...chat.Option) *chat.Runs {
 		ag := llmagent.New("support", llmagent.WithModel(m), llmagent.WithTools(tools),
@@ -237,5 +247,36 @@ func TestWorkersNotifyWithHistory(t *testing.T) {
 	<-r.Done()
 	if got := table.dump(group); got != "user:[张三] 几点开会 | assistant:十点" {
 		t.Fatalf("table %s", got)
+	}
+}
+
+// TestWorkersLargeAttachment 在 NATS 上转交带大附件的消息：NATS 默认一条消息最多 1 MiB。
+func TestWorkersLargeAttachment(t *testing.T) {
+	t.Parallel()
+	m := chattest.NewModel(chattest.Text("是一张图"), chattest.Text("收到"))
+	backend := natsbroadcast.New(natstest.Connect(t), "test.chat."+strings.ToLower(rand.Text()))
+	d := newDeploymentOn(t, backend, m, nil, 1)
+	ctx := context.Background()
+
+	big := bytes.Repeat([]byte("P"), 2<<20)
+	msg := model.NewUserMessage("这是什么")
+	msg.AddImageData(big, "", "image/png")
+	r, err := d.web.Start(ctx, "u1", "c1", msg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names, _ := collect(t, r, "")
+	if got := strings.Join(names, " "); !strings.Contains(got, chat.EventText) {
+		t.Fatalf("events %s", got)
+	}
+	// 模型收到了完整的图片。
+	var size int
+	for _, p := range lastUser(m.Requests()[0]).ContentParts {
+		if p.Image != nil {
+			size = len(p.Image.Data)
+		}
+	}
+	if size != len(big) {
+		t.Fatalf("model got an image of %d bytes, want %d", size, len(big))
 	}
 }

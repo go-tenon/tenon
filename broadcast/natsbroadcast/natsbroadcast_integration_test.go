@@ -1,6 +1,7 @@
 package natsbroadcast_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"errors"
@@ -112,5 +113,51 @@ func TestNewPanics(t *testing.T) {
 			}()
 			f()
 		})
+	}
+}
+
+// 超过 max_payload 的消息分片发送，订阅方收到原样的整条消息；两个连接同时发送的大消息各自拼回。
+func TestLargeMessages(t *testing.T) {
+	t.Parallel()
+	p := prefix()
+	nc := natstest.Connect(t)
+	h := broadcast.New(natsbroadcast.New(nc, p), nil)
+	defer h.Close()
+	other := broadcast.New(natsbroadcast.New(natstest.Connect(t), p), nil)
+	defer other.Close()
+	sub := h.Subscribe("room:1")
+	broadcasttest.Ready(t, h)
+
+	big := func(b byte) []byte { return bytes.Repeat([]byte{b}, int(nc.MaxPayload())*3+123) }
+	ctx := context.Background()
+	if err := h.Publish(ctx, "room:1", big('a')); err != nil {
+		t.Fatal(err)
+	}
+	if err := other.Publish(ctx, "room:1", big('b')); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Publish(ctx, "room:1", []byte("small")); err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for range 3 {
+		select {
+		case m := <-sub.C():
+			switch {
+			case bytes.Equal(m.Data, big('a')):
+				got["a"] = true
+			case bytes.Equal(m.Data, big('b')):
+				got["b"] = true
+			case string(m.Data) == "small":
+				got["small"] = true
+			default:
+				t.Fatalf("unexpected message of %d bytes", len(m.Data))
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("timed out, got %v", got)
+		}
+	}
+	if len(got) != 3 {
+		t.Fatalf("got %v", got)
 	}
 }
