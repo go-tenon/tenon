@@ -1,19 +1,22 @@
 # 请求生命周期
 
-了解一个工具的工作原理，用起来就会更有把握。本页从整体上介绍一个 Tenon 应用怎样启动、一个请求从进入到返回会经过哪些环节，以及应用停止时怎样做到不丢请求。
+这一页从整体上介绍一个 Tenon 应用的一生：它怎样启动，一个请求从进入到返回经过哪些环节，应用停止时怎样做到不中断正在处理的请求，以及部署平台怎样判断它是否正常。
 
-先建立一个整体的印象即可。每一部分的细节都在链接的页面中。
+遇到这些问题时，这一页能帮你找到原因：请求为什么返回了 401 而不是 422？停机时为什么有请求被中断？部署平台为什么认为实例没有就绪？先建立一个整体的印象即可，每一部分的细节都在链接的页面中。
+
+阅读前需要了解：[安装](../installation/installing.md)中的三步程序；[context](go-primer.md#context)。
 
 - [启动](#startup)
 - [请求的处理过程](#request-flow)
 - [平滑停止](#graceful-shutdown)
 - [健康检查](#health-checks)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="startup"></a>
 ## 启动
 
-应用的入口拥有全部的运行时资源。一个需要数据库的 API 按下面的顺序启动：
+数据库连接池、Redis 客户端这些资源都由程序的入口创建和关闭。一个需要数据库的 API 按下面的顺序启动：
 
 1. 读取并校验[配置](../general/configuration.md)；
 2. 打开数据库等资源，每打开一个，就登记对应的关闭操作；
@@ -28,7 +31,9 @@
 <a id="request-flow"></a>
 ## 请求的处理过程
 
-安装了 `httpx.Defaults` 和 `httpx.Timeout` 之后，一个请求从进入到返回，会依次经过这些环节：
+一个请求进入程序后，先经过一层层的**中间件**，再到达你的处理函数。可以把中间件想象成套在处理函数外面的一层层包装：请求从外向内穿过每一层，响应再从内向外返回。任何一层都可以直接返回响应，请求就不会再往里走。
+
+安装了 `httpx.Defaults` 和 `httpx.Timeout` 之后，一个请求会依次经过这些环节：
 
 ```text
 确定请求 ID，写入安全响应头
@@ -45,11 +50,20 @@
   → 错误转换为统一的错误响应
 ```
 
-我们以修改文章的请求 `PUT /articles/{id}` 为例，看看不同的请求会在哪一步结束：
+其中几个环节的含义：
+
+- **请求 ID**：给每个请求一个唯一的编号，写在响应头 `X-Request-ID` 和这个请求的每一行日志中，排查问题时按它查找。
+- **按 Accept-Language 协商语言**：浏览器在 `Accept-Language` 请求头中告诉服务端用户偏好的语言，错误提示按它翻译。
+- **panic 恢复**：处理函数中发生 panic 时，返回 `500`，而不是让整个程序崩溃。
+- **Bearer 认证**：检查请求头 `Authorization: Bearer <令牌>` 中的令牌，确认请求来自谁。
+
+顺序很重要。以修改文章的请求 `PUT /articles/{id}` 为例，看看不同的请求会在哪一步结束：
 
 - 没有有效令牌的请求在认证这一步返回 `401`；
 - 标题为空的请求在验证输入这一步返回 `422`，到不了处理器；
 - 处理器返回的业务错误（例如 slug 已被占用）在最后一步转换为 `409` 等响应。
+
+所以一个没有登录、标题又为空的请求，得到的是 `401` 而不是 `422`：认证在验证输入之前。
 
 前半段是安装在 Router 上的[中间件](../http/middleware.md)，作用于所有请求；认证由路由声明的策略决定，见[认证](../security/authentication.md)；输入见[请求](../http/requests.md)和[验证](../http/validation.md)；错误的转换见[错误处理](../general/errors.md)。
 
@@ -66,7 +80,7 @@ var draining httpx.Draining
 err := httpx.Serve(ctx, cfg.HTTP, ln, handler, httpx.OnDraining(draining.Set))
 ```
 
-当 `ctx` 被取消时（收到停止信号，或者[不停机升级](../installation/operations.md#zero-downtime-upgrades)时交给了新进程），它按以下顺序停止：
+`draining` 是一个标志，表示“正在停止”。当 `ctx` 被取消时（收到停止信号，或者[不停机升级](../installation/operations.md#zero-downtime-upgrades)时交给了新进程），`httpx.Serve` 按以下顺序停止：
 
 1. 调用 `OnDraining`，让[就绪检查](#health-checks)开始返回失败；
 2. 停止接收新连接，等待正在处理的请求完成，这个过程叫**排空**；
@@ -118,6 +132,25 @@ router.Handle("/readyz", httpx.Ready(httpx.ReadyOptions{
 
 > [!TIP]
 > 探测很频繁，在[访问日志](../http/middleware.md#http-configuration)的 `ignore_paths` 中排除这两个路径。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**停机时日志中出现 `context canceled`，有请求失败**
+
+这些请求在 `shutdown_timeout` 内没有完成，被取消了。检查是否有很慢的请求；需要时调大 `http.shutdown_timeout`，并让部署平台等待的时间比它更长，见[平滑停止](../installation/deployment.md#graceful-shutdown)。
+
+**按 Ctrl+C 后程序要等很久才退出**
+
+有请求或 goroutine 没有响应 ctx 的取消。检查数据库查询、外部调用是否都传入了请求的 `ctx`，自己启动的 goroutine 是否在 `ctx.Done()` 时返回。
+
+**`/readyz` 一直返回 `503`**
+
+看响应体中哪一项是 `failed`，再在日志中找到失败的原因。缓存这类可以降级的依赖，标为 `Optional`。
+
+**`openapi` 或 `routes` 命令 panic：`nil pointer dereference`**
+
+就绪检查中直接写了 `db.PingContext` 这样的方法值。这些命令用 `nil` 依赖构造路由，改成闭包 `func(ctx context.Context) error { return db.PingContext(ctx) }`，见上文的[健康检查](#health-checks)。
 
 <a id="api-reference"></a>
 ## API 参考

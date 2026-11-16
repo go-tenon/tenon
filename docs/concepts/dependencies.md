@@ -2,7 +2,9 @@
 
 应用中的每一部分都依赖别的东西：业务动作需要数据库，发送通知需要邮件服务，限流需要 Redis。依赖装配说的就是这件事：这些依赖由谁创建、怎样交到需要它们的代码手里、最后由谁关闭。
 
-Tenon 的做法很简单：业务代码通过**构造函数的参数**声明它需要什么，应用的**入口**按顺序创建这些依赖并传进去。没有服务容器，没有全局注册表，也没有基于反射的自动注入。
+Tenon 的做法很简单：业务代码通过**构造函数的参数**声明它需要什么，应用的**入口**按顺序创建这些依赖并传进去。所有的创建和传递都是你能直接读到的普通 Go 代码，没有在背后自动完成的步骤。
+
+阅读前需要了解：[入门教程第 2 章](../tutorial/02-infrastructure.md)（这一页解释其中 `bootstrap` 包的写法）；[defer 与结束后台工作](go-primer.md#cleanup)。
 
 - [为什么这样做](#why)
 - [构造函数注入](#constructor-injection)
@@ -11,6 +13,7 @@ Tenon 的做法很简单：业务代码通过**构造函数的参数**声明它�
     - [只在执行时装配的命令](#deferred-commands)
 - [关闭资源](#closing-resources)
 - [在测试中替换依赖](#replacing-dependencies-in-tests)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="why"></a>
@@ -324,6 +327,25 @@ setCover := article.NewSetCover(db, memoryImages{})
 ```
 
 接口在真正需要替换实现时再引入，代码会简单得多。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**`openapi`、`client` 等命令 panic：`nil pointer dereference`**
+
+有代码在构造路由或声明命令时**使用**了依赖，而这时依赖是零值。检查构造函数和 `Register` 函数，确保它们只保存依赖；方法值（例如 `db.PingContext`）改成闭包。
+
+**新加的资源在程序退出时没有关闭**
+
+打开后没有登记到 `stack`。每成功打开一个资源，紧接着调用 `stack.MustAdd`。
+
+**启动到一半失败，日志中出现多个错误**
+
+这是 `CloseWith` 合并的结果：第一个是启动失败的原因，后面是关闭已打开资源时遇到的错误。先处理第一个。
+
+**测试之间互相影响**
+
+检查是否有依赖放在了全局变量中。改为通过构造函数传入，每个测试创建自己的实例。
 
 <a id="api-reference"></a>
 ## API 参考
