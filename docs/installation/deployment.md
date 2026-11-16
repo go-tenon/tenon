@@ -132,7 +132,7 @@ CONFIG=--config=config/app.yaml,config/prod.yaml
 
 - **HTTP 服务**放在负载均衡后面，请求被分摊到各个实例。
 - **worker** 从队列中领取任务，一个任务只会被一个实例领取，可以随时增减实例。
-- **调度器**用锁保证每个定时任务每次只执行一次，所以多个实例互为备份，前提是它们共用同一个数据库或 Redis，见[多个实例](../background/scheduling.md#multiple-instances)。
+- **调度器**用锁保证每个定时任务每次只执行一次，所以多个实例互为备份，前提是它们共用同一个 Redis，见[多个实例](../background/scheduling.md#multiple-instances)。
 
 这些部分共用数据库的连接池。设置连接数上限 `max_conns` 时，要把 HTTP 请求、各队列的并发数和同时执行的定时任务都算进去；所有实例的连接数加起来，不能超过数据库允许的最大连接数，见[连接池](../database/quick-start.md#pool-exhaustion)。
 
