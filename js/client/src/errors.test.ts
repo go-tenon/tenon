@@ -19,6 +19,11 @@ describe("describeError", () => {
       [apiError(404), "not_found"],
       [apiError(503), "server"],
       [new TypeError("Failed to fetch"), "network"],
+      [new TypeError("NetworkError when attempting to fetch resource."), "network"],
+      [new TypeError("Load failed"), "network"],
+      [new TypeError("Failed to fetch dynamically imported module: /assets/page-AbC.js"), "network"],
+      // 代码中的 TypeError 不是网络错误：界面不会提示“网络连接失败”，上报时也不会被归错类。
+      [new TypeError("Cannot read properties of undefined (reading 'title')"), "unknown"],
       [Object.assign(new Error("aborted"), { name: "AbortError" }), "aborted"],
       ["oops", "unknown"],
     ]

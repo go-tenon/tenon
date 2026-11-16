@@ -220,6 +220,8 @@ srv := mcpx.New(mcpx.Options{Name: "app"}, mcpx.WithTelemetry(tel.Meters, tel.Tr
 <a id="error-tracking"></a>
 ## 错误追踪
 
+浏览器中的错误见[前端观测](frontend-observability.md)：它们由前端的 SDK 收集，与这里的服务端链路关联。
+
 组件把出错的执行记录为 span 上的 `exception` 事件：HTTP 请求的 `5xx`（包括 panic 和[页面](../responses/views.md#error-pages)的错误）、失败和重试的队列任务、失败的定时任务、出错的数据库语句和 MCP 调用。事件的属性与[错误日志](logging.md#error-logging)的字段一一对应：
 
 | 属性 | 内容 |

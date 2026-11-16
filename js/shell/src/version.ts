@@ -5,8 +5,11 @@ import { useCallback, useEffect, useState } from "react"
 
 declare global {
   interface ImportMetaEnv {
-    /** Vite 的 base，例如 /admin/：前端挂载的路径。与 vite/client 中的声明相同。 */
-    readonly BASE_URL: string
+    /**
+     * Vite 的 base，例如 /admin/：前端挂载的路径。修饰符必须与 vite/client 中的声明相同（没有 readonly），
+     * 否则引入 vite/client 类型的应用类型检查失败；version.test.ts 引入了它，检查两者兼容。
+     */
+    BASE_URL: string
     /** tenonVersion 注入的版本号；开发模式和没有使用插件时没有。 */
     readonly TENON_BUILD_VERSION?: string
     /** version.json 的地址，已经带上 Vite 的 base。 */

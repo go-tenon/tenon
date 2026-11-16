@@ -18,7 +18,9 @@ func spaFS() fstest.MapFS {
 	return fstest.MapFS{
 		"index.html":               {Data: []byte("<!doctype html><div id=root></div>")},
 		"assets/index-BjXc12aB.js": {Data: []byte("console.log(1)")},
-		"favicon.svg":              {Data: []byte("<svg/>")},
+		// 留在 dist 中的 source map：不提供。
+		"assets/index-BjXc12aB.js.map": {Data: []byte(`{"sources":["src/secret.ts"]}`)},
+		"favicon.svg":                  {Data: []byte("<svg/>")},
 	}
 }
 
@@ -52,6 +54,8 @@ func TestSPAServe(t *testing.T) {
 		{"hashed asset", "/assets/index-BjXc12aB.js", "*/*", 200, immutable, "console.log"},
 		{"public file", "/favicon.svg", "", 200, "no-cache", "<svg/>"},
 		{"client route", "/articles/42", htmlAccept, 200, "no-cache", "<!doctype"},
+		{"source map", "/assets/index-BjXc12aB.js.map", "*/*", 404, "", ""},
+		{"source map as page", "/assets/index-BjXc12aB.js.map", htmlAccept, 404, "", ""},
 		{"client route with dot", "/reports/2026.11", htmlAccept, 200, "no-cache", "<!doctype"},
 		{"fetch of missing path", "/articles/42", "*/*", 404, "", ""},
 		{"missing asset", "/assets/old-AAAAAAAA.js", htmlAccept, 404, "", ""},
