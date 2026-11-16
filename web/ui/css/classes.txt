@@ -345,10 +345,12 @@
 !pressedTriggers.has(trigger))
 !prevTriggerRect)
 !preventReturnFocus
+!r.Handled:
 !r.autoscrolling)
 !r.closeHasFocus));
 !r.dragDismissed
 !r.ending)
+!r.inStream:
 !r.isSwiping
 !read(escapeKey)
 !rectsAreEqual(elementRectForRootMargin,
@@ -437,6 +439,7 @@
 !up
 !up.hidden
 !v.status.Exists
+!v.stream.Exists
 !valid));
 !validate(root,
 !vertical);
@@ -465,6 +468,7 @@
 #document
 #eee
 #fff
+#overview
 $
 $:
 ${(s.cells
@@ -3057,6 +3061,7 @@ ${width}px
 +a
 +b;
 +firstThursday)
++formatBytes(int64(v.stream.Bytes))+
 +m[2]
 +m[3])
 +startOfDay(a)
@@ -3807,9 +3812,12 @@ ${width}px
 /failed/
 /hidden|clip/.test(win.getComputedStyle(getViewportScroller(html,
 /paint|layout|strict|content/;
+/pause
+/resume
 /retry
 /scheduled
 /subscription/cancel
+/topics/
 /transform|translate|scale|rotate|perspective|filter/;
 0
 0${week.weekNumber}
@@ -5683,6 +5691,7 @@ ${width}px
 10%
 10)
 10));
+10)+
 10).map(angleOf);
 10);
 10,
@@ -11239,6 +11248,7 @@ ${width}px
 >${shapes}${labels}</g>
 >${t.rows[si][i]}</div>
 >${text}</textPath></text>
+>-</span>
 >80ms
 ></a>
 ></button>
@@ -11249,6 +11259,7 @@ ${width}px
 ></path></svg>
 ></path><path
 ></span>
+></th>
 ><a
 ><g
 ><path
@@ -11507,6 +11518,7 @@ ${width}px
 @renderAs(*p.Render,
 @responsiveContainer()
 @returns
+@row(
 @row(k,
 @row(t(ctx,
 @searchBox(v)
@@ -11562,7 +11574,10 @@ ${width}px
 @toggle.Toggle(p)
 @tooltip.Content(tooltip.ContentProps{Side:
 @tooltip.Tooltip()
+@topicButton(v.base,
 @topicLink(v,
+@topicState(r)
+@topicsTable(v)
 @ui.Confirm()
 @ui.Empty(ui.EmptyProps{Icon:
 @ui.Page(ui.PageProps{Title:
@@ -12616,7 +12631,6 @@ CornerRightDown
 CornerRightUp
 CornerUpLeft
 CornerUpRight
-Count
 Counted
 Cpu
 Create
@@ -13539,6 +13553,7 @@ JSON;
 Jalali
 January
 JapaneseYen
+JetStream
 Jobs
 Joystick
 Julian
@@ -14885,6 +14900,7 @@ NutOff
 OF
 OFFSET
 OFFSET;
+OK
 OPEN_DELAY
 OPEN_DELAY,
 OPPOSITE_DIRECTION_DAMPING_FACTOR
@@ -15041,7 +15057,6 @@ PageUp
 PageUp:
 Pager,
 Page。
-Page，自己写
 Pagination
 Pagination(pg
 Pagination(props
@@ -15089,6 +15104,7 @@ Pass
 Patches
 Pattern
 Pause
+Paused
 PawPrint
 Payload
 PcCase
@@ -15101,6 +15117,7 @@ PencilLine
 PencilOff
 PencilRuler
 Pendant
+Pending
 Pentagon
 Percent
 Permission
@@ -15206,6 +15223,7 @@ Positioner
 Positioner(props
 Positioner,
 PositionerProps
+PostgreSQL
 PoundSterling
 Power
 PowerOff
@@ -15373,6 +15391,7 @@ RectangleHorizontal
 RectangleProps
 RectangleVertical
 Recycle
+Redelivered
 Redo
 Redo2
 RedoDot
@@ -15403,6 +15422,7 @@ Repeat2
 Replace
 ReplaceAll
 Replacing
+Replicas
 Replication
 Reply
 ReplyAll
@@ -15425,6 +15445,7 @@ Resolves
 ResponsiveContainer
 ResponsiveContainer:
 Restore
+Resume
 Retain
 Retry
 Return
@@ -15958,6 +15979,7 @@ StickyNote
 Stone
 Stops
 Store
+Stream
 StretchHorizontal
 StretchVertical
 Strikethrough
@@ -18967,7 +18989,6 @@ c,
 c.Disabled
 c.Fill
 c.Render(ctx,
-c.Topic
 c.Topic+
 c.Topic,
 c.activeItem))
@@ -21116,6 +21137,7 @@ count++;
 count,
 count:
 count;
+counted
 counter
 counterMap
 counterMap.set(element,
@@ -22305,6 +22327,7 @@ delegation
 delete
 delete(attrs,
 delete(trigger,
+delivered
 delta
 delta)
 delta));
@@ -23699,6 +23722,7 @@ feeds
 fence
 ferris-wheel
 fetches
+fetching
 field
 field-content
 field-description
@@ -23864,6 +23888,7 @@ firstInvalid
 firstItem:
 firstLine(j.Error)
 firstLine(string(j.Payload))
+firstLine(v.streamErr.Error())
 firstMeasurement
 firstMonth
 firstMonth)
@@ -23936,6 +23961,7 @@ flexiblePrevTotal
 flexiblePrevTotal)
 flick
 flicker
+flight
 flight,
 flight.
 flip
@@ -24269,6 +24295,8 @@ formatStep
 formatTime(j.AvailableAt)
 formatTime(j.FailedAt)
 formatTime(j.FailedAt))
+formatTime(r.LastDelivered)
+formatTime(r.PausedUntil)})
 formatTime(v.status.NextScheduled))
 formats
 formatted
@@ -24385,6 +24413,7 @@ funnel
 funnel-plus
 funnel-x
 furnished
+further
 furthestAncestors
 furthestAncestors.a)
 furthestAncestors.b)
@@ -25716,6 +25745,7 @@ host
 host.hasAttribute(
 hosts
 hotel
+hour
 hourglass
 house
 house-heart
@@ -25748,7 +25778,6 @@ hover:group-data-[collapsible=offcanvas]:bg-sidebar
 hover:text-accent-foreground
 hover:text-foreground
 hover:text-sidebar-foreground
-hover:underline
 hoverEnabled
 hoverEnabled()
 hoverEnabled,
@@ -25891,6 +25920,7 @@ icon.
 icon.CircleCheck,
 icon.Clock,
 icon.FileText,
+icon.Inbox,
 icon/offcanvas
 icon:
 iconCheck
@@ -27598,9 +27628,9 @@ len(st.radialBars)
 len(st.x.Domain)
 len(st.y.Domain)
 len(ticks))
-len(v.counts)
 len(v.list.Items)
 len(v.page.toc)
+len(v.topics)
 len(values)
 len(values))
 len)
@@ -27828,6 +27858,7 @@ list[index];
 list[nextIndex];
 listbox
 listbox,
+listed
 listen
 listen(
 listenForClick(content)
@@ -28605,6 +28636,7 @@ maxY
 max]
 max];
 max]].forEach(([arrow,
+max_defer
 maximize
 maximize-2
 maximum
@@ -30557,6 +30589,7 @@ overshoot
 overshoot);
 overshoots
 overview
+overview.
 overviewSection
 overviewSection(v
 overviewView)
@@ -32254,32 +32287,52 @@ queueweb.confirm_delete
 queueweb.confirm_delete_all
 queueweb.confirm_retry_all
 queueweb.confirm_retry_all_description
-queueweb.count
+queueweb.deferred
 queueweb.delete
 queueweb.delete_all
 queueweb.details
 queueweb.error
 queueweb.failed
 queueweb.failed_at
+queueweb.failed_count
 queueweb.idle
+queueweb.in_flight
 queueweb.lag
+queueweb.last_delivered
+queueweb.messages
 queueweb.next
 queueweb.no_failed
+queueweb.no_handler
 queueweb.no_scheduled
+queueweb.no_topics
 queueweb.overview
+queueweb.pause
+queueweb.paused_until
+queueweb.pending
+queueweb.redelivered
 queueweb.relay
 queueweb.relaying
+queueweb.replicas
+queueweb.resume
 queueweb.retry
 queueweb.retry_all
 queueweb.scheduled
+queueweb.scheduled_db
+queueweb.scheduled_note
 queueweb.slot
 queueweb.slot_missing
 queueweb.slot_name
+queueweb.stalled
+queueweb.state
+queueweb.state_ok
+queueweb.stream_error
+queueweb.stream_missing
 queueweb.title
 queueweb.view
 queueweb.wal_status
 quote
 r
+r)
 r);
 r,
 r,omitempty
@@ -32289,9 +32342,14 @@ r.Dot;
 r.EndAngle
 r.Fill,
 r.FillOpacity
+r.Handled
+r.Paused()
+r.Paused():
+r.Stalled():
 r.Stroke
 r.StrokeWidth
 r.Tag
+r.Topic
 r.action.remove();
 r.action.textContent
 r.activePointerId
@@ -32301,6 +32359,9 @@ r.autoscrolling);
 r.autoscrollingTimeout
 r.cancelledSwipe
 r.cancelledSwipe)
+r.cell(int(r.Pending))
+r.cell(r.InFlight)
+r.cell(r.Redelivered)
 r.cleanup.forEach((fn)
 r.cleanup.push(()
 r.close);
@@ -32333,6 +32394,7 @@ r.dragStartPos;
 r.el.remove();
 r.el;
 r.ending
+r.failed
 r.firstItem
 r.firstItem;
 r.handleSwipeEnd
@@ -33136,6 +33198,7 @@ replace-all
 replaced
 replaces
 replacing
+replicas(v.stream))
 reply
 reply-all
 report
@@ -35020,6 +35083,7 @@ some
 something
 somewhere
 soon
+sooner
 sooner,
 sort
 sort()).
@@ -35950,10 +36014,10 @@ strconv.FormatBool(pressed)
 strconv.FormatBool(s.open)
 strconv.FormatFloat(math.Floor(v*1000+0.5)/1000,
 strconv.FormatFloat(v,
+strconv.FormatUint(v.stream.Messages,
 strconv.Itoa(*p.ScrollEdgeThreshold)
 strconv.Itoa(*p.ScrollPreviousItemPeek)
 strconv.Itoa(alignOffset)
-strconv.Itoa(c.Count)
 strconv.Itoa(d.close),
 strconv.Itoa(d.open),
 strconv.Itoa(i)
@@ -35978,12 +36042,14 @@ strconv.Itoa(p.Rows)
 strconv.Itoa(p.ScrollMargin)
 strconv.Itoa(p.SideOffset)
 strconv.Itoa(p.Timeout)
+strconv.Itoa(r.failed)
 strconv.Itoa(rand.Intn(40)+50)
 strconv.Itoa(sideOffset)
 strconv.Itoa(spacing)
 strconv.Itoa(status)
 strconv.Itoa(t)
 strconv.Itoa(v.status.Scheduled))
+strconv.Itoa(v.stream.Deferred))
 strconv.ParseFloat(match[1],
 strconv.ParseFloat(str(value),
 streamingTurn:
@@ -37284,7 +37350,14 @@ topOffset
 topOffset)
 topic
 topic,
+topicButton
+topicButton(base
 topicLink(v
+topicRow)
+topicState(r
+topics
+topicsTable(v
+topic，完成后替换概览。
 topmost),
 tops
 tops.push(vertical
@@ -38085,7 +38158,7 @@ v.active(g.section)
 v.active(it),
 v.active(p),
 v.base
-v.base}.topicURL(c.Topic))
+v.base}.topicURL(r.Topic))
 v.bulkURL(
 v.counts
 v.crumbs();
@@ -38093,6 +38166,7 @@ v.documentTitle()})
 v.every(isDate);
 v.groups()
 v.home(),
+v.jetStream
 v.list.Items
 v.list.Total
 v.listing();
@@ -38119,8 +38193,12 @@ v.site.opts.Title
 v.status.Active
 v.status.Slot)
 v.status.WALStatus)
+v.stream.Stream)
+v.streamErr
+v.streamReady()
 v.title()
 v.topicURL(topic)
+v.topics
 v.url(it),
 v.url(p),
 v.url(v.page)
@@ -39165,6 +39243,7 @@ zooming
 {\n
 {children
 {{
+{{.t}}
 {}
 {})
 {}));
@@ -39333,6 +39412,7 @@ zooming
 是顶栏中的搜索框：输入时用
 显示
 显示错误提示，没有错误时显示说明。
+暂停或恢复
 末尾的内容，例如应用自己的脚本。
 标题
 每
@@ -39357,6 +39437,6 @@ zooming
 邮箱
 配置
 错误还显示
-需要完全控制文档结构时不用
+需要完全控制文档结构时，自己写
 非空时，第一项是值为空的这一项。
 页面中没有

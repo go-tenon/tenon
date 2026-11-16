@@ -1,5 +1,4 @@
-// Package queuecmd 提供 queue 命令：查看队列在数据库一侧的状态、列出失败任务、重建转发任务的复制槽。
-// JetStream 中积压的任务数由 NATS 统计，用 nats 命令行查看。
+// Package queuecmd 提供 queue 命令：查看队列在数据库和 JetStream 两侧的状态、列出失败任务、重建转发任务的复制槽。
 package queuecmd
 
 import (
@@ -10,6 +9,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/cockroachdb/errors"
 	"github.com/spf13/cobra"
 	"github.com/uptrace/bun"
 
@@ -20,17 +20,37 @@ import (
 // errorWidth 是 queue failed 显示的错误信息的最大长度（字符）。
 const errorWidth = 80
 
+// Option 调整 New 返回的命令。
+type Option func(*options)
+
+type options struct {
+	jetStream *queue.Config
+}
+
+// WithJetStream 让 queue status 同时显示 JetStream 中的状态：stream 的消息和存储、定时消息、
+// 各 topic 等待处理和处理中的任务。cfg 与 Worker 的相同，命令执行时才连接 NATS。
+func WithJetStream(cfg queue.Config) Option {
+	return func(o *options) { o.jetStream = &cfg }
+}
+
 // New 返回 queue 命令。db 是发布任务的数据库：
 //
-//	queue status                         复制槽是否有 worker 在转发、积压多少，queue_scheduled 中的任务
+//	queue status                         复制槽是否有 worker 在转发、积压多少，queue_scheduled 中的任务；
+//	                                     设置了 WithJetStream 时还有 JetStream 中的任务
 //	queue failed [--topic t] [--limit n] 从新到旧列出失败任务
 //	queue slot recreate [--force]        复制槽丢失或失效后重建它
 //
 // 和其他需要数据库的命令一样，在 command.Bind 中声明：New 只保存参数，命令执行时才使用它。
-func New(db bun.IDB) *cobra.Command {
+//
+//	queuecmd.New(a.db, queuecmd.WithJetStream(a.cfg.Queue))
+func New(db bun.IDB, opts ...Option) *cobra.Command {
+	var o options
+	for _, opt := range opts {
+		opt(&o)
+	}
 	status := &cobra.Command{
 		Use:   "status",
-		Short: "显示转发任务的复制槽和 queue_scheduled 的状态",
+		Short: "显示转发任务的复制槽、延迟任务和 JetStream 中各 topic 的状态",
 		Args:  command.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			s, err := queue.ReadStatus(cmd.Context(), db)
@@ -57,7 +77,10 @@ func New(db bun.IDB) *cobra.Command {
 			if !s.NextScheduled.IsZero() {
 				fmt.Fprintf(w, "next scheduled\t%s\n", s.NextScheduled.Local().Format(time.DateTime))
 			}
-			return w.Flush()
+			if o.jetStream == nil {
+				return w.Flush()
+			}
+			return printJetStream(cmd, w, *o.jetStream)
 		},
 	}
 
@@ -131,4 +154,53 @@ func firstLine(s string) string {
 		return s
 	}
 	return string([]rune(s)[:errorWidth-1]) + "…"
+}
+
+// printJetStream 接着 w 中数据库一侧的状态输出 stream 的状态，再输出各 topic 的表格。
+func printJetStream(cmd *cobra.Command, w *tabwriter.Writer, cfg queue.Config) error {
+	admin := queue.NewAdmin(cfg, nil)
+	defer admin.Close()
+	st, err := admin.Status(cmd.Context())
+	if err != nil {
+		return errors.Join(w.Flush(), err) // 数据库一侧的状态照常输出
+	}
+	if !st.Exists {
+		fmt.Fprintf(w, "stream\t%s (not created yet: start a worker)\n", st.Stream)
+		return w.Flush()
+	}
+	fmt.Fprintf(w, "stream\t%s\n", st.Stream)
+	fmt.Fprintf(w, "messages\t%d (%s)\n", st.Messages, bytes(int64(st.Bytes)))
+	replicas := strconv.Itoa(st.Replicas)
+	if st.Leader != "" {
+		replicas += " (leader " + st.Leader + ")"
+	}
+	fmt.Fprintf(w, "replicas\t%s\n", replicas)
+	fmt.Fprintf(w, "deferred\t%d\n", st.Deferred)
+	if err := w.Flush(); err != nil || len(st.Topics) == 0 {
+		return err
+	}
+	fmt.Fprintln(cmd.OutOrStdout())
+	w = tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
+	fmt.Fprintln(w, "TOPIC\tPENDING\tIN FLIGHT\tREDELIVERED\tLAST DELIVERED\tSTATE")
+	for _, t := range st.Topics {
+		last := "-"
+		if !t.LastDelivered.IsZero() {
+			last = t.LastDelivered.Local().Format(time.DateTime)
+		}
+		fmt.Fprintf(w, "%s\t%d\t%d\t%d\t%s\t%s\n", t.Topic, t.Pending, t.InFlight, t.Redelivered, last, topicState(t))
+	}
+	return w.Flush()
+}
+
+// topicState 是 topic 需要注意的状态，正常时为 "ok"。
+func topicState(t queue.TopicStatus) string {
+	switch {
+	case !t.Handled:
+		return "no handler: no worker has registered this topic"
+	case t.Paused():
+		return "paused until " + t.PausedUntil.Local().Format(time.DateTime)
+	case t.Stalled():
+		return "stalled: no worker is fetching"
+	}
+	return "ok"
 }

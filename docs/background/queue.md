@@ -467,6 +467,12 @@ func (f *FailedJobs) Cleanup(keep time.Duration) func(ctx context.Context, limit
 func Migrations() fs.FS
 func ReadStatus(ctx context.Context, db bun.IDB) (Status, error)
 func RecreateSlot(ctx context.Context, db bun.IDB, force bool) error
+
+func NewAdmin(cfg Config, logger *slog.Logger) *Admin
+func (a *Admin) Status(ctx context.Context) (StreamStatus, error)
+func (a *Admin) Pause(ctx context.Context, topic string, until time.Time) error
+func (a *Admin) Resume(ctx context.Context, topic string) error
+func (a *Admin) Close()
 ```
 
-`Migrations` 是队列的迁移；`ReadStatus` 读取复制槽和延迟任务的状态，`queue status` 命令用它；`RecreateSlot` 在复制槽失效后重建，见[部署](../installation/operations.md#queue-recovery)。
+`Migrations` 是队列的迁移；`ReadStatus` 读取复制槽和延迟任务的状态，`Admin` 读取 JetStream 中的 stream 和各 topic、暂停和恢复 topic，`queue status` 命令和[队列面板](queue-monitoring.md#panel)用它们；`RecreateSlot` 在复制槽失效后重建，见[部署](../installation/operations.md#queue-recovery)。
