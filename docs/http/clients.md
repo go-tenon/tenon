@@ -124,6 +124,7 @@ session.connect(api)
 - 打开页面（包括刷新页面、新标签页）时先调用一次 `await session.restore()`，返回 `true` 表示已经登录，决定显示登录页还是应用。
 - 登录接口返回后调用 `await session.signIn(out, { account: me.id })`：所有连接的客户端得到 access token，身份记为这个账号。登出时先调用登出接口，服务端撤销这次登录并清除 cookie，再调用 `await session.signOut()`。
 - 几个请求同时收到 `401` 时只刷新一次，它们都等这一次的结果。刷新返回 `401` 时这次登录已经失效：清除凭据和身份，调用 `onSignedOut`；网络错误不清除凭据，下次再试。
+- 请求、刷新都只对发出时的身份有效。请求发出之后登录、退出或切换了身份（`session.generation()` 变了），收到的 `401` 原样抛出，不刷新，也不用新的身份重发；刷新期间登录或退出时，刷新的结果被丢弃，不会把旧账号的 token 写回来。`session.auth` 带着 `generation`，接上会话的客户端自动这样处理。
 - 一个会话可以连接多个 API 的客户端（`session.connect`），例如同一次登录调用 `/api` 和 `/api/admin`。
 - 公开的接口（[`rest.Public`](routing.md#access-policies)）直接请求，`401` 原样返回给调用者。
 - 请求带上 `Accept-Language`（默认是浏览器的语言，`language` 可以覆盖），错误的 `detail` 按它翻译。App 的 WebView 设置 `appVersion`，作为 [`X-App-Version`](#app-version) 发送。

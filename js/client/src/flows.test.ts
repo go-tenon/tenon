@@ -20,7 +20,7 @@ function response(status: number, json: unknown = {}, headers: Record<string, st
 }
 
 /** 记录请求的假 fetch：handler 按请求返回响应。 */
-function fakeFetch(handler: (url: string, init: RequestInitLike) => ResponseLike) {
+function fakeFetch(handler: (url: string, init: RequestInitLike) => ResponseLike | Promise<ResponseLike>) {
   const calls: { url: string; init: RequestInitLike }[] = []
   const fetch: FetchLike = async (url, init = {}) => {
     calls.push({ url, init })
@@ -48,6 +48,19 @@ describe("session.fetch", () => {
     ])
     expect((calls[1].init.headers as Record<string, string>)["Content-Type"]).toBe("application/json")
     expect(refresh).toHaveBeenCalledTimes(1)
+  })
+
+  it("请求发出之后身份变了：返回原来的 401，不刷新、不用新身份重试", async () => {
+    const refresh = vi.fn().mockResolvedValue(body("bob2"))
+    const session = createSession({ refresh })
+    await session.signIn(body("alice"), { account: "alice" })
+    const { fetch, calls } = fakeFetch(async () => {
+      await session.signIn(body("bob"), { account: "bob" })
+      return response(401)
+    })
+    expect((await session.fetch(fetch)("/api/x", { method: "POST" })).status).toBe(401)
+    expect(calls).toHaveLength(1)
+    expect(refresh).not.toHaveBeenCalled()
   })
 
   it("刷新失败时返回原来的 401", async () => {
