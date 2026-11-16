@@ -343,12 +343,14 @@ app.storage.get<{ collapsed: boolean }>("sider")
 | `Slot`、`Fill`、`useSlotFilled` | 插槽 |
 | `useLayoutState`、`useLayoutVariant`、`useNarrow` | 布局状态、用户选择的布局、窄屏 |
 | `useBottomNav`、`bottomNav` | 窄屏时底部标签栏的项 |
+| `useResizable(options)`、`clampSize` | 可以拖动调整宽度的分栏：宽度按账号保存，分隔条的属性（拖动、方向键、双击恢复） |
 | `TabsOutlet`、`useTabs`、`useTab`、`useTabActive`、`useTabTitle`、`useTabShortcuts` | 多标签 |
 | `confirmDiscard(app)` | 有未保存的修改时询问是否放弃，例如退出登录前 |
 | `useTenant`、`switchTenant`、`enterTenant` | 当前租户、切换租户 |
 | `resolver`、`antdRule`、`formValidator` | 用生成的规则校验表单：react-hook-form、antd Form、其他表单库 |
 | `setServerErrors`、`serverErrors` | 把服务端的错误设置到表单的字段 |
 | `useUnsavedChanges(dirty, options)` | 有未保存的修改时离开前询问 |
+| `createAutoSaver(initial, options)` | 自动保存，与表单库无关，见[表单](app-shell-features.md#forms) |
 | `listSearch(querySchema, options)`、`useList(Route)` | 列表的查询条件、排序和分页保存在地址中 |
 | `useSelection(resetOn)` | 列表的选中项 |
 | `safeRedirect(redirect, fallback)` | 只接受同源相对路径的回跳地址 |

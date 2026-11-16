@@ -105,6 +105,13 @@
       "files": ["page.tsx"]
     },
     {
+      "name": "tenon-split-view",
+      "type": "registry:block",
+      "title": "列表加详情的分栏",
+      "description": "左侧列表、右侧详情，分隔条可以拖动、用方向键调整，宽度按账号保存；窄屏时只显示一侧。",
+      "files": ["split-view.tsx"]
+    },
+    {
       "name": "tenon-data-table",
       "type": "registry:block",
       "title": "资源表格",
@@ -117,7 +124,7 @@
       "name": "tenon-form",
       "type": "registry:block",
       "title": "表单",
-      "description": "react-hook-form 加上生成的校验规则；服务端的字段错误显示在对应的输入框下面；未保存的修改离开前询问。",
+      "description": "react-hook-form 加上生成的校验规则；服务端的字段错误显示在对应的输入框下面；未保存的修改离开前询问；useAutoSave 让表单在修改后自动保存。",
       "registryDependencies": ["label"],
       "dependencies": ["react-hook-form@^7.91.0"],
       "files": ["form.tsx"]

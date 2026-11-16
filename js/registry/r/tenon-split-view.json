@@ -1,0 +1,15 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "tenon-split-view",
+  "type": "registry:block",
+  "title": "列表加详情的分栏",
+  "description": "左侧列表、右侧详情，分隔条可以拖动、用方向键调整，宽度按账号保存；窄屏时只显示一侧。",
+  "files": [
+    {
+      "path": "src/components/tenon/split-view.tsx",
+      "type": "registry:component",
+      "target": "~/src/components/tenon/split-view.tsx",
+      "content": "// 列表加详情的分栏：左侧是列表，右侧是选中项的详情，中间的分隔条可以拖动调整左侧的宽度。\n// 宽度按账号保存（@go-tenon/shell 的 useResizable）；窄屏时只显示一侧，由页面决定显示哪一侧。\n\nimport { useNarrow, useResizable } from \"@go-tenon/shell\"\nimport type { ReactNode } from \"react\"\nimport { cn } from \"@/lib/utils\"\n\n/** SplitView 的选项。 */\nexport interface SplitViewProps {\n  /** 区分不同的分栏，左侧的宽度按它保存，例如 \"articles\"。 */\n  id: string\n  /** 左侧：通常是列表。 */\n  pane: ReactNode\n  /** 右侧：通常是详情，没有选中时放一个空状态。 */\n  children: ReactNode\n  /** 左侧的默认、最小、最大宽度（像素），默认 320、240、560。 */\n  defaultWidth?: number\n  minWidth?: number\n  maxWidth?: number\n  /**\n   * 窄屏时显示哪一侧，默认 pane。列表加详情的页面通常在选中了一项时显示 main：\n   *\n   *   <SplitView id=\"articles\" pane={<List />} narrow={id ? \"main\" : \"pane\"}>…</SplitView>\n   */\n  narrow?: \"pane\" | \"main\"\n  className?: string\n}\n\n/**\n * 列表加详情的分栏，放在页面中，例如文章列表的路由用它，详情是子路由的 Outlet：\n *\n *   <SplitView id=\"articles\" pane={<ArticleList />} narrow={params.id ? \"main\" : \"pane\"}>\n *     <Outlet />\n *   </SplitView>\n *\n * 分隔条可以拖动，也可以聚焦后用方向键调整，双击恢复默认宽度。\n */\nexport function SplitView({\n  id,\n  pane,\n  children,\n  defaultWidth = 320,\n  minWidth = 240,\n  maxWidth = 560,\n  narrow = \"pane\",\n  className,\n}: SplitViewProps): ReactNode {\n  const isNarrow = useNarrow()\n  const split = useResizable({ id, defaultSize: defaultWidth, min: minWidth, max: maxWidth })\n  if (isNarrow) {\n    return (\n      <div data-slot=\"split-view\" className={cn(\"flex min-h-0 flex-1 flex-col\", className)}>\n        {narrow === \"pane\" ? pane : children}\n      </div>\n    )\n  }\n  return (\n    <div\n      data-slot=\"split-view\"\n      className={cn(\n        \"flex min-h-0 flex-1 overflow-hidden rounded-lg border\",\n        split.dragging && \"select-none\",\n        className,\n      )}\n    >\n      <aside\n        data-slot=\"split-view-pane\"\n        className=\"flex min-h-0 shrink-0 flex-col overflow-auto\"\n        style={{ width: split.size }}\n      >\n        {pane}\n      </aside>\n      {/* biome-ignore lint/a11y/useSemanticElements: 可以聚焦、拖动的分隔条是 WAI-ARIA 的 Window Splitter 模式，<hr> 不能聚焦，也不能带 aria-valuenow */}\n      <div\n        {...split.separatorProps}\n        role=\"separator\"\n        aria-label=\"调整宽度\"\n        className={cn(\n          \"relative w-px shrink-0 cursor-col-resize bg-border outline-none transition-colors\",\n          \"after:absolute after:inset-y-0 after:-left-1.5 after:w-3\", // 加宽可以拖动的范围\n          \"hover:bg-primary focus-visible:bg-primary\",\n          split.dragging && \"bg-primary\",\n        )}\n      />\n      <div data-slot=\"split-view-main\" className=\"flex min-h-0 min-w-0 flex-1 flex-col overflow-auto\">\n        {children}\n      </div>\n    </div>\n  )\n}\n"
+    }
+  ]
+}
