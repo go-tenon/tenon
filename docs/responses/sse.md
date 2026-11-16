@@ -4,6 +4,8 @@
 
 SSE 只负责服务端到客户端。客户端发给服务端的仍然是普通请求，认证、验证和限流都和其他接口一样。需要在线成员、“正在输入”或移动端 SDK 时，用基于 WebSocket 的[实时频道](../libraries/realtime.md)。
 
+阅读前需要了解：[路由](../http/routing.md)；[context](../concepts/go-primer.md#context)。长连接一节用到了[广播](../libraries/broadcasting.md)。
+
 - [示例用法](#introduction)
 - [流式响应](#streaming-responses)
 - [长连接](#long-lived-connections)
@@ -12,6 +14,7 @@ SSE 只负责服务端到客户端。客户端发给服务端的仍然是普通�
 - [凭据失效](#revoked-credentials)
     - [立即断开](#immediate-revocation)
 - [部署](#deployment)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="introduction"></a>
@@ -211,6 +214,29 @@ Hub 经由 Redis 在实例之间传递消息，见[后端](../libraries/broadcas
 
 - **代理缓冲**：nginx 默认会缓冲响应，SSE 响应带 `X-Accel-Buffering: no` 关闭它，nginx 配置保持原样。其他代理请确认它们对 `text/event-stream` 响应直接转发。
 - **HTTP/2**：使用 HTTP/1.1 时，浏览器对同一个站点最多同时打开 6 个连接。每个打开的标签页都占用一条长连接，标签页多了以后，新的请求会一直等待。生产环境请在反向代理上启用 HTTP/2。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**浏览器很久才收到事件，或者一次收到一大批**
+
+反向代理缓冲了响应。nginx 会按 `X-Accel-Buffering: no` 关闭缓冲；其他代理要确认对 `text/event-stream` 直接转发，见[部署](#deployment)。
+
+**开了几个标签页后，新的请求一直在等待**
+
+使用 HTTP/1.1 时，浏览器对同一个站点最多同时打开 6 个连接，每条长连接占一个。在反向代理上启用 HTTP/2，见[部署](#deployment)。
+
+**断线重连后，丢了断线期间的消息**
+
+处理器没有为消息带上 ID，或者没有根据 `s.LastEventID()` 补发，见[断线重连](#reconnecting)。
+
+**撤销了 token，但已经打开的长连接没有断开**
+
+长连接每 30 秒重新校验一次凭据，最多 30 秒后断开。需要立即断开时，见[立即断开](#immediate-revocation)。
+
+**推送开始后返回的错误，客户端没有收到**
+
+返回 `rest.SSE` 之后，响应已经开始发送，之后的错误只会记录日志。需要告诉客户端的错误，在开始推送之前返回，或者作为一个事件发送。
 
 <a id="api-reference"></a>
 ## API 参考

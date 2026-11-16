@@ -2,6 +2,8 @@
 
 后台的大部分页面是增删改查：列表、详情、表单和行上的操作。资源在 Go 中声明，`tenon generate` 生成与组件库无关的资源定义 `resources.ts`，运营后台（antd）和控制台（shadcn）用同一份定义渲染。入门教程的[后台：作者与角色](../tutorial/08-admin.md)是一个完整的例子。字段的类型、枚举和校验规则都取自接口的 OpenAPI schema，后端改了字段、校验或枚举，重新生成后页面随之改变。
 
+阅读前需要了解：[路由](../http/routing.md)；[应用骨架](app-shell.md)；[入门教程第 8 章](../tutorial/08-admin.md)。
+
 - [声明资源](#declaring)
 - [显示文字](#labels)
 - [检查](#checks)
@@ -9,6 +11,7 @@
 - [前端的资源模型](#model)
 - [运营后台中的资源页面](#admin)
 - [控制台中的资源页面](#console)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="declaring"></a>
@@ -47,7 +50,7 @@ api.Resource(rest.Resource{
 | `Columns` | 列表的列：列表项的字段。为空时是除对象和数组外的全部字段，按结构体中的顺序 |
 | `Search` | 关键词搜索的查询参数 |
 | `Filters` | 筛选条件：列表接口的查询参数 |
-| `Sort` | 可以排序的列。列表接口要有 `sort` 查询参数，取值是列名，前面加 `-` 表示降序，与 [`useList`](app-shell.md#lists) 相同 |
+| `Sort` | 可以排序的列。列表接口要有 `sort` 查询参数，取值是列名，前面加 `-` 表示降序，与 [`useList`](app-shell-features.md#lists) 相同 |
 | `Form` | 创建和修改的表单字段：请求体的字段。为空时是请求体的全部字段，按结构体中的顺序 |
 | `Actions` | 行上的其他操作：`Operation` 是接口，`Confirm` 执行前询问，`Danger` 用醒目的颜色 |
 
@@ -58,7 +61,7 @@ api.Resource(rest.Resource{
 <a id="labels"></a>
 ## 显示文字
 
-资源、字段和操作的显示文字来自[翻译文件](../general/localization.md)，与[枚举](clients.md#ts-enums)的显示文字一样按语言生成：
+资源、字段和操作的显示文字来自[翻译文件](../general/localization.md)，与[枚举](client-react.md#ts-enums)的显示文字一样按语言生成：
 
 ```yaml
 # zh-CN.yaml
@@ -123,7 +126,7 @@ export const articles = resourceModel(resources.article, kit, queryClient)
 | `allowed(can, operation)` | 当前身份能否使用一个接口或操作 |
 | `listQuery`、`getQuery` | 列表和详情的查询选项，query key 与 `createQueries` 相同 |
 | `create`、`update`、`remove`、`run` | 调用生成的客户端，完成后让这个分组的查询失效 |
-| `formSchema(mode)`、`ruleOptions` | 表单的校验规则，交给 [`resolver`、`antdRule`](app-shell.md#forms) |
+| `formSchema(mode)`、`ruleOptions` | 表单的校验规则，交给 [`resolver`、`antdRule`](app-shell-features.md#forms) |
 | `display(field, value)` | 枚举字段显示它的文字 |
 
 在页面中：
@@ -196,6 +199,25 @@ export const Route = createFileRoute("/_app/articles")({
 - 覆盖方式与运营后台相同：`render`、`inputs`（组件收到 `id`、`value`、`onChange`、`invalid`）、`rowActions`、`actions`。
 
 组件复制在项目中，外观归项目所有，可以直接修改；逻辑仍然来自 `@go-tenon/shell` 的资源模型，随框架升级。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**启动时 panic，提示资源的某个字段不存在**
+
+列、筛选条件或表单字段写了接口中没有的字段。报错中列出了可用的字段，对照修改，见[检查](#checks)。
+
+**点击列头排序时得到 422**
+
+列表接口的 `sort` 参数用 `enum` 限定了取值，但没有包含这一列的升序或降序。在 `enum` 中加上，见[检查](#checks)。
+
+**后台中显示的是字段名，而不是中文**
+
+翻译文件中缺少这个资源或字段的显示文字。`generate` 会输出警告并列出缺少的消息，补上后重新生成，见[显示文字](#labels)。
+
+**“新建”“删除”按钮不见了**
+
+当前用户缺少对应接口要求的权限，按钮按权限隐藏。也可能是资源没有设置 `Create`、`Delete`。
 
 <a id="api-reference"></a>
 ## API 参考

@@ -8,7 +8,9 @@
 
 `web` 包把它们接到框架上：渲染组件、呈现错误、处理 htmx 的跳转、设置内容安全策略，并内嵌了 htmx 与 Alpine 的脚本。现成的按钮、表格、分页见[界面组件](components.md)，表单见[表单](forms.md)。
 
-页面没有会话，也没有登录：页面路由都是公开的。只给内部人员看的页面用 [HTTP Basic 认证](../http/middleware.md#basic-auth)等中间件保护，或者只在内网开放。
+页面没有会话，也没有登录：页面路由都是公开的。每个页面响应都带有内容安全策略，见[内容安全策略](assets.md#content-security-policy)。
+
+阅读前需要了解：HTML；[路由](../http/routing.md)；[错误处理](../general/errors.md)。templ 和 htmx 会在用到时介绍。只给内部人员看的页面用 [HTTP Basic 认证](../http/middleware.md#basic-auth)等中间件保护，或者只在内网开放。
 
 - [示例用法](#example-usage)
 - [安装 templ](#installing-templ)
@@ -22,7 +24,7 @@
 - [错误页](#error-pages)
 - [跳转](#redirects)
 - [前端状态](#client-state)
-- [内容安全策略](#content-security-policy)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="example-usage"></a>
@@ -148,7 +150,7 @@ func Register(r chi.Router, pages *web.Pages, db *bun.DB) {
 }
 ```
 
-页面处理器的签名是 `func(w http.ResponseWriter, r *http.Request) error`。注册的每条路由会设置[内容安全策略](#content-security-policy)和主题，调用处理器，并呈现它返回的错误。
+页面处理器的签名是 `func(w http.ResponseWriter, r *http.Request) error`。注册的每条路由会设置[内容安全策略](assets.md#content-security-policy)和主题，调用处理器，并呈现它返回的错误。
 
 只给内部人员看的页面，把认证中间件装在传入的路由上，例如 `pages.Routes(r.With(staffOnly))`。
 
@@ -302,11 +304,7 @@ templ ArticleTable(q article.ListQuery, list page.Offset[article.Article]) {
 }
 ```
 
-`ui.SortHead` 是可以点击排序的表头：点击按这一列升序，再点击改为降序，当前排序的列显示方向箭头并带 `aria-sort`；`DescFirst` 让第一次点击按降序，适合时间、数量。它按 `q.Sort` 判断当前的方向（`title` 为升序，`-title` 为降序），用 `sortURL(q)` 生成下一次点击的地址。`ListQuery` 的 `enum` 要包含每一列的两个方向，例如 `title,-title,created,-created`。
-
-`ui.Empty` 是没有数据时的提示，children 可以放操作，例如“清除搜索”链接。
-
-`ui.Pagination` 显示上一页、下一页、首页、末页，以及当前页两侧各 1 页，中间省略；只有一页时不显示。`HTMX` 让链接同时带 `hx-get`，沿用区域上的 `hx-target`；链接也写了 `href`，不支持 htmx 的场景（例如在新标签页打开）也能正常访问。自己写分页导航时，`list.Links(1)` 返回要显示的页码，省略的部分用 `0` 表示，例如 `[1 0 9 10 11 0 20]`，`list.LastPage()` 是最后一页的页码。
+`ui.SortHead`（可以点击排序的表头）、`ui.Empty`（没有数据时的提示）和 `ui.Pagination`（分页导航）的用法见[界面组件](components.md#list-components)。`ListQuery` 的 `enum` 要包含每一列的两个方向，例如 `title,-title,created,-created`，`ui.SortHead` 按 `q.Sort` 判断当前的方向。
 
 两个细节：
 
@@ -369,34 +367,24 @@ htmx 用 `outerMorph` 或 `innerMorph` 替换内容时，内嵌的 hx-alpine-com
 > [!WARNING]
 > htmx 的事件会冒泡。在表单上监听 `htmx:after:request` 时，表单内其他元素发出的请求也会触发它。只处理表单自己的请求时，加上 Alpine 的 `.self` 修饰符：`x-on:htmx:after:request.self="$el.reset()"`。
 
-<a id="content-security-policy"></a>
-## 内容安全策略
+<a id="troubleshooting"></a>
+## 常见问题
 
-内容安全策略（CSP）告诉浏览器只执行带有正确 nonce 的脚本，被注入页面的 `<script>` 没有 nonce，浏览器拒绝执行。`Pages` 为每个页面响应（包括错误页）生成一个随机的 nonce，写进 `Content-Security-Policy` 响应头和 templ 的 context，默认的策略是 `web.DefaultCSP`：
+**修改了 `.templ` 文件，页面没有变化**
 
-```text
-script-src 'self' 'nonce-…' 'unsafe-eval'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'
-```
+`.templ` 文件要先生成 Go 代码（`_templ.go`），再编译程序。运行 `go tool templ generate`，开发时用 `--watch` 自动重新生成，见[安装 templ](#installing-templ)。
 
-- `ui.Head()` 读取 context 中的 nonce，给它输出的 `<script>`、`<style>` 带上它；其中的 `web.Scripts()` 还设置了 htmx 的 `inlineScriptNonce`，htmx 执行交换进来的脚本时也使用这个 nonce。
-- 布局中自己写的内联脚本，以及其他网站的脚本（例如[人机验证](../security/login.md#captcha)的组件），要加上 `nonce={ templ.GetNonce(ctx) }`。
-- `'self'` 允许加载本站的脚本文件，包括[静态文件](assets.md)。样式、图片、字体和 iframe 可以来自任何来源。
-- `frame-ancestors 'none'` 禁止其他网站把页面嵌入框架，诱导用户点击。
+**点击链接后整个页面被替换，而不是只替换列表区域**
 
-页面响应同时带有 `Referrer-Policy: same-origin`，点开其他网站的链接时，本站页面的地址只在站内传递。
+htmx 4 的属性默认只作用于元素本身，区域上的 `hx-target`、`hx-swap` 要写成 `hx-target:inherited`、`hx-swap:inherited`，里面的链接和表单才会沿用它们，见[列表页](#list-pages)。
 
-Alpine 的表达式（`x-data`、`x-on` 等）和 htmx 的 `hx-on` 在运行时编译执行，需要 `'unsafe-eval'`。去掉它之后，这两类属性都会失效。只用 htmx 属性和[界面组件](components.md)、不写 Alpine 表达式的页面可以用 `Options.CSP` 去掉它。
+**浏览器控制台报错脚本被内容安全策略拒绝**
 
-需要别的策略时设置 `Options.CSP`，它接收本次的 nonce，返回完整的策略；返回空字符串时不设置这个响应头。例如允许合作方的网站嵌入页面：
+自己写的内联脚本没有带 nonce。加上 `nonce={ templ.GetNonce(ctx) }`，见[内容安全策略](assets.md#content-security-policy)。
 
-```go
-CSP: func(nonce string) string {
-    return strings.Replace(web.DefaultCSP(nonce), "frame-ancestors 'none'", "frame-ancestors https://partner.example.com", 1)
-},
-```
+**点后退时，页面上的事件处理执行了两次**
 
-> [!WARNING]
-> 应用的脚本放进静态文件，在 `<head>` 中加载。写在 `<body>` 里的话，用户点后退时，htmx 会重新请求整页并替换 `body`，其中的脚本会再执行一次，事件监听器就注册了两遍。写法是：`<script defer src={ web.StaticURL(ctx, "js/app.js") }></script>`。
+脚本写在了 `<body>` 中。把应用的脚本放进静态文件，在 `<head>` 中加载，见[内容安全策略](assets.md#content-security-policy)末尾的说明。
 
 <a id="api-reference"></a>
 ## API 参考

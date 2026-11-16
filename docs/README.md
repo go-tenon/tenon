@@ -64,13 +64,15 @@ Tenon 是一个用 Go 构建 HTTP API 的框架。用户登录后使用的界面
 - [依赖装配](concepts/dependencies.md)：在入口创建数据库连接等依赖，再传给业务代码
 - [业务动作](concepts/actions.md)：一个用例写成一个类型，HTTP、命令行和队列都能调用它
 - [客户端协议](http/protocol.md)：前端和 App 调用接口时遵守的约定
-- [客户端代码](responses/clients.md)：由接口生成 TypeScript 和 Go 的客户端
+- [客户端代码](responses/clients.md)：由接口生成 TypeScript 客户端
+- [在 React 中调用接口](responses/client-react.md)：TanStack Query、校验规则、权限、枚举与分页
 - [开发工具](installation/tooling.md)：`tenon dev`、`tenon generate`、`tenon build`
 
 ## 第四阶段：前端
 
 - [单页应用](responses/spa.md)：把 React 前端打包进 Go 程序
-- [应用骨架](responses/app-shell.md)：登录检查、菜单、多标签、表单和列表
+- [应用骨架](responses/app-shell.md)：登录检查、权限、菜单与布局
+- [应用骨架：页面中的常用功能](responses/app-shell-features.md)：多标签、租户、表单、列表与通知
 - [运营后台](responses/admin.md)：用 antd 搭建后台
 - [shadcn registry 与控制台](responses/registry.md)：用 shadcn 搭建界面
 - [资源](responses/resources.md)：在 Go 中声明增删改查的页面，两套界面直接渲染
@@ -140,6 +142,7 @@ Tenon 是一个用 Go 构建 HTTP API 的框架。用户登录后使用的界面
 - [可观测性](general/telemetry.md)：指标、链路和日志推送到观测平台
 - [日志进阶](general/logging-advanced.md)：处理链、多个输出、脱敏与测试日志
 - [前端观测](general/frontend-observability.md)：浏览器中的错误、页面和链路
+- [Go 客户端](responses/go-client.md)：其他 Go 服务和工具调用你的 API
 - [部署](installation/deployment.md)：构建、配置和上线
 - [运维](installation/operations.md)：不停机升级、维护窗口、备份与恢复
 
