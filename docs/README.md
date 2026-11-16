@@ -127,7 +127,6 @@ Tenon 是一个用 Go 构建后端服务的框架。业务逻辑写成[业务动
 存储与通信：
 
 - [缓存](libraries/cache.md)：把查询结果暂存起来，减少数据库的压力
-- [Redis](libraries/redis.md)：连接 Redis
 - [NATS](libraries/nats.md)：连接 NATS，广播和在线成员使用它
 - [原子锁](libraries/locks.md)：同一时间只让一个进程做某件事
 - [限流](libraries/rate-limiting.md)：限制一段时间内的请求次数

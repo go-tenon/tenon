@@ -242,7 +242,7 @@ FROM pg_replication_slots WHERE slot_name LIKE 'mygoravel_queue_%';
 <a id="backups"></a>
 ## 备份与恢复
 
-应用的数据保存在两个地方：数据库，以及[文件存储](../libraries/filesystem.md)使用的磁盘或对象存储，两者都要备份。其他地方的数据丢了可以重新生成：Memcached 中的缓存、Redis 中的锁和限流计数会重新生成，Qdrant 中的[向量](../ai/vector.md)可以根据数据库中的数据重建。
+应用的数据保存在两个地方：数据库，以及[文件存储](../libraries/filesystem.md)使用的磁盘或对象存储，两者都要备份。其他地方的数据丢了可以重新生成：Memcached 中的缓存会重新生成，NATS 中的在线成员会随连接续期恢复，Qdrant 中的[向量](../ai/vector.md)可以根据数据库中的数据重建。
 
 Tenon 不提供备份命令：只有数据库自己的备份机制能持续备份、恢复到任意时间点；在程序中定时导出，数据量大时很慢，还会丢掉两次导出之间写入的数据。
 

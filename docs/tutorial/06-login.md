@@ -5,7 +5,7 @@
 **这一章要做的**（内容比较多，分成几步）：
 
 1. 了解登录是怎样工作的；
-2. 准备配置：Redis 和应用密钥；
+2. 准备配置：应用密钥；
 3. 建作者表，加一个创建作者的命令；
 4. 写登录、刷新、退出三个接口，让写文章的接口要求登录；
 5. 在前端加上登录页，没有登录时跳到登录页。
@@ -45,10 +45,7 @@
 <a id="configuration"></a>
 ## 配置
 
-登录需要两样新东西：
-
-- **Redis**：`login` 用它记录每个邮箱输错密码的次数，错太多次就暂时拒绝登录，防止有人不断猜密码。记在 Redis 中，多个实例共享同一个计数。
-- **应用密钥**：签发 token 时用它签名，没有密钥就无法伪造 token。
+登录需要一个**应用密钥**：签发 token 时用它签名，没有密钥就无法伪造 token。
 
 生成一个随机的密钥写进 `.env`：
 
@@ -56,7 +53,7 @@
 echo "APP_KEY=$(openssl rand -base64 32)" >> .env
 ```
 
-`.env` 不提交到代码仓库，生产环境用环境变量 `APP_KEY` 设置。密钥泄露后要更换，已经签发的 token 随之失效。在 `config/app.yaml` 中加上 Redis 和密钥：
+`.env` 不提交到代码仓库，生产环境用环境变量 `APP_KEY` 设置。密钥泄露后要更换，已经签发的 token 随之失效。在 `config/app.yaml` 中加上密钥：
 
 ```yaml title="config/app.yaml"
 # 应用的配置。${VAR:-默认值} 读取环境变量，生产环境用环境变量覆盖开发时的默认值。
@@ -65,9 +62,6 @@ http:
 
 database:
   dsn: ${DATABASE_URL:-postgres://blog:blog@localhost:5432/blog?sslmode=disable}
-
-redis:
-  url: ${REDIS_URL:-redis://localhost:6379/0}
 
 crypt:
   key: ${APP_KEY}
@@ -91,7 +85,6 @@ import (
 type Config struct {
     HTTP     httpx.Config    `yaml:"http"`
     Database database.Config `yaml:"database"`
-    Redis    RedisConfig     `yaml:"redis"`
     // Crypt 是应用密钥，用来签发登录凭据。
     Crypt   crypt.Config    `yaml:"crypt"`
     Hashing hashing.Config  `yaml:"hashing"`
@@ -99,16 +92,12 @@ type Config struct {
     // DevServers 是各前端开发服务器的地址，只在 tenon dev 时有值。
     DevServers map[string]string `yaml:"dev_servers"`
 }
-
-type RedisConfig struct {
-    URL string `yaml:"url"`
-}
 ```
 
 <a id="tables"></a>
 ## 数据表
 
-`login` 和 `apitoken` 需要自己的表（保存邮箱、密码哈希、签发过的 token），它们的迁移由框架提供。我们先把这些迁移复制（发布）到 `migrations` 目录中。在 `cmd/api/main.go` 中给 `migrate` 加上 `publish` 子命令；顺便加上 `bootstrap.Commands()`，下文创建作者的命令在其中：
+`login` 和 `apitoken` 需要自己的表（保存邮箱、密码哈希、签发过的 token），`login` 还要记录每个邮箱输错密码的次数，错太多次就暂时拒绝登录，防止有人不断猜密码，计数保存在限流的 `rate_limits` 表中。这些表的迁移由框架提供。我们先把这些迁移复制（发布）到 `migrations` 目录中。在 `cmd/api/main.go` 中给 `migrate` 加上 `publish` 子命令；顺便加上 `bootstrap.Commands()`，下文创建作者的命令在其中：
 
 ```go title="cmd/api/main.go"
 // Command api 是博客的入口。
@@ -124,6 +113,7 @@ import (
     "github.com/go-tenon/tenon/database"
     "github.com/go-tenon/tenon/database/migrate"
     "github.com/go-tenon/tenon/login"
+    "github.com/go-tenon/tenon/ratelimit/pglimit"
 
     "example.com/blog/internal/bootstrap"
     "example.com/blog/migrations"
@@ -149,6 +139,7 @@ func migrateCommand() *cobra.Command {
     cmd.AddCommand(migratecmd.Publish(
         migrate.Source{Name: "login", FS: login.Migrations()},
         migrate.Source{Name: "apitoken", FS: apitoken.Migrations()},
+        migrate.Source{Name: "ratelimit", FS: pglimit.Migrations()},
     ))
     return cmd
 }
@@ -522,7 +513,7 @@ func Register(api *rest.API, requireUser func(*huma.Operation), users *login.Rea
 <a id="assembling"></a>
 ## 装配
 
-现在把这些连起来。在 `internal/bootstrap/app.go` 的 `open` 中连接 Redis，创建 `login` 和 `apitoken`，保存到 `App` 中。和数据库一样，Redis 的关闭也登记到 `stack`：
+现在把这些连起来。在 `internal/bootstrap/app.go` 的 `open` 中创建 `login` 和 `apitoken`，保存到 `App` 中：
 
 ```go title="internal/bootstrap/app.go"
 package bootstrap
@@ -532,7 +523,6 @@ import (
     "log/slog"
     "time"
 
-    "github.com/redis/rueidis"
     "github.com/uptrace/bun"
 
     "github.com/go-tenon/tenon/apitoken"
@@ -544,7 +534,7 @@ import (
     "github.com/go-tenon/tenon/logging"
     "github.com/go-tenon/tenon/login"
     "github.com/go-tenon/tenon/ratelimit"
-    "github.com/go-tenon/tenon/ratelimit/redislimit"
+    "github.com/go-tenon/tenon/ratelimit/pglimit"
 
     "example.com/blog/internal/user"
 )
@@ -553,14 +543,13 @@ import (
 type App struct {
     cfg Config
     db  *bun.DB
-    rdb rueidis.Client
     // users 校验作者的邮箱和密码，jwt 签发和校验登录凭据。
     users  *login.Realm
     tokens *apitoken.Store
     jwt    *apitoken.JWT
 }
 
-// open 安装日志器，连接数据库和 Redis，把关闭操作登记到 stack。
+// open 安装日志器，连接数据库，把关闭操作登记到 stack。
 func open(ctx context.Context, cfg Config, stack *cleanup.Stack) (*App, error) {
     slog.SetDefault(logging.New(logging.Config{}))
 
@@ -570,31 +559,21 @@ func open(ctx context.Context, cfg Config, stack *cleanup.Stack) (*App, error) {
     }
     stack.MustAdd("database", func(context.Context) error { return db.Close() })
 
-    opt, err := rueidis.ParseURL(cfg.Redis.URL)
-    if err != nil {
-        return nil, err
-    }
-    rdb, err := rueidis.NewClient(opt)
-    if err != nil {
-        return nil, err
-    }
-    stack.MustAdd("redis", func(context.Context) error { rdb.Close(); return nil })
-
     keys := crypt.New(cfg.Crypt)
-    // 每个邮箱 15 分钟内最多输错 5 次密码，计数保存在 Redis 中，所有实例共享。
+    // 每个邮箱 15 分钟内最多输错 5 次密码，计数保存在数据库中，所有实例共享。
     every15 := ratelimit.Config{Rate: 5, Interval: 15 * time.Minute, Burst: 5}
     users := login.New(db, login.Options{
         Type:     user.Type,
         Hasher:   hashing.New(cfg.Hashing),
         Crypt:    keys,
         Policy:   login.Policy{PasswordKinds: []string{login.KindEmail}},
-        Attempts: redislimit.New(rdb, "blog:login:attempts", every15),
-        Sends:    redislimit.New(rdb, "blog:login:sends", every15),
+        Attempts: pglimit.New(db, "login:attempts", every15),
+        Sends:    pglimit.New(db, "login:sends", every15),
     })
     tokens := apitoken.NewStore(db, cfg.Token)
 
     return &App{
-        cfg: cfg, db: db, rdb: rdb,
+        cfg: cfg, db: db,
         users: users, tokens: tokens,
         jwt: apitoken.NewJWT(tokens, apitoken.JWTConfig{Keys: apitoken.HMACKeys(keys)}),
     }, nil
@@ -633,7 +612,7 @@ func Serve(ctx context.Context, cfg Config) error {
 }
 ```
 
-在 `internal/bootstrap/http.go` 中注册新的接口，`/readyz` 也检查 Redis：
+在 `internal/bootstrap/http.go` 中注册新的接口：
 
 ```go title="internal/bootstrap/http.go"
 package bootstrap
@@ -682,7 +661,6 @@ func (a *App) Router(draining *httpx.Draining) chi.Router {
         Draining: draining,
         Checks: []health.Check{
             {Name: "database", Ping: func(ctx context.Context) error { return a.db.PingContext(ctx) }},
-            {Name: "redis", Ping: func(ctx context.Context) error { return a.rdb.Do(ctx, a.rdb.B().Ping().Build()).Error() }},
         },
     }))
     router.Route("/api", func(r chi.Router) {
@@ -707,7 +685,6 @@ func DocRouter() chi.Routes {
 
 - `rest.Options.Accounts` 声明接口接受哪些账号的 token，现在只有作者。
 - `rest.RequireBearer` 返回 `requireUser`：被它保护的接口要求请求头中带有 `Authorization: Bearer <access token>`。它被传给 `user.Register`、`auth.Register` 和 `article.Register`。
-- `/readyz` 现在也检查 Redis，Redis 不可用时登录无法工作。
 
 在 `internal/article/routes.go` 中，读文章仍然公开，写文章改为需要登录：
 
@@ -989,10 +966,6 @@ function ArticleList() {
 **启动时报错缺少 `APP_KEY`**
 
 还没有生成密钥，或者 `.env` 不在项目根目录。按[配置](#configuration)一节生成。
-
-**`user create` 报错连不上 Redis**
-
-Redis 没有运行，运行 `docker compose up -d --wait`。
 
 **`user create` 报错密码不符合要求**
 

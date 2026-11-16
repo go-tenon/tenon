@@ -14,7 +14,7 @@ Tenon 是一个用 Go 构建后端服务的框架：业务逻辑写成 action，
 go get github.com/go-tenon/tenon@main
 ```
 
-需要 Go 1.27.4 或更高版本。基础设施是固定的一套，每个组件只做最擅长的事：PostgreSQL 保存业务数据，[Memcached](docs/libraries/cache.md) 做缓存，[Redis](docs/libraries/redis.md) 做锁和限流，[NATS](docs/libraries/nats.md) 做任务队列、广播和在线成员。框架的包分为基础、基础设施、入口、功能四层，每个包都可以单独使用，见[框架包一览](docs/concepts/structure.md#framework-packages)。从[安装](docs/installation/installing.md)开始，`tenon init` 一条命令生成能直接运行的 Go + React 项目。
+需要 Go 1.27.4 或更高版本。基础设施是固定的一套，每个组件只做最擅长的事：PostgreSQL 保存业务数据以及锁和限流计数，[Memcached](docs/libraries/cache.md) 做缓存，[NATS](docs/libraries/nats.md) 做任务队列、广播和在线成员。框架的包分为基础、基础设施、入口、功能四层，每个包都可以单独使用，见[框架包一览](docs/concepts/structure.md#framework-packages)。从[安装](docs/installation/installing.md)开始，`tenon init` 一条命令生成能直接运行的 Go + React 项目。
 
 ## 文档
 

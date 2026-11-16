@@ -1,6 +1,6 @@
 # 依赖装配
 
-应用中的每一部分都依赖别的东西：业务动作需要数据库，发送通知需要邮件服务，限流需要 Redis。依赖装配说的就是这件事：这些依赖由谁创建、怎样交到需要它们的代码手里、最后由谁关闭。
+应用中的每一部分都依赖别的东西：业务动作需要数据库，发送通知需要邮件服务，广播需要 NATS。依赖装配说的就是这件事：这些依赖由谁创建、怎样交到需要它们的代码手里、最后由谁关闭。
 
 Tenon 的做法很简单：业务代码通过**构造函数的参数**声明它需要什么，应用的**入口**按顺序创建这些依赖并传进去。所有的创建和传递都是你能直接读到的普通 Go 代码，没有在背后自动完成的步骤。
 
@@ -249,7 +249,7 @@ func Start(ctx context.Context, cfg Config) error {
 `d.Run` 让各部分共用同一个 `ctx`，其中一个出错时，其余的会一起停止。
 
 > [!TIP]
-> 多个部分都用到的资源（数据库、Redis、缓存）放进 `open`；只有一个部分用到的（例如 HTTP 中间件）在它自己的方法里创建。
+> 多个部分都用到的资源（数据库、NATS、缓存）放进 `open`；只有一个部分用到的（例如 HTTP 中间件）在它自己的方法里创建。
 
 <a id="deferred-commands"></a>
 ### 只在执行时装配的命令
@@ -279,12 +279,12 @@ func Commands() []*cobra.Command {
 var stack cleanup.Stack
 defer func() { err = stack.CloseWith(context.Background(), err) }()
 
-rdb, err := rueidis.NewClient(opt)
+nc, err := nats.Connect(url)
 if err != nil {
     return err
 }
-stack.MustAdd("redis", func(context.Context) error {
-    rdb.Close()
+stack.MustAdd("nats", func(context.Context) error {
+    nc.Close()
     return nil
 })
 ```

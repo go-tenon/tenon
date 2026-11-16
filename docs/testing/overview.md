@@ -2,7 +2,7 @@
 
 Tenon 在设计时就考虑了测试。所有的依赖都是显式传入的，所以在测试中，你可以直接构造 API、业务动作和命令。
 
-Tenon 直接使用 Go 标准库的 `testing`、`net/http/httptest` 和 `go test` 命令。需要数据库、Redis 的地方，使用真实的服务：每个测试一个隔离的数据库，测试的结果和生产环境的行为一致。
+Tenon 直接使用 Go 标准库的 `testing`、`net/http/httptest` 和 `go test` 命令。需要数据库、NATS 的地方，使用真实的服务：每个测试一个隔离的数据库，测试的结果和生产环境的行为一致。
 
 阅读前需要了解：Go 的 `testing` 包和 `go test` 的基本用法；[依赖装配](../concepts/dependencies.md)；[业务动作](../concepts/actions.md)。
 
@@ -116,7 +116,7 @@ func TestPublishRecordsTime(t *testing.T) {
 使用时注意：
 
 - 数据库在 `synctest.Test` 中打开。只有 Go 程序中的时钟是假的：查询用到的时间都要由 Go 算出后作为参数传入，例如 `Where("expires_at > ?", time.Now())`；迁移中的时间列也不设默认值，见[时间戳](../database/quick-start.md#timestamps)。框架自己的 SQL 都遵守这条规则，由 `internal/checks/clocktest` 检查。
-- 由服务端计算的过期时间按真实时钟走，例如 Redis 的 `EXPIRE`。
+- 由服务端计算的过期时间按真实时钟走，例如 NATS 中 KV bucket 的 TTL。
 - 假时钟从 2000-01-01 00:00 UTC 开始，需要某个具体时刻时用 `time.Sleep(time.Until(target))` 拨过去。
 - `t.Run` 和 `t.Parallel` 在 `synctest.Test` 之外调用。要在几种情况下测试时，在每个子测试中分别调用 `synctest.Test`。
 

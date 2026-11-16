@@ -1,6 +1,6 @@
 # 2. 基础设施与装配
 
-上一章生成的项目把数据保存在内存中，重启就没了。一个真正的应用需要数据库，通常还需要 Redis、缓存和队列，这些统称为**基础设施**。
+上一章生成的项目把数据保存在内存中，重启就没了。一个真正的应用需要数据库，通常还需要缓存和队列，这些统称为**基础设施**。
 
 **这一章要做的：**
 
@@ -22,12 +22,11 @@
 <a id="infrastructure"></a>
 ## 启动基础设施
 
-一个常规项目会用到四个服务：
+一个常规项目会用到三个服务：
 
 | 服务 | 用途 | 在哪里用到 |
 | --- | --- | --- |
 | PostgreSQL | 业务数据 | 第 3 章 |
-| Redis | 限流、锁 | 第 6 章、[限流](../libraries/rate-limiting.md) |
 | Memcached | 缓存 | [缓存](../libraries/cache.md) |
 | NATS | 队列 | [队列](../background/queue.md) |
 
@@ -53,14 +52,6 @@ services:
       test: pg_isready -U blog -h 127.0.0.1
       interval: 1s
       retries: 60
-
-  redis:
-    image: redis:8
-    ports: ["127.0.0.1:6379:6379"]
-    healthcheck:
-      test: redis-cli ping
-      interval: 1s
-      retries: 30
 
   memcached:
     image: memcached:1.6-alpine
@@ -132,7 +123,7 @@ type Config struct {
 <a id="assembling"></a>
 ## 装配应用
 
-模板把所有代码都放在 `main.go` 中。现在这样没问题，但应用会越来越大：要打开数据库、Redis、缓存、队列；程序退出时要按正确的顺序关闭它们；除了 HTTP 服务，以后还会有处理后台任务的 worker，它们需要同样的数据库连接。如果都写在 `main.go` 中，它很快会变得又长又难改。
+模板把所有代码都放在 `main.go` 中。现在这样没问题，但应用会越来越大：要打开数据库、缓存、队列；程序退出时要按正确的顺序关闭它们；除了 HTTP 服务，以后还会有处理后台任务的 worker，它们需要同样的数据库连接。如果都写在 `main.go` 中，它很快会变得又长又难改。
 
 所以我们把装配集中到 `internal/bootstrap` 包中，分成三个文件：`config.go`（上面已经写好）、`app.go`（打开和关闭资源）、`http.go`（HTTP 服务）。
 
