@@ -4,7 +4,7 @@ import { createSession } from "@go-tenon/client"
 import { AppRoot, createApp, type RouterContext, resolver } from "@go-tenon/shell"
 import { createMemoryHistory, createRootRouteWithContext, createRoute } from "@tanstack/react-router"
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
-import type { ReactNode } from "react"
+import { Activity, type ReactNode, StrictMode, useState } from "react"
 import { useForm } from "react-hook-form"
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest"
 import { AutoSaveStatus, Field, useAutoSave } from "@/components/tenon/form"
@@ -27,7 +27,7 @@ afterEach(() => {
   narrow = false
 })
 
-async function mount(page: () => ReactNode) {
+async function mount(page: () => ReactNode, strict = false) {
   const root = createRootRouteWithContext<RouterContext>()()
   const route = createRoute({ getParentRoute: () => root, path: "/", component: page })
   const session = createSession({ refresh: async () => ({ access_token: "t", expires_at: "" }) })
@@ -38,7 +38,15 @@ async function mount(page: () => ReactNode) {
     session,
     router: { history: createMemoryHistory({ initialEntries: ["/"] }) },
   })
-  render(<AppRoot app={app} />)
+  render(
+    strict ? (
+      <StrictMode>
+        <AppRoot app={app} />
+      </StrictMode>
+    ) : (
+      <AppRoot app={app} />
+    ),
+  )
   return app
 }
 
@@ -111,6 +119,38 @@ describe("useAutoSave", () => {
     fireEvent.change(await screen.findByLabelText("名称"), { target: { value: "重复的名称" } })
     await waitFor(() => expect(screen.getByRole("status").textContent).toContain("保存失败"))
     expect(await screen.findByText("名称已被使用")).toBeTruthy()
+  })
+
+  it("StrictMode 下照常保存", async () => {
+    const save = vi.fn(async () => {})
+    await mount(() => <SettingsForm save={save} />, true)
+    fireEvent.change(await screen.findByLabelText("名称"), { target: { value: "严格模式" } })
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ name: "严格模式" }))
+  })
+
+  it("Activity 隐藏时保存等待的修改，重新显示后照常保存", async () => {
+    const save = vi.fn(async () => {})
+    function Tabs() {
+      const [visible, setVisible] = useState(true)
+      return (
+        <>
+          <button type="button" onClick={() => setVisible((v) => !v)}>
+            切换
+          </button>
+          <Activity mode={visible ? "visible" : "hidden"}>
+            <SettingsForm save={save} />
+          </Activity>
+        </>
+      )
+    }
+    await mount(Tabs)
+    const input = await screen.findByLabelText("名称")
+    fireEvent.change(input, { target: { value: "隐藏之前" } })
+    fireEvent.click(screen.getByText("切换"))
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ name: "隐藏之前" }))
+    fireEvent.click(screen.getByText("切换"))
+    fireEvent.change(await screen.findByLabelText("名称"), { target: { value: "重新显示" } })
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ name: "重新显示" }))
   })
 
   it("离开页面时立即保存还在等待的修改", async () => {

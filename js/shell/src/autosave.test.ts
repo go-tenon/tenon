@@ -97,6 +97,18 @@ describe("createAutoSaver", () => {
     expect(save).toHaveBeenCalledTimes(1)
   })
 
+  it("停止之后 resume 恢复接收变化", async () => {
+    const save = vi.fn(async () => true)
+    const s = createAutoSaver<V>({ title: "" }, { save, delay: 10 })
+    s.change({ title: "隐藏前" })
+    await s.stop()
+    s.resume()
+    s.change({ title: "重新显示" })
+    await vi.advanceTimersByTimeAsync(10)
+    expect(save).toHaveBeenLastCalledWith({ title: "重新显示" })
+    expect(save).toHaveBeenCalledTimes(2)
+  })
+
   it("markSaved 之后与它相同的值不保存；flush(true) 即使相同也保存", async () => {
     const save = vi.fn(async () => true)
     const s = createAutoSaver<V>({ title: "" }, { save, delay: 10 })

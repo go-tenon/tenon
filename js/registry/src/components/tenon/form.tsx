@@ -181,8 +181,11 @@ export function useAutoSave<T extends FieldValues>(form: UseFormReturn<T>, optio
     const subscription = form.watch(() => saver.change(form.getValues()))
     return () => subscription.unsubscribe()
   }, [form, saver, enabled])
-  // 离开页面时立即保存还在等待的修改。
-  useEffect(() => () => void saver.stop(), [saver])
+  // 离开页面时立即保存还在等待的修改；StrictMode 重新激活、Activity 重新显示时恢复。
+  useEffect(() => {
+    saver.resume()
+    return () => void saver.stop()
+  }, [saver])
   const status = useSyncExternalStore(saver.subscribe, saver.status, saver.status)
   return { status, saveNow: saver.flush, markSaved: saver.markSaved, discard: saver.discard }
 }
