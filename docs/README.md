@@ -1,124 +1,144 @@
 # Tenon 文档
 
-Tenon 是一个用于构建 HTTP API 的 Go 应用框架。登录后使用的界面是调用 API 的单页应用或 App，官网、帮助中心这类公开页面可以在服务端渲染。它为配置、路由、验证、错误处理、日志、认证、数据库和迁移提供一套统一的约定，同时让你直接使用 chi、Huma、slog、Bun、goose、Cobra 等社区组件的原生能力。
+Tenon 是一个用 Go 构建 HTTP API 的框架。用户登录后使用的界面，是调用这些 API 的单页应用（React）或手机 App；官网、帮助中心这类公开页面，也可以由服务端直接生成 HTML。
 
-第一次使用 Tenon，先读[安装](installation/installing.md)写出最小 API，或用[脚手架](installation/scaffolding.md)生成完整项目，然后跟着[入门教程](tutorial/README.md)做一个博客。之后按需查阅下面的章节，每一页都可以单独阅读。
+一个后端应用要处理很多相同的问题：读取配置、定义路由、校验请求、返回错误、记录日志、连接数据库、管理登录。Tenon 为这些问题提供一套统一的写法，同时让你直接使用 Go 社区中成熟的组件，例如 chi（路由）、Huma（接口与 OpenAPI 文档）、slog（日志）、Bun（数据库）、goose（数据库迁移）和 Cobra（命令行）。
 
-## 入门
+这份文档假设你会写 Go 的基本语法，但不要求你有后端框架的经验。用到的后端概念，例如中间件、事务、JWT，第一次出现时都会解释。
 
-- [安装](installation/README.md)
-    - [安装](installation/installing.md)
-    - [脚手架](installation/scaffolding.md)
-    - [开发工具](installation/tooling.md)
-    - [部署](installation/deployment.md)
-- [入门教程](tutorial/README.md)
-    - [创建项目](tutorial/01-project.md)
-    - [基础设施与装配](tutorial/02-infrastructure.md)
-    - [数据库与迁移](tutorial/03-database.md)
-    - [文章接口](tutorial/04-api.md)
-    - [文章页面](tutorial/05-pages.md)
-    - [作者登录](tutorial/06-login.md)
-    - [草稿与发布](tutorial/07-drafts.md)
-    - [后台：作者与角色](tutorial/08-admin.md)
+## 怎样阅读
 
-## 概览与通用主题
+文档按学习顺序排列，建议从上往下读：
 
-- [概览](concepts/README.md)
-    - [目录结构](concepts/structure.md)
-    - [请求生命周期](concepts/lifecycle.md)
-    - [依赖装配](concepts/dependencies.md)
-    - [业务动作](concepts/actions.md)
-- [通用主题](general/README.md)
-    - [配置](general/configuration.md)
-    - [错误处理](general/errors.md)
-    - [日志](general/logging.md)
-    - [本地化](general/localization.md)
-    - [命令行](general/commands.md)
+1. **入门**：安装 Tenon，跟着教程做出一个能登录、能发布文章的博客。做完教程，你已经接触了大部分常用功能。
+2. **基础**：分别深入讲解教程中用到的每一部分。写自己的项目时，遇到哪一部分就读哪一页。
+3. 之后的章节按需阅读：需要缓存、队列、文件上传等功能时读“常用功能”，需要登录和权限时读“安全”，以此类推。
 
-## 处理请求
+每一页的开头会写出需要先读哪些页面。遇到不熟悉的 Go 写法，例如 `context`、错误的包装、结构体标签，可以先看[Go 知识准备](concepts/go-primer.md)。
 
-- [请求处理](http/README.md)
-    - [路由](http/routing.md)
-    - [中间件](http/middleware.md)
-    - [请求](http/requests.md)
-    - [验证](http/validation.md)
-    - [客户端协议](http/protocol.md)
-- [构建响应](responses/README.md)
-    - [响应](responses/responses.md)
-    - [客户端代码](responses/clients.md)
-    - [单页应用](responses/spa.md)
-    - [应用骨架](responses/app-shell.md)
-    - [设计令牌](responses/theme.md)
-    - [运营后台](responses/admin.md)
-    - [资源](responses/resources.md)
-    - [shadcn registry 与控制台](responses/registry.md)
-    - [服务端推送](responses/sse.md)
+## 第一阶段：入门
+
+- [安装](installation/installing.md)：安装 Go 和 Tenon，写出第一个 API
+- [脚手架](installation/scaffolding.md)：用 `tenon init` 生成一个完整的项目
+- [入门教程](tutorial/README.md)：从零做出一个博客
+    1. [创建项目](tutorial/01-project.md)
+    2. [基础设施与装配](tutorial/02-infrastructure.md)
+    3. [数据库与迁移](tutorial/03-database.md)
+    4. [文章接口](tutorial/04-api.md)
+    5. [文章页面](tutorial/05-pages.md)
+    6. [作者登录](tutorial/06-login.md)
+    7. [草稿与发布](tutorial/07-drafts.md)
+    8. [后台：作者与角色](tutorial/08-admin.md)
+
+## 第二阶段：基础
+
+先了解一个 Tenon 项目由哪些部分组成，一个请求是怎样被处理的：
+
+- [Go 知识准备](concepts/go-primer.md)：文档中常见、入门教程不一定讲到的 Go 写法
+- [目录结构](concepts/structure.md)：项目中的目录各放什么
+- [请求生命周期](concepts/lifecycle.md)：一个 HTTP 请求从进入到返回经过哪些环节
+
+然后逐一深入：
+
+- [配置](general/configuration.md)：配置文件、环境变量和多套环境
+- [路由](http/routing.md)：把一个地址交给一个处理函数
+- [请求](http/requests.md)：读取路径参数、查询参数、请求头和请求体
+- [验证](http/validation.md)：在处理请求之前检查输入
+- [响应](responses/responses.md)：返回 JSON、状态码、分页和文件
+- [错误处理](general/errors.md)：定义业务错误，返回给客户端合适的状态码和提示
+- [中间件](http/middleware.md)：在每个请求前后做的通用工作，例如超时、跨域
+- [日志](general/logging.md)：记录日志，在日志中找到一次请求的全部记录
+- [本地化](general/localization.md)：中英文等多种语言的提示
+- [数据库](database/quick-start.md)：连接数据库，定义模型，查询和事务
+- [迁移](database/migrations.md)：用迁移文件管理表结构的变化
+- [命令行](general/commands.md)：`serve`、`migrate` 以及你自己的命令
+- [测试](testing/README.md)：测试业务代码、数据库和接口
+    - [快速入门](testing/overview.md)
+    - [数据库与业务动作](testing/database.md)
+    - [HTTP 与命令](testing/http.md)
+
+## 第三阶段：组织代码
+
+项目变大以后，代码怎样分层、依赖怎样传递，接口怎样交给前端使用：
+
+- [依赖装配](concepts/dependencies.md)：在入口创建数据库连接等依赖，再传给业务代码
+- [业务动作](concepts/actions.md)：一个用例写成一个类型，HTTP、命令行和队列都能调用它
+- [客户端协议](http/protocol.md)：前端和 App 调用接口时遵守的约定
+- [客户端代码](responses/clients.md)：由接口生成 TypeScript 和 Go 的客户端
+- [开发工具](installation/tooling.md)：`tenon dev`、`tenon generate`、`tenon build`
+
+## 第四阶段：前端
+
+- [单页应用](responses/spa.md)：把 React 前端打包进 Go 程序
+- [应用骨架](responses/app-shell.md)：登录检查、菜单、多标签、表单和列表
+- [运营后台](responses/admin.md)：用 antd 搭建后台
+- [shadcn registry 与控制台](responses/registry.md)：用 shadcn 搭建界面
+- [资源](responses/resources.md)：在 Go 中声明增删改查的页面，两套界面直接渲染
+- [设计令牌](responses/theme.md)：品牌色、圆角等在一处定义，所有界面共用
+- [服务端推送](responses/sse.md)：服务端主动把进度、通知推给浏览器
+- 服务端生成的页面：
     - [视图](responses/views.md)
     - [表单](responses/forms.md)
     - [前端资源](responses/assets.md)
     - [界面组件](responses/components.md)
     - [文档页](responses/doc-pages.md)
 
-## 数据
+## 第五阶段：常用功能
 
-- [数据库](database/README.md)
-    - [快速入门](database/quick-start.md)
-    - [迁移](database/migrations.md)
+存储与通信：
 
-## 库与功能
+- [缓存](libraries/cache.md)：把查询结果暂存起来，减少数据库的压力
+- [Redis](libraries/redis.md)：连接 Redis
+- [原子锁](libraries/locks.md)：同一时间只让一个进程做某件事
+- [限流](libraries/rate-limiting.md)：限制一段时间内的请求次数
+- [队列](libraries/queue.md)：把耗时的工作放到后台执行
+- [定时任务](libraries/scheduling.md)：每天、每小时执行的工作
+- [广播](libraries/broadcasting.md)：在多个进程之间传递消息
+- [实时频道](libraries/realtime.md)：把消息推给在线的用户
+- [文件存储](libraries/filesystem.md)：本地磁盘和对象存储
+- [文件上传](libraries/file-uploads.md)：上传接口和常见用法
+- [邮件](libraries/mail.md)、[短信](libraries/sms.md)、[生成 PDF](libraries/pdf.md)
+- [出站请求](libraries/outbound.md)：安全地调用其他服务的接口
 
-- [库参考](libraries/README.md)
-    - [缓存](libraries/cache.md)
-    - [原子锁](libraries/locks.md)
-    - [限流](libraries/rate-limiting.md)
-    - [队列](libraries/queue.md)
-    - [定时任务](libraries/scheduling.md)
-    - [广播](libraries/broadcasting.md)
-    - [实时频道](libraries/realtime.md)
-    - [文件存储](libraries/filesystem.md)
-    - [文件的常见用法与上传接口](libraries/file-uploads.md)
-    - [邮件](libraries/mail.md)
-    - [短信](libraries/sms.md)
-    - [生成 PDF](libraries/pdf.md)
-    - [出站请求](libraries/outbound.md)
-    - [Redis](libraries/redis.md)
-- [应用功能](features/README.md)
-    - [通知](features/notifications.md)
-    - [移动推送](features/push.md)
-    - [操作日志](features/activity.md)
-    - [功能开关](features/flags.md)
-    - [设置](features/settings.md)
-    - [后台操作](features/operations.md)
-    - [导入与导出](features/import-export.md)
-    - [后台导入与导出](features/background-import-export.md)
-    - [Webhook](features/webhooks.md)
-    - [全文搜索](features/search.md)
-- [安全](security/README.md)
-    - [单账号后台](security/admin-example.md)
-    - [认证](security/authentication.md)
-    - [登录与注册](security/login.md)
-    - [API 令牌](security/api-tokens.md)
-    - [第三方登录](security/social-login.md)
-    - [企业单点登录](security/enterprise-sso.md)
-    - [OAuth 授权服务器](security/oauth-server.md)
-    - [运营后台与多租户](security/saas-example.md)
-    - [多租户](security/tenancy.md)
-    - [授权](security/authorization.md)
-    - [哈希](security/hashing.md)
-    - [加密与签名链接](security/encryption.md)
-- [AI](ai/README.md)
+应用中常见的功能：
+
+- [通知](features/notifications.md)：站内通知、邮件和其他渠道
+- [移动推送](features/push.md)：推送到手机
+- [设置](features/settings.md)：应用和用户的设置
+- [功能开关](features/flags.md)：按用户逐步开放新功能
+- [操作日志](features/activity.md)：记录谁在什么时候做了什么
+- [后台操作](features/operations.md)：导入、批量处理这类耗时的操作，带进度
+- [导入与导出](features/import-export.md)：Excel 和 CSV
+- [后台导入与导出](features/background-import-export.md)：大文件在后台处理
+- [Webhook](features/webhooks.md)：把事件通知给其他系统
+- [全文搜索](features/search.md)：按关键词搜索
+
+## 第六阶段：安全
+
+建议按下面的顺序阅读：先理解认证，再学习登录和授权，最后是更复杂的场景。
+
+- [认证](security/authentication.md)：怎样知道“这个请求是谁发的”
+- [登录与注册](security/login.md)：邮箱和密码、验证码、找回密码
+- [API 令牌](security/api-tokens.md)：给程序和第三方使用的令牌
+- [授权](security/authorization.md)：角色与权限，“这个人能不能做这件事”
+- [哈希](security/hashing.md)：安全地保存密码
+- [加密与签名链接](security/encryption.md)：保护敏感数据和链接
+- [单账号后台](security/admin-example.md)：一个完整的例子
+- [第三方登录](security/social-login.md)：用微信、GitHub 等账号登录
+- [企业单点登录](security/enterprise-sso.md)：用企业自己的账号系统登录
+- [OAuth 授权服务器](security/oauth-server.md)：让第三方应用代表用户调用你的接口
+- [多租户](security/tenancy.md)：一套系统同时服务多个客户
+- [运营后台与多租户](security/saas-example.md)：一个完整的例子
+
+## 第七阶段：进阶
+
+- AI：
     - [AI 助手](ai/chat.md)
     - [MCP 服务](ai/mcp.md)
     - [文档转换与切分](ai/documents.md)
     - [向量检索](ai/vector.md)
-
-## 进阶
-
-- [可观测性](general/telemetry.md)：OpenTelemetry 指标、链路与推送
-- [前端观测](general/frontend-observability.md)：浏览器中的错误、页面与链路，source map
-- [测试](testing/README.md)
-    - [快速入门](testing/overview.md)
-    - [数据库与业务动作](testing/database.md)
-    - [HTTP 与命令](testing/http.md)
+- [可观测性](general/telemetry.md)：指标、链路和日志推送到观测平台
+- [前端观测](general/frontend-observability.md)：浏览器中的错误、页面和链路
+- [部署](installation/deployment.md)：构建、配置和上线
 
 文档与同一版本的代码对应。框架依赖的精确版本以仓库中的 [go.mod](../go.mod) 为准。
