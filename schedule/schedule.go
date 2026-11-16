@@ -2,6 +2,7 @@ package schedule
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"log/slog"
 	"runtime/debug"
@@ -179,8 +180,9 @@ func (s *Scheduler) Run(ctx context.Context) error {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				if err := s.execute(taskCtx, t, tick); err != nil {
-					s.logger.ErrorContext(taskContext(taskCtx, t), "scheduled task failed", "error", err)
+				ctx := taskContext(taskCtx, t)
+				if err := s.execute(ctx, t, tick); err != nil {
+					s.logger.ErrorContext(ctx, "scheduled task failed", "error", err)
 				}
 			}()
 		}
@@ -235,7 +237,7 @@ func (s *Scheduler) RunDue(ctx context.Context, t time.Time) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if err := s.execute(ctx, task, tick); err != nil {
+			if err := s.execute(taskContext(ctx, task), task, tick); err != nil {
 				errs[i] = errors.Wrapf(err, "schedule: task %q", task.name)
 			}
 		}()
@@ -244,10 +246,9 @@ func (s *Scheduler) RunDue(ctx context.Context, t time.Time) error {
 	return errors.Join(errs...)
 }
 
-// execute 取得这一次触发和防止重叠所需的锁，然后执行任务。
+// execute 取得这一次触发和防止重叠所需的锁，然后执行任务。ctx 是 taskContext 返回的这一次执行的 context。
 // 其他实例已经执行这一次触发、或者任务仍在执行时直接返回 nil。
 func (s *Scheduler) execute(ctx context.Context, t *task, tick time.Time) error {
-	ctx = taskContext(ctx, t)
 	finished, err := s.runLocked(ctx, t, tick)
 	if finished != nil {
 		// 结束事件在释放执行锁之后发出：Observer 收到它时，Running 已经返回 false。
@@ -381,8 +382,14 @@ func call(ctx context.Context, run func(ctx context.Context) error) (err error) 
 	return run(ctx)
 }
 
+// taskContext 返回一次执行的 context：日志带上任务名；ctx 中没有请求 ID 时分配一个，
+// 这次执行的日志、它发布的队列任务和写下的操作记录据此关联起来。
 func taskContext(ctx context.Context, t *task) context.Context {
-	return logging.WithAttrs(ctx, slog.String("task", t.name))
+	ctx = logging.WithAttrs(ctx, slog.String("task", t.name))
+	if logging.RequestID(ctx) == "" {
+		ctx = logging.WithRequestID(ctx, rand.Text())
+	}
+	return ctx
 }
 
 // Cleanup 把 Cleanup(ctx, limit) 形式的清理函数包装成任务：反复调用，直到一次删除的数量少于 limit。

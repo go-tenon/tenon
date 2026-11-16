@@ -93,6 +93,7 @@ func connect(t *testing.T, url, token string, header http.Header) (*client, fram
 }
 
 // rejected 发送 connect 命令，返回服务器拒绝连接时的关闭码。
+// 服务器可能不等 connect 命令就关闭连接（例如已经停止），这时写入失败，关闭码照样从读取中得到。
 func rejected(t *testing.T, url, token string, header http.Header) websocket.StatusCode {
 	t.Helper()
 	c, _, err := dial(t, url, header)
@@ -102,9 +103,7 @@ func rejected(t *testing.T, url, token string, header http.Header) websocket.Sta
 	data, _ := json.Marshal(map[string]any{"id": 1, "connect": map[string]any{"token": token}})
 	ctx, cancel := context.WithTimeout(context.Background(), wait)
 	defer cancel()
-	if err := c.conn.Write(ctx, websocket.MessageText, data); err != nil {
-		t.Fatalf("write: %v", err)
-	}
+	_ = c.conn.Write(ctx, websocket.MessageText, data)
 	return c.closed()
 }
 

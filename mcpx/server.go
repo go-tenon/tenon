@@ -2,6 +2,7 @@ package mcpx
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"log/slog"
 	"reflect"
@@ -156,6 +157,10 @@ func Register[I, O any](s *Server, t Tool, fn func(context.Context, I) (O, error
 	}
 	name := t.Name
 	s.sdk.AddTool(tool, func(ctx context.Context, req *mcp.CallToolRequest) (_ *mcp.CallToolResult, err error) {
+		// 经由 HTTP 时请求 ID 由 httpx.AssignRequestID 分配；stdio 等其他传输方式在这里为每次调用分配一个。
+		if logging.RequestID(ctx) == "" {
+			ctx = logging.WithRequestID(ctx, rand.Text())
+		}
 		httpx.AddAccessLogAttrs(ctx, slog.String("mcp.tool", name))
 		var input I
 		if problems := in.validate(req.Params.Arguments, &input); len(problems) > 0 {
