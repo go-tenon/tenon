@@ -90,6 +90,7 @@ import { CloudOutlined } from "@ant-design/icons"
 | `AdminLayout variant="top"` | 导航在顶栏 | 页面少的后台 |
 | `AdminLayout variant="mix"` | 一级导航在顶栏，二级在侧栏 | 模块多、每个模块页面多的后台 |
 | `RailLayout` | 最左侧的图标栏切换模块，旁边是模块内的菜单 | 客服、IM、项目管理这类工作台 |
+| `CenteredLayout` | 没有侧栏，内容限宽居中（`width`，默认 720） | 简单的用户端、个人中心 |
 | `SettingsLayout` | 页面内左侧是二级导航，右侧是内容 | 设置、个人资料 |
 | `FullscreenLayout` | 只保留返回和操作入口 | 编辑器、画布、数据大屏 |
 | `AuthLayout` | 卡片居中，或者左右分栏（`side`） | 登录、注册、找回密码 |
@@ -192,7 +193,7 @@ bun add ai@^7.0.159 @ai-sdk/react@^4.0.163 @ant-design/x@^2.10.0 @ant-design/x-m
 | 名称 | 说明 |
 | --- | --- |
 | `AdminProvider`、`useAdmin` | 全局配置；颜色模式、图标 |
-| `AdminLayout`、`RailLayout`、`SettingsLayout`、`FullscreenLayout`、`AuthLayout` | 布局 |
+| `AdminLayout`、`RailLayout`、`CenteredLayout`、`SettingsLayout`、`FullscreenLayout`、`AuthLayout` | 布局 |
 | `TabBar`、`Crumbs`、`NavLink`、`CollapseButton` | 自定义布局用的部件 |
 | `LoginPage`、`RouteError`、`NotFoundPage`、`ForbiddenPage` | 页面 |
 | `UserMenu`、`TenantSwitcher`、`NewVersionNotice` | 顶栏的部件 |

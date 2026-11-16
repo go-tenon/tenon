@@ -21,6 +21,7 @@ import { DataTable, ListToolbar, StatusBadge } from "@/components/tenon/data-tab
 import { ConfirmProvider, useConfirm } from "@/components/tenon/dialogs"
 import { Field, FormError, useApiForm } from "@/components/tenon/form"
 import { LoginForm } from "@/components/tenon/login-form"
+import { MixedLayout } from "@/components/tenon/mixed-layout"
 import { AuthLayout } from "@/components/tenon/page-layouts"
 import { SidebarLayout } from "@/components/tenon/sidebar-layout"
 import { TopNavLayout } from "@/components/tenon/topnav-layout"
@@ -229,6 +230,10 @@ async function setup(path: string, signedIn = true) {
   return { app, session, search: () => app.router.state.location.search as Record<string, unknown> }
 }
 
+/** 窄屏：matchMedia 的查询都匹配。 */
+const narrowScreen = (query: string) =>
+  ({ matches: true, media: query, addEventListener() {}, removeEventListener() {} }) as unknown as MediaQueryList
+
 describe("布局", () => {
   it("侧栏布局：菜单来自路由，链接由路由跳转，收起状态保存在布局状态中", async () => {
     layout = () => <SidebarLayout title="控制台" />
@@ -259,6 +264,40 @@ describe("布局", () => {
     await screen.findByText("home page")
     expect(screen.getByText("门户")).toBeTruthy()
     expect(screen.getAllByText("文章")[0].closest("a")?.getAttribute("href")).toBe("/articles")
+  })
+
+  it("顶部导航布局：窄屏时 narrowNav=bottom 把第一级菜单放到底部标签栏", async () => {
+    const narrow = vi.spyOn(window, "matchMedia").mockImplementation(narrowScreen)
+    try {
+      layout = () => <TopNavLayout title="门户" narrowNav="bottom" />
+      const { app } = await setup("/")
+      await screen.findByText("home page")
+      const bottom = screen.getByRole("navigation", { name: "主导航" })
+      const links = Array.from(bottom.querySelectorAll("a"))
+      expect(links.map((a) => a.textContent)).toEqual(["首页", "文章", "编辑器"])
+      expect(links[0].getAttribute("aria-current")).toBe("page")
+      expect(screen.queryByRole("button", { name: "打开导航" })).toBeNull()
+      await act(async () => fireEvent.click(links[1]))
+      await screen.findByText("你好")
+      expect(app.router.state.location.pathname).toBe("/articles")
+    } finally {
+      narrow.mockRestore()
+    }
+  })
+
+  it("顶栏 + 侧栏布局：模块在顶栏，点击进入模块", async () => {
+    layout = () => <MixedLayout title="控制台" />
+    const { app } = await setup("/")
+    await screen.findByText("home page")
+    const header = document.querySelector("header") as HTMLElement
+    const modules = Array.from(header.querySelectorAll("nav a"))
+    expect(modules.map((a) => a.textContent)).toEqual(["首页", "文章", "编辑器"])
+    expect(modules[0].getAttribute("aria-current")).toBe("page")
+    await act(async () => fireEvent.click(modules[1]))
+    await screen.findByText("你好")
+    expect(app.router.state.location.pathname).toBe("/articles")
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: /Toggle Sidebar/i })))
+    expect(JSON.parse(localStorage.getItem("tenon:registry-test:layout:u1") ?? "{}").collapsed).toBe(true)
   })
 })
 

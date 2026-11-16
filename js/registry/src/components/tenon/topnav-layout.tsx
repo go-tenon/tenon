@@ -1,8 +1,9 @@
-// 顶部导航：导航在顶栏，内容居中或全宽，适合页面少的用户端。窄屏时导航收进抽屉。
+// 顶部导航：导航在顶栏，内容居中或全宽，适合页面少的用户端。窄屏时导航收进抽屉，或者放到底部标签栏。
 
 import { Slot, type TabsOutletProps, useNarrow, useNavigation } from "@go-tenon/shell"
 import { ChevronDown, Menu } from "lucide-react"
 import type { ReactNode } from "react"
+import { BottomNav } from "@/components/tenon/bottom-nav"
 import { MenuIcon, NavLink } from "@/components/tenon/nav"
 import { LayoutContent } from "@/components/tenon/tab-bar"
 import { Button } from "@/components/ui/button"
@@ -17,10 +18,18 @@ export interface TopNavLayoutProps {
   /** 内容限宽居中（默认）还是全宽。 */
   width?: "contained" | "full"
   tabs?: boolean | TabsOutletProps
+  /** 窄屏时导航放在哪里：drawer（默认）收进左上角按钮打开的抽屉；bottom 放到底部标签栏，见 BottomNav。 */
+  narrowNav?: "drawer" | "bottom"
 }
 
 /** 顶部导航布局。插槽：brand、search、actions、tenant、user 在顶栏，footer 在页脚。 */
-export function TopNavLayout({ title, logo, width = "contained", tabs }: TopNavLayoutProps): ReactNode {
+export function TopNavLayout({
+  title,
+  logo,
+  width = "contained",
+  tabs,
+  narrowNav = "drawer",
+}: TopNavLayoutProps): ReactNode {
   const { menu, active } = useNavigation()
   const narrow = useNarrow()
   const link = (active_: boolean) =>
@@ -53,10 +62,10 @@ export function TopNavLayout({ title, logo, width = "contained", tabs }: TopNavL
   )
   const container = width === "contained" ? "mx-auto w-full max-w-6xl px-4" : "w-full px-4"
   return (
-    <div className="flex min-h-svh flex-col">
+    <div className={cn("flex min-h-svh flex-col", narrow && narrowNav === "bottom" && "pb-16")}>
       <header className="sticky top-0 z-10 border-b bg-background/95 backdrop-blur">
         <div className={cn(container, "flex h-14 items-center gap-4")}>
-          {narrow && (
+          {narrow && narrowNav === "drawer" && (
             <Sheet>
               <SheetTrigger asChild>
                 <Button variant="ghost" size="icon" aria-label="打开导航">
@@ -97,6 +106,7 @@ export function TopNavLayout({ title, logo, width = "contained", tabs }: TopNavL
         <LayoutContent tabs={tabs} />
       </main>
       <Slot name="footer" />
+      {narrow && narrowNav === "bottom" && <BottomNav />}
     </div>
   )
 }

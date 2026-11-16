@@ -5,7 +5,7 @@ import { createMemoryHistory, createRootRouteWithContext, createRoute, Outlet } 
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { theme } from "antd"
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest"
-import { AdminLayout, type AdminVariant, AuthLayout, RailLayout } from "./layouts"
+import { AdminLayout, type AdminVariant, AuthLayout, CenteredLayout, RailLayout } from "./layouts"
 import { NewVersionNotice, TenantSwitcher, UserMenu } from "./menus"
 import { LoginPage, NotFoundPage, RouteError } from "./pages"
 import { AdminProvider } from "./provider"
@@ -207,6 +207,17 @@ describe("AdminLayout", () => {
     await screen.findByText("articles page")
     expect(screen.getByLabelText("首页")).toBeTruthy()
     expect(screen.getByLabelText("文章")).toBeTruthy()
+  })
+
+  it("CenteredLayout：没有菜单，顶栏放标题和插槽，内容限宽", async () => {
+    layout = () => <CenteredLayout title="个人中心" width={600} />
+    await setup("/articles")
+    await screen.findByText("articles page")
+    expect(screen.getByText("个人中心")).toBeTruthy()
+    expect(screen.getByRole("button", { name: "写文章" })).toBeTruthy() // actions 插槽
+    expect(screen.queryByRole("menu")).toBeNull()
+    const content = screen.getByText("articles page").closest("main") as HTMLElement
+    expect(content.style.maxWidth).toBe("600px")
   })
 })
 

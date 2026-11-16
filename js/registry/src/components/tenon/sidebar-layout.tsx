@@ -43,7 +43,8 @@ export interface SidebarLayoutProps {
   tabs?: boolean | TabsOutletProps
 }
 
-function Item({ item, active }: { item: MenuItem; active: readonly string[] }): ReactNode {
+/** 侧栏中的一个菜单项：分组展开为二级菜单。“顶栏 + 侧栏”布局也用它。 */
+export function SidebarItem({ item, active }: { item: MenuItem; active: readonly string[] }): ReactNode {
   const badge = badgeText(item.badge)
   if (!item.children) {
     return (
@@ -112,7 +113,7 @@ export function SidebarLayout({ title, logo, variant = "sidebar", tabs }: Sideba
               <SidebarGroupLabel>导航</SidebarGroupLabel>
               <SidebarMenu>
                 {menu.map((item) => (
-                  <Item key={item.id} item={item} active={active} />
+                  <SidebarItem key={item.id} item={item} active={active} />
                 ))}
               </SidebarMenu>
             </SidebarGroup>

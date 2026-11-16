@@ -52,7 +52,9 @@ bunx shadcn@4.23.0 add ./.tenon/js/registry/r/tenon-rail-layout.json
 | 条目 | 组件 | 说明 |
 | --- | --- | --- |
 | `tenon-sidebar-layout` | `SidebarLayout` | 侧栏可收起为图标，顶栏在内容上方；`variant` 为 `inset`（内嵌式，内容区是浮起的卡片）或 `floating`；`tabs` 开启多标签 |
-| `tenon-topnav-layout` | `TopNavLayout` | 导航在顶栏，内容居中或全宽，窄屏时导航收进抽屉 |
+| `tenon-topnav-layout` | `TopNavLayout` | 导航在顶栏，内容居中或全宽；窄屏时导航收进抽屉，`narrowNav="bottom"` 时放到底部标签栏 |
+| `tenon-mixed-layout` | `MixedLayout` | 第一级菜单（模块）在顶栏，当前模块下的菜单在侧栏，对应运营后台的 `variant="mix"`；窄屏时侧栏变为抽屉，显示完整的菜单 |
+| `tenon-bottom-nav` | `BottomNav` | 底部标签栏：窄屏时第一级菜单固定在屏幕底部，最多 5 项。`TopNavLayout` 的 `narrowNav="bottom"` 使用它，其他布局也可以直接放置 |
 | `tenon-rail-layout` | `RailLayout` | 最左侧的图标栏切换模块，旁边是模块内的导航 |
 | `tenon-page-layouts` | `CenteredLayout`、`SettingsLayout`、`FullscreenLayout`、`AuthLayout` | 居中窄栏、设置、全屏、登录 |
 | `tenon-tab-bar` | `TabBar`、`LayoutContent` | 标签栏：菜单（刷新、固定、关闭）、拖动排序、未保存的标记 |

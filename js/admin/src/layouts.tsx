@@ -239,6 +239,53 @@ export function RailLayout({ logo, tabs }: RailLayoutProps): ReactNode {
   )
 }
 
+/** CenteredLayout 的选项。 */
+export interface CenteredLayoutProps {
+  title?: ReactNode
+  logo?: ReactNode
+  /** 内容的最大宽度（像素），默认 720。 */
+  width?: number
+  children?: ReactNode
+}
+
+/**
+ * 居中窄栏：没有侧栏，内容限宽居中，适合简单的用户端、个人中心。顶栏左侧是 brand 插槽（默认是 logo 和 title），
+ * 右侧是 actions 和 user 插槽。children 默认是 Outlet。
+ */
+export function CenteredLayout({ title, logo, width = 720, children }: CenteredLayoutProps): ReactNode {
+  const { token } = theme.useToken()
+  const hasBrand = useSlotFilled("brand")
+  const column = { width: "100%", maxWidth: width, margin: "0 auto", padding: "0 16px" }
+  return (
+    <Layout style={{ minHeight: "100vh" }}>
+      <Layout.Header
+        style={{
+          padding: 0,
+          background: token.colorBgContainer,
+          borderBottom: `1px solid ${token.colorBorderSecondary}`,
+        }}
+      >
+        <div style={{ ...column, display: "flex", alignItems: "center", gap: 12, height: "100%" }}>
+          {hasBrand ? (
+            <Slot name="brand" />
+          ) : (
+            <Space>
+              {logo}
+              <span style={{ fontWeight: 600 }}>{title}</span>
+            </Space>
+          )}
+          <Space style={{ marginLeft: "auto" }}>
+            <Slot name="actions" />
+            <Slot name="user" />
+          </Space>
+        </div>
+      </Layout.Header>
+      <Layout.Content style={{ ...column, paddingTop: 24, paddingBottom: 24 }}>{children ?? <Outlet />}</Layout.Content>
+      <Slot name="footer" />
+    </Layout>
+  )
+}
+
 /**
  * 设置类页面：页面内左侧是二级导航，右侧是内容。用作 /settings 这类布局路由的 component；
  * items 默认是当前第一级菜单下的菜单。

@@ -6,7 +6,7 @@ import { type ReactNode, useCallback, useLayoutEffect, useMemo, useSyncExternalS
 import { createPortal } from "react-dom"
 import { useApp, useBreadcrumbs, useMenu } from "./app"
 import { type Badge, useBadgeOf } from "./badges"
-import type { Crumb, MenuItem } from "./menu"
+import { type Crumb, firstPage, type MenuItem } from "./menu"
 import { createStore, perOwner, type Store } from "./store"
 
 // ———————————————————————————— 导航模型 ————————————————————————————
@@ -51,6 +51,45 @@ export function useNavigation(): Navigation {
     const module = menu.find((m) => m.id === active[0])
     return { menu, active, modules: menu, module, secondary: module?.children ?? [], crumbs }
   }, [menu, matched, crumbs])
+}
+
+/** 底部标签栏中的一项。 */
+export interface BottomNavItem {
+  id: string
+  title: string
+  icon?: string
+  /** 点击后进入的页面：分组是它下面第一个可以进入的页面。 */
+  path: string
+  badge?: MenuItem["badge"]
+  active: boolean
+}
+
+/**
+ * 窄屏时底部标签栏的项：第一级菜单，最多 max 项（默认 5）。分组进入它下面第一个可以进入的页面，
+ * 没有可以进入的页面的分组不显示。底部标签栏只适合第一级菜单不多的前端，例如用户端。
+ */
+export function bottomNav(menu: readonly MenuItem[], active: readonly string[], max = 5): BottomNavItem[] {
+  const out: BottomNavItem[] = []
+  for (const item of menu) {
+    if (out.length >= max) break
+    const path = item.children ? firstPage(item.children) : item.path
+    if (!path) continue
+    out.push({
+      id: item.id,
+      title: item.title,
+      icon: item.icon,
+      path,
+      badge: item.badge,
+      active: active[0] === item.id,
+    })
+  }
+  return out
+}
+
+/** 当前的底部标签栏，见 bottomNav。 */
+export function useBottomNav(max = 5): BottomNavItem[] {
+  const { menu, active } = useNavigation()
+  return useMemo(() => bottomNav(menu, active, max), [menu, active, max])
 }
 
 /**

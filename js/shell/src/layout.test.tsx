@@ -6,6 +6,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { AppRoot, createApp, type RouterContext, type TenancyOptions } from "./app"
 import {
+  bottomNav,
   Fill,
   Slot,
   useLayoutState,
@@ -176,6 +177,32 @@ describe("导航模型", () => {
     await act(() => app.router.navigate({ href: "/articles" }))
     await screen.findByText("articles page")
     expect(text("menu")).toBe("文章,全部文章,通知")
+  })
+})
+
+describe("底部标签栏", () => {
+  const menu = [
+    { id: "home", title: "首页", icon: "home", path: "/" },
+    {
+      id: "orders",
+      title: "订单",
+      path: "/orders",
+      children: [{ id: "orders-all", title: "全部订单", path: "/orders/all" }],
+    },
+    { id: "empty", title: "空分组", path: "/empty", children: [] },
+    { id: "me", title: "我的", path: "/me", badge: 2 },
+  ]
+
+  it("第一级菜单；分组进入它下面第一个页面，没有页面的分组不显示", () => {
+    expect(bottomNav(menu, ["orders", "orders-all"])).toEqual([
+      { id: "home", title: "首页", icon: "home", path: "/", badge: undefined, active: false },
+      { id: "orders", title: "订单", icon: undefined, path: "/orders/all", badge: undefined, active: true },
+      { id: "me", title: "我的", icon: undefined, path: "/me", badge: 2, active: false },
+    ])
+  })
+
+  it("最多 max 项", () => {
+    expect(bottomNav(menu, [], 2).map((i) => i.id)).toEqual(["home", "orders"])
   })
 })
 
