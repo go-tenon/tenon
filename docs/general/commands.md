@@ -88,7 +88,7 @@ func main() {
 
 `command.Execute` 执行根命令。收到 `SIGINT` 或 `SIGTERM` 时，它会取消命令的 context；命令失败时，它把错误写到标准错误，并以对应的[退出码](#exit-codes)结束进程。
 
-`command.Root` 在根命令上定义了 `--config` 选项，所有子命令共用它。它可以传入多次，后面的文件覆盖前面的；没有传入时读取环境变量 `APP_CONFIG`（格式相同，用逗号分隔），它也没有设置时是 `config/app.yaml`，见[按环境覆盖配置](configuration.md#overriding-configuration)。需要配置的命令由框架负责读取项目根目录的 [.env](configuration.md#env-files)、按 `--config` 加载配置并校验，你的代码只会拿到校验通过的配置。配置结构见[配置](configuration.md#loading-configuration)，类型参数通常可以从你传入的函数推断出来。
+`command.Root` 在根命令上定义了 `--config` 选项，所有子命令共用它。它可以传入多次，后面的文件覆盖前面的；没有传入时读取环境变量 `APP_CONFIG`（格式相同，用逗号分隔），它也没有设置时是 `config/app.yaml`，见[叠加多个配置文件](configuration.md#overriding-configuration)。需要配置的命令由框架负责读取项目根目录的 [.env](configuration.md#env-files)、按 `--config` 加载配置并校验，你的代码只会拿到校验通过的配置。配置结构见[配置](configuration.md#loading-configuration)，类型参数通常可以从你传入的函数推断出来。
 
 | 构造函数 | 创建的命令 | 需要配置 |
 | --- | --- | --- |
@@ -189,9 +189,8 @@ return command.AsExitError(command.ExitUnavailable, err)
 `command.Run` 创建一个先加载配置、再调用 `run(ctx, cfg)` 的命令。`ctx` 会在进程收到停止信号时被取消，常驻进程据此退出。`bootstrap.Serve` 装配应用并启动 HTTP 服务，见[依赖装配](../concepts/dependencies.md#assembling-the-application)，HTTP 服务会据此[平滑停止](../http/lifecycle.md#graceful-shutdown)：
 
 ```bash
-./bin/api serve                                                 # 使用 config/app.yaml
-./bin/api serve --config config/app.yaml --config config/prod.yaml
-APP_CONFIG=config/app.yaml,config/prod.yaml ./bin/api serve     # 与上一行等价
+./bin/api serve                                                      # 使用 config/app.yaml
+./bin/api serve --config config/app.yaml --config config/local.yaml  # 再叠加 config/local.yaml
 ```
 
 `Run` 不限于常驻进程，任何“读取配置然后做一件事”的命令都可以用它创建，例如数据回填、发送一次报表。
@@ -318,7 +317,7 @@ go run ./cmd/api migrate publish --dir migrations
 - `config show` 输出加载后的配置，包括默认值和展开后的环境变量。默认输出 YAML，`--format json` 输出 JSON。
 
 ```bash
-./bin/api config check --config config/app.yaml,config/prod.yaml
+./bin/api config check
 ./bin/api config show --format json
 ```
 

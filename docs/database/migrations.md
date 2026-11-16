@@ -175,8 +175,8 @@ root.AddCommand(migratecmd.New(migrations.FS, func(cfg settings.Config) database
 之后，你就可以在部署流程中执行：
 
 ```bash
-./bin/api migrate up --config config/app.yaml --config config/prod.yaml
-./bin/api migrate status --config config/app.yaml --config config/prod.yaml
+./bin/api migrate up
+./bin/api migrate status
 ```
 
 命令负责加载配置、连接数据库和关闭连接。数据库连不上时，命令以 `ExitUnavailable` 退出，部署脚本可以据此重试。各命令的输出见 [migrate 命令](../general/commands.md#migrate-command)。
