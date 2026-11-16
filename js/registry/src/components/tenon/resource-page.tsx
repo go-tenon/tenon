@@ -11,11 +11,10 @@ import {
   useResourceList,
   useResourceMutations,
 } from "@go-tenon/shell"
-import type { ColumnDef } from "@tanstack/react-table"
 import { Plus } from "lucide-react"
 import { type ReactNode, useEffect, useMemo, useState } from "react"
 import { Controller, type FieldValues, type UseFormReturn } from "react-hook-form"
-import { DataTable, type RowAction } from "@/components/tenon/data-table"
+import { DataTable, type DataTableColumn, type RowAction } from "@/components/tenon/data-table"
 import { useConfirm } from "@/components/tenon/dialogs"
 import { Field, FormError, useApiForm } from "@/components/tenon/form"
 import { PageHeader } from "@/components/tenon/page"
@@ -364,7 +363,7 @@ export function ResourcePage({ model, route, render = {}, inputs, rowActions, ac
     }
   }
 
-  const columns = useMemo<ColumnDef<ResourceRow>[]>(
+  const columns = useMemo<DataTableColumn<ResourceRow>[]>(
     () =>
       model.columns.map((f) => ({
         id: f.name,

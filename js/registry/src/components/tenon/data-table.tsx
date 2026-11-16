@@ -5,10 +5,13 @@ import { type ListState, type Selection, useTabActive } from "@go-tenon/shell"
 import {
   type ColumnDef,
   flexRender,
-  getCoreRowModel,
+  type RowData,
   type RowSelectionState,
+  rowSelectionFeature,
+  rowSortingFeature,
   type SortingState,
-  useReactTable,
+  tableFeatures,
+  useTable,
 } from "@tanstack/react-table"
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, MoreHorizontal } from "lucide-react"
 import { type ReactNode, useEffect, useState } from "react"
@@ -20,9 +23,25 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 
+/** DataTable 用到的表格功能：排序和行选择。分页和排序都由服务端完成，没有登记客户端的行模型。 */
+const features = tableFeatures({ rowSortingFeature, rowSelectionFeature })
+
+/** DataTable 的功能集，自己用 TanStack Table 的类型（Row、Table 等）时作为第一个类型参数。 */
+export type DataTableFeatures = typeof features
+
+/**
+ * DataTable 的列定义：TanStack Table 的 ColumnDef，功能集固定为 DataTable 的。
+ * 值的类型因列而异，所以是 any；单独声明一列时可以写 ColumnDef<DataTableFeatures, T, string> 得到更准确的类型。
+ */
+// biome-ignore lint/suspicious/noExplicitAny: 一个列数组中各列的值类型不同
+export type DataTableColumn<T extends RowData> = ColumnDef<DataTableFeatures, T, any>
+
+/** 读取中的空数据：表格的输入保持稳定，不在每次渲染时换成新的数组。 */
+const noRows: never[] = []
+
 /** DataTable 的选项。 */
-export interface DataTableProps<T> {
-  columns: ColumnDef<T>[]
+export interface DataTableProps<T extends RowData> {
+  columns: DataTableColumn<T>[]
   /** 当前页的数据；读取中为 undefined。 */
   data?: T[]
   /** 符合条件的总数，用于分页。 */
@@ -134,7 +153,7 @@ export function ListToolbar({
  *
  * 点击列头按这一列排序（列的 id 是排序参数），再点一次反向，第三次恢复默认。
  */
-export function DataTable<T>({
+export function DataTable<T extends RowData>({
   columns,
   data,
   total = 0,
@@ -150,7 +169,7 @@ export function DataTable<T>({
   const active = useTabActive()
   const sorting: SortingState = list.tableState.sorting
   const rowSelection: RowSelectionState = Object.fromEntries([...(selection?.keys ?? [])].map((k) => [k, true]))
-  const all: ColumnDef<T>[] = [
+  const all: DataTableColumn<T>[] = [
     ...(selection
       ? [
           {
@@ -170,7 +189,7 @@ export function DataTable<T>({
               />
             ),
             enableSorting: false,
-          } satisfies ColumnDef<T>,
+          } satisfies DataTableColumn<T>,
         ]
       : []),
     ...columns,
@@ -181,24 +200,19 @@ export function DataTable<T>({
             header: () => null,
             cell: ({ row }) => <RowActions actions={rowActions(row.original)} />,
             enableSorting: false,
-          } satisfies ColumnDef<T>,
+          } satisfies DataTableColumn<T>,
         ]
       : []),
   ]
-  const table = useReactTable({
-    data: data ?? [],
+  // 数据已经是服务端分页、排序后的一页：表格只负责渲染、列头排序的切换和行选择。
+  const table = useTable({
+    features,
+    data: data ?? noRows,
     columns: all,
     getRowId: rowKey,
-    getCoreRowModel: getCoreRowModel(),
-    manualPagination: true,
     manualSorting: true,
-    rowCount: total,
     enableSortingRemoval: true,
-    state: {
-      sorting,
-      pagination: { pageIndex: list.tableState.pageIndex, pageSize: list.tableState.pageSize },
-      rowSelection,
-    },
+    state: { sorting, rowSelection },
     onSortingChange: (updater) => {
       const next = typeof updater === "function" ? updater(sorting) : updater
       list.setSort(next[0] ? { field: next[0].id, desc: next[0].desc } : undefined)
@@ -260,7 +274,7 @@ export function DataTable<T>({
               ) : (
                 table.getRowModel().rows.map((row) => (
                   <TableRow key={row.id} data-state={row.getIsSelected() ? "selected" : undefined}>
-                    {row.getVisibleCells().map((cell) => (
+                    {row.getAllCells().map((cell) => (
                       <TableCell key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>
                     ))}
                   </TableRow>

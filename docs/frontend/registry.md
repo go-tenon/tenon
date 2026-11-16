@@ -99,6 +99,15 @@ const selection = useSelection<string>(list.params)
 
 点击列头按这一列排序（列的 `id` 就是排序参数），工具栏的搜索输入停顿后才更新地址中的 `q`。
 
+列定义的类型是 `DataTableColumn<T>`，即 [TanStack Table](https://tanstack.com/table) v9 的 `ColumnDef`，功能集固定为表格用到的排序和行选择：
+
+```tsx
+const columns: DataTableColumn<Article>[] = [
+  { id: "title", accessorKey: "title", header: "标题" },
+  { id: "status", header: "状态", enableSorting: false, cell: ({ row }) => <StatusBadge>{row.original.status}</StatusBadge> },
+]
+```
+
 表单用 `useApiForm`：
 
 ```tsx
