@@ -2,6 +2,8 @@
 
 本页给出一套**数据库驱动的单账号后台**最短闭环：一张用户表、邮箱密码登录、JWT（access token + refresh cookie）、用 Bearer 保护业务接口。读完就能搭起可用的后台认证；细节由后面各章拆开讲，多租户与代登录见[运营后台与多租户](saas-example.md)。
 
+阅读前需要了解：[入门教程第 6 章](../tutorial/06-login.md)；[依赖装配](../concepts/dependencies.md)。
+
 | | 本示例 |
 | --- | --- |
 | 账号 | 一套 `user`，`users` 表 |
@@ -17,6 +19,7 @@
 - [保护业务路由](#protecting-routes)
 - [接入入口](#wiring)
 - [接下来读什么](#next)
+- [常见问题](#troubleshooting)
 
 <a id="how-it-works"></a>
 ## 怎么运转
@@ -110,12 +113,12 @@ jwt := apitoken.NewJWT(tokens, apitoken.JWTConfig{Keys: apitoken.HMACKeys(crypt.
 cookie := apitoken.RefreshCookie{Name: "admin_refresh", Path: "/admin/api/auth"}
 ```
 
-根配置里需要 `crypt`、`hashing`、`api_token`（以及 Redis）。`apitoken.Config` 的 `idle_timeout` 必须长于 access token 有效期，否则 `NewJWT` 会 panic，见 [JWT 模式](api-tokens.md#jwt)。
+根配置里需要 `crypt`、`hashing`、`api_token`（以及 Redis）。`apitoken.Config` 的 `idle_timeout` 必须长于 access token 有效期，否则 `NewJWT` 会 panic，见 [JWT 模式](jwt.md#jwt)。
 
 <a id="auth-api"></a>
 ## 登录接口
 
-单页应用用 [JWT + refresh cookie](api-tokens.md#single-page-applications)：access 只放内存；refresh 只随 `/admin/api/auth` 下的请求发送。
+单页应用用 [JWT + refresh cookie](jwt.md#single-page-applications)：access 只放内存；refresh 只随 `/admin/api/auth` 下的请求发送。
 
 ```go
 package adminauth
@@ -258,3 +261,18 @@ router.Handle("/admin/*", adminSPA)
 | 运营后台 + 租户后台 + 代登录 | [运营后台与多租户](saas-example.md) |
 
 动手跟着改博客项目时，仍以[入门教程：作者登录](../tutorial/06-login.md)为准；本页是参考向的完整切片。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**启动时 panic，提示 `idle_timeout` 太短**
+
+`apitoken.Config` 的 `idle_timeout` 必须长于 access token 的有效期，见 [JWT 模式](jwt.md#jwt)。
+
+**登录成功，刷新页面后又要登录**
+
+refresh cookie 的 `Path` 只包含 `/admin/api/auth`，刷新接口要在这个路径下；页面和接口要同源，见[登录接口](#auth-api)。
+
+**其他账号体系的 token 调用后台接口，得到 401**
+
+`Accounts` 只接受 `user`，这是预期的行为，见[接入入口](#wiring)。

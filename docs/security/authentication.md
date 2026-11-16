@@ -6,6 +6,8 @@
 
 Tenon 用 Bearer Token 做这件事。客户端在请求头里带上 `Authorization: Bearer <token>`，框架拿你写的校验函数认出这个人，再把身份交给后面的处理器。
 
+阅读前需要了解：[路由](../http/routing.md)；[context](../concepts/go-primer.md#context)；[入门教程第 6 章](../tutorial/06-login.md#how-it-works)解释了 token。多套账号、多租户和代为登录见[认证进阶](authentication-advanced.md)。
+
 整条链路可以想成：
 
 1. 客户端出示一把「钥匙」（token）
@@ -25,11 +27,9 @@ Token 本身可以是什么都行：数据库里的 API Key，或者认证服务
 - [保护路由](#protecting-routes)
     - [认证失败的响应](#failed-authentication)
 - [每次请求加载权限](#resolving-subjects)
-- [多套账号体系](#account-systems)
-- [多租户](#tenants)
-- [代为登录](#impersonation)
 - [获取已认证的主体](#retrieving-the-subject)
 - [管理凭据](#managing-credentials)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="example-usage"></a>
@@ -79,13 +79,13 @@ type Subject struct {
 | --- | --- |
 | `Type` | 属于哪套账号，例如 `user`、`staff`、`customer`，由应用自己声明；队列任务这类系统操作用 `identity.System` |
 | `ID` | 在这套账号里的标识，不透明字符串，常见是用户表主键 |
-| `Impersonator` | 代为登录时「真正动手的人」，例如客服；零值表示本人操作，见[代为登录](#impersonation) |
+| `Impersonator` | 代为登录时「真正动手的人」，例如客服；零值表示本人操作，见[代为登录](authentication-advanced.md#impersonation) |
 | `Method` | 怎么认出来的，例如 `bearer` |
 | `Credential` | 这次用的凭据 ID，例如 [API 令牌](api-tokens.md)的 ID；方便在设备列表里标出「当前设备」、退出其他设备，也可以为空 |
-| `Tenant` | 这次请求落在哪个租户；`""` 表示平台本身。凭据绑了租户时，只能在该租户里用，见[多租户](#tenants) |
+| `Tenant` | 这次请求落在哪个租户；`""` 表示平台本身。凭据绑了租户时，只能在该租户里用，见[多租户](authentication-advanced.md#tenants) |
 | `Permissions` | 这个人有哪些权限，例如 `articles:write` |
 | `Scopes` | 这把钥匙被限制在哪些权限里，例如只读令牌的 `articles:read`；`nil` 表示不额外限制 |
-| `Auth` | 这次登录怎么验的身份：`Methods` 是通过的方式，如 `[password totp]`，`Time` 是最近一次验证时间（登录或[确认身份](login.md#confirming)）；`Auth.TwoFactor()` 表示是否经过二次验证。个人访问令牌、代为登录等凭据为零值 |
+| `Auth` | 这次登录怎么验的身份：`Methods` 是通过的方式，如 `[password totp]`，`Time` 是最近一次验证时间（登录或[确认身份](login-security.md#confirming)）；`Auth.TwoFactor()` 表示是否经过二次验证。个人访问令牌、代为登录等凭据为零值 |
 
 `Type` + `ID` 合起来是 `identity.Ref`，用 `sub.Ref()` 取得。框架里凡是要记下「是谁」的地方——令牌、角色、操作日志、通知——都会同时存这两个字段。所以 `ID` 只要在同一种 `Type` 里唯一就行：员工表和客户表都可以用自增 ID，不会打架。
 
@@ -212,7 +212,7 @@ api := rest.New(router, rest.Options{Accounts: identity.Accounts{user.Type: nil}
 
 键是账号体系，值是这套账号的 `identity.Resolver`。`nil` 表示：校验器给什么主体，就直接用什么主体，见[每次请求加载权限](#resolving-subjects)。
 
-如果校验器认出的人，`Type` 不在 `Accounts` 里——比如客户 token 打到了只接受员工的后台——效果和无效 token 一样，返回 `401`。产品有多套账号时，每个 API 只收它该服务的那几种，见[多套账号体系](#account-systems)。没设 `Accounts` 就去注册需要认证的路由，会 panic。
+如果校验器认出的人，`Type` 不在 `Accounts` 里——比如客户 token 打到了只接受员工的后台——效果和无效 token 一样，返回 `401`。产品有多套账号时，每个 API 只收它该服务的那几种，见[多套账号体系](authentication-advanced.md#account-systems)。没设 `Accounts` 就去注册需要认证的路由，会 panic。
 
 用 `rest.RequireBearer` 给路由加上认证。参数是：API 实例、校验器、以及调用者必须具备的权限。
 
@@ -253,7 +253,7 @@ rest.Register(api, op, NewGet(db).HTTP)
 | 校验器拒绝了 token | 401 | `auth.unauthenticated` |
 | token 属于 API 不接受的账号体系 | 401 | `auth.unauthenticated` |
 | 缺少所需权限 | 403 | `auth.forbidden` |
-| 路由要求最近确认过身份（[`rest.Confirmed`](login.md#confirming)），而凭据太久没确认 | 403 | `auth.confirm_required` |
+| 路由要求最近确认过身份（[`rest.Confirmed`](login-security.md#confirming)），而凭据太久没确认 | 403 | `auth.confirm_required` |
 | Resolver 要求这次登录经过二次验证，返回 `identity.ErrTwoFactorRequired` | 403 | `auth.two_factor_required` |
 | 校验器返回 5xx 类错误 | 与错误分类对应，例如 503 | 无 |
 
@@ -319,126 +319,6 @@ Resolver 只负责补权限和租户。返回主体里的 `Type`、`ID`、`Metho
 
 [MCP 服务](../ai/mcp.md)和[实时频道](../libraries/realtime.md#tokens)的 `Accounts` 也是同一个类型 `identity.Accounts`，所以同一个 Resolver 可以共用；三者对返回值的处理规则一致。[API 令牌](api-tokens.md)只标识用户，通常总会搭配 `Resolve` 一起用。
 
-<a id="account-systems"></a>
-## 多套账号体系
-
-运营人员 + 租户成员的完整接线见[运营后台与多租户](saas-example.md)。
-
-框架不替你定义用户表。一个产品里完全可以有几套互不相干的账号——平台运营、商家员工、终端客户——各自一张表，主键和登录方式都由产品自己定。框架只需要知道：这个主体属于哪一套，也就是它的 `Type`。
-
-**1. 每套账号声明一个类型**，放在拥有那张表的模块里：
-
-```go
-// internal/staff/staff.go
-const Type identity.SubjectType = "staff"
-
-// internal/member/member.go
-const Type identity.SubjectType = "member"
-
-// internal/customer/customer.go
-const Type identity.SubjectType = "customer"
-```
-
-登录时用它构造主体，例如 `identity.Subject{Type: customer.Type, ID: c.ID}`。
-
-**2. 每个入口声明接受哪几套账号。** 运营后台只收运营人员，商家后台只收商家员工，App / 小程序只收客户：
-
-```go
-router.Route("/ops/api", func(r chi.Router) {
-    ops := rest.New(r, rest.Options{BasePath: "/ops/api", Accounts: identity.Accounts{staff.Type: roles.Resolve}})
-    // 注册运营后台的接口
-})
-router.Route("/console/api", func(r chi.Router) {
-    console := rest.New(r, rest.Options{BasePath: "/console/api", Accounts: identity.Accounts{member.Type: roles.Resolve}, Tenant: fromPath})
-    // 注册商家后台的接口
-})
-router.Route("/api", func(r chi.Router) {
-    shop := rest.New(r, rest.Options{BasePath: "/api", Accounts: identity.Accounts{customer.Type: customers.Resolve}, Tenant: fromHost})
-    // 注册 App 和小程序的接口
-})
-```
-
-几个 API 可以共用同一个 token 校验器：客户的 token 打到商家后台，会像无效 token 一样得到 `401`。一个入口也可以同时接受多套账号，例如 `identity.Accounts{member.Type: roles.Resolve, customer.Type: customers.Resolve}`；`sub.Can` 和业务动作对它们一视同仁。[`authz`](authorization.md#roles) 按主体的类型和 ID 存角色，可以同时服务多套账号。终端客户往往不需要角色：Resolver 检查账号是否停用，再按「数据归属本人」授权即可。
-
-**3. 每套账号有自己的登录方式和令牌有效期。** 每套账号用一个 [`login.Realm`](login.md) 管理登录标识和密码——比如运营人员只能由管理员创建、必须用密码；客户可以用手机验证码自助注册。令牌用各自的配置创建 `apitoken.Store` 签发，见[装配](api-tokens.md#assembling)。
-
-**4. ID 只需在同一套账号中唯一。** 令牌、角色、[操作日志](../features/activity.md)、[通知](../features/notifications.md)、[功能开关](../features/flags.md)和实时频道的在线成员，都会同时保存主体的类型和 ID，所以员工表和客户表都用自增 ID 也能分清。主键是 `(tenant_id, id)` 这类组合时，把租户编进 ID，例如 `t42:1001`。新表推荐 UUIDv7。需要把主体塞进一个字符串时（缓存键、广播主题），用 `sub.Ref().String()`，结果形如 `customer:42`。
-
-[代为登录](#impersonation)也可以跨账号体系：运营人员代客户登录时，主体是客户，`Impersonator` 是运营人员的 `identity.Ref`。
-
-<a id="tenants"></a>
-## 多租户
-
-SaaS 里很常见：同一个人属于多个组织，在每个组织里权限不同。本次请求属于哪个租户，由请求本身决定——路径里的 `/t/{tenant}`、子域名、或请求头。用 `rest.Options.Tenant` 把它取出来：
-
-```go
-api := rest.New(router, rest.Options{
-    Tenant:   func(ctx huma.Context) string { return ctx.Param("tenant") },
-    Accounts: identity.Accounts{user.Type: resolve},
-})
-```
-
-`Tenant` 的结果在每个操作开始时写入 context，公开操作也不例外；用 `identity.TenantFromContext` 读取。没设 `Tenant`、或取到空字符串时，租户是 `""`，表示平台本身（个人中心、运营后台这类）。
-
-Resolver 据此加载用户在该租户里的权限，并把租户写进主体：
-
-```go
-func resolve(ctx context.Context, sub identity.Subject) (identity.Subject, error) {
-    tenant := identity.TenantFromContext(ctx)
-    perms, err := members.Permissions(ctx, tenant, sub.Ref())
-    if err != nil {
-        return identity.Subject{}, err // 不是成员时返回 errorx.NotFound 类错误，得到 404
-    }
-    sub.Tenant, sub.Permissions = tenant, perms
-    return sub, nil
-}
-```
-
-凭据也可以绑死一个租户，例如「只属于某个租户的个人访问令牌」：校验器返回的主体 `Tenant` 不为空时，只要和本次请求的租户不一致，就会在 Resolver 之前直接 `403`。
-
-角色和成员可以交给 [`authz`](authorization.md#roles) 管理，它的 `Resolve` 方法就是上面这类函数。租户怎么定、成员怎么管、数据怎么隔离、运营后台怎么做，见[多租户](tenancy.md)。
-
-<a id="impersonation"></a>
-## 代为登录
-
-客服排查问题时，经常需要「以用户的身份看一眼」。代为登录拿到的主体就是那个用户，权限也是他的；真正动手的人记在 `Impersonator` 里。`Impersonator` 会和其他字段一起存在令牌里，之后每个请求都会带着它。
-
-做法很直接：签发一个带 `Impersonator` 的[登录令牌](api-tokens.md#login-and-logout)。运营后台的「以此用户登录」调用一个要求 `users:impersonate` 的接口，为目标用户签发令牌，交给用户端前端使用；排查完再[撤销](api-tokens.md#revoking-tokens)。运营人员和用户属于不同[账号体系](#account-systems)时也一样——主体是用户，`Impersonator` 是运营人员：
-
-```go
-staff, _ := identity.FromContext(ctx)
-if !staff.Impersonator.IsZero() {
-    return nil, identity.ErrForbidden.New() // 先回到自己的账号，代为登录只有一层
-}
-target := identity.Subject{Type: customer.Type, ID: in.CustomerID, Impersonator: staff.Ref()}
-plain, err := tokens.Login(ctx, target, device)
-```
-
-用户端前端在 `sub.Impersonator` 不为零值时，显示「正在代 {用户} 操作」和退出按钮；退出时撤销这个令牌，回到运营后台。
-
-令牌放请求头或请求体里传；不要塞进跳转地址的查询参数——那样会留在浏览器历史和访问日志里。
-
-几件需要应用自己拿主意的事：
-
-- **操作者仍然有效**：在 Resolver 里检查 `Impersonator` 是否还拥有代为登录权限。客服离职或权限被收回后，他代登的令牌在下一个请求就该失效：
-
-  ```go
-  if !sub.Impersonator.IsZero() {
-      perms, _, err := roles.Permissions(ctx, sub.Impersonator, "")
-      if err != nil {
-          return identity.Subject{}, err
-      }
-      if !identity.Grants(perms, "users:impersonate") {
-          return identity.Subject{}, identity.ErrUnauthenticated.New()
-      }
-  }
-  return roles.Resolve(ctx, sub)
-  ```
-
-- **谁可以被代为登录**：通常不允许代登其他运营人员；在 `Impersonate` 里用 `roles.Permissions(ctx, target.Ref(), "")` 确认目标在平台中没有角色
-- **哪些操作不允许代为执行**：改密码和邮箱、管理设备和令牌、付款等，在对应业务动作里拒绝 `!subject.Impersonator.IsZero()` 的主体。代登期间创建的[个人访问令牌](api-tokens.md#personal-access-tokens)会记下 `Impersonator`，之后每次使用都归到这个操作者。[OAuth 授权](oauth-server.md)的同意接口由框架注册，已经会拒绝代登主体
-- **审计**：[操作日志](../features/activity.md)会自动记下 `Impersonator`；自己写日志时也要同时写下两者，例如 `slog.InfoContext(ctx, "article published", "subject", subject.Ref().String(), "impersonator", subject.Impersonator.String())`
-
 <a id="retrieving-the-subject"></a>
 ## 获取已认证的主体
 
@@ -467,11 +347,30 @@ func (a *Get) HTTP(ctx context.Context, in *GetInput) (*ArticleOutput, error) {
 <a id="managing-credentials"></a>
 ## 管理凭据
 
-把 token 写在配置文件里，适合内部服务或少数固定调用方。面向用户的 API 用 [API 令牌](api-tokens.md)：单页应用和 App 登录后拿到滑动过期的 token，或一对 [JWT access token 和 refresh token](api-tokens.md#jwt)；用户也可以给脚本建个人访问令牌。`Store.Validate` 或 `JWT.Validate` 可以直接当校验器。
+把 token 写在配置文件里，适合内部服务或少数固定调用方。面向用户的 API 用 [API 令牌](api-tokens.md)：单页应用和 App 登录后拿到滑动过期的 token，或一对 [JWT access token 和 refresh token](jwt.md#jwt)；用户也可以给脚本建个人访问令牌。`Store.Validate` 或 `JWT.Validate` 可以直接当校验器。
 
 用外部认证服务签发的 JWT 时，在校验器里用成熟库验证签名、签发者和有效期，再转成 `identity.Subject`。凭据换了，路由和业务代码不用动。
 
 用 GitHub、Google 等账号登录见[第三方登录](social-login.md)；用户注册、找回密码等由应用自己实现。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**带了 token 仍然得到 401**
+
+依次检查：请求头是否是 `Authorization: Bearer <token>` 的格式；校验器是否返回了 `ID` 为空的主体或 4xx 类错误；主体的 `Type` 是否在这个 API 的 `Accounts` 中，见[认证失败的响应](#failed-authentication)。
+
+**认证服务暂时不可用时，接口返回 503**
+
+校验器返回了 5xx 类错误（例如数据库不可用），框架按错误的分类返回对应的状态码，而不是把用户当作未登录。这是预期的行为。
+
+**注册路由时 panic**
+
+需要认证的路由没有设置 `Accounts`，或者路由没有声明访问策略。公开的路由也要写 `rest.Public()(&op)`，见[保护路由](#protecting-routes)。
+
+**令牌有效，但得到 403**
+
+用户缺少路由要求的权限。权限在每个请求中由 Resolver 加载，见[每次请求加载权限](#resolving-subjects)。
 
 <a id="api-reference"></a>
 ## API 参考
@@ -515,7 +414,7 @@ func RequireAuth(api *API, name string, scheme *huma.SecurityScheme, authenticat
 func Confirmed(maxAge time.Duration) func(op *huma.Operation)
 ```
 
-包 `github.com/go-tenon/tenon/httpx/rest`。`RequireBearer` 要求 `Authorization: Bearer` 令牌；`RequireAuth` 用于其他认证方式；`Confirmed` 要求最近 `maxAge` 内确认过身份，见[确认身份](login.md#confirming)。
+包 `github.com/go-tenon/tenon/httpx/rest`。`RequireBearer` 要求 `Authorization: Bearer` 令牌；`RequireAuth` 用于其他认证方式；`Confirmed` 要求最近 `maxAge` 内确认过身份，见[确认身份](login-security.md#confirming)。
 
 ### 错误
 

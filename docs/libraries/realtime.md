@@ -6,6 +6,10 @@
 
 频道就是[广播](broadcasting.md)的主题。业务代码照常通过 `hub.PublishJSON` 发布，SSE 处理器和 WebSocket 客户端都会收到；多个实例之间由 Hub 的后端传递消息。
 
+**WebSocket** 是浏览器和服务器之间的一条双向连接：连接建立后，双方都可以随时发送消息。
+
+阅读前需要了解：[广播](broadcasting.md)；[API 令牌](../security/api-tokens.md)。
+
 - [示例用法](#example-usage)
 - [创建 Realtime](#creating)
 - [频道](#channels)
@@ -19,6 +23,7 @@
 - [断线与重连](#reconnecting)
 - [部署](#deployment)
     - [单独部署实时连接](#separate-process)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="example-usage"></a>
@@ -164,7 +169,7 @@ router.Handle("/t/{tenant}/realtime", rt.Handler())
 
 token 无效、属于其他账号体系，或 Resolver 拒绝主体时，连接以 3500 关闭，SDK 停止重连。连接期间两者每 30 秒重新运行一次，token 被撤销、用户被停用或移出租户后连接结束。没有 token 的连接是匿名的，只能订阅公开频道。
 
-使用 [JWT 模式](../security/api-tokens.md#jwt)时，SDK 传入 access token，并设置 `getToken`：
+使用 [JWT 模式](../security/jwt.md#jwt)时，SDK 传入 access token，并设置 `getToken`：
 
 ```js
 import { realtimeAuth } from '@go-tenon/client';
@@ -319,6 +324,25 @@ location / {
 - 只改了接口和页面时，[升级](../installation/operations.md#zero-downtime-upgrades) `serve` 即可，实时连接保持在线；改了频道规则、授权函数，或者升级了框架，再升级 `realtime`。
 - `start` 中的 `HTTP` 已经挂载了实时频道，`Realtime` 只在单独部署时使用。
 - `realtime` 进程同样可以运行多个实例，它们与 `serve`、`work` 共用 Hub 后端，业务代码在哪个进程中发布都一样。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**浏览器订阅时被拒绝，`ctx.code` 是 102**
+
+服务端没有登记这个频道的规则。客户端只能订阅有匹配规则的频道，见[频道](#channels)。
+
+**订阅私有频道时被拒绝，`ctx.code` 是 103**
+
+连接没有带 token，是匿名的；或者授权函数返回了“不能订阅”。私有频道只对登录的连接开放，见[私有频道](#private-channels)。
+
+**连接以 3500 关闭，之后不再重连**
+
+token 无效、属于其他账号体系，或者主体被拒绝了，见[认证](#authentication)。
+
+**其他域名的页面连接时被拒绝**
+
+浏览器发起的连接只接受同源请求。把那个来源加入 `Options.TrustedOrigins`。
 
 <a id="api-reference"></a>
 ## API 参考

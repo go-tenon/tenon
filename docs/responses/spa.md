@@ -2,13 +2,16 @@
 
 用 React、Vue 等写的单页应用，可以和 API 打包进同一个二进制文件：Vite 的构建产物通过 `embed` 嵌入程序，由 `httpx.SPA` 提供。页面和 API 同源，部署时只有一个二进制文件。一个应用可以有多个单页应用，例如运营后台挂在 `/admin/`，用户端挂在 `/`。
 
-单页应用调用 [JSON API](../http/routing.md)，请求带 Bearer 令牌（见[单页应用的登录](../security/api-tokens.md#single-page-applications)），客户端由 `client --ts` 从路由生成，见[客户端代码](clients.md#typescript)。后台和用户端都是单页应用；公开页面可以[在服务端渲染](views.md)，两者共用一个 Router。`tenon init` 生成的项目已经按本页的方式组织好。路由、登录检查、权限、菜单等应用骨架的逻辑由 `@go-tenon/shell` 提供，见[应用骨架](app-shell.md)。
+单页应用调用 [JSON API](../http/routing.md)，请求带 Bearer 令牌（见[单页应用的登录](../security/jwt.md#single-page-applications)），客户端由 `client --ts` 从路由生成，见[客户端代码](clients.md#typescript)。后台和用户端都是单页应用；公开页面可以[在服务端渲染](views.md)，两者共用一个 Router。`tenon init` 生成的项目已经按本页的方式组织好。路由、登录检查、权限、菜单等应用骨架的逻辑由 `@go-tenon/shell` 提供，见[应用骨架](app-shell.md)。
+
+阅读前需要了解：[脚手架](../installation/scaffolding.md)；[embed](../concepts/go-primer.md#embed)。
 
 - [嵌入构建产物](#embedding)
 - [挂载](#mounting)
 - [缓存与前端路由](#caching-and-routing)
 - [开发](#development)
 - [构建与发布](#building)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="embedding"></a>
@@ -146,6 +149,29 @@ RUN CGO_ENABLED=0 go tool tenon build -o /out/api && mkdir /out/storage
 ```bash
 for app in apps/*/; do mkdir -p "$app/dist" && touch "$app/dist/index.html"; done
 ```
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**构建后打开某个页面得到 404，开发时正常**
+
+嵌入时省略了 `all:`，Vite 拆分出的以 `_` 开头的文件没有进入程序，见[嵌入构建产物](#embedding)。
+
+**`go build` 报错 `pattern dist: no matching files found`**
+
+前端还没有构建，`dist` 不存在。用 `tenon build` 构建，它先构建前端；只跑 Go 测试的 CI 放一个占位的 `index.html`，见[构建与发布](#building)。
+
+**开发时页面返回 502**
+
+前端的开发服务器（Vite）没有启动或者还在启动。用 `bun run dev` 启动全部，等终端中出现 Vite 就绪的提示后刷新，见[开发](#development)。
+
+**发布新版本后，已经打开的页面切换路由时报错**
+
+旧版本的脚本按需加载的分块在新版本中已经不存在了。在路由的 `errorComponent` 中提示刷新页面，或者用[新版本提示](app-shell.md#new-version)。
+
+**写错的接口地址返回了 `index.html`，而不是 404**
+
+API 没有放在子路由下。把 API 挂在 `/api` 等子路由中，写错的接口地址才会得到 JSON 格式的 404，见[挂载](#mounting)。
 
 <a id="api-reference"></a>
 ## API 参考

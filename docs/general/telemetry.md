@@ -181,9 +181,9 @@ w := queue.NewWorker(db, cfg.Queue, nil, queue.WithTelemetry(tel.Meters, tel.Tra
 | `queue.relay.lag` | 仪表，字节 | | 复制槽中还没确认的 WAL，见[监控积压](../installation/operations.md#queue-monitoring) |
 | `queue.scheduled.jobs` | 仪表 | | `queue_scheduled` 中等待的任务数 |
 
-`queue.job.*` 带有 `messaging.system`（`nsq`）和 `messaging.destination.name`（topic）属性，与队列的 span 相同。`queue.job.outcome` 是 `succeeded`、`retrying`、`failed`、`released`，与[任务事件](../libraries/queue.md#job-events)对应。NSQ 重新投递的任务（等待不超过 `max_defer` 的重试、放回的任务）给不出可以执行的时间，不记录等待时长。导出到 Prometheus 后，点换成下划线，单位成为后缀，例如 `queue_job_wait_seconds`。
+`queue.job.*` 带有 `messaging.system`（`nsq`）和 `messaging.destination.name`（topic）属性，与队列的 span 相同。`queue.job.outcome` 是 `succeeded`、`retrying`、`failed`、`released`，与[任务事件](../libraries/queue-monitoring.md#job-events)对应。NSQ 重新投递的任务（等待不超过 `max_defer` 的重试、放回的任务）给不出可以执行的时间，不记录等待时长。导出到 Prometheus 后，点换成下划线，单位成为后缀，例如 `queue_job_wait_seconds`。
 
-每个 worker 实例都在采集时查询一次复制槽，报告 `queue.relay.lag` 和 `queue.scheduled.jobs`；所有实例的 `queue.relay.active` 之和为 0 时没有实例在转发，WAL 会一直累积，应当告警。NSQ 中积压的任务数由 nsqd 统计，见[队列状态](../libraries/queue.md#stats-command)。
+每个 worker 实例都在采集时查询一次复制槽，报告 `queue.relay.lag` 和 `queue.scheduled.jobs`；所有实例的 `queue.relay.active` 之和为 0 时没有实例在转发，WAL 会一直累积，应当告警。NSQ 中积压的任务数由 nsqd 统计，见[队列状态](../libraries/queue-monitoring.md#stats-command)。
 
 发布任务时自动把 `ctx` 中的链路写入任务的元数据（`traceparent`）。worker 为每次执行创建一个 `process <topic>` span，接在发布任务的 span 之后：发布文章的请求和随后发送通知邮件的任务出现在同一条链路中，中间隔了多久、邮件为什么失败都能看到。每次重试是一个新的 span，失败、重试和租约丢失时标记为错误。
 

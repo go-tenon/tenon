@@ -2,6 +2,10 @@
 
 运营后台、租户后台与代登录的完整接线见[运营后台与多租户](saas-example.md)。本页讲租户怎样从请求里取出、成员与角色、以及数据隔离。
 
+**租户**是 SaaS 中的一个客户组织，例如一家公司。**单数据库多租户**指所有租户的数据放在同一个数据库的同一组表中，每行用 `tenant_id` 区分属于哪个租户。
+
+阅读前需要了解：[认证进阶](authentication-advanced.md#tenants)；[授权](authorization.md)。
+
 SaaS 应用通常有三类用户：
 
 | 用户 | 例子 | 在 Tenon 中 | 通常使用 |
@@ -10,7 +14,7 @@ SaaS 应用通常有三类用户：
 | 租户成员 | 某个公司的员工 | 在该租户中拥有角色，同一个人可以属于多个租户 | 调用 JSON API 的网页或客户端 |
 | 租户的客户 | 公司的终端客户 | 在租户中拥有客户角色，或者是单独的一套账号，见[租户的客户](#customers) | 调用 JSON API 的网页、App 或小程序 |
 
-三类用户可以共用一张用户表，也可以各自一张表、各是一套账号体系，见[多套账号体系](authentication.md#account-systems)。
+三类用户可以共用一张用户表，也可以各自一张表、各是一套账号体系，见[多套账号体系](authentication-advanced.md#account-systems)。
 
 所有租户的数据存在同一个数据库中，用 `tenant_id` 区分。框架不提供按租户切换数据库：队列、令牌和角色都只有一份，同一个库就是最简单、也最不容易出错的结构；需要更强的隔离时，用 PostgreSQL 的[行级安全策略](#data-isolation)兜底。实现多租户需要三件事：
 
@@ -35,6 +39,7 @@ SaaS 应用通常有三类用户：
 - [运营后台](#platform)
 - [租户的客户](#customers)
 - [令牌与租户](#tokens)
+- [常见问题](#troubleshooting)
 
 <a id="identifying-tenants"></a>
 ## 确定租户
@@ -266,7 +271,7 @@ err = roles.Assign(ctx, staff, authz.AllTenants, support.ID)
 
 `AllTenants` 中只能分配全局角色。它的权限很大，应当只授予只读权限，并记录访问日志。
 
-需要看到某个用户眼中的页面、或者替他完成操作时，使用[代为登录](authentication.md#impersonation)：客服以这个用户的身份和权限操作，`Impersonator` 记下客服本人。
+需要看到某个用户眼中的页面、或者替他完成操作时，使用[代为登录](authentication-advanced.md#impersonation)：客服以这个用户的身份和权限操作，`Impersonator` 记下客服本人。
 
 <a id="customers"></a>
 ## 租户的客户
@@ -274,7 +279,7 @@ err = roles.Assign(ctx, staff, authz.AllTenants, support.ID)
 租户的终端客户也是主体。客户账号有两种设计：
 
 - **平台统一账号**：客户注册一次，可以成为多个租户的客户，在租户中分配一个只有客户权限的角色，例如 `customer`，和租户成员的处理完全相同；
-- **租户内账号**：每个租户的客户是独立的账号，同一个邮箱在两个租户中各注册一次。它们通常是单独的一张表、单独的一套[账号体系](authentication.md#account-systems)，例如 `customer.Type`。客户的 App 和网页调用一个只接受客户的 API。客户的 [`login.Realm`](login.md#identifiers) 设置 `PerTenant: true`，邮箱和手机号就在租户内唯一，登录得到的主体带有请求所在的租户，签发的令牌只能在这个租户中使用：
+- **租户内账号**：每个租户的客户是独立的账号，同一个邮箱在两个租户中各注册一次。它们通常是单独的一张表、单独的一套[账号体系](authentication-advanced.md#account-systems)，例如 `customer.Type`。客户的 App 和网页调用一个只接受客户的 API。客户的 [`login.Realm`](login.md#identifiers) 设置 `PerTenant: true`，邮箱和手机号就在租户内唯一，登录得到的主体带有请求所在的租户，签发的令牌只能在这个租户中使用：
 
 ```go
 customers := login.New(a.db, login.Options{Type: customer.Type, PerTenant: true, Policy: login.Policy{Register: true} /* 其余字段见登录与注册 */})
@@ -286,7 +291,7 @@ if err != nil {
 plain, err := customerTokens.Login(ctx, out.Subject, device) // out.Subject.Tenant 是请求所在的租户
 ```
 
-带着这样的令牌访问其他租户时，请求返回 `403`。客户表的主键是 `(tenant_id, id)` 时，把租户编进主体的 ID，见[多套账号体系](authentication.md#account-systems)；[第三方账号](social-login.md#linking-accounts)同样按租户隔离。
+带着这样的令牌访问其他租户时，请求返回 `403`。客户表的主键是 `(tenant_id, id)` 时，把租户编进主体的 ID，见[多套账号体系](authentication-advanced.md#account-systems)；[第三方账号](social-login.md#linking-accounts)同样按租户隔离。
 
 <a id="tokens"></a>
 ## 令牌与租户
@@ -302,3 +307,18 @@ plain, err := tokens.Create(ctx, sub, apitoken.Personal{
 ```
 
 令牌能做的是用户在该租户中的权限与 `Scopes` 的交集，见 [API 令牌](api-tokens.md#personal-access-tokens)。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**一个租户看到了另一个租户的数据**
+
+查询没有带 `subject.Tenant` 条件。每个查询都要限定在当前租户中，见[数据隔离](#data-isolation)。
+
+**队列任务中永远查不到文章，返回 `ErrNotFound`**
+
+任务的 payload 中没有带租户，系统主体以平台本身的身份查询。payload 要带上租户，按租户构造系统主体。
+
+**带着令牌访问其他租户时得到 403**
+
+令牌绑定了租户，只能在这个租户中使用，见[令牌与租户](#tokens)。

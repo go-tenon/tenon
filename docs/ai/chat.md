@@ -265,7 +265,7 @@ const { messages, sendMessage, addToolApprovalResponse } = useChat({
 });
 ```
 
-React 前端可以直接用 `@go-tenon/shell/chat` 的 [`useAssistantChat`](../responses/app-shell.md#ai-chat)，它按上面的方式配置好 `useChat`，还处理了插话和停止；运营后台的 [`AssistantChat`](../responses/admin.md#features) 是现成的对话界面。
+React 前端可以直接用 `@go-tenon/shell/chat` 的 [`useAssistantChat`](../responses/app-shell-features.md#ai-chat)，它按上面的方式配置好 `useChat`，还处理了插话和停止；运营后台的 [`AssistantChat`](../responses/admin.md#features) 是现成的对话界面。
 
 `Runs.Submit` 在后台开始一次运行后立即返回，运行独立于请求，请求结束后照常继续。它也独立于 [`httpx.Timeout`](../http/middleware.md#request-timeout)，助手的路由和其他 API 装在同一组中间件下即可。对话正在回答时再次提交，`Submit` 返回 `chat.ErrBusy`（`409`）。
 

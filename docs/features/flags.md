@@ -9,6 +9,8 @@
 
 检查开关时只读不写，也不缓存：修改设置后，所有实例的下一次检查立即生效。按比例放量用开关名和用户（或租户）ID 的哈希决定，同一个人每次的结果相同，把比例从 10% 提高到 50% 时，原来的 10% 仍然开启。
 
+阅读前需要了解：[依赖装配](../concepts/dependencies.md)；[发布框架迁移](../database/migrations.md#publishing-framework-migrations)。
+
 - [示例用法](#example-usage)
 - [安装](#installation)
 - [声明开关](#defining-flags)
@@ -20,6 +22,7 @@
     - [后台页面](#admin-pages)
 - [删除开关](#removing-flags)
 - [测试](#testing)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="example-usage"></a>
@@ -229,6 +232,25 @@ func TestEditWithNewEditor(t *testing.T) {
     // ...
 }
 ```
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**修改了设置，但开关的结果没有变化**
+
+检查[判断顺序](#evaluation-order)：针对用户、租户的设置优先于全员的设置。例如全员设为 `On`，但这个用户被单独设为了 `Off`，他仍然是关闭的。
+
+**启动时 panic，提示开关名重复或不合法**
+
+`NewStore` 检查全部开关。修改重复的名字，见[声明开关](#defining-flags)。
+
+**数据库出错时，开关的结果和设置的不一样**
+
+读取设置出错时，`Active` 记录一条 Error 日志并返回 `Default` 的结果，请求照常处理，见[检查开关](#checking-flags)。
+
+**前端拿到的开关状态被篡改了**
+
+前端只用开关的结果决定显示什么。接口和业务动作要在服务端用 `Active` 再检查一次，不信任前端传来的状态。
 
 <a id="api-reference"></a>
 ## API 参考

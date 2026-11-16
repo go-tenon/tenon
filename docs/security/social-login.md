@@ -10,17 +10,19 @@
 | 入口 | 谁与第三方交互 | 方法 |
 | --- | --- | --- |
 | [单页应用](#spa-login) | API 生成跳转地址和 Flow，单页应用保存 Flow，回调后把它和回调参数交给 API | `Start`、`Finish` |
-| [App](#api-login) | App 自己跳转到第三方，把授权码交给 API | `Exchange` |
-| [App 原生登录](#native-sign-in) | SDK 直接返回 ID token | `IDToken` |
+| [App](social-login-apps.md#api-login) | App 自己跳转到第三方，把授权码交给 API | `Exchange` |
+| [App 原生登录](social-login-apps.md#native-sign-in) | SDK 直接返回 ID token | `IDToken` |
+
+几个术语：**OAuth 2.0** 是让用户把第三方账号的访问权授予你的应用的协议，**OpenID Connect** 在它之上增加了“这个人是谁”的 ID token；**state** 和 **PKCE** 是登录过程中的两个随机值，防止攻击者把自己的授权码塞给用户。
+
+阅读前需要了解：[登录与注册](login.md)；[API 令牌](api-tokens.md)。App 中的写法和 Sign in with Apple 见[在 App 中使用第三方登录](social-login-apps.md)。
 
 - [示例用法](#example-usage)
 - [提供方](#providers)
 - [登录与注册](#signing-in)
 - [在单页应用中登录](#spa-login)
-- [在 App 中登录](#api-login)
-    - [App 原生登录](#native-sign-in)
 - [账号关联](#linking-accounts)
-- [Sign in with Apple](#sign-in-with-apple)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="example-usage"></a>
@@ -211,9 +213,9 @@ out, err := users.External(ctx, ext)
 | --- | --- | --- |
 | `out.Subject` | 这个第三方账号已经绑定 | 签发 token |
 | `out.Proof` | 还没有绑定 | 注册新账号，或者让用户登录已有账号后[绑定](#linking-accounts) |
-| `out.Pending`、`out.Enroll` | 账号体系要求[二次验证](login.md#requiring-two-factor) | 与密码登录相同，先完成第二步或先启用 |
+| `out.Pending`、`out.Enroll` | 账号体系要求[二次验证](login-security.md#requiring-two-factor) | 与密码登录相同，先完成第二步或先启用 |
 
-注册与[验证码注册](login.md#codes)相同：应用的注册业务动作在事务中创建账号行，再把 `out.Proof` 交给 `Register`。第三方账号作为登录标识写入，第三方确认过（`EmailVerified`）的邮箱也一并写入，之后用户也可以用这个邮箱收验证码登录。第三方账号登录时跳过[二次验证](login.md#two-factor)这一步，由提供方负责验证身份；账号体系[强制二次验证](login.md#requiring-two-factor)时除外。
+注册与[验证码注册](login.md#codes)相同：应用的注册业务动作在事务中创建账号行，再把 `out.Proof` 交给 `Register`。第三方账号作为登录标识写入，第三方确认过（`EmailVerified`）的邮箱也一并写入，之后用户也可以用这个邮箱收验证码登录。第三方账号登录时跳过[二次验证](login-security.md#two-factor)这一步，由提供方负责验证身份；账号体系[强制二次验证](login-security.md#requiring-two-factor)时除外。
 
 `ext.Claims` 是 ID token 的全部声明（`Account` 读取的提供方由应用自己填写），例如企业 IdP 的 `groups`，应用可以在每次登录时据此同步角色。提供方在这次登录中做过多因素认证时（各家写在 `amr` 等声明中，写法不同），应用确认后设置 `ext.TwoFactor = true`，这次登录记为 `[提供方, idp_mfa]`，计入二次验证。只对信任其 MFA 的提供方这样做，例如租户自己的企业 IdP。
 
@@ -229,7 +231,7 @@ client secret 和各家的授权地址都留在服务端，由 API 为单页应�
 1. 登录页上的“使用 GitHub 登录”调用 `POST /auth/github/start`，`Start` 生成跳转地址和 `oauth.Flow`（state、nonce 和 PKCE verifier）。单页应用把 `flow` 存进 `sessionStorage`，然后整页跳转到第三方；
 2. 用户同意授权后，第三方带着授权码和 state 跳回单页应用的回调页 `/admin/auth/github/callback`，也就是 `RedirectURL`；
 3. 回调页把地址中的查询参数和保存的 `flow` 交给 `POST /auth/github/finish`，`Finish` 比较 state，用授权码和 verifier 换取 token，读取账号；
-4. API 签发 [JWT](api-tokens.md#jwt)，refresh token 写入 [HttpOnly cookie](api-tokens.md#single-page-applications)。编辑必须使用[二次验证](login.md#requiring-two-factor)，所以多数时候 `finish` 返回的是 `pending`（或者还没有启用时的 `enroll`），单页应用接着走与密码登录相同的第二步。
+4. API 签发 [JWT](jwt.md#jwt)，refresh token 写入 [HttpOnly cookie](jwt.md#single-page-applications)。编辑必须使用[二次验证](login-security.md#requiring-two-factor)，所以多数时候 `finish` 返回的是 `pending`（或者还没有启用时的 `enroll`），单页应用接着走与密码登录相同的第二步。
 
 编辑后台不开放注册，第三方账号还没有绑定时返回 `social.ErrNotLinked`，编辑先用密码登录，再在账号设置中[绑定](#linking-accounts)。例如 `web_social.go`：
 
@@ -333,95 +335,6 @@ authhttp.RegisterWebSocial(admin, providers, acc.Editors, acc.EditorJWT, acc.Edi
 
 `flow` 中有 state 和 PKCE verifier，回调页用完就从 `sessionStorage` 中删除。state 来自回调地址，`flow` 来自发起登录的那个标签页，两者对不上时（例如攻击者诱导用户打开带着自己授权码的回调地址）返回 `oauth.ErrInvalid`，响应 `401`；授权码已用过、ID token 无效时也是如此。
 
-<a id="api-login"></a>
-## 在 App 中登录
-
-App 自己完成跳转：
-
-1. 客户端生成 state、nonce 和 PKCE verifier，自己保存，然后打开第三方的授权地址，`redirect_uri` 是它登记的回调地址；
-2. 第三方带着授权码跳回客户端，客户端比较 state；
-3. 客户端把授权码、verifier、nonce 和回调地址交给 API；
-4. API 用 client secret 换取 token，读取账号，签发 [API 令牌](api-tokens.md)。
-
-读者 App 可以用第三方账号注册：还没有绑定时，API 返回注册凭证和第三方提供的名称，App 进入注册页预填。例如 `social.go`：
-
-```go
-type SocialTokenInput struct {
-    Provider  string `path:"provider"`
-    UserAgent string `header:"User-Agent"`
-    Body      struct {
-        Code         string `json:"code,omitempty"`
-        CodeVerifier string `json:"code_verifier,omitempty"`
-        RedirectURI  string `json:"redirect_uri,omitempty"`
-        IDToken      string `json:"id_token,omitempty" doc:"App 原生登录时 SDK 返回的 ID token，代替 code"`
-        Nonce        string `json:"nonce,omitempty"`
-    }
-    ip string
-}
-
-// Resolve 记录客户端地址，见 Huma 的 Resolver。
-func (in *SocialTokenInput) Resolve(ctx huma.Context) []error {
-    in.ip, _, _ = net.SplitHostPort(ctx.RemoteAddr())
-    return nil
-}
-
-type SocialTokenOutput struct {
-    Body struct {
-        Token string `json:"token,omitempty"`
-        Proof string `json:"proof,omitempty" doc:"还没有账号：带着它调用注册接口"`
-        Name  string `json:"name,omitempty"`
-    }
-}
-
-// RegisterSocial 注册用第三方账号换取 API 令牌的接口。
-func RegisterSocial(api *rest.API, providers map[string]*oauth.Provider, users *login.Realm, tokens *apitoken.Store) {
-    op := huma.Operation{OperationID: "auth-social-token", Method: http.MethodPost, Path: "/auth/{provider}/tokens"}
-    rest.Public()(&op)
-    rest.Register(api, op, func(ctx context.Context, in *SocialTokenInput) (*SocialTokenOutput, error) {
-        p, ok := providers[in.Provider]
-        if !ok {
-            return nil, social.ErrUnknownProvider.New()
-        }
-        var ext login.External
-        var err error
-        if in.Body.IDToken != "" {
-            ext, err = p.IDToken(ctx, in.Body.IDToken, in.Body.Nonce)
-        } else {
-            ext, err = p.Exchange(ctx, oauth.Grant{
-                Code: in.Body.Code, Verifier: in.Body.CodeVerifier, RedirectURI: in.Body.RedirectURI, Nonce: in.Body.Nonce,
-            })
-        }
-        if err != nil {
-            return nil, err
-        }
-        out, err := users.External(ctx, ext)
-        if err != nil {
-            return nil, err
-        }
-        resp := &SocialTokenOutput{}
-        if out.Proof != "" {
-            resp.Body.Proof, resp.Body.Name = out.Proof, ext.Name
-            return resp, nil
-        }
-        resp.Body.Token, err = tokens.Login(ctx, out.Subject, apitoken.Device{IP: in.ip, UserAgent: in.UserAgent})
-        return resp, err
-    })
-}
-```
-
-App 带着 `proof` 调用[注册接口](login.md#codes)，与验证码注册是同一个接口。
-
-`Exchange` 检查两件事：`redirect_uri` 必须在 `client_redirect_urls` 中，否则攻击者可以用发往其他地址的授权码换取 token；客户端没有 client secret，PKCE 是它唯一的保护，所以 `code_verifier` 必填。client secret 始终留在服务器上。
-
-<a id="native-sign-in"></a>
-### App 原生登录
-
-App 也可以使用系统或第三方 SDK 提供的原生登录，例如 Google 登录和 Sign in with Apple。SDK 直接返回 ID token，App 把它放在 `id_token` 中交给同一个接口，由 `IDToken` 校验。
-
-SDK 签发的 ID token 的受众是 App 自己的 client ID，它与网页使用的不同，所以要列在 `oauth.Config.Audiences` 中，见上面的 `GoogleAppClientIDs`。
-
-nonce 用来确认 ID token 属于这一次登录：截获的 ID token 在有效期内可以被重放，只有服务器下发 nonce、App 把它放进登录请求，服务器再比较保存的那个值，才能防住。有的 SDK 要求在请求中放 nonce 的 SHA-256，这时比较哈希值。
-
 <a id="linking-accounts"></a>
 ## 账号关联
 
@@ -447,42 +360,24 @@ if err := h.users.Link(ctx, h.db, sub.Ref(), out.Proof); err != nil {
 
 `Identifiers` 列出账号的全部登录标识，第三方账号的 `Kind` 是提供方的名称；`Detach` 解除绑定，账号始终保留至少一种登录方式，见[管理登录方式](login.md#managing)。设置了 [`PerTenant`](login.md#identifiers) 的账号体系，第三方账号同样按租户隔离：同一个 Google 账号可以在两个租户中各绑定一个账号。
 
-<a id="sign-in-with-apple"></a>
-## Sign in with Apple
+<a id="troubleshooting"></a>
+## 常见问题
 
-Apple 也是 OpenID Connect 提供方，签发者是 `https://appleid.apple.com`，与 Google 的写法基本相同，但有几点差别：
+**回调时返回 401，`oauth.ErrInvalid`**
 
-```go
-apple, err := oauth.Discover(ctx, oauth.Config{
-    Provider:     "apple",
-    Issuer:       "https://appleid.apple.com",
-    ClientID:     cfg.Apple.ServiceID,
-    ClientSecret: cfg.Apple.ClientSecret,
-    RedirectURL:  "https://example.com/auth/apple/callback", // 服务器上的转发地址，见下文
-    Scopes:       []string{"openid", "email", "name"},
-    NoPKCE:       true,
-    FormPost:     true,
-})
-```
+state 与发起登录时保存的不一致（例如在另一个标签页中完成了登录），或者授权码已经用过、ID token 无效。让用户重新发起登录，见[在单页应用中登录](#spa-login)。
 
-- **client secret 是你自己签名的 JWT**：用 Apple 下发的私钥（`.p8`）按 ES256 签名，有效期最长 6 个月，需要定期重新生成，见 [Apple 的文档](https://developer.apple.com/documentation/accountorganizationaldatasharing/creating-a-client-secret)。
-- **不使用 PKCE**：Apple 的授权和 token 接口没有 PKCE 参数，依靠 state、nonce 和 client secret，所以设置 `NoPKCE`。
-- **用户姓名只在第一次授权时返回**：它不在 ID token 中，而是回调表单中的 `user` 字段，第一次登录时就要保存下来。`email_verified` 是字符串，`oauth` 已经处理。
-- **申请了姓名或邮箱时，回调是跨站 POST**：Apple 要求 `response_mode=form_post`（`FormPost`），浏览器从 `appleid.apple.com` 把授权码提交到回调地址。
+**用第三方账号注册时返回 `login.ErrTaken`**
 
-最后一点影响[单页应用中登录](#spa-login)的写法：回调是 POST，单页应用接收不了。在服务器上注册这个回调地址，把表单原样转成查询参数，跳到单页应用的回调页，之后的步骤与 Google 相同：
+这个邮箱已经属于其他账号。框架不按邮箱自动关联，用户要先用原来的方式登录，再绑定第三方账号，见[账号关联](#linking-accounts)。
 
-```go
-router.Post("/auth/apple/callback", func(w http.ResponseWriter, r *http.Request) {
-    if err := r.ParseForm(); err != nil {
-        http.Error(w, "bad request", http.StatusBadRequest)
-        return
-    }
-    http.Redirect(w, r, "/admin/auth/apple/callback?"+r.PostForm.Encode(), http.StatusSeeOther)
-})
-```
+**后台用第三方账号登录时返回 `social.ErrNotLinked`**
 
-`RedirectURL` 是这个服务器地址。授权码只能使用一次，有效期很短，与第三方用查询参数直接跳回时一样出现在地址中；`user` 字段（第一次授权时的姓名）随之带到回调页，单页应用把它一起交给注册接口。
+不开放注册的后台中，第三方账号要先绑定到已有账号上才能登录。
+
+**启动时没有发现配置错误，登录时才报错**
+
+给配置结构体加上 `Validate`，空的 `client_id` 这类错误在启动时就会被拦住。
 
 <a id="api-reference"></a>
 ## API 参考

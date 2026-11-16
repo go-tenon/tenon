@@ -2,6 +2,8 @@
 
 公开页面中常常有表单，例如订阅新文章、联系我们。页面中的表单和 JSON API 使用同一套[验证](../http/validation.md)规则：在结构体字段上写 Huma 的标签。`web.ParseForm` 解析浏览器提交的表单，按标签验证，并保留用户的原始输入，验证失败时可以原样回填。
 
+阅读前需要了解：[视图](views.md)；[验证](../http/validation.md)。
+
 - [示例用法](#example-usage)
 - [定义表单](#defining-forms)
 - [渲染表单](#rendering-forms)
@@ -9,6 +11,7 @@
 - [验证失败后重新显示](#redisplaying-forms)
 - [业务规则验证](#business-validation)
 - [验证提示](#validation-messages)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="example-usage"></a>
@@ -118,7 +121,7 @@ func (h *Handlers) Subscribe(w http.ResponseWriter, r *http.Request) error {
 
 只有请求体无法解析时，`ParseForm` 才返回错误（`web.ErrBadForm`，响应 `422`）。订阅成功后，`Subscribed` 片段替换表单，显示“确认邮件已发到 …”。需要整页跳转时用 `web.Redirect`，见[跳转](views.md#redirects)。
 
-公开的表单要防止被脚本反复提交：用[限流](../libraries/rate-limiting.md)按 IP 限制这个路由，必要时加上[人机验证](../security/login.md#captcha)。
+公开的表单要防止被脚本反复提交：用[限流](../libraries/rate-limiting.md)按 IP 限制这个路由，必要时加上[人机验证](../security/login-security.md#captcha)。
 
 <a id="redisplaying-forms"></a>
 ## 验证失败后重新显示
@@ -148,6 +151,21 @@ if err := h.subscribe.Handle(r.Context(), f.Data); errors.Is(err, subscriber.Err
 ## 验证提示
 
 验证提示按请求协商的语言翻译，框架内置了中文和英文，例如 `minLength:"1"` 的字段为空时提示“不能为空”，`pattern` 加 `patternDescription` 时提示“必须是”加描述。JSON API 的验证错误使用同一套提示，完整的规则和覆盖方法见[验证提示](../http/validation.md#validation-messages)。没有安装 `httpx.Locale` 中间件时，提示用 Huma 的英文原文。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**勾选了复选框，提交后仍然是 `false`**
+
+复选框的 `name` 要与字段的 `json` 标签一致。没有提交的复选框视为未勾选，见[定义表单](#defining-forms)。
+
+**填了内容，提交后提示必填**
+
+`<input>` 的 `name` 与 `json` 标签不一致，服务端没有收到这个字段。用 `ui.TextField` 等字段组件，它们按字段名生成 `name`。
+
+**数字字段填了空格或空字符串，没有报错**
+
+数字字段去掉首尾空格后解析，空字符串视为未填写。需要必填时，去掉 `omitempty`。
 
 <a id="api-reference"></a>
 ## API 参考
