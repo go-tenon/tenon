@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/cockroachdb/errors"
@@ -14,11 +15,15 @@ import (
 	"github.com/go-tenon/tenon/config"
 )
 
-const configFlag = "config"
+const (
+	configFlag = "config"
+	// configEnv 是没有传入 --config 时读取的环境变量，格式与 --config 相同：逗号分隔的配置文件。
+	configEnv = "CONFIG"
+)
 
 // Root 返回应用的根命令，用 AddCommand 装配需要的命令。
 // 根命令定义了所有子命令共用的 --config 选项：可以重复传入多个配置文件，
-// 后面的覆盖前面的，默认为 config/app.yaml。未知命令、未知选项和多余参数标记为 ExitUsage。
+// 后面的覆盖前面的。没有传入时读取环境变量 CONFIG，它也没有设置时为 config/app.yaml。未知命令、未知选项和多余参数标记为 ExitUsage。
 func Root(name, short string) *cobra.Command {
 	root := &cobra.Command{
 		Use:           name,
@@ -29,7 +34,7 @@ func Root(name, short string) *cobra.Command {
 		RunE:          func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return AsExitError(ExitUsage, err) })
-	root.PersistentFlags().StringSlice(configFlag, []string{"config/app.yaml"}, "配置文件，可以传入多次，后面的覆盖前面的")
+	root.PersistentFlags().StringSlice(configFlag, []string{"config/app.yaml"}, "配置文件，可以传入多次，后面的覆盖前面的；没有传入时读取环境变量 "+configEnv)
 	return root
 }
 
@@ -45,8 +50,9 @@ func Run[C any](use, short string, run func(ctx context.Context, cfg C) error) *
 	})
 }
 
-// LoadConfig 加载并校验 --config 指定的配置文件，失败时错误带 ExitConfig 退出码。
+// LoadConfig 加载并校验配置文件，失败时错误带 ExitConfig 退出码。
 // 加载前先读取工作目录下的 .env（不存在时忽略），进程中已经设置的变量优先。
+// 配置文件依次取自 --config、环境变量 CONFIG（可以写在 .env 中）和默认的 config/app.yaml。
 // cmd 必须挂在 Root 返回的根命令下。
 func LoadConfig[C any](cmd *cobra.Command) (C, error) {
 	var zero C
@@ -57,8 +63,24 @@ func LoadConfig[C any](cmd *cobra.Command) (C, error) {
 	if err := config.LoadEnv(".env"); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return zero, AsExitError(ExitConfig, err)
 	}
+	if v := os.Getenv(configEnv); v != "" && !cmd.Flags().Changed(configFlag) {
+		if files = splitList(v); len(files) == 0 {
+			return zero, AsExitError(ExitConfig, errors.Newf("command: %s=%q lists no config files", configEnv, v))
+		}
+	}
 	cfg, err := config.Load[C](files...)
 	return cfg, AsExitError(ExitConfig, err)
+}
+
+// splitList 按逗号拆分 s，去掉空白和空项。
+func splitList(s string) []string {
+	var out []string
+	for f := range strings.SplitSeq(s, ",") {
+		if f = strings.TrimSpace(f); f != "" {
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 // Execute 执行根命令：SIGINT、SIGTERM 会取消命令的 context；

@@ -59,17 +59,17 @@ go build -trimpath -o bin/api ./cmd/api
 <a id="release-process"></a>
 ## 第一次发布
 
-下面的命令在服务器的部署目录（`config` 目录所在的目录）中执行。生产环境的配置由 `config/app.yaml` 和 `config/prod.yaml` 叠加而成，后者只写和开发环境不同的部分，见[按环境覆盖配置](../general/configuration.md#overriding-configuration)。为了简洁，先把配置参数记在一个变量中：
+下面的命令在服务器的部署目录（`config` 目录所在的目录）中执行。生产环境的配置由 `config/app.yaml` 和 `config/prod.yaml` 叠加而成，后者只写和开发环境不同的部分，见[按环境覆盖配置](../general/configuration.md#overriding-configuration)。没有传入 `--config` 时，命令从环境变量 `CONFIG` 读取要加载的配置文件，先设置好它，后面的命令就不用再写：
 
 ```bash
-CONFIG=--config=config/app.yaml,config/prod.yaml
+export CONFIG=config/app.yaml,config/prod.yaml
 ```
 
 <a id="checking-configuration"></a>
 ### 检查配置
 
 ```bash
-./bin/api config check $CONFIG
+./bin/api config check
 ```
 
 它只读取和检查配置文件，不连接数据库，可以在启动服务之前发现缺少的环境变量和写错的字段。
@@ -77,7 +77,7 @@ CONFIG=--config=config/app.yaml,config/prod.yaml
 再检查数据库能不能连上，同时看看哪些迁移将要执行：
 
 ```bash
-./bin/api migrate status $CONFIG
+./bin/api migrate status
 ```
 
 数据库连不上时，这条命令以退出码 4 结束。
@@ -90,7 +90,7 @@ CONFIG=--config=config/app.yaml,config/prod.yaml
 在启动新版本**之前**执行迁移：
 
 ```bash
-./bin/api migrate up $CONFIG
+./bin/api migrate up
 ```
 
 为什么要在启动之前？新代码可能用到新的表和字段，如果先启动服务，第一批请求就会因为表不存在而出错。
@@ -103,7 +103,7 @@ CONFIG=--config=config/app.yaml,config/prod.yaml
 ### 启动服务
 
 ```bash
-./bin/api start $CONFIG
+./bin/api start
 ```
 
 `start` 在一个进程中同时运行三样东西：HTTP 服务、队列的 worker（在后台执行任务）和定时任务的调度器。下一节说明什么时候应该把它们分开运行。
@@ -166,8 +166,9 @@ RuntimeDirectory=blog/%i
 PIDFile=/run/blog/%i/daemon.pid
 User=blog
 WorkingDirectory=/opt/blog
+Environment=CONFIG=config/app.yaml,config/prod.yaml
 EnvironmentFile=/etc/blog/env
-ExecStart=/opt/blog/bin/api %i --config=config/app.yaml,config/prod.yaml
+ExecStart=/opt/blog/bin/api %i
 Restart=on-failure
 RestartSec=5s
 RestartPreventExitStatus=2 3
@@ -193,7 +194,7 @@ sudo systemctl enable --now blog@serve blog@work blog@schedule  # 或者分开�
 
 文件中几组设置的作用：
 
-- **运行身份**：`User` 是运行程序的用户，`WorkingDirectory` 是工作目录（配置文件的相对路径从这里算起），`EnvironmentFile` 读取密钥。
+- **运行身份**：`User` 是运行程序的用户，`WorkingDirectory` 是工作目录（配置文件的相对路径从这里算起），`Environment` 设置要加载的配置文件，`EnvironmentFile` 读取密钥。
 - **崩溃后重启**：`Restart=on-failure` 在程序以非 0 状态退出时重启它，每次间隔 `RestartSec`（5 秒）。数据库暂时连不上时，程序以退出码 4 结束，systemd 每 5 秒重试，直到连上为止。`RestartPreventExitStatus=2 3` 排除了用法错误（2）和配置错误（3）：这两种错误重启多少次都一样，服务直接进入失败状态，用 `systemctl status` 能看到原因。
 - **停止**：`TimeoutStopSec` 是发送 `SIGTERM` 后等待程序退出的时间，超时后强制结束。它要比程序的平滑停止时间长，见[平滑停止](#graceful-shutdown)。
 - **安全**：`ProtectSystem=strict` 让整个文件系统只读，只有 `ReadWritePaths` 中的目录可写；`PrivateTmp` 给程序一个独立的 `/tmp`；`NoNewPrivileges` 禁止程序获得更多权限。程序需要写其他目录时，把它加到 `ReadWritePaths` 中。
@@ -212,10 +213,9 @@ journalctl -u 'blog@*' -f
 
 ```bash
 set -e
-CONFIG=--config=config/app.yaml,config/prod.yaml
 run() {
-    sudo systemd-run --wait --pipe --quiet --uid=blog \
-        -p EnvironmentFile=/etc/blog/env -p WorkingDirectory=/opt/blog "$@" $CONFIG
+    sudo systemd-run --wait --pipe --quiet --uid=blog -p WorkingDirectory=/opt/blog \
+        -p Environment=CONFIG=config/app.yaml,config/prod.yaml -p EnvironmentFile=/etc/blog/env "$@"
 }
 
 sudo install -m 755 api /opt/blog/bin/api.new
@@ -259,14 +259,15 @@ WORKDIR /app
 COPY --from=build /out/api /app/api
 COPY config /app/config
 COPY --from=build --chown=nonroot:nonroot /out/storage /app/storage
-ENTRYPOINT ["/app/api", "--config=config/app.yaml,config/prod.yaml"]
+ENV CONFIG=config/app.yaml,config/prod.yaml
+ENTRYPOINT ["/app/api"]
 CMD ["start"]
 ```
 
 这个文件分两段：第一段在 Go 的镜像中编译程序，第二段只把编译结果复制到一个很小的运行镜像中，最终的镜像不包含 Go 工具链和源代码。需要注意的几点：
 
 - **`ENTRYPOINT` 要写成 JSON 数组的形式。** 这样程序就是容器中的第一个进程，能直接收到 `docker stop` 发出的 `SIGTERM`。如果写成 `ENTRYPOINT ./api start`，信号会发给 shell，程序收不到，等待时间一到就被强制结束，正在处理的请求被中断。
-- **`--config` 写在 `ENTRYPOINT` 中**，`docker run blog migrate up` 这样的命令也会使用同样的配置。
+- **`CONFIG` 写在镜像中**，`docker run blog migrate up` 这样的命令也会使用同样的配置。
 - **distroless 镜像中带有 CA 证书和时区数据**，访问 HTTPS 接口、按时区执行定时任务都能直接用。
 - **`storage` 目录要挂载卷**，否则容器删除后上传的文件也没了。镜像中预先建好这个目录，并交给 `nonroot` 用户，否则新挂载的卷属于 root，程序无法写入。文件存放在 S3 这类对象存储中时不需要它。
 

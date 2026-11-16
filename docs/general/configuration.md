@@ -73,7 +73,7 @@ cfg, err := config.Load[Config]("config/app.yaml")
 ```
 
 > [!TIP]
-> 使用[命令行](commands.md)时，命令会按 `--config` 选项加载配置，默认是 `config/app.yaml`。
+> 使用[命令行](commands.md)时，命令会按 `--config` 选项加载配置；没有传入时读取环境变量 `CONFIG`，它也没有设置时是 `config/app.yaml`，见[按环境覆盖配置](#overriding-configuration)。
 
 应用自己的配置，例如第三方服务的地址，同样定义成结构体，作为新的字段加入 `Config`。假设你要把图片上传到对象存储：
 
@@ -139,6 +139,16 @@ cfg, err := config.Load[Config]("config/app.yaml", "config/prod.yaml")
 ```bash
 ./bin/api serve --config config/app.yaml --config config/local.yaml
 ```
+
+每条命令都写 `--config` 很繁琐。没有传入 `--config` 时，命令从环境变量 `CONFIG` 读取配置文件，写法与 `--config` 相同，用逗号分隔：
+
+```bash
+export CONFIG=config/app.yaml,config/prod.yaml
+./bin/api serve      # 加载 config/app.yaml 和 config/prod.yaml
+./bin/api migrate up # 同上
+```
+
+`CONFIG` 也可以写在 [.env](#env-files) 中，例如本地开发时写 `CONFIG=config/app.yaml,config/local.yaml`。传入了 `--config` 时，`CONFIG` 被忽略；两者都没有时，只加载 `config/app.yaml`。部署时在 systemd 或 Docker 中设置它，见[部署](../installation/deployment.md#release-process)。
 
 <a id="environment-variables"></a>
 ## 环境变量

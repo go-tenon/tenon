@@ -88,7 +88,7 @@ func main() {
 
 `command.Execute` 执行根命令。收到 `SIGINT` 或 `SIGTERM` 时，它会取消命令的 context；命令失败时，它把错误写到标准错误，并以对应的[退出码](#exit-codes)结束进程。
 
-`command.Root` 在根命令上定义了 `--config` 选项，所有子命令共用它。它可以传入多次，后面的文件覆盖前面的，默认是 `config/app.yaml`，见[按环境覆盖配置](configuration.md#overriding-configuration)。需要配置的命令由框架负责读取项目根目录的 [.env](configuration.md#env-files)、按 `--config` 加载配置并校验，你的代码只会拿到校验通过的配置。配置结构见[配置](configuration.md#loading-configuration)，类型参数通常可以从你传入的函数推断出来。
+`command.Root` 在根命令上定义了 `--config` 选项，所有子命令共用它。它可以传入多次，后面的文件覆盖前面的；没有传入时读取环境变量 `CONFIG`（格式相同，用逗号分隔），它也没有设置时是 `config/app.yaml`，见[按环境覆盖配置](configuration.md#overriding-configuration)。需要配置的命令由框架负责读取项目根目录的 [.env](configuration.md#env-files)、按 `--config` 加载配置并校验，你的代码只会拿到校验通过的配置。配置结构见[配置](configuration.md#loading-configuration)，类型参数通常可以从你传入的函数推断出来。
 
 | 构造函数 | 创建的命令 | 需要配置 |
 | --- | --- | --- |
@@ -191,6 +191,7 @@ return command.AsExitError(command.ExitUnavailable, err)
 ```bash
 ./bin/api serve                                                 # 使用 config/app.yaml
 ./bin/api serve --config config/app.yaml --config config/prod.yaml
+CONFIG=config/app.yaml,config/prod.yaml ./bin/api serve         # 与上一行等价
 ```
 
 `Run` 不限于常驻进程，任何“读取配置然后做一件事”的命令都可以用它创建，例如数据回填、发送一次报表。
@@ -395,7 +396,7 @@ func LoadConfig[C any](cmd *cobra.Command) (C, error)
     - `cmd`：当前执行的命令，用来读取 `--config` 选项
 - **返回**：加载并校验后的配置；失败时返回的错误带 `ExitConfig` 退出码
 
-在自定义命令中读取 `.env`，再按 `--config` 加载配置，见[自定义命令](#custom-commands)。
+在自定义命令中读取 `.env`，再按 `--config` 或环境变量 `CONFIG` 加载配置，见[自定义命令](#custom-commands)。
 
 ### Bind
 
