@@ -1,0 +1,37 @@
+# [[.Name]]：运营后台
+
+这是用 antd 写的运营后台，挂在 `[[.Base]]`。
+
+## 允许使用的库
+
+- 界面只用 **antd** 和 **ProComponents**（`@ant-design/pro-components`，锁定在预发布版本 3.1.15-8），图标用 `@ant-design/icons`。
+- 不用 shadcn、Radix、Tailwind、lucide：`bun run lint` 会拒绝这些导入。
+- 查询 antd 的组件、属性和令牌：项目根目录的 `.mcp.json` 中有 antd 的 MCP 服务（`@ant-design/cli`，版本与 antd 相同），也可以运行 `bunx @ant-design/cli@6.6.8 info Table`。
+
+## 写法
+
+- **页面**：`src/routes` 中一个文件一个页面。需要登录的页面放在 `src/routes/_app/` 下。标题、图标、菜单顺序、权限写在路由的 `staticData` 中，菜单、面包屑、标签栏和权限检查都来自这里：
+
+  ```tsx
+  export const Route = createFileRoute("/_app/articles/")({
+    staticData: { title: "文章", icon: "file-text", order: 10, permission: "articles:read" },
+    component: Articles,
+  })
+  ```
+
+  `icon` 是名字，映射见 `@go-tenon/admin` 的 `defaultIcons`，需要别的图标时在 `__root.tsx` 的 `AdminProvider icons` 中加上。
+- **接口**：用生成的客户端 `@[[.Scope]]/client/api`，不要手写 fetch（`src/auth.ts` 中的登录接口除外）。读取用 TanStack Query。
+- **表单**：antd 的 `Form`。校验规则用 `antdRule(schemas.xxx.body, { components, messages })`（`@go-tenon/shell`），与服务端相同；提交失败时 `setServerErrors(err, form)` 把字段错误显示在对应的输入框下面。有未保存的修改时用 `useUnsavedChanges`。
+- **列表**：ProTable。查询条件、排序和分页保存在地址中：路由的 `validateSearch` 用 `listSearch(schemas.xxx.list.query)`，页面用 `useList(Route)`。
+- **按钮权限**：`useCan()("articles:write")`。前端的检查只决定显示什么，接口仍由服务端检查。
+- **顶栏的操作**：`<Fill name="actions">…</Fill>`，不要直接修改布局。
+- 文案用中文。
+
+## 检查
+
+```bash
+bun run typecheck
+bun run lint
+```
+
+框架的文档：应用骨架（`@go-tenon/shell`）、设计令牌、运营后台（`@go-tenon/admin`）。

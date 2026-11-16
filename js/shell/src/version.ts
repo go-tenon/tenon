@@ -5,6 +5,8 @@ import { useCallback, useEffect, useState } from "react"
 
 declare global {
   interface ImportMetaEnv {
+    /** Vite 的 base，例如 /admin/：前端挂载的路径。与 vite/client 中的声明相同。 */
+    readonly BASE_URL: string
     /** tenonVersion 注入的版本号；开发模式和没有使用插件时没有。 */
     readonly TENON_BUILD_VERSION?: string
     /** version.json 的地址，已经带上 Vite 的 base。 */

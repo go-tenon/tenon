@@ -1,0 +1,14 @@
+import { StrictMode } from "react"
+import { createRoot } from "react-dom/client"
+import { AppRoot } from "@go-tenon/shell"
+import { app } from "./app"
+import "./app.css"
+
+const root = document.getElementById("root")
+if (!root) throw new Error("index.html 中缺少 <div id=\"root\">")
+
+createRoot(root).render(
+  <StrictMode>
+    <AppRoot app={app} />
+  </StrictMode>,
+)

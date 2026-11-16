@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"syscall"
 
@@ -147,7 +148,7 @@ func root() *cobra.Command {
 var moduleLine = regexp.MustCompile(`(?m)^module\s+(\S+)`)
 
 func addFrontendCommand() *cobra.Command {
-	var base string
+	var base, template string
 	cmd := &cobra.Command{
 		Use:   "frontend <name>",
 		Short: "在 apps/<name> 中生成一个 React 前端，加入 Bun workspace",
@@ -178,12 +179,23 @@ func addFrontendCommand() *cobra.Command {
 			if err != nil || m == nil {
 				return fmt.Errorf("run add frontend in the project root: go.mod with a module line is required (%v)", err)
 			}
-			f := scaffold.Frontend{Scope: pkg.Name, Name: name, Base: base, Title: name}
+			if !slices.Contains(scaffold.Templates, template) {
+				return fmt.Errorf("--template %q is not one of %v", template, scaffold.Templates)
+			}
+			f := scaffold.Frontend{Scope: pkg.Name, Name: name, Base: base, Title: name, Template: template}
 			if err := scaffold.WriteFrontend(".", f); err != nil {
 				return err
 			}
 			if err := scaffold.AddWorkspace(".", path.Join(project.AppsDir, name)); err != nil {
 				return err
+			}
+			if template == "admin" {
+				if err := scaffold.AddWorkspace(".", scaffold.AdminPackage); err != nil {
+					return err
+				}
+				if err := scaffold.AddMCPServer(".", "antd", scaffold.AntdMCP); err != nil {
+					return err
+				}
 			}
 			if err := dev.EnsureDist(&project.Config{Frontends: []project.Frontend{{Name: name, Dir: path.Join(project.AppsDir, name)}}}); err != nil {
 				return err
@@ -211,6 +223,7 @@ func addFrontendCommand() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&base, "base", "", "前端挂载的路径，以 / 开头和结尾，默认 /<name>/")
+	cmd.Flags().StringVar(&template, "template", "default", "前端的模板：default，或 admin（antd 的运营后台）")
 	return cmd
 }
 

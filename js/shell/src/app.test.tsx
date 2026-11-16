@@ -179,3 +179,28 @@ describe("createApp", () => {
     expect(app.router.state.location.pathname).toBe("/")
   })
 })
+
+describe("子路径", () => {
+  it("挂在子路径时，地址、登录回跳和跳转都不含它", async () => {
+    const root = createRootRouteWithContext<RouterContext>()({ component: Outlet })
+    const login = createRoute({ getParentRoute: () => root, path: "/login", component: () => <p>login page</p> })
+    const layout = createRoute({ getParentRoute: () => root, id: "_app", beforeLoad: requireAuth, component: Outlet })
+    const users = createRoute({ getParentRoute: () => layout, path: "/users", component: () => <p>users page</p> })
+    const history = createMemoryHistory({ initialEntries: ["/admin/users"] })
+    const session = createSession({ refresh: async () => Promise.reject({ status: 401, fields: [] }) })
+    const app = createApp({
+      id: "sub",
+      routeTree: root.addChildren([login, layout.addChildren([users])]),
+      session,
+      router: { history, basepath: "/admin/" },
+    })
+    render(<AppRoot app={app} />)
+    expect(await screen.findByText("login page")).toBeTruthy()
+    expect(history.location.pathname).toBe("/admin/login")
+    expect(app.router.state.location.search).toEqual({ redirect: "/users" })
+    await act(() => session.signIn(body("a1"), { account: "u1" }))
+    await act(() => app.redirectAfterSignIn("/users"))
+    expect(await screen.findByText("users page")).toBeTruthy()
+    expect(history.location.pathname).toBe("/admin/users")
+  })
+})

@@ -92,7 +92,7 @@ Redis 的锁、限流、在线成员和广播的测试对单机 Redis 和集群�
 <a id="js-packages"></a>
 ### 前端包
 
-`js` 是前端包的 Bun workspace：`js/client` 是 `@go-tenon/client`，`js/shell` 是 `@go-tenon/shell`。它们不发布到 npm，随 Go 模块分发：应用中的 `tenon` 把框架版本中的 `js` 复制到项目的 `.tenon/js`，见[框架的前端包](docs/installation/tooling.md#framework-packages)。在 `js` 目录中运行：
+`js` 是前端包的 Bun workspace：`js/client` 是 `@go-tenon/client`，`js/shell` 是 `@go-tenon/shell`，`js/admin` 是 `@go-tenon/admin`（antd 的外观）。它们不发布到 npm，随 Go 模块分发：应用中的 `tenon` 把框架版本中的 `js` 复制到项目的 `.tenon/js`，见[框架的前端包](docs/installation/tooling.md#framework-packages)。在 `js` 目录中运行：
 
 ```bash
 bun install --frozen-lockfile

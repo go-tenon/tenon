@@ -136,6 +136,17 @@ router.Handle("/admin/*", httpx.NewSPA(admin.Dist, httpx.SPAOptions{Base: "/admi
 
 把它加在挂载 `/*` 的那一行之前，并导入 `<模块>/apps/admin`。`--base` 指定其他的挂载路径，以 `/` 开头和结尾。在项目根目录运行，`apps/admin` 必须尚未创建。
 
+`--template` 选择模板：
+
+| 模板 | 内容 |
+| --- | --- |
+| `default`（默认） | React、TanStack Router 和[应用骨架](../responses/app-shell.md)的最小前端 |
+| `admin` | 用 antd 写的运营后台：登录页、侧栏布局、多标签、用户菜单，以及给 AI 编程助手的约定，见[运营后台](../responses/admin.md) |
+
+```bash
+go tool tenon add frontend admin --template admin
+```
+
 <a id="dev"></a>
 ## tenon dev
 

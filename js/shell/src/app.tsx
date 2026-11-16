@@ -136,8 +136,11 @@ export function createApp<TRouteTree extends AnyRoute>(options: AppOptions<TRout
   let restoring: Promise<boolean> | undefined
 
   const app = {} as App<TRouteTree>
+  // 前端挂在子路径（例如 /admin/）时，路由的 basepath 默认是 Vite 的 base：页面中的地址、跳转和登录回跳都不含它。
+  const basepath = options.router?.basepath ?? (import.meta.env?.BASE_URL || "/")
   const router = createRouter({
     ...options.router,
+    basepath,
     routeTree: options.routeTree,
     context: { app },
   }) as unknown as Router<TRouteTree>
