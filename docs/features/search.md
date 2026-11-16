@@ -6,6 +6,10 @@
 
 这个包不监听模型的保存自动同步：批量更新和原生 SQL 会绕过模型事件，索引就悄悄过期了。同步由业务动作在修改数据的事务中显式发起，通过数据库队列执行，事务回滚时同步也一起取消。
 
+**全文搜索**和 `LIKE` 不同：它先把文字切分成词，按词建立索引，搜索时按词匹配，并按相关度排序。中文没有空格分隔词语，所以需要**分词**。
+
+阅读前需要了解：[队列](../libraries/queue.md)；[数据库事务](../database/quick-start.md#transactions)。
+
 - [示例用法](#example-usage)
 - [安装](#installation)
 - [声明索引](#defining-indexes)
@@ -19,6 +23,7 @@
     - [高亮](#highlighting)
     - [多租户](#tenancy)
 - [分词](#tokenizers)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="example-usage"></a>
@@ -340,6 +345,25 @@ var SearchIndex = search.Define[SearchDoc]("articles", search.WithTokenizer(gse.
 建索引时它还输出长词中包含的短词（“搜索引擎”还输出“搜索”“引擎”），查询短词也能命中。代价是程序增大约 25 MB，第一次分词时加载词典约 0.5 秒，常驻内存约 300 MB。
 
 也可以实现 `search.Tokenizer` 接入其他分词方式，`search.Split` 处理了字母、数字和标点，只需要提供切分中日韩文字的函数。更换分词器之后要[重建索引](#reindexing)。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**修改了文章，搜索结果还是旧的**
+
+修改数据的事务中没有调用 `Sync`，或者 worker 没有运行，同步任务还没有执行，见[同步](#syncing)。
+
+**很长的文章，后半部分的内容搜不到**
+
+一个文档最多索引前 16383 个词。更长的内容切分成多个文档，见[一个 key 多个文档](#multiple-documents)。
+
+**修改了 `SearchDoc` 的字段后，搜索结果不对**
+
+已有的文档还是按旧的方式写入的，要重建索引，见[重建索引](#reindexing)。
+
+**同步任务进了失败任务表**
+
+文档无法建索引，例如过滤字段的值超过 191 字节。缩短这个值，或者不把它作为过滤字段。
 
 <a id="api-reference"></a>
 ## API 参考

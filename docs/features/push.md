@@ -5,6 +5,8 @@ App 在后台或者没有打开时，只能靠系统的推送通道把消息送�
 - **设备由服务端登记**：App 登录后把推送 SDK 给出的设备标识交给你的接口，接口把设备记在当前用户名下，同时记下这次登录的凭据。设备只能登记在当前用户名下，退出登录时连同凭据一起删除，这台设备的推送随之停止。
 - **推送随事务提交**：`push.Send` 在业务事务中发布推送任务，事务提交后才推送，回滚时一起取消，与[站内通知](notifications.md)、[webhook](webhooks.md) 的写法相同。一次通知发往哪些渠道，仍由业务动作显式写出来。
 
+阅读前需要了解：[队列](../libraries/queue.md)；[API 令牌](../security/api-tokens.md)；你的 App 已经集成了阿里云的推送 SDK。
+
 - [示例用法](#example-usage)
 - [安装](#installation)
     - [阿里云控制台](#aliyun-console)
@@ -19,6 +21,7 @@ App 在后台或者没有打开时，只能靠系统的推送通道把消息送�
 - [海外用户](#overseas)
 - [测试](#testing)
 - [清理](#cleanup)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="example-usage"></a>
@@ -255,6 +258,29 @@ App 每次启动都会重新登记，长期没有更新的设备通常已经卸�
 ```go
 sched.Add("push:cleanup", "@daily", schedule.Cleanup(push.Cleanup(a.db, 90*24*time.Hour), 1000))
 ```
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**iOS 收不到推送**
+
+`apns` 的环境不对：App Store、TestFlight 的包用 `PRODUCT`，Xcode 直接安装的包用 `DEV`。
+
+**Android 的通知没有显示**
+
+Android 8 及以上要先创建 NotificationChannel，ID 与配置中的 `android.channel` 一致，见 [App 端](#app-side)。
+
+**用户退出登录后，这台设备仍然收到推送**
+
+退出登录时没有删除设备的登记，见[退出登录](#unregistering)。
+
+**同一部手机换了账号，旧账号的推送还在发过来**
+
+一台设备同时只属于一个用户。新账号登录后要重新调用登记接口，设备才会改为登记给新账号，见[登记设备](#registering-devices)。
+
+**事务回滚了，推送却发出去了**
+
+`push.Send` 要在业务事务中调用，用事务 `tx`，提交后才推送。
 
 <a id="api-reference"></a>
 ## API 参考

@@ -2,6 +2,8 @@
 
 后台管理系统几乎都要支持用 Excel 批量导入数据，以及把列表导出成表格。`sheet` 包读写 CSV 和 Excel（XLSX）两种格式，导入时按[验证](../http/validation.md)规则检查每一行，规则与 JSON 接口和[页面表单](../responses/forms.md)用的是同一个结构体。
 
+阅读前需要了解：[验证](../http/validation.md)；[业务动作](../concepts/actions.md)；[迭代器](https://go.dev/blog/range-functions)（`sheet.Decode` 返回 `iter.Seq2`，用 `for record, err := range ...` 遍历）。
+
 - [示例用法](#example-usage)
 - [导入](#importing)
     - [对应的列](#columns)
@@ -11,6 +13,7 @@
 - [导出](#exporting)
     - [编写导出业务动作](#export-action)
     - [单元格的值](#cell-values)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="example-usage"></a>
@@ -43,7 +46,7 @@ for rec, err := range rows {
 }
 ```
 
-一次请求中处理几千行以内的数据；更大的文件见[后台导入与导出](background-import-export.md)。
+一次请求中处理几千行以内的数据；更大的文件见[后台导入与导出](background-imports.md)。
 
 <a id="importing"></a>
 ## 导入
@@ -160,7 +163,7 @@ func (a *Import) HTTP(ctx context.Context, in *ImportInput) (*ImportOutput, erro
 
 `sheet.Decode` 返回一个迭代器，每次产出一行 `sheet.Record`：`Line` 是这一行在 Excel 中的行号，`Data` 是解码后的 `Changes`，`Errors` 是验证失败的提示，与[表单的验证提示](../responses/forms.md#validation-messages)相同，按请求的语言翻译。验证失败的行同样会产出，用 `Valid` 判断。
 
-`row` 把 `Create` 返回的业务错误分两种处理：slug 重复只是这一行的问题，用 `SetError` 放到 `slug` 字段上，接着处理下一行；其他错误（例如没有权限、数据库不可用）对每一行都一样，直接结束导入。[后台导入](background-import-export.md#processing-imports)也用这个 `row`。前端拿到的结果类似：
+`row` 把 `Create` 返回的业务错误分两种处理：slug 重复只是这一行的问题，用 `SetError` 放到 `slug` 字段上，接着处理下一行；其他错误（例如没有权限、数据库不可用）对每一行都一样，直接结束导入。[后台导入](background-imports.md#processing-imports)也用这个 `row`。前端拿到的结果类似：
 
 ```json
 {
@@ -310,7 +313,7 @@ func download(name string, format sheet.Format, write func(w *sheet.Writer) erro
 }
 ```
 
-导出与[列表查询](../security/authorization.md#scoping-queries)一样，在查询条件中限定 subject 能看到的范围。`Handle` 接收 `sheet.RowWriter`，这里传入的是 `*sheet.Writer`，[后台导出](background-import-export.md#background-exports)时传入记录进度的 `exports.Writer`，查询和写表的代码只有一份。`q.Rows` 用游标逐行读取，`Writer` 边读边写，内存占用与表的大小无关。
+导出与[列表查询](../security/authorization.md#scoping-queries)一样，在查询条件中限定 subject 能看到的范围。`Handle` 接收 `sheet.RowWriter`，这里传入的是 `*sheet.Writer`，[后台导出](background-exports.md)时传入记录进度的 `exports.Writer`，查询和写表的代码只有一份。`q.Rows` 用游标逐行读取，`Writer` 边读边写，内存占用与表的大小无关。
 
 `GET /articles/export?format=csv&columns=title,published_at` 只导出标题和发布时间两列，顺序与 `columns` 一致。`Select` 在开始写响应之前检查列名，不存在的列返回 `sheet.ErrUnknownColumn`。
 
@@ -334,6 +337,25 @@ func download(name string, format sheet.Format, write func(w *sheet.Writer) erro
 时间按它自己的时区显示。数据库读出的时间通常是 UTC，要显示为用户的当地时间，在 `Value` 中转换，例如 `a.PublishedAt.In(loc)`。状态等枚举值可以在 `Value` 中用 `i18n.T` 翻译成文字，此时 `Value` 需要 context，把 `exportColumns` 改为接收 `ctx` 的函数即可。
 
 写出的 CSV 以 UTF-8 BOM 开头，Excel 打开时中文显示正常。以 `=`、`+`、`-`、`@` 开头的非数字文本，前面会加一个 `'`，Excel 把它当作普通文本；代价是 `+86 138…` 这样的电话号码在 CSV 中会带上这个 `'`。XLSX 中的文本按文本类型原样写出。XLSX 的表头加粗并冻结在第一行。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**导入时整个文件被拒绝，错误是 `sheet.ErrMissingColumns`**
+
+表格中缺少必填字段对应的列，提示中列出了缺少的列名。表头可以用 `json` 或 `sheet` 标签中的任意一个名称，比较时忽略大小写、空白、连字符和下划线，见[对应的列](#columns)。
+
+**导入的文件很大，请求超时了**
+
+一次请求只适合处理几千行以内的数据。更大的文件见[后台导入与导出](background-imports.md)。
+
+**Excel 中的日期导入后格式不对**
+
+读取的是单元格在 Excel 中显示的文本，日期按单元格设置的格式显示。把日期列设置为字段能解析的格式，例如 `2026-11-16`，见[读取规则](#reading-rules)。
+
+**CSV 中的中文是乱码**
+
+内容先按 UTF-8 解码，失败时改用 GB18030。其他编码的文件，先在 Excel 中另存为 UTF-8 的 CSV。
 
 <a id="api-reference"></a>
 ## API 参考

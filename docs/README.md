@@ -111,7 +111,7 @@ Tenon 是一个用 Go 构建 HTTP API 的框架。用户登录后使用的界面
 - [操作日志](features/activity.md)：记录谁在什么时候做了什么
 - [后台操作](features/operations.md)：导入、批量处理这类耗时的操作，带进度
 - [导入与导出](features/import-export.md)：Excel 和 CSV
-- [后台导入与导出](features/background-import-export.md)：大文件在后台处理
+- [后台导入](features/background-imports.md)、[后台导出](features/background-exports.md)：大文件在后台处理
 - [Webhook](features/webhooks.md)：把事件通知给其他系统
 - [全文搜索](features/search.md)：按关键词搜索
 

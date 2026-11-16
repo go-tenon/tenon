@@ -4,6 +4,8 @@
 
 `notification` 包只提供站内的收件箱，其他渠道已经有各自的包：[邮件](../libraries/mail.md)、[移动推送](push.md)、[队列](../libraries/queue.md)、[广播](../libraries/broadcasting.md)。一次通知发往哪些渠道，由业务动作显式写出来，读代码就能看到会发生什么。
 
+阅读前需要了解：[数据库事务](../database/quick-start.md#transactions)；[发布框架迁移](../database/migrations.md#publishing-framework-migrations)。实时推送未读数一节用到了[广播](../libraries/broadcasting.md)。
+
 - [示例用法](#example-usage)
 - [安装](#installation)
 - [发送通知](#sending)
@@ -15,6 +17,7 @@
 - [其他渠道：Telegram](#telegram)
 - [实时推送](#realtime)
 - [保留期限](#retention)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="example-usage"></a>
@@ -353,6 +356,21 @@ func (h *Handlers) Inbox(ctx context.Context, _ *struct{}) (*huma.StreamResponse
 ```go
 sched.Add("notifications:cleanup", "0 4 * * *", schedule.Cleanup(notification.Cleanup(a.db, 90*24*time.Hour), 1000))
 ```
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**通知写入了，但事务回滚后通知还在**
+
+`Send` 用的是 `db`，不是事务 `tx`。在业务事务中用 `tx` 调用，见[发送通知](#sending)。
+
+**用户在另一个租户中看不到通知**
+
+收件人由租户和主体组成，同一个用户在两个租户中是两个收件人，各自有各自的通知，见[收件人](#recipients)。
+
+**通知中的文章标题变成了改名后的**
+
+显示时读取了文章现在的数据。需要显示的内容在发送时写进 `Data`，见[事件与数据](#events-and-data)。
 
 <a id="api-reference"></a>
 ## API 参考
