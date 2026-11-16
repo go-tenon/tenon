@@ -22,6 +22,7 @@ agent 本身由 [trpc-agent-go](https://github.com/trpc-group/trpc-agent-go) 提
 - [装配](#assembling)
     - [配置模型](#configuring-models)
 - [对话接口](#conversation-api)
+    - [发送图片和文件](#files)
     - [停止回答](#stopping)
     - [中途插话](#steering)
     - [断线重连](#reconnecting)
@@ -268,6 +269,36 @@ const { messages, sendMessage, addToolApprovalResponse } = useChat({
 React 前端可以直接用 `@go-tenon/shell/chat` 的 [`useAssistantChat`](../frontend/app-shell-features.md#ai-chat)，它按上面的方式配置好 `useChat`，还处理了插话和停止；运营后台的 [`AssistantChat`](../frontend/admin.md#features) 是现成的对话界面。
 
 `Runs.Submit` 在后台开始一次运行后立即返回，运行独立于请求，请求结束后照常继续。它也独立于 [`httpx.Timeout`](../http/middleware.md#request-timeout)，助手的路由和其他 API 装在同一组中间件下即可。对话正在回答时再次提交，`Submit` 返回 `chat.ErrBusy`（`409`）。
+
+<a id="files"></a>
+### 发送图片和文件
+
+`useChat` 的 `sendMessage` 可以带上文件，`Submit` 把它们和文字一起交给模型，模型直接看到图片、听到音频、读到 PDF：
+
+```tsx
+<form onSubmit={(e) => {
+  e.preventDefault();
+  sendMessage({ text, files }); // files 是 <input type="file" multiple> 的 FileList
+}}>
+```
+
+`useChat` 把每个文件变成一个文件片段（`{"type": "file", "mediaType": "image/png", "filename": "cat.png", "url": "data:…"}`），`Submit` 按 `mediaType` 转换：
+
+| `mediaType` | 交给模型的内容 |
+| --- | --- |
+| `image/*` | 图片 |
+| `audio/*` | 音频；Chat Completions 接口只接受 wav 和 mp3 的文件内容，不接受链接 |
+| `video/*` | 视频；Chat Completions 接口不支持，模型只看到一句说明，说明省略了视频 |
+| 其他，例如 `application/pdf` | 文件 |
+
+模型能否理解这些内容取决于模型本身：给不支持图片的模型发图片，模型服务通常会返回错误。消息可以只有文件、没有文字。
+
+文件片段的 `url` 有两种写法：
+
+- **data URL**：`useChat` 发送 `FileList` 时的默认做法，文件内容在请求体中。默认的[请求体上限](../http/requests.md#body-size)是 1 MiB，助手的路由要按允许的文件大小放宽。文件内容也随对话一起保存在对话存储中，页面打开时 `UIMessages` 原样返回。
+- **http(s) 链接**：文件先[上传](../libraries/direct-uploads.md)到 S3 等处，消息中只放链接。链接原样交给模型服务，由模型服务下载，所以它必须能从公网访问，例如有效期足够长的签名地址；应用的服务端不访问它。适合较大的文件，请求体和对话存储都保持精简。
+
+其他写法（例如 `blob:`）和缺少 `mediaType` 的文件返回 `422`。不使用 `useChat` 时，自己构造带 `ContentParts` 的 `model.Message` 交给 `Runs.Start`，例如用 `msg.AddImageData(data, "auto", "png")`。
 
 <a id="stopping"></a>
 ### 停止回答

@@ -33,8 +33,7 @@ func (rs *Runs) UIMessages(ctx context.Context, userID, sessionID string) ([]UIM
 				if c.Message.Role == model.RoleUser {
 					role = "user"
 				}
-				out = append(out, UIMessage{ID: ev.ID, Role: role, Parts: []UIPart{{Type: "text", Text: c.Message.Content}},
-					Metadata: &UIMetadata{Author: author}})
+				out = append(out, UIMessage{ID: ev.ID, Role: role, Parts: uiParts(c.Message), Metadata: &UIMetadata{Author: author}})
 			}
 			assistant = -1
 			continue
@@ -43,12 +42,11 @@ func (rs *Runs) UIMessages(ctx context.Context, userID, sessionID string) ([]UIM
 			m := c.Message
 			switch m.Role {
 			case model.RoleUser:
-				text := UIPart{Type: "text", Text: m.Content}
 				if _, steer := ev.Extensions[steerExtension]; steer && assistant >= 0 {
 					out[assistant].Parts = append(out[assistant].Parts, UIPart{Type: "data-steering", ID: ev.ID, Data: UISteering{Text: m.Content}})
 					continue
 				}
-				out = append(out, UIMessage{ID: ev.ID, Role: "user", Parts: []UIPart{text}})
+				out = append(out, UIMessage{ID: ev.ID, Role: "user", Parts: uiParts(m)})
 				assistant = -1
 			case model.RoleAssistant:
 				if m.Content == "" && m.ReasoningContent == "" && len(m.ToolCalls) == 0 {

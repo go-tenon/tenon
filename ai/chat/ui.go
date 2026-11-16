@@ -10,7 +10,6 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"trpc.group/trpc-go/trpc-agent-go/agent"
-	"trpc.group/trpc-go/trpc-agent-go/model"
 
 	"github.com/go-tenon/tenon/errorx"
 	"github.com/go-tenon/tenon/httpx"
@@ -65,12 +64,16 @@ type UIMetadata struct {
 	Author string `json:"author,omitempty"`
 }
 
-// UIPart 是消息的一部分：文本、思考过程、工具调用、插话等。
+// UIPart 是消息的一部分：文本、文件、思考过程、工具调用、插话等。
 type UIPart struct {
-	_          struct{}    `additionalProperties:"true"`
-	Type       string      `json:"type"`
-	ID         string      `json:"id,omitempty"`
-	Text       string      `json:"text,omitempty"`
+	_    struct{} `additionalProperties:"true"`
+	Type string   `json:"type"`
+	ID   string   `json:"id,omitempty"`
+	Text string   `json:"text,omitempty"`
+	// MediaType、Filename 和 URL 是文件片段（type 为 file）的 MIME 类型、文件名和内容，URL 是 data URL 或 http(s) 链接。
+	MediaType  string      `json:"mediaType,omitempty"`
+	Filename   string      `json:"filename,omitempty"`
+	URL        string      `json:"url,omitempty"`
 	State      string      `json:"state,omitempty"`
 	ToolCallID string      `json:"toolCallId,omitempty"`
 	ToolName   string      `json:"toolName,omitempty"`
@@ -110,7 +113,8 @@ func (r UIRequest) last() (UIMessage, bool) {
 	return UIMessage{}, false
 }
 
-// Submit 处理 useChat 发来的消息：用户消息开始一次运行；带有审批结果的助手消息
+// Submit 处理 useChat 发来的消息：用户消息开始一次运行，消息中的文件片段（图片、音频、PDF 等）
+// 和文字一起交给模型，文件的 url 是 data URL 或 http(s) 链接，其他写法返回 ErrBadRequest；带有审批结果的助手消息
 // 依次调用 Approve 或 Reject，全部决定后对话继续运行。返回的运行用 UIStream 推送给前端；
 // 还有调用等待决定时返回 nil。
 //
@@ -122,11 +126,11 @@ func (rs *Runs) Submit(ctx context.Context, userID string, req UIRequest, opts .
 	}
 	switch m.Role {
 	case "user":
-		text := m.text()
-		if text == "" {
-			return nil, ErrBadRequest.New()
+		msg, err := m.userMessage()
+		if err != nil {
+			return nil, err
 		}
-		return rs.Start(ctx, userID, req.ID, model.NewUserMessage(text), opts...)
+		return rs.Start(ctx, userID, req.ID, msg, opts...)
 	case "assistant":
 		var run *Run
 		decided := false

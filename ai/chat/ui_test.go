@@ -4,10 +4,12 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"github.com/go-chi/chi/v5"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -297,6 +299,93 @@ func TestSubmitRejectsBadRequests(t *testing.T) {
 		resp.Body.Close()
 		if resp.StatusCode != http.StatusUnprocessableEntity {
 			t.Errorf("body %v: status %d", body, resp.StatusCode)
+		}
+	}
+}
+
+func TestSubmitWithFiles(t *testing.T) {
+	t.Parallel()
+	m := chattest.NewModel(chattest.Text("是一只猫"), chattest.Text("收到"))
+	rs := newRuns(t, m, nil)
+	url := chatServer(t, rs)
+
+	png := "data:image/png;base64," + base64.StdEncoding.EncodeToString([]byte("PNG"))
+	pdf := "data:application/pdf;base64," + base64.StdEncoding.EncodeToString([]byte("%PDF"))
+	msg := map[string]any{"id": "m1", "role": "user", "parts": []any{
+		map[string]any{"type": "text", "text": "这是什么？"},
+		map[string]any{"type": "file", "mediaType": "image/png", "filename": "cat.png", "url": png},
+		map[string]any{"type": "file", "mediaType": "application/pdf", "filename": "a.pdf", "url": pdf},
+		map[string]any{"type": "file", "mediaType": "image/jpeg", "url": "https://example.com/b.jpg"},
+		map[string]any{"type": "file", "mediaType": "audio/mpeg", "url": "data:audio/mpeg;base64," + base64.StdEncoding.EncodeToString([]byte("ID3"))},
+	}}
+	chunks(t, postChat(t, url, map[string]any{"id": "c1", "message": msg}))
+
+	reqs := m.LastRequest()
+	got := reqs[len(reqs)-1]
+	// trpc-agent-go 在请求模型前加上一段列出附件的文字，这里只看文件。
+	var files []model.ContentPart
+	for _, p := range got.ContentParts {
+		if p.Type != model.ContentTypeText {
+			files = append(files, p)
+		}
+	}
+	if got.Content != "这是什么？" || len(files) != 4 {
+		t.Fatalf("model got %+v", got)
+	}
+	img, file, link, audio := files[0], files[1], files[2], files[3]
+	if img.Type != model.ContentTypeImage || string(img.Image.Data) != "PNG" || img.Image.Format != "image/png" {
+		t.Errorf("image %+v", img.Image)
+	}
+	if file.Type != model.ContentTypeFile || string(file.File.Data) != "%PDF" || file.File.Name != "a.pdf" || file.File.MimeType != "application/pdf" {
+		t.Errorf("file %+v", file.File)
+	}
+	if link.Type != model.ContentTypeImage || link.Image.URL != "https://example.com/b.jpg" || len(link.Image.Data) != 0 {
+		t.Errorf("link %+v", link.Image)
+	}
+	if audio.Type != model.ContentTypeAudio || audio.Audio.Format != "mp3" || string(audio.Audio.Data) != "ID3" {
+		t.Errorf("audio %+v", audio.Audio)
+	}
+
+	// 只发文件、不带文字也可以。
+	only := map[string]any{"id": "m2", "role": "user", "parts": []any{map[string]any{"type": "file", "mediaType": "image/png", "url": png}}}
+	chunks(t, postChat(t, url, map[string]any{"id": "c1", "message": only}))
+
+	history, err := rs.UIMessages(context.Background(), "u1", "c1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 4 {
+		t.Fatalf("history %+v", history)
+	}
+	want := []chat.UIPart{
+		{Type: "text", Text: "这是什么？"},
+		{Type: "file", MediaType: "image/png", URL: png},
+		{Type: "file", MediaType: "application/pdf", Filename: "a.pdf", URL: pdf},
+		{Type: "file", MediaType: "image/jpeg", URL: "https://example.com/b.jpg"},
+		{Type: "file", MediaType: "audio/mpeg", URL: "data:audio/mpeg;base64," + base64.StdEncoding.EncodeToString([]byte("ID3"))},
+	}
+	if !reflect.DeepEqual(history[0].Parts, want) {
+		t.Errorf("history parts\ngot  %+v\nwant %+v", history[0].Parts, want)
+	}
+	if want := []chat.UIPart{{Type: "file", MediaType: "image/png", URL: png}}; !reflect.DeepEqual(history[2].Parts, want) {
+		t.Errorf("file-only history %+v", history[2].Parts)
+	}
+}
+
+func TestSubmitRejectsBadFiles(t *testing.T) {
+	t.Parallel()
+	rs := newRuns(t, chattest.NewModel(), nil)
+	url := chatServer(t, rs)
+	for _, part := range []map[string]any{
+		{"type": "file", "mediaType": "image/png", "url": "blob:http://localhost/1"},
+		{"type": "file", "mediaType": "image/png", "url": "data:image/png;base64,***"},
+		{"type": "file", "url": "https://example.com/x"},
+	} {
+		msg := map[string]any{"id": "m1", "role": "user", "parts": []any{part}}
+		resp := postChat(t, url, map[string]any{"id": "c1", "message": msg})
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusUnprocessableEntity {
+			t.Errorf("part %v: status %d", part, resp.StatusCode)
 		}
 	}
 }
