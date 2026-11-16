@@ -39,7 +39,13 @@ type UIChunk struct {
 	ErrorText    string   `json:"errorText,omitempty"`
 	FinishReason string   `json:"finishReason,omitempty"`
 	Reason       string   `json:"reason,omitempty"`
-	Parts        []UIPart `json:"parts,omitempty"`
+	Data         any      `json:"data,omitempty"`
+}
+
+// UISteering 是插话的数据片段（data-steering）的内容。插话用 UI 消息流协议的数据片段发送，
+// useChat 不需要额外处理就能接收，它出现在回答的 parts 中：{"type": "data-steering", "id": "…", "data": {"text": "…"}}。
+type UISteering struct {
+	Text string `json:"text"`
 }
 
 // UIMessage 是 useChat 中的一条消息。
@@ -72,7 +78,7 @@ type UIPart struct {
 	Output     any         `json:"output,omitempty"`
 	ErrorText  string      `json:"errorText,omitempty"`
 	Approval   *UIApproval `json:"approval,omitempty"`
-	Parts      []UIPart    `json:"parts,omitempty"`
+	Data       any         `json:"data,omitempty"`
 }
 
 // UIApproval 是工具调用的审批状态。
@@ -229,7 +235,7 @@ func (e *uiEncoder) event(ev Event) error {
 		if ev.Name == EventUser {
 			return e.all(e.closeBlock, e.finishStep, func() error {
 				e.afterTools = false
-				return e.send(UIChunk{Type: "steering-message", ID: ev.ID, Parts: []UIPart{{Type: "text", Text: data.Text}}})
+				return e.send(UIChunk{Type: "data-steering", ID: ev.ID, Data: UISteering(data)})
 			})
 		}
 		if err := e.all(e.nextStep, e.startStep); err != nil {

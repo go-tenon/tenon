@@ -315,6 +315,8 @@ const done = await watchOperation((o) => api.article.bulkPublishProgress(op.id, 
 if (done.status === "failed") showError(done.error)
 ```
 
+React 前端用 `@go-tenon/shell` 的 [`trackOperation`](../responses/app-shell.md#operations) 登记操作，顶栏的任务中心和页面都能显示它的进度，见运营后台的 [`OperationCenter`](../responses/admin.md#features)。
+
 进度是状态：广播只提醒连接重新读取，连接（包括断线重连）时先推送一次当前进度，所以页面总是显示最新的进度，与[通知角标](notifications.md#realtime)的做法相同。每次读取都经过 `Get`，只有发起人能看到进度，其他人收到 `operation.ErrNotFound`。
 
 <a id="listing"></a>

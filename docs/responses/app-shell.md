@@ -13,6 +13,9 @@
 - [租户](#tenants)
 - [表单](#forms)
 - [列表](#lists)
+- [通知](#notifications)
+- [后台操作](#operations)
+- [AI 对话](#ai-chat)
 - [新版本提示](#new-version)
 - [本地存储](#storage)
 - [API 参考](#api-reference)
@@ -475,6 +478,76 @@ function Articles() {
 
 游标分页的游标不放进地址，“加载更多”用 TanStack Query 的 [useInfiniteQuery](https://tanstack.com/query/latest/docs/framework/react/guides/infinite-queries)，`getNextPageParam` 取响应的 `next_cursor`。
 
+<a id="notifications"></a>
+## 通知
+
+`useNotifications` 是[通知](../features/notifications.md)的模型：未读数、列表（从新到旧，“加载更多”翻页）、标记已读。通知的接口由应用定义，把生成的客户端的方法交给它：
+
+```ts
+const notifications: NotificationsSource = {
+  list: (before) => api.notification.index({ before }).then((l) => l.map(toItem)),
+  markRead: (ids) => api.notification.read({ ids }),
+  markAllRead: () => api.notification.readAll(),
+  badge: (o) => api.notification.inbox(o), // 未读数的事件流，见“实时推送”
+}
+
+const { unread, items, hasMore, loadMore, markRead, markAllRead } = useNotifications(notifications)
+```
+
+- 未读数来自事件流的 `badge` 事件（`{ "unread": 3 }`），断开后自动重连（等待时间从 1 秒加倍到 30 秒）；每次收到都重新读取列表。没有事件流时传 `unread`，每 60 秒读取一次（`pollInterval`）。
+- `items` 的每一项是 `{ id, title, body?, read, created_at, href? }`，`title` 是服务端按语言生成的文案，`href` 是点击后打开的页面。
+- `markRead` 先在界面上标记，再调用接口；已读的通知不再调用。
+- 列表按身份隔离：切换租户或换了账号后读取新身份的通知。
+
+<a id="operations"></a>
+## 后台操作
+
+[后台操作](../features/operations.md)发起后登记到操作中心，顶栏的任务中心和页面读取它们的进度：
+
+```ts
+const op = await api.article.bulkPublish({ ids })
+trackOperation(app, {
+  id: op.id,
+  title: `批量发布 ${ids.length} 篇文章`,
+  open: (o) => api.article.bulkPublishProgress(op.id, o),
+})
+```
+
+- `useOperations()` 是登记过的操作，新的在前；`useOperation(id)` 是一个操作。每一项有 `title`、最新的进度 `operation`、比例 `ratio`（不知道总数时为空）、`finished` 和读取失败时的 `error`。
+- 进度用 `@go-tenon/client` 的 `watchOperation` 读取，断开后自动重连，操作结束时停止。
+- 同一个 ID 只登记一次。结束后仍留在操作中心，`dismissOperation(app, id)` 移除；退出登录、切换身份时清空。
+
+<a id="ai-chat"></a>
+## AI 对话
+
+`@go-tenon/shell/chat` 在 Vercel AI SDK 的 `useChat` 之上接好[对话接口](../ai/chat.md#conversation-api)：消息流、历史、断线续传、停止、插话和审批。它是单独的入口，用到时在前端安装 AI SDK：
+
+```sh
+bun add ai@^7.0.159 @ai-sdk/react@^4.0.163
+```
+
+```tsx
+import { useAssistantChat, useAssistantHistory } from "@go-tenon/shell/chat"
+
+function Assistant({ id }: { id: string }) {
+  const history = useAssistantHistory({ api: "/api/v1/assistant/chat", id })
+  if (!history.data) return null
+  return <Conversation id={id} messages={history.data} />
+}
+
+function Conversation({ id, messages }: { id: string; messages: UIMessage[] }) {
+  const chat = useAssistantChat({ api: "/api/v1/assistant/chat", id, messages })
+  // chat.messages、chat.status、chat.busy、chat.pending、chat.send(text)、chat.stop()、chat.respond(id, approved, reason)
+}
+```
+
+- 先读取历史，再创建对话：`useChat` 用历史作为初始消息，进行中的回答随即接上（`resume`）。
+- 请求带上 access token，`401` 时刷新再重试；发送时只发最后一条消息。
+- `send`：没有回答进行时发送新消息；回答进行中时[插话](../ai/chat.md#steering)，回答恰好已经结束（`409 ai.finished`）时改为发送新消息。
+- `stop`：调用停止接口，服务端取消这次回答（客户端断开连接不会停止它）。
+- `pending` 是等待[审批](../ai/chat.md#approval)的工具调用（`{ id, toolName, input }`），`respond` 批准或拒绝；全部有了决定后自动发送，回答继续。
+- 插话在回答中是一个 `data-steering` part（`data` 是 `{ text }`），外观把它显示为一条用户消息。
+
 <a id="new-version"></a>
 ## 新版本提示
 
@@ -524,6 +597,9 @@ app.storage.get<{ collapsed: boolean }>("sider")
 | `listSearch(querySchema, options)`、`useList(Route)` | 列表的查询条件、排序和分页保存在地址中 |
 | `useSelection(resetOn)` | 列表的选中项 |
 | `safeRedirect(redirect, fallback)` | 只接受同源相对路径的回跳地址 |
+| `useNotifications` | 通知：未读数、列表、标记已读 |
+| `trackOperation`、`dismissOperation`、`clearOperations`、`useOperations`、`useOperation` | 后台操作的进度 |
+| `useAssistantChat`、`useAssistantHistory`、`pendingApprovals` | `@go-tenon/shell/chat` 中的 AI 对话 |
 | `useNewVersion`、`watchVersion` | 新版本提示 |
 | `tenonVersion(options)` | `@go-tenon/shell/vite` 中的构建插件 |
 | `appStorage(id)` | 按应用隔离的本地存储 |

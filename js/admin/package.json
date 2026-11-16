@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./chat": "./src/chat.tsx"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
@@ -22,13 +23,29 @@
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "@types/react": "^19.1.0",
-    "@types/react-dom": "^19.1.0"
+    "@types/react-dom": "^19.1.0",
+    "@ant-design/x": "^2.10.0",
+    "@ant-design/x-markdown": "^2.10.0",
+    "ai": "^7.0.159",
+    "@ai-sdk/react": "^4.0.163"
   },
   "peerDependenciesMeta": {
     "@types/react": {
       "optional": true
     },
     "@types/react-dom": {
+      "optional": true
+    },
+    "@ant-design/x": {
+      "optional": true
+    },
+    "@ant-design/x-markdown": {
+      "optional": true
+    },
+    "ai": {
+      "optional": true
+    },
+    "@ai-sdk/react": {
       "optional": true
     }
   }

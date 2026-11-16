@@ -1,12 +1,13 @@
 # 运营后台
 
-运营后台用 [antd](https://ant.design) 和 [ProComponents](https://procomponents.ant.design) 编写，数据密度高、组件齐全。`@go-tenon/admin` 是它的外观：布局、标签栏、登录页、错误页、用户菜单和租户切换。逻辑都来自[应用骨架](app-shell.md)（`@go-tenon/shell`）：导航模型、插槽、布局状态、多标签和权限，这里只负责用 antd 渲染。
+运营后台用 [antd](https://ant.design) 和 [ProComponents](https://procomponents.ant.design) 编写，数据密度高、组件齐全。`@go-tenon/admin` 是它的外观：布局、标签栏、登录页、错误页、用户菜单、租户切换、通知、后台任务和 AI 对话。逻辑都来自[应用骨架](app-shell.md)（`@go-tenon/shell`）：导航模型、插槽、布局状态、多标签和权限，这里只负责用 antd 渲染。
 
 - [新建运营后台](#creating)
 - [模板里有什么](#template)
 - [全局配置](#provider)
 - [布局](#layouts)
 - [页面与部件](#pages)
+- [通知、后台任务与 AI 对话](#features)
 - [给 AI 编程助手的约定](#agents)
 - [API 参考](#api-reference)
 
@@ -129,6 +130,35 @@ function Layout() {
 
 表单用 antd 的 `Form`，校验规则用 [`antdRule`](app-shell.md#forms)，与服务端相同；列表用 ProTable，查询条件保存在地址中，见[列表](app-shell.md#lists)。
 
+<a id="features"></a>
+## 通知、后台任务与 AI 对话
+
+框架功能的界面，逻辑见应用骨架的[通知](app-shell.md#notifications)、[后台操作](app-shell.md#operations)和 [AI 对话](app-shell.md#ai-chat)：
+
+```tsx
+<Fill name="actions">
+  <NotificationBell source={notifications} />
+  <OperationCenter />
+  <AssistantButton api="/api/v1/assistant/chat" id={conversationId} toolTitles={{ refund_order: "退款" }} />
+</Fill>
+```
+
+| 组件 | 说明 |
+| --- | --- |
+| `NotificationBell` | 铃铛，角标是未读数；点开是通知列表、“全部已读”和“加载更多”。点击一条通知标记已读并打开它的 `href`，`onOpen` 可以改为自己处理 |
+| `OperationCenter` | 任务中心：角标是进行中的操作数，点开是 `trackOperation` 登记的操作和进度，结束的可以移除。没有登记过操作时不显示 |
+| `OperationProgress` | 页面中一个操作的进度：`<OperationProgress id={op.id} />` |
+| `AssistantChat` | AI 对话（[Ant Design X](https://x.ant.design)）：回答用 Markdown 渲染（`@ant-design/x-markdown`），思考过程可以展开，工具调用列出参数和结果；需要审批的调用显示“批准”和“拒绝”，等待审批时不能发送；回答进行中输入的内容插入这次回答，停止按钮停止回答；插话显示为单独的用户消息 |
+| `AssistantButton` | 顶栏的按钮，点开是侧边的 `AssistantChat` |
+
+`AssistantChat` 和 `AssistantButton` 在单独的入口 `@go-tenon/admin/chat` 中，用到时安装：
+
+```sh
+bun add ai@^7.0.159 @ai-sdk/react@^4.0.163 @ant-design/x@^2.10.0 @ant-design/x-markdown@^2.10.0
+```
+
+`toolTitles` 是工具的显示名称；应用自己的 `data-*` 片段用 `renderPart` 渲染。
+
 <a id="agents"></a>
 ## 给 AI 编程助手的约定
 
@@ -148,4 +178,6 @@ function Layout() {
 | `TabBar`、`Crumbs`、`NavLink`、`CollapseButton` | 自定义布局用的部件 |
 | `LoginPage`、`RouteError`、`NotFoundPage`、`ForbiddenPage` | 页面 |
 | `UserMenu`、`TenantSwitcher`、`NewVersionNotice` | 顶栏的部件 |
+| `NotificationBell`、`OperationCenter`、`OperationProgress`、`OperationProgressBar` | 通知和后台任务 |
+| `AssistantChat`、`AssistantButton` | `@go-tenon/admin/chat` 中的 AI 对话 |
 | `defaultIcons` | 默认登记的图标 |
