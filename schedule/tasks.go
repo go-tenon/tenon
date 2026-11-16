@@ -50,7 +50,7 @@ func (s *Scheduler) Tasks() []Task {
 }
 
 // Running 报告各任务此刻是否正在执行，在任何一个实例上都算。它查询锁存储中任务执行期间持有的锁，
-// 所以可以在没有运行调度器的进程中调用，结果的范围取决于锁存储：多实例部署需要共用同一个 Redis 锁存储。
+// 所以可以在没有运行调度器的进程中调用，结果的范围取决于锁存储：多实例部署需要共用同一个锁存储。
 // 使用 EveryInstance 或 AllowOverlap 的任务不在锁存储中登记执行状态，不出现在结果中。
 func (s *Scheduler) Running(ctx context.Context) (map[string]bool, error) {
 	s.mu.Lock()

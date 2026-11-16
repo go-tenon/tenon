@@ -121,7 +121,7 @@ type Accounts struct {
     Roles        *authz.Store
 }
 
-func New(db *bun.DB, rdb rueidis.Client, cfg Config, hasher *hashing.Hasher, c *crypt.Crypt) *Accounts {
+func New(db *bun.DB, cfg Config, hasher *hashing.Hasher, c *crypt.Crypt) *Accounts {
     every15 := ratelimit.Config{Rate: 5, Interval: 15 * time.Minute, Burst: 5}
     roles := authz.NewStore(db, auth.Permissions)
 
@@ -131,8 +131,8 @@ func New(db *bun.DB, rdb rueidis.Client, cfg Config, hasher *hashing.Hasher, c *
         Crypt:    c,
         Policy:   login.Policy{PasswordKinds: []string{login.KindEmail}},
         Resolve:  staff.Resolve(db, roles),
-        Attempts: redislimit.New(rdb, "app:login:staff:attempts", every15),
-        Sends:    redislimit.New(rdb, "app:login:staff:sends", every15),
+        Attempts: pglimit.New(db, "login:staff:attempts", every15),
+        Sends:    pglimit.New(db, "login:staff:sends", every15),
         // Send: 邀请设密邮件，见登录与注册
     })
     memberRealm := login.New(db, login.Options{
@@ -141,8 +141,8 @@ func New(db *bun.DB, rdb rueidis.Client, cfg Config, hasher *hashing.Hasher, c *
         Crypt:    c,
         Policy:   login.Policy{PasswordKinds: []string{login.KindEmail}},
         Resolve:  member.Resolve(db, roles),
-        Attempts: redislimit.New(rdb, "app:login:member:attempts", every15),
-        Sends:    redislimit.New(rdb, "app:login:member:sends", every15),
+        Attempts: pglimit.New(db, "login:member:attempts", every15),
+        Sends:    pglimit.New(db, "login:member:sends", every15),
     })
 
     staffTokens := apitoken.NewStore(db, cfg.StaffToken)
@@ -275,7 +275,7 @@ func (h *handlers) handoff(ctx context.Context, in *HandoffInput) (*SessionOutpu
 ## 接入入口
 
 ```go
-acc := accounts.New(a.db, a.rdb, a.cfg.Accounts, hashing.New(a.cfg.Hashing), a.crypt)
+acc := accounts.New(a.db, a.cfg.Accounts, hashing.New(a.cfg.Hashing), a.crypt)
 
 router.Route("/ops/api", func(r chi.Router) {
     ops := rest.New(r, rest.Options{

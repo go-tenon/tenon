@@ -22,12 +22,12 @@ const (
 //
 //   - allowed：放行；
 //   - exceeded：配额用完，返回 ErrExceeded；
-//   - error：存储出错，例如 Redis 不可用。
+//   - error：存储出错，例如数据库不可用。
 //
 // ctx 被取消或超时导致的错误来自调用方，跳过记录。
 // 按结果计数就能看出拒绝的比例和存储故障；key 不进入属性，否则指标序列会随客户端数量增长。
 //
-//	logins := redislimit.New(rdb, "blog:login", cfg)
+//	logins := pglimit.New(db, "login", cfg)
 //	attempts := ratelimit.Observe(meters, "login", logins)
 //
 // mp 或 l 为 nil、name 为空时 panic。

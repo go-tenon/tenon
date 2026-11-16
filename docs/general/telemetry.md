@@ -211,11 +211,11 @@ sched := schedule.New(locker, cfg.Schedule, nil, schedule.WithTelemetry(tel.Mete
 被拒绝的请求返回 `429`，已经出现在 [HTTP 请求的指标](#http)中，按路由就能看出哪个接口被限流。还看不出来的是：被哪个限流器拒绝、拒绝占全部调用的比例、存储是否出错，以及 HTTP 之外的调用。用 `ratelimit.Observe` 包装限流器：
 
 ```go
-logins := redislimit.New(rdb, "app:login", ratelimit.Config{Rate: 5, Interval: time.Minute, Burst: 5})
+logins := pglimit.New(db, "login:attempts", ratelimit.Config{Rate: 5, Interval: time.Minute, Burst: 5})
 attempts := ratelimit.Observe(tel.Meters, "login", logins)
 ```
 
-把 `attempts` 交给 [`login.Options.Attempts`](../security/login.md#limits)。第二个参数是指标中的名称，与存储的 `name` 分开：Redis 限流器的 `name` 往往带着应用的前缀，指标中只用简短的名称。任何 `Limiter` 都可以包装，包括中间件使用的内存限流器。
+把 `attempts` 交给 [`login.Options.Attempts`](../security/login.md#limits)。第二个参数是指标中的名称，与存储的 `name` 分开：存储的 `name` 往往带着更多的层级，指标中只用简短的名称。任何 `Limiter` 都可以包装，包括中间件使用的内存限流器。
 
 | 指标 | 类型 | 属性 | 含义 |
 | --- | --- | --- | --- |

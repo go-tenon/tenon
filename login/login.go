@@ -77,7 +77,7 @@ type Options struct {
 	// ProofTTL 是完成凭证的有效期，默认 15 分钟。
 	ProofTTL time.Duration
 	// Attempts 限制同一个标识的密码登录失败次数：每次尝试前消耗一次，成功后清零。
-	// 多个实例共享配额时使用 redislimit，例如每 15 分钟 5 次。
+	// 多个实例共享配额时使用 pglimit，例如每 15 分钟 5 次。
 	Attempts ratelimit.Limiter
 	// Sends 限制向同一个标识发送验证码的次数，例如每 15 分钟 5 次。
 	Sends ratelimit.Limiter

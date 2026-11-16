@@ -365,7 +365,7 @@ bots, err := captcha.New(captcha.Config{Secret: "test"}, fake.Client())
 `Sends` 和人机验证之外，验证码用短信发送时再给费用设一个上限：在 `Send` 中先过一个全局限流器，超出后停止发送。`Send` 返回的错误由 `SendCode` 原样返回，这次的验证记录同时删除：
 
 ```go
-smsBudget := redislimit.New(rdb, "app:sms:budget", ratelimit.Config{Rate: 5000, Interval: 24 * time.Hour, Burst: 5000})
+smsBudget := pglimit.New(db, "sms:budget", ratelimit.Config{Rate: 5000, Interval: 24 * time.Hour, Burst: 5000})
 
 readers := login.New(db, login.Options{
     // ……

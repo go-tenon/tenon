@@ -95,7 +95,7 @@ func Resolve(db bun.IDB) identity.Resolver {
 <a id="assembling"></a>
 ## 装配
 
-在入口的 `open` 中创建 `Realm`、`Store` 和 `JWT`。`Hashing` / `Crypt` / Redis 限流的配置挂法见[哈希](hashing.md)、[加密](encryption.md)、[登录装配](login.md#assembling)。
+在入口的 `open` 中创建 `Realm`、`Store` 和 `JWT`。`Hashing` / `Crypt` / 限流的配置挂法见[哈希](hashing.md)、[加密](encryption.md)、[登录装配](login.md#assembling)。
 
 ```go
 every15 := ratelimit.Config{Rate: 5, Interval: 15 * time.Minute, Burst: 5}
@@ -105,15 +105,15 @@ users := login.New(db, login.Options{
     Crypt:    crypt.New(cfg.Crypt),
     Policy:   login.Policy{PasswordKinds: []string{login.KindEmail}},
     Resolve:  user.Resolve(db), // 登录成功签发前也走一遍：停用账号拿不到 token
-    Attempts: redislimit.New(rdb, "app:login:attempts", every15),
-    Sends:    redislimit.New(rdb, "app:login:sends", every15),
+    Attempts: pglimit.New(db, "login:attempts", every15),
+    Sends:    pglimit.New(db, "login:sends", every15),
 })
 tokens := apitoken.NewStore(db, cfg.APIToken)
 jwt := apitoken.NewJWT(tokens, apitoken.JWTConfig{Keys: apitoken.HMACKeys(crypt.New(cfg.Crypt))})
 cookie := apitoken.RefreshCookie{Name: "admin_refresh", Path: "/admin/api/auth"}
 ```
 
-根配置里需要 `crypt`、`hashing`、`api_token`（以及 Redis）。`apitoken.Config` 的 `idle_timeout` 必须长于 access token 有效期，否则 `NewJWT` 会 panic，见 [JWT 模式](jwt.md#jwt)。
+根配置里需要 `crypt`、`hashing`、`api_token`；限流计数保存在数据库中，记得发布 `pglimit` 的迁移。`apitoken.Config` 的 `idle_timeout` 必须长于 access token 有效期，否则 `NewJWT` 会 panic，见 [JWT 模式](jwt.md#jwt)。
 
 <a id="auth-api"></a>
 ## 登录接口
