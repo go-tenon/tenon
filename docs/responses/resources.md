@@ -7,6 +7,7 @@
 - [检查](#checks)
 - [生成的定义](#generated)
 - [前端的资源模型](#model)
+- [运营后台中的资源页面](#admin)
 - [API 参考](#api-reference)
 
 <a id="declaring"></a>
@@ -138,6 +139,41 @@ function Articles() {
 
 `useResourceItem(model, key)` 读取一行的详情，`formValues(model, row)` 得到表单的初始值。显示文字的语言与验证提示相同：`language` 本身，没有时它的主语言，再没有时第一种语言。
 
+<a id="admin"></a>
+## 运营后台中的资源页面
+
+`@go-tenon/admin` 的 `ResourcePage` 用 ProTable 渲染列表，用 DrawerForm 渲染创建和修改的表单。没有覆盖时，一个资源的页面只有路由：
+
+```tsx
+import { ResourcePage } from "@go-tenon/admin"
+
+export const Route = createFileRoute("/_app/articles")({
+  staticData: { title: "文章", icon: "file" },
+  validateSearch: articles.listSearch,
+  component: () => <ResourcePage model={articles} route={Route} />,
+})
+```
+
+- 列按字段的类型显示：枚举显示文字，布尔显示“是”“否”，时间按本地格式，标签逐个显示。可以排序的列点击列头排序。
+- 搜索框和筛选条件在表格上方，枚举的筛选条件是下拉选择。翻页、排序和筛选都写进地址。
+- 表单的输入组件按字段的类型选择：文字、数字、开关、下拉、多选、标签、日期、日期时间，时间以 ISO 字符串提交。
+- 校验规则与服务端相同，服务端返回的字段错误显示在输入框下面。
+- “新建”“修改”、删除和行上的操作按权限显示。删除和带 `Confirm` 的操作先询问，完成后列表随之刷新。
+
+只写需要覆盖的部分：
+
+```tsx
+<ResourcePage
+  model={articles}
+  route={Route}
+  render={{ title: (v, row) => <Link to="/articles/$id" params={{ id: String(row.id) }}>{String(v)}</Link> }}
+  inputs={{ content: (p) => <RichEditor id={p.id} value={p.value as string} onChange={p.onChange} /> }}
+  rowActions={(row) => [{ key: "preview", label: "预览", onClick: () => preview(row) }]}
+/>
+```
+
+`inputs` 中的组件收到 `id`、`value`、`onChange`，`id` 要放在控件上，表单项的标签才能指向它。`FieldValue`、`defaultInput` 和 `ResourceForm` 也单独导出，可以在自己写的页面中使用。
+
 <a id="api-reference"></a>
 ## API 参考
 
@@ -149,3 +185,4 @@ function Articles() {
 | `(*rest.API).Resources()` | 已声明的资源，列、表单字段和 `Key` 已经补全 |
 | `resourceModel(def, kit, queryClient)` | `@go-tenon/shell`：资源模型 |
 | `useResourceList`、`useResourceItem`、`useResourceMutations`、`formValues` | `@go-tenon/shell`：列表、详情、修改、表单的初始值 |
+| `ResourcePage`、`ResourceForm`、`FieldValue`、`defaultInput` | `@go-tenon/admin`：antd 的资源页面 |

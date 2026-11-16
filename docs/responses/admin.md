@@ -180,4 +180,5 @@ bun add ai@^7.0.159 @ai-sdk/react@^4.0.163 @ant-design/x@^2.10.0 @ant-design/x-m
 | `UserMenu`、`TenantSwitcher`、`NewVersionNotice` | 顶栏的部件 |
 | `NotificationBell`、`OperationCenter`、`OperationProgress`、`OperationProgressBar` | 通知和后台任务 |
 | `AssistantChat`、`AssistantButton` | `@go-tenon/admin/chat` 中的 AI 对话 |
+| `ResourcePage`、`ResourceForm`、`FieldValue`、`defaultInput` | [资源](resources.md#admin)的页面 |
 | `defaultIcons` | 默认登记的图标 |
