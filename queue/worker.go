@@ -59,6 +59,8 @@ type Worker struct {
 	observers []Observer
 	tracer    trace.Tracer // 为 nil 时不创建 span
 
+	beforeFetch func() // 测试用：每次拉取之前调用，见 export_test.go
+
 	relaying  atomic.Bool         // 这个 Worker 正在转发
 	relayJobs metric.Int64Counter // 为 nil 时不记录
 
@@ -217,6 +219,9 @@ func (w *Worker) consume(ctx context.Context, h *handler, c jetstream.Consumer) 
 				break free
 			}
 		}
+		if w.beforeFetch != nil {
+			w.beforeFetch()
+		}
 		got, err := w.fetch(ctx, h, c, n, slots)
 		for range n - got {
 			<-slots
@@ -225,14 +230,16 @@ func (w *Worker) consume(ctx context.Context, h *handler, c jetstream.Consumer) 
 			continue
 		}
 		w.logger.Error("fetch jobs failed", "topic", h.topic, "error", err)
-		if errors.Is(err, jetstream.ErrConsumerNotFound) || errors.Is(err, jetstream.ErrConsumerDeleted) {
-			// consumer 被人删除了：重新创建，从 stream 中还没确认的任务继续。
-			setupCtx, cancel := context.WithTimeout(ctx, setupTimeout)
-			if again, err := w.ensureConsumer(setupCtx, h); err == nil {
-				c = again
-			}
-			cancel()
+		// 拉取出错时重新确认 consumer：它被人删除后，正在等待的拉取得到 ErrConsumerDeleted，
+		// 之后用旧的 consumer 拉取得到的却是 nats.ErrNoResponders，只认前者的话就一直拉取不到。
+		// ensureConsumer 是幂等的，consumer 还在时只是换一个新的句柄；失败时保留原来的，下一次再试。
+		setupCtx, cancel := context.WithTimeout(ctx, setupTimeout)
+		if again, err := w.ensureConsumer(setupCtx, h); err == nil {
+			c = again
+		} else if ctx.Err() == nil {
+			w.logger.Error("recreate consumer failed", "topic", h.topic, "error", err)
 		}
+		cancel()
 		wait(ctx, time.Second)
 	}
 }

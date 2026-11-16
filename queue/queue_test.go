@@ -701,6 +701,53 @@ func TestConsumerRecreated(t *testing.T) {
 	}
 }
 
+// consumer 在两次拉取之间被删除时（没有等待中的拉取，之后的拉取得到 no responders），Worker 同样重建它。
+func TestConsumerDeletedBetweenFetches(t *testing.T) {
+	t.Parallel()
+	db := openDB(t)
+	cfg := queuetest.Config(t)
+	js, err := jetstream.New(queuetest.Conn(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := make(chan int, 2)
+	var armed atomic.Bool
+	deleted := make(chan error, 1)
+	start(t, db, cfg, func(w *queue.Worker) {
+		jobs.Handle(w, func(_ context.Context, p payload) error {
+			got <- p.N
+			return nil
+		})
+		queue.SetBeforeFetch(w, func() {
+			if armed.CompareAndSwap(true, false) {
+				deleted <- js.DeleteConsumer(context.Background(), cfg.Stream, "jobs")
+			}
+		})
+	})
+	publish(t, db, 1)
+	if n := <-got; n != 1 {
+		t.Fatalf("handled %d", n)
+	}
+	armed.Store(true) // 正在等待的拉取结束后、下一次拉取之前删除
+	select {
+	case err := <-deleted:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("consumer not deleted")
+	}
+	publish(t, db, 2)
+	select {
+	case n := <-got:
+		if n != 2 {
+			t.Fatalf("handled %d", n)
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("job not handled after the consumer was deleted between fetches")
+	}
+}
+
 // 任务连续到达时，relay 按攒批的最长等待发出，不等攒满一批：第一个任务在发布还没结束时就已处理。
 func TestRelayDoesNotWaitForFullBatch(t *testing.T) {
 	t.Parallel()
