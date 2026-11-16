@@ -151,8 +151,11 @@ export interface ResourceModel {
   rowKey(row: ResourceRow): string
   /** 字段的值的显示文字：枚举显示它的文字，其他原样返回。 */
   display(field: ResourceField, value: unknown): unknown
-  /** 资源所在分组全部查询的 key 前缀：完成修改后让它们失效。 */
-  queryKey: readonly unknown[]
+  /**
+   * 资源所在分组全部查询的 key 前缀：完成修改后让它们失效。每次读取时计算，createQueries 带 scope 时
+   * 包含当前的身份（模型通常在登录之前创建）。
+   */
+  readonly queryKey: readonly unknown[]
 }
 
 function browserLanguage(): string | undefined {
@@ -253,10 +256,12 @@ export function resourceModel(def: ResourceDef, kit: ResourceKit, queryClient?: 
   const group = ops.list[0]
   const queries = kit.queries as Generated
   const groupQueries = (group === null ? queries : queries[group]) as { key?: () => readonly unknown[] } | undefined
-  const queryKey = groupQueries?.key?.() ?? (queries.key as (() => readonly unknown[]) | undefined)?.() ?? [def.name]
+  // 每次调用时计算：createQueries 的 scope（账号、租户）在登录、切换租户后变化。
+  const queryKey = (): readonly unknown[] =>
+    groupQueries?.key?.() ?? (queries.key as (() => readonly unknown[]) | undefined)?.() ?? [def.name]
   const invalidate = async <T>(p: Promise<T>): Promise<T> => {
     const result = await p
-    await queryClient?.invalidateQueries({ queryKey: [...queryKey] })
+    await queryClient?.invalidateQueries({ queryKey: [...queryKey()] })
     return result
   }
 
@@ -290,7 +295,7 @@ export function resourceModel(def: ResourceDef, kit: ResourceKit, queryClient?: 
       return q
         ? (q(params) as ReturnType<ResourceModel["listQuery"]>)
         : {
-            queryKey: [...queryKey, "list", params],
+            queryKey: [...queryKey(), "list", params],
             queryFn: () => call(kit.client, ops.list, [params]) as Promise<unknown>,
           }
     },
@@ -298,7 +303,7 @@ export function resourceModel(def: ResourceDef, kit: ResourceKit, queryClient?: 
       const q = ops.get && method(queries, ops.get)
       return q
         ? (q(key) as ReturnType<ResourceModel["getQuery"]>)
-        : { queryKey: [...queryKey, "get", key], queryFn: () => call(kit.client, ops.get, [key]) as Promise<unknown> }
+        : { queryKey: [...queryKey(), "get", key], queryFn: () => call(kit.client, ops.get, [key]) as Promise<unknown> }
     },
     create: (body) => invalidate(Promise.resolve(call(kit.client, ops.create, [body]))),
     update: (key, body) => invalidate(Promise.resolve(call(kit.client, ops.update, [key, body]))),
@@ -316,7 +321,9 @@ export function resourceModel(def: ResourceDef, kit: ResourceKit, queryClient?: 
       return String(row[def.key ?? "id"] ?? "")
     },
     display: displayValue,
-    queryKey,
+    get queryKey() {
+      return queryKey()
+    },
   }
 }
 

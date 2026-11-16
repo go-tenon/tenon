@@ -151,6 +151,22 @@ describe("resourceModel", () => {
     expect(calls[1]?.body).toEqual({ title: "改", slug: "x" })
     expect(spy).toHaveBeenCalledWith({ queryKey: ["api", "article"] })
   })
+
+  it("createQueries 带 scope 时，失效的 key 按当前的身份计算", async () => {
+    server()
+    const client = createClient({ baseURL: "/api" })
+    const queryClient = new QueryClient()
+    let scope: unknown[] = []
+    const queries = createQueries(client, { queryClient, scope: () => scope })
+    // 模型通常在模块中创建，那时还没有登录；之后登录、切换租户，scope 随之变化。
+    const m = resourceModel(resources.article, { client, queries, schemas, components, enums }, queryClient)
+    scope = ["u1", "acme"]
+    expect(m.queryKey).toEqual(["u1", "acme", "api", "article"])
+    expect(m.listQuery({}).queryKey.slice(0, 4)).toEqual(m.queryKey)
+    const spy = vi.spyOn(queryClient, "invalidateQueries")
+    await m.remove("a2")
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["u1", "acme", "api", "article"] })
+  })
 })
 
 describe("useResourceList", () => {

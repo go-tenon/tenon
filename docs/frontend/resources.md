@@ -117,9 +117,12 @@ import { components, schemas } from "@blog/client/api/schemas"
 import { enums } from "@blog/client/api/enums"
 import { messages } from "@blog/client/api/messages"
 
-const kit = { client: api, queries: createQueries(api, { queryClient }), schemas, components, enums, messages, language: "zh-CN" }
+const queries = createQueries(api, { queryClient, scope: session.scope })
+const kit = { client: api, queries, schemas, components, enums, messages, language: "zh-CN" }
 export const articles = resourceModel(resources.article, kit, queryClient)
 ```
+
+模型通常在模块中创建，那时还没有登录。query key 在每次使用时按当前的身份计算，所以 `createQueries` 可以带上 [`scope`](client-react.md#tanstack)：登录、切换租户之后，列表和失效的范围都属于新的身份。
 
 | 成员 | 说明 |
 | --- | --- |
