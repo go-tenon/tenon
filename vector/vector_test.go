@@ -19,6 +19,7 @@ import (
 	"github.com/qdrant/go-client/qdrant"
 	"github.com/uptrace/bun"
 
+	"github.com/go-tenon/tenon/ai"
 	"github.com/go-tenon/tenon/ai/aitest"
 	"github.com/go-tenon/tenon/database"
 	"github.com/go-tenon/tenon/database/dbtest"
@@ -178,13 +179,13 @@ func TestReplaceAndReuse(t *testing.T) {
 	t.Parallel()
 	f := setup(t)
 	f.put(t, "a", chunkDoc{Text: "一"}, chunkDoc{Text: "二"}, chunkDoc{Text: "三"})
-	if got := f.emb.Requests(); len(got) != 1 || !slices.Equal(got[0], []string{"一", "二", "三"}) {
+	if got := f.emb.Requests(); len(got) != 1 || !slices.Equal(inputTexts(got[0]), []string{"一", "二", "三"}) {
 		t.Fatalf("embedding requests = %v", got)
 	}
 
 	// 文本不变的文档沿用原来的向量，即使位置变了；重复的文本只计算一次
 	f.put(t, "a", chunkDoc{Text: "三"}, chunkDoc{Text: "四"}, chunkDoc{Text: "四"})
-	if got := f.emb.Requests(); len(got) != 2 || !slices.Equal(got[1], []string{"四"}) {
+	if got := f.emb.Requests(); len(got) != 2 || !slices.Equal(inputTexts(got[1]), []string{"四"}) {
 		t.Fatalf("embedding requests = %v", got)
 	}
 	if got := sorted(texts(f.search(t, vector.Query{Text: "一"}))); !slices.Equal(got, []string{"三", "四", "四"}) {
@@ -488,4 +489,16 @@ func TestConcurrentFirstSync(t *testing.T) {
 			}
 		}
 	}
+}
+
+// inputTexts 返回一次计算向量的请求中各项的文字，并检查请求是为文档计算的。
+func inputTexts(req ai.EmbedRequest) []string {
+	if req.Purpose != ai.ForDocument {
+		return []string{"purpose " + string(req.Purpose)}
+	}
+	out := make([]string, len(req.Inputs))
+	for i, c := range req.Inputs {
+		out[i] = c.Text()
+	}
+	return out
 }

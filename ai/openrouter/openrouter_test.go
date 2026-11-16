@@ -81,7 +81,7 @@ func TestEmbedUsesCompatibleAPI(t *testing.T) {
 		return map[string]any{"data": []map[string]any{{"index": 0, "embedding": []float64{1, 0}}}}
 	})
 
-	vecs, err := c.Embed(t.Context(), []string{"猫"})
+	vecs, err := c.Embed(t.Context(), ai.EmbedRequest{Inputs: []ai.Content{ai.Text("猫")}})
 	require.NoError(t, err)
 	assert.Equal(t, [][]float32{{1, 0}}, vecs)
 	assert.Equal(t, "/api/v1/embeddings", (*got)[0].Path)

@@ -116,7 +116,7 @@ func TestReindexSwitchesModel(t *testing.T) {
 	if err := chunks.Refresh(ctx, changed, f.src.load, "a"); err != nil {
 		t.Fatal(err)
 	}
-	if got := newEmb.Requests(); len(got) != 1 || !slices.Equal(got[0], []string{"修改后的a"}) {
+	if got := newEmb.Requests(); len(got) != 1 || !slices.Equal(inputTexts(got[0]), []string{"修改后的a"}) {
 		t.Fatalf("new model requests = %v", got)
 	}
 	f.src.set("d", chunkDoc{Text: "没有同步过的d"}) // 绕过 Sync 的修改，重建后补上

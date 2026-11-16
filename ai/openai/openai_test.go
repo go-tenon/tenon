@@ -216,7 +216,7 @@ func TestEmbed(t *testing.T) {
 	})
 
 	vecs, err := s.client("text-embedding-3-small", openai.WithDimensions(2), openai.WithBatchSize(2)).
-		Embed(t.Context(), []string{"a", "bb", "ccc"})
+		Embed(t.Context(), ai.EmbedRequest{Inputs: texts("a", "bb", "ccc"), Purpose: ai.ForQuery})
 	require.NoError(t, err)
 	assert.Equal(t, [][]float32{{1, 0.5}, {2, 0.5}, {3, 0.5}}, vecs)
 
@@ -224,17 +224,31 @@ func TestEmbed(t *testing.T) {
 	assert.Equal(t, map[string]any{"input": []any{"a", "bb"}, "model": "text-embedding-3-small", "dimensions": float64(2), "encoding_format": "float"}, s.requests[0].JSON)
 	assert.Equal(t, []any{"ccc"}, s.requests[1].JSON["input"])
 
-	vecs, err = s.client("m").Embed(t.Context(), nil)
+	vecs, err = s.client("m").Embed(t.Context(), ai.EmbedRequest{})
 	require.NoError(t, err)
 	assert.Empty(t, vecs)
 	assert.Len(t, s.requests, 2)
+
+	// 只接受文字。
+	img := ai.Content{ai.MediaPart(ai.Media{Data: []byte("PNG"), MIME: "image/png"})}
+	_, err = s.client("m").Embed(t.Context(), ai.EmbedRequest{Inputs: []ai.Content{ai.Text("a"), img}})
+	assert.ErrorIs(t, err, ai.ErrUnsupportedInput)
+	assert.Len(t, s.requests, 2)
+}
+
+func texts(ss ...string) []ai.Content {
+	out := make([]ai.Content, len(ss))
+	for i, s := range ss {
+		out[i] = ai.Text(s)
+	}
+	return out
 }
 
 func TestEmbedMissing(t *testing.T) {
 	s := newServer(t, func(w http.ResponseWriter, r request) {
 		writeJSON(w, map[string]any{"data": []map[string]any{{"index": 0, "embedding": []float64{1}}}})
 	})
-	_, err := s.client("m").Embed(t.Context(), []string{"a", "b"})
+	_, err := s.client("m").Embed(t.Context(), ai.EmbedRequest{Inputs: texts("a", "b")})
 	assert.ErrorContains(t, err, "no embedding returned for text 1")
 }
 
@@ -254,7 +268,7 @@ func TestRerank(t *testing.T) {
 	})
 	c := s.client("bge-reranker")
 
-	got, err := c.Rerank(t.Context(), "Ruby 框架", []string{"Django", "Rails", "React"}, 2)
+	got, err := c.Rerank(t.Context(), ai.Text("Ruby 框架"), texts("Django", "Rails", "React"), 2)
 	require.NoError(t, err)
 	assert.Equal(t, []ai.Ranked{{Index: 1, Score: 0.9}, {Index: 0, Score: 0.2}}, got)
 	r := s.last()
@@ -262,17 +276,21 @@ func TestRerank(t *testing.T) {
 	assert.Equal(t, map[string]any{"model": "bge-reranker", "query": "Ruby 框架", "documents": []any{"Django", "Rails", "React"}, "top_n": float64(2)}, r.JSON)
 
 	// limit 不小于文档数时不发 top_n。
-	_, err = c.Rerank(t.Context(), "q", []string{"a", "b"}, 5)
+	_, err = c.Rerank(t.Context(), ai.Text("q"), texts("a", "b"), 5)
 	require.NoError(t, err)
 	assert.NotContains(t, s.last().JSON, "top_n")
 
-	got, err = c.Rerank(t.Context(), "q", nil, 1)
+	got, err = c.Rerank(t.Context(), ai.Text("q"), nil, 1)
 	require.NoError(t, err)
 	assert.Empty(t, got)
 	assert.Len(t, s.requests, 2)
 
-	_, err = c.Rerank(t.Context(), "q", []string{"a"}, 0)
+	_, err = c.Rerank(t.Context(), ai.Text("q"), texts("a"), 0)
 	assert.ErrorContains(t, err, "rerank index 1 out of range")
+
+	img := ai.Content{ai.MediaPart(ai.Media{Data: []byte("PNG"), MIME: "image/png"})}
+	_, err = c.Rerank(t.Context(), ai.Text("q"), []ai.Content{img}, 0)
+	assert.ErrorIs(t, err, ai.ErrUnsupportedInput)
 }
 
 func TestClientRetries(t *testing.T) {
@@ -287,7 +305,7 @@ func TestClientRetries(t *testing.T) {
 			http.Error(w, `{"error":{"message":"overloaded"}}`, http.StatusTooManyRequests)
 		}))
 		c := openai.New(ai.ModelConfig{Model: "m", BaseURL: s.URL, APIKey: "k", MaxRetries: tc.maxRetries})
-		if _, err := c.Embed(context.Background(), []string{"x"}); err == nil {
+		if _, err := c.Embed(context.Background(), ai.EmbedRequest{Inputs: []ai.Content{ai.Text("x")}}); err == nil {
 			t.Errorf("max_retries %d: expected an error", tc.maxRetries)
 		}
 		s.Close()

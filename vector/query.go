@@ -6,6 +6,8 @@ import (
 
 	"github.com/cockroachdb/errors"
 	"github.com/qdrant/go-client/qdrant"
+
+	"github.com/go-tenon/tenon/ai"
 )
 
 // DefaultLimit 是 Query.Limit 不大于 0 时返回的结果数。
@@ -108,7 +110,7 @@ func (ix *Index[D]) query(ctx context.Context, s *Store, text string, filter *qd
 		return nil, err
 	}
 	m := c.model
-	vecs, err := m.Embedder.Embed(ctx, []string{text})
+	vecs, err := m.Embedder.Embed(ctx, ai.EmbedRequest{Inputs: []ai.Content{ai.Text(text)}, Purpose: ai.ForQuery})
 	if err != nil {
 		return nil, errors.Wrap(err, "vector: embed query")
 	}

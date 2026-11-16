@@ -261,8 +261,12 @@ func (c *Client) Transcribe(ctx context.Context, req ai.TranscriptionRequest) (s
 	return t.Text, nil
 }
 
-// Embed 实现 ai.Embedder。
-func (c *Client) Embed(ctx context.Context, texts []string) ([][]float32, error) {
+// Embed 实现 ai.Embedder，只接受文字；OpenAI 的接口不区分查询和文档，req.Purpose 不起作用。
+func (c *Client) Embed(ctx context.Context, req ai.EmbedRequest) ([][]float32, error) {
+	texts, err := ai.Texts(req.Inputs)
+	if err != nil {
+		return nil, errors.Wrap(err, "ai/openai: embed")
+	}
 	out := make([][]float32, len(texts))
 	size := c.batchSize
 	if size <= 0 {
@@ -316,12 +320,16 @@ type rerankResponse struct {
 	} `json:"results"`
 }
 
-// Rerank 实现 ai.Reranker，调用 POST {BaseURL}/rerank。
-func (c *Client) Rerank(ctx context.Context, query string, docs []string, limit int) ([]ai.Ranked, error) {
+// Rerank 实现 ai.Reranker，调用 POST {BaseURL}/rerank，只接受文字。
+func (c *Client) Rerank(ctx context.Context, query ai.Content, docs []ai.Content, limit int) ([]ai.Ranked, error) {
 	if len(docs) == 0 {
 		return nil, nil
 	}
-	p := rerankParams{Model: c.model, Query: query, Documents: docs}
+	texts, err := ai.Texts(append([]ai.Content{query}, docs...))
+	if err != nil {
+		return nil, errors.Wrap(err, "ai/openai: rerank")
+	}
+	p := rerankParams{Model: c.model, Query: texts[0], Documents: texts[1:]}
 	if limit > 0 && limit < len(docs) {
 		p.TopN = limit
 	}
