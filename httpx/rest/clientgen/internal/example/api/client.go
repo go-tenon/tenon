@@ -18,12 +18,13 @@ type Client struct {
 	c *wire.Client
 
 	Article ArticleGroup
+	Blog    BlogGroup
 }
 
 // New 创建客户端。
 func New(opts Options) *Client {
 	c := wire.New(opts, "/api")
-	return &Client{c: c, Article: ArticleGroup{c: c}}
+	return &Client{c: c, Article: ArticleGroup{c: c}, Blog: BlogGroup{c: c}}
 }
 
 // Ping 调用 ping。

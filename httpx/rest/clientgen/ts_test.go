@@ -19,10 +19,12 @@ const exampleTSOut = "internal/example/ts"
 var exampleTranslations = fstest.MapFS{
 	"zh-CN.yaml": {Data: []byte("article.status.draft: 草稿\narticle.status.published: 已发布\n" +
 		"article.title: 文章\narticle.fields.title: 标题\narticle.fields.status: 状态\narticle.fields.published_at: 发布时间\n" +
-		"article.fields.featured: 精选\narticle.fields.slug: 链接名\narticle.fields.tags: 标签\narticle.actions.publish: 发布\n")},
+		"article.fields.featured: 精选\narticle.fields.slug: 链接名\narticle.fields.tags: 标签\narticle.actions.publish: 发布\n" +
+		"blog.title: 博客设置\nblog.fields.name: 博客名称\nblog.fields.comments: 开放评论\nblog.fields.default_status: 新文章的状态\n")},
 	"en.yaml": {Data: []byte("article.status.draft: Draft\narticle.status.published: Published\n" +
 		"article.title: Articles\narticle.fields.title: Title\narticle.fields.status: Status\narticle.fields.published_at: Published at\n" +
-		"article.fields.featured: Featured\narticle.fields.slug: Slug\narticle.fields.tags: Tags\narticle.actions.publish: Publish\n")},
+		"article.fields.featured: Featured\narticle.fields.slug: Slug\narticle.fields.tags: Tags\narticle.actions.publish: Publish\n" +
+		"blog.title: Blog settings\nblog.fields.name: Blog name\nblog.fields.comments: Comments\nblog.fields.default_status: Status of new articles\n")},
 }
 
 func generateTS(t *testing.T, api *rest.API) *clientgen.Result {

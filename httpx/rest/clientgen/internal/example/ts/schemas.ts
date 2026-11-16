@@ -67,6 +67,13 @@ export const schemas = {
       },
     },
   },
+  blog: {
+    settingsUpdate: {
+      body: {
+        "$ref": "#/components/schemas/BlogSettings"
+      },
+    },
+  },
 } as const
 
 /** schemas 中 $ref 引用的命名类型，键是 OpenAPI 中的名称。 */
@@ -77,6 +84,28 @@ export const components = {
       "published"
     ],
     "type": "string"
+  },
+  BlogSettings: {
+    "additionalProperties": false,
+    "properties": {
+      "comments": {
+        "type": "boolean"
+      },
+      "default_status": {
+        "$ref": "#/components/schemas/ArticleStatus"
+      },
+      "name": {
+        "maxLength": 60,
+        "minLength": 1,
+        "type": "string"
+      }
+    },
+    "required": [
+      "name",
+      "comments",
+      "default_status"
+    ],
+    "type": "object"
   },
   Changes: {
     "additionalProperties": false,

@@ -11,6 +11,7 @@
 - [前端的资源模型](#model)
 - [运营后台中的资源页面](#admin)
 - [控制台中的资源页面](#console)
+- [设置页面](#settings)
 - [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
@@ -114,8 +115,9 @@ import { createQueries } from "@blog/client/api/queries"
 import { resources } from "@blog/client/api/resources"
 import { components, schemas } from "@blog/client/api/schemas"
 import { enums } from "@blog/client/api/enums"
+import { messages } from "@blog/client/api/messages"
 
-const kit = { client: api, queries: createQueries(api, { queryClient }), schemas, components, enums, language: "zh-CN" }
+const kit = { client: api, queries: createQueries(api, { queryClient }), schemas, components, enums, messages, language: "zh-CN" }
 export const articles = resourceModel(resources.article, kit, queryClient)
 ```
 
@@ -126,7 +128,7 @@ export const articles = resourceModel(resources.article, kit, queryClient)
 | `allowed(can, operation)` | 当前身份能否使用一个接口或操作 |
 | `listQuery`、`getQuery` | 列表和详情的查询选项，query key 与 `createQueries` 相同 |
 | `create`、`update`、`remove`、`run` | 调用生成的客户端，完成后让这个分组的查询失效 |
-| `formSchema(mode)`、`ruleOptions` | 表单的校验规则，交给 [`resolver`、`antdRule`](app-shell-features.md#forms) |
+| `formSchema(mode)`、`ruleOptions` | 表单的校验规则，交给 [`resolver`、`antdRule`](app-shell-features.md#forms)。`kit` 带上 `messages` 时提示是翻译好的文字，没有时是错误码，例如 `validation.filled` |
 | `display(field, value)` | 枚举字段显示它的文字 |
 
 在页面中：
@@ -200,6 +202,42 @@ export const Route = createFileRoute("/_app/articles")({
 
 组件复制在项目中，外观归项目所有，可以直接修改；逻辑仍然来自 `@go-tenon/shell` 的资源模型，随框架升级。
 
+<a id="settings"></a>
+## 设置页面
+
+[设置](../features/settings.md)是只有一组值的表单，例如站点名称、是否开放注册。它没有列表，也没有一行一行的数据，所以单独声明：引用读取和保存设置的两个接口，其他都从接口得到：
+
+```go
+rest.Register(api, getSettings, settings.Get)   // GET /settings/site，响应体是设置
+rest.Register(api, saveSettings, settings.Save) // PUT /settings/site，请求体是设置
+api.Settings(rest.Settings{Name: "site", Get: "site-settings-get", Update: "site-settings-update"})
+```
+
+| 字段 | 说明 |
+| --- | --- |
+| `Get` | 读取设置的接口：GET，没有路径参数，响应体包含全部表单字段 |
+| `Update` | 保存设置的接口：没有路径参数，请求体是设置 |
+| `Form` | 表单的字段：保存接口请求体的字段。为空时是全部字段，按结构体中的顺序 |
+
+两个接口都没有路径参数：设置属于当前的用户、租户或者平台，由请求本身决定，见[租户的设置](../features/settings.md#tenant-settings)。声明的检查与资源相同，接口不存在、形式不对、字段不存在时 panic；名称不能与资源相同，因为显示文字在同一个命名空间中。
+
+显示文字是 `<名称>.title` 和 `<名称>.fields.<字段>` 的消息。`tenon generate` 生成 `settings.ts`，`@go-tenon/shell` 的 `settingsModel` 把它和生成的客户端接在一起：
+
+```ts
+import { settingsModel } from "@go-tenon/shell"
+import { settings } from "@blog/client/api/settings"
+
+export const siteSettings = settingsModel(settings.site, kit, queryClient)
+```
+
+两套外观都有 `SettingsForm`：读取设置作为初始值，按权限决定能否修改（没有保存的权限时只读），字段的输入组件与资源表单相同。默认有“保存”按钮，`autoSave` 改为修改后自动保存，并显示保存的状态：
+
+```tsx
+<SettingsForm model={siteSettings} autoSave />
+```
+
+`inputs` 覆盖某个字段的输入组件，与 `ResourcePage` 相同。较早生成的项目中，`packages/client/package.json` 的 `exports` 还没有 `"./*/settings": "./src/*/settings.ts"`，手动加上这一行。
+
 <a id="troubleshooting"></a>
 ## 常见问题
 
@@ -230,5 +268,8 @@ export const Route = createFileRoute("/_app/articles")({
 | `(*rest.API).Resources()` | 已声明的资源，列、表单字段和 `Key` 已经补全 |
 | `resourceModel(def, kit, queryClient)` | `@go-tenon/shell`：资源模型 |
 | `useResourceList`、`useResourceItem`、`useResourceMutations`、`formValues` | `@go-tenon/shell`：列表、详情、修改、表单的初始值 |
+| `rest.Settings`、`(*rest.API).Settings(s)`、`(*rest.API).SettingsPages()` | 设置页面的声明，写入 `x-tenon-settings` |
+| `settingsModel(def, kit, queryClient)`、`useSettings(model)` | `@go-tenon/shell`：设置模型，读取与保存 |
 | `ResourcePage`、`ResourceForm`、`FieldValue`、`defaultInput` | `@go-tenon/admin`：antd 的资源页面 |
+| `SettingsForm` | `@go-tenon/admin`：antd 的设置表单；registry 的 `tenon-settings-form` 是 shadcn 的 |
 | `tenon-resource-page` | registry：shadcn 的资源页面，导出的名称与 antd 的相同 |

@@ -30,6 +30,13 @@ type Author struct {
 	Name string `json:"name"`
 }
 
+// BlogSettings 是博客的设置，保存在 Store 中。
+type BlogSettings struct {
+	Name          string `json:"name" minLength:"1" maxLength:"60"`
+	Comments      bool   `json:"comments"`
+	DefaultStatus Status `json:"default_status"`
+}
+
 // Changes 是创建和修改文章时提交的内容。
 type Changes struct {
 	// Title 是标题。

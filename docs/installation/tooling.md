@@ -223,6 +223,7 @@ router.Handle("/admin/*", httpx.NewSPA(admin.Dist, httpx.SPAOptions{Base: "/admi
     "./*/permissions": "./src/*/permissions.ts",
     "./*/queries": "./src/*/queries.ts",
     "./*/resources": "./src/*/resources.ts",
+    "./*/settings": "./src/*/settings.ts",
     "./*/schemas": "./src/*/schemas.ts",
     "./*": "./src/*/api.ts"
   }

@@ -1,6 +1,7 @@
 // 资源：服务端用 rest.API.Resource 声明、tenon generate 生成在 resources.ts 中的后台页面定义。
 // 这里把定义和生成的客户端、校验规则、枚举接在一起，得到与组件库无关的模型：列、筛选条件、表单字段（带显示文字、
 // 输入方式和选项）、权限、读取和修改。运营后台（antd）和控制台（shadcn）用同一个模型渲染。
+// 设置（rest.API.Settings、settings.ts）是只有一组值的表单，用同样的字段模型，见 settingsModel。
 
 import { pickLanguage, type Schema } from "@go-tenon/client"
 import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -61,6 +62,13 @@ export interface ResourceDef {
 
 type Generated = { readonly [key: string]: unknown }
 
+/** 表单的校验选项：交给 resolver、antdRule 或 formValidator。 */
+export interface RuleOptions {
+  components?: { readonly [name: string]: Schema }
+  messages?: { readonly [language: string]: { readonly [code: string]: string } }
+  language?: string
+}
+
 /** 生成的代码：一个 API 的客户端和元数据，交给 resourceModel。 */
 export interface ResourceKit {
   /** createClient 创建的客户端。 */
@@ -72,6 +80,8 @@ export interface ResourceKit {
   components?: { readonly [name: string]: Schema }
   /** enums.ts 中的 enums。 */
   enums?: { readonly [name: string]: { readonly values: readonly string[]; readonly labels: Generated } }
+  /** messages.ts 中的 messages：验证提示的模板。没有时表单中的提示是错误码，例如 validation.filled。 */
+  messages?: { readonly [language: string]: { readonly [code: string]: string } }
   /** 显示文字的语言，例如 zh-CN；没有这种语言时依次用主语言和第一种语言。默认是浏览器的语言。 */
   language?: string
 }
@@ -135,8 +145,8 @@ export interface ResourceModel {
   run(action: string, key: string): Promise<unknown>
   /** 表单的校验规则（请求体的 schema），交给 resolver、antdRule 或 formValidator。 */
   formSchema(mode: "create" | "update"): Schema
-  /** components 和 language，与 formSchema 一起交给 resolver、antdRule。 */
-  ruleOptions: { components?: { readonly [name: string]: Schema }; language?: string }
+  /** components、messages 和 language，与 formSchema 一起交给 resolver、antdRule。 */
+  ruleOptions: RuleOptions
   /** 一行的标识。 */
   rowKey(row: ResourceRow): string
   /** 字段的值的显示文字：枚举显示它的文字，其他原样返回。 */
@@ -190,19 +200,12 @@ function schemaAt(schemas: Generated, ref: OperationRef, part: "body" | "query")
   return op?.[part] ?? {}
 }
 
-/**
- * 由 resources.ts 中的定义得到资源模型：
- *
- *	const kit = { client: api, queries, schemas, components, enums, language: "zh-CN" }
- *	export const articles = resourceModel(resources.article, kit, queryClient)
- *
- * queryClient 用来在修改后让查询失效。
- */
-export function resourceModel(def: ResourceDef, kit: ResourceKit, queryClient?: QueryClient): ResourceModel {
-  const language = kit.language ?? browserLanguage()
-  const labels = pickLanguage(def.labels, language)
-  const fieldLabel = (name: string) => labels?.fields[name] ?? name
-
+/** 由字段的定义得到模型中的字段：显示文字、输入方式和枚举的选项。 */
+function fieldBuilder(
+  kit: Pick<ResourceKit, "enums">,
+  language: string | undefined,
+  labels: { readonly [field: string]: string } | undefined,
+): (f: ResourceFieldDef) => ResourceField {
   const options = (f: ResourceFieldDef): ResourceField["options"] => {
     if (f.enum && kit.enums?.[f.enum]) {
       const e = kit.enums[f.enum]
@@ -212,11 +215,11 @@ export function resourceModel(def: ResourceDef, kit: ResourceKit, queryClient?: 
     if (f.values) return f.values.map((value) => ({ value, label: value }))
     return undefined
   }
-  const field = (f: ResourceFieldDef): ResourceField => {
+  return (f) => {
     const opts = options(f)
     return {
       name: f.name,
-      label: fieldLabel(f.name),
+      label: labels?.[f.name] ?? f.name,
       kind: kindOf(f, !!opts),
       required: !!f.required,
       sortable: !!f.sortable,
@@ -224,6 +227,27 @@ export function resourceModel(def: ResourceDef, kit: ResourceKit, queryClient?: 
       def: f,
     }
   }
+}
+
+/** 枚举字段显示它的文字，其他原样返回。 */
+function displayValue(f: ResourceField, value: unknown): unknown {
+  if (!f.options) return value
+  const label = (v: unknown) => f.options?.find((o) => o.value === v)?.label ?? v
+  return Array.isArray(value) ? value.map(label) : label(value)
+}
+
+/**
+ * 由 resources.ts 中的定义得到资源模型：
+ *
+ *	const kit = { client: api, queries, schemas, components, enums, messages, language: "zh-CN" }
+ *	export const articles = resourceModel(resources.article, kit, queryClient)
+ *
+ * queryClient 用来在修改后让查询失效。
+ */
+export function resourceModel(def: ResourceDef, kit: ResourceKit, queryClient?: QueryClient): ResourceModel {
+  const language = kit.language ?? browserLanguage()
+  const labels = pickLanguage(def.labels, language)
+  const field = fieldBuilder(kit, language, labels?.fields)
 
   const ops = def.operations
   const group = ops.list[0]
@@ -287,15 +311,11 @@ export function resourceModel(def: ResourceDef, kit: ResourceKit, queryClient?: 
       const ref = mode === "create" ? (ops.create ?? ops.update) : (ops.update ?? ops.create)
       return ref ? schemaAt(kit.schemas, ref, "body") : {}
     },
-    ruleOptions: { components: kit.components, language },
+    ruleOptions: { components: kit.components, messages: kit.messages, language },
     rowKey(row) {
       return String(row[def.key ?? "id"] ?? "")
     },
-    display(f, value) {
-      if (!f.options) return value
-      const label = (v: unknown) => f.options?.find((o) => o.value === v)?.label ?? v
-      return Array.isArray(value) ? value.map(label) : label(value)
-    },
+    display: displayValue,
     queryKey,
   }
 }
@@ -378,8 +398,8 @@ export function useResourceMutations(model: ResourceModel) {
   return useMemo(() => ({ save, remove, run }), [save, remove, run])
 }
 
-/** 表单的初始值：编辑时取详情（或列表中的这一行）中表单字段的值，新建时为空。 */
-export function formValues(model: ResourceModel, row?: ResourceRow): Record<string, unknown> {
+/** 表单的初始值：编辑时取详情（或列表中的这一行）中表单字段的值，新建时为空。设置的模型同样适用。 */
+export function formValues(model: { form: readonly ResourceField[] }, row?: ResourceRow): Record<string, unknown> {
   const out: Record<string, unknown> = {}
   for (const f of model.form) {
     const v = row?.[f.name]
@@ -388,4 +408,106 @@ export function formValues(model: ResourceModel, row?: ResourceRow): Record<stri
     else if (f.kind === "tags" || f.kind === "multiselect") out[f.name] = []
   }
   return out
+}
+
+// ———————————————————————————— 设置 ————————————————————————————
+
+/** settings.ts 中的一组设置。 */
+export interface SettingsDef {
+  readonly name: string
+  readonly operations: { readonly get: OperationRef; readonly update: OperationRef }
+  readonly permissions: { readonly get: readonly string[]; readonly update: readonly string[] }
+  readonly form: readonly ResourceFieldDef[]
+  readonly labels: {
+    readonly [language: string]: { readonly title?: string; readonly fields: { readonly [field: string]: string } }
+  }
+}
+
+/** 与组件库无关的设置模型。 */
+export interface SettingsModel {
+  name: string
+  title: string
+  form: ResourceField[]
+  /** 当前身份能否读取、保存：接口要求的权限都具备。 */
+  allowed(can: (permission: string) => boolean, operation: "get" | "update"): boolean
+  /** 读取设置的查询选项，交给 useQuery。 */
+  query(): { queryKey: readonly unknown[]; queryFn: () => Promise<unknown> }
+  /** 保存：调用保存接口，完成后让读取的查询失效。 */
+  save(values: Record<string, unknown>): Promise<unknown>
+  /** 表单的校验规则（保存接口的请求体），交给 resolver、antdRule 或 formValidator。 */
+  formSchema(): Schema
+  ruleOptions: RuleOptions
+  display(field: ResourceField, value: unknown): unknown
+}
+
+/**
+ * 由 settings.ts 中的定义得到设置模型：
+ *
+ *	export const site = settingsModel(settings.site, kit, queryClient)
+ *
+ * queryClient 用来在保存后让读取的查询失效。
+ */
+export function settingsModel(def: SettingsDef, kit: ResourceKit, queryClient?: QueryClient): SettingsModel {
+  const language = kit.language ?? browserLanguage()
+  const labels = pickLanguage(def.labels, language)
+  const field = fieldBuilder(kit, language, labels?.fields)
+  const ops = def.operations
+  const query = (): ReturnType<SettingsModel["query"]> => {
+    const q = method(kit.queries, ops.get)
+    return q
+      ? (q() as ReturnType<SettingsModel["query"]>)
+      : { queryKey: ["settings", def.name], queryFn: () => call(kit.client, ops.get, []) as Promise<unknown> }
+  }
+  return {
+    name: def.name,
+    title: labels?.title ?? def.name,
+    form: def.form.map(field),
+    allowed: (can, operation) => def.permissions[operation].every(can),
+    query,
+    async save(values) {
+      const result = await call(kit.client, ops.update, [values])
+      await queryClient?.invalidateQueries({ queryKey: [...query().queryKey] })
+      return result
+    },
+    formSchema: () => schemaAt(kit.schemas, ops.update, "body"),
+    ruleOptions: { components: kit.components, messages: kit.messages, language },
+    display: displayValue,
+  }
+}
+
+/** useSettings 的返回值。 */
+export interface Settings {
+  model: SettingsModel
+  /** 表单的初始值：读取到的设置中表单字段的值；还没读到时为空。 */
+  values?: Record<string, unknown>
+  loading: boolean
+  error: unknown
+  /** 当前身份能否保存。 */
+  canSave: boolean
+  save(values: Record<string, unknown>): Promise<unknown>
+  refetch(): void
+}
+
+/** 读取设置，给出表单的初始值和保存。 */
+export function useSettings(model: SettingsModel): Settings {
+  const can = useCan()
+  const query = useQuery(model.query())
+  const queryClient = useQueryClient()
+  const values = useMemo(
+    () => (query.data ? formValues(model, query.data as ResourceRow) : undefined),
+    [model, query.data],
+  )
+  return {
+    model,
+    values,
+    loading: query.isPending,
+    error: query.error,
+    canSave: model.allowed(can, "update"),
+    async save(v) {
+      const result = await model.save(v)
+      await queryClient.invalidateQueries({ queryKey: [...model.query().queryKey] })
+      return result
+    },
+    refetch: () => void query.refetch(),
+  }
 }

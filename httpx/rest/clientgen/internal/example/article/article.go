@@ -162,15 +162,48 @@ type PingOutput struct {
 	}
 }
 
-// Store 把文章保存在内存中。
+// BlogSettings 是博客的设置，保存在 Store 中。
+type BlogSettings struct {
+	Name          string `json:"name" minLength:"1" maxLength:"60"`
+	Comments      bool   `json:"comments"`
+	DefaultStatus Status `json:"default_status"`
+}
+
+// BlogSettingsInput 是保存设置的请求。
+type BlogSettingsInput struct {
+	Body BlogSettings
+}
+
+// BlogSettingsOutput 是设置。
+type BlogSettingsOutput struct {
+	Body BlogSettings
+}
+
+// Store 把文章和设置保存在内存中。
 type Store struct {
 	mu       sync.Mutex
 	articles []ArticleDTO
 	keys     map[string]bool
+	settings BlogSettings
 }
 
 // NewStore 创建空的 Store。
-func NewStore() *Store { return &Store{keys: map[string]bool{}} }
+func NewStore() *Store {
+	return &Store{keys: map[string]bool{}, settings: BlogSettings{Name: "博客", DefaultStatus: StatusDraft}}
+}
+
+func (s *Store) getSettings(context.Context, *struct{}) (*BlogSettingsOutput, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return &BlogSettingsOutput{Body: s.settings}, nil
+}
+
+func (s *Store) updateSettings(_ context.Context, in *BlogSettingsInput) (*BlogSettingsOutput, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.settings = in.Body
+	return &BlogSettingsOutput{Body: s.settings}, nil
+}
 
 // Register 登记示例接口；auth 保护需要登录的接口。
 func Register(api *rest.API, s *Store, auth func(*huma.Operation)) {
@@ -203,6 +236,10 @@ func Register(api *rest.API, s *Store, auth func(*huma.Operation)) {
 		Columns: []string{"title", "status", "published_at", "featured"}, Search: "q", Filters: []string{"status"},
 		Actions: []rest.Action{{Name: "publish", Operation: "article-publish", Confirm: true}},
 	})
+	// 博客的设置页面：显示文字是 blog.title、blog.fields.<字段> 的消息。
+	rest.Register(api, op("blog-settings-get", http.MethodGet, "/settings", "博客设置", true), s.getSettings)
+	rest.Register(api, op("blog-settings-update", http.MethodPut, "/settings", "保存博客设置", true), s.updateSettings)
+	api.Settings(rest.Settings{Name: "blog", Get: "blog-settings-get", Update: "blog-settings-update"})
 }
 
 // PreviewInput 记录预览者的浏览器：User-Agent 由浏览器设置，TS 客户端不把它作为参数。
