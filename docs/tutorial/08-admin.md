@@ -1,19 +1,31 @@
 # 8. 后台：作者与角色
 
-上一章定下了文章的规则，但作者只能用命令创建，所有作者的权限也都一样。这一章给博客加上一个运营后台：管理员在后台中管理角色，给作者分配角色；作者的权限来自他的角色，修改后在下一个请求生效。
+上一章定下了文章的规则，但作者只能用命令行管理，所有作者的权限也都一样。
 
-后台的页面大多是增删改查。我们在 Go 中把作者和角色声明为**资源**，`tenon generate` 生成资源的定义，后台的页面按定义渲染：角色的页面没有一行页面代码，作者的页面只覆盖角色这一个字段。
+**这一章要做的：** 给博客加上一个运营后台。管理员在后台中创建角色、给作者分配角色；作者能做什么，由他的角色决定。
+
+几个术语：
+
+- **权限**：一项具体的操作，例如“管理作者”。
+- **角色**：一组权限，例如“编辑”角色包含“管理角色”这项权限。
+- 作者被分配角色，就拥有了角色中的全部权限。管理员只需要调整角色，不需要逐个给作者设置权限。
+
+后台的页面大多是增删改查：一个列表，一个新建和修改的表单，一个删除按钮。每个都手写会有大量重复的代码，所以我们在 Go 中把作者和角色声明为**资源**：列表显示哪些列、表单有哪些字段、每个操作需要什么权限。`tenon generate` 把资源的声明生成到前端，后台的页面按声明自动渲染。最后你会看到，角色的页面没有一行页面代码，作者的页面只需要覆盖一个字段。
+
+阅读前需要了解：[第 7 章](07-drafts.md)。
 
 - [权限与角色](#permissions)
 - [角色的接口](#roles)
 - [作者的接口](#users)
 - [装配](#wiring)
 - [后台](#admin)
+- [常见问题](#troubleshooting)
+- [小结](#summary)
 
 <a id="permissions"></a>
 ## 权限与角色
 
-先声明博客的全部权限。新建 `internal/auth/permissions.go`：
+先列出博客有哪些权限。新建 `internal/auth/permissions.go`：
 
 ```go title="internal/auth/permissions.go"
 package auth
@@ -47,9 +59,10 @@ var Catalog = authz.Catalog{
 }
 ```
 
-`Catalog` 是[权限目录](../security/authorization.md#permission-catalog)：角色只能包含其中的权限，它也写入 OpenAPI 文档。`Permission` 同时是一个[枚举](../http/validation.md#enums)，接口只接受目录中的权限，后台的角色表单中它是带显示文字的多选，显示文字写在翻译文件中（见下文）。
+- **`Catalog`** 是[权限目录](../security/authorization.md#permission-catalog)，列出全部权限。角色只能包含其中的权限，写错一个字母会被拒绝。它也写入接口文档，前端由此知道有哪些权限。
+- **`Permission`** 同时是一个[枚举](../http/validation.md#enums)：一个只能取几个固定值的类型。接口只接受目录中的权限；在后台的角色表单中，它显示为一个多选框，每个选项的显示文字写在翻译文件中（见下文）。
 
-角色和分配保存在 [`authz`](../security/authorization.md#roles) 的表中。它自带迁移，在 `cmd/api/main.go` 的 `migrate publish` 中加上它；同时把翻译文件交给 `httpcmd.Commands`，生成客户端时枚举和资源的显示文字来自其中：
+角色，以及“哪个作者有哪些角色”，保存在框架的 [`authz`](../security/authorization.md#roles) 包的表中。和第 6 章的 `login` 一样，它自带迁移，在 `cmd/api/main.go` 的 `migrate publish` 中加上它。同时把翻译文件交给 `httpcmd.Commands`：生成客户端时，枚举和资源的显示文字从翻译文件中读取：
 
 ```go title="cmd/api/main.go"
 // Command api 是博客的入口。
@@ -108,7 +121,7 @@ go run ./cmd/api migrate up
 <a id="roles"></a>
 ## 角色的接口
 
-角色的接口调用 `authz.Store` 的方法：列出、创建、修改和删除。新建 `internal/role/role.go`：
+角色是一个新的模块 `internal/role`。它的接口很简单，直接调用 `authz.Store` 的方法：列出、创建、修改和删除。新建 `internal/role/role.go`：
 
 ```go title="internal/role/role.go"
 // Package role 是角色的管理接口：角色是一组权限，分配给作者。数据保存在 authz 的表中。
@@ -246,14 +259,20 @@ func Register(api *rest.API, require func(*huma.Operation), roles *authz.Store) 
 }
 ```
 
-最后的 `api.Resource` 把这几个接口声明为一个[资源](../responses/resources.md)：列表显示哪些列，其他都从接口得到。表单的字段是请求体 `Changes` 的全部字段，类型、是否必填和校验规则来自它的标签，`permissions` 是 `Permission` 的数组，所以是多选。资源写入 OpenAPI 文档，`tenon generate` 据此生成前端的资源定义。
+最后的 `api.Resource` 把这几个接口声明为一个[资源](../responses/resources.md)。你只需要写出列表显示哪些列，其他都从已经注册的接口中得到：
 
-`authz` 的错误（例如“已有同名角色”）已经有翻译，接口直接返回它们。
+- **表单的字段**是新建接口请求体 `Changes` 的全部字段。字段的类型、是否必填、校验规则都来自它的标签，和第 4 章的校验规则是同一份。
+- **`permissions`** 的类型是 `Permission` 的数组，所以表单中显示为多选。
+- **每个操作需要的权限**来自注册接口时的声明，后台据此隐藏用户没有权限的按钮。
+
+资源写入接口文档，`tenon generate` 据此生成前端的资源定义。
+
+`authz` 的错误（例如“已有同名角色”）已经有翻译，接口直接返回它们即可。
 
 <a id="users"></a>
 ## 作者的接口
 
-后台列出作者、修改作者的名字和角色。新建 `internal/user/admin.go`：
+后台要列出作者，并修改作者的名字和角色。新建 `internal/user/admin.go`：
 
 ```go title="internal/user/admin.go"
 package user
@@ -373,7 +392,8 @@ func (a *Admin) Update(ctx context.Context, in *UpdateInput) (*AuthorOutput, err
 }
 ```
 
-`Update` 比较作者现有的角色和提交的角色，分配新加的、撤销去掉的。权限在每个请求中按作者当前的角色加载，所以修改在下一个请求就生效，作者不用重新登录。
+- `Update` 比较作者现有的角色和提交的角色，分配新加的、撤销去掉的。
+- 作者的权限没有写在 token 中，而是在每个请求中按作者当前的角色加载。所以修改了角色，下一个请求就生效，作者不用重新登录。
 
 后台要知道当前作者有哪些权限，才能显示他能用的菜单和按钮。修改 `internal/user/me.go`，返回中加上权限：
 
@@ -456,7 +476,7 @@ func Register(api *rest.API, requireUser, requireManage func(*huma.Operation), d
 }
 ```
 
-第一个管理员也用命令设置。新建 `internal/user/admin_command.go`：
+还有一个“先有鸡还是先有蛋”的问题：只有管理员能在后台中分配角色，那第一个管理员由谁来设置？答案是用命令行。新建 `internal/user/admin_command.go`：
 
 ```go title="internal/user/admin_command.go"
 package user
@@ -556,7 +576,7 @@ func Commands(db *bun.DB, logins *login.Realm, roles *authz.Store) *cobra.Comman
 <a id="wiring"></a>
 ## 装配
 
-在 `internal/bootstrap/app.go` 中创建 `authz.Store`，`internal/bootstrap/commands.go` 把它交给作者的命令：
+在 `internal/bootstrap/app.go` 中创建 `authz.Store` 保存到 `App` 中，`internal/bootstrap/commands.go` 把它交给作者的命令：
 
 ```go title="internal/bootstrap/app.go"
 package bootstrap
@@ -775,7 +795,7 @@ func DocRouter() chi.Routes {
 }
 ```
 
-资源、字段和权限的显示文字写在 `locales/zh-CN.yaml` 中，消息键是 `<资源>.title`、`<资源>.fields.<字段>` 和 `permission.<权限>`：
+后台中显示的文字，例如资源的名字“作者”、字段的名字“注册时间”、权限的名字“管理作者”，都写在 `locales/zh-CN.yaml` 中。消息键的格式是 `<资源>.title`、`<资源>.fields.<字段>` 和 `permission.<权限>`：
 
 ```yaml title="locales/zh-CN.yaml"
 article.not_found: 文章不存在
@@ -800,12 +820,12 @@ role.fields.permissions: 权限
 go run ./cmd/api user admin --email ming@example.com
 ```
 
-它创建拥有全部权限的“管理员”角色，并分配给小明。
+这条命令创建一个拥有全部权限的“管理员”角色，并分配给小明。
 
 <a id="admin"></a>
 ## 后台
 
-用 antd 的模板新建后台，见[运营后台](../responses/admin.md)：
+后端完成了，现在创建后台的前端。后台是一个独立的前端应用，和博客的页面分开。用 Tenon 的后台模板新建它，模板基于 [Ant Design](https://ant.design) 组件库，见[运营后台](../responses/admin.md)：
 
 ```bash
 go tool tenon add frontend admin --template admin
@@ -817,7 +837,7 @@ go tool tenon add frontend admin --template admin
 go tool tenon generate
 ```
 
-`packages/client/src/api/resources.ts` 中多了 `user` 和 `role` 两个资源：列、表单字段的类型和显示文字，每个接口要求的权限。在后台中把它们和生成的客户端接在一起。新建 `apps/admin/src/resources.ts`：
+`packages/client/src/api/resources.ts` 中多了 `user` 和 `role` 两个资源的定义：有哪些列、表单字段的类型和显示文字、每个接口要求的权限。在后台中把它们和生成的客户端接在一起。新建 `apps/admin/src/resources.ts`：
 
 ```ts title="apps/admin/src/resources.ts"
 import { resourceModel } from "@go-tenon/shell"
@@ -852,9 +872,11 @@ export const Route = createFileRoute("/_app/roles")({
 })
 ```
 
-`ResourcePage` 按定义渲染列表、新建和修改的表单、删除前的确认；`permission` 让没有 `roles:manage` 的作者看不到这个菜单。表单的校验规则与服务端相同：名称为空、没有选择权限时，提交前就会提示。
+- `ResourcePage` 按资源的定义渲染列表、新建和修改的表单、删除前的确认。
+- `permission` 让没有 `roles:manage` 权限的作者看不到这个菜单。
+- 表单的校验规则来自服务端的声明：名称为空、没有选择权限时，提交之前就会提示。
 
-作者的角色在接口中是角色的 ID，页面上应该显示和选择名称。这是唯一需要覆盖的地方。新建 `apps/admin/src/routes/_app/users.tsx`：
+作者的页面几乎也一样，只有一处不同：接口中作者的角色是角色的 ID，而页面上应该显示和选择角色的名称。这是唯一需要自己写的地方。新建 `apps/admin/src/routes/_app/users.tsx`：
 
 ```tsx title="apps/admin/src/routes/_app/users.tsx"
 import { type FieldInput, ResourcePage } from "@go-tenon/admin"
@@ -914,6 +936,31 @@ function Users() {
 3. 退出，用小红登录：侧栏中只有“角色”。直接请求 `/api/users` 得到 `403`。
 
 以后在 Go 中给资源加一列（例如作者的文章数），重新生成后后台就会显示它，页面代码不用修改。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**后台的侧栏中没有菜单**
+
+当前登录的作者没有任何权限。用 `user admin --email` 把他设为管理员，或者在后台中给他分配角色。
+
+**后台中显示的是 `user.fields.name` 这样的键，而不是中文**
+
+翻译文件中缺少这个键，或者修改翻译后没有重新生成客户端。补上翻译，运行 `go tool tenon generate`。
+
+**修改了作者的角色，但他的菜单没有变化**
+
+接口在下一个请求就按新的角色检查权限；后台的菜单则是在打开页面、登录时读取当前作者（`/api/me`）的权限，刷新页面后更新。
+
+<a id="summary"></a>
+## 小结
+
+这一章，你：
+
+- 用权限目录列出了博客的全部权限，用角色把权限分组，再把角色分配给作者；
+- 用命令行设置了第一个管理员；
+- 在 Go 中把作者和角色声明为资源，后台的页面按声明渲染；
+- 只为作者的角色字段写了一点页面代码。
 
 恭喜你完成了入门教程！回顾一下，你已经用到了一个常规项目需要的大部分东西：配置与装配、数据库与迁移、接口与校验、业务错误与本地化、React 页面与生成的客户端、登录与授权、角色与权限，以及按声明渲染的后台。
 
