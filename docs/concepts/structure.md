@@ -58,7 +58,7 @@ blog/
 ├── go.mod
 ├── tenon.json             开发工具的配置，可以没有
 ├── package.json           Bun workspace 与 dev、build、generate 脚本
-├── compose.yaml           本机开发用的 PostgreSQL、Redis 等
+├── compose.yaml           本机开发用的 PostgreSQL、NATS 等
 ├── .env                   本机的环境变量，不提交
 ├── config/
 │   ├── app.yaml           配置
@@ -235,8 +235,8 @@ Tenon 的每个包都可以单独使用，按需引入即可。顶层的包分�
 | `queue` | NATS JetStream 任务队列，数据库发件箱，重试与失败任务 | [队列](../background/queue.md) |
 | `schedule` | 按 cron 表达式定时执行，多实例去重 | [定时任务](../background/scheduling.md) |
 | `cachex` | Memcached 上的先读缓存再加载 | [缓存](../libraries/cache.md) |
-| `lock` | 带过期时间的原子锁，`lock/pglock` 是 PostgreSQL 存储，`lock/redislock` 是 Redis 存储 | [原子锁](../libraries/locks.md) |
-| `ratelimit` | 按键限流，`ratelimit/pglimit` 是 PostgreSQL 限流器，`ratelimit/redislimit` 是 Redis 限流器 | [限流](../libraries/rate-limiting.md) |
+| `lock` | 带过期时间的原子锁，`lock/pglock` 是 PostgreSQL 存储 | [原子锁](../libraries/locks.md) |
+| `ratelimit` | 按键限流，`ratelimit/pglimit` 是 PostgreSQL 限流器 | [限流](../libraries/rate-limiting.md) |
 | `broadcast` | 实例之间广播消息，`broadcast/natsbroadcast` 是 NATS 后端 | [广播](../libraries/broadcasting.md) |
 | `filesystem` | `files` 表、上传、公开地址；`local`、`s3` 两种磁盘 | [文件存储](../libraries/filesystem.md) |
 | `imgproxy` | 签名的 imgproxy 地址，按需缩放图片 | [图片缩略图](../libraries/file-uploads.md#thumbnails) |

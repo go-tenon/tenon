@@ -49,7 +49,6 @@ require (
 	github.com/pressly/goose/v3 v3.30.1
 	github.com/prometheus/client_golang v1.25.0
 	github.com/qdrant/go-client v1.20.1
-	github.com/redis/rueidis v1.0.79
 	github.com/resend/resend-go/v3 v3.17.0
 	github.com/rs/cors v1.11.1
 	github.com/samber/slog-chi v1.19.1
@@ -159,6 +158,7 @@ require (
 	github.com/prometheus/procfs v0.23.0 // indirect
 	github.com/puzpuzpuz/xsync/v3 v3.5.1 // indirect
 	github.com/quagmt/udecimal v1.11.0 // indirect
+	github.com/redis/rueidis v1.0.79 // indirect
 	github.com/richardlehane/mscfb v1.0.9 // indirect
 	github.com/richardlehane/msoleps v1.0.6 // indirect
 	github.com/rogpeppe/go-internal v1.16.0 // indirect

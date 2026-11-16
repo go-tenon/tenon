@@ -34,7 +34,7 @@ db := dbtest.Open(t, migrations.FS)
 <a id="running-database-tests-locally"></a>
 ### 在本地运行数据库测试
 
-在项目根目录放一个只给测试用的 `compose.test.yml`，启动应用用到的 PostgreSQL、[Redis](../libraries/redis.md#testing) 和 [Memcached](../libraries/cache.md#testing)：
+在项目根目录放一个只给测试用的 `compose.test.yml`，启动应用用到的 PostgreSQL 和 [Memcached](../libraries/cache.md#testing)：
 
 ```yaml
 # compose.test.yml
@@ -56,17 +56,6 @@ services:
       interval: 1s
       retries: 60
 
-  redis:
-    image: redis:8
-    ports:
-      - 127.0.0.1:56379:6379
-    tmpfs:
-      - /data
-    healthcheck:
-      test: redis-cli ping
-      interval: 1s
-      retries: 30
-
   memcached:
     image: memcached:1.6-alpine
     ports:
@@ -82,14 +71,11 @@ services:
 ```bash
 docker compose -f compose.test.yml up -d --wait
 export POSTGRES_TEST_URL='postgres://postgres:postgres@127.0.0.1:55432/postgres?sslmode=disable'
-export REDIS_TEST_URL='redis://127.0.0.1:56379/0'
 export MEMCACHED_TEST_ADDR='127.0.0.1:51211'
 go test -race -count=1 ./...
 ```
 
 每个测试使用自己的临时库，服务可以一直开着反复运行测试。数据放在 tmpfs 中，执行 `docker compose -f compose.test.yml down -v` 清理后数据全部消失。
-
-Redis 的集成测试见 [Redis](../libraries/redis.md#testing)。
 
 <a id="testing-actions"></a>
 ## 测试业务动作

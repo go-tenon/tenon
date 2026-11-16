@@ -12,7 +12,6 @@
     - [限流的 key](#rate-limit-key)
 - [在处理器中限流](#in-handlers)
 - [PostgreSQL 限流器](#postgres-limiter)
-- [Redis 限流器](#redis-limiter)
 - [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
@@ -62,13 +61,12 @@ ratelimit.Config{
 
 上面的配置表示：每个 key 平均每秒最多 10 次，短时间内最多连续 20 次。被拒绝的调用不消耗配额，按返回的等待时间重试即可。
 
-框架提供三种实现：
+框架提供两种实现：
 
 | 实现 | 计数保存在 | 适合 |
 | --- | --- | --- |
 | `ratelimit.NewMemory(cfg)` | 进程内存，每个实例分别计数 | 每个请求都要经过的全局限流 |
 | `pglimit.New(db, name, cfg)` | PostgreSQL，多个实例共享 | 登录、验证码、发邮件等需要多实例共享计数的低频操作 |
-| `redislimit.New(rdb, name, cfg)` | Redis，多个实例共享 | 同上，以及多个实例共享的全局限流 |
 
 它们的算法相同，换实现时限流结果一致。
 
@@ -169,27 +167,6 @@ sched.Add("rate-limits:cleanup", "@hourly", schedule.Cleanup(attempts.Cleanup, 1
     schedule.Describe("删除配额已回满的限流计数"))
 ```
 
-<a id="redis-limiter"></a>
-## Redis 限流器
-
-也可以用 Redis 共享配额。`redislimit.New` 接收[入口中创建的客户端](redis.md#connecting) `rdb`，第二个参数 `name` 区分不同的限流器：同名的限流器共享配额，所以每个 `name` 应该只对应一种配额。
-
-```go
-import "github.com/go-tenon/tenon/ratelimit/redislimit"
-
-attempts := redislimit.New(rdb, "app:passcode", ratelimit.Config{Rate: 5, Interval: time.Minute, Burst: 5})
-```
-
-每个 key 对应一个 Redis 键，键名是 `name:key`，例如 `app:passcode:42`；多个应用共用一个 Redis 时，在 `name` 中带上应用的命名空间。每次 `Allow` 是一次原子的脚本调用，时间取自 Redis 服务端时钟，多个实例并发调用时计数也是精确的。键在配额回满时自动过期。
-
-Redis 的写入很快，也适合多个实例共享的全局限流：
-
-```go
-router.Use(httpx.RateLimit(redislimit.New(rdb, "app:http", cfg.HTTP.RateLimit), httpx.KeyByIP))
-```
-
-这时 Redis 不可用会让所有请求都得到 `503`。如果宁可短时间不限流也要保证可用，请继续使用内存限流器。
-
 <a id="troubleshooting"></a>
 ## 常见问题
 
@@ -201,9 +178,9 @@ router.Use(httpx.RateLimit(redislimit.New(rdb, "app:http", cfg.HTTP.RateLimit), 
 
 内存限流器的计数只在本进程中，请求分散到几个实例，配额也成倍增加。需要共享计数时用 [PostgreSQL 限流器](#postgres-limiter)。
 
-**Redis 不可用时所有请求都返回 503**
+**数据库不可用时所有请求都返回 503**
 
-全局限流用了 Redis 限流器，限流器出错时中间件返回 `503`。宁可短时间不限流也要保证可用时，用内存限流器。
+全局限流用了 PostgreSQL 限流器，限流器出错时中间件返回 `503`。全局限流请用内存限流器，PostgreSQL 限流器只用于低频操作。
 
 **登录成功后，用户仍然被限流**
 
@@ -257,20 +234,6 @@ func (l *Limiter) Cleanup(ctx context.Context, limit int) (int, error)
 - **返回**：限流器
 
 包 `github.com/go-tenon/tenon/ratelimit/pglimit`。计数保存在 PostgreSQL 中，所有实例共享。`Cleanup` 删除最多 `limit` 个配额已经回满的 key（所有限流器的），返回删除的个数。
-
-### redislimit.New
-
-```go
-func New(rdb rueidis.Client, name string, cfg ratelimit.Config) *Limiter
-```
-
-- **参数**
-    - `rdb`：Redis 客户端
-    - `name`：限流器的名称，也是 Redis 键的前缀，例如 `app:login`
-    - `cfg`：配额，见上面的 `Config`
-- **返回**：限流器
-
-包 `github.com/go-tenon/tenon/ratelimit/redislimit`。计数保存在 Redis 中，所有实例共享。
 
 ### ratelimit.Observe
 

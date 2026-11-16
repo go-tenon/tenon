@@ -17,7 +17,6 @@
 - [等待锁](#waiting-for-locks)
 - [锁的有效期](#lock-ttl)
 - [PostgreSQL 存储](#postgres-store)
-- [Redis 存储](#redis-store)
 - [其他存储](#other-stores)
 - [测试](#testing)
 - [常见问题](#troubleshooting)
@@ -148,15 +147,6 @@ sched.Add("locks:cleanup", "@hourly", schedule.Cleanup(locks.Cleanup, 1000),
 
 锁的读写都很少：定时任务每次触发取一次锁，长任务每隔一段时间续期一次。依赖锁的功能（定时任务、AI 助手的多实例协作）本来就依赖数据库，数据库不可用时它们也无法工作，锁放在数据库中不会增加新的故障。
 
-<a id="redis-store"></a>
-## Redis 存储
-
-也可以用 Redis 保存锁：`lock.New(redislock.New(rdb))`，`rdb` 是[入口中创建的 Redis 客户端](redis.md#connecting)。
-
-每把锁是一个 Redis 键：键名就是锁名，值是持有者标识，键的过期时间就是锁的有效期。过期由 Redis 计算，与各实例的时钟无关；过期的键由 Redis 自动删除。多个应用共用一个 Redis 时，在锁名前加上应用的命名空间，例如 `app:articles:publish-scheduled`。Redis 必须配置 `noeviction`，锁才能在内存紧张时保留下来，见 [Redis](redis.md)。
-
-锁只写在一个 Redis 主节点上。使用哨兵或集群时，主节点故障切换可能丢失刚写入的锁，短时间内出现两个持有者；对互斥要求严格的操作，请在数据库事务中用 `SELECT ... FOR UPDATE` 锁住相关的行。
-
 <a id="other-stores"></a>
 ## 其他存储
 
@@ -203,7 +193,7 @@ locker := lock.New(locktest.NewStore())
 
 **锁偶尔失效，两个实例同时执行**
 
-任务的执行时间超过了锁的有效期，锁过期后被别人取得。调大 `ttl` 或定期续期，见[锁的有效期](#lock-ttl)。使用 Redis 存储时，还可能是没有配置 `noeviction`，或者主节点故障切换丢了锁。
+任务的执行时间超过了锁的有效期，锁过期后被别人取得。调大 `ttl` 或定期续期，见[锁的有效期](#lock-ttl)。各实例的时钟偏差太大时也会这样，见 [PostgreSQL 存储](#postgres-store)。对互斥要求严格的操作，在数据库事务中用 `SELECT ... FOR UPDATE` 锁住相关的行。
 
 <a id="api-reference"></a>
 ## API 参考
@@ -269,7 +259,7 @@ type Store interface {
 }
 ```
 
-每个方法都必须是原子的。`pglock.New(db bun.IDB)` 是 PostgreSQL 实现，`redislock.New(rdb rueidis.Client)` 是 Redis 实现，`locktest` 提供测试用的内存存储和契约测试，见[其他存储](#other-stores)。
+每个方法都必须是原子的。`pglock.New(db bun.IDB)` 是 PostgreSQL 实现，`locktest` 提供测试用的内存存储和契约测试，见[其他存储](#other-stores)。
 
 ### pglock
 

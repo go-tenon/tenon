@@ -8,7 +8,7 @@
 
 Tenon 使用 [OpenTelemetry](https://opentelemetry.io/docs/languages/go/) 报告这些数据。OpenTelemetry 是收集这三类数据的开放标准，它的推送协议叫 **OTLP**，大多数观测平台都能接收。框架的 HTTP 服务、数据库连接池、队列、调度器、限流器、MCP 服务和实时频道都可以报告指标，前五个还报告链路。`telemetry` 包把指标、链路和应用的日志一起推送到一个 OTLP 接收端，例如 [OpenObserve](https://openobserve.ai/)。
 
-指标和链路都需要显式开启。OpenTelemetry 中，创建指标和链路的对象叫 **Provider**（`MeterProvider`、`TracerProvider`）：把它们交给需要报告的组件，没有传入的组件就不报告。Redis、Memcached 等依赖由各自的生态报告，例如 rueidis 的 [rueidisotel](https://pkg.go.dev/github.com/redis/rueidis/rueidisotel)，把同一个 Provider 交给它们即可。
+指标和链路都需要显式开启。OpenTelemetry 中，创建指标和链路的对象叫 **Provider**（`MeterProvider`、`TracerProvider`）：把它们交给需要报告的组件，没有传入的组件就不报告。框架没有覆盖的依赖（例如 Memcached 客户端）由各自的生态报告，把同一个 Provider 交给它们即可。
 
 阅读前需要了解：[日志](logging.md)；[依赖装配](../concepts/dependencies.md)。
 

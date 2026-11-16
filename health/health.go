@@ -1,4 +1,4 @@
-// Package health 检查应用依赖的可用性，例如数据库、Redis 是否连得上。它与传输方式无关：
+// Package health 检查应用依赖的可用性，例如数据库、NATS 是否连得上。它与传输方式无关：
 // httpx.Ready 把结果作为 HTTP 就绪检查返回，其他入口（例如以后的 gRPC 健康检查服务）可以使用同一个 Checker。
 package health
 
@@ -18,7 +18,7 @@ const DefaultTimeout = time.Second
 
 // Check 是一项检查：一个依赖，以及确认它可用的方法。
 type Check struct {
-	// Name 出现在结果和日志中，例如 database、redis。
+	// Name 出现在结果和日志中，例如 database、nats。
 	Name string
 	// Ping 确认依赖可用，返回错误表示不可用，例如 db.PingContext。超过 Options.Timeout 视为失败。
 	Ping func(ctx context.Context) error

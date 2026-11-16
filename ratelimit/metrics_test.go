@@ -59,7 +59,7 @@ func TestObserve(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 
-	down := errors.New("redis down")
+	down := errors.New("database down")
 	broken := ratelimit.Observe(mp, "api", failing{down})
 	if err := broken.Allow(ctx, "k"); !errors.Is(err, down) {
 		t.Fatalf("err = %v", err)

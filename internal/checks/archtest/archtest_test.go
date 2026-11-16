@@ -124,7 +124,7 @@ var rules = map[string]rule{
 var components = []string{
 	"net/http", "database/sql", "github.com/danielgtaylor/huma",
 	"github.com/go-chi/chi", "github.com/uptrace/bun", "github.com/jackc/pgx",
-	"github.com/pressly/goose", "github.com/spf13/cobra", "github.com/redis/rueidis",
+	"github.com/pressly/goose", "github.com/spf13/cobra",
 	"github.com/nats-io/nats.go",
 }
 
@@ -440,17 +440,14 @@ func TestAPIDoesNotLinkTempl(t *testing.T) {
 	}
 }
 
-// TestCoreDoesNotLinkRedis 确保核心包不链接 Redis 客户端，测试可以用内存替身代替 Redis；
-// Redis 实现分别在 lock/redislock 和 ratelimit/redislimit 中。
-func TestCoreDoesNotLinkRedis(t *testing.T) {
-	for _, pkg := range []string{module + "/lock", module + "/ratelimit", module + "/httpx", module + "/broadcast", module + "/queue"} {
-		out, err := exec.Command("go", "list", "-deps", pkg).CombinedOutput()
-		if err != nil {
-			t.Fatalf("go list: %v\n%s", err, out)
-		}
-		for _, dep := range strings.Fields(string(out)) {
-			if under(dep, "github.com/redis/rueidis") {
-				t.Errorf("%s depends on %s", pkg, dep)
+// TestNoRedisClient 确保框架的包不直接引用 Redis 客户端：锁和限流保存在 PostgreSQL 中，
+// 广播和在线成员在 NATS 中，框架不再依赖 Redis。realtime 依赖的 Centrifuge 自带 Redis broker，
+// 间接链接 rueidis，但运行时不连接 Redis。
+func TestNoRedisClient(t *testing.T) {
+	for pkg, imps := range imports(t) {
+		for _, imp := range imps {
+			if under(imp, "github.com/redis") {
+				t.Errorf("%s imports %s", pkg, imp)
 			}
 		}
 	}

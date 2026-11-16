@@ -79,6 +79,7 @@ import (
     "github.com/go-tenon/tenon/database"
     "github.com/go-tenon/tenon/database/migrate"
     "github.com/go-tenon/tenon/login"
+    "github.com/go-tenon/tenon/ratelimit/pglimit"
 
     "example.com/blog/internal/bootstrap"
     "example.com/blog/locales"
@@ -106,6 +107,7 @@ func migrateCommand() *cobra.Command {
     cmd.AddCommand(migratecmd.Publish(
         migrate.Source{Name: "login", FS: login.Migrations()},
         migrate.Source{Name: "apitoken", FS: apitoken.Migrations()},
+        migrate.Source{Name: "ratelimit", FS: pglimit.Migrations()},
         migrate.Source{Name: "authz", FS: authz.Migrations()},
     ))
     return cmd
@@ -586,7 +588,6 @@ import (
     "log/slog"
     "time"
 
-    "github.com/redis/rueidis"
     "github.com/uptrace/bun"
 
     "github.com/go-tenon/tenon/apitoken"
@@ -599,7 +600,7 @@ import (
     "github.com/go-tenon/tenon/logging"
     "github.com/go-tenon/tenon/login"
     "github.com/go-tenon/tenon/ratelimit"
-    "github.com/go-tenon/tenon/ratelimit/redislimit"
+    "github.com/go-tenon/tenon/ratelimit/pglimit"
 
     "example.com/blog/internal/auth"
     "example.com/blog/internal/user"
@@ -609,7 +610,6 @@ import (
 type App struct {
     cfg Config
     db  *bun.DB
-    rdb rueidis.Client
     // users 校验作者的邮箱和密码，jwt 签发和校验登录凭据。
     users  *login.Realm
     tokens *apitoken.Store
@@ -618,7 +618,7 @@ type App struct {
     roles *authz.Store
 }
 
-// open 安装日志器，连接数据库和 Redis，把关闭操作登记到 stack。
+// open 安装日志器，连接数据库，把关闭操作登记到 stack。
 func open(ctx context.Context, cfg Config, stack *cleanup.Stack) (*App, error) {
     slog.SetDefault(logging.New(logging.Config{}))
 
@@ -628,31 +628,21 @@ func open(ctx context.Context, cfg Config, stack *cleanup.Stack) (*App, error) {
     }
     stack.MustAdd("database", func(context.Context) error { return db.Close() })
 
-    opt, err := rueidis.ParseURL(cfg.Redis.URL)
-    if err != nil {
-        return nil, err
-    }
-    rdb, err := rueidis.NewClient(opt)
-    if err != nil {
-        return nil, err
-    }
-    stack.MustAdd("redis", func(context.Context) error { rdb.Close(); return nil })
-
     keys := crypt.New(cfg.Crypt)
-    // 每个邮箱 15 分钟内最多输错 5 次密码，计数保存在 Redis 中，所有实例共享。
+    // 每个邮箱 15 分钟内最多输错 5 次密码，计数保存在数据库中，所有实例共享。
     every15 := ratelimit.Config{Rate: 5, Interval: 15 * time.Minute, Burst: 5}
     users := login.New(db, login.Options{
         Type:     user.Type,
         Hasher:   hashing.New(cfg.Hashing),
         Crypt:    keys,
         Policy:   login.Policy{PasswordKinds: []string{login.KindEmail}},
-        Attempts: redislimit.New(rdb, "blog:login:attempts", every15),
-        Sends:    redislimit.New(rdb, "blog:login:sends", every15),
+        Attempts: pglimit.New(db, "login:attempts", every15),
+        Sends:    pglimit.New(db, "login:sends", every15),
     })
     tokens := apitoken.NewStore(db, cfg.Token)
 
     return &App{
-        cfg: cfg, db: db, rdb: rdb,
+        cfg: cfg, db: db,
         users: users, tokens: tokens,
         jwt:   apitoken.NewJWT(tokens, apitoken.JWTConfig{Keys: apitoken.HMACKeys(keys)}),
         roles: authz.NewStore(db, auth.Catalog),
@@ -766,7 +756,6 @@ func (a *App) Router(draining *httpx.Draining) chi.Router {
         Draining: draining,
         Checks: []health.Check{
             {Name: "database", Ping: func(ctx context.Context) error { return a.db.PingContext(ctx) }},
-            {Name: "redis", Ping: func(ctx context.Context) error { return a.rdb.Do(ctx, a.rdb.B().Ping().Build()).Error() }},
         },
     }))
     router.Route("/api", func(r chi.Router) {

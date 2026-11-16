@@ -2,7 +2,7 @@
 
 Tenon 的缓存建立在 [Memcached](https://memcached.org) 之上。对于查询代价高、读多写少的数据，你可以把查询结果放进缓存，之后的请求直接从缓存读取。
 
-Memcached 只做缓存这一件事：内存满了就淘汰最久没用的数据，多个实例共享同一份缓存，缓存丢了也能随时从数据库重建。因此，锁、限流计数这类**必须保留**的数据放在 [Redis](redis.md) 中。
+Memcached 只做缓存这一件事：内存满了就淘汰最久没用的数据，多个实例共享同一份缓存，缓存丢了也能随时从数据库重建。因此，锁、限流计数这类**必须保留**的数据放在 PostgreSQL 中，见[原子锁](locks.md)和[限流](rate-limiting.md)。
 
 Tenon 不封装 Memcached 客户端，而是直接使用社区的 [gomemcache](https://github.com/bradfitz/gomemcache)。在它之上，`cachex` 包提供“先读缓存，没有就查库再写回”的读取方式，并替你处理热点过期、集中过期和不存在的数据这几个常见问题。
 
@@ -164,7 +164,7 @@ func (a *Get) Handle(ctx context.Context, subject identity.Subject, id uuid.UUID
 Memcached 不可用时，每个请求都会遇到读取失败。为了不让日志刷屏，每个 `Cache` 每分钟最多记录一条，并附上这期间省略的条数。
 
 > [!NOTE]
-> 这种“出错就当没有缓存”的处理，只适用于可以丢弃的查询缓存。这也是 Memcached 只存放这类数据的原因：令牌保存在数据库中，限流计数和锁保存在 [Redis](redis.md) 中。
+> 这种“出错就当没有缓存”的处理，只适用于可以丢弃的查询缓存。这也是 Memcached 只存放这类数据的原因：令牌、限流计数和锁都保存在数据库中。
 
 <a id="hot-keys"></a>
 ### 热点、集中过期与不存在的数据

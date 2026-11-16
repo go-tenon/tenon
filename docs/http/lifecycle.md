@@ -105,9 +105,6 @@ router.Handle("/readyz", httpx.Ready(httpx.ReadyOptions{
     Draining: &draining,
     Checks: []health.Check{
         {Name: "database", Ping: func(ctx context.Context) error { return db.PingContext(ctx) }},
-        {Name: "redis", Ping: func(ctx context.Context) error {
-            return rdb.Do(ctx, rdb.B().Ping().Build()).Error()
-        }},
         {Name: "cache", Ping: func(context.Context) error { return mc.Ping() }, Optional: true},
     },
 }))
@@ -116,7 +113,7 @@ router.Handle("/readyz", httpx.Ready(httpx.ReadyOptions{
 `draining` 与传给 `httpx.OnDraining` 的是同一个。每个 `Ping` 都写成闭包，到检查时才使用依赖：`openapi`、`routes` 命令用 `nil` 依赖构造同一套路由（见[依赖装配](../concepts/dependencies.md#assembling-the-application)），`db.PingContext` 这样的方法值在 `db` 为 `nil` 时取值就会 panic。检查项 `health.Check` 和执行检查的 `health.Checker` 在与传输方式无关的 `health` 包中，`httpx.Ready` 只负责排空的判断和响应格式。全部检查并行执行，每项最多 1 秒，超时按失败处理。必需的检查都通过时返回 `200`，否则返回 `503`；正在排空时直接返回 `503`。响应体列出每项的结果：
 
 ```json
-{"status":"ready","checks":{"cache":"failed","database":"ok","redis":"ok"}}
+{"status":"ready","checks":{"cache":"failed","database":"ok"}}
 ```
 
 失败的原因只记录在日志中，而且只在状态变化时记录：从通过变为失败记 `Warn`，恢复时记 `Info`。

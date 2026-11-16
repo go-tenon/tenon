@@ -132,7 +132,7 @@ CONFIG=--config=config/app.yaml,config/prod.yaml
 
 - **HTTP 服务**放在负载均衡后面，请求被分摊到各个实例。
 - **worker** 从队列中领取任务，一个任务只会被一个实例领取，可以随时增减实例。
-- **调度器**用锁保证每个定时任务每次只执行一次，所以多个实例互为备份，前提是它们共用同一个 Redis，见[多个实例](../background/scheduling.md#multiple-instances)。
+- **调度器**用锁保证每个定时任务每次只执行一次，所以多个实例互为备份，前提是它们共用同一个数据库，见[多个实例](../background/scheduling.md#multiple-instances)。
 
 这些部分共用数据库的连接池。设置连接数上限 `max_conns` 时，要把 HTTP 请求、各队列的并发数和同时执行的定时任务都算进去；所有实例的连接数加起来，不能超过数据库允许的最大连接数，见[连接池](../database/quick-start.md#pool-exhaustion)。
 
@@ -309,13 +309,9 @@ services:
 
 一起运行时，把三个服务换成一个运行 `start` 的服务即可。
 
-应用用到的其他服务也放进同一个 compose 文件。框架会用到 PostgreSQL、[Redis](../libraries/redis.md)（锁、限流）、[Memcached](../libraries/cache.md)（缓存）和 [NATS](../libraries/nats.md)（任务队列、广播、在线成员）：
+应用用到的其他服务也放进同一个 compose 文件。框架会用到 PostgreSQL（业务数据、锁、限流）、[Memcached](../libraries/cache.md)（缓存）和 [NATS](../libraries/nats.md)（任务队列、广播、在线成员）：
 
 ```yaml
-  redis:
-    image: redis:8
-    command: [redis-server, --maxmemory-policy, noeviction, --appendonly, "yes"]
-    volumes: [redis:/data]
   memcached:
     image: memcached:1.6-alpine
     command: [memcached, -m, "512"]
@@ -324,10 +320,10 @@ services:
     command: [nats-server, -js, -sd, /data, -m, "8222"]
     volumes: [nats:/data]
     ports: ["127.0.0.1:8222:8222"]
-# 以及顶层的 volumes: {redis: {}, nats: {}}
+# 以及顶层的 volumes: {nats: {}}
 ```
 
-Redis 要配置 `noeviction`：内存满时报错，而不是悄悄删掉锁和限流计数。NATS 的 `-js` 开启 JetStream，任务保存在 `/data` 中；`8222` 是它的监控端口，只监听本机，通过 SSH 隧道或内网访问。用到[生成 PDF](../libraries/pdf.md#deployment) 等功能时，再按各自的说明加上对应的服务。
+NATS 的 `-js` 开启 JetStream，任务保存在 `/data` 中；`8222` 是它的监控端口，只监听本机，通过 SSH 隧道或内网访问。用到[生成 PDF](../libraries/pdf.md#deployment) 等功能时，再按各自的说明加上对应的服务。
 
 容器的升级方式是换一个新容器，见[不停机升级](operations.md#zero-downtime-upgrades)。
 

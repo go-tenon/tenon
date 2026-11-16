@@ -86,15 +86,6 @@ jobs:
   test:
     runs-on: ubuntu-latest
     services:
-      redis:
-        image: redis:8
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
       memcached:
         image: memcached:1.6-alpine
         ports:
@@ -119,8 +110,6 @@ jobs:
           --health-retries 20
     env:
       POSTGRES_TEST_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable
-      REDIS_TEST_URL: redis://127.0.0.1:6379/0
-      REDIS_CLUSTER_TEST_URL: redis://127.0.0.1:7000
       MEMCACHED_TEST_ADDR: 127.0.0.1:11211
       NATS_TEST_URL: nats://127.0.0.1:4222
       GOTENBERG_TEST_URL: http://127.0.0.1:3000
@@ -128,16 +117,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 服务容器只接受镜像的默认参数，Redis 集群、NATS 和 PostgreSQL 在这里启动。
-      # 集群由三个主节点组成，节点向客户端报告 127.0.0.1，所以端口原样映射。
-      - name: Start Redis cluster
-        run: |
-          docker run -d --name redis-cluster -p 127.0.0.1:7000-7002:7000-7002 \
-            -v "$PWD/internal/redistest/cluster.sh:/cluster.sh:ro" redis:8 sh /cluster.sh 7000 7001 7002
-          for i in $(seq 1 60); do docker exec redis-cluster redis-cli -p 7000 cluster info | grep -q cluster_state:ok && exit 0; sleep 1; done
-          docker logs redis-cluster
-          exit 1
-
+      # 服务容器只接受镜像的默认参数，NATS 和 PostgreSQL 在这里启动。
       # 队列用 JetStream 保存任务，-js 开启它。
       - name: Start NATS
         run: |
