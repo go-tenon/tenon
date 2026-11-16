@@ -6,7 +6,7 @@
 //
 // 处理：Worker 消费已注册 topic 的任务，交给处理函数；同一个应用的 Worker 使用同一个 channel，每个任务只处理一次。
 // 处理失败的任务按退避时间重试，不超过 Config.MaxDefer 的由 NSQ 延迟投递，更晚的存入 queue_scheduled 等待；
-// 次数用完后转入 queue_failed_jobs。
+// 次数用完后转入 queue_failed_jobs。NotFound、InvalidArgument 这类业务错误重试也不会成功，直接转入，见 IsPermanent。
 //
 // Topic 把 topic 名称和 payload 类型声明在一起，发布和处理都通过它：
 //

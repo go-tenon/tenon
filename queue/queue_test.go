@@ -3,8 +3,10 @@ package queue_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -14,6 +16,7 @@ import (
 	"github.com/uptrace/bun"
 
 	"github.com/go-tenon/tenon/database/dbtest"
+	"github.com/go-tenon/tenon/errorx"
 	"github.com/go-tenon/tenon/logging"
 	"github.com/go-tenon/tenon/queue"
 	"github.com/go-tenon/tenon/queue/queuetest"
@@ -337,7 +340,7 @@ func TestRetry(t *testing.T) {
 	}
 }
 
-// 次数用完或 Permanent 的错误转入失败任务表；Retry 重新发布，执行次数从头计算。
+// 次数用完、Permanent 的错误或业务错误转入失败任务表；Retry 重新发布，执行次数从头计算。
 func TestFailedJobs(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
@@ -346,6 +349,10 @@ func TestFailedJobs(t *testing.T) {
 	var calls atomic.Int64
 	var heal atomic.Bool
 	permanent := queue.Topic[payload]("permanent")
+	// 业务错误默认不重试，第一次失败就转入失败任务表。
+	business := queue.Topic[payload]("business")
+	errNotFound := errorx.Define(errorx.NotFound, "article.not_found")
+	var businessCalls atomic.Int64
 	start(t, db, cfg, func(w *queue.Worker) {
 		jobs.Handle(w, func(ctx context.Context, p payload) error {
 			calls.Add(1)
@@ -357,12 +364,19 @@ func TestFailedJobs(t *testing.T) {
 		permanent.Handle(w, func(context.Context, payload) error {
 			return queue.Permanent(errors.New("bad input"))
 		})
+		business.Handle(w, func(context.Context, payload) error {
+			businessCalls.Add(1)
+			return fmt.Errorf("load article: %w", errNotFound.New())
+		})
 	})
 	publish(t, db, 1)
 	if err := permanent.Publish(context.Background(), db, payload{N: 2}); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, 5*time.Second, func() bool { return len(failedRows(t, db)) == 2 })
+	if err := business.Publish(context.Background(), db, payload{N: 3}); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, 5*time.Second, func() bool { return len(failedRows(t, db)) == 3 })
 	rows := failedRows(t, db)
 	byTopic := map[string]failedRow{}
 	for _, r := range rows {
@@ -374,6 +388,9 @@ func TestFailedJobs(t *testing.T) {
 	if r := byTopic["permanent"]; r.Attempts != 1 {
 		t.Fatalf("permanent failed %+v", r)
 	}
+	if r := byTopic["business"]; r.Attempts != 1 || businessCalls.Load() != 1 || !strings.Contains(r.Error, "article.not_found") {
+		t.Fatalf("business error failed %+v after %d calls", r, businessCalls.Load())
+	}
 
 	heal.Store(true)
 	failed := queue.NewFailedJobs(db)
@@ -384,7 +401,7 @@ func TestFailedJobs(t *testing.T) {
 	if err := failed.Retry(context.Background(), byTopic["jobs"].ID); !errors.Is(err, queue.ErrFailedJobNotFound) {
 		t.Fatalf("retry twice: %v", err)
 	}
-	if rows := failedRows(t, db); len(rows) != 1 || rows[0].Topic != "permanent" {
+	if rows := failedRows(t, db); len(rows) != 2 {
 		t.Fatalf("failed rows %+v", rows)
 	}
 }
@@ -602,8 +619,36 @@ func TestPermanent(t *testing.T) {
 	if !queue.IsPermanent(err) || !errors.Is(err, base) || queue.Permanent(nil) != nil {
 		t.Fatalf("permanent %v", err)
 	}
-	if queue.IsPermanent(base) {
-		t.Fatal("plain error is permanent")
+	if queue.Retry(nil) != nil || queue.RetryAfter(nil, time.Second) != nil {
+		t.Fatal("nil error marked for retry")
+	}
+
+	notFound := errorx.Define(errorx.NotFound, "article.not_found")
+	limited := errorx.Define(errorx.ResourceExhausted, "sms.limited")
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"plain error", base, false},
+		{"wrapped plain error", fmt.Errorf("send: %w", base), false},
+		{"unavailable", errorx.Define(errorx.Unavailable, "mail.unavailable").New(), false},
+		{"internal", errorx.Define(errorx.Internal, "demo.internal").New(), false},
+		{"resource exhausted", limited.New(), false},
+		{"not found", fmt.Errorf("load article: %w", notFound.New()), true},
+		{"invalid argument", errorx.Define(errorx.InvalidArgument, "document.corrupt").New(), true},
+		{"conflict", errorx.Define(errorx.Conflict, "article.already_published").New(), true},
+		{"business error with errorx.RetryAfter", errorx.Define(errorx.Conflict, "demo.busy").New(errorx.RetryAfter(time.Second)), false},
+		{"business error marked Retry", queue.Retry(notFound.New()), false},
+		{"business error marked RetryAfter", queue.RetryAfter(notFound.New(), time.Second), false},
+		{"Permanent wins over Retry", queue.Permanent(queue.Retry(base)), true},
+		{"Permanent inside RetryAfter", queue.RetryAfter(queue.Permanent(base), time.Second), true},
+		{"Permanent system failure", queue.Permanent(errorx.Define(errorx.Unavailable, "demo.down").New()), true},
+	}
+	for _, c := range cases {
+		if got := queue.IsPermanent(c.err); got != c.want {
+			t.Errorf("%s: IsPermanent = %v, want %v", c.name, got, c.want)
+		}
 	}
 }
 

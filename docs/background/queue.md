@@ -248,7 +248,7 @@ queue:
 <a id="failures-and-retries"></a>
 ## 失败与重试
 
-处理函数返回错误或 panic 时，任务在一段时间后重试，第 n 次失败后等待约 n⁴ 秒（上下浮动 10%）：
+处理函数返回系统故障或 panic 时，任务在一段时间后重试，第 n 次失败后等待约 n⁴ 秒（上下浮动 10%）：
 
 | 失败次数 | 1 | 2 | 3 | 4 | 5 | 9 |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -256,17 +256,28 @@ queue:
 
 默认最多执行 10 次，从第一次失败到最后一次重试约 4.3 小时，足以跨过大多数第三方服务的故障。不超过 `max_defer` 的等待由 NSQ 完成，更长的等待存入 `queue_scheduled`。同一个 topic 的其他任务照常处理。
 
-有些错误重试也是徒劳，例如文章已经被删除。用 `queue.Permanent` 包装这类错误，任务直接转入失败任务表：
+是否重试由错误的[分类](../general/errors.md#error-kinds)决定：
+
+| 处理函数返回的错误 | 结果 |
+| --- | --- |
+| 系统故障：`errorx.Unavailable`、`errorx.Internal`，不是业务错误的普通错误，以及 panic | 按上表的时间重试 |
+| `errorx.ResourceExhausted`，或者用 `errorx.RetryAfter` 给出了等待时间的错误 | 重试，有等待时间时按它重试 |
+| 其他业务错误，例如 `errorx.NotFound`、`errorx.InvalidArgument`、`errorx.Conflict` | 不重试，直接转入失败任务表 |
+
+业务错误表示这次调用本身不成立，例如文章已经被删除，重试的结果不会不同，所以处理函数直接返回业务动作的错误即可。任务内容无法解码为处理函数的参数类型时，同样直接转入失败任务表。
+
+两种情况需要自己标记：
+
+- 不是业务错误、但重试也是徒劳的错误，例如推送服务拒绝了配置不对的请求，用 `queue.Permanent` 包装，任务直接转入失败任务表；
+- 业务错误确实可能在稍后消失，例如从只读副本读到了还没有同步的数据而得到 `NotFound`，用 `queue.Retry` 包装，任务照常重试。
 
 ```go
-if errors.Is(err, article.ErrNotFound) {
-    return queue.Permanent(err)
+if errors.Is(err, article.ErrNotFound) && replica {
+    return queue.Retry(err)
 }
 ```
 
-任务内容无法解码为处理函数的参数类型时，同样视为永久失败。
-
-第三方服务限流时往往会告诉你多久之后再试，例如 HTTP 429 响应的 `Retry-After`。用 `queue.RetryAfter` 包装错误，任务在指定的时间之后重试：
+第三方服务限流时往往会告诉你多久之后再试，例如 HTTP 429 响应的 `Retry-After`。用 `queue.RetryAfter` 包装错误，任务在指定的时间之后重试（被包装的是业务错误时同样重试）：
 
 ```go
 if resp.StatusCode == http.StatusTooManyRequests {
@@ -277,12 +288,12 @@ if resp.StatusCode == http.StatusTooManyRequests {
 
 这次重试同样计入执行次数，次数用完时照常转入失败任务表。
 
-任务自己保存了处理状态时，需要在放弃之前记下最终结果，例如把一条投递记录从「重试中」改为「失败」。`queue.AttemptFromContext` 返回本次是第几次执行，以及这是否是最后一次：
+任务自己保存了处理状态时，需要在放弃之前记下最终结果，例如把一条投递记录从「重试中」改为「失败」。`queue.AttemptFromContext` 返回本次是第几次执行，以及这是否是最后一次；`queue.IsPermanent` 报告这个错误是否会让任务直接结束，两者之一成立时任务就不会再执行：
 
 ```go
 if err != nil {
-    if _, final := queue.AttemptFromContext(ctx); final {
-        markFailed(ctx, a.db, id, err) // 这是最后一次尝试
+    if _, final := queue.AttemptFromContext(ctx); final || queue.IsPermanent(err) {
+        markFailed(ctx, a.db, id, err) // 任务不会再执行
     }
     return err
 }
@@ -341,7 +352,7 @@ queuetest.Run(t, w) // 测试结束时停止
 
 **任务失败后没有重试，直接进了失败任务表**
 
-处理函数返回了用 `queue.Permanent` 包装的错误，或者重试次数已经用完，见[失败与重试](#failures-and-retries)。
+处理函数返回了业务错误（例如 `errorx.NotFound`）、用 `queue.Permanent` 包装的错误，或者重试次数已经用完，见[失败与重试](#failures-and-retries)。业务错误确实需要重试时，用 `queue.Retry` 包装。
 
 <a id="api-reference"></a>
 ## API 参考
@@ -418,11 +429,13 @@ func WithObserver(o Observer) WorkerOption
 
 ```go
 func Permanent(err error) error
+func Retry(err error) error
 func RetryAfter(err error, d time.Duration) error
+func IsPermanent(err error) bool
 func AttemptFromContext(ctx context.Context) (attempt int, final bool)
 ```
 
-`Permanent` 标记为最终失败，直接转入失败任务；`RetryAfter` 指定下次重试的时间；`AttemptFromContext` 返回这是第几次尝试、是否最后一次。见[失败与重试](#failures-and-retries)。
+`Permanent` 标记为最终失败，直接转入失败任务；`Retry` 让默认不重试的业务错误按退避时间重试；`RetryAfter` 指定下次重试的时间；`IsPermanent` 报告以这个错误失败的任务是否直接结束；`AttemptFromContext` 返回这是第几次尝试、是否最后一次。三个标记同时出现时 `Permanent` 优先。见[失败与重试](#failures-and-retries)。
 
 ### FailedJobs
 

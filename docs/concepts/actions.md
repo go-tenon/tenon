@@ -184,15 +184,14 @@ var system = identity.Subject{Type: identity.System, ID: "system", Permissions: 
 // Job 处理定时发布的任务。文章已经发布时任务视为完成，所以重复执行是安全的。
 func (a *Publish) Job(ctx context.Context, id uuid.UUID) error {
     _, err := a.Handle(ctx, system, id)
-    switch {
-    case errors.Is(err, ErrAlreadyPublished):
+    if errors.Is(err, ErrAlreadyPublished) {
         return nil
-    case errors.Is(err, ErrNotFound):
-        return queue.Permanent(err) // 文章已被删除，任务到此结束
     }
     return err
 }
 ```
+
+`Handle` 返回的其他业务错误原样返回即可：例如文章已被删除时的 `ErrNotFound`，重试的结果不会不同，任务直接转入失败任务表；数据库故障这类系统故障则稍后重试，见[失败与重试](../background/queue.md#failures-and-retries)。
 
 `queue.Topic` 把 topic 的名称和 payload 的类型绑在一起，发布方和处理方共用这一个声明，名称写错或者类型不一致时都无法编译。设置定时发布的业务动作在写入发布时间的同一个事务中发布任务：
 
