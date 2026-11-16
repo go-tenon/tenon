@@ -1,7 +1,23 @@
+/* 设计令牌（theme/tokens.json）生成的 CSS 变量：--primary、--radius 等。修改品牌色后页面随之改变。 */
+@import "@[[.Slug]]/theme/tokens.css";
+
 body {
   margin: 0;
-  font-family: system-ui, sans-serif;
+  font-family: var(--font-sans, system-ui, sans-serif);
   background: #f6f6f6;
+}
+
+h1 {
+  color: var(--primary);
+}
+
+button {
+  padding: 0.4rem 0.8rem;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--primary);
+  color: var(--primary-foreground);
+  cursor: pointer;
 }
 
 main {
@@ -9,7 +25,7 @@ main {
   margin: 3rem auto;
   padding: 1.5rem;
   background: #fff;
-  border-radius: 0.75rem;
+  border-radius: calc(var(--radius) * 1.5);
 }
 
 form {

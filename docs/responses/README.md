@@ -6,6 +6,7 @@
 - [客户端代码](clients.md)：由路由生成 Go 与 TypeScript 客户端
 - [单页应用](spa.md)：把 React 单页应用嵌入程序并对外提供
 - [应用骨架](app-shell.md)：@go-tenon/shell 的路由、登录检查、权限、菜单和新版本提示
+- [设计令牌](theme.md)：品牌只在 theme/tokens.json 中定义一次，生成公开页面、shadcn 和 antd 的主题
 - [服务端推送](sse.md)：Server-Sent Events
 - [视图](views.md)：用 templ 渲染公开页面
 - [表单](forms.md)：服务端渲染页面中的表单

@@ -74,8 +74,11 @@ func initCommand() *cobra.Command {
 					return err
 				}
 			}
-			// 前端依赖框架的前端包，bun install 之前先复制它们。
+			// 前端依赖框架的前端包和设计令牌生成的主题包，bun install 之前先准备好它们。
 			if _, err := dev.SyncJS(dir); err != nil {
+				return err
+			}
+			if _, err := dev.GenerateTheme(dir); err != nil {
 				return err
 			}
 			_, err := exec.LookPath("bun")
@@ -188,6 +191,9 @@ func addFrontendCommand() *cobra.Command {
 			if _, err := dev.SyncJS("."); err != nil {
 				return err
 			}
+			if _, err := dev.GenerateTheme("."); err != nil {
+				return err
+			}
 			if _, err := exec.LookPath("bun"); err == nil {
 				if err := run(cmd, ".", "bun", "install"); err != nil {
 					return err
@@ -236,6 +242,9 @@ func buildCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if _, err := dev.GenerateTheme("."); err != nil {
+				return err
+			}
 			if len(cfg.Frontends) > 0 {
 				if _, err := dev.SyncJS("."); err != nil {
 					return err
@@ -279,6 +288,9 @@ func generateCommand() *cobra.Command {
 			}
 			defer func() { _ = os.RemoveAll(tmp) }()
 			if err := dev.EnsureDist(cfg); err != nil {
+				return err
+			}
+			if _, err := dev.GenerateTheme("."); err != nil {
 				return err
 			}
 			// 生成之后通常接着做类型检查，前端依赖的框架前端包要已经就位，包的依赖要已经安装。

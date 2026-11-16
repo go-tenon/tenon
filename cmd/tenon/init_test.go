@@ -164,6 +164,31 @@ func TestInitEndToEnd(t *testing.T) {
 	if res := send(t, http.MethodDelete, base+"/api/todos/1", ""); res.status != http.StatusNotFound || res.body["code"] != "todo.not_found" {
 		t.Fatalf("delete again: %+v", res)
 	}
+
+	// 设计令牌：修改一次品牌色，重新构建后前端的样式（shadcn 的 CSS 变量）和 antd 的令牌都随之改变。
+	builtCSS := func() string {
+		var all strings.Builder
+		files, _ := filepath.Glob(filepath.Join(dir, "apps", "web", "dist", "assets", "*.css"))
+		for _, f := range files {
+			b, _ := os.ReadFile(f)
+			all.Write(b)
+		}
+		return all.String()
+	}
+	if css := builtCSS(); !strings.Contains(css, "oklch(.511 .262 276.966)") && !strings.Contains(css, "oklch(0.511 0.262 276.966)") {
+		t.Fatalf("default brand missing from built css:\n%s", css)
+	}
+	tokens := `{"color": {"brand": {"$type": "color", "$value": "#e11d48"}}, "radius": {"$type": "dimension", "$value": "0.25rem"}}`
+	if err := os.WriteFile(filepath.Join(dir, "theme", "tokens.json"), []byte(tokens), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sh("go", "tool", "tenon", "build")
+	if css := builtCSS(); !strings.Contains(css, "#e11d48") || strings.Contains(css, "276.966") {
+		t.Fatalf("brand change not in built css:\n%s", css)
+	}
+	if ts, _ := os.ReadFile(filepath.Join(dir, "packages", "theme", "src", "index.ts")); !strings.Contains(string(ts), `"colorPrimary": "#e11d48"`) {
+		t.Fatalf("antd tokens not regenerated:\n%s", ts)
+	}
 }
 
 type response struct {

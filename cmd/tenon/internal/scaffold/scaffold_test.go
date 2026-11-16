@@ -19,7 +19,8 @@ func TestWrite(t *testing.T) {
 	for _, f := range []string{".gitignore", "go.mod", "package.json", "config/app.yaml", "cmd/api/main.go", "internal/todo/todo.go",
 		"packages/client/package.json", "apps/web/package.json", "apps/web/vite.config.ts", "apps/web/tsconfig.json",
 		"apps/web/frontend.go", "apps/web/index.html", "apps/web/src/main.tsx", "apps/web/src/app.ts", "apps/web/src/client.ts",
-		"apps/web/src/routes/__root.tsx", "apps/web/src/routes/index.tsx", "apps/web/src/routeTree.gen.ts"} {
+		"apps/web/src/routes/__root.tsx", "apps/web/src/routes/index.tsx", "apps/web/src/routeTree.gen.ts",
+		"theme/tokens.json", "theme/theme.go", "packages/theme/package.json"} {
 		if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
 			t.Errorf("%s: %v", f, err)
 		}
@@ -28,6 +29,8 @@ func TestWrite(t *testing.T) {
 		"package.json":                  `"name": "todo"`,
 		"packages/client/package.json":  `"name": "@todo/client"`,
 		"./package.json":                `".tenon/js/shell"`,
+		"packages/theme/package.json":   `"name": "@todo/theme"`,
+		"apps/web/src/app.css":          `@import "@todo/theme/tokens.css";`,
 		"apps/web/package.json":         `"@go-tenon/shell": "workspace:*"`,
 		"apps/web/vite.config.ts":       `base: "/"`,
 		"apps/web/frontend.go":          "//go:embed all:dist\n",

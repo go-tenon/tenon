@@ -48,6 +48,8 @@ var rules = map[string]rule{
 	"crypt":     {layerFoundation, []string{"errorx"}},
 	"form":      {layerFoundation, []string{"i18n"}},
 	"telemetry": {layerFoundation, nil},
+	// 设计令牌：解析 theme/tokens.json，生成三套界面的主题。
+	"theme": {layerFoundation, nil},
 
 	"lock":        {layerInfrastructure, nil},
 	"outbound":    {layerInfrastructure, nil},
@@ -72,7 +74,7 @@ var rules = map[string]rule{
 
 	"httpx":                {layerEntry, []string{"acquire", "enum", "errorx", "form", "i18n", "identity", "logging", "ratelimit"}},
 	"httpx/rest/clientgen": {layerEntry, []string{"command", "enum", "errorx", "httpx", "i18n", "identity", "page"}},
-	"web":                  {layerEntry, []string{"errorx", "form", "httpx", "i18n", "logging"}},
+	"web":                  {layerEntry, []string{"errorx", "form", "httpx", "i18n", "logging", "theme"}},
 	"realtime":             {layerEntry, []string{"broadcast", "httpx", "identity", "logging"}},
 	"mcpx":                 {layerEntry, []string{"errorx", "httpx", "identity", "logging"}},
 	"mcpx/mcpxtest":        {layerEntry, []string{"identity", "mcpx"}},
@@ -81,7 +83,7 @@ var rules = map[string]rule{
 	"command/httpcmd":      {layerEntry, []string{"command", "httpx", "httpx/rest/clientgen"}},
 	// tenon 命令行（go tool tenon）：开发工具，不被框架的其他包引用。
 	"cmd/tenon":                   {layerEntry, []string{"cmd/tenon/internal/dev", "cmd/tenon/internal/project", "cmd/tenon/internal/scaffold"}},
-	"cmd/tenon/internal/dev":      {layerEntry, []string{"cmd/tenon/internal/project"}},
+	"cmd/tenon/internal/dev":      {layerEntry, []string{"cmd/tenon/internal/project", "theme"}},
 	"cmd/tenon/internal/project":  {layerEntry, nil},
 	"cmd/tenon/internal/scaffold": {layerEntry, nil},
 	"command/migratecmd":          {layerEntry, []string{"command", "database"}},

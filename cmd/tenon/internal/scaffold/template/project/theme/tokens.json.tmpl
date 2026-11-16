@@ -1,0 +1,11 @@
+{
+  "$description": "设计令牌：品牌只在这里定义一次。go tool tenon generate（tenon dev 会自动运行）生成 packages/theme 中 shadcn 的 CSS 变量和 antd 的令牌；服务端页面用 theme.Tokens（theme/theme.go）。暗色的值写在 $extensions 的 tenon.dark 中。",
+  "color": {
+    "brand": {
+      "$type": "color",
+      "$value": "oklch(0.511 0.262 276.966)",
+      "$extensions": { "tenon.dark": "oklch(0.673 0.182 276.935)" }
+    }
+  },
+  "radius": { "$type": "dimension", "$value": "0.625rem" }
+}

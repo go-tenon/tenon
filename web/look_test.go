@@ -12,6 +12,7 @@ import (
 	"github.com/a-h/templ"
 	"github.com/go-chi/chi/v5"
 
+	"github.com/go-tenon/tenon/theme"
 	"github.com/go-tenon/tenon/web"
 )
 
@@ -101,5 +102,33 @@ func TestThemeValidate(t *testing.T) {
 		if th.Validate() == nil {
 			t.Errorf("%s: expected an error", name)
 		}
+	}
+}
+
+func TestThemeWithTokens(t *testing.T) {
+	tokens := theme.MustParse([]byte(`{
+  "color": {
+    "brand": { "$value": "#4f46e5", "$extensions": { "tenon.dark": "#818cf8" } },
+    "background": { "$value": "#ffffff" }
+  },
+  "radius": { "$value": "0.75rem" },
+  "font": { "$value": ["Inter", "sans-serif"] }
+}`))
+	// 配置中写了的值优先。
+	got := web.Theme{Style: "maia", Font: "Noto Sans", Vars: map[string]string{"background": "#fafafa", "sidebar": "#f0f0f0"}}.WithTokens(tokens)
+	if got.Style != "maia" || got.Radius != "0.75rem" || got.Font != "Noto Sans" {
+		t.Errorf("style %q radius %q font %q", got.Style, got.Radius, got.Font)
+	}
+	if got.Vars["primary"] != "#4f46e5" || got.Vars["background"] != "#fafafa" || got.Vars["sidebar"] != "#f0f0f0" || got.DarkVars["primary"] != "#818cf8" {
+		t.Errorf("vars %v dark %v", got.Vars, got.DarkVars)
+	}
+	if _, ok := got.Vars["radius"]; ok {
+		t.Error("radius must go to Theme.Radius, not Vars")
+	}
+	if err := got.Validate(); err != nil {
+		t.Error(err)
+	}
+	if plain := (web.Theme{Radius: "1rem"}).WithTokens(nil); plain.Radius != "1rem" || plain.Vars != nil {
+		t.Errorf("nil tokens changed the theme: %+v", plain)
 	}
 }
