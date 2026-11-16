@@ -8,7 +8,7 @@ Tenon 应用的配置保存在 `config` 目录的 YAML 文件中，加载到你�
 
 - [示例用法](#example-usage)
 - [加载配置](#loading-configuration)
-- [按环境覆盖配置](#overriding-configuration)
+- [叠加多个配置文件](#overriding-configuration)
 - [环境变量](#environment-variables)
     - [.env 文件](#env-files)
 - [默认值与校验](#defaults-and-validation)
@@ -73,7 +73,7 @@ cfg, err := config.Load[Config]("config/app.yaml")
 ```
 
 > [!TIP]
-> 使用[命令行](commands.md)时，命令会按 `--config` 选项加载配置；没有传入时读取环境变量 `APP_CONFIG`，它也没有设置时是 `config/app.yaml`，见[按环境覆盖配置](#overriding-configuration)。
+> 使用[命令行](commands.md)时，命令会按 `--config` 选项加载配置；没有传入时读取环境变量 `APP_CONFIG`，它也没有设置时是 `config/app.yaml`，见[叠加多个配置文件](#overriding-configuration)。
 
 应用自己的配置，例如第三方服务的地址，同样定义成结构体，作为新的字段加入 `Config`。假设你要把图片上传到对象存储：
 
@@ -105,50 +105,40 @@ storage:
 > 解码是严格的。文件中出现结构体里没有的字段（包括拼错的段名），或者值的类型不匹配时，加载会直接报错，并指出是哪个文件的哪一行。
 
 <a id="overriding-configuration"></a>
-## 按环境覆盖配置
+## 叠加多个配置文件
 
-开发、测试和生产环境的配置大部分是相同的，只有少数几个值不同。所以，把共同的部分写在 `config/app.yaml` 中，每个环境的差异写在单独的文件中：
+大多数项目只需要一个配置文件 `config/app.yaml`，开发和生产都用它：各环境不同的值写成 `${DATABASE_URL}` 这样的[环境变量](#environment-variables)，开发时由 [.env](#env-files) 提供，部署时由部署平台提供。命令默认加载 `config/app.yaml`，不用传 `--config`。
+
+需要时也可以依次传入多个文件，**后面的文件覆盖前面的**。例如本地调试时，叠加一个不提交到版本库的 `config/local.yaml`，只写和 `app.yaml` 不同的部分：
 
 ```yaml
-# config/prod.yaml：只写和 app.yaml 不同的部分
+# config/local.yaml
 logs:
-  level: warn
-database:
-  max_conns: 50
+  level: debug
 ```
 
-加载时依次传入多个文件，**后面的文件覆盖前面的**：
-
 ```bash
-./bin/api serve --config config/app.yaml --config config/prod.yaml
-./bin/api serve --config config/app.yaml,config/prod.yaml   # 与上一行等价
+./bin/api serve --config config/app.yaml --config config/local.yaml
+./bin/api serve --config config/app.yaml,config/local.yaml   # 与上一行等价
 ```
 
 在代码中加载时，同样按顺序传入：
 
 ```go
-cfg, err := config.Load[Config]("config/app.yaml", "config/prod.yaml")
+cfg, err := config.Load[Config]("config/app.yaml", "config/local.yaml")
 ```
 
 后面的文件中没有写的字段，保留前面的值；写了的字段，覆盖前面的值。map 按键合并，slice 则整体替换。
 
-每个文件都会单独检查未知字段，而 `Validate` 只在全部文件合并之后执行一次。所以，基础文件可以把某个必填的值留给环境文件补齐。
+每个文件都会单独检查未知字段，而 `Validate` 只在全部文件合并之后执行一次。所以，基础文件可以把某个必填的值留给后面的文件补齐。
 
-文件的数量和名称都由你决定。例如在本地临时调试时，可以再叠加一个不提交到版本库的文件：
-
-```bash
-./bin/api serve --config config/app.yaml --config config/local.yaml
-```
-
-每条命令都写 `--config` 很繁琐。没有传入 `--config` 时，命令从环境变量 `APP_CONFIG` 读取配置文件，写法与 `--config` 相同，用逗号分隔：
+不想每条命令都写 `--config` 时，可以设置环境变量 `APP_CONFIG`，写法与 `--config` 相同，用逗号分隔，也可以写在 `.env` 中：
 
 ```bash
-export APP_CONFIG=config/app.yaml,config/prod.yaml
-./bin/api serve      # 加载 config/app.yaml 和 config/prod.yaml
-./bin/api migrate up # 同上
+APP_CONFIG=config/app.yaml,config/local.yaml
 ```
 
-`APP_CONFIG` 也可以写在 [.env](#env-files) 中，例如本地开发时写 `APP_CONFIG=config/app.yaml,config/local.yaml`。传入了 `--config` 时，`APP_CONFIG` 被忽略；两者都没有时，只加载 `config/app.yaml`。部署时在 systemd 或 Docker 中设置它，见[部署](../installation/deployment.md#release-process)。
+传入了 `--config` 时，`APP_CONFIG` 被忽略；两者都没有时，只加载 `config/app.yaml`。
 
 <a id="environment-variables"></a>
 ## 环境变量
@@ -251,8 +241,8 @@ type HTTPConfig struct {
 多个文件、默认值和环境变量叠加之后，最终生效的配置是什么样的？在[命令行](commands.md#declaring-the-cli)中装配 `command.Config` 之后，应用就有了两个检查配置的命令：
 
 ```bash
-./bin/api config check --config config/app.yaml,config/prod.yaml   # 只加载并校验，不访问网络
-./bin/api config show --config config/app.yaml,config/prod.yaml    # 输出合并后的配置
+./bin/api config check   # 只加载并校验，不访问网络
+./bin/api config show    # 输出合并后的配置
 ```
 
 `config show` 的输出包括默认值、多个文件合并的结果和展开后的环境变量，`--format json` 输出 JSON。发布之前运行 `config check`，可以尽早发现缺失的环境变量或写错的字段。配置文件缺失或校验失败时，这两个命令都以 `ExitConfig` 退出，见 [config 命令](commands.md#config-command)。
