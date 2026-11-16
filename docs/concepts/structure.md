@@ -196,7 +196,7 @@ Tenon 的每个包都可以单独使用，按需引入即可。顶层的包分�
 功能        apitoken  login  oauthserver  authz  notification  push  activity  feature  settings  operation  privacy  privacy/export  webhook  search  vector  sheet/imports  sheet/exports  ai
 入口        httpx  web  realtime  mcpx  command
 基础设施    database  natsx  queue  schedule  cachex  lock  ratelimit  captcha  broadcast  filesystem  imgproxy  mail  sms  pdf  outbound  sheet  document
-基础        errorx  identity  config  cleanup  logging  telemetry  health  i18n  enum  page  form  hashing  crypt  acquire
+基础        errorx  identity  config  cleanup  logging  telemetry  health  doctor  i18n  enum  page  form  hashing  crypt  acquire
 ```
 
 这条规则由架构测试 `internal/checks/archtest` 保证，新增的导入违反分层时测试会失败。名字以 `test` 结尾的子包（`dbtest`、`queuetest`、`mailtest` 等）是测试用的替身和工具。
@@ -217,6 +217,7 @@ Tenon 的每个包都可以单独使用，按需引入即可。顶层的包分�
 | `form` | 按 Huma 标签转换、验证文本字段，表单和表格导入共用 | [表单](../web/forms.md) |
 | `hashing` | 密码哈希 | [哈希](../security/hashing.md) |
 | `health` | 检查依赖是否可用，供就绪检查使用 | [健康检查](../http/lifecycle.md#health-checks) |
+| `doctor` | 检查运行环境的版本、设置和权限，给出修改方法；`doctorcmd` 是 `doctor` 命令 | [自检](../installation/doctor.md) |
 | `i18n` | 组合 go-i18n 消息目录 | [本地化](../general/localization.md) |
 | `identity` | 已认证的主体，在 context 中传递 | [认证](../security/authentication.md) |
 | `logging` | 构造 slog 日志器，传递请求关联字段 | [日志](../general/logging.md) |

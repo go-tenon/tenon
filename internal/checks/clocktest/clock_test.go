@@ -18,9 +18,11 @@ import (
 // root 是模块根目录。
 const root = "../../.."
 
-// exempt 是允许使用数据库时钟的目录：ai/chat 的迁移是 trpc-agent-go 的表结构，由上游代码写入。
+// exempt 是允许使用数据库时钟的目录和文件：ai/chat 的迁移是 trpc-agent-go 的表结构，由上游代码写入；
+// database 的自检读取数据库时钟，与本机时钟比较。
 var exempt = map[string]bool{
 	"ai/chat/migrations": true,
+	"database/doctor.go": true,
 }
 
 // dbClock 匹配 SQL 中读取当前时间的写法。
@@ -41,6 +43,7 @@ func TestSQLDoesNotReadDatabaseClock(t *testing.T) {
 			return nil
 		}
 		switch {
+		case exempt[rel]:
 		case strings.HasSuffix(path, ".sql"):
 			files++
 			data, err := os.ReadFile(path)

@@ -202,6 +202,8 @@ PgBouncer 只是让连接可以共用，数据库的处理能力仍然由数据�
 
 数据库连接经过 [PgBouncer](#pgbouncer) 时，要配置 `queue.replication_dsn` 直接连接 PostgreSQL：复制协议不能经过 PgBouncer。
 
+这些设置可以用[自检](doctor.md)逐项检查：`queue.Doctor` 读取它们，并建立一条复制连接确认权限，不满足时给出修改方法。
+
 <a id="queue-monitoring"></a>
 ### 监控积压
 
