@@ -77,6 +77,7 @@ Tenon 是一个用 Go 构建 HTTP API 的框架。用户登录后使用的界面
 - [应用骨架：页面中的常用功能](responses/app-shell-features.md)：多标签、租户、表单、列表与通知
 - [运营后台](responses/admin.md)：用 antd 搭建后台
 - [shadcn registry 与控制台](responses/registry.md)：用 shadcn 搭建界面
+- [前端规范](responses/frontend-conventions.md)：前端用什么技术、目录怎样组织、代码怎样写
 - [资源](responses/resources.md)：在 Go 中声明增删改查的页面，两套界面直接渲染
 - [设计令牌](responses/theme.md)：品牌色、圆角等在一处定义，所有界面共用
 - [服务端推送](responses/sse.md)：服务端主动把进度、通知推给浏览器
