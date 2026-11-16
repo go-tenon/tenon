@@ -14,6 +14,9 @@ export interface ChatPaths {
  * 请求带上 access token，401 时刷新再重试；发送时只发最后一条消息（历史保存在服务端）。恢复进行中的回答时，
  * AI SDK 默认请求 {api}/{id}/stream，与服务端的约定相同。
  *
+ * 响应不是 2xx 时抛出 HttpError（读出 Problem Details），useChat 的 error 因此可以用 describeError 描述，
+ * 例如 409 ai.busy；不然 AI SDK 会把整个响应体作为错误信息。
+ *
  *	useChat({ id, resume: true, transport: new DefaultChatTransport(chatTransport("/api/assistant/chat", session.fetch(fetch))) })
  */
 export function chatTransport<F extends FetchLike>(
@@ -21,14 +24,15 @@ export function chatTransport<F extends FetchLike>(
   fetch?: F,
 ): {
   api: string
-  fetch?: F
+  fetch: F
   prepareSendMessagesRequest: (options: { id: string; messages: readonly unknown[] }) => {
     body: { id: string; message: unknown }
   }
 } {
+  const f: FetchLike = fetch ?? globalFetch()
   return {
     api,
-    fetch,
+    fetch: (async (url: string, init?: Parameters<FetchLike>[1]) => ensureOK(await f(url, init))) as F,
     prepareSendMessagesRequest: ({ id, messages }) => ({ body: { id, message: messages[messages.length - 1] } }),
   }
 }

@@ -327,4 +327,31 @@ describe("AssistantChat", () => {
     await screen.findByRole("textbox", { name: "消息" })
     expect(screen.queryByRole("button", { name: "添加附件" })).toBeNull()
   })
+
+  it("服务端没有收下消息时，输入框恢复原文，显示原因，对话中不留下这条消息", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.endsWith("/messages")) return Response.json([])
+        if (url.endsWith("/stream")) return new Response(null, { status: 204 })
+        return new Response(
+          JSON.stringify({ status: 409, code: "ai.awaiting_approval", detail: "有工具调用等待审批" }),
+          {
+            status: 409,
+            headers: { "Content-Type": "application/problem+json" },
+          },
+        )
+      }),
+    )
+    await mount(() => <AssistantChat api="/api/chat" id="c1" />)
+    const input = await screen.findByRole("textbox", { name: "消息" })
+    fireEvent.change(input, { target: { value: "你好" } })
+    fireEvent.keyDown(input, { key: "Enter" })
+    expect((await screen.findByRole("alert")).textContent).toBe("有工具调用等待审批")
+    await waitFor(() =>
+      expect((screen.getByRole("textbox", { name: "消息" }) as HTMLTextAreaElement).value).toBe("你好"),
+    )
+    expect(screen.queryByText("你好", { selector: "[data-slot=bubble-content]" })).toBeNull()
+  })
 })

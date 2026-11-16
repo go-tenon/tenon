@@ -307,7 +307,7 @@ function Conversation({ id, messages }: { id: string; messages: UIMessage[] }) {
 
 - 先读取历史，再创建对话：`useChat` 用历史作为初始消息，进行中的回答随即接上（`resume`）。
 - 请求带上 access token，`401` 时刷新再重试；发送时只发最后一条消息。
-- `send`：没有回答进行时发送新消息；回答进行中时[插话](../ai/chat.md#steering)，回答恰好已经结束（`409 ai.finished`）时改为发送新消息。
+- `send`：没有回答进行时发送新消息；回答进行中时[插话](../ai/chat.md#steering)，回答恰好已经结束（`409 ai.finished`）时改为发送新消息。服务端没有收下新消息时，`send` 把它从 `messages` 中撤回并抛出错误，调用方可以把内容放回输入框。
 - `stop`：调用停止接口，服务端取消这次回答（客户端断开连接不会停止它）。
 - `pending` 是等待[审批](../ai/chat.md#approval)的工具调用（`{ id, toolName, input }`），`respond` 批准或拒绝；全部有了决定后自动发送，回答继续。
 - 插话在回答中是一个 `data-steering` part（`data` 是 `{ text }`），外观把它显示为一条用户消息。
@@ -356,7 +356,7 @@ const composer = useAssistantComposer(chat)
 - `text`、`setText`：输入的文字。
 - `attachments`：待发送的附件（`useAttachments`），选择、粘贴或拖入文件时 `add`，`remove` 移除一个；`canAttach` 为 `false` 时（`attachments: false`）不显示添加附件的入口。不符合限制的文件不加入，`attachments.error` 是原因；`items` 中图片的 `preview` 是预览地址，移除和卸载时释放。
 - `canSend`：有文字或附件、没有等待审批的工具调用，并且回答进行中时只有文字。`awaiting` 表示有等待审批的工具调用。
-- `submit`：发送并清空输入框。`send` 抛出错误时（附件不符合限制、上传失败、插话失败）恢复文字和附件；请求本身失败时 `useChat` 不抛出错误，输入框已经清空，原因在 `error` 中。
+- `submit`：发送并清空输入框。消息没有发出去时恢复文字和附件，原因在 `error` 中：附件不符合限制、上传失败、插话失败，或者服务端没有收下消息（响应不是 2xx，例如 `409` 对话正在回答，或者请求根本没有到达）。服务端收下之后才出错的（例如回答中途断线）不恢复：消息已经在对话中，回答在服务端继续，断线后接上。
 - `error`：附件、发送或对话出错的说明，可以直接显示。
 
 `fileParts(message.parts)` 取出消息中的文件片段（`{ mediaType, filename, url }`），用于显示已经发送的附件。

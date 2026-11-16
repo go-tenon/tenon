@@ -238,7 +238,21 @@ export function useAssistantChat({
   const app = useApp()
   const authed = useMemo(() => app.session.fetch(fetch), [app])
   const controls = useMemo(() => chatControls<UIMessage>(api, authed, paths), [api, authed, paths])
-  const transport = useMemo(() => new DefaultChatTransport(chatTransport(api, authed)), [api, authed])
+  // accepted：发送的请求得到了 2xx 响应，服务端收下了消息。
+  const accepted = useRef(false)
+  const transport = useMemo(
+    () =>
+      new DefaultChatTransport(
+        chatTransport(api, async (input: RequestInfo | URL, init?: RequestInit) => {
+          const res = await authed(input, init)
+          if (init?.method === "POST" && res.ok) accepted.current = true
+          return res
+        }),
+      ),
+    [api, authed],
+  )
+  // 请求失败时 useChat 的 sendMessage 不抛出错误，只设置 error：用 onError 记下这次发送的错误。
+  const failure = useRef<Error | undefined>(undefined)
   const chat = useChat({
     id,
     messages,
@@ -246,11 +260,33 @@ export function useAssistantChat({
     resume: true,
     // 审批了全部等待的工具调用后，自动发送审批结果，回答随即继续。
     sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
+    onError: (err) => {
+      failure.current = err
+    },
   })
   const busy = chat.status === "submitted" || chat.status === "streaming"
 
   /**
+   * 发送一条新消息。服务端没有收下它（请求出错或者响应不是 2xx）时，从对话中撤回这条消息并抛出错误，
+   * 调用方可以把内容放回输入框。服务端已经收下、之后才出错的（例如回答中途断线），回答在服务端继续，
+   * 断线后接上，这时不撤回也不抛出，错误在 error 中。
+   */
+  const submit = useCallback(
+    async (message: Parameters<typeof chat.sendMessage>[0]) => {
+      failure.current = undefined
+      accepted.current = false
+      await chat.sendMessage(message)
+      const err = failure.current
+      if (!err || accepted.current) return
+      chat.setMessages((ms) => (ms[ms.length - 1]?.role === "user" ? ms.slice(0, -1) : ms))
+      throw err
+    },
+    [chat],
+  )
+
+  /**
    * 发送：回答进行中时插话，回答恰好已经结束（409 ai.finished）时改为发送新消息。
+   * 发送新消息的请求失败、服务端没有收下它时抛出错误，见 submit。
    * files 是附件，按 attachments 检查后随消息发送：设置了 upload 时上传后放链接，否则放 data URL。
    * 插话只能是文字，所以回答进行中带附件时抛出 AttachmentError。
    */
@@ -270,21 +306,21 @@ export function useAssistantChat({
             url: await upload(f),
           })),
         )
-        await chat.sendMessage(text ? { text, files: parts } : { files: parts })
+        await submit(text ? { text, files: parts } : { files: parts })
         return
       }
       if (!busy) {
-        await chat.sendMessage({ text })
+        await submit({ text })
         return
       }
       try {
         await controls.steer(id, text)
       } catch (err) {
         if (describeError(err).code !== "ai.finished") throw err
-        await chat.sendMessage({ text })
+        await submit({ text })
       }
     },
-    [busy, chat, controls, id, attachments],
+    [busy, submit, controls, id, attachments],
   )
 
   /** 停止：服务端取消这次回答（客户端断开连接不会停止它），本地的消息流随之结束。 */
@@ -326,7 +362,8 @@ function messageOf(err: unknown): string {
  * 输入框：文字、待发送的附件和发送，外观只负责显示。
  *
  * - canSend：有文字或附件、没有等待审批的工具调用，并且回答进行中时只有文字（插话只能是文字）。
- * - submit：发送并清空输入框；失败时恢复文字和附件，error 是失败的原因。
+ * - submit：发送并清空输入框；没有发出去时（附件不符合限制、上传失败、服务端没有收下消息）恢复文字和附件，
+ *   error 是原因。
  * - error：附件不符合限制、发送失败或对话出错的说明，可以直接显示。
  */
 export function useAssistantComposer(chat: AssistantChat) {

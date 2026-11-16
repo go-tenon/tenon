@@ -260,7 +260,7 @@ const { messages, sendMessage, addToolApprovalResponse } = useChat({
   id: conversationId,
   messages: initialMessages, // await chat.messages(conversationId)
   resume: true,
-  // 历史保存在服务端，chatTransport 只发送最后一条消息
+  // 历史保存在服务端，chatTransport 只发送最后一条消息；响应不是 2xx 时抛出 HttpError，describeError 可以描述它
   transport: new DefaultChatTransport(chatTransport('/api/v1/assistant/chat', authed)),
   sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
 });
