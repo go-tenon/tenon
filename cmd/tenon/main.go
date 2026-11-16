@@ -205,7 +205,7 @@ func addFrontendCommand() *cobra.Command {
 			}
 			if template == "console" {
 				// shadcn 的组件和 tenon 的组件从框架的 registry 复制进前端，不需要联网。
-				if err := scaffold.InstallRegistry(path.Join(dev.JSDir, "registry"), path.Join(project.AppsDir, name)); err != nil {
+				if err := scaffold.InstallRegistry(path.Join(dev.JSDir, "registry"), path.Join(project.AppsDir, name), scaffold.ConsoleRegistryItems); err != nil {
 					return err
 				}
 				if err := scaffold.AddMCPServer(".", "shadcn", scaffold.ShadcnMCP); err != nil {

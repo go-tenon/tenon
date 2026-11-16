@@ -113,6 +113,45 @@
       "registryDependencies": ["button", "input", "label"],
       "dependencies": ["react-hook-form@^7.91.0"],
       "files": ["login-form.tsx", "form.tsx"]
+    },
+    {
+      "name": "tenon-notifications",
+      "type": "registry:block",
+      "title": "通知铃铛与任务中心",
+      "description": "NotificationBell（未读数、通知列表、标记已读）、OperationCenter（后台任务的进度）、OperationProgress（页面中的进度），逻辑来自 @go-tenon/shell。",
+      "registryDependencies": ["button", "empty", "popover", "progress", "skeleton"],
+      "files": ["notifications.tsx"]
+    },
+    {
+      "name": "tenon-markdown",
+      "type": "registry:block",
+      "title": "消息的 Markdown",
+      "description": "Markdown：Streamdown 渲染流式输出，代码块用 CodeBlock，带语法高亮和复制按钮。",
+      "registryDependencies": ["code-block", "use-highlighted-code"],
+      "dependencies": ["streamdown@^2.7.1"],
+      "files": ["markdown.tsx"]
+    },
+    {
+      "name": "tenon-assistant-chat",
+      "type": "registry:block",
+      "title": "AI 对话",
+      "description": "AssistantChat、AssistantButton：按 shadcn/ui 的 AI Elements 组合，接好 tenon 的对话接口（消息流、历史、停止、插话、审批），逻辑来自 @go-tenon/shell/chat。",
+      "registryDependencies": [
+        "bubble",
+        "button",
+        "code-block",
+        "empty",
+        "input-group",
+        "item",
+        "message",
+        "message-scroller",
+        "sheet",
+        "skeleton",
+        "trace",
+        "use-highlighted-code"
+      ],
+      "dependencies": ["ai@^7.0.159", "@ai-sdk/react@^4.0.163", "streamdown@^2.7.1"],
+      "files": ["assistant-chat.tsx", "markdown.tsx"]
     }
   ]
 }
