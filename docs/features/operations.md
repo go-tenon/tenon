@@ -285,7 +285,7 @@ func (a *Summarize) Job(ctx context.Context, u operation.Unit[SummarizeUnit]) er
 | --- | --- |
 | nil | 成功，`Processed` 加一 |
 | 带错误码的业务错误 | 失败，`Processed`、`Failed` 各加一，就此结束 |
-| 其他错误 | 队列重试；最后一次仍然出错时失败，任务转入[失败任务表](../libraries/queue.md#failed-jobs)，之后重试成功时 `Failed` 减一 |
+| 其他错误 | 队列重试；最后一次仍然出错时失败，任务转入[失败任务表](../libraries/queue-monitoring.md#failed-jobs)，之后重试成功时 `Failed` 减一 |
 
 一个单位失败时其他单位照常执行。每个单位结束时都在一个事务中调用 `saved`，最后一个单位结束时 `op.Finished()` 为 `true`，在这里发送通知或发布下一步任务；`saved` 在操作结束时最后调用一次，重试失败任务修正计数时通知也只发一次。已经成功的单位再次投递时直接跳过。
 

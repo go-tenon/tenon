@@ -4,12 +4,15 @@
 
 `ratelimit` 包与传输方式无关：同一个限流器，既可以作为 HTTP 中间件按请求限流，也可以在处理器、命令或任务中直接调用。
 
+阅读前需要了解：[中间件](../http/middleware.md)；多个实例共享计数时还需要 [Redis](redis.md)。
+
 - [示例用法](#example-usage)
 - [限流器](#limiters)
 - [限制请求频率](#http-middleware)
     - [限流的 key](#rate-limit-key)
 - [在处理器中限流](#in-handlers)
 - [Redis 限流器](#redis-limiter)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="example-usage"></a>
@@ -156,6 +159,25 @@ router.Use(httpx.RateLimit(redislimit.New(rdb, "app:http", cfg.HTTP.RateLimit), 
 ```
 
 这时 Redis 不可用会让所有请求都得到 `503`。如果宁可短时间不限流也要保证可用，请继续使用内存限流器。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**所有用户共用了一份配额**
+
+部署在反向代理之后，但没有配置可信代理，所有请求的地址都是代理的地址。配置 `client_ip.trusted_proxies`，见[限流的 key](#rate-limit-key)。
+
+**部署了几个实例后，限流变宽松了**
+
+内存限流器的计数只在本进程中，请求分散到几个实例，配额也成倍增加。需要共享计数时用 [Redis 限流器](#redis-limiter)。
+
+**Redis 不可用时所有请求都返回 503**
+
+全局限流用了 Redis 限流器，限流器出错时中间件返回 `503`。宁可短时间不限流也要保证可用时，用内存限流器。
+
+**登录成功后，用户仍然被限流**
+
+只想限制连续的失败时，在成功后调用 `Reset`，见[在处理器中限流](#in-handlers)。
 
 <a id="api-reference"></a>
 ## API 参考

@@ -6,6 +6,10 @@
 
 调度器只负责“按时触发”：任务就是一个 `func(ctx context.Context) error`，在调度器所在的进程中执行。部署多个实例时，同一个任务的同一次触发只会在一个实例上执行。
 
+**cron 表达式**是描述“什么时候执行”的一串字段，例如 `0 0 2 * * *` 表示每天 02:00:00。写 6 段时第一段是秒；也可以写常见的 5 段（分、时、日、月、星期），在那一分钟的第 0 秒触发。
+
+阅读前需要了解：[原子锁](locks.md)；[依赖装配](../concepts/dependencies.md#running-parts)。
+
 - [示例用法](#example-usage)
 - [定义任务](#defining-tasks)
     - [表达式](#expressions)
@@ -21,6 +25,7 @@
     - [手动执行](#running-manually)
 - [清理框架数据](#framework-cleanups)
 - [测试](#testing)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="example-usage"></a>
@@ -289,7 +294,7 @@ article.PublishScheduledJob.Handle(w, func(ctx context.Context, _ struct{}) erro
 | [OAuth 授权码](../security/oauth-server.md#assembling) | `oauthserver.New(…)` 的 `Cleanup` | 每小时 |
 | [OAuth 动态注册的客户端](../security/oauth-server.md#dynamic-registration) | `oauthserver.New(…)` 的 `CleanupClients(保留期)` | 每天 |
 | [Webhook 投递记录](../features/webhooks.md#retention) | `webhook.Cleanup(db, 保留期)` | 每天 |
-| [失败任务](queue.md#failed-jobs) | `queue.NewFailedJobs(db).Cleanup(保留期)` | 每天 |
+| [失败任务](queue-monitoring.md#failed-jobs) | `queue.NewFailedJobs(db).Cleanup(保留期)` | 每天 |
 
 锁、限流和在线成员保存在 Redis 中，过期的键由 Redis 自动删除。
 
@@ -318,6 +323,25 @@ func TestDailyReport(t *testing.T) {
 ```
 
 任务本身是普通的函数，直接调用它测试即可。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**任务没有按时执行**
+
+检查调度器是否在运行（`schedule` 或 `start` 命令）。再看时区：表达式按 `TZ` 环境变量计算，容器中通常是 UTC，见[时区](#timezones)。
+
+**任务每次都被跳过，日志中提示上一次还没结束**
+
+上一次执行卡住了，一直持有锁。用 `schedule.Timeout` 限制每次执行的时长，见[防止重叠](#preventing-overlaps)。
+
+**部署了几个实例，同一次触发执行了多次**
+
+各实例没有共用同一个 Redis 锁存储，或者时钟偏差超过了一分钟，见[多个实例](#multiple-instances)。
+
+**启动时 panic：`schedule: invalid cron expression`**
+
+表达式写错了，例如字段的个数不对、取值超出范围。5 段或 6 段的写法都可以，6 段时第一段是秒；`@every` 的间隔必须是整秒，见[表达式](#expressions)。
 
 <a id="api-reference"></a>
 ## API 参考

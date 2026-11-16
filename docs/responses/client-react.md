@@ -184,7 +184,7 @@ const errors = validate(schemas.article.create.body, values, { components, messa
 | 函数 | 用途 | 见 |
 | --- | --- | --- |
 | `realtimeAuth(session)` | Centrifuge SDK 的 `token` 和 `getToken` | [实时频道](../libraries/realtime.md#tokens) |
-| `uploadFile(file, steps)` | 直传到对象存储：单次或分片、重试、进度和取消 | [上传接口](../libraries/file-uploads.md#rest-direct-upload) |
+| `uploadFile(file, steps)` | 直传到对象存储：单次或分片、重试、进度和取消 | [上传接口](../libraries/direct-uploads.md#rest-direct-upload) |
 | `watchOperation(open)` | 读取后台操作的进度直到结束，断线重连 | [后台操作](../features/operations.md#progress) |
 | `chatTransport`、`chatControls` | `useChat` 的 transport，以及停止、插话、历史 | [AI 助手](../ai/chat.md#conversation-api) |
 

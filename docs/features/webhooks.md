@@ -213,7 +213,7 @@ webhook.NewDeliverer(a.db, webhook.Options{}).Handle(w)
 | 最后一次仍然失败 | 投递记录标记为 `failed` |
 | 端点已停用 | 停止发送，投递记录标记为 `failed` |
 
-最后一次失败的投递只记在投递记录中，与[失败任务表](../libraries/queue.md#failed-jobs)分开：接收方出错属于对方的系统，你的告警保持安静。投递记录就是它的结果，租户在页面上看到并重发。
+最后一次失败的投递只记在投递记录中，与[失败任务表](../libraries/queue-monitoring.md#failed-jobs)分开：接收方出错属于对方的系统，你的告警保持安静。投递记录就是它的结果，租户在页面上看到并重发。
 
 <a id="private-addresses"></a>
 ### 拒绝内网地址

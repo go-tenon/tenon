@@ -6,6 +6,8 @@
 
 `lock` 包提供的锁都有过期时间：取得锁之后，在有效期内独占它；如果持有者在执行中崩溃，锁到期后会自动失效。
 
+阅读前需要了解：[Redis](redis.md)；[依赖装配](../concepts/dependencies.md)。
+
 > [!NOTE]
 > 锁只负责“谁来执行”。如果你要解决的是并发修改同一行数据，请优先使用带条件的更新或 `SELECT ... FOR UPDATE`，由数据库保证一致。
 
@@ -17,6 +19,7 @@
 - [Redis 存储](#redis-store)
 - [其他存储](#other-stores)
 - [测试](#testing)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="example-usage"></a>
@@ -158,6 +161,21 @@ locker := lock.New(locktest.NewStore())
 ```
 
 它只用于测试。生产环境中同时运行的进程，包括不停机升级时的新旧进程，必须共用 Redis 存储。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**`Do` 返回 `lock.ErrNotHeld`**
+
+任务的执行时间超过了锁的有效期，锁已经被别人取得。调大 `ttl`，或者在长任务中定期续期，见[锁的有效期](#lock-ttl)。
+
+**部署了一个实例，任务仍然执行了两次**
+
+[不停机升级](../installation/operations.md#upgrade-overlap)时新旧进程会同时运行。用 Redis 存储，让所有进程共用同一个锁。
+
+**锁偶尔失效，两个实例同时执行**
+
+Redis 没有配置 `noeviction`，内存紧张时锁被淘汰了；或者使用哨兵、集群时主节点故障切换丢了锁。对互斥要求严格的操作，用数据库的 `SELECT ... FOR UPDATE`，见 [Redis 存储](#redis-store)。
 
 <a id="api-reference"></a>
 ## API 参考
