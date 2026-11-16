@@ -44,6 +44,7 @@ require (
 	github.com/lmittmann/tint v1.2.1
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/nats-io/nats.go v1.55.0
+	github.com/nats-io/nuid v1.0.1
 	github.com/nicksnyder/go-i18n/v2 v2.7.0
 	github.com/openai/openai-go v1.12.0
 	github.com/pressly/goose/v3 v3.30.1
@@ -148,7 +149,6 @@ require (
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/natefinch/atomic v1.0.1 // indirect
 	github.com/nats-io/nkeys v0.4.16 // indirect
-	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/pandatix/go-abnf v0.5.5 // indirect
 	github.com/panjf2000/ants/v2 v2.10.0 // indirect
 	github.com/philhofer/fwd v1.2.1 // indirect

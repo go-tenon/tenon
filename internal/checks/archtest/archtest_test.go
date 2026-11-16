@@ -67,6 +67,7 @@ var rules = map[string]rule{
 	"sms/tencent": {layerInfrastructure, []string{"outbound", "sms"}},
 	// 阿里云 OpenAPI 的签名和调用，push/aliyun 和 sms/aliyun 共用。
 	"internal/aliyunapi": {layerInfrastructure, nil},
+	"internal/apischema": {layerEntry, nil},
 	"natsx":              {layerInfrastructure, []string{"logging"}},
 	"queue":              {layerInfrastructure, []string{"doctor", "errorx", "logging", "natsx"}},
 	"cachex":             {layerInfrastructure, []string{"doctor", "logging"}},
@@ -79,7 +80,8 @@ var rules = map[string]rule{
 	"httpx/rest/clientgen": {layerEntry, []string{"command", "enum", "errorx", "httpx", "i18n", "identity", "page"}},
 	"web":                  {layerEntry, []string{"errorx", "form", "httpx", "i18n", "logging", "theme"}},
 	"realtime":             {layerEntry, []string{"broadcast", "identity", "logging"}},
-	"mcpx":                 {layerEntry, []string{"errorx", "httpx", "identity", "logging"}},
+	"mcpx":                 {layerEntry, []string{"errorx", "httpx", "identity", "internal/apischema", "logging"}},
+	"natsrpc":              {layerEntry, []string{"errorx", "form", "i18n", "identity", "internal/apischema", "logging"}},
 	"mcpx/mcpxtest":        {layerEntry, []string{"identity", "mcpx"}},
 	"mcpx/mcpcmd":          {layerEntry, []string{"command", "identity", "mcpx"}},
 	"command":              {layerEntry, []string{"cleanup", "config", "errorx", "logging"}},

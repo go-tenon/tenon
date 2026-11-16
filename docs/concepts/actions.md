@@ -15,6 +15,7 @@
     - [定时任务](#as-scheduled-tasks)
     - [命令行](#as-commands)
     - [AI 工具](#as-tools)
+    - [RPC](#as-rpc)
     - [页面、其他动作和脚本](#direct-calls)
 - [同步的后续动作](#follow-ups)
     - [声明钩子](#declaring-hooks)
@@ -287,6 +288,26 @@ func (a *Publish) Tool(ctx context.Context, in PublishArgs) (*ArticleDTO, error)
 ```
 
 工具的名称、说明和需要的权限在模块的 `tools.go` 中登记，详见 [MCP 服务](../ai/mcp.md)。
+
+<a id="as-rpc"></a>
+### RPC
+
+其他服务（不一定用 Go 编写）经由 NATS 同步调用一个业务动作时，入口是 `RPC` 方法，签名与 `Tool` 相同，参数类型的标签也与 REST 的请求体相同：
+
+```go
+// RPC 处理端点 articles.publish。
+func (a *Publish) RPC(ctx context.Context, in PublishArgs) (*ArticleDTO, error) {
+    subject, _ := identity.FromContext(ctx)
+    item, err := a.Handle(ctx, subject, in.ID)
+    if err != nil {
+        return nil, err
+    }
+    dto := toDTO(item)
+    return &dto, nil
+}
+```
+
+端点名、需要的权限和是否幂等在登记时声明，详见[提供和调用端点](../rpc/endpoints.md)。
 
 <a id="direct-calls"></a>
 ### 页面、其他动作和脚本
