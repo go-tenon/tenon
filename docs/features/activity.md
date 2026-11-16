@@ -6,6 +6,8 @@
 
 每条记录都由业务动作显式写入：业务真正关心的是“文章已发布”这样的事件，批量更新也同样能记录。
 
+阅读前需要了解：[数据库事务](../database/quick-start.md#transactions)；[业务动作](../concepts/actions.md)；[发布框架迁移](../database/migrations.md#publishing-framework-migrations)。
+
 - [示例用法](#example-usage)
 - [安装](#installation)
 - [记录操作](#recording)
@@ -14,6 +16,7 @@
 - [查看操作日志](#listing)
     - [显示](#displaying)
 - [保留期限](#retention)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="example-usage"></a>
@@ -173,6 +176,25 @@ sched.Add("activity:cleanup", "0 4 * * *", schedule.Cleanup(activity.Cleanup(a.d
 ```
 
 保留多久取决于产品和合规要求。需要长期保存的场景，可以在删除之前把旧记录导出到对象存储或数据仓库。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**事务回滚了，操作日志却留下了**
+
+`Record` 用的是 `db`，不是事务 `tx`，记录没有随事务回滚。在事务中用 `tx` 调用，见[记录操作](#recording)。
+
+**历史中显示的文章标题是修改后的，而不是当时的**
+
+显示时读取了文章现在的数据。需要显示的内容在记录时写进 `Properties`，见[事件与属性](#events-and-properties)。
+
+**属性中的 ID 读出来变成了 `1.2e+18` 这样的数字**
+
+JSON 中的数字读出来是 `float64`，较大的整数会丢失精度。把 ID 保存为字符串。
+
+**定时任务写入的记录没有出现在租户的历史中**
+
+多租户应用中，系统主体要带上任务所属的租户，否则记录会落到平台本身，见[队列与定时任务](#jobs)。
 
 <a id="api-reference"></a>
 ## API 参考

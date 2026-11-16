@@ -2,9 +2,11 @@
 
 有些操作要在后台跑好几分钟：导入几万行表格、导出几十万篇文章、批量发布选中的一百篇文章。用户需要看到进度，结束后知道结果，还希望在一个“任务中心”里看到自己发起过的所有操作。
 
-`operation` 包把这些操作记在 `operations` 表中：谁发起的、是什么操作、当前状态、处理了多少、失败了多少、失败的原因。[后台导入和导出](background-import-export.md#background-imports)也建立在它之上，所以导入、导出和应用自己的批量操作出现在同一个列表里，用同一种方式推送进度。
+`operation` 包把这些操作记在 `operations` 表中：谁发起的、是什么操作、当前状态、处理了多少、失败了多少、失败的原因。[后台导入和导出](background-imports.md#background-imports)也建立在它之上，所以导入、导出和应用自己的批量操作出现在同一个列表里，用同一种方式推送进度。
 
 操作只负责记录，执行仍然是普通的[队列](../libraries/queue.md)任务。
+
+阅读前需要了解：[队列](../libraries/queue.md)；[数据库事务](../database/quick-start.md#transactions)。
 
 - [示例用法](#example-usage)
 - [安装](#installation)
@@ -14,6 +16,7 @@
 - [进度推送](#progress)
 - [任务中心](#listing)
 - [清理](#cleanup)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="example-usage"></a>
@@ -338,6 +341,25 @@ ops, err := a.ops.List(ctx, subject, operation.Query{Limit: 20})
 ```go
 sched.Add("operations:cleanup", "0 3 * * *", schedule.Cleanup(a.ops.Cleanup(30*24*time.Hour), 1000))
 ```
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**操作一直停在 `pending`**
+
+执行它的队列任务还没有被处理：检查 worker 是否在运行，任务是否注册了处理函数。
+
+**迁移报错，提示 `operations` 表不存在**
+
+`operation` 的迁移要排在 `imports`、`exports` 之前，它们的表引用 `operations` 表，见[安装](#installation)。
+
+**重试后，有的单位被处理了两次**
+
+每处理若干个单位才 `Save` 一次时，重试会从上次保存的位置继续，中间处理过但没有保存的单位会再处理一次。处理要能重复执行，或者每个单位保存一次。
+
+**操作显示已完成，但有失败的单位**
+
+单位的业务错误由回调记为失败、不返回错误，所以操作仍是 `completed`。看 `Failed` 的数量。
 
 <a id="api-reference"></a>
 ## API 参考
