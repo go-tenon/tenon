@@ -273,16 +273,23 @@ function validDate(v: string): boolean {
   return date.getUTCFullYear() === y && date.getUTCMonth() === mo - 1 && date.getUTCDate() === d
 }
 
-function pickLanguage(messages: ValidateOptions["messages"], language?: string) {
-  if (!messages) return undefined
+/**
+ * 按语言选择：language 本身，没有时它的主语言（zh-CN 的 zh，或者同一主语言的其他地区），再没有时第一种语言。
+ * 验证提示、枚举和资源的显示文字都按这个规则选择语言。
+ */
+export function pickLanguage<T>(
+  byLanguage: { readonly [language: string]: T } | undefined,
+  language?: string,
+): T | undefined {
+  if (!byLanguage) return undefined
   if (language) {
-    if (messages[language]) return messages[language]
+    if (byLanguage[language]) return byLanguage[language]
     const primary = language.split("-")[0]
-    const match = Object.keys(messages).find((l) => l === primary || l.split("-")[0] === primary)
-    if (match) return messages[match]
+    const match = Object.keys(byLanguage).find((l) => l === primary || l.split("-")[0] === primary)
+    if (match) return byLanguage[match]
   }
-  const first = Object.keys(messages)[0]
-  return first ? messages[first] : undefined
+  const first = Object.keys(byLanguage)[0]
+  return first ? byLanguage[first] : undefined
 }
 
 /** 替换模板中的 {{.名称}}。 */

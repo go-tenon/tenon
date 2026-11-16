@@ -1,0 +1,391 @@
+// 资源：服务端用 rest.API.Resource 声明、tenon generate 生成在 resources.ts 中的后台页面定义。
+// 这里把定义和生成的客户端、校验规则、枚举接在一起，得到与组件库无关的模型：列、筛选条件、表单字段（带显示文字、
+// 输入方式和选项）、权限、读取和修改。运营后台（antd）和控制台（shadcn）用同一个模型渲染。
+
+import { pickLanguage, type Schema } from "@go-tenon/client"
+import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useMemo } from "react"
+import { useCan } from "./app"
+import { type ListRoute, type ListSearch, type ListState, listSearch, useList } from "./list"
+
+/** 客户端方法的位置：[分组, 方法]，没有分组时分组为 null。 */
+export type OperationRef = readonly [string | null, string]
+
+/** resources.ts 中的字段。 */
+export interface ResourceFieldDef {
+  readonly name: string
+  readonly type: string
+  readonly format?: string
+  /** enums.ts 中的命名类型。 */
+  readonly enum?: string
+  /** 没有命名类型的枚举的取值。 */
+  readonly values?: readonly string[]
+  /** 数组元素的类型。 */
+  readonly items?: string
+  readonly nullable?: boolean
+  readonly required?: boolean
+  readonly sortable?: boolean
+}
+
+/** resources.ts 中的一个资源。 */
+export interface ResourceDef {
+  readonly name: string
+  readonly key?: string
+  readonly operations: {
+    readonly list: OperationRef
+    readonly get?: OperationRef
+    readonly create?: OperationRef
+    readonly update?: OperationRef
+    readonly delete?: OperationRef
+  }
+  readonly permissions: { readonly [operation: string]: readonly string[] }
+  readonly columns: readonly ResourceFieldDef[]
+  readonly search?: string
+  readonly filters: readonly ResourceFieldDef[]
+  readonly form: readonly ResourceFieldDef[]
+  readonly actions: readonly {
+    readonly name: string
+    readonly operation: OperationRef
+    readonly permissions: readonly string[]
+    readonly confirm: boolean
+    readonly danger: boolean
+  }[]
+  readonly labels: {
+    readonly [language: string]: {
+      readonly title?: string
+      readonly fields: { readonly [field: string]: string }
+      readonly actions: { readonly [action: string]: string }
+    }
+  }
+}
+
+type Generated = { readonly [key: string]: unknown }
+
+/** 生成的代码：一个 API 的客户端和元数据，交给 resourceModel。 */
+export interface ResourceKit {
+  /** createClient 创建的客户端。 */
+  client: object
+  /** createQueries 创建的查询选项：列表和详情的 query key 与应用中的其他查询相同。 */
+  queries: object
+  /** schemas.ts 中的 schemas 和 components。 */
+  schemas: Generated
+  components?: { readonly [name: string]: Schema }
+  /** enums.ts 中的 enums。 */
+  enums?: { readonly [name: string]: { readonly values: readonly string[]; readonly labels: Generated } }
+  /** 显示文字的语言，例如 zh-CN；没有这种语言时依次用主语言和第一种语言。默认是浏览器的语言。 */
+  language?: string
+}
+
+/** 字段的输入和显示方式，由类型、格式和枚举得出。 */
+export type FieldKind = "text" | "number" | "boolean" | "select" | "multiselect" | "tags" | "date" | "datetime" | "json"
+
+/** 模型中的字段：显示文字、输入方式、选项。 */
+export interface ResourceField {
+  name: string
+  label: string
+  kind: FieldKind
+  required: boolean
+  sortable: boolean
+  /** 枚举的选项。 */
+  options?: { value: string; label: string }[]
+  def: ResourceFieldDef
+}
+
+/** 模型中的操作。 */
+export interface ResourceAction {
+  name: string
+  label: string
+  confirm: boolean
+  danger: boolean
+  permissions: readonly string[]
+}
+
+/** 资源的操作：读取、创建、修改、删除和其他操作。 */
+export type ResourceOperation = "list" | "get" | "create" | "update" | "delete"
+
+/** 一行数据。 */
+export type ResourceRow = { readonly [field: string]: unknown }
+
+/** 与组件库无关的资源模型。 */
+export interface ResourceModel {
+  name: string
+  title: string
+  /** 标识一行的字段，例如 id；没有详情、修改、删除和操作时为空。 */
+  key?: string
+  columns: ResourceField[]
+  filters: ResourceField[]
+  form: ResourceField[]
+  /** 关键词搜索的查询参数。 */
+  search?: string
+  actions: ResourceAction[]
+  /** 有哪些接口。 */
+  has: Record<ResourceOperation, boolean>
+  /** 列表路由的 validateSearch：查询条件、排序和分页保存在地址中。 */
+  listSearch: ListSearch<Record<string, unknown>>
+  /** 当前身份能否使用一个接口或操作：接口要求的权限都具备。 */
+  allowed(can: (permission: string) => boolean, operation: ResourceOperation | { action: string }): boolean
+  /** 列表的查询选项，交给 useQuery。 */
+  listQuery(params: Record<string, unknown>): { queryKey: readonly unknown[]; queryFn: () => Promise<unknown> }
+  /** 详情的查询选项。 */
+  getQuery(key: string): { queryKey: readonly unknown[]; queryFn: () => Promise<unknown> }
+  /** 创建、修改、删除和其他操作；完成后让这个资源所在分组的查询失效。 */
+  create(body: Record<string, unknown>): Promise<unknown>
+  update(key: string, body: Record<string, unknown>): Promise<unknown>
+  remove(key: string): Promise<unknown>
+  run(action: string, key: string): Promise<unknown>
+  /** 表单的校验规则（请求体的 schema），交给 resolver、antdRule 或 formValidator。 */
+  formSchema(mode: "create" | "update"): Schema
+  /** components 和 language，与 formSchema 一起交给 resolver、antdRule。 */
+  ruleOptions: { components?: { readonly [name: string]: Schema }; language?: string }
+  /** 一行的标识。 */
+  rowKey(row: ResourceRow): string
+  /** 字段的值的显示文字：枚举显示它的文字，其他原样返回。 */
+  display(field: ResourceField, value: unknown): unknown
+  /** 资源所在分组全部查询的 key 前缀：完成修改后让它们失效。 */
+  queryKey: readonly unknown[]
+}
+
+function browserLanguage(): string | undefined {
+  return typeof navigator === "undefined" ? undefined : navigator.language
+}
+
+function kindOf(def: ResourceFieldDef, hasOptions: boolean): FieldKind {
+  if (def.type === "array") {
+    if (hasOptions) return "multiselect"
+    return def.items === "string" ? "tags" : "json"
+  }
+  if (hasOptions) return "select"
+  switch (def.type) {
+    case "boolean":
+      return "boolean"
+    case "integer":
+    case "number":
+      return "number"
+    case "object":
+      return "json"
+  }
+  if (def.format === "date-time") return "datetime"
+  if (def.format === "date") return "date"
+  return "text"
+}
+
+function method(target: object, ref: OperationRef): ((...args: unknown[]) => unknown) | undefined {
+  const [group, name] = ref
+  const scope = (group === null ? target : (target as Generated)[group]) as Generated | undefined
+  const fn = scope?.[name]
+  return typeof fn === "function" ? (fn as (...args: unknown[]) => unknown) : undefined
+}
+
+function call(target: object, ref: OperationRef | undefined, args: unknown[]): unknown {
+  if (!ref) throw new Error("resource: operation not declared")
+  const fn = method(target, ref)
+  if (!fn) throw new Error(`resource: no method ${ref.filter(Boolean).join(".")}`)
+  return fn(...args)
+}
+
+function schemaAt(schemas: Generated, ref: OperationRef, part: "body" | "query"): Schema {
+  const [group, name] = ref
+  const scope = (group === null ? schemas : schemas[group]) as Generated | undefined
+  const op = scope?.[name] as { body?: Schema; query?: Schema } | undefined
+  return op?.[part] ?? {}
+}
+
+/**
+ * 由 resources.ts 中的定义得到资源模型：
+ *
+ *	const kit = { client: api, queries, schemas, components, enums, language: "zh-CN" }
+ *	export const articles = resourceModel(resources.article, kit, queryClient)
+ *
+ * queryClient 用来在修改后让查询失效。
+ */
+export function resourceModel(def: ResourceDef, kit: ResourceKit, queryClient?: QueryClient): ResourceModel {
+  const language = kit.language ?? browserLanguage()
+  const labels = pickLanguage(def.labels, language)
+  const fieldLabel = (name: string) => labels?.fields[name] ?? name
+
+  const options = (f: ResourceFieldDef): ResourceField["options"] => {
+    if (f.enum && kit.enums?.[f.enum]) {
+      const e = kit.enums[f.enum]
+      const text = pickLanguage(e.labels as { [l: string]: { [v: string]: string } }, language) ?? {}
+      return e.values.map((value) => ({ value, label: text[value] ?? value }))
+    }
+    if (f.values) return f.values.map((value) => ({ value, label: value }))
+    return undefined
+  }
+  const field = (f: ResourceFieldDef): ResourceField => {
+    const opts = options(f)
+    return {
+      name: f.name,
+      label: fieldLabel(f.name),
+      kind: kindOf(f, !!opts),
+      required: !!f.required,
+      sortable: !!f.sortable,
+      options: opts,
+      def: f,
+    }
+  }
+
+  const ops = def.operations
+  const group = ops.list[0]
+  const queries = kit.queries as Generated
+  const groupQueries = (group === null ? queries : queries[group]) as { key?: () => readonly unknown[] } | undefined
+  const queryKey = groupQueries?.key?.() ?? (queries.key as (() => readonly unknown[]) | undefined)?.() ?? [def.name]
+  const invalidate = async <T>(p: Promise<T>): Promise<T> => {
+    const result = await p
+    await queryClient?.invalidateQueries({ queryKey: [...queryKey] })
+    return result
+  }
+
+  return {
+    name: def.name,
+    title: labels?.title ?? def.name,
+    key: def.key,
+    columns: def.columns.map(field),
+    filters: def.filters.map(field),
+    form: def.form.map(field),
+    search: def.search,
+    actions: def.actions.map((a) => ({
+      name: a.name,
+      label: labels?.actions[a.name] ?? a.name,
+      confirm: a.confirm,
+      danger: a.danger,
+      permissions: a.permissions,
+    })),
+    has: { list: true, get: !!ops.get, create: !!ops.create, update: !!ops.update, delete: !!ops.delete },
+    listSearch: listSearch(schemaAt(kit.schemas, ops.list, "query"), { components: kit.components }),
+    allowed(can, operation) {
+      if (typeof operation === "object") {
+        const a = def.actions.find((x) => x.name === operation.action)
+        return !!a && a.permissions.every(can)
+      }
+      if (!ops[operation]) return false
+      return (def.permissions[operation] ?? []).every(can)
+    },
+    listQuery(params) {
+      const q = method(queries, ops.list)
+      return q
+        ? (q(params) as ReturnType<ResourceModel["listQuery"]>)
+        : {
+            queryKey: [...queryKey, "list", params],
+            queryFn: () => call(kit.client, ops.list, [params]) as Promise<unknown>,
+          }
+    },
+    getQuery(key) {
+      const q = ops.get && method(queries, ops.get)
+      return q
+        ? (q(key) as ReturnType<ResourceModel["getQuery"]>)
+        : { queryKey: [...queryKey, "get", key], queryFn: () => call(kit.client, ops.get, [key]) as Promise<unknown> }
+    },
+    create: (body) => invalidate(Promise.resolve(call(kit.client, ops.create, [body]))),
+    update: (key, body) => invalidate(Promise.resolve(call(kit.client, ops.update, [key, body]))),
+    remove: (key) => invalidate(Promise.resolve(call(kit.client, ops.delete, [key]))),
+    run(action, key) {
+      const a = def.actions.find((x) => x.name === action)
+      return invalidate(Promise.resolve(call(kit.client, a?.operation, [key])))
+    },
+    formSchema(mode) {
+      const ref = mode === "create" ? (ops.create ?? ops.update) : (ops.update ?? ops.create)
+      return ref ? schemaAt(kit.schemas, ref, "body") : {}
+    },
+    ruleOptions: { components: kit.components, language },
+    rowKey(row) {
+      return String(row[def.key ?? "id"] ?? "")
+    },
+    display(f, value) {
+      if (!f.options) return value
+      const label = (v: unknown) => f.options?.find((o) => o.value === v)?.label ?? v
+      return Array.isArray(value) ? value.map(label) : label(value)
+    },
+    queryKey,
+  }
+}
+
+/** 列表的数据：page.Offset（items、total）或 page.Cursor（items、next_cursor）。 */
+export interface ResourcePage {
+  items: ResourceRow[]
+  total?: number
+  next_cursor?: string
+}
+
+/** useResourceList 的返回值。 */
+export interface ResourceList {
+  model: ResourceModel
+  /** 地址中的查询条件、排序和分页，见 useList。 */
+  list: ListState<Record<string, unknown>>
+  rows: ResourceRow[]
+  total?: number
+  loading: boolean
+  error: unknown
+  /** 当前身份能否使用：没有声明的接口也是 false。 */
+  can: {
+    create: boolean
+    update: boolean
+    delete: boolean
+    get: boolean
+    action(name: string): boolean
+  }
+  refetch(): void
+}
+
+/**
+ * 资源的列表：查询条件保存在地址中，数据来自列表接口，按权限得出能用的按钮。列表路由的 validateSearch 用 model.listSearch：
+ *
+ *	export const Route = createFileRoute("/_app/articles")({ validateSearch: articles.listSearch, component: Articles })
+ *	const view = useResourceList(articles, Route)
+ */
+export function useResourceList(model: ResourceModel, route: ListRoute<Record<string, unknown>>): ResourceList {
+  const list = useList(route)
+  const can = useCan()
+  const query = useQuery(model.listQuery(list.params))
+  const page = query.data as ResourcePage | undefined
+  return {
+    model,
+    list,
+    rows: page?.items ?? [],
+    total: page?.total,
+    loading: query.isPending,
+    error: query.error,
+    can: {
+      create: model.allowed(can, "create"),
+      update: model.allowed(can, "update"),
+      delete: model.allowed(can, "delete"),
+      get: model.allowed(can, "get"),
+      action: (name) => model.allowed(can, { action: name }),
+    },
+    refetch: () => void query.refetch(),
+  }
+}
+
+/** 一行的详情：编辑表单的初始值。key 为空时不读取（例如新建）。 */
+export function useResourceItem(model: ResourceModel, key: string | undefined) {
+  return useQuery({ ...model.getQuery(key ?? ""), enabled: !!key && model.has.get })
+}
+
+/** 资源的修改：创建、修改、删除和其他操作，带进行中的状态；完成后列表随之刷新。 */
+export function useResourceMutations(model: ResourceModel) {
+  const queryClient = useQueryClient()
+  const done = () => queryClient.invalidateQueries({ queryKey: [...model.queryKey] })
+  const save = useMutation({
+    mutationFn: ({ key, values }: { key?: string; values: Record<string, unknown> }) =>
+      key ? model.update(key, values) : model.create(values),
+    onSuccess: done,
+  })
+  const remove = useMutation({ mutationFn: (key: string) => model.remove(key), onSuccess: done })
+  const run = useMutation({
+    mutationFn: ({ action, key }: { action: string; key: string }) => model.run(action, key),
+    onSuccess: done,
+  })
+  return useMemo(() => ({ save, remove, run }), [save, remove, run])
+}
+
+/** 表单的初始值：编辑时取详情（或列表中的这一行）中表单字段的值，新建时为空。 */
+export function formValues(model: ResourceModel, row?: ResourceRow): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const f of model.form) {
+    const v = row?.[f.name]
+    if (v !== undefined) out[f.name] = v
+    else if (f.kind === "boolean") out[f.name] = false
+    else if (f.kind === "tags" || f.kind === "multiselect") out[f.name] = []
+  }
+  return out
+}
