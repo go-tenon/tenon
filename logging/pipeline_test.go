@@ -117,6 +117,35 @@ func TestTimeZone(t *testing.T) {
 	}
 }
 
+// 分组中的时间同样转换，例如 slog-chi 写入访问日志的 request.time 和 response.time（它固定给出 UTC）。
+func TestTimeZoneConvertsGroupedTimes(t *testing.T) {
+	var buf bytes.Buffer
+	logger := logging.New(logging.Config{Writer: &buf, TimeZone: "Asia/Shanghai"})
+	at := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	logger.Info("x", slog.Group("request", slog.Time("time", at)))
+	rec := decode(t, buf.Bytes())
+	if got := rec["request"].(map[string]any)["time"]; got != "2026-01-02T11:04:05+08:00" {
+		t.Fatal(rec)
+	}
+}
+
+// 没有设置 TimeZone 时，字段中的时间也使用本地时区，与记录的时间一致。
+func TestNoTimeZoneUsesLocalForFields(t *testing.T) {
+	prev := time.Local
+	time.Local = time.FixedZone("CST", 8*60*60)
+	t.Cleanup(func() { time.Local = prev })
+
+	var buf bytes.Buffer
+	logger := logging.New(logging.Config{Writer: &buf})
+	at := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	logger.Info("x", "at", at, slog.Group("request", slog.Time("time", at)))
+	rec := decode(t, buf.Bytes())
+	if !strings.HasSuffix(rec["time"].(string), "+08:00") || rec["at"] != "2026-01-02T11:04:05+08:00" ||
+		rec["request"].(map[string]any)["time"] != "2026-01-02T11:04:05+08:00" {
+		t.Fatal(rec)
+	}
+}
+
 func TestOrAddsErrorFormatterToForeignLoggers(t *testing.T) {
 	var buf bytes.Buffer
 	logging.Or(slog.New(slog.NewJSONHandler(&buf, nil))).Error("x", "error", errors.New("boom"))
