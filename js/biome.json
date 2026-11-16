@@ -5,6 +5,7 @@
       "**",
       "!**/node_modules",
       "!**/dist",
+      "!e2e/test-results",
       "!registry/src/components/ui",
       "!registry/src/hooks",
       "!registry/src/lib",

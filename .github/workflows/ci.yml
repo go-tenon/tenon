@@ -56,6 +56,12 @@ jobs:
       - name: Test
         run: bun run test
 
+      - name: Install Playwright browser
+        run: bunx playwright install --with-deps chromium
+
+      - name: E2E
+        run: bun run e2e
+
   # tenon init 生成的项目能安装、生成客户端、类型检查、构建并运行（TestInitEndToEnd）；
   # 按 docs/tutorial 做一遍入门教程，用教程的 compose.yaml 启动基础设施（TestTutorial）。
   # 单独一个 job：编译和安装依赖很占 CPU，放在 test 中会干扰计时的测试。
