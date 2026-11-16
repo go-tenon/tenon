@@ -88,7 +88,7 @@ migrationCmd.AddCommand(migratecmd.Publish(
 部署时先执行迁移，再启动发布任务的进程：复制槽建立之后发布的任务才会被转发。
 
 > [!WARNING]
-> 复制槽保留 worker 还没读到的 WAL。所有 worker 都停止时，WAL 会一直累积；超过 `max_slot_wal_keep_size` 后复制槽失效，其中的任务丢失，worker 拒绝启动。不设置它则会一直累积到磁盘写满。请监控复制槽的积压并设置告警，见[部署](../installation/deployment.md#queue)。
+> 复制槽保留 worker 还没读到的 WAL。所有 worker 都停止时，WAL 会一直累积；超过 `max_slot_wal_keep_size` 后复制槽失效，其中的任务丢失，worker 拒绝启动。不设置它则会一直累积到磁盘写满。请监控复制槽的积压并设置告警，见[部署](../installation/operations.md#queue)。
 
 <a id="publishing-jobs"></a>
 ## 发布任务
@@ -404,7 +404,7 @@ w := queue.NewWorker(a.db, a.cfg.Queue, nil,
 <a id="stats-command"></a>
 ## 队列状态
 
-每个 topic 积压、处理中、延迟中的任务数由 nsqd 统计，在 [nsqadmin](https://nsq.io/components/nsqadmin.html) 中查看，也可以在那里暂停一个 topic 的消费；接入监控系统用 nsqd 的 [statsd 输出](https://nsq.io/components/nsqd.html#statsd--graphite-integration)。还没转发的任务在复制槽中，积压的字节数用 `pg_replication_slots` 查询，见[部署](../installation/deployment.md#queue)；延迟超过 `max_defer` 的任务在 `queue_scheduled` 中。
+每个 topic 积压、处理中、延迟中的任务数由 nsqd 统计，在 [nsqadmin](https://nsq.io/components/nsqadmin.html) 中查看，也可以在那里暂停一个 topic 的消费；接入监控系统用 nsqd 的 [statsd 输出](https://nsq.io/components/nsqd.html#statsd--graphite-integration)。还没转发的任务在复制槽中，积压的字节数用 `pg_replication_slots` 查询，见[部署](../installation/operations.md#queue)；延迟超过 `max_defer` 的任务在 `queue_scheduled` 中。
 
 `queuecmd.New` 返回 `queue` 命令，查看数据库一侧的状态和失败任务。它和其他需要数据库的命令一样在 [bootstrap.Commands](../concepts/actions.md#as-commands) 中声明：
 
@@ -427,7 +427,7 @@ scheduled       3
 next scheduled  2026-11-14 09:00:00
 ```
 
-`state` 为 `idle` 时没有 worker 在转发；为 `missing` 或 `lost` 时 worker 拒绝启动，用 `queue slot recreate` 重建复制槽，见[重建复制槽](../installation/deployment.md#queue-recovery)。
+`state` 为 `idle` 时没有 worker 在转发；为 `missing` 或 `lost` 时 worker 拒绝启动，用 `queue slot recreate` 重建复制槽，见[重建复制槽](../installation/operations.md#queue-recovery)。
 
 `queue failed` 从新到旧列出失败任务，错误信息只显示第一行，完整的错误和堆栈用 `FailedJobs.Get` 查看：
 
@@ -598,4 +598,4 @@ func ReadStatus(ctx context.Context, db bun.IDB) (Status, error)
 func RecreateSlot(ctx context.Context, db bun.IDB, force bool) error
 ```
 
-`Migrations` 是队列的迁移；`ReadStatus` 读取复制槽和延迟任务的状态，`queue status` 命令用它；`RecreateSlot` 在复制槽失效后重建，见[部署](../installation/deployment.md#queue-recovery)。
+`Migrations` 是队列的迁移；`ReadStatus` 读取复制槽和延迟任务的状态，`queue status` 命令用它；`RecreateSlot` 在复制槽失效后重建，见[部署](../installation/operations.md#queue-recovery)。

@@ -140,7 +140,7 @@ return rest.SSE(func(s *httpx.Stream) error {
 hub := broadcast.New(redisbroadcast.New(rdb, "app:broadcast"), nil)
 ```
 
-频道名区分不同的应用，同一个应用的实例必须相同。单机部署也要经由 Redis 传递：[不停机升级](../installation/deployment.md#upgrade-overlap)或滚动发布时新旧进程短暂并存，旧进程中还没结束的请求和任务发布的事件，要送到已经重连到新进程的浏览器。
+频道名区分不同的应用，同一个应用的实例必须相同。单机部署也要经由 Redis 传递：[不停机升级](../installation/operations.md#upgrade-overlap)或滚动发布时新旧进程短暂并存，旧进程中还没结束的请求和任务发布的事件，要送到已经重连到新进程的浏览器。
 
 单机和[集群](redis.md#cluster)都可以使用。集群中频道按名称落在一个槽上，消息只经过负责这个槽的节点。
 

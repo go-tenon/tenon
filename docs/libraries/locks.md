@@ -52,7 +52,7 @@ locker := lock.New(redislock.New(rdb))
 publishScheduled := article.NewPublishScheduled(db, locker)
 ```
 
-`lock.New` 接收锁存储，生产环境使用 [Redis 存储](#redis-store)，`rdb` 是[入口中创建的客户端](redis.md#connecting)。所有进程共用同一个存储才能互斥，单机部署也是如此：[不停机升级](../installation/deployment.md#upgrade-overlap)时新旧进程会同时运行。
+`lock.New` 接收锁存储，生产环境使用 [Redis 存储](#redis-store)，`rdb` 是[入口中创建的客户端](redis.md#connecting)。所有进程共用同一个存储才能互斥，单机部署也是如此：[不停机升级](../installation/operations.md#upgrade-overlap)时新旧进程会同时运行。
 
 <a id="running-once"></a>
 ## 只让一个实例执行

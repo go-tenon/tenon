@@ -135,7 +135,7 @@ w := queue.NewWorker(db, cfg.Queue, nil, queue.WithTelemetry(tel.Meters, tel.Tra
 | `queue.job.duration` | 直方图，秒 | `queue.job.outcome` | 处理耗时；按结果计数就是吞吐和失败率 |
 | `queue.relay.jobs` | 计数 | `queue.relay.route` | 从 WAL 读到并转发的任务：`published` 立即交给 NSQ，`deferred` 作为延迟消息，`scheduled` 存入 `queue_scheduled` |
 | `queue.relay.active` | 仪表 | | 这个实例正在转发时为 1 |
-| `queue.relay.lag` | 仪表，字节 | | 复制槽中还没确认的 WAL，见[监控积压](../installation/deployment.md#queue-monitoring) |
+| `queue.relay.lag` | 仪表，字节 | | 复制槽中还没确认的 WAL，见[监控积压](../installation/operations.md#queue-monitoring) |
 | `queue.scheduled.jobs` | 仪表 | | `queue_scheduled` 中等待的任务数 |
 
 `queue.job.*` 带有 `messaging.system`（`nsq`）和 `messaging.destination.name`（topic）属性，与队列的 span 相同。`queue.job.outcome` 是 `succeeded`、`retrying`、`failed`、`released`，与[任务事件](../libraries/queue.md#job-events)对应。NSQ 重新投递的任务（等待不超过 `max_defer` 的重试、放回的任务）给不出可以执行的时间，不记录等待时长。导出到 Prometheus 后，点换成下划线，单位成为后缀，例如 `queue_job_wait_seconds`。

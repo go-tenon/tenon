@@ -66,7 +66,7 @@ var draining httpx.Draining
 err := httpx.Serve(ctx, cfg.HTTP, ln, handler, httpx.OnDraining(draining.Set))
 ```
 
-当 `ctx` 被取消时（收到停止信号，或者[不停机升级](../installation/deployment.md#zero-downtime-upgrades)时交给了新进程），它按以下顺序停止：
+当 `ctx` 被取消时（收到停止信号，或者[不停机升级](../installation/operations.md#zero-downtime-upgrades)时交给了新进程），它按以下顺序停止：
 
 1. 调用 `OnDraining`，让[就绪检查](#health-checks)开始返回失败；
 2. 停止接收新连接，等待正在处理的请求完成，这个过程叫**排空**；

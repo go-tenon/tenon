@@ -241,7 +241,7 @@ func Start(ctx context.Context, cfg Config) error {
 }
 ```
 
-你会注意到，每个部分都分两步：先装配好它需要的一切，包括取得监听端口；再返回运行它的函数。这样做的好处是，路由冲突、端口被占用这类错误在开始运行之前就会返回，[不停机升级](../installation/deployment.md#zero-downtime-upgrades)时，旧版本继续服务，直到新版本装配成功。
+你会注意到，每个部分都分两步：先装配好它需要的一切，包括取得监听端口；再返回运行它的函数。这样做的好处是，路由冲突、端口被占用这类错误在开始运行之前就会返回，[不停机升级](../installation/operations.md#zero-downtime-upgrades)时，旧版本继续服务，直到新版本装配成功。
 
 `d.Run` 让各部分共用同一个 `ctx`，其中一个出错时，其余的会一起停止。
 
@@ -364,7 +364,7 @@ func (d *Daemon) Stop()
 
 包 `github.com/go-tenon/tenon/command`。常驻进程：`Listen` 取得监听端口，`Run` 报告就绪后同时运行 `runs`，直到停止。
 
-在 systemd 的 `Type=notify-reload` 服务中运行时，`Run` 向 systemd 报告就绪，收到 `SIGHUP` 时不停机升级，见[部署](../installation/deployment.md#zero-downtime-upgrades)；不在其中时，`Run` 等同于 `command.Concurrently`。
+在 systemd 的 `Type=notify-reload` 服务中运行时，`Run` 向 systemd 报告就绪，收到 `SIGHUP` 时不停机升级，见[部署](../installation/operations.md#zero-downtime-upgrades)；不在其中时，`Run` 等同于 `command.Concurrently`。
 
 > [!IMPORTANT]
 > 一个进程只创建一个 `Daemon`。所有的 `Listen` 都要在 `Run` 之前调用，进程退出前调用 `Stop`。

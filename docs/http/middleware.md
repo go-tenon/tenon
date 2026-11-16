@@ -339,7 +339,7 @@ http:
       android: 1.3.0
 ```
 
-版本按[语义化版本](https://semver.org/lang/zh-CN/)比较：`1.4` 等于 `1.4.0`，`1.10.0` 高于 `1.9.0`，`1.4.0-beta.1` 低于 `1.4.0`，`+` 之后的构建号不参与比较。修改最低版本后[不停机升级](../installation/deployment.md#zero-downtime-upgrades)即可生效。
+版本按[语义化版本](https://semver.org/lang/zh-CN/)比较：`1.4` 等于 `1.4.0`，`1.10.0` 高于 `1.9.0`，`1.4.0-beta.1` 低于 `1.4.0`，`+` 之后的构建号不参与比较。修改最低版本后[不停机升级](../installation/operations.md#zero-downtime-upgrades)即可生效。
 
 带这个请求头的请求，访问日志中有 `app` 字段，例如 `"app":"ios/1.4.2"`。提高最低版本之前，先按它统计还有多少用户在用旧版本。
 
