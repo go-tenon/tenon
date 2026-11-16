@@ -191,6 +191,7 @@ Tenon 是一个用 Go 构建后端服务的框架。业务逻辑写成[业务动
 - [RPC 协议](rpc/protocol.md)（草案）：其他服务经由 NATS 调用业务动作的线路约定
 - [部署](installation/deployment.md)：构建、配置和上线
 - [自检](installation/doctor.md)：检查运行环境，给出修改方法
+- [交给客户自托管](installation/self-hosting.md)：交给客户用 Docker Compose 运行
 - [运维](installation/operations.md)：不停机升级、维护窗口、备份与恢复
 
 文档与同一版本的代码对应。框架依赖的精确版本以仓库中的 [go.mod](../go.mod) 为准。

@@ -147,10 +147,12 @@ if err := doctor.Require(ctx, nil, app.doctor()...); err != nil {
 排查问题时，在同一个镜像中单独运行 `doctor`：
 
 ```bash
-docker compose run --rm serve doctor
+docker compose run --rm --no-deps serve doctor
 ```
 
-`--rm` 在命令结束后删除这个临时容器。它使用 `serve` 服务的环境变量和网络，与正式运行时连接的是同一组服务。
+`--rm` 在命令结束后删除这个临时容器。它使用 `serve` 服务的环境变量和网络，与正式运行时连接的是同一组服务。`--no-deps` 不启动 `serve` 依赖的服务：没有它时会先执行一次 `migrate`，迁移失败时 `doctor` 就运行不了。
+
+交给客户自托管时的完整部署见[交给客户自托管](self-hosting.md)。
 
 <a id="custom-checks"></a>
 ## 编写应用自己的检查
