@@ -191,11 +191,11 @@ func (a *App) doctor() []doctor.Group {
 <a id="admin-page"></a>
 ## 在后台页面中显示
 
-自检的结果也可以放在运营后台的“系统状态”页面中，不用登录服务器就能看到。`doctor.Report` 带有 JSON 标签，可以直接作为接口的响应体：
+自检的结果也可以放在运营后台的“系统状态”页面中，不用登录服务器就能看到。`doctor.DoctorReport` 带有 JSON 标签，可以直接作为接口的响应体，它在 OpenAPI 中的名字是 `DoctorReport`：
 
 ```go
 type DoctorOutput struct {
-    Body doctor.Report
+    Body doctor.DoctorReport
 }
 
 status := huma.Operation{
@@ -313,16 +313,16 @@ func Skip(reason string) error
 
 `Problem` 是查到的问题，有 `Summary`、`Fix`、`Doc` 和 `Warning` 四个字段。被包装过的 `*Problem` 同样有效。
 
-### Run、Report
+### Run、DoctorReport
 
 ```go
-func Run(ctx context.Context, groups ...Group) Report
-func (r Report) Count(s Status) int
-func (r Report) Err() error
-func (r Report) WriteText(w io.Writer) error
+func Run(ctx context.Context, groups ...Group) DoctorReport
+func (r DoctorReport) Count(s Status) int
+func (r DoctorReport) Err() error
+func (r DoctorReport) WriteText(w io.Writer) error
 ```
 
-`Run` 执行全部检查，`Report.Results` 按传入的顺序列出每一项的 `Result`（`Group`、`Check`、`Status`、`Summary`、`Fix`、`Doc`）。`Status` 是 `doctor.Passed`、`Warning`、`Failed`、`Skipped` 之一。`Err` 在有失败时返回 `doctor.ErrFailed` 分类的错误（`errorx.Unavailable`，命令以退出码 4 结束），只有提示时返回 `nil`。`WriteText` 写出 `doctor` 命令的文本格式。
+`Run` 执行全部检查，`DoctorReport.Results` 按传入的顺序列出每一项的 `DoctorResult`（`Group`、`Check`、`Status`、`Summary`、`Fix`、`Doc`）。`Status` 是 `doctor.Passed`、`Warning`、`Failed`、`Skipped` 之一。`Err` 在有失败时返回 `doctor.ErrFailed` 分类的错误（`errorx.Unavailable`，命令以退出码 4 结束），只有提示时返回 `nil`。`WriteText` 写出 `doctor` 命令的文本格式。
 
 ### Require
 
@@ -330,7 +330,7 @@ func (r Report) WriteText(w io.Writer) error
 func Require(ctx context.Context, logger *slog.Logger, groups ...Group) error
 ```
 
-执行检查，把提示写入 `logger`（`nil` 表示 `slog.Default()`），返回 `Report.Err()`。
+执行检查，把提示写入 `logger`（`nil` 表示 `slog.Default()`），返回 `DoctorReport.Err()`。
 
 ### doctorcmd.New、migratecmd.Check
 

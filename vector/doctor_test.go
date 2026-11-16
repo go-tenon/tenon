@@ -13,7 +13,7 @@ import (
 )
 
 // indexResult 返回 store 上 chunks 索引的检查结果，并确认 Qdrant 连得上。
-func indexResult(t *testing.T, store *vector.Store) doctor.Result {
+func indexResult(t *testing.T, store *vector.Store) doctor.DoctorResult {
 	t.Helper()
 	results := doctor.Run(context.Background(), vector.Doctor(store, chunks.Name())).Results
 	if results[0].Check != "qdrant" || results[0].Status != doctor.Passed {

@@ -59,11 +59,11 @@ func TestDoctorCommandJSON(t *testing.T) {
 	if command.ExitCode(err) != command.ExitUnavailable {
 		t.Fatalf("exit = %d: %v", command.ExitCode(err), err)
 	}
-	var report doctor.Report
+	var report doctor.DoctorReport
 	if err := json.Unmarshal([]byte(out), &report); err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
-	want := doctor.Result{Group: "postgres", Check: "b", Status: doctor.Failed,
+	want := doctor.DoctorResult{Group: "postgres", Check: "b", Status: doctor.Failed,
 		Summary: "wal_level is replica", Fix: "set wal_level=logical", Doc: "docs/queue.md"}
 	if len(report.Results) != 2 || report.Results[1] != want || report.Results[0].Status != doctor.Passed {
 		t.Errorf("report = %+v", report)

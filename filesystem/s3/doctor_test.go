@@ -38,7 +38,7 @@ func fakeDisk(t *testing.T, publicURL func(server string) string) *s3disk.Disk {
 
 func TestDoctorPublicURL(t *testing.T) {
 	t.Parallel()
-	run := func(disk *s3disk.Disk) doctor.Result {
+	run := func(disk *s3disk.Disk) doctor.DoctorResult {
 		t.Helper()
 		return doctor.Run(context.Background(), s3disk.Doctor(disk)).Results[0]
 	}

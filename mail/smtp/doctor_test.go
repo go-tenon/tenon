@@ -10,7 +10,7 @@ import (
 	"github.com/go-tenon/tenon/mail/smtp"
 )
 
-func check(t *testing.T, cfg smtp.Config) doctor.Result {
+func check(t *testing.T, cfg smtp.Config) doctor.DoctorResult {
 	t.Helper()
 	m, err := smtp.New(cfg)
 	if err != nil {

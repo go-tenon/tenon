@@ -15,8 +15,8 @@ import (
 )
 
 // results 按检查名返回结果。
-func results(r doctor.Report) map[string]doctor.Result {
-	m := map[string]doctor.Result{}
+func results(r doctor.DoctorReport) map[string]doctor.DoctorResult {
+	m := map[string]doctor.DoctorResult{}
 	for _, res := range r.Results {
 		m[res.Check] = res
 	}

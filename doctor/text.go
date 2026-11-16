@@ -18,7 +18,7 @@ var marks = map[Status]string{Passed: "ok", Warning: "warn", Failed: "FAIL", Ski
 //	        see: docs/background/queue.md#preparing
 //
 //	1 failed, 0 warnings, 1 passed, 0 skipped
-func (r Report) WriteText(w io.Writer) error {
+func (r DoctorReport) WriteText(w io.Writer) error {
 	var b strings.Builder
 	group := ""
 	for i, res := range r.Results {

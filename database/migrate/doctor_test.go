@@ -21,7 +21,7 @@ func TestDoctor(t *testing.T) {
 	older := fstest.MapFS{"00001_a.sql": migration("a")}
 	newer := fstest.MapFS{"00001_a.sql": migration("a"), "00002_b.sql": migration("b")}
 	db := dbtest.Open(t, nil)
-	check := func(fsys fstest.MapFS) doctor.Result {
+	check := func(fsys fstest.MapFS) doctor.DoctorResult {
 		t.Helper()
 		return doctor.Run(ctx, migrate.Doctor(db, fsys)).Results[0]
 	}
