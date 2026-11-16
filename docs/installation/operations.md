@@ -279,7 +279,7 @@ Tenon 不提供备份命令：只有数据库自己的备份机制能持续备�
 ./bin/api migrate status --config=config/app.yaml,config/restore.yaml
 ```
 
-`config/restore.yaml` 只把数据库地址改为临时库。`--config` 优先于环境变量 `CONFIG`，所以即使设置了 `CONFIG`，这里也只加载这两个文件。确认迁移的版本与预期一致后，再抽查几张业务表中最新的数据。每次演练都记下恢复用了多长时间：真的出事时，停服大约也要这么久。
+`config/restore.yaml` 只把数据库地址改为临时库。`--config` 优先于环境变量 `APP_CONFIG`，所以即使设置了 `APP_CONFIG`，这里也只加载这两个文件。确认迁移的版本与预期一致后，再抽查几张业务表中最新的数据。每次演练都记下恢复用了多长时间：真的出事时，停服大约也要这么久。
 
 <a id="upgrading"></a>
 ## 升级依赖

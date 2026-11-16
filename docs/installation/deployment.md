@@ -59,10 +59,10 @@ go build -trimpath -o bin/api ./cmd/api
 <a id="release-process"></a>
 ## 第一次发布
 
-下面的命令在服务器的部署目录（`config` 目录所在的目录）中执行。生产环境的配置由 `config/app.yaml` 和 `config/prod.yaml` 叠加而成，后者只写和开发环境不同的部分，见[按环境覆盖配置](../general/configuration.md#overriding-configuration)。没有传入 `--config` 时，命令从环境变量 `CONFIG` 读取要加载的配置文件，先设置好它，后面的命令就不用再写：
+下面的命令在服务器的部署目录（`config` 目录所在的目录）中执行。生产环境的配置由 `config/app.yaml` 和 `config/prod.yaml` 叠加而成，后者只写和开发环境不同的部分，见[按环境覆盖配置](../general/configuration.md#overriding-configuration)。没有传入 `--config` 时，命令从环境变量 `APP_CONFIG` 读取要加载的配置文件，先设置好它，后面的命令就不用再写：
 
 ```bash
-export CONFIG=config/app.yaml,config/prod.yaml
+export APP_CONFIG=config/app.yaml,config/prod.yaml
 ```
 
 <a id="checking-configuration"></a>
@@ -166,7 +166,7 @@ RuntimeDirectory=blog/%i
 PIDFile=/run/blog/%i/daemon.pid
 User=blog
 WorkingDirectory=/opt/blog
-Environment=CONFIG=config/app.yaml,config/prod.yaml
+Environment=APP_CONFIG=config/app.yaml,config/prod.yaml
 EnvironmentFile=/etc/blog/env
 ExecStart=/opt/blog/bin/api %i
 Restart=on-failure
@@ -215,7 +215,7 @@ journalctl -u 'blog@*' -f
 set -e
 run() {
     sudo systemd-run --wait --pipe --quiet --uid=blog -p WorkingDirectory=/opt/blog \
-        -p Environment=CONFIG=config/app.yaml,config/prod.yaml -p EnvironmentFile=/etc/blog/env "$@"
+        -p Environment=APP_CONFIG=config/app.yaml,config/prod.yaml -p EnvironmentFile=/etc/blog/env "$@"
 }
 
 sudo install -m 755 api /opt/blog/bin/api.new
@@ -259,7 +259,7 @@ WORKDIR /app
 COPY --from=build /out/api /app/api
 COPY config /app/config
 COPY --from=build --chown=nonroot:nonroot /out/storage /app/storage
-ENV CONFIG=config/app.yaml,config/prod.yaml
+ENV APP_CONFIG=config/app.yaml,config/prod.yaml
 ENTRYPOINT ["/app/api"]
 CMD ["start"]
 ```
@@ -267,7 +267,7 @@ CMD ["start"]
 这个文件分两段：第一段在 Go 的镜像中编译程序，第二段只把编译结果复制到一个很小的运行镜像中，最终的镜像不包含 Go 工具链和源代码。需要注意的几点：
 
 - **`ENTRYPOINT` 要写成 JSON 数组的形式。** 这样程序就是容器中的第一个进程，能直接收到 `docker stop` 发出的 `SIGTERM`。如果写成 `ENTRYPOINT ./api start`，信号会发给 shell，程序收不到，等待时间一到就被强制结束，正在处理的请求被中断。
-- **`CONFIG` 写在镜像中**，`docker run blog migrate up` 这样的命令也会使用同样的配置。
+- **`APP_CONFIG` 写在镜像中**，`docker run blog migrate up` 这样的命令也会使用同样的配置。
 - **distroless 镜像中带有 CA 证书和时区数据**，访问 HTTPS 接口、按时区执行定时任务都能直接用。
 - **`storage` 目录要挂载卷**，否则容器删除后上传的文件也没了。镜像中预先建好这个目录，并交给 `nonroot` 用户，否则新挂载的卷属于 root，程序无法写入。文件存放在 S3 这类对象存储中时不需要它。
 

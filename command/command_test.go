@@ -208,7 +208,7 @@ func TestExitCode(t *testing.T) {
 // projectDir 创建一个临时项目目录并切换进去，files 的路径相对于该目录。
 func projectDir(t *testing.T, files map[string]string) {
 	t.Helper()
-	t.Setenv("CONFIG", "") // 不受运行测试的环境影响
+	t.Setenv("APP_CONFIG", "") // 不受运行测试的环境影响
 	dir := t.TempDir()
 	for name, content := range files {
 		path := filepath.Join(dir, name)
@@ -273,20 +273,20 @@ func TestConfigEnv(t *testing.T) {
 		{"config/app.yaml,config/prod.yaml", []string{"--config", "config/app.yaml"}, "app"}, // --config 优先
 		{"", nil, "app"},
 	} {
-		t.Setenv("CONFIG", tc.env)
+		t.Setenv("APP_CONFIG", tc.env)
 		if got := loadedName(t, tc.args...); got != tc.want {
-			t.Errorf("CONFIG=%q args=%v name=%q want %q", tc.env, tc.args, got, tc.want)
+			t.Errorf("APP_CONFIG=%q args=%v name=%q want %q", tc.env, tc.args, got, tc.want)
 		}
 	}
 }
 
 func TestConfigEnvFromDotEnv(t *testing.T) {
 	projectDir(t, map[string]string{
-		".env":              "CONFIG=config/app.yaml,config/local.yaml\n",
+		".env":              "APP_CONFIG=config/app.yaml,config/local.yaml\n",
 		"config/app.yaml":   "name: app\n",
 		"config/local.yaml": "name: local\n",
 	})
-	os.Unsetenv("CONFIG")
+	os.Unsetenv("APP_CONFIG")
 	if got := loadedName(t); got != "local" {
 		t.Fatalf("name=%q", got)
 	}
@@ -294,7 +294,7 @@ func TestConfigEnvFromDotEnv(t *testing.T) {
 
 func TestEmptyConfigEnvIsConfigError(t *testing.T) {
 	projectDir(t, map[string]string{"config/app.yaml": minimalConfig})
-	t.Setenv("CONFIG", " , ")
+	t.Setenv("APP_CONFIG", " , ")
 	root := newRoot(command.Config[settings]())
 	if _, _, err := execute(root, "config", "check"); command.ExitCode(err) != command.ExitConfig {
 		t.Fatalf("exit=%d err=%v", command.ExitCode(err), err)

@@ -18,12 +18,12 @@ import (
 const (
 	configFlag = "config"
 	// configEnv 是没有传入 --config 时读取的环境变量，格式与 --config 相同：逗号分隔的配置文件。
-	configEnv = "CONFIG"
+	configEnv = "APP_CONFIG"
 )
 
 // Root 返回应用的根命令，用 AddCommand 装配需要的命令。
 // 根命令定义了所有子命令共用的 --config 选项：可以重复传入多个配置文件，
-// 后面的覆盖前面的。没有传入时读取环境变量 CONFIG，它也没有设置时为 config/app.yaml。未知命令、未知选项和多余参数标记为 ExitUsage。
+// 后面的覆盖前面的。没有传入时读取环境变量 APP_CONFIG，它也没有设置时为 config/app.yaml。未知命令、未知选项和多余参数标记为 ExitUsage。
 func Root(name, short string) *cobra.Command {
 	root := &cobra.Command{
 		Use:           name,
@@ -52,7 +52,7 @@ func Run[C any](use, short string, run func(ctx context.Context, cfg C) error) *
 
 // LoadConfig 加载并校验配置文件，失败时错误带 ExitConfig 退出码。
 // 加载前先读取工作目录下的 .env（不存在时忽略），进程中已经设置的变量优先。
-// 配置文件依次取自 --config、环境变量 CONFIG（可以写在 .env 中）和默认的 config/app.yaml。
+// 配置文件依次取自 --config、环境变量 APP_CONFIG（可以写在 .env 中）和默认的 config/app.yaml。
 // cmd 必须挂在 Root 返回的根命令下。
 func LoadConfig[C any](cmd *cobra.Command) (C, error) {
 	var zero C
