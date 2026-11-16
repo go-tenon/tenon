@@ -203,6 +203,15 @@ func addFrontendCommand() *cobra.Command {
 			if _, err := dev.SyncJS("."); err != nil {
 				return err
 			}
+			if template == "console" {
+				// shadcn 的组件和 tenon 的组件从框架的 registry 复制进前端，不需要联网。
+				if err := scaffold.InstallRegistry(path.Join(dev.JSDir, "registry"), path.Join(project.AppsDir, name)); err != nil {
+					return err
+				}
+				if err := scaffold.AddMCPServer(".", "shadcn", scaffold.ShadcnMCP); err != nil {
+					return err
+				}
+			}
 			if _, err := dev.GenerateTheme("."); err != nil {
 				return err
 			}
@@ -223,7 +232,7 @@ func addFrontendCommand() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&base, "base", "", "前端挂载的路径，以 / 开头和结尾，默认 /<name>/")
-	cmd.Flags().StringVar(&template, "template", "default", "前端的模板：default，或 admin（antd 的运营后台）")
+	cmd.Flags().StringVar(&template, "template", "default", "前端的模板：default；admin（antd 的运营后台）；console（shadcn 的控制台）")
 	return cmd
 }
 

@@ -92,7 +92,9 @@ Redis 的锁、限流、在线成员和广播的测试对单机 Redis 和集群�
 <a id="js-packages"></a>
 ### 前端包
 
-`js` 是前端包的 Bun workspace：`js/client` 是 `@go-tenon/client`，`js/shell` 是 `@go-tenon/shell`，`js/admin` 是 `@go-tenon/admin`（antd 的外观）。它们不发布到 npm，随 Go 模块分发：应用中的 `tenon` 把框架版本中的 `js` 复制到项目的 `.tenon/js`，见[框架的前端包](docs/installation/tooling.md#framework-packages)。在 `js` 目录中运行：
+`js` 是前端包的 Bun workspace：`js/client` 是 `@go-tenon/client`，`js/shell` 是 `@go-tenon/shell`，`js/admin` 是 `@go-tenon/admin`（antd 的外观），`js/registry` 是 tenon 的 shadcn registry。
+
+`js/registry` 的 `src/components/tenon` 是框架的组件，`src/components/ui`、`src/hooks`、`src/lib`、`src/index.css` 是 shadcn 生成的代码，保持原样（Biome 跳过它们）。修改 `src/components/tenon` 或 `registry.json` 后运行 `bun registry/build.ts` 重新生成 `r/`，`registry.test.ts` 检查它是最新的，并检查每个条目带上了它导入的 shadcn 组件和 npm 包。更新 shadcn 的组件时，在一个单独的 Vite 项目中运行 `bunx shadcn@<版本> init` 和 `add`，再把生成的文件复制过来：在 `js` 这个 Bun workspace 中运行时，shadcn 不能正确解析路径别名。它们不发布到 npm，随 Go 模块分发：应用中的 `tenon` 把框架版本中的 `js` 复制到项目的 `.tenon/js`，见[框架的前端包](docs/installation/tooling.md#framework-packages)。在 `js` 目录中运行：
 
 ```bash
 bun install --frozen-lockfile

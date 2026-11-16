@@ -1,0 +1,13 @@
+{
+  "name": "@go-tenon/registry",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@go-tenon/client": "workspace:*",
+    "@go-tenon/shell": "workspace:*"
+  }
+}

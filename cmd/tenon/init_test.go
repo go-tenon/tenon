@@ -51,6 +51,8 @@ func TestInitEndToEnd(t *testing.T) {
 	}
 	// 第二个前端挂在 /admin/：按 add frontend 的提示修改路由。
 	sh("go", "tool", "tenon", "add", "frontend", "admin", "--template", "admin")
+	// 第三个前端用 console 模板：shadcn 的组件和 tenon registry 的组件从框架复制进来，类型检查和构建都要通过。
+	sh("go", "tool", "tenon", "add", "frontend", "console", "--template", "console")
 	mainGo := filepath.Join(dir, "cmd", "api", "main.go")
 	src, err := os.ReadFile(mainGo)
 	if err != nil {

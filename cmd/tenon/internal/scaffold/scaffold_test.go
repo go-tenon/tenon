@@ -196,3 +196,67 @@ func TestAddMCPServer(t *testing.T) {
 		}
 	}
 }
+
+func TestWriteConsoleFrontend(t *testing.T) {
+	root := t.TempDir()
+	f := scaffold.Frontend{Scope: "helpdesk", Name: "console", Base: "/console/", Title: "控制台", Template: "console"}
+	if err := scaffold.WriteFrontend(root, f); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(root, "apps", "console")
+	for name, want := range map[string]string{
+		"package.json":         `"radix-ui": "^1.8.1"`,
+		"components.json":      `"ui": "@/components/ui"`,
+		"vite.config.ts":       `base: "/console/"`,
+		"biome.json":           `"@ant-design/*"`,
+		"AGENTS.md":            "./.tenon/js/registry/r/",
+		"src/main.tsx":         `import "@helpdesk/theme/tokens.css"`,
+		"src/routes/_app.tsx":  `<SidebarLayout title="控制台" variant="inset"`,
+		"src/routes/login.tsx": "<LoginForm",
+		"src/index.css":        `@import "tailwindcss";`,
+		"src/routeTree.gen.ts": "LoginRouteImport",
+	} {
+		if b, _ := os.ReadFile(filepath.Join(dir, name)); !strings.Contains(string(b), want) {
+			t.Errorf("%s missing %q:\n%s", name, want, b)
+		}
+	}
+}
+
+func TestInstallRegistry(t *testing.T) {
+	registry, dir := t.TempDir(), t.TempDir()
+	for p, content := range map[string]string{
+		"src/components/ui/button.tsx":         "button",
+		"src/components/tenon/nav.tsx":         "nav",
+		"src/components/tenon/blocks.test.tsx": "test",
+		"src/hooks/use-mobile.ts":              "hook",
+		"src/lib/utils.ts":                     "utils",
+		"src/index.css":                        "not copied",
+	} {
+		full := filepath.Join(registry, p)
+		_ = os.MkdirAll(filepath.Dir(full), 0o755)
+		if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// 已有的文件不覆盖：项目修改过的组件保留。
+	_ = os.MkdirAll(filepath.Join(dir, "src/components/ui"), 0o755)
+	_ = os.WriteFile(filepath.Join(dir, "src/components/ui/button.tsx"), []byte("mine"), 0o644)
+	if err := scaffold.InstallRegistry(registry, dir); err != nil {
+		t.Fatal(err)
+	}
+	for p, want := range map[string]string{
+		"src/components/ui/button.tsx": "mine",
+		"src/components/tenon/nav.tsx": "nav",
+		"src/hooks/use-mobile.ts":      "hook",
+		"src/lib/utils.ts":             "utils",
+	} {
+		if b, _ := os.ReadFile(filepath.Join(dir, p)); string(b) != want {
+			t.Errorf("%s = %q, want %q", p, b, want)
+		}
+	}
+	for _, p := range []string{"src/components/tenon/blocks.test.tsx", "src/index.css"} {
+		if _, err := os.Stat(filepath.Join(dir, p)); err == nil {
+			t.Errorf("%s copied", p)
+		}
+	}
+}

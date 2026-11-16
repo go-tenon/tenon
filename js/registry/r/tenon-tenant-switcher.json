@@ -1,0 +1,18 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "tenon-tenant-switcher",
+  "type": "registry:block",
+  "title": "租户切换",
+  "registryDependencies": [
+    "button",
+    "dropdown-menu"
+  ],
+  "files": [
+    {
+      "path": "src/components/tenon/tenant-switcher.tsx",
+      "type": "registry:component",
+      "target": "~/src/components/tenon/tenant-switcher.tsx",
+      "content": "// 租户切换：当前租户和全部租户，见 @go-tenon/shell 的 useTenant 和 createApp 的 tenancy。\n\nimport { useTenant } from \"@go-tenon/shell\"\nimport { Check, ChevronsUpDown } from \"lucide-react\"\nimport type { ReactNode } from \"react\"\nimport { Button } from \"@/components/ui/button\"\nimport { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from \"@/components/ui/dropdown-menu\"\n\n/** 租户切换，放在 tenant 插槽。只有一个租户时只显示名称，没有租户时不显示。 */\nexport function TenantSwitcher(): ReactNode {\n  const { tenant, tenants, current, switchTo } = useTenant()\n  if (!current) return null\n  const label = tenant?.name ?? current\n  if (tenants.length <= 1) return <span className=\"text-sm text-muted-foreground\">{label}</span>\n  return (\n    <DropdownMenu>\n      <DropdownMenuTrigger asChild>\n        <Button variant=\"outline\" size=\"sm\" data-testid=\"tenant-switcher\">\n          {label}\n          <ChevronsUpDown className=\"opacity-50\" />\n        </Button>\n      </DropdownMenuTrigger>\n      <DropdownMenuContent align=\"end\">\n        {tenants.map((t) => (\n          <DropdownMenuItem key={t.id} onSelect={() => void switchTo(t.id)}>\n            {t.name}\n            {t.id === current && <Check className=\"ml-auto\" />}\n          </DropdownMenuItem>\n        ))}\n      </DropdownMenuContent>\n    </DropdownMenu>\n  )\n}\n"
+    }
+  ]
+}

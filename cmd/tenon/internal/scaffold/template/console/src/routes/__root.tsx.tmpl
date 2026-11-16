@@ -1,0 +1,18 @@
+import { createRootRouteWithContext, Outlet } from "@tanstack/react-router"
+import type { RouterContext } from "@go-tenon/shell"
+import { ColorModeProvider } from "@/components/tenon/color-mode"
+import { ConfirmProvider, NewVersionNotice } from "@/components/tenon/dialogs"
+
+// 根路由：颜色模式、确认对话框和新版本提示。
+export const Route = createRootRouteWithContext<RouterContext>()({ component: Root })
+
+function Root() {
+  return (
+    <ColorModeProvider>
+      <ConfirmProvider>
+        <NewVersionNotice />
+        <Outlet />
+      </ConfirmProvider>
+    </ColorModeProvider>
+  )
+}

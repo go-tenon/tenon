@@ -49,6 +49,7 @@ Tenon 是一个用于构建 HTTP API 的 Go 应用框架。登录后使用的界
     - [应用骨架](responses/app-shell.md)
     - [设计令牌](responses/theme.md)
     - [运营后台](responses/admin.md)
+    - [shadcn registry 与控制台](responses/registry.md)
     - [服务端推送](responses/sse.md)
     - [视图](responses/views.md)
     - [表单](responses/forms.md)

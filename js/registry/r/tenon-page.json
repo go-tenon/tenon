@@ -1,0 +1,19 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "tenon-page",
+  "type": "registry:block",
+  "title": "页头、加载与错误状态、侧边面板",
+  "registryDependencies": [
+    "button",
+    "sheet",
+    "skeleton"
+  ],
+  "files": [
+    {
+      "path": "src/components/tenon/page.tsx",
+      "type": "registry:component",
+      "target": "~/src/components/tenon/page.tsx",
+      "content": "// 页面的部件：页头、加载与错误状态、空状态、右侧抽屉面板。\n\nimport { describeError } from \"@go-tenon/client\"\nimport { useNavigation } from \"@go-tenon/shell\"\nimport { CircleAlert, Inbox } from \"lucide-react\"\nimport type { ReactNode } from \"react\"\nimport { Button } from \"@/components/ui/button\"\nimport { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from \"@/components/ui/sheet\"\nimport { Skeleton } from \"@/components/ui/skeleton\"\n\n/** 页头：标题默认是当前页面的标题（面包屑的最后一级），右侧放操作按钮。 */\nexport function PageHeader({\n  title,\n  description,\n  children,\n}: {\n  title?: ReactNode\n  description?: ReactNode\n  children?: ReactNode\n}): ReactNode {\n  const { crumbs } = useNavigation()\n  return (\n    <div className=\"flex flex-wrap items-start justify-between gap-4\">\n      <div className=\"space-y-1\">\n        <h1 className=\"text-xl font-semibold tracking-tight\">{title ?? crumbs.at(-1)?.title}</h1>\n        {description && <p className=\"text-sm text-muted-foreground\">{description}</p>}\n      </div>\n      {children && <div className=\"flex items-center gap-2\">{children}</div>}\n    </div>\n  )\n}\n\n/** 加载中：rows 行骨架。 */\nexport function PageLoading({ rows = 5 }: { rows?: number }): ReactNode {\n  return (\n    <div className=\"space-y-3\" aria-busy=\"true\">\n      {Array.from({ length: rows }, (_, i) => i).map((row) => (\n        <Skeleton key={row} className=\"h-10 w-full\" />\n      ))}\n    </div>\n  )\n}\n\n/** 出错：显示服务端的提示（describeError），断网等没有提示时显示通用的文字；retry 时显示重试按钮。 */\nexport function PageError({ error, retry }: { error: unknown; retry?: () => void }): ReactNode {\n  const info = describeError(error)\n  const message =\n    info.message ??\n    (info.kind === \"network\"\n      ? \"网络连接失败，请检查网络后重试。\"\n      : info.kind === \"forbidden\"\n        ? \"没有权限。\"\n        : \"加载失败，请稍后重试。\")\n  return (\n    <div role=\"alert\" className=\"flex flex-col items-center gap-3 py-12 text-center\">\n      <CircleAlert className=\"size-8 text-destructive\" />\n      <p className=\"text-sm text-muted-foreground\">{message}</p>\n      {retry && (\n        <Button variant=\"outline\" size=\"sm\" onClick={retry}>\n          重试\n        </Button>\n      )}\n    </div>\n  )\n}\n\n/** 空状态。 */\nexport function PageEmpty({ children = \"还没有内容。\" }: { children?: ReactNode }): ReactNode {\n  return (\n    <div className=\"flex flex-col items-center gap-3 py-12 text-center text-sm text-muted-foreground\">\n      <Inbox className=\"size-8\" />\n      {children}\n    </div>\n  )\n}\n\n/** 右侧抽屉面板，例如在列表页中查看、编辑一条记录。 */\nexport function SidePanel({\n  open,\n  onOpenChange,\n  title,\n  description,\n  children,\n}: {\n  open: boolean\n  onOpenChange: (open: boolean) => void\n  title: ReactNode\n  description?: ReactNode\n  children: ReactNode\n}): ReactNode {\n  return (\n    <Sheet open={open} onOpenChange={onOpenChange}>\n      <SheetContent className=\"w-full sm:max-w-lg\">\n        <SheetHeader>\n          <SheetTitle>{title}</SheetTitle>\n          {description && <SheetDescription>{description}</SheetDescription>}\n        </SheetHeader>\n        <div className=\"flex-1 overflow-y-auto px-4 pb-4\">{children}</div>\n      </SheetContent>\n    </Sheet>\n  )\n}\n"
+    }
+  ]
+}
