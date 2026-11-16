@@ -50,7 +50,7 @@ const defaultMaxTotalSize = 5 << 20
 export class AttachmentError extends Error {
   constructor(
     message: string,
-    readonly reason: "type" | "size" | "total" | "count" | "busy",
+    readonly reason: "type" | "size" | "total" | "count" | "busy" | "disabled",
   ) {
     super(message)
     this.name = "AttachmentError"
@@ -58,7 +58,7 @@ export class AttachmentError extends Error {
 }
 
 /** 文件是否符合 accept：.pdf 这样的扩展名、image/* 这样的大类，或完整的 MIME 类型。 */
-export function acceptsFile(accept: string, file: { name: string; type: string }): boolean {
+function acceptsFile(accept: string, file: File): boolean {
   const name = file.name.toLowerCase()
   const type = file.type.toLowerCase()
   return accept
@@ -72,31 +72,40 @@ export function acceptsFile(accept: string, file: { name: string; type: string }
 
 const mib = (n: number) => `${Math.round((n / (1 << 20)) * 10) / 10} MiB`
 
-/** 检查一个文件的类型和大小，不符合时抛出 AttachmentError。 */
-function checkFile(file: File, opts: AttachmentOptions) {
+/**
+ * 在已有的附件 current 之后加入 incoming：返回其中符合限制的文件，以及第一个不符合的原因。
+ * 加入附件（useAttachments）和发送（send）都按它检查。
+ */
+function admit(
+  current: readonly File[],
+  incoming: Iterable<File> | ArrayLike<File>,
+  opts: AttachmentOptions,
+): { accepted: File[]; error?: AttachmentError } {
   const accept = opts.accept ?? defaultAccept
   const maxSize = opts.maxFileSize ?? defaultMaxFileSize
-  if (!file.type || !acceptsFile(accept, file)) throw new AttachmentError(`不支持这种文件：${file.name}`, "type")
-  if (file.size > maxSize) throw new AttachmentError(`${file.name} 超过了 ${mib(maxSize)}`, "size")
-}
-
-/** 文件的总大小超过上限时的说明；设置了 upload 时不限制。 */
-function totalProblem(total: number, opts: AttachmentOptions): string | undefined {
-  const max = opts.maxTotalSize ?? defaultMaxTotalSize
-  if (opts.upload || total <= max) return undefined
-  return `文件总共不能超过 ${mib(max)}`
-}
-
-/** 检查一条消息的附件，不符合时抛出 AttachmentError。 */
-export function checkAttachments(files: readonly File[], opts: AttachmentOptions = {}) {
-  const max = opts.maxFiles ?? defaultMaxFiles
-  if (files.length > max) throw new AttachmentError(`一次最多发送 ${max} 个文件`, "count")
-  for (const f of files) checkFile(f, opts)
-  const problem = totalProblem(
-    files.reduce((n, f) => n + f.size, 0),
-    opts,
-  )
-  if (problem) throw new AttachmentError(problem, "total")
+  const maxFiles = opts.maxFiles ?? defaultMaxFiles
+  // 设置了 upload 时消息中只有链接，不限制总大小。
+  const maxTotal = opts.upload ? Number.POSITIVE_INFINITY : (opts.maxTotalSize ?? defaultMaxTotalSize)
+  let total = current.reduce((n, f) => n + f.size, 0)
+  const accepted: File[] = []
+  let error: AttachmentError | undefined
+  for (const file of Array.from(incoming)) {
+    if (current.length + accepted.length >= maxFiles) {
+      error ??= new AttachmentError(`一次最多发送 ${maxFiles} 个文件`, "count")
+      break
+    }
+    if (!file.type || !acceptsFile(accept, file)) {
+      error ??= new AttachmentError(`不支持这种文件：${file.name}`, "type")
+    } else if (file.size > maxSize) {
+      error ??= new AttachmentError(`${file.name} 超过了 ${mib(maxSize)}`, "size")
+    } else if (total + file.size > maxTotal) {
+      error ??= new AttachmentError(`文件总共不能超过 ${mib(maxTotal)}`, "total")
+    } else {
+      total += file.size
+      accepted.push(file)
+    }
+  }
+  return { accepted, error }
 }
 
 function dataURL(file: File): Promise<string> {
@@ -106,18 +115,6 @@ function dataURL(file: File): Promise<string> {
     r.onerror = () => reject(r.error)
     r.readAsDataURL(file)
   })
-}
-
-/** 把文件变成消息中的文件片段：设置了 upload 时上传后放链接，否则放 data URL。 */
-export async function toFileParts(files: readonly File[], opts: AttachmentOptions = {}): Promise<FileUIPart[]> {
-  return Promise.all(
-    files.map(async (f) => ({
-      type: "file" as const,
-      mediaType: f.type,
-      filename: f.name,
-      url: opts.upload ? await opts.upload(f) : await dataURL(f),
-    })),
-  )
 }
 
 /** 待发送的一个附件。preview 是图片的预览地址（object URL），其他文件没有。 */
@@ -133,44 +130,29 @@ let attachmentSeq = 0
  * 待发送的附件：选择、粘贴或拖入文件时 add，逐个 remove，发送后 clear。不符合限制的文件不加入，
  * error 是可以直接显示的原因，下一次 add、remove 或 clear 时清除。图片的预览地址在移除和卸载时释放。
  */
-export function useAttachments({ accept, maxFileSize, maxTotalSize, maxFiles, upload }: AttachmentOptions = {}) {
+export function useAttachments(options: AttachmentOptions = {}) {
   const [items, setItems] = useState<PendingAttachment[]>([])
-  const [error, setError] = useState<string>()
+  const [error, setError] = useState<AttachmentError>()
   const live = useRef(items)
   live.current = items
   useEffect(() => () => release(live.current), [])
-  const max = maxFiles ?? defaultMaxFiles
+  const opts = useRef(options)
+  opts.current = options
 
-  const add = useCallback(
-    (files: Iterable<File> | ArrayLike<File>) => {
-      let problem: string | undefined
-      const accepted: PendingAttachment[] = []
-      let total = live.current.reduce((n, a) => n + a.file.size, 0)
-      for (const file of Array.from(files)) {
-        if (live.current.length + accepted.length >= max) {
-          problem = `一次最多发送 ${max} 个文件`
-          break
-        }
-        try {
-          checkFile(file, { accept, maxFileSize })
-        } catch (err) {
-          problem = (err as Error).message
-          continue
-        }
-        const over = totalProblem(total + file.size, { maxTotalSize, upload })
-        if (over) {
-          problem = over
-          continue
-        }
-        total += file.size
-        const preview = file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined
-        accepted.push({ id: `att-${++attachmentSeq}`, file, preview })
-      }
-      setError(problem)
-      if (accepted.length) setItems((cur) => [...cur, ...accepted])
-    },
-    [max, accept, maxFileSize, maxTotalSize, upload],
-  )
+  const add = useCallback((files: Iterable<File> | ArrayLike<File>) => {
+    const { accepted, error } = admit(
+      live.current.map((a) => a.file),
+      files,
+      opts.current,
+    )
+    setError(error)
+    const added = accepted.map((file) => ({
+      id: `att-${++attachmentSeq}`,
+      file,
+      preview: file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined,
+    }))
+    if (added.length) setItems((cur) => [...cur, ...added])
+  }, [])
   const remove = useCallback((id: string) => {
     setError(undefined)
     setItems((cur) => {
@@ -188,8 +170,8 @@ export function useAttachments({ accept, maxFileSize, maxTotalSize, maxFiles, up
   return {
     items,
     files: items.map((a) => a.file),
-    error,
-    accept: accept ?? defaultAccept,
+    error: error?.message,
+    accept: options.accept ?? defaultAccept,
     add,
     remove,
     clear,
@@ -247,8 +229,12 @@ export function useAssistantChat({
   id,
   paths,
   messages,
-  attachments,
-}: AssistantOptions & { messages: UIMessage[]; attachments?: AttachmentOptions }) {
+  attachments = {},
+}: AssistantOptions & {
+  messages: UIMessage[]
+  /** 附件的类型、大小和上传方式；false 时不能发送附件。 */
+  attachments?: AttachmentOptions | false
+}) {
   const app = useApp()
   const authed = useMemo(() => app.session.fetch(fetch), [app])
   const controls = useMemo(() => chatControls<UIMessage>(api, authed, paths), [api, authed, paths])
@@ -265,14 +251,25 @@ export function useAssistantChat({
 
   /**
    * 发送：回答进行中时插话，回答恰好已经结束（409 ai.finished）时改为发送新消息。
-   * files 是附件，按 attachments 检查后随消息发送；插话只能是文字，所以回答进行中带附件时抛出 AttachmentError。
+   * files 是附件，按 attachments 检查后随消息发送：设置了 upload 时上传后放链接，否则放 data URL。
+   * 插话只能是文字，所以回答进行中带附件时抛出 AttachmentError。
    */
   const send = useCallback(
     async (text: string, files: readonly File[] = []) => {
       if (files.length > 0) {
+        if (attachments === false) throw new AttachmentError("不能发送文件", "disabled")
         if (busy) throw new AttachmentError("回答进行中不能发送文件，请等回答结束", "busy")
-        checkAttachments(files, attachments)
-        const parts = await toFileParts(files, attachments)
+        const { error } = admit([], files, attachments)
+        if (error) throw error
+        const upload = attachments.upload ?? dataURL
+        const parts: FileUIPart[] = await Promise.all(
+          files.map(async (f) => ({
+            type: "file" as const,
+            mediaType: f.type,
+            filename: f.name,
+            url: await upload(f),
+          })),
+        )
         await chat.sendMessage(text ? { text, files: parts } : { files: parts })
         return
       }
@@ -309,6 +306,8 @@ export function useAssistantChat({
     error: chat.error,
     busy,
     pending: pendingApprovals(chat.messages),
+    /** 传入的附件选项，false 时不能发送附件。 */
+    attachments,
     send,
     stop,
     respond,
@@ -316,3 +315,55 @@ export function useAssistantChat({
 }
 
 export type AssistantChat = ReturnType<typeof useAssistantChat>
+
+/** 错误的说明：附件的问题直接显示，其他按接口错误描述。 */
+function messageOf(err: unknown): string {
+  if (err instanceof AttachmentError) return err.message
+  return describeError(err).message ?? (err instanceof Error ? err.message : String(err))
+}
+
+/**
+ * 输入框：文字、待发送的附件和发送，外观只负责显示。
+ *
+ * - canSend：有文字或附件、没有等待审批的工具调用，并且回答进行中时只有文字（插话只能是文字）。
+ * - submit：发送并清空输入框；失败时恢复文字和附件，error 是失败的原因。
+ * - error：附件不符合限制、发送失败或对话出错的说明，可以直接显示。
+ */
+export function useAssistantComposer(chat: AssistantChat) {
+  const canAttach = chat.attachments !== false
+  const attachments = useAttachments(chat.attachments || undefined)
+  const [text, setText] = useState("")
+  const [failure, setFailure] = useState<unknown>()
+  const awaiting = chat.pending.length > 0
+  const files = attachments.files
+  const canSend = !awaiting && (text.trim() !== "" || files.length > 0) && !(chat.busy && files.length > 0)
+
+  const submit = async () => {
+    if (!canSend) return
+    const value = text
+    setText("")
+    attachments.clear()
+    setFailure(undefined)
+    try {
+      await chat.send(value, files)
+    } catch (err) {
+      setFailure(err)
+      setText(value)
+      attachments.add(files)
+    }
+  }
+
+  const problem = failure ?? chat.error
+  return {
+    text,
+    setText,
+    attachments,
+    canAttach,
+    awaiting,
+    canSend,
+    submit,
+    error: attachments.error ?? (problem ? messageOf(problem) : undefined),
+  }
+}
+
+export type AssistantComposer = ReturnType<typeof useAssistantComposer>

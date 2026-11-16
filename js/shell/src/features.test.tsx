@@ -10,11 +10,11 @@ import { type Activity, type ActivityItem, useActivity } from "./activity"
 import { type App, AppRoot, createApp, type RouterContext, useApp } from "./app"
 import {
   type AssistantChat,
+  type AssistantComposer,
   AttachmentError,
   type Attachments,
-  acceptsFile,
-  checkAttachments,
   useAssistantChat,
+  useAssistantComposer,
   useAttachments,
 } from "./chat"
 import { type NotificationItem, type Notifications, type NotificationsSource, useNotifications } from "./notifications"
@@ -525,6 +525,40 @@ describe("useAssistantChat", () => {
   })
 })
 
+function Composer({ onValue }: { onValue: (c: AssistantComposer) => void }) {
+  const upload = async (): Promise<string> => {
+    throw new Error("上传失败")
+  }
+  const chat = useAssistantChat({ api: "/api/chat", id: "c1", messages: history, attachments: { upload } })
+  const composer = useAssistantComposer(chat)
+  useEffect(() => {
+    onValue(composer)
+  })
+  return null
+}
+
+describe("useAssistantComposer", () => {
+  it("发送失败（这里是上传失败）时恢复文字和附件，error 是原因", async () => {
+    vi.spyOn(URL, "createObjectURL").mockImplementation(() => "blob:x")
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {})
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 204 })),
+    )
+    let c: AssistantComposer | undefined
+    await mount(() => <Composer onValue={(v) => (c = v)} />)
+    await waitFor(() => expect(c).toBeDefined())
+    expect(c?.canSend).toBe(false)
+    act(() => c?.setText("看图"))
+    act(() => c?.attachments.add([new File(["PNG"], "a.png", { type: "image/png" })]))
+    expect(c?.canSend).toBe(true)
+    await act(() => c?.submit() ?? Promise.resolve())
+    await waitFor(() => expect(c?.error).toBe("上传失败"))
+    expect(c?.text).toBe("看图")
+    expect(c?.attachments.files.map((f) => f.name)).toEqual(["a.png"])
+  })
+})
+
 describe("useAttachments", () => {
   it("加入符合限制的文件，拒绝其余的并给出原因；图片有预览，移除和清空时释放", async () => {
     const created: string[] = []
@@ -563,19 +597,45 @@ describe("useAttachments", () => {
     expect(a?.files).toEqual([])
   })
 
-  it("accept 支持扩展名、大类和完整的 MIME 类型", () => {
-    expect(acceptsFile("image/*,.pdf", { name: "a.PNG", type: "image/png" })).toBe(true)
-    expect(acceptsFile("image/*,.pdf", { name: "A.PDF", type: "" })).toBe(true)
-    expect(acceptsFile("audio/mpeg", { name: "a.mp3", type: "audio/mpeg" })).toBe(true)
-    expect(acceptsFile("image/*,.pdf", { name: "a.txt", type: "text/plain" })).toBe(false)
+  it("accept 支持扩展名、大类和完整的 MIME 类型；没有类型的文件不加入", () => {
+    vi.spyOn(URL, "createObjectURL").mockImplementation(() => "blob:x")
+    let a: Attachments | undefined
+    render(
+      <Probe
+        use={() => useAttachments({ accept: "image/*,.pdf,audio/mpeg", maxFiles: 10 })}
+        onValue={(v) => (a = v)}
+      />,
+    )
+    const file = (name: string, type: string) => new File(["x"], name, { type })
+    act(() =>
+      a?.add([
+        file("a.PNG", "image/png"),
+        file("A.PDF", "application/pdf"),
+        file("a.mp3", "audio/mpeg"),
+        file("a.txt", "text/plain"),
+        file("b.pdf", ""),
+      ]),
+    )
+    expect(a?.files.map((f) => f.name)).toEqual(["a.PNG", "A.PDF", "a.mp3"])
+    expect(a?.error).toBe("不支持这种文件：a.txt") // 第一个不符合的原因
   })
-})
 
-describe("checkAttachments", () => {
   it("data URL 发送时检查总大小；设置了 upload 时不检查", () => {
+    vi.spyOn(URL, "createObjectURL").mockImplementation(() => "blob:x")
     const f = (n: number) => new File(["x".repeat(n)], `${n}.png`, { type: "image/png" })
-    expect(() => checkAttachments([f(8), f(8)], { maxTotalSize: 10 })).toThrow("文件总共不能超过")
-    expect(() => checkAttachments([f(8), f(8)], { maxTotalSize: 10, upload: async () => "https://x" })).not.toThrow()
-    expect(() => checkAttachments([f(8)], { maxTotalSize: 10 })).not.toThrow()
+    let a: Attachments | undefined
+    let b: Attachments | undefined
+    render(<Probe use={() => useAttachments({ maxTotalSize: 10 })} onValue={(v) => (a = v)} />)
+    render(
+      <Probe
+        use={() => useAttachments({ maxTotalSize: 10, upload: async () => "https://x" })}
+        onValue={(v) => (b = v)}
+      />,
+    )
+    act(() => a?.add([f(8), f(8)]))
+    act(() => b?.add([f(8), f(8)]))
+    expect(a?.files).toHaveLength(1)
+    expect(a?.error).toBe("文件总共不能超过 0 MiB")
+    expect(b?.files).toHaveLength(2)
   })
 })
