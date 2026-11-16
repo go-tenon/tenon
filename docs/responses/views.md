@@ -8,9 +8,9 @@
 
 `web` 包把它们接到框架上：渲染组件、呈现错误、处理 htmx 的跳转、设置内容安全策略，并内嵌了 htmx 与 Alpine 的脚本。现成的按钮、表格、分页见[界面组件](components.md)，表单见[表单](forms.md)。
 
-页面没有会话，也没有登录：页面路由都是公开的。每个页面响应都带有内容安全策略，见[内容安全策略](assets.md#content-security-policy)。
+页面没有会话，也没有登录：页面路由都是公开的。只给内部人员看的页面用 [HTTP Basic 认证](../http/optional-middleware.md#basic-auth)等中间件保护，或者只在内网开放。每个页面响应都带有内容安全策略，见[内容安全策略](assets.md#content-security-policy)。
 
-阅读前需要了解：HTML；[路由](../http/routing.md)；[错误处理](../general/errors.md)。templ 和 htmx 会在用到时介绍。只给内部人员看的页面用 [HTTP Basic 认证](../http/middleware.md#basic-auth)等中间件保护，或者只在内网开放。
+阅读前需要了解：HTML；[路由](../http/routing.md)；[错误处理](../general/errors.md)。templ 和 htmx 会在用到时介绍。
 
 - [示例用法](#example-usage)
 - [安装 templ](#installing-templ)
@@ -130,7 +130,7 @@ func (a *App) Router() chi.Router {
 几点说明：
 
 - `serve` 用 `a.Router()` 运行 HTTP 服务，`openapi`、`routes` 命令用它生成文档、列出路由，见[依赖装配](../concepts/dependencies.md#assembling-the-application)。
-- 页面和 JSON API 共用一个 Router。API 挂在 `/api/v1` 下；`BasePath` 让 OpenAPI 文档中的地址带上这个前缀，见 [API 版本](../http/routing.md#api-versioning)。`rest.New` 返回 JSON 格式 404 的设置只作用于这个子路由，其余地址的 404 由 `pages.NotFound` 渲染成页面。
+- 页面和 JSON API 共用一个 Router。API 挂在 `/api/v1` 下；`BasePath` 让 OpenAPI 文档中的地址带上这个前缀，见 [API 版本](../http/openapi.md#api-versioning)。`rest.New` 返回 JSON 格式 404 的设置只作用于这个子路由，其余地址的 404 由 `pages.NotFound` 渲染成页面。
 - 后台等[单页应用](spa.md)也挂在这个 Router 上，例如 `router.Handle("/admin/*", spa)`。
 - `static` 提供应用自己的图片等静态文件，见[前端资源](assets.md)。`Theme` 来自配置，决定组件的风格和颜色，见[主题](components.md#themes)；`ui.Assets()` 提供它们的样式表和脚本。
 - [请求超时](../http/middleware.md#request-timeout)按路由组安装。

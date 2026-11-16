@@ -4,6 +4,10 @@
 
 这种方式还有一个额外的好处：验证规则会自动出现在 OpenAPI 文档中，前端开发者看到的约束，与服务端实际执行的约束完全一致。
 
+验证分两种：格式上的要求（必填、长度、取值范围、正则）写在标签上，由框架检查；需要查询数据才能判断的规则（例如“slug 全站唯一”）写在业务代码中，见[业务规则验证](#business-validation)。
+
+阅读前需要了解：[请求](requests.md)；[结构体标签](../concepts/go-primer.md#struct-tags)。
+
 - [示例用法](#validation-quickstart)
 - [可用的验证规则](#available-validation-rules)
 - [必填与可选字段](#required-and-optional-fields)
@@ -11,6 +15,7 @@
     - [验证提示](#validation-messages)
 - [带显示文字的枚举](#enums)
 - [业务规则验证](#business-validation)
+- [常见问题](#troubleshooting)
 
 <a id="validation-quickstart"></a>
 ## 示例用法
@@ -195,3 +200,22 @@ func (a *Update) Handle(ctx context.Context, subject identity.Subject, id uuid.U
 
 > [!TIP]
 > `Handle` 也会被命令行、队列或测试直接调用，绕过 HTTP 层的验证。必须成立的约束（例如标题必填）在 `Handle` 中再检查一次。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**加了 `omitempty`，但空字符串仍然被 `minLength:"1"` 拒绝**
+
+`omitempty` 只让“不传这个字段”变得合法。传了空字符串，就要满足字段上的规则。如果空字符串也合法，去掉 `minLength`。
+
+**处理器中分不清“没有传”和“传了空值”**
+
+用指针类型，例如 `*string`：没有传时是 `nil`，传了空字符串时指向 `""`，见[必填与可选字段](#required-and-optional-fields)和[指针表示“没有提供”](../concepts/go-primer.md#optional-fields)。
+
+**验证提示是英文的**
+
+请求的 `Accept-Language` 是英文，或者应用没有中文的翻译。框架内置了中英文的验证提示，见[验证提示](#validation-messages)。
+
+**从命令行或后台任务调用时，不合法的数据没有被拒绝**
+
+标签上的规则只在 HTTP 请求中检查。必须成立的约束在 `Handle` 中再检查一次，见[业务规则验证](#business-validation)。

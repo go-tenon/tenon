@@ -245,7 +245,7 @@ saveBlob(blob, filename || "failures.xlsx")
 <a id="app-version"></a>
 ## App 版本
 
-安装在手机和电脑上的 App，每个请求都带上平台和版本，服务端才能在需要时[停止支持旧版本](../http/middleware.md#app-version)：
+安装在手机和电脑上的 App，每个请求都带上平台和版本，服务端才能在需要时[停止支持旧版本](../http/optional-middleware.md#app-version)：
 
 ```http
 X-App-Version: android/2.3.1
@@ -317,7 +317,7 @@ oasdiff 只比较请求和响应的结构。schema 改名时结构相同，由�
 | `--main <pkg>` | 应用的主包，在它的依赖中查找错误码；默认是当前程序 |
 | `--import <pkg>` | 生成的 Go 代码可以直接导入的包（含子包），可重复；默认只有 `github.com/google/uuid` |
 | `--rename <path>=<name>` | 服务端包路径对应的镜像包名，可重复 |
-| `--base-path <path>` | 只生成 `BasePath` 为它的 API，例如 `/api/v2`；路由中有[多个 API](../http/routing.md#api-versioning) 时 `--out` 需要它 |
+| `--base-path <path>` | 只生成 `BasePath` 为它的 API，例如 `/api/v2`；路由中有[多个 API](../http/openapi.md#api-versioning) 时 `--out` 需要它 |
 
 ### clientgen
 
