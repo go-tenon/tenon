@@ -2,6 +2,10 @@
 
 本页从线路层面说明 Tenon API 的约定：请求头、状态码、请求体和响应体、事件流。网页、App、桌面端和其他服务的客户端，无论用什么语言编写，都按本页实现；`tenon generate` 生成的 TypeScript 和 Go 客户端是其中的一种实现。每个接口的路径和数据结构见应用导出的 OpenAPI 文档，本页说明所有接口共同遵守的部分。
 
+这一页是参考资料。如果你用的是 `tenon generate` 生成的客户端，这些细节都已经处理好了，不需要读；要用其他语言自己实现客户端，或者排查客户端和服务端之间的问题时，再来读。
+
+阅读前需要了解：[接口文档](openapi.md)；[错误处理](../general/errors.md)。
+
 - [契约与接口路径](#contract)
 - [请求与响应](#requests)
 - [错误](#errors)
@@ -53,7 +57,7 @@ OpenAPI 文档中有三个框架的扩展字段：根上的 `x-tenon-permissions
 | `Retry-After` | 建议的等待秒数，出现在 `429` 和部分 `503` 中 |
 | `WWW-Authenticate: Bearer` | 出现在 `401` 中 |
 
-跨域访问的客户端可以读取上面这些响应头，以及 `Location`、`Content-Disposition`，见[跨域请求](middleware.md#cors)。
+跨域访问的客户端可以读取上面这些响应头，以及 `Location`、`Content-Disposition`，见[跨域请求](optional-middleware.md#cors)。
 
 <a id="errors"></a>
 ## 错误
@@ -317,4 +321,4 @@ Content-Type: application/problem+json
 {"title": "Upgrade Required", "status": 426, "detail": "当前版本过低，请升级到 1.4.0 或更高版本", "code": "app.upgrade_required"}
 ```
 
-App 停在升级页面，打开应用商店或开始自动更新。请求头格式错误时返回 `400`。见 [App 最低版本](middleware.md#app-version)。
+App 停在升级页面，打开应用商店或开始自动更新。请求头格式错误时返回 `400`。见 [App 最低版本](optional-middleware.md#app-version)。

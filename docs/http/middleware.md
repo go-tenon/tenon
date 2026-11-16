@@ -2,29 +2,29 @@
 
 有些事情每个请求都要做：确定请求 ID、记录访问日志、限制请求体的大小、在处理器 panic 时恢复。把它们写在每个处理器里显然不现实，中间件就是为此而生的：它包在处理器的外面，在请求到达处理器之前和之后做这些通用的事。
 
-Tenon 的中间件都是标准的 `func(http.Handler) http.Handler`，安装在 chi Router 上。装哪些、按什么顺序装，都由你在代码中决定，`rest.New` 只使用你装好的 Router。
+可以把中间件想象成套在处理器外面的一层层包装：请求从外向内穿过每一层，到达处理器；响应再从内向外穿过每一层，返回给客户端。任何一层都可以直接返回响应，请求就不会再往里走，例如请求体太大时直接返回 413。
+
+Tenon 的中间件都是标准的 `func(http.Handler) http.Handler`：接收里面一层的处理器，返回包了一层之后的处理器。它们安装在 chi Router 上，装哪些、按什么顺序装，都由你在代码中决定，`rest.New` 只使用你装好的 Router。
+
+阅读前需要了解：[安装](../installation/installing.md#middleware)的第二步；[路由](routing.md)。
 
 > [!IMPORTANT]
 > 一个中间件是否生效，只取决于代码里有没有安装它。配置文件只提供参数。参数不合法时（例如超时为 0），构造时就 panic。
 
 - [示例用法](#default-middleware)
+- [自定义中间件](#custom-middleware)
+    - [全局中间件](#chi-middleware)
+    - [路由中间件](#route-middleware)
 - [请求超时](#request-timeout)
 - [配置](#http-configuration)
     - [请求 ID](#request-id)
     - [可信代理](#trusted-proxies)
     - [访问日志](#access-log)
-- [限流](#rate-limiting)
-- [跨域请求](#cors)
-- [HTTP Basic 认证](#basic-auth)
-- [App 最低版本](#app-version)
-- [响应压缩](#compression)
+- [可选的中间件](#optional)
 - [自行组装](#custom-stack)
-- [自定义中间件](#custom-middleware)
-    - [全局中间件](#chi-middleware)
-    - [路由中间件](#route-middleware)
 - [用于普通 HTTP 处理器](#plain-handlers)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
-
 <a id="default-middleware"></a>
 ## 示例用法
 
@@ -63,13 +63,75 @@ router.Use(httpx.Defaults(cfg.HTTP, httpx.Languages(languages))...)
 | --- | --- |
 | `Timeout(cfg.Timeout)` | 为请求 context 设置超时，见[请求超时](#request-timeout) |
 | `RateLimit(limiter, key)` | 按客户端限流，超出时返回 429，见[限流](../libraries/rate-limiting.md) |
-| `Compress()` | 按 `Accept-Encoding` 用 zstd 或 gzip 压缩文本类响应，见[响应压缩](#compression) |
+| `Compress()` | 按 `Accept-Encoding` 用 zstd 或 gzip 压缩文本类响应，见[响应压缩](optional-middleware.md#compression) |
 
 每个中间件都可以单独省略，框架的其他部分照常工作：没有 `AccessLog` 时，`httpx.AddAccessLogAttrs` 什么也不做；没有 `Locale` 时，`i18n.T` 原样返回消息 ID；没有 `AssignRequestID` 时，`httpx.RequestID` 返回空字符串。
 
 认证不在默认中间件中，因为它是按路由启用的，见[认证](../security/authentication.md)。健康检查也由你自己注册，见[请求生命周期](../concepts/lifecycle.md#health-checks)。
 
-<a id="configuring-middleware"></a>
+
+<a id="custom-middleware"></a>
+## 自定义中间件
+
+<a id="chi-middleware"></a>
+### 全局中间件
+
+自己编写的中间件和默认中间件安装方式完全相同，`router.Use` 的先后顺序就是执行顺序。
+
+例如，数据库维护期间进入只读模式：读请求照常处理，修改文章等写请求统一返回 `503`：
+
+```go
+var readOnly atomic.Bool // 由运维开关控制，例如收到某个信号时切换
+
+router := chi.NewRouter()
+router.Use(httpx.Defaults(cfg.HTTP)...)
+router.Use(func(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        if readOnly.Load() && r.Method != http.MethodGet && r.Method != http.MethodHead {
+            httpx.WriteProblem(w, http.StatusServiceUnavailable, "read-only mode")
+            return
+        }
+        next.ServeHTTP(w, r)
+    })
+})
+
+api := rest.New(router, rest.Options{})
+```
+
+安装在默认中间件之后，被拒绝的写请求同样带有请求 ID、出现在访问日志中，panic 也会被恢复。
+
+chi 要求所有中间件在注册路由之前安装，所以请先安装中间件，再调用 `rest.New` 并注册路由。
+
+<a id="route-middleware"></a>
+### 路由中间件
+
+只对某条路由生效的逻辑，可以使用 Huma 原生的 `Operation.Middlewares`。
+
+例如，早期的接口路径是 `/posts/{id}`，后来统一改为 `/articles/{id}`。旧路径暂时保留，但要在响应头中提醒客户端迁移：
+
+```go
+legacy := huma.Operation{
+    OperationID: "post-get",
+    Method:      http.MethodGet,
+    Path:        "/posts/{id}",
+    Summary:     "获取文章（已废弃，请使用 /articles/{id}）",
+    Deprecated:  true,
+}
+legacy.Middlewares = append(legacy.Middlewares, func(ctx huma.Context, next func(huma.Context)) {
+    ctx.SetHeader("Deprecation", "true")
+    ctx.SetHeader("Link", "</articles/"+ctx.Param("id")+`>; rel="successor-version"`)
+    next(ctx)
+})
+requireArticles(&legacy)
+```
+
+之后像注册 `article-get` 一样注册它即可。`Deprecated: true` 还会在 OpenAPI 文档中把这条路由标记为已废弃。
+
+路由中间件在 Router 上的全局中间件之后、处理器之前执行。
+
+> [!TIP]
+> 认证使用 [`rest.RequireBearer`](../security/authentication.md#protecting-routes)。它在检查凭据的同时，还会在 OpenAPI 文档中标记该路由需要认证，确保运行行为和文档一致。
+
 <a id="request-timeout"></a>
 ## 请求超时
 
@@ -122,8 +184,8 @@ http:
 | `timeout.duration` | `Timeout` | 每个请求 context 的超时 | `30s` |
 | `body_limit.max_bytes` | `BodyLimit` | 请求体的最大字节数 | 1 MiB |
 | `rate_limit.*` | `RateLimit` | 见[限流](../libraries/rate-limiting.md) | 每秒 10 个，突发 20 个 |
-| `cors.*` | `CORS` | 见[跨域请求](#cors) | 允许任何来源，预检结果缓存 2 小时 |
-| `app_version.minimum` | `AppVersion` | 见[App 最低版本](#app-version) | 不限制 |
+| `cors.*` | `CORS` | 见[跨域请求](optional-middleware.md#cors) | 允许任何来源，预检结果缓存 2 小时 |
+| `app_version.minimum` | `AppVersion` | 见[App 最低版本](optional-middleware.md#app-version) | 不限制 |
 
 没有写出的字段使用默认值。除 `acquire_timeout` 外，所有超时和数值都必须为正数，写 `0` 或负数会在加载配置时报错；要关掉某个中间件，在代码中省略它即可。
 
@@ -223,147 +285,18 @@ http:
 > [!NOTE]
 > 处理器没有写出任何响应时，客户端收到的是 `200`。`AccessLog` 会显式写出这个 `200`，让日志中的状态码与客户端看到的一致。
 
-<a id="rate-limiting"></a>
-## 限流
+<a id="optional"></a>
+## 可选的中间件
 
-`httpx.RateLimit` 按客户端限制请求频率，超出时返回 `429`。它不在默认中间件中，需要时在 `httpx.Defaults` 之后安装：
+下面这些中间件不在 `httpx.Defaults` 中，需要时另行安装，用法见[可选的中间件](optional-middleware.md)：
 
-```go
-router.Use(httpx.Defaults(cfg.HTTP)...)
-router.Use(httpx.RateLimit(ratelimit.NewMemory(cfg.HTTP.RateLimit), httpx.KeyByIP))
-```
-
-参数来自 `http.rate_limit` 段。限流的 key、配额参数、在处理器中按用户限流以及多实例共享计数，见[限流](../libraries/rate-limiting.md)。
-
-<a id="cors"></a>
-## 跨域请求
-
-独立部署的单页应用、桌面或移动端的 WebView 与 API 不在同一个源时，浏览器要求 API 返回 CORS 响应头。`httpx.CORS` 只安装在 API 的路由组上，页面不开放跨域：
-
-```go
-router.Route("/api", func(r chi.Router) {
-    r.Use(httpx.CORS(cfg.HTTP.CORS))
-    // ...
-})
-```
-
-参数来自 `http.cors` 段：
-
-```yaml
-http:
-  cors:
-    allowed_origins: ["https://app.example.com", "https://*.example.com", "capacitor://localhost"]
-    expose_headers: [X-Total-Count]
-    max_age: 2h
-```
-
-| 字段 | 说明 | 默认值 |
-| --- | --- | --- |
-| `allowed_origins` | 允许的来源，`scheme://host[:port]`，可以有一个 `*` 通配；单独的 `*` 允许任何来源 | `["*"]` |
-| `expose_headers` | 还要让前端读取的响应头，`X-Request-ID`、`Content-Language`、`Retry-After`、`Location`、`Content-Disposition` 总是暴露 | 空 |
-| `max_age` | 浏览器缓存预检结果的时间，Chrome 最多缓存 2 小时 | `2h` |
-| `credentials` | 允许携带 cookie，见下文；为 `true` 时 `allowed_origins` 必须逐个列出具体来源 | `false` |
-
-API 只用 [Bearer token](../security/api-tokens.md) 认证，所以 `CORS` 默认关闭凭据：token 只在你的前端中，允许任何来源也是安全的。唯一的例外是单页应用保存 refresh token 的 [cookie](../security/api-tokens.md#single-page-applications)：单页应用与 API 在同一站点的不同子域名（`app.example.com` 与 `api.example.com`）时，设置 `credentials: true` 并列出单页应用的来源。ookie 的 `Path` 只包含刷新和登出接口，只有这两个接口收到 cookie。请求头按预检请求声明的原样允许，`Authorization` 自动包含在内。
-
-预检请求（`OPTIONS`）直接以 `204` 应答，不进入路由、认证和限流，所以要把 `CORS` 安装在它们之前。`401`、`429` 等错误响应同样带有 CORS 头，前端能读到错误内容。
-
-<a id="basic-auth"></a>
-## HTTP Basic 认证
-
-[队列面板](../libraries/queue.md#panel)、内部的[文档页](../responses/doc-pages.md)这类给运维和团队成员看的页面，不值得接入应用的账号体系，用 `httpx.BasicAuth` 保护：浏览器弹出登录框，之后的请求自动带上用户名和密码。
-
-账号写在配置中，密码保存为[哈希](../security/hashing.md)，用 `hashing.Hasher` 生成和校验：
-
-```go
-type Config struct {
-    // ……
-    Ops map[string]string `yaml:"ops"` // 运维账号：用户名 → 密码哈希
-}
-
-verifyOps := func(_ context.Context, user, password string) (bool, error) {
-    hash, ok := cfg.Ops[user]
-    return ok && hasher.Check(password, hash), nil
-}
-```
-
-```go
-ops := router.With(
-    httpx.RateLimit(opsLimiter, httpx.KeyByIP), // 限制暴力尝试，见限流
-    httpx.BasicAuth("ops", verifyOps),
-)
-```
-
-- 没有凭据或校验不通过时返回 `401` 和 `WWW-Authenticate: Basic realm="ops"`；`verify` 返回错误时返回 `503`，记录一条 Error 日志。
-- 认证通过后，`httpx.BasicUser(ctx)` 返回用户名，用来在日志中记下操作者。
-- Basic 认证在每个请求中发送明文密码，只能用于 HTTPS。
-- 浏览器会给跨站请求自动带上 Basic 凭据：页面中有 `POST` 等修改数据的请求时，用 `http.CrossOriginProtection` 拒绝跨站请求。队列面板已经这样做了。
-
-<a id="app-version"></a>
-## App 最低版本
-
-装在手机和电脑上的 App 升级有快有慢。接口做了旧版本处理不了的变更，或者旧版本有安全问题时，要让它们停止调用接口，提示用户升级。`httpx.AppVersion` 读取 App 在每个请求中带的版本：
-
-```http
-X-App-Version: ios/1.4.2
-```
-
-版本低于该平台的最低版本时返回 `426`：
-
-```http
-HTTP/1.1 426 Upgrade Required
-Content-Type: application/problem+json
-
-{"title": "Upgrade Required", "status": 426, "detail": "当前版本过低，请升级到 1.4.0 或更高版本", "code": "app.upgrade_required"}
-```
-
-App 收到 `app.upgrade_required` 时显示升级页面，打开应用商店或开始自动更新，见[客户端协议](protocol.md#app-version)。请求头格式错误时返回 `400`。没有这个请求头的请求放行，例如浏览器、单页应用和用 [API token](../security/api-tokens.md) 调用的第三方；没有设置最低版本的平台也放行。
-
-`AppVersion` 只安装在 API 的路由组上，放在 `CORS` 之后，WebView 中的页面才能读到 `426` 的内容：
-
-```go
-router.Route("/api", func(r chi.Router) {
-    r.Use(httpx.CORS(cfg.HTTP.CORS))
-    r.Use(httpx.AppVersion(cfg.HTTP.AppVersion))
-    // ...
-})
-```
-
-最低版本按平台写在 `http.app_version` 段，平台名由 App 自己决定，不区分大小写：
-
-```yaml
-http:
-  app_version:
-    minimum:
-      ios: 1.4.0
-      android: 1.3.0
-```
-
-版本按[语义化版本](https://semver.org/lang/zh-CN/)比较：`1.4` 等于 `1.4.0`，`1.10.0` 高于 `1.9.0`，`1.4.0-beta.1` 低于 `1.4.0`，`+` 之后的构建号不参与比较。修改最低版本后[不停机升级](../installation/operations.md#zero-downtime-upgrades)即可生效。
-
-带这个请求头的请求，访问日志中有 `app` 字段，例如 `"app":"ios/1.4.2"`。提高最低版本之前，先按它统计还有多少用户在用旧版本。
-
-**这个请求头要从 App 的第一个版本就开始发送。** 没有带它的旧版本无法被拦截，只能等用户自己升级，见[客户端代码](../responses/clients.md#app-version)。
-
-<a id="compression"></a>
-## 响应压缩
-
-应用直接对外提供服务、前面没有负责压缩的反向代理或 CDN 时，在 `httpx.Defaults` 之后安装 `httpx.Compress`：
-
-```go
-router.Use(httpx.Defaults(cfg.HTTP)...)
-router.Use(httpx.Compress())
-```
-
-浏览器同时接受两种编码时使用 zstd，否则使用 gzip。JSON、HTML 片段和样式表通常压缩到原来的几分之一。
-
-只有文本类响应会被压缩：`text/*`、JSON、JavaScript、XML、SVG 和 WebAssembly。图片、字体、PDF、压缩包等原样发送。以下响应也不压缩：
-
-- 小于 1 KiB 的响应；
-- 已经带 `Content-Encoding` 的响应，例如[界面组件](../responses/components.md)预先压缩的样式表和脚本；
-- `Range` 请求的部分响应。
-
-[服务端推送](../responses/sse.md)和 [WebSocket](../libraries/realtime.md) 照常工作：`text/event-stream` 直接写出，每条事件立即送达；带 `Upgrade` 请求头的握手原样交给处理器。[静态资源](../responses/assets.md)的 `ETag` 保持不变，浏览器协商时照常得到 `304`。
+| 中间件 | 什么时候需要 |
+| --- | --- |
+| [`RateLimit`](optional-middleware.md#rate-limiting) | 限制每个客户端的请求频率 |
+| [`CORS`](optional-middleware.md#cors) | 其他域名的网页要调用你的接口 |
+| [`BasicAuth`](optional-middleware.md#basic-auth) | 给内部页面（例如队列面板）加一道简单的密码 |
+| [`AppVersion`](optional-middleware.md#app-version) | 拒绝过旧版本的移动 App |
+| [`Compress`](optional-middleware.md#compression) | 程序直接面对用户、前面没有反向代理时压缩响应 |
 
 <a id="custom-stack"></a>
 ## 自行组装
@@ -397,68 +330,6 @@ router.Use(
 
 自行组装时请保持 `AccessLog` 在 `Recover` 之外，这样 panic 产生的 500 才会出现在访问日志中。
 
-<a id="custom-middleware"></a>
-## 自定义中间件
-
-<a id="chi-middleware"></a>
-### 全局中间件
-
-自己编写的中间件和默认中间件安装方式完全相同，`router.Use` 的先后顺序就是执行顺序。
-
-例如，数据库维护期间进入只读模式：读请求照常处理，修改文章等写请求统一返回 `503`：
-
-```go
-var readOnly atomic.Bool // 由运维开关控制，例如收到某个信号时切换
-
-router := chi.NewRouter()
-router.Use(httpx.Defaults(cfg.HTTP)...)
-router.Use(func(next http.Handler) http.Handler {
-    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        if readOnly.Load() && r.Method != http.MethodGet && r.Method != http.MethodHead {
-            httpx.WriteProblem(w, http.StatusServiceUnavailable, "read-only mode")
-            return
-        }
-        next.ServeHTTP(w, r)
-    })
-})
-
-api := rest.New(router, rest.Options{})
-```
-
-安装在默认中间件之后，被拒绝的写请求同样带有请求 ID、出现在访问日志中，panic 也会被恢复。
-
-chi 要求所有中间件在注册路由之前安装，所以请先安装中间件，再调用 `rest.New` 并注册路由。
-
-<a id="route-middleware"></a>
-### 路由中间件
-
-只对某条路由生效的逻辑，可以使用 Huma 原生的 `Operation.Middlewares`。
-
-例如，早期的接口路径是 `/posts/{id}`，后来统一改为 `/articles/{id}`。旧路径暂时保留，但要在响应头中提醒客户端迁移：
-
-```go
-legacy := huma.Operation{
-    OperationID: "post-get",
-    Method:      http.MethodGet,
-    Path:        "/posts/{id}",
-    Summary:     "获取文章（已废弃，请使用 /articles/{id}）",
-    Deprecated:  true,
-}
-legacy.Middlewares = append(legacy.Middlewares, func(ctx huma.Context, next func(huma.Context)) {
-    ctx.SetHeader("Deprecation", "true")
-    ctx.SetHeader("Link", "</articles/"+ctx.Param("id")+`>; rel="successor-version"`)
-    next(ctx)
-})
-requireArticles(&legacy)
-```
-
-之后像注册 `article-get` 一样注册它即可。`Deprecated: true` 还会在 OpenAPI 文档中把这条路由标记为已废弃。
-
-路由中间件在 Router 上的全局中间件之后、处理器之前执行。
-
-> [!TIP]
-> 认证使用 [`rest.RequireBearer`](../security/authentication.md#protecting-routes)。它在检查凭据的同时，还会在 OpenAPI 文档中标记该路由需要认证，确保运行行为和文档一致。
-
 <a id="plain-handlers"></a>
 ## 用于普通 HTTP 处理器
 
@@ -467,6 +338,25 @@ requireArticles(&legacy)
 ```go
 handler := chi.Chain(httpx.Defaults(cfg.HTTP)...).Handler(mux)
 ```
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**日志中的客户端地址都是代理的地址**
+
+没有配置可信代理，程序不会相信 `X-Forwarded-For`。把代理的网段写进 `client_ip.trusted_proxies`，见[可信代理](#trusted-proxies)。
+
+**上传文件时返回 413**
+
+请求体超过了 `body_limit`（默认 1 MiB）。只给上传的路由放宽限制，见[请求体大小](requests.md#body-size)。
+
+**慢接口返回 503，日志中出现 `context deadline exceeded`**
+
+请求超过了 `http.timeout`。优化接口；确实需要更长时间的接口，单独放在超时更长的路由组中，见[请求超时](#request-timeout)。
+
+**自己写的中间件没有生效**
+
+检查安装的位置：`router.Use` 只对之后注册的路由生效；装在子路由上的中间件，只对这个子路由生效。
 
 <a id="api-reference"></a>
 ## API 参考
@@ -503,11 +393,11 @@ router.Use(httpx.Defaults(cfg.HTTP)...)
 | `BodyLimit(cfg BodyLimitConfig)` | 限制请求体大小 |
 | `AcquireTimeout(d time.Duration)` | 等待共享资源的时限 |
 | `Timeout(cfg TimeoutConfig)` | [请求超时](#request-timeout) |
-| `RateLimit(limiter ratelimit.Limiter, key KeyFunc)` | [限流](#rate-limiting) |
-| `CORS(cfg CORSConfig)` | [跨域请求](#cors) |
-| `BasicAuth(realm string, verify func(ctx context.Context, user, password string) (bool, error))` | [HTTP Basic 认证](#basic-auth) |
-| `AppVersion(cfg AppVersionConfig)` | [App 最低版本](#app-version) |
-| `Compress()` | [响应压缩](#compression) |
+| `RateLimit(limiter ratelimit.Limiter, key KeyFunc)` | [限流](optional-middleware.md#rate-limiting) |
+| `CORS(cfg CORSConfig)` | [跨域请求](optional-middleware.md#cors) |
+| `BasicAuth(realm string, verify func(ctx context.Context, user, password string) (bool, error))` | [HTTP Basic 认证](optional-middleware.md#basic-auth) |
+| `AppVersion(cfg AppVersionConfig)` | [App 最低版本](optional-middleware.md#app-version) |
+| `Compress()` | [响应压缩](optional-middleware.md#compression) |
 | `Telemetry(mp metric.MeterProvider, tp trace.TracerProvider)` | 请求指标与链路，见[可观测性](../general/telemetry.md#http) |
 
 ### 读取请求信息

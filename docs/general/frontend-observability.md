@@ -142,7 +142,7 @@ if (observing) {
 
 `allowedTracingUrls` 中的请求带上 W3C 的 `traceparent` 请求头，框架的 HTTP 服务[接在调用方的链路之后](telemetry.md#http)。后端把链路推送到同一个 OpenObserve（[配置](telemetry.md#setup)中的 `telemetry.endpoint`），错误详情中的 Trace Correlation 就能跳到后端的链路：慢在哪个查询、哪个下游服务出了错。
 
-前端和 API 同源（`/api`）时不涉及跨域。API 在其他域名时，[CORS](../http/middleware.md#cors) 要允许 `traceparent` 和 `tracestate` 请求头，否则浏览器在预检时去掉它们。
+前端和 API 同源（`/api`）时不涉及跨域。API 在其他域名时，[CORS](../http/optional-middleware.md#cors) 要允许 `traceparent` 和 `tracestate` 请求头，否则浏览器在预检时去掉它们。
 
 <a id="source-maps"></a>
 ## Source map
