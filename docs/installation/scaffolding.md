@@ -186,7 +186,7 @@ func routes(cfg Config, store *todo.Store) chi.Router {
 - **开发时**：前端的开发服务器 Vite 在另一个端口上运行，但你不直接访问它。Go 程序在 8080 端口上处理 `/api` 的请求，把其余的请求（页面、热更新）转发给 Vite。浏览器始终只访问 8080。
 - **发布时**：前端被构建成静态文件，放进 `apps/web/dist`，再由 `frontend.go` 打包进 Go 程序（见 [embed](../concepts/go-primer.md#embed)）。Go 程序直接提供这些文件，不再需要 Vite。
 
-细节见[单页应用](../responses/spa.md)。
+细节见[单页应用](../frontend/spa.md)。
 
 <a id="building"></a>
 ## 构建

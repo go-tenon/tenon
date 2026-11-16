@@ -51,7 +51,7 @@ type Changes struct {
 <a id="exporting-openapi"></a>
 ## 离线导出
 
-很多时候，你希望离线生成 OpenAPI 文档，例如在 CI 中检查接口变更，或者为前端[生成客户端代码](../responses/clients.md)。只需用默认配置和 `nil` 依赖调用构造路由的同一个函数，再用 `rest.Lookup` 取出其中的 API：
+很多时候，你希望离线生成 OpenAPI 文档，例如在 CI 中检查接口变更，或者为前端[生成客户端代码](clients.md)。只需用默认配置和 `nil` 依赖调用构造路由的同一个函数，再用 `rest.Lookup` 取出其中的 API：
 
 ```go
 // routes 是 serve 也在用的路由函数，见依赖装配
@@ -84,7 +84,7 @@ git diff --exit-code openapi.json
 <a id="api-versioning"></a>
 ## API 版本
 
-只提供 JSON API 的应用，通常直接挂在根路径上，由部署决定前缀，例如 `https://api.example.com/v1`。但如果 API 要和[页面](../responses/views.md)或单页应用共用一个 Router，就需要把它挂在带版本号的子路由下，并把同一个前缀设为 `BasePath`：
+只提供 JSON API 的应用，通常直接挂在根路径上，由部署决定前缀，例如 `https://api.example.com/v1`。但如果 API 要和[页面](../web/views.md)或单页应用共用一个 Router，就需要把它挂在带版本号的子路由下，并把同一个前缀设为 `BasePath`：
 
 ```go
 router.Route("/api/v1", func(r chi.Router) {
@@ -104,7 +104,7 @@ router.Route("/api/v2", func(r chi.Router) {
 })
 ```
 
-一个应用中有多个 API 时，[`openapi`](../general/commands.md#openapi-command) 和 [`client`](../responses/clients.md) 命令用 `--base-path` 选择其中一个，例如 `./bin/api openapi --base-path /api/v2`。
+一个应用中有多个 API 时，[`openapi`](../general/commands.md#openapi-command) 和 [`client`](clients.md) 命令用 `--base-path` 选择其中一个，例如 `./bin/api openapi --base-path /api/v2`。
 
 <a id="troubleshooting"></a>
 ## 常见问题

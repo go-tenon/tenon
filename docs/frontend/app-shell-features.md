@@ -112,7 +112,7 @@ const { current, tenant, tenants, switchTo } = useTenant()
 | 子域名 | 返回完整的地址，例如 `` (id) => `https://${id}.example.com/` `` | 整页跳转 |
 | 请求头 `X-Tenant` | 不设置 | 留在当前页面，按新租户重新读取数据 |
 
-客户端按同样的方式把租户带给接口：请求头方式用 `createClient` 的 `headers`，路径方式用函数形式的 `baseURL`，见[客户端代码](clients.md#creating-the-client)：
+客户端按同样的方式把租户带给接口：请求头方式用 `createClient` 的 `headers`，路径方式用函数形式的 `baseURL`，见[客户端代码](../http/clients.md#creating-the-client)：
 
 ```ts
 const tenant = () => session.identity()?.tenant

@@ -171,7 +171,7 @@ func (a *DirectUpload) AbortMultipart(ctx context.Context, in *UploadIDInput) (*
 }
 ```
 
-客户端用 `@go-tenon/client` 的 `uploadFile` 执行完整的流程，各个步骤是[生成客户端](../responses/clients.md)的方法：
+客户端用 `@go-tenon/client` 的 `uploadFile` 执行完整的流程，各个步骤是[生成客户端](../http/clients.md)的方法：
 
 ```ts
 import { uploadFile } from "@go-tenon/client"

@@ -1,6 +1,6 @@
 # 设计令牌
 
-一个产品通常有三套界面：服务端渲染的公开页面（[web/ui](components.md)）、用 shadcn 写的前端、用 antd 写的运营后台。品牌只在一处定义：项目的 `theme/tokens.json`，`tenon generate` 从它生成三套主题。修改一次品牌色，三套界面同时改变。
+一个产品通常有三套界面：服务端渲染的公开页面（[web/ui](../web/components.md)）、用 shadcn 写的前端、用 antd 写的运营后台。品牌只在一处定义：项目的 `theme/tokens.json`，`tenon generate` 从它生成三套主题。修改一次品牌色，三套界面同时改变。
 
 阅读前需要了解：[脚手架](../installation/scaffolding.md)；CSS 变量的基本用法。
 
@@ -104,7 +104,7 @@ pages := web.New(web.Options{
 })
 ```
 
-`theme` 是项目自己的 `theme` 包。组件风格（`style`）、颜色模式（`mode`）仍在配置中，见[界面组件的主题](components.md#themes)。
+`theme` 是项目自己的 `theme` 包。组件风格（`style`）、颜色模式（`mode`）仍在配置中，见[界面组件的主题](../web/components.md#themes)。
 
 <a id="troubleshooting"></a>
 ## 常见问题

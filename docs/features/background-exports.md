@@ -1,6 +1,6 @@
 # 后台导出
 
-导出几十万行要几分钟，在一次请求中做会超时，所以放到[队列](../libraries/queue.md)中。`sheet/exports` 包记录导出的进度，任务把表格写到本地临时文件，完成后上传到[文件存储](../libraries/filesystem.md)，用户在页面上看到进度，结束后直接下载。
+导出几十万行要几分钟，在一次请求中做会超时，所以放到[队列](../background/queue.md)中。`sheet/exports` 包记录导出的进度，任务把表格写到本地临时文件，完成后上传到[文件存储](../libraries/filesystem.md)，用户在页面上看到进度，结束后直接下载。
 
 导出是一个[后台操作](operations.md)，在“任务中心”中与导入和其他批量操作一起显示。同步的导出和列的写法见[导入与导出](import-export.md)。
 
@@ -232,7 +232,7 @@ data: {"id":"0193e7a2-8a01-7c3e-b1d4-5e6f7a8b9c0d","kind":"articles.export","sta
 <a id="export-button"></a>
 ## 在页面中使用
 
-框架提供了现成的导出按钮：运营后台（antd）的 `ExportButton` 和 shadcn registry 的 `tenon-transfer`，逻辑来自 `@go-tenon/shell` 的 `useExport`。点击按钮发起导出，对话框显示进度，完成后显示“下载”。进度同时出现在顶栏的[任务中心](../responses/app-shell-features.md#operations)。
+框架提供了现成的导出按钮：运营后台（antd）的 `ExportButton` 和 shadcn registry 的 `tenon-transfer`，逻辑来自 `@go-tenon/shell` 的 `useExport`。点击按钮发起导出，对话框显示进度，完成后显示“下载”。进度同时出现在顶栏的[任务中心](../frontend/app-shell-features.md#operations)。
 
 ```tsx
 <ExportButton

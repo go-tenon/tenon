@@ -6,7 +6,7 @@
 
 **向量**是一组数字，由嵌入模型（embedding model）根据文字的意思算出来，意思相近的文字，向量也相近。
 
-阅读前需要了解：[全文搜索](../features/search.md)（用法相同）；[队列](../libraries/queue.md)；[文档转换与切分](documents.md)。
+阅读前需要了解：[全文搜索](../features/search.md)（用法相同）；[队列](../background/queue.md)；[文档转换与切分](documents.md)。
 
 - [示例用法](#example-usage)
 - [安装](#installation)
@@ -51,7 +51,7 @@ hits, err := Chunks.Search(ctx, store, vector.Query{Text: "如何退款", Limit:
 go get github.com/qdrant/go-client@v1.19.0
 ```
 
-把 `vector` 的迁移加入[发布命令](../database/migrations.md#publishing-framework-migrations)，发布后执行 `migrate up`。同步任务通过[队列](../libraries/queue.md)执行，重建索引的进度记在[后台操作](../features/operations.md)中，所以还需要它们的迁移：
+把 `vector` 的迁移加入[发布命令](../database/migrations.md#publishing-framework-migrations)，发布后执行 `migrate up`。同步任务通过[队列](../background/queue.md)执行，重建索引的进度记在[后台操作](../features/operations.md)中，所以还需要它们的迁移：
 
 ```go
 migratecmd.Publish(
@@ -186,7 +186,7 @@ return database.RunInTx(ctx, a.db, nil, func(ctx context.Context, tx database.Tx
 })
 ```
 
-worker 注册同步任务和[重建任务](#reindexing)的处理函数，加在 [worker 的装配](../libraries/queue.md#running-workers)中：
+worker 注册同步任务和[重建任务](#reindexing)的处理函数，加在 [worker 的装配](../background/queue.md#running-workers)中：
 
 ```go
 attachment.Chunks.Handle(w, a.vectors, attachment.LoadChunks, attachment.ScanChunkKeys)
@@ -196,7 +196,7 @@ attachment.Chunks.Handle(w, a.vectors, attachment.LoadChunks, attachment.ScanChu
 
 - 同一个 key 的同步依次执行，后执行的一定读到更新的数据。为此锁要一直持有到写完 Qdrant，计算向量期间同步事务也保持打开，所以 `LoadFunc` 只应读取数据，转换、切分文件这类耗时的处理放在之前的任务中完成。
 - 删除附件同样调用 `Sync`，`LoadChunks` 读不到分段，索引中的文档随之删除。
-- 计算向量的文本为空时，任务直接转入[失败任务表](../libraries/queue-monitoring.md#failed-jobs)。模型服务出错时，任务按队列的规则重试。
+- 计算向量的文本为空时，任务直接转入[失败任务表](../background/queue-monitoring.md#failed-jobs)。模型服务出错时，任务按队列的规则重试。
 - 索引的每个版本是 Qdrant 中的一个 collection，第一次写入时自动创建，同时给过滤字段建立索引；之后新增过滤字段时，进程启动后第一次同步会补建索引。
 
 <a id="reusing-vectors"></a>

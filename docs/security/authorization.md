@@ -135,7 +135,7 @@ roles := authz.NewStore(a.db, auth.Permissions)
 
 角色只能包含目录中的权限，以及能匹配目录中权限的通配符，写错权限名会在保存角色时得到错误。目录也是角色编辑界面的数据来源：`roles.Catalog()` 返回全部权限和说明。
 
-把目录交给 API，它写入 OpenAPI 的 `x-tenon-permissions`，生成的客户端据此得到权限常量和说明，见[客户端的权限](../responses/client-react.md#ts-permissions)：
+把目录交给 API，它写入 OpenAPI 的 `x-tenon-permissions`，生成的客户端据此得到权限常量和说明，见[客户端的权限](../frontend/client-react.md#ts-permissions)：
 
 ```go
 api := rest.New(r, rest.Options{Title: "Blog API", BasePath: "/api", Accounts: accounts, Permissions: auth.Permissions})
@@ -178,7 +178,7 @@ rt, err := realtime.New(hub, realtime.Options{Authenticate: tokens.Validate, Acc
 
 `authz` 按主体的类型和 ID 保存角色，可以同时用于多套账号体系，例如 `identity.Accounts{staff.Type: roles.Resolve, member.Type: roles.Resolve}`。
 
-加载是一次带索引的查询，修改角色、撤销分配都在下一个请求生效；请求量大时可以[缓存](#caching-permissions)。已经建立的长连接按新的权限每 30 秒校验一次；需要立即生效时，修改后调用 `RecheckSubject`，修改角色的权限后调用 `RecheckTenant`，见[立即断开](../responses/sse.md#immediate-revocation)。还需要检查账号是否停用时，在外面包一层：
+加载是一次带索引的查询，修改角色、撤销分配都在下一个请求生效；请求量大时可以[缓存](#caching-permissions)。已经建立的长连接按新的权限每 30 秒校验一次；需要立即生效时，修改后调用 `RecheckSubject`，修改角色的权限后调用 `RecheckTenant`，见[立即断开](../http/sse.md#immediate-revocation)。还需要检查账号是否停用时，在外面包一层：
 
 ```go
 resolve := func(ctx context.Context, sub identity.Subject) (identity.Subject, error) {

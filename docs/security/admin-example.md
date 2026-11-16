@@ -214,7 +214,7 @@ func Register(api *rest.API, requireUser func(*huma.Operation), users *login.Rea
 }
 ```
 
-打开页面时先 `POST /auth/refresh`：有 cookie 就换到 access token，没有就进登录页。前端写法见 [API 客户端](../responses/clients.md#creating-the-client)。
+打开页面时先 `POST /auth/refresh`：有 cookie 就换到 access token，没有就进登录页。前端写法见 [API 客户端](../http/clients.md#creating-the-client)。
 
 <a id="protecting-routes"></a>
 ## 保护业务路由

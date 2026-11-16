@@ -5,7 +5,7 @@ App 在后台或者没有打开时，只能靠系统的推送通道把消息送�
 - **设备由服务端登记**：App 登录后把推送 SDK 给出的设备标识交给你的接口，接口把设备记在当前用户名下，同时记下这次登录的凭据。设备只能登记在当前用户名下，退出登录时连同凭据一起删除，这台设备的推送随之停止。
 - **推送随事务提交**：`push.Send` 在业务事务中发布推送任务，事务提交后才推送，回滚时一起取消，与[站内通知](notifications.md)、[webhook](webhooks.md) 的写法相同。一次通知发往哪些渠道，仍由业务动作显式写出来。
 
-阅读前需要了解：[队列](../libraries/queue.md)；[API 令牌](../security/api-tokens.md)；你的 App 已经集成了阿里云的推送 SDK。
+阅读前需要了解：[队列](../background/queue.md)；[API 令牌](../security/api-tokens.md)；你的 App 已经集成了阿里云的推送 SDK。
 
 - [示例用法](#example-usage)
 - [安装](#installation)
@@ -45,7 +45,7 @@ App 登录之后调用你的接口登记设备；业务代码在事务中调用 
 <a id="installation"></a>
 ## 安装
 
-推送任务使用[队列](../libraries/queue.md)，把两者的迁移都加入[发布命令](../database/migrations.md#publishing-framework-migrations)，发布后执行 `migrate up`：
+推送任务使用[队列](../background/queue.md)，把两者的迁移都加入[发布命令](../database/migrations.md#publishing-framework-migrations)，发布后执行 `migrate up`：
 
 ```go
 migratecmd.Publish(
@@ -194,12 +194,12 @@ categories:
 | `xiaomi` | 小米推送后台申请的 channel ID，每个应用最多 8 个 |
 | `channel` | 覆盖 `android.channel`，例如营销消息用单独的通知渠道，用户可以只关闭它 |
 
-推送营销消息时写 `Category: "promo"`。指定了配置中没有的分类时，推送任务直接失败，在[失败任务](../libraries/queue-monitoring.md#failed-jobs)中可以看到原因。
+推送营销消息时写 `Category: "promo"`。指定了配置中没有的分类时，推送任务直接失败，在[失败任务](../background/queue-monitoring.md#failed-jobs)中可以看到原因。
 
 <a id="delivering"></a>
 ## 运行推送
 
-在 [worker](../libraries/queue.md#processing-jobs) 中注册推送任务的处理器。`aliyun.New` 不访问网络：
+在 [worker](../background/queue.md#processing-jobs) 中注册推送任务的处理器。`aliyun.New` 不访问网络：
 
 ```go
 provider, err := aliyun.New(cfg.Push, nil)

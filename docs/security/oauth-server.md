@@ -6,7 +6,7 @@
 - 客户端即来即用：claude.ai、ChatGPT 的 client_id 是一个 https 地址，授权时从这个地址取回客户端的名称和回调地址（Client ID Metadata Document）。
 - 令牌是 [`apitoken`](api-tokens.md) 的 OAuth 令牌：只能用于授权时的 MCP 服务，权限是用户本人的权限与同意的范围的交集，按使用滑动过期，出现在用户的令牌列表中，可以随时撤销。
 
-同意页是应用的[单页应用](../responses/spa.md)中的一个页面：授权端点校验请求后跳到同意页，同意页用登录 token 调用两个接口，读取请求、提交用户的选择。所以能授权的是这两个接口接受的账号体系。例子中授权的是编辑：他们在编辑后台登录，在 Claude 中查找和发布文章。
+同意页是应用的[单页应用](../frontend/spa.md)中的一个页面：授权端点校验请求后跳到同意页，同意页用登录 token 调用两个接口，读取请求、提交用户的选择。所以能授权的是这两个接口接受的账号体系。例子中授权的是编辑：他们在编辑后台登录，在 Claude 中查找和发布文章。
 
 **OAuth** 是一种授权协议：第三方应用（这里是 claude.ai 这类 AI 客户端）把用户带到你的网站，用户登录并点“允许”后，第三方拿到一个只能做有限的事、可以随时撤销的令牌，而不需要知道用户的密码。
 
@@ -106,7 +106,7 @@ oauth.Register(api, rest.RequireBearer(api, tokens.Validate)) // 编辑后台用
 | `GET /oauth/consent?request=…` | `oauth-consent-get` | 读取授权请求：应用、范围、跳转去向 |
 | `POST /oauth/consent` | `oauth-consent-decide` | 允许或拒绝，返回浏览器要跳转去的地址 |
 
-授权码 10 分钟有效。用 `oauth.Cleanup` 定时删除过期的授权码，见[清理框架数据](../libraries/scheduling.md#framework-cleanups)。
+授权码 10 分钟有效。用 `oauth.Cleanup` 定时删除过期的授权码，见[清理框架数据](../background/scheduling.md#framework-cleanups)。
 
 <a id="scopes"></a>
 ### 范围
@@ -189,7 +189,7 @@ sched.Add("oauth:cleanup-clients", "@daily", schedule.Cleanup(oauth.CleanupClien
 <a id="consent-page"></a>
 ## 同意页
 
-同意页是编辑后台单页应用中的一个路由，路径与 `ConsentURL` 相同。它从地址中取出 `request`，用[客户端](../responses/clients.md#creating-the-client)读取授权请求，用户点击后提交选择，再跳转到返回的地址。下面是用 TanStack Router 写的 `src/routes/oauth/consent.tsx`：
+同意页是编辑后台单页应用中的一个路由，路径与 `ConsentURL` 相同。它从地址中取出 `request`，用[客户端](../http/clients.md#creating-the-client)读取授权请求，用户点击后提交选择，再跳转到返回的地址。下面是用 TanStack Router 写的 `src/routes/oauth/consent.tsx`：
 
 ```tsx
 import { createFileRoute } from "@tanstack/react-router"
@@ -238,7 +238,7 @@ function Consent() {
 - **登录**：同意页和编辑后台的其他页面一样要求登录。没有登录时，编辑后台照常跳到登录页，登录后回到原地址（包括 `request` 参数）。
 - **只接受用户本人的登录 token**：个人访问令牌和 OAuth 令牌带有权限限制，[代为登录](authentication-advanced.md#impersonation)的 token 是客服在操作，它们都不代表用户本人，调用这两个接口返回 `403 oauth.restricted_credential`。
 - **重新校验**：`request` 就是原始的授权参数，两个接口每次都重新校验，被改过的请求返回 `422`（`oauth.invalid_client`、`oauth.invalid_redirect_uri` 或 `oauth.invalid_request`）。
-- **禁止嵌入框架**：同意页要防止诱导点击。`httpx.SPA` 默认带 `frame-ancestors 'none'`，见[单页应用](../responses/spa.md)；放开了它时，同意页所在的路由仍然保持禁止。
+- **禁止嵌入框架**：同意页要防止诱导点击。`httpx.SPA` 默认带 `frame-ancestors 'none'`，见[单页应用](../frontend/spa.md)；放开了它时，同意页所在的路由仍然保持禁止。
 
 <a id="deployment"></a>
 ## 部署

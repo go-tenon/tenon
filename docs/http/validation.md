@@ -34,7 +34,7 @@ type CreateInput struct {
 }
 ```
 
-就是这样！当客户端发送的标题为空，或者 slug 含有空格、大写字母时，Huma 直接返回一个 `422` 错误响应。修改文章的接口和[页面表单](../responses/forms.md)也使用同一个 `Changes`，所以规则只需要写一次。
+就是这样！当客户端发送的标题为空，或者 slug 含有空格、大写字母时，Huma 直接返回一个 `422` 错误响应。修改文章的接口和[页面表单](../web/forms.md)也使用同一个 `Changes`，所以规则只需要写一次。
 
 <a id="available-validation-rules"></a>
 ## 可用的验证规则
@@ -132,7 +132,7 @@ type PatchInput struct {
 | `validation.integer`、`validation.number` | 数字字段收到了其他值 | 必须是整数、必须是数字 |
 | `validation.unexpected` | 请求体中有未声明的字段 | 不支持这个字段 |
 
-完整的列表见框架的 `i18n/locales/zh-CN.yaml`，以 `validation.` 开头。在应用的翻译文件中写同名消息即可覆盖，见[本地化](../general/localization.md)。[页面表单](../responses/forms.md#validation-messages)的提示与 API 相同。
+完整的列表见框架的 `i18n/locales/zh-CN.yaml`，以 `validation.` 开头。在应用的翻译文件中写同名消息即可覆盖，见[本地化](../general/localization.md)。[页面表单](../web/forms.md#validation-messages)的提示与 API 相同。
 
 少数无法识别的消息没有 `code`，`message` 保持 Huma 的英文原文，例如 `oneOf` 等组合规则。没有安装 `httpx.Locale` 中间件时，所有提示都是英文原文，`code` 照常返回。
 
@@ -175,7 +175,7 @@ article.status.published: 已发布
 ```
 
 - 字段的类型是 `Status` 时，请求体和查询参数只接受声明的取值，其他值返回 `422`，错误码 `validation.one_of`。不需要再写 `enum` 标签。
-- `rest.EnumSchema` 把它登记为 OpenAPI 的命名类型，名称由前缀得出（`article.status` 是 `ArticleStatus`），带有全部取值和 `x-tenon-enum`（消息前缀）。生成的客户端得到取值的联合类型和各语言的显示文字，见[客户端的枚举](../responses/client-react.md#ts-enums)。两个枚举得出同一个名称时 panic。
+- `rest.EnumSchema` 把它登记为 OpenAPI 的命名类型，名称由前缀得出（`article.status` 是 `ArticleStatus`），带有全部取值和 `x-tenon-enum`（消息前缀）。生成的客户端得到取值的联合类型和各语言的显示文字，见[客户端的枚举](../frontend/client-react.md#ts-enums)。两个枚举得出同一个名称时 panic。
 - `Statuses.Label(ctx, v)` 按请求的语言返回显示文字，没有翻译时返回取值本身，例如在页面中显示状态；`Statuses.Values()` 按声明的顺序返回全部取值，例如生成下拉框的选项；`Statuses.Valid(v)` 判断取值是否合法。
 - `Schema` 方法是 Huma 的 `SchemaProvider`：类型自己声明 schema，不需要在装配时逐个登记。
 

@@ -8,7 +8,7 @@
 
 **cron 表达式**是描述“什么时候执行”的一串字段，例如 `0 0 2 * * *` 表示每天 02:00:00。写 6 段时第一段是秒；也可以写常见的 5 段（分、时、日、月、星期），在那一分钟的第 0 秒触发。
 
-阅读前需要了解：[原子锁](locks.md)；[依赖装配](../concepts/dependencies.md#running-parts)。
+阅读前需要了解：[原子锁](../libraries/locks.md)；[依赖装配](../concepts/dependencies.md#running-parts)。
 
 - [示例用法](#example-usage)
 - [定义任务](#defining-tasks)
@@ -56,9 +56,9 @@ sched.Add("articles:publish-scheduled", "* * * * *", article.NewPublishScheduled
 
 任务通常是[业务动作](../concepts/actions.md#as-scheduled-tasks)的 `Handle` 方法：发布到期文章的 `PublishScheduled` 只接收 `ctx`，它的 `Handle` 正好是任务的签名。`schedule.Describe` 为任务加一句说明，在[查看任务](#listing-tasks)时展示。
 
-`locker` 是[原子锁](locks.md)，调度器用它在多个实例之间去重、防止任务重叠，见[多个实例](#multiple-instances)。第二个参数是配置段，见[失败与停止](#failures-and-shutdown)；第三个参数是日志器，`nil` 时使用 `slog.Default()`。
+`locker` 是[原子锁](../libraries/locks.md)，调度器用它在多个实例之间去重、防止任务重叠，见[多个实例](#multiple-instances)。第二个参数是配置段，见[失败与停止](#failures-and-shutdown)；第三个参数是日志器，`nil` 时使用 `slog.Default()`。
 
-[原子锁](locks.md#running-once)一章中，每个实例都要自己定时调用 `PublishScheduled` 并用锁去重；交给调度器之后，`PublishScheduled` 里的 `locker.Do` 和 `locker` 依赖都可以去掉，调度器已经保证每次只在一个实例上执行。
+[原子锁](../libraries/locks.md#running-once)一章中，每个实例都要自己定时调用 `PublishScheduled` 并用锁去重；交给调度器之后，`PublishScheduled` 里的 `locker.Do` 和 `locker` 依赖都可以去掉，调度器已经保证每次只在一个实例上执行。
 
 <a id="expressions"></a>
 ### 表达式
@@ -88,7 +88,7 @@ sched.Add("reports:daily", "0 3 * * *", reports.Generate, schedule.In(shanghai))
 <a id="running-the-scheduler"></a>
 ## 运行调度器
 
-调度器是进程的一个运行部分（见[多个运行部分](../concepts/dependencies.md#running-parts)）。在入口的 `bootstrap` 包中，`a.locker` 是入口创建的[原子锁](locks.md#redis-store)。注册任务单独写在 `tasks` 中，调度器运行它，[查看任务](#listing-tasks)的命令和后台页面也用它，任务只定义一次：
+调度器是进程的一个运行部分（见[多个运行部分](../concepts/dependencies.md#running-parts)）。在入口的 `bootstrap` 包中，`a.locker` 是入口创建的[原子锁](../libraries/locks.md#redis-store)。注册任务单独写在 `tasks` 中，调度器运行它，[查看任务](#listing-tasks)的命令和后台页面也用它，任务只定义一次：
 
 ```go
 // tasks 创建调度器并注册全部定时任务。
@@ -125,7 +125,7 @@ root.AddCommand(command.Run("schedule", "执行定时任务", bootstrap.Schedule
 
 部署多个实例时，每个实例上的调度器都会在同一时刻触发同一个任务。调度器在执行之前取得一把锁，锁名包含任务名和触发时刻，例如 `schedule:queue:prune-failed:1794366000`，只有取得锁的实例执行这一次触发。锁一分钟后自然过期，所以各实例的时钟偏差小于一分钟时，每次触发只执行一次。
 
-所有进程共用同一个 [Redis 锁存储](locks.md#redis-store)，去重就覆盖全部实例。单机部署也一样：[不停机升级](../installation/operations.md#upgrade-overlap)时新旧两个调度器会同时运行。过期的锁由 Redis 自动删除。
+所有进程共用同一个 [Redis 锁存储](../libraries/locks.md#redis-store)，去重就覆盖全部实例。单机部署也一样：[不停机升级](../installation/operations.md#upgrade-overlap)时新旧两个调度器会同时运行。过期的锁由 Redis 自动删除。
 
 只想在每个实例上各执行一次的任务，例如清理本机的临时目录，使用 `schedule.EveryInstance()`：
 
@@ -274,7 +274,7 @@ article.PublishScheduledJob.Handle(w, func(ctx context.Context, _ struct{}) erro
 })
 ```
 
-任务和队列处理函数调用的是同一个业务动作，手动执行和定时执行的效果相同。手动执行绕过[防止重叠](#preventing-overlaps)，需要互斥的任务在业务动作中自己使用[原子锁](locks.md)。
+任务和队列处理函数调用的是同一个业务动作，手动执行和定时执行的效果相同。手动执行绕过[防止重叠](#preventing-overlaps)，需要互斥的任务在业务动作中自己使用[原子锁](../libraries/locks.md)。
 
 <a id="framework-cleanups"></a>
 ## 清理框架数据
@@ -286,7 +286,7 @@ article.PublishScheduledJob.Handle(w, func(ctx context.Context, _ struct{}) erro
 | [API 令牌](../security/api-tokens.md#cleanup) | `apitoken.Store` 的 `Cleanup` | 每小时 |
 | [登录验证码](../security/login.md#cleanup) | 每套账号的 `login.Realm` 的 `Cleanup` | 每小时 |
 | [未绑定的 passkey](../security/login-security.md#passkeys) | `passkey.Store` 的 `Cleanup` | 每天 |
-| [文件](filesystem.md#cleanup) | 文件服务的 `Cleanup` | 每 5 分钟 |
+| [文件](../libraries/filesystem.md#cleanup) | 文件服务的 `Cleanup` | 每 5 分钟 |
 | [操作日志](../features/activity.md#retention) | `activity.Cleanup(db, 保留期)` | 每天 |
 | [通知](../features/notifications.md#retention) | `notification.Cleanup(db, 保留期)` | 每天 |
 | [推送设备](../features/push.md#cleanup) | `push.Cleanup(db, 保留期)` | 每天 |
@@ -301,7 +301,7 @@ article.PublishScheduledJob.Handle(w, func(ctx context.Context, _ struct{}) erro
 <a id="testing"></a>
 ## 测试
 
-`RunDue` 执行在指定时刻到期的任务，等它们结束后返回合并的错误，用来确定性地验证调度配置。[`locktest.NewStore()`](locks.md#testing) 是测试用的内存锁存储：
+`RunDue` 执行在指定时刻到期的任务，等它们结束后返回合并的错误，用来确定性地验证调度配置。[`locktest.NewStore()`](../libraries/locks.md#testing) 是测试用的内存锁存储：
 
 ```go
 func TestDailyReport(t *testing.T) {

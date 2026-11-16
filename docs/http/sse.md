@@ -4,7 +4,7 @@
 
 SSE 只负责服务端到客户端。客户端发给服务端的仍然是普通请求，认证、验证和限流都和其他接口一样。需要在线成员、“正在输入”或移动端 SDK 时，用基于 WebSocket 的[实时频道](../libraries/realtime.md)。
 
-阅读前需要了解：[路由](../http/routing.md)；[context](../concepts/go-primer.md#context)。长连接一节用到了[广播](../libraries/broadcasting.md)。
+阅读前需要了解：[路由](routing.md)；[context](../concepts/go-primer.md#context)。长连接一节用到了[广播](../libraries/broadcasting.md)。
 
 - [示例用法](#introduction)
 - [流式响应](#streaming-responses)
@@ -47,7 +47,7 @@ data: {"n":2}
 ...
 ```
 
-事件流的报文格式、心跳和重连规则见[客户端协议](../http/protocol.md#event-streams)。`rest.RegisterSSE` 的参数和 `rest.Register` 相同，多一个事件表：键是事件名，值是事件数据的类型，用于生成 OpenAPI 文档和[客户端代码](clients.md#event-streams)。连接由 `httpx.SSE` 管理：心跳、超时、停机和断线重连。有两种用法：
+事件流的报文格式、心跳和重连规则见[客户端协议](protocol.md#event-streams)。`rest.RegisterSSE` 的参数和 `rest.Register` 相同，多一个事件表：键是事件名，值是事件数据的类型，用于生成 OpenAPI 文档和[客户端代码](clients.md#event-streams)。连接由 `httpx.SSE` 管理：心跳、超时、停机和断线重连。有两种用法：
 
 | 用法 | 客户端 | 适合 |
 | --- | --- | --- |
@@ -152,7 +152,7 @@ SSE 接口和其他接口注册在同一个 API 上，认证方式相同，例�
 
 开始推送之后，连接脱离请求时限：
 
-- `s.Context()` 只在客户端断开或服务器停机时取消，[`httpx.Timeout`](../http/middleware.md#request-timeout) 的超时与它无关。
+- `s.Context()` 只在客户端断开或服务器停机时取消，[`httpx.Timeout`](middleware.md#request-timeout) 的超时与它无关。
 - 服务器配置中的 `http.write_timeout` 同样会切断长连接，SSE 会为当前请求取消它，配置保持原样。
 
 停机时，`httpx.Serve` 一开始排空，`s.Done()` 就会关闭，处理器返回，连接结束，客户端随后重连到其他实例。所以打开着的长连接随排空一起结束，停机很快完成，见[平滑停止](../concepts/lifecycle.md#graceful-shutdown)。

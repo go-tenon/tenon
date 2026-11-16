@@ -342,4 +342,4 @@ nav > * + * {
 
 现在博客有了可以使用的页面，但谁都可以写文章、删文章。下一章，我们加上作者登录。
 
-深入了解：[客户端代码](../responses/clients.md)、[单页应用](../responses/spa.md)、[应用骨架](../responses/app-shell.md)。
+深入了解：[客户端代码](../http/clients.md)、[单页应用](../frontend/spa.md)、[应用骨架](../frontend/app-shell.md)。

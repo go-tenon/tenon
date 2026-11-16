@@ -102,7 +102,7 @@ Send: func(ctx context.Context, code login.Code) error {
 | `Template` | 应用给模板起的名字，各服务商的配置把它对应到自己的模板 ID |
 | `Params` | 模板变量，键是变量名 |
 
-`Send` 是同步的，等服务商响应才返回。通知类的短信交给[队列](queue.md#publishing-jobs)发送，`sms.Message` 可以完整地序列化为 JSON，失败时按退避重试。
+`Send` 是同步的，等服务商响应才返回。通知类的短信交给[队列](../background/queue.md#publishing-jobs)发送，`sms.Message` 可以完整地序列化为 JSON，失败时按退避重试。
 
 服务商接受了请求，`Send` 就返回成功，之后由运营商投递，送达与否在服务商的回执中查看。阿里云和腾讯云都没有幂等键，重试可能让用户收到两条。
 

@@ -145,7 +145,7 @@ ID                                    TOPIC      ATTEMPTS  FAILED AT            
 
 吞吐、耗时等指标交给 Grafana（见[可观测性](../general/telemetry.md#queue)），各 topic 的积压和消费者交给 nsqadmin，面板只在页头放它们的链接；重建复制槽只能用 `queue slot recreate`。面板不新增任何表。
 
-面板是框架自带的[服务端渲染页面](../responses/views.md)，认证由应用决定，通常是 [HTTP Basic 认证](../http/optional-middleware.md#basic-auth)。挂在 HTTP 进程的路由上：
+面板是框架自带的[服务端渲染页面](../web/views.md)，认证由应用决定，通常是 [HTTP Basic 认证](../http/optional-middleware.md#basic-auth)。挂在 HTTP 进程的路由上：
 
 ```go
 router.Handle(web.AssetsPath+"*", web.Assets())
@@ -157,7 +157,7 @@ queueweb.Register(ops, "/ops/queue", a.db, queueweb.Options{
 })
 ```
 
-`a.verifyOps` 校验运维账号，见 [HTTP Basic 认证](../http/optional-middleware.md#basic-auth)。`Options.Theme` 可以设置面板的[主题](../responses/components.md#themes)。
+`a.verifyOps` 校验运维账号，见 [HTTP Basic 认证](../http/optional-middleware.md#basic-auth)。`Options.Theme` 可以设置面板的[主题](../web/components.md#themes)。
 
 - 全部重试只处理点击之前失败的任务：重试后马上又失败的任务在这一轮里只放回一次。它分批处理，每批 1000 条，直到处理完。
 - 每次重试和删除记一条 Info 日志，带上操作者（Basic 认证的用户名）、topic 和条数。

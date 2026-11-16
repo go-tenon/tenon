@@ -263,7 +263,7 @@ for _, t := range list {
 | `RevokeOthers(ctx, sub)` | `sub` 除本次请求所用 token 以外的全部**登录 token**，包括 JWT 模式的登录 | “退出其他设备” |
 | `RevokeSubject(ctx, ref)` | 主体 `ref`（`identity.Ref`）的全部 token，包括个人访问令牌 | 封禁账号、修改密码 |
 
-撤销立即生效，被撤销的 token 在下一次请求时返回 `401`（[JWT 模式](jwt.md#jwt)中已签发的 access token 要等到过期）；用它建立的 SSE 长连接最多 30 秒内结束，见[凭据失效](../responses/sse.md#revoked-credentials)。撤销后调用 `RecheckCredential` 或 `RecheckSubject`，连接会立即结束，见[立即断开](../responses/sse.md#immediate-revocation)。
+撤销立即生效，被撤销的 token 在下一次请求时返回 `401`（[JWT 模式](jwt.md#jwt)中已签发的 access token 要等到过期）；用它建立的 SSE 长连接最多 30 秒内结束，见[凭据失效](../http/sse.md#revoked-credentials)。撤销后调用 `RecheckCredential` 或 `RecheckSubject`，连接会立即结束，见[立即断开](../http/sse.md#immediate-revocation)。
 
 <a id="loading-permissions"></a>
 ## 加载权限
@@ -307,7 +307,7 @@ mcpx.HandlerOptions{Validate: tokens.ValidateFor("https://example.com/mcp") /* �
 <a id="cleanup"></a>
 ## 过期清理
 
-过期的 token 校验失败，但行仍然留在表中。`Store` 提供 `Cleanup` 来清理，每次最多删除 `limit` 个过期 token，可以注册为[定时任务](../libraries/scheduling.md)：
+过期的 token 校验失败，但行仍然留在表中。`Store` 提供 `Cleanup` 来清理，每次最多删除 `limit` 个过期 token，可以注册为[定时任务](../background/scheduling.md)：
 
 ```go
 n, err := tokens.Cleanup(ctx, 1000)

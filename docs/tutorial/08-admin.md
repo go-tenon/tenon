@@ -259,7 +259,7 @@ func Register(api *rest.API, require func(*huma.Operation), roles *authz.Store) 
 }
 ```
 
-最后的 `api.Resource` 把这几个接口声明为一个[资源](../responses/resources.md)。你只需要写出列表显示哪些列，其他都从已经注册的接口中得到：
+最后的 `api.Resource` 把这几个接口声明为一个[资源](../frontend/resources.md)。你只需要写出列表显示哪些列，其他都从已经注册的接口中得到：
 
 - **表单的字段**是新建接口请求体 `Changes` 的全部字段。字段的类型、是否必填、校验规则都来自它的标签，和第 4 章的校验规则是同一份。
 - **`permissions`** 的类型是 `Permission` 的数组，所以表单中显示为多选。
@@ -825,13 +825,13 @@ go run ./cmd/api user admin --email ming@example.com
 <a id="admin"></a>
 ## 后台
 
-后端完成了，现在创建后台的前端。后台是一个独立的前端应用，和博客的页面分开。用 Tenon 的后台模板新建它，模板基于 [Ant Design](https://ant.design) 组件库，见[运营后台](../responses/admin.md)：
+后端完成了，现在创建后台的前端。后台是一个独立的前端应用，和博客的页面分开。用 Tenon 的后台模板新建它，模板基于 [Ant Design](https://ant.design) 组件库，见[运营后台](../frontend/admin.md)：
 
 ```bash
 go tool tenon add frontend admin --template admin
 ```
 
-它在 `apps/admin` 中生成登录页、侧栏布局和首页，登录调用的正是第 6 章的 `/api/auth` 接口。另外还有一个“布局”页面，可以在浏览器中切换几种后台布局，对照着选；不需要时删除 `src/routes/_app/layouts.tsx` 即可，见[运营后台](../responses/admin.md#template)。重新生成客户端：
+它在 `apps/admin` 中生成登录页、侧栏布局和首页，登录调用的正是第 6 章的 `/api/auth` 接口。另外还有一个“布局”页面，可以在浏览器中切换几种后台布局，对照着选；不需要时删除 `src/routes/_app/layouts.tsx` 即可，见[运营后台](../frontend/admin.md#template)。重新生成客户端：
 
 ```bash
 go tool tenon generate
@@ -964,6 +964,6 @@ function Users() {
 
 恭喜你完成了入门教程！回顾一下，你已经用到了一个常规项目需要的大部分东西：配置与装配、数据库与迁移、接口与校验、业务错误与本地化、React 页面与生成的客户端、登录与授权、角色与权限，以及按声明渲染的后台。
 
-接下来，你可以按需阅读各个参考页：例如用[缓存](../libraries/cache.md)加快首页，用[队列](../libraries/queue.md)在发布后给订阅者发邮件，用[定时任务](../libraries/scheduling.md)定时发布文章，最后参考[部署](../installation/deployment.md)把博客上线。
+接下来，你可以按需阅读各个参考页：例如用[缓存](../libraries/cache.md)加快首页，用[队列](../background/queue.md)在发布后给订阅者发邮件，用[定时任务](../background/scheduling.md)定时发布文章，最后参考[部署](../installation/deployment.md)把博客上线。
 
-深入了解：[授权](../security/authorization.md)、[资源](../responses/resources.md)、[运营后台](../responses/admin.md)。
+深入了解：[授权](../security/authorization.md)、[资源](../frontend/resources.md)、[运营后台](../frontend/admin.md)。

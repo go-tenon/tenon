@@ -2,7 +2,7 @@
 
 几千行以上的表格不适合在一次请求中处理：请求会超时，失败了也只能从头再来。`sheet/imports` 在队列任务中逐行处理上传的表格，保存进度，worker 重启后从断点继续，失败的行可以下载。导入的状态和进度是一个[后台操作](operations.md)。同步的导入导出和列的写法见[导入与导出](import-export.md)，后台导出见[后台导出](background-exports.md)。
 
-阅读前需要了解：[导入与导出](import-export.md)；[队列](../libraries/queue.md)；[后台操作](operations.md)。
+阅读前需要了解：[导入与导出](import-export.md)；[队列](../background/queue.md)；[后台操作](operations.md)。
 
 - [后台导入](#background-imports)
     - [登记导入](#starting-imports)
@@ -16,7 +16,7 @@
 <a id="background-imports"></a>
 ## 后台导入
 
-文件有几万行时，处理放到后台，用户可以先去做别的事。`sheet/imports` 包把导入放到[队列](../libraries/queue.md)中：用户上传文件后马上得到一个导入 ID，前端用它查询进度；任务每处理 100 行保存一次进度，重试时从中断的地方继续；没有导入的行保存下来，用户可以下载、改正后重新导入；结束时在同一个事务中通知用户。
+文件有几万行时，处理放到后台，用户可以先去做别的事。`sheet/imports` 包把导入放到[队列](../background/queue.md)中：用户上传文件后马上得到一个导入 ID，前端用它查询进度；任务每处理 100 行保存一次进度，重试时从中断的地方继续；没有导入的行保存下来，用户可以下载、改正后重新导入；结束时在同一个事务中通知用户。
 
 一次导入是一个[后台操作](operations.md)：状态和进度记在 `operations` 表中，`imports` 表记录上传的文件和处理到的行号，`import_failures` 表记录没有导入的行。和文件、队列的迁移一起[发布](../database/migrations.md#publishing-framework-migrations)，`operation` 排在 `imports` 之前：
 
@@ -180,7 +180,7 @@ func (a *QueueImport) Failures(ctx context.Context, in *ImportFailuresInput) (*h
 <a id="processing-imports"></a>
 ### 处理导入
 
-worker 注册任务，见[启动 worker](../libraries/queue.md#running-workers)：
+worker 注册任务，见[启动 worker](../background/queue.md#running-workers)：
 
 ```go
 article.ImportJob.Handle(w, article.NewQueueImport(a.db, a.hub, a.importer, article.NewImport(article.NewCreate(a.db))).Job)
@@ -206,7 +206,7 @@ article.ImportJob.Handle(w, article.NewQueueImport(a.db, a.hub, a.importer, arti
 <a id="progress-and-failures"></a>
 ### 进度与失败的行
 
-在 `routes.go` 中注册路由。`Progress` 用 [`rest.RegisterSSE`](../responses/sse.md) 注册，事件表描述推送的数据：
+在 `routes.go` 中注册路由。`Progress` 用 [`rest.RegisterSSE`](../http/sse.md) 注册，事件表描述推送的数据：
 
 ```go
 queueImport := NewQueueImport(db, hub, importer, NewImport(NewCreate(db)))
@@ -242,7 +242,7 @@ data: {"id":"0193e7a2-7c1e-7b4a-9d2f-3c5a1e8b6f10","kind":"articles.import","sta
 
 进度是状态：广播只提醒连接重新读取，连接（包括断线重连）时先推送一次当前进度，所以页面总是显示最新的进度，与[通知角标](notifications.md#realtime)的做法相同。worker 和 SSE 连接在不同的实例上时，广播由 Hub 的后端送达，见[广播](../libraries/broadcasting.md)。每次读取都经过 `Get`，只有发起导入的人能看到进度，其他人收到 `operation.ErrNotFound`。
 
-使用 Bearer 令牌的前端用 `fetch` 读取事件流（浏览器的 `EventSource` 由浏览器决定请求头），见[客户端代码的事件流](../responses/clients.md#event-streams)。
+使用 Bearer 令牌的前端用 `fetch` 读取事件流（浏览器的 `EventSource` 由浏览器决定请求头），见[客户端代码的事件流](../http/clients.md#event-streams)。
 
 `WriteFailures` 写出的表格是原来的表头加上一列“错误”，每一行是原始单元格和这一行的错误，例如 `标题: 不能为空`。用户在这个文件里改正后可以直接重新导入，多出的错误列自动略过。需要在页面上直接显示失败的行时，用 `Failures` 读取前几行。
 
@@ -254,7 +254,7 @@ data: {"id":"0193e7a2-7c1e-7b4a-9d2f-3c5a1e8b6f10","kind":"articles.import","sta
 <a id="import-button"></a>
 ### 在页面中使用
 
-框架提供了现成的导入按钮：运营后台（antd）的 `ImportButton` 和 shadcn registry 的 `tenon-transfer`，逻辑都来自 `@go-tenon/shell` 的 `useImport`。点击按钮打开对话框，用户选择表格后，它依次上传文件、发起导入、显示进度，结束后显示成功和没有导入的行数，有没有导入的行时可以下载它们。进度同时出现在顶栏的[任务中心](../responses/app-shell-features.md#operations)，用户关闭对话框也能看到。
+框架提供了现成的导入按钮：运营后台（antd）的 `ImportButton` 和 shadcn registry 的 `tenon-transfer`，逻辑都来自 `@go-tenon/shell` 的 `useImport`。点击按钮打开对话框，用户选择表格后，它依次上传文件、发起导入、显示进度，结束后显示成功和没有导入的行数，有没有导入的行时可以下载它们。进度同时出现在顶栏的[任务中心](../frontend/app-shell-features.md#operations)，用户关闭对话框也能看到。
 
 把上面几个接口交给它：
 

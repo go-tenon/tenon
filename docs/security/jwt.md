@@ -20,7 +20,7 @@ JWT 一旦签发就无法单独作废，所以 Tenon 让它的有效期很短（
 
 每次登录仍然是 `api_tokens` 中的一行，[设备列表](api-tokens.md#listing-tokens)、[撤销](api-tokens.md#revoking-tokens)、[过期清理](api-tokens.md#cleanup)都照常使用。区别在于撤销的效果：refresh token 立即失效，已经签发的 access token 在有效期（默认 10 分钟）内仍然可以发起请求。撤销需要立即生效的账号体系继续用不透明 token。两种方式可以在同一个应用中并存，例如运营后台和商家后台用不透明 token，客户 App 用 JWT。
 
-[SSE](../responses/sse.md#revoked-credentials) 和[实时连接](../libraries/realtime.md#revocation)这类长连接另有机制：复查凭据时 `JWT.Validate` 按登录 ID 查一次表，撤销后连接和不透明 token 一样，最多 30 秒内结束，调用 `Recheck*` 时立即结束。复查只看登录是否还在，所以已经建立的连接可以一直保持，跨过 access token 的有效期。断线后重连时 access token 可能已经过期，实时连接的客户端要设置 [`getToken`](../libraries/realtime.md#tokens) 换新的。
+[SSE](../http/sse.md#revoked-credentials) 和[实时连接](../libraries/realtime.md#revocation)这类长连接另有机制：复查凭据时 `JWT.Validate` 按登录 ID 查一次表，撤销后连接和不透明 token 一样，最多 30 秒内结束，调用 `Recheck*` 时立即结束。复查只看登录是否还在，所以已经建立的连接可以一直保持，跨过 access token 的有效期。断线后重连时 access token 可能已经过期，实时连接的客户端要设置 [`getToken`](../libraries/realtime.md#tokens) 换新的。
 
 用 `Store` 创建 `apitoken.JWT`。`HMACKeys` 从[应用密钥](encryption.md#configuration)派生签名密钥：
 
@@ -163,13 +163,13 @@ func (h *handlers) logout(ctx context.Context, _ *struct{}) (*LogoutOutput, erro
 }
 ```
 
-`LogoutOutput` 只有 `SetCookie` 一个字段。登录处理器在 `Password` 成功后调用 `h.jwt.Login`，再 `return session(pair, in.Body.Cookie), nil`。`apitoken.Session` 和 `apitoken.RefreshRequest` 是框架固定的请求体和响应体格式，客户端都按它们读写，见[客户端协议](../http/protocol.md#sessions)。`RefreshCookie.Session` 在宽限期内的重复刷新（`pair.Refresh` 为空）时不返回 cookie，浏览器中保留的就是最新的那个。前端的写法见 [API 客户端](../responses/clients.md#creating-the-client)，完整的例子见[单账号后台](admin-example.md#auth-api)。
+`LogoutOutput` 只有 `SetCookie` 一个字段。登录处理器在 `Password` 成功后调用 `h.jwt.Login`，再 `return session(pair, in.Body.Cookie), nil`。`apitoken.Session` 和 `apitoken.RefreshRequest` 是框架固定的请求体和响应体格式，客户端都按它们读写，见[客户端协议](../http/protocol.md#sessions)。`RefreshCookie.Session` 在宽限期内的重复刷新（`pair.Refresh` 为空）时不返回 cookie，浏览器中保留的就是最新的那个。前端的写法见 [API 客户端](../http/clients.md#creating-the-client)，完整的例子见[单账号后台](admin-example.md#auth-api)。
 
 部署方式决定还要做什么：
 
 | 单页应用与 API | 需要的设置 |
 | --- | --- |
-| 同源，例如由 [`httpx.SPA`](../responses/spa.md) 提供 | 保持默认 |
+| 同源，例如由 [`httpx.SPA`](../frontend/spa.md) 提供 | 保持默认 |
 | 同一站点的不同子域名，例如 `app.example.com` 与 `api.example.com` | API 的 [CORS](../http/optional-middleware.md#cors) 设置 `credentials: true`，逐个列出来源；`RefreshCookie.Domain` 设为 `example.com`；前端刷新时 `credentials: "include"` |
 | 不同站点，例如 `example.com` 与 `example-api.io` | 浏览器拦截第三方 cookie，用不了 cookie。退回请求体方式，refresh token 只能放在 `localStorage` 中，页面上的脚本都能读到，要格外防范 XSS |
 

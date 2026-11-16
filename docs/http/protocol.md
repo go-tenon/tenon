@@ -138,7 +138,7 @@ OpenAPI 文档中有三个框架的扩展字段：根上的 `x-tenon-permissions
 <a id="pagination"></a>
 ## 分页、筛选与排序
 
-列表接口使用两种分页之一，见[分页](../responses/responses.md#pagination)：
+列表接口使用两种分页之一，见[分页](responses.md#pagination)：
 
 | | 固定分页 | 游标分页 |
 | --- | --- | --- |
@@ -207,7 +207,7 @@ refresh token 有两种保存方式：
 <a id="event-streams"></a>
 ## 事件流
 
-持续推送的接口使用 [Server-Sent Events](https://html.spec.whatwg.org/multipage/server-sent-events.html)，`Content-Type: text/event-stream`，见[服务端推送](../responses/sse.md)：
+持续推送的接口使用 [Server-Sent Events](https://html.spec.whatwg.org/multipage/server-sent-events.html)，`Content-Type: text/event-stream`，见[服务端推送](sse.md)：
 
 ```text
 event: published

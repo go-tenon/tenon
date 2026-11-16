@@ -129,12 +129,12 @@ blog/
 <a id="the-frontend-directory"></a>
 ### apps 和 packages
 
-`apps` 中每个目录是一个前端，例如用户端 `apps/web`、运营后台 `apps/admin`，目录名是前端的名称。每个前端的 `frontend.go` 把构建产物嵌入程序，所以部署时仍然只有一个二进制文件，见[单页应用](../responses/spa.md)。用 [tenon add frontend](../installation/tooling.md#add-frontend) 加入新的前端。
+`apps` 中每个目录是一个前端，例如用户端 `apps/web`、运营后台 `apps/admin`，目录名是前端的名称。每个前端的 `frontend.go` 把构建产物嵌入程序，所以部署时仍然只有一个二进制文件，见[单页应用](../frontend/spa.md)。用 [tenon add frontend](../installation/tooling.md#add-frontend) 加入新的前端。
 
 `packages` 中是多个前端共用的包。`packages/client` 是共用的客户端包，前端用 `@<作用域>/client/<名称>` 导入它，见[前端与 API](../installation/tooling.md#conventions)。
 
 > [!NOTE]
-> `packages/client/src` 中每个 API 一个目录，是生成的 TypeScript 客户端，每次修改接口后都会重新生成，见[客户端代码](../responses/clients.md)。
+> `packages/client/src` 中每个 API 一个目录，是生成的 TypeScript 客户端，每次修改接口后都会重新生成，见[客户端代码](../http/clients.md)。
 
 <a id="adding-a-module"></a>
 ## 新增一个业务模块
@@ -214,12 +214,12 @@ Tenon 的每个包都可以单独使用，按需引入即可。顶层的包分�
 | `crypt` | 用应用密钥加密、签名链接 | [加密与签名链接](../security/encryption.md) |
 | `enum` | 带显示文字的枚举：取值、校验和按语言翻译的显示文字 | [带显示文字的枚举](../http/validation.md#enums) |
 | `errorx` | 带稳定错误码和分类的业务错误 | [错误处理](../general/errors.md) |
-| `form` | 按 Huma 标签转换、验证文本字段，表单和表格导入共用 | [表单](../responses/forms.md) |
+| `form` | 按 Huma 标签转换、验证文本字段，表单和表格导入共用 | [表单](../web/forms.md) |
 | `hashing` | 密码哈希 | [哈希](../security/hashing.md) |
 | `i18n` | 组合 go-i18n 消息目录 | [本地化](../general/localization.md) |
 | `identity` | 已认证的主体，在 context 中传递 | [认证](../security/authentication.md) |
 | `logging` | 构造 slog 日志器，传递请求关联字段 | [日志](../general/logging.md) |
-| `page` | 分页参数与响应结构 | [分页](../responses/responses.md#pagination) |
+| `page` | 分页参数与响应结构 | [分页](../http/responses.md#pagination) |
 | `telemetry` | 用 OTLP 推送日志、指标和链路 | [可观测性](../general/telemetry.md) |
 
 <a id="infrastructure"></a>
@@ -231,8 +231,8 @@ Tenon 的每个包都可以单独使用，按需引入即可。顶层的包分�
 | --- | --- | --- |
 | `database` | PostgreSQL 连接池、事务与提交后回调、约束错误 | [数据库](../database/quick-start.md) |
 | `database/migrate` | goose 迁移器，新建、发布迁移 | [迁移](../database/migrations.md) |
-| `queue` | NSQ 任务队列，数据库发件箱，重试与失败任务 | [队列](../libraries/queue.md) |
-| `schedule` | 按 cron 表达式定时执行，多实例去重 | [定时任务](../libraries/scheduling.md) |
+| `queue` | NSQ 任务队列，数据库发件箱，重试与失败任务 | [队列](../background/queue.md) |
+| `schedule` | 按 cron 表达式定时执行，多实例去重 | [定时任务](../background/scheduling.md) |
 | `cachex` | Memcached 上的先读缓存再加载 | [缓存](../libraries/cache.md) |
 | `lock` | 带过期时间的原子锁，`lock/redislock` 是 Redis 存储 | [原子锁](../libraries/locks.md) |
 | `ratelimit` | 按键限流，`ratelimit/redislimit` 是 Redis 限流器 | [限流](../libraries/rate-limiting.md) |
@@ -256,13 +256,13 @@ Tenon 的每个包都可以单独使用，按需引入即可。顶层的包分�
 | --- | --- | --- |
 | `httpx` | 中间件、平滑停机、就绪检查、单页应用 | [中间件](../http/middleware.md)、[请求生命周期](lifecycle.md) |
 | `httpx/rest` | 基于 Huma 的路由注册、错误转换与 OpenAPI | [路由](../http/routing.md) |
-| `httpx/rest/clientgen` | 从路由生成 TypeScript 与 Go 客户端 | [客户端代码](../responses/clients.md) |
-| `web` | 服务端渲染的公开页面：组件、错误页、表单、静态文件 | [视图](../responses/views.md) |
-| `web/ui`、`web/docs` | 界面组件；Markdown 文档页 | [界面组件](../responses/components.md)、[文档页](../responses/doc-pages.md) |
+| `httpx/rest/clientgen` | 从路由生成 TypeScript 与 Go 客户端 | [客户端代码](../http/clients.md) |
+| `web` | 服务端渲染的公开页面：组件、错误页、表单、静态文件 | [视图](../web/views.md) |
+| `web/ui`、`web/docs` | 界面组件；Markdown 文档页 | [界面组件](../web/components.md)、[文档页](../web/doc-pages.md) |
 | `realtime` | 嵌入 Centrifuge 的 WebSocket 频道 | [实时频道](../libraries/realtime.md) |
 | `mcpx` | 把动作作为 MCP 工具提供给 AI 客户端 | [MCP 服务](../ai/mcp.md) |
 | `command` | 根命令、`Bind`、`Daemon`、退出码；`httpcmd`、`migratecmd` 等内置命令 | [命令行](../general/commands.md) |
-| `queue/queueweb` | 队列面板 | [队列面板](../libraries/queue-monitoring.md#panel) |
+| `queue/queueweb` | 队列面板 | [队列面板](../background/queue-monitoring.md#panel) |
 | `cmd/tenon` | 开发工具 `go tool tenon` | [开发工具](../installation/tooling.md) |
 
 <a id="features"></a>

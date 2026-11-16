@@ -17,7 +17,7 @@ type Renderer interface {
 
 `pdf/gotenberg` 实现 `Renderer`，调用 [Gotenberg](https://gotenberg.dev) 服务中的 Chromium。浏览器运行在独立的容器中，崩溃、内存占用、排队和定期重启都由 Gotenberg 负责；它的镜像带有 Noto CJK 字体，中文直接可用。
 
-阅读前需要了解：[视图](../responses/views.md)中的 templ；CSS 的基本写法。
+阅读前需要了解：[视图](../web/views.md)中的 templ；CSS 的基本写法。
 
 - [示例用法](#example-usage)
 - [启动 Gotenberg](#running-gotenberg)
@@ -182,7 +182,7 @@ var assets, _ = fs.Sub(files, "assets")
 - [文件存储](filesystem.md)中的图片有公开地址，直接写在 `src` 中，Gotenberg 会去下载。
 - 每份文档不同的图片，例如二维码，可以写成 data URL：`<img src={ templ.SafeURL("data:image/png;base64," + code) }/>`。
 
-要使用 [Tailwind CSS](../responses/assets.md#tailwind)，把为 PDF 生成的样式表输出到 `assets` 目录中即可。
+要使用 [Tailwind CSS](../web/assets.md#tailwind)，把为 PDF 生成的样式表输出到 `assets` 目录中即可。
 
 <a id="downloading"></a>
 ## 下载 PDF
@@ -264,7 +264,7 @@ msg.Attachments = append(msg.Attachments, mail.Attachment{
 <a id="background-generation"></a>
 ## 后台生成
 
-一份几页的 PDF 通常在一秒内生成，在请求中同步生成即可。页数很多，或者要一次生成一批时，交给[队列](queue.md)：任务中调用 `Render`，用[文件存储](filesystem.md#server-upload)的 `Upload` 保存结果，再用[通知](../features/notifications.md)告诉用户下载地址。需要长期保留的文件，上传后用 `Confirm` 确认。
+一份几页的 PDF 通常在一秒内生成，在请求中同步生成即可。页数很多，或者要一次生成一批时，交给[队列](../background/queue.md)：任务中调用 `Render`，用[文件存储](filesystem.md#server-upload)的 `Upload` 保存结果，再用[通知](../features/notifications.md)告诉用户下载地址。需要长期保留的文件，上传后用 `Confirm` 确认。
 
 Gotenberg 暂时不可用时，任务返回错误，按队列的规则稍后重试。
 

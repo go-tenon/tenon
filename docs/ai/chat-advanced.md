@@ -235,7 +235,7 @@ posts, err = ai.RerankBy(ctx, openai.New(cfg.Rerank), query, posts, func(p artic
 
 重排用的是 Cohere 和 Jina 的 `POST {BaseURL}/rerank`，硅基流动、OpenRouter、vLLM 等都沿用了它，`ai/openai` 和 `ai/openrouter` 都按这个格式调用。Cohere 自己的地址填 `https://api.cohere.com/v2`。
 
-生成图片和语音通常要十几秒到几十秒，可以在后台完成的放进[队列](../libraries/queue.md)执行。
+生成图片和语音通常要十几秒到几十秒，可以在后台完成的放进[队列](../background/queue.md)执行。
 
 <a id="decisions"></a>
 ## 决策
@@ -301,7 +301,7 @@ decider := systemone.New(ai.ModelConfig{Model: "decision-model-preview", BaseURL
 ## 部署
 
 - **停机**：清理资源时，`runs.Shutdown` 停止接受新的回答（返回 `chat.ErrShuttingDown`，即 `503`），等进行中的回答说完，超过时限的才取消；取消的回答已经生成的部分保留在对话中，用户可以继续对话。等待期间 HTTP 服务已经停止，浏览器的消息流会断开：部署了[多个实例](#multiple-instances)时，浏览器重连到其他实例继续接收这次回答；单实例时，回答说完后保存在对话中，页面重新加载时可以看到。`Shutdown` 用的时间要计入部署平台的停止宽限期，见[平滑停止](../installation/deployment.md#graceful-shutdown)。
-- **后台任务**：在后台完成的 AI 工作（例如生成摘要、给文章打标签）交给[队列](../libraries/queue.md)执行，在处理函数中直接调用 trpc-agent-go 的 `runner.Run`。队列任务[至少执行一次](../libraries/queue.md)，这些工具需要能安全地重复执行。
+- **后台任务**：在后台完成的 AI 工作（例如生成摘要、给文章打标签）交给[队列](../background/queue.md)执行，在处理函数中直接调用 trpc-agent-go 的 `runner.Run`。队列任务[至少执行一次](../background/queue.md)，这些工具需要能安全地重复执行。
 
 <a id="multiple-instances"></a>
 ### 多个实例
@@ -336,7 +336,7 @@ runs := chat.NewRuns("app", agent, sessions,
 )
 ```
 
-worker 进程在处理队列的同时调用 `runs.Serve`，`a.jobs` 是原来装配[队列 worker](../libraries/queue.md#running-workers) 的 `Worker` 方法：
+worker 进程在处理队列的同时调用 `runs.Serve`，`a.jobs` 是原来装配[队列 worker](../background/queue.md#running-workers) 的 `Worker` 方法：
 
 ```go
 func (a *App) Worker(d *command.Daemon) (func(context.Context) error, error) {

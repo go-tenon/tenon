@@ -8,7 +8,7 @@
 
 **全文搜索**和 `LIKE` 不同：它先把文字切分成词，按词建立索引，搜索时按词匹配，并按相关度排序。中文没有空格分隔词语，所以需要**分词**。
 
-阅读前需要了解：[队列](../libraries/queue.md)；[数据库事务](../database/quick-start.md#transactions)。
+阅读前需要了解：[队列](../background/queue.md)；[数据库事务](../database/quick-start.md#transactions)。
 
 - [示例用法](#example-usage)
 - [安装](#installation)
@@ -180,7 +180,7 @@ err := database.RunInTx(ctx, a.db, nil, func(ctx context.Context, tx database.Tx
 })
 ```
 
-`Sync` 只发布一个带着 key 的队列任务，事务提交后才执行。worker 注册同步任务和[重建任务](#reindexing)的处理函数，加在 [worker 的装配](../libraries/queue.md#running-workers)中：
+`Sync` 只发布一个带着 key 的队列任务，事务提交后才执行。worker 注册同步任务和[重建任务](#reindexing)的处理函数，加在 [worker 的装配](../background/queue.md#running-workers)中：
 
 ```go
 article.SearchIndex.Handle(w, a.db, article.LoadSearchDocs, article.ScanSearchKeys)
@@ -191,7 +191,7 @@ article.SearchIndex.Handle(w, a.db, article.LoadSearchDocs, article.ScanSearchKe
 - 同一个 key 的同步依次执行，后执行的一定读到更新的数据。`LoadFunc` 执行期间持有这个 key 的锁，所以它只应读取数据。
 - 删除文章同样调用 `Sync`，`LoadSearchDocs` 读不到文章，索引中的文档随之删除。
 - 一个文档最多索引前 `search.MaxTerms`（16383）个词，大约一万多字，之后的文字搜不到。更长的内容按[一个 key 多个文档](#multiple-documents)切分。
-- 文档无法建索引时（例如过滤字段的值超过 191 字节），任务直接转入[失败任务表](../libraries/queue-monitoring.md#failed-jobs)。
+- 文档无法建索引时（例如过滤字段的值超过 191 字节），任务直接转入[失败任务表](../background/queue-monitoring.md#failed-jobs)。
 
 修改了 `SearchDoc` 的字段或者[分词器](#tokenizers)之后，已有的文档要按新的方式重新写入，见[重建索引](#reindexing)。
 
@@ -249,7 +249,7 @@ op, err := article.SearchIndex.Reindex(ctx, tx, ops, sub)
 <a id="searching"></a>
 ## 搜索
 
-`Search` 返回一页结果，`Result` 嵌入了 [page.Offset](../responses/responses.md#pagination)，可以直接作为接口的响应体，页面中也可以用它渲染分页导航：
+`Search` 返回一页结果，`Result` 嵌入了 [page.Offset](../http/responses.md#pagination)，可以直接作为接口的响应体，页面中也可以用它渲染分页导航：
 
 ```json
 {

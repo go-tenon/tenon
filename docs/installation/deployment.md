@@ -116,8 +116,8 @@ CONFIG=--config=config/app.yaml,config/prod.yaml
 按[命令行](../general/commands.md#running-together)一章写好的应用，有三个一直运行的部分：
 
 - **HTTP 服务**（`serve`）：处理接口请求；
-- **队列的 worker**（`work`）：在后台执行耗时的任务，例如发送邮件，见[队列](../libraries/queue.md)；
-- **调度器**（`schedule`）：到点执行定时任务，见[定时任务](../libraries/scheduling.md)。
+- **队列的 worker**（`work`）：在后台执行耗时的任务，例如发送邮件，见[队列](../background/queue.md)；
+- **调度器**（`schedule`）：到点执行定时任务，见[定时任务](../background/scheduling.md)。
 
 它们可以在一个进程中一起运行，也可以分开运行。代码完全相同，只是启动的命令不同：
 
@@ -132,7 +132,7 @@ CONFIG=--config=config/app.yaml,config/prod.yaml
 
 - **HTTP 服务**放在负载均衡后面，请求被分摊到各个实例。
 - **worker** 从队列中领取任务，一个任务只会被一个实例领取，可以随时增减实例。
-- **调度器**用锁保证每个定时任务每次只执行一次，所以多个实例互为备份，前提是它们共用同一个数据库或 Redis，见[多个实例](../libraries/scheduling.md#multiple-instances)。
+- **调度器**用锁保证每个定时任务每次只执行一次，所以多个实例互为备份，前提是它们共用同一个数据库或 Redis，见[多个实例](../background/scheduling.md#multiple-instances)。
 
 这些部分共用数据库的连接池。设置连接数上限 `max_conns` 时，要把 HTTP 请求、各队列的并发数和同时执行的定时任务都算进去；所有实例的连接数加起来，不能超过数据库允许的最大连接数，见[连接池](../database/quick-start.md#pool-exhaustion)。
 
@@ -309,7 +309,7 @@ services:
 
 一起运行时，把三个服务换成一个运行 `start` 的服务即可。
 
-应用用到的其他服务也放进同一个 compose 文件。框架会用到 PostgreSQL、[Redis](../libraries/redis.md)（锁、限流、广播）、[Memcached](../libraries/cache.md)（缓存）和 [nsqd](../libraries/queue.md#preparing)（任务队列）：
+应用用到的其他服务也放进同一个 compose 文件。框架会用到 PostgreSQL、[Redis](../libraries/redis.md)（锁、限流、广播）、[Memcached](../libraries/cache.md)（缓存）和 [nsqd](../background/queue.md#preparing)（任务队列）：
 
 ```yaml
   redis:
@@ -369,7 +369,7 @@ Redis 要配置 `noeviction`：内存满时报错，而不是悄悄删掉锁和�
 - **识别用户的真实地址。** 程序看到的请求都来自代理的地址。在 `http.client_ip.trusted_proxies` 中填写代理的网段，程序就会从代理转发的请求头中读出用户的真实地址，见[可信代理](../http/middleware.md#trusted-proxies)。
 - **保留原始的 `Host` 请求头**，包括端口。nginx 用 `proxy_set_header Host $http_host;`，不要用 `$host`，它会丢掉端口，程序生成的地址和[实时频道](../libraries/realtime.md)的安全检查都会出错。
 - **HTTPS 与 HSTS。** 全站使用 HTTPS 后，在代理上加上 `Strict-Transport-Security` 响应头，例如 nginx 的 `add_header Strict-Transport-Security "max-age=31536000" always;`，浏览器此后只用 HTTPS 访问这个域名。
-- **服务端推送**需要在代理上启用 HTTP/2，见[服务端推送](../responses/sse.md#deployment)。
+- **服务端推送**需要在代理上启用 HTTP/2，见[服务端推送](../http/sse.md#deployment)。
 
 程序直接对外提供服务、前面没有代理时，安装 [httpx.Compress](../http/optional-middleware.md#compression) 压缩响应。跨域请求用内置的 [CORS](../http/optional-middleware.md#cors)。限流可以在网关中配置，也可以用内置的[限流](../libraries/rate-limiting.md)。
 

@@ -1,6 +1,6 @@
 # AI 助手
 
-`ai/chat` 包用于构建对话式的 AI 助手：模型边想边答，需要时调用应用提供的工具，回答以[服务端推送](../responses/sse.md)实时显示给用户。
+`ai/chat` 包用于构建对话式的 AI 助手：模型边想边答，需要时调用应用提供的工具，回答以[服务端推送](../http/sse.md)实时显示给用户。
 
 agent 本身由 [trpc-agent-go](https://github.com/trpc-group/trpc-agent-go) 提供：模型、工具、提示词、记忆、多 agent 协作都直接使用它的 API，见[它的文档](https://trpc-group.github.io/trpc-agent-go/)。`ai/chat` 补上 Web 应用还需要的部分：
 
@@ -11,7 +11,7 @@ agent 本身由 [trpc-agent-go](https://github.com/trpc-group/trpc-agent-go) 提
 
 几个术语：**agent** 是能自己决定下一步做什么的模型程序，它可以调用你提供的**工具**（Go 函数）来查数据、执行操作；一次**运行**是 agent 回答一个问题的全过程，可能包含多轮思考和工具调用。
 
-阅读前需要了解：[服务端推送](../responses/sse.md)；[依赖装配](../concepts/dependencies.md)；React 和 Vercel AI SDK 的 `useChat`（前端部分）。按对话选择 agent、使用应用自己的消息表、多模态、部署等见 [AI 助手进阶](chat-advanced.md)。
+阅读前需要了解：[服务端推送](../http/sse.md)；[依赖装配](../concepts/dependencies.md)；React 和 Vercel AI SDK 的 `useChat`（前端部分）。按对话选择 agent、使用应用自己的消息表、多模态、部署等见 [AI 助手进阶](chat-advanced.md)。
 - **图片、语音和向量**：生成图片、合成和识别语音、计算向量、重排，接口统一，测试时有替身。
 - **决策**：用专门的决策模型做分类、路由和打分，得到概率。
 
@@ -140,7 +140,7 @@ ai:
 模型请求和普通的 HTTP 请求一样，遇到暂时的失败会重试几次，仍然失败就直接返回错误：
 
 - 连接失败、`408`、`409`、`429` 和 `5xx` 时重试。服务端给出 `Retry-After`（1 分钟以内）就按它等待，否则指数退避：0.5 秒起，每次翻倍，最长 8 秒。
-- 重试用完后返回错误。对话中，这次回答以 `error` 事件结束，用户可以重新发送；在[队列](../libraries/queue.md)任务中调用模型时，失败由任务的重试策略接着处理。
+- 重试用完后返回错误。对话中，这次回答以 `error` 事件结束，用户可以重新发送；在[队列](../background/queue.md)任务中调用模型时，失败由任务的重试策略接着处理。
 - 模型已经开始流式返回内容后出错时直接结束：已经推给用户的半段回答无法撤回，这次回答以错误结束。
 
 `max_retries` 同样作用于[图片、语音和向量](chat-advanced.md#media)的请求。
@@ -265,7 +265,7 @@ const { messages, sendMessage, addToolApprovalResponse } = useChat({
 });
 ```
 
-React 前端可以直接用 `@go-tenon/shell/chat` 的 [`useAssistantChat`](../responses/app-shell-features.md#ai-chat)，它按上面的方式配置好 `useChat`，还处理了插话和停止；运营后台的 [`AssistantChat`](../responses/admin.md#features) 是现成的对话界面。
+React 前端可以直接用 `@go-tenon/shell/chat` 的 [`useAssistantChat`](../frontend/app-shell-features.md#ai-chat)，它按上面的方式配置好 `useChat`，还处理了插话和停止；运营后台的 [`AssistantChat`](../frontend/admin.md#features) 是现成的对话界面。
 
 `Runs.Submit` 在后台开始一次运行后立即返回，运行独立于请求，请求结束后照常继续。它也独立于 [`httpx.Timeout`](../http/middleware.md#request-timeout)，助手的路由和其他 API 装在同一组中间件下即可。对话正在回答时再次提交，`Submit` 返回 `chat.ErrBusy`（`409`）。
 
