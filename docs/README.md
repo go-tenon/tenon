@@ -94,12 +94,14 @@ Tenon 是一个用 Go 构建 HTTP API 的框架。用户登录后使用的界面
 - [原子锁](libraries/locks.md)：同一时间只让一个进程做某件事
 - [限流](libraries/rate-limiting.md)：限制一段时间内的请求次数
 - [队列](libraries/queue.md)：把耗时的工作放到后台执行
+- [队列：失败任务与监控](libraries/queue-monitoring.md)：失败任务的重试、队列的状态与面板
 - [定时任务](libraries/scheduling.md)：每天、每小时执行的工作
 - [广播](libraries/broadcasting.md)：在多个进程之间传递消息
 - [实时频道](libraries/realtime.md)：把消息推给在线的用户
 - [文件存储](libraries/filesystem.md)：本地磁盘和对象存储
 - [文件上传](libraries/file-uploads.md)：上传接口和常见用法
-- [邮件](libraries/mail.md)、[短信](libraries/sms.md)、[生成 PDF](libraries/pdf.md)
+- [客户端直传](libraries/direct-uploads.md)：大文件直接上传到 S3
+- [邮件](libraries/mail.md)、[邮件服务商](libraries/mail-providers.md)、[短信](libraries/sms.md)、[生成 PDF](libraries/pdf.md)
 - [出站请求](libraries/outbound.md)：安全地调用其他服务的接口
 
 应用中常见的功能：

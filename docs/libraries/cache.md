@@ -6,6 +6,10 @@ Memcached 只做缓存这一件事：内存满了就淘汰最久没用的数据�
 
 Tenon 不封装 Memcached 客户端，而是直接使用社区的 [gomemcache](https://github.com/bradfitz/gomemcache)。在它之上，`cachex` 包提供“先读缓存，没有就查库再写回”的读取方式，并替你处理热点过期、集中过期和不存在的数据这几个常见问题。
 
+几个术语：**命中**是要读的数据在缓存中，**未命中**是不在、要去查数据库；**过期时间**（TTL）是数据在缓存中保留多久。
+
+阅读前需要了解：[依赖装配](../concepts/dependencies.md)；[泛型](../concepts/go-primer.md#generics)。
+
 - [示例用法](#example-usage)
 - [配置缓存](#assembling-cache)
     - [servers](#config-servers)
@@ -19,6 +23,7 @@ Tenon 不封装 Memcached 客户端，而是直接使用社区的 [gomemcache](h
 - [缓存键](#keys-and-serialization)
 - [部署](#deployment)
 - [测试](#testing)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="example-usage"></a>
@@ -290,6 +295,25 @@ func newTestCache(t *testing.T) *cachex.Cache[*article.Article] {
 - 发布文章之后，缓存被删除，再次读取得到新的状态；
 - 缓存中有别人的草稿时，读取仍然返回 `404`；
 - 不存在的文章返回 `404`。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**修改了文章，页面上还是旧的内容**
+
+修改后没有删除缓存，或者删除时用的键与读取时不同。读取和删除都用同一个 `cachex.Cache`，见[示例用法](#example-usage)。
+
+**Memcached 停了以后，接口变得很慢**
+
+每次缓存操作都要等到超时才回退到数据库。把客户端的 `Timeout` 设得短一些（默认 500 毫秒），见[创建客户端](#creating-the-client)。
+
+**生成接口文档时 panic**
+
+`cachex.New` 遇到 `nil` 客户端会 panic。在入口中创建 `Cache`，再传给模块的 `Register`，见[创建客户端](#creating-the-client)。
+
+**别人的草稿被返回了**
+
+缓存中保存的是数据，不包含权限。命中缓存之后仍然要检查访问权限，见[读取缓存](#cache-aside)。
 
 <a id="api-reference"></a>
 ## API 参考

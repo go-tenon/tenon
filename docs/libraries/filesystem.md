@@ -10,6 +10,8 @@
 
 为什么要分“上传”和“确认”两步？设想用户在编辑文章时上传了一张封面，然后放弃了编辑。先上传、后确认，放弃的临时文件会被自动回收，存储中只留下被引用的文件。
 
+阅读前需要了解：[数据库：快速入门](../database/quick-start.md)；[依赖装配](../concepts/dependencies.md)。大文件由客户端直接上传到 S3 的写法见[客户端直传](direct-uploads.md)。
+
 使用前先发布 `files` 表的迁移，见[发布框架迁移](../database/migrations.md#publishing-framework-migrations)：
 
 ```go
@@ -25,14 +27,12 @@ migrationCmd.AddCommand(migratecmd.Publish(
     - [S3 磁盘](#s3-disk)
 - [装配文件服务](#assembling-files)
 - [通过应用服务器上传](#server-upload)
-- [客户端直传](#direct-upload)
-    - [单次上传](#direct-put)
-    - [分片上传](#multipart-upload)
 - [确认文件](#confirming-files)
 - [访问文件](#accessing-files)
 - [删除文件](#deleting-files)
 - [过期清理](#cleanup)
 - [表结构](#schema)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="example-usage"></a>
@@ -232,70 +232,6 @@ if err != nil {
 
 对象键由上传日期、文件 ID 和小写扩展名组成，原始文件名只保存在 `filename` 字段中。
 
-<a id="direct-upload"></a>
-## 客户端直传
-
-使用 S3 磁盘时，客户端可以拿着签名地址把文件直接传到 S3。先用 `Prepare` 登记文件，再根据大小选择单次上传或分片上传：
-
-```go
-record, err := fileService.Prepare(ctx, owner, filesystem.FileInput{
-    Disk:        "s3",
-    Filename:    "video.mp4",
-    ContentType: "video/mp4",
-    Size:        size,
-})
-```
-
-签名返回 `filesystem.SignedRequest`，包含 `url`、`method` 和必须原样携带的 `headers`。签名绑定了文件的大小和类型，长度不符的请求会被 S3 拒绝。签名有效期是 15 分钟，并且不超过临时文件剩余的时间。
-
-本地磁盘不支持直传，签名方法返回 `filesystem.ErrUnsupported`，请改用 `Upload`。
-
-<a id="direct-put"></a>
-### 单次上传
-
-不超过 5GiB 的文件可以一次上传：
-
-```go
-signed, err := fileService.SignPut(ctx, owner, record.ID)
-```
-
-客户端用 `signed` 发起请求：
-
-```js
-await fetch(signed.url, { method: signed.method, headers: signed.headers, body: file })
-```
-
-上传成功后，业务使用文件时调用 [Confirm](#confirming-files)。
-
-<a id="multipart-upload"></a>
-### 分片上传
-
-大文件使用分片上传，单片失败只需重传这一片。先创建分片会话：
-
-```go
-upload, err := fileService.CreateMultipart(ctx, owner, record.ID)
-// upload.UploadID、upload.PartSize、upload.PartCount
-```
-
-分片大小默认 16MiB，超大文件会自动放大，保证在 S3 的 10000 片上限以内。除最后一片外，每片正好 `PartSize` 字节。会话 ID 由客户端保存并在后续请求中带回。
-
-每一片上传前，单独为它签名，签名后立即使用，因此网络再慢签名也始终有效：
-
-```go
-signed, err := fileService.SignPart(ctx, owner, record.ID, uploadID, number) // number 从 1 开始
-```
-
-客户端上传每一片后，从响应头读取 `ETag` 并保存。不同分片可以并发上传；某一片失败时，重新签名并重传这一片即可。全部上传后，提交编号和 ETag 合并：
-
-```go
-record, err := fileService.CompleteMultipart(ctx, owner, record.ID, uploadID, []filesystem.Part{
-    {Number: 1, ETag: `"9b2cf535f27731c974343645a3985328"`},
-    {Number: 2, ETag: `"6f5902ac237024bdd0c176cb93063dc4"`},
-})
-```
-
-`parts` 必须正好覆盖 `1..PartCount`。合并成功但响应丢失时，重复调用同样返回成功。放弃上传时调用 `AbortMultipart(ctx, owner, id, uploadID)`，之后可以重新创建会话。
-
 <a id="confirming-files"></a>
 ## 确认文件
 
@@ -433,6 +369,21 @@ sched.Add("files:cleanup", "*/5 * * * *", schedule.Cleanup(fileService.Cleanup, 
 | `filesystem.ErrNotUploaded` | 确认时对象还没有上传完整 |
 | `filesystem.ErrUnsupported` | 磁盘不支持客户端直传 |
 
+<a id="troubleshooting"></a>
+## 常见问题
+
+**上传成功的文件过一段时间后不见了**
+
+文件上传后是 `temporary` 状态，超过 `temp_ttl` 仍未确认就会被清理。业务使用文件时调用 `Confirm`，见[确认文件](#confirming-files)。
+
+**`Confirm` 返回 `ErrNotFound`，但文件明明上传了**
+
+只有上传者本人可以确认文件；文件已经过期被清理时也是这样，见[确认文件](#confirming-files)。
+
+**通过公开地址访问文件得到 404**
+
+本地磁盘要挂在 `public_url` 的路径上才能提供下载；S3 磁盘要为桶（或 CDN 回源）配置公开读，见[磁盘](#disks)。
+
 <a id="api-reference"></a>
 ## API 参考
 
@@ -473,7 +424,7 @@ func (s *Service) AbortMultipart(ctx context.Context, owner identity.Subject, id
 func PartSize(size int64) int64
 ```
 
-见[客户端直传](#direct-upload)。
+见[客户端直传](direct-uploads.md#direct-upload)。
 
 ### 读取与删除
 

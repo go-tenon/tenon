@@ -191,7 +191,7 @@ categories:
 | `xiaomi` | 小米推送后台申请的 channel ID，每个应用最多 8 个 |
 | `channel` | 覆盖 `android.channel`，例如营销消息用单独的通知渠道，用户可以只关闭它 |
 
-推送营销消息时写 `Category: "promo"`。指定了配置中没有的分类时，推送任务直接失败，在[失败任务](../libraries/queue.md#failed-jobs)中可以看到原因。
+推送营销消息时写 `Category: "promo"`。指定了配置中没有的分类时，推送任务直接失败，在[失败任务](../libraries/queue-monitoring.md#failed-jobs)中可以看到原因。
 
 <a id="delivering"></a>
 ## 运行推送

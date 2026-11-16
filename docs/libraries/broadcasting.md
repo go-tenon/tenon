@@ -6,6 +6,8 @@
 
 它与传输方式无关：同一个 Hub 既可以推给 SSE 连接，也可以推给[实时频道](realtime.md)的 WebSocket 客户端。消息按主题（topic）分发，例如 `articles`、`room:42`。
 
+阅读前需要了解：[服务端推送](../responses/sse.md)；[Redis](redis.md)；[提交后执行](../database/quick-start.md#after-commit)。
+
 - [示例用法](#example-usage)
 - [创建 Hub](#creating-the-hub)
 - [发布事件](#publishing-events)
@@ -14,6 +16,7 @@
 - [后端](#backends)
 - [投递保证](#delivery-guarantees)
 - [测试](#testing)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="example-usage"></a>
@@ -176,6 +179,25 @@ msg := broadcasttest.Receive(t, sub)
 ```
 
 它保留全部消息，只用于测试。实现自己的后端时，用 `broadcasttest.TestBackend` 检查它是否符合约定。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**订阅了，但收不到其他实例上发布的消息**
+
+各实例的 Hub 要用同一个 Redis 和同一个频道名。Redis 需要 7 或更新的版本，分片 Pub/Sub 才能使用，见[后端](#backends)。
+
+**客户端收到了一条随后被回滚的通知**
+
+事件在事务提交之前发布了。在事务中用 `AfterCommit` 登记，提交之后才发出，见[发布事件](#publishing-events)。
+
+**断线重连后丢了几条消息**
+
+Redis Pub/Sub 只转发在线的消息。客户端重连时按 `Last-Event-ID` 从应用的数据中补发；补发时先订阅、再查询，见[断线补发](#replaying-missed-events)。
+
+**发布时报错主题不合法**
+
+主题只能由字母、数字和 `_ - : .` 组成，最长 200 字节。
 
 <a id="api-reference"></a>
 ## API 参考

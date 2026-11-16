@@ -17,6 +17,8 @@ type Renderer interface {
 
 `pdf/gotenberg` 实现 `Renderer`，调用 [Gotenberg](https://gotenberg.dev) 服务中的 Chromium。浏览器运行在独立的容器中，崩溃、内存占用、排队和定期重启都由 Gotenberg 负责；它的镜像带有 Noto CJK 字体，中文直接可用。
 
+阅读前需要了解：[视图](../responses/views.md)中的 templ；CSS 的基本写法。
+
 - [示例用法](#example-usage)
 - [启动 Gotenberg](#running-gotenberg)
 - [编写模板](#writing-templates)
@@ -27,6 +29,7 @@ type Renderer interface {
 - [后台生成](#background-generation)
 - [测试](#testing)
 - [部署](#deployment)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="example-usage"></a>
@@ -311,6 +314,25 @@ services:
 - **Gotenberg 只在内网提供服务**，只让应用访问它。
 - 默认最多同时生成 6 份，其余排队；单次请求的时限是 30 秒。分别用 `--chromium-max-concurrency`、`--api-timeout` 调整，见 [Gotenberg 文档](https://gotenberg.dev)。
 - 模板中有用户填写的图片地址时，Chromium 会去访问这些地址。在服务中加上 `command: [gotenberg, --chromium-deny-private-ips]` 可以禁止它访问内网地址，被拒绝的图片留空，PDF 照常生成。开启后，文件存储的公开地址也要是公网地址。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**`Render` 报错连不上 Gotenberg**
+
+Gotenberg 没有运行，或者配置中的地址不对。本地用 Docker 启动它，见[启动 Gotenberg](#running-gotenberg)。
+
+**PDF 中的图片或样式没有生效**
+
+页面中引用的文件要放进 `Assets`，和页面一起上传给 Gotenberg，HTML 中只写文件名，例如 `href="article.css"`；`Assets` 只包含顶层文件，见[样式和图片](#assets)。
+
+**纸张大小或页边距不对**
+
+纸张和边距只能在 CSS 的 `@page` 中设置，Go 代码中没有对应的选项，见[纸张、边距与页码](#page-setup)。
+
+**中文显示为方块**
+
+Gotenberg 镜像中带有 Noto Sans CJK。使用了其他字体时，把字体文件放进 `Assets` 并用 `@font-face` 引用。
 
 <a id="api-reference"></a>
 ## API 参考

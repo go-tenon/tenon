@@ -2,6 +2,10 @@
 
 `outbound` 包创建一个只能访问公网地址的 HTTP 客户端，用来请求由用户填写的地址。
 
+这类攻击叫 **SSRF**（服务端请求伪造）：攻击者让你的服务器替他去访问只有服务器才能访问的地址。
+
+阅读前需要了解：Go 标准库的 `http.Client`；[错误处理](../general/errors.md)。
+
 为什么需要它？有些请求的地址由用户填写：租户的 [webhook](../features/webhooks.md) 端点、文章中链接的预览、AI 助手要抓取的网页。如果直接用 `http.DefaultClient` 去请求，有人可以填 `http://169.254.169.254/latest/meta-data/` 读取云服务器的元数据（其中可能有临时密钥），或者填 `http://10.0.0.5:6379/` 访问内网服务。这类攻击叫服务端请求伪造（SSRF）。
 
 `outbound` 包创建只能访问公网地址的 `*http.Client`。地址在域名解析之后、建立连接之前检查，检查的是真正要连接的 IP，所以下面这些绕过方式都无效：
@@ -21,6 +25,7 @@
 - [代理](#proxies)
 - [在其他组件中使用](#using-with-other-components)
 - [测试](#testing)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="example-usage"></a>
@@ -206,6 +211,25 @@ fake.On("POST https://api.resend.com/emails").Reply(outboundtest.JSON(200, map[s
 client := resendsdk.NewCustomClient(fake.Client(), "re_test") // github.com/resend/resend-go/v3
 mailer, err := resend.NewWithClient(client, from)
 ```
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**本地开发时请求 `localhost` 被拒绝**
+
+回环地址默认被拒绝。开发时用 `Allow` 放行，见[本地开发](#local-development)。
+
+**请求 8080 端口的地址被拒绝**
+
+默认只能连接 80 和 443 端口。需要其他端口时在选项中放行，见[允许的地址与端口](#allowed-destinations)。
+
+**请求一直没有返回**
+
+`Timeout` 的零值是 30 秒，覆盖连接、重定向和读取响应体。需要更短时显式设置。
+
+**响应很大，服务器内存上涨**
+
+客户端不限制响应的大小。用 `io.LimitReader` 限制读取的字节数。
 
 <a id="api-reference"></a>
 ## API 参考
