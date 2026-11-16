@@ -2,12 +2,14 @@ package chat_test
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/uptrace/bun"
 	"trpc.group/trpc-go/trpc-agent-go/agent/llmagent"
+	"trpc.group/trpc-go/trpc-agent-go/event"
 	"trpc.group/trpc-go/trpc-agent-go/model"
 	"trpc.group/trpc-go/trpc-agent-go/session"
 	tpg "trpc.group/trpc-go/trpc-agent-go/session/postgres"
@@ -176,6 +178,51 @@ func TestEraseUser(t *testing.T) {
 		t.Fatalf("after: u1=%d u2=%d", rows("u1"), rows("u2"))
 	}
 	if err := chat.EraseUser(ctx, db, ""); err == nil {
+		t.Fatal("expected error for empty user ID")
+	}
+}
+
+// TestExportUser 导出一个用户在全部应用中的会话、事件和用户状态，不包括其他用户的。
+func TestExportUser(t *testing.T) {
+	t.Parallel()
+	db := dbtest.Open(t, chat.Migrations())
+	ctx := context.Background()
+	s := newSessions(t, db, false)
+	t.Cleanup(func() { _ = s.Close() })
+	for _, key := range []session.Key{
+		{AppName: "blog", UserID: "u1", SessionID: "s1"},
+		{AppName: "blog", UserID: "u2", SessionID: "s2"},
+	} {
+		sess, err := s.CreateSession(ctx, key, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ev := event.NewResponseEvent("inv", "user", &model.Response{Choices: []model.Choice{{Message: model.NewUserMessage("hello from " + key.UserID)}}})
+		if err := s.AppendEvent(ctx, sess, ev); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.UpdateUserState(ctx, session.UserKey{AppName: key.AppName, UserID: key.UserID}, session.StateMap{"nickname": []byte("nick-" + key.UserID)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	v, err := chat.ExportUser(ctx, db, "u1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(data)
+	for _, want := range []string{`"sessions":[{"app":"blog","session_id":"s1","created_at":`, "hello from u1", `"key":"nickname","value":"nick-u1"`, `"summaries":[]`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("%s does not contain %s", got, want)
+		}
+	}
+	if strings.Contains(got, "u2") || strings.Contains(got, "deleted_at") {
+		t.Errorf("export contains other data: %s", got)
+	}
+	if _, err := chat.ExportUser(ctx, db, ""); err == nil {
 		t.Fatal("expected error for empty user ID")
 	}
 }

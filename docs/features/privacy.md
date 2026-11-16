@@ -72,10 +72,11 @@ type Source struct {
     Name  string
     Check func(ctx context.Context, ref identity.Ref) error
     Erase func(ctx context.Context, db bun.IDB, ref identity.Ref) error
+    Export func(ctx context.Context, db bun.IDB, ref identity.Ref) (any, error)
 }
 ```
 
-`ref` 是主体的类型和 ID（`identity.Ref`），`db` 是删除所在的事务。全部 `Erase` 按登记的顺序在同一个事务中执行。`Check` 见[能否注销](#checks)。
+`ref` 是主体的类型和 ID（`identity.Ref`），`db` 是删除所在的事务。全部 `Erase` 按登记的顺序在同一个事务中执行。`Check` 见[能否注销](#checks)，`Export` 用于[导出个人数据](data-export.md)，同一份清单既决定删除什么，也决定导出什么。
 
 <a id="framework-sources"></a>
 ### 框架的数据

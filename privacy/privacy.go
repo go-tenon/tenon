@@ -44,6 +44,9 @@ type Source struct {
 	//
 	// Erase 可能执行多次（失败后重试），必须是幂等的：数据已经不存在时直接返回 nil。
 	Erase func(ctx context.Context, db bun.IDB, ref identity.Ref) error
+	// Export 返回 ref 在这里的数据，导出个人数据时编码为 JSON，写成压缩包中的 <Name>.json，见 privacy/export。
+	// 全部 Export 在同一个只读事务中执行，db 是这个事务，读到的是同一时刻的数据。返回 nil 时不写这个文件。可以为 nil。
+	Export func(ctx context.Context, db bun.IDB, ref identity.Ref) (any, error)
 }
 
 // Options 是 New 的选项。
@@ -54,7 +57,7 @@ type Options struct {
 	// Grace 是冷静期：Request 之后经过这么久，EraseDue 才删除数据；期间用户可以 Cancel。
 	// 0 表示没有冷静期，下一次 EraseDue 就删除。不能为负数。
 	Grace time.Duration
-	// Sources 是保存了主体数据的地方，至少一项。Name 不能为空或重复，Check 和 Erase 至少有一个。
+	// Sources 是保存了主体数据的地方，至少一项。Name 不能为空或重复，Check、Erase 和 Export 至少有一个。
 	Sources []Source
 }
 
@@ -108,13 +111,19 @@ func New(db *bun.DB, opts Options) *Service {
 			panic("privacy: source without a name")
 		case seen[src.Name]:
 			panic(errors.Newf("privacy: duplicate source %q", src.Name))
-		case src.Check == nil && src.Erase == nil:
-			panic(errors.Newf("privacy: source %q has neither Check nor Erase", src.Name))
+		case src.Check == nil && src.Erase == nil && src.Export == nil:
+			panic(errors.Newf("privacy: source %q has no Check, Erase or Export", src.Name))
 		}
 		seen[src.Name] = true
 	}
 	return &Service{db: db, typ: opts.Type, grace: opts.Grace, sources: append([]Source(nil), opts.Sources...)}
 }
+
+// Type 返回这个服务处理的账号体系。
+func (s *Service) Type() identity.SubjectType { return s.typ }
+
+// Sources 返回登记的各项，供 privacy/export 导出个人数据。
+func (s *Service) Sources() []Source { return append([]Source(nil), s.sources...) }
 
 // Check 依次调用各项的 Check，返回第一个错误，用于在申请页面上提前告诉用户能否注销。
 func (s *Service) Check(ctx context.Context, ref identity.Ref) error {

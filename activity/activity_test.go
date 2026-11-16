@@ -2,6 +2,7 @@ package activity_test
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"strings"
 	"testing"
@@ -222,5 +223,57 @@ func TestCleanupDeletesOldRecords(t *testing.T) {
 	}
 	if _, err := cleanup(ctx, 0); err == nil {
 		t.Fatal("expected error for non-positive limit")
+	}
+}
+
+// exported 把 Export 的结果编码为 JSON。
+func exported(t *testing.T) func(v any, err error) string {
+	return func(v any, err error) string {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := json.Marshal(v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(data)
+	}
+}
+
+func contains(t *testing.T, got string, want ...string) {
+	t.Helper()
+	for _, w := range want {
+		if !strings.Contains(got, w) {
+			t.Errorf("%s does not contain %s", got, w)
+		}
+	}
+}
+
+func excludes(t *testing.T, got string, unwanted ...string) {
+	t.Helper()
+	for _, w := range unwanted {
+		if strings.Contains(got, w) {
+			t.Errorf("%s contains %s", got, w)
+		}
+	}
+}
+
+func TestExport(t *testing.T) {
+	t.Parallel()
+	db := dbtest.Open(t, activity.Migrations())
+	ctx := context.Background()
+	record(t, db, alice, activity.Activity{Event: "article.published", TargetType: "article", TargetID: "a1", Properties: map[string]any{"title": "Hello"}})
+	asAlice := alice
+	asAlice.Tenant, asAlice.Impersonator = "globex", identity.Ref{Type: "staff", ID: "s1"}
+	record(t, db, asAlice, activity.Activity{Event: "article.deleted"})
+	record(t, db, identity.Subject{ID: "u2", Type: "user", Tenant: "acme"}, activity.Activity{Event: "bob.event"})
+	got := exported(t)(activity.Export(ctx, db, alice.Ref()))
+	contains(t, got,
+		`{"tenant":"acme","event":"article.published","target_type":"article","target_id":"a1","properties":{"title":"Hello"},"created_at":`,
+		`{"tenant":"globex","event":"article.deleted","impersonated":true,"created_at":`)
+	excludes(t, got, "bob.event", "s1")
+	if _, err := activity.Export(ctx, db, identity.Ref{}); err == nil {
+		t.Fatal("expected error for empty subject")
 	}
 }

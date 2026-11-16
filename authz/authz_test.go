@@ -2,6 +2,7 @@ package authz_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"slices"
 	"strings"
@@ -266,5 +267,58 @@ func TestCatalog(t *testing.T) {
 	got[0].Name = "changed"
 	if s.Catalog()[0].Name != "articles:read" {
 		t.Fatal("Catalog returned shared slice")
+	}
+}
+
+// exported 把 Export 的结果编码为 JSON。
+func exported(t *testing.T) func(v any, err error) string {
+	return func(v any, err error) string {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := json.Marshal(v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(data)
+	}
+}
+
+func contains(t *testing.T, got string, want ...string) {
+	t.Helper()
+	for _, w := range want {
+		if !strings.Contains(got, w) {
+			t.Errorf("%s does not contain %s", got, w)
+		}
+	}
+}
+
+func excludes(t *testing.T, got string, unwanted ...string) {
+	t.Helper()
+	for _, w := range unwanted {
+		if strings.Contains(got, w) {
+			t.Errorf("%s contains %s", got, w)
+		}
+	}
+}
+
+func TestExport(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	db := dbtest.Open(t, authz.Migrations())
+	s := authz.NewStore(db, catalog)
+	reader := mustRole(t, s, authz.Role{Name: "reader", Permissions: []string{"articles:read"}})
+	mustAssign(t, s, user("alice"), "acme", reader.ID)
+	mustAssign(t, s, user("alice"), authz.AllTenants, reader.ID)
+	mustAssign(t, s, user("bob"), "globex", reader.ID)
+	got := exported(t)(s.Export(ctx, db, user("alice")))
+	contains(t, got, `{"tenant":"*","role":"reader","assigned_at":`, `{"tenant":"acme","role":"reader","assigned_at":`)
+	excludes(t, got, "globex")
+	if got := exported(t)(s.Export(ctx, db, user("nobody"))); got != "[]" {
+		t.Fatalf("no roles: %s", got)
+	}
+	if _, err := s.Export(ctx, db, identity.Ref{}); err == nil {
+		t.Fatal("expected error for empty subject")
 	}
 }

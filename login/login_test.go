@@ -2,6 +2,7 @@ package login_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"sync"
@@ -889,5 +890,41 @@ func TestNewPanics(t *testing.T) {
 			}()
 			login.New(db, opts)
 		}()
+	}
+}
+
+func TestExport(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	e := newRealm(t, login.Options{Policy: login.Policy{Register: true}})
+	e.account(t, ctx, "c1", "alice@example.com", "correct horse")
+	if err := e.realm.Attach(ctx, e.db, ref("c1"), login.Phone("+8613800138000"), false); err != nil {
+		t.Fatal(err)
+	}
+	e.account(t, ctx, "c2", "bob@example.com", "")
+
+	v, err := e.realm.Export(ctx, e.db, ref("c1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(data)
+	for _, want := range []string{
+		`{"kind":"email","value":"alice@example.com","verified":true,"created_at":`,
+		`{"kind":"phone","value":"+8613800138000","verified":false,"created_at":`,
+		`"password":true,"two_factor":false}`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("%s does not contain %s", got, want)
+		}
+	}
+	if strings.Contains(got, "bob") || strings.Contains(got, "argon") || strings.Contains(got, "correct horse") {
+		t.Errorf("export leaks data: %s", got)
+	}
+	if _, err := e.realm.Export(ctx, e.db, identity.Ref{Type: "staff", ID: "c1"}); err == nil {
+		t.Fatal("expected error for another account system")
 	}
 }

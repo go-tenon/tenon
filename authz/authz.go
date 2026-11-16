@@ -469,6 +469,29 @@ func (s *Store) Erase(ctx context.Context, db bun.IDB, ref identity.Ref) error {
 	return nil
 }
 
+// Export 在 db 中读取主体 ref 在各个域中的角色，用于导出个人数据；签名与 privacy.Source 的 Export 相同。
+// 每个分配是一个对象：tenant（"" 为平台本身，* 为所有租户）、role（角色名称）、assigned_at。
+func (s *Store) Export(ctx context.Context, db bun.IDB, ref identity.Ref) (any, error) {
+	if err := ref.Validate(); err != nil {
+		return nil, errors.Wrap(err, "authz")
+	}
+	type exported struct {
+		Tenant     string    `bun:"tenant"      json:"tenant"`
+		Role       string    `bun:"role"        json:"role"`
+		AssignedAt time.Time `bun:"assigned_at" json:"assigned_at"`
+	}
+	out := []exported{}
+	err := db.NewSelect().TableExpr("authz_assignments AS a").
+		Join("JOIN authz_roles AS r ON r.id = a.role_id").
+		ColumnExpr("a.tenant, r.name AS role, a.created_at AS assigned_at").
+		Where("a.subject_type = ? AND a.subject_id = ?", ref.Type, ref.ID).
+		OrderExpr("a.tenant, r.name").Scan(ctx, &out)
+	if err != nil {
+		return nil, errors.Wrap(err, "authz: export")
+	}
+	return out, nil
+}
+
 // subjectTag 是主体 ref 在所有域中的权限缓存的 tag，分配变化时失效。
 func (s *Store) subjectTag(ref identity.Ref) string {
 	return s.prefix + "authz:subject:" + lengthPrefixed(string(ref.Type), ref.ID)

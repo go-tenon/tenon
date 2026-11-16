@@ -192,6 +192,32 @@ func Erase(ctx context.Context, db bun.IDB, ref identity.Ref) error {
 	return errors.Wrap(err, "notification: erase")
 }
 
+// Export 返回主体 ref 在所有租户中收到的通知，按时间从旧到新，用于导出个人数据；签名与 privacy.Source 的 Export 相同。
+// 每条通知是一个对象：tenant、event、data、read_at（未读时省略）、created_at。
+func Export(ctx context.Context, db bun.IDB, ref identity.Ref) (any, error) {
+	if err := ref.Validate(); err != nil {
+		return nil, errors.Wrap(err, "notification")
+	}
+	var rows []Notification
+	err := db.NewSelect().Model(&rows).
+		Where("recipient_type = ? AND recipient_id = ?", ref.Type, ref.ID).OrderExpr("id").Scan(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "notification: export")
+	}
+	type exported struct {
+		Tenant    string         `json:"tenant"`
+		Event     string         `json:"event"`
+		Data      map[string]any `json:"data"`
+		ReadAt    time.Time      `json:"read_at,omitzero"`
+		CreatedAt time.Time      `json:"created_at"`
+	}
+	out := make([]exported, len(rows))
+	for i, n := range rows {
+		out[i] = exported{Tenant: n.Tenant, Event: n.Event, Data: n.Data, ReadAt: n.ReadAt, CreatedAt: n.CreatedAt}
+	}
+	return out, nil
+}
+
 // Cleanup 返回删除 keep 以前的通知（无论是否已读）的清理函数，每次调用最多删除 limit 条，交给 schedule.Cleanup：
 //
 //	sched.Add("notifications:cleanup", "0 4 * * *", schedule.Cleanup(notification.Cleanup(db, 90*24*time.Hour), 1000))

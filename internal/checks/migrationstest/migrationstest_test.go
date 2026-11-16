@@ -27,6 +27,7 @@ import (
 	"github.com/go-tenon/tenon/oauthserver"
 	"github.com/go-tenon/tenon/operation"
 	"github.com/go-tenon/tenon/privacy"
+	privacyexport "github.com/go-tenon/tenon/privacy/export"
 	"github.com/go-tenon/tenon/push"
 	"github.com/go-tenon/tenon/queue"
 	"github.com/go-tenon/tenon/ratelimit/pglimit"
@@ -56,6 +57,7 @@ var sources = map[string]migrate.Source{
 	"oauthserver":       {Name: "oauthserver", FS: oauthserver.Migrations()},
 	"operation":         {Name: "operation", FS: operation.Migrations()},
 	"privacy":           {Name: "privacy", FS: privacy.Migrations()},
+	"privacy/export":    {Name: "privacy_export", FS: privacyexport.Migrations()},
 	"push":              {Name: "push", FS: push.Migrations()},
 	"queue":             {Name: "queue", FS: queue.Migrations()},
 	"ratelimit/pglimit": {Name: "ratelimit", FS: pglimit.Migrations()},

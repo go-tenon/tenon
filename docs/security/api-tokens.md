@@ -353,6 +353,7 @@ func (s *Store) RevokeSubject(ctx context.Context, ref identity.Ref) (int, error
 func (s *Store) RevokeToken(ctx context.Context, token string) error
 func (s *Store) Cleanup(ctx context.Context, limit int) (int, error)
 func Erase(ctx context.Context, db bun.IDB, ref identity.Ref) error
+func Export(ctx context.Context, db bun.IDB, ref identity.Ref) (any, error)
 ```
 
 | 方法 | 说明 |
@@ -365,6 +366,7 @@ func Erase(ctx context.Context, db bun.IDB, ref identity.Ref) error
 | `List`、`Revoke`、`RevokeOthers` | 设备列表、退出某台设备、退出其他设备 |
 | `RevokeSubject` | 停用账号时撤销全部令牌 |
 | `Erase` | 包级函数，在注销的事务中删除全部令牌，登记到[注销账号](../features/privacy.md#framework-sources) |
+| `Export` | 包级函数，列出全部令牌（不含令牌本身），登记到[导出个人数据](../features/data-export.md#sources) |
 | `Cleanup` | 删除过期的令牌，交给定时任务 |
 
 ### JWT

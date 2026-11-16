@@ -400,6 +400,7 @@ func MarkAllRead(ctx context.Context, db bun.IDB, r Recipient) error
 func Delete(ctx context.Context, db bun.IDB, r Recipient, ids ...uuid.UUID) error
 func Cleanup(db bun.IDB, keep time.Duration) func(ctx context.Context, limit int) (int, error)
 func Erase(ctx context.Context, db bun.IDB, ref identity.Ref) error
+func Export(ctx context.Context, db bun.IDB, ref identity.Ref) (any, error)
 func RecipientOf(s identity.Subject) Recipient
 func Migrations() fs.FS
 ```
@@ -410,7 +411,7 @@ func Migrations() fs.FS
 | `UnreadCount` | 未读数 |
 | `MarkRead`、`MarkAllRead`、`Delete` | 只作用于收件人自己的通知 |
 | `Cleanup` | 删除早于 `keep` 的通知，交给[定时任务](../background/scheduling.md#framework-cleanups) |
-| `Erase` | 删除主体在所有租户中的通知，登记到[注销账号](privacy.md#framework-sources) |
+| `Erase`、`Export` | 删除、导出主体在所有租户中的通知，登记到[注销账号](privacy.md#framework-sources)和[导出个人数据](data-export.md#sources) |
 | `RecipientOf` | 主体所在的租户和主体，就是收件人 |
 
 `Notification` 是 `notifications` 表的 Bun 模型，字段 `Event`、`Data`、`ReadAt`、`CreatedAt`；不存在或不属于收件人时返回 `ErrNotFound`。

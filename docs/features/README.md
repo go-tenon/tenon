@@ -14,3 +14,4 @@
 - [Webhook](webhooks.md)：向外部系统发送事件
 - [全文搜索](search.md)：PostgreSQL 全文搜索与重建索引
 - [注销账号](privacy.md)：冷静期后删除用户在各处的个人数据
+- [导出个人数据](data-export.md)：把用户在各处的数据打包成 zip，由本人下载

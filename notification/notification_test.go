@@ -2,6 +2,7 @@ package notification_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -314,6 +315,60 @@ func TestErase(t *testing.T) {
 		}
 	}
 	if err := notification.Erase(ctx, db, identity.Ref{}); err == nil {
+		t.Fatal("expected error for empty subject")
+	}
+}
+
+// exported 把 Export 的结果编码为 JSON。
+func exported(t *testing.T) func(v any, err error) string {
+	return func(v any, err error) string {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := json.Marshal(v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(data)
+	}
+}
+
+func contains(t *testing.T, got string, want ...string) {
+	t.Helper()
+	for _, w := range want {
+		if !strings.Contains(got, w) {
+			t.Errorf("%s does not contain %s", got, w)
+		}
+	}
+}
+
+func excludes(t *testing.T, got string, unwanted ...string) {
+	t.Helper()
+	for _, w := range unwanted {
+		if strings.Contains(got, w) {
+			t.Errorf("%s contains %s", got, w)
+		}
+	}
+}
+
+func TestExport(t *testing.T) {
+	t.Parallel()
+	db := dbtest.Open(t, notification.Migrations())
+	ctx := context.Background()
+	sent := send(t, db, "first", alice)
+	send(t, db, "second", aliceGlobex)
+	send(t, db, "bob", bob)
+	if err := notification.MarkRead(ctx, db, alice, sent[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	got := exported(t)(notification.Export(ctx, db, alice.Ref))
+	contains(t, got, `"tenant":"acme","event":"first","data":{},"read_at":`, `"tenant":"globex","event":"second","data":{},"created_at":`)
+	excludes(t, got, `"bob"`)
+	if strings.Index(got, "first") > strings.Index(got, "second") {
+		t.Errorf("not in order: %s", got)
+	}
+	if _, err := notification.Export(ctx, db, identity.Ref{}); err == nil {
 		t.Fatal("expected error for empty subject")
 	}
 }
