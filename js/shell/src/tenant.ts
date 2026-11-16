@@ -4,22 +4,25 @@
 import { useQuery } from "@tanstack/react-query"
 import { useMemo, useSyncExternalStore } from "react"
 import { type App, type Tenant, useApp } from "./app"
+import { confirmDiscard } from "./tabs"
 
-/** 切换到租户 id。 */
-export async function switchTenant(app: App, id: string): Promise<void> {
+/** 切换到租户 id。标签中有未保存的修改时先询问，放弃切换时返回 false。 */
+export async function switchTenant(app: App, id: string): Promise<boolean> {
   const { session, router, tenancy } = app
+  if (!(await confirmDiscard(app))) return false
   const identity = session.identity()
   if (identity?.tenant !== id) session.setIdentity({ account: identity?.account ?? "", tenant: id })
   const home = tenancy?.home?.(id)
   if (!home) {
     await router.invalidate()
-    return
+    return true
   }
   if (/^[a-z][a-z\d+.-]*:\/\//i.test(home)) {
     window.location.assign(home)
-    return
+    return true
   }
   await router.navigate({ href: home })
+  return true
 }
 
 /**
@@ -40,7 +43,8 @@ export interface TenantState {
   tenants: Tenant[]
   /** 当前租户的信息。 */
   tenant?: Tenant
-  switchTo(id: string): Promise<void>
+  /** 切换租户；有未保存的修改并且用户选择留下时返回 false。 */
+  switchTo(id: string): Promise<boolean>
 }
 
 /** 当前租户和切换租户，例如顶栏的租户菜单。 */
