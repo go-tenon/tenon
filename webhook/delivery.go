@@ -68,7 +68,7 @@ func GetDelivery(ctx context.Context, db bun.IDB, tenant string, id uuid.UUID) (
 }
 
 // Resend 把租户 tenant 的一条投递记录重新发给它的端点：以相同的事件 ID 和请求体写入一条新的投递记录，
-// 并通过 queue.Database(db) 发布投递任务，返回新的记录。原记录保持不变。
+// 并在 db 中发布投递任务 Deliver，返回新的记录。原记录保持不变。
 // 接收方按 webhook-id 去重时会把它当作同一个事件。
 func Resend(ctx context.Context, db bun.IDB, tenant string, id uuid.UUID) (*Delivery, error) {
 	old, err := GetDelivery(ctx, db, tenant, id)

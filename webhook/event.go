@@ -19,10 +19,8 @@ type Event[T any] struct {
 }
 
 // Send 把事件推送给 subject 所在租户中订阅了它的端点：为每个端点写入一条投递记录，
-// 并通过 queue.Database(db) 发布投递任务。db 通常是业务修改所在的事务，事务提交后才会投递，回滚时一起取消。
+// 并在 db 中发布投递任务 Deliver。db 通常是业务修改所在的事务，事务提交后才会投递，回滚时一起取消。
 // 没有端点订阅时什么也不写。
-//
-// 投递任务总是发布到数据库队列，即使应用的其他任务使用 Redis 或 NATS，worker 也要用数据库驱动处理 Deliver。
 func (e Event[T]) Send(ctx context.Context, db bun.IDB, subject identity.Subject, data T) error {
 	return send(ctx, db, subject, e.Name, data)
 }
