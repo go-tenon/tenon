@@ -330,7 +330,7 @@ hits, err = ai.RerankBy(ctx, a.reranker, ai.Text(question), hits, func(h vector.
 <a id="images"></a>
 ## 图片
 
-用多模态的嵌入模型，商品图片、照片也能建索引：用户输入“红色连衣裙”，找出图片是红色连衣裙的商品。模型见[图片向量](chat-advanced.md#image-embeddings)，下面用百炼的 `qwen3-vl-embedding`。
+用多模态的嵌入模型，商品图片、照片、视频也能建索引：用户输入“红色连衣裙”，找出图片是红色连衣裙的商品。模型见[图片和视频向量](chat-advanced.md#image-embeddings)，下面用百炼的 `qwen3-vl-embedding`。
 
 `Model.Inputs` 声明模型接受图片，`WithFiles` 让 `Store` 读取[文件存储](../libraries/filesystem.md)中的图片：
 
@@ -373,9 +373,10 @@ func LoadProducts(ctx context.Context, tx bun.IDB, key string) ([]ProductDoc, er
 ```
 
 - `FilePart` 只记文件 ID，`LoadFunc` 不用读图片。同步时文件 ID 没有变化的文档沿用原来的向量，既不读文件也不调用模型；只有新的图片才通过 `WithFiles` 读出内容交给模型。文件存储中替换文件会产生新的 ID，所以同一个 ID 的内容不会变。
-- 文字和图片也可以放在一个文档中，融合为一个向量：`vector.Content{vector.TextPart(p.Title), vector.FilePart(p.CoverID)}`。只有能融合的模型支持，见[图片向量](chat-advanced.md#image-embeddings)。
+- 文字和图片也可以放在一个文档中，融合为一个向量：`vector.Content{vector.TextPart(p.Title), vector.FilePart(p.CoverID)}`。只有能融合的模型支持，见[图片和视频向量](chat-advanced.md#image-embeddings)。
+- 视频的写法相同，`FilePart` 引用视频文件，`Model.Inputs` 加上 `ai.ModalityVideo`。读出的文件累计到 64 MiB 就先交给模型计算一批，视频多时内存占用不会一直增长。
 - `Content` 编码为 JSON 时，图片只有文件 ID；检索结果通常不需要它，像上面一样写 `json:"-"`。
-- 图片超过 `vector.MaxFileSize`（32 MiB）、文件已删除、模型的 `Inputs` 没有图片时，同步任务转入失败任务表。
+- 文件超过 `vector.MaxFileSize`（50 MiB，模型自己的上限可能更小）、文件已删除、模型的 `Inputs` 没有这种内容时，同步任务转入失败任务表。
 - 混合索引中，只有图片的文档没有关键词，只参与语义那一路。
 
 一个商品有好几个文档，按文档检索时同一个商品会出现多次。`GroupByKey` 让每个 key 只返回最接近的一个文档：

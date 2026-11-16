@@ -371,3 +371,44 @@ func solidPNG(c color.Color) ai.Media {
 	_ = png.Encode(&b, img)
 	return ai.Media{Data: b.Bytes(), MIME: "image/png"}
 }
+
+// TestVideoDocuments 不并行：它调小了全局的 embedBytes。
+func TestVideoDocuments(t *testing.T) {
+	defer vector.SetEmbedBytes(15)()
+	ctx := context.Background()
+	video := func(s string) ai.Media { return ai.Media{Data: []byte(s), MIME: "video/mp4"} }
+	f := setupProducts(t, []ai.Modality{ai.ModalityText, ai.ModalityImage, ai.ModalityVideo})
+	flower := video("FLOWER-MP4")
+	f.emb.Same(ai.Text("一朵花"), ai.Content{ai.MediaPart(flower)})
+	ids := []uuid.UUID{f.files.add(flower), f.files.add(video("BUNNY--MP4")), f.files.add(video("CITY---MP4"))}
+	var docs []productDoc
+	for _, id := range ids {
+		docs = append(docs, productDoc{Kind: "video", Embed: vector.Content{vector.FilePart(id)}})
+	}
+	if err := f.put(ctx, products, "v1", docs...); err != nil {
+		t.Fatal(err)
+	}
+	// 每段 10 字节，累计到 15 字节就先计算一批：两次请求。
+	var sizes []int
+	for _, r := range f.emb.Requests() {
+		sizes = append(sizes, len(r.Inputs))
+	}
+	if !slices.Equal(sizes, []int{2, 1}) {
+		t.Fatalf("embed batches %v, want [2 1]", sizes)
+	}
+	hits, err := products.Search(ctx, f.store, vector.Query{Input: vector.Text("一朵花"), Limit: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hits[0].Doc.Embed[0].File != ids[0] {
+		t.Fatalf("hit %+v", hits[0].Doc)
+	}
+
+	// 模型的 Inputs 没有视频。
+	g := setupProducts(t, textAndImage)
+	id := g.files.add(flower)
+	err = g.put(ctx, products, "v1", productDoc{Embed: vector.Content{vector.FilePart(id)}})
+	if err == nil || !strings.Contains(err.Error(), "does not accept video input") {
+		t.Fatalf("err = %v", err)
+	}
+}

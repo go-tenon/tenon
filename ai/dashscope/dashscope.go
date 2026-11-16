@@ -38,11 +38,14 @@ const (
 //
 // Embed 需要多模态向量模型，例如 qwen3-vl-embedding、qwen2.5-vl-embedding、tongyi-embedding-vision-plus、
 // multimodal-embedding-v1；只有文字的向量模型（例如 qwen3.7-text-embedding）用 ai/openai。每项输入可以是一段文字、
-// 一张图片，或一段文字加一张图片；后者只有 qwen3-vl-embedding、qwen2.5-vl-embedding 这类模型能融合为一个向量，
-// 其他模型会只取其中一种，此时 Embed 返回 ai.ErrUnsupportedInput。
+// 一张图片、一段视频，或一段文字加一张图片（一段视频）；后者只有 qwen3-vl-embedding、qwen2.5-vl-embedding 这类模型
+// 能融合为一个向量，其他模型会只取其中一种，此时 Embed 返回 ai.ErrUnsupportedInput。百炼没有音频向量模型。
+//
+// 一次请求最多放 WithBatchSize 项、一段视频，超过时分成多次请求。qwen2.5-vl-embedding 把一次请求中的所有项融合为
+// 一个向量，要用 WithBatchSize(1)。
 //
 // Rerank 可以用文字重排模型（例如 qwen3.7-text-rerank），也可以用多模态重排模型（例如 qwen3-vl-rerank），
-// 后者的查询和文档可以是图片。
+// 后者的查询和文档可以是图片或视频。
 type Client struct {
 	*openai.Client
 	native     string // 原生接口的地址，不带结尾的 /
@@ -115,9 +118,10 @@ func (c *Client) post(ctx context.Context, path string, body, out any) error {
 type item struct {
 	Text  string `json:"text,omitempty"`
 	Image string `json:"image,omitempty"`
+	Video string `json:"video,omitempty"`
 }
 
-// itemOf 把 Content 转换为一项输入：文字各段用换行连接，最多一张图片，不接受音频和视频。
+// itemOf 把 Content 转换为一项输入：文字各段用换行连接，最多一张图片或一段视频，不接受音频（百炼没有音频向量模型）。
 func itemOf(c ai.Content) (item, error) {
 	if err := c.Validate(); err != nil {
 		return item{}, err
@@ -128,12 +132,39 @@ func itemOf(c ai.Content) (item, error) {
 		return item{}, errors.Wrap(ai.ErrUnsupportedInput, "more than one media in an input")
 	}
 	if len(media) == 1 {
-		if media[0].Modality() != ai.ModalityImage {
-			return item{}, errors.Wrapf(ai.ErrUnsupportedInput, "media type %q, only images are supported", media[0].MIME)
+		url := "data:" + media[0].MIME + ";base64," + base64.StdEncoding.EncodeToString(media[0].Data)
+		switch media[0].Modality() {
+		case ai.ModalityImage:
+			it.Image = url
+		case ai.ModalityVideo:
+			it.Video = url
+		default:
+			return item{}, errors.Wrapf(ai.ErrUnsupportedInput, "media type %q, only images and videos are supported", media[0].MIME)
 		}
-		it.Image = "data:" + media[0].MIME + ";base64," + base64.StdEncoding.EncodeToString(media[0].Data)
 	}
 	return it, nil
+}
+
+// mixed 报告一项是否同时有文字和媒体：只有融合的结果（vl、fusion）才代表整项。
+func (it item) mixed() bool { return it.Text != "" && (it.Image != "" || it.Video != "") }
+
+// batches 把 items 分成多次请求的范围：每次最多 size 项、最多一段视频（qwen3-vl-embedding 等一次只接受一段视频）。
+func batches(items []item, size int) [][2]int {
+	var out [][2]int
+	start, videos := 0, 0
+	for i, it := range items {
+		if i-start == size || (it.Video != "" && videos == 1) {
+			out = append(out, [2]int{start, i})
+			start, videos = i, 0
+		}
+		if it.Video != "" {
+			videos++
+		}
+	}
+	if start < len(items) {
+		out = append(out, [2]int{start, len(items)})
+	}
+	return out
 }
 
 type embedParams struct {
@@ -181,22 +212,27 @@ func (c *Client) Embed(ctx context.Context, req ai.EmbedRequest) ([][]float32, e
 		size = DefaultBatchSize
 	}
 	out := make([][]float32, len(items))
-	for start := 0; start < len(items); start += size {
-		part := items[start:min(start+size, len(items))]
+	for _, b := range batches(items, size) {
+		start, part := b[0], items[b[0]:b[1]]
 		body := embedBody{Model: c.Model(), Parameters: params}
 		body.Input.Contents = part
 		var resp embedResponse
 		if err := c.post(ctx, embedPath, body, &resp); err != nil {
 			return nil, errors.Wrap(err, "ai/dashscope: embed")
 		}
+		if n := len(resp.Output.Embeddings); n != len(part) {
+			// qwen2.5-vl-embedding 这类模型把一次请求中的所有项融合为一个向量
+			return nil, errors.Newf("ai/dashscope: model %q returned %d embeddings for %d inputs; "+
+				"if it combines all inputs of a request into one, use dashscope.WithBatchSize(1)", c.Model(), n, len(part))
+		}
 		for _, e := range resp.Output.Embeddings {
 			if e.Index < 0 || e.Index >= len(part) {
 				return nil, errors.Newf("ai/dashscope: embedding index %d out of range", e.Index)
 			}
-			// 一项中同时有文字和图片时，只有融合的结果（vl、fusion）才代表整项；其他模型只取了其中一种。
-			if it := part[e.Index]; it.Text != "" && it.Image != "" && e.Type != "vl" && e.Type != "fusion" {
+			// 一项中同时有文字和媒体时，只有融合的结果（vl、fusion）才代表整项；其他模型只取了其中一种。
+			if part[e.Index].mixed() && e.Type != "vl" && e.Type != "fusion" {
 				return nil, errors.Wrapf(ai.ErrUnsupportedInput,
-					"ai/dashscope: model %q cannot combine text and an image in input %d (got a %q embedding)", c.Model(), start+e.Index, e.Type)
+					"ai/dashscope: model %q cannot combine text and media in input %d (got a %q embedding)", c.Model(), start+e.Index, e.Type)
 			}
 			out[start+e.Index] = e.Embedding
 		}
@@ -231,14 +267,14 @@ type rerankResponse struct {
 }
 
 // Rerank 实现 ai.Reranker，调用重排接口。全是文字时以字符串发送，各种重排模型都接受；
-// 有图片时以对象发送，需要多模态重排模型（例如 qwen3-vl-rerank）。
+// 有图片或视频时以对象发送，需要多模态重排模型（例如 qwen3-vl-rerank）。
 func (c *Client) Rerank(ctx context.Context, query ai.Content, docs []ai.Content, limit int) ([]ai.Ranked, error) {
 	if len(docs) == 0 {
 		return nil, nil
 	}
 	all := append([]ai.Content{query}, docs...)
 	items := make([]item, len(all))
-	hasImage := false
+	hasMedia := false
 	for i, in := range all {
 		it, err := itemOf(in)
 		if err != nil {
@@ -248,10 +284,10 @@ func (c *Client) Rerank(ctx context.Context, query ai.Content, docs []ai.Content
 			return nil, errors.Wrapf(err, "ai/dashscope: rerank document %d", i-1)
 		}
 		items[i] = it
-		hasImage = hasImage || it.Image != ""
+		hasMedia = hasMedia || it.Image != "" || it.Video != ""
 	}
 	value := func(it item) any {
-		if hasImage {
+		if hasMedia {
 			return it
 		}
 		return it.Text

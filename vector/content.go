@@ -17,7 +17,8 @@ import (
 )
 
 // MaxFileSize 是 FilePart 引用的文件的最大字节数，更大的文件不计算向量，文档同步失败。
-const MaxFileSize = 32 << 20
+// 与百炼的视频上限（约 50 MB）相当；模型自己的上限可能更小，以模型为准。
+const MaxFileSize = 50 << 20
 
 // Part 是 Content 的一段：文字、文件或媒体，三者选一，用 TextPart、FilePart、MediaPart 创建。
 type Part struct {
