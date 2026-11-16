@@ -50,6 +50,61 @@ type Frontend struct {
 	Title string
 	// Template 是前端的模板，见 Templates；为空时是 default。
 	Template string
+	// Layout 是默认布局，见 Layouts；为空时是模板的第一种布局。default 模板没有布局。
+	Layout string
+}
+
+// Layouts 是 admin 和 console 模板可选的布局，第一种是默认的。布局预览页（src/routes/_app/layouts.tsx）列出全部，
+// 用户可以在它们之间切换；--layout 选的那一种排在第一位，成为默认布局。
+var Layouts = map[string][]string{
+	"admin":   {"side", "top", "mix", "rail", "centered"},
+	"console": {"inset", "side", "floating", "top", "mix", "rail", "centered"},
+}
+
+// LayoutOrder 返回模板的全部布局，默认布局（f.Layout，为空时是第一种）排在第一位。
+func (f Frontend) LayoutOrder() []string {
+	all := Layouts[f.Template]
+	if f.Layout == "" || !slices.Contains(all, f.Layout) {
+		return all
+	}
+	out := []string{f.Layout}
+	for _, l := range all {
+		if l != f.Layout {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
+// LayoutArray 返回 LayoutOrder 的 TypeScript 数组字面量，例如 ["side", "top"]，写入模板的 src/layouts.ts。
+func (f Frontend) LayoutArray() string {
+	quoted := make([]string, 0, len(Layouts[f.Template]))
+	for _, l := range f.LayoutOrder() {
+		quoted = append(quoted, strconv.Quote(l))
+	}
+	return "[" + strings.Join(quoted, ", ") + "]"
+}
+
+// checkLayout 检查 f.Layout 是模板可选的布局。
+func (f Frontend) checkLayout() error {
+	if f.Layout == "" {
+		return nil
+	}
+	all, ok := Layouts[f.Template]
+	if !ok {
+		return fmt.Errorf("template %q has no layouts; --layout is for the admin and console templates", f.templateName())
+	}
+	if !slices.Contains(all, f.Layout) {
+		return fmt.Errorf("layout %q is not one of %v for the %s template", f.Layout, all, f.Template)
+	}
+	return nil
+}
+
+func (f Frontend) templateName() string {
+	if f.Template == "" {
+		return "default"
+	}
+	return f.Template
 }
 
 // Templates 是 tenon add frontend 的 --template 可选的模板：
@@ -71,7 +126,7 @@ var ShadcnMCP = map[string]any{"command": "bunx", "args": []any{"shadcn@4.23.0",
 // ConsoleRegistryItems 是 console 模板从 tenon 的 shadcn registry（框架的 js/registry，复制在项目的 .tenon/js/registry）
 // 加入前端的条目：布局、部件、页面、资源表格、表单和资源页面。通知、Markdown 和 AI 对话需要其他 npm 包，用到时用 shadcn add 加入。
 var ConsoleRegistryItems = []string{
-	"tenon-sidebar-layout", "tenon-topnav-layout", "tenon-rail-layout", "tenon-page-layouts", "tenon-tab-bar",
+	"tenon-sidebar-layout", "tenon-topnav-layout", "tenon-mixed-layout", "tenon-rail-layout", "tenon-page-layouts", "tenon-tab-bar",
 	"tenon-color-mode", "tenon-user-menu", "tenon-tenant-switcher", "tenon-command-menu", "tenon-dialogs",
 	"tenon-page", "tenon-data-table", "tenon-form", "tenon-login-form", "tenon-resource-page",
 }
@@ -179,6 +234,9 @@ func WriteFrontend(root string, f Frontend) error {
 	if _, err := os.Stat(dir); err == nil {
 		return fmt.Errorf("%s already exists", filepath.ToSlash(filepath.Join("apps", f.Name)))
 	} else if !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	if err := f.checkLayout(); err != nil {
 		return err
 	}
 	switch f.Template {

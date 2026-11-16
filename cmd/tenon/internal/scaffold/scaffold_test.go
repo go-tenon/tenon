@@ -148,17 +148,19 @@ func TestWriteAdminFrontend(t *testing.T) {
 	}
 	dir := filepath.Join(root, "apps", "ops")
 	for name, want := range map[string]string{
-		"package.json":              `"@go-tenon/admin": "workspace:*"`,
-		"vite.config.ts":            `base: "/ops/"`,
-		"frontend.go":               "package ops\n",
-		"AGENTS.md":                 "挂在 `/ops/`",
-		"biome.json":                "noRestrictedImports",
-		"src/app.ts":                `id: "ops"`,
-		"src/routes/__root.tsx":     `import { antd } from "@helpdesk/theme"`,
-		"src/routes/_app.tsx":       "beforeLoad: requireAuth",
-		"src/routes/login.tsx":      `<AuthLayout title="运营后台">`,
-		"src/routes/_app/index.tsx": "欢迎使用运营后台",
-		"src/routeTree.gen.ts":      "LoginRouteImport",
+		"package.json":                `"@go-tenon/admin": "workspace:*"`,
+		"vite.config.ts":              `base: "/ops/"`,
+		"frontend.go":                 "package ops\n",
+		"AGENTS.md":                   "挂在 `/ops/`",
+		"biome.json":                  "noRestrictedImports",
+		"src/app.ts":                  `id: "ops"`,
+		"src/routes/__root.tsx":       `import { antd } from "@helpdesk/theme"`,
+		"src/routes/_app.tsx":         "useLayoutVariant(layouts)",
+		"src/layouts.ts":              `export const layouts = ["side", "top", "mix", "rail", "centered"] as const`,
+		"src/routes/_app/layouts.tsx": `createFileRoute("/_app/layouts")`,
+		"src/routes/login.tsx":        `<AuthLayout title="运营后台">`,
+		"src/routes/_app/index.tsx":   "欢迎使用运营后台",
+		"src/routeTree.gen.ts":        "LoginRouteImport",
 	} {
 		if b, _ := os.ReadFile(filepath.Join(dir, name)); !strings.Contains(string(b), want) {
 			t.Errorf("%s missing %q:\n%s", name, want, b)
@@ -166,6 +168,31 @@ func TestWriteAdminFrontend(t *testing.T) {
 	}
 	if err := scaffold.WriteFrontend(t.TempDir(), scaffold.Frontend{Name: "x", Template: "vue"}); err == nil {
 		t.Error("unknown template accepted")
+	}
+}
+
+func TestFrontendLayout(t *testing.T) {
+	// --layout 选的布局排在第一位，成为默认布局；其余的顺序不变。
+	root := t.TempDir()
+	f := scaffold.Frontend{Scope: "helpdesk", Name: "ops", Base: "/ops/", Title: "运营后台", Template: "admin", Layout: "rail"}
+	if err := scaffold.WriteFrontend(root, f); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(filepath.Join(root, "apps", "ops", "src", "layouts.ts"))
+	if want := `export const layouts = ["rail", "side", "top", "mix", "centered"] as const`; !strings.Contains(string(b), want) {
+		t.Errorf("layouts.ts missing %q:\n%s", want, b)
+	}
+	for _, c := range []struct {
+		f    scaffold.Frontend
+		want string
+	}{
+		{scaffold.Frontend{Name: "a", Template: "admin", Layout: "inset"}, `layout "inset" is not one of`},
+		{scaffold.Frontend{Name: "b", Template: "console", Layout: "wide"}, `layout "wide" is not one of`},
+		{scaffold.Frontend{Name: "c", Layout: "side"}, `template "default" has no layouts`},
+	} {
+		if err := scaffold.WriteFrontend(t.TempDir(), c.f); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%+v: err = %v, want %q", c.f, err, c.want)
+		}
 	}
 }
 
@@ -213,7 +240,8 @@ func TestWriteConsoleFrontend(t *testing.T) {
 		"biome.json":           `"@ant-design/*"`,
 		"AGENTS.md":            "./.tenon/js/registry/r/",
 		"src/main.tsx":         `import "@helpdesk/theme/tokens.css"`,
-		"src/routes/_app.tsx":  `<SidebarLayout title="控制台" variant="inset"`,
+		"src/routes/_app.tsx":  `<SidebarLayout title="控制台" variant={layout === "side" ? "sidebar" : layout}`,
+		"src/layouts.ts":       `export const layouts = ["inset", "side", "floating", "top", "mix", "rail", "centered"] as const`,
 		"src/routes/login.tsx": "<LoginForm",
 		"src/index.css":        `@import "tailwindcss";`,
 		"src/routeTree.gen.ts": "LoginRouteImport",

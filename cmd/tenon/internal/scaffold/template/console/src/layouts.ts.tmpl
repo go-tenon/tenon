@@ -1,0 +1,15 @@
+// 这个前端可以使用的布局。第一种是默认的（tenon add frontend 的 --layout）；布局页面（src/routes/_app/layouts.tsx）
+// 列出全部，点“使用”切换，选择保存在浏览器中。确定之后，只保留需要的布局，并删除布局页面。
+export const layouts = [[.LayoutArray]] as const
+
+export type LayoutName = (typeof layouts)[number]
+
+export const layoutInfo: Record<LayoutName, { title: string; description: string }> = {
+  inset: { title: "内嵌式侧栏", description: "侧栏与背景一体，内容区是浮起的卡片。适合偏产品感、品牌感的控制台。" },
+  side: { title: "侧栏", description: "左侧导航可收起为图标，顶栏在内容上方。适合大多数控制台。" },
+  floating: { title: "浮起的侧栏", description: "侧栏浮在背景之上，带圆角和阴影。" },
+  top: { title: "顶部导航", description: "导航在顶栏，内容限宽居中；窄屏时导航收进抽屉。适合页面少的用户端。" },
+  mix: { title: "顶栏 + 侧栏", description: "一级导航在顶栏，二级在侧栏。适合模块多、每个模块页面也多的控制台。" },
+  rail: { title: "图标栏 + 二级面板", description: "最左侧的图标栏切换模块，旁边是模块内的导航。适合客服、项目管理这类工作台。" },
+  centered: { title: "居中窄栏", description: "没有侧栏，内容限宽居中。适合简单的用户端、个人中心。" },
+}

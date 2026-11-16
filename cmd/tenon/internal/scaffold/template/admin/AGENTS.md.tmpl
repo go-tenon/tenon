@@ -25,6 +25,7 @@
 - **列表**：ProTable。查询条件、排序和分页保存在地址中：路由的 `validateSearch` 用 `listSearch(schemas.xxx.list.query)`，页面用 `useList(Route)`。
 - **按钮权限**：`useCan()("articles:write")`。前端的检查只决定显示什么，接口仍由服务端检查。
 - **顶栏的操作**：`<Fill name="actions">…</Fill>`，不要直接修改布局。
+- **布局**：可以使用的布局列在 `src/layouts.ts` 中，第一种是默认的，`src/routes/_app.tsx` 按当前布局渲染。换布局时改 `layouts.ts` 的顺序；`src/routes/_app/layouts.tsx` 是项目初期对照选择布局的页面，选定后删除。
 - 文案用中文。
 
 ## 检查

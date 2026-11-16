@@ -17,7 +17,7 @@
 go tool tenon add frontend console --template console
 ```
 
-它在 `apps/console` 中生成一个前端：Vite、Tailwind CSS v4、shadcn（Radix 版本，`nova` 风格），带登录页、内嵌式侧栏布局、多标签、用户菜单和 ⌘K。下面[组件](#blocks)表中布局到登录表单的条目，连同它们用到的 shadcn 组件（`src/components/ui`）和 tenon 的组件（`src/components/tenon`），从框架复制进来，不需要联网，之后可以随意修改。通知、Markdown 和 AI 对话需要其他 npm 包，用到时再[加入](#adding)。然后按提示在路由中挂载它（见[单页应用](spa.md#mounting)）。
+它在 `apps/console` 中生成一个前端：Vite、Tailwind CSS v4、shadcn（Radix 版本，`nova` 风格），带登录页、布局（默认是内嵌式侧栏，`--layout` 可以选择其他的）、多标签、用户菜单和 ⌘K。下面[组件](#blocks)表中布局到登录表单的条目，连同它们用到的 shadcn 组件（`src/components/ui`）和 tenon 的组件（`src/components/tenon`），从框架复制进来，不需要联网，之后可以随意修改。通知、Markdown 和 AI 对话需要其他 npm 包，用到时再[加入](#adding)。然后按提示在路由中挂载它（见[单页应用](spa.md#mounting)）。
 
 ```text
 apps/console/
@@ -27,13 +27,14 @@ apps/console/
 └── src/
     ├── main.tsx           先加载 shadcn 的样式，再加载设计令牌的 tokens.css
     ├── auth.ts            登录、刷新、登出和当前用户的接口
+    ├── layouts.ts         可以使用的布局，第一种是默认的
     ├── components/
     │   ├── ui/            shadcn 的组件
     │   └── tenon/         tenon registry 的组件
-    └── routes/            login.tsx、_app.tsx（侧栏布局）、_app/index.tsx
+    └── routes/            login.tsx、_app.tsx（按当前布局渲染）、_app/index.tsx、_app/layouts.tsx（布局页面）
 ```
 
-品牌色、圆角来自项目的[设计令牌](theme.md)：`main.tsx` 在 shadcn 的默认变量之后加载 `@<项目>/theme/tokens.css`，令牌中写了的变量覆盖默认值，暗色的值随 `.dark` 切换。登录相关的接口与运营后台的模板相同，见[模板里有什么](admin.md#template)。
+品牌色、圆角来自项目的[设计令牌](theme.md)：`main.tsx` 在 shadcn 的默认变量之后加载 `@<项目>/theme/tokens.css`，令牌中写了的变量覆盖默认值，暗色的值随 `.dark` 切换。登录相关的接口、`layouts.ts` 和布局页面的用法与运营后台的模板相同，见[模板里有什么](admin.md#template)。
 
 <a id="adding"></a>
 ## 加入其他组件
