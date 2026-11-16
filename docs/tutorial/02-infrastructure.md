@@ -29,7 +29,7 @@
 | PostgreSQL | 业务数据 | 第 3 章 |
 | Redis | 限流、锁 | 第 6 章、[限流](../libraries/rate-limiting.md) |
 | Memcached | 缓存 | [缓存](../libraries/cache.md) |
-| NSQ | 队列 | [队列](../libraries/queue.md) |
+| NSQ | 队列 | [队列](../background/queue.md) |
 
 我们用 Docker Compose 启动它们。Docker 把一个服务和它需要的运行环境打包成**镜像**，在你的电脑上以**容器**的形式运行，不需要一个个安装和配置这些软件。Docker Compose 用一个 YAML 文件描述要启动哪些容器。
 
@@ -87,7 +87,7 @@ docker compose up -d --wait
 
 - `ports` 中的 `127.0.0.1:5432:5432` 把容器的端口映射到你电脑的 `5432` 端口，并且只允许本机访问。程序用 `localhost:5432` 就能连上数据库。
 - `volumes` 把数据保存在 Docker 的**卷**中。`docker compose down` 停止并删除容器时，数据仍然保留；加上 `-v` 才会连数据一起删除。
-- PostgreSQL 的 `wal_level=logical` 是[队列](../libraries/queue.md)需要的设置，现在不用关心。
+- PostgreSQL 的 `wal_level=logical` 是[队列](../background/queue.md)需要的设置，现在不用关心。
 
 <a id="configuration"></a>
 ## 配置
@@ -211,7 +211,7 @@ func Serve(ctx context.Context, cfg Config) error {
 - **`open`** 打开资源，同时把“怎样关闭它”登记到 `stack` 中。程序退出时，`stack` 按打开的相反顺序关闭资源，例如先关闭依赖数据库的部分，再关闭数据库。如果打开到一半失败了（例如数据库连不上），已经打开的资源也会被关闭，不会泄漏。
 - **`part`** 是一个函数类型，表示进程中的一个运行部分，例如 HTTP 服务。它先做准备工作，返回一个一直运行、直到 ctx 被取消的 `run` 函数（函数作为值，见[把方法当作值传递](../concepts/go-primer.md#method-values)）。
 - **`run`** 把这些串起来：打开资源，准备好各个部分，然后一直运行到收到停止信号（`Ctrl-C` 或 `SIGTERM`），最后由 `defer` 关闭资源。
-- **`Serve`** 是 `serve` 命令调用的函数，它只运行 HTTP 服务一个部分。以后加上处理后台任务的 worker 时，再写一个只运行 worker 的 `Work`，见[队列](../libraries/queue.md#running-workers)。
+- **`Serve`** 是 `serve` 命令调用的函数，它只运行 HTTP 服务一个部分。以后加上处理后台任务的 worker 时，再写一个只运行 worker 的 `Work`，见[队列](../background/queue.md#running-workers)。
 
 接着，新建 `internal/bootstrap/http.go`，装配 HTTP 服务：
 

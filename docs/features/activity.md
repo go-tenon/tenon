@@ -218,7 +218,7 @@ for _, a := range list {
 <a id="retention"></a>
 ## 保留期限
 
-操作日志会一直增长。`activity.Cleanup` 返回删除保留期以前的记录的清理函数，交给[定时任务](../libraries/scheduling.md#framework-cleanups)：
+操作日志会一直增长。`activity.Cleanup` 返回删除保留期以前的记录的清理函数，交给[定时任务](../background/scheduling.md#framework-cleanups)：
 
 ```go
 sched.Add("activity:cleanup", "0 4 * * *", schedule.Cleanup(activity.Cleanup(a.db, 180*24*time.Hour), 1000))

@@ -73,7 +73,7 @@ theme:
 | `vars`、`dark_vars` | 覆盖亮色、暗色主题的 CSS 变量，例如 `primary`、`ring`、`sidebar`，完整的变量见 [shadcn 的主题文档](https://ui.shadcn.com/docs/theming) |
 | `stylesheet` | 用 Tailwind 生成的样式表，见[用 Tailwind 编写样式](assets.md#tailwind) |
 
-在配置的 `Validate` 中调用 `cfg.Theme.Validate()`，配置写错时启动就会报错。然后把它交给 `web.New`。品牌色、圆角、字体通常不写在配置中，而是来自项目的[设计令牌](theme.md)：`WithTokens` 用它们填充主题，公开页面与 shadcn、antd 的前端使用同一套颜色，配置中写了的值优先：
+在配置的 `Validate` 中调用 `cfg.Theme.Validate()`，配置写错时启动就会报错。然后把它交给 `web.New`。品牌色、圆角、字体通常不写在配置中，而是来自项目的[设计令牌](../frontend/theme.md)：`WithTokens` 用它们填充主题，公开页面与 shadcn、antd 的前端使用同一套颜色，配置中写了的值优先：
 
 ```go
 pages := web.New(web.Options{

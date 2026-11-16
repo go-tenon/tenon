@@ -1,10 +1,10 @@
 # 响应
 
-和[请求](../http/requests.md)一样，响应也由一个 Go 结构体描述，称为**输出类型**：`Body` 字段是 JSON 响应体，带 `header` 标签的字段是响应头，`Status` 字段决定状态码。处理器成功时返回输出和 `nil` 错误；失败时返回错误，框架会把它转换为[统一的错误响应](../general/errors.md)。
+和[请求](requests.md)一样，响应也由一个 Go 结构体描述，称为**输出类型**：`Body` 字段是 JSON 响应体，带 `header` 标签的字段是响应头，`Status` 字段决定状态码。处理器成功时返回输出和 `nil` 错误；失败时返回错误，框架会把它转换为[统一的错误响应](../general/errors.md)。
 
 本页先介绍怎样返回一个对象，再介绍列表接口最常用的分页、筛选和排序。
 
-阅读前需要了解：[请求](../http/requests.md)；[泛型](../concepts/go-primer.md#generics)（分页的 `page.Offset[T]`）。
+阅读前需要了解：[请求](requests.md)；[泛型](../concepts/go-primer.md#generics)（分页的 `page.Offset[T]`）。
 
 - [示例用法](#creating-responses)
     - [JSON 响应](#json-responses)
@@ -61,7 +61,7 @@ return &ArticleOutput{Body: toDTO(item)}, nil
 }
 ```
 
-草稿还没有发布时间，`published_at` 字段会被省略。`doc`、`example` 和 `enum` 标签只写入接口文档，见[说明与示例](../http/openapi.md#describing-apis)。
+草稿还没有发布时间，`published_at` 字段会被省略。`doc`、`example` 和 `enum` 标签只写入接口文档，见[说明与示例](openapi.md#describing-apis)。
 
 > [!TIP]
 > 建议为响应定义专门的 DTO 结构。这样你可以自由地调整数据库结构，API 保持稳定，内部字段也只留在服务端。
@@ -132,7 +132,7 @@ items := make([]ArticleDTO, 0)
 | 响应体 | `items`、`page`、`per_page`、`total` | `items`、`next_cursor` |
 | 适用场景 | 需要页码和总数，例如后台表格 | 信息流、数据量大或写入频繁的列表 |
 
-两种分页的 `per_page` 都默认为 20、最大为 100，超出范围的请求会被拒绝并返回 `422`。客户端一侧的约定见[客户端协议](../http/protocol.md#pagination)。
+两种分页的 `per_page` 都默认为 20、最大为 100，超出范围的请求会被拒绝并返回 `422`。客户端一侧的约定见[客户端协议](protocol.md#pagination)。
 
 <a id="offset-pagination"></a>
 ### 固定分页
@@ -166,7 +166,7 @@ if err != nil {
 return &ListArticlesOutput{Body: page.NewOffset(toDTOs(rows), in.OffsetParams, total)}, nil
 ```
 
-页面中的列表同样使用 `page.OffsetParams` 和 `page.Offset`，`LastPage`、`Links` 用于渲染分页导航，见[列表页](views.md#list-pages)。
+页面中的列表同样使用 `page.OffsetParams` 和 `page.Offset`，`LastPage`、`Links` 用于渲染分页导航，见[列表页](../web/views.md#list-pages)。
 
 客户端请求 `/articles?page=2&per_page=20` 时得到：
 
@@ -246,7 +246,7 @@ return &ListPublishedOutput{Body: body}, nil
 <a id="filtering-and-sorting"></a>
 ### 筛选与排序
 
-筛选和排序也是查询参数，和分页参数写在同一个结构体中。下面是文章列表的查询参数，它同时带 `json` 标签，后台的[列表页](views.md#list-pages)用 `web.ParseQuery` 解析同一个结构体：
+筛选和排序也是查询参数，和分页参数写在同一个结构体中。下面是文章列表的查询参数，它同时带 `json` 标签，后台的[列表页](../web/views.md#list-pages)用 `web.ParseQuery` 解析同一个结构体：
 
 ```go
 type ListQuery struct {
@@ -257,7 +257,7 @@ type ListQuery struct {
 }
 ```
 
-`sort` 的值是列名，前面加 `-` 表示降序，和页面上的 [`ui.SortHead`](views.md#list-pages) 一致。Huma 在调用处理器之前检查这些参数：`?sort=views`、`?status=archived` 返回 `422`；空值等同于没有这个参数，取 `default` 的值。
+`sort` 的值是列名，前面加 `-` 表示降序，和页面上的 [`ui.SortHead`](../web/views.md#list-pages) 一致。Huma 在调用处理器之前检查这些参数：`?sort=views`、`?status=archived` 返回 `422`；空值等同于没有这个参数，取 `default` 的值。
 
 列表的业务动作把参数转换为查询条件。每个 `sort` 值对应一个固定的 `ORDER BY`：
 

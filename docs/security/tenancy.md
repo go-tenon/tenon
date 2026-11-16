@@ -115,7 +115,7 @@ func (a *Create) Handle(ctx context.Context, subject identity.Subject, name stri
 | 自定义角色 | `roles.CreateRole(ctx, authz.Role{Tenant: sub.Tenant, ...})` |
 | 读取、修改某个角色 | 先用 `roles.Role(ctx, id, sub.Tenant)` 确认它属于本租户或是全局角色 |
 
-调整角色或移出成员之后，调用 [`RecheckSubject`](../responses/sse.md#immediate-revocation) 让这个人已经打开的长连接立即按新的权限校验。
+调整角色或移出成员之后，调用 [`RecheckSubject`](../http/sse.md#immediate-revocation) 让这个人已经打开的长连接立即按新的权限校验。
 
 **租户 ID 只能来自 `sub.Tenant`**：取自表单或请求体的话，管理员就能操作其他租户。`Assign` 会拒绝把其他租户的角色分配到本租户；调用者是否有权管理这个租户，由路由上的 `members:manage` 和 `sub.Tenant` 保证。
 
@@ -209,7 +209,7 @@ err := PublishAt.Publish(ctx, tx, PublishJob{Tenant: subject.Tenant, ID: item.ID
 <a id="tenant-scheduled-tasks"></a>
 ### 定时任务
 
-[发布到期文章](../libraries/scheduling.md#defining-tasks)的 `PublishScheduled` 用一条 `UPDATE` 处理所有租户到期的文章，多租户时保持原样。
+[发布到期文章](../background/scheduling.md#defining-tasks)的 `PublishScheduled` 用一条 `UPDATE` 处理所有租户到期的文章，多租户时保持原样。
 
 需要逐个租户执行的任务，例如每天给每个租户发一份摘要，由定时任务为每个租户发布一个队列任务，worker 并行处理，各自重试。这样一个租户出错只影响它自己，执行时间也与租户数量无关：
 

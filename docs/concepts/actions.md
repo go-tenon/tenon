@@ -200,7 +200,7 @@ func (a *Publish) Job(ctx context.Context, id uuid.UUID) error {
 err := PublishAt.Publish(ctx, tx, item.ID, queue.At(publishAt))
 ```
 
-最后，在 worker 中注册处理方法，见[启动 worker](../libraries/queue.md#running-workers)：
+最后，在 worker 中注册处理方法，见[启动 worker](../background/queue.md#running-workers)：
 
 ```go
 article.PublishAt.Handle(w, article.NewPublish(a.db).Job)
@@ -218,7 +218,7 @@ article.PublishAt.Handle(w, article.NewPublish(a.db).Job)
 sched.Add("articles:publish-scheduled", "* * * * *", article.NewPublishScheduled(a.db).Handle)
 ```
 
-调度器的用法见[定时任务](../libraries/scheduling.md#defining-tasks)。
+调度器的用法见[定时任务](../background/scheduling.md#defining-tasks)。
 
 <a id="as-commands"></a>
 ### 命令行
@@ -292,7 +292,7 @@ func (a *Publish) Tool(ctx context.Context, in PublishArgs) (*ArticleDTO, error)
 <a id="direct-calls"></a>
 ### 页面、其他动作和脚本
 
-除了上面这些入口，其他地方直接调用 `Handle` 即可。例如[页面处理器](../responses/views.md#rendering-pages)持有它用到的业务动作；[填充数据](../database/migrations.md#seeding)的 `seed` 命令组合了“创建”和“发布”两个动作，直接调用它们的 `Handle`：
+除了上面这些入口，其他地方直接调用 `Handle` 即可。例如[页面处理器](../web/views.md#rendering-pages)持有它用到的业务动作；[填充数据](../database/migrations.md#seeding)的 `seed` 命令组合了“创建”和“发布”两个动作，直接调用它们的 `Handle`：
 
 ```go
 item, err := article.NewCreate(db).Handle(ctx, alice, changes)
@@ -400,7 +400,7 @@ article.Commands(a.db, onPublished)
 | 后续动作 | 写法 |
 | --- | --- |
 | 必须和发布一起成功，例如加积分 | 在钩子中用 `tx` 写入 |
-| 可以稍后执行、失败要重试，例如通知关注者 | 在钩子中用 `tx` 发布[队列任务](../libraries/queue.md)：`Topic.Publish(ctx, tx, …)`，事务提交后才投递 |
+| 可以稍后执行、失败要重试，例如通知关注者 | 在钩子中用 `tx` 发布[队列任务](../background/queue.md)：`Topic.Publish(ctx, tx, …)`，事务提交后才投递 |
 | 回滚时撤销不了的副作用，例如广播、删除缓存 | 在钩子中用 [`tx.AfterCommit`](../database/quick-start.md#after-commit) 登记 |
 
 > [!WARNING]
@@ -414,11 +414,11 @@ article.Commands(a.db, onPublished)
 | 用途 | 写法 |
 | --- | --- |
 | 验证并读取请求 | 带验证标签的结构体，例如 `Changes`；HTTP 输入类型写成 `Body Changes`，见[请求](../http/requests.md#json-body) |
-| 页面表单 | 同一个结构体：`web.ParseForm[article.Changes](r)`，见[表单](../responses/forms.md) |
+| 页面表单 | 同一个结构体：`web.ParseForm[article.Changes](r)`，见[表单](../web/forms.md) |
 | 表格导入 | 同一个结构体：`sheet.Decode[article.Changes](ctx, r)`，见[导入与导出](../features/import-export.md) |
 | 业务参数 | `Handle` 直接接收 `Changes`，验证标签对它没有影响 |
 | 响应 | `ArticleDTO` 和转换函数 `toDTO`，见[共享响应结构](../http/routing.md#shared-responses) |
-| 前端类型 | 由导出的 OpenAPI 文档生成，见[客户端代码](../responses/clients.md) |
+| 前端类型 | 由导出的 OpenAPI 文档生成，见[客户端代码](../http/clients.md) |
 
 `Changes` 只声明一次，JSON 接口、页面表单和业务代码都使用它，验证规则只有一份。转换函数也只是普通的函数，字段改名时，编译器会发现遗漏的地方。
 

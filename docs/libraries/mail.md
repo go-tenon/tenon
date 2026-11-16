@@ -55,7 +55,7 @@ msg.To = []mail.Address{{Name: "编辑部", Email: "editors@example.com"}}
 err = mailer.Send(ctx, msg)
 ```
 
-开发时用 `logmail` 把邮件写进日志，你可以直接从日志中复制邮件里的链接；上线时换成 SMTP、Resend 或 SES，业务代码保持原样。`Send` 是同步的，只发送一次，需要可靠送达的邮件交给[队列](queue.md#publishing-jobs)发送。
+开发时用 `logmail` 把邮件写进日志，你可以直接从日志中复制邮件里的链接；上线时换成 SMTP、Resend 或 SES，业务代码保持原样。`Send` 是同步的，只发送一次，需要可靠送达的邮件交给[队列](../background/queue.md#publishing-jobs)发送。
 
 <a id="assembling-mailer"></a>
 ## 装配发送器
@@ -259,7 +259,7 @@ func (a *Publish) notifyEditors(ctx context.Context, item *Article) error {
 - **发送失败时发布照样成功**。文章已经发布成功，回调返回的错误只记录日志，接口照常返回。
 
 > [!NOTE]
-> `Send` 是同步的：接口要等邮件服务器响应才返回，并且只发送一次。需要可靠送达的邮件可以交给[队列](queue.md#publishing-jobs)发送，`mail.Message` 可以完整地序列化为 JSON。
+> `Send` 是同步的：接口要等邮件服务器响应才返回，并且只发送一次。需要可靠送达的邮件可以交给[队列](../background/queue.md#publishing-jobs)发送，`mail.Message` 可以完整地序列化为 JSON。
 
 <a id="messages"></a>
 ## 邮件消息
@@ -320,7 +320,7 @@ func TestPublishNotifiesEditors(t *testing.T) {
 
 **通知邮件发送失败后丢了**
 
-同步发送的邮件失败时只返回错误。通知类的邮件交给[队列](queue.md#publishing-jobs)发送，失败时按退避重试。
+同步发送的邮件失败时只返回错误。通知类的邮件交给[队列](../background/queue.md#publishing-jobs)发送，失败时按退避重试。
 
 <a id="api-reference"></a>
 ## API 参考

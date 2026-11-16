@@ -4,9 +4,9 @@
 
 `operation` 包把这些操作记在 `operations` 表中：谁发起的、是什么操作、当前状态、处理了多少、失败了多少、失败的原因。[后台导入和导出](background-imports.md#background-imports)也建立在它之上，所以导入、导出和应用自己的批量操作出现在同一个列表里，用同一种方式推送进度。
 
-操作只负责记录，执行仍然是普通的[队列](../libraries/queue.md)任务。
+操作只负责记录，执行仍然是普通的[队列](../background/queue.md)任务。
 
-阅读前需要了解：[队列](../libraries/queue.md)；[数据库事务](../database/quick-start.md#transactions)。
+阅读前需要了解：[队列](../background/queue.md)；[数据库事务](../database/quick-start.md#transactions)。
 
 - [示例用法](#example-usage)
 - [安装](#installation)
@@ -223,7 +223,7 @@ func (a *BulkPublish) Progress(ctx context.Context, in *OperationIDInput) (*huma
 <a id="running"></a>
 ## 执行操作
 
-worker 注册任务，见[启动 worker](../libraries/queue.md#running-workers)：
+worker 注册任务，见[启动 worker](../background/queue.md#running-workers)：
 
 ```go
 article.BulkPublishJob.Handle(w, article.NewBulkPublish(a.db, a.hub, a.ops, article.NewPublish(a.db)).Job)
@@ -288,7 +288,7 @@ func (a *Summarize) Job(ctx context.Context, u operation.Unit[SummarizeUnit]) er
 | --- | --- |
 | nil | 成功，`Processed` 加一 |
 | 带错误码的业务错误 | 失败，`Processed`、`Failed` 各加一，就此结束 |
-| 其他错误 | 队列重试；最后一次仍然出错时失败，任务转入[失败任务表](../libraries/queue-monitoring.md#failed-jobs)，之后重试成功时 `Failed` 减一 |
+| 其他错误 | 队列重试；最后一次仍然出错时失败，任务转入[失败任务表](../background/queue-monitoring.md#failed-jobs)，之后重试成功时 `Failed` 减一 |
 
 一个单位失败时其他单位照常执行。每个单位结束时都在一个事务中调用 `saved`，最后一个单位结束时 `op.Finished()` 为 `true`，在这里发送通知或发布下一步任务；`saved` 在操作结束时最后调用一次，重试失败任务修正计数时通知也只发一次。已经成功的单位再次投递时直接跳过。
 
@@ -299,7 +299,7 @@ func (a *Summarize) Job(ctx context.Context, u operation.Unit[SummarizeUnit]) er
 
 `Run` 每次保存进度（变为 `running`、每次 `Save`、结束）都在同一个事务中调用 `saved`。例子中的 `saved` 用 [AfterCommit](../database/quick-start.md#after-commit) 在提交后发布广播，提醒正在查看进度的连接；操作结束时在这个事务中发送[通知](notifications.md)，通知和状态一起提交，恰好发送一次。
 
-`Progress` 用 [`rest.RegisterSSE`](../responses/sse.md) 注册，连接后每次保存进度都会收到一个 `progress` 事件：
+`Progress` 用 [`rest.RegisterSSE`](../http/sse.md) 注册，连接后每次保存进度都会收到一个 `progress` 事件：
 
 ```text
 event: progress
@@ -318,7 +318,7 @@ const done = await watchOperation((o) => api.article.bulkPublishProgress(op.id, 
 if (done.status === "failed") showError(done.error)
 ```
 
-React 前端用 `@go-tenon/shell` 的 [`trackOperation`](../responses/app-shell-features.md#operations) 登记操作，顶栏的任务中心和页面都能显示它的进度，见运营后台的 [`OperationCenter`](../responses/admin.md#features)。
+React 前端用 `@go-tenon/shell` 的 [`trackOperation`](../frontend/app-shell-features.md#operations) 登记操作，顶栏的任务中心和页面都能显示它的进度，见运营后台的 [`OperationCenter`](../frontend/admin.md#features)。
 
 进度是状态：广播只提醒连接重新读取，连接（包括断线重连）时先推送一次当前进度，所以页面总是显示最新的进度，与[通知角标](notifications.md#realtime)的做法相同。每次读取都经过 `Get`，只有发起人能看到进度，其他人收到 `operation.ErrNotFound`。
 
@@ -336,7 +336,7 @@ ops, err := a.ops.List(ctx, subject, operation.Query{Limit: 20})
 <a id="cleanup"></a>
 ## 清理
 
-用[定时任务](../libraries/scheduling.md#framework-cleanups)定期删除旧的操作，导入、导出的记录和导入的失败行随之删除：
+用[定时任务](../background/scheduling.md#framework-cleanups)定期删除旧的操作，导入、导出的记录和导入的失败行随之删除：
 
 ```go
 sched.Add("operations:cleanup", "0 3 * * *", schedule.Cleanup(a.ops.Cleanup(30*24*time.Hour), 1000))

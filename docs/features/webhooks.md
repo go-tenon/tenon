@@ -6,7 +6,7 @@ SaaS 的租户常常要把你的应用接进他们自己的系统：文章发布
 
 **签名**让接收方确认请求确实来自你、内容没有被改过：发送方用双方共享的密钥对请求内容计算一个值（HMAC），接收方用同一个密钥再算一遍，结果相同才接受。
 
-阅读前需要了解：[队列](../libraries/queue.md)；[出站请求](../libraries/outbound.md)；[多租户](../security/tenancy.md)。
+阅读前需要了解：[队列](../background/queue.md)；[出站请求](../libraries/outbound.md)；[多租户](../security/tenancy.md)。
 
 - [示例用法](#example-usage)
 - [安装](#installation)
@@ -48,7 +48,7 @@ webhook.NewDeliverer(db, webhook.Options{}).Handle(w)
 <a id="installation"></a>
 ## 安装
 
-webhook 的投递任务使用[数据库队列](../libraries/queue.md)，把两者的迁移都加入[发布命令](../database/migrations.md#publishing-framework-migrations)，发布后执行 `migrate up`：
+webhook 的投递任务使用[数据库队列](../background/queue.md)，把两者的迁移都加入[发布命令](../database/migrations.md#publishing-framework-migrations)，发布后执行 `migrate up`：
 
 ```go
 migratecmd.Publish(
@@ -120,11 +120,11 @@ func Routes(api *rest.API, validate identity.TokenValidator, db *bun.DB) {
 }
 ```
 
-新增事件时记得加到这里；事件名称重复时 `Document` 会 panic。事件内容一旦发布就是租户依赖的接口，修改时的检查见[检查接口变更](../responses/clients.md#checking-changes)。
+新增事件时记得加到这里；事件名称重复时 `Document` 会 panic。事件内容一旦发布就是租户依赖的接口，修改时的检查见[检查接口变更](../http/clients.md#checking-changes)。
 
 每个事件描述为一个 `POST` 请求：请求体是 `{type, timestamp, data}`，`data` 的 schema 由事件内容的类型生成，名称规则与[接口的类型](../http/routing.md#shared-responses)相同（`article.PublishedHook` 为 `ArticlePublishedHook`）；请求头是上面的三个签名请求头。`openapi --spec 3.0` 导出的文档和 `/openapi-3.0.json`、`/openapi-3.0.yaml` 端点都不含 `webhooks`，3.0 没有这一项。
 
-租户可以用这份文档生成事件内容的类型。例如用 TypeScript 接收时，[openapi-typescript](../responses/client-react.md#other-ts-tools) 生成的 `webhooks` 类型按事件名列出请求体，配合 Standard Webhooks 的官方库 [standardwebhooks](https://www.npmjs.com/package/standardwebhooks) 校验签名：
+租户可以用这份文档生成事件内容的类型。例如用 TypeScript 接收时，[openapi-typescript](../frontend/client-react.md#other-ts-tools) 生成的 `webhooks` 类型按事件名列出请求体，配合 Standard Webhooks 的官方库 [standardwebhooks](https://www.npmjs.com/package/standardwebhooks) 校验签名：
 
 ```ts
 import { Webhook } from "standardwebhooks"
@@ -199,7 +199,7 @@ d, err := webhook.Resend(ctx, a.db, sub.Tenant, deliveryID)
 <a id="delivering"></a>
 ## 运行投递
 
-在 [worker](../libraries/queue.md#running-workers) 中注册：
+在 [worker](../background/queue.md#running-workers) 中注册：
 
 ```go
 webhook.NewDeliverer(a.db, webhook.Options{}).Handle(w)
@@ -213,12 +213,12 @@ webhook.NewDeliverer(a.db, webhook.Options{}).Handle(w)
 | 端点的响应 | 结果 |
 | --- | --- |
 | 2xx | 投递成功 |
-| 其他状态码（包括 3xx）、超时、连接失败 | 按队列的[退避时间](../libraries/queue.md#failures-and-retries)重试，第 n 次失败后约等 n⁴ 秒 |
+| 其他状态码（包括 3xx）、超时、连接失败 | 按队列的[退避时间](../background/queue.md#failures-and-retries)重试，第 n 次失败后约等 n⁴ 秒 |
 | 429、503 带有 `Retry-After` | 按它的要求等待后重试 |
 | 最后一次仍然失败 | 投递记录标记为 `failed` |
 | 端点已停用 | 停止发送，投递记录标记为 `failed` |
 
-最后一次失败的投递只记在投递记录中，与[失败任务表](../libraries/queue-monitoring.md#failed-jobs)分开：接收方出错属于对方的系统，你的告警保持安静。投递记录就是它的结果，租户在页面上看到并重发。
+最后一次失败的投递只记在投递记录中，与[失败任务表](../background/queue-monitoring.md#failed-jobs)分开：接收方出错属于对方的系统，你的告警保持安静。投递记录就是它的结果，租户在页面上看到并重发。
 
 <a id="private-addresses"></a>
 ### 拒绝内网地址
@@ -298,7 +298,7 @@ req.Header.Set(webhook.HeaderSignature, sig)
 <a id="retention"></a>
 ## 保留期限
 
-`webhook.Cleanup` 返回删除保留期以前的投递记录的清理函数，交给[定时任务](../libraries/scheduling.md#framework-cleanups)：
+`webhook.Cleanup` 返回删除保留期以前的投递记录的清理函数，交给[定时任务](../background/scheduling.md#framework-cleanups)：
 
 ```go
 sched.Add("webhooks:cleanup", "0 4 * * *", schedule.Cleanup(webhook.Cleanup(a.db, 30*24*time.Hour), 1000))

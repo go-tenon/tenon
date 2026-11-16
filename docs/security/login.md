@@ -266,7 +266,7 @@ err := database.RunInTx(ctx, a.db, nil, func(ctx context.Context, tx database.Tx
 <a id="cleanup"></a>
 ## 清理
 
-过期和已用过的验证码校验失败，但行仍然留在表中。`Cleanup` 每次最多删除 `limit` 条，可以注册为[定时任务](../libraries/scheduling.md)：
+过期和已用过的验证码校验失败，但行仍然留在表中。`Cleanup` 每次最多删除 `limit` 条，可以注册为[定时任务](../background/scheduling.md)：
 
 ```go
 n, err := users.Cleanup(ctx, 1000)

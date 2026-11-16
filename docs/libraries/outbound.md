@@ -137,7 +137,7 @@ previews.Transport = outbound.Retry(previews.Transport, outbound.RetryOptions{})
 
 客户端的 `Timeout` 和请求的 context 限制包括重试在内的总时长，剩余时间不够等到下一次时，直接返回最后一次的结果。
 
-重试让用户多等，只适合当前请求就需要结果的场景。要保证送达的请求，例如通知第三方订单已支付，放进[队列](queue.md)的任务中：任务失败后由队列重试，进程重启后照样执行。[Webhook](../features/webhooks.md) 的投递就是这样做的。
+重试让用户多等，只适合当前请求就需要结果的场景。要保证送达的请求，例如通知第三方订单已支付，放进[队列](../background/queue.md)的任务中：任务失败后由队列重试，进程重启后照样执行。[Webhook](../features/webhooks.md) 的投递就是这样做的。
 
 <a id="proxies"></a>
 ## 代理

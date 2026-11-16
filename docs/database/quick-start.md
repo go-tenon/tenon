@@ -338,7 +338,7 @@ err := database.RunInTx(ctx, a.db, nil, func(ctx context.Context, tx database.Tx
 - **失败只记录日志。** 回调返回错误或 panic 时记录一条 Error 日志，其余回调继续执行，`RunInTx` 仍然返回 `nil`：数据已经提交，操作是成功的。返回错误前用 `errors.Wrap` 写明是哪个操作，日志中才看得出来。
 
 > [!WARNING]
-> 回调只保存在内存中，事务提交之后、回调执行之前进程退出，回调随之丢失。它适合尽力而为的操作；必须完成的工作，例如发送通知邮件，请在事务中发布任务，任务与业务数据一起提交，见[队列](../libraries/queue.md#publishing-jobs)。
+> 回调只保存在内存中，事务提交之后、回调执行之前进程退出，回调随之丢失。它适合尽力而为的操作；必须完成的工作，例如发送通知邮件，请在事务中发布任务，任务与业务数据一起提交，见[队列](../background/queue.md#publishing-jobs)。
 
 回调是同步执行的，会推迟响应，耗时的操作交给队列。
 

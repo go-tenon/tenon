@@ -100,7 +100,7 @@ func TestCreateRejectsBadRequests(t *testing.T) {
 <a id="page-tests"></a>
 ## 页面测试
 
-[服务端渲染的页面](../responses/views.md)用 `web/webtest` 测试。`webtest.Client` 像浏览器一样向页面路由发送请求，保存响应设置的 cookie，并读取 htmx 的响应头。下面测试文章页和列表页：
+[服务端渲染的页面](../web/views.md)用 `web/webtest` 测试。`webtest.Client` 像浏览器一样向页面路由发送请求，保存响应设置的 cookie，并读取 htmx 的响应头。下面测试文章页和列表页：
 
 ```go
 func TestPages(t *testing.T) {
@@ -144,7 +144,7 @@ func TestPages(t *testing.T) {
 | 方法 | 返回 |
 | --- | --- |
 | `Redirect()` | 跳转的目标：`303` 的 `Location`，或 htmx 请求的 `HX-Redirect` |
-| `Messages()` | 随局部请求送达的错误提示，见[错误页](../responses/views.md#error-pages) |
+| `Messages()` | 随局部请求送达的错误提示，见[错误页](../web/views.md#error-pages) |
 | `Event(name)` | `HX-Trigger` 中事件 `name` 的 detail |
 | `PushURL()` | `web.PushURL` 推送的地址 |
 

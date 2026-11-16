@@ -172,7 +172,7 @@ func main() {
 <a id="running-parts"></a>
 ### 多个运行部分
 
-应用变大以后，入口通常放在 `internal/bootstrap` 包中，并分成两部分：`App` 保存各部分共用的资源，由 `open` 打开；HTTP 服务、[队列 worker](../libraries/queue.md#running-workers)、[定时任务调度器](../libraries/scheduling.md#running-the-scheduler)各是 `App` 的一个方法。[入门教程](../tutorial/02-infrastructure.md#assembling)按这个结构写出了完整的 `app.go` 和 `http.go`：
+应用变大以后，入口通常放在 `internal/bootstrap` 包中，并分成两部分：`App` 保存各部分共用的资源，由 `open` 打开；HTTP 服务、[队列 worker](../background/queue.md#running-workers)、[定时任务调度器](../background/scheduling.md#running-the-scheduler)各是 `App` 的一个方法。[入门教程](../tutorial/02-infrastructure.md#assembling)按这个结构写出了完整的 `app.go` 和 `http.go`：
 
 ```go
 // open 打开各部分共用的资源，把关闭操作登记到 stack。

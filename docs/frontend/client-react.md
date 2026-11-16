@@ -1,10 +1,10 @@
 # 在 React 中调用接口
 
-[客户端代码](clients.md)一页介绍了怎样生成和调用 TypeScript 客户端。这一页介绍在 React 页面中怎样用好它：用 TanStack Query 读取和修改数据，在表单中复用服务端的校验规则，按权限显示按钮，显示枚举的文字，以及处理错误和分页。
+[客户端代码](../http/clients.md)一页介绍了怎样生成和调用 TypeScript 客户端。这一页介绍在 React 页面中怎样用好它：用 TanStack Query 读取和修改数据，在表单中复用服务端的校验规则，按权限显示按钮，显示枚举的文字，以及处理错误和分页。
 
 **TanStack Query** 是一个管理“从服务端读来的数据”的库：它负责调用接口、记录加载和出错的状态、缓存结果，并在数据修改后重新获取。入门教程的[第 5 章](../tutorial/05-pages.md#list)已经用过它。
 
-阅读前需要了解：[客户端代码](clients.md)；React 的组件和 Hook。
+阅读前需要了解：[客户端代码](../http/clients.md)；React 的组件和 Hook。
 
 - [TanStack Query](#tanstack)
 - [校验规则与验证提示](#validation-rules)
@@ -57,7 +57,7 @@ function Article({ id }: { id: string }) {
 articles.on("publication", () => queryClient.invalidateQueries({ queryKey: queries.article.key() }))
 ```
 
-[固定分页](responses.md#offset-pagination)的列表由服务端分页。TanStack Table 的 `pageIndex` 从 0 开始，`page` 从 1 开始；把 `items` 和 `total` 交给表格，并开启 `manualPagination`：
+[固定分页](../http/responses.md#offset-pagination)的列表由服务端分页。TanStack Table 的 `pageIndex` 从 0 开始，`page` 从 1 开始；把 `items` 和 `total` 交给表格，并开启 `manualPagination`：
 
 ```ts
 const { data } = useQuery({

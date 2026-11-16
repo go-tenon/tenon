@@ -96,10 +96,10 @@ func main() {
 | `command.Config[C]()` | `config check`、`config show` | 是 |
 | `migratecmd.New(fsys, dbConfig, opts...)` | `migrate up`、`migrate status`、`migrate down`、`migrate make`；`migratecmd.Name` 构造其他数据库的命令，见[多个数据库](../database/advanced.md#multiple-databases) | 是 |
 | `migratecmd.Publish(sources...)` | 显式挂载的 `migrate publish` | 否 |
-| `httpcmd.Commands(router, opts...)` | `openapi`、`routes`、`client`（生成 TypeScript 或 Go 客户端，见[客户端代码](../responses/clients.md)）；`httpcmd.Translations(locales.FS)` 传入应用的翻译文件，生成的验证提示与服务端相同。也可以用 `httpcmd.OpenAPI`、`httpcmd.Routes`、`clientgen.Command` 单独装配 | 否 |
+| `httpcmd.Commands(router, opts...)` | `openapi`、`routes`、`client`（生成 TypeScript 或 Go 客户端，见[客户端代码](../http/clients.md)）；`httpcmd.Translations(locales.FS)` 传入应用的翻译文件，生成的验证提示与服务端相同。也可以用 `httpcmd.OpenAPI`、`httpcmd.Routes`、`clientgen.Command` 单独装配 | 否 |
 | `command.Bind(open, declare)` | 应用声明的命令，例如 `article publish`，见[从命令行运行动作](../concepts/actions.md#as-commands) | 是 |
-| `queuecmd.New(db)` | `queue status`、`queue failed`、`queue slot recreate`，在 `command.Bind` 中声明，见[队列状态](../libraries/queue-monitoring.md#stats-command) | 是 |
-| `schedulecmd.New(tasks, m)` | `schedules`，在 `command.Bind` 中声明，见[列出任务的命令](../libraries/scheduling.md#schedules-command) | 是 |
+| `queuecmd.New(db)` | `queue status`、`queue failed`、`queue slot recreate`，在 `command.Bind` 中声明，见[队列状态](../background/queue-monitoring.md#stats-command) | 是 |
+| `schedulecmd.New(tasks, m)` | `schedules`，在 `command.Bind` 中声明，见[列出任务的命令](../background/scheduling.md#schedules-command) | 是 |
 
 开发时用的 `dev`、`build`、`generate` 不在这里，它们由[开发工具](../installation/tooling.md) `go tool tenon` 提供。命令行中只有你装配了的命令：不提供 HTTP API 的程序，例如一个只消费消息的常驻进程，只装配 `command.Run("run", ...)` 和 `migrate` 即可。
 
@@ -198,7 +198,7 @@ return command.AsExitError(command.ExitUnavailable, err)
 <a id="running-together"></a>
 ### 在一个进程中运行多个部分
 
-一个完整的应用通常有三个常驻部分：HTTP 服务、[队列 worker](../libraries/queue.md#running-workers) 和[定时任务调度器](../libraries/scheduling.md#running-the-scheduler)，分别是 `App` 的 `HTTP`、`Worker` 和 `Scheduler` 方法（见[依赖装配](../concepts/dependencies.md#assembling-the-application)）。每个命令只是选择运行哪些部分：
+一个完整的应用通常有三个常驻部分：HTTP 服务、[队列 worker](../background/queue.md#running-workers) 和[定时任务调度器](../background/scheduling.md#running-the-scheduler)，分别是 `App` 的 `HTTP`、`Worker` 和 `Scheduler` 方法（见[依赖装配](../concepts/dependencies.md#assembling-the-application)）。每个命令只是选择运行哪些部分：
 
 ```go
 func Serve(ctx context.Context, cfg Config) error {
@@ -226,7 +226,7 @@ func Start(ctx context.Context, cfg Config) error {
 | `start` | 以上三者，在同一个进程中 |
 | `realtime` | 只承接[实时频道](../libraries/realtime.md)的连接，可选，见[单独部署实时连接](../libraries/realtime.md#separate-process) |
 
-小型部署只运行 `start`：一个进程、一份配置、一套资源。业务量增长后改为分别部署 `serve`、`work` 和 `schedule`，各自按负载增减实例，代码保持原样。`start` 也可以部署多个实例：worker 竞争领取任务，调度器通过锁保证[每次触发只执行一次](../libraries/scheduling.md#multiple-instances)。
+小型部署只运行 `start`：一个进程、一份配置、一套资源。业务量增长后改为分别部署 `serve`、`work` 和 `schedule`，各自按负载增减实例，代码保持原样。`start` 也可以部署多个实例：worker 竞争领取任务，调度器通过锁保证[每次触发只执行一次](../background/scheduling.md#multiple-instances)。
 
 `run` 先装配全部部分，再用 `d.Run` 同时运行它们（内部是 `command.Concurrently`）：
 
@@ -254,7 +254,7 @@ func Start(ctx context.Context, cfg Config) error {
 <a id="routes-command"></a>
 ### routes 命令
 
-当业务模块变多时，你可以用 `routes` 查看整个应用的路由，包括 JSON API 和[页面](../responses/views.md#page-routes)。`httpcmd.Routes` 的参数是构造完整路由的函数，例如[入门教程](../tutorial/02-infrastructure.md#assembling)中的 `bootstrap.DocRouter`。它离线运行：
+当业务模块变多时，你可以用 `routes` 查看整个应用的路由，包括 JSON API 和[页面](../web/views.md#page-routes)。`httpcmd.Routes` 的参数是构造完整路由的函数，例如[入门教程](../tutorial/02-infrastructure.md#assembling)中的 `bootstrap.DocRouter`。它离线运行：
 
 ```bash
 ./bin/api routes

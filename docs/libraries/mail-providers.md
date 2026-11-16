@@ -105,7 +105,7 @@ mailer, err := ses.NewWithClient(client, cfg.Mail.SES.From)
 <a id="failover"></a>
 ## 多个发送器
 
-交给[队列](queue.md#publishing-jobs)发送的邮件，服务暂时故障时由任务按退避重试，恢复后照样发出。[登录验证码](../security/login.md#codes)、找回密码这类邮件不一样：同步发送，用户在页面上等着，邮件服务一出问题（故障、限流、额度用完、账号被暂停），用户就登录不了。`mail.Failover` 把几个发送器组合成一个，前一个失败时换下一个：
+交给[队列](../background/queue.md#publishing-jobs)发送的邮件，服务暂时故障时由任务按退避重试，恢复后照样发出。[登录验证码](../security/login.md#codes)、找回密码这类邮件不一样：同步发送，用户在页面上等着，邮件服务一出问题（故障、限流、额度用完、账号被暂停），用户就登录不了。`mail.Failover` 把几个发送器组合成一个，前一个失败时换下一个：
 
 ```go
 primary, err := resend.New(cfg.Mail.Resend)

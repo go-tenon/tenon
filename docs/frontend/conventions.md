@@ -39,7 +39,7 @@
 | 运营后台、纯内部系统 | antd + ProComponents | `--template admin`，见[运营后台](admin.md) |
 | 面向客户的后台（如租户控制台）、用户端 | shadcn/ui | `--template console`，见 [shadcn registry 与控制台](registry.md) |
 | 面向客户、以大量数据录入为主的后台（如 ERP、财务、仓储） | antd + ProComponents，使用品牌主题 | `--template admin` |
-| 公开页面（官网、帮助中心） | 服务端渲染，templ + shadcn-templ | 见[视图](views.md)和[界面组件](components.md) |
+| 公开页面（官网、帮助中心） | 服务端渲染，templ + shadcn-templ | 见[视图](../web/views.md)和[界面组件](../web/components.md) |
 
 面向客户的后台用哪一套，看它以什么为主：以展示、流程和品牌感为主的用 shadcn；以复杂表格和大表单为主的用 antd。**一个前端只使用一套组件库**，两套的品牌色、圆角来自同一份[设计令牌](theme.md)，看起来仍然是一个产品。
 
@@ -52,7 +52,7 @@
 | 框架 | React |
 | 构建 | Vite，构建产物嵌入 Go 程序，见[单页应用](spa.md) |
 | 路由 | TanStack Router，文件路由 |
-| 服务端数据 | TanStack Query + `tenon generate` 生成的客户端，见[客户端代码](clients.md) |
+| 服务端数据 | TanStack Query + `tenon generate` 生成的客户端，见[客户端代码](../http/clients.md) |
 | 框架的前端包 | `@go-tenon/client`、`@go-tenon/shell`；antd 的前端加 `@go-tenon/admin`，shadcn 的前端用 tenon 的 shadcn registry |
 | 图表 | ECharts |
 | AI 对话 | `@ai-sdk/react` 的 `useChat`，对接 [AI 助手](../ai/chat.md) |
@@ -202,8 +202,8 @@ apps/admin/
 - 所有请求都通过生成的客户端发出，不手写接口的类型和地址。修改接口后由 `tenon dev` 或 `tenon generate` 重新生成。
 - 每个接口的查询选项和 query key 是生成的，页面和路由预加载直接使用，见 [TanStack Query](client-react.md#tanstack)。`features/<领域>/queries.ts` 只放组合多个接口的查询和乐观更新；有第二个前端用到时，移到 `packages/client`。
 - 修改数据后，让相关的查询失效，不手动修改缓存，除非是有意的乐观更新。
-- 接口错误用 `isApiError` 判断：校验错误按 `errors[].location` 显示在对应字段旁；业务错误按 `code` 处理；`401` 由会话统一处理，见[错误](clients.md#ts-errors)。
-- 列表使用服务端分页，参数是 `page`、`per_page`，见[分页](responses.md#pagination)。
+- 接口错误用 `isApiError` 判断：校验错误按 `errors[].location` 显示在对应字段旁；业务错误按 `code` 处理；`401` 由会话统一处理，见[错误](../http/clients.md#ts-errors)。
+- 列表使用服务端分页，参数是 `page`、`per_page`，见[分页](../http/responses.md#pagination)。
 - 登录按 [JWT 与单页应用的登录](../security/jwt.md#single-page-applications)实现，令牌的保存和刷新交给 `@go-tenon/client` 的会话。
 
 <a id="state"></a>
@@ -273,12 +273,12 @@ AI 编程助手按项目中的说明写代码。说明越具体，它生成的�
 为了让任何技术都能接入，后端现在就遵守这些约定：
 
 1. 业务规则、权限和校验都在 Go 中，所有端都只是 API 的调用方。
-2. 每个 API 的 OpenAPI 文档是各端与后端之间唯一的契约；不兼容的修改通过新的 `BasePath` 发布，见[接口文档](../http/openapi.md)。任何语言都可以从它生成客户端，`tenon generate` 已经能生成 TypeScript 和 [Go](go-client.md) 的客户端。
+2. 每个 API 的 OpenAPI 文档是各端与后端之间唯一的契约；不兼容的修改通过新的 `BasePath` 发布，见[接口文档](../http/openapi.md)。任何语言都可以从它生成客户端，`tenon generate` 已经能生成 TypeScript 和 [Go](../http/go-client.md) 的客户端。
 3. 框架的约定（错误格式、分页、令牌刷新、实时频道、服务端推送与 AI 对话的消息流、上传、App 版本）写在与语言无关的[客户端协议](../http/protocol.md)中，`@go-tenon/client` 只是第一个实现。
 4. 每个功能都能用 Bearer 令牌访问，refresh token 可以放在请求体中，不依赖只有浏览器才有的 cookie。
 5. 实时消息用 Centrifuge，它有 JavaScript、Dart、Swift、Java、Go 等官方 SDK，见[实时频道](../libraries/realtime.md)；推送见[移动推送](../features/push.md)。
 6. 设计令牌和文案的源文件是 JSON，不绑定某种语言。
-7. App 从第一个版本起发送 `X-App-Version`，见 [App 版本](clients.md#app-version)。
+7. App 从第一个版本起发送 `X-App-Version`，见 [App 版本](../http/clients.md#app-version)。
 
 <a id="troubleshooting"></a>
 ## 常见问题

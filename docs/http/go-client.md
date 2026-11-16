@@ -92,7 +92,7 @@ for _, a := range list.Items { // page.Offset[article.ArticleDTO]
 <a id="go-client-errors"></a>
 ## 错误
 
-非 2xx 的响应返回 `*wire.Error`：`Status` 是状态码，`Code` 是业务错误码，`Detail` 是可以展示给用户的说明，`Fields` 是 `422` 时每个字段的问题（[翻译后的提示和规则 `code`](../http/validation.md#validation-error-response)），`Params` 是业务错误的[公开参数](../general/errors.md#public-parameters)，`RequestID` 用来报告问题，`RetryAfter` 是 `Retry-After` 响应头建议的等待时间。
+非 2xx 的响应返回 `*wire.Error`：`Status` 是状态码，`Code` 是业务错误码，`Detail` 是可以展示给用户的说明，`Fields` 是 `422` 时每个字段的问题（[翻译后的提示和规则 `code`](validation.md#validation-error-response)），`Params` 是业务错误的[公开参数](../general/errors.md#public-parameters)，`RequestID` 用来报告问题，`RetryAfter` 是 `Retry-After` 响应头建议的等待时间。
 
 服务端用 [`errorx.Define`](../general/errors.md#defining-errors) 定义的错误码，在对应的包中生成为同名常量，用 `errors.Is` 判断：
 

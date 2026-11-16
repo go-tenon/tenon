@@ -335,7 +335,7 @@ n, err := fileService.Cleanup(ctx, 500)
 
 `Cleanup` 被设计为定时任务：每次处理一批，可以反复执行，多个实例同时执行也是安全的。某条记录清理失败时，它会推迟 5 分钟再重试，错误合并返回，其他记录照常处理。清理和确认通过带条件的更新互斥，只有一方能成功，正在被确认的文件因此安全。
 
-用[定时任务](scheduling.md#framework-cleanups)每 5 分钟执行一次：
+用[定时任务](../background/scheduling.md#framework-cleanups)每 5 分钟执行一次：
 
 ```go
 sched.Add("files:cleanup", "*/5 * * * *", schedule.Cleanup(fileService.Cleanup, 500))

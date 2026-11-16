@@ -80,7 +80,7 @@ type SearchArticlesInput struct {
 > 上面的写法会把超出范围的 `limit` 当作错误拒绝。想把它截断为 100 时，省略 `maximum`，在业务动作中截断，并在接口描述中说明。
 
 > [!TIP]
-> 列表接口的分页参数嵌入 `page.OffsetParams` 或 `page.CursorParams` 即可，见[分页](../responses/responses.md#pagination)。
+> 列表接口的分页参数嵌入 `page.OffsetParams` 或 `page.CursorParams` 即可，见[分页](responses.md#pagination)。
 
 <a id="headers"></a>
 ### 请求头

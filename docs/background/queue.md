@@ -205,7 +205,7 @@ func Work(ctx context.Context, cfg Config) error {
 }
 ```
 
-`newMailer` 见[装配发送器](mail.md#assembling-mailer)。业务动作的任务入口也注册在这里，例如定时发布文章，见[队列任务](../concepts/actions.md#as-jobs)。在根命令中用 `command.Run("work", "处理队列任务", bootstrap.Work)` 注册它。
+`newMailer` 见[装配发送器](../libraries/mail.md#assembling-mailer)。业务动作的任务入口也注册在这里，例如定时发布文章，见[队列任务](../concepts/actions.md#as-jobs)。在根命令中用 `command.Run("work", "处理队列任务", bootstrap.Work)` 注册它。
 
 发布的任务要等 worker 转发才会执行，所以部署时**至少运行一个 worker**。`w.Run` 连不上 nsqd 时返回错误；运行后一直到进程收到停止信号，然后停止接收任务，等处理中的任务写回结果才返回；数据库由 `run` 在所有部分都返回之后才关闭。
 

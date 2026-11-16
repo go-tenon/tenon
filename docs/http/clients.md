@@ -1,10 +1,10 @@
 # 客户端代码
 
-前端、App 和其他服务调用你的 JSON API 时，请求和响应的类型直接从服务端生成，与服务端始终一致：服务端加了字段、改了字段名，重新生成后前端的编译器就会提示。Tenon 的 `client` 命令从路由声明直接生成 TypeScript 和 Go 客户端：函数按 operationId 分组，类型和服务端一致，业务错误码是常量。其他语言用 [openapi 命令](../general/commands.md#openapi-command)导出的 OpenAPI 文档生成。所有接口共同遵守的请求头、错误、分页和会话等约定见[客户端协议](../http/protocol.md)，其他语言的客户端按它实现。
+前端、App 和其他服务调用你的 JSON API 时，请求和响应的类型直接从服务端生成，与服务端始终一致：服务端加了字段、改了字段名，重新生成后前端的编译器就会提示。Tenon 的 `client` 命令从路由声明直接生成 TypeScript 和 Go 客户端：函数按 operationId 分组，类型和服务端一致，业务错误码是常量。其他语言用 [openapi 命令](../general/commands.md#openapi-command)导出的 OpenAPI 文档生成。所有接口共同遵守的请求头、错误、分页和会话等约定见[客户端协议](protocol.md)，其他语言的客户端按它实现。
 
-这一页介绍怎样生成和调用 TypeScript 客户端。在 React 页面中配合 TanStack Query 使用、复用校验规则和权限，见[在 React 中调用接口](client-react.md)；Go 客户端见 [Go 客户端](go-client.md)。
+这一页介绍怎样生成和调用 TypeScript 客户端。在 React 页面中配合 TanStack Query 使用、复用校验规则和权限，见[在 React 中调用接口](../frontend/client-react.md)；Go 客户端见 [Go 客户端](go-client.md)。
 
-阅读前需要了解：[路由](../http/routing.md)；[入门教程第 5 章](../tutorial/05-pages.md#client)用过生成的客户端。
+阅读前需要了解：[路由](routing.md)；[入门教程第 5 章](../tutorial/05-pages.md#client)用过生成的客户端。
 
 - [示例用法](#introduction)
 - [生成的名称](#generated-names)
@@ -60,7 +60,7 @@ if errors.Is(err, article.ErrSlugTaken) {
 | schema 名 | 包名加类型名，类型名已以包名开头时不重复 | `article.Changes` 为 `ArticleChanges`，`article.ArticleDTO` 为 `ArticleDTO` |
 | 错误响应 | 所有接口共用 | `ErrorModel` |
 
-规则见[共享响应结构](../http/routing.md#shared-responses)。改名会改变生成的代码，和修改接口一样需要通知调用方。
+规则见[共享响应结构](routing.md#shared-responses)。改名会改变生成的代码，和修改接口一样需要通知调用方。
 
 <a id="typescript"></a>
 ## TypeScript
@@ -81,13 +81,13 @@ go tool tenon generate   # 等价于 go run ./cmd/api client --ts packages/clien
 | `api.ts` | OpenAPI 中的全部类型、每个接口的输入类型、事件流的事件类型，以及 `createClient` |
 | `errors.ts` | 服务端用 [`errorx.Define`](../general/errors.md#defining-errors) 定义的错误码，按包分组，例如 `ArticleErrors.SlugTaken` |
 | `runtime.ts` | 发送请求、刷新 access token、`ApiError`、事件流和下载 |
-| `queries.ts` | TanStack Query 的查询和修改选项，见 [TanStack Query](client-react.md#tanstack) |
-| `schemas.ts` | 每个接口的请求体和查询参数的校验规则，见[校验规则与验证提示](client-react.md#validation-rules) |
-| `messages.ts` | 各语言的验证提示模板，见[校验规则与验证提示](client-react.md#validation-rules) |
-| `permissions.ts` | 权限目录和每个接口要求的权限，见[权限](client-react.md#ts-permissions) |
-| `enums.ts` | 带显示文字的枚举，见[枚举](client-react.md#ts-enums) |
-| `resources.ts` | 用 `api.Resource` 声明的资源，见[资源](resources.md#generated) |
-| `settings.ts` | 用 `api.Settings` 声明的设置页面，见[设置页面](resources.md#settings) |
+| `queries.ts` | TanStack Query 的查询和修改选项，见 [TanStack Query](../frontend/client-react.md#tanstack) |
+| `schemas.ts` | 每个接口的请求体和查询参数的校验规则，见[校验规则与验证提示](../frontend/client-react.md#validation-rules) |
+| `messages.ts` | 各语言的验证提示模板，见[校验规则与验证提示](../frontend/client-react.md#validation-rules) |
+| `permissions.ts` | 权限目录和每个接口要求的权限，见[权限](../frontend/client-react.md#ts-permissions) |
+| `enums.ts` | 带显示文字的枚举，见[枚举](../frontend/client-react.md#ts-enums) |
+| `resources.ts` | 用 `api.Resource` 声明的资源，见[资源](../frontend/resources.md#generated) |
+| `settings.ts` | 用 `api.Settings` 声明的设置页面，见[设置页面](../frontend/resources.md#settings) |
 
 生成的代码是独立的 TypeScript，由 Go 程序直接生成。重新生成时只删除带生成标记的文件，目录中手写的文件保持不变。把它们提交到仓库，CI 中重新生成后用 `git diff --exit-code` 检查是否忘了更新。
 
@@ -96,7 +96,7 @@ go tool tenon generate   # 等价于 go run ./cmd/api client --ts packages/clien
 <a id="creating-the-client"></a>
 ### 创建客户端
 
-单页应用用 [JWT 模式](../security/jwt.md#jwt)登录，refresh token 保存在 [HttpOnly cookie](../security/jwt.md#single-page-applications) 中。access token 只放在内存里：请求自动带上它，受保护的接口返回 `401` 时刷新一次，再重试请求。框架的 `@go-tenon/client` 提供会话 `createSession`，按[客户端协议](../http/protocol.md#sessions)保存和刷新凭据。下面是 `apps/web/src/client.ts`：
+单页应用用 [JWT 模式](../security/jwt.md#jwt)登录，refresh token 保存在 [HttpOnly cookie](../security/jwt.md#single-page-applications) 中。access token 只放在内存里：请求自动带上它，受保护的接口返回 `401` 时刷新一次，再重试请求。框架的 `@go-tenon/client` 提供会话 `createSession`，按[客户端协议](protocol.md#sessions)保存和刷新凭据。下面是 `apps/web/src/client.ts`：
 
 ```ts
 import { createSession } from "@go-tenon/client"
@@ -125,9 +125,9 @@ session.connect(api)
 - 登录接口返回后调用 `await session.signIn(out, { account: me.id })`：所有连接的客户端得到 access token，身份记为这个账号。登出时先调用登出接口，服务端撤销这次登录并清除 cookie，再调用 `await session.signOut()`。
 - 几个请求同时收到 `401` 时只刷新一次，它们都等这一次的结果。刷新返回 `401` 时这次登录已经失效：清除凭据和身份，调用 `onSignedOut`；网络错误不清除凭据，下次再试。
 - 一个会话可以连接多个 API 的客户端（`session.connect`），例如同一次登录调用 `/api` 和 `/api/admin`。
-- 公开的接口（[`rest.Public`](../http/routing.md#access-policies)）直接请求，`401` 原样返回给调用者。
+- 公开的接口（[`rest.Public`](routing.md#access-policies)）直接请求，`401` 原样返回给调用者。
 - 请求带上 `Accept-Language`（默认是浏览器的语言，`language` 可以覆盖），错误的 `detail` 按它翻译。App 的 WebView 设置 `appVersion`，作为 [`X-App-Version`](#app-version) 发送。
-- `headers` 是每次请求附加的请求头，每次请求时读取，值为空时不发送，接口自己的请求头优先，例如租户在请求头中时 `headers: () => ({ "X-Tenant": session.identity()?.tenant })`。`baseURL` 也可以是函数，例如租户在路径中时 `` baseURL: () => `/api/t/${tenant}` ``。见[租户](app-shell-features.md#tenants)。
+- `headers` 是每次请求附加的请求头，每次请求时读取，值为空时不发送，接口自己的请求头优先，例如租户在请求头中时 `headers: () => ({ "X-Tenant": session.identity()?.tenant })`。`baseURL` 也可以是函数，例如租户在路径中时 `` baseURL: () => `/api/t/${tenant}` ``。见[租户](../frontend/app-shell-features.md#tenants)。
 
 `/auth/login`、`/auth/refresh` 是应用自己注册的公开接口，写法见[单页应用](../security/jwt.md#single-page-applications)。App、桌面端和小程序用响应体传递：登录时省略 `cookie`，refresh token 在响应体中，保存在系统的安全存储中。给 `createSession` 传入存储，`refresh` 收到保存的 refresh token，把它放进请求体：
 
@@ -165,7 +165,7 @@ created.headers.location // 有响应头的接口返回 { body, headers }
 <a id="ts-errors"></a>
 ### 错误
 
-非 2xx 的响应抛出 `ApiError`：`status` 是状态码，`code` 是业务错误码，`detail` 是可以展示给用户的说明，`fields` 是 `422` 时每个字段的问题（[翻译后的提示和规则 `code`](../http/validation.md#validation-error-response)），`params` 是业务错误的[公开参数](../general/errors.md#public-parameters)（没有时是空对象），`requestId` 用来报告问题，`retryAfter` 是建议的等待秒数。业务错误码用 `errors.ts` 中的常量判断：
+非 2xx 的响应抛出 `ApiError`：`status` 是状态码，`code` 是业务错误码，`detail` 是可以展示给用户的说明，`fields` 是 `422` 时每个字段的问题（[翻译后的提示和规则 `code`](validation.md#validation-error-response)），`params` 是业务错误的[公开参数](../general/errors.md#public-parameters)（没有时是空对象），`requestId` 用来报告问题，`retryAfter` 是建议的等待秒数。业务错误码用 `errors.ts` 中的常量判断：
 
 ```ts
 import { ArticleErrors, isApiError } from "@blog/client/api"
@@ -246,7 +246,7 @@ saveBlob(blob, filename || "failures.xlsx")
 <a id="app-version"></a>
 ## App 版本
 
-安装在手机和电脑上的 App，每个请求都带上平台和版本，服务端才能在需要时[停止支持旧版本](../http/optional-middleware.md#app-version)：
+安装在手机和电脑上的 App，每个请求都带上平台和版本，服务端才能在需要时[停止支持旧版本](optional-middleware.md#app-version)：
 
 ```http
 X-App-Version: android/2.3.1
@@ -312,13 +312,13 @@ oasdiff 只比较请求和响应的结构。schema 改名时结构相同，由�
 
 | 选项 | 说明 |
 | --- | --- |
-| `--ts <dir>` | TypeScript 客户端的输出目录，每个 API 写到其中以名称命名的子目录，例如 `packages/client/src`。应用的翻译文件由 `httpcmd.Translations` 传入，见[校验规则与验证提示](client-react.md#validation-rules) |
+| `--ts <dir>` | TypeScript 客户端的输出目录，每个 API 写到其中以名称命名的子目录，例如 `packages/client/src`。应用的翻译文件由 `httpcmd.Translations` 传入，见[校验规则与验证提示](../frontend/client-react.md#validation-rules) |
 | `--name <path>=<name>` | 按 `BasePath` 指定 TypeScript 客户端的目录名，默认是 `BasePath` 的最后一段，可重复；两个 API 名称相同时报错 |
 | `--out <dir>` | Go 客户端的输出目录，目录名是根包的包名，例如 `../api` |
 | `--main <pkg>` | 应用的主包，在它的依赖中查找错误码；默认是当前程序 |
 | `--import <pkg>` | 生成的 Go 代码可以直接导入的包（含子包），可重复；默认只有 `github.com/google/uuid` |
 | `--rename <path>=<name>` | 服务端包路径对应的镜像包名，可重复 |
-| `--base-path <path>` | 只生成 `BasePath` 为它的 API，例如 `/api/v2`；路由中有[多个 API](../http/openapi.md#api-versioning) 时 `--out` 需要它 |
+| `--base-path <path>` | 只生成 `BasePath` 为它的 API，例如 `/api/v2`；路由中有[多个 API](openapi.md#api-versioning) 时 `--out` 需要它 |
 
 ### clientgen
 

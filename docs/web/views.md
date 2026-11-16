@@ -1,6 +1,6 @@
 # 视图
 
-需要登录的界面——后台、用户端、[OAuth 同意页](../security/oauth-server.md#consent-page)——都是[单页应用](spa.md)，调用 JSON API。官网、文章页、帮助中心这类**公开页面**适合在服务端渲染：搜索引擎直接读到内容，首屏随 HTML 一起到达。
+需要登录的界面——后台、用户端、[OAuth 同意页](../security/oauth-server.md#consent-page)——都是[单页应用](../frontend/spa.md)，调用 JSON API。官网、文章页、帮助中心这类**公开页面**适合在服务端渲染：搜索引擎直接读到内容，首屏随 HTML 一起到达。
 
 - [templ](https://templ.guide) 把 `.templ` 文件编译成带类型参数的 Go 函数，错误在编译期就能发现；
 - [htmx 4](https://four.htmx.org) 用 HTML 属性声明“点这里就请求某个地址，把返回的片段放到某个位置”，服务端只管返回 HTML；
@@ -131,7 +131,7 @@ func (a *App) Router() chi.Router {
 
 - `serve` 用 `a.Router()` 运行 HTTP 服务，`openapi`、`routes` 命令用它生成文档、列出路由，见[依赖装配](../concepts/dependencies.md#assembling-the-application)。
 - 页面和 JSON API 共用一个 Router。API 挂在 `/api/v1` 下；`BasePath` 让 OpenAPI 文档中的地址带上这个前缀，见 [API 版本](../http/openapi.md#api-versioning)。`rest.New` 返回 JSON 格式 404 的设置只作用于这个子路由，其余地址的 404 由 `pages.NotFound` 渲染成页面。
-- 后台等[单页应用](spa.md)也挂在这个 Router 上，例如 `router.Handle("/admin/*", spa)`。
+- 后台等[单页应用](../frontend/spa.md)也挂在这个 Router 上，例如 `router.Handle("/admin/*", spa)`。
 - `static` 提供应用自己的图片等静态文件，见[前端资源](assets.md)。`Theme` 来自配置，决定组件的风格和颜色，见[主题](components.md#themes)；`ui.Assets()` 提供它们的样式表和脚本。
 - [请求超时](../http/middleware.md#request-timeout)按路由组安装。
 
@@ -224,7 +224,7 @@ func (h *Handlers) Related(w http.ResponseWriter, r *http.Request) error {
 
 文章列表可以搜索、排序和翻页。列表的状态全部放在地址的查询参数中，例如 `/articles?q=go&sort=title&page=2`。这样刷新、后退、复制链接都能回到同一个状态，搜索引擎也能收录每一页。
 
-查询参数用一个结构体描述，写法与[表单](forms.md#defining-forms)相同：字段名取 `json` 标签，规则写在 Huma 标签上。查询参数都是可选的，字段要带 `omitempty`。分页嵌入 `page.OffsetParams`。下面的 `ListQuery` 放在文章模块中，同时带上 `query` 标签，[列表接口](responses.md#filtering-and-sorting)也可以直接使用它：
+查询参数用一个结构体描述，写法与[表单](forms.md#defining-forms)相同：字段名取 `json` 标签，规则写在 Huma 标签上。查询参数都是可选的，字段要带 `omitempty`。分页嵌入 `page.OffsetParams`。下面的 `ListQuery` 放在文章模块中，同时带上 `query` 标签，[列表接口](../http/responses.md#filtering-and-sorting)也可以直接使用它：
 
 ```go
 type ListQuery struct {
@@ -256,7 +256,7 @@ func (h *Handlers) List(w http.ResponseWriter, r *http.Request) error {
 }
 ```
 
-`article.List` 是列表的业务动作，按筛选条件和排序查询当前页，同时返回总数，代码见[筛选与排序](responses.md#filtering-and-sorting)；匿名访客只能看到已发布的文章。筛选、排序、翻页都只替换列表区域，`web.PushURL` 让 htmx 把地址栏改为这个状态的地址。
+`article.List` 是列表的业务动作，按筛选条件和排序查询当前页，同时返回总数，代码见[筛选与排序](../http/responses.md#filtering-and-sorting)；匿名访客只能看到已发布的文章。筛选、排序、翻页都只替换列表区域，`web.PushURL` 让 htmx 把地址栏改为这个状态的地址。
 
 链接由 `web.QueryURL` 生成，它是 `ParseQuery` 的逆操作。零值和等于 `default` 的参数会被省略，同一个状态总是得到同一个地址。在视图包中写几个小函数：
 

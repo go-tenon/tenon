@@ -142,11 +142,11 @@ func (h *Handlers) VerifyEmail(w http.ResponseWriter, r *http.Request) error {
 }
 ```
 
-验证链接从邮件中打开，任何人都能访问，所以它是一个[公开页面](../responses/views.md)。
+验证链接从邮件中打开，任何人都能访问，所以它是一个[公开页面](../web/views.md)。
 
 `VerifyURL` 只证明这个链接是本站发出的。链接发出之后数据可能变了，业务动作仍要按当前数据判断：上面的 `verifyEmail` 要确认用户当前的邮箱仍是链接中的 `email`，用户在此期间又改过邮箱，旧链接就随之失效。
 
-签名不对时返回 `crypt.ErrInvalidSignature`，过期时返回 `crypt.ErrExpired`。两者都是 `errorx.PermissionDenied`，页面呈现 403 [错误页](../responses/views.md#error-pages)，提示“链接无效”或“链接已过期”。过期页可以提供重新发送的入口：
+签名不对时返回 `crypt.ErrInvalidSignature`，过期时返回 `crypt.ErrExpired`。两者都是 `errorx.PermissionDenied`，页面呈现 403 [错误页](../web/views.md#error-pages)，提示“链接无效”或“链接已过期”。过期页可以提供重新发送的入口：
 
 ```go
 if errors.Is(err, crypt.ErrExpired) {

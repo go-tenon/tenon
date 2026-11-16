@@ -2,7 +2,7 @@
 
 用 React、Vue 等写的单页应用，可以和 API 打包进同一个二进制文件：Vite 的构建产物通过 `embed` 嵌入程序，由 `httpx.SPA` 提供。页面和 API 同源，部署时只有一个二进制文件。一个应用可以有多个单页应用，例如运营后台挂在 `/admin/`，用户端挂在 `/`。
 
-单页应用调用 [JSON API](../http/routing.md)，请求带 Bearer 令牌（见[单页应用的登录](../security/jwt.md#single-page-applications)），客户端由 `client --ts` 从路由生成，见[客户端代码](clients.md#typescript)。后台和用户端都是单页应用；公开页面可以[在服务端渲染](views.md)，两者共用一个 Router。`tenon init` 生成的项目已经按本页的方式组织好。路由、登录检查、权限、菜单等应用骨架的逻辑由 `@go-tenon/shell` 提供，见[应用骨架](app-shell.md)。
+单页应用调用 [JSON API](../http/routing.md)，请求带 Bearer 令牌（见[单页应用的登录](../security/jwt.md#single-page-applications)），客户端由 `client --ts` 从路由生成，见[客户端代码](../http/clients.md#typescript)。后台和用户端都是单页应用；公开页面可以[在服务端渲染](../web/views.md)，两者共用一个 Router。`tenon init` 生成的项目已经按本页的方式组织好。路由、登录检查、权限、菜单等应用骨架的逻辑由 `@go-tenon/shell` 提供，见[应用骨架](app-shell.md)。
 
 阅读前需要了解：[脚手架](../installation/scaffolding.md)；[embed](../concepts/go-primer.md#embed)。
 
@@ -117,7 +117,7 @@ dev_servers:
 bun run dev   # package.json 中是 "dev": "go tool tenon dev"
 ```
 
-修改 Go 代码后应用自动重新编译、重启，并重新生成 [TypeScript 客户端](clients.md#typescript)，前端的热更新照常进行。按约定的[目录结构](../concepts/structure.md)组织时零配置，见 [tenon dev](../installation/tooling.md#dev)。生产环境中没有 `dev_servers`，`DevServer` 为空，`SPA` 提供嵌入的构建产物。
+修改 Go 代码后应用自动重新编译、重启，并重新生成 [TypeScript 客户端](../http/clients.md#typescript)，前端的热更新照常进行。按约定的[目录结构](../concepts/structure.md)组织时零配置，见 [tenon dev](../installation/tooling.md#dev)。生产环境中没有 `dev_servers`，`DevServer` 为空，`SPA` 提供嵌入的构建产物。
 
 设置了 `DevServer` 时，`NewSPA` 跳过构建产物，但 `dist` 仍然要存在，程序才能编译。`tenon dev` 第一次启动时，没有 `node_modules` 就先运行 `bun install`，没有 `dist` 就写一个占位页；停止后构建一次，`dist` 是最新的。Vite 没有启动时，页面返回 `502`，内容是连接错误。
 

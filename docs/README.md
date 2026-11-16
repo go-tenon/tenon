@@ -1,10 +1,27 @@
 # Tenon 文档
 
-Tenon 是一个用 Go 构建 HTTP API 的框架。用户登录后使用的界面，是调用这些 API 的单页应用（React）或手机 App；官网、帮助中心这类公开页面，也可以由服务端直接生成 HTML。
+Tenon 是一个用 Go 构建后端服务的框架。业务逻辑写成[业务动作](concepts/actions.md)，再从不同的入口调用它：HTTP 接口、服务端页面、队列任务、定时任务、命令行和 MCP 工具。
+
+其中 HTTP API 是目前最完整的入口。用户登录后使用的界面，是调用这些 API 的单页应用（React）或手机 App；官网、帮助中心这类公开页面，也可以由服务端直接生成 HTML。
 
 一个后端应用要处理很多相同的问题：读取配置、定义路由、校验请求、返回错误、记录日志、连接数据库、管理登录。Tenon 为这些问题提供一套统一的写法，同时让你直接使用 Go 社区中成熟的组件，例如 chi（路由）、Huma（接口与 OpenAPI 文档）、slog（日志）、Bun（数据库）、goose（数据库迁移）和 Cobra（命令行）。
 
 这份文档假设你会写 Go 的基本语法，但不要求你有后端框架的经验。用到的后端概念，例如中间件、事务、JWT，第一次出现时都会解释。
+
+## 核心与入口
+
+配置、错误、日志、数据库、缓存、认证与授权这些部分与入口无关，所有入口共用。入口只负责把外部的调用转换为对业务动作的调用，同一个动作可以从多个入口调用，见[从不同入口运行](concepts/actions.md#entry-points)。目前提供这些入口：
+
+| 入口 | 用途 | 文档 |
+| --- | --- | --- |
+| HTTP 接口 | JSON API、OpenAPI 文档、生成的客户端 | [HTTP 接口](http/README.md) |
+| 服务端页面 | 用 templ 和 htmx 渲染的公开页面 | [服务端页面](web/README.md) |
+| 后台任务 | 队列 worker 与定时任务调度器，也可以单独部署为没有 HTTP 接口的服务 | [后台任务](background/README.md) |
+| 命令行 | 运维和一次性的操作 | [命令行](general/commands.md) |
+| MCP 工具 | 供 Claude、Cursor 等 AI 客户端调用 | [MCP 服务](ai/mcp.md) |
+| 实时频道 | WebSocket，把消息推给在线的用户 | [实时频道](libraries/realtime.md) |
+
+单页应用和手机 App 是 HTTP 接口的调用方，见[前端](frontend/README.md)。
 
 ## 怎样阅读
 
@@ -38,22 +55,28 @@ Tenon 是一个用 Go 构建 HTTP API 的框架。用户登录后使用的界面
 - [目录结构](concepts/structure.md)：项目中的目录各放什么
 - [请求生命周期](concepts/lifecycle.md)：一个 HTTP 请求从进入到返回经过哪些环节
 
-然后逐一深入：
+然后逐一深入。先是每个应用都会用到、与入口无关的部分：
 
 - [配置](general/configuration.md)：配置文件、环境变量和多套环境
-- [路由](http/routing.md)：把一个地址交给一个处理函数
-- [接口文档](http/openapi.md)：自动生成的 OpenAPI 文档，说明与示例，API 版本
-- [请求](http/requests.md)：读取路径参数、查询参数、请求头和请求体
-- [验证](http/validation.md)：在处理请求之前检查输入
-- [响应](responses/responses.md)：返回 JSON、状态码、分页和文件
 - [错误处理](general/errors.md)：定义业务错误，返回给客户端合适的状态码和提示
-- [中间件](http/middleware.md)：在每个请求前后做的通用工作，例如请求 ID、超时
-- [可选的中间件](http/optional-middleware.md)：限流、跨域、Basic 认证、App 最低版本、响应压缩
 - [日志](general/logging.md)：记录日志，在日志中找到一次请求的全部记录
 - [本地化](general/localization.md)：中英文等多种语言的提示
 - [数据库](database/quick-start.md)：连接数据库，定义模型，查询和事务
 - [迁移](database/migrations.md)：用迁移文件管理表结构的变化
 - [命令行](general/commands.md)：`serve`、`migrate` 以及你自己的命令
+
+再是 HTTP 接口：
+
+- [路由](http/routing.md)：把一个地址交给一个处理函数
+- [接口文档](http/openapi.md)：自动生成的 OpenAPI 文档，说明与示例，API 版本
+- [请求](http/requests.md)：读取路径参数、查询参数、请求头和请求体
+- [验证](http/validation.md)：在处理请求之前检查输入
+- [响应](http/responses.md)：返回 JSON、状态码、分页和文件
+- [中间件](http/middleware.md)：在每个请求前后做的通用工作，例如请求 ID、超时
+- [可选的中间件](http/optional-middleware.md)：限流、跨域、Basic 认证、App 最低版本、响应压缩
+
+最后是测试：
+
 - [测试](testing/README.md)：测试业务代码、数据库和接口
     - [快速入门](testing/overview.md)
     - [数据库与业务动作](testing/database.md)
@@ -66,29 +89,39 @@ Tenon 是一个用 Go 构建 HTTP API 的框架。用户登录后使用的界面
 - [依赖装配](concepts/dependencies.md)：在入口创建数据库连接等依赖，再传给业务代码
 - [业务动作](concepts/actions.md)：一个用例写成一个类型，HTTP、命令行和队列都能调用它
 - [客户端协议](http/protocol.md)：前端和 App 调用接口时遵守的约定
-- [客户端代码](responses/clients.md)：由接口生成 TypeScript 客户端
-- [在 React 中调用接口](responses/client-react.md)：TanStack Query、校验规则、权限、枚举与分页
+- [客户端代码](http/clients.md)：由接口生成 TypeScript 客户端
+- [在 React 中调用接口](frontend/client-react.md)：TanStack Query、校验规则、权限、枚举与分页
 - [开发工具](installation/tooling.md)：`tenon dev`、`tenon generate`、`tenon build`
 
-## 第四阶段：前端
+## 第四阶段：前端与页面
 
-- [单页应用](responses/spa.md)：把 React 前端打包进 Go 程序
-- [应用骨架](responses/app-shell.md)：登录检查、权限、菜单与布局
-- [应用骨架：页面中的常用功能](responses/app-shell-features.md)：多标签、租户、表单、列表与通知
-- [运营后台](responses/admin.md)：用 antd 搭建后台
-- [shadcn registry 与控制台](responses/registry.md)：用 shadcn 搭建界面
-- [前端规范](responses/frontend-conventions.md)：前端用什么技术、目录怎样组织、代码怎样写
-- [资源](responses/resources.md)：在 Go 中声明增删改查的页面，两套界面直接渲染
-- [设计令牌](responses/theme.md)：品牌色、圆角等在一处定义，所有界面共用
-- [服务端推送](responses/sse.md)：服务端主动把进度、通知推给浏览器
-- 服务端生成的页面：
-    - [视图](responses/views.md)
-    - [表单](responses/forms.md)
-    - [前端资源](responses/assets.md)
-    - [界面组件](responses/components.md)
-    - [文档页](responses/doc-pages.md)
+调用 HTTP 接口的单页应用：
+
+- [单页应用](frontend/spa.md)：把 React 前端打包进 Go 程序
+- [应用骨架](frontend/app-shell.md)：登录检查、权限、菜单与布局
+- [应用骨架：页面中的常用功能](frontend/app-shell-features.md)：多标签、租户、表单、列表与通知
+- [运营后台](frontend/admin.md)：用 antd 搭建后台
+- [shadcn registry 与控制台](frontend/registry.md)：用 shadcn 搭建界面
+- [前端规范](frontend/conventions.md)：前端用什么技术、目录怎样组织、代码怎样写
+- [资源](frontend/resources.md)：在 Go 中声明增删改查的页面，两套界面直接渲染
+- [设计令牌](frontend/theme.md)：品牌色、圆角等在一处定义，所有界面共用
+- [服务端推送](http/sse.md)：服务端主动把进度、通知推给浏览器
+
+服务端生成的公开页面：
+
+- [视图](web/views.md)：用 templ 渲染页面
+- [表单](web/forms.md)：页面中的表单
+- [前端资源](web/assets.md)：CSS、JavaScript 与静态文件
+- [界面组件](web/components.md)：web/ui 提供的组件
+- [文档页](web/doc-pages.md)：把 Markdown 目录发布为帮助中心
 
 ## 第五阶段：常用功能
+
+后台任务：
+
+- [队列](background/queue.md)：把耗时的工作放到后台执行
+- [队列：失败任务与监控](background/queue-monitoring.md)：失败任务的重试、队列的状态与面板
+- [定时任务](background/scheduling.md)：每天、每小时执行的工作
 
 存储与通信：
 
@@ -96,9 +129,6 @@ Tenon 是一个用 Go 构建 HTTP API 的框架。用户登录后使用的界面
 - [Redis](libraries/redis.md)：连接 Redis
 - [原子锁](libraries/locks.md)：同一时间只让一个进程做某件事
 - [限流](libraries/rate-limiting.md)：限制一段时间内的请求次数
-- [队列](libraries/queue.md)：把耗时的工作放到后台执行
-- [队列：失败任务与监控](libraries/queue-monitoring.md)：失败任务的重试、队列的状态与面板
-- [定时任务](libraries/scheduling.md)：每天、每小时执行的工作
 - [广播](libraries/broadcasting.md)：在多个进程之间传递消息
 - [实时频道](libraries/realtime.md)：把消息推给在线的用户
 - [文件存储](libraries/filesystem.md)：本地磁盘和对象存储
@@ -153,7 +183,7 @@ Tenon 是一个用 Go 构建 HTTP API 的框架。用户登录后使用的界面
 - [日志进阶](general/logging-advanced.md)：处理链、多个输出、脱敏与测试日志
 - [前端观测](general/frontend-observability.md)：浏览器中的错误、页面和链路
 - [数据库进阶](database/advanced.md)：慢查询、软删除、隔离级别、只读副本、多个数据库
-- [Go 客户端](responses/go-client.md)：其他 Go 服务和工具调用你的 API
+- [Go 客户端](http/go-client.md)：其他 Go 服务和工具调用你的 API
 - [部署](installation/deployment.md)：构建、配置和上线
 - [运维](installation/operations.md)：不停机升级、维护窗口、备份与恢复
 

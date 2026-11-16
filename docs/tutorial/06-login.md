@@ -1018,4 +1018,4 @@ refresh token 的 cookie 没有带上。检查是否通过 8080 端口访问页�
 
 作者现在可以登录了。不过，任何作者都能修改别人的文章，所有文章写完就立即公开。下一章，我们给文章加上作者和草稿。
 
-深入了解：[登录与注册](../security/login.md)、[API 令牌](../security/api-tokens.md)、[认证](../security/authentication.md)、[应用骨架](../responses/app-shell.md)、[命令行](../general/commands.md)。
+深入了解：[登录与注册](../security/login.md)、[API 令牌](../security/api-tokens.md)、[认证](../security/authentication.md)、[应用骨架](../frontend/app-shell.md)、[命令行](../general/commands.md)。

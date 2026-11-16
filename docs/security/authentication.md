@@ -14,7 +14,7 @@ Tenon 用 Bearer Token 做这件事。客户端在请求头里带上 `Authorizat
 2. 你告诉框架怎么验这把钥匙（校验器）
 3. 验过之后，框架知道「来的是谁」，以及「他能干什么」
 
-JSON API 只用 Bearer token。需要登录的一端——后台、网页、桌面客户端、移动端——都走 JSON API；网页和后台是[单页应用](../responses/spa.md)。服务端渲染的[页面](../responses/views.md)只放公开内容。
+JSON API 只用 Bearer token。需要登录的一端——后台、网页、桌面客户端、移动端——都走 JSON API；网页和后台是[单页应用](../frontend/spa.md)。服务端渲染的[页面](../web/views.md)只放公开内容。
 
 Token 本身可以是什么都行：数据库里的 API Key，或者认证服务签发的 JWT。框架不限定种类，你只要写一个函数，把「这串 token → 对应哪个人」说清楚就行。
 

@@ -104,7 +104,7 @@ curl localhost:8080/ping
 | 访问策略 | `rest.Public()` 或 `rest.RequireBearer(...)`，必须选择一个 |
 | 处理器 | 处理请求的函数，通常是[业务动作](../concepts/actions.md)的 `HTTP` 方法 |
 
-输入和输出类型的写法分别在[请求](requests.md)和[响应](../responses/responses.md)中介绍。
+输入和输出类型的写法分别在[请求](requests.md)和[响应](responses.md)中介绍。
 
 <a id="handlers"></a>
 ### 处理器
@@ -306,9 +306,9 @@ func toDTO(a *Article) ArticleDTO {
 }
 ```
 
-`ArticleDTO` 决定了 API 返回哪些字段。响应体始终用 DTO：模型 `Article` 直接作为响应体的话，给模型加一个内部字段，就会意外地把它暴露给客户端。请求和响应类型的详细写法分别见[请求](requests.md)和[响应](../responses/responses.md)。
+`ArticleDTO` 决定了 API 返回哪些字段。响应体始终用 DTO：模型 `Article` 直接作为响应体的话，给模型加一个内部字段，就会意外地把它暴露给客户端。请求和响应类型的详细写法分别见[请求](requests.md)和[响应](responses.md)。
 
-请求和响应中的具名类型在 OpenAPI 文档中以包名加类型名命名，类型名已经以包名开头时只保留一次：`article.Changes` 为 `ArticleChanges`，`comment.Changes` 为 `CommentChanges`，`article.ArticleDTO` 仍为 `ArticleDTO`；匿名的请求体以外层类型的名称加字段名命名，例如 `article.RejectInput` 的 `Body` 为 `ArticleRejectInputBody`。所以每个包都可以用 `Changes` 这样的短名，前端[生成的类型](../responses/clients.md#generated-names)也不会重名。
+请求和响应中的具名类型在 OpenAPI 文档中以包名加类型名命名，类型名已经以包名开头时只保留一次：`article.Changes` 为 `ArticleChanges`，`comment.Changes` 为 `CommentChanges`，`article.ArticleDTO` 仍为 `ArticleDTO`；匿名的请求体以外层类型的名称加字段名命名，例如 `article.RejectInput` 的 `Body` 为 `ArticleRejectInputBody`。所以每个包都可以用 `Changes` 这样的短名，前端[生成的类型](clients.md#generated-names)也不会重名。
 
 <a id="listing-routes"></a>
 ### 查看全部路由
@@ -395,7 +395,7 @@ func New(r chi.Router, opts Options) *API
 | `Transformers []huma.Transformer` | 追加在 Huma 默认的 Transformer 之后 |
 | `Accounts identity.Accounts` | 接受的账号体系，见[认证](../security/authentication.md) |
 | `Tenant func(huma.Context) string` | 从请求取出租户，见[多租户](../security/tenancy.md) |
-| `Credentials identity.CredentialWatcher` | 长连接复查凭据的信号，见[服务端推送](../responses/sse.md#immediate-revocation) |
+| `Credentials identity.CredentialWatcher` | 长连接复查凭据的信号，见[服务端推送](sse.md#immediate-revocation) |
 
 ### Register
 

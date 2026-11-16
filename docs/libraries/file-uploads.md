@@ -70,7 +70,7 @@ for i := range images {
 <a id="processing-files"></a>
 ## 确认后异步处理
 
-需要在上传后处理文件（例如提取元数据、生成视频封面）时，在确认文件的同一个事务中发布一个[队列](queue.md)任务。任务和文件状态一起提交，事务回滚时任务随之撤销：
+需要在上传后处理文件（例如提取元数据、生成视频封面）时，在确认文件的同一个事务中发布一个[队列](../background/queue.md)任务。任务和文件状态一起提交，事务回滚时任务随之撤销：
 
 ```go
 err := database.RunInTx(ctx, db, nil, func(ctx context.Context, tx database.Tx) error {
@@ -136,7 +136,7 @@ services:
 <a id="pages"></a>
 ## 在页面中上传
 
-单页应用的上传见[客户端代码的上传文件](../responses/clients.md#uploading-files)：用户选择文件后立即上传为临时文件，表单只提交文件 ID，保存时确认。
+单页应用的上传见[客户端代码的上传文件](../http/clients.md#uploading-files)：用户选择文件后立即上传为临时文件，表单只提交文件 ID，保存时确认。
 
 <a id="rest"></a>
 ## 在 REST 接口中使用

@@ -2,7 +2,7 @@
 
 实时频道是基于 WebSocket 的双向连接，客户端订阅频道，服务端向频道发布消息。
 
-[服务端推送](../responses/sse.md)适合服务器单向推送：通知角标、进度、AI 的流式回答。聊天、在线状态、“对方正在输入”这类场景需要双向的连接、在线成员和移动端 SDK，`realtime` 包为此在进程内嵌入 [Centrifuge](https://github.com/centrifugal/centrifuge)，提供 WebSocket 实时频道。客户端使用 Centrifuge 的[官方 SDK](https://centrifugal.dev/docs/transports/client_sdk)：浏览器的 centrifuge-js，以及 Swift、Java、Dart 等。
+[服务端推送](../http/sse.md)适合服务器单向推送：通知角标、进度、AI 的流式回答。聊天、在线状态、“对方正在输入”这类场景需要双向的连接、在线成员和移动端 SDK，`realtime` 包为此在进程内嵌入 [Centrifuge](https://github.com/centrifugal/centrifuge)，提供 WebSocket 实时频道。客户端使用 Centrifuge 的[官方 SDK](https://centrifugal.dev/docs/transports/client_sdk)：浏览器的 centrifuge-js，以及 Swift、Java、Dart 等。
 
 频道就是[广播](broadcasting.md)的主题。业务代码照常通过 `hub.PublishJSON` 发布，SSE 处理器和 WebSocket 客户端都会收到；多个实例之间由 Hub 的后端传递消息。
 
@@ -179,14 +179,14 @@ import { session } from './client';
 const centrifuge = new Centrifuge('wss://api.example.com/realtime', { ...realtimeAuth(session) });
 ```
 
-`session` 是 `@go-tenon/client` 的会话，见[创建客户端](../responses/clients.md#creating-the-client)，刷新与 API 请求共用同一次。断线一段时间后重连，access token 可能已经过期，这时连接返回 109（token 已过期），SDK 调用 `getToken` 换新的再连。已经建立的连接跨过 access token 的有效期继续保持：复查只检查这次登录是否已被撤销。
+`session` 是 `@go-tenon/client` 的会话，见[创建客户端](../http/clients.md#creating-the-client)，刷新与 API 请求共用同一次。断线一段时间后重连，access token 可能已经过期，这时连接返回 109（token 已过期），SDK 调用 `getToken` 换新的再连。已经建立的连接跨过 access token 的有效期继续保持：复查只检查这次登录是否已被撤销。
 
 这个处理不限于 JWT：`Authenticate` 返回的错误匹配 `identity.ErrExpired` 时，连接返回 109；连接期间复查遇到它时以 3005 断开，SDK 重连时同样换新的 token。
 
 <a id="revocation"></a>
 ### 撤销后断开
 
-连接期间每 30 秒重新校验一次凭据，与 [SSE](../responses/sse.md#revoked-credentials) 相同。需要撤销后立即断开时，把 [`broadcast.Credentials`](../responses/sse.md#immediate-revocation) 交给 `Options.Credentials`，之后退出登录、撤销 token 时照常调用 `Recheck*`，实时连接随之生效。
+连接期间每 30 秒重新校验一次凭据，与 [SSE](../http/sse.md#revoked-credentials) 相同。需要撤销后立即断开时，把 [`broadcast.Credentials`](../http/sse.md#immediate-revocation) 交给 `Options.Credentials`，之后退出登录、撤销 token 时照常调用 `Recheck*`，实时连接随之生效。
 
 <a id="presence"></a>
 ## 在线成员
@@ -285,7 +285,7 @@ Centrifuge 只链接进使用了 `realtime` 的应用。
 
 `serve` 和 `start` 都挂载了 `/realtime`，起步阶段直接使用即可。WebSocket 是长连接：每次升级，旧进程停止时断开它上面的全部连接，客户端在同一时刻重连。接口发布频繁、连接很多时，把实时连接交给单独的一组 `realtime` 进程，升级接口时它们保持在线，大量空闲连接也与接口分开占用资源。
 
-`realtime` 进程运行与 `serve` 相同的路由，只是监听另一个地址。把[装配页面](../responses/views.md#assembling-pages)中 `HTTP` 方法的内容移到 `serveOn`，两个部分共用：
+`realtime` 进程运行与 `serve` 相同的路由，只是监听另一个地址。把[装配页面](../web/views.md#assembling-pages)中 `HTTP` 方法的内容移到 `serveOn`，两个部分共用：
 
 ```go
 // HTTP 运行全部路由，serve 和 start 命令使用它。

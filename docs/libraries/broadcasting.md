@@ -2,11 +2,11 @@
 
 广播把一条消息送到每一个实例，让各个实例上订阅了它的连接都能收到。
 
-只部署一个实例时，[服务端推送](../responses/sse.md)直接把消息写给连接上的客户端就行了。但部署多个实例之后，发布消息的请求和要收到消息的客户端往往在不同实例上：编辑 A 在实例 1 上发布了文章，编辑 B 的长连接在实例 2 上。`broadcast` 包负责把消息送到每个实例，再交给这个实例上订阅了它的连接。
+只部署一个实例时，[服务端推送](../http/sse.md)直接把消息写给连接上的客户端就行了。但部署多个实例之后，发布消息的请求和要收到消息的客户端往往在不同实例上：编辑 A 在实例 1 上发布了文章，编辑 B 的长连接在实例 2 上。`broadcast` 包负责把消息送到每个实例，再交给这个实例上订阅了它的连接。
 
 它与传输方式无关：同一个 Hub 既可以推给 SSE 连接，也可以推给[实时频道](realtime.md)的 WebSocket 客户端。消息按主题（topic）分发，例如 `articles`、`room:42`。
 
-阅读前需要了解：[服务端推送](../responses/sse.md)；[Redis](redis.md)；[提交后执行](../database/quick-start.md#after-commit)。
+阅读前需要了解：[服务端推送](../http/sse.md)；[Redis](redis.md)；[提交后执行](../database/quick-start.md#after-commit)。
 
 - [示例用法](#example-usage)
 - [创建 Hub](#creating-the-hub)
@@ -84,7 +84,7 @@ tx.AfterCommit(func(ctx context.Context) error {
 <a id="pushing-to-browsers"></a>
 ## 推送给客户端
 
-SSE 处理器订阅主题，收到事件就推送，写法见[长连接](../responses/sse.md#long-lived-connections)：
+SSE 处理器订阅主题，收到事件就推送，写法见[长连接](../http/sse.md#long-lived-connections)：
 
 ```go
 sub := hub.Subscribe("articles")
@@ -109,7 +109,7 @@ for {
 <a id="replaying-missed-events"></a>
 ### 断线补发
 
-连接断开期间的事件由客户端重连时补发。[长连接](../responses/sse.md#long-lived-connections)的处理器为每个事件带上了 ID，客户端重连时通过 `Last-Event-ID` 发回最后收到的 ID。文章的 ID 是 UUIDv7，按时间排序，所以补发就是查询这个 ID 之后发布的文章。`publishedAfter` 是查询之后发布的文章的业务动作 `article.PublishedAfter`：
+连接断开期间的事件由客户端重连时补发。[长连接](../http/sse.md#long-lived-connections)的处理器为每个事件带上了 ID，客户端重连时通过 `Last-Event-ID` 发回最后收到的 ID。文章的 ID 是 UUIDv7，按时间排序，所以补发就是查询这个 ID 之后发布的文章。`publishedAfter` 是查询之后发布的文章的业务动作 `article.PublishedAfter`：
 
 ```go
 return rest.SSE(func(s *httpx.Stream) error {
@@ -256,4 +256,4 @@ func New(rdb rueidis.Client, channel string) *Backend
 
 ### NewCredentials
 
-见[服务端推送](../responses/sse.md#immediate-revocation)。
+见[服务端推送](../http/sse.md#immediate-revocation)。

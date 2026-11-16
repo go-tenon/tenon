@@ -84,7 +84,7 @@ func (a *PublishScheduled) Handle(ctx context.Context) error {
 释放锁独立于 `ctx`：请求或命令被取消后，`Do` 仍会释放锁。
 
 > [!TIP]
-> 按时触发的任务交给[调度器](scheduling.md)执行时，调度器已经保证每次触发只在一个实例上执行，任务里直接执行即可。锁适合调度器之外的场景，例如下面的重新生成站点地图。
+> 按时触发的任务交给[调度器](../background/scheduling.md)执行时，调度器已经保证每次触发只在一个实例上执行，任务里直接执行即可。锁适合调度器之外的场景，例如下面的重新生成站点地图。
 
 <a id="waiting-for-locks"></a>
 ## 等待锁
@@ -124,7 +124,7 @@ if err := lk.Refresh(ctx, time.Minute); err != nil {
 
 锁过期并被他人取得后，原持有者的 `Refresh` 和 `Release` 都返回 `lock.ErrNotHeld`，新的持有者照常持有。`Do` 在函数返回后释放锁，此时得到 `ErrNotHeld` 也会一并返回，提示任务超过了有效期。
 
-`locker.Held(ctx, name)` 只读取锁此刻是否被持有，适合在后台页面展示状态，例如[定时任务是否正在执行](scheduling.md#listing-tasks)。它的结果只反映查询的那一刻，判断能否执行仍用 `Acquire`。
+`locker.Held(ctx, name)` 只读取锁此刻是否被持有，适合在后台页面展示状态，例如[定时任务是否正在执行](../background/scheduling.md#listing-tasks)。它的结果只反映查询的那一刻，判断能否执行仍用 `Acquire`。
 
 <a id="redis-store"></a>
 ## Redis 存储

@@ -59,7 +59,7 @@ API 只用 [Bearer token](../security/api-tokens.md) 认证，所以 `CORS` 默�
 <a id="basic-auth"></a>
 ## HTTP Basic 认证
 
-[队列面板](../libraries/queue-monitoring.md#panel)、内部的[文档页](../responses/doc-pages.md)这类给运维和团队成员看的页面，不值得接入应用的账号体系，用 `httpx.BasicAuth` 保护：浏览器弹出登录框，之后的请求自动带上用户名和密码。
+[队列面板](../background/queue-monitoring.md#panel)、内部的[文档页](../web/doc-pages.md)这类给运维和团队成员看的页面，不值得接入应用的账号体系，用 `httpx.BasicAuth` 保护：浏览器弹出登录框，之后的请求自动带上用户名和密码。
 
 账号写在配置中，密码保存为[哈希](../security/hashing.md)，用 `hashing.Hasher` 生成和校验：
 
@@ -131,7 +131,7 @@ http:
 
 带这个请求头的请求，访问日志中有 `app` 字段，例如 `"app":"ios/1.4.2"`。提高最低版本之前，先按它统计还有多少用户在用旧版本。
 
-**这个请求头要从 App 的第一个版本就开始发送。** 没有带它的旧版本无法被拦截，只能等用户自己升级，见[客户端代码](../responses/clients.md#app-version)。
+**这个请求头要从 App 的第一个版本就开始发送。** 没有带它的旧版本无法被拦截，只能等用户自己升级，见[客户端代码](clients.md#app-version)。
 
 <a id="compression"></a>
 ## 响应压缩
@@ -148,10 +148,10 @@ router.Use(httpx.Compress())
 只有文本类响应会被压缩：`text/*`、JSON、JavaScript、XML、SVG 和 WebAssembly。图片、字体、PDF、压缩包等原样发送。以下响应也不压缩：
 
 - 小于 1 KiB 的响应；
-- 已经带 `Content-Encoding` 的响应，例如[界面组件](../responses/components.md)预先压缩的样式表和脚本；
+- 已经带 `Content-Encoding` 的响应，例如[界面组件](../web/components.md)预先压缩的样式表和脚本；
 - `Range` 请求的部分响应。
 
-[服务端推送](../responses/sse.md)和 [WebSocket](../libraries/realtime.md) 照常工作：`text/event-stream` 直接写出，每条事件立即送达；带 `Upgrade` 请求头的握手原样交给处理器。[静态资源](../responses/assets.md)的 `ETag` 保持不变，浏览器协商时照常得到 `304`。
+[服务端推送](sse.md)和 [WebSocket](../libraries/realtime.md) 照常工作：`text/event-stream` 直接写出，每条事件立即送达；带 `Upgrade` 请求头的握手原样交给处理器。[静态资源](../web/assets.md)的 `ETag` 保持不变，浏览器协商时照常得到 `304`。
 
 <a id="troubleshooting"></a>
 ## 常见问题

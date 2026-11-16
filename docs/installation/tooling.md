@@ -86,8 +86,8 @@ bun run dev   # 即 go tool tenon dev
 
 此外：
 
-- 修改了设计令牌 `theme/tokens.json` 时，重新生成前端的主题，见[设计令牌](../responses/theme.md)。
-- 项目中有服务端渲染的页面（`.templ` 文件）时，同时运行 templ 的生成和自动刷新，这时打开 <http://localhost:7331>，见[视图](../responses/views.md)。
+- 修改了设计令牌 `theme/tokens.json` 时，重新生成前端的主题，见[设计令牌](../frontend/theme.md)。
+- 项目中有服务端渲染的页面（`.templ` 文件）时，同时运行 templ 的生成和自动刷新，这时打开 <http://localhost:7331>，见[视图](../web/views.md)。
 
 启动前，`tenon dev` 会检查需要的命令（Go、Bun 等）是否已经安装，缺少时直接告诉你。
 
@@ -104,8 +104,8 @@ bun run generate   # 即 go tool tenon generate
 
 生成的内容：
 
-- 每个 API 的 TypeScript 客户端，在 `packages/client/src/<名称>` 中，见[客户端代码](../responses/clients.md#typescript)；
-- 在 [tenon.json](#configuration) 中要求了的 Go 客户端，见 [Go 客户端](../responses/go-client.md)；
+- 每个 API 的 TypeScript 客户端，在 `packages/client/src/<名称>` 中，见[客户端代码](../http/clients.md#typescript)；
+- 在 [tenon.json](#configuration) 中要求了的 Go 客户端，见 [Go 客户端](../http/go-client.md)；
 - 有设计令牌时，前端的主题包 `packages/theme`。
 
 `tenon dev` 每次重新编译成功后会自动运行它，所以平时不需要手动运行。
@@ -125,7 +125,7 @@ bun run build   # 即 go tool tenon build
 2. 在每个前端目录中运行 `bun run build`，结果写进各自的 `dist`。
 3. 编译 Go 程序：`go build -trimpath -o bin/api ./cmd/api`。`-trimpath` 去掉二进制中你电脑上的文件路径。
 
-`-o` 可以指定输出的文件；`GOOS`、`GOARCH` 等环境变量照常生效，例如在 Mac 上构建 Linux 的版本。部署见[部署](deployment.md)，Docker 镜像的写法见[构建与发布](../responses/spa.md#building)。
+`-o` 可以指定输出的文件；`GOOS`、`GOARCH` 等环境变量照常生效，例如在 Mac 上构建 Linux 的版本。部署见[部署](deployment.md)，Docker 镜像的写法见[构建与发布](../frontend/spa.md#building)。
 
 <a id="add-frontend"></a>
 ## tenon add frontend：再加一个前端
@@ -148,9 +148,9 @@ router.Handle("/admin/*", httpx.NewSPA(admin.Dist, httpx.SPAOptions{Base: "/admi
 
 | 模板 | 内容 |
 | --- | --- |
-| `default`（默认） | 一个最小的 React 前端，见[应用骨架](../responses/app-shell.md) |
-| `admin` | 用 antd 写的运营后台：登录页、侧栏、多标签、用户菜单，见[运营后台](../responses/admin.md) |
-| `console` | 用 shadcn 和 Tailwind 写的控制台，见 [shadcn registry 与控制台](../responses/registry.md) |
+| `default`（默认） | 一个最小的 React 前端，见[应用骨架](../frontend/app-shell.md) |
+| `admin` | 用 antd 写的运营后台：登录页、侧栏、多标签、用户菜单，见[运营后台](../frontend/admin.md) |
+| `console` | 用 shadcn 和 Tailwind 写的控制台，见 [shadcn registry 与控制台](../frontend/registry.md) |
 
 `--base` 可以指定其他的挂载路径，以 `/` 开头和结尾。`apps/admin` 必须还不存在。
 
@@ -161,7 +161,7 @@ router.Handle("/admin/*", httpx.NewSPA(admin.Dist, httpx.SPAOptions{Base: "/admi
 | `admin` | `side`（侧栏）、`top`（顶部导航）、`mix`（顶栏 + 侧栏）、`rail`（图标栏 + 二级面板）、`centered`（居中窄栏） |
 | `console` | `inset`（内嵌式侧栏）、`side`、`floating`（浮起的侧栏）、`top`、`mix`、`rail`、`centered` |
 
-拿不准用哪一种时不用纠结：两个模板都带一个“布局”页面，列出全部布局，点“使用”就能在浏览器中切换整个应用的布局，对照着选。选定之后在 `src/layouts.ts` 中把它放在第一位，只保留需要的布局，再删除这个页面，见[运营后台](../responses/admin.md#template)。
+拿不准用哪一种时不用纠结：两个模板都带一个“布局”页面，列出全部布局，点“使用”就能在浏览器中切换整个应用的布局，对照着选。选定之后在 `src/layouts.ts` 中把它放在第一位，只保留需要的布局，再删除这个页面，见[运营后台](../frontend/admin.md#template)。
 
 <a id="troubleshooting"></a>
 ## 常见问题
@@ -202,7 +202,7 @@ router.Handle("/admin/*", httpx.NewSPA(admin.Dist, httpx.SPAOptions{Base: "/admi
 }
 ```
 
-构建的结果在前端目录的 `dist` 中，由同一目录中的 `frontend.go` 打包进程序，见[单页应用](../responses/spa.md#embedding)。
+构建的结果在前端目录的 `dist` 中，由同一目录中的 `frontend.go` 打包进程序，见[单页应用](../frontend/spa.md#embedding)。
 
 **API** 是你在路由中用 `rest.New` 创建的每一个 API。每个 API 的 TypeScript 客户端生成到 `packages/client/src/<名称>`，名称默认是它的 `BasePath` 的最后一段：
 
@@ -230,7 +230,7 @@ router.Handle("/admin/*", httpx.NewSPA(admin.Dist, httpx.SPAOptions{Base: "/admi
 }
 ```
 
-生成的每个文件的内容见[客户端代码](../responses/clients.md#generating-types)。
+生成的每个文件的内容见[客户端代码](../http/clients.md#generating-types)。
 
 <a id="framework-packages"></a>
 ### 框架的前端包
@@ -280,7 +280,7 @@ Tenon 也提供了一些前端包，例如 `@go-tenon/client`（调用接口、�
 | `apis.<BasePath>.go` | 不生成 | 这个 API 的 Go 客户端的目录 |
 | `templ.proxyPort` | `7331` | templ 自动刷新代理的端口 |
 | `templ.static` | 不监视 | 文件变化时刷新浏览器的目录 |
-| `tailwind.input`、`tailwind.output` | 不使用 | Tailwind 的入口和生成的样式表，见[用 Tailwind 编写样式](../responses/assets.md#tailwind) |
+| `tailwind.input`、`tailwind.output` | 不使用 | Tailwind 的入口和生成的样式表，见[用 Tailwind 编写样式](../web/assets.md#tailwind) |
 | `tools` | 空 | 其他工具：`watch` 是开发时运行的命令，`build` 是停止后运行的命令 |
 
 例如开发时用 esbuild 打包公开页面的脚本：
@@ -309,7 +309,7 @@ root.AddCommand(httpcmd.Commands(func() chi.Routes { return routes(config.Defaul
 
 `routes` 就是 `serve` 也在用的那个函数。这些命令用默认配置和 `nil` 调用它，只读取构造出的路由，不连接数据库。
 
-**接收前端开发服务器的地址。** 开发时，`tenon dev` 把各前端的 Vite 地址写进 `.tenon/dev.yaml` 的 `dev_servers`，再用 `--config` 把它交给应用。应用的配置中有这个字段，挂载前端时按名称取出地址，见[单页应用的开发](../responses/spa.md#development)：
+**接收前端开发服务器的地址。** 开发时，`tenon dev` 把各前端的 Vite 地址写进 `.tenon/dev.yaml` 的 `dev_servers`，再用 `--config` 把它交给应用。应用的配置中有这个字段，挂载前端时按名称取出地址，见[单页应用的开发](../frontend/spa.md#development)：
 
 ```go
 type Config struct {

@@ -46,7 +46,7 @@ api.Resource(rest.Resource{
 
 | 字段 | 说明 |
 | --- | --- |
-| `List` | 列表接口：GET，没有路径参数，响应体有 `items` 数组（[`page.Offset`](responses.md#offset-pagination) 或 `page.Cursor`）。必须设置 |
+| `List` | 列表接口：GET，没有路径参数，响应体有 `items` 数组（[`page.Offset`](../http/responses.md#offset-pagination) 或 `page.Cursor`）。必须设置 |
 | `Get`、`Create`、`Update`、`Delete` | 详情、创建、修改、删除接口，没有的留空 |
 | `Columns` | 列表的列：列表项的字段。为空时是除对象和数组外的全部字段，按结构体中的顺序 |
 | `Search` | 关键词搜索的查询参数 |

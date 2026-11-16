@@ -2,7 +2,7 @@
 
 用户需要知道和自己有关的事：文章被发布了、被评论了、被邀请加入团队了。`notification` 包是站内通知的收件箱：每条通知是 `notifications` 表中的一行，属于某个租户中的某个主体，带有已读状态。
 
-`notification` 包只提供站内的收件箱，其他渠道已经有各自的包：[邮件](../libraries/mail.md)、[移动推送](push.md)、[队列](../libraries/queue.md)、[广播](../libraries/broadcasting.md)。一次通知发往哪些渠道，由业务动作显式写出来，读代码就能看到会发生什么。
+`notification` 包只提供站内的收件箱，其他渠道已经有各自的包：[邮件](../libraries/mail.md)、[移动推送](push.md)、[队列](../background/queue.md)、[广播](../libraries/broadcasting.md)。一次通知发往哪些渠道，由业务动作显式写出来，读代码就能看到会发生什么。
 
 阅读前需要了解：[数据库事务](../database/quick-start.md#transactions)；[发布框架迁移](../database/migrations.md#publishing-framework-migrations)。实时推送未读数一节用到了[广播](../libraries/broadcasting.md)。
 
@@ -151,7 +151,7 @@ func (h *Handlers) Read(ctx context.Context, in *ReadInput) (*struct{}, error) {
 <a id="mail"></a>
 ## 同时发送邮件
 
-要让作者同时收到邮件，在同一个事务中把邮件交给[队列](../libraries/queue.md#publishing-jobs)。邮件用作者自己的语言渲染，见[在 HTTP 之外使用](../general/localization.md#outside-http)：
+要让作者同时收到邮件，在同一个事务中把邮件交给[队列](../background/queue.md#publishing-jobs)。邮件用作者自己的语言渲染，见[在 HTTP 之外使用](../general/localization.md#outside-http)：
 
 ```go
 _, err = notification.Send(ctx, tx, n, author)
@@ -278,7 +278,7 @@ func (a *Send) Job(ctx context.Context, m Message) error {
 
 - 用户屏蔽 bot 后再发送会返回 403，这时删除绑定，推送随之停止。
 - 用 HTML 格式时，文案中的文章标题等内容要先经过 `html.EscapeString`，否则一个 `<` 就会让消息被拒绝。
-- Telegram 限制同一个聊天每秒约 1 条、全部聊天每秒约 30 条，超出时返回 429 和 `retry_after`，由 [`queue.RetryAfter`](../libraries/queue.md#failures-and-retries) 按它的要求等待。给大量用户群发时，再用[限流](../libraries/rate-limiting.md)控制发送速度。
+- Telegram 限制同一个聊天每秒约 1 条、全部聊天每秒约 30 条，超出时返回 429 和 `retry_after`，由 [`queue.RetryAfter`](../background/queue.md#failures-and-retries) 按它的要求等待。给大量用户群发时，再用[限流](../libraries/rate-limiting.md)控制发送速度。
 - `a.api` 平时是 `https://api.telegram.org`，测试时换成 `httptest.Server` 的地址。
 - 任务至少执行一次，极少数情况下用户会收到两条相同的消息。
 
@@ -312,7 +312,7 @@ func inboxTopic(r notification.Recipient) string {
 
 主题只能由字母、数字和 `_ - : .` 组成，租户和用户 ID 中有其他字符时，先做转换。
 
-[事件流接口](../responses/sse.md#long-lived-connections)订阅当前用户的主题。角标是状态：连接（包括断线重连）时先推送一次当前的未读数，之后每收到一条广播就重新查询，因此角标总是最新的：
+[事件流接口](../http/sse.md#long-lived-connections)订阅当前用户的主题。角标是状态：连接（包括断线重连）时先推送一次当前的未读数，之后每收到一条广播就重新查询，因此角标总是最新的：
 
 ```go
 type Badge struct {
@@ -346,12 +346,12 @@ func (h *Handlers) Inbox(ctx context.Context, _ *struct{}) (*huma.StreamResponse
 }
 ```
 
-用 `rest.RegisterSSE(api, op, map[string]any{"badge": Badge{}}, h.Inbox)` 注册。前端收到 `badge` 事件就更新导航栏的角标，见[客户端代码的事件流](../responses/clients.md#event-streams)；`@go-tenon/shell` 的 [`useNotifications`](../responses/app-shell-features.md#notifications) 读取它并在断开后重连，运营后台的 [`NotificationBell`](../responses/admin.md#features) 是现成的铃铛。标记已读之后同样发布一条广播，用户打开的其他标签页也会随之更新。
+用 `rest.RegisterSSE(api, op, map[string]any{"badge": Badge{}}, h.Inbox)` 注册。前端收到 `badge` 事件就更新导航栏的角标，见[客户端代码的事件流](../http/clients.md#event-streams)；`@go-tenon/shell` 的 [`useNotifications`](../frontend/app-shell-features.md#notifications) 读取它并在断开后重连，运营后台的 [`NotificationBell`](../frontend/admin.md#features) 是现成的铃铛。标记已读之后同样发布一条广播，用户打开的其他标签页也会随之更新。
 
 <a id="retention"></a>
 ## 保留期限
 
-`notification.Cleanup` 返回删除保留期以前的通知（无论是否已读）的清理函数，交给[定时任务](../libraries/scheduling.md#framework-cleanups)：
+`notification.Cleanup` 返回删除保留期以前的通知（无论是否已读）的清理函数，交给[定时任务](../background/scheduling.md#framework-cleanups)：
 
 ```go
 sched.Add("notifications:cleanup", "0 4 * * *", schedule.Cleanup(notification.Cleanup(a.db, 90*24*time.Hour), 1000))
@@ -408,7 +408,7 @@ func Migrations() fs.FS
 | `List`、`Get` | 读取收件人自己的通知，读不到别人的 |
 | `UnreadCount` | 未读数 |
 | `MarkRead`、`MarkAllRead`、`Delete` | 只作用于收件人自己的通知 |
-| `Cleanup` | 删除早于 `keep` 的通知，交给[定时任务](../libraries/scheduling.md#framework-cleanups) |
+| `Cleanup` | 删除早于 `keep` 的通知，交给[定时任务](../background/scheduling.md#framework-cleanups) |
 | `RecipientOf` | 主体所在的租户和主体，就是收件人 |
 
 `Notification` 是 `notifications` 表的 Bun 模型，字段 `Event`、`Data`、`ReadAt`、`CreatedAt`；不存在或不属于收件人时返回 `ErrNotFound`。
