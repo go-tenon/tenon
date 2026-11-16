@@ -4,13 +4,14 @@
 
 `ratelimit` 包与传输方式无关：同一个限流器，既可以作为 HTTP 中间件按请求限流，也可以在处理器、命令或任务中直接调用。
 
-阅读前需要了解：[中间件](../http/middleware.md)；多个实例共享计数时还需要 [Redis](redis.md)。
+阅读前需要了解：[中间件](../http/middleware.md)；多个实例共享计数时还需要[迁移](../database/migrations.md)。
 
 - [示例用法](#example-usage)
 - [限流器](#limiters)
 - [限制请求频率](#http-middleware)
     - [限流的 key](#rate-limit-key)
 - [在处理器中限流](#in-handlers)
+- [PostgreSQL 限流器](#postgres-limiter)
 - [Redis 限流器](#redis-limiter)
 - [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
@@ -21,7 +22,7 @@
 下面限制同一个邮箱每分钟最多尝试登录 5 次：
 
 ```go
-logins := redislimit.New(rdb, "app:login", ratelimit.Config{Rate: 5, Interval: time.Minute, Burst: 5})
+logins := pglimit.New(db, "login", ratelimit.Config{Rate: 5, Interval: time.Minute, Burst: 5})
 
 if err := logins.Allow(ctx, email); err != nil {
     return err // ratelimit.ErrExceeded：响应 429，带 Retry-After
@@ -30,10 +31,10 @@ if err := logins.Allow(ctx, email); err != nil {
 
 超出限制时，`Allow` 返回 `ratelimit.ErrExceeded`，接口照常返回它，客户端收到 `429` 和建议的等待时间。
 
-也可以把限流器作为中间件，按客户端地址限制全部请求：
+也可以把限流器作为中间件，按客户端地址限制全部请求。每个请求都要经过它，用进程内的限流器：
 
 ```go
-router.Use(httpx.RateLimit(redislimit.New(rdb, "app:http", cfg.HTTP.RateLimit), httpx.KeyByIP))
+router.Use(httpx.RateLimit(ratelimit.NewMemory(cfg.HTTP.RateLimit), httpx.KeyByIP))
 ```
 
 <a id="limiters"></a>
@@ -61,14 +62,15 @@ ratelimit.Config{
 
 上面的配置表示：每个 key 平均每秒最多 10 次，短时间内最多连续 20 次。被拒绝的调用不消耗配额，按返回的等待时间重试即可。
 
-框架提供两种实现：
+框架提供三种实现：
 
 | 实现 | 计数保存在 | 适合 |
 | --- | --- | --- |
 | `ratelimit.NewMemory(cfg)` | 进程内存，每个实例分别计数 | 每个请求都要经过的全局限流 |
-| `redislimit.New(rdb, name, cfg)` | Redis，多个实例共享 | 登录、验证码等需要多实例共享计数的操作，以及全局限流 |
+| `pglimit.New(db, name, cfg)` | PostgreSQL，多个实例共享 | 登录、验证码、发邮件等需要多实例共享计数的低频操作 |
+| `redislimit.New(rdb, name, cfg)` | Redis，多个实例共享 | 同上，以及多个实例共享的全局限流 |
 
-两者的算法相同，换实现时限流结果一致。
+它们的算法相同，换实现时限流结果一致。
 
 <a id="http-middleware"></a>
 ## 限制请求频率
@@ -134,15 +136,43 @@ func (h *Handlers) Unlock(w http.ResponseWriter, r *http.Request) error {
 入口中创建限流器并传给登录处理器：
 
 ```go
-attempts := redislimit.New(rdb, "app:passcode", ratelimit.Config{Rate: 5, Interval: time.Minute, Burst: 5})
+attempts := pglimit.New(db, "passcode", ratelimit.Config{Rate: 5, Interval: time.Minute, Burst: 5})
 ```
 
-校验口令需要多个实例共享计数，否则攻击者把请求分散到各个实例，就能得到成倍的尝试次数，所以这里使用 [Redis 限流器](#redis-limiter)。
+校验口令需要多个实例共享计数，否则攻击者把请求分散到各个实例，就能得到成倍的尝试次数，所以这里使用 [PostgreSQL 限流器](#postgres-limiter)。
+
+<a id="postgres-limiter"></a>
+## PostgreSQL 限流器
+
+多个实例共享配额时使用 PostgreSQL 限流器。计数保存在 `rate_limits` 表中，使用前先[发布](../database/migrations.md#publishing-framework-migrations)它的迁移：
+
+```go
+migrate.Source{Name: "ratelimit", FS: pglimit.Migrations()}
+```
+
+`pglimit.New` 接收应用的数据库连接池，第二个参数 `name` 区分不同的限流器：同名的限流器共享配额，所以每个 `name` 应该只对应一种配额。
+
+```go
+import "github.com/go-tenon/tenon/ratelimit/pglimit"
+
+attempts := pglimit.New(db, "passcode", ratelimit.Config{Rate: 5, Interval: time.Minute, Burst: 5})
+```
+
+每个 key 是表中的一行，主键是 `(name, key)`，只保存一个时间（理论到达时间）。每次 `Allow` 是一条语句：同一个 key 的并发调用由行锁排队，不会多放行；时间按应用服务器的时钟计算，各实例的时钟需要同步。
+
+每次 `Allow` 都写一次数据库，所以只用于登录、验证码、发邮件这类低频操作：每次登录尝试本来就要查询账号、校验密码，多一次写入可以忽略。每个请求都要经过的全局限流用内存限流器。
+
+配额回满的 key 与不存在的 key 等价，它们的行用 `Cleanup` 定时删除。`Cleanup` 删除的是表中所有限流器的行：
+
+```go
+sched.Add("rate-limits:cleanup", "@hourly", schedule.Cleanup(attempts.Cleanup, 1000),
+    schedule.Describe("删除配额已回满的限流计数"))
+```
 
 <a id="redis-limiter"></a>
 ## Redis 限流器
 
-多个实例共享配额时使用 Redis 限流器。`redislimit.New` 接收[入口中创建的客户端](redis.md#connecting) `rdb`，第二个参数 `name` 区分不同的限流器：同名的限流器共享配额，所以每个 `name` 应该只对应一种配额。
+也可以用 Redis 共享配额。`redislimit.New` 接收[入口中创建的客户端](redis.md#connecting) `rdb`，第二个参数 `name` 区分不同的限流器：同名的限流器共享配额，所以每个 `name` 应该只对应一种配额。
 
 ```go
 import "github.com/go-tenon/tenon/ratelimit/redislimit"
@@ -169,7 +199,7 @@ router.Use(httpx.RateLimit(redislimit.New(rdb, "app:http", cfg.HTTP.RateLimit), 
 
 **部署了几个实例后，限流变宽松了**
 
-内存限流器的计数只在本进程中，请求分散到几个实例，配额也成倍增加。需要共享计数时用 [Redis 限流器](#redis-limiter)。
+内存限流器的计数只在本进程中，请求分散到几个实例，配额也成倍增加。需要共享计数时用 [PostgreSQL 限流器](#postgres-limiter)。
 
 **Redis 不可用时所有请求都返回 503**
 
@@ -211,6 +241,22 @@ func NewMemory(cfg Config) *Memory
 ```
 
 进程内的限流器，计数不在实例之间共享。
+
+### pglimit.New
+
+```go
+func New(db bun.IDB, name string, cfg ratelimit.Config) *Limiter
+func Migrations() fs.FS
+func (l *Limiter) Cleanup(ctx context.Context, limit int) (int, error)
+```
+
+- **参数**
+    - `db`：数据库连接池，必须已执行 `Migrations` 中的迁移
+    - `name`：限流器的名称，同名的限流器共享配额，例如 `login`
+    - `cfg`：配额，见上面的 `Config`
+- **返回**：限流器
+
+包 `github.com/go-tenon/tenon/ratelimit/pglimit`。计数保存在 PostgreSQL 中，所有实例共享。`Cleanup` 删除最多 `limit` 个配额已经回满的 key（所有限流器的），返回删除的个数。
 
 ### redislimit.New
 

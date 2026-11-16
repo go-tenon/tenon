@@ -2,7 +2,6 @@ package ratelimit_test
 
 import (
 	"context"
-	"crypto/rand"
 	"testing"
 	"time"
 
@@ -12,9 +11,6 @@ import (
 	"github.com/go-tenon/tenon/ratelimit"
 	"github.com/go-tenon/tenon/ratelimit/redislimit"
 )
-
-// 每个限流器使用随机 name，测试之间的键相互独立，Redis 中的数据可以保留。
-func testName() string { return "test:ratelimit:" + rand.Text() }
 
 func TestRedis(t *testing.T) {
 	for _, srv := range redistest.Servers {

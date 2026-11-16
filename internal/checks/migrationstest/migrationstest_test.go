@@ -20,6 +20,7 @@ import (
 	"github.com/go-tenon/tenon/database/migrate"
 	"github.com/go-tenon/tenon/feature"
 	"github.com/go-tenon/tenon/filesystem"
+	"github.com/go-tenon/tenon/lock/pglock"
 	"github.com/go-tenon/tenon/login"
 	"github.com/go-tenon/tenon/login/passkey"
 	"github.com/go-tenon/tenon/notification"
@@ -27,6 +28,7 @@ import (
 	"github.com/go-tenon/tenon/operation"
 	"github.com/go-tenon/tenon/push"
 	"github.com/go-tenon/tenon/queue"
+	"github.com/go-tenon/tenon/ratelimit/pglimit"
 	"github.com/go-tenon/tenon/search"
 	"github.com/go-tenon/tenon/settings"
 	"github.com/go-tenon/tenon/sheet/exports"
@@ -38,25 +40,27 @@ import (
 // sources 是框架中带迁移的包：键是包相对模块根的目录，Name 是文档中发布它时使用的来源名。
 // 新增带迁移的包时在这里登记，TestEveryPackageIsListed 检查没有遗漏。
 var sources = map[string]migrate.Source{
-	"activity":      {Name: "activity", FS: activity.Migrations()},
-	"ai/chat":       {Name: "ai", FS: chat.Migrations()},
-	"apitoken":      {Name: "apitoken", FS: apitoken.Migrations()},
-	"authz":         {Name: "authz", FS: authz.Migrations()},
-	"sheet/exports": {Name: "exports", FS: exports.Migrations()},
-	"feature":       {Name: "feature", FS: feature.Migrations()},
-	"filesystem":    {Name: "filesystem", FS: filesystem.Migrations()},
-	"sheet/imports": {Name: "imports", FS: imports.Migrations()},
-	"login":         {Name: "login", FS: login.Migrations()},
-	"login/passkey": {Name: "passkey", FS: passkey.Migrations()},
-	"notification":  {Name: "notification", FS: notification.Migrations()},
-	"oauthserver":   {Name: "oauthserver", FS: oauthserver.Migrations()},
-	"operation":     {Name: "operation", FS: operation.Migrations()},
-	"push":          {Name: "push", FS: push.Migrations()},
-	"queue":         {Name: "queue", FS: queue.Migrations()},
-	"search":        {Name: "search", FS: search.Migrations()},
-	"vector":        {Name: "vector", FS: vector.Migrations()},
-	"settings":      {Name: "settings", FS: settings.Migrations()},
-	"webhook":       {Name: "webhook", FS: webhook.Migrations()},
+	"activity":          {Name: "activity", FS: activity.Migrations()},
+	"ai/chat":           {Name: "ai", FS: chat.Migrations()},
+	"apitoken":          {Name: "apitoken", FS: apitoken.Migrations()},
+	"authz":             {Name: "authz", FS: authz.Migrations()},
+	"sheet/exports":     {Name: "exports", FS: exports.Migrations()},
+	"feature":           {Name: "feature", FS: feature.Migrations()},
+	"filesystem":        {Name: "filesystem", FS: filesystem.Migrations()},
+	"sheet/imports":     {Name: "imports", FS: imports.Migrations()},
+	"lock/pglock":       {Name: "lock", FS: pglock.Migrations()},
+	"login":             {Name: "login", FS: login.Migrations()},
+	"login/passkey":     {Name: "passkey", FS: passkey.Migrations()},
+	"notification":      {Name: "notification", FS: notification.Migrations()},
+	"oauthserver":       {Name: "oauthserver", FS: oauthserver.Migrations()},
+	"operation":         {Name: "operation", FS: operation.Migrations()},
+	"push":              {Name: "push", FS: push.Migrations()},
+	"queue":             {Name: "queue", FS: queue.Migrations()},
+	"ratelimit/pglimit": {Name: "ratelimit", FS: pglimit.Migrations()},
+	"search":            {Name: "search", FS: search.Migrations()},
+	"vector":            {Name: "vector", FS: vector.Migrations()},
+	"settings":          {Name: "settings", FS: settings.Migrations()},
+	"webhook":           {Name: "webhook", FS: webhook.Migrations()},
 }
 
 // TestEveryPackageIsListed 确保仓库中每个 migrations 目录都登记在 sources 中。

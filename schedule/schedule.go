@@ -81,7 +81,7 @@ func Timeout(d time.Duration) TaskOption {
 // SchedulerOption 调整 New 创建的调度器。
 type SchedulerOption func(*Scheduler)
 
-// New 创建调度器。locker 用于多实例去重和防止重叠，所有实例共用同一个 Redis 锁存储（lock/redislock）；
+// New 创建调度器。locker 用于多实例去重和防止重叠，所有实例共用同一个锁存储，例如 lock/pglock；
 // 测试中可以使用 locktest.NewStore。logger 为 nil 时使用 slog.Default()。
 // locker 为 nil 或 cfg 不合法时 panic。
 func New(locker *lock.Locker, cfg Config, logger *slog.Logger, opts ...SchedulerOption) *Scheduler {

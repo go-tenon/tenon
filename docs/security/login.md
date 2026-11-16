@@ -33,8 +33,8 @@ users := login.New(db, login.Options{
     Hasher:   hashing.New(cfg.Hashing),
     Crypt:    crypt.New(cfg.Crypt),
     Send:     sendCode, // 发送验证码：邮件或短信
-    Attempts: redislimit.New(rdb, "app:login:attempts", every15),
-    Sends:    redislimit.New(rdb, "app:login:sends", every15),
+    Attempts: pglimit.New(db, "login:attempts", every15),
+    Sends:    pglimit.New(db, "login:sends", every15),
 })
 
 out, err := users.Password(ctx, login.Email(email), password)
@@ -55,7 +55,7 @@ plain, err := tokens.Login(ctx, out.Subject, device)
 `login` 没有单独的配置段；它吃的是数据库、[`Hasher`](hashing.md)、[`Crypt`](encryption.md) 和限流器这些已经装配好的依赖。串起来看：
 
 1. 发布迁移，建好 `auth_*` 表
-2. 启动时 `Load` 校验哈希、加密、Redis 等依赖的配置
+2. 启动时 `Load` 校验哈希、加密等依赖的配置
 3. 在入口创建一次 `login.Realm`（每套账号体系各一个）
 4. 登录 / 注册接口调用 `Realm` 的方法；成功后再交给 [API 令牌](api-tokens.md) 签发凭据
 
@@ -78,8 +78,8 @@ users := login.New(a.db, login.Options{
     Crypt:    a.crypt,
     Send:     sendCode(mailer, emails),
     Resolve:  user.Resolve,
-    Attempts: redislimit.New(a.rdb, "app:login:user:attempts", every15),
-    Sends:    redislimit.New(a.rdb, "app:login:user:sends", every15),
+    Attempts: pglimit.New(a.db, "login:user:attempts", every15),
+    Sends:    pglimit.New(a.db, "login:user:sends", every15),
 })
 ```
 
@@ -259,7 +259,7 @@ err := database.RunInTx(ctx, a.db, nil, func(ctx context.Context, tx database.Tx
 | 向同一个标识发送验证码，`Options.Sends` | 15 分钟 5 次 | `ratelimit.ErrExceeded`，`429` |
 | 同一个验证码的尝试次数，`Options.CodeAttempts` | 默认 3 次 | 验证码作废，`login.ErrInvalidCode` |
 
-`Attempts` 和 `Sends` 用 [`redislimit`](../libraries/rate-limiting.md#redis-limiter)，多个实例共享计数；每套账号用各自的名字。按 IP 的限流不在 `login` 中，需要时在登录接口上安装 [`httpx.RateLimit`](../libraries/rate-limiting.md#http-middleware)。
+`Attempts` 和 `Sends` 用 [`pglimit`](../libraries/rate-limiting.md#postgres-limiter)，多个实例共享计数，记得发布它的迁移、定时清理回满的计数；每套账号用各自的名字。按 IP 的限流不在 `login` 中，需要时在登录接口上安装 [`httpx.RateLimit`](../libraries/rate-limiting.md#http-middleware)。
 
 为了保护“哪些邮箱注册过”这一信息：密码登录对“邮箱不存在”和“密码错误”返回同一个错误，耗时相同；找回密码和不开放注册时的验证码不发给未注册的邮箱，但同样返回请求 ID。验证码在库中只保存由应用密钥派生的 HMAC，数据库泄露时验证码仍然安全；完成凭证只保存 SHA-256。
 

@@ -88,7 +88,7 @@ sched.Add("reports:daily", "0 3 * * *", reports.Generate, schedule.In(shanghai))
 <a id="running-the-scheduler"></a>
 ## 运行调度器
 
-调度器是进程的一个运行部分（见[多个运行部分](../concepts/dependencies.md#running-parts)）。在入口的 `bootstrap` 包中，`a.locker` 是入口创建的[原子锁](../libraries/locks.md#redis-store)。注册任务单独写在 `tasks` 中，调度器运行它，[查看任务](#listing-tasks)的命令和后台页面也用它，任务只定义一次：
+调度器是进程的一个运行部分（见[多个运行部分](../concepts/dependencies.md#running-parts)）。在入口的 `bootstrap` 包中，`a.locker` 是入口创建的[原子锁](../libraries/locks.md#postgres-store)。注册任务单独写在 `tasks` 中，调度器运行它，[查看任务](#listing-tasks)的命令和后台页面也用它，任务只定义一次：
 
 ```go
 // tasks 创建调度器并注册全部定时任务。
@@ -127,7 +127,7 @@ root.AddCommand(command.Run("schedule", "执行定时任务", bootstrap.Schedule
 
 部署多个实例时，每个实例上的调度器都会在同一时刻触发同一个任务。调度器在执行之前取得一把锁，锁名包含任务名和触发时刻，例如 `schedule:queue:prune-failed:1794366000`，只有取得锁的实例执行这一次触发。锁一分钟后自然过期，所以各实例的时钟偏差小于一分钟时，每次触发只执行一次。
 
-所有进程共用同一个 [Redis 锁存储](../libraries/locks.md#redis-store)，去重就覆盖全部实例。单机部署也一样：[不停机升级](../installation/operations.md#upgrade-overlap)时新旧两个调度器会同时运行。过期的锁由 Redis 自动删除。
+所有进程共用同一个[锁存储](../libraries/locks.md#postgres-store)，去重就覆盖全部实例。单机部署也一样：[不停机升级](../installation/operations.md#upgrade-overlap)时新旧两个调度器会同时运行。每次触发留下一行过期的锁，用 `pglock` 的 `Cleanup` 定时删除，见 [PostgreSQL 存储](../libraries/locks.md#postgres-store)。
 
 只想在每个实例上各执行一次的任务，例如清理本机的临时目录，使用 `schedule.EveryInstance()`：
 
@@ -287,6 +287,8 @@ article.PublishScheduledJob.Handle(w, func(ctx context.Context, _ struct{}) erro
 | --- | --- | --- |
 | [API 令牌](../security/api-tokens.md#cleanup) | `apitoken.Store` 的 `Cleanup` | 每小时 |
 | [登录验证码](../security/login.md#cleanup) | 每套账号的 `login.Realm` 的 `Cleanup` | 每小时 |
+| [原子锁](../libraries/locks.md#postgres-store) | `pglock.New(db)` 的 `Cleanup` | 每小时 |
+| [限流计数](../libraries/rate-limiting.md#postgres-limiter) | 任意一个 `pglimit.New(…)` 的 `Cleanup`（删除所有限流器的） | 每小时 |
 | [未绑定的 passkey](../security/login-security.md#passkeys) | `passkey.Store` 的 `Cleanup` | 每天 |
 | [文件](../libraries/filesystem.md#cleanup) | 文件服务的 `Cleanup` | 每 5 分钟 |
 | [操作日志](../features/activity.md#retention) | `activity.Cleanup(db, 保留期)` | 每天 |
@@ -298,7 +300,7 @@ article.PublishScheduledJob.Handle(w, func(ctx context.Context, _ struct{}) erro
 | [Webhook 投递记录](../features/webhooks.md#retention) | `webhook.Cleanup(db, 保留期)` | 每天 |
 | [失败任务](queue-monitoring.md#failed-jobs) | `queue.NewFailedJobs(db).Cleanup(保留期)` | 每天 |
 
-锁和限流保存在 Redis 中，过期的键由 Redis 自动删除；在线成员保存在 NATS 中，过期的记录由 NATS 删除。
+在线成员保存在 NATS 中，过期的记录由 NATS 自动删除。
 
 <a id="testing"></a>
 ## 测试
@@ -339,7 +341,7 @@ func TestDailyReport(t *testing.T) {
 
 **部署了几个实例，同一次触发执行了多次**
 
-各实例没有共用同一个 Redis 锁存储，或者时钟偏差超过了一分钟，见[多个实例](#multiple-instances)。
+各实例没有共用同一个锁存储，或者时钟偏差超过了一分钟，见[多个实例](#multiple-instances)。
 
 **启动时 panic：`schedule: invalid cron expression`**
 

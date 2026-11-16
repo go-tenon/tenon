@@ -2,6 +2,7 @@ package ratelimit_test
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"testing"
 	"time"
@@ -9,6 +10,9 @@ import (
 	"github.com/go-tenon/tenon/errorx"
 	"github.com/go-tenon/tenon/ratelimit"
 )
+
+// testName 返回随机的限流器名字，测试之间的配额相互独立，共用的存储中的数据可以保留。
+func testName() string { return "test:ratelimit:" + rand.Text() }
 
 // testLimiter 检查任意 Limiter 实现的共同行为。newLimiter 以 cfg 创建限流器。
 func testLimiter(t *testing.T, newLimiter func(ratelimit.Config) ratelimit.Limiter) {

@@ -6,7 +6,7 @@
 
 `lock` 包提供的锁都有过期时间：取得锁之后，在有效期内独占它；如果持有者在执行中崩溃，锁到期后会自动失效。
 
-阅读前需要了解：[Redis](redis.md)；[依赖装配](../concepts/dependencies.md)。
+阅读前需要了解：[迁移](../database/migrations.md)；[依赖装配](../concepts/dependencies.md)。
 
 > [!NOTE]
 > 锁只负责“谁来执行”。如果你要解决的是并发修改同一行数据，请优先使用带条件的更新或 `SELECT ... FOR UPDATE`，由数据库保证一致。
@@ -16,6 +16,7 @@
 - [只让一个实例执行](#running-once)
 - [等待锁](#waiting-for-locks)
 - [锁的有效期](#lock-ttl)
+- [PostgreSQL 存储](#postgres-store)
 - [Redis 存储](#redis-store)
 - [其他存储](#other-stores)
 - [测试](#testing)
@@ -28,7 +29,7 @@
 下面的代码保证每天的报表只由一个实例生成：
 
 ```go
-locker := lock.New(redislock.New(rdb))
+locker := lock.New(pglock.New(db))
 
 err := locker.Do(ctx, "reports:daily", time.Minute, func(ctx context.Context) error {
     return buildDailyReport(ctx) // 同一时刻只有一个实例在执行
@@ -48,14 +49,14 @@ if errors.Is(err, lock.ErrNotAcquired) {
 ```go
 import (
     "github.com/go-tenon/tenon/lock"
-    "github.com/go-tenon/tenon/lock/redislock"
+    "github.com/go-tenon/tenon/lock/pglock"
 )
 
-locker := lock.New(redislock.New(rdb))
+locker := lock.New(pglock.New(db))
 publishScheduled := article.NewPublishScheduled(db, locker)
 ```
 
-`lock.New` 接收锁存储，生产环境使用 [Redis 存储](#redis-store)，`rdb` 是[入口中创建的客户端](redis.md#connecting)。所有进程共用同一个存储才能互斥，单机部署也是如此：[不停机升级](../installation/operations.md#upgrade-overlap)时新旧进程会同时运行。
+`lock.New` 接收锁存储，生产环境使用 [PostgreSQL 存储](#postgres-store)，`db` 是应用的数据库连接池。所有进程共用同一个存储才能互斥，单机部署也是如此：[不停机升级](../installation/operations.md#upgrade-overlap)时新旧进程会同时运行。
 
 <a id="running-once"></a>
 ## 只让一个实例执行
@@ -126,8 +127,31 @@ if err := lk.Refresh(ctx, time.Minute); err != nil {
 
 `locker.Held(ctx, name)` 只读取锁此刻是否被持有，适合在后台页面展示状态，例如[定时任务是否正在执行](../background/scheduling.md#listing-tasks)。它的结果只反映查询的那一刻，判断能否执行仍用 `Acquire`。
 
+<a id="postgres-store"></a>
+## PostgreSQL 存储
+
+`pglock` 把每把锁保存为 `locks` 表的一行：锁名、持有者和过期时间。使用前先[发布](../database/migrations.md#publishing-framework-migrations)它的迁移：
+
+```go
+migrate.Source{Name: "lock", FS: pglock.Migrations()}
+```
+
+- **每个操作是一条语句。** 取得锁是插入，已有同名的锁时只接管已经过期的；续期和释放带着持有者的条件。并发取得同一把锁时只有一方成功。
+- **过期按应用服务器的时钟计算**，各实例的时钟需要同步，偏差要远小于锁的有效期。
+- **过期的行等同于不存在**，下一次取得锁时直接接管。锁名不重复使用时（例如[定时任务](../background/scheduling.md#multiple-instances)的锁名带有触发时刻），过期的行会留下来，用 `Cleanup` 定时删除：
+
+```go
+locks := pglock.New(db)
+sched.Add("locks:cleanup", "@hourly", schedule.Cleanup(locks.Cleanup, 1000),
+    schedule.Describe("删除过期的锁"))
+```
+
+锁的读写都很少：定时任务每次触发取一次锁，长任务每隔一段时间续期一次。依赖锁的功能（定时任务、AI 助手的多实例协作）本来就依赖数据库，数据库不可用时它们也无法工作，锁放在数据库中不会增加新的故障。
+
 <a id="redis-store"></a>
 ## Redis 存储
+
+也可以用 Redis 保存锁：`lock.New(redislock.New(rdb))`，`rdb` 是[入口中创建的 Redis 客户端](redis.md#connecting)。
 
 每把锁是一个 Redis 键：键名就是锁名，值是持有者标识，键的过期时间就是锁的有效期。过期由 Redis 计算，与各实例的时钟无关；过期的键由 Redis 自动删除。多个应用共用一个 Redis 时，在锁名前加上应用的命名空间，例如 `app:articles:publish-scheduled`。Redis 必须配置 `noeviction`，锁才能在内存紧张时保留下来，见 [Redis](redis.md)。
 
@@ -147,7 +171,7 @@ type Store interface {
 }
 ```
 
-实现时可以参考 [`lock/redislock`](../../lock/redislock/redislock.go)：`Refresh` 和 `Release` 需要先比较 `owner` 再修改，两步必须在一个原子操作中完成。`locktest.TestStore(t, newStore)` 检查实现是否符合这些约定，框架自己的存储也用它测试。
+实现时可以参考 [`lock/pglock`](../../lock/pglock/pglock.go)：`Refresh` 和 `Release` 需要先比较 `owner` 再修改，两步必须在一个原子操作中完成。`locktest.TestStore(t, newStore)` 检查实现是否符合这些约定，框架自己的存储也用它测试。
 
 <a id="testing"></a>
 ## 测试
@@ -160,7 +184,7 @@ import "github.com/go-tenon/tenon/lock/locktest"
 locker := lock.New(locktest.NewStore())
 ```
 
-它只用于测试。生产环境中同时运行的进程，包括不停机升级时的新旧进程，必须共用 Redis 存储。
+它只用于测试。生产环境中同时运行的进程，包括不停机升级时的新旧进程，必须共用同一个存储，例如 [PostgreSQL 存储](#postgres-store)。
 
 <a id="troubleshooting"></a>
 ## 常见问题
@@ -171,11 +195,15 @@ locker := lock.New(locktest.NewStore())
 
 **部署了一个实例，任务仍然执行了两次**
 
-[不停机升级](../installation/operations.md#upgrade-overlap)时新旧进程会同时运行。用 Redis 存储，让所有进程共用同一个锁。
+[不停机升级](../installation/operations.md#upgrade-overlap)时新旧进程会同时运行。用 PostgreSQL 存储，让所有进程共用同一个锁。
+
+**`locks` 表越来越大**
+
+锁名带有时间等不重复的部分时，每个锁留下一行。定时执行 `Cleanup`，见 [PostgreSQL 存储](#postgres-store)。
 
 **锁偶尔失效，两个实例同时执行**
 
-Redis 没有配置 `noeviction`，内存紧张时锁被淘汰了；或者使用哨兵、集群时主节点故障切换丢了锁。对互斥要求严格的操作，用数据库的 `SELECT ... FOR UPDATE`，见 [Redis 存储](#redis-store)。
+任务的执行时间超过了锁的有效期，锁过期后被别人取得。调大 `ttl` 或定期续期，见[锁的有效期](#lock-ttl)。使用 Redis 存储时，还可能是没有配置 `noeviction`，或者主节点故障切换丢了锁。
 
 <a id="api-reference"></a>
 ## API 参考
@@ -241,4 +269,14 @@ type Store interface {
 }
 ```
 
-每个方法都必须是原子的。`redislock.New(rdb rueidis.Client)` 是 Redis 实现，`locktest` 提供测试用的内存存储和契约测试，见[其他存储](#other-stores)。
+每个方法都必须是原子的。`pglock.New(db bun.IDB)` 是 PostgreSQL 实现，`redislock.New(rdb rueidis.Client)` 是 Redis 实现，`locktest` 提供测试用的内存存储和契约测试，见[其他存储](#other-stores)。
+
+### pglock
+
+```go
+func New(db bun.IDB) *Store
+func Migrations() fs.FS
+func (s *Store) Cleanup(ctx context.Context, limit int) (int, error)
+```
+
+包 `github.com/go-tenon/tenon/lock/pglock`。`db` 为 `nil` 时 panic。`Cleanup` 删除最多 `limit` 个已经过期的锁，返回删除的个数。

@@ -1,6 +1,6 @@
 # NATS
 
-NATS 在 Tenon 中负责**消息的传递**：[队列](../background/queue.md)的任务保存在 JetStream 中；[广播](broadcasting.md)经由 NATS 的发布订阅把消息送到每个实例；[实时频道](realtime.md)的在线成员保存在 JetStream 的键值存储（KV）中。锁和限流这类需要原子更新的协调数据在 [Redis](redis.md) 中。
+NATS 在 Tenon 中负责**消息的传递**：[队列](../background/queue.md)的任务保存在 JetStream 中；[广播](broadcasting.md)经由 NATS 的发布订阅把消息送到每个实例；[实时频道](realtime.md)的在线成员保存在 JetStream 的键值存储（KV）中。锁和限流这类低频的协调数据在 PostgreSQL 中，见[原子锁](locks.md#postgres-store)和[限流](rate-limiting.md#postgres-limiter)。
 
 Tenon 不封装 NATS 客户端，使用官方的 [nats.go](https://github.com/nats-io/nats.go)。队列的 worker 按[队列配置](../background/queue.md#configuration)自己连接；广播和在线成员使用应用在入口创建的连接，全应用共用一个。
 
