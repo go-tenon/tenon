@@ -97,7 +97,7 @@ const (
 type Result struct {
 	Group  string `json:"group"`
 	Check  string `json:"check"`
-	Status Status `json:"status"`
+	Status Status `json:"status" enum:"passed,warning,failed,skipped"`
 	// Summary 是问题、跳过的原因，或者检查没能完成的错误；通过时为空。
 	Summary string `json:"summary,omitempty"`
 	Fix     string `json:"fix,omitempty"`
