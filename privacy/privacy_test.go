@@ -121,7 +121,7 @@ func (a *app) sources() []privacy.Source {
 }
 
 func (a *app) service(grace time.Duration) *privacy.Service {
-	return privacy.New(a.db, privacy.Options{Grace: grace, Sources: a.sources()})
+	return privacy.New(a.db, privacy.Options{Type: "user", Grace: grace, Sources: a.sources()})
 }
 
 // signUp 建一个用户，给他一条通知和一个 token，返回 token。
@@ -188,12 +188,14 @@ func TestNewPanics(t *testing.T) {
 		db   *bun.DB
 		opts privacy.Options
 	}{
-		"nil db":      {nil, privacy.Options{Sources: []privacy.Source{{Name: "a", Erase: erase}}}},
-		"no sources":  {db, privacy.Options{}},
-		"empty name":  {db, privacy.Options{Sources: []privacy.Source{{Erase: erase}}}},
-		"duplicate":   {db, privacy.Options{Sources: []privacy.Source{{Name: "a", Erase: erase}, {Name: "a", Erase: erase}}}},
-		"no function": {db, privacy.Options{Sources: []privacy.Source{{Name: "a"}}}},
-		"negative":    {db, privacy.Options{Grace: -time.Second, Sources: []privacy.Source{{Name: "a", Erase: erase}}}},
+		"nil db":      {nil, privacy.Options{Type: "user", Sources: []privacy.Source{{Name: "a", Erase: erase}}}},
+		"no type":     {db, privacy.Options{Sources: []privacy.Source{{Name: "a", Erase: erase}}}},
+		"bad type":    {db, privacy.Options{Type: "User", Sources: []privacy.Source{{Name: "a", Erase: erase}}}},
+		"no sources":  {db, privacy.Options{Type: "user"}},
+		"empty name":  {db, privacy.Options{Type: "user", Sources: []privacy.Source{{Erase: erase}}}},
+		"duplicate":   {db, privacy.Options{Type: "user", Sources: []privacy.Source{{Name: "a", Erase: erase}, {Name: "a", Erase: erase}}}},
+		"no function": {db, privacy.Options{Type: "user", Sources: []privacy.Source{{Name: "a"}}}},
+		"negative":    {db, privacy.Options{Type: "user", Grace: -time.Second, Sources: []privacy.Source{{Name: "a", Erase: erase}}}},
 	} {
 		func() {
 			defer func() {
@@ -401,7 +403,7 @@ func TestEraseDueAfterCommit(t *testing.T) {
 	// notify 在 search 之前：search 失败时，notify 已经登记了回调。
 	sources := a.sources()
 	sources = append(sources[:3:3], notify, sources[3])
-	s := privacy.New(a.db, privacy.Options{Sources: sources})
+	s := privacy.New(a.db, privacy.Options{Type: "user", Sources: sources})
 	request(t, s, a.db, "alice")
 	request(t, s, a.db, "bob")
 	a.fail.Store("alice", true)
@@ -477,5 +479,59 @@ func TestEraseDueConcurrent(t *testing.T) {
 	wg.Wait()
 	if total.Load() != users || len(a.erased) != users {
 		t.Fatalf("erased %d subjects in %d calls", total.Load(), len(a.erased))
+	}
+}
+
+// 每套账号体系一个服务：两个服务共用一张表，各自只处理自己的主体，不接受别的账号体系。
+func TestAccountSystems(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	a := newApp(t)
+	users := a.service(0)
+	var staffErased []string
+	staff := privacy.New(a.db, privacy.Options{Type: "staff", Sources: []privacy.Source{{
+		Name: "staff",
+		Erase: func(_ context.Context, _ bun.IDB, ref identity.Ref) error {
+			if ref.Type != "staff" {
+				return errors.New("staff source got " + ref.String())
+			}
+			staffErased = append(staffErased, ref.ID)
+			return nil
+		},
+	}}})
+	token := a.signUp(t, "alice")
+	request(t, users, a.db, "alice")
+	if _, err := staff.Request(ctx, a.db, identity.Ref{Type: "staff", ID: "alice"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// staff 的服务只删除 staff 的注销。
+	if n, err := staff.EraseDue(ctx, 10); n != 1 || err != nil {
+		t.Fatalf("staff erase due: %d, %v", n, err)
+	}
+	if !a.exists(t, "alice", token) || strings.Join(staffErased, ",") != "alice" {
+		t.Fatalf("staff erased user data, or staff not erased: %v", staffErased)
+	}
+	if _, err := users.Pending(ctx, user("alice")); err != nil {
+		t.Fatalf("user erasure no longer pending: %v", err)
+	}
+	if n, err := users.EraseDue(ctx, 10); n != 1 || err != nil {
+		t.Fatalf("user erase due: %d, %v", n, err)
+	}
+	if a.exists(t, "alice", token) {
+		t.Fatal("user not erased")
+	}
+
+	other := identity.Ref{Type: "staff", ID: "bob"}
+	for name, err := range map[string]error{
+		"check":   users.Check(ctx, other),
+		"request": func() error { _, err := users.Request(ctx, a.db, other); return err }(),
+		"pending": func() error { _, err := users.Pending(ctx, other); return err }(),
+		"cancel":  users.Cancel(ctx, a.db, other),
+		"erase":   users.Erase(ctx, other),
+	} {
+		if err == nil || !strings.Contains(err.Error(), "does not belong") {
+			t.Errorf("%s: %v", name, err)
+		}
 	}
 }

@@ -48,6 +48,9 @@ type Source struct {
 
 // Options 是 New 的选项。
 type Options struct {
+	// Type 是这个服务处理的账号体系，例如 user，必填。一个服务只注销一套账号体系的主体，
+	// 与 login.Realm 一一对应：Sources 中的函数只会收到这个类型的主体。有多套账号体系时，各建一个服务。
+	Type identity.SubjectType
 	// Grace 是冷静期：Request 之后经过这么久，EraseDue 才删除数据；期间用户可以 Cancel。
 	// 0 表示没有冷静期，下一次 EraseDue 就删除。不能为负数。
 	Grace time.Duration
@@ -75,9 +78,11 @@ func (e Erasure) Subject() identity.Ref { return identity.Ref{Type: e.SubjectTyp
 // Erased 报告数据是否已经删除。
 func (e Erasure) Erased() bool { return !e.ErasedAt.IsZero() }
 
-// Service 申请、撤销和执行注销，可以并发使用，多个实例同时执行 EraseDue 也是安全的。
+// Service 申请、撤销和执行一套账号体系（Options.Type）的注销，可以并发使用，多个实例同时执行 EraseDue 也是安全的。
+// 方法收到其他账号体系的主体时返回错误。
 type Service struct {
 	db      *bun.DB
+	typ     identity.SubjectType
 	grace   time.Duration
 	sources []Source
 }
@@ -86,6 +91,9 @@ type Service struct {
 func New(db *bun.DB, opts Options) *Service {
 	if db == nil {
 		panic("privacy: nil database")
+	}
+	if err := opts.Type.Validate(); err != nil {
+		panic(err)
 	}
 	if opts.Grace < 0 {
 		panic("privacy: negative grace period")
@@ -105,13 +113,13 @@ func New(db *bun.DB, opts Options) *Service {
 		}
 		seen[src.Name] = true
 	}
-	return &Service{db: db, grace: opts.Grace, sources: append([]Source(nil), opts.Sources...)}
+	return &Service{db: db, typ: opts.Type, grace: opts.Grace, sources: append([]Source(nil), opts.Sources...)}
 }
 
 // Check 依次调用各项的 Check，返回第一个错误，用于在申请页面上提前告诉用户能否注销。
 func (s *Service) Check(ctx context.Context, ref identity.Ref) error {
-	if err := ref.Validate(); err != nil {
-		return errors.Wrap(err, "privacy")
+	if err := s.check(ref); err != nil {
+		return err
 	}
 	for _, src := range s.sources {
 		if src.Check == nil {
@@ -153,6 +161,9 @@ func (s *Service) Request(ctx context.Context, tx bun.IDB, ref identity.Ref) (*E
 
 // Pending 返回 ref 待执行的注销，没有时返回 ErrNotFound。登录后用它提示“账号将于某日注销”。
 func (s *Service) Pending(ctx context.Context, ref identity.Ref) (*Erasure, error) {
+	if err := s.check(ref); err != nil {
+		return nil, err
+	}
 	e := new(Erasure)
 	err := s.db.NewSelect().Model(e).
 		Where("subject_type = ? AND subject_id = ?", ref.Type, ref.ID).Where("erased_at IS NULL").Scan(ctx)
@@ -168,6 +179,9 @@ func (s *Service) Pending(ctx context.Context, ref identity.Ref) (*Erasure, erro
 // Cancel 在 tx 中撤销 ref 待执行的注销，没有时返回 ErrNotFound。
 // 正在执行删除时，Cancel 等它结束，然后返回 ErrNotFound。
 func (s *Service) Cancel(ctx context.Context, tx bun.IDB, ref identity.Ref) error {
+	if err := s.check(ref); err != nil {
+		return err
+	}
 	res, err := tx.NewDelete().Model((*Erasure)(nil)).
 		Where("subject_type = ? AND subject_id = ?", ref.Type, ref.ID).Where("erased_at IS NULL").Exec(ctx)
 	if err != nil {
@@ -212,7 +226,7 @@ func (s *Service) Erase(ctx context.Context, ref identity.Ref) error {
 	})
 }
 
-// EraseDue 删除最多 limit 个冷静期已过的主体，返回删除完成的个数，交给 schedule.Cleanup：
+// EraseDue 删除这套账号体系中最多 limit 个冷静期已过的主体，返回删除完成的个数，交给 schedule.Cleanup：
 //
 //	sched.Add("privacy:erase", "*/10 * * * *", schedule.Cleanup(deletions.EraseDue, 100))
 //
@@ -234,7 +248,7 @@ func (s *Service) EraseDue(ctx context.Context, limit int) (int, error) {
 		err := database.RunInTx(ctx, s.db, nil, func(ctx context.Context, tx database.Tx) error {
 			now := clock()
 			e := new(Erasure)
-			err := tx.NewSelect().Model(e).Where("erased_at IS NULL").Where("due_at <= ?", now).
+			err := tx.NewSelect().Model(e).Where("subject_type = ?", s.typ).Where("erased_at IS NULL").Where("due_at <= ?", now).
 				OrderExpr("due_at").Limit(1).For("UPDATE SKIP LOCKED").Scan(ctx)
 			if errors.Is(err, sql.ErrNoRows) {
 				return nil
@@ -269,6 +283,17 @@ func (s *Service) EraseDue(ctx context.Context, limit int) (int, error) {
 		done++
 	}
 	return done, errors.Join(errs...)
+}
+
+// check 确认 ref 有效，并且属于这个服务的账号体系。
+func (s *Service) check(ref identity.Ref) error {
+	if err := ref.Validate(); err != nil {
+		return errors.Wrap(err, "privacy")
+	}
+	if ref.Type != s.typ {
+		return errors.Newf("privacy: subject type %q does not belong to service %q", ref.Type, s.typ)
+	}
+	return nil
 }
 
 // run 在 tx 中按顺序执行各项的 Erase。

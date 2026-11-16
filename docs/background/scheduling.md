@@ -299,7 +299,7 @@ article.PublishScheduledJob.Handle(w, func(ctx context.Context, _ struct{}) erro
 | [OAuth 动态注册的客户端](../security/oauth-server.md#dynamic-registration) | `oauthserver.New(…)` 的 `CleanupClients(保留期)` | 每天 |
 | [Webhook 投递记录](../features/webhooks.md#retention) | `webhook.Cleanup(db, 保留期)` | 每天 |
 | [失败任务](queue-monitoring.md#failed-jobs) | `queue.NewFailedJobs(db).Cleanup(保留期)` | 每天 |
-| [冷静期已过的注销账号](../features/privacy.md#erasing) | `privacy.New(…)` 的 `EraseDue` | 每 10 分钟 |
+| [冷静期已过的注销账号](../features/privacy.md#erasing) | 每套账号体系的 `privacy.New(…)` 的 `EraseDue` | 每 10 分钟 |
 
 在线成员保存在 NATS 中，过期的记录由 NATS 自动删除。
 

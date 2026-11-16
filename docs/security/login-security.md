@@ -257,6 +257,7 @@ _, err := a.staff.SendCode(ctx, login.Reset, login.Email(in.Email))
 
 ```go
 deletions := privacy.New(db, privacy.Options{
+    Type:  user.Type,
     Grace: 15 * 24 * time.Hour,
     Sources: []privacy.Source{
         {Name: "users", Erase: user.Erase},
