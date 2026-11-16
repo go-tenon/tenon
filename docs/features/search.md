@@ -191,7 +191,7 @@ article.SearchIndex.Handle(w, a.db, article.LoadSearchDocs, article.ScanSearchKe
 - 同一个 key 的同步依次执行，后执行的一定读到更新的数据。`LoadFunc` 执行期间持有这个 key 的锁，所以它只应读取数据。
 - 删除文章同样调用 `Sync`，`LoadSearchDocs` 读不到文章，索引中的文档随之删除。
 - 一个文档最多索引前 `search.MaxTerms`（16383）个词，大约一万多字，之后的文字搜不到。更长的内容按[一个 key 多个文档](#multiple-documents)切分。
-- 文档无法建索引时（例如过滤字段的值超过 191 字节），任务直接转入[失败任务表](../libraries/queue.md#failed-jobs)。
+- 文档无法建索引时（例如过滤字段的值超过 191 字节），任务直接转入[失败任务表](../libraries/queue-monitoring.md#failed-jobs)。
 
 修改了 `SearchDoc` 的字段或者[分词器](#tokenizers)之后，已有的文档要按新的方式重新写入，见[重建索引](#reindexing)。
 

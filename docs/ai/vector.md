@@ -191,7 +191,7 @@ attachment.Chunks.Handle(w, a.vectors, attachment.LoadChunks, attachment.ScanChu
 
 - 同一个 key 的同步依次执行，后执行的一定读到更新的数据。为此锁要一直持有到写完 Qdrant，计算向量期间同步事务也保持打开，所以 `LoadFunc` 只应读取数据，转换、切分文件这类耗时的处理放在之前的任务中完成。
 - 删除附件同样调用 `Sync`，`LoadChunks` 读不到分段，索引中的文档随之删除。
-- 计算向量的文本为空时，任务直接转入[失败任务表](../libraries/queue.md#failed-jobs)。模型服务出错时，任务按队列的规则重试。
+- 计算向量的文本为空时，任务直接转入[失败任务表](../libraries/queue-monitoring.md#failed-jobs)。模型服务出错时，任务按队列的规则重试。
 - 索引的每个版本是 Qdrant 中的一个 collection，第一次写入时自动创建，同时给过滤字段建立索引；之后新增过滤字段时，进程启动后第一次同步会补建索引。
 
 <a id="reusing-vectors"></a>

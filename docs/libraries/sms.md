@@ -6,6 +6,8 @@
 
 所以 `sms` 中的一条短信是收件号码、模板名和模板变量。模板名是应用自己起的，例如 `login_code`；签名和每家服务商的模板 ID 写在各自的配置中。同一条短信可以交给不同的服务商发送，业务代码与服务商无关。
 
+阅读前需要了解：[邮件](mail.md)（装配方式相同）；[错误处理](../general/errors.md)。
+
 | 包 | 用途 |
 | --- | --- |
 | `sms/aliyun` | 阿里云短信服务 |
@@ -22,6 +24,7 @@
 - [使用阿里云](#aliyun)
 - [使用腾讯云](#tencent)
 - [自定义发送器](#custom-senders)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="example-usage"></a>
@@ -135,7 +138,7 @@ texts := sms.Failover([]sms.Named{
 }, sms.FailoverOptions{})
 ```
 
-规则与[邮件的多个发送器](mail.md#failover)相同：按顺序尝试，失败的服务商在 `Cooldown`（默认 1 分钟）内排到最后，换用时记录 `Warn` 日志，恢复时记录 `Info`。区别在于什么时候**不**换下一家：
+规则与[邮件的多个发送器](mail-providers.md#failover)相同：按顺序尝试，失败的服务商在 `Cooldown`（默认 1 分钟）内排到最后，换用时记录 `Warn` 日志，恢复时记录 `Info`。区别在于什么时候**不**换下一家：
 
 - `sms.ErrInvalid`：换哪家都一样。
 - `sms.ErrRejected`：号码本身发不到，换哪家都一样。
@@ -220,6 +223,25 @@ func (s *TwilioSender) Send(ctx context.Context, msg sms.Message) error {
     // 调用 Twilio API；21211（号码无效）、21610（用户退订）包装为 sms.ErrRejected
 }
 ```
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**开发时收不到短信**
+
+开发时用的是 `logsms`，它只把短信写进日志，验证码在日志中查看，见[装配发送器](#assembling)。
+
+**换到另一家服务商后发送失败**
+
+每家服务商都要申请好同名的模板，签名也都要审核通过，见[多个服务商](#failover)。
+
+**用户收到了两条同样的验证码**
+
+阿里云和腾讯云都没有幂等键，重试或换用服务商时可能重复发送，见[发送短信](#sending)。
+
+**同一个号码发送失败，提示过于频繁（`ErrLimited`）**
+
+这是服务商对单个号码的防刷保护，不会换下一家服务商重试。让用户稍后再试。
 
 <a id="api-reference"></a>
 ## API 参考

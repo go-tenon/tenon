@@ -2,6 +2,8 @@
 
 产品的帮助中心、团队内部的操作手册，内容都是一篇篇说明文字。`web/docs` 把一个目录中的 Markdown 文件变成带导航的文档页：左侧是按目录生成的侧边栏，正文右侧是本页目录，顶栏有站内搜索，切换页面时 htmx 只替换正文区域。页面用当前区域的[主题](components.md#themes)和内置模板渲染。
 
+阅读前需要了解：[视图](views.md)；Markdown 的基本写法。
+
 - [示例用法](#example-usage)
 - [编写文档](#writing)
     - [排序与标题](#ordering)
@@ -12,6 +14,7 @@
 - [搜索](#search)
 - [开发时预览](#development)
 - [注意事项](#caveats)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="example-usage"></a>
@@ -186,6 +189,25 @@ site, err := docs.New(opts)
 
 - 多种语言的文档各自是一个 `docs.Site`，例如 `/help` 和 `/en/help`。
 - 侧边栏和本页目录的文字（「本页目录」「上一页」等）随请求的语言变化，正文不变。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**启动时报错，提示 front matter 中有不认识的字段**
+
+front matter 只支持 `title`、`description`、`order` 三个字段，例如 Hugo 的 `weight` 会报错，见[排序与标题](#ordering)。
+
+**启动时报错，提示链接指向不存在的文件**
+
+文档中的相对链接写错了，或者目标文件被移动了。`docs.New` 在启动时检查全部链接，按报错修正。
+
+**修改了文档，页面没有变化**
+
+嵌入的文档只有重新编译后才会更新。开发时改为读取磁盘并设置 `Reload`，见[开发时预览](#development)。
+
+**Markdown 中写的 HTML 没有显示**
+
+HTML 默认被去掉。文档只由可信的人编写时，设置 `Options.HTML`，见 [Markdown 写法](#markdown)。
 
 <a id="api-reference"></a>
 ## API 参考

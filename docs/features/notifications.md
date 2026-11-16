@@ -346,7 +346,7 @@ func (h *Handlers) Inbox(ctx context.Context, _ *struct{}) (*huma.StreamResponse
 }
 ```
 
-用 `rest.RegisterSSE(api, op, map[string]any{"badge": Badge{}}, h.Inbox)` 注册。前端收到 `badge` 事件就更新导航栏的角标，见[客户端代码的事件流](../responses/clients.md#event-streams)；`@go-tenon/shell` 的 [`useNotifications`](../responses/app-shell.md#notifications) 读取它并在断开后重连，运营后台的 [`NotificationBell`](../responses/admin.md#features) 是现成的铃铛。标记已读之后同样发布一条广播，用户打开的其他标签页也会随之更新。
+用 `rest.RegisterSSE(api, op, map[string]any{"badge": Badge{}}, h.Inbox)` 注册。前端收到 `badge` 事件就更新导航栏的角标，见[客户端代码的事件流](../responses/clients.md#event-streams)；`@go-tenon/shell` 的 [`useNotifications`](../responses/app-shell-features.md#notifications) 读取它并在断开后重连，运营后台的 [`NotificationBell`](../responses/admin.md#features) 是现成的铃铛。标记已读之后同样发布一条广播，用户打开的其他标签页也会随之更新。
 
 <a id="retention"></a>
 ## 保留期限

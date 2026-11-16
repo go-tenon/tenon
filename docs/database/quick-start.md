@@ -2,26 +2,30 @@
 
 几乎每个 API 都需要与数据库交互。Tenon 只支持 PostgreSQL，并使用社区中成熟的组件：[pgx](https://github.com/jackc/pgx) 是驱动，[Bun](https://bun.uptrace.dev) 负责构建查询和映射模型，[goose](https://github.com/pressly/goose) 管理迁移（见[迁移](migrations.md)）。
 
+几个术语：
+
+- **连接池**：程序和数据库之间预先建立的一组连接。每次查询从池中借一个连接，用完还回去，不必每次重新连接；池中最多有多少个连接，就最多有多少条语句同时执行。
+- **模型**：一个对应数据表的 Go 结构体，字段对应表的列。Bun 按模型生成 SQL，并把查询结果填进结构体。
+- **事务**：把几条语句变成一个整体，要么全部生效，要么全部不生效。
+
 `database` 包只负责打开一个配置好的连接池（[pgxpool](https://pkg.go.dev/github.com/jackc/pgx/v5/pgxpool)），返回原生的 `*bun.DB`。之后的查询、事务都直接使用 Bun 的 API，你随时可以参考 [Bun 的文档](https://bun.uptrace.dev/guide/)。在此之上，`database` 另外提供几样 Bun 没有的东西：事务提交后的回调、约束错误的判断，以及慢查询日志。
 
+阅读前需要了解：SQL 的基本语句；[配置](../general/configuration.md)；[入门教程第 3、4 章](../tutorial/03-database.md)。慢查询日志、软删除、隔离级别、只读副本和多个数据库见[数据库进阶](advanced.md)。
+
 - [示例用法](#introduction)
+- [连接数据库](#connecting)
 - [配置](#configuration)
     - [连接用满时](#pool-exhaustion)
-- [连接数据库](#connecting)
-    - [慢查询](#slow-queries)
 - [定义模型](#defining-models)
     - [主键](#primary-keys)
     - [自动维护时间戳](#timestamps)
-    - [软删除](#soft-deletes)
 - [执行查询](#running-queries)
     - [处理“未找到”](#handling-not-found)
+- [处理约束错误](#constraint-errors)
 - [事务](#transactions)
     - [提交后执行](#after-commit)
-    - [隔离级别与死锁](#isolation-and-deadlocks)
-- [处理约束错误](#constraint-errors)
-- [只读副本](#read-replicas)
-- [多个数据库](#multiple-databases)
 - [测试](#testing)
+- [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="introduction"></a>
@@ -44,74 +48,7 @@ err = db.NewSelect().Model(&items).
     Scan(ctx)
 ```
 
-修改数据时使用事务。像下面这样，在事务中更新文章，并登记一个提交之后才执行的广播：
-
-```go
-err := database.RunInTx(ctx, db, nil, func(ctx context.Context, tx database.Tx) error {
-    if _, err := tx.NewUpdate().Model(item).Column("status").WherePK().Exec(ctx); err != nil {
-        return err
-    }
-    tx.AfterCommit(func(ctx context.Context) error {
-        return hub.Publish(ctx, "articles", data)
-    })
-    return nil
-})
-```
-
-广播只在事务提交后发出，浏览器收到的通知总是对应已经保存的数据。下面几节依次介绍配置、模型、查询和事务的细节。
-
-<a id="configuration"></a>
-## 配置
-
-数据库配置通常放在配置文件的 `database` 段中：
-
-```yaml
-database:
-  dsn: ${DATABASE_URL}
-  max_conns: 20
-  min_conns: 0
-  max_conn_lifetime: 1h
-  max_conn_idle_time: 30m
-  slow_query: 1s
-```
-
-| 字段 | 说明 | `DefaultConfig` 中的默认值 |
-| --- | --- | --- |
-| `dsn` | PostgreSQL 连接串，例如 `postgres://user:pass@localhost:5432/app?sslmode=disable` | 无，必填 |
-| `max_conns` | 最大连接数 | 4 × `GOMAXPROCS` |
-| `min_conns` | 空闲时也保持的连接数 | `0` |
-| `max_conn_lifetime` | 连接的最长存活时间，到期后在空闲时关闭 | `1h` |
-| `max_conn_idle_time` | 超过 `min_conns` 的空闲连接的最长保留时间 | `30m` |
-| `slow_query` | 执行时间达到它的语句记为[慢查询](#slow-queries)；`0` 表示不记录 | `1s` |
-
-这些字段对应 `database.Config` 结构体。把它放进应用的根配置结构体，`config.Load` 会自动填充上表中的默认值：
-
-```go
-type Config struct {
-    Database database.Config `yaml:"database"`
-}
-
-cfg, err := config.Load[Config](path)
-if err != nil {
-    return err
-}
-```
-
-`database.Config` 实现了 `Validate` 方法，`config.Load` 会自动检查 DSN 是否为空、连接池参数是否合法；DSN 的格式在打开连接时检查。
-
-> [!TIP]
-> 设置 `max_conns` 时，请考虑应用的部署副本数：所有副本的连接数之和要控制在数据库的最大连接数以内。
-
-<a id="pool-exhaustion"></a>
-### 连接用满时
-
-连接都在使用中时，新的语句排队等待空闲连接。HTTP 请求的排队时间要有上限：过载时一直排队只会让所有请求一起变慢、一起超时。`acquire.WithTimeout` 给取连接这一步设一个时限，超过时返回 `database.ErrBusy`，响应为 `503` 并带 `Retry-After`，客户端稍后重试：
-
-```go
-ctx = acquire.WithTimeout(ctx, time.Second)
-```
-
-[默认中间件](../http/middleware.md#default-middleware)为每个请求按 `http.acquire_timeout`（默认 1 秒）设置它。`acquire` 包只在 context 中传递“最多愿意等多久去拿一个共享资源”，数据库连接池读取它，HTTP 中间件与数据库各自独立。时限只作用于取连接，语句本身的执行时间由请求超时控制。队列任务和命令排队等待连接是正常情况，所以只有 HTTP 请求设置它。
+`database.Open` 返回的 `db` 是 Bun 的 `*bun.DB`，`NewSelect` 构建一条 `SELECT` 语句，`Scan` 执行它，并把结果填进 `items`。下面几节依次介绍连接、配置、模型、查询和事务。
 
 <a id="connecting"></a>
 ## 连接数据库
@@ -143,16 +80,58 @@ func Check(ctx context.Context, dsn string) error {
 
 在应用中，连接池在入口打开**一次**，传给所有需要它的[业务动作](../concepts/actions.md)，在应用退出时关闭，见[依赖装配](../concepts/dependencies.md)。
 
-<a id="slow-queries"></a>
-### 慢查询
+<a id="configuration"></a>
+## 配置
 
-执行时间达到 `slow_query`（默认 1 秒）的语句记录一条 `Warn` 日志：
+数据库配置通常放在配置文件的 `database` 段中：
 
-```text
-WARN slow query component=database duration=1.284s db.operation.name=SELECT db.collection.name=articles query="SELECT \"a\".\"id\", … FROM \"articles\" AS \"a\" WHERE (\"a\".\"author_id\" = ?) ORDER BY \"a\".\"id\" DESC LIMIT ?"
+```yaml
+database:
+  dsn: ${DATABASE_URL}
+  max_conns: 20
+  min_conns: 0
+  max_conn_lifetime: 1h
+  max_conn_idle_time: 30m
+  slow_query: 1s
 ```
 
-`query` 中的字符串、数字等字面量都换成了 `?`，日志只记录语句的形状，同一条语句不同参数的执行看起来一样，便于汇总。日志在执行语句的 `ctx` 中记录，带着请求 ID 和 `trace_id`，可以找到是哪个请求或任务执行的。日志器默认是 `slog.Default()`，用 `database.WithLogger` 指定其他的。
+| 字段 | 说明 | `DefaultConfig` 中的默认值 |
+| --- | --- | --- |
+| `dsn` | PostgreSQL 连接串，例如 `postgres://user:pass@localhost:5432/app?sslmode=disable` | 无，必填 |
+| `max_conns` | 最大连接数 | 4 × `GOMAXPROCS` |
+| `min_conns` | 空闲时也保持的连接数 | `0` |
+| `max_conn_lifetime` | 连接的最长存活时间，到期后在空闲时关闭 | `1h` |
+| `max_conn_idle_time` | 超过 `min_conns` 的空闲连接的最长保留时间 | `30m` |
+| `slow_query` | 执行时间达到它的语句记为[慢查询](advanced.md#slow-queries)；`0` 表示不记录 | `1s` |
+
+这些字段对应 `database.Config` 结构体。把它放进应用的根配置结构体，`config.Load` 会自动填充上表中的默认值：
+
+```go
+type Config struct {
+    Database database.Config `yaml:"database"`
+}
+
+cfg, err := config.Load[Config](path)
+if err != nil {
+    return err
+}
+```
+
+`database.Config` 实现了 `Validate` 方法，`config.Load` 会自动检查 DSN 是否为空、连接池参数是否合法；DSN 的格式在打开连接时检查。
+
+> [!TIP]
+> 设置 `max_conns` 时，请考虑应用的部署副本数：所有副本的连接数之和要控制在数据库的最大连接数以内。
+
+<a id="pool-exhaustion"></a>
+### 连接用满时
+
+连接都在使用中时，新的语句排队等待空闲连接。HTTP 请求的排队时间要有上限：过载时一直排队只会让所有请求一起变慢、一起超时。`acquire.WithTimeout` 给取连接这一步设一个时限，超过时返回 `database.ErrBusy`，响应为 `503` 并带 `Retry-After`，客户端稍后重试：
+
+```go
+ctx = acquire.WithTimeout(ctx, time.Second)
+```
+
+[默认中间件](../http/middleware.md#default-middleware)为每个请求按 `http.acquire_timeout`（默认 1 秒）设置它。`acquire` 包只在 context 中传递“最多愿意等多久去拿一个共享资源”，数据库连接池读取它，HTTP 中间件与数据库各自独立。时限只作用于取连接，语句本身的执行时间由请求超时控制。队列任务和命令排队等待连接是正常情况，所以只有 HTTP 请求设置它。
 
 <a id="defining-models"></a>
 ## 定义模型
@@ -241,46 +220,6 @@ _, err := db.NewUpdate().
 
 如果使用 `Set(...)` 显式指定更新表达式，需要同时设置 `Set("updated_at = ?", time.Now().UTC())`。`Model((*Article)(nil))` 和原生 SQL 绕过模型钩子，这些写入路径需要自行维护时间戳。迁移中的时间列不设默认值，时间总是由应用写入，这样测试才能用假时钟控制时间，见[控制时间](../testing/overview.md#controlling-time)。
 
-<a id="soft-deletes"></a>
-### 软删除
-
-如果删除后需要保留记录，可以使用 Bun 原生的[模型软删除](https://bun.uptrace.dev/guide/soft-deletes.html#using-bun-models)。上面 `DeletedAt` 的 `soft_delete` 标签启用该功能，`nullzero` 将 Go 的零时间映射为 SQL `NULL`；迁移中对应的 `deleted_at` 列应允许为空。
-
-对于配置了该标签的模型，`NewDelete()` 会更新 `deleted_at`，普通模型查询会自动排除已软删除的记录。下面的 `id` 是目标文章的 UUID，`ctx` 是请求上下文，`db` 是打开的连接池：
-
-```go
-// 标记为已删除，保留记录。
-_, err := db.NewDelete().
-    Model((*Article)(nil)).
-    Where("id = ?", id).
-    Exec(ctx)
-
-// 仅查询已软删除的文章。
-var deleted []Article
-err = db.NewSelect().Model(&deleted).WhereDeleted().Scan(ctx)
-
-// 查询全部文章，包括已软删除的记录。
-var all []Article
-err = db.NewSelect().Model(&all).WhereAllWithDeleted().Scan(ctx)
-
-// 物理删除目标文章，无论它是否已软删除。
-_, err = db.NewDelete().
-    Model((*Article)(nil)).
-    Where("id = ?", id).
-    ForceDelete().
-    Exec(ctx)
-```
-
-软删除由 Bun 根据模型标签处理，直接执行原生 SQL 时需要自行处理 `deleted_at` 条件。上述时间戳钩子只处理插入和更新查询，`NewDelete()` 的软删除保持 `updated_at` 原值。
-
-软删除的记录仍然参与数据库唯一约束。本例的 `articles_slug_key` 会继续保留已删除文章的 slug；如果业务允许复用，可以在迁移中把它改为只约束未删除记录的部分唯一索引：
-
-```sql
-CREATE UNIQUE INDEX articles_slug_key ON articles (slug) WHERE deleted_at IS NULL;
-```
-
-索引沿用原来的名字，[处理约束错误](#constraint-errors)的代码保持原样。
-
 <a id="running-queries"></a>
 ## 执行查询
 
@@ -319,6 +258,42 @@ if err != nil {
 ```
 
 其他数据库错误会被当作内部错误，返回 `500`，完整的错误链和堆栈会记录到日志中，见[错误处理](../general/errors.md#wrapping-errors)。
+
+<a id="constraint-errors"></a>
+## 处理约束错误
+
+数据库约束是保证数据一致性的最后一道防线。当插入的数据违反唯一约束时，例如两篇文章使用了相同的 slug，你通常希望返回一个 `409 Conflict`。下面是“创建文章”的 `Handle`，`articles_slug_key` 是[迁移](migrations.md#migration-structure)中定义的唯一约束：
+
+```go
+func (a *Create) Handle(ctx context.Context, subject identity.Subject, c Changes) (*Article, error) {
+    if subject.ID == "" {
+        return nil, ErrForbidden.New()
+    }
+    item := &Article{
+        ID: uuid.Must(uuid.NewV7()), AuthorID: subject.ID, Status: StatusDraft,
+        Title: c.Title, Slug: c.Slug, Content: c.Content,
+    }
+    _, err := a.db.NewInsert().Model(item).Exec(ctx)
+    if database.IsUniqueViolation(err, "articles_slug_key") {
+        return nil, ErrSlugTaken.Wrap(err, errorx.Public("slug", c.Slug))
+    }
+    if err != nil {
+        return nil, errors.Wrap(err, "insert article")
+    }
+    return item, nil
+}
+```
+
+`database` 包提供以下判断函数：
+
+| 函数 | 判断的约束 | SQLSTATE |
+| --- | --- | --- |
+| `IsUniqueViolation(err, names...)` | 唯一约束与主键 | 23505 |
+| `IsForeignKeyViolation(err)` | 外键约束 | 23503 |
+| `IsCheckViolation(err)` | 检查约束 | 23514 |
+| `IsDeadlock(err)` | 死锁 | 40P01 |
+
+`IsUniqueViolation` 可以传入约束名，只在指定的约束冲突时返回 `true`。推荐总是指定约束名，为不同的约束返回不同的业务错误，例如“slug 已被使用”和“邮箱已注册”；其他错误则保留原因继续返回。
 
 <a id="transactions"></a>
 ## 事务
@@ -367,121 +342,33 @@ err := database.RunInTx(ctx, a.db, nil, func(ctx context.Context, tx database.Tx
 
 回调是同步执行的，会推迟响应，耗时的操作交给队列。
 
-<a id="isolation-and-deadlocks"></a>
-### 隔离级别与死锁
-
-PostgreSQL 的默认隔离级别是 READ COMMITTED。“先读取、检查、再修改”的逻辑应当放在一个事务中，并用 `FOR UPDATE` 锁住要修改的行，见[在事务中检查](../security/authorization.md#checking-in-transactions)。
-
-数据库检测到死锁时会中止其中一个事务，`database.IsDeadlock` 可以识别这个错误。被中止的事务已经整体回滚，登记的提交后回调也一并丢弃，可以直接重试：
-
-```go
-for attempt := 1; ; attempt++ {
-    err := database.RunInTx(ctx, a.db, nil, publish)
-    if database.IsDeadlock(err) && attempt < 3 {
-        continue
-    }
-    return err
-}
-```
-
-<a id="constraint-errors"></a>
-## 处理约束错误
-
-数据库约束是保证数据一致性的最后一道防线。当插入的数据违反唯一约束时，例如两篇文章使用了相同的 slug，你通常希望返回一个 `409 Conflict`。下面是“创建文章”的 `Handle`，`articles_slug_key` 是[迁移](migrations.md#migration-structure)中定义的唯一约束：
-
-```go
-func (a *Create) Handle(ctx context.Context, subject identity.Subject, c Changes) (*Article, error) {
-    if subject.ID == "" {
-        return nil, ErrForbidden.New()
-    }
-    item := &Article{
-        ID: uuid.Must(uuid.NewV7()), AuthorID: subject.ID, Status: StatusDraft,
-        Title: c.Title, Slug: c.Slug, Content: c.Content,
-    }
-    _, err := a.db.NewInsert().Model(item).Exec(ctx)
-    if database.IsUniqueViolation(err, "articles_slug_key") {
-        return nil, ErrSlugTaken.Wrap(err, errorx.Public("slug", c.Slug))
-    }
-    if err != nil {
-        return nil, errors.Wrap(err, "insert article")
-    }
-    return item, nil
-}
-```
-
-`database` 包提供以下判断函数：
-
-| 函数 | 判断的约束 | SQLSTATE |
-| --- | --- | --- |
-| `IsUniqueViolation(err, names...)` | 唯一约束与主键 | 23505 |
-| `IsForeignKeyViolation(err)` | 外键约束 | 23503 |
-| `IsCheckViolation(err)` | 检查约束 | 23514 |
-| `IsDeadlock(err)` | 死锁 | 40P01 |
-
-`IsUniqueViolation` 可以传入约束名，只在指定的约束冲突时返回 `true`。推荐总是指定约束名，为不同的约束返回不同的业务错误，例如“slug 已被使用”和“邮箱已注册”；其他错误则保留原因继续返回。
-
-<a id="read-replicas"></a>
-## 只读副本
-
-读多写少的应用可以把一部分读取交给只读副本，减轻主库的压力。副本是主库之外的另一个连接池，用 `database.ReadOnly` 打开，在入口和主库一起创建：
-
-```go
-replica, err := database.Open(ctx, cfg.Replica, database.Name("replica"), database.ReadOnly())
-```
-
-`ReadOnly` 让副本的会话默认只读：误把写操作交给它时，立即得到 `database.IsReadOnly` 能识别的错误。`Name` 是连接池的名字，区分主库和副本。有多个副本时，在它们前面放一个负载均衡（云数据库的只读地址、HAProxy 等），`replica.dsn` 指向它。
-
-哪些读取交给副本，由业务动作在构造函数中声明。文章列表能容忍几百毫秒的复制延迟，交给副本；发布文章要在事务中读取并修改，用主库：
-
-```go
-list := article.NewList(a.replica)
-publish := article.NewPublish(a.db, a.emails)
-```
-
-副本上的数据比主库晚一点，选择时注意：
-
-- **刚写入的数据可能还读不到。** 写完立即要读的地方用主库，例如修改后返回最新内容、标记已读后刷新未读数。
-- **授权检查和事务中的读取用主库**，见[在事务中检查](../security/authorization.md#checking-in-transactions)。
-- **框架的组件都用主库**：权限、token、功能开关、队列。`search.Search` 这类只读取的函数接收 `db` 参数，可以传入副本。
-- 副本上运行很久的查询可能因为与复制冲突被取消，报表类的长查询可以在副本上开启 `hot_standby_feedback`。监控副本的复制延迟（`pg_stat_replication.replay_lag`）。
-
-测试中用 `dbtest.Replica(t, db)` 代替副本：它连接同一个测试库，没有延迟，写入时失败，能发现误把写操作交给副本的代码。
-
-<a id="multiple-databases"></a>
-## 多个数据库
-
-按模块拆分的数据库，例如把埋点事件放进单独的分析库，同样是一个连接池。在配置中加一段，在入口打开，传给这个模块的业务动作：
-
-```yaml
-analytics:
-  dsn: ${ANALYTICS_DATABASE_URL}
-```
-
-```go
-analytics, err := database.Open(ctx, cfg.Analytics, database.Name("analytics"))
-track := events.NewTrack(analytics)
-```
-
-每个数据库有自己的迁移文件。`migratecmd.Name` 构造另一个数据库的迁移命令，挂在 `migrate` 下：
-
-```go
-mig := migratecmd.New(migrations.FS, func(c Config) database.Config { return c.Database })
-mig.AddCommand(migratecmd.New(analyticsmigrations.FS, func(c Config) database.Config { return c.Analytics },
-    migratecmd.Name("analytics")))
-```
-
-`migrate analytics up` 迁移分析库，`migrate analytics make add_index` 在 `migrations/analytics` 中新建文件。部署时两个数据库的迁移都要执行。
-
-拆库之后要注意：
-
-- **没有跨库的事务。** 两个库的修改需要一起成功时，在一个库的事务中发布[任务](../libraries/queue.md)，由任务修改另一个库，任务至少执行一次。
-- **任务在哪个库发布，就要有一个用这个库的 worker 转发**：队列把任务写进发布它的事务所在数据库的 WAL。通常只在主库发布任务；某个模块必须在自己的库中发布时，`work` 进程为这个库再创建一个 `queue.Worker`。
-- 框架包的迁移（队列、权限等）发布到使用它们的那个库，通常是主库。
-
 <a id="testing"></a>
 ## 测试
 
 `database/dbtest` 包可以为每个测试创建一个独立的真实数据库，执行迁移后交给测试使用，测试结束时自动删除。详见[测试](../testing/database.md#database-tests)。
+
+<a id="troubleshooting"></a>
+## 常见问题
+
+**启动时报错连不上数据库，命令以退出码 4 结束**
+
+`database.Open` 打开时会立即检查连通性。检查 DSN 中的地址、端口、用户名和密码，以及数据库是否在运行。
+
+**查询返回 `sql: no rows in result set`**
+
+`Scan` 查一行时没有找到数据，返回 `sql.ErrNoRows`。把它转换为业务错误，见[处理“未找到”](#handling-not-found)。
+
+**请求返回 503，错误码是 `database.busy`**
+
+连接池的连接都在使用中，请求等不到空闲连接。检查是否有慢查询长时间占着连接；需要时调大 `max_conns`，但所有实例加起来不能超过数据库的最大连接数，见[连接用满时](#pool-exhaustion)。
+
+**事务中的查询没有生效，或者出现死锁**
+
+在 `RunInTx` 的函数中，要用参数 `tx` 执行语句，而不是外面的 `db`：用 `db` 执行的语句不在事务中，还可能因为等待事务释放锁而卡住。
+
+**在事务中发送了邮件，但事务回滚了，邮件却已经发出**
+
+事务之外的副作用要放在 `tx.AfterCommit` 中，提交成功后才执行，见[提交后执行](#after-commit)。
 
 <a id="api-reference"></a>
 ## API 参考
@@ -510,7 +397,7 @@ func Name(name string) Option
 func ReadOnly() Option
 ```
 
-`WithTelemetry` 报告每条语句的指标和链路，见[可观测性](../general/telemetry.md#database)；`WithLogger` 指定慢查询的日志器；`Name` 是连接池的名称，默认 `primary`；`ReadOnly` 让会话默认只读，用于[只读副本](#read-replicas)。
+`WithTelemetry` 报告每条语句的指标和链路，见[可观测性](../general/telemetry.md#database)；`WithLogger` 指定慢查询的日志器；`Name` 是连接池的名称，默认 `primary`；`ReadOnly` 让会话默认只读，用于[只读副本](advanced.md#read-replicas)。
 
 ### Config、DefaultConfig
 

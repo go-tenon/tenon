@@ -288,7 +288,7 @@ func (a *Summarize) Job(ctx context.Context, u operation.Unit[SummarizeUnit]) er
 | --- | --- |
 | nil | 成功，`Processed` 加一 |
 | 带错误码的业务错误 | 失败，`Processed`、`Failed` 各加一，就此结束 |
-| 其他错误 | 队列重试；最后一次仍然出错时失败，任务转入[失败任务表](../libraries/queue.md#failed-jobs)，之后重试成功时 `Failed` 减一 |
+| 其他错误 | 队列重试；最后一次仍然出错时失败，任务转入[失败任务表](../libraries/queue-monitoring.md#failed-jobs)，之后重试成功时 `Failed` 减一 |
 
 一个单位失败时其他单位照常执行。每个单位结束时都在一个事务中调用 `saved`，最后一个单位结束时 `op.Finished()` 为 `true`，在这里发送通知或发布下一步任务；`saved` 在操作结束时最后调用一次，重试失败任务修正计数时通知也只发一次。已经成功的单位再次投递时直接跳过。
 
@@ -318,7 +318,7 @@ const done = await watchOperation((o) => api.article.bulkPublishProgress(op.id, 
 if (done.status === "failed") showError(done.error)
 ```
 
-React 前端用 `@go-tenon/shell` 的 [`trackOperation`](../responses/app-shell.md#operations) 登记操作，顶栏的任务中心和页面都能显示它的进度，见运营后台的 [`OperationCenter`](../responses/admin.md#features)。
+React 前端用 `@go-tenon/shell` 的 [`trackOperation`](../responses/app-shell-features.md#operations) 登记操作，顶栏的任务中心和页面都能显示它的进度，见运营后台的 [`OperationCenter`](../responses/admin.md#features)。
 
 进度是状态：广播只提醒连接重新读取，连接（包括断线重连）时先推送一次当前进度，所以页面总是显示最新的进度，与[通知角标](notifications.md#realtime)的做法相同。每次读取都经过 `Get`，只有发起人能看到进度，其他人收到 `operation.ErrNotFound`。
 

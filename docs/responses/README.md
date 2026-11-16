@@ -3,9 +3,12 @@
 向客户端返回结果：JSON 接口、生成的客户端、单页应用、服务端推送和服务端渲染页面。
 
 - [响应](responses.md)：JSON 响应、分页、列表筛选与排序
-- [客户端代码](clients.md)：由路由生成 Go 与 TypeScript 客户端
+- [客户端代码](clients.md)：由路由生成 TypeScript 客户端并调用接口
+- [在 React 中调用接口](client-react.md)：TanStack Query、校验规则、权限、枚举与分页
+- [Go 客户端](go-client.md)：其他 Go 服务和工具调用你的 API
 - [单页应用](spa.md)：把 React 单页应用嵌入程序并对外提供
 - [应用骨架](app-shell.md)：@go-tenon/shell 的路由、登录检查、权限、菜单和新版本提示
+- [应用骨架：页面中的常用功能](app-shell-features.md)：多标签、租户、表单、列表、通知、后台操作与 AI 对话
 - [资源](resources.md)：在 Go 中声明后台的增删改查页面，生成与组件库无关的资源定义
 - [shadcn registry 与控制台](registry.md)：shadcn 的布局、表格、表单等组件和 console 模板
 - [运营后台](admin.md)：@go-tenon/admin，antd 的布局、标签栏、登录页和 admin 模板

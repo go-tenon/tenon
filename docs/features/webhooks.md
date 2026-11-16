@@ -124,7 +124,7 @@ func Routes(api *rest.API, validate rest.TokenValidator, db *bun.DB) {
 
 每个事件描述为一个 `POST` 请求：请求体是 `{type, timestamp, data}`，`data` 的 schema 由事件内容的类型生成，名称规则与[接口的类型](../http/routing.md#shared-responses)相同（`article.PublishedHook` 为 `ArticlePublishedHook`）；请求头是上面的三个签名请求头。`openapi --spec 3.0` 导出的文档和 `/openapi-3.0.json`、`/openapi-3.0.yaml` 端点都不含 `webhooks`，3.0 没有这一项。
 
-租户可以用这份文档生成事件内容的类型。例如用 TypeScript 接收时，[openapi-typescript](../responses/clients.md#other-ts-tools) 生成的 `webhooks` 类型按事件名列出请求体，配合 Standard Webhooks 的官方库 [standardwebhooks](https://www.npmjs.com/package/standardwebhooks) 校验签名：
+租户可以用这份文档生成事件内容的类型。例如用 TypeScript 接收时，[openapi-typescript](../responses/client-react.md#other-ts-tools) 生成的 `webhooks` 类型按事件名列出请求体，配合 Standard Webhooks 的官方库 [standardwebhooks](https://www.npmjs.com/package/standardwebhooks) 校验签名：
 
 ```ts
 import { Webhook } from "standardwebhooks"
@@ -218,7 +218,7 @@ webhook.NewDeliverer(a.db, webhook.Options{}).Handle(w)
 | 最后一次仍然失败 | 投递记录标记为 `failed` |
 | 端点已停用 | 停止发送，投递记录标记为 `failed` |
 
-最后一次失败的投递只记在投递记录中，与[失败任务表](../libraries/queue.md#failed-jobs)分开：接收方出错属于对方的系统，你的告警保持安静。投递记录就是它的结果，租户在页面上看到并重发。
+最后一次失败的投递只记在投递记录中，与[失败任务表](../libraries/queue-monitoring.md#failed-jobs)分开：接收方出错属于对方的系统，你的告警保持安静。投递记录就是它的结果，租户在页面上看到并重发。
 
 <a id="private-addresses"></a>
 ### 拒绝内网地址
