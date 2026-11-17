@@ -109,6 +109,63 @@ const expired = createClient({ baseURL, auth: { refresh: async () => null, onSig
 err = await rejects(expired.article.create({ title: "x", slug: "x" }), "refresh failed")
 check(err.status === 401 && signedOut && expired.getAccessToken() === "", "signed out", err)
 
+// 请求发出之后身份变了（auth.generation）：收到 401 不刷新、不重试，不能用新身份重发旧身份的请求。
+let generation = 1
+let switchedRefreshes = 0
+let switchedSends = 0
+const switching = createClient({
+  baseURL,
+  auth: { refresh: async () => (switchedRefreshes++, "secret"), generation: () => generation },
+  fetch: async (input, init) => {
+    switchedSends++
+    const res = await fetch(input, init)
+    generation++ // 响应到达之前换了账号
+    return res
+  },
+})
+err = await rejects(switching.article.create({ title: "x", slug: "x" }), "identity changed")
+check(err.status === 401 && switchedRefreshes === 0 && switchedSends === 1, "no retry after identity change", {
+  switchedRefreshes,
+  switchedSends,
+})
+
+// 确认身份期间身份变了：不重试，不能用新身份重发旧身份的请求。
+let confirmSends = 0
+const confirmSwitching = createClient({
+  baseURL,
+  auth: { refresh: async () => "secret", generation: () => generation },
+  onConfirmRequired: async () => {
+    generation++ // 确认期间换了账号
+    return true
+  },
+  fetch: async () => {
+    confirmSends++
+    return new Response(JSON.stringify({ status: 403, code: "auth.confirm_required", detail: "confirm" }), { status: 403 })
+  },
+})
+err = await rejects(confirmSwitching.article.create({ title: "x", slug: "x" }), "identity changed while confirming")
+check(err.status === 403 && confirmSends === 1, "no retry after confirming as another identity", { confirmSends })
+
+// 刷新期间身份变了：刷新的结果不使用，也不当作需要重新登录。
+let finishRefresh!: (token: string | null) => void
+let staleSignedOut = false
+const stale = createClient({
+  baseURL,
+  auth: {
+    refresh: () => new Promise((resolve) => (finishRefresh = resolve)),
+    generation: () => generation,
+    onSignedOut: () => (staleSignedOut = true),
+  },
+})
+const pending = stale.refresh()
+stale.setAccessToken("bob")
+generation++
+finishRefresh(null)
+check((await pending) === false && stale.getAccessToken() === "bob" && !staleSignedOut, "stale refresh ignored", {
+  token: stale.getAccessToken(),
+  staleSignedOut,
+})
+
 // 403 auth.confirm_required：确认身份后重试一次。
 let calls = 0
 let confirms = 0

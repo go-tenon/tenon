@@ -38,6 +38,11 @@ export interface AuthOptions {
   refresh: () => Promise<string | null | undefined>
   /** 刷新失败、需要重新登录时调用，例如跳到登录页。 */
   onSignedOut?: () => void
+  /**
+   * 身份的代次，登录、退出、切换身份时变化（Session.generation）。设置时，请求发出之后代次变了，
+   * 收到 401 不再刷新重试，直接抛出：不能用新身份重发旧身份的请求；刷新期间代次变了，刷新的结果也不再使用。
+   */
+  generation?: () => number
 }
 
 /** 事件流的选项。 */
@@ -134,6 +139,7 @@ const confirmRequired = "auth.confirm_required"
 export class Runtime {
   private accessToken = ""
   private refreshing: Promise<boolean> | null = null
+  private refreshingGeneration: number | undefined
 
   constructor(private readonly options: ClientOptions) {}
 
@@ -147,23 +153,34 @@ export class Runtime {
     return this.accessToken
   }
 
-  /** 调用 auth.refresh 换新的 access token，并发的调用共用同一次。返回是否成功。 */
+  /**
+   * 调用 auth.refresh 换新的 access token，并发的调用共用同一次。返回是否成功。
+   * 刷新期间身份变了（auth.generation）时返回 false，不改 access token：它由新的登录设置。
+   */
   refresh(): Promise<boolean> {
     const auth = this.options.auth
     if (!auth) return Promise.resolve(false)
-    this.refreshing ??= auth
+    const started = auth.generation?.()
+    // 身份变化之前开始的刷新，结果不会被使用，不共用它。
+    if (this.refreshing && this.refreshingGeneration === started) return this.refreshing
+    const p: Promise<boolean> = auth
       .refresh()
       .then(
         (token) => token ?? "",
         () => "",
       )
       .then((token) => {
+        if (auth.generation?.() !== started) return false
         this.accessToken = token
         if (!token) auth.onSignedOut?.()
         return token !== ""
       })
-      .finally(() => (this.refreshing = null))
-    return this.refreshing
+      .finally(() => {
+        if (this.refreshing === p) this.refreshing = null
+      })
+    this.refreshing = p
+    this.refreshingGeneration = started
+    return p
   }
 
   /** 发送请求，返回解码后的 JSON；204 等没有内容的响应返回 undefined。 */
@@ -238,19 +255,25 @@ export class Runtime {
   private async send(req: Request, signal?: AbortSignal): Promise<Response> {
     let refreshed = false
     let confirmed = false
+    const auth = this.options.auth
+    const sent = auth?.generation?.()
     for (;;) {
       const token = this.accessToken
       const res = await this.fetchOnce(req, signal)
       if (res.ok) return res
-      if (res.status === 401 && !req.public && this.options.auth && !refreshed) {
+      // 身份变了时不重试：这是上一个身份的请求，不能用现在的凭据重发。
+      if (res.status === 401 && !req.public && auth && !refreshed && auth.generation?.() === sent) {
         refreshed = true
         // 等待期间其他请求可能已经换了 token：直接用新的重试。
-        if (this.accessToken !== token || (await this.refresh())) continue
+        if (this.accessToken !== token || (await this.refresh())) {
+          if (auth.generation?.() === sent) continue
+        }
       }
       const err = await toError(res)
-      if (err.code === confirmRequired && this.options.onConfirmRequired && !confirmed) {
+      // 确认身份前后都要还是发出时的身份，否则不确认、不重试。
+      if (err.code === confirmRequired && this.options.onConfirmRequired && !confirmed && auth?.generation?.() === sent) {
         confirmed = true
-        if (await this.options.onConfirmRequired()) continue
+        if ((await this.options.onConfirmRequired()) && auth?.generation?.() === sent) continue
       }
       throw err
     }
