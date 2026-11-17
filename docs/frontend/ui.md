@@ -24,6 +24,7 @@
 - [资源页面](#resources)
 - [设置](#settings)
 - [导入与导出](#transfer)
+- [队列面板](#queue-panel)
 - [确认与提示](#feedback)
 - [路由链接](#links)
 - [演示](#playground)
@@ -494,6 +495,30 @@ import { ExportButton, ImportButton } from "@go-tenon/ui"
 - 导出：点击后在后台导出，对话框显示进度，完成后下载。
 - 进度同时出现在顶栏的后台任务（`OperationsMenu`）中，关闭对话框不影响导入导出。
 
+<a id="queue-panel"></a>
+## 队列面板
+
+`QueuePanel` 是[队列的运维接口](../background/queue-monitoring.md#queue-api)（`queue/queueapi`）的页面。它接收应用生成的客户端分组 `api.queue`，放在一个需要运维权限的路由上：
+
+```tsx title="src/routes/_app/queue.tsx"
+import { createFileRoute } from "@tanstack/react-router"
+import { QueuePanel } from "@go-tenon/ui"
+import { api } from "../../app"
+
+export const Route = createFileRoute("/_app/queue")({
+  staticData: { title: "队列", icon: "list", permission: "queue:manage" },
+  component: () => <QueuePanel api={api.queue} />,
+})
+```
+
+- **概览**：复制槽（是否有 Worker 在转发、积压、WAL 状态）、JetStream（消息数、定时投递、副本）和失败任务总数，每 5 秒刷新（`refreshInterval`）。读不到 JetStream 时显示原因，数据库一侧照常显示；应用没有设置 `queueapi.Options.Admin` 时只有数据库一侧。
+- **Topic**：每个 topic 的状态、等待、处理中、重新投递、失败的任务数和最近投递的时间。正常和停滞的 topic 可以暂停一小时（先确认），暂停的可以恢复；没有设置 `Admin` 时没有这两个按钮。
+- **失败任务**：按 topic 筛选（标签上是条数）、分页。单条重试和删除先确认；“全部重试”“全部删除”处理当前筛选的 topic（全部时是全部 topic），完成后提示条数。
+- **详情**：点击一条失败任务，右侧显示完整的错误和堆栈、元数据（例如 `request_id`）和 payload，可以在这里重试或删除。
+- 页头是概览返回的外部链接（`queueapi.Options.Links`，例如 Grafana）。
+
+`api.queue` 的形状由 `QueueApi` 描述，不依赖具体的应用；字段与 `queue/queueapi` 的类型一致。
+
 <a id="feedback"></a>
 ## 确认与提示
 
@@ -552,6 +577,7 @@ bun run playground
 | `ResourcePage`、`ResourceForm`、`RowAction` | 资源页面、新建和修改的表单 |
 | `SettingsForm` | 设置的表单 |
 | `ImportButton`、`ExportButton` | 导入和导出 |
+| `QueuePanel`、`QueueApi` | 队列面板和它需要的接口 |
 | `confirm`、`notifySuccess`、`notifyError` | 确认对话框和提示 |
 | `ButtonLink`、`AnchorLink`、`NavLinkLink`、`ActionIconLink` | 类型安全的路由链接 |
 | `Icon`、`useIcon`、`defaultIcons`、`IconsProvider` | 图标名称 |

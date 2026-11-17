@@ -24,6 +24,7 @@ import {
   NotificationsMenu,
   OperationsMenu,
   Page,
+  QueuePanel,
   ResourcePage,
   RouteError,
   SettingsForm,
@@ -65,7 +66,7 @@ import {
 import { type AnyRoute, createRootRouteWithContext, createRoute, Outlet, useParams } from "@tanstack/react-router"
 import { type ReactNode, useEffect } from "react"
 import { createRoot } from "react-dom/client"
-import { customerExport, customerImport, customersModel, queryClient, shopSettings } from "./resources"
+import { customerExport, customerImport, customersModel, queryClient, queueApi, shopSettings } from "./resources"
 
 // ———————————————————————————— 共用的假数据 ————————————————————————————
 
@@ -297,6 +298,7 @@ function adminApp() {
       customers,
       page(layout, "/users", "用户", "users", () => <AdminPlaceholder title="用户" />, "users:manage"),
       page(layout, "/reports", "报表", "report", () => <AdminPlaceholder title="报表" />),
+      page(layout, "/queue", "队列", "list", () => <QueuePanel api={queueApi} />),
       page(layout, "/billing", "计费", "wallet", () => <AdminPlaceholder title="计费" />, "billing:manage"),
       page(layout, "/settings", "设置", "settings", () => (
         <Page title="设置" description="店铺的基本信息，对所有渠道生效。">

@@ -267,3 +267,97 @@ export const customerExport = {
       }
     },
 }
+
+/** 演示的队列运维接口：api.queue 的形状。 */
+export const queueApi = (() => {
+  let failed = Array.from({ length: 23 }, (_, i) => ({
+    id: `job-${i + 1}`,
+    topic: ["mail.send", "mail.send", "report.daily", "webhook.deliver"][i % 4],
+    attempts: [10, 10, 3, 8][i % 4],
+    error: [
+      "smtp: dial tcp 10.0.3.12:587: connect: connection refused",
+      "smtp: 421 4.7.0 Try again later, closing connection",
+      "pdf: render report: gotenberg returned 503",
+      "webhook: POST https://hooks.example.com/orders: context deadline exceeded",
+    ][i % 4],
+    failed_at: new Date(Date.now() - i * 37 * 60_000).toISOString(),
+  }))
+  const paused = new Set(["report.daily"])
+  return {
+    status: async () =>
+      delay({
+        slot: {
+          name: "tenon_queue_3f2a9c1e5b7d4e60",
+          exists: true,
+          active: true,
+          active_pid: 48213,
+          wal_status: "reserved",
+          lag: 12_700,
+        },
+        jetstream: { stream: "jobs", exists: true, messages: 28, bytes: 7_577, replicas: 1, deferred: 5 },
+        topics: ["mail.send", "report.daily", "sms.send", "webhook.deliver"].map((topic, i) => ({
+          topic,
+          state: paused.has(topic)
+            ? "paused"
+            : topic === "sms.send"
+              ? "no_handler"
+              : topic === "webhook.deliver"
+                ? "stalled"
+                : "ok",
+          pending: [9, 7, 4, 12][i],
+          in_flight: [3, 0, 0, 0][i],
+          redelivered: [0, 0, 0, 2][i],
+          waiting: [2, 0, 0, 0][i],
+          failed: failed.filter((j) => j.topic === topic).length,
+          last_delivered: i === 0 ? new Date().toISOString() : undefined,
+          paused_until: paused.has(topic) ? new Date(Date.now() + 40 * 60_000).toISOString() : undefined,
+        })),
+        failed: failed.length,
+        links: [{ name: "Grafana", url: "https://grafana.example.com" }],
+      }),
+    failedList: async (input: { topic?: string; page?: number; per_page?: number } = {}) => {
+      const rows = input.topic ? failed.filter((j) => j.topic === input.topic) : failed
+      const page = input.page ?? 1
+      const per = input.per_page ?? 20
+      const counts = new Map<string, number>()
+      for (const j of failed) counts.set(j.topic, (counts.get(j.topic) ?? 0) + 1)
+      return delay({
+        items: rows.slice((page - 1) * per, page * per),
+        total: rows.length,
+        topics: [...counts].map(([topic, count]) => ({ topic, count })).sort((a, b) => b.count - a.count),
+      })
+    },
+    failedGet: async (id: string) => {
+      const j = failed.find((x) => x.id === id) ?? failed[0]
+      return delay({
+        ...j,
+        error: `${j.error}\n\ngoroutine 81 [running]:\nmain.(*Mailer).Send(...)\n\t/app/internal/mail/mail.go:142\nqueue.(*Worker).handle(...)\n\t/app/vendor/tenon/queue/worker.go:388`,
+        metadata: {
+          request_id: "01JD5Q8M2V9ZJ1H3",
+          traceparent: "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+        },
+        payload: { to: "ming@example.com", template: "order_shipped", data: { order: 10482 } },
+      })
+    },
+    failedRetry: async (id: string) => {
+      failed = failed.filter((j) => j.id !== id)
+      return delay(undefined)
+    },
+    failedDelete: async (id: string) => {
+      failed = failed.filter((j) => j.id !== id)
+      return delay(undefined)
+    },
+    failedRetryAll: async (input: { topic?: string } = {}) => {
+      const before = failed.length
+      failed = input.topic ? failed.filter((j) => j.topic !== input.topic) : []
+      return delay({ count: before - failed.length })
+    },
+    failedDeleteAll: async (input: { topic?: string } = {}) => {
+      const before = failed.length
+      failed = input.topic ? failed.filter((j) => j.topic !== input.topic) : []
+      return delay({ count: before - failed.length })
+    },
+    topicPause: async (topic: string) => delay(void paused.add(topic)),
+    topicResume: async (topic: string) => delay(void paused.delete(topic)),
+  }
+})()
