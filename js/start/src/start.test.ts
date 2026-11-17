@@ -45,18 +45,17 @@ describe("compile", () => {
     expect(stripBase("/docs/", "/")).toBe("/docs/")
   })
 
-  it("入口嵌入每个静态文件，路径以 / 开头", () => {
+  it("入口以 base64 内联每个静态文件，路径以 / 开头", () => {
     const src = entrySource(
       "/app/dist/server/server.js",
-      ["assets/a.js", "index.html"],
-      "/app/dist/client",
+      { "index.html": "PGgxPg==", "assets/a.js": "YQ==" },
       "/app/node_modules/.tenon-start",
+      "admin",
     )
     expect(src).toContain('import { serve } from "@go-tenon/start/serve"')
     expect(src).toContain('import handler from "../../dist/server/server.js"')
-    expect(src).toContain('import f0 from "../../dist/client/assets/a.js" with { type: "file" }')
-    expect(src).toContain('"/index.html": f1,')
-    expect(src).toContain('base: "/"')
+    expect(src).toContain('  "/assets/a.js": "YQ==",\n  "/index.html": "PGgxPg==",')
+    expect(src).toContain('base: "/admin/"')
   })
 })
 

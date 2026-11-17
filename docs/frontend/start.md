@@ -104,18 +104,25 @@ export const Route = createFileRoute("/articles/$id")({
 <a id="compiling"></a>
 ## 编译
 
-`tenon-start compile` 构建前端，把服务端入口和全部静态文件（包括预渲染的 HTML）编译成一个不依赖外部文件的可执行文件，由 Go 用 `go:embed` 嵌入，交给 [`ssr.Options.Executable`](ssr.md#wiring)：
+`tenon-start compile` 构建前端，把服务端入口和全部静态文件（包括预渲染的 HTML，以 base64 内联）打包成一个 JS 文件 `ssr.js`，由 Go 用 `go:embed` 嵌入，交给 [`ssr.Options.Bundle`](ssr.md#wiring)。它与架构无关：
 
 ```bash
-bunx tenon-start compile --out ssr.bin --base /admin/
+bunx tenon-start compile --out ssr.js --base /admin/
 ```
 
 模板中它是前端的 `bun run build`，由 `tenon build` 运行，见[开发工具](../installation/tooling.md#build)。
 
 - `--base` 是前端挂载的路径，与 `vite.config.ts` 的 `base` 相同，默认 `/`。静态文件按它提供。
+- `--skip-build` 跳过 `vite build`，直接打包已有的 `dist`。
+- 内联的静态文件：`assets/` 下的文件名带内容哈希，永久缓存；其余文件每次协商。source map 不嵌入。
+
+`tenon-start runtime` 构建几个前端共用的运行时：Bun 和一个加载器编译成的可执行文件，交给 [`ssr.NewRuntime`](ssr.md#wiring)。加载器从文件描述符 3 读出前端的 `ssr.js` 并运行它。`tenon build` 构建一次，写到 `apps/ssr-runtime.bin`：
+
+```bash
+bunx tenon-start runtime --out ../ssr-runtime.bin --target bun-linux-arm64
+```
+
 - `--target` 是运行的系统和架构，`bun-linux-x64` 或 `bun-linux-arm64`。没有写时按环境变量 `GOARCH`（`tenon build` 设为 Go 程序的架构，见 `--arch`），再没有时是当前机器的架构。
-- `--skip-build` 跳过 `vite build`，直接编译已有的 `dist`。
-- 可执行文件中的静态文件：`assets/` 下的文件名带内容哈希，永久缓存；其余文件每次协商。source map 不嵌入。
 
 <a id="development"></a>
 ## 开发
@@ -150,4 +157,5 @@ bunx tenon-start compile --out ssr.bin --base /admin/
 | `@go-tenon/start/serve` | `serve(options)` | Bun 中的 SSR 服务，`tenon-start compile` 生成的入口调用它 |
 | `@go-tenon/start/print` | `definePrint`、`printHandler`、`PrintDocument` | 打印模板，见[打印模板](#print-templates) |
 | `@go-tenon/start/vite` | `tenon(options)` | Vite 插件：TanStack Start、React 和预渲染 |
-| 命令 | `tenon-start compile` | 构建并编译 SSR 可执行文件 |
+| 命令 | `tenon-start compile` | 构建前端，打包成 `ssr.js` |
+| 命令 | `tenon-start runtime` | 构建几个前端共用的运行时 |

@@ -15,28 +15,56 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// process 是写入 memfd 的 SSR 可执行文件。file 要一直被引用到 close：
-// *os.File 被回收时终结器会关闭 fd，之后从 path 启动（重启）会失败，甚至执行到复用了这个 fd 的其他文件。
+// process 是启动 SSR 进程用到的文件：共用的运行时和这个前端的代码，都在 memfd 中。bundle 要一直被引用到 close：
+// *os.File 被回收时终结器会关闭 fd，之后重启时交给子进程的就不是它了。
 type process struct {
-	file *os.File
-	path string
+	runtime string // 运行时的路径，/proc/self/fd/N
+	bundle  *os.File
 }
 
-func (p *process) close() error { return p.file.Close() }
+func (p *process) close() error { return p.bundle.Close() }
 
-// prepare 把可执行文件写进 memfd：从内存执行，不落盘，进程退出后自动释放。
-func (h *Host) prepare() (*process, error) {
-	fd, err := unix.MemfdCreate(processName, unix.MFD_CLOEXEC)
+// memfd 把 data 写进一个内存文件：不落盘，关闭后自动释放。
+func memfd(name string, data []byte) (*os.File, error) {
+	fd, err := unix.MemfdCreate(name, unix.MFD_CLOEXEC)
 	if err != nil {
 		return nil, errors.Wrap(err, "ssr: memfd_create")
 	}
-	f := os.NewFile(uintptr(fd), processName)
-	if _, err := f.Write(h.opts.Executable); err != nil {
+	f := os.NewFile(uintptr(fd), name)
+	if _, err := f.Write(data); err != nil {
 		_ = f.Close()
-		return nil, errors.Wrap(err, "ssr: write executable")
+		return nil, errors.Wrapf(err, "ssr: write %s", name)
 	}
-	// f 在 Run 结束时关闭：在此之前一直从它启动 SSR 进程。
-	return &process{file: f, path: fmt.Sprintf("/proc/self/fd/%d", fd)}, nil
+	return f, nil
+}
+
+// load 第一次调用时把运行时写进 memfd，之后返回同一个路径。
+func (r *Runtime) load() (string, error) {
+	r.once.Do(func() {
+		if len(r.executable) == 0 {
+			r.err = errors.New("ssr: the runtime is empty (run go tool tenon build)")
+			return
+		}
+		r.file, r.err = memfd(processName, r.executable)
+		if r.err == nil {
+			r.path = fmt.Sprintf("/proc/self/fd/%d", r.file.Fd())
+		}
+	})
+	return r.path, r.err
+}
+
+// prepare 准备启动 SSR 进程：共用的运行时（只写一次）和这个前端的代码，都从内存中交给子进程。
+func (h *Host) prepare() (*process, error) {
+	runtime, err := h.opts.Runtime.load()
+	if err != nil {
+		return nil, err
+	}
+	bundle, err := memfd(processName+"-bundle", h.opts.Bundle)
+	if err != nil {
+		return nil, err
+	}
+	// bundle 在 Run 结束时关闭：在此之前每次（重新）启动都把它交给子进程。
+	return &process{runtime: runtime, bundle: bundle}, nil
 }
 
 // supervise 启动 SSR 进程，意外退出后按退避重启，直到 ctx 取消；取消时先 SIGTERM，超过 StopTimeout 再 SIGKILL。
@@ -50,7 +78,9 @@ func (h *Host) supervise(ctx context.Context, p *process) error {
 		stdout := &lineWriter{logger: h.logger, level: slog.LevelInfo}
 		stderr := &lineWriter{logger: h.logger, level: slog.LevelWarn}
 		cmd := &exec.Cmd{
-			Path:        p.path,
+			// 运行时的加载器从 fd 3（BundleFD）读取前端的代码：ExtraFiles 的第一个就是 fd 3。
+			ExtraFiles:  []*os.File{p.bundle},
+			Path:        p.runtime,
 			Args:        []string{processName},
 			Env:         h.env(),
 			Stdout:      stdout,

@@ -50,6 +50,7 @@ func fakeSSR() {
 	if os.Getenv("FAKE_SSR") == "silent" {
 		time.Sleep(time.Hour)
 	}
+	bundle := readBundle()
 	journal := func(s string) {
 		if p := os.Getenv("FAKE_LOG"); p != "" {
 			f, _ := os.OpenFile(p, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
@@ -67,6 +68,7 @@ func fakeSSR() {
 		json.NewEncoder(w).Encode(map[string]string{
 			"nonce": r.Header.Get(HeaderNonce), "request_id": r.Header.Get("X-Request-ID"),
 			"traceparent": r.Header.Get("Traceparent"), "host": r.Host, "env": os.Getenv("FAKE_EXTRA"),
+			"bundle": bundle,
 		})
 	})
 	mux.HandleFunc("/stream", func(w http.ResponseWriter, r *http.Request) {
@@ -126,7 +128,7 @@ func fakeSSR() {
 
 // fakeHost 托管 fakeSSR，就绪后打印子进程的 pid，然后一直运行，等测试把它强制结束。
 func fakeHost() {
-	h, err := New(Options{Executable: self(), API: http.NotFoundHandler(), Env: []string{"FAKE_SSR=1"}})
+	h, err := New(Options{Runtime: testRuntime(), Bundle: testBundle, API: http.NotFoundHandler(), Env: []string{"FAKE_SSR=1"}})
 	if err != nil {
 		panic(err)
 	}
@@ -146,6 +148,25 @@ var selfOnce = sync.OnceValue(func() []byte {
 })
 
 func self() []byte { return selfOnce() }
+
+// testRuntime 是全部测试共用的运行时：测试二进制自己。testBundle 是交给它的“前端代码”，fakeSSR 从 fd 3 读出来。
+var testRuntime = sync.OnceValue(func() *Runtime { return NewRuntime(self()) })
+
+var testBundle = []byte("fake bundle")
+
+// readBundle 从 BundleFD 读出前端代码。用 pread（从头读），不移动共享的偏移：重启后的进程同样能读到。
+func readBundle() string {
+	f := os.NewFile(BundleFD, "bundle")
+	info, err := f.Stat()
+	if err != nil {
+		return "stat: " + err.Error()
+	}
+	b := make([]byte, info.Size())
+	if _, err := f.ReadAt(b, 0); err != nil {
+		return "read: " + err.Error()
+	}
+	return string(b)
+}
 
 // client 不复用连接：DefaultClient 可能预先建立一条连接却不发请求，服务器关停时要等满 5 秒才把它当作空闲连接。
 var client = &http.Client{Transport: &http.Transport{DisableKeepAlives: true}}
@@ -175,7 +196,7 @@ func TestHost(t *testing.T) {
 		io.WriteString(w, "pong "+logging.RequestID(r.Context()))
 	})
 	h, err := New(Options{
-		Executable: self(), API: httpx.AssignRequestID(httpx.DefaultRequestIDConfig())(api),
+		Runtime: testRuntime(), Bundle: testBundle, API: httpx.AssignRequestID(httpx.DefaultRequestIDConfig())(api),
 		Env:    []string{"FAKE_SSR=1", "FAKE_LOG=" + journal, "FAKE_EXTRA=extra"},
 		Logger: slog.New(slog.NewTextHandler(logs, nil)), MeterProvider: mp,
 	})
@@ -234,7 +255,8 @@ func TestHost(t *testing.T) {
 		if csp := res.Header.Get("Content-Security-Policy"); csp != DefaultCSP(got["nonce"]) {
 			t.Fatalf("csp %q", csp)
 		}
-		if got["request_id"] != "REQ-1" || got["env"] != "extra" || !strings.HasPrefix(got["host"], "127.0.0.1:") {
+		if got["request_id"] != "REQ-1" || got["env"] != "extra" || !strings.HasPrefix(got["host"], "127.0.0.1:") ||
+			got["bundle"] != string(testBundle) {
 			t.Fatalf("forwarded %v", got)
 		}
 		if res.Header.Get(HeaderRoute) != "" {
@@ -316,7 +338,13 @@ func TestHost(t *testing.T) {
 		if err != nil || res.StatusCode != http.StatusOK {
 			t.Fatalf("after restart: %v %v", res, err)
 		}
+		// 重启后的进程同样从 fd 3 读到前端代码。
+		var got map[string]string
+		json.NewDecoder(res.Body).Decode(&got)
 		res.Body.Close()
+		if got["bundle"] != string(testBundle) {
+			t.Fatalf("bundle after restart: %q", got["bundle"])
+		}
 		var rm metricdata.ResourceMetrics
 		reader.Collect(context.Background(), &rm)
 		if n := counter(rm, "ssr.restarts"); n != 1 {
@@ -360,7 +388,7 @@ func TestHost(t *testing.T) {
 }
 
 func TestReadyTimeout(t *testing.T) {
-	h, err := New(Options{Executable: self(), API: http.NotFoundHandler(), Env: []string{"FAKE_SSR=silent"},
+	h, err := New(Options{Runtime: testRuntime(), Bundle: testBundle, API: http.NotFoundHandler(), Env: []string{"FAKE_SSR=silent"},
 		ReadyTimeout: 300 * time.Millisecond, StopTimeout: time.Second, Logger: slog.New(slog.DiscardHandler)})
 	if err != nil {
 		t.Fatal(err)
@@ -438,7 +466,7 @@ func TestDevServer(t *testing.T) {
 
 // Render 用打印模板渲染数据：没有内部接口（队列 worker）也能运行；对外的请求访问不到打印模板。
 func TestRender(t *testing.T) {
-	h, err := New(Options{Executable: self(), Env: []string{"FAKE_SSR=1"}})
+	h, err := New(Options{Runtime: testRuntime(), Bundle: testBundle, Env: []string{"FAKE_SSR=1"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -476,8 +504,8 @@ func TestRender(t *testing.T) {
 
 // Run 依次托管多个前端：serve 运行时全部就绪，结束后全部停止。
 func TestRunMany(t *testing.T) {
-	a, _ := New(Options{Executable: self(), Env: []string{"FAKE_SSR=1"}})
-	b, _ := New(Options{Executable: self(), Env: []string{"FAKE_SSR=1"}})
+	a, _ := New(Options{Runtime: testRuntime(), Bundle: testBundle, Env: []string{"FAKE_SSR=1"}})
+	b, _ := New(Options{Runtime: testRuntime(), Bundle: testBundle, Env: []string{"FAKE_SSR=1"}})
 	err := Run(context.Background(), func(context.Context) error {
 		if !a.Ready() || !b.Ready() {
 			return errors.New("not all hosts are ready")
@@ -487,9 +515,30 @@ func TestRunMany(t *testing.T) {
 	if err != nil || a.Ready() || b.Ready() {
 		t.Fatalf("run: %v ready %v %v", err, a.Ready(), b.Ready())
 	}
+	// 两个 Host 共用一个运行时：它只写进一次 memfd。
+	if a.opts.Runtime != b.opts.Runtime || testRuntime().path == "" {
+		t.Fatal("runtime not shared")
+	}
 	ran := false
 	if err := Run(context.Background(), func(context.Context) error { ran = true; return nil }); err != nil || !ran {
 		t.Fatal("no hosts")
+	}
+}
+
+// 不是开发模式时，运行时和前端代码必填；运行时是空的占位文件（还没有 tenon build）时 Run 报错。
+func TestRuntimeRequired(t *testing.T) {
+	if _, err := New(Options{Bundle: testBundle}); err == nil {
+		t.Fatal("missing runtime")
+	}
+	if _, err := New(Options{Runtime: testRuntime()}); err == nil {
+		t.Fatal("missing bundle")
+	}
+	h, err := New(Options{Runtime: NewRuntime(nil), Bundle: testBundle})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Run(context.Background(), func(context.Context) error { return nil }); err == nil || !strings.Contains(err.Error(), "runtime is empty") {
+		t.Fatalf("empty runtime: %v", err)
 	}
 }
 

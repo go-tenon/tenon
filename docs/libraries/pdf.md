@@ -278,7 +278,7 @@ msg.Attachments = append(msg.Attachments, mail.Attachment{
 队列 worker 是另一个进程，同样要托管 SSR 进程才能渲染打印模板：用 `ssr.Host.Run` 包住 worker 的运行函数。worker 不提供接口，`ssr.Options.API` 留空：
 
 ```go
-pages, err := ssr.New(ssr.Options{Executable: web.SSR})
+pages, err := ssr.New(ssr.Options{Runtime: ssr.NewRuntime(apps.Runtime), Bundle: web.SSR})
 if err != nil {
     return err
 }

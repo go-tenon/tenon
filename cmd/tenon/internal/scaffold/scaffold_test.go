@@ -28,9 +28,9 @@ func TestWrite(t *testing.T) {
 		"package.json":                   `"name": "todo"`,
 		"packages/client/package.json":   `"name": "@todo/client"`,
 		"./package.json":                 `".tenon/js/ui"`,
-		"apps/web/package.json":          `"build": "tenon-start compile --out ssr.bin --base /"`,
+		"apps/web/package.json":          `"build": "tenon-start compile --out ssr.js --base /"`,
 		"apps/web/vite.config.ts":        `plugins: [tenon({ prerender: ["/"] }), tenonVersion()]`,
-		"apps/web/frontend.go":           "//go:embed ssr.bin\nvar SSR []byte\n",
+		"apps/web/frontend.go":           "//go:embed ssr.js\nvar SSR []byte\n",
 		"apps/web/src/theme.ts":          `preset: "site"`,
 		"apps/web/src/start.ts":          "requestMiddleware: [requestMiddleware] }",
 		"apps/web/src/router.tsx":        `id: "web"`,
@@ -38,7 +38,8 @@ func TestWrite(t *testing.T) {
 		"apps/web/src/routes/index.tsx":  `from "@todo/client/api"`, // 示例页面覆盖前端模板的首页
 		"apps/web/src/api.ts":            "fetch: apiFetch",
 		"go.mod":                         "\nignore node_modules\n",
-		".gitignore":                     "ssr.bin",
+		".gitignore":                     "/apps/ssr-runtime.bin\n/apps/*/ssr.js",
+		"apps/runtime.go":                "//go:embed ssr-runtime.bin\nvar Runtime []byte\n",
 	} {
 		if b, _ := os.ReadFile(filepath.Join(dir, f)); !strings.Contains(string(b), want) {
 			t.Errorf("%s missing %q:\n%s", f, want, b)
@@ -119,7 +120,7 @@ func TestWriteFrontend(t *testing.T) {
 		}
 		dir := filepath.Join(root, "apps", "admin-console")
 		files := map[string]string{
-			"package.json":   `"build": "tenon-start compile --out ssr.bin --base /admin/"`,
+			"package.json":   `"build": "tenon-start compile --out ssr.js --base /admin/"`,
 			"vite.config.ts": `base: "/admin/"`,
 			"frontend.go":    "package adminconsole\n",
 			"src/router.tsx": `id: "admin-console"`,

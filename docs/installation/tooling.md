@@ -118,8 +118,9 @@ bun run build   # 即 go tool tenon build
 构建出一个可以部署的可执行文件 `bin/api`，前端打包在其中。它依次做这些事：
 
 1. 安装前端的依赖：`bun install --frozen-lockfile`。`--frozen-lockfile` 要求依赖的版本与 `bun.lock` 完全一致，所以 CI 中构建出的结果和你本地的相同。
-2. 在每个前端目录中运行 `bun run build`，即 `tenon-start compile`：构建前端，把渲染页面的程序和全部静态文件编译成一个可执行文件 `ssr.bin`，见 [TanStack Start 的接入](../frontend/start.md#compiling)。它的架构与 Go 程序相同（`go env GOARCH`）。
-3. 编译 Go 程序：`go build -trimpath -o bin/api ./cmd/api`。`-trimpath` 去掉二进制中你电脑上的文件路径。每个前端的 `frontend.go` 用 `go:embed` 嵌入它的 `ssr.bin`。
+2. 在每个前端目录中运行 `bun run build`，即 `tenon-start compile`：构建前端，把渲染页面的代码和全部静态文件打包成一个 JS 文件 `ssr.js`，见 [TanStack Start 的接入](../frontend/start.md#compiling)。
+3. 构建一次几个前端共用的 Bun 运行时 `apps/ssr-runtime.bin`（`tenon-start runtime`），架构与 Go 程序相同（`go env GOARCH`，或 `--arch`）。
+4. 编译 Go 程序：`go build -trimpath -o bin/api ./cmd/api`。`-trimpath` 去掉二进制中你电脑上的文件路径。每个前端的 `frontend.go` 用 `go:embed` 嵌入它的 `ssr.js`，`apps/runtime.go` 嵌入运行时。
 
 `-o` 可以指定输出的文件。`--arch amd64` 或 `--arch arm64` 为另一种架构构建（Linux），例如在 arm64 的机器或 Mac 上构建部署到 amd64 服务器的程序；不写时与本机相同。Go 托管 SSR 进程只支持 Linux。部署见[部署](deployment.md)。
 
@@ -137,7 +138,7 @@ go tool tenon add frontend admin --style admin
 它在 `apps/admin` 中生成一个前端，挂在 `/admin/` 下，加入根目录 `package.json` 的 workspace，安装依赖。最后打印要加到 `cmd/api/main.go` 中的代码：为它创建一个托管 SSR 进程的 `Host`，把它的页面挂在 `/admin/*`，并交给 `ssr.Run`：
 
 ```go
-adminPages, err := ssr.New(ssr.Options{Executable: admin.SSR, API: api, DevServer: cfg.DevServers["admin"]})
+adminPages, err := ssr.New(ssr.Options{Runtime: runtime, Bundle: admin.SSR, API: api, DevServer: cfg.DevServers["admin"]})
 // …
 router.Handle("/admin/*", adminPages.Handler()) // 放在挂载 /* 的那一行之前
 // …
@@ -189,13 +190,13 @@ return ssr.Run(ctx, serve, webPages, adminPages)
 {
   "scripts": {
     "dev": "vite dev",
-    "build": "tenon-start compile --out ssr.bin --base /admin/",
+    "build": "tenon-start compile --out ssr.js --base /admin/",
     "typecheck": "tsr generate && tsc --noEmit"
   }
 }
 ```
 
-构建的结果是前端目录中的 `ssr.bin`，由同一目录中的 `frontend.go` 打包进程序，见[服务端渲染](../frontend/ssr.md)。它不提交到代码仓库；还没有构建时，`tenon dev`、`tenon generate` 写入一个空的占位文件，Go 程序照样能编译。
+构建的结果是前端目录中的 `ssr.js`，由同一目录中的 `frontend.go` 打包进程序；几个前端共用的运行时在 `apps/ssr-runtime.bin`，由 `apps/runtime.go` 打包，见[服务端渲染](../frontend/ssr.md)。它们不提交到代码仓库；还没有构建时，`tenon dev`、`tenon generate` 写入一个空的占位文件，Go 程序照样能编译。
 
 **API** 是你在路由中用 `rest.New` 创建的每一个 API。每个 API 的 TypeScript 客户端生成到 `packages/client/src/<名称>`，名称默认是它的 `BasePath` 的最后一段：
 

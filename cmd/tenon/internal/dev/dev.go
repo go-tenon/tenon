@@ -102,7 +102,7 @@ func (d dev) check() error {
 }
 
 // prepare 在启动监听进程之前运行一次：把框架的前端包复制到 .tenon/js（见 SyncJS），前端包的 package.json 变了
-// 或者缺少依赖（见 NeedsInstall）时在根目录 bun install，确保每个前端的 ssr.bin 存在（见 EnsureDist），
+// 或者缺少依赖（见 NeedsInstall）时在根目录 bun install，确保每个前端的 ssr.js 和共用的运行时存在（见 EnsureDist），
 // 写入前端开发服务器的地址（见 DevConfig）。
 func (d dev) prepare() error {
 	if len(d.cfg.Frontends) > 0 {
@@ -122,21 +122,31 @@ func (d dev) prepare() error {
 	return EnsureDist(d.cfg)
 }
 
-// SSRBinary 是前端目录中 SSR 可执行文件的名字，frontend.go 用 go:embed 嵌入它。
-const SSRBinary = "ssr.bin"
+// SSRBundle 是前端目录中 SSR 代码的名字（tenon-start compile 生成），frontend.go 用 go:embed 嵌入它。
+const SSRBundle = "ssr.js"
 
-// EnsureDist 在前端的 ssr.bin 不存在时（例如刚 clone 的项目，它被 .gitignore 忽略）写入空的占位文件，
-// 嵌入它的代码才能编译。开发时页面来自前端的开发服务器，用不到它；go tool tenon build 编译出真正的可执行文件。
+// SSRRuntime 是几个前端共用的 Bun 运行时（tenon-start runtime 生成），在 apps 目录中，apps/runtime.go 嵌入它。
+const SSRRuntime = "ssr-runtime.bin"
+
+// EnsureDist 在前端的 ssr.js 和共用的运行时不存在时（例如刚 clone 的项目，它们被 .gitignore 忽略）写入空的
+// 占位文件，嵌入它们的代码才能编译。开发时页面来自前端的开发服务器，用不到它们；go tool tenon build 生成真正的文件。
 func EnsureDist(cfg *project.Config) error {
+	if len(cfg.Frontends) == 0 {
+		return nil
+	}
+	// 前端都在 apps 目录中，共用的运行时在它们的上一级。
+	paths := []string{filepath.Join(filepath.Dir(cfg.Frontends[0].Dir), SSRRuntime)}
 	for _, f := range cfg.Frontends {
-		bin := filepath.Join(f.Dir, SSRBinary)
-		if _, err := os.Stat(bin); !errors.Is(err, fs.ErrNotExist) {
+		paths = append(paths, filepath.Join(f.Dir, SSRBundle))
+	}
+	for _, p := range paths {
+		if _, err := os.Stat(p); !errors.Is(err, fs.ErrNotExist) {
 			if err != nil {
 				return err
 			}
 			continue
 		}
-		if err := os.WriteFile(bin, nil, 0o644); err != nil {
+		if err := os.WriteFile(p, nil, 0o644); err != nil {
 			return err
 		}
 	}

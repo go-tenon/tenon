@@ -228,9 +228,12 @@ func TestDevFrontends(t *testing.T) {
 		if !strings.Contains(devYAML, "  "+f+": http://localhost:") {
 			t.Errorf("dev.yaml missing %s:\n%s", f, devYAML)
 		}
-		if b, err := os.ReadFile(filepath.Join(dir, "apps", f, dev.SSRBinary)); err != nil || len(b) != 0 {
-			t.Errorf("%s ssr.bin placeholder = %q, %v", f, b, err)
+		if b, err := os.ReadFile(filepath.Join(dir, "apps", f, dev.SSRBundle)); err != nil || len(b) != 0 {
+			t.Errorf("%s ssr.js placeholder = %q, %v", f, b, err)
 		}
+	}
+	if b, err := os.ReadFile(filepath.Join(dir, "apps", dev.SSRRuntime)); err != nil || len(b) != 0 {
+		t.Errorf("runtime placeholder = %q, %v", b, err)
 	}
 	if count("bun run build") != 0 {
 		t.Errorf("built before start:\n%s", l)

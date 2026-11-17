@@ -38,8 +38,11 @@ const (
 
 // Options 配置 Host。
 type Options struct {
-	// Executable 是 bun build --compile 编译出的 SSR 可执行文件，通常用 go:embed 嵌入。DevServer 为空时必填。
-	Executable []byte
+	// Runtime 是启动 SSR 进程的 Bun 运行时，几个前端共用一个，见 NewRuntime。DevServer 为空时必填。
+	Runtime *Runtime
+	// Bundle 是这个前端的代码：tenon-start compile 生成的 ssr.js（服务端入口和全部静态文件），通常用 go:embed 嵌入。
+	// DevServer 为空时必填。
+	Bundle []byte
 	// API 是 SSR 进程渲染页面时调用的接口，通常就是对外的那一组接口路由。
 	// 它在内部 socket 上提供，只接受与本进程同一用户的连接。nil 时不提供，例如只用 Render 生成 PDF 的队列 worker。
 	API http.Handler
@@ -75,7 +78,7 @@ type Host struct {
 	started  atomic.Bool
 }
 
-// New 检查 opts 并创建 Host。DevServer 为空时 Executable 必填。
+// New 检查 opts 并创建 Host。DevServer 为空时 Runtime 和 Bundle 必填。
 func New(opts Options) (*Host, error) {
 	h := &Host{opts: opts, logger: opts.Logger}
 	if h.logger == nil {
@@ -111,8 +114,8 @@ func New(opts Options) (*Host, error) {
 		h.client = h.renderClient()
 		return h, nil
 	}
-	if len(opts.Executable) == 0 {
-		return nil, errors.New("ssr: Options.Executable is required")
+	if opts.Runtime == nil || len(opts.Bundle) == 0 {
+		return nil, errors.New("ssr: Options.Runtime and Options.Bundle are required (run go tool tenon build)")
 	}
 	id := rand.Text()
 	h.socket = "@tenon-ssr-" + id

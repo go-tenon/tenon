@@ -1,4 +1,4 @@
-// 在 Bun 中运行的 SSR 服务：tenon-start compile 生成的入口用 serve 监听 Go 给的 unix socket。
+// 在 Bun 中运行的 SSR 服务：tenon-start compile 生成的 ssr.js 用 serve 监听 Go 给的 unix socket。
 // 这里不导入 TanStack 的包：服务端入口已经由 Vite 构建好（dist/server/server.js）。
 
 import { unlinkSync } from "node:fs"
@@ -9,7 +9,7 @@ export interface ServeOptions {
   /** Start 构建出的服务端入口（dist/server/server.js 的默认导出）。 */
   handler: { fetch: (request: Request) => Response | Promise<Response> }
   /**
-   * 嵌入可执行文件的静态文件：路径（例如 /assets/index-1a2b.js、/docs/intro/index.html）到 Bun 嵌入文件的映射，
+   * 内联的静态文件：路径（例如 /assets/index-1a2b.js、/docs/intro/index.html）到 base64 内容的映射，
    * 由 tenon-start compile 生成。路径对应的文件、目录下的 index.html（预渲染的页面）直接返回，其余请求交给 handler。
    */
   files: Record<string, string>
@@ -43,8 +43,25 @@ export function serve(options: ServeOptions): void {
   })
 }
 
+/** 解码后的静态文件，第一次请求时解码。 */
+const decoded = new Map<string, Uint8Array<ArrayBuffer>>()
+
+function content(files: Record<string, string>, path: string): Uint8Array<ArrayBuffer> {
+  let bytes = decoded.get(path)
+  if (!bytes) {
+    bytes = new Uint8Array(Buffer.from(files[path] ?? "", "base64"))
+    decoded.set(path, bytes)
+  }
+  return bytes
+}
+
+/** 按扩展名得到 Content-Type，例如 text/javascript;charset=utf-8。 */
+function contentType(path: string): string {
+  return Bun.file(path).type
+}
+
 /**
- * 返回请求路径对应的嵌入文件：assets 下的文件名带内容哈希，永久缓存；预渲染的 HTML 每次协商，
+ * 返回请求路径对应的内联文件：assets 下的文件名带内容哈希，永久缓存；预渲染的 HTML 每次协商，
  * 其中的占位 nonce 换成本次请求的 nonce（X-CSP-Nonce）。
  */
 export async function staticFile(
@@ -56,17 +73,21 @@ export async function staticFile(
   if (path === undefined) return undefined
   const dir = path.endsWith("/") ? path : `${path}/`
   for (const candidate of [path, `${dir}index.html`]) {
-    const file = files[candidate]
-    if (!file) continue
+    if (!Object.hasOwn(files, candidate)) continue
     if (candidate.endsWith(".html")) {
-      const html = (await Bun.file(file).text()).replaceAll(PrerenderNonce, request.headers.get(HeaderNonce) ?? "")
+      const html = new TextDecoder()
+        .decode(content(files, candidate))
+        .replaceAll(PrerenderNonce, request.headers.get(HeaderNonce) ?? "")
       return new Response(html, {
         headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" },
       })
     }
     const immutable = candidate.startsWith("/assets/")
-    return new Response(Bun.file(file), {
-      headers: { "Cache-Control": immutable ? "public, max-age=31536000, immutable" : "no-cache" },
+    return new Response(content(files, candidate), {
+      headers: {
+        "Content-Type": contentType(candidate),
+        "Cache-Control": immutable ? "public, max-age=31536000, immutable" : "no-cache",
+      },
     })
   }
   return undefined

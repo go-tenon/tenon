@@ -222,6 +222,7 @@ import (
     "github.com/go-tenon/tenon/httpx/rest"
     "github.com/go-tenon/tenon/ssr"
 
+    "example.com/blog/apps"
     webapp "example.com/blog/apps/web"
     "example.com/blog/internal/todo"
 )
@@ -230,7 +231,8 @@ import (
 func (a *App) HTTP(d *command.Daemon) (func(context.Context) error, error) {
     var draining httpx.Draining
     var router chi.Router
-    web, err := a.pages("web", webapp.SSR, &router)
+    rt := ssr.NewRuntime(apps.Runtime) // 几个前端共用的 Bun 运行时
+    web, err := a.pages(rt, "web", webapp.SSR, &router)
     if err != nil {
         return nil, err
     }
@@ -246,11 +248,12 @@ func (a *App) HTTP(d *command.Daemon) (func(context.Context) error, error) {
     }, nil
 }
 
-// pages 创建托管前端 name 的 SSR 进程的 Host：exe 是嵌入的 SSR 可执行文件；开发时页面转给前端的开发服务器。
-// 进程渲染页面需要数据时调用 *router 中的接口，router 在 Host 创建之后才构造好，所以传它的地址。
-func (a *App) pages(name string, exe []byte, router *chi.Router) (*ssr.Host, error) {
+// pages 创建托管前端 name 的 SSR 进程的 Host：bundle 是嵌入的前端代码，由几个前端共用的运行时 rt 运行；
+// 开发时页面转给前端的开发服务器。进程渲染页面需要数据时调用 *router 中的接口，
+// router 在 Host 创建之后才构造好，所以传它的地址。
+func (a *App) pages(rt *ssr.Runtime, name string, bundle []byte, router *chi.Router) (*ssr.Host, error) {
     api := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { (*router).ServeHTTP(w, r) })
-    return ssr.New(ssr.Options{Executable: exe, API: api, DevServer: a.cfg.DevServers[name]})
+    return ssr.New(ssr.Options{Runtime: rt, Bundle: bundle, API: api, DevServer: a.cfg.DevServers[name]})
 }
 
 // Router 构造应用的全部路由：健康检查、/api 下的接口和页面。
