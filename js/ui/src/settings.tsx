@@ -65,7 +65,7 @@ export function SettingsForm({
         </Box>
       )}
       {view.loading ? (
-        <Stack gap="md" maw={520}>
+        <Stack gap="md">
           {model.form.map((f) => (
             <Skeleton key={f.name} h={56} />
           ))}
@@ -148,7 +148,7 @@ function Loaded({
         }
       })}
     >
-      <Stack gap="md" maw={520}>
+      <Stack gap="md">
         <FormError error={formError} />
         {model.form.map((f) => {
           const Input = inputs[f.name] ?? DefaultInput
