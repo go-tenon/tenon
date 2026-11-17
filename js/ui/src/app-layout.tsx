@@ -29,11 +29,12 @@ import {
   IconSearch,
 } from "@tabler/icons-react"
 import { Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router"
-import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from "react"
+import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Icon } from "./icons"
 import { TabsAvailableProvider } from "./layout-context"
 import { NavLinkLink } from "./links"
 import { TenantSwitcher } from "./menus"
+import { ContentFlashProvider, PageProgress } from "./page-progress"
 import {
   type MenuItem,
   Slot,
@@ -93,15 +94,9 @@ export function AppLayout({ title, logo, user, actions, search = true, tabs, max
     if (state.navOpen) setState({ navOpen: false })
   }, [pathname])
 
-  // 切换页面（点标签、点菜单、搜索跳转）时，新页面淡入，同时从下方上移 6px。只看路径：翻页、筛选不算。
+  // 切换页面（点标签、点菜单、搜索跳转）和重新加载标签时，内容区淡入，同时从下方上移 6px。只看路径：翻页、筛选不算。
   const content = useRef<HTMLDivElement>(null)
-  const first = useRef(true)
-  // biome-ignore lint/correctness/useExhaustiveDependencies: 只在路径变化时播放
-  useEffect(() => {
-    if (first.current) {
-      first.current = false
-      return
-    }
+  const flash = useCallback(() => {
     const el = content.current
     if (!el?.animate || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return
     el.animate(
@@ -109,11 +104,17 @@ export function AppLayout({ title, logo, user, actions, search = true, tabs, max
         { opacity: 0, transform: "translateY(6px)" },
         { opacity: 1, transform: "none" },
       ],
-      {
-        duration: 180,
-        easing: "ease-out",
-      },
+      { duration: 180, easing: "ease-out" },
     )
+  }, [])
+  const first = useRef(true)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 只在路径变化时播放
+  useEffect(() => {
+    if (first.current) {
+      first.current = false
+      return
+    }
+    flash()
   }, [pathname])
 
   const vars = { "--tn-header-height": `${m.headerHeight}px` } as CSSProperties
@@ -166,7 +167,13 @@ export function AppLayout({ title, logo, user, actions, search = true, tabs, max
               {title && <span className="tn-brand-title">{title}</span>}
             </Link>
           </div>
-          {showTabBar ? <TabBar /> : <Box style={{ flex: 1 }} />}
+          {showTabBar ? (
+            <ContentFlashProvider value={flash}>
+              <TabBar />
+            </ContentFlashProvider>
+          ) : (
+            <Box style={{ flex: 1 }} />
+          )}
           <Group gap="xs" wrap="nowrap">
             <Slot name="actions" />
             {actions}
@@ -198,6 +205,7 @@ export function AppLayout({ title, logo, user, actions, search = true, tabs, max
         <Slot name="footer" />
       </AppShell.Main>
       {search && <PageSearch />}
+      <PageProgress />
       <NewVersionNotice />
     </AppShell>
   )

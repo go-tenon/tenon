@@ -4,6 +4,7 @@
  */
 @import "@mantine/core/styles.css";
 @import "@mantine/notifications/styles.css";
+@import "@mantine/nprogress/styles.css";
 @import "@mantine/spotlight/styles.css";
 @import "@mantine/dates/styles.css";
 @import "mantine-datatable/styles.css";
@@ -547,23 +548,6 @@ body {
 .tn-tab-reload {
   flex-shrink: 0;
   margin-left: 12px;
-}
-
-/* 点击刷新后图标转一圈。 */
-.tn-tab-reload-spin {
-  animation: tn-spin 600ms ease;
-}
-
-@keyframes tn-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .tn-tab-reload-spin {
-    animation: none;
-  }
 }
 
 /* ———————————————— 表格 ———————————————— */

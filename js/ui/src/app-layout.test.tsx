@@ -185,14 +185,16 @@ describe("AppLayout 的多标签", () => {
     await waitFor(() => expect(titles()).toEqual(["*概览", ">用户"]))
   })
 
-  it("刷新按钮重新挂载当前页面，按钮的图标转一圈，页面不加遮罩", async () => {
+  it("刷新按钮重新挂载当前页面，页面顶部显示进度条，页面不加遮罩", async () => {
     await renderApp(tree({ tabs: true }), { path: "/trade/orders", permissions: ["users:manage"] })
     const before = await screen.findByText("订单页面")
-    const button = screen.getByRole("button", { name: "重新加载当前页面" })
-    await act(async () => fireEvent.click(button))
+    const progress = () => document.querySelector(".mantine-Progress-root[data-mounted=true]")
+    await waitFor(() => expect(progress()).toBeNull(), { timeout: 2000 }) // 打开页面时的进度条先走完
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "重新加载当前页面" })))
+    expect(progress()).not.toBeNull()
     const after = await screen.findByText("订单页面")
     expect(after).not.toBe(before) // 重新挂载：是新的元素
-    expect(button.querySelector(".tn-tab-reload-spin")).not.toBeNull()
+    await waitFor(() => expect(progress()).toBeNull(), { timeout: 2000 }) // 请求都完成后走完、消失
     expect(document.querySelector(".mantine-LoadingOverlay-root")).toBeNull()
   })
 
