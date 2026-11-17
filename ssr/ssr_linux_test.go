@@ -240,10 +240,13 @@ func TestHost(t *testing.T) {
 		if res.Header.Get(HeaderRoute) != "" {
 			t.Fatal("route header leaked to the client")
 		}
+		// 客户端读完响应时，服务端的中间件可能还没有结束 span。
 		var span sdktrace.ReadOnlySpan
-		for _, s := range spans.Ended() {
-			if s.Name() == "GET /echo/$id" {
-				span = s
+		for deadline := time.Now().Add(2 * time.Second); span == nil && time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+			for _, s := range spans.Ended() {
+				if s.Name() == "GET /echo/$id" {
+					span = s
+				}
 			}
 		}
 		if span == nil {
@@ -305,7 +308,7 @@ func TestHost(t *testing.T) {
 		deadline := time.Now().Add(10 * time.Second)
 		for !h.Ready() || h.pid.Load() == pid {
 			if time.Now().After(deadline) {
-				t.Fatal("not restarted")
+				t.Fatalf("not restarted, pid %d -> %d, ready %v; logs:\n%s", pid, h.pid.Load(), h.Ready(), logs.String())
 			}
 			time.Sleep(10 * time.Millisecond)
 		}

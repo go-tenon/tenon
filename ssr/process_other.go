@@ -9,6 +9,8 @@ import (
 
 type process struct{}
 
+func (*process) close() error { return nil }
+
 func (h *Host) prepare() (*process, error) { return nil, ErrUnsupported }
 
 func (h *Host) supervise(context.Context, *process) error { return ErrUnsupported }
