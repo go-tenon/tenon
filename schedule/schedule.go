@@ -70,6 +70,12 @@ func In(loc *time.Location) TaskOption { return func(t *task) { t.loc = loc } }
 // ErrTimeout 是超过 Timeout 的执行的错误，也是任务 ctx 的取消原因。
 var ErrTimeout = errors.New("schedule: task timed out")
 
+// ErrUnknownTask 是 RunNow 找不到任务时的错误。
+var ErrUnknownTask = errors.New("schedule: unknown task")
+
+// ErrRunning 是 RunNow 的任务正在执行（任何一个实例上）、又没有 AllowOverlap 时的错误：这次不执行。
+var ErrRunning = errors.New("schedule: task is still running")
+
 // Timeout 限制每次执行的时长：超过 d 时以 ErrTimeout 取消任务的 ctx，这次执行记为失败，错误满足 errors.Is(err, ErrTimeout)。
 // 卡住的任务因此按时释放执行锁，之后的触发照常进行。任务需要遵守 ctx 才能及时结束。d 不大于 0 时 panic。
 func Timeout(d time.Duration) TaskOption {
@@ -181,7 +187,7 @@ func (s *Scheduler) Run(ctx context.Context) error {
 			go func() {
 				defer wg.Done()
 				ctx := taskContext(taskCtx, t)
-				if err := s.execute(ctx, t, tick); err != nil {
+				if err := s.execute(ctx, t, tick, false); err != nil {
 					s.logger.ErrorContext(ctx, "scheduled task failed", "error", err)
 				}
 			}()
@@ -237,7 +243,7 @@ func (s *Scheduler) RunDue(ctx context.Context, t time.Time) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if err := s.execute(taskContext(ctx, task), task, tick); err != nil {
+			if err := s.execute(taskContext(ctx, task), task, tick, false); err != nil {
 				errs[i] = errors.Wrapf(err, "schedule: task %q", task.name)
 			}
 		}()
@@ -246,10 +252,29 @@ func (s *Scheduler) RunDue(ctx context.Context, t time.Time) error {
 	return errors.Join(errs...)
 }
 
+// RunNow 立即在本实例上执行一次任务，例如后台的“立即执行”（通常经由队列交给 worker，见 schedule/scheduleapi）。
+// 它不按表达式，也不参与同一次触发的去重；没有 AllowOverlap 的任务照样防止重叠：正在任何一个实例上执行时
+// 不执行，返回 ErrRunning。执行的事件照常交给 Observer，Event.Manual 为 true、Tick 为零值。
+// 返回任务的错误；找不到任务时返回 ErrUnknownTask。
+func (s *Scheduler) RunNow(ctx context.Context, name string) error {
+	s.mu.Lock()
+	var t *task
+	for _, x := range s.tasks {
+		if x.name == name {
+			t = x
+		}
+	}
+	s.mu.Unlock()
+	if t == nil {
+		return errors.Wrapf(ErrUnknownTask, "schedule: task %q", name)
+	}
+	return s.execute(taskContext(ctx, t), t, time.Time{}, true)
+}
+
 // execute 取得这一次触发和防止重叠所需的锁，然后执行任务。ctx 是 taskContext 返回的这一次执行的 context。
 // 其他实例已经执行这一次触发、或者任务仍在执行时直接返回 nil。
-func (s *Scheduler) execute(ctx context.Context, t *task, tick time.Time) error {
-	finished, err := s.runLocked(ctx, t, tick)
+func (s *Scheduler) execute(ctx context.Context, t *task, tick time.Time, manual bool) error {
+	finished, err := s.runLocked(ctx, t, tick, manual)
 	if finished != nil {
 		// 结束事件在释放执行锁之后发出：Observer 收到它时，Running 已经返回 false。
 		s.observe(finished.ctx, finished.Event)
@@ -264,47 +289,57 @@ type finishedRun struct {
 }
 
 // runLocked 按去重和防重叠的规则取得锁并执行任务，返回时锁已释放；没有执行时 finished 为 nil。
-func (s *Scheduler) runLocked(ctx context.Context, t *task, tick time.Time) (finished *finishedRun, _ error) {
+// manual 是 RunNow 的执行：没有这一次触发，不做触发的去重，防止重叠照旧；因为重叠没有执行时返回 ErrRunning。
+func (s *Scheduler) runLocked(ctx context.Context, t *task, tick time.Time, manual bool) (finished *finishedRun, _ error) {
+	skipped := func(reason SkipReason, err error) {
+		s.observe(ctx, Event{Kind: TaskSkipped, Task: t.name, Tick: tick, SkipReason: reason, Err: err, Manual: manual})
+	}
+	overlap := func() error {
+		if manual {
+			return ErrRunning
+		}
+		return nil
+	}
 	if !t.allowOverlap {
 		if !t.begin() {
 			s.logger.InfoContext(ctx, "scheduled task skipped, still running")
-			s.observe(ctx, Event{Kind: TaskSkipped, Task: t.name, Tick: tick, SkipReason: SkipOverlap})
-			return nil, nil
+			skipped(SkipOverlap, nil)
+			return nil, overlap()
 		}
 		defer t.end()
 	}
-	if !t.everyInstance {
+	if !t.everyInstance && !manual {
 		key := "schedule:" + t.name + ":" + strconv.FormatInt(tick.Unix(), 10)
 		if _, err := s.locker.Acquire(ctx, key, tickTTL); err != nil {
 			if errors.Is(err, lock.ErrNotAcquired) {
 				return nil, nil // 其他实例执行这一次触发
 			}
-			s.observe(ctx, Event{Kind: TaskSkipped, Task: t.name, Tick: tick, SkipReason: SkipLockFailed, Err: err})
+			skipped(SkipLockFailed, err)
 			return nil, err
 		}
-		if !t.allowOverlap {
-			running, err := s.locker.Acquire(ctx, runningKey(t.name), runningTTL)
-			if errors.Is(err, lock.ErrNotAcquired) {
-				s.logger.InfoContext(ctx, "scheduled task skipped, still running on another instance")
-				s.observe(ctx, Event{Kind: TaskSkipped, Task: t.name, Tick: tick, SkipReason: SkipOverlap})
-				return nil, nil
-			}
-			if err != nil {
-				s.observe(ctx, Event{Kind: TaskSkipped, Task: t.name, Tick: tick, SkipReason: SkipLockFailed, Err: err})
-				return nil, err
-			}
-			stop := s.keep(ctx, running)
-			defer stop()
+	}
+	if !t.everyInstance && !t.allowOverlap {
+		running, err := s.locker.Acquire(ctx, runningKey(t.name), runningTTL)
+		if errors.Is(err, lock.ErrNotAcquired) {
+			s.logger.InfoContext(ctx, "scheduled task skipped, still running on another instance")
+			skipped(SkipOverlap, nil)
+			return nil, overlap()
 		}
+		if err != nil {
+			skipped(SkipLockFailed, err)
+			return nil, err
+		}
+		stop := s.keep(ctx, running)
+		defer stop()
 	}
 	ctx, end := s.startSpan(ctx, t.name, tick)
 	start := time.Now()
-	s.observe(ctx, Event{Kind: TaskStarted, Task: t.name, Tick: tick, Started: start})
+	s.observe(ctx, Event{Kind: TaskStarted, Task: t.name, Tick: tick, Started: start, Manual: manual})
 	err := t.call(ctx)
 	elapsed := time.Since(start)
 	end(err)
 	s.logger.DebugContext(ctx, "scheduled task finished", "duration", elapsed, "error", err)
-	e := Event{Kind: TaskSucceeded, Task: t.name, Tick: tick, Started: start, Duration: elapsed, Err: err}
+	e := Event{Kind: TaskSucceeded, Task: t.name, Tick: tick, Started: start, Duration: elapsed, Err: err, Manual: manual}
 	if err != nil {
 		e.Kind = TaskFailed
 	}

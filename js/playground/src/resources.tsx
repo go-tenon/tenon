@@ -2,7 +2,15 @@
 // 接口是内存中的假数据。
 
 import type { OperationLike } from "@go-tenon/client"
-import { type ResourceDef, resourceModel, type SettingsDef, settingsModel } from "@go-tenon/ui"
+import {
+  type ResourceDef,
+  resourceModel,
+  type ScheduleApi,
+  type ScheduleRunData,
+  type ScheduleTaskData,
+  type SettingsDef,
+  settingsModel,
+} from "@go-tenon/ui"
 import { QueryClient } from "@tanstack/react-query"
 
 export const queryClient = new QueryClient()
@@ -356,4 +364,94 @@ export const queueApi = (() => {
     topicPause: async (topic: string) => delay(void paused.add(topic)),
     topicResume: async (topic: string) => delay(void paused.delete(topic)),
   }
+})()
+
+/** 演示的定时任务接口：api.schedule 的形状。 */
+export const scheduleApi = (() => {
+  const now = Date.now()
+  const at = (minutes: number) => new Date(now + minutes * 60_000).toISOString()
+  const tasks: ScheduleTaskData[] = [
+    {
+      name: "articles:publish-scheduled",
+      description: "发布到了预定时间的文章",
+      expr: "* * * * *",
+      next_run: at(1),
+      running: false,
+      last_status: "succeeded",
+      last_run_at: at(-1),
+      last_duration_ms: 84,
+      missed: false,
+    },
+    {
+      name: "reports:daily",
+      description: "生成前一天的报表",
+      expr: "0 2 * * *",
+      next_run: at(60 * 9),
+      running: false,
+      last_status: "failed",
+      last_run_at: at(-60 * 15),
+      last_duration_ms: 42_300,
+      last_error: "pdf: render timeout after 40s",
+      missed: false,
+    },
+    {
+      name: "locks:cleanup",
+      description: "删除过期的锁",
+      expr: "@hourly",
+      next_run: at(23),
+      running: true,
+      last_status: "succeeded",
+      last_run_at: at(-37),
+      last_duration_ms: 1_204,
+      missed: false,
+    },
+    {
+      name: "queue:prune-failed",
+      description: "删除 30 天前的失败任务",
+      expr: "@daily",
+      next_run: at(60 * 7),
+      running: false,
+      last_status: "succeeded",
+      last_run_at: at(-60 * 41),
+      last_duration_ms: 310,
+      missed: true,
+    },
+  ]
+  const runs: ScheduleRunData[] = Array.from({ length: 64 }, (_, i) => {
+    const t = tasks[i % tasks.length]
+    const failed = t.name === "reports:daily" && i % 3 === 1
+    const skipped = t.name === "locks:cleanup" && i % 5 === 2
+    return {
+      id: `run-${i + 1}`,
+      task: t.name,
+      status: failed ? "failed" : skipped ? "skipped" : "succeeded",
+      manual: i % 11 === 3,
+      started_at: at(-i * 37),
+      duration_ms: skipped ? 0 : (t.last_duration_ms ?? 100) + (i % 7) * 13,
+      error: failed
+        ? "pdf: render timeout after 40s\n    at reports.render (reports/daily.go:88)"
+        : skipped
+          ? "overlap"
+          : "",
+    }
+  })
+  const api: ScheduleApi = {
+    async list() {
+      await new Promise((r) => setTimeout(r, 300))
+      return { items: tasks }
+    },
+    async run() {
+      await new Promise((r) => setTimeout(r, 300))
+    },
+    async runs(input = {}) {
+      await new Promise((r) => setTimeout(r, 300))
+      const rows = runs.filter(
+        (r) => (!input.task || r.task === input.task) && (!input.status || r.status === input.status),
+      )
+      const page = input.page ?? 1
+      const perPage = input.per_page ?? 20
+      return { items: rows.slice((page - 1) * perPage, page * perPage), total: rows.length }
+    },
+  }
+  return api
 })()

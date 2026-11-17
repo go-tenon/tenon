@@ -143,7 +143,7 @@ sudo rm /etc/nginx/blog.maintenance
 
 - **先挡住请求，再停止程序。** 顺序反过来的话，程序停止后、维护生效前的请求会得到 `502`。
 - **worker 和调度器也要停止。** 它们直接连接数据库，维护期间会不断出错；不兼容的变更期间，还可能用旧代码处理新数据。停止时 worker 会等处理中的任务完成，没执行的任务留在队列中，恢复后继续执行。
-- **停止期间错过的定时任务会等下一次触发**，见[失败与停止](../background/scheduling.md#failures-and-shutdown)。每天只执行一次的任务，恢复后需要[手动执行](../background/scheduling.md#running-manually)一次。
+- **停止期间错过的定时任务会等下一次触发**，见[失败与停止](../background/scheduling.md#failures-and-shutdown)。每天只执行一次的任务，恢复后在后台[立即执行](../background/scheduling.md#running-manually)一次。
 - **检查通过后再结束维护。** 标记文件还在时，办公网络已经能访问新版本，确认无误再删除文件。
 
 使用 Docker Compose 时，`docker compose stop` 和 `docker compose up -d` 分别对应上面的停止和启动。

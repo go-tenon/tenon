@@ -96,6 +96,7 @@ var rules = map[string]rule{
 	"queue/queuecmd":              {layerEntry, []string{"command", "queue"}},
 	"queue/queueapi":              {layerEntry, []string{"errorx", "httpx", "identity", "logging", "page", "queue"}},
 	"schedule/schedulecmd":        {layerEntry, []string{"command", "schedule"}},
+	"schedule/scheduleapi":        {layerEntry, []string{"errorx", "httpx", "identity", "logging", "page", "queue", "schedule"}},
 
 	"apitoken":          {layerFeature, []string{"errorx", "identity"}},
 	"authz":             {layerFeature, []string{"cachex", "database", "errorx", "identity", "logging"}},

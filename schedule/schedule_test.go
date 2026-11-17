@@ -327,3 +327,66 @@ func TestTimeout(t *testing.T) {
 	}()
 	schedule.Timeout(0)
 }
+
+func TestRunNow(t *testing.T) {
+	locker := lock.New(locktest.NewStore())
+	var events []schedule.Event
+	var mu sync.Mutex
+	observe := schedule.WithObserver(func(_ context.Context, e schedule.Event) {
+		mu.Lock()
+		events = append(events, e)
+		mu.Unlock()
+	})
+	var runs atomic.Int64
+	started := make(chan struct{}, 2)
+	release := make(chan struct{})
+	a := schedule.New(locker, schedule.DefaultConfig(), nil, observe)
+	b := schedule.New(locker, schedule.DefaultConfig(), nil, observe)
+	for _, s := range []*schedule.Scheduler{a, b} {
+		s.Add("report", "@daily", blockingTask(&runs, started, release))
+		s.Add("broken", "@daily", func(context.Context) error { return errors.New("boom") })
+	}
+
+	if err := a.RunNow(context.Background(), "missing"); !errors.Is(err, schedule.ErrUnknownTask) {
+		t.Fatalf("unknown: %v", err)
+	}
+	if err := a.RunNow(context.Background(), "broken"); err == nil || err.Error() != "boom" {
+		t.Fatalf("broken: %v", err)
+	}
+
+	// 不按表达式执行；正在另一个实例上执行时不重叠，返回 ErrRunning。
+	done := make(chan error, 1)
+	go func() { done <- a.RunNow(context.Background(), "report") }()
+	<-started
+	if err := b.RunNow(context.Background(), "report"); !errors.Is(err, schedule.ErrRunning) {
+		t.Fatalf("overlap: %v", err)
+	}
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if runs.Load() != 1 {
+		t.Fatalf("runs = %d", runs.Load())
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	var finished, skipped int
+	for _, e := range events {
+		if !e.Manual || !e.Tick.IsZero() {
+			t.Fatalf("event not marked manual: %+v", e)
+		}
+		switch e.Kind {
+		case schedule.TaskSucceeded, schedule.TaskFailed:
+			finished++
+		case schedule.TaskSkipped:
+			skipped++
+			if e.SkipReason != schedule.SkipOverlap {
+				t.Fatalf("skip reason: %v", e.SkipReason)
+			}
+		}
+	}
+	if finished != 2 || skipped != 1 {
+		t.Fatalf("events: %+v", events)
+	}
+}

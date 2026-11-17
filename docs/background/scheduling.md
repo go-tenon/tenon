@@ -22,7 +22,7 @@
     - [列出任务的命令](#schedules-command)
     - [执行记录](#run-history)
     - [后台页面](#admin-pages)
-    - [手动执行](#running-manually)
+    - [立即执行](#running-manually)
 - [清理框架数据](#framework-cleanups)
 - [测试](#testing)
 - [常见问题](#troubleshooting)
@@ -226,7 +226,25 @@ queue:prune-failed          @daily        2026-11-12 00:00:00  6h59m42s  no     
 <a id="run-history"></a>
 ### 执行记录
 
-上一次什么时候执行、结果如何，是运行时的数据：部署多个实例时，每次触发由先取得锁的实例执行。需要执行记录时，用 `schedule.WithObserver` 接收执行事件，写进自己的表：
+上一次什么时候执行、结果如何，是运行时的数据：部署多个实例时，每次触发由先取得锁的实例执行。`schedule/scheduleapi` 把它们写进 `schedule_runs` 表：调度器加上 `scheduleapi.Observer`，每次执行结束、被跳过时写一行，由其他实例执行的触发不报告，所以每次执行只记一行。表的迁移由 `scheduleapi.Migrations()` [发布](../database/migrations.md)：
+
+```go
+scheduleapi.Migrations()
+```
+
+```go
+func (a *App) tasks() *schedule.Scheduler {
+    sched := schedule.New(a.locker, a.cfg.Schedule, nil, schedule.WithObserver(scheduleapi.Observer(a.db)))
+    // ……
+    sched.Add("schedule:prune-runs", "@daily", schedule.Cleanup(scheduleapi.Cleanup(a.db, 7*24*time.Hour), 1000),
+        schedule.Describe("删除 7 天前的执行记录"))
+    return sched
+}
+```
+
+执行记录要定时清理，`scheduleapi.Cleanup(db, 保留期)` 见[清理框架数据](#framework-cleanups)。
+
+想把执行事件送到别处（例如指标、告警）时，自己写一个 `schedule.Observer`，`WithObserver` 可以用多次：
 
 | 事件 | 时机 |
 | --- | --- |
@@ -235,48 +253,46 @@ queue:prune-failed          @daily        2026-11-12 00:00:00  6h59m42s  no     
 | `TaskFailed` | 返回错误或 panic，`Err` 是原因 |
 | `TaskSkipped` | 应当在本实例执行却被跳过，`SkipReason` 是 `overlap`（上一次还没结束）或 `lock_failed`（锁存储出错） |
 
-`Tick` 是这次触发的时刻，即任务应当执行的时间；`Started` 是实际开始的时间，两者之差是调度延迟。由其他实例执行的触发不报告。结束事件在释放执行锁之后发出，Observer 收到它时 `Running` 已经返回 `false`。Observer 在执行任务的 goroutine 中同步调用，写一行数据库很快，更重的工作请缓冲后批量处理。
+`Tick` 是这次触发的时刻，即任务应当执行的时间；`Started` 是实际开始的时间，两者之差是调度延迟。[立即执行](#running-manually)的事件 `Manual` 为 `true`，`Tick` 为零值。结束事件在释放执行锁之后发出，Observer 收到它时 `Running` 已经返回 `false`。Observer 在执行任务的 goroutine 中同步调用，写一行数据库很快，更重的工作请缓冲后批量处理。
 
 <a id="admin-pages"></a>
 ### 后台页面
 
-后台页面由 HTTP 进程提供，它同样调用 `a.tasks()` 拿到任务的定义，再从[执行记录](#run-history)中读取每个任务上一次的结果，例如应用自己的表中每个任务最新的一行（`r`、`ok`）：
+`scheduleapi.Register` 在 HTTP 进程中注册定时任务的接口，`@go-tenon/ui` 的 `SchedulePanel` 是现成的页面。`protect` 保护全部接口，通常要求一个运维权限：
 
 ```go
-sched := a.tasks()
-running, err := sched.Running(ctx)
-// ...
-for _, t := range sched.Tasks() {
-    r, ok := lastRuns[t.Name] // 应用从自己的执行记录中查出
-
-    // 应当执行的时间过去了一分钟，这次触发却没有执行记录，也没有正在执行：这次触发丢了，
-    // 例如调度器停止或部署期间。
-    prev := t.Prev(time.Now())
-    missed := (!ok || prev.After(r.Tick)) && time.Since(prev) > time.Minute && !running[t.Name]
-}
+scheduleapi.Register(api, rest.RequireToken(api, tokens.Validate, "jobs:manage"), a.db, a.tasks)
 ```
 
-页面上可以展示每个任务的说明、表达式、下一次执行的时间、上一次的结果和耗时，并把错过的触发标出来。
+| 接口 | 用途 |
+| --- | --- |
+| `GET /schedules`（`schedule-list`） | 全部任务：说明、表达式、下一次执行、是否正在执行、上一次的结果和耗时、是否错过了触发 |
+| `POST /schedules/{name}/run`（`schedule-run`） | [立即执行](#running-manually)，返回 202 |
+| `GET /schedules/runs`（`schedule-runs`） | 执行记录，按任务（`task`）、结果（`status`）筛选，分页 |
 
-<a id="running-manually"></a>
-### 手动执行
+`a.tasks` 只用来读取任务的定义和执行状态，HTTP 进程不运行调度器。应当执行的时间过去了一分钟，这次触发却没有执行记录，也没有正在执行，任务标为错过（`missed`），例如调度器停止或部署期间；从来没有按表达式执行过的任务不算。
 
-后台页面上的「立即执行」把任务[发布到队列](queue.md#publishing-jobs)，由 worker 执行：耗时的任务会占用请求，HTTP 实例也可能有很多个。
+页面接收生成的客户端分组 `api.schedule`：
 
-```go
-// article 包中：
-var PublishScheduledJob = queue.Topic[struct{}]("articles.publish-scheduled")
-
-// 后台页面：
-err := article.PublishScheduledJob.Publish(ctx, a.db, struct{}{})
-
-// Worker 中：
-article.PublishScheduledJob.Handle(w, func(ctx context.Context, _ struct{}) error {
-    return article.NewPublishScheduled(a.db).Handle(ctx)
+```tsx
+export const Route = createFileRoute("/_app/schedules")({
+  staticData: { title: "定时任务", icon: "clock", permission: "jobs:manage" },
+  component: () => <SchedulePanel api={api.schedule} />,
 })
 ```
 
-任务和队列处理函数调用的是同一个业务动作，手动执行和定时执行的效果相同。手动执行绕过[防止重叠](#preventing-overlaps)，需要互斥的任务在业务动作中自己使用[原子锁](../libraries/locks.md)。
+它分成“任务”和“执行记录”两个页内标签：任务列表上可以立即执行，点任务名打开它的执行记录；执行记录按任务、结果筛选，点一行看完整的错误。有任务错过了触发时，标签上面显示提示。
+
+<a id="running-manually"></a>
+### 立即执行
+
+页面上的“立即执行”把任务名[发布到队列](queue.md#publishing-jobs)（`scheduleapi.RunNow`），由 worker 执行：耗时的任务不占用请求，HTTP 实例也可能有很多个。worker 进程注册它的处理函数：
+
+```go
+scheduleapi.HandleRunNow(w, a.tasks)
+```
+
+处理函数调用 `Scheduler.RunNow`：不按表达式，也不参与同一次触发的去重，执行的事件照常交给 Observer，执行记录中标为手动。没有 `AllowOverlap` 的任务照样[防止重叠](#preventing-overlaps)：正在任何一个实例上执行时这次不执行，记一行跳过。任务失败不重试，和按表达式触发一样等下一次。
 
 <a id="framework-cleanups"></a>
 ## 清理框架数据
@@ -299,6 +315,7 @@ article.PublishScheduledJob.Handle(w, func(ctx context.Context, _ struct{}) erro
 | [OAuth 动态注册的客户端](../security/oauth-server.md#dynamic-registration) | `oauthserver.New(…)` 的 `CleanupClients(保留期)` | 每天 |
 | [Webhook 投递记录](../features/webhooks.md#retention) | `webhook.Cleanup(db, 保留期)` | 每天 |
 | [失败任务](queue-monitoring.md#failed-jobs) | `queue.NewFailedJobs(db).Cleanup(保留期)` | 每天 |
+| [定时任务的执行记录](#run-history) | `scheduleapi.Cleanup(db, 保留期)` | 每天 |
 | [冷静期已过的注销账号](../features/privacy.md#erasing) | 每套账号体系的 `privacy.New(…)` 的 `EraseDue` | 每 10 分钟 |
 
 在线成员保存在 NATS 中，过期的记录由 NATS 自动删除。
