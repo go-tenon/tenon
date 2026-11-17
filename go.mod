@@ -12,12 +12,12 @@ require (
 	github.com/adhocore/gronx v1.20.7
 	github.com/alecthomas/chroma/v2 v2.27.0
 	github.com/aws/aws-sdk-go-v2 v1.48.0
-	github.com/aws/aws-sdk-go-v2/config v1.33.18
-	github.com/aws/aws-sdk-go-v2/credentials v1.21.0
+	github.com/aws/aws-sdk-go-v2/config v1.33.19
+	github.com/aws/aws-sdk-go-v2/credentials v1.21.1
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.10
 	github.com/aws/aws-sdk-go-v2/service/sesv2 v1.79.9
 	github.com/aws/smithy-go v1.28.9
-	github.com/axadrn/shadcn-templ/v2 v2.0.0
+	github.com/axadrn/shadcn-templ/v2 v2.0.1
 	github.com/bradfitz/gomemcache v0.0.0-20260422231931-4d751bb6e37c
 	github.com/centrifugal/centrifuge v0.40.1
 	github.com/cespare/xxhash/v2 v2.3.0

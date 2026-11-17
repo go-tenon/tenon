@@ -177,7 +177,9 @@ func TestInitEndToEnd(t *testing.T) {
 		}
 		return all.String()
 	}
-	if css := builtCSS(); !strings.Contains(css, "oklch(.511 .262 276.966)") && !strings.Contains(css, "oklch(0.511 0.262 276.966)") {
+	// 不同的 CSS 压缩器写法不同，例如 vite 8 的 Lightning CSS 把亮度写成百分比：oklch(51.1% .262 276.966)。
+	if css := builtCSS(); !strings.Contains(css, "oklch(.511 .262 276.966)") && !strings.Contains(css, "oklch(0.511 0.262 276.966)") &&
+		!strings.Contains(css, "oklch(51.1% .262 276.966)") {
 		t.Fatalf("default brand missing from built css:\n%s", css)
 	}
 	tokens := `{"color": {"brand": {"$type": "color", "$value": "#e11d48"}}, "radius": {"$type": "dimension", "$value": "0.25rem"}}`

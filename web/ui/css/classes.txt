@@ -12,6 +12,7 @@
 !!content._templOpen
 !!content._templOpen,
 !!currentContainingBlockComputedStyle
+!!declared
 !!definition.required
 !!el?.querySelector?.(
 !!element
@@ -301,7 +302,6 @@
 !morph.prev[key]
 !morph.prev[key][si])
 !mounted(el))
-!mounted(node._templPortalOwner))
 !multiple
 !nav.mounted)
 !nestLabel)
@@ -1003,6 +1003,7 @@ ${width}px
 (!month)
 (!morph
 (!mounted
+(!mounted(owner)
 (!moved)
 (!n)
 (!name)
@@ -1048,7 +1049,6 @@ ${width}px
 (!previous
 (!previousRect
 (!props.showWeekNumber)
-(!provider)
 (!r)
 (!r.action.isConnected)
 (!r.description.isConnected)
@@ -1167,6 +1167,7 @@ ${width}px
 (!trigger.matches(
 (!typeableComboboxReference)
 (!uncontrolledElementsSet?.has(element)
+(!unmounted)
 (!updateGutterOnly)
 (!validate(root,
 (!validity(item).valid)
@@ -2207,7 +2208,6 @@ ${width}px
 (node
 (node)
 (node._templFocusInsideDisabled)
-(node._templPortalOwner
 (node.isConnected)
 (node.matches?.(POPUP)
 (node.nodeName
@@ -2272,6 +2272,7 @@ ${width}px
 (overlay
 (overlay)
 (own(nav,
+(owner
 (p
 (p)
 (p.radius
@@ -2517,6 +2518,7 @@ ${width}px
 (s.fill
 (s.focused?.isEqualTo(day))
 (s.formatters.formatMonthDropdown)
+(s.formatters.formatWeekdayName)
 (s.hidden)
 (s.icon
 (s.labelList
@@ -16960,7 +16962,6 @@ ZoomOut
 [data-templ-tooltip-trigger=
 [data-templ-tooltip-trigger]
 [dateLib.format(calendarMonth.date,
-[dateLib.format(weekday,
 [dateLib.formatNumber(week.weekNumber
 [day]
 [document,
@@ -16976,6 +16977,7 @@ ZoomOut
 [firstPivotIndex,
 [floating,
 [formatMonthDropdown(s,
+[formatWeekdayName(s,
 [from,
 [getOppositeAlignmentPlacement(placement),
 [getOppositePlacement(initialPlacement)]
@@ -18553,6 +18555,7 @@ before
 before)
 before);
 before,
+before.
 before:
 before;
 beforeContentFocusGuard()
@@ -22242,6 +22245,7 @@ declare
 declared
 declared,
 declared.
+declares
 decrement
 decrement:
 dedupe
@@ -24298,6 +24302,7 @@ formatTime(j.FailedAt))
 formatTime(r.LastDelivered)
 formatTime(r.PausedUntil)})
 formatTime(v.status.NextScheduled))
+formatWeekdayName(s,
 formats
 formatted
 formatter
@@ -25371,6 +25376,8 @@ handleContentChange();
 handleDayClick
 handleDocumentPointerDown
 handleEnd).
+handleF6(event)
+handleF6);
 handleFocus
 handleFocus()
 handleFocus);
@@ -30607,11 +30614,13 @@ ownDisabled(answer);
 ownTitleId:
 owner
 owner)
+owner)))
 owner),
 owner);
 owner,
 owner.
 owner.parentElement
+owner.querySelector(
 owner:
 ownerDocument
 ownerDocument(positionerElement).documentElement.clientWidth;
@@ -31673,7 +31682,6 @@ popupFor(content),
 popupFor(content).id
 popupFor(content).id);
 popupFor(content).querySelector(
-popupFor(content).removeAttribute(
 popupFor(content).setAttribute(
 popupFor(content);
 popupFor(content)?.id
@@ -32166,17 +32174,17 @@ provider(ctx
 provider(ctx)
 provider(ctx).pendingScroll()
 provider.
+provider.destroy
 provider.render
 provider.render(),
 provider.render();
 provider.store
-provider.store.clearTimers();
+provider.toasts.clear();
 provider.toasts.delete(id);
 provider.toasts.forEach((r,
+provider.toasts.forEach(unmountToast);
 provider.toasts.get(toast.id);
 provider.toasts.set(toast.id,
-provider.unsubscribe
-provider.unsubscribe();
 provider;
 providerKey
 providerKey,
@@ -33196,6 +33204,7 @@ repeats
 replace
 replace-all
 replaced
+replaced(node,
 replaces
 replacing
 replicas(v.stream))
@@ -33776,6 +33785,7 @@ s.cornerSize.width
 s.current
 s.current,
 s.dateLib);
+s.dateLib.format(weekday,
 s.dateLib.startOfMonth(month);
 s.dateLib;
 s.dayCells
@@ -33806,6 +33816,7 @@ s.focused;
 s.form
 s.formatters
 s.formatters.formatMonthDropdown(date);
+s.formatters.formatWeekdayName(weekday);
 s.gaps);
 s.gaps)}
 s.gaps[i]);
@@ -34515,6 +34526,7 @@ setLeftRTLScrollbarOffset();
 setLegendSize:
 setListFunctionalStyles(content,
 setListening(!isEmpty);
+setListening(false);
 setListening(next)
 setMirror(input,
 setMonth
@@ -35954,6 +35966,7 @@ stops
 store
 store,
 store.addToast(options);
+store.clearTimers();
 store.closeToast(id);
 store.closeToast(r.id));
 store.closeToast(r.id);
@@ -37843,6 +37856,8 @@ unmountContent(st));
 unmountContent(st);
 unmountPortal(positioner)
 unmountPortal(positioner);
+unmountToast(r)
+unmountToast(r);
 unmounted
 unmounted,
 unmounted.
@@ -37868,6 +37883,8 @@ unset
 unstacked
 unstyled
 unstyled.
+unsubscribe
+unsubscribe();
 unsubscribes
 until
 until-found
@@ -38454,7 +38471,7 @@ viewport._templSnapRO.disconnect();
 viewport._templSnapRO.observe(viewport);
 viewport._templSnapRO;
 viewport._templToastProvider
-viewport._templToastProvider;
+viewport._templToastProvider?.destroy();
 viewport.addEventListener(
 viewport.addEventListener(type,
 viewport.after(alerts);
@@ -38690,6 +38707,8 @@ weekStartsOn
 weekStartsOn(root)
 weekStartsOn(root),
 weekStartsOn:
+weekday)
+weekday)]),
 weekday:
 weekdays
 weekdays:
@@ -38952,6 +38971,7 @@ window.templ.typeahead.useTypeahead({
 window.templ?.dialog;
 window;
 windowFocusTimeout
+windowFocusTimeout.clear();
 windowFocusTimeout.start(0,
 windowScrollbarX
 windowScrollbarX;

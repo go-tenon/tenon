@@ -12,12 +12,11 @@ import {
   useSelection,
 } from "@go-tenon/shell"
 import { createMemoryHistory, createRootRouteWithContext, createRoute, Outlet } from "@tanstack/react-router"
-import type { ColumnDef } from "@tanstack/react-table"
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest"
 import { ColorModeProvider } from "@/components/tenon/color-mode"
 import { CommandMenu } from "@/components/tenon/command-menu"
-import { DataTable, ListToolbar, StatusBadge } from "@/components/tenon/data-table"
+import { DataTable, type DataTableColumn, ListToolbar, StatusBadge } from "@/components/tenon/data-table"
 import { ConfirmProvider, useConfirm } from "@/components/tenon/dialogs"
 import { Field, FormError, useApiForm } from "@/components/tenon/form"
 import { LoginForm } from "@/components/tenon/login-form"
@@ -100,7 +99,7 @@ const query = {
   },
 }
 
-const columns: ColumnDef<Article>[] = [
+const columns: DataTableColumn<Article>[] = [
   { id: "title", accessorKey: "title", header: "标题" },
   {
     id: "status",
