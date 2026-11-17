@@ -10,7 +10,7 @@ Tenon 的队列有两个特点，在开始之前需要了解。第一，任务�
 
 第二，每个任务**至少执行一次**：worker 崩溃或停止超时时，正在处理的任务会交给其他 worker 重新执行，处理函数需要能安全地重复执行。任务之间不保证执行顺序。
 
-阅读前需要了解：[数据库事务](../database/quick-start.md#transactions)；[依赖装配](../concepts/dependencies.md)。失败任务的处理、队列的监控和面板见[队列：失败任务与监控](queue-monitoring.md)。
+阅读前需要了解：[数据库事务](../database/quick-start.md#transactions)；[依赖装配](../concepts/dependencies.md)。失败任务的处理、队列的监控和运维接口见[队列：失败任务与监控](queue-monitoring.md)。
 
 - [示例用法](#example-usage)
 - [准备](#preparing)
@@ -470,4 +470,4 @@ func (a *Admin) Pause(ctx context.Context, topic string, until time.Time) error
 func (a *Admin) Resume(ctx context.Context, topic string) error
 ```
 
-`Migrations` 是队列的迁移；`ReadStatus` 读取复制槽和延迟任务的状态，`Admin` 读取 JetStream 中的 stream 和各 topic、暂停和恢复 topic，`queue status` 命令和[队列面板](queue-monitoring.md#panel)用它们；`RecreateSlot` 在复制槽失效后重建，见[部署](../installation/operations.md#queue-recovery)。
+`Migrations` 是队列的迁移；`ReadStatus` 读取复制槽和延迟任务的状态，`Admin` 读取 JetStream 中的 stream 和各 topic、暂停和恢复 topic，`queue status` 命令和[运维接口](queue-monitoring.md#queue-api)用它们；`RecreateSlot` 在复制槽失效后重建，见[部署](../installation/operations.md#queue-recovery)。

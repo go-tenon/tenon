@@ -12,7 +12,7 @@ import (
 
 type basicUserKey struct{}
 
-// BasicAuth 要求请求带 HTTP Basic 认证，用于框架维护的运维页面（例如 queueweb 的队列面板）和内部文档。
+// BasicAuth 要求请求带 HTTP Basic 认证，用于运维页面和内部文档这类不接入应用账号体系的页面。
 // verify 校验用户名和密码，返回 true 时放行，用户名写入 ctx（BasicUser）；通常比较配置中的账号和用 hashing 保存的密码哈希。
 //
 // 没有凭据或 verify 返回 false 时响应 401 和 WWW-Authenticate: Basic，浏览器弹出登录框；

@@ -58,7 +58,7 @@ http:
 <a id="basic-auth"></a>
 ## HTTP Basic 认证
 
-[队列面板](../background/queue-monitoring.md#panel)、内部的[文档页](../web/doc-pages.md)这类给运维和团队成员看的页面，不值得接入应用的账号体系，用 `httpx.BasicAuth` 保护：浏览器弹出登录框，之后的请求自动带上用户名和密码。
+内部的[文档页](../web/doc-pages.md)这类给运维和团队成员看的页面，不值得接入应用的账号体系，用 `httpx.BasicAuth` 保护：浏览器弹出登录框，之后的请求自动带上用户名和密码。
 
 账号写在配置中，密码保存为[哈希](../security/hashing.md)，用 `hashing.Hasher` 生成和校验：
 
@@ -84,7 +84,7 @@ ops := router.With(
 - 没有凭据或校验不通过时返回 `401` 和 `WWW-Authenticate: Basic realm="ops"`；`verify` 返回错误时返回 `503`，记录一条 Error 日志。
 - 认证通过后，`httpx.BasicUser(ctx)` 返回用户名，用来在日志中记下操作者。
 - Basic 认证在每个请求中发送明文密码，只能用于 HTTPS。
-- 浏览器会给跨站请求自动带上 Basic 凭据：页面中有 `POST` 等修改数据的请求时，用 `http.CrossOriginProtection` 拒绝跨站请求。队列面板已经这样做了。
+- 浏览器会给跨站请求自动带上 Basic 凭据：页面中有 `POST` 等修改数据的请求时，用 `http.CrossOriginProtection` 拒绝跨站请求。
 
 <a id="app-version"></a>
 ## App 最低版本

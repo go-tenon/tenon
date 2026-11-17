@@ -15,7 +15,7 @@ import (
 var ErrTopicNotFound = errors.New("queue: topic not found")
 
 // Admin 查看和调整 JetStream 中的队列：各 topic 等待处理和处理中的任务、定时消息，暂停和恢复 topic 的处理。
-// 队列面板（queueweb）和 queue 命令（queuecmd）用它；数据库一侧的状态见 ReadStatus。
+// 队列的运维接口（queueapi）和 queue 命令（queuecmd）用它；数据库一侧的状态见 ReadStatus。
 //
 // 它使用应用的 NATS 连接，不关闭它。可以被多个 goroutine 同时使用。
 type Admin struct {
