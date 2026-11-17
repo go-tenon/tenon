@@ -244,7 +244,7 @@ Tenon 的每个包都可以单独使用，按需引入即可。顶层的包分�
 | `imgproxy` | 签名的 imgproxy 地址，按需缩放图片 | [图片缩略图](../libraries/file-uploads.md#thumbnails) |
 | `mail` | 邮件；`smtp`、`resend`、`ses` 发送，`logmail` 用于开发 | [邮件](../libraries/mail.md) |
 | `sms` | 短信；`aliyun`、`tencent` 发送，`logsms` 用于开发 | [短信](../libraries/sms.md) |
-| `pdf` | 把 templ 页面生成为 PDF，`pdf/gotenberg` 生成 | [生成 PDF](../libraries/pdf.md) |
+| `pdf` | 把前端打印模板渲染的 HTML 生成为 PDF，`pdf/gotenberg` 生成 | [生成 PDF](../libraries/pdf.md) |
 | `outbound` | 只能访问公网地址的 HTTP 客户端 | [出站请求](../libraries/outbound.md) |
 | `captcha` | 服务端校验 Turnstile、hCaptcha | [人机验证](../security/login-security.md#captcha) |
 | `sheet` | 读写 CSV 和 Excel，按结构体解码并验证每一行 | [导入与导出](../features/import-export.md) |

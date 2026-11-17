@@ -83,6 +83,30 @@ const asset = homeHtml.match(/\/assets\/[^"]+\.js/)?.[0]
 const assetRes = asset ? await page(asset) : undefined
 if (assetRes?.status !== 200 || !assetRes.headers.get("Cache-Control")?.includes("immutable")) fail("asset", asset)
 
+// 打印模板：Go 的 ssr.Host.Render 发来数据，返回完整的 HTML，样式内联。
+const printed = await fetch("http://ssr/__tenon/print/invoice", {
+  unix: unix(ssrName),
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ no: "INV-7", items: [{ name: "咨询服务", amount: 1200 }] }),
+} as RequestInit)
+const printedHtml = await printed.text()
+if (
+  printed.status !== 200 ||
+  !printedHtml.startsWith('<!doctype html><html lang="zh-CN">') ||
+  !printedHtml.includes("<title>发票 INV-7</title>") ||
+  !printedHtml.includes("咨询服务") ||
+  !printedHtml.includes("rgb(1, 2, 3)") ||
+  !printedHtml.includes("@page")
+)
+  fail("print", printedHtml.slice(0, 600))
+const missing = await fetch("http://ssr/__tenon/print/nope", {
+  unix: unix(ssrName),
+  method: "POST",
+  body: "{}",
+} as RequestInit)
+if (missing.status !== 404) fail("unknown print template", missing.status)
+
 ssr.kill("SIGTERM")
 const code = await ssr.exited
 if (code !== 0) fail("exit after SIGTERM", code)

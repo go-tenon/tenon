@@ -4,10 +4,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"io"
 	"testing"
 
-	"github.com/a-h/templ"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -17,12 +15,7 @@ import (
 	"github.com/go-tenon/tenon/pdf/pdftest"
 )
 
-func html(s string) templ.Component {
-	return templ.ComponentFunc(func(_ context.Context, w io.Writer) error {
-		_, err := io.WriteString(w, s)
-		return err
-	})
-}
+func html(s string) []byte { return []byte(s) }
 
 func TestRenderer(t *testing.T) {
 	t.Parallel()

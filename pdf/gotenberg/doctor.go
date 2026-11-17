@@ -10,7 +10,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/a-h/templ"
 	"github.com/cockroachdb/errors"
 
 	"github.com/go-tenon/tenon/doctor"
@@ -29,7 +28,7 @@ func Doctor(r *Renderer) doctor.Group {
 	return doctor.Group{Name: "gotenberg", Checks: []doctor.Check{
 		{Name: "health", Run: r.checkHealth},
 		{Name: "render", Run: func(ctx context.Context) error {
-			data, err := r.Render(ctx, pdf.Document{HTML: templ.Raw("<p>tenon doctor</p>")})
+			data, err := r.Render(ctx, pdf.Document{HTML: []byte("<p>tenon doctor</p>")})
 			if err != nil {
 				return renderProblem(err)
 			}

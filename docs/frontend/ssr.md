@@ -10,6 +10,7 @@
 - [安全](#security)
 - [链路与日志](#observability)
 - [开发](#development)
+- [渲染打印模板](#rendering)
 - [与 SSR 进程的约定](#contract)
 - [限制](#limitations)
 - [API 参考](#api-reference)
@@ -56,7 +57,7 @@ return pages.Run(ctx, func(ctx context.Context) error {
 
 `Run` 的顺序：
 
-1. 在内部 socket 上提供 `Options.API`，启动 SSR 进程，等它的 socket 可以连接。超过 `ReadyTimeout`（默认 30 秒）还没就绪时返回错误，不开始接收请求。
+1. 在内部 socket 上提供 `Options.API`（设置了时），启动 SSR 进程，等它的 socket 可以连接。超过 `ReadyTimeout`（默认 30 秒）还没就绪时返回错误，不开始接收请求。
 2. 调用传入的函数，开始接收请求。SSR 进程意外退出时按退避重启：第一次等 100 毫秒，之后翻倍，最多 5 秒；连续运行超过 10 秒后从头计算。重启期间页面请求返回 502 和 `Retry-After: 1`，接口不受影响。
 3. 收到停止信号后，传入的函数先排空对外的请求，进行中的页面渲染完成后才返回，见[平滑停止](../installation/deployment.md#graceful-shutdown)；然后向 SSR 进程发送 SIGTERM，超过 `StopTimeout`（默认 10 秒）再强制结束；最后关闭内部入口。
 
@@ -80,6 +81,19 @@ return pages.Run(ctx, func(ctx context.Context) error {
 
 `Options.DevServer` 不为空时（`tenon dev` 设置），不启动 SSR 进程，页面请求转给前端的开发服务器，包括热更新的 WebSocket。开发服务器注入的内联脚本没有 nonce，所以开发模式不设置 CSP；请求 ID 和链路照常转交。
 
+<a id="rendering"></a>
+## 渲染打印模板
+
+`Render(ctx, name, data)` 用 SSR 进程中名为 `name` 的打印模板渲染 `data`，返回完整的 HTML，通常交给 [`pdf`](../libraries/pdf.md) 生成 PDF。`data` 编码为 JSON 传给模板，请求 ID 和链路照常转交；模板写法见[生成 PDF：编写模板](../libraries/pdf.md#writing-templates)。
+
+```go
+html, err := pages.Render(ctx, "invoice", invoice)
+```
+
+- 打印模板只用传入的数据渲染，不调用接口，所以队列任务中没有用户的 cookie 也能使用。队列 worker 同样用 `Run` 包住自己的运行函数，不提供接口时 `Options.API` 留空。
+- 模板的地址是 `POST /__tenon/print/{name}`，只供 `Render` 调用：对外的页面请求访问 `/__tenon/` 下的地址时返回 `404`。
+- 没有这个模板时返回 `ErrUnknownTemplate`；SSR 进程没有就绪（`Run` 之外、重启期间）时返回错误。开发模式下请求开发服务器。
+
 <a id="contract"></a>
 ## 与 SSR 进程的约定
 
@@ -92,6 +106,7 @@ return pages.Run(ctx, func(ctx context.Context) error {
 | 请求头 `X-CSP-Nonce` | 写到全部内联脚本上 |
 | 请求头 `X-Request-ID`、`traceparent`、`Cookie` | 调用接口时原样带上 |
 | 响应头 `X-Tenon-Route` | 可选，匹配到的路由模板 |
+| `POST /__tenon/print/{name}` | 可选，用打印模板渲染请求体中的 JSON，返回完整的 HTML；没有这个模板时返回 404 |
 | SIGTERM | 停止接收请求并退出；Go 发送它之前已经排空了对外的请求 |
 
 <a id="limitations"></a>
@@ -112,6 +127,8 @@ return pages.Run(ctx, func(ctx context.Context) error {
 | `(*Host).Handler() http.Handler` | 页面的处理器 |
 | `(*Host).Run(ctx, serve) error` | 启动 SSR 进程，运行 `serve`，停止时按顺序关闭；一个 Host 只能运行一次 |
 | `(*Host).Ready() bool` | SSR 进程是否可以接收请求；开发模式总是 true |
+| `(*Host).Render(ctx, name, data) ([]byte, error)` | 用打印模板渲染数据，返回完整的 HTML，见[渲染打印模板](#rendering) |
+| `PrintPath`、`ErrUnknownTemplate` | 打印模板的地址前缀；没有这个模板 |
 | `DefaultCSP(nonce) string` | 默认的内容安全策略 |
 | `ErrUnsupported` | 当前系统不能运行 SSR 进程 |
 | `EnvSocket`、`EnvAPISocket` | 传给 SSR 进程的环境变量名 |
@@ -120,7 +137,7 @@ return pages.Run(ctx, func(ctx context.Context) error {
 | `Options` 字段 | 说明 |
 | --- | --- |
 | `Executable` | SSR 可执行文件，`DevServer` 为空时必填 |
-| `API` | 内部入口提供的接口，`DevServer` 为空时必填 |
+| `API` | 内部入口提供的接口；nil 时不提供，例如只用 `Render` 生成 PDF 的队列 worker |
 | `DevServer` | 开发服务器地址 |
 | `CSP` | 由 nonce 生成内容安全策略，默认 `DefaultCSP` |
 | `Env` | SSR 进程额外的环境变量 |

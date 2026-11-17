@@ -47,7 +47,7 @@ func (h *Host) supervise(ctx context.Context, p *process) error {
 		cmd := &exec.Cmd{
 			Path:        p.path,
 			Args:        []string{processName},
-			Env:         append(append(os.Environ(), h.opts.Env...), EnvSocket+"="+h.socket, EnvAPISocket+"="+h.api),
+			Env:         h.env(),
 			Stdout:      stdout,
 			Stderr:      stderr,
 			SysProcAttr: &syscall.SysProcAttr{Pdeathsig: syscall.SIGKILL},

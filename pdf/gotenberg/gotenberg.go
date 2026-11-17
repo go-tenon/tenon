@@ -111,16 +111,12 @@ func (r *Renderer) Render(ctx context.Context, doc pdf.Document) ([]byte, error)
 
 // form 编码请求体：index.html、Assets 的顶层文件和固定参数。
 func form(ctx context.Context, doc pdf.Document) (*bytes.Buffer, string, error) {
-	if doc.HTML == nil {
+	if len(doc.HTML) == 0 {
 		return nil, "", errors.New("gotenberg: document has no HTML")
-	}
-	var html bytes.Buffer
-	if err := doc.HTML.Render(ctx, &html); err != nil {
-		return nil, "", errors.Wrap(err, "gotenberg: render html")
 	}
 	body := new(bytes.Buffer)
 	w := multipart.NewWriter(body)
-	if err := addFile(w, "index.html", html.Bytes()); err != nil {
+	if err := addFile(w, "index.html", doc.HTML); err != nil {
 		return nil, "", err
 	}
 	if doc.Assets != nil {
