@@ -840,7 +840,7 @@ go run ./cmd/api user admin --email ming@example.com
 <a id="admin"></a>
 ## 后台
 
-后端完成了，现在创建后台的前端。后台是一个独立的前端应用，挂在 `/admin/`，和博客的页面分开。用 Tenon 的前端模板新建它，选运营后台的样式预设（紧凑、适合表格和表单），见[界面组件](../frontend/ui.md)：
+后端完成了，现在创建后台的前端。后台是一个独立的前端应用，挂在 `/admin/`，和博客的页面分开。用 Tenon 的前端模板新建它，选运营后台的样式预设（紧凑、适合表格和表单），见[样式预设与主题](../frontend/app.md#presets)：
 
 ```bash
 go tool tenon add frontend admin --style admin
@@ -989,4 +989,4 @@ function Users() {
 
 接下来，你可以按需阅读各个参考页：例如用[缓存](../libraries/cache.md)加快首页，用[队列](../background/queue.md)在发布后给订阅者发邮件，用[定时任务](../background/scheduling.md)定时发布文章，最后参考[部署](../installation/deployment.md)把博客上线。
 
-深入了解：[授权](../security/authorization.md)、[资源](../frontend/resources.md)、[界面组件](../frontend/ui.md)。
+深入了解：[授权](../security/authorization.md)、[资源与设置页面](../frontend/resources.md)、[布局与导航](../frontend/layout.md)。

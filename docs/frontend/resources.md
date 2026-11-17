@@ -1,8 +1,10 @@
-# 资源
+# 资源与设置页面
 
-后台的大部分页面是增删改查：列表、详情、表单和行上的操作。资源在 Go 中声明，`tenon generate` 生成与组件库无关的资源定义 `resources.ts`，`@go-tenon/ui` 的 `ResourcePage` 按它渲染。入门教程的[后台：作者与角色](../tutorial/08-admin.md)是一个完整的例子。字段的类型、枚举和校验规则都取自接口的 OpenAPI schema，后端改了字段、校验或枚举，重新生成后页面随之改变。
+后台的大部分页面是增删改查：列表、详情、表单和行上的操作。资源在 Go 中声明，`tenon generate` 生成资源定义 `resources.ts`，`@go-tenon/ui` 的 `ResourcePage` 按它渲染整个页面，不用写页面代码。只有一组值的设置页面同样声明，由 `SettingsForm` 渲染。入门教程的[后台：作者与角色](../tutorial/08-admin.md)是一个完整的例子。字段的类型、枚举和校验规则都取自接口的 OpenAPI schema，后端改了字段、校验或枚举，重新生成后页面随之改变。
 
-阅读前需要了解：[路由](../http/routing.md)；[应用骨架](app-shell.md)；[入门教程第 8 章](../tutorial/08-admin.md)。
+需要自己写列表或表单时，见[列表与表单](lists-forms.md)。
+
+阅读前需要了解：[路由](../http/routing.md)；[搭建前端应用](app.md)；[入门教程第 8 章](../tutorial/08-admin.md)。
 
 - [声明资源](#declaring)
 - [显示文字](#labels)
@@ -50,7 +52,7 @@ api.Resource(rest.Resource{
 | `Columns` | 列表的列：列表项的字段。为空时是除对象和数组外的全部字段，按结构体中的顺序 |
 | `Search` | 关键词搜索的查询参数 |
 | `Filters` | 筛选条件：列表接口的查询参数 |
-| `Sort` | 可以排序的列。列表接口要有 `sort` 查询参数，取值是列名，前面加 `-` 表示降序，与 [`useList`](app-shell-features.md#lists) 相同 |
+| `Sort` | 可以排序的列。列表接口要有 `sort` 查询参数，取值是列名，前面加 `-` 表示降序，与 [`useList`](lists-forms.md#lists) 相同 |
 | `Form` | 创建和修改的表单字段：请求体的字段。为空时是请求体的全部字段，按结构体中的顺序 |
 | `Actions` | 行上的其他操作：`Operation` 是接口，`Confirm` 执行前询问，`Danger` 用醒目的颜色 |
 
@@ -131,7 +133,7 @@ const form = useSchemaForm({ schema: kit.schemas.article.create.body, rules: kit
 | `allowed(can, operation)` | 当前身份能否使用一个接口或操作 |
 | `listQuery`、`getQuery` | 列表和详情的查询选项，query key 与 `createQueries` 相同 |
 | `create`、`update`、`remove`、`run` | 调用生成的客户端，完成后让这个分组的查询失效 |
-| `formSchema(mode)`、`ruleOptions` | 表单的校验规则，交给 `@go-tenon/ui` 的 [`useSchemaForm`](ui.md#forms) |
+| `formSchema(mode)`、`ruleOptions` | 表单的校验规则，交给 `@go-tenon/ui` 的 [`useSchemaForm`](lists-forms.md#forms) |
 | `display(field, value)` | 枚举字段显示它的文字，其他原样返回。`field` 可以是字段名，例如在自定义的列中显示枚举：`articles.display("status", row.status)` |
 
 在页面中：
@@ -151,26 +153,35 @@ function Articles() {
 <a id="admin"></a>
 ## 资源页面
 
-`@go-tenon/ui` 的 `ResourcePage` 用 `DataTable` 渲染列表，在右侧抽屉中渲染创建和修改的表单。没有覆盖时，一个资源的页面只有路由：
+`ResourcePage` 按资源模型渲染完整的增删改查页面：列表、搜索和筛选、新建和修改的表单、删除和其他操作，按权限显示按钮。没有覆盖时，一个资源的页面只有路由：
 
-```tsx
+```tsx title="src/routes/_app/articles.tsx"
+import { createFileRoute } from "@tanstack/react-router"
 import { ResourcePage } from "@go-tenon/ui"
+import { articles } from "../../resources"
 
 export const Route = createFileRoute("/_app/articles")({
-  staticData: { title: "文章", icon: "file" },
+  staticData: { title: "文章", icon: "article", permission: "article:read" },
   validateSearch: articles.listSearch,
   component: () => <ResourcePage model={articles} route={Route} />,
 })
 ```
 
-- 列按字段的类型显示：枚举显示文字，布尔显示“是”“否”，时间按本地格式，标签逐个显示。可以排序的列点击列头排序。
-- 搜索框和筛选条件在表格上方，枚举的筛选条件是下拉选择。翻页、排序和筛选都写进地址。
-- 表单的输入组件按字段的类型选择：文字、数字、开关、下拉、多选、标签、日期、日期时间，时间以 ISO 字符串提交。
-- 校验规则与服务端相同，服务端返回的字段错误显示在输入框下面。
-- “新建”“修改”、删除和行上的操作按权限显示。删除和带 `Confirm` 的操作先询问，完成后列表随之刷新。
-- 列设置（显示哪些列、顺序）按资源的名称保存在浏览器中。
+- **列表**：用 [`DataTable`](lists-forms.md#data-table) 渲染。列按字段的类型显示：枚举显示文字，布尔显示“是”“否”，时间按本地格式，标签逐个显示。可以排序的列点击列头排序；列设置（显示哪些列、顺序）按资源的名称保存在浏览器中。
+- **搜索和筛选**：在表格上方。关键词搜索按回车或离开输入框时生效；枚举字段是下拉选择，布尔字段是“是/否”。翻页、排序和筛选都写进地址，有条件时显示“清除筛选”。
+- **新建和修改**：在右侧的抽屉中。表单字段来自请求体，校验与服务端相同，服务端的字段错误显示在输入框下面；修改时有详情接口就先读取完整的一行。有未保存的修改时，关闭抽屉之前询问。
+- **删除和操作**：在每一行的“更多操作”菜单中，按权限显示。删除和声明了 `Confirm` 的操作先确认；完成或失败后右上角提示，列表随之刷新。
 
-只写需要覆盖的部分：
+需要覆盖的部分通过选项传入：
+
+| 选项 | 作用 |
+| --- | --- |
+| `title`、`description` | 页面的标题和说明；`title={null}` 不显示标题区 |
+| `render` | 覆盖某一列的显示 |
+| `inputs` | 覆盖某个表单字段的输入组件 |
+| `rowActions` | 行上的额外操作，排在声明的操作之后、删除之前 |
+| `toolbar` | 标题区的额外按钮，例如导入、导出 |
+| `expand` | 点击一行展开的内容 |
 
 ```tsx
 <ResourcePage
@@ -184,7 +195,21 @@ export const Route = createFileRoute("/_app/articles")({
 />
 ```
 
-`inputs` 中的组件收到 `FieldInputProps`：`field`、`label`、`value`、`onChange`（直接是值）、`error`、`disabled`。`FieldValue`、`DefaultInput` 和 `ResourceForm` 也单独导出，可以在自己写的页面中使用，见[界面组件](ui.md)。
+`inputs` 中的组件收到 `FieldInputProps`：`field`、`label`、`value`、`onChange`（直接是值）、`error`、`disabled`。没有覆盖的字段按 `kind`（`FieldKind`）选择输入组件：
+
+| `kind` | 输入组件 |
+| --- | --- |
+| `text` | 文本框 |
+| `number` | 数字输入 |
+| `boolean` | 开关 |
+| `select` | 下拉选择，非必填时可以清除 |
+| `multiselect` | 多选 |
+| `tags` | 标签输入，回车添加 |
+| `date` | 日期选择，值是 `YYYY-MM-DD` |
+| `datetime` | 日期和时间选择，值是 ISO 时间 |
+| `json` | JSON 编辑，是合法的 JSON 时才交给表单 |
+
+`FieldValue`（按类型显示一个值）、`DefaultInput`（按类型选择输入组件）和 `ResourceForm`（新建和修改的表单）也单独导出，可以在自己写的页面中使用。
 
 <a id="settings"></a>
 ## 设置页面
@@ -213,13 +238,24 @@ import { settingsModel } from "@go-tenon/ui"
 export const siteSettings = settingsModel(kit.settings.site, kit)
 ```
 
-`@go-tenon/ui` 的 `SettingsForm` 读取设置作为初始值，按权限决定能否修改（没有保存的权限时只读），字段的输入组件与资源表单相同。默认有“保存”按钮，`autoSave` 改为修改后自动保存，并显示保存的状态：
+`SettingsForm` 读取设置作为初始值，按权限决定能否修改（没有保存的权限时只读），字段的输入组件与资源表单相同：
 
 ```tsx
-<SettingsForm model={siteSettings} autoSave />
+import { Page, SettingsForm } from "@go-tenon/ui"
+import { siteSettings } from "../../resources"
+
+function Settings() {
+  return (
+    <Page title="站点设置">
+      <SettingsForm model={siteSettings} title={null} autoSave />
+    </Page>
+  )
+}
 ```
 
-`inputs` 覆盖某个字段的输入组件，与 `ResourcePage` 相同。
+- 默认有“保存”按钮，有修改时才可用；校验规则与服务端相同，服务端的字段错误显示在输入框下面。
+- `autoSave` 去掉保存按钮：修改后停下一会儿就保存，表单下方显示“有未保存的修改”“保存中…”“已保存”；校验不通过时不保存，离开页面时保存还在等待的修改。
+- `inputs` 覆盖某个字段的输入组件，与 `ResourcePage` 相同。
 
 <a id="troubleshooting"></a>
 ## 常见问题
@@ -254,5 +290,6 @@ export const siteSettings = settingsModel(kit.settings.site, kit)
 | `useResourceList`、`useResourceItem`、`useResourceMutations`、`formValues` | `@go-tenon/ui`：列表、详情、修改、表单的初始值 |
 | `rest.Settings`、`(*rest.API).Settings(s)`、`(*rest.API).SettingsPages()` | 设置页面的声明，写入 `x-tenon-settings` |
 | `settingsModel(def, kit, queryClient)`、`useSettings(model)` | `@go-tenon/ui`：设置模型，读取与保存 |
-| `ResourcePage`、`ResourceForm`、`FieldValue`、`DefaultInput` | `@go-tenon/ui`：资源页面 |
+| `ResourcePage`、`ResourceForm`、`RowAction`、`FieldValue`、`DefaultInput`、`FieldInputProps` | `@go-tenon/ui`：资源页面 |
+| `FieldKind`、`ResourceField` | 模型中字段的输入方式和显示文字 |
 | `SettingsForm` | `@go-tenon/ui`：设置表单 |

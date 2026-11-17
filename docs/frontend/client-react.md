@@ -30,6 +30,8 @@ export const queries = createQueries(api, {
 clearOnIdentityChange(session, queryClient) // 登录、退出、切换身份时清空缓存
 ```
 
+用 `@go-tenon/ui` 的前端不需要自己调用这两个：`createApp` 已经在身份变化时清空缓存，生成的 `createKit(api, { scope: session.scope })` 中的 `kit.queries` 就是 `createQueries` 的结果，见[资源与设置页面](resources.md#model)。
+
 | 接口 | 生成的选项 | 交给 |
 | --- | --- | --- |
 | GET | `queries.article.get(id)` 返回 `{ queryKey, queryFn }` | `useQuery`、`queryClient.prefetchQuery`、路由的 loader |

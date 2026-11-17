@@ -29,7 +29,7 @@ go get github.com/go-tenon/tenon@main
 | 组织项目代码 | [目录结构](docs/concepts/structure.md) · [依赖装配](docs/concepts/dependencies.md) · [业务动作](docs/concepts/actions.md) |
 | 编写接口 | [路由](docs/http/routing.md) · [请求](docs/http/requests.md) · [验证](docs/http/validation.md) · [响应](docs/http/responses.md) · [认证](docs/security/authentication.md) |
 | 为前端和 App 生成接口类型 | [客户端代码](docs/http/clients.md) |
-| 编写网页并打进二进制 | [服务端渲染](docs/frontend/ssr.md) · [TanStack Start 的接入](docs/frontend/start.md) · [界面组件](docs/frontend/ui.md) |
+| 编写网页并打进二进制 | [服务端渲染](docs/frontend/ssr.md) · [TanStack Start 的接入](docs/frontend/start.md) · [搭建前端应用](docs/frontend/app.md) |
 | 推送实时消息 | [服务端推送](docs/http/sse.md) · [广播](docs/libraries/broadcasting.md) · [实时频道](docs/libraries/realtime.md) |
 | 查看全部路由 | [routes 命令](docs/general/commands.md#routes-command) |
 | 处理错误与日志 | [错误处理](docs/general/errors.md) · [日志](docs/general/logging.md) |

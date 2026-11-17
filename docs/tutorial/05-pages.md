@@ -327,4 +327,4 @@ function EditArticle() {
 
 现在博客有了可以使用的页面，但谁都可以写文章、删文章。下一章，我们加上作者登录。
 
-深入了解：[客户端代码](../http/clients.md)、[TanStack Start 的接入](../frontend/start.md)、[界面组件](../frontend/ui.md)、[应用骨架](../frontend/app-shell.md)。
+深入了解：[客户端代码](../http/clients.md)、[TanStack Start 的接入](../frontend/start.md)、[搭建前端应用](../frontend/app.md)、[布局与导航](../frontend/layout.md)。
