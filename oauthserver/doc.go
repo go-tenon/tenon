@@ -17,7 +17,7 @@
 //	})
 //	router.Handle(srv.MetadataPath(), srv.Metadata())
 //	srv.Routes(router)
-//	srv.Register(api, rest.RequireBearer(api, tokens.Validate))
+//	srv.Register(api, rest.RequireToken(api, tokens.Validate))
 //
 //	res := srv.Resource("https://blog.example.com/mcp")
 //	router.Handle(res.MetadataPath(), mcpx.ResourceMetadata(res))

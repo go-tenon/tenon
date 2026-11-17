@@ -69,11 +69,11 @@ import { routeTree } from "./routeTree.gen"
 import { api } from "./client"
 
 export const session = createSession({
-  refresh: async () => api.auth.refresh(),
-  // 刷新被拒绝（登录已失效）时重新运行守卫，离开需要登录的页面
+  // 读取当前用户；没有登录时接口返回 401
+  load: async () => ({ account: (await api.user.me()).id }),
+  // 登录失效（接口返回 401）时重新运行守卫，离开需要登录的页面
   onSignedOut: () => void app.router.invalidate(),
 })
-session.connect(api)
 
 export const app = createApp({
   id: "admin",
@@ -151,7 +151,7 @@ import { createFileRoute } from "@tanstack/react-router"
 export const Route = createFileRoute("/_app")({ beforeLoad: requireAuth, component: Layout })
 ```
 
-- 打开第一个页面之前恢复登录状态（`session.restore()`，用 cookie 换 access token），之后不再重复；公开页面的页头也知道是否已经登录。
+- 打开第一个页面之前恢复登录状态（`session.restore()`，读一次当前用户），之后不再重复；公开页面的页头也知道是否已经登录。
 - 没有登录时跳到 `loginPath`（默认 `/login`），带上 `?redirect=<原来的地址>`。
 - 退出（`session.signOut()`）、切换身份时重新运行检查，离开需要登录的页面。
 
@@ -316,7 +316,7 @@ app.storage.get<{ collapsed: boolean }>("sider")
 
 **登录后又跳回了登录页**
 
-恢复登录状态时用 cookie 换 access token 失败了。检查刷新接口是否正常，以及是否通过同一个端口访问页面和接口（cookie 只在同源请求中发送）。
+恢复登录状态时读不到当前用户。检查会话的 `load` 调用的接口是否正常，以及是否通过同一个源访问页面和接口：会话 cookie 只在同源请求中发送，`Secure` 的 cookie 只在 HTTPS 和 `localhost` 上保存。
 
 **进入页面时显示 403，但用户应该有权限**
 

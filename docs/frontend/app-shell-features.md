@@ -118,8 +118,8 @@ const { current, tenant, tenants, switchTo } = useTenant()
 
 ```ts
 const tenant = () => session.identity()?.tenant
-export const api = createClient({ baseURL: "/api", auth: session.auth, headers: () => ({ "X-Tenant": tenant() }) })
-// 路径方式：createClient({ baseURL: () => `/api/t/${tenant()}`, auth: session.auth })
+export const api = createClient({ baseURL: "/api", session, headers: () => ({ "X-Tenant": tenant() }) })
+// 路径方式：createClient({ baseURL: () => `/api/t/${tenant()}`, session })
 ```
 
 租户在路径中时，用户也可能直接打开另一个租户的地址。租户布局路由的 `beforeLoad` 调用 `enterTenant`，会话的身份随之切换：
@@ -306,7 +306,7 @@ function Conversation({ id, messages }: { id: string; messages: UIMessage[] }) {
 ```
 
 - 先读取历史，再创建对话：`useChat` 用历史作为初始消息，进行中的回答随即接上（`resume`）。
-- 请求带上 access token，`401` 时刷新再重试；发送时只发最后一条消息。
+- 请求同源发送会话 cookie，`401` 时会话变为未登录；发送时只发最后一条消息。
 - `send`：没有回答进行时发送新消息；回答进行中时[插话](../ai/chat.md#steering)，回答恰好已经结束（`409 ai.finished`）时改为发送新消息。服务端没有收下新消息时，`send` 把它从 `messages` 中撤回并抛出错误，调用方可以把内容放回输入框。
 - `stop`：调用停止接口，服务端取消这次回答（客户端断开连接不会停止它）。
 - `pending` 是等待[审批](../ai/chat.md#approval)的工具调用（`{ id, toolName, input }`），`respond` 批准或拒绝；全部有了决定后自动发送，回答继续。

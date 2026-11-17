@@ -75,44 +75,6 @@ func TestConfirm(t *testing.T) {
 	})
 }
 
-// JWT 模式的 access token 带有 amr、auth_time；Confirm 返回带有新验证情况的 access token，之后的刷新同样带有它。
-func TestJWTConfirm(t *testing.T) {
-	t.Parallel()
-	synctest.Test(t, func(t *testing.T) {
-		ctx := context.Background()
-		j, s := newJWT(t, apitoken.JWTConfig{})
-		pair := jwtLogin(t, j, signedIn("email"), apitoken.Device{})
-		sub, ok := access(t, j, pair.Access)
-		if !ok || !slices.Equal(sub.Auth.Methods, []string{"email"}) || !sub.Auth.Time.Equal(time.Now()) {
-			t.Fatalf("auth %+v", sub.Auth)
-		}
-
-		time.Sleep(5 * time.Minute)
-		confirmed, err := j.Confirm(ctx, sub, "totp")
-		if err != nil || confirmed.Refresh != "" {
-			t.Fatalf("confirm %+v %v", confirmed, err)
-		}
-		csub, _ := access(t, j, confirmed.Access)
-		if !slices.Equal(csub.Auth.Methods, []string{"email", "totp"}) || !csub.Auth.Time.Equal(time.Now()) {
-			t.Fatalf("confirmed auth %+v", csub.Auth)
-		}
-		refreshed, err := j.Refresh(ctx, pair.Refresh)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if rsub, _ := access(t, j, refreshed.Access); !rsub.Auth.TwoFactor() || !rsub.Auth.Time.Equal(csub.Auth.Time) {
-			t.Fatalf("refreshed auth %+v", rsub.Auth)
-		}
-
-		// 不透明的登录 token 不是 JWT 模式的登录。
-		opaque, _ := valid(t, s, login(t, s, signedIn("password"), apitoken.Device{}))
-		if _, err := j.Confirm(ctx, opaque, "password"); !errors.Is(err, apitoken.ErrNotFound) {
-			t.Fatalf("JWT.Confirm with an opaque login: %v", err)
-		}
-	})
-}
-
-// rest.Confirmed 按凭据的验证时间放行；确认身份后重新放行。
 func TestRequireConfirmed(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
@@ -120,7 +82,7 @@ func TestRequireConfirmed(t *testing.T) {
 		api := rest.New(chi.NewRouter(), rest.Options{Accounts: identity.Accounts{"user": nil}})
 		op := huma.Operation{OperationID: "account-delete", Method: http.MethodDelete, Path: "/account"}
 		rest.Confirmed(15 * time.Minute)(&op)
-		rest.RequireBearer(api, s.Validate)(&op)
+		rest.RequireToken(api, s.Validate)(&op)
 		rest.Register(api, op, func(context.Context, *struct{}) (*struct{}, error) { return nil, nil })
 		call := func(token string) *httptest.ResponseRecorder {
 			req := httptest.NewRequest(http.MethodDelete, "/account", nil)

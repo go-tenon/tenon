@@ -172,8 +172,8 @@ describe("resourceModel", () => {
 describe("useResourceList", () => {
   it("列表的数据、地址中的查询条件、按权限得出的按钮；修改后刷新", async () => {
     const calls = server()
-    const session = createSession({ refresh: async () => ({ access_token: "t", expires_at: "" }) })
-    await session.signIn({ access_token: "t", expires_at: "" }, { account: "u1" })
+    const session = createSession({ load: async () => ({ account: "u1" }) })
+    await session.signIn({ account: "u1" })
     const { kit: k } = kit()
     let model: ResourceModel | undefined
     let view: ResourceList | undefined
@@ -263,8 +263,8 @@ describe("settingsModel", () => {
         return Response.json(saved)
       }),
     )
-    const session = createSession({ refresh: async () => ({ access_token: "t", expires_at: "" }) })
-    await session.signIn({ access_token: "t", expires_at: "" }, { account: "u1" })
+    const session = createSession({ load: async () => ({ account: "u1" }) })
+    await session.signIn({ account: "u1" })
     const model = settingsModel(settings.blog, kit().kit)
     let view: Settings | undefined
     const root = createRootRouteWithContext<RouterContext>()({

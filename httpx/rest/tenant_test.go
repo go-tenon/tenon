@@ -72,7 +72,7 @@ func tenantAPI(t *testing.T) *rest.API {
 		{"write", http.MethodPost, "/t/{tenant}/articles", "articles:write"},
 	} {
 		op := huma.Operation{OperationID: r.id, Method: r.method, Path: r.path}
-		rest.RequireBearer(api, validate, r.perm)(&op)
+		rest.RequireToken(api, validate, r.perm)(&op)
 		rest.Register(api, op, who)
 	}
 	public := huma.Operation{OperationID: "public", Method: http.MethodGet, Path: "/t/{tenant}/about"}

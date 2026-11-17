@@ -1,22 +1,8 @@
-// 会话：按客户端协议保存和刷新登录凭据，并记录当前的身份。一个会话可以连接多个 API 的客户端。
+// 会话：记录当前的身份。浏览器的登录凭据是服务端写入的 HttpOnly 会话 cookie，随同源请求自动发送，
+// 页面上的脚本既读不到也不需要管理它：这里没有 token，只有“当前是谁”。
 
 import { isApiErrorLike } from "./errors"
-import { type FetchLike, globalFetch, headerRecord } from "./fetch"
-
-/** 登录、刷新和确认身份接口的响应体（apitoken.Session）。 */
-export interface SessionBody {
-  access_token: string
-  /** 不为空时替换已保存的 refresh token；为空或不出现时继续使用已保存的。 */
-  refresh_token?: string
-  expires_at: string
-}
-
-/** 保存 refresh token 的存储，例如 App 的安全存储。浏览器使用 cookie，不传存储。 */
-export interface TokenStorage {
-  get(): string | null | undefined | Promise<string | null | undefined>
-  set(token: string): void | Promise<void>
-  remove(): void | Promise<void>
-}
+import { type FetchLike, globalFetch } from "./fetch"
 
 /** 当前的身份：账号，以及多租户应用中当前的租户。 */
 export interface Identity {
@@ -24,56 +10,43 @@ export interface Identity {
   tenant?: string
 }
 
-/** 生成的客户端中会话需要的部分。 */
-export interface TokenHolder {
-  setAccessToken(token: string): void
-}
-
 /** createSession 的选项。 */
 export interface SessionOptions {
   /**
-   * 调用应用的刷新接口，返回它的响应体。传入存储时 refreshToken 是保存的 refresh token，放在请求体中；
-   * 浏览器使用 cookie，refreshToken 是 undefined，请求体为空，浏览器带上 cookie。
+   * 读取当前的身份，通常调用应用的“当前用户”接口：已登录时返回身份，未登录时返回 null。
+   * 打开页面时调用一次（restore），登录成功后没有给出身份时也调用。
    */
-  refresh: (refreshToken: string | undefined) => Promise<SessionBody>
-  /** 保存 refresh token 的存储。不传时 refresh token 在 cookie 中，由浏览器保存。 */
-  storage?: TokenStorage
+  load: () => Promise<Identity | null>
   /** 登录失效、需要重新登录时调用，例如跳到登录页。主动 signOut 不调用它。 */
   onSignedOut?: () => void
 }
 
 /** 会话。 */
 export interface Session {
-  /**
-   * 交给生成客户端的 createClient({ auth })：受保护的接口返回 401 时用它刷新。
-   * generation 与 Session.generation 相同：请求发出之后身份变了，客户端不再刷新重试，免得用别人的身份重发。
-   */
-  readonly auth: { refresh: () => Promise<string | null>; generation: () => number }
-  /** 连接一个客户端：它立即得到当前的 access token，之后登录、刷新、退出时随之更新。返回断开的函数。 */
-  connect(client: TokenHolder): () => void
-  /** 打开页面或启动 App 时调用：刷新一次，返回是否已经登录。并发的调用共用同一次刷新。 */
+  /** 打开页面时调用：读取一次身份，返回是否已经登录。并发的调用共用同一次读取；已经有身份时不再读取。 */
   restore(): Promise<boolean>
+  /** 登录接口成功后调用（cookie 已由服务端写入）：设置身份；不传时用 load 读取。 */
+  signIn(identity?: Identity): Promise<void>
+  /** 退出：清除身份。退出接口由应用自己调用，cookie 由它清除。 */
+  signOut(): void
   /**
-   * 登录接口成功后调用：保存凭据，把 access token 交给所有连接的客户端，设置身份。
-   * 这之前开始、还没有完成的刷新，结果被丢弃。
+   * 受保护的请求返回 401 时调用：登录已经失效，清除身份并调用 onSignedOut。
+   * 把会话交给生成的客户端（createClient({ session })），它按请求发出时的代次调用这里。
    */
-  signIn(body: SessionBody, identity?: Identity): Promise<void>
-  /** 退出：清除凭据和身份。登出接口由应用自己调用，cookie 由它清除。这之前开始、还没有完成的刷新，结果被丢弃。 */
-  signOut(): Promise<void>
+  expired(): void
+  /** 是否已经登录。 */
+  signedIn(): boolean
   /** 当前的身份，没有登录时为 null。 */
   identity(): Identity | null
-  /** 设置身份，例如登录后读到当前用户、切换租户。身份变化时代次加一并通知订阅者。 */
+  /** 设置身份，例如切换租户。身份变化时代次加一并通知订阅者。 */
   setIdentity(identity: Identity | null): void
   /** 身份的代次：每次登录、退出、切换身份都加一。代次变化前发出的请求，结果不应再使用。 */
   generation(): number
   /** query key 的作用域：[账号, 租户]，交给 createQueries 的 scope。 */
   scope(): readonly unknown[]
-  /** 当前的 access token，例如交给实时频道的 SDK。 */
-  accessToken(): string
   /**
-   * 返回带认证的 fetch，用于不经过生成客户端的请求，例如 AI 对话的消息流、对象存储之外的上传接口：
-   * 请求带上 Authorization: Bearer；收到 401 时刷新一次（与其他请求共用同一次刷新），再重试。默认包装全局的 fetch。
-   * 请求发出之后身份变了（登录、退出、切换身份）时不重试，返回原来的 401。
+   * 返回用于不经过生成客户端的请求的 fetch，例如 AI 对话的消息流：同源发送 cookie；收到 401 时，
+   * 请求发出之后身份没有变过才调用 expired。默认包装全局的 fetch。
    */
   fetch<F extends FetchLike = FetchLike>(base?: F): F
   /** 订阅身份的变化（登录、退出、切换身份），返回取消订阅的函数。 */
@@ -82,144 +55,66 @@ export interface Session {
 
 /** 创建会话。 */
 export function createSession(options: SessionOptions): Session {
-  const clients = new Set<TokenHolder>()
   const listeners = new Set<() => void>()
-  let token = ""
   let current: Identity | null = null
   let gen = 0
-  // 凭据的代次：登录、退出、刷新被拒绝时加一。刷新完成时代次变了，说明凭据已被替换，结果作废。
-  // 切换租户等只改身份、不换凭据，不影响进行中的刷新。
-  let epoch = 0
-  let refreshing: Promise<string | null> | null = null
-  // 对存储的写入排成一队，按发起的顺序执行：异步的存储也不会让先发起的写入晚完成、覆盖后面的。
-  let writes: Promise<void> = Promise.resolve()
+  let restoring: Promise<boolean> | null = null
 
-  const setToken = (t: string) => {
-    token = t
-    for (const c of clients) c.setAccessToken(t)
-  }
-  const changed = () => {
+  const set = (identity: Identity | null) => {
+    const same =
+      (current === null) === (identity === null) &&
+      current?.account === identity?.account &&
+      current?.tenant === identity?.tenant
+    if (same) return
+    current = identity ? { ...identity } : null
     gen++
     for (const l of [...listeners]) l()
   }
-  // persist 排队写入存储；轮到它时凭据已经不是 started 那一代，就跳过。
-  const persist = (started: number, write: (storage: TokenStorage) => void | Promise<void>): Promise<void> => {
-    const storage = options.storage
-    if (!storage) return Promise.resolve()
-    const p = writes.then(() => (epoch === started ? write(storage) : undefined))
-    writes = p.catch(() => {})
-    return p
-  }
-  // save 保存 started 那一代的凭据：先写存储，再交给客户端。等待存储期间凭据被替换（登录、退出）时都不提交，
-  // 返回 false，免得旧账号的 token 覆盖新账号的。
-  const save = async (body: SessionBody, started: number): Promise<boolean> => {
-    const refreshToken = body.refresh_token
-    if (refreshToken) await persist(started, (s) => s.set(refreshToken))
-    if (epoch !== started) return false
-    setToken(body.access_token)
-    return true
-  }
-  // replaced 让进行中的刷新和保存作废：新的刷新不再共用它。返回新的代次。
-  const replaced = () => {
-    epoch++
-    refreshing = null
-    return epoch
-  }
-  // clear 立即清除内存中的凭据和身份，再排队删除存储中的 refresh token。
-  const clear = async () => {
-    const started = replaced()
-    setToken("")
-    if (current !== null) {
-      current = null
-      changed()
-    }
-    await persist(started, (s) => s.remove())
-  }
 
-  const refresh = (): Promise<string | null> => {
-    if (refreshing) return refreshing
-    const started = epoch
-    const stale = () => epoch !== started
-    const p: Promise<string | null> = (async () => {
-      let saved: string | undefined
-      if (options.storage) {
-        // 先等之前的写入完成，否则可能读到刚登录的账号写入之前的旧 token。
-        await writes
-        if (stale()) return null
-        saved = (await options.storage.get()) ?? undefined
-        if (!saved || stale()) return null
-      }
-      try {
-        const body = await options.refresh(saved)
-        // 等待期间退出或换了账号登录：这是旧凭据的结果，保存它会把旧账号的 token 写回去。
-        if (stale()) return null
-        return (await save(body, started)) ? body.access_token : null
-      } catch (err) {
-        // 刷新被拒绝（401）表示这次登录已经失效；网络错误等保留凭据，下次再试。凭据已被替换时与它无关。
-        if (isApiErrorLike(err) && err.status === 401 && !stale()) {
-          const had = token !== "" || current !== null
-          await clear()
-          if (had) options.onSignedOut?.()
-        }
-        return null
-      }
-    })().finally(() => {
-      if (refreshing === p) refreshing = null
-    })
-    refreshing = p
-    return p
-  }
-
-  return {
-    auth: { refresh, generation: () => gen },
-    connect(client) {
-      clients.add(client)
-      client.setAccessToken(token)
-      return () => clients.delete(client)
+  const session: Session = {
+    restore() {
+      if (current !== null) return Promise.resolve(true) // 已经知道身份，例如刚登录
+      const started = gen
+      restoring ??= options.load().then(
+        (identity) => {
+          // 读取期间登录、退出或切换了身份：以那次变化为准，丢弃读到的结果。
+          if (gen === started) set(identity)
+          return current !== null
+        },
+        (err) => {
+          restoring = null // 网络错误等：下次再试
+          if (isApiErrorLike(err) && err.status === 401) {
+            set(null)
+            return false
+          }
+          throw err
+        },
+      )
+      return restoring
     },
-    restore: async () => (await refresh()) !== null,
-    async signIn(body, identity) {
-      // 保存期间又登录了别的账号或退出了：以后面的为准，这次不再提交。
-      if (!(await save(body, replaced()))) return
-      if (identity) this.setIdentity(identity)
-      else changed()
+    async signIn(identity) {
+      set(identity ?? (await options.load()))
     },
-    async signOut() {
-      const started = replaced()
-      setToken("")
-      current = null
-      changed()
-      await persist(started, (s) => s.remove())
+    signOut() {
+      set(null)
     },
+    expired() {
+      if (current === null) return
+      set(null)
+      options.onSignedOut?.()
+    },
+    signedIn: () => current !== null,
     identity: () => current,
-    setIdentity(identity) {
-      const same =
-        current?.account === identity?.account &&
-        current?.tenant === identity?.tenant &&
-        (current === null) === (identity === null)
-      if (same) return
-      current = identity ? { ...identity } : null
-      changed()
-    },
+    setIdentity: set,
     generation: () => gen,
     scope: () => (current ? [current.account, current.tenant ?? ""] : []),
-    accessToken: () => token,
     fetch<F extends FetchLike = FetchLike>(base?: F): F {
       const send: FetchLike = base ?? globalFetch()
       const wrapped: FetchLike = async (url, init = {}) => {
-        const attempt = (t: string) => {
-          const headers = headerRecord(init.headers)
-          if (t) headers.Authorization = `Bearer ${t}`
-          return send(url, { ...init, headers })
-        }
-        const used = token
-        const sent = gen
-        const res = await attempt(used)
-        // 身份变了：这是上一个身份的请求，不能用现在的凭据重发。
-        if (res.status !== 401 || gen !== sent) return res
-        // 等待期间其他请求可能已经换了 token：直接用新的重试。
-        const next = token !== used ? token : await refresh()
-        return next && gen === sent ? attempt(next) : res
+        const issued = gen
+        const res = await send(url, { ...init, credentials: init.credentials ?? "same-origin" })
+        if (res.status === 401 && gen === issued) session.expired()
+        return res
       }
       return wrapped as F
     },
@@ -228,4 +123,5 @@ export function createSession(options: SessionOptions): Session {
       return () => listeners.delete(listener)
     },
   }
+  return session
 }

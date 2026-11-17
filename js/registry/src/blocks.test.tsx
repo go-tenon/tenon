@@ -193,7 +193,11 @@ const editor = createRoute({
   staticData: { title: "编辑器" },
   component: EditorPage,
 })
-let loginFn = vi.fn(async () => ({ access_token: "a2", expires_at: "" }))
+// signedInAs 是服务端会话中的账号：登录接口成功时设置，会话的 load 读取它。
+let signedInAs: string | null = null
+let loginFn = vi.fn(async () => {
+  signedInAs = "u2"
+})
 const login = createRoute({
   getParentRoute: () => root,
   path: "/login",
@@ -212,13 +216,9 @@ const login = createRoute({
 const routeTree = root.addChildren([appRoute.addChildren([home, articlesRoute, editor]), login])
 
 async function setup(path: string, signedIn = true) {
-  const session: Session = createSession({
-    refresh: async () => {
-      if (!signedIn) throw { status: 401, fields: [] }
-      return { access_token: "a1", expires_at: "" }
-    },
-  })
-  if (signedIn) await session.signIn({ access_token: "a1", expires_at: "" }, { account: "u1" })
+  signedInAs = signedIn ? "u1" : null
+  const session: Session = createSession({ load: async () => (signedInAs ? { account: signedInAs } : null) })
+  if (signedIn) await session.signIn({ account: "u1" })
   const app = createApp({
     id: "registry-test",
     routeTree,
@@ -394,10 +394,12 @@ describe("表单与对话框", () => {
     fireEvent.change(screen.getByLabelText("密码"), { target: { value: "x" } })
     await act(async () => fireEvent.submit(screen.getByLabelText("邮箱").closest("form") as HTMLFormElement))
     await screen.findByText("邮箱或密码不对")
-    loginFn = vi.fn(async () => ({ access_token: "a2", expires_at: "" }))
+    loginFn = vi.fn(async () => {
+      signedInAs = "u2"
+    })
     await act(async () => fireEvent.submit(screen.getByLabelText("邮箱").closest("form") as HTMLFormElement))
     await screen.findByText("你好")
     expect(app.router.state.location.pathname).toBe("/articles")
-    expect(session.accessToken()).toBe("a2")
+    expect(session.identity()).toEqual({ account: "u2" })
   })
 })

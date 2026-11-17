@@ -162,7 +162,6 @@ Tenon 是一个用 Go 构建后端服务的框架。业务逻辑写成[业务动
 - [登录与注册](security/login.md)：邮箱和密码、验证码、找回密码
 - [登录的安全功能](security/login-security.md)：二次验证、Passkey、人机验证
 - [API 令牌](security/api-tokens.md)：给程序和第三方使用的令牌
-- [JWT 与单页应用的登录](security/jwt.md)：浏览器中的登录方式
 - [授权](security/authorization.md)：角色与权限，“这个人能不能做这件事”
 - [哈希](security/hashing.md)：安全地保存密码
 - [加密与签名链接](security/encryption.md)：保护敏感数据和链接

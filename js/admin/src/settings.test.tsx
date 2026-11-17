@@ -62,8 +62,8 @@ function server(options: { fail?: boolean } = {}) {
 }
 
 async function mount(autoSave = false, strict = false) {
-  const session = createSession({ refresh: async () => ({ access_token: "t", expires_at: "" }) })
-  await session.signIn({ access_token: "t", expires_at: "" }, { account: "u1" })
+  const session = createSession({ load: async () => ({ account: "u1" }) })
+  await session.signIn({ account: "u1" })
   const client = createClient({ baseURL: "/api" })
   const queryClient = new QueryClient()
   const model = settingsModel(

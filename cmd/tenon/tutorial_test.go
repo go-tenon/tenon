@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/go-tenon/tenon/database"
+	"github.com/go-tenon/tenon/httpx"
 )
 
 // tutorialFile 是教程中一个完整文件的代码块：```go title="internal/article/article.go"。
@@ -281,15 +282,15 @@ func (p *tutorial) run() {
 	}
 }
 
-// login 用邮箱和密码登录，返回 access token；refresh token 在 cookie 中。
+// login 像浏览器一样用邮箱和密码登录，返回会话 cookie 中的 token。
 func login(t *testing.T, base, email string) string {
 	t.Helper()
 	res := call(t, "", http.MethodPost, base+"/api/auth/login", `{"email":"`+email+`","password":"secret123"}`)
-	token, _ := res.body["access_token"].(string)
-	if res.status != http.StatusOK || token == "" || !slices.ContainsFunc(res.cookies, func(c *http.Cookie) bool { return c.Name == "blog_refresh" && c.HttpOnly }) {
+	i := slices.IndexFunc(res.cookies, func(c *http.Cookie) bool { return c.Name == httpx.DefaultSessionCookieName && c.HttpOnly && c.Secure })
+	if res.status/100 != 2 || i < 0 || res.cookies[i].Value == "" {
 		t.Fatalf("login %s: %+v", email, res)
 	}
-	return token
+	return res.cookies[i].Value
 }
 
 type apiResponse struct {
@@ -298,13 +299,15 @@ type apiResponse struct {
 	cookies []*http.Cookie
 }
 
+// call 像同源页面中的浏览器一样发出请求：带上会话 cookie 和 Sec-Fetch-Site。
 func call(t *testing.T, token, method, url, body string) apiResponse {
 	t.Helper()
 	req, _ := http.NewRequest(method, url, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept-Language", "zh-CN")
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
 	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
+		req.AddCookie(&http.Cookie{Name: httpx.DefaultSessionCookieName, Value: token})
 	}
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {

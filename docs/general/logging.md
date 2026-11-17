@@ -123,7 +123,7 @@ ctx = logging.WithAttrs(ctx, slog.String("component", "article"))
 | --- | --- | --- |
 | 访问日志 | `httpx.AccessLog` | 每个请求的方法、路由、状态码、耗时、客户端地址，以及业务错误的错误码 |
 | 错误诊断 | `rest.Register` | `5xx` 错误的完整错误链 |
-| 认证后端故障 | `rest.RequireBearer` | 校验器返回 `5xx` 类错误时的完整错误链 |
+| 认证后端故障 | `rest.RequireToken` | 校验器返回 `5xx` 类错误时的完整错误链 |
 
 确实需要自己记录错误时（例如后台任务失败），把错误直接作为字段值传入即可：
 

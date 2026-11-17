@@ -1,6 +1,6 @@
 # 登录与注册
 
-`login` 包回答“这个人是谁”：用登录标识和密码登录、用验证码登录或注册、找回密码、绑定和更换邮箱或手机号。得到 `identity.Subject` 之后，由 API 签发凭据：[`tokens.Login`](api-tokens.md#login-and-logout) 或 [`JWT.Login`](jwt.md#jwt)。单页应用、App 和后台都通过这些接口登录。
+`login` 包回答“这个人是谁”：用登录标识和密码登录、用验证码登录或注册、找回密码、绑定和更换邮箱或手机号。得到 `identity.Subject` 之后，由 API 签发凭据：[`tokens.Login`](api-tokens.md#login-and-logout)，浏览器的登录把它写进[会话 cookie](api-tokens.md#browser-sessions)。单页应用、App 和后台都通过这些接口登录。
 
 账号表属于应用。应用的 `users` 表只保存业务字段；登录标识、密码哈希和验证码保存在框架的 `auth_*` 表中，按 [`identity.Ref`](authentication.md#key-concepts) 引用账号。一个账号可以有多个邮箱、手机号，也可以没有密码只用验证码登录。
 

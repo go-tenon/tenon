@@ -4,7 +4,7 @@
 
 协议和传输由官方的 [Go SDK](https://github.com/modelcontextprotocol/go-sdk) 实现，`mcpx` 补上应用需要的部分：
 
-- **与 JSON API 相同的认证**：请求带 Bearer token，主体、租户和权限的规则与 [`rest.RequireBearer`](../security/authentication.md) 完全相同。
+- **与 JSON API 相同的认证**：请求带 Bearer token，主体、租户和权限的规则与 [`rest.RequireToken`](../security/authentication.md) 完全相同。
 - **按权限筛选工具**：每个工具声明需要的权限，主体没有权限的工具既看不到也调不了。给 AI 用的[个人访问令牌](../security/api-tokens.md#personal-access-tokens)只给 `articles:read`，它就只能用只读的工具。
 - **按 Huma 的规则校验参数**：工具参数的 schema 和校验与 REST 的请求体相同。
 - **错误分开对待**：业务错误交给模型，让它据此调整；内部错误只告诉它“内部错误”，完整错误写进日志。

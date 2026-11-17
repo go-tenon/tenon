@@ -151,7 +151,7 @@ func TestLocalizedBusinessErrorUsesPublicParams(t *testing.T) {
 func TestBearerRejectsEmptySubjectAndDocumentsNoOAuthScopes(t *testing.T) {
 	api := rest.New(chi.NewRouter(), rest.Options{Accounts: identity.Accounts{"user": nil}})
 	op := huma.Operation{OperationID: "auth", Method: http.MethodGet, Path: "/auth"}
-	rest.RequireBearer(api, func(context.Context, string) (identity.Subject, error) { return identity.Subject{}, nil }, "orders")(&op)
+	rest.RequireToken(api, func(context.Context, string) (identity.Subject, error) { return identity.Subject{}, nil }, "orders")(&op)
 	if len(op.Security[0]["bearer"]) != 0 {
 		t.Fatal("HTTP bearer cannot carry OAuth scopes")
 	}
@@ -244,7 +244,7 @@ func TestAccessLogCarriesBusinessCode(t *testing.T) {
 		return nil, errorx.Define(errorx.Conflict, "demo.conflict").Wrap(errors.New("pq: duplicate key"))
 	})
 	secured := huma.Operation{OperationID: "secured", Method: "GET", Path: "/secured"}
-	rest.RequireBearer(api, func(context.Context, string) (identity.Subject, error) { return identity.Subject{ID: "u"}, nil })(&secured)
+	rest.RequireToken(api, func(context.Context, string) (identity.Subject, error) { return identity.Subject{ID: "u"}, nil })(&secured)
 	rest.Register(api, secured, func(context.Context, *pingIn) (*pingOut, error) { return &pingOut{}, nil })
 	for path, code := range map[string]string{"/conflict": "demo.conflict", "/secured": "auth.unauthenticated"} {
 		logs.Reset()

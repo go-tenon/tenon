@@ -28,24 +28,22 @@
 登录要解决两个问题：用户第一次登录时，确认他是谁；之后的每个请求，确认它来自一个已经登录的用户。框架用两个包分别处理：
 
 - `login` 回答“这个人是谁”：保存邮箱和密码哈希，校验密码，限制输错的次数。邮箱、密码保存在框架的 `auth_*` 表中，应用的 `users` 表只有名字这样的业务字段。
-- `apitoken` 签发登录凭据。浏览器中的单页应用用一对凭据：
-  - **access token**，有效期 10 分钟，只保存在页面的内存中，请求时放在 `Authorization: Bearer` 中；
-  - **refresh token**，保存在 HttpOnly cookie 中，页面上的脚本读不到它，用来换新的 access token。
+- `apitoken` 签发登录凭据：密码正确后签发一个 token，写进浏览器的**会话 cookie**。之后浏览器的每个请求都自动带上它，服务端据此知道请求来自谁。
 
 几个术语：
 
 - **密码哈希**：数据库中不保存密码本身，而是保存用单向算法计算出的“指纹”。登录时对输入的密码做同样的计算，比较结果。即使数据库泄露，也得不到原始密码。
-- **token（令牌）**：登录成功后服务端签发的一段字符串，之后的请求带上它，服务端就知道请求来自谁，不需要每次都发送密码。access token 是 JWT 格式：内容带有服务端的签名，服务端不用查数据库就能验证它。
-- **HttpOnly cookie**：浏览器保存、每次请求自动带上的 cookie，并且页面上的 JavaScript 读不到它。
+- **token（令牌）**：登录成功后服务端签发的一段随机字符串，数据库中只保存它的哈希。之后的请求带上它，服务端就知道请求来自谁，不需要每次都发送密码。退出登录时删除它，立即失效。
+- **HttpOnly cookie**：浏览器保存、每次请求自动带上的 cookie，并且页面上的 JavaScript 读不到它。即使页面被注入了恶意脚本，也拿不走登录凭据。
 
-为什么用两个 token？access token 每次请求都要带，放在页面的内存中最方便，但页面上的脚本也能读到它，所以它只有 10 分钟有效期，即使被偷走，很快也会失效。refresh token 有效期长，放在脚本读不到的 HttpOnly cookie 中，只用来换新的 access token。
+所以流程是：登录接口校验密码，把 token 写进会话 cookie；之后的请求自动带上它；打开页面时读一次当前的作者（`/api/me`），读到了就是已登录。页面上的代码从头到尾不接触 token。
 
-所以流程是：登录成功后得到一对 token；打开页面时先用 cookie 中的 refresh token 换一个 access token，换到了就是已登录；access token 过期后再换一个。
+cookie 是浏览器自动附加的，其他网站的页面向博客发请求时，也可能带上它，冒充作者修改文章（跨站请求伪造）。框架为此做了两件事：会话 cookie 设为 `SameSite=Lax`，其他网站的页面发出的请求不带它；用 cookie 认证的修改请求必须来自博客自己的页面，否则返回 `403`。
 
 <a id="configuration"></a>
 ## 配置
 
-登录需要一个**应用密钥**：签发 token 时用它签名，没有密钥就无法伪造 token。
+登录需要一个**应用密钥**：`login` 用它签名验证码等数据，没有密钥就无法伪造它们。
 
 生成一个随机的密钥写进 `.env`：
 
@@ -85,7 +83,7 @@ import (
 type Config struct {
     HTTP     httpx.Config    `yaml:"http"`
     Database database.Config `yaml:"database"`
-    // Crypt 是应用密钥，用来签发登录凭据。
+    // Crypt 是应用密钥，login 用它签名验证码等数据。
     Crypt   crypt.Config    `yaml:"crypt"`
     Hashing hashing.Config  `yaml:"hashing"`
     Token   apitoken.Config `yaml:"token"`
@@ -392,34 +390,33 @@ func Register(api *rest.API, requireUser func(*huma.Operation), db *bun.DB) {
 ```
 
 - `identity.FromContext` 从 ctx 中取出这次请求的登录者。登录者是验证 token 时放进 ctx 的，见 [context](../concepts/go-primer.md#context)。
-- `requireUser` 是一个保护接口的函数，和 `rest.Public()` 用法一样：被它保护的接口，只有带着有效的 access token 才能调用，所以 `Me` 中一定能取到登录者。它在下文的装配一节中创建。
+- `requireUser` 是一个保护接口的函数，和 `rest.Public()` 用法一样：被它保护的接口，只有带着有效的登录凭据才能调用，所以 `Me` 中一定能取到登录者。它在下文的装配一节中创建。
 
 <a id="auth"></a>
 ## 登录接口
 
-接着，新建 `internal/auth/auth.go`，提供登录、刷新和退出三个接口：
+接着，新建 `internal/auth/auth.go`，提供登录和退出两个接口：
 
 ```go title="internal/auth/auth.go"
-// Package auth 是登录、刷新和登出的接口。
+// Package auth 是登录和退出的接口。
 //
-// 浏览器中的单页应用使用 JWT：access token 只保存在页面的内存中，refresh token 保存在 HttpOnly cookie 中，
-// 页面上的脚本读不到它。打开页面时先刷新一次，拿到 access token。
+// 浏览器的登录凭据是会话 cookie：登录成功后把 token 写进 HttpOnly cookie，之后浏览器随同源请求自动带上，
+// 页面上的脚本读不到它。
 package auth
 
 import (
     "context"
     "net/http"
+    "time"
 
     "github.com/danielgtaylor/huma/v2"
 
     "github.com/go-tenon/tenon/apitoken"
+    "github.com/go-tenon/tenon/httpx"
     "github.com/go-tenon/tenon/httpx/rest"
     "github.com/go-tenon/tenon/identity"
     "github.com/go-tenon/tenon/login"
 )
-
-// refreshCookie 只发给 /api/auth 下的接口。
-var refreshCookie = apitoken.RefreshCookie{Name: "blog_refresh", Path: "/api/auth"}
 
 type LoginInput struct {
     UserAgent string `header:"User-Agent"`
@@ -429,74 +426,47 @@ type LoginInput struct {
     }
 }
 
-type RefreshInput struct {
-    Cookie string `cookie:"blog_refresh"`
-}
-
-// SessionOutput 返回 access token，refresh token 写入 cookie。
+// SessionOutput 写入或清除会话 cookie。
 type SessionOutput struct {
-    SetCookie *http.Cookie `header:"Set-Cookie"`
-    Body      apitoken.Session
-}
-
-type LogoutOutput struct {
     SetCookie *http.Cookie `header:"Set-Cookie"`
 }
 
 type handlers struct {
-    users  *login.Realm
-    tokens *apitoken.Store
-    jwt    *apitoken.JWT
+    users    *login.Realm
+    tokens   *apitoken.Store
+    lifetime time.Duration
 }
 
-func session(pair apitoken.Pair) *SessionOutput {
-    out := &SessionOutput{}
-    out.Body, out.SetCookie = refreshCookie.Session(pair)
-    return out
-}
-
-// login 校验邮箱和密码。密码错误返回 401；同一个邮箱错太多次返回 429。
+// login 校验邮箱和密码，签发 token 写进会话 cookie。密码错误返回 401；同一个邮箱错太多次返回 429。
 func (h *handlers) login(ctx context.Context, in *LoginInput) (*SessionOutput, error) {
     out, err := h.users.Password(ctx, login.Email(in.Body.Email), in.Body.Password)
     if err != nil {
         return nil, err
     }
-    pair, err := h.jwt.Login(ctx, out.Subject, apitoken.Device{UserAgent: in.UserAgent})
+    token, err := h.tokens.Login(ctx, out.Subject, apitoken.Device{UserAgent: in.UserAgent})
     if err != nil {
         return nil, err
     }
-    return session(pair), nil
-}
-
-// refresh 用 cookie 中的 refresh token 换一个新的 access token，失败时返回 401，页面显示登录。
-func (h *handlers) refresh(ctx context.Context, in *RefreshInput) (*SessionOutput, error) {
-    pair, err := h.jwt.Refresh(ctx, in.Cookie)
-    if err != nil {
-        return nil, err
-    }
-    return session(pair), nil
+    return &SessionOutput{SetCookie: httpx.SessionCookie{}.Set(token, h.lifetime)}, nil
 }
 
 // logout 撤销这次登录，并清除 cookie。
-func (h *handlers) logout(ctx context.Context, _ *struct{}) (*LogoutOutput, error) {
+func (h *handlers) logout(ctx context.Context, _ *struct{}) (*SessionOutput, error) {
     sub, _ := identity.FromContext(ctx)
     if err := h.tokens.Revoke(ctx, sub, sub.Credential); err != nil {
         return nil, err
     }
-    return &LogoutOutput{SetCookie: refreshCookie.Clear()}, nil
+    return &SessionOutput{SetCookie: httpx.SessionCookie{}.Clear()}, nil
 }
 
-// Register 注册登录、刷新和登出的接口。requireUser 要求请求带着有效的 access token。
-func Register(api *rest.API, requireUser func(*huma.Operation), users *login.Realm, tokens *apitoken.Store, jwt *apitoken.JWT) {
-    h := &handlers{users: users, tokens: tokens, jwt: jwt}
+// Register 注册登录和退出的接口。requireUser 要求请求带着有效的登录凭据；lifetime 是浏览器保存 cookie 的时长。
+func Register(api *rest.API, requireUser func(*huma.Operation), users *login.Realm, tokens *apitoken.Store, lifetime time.Duration) {
+    h := &handlers{users: users, tokens: tokens, lifetime: lifetime}
 
-    op := huma.Operation{OperationID: "auth-login", Method: http.MethodPost, Path: "/auth/login", Summary: "用邮箱和密码登录"}
+    op := huma.Operation{OperationID: "auth-login", Method: http.MethodPost, Path: "/auth/login", Summary: "用邮箱和密码登录", DefaultStatus: http.StatusNoContent}
     rest.Public()(&op)
+    rest.SameOrigin(api)(&op)
     rest.Register(api, op, h.login)
-
-    op = huma.Operation{OperationID: "auth-refresh", Method: http.MethodPost, Path: "/auth/refresh", Summary: "换一个新的 access token"}
-    rest.Public()(&op)
-    rest.Register(api, op, h.refresh)
 
     op = huma.Operation{OperationID: "auth-logout", Method: http.MethodPost, Path: "/auth/logout", Summary: "退出登录", DefaultStatus: http.StatusNoContent}
     requireUser(&op)
@@ -504,11 +474,9 @@ func Register(api *rest.API, requireUser func(*huma.Operation), users *login.Rea
 }
 ```
 
-- 登录：`Password` 校验邮箱和密码，错误时返回 `401`；同一个邮箱 15 分钟内错 5 次后返回 `429`。成功后签发一对凭据，refresh token 写入 cookie。
-- 刷新：用 cookie 中的 refresh token 换一对新的，旧的随之作废。
-- 退出：撤销这次登录，清除 cookie。
-
-`refreshCookie` 的 `Path` 是 `/api/auth`，浏览器只在请求 `/api/auth` 下的接口时带上这个 cookie，其他接口收不到它，减少泄露的机会。
+- 登录：`Password` 校验邮箱和密码，错误时返回 `401`；同一个邮箱 15 分钟内错 5 次后返回 `429`。成功后签发一个 token，`httpx.SessionCookie` 把它放进会话 cookie。
+- 退出：撤销这次登录的 token，清除 cookie。token 被撤销后，即使 cookie 还在别处，也不能再用了。
+- `rest.SameOrigin` 让登录接口只接受博客自己的页面发出的请求。否则其他网站可以在你不知情时，让浏览器登录攻击者的账号。
 
 <a id="assembling"></a>
 ## 装配
@@ -543,10 +511,9 @@ import (
 type App struct {
     cfg Config
     db  *bun.DB
-    // users 校验作者的邮箱和密码，jwt 签发和校验登录凭据。
+    // users 校验作者的邮箱和密码，tokens 签发和校验登录凭据。
     users  *login.Realm
     tokens *apitoken.Store
-    jwt    *apitoken.JWT
 }
 
 // open 安装日志器，连接数据库，把关闭操作登记到 stack。
@@ -572,11 +539,7 @@ func open(ctx context.Context, cfg Config, stack *cleanup.Stack) (*App, error) {
     })
     tokens := apitoken.NewStore(db, cfg.Token)
 
-    return &App{
-        cfg: cfg, db: db,
-        users: users, tokens: tokens,
-        jwt: apitoken.NewJWT(tokens, apitoken.JWTConfig{Keys: apitoken.HMACKeys(keys)}),
-    }, nil
+    return &App{cfg: cfg, db: db, users: users, tokens: tokens}, nil
 }
 
 // part 是进程中的一个运行部分，例如 HTTP 服务：装配时返回 run，run 一直运行到 ctx 被取消。
@@ -667,9 +630,9 @@ func (a *App) Router(draining *httpx.Draining) chi.Router {
         r.Use(httpx.Timeout(a.cfg.HTTP.Timeout))
         // Accounts 声明接口接受哪些账号的登录凭据：博客只有作者一种。
         api := rest.New(r, rest.Options{Title: "Blog API", Version: "1.0.0", BasePath: "/api", Accounts: identity.Accounts{user.Type: nil}})
-        // requireUser 要求请求带着作者的 access token：Authorization: Bearer <token>
-        requireUser := rest.RequireBearer(api, a.jwt.Validate)
-        auth.Register(api, requireUser, a.users, a.tokens, a.jwt)
+        // requireUser 要求请求带着作者的登录凭据：浏览器的会话 cookie，或者 Authorization: Bearer <token>
+        requireUser := rest.RequireToken(api, a.tokens.Validate)
+        auth.Register(api, requireUser, a.users, a.tokens, a.cfg.Token.Lifetime)
         user.Register(api, requireUser, a.db)
         article.Register(api, requireUser, a.db)
     })
@@ -684,7 +647,7 @@ func DocRouter() chi.Routes {
 ```
 
 - `rest.Options.Accounts` 声明接口接受哪些账号的 token，现在只有作者。
-- `rest.RequireBearer` 返回 `requireUser`：被它保护的接口要求请求头中带有 `Authorization: Bearer <access token>`。它被传给 `user.Register`、`auth.Register` 和 `article.Register`。
+- `rest.RequireToken` 返回 `requireUser`：被它保护的接口要求请求带着有效的 token。浏览器用会话 cookie，以后的 App、脚本用 `Authorization: Bearer <token>`，两种方式都可以。用 cookie 认证的修改请求必须来自本站的页面。`requireUser` 被传给 `user.Register`、`auth.Register` 和 `article.Register`。
 
 在 `internal/article/routes.go` 中，读文章仍然公开，写文章改为需要登录：
 
@@ -735,7 +698,7 @@ go run ./cmd/api user create --name 小明 --email ming@example.com --password s
 <a id="frontend"></a>
 ## 前端
 
-前端要做的事情有：保管 access token，每次请求带上它；打开页面时用 cookie 换 access token；token 过期时再换一个。这些由 `@go-tenon/client` 的**会话**（session）完成：受保护的接口返回 `401` 时，会话用 cookie 换一个新的 access token，然后重试原来的请求，页面上的代码不用关心这些。
+登录凭据在浏览器自动带上的 cookie 中，前端不需要保管 token，只需要知道“现在是谁”：打开页面时读一次当前的作者，登录、退出时更新。这由 `@go-tenon/client` 的**会话**（session）完成。
 
 把 `apps/web/src/client.ts` 改成下面这样：
 
@@ -743,16 +706,12 @@ go run ./cmd/api user create --name 小明 --email ming@example.com --password s
 import { createSession } from "@go-tenon/client"
 import { createClient } from "@blog/client/api"
 
-// 刷新接口靠 cookie 认证，用一个不带 access token 的客户端调用它。
-const plain = createClient({ baseURL: "/api" })
-
-// session 保管登录凭据；refresh 用 cookie 换一个新的 access token。
-export const session = createSession({ refresh: () => plain.auth.refresh() })
+// session 记录当前的作者：打开页面、登录后读取 /api/me，没有登录时它返回 401。
+export const session = createSession({ load: async () => ({ account: (await api.user.me()).id }) })
 
 // api 是 tenon generate 生成的客户端（src/api），接口改了以后 tenon dev 会自动重新生成。
-// 受保护的接口返回 401 时，它通过 session.auth 换一个新的 access token 再重试；登录、退出时 session 更新它的 token。
-export const api = createClient({ baseURL: "/api", auth: session.auth })
-session.connect(api)
+// 受保护的接口返回 401 时（登录过期，或者在别处退出了），会话随之变为未登录。
+export const api = createClient({ baseURL: "/api", session })
 ```
 
 再把会话交给应用。把 `apps/web/src/app.ts` 改成下面这样：
@@ -771,7 +730,7 @@ declare module "@tanstack/react-router" {
 }
 ```
 
-应用在打开第一个页面之前恢复登录状态：cookie 还有效时，刷新页面后仍然是登录的。
+应用在打开第一个页面之前读一次当前的作者：cookie 还有效时，刷新页面后仍然是登录的。
 
 <a id="login-page"></a>
 ### 登录页
@@ -800,8 +759,8 @@ function Login() {
   const [password, setPassword] = useState("")
   const login = useMutation({
     mutationFn: () => api.auth.login({ email, password }),
-    onSuccess: async (body) => {
-      await session.signIn(body)
+    onSuccess: async () => {
+      await session.signIn()
       await app.redirectAfterSignIn(redirect)
     },
   })
@@ -825,7 +784,7 @@ function Login() {
 }
 ```
 
-- 登录成功后，`session.signIn` 保存 access token；`app.redirectAfterSignIn` 回到登录前想去的页面（地址中的 `?redirect=`），没有时回到首页。
+- 登录成功时，服务端已经写好了会话 cookie；`session.signIn` 读取当前的作者，`app.redirectAfterSignIn` 回到登录前想去的页面（地址中的 `?redirect=`），没有时回到首页。
 - 回跳地址只接受本站的相对路径。否则别人可以构造一个 `?redirect=https://evil.example` 的链接，让用户登录后跳到一个仿冒的网站。
 
 <a id="requiring-login"></a>
@@ -868,7 +827,7 @@ function EditArticle() {
 }
 ```
 
-页面上的检查只是为了让没有登录的人先去登录，真正的保护仍然在服务端：接口要求登录，没有 token 时返回 `401`。
+页面上的检查只是为了让没有登录的人先去登录，真正的保护仍然在服务端：接口要求登录，没有有效的 cookie 时返回 `401`。
 
 <a id="header"></a>
 ### 页头
@@ -911,7 +870,7 @@ function Layout() {
 ```
 
 - `useSignedIn` 返回是否已登录，登录、退出时页面随之更新。
-- 退出时，`session.signOut()` 清除内存中的 access token，退出接口清除 cookie。正在看的页面需要登录时，应用随即跳到登录页。
+- 退出时，退出接口撤销 token、清除 cookie，`session.signOut()` 清除当前的身份。正在看的页面需要登录时，应用随即跳到登录页。
 - 登录、退出时，TanStack Query 中缓存的数据也被清空，上一个作者的数据不会出现在下一个作者的页面上。
 
 最后，首页在没有登录时不显示编辑和删除。把 `apps/web/src/routes/index.tsx` 改成下面这样：
@@ -958,7 +917,7 @@ function ArticleList() {
 }
 ```
 
-打开 http://localhost:8080/write，页面先跳到登录页。用刚才创建的账号登录，回到了写文章的页面。写一篇文章，再刷新页面，仍然是登录状态：页面用 cookie 换到了新的 access token。退出后，编辑按钮消失了。
+打开 http://localhost:8080/write，页面先跳到登录页。用刚才创建的账号登录，回到了写文章的页面。写一篇文章，再刷新页面，仍然是登录状态：浏览器带着会话 cookie，页面读到了当前的作者。退出后，编辑按钮消失了。
 
 <a id="troubleshooting"></a>
 ## 常见问题
@@ -973,7 +932,11 @@ function ArticleList() {
 
 **登录后刷新页面，又变成未登录**
 
-refresh token 的 cookie 没有带上。检查是否通过 8080 端口访问页面：cookie 只在同源的请求中发送，直接访问前端开发服务器的端口时就没有。
+会话 cookie 没有保存或没有带上。检查是否通过 http://localhost:8080 访问页面：cookie 只在同源的请求中发送，直接访问前端开发服务器的端口时就没有；它还带有 `Secure` 属性，浏览器只在 HTTPS 和 `localhost` 上保存它，用局域网 IP 访问时登录不上。
+
+**修改文章时返回 `403`，错误码是 `http.cross_site`**
+
+请求不是从博客自己的页面发出的，例如在其他网站的页面上，或者用工具发请求时没有带 `Origin`。浏览器中的页面不会遇到；用 curl 调试时改用 `Authorization: Bearer <token>`。
 
 **登录时返回 `429`**
 
@@ -984,7 +947,7 @@ refresh token 的 cookie 没有带上。检查是否通过 8080 端口访问页�
 
 这一章，你：
 
-- 了解了 access token 和 refresh token 的分工：一个短期有效、放在内存中，一个长期有效、放在脚本读不到的 cookie 中；
+- 了解了会话 cookie：token 放在脚本读不到的 HttpOnly cookie 中，浏览器自动带上；用 cookie 认证的修改请求必须来自本站的页面；
 - 用 `login` 保存邮箱和密码，并限制输错的次数；
 - 写了一个创建作者的命令，它和接口调用同一个 `Handle`；
 - 用 `requireUser` 保护了写文章的接口；

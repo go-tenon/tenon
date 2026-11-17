@@ -227,11 +227,11 @@ func (a *ConfirmAccount) Handle(ctx context.Context, sub identity.Subject, passw
 
 ```go
 op := huma.Operation{OperationID: "account-delete", Method: http.MethodDelete, Path: "/account"}
-rest.RequireBearer(api, tokens.Validate)(&op)
+rest.RequireToken(api, tokens.Validate)(&op)
 rest.Confirmed(15 * time.Minute)(&op)
 ```
 
-`Confirm` 的方式参数是这次确认用到的方式：密码为 `login.MethodPassword`，验证码为标识的类型（如 `login.KindPhone`），二次验证为 `CheckTwoFactor` 的返回值。[JWT 模式](jwt.md#jwt)用 `jwt.Confirm`，它返回新的 access token，客户端替换后重试。个人访问令牌和代为登录的 token 访问 `Confirmed` 的路由总是 `403`。
+`Confirm` 的方式参数是这次确认用到的方式：密码为 `login.MethodPassword`，验证码为标识的类型（如 `login.KindPhone`），二次验证为 `CheckTwoFactor` 的返回值。确认在下一个请求就生效，客户端直接重试。个人访问令牌和代为登录的 token 访问 `Confirmed` 的路由总是 `403`。
 
 登录本身也算一次确认。登录得到的 `out.Subject.Auth` 记下了这次通过的验证方式（如 `password`、`password totp`、`email`、`passkey`、`google`）和时间，token 保存它们，之后每个请求的主体都带着，见[认证](authentication.md#key-concepts)。
 
@@ -302,8 +302,6 @@ if len(known) > 0 && !slices.ContainsFunc(known, func(t apitoken.Token) bool { r
     // 发邮件、短信或站内通知，带上时间和 IP，提醒用户如果不是本人，去设备列表退出这台设备
 }
 ```
-
-refresh token 被另一方使用时，框架撤销这次登录并调用 [`OnReuse`](jwt.md#jwt)，在那里提醒用户。
 
 <a id="captcha"></a>
 ## 人机验证

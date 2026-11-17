@@ -3,7 +3,6 @@ package realtime
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"time"
 
 	"github.com/centrifugal/centrifuge"
@@ -14,27 +13,29 @@ import (
 // connection 是一个连接的身份。
 type connection struct {
 	sub   identity.Subject // ID 为空表示匿名
-	token string           // 由 Options.Authenticate 认证时的 token
+	token string           // 由 Options.Authenticate 认证时的 token：SDK 传入的，或浏览器的会话 cookie
 }
 
 type connectionKey struct{}
 
-// connecting 识别连接的主体：SDK 传入 token 时由 Options.Authenticate 校验，没有 token 时是匿名连接。
+// connecting 识别连接的主体：SDK 传入的 token 优先，其次是浏览器在连接请求中带上的会话 cookie，
+// 都由 Options.Authenticate 校验；两者都没有时是匿名连接。
 func (rt *Realtime) connecting(ctx context.Context, e centrifuge.ConnectEvent) (centrifuge.ConnectReply, error) {
 	conn := &connection{}
-	if e.Token != "" {
-		sub, err := identity.Establish(ctx, rt.authenticator(e.Token), rt.opts.Accounts.Resolve)
+	token := e.Token
+	if token == "" {
+		token, _ = ctx.Value(sessionKey{}).(string)
+	}
+	if token != "" {
+		sub, err := identity.Establish(ctx, rt.authenticator(token), rt.opts.Accounts.Resolve)
 		switch {
 		case identity.Failed(err):
 			rt.logger.ErrorContext(ctx, "authentication backend failed", "error", err)
 			return centrifuge.ConnectReply{}, centrifuge.ErrorInternal
-		case errors.Is(err, identity.ErrExpired):
-			// SDK 收到后调用 getToken 换新的 token 再连接，例如 JWT 模式的 access token 在断线期间过期。
-			return centrifuge.ConnectReply{}, centrifuge.ErrorTokenExpired
 		case err != nil:
 			return centrifuge.ConnectReply{}, centrifuge.DisconnectInvalidToken
 		}
-		conn.sub, conn.token = sub, e.Token
+		conn.sub, conn.token = sub, token
 		ctx = identity.WithSubject(ctx, sub)
 	}
 	return centrifuge.ConnectReply{
@@ -53,8 +54,7 @@ func (rt *Realtime) authenticator(token string) identity.Authenticator {
 	}
 }
 
-// check 重新校验连接的凭据，只有确定已经失效时返回断开的方式：token 只是过期时以 DisconnectExpired 断开，
-// SDK 重连时收到“token 已过期”，换新的 token；其他情况以 DisconnectInvalidToken 断开，SDK 停止重连。
+// check 重新校验连接的凭据，只有确定已经失效时返回 DisconnectInvalidToken，SDK 收到后停止重连。
 func (rt *Realtime) check(ctx context.Context, conn *connection) *centrifuge.Disconnect {
 	ctx, cancel := context.WithTimeout(ctx, credentialTimeout)
 	defer cancel()
@@ -62,8 +62,6 @@ func (rt *Realtime) check(ctx context.Context, conn *connection) *centrifuge.Dis
 	switch {
 	case err == nil, identity.Failed(err):
 		return nil
-	case errors.Is(err, identity.ErrExpired):
-		return &centrifuge.DisconnectExpired
 	default:
 		return &centrifuge.DisconnectInvalidToken
 	}

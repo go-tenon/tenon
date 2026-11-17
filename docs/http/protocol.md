@@ -40,7 +40,7 @@ OpenAPI 文档中有三个框架的扩展字段：根上的 `x-tenon-permissions
 
 | 请求头 | 说明 |
 | --- | --- |
-| `Authorization: Bearer <token>` | 需要登录的接口都用它认证，token 是 access token、登录 token 或个人访问令牌，见[会话](#sessions) |
+| `Authorization: Bearer <token>` | 浏览器以外的客户端用它认证，token 是登录 token、个人访问令牌或 OAuth 令牌；浏览器用会话 cookie，见[会话](#sessions) |
 | `Accept-Language` | 错误提示和其他文案的语言，例如 `zh-CN`、`en`；不支持的语言使用应用的默认语言 |
 | `X-App-Version` | 安装在设备上的 App 的平台和版本，见 [App 版本](#app-version)；浏览器中的单页应用不带 |
 | `X-Request-ID` | 可选，1–128 个不含空格的可打印 ASCII 字符。带上时服务端沿用它，否则生成一个 |
@@ -124,7 +124,8 @@ OpenAPI 文档中有三个框架的扩展字段：根上的 `x-tenon-permissions
 
 | 错误码 | 状态码 | 客户端的处理 |
 | --- | --- | --- |
-| `auth.unauthenticated` | 401 | 有 refresh token 时[刷新](#sessions)一次再重试，否则让用户登录。无论服务端因为什么拒绝，`401` 都是这一个错误码 |
+| `auth.unauthenticated` | 401 | 让用户重新登录。无论服务端因为什么拒绝，`401` 都是这一个错误码 |
+| `http.cross_site` | 403 | 浏览器从其他站点的页面发出了带会话 cookie 的写请求，见[会话](#sessions)。同源页面不会遇到 |
 | `auth.forbidden` | 403 | 提示没有权限 |
 | `auth.confirm_required` | 403 | 让用户再次验证身份（例如输入密码），确认后重试 |
 | `auth.two_factor_required` | 403 | 让用户完成二次验证后重试 |
@@ -160,49 +161,29 @@ OpenAPI 文档中有三个框架的扩展字段：根上的 `x-tenon-permissions
 <a id="sessions"></a>
 ## 会话
 
-客户端用三种 token 认证，请求都带 `Authorization: Bearer <token>`：
+token 是不透明的随机字符串，服务端每个请求查一次表，撤销立即生效，没有刷新的步骤：
 
 | token | 获得方式 | 过期 |
 | --- | --- | --- |
-| access token（JWT 模式） | 登录、刷新 | 短期，默认 10 分钟，用 refresh token 换新的 |
-| 登录 token（不透明） | 登录 | 一段时间不用后过期，没有 refresh token |
+| 登录 token | 登录 | 一段时间不用后过期，到最长期限后过期 |
 | 个人访问令牌 | 用户在设置中创建 | 按创建时的设置 |
+| OAuth 令牌 | 用户授权第三方客户端 | 按授权时的设置 |
 
-JWT 模式的登录、刷新和确认身份接口都返回同一个格式：
+同一种 token 有两种携带方式：
 
-```json
-{"access_token": "eyJ…", "refresh_token": "kq3…", "expires_at": "2026-11-11T08:10:00Z"}
-```
-
-| 字段 | 说明 |
+| 客户端 | 携带方式 |
 | --- | --- |
-| `access_token` | 放在 `Authorization: Bearer` 中 |
-| `refresh_token` | 不为空时替换已保存的 refresh token；为空或不出现时继续使用已保存的那一个 |
-| `expires_at` | access token 的过期时间 |
+| 浏览器中的页面 | 登录接口把 token 写进会话 cookie：`HttpOnly`、`Secure`、`SameSite=Lax`、`Path=/`，名称以 `__Host-` 开头（默认 `__Host-session`）。浏览器随同源请求自动带上它，页面上的脚本读不到也不需要读它 |
+| App、桌面端、小程序、脚本 | 登录接口在响应体中返回 token，保存在设备的安全存储中，请求时放在 `Authorization: Bearer` 中 |
 
-刷新接口的请求体：
+浏览器的规则：
 
-```json
-{"refresh_token": "kq3…"}
-```
+1. 页面和 API 由同一个源提供，cookie 只随同源请求发送。
+2. 打开页面（包括刷新页面、新标签页）时读一次当前用户，例如 `GET /api/me`：成功就是已登录，`401` 时显示登录页。
+3. 收到 `401` 时这次登录已经失效（过期、在别处退出或被撤销），让用户重新登录。
+4. 用 cookie 认证的写请求（GET、HEAD、OPTIONS 以外）必须来自同源的页面：服务端按浏览器发送的 `Sec-Fetch-Site` 判断，没有时比较 `Origin`，否则返回 `403 http.cross_site`。浏览器会自动带上这两个请求头，页面不需要做任何事，也不需要 CSRF token。会设置 cookie 的登录接口同样只接受同源页面的请求。
 
-refresh token 有两种保存方式：
-
-| 客户端 | 保存方式 |
-| --- | --- |
-| App、桌面端、小程序、脚本 | 保存在设备的安全存储中，刷新时放在请求体中 |
-| 浏览器中的单页应用 | 登录请求体带 `"cookie": true`，服务端把 refresh token 写入 `HttpOnly`、`SameSite=Strict` 的 cookie，响应体中没有 `refresh_token`；刷新时请求体为空，浏览器自动带上 cookie |
-
-客户端的规则：
-
-1. 请求带上 access token。access token 过期或收到 `401` 时刷新一次，再重试原来的请求。
-2. 同一时间只发起一次刷新：刷新进行中的请求等它完成，再用新的 access token 重试。
-3. 刷新返回 `401` 时，这次登录已经失效，让用户重新登录。
-4. 打开浏览器页面（包括刷新页面、新标签页）时先刷新一次，拿到 access token；失败时显示登录页。
-
-每次刷新都会更换 refresh token。上一个 refresh token 在更换后 30 秒内仍可使用，但只换得新的 access token，`refresh_token` 为空，这样同时发起的几次刷新都能成功。超过 30 秒还有人用上一个 refresh token 刷新，服务端认为它已被盗用，撤销这次登录，双方都要重新登录。
-
-登出接口撤销当前这次登录，使用 cookie 的同时清除 cookie。服务端也可能在用户修改密码、管理员停用账号时撤销登录，之后的请求和刷新返回 `401`。
+登出接口撤销当前这次登录，并清除 cookie。服务端也可能在用户修改密码、管理员停用账号时撤销登录，之后的请求返回 `401`。
 
 <a id="event-streams"></a>
 ## 事件流
@@ -220,7 +201,7 @@ data: {"id":"0193e7a2-7c1e-7b4a-9d2f-3c5a1e8b6f10","title":"Hello"}
 
 - 每个事件有事件名（`event`）和 JSON 数据（`data`），可能有 `id`。每个接口有哪些事件、数据是什么结构，见 OpenAPI 文档。
 - 以 `:` 开头的行是心跳，大约每 15 秒一次，客户端忽略它。
-- 认证与普通请求相同，带 `Authorization` 请求头。浏览器原生的 `EventSource` 不能设置请求头，所以用 `fetch` 读取事件流。
+- 认证与普通请求相同：浏览器带会话 cookie，其他客户端带 `Authorization` 请求头。
 - 认证、权限和参数错误在开始推送之前返回，是普通的错误响应。
 - 连接可能因为服务器重启、网络切换而断开。长连接的接口由客户端重新连接，带上 `Last-Event-ID`，服务端据此补发断线期间的事件；服务端可能用 `retry` 字段建议重连的间隔（毫秒）。
 - 登录被撤销或失去权限后，服务端在 30 秒内结束连接，重新连接时得到 `401`。
@@ -232,8 +213,7 @@ data: {"id":"0193e7a2-7c1e-7b4a-9d2f-3c5a1e8b6f10","title":"Hello"}
 双向的实时连接使用 [Centrifuge](https://centrifugal.dev) 的协议，用它的官方 SDK 连接（JavaScript、Dart、Swift、Java、Go 等），见[实时频道](../libraries/realtime.md)。
 
 - 连接地址是应用挂载的 WebSocket 路径，例如 `wss://example.com/realtime`。
-- 连接时传入 token（与 API 相同的 access token 或登录 token）。没有 token 的连接是匿名的，只能订阅公开频道。
-- JWT 模式下设置 SDK 的 `getToken`：重连时 access token 可能已经过期，SDK 调用它[刷新](#sessions)后取得新的 token；返回空字符串表示需要重新登录。
+- 浏览器中的页面不传 token：同源的连接请求带着会话 cookie，用它认证；其他客户端连接时传入与 API 相同的 token。两者都没有的连接是匿名的，只能订阅公开频道。其他站点的页面不能建立连接。
 - token 无效或这次登录已被撤销时，连接以关闭码 `3500` 结束，SDK 不再重连。连接期间服务端每 30 秒重新检查一次。
 - 订阅被拒绝时，错误码 `103` 表示没有权限，`102` 表示没有这个频道。
 - 频道中的消息（publication）的数据是 JSON。频道名称和消息结构由应用定义。

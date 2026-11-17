@@ -18,7 +18,7 @@ import (
 )
 
 // 认证通过后，请求的 context 带有重新校验凭据的函数，长连接期间据此发现 token 被撤销或失去 scope。
-func TestRequireBearerInstallsCredentialCheck(t *testing.T) {
+func TestRequireTokenInstallsCredentialCheck(t *testing.T) {
 	var (
 		mu      sync.Mutex
 		subject = identity.Subject{ID: "alice", Type: "user", Permissions: []string{"events"}}
@@ -39,7 +39,7 @@ func TestRequireBearerInstallsCredentialCheck(t *testing.T) {
 	api := rest.New(chi.NewRouter(), rest.Options{Accounts: identity.Accounts{"user": nil}})
 	captured := make(chan context.Context, 1)
 	op := huma.Operation{OperationID: "events", Method: http.MethodGet, Path: "/events"}
-	rest.RequireBearer(api, validate, "events")(&op)
+	rest.RequireToken(api, validate, "events")(&op)
 	rest.Register(api, op, func(ctx context.Context, _ *struct{}) (*struct{}, error) {
 		captured <- ctx
 		return nil, nil

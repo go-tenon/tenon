@@ -115,7 +115,7 @@ webhook-signature: v1,K5oZfzN95Z9UVu1EsfQmfVNQhnkZ2pj9o9NDN/H/pI4=
 
 ```go
 func Routes(api *rest.API, validate identity.TokenValidator, db *bun.DB) {
-    article.Register(api, rest.RequireBearer(api, validate, "articles"), db)
+    article.Register(api, rest.RequireToken(api, validate, "articles"), db)
     webhook.Document(api.OpenAPI(), article.Published)
 }
 ```

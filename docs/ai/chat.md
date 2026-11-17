@@ -253,7 +253,7 @@ rest.RegisterSSE(api, op, chat.UIEvents, h.Chat)
 import { chatControls, chatTransport } from "@go-tenon/client";
 import { session } from "./client"; // createSession 创建的会话，见客户端代码
 
-const authed = session.fetch(fetch); // 带上 access token，401 时刷新再重试
+const authed = session.fetch(fetch); // 同源发送会话 cookie，401 时会话变为未登录
 const chat = chatControls('/api/v1/assistant/chat', authed);
 
 const { messages, sendMessage, addToolApprovalResponse } = useChat({

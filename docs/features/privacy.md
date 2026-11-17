@@ -168,7 +168,7 @@ func (a *DeleteAccount) Handle(ctx context.Context, sub identity.Subject) (*priv
 
 ```go
 op := huma.Operation{OperationID: "account-delete", Method: http.MethodDelete, Path: "/account"}
-rest.RequireBearer(api, tokens.Validate)(&op)
+rest.RequireToken(api, tokens.Validate)(&op)
 rest.Confirmed(15 * time.Minute)(&op)
 ```
 
@@ -294,9 +294,6 @@ err := a.deletions.Erase(ctx, identity.Ref{Type: user.Type, ID: in.ID})
 
 <a id="troubleshooting"></a>
 ## 常见问题
-
-**删除之后，用户用原来的 token 还能访问几分钟。**
-使用 [JWT](../security/jwt.md) 时，access token 不访问数据库，删除登录记录后，已签发的 access token 在有效期（默认 10 分钟）内仍然可以发起请求。删除账号行之后，Resolver 加载不到用户，应当返回错误；需要立即失效的接口使用不透明 token。
 
 **`EraseDue` 一直报 `violates foreign key constraint`。**
 登记顺序不对：引用账号行的表还有数据，账号行就被删除了。把删除引用方的那一项排在前面，或者给外键加上 `ON DELETE CASCADE`。

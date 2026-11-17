@@ -48,7 +48,7 @@ apps/admin/
 
 **选择布局。** `src/layouts.ts` 列出这个前端可以使用的布局，第一种是默认的，由 `tenon add frontend` 的 `--layout` 决定（见[开发工具](../installation/tooling.md#add-frontend)）。`_app.tsx` 用 [`useLayoutVariant`](app-shell.md#layouts) 取得当前的布局并渲染它。“布局”页面列出全部布局，点“使用”切换，选择保存在这个浏览器中。项目初期用它对照选择；选定之后，在 `layouts.ts` 中把它放在第一位，只保留需要的布局（保留几种时，用户可以在它们之间切换），再删除 `_app/layouts.tsx`。
 
-`src/auth.ts` 按约定的路径调用登录相关的接口：`POST /api/auth/login`、`/api/auth/refresh`、`/api/auth/logout` 和 `GET /api/me`（返回 `{ name, permissions? }`）。应用按[教程第 6 章](../tutorial/06-login.md)的写法注册它们后，登录就能使用；接口名或路径不同时只改这个文件。没有登录时打开任何页面都会跳到登录页，登录后回到原来的页面。
+`src/auth.ts` 按约定的路径调用登录相关的接口：`POST /api/auth/login`（写入会话 cookie）、`POST /api/auth/logout` 和 `GET /api/me`（返回 `{ id, name, permissions? }`）。应用按[教程第 6 章](../tutorial/06-login.md)的写法注册它们后，登录就能使用；接口名或路径不同时只改这个文件。没有登录时打开任何页面都会跳到登录页，登录后回到原来的页面。
 
 页面放在 `src/routes/_app/` 中，一个文件一个页面，路由的 `staticData` 决定菜单：
 
@@ -185,7 +185,7 @@ bun add ai@^7.0.159 @ai-sdk/react@^4.0.163 @ant-design/x@^2.10.0 @ant-design/x-m
 
 **登录后接口都返回 404**
 
-模板按约定的路径调用登录相关的接口（`/api/auth/login`、`/api/auth/refresh`、`/api/auth/logout`、`/api/me`）。应用的路径不同时，修改 `src/auth.ts`，见[模板里有什么](#template)。
+模板按约定的路径调用登录相关的接口（`/api/auth/login`、`/api/auth/logout`、`/api/me`）。应用的路径不同时，修改 `src/auth.ts`，见[模板里有什么](#template)。
 
 **打开 `/admin/` 得到 404**
 

@@ -117,7 +117,6 @@ func publish(t *testing.T, hub *broadcast.Hub, topic string, v any) {
 type tokens struct {
 	mu      sync.Mutex
 	revoked map[string]bool
-	expired map[string]bool
 	down    bool
 }
 
@@ -129,8 +128,6 @@ func (s *tokens) validate(_ context.Context, token string) (identity.Subject, er
 		return identity.Subject{}, errUnavailable.New()
 	case s.revoked[token]:
 		return identity.Subject{}, errRevoked.New()
-	case s.expired[token]:
-		return identity.Subject{}, errRevoked.Wrap(identity.ErrExpired.New())
 	}
 	return identity.Subject{Type: "user", ID: token, Credential: "cred-" + token}, nil
 }
@@ -142,15 +139,6 @@ func (s *tokens) revoke(token string) {
 		s.revoked = map[string]bool{}
 	}
 	s.revoked[token] = true
-}
-
-func (s *tokens) expire(token string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.expired == nil {
-		s.expired = map[string]bool{}
-	}
-	s.expired[token] = true
 }
 
 func (s *tokens) setDown(down bool) {
@@ -363,11 +351,6 @@ func TestTokenAuthentication(t *testing.T) {
 	if rejected(t, n.url, "revoked", nil) != 3500 {
 		t.Fatal("revoked token was not rejected as invalid")
 	}
-	// 只是过期的 token 返回“token 已过期”（109），连接不关闭：SDK 换新的 token 后重试。
-	store.expire("expired")
-	if _, reply := connect(t, n.url, "expired", nil); reply.Error == nil || reply.Error.Code != 109 {
-		t.Fatalf("connect with an expired token: %+v", reply)
-	}
 	// 后端故障时返回内部错误，不是无效 token：客户端 SDK 会稍后重连。
 	store.setDown(true)
 	if _, reply := connect(t, n.url, "alice", nil); reply.Error == nil || reply.Error.Code != 100 {
@@ -375,6 +358,29 @@ func TestTokenAuthentication(t *testing.T) {
 	}
 	store.setDown(false)
 	mustConnect(t, n.url, "alice", nil)
+
+	// 浏览器不传 token，用连接请求中的会话 cookie 认证；SDK 传入的 token 优先。
+	seen := make(chan identity.Subject, 2)
+	n.rt.Channel("inbox", realtime.Private(func(_ context.Context, sub identity.Subject, _ realtime.Params) (bool, error) {
+		seen <- sub
+		return true, nil
+	}))
+	browser := http.Header{"Cookie": {httpx.DefaultSessionCookieName + "=carol"}}
+	mustConnect(t, n.url, "", browser).mustSubscribe("inbox")
+	if sub := <-seen; sub.ID != "carol" {
+		t.Fatalf("cookie subject %+v", sub)
+	}
+	mustConnect(t, n.url, "dave", browser).mustSubscribe("inbox")
+	if sub := <-seen; sub.ID != "dave" {
+		t.Fatalf("token did not take precedence: %+v", sub)
+	}
+	if rejected(t, n.url, "", http.Header{"Cookie": {httpx.DefaultSessionCookieName + "=revoked"}}) != 3500 {
+		t.Fatal("revoked session cookie was accepted")
+	}
+	// 其他网站的页面不能借用户的 cookie 建立连接。
+	if _, resp, err := dial(t, n.url, http.Header{"Cookie": {httpx.DefaultSessionCookieName + "=carol"}, "Origin": {"https://evil.example"}}); err == nil || resp == nil || resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("cross-site connection: %v", err)
+	}
 
 	// 没有配置 Authenticate 时，带 token 的连接一律拒绝。
 	plain := start(t, broadcasttest.NewBackend(), realtime.Options{}, nil)
@@ -551,12 +557,6 @@ func TestPeriodicRecheckDisconnects(t *testing.T) {
 	store.revoke("alice")
 	if code := c.closed(); code != 3500 {
 		t.Fatalf("closed with %d", code)
-	}
-	// token 在连接期间过期：以 3005 断开，SDK 重连时会收到 109，换新的 token。
-	b := mustConnect(t, n.url, "bob", nil)
-	store.expire("bob")
-	if code := b.closed(); code != 3005 {
-		t.Fatalf("expired token closed with %d", code)
 	}
 }
 

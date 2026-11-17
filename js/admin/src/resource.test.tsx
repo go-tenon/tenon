@@ -104,8 +104,8 @@ function server() {
 }
 
 async function mount(path = "/articles", ready = "你好") {
-  const session = createSession({ refresh: async () => ({ access_token: "t", expires_at: "" }) })
-  await session.signIn({ access_token: "t", expires_at: "" }, { account: "u1" })
+  const session = createSession({ load: async () => ({ account: "u1" }) })
+  await session.signIn({ account: "u1" })
   const client = createClient({ baseURL: "/api" })
   const queryClient = new QueryClient()
   const model: ResourceModel = resourceModel(

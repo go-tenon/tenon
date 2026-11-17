@@ -22,7 +22,7 @@ func TestCORSPreflightBeforeRoutes(t *testing.T) {
 	r.Use(httpx.CORS(cfg))
 	api := rest.New(r, rest.Options{Accounts: identity.Accounts{"user": nil}})
 	op := huma.Operation{OperationID: "create", Method: http.MethodPost, Path: "/articles"}
-	rest.RequireBearer(api, func(context.Context, string) (identity.Subject, error) { return identity.Subject{}, nil })(&op)
+	rest.RequireToken(api, func(context.Context, string) (identity.Subject, error) { return identity.Subject{}, nil })(&op)
 	rest.Register(api, op, func(context.Context, *struct{}) (*struct{}, error) { return nil, nil })
 
 	req := httptest.NewRequest(http.MethodOptions, "/articles", nil)

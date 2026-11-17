@@ -220,7 +220,7 @@ func (r *runner) handle(root context.Context, ep *endpoint, m *nats.Msg) (resp *
 	return resp, ""
 }
 
-// authenticate 按 identity.Establish 确立主体，规则与 HTTP 接口的 rest.RequireBearer 相同。
+// authenticate 按 identity.Establish 确立主体，规则与 HTTP 接口的 rest.RequireToken 相同。
 func (r *runner) authenticate(ctx context.Context, ep *endpoint, h nats.Header) (identity.Subject, error) {
 	token := bearerToken(h.Get(HeaderAuthorization))
 	authenticate := func(ctx context.Context) (identity.Subject, error) {

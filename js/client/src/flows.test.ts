@@ -3,11 +3,7 @@ import { chatControls, chatTransport } from "./chat"
 import { describeError } from "./errors"
 import type { FetchLike, RequestInitLike, ResponseLike } from "./fetch"
 import { isFinished, type OperationLike, progressRatio, watchOperation } from "./operation"
-import { realtimeAuth } from "./realtime"
-import { createSession, type SessionBody } from "./session"
 import { UploadError, uploadFile } from "./upload"
-
-const body = (access: string): SessionBody => ({ access_token: access, expires_at: "2026-11-11T08:10:00Z" })
 
 function response(status: number, json: unknown = {}, headers: Record<string, string> = {}): ResponseLike {
   return {
@@ -20,7 +16,7 @@ function response(status: number, json: unknown = {}, headers: Record<string, st
 }
 
 /** 记录请求的假 fetch：handler 按请求返回响应。 */
-function fakeFetch(handler: (url: string, init: RequestInitLike) => ResponseLike | Promise<ResponseLike>) {
+function fakeFetch(handler: (url: string, init: RequestInitLike) => ResponseLike) {
   const calls: { url: string; init: RequestInitLike }[] = []
   const fetch: FetchLike = async (url, init = {}) => {
     calls.push({ url, init })
@@ -28,60 +24,6 @@ function fakeFetch(handler: (url: string, init: RequestInitLike) => ResponseLike
   }
   return { fetch, calls }
 }
-
-describe("session.fetch", () => {
-  it("带上 access token；401 时刷新一次再重试", async () => {
-    const refresh = vi.fn().mockResolvedValue(body("a2"))
-    const session = createSession({ refresh })
-    await session.signIn(body("a1"))
-    const { fetch, calls } = fakeFetch((_, init) =>
-      response((init.headers as Record<string, string>).Authorization === "Bearer a2" ? 200 : 401),
-    )
-    const res = await session.fetch(fetch)("/api/x", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-    })
-    expect(res.status).toBe(200)
-    expect(calls.map((c) => (c.init.headers as Record<string, string>).Authorization)).toEqual([
-      "Bearer a1",
-      "Bearer a2",
-    ])
-    expect((calls[1].init.headers as Record<string, string>)["Content-Type"]).toBe("application/json")
-    expect(refresh).toHaveBeenCalledTimes(1)
-  })
-
-  it("请求发出之后身份变了：返回原来的 401，不刷新、不用新身份重试", async () => {
-    const refresh = vi.fn().mockResolvedValue(body("bob2"))
-    const session = createSession({ refresh })
-    await session.signIn(body("alice"), { account: "alice" })
-    const { fetch, calls } = fakeFetch(async () => {
-      await session.signIn(body("bob"), { account: "bob" })
-      return response(401)
-    })
-    expect((await session.fetch(fetch)("/api/x", { method: "POST" })).status).toBe(401)
-    expect(calls).toHaveLength(1)
-    expect(refresh).not.toHaveBeenCalled()
-  })
-
-  it("刷新失败时返回原来的 401", async () => {
-    const session = createSession({ refresh: vi.fn().mockRejectedValue({ status: 401, fields: [] }) })
-    const { fetch, calls } = fakeFetch(() => response(401))
-    expect((await session.fetch(fetch)("/api/x")).status).toBe(401)
-    expect(calls).toHaveLength(1)
-  })
-})
-
-describe("realtimeAuth", () => {
-  it("连接时用当前的 token，过期后通过会话刷新，失败时返回空字符串", async () => {
-    const refresh = vi.fn().mockResolvedValueOnce(body("a2")).mockRejectedValueOnce({ status: 401, fields: [] })
-    const session = createSession({ refresh })
-    await session.signIn(body("a1"))
-    const auth = realtimeAuth(session)
-    expect(auth.token).toBe("a1")
-    expect(await auth.getToken()).toBe("a2")
-    expect(await auth.getToken()).toBe("")
-  })
-})
 
 describe("watchOperation", () => {
   const op = (status: string, processed: number): OperationLike => ({

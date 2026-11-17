@@ -16,7 +16,7 @@ import (
 func TestEndpointsDescribeRegisteredOperations(t *testing.T) {
 	api := rest.New(chi.NewRouter(), rest.Options{Accounts: identity.Accounts{"user": nil}})
 	get := huma.Operation{OperationID: "count-get", Method: http.MethodGet, Path: "/counts/{id}", Summary: "取计数"}
-	rest.RequireBearer(api, func(context.Context, string) (identity.Subject, error) { return identity.Subject{}, nil })(&get)
+	rest.RequireToken(api, func(context.Context, string) (identity.Subject, error) { return identity.Subject{}, nil })(&get)
 	rest.Register(api, get, func(context.Context, *countIn) (*minimalOutput, error) { return nil, nil })
 	stream := huma.Operation{OperationID: "count-stream", Method: http.MethodGet, Path: "/count"}
 	rest.Public()(&stream)

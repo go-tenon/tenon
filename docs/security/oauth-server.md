@@ -42,7 +42,7 @@ oauth := oauthserver.New(db, tokens, oauthserver.Options{
 })
 router.Handle(oauth.MetadataPath(), oauth.Metadata())
 oauth.Routes(router)                                    // 授权、令牌端点
-oauth.Register(api, rest.RequireBearer(api, tokens.Validate)) // 同意页调用的接口
+oauth.Register(api, rest.RequireToken(api, tokens.Validate)) // 同意页调用的接口
 ```
 
 之后，在 claude.ai 中添加你的 MCP 服务时，用户会被带到你的应用登录，在同意页上点“允许”，claude.ai 就拿到了一个只能访问 MCP 服务的令牌。
@@ -62,7 +62,7 @@ migratecmd.Publish(
 <a id="assembling"></a>
 ## 装配
 
-串起来看：发布迁移 → 启动时准备好 `apitoken.Store`（或 JWT）→ 在入口创建一次 `oauthserver.Server` 并挂路由 → 授权 / 令牌 / 同意页请求走这些端点。
+串起来看：发布迁移 → 启动时准备好 `apitoken.Store` → 在入口创建一次 `oauthserver.Server` 并挂路由 → 授权 / 令牌 / 同意页请求走这些端点。
 
 创建授权服务器，端点挂在应用的根上，同意页的两个接口注册在编辑后台的 API 上：
 
@@ -78,7 +78,7 @@ oauth := oauthserver.New(a.db, tokens, oauthserver.Options{
 })
 router.Handle(oauth.MetadataPath(), oauth.Metadata())
 oauth.Routes(router)
-oauth.Register(api, rest.RequireBearer(api, tokens.Validate)) // 编辑后台用 JWT 登录时传入 jwt.Validate
+oauth.Register(api, rest.RequireToken(api, tokens.Validate)) // 同意页的接口用编辑的会话 cookie 认证
 ```
 
 | 选项 | 说明 |

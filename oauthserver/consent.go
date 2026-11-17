@@ -61,7 +61,7 @@ type decisionInput struct{ Body Decision }
 
 type redirectOutput struct{ Body Redirect }
 
-// Register 在 api 上注册同意页使用的两个接口，auth 要求登录，通常是 rest.RequireBearer(api, tokens.Validate)：
+// Register 在 api 上注册同意页使用的两个接口，auth 要求登录，通常是 rest.RequireToken(api, tokens.Validate)：
 //
 //	GET  /oauth/consent?request=…  读取授权请求，显示在同意页上（oauth-consent-get）
 //	POST /oauth/consent            同意或拒绝，返回浏览器要跳转去的地址（oauth-consent-decide）

@@ -11,9 +11,9 @@
 | 账号怎么来 | 管理员邀请 / 创建 | 租户内邀请或管理员创建 |
 | 怎么登录 | 邮箱 + 密码 | 邮箱 + 密码 |
 | 权限 | 平台域 `""` 上的 `authz` 角色 | 该租户上的 `authz` 角色 |
-| 凭据 | 各自一套 JWT + refresh cookie | 同左；代登时签发带 `Impersonator` 的成员令牌 |
+| 凭据 | 会话 cookie `__Host-ops` | 会话 cookie `__Host-session`；代登时签发带 `Impersonator` 的成员令牌 |
 
-单账号流程（邮箱密码、JWT cookie、`RequireBearer`）与[单账号后台](admin-example.md)相同，本页只写多出来的部分。租户确定、数据隔离、客户账号见[多租户](tenancy.md)；代登录约定见[认证：代为登录](authentication-advanced.md#impersonation)。
+单账号流程（邮箱密码、会话 cookie、`RequireToken`）与[单账号后台](admin-example.md)相同，本页只写多出来的部分。租户确定、数据隔离、客户账号见[多租户](tenancy.md)；代登录约定见[认证：代为登录](authentication-advanced.md#impersonation)。
 
 - [账号表](#account-tables)
 - [装配](#assembling)
@@ -101,7 +101,7 @@ func Resolve(db bun.IDB, roles *authz.Store) identity.Resolver {
 <a id="assembling"></a>
 ## 装配
 
-两套 `login.Realm`、两套 `apitoken.Store` / `JWT`、共用一个 `authz.Store`。cookie 的 `Path` 分别限制在各自的 auth 前缀下。
+两套 `login.Realm`、两套 `apitoken.Store`、共用一个 `authz.Store`。两个前端在同一个源下，两套账号各用一个[会话 cookie](api-tokens.md#browser-sessions)：运营是 `__Host-ops`，成员是默认的 `__Host-session`。浏览器同时保存两个，互不覆盖，每个 API 只读自己的那一个。
 
 ```go
 type Config struct {
@@ -112,14 +112,13 @@ type Config struct {
 type Accounts struct {
     Staff        *login.Realm
     StaffTokens  *apitoken.Store
-    StaffJWT     *apitoken.JWT
-    StaffCookie  apitoken.RefreshCookie
     Members      *login.Realm
     MemberTokens *apitoken.Store
-    MemberJWT    *apitoken.JWT
-    MemberCookie apitoken.RefreshCookie
     Roles        *authz.Store
 }
+
+// StaffCookie 是运营的会话 cookie；成员用默认的 httpx.SessionCookie{}。
+var StaffCookie = httpx.SessionCookie{Name: "__Host-ops"}
 
 func New(db *bun.DB, cfg Config, hasher *hashing.Hasher, c *crypt.Crypt) *Accounts {
     every15 := ratelimit.Config{Rate: 5, Interval: 15 * time.Minute, Burst: 5}
@@ -145,28 +144,22 @@ func New(db *bun.DB, cfg Config, hasher *hashing.Hasher, c *crypt.Crypt) *Accoun
         Sends:    pglimit.New(db, "login:member:sends", every15),
     })
 
-    staffTokens := apitoken.NewStore(db, cfg.StaffToken)
-    memberTokens := apitoken.NewStore(db, cfg.MemberToken)
     return &Accounts{
-        Staff: staffRealm, StaffTokens: staffTokens,
-        StaffJWT:    apitoken.NewJWT(staffTokens, apitoken.JWTConfig{Keys: apitoken.HMACKeys(c)}),
-        StaffCookie: apitoken.RefreshCookie{Name: "ops_refresh", Path: "/ops/api/auth"},
-        Members: memberRealm, MemberTokens: memberTokens,
-        MemberJWT:    apitoken.NewJWT(memberTokens, apitoken.JWTConfig{Keys: apitoken.HMACKeys(c)}),
-        MemberCookie: apitoken.RefreshCookie{Name: "console_refresh", Path: "/t"},
-        Roles:        roles,
+        Staff: staffRealm, StaffTokens: apitoken.NewStore(db, cfg.StaffToken),
+        Members: memberRealm, MemberTokens: apitoken.NewStore(db, cfg.MemberToken),
+        Roles: roles,
     }
 }
 ```
 
-`MemberCookie.Path` 设为 `/t`，这样任意 `/t/{tenant}/api/auth` 都能带上 refresh cookie；若希望更窄，可按租户拆 cookie（实现更复杂，一般不必要）。
+成员的 cookie 不区分租户：登录 token 通常不绑租户，同一个成员带着同一个会话进入他所属的各个租户，权限由各租户上的角色决定。
 
 需要发布的迁移：`login`、`ratelimit`、`apitoken`、`authz`，以及 `staff` / `members` / `tenants` 等业务表。
 
 <a id="ops-api"></a>
 ## 运营后台
 
-登录 / 刷新 / 登出与[单账号后台](admin-example.md#auth-api)相同，只是换用 `Staff` 的 Realm、JWT 和 cookie 名 `ops_refresh`。额外提供「以此成员登录」：
+登录 / 登出与[单账号后台](admin-example.md#auth-api)相同，只是换用 `Staff` 的 Realm 和 `StaffCookie`（`StaffCookie.Set`、`StaffCookie.Clear`）。额外提供「以此成员登录」：
 
 ```go
 type ImpersonateInput struct {
@@ -177,11 +170,11 @@ type ImpersonateInput struct {
     }
 }
 
+// ImpersonateOutput 直接写入成员的会话 cookie：两个后台同源，运营的 cookie 不受影响。
 type ImpersonateOutput struct {
-    Body struct {
-        apitoken.Session        // refresh_token 交给租户后台前端设 cookie，不要放进 URL
-        TenantID         string `json:"tenant_id"`
-        ConsolePath      string `json:"console_path"` // 例如 /t/acme/app
+    SetCookie *http.Cookie `header:"Set-Cookie"`
+    Body      struct {
+        ConsolePath string `json:"console_path"` // 例如 /t/acme/app，运营前端随后打开它
     }
 }
 
@@ -202,51 +195,30 @@ func (h *handlers) impersonate(ctx context.Context, in *ImpersonateInput) (*Impe
         ID:           in.Body.MemberID,
         Impersonator: staff.Ref(),
     }
-    pair, err := h.memberJWT.Login(ctx, target, apitoken.Device{UserAgent: in.UserAgent})
+    token, err := h.memberTokens.Login(ctx, target, apitoken.Device{UserAgent: in.UserAgent})
     if err != nil {
         return nil, err
     }
-    out := &ImpersonateOutput{}
-    out.Body.Session = apitoken.NewSession(pair)
-    out.Body.TenantID = in.Body.TenantID
+    out := &ImpersonateOutput{SetCookie: httpx.SessionCookie{}.Set(token, h.memberLifetime)}
     out.Body.ConsolePath = "/t/" + in.Body.TenantID + "/app"
     return out, nil
 }
 
 // 注册时：
 rest.Register(api, op("ops-impersonate", http.MethodPost, "/members/impersonate",
-    rest.RequireBearer(api, acc.StaffJWT.Validate, "users:impersonate")), h.impersonate)
+    rest.RequireToken(api, acc.StaffTokens.Validate, "users:impersonate")), h.impersonate)
 ```
 
-运营前端拿到 `refresh_token` 后，打开租户后台并调用一次租户侧的交接接口（见下），由租户后台写入自己的 cookie。**不要**把 token 放进查询参数。
+成员的 token 不经过前端代码：响应直接写入成员的会话 cookie，运营前端随后打开 `console_path`，租户后台就以这个成员的身份工作。运营自己的 `__Host-ops` 不受影响，排查结束后回到运营后台仍然是登录状态。
 
 <a id="console-api"></a>
 ## 租户后台
 
-`Tenant` 从路径取出；`Accounts` 只接受 `member`。成员自己的登录 / 刷新 / 登出同样用 JWT + cookie，cookie 名 `console_refresh`。
-
-代登交接：公开接口接收运营传来的 refresh，校验后写成租户后台的 cookie，并返回 access——之后与普通成员会话相同。
-
-```go
-type HandoffInput struct {
-    Body struct {
-        RefreshToken string `json:"refresh_token" minLength:"1"`
-    }
-}
-
-func (h *handlers) handoff(ctx context.Context, in *HandoffInput) (*SessionOutput, error) {
-    pair, err := h.jwt.Refresh(ctx, in.Body.RefreshToken)
-    if err != nil {
-        return nil, err
-    }
-    // Refresh 已轮换；用新的 Pair 写 cookie。也可 Login 后只接受尚未用过的 refresh，按产品选择。
-    return h.session(pair), nil
-}
-```
+`Tenant` 从路径取出；`Accounts` 只接受 `member`。成员自己的登录 / 登出同样用会话 cookie，名称是默认的 `__Host-session`。
 
 租户后台 UI：若 `sub.Impersonator` 非零，显示「正在代 {成员} 操作」和退出；退出时 `Revoke` 当前 credential，清 cookie，回到运营后台。
 
-业务路由照常 `RequireBearer(api, memberJWT.Validate, "articles:write")`；列表与读写必须带 `subject.Tenant` 条件，见[多租户：数据隔离](tenancy.md#data-isolation)。
+业务路由照常 `RequireToken(api, acc.MemberTokens.Validate, "articles:write")`；列表与读写必须带 `subject.Tenant` 条件，见[多租户：数据隔离](tenancy.md#data-isolation)。
 
 <a id="impersonation"></a>
 ## 代为登录
@@ -254,13 +226,13 @@ func (h *handlers) handoff(ctx context.Context, in *HandoffInput) (*SessionOutpu
 端到端流程：
 
 ```text
-运营已登录（staff JWT）
+运营已登录（__Host-ops）
   │ POST /ops/api/members/impersonate  （需要 users:impersonate）
   ▼
-得到成员的 Pair（Subject=member，Impersonator=staff）
-  │ 打开 /t/{tenant}/app，POST refresh_token 到交接接口
+签发成员的 token（Subject=member，Impersonator=staff），写入 __Host-session
+  │ 运营前端打开 /t/{tenant}/app
   ▼
-租户后台写入 console_refresh cookie，之后用成员 access 调 /t/{tenant}/api
+租户后台带着成员的 cookie 调 /t/{tenant}/api
   │ 每个请求：member.Resolve 校验 Impersonator 仍有权限，再 roles.Resolve
   ▼
 排查结束：撤销该 credential，清 cookie，回到 /ops
@@ -279,8 +251,9 @@ acc := accounts.New(a.db, a.cfg.Accounts, hashing.New(a.cfg.Hashing), a.crypt)
 
 router.Route("/ops/api", func(r chi.Router) {
     ops := rest.New(r, rest.Options{
-        BasePath: "/ops/api",
-        Accounts: identity.Accounts{staff.Type: staff.Resolve(a.db, acc.Roles)},
+        BasePath:      "/ops/api",
+        Accounts:      identity.Accounts{staff.Type: staff.Resolve(a.db, acc.Roles)},
+        SessionCookie: accounts.StaffCookie, // 运营只读 __Host-ops
     })
     opsapi.Register(ops, acc)
 })
@@ -314,7 +287,11 @@ router.Route("/t/{tenant}", func(r chi.Router) {
 
 **代登录后，租户后台仍然显示未登录**
 
-运营前端拿到 refresh token 后，要调用租户侧的交接接口，由租户后台写入自己的 cookie。不要把 token 放进查询参数。
+两个后台必须同源，代登录的响应写入的成员 cookie 才能被租户后台读到；`Secure` 的 cookie 只在 HTTPS 和 `localhost` 上保存。
+
+**运营登录后，租户后台的成员被退出了（或者反过来）**
+
+两套账号用了同一个 cookie 名称。运营的 API 设置 `SessionCookie: httpx.SessionCookie{Name: "__Host-ops"}`，见[装配](#assembling)。
 
 **成员的个人访问令牌访问其他租户，得到 403**
 

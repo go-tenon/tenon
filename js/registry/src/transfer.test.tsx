@@ -11,8 +11,8 @@ import { ExportButton, ImportButton } from "@/components/tenon/transfer"
 afterEach(() => cleanup())
 
 async function mount(children: () => ReactNode) {
-  const session = createSession({ refresh: async () => ({ access_token: "a1", expires_at: "" }) })
-  await session.signIn({ access_token: "a1", expires_at: "" }, { account: "u1" })
+  const session = createSession({ load: async () => ({ account: "u1" }) })
+  await session.signIn({ account: "u1" })
   const app = createApp({
     id: "registry-transfer",
     routeTree: createRootRouteWithContext<RouterContext>()({

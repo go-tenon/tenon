@@ -403,7 +403,7 @@ var onPublished = []article.PublishedHook{points.ArticlePublished}
 ```
 
 ```go
-article.Register(api, rest.RequireBearer(api, validate, "articles"), db, onPublished)
+article.Register(api, rest.RequireToken(api, validate, "articles"), db, onPublished)
 article.PublishAt.Handle(w, article.NewPublish(a.db, onPublished...).Job)
 article.Commands(a.db, onPublished)
 ```

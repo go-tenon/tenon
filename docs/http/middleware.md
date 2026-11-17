@@ -130,7 +130,7 @@ requireArticles(&legacy)
 路由中间件在 Router 上的全局中间件之后、处理器之前执行。
 
 > [!TIP]
-> 认证使用 [`rest.RequireBearer`](../security/authentication.md#protecting-routes)。它在检查凭据的同时，还会在 OpenAPI 文档中标记该路由需要认证，确保运行行为和文档一致。
+> 认证使用 [`rest.RequireToken`](../security/authentication.md#protecting-routes)。它在检查凭据的同时，还会在 OpenAPI 文档中标记该路由需要认证，确保运行行为和文档一致。
 
 <a id="request-timeout"></a>
 ## 请求超时

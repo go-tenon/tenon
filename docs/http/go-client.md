@@ -112,41 +112,13 @@ case errors.Is(err, wire.ErrUpgradeRequired):
 <a id="go-client-auth"></a>
 ## 认证
 
-`Options.Auth` 提供受保护接口的 Bearer token；公开的接口直接请求。不透明的 [API token](../security/api-tokens.md) 用 `wire.StaticToken(token)`。[JWT 模式](../security/jwt.md#jwt)实现 `wire.Auth` 的两个方法，下面是把 refresh token 放在内存里的客户端写法（浏览器后台更常见的是 HttpOnly cookie，见[单账号后台](../security/admin-example.md#auth-api)）：
+`Options.Auth` 提供受保护接口的 Bearer token；公开的接口直接请求。[API token](../security/api-tokens.md) 用 `wire.StaticToken(token)`，token 来自在响应体中返回 token 的登录接口，或者个人访问令牌：
 
 ```go
-type tokens struct {
-    mu      sync.Mutex
-    access  string
-    refresh string
-    public  *api.Client // 只调用公开的刷新接口
-}
-
-func (t *tokens) Token(context.Context) (string, error) {
-    t.mu.Lock()
-    defer t.mu.Unlock()
-    return t.access, nil
-}
-
-func (t *tokens) Refresh(ctx context.Context) error {
-    t.mu.Lock()
-    refresh := t.refresh
-    t.mu.Unlock()
-    s, err := t.public.Auth.Refresh(ctx, authapi.RefreshInputBody{RefreshToken: refresh})
-    if err != nil {
-        return err
-    }
-    t.mu.Lock()
-    defer t.mu.Unlock()
-    t.access = s.AccessToken
-    if s.RefreshToken != "" {
-        t.refresh = s.RefreshToken
-    }
-    return nil // 同时保存到系统的钥匙串，例如 mygo 的 Secrets
-}
+c := api.New(api.Options{BaseURL: "https://blog.example.com/api", Auth: wire.StaticToken(token)})
 ```
 
-受保护的接口返回 `401` 时，客户端调用一次 `Refresh`，再用新 token 重试一次。几个请求同时收到 `401` 时只刷新一次；`Refresh` 返回错误时，调用方收到原来的 `401`，这时让用户重新登录。
+受保护的接口返回 `401` 时，调用方收到 `identity.ErrUnauthenticated`，这时让用户重新登录。需要从别处读取 token（例如系统的钥匙串）时，实现 `wire.Auth`。
 
 <a id="go-client-events"></a>
 ## 事件流

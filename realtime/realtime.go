@@ -15,6 +15,7 @@ import (
 	"go.opentelemetry.io/otel/metric"
 
 	"github.com/go-tenon/tenon/broadcast"
+	"github.com/go-tenon/tenon/httpx"
 	"github.com/go-tenon/tenon/identity"
 	"github.com/go-tenon/tenon/logging"
 )
@@ -22,15 +23,19 @@ import (
 // credentialInterval 是连接期间重新校验凭据的间隔，与 SSE 相同。
 var credentialInterval = 30 * time.Second
 
+// sessionKey 是连接请求中会话 cookie 的值在 context 中的键。
+type sessionKey struct{}
+
 // credentialTimeout 是一次凭据校验或订阅授权的时限。
 const credentialTimeout = 10 * time.Second
 
 // Options 配置 Realtime，零值可用。
 type Options struct {
-	// Authenticate 校验客户端 SDK 连接时传入的 token，返回主体，通常与 rest.RequireBearer 使用同一个校验器。
-	// SPA 和移动端用它认证：浏览器的 WebSocket 由浏览器决定请求头。ctx 是连接请求的 context。
-	// 返回不是系统故障的错误或 ID 为空的主体表示 token 无效；错误匹配 identity.ErrExpired 时表示 token 只是过期，
-	// 连接返回 109（token 已过期），SDK 调用 getToken 换新的再连；返回系统故障（identity.Failed 报告为 true）表示暂时无法判断，客户端稍后重连。
+	// Authenticate 校验连接的 token，返回主体，通常与 rest.RequireToken 使用同一个校验器。
+	// token 是客户端 SDK 连接时传入的（App 等客户端），没有时是浏览器在连接请求中带上的会话 cookie
+	// （SessionCookie），页面不需要传 token。ctx 是连接请求的 context。
+	// 返回不是系统故障的错误或 ID 为空的主体表示 token 无效，SDK 停止重连；返回系统故障（identity.Failed 报告为 true）
+	// 表示暂时无法判断，客户端稍后重连。
 	// 连接期间用同一个 token 定期重新调用，token 被撤销后连接结束。
 	//
 	// nil 时带 token 的连接一律拒绝。
@@ -43,6 +48,8 @@ type Options struct {
 	//
 	// 设置了 Authenticate 时必须设置；名称不合法时 New panic。
 	Accounts identity.Accounts
+	// SessionCookie 是浏览器的会话 cookie，与 rest.Options.SessionCookie 相同；零值是 httpx.DefaultSessionCookieName。
+	SessionCookie httpx.SessionCookie
 	// Tenant 从连接请求中取出它所在的租户，例如路径参数 chi.URLParam(r, "tenant")、子域名或请求头，
 	// 结果写入 identity.WithTenant：Resolver 据此加载权限，绑定了其他租户的 token 被拒绝。
 	// 与 rest.Options.Tenant 的作用相同。nil 时使用外层中间件已经写入的租户，没有时是平台本身（""）。
@@ -102,6 +109,9 @@ func New(hub *broadcast.Hub, opts Options) (*Realtime, error) {
 		panic("realtime: Accounts is required with Authenticate")
 	}
 	if err := opts.Accounts.Validate(); err != nil {
+		panic(errors.Wrap(err, "realtime"))
+	}
+	if err := opts.SessionCookie.Validate(); err != nil {
 		panic(errors.Wrap(err, "realtime"))
 	}
 	if opts.PresenceGrace > MaxPresenceGrace {
@@ -200,13 +210,17 @@ func (rt *Realtime) Unsubscribe(ref identity.Ref, channel string) error {
 
 // Handler 返回接受 WebSocket 连接的处理器，客户端 SDK 连接到它所在的地址。
 //
-// Options.Authenticate 校验 SDK 传入的 token；没有 token 的连接是匿名的，只能订阅 Public 频道。
+// Options.Authenticate 校验 SDK 传入的 token 或浏览器的会话 cookie；两者都没有的连接是匿名的，只能订阅 Public 频道。
+// 浏览器的连接只接受同源的页面（以及 TrustedOrigins），其他网站的页面不能借用户的 cookie 建立连接。
 // 连接脱离 Timeout 中间件的超时和 http.Server.WriteTimeout。
 func (rt *Realtime) Handler() http.Handler {
 	ws := centrifuge.NewWebsocketHandler(rt.node, centrifuge.WebsocketConfig{CheckOrigin: rt.checkOrigin})
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if tenant := rt.opts.Tenant; tenant != nil {
 			r = r.WithContext(identity.WithTenant(r.Context(), tenant(r)))
+		}
+		if token := rt.opts.SessionCookie.Token(r.Header.Get("Cookie")); token != "" {
+			r = r.WithContext(context.WithValue(r.Context(), sessionKey{}, token))
 		}
 		ws.ServeHTTP(hijackable(w), r)
 	})

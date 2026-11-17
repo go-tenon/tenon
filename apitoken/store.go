@@ -21,7 +21,7 @@ import (
 )
 
 var (
-	// ErrInvalid 表示 token 不存在、已撤销或已过期。rest.RequireBearer 把它呈现为 401。
+	// ErrInvalid 表示 token 不存在、已撤销或已过期。rest.RequireToken 把它呈现为 401。
 	ErrInvalid = errorx.Define(errorx.Unauthenticated, "apitoken.invalid")
 	// ErrNotFound 表示要撤销的 token 不存在或不属于该主体。
 	ErrNotFound = errorx.Define(errorx.NotFound, "apitoken.not_found")
@@ -33,9 +33,6 @@ type Kind string
 const (
 	// KindLogin 是 SPA、App 登录时签发的 token，按 Config 滑动过期，代表一台设备。
 	KindLogin Kind = "login"
-	// KindRefresh 是 JWT 模式的登录（见 JWT），同样按 Config 滑动过期、代表一台设备；
-	// 客户端持有的是 refresh token，每次刷新时轮换，请求使用短期的 access token。
-	KindRefresh Kind = "refresh"
 	// KindPersonal 是个人访问令牌，供脚本和第三方集成使用，过期时间由创建者指定。
 	KindPersonal Kind = "personal"
 	// KindOAuth 是用户授权 OAuth 客户端（例如 claude.ai 的连接器）后签发的令牌，见 Authorize。
@@ -98,8 +95,6 @@ type row struct {
 
 	ID               uuid.UUID `bun:"id,pk,type:uuid"`
 	TokenHash        string    `bun:"token_hash,notnull"`
-	PreviousHash     string    `bun:"previous_hash,nullzero"` // refresh 轮换前的上一个 token
-	RotatedAt        time.Time `bun:"rotated_at,nullzero"`    // refresh 最近一次轮换的时间
 	SubjectType      string    `bun:"subject_type,notnull"`
 	SubjectID        string    `bun:"subject_id,notnull"`
 	Tenant           string    `bun:"tenant,notnull"`
@@ -274,7 +269,7 @@ func (s *Store) issue(ctx context.Context, sub identity.Subject, r *row, now tim
 // 两者的 Permissions 都为空，由 Resolve 加载。token 不存在、已撤销或已过期时返回 ErrInvalid。
 //
 // 距上次记录使用超过一分钟时，更新最近使用时间，并延长登录 token 的有效期。
-// JWT 模式的 refresh token 只用于刷新，OAuth 令牌只能用于它的资源（见 ValidateFor），两者在这里校验都返回 ErrInvalid。
+// OAuth 令牌只能用于它的资源（见 ValidateFor），在这里校验返回 ErrInvalid。
 func (s *Store) Validate(ctx context.Context, token string) (identity.Subject, error) {
 	return s.validate(ctx, token, "")
 }
@@ -301,7 +296,7 @@ func (s *Store) validate(ctx context.Context, token, resource string) (identity.
 	}
 	now := time.Now().UTC()
 	var r row
-	q := s.live(s.db.NewSelect().Model(&r), now).Where("token_hash = ?", hash(token)).Where("kind <> ?", KindRefresh)
+	q := s.live(s.db.NewSelect().Model(&r), now).Where("token_hash = ?", hash(token))
 	if resource == "" {
 		q = q.Where("kind <> ?", KindOAuth)
 	} else {
@@ -340,39 +335,33 @@ func (s *Store) validate(ctx context.Context, token, resource string) (identity.
 // methods 是这次用到的验证方式，补充到登录的 Auth.Methods 中；之后 rest.Confirmed 的路由在有效期内放行。
 // 用二次验证确认后，没有经过二次验证的登录也变为经过了（identity.Auth.TwoFactor），当前的登录继续有效。
 //
-// 不透明的登录 token 下一个请求就生效；JWT 模式用 JWT.Confirm，它同时返回带有新验证情况的 access token。
+// 下一个请求就生效。
 // sub.Credential 不是 sub 的登录（个人访问令牌、OAuth 令牌）时返回 ErrNotFound；代为登录的 token 返回 identity.ErrForbidden，
 // 实际操作的人不是主体本人。methods 必填。
 func (s *Store) Confirm(ctx context.Context, sub identity.Subject, methods ...string) error {
-	_, err := s.confirm(ctx, sub, methods, KindLogin, KindRefresh)
-	return err
-}
-
-// confirm 更新 kinds 类登录的验证情况，返回更新后的行。
-func (s *Store) confirm(ctx context.Context, sub identity.Subject, methods []string, kinds ...Kind) (*row, error) {
 	if len(methods) == 0 {
-		return nil, errors.New("apitoken: Confirm needs at least one auth method")
+		return errors.New("apitoken: Confirm needs at least one auth method")
 	}
 	if _, err := joinWords(methods, "auth method"); err != nil {
-		return nil, err
+		return err
 	}
 	if !sub.Impersonator.IsZero() {
-		return nil, identity.ErrForbidden.New()
+		return identity.ErrForbidden.New()
 	}
 	id, err := uuid.Parse(sub.Credential)
 	if err != nil || sub.ID == "" {
-		return nil, ErrNotFound.New()
+		return ErrNotFound.New()
 	}
 	now := time.Now().UTC()
 	var r row
 	err = s.live(s.db.NewSelect().Model(&r), now).Where("id = ?", id).
 		Where("subject_type = ? AND subject_id = ?", sub.Type, sub.ID).
-		Where("kind IN (?)", bun.List(kinds)).Scan(ctx)
+		Where("kind = ?", KindLogin).Scan(ctx)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrNotFound.New()
+		return ErrNotFound.New()
 	}
 	if err != nil {
-		return nil, errors.Wrap(err, "apitoken: confirm")
+		return errors.Wrap(err, "apitoken: confirm")
 	}
 	merged := strings.Fields(r.AuthMethods)
 	for _, m := range methods {
@@ -383,7 +372,7 @@ func (s *Store) confirm(ctx context.Context, sub identity.Subject, methods []str
 	r.AuthMethods, r.AuthTime = strings.Join(merged, " "), now
 	_, err = s.db.NewUpdate().Model((*row)(nil)).
 		Set("auth_methods = ?", r.AuthMethods).Set("auth_time = ?", r.AuthTime).Where("id = ?", r.ID).Exec(ctx)
-	return &r, errors.Wrap(err, "apitoken: confirm")
+	return errors.Wrap(err, "apitoken: confirm")
 }
 
 // touch 记录 token 在 now 被使用。条件更新保证并发请求中只有一个真正写入。
@@ -443,14 +432,14 @@ func (s *Store) RevokeToken(ctx context.Context, token string) error {
 	return err
 }
 
-// RevokeOthers 撤销 sub 除本次请求所用 token（sub.Credential）以外的全部登录 token（包括 JWT 模式的登录），返回撤销的个数，
+// RevokeOthers 撤销 sub 除本次请求所用 token（sub.Credential）以外的全部登录 token，返回撤销的个数，
 // 例如“退出其他设备”。个人访问令牌保持有效。sub.Credential 不是 sub 的 token 时，撤销它的全部登录 token。
 func (s *Store) RevokeOthers(ctx context.Context, sub identity.Subject) (int, error) {
 	if sub.ID == "" {
 		return 0, errors.New("apitoken: subject ID is required")
 	}
 	q := s.db.NewDelete().Model((*row)(nil)).
-		Where("subject_type = ? AND subject_id = ?", sub.Type, sub.ID).Where("kind IN (?)", bun.List([]Kind{KindLogin, KindRefresh}))
+		Where("subject_type = ? AND subject_id = ?", sub.Type, sub.ID).Where("kind = ?", KindLogin)
 	if current, err := uuid.Parse(sub.Credential); err == nil {
 		q = q.Where("id <> ?", current)
 	}
@@ -467,8 +456,7 @@ func (s *Store) RevokeSubject(ctx context.Context, ref identity.Ref) (int, error
 }
 
 // Erase 在 db 中删除主体 ref 的全部 token，包括个人访问令牌和 OAuth 令牌，用于注销账号。
-// db 通常是注销所在的事务，签名与 privacy.Source 的 Erase 相同。与 RevokeSubject 一样，
-// JWT 模式下已签发的 access token 在 TTL 内仍然可以发起请求。
+// db 通常是注销所在的事务，签名与 privacy.Source 的 Erase 相同。
 func Erase(ctx context.Context, db bun.IDB, ref identity.Ref) error {
 	if err := ref.Validate(); err != nil {
 		return errors.Wrap(err, "apitoken")

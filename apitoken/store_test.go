@@ -467,9 +467,9 @@ func TestImpersonation(t *testing.T) {
 	}
 }
 
-// TestRequireBearer 确认 Validate 可以直接作为 rest.RequireBearer 的校验器：
+// TestRequireToken 确认 Validate 可以直接作为 rest.RequireToken 的校验器：
 // 权限由 Resolve 按用户加载，个人访问令牌的 scope 再加以限制。
-func TestRequireBearer(t *testing.T) {
+func TestRequireToken(t *testing.T) {
 	t.Parallel()
 	s := newStore(t)
 	permissions := map[string][]string{"alice": {"articles:*"}}
@@ -478,7 +478,7 @@ func TestRequireBearer(t *testing.T) {
 		return sub, nil
 	}}})
 	op := huma.Operation{OperationID: "me", Method: http.MethodGet, Path: "/me"}
-	rest.RequireBearer(api, s.Validate, "articles:read")(&op)
+	rest.RequireToken(api, s.Validate, "articles:read")(&op)
 	type meOut struct {
 		Body struct {
 			ID         string `json:"id"`

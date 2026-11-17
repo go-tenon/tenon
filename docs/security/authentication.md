@@ -8,11 +8,12 @@
 
 | 入口 | 凭据从哪里来 |
 | --- | --- |
-| HTTP 接口、[MCP 服务](../ai/mcp.md) | 请求头 `Authorization: Bearer <token>` |
-| [实时频道](../libraries/realtime.md) | 客户端建立连接时传入的 token |
+| HTTP 接口 | 浏览器的[会话 cookie](api-tokens.md#browser-sessions)，或请求头 `Authorization: Bearer <token>` |
+| [MCP 服务](../ai/mcp.md) | 请求头 `Authorization: Bearer <token>` |
+| [实时频道](../libraries/realtime.md) | 浏览器连接请求中的会话 cookie，或客户端建立连接时传入的 token |
 | 队列任务、定时任务、命令行 | 没有外部凭据，由代码构造调用者，见[队列任务](../concepts/actions.md#as-jobs) |
 
-这一页以 HTTP 接口为例：客户端在请求头里带上 `Authorization: Bearer <token>`，框架拿你写的校验函数认出这个人，再把身份交给后面的处理器。
+这一页以 HTTP 接口为例：客户端带上 token（浏览器放在会话 cookie 中，其他客户端放在 `Authorization: Bearer <token>` 中），框架拿你写的校验函数认出这个人，再把身份交给后面的处理器。
 
 阅读前需要了解：[路由](../http/routing.md)；[context](../concepts/go-primer.md#context)；[入门教程第 6 章](../tutorial/06-login.md#how-it-works)解释了 token。多套账号、多租户和代为登录见[认证进阶](authentication-advanced.md)。
 
@@ -43,7 +44,7 @@ Token 本身可以是什么都行：数据库里的 API Key，或者认证服务
 <a id="example-usage"></a>
 ## 示例用法
 
-先看一眼完整流程：建令牌存储 → 声明 API 接受哪些账号 → 用 `RequireBearer` 护住一条路由：
+先看一眼完整流程：建令牌存储 → 声明 API 接受哪些账号 → 用 `RequireToken` 护住一条路由：
 
 ```go
 tokens := apitoken.NewStore(db, cfg.APIToken)
@@ -53,7 +54,7 @@ api := rest.New(router, rest.Options{
 })
 
 op := huma.Operation{OperationID: "article-create", Method: http.MethodPost, Path: "/articles"}
-rest.RequireBearer(api, tokens.Validate, "articles:write")(&op)
+rest.RequireToken(api, tokens.Validate, "articles:write")(&op)
 rest.Register(api, op, NewCreate(db).HTTP)
 
 // 处理器中取出主体
@@ -118,7 +119,7 @@ const Type identity.SubjectType = "user"
 type TokenValidator func(ctx context.Context, token string) (identity.Subject, error)
 ```
 
-它和传输方式无关，定义在 `identity` 包中：REST 接口的 `rest.RequireBearer`、[MCP 服务](../ai/mcp.md)和[实时频道](../libraries/realtime.md)都使用同一个校验器。
+它和传输方式无关，定义在 `identity` 包中：REST 接口的 `rest.RequireToken`、[MCP 服务](../ai/mcp.md)和[实时频道](../libraries/realtime.md)都使用同一个校验器。
 
 <a id="token-validators"></a>
 ## 编写 Token 校验器
@@ -130,7 +131,7 @@ type TokenValidator func(ctx context.Context, token string) (identity.Subject, e
 | 函数 | 什么时候跑 | 干什么 |
 | --- | --- | --- |
 | `Config.Validate` | **启动时**，加载配置之后 | 检查配置本身写得对不对（有没有空 token、有没有重复） |
-| `Validator` 返回的那个函数 | **每次请求**，`RequireBearer` 调校验器时 | 拿请求里的 token 去查「这是谁」 |
+| `Validator` 返回的那个函数 | **每次请求**，`RequireToken` 调校验器时 | 拿请求里的 token 去查「这是谁」 |
 
 二者共用同一份 `Config` 数据，但互不调用：`Validate` 不参与验请求；请求时的校验器也不再跑一遍配置检查——它假定启动时已经查过了。
 
@@ -188,8 +189,8 @@ func Validator(cfg Config) identity.TokenValidator {
 
 1. 配置文件写出可用凭据（见下）
 2. 应用启动：`config.Load` 解出 `Config`，自动调用 `Config.Validate`；配错了直接起不来
-3. 装配路由：调用 `Validator(cfg)` 一次，得到校验器，交给 `RequireBearer`
-4. 请求到来：`RequireBearer` 取出 Bearer token，调用那个校验器，得到主体或 `401`
+3. 装配路由：调用 `Validator(cfg)` 一次，得到校验器，交给 `RequireToken`
+4. 请求到来：`RequireToken` 取出 Bearer token，调用那个校验器，得到主体或 `401`
 
 配置可以这样写，并把这个 `Config` 挂到应用的[根配置结构体](../general/configuration.md#loading-configuration)上（字段名 `Auth`，配置段 `auth`）。任何实现了 `Validate() error` 的配置类型，`Load` 都会在解码后调用它：
 
@@ -224,12 +225,12 @@ api := rest.New(router, rest.Options{Accounts: identity.Accounts{user.Type: nil}
 
 如果校验器认出的人，`Type` 不在 `Accounts` 里——比如客户 token 打到了只接受员工的后台——效果和无效 token 一样，返回 `401`。产品有多套账号时，每个 API 只收它该服务的那几种，见[多套账号体系](authentication-advanced.md#account-systems)。没设 `Accounts` 就去注册需要认证的路由，会 panic。
 
-用 `rest.RequireBearer` 给路由加上认证。参数是：API 实例、校验器、以及调用者必须具备的权限。
+用 `rest.RequireToken` 给路由加上认证。参数是：API 实例、校验器、以及调用者必须具备的权限。
 
 下面是「获取文章」接口的片段：`api` 由 `rest.New` 创建，`validate` 是令牌校验器（例如 [`tokens.Validate`](api-tokens.md)），`db` 是入口打开的数据库。`Get` 业务动作的定义见[路由](../http/routing.md#http-actions)：
 
 ```go
-requireArticles := rest.RequireBearer(api, validate, "articles")
+requireArticles := rest.RequireToken(api, validate, "articles")
 
 op := huma.Operation{
     OperationID: "article-get",
@@ -240,16 +241,16 @@ requireArticles(&op)
 rest.Register(api, op, NewGet(db).HTTP)
 ```
 
-`RequireBearer` 返回的函数可以复用到多条路由。可以传多个权限：`sub.Can` 必须对**全部**权限都为 `true` 才能进；不传权限则只要求「认得出人」。
+`RequireToken` 返回的函数可以复用到多条路由。可以传多个权限：`sub.Can` 必须对**全部**权限都为 `true` 才能进；不传权限则只要求「认得出人」。
 
 它同时做两件事：
 
-- 运行时检查 `Authorization` 头，并调用校验器
-- 在 OpenAPI 文档里把这条路由标成需要 Bearer 认证，所需权限写在 `x-required-permissions` 扩展字段里
+- 运行时从 `Authorization: Bearer` 或[会话 cookie](api-tokens.md#browser-sessions)中取出 token，调用校验器；用 cookie 认证的写请求必须来自同源的页面
+- 在 OpenAPI 文档里把这条路由标成需要 Bearer 或会话 cookie 认证，所需权限写在 `x-required-permissions` 扩展字段里
 
 需要认证的响应还会自动带上 `Cache-Control: no-store`，避免被中间代理缓存。
 
-`RequireBearer` 建立在更通用的 `rest.RequireAuth` 之上。如果认证方式不是 Bearer（比如从自定义请求头读 API Key），可以用 `RequireAuth` 自己声明 OpenAPI 安全方案和认证函数；失败时的响应规则一样。
+`RequireToken` 建立在更通用的 `rest.RequireAuth` 之上。如果认证方式不是 Bearer（比如从自定义请求头读 API Key），可以用 `RequireAuth` 自己声明 OpenAPI 安全方案和认证函数；失败时的响应规则一样。
 
 > [!TIP]
 > 公开路由也要显式写 `rest.Public()(&op)`。忘了声明访问策略的路由，注册时会 panic——每个接口的「能不能匿名访问」都必须是你亲手写下的。
@@ -259,7 +260,8 @@ rest.Register(api, op, NewGet(db).HTTP)
 
 | 情况 | 状态码 | 错误码 |
 | --- | --- | --- |
-| 没有 `Authorization` 头，或格式不是 `Bearer <token>` | 401 | `auth.unauthenticated` |
+| 没有会话 cookie，也没有 `Authorization: Bearer <token>` | 401 | `auth.unauthenticated` |
+| 用会话 cookie 认证的写请求来自其他站点的页面 | 403 | `http.cross_site` |
 | 校验器拒绝了 token | 401 | `auth.unauthenticated` |
 | token 属于 API 不接受的账号体系 | 401 | `auth.unauthenticated` |
 | 缺少所需权限 | 403 | `auth.forbidden` |
@@ -350,14 +352,14 @@ func (a *Get) HTTP(ctx context.Context, in *GetInput) (*ArticleOutput, error) {
 }
 ```
 
-对受 `RequireBearer` 保护的路由，`ok` 一定是 `true`。保留这个检查，是为了防止路由被误改成公开后，处理器在没身份的情况下继续跑。
+对受 `RequireToken` 保护的路由，`ok` 一定是 `true`。保留这个检查，是为了防止路由被误改成公开后，处理器在没身份的情况下继续跑。
 
 另一种做法：让 `Handle` 拒绝空主体，见[授权](authorization.md#ownership)。这样即使路由被误改成公开，也会在 `Handle` 里被拦住；`HTTP` 就可以写成 `subject, _ := identity.FromContext(ctx)`。[路由](../http/routing.md#organizing-routes)一章里的业务动作就是这么写的。
 
 <a id="managing-credentials"></a>
 ## 管理凭据
 
-把 token 写在配置文件里，适合内部服务或少数固定调用方。面向用户的 API 用 [API 令牌](api-tokens.md)：单页应用和 App 登录后拿到滑动过期的 token，或一对 [JWT access token 和 refresh token](jwt.md#jwt)；用户也可以给脚本建个人访问令牌。`Store.Validate` 或 `JWT.Validate` 可以直接当校验器。
+把 token 写在配置文件里，适合内部服务或少数固定调用方。面向用户的 API 用 [API 令牌](api-tokens.md)：浏览器和 App 登录后拿到滑动过期的 token，浏览器的放在会话 cookie 中；用户也可以给脚本建个人访问令牌。`Store.Validate` 可以直接当校验器。
 
 用外部认证服务签发的 JWT 时，在校验器里用成熟库验证签名、签发者和有效期，再转成 `identity.Subject`。凭据换了，路由和业务代码不用动。
 
@@ -416,15 +418,15 @@ type Resolver func(ctx context.Context, sub Subject) (Subject, error)
 
 API 接受的账号体系，以及认证通过后加载主体的函数，见[每次请求加载权限](#resolving-subjects)。
 
-### rest.RequireBearer、RequireAuth
+### rest.RequireToken、RequireAuth
 
 ```go
-func RequireBearer(api *API, validate identity.TokenValidator, permissions ...string) func(op *huma.Operation)
+func RequireToken(api *API, validate identity.TokenValidator, permissions ...string) func(op *huma.Operation)
 func RequireAuth(api *API, name string, scheme *huma.SecurityScheme, authenticate Authenticator, permissions ...string) func(op *huma.Operation)
 func Confirmed(maxAge time.Duration) func(op *huma.Operation)
 ```
 
-包 `github.com/go-tenon/tenon/httpx/rest`。`RequireBearer` 要求 `Authorization: Bearer` 令牌；`RequireAuth` 用于其他认证方式；`Confirmed` 要求最近 `maxAge` 内确认过身份，见[确认身份](login-security.md#confirming)。
+包 `github.com/go-tenon/tenon/httpx/rest`。`RequireToken` 要求会话 cookie 或 `Authorization: Bearer` 中的令牌；`SameOrigin` 让设置会话 cookie 的公开接口只接受同源页面的请求；`RequireAuth` 用于其他认证方式；`Confirmed` 要求最近 `maxAge` 内确认过身份，见[确认身份](login-security.md#confirming)。
 
 ### 错误
 
@@ -432,6 +434,6 @@ func Confirmed(maxAge time.Duration) func(op *huma.Operation)
 | --- | --- | --- |
 | `identity.ErrUnauthenticated` | 401 | 没有凭据或凭据无效 |
 | `identity.ErrForbidden` | 403 | 缺少所需权限 |
-| `identity.ErrExpired` | 401 | 令牌过期，客户端刷新后重试 |
+| `httpx.ErrCrossSite` | 403 | 用会话 cookie 认证的写请求来自其他站点（`http.cross_site`） |
 
 完整情况见[认证失败的响应](#failed-authentication)。
