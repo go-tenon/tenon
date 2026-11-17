@@ -39,7 +39,7 @@ export function confirm({ title, message, confirmLabel = "确定", danger }: Con
 
 /** 操作成功的提示。 */
 export function notifySuccess(message: ReactNode): void {
-  notifications.show({ message, color: "teal", autoClose: 2500 })
+  notifications.show({ message, color: "green", autoClose: 2500 })
 }
 
 /** 操作失败的提示：显示服务端的文案，没有时按错误的种类给出提示。 */

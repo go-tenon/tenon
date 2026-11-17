@@ -1,26 +1,31 @@
+import { generateColors } from "@mantine/colors-generator"
 import { describe, expect, it } from "vitest"
-import { createUiTheme, layoutMetrics, palette, themes } from "./theme"
-
-// 相对亮度，用来检查色板从浅到深单调。
-function luminance(hex: string): number {
-  const [r, g, b] = [1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16) / 255)
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b
-}
+import { createUiTheme, layoutMetrics, palette, primaryColors, themes } from "./theme"
 
 describe("palette", () => {
-  it.each(["#4f5bd5", "#0f766e", "#e11d48", "#f59e0b", "#111827", "#a5b4fc"])(
-    "%s：10 级，第 6 级是输入的颜色，从浅到深",
-    (hex) => {
-      const p = palette(hex)
+  it("预设的名称：26 种，色板与官方生成器对同一颜色值的结果相同", () => {
+    expect(Object.keys(primaryColors)).toHaveLength(26)
+    for (const [name, hex] of Object.entries(primaryColors)) {
+      const p = palette(name)
       expect(p).toHaveLength(10)
-      expect(p[6]).toBe(hex)
-      for (const c of p) expect(c).toMatch(/^#[0-9a-f]{6}$/)
-      for (let i = 1; i < 10; i++) expect(luminance(p[i])).toBeLessThanOrEqual(luminance(p[i - 1]) + 1e-9)
-    },
-  )
+      expect(p).toEqual(generateColors(hex))
+      expect(p).toContain(hex)
+    }
+  })
 
-  it("不合法的颜色报错", () => {
-    expect(() => palette("blue")).toThrow(/invalid color/)
+  it("26 种预设都在主题的 colors 中，组件可以用名称取色；品牌色默认是第一种预设 blue-gray", () => {
+    for (const t of Object.values(themes)) {
+      for (const name of Object.keys(primaryColors)) expect(t.colors?.[name]).toEqual(palette(name))
+    }
+    for (const t of Object.values(themes)) expect(t.colors?.brand).toEqual(palette("blue-gray"))
+  })
+
+  it("颜色值直接交给官方生成器", () => {
+    expect(palette("#0f766e")).toEqual(generateColors("#0f766e"))
+  })
+
+  it("不认识的名称报错并列出预设", () => {
+    expect(() => palette("sky-bleu")).toThrow(/invalid color "sky-bleu".*sky-blue/)
   })
 })
 
@@ -42,14 +47,13 @@ describe("createUiTheme", () => {
     expect(layoutMetrics(t)).toMatchObject({ preset: "admin", datetimeFormat: "YYYY/MM/DD HH:mm", headerHeight: 52 })
   })
 
-  it("运营后台默认用深蓝灰的主色，项目的品牌色覆盖它", () => {
-    expect(themes.admin.colors?.brand?.[6]).toBe("#34507f")
-    expect(createUiTheme({ preset: "admin", primary: "#0f766e" }).colors?.brand?.[6]).toBe("#0f766e")
+  it("项目的品牌色覆盖默认的，可以写预设的名称", () => {
+    expect(createUiTheme({ preset: "admin", primary: "sky-blue" }).colors?.brand).toEqual(palette("#099cff"))
   })
 
   it("由设计令牌生成：品牌色、圆角、字体覆盖预设", () => {
     const t = createUiTheme({ preset: "admin", primary: "#0f766e", radius: 8, fontFamily: "Inter" })
-    expect(t.colors?.brand?.[6]).toBe("#0f766e")
+    expect(t.colors?.brand).toEqual(palette("#0f766e"))
     expect(t.radius?.md).toBe("8px")
     expect(t.radius?.xl).toBe("16px")
     expect(t.fontFamily).toBe("Inter")

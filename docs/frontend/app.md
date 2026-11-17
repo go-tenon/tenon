@@ -150,14 +150,14 @@ function Document({ children }: { children: ReactNode }) {
 ```ts title="src/theme.ts"
 import { createUiTheme } from "@go-tenon/ui"
 
-export const theme = createUiTheme({ preset: "admin", primary: "#34507f" })
+export const theme = createUiTheme({ preset: "admin", primary: "blue-gray" })
 ```
 
 三套预设共用一套设计语言：系统字体、偏冷的中性色、1 像素的细边框、几乎不用阴影，层级靠留白、字重和背景的明暗区分。亮色和暗色都完整定义，组件中不写死颜色。
 
 | 预设 | 适合 | 特点 |
 | --- | --- | --- |
-| `admin` | 运营后台、内部系统、以表格和表单为主的后台 | 正文 14px，控件 32px 高，顶栏 52px，圆角 4px，主色是沉稳的深蓝灰，一屏能看到更多数据 |
+| `admin` | 运营后台、内部系统、以表格和表单为主的后台 | 正文 14px，控件 32px 高，顶栏 52px，圆角 4px，一屏能看到更多数据 |
 | `console` | 面向客户的 SaaS 控制台、用户中心 | 正文 14px，控件 36px 高，顶栏 56px，圆角 8px，留白舒展 |
 | `site` | 官网、落地页、文章、文档 | 正文 16px，大标题随屏幕宽度缩放，行距宽松，顶栏 64px |
 
@@ -167,7 +167,11 @@ export const theme = createUiTheme({ preset: "admin", primary: "#34507f" })
 `createUiTheme` 的选项是设计令牌：
 
 - `preset` 是样式预设；`themes.admin`、`themes.console`、`themes.site` 是不改令牌的三套主题。
-- `primary` 是品牌色，默认是偏冷的蓝紫 `#4f5bd5`，`admin` 预设默认是深蓝灰 `#34507f`。它生成 10 级色板：同一色相，按感知亮度（OKLCH）分级，第 6 级（亮色模式的主色）就是输入的颜色，很浅或很深的颜色也从浅到深单调。也可以单独调用 `palette(hex)`。
+- `primary` 是品牌色，默认是第一种预设 `blue-gray`。可以写颜色值，也可以写 Mantine [颜色生成器](https://mantine.dev/colors-generator)中预设的名称，名称是官方英文名的小写连字符写法：
+
+  `blue-gray`、`brown`、`tomato`、`deep-orange`、`bright-orange`、`yellow`、`bright-green`、`green`、`light-blue`、`sky-blue`、`pale-blue`、`bright-blue`、`deep-blue`、`pale-indigo`、`purple`、`pale-purple`、`violet`、`pale-violet`、`dark-pink`、`bright-pink`、`pink`、`magenta`、`bright-red`、`pale-red`、`deep-red`、`red`
+
+  色板由 Mantine 官方的生成器（`@mantine/colors-generator`）生成，与颜色生成器页面上的结果一致：输入的颜色按亮度落在 10 级中的一级，亮色模式的主色是第 6 级，暗色模式是第 5 级，所以很深的颜色（例如 `brown`、`deep-red`）在按钮上会比输入的颜色浅一些。名称对应的颜色值在 `primaryColors` 中，也可以单独调用 `palette(color)`。
 - `radius` 是基础圆角（像素），其他圆角按比例缩放。
 - `override` 是再合并的 Mantine 主题覆盖，用于令牌之外的调整，例如某个组件的默认属性。
 - `landing` 是落地页的风格（`classic`、`dusk`、`ink`、`mist`），只对 `site` 预设有意义，见[落地页](site.md#landing)。
@@ -359,7 +363,7 @@ bun run playground
 | `themes`、`Preset` | 三套样式预设：`admin`、`console`、`site` |
 | `createUiTheme(options)` | 由预设和设计令牌生成主题：`preset`、`primary`、`radius`、`fontFamily`、`landing`、`datetimeFormat`、`override` |
 | `useFormatDateTime()` | 按主题的 `datetimeFormat` 显示日期时间 |
-| `palette(hex)` | 由一个颜色生成 10 级色板 |
+| `palette(color)`、`primaryColors`、`PrimaryColor` | 由预设的名称或颜色值生成 10 级色板；预设的主题色 |
 | `layoutMetrics(theme)`、`LayoutMetrics` | 主题中的布局尺寸 |
 | `requireAuth` | 布局路由的 `beforeLoad`：没有登录时跳到登录页 |
 | `app.redirectAfterSignIn(redirect)`、`safeRedirect(redirect, fallback)` | 登录后回到原来的地址；只接受同源相对路径的回跳地址 |

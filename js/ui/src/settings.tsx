@@ -170,7 +170,7 @@ function Loaded({
         {saver ? (
           status !== "idle" && (
             <Group gap={6} role="status">
-              {status === "saved" && <IconCheck size={14} color="var(--mantine-color-teal-6)" />}
+              {status === "saved" && <IconCheck size={14} color="var(--mantine-color-green-6)" />}
               <Text size="xs" c={status === "error" ? "red" : "dimmed"}>
                 {statusText[status]}
               </Text>

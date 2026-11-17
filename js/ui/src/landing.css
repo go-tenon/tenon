@@ -156,19 +156,20 @@
   color: var(--tn-text);
 }
 
+/* 终端样式的代码块：亮色和暗色模式下都是暗色。 */
 .tn-lp-code[data-tone="terminal"] {
-  background: #0a0a0b;
-  border-color: #232326;
+  background: var(--mantine-color-dark-9);
+  border-color: var(--mantine-color-dark-5);
 }
 
 .tn-lp-code[data-tone="terminal"] .tn-lp-code-bar {
-  background: #0a0a0b;
-  border-color: #232326;
-  color: #8a8a90;
+  background: var(--mantine-color-dark-9);
+  border-color: var(--mantine-color-dark-5);
+  color: var(--mantine-color-dark-2);
 }
 
 .tn-lp-code[data-tone="terminal"] pre {
-  color: #e8e8ea;
+  color: var(--mantine-color-dark-0);
 }
 
 /* 区块 */
@@ -347,7 +348,7 @@
   overflow: hidden;
   border-radius: 50%;
   font-weight: 600;
-  color: #fff;
+  color: var(--mantine-color-white);
   background: var(--lp-accent);
 }
 
@@ -459,7 +460,11 @@
   height: 820px;
   background:
     radial-gradient(46% 40% at 50% 40%, var(--lp-glow), transparent 70%),
-    radial-gradient(28% 24% at 74% 24%, color-mix(in srgb, #5ec8ff 14%, transparent), transparent 70%);
+    radial-gradient(
+      28% 24% at 74% 24%,
+      color-mix(in srgb, var(--mantine-color-light-blue-4) 14%, transparent),
+      transparent 70%
+    );
 }
 
 .tn-site[data-landing="dusk"] .tn-lp-badge {
@@ -551,7 +556,7 @@
 }
 
 .tn-site[data-landing="dusk"] .tn-lp-avatar {
-  background: linear-gradient(135deg, var(--mantine-color-brand-4), #5ec8ff);
+  background: linear-gradient(135deg, var(--mantine-color-brand-4), var(--mantine-color-light-blue-4));
 }
 
 .tn-site[data-landing="dusk"] .tn-lp-cta {
@@ -814,9 +819,14 @@
   --lp-glass-border: rgba(255, 255, 255, 0.9);
   --lp-shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 12px 32px -8px rgba(16, 24, 40, 0.1);
   --lp-blob-1: color-mix(in srgb, var(--mantine-color-brand-3) 70%, transparent);
-  --lp-blob-2: rgba(245, 208, 254, 0.75);
-  --lp-blob-3: rgba(186, 230, 253, 0.75);
-  --lp-gradient: linear-gradient(135deg, var(--mantine-color-brand-5), #a855f7 55%, #ec4899);
+  --lp-blob-2: color-mix(in srgb, var(--mantine-color-bright-pink-1) 75%, transparent);
+  --lp-blob-3: color-mix(in srgb, var(--mantine-color-light-blue-1) 75%, transparent);
+  --lp-gradient: linear-gradient(
+    135deg,
+    var(--mantine-color-brand-5),
+    var(--mantine-color-violet-5) 55%,
+    var(--mantine-color-magenta-5)
+  );
   --tn-surface: var(--lp-surface);
   --tn-text: #101828;
   --tn-muted: #667085;
@@ -840,8 +850,8 @@
   --lp-glass-border: rgba(255, 255, 255, 0.1);
   --lp-shadow: 0 12px 40px -12px rgba(0, 0, 0, 0.6);
   --lp-blob-1: color-mix(in srgb, var(--mantine-color-brand-8) 45%, transparent);
-  --lp-blob-2: rgba(134, 25, 143, 0.32);
-  --lp-blob-3: rgba(14, 116, 144, 0.32);
+  --lp-blob-2: color-mix(in srgb, var(--mantine-color-dark-pink-9) 32%, transparent);
+  --lp-blob-3: color-mix(in srgb, var(--mantine-color-light-blue-9) 32%, transparent);
   --tn-text: #f2f4f7;
   --tn-muted: #98a2b3;
   --tn-subtle: #667085;
@@ -924,29 +934,30 @@
   border-radius: 13px;
 }
 
-.tn-site[data-landing="mist"] .tn-lp-feature[data-hue="1"] .tn-lp-feature-icon {
-  color: #2563eb;
-  background: #dbeafe;
+/* 彩色图标用预设颜色的 light 变体，亮色和暗色由 Mantine 分别给出。 */
+.tn-site[data-landing="mist"] .tn-lp-feature-icon {
+  color: var(--hue-color);
+  background: var(--hue-bg);
 }
-.tn-site[data-landing="mist"] .tn-lp-feature[data-hue="2"] .tn-lp-feature-icon {
-  color: #0d9488;
-  background: #ccfbf1;
+.tn-site[data-landing="mist"] .tn-lp-feature[data-hue="1"] {
+  --hue-color: var(--mantine-color-bright-blue-light-color);
+  --hue-bg: var(--mantine-color-bright-blue-light);
 }
-.tn-site[data-landing="mist"] .tn-lp-feature[data-hue="3"] .tn-lp-feature-icon {
-  color: #e11d48;
-  background: #ffe4e6;
+.tn-site[data-landing="mist"] .tn-lp-feature[data-hue="2"] {
+  --hue-color: var(--mantine-color-green-light-color);
+  --hue-bg: var(--mantine-color-green-light);
 }
-.tn-site[data-landing="mist"] .tn-lp-feature[data-hue="4"] .tn-lp-feature-icon {
-  color: #d97706;
-  background: #fef3c7;
+.tn-site[data-landing="mist"] .tn-lp-feature[data-hue="3"] {
+  --hue-color: var(--mantine-color-bright-red-light-color);
+  --hue-bg: var(--mantine-color-bright-red-light);
 }
-.tn-site[data-landing="mist"] .tn-lp-feature[data-hue="5"] .tn-lp-feature-icon {
-  color: #7c3aed;
-  background: #ede9fe;
+.tn-site[data-landing="mist"] .tn-lp-feature[data-hue="4"] {
+  --hue-color: var(--mantine-color-bright-orange-light-color);
+  --hue-bg: var(--mantine-color-bright-orange-light);
 }
-
-[data-mantine-color-scheme="dark"] .tn-site[data-landing="mist"] .tn-lp-feature-icon {
-  background: rgba(255, 255, 255, 0.06);
+.tn-site[data-landing="mist"] .tn-lp-feature[data-hue="5"] {
+  --hue-color: var(--mantine-color-violet-light-color);
+  --hue-bg: var(--mantine-color-violet-light);
 }
 
 .tn-site[data-landing="mist"] .tn-lp-stats {
@@ -973,16 +984,17 @@
 }
 
 .tn-site[data-landing="mist"] .tn-lp-avatar {
-  background: linear-gradient(135deg, #f472b6, #8b5cf6);
+  background: linear-gradient(135deg, var(--mantine-color-magenta-4), var(--mantine-color-violet-5));
 }
 
 .tn-site[data-landing="mist"] .tn-lp-cta {
   border-radius: 32px;
-  color: #fff;
+  color: var(--mantine-color-white);
   background:
     radial-gradient(80% 120% at 0% 0%, var(--mantine-color-brand-4), transparent 60%),
-    radial-gradient(80% 120% at 100% 100%, #ec4899, transparent 60%), #6d28d9;
-  box-shadow: 0 30px 60px -20px rgba(109, 40, 217, 0.5);
+    radial-gradient(80% 120% at 100% 100%, var(--mantine-color-magenta-5), transparent 60%),
+    var(--mantine-color-violet-7);
+  box-shadow: 0 30px 60px -20px color-mix(in srgb, var(--mantine-color-violet-7) 50%, transparent);
 }
 
 .tn-site[data-landing="mist"] .tn-lp-cta .tn-lp-h2 {
@@ -990,7 +1002,7 @@
 }
 
 .tn-site[data-landing="mist"] .tn-lp-cta-text p {
-  color: rgba(255, 255, 255, 0.85);
+  color: color-mix(in srgb, var(--mantine-color-white) 85%, transparent);
 }
 
 .tn-site[data-landing="mist"] .mantine-Button-root {
@@ -1000,8 +1012,8 @@
 
 .tn-site[data-landing="mist"] .mantine-Button-root:is(:not([data-variant]), [data-variant="filled"]) {
   border: 0;
-  color: #fff;
-  background: linear-gradient(135deg, var(--mantine-color-brand-5), #8b5cf6);
+  color: var(--mantine-color-white);
+  background: linear-gradient(135deg, var(--mantine-color-brand-5), var(--mantine-color-violet-5));
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.3),
     0 10px 24px -8px color-mix(in srgb, var(--mantine-color-brand-6) 70%, transparent);
@@ -1016,6 +1028,6 @@
 }
 
 .tn-site[data-landing="mist"] .tn-lp-cta .mantine-Button-root:is(:not([data-variant]), [data-variant="filled"]) {
-  color: #4f46e5;
-  background: #fff;
+  color: var(--mantine-color-violet-7);
+  background: var(--mantine-color-white);
 }

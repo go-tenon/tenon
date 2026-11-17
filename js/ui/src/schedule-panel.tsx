@@ -82,7 +82,7 @@ export interface SchedulePanelProps {
 }
 
 const statusText: Record<ScheduleStatus, { label: string; color: string }> = {
-  succeeded: { label: "成功", color: "teal" },
+  succeeded: { label: "成功", color: "green" },
   failed: { label: "失败", color: "red" },
   skipped: { label: "跳过", color: "gray" },
 }
@@ -163,7 +163,7 @@ export function SchedulePanel({ api, title = "定时任务" }: SchedulePanelProp
       ]}
     >
       {missed.length > 0 && (
-        <Alert color="orange" variant="light" title={`${missed.length} 个任务错过了上一次执行`} role="alert">
+        <Alert color="deep-orange" variant="light" title={`${missed.length} 个任务错过了上一次执行`} role="alert">
           {missed.map((t) => t.name).join("、")}
           ：应当执行的时间已经过去，却没有执行记录，通常是调度器停止或正在部署。下一次会按时执行，需要补上时点“立即执行”。
         </Alert>
@@ -235,8 +235,8 @@ function Tasks({
       title: "上一次",
       noWrap: true,
       render: (t) => {
-        if (t.running) return <Badge color="blue">执行中</Badge>
-        if (t.missed) return <Badge color="orange">错过</Badge>
+        if (t.running) return <Badge color="bright-blue">执行中</Badge>
+        if (t.missed) return <Badge color="deep-orange">错过</Badge>
         if (!t.last_status) return <Text c="dimmed">还没执行过</Text>
         return (
           <Stack gap={2} align="flex-start">

@@ -102,7 +102,7 @@ import { DescriptionList, StatusDot } from "@go-tenon/ui"
 <DescriptionList
   title="复制槽"
   description="PostgreSQL 逻辑复制"
-  extra={<StatusDot color="teal">转发中</StatusDot>}
+  extra={<StatusDot color="green">转发中</StatusDot>}
   items={[
     { label: "名称", value: slot.name, mono: true },
     { label: "积压", value: "12.4 KiB" },
@@ -117,7 +117,7 @@ import { DescriptionList, StatusDot } from "@go-tenon/ui"
 - 值是 `undefined`、`null` 或空字符串时显示“—”，`0` 照常显示。
 - 放进对话框或已有的卡片中时用 `withBorder={false}`。
 
-`StatusDot` 是一个带浅色光圈的圆点和文字，表示状态：正常用 `teal`，需要注意用 `orange`，出错用 `red`。
+`StatusDot` 是一个带浅色光圈的圆点和文字，表示状态：正常用 `green`，需要注意用 `deep-orange`，出错用 `red`。
 
 <a id="forms"></a>
 ## 表单

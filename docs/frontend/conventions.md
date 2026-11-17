@@ -215,7 +215,7 @@ apps/admin/
 <a id="styles"></a>
 ### 样式
 
-- 主题在 `src/theme.ts` 中用 `createUiTheme` 设置：样式预设、品牌色、圆角、字体，见[样式预设](app.md#presets)。不在组件中写固定的颜色值，用 Mantine 的主题颜色（`c="dimmed"`、`color="red"`）和 CSS 变量。
+- 主题在 `src/theme.ts` 中用 `createUiTheme` 设置：样式预设、品牌色、圆角、字体，见[样式预设](app.md#presets)。不在组件中写固定的颜色值，用 Mantine 的主题颜色（`c="dimmed"`、`color="red"`）和 CSS 变量。彩色用颜色生成器的预设名称（例如 `color="deep-orange"`），见[样式预设与主题](app.md#tokens)。
 - 布局用 Mantine 的 `Stack`、`Group`、`Grid`，间距用主题的尺寸（`gap="md"`）。组件局部的样式用 `classNames`/`styles` 或 CSS Modules，不覆盖 Mantine 的内部类名。
 - 亮色和暗色都要能用：用主题颜色就自动适配，自己写的 CSS 用 `light-dark()` 或 Mantine 的变量。
 

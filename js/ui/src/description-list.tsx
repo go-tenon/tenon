@@ -39,7 +39,7 @@ const empty = (v: ReactNode) => v === undefined || v === null || v === ""
  *	<DescriptionList
  *	  title="复制槽"
  *	  description="PostgreSQL"
- *	  extra={<StatusDot color="teal">转发中</StatusDot>}
+ *	  extra={<StatusDot color="green">转发中</StatusDot>}
  *	  items={[
  *	    { label: "名称", value: slot.name, mono: true },
  *	    { label: "积压", value: "12.4 KiB" },
@@ -89,7 +89,7 @@ export function DescriptionList({
 
 /** StatusDot 的选项。 */
 export interface StatusDotProps {
-  /** 颜色：正常用 teal，需要注意用 orange，出错用 red，没有状态用 gray。 */
+  /** 颜色：正常用 green，需要注意用 deep-orange，出错用 red，没有状态用 gray。 */
   color: MantineColor
   children: ReactNode
 }

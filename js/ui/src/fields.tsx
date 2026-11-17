@@ -222,7 +222,7 @@ export function FieldValue({
             w={6}
             h={6}
             style={{ borderRadius: "50%", flex: "none" }}
-            bg={value ? "teal.5" : "gray.4"}
+            bg={value ? "green.5" : "gray.4"}
           />
           <span>{value ? "是" : "否"}</span>
         </Group>
