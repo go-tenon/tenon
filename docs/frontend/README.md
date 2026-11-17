@@ -4,6 +4,7 @@
 
 - [单页应用](spa.md)：把 React 单页应用嵌入程序并对外提供
 - [服务端渲染](ssr.md)：Bun 编译的 SSR 可执行文件嵌入 Go 程序，由 ssr 包托管，页面请求经 unix socket 转给它
+- [TanStack Start 的接入](start.md)：@go-tenon/start，服务端渲染与浏览器调用同一组接口、预渲染和编译
 - [在 React 中调用接口](client-react.md)：TanStack Query、校验规则、权限、枚举与分页
 - [应用骨架](app-shell.md)：@go-tenon/shell 的路由、登录检查、权限、菜单和新版本提示
 - [应用骨架：页面中的常用功能](app-shell-features.md)：多标签、租户、表单、列表、通知、后台操作与 AI 对话
