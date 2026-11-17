@@ -102,7 +102,7 @@ export const session = createSession({ load: async () => ({ account: (await me()
 - 读取当前用户、检查权限只在浏览器中进行。服务端渲染时应用不读取身份，需要登录的页面设置 `ssr: false`，只在浏览器中渲染，见 [TanStack Start 的接入](start.md)。
 - 前端挂在子路径（例如 `/admin/`）时，路由的 `basepath` 默认是 Vite 的 `base`：页面中的地址、`<Link>`、登录回跳都不含它。
 - `id` 区分同一个域名下的前端，例如 `web` 和 `admin`，见[本地存储](#storage)。
-- QueryClient 对 `4xx` 不重试，其他错误重试 2 次；登录、退出、切换账号或租户时清空缓存，并重新挂载页面：页面中按身份计算的查询重新读取。也可以传入自己的 `queryClient`。
+- QueryClient 对 `4xx` 不重试，其他错误重试 2 次；登录、退出、切换账号或租户时清空缓存，并重新挂载页面：页面中按身份计算的查询重新读取。重新挂载的只是布局中的页面（`AppLayout` 用 `SessionBoundary` 包住页面），HTML 文档和布局保持不变。也可以传入自己的 `queryClient`。
 - `router` 传给 Router 的其他选项：CSP 的 `nonce`、默认的错误页 `RouteError` 和 404 页 `NotFoundPage`（见[错误页](#errors)）。`router.Wrap` 包住整个应用；`createApp` 在它里面提供 QueryClient 和应用。
 - 多租户应用还要设置 `tenancy`，见[租户](layout.md#tenants)。
 
@@ -114,18 +114,19 @@ export const session = createSession({ load: async () => ({ account: (await me()
 ```tsx title="src/routes/__root.tsx"
 import "@go-tenon/ui/styles.css"
 import type { ReactNode } from "react"
-import { mantineHtmlProps } from "@mantine/core"
-import { createRootRouteWithContext, HeadContent, Outlet, Scripts } from "@tanstack/react-router"
-import { ColorSchemeScript, type RouterContext, UIProvider } from "@go-tenon/ui"
+import { ColorSchemeScript, mantineHtmlProps } from "@mantine/core"
+import { createRootRouteWithContext, HeadContent, Outlet, Scripts, useRouter } from "@tanstack/react-router"
+import { type RouterContext, UIProvider } from "@go-tenon/ui"
 import { theme } from "../theme"
 
 export const Route = createRootRouteWithContext<RouterContext>()({ shellComponent: Document, component: Outlet })
 
 function Document({ children }: { children: ReactNode }) {
+  const nonce = useRouter().options.ssr?.nonce
   return (
     <html lang="zh-CN" {...mantineHtmlProps}>
       <head>
-        <ColorSchemeScript />
+        <ColorSchemeScript nonce={nonce} />
         <HeadContent />
       </head>
       <body>
@@ -137,7 +138,7 @@ function Document({ children }: { children: ReactNode }) {
 }
 ```
 
-- `ColorSchemeScript`（`@go-tenon/ui` 的，不是 Mantine 的）在页面显示之前按用户的选择设置亮色或暗色，避免闪烁；`defaultColorScheme` 与 `UIProvider` 相同。它是只写进服务端渲染的 HTML 的内联脚本，自动带上 Go 为这次请求生成的 CSP nonce（`createApp` 的 `router.ssr.nonce` 来自 `@go-tenon/start` 的 `cspNonce()`），执行后移除自己；在浏览器中渲染时不输出，所以只在浏览器中渲染的页面（`defaultSsr: false`）不会出现 “Encountered a script tag” 的警告。
+- `ColorSchemeScript` 在页面显示之前设置亮色或暗色，避免闪烁。它是内联脚本，要带上 Go 为这次请求生成的 CSP nonce（`createApp` 的 `router.ssr.nonce` 来自 `@go-tenon/start` 的 `cspNonce()`）。
 - `mantineHtmlProps` 让服务端渲染的 `<html>` 与浏览器设置的配色属性一致，不产生水合警告。
 - `UIProvider` 安装 Mantine 的主题、右上角的通知（`@mantine/notifications`）、确认对话框（`@mantine/modals`）和图标名称的对应表。组件测试中传 `env="test"`，关闭过渡动画和 portal。配色默认跟随系统，用户在用户菜单中切换后保存在浏览器中。
 

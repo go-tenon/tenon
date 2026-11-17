@@ -288,7 +288,9 @@ function TopLayout() {
       {useSlotFilled("aside") && <aside><Slot name="aside" /></aside>}
       <main>
         <TabBar />
-        <TabsOutlet max={10} />
+        <SessionBoundary>
+          <TabsOutlet max={10} />
+        </SessionBoundary>
       </main>
     </>
   )
@@ -301,6 +303,7 @@ function TopLayout() {
 | `useMenu()`、`useBreadcrumbs()` | 只要菜单或面包屑时用 |
 | `firstPage(menu)`、`pageUnder(menu, path)` | 第一个可以进入的页面；某个分组下第一个可以进入的页面，例如点击面包屑中的分组时跳转到它 |
 | `Slot`、`useSlotFilled(name)` | 放置插槽；插槽中是否有内容，例如没有侧边面板时不留出位置 |
+| `SessionBoundary` | 登录、退出、切换账号或租户时重新挂载其中的页面，上一个身份的页面状态不会留下。只包住页面（`Outlet` 或 `TabsOutlet`），不要包住布局或根路由的 HTML 文档：那样每次打开已登录的页面，整个文档都会在浏览器中重建 |
 | `useLayoutState()` | `[state, setState]`：`collapsed`（侧栏收起为图标）、`tabs`（用户打开了多标签），按账号保存；`navOpen`（窄屏时导航抽屉打开，不保存） |
 | `useNarrow()` | 是否是窄屏（默认宽度小于 768px） |
 | `TabBar`、`TabsOutlet` | 标签栏（32px 高，为顶栏设计）；代替 `Outlet` 渲染标签中的页面：`max` 数量上限，`confirm` 换掉询问未保存修改的浏览器确认框，`home` 第一次使用时固定菜单的第一个页面 |
@@ -336,6 +339,7 @@ function TopLayout() {
 | --- | --- |
 | `AppLayout` | 应用外壳：`title`、`logo`、`user`、`actions`、`search`、`tabs`、`maxWidth` |
 | `Fill`、`Slot`、`useSlotFilled`、`SlotName` | 插槽 |
+| `SessionBoundary` | 身份变化时重新挂载其中的页面 |
 | `UserMenu`、`TenantSwitcher`、`NotificationsMenu`、`OperationsMenu`、`LanguageMenu`、`ColorSchemeToggle` | 顶栏菜单；`UserMenu` 的选项：`name`、`avatar`、`logout`、`items`、`colorScheme` |
 | `Icon`、`useIcon`、`defaultIcons`、`IconsProvider` | 图标名称 |
 | `useMenuBadge(routeId, value)` | 登记菜单项的徽标 |

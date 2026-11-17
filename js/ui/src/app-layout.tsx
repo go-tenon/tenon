@@ -37,6 +37,7 @@ import { TenantSwitcher } from "./menus"
 import { ContentTransitionProvider, PageProgress } from "./page-progress"
 import {
   type MenuItem,
+  SessionBoundary,
   Slot,
   TabsOutlet,
   type TabsOutletProps,
@@ -217,7 +218,10 @@ export function AppLayout({ title, logo, user, actions, search = true, tabs, max
 
       <AppShell.Main>
         <Box ref={content} className="tn-content" p={m.contentPadding} maw={maxWidth}>
-          {tabsOn ? <TabsOutlet home {...(typeof tabs === "object" ? tabs : {})} /> : <Outlet />}
+          {/* 身份变化时只重新挂载页面，布局和 HTML 文档保持不变。 */}
+          <SessionBoundary>
+            {tabsOn ? <TabsOutlet home {...(typeof tabs === "object" ? tabs : {})} /> : <Outlet />}
+          </SessionBoundary>
         </Box>
         <Slot name="footer" />
       </AppShell.Main>

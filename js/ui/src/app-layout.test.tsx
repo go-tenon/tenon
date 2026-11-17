@@ -135,6 +135,30 @@ describe("AppLayout", () => {
     expect(screen.queryByRole("button", { name: /搜索/ })).toBeNull()
   })
 
+  it("切换身份时只重新挂载页面：根路由的文档（这里是 shell）和布局保持不变", async () => {
+    const root = createRootRouteWithContext<RouterContext>()({
+      component: () => (
+        <div data-testid="shell">
+          <Outlet />
+        </div>
+      ),
+    })
+    const layout = createRoute({
+      getParentRoute: () => root,
+      id: "_app",
+      component: () => <AppLayout title="测试后台" />,
+    })
+    const home = createRoute({ getParentRoute: () => layout, path: "/", component: () => <p>首页内容</p> })
+    const app = await renderApp(root.addChildren([layout.addChildren([home])]))
+    const page = await screen.findByText("首页内容")
+    const shell = screen.getByTestId("shell")
+    const header = document.querySelector(".tn-header")
+    await act(async () => app.session.setIdentity({ account: "u2" }))
+    await waitFor(() => expect(screen.getByText("首页内容")).not.toBe(page)) // 页面重新挂载
+    expect(screen.getByTestId("shell")).toBe(shell) // 文档没有重建
+    expect(document.querySelector(".tn-header")).toBe(header) // 布局没有重建
+  })
+
   it("没有登录时跳到登录页", async () => {
     const app = await renderApp(tree(), { signedIn: false })
     await screen.findByText("登录页")
