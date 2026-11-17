@@ -163,7 +163,17 @@ queueapi.Register(api, rest.RequireToken(api, a.tokens.Validate, "queue:manage")
 })
 ```
 
-第二个参数保护全部接口，通常像上面这样要求一项运维权限，见[在路由上声明权限](../security/authorization.md#route-permissions)；权限名由应用决定，记得写进[权限目录](../security/authorization.md#permission-catalog)。不设置 `Admin` 时，接口只返回数据库一侧的状态，也不注册暂停和恢复；`Links` 中地址为空的项不返回。
+第二个参数保护全部接口，通常像上面这样要求一项运维权限，见[在路由上声明权限](../security/authorization.md#route-permissions)；权限名由应用决定，记得写进[权限目录](../security/authorization.md#permission-catalog)。不设置 `Admin` 时，概览只返回数据库一侧的状态，暂停和恢复返回 `503 queue.no_admin`；`Links` 中地址为空的项不返回。
+
+暂停和恢复的接口总是注册：生成文档和客户端的路由（例如入门教程中的 `DocRouter`）通常不连接 NATS，没有 `Admin`，接口却要和运行时一致，否则生成的客户端中缺少这两个方法，[`QueuePanel`](../frontend/ui.md#queue-panel) 就不显示暂停和恢复。所以生成时 `Admin` 可以为 nil，运行时设置它：
+
+```go
+opts := queueapi.Options{}
+if a.nc != nil { // DocRouter 没有 NATS 连接
+    opts.Admin = queue.NewAdmin(a.nc, a.cfg.Queue)
+}
+queueapi.Register(api, protect, a.db, opts)
+```
 
 | 方法和路径 | operationId | 作用 |
 | --- | --- | --- |
@@ -174,8 +184,8 @@ queueapi.Register(api, rest.RequireToken(api, a.tokens.Validate, "queue:manage")
 | `DELETE /queue/failed/{id}` | `queue-failed-delete` | 删除一条失败任务 |
 | `POST /queue/failed/retry?topic=` | `queue-failed-retry-all` | 重新发布一个 topic 的失败任务，`topic` 为空时是全部 topic，返回条数 |
 | `DELETE /queue/failed?topic=` | `queue-failed-delete-all` | 删除一个 topic 的失败任务，`topic` 为空时是全部 topic，返回条数 |
-| `POST /queue/topics/{topic}/pause` | `queue-topic-pause` | 暂停 topic 一小时，见下文；设置了 `Admin` 时才有 |
-| `POST /queue/topics/{topic}/resume` | `queue-topic-resume` | 恢复 topic；设置了 `Admin` 时才有 |
+| `POST /queue/topics/{topic}/pause` | `queue-topic-pause` | 暂停 topic 一小时，见下文；没有设置 `Admin` 时返回 `503 queue.no_admin` |
+| `POST /queue/topics/{topic}/resume` | `queue-topic-resume` | 恢复 topic；没有设置 `Admin` 时返回 `503 queue.no_admin` |
 
 路径相对于 API 的 `BasePath`。operationId 都以 `queue-` 开头，[生成的客户端](../http/clients.md)中是 `api.queue.status()`、`api.queue.failedList()` 这样的函数。时间都是 RFC 3339 格式。
 

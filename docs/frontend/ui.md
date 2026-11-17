@@ -530,7 +530,7 @@ export const Route = createFileRoute("/_app/queue")({
 ```
 
 - **概览**：复制槽（是否有 Worker 在转发、积压、WAL 状态）、JetStream（消息数、定时投递、副本）和失败任务总数，每 5 秒刷新（`refreshInterval`）。读不到 JetStream 时显示原因，数据库一侧照常显示；应用没有设置 `queueapi.Options.Admin` 时只有数据库一侧。
-- **Topic**：每个 topic 的状态、等待、处理中、重新投递、失败的任务数和最近投递的时间。正常和停滞的 topic 可以暂停一小时（先确认），暂停的可以恢复；没有设置 `Admin` 时没有这两个按钮。
+- **Topic**：每个 topic 的状态、等待、处理中、重新投递、失败的任务数和最近投递的时间。正常和停滞的 topic 可以暂停一小时（先确认），暂停的可以恢复；没有设置 `Admin` 时（概览中没有 JetStream）不显示这两个按钮。
 - **失败任务**：按 topic 筛选（标签上是条数）、分页。单条重试和删除先确认；“全部重试”“全部删除”处理当前筛选的 topic（全部时是全部 topic），完成后提示条数。
 - **详情**：点击一条失败任务，右侧显示完整的错误和堆栈、元数据（例如 `request_id`）和 payload，可以在这里重试或删除。
 - 页头是概览返回的外部链接（`queueapi.Options.Links`，例如 Grafana）。

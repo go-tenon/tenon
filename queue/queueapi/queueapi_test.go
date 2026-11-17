@@ -165,9 +165,11 @@ func TestStatus(t *testing.T) {
 	if len(st.Links) != 1 || st.Links[0] != (queueapi.QueueLink{Name: "Grafana", URL: "https://grafana.example.com/d/queue"}) {
 		t.Fatalf("links: %+v", st.Links)
 	}
-	// 没有设置 Admin 时不注册暂停和恢复。
-	if code, _ := e.call(t, http.MethodPost, "/queue/topics/mail/pause", "ops", nil); code != http.StatusNotFound {
-		t.Fatalf("pause without admin: %d", code)
+	// 没有设置 Admin 时暂停和恢复仍然注册（生成的客户端与运行时一致），调用时返回 queue.no_admin。
+	for _, path := range []string{"/queue/topics/mail/pause", "/queue/topics/mail/resume"} {
+		if code, body := e.call(t, http.MethodPost, path, "ops", nil); code != http.StatusServiceUnavailable || !strings.Contains(body, "queue.no_admin") {
+			t.Fatalf("%s without admin: %d %s", path, code, body)
+		}
 	}
 }
 

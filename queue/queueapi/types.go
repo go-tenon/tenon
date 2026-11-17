@@ -14,7 +14,7 @@ import (
 // QueueStatus 是概览（queue-status）：数据库一侧的复制槽、JetStream 一侧的 stream，以及每个 topic 一行。
 type QueueStatus struct {
 	Slot      QueueSlot       `json:"slot" doc:"转发任务的复制槽：数据库一侧的状态"`
-	JetStream *QueueJetStream `json:"jetstream,omitempty" doc:"JetStream 一侧的状态；应用没有设置 Options.Admin 时没有这个字段，也没有暂停和恢复的接口"`
+	JetStream *QueueJetStream `json:"jetstream,omitempty" doc:"JetStream 一侧的状态；应用没有设置 Options.Admin 时没有这个字段，暂停和恢复返回 queue.no_admin"`
 	Topics    []QueueTopic    `json:"topics" nullable:"false" doc:"JetStream 中的 topic 和有失败任务的 topic，按名字排序"`
 	Failed    int             `json:"failed" doc:"全部 topic 的失败任务数"`
 	Links     []QueueLink     `json:"links" nullable:"false" doc:"外部链接（Options.Links），例如 Grafana，按名称排序"`
