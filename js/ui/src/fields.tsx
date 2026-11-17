@@ -27,7 +27,7 @@ export interface FieldInputProps {
   onChange?: (value: unknown) => void
   error?: ReactNode
   disabled?: boolean
-  /** 表单中显示的标签，默认是字段的显示文字。 */
+  /** 表单中显示的标签。ResourceForm、SettingsForm 传入字段的显示文字；自己调用 DefaultInput 时可以省略，默认相同。 */
   label?: ReactNode
 }
 

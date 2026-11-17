@@ -504,7 +504,7 @@ function FormBody({
           const Input = inputs[f.name] ?? DefaultInput
           return (
             <Box key={f.name}>
-              <Input field={f} {...form.getInputProps(f.name)} />
+              <Input field={f} label={f.label} {...form.getInputProps(f.name)} />
             </Box>
           )
         })}
