@@ -17,12 +17,16 @@ import {
   AuthLayout,
   ButtonLink,
   DocsLayout,
+  ExportButton,
+  ImportButton,
   LoginForm,
   NotFoundPage,
   NotificationsMenu,
   OperationsMenu,
   Page,
+  ResourcePage,
   RouteError,
+  SettingsForm,
   SiteLayout,
   TenantSwitcher,
   themes,
@@ -61,6 +65,7 @@ import {
 import { type AnyRoute, createRootRouteWithContext, createRoute, Outlet, useParams } from "@tanstack/react-router"
 import { type ReactNode, useEffect } from "react"
 import { createRoot } from "react-dom/client"
+import { customerExport, customerImport, customersModel, queryClient, shopSettings } from "./resources"
 
 // ———————————————————————————— 共用的假数据 ————————————————————————————
 
@@ -261,6 +266,25 @@ function adminApp() {
     path: "/trade",
     staticData: { title: "交易", icon: "cart", order: 0.5 },
   })
+  const customers = createRoute({
+    getParentRoute: () => layout,
+    path: "/customers",
+    staticData: { title: "客户", icon: "team", order: 0.7 },
+    validateSearch: customersModel.listSearch,
+    component: () => (
+      <ResourcePage
+        model={customersModel}
+        route={customers as never}
+        description="全部渠道的客户。"
+        toolbar={
+          <>
+            <ImportButton source={customerImport} title="导入" />
+            <ExportButton source={customerExport} title="导出" />
+          </>
+        }
+      />
+    ),
+  })
   const routeTree = root.addChildren([
     layout.addChildren([
       page(layout, "/", "概览", "dashboard", AdminHome),
@@ -270,10 +294,15 @@ function adminApp() {
         page(trade, "/invoices", "发票", undefined, () => <AdminPlaceholder title="发票" />),
       ]),
       page(layout, "/products", "商品", "product", () => <AdminPlaceholder title="商品" />),
+      customers,
       page(layout, "/users", "用户", "users", () => <AdminPlaceholder title="用户" />, "users:manage"),
       page(layout, "/reports", "报表", "report", () => <AdminPlaceholder title="报表" />),
       page(layout, "/billing", "计费", "wallet", () => <AdminPlaceholder title="计费" />, "billing:manage"),
-      page(layout, "/settings", "设置", "settings", () => <AdminPlaceholder title="设置" />),
+      page(layout, "/settings", "设置", "settings", () => (
+        <Page title="设置" description="店铺的基本信息，对所有渠道生效。">
+          <SettingsForm model={shopSettings} title={null} />
+        </Page>
+      )),
     ]),
     createRoute({ getParentRoute: () => root, path: "/login", component: LoginPage }),
   ])
@@ -281,6 +310,7 @@ function adminApp() {
     id: "playground-admin",
     routeTree,
     session,
+    queryClient,
     permissions,
     tenancy,
     router: { basepath: "/admin", defaultErrorComponent: RouteError, defaultNotFoundComponent: NotFoundPage },
