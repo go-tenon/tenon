@@ -1,11 +1,9 @@
 import { defineConfig } from "vite"
-import { tenonVersion } from "@go-tenon/shell/vite"
 import { tenon } from "@go-tenon/start/vite"
 
-// base 是 Go 中挂载这个前端的路径。tenon 包含 TanStack Start 和 React 的插件；
-// prerender 列出构建时渲染成 HTML 的页面，见框架文档的“TanStack Start 的接入”。
-// tenonVersion 写入构建版本，页面在部署了新版本时提示刷新。
+// base 是 Go 中挂载这个前端的路径。tenon 包含 TanStack Start 和 React 的插件，并写入构建版本
+// （页面在部署了新版本时提示刷新）；prerender 列出构建时渲染成 HTML 的页面，见框架文档的“TanStack Start 的接入”。
 export default defineConfig({
   base: "[[.Base]]",
-  plugins: [tenon([[if eq .Style "site"]]{ prerender: ["/"] }[[end]]), tenonVersion()],
+  plugins: [tenon([[if eq .Style "site"]]{ prerender: ["/"] }[[end]])],
 })

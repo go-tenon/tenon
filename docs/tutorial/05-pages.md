@@ -58,7 +58,7 @@ import "@go-tenon/ui/styles.css"
 import type { ReactNode } from "react"
 import { ColorSchemeScript, mantineHtmlProps } from "@mantine/core"
 import { createRootRouteWithContext, HeadContent, Scripts, useRouter } from "@tanstack/react-router"
-import type { RouterContext } from "@go-tenon/shell"
+import type { RouterContext } from "@go-tenon/ui"
 import { AnchorLink, ButtonLink, SiteLayout, UIProvider } from "@go-tenon/ui"
 import { theme } from "../theme"
 

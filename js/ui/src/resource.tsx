@@ -1,18 +1,7 @@
-// 资源页面：@go-tenon/shell 的资源模型（resourceModel）的外观。列表、搜索和筛选、新建和修改的表单（抽屉）、
+// 资源页面：shell/ 中的资源模型（resourceModel）的外观。列表、搜索和筛选、新建和修改的表单（抽屉）、
 // 删除和其他操作都来自 Go 中的声明，页面只写需要覆盖的部分。
 
 import { describeError, type ErrorInfo } from "@go-tenon/client"
-import {
-  formValues,
-  type ListRoute,
-  type ResourceField,
-  type ResourceModel,
-  type ResourceRow,
-  useResourceItem,
-  useResourceList,
-  useResourceMutations,
-  useUnsavedChanges,
-} from "@go-tenon/shell"
 import {
   ActionIcon,
   Box,
@@ -35,6 +24,17 @@ import { confirm, notifyError, notifySuccess } from "./feedback"
 import { DefaultInput, type FieldInput, FieldValue } from "./fields"
 import { applyServerErrors, FormError, useSchemaForm } from "./form"
 import { Page } from "./page"
+import {
+  formValues,
+  type ListRoute,
+  type ResourceField,
+  type ResourceModel,
+  type ResourceRow,
+  useResourceItem,
+  useResourceList,
+  useResourceMutations,
+  useUnsavedChanges,
+} from "./shell"
 import { layoutMetrics } from "./theme"
 
 /** 行上的一个额外操作。 */

@@ -11,7 +11,6 @@ export default defineConfig({
     alias: {
       "@go-tenon/ui/styles.css": path("ui/src/styles.css"),
       "@go-tenon/ui": path("ui/src/index.ts"),
-      "@go-tenon/shell": path("shell/src/index.ts"),
       "@go-tenon/client": path("client/src/index.ts"),
     },
   },

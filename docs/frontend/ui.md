@@ -1,8 +1,8 @@
 # 界面组件
 
-`@go-tenon/ui` 是框架的界面层，基于 [Mantine](https://mantine.dev)。它提供三套样式预设：运营后台、SaaS 控制台、官网和内容站，以及按[应用骨架](app-shell.md)的约定实现的布局和部件：应用外壳、登录页、错误页、官网和文档页的布局、顶栏菜单。
+`@go-tenon/ui` 是框架的前端应用层，基于 [Mantine](https://mantine.dev)。它提供三套样式预设：运营后台、SaaS 控制台、官网和内容站，以及按[应用骨架](app-shell.md)的约定实现的布局和部件：应用外壳、登录页、错误页、官网和文档页的布局、顶栏菜单。
 
-菜单、权限、多标签、会话这些逻辑都在 `@go-tenon/shell` 中，这里只负责外观。页面中的其他内容直接使用 Mantine 的组件。
+菜单、权限、多标签、会话这些逻辑见[应用骨架](app-shell.md)，它们和这一页的组件在同一个包中。页面中的其他内容直接使用 Mantine 的组件。
 
 阅读前需要了解：[应用骨架](app-shell.md)；[在 React 中调用接口](client-react.md)。
 
@@ -42,7 +42,7 @@ import "@go-tenon/ui/styles.css"
 import type { ReactNode } from "react"
 import { ColorSchemeScript, mantineHtmlProps } from "@mantine/core"
 import { createRootRouteWithContext, HeadContent, Outlet, Scripts, useRouter } from "@tanstack/react-router"
-import type { RouterContext } from "@go-tenon/shell"
+import type { RouterContext } from "@go-tenon/ui"
 import { UIProvider } from "@go-tenon/ui"
 import { theme } from "../theme"
 
@@ -127,7 +127,7 @@ export const theme = createUiTheme({ preset: "console", primary: "#0f766e", radi
 ```tsx title="src/routes/_app.tsx"
 import { useQuery } from "@tanstack/react-query"
 import { createFileRoute } from "@tanstack/react-router"
-import { Fill, requireAuth } from "@go-tenon/shell"
+import { Fill, requireAuth } from "@go-tenon/ui"
 import { AppLayout, NotificationsMenu, OperationsMenu, TenantSwitcher, UserMenu } from "@go-tenon/ui"
 import { api } from "../app"
 
@@ -284,7 +284,7 @@ function Login() {
 ```tsx title="src/routes/__root.tsx"
 import { Button } from "@mantine/core"
 import { createRootRouteWithContext } from "@tanstack/react-router"
-import type { RouterContext } from "@go-tenon/shell"
+import type { RouterContext } from "@go-tenon/ui"
 import { SiteLayout } from "@go-tenon/ui"
 
 export const Route = createRootRouteWithContext<RouterContext>()({ component: Site })
@@ -342,9 +342,8 @@ function Doc({ html }: { html: string }) {
 
 ```tsx
 import { useQuery } from "@tanstack/react-query"
-import { useList, useSelection } from "@go-tenon/shell"
 import { Button } from "@mantine/core"
-import { type Column, DataTable } from "@go-tenon/ui"
+import { type Column, DataTable, useList, useSelection } from "@go-tenon/ui"
 
 const columns: Column<Order>[] = [
   { accessor: "number", title: "订单号", fixed: true },
@@ -385,8 +384,7 @@ function Orders() {
 
 ```tsx
 import { Button, TextInput } from "@mantine/core"
-import { useUnsavedChanges } from "@go-tenon/shell"
-import { applyServerErrors, FormError, useSchemaForm } from "@go-tenon/ui"
+import { applyServerErrors, FormError, useSchemaForm, useUnsavedChanges } from "@go-tenon/ui"
 import type { ErrorInfo } from "@go-tenon/client"
 import { useState } from "react"
 import { api } from "../app"
@@ -551,7 +549,7 @@ export const Route = createFileRoute("/_app/queue")({
 <a id="new-version"></a>
 ## 新版本提示
 
-部署了新版本后，已经打开的页面还在运行旧代码。`NewVersionNotice` 在发现新版本时于右下角提示“刷新”或“稍后”，版本号来自模板中的 `tenonVersion` 插件，见[新版本提示](app-shell.md#new-version)。`AppLayout` 已经包含它，其他布局需要时自己放一个。
+部署了新版本后，已经打开的页面还在运行旧代码。`NewVersionNotice` 在发现新版本时于右下角提示“刷新”或“稍后”，版本号由 `@go-tenon/start/vite` 的 `tenon()` 插件在构建时写入，见[新版本提示](app-shell.md#new-version)。`AppLayout` 已经包含它，其他布局需要时自己放一个。
 
 <a id="feedback"></a>
 ## 确认与提示

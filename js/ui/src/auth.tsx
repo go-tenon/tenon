@@ -1,10 +1,10 @@
 // 认证页：登录、注册、找回密码等页面的布局，以及登录表单。
 
 import type { ErrorInfo } from "@go-tenon/client"
-import { serverErrors, useApp } from "@go-tenon/shell"
 import { Alert, Button, Group, PasswordInput, Stack, Text, TextInput, Title } from "@mantine/core"
 import { IconAlertCircle } from "@tabler/icons-react"
 import { type FormEvent, type ReactNode, useState } from "react"
+import { serverErrors, useApp } from "./shell"
 
 /** AuthLayout 的选项。 */
 export interface AuthLayoutProps {

@@ -1,5 +1,8 @@
 // E2E 用的应用：几个页面放在开启多标签的布局之下，各自有需要保留的状态（输入框、计数、计时器）。
 import { createSession } from "@go-tenon/client"
+import { createRootRouteWithContext, createRoute, Link, Outlet, useNavigate } from "@tanstack/react-router"
+import { type ReactNode, useEffect, useState } from "react"
+import { createRoot } from "react-dom/client"
 import {
   AppRoot,
   createApp,
@@ -10,10 +13,7 @@ import {
   useTabs,
   useTabTitle,
   useUnsavedChanges,
-} from "@go-tenon/shell"
-import { createRootRouteWithContext, createRoute, Link, Outlet, useNavigate } from "@tanstack/react-router"
-import { type ReactNode, useEffect, useState } from "react"
-import { createRoot } from "react-dom/client"
+} from "../../ui/src/shell"
 
 function Layout(): ReactNode {
   const tabs = useTabs()

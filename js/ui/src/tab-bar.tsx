@@ -1,10 +1,10 @@
-// 标签栏：@go-tenon/shell 的多标签的外观。点击切换，中键或关闭按钮关闭，右键菜单有刷新、固定和批量关闭，可以拖动排序。
+// 标签栏：shell/ 中的多标签的外观。点击切换，中键或关闭按钮关闭，右键菜单有刷新、固定和批量关闭，可以拖动排序。
 
-import { type TabView, useTabs } from "@go-tenon/shell"
 import { CloseButton, Menu } from "@mantine/core"
 import { IconPin } from "@tabler/icons-react"
 import { type ReactNode, useState } from "react"
 import { Icon } from "./icons"
+import { type TabView, useTabs } from "./shell"
 
 /** 标签栏，AppLayout 开启 tabs 时显示在内容区顶部。 */
 export function TabBar(): ReactNode {

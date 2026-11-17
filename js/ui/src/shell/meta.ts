@@ -4,7 +4,7 @@ declare module "@tanstack/react-router" {
   interface StaticDataRouteOption {
     /** 菜单、面包屑和标签中显示的标题。没有标题的路由不出现在菜单和面包屑中。 */
     title?: string
-    /** 图标的名字，例如 "file-text"。由外观层映射为组件库的图标，shell 不依赖图标库。 */
+    /** 图标的名字，例如 "file-text"。由 IconsProvider 映射为图标组件。 */
     icon?: string
     /** 在同级菜单中的顺序，小的在前；相同时按路径排序。 */
     order?: number

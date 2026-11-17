@@ -29,7 +29,7 @@ func TestWrite(t *testing.T) {
 		"packages/client/package.json":   `"name": "@todo/client"`,
 		"./package.json":                 `".tenon/js/ui"`,
 		"apps/web/package.json":          `"build": "tenon-start compile --out ssr.js --base /"`,
-		"apps/web/vite.config.ts":        `plugins: [tenon({ prerender: ["/"] }), tenonVersion()]`,
+		"apps/web/vite.config.ts":        `plugins: [tenon({ prerender: ["/"] })]`,
 		"apps/web/frontend.go":           "//go:embed ssr.js\nvar SSR []byte\n",
 		"apps/web/src/theme.ts":          `preset: "site"`,
 		"apps/web/src/start.ts":          "requestMiddleware: [requestMiddleware] }",

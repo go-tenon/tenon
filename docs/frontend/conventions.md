@@ -52,7 +52,7 @@
 | 框架 | React、[TanStack Start](start.md)，编译成 SSR 程序嵌入 Go 程序，见[服务端渲染](ssr.md) |
 | 路由 | TanStack Router，文件路由 |
 | 服务端数据 | TanStack Query + `tenon generate` 生成的客户端，见[客户端代码](../http/clients.md) |
-| 框架的前端包 | `@go-tenon/client`、`@go-tenon/shell`、`@go-tenon/start`、`@go-tenon/ui` |
+| 框架的前端包 | `@go-tenon/client`、`@go-tenon/start`、`@go-tenon/ui` |
 | 组件 | Mantine；表格用 `@go-tenon/ui` 的 `DataTable`（基于 mantine-datatable） |
 | 表单 | `@mantine/form`，用 `@go-tenon/ui` 的 `useSchemaForm` 接上生成的校验规则 |
 | 图标 | Tabler Icons（`@tabler/icons-react`） |
@@ -200,7 +200,7 @@ apps/admin/
 | 服务端数据 | TanStack Query | 列表、详情、当前用户 |
 | 表单输入 | 表单库 | 未提交的编辑、校验错误 |
 | 页面局部的交互 | 组件状态 | 弹窗开关、展开状态 |
-| 应用共享的交互 | Context，或 `@go-tenon/shell` 的布局状态 | 侧栏折叠、标签页、主题 |
+| 应用共享的交互 | Context，或 `@go-tenon/ui` 的布局状态 | 侧栏折叠、标签页、主题 |
 
 同一份数据只放在一个位置。不要把服务端数据复制到组件状态或 Context 中：复制出来的那一份不会随接口更新，两份很快就对不上了。
 

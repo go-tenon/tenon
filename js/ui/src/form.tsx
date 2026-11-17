@@ -2,12 +2,12 @@
 // 其他错误显示在表单上方；有未保存的修改时，离开页面之前询问。
 
 import type { ErrorInfo, Schema } from "@go-tenon/client"
-import { type FormRulesOptions, formValidator, setServerErrors } from "@go-tenon/shell"
 import { Alert } from "@mantine/core"
 import { type UseFormReturnType, useForm } from "@mantine/form"
 import { IconAlertCircle } from "@tabler/icons-react"
 import { type ReactNode, useMemo } from "react"
 import { errorMessage } from "./auth"
+import { type FormRulesOptions, formValidator, setServerErrors } from "./shell"
 
 /** useSchemaForm 的选项。 */
 export interface SchemaFormOptions<T> {

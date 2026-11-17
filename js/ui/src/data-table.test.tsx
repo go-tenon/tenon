@@ -1,9 +1,10 @@
 // @vitest-environment happy-dom
-import { type RouterContext, useList, useSelection } from "@go-tenon/shell"
+
 import { createRootRouteWithContext, createRoute, Outlet } from "@tanstack/react-router"
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, describe, expect, it } from "vitest"
 import { type Column, DataTable } from "./data-table"
+import { type RouterContext, useList, useSelection } from "./shell"
 import { renderApp } from "./testing"
 
 afterEach(() => {

@@ -2,8 +2,7 @@ import "@go-tenon/ui/styles.css"
 import type { ReactNode } from "react"
 import { ColorSchemeScript, mantineHtmlProps } from "@mantine/core"
 import { createRootRouteWithContext, HeadContent, Outlet, Scripts, useRouter } from "@tanstack/react-router"
-import type { RouterContext } from "@go-tenon/shell"
-import { UIProvider } from "@go-tenon/ui"
+import { type RouterContext, UIProvider } from "@go-tenon/ui"
 import { theme } from "../theme"
 
 // 根路由：整个 HTML 文档。页面在 <Outlet /> 中。

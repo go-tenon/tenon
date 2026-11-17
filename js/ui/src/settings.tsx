@@ -1,7 +1,13 @@
-// 设置：@go-tenon/shell 的设置模型（settingsModel）的外观。一组值的表单：读取设置作为初始值，按权限决定能否修改，
+// 设置：shell/ 中的设置模型（settingsModel）的外观。一组值的表单：读取设置作为初始值，按权限决定能否修改，
 // 可以自动保存。
 
 import type { ErrorInfo } from "@go-tenon/client"
+import { Alert, Box, Button, Card, Group, Skeleton, Stack, Text, Title } from "@mantine/core"
+import { IconCheck } from "@tabler/icons-react"
+import { type ReactNode, useEffect, useState, useSyncExternalStore } from "react"
+import { notifySuccess } from "./feedback"
+import { DefaultInput, type FieldInput } from "./fields"
+import { applyServerErrors, FormError, useSchemaForm } from "./form"
 import {
   type AutoSaveStatus,
   createAutoSaver,
@@ -10,13 +16,7 @@ import {
   type SettingsModel,
   useSettings,
   useUnsavedChanges,
-} from "@go-tenon/shell"
-import { Alert, Box, Button, Card, Group, Skeleton, Stack, Text, Title } from "@mantine/core"
-import { IconCheck } from "@tabler/icons-react"
-import { type ReactNode, useEffect, useState, useSyncExternalStore } from "react"
-import { notifySuccess } from "./feedback"
-import { DefaultInput, type FieldInput } from "./fields"
-import { applyServerErrors, FormError, useSchemaForm } from "./form"
+} from "./shell"
 
 /** SettingsForm 的选项。 */
 export interface SettingsFormProps {

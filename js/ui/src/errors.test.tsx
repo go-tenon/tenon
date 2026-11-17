@@ -1,9 +1,10 @@
 // @vitest-environment happy-dom
-import { ForbiddenError, type RouterContext } from "@go-tenon/shell"
+
 import { createRootRouteWithContext, createRoute, Outlet } from "@tanstack/react-router"
 import { act, cleanup, fireEvent, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it } from "vitest"
 import { RouteError } from "./errors"
+import { ForbiddenError, type RouterContext } from "./shell"
 import { renderApp } from "./testing"
 
 afterEach(cleanup)

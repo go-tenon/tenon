@@ -1,6 +1,5 @@
-import { createApp } from "@go-tenon/shell"
 import { cspNonce } from "@go-tenon/start"
-import { NotFoundPage, RouteError } from "@go-tenon/ui"
+import { createApp, NotFoundPage, RouteError } from "@go-tenon/ui"
 [[- if ne .Style "site"]]
 import { me, session } from "./auth"
 [[- end]]

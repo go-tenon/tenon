@@ -232,7 +232,7 @@ data: {"id":"0193e7a2-8a01-7c3e-b1d4-5e6f7a8b9c0d","kind":"articles.export","sta
 <a id="export-button"></a>
 ## 在页面中使用
 
-框架提供了现成的导出按钮：`@go-tenon/ui` 的 `ExportButton`，逻辑来自 `@go-tenon/shell` 的 `useExport`。点击按钮发起导出，对话框显示进度，完成后显示“下载”。进度同时出现在顶栏的[任务中心](../frontend/app-shell-features.md#operations)。
+框架提供了现成的导出按钮：`@go-tenon/ui` 的 `ExportButton`，逻辑是同一个包中的 `useExport`。点击按钮发起导出，对话框显示进度，完成后显示“下载”。进度同时出现在顶栏的[任务中心](../frontend/app-shell-features.md#operations)。
 
 ```tsx
 <ExportButton

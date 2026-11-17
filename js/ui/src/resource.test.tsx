@@ -1,7 +1,6 @@
 // @vitest-environment happy-dom
 // 资源页面：用 clientgen 示例 API 生成的代码渲染文章的列表、表单和操作。
 import { createSession } from "@go-tenon/client"
-import { createApp, type ResourceModel, type RouterContext, resourceModel } from "@go-tenon/shell"
 import { TextInput } from "@mantine/core"
 import { QueryClient } from "@tanstack/react-query"
 import { createMemoryHistory, createRootRouteWithContext, createRoute, Outlet } from "@tanstack/react-router"
@@ -14,6 +13,7 @@ import { createQueries } from "../../../httpx/rest/clientgen/internal/example/ts
 import { resources } from "../../../httpx/rest/clientgen/internal/example/ts/resources"
 import { components, schemas } from "../../../httpx/rest/clientgen/internal/example/ts/schemas"
 import { ResourcePage, type ResourcePageProps } from "./resource"
+import { createApp, type ResourceModel, type RouterContext, resourceModel } from "./shell"
 import { renderRoot } from "./testing"
 
 afterEach(() => {

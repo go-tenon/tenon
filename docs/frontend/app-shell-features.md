@@ -56,7 +56,7 @@ function ArticlePage() {
 页面照常使用 Router 的标准 hooks（`Route.useParams()`、`useSearch()`、`useLocation()` 等），不需要知道自己是否在标签中：每个标签有自己的路由上下文，隐藏的标签读到的是它最后一次显示时的状态。隐藏的标签放在 React 的 `<Activity mode="hidden">` 中，组件状态保留，effect 暂停：隐藏期间不发出请求，切回时照常恢复。页面需要知道自己是否显示时（例如暂停轮询）用 `useTabActive()`。
 
 > [!NOTE]
-> 标签自己的路由上下文依赖 TanStack Router 内部的 `router.stores`。升级 TanStack Router 时，`js/shell/src/tabs.test.tsx` 检查它是否仍然可用。`<Activity>` 需要 React 19.2。
+> 标签自己的路由上下文依赖 TanStack Router 内部的 `router.stores`。升级 TanStack Router 时，`js/ui/src/shell/tabs.test.tsx` 检查它是否仍然可用。`<Activity>` 需要 React 19.2。
 
 `useTabs()` 返回标签和操作，外观据此渲染标签栏：
 
@@ -138,7 +138,7 @@ export const Route = createFileRoute("/t/$tenant")({
 用 react-hook-form 时，交给 `useForm` 一个 `resolver`：
 
 ```tsx
-import { resolver, setServerErrors } from "@go-tenon/shell"
+import { resolver, setServerErrors } from "@go-tenon/ui"
 import { components, schemas } from "@blog/client/api/schemas"
 import { messages } from "@blog/client/api/messages"
 
@@ -182,7 +182,7 @@ const save = useMutation({
 列表的查询条件、排序和分页保存在地址中：刷新页面、分享链接、浏览器前进后退都回到同一个列表。地址中的参数与接口相同（`page`、`per_page`、`sort` 和各筛选条件），可以直接交给生成的客户端：
 
 ```tsx
-import { listSearch, useList, useSelection } from "@go-tenon/shell"
+import { listSearch, useList, useSelection } from "@go-tenon/ui"
 import type { ArticleListInput } from "@blog/client/api"
 import { components, schemas } from "@blog/client/api/schemas"
 
@@ -273,14 +273,14 @@ const history = useActivity({ key: ["article", id], list: (before) => api.articl
 <a id="ai-chat"></a>
 ## AI 对话
 
-`@go-tenon/shell/chat` 在 Vercel AI SDK 的 `useChat` 之上接好[对话接口](../ai/chat.md#conversation-api)：消息流、历史、断线续传、停止、插话和审批。它是单独的入口，用到时在前端安装 AI SDK：
+`@go-tenon/ui/chat` 在 Vercel AI SDK 的 `useChat` 之上接好[对话接口](../ai/chat.md#conversation-api)：消息流、历史、断线续传、停止、插话和审批。它是单独的入口，用到时在前端安装 AI SDK：
 
 ```sh
 bun add ai@^7.0.159 @ai-sdk/react@^4.0.163
 ```
 
 ```tsx
-import { useAssistantChat, useAssistantHistory } from "@go-tenon/shell/chat"
+import { useAssistantChat, useAssistantHistory } from "@go-tenon/ui/chat"
 
 function Assistant({ id }: { id: string }) {
   const history = useAssistantHistory({ api: "/api/v1/assistant/chat", id })

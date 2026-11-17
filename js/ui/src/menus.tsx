@@ -3,15 +3,6 @@
 //   <Fill name="user"><UserMenu name={me.name} logout={api.auth.logout} /></Fill>
 
 import {
-  dismissOperation,
-  type NotificationsSource,
-  type TrackedOperation,
-  useApp,
-  useNotifications,
-  useOperations,
-  useTenant,
-} from "@go-tenon/shell"
-import {
   ActionIcon,
   Avatar,
   Badge,
@@ -32,6 +23,15 @@ import {
 import { IconBell, IconCheck, IconListCheck, IconLogout, IconSelector, IconX } from "@tabler/icons-react"
 import { useNavigate } from "@tanstack/react-router"
 import { type ReactNode, useState } from "react"
+import {
+  dismissOperation,
+  type NotificationsSource,
+  type TrackedOperation,
+  useApp,
+  useNotifications,
+  useOperations,
+  useTenant,
+} from "./shell"
 
 /** 用户菜单中的一项。 */
 export interface UserMenuItem {

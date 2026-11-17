@@ -1,10 +1,10 @@
 // @vitest-environment happy-dom
 import { createSession, type OperationLike } from "@go-tenon/client"
-import { createApp, type RouterContext } from "@go-tenon/shell"
 import { createMemoryHistory, createRootRouteWithContext } from "@tanstack/react-router"
 import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react"
 import type { ReactNode } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
+import { createApp, type RouterContext } from "./shell"
 import { renderRoot } from "./testing"
 import { ExportButton, ImportButton } from "./transfer"
 

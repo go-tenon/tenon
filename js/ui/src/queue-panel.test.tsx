@@ -1,9 +1,10 @@
 // @vitest-environment happy-dom
-import type { RouterContext } from "@go-tenon/shell"
+
 import { createRootRouteWithContext } from "@tanstack/react-router"
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { formatBytes, type QueueApi, type QueueFailedJobData, QueuePanel } from "./queue-panel"
+import type { RouterContext } from "./shell"
 import { renderApp } from "./testing"
 
 afterEach(cleanup)

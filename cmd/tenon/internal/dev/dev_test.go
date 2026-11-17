@@ -286,14 +286,14 @@ func TestSyncJS(t *testing.T) {
 	if b, _ := os.ReadFile(pkg); !strings.Contains(string(b), `"name": "@go-tenon/client"`) {
 		t.Fatalf("package.json:\n%s", b)
 	}
-	for _, p := range []string{".tenon/js/client/src/index.ts", ".tenon/js/shell/src/form.ts", ".tenon/.gitignore"} {
+	for _, p := range []string{".tenon/js/client/src/index.ts", ".tenon/js/ui/src/shell/form.ts", ".tenon/.gitignore"} {
 		if _, err := os.Stat(filepath.Join(dir, p)); err != nil {
 			t.Error(err)
 		}
 	}
-	// 测试文件只在框架中运行，不复制：它们可能依赖项目中没有的包（例如 antd）。
+	// 测试文件只在框架中运行，不复制：它们可能依赖项目中没有的包（例如 happy-dom）。
 	for _, p := range []string{".tenon/js/node_modules", ".tenon/js/client/node_modules", ".tenon/js/package.json",
-		".tenon/js/client/src/errors.test.ts", ".tenon/js/shell/src/form.test.tsx"} {
+		".tenon/js/client/src/errors.test.ts", ".tenon/js/ui/src/shell/form.test.tsx"} {
 		if _, err := os.Stat(filepath.Join(dir, p)); !os.IsNotExist(err) {
 			t.Errorf("%s copied", p)
 		}
@@ -311,9 +311,9 @@ func TestSyncJS(t *testing.T) {
 
 	// 包自己的 node_modules（Bun 的依赖链接）保留；包中多出的文件、框架中已经没有的包被删除。
 	for p, content := range map[string]string{
-		".tenon/js/shell/node_modules/react/package.json": "{}",
-		".tenon/js/shell/src/stale.ts":                    "",
-		".tenon/js/old/package.json":                      "{}",
+		".tenon/js/ui/node_modules/react/package.json": "{}",
+		".tenon/js/ui/src/stale.ts":                    "",
+		".tenon/js/old/package.json":                   "{}",
 	} {
 		full := filepath.Join(dir, p)
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
@@ -326,10 +326,10 @@ func TestSyncJS(t *testing.T) {
 	if _, err := dev.SyncJS("."); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, ".tenon/js/shell/node_modules/react/package.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, ".tenon/js/ui/node_modules/react/package.json")); err != nil {
 		t.Errorf("dependency links removed: %v", err)
 	}
-	for _, p := range []string{".tenon/js/shell/src/stale.ts", ".tenon/js/old"} {
+	for _, p := range []string{".tenon/js/ui/src/stale.ts", ".tenon/js/old"} {
 		if _, err := os.Stat(filepath.Join(dir, p)); !os.IsNotExist(err) {
 			t.Errorf("%s not removed", p)
 		}
@@ -371,11 +371,11 @@ func TestNeedsInstall(t *testing.T) {
 	}
 	write("node_modules/.keep", "")
 	write(".tenon/js/client/package.json", `{"name":"@go-tenon/client"}`)
-	write(".tenon/js/shell/package.json", `{"name":"@go-tenon/shell","peerDependencies":{"react":"^19"}}`)
+	write(".tenon/js/ui/package.json", `{"name":"@go-tenon/ui","peerDependencies":{"react":"^19"}}`)
 	if !dev.NeedsInstall(dir) {
-		t.Error("shell has dependencies but no node_modules: want install")
+		t.Error("ui has dependencies but no node_modules: want install")
 	}
-	write(".tenon/js/shell/node_modules/react/package.json", "{}")
+	write(".tenon/js/ui/node_modules/react/package.json", "{}")
 	if dev.NeedsInstall(dir) {
 		t.Error("everything installed: want no install")
 	}

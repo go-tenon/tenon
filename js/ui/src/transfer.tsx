@@ -1,8 +1,7 @@
-// 导入与导出：@go-tenon/shell 的 useImport、useExport 的外观。导入在对话框中选择表格、上传、显示进度和结果；
+// 导入与导出：shell/ 中的 useImport、useExport 的外观。导入在对话框中选择表格、上传、显示进度和结果；
 // 导出显示进度，完成后下载。进度同时出现在顶栏的后台任务中。
 
 import { describeError, type OperationLike } from "@go-tenon/client"
-import { type ExportSource, type ImportSource, type TransferPhase, useExport, useImport } from "@go-tenon/shell"
 import { Alert, Anchor, Button, Group, Modal, Progress, Stack, Text, ThemeIcon, UnstyledButton } from "@mantine/core"
 import {
   IconAlertTriangle,
@@ -14,6 +13,7 @@ import {
 } from "@tabler/icons-react"
 import { type DragEvent, type ReactNode, useEffect, useRef, useState } from "react"
 import { errorMessage } from "./auth"
+import { type ExportSource, type ImportSource, type TransferPhase, useExport, useImport } from "./shell"
 
 /** 结束时调用一次 onCompleted，例如刷新列表。 */
 function useOnFinished(phase: TransferPhase, onCompleted?: () => void) {
@@ -52,7 +52,7 @@ function Running({ label, op }: { label: string; op?: OperationLike }): ReactNod
 
 /** ImportButton 的选项。 */
 export interface ImportButtonProps {
-  /** 导入的接口，见 @go-tenon/shell 的 useImport。 */
+  /** 导入的接口，见 shell/ 中的 useImport。 */
   source: ImportSource
   /** 按钮和对话框的标题，默认“导入”。 */
   title?: string
@@ -228,7 +228,7 @@ function DropZone({ accept, onFile }: { accept: string; onFile: (file: File) => 
 
 /** ExportButton 的选项。 */
 export interface ExportButtonProps {
-  /** 导出的接口，见 @go-tenon/shell 的 useExport。 */
+  /** 导出的接口，见 shell/ 中的 useExport。 */
   source: ExportSource
   /** 按钮和对话框的标题，默认“导出”。 */
   title?: string
