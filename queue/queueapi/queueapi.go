@@ -42,6 +42,8 @@ var (
 	ErrFailedJobNotFound = errorx.Define(errorx.NotFound, "queue.failed_job_not_found")
 	// ErrTopicNotFound 表示 JetStream 中没有这个 topic 的 consumer：没有 Worker 为它注册过处理函数。
 	ErrTopicNotFound = errorx.Define(errorx.NotFound, "queue.topic_not_found")
+	// ErrNoAdmin 表示应用没有设置 Options.Admin，不能暂停和恢复 topic。
+	ErrNoAdmin = errorx.Define(errorx.Unavailable, "queue.no_admin")
 )
 
 const (
@@ -82,10 +84,14 @@ type handlers struct {
 //	DELETE /queue/failed/{id}            删除一条失败任务（queue-failed-delete）
 //	POST   /queue/failed/retry?topic=    重新发布一个 topic（为空时全部）的失败任务（queue-failed-retry-all）
 //	DELETE /queue/failed?topic=          删除一个 topic（为空时全部）的失败任务（queue-failed-delete-all）
-//	POST   /queue/topics/{topic}/pause   暂停 topic 一小时（queue-topic-pause，设置了 Admin 时才有）
-//	POST   /queue/topics/{topic}/resume  恢复 topic（queue-topic-resume，设置了 Admin 时才有）
+//	POST   /queue/topics/{topic}/pause   暂停 topic 一小时（queue-topic-pause）
+//	POST   /queue/topics/{topic}/resume  恢复 topic（queue-topic-resume）
 //
-// db 只在处理请求时使用，openapi、client 命令离线构造路由时可以为 nil。api 或 protect 为 nil 时 panic。
+// 暂停和恢复总是注册，生成的客户端中总有这两个方法：生成文档和客户端时（DocRouter）通常没有 NATS 连接，
+// 也就没有 Admin，接口却要和运行时一致。没有设置 Admin 时它们返回 ErrNoAdmin，概览中没有 jetstream 字段，
+// 面板据此不显示暂停和恢复。
+//
+// db、opts.Admin 只在处理请求时使用，openapi、client 命令离线构造路由时可以为 nil。api 或 protect 为 nil 时 panic。
 func Register(api *rest.API, protect func(*huma.Operation), db *bun.DB, opts Options) {
 	if api == nil || protect == nil {
 		panic("queueapi: nil API or protect")
@@ -113,10 +119,8 @@ func Register(api *rest.API, protect func(*huma.Operation), db *bun.DB, opts Opt
 	rest.Register(api, op("queue-failed-delete", http.MethodDelete, "/queue/failed/{id}", "删除失败任务"), h.delete)
 	rest.Register(api, op("queue-failed-retry-all", http.MethodPost, "/queue/failed/retry", "全部重试失败任务"), h.retryAll)
 	rest.Register(api, op("queue-failed-delete-all", http.MethodDelete, "/queue/failed", "全部删除失败任务"), h.deleteAll)
-	if h.admin != nil {
-		rest.Register(api, op("queue-topic-pause", http.MethodPost, "/queue/topics/{topic}/pause", "暂停 topic 一小时"), h.pause)
-		rest.Register(api, op("queue-topic-resume", http.MethodPost, "/queue/topics/{topic}/resume", "恢复 topic"), h.resume)
-	}
+	rest.Register(api, op("queue-topic-pause", http.MethodPost, "/queue/topics/{topic}/pause", "暂停 topic 一小时"), h.pause)
+	rest.Register(api, op("queue-topic-resume", http.MethodPost, "/queue/topics/{topic}/resume", "恢复 topic"), h.resume)
 }
 
 func (h *handlers) failed() *queue.FailedJobs { return queue.NewFailedJobs(h.db) }
@@ -344,7 +348,9 @@ func (h *handlers) pause(ctx context.Context, in *topicInput) (*pauseOutput, err
 }
 
 func (h *handlers) resume(ctx context.Context, in *topicInput) (*struct{}, error) {
-	if err := h.topicAction(ctx, in.Topic, "resumed", h.admin.Resume); err != nil {
+	if err := h.topicAction(ctx, in.Topic, "resumed", func(ctx context.Context, topic string) error {
+		return h.admin.Resume(ctx, topic)
+	}); err != nil {
 		return nil, err
 	}
 	return &struct{}{}, nil
@@ -352,6 +358,9 @@ func (h *handlers) resume(ctx context.Context, in *topicInput) (*struct{}, error
 
 // topicAction 对 topic 执行 do，记一条日志。
 func (h *handlers) topicAction(ctx context.Context, topic, action string, do func(ctx context.Context, topic string) error) error {
+	if h.admin == nil {
+		return ErrNoAdmin.New()
+	}
 	actx, cancel := context.WithTimeout(ctx, adminTimeout)
 	err := do(actx, topic)
 	cancel()
