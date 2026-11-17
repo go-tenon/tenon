@@ -80,7 +80,8 @@ export class UploadError extends Error {
 /**
  * 把 file 直传到对象存储，返回登记的文件（仍是 temporary 状态，交给业务接口确认后才保留）。
  * 小文件签名一次，用一个请求上传；大于 multipartThreshold 且提供了 multipart 时分片上传，记下每片的 ETag，最后合并。
- * 一片失败时重新签名并重传，仍然失败或被取消时放弃分片会话。对象存储的 CORS 要允许 PUT，并暴露 ETag 响应头。
+ * 一片失败时重新签名并重传，仍然失败或被取消时放弃分片会话。对象存储的 CORS 要允许 PUT 和请求头
+ * Content-Type、If-None-Match，并暴露 ETag 响应头。
  */
 export async function uploadFile<F extends { id: string }>(
   file: BlobLike,

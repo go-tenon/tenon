@@ -316,6 +316,16 @@ func TestDeleteInTransaction(t *testing.T) {
 
 func sendSigned(t *testing.T, req filesystem.SignedRequest, body []byte) string {
 	t.Helper()
+	status, etag, msg := trySigned(t, req, body)
+	if status != http.StatusOK {
+		t.Fatalf("status %d: %s", status, msg)
+	}
+	return etag
+}
+
+// trySigned 发送签名请求，返回状态码、ETag 和响应体。
+func trySigned(t *testing.T, req filesystem.SignedRequest, body []byte) (status int, etag, msg string) {
+	t.Helper()
 	r, err := http.NewRequest(req.Method, req.URL, bytes.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
@@ -328,11 +338,8 @@ func sendSigned(t *testing.T, req filesystem.SignedRequest, body []byte) string 
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		msg, _ := io.ReadAll(resp.Body)
-		t.Fatalf("status %d: %s", resp.StatusCode, msg)
-	}
-	return resp.Header.Get("ETag")
+	data, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, resp.Header.Get("ETag"), string(data)
 }
 
 func TestS3DirectPut(t *testing.T) {
@@ -359,6 +366,18 @@ func TestS3DirectPut(t *testing.T) {
 	}
 	if _, err := e.svc.SignPut(ctx, alice, r.ID); !errors.Is(err, filesystem.ErrInvalid) {
 		t.Fatalf("signing confirmed file = %v", err)
+	}
+	// 确认之后，还在有效期内的上传地址不能替换已经校验过的内容。
+	if status, _, msg := trySigned(t, req, []byte("HACKD")); status != http.StatusPreconditionFailed {
+		t.Fatalf("overwrite with the old upload URL: %d %s", status, msg)
+	}
+	body, _, err := e.svc.Open(ctx, r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer body.Close()
+	if got, _ := io.ReadAll(body); string(got) != "hello" {
+		t.Fatalf("content replaced: %q", got)
 	}
 }
 
