@@ -193,7 +193,7 @@ queueapi.Register(api, protect, a.db, opts)
 - 失败任务不存在时返回 `404 queue.failed_job_not_found`；没有 worker 为 topic 注册过处理函数时，暂停和恢复返回 `404 queue.topic_not_found`。
 - 每次重试、删除、暂停和恢复记一条 Info 日志，带上操作者（`subject`，主体的 `Ref`）、topic 和条数。
 
-接口只返回数据。`@go-tenon/ui` 的 [`QueuePanel`](../frontend/features.md#queue-panel) 是现成的面板页面：概览每 5 秒刷新，可以暂停和恢复 topic，按 topic 查看、重试和删除失败任务，查看失败任务的错误、元数据和 payload。把生成的客户端分组交给它，放在需要运维权限的路由上：
+接口只返回数据。`@go-tenon/ui` 的 [`QueuePanel`](../frontend/features.md#queue-panel) 是现成的面板页面：分成任务类型、失败任务、系统状态三个页内标签，可以暂停和恢复 topic，按 topic 查看、重试和删除失败任务，查看失败任务的错误、元数据和任务内容。把生成的客户端分组交给它，放在需要运维权限的路由上：
 
 ```tsx
 export const Route = createFileRoute("/_app/queue")({

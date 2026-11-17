@@ -172,6 +172,22 @@ describe("ResourcePage", () => {
     expect(app.router.state.location.search).toEqual({})
   })
 
+  it("在筛选中删除一行后清除筛选：不会因为原来缓存的列表又显示被删的那一行", async () => {
+    server()
+    const app = await mount()
+    await act(() => app.router.navigate({ to: "/articles", search: { status: "draft" } as never }))
+    await screen.findByText("草稿一篇")
+    await waitFor(() => expect(screen.queryByText("你好")).toBeNull())
+    fireEvent.click(within(rowOf("草稿一篇")).getByRole("button", { name: "更多操作" }))
+    fireEvent.click(await screen.findByRole("menuitem", { name: "删除" }))
+    await act(async () => fireEvent.click(await screen.findByRole("button", { name: "删除" })))
+    await waitFor(() => expect(screen.queryByText("草稿一篇")).toBeNull())
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "清除筛选" })))
+    expect(screen.queryByText("草稿一篇")).toBeNull() // 读到之前显示的是当前的（已经没有这一行），不是原来缓存的全部
+    await screen.findByText("你好")
+    expect(screen.queryByText("草稿一篇")).toBeNull()
+  })
+
   it("新建是单独的页面：面包屑是“文章 / 新建”；校验与服务端相同，服务端的字段错误显示在输入框下面；创建后回到列表", async () => {
     const calls = server()
     const app = await mount()

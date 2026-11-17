@@ -22,11 +22,6 @@ function fakeApi(options: { admin?: boolean; slotExists?: boolean } = {}) {
     { id: "j3", topic: "report.daily", attempts: 3, error: "pdf: unavailable", failed_at: "2026-11-17T07:00:00Z" },
   ]
   const paused = new Set<string>(["report.daily"])
-  const counts = () => {
-    const m = new Map<string, number>()
-    for (const j of failed) m.set(j.topic, (m.get(j.topic) ?? 0) + 1)
-    return [...m].map(([topic, count]) => ({ topic, count }))
-  }
   const api: QueueApi = {
     status: vi.fn(async () => ({
       slot: {
@@ -52,7 +47,7 @@ function fakeApi(options: { admin?: boolean; slotExists?: boolean } = {}) {
     })),
     failedList: vi.fn(async (input = {}) => {
       const rows = input.topic ? failed.filter((j) => j.topic === input.topic) : failed
-      return { items: rows, total: rows.length, topics: counts() }
+      return { items: rows, total: rows.length }
     }),
     failedGet: vi.fn(async (id: string) => ({
       ...(failed.find((j) => j.id === id) as QueueFailedJobData),
@@ -82,7 +77,7 @@ function fakeApi(options: { admin?: boolean; slotExists?: boolean } = {}) {
 
 async function mount(api: QueueApi) {
   const root = createRootRouteWithContext<RouterContext>()({
-    component: () => <QueuePanel api={api} refreshInterval={60_000} />,
+    component: () => <QueuePanel api={api} />,
   })
   const app = await renderApp(root)
   await screen.findByText("mail.send")
@@ -168,11 +163,9 @@ describe("QueuePanel", () => {
     expect(api.failedRetryAll).toHaveBeenCalledWith({ topic: undefined })
   })
 
-  it("切换筛选时总是向服务器读最新的；失败列表定时刷新", async () => {
+  it("切换筛选时总是向服务器读最新的", async () => {
     const api = fakeApi()
-    const root = createRootRouteWithContext<RouterContext>()({
-      component: () => <QueuePanel api={api} refreshInterval={200} />,
-    })
+    const root = createRootRouteWithContext<RouterContext>()({ component: () => <QueuePanel api={api} /> })
     await renderApp(root, { path: "/?tab=failed" })
     await screen.findByText("smtp: timeout")
     const calls = () => (api.failedList as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0]?.topic ?? "全部")
@@ -182,8 +175,6 @@ describe("QueuePanel", () => {
     await act(async () => fireEvent.click(screen.getByRole("radio", { name: /全部/ })))
     await waitFor(() => expect(calls().filter((t) => t === "全部").length).toBeGreaterThan(before))
     expect(await screen.findByText("smtp: timeout")).toBeTruthy()
-    const n = calls().length
-    await waitFor(() => expect(calls().length).toBeGreaterThan(n), { timeout: 1000 }) // 定时刷新
   })
 
   it("把一类全部重试后，这一类留在筛选中，条数是 0、表格中没有任务；切换筛选不显示过时的数据", async () => {

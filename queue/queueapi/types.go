@@ -68,16 +68,9 @@ type QueueTopic struct {
 	PausedUntil   *time.Time `json:"paused_until,omitempty" doc:"暂停处理的截止时间，没有暂停时没有这个字段"`
 }
 
-// QueueTopicCount 是一个 topic 中失败任务的条数。
-type QueueTopicCount struct {
-	Topic string `json:"topic"`
-	Count int    `json:"count"`
-}
-
-// QueueFailedList 是失败任务列表（queue-failed-list）：一页失败任务，以及每个 topic 的失败任务数。
+// QueueFailedList 是失败任务列表（queue-failed-list）：一页失败任务。每个 topic 的失败任务数见概览（QueueTopic.Failed）。
 type QueueFailedList struct {
 	page.Offset[QueueFailedJob]
-	Topics []QueueTopicCount `json:"topics" nullable:"false" doc:"每个 topic 的失败任务数，条数多的在前，不受 topic 筛选的影响；没有失败任务的 topic 不出现"`
 }
 
 // QueueFailedJob 是列表中的一条失败任务，完整的错误、元数据和 payload 见 QueueFailedJobDetail。

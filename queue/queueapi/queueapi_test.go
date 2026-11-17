@@ -184,10 +184,6 @@ func TestFailedList(t *testing.T) {
 		list.Items[0].Error != "smtp: 550 mailbox unavailable" || list.Items[0].Attempts != 3 || list.Items[0].Topic != "mail" {
 		t.Fatalf("list: %+v", list)
 	}
-	// 每个 topic 的条数不受筛选影响，条数多的在前。
-	if len(list.Topics) != 2 || list.Topics[0] != (queueapi.QueueTopicCount{Topic: "mail", Count: 2}) || list.Topics[1].Topic != "report" {
-		t.Fatalf("topics: %+v", list.Topics)
-	}
 
 	// 全部 topic，每页一条的第二页。
 	list = queueapi.QueueFailedList{}

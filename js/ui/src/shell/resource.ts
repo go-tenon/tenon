@@ -374,8 +374,9 @@ export interface ResourceList {
 export function useResourceList(model: ResourceModel, route: ListRoute<Record<string, unknown>>): ResourceList {
   const list = useList(route)
   const can = useCan()
-  // 换筛选、翻页、排序时先显示原来的数据，新的读到后直接替换，表格不闪。
-  const query = useQuery({ ...model.listQuery(list.params), placeholderData: keepPreviousData })
+  // 换筛选、翻页、排序时总是向服务器读最新的，不用各自缓存的旧数据（例如刚删掉的一行不会又出现）；
+  // 读到之前先显示原来的（表格变淡），读到后替换，表格不闪。
+  const query = useQuery({ ...model.listQuery(list.params), gcTime: 0, placeholderData: keepPreviousData })
   const page = query.data as ListResponse | undefined
   return {
     model,

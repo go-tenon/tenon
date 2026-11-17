@@ -210,9 +210,7 @@ func (h *handlers) failedList(ctx context.Context, in *failedListInput) (*failed
 		return nil, err
 	}
 	var total int64
-	out := QueueFailedList{Topics: make([]QueueTopicCount, len(counts))}
-	for i, c := range counts {
-		out.Topics[i] = QueueTopicCount{Topic: c.Topic, Count: c.Count}
+	for _, c := range counts {
 		if in.Topic == "" || c.Topic == in.Topic {
 			total += int64(c.Count)
 		}
@@ -225,8 +223,7 @@ func (h *handlers) failedList(ctx context.Context, in *failedListInput) (*failed
 	for i, j := range jobs {
 		items[i] = QueueFailedJob{ID: j.ID, Topic: j.Topic, Attempts: j.Attempts, Error: firstLine(j.Error), FailedAt: j.FailedAt.UTC()}
 	}
-	out.Offset = page.NewOffset(items, in.OffsetParams, total)
-	return &failedListOutput{Body: out}, nil
+	return &failedListOutput{Body: QueueFailedList{Offset: page.NewOffset(items, in.OffsetParams, total)}}, nil
 }
 
 // idInput 指定一条失败任务。

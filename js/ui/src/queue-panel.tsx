@@ -1,8 +1,9 @@
 // 队列面板：queue/queueapi 的运维页面，分成三个页内标签（地址中的 ?tab=）：
-//   - 任务类型：每个 topic 的状态和任务数，可以暂停、恢复。每 5 秒刷新。
+//   - 任务类型：每个 topic 的状态和任务数，可以暂停、恢复。
 //   - 失败任务：按任务类型筛选、分页，查看原因（对话框），单条或勾选多条重试、删除，也可以一次处理当前筛选的全部。
 //   - 系统状态：复制槽和 JetStream 的底层状态，给开发人员排查问题用。
 // 复制槽、JetStream 出问题时，标签上面显示醒目的提示。数据来自应用生成的客户端分组 api.queue。
+// 和其他列表一样按需读取：打开页面、切换标签和筛选、做完操作、切回浏览器窗口时读取，没有定时刷新。
 import {
   ActionIcon,
   Alert,
@@ -84,7 +85,6 @@ export interface QueueFailedJobDetailData extends QueueFailedJobData {
 export interface QueueFailedListData {
   items: QueueFailedJobData[]
   total: number
-  topics: { topic: string; count: number }[]
 }
 
 /**
@@ -111,8 +111,6 @@ export interface QueuePanelProps {
   api: QueueApi
   /** 页面的标题，默认“队列”。 */
   title?: ReactNode
-  /** 刷新的间隔（毫秒），默认 5000。 */
-  refreshInterval?: number
 }
 
 /** topic 的状态：显示的文字、颜色，异常时的说明（显示在状态下面）。 */
@@ -146,8 +144,8 @@ const statusKey = ["tenon", "queue", "status"]
  *	  component: () => <QueuePanel api={api.queue} />,
  *	})
  */
-export function QueuePanel({ api, title = "队列", refreshInterval = 5000 }: QueuePanelProps): ReactNode {
-  const status = useQuery({ queryKey: statusKey, queryFn: () => api.status(), refetchInterval: refreshInterval })
+export function QueuePanel({ api, title = "队列" }: QueuePanelProps): ReactNode {
+  const status = useQuery({ queryKey: statusKey, queryFn: () => api.status() })
   const s = status.data
   // 状态还没读到时各个标签显示读取中；读取失败时显示原因。
   const needStatus = (render: (s: QueueStatusData) => ReactNode) =>
@@ -165,7 +163,7 @@ export function QueuePanel({ api, title = "队列", refreshInterval = 5000 }: Qu
   return (
     <Page
       title={title}
-      description="后台任务的处理情况，每 5 秒刷新。失败的任务可以查看原因、重试或删除。"
+      description="后台任务的处理情况。失败的任务可以查看原因、重试或删除。"
       tabs={[
         { value: "topics", label: "任务类型", content: needStatus((s) => <Topics status={s} api={api} />) },
         {
@@ -176,7 +174,6 @@ export function QueuePanel({ api, title = "队列", refreshInterval = 5000 }: Qu
           content: (
             <FailedJobs
               api={api}
-              refreshInterval={refreshInterval}
               counts={s?.topics.filter((t) => t.failed > 0).map((t) => ({ topic: t.topic, count: t.failed }))}
             />
           ),
@@ -401,11 +398,9 @@ function Topics({ status, api }: { status: QueueStatusData; api: QueueApi }): Re
 
 function FailedJobs({
   api,
-  refreshInterval,
   counts,
 }: {
   api: QueueApi
-  refreshInterval: number
   /** 各任务类型的失败条数，来自定时刷新的概览：筛选项按它显示。 */
   counts?: { topic: string; count: number }[]
 }): ReactNode {
@@ -418,8 +413,6 @@ function FailedJobs({
   const list = useQuery({
     queryKey: ["tenon", "queue", "failed", topic, page, perPage],
     queryFn: () => api.failedList({ topic, page, per_page: perPage }),
-    // 和任务类型一样定时刷新：新出现的失败任务会自己出现。
-    refetchInterval: refreshInterval,
     // 换筛选、翻页时总是向服务器读最新的，不用缓存（不会显示过时的数据）；读到之前先显示当前的（表格变淡），不闪。
     gcTime: 0,
     placeholderData: keepPreviousData,

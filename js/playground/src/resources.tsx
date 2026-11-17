@@ -318,12 +318,9 @@ export const queueApi = (() => {
       const rows = input.topic ? failed.filter((j) => j.topic === input.topic) : failed
       const page = input.page ?? 1
       const per = input.per_page ?? 20
-      const counts = new Map<string, number>()
-      for (const j of failed) counts.set(j.topic, (counts.get(j.topic) ?? 0) + 1)
       return delay({
         items: rows.slice((page - 1) * per, page * per),
         total: rows.length,
-        topics: [...counts].map(([topic, count]) => ({ topic, count })).sort((a, b) => b.count - a.count),
       })
     },
     failedGet: async (id: string) => {
