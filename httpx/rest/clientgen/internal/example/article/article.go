@@ -110,7 +110,7 @@ type ListInput struct {
 	page.OffsetParams
 	Status Status   `query:"status"`
 	Tags   []string `query:"tag,explode"`
-	Q      string   `query:"q"`
+	Title  string   `query:"title" doc:"标题包含的文字"`
 }
 
 type ListOutput struct {
@@ -230,7 +230,7 @@ func Register(api *rest.API, s *Store, auth func(*huma.Operation)) {
 	// 文章的后台页面：显示文字是 article.title、article.fields.<字段>、article.actions.<操作> 的消息。
 	api.Resource(rest.Resource{
 		Name: "article", List: "article-list", Get: "article-get", Create: "article-create", Update: "article-update", Delete: "article-delete",
-		Columns: []string{"title", "status", "published_at", "featured"}, Search: "q", Filters: []string{"status"},
+		Columns: []string{"title", "status", "published_at", "featured"}, Filters: []string{"title", "status"},
 		Actions: []rest.Action{{Name: "publish", Operation: "article-publish", Confirm: true}},
 	})
 	// 博客的设置页面：显示文字是 blog.title、blog.fields.<字段> 的消息。
@@ -351,7 +351,7 @@ func (s *Store) list(_ context.Context, in *ListInput) (*ListOutput, error) {
 		if in.Status != "" && a.Status != in.Status {
 			continue
 		}
-		if in.Q != "" && !strings.Contains(a.Title, in.Q) {
+		if in.Title != "" && !strings.Contains(a.Title, in.Title) {
 			continue
 		}
 		if !hasAll(a.Tags, in.Tags) {

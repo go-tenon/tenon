@@ -92,8 +92,10 @@ describe("resourceModel", () => {
       ["slug", "text", true],
       ["tags", "tags", false],
     ])
-    expect(m.filters.map((f) => f.name)).toEqual(["status"])
-    expect(m.search).toBe("q")
+    expect(m.filters.map((f) => [f.name, f.kind])).toEqual([
+      ["title", "text"],
+      ["status", "select"],
+    ])
     expect(m.actions).toEqual([{ name: "publish", label: "发布", confirm: true, danger: false, permissions: [] }])
     expect(m.has).toEqual({ list: true, get: true, create: true, update: true, delete: true })
     expect(m.rowKey({ id: "a1" })).toBe("a1")

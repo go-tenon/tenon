@@ -30,8 +30,8 @@ export const resources = {
       { name: "published_at", type: "string", format: "date-time" },
       { name: "featured", type: "boolean", required: true },
     ],
-    search: "q",
     filters: [
+      { name: "title", type: "string" },
       { name: "status", type: "string", enum: "ArticleStatus" },
     ],
     form: [

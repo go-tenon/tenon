@@ -41,7 +41,6 @@ export interface ResourceDef {
   }
   readonly permissions: { readonly [operation: string]: readonly string[] }
   readonly columns: readonly ResourceFieldDef[]
-  readonly search?: string
   readonly filters: readonly ResourceFieldDef[]
   readonly form: readonly ResourceFieldDef[]
   readonly actions: readonly {
@@ -125,8 +124,6 @@ export interface ResourceModel {
   columns: ResourceField[]
   filters: ResourceField[]
   form: ResourceField[]
-  /** 关键词搜索的查询参数。 */
-  search?: string
   actions: ResourceAction[]
   /** 有哪些接口。 */
   has: Record<ResourceOperation, boolean>
@@ -278,7 +275,6 @@ export function resourceModel(def: ResourceDef, kit: ResourceKit, queryClient?: 
     columns,
     filters,
     form,
-    search: def.search,
     actions: def.actions.map((a) => ({
       name: a.name,
       label: labels?.actions[a.name] ?? a.name,

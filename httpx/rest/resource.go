@@ -28,8 +28,7 @@ type Resource struct {
 	Update  string   `json:"update,omitempty"`  // 修改接口的操作 ID，没有时留空；路径参数与 Get 相同
 	Delete  string   `json:"delete,omitempty"`  // 删除接口的操作 ID，没有时留空；路径参数与 Get 相同
 	Columns []string `json:"columns"`           // 列表显示的列：列表项的字段。为空时是列表项中除对象和数组外的全部字段。
-	Search  string   `json:"search,omitempty"`  // 列表接口中关键词搜索的查询参数，例如 q；为空时没有搜索框。
-	Filters []string `json:"filters,omitempty"` // 列表的筛选条件：列表接口的查询参数，例如 status。
+	Filters []string `json:"filters,omitempty"` // 列表上方的筛选条件：列表接口的查询参数，按业务命名，例如 name、status、min_age；文字是输入框，枚举是下拉选择，布尔是“是 / 否”。
 	Sort    []string `json:"sort,omitempty"`    // 可以排序的列。列表接口要有 sort 查询参数，取值是列名，前面加 - 表示降序；sort 限定了取值时，每一列的升序或降序至少有一个在其中。
 	Form    []string `json:"form,omitempty"`    // 创建和修改的表单字段：请求体的字段。为空时是请求体的全部字段（创建和修改都有时取创建的）。
 	Actions []Action `json:"actions,omitempty"` // 一行上的其他操作，例如发布。
@@ -100,9 +99,6 @@ func (a *API) checkResource(r *Resource) error {
 		return err
 	}
 	query := params(list, "query")
-	if r.Search != "" && !slices.Contains(query, r.Search) {
-		return fmt.Errorf("search %q is not a query parameter of %s", r.Search, r.List)
-	}
 	for _, f := range r.Filters {
 		if !slices.Contains(query, f) {
 			return fmt.Errorf("filter %q is not a query parameter of %s", f, r.List)

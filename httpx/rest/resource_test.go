@@ -82,7 +82,7 @@ func TestResource(t *testing.T) {
 	api := resourceAPI()
 	api.Resource(rest.Resource{
 		Name: "article", List: "article-list", Get: "article-get", Create: "article-create", Update: "article-update", Delete: "article-delete",
-		Search: "q", Filters: []string{"status"}, Sort: []string{"updated_at"},
+		Filters: []string{"status"}, Sort: []string{"updated_at"},
 		Actions: []rest.Action{{Name: "publish", Operation: "article-publish", Confirm: true}},
 	})
 	got := api.Resources()
@@ -127,7 +127,6 @@ func TestResourceRejects(t *testing.T) {
 		"list method":     {func(r *rest.Resource) { r.List = "article-create" }, "must be GET"},
 		"list shape":      {func(r *rest.Resource) { r.List = "article-get" }, "must not have path parameters"},
 		"column":          {func(r *rest.Resource) { r.Columns = []string{"title", "nope"} }, "column nope not found"},
-		"search":          {func(r *rest.Resource) { r.Search = "keyword" }, `search "keyword" is not a query parameter`},
 		"filter":          {func(r *rest.Resource) { r.Filters = []string{"author"} }, `filter "author" is not a query parameter`},
 		"sort column":     {func(r *rest.Resource) { r.Sort = []string{"nope"} }, "sort column nope not found"},
 		"sort value":      {func(r *rest.Resource) { r.Sort = []string{"status"} }, "sort column status is not an allowed value"},

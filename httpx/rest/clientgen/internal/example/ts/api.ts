@@ -127,7 +127,8 @@ export interface ArticleListInput {
   per_page?: number
   status?: ArticleStatus
   tag?: string[] | null
-  q?: string
+  /** 标题包含的文字 */
+  title?: string
 }
 
 /** article-publish 的参数。 */
@@ -192,7 +193,7 @@ export function createClient(options: ClientOptions) {
        * GET /articles
        */
       list: (input: ArticleListInput = {}): Promise<OffsetArticleDTO> =>
-        rt.request<OffsetArticleDTO>({ method: "GET", path: `/articles`, public: true, query: { "page": input["page"], "per_page": input["per_page"], "q": input["q"], "status": input["status"], "tag": input["tag"] } }),
+        rt.request<OffsetArticleDTO>({ method: "GET", path: `/articles`, public: true, query: { "page": input["page"], "per_page": input["per_page"], "status": input["status"], "tag": input["tag"], "title": input["title"] } }),
       /**
        * 预览链接
        *

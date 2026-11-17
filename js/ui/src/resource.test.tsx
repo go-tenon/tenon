@@ -178,6 +178,18 @@ describe("ResourcePage", () => {
     expect(app.router.state.location.search).toEqual({})
   })
 
+  it("文字的筛选条件是输入框，提示是字段的显示文字；回车后写进地址交给列表接口，可以清除", async () => {
+    const calls = server()
+    const app = await mount("/articles", "你好")
+    const input = screen.getByPlaceholderText("标题")
+    fireEvent.change(input, { target: { value: "你" } })
+    await act(async () => fireEvent.keyDown(input, { key: "Enter" }))
+    await waitFor(() => expect(app.router.state.location.search).toEqual({ title: "你" }))
+    await waitFor(() => expect(calls.some((c) => c.url === "/api/articles?title=%E4%BD%A0")).toBe(true))
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "清除标题" })))
+    await waitFor(() => expect(app.router.state.location.search).toEqual({}))
+  })
+
   it("在筛选中删除一行后清除筛选：不会因为原来缓存的列表又显示被删的那一行", async () => {
     server()
     const app = await mount()

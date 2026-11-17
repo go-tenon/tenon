@@ -81,7 +81,7 @@ type ListInput struct {
 	page.OffsetParams
 	Status Status   `query:"status"`
 	Tags   []string `query:"tag,explode"`
-	Q      string   `query:"q"`
+	Title  string   `query:"title" doc:"标题包含的文字"`
 }
 
 // PingOutputBody 是 PingOutput 的响应体。

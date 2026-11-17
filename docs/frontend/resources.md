@@ -37,7 +37,6 @@ api.Resource(rest.Resource{
     Update: "article-update",
     Delete: "article-delete",
     Columns: []string{"title", "status", "updated_at"},
-    Search:  "q",
     Filters: []string{"status"},
     Sort:    []string{"updated_at"},
     Form:    []string{"title", "content", "status"},
@@ -50,8 +49,7 @@ api.Resource(rest.Resource{
 | `List` | 列表接口：GET，没有路径参数，响应体有 `items` 数组（[`page.Offset`](../http/responses.md#offset-pagination) 或 `page.Cursor`）。必须设置 |
 | `Get`、`Create`、`Update`、`Delete` | 详情、创建、修改、删除接口，没有的留空 |
 | `Columns` | 列表的列：列表项的字段。为空时是除对象和数组外的全部字段，按结构体中的顺序 |
-| `Search` | 关键词搜索的查询参数 |
-| `Filters` | 筛选条件：列表接口的查询参数 |
+| `Filters` | 列表上方的筛选条件：列表接口的查询参数，按业务命名，例如 `name`、`status`、`min_age`。文字是输入框（提示是字段的显示文字），枚举是下拉选择，布尔是“是 / 否” |
 | `Sort` | 可以排序的列。列表接口要有 `sort` 查询参数，取值是列名，前面加 `-` 表示降序，与 [`useList`](lists-forms.md#lists) 相同 |
 | `Form` | 创建和修改的表单字段：请求体的字段。为空时是请求体的全部字段，按结构体中的顺序 |
 | `Actions` | 行上的其他操作：`Operation` 是接口，`Confirm` 执行前询问，`Danger` 用醒目的颜色 |

@@ -299,7 +299,7 @@ type Author struct {
 
 type ListInput struct {
     page.OffsetParams
-    Q string `query:"q" doc:"按名字搜索"`
+    Name string `query:"name" doc:"名字包含的文字"`
 }
 
 type ListOutput struct {
@@ -338,12 +338,12 @@ func (a *Admin) author(ctx context.Context, u *User) (Author, error) {
     return Author{ID: u.ID, Name: u.Name, Roles: ids, CreatedAt: u.CreatedAt}, nil
 }
 
-// List 按创建时间列出作者，q 按名字搜索。
+// List 按创建时间列出作者，name 不为空时只列出名字包含它的作者。
 func (a *Admin) List(ctx context.Context, in *ListInput) (*ListOutput, error) {
     var users []User
     q := a.db.NewSelect().Model(&users).Order("created_at").Limit(in.Limit()).Offset(in.Offset())
-    if in.Q != "" {
-        q = q.Where("name ILIKE ?", "%"+in.Q+"%")
+    if in.Name != "" {
+        q = q.Where("name ILIKE ?", "%"+in.Name+"%")
     }
     total, err := q.ScanAndCount(ctx)
     if err != nil {
@@ -472,7 +472,7 @@ func Register(api *rest.API, requireUser, requireManage func(*huma.Operation), d
     // 作者的后台页面：作者用命令创建，后台只列出和修改。
     api.Resource(rest.Resource{
         Name: "user", List: "user-list", Update: "user-update",
-        Columns: []string{"name", "roles", "created_at"}, Search: "q",
+        Columns: []string{"name", "roles", "created_at"}, Filters: []string{"name"},
     })
 }
 ```
@@ -951,7 +951,7 @@ function Users() {
 }
 ```
 
-其余的列（名字、注册时间）、搜索框、修改的表单和按钮都来自定义。
+其余的列（名字、注册时间）、按名字筛选的输入框、修改的表单和按钮都来自定义。
 
 运行 `go tool tenon dev`，打开 http://localhost:8080/admin/，用小明登录。侧栏中有“作者”和“角色”：
 

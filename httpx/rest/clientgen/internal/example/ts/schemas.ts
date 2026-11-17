@@ -42,9 +42,6 @@ export const schemas = {
             "minimum": 1,
             "type": "integer"
           },
-          "q": {
-            "type": "string"
-          },
           "status": {
             "$ref": "#/components/schemas/ArticleStatus"
           },
@@ -56,6 +53,9 @@ export const schemas = {
               "array",
               "null"
             ]
+          },
+          "title": {
+            "type": "string"
           }
         },
         "type": "object"

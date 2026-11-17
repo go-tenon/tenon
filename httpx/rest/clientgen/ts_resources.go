@@ -92,9 +92,6 @@ func (t *tsGen) resourceTS(r rest.Resource, templates map[string]map[string]stri
 		b.WriteString("      " + t.fieldTS(c, item.Properties[c], slices.Contains(item.Required, c), slices.Contains(r.Sort, c)) + ",\n")
 	}
 	b.WriteString("    ],\n")
-	if r.Search != "" {
-		b.WriteString("    search: " + strconv.Quote(r.Search) + ",\n")
-	}
 	b.WriteString("    filters: [\n")
 	for _, f := range r.Filters {
 		i := slices.IndexFunc(list.op.Parameters, func(p *huma.Param) bool { return p.In == "query" && p.Name == f })
