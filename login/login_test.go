@@ -124,6 +124,15 @@ func (e *env) account(t *testing.T, ctx context.Context, id, email, password str
 	}
 }
 
+// register 调用 Register，再调用 CompleteRegister：db 不是事务，写入立即生效。
+func (e *env) register(ctx context.Context, db bun.IDB, proof string, r identity.Ref, opts ...login.RegisterOption) (login.Outcome, error) {
+	reg, err := e.realm.Register(ctx, db, proof, r, opts...)
+	if err != nil {
+		return login.Outcome{}, err
+	}
+	return e.realm.CompleteRegister(ctx, reg)
+}
+
 // code 发送并返回验证码。
 func (e *env) code(t *testing.T, ctx context.Context, purpose login.Purpose, id login.Identifier) (string, login.Code) {
 	t.Helper()
@@ -281,6 +290,49 @@ func TestRehash(t *testing.T) {
 	}
 	if after := stored(); after == before || !strings.HasPrefix(after, "$2a$05$") {
 		t.Fatalf("hash not upgraded: %s", after)
+	}
+}
+
+// Options.Resolve 通常从连接池读取账号：注册事务提交之后才调用它，能读到事务中写入的账号。
+func TestRegisterResolvesAfterCommit(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	var e *env
+	e = newRealm(t, login.Options{Policy: login.Policy{Register: true}, Resolve: func(ctx context.Context, sub identity.Subject) (identity.Subject, error) {
+		var role string
+		if err := e.db.NewSelect().Table("accounts").Column("role").Where("id = ?", sub.ID).Scan(ctx, &role); err != nil {
+			return identity.Subject{}, err
+		}
+		sub.Permissions = []string{role}
+		return sub, nil
+	}})
+	if _, err := e.db.ExecContext(ctx, "CREATE TABLE accounts (id text PRIMARY KEY, role text NOT NULL)"); err != nil {
+		t.Fatal(err)
+	}
+	var reg login.Registration
+	err := database.RunInTx(ctx, e.db, nil, func(ctx context.Context, tx database.Tx) error {
+		if _, err := tx.ExecContext(ctx, "INSERT INTO accounts VALUES ('c1', 'articles:write')"); err != nil {
+			return err
+		}
+		var err error
+		reg, err = e.realm.Register(ctx, tx, e.proof(t, ctx, login.SignIn, login.Email("alice@example.com")), ref("c1"))
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := e.realm.CompleteRegister(ctx, reg)
+	if err != nil || out.Subject.Ref() != ref("c1") || strings.Join(out.Subject.Permissions, ",") != "articles:write" {
+		t.Fatalf("complete: %+v %v", out, err)
+	}
+
+	// 别的账号体系的 Registration、零值都不接受。
+	other := newRealm(t, login.Options{})
+	if _, err := other.realm.CompleteRegister(ctx, reg); err == nil {
+		t.Fatal("registration of another realm accepted")
+	}
+	if _, err := e.realm.CompleteRegister(ctx, login.Registration{}); err == nil {
+		t.Fatal("zero registration accepted")
 	}
 }
 
@@ -513,13 +565,16 @@ func TestRegister(t *testing.T) {
 	_, err = e.realm.Register(ctx, e.db, out.Proof, ref("c9"), login.WithPassword("short"))
 	is(t, err, login.ErrWeakPassword)
 
-	var reg login.Outcome
+	var reg login.Registration
 	err = database.RunInTx(ctx, e.db, nil, func(ctx context.Context, tx database.Tx) error {
 		reg, err = e.realm.Register(ctx, tx, out.Proof, ref("c9"), login.WithPassword("correct horse"))
 		return err
 	})
-	if err != nil || reg.Subject.Ref() != ref("c9") {
-		t.Fatalf("register: %+v %v", reg, err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if done, err := e.realm.CompleteRegister(ctx, reg); err != nil || done.Subject.Ref() != ref("c9") || done.Subject.Auth.Methods[0] != "email" {
+		t.Fatalf("register: %+v %v", done, err)
 	}
 	list, _ := e.realm.Identifiers(ctx, ref("c9"))
 	if len(list) != 1 || list[0].Identifier != email || !list[0].Verified {
@@ -737,7 +792,7 @@ func TestPerTenant(t *testing.T) {
 	newcomer := e.proof(t, acme, login.SignIn, login.Email("new@example.com"))
 	_, err = e.realm.Register(globex, e.db, newcomer, ref("globex:2"))
 	is(t, err, login.ErrInvalidProof)
-	reg, err := e.realm.Register(acme, e.db, newcomer, ref("acme:2"))
+	reg, err := e.register(acme, e.db, newcomer, ref("acme:2"))
 	if err != nil || reg.Subject.Tenant != "acme" {
 		t.Fatalf("register: %+v %v", reg, err)
 	}

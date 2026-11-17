@@ -215,7 +215,7 @@ out, err := users.External(ctx, ext)
 | `out.Proof` | 还没有绑定 | 注册新账号，或者让用户登录已有账号后[绑定](#linking-accounts) |
 | `out.Pending`、`out.Enroll` | 账号体系要求[二次验证](login-security.md#requiring-two-factor) | 与密码登录相同，先完成第二步或先启用 |
 
-注册与[验证码注册](login.md#codes)相同：应用的注册业务动作在事务中创建账号行，再把 `out.Proof` 交给 `Register`。第三方账号作为登录标识写入，第三方确认过（`EmailVerified`）的邮箱也一并写入，之后用户也可以用这个邮箱收验证码登录。第三方账号登录时跳过[二次验证](login-security.md#two-factor)这一步，由提供方负责验证身份；账号体系[强制二次验证](login-security.md#requiring-two-factor)时除外。
+注册与[验证码注册](login.md#codes)相同：应用的注册业务动作在事务中创建账号行，再把 `out.Proof` 交给 `Register`，提交之后调用 `CompleteRegister`。第三方账号作为登录标识写入，第三方确认过（`EmailVerified`）的邮箱也一并写入，之后用户也可以用这个邮箱收验证码登录。第三方账号登录时跳过[二次验证](login-security.md#two-factor)这一步，由提供方负责验证身份；账号体系[强制二次验证](login-security.md#requiring-two-factor)时除外。
 
 `ext.Claims` 是 ID token 的全部声明（`Account` 读取的提供方由应用自己填写），例如企业 IdP 的 `groups`，应用可以在每次登录时据此同步角色。提供方在这次登录中做过多因素认证时（各家写在 `amr` 等声明中，写法不同），应用确认后设置 `ext.TwoFactor = true`，这次登录记为 `[提供方, idp_mfa]`，计入二次验证。只对信任其 MFA 的提供方这样做，例如租户自己的企业 IdP。
 

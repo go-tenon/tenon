@@ -176,7 +176,7 @@ func idpMFA(claims map[string]any) bool {
 ```
 
 - **`TrustEmail`**：邮箱在这个租户中已经有账号时（例如公司改用 SSO 之前员工用密码注册过），`External` 直接把 SSO 账号绑定给它并登录。只有在租户验证过这个邮箱的域名时才设置，`Verified` 检查 `ext.Email` 的域名在 `sso_domains` 中属于这个租户并且 `verified_at` 不为空。
-- **自动开通**：`out.Proof` 表示还没有账号。`signUp` 是应用的注册业务动作，在事务中创建成员行并调用 `Register`，与[验证码注册](login.md#codes)相同，返回的也是 `login.Outcome`。
+- **自动开通**：`out.Proof` 表示还没有账号。`signUp` 是应用的注册业务动作，在事务中创建成员行并调用 `Register`，提交之后调用 `CompleteRegister`，与[验证码注册](login.md#codes)相同，返回的也是 `login.Outcome`。
 - **`TwoFactor`**：IdP 做过多因素认证时，这次登录记为 `[sso, idp_mfa]`，计入二次验证；租户要求二次验证时，这次登录已经满足要求。
 
 <a id="syncing-roles"></a>

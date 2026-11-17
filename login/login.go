@@ -64,7 +64,8 @@ type Options struct {
 	// PolicyFor 按 ctx 返回登录策略，用于各租户不同的策略，例如读取租户的设置（settings.Group）。
 	// PerTenant 时 ctx 中带有登录的租户（identity.TenantFromContext）。返回的错误原样交给调用方。为 nil 时使用 Policy。
 	PolicyFor func(ctx context.Context) (Policy, error)
-	// Resolve 在登录成功、签发凭据之前调用一次，通常与入口的 identity.Accounts 中这套账号的 Resolver 相同：
+	// Resolve 在登录成功、签发凭据之前调用一次（注册时在 CompleteRegister 中，事务提交之后），
+	// 通常与入口的 identity.Accounts 中这套账号的 Resolver 相同：
 	// 返回错误（例如账号已停用）时登录失败，返回的 Permissions 等字段带入 Outcome.Subject。
 	// Type、ID、Tenant 始终取自原主体。为 nil 时跳过。
 	Resolve identity.Resolver

@@ -302,7 +302,7 @@ func TestAuthMethods(t *testing.T) {
 	}
 
 	// 注册得到的主体记下验证的标识。
-	if got := methods(e.realm.Register(ctx, e.db, e.proof(t, ctx, login.SignIn, login.Phone("+8613800138000")), ref("c2"))); got != "phone" {
+	if got := methods(e.register(ctx, e.db, e.proof(t, ctx, login.SignIn, login.Phone("+8613800138000")), ref("c2"))); got != "phone" {
 		t.Errorf("register: %q", got)
 	}
 
