@@ -84,35 +84,39 @@ async function mount(api: QueueApi) {
   const root = createRootRouteWithContext<RouterContext>()({
     component: () => <QueuePanel api={api} refreshInterval={60_000} />,
   })
-  await renderApp(root)
-  await screen.findByRole("heading", { name: "任务类型" })
+  const app = await renderApp(root)
+  await screen.findByText("mail.send")
+  return app
+}
+
+/** 切到一个页内标签。 */
+async function openTab(name: string) {
+  await act(async () => fireEvent.click(screen.getByRole("tab", { name: new RegExp(name) })))
 }
 
 const topicRow = (topic: string) =>
-  within(screen.getByRole("heading", { name: "任务类型" }).parentElement as HTMLElement)
+  within(screen.getByRole("tabpanel"))
     .getAllByText(topic)
     .map((e) => e.closest("tr") as HTMLElement)[0]
 
 describe("QueuePanel", () => {
-  it("顶部是关键数字；系统正常时没有提示，系统详情默认收起", async () => {
-    await mount(fakeApi())
-    const stat = (label: string) =>
-      (screen.getByText(label, { selector: ".mantine-Card-root p" }).nextElementSibling as HTMLElement).textContent
-    expect(stat("等待中")).toBe("27")
-    expect(stat("处理中")).toBe("9")
-    expect(stat("失败")).toBe("3")
-    expect(stat("定时投递")).toBe("5")
+  it("分成任务类型、失败任务、系统状态三个页内标签；当前标签记在地址中", async () => {
+    const app = await mount(fakeApi())
+    expect(screen.getByRole("tab", { name: "任务类型" }).getAttribute("aria-selected")).toBe("true")
+    expect(screen.getByRole("tab", { name: /失败任务/ }).textContent).toContain("3")
     expect(screen.queryByRole("alert")).toBeNull()
-    expect(screen.queryByRole("link")).toBeNull()
-    const details = screen.getByRole("button", { name: "系统详情" })
-    expect(details.getAttribute("aria-expanded")).toBe("false")
-    await act(async () => fireEvent.click(details))
-    expect(details.getAttribute("aria-expanded")).toBe("true")
+    expect(screen.queryByText("tenon_queue_abc")).toBeNull() // 没打开过的标签不渲染
+    expect(within(topicRow("sms.send")).getByText("没有处理程序")).toBeTruthy()
+    expect(within(topicRow("sms.send")).getByText(/没有 Worker 处理这类任务/)).toBeTruthy()
+
+    await openTab("系统状态")
+    expect(app.router.state.location.search).toEqual({ tab: "system" })
     expect(screen.getByText("tenon_queue_abc")).toBeTruthy()
     expect(screen.getByText("12.4 KiB")).toBeTruthy()
     expect(screen.getByText("4821")).toBeTruthy()
-    expect(within(topicRow("sms.send")).getByText("没有处理程序")).toBeTruthy()
-    expect(within(topicRow("sms.send")).getByText(/没有 Worker 处理这类任务/)).toBeTruthy()
+
+    await openTab("任务类型")
+    expect(app.router.state.location.search).toEqual({})
   })
 
   it("复制槽不存在时显示醒目的提示", async () => {
@@ -142,7 +146,8 @@ describe("QueuePanel", () => {
   it("失败任务按任务类型筛选；单条重试先确认；按钮写明一次处理的条数", async () => {
     const api = fakeApi()
     await mount(api)
-    await act(async () => fireEvent.click(screen.getByRole("radio", { name: /report\.daily/ })))
+    await openTab("失败任务")
+    await act(async () => fireEvent.click(await screen.findByRole("radio", { name: /report\.daily/ })))
     await waitFor(() =>
       expect(api.failedList).toHaveBeenLastCalledWith({ topic: "report.daily", page: 1, per_page: 20 }),
     )
@@ -166,6 +171,7 @@ describe("QueuePanel", () => {
   it("勾选几条一起删除：先确认，逐条调用接口", async () => {
     const api = fakeApi()
     await mount(api)
+    await openTab("失败任务")
     for (const text of ["smtp: timeout", "pdf: unavailable"]) {
       const row = (await screen.findByText(text)).closest("tr") as HTMLElement
       await act(async () => fireEvent.click(within(row).getByRole("checkbox")))
@@ -182,6 +188,7 @@ describe("QueuePanel", () => {
   it("点击一条失败任务，在对话框中显示完整的错误、元数据和任务内容", async () => {
     const api = fakeApi()
     await mount(api)
+    await openTab("失败任务")
     await act(async () => fireEvent.click(await screen.findByText("pdf: unavailable")))
     const dialog = await screen.findByRole("dialog")
     expect(await within(dialog).findByText(/at send \(mail\.go:42\)/)).toBeTruthy()

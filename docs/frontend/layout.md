@@ -153,6 +153,26 @@ function Orders() {
 
 面包屑在标题上面，来自路由的标题：最后一级是当前页面，前面的是链接。不需要时设置 `breadcrumbs={false}`，例如首页。
 
+<a id="page-tabs"></a>
+内容多的页面用 `tabs` 分成几个页内标签，在标题区下面切换，不要把几块内容上下平铺：
+
+```tsx
+<Page
+  title="队列"
+  tabs={[
+    { value: "topics", label: "任务类型", content: <Topics /> },
+    { value: "failed", label: "失败任务", count: failed, alert: true, content: <FailedJobs /> },
+    { value: "system", label: "系统状态", content: <SystemStatus /> },
+  ]}
+>
+  <Problems /> {/* children 在标签的上面：整个页面都要看到的提示 */}
+</Page>
+```
+
+- 当前的标签记在地址的 `?tab=` 中（第一个标签不写），刷新、分享链接后还在这个标签；切换标签不会打开新的[多标签](#tabs)。路由设置了 `validateSearch` 时要保留 `tab` 参数。
+- 没打开过的标签不渲染，也就不发请求；打开过的保留状态，切回来时筛选、翻页都还在。
+- `count` 显示在标签右边，例如失败的条数，0 时不显示；`alert` 让它是红色。
+
 页面中的其他内容直接使用 Mantine 的组件。表格和表单见[列表与表单](lists-forms.md)。
 
 <a id="tabs"></a>
@@ -319,7 +339,7 @@ function TopLayout() {
 | `UserMenu`、`TenantSwitcher`、`NotificationsMenu`、`OperationsMenu`、`LanguageMenu`、`ColorSchemeToggle` | 顶栏菜单；`UserMenu` 的选项：`name`、`avatar`、`logout`、`items`、`colorScheme` |
 | `Icon`、`useIcon`、`defaultIcons`、`IconsProvider` | 图标名称 |
 | `useMenuBadge(routeId, value)` | 登记菜单项的徽标 |
-| `Page` | 页面的标题区：`title`、`description`、`actions`、`breadcrumbs` |
+| `Page`、`PageTab` | 页面的标题区：`title`、`description`、`actions`、`breadcrumbs`、`crumb`；页内标签 `tabs`（`value`、`label`、`count`、`alert`、`content`） |
 | `TabBar`、`TabsOutlet` | 标签栏；标签中的页面（`max`、`confirm`、`home`） |
 | `useTabs`、`useTab`、`useTabActive`、`useTabTitle`、`useTabShortcuts` | 多标签 |
 | `confirmDiscard(app)` | 有未保存的修改时询问是否放弃，例如退出登录前 |

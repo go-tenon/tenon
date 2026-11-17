@@ -1,12 +1,9 @@
-// 队列面板：queue/queueapi 的运维页面。
-//   - 顶部是几个关键数字（等待中、处理中、失败、定时投递），每 5 秒刷新；复制槽、JetStream 出问题时显示醒目的提示，
-//     平时收在页面底部的“系统详情”中。
-//   - 任务类型：每个 topic 的状态和任务数，可以暂停、恢复。
+// 队列面板：queue/queueapi 的运维页面，分成三个页内标签（地址中的 ?tab=）：
+//   - 任务类型：每个 topic 的状态和任务数，可以暂停、恢复。每 5 秒刷新。
 //   - 失败任务：按任务类型筛选、分页，查看原因（对话框），单条或勾选多条重试、删除，也可以一次处理当前筛选的全部。
-// 数据来自应用生成的客户端分组 api.queue。
-
+//   - 系统状态：复制槽和 JetStream 的底层状态，给开发人员排查问题用。
+// 复制槽、JetStream 出问题时，标签上面显示醒目的提示。数据来自应用生成的客户端分组 api.queue。
 import {
-  Accordion,
   ActionIcon,
   Alert,
   Badge,
@@ -25,7 +22,6 @@ import {
   Stack,
   Table,
   Text,
-  Title,
 } from "@mantine/core"
 import { IconDots, IconPlayerPause, IconPlayerPlay, IconRotateClockwise, IconTrash } from "@tabler/icons-react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -153,25 +149,36 @@ const statusKey = ["tenon", "queue", "status"]
 export function QueuePanel({ api, title = "队列", refreshInterval = 5000 }: QueuePanelProps): ReactNode {
   const status = useQuery({ queryKey: statusKey, queryFn: () => api.status(), refetchInterval: refreshInterval })
   const s = status.data
+  // 状态还没读到时各个标签显示读取中；读取失败时显示原因。
+  const needStatus = (render: (s: QueueStatusData) => ReactNode) =>
+    s ? (
+      render(s)
+    ) : status.isError ? (
+      <Alert color="red" variant="light" title="读取队列状态失败" role="alert">
+        {String((status.error as { detail?: string })?.detail ?? status.error)}
+      </Alert>
+    ) : (
+      <Group justify="center" py="xl">
+        <Loader size="sm" />
+      </Group>
+    )
   return (
-    <Page title={title} description="后台任务的处理情况，每 5 秒刷新。失败的任务可以查看原因、重试或删除。">
-      {status.isError && !s ? (
-        <Alert color="red" variant="light" title="读取队列状态失败" role="alert">
-          {String((status.error as { detail?: string })?.detail ?? status.error)}
-        </Alert>
-      ) : !s ? (
-        <Group justify="center" py="xl">
-          <Loader size="sm" />
-        </Group>
-      ) : (
-        <>
-          <Problems status={s} />
-          <Stats status={s} />
-          <Topics status={s} api={api} />
-        </>
-      )}
-      <FailedJobs api={api} />
-      {s && <SystemDetails status={s} />}
+    <Page
+      title={title}
+      description="后台任务的处理情况，每 5 秒刷新。失败的任务可以查看原因、重试或删除。"
+      tabs={[
+        { value: "topics", label: "任务类型", content: needStatus((s) => <Topics status={s} api={api} />) },
+        {
+          value: "failed",
+          label: "失败任务",
+          count: s?.failed,
+          alert: true,
+          content: <FailedJobs api={api} />,
+        },
+        { value: "system", label: "系统状态", content: needStatus((s) => <SystemStatus status={s} />) },
+      ]}
+    >
+      {s && <Problems status={s} />}
     </Page>
   )
 }
@@ -225,34 +232,8 @@ function Problems({ status }: { status: QueueStatusData }): ReactNode {
   )
 }
 
-/** 关键数字：等待中、处理中、失败、定时投递。 */
-function Stats({ status }: { status: QueueStatusData }): ReactNode {
-  const sum = (k: "pending" | "in_flight") => status.topics.reduce((n, t) => n + t[k], 0)
-  const js = status.jetstream && !status.jetstream.error ? status.jetstream : undefined
-  const stats: { label: string; value: ReactNode; color?: string }[] = [
-    { label: "等待中", value: js ? sum("pending") : "—" },
-    { label: "处理中", value: js ? sum("in_flight") : "—" },
-    { label: "失败", value: status.failed, color: status.failed > 0 ? "red" : undefined },
-    { label: "定时投递", value: js ? js.deferred : "—" },
-  ]
-  return (
-    <SimpleGrid cols={{ base: 2, md: 4 }} spacing="md">
-      {stats.map((s) => (
-        <Card key={s.label}>
-          <Text size="sm" c="dimmed">
-            {s.label}
-          </Text>
-          <Text fz={24} fw={600} c={s.color} mt={4} style={{ fontVariantNumeric: "tabular-nums" }}>
-            {s.value}
-          </Text>
-        </Card>
-      ))}
-    </SimpleGrid>
-  )
-}
-
-/** 系统详情：复制槽和 JetStream 的底层状态，给开发人员排查问题用，默认收起。 */
-function SystemDetails({ status }: { status: QueueStatusData }): ReactNode {
+/** 系统状态：复制槽和 JetStream 的底层状态，给开发人员排查问题用。 */
+function SystemStatus({ status }: { status: QueueStatusData }): ReactNode {
   const { slot, jetstream: js } = status
   const rows: [string, ReactNode][] = [
     ["复制槽", <Code key="slot">{slot.name}</Code>],
@@ -265,34 +246,26 @@ function SystemDetails({ status }: { status: QueueStatusData }): ReactNode {
     rows.push(
       ["任务流", <Code key="stream">{js.stream}</Code>],
       ["消息", `${js.messages}（${formatBytes(js.bytes)}）`],
+      ["定时投递", js.deferred],
       ["副本", js.replicas],
       ["Leader", js.leader ?? "—"],
     )
   else if (!js) rows.push(["任务流", "应用没有设置 queueapi.Options.Admin，只显示数据库一侧的状态"])
   return (
-    <Accordion variant="contained" radius="md">
-      <Accordion.Item value="system">
-        <Accordion.Control>
-          <Text size="sm" fw={500}>
-            系统详情
-          </Text>
-        </Accordion.Control>
-        <Accordion.Panel>
-          <Table fz="sm" verticalSpacing={6} withRowBorders={false}>
-            <Table.Tbody>
-              {rows.map(([k, v]) => (
-                <Table.Tr key={k}>
-                  <Table.Td w={120} c="dimmed">
-                    {k}
-                  </Table.Td>
-                  <Table.Td>{v}</Table.Td>
-                </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
-        </Accordion.Panel>
-      </Accordion.Item>
-    </Accordion>
+    <Card>
+      <Table fz="sm" verticalSpacing={8} withRowBorders={false}>
+        <Table.Tbody>
+          {rows.map(([k, v]) => (
+            <Table.Tr key={k}>
+              <Table.Td w={120} c="dimmed">
+                {k}
+              </Table.Td>
+              <Table.Td>{v}</Table.Td>
+            </Table.Tr>
+          ))}
+        </Table.Tbody>
+      </Table>
+    </Card>
   )
 }
 
@@ -415,12 +388,7 @@ function Topics({ status, api }: { status: QueueStatusData; api: QueueApi }): Re
       },
     })
   }
-  return (
-    <Stack gap="xs">
-      <Title order={4}>任务类型</Title>
-      <DataTable records={status.topics} columns={columns} rowKey="topic" empty="还没有任务" minHeight={120} />
-    </Stack>
-  )
+  return <DataTable records={status.topics} columns={columns} rowKey="topic" empty="还没有任务" minHeight={120} />
 }
 
 // ———————————————————————————— 失败任务 ————————————————————————————
@@ -590,37 +558,39 @@ function FailedJobs({ api }: { api: QueueApi }): ReactNode {
     )
 
   return (
-    <Stack gap="xs">
-      <Group justify="space-between" gap="xs">
-        <Title order={4}>失败任务</Title>
-        <Group gap="xs" wrap="nowrap">
-          <Button
-            variant="default"
-            leftSection={<IconRotateClockwise size={16} />}
-            disabled={count === 0}
-            onClick={() => void everything("retry")}
-          >
-            {topic ? `重试这 ${count} 个` : `重试全部 ${count} 个`}
-          </Button>
-          <Menu position="bottom-end" width={180}>
-            <Menu.Target>
-              <ActionIcon variant="default" size={32} aria-label="更多批量操作" disabled={count === 0}>
-                <IconDots size={16} stroke={1.6} />
-              </ActionIcon>
-            </Menu.Target>
-            <Menu.Dropdown>
-              <Menu.Item
-                color="red"
-                leftSection={<IconTrash size={14} stroke={1.6} />}
-                onClick={() => void everything("delete")}
-              >
-                {topic ? `删除这 ${count} 个` : `删除全部 ${count} 个`}
-              </Menu.Item>
-            </Menu.Dropdown>
-          </Menu>
-        </Group>
-      </Group>
+    <>
       <DataTable
+        toolbar={
+          <Group justify="space-between" gap="xs">
+            {filter}
+            <Group gap="xs" wrap="nowrap">
+              <Button
+                variant="default"
+                leftSection={<IconRotateClockwise size={16} />}
+                disabled={count === 0}
+                onClick={() => void everything("retry")}
+              >
+                {topic ? `重试这 ${count} 个` : `重试全部 ${count} 个`}
+              </Button>
+              <Menu position="bottom-end" width={180}>
+                <Menu.Target>
+                  <ActionIcon variant="default" size={32} aria-label="更多批量操作" disabled={count === 0}>
+                    <IconDots size={16} stroke={1.6} />
+                  </ActionIcon>
+                </Menu.Target>
+                <Menu.Dropdown>
+                  <Menu.Item
+                    color="red"
+                    leftSection={<IconTrash size={14} stroke={1.6} />}
+                    onClick={() => void everything("delete")}
+                  >
+                    {topic ? `删除这 ${count} 个` : `删除全部 ${count} 个`}
+                  </Menu.Item>
+                </Menu.Dropdown>
+              </Menu>
+            </Group>
+          </Group>
+        }
         records={data?.items ?? []}
         total={data?.total}
         loading={list.isPending}
@@ -649,10 +619,9 @@ function FailedJobs({ api }: { api: QueueApi }): ReactNode {
         )}
         empty={topic ? "这类任务没有失败的" : "没有失败的任务"}
         onRowClick={(j) => setOpen(j.id)}
-        toolbar={filter}
       />
       <FailedJobDetail api={api} id={open} onClose={() => setOpen(undefined)} onAction={(a, id) => single(a, id)} />
-    </Stack>
+    </>
   )
 }
 
