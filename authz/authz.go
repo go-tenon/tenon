@@ -407,11 +407,11 @@ func (s *Store) Assign(ctx context.Context, ref identity.Ref, tenant, roleID str
 	return nil
 }
 
-// Unassign 撤销主体 ref 在 tenant 中的角色；没有分配时直接返回。
+// Unassign 撤销主体 ref 在 tenant 中的角色；没有分配时直接返回，roleID 不是合法的角色 ID 时返回 ErrRoleNotFound。
 func (s *Store) Unassign(ctx context.Context, ref identity.Ref, tenant, roleID string) error {
 	rid, err := uuid.Parse(roleID)
 	if err != nil {
-		return nil
+		return ErrRoleNotFound.New()
 	}
 	_, err = s.db.NewDelete().Model((*assignmentRow)(nil)).
 		Where("subject_type = ? AND subject_id = ?", ref.Type, ref.ID).Where("tenant = ?", tenant).Where("role_id = ?", rid).Exec(ctx)

@@ -84,6 +84,7 @@ func (c *Client) Call(ctx context.Context, action string, params url.Values) (*R
 		return nil, errors.Wrapf(err, "%s: read response", action)
 	}
 	r := &Response{Status: resp.StatusCode, Body: data}
+	// 响应体不是 JSON 时（例如网关返回的错误页）通用字段留空，Error 输出原始响应体。
 	_ = json.Unmarshal(data, r)
 	return r, nil
 }

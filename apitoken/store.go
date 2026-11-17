@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
-	"encoding/base64"
 	"encoding/hex"
 	"slices"
 	"strings"
@@ -253,7 +252,7 @@ func (s *Store) issue(ctx context.Context, sub identity.Subject, r *row, now tim
 	if err != nil {
 		return "", errors.Wrap(err, "apitoken: new id")
 	}
-	plain := secret()
+	plain := rand.Text()
 	r.ID, r.TokenHash = id, hash(plain)
 	r.SubjectType, r.SubjectID = string(sub.Type), sub.ID
 	r.ImpersonatorType, r.ImpersonatorID = string(sub.Impersonator.Type), sub.Impersonator.ID
@@ -545,13 +544,6 @@ func (r *row) impersonator() identity.Ref {
 // live 把查询限定在未过期的 token。
 func (s *Store) live(q *bun.SelectQuery, now time.Time) *bun.SelectQuery {
 	return q.Where("(expires_at IS NULL OR expires_at > ?)", now)
-}
-
-// secret 生成 token 明文：32 字节随机数的 URL 安全 base64。
-func secret() string {
-	b := make([]byte, 32)
-	rand.Read(b)
-	return base64.RawURLEncoding.EncodeToString(b)
 }
 
 func hash(token string) string {

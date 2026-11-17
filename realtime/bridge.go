@@ -3,6 +3,7 @@ package realtime
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -37,10 +38,11 @@ type envelope struct {
 // 频道就是 Hub 的主题，应用通过 Hub 发布的消息直接交给订阅了同名频道的客户端。
 // 每个实例本来就收到全部主题，所以按频道订阅和退订直接返回。只投递实时消息。
 type bridge struct {
-	hub  *broadcast.Hub
-	node *centrifuge.Node
-	pubs centrifuge.BrokerEventHandler
-	ctl  centrifuge.ControlEventHandler
+	hub    *broadcast.Hub
+	node   *centrifuge.Node
+	pubs   centrifuge.BrokerEventHandler
+	ctl    centrifuge.ControlEventHandler
+	logger *slog.Logger // 记录转发失败的消息
 
 	members *membership
 
@@ -51,10 +53,6 @@ type bridge struct {
 	wake  chan struct{}
 	done  chan struct{}
 	once  sync.Once
-}
-
-func newBridge(hub *broadcast.Hub, node *centrifuge.Node) *bridge {
-	return &bridge{hub: hub, node: node, wake: make(chan struct{}, 1), done: make(chan struct{})}
 }
 
 // later 把 task 排到 run 中执行，不阻塞。
@@ -153,24 +151,35 @@ func (b *bridge) deliver(msg broadcast.Message) {
 		if b.node.Hub().NumSubscribers(msg.Topic) == 0 || !json.Valid(msg.Data) {
 			return
 		}
-		_ = b.pubs.HandlePublication(msg.Topic, &centrifuge.Publication{Data: msg.Data}, centrifuge.StreamPosition{}, false, nil)
+		if err := b.pubs.HandlePublication(msg.Topic, &centrifuge.Publication{Data: msg.Data}, centrifuge.StreamPosition{}, false, nil); err != nil {
+			b.logger.Error("deliver publication", "channel", msg.Topic, "error", err)
+		}
 		return
 	}
 	var e envelope
-	if json.Unmarshal(msg.Data, &e) != nil {
+	if err := json.Unmarshal(msg.Data, &e); err != nil {
+		b.logger.Error("decode internal message", "error", err)
 		return
 	}
+	var err error
 	switch e.Kind {
 	case kindControl:
 		if e.Node == "" || e.Node == b.node.ID() {
-			b.later(func() { _ = b.ctl.HandleControl(e.Data) })
+			b.later(func() {
+				if err := b.ctl.HandleControl(e.Data); err != nil {
+					b.logger.Error("handle control message", "error", err)
+				}
+			})
 		}
 	case kindPublish:
-		_ = b.pubs.HandlePublication(e.Channel, &centrifuge.Publication{Data: e.Data, Info: e.Info}, centrifuge.StreamPosition{}, false, nil)
+		err = b.pubs.HandlePublication(e.Channel, &centrifuge.Publication{Data: e.Data, Info: e.Info}, centrifuge.StreamPosition{}, false, nil)
 	case kindJoin:
-		_ = b.pubs.HandleJoin(e.Channel, e.Info)
+		err = b.pubs.HandleJoin(e.Channel, e.Info)
 	case kindLeave:
-		_ = b.pubs.HandleLeave(e.Channel, e.Info)
+		err = b.pubs.HandleLeave(e.Channel, e.Info)
+	}
+	if err != nil {
+		b.logger.Error("deliver internal message", "kind", e.Kind, "channel", e.Channel, "error", err)
 	}
 }
 

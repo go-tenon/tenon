@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"database/sql"
-	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -67,7 +66,7 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) {
 	}
 	now := time.Now().UTC()
 	c := &registeredClient{
-		ID: registeredPrefix + randomID(), Name: strings.TrimSpace(req.ClientName), RedirectURIs: req.RedirectURIs,
+		ID: registeredPrefix + rand.Text(), Name: strings.TrimSpace(req.ClientName), RedirectURIs: req.RedirectURIs,
 		CreatedAt: now, LastUsedAt: now,
 	}
 	if c.Name == "" {
@@ -151,11 +150,4 @@ func (s *Server) CleanupClients(keep time.Duration) func(ctx context.Context, li
 
 func writeRegistrationError(w http.ResponseWriter, code, description string) {
 	writeTokenError(w, http.StatusBadRequest, code, description)
-}
-
-// randomID 生成 22 个字符的随机标识。
-func randomID() string {
-	b := make([]byte, 16)
-	rand.Read(b)
-	return base64.RawURLEncoding.EncodeToString(b)
 }
