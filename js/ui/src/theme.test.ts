@@ -35,6 +35,13 @@ describe("createUiTheme", () => {
     expect([admin.controlSize, console.controlSize, site.controlSize]).toEqual(["sm", "sm", "md"])
   })
 
+  it("日期时间的格式随预设：运营后台是 MM/DD HH:mm，可以覆盖", () => {
+    expect(layoutMetrics(themes.admin).datetimeFormat).toBe("MM/DD HH:mm")
+    expect(layoutMetrics(themes.console).datetimeFormat).toBe("YYYY-MM-DD HH:mm")
+    const t = createUiTheme({ preset: "admin", datetimeFormat: "YYYY/MM/DD HH:mm" })
+    expect(layoutMetrics(t)).toMatchObject({ preset: "admin", datetimeFormat: "YYYY/MM/DD HH:mm", headerHeight: 52 })
+  })
+
   it("运营后台默认用深蓝灰的主色，项目的品牌色覆盖它", () => {
     expect(themes.admin.colors?.brand?.[6]).toBe("#34507f")
     expect(createUiTheme({ preset: "admin", primary: "#0f766e" }).colors?.brand?.[6]).toBe("#0f766e")

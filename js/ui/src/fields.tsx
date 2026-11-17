@@ -14,11 +14,13 @@ import {
   TagsInput,
   Text,
   TextInput,
+  useMantineTheme,
 } from "@mantine/core"
 import { DateInput, DateTimePicker } from "@mantine/dates"
 import dayjs from "dayjs"
-import { type ReactNode, useEffect, useState } from "react"
+import { type ReactNode, useCallback, useEffect, useState } from "react"
 import type { ResourceField } from "./shell"
+import { layoutMetrics } from "./theme"
 
 /** 字段输入组件的属性：value、onChange、error 来自表单（@mantine/form 的 getInputProps）。 */
 export interface FieldInputProps {
@@ -176,6 +178,24 @@ function JsonField({
 }
 
 /** 按字段的类型显示一个值：枚举显示文字，布尔显示是否，时间按本地格式，标签逐个显示，空值显示破折号。 */
+/**
+ * 按主题的 datetimeFormat（运营后台是 MM/DD HH:mm）显示日期时间。后端返回的是带时区的 ISO 时间，显示为浏览器所在时区的时间；
+ * 解析不了时原样返回。
+ *
+ *   const formatDateTime = useFormatDateTime()
+ *   formatDateTime(order.created_at) // 11/03 10:12
+ */
+export function useFormatDateTime(): (value: string | Date) => string {
+  const format = layoutMetrics(useMantineTheme()).datetimeFormat ?? "YYYY-MM-DD HH:mm"
+  return useCallback(
+    (value: string | Date) => {
+      const d = dayjs(value)
+      return d.isValid() ? d.format(format) : String(value)
+    },
+    [format],
+  )
+}
+
 export function FieldValue({
   field,
   value,
@@ -186,6 +206,7 @@ export function FieldValue({
   /** 枚举的显示文字，通常是 model.display。 */
   display?: (field: ResourceField, value: unknown) => unknown
 }): ReactNode {
+  const formatDateTime = useFormatDateTime()
   if (value === undefined || value === null || value === "" || (Array.isArray(value) && value.length === 0))
     return (
       <Text span c="dimmed">
@@ -222,9 +243,7 @@ export function FieldValue({
       )
     }
     case "datetime":
-      return (
-        <span style={{ fontVariantNumeric: "tabular-nums" }}>{dayjs(String(value)).format("YYYY-MM-DD HH:mm")}</span>
-      )
+      return <span style={{ fontVariantNumeric: "tabular-nums" }}>{formatDateTime(String(value))}</span>
     case "date":
       return <span style={{ fontVariantNumeric: "tabular-nums" }}>{dayjs(String(value)).format("YYYY-MM-DD")}</span>
     case "number":

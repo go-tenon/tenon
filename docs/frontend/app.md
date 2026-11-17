@@ -171,6 +171,12 @@ export const theme = createUiTheme({ preset: "admin", primary: "#34507f" })
 - `radius` 是基础圆角（像素），其他圆角按比例缩放。
 - `override` 是再合并的 Mantine 主题覆盖，用于令牌之外的调整，例如某个组件的默认属性。
 - `landing` 是落地页的风格（`classic`、`dusk`、`ink`、`mist`），只对 `site` 预设有意义，见[落地页](site.md#landing)。
+- `datetimeFormat` 是日期时间的显示格式（[dayjs 的写法](https://day.js.org/docs/en/display/format)），默认随预设：`admin` 是 `MM/DD HH:mm`（例如 11/03 10:12），其他是 `YYYY-MM-DD HH:mm`。后端返回带时区的 ISO 时间，显示为浏览器所在时区的时间。表格中的日期时间字段、操作记录、通知都用它；自己写的页面用 `useFormatDateTime()`：
+
+```tsx
+const formatDateTime = useFormatDateTime()
+formatDateTime(order.created_at) // 11/03 10:12
+```
 
 <a id="route-metadata"></a>
 ## 页面的元数据
@@ -351,7 +357,8 @@ bun run playground
 | `AppRoot` | 不用 TanStack Start 时渲染应用（RouterProvider）；用 Start 时由它渲染 `getRouter` 返回的 Router |
 | `UIProvider` | 安装主题、通知、对话框和图标：`theme`、`defaultColorScheme`、`icons`、`env` |
 | `themes`、`Preset` | 三套样式预设：`admin`、`console`、`site` |
-| `createUiTheme(options)` | 由预设和设计令牌生成主题：`preset`、`primary`、`radius`、`fontFamily`、`landing`、`override` |
+| `createUiTheme(options)` | 由预设和设计令牌生成主题：`preset`、`primary`、`radius`、`fontFamily`、`landing`、`datetimeFormat`、`override` |
+| `useFormatDateTime()` | 按主题的 `datetimeFormat` 显示日期时间 |
 | `palette(hex)` | 由一个颜色生成 10 级色板 |
 | `layoutMetrics(theme)`、`LayoutMetrics` | 主题中的布局尺寸 |
 | `requireAuth` | 布局路由的 `beforeLoad`：没有登录时跳到登录页 |

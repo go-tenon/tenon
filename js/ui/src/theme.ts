@@ -118,6 +118,8 @@ export interface LayoutMetrics {
   contentPadding: "sm" | "md" | "lg" | "xl"
   /** 表单控件、按钮的默认尺寸。 */
   controlSize: "xs" | "sm" | "md"
+  /** 日期时间的显示格式（dayjs 的写法），例如 MM/DD HH:mm。表格、操作记录、通知中的时间都用它。 */
+  datetimeFormat: string
 }
 
 // 系统字体：中文优先用系统自带的苹方、思源黑体、微软雅黑，不额外加载字体。
@@ -237,6 +239,7 @@ const admin: MantineThemeOverride = mergeThemeOverrides(
     navbarCollapsedWidth: 56,
     contentPadding: "md",
     controlSize: "sm",
+    datetimeFormat: "MM/DD HH:mm",
   }),
   createTheme({
     colors: { brand: palette(adminBrand), dark: adminDark },
@@ -284,6 +287,7 @@ const consolePreset: MantineThemeOverride = mergeThemeOverrides(
     navbarCollapsedWidth: 64,
     contentPadding: "lg",
     controlSize: "sm",
+    datetimeFormat: "YYYY-MM-DD HH:mm",
   }),
   createTheme({
     defaultRadius: "md",
@@ -312,6 +316,7 @@ const site: MantineThemeOverride = mergeThemeOverrides(
     navbarCollapsedWidth: 64,
     contentPadding: "xl",
     controlSize: "md",
+    datetimeFormat: "YYYY-MM-DD HH:mm",
   }),
   createTheme({
     fontFamily: siteFontFamily,
@@ -347,6 +352,8 @@ export interface UiThemeOptions {
   fontFamily?: string
   /** 落地页的风格，只对 site 预设有意义，默认 classic。 */
   landing?: Landing
+  /** 日期时间的显示格式（dayjs 的写法），默认随预设：admin 是 MM/DD HH:mm，其他是 YYYY-MM-DD HH:mm。 */
+  datetimeFormat?: string
   /** 再合并的 Mantine 主题覆盖，用于令牌之外的调整。 */
   override?: MantineThemeOverride
 }
@@ -354,14 +361,22 @@ export interface UiThemeOptions {
 /** 由预设和设计令牌生成 Mantine 主题，交给 UIProvider。 */
 export function createUiTheme(options: UiThemeOptions = {}): MantineThemeOverride {
   const parts: MantineThemeOverride[] = [themes[options.preset ?? "console"]]
-  if (options.landing) {
-    if (!landings.includes(options.landing)) {
-      throw new Error(
-        `@go-tenon/ui: unknown landing ${JSON.stringify(options.landing)}, expected one of ${landings.join(", ")}`,
-      )
-    }
+  if (options.landing && !landings.includes(options.landing)) {
+    throw new Error(
+      `@go-tenon/ui: unknown landing ${JSON.stringify(options.landing)}, expected one of ${landings.join(", ")}`,
+    )
+  }
+  if (options.landing || options.datetimeFormat) {
     const m = layoutMetrics(parts[0] as { other?: Record<string, unknown> })
-    parts.push({ other: { tenon: { ...m, landing: options.landing } } })
+    parts.push({
+      other: {
+        tenon: {
+          ...m,
+          ...(options.landing && { landing: options.landing }),
+          ...(options.datetimeFormat && { datetimeFormat: options.datetimeFormat }),
+        },
+      },
+    })
   }
   if (options.primary) parts.push({ colors: { brand: palette(options.primary) } })
   if (options.radius !== undefined) {

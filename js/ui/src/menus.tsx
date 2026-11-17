@@ -37,6 +37,7 @@ import {
 } from "@tabler/icons-react"
 import { useNavigate } from "@tanstack/react-router"
 import { type ReactNode, useState } from "react"
+import { useFormatDateTime } from "./fields"
 import { useTabsAvailable } from "./layout-context"
 import {
   confirmDiscard,
@@ -256,12 +257,7 @@ export function NotificationsMenu({ source }: { source: NotificationsSource }): 
   const n = useNotifications(source)
   const navigate = useNavigate()
   const [opened, setOpened] = useState(false)
-  const time = new Intl.DateTimeFormat("zh-CN", {
-    month: "numeric",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  })
+  const formatDateTime = useFormatDateTime()
   return (
     <Popover width={360} position="bottom-end" opened={opened} onChange={setOpened}>
       <Popover.Target>
@@ -325,7 +321,7 @@ export function NotificationsMenu({ source }: { source: NotificationsSource }): 
                         </Text>
                       )}
                       <Text size="xs" c="dimmed" mt={2}>
-                        {time.format(new Date(item.created_at))}
+                        {formatDateTime(item.created_at)}
                       </Text>
                     </div>
                   </Group>

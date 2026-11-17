@@ -34,6 +34,7 @@ import {
   UIProvider,
   UserMenu,
   useApp,
+  useFormatDateTime,
 } from "@go-tenon/ui"
 import {
   Badge,
@@ -100,7 +101,8 @@ const orders = Array.from({ length: 14 }, (_, i) => ({
   customer: ["华东分公司", "北辰贸易", "青木设计", "远山物流", "星河零售", "海岸咨询"][i % 6],
   status: Object.keys(statuses)[i % 5],
   amount: 1280 + ((i * 3779) % 24000),
-  created: `11-${String(17 - (i % 9)).padStart(2, "0")} ${String(9 + (i % 8)).padStart(2, "0")}:${String((i * 7) % 60).padStart(2, "0")}`,
+  // 和后端一样是带时区的 ISO 时间，显示时按主题的格式。
+  created: `2026-11-${String(17 - (i % 9)).padStart(2, "0")}T${String(1 + (i % 8)).padStart(2, "0")}:${String((i * 7) % 60).padStart(2, "0")}:00Z`,
 }))
 const money = (n: number) => `¥${n.toFixed(2)}`
 
@@ -155,6 +157,7 @@ function Stat({ label, value, delta }: { label: string; value: string; delta: st
 }
 
 function OrdersTable({ rows }: { rows: typeof orders }): ReactNode {
+  const formatDateTime = useFormatDateTime()
   return (
     <Paper style={{ overflow: "hidden" }}>
       <Table highlightOnHover verticalSpacing={8} horizontalSpacing="md" striped={false}>
@@ -176,7 +179,7 @@ function OrdersTable({ rows }: { rows: typeof orders }): ReactNode {
                 <Badge color={statuses[o.status]}>{o.status}</Badge>
               </Table.Td>
               <Table.Td style={{ fontVariantNumeric: "tabular-nums" }}>{money(o.amount)}</Table.Td>
-              <Table.Td c="dimmed">{o.created}</Table.Td>
+              <Table.Td c="dimmed">{formatDateTime(o.created)}</Table.Td>
             </Table.Tr>
           ))}
         </Table.Tbody>
