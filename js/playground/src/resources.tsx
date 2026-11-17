@@ -313,7 +313,6 @@ export const queueApi = (() => {
           paused_until: paused.has(topic) ? new Date(Date.now() + 40 * 60_000).toISOString() : undefined,
         })),
         failed: failed.length,
-        links: [{ name: "Grafana", url: "https://grafana.example.com" }],
       }),
     failedList: async (input: { topic?: string; page?: number; per_page?: number } = {}) => {
       const rows = input.topic ? failed.filter((j) => j.topic === input.topic) : failed

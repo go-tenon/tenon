@@ -80,7 +80,6 @@ func setupWith(t *testing.T, admin *queue.Admin) *env {
 		return identity.Subject{}, nil
 	}
 	queueapi.Register(api, rest.RequireToken(api, validate, "queue:manage"), e.db, queueapi.Options{
-		Links:  map[string]string{"Grafana": "https://grafana.example.com/d/queue", "NATS": ""},
 		Logger: slog.New(slog.NewJSONHandler(e.logs, nil)),
 		Admin:  admin,
 	})
@@ -161,9 +160,6 @@ func TestStatus(t *testing.T) {
 	if len(st.Topics) != 2 || st.Topics[0].Topic != "mail" || st.Topics[0].Failed != 2 || st.Topics[0].State != queueapi.StateAbsent ||
 		st.Topics[1].Topic != "report" || st.Topics[1].Failed != 1 {
 		t.Fatalf("topics: %+v", st.Topics)
-	}
-	if len(st.Links) != 1 || st.Links[0] != (queueapi.QueueLink{Name: "Grafana", URL: "https://grafana.example.com/d/queue"}) {
-		t.Fatalf("links: %+v", st.Links)
 	}
 	// 没有设置 Admin 时暂停和恢复仍然注册（生成的客户端与运行时一致），调用时返回 queue.no_admin。
 	for _, path := range []string{"/queue/topics/mail/pause", "/queue/topics/mail/resume"} {

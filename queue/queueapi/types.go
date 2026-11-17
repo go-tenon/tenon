@@ -17,7 +17,6 @@ type QueueStatus struct {
 	JetStream *QueueJetStream `json:"jetstream,omitempty" doc:"JetStream 一侧的状态；应用没有设置 Options.Admin 时没有这个字段，暂停和恢复返回 queue.no_admin"`
 	Topics    []QueueTopic    `json:"topics" nullable:"false" doc:"JetStream 中的 topic 和有失败任务的 topic，按名字排序"`
 	Failed    int             `json:"failed" doc:"全部 topic 的失败任务数"`
-	Links     []QueueLink     `json:"links" nullable:"false" doc:"外部链接（Options.Links），例如 Grafana，按名称排序"`
 }
 
 // QueueSlot 是复制槽的状态，见 queue.Status。
@@ -67,12 +66,6 @@ type QueueTopic struct {
 	Failed        int        `json:"failed" doc:"失败任务数"`
 	LastDelivered *time.Time `json:"last_delivered,omitempty" doc:"最近一次把任务交给 Worker 的时间，没有交过时没有这个字段"`
 	PausedUntil   *time.Time `json:"paused_until,omitempty" doc:"暂停处理的截止时间，没有暂停时没有这个字段"`
-}
-
-// QueueLink 是一个外部链接。
-type QueueLink struct {
-	Name string `json:"name" doc:"显示的名称，例如 Grafana"`
-	URL  string `json:"url"`
 }
 
 // QueueTopicCount 是一个 topic 中失败任务的条数。

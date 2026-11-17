@@ -1,15 +1,12 @@
 // Package queueapi 是队列运维的 JSON 接口：复制槽和 JetStream 的状态，各 topic 等待处理、处理中和失败的任务，
-// 重试和删除失败任务，暂停和恢复 topic 的处理。它只读写 queue 已有的数据，不新增存储：吞吐、耗时这类指标看
-// OpenTelemetry（Grafana），接口只把它们的链接（Options.Links）交给前端。面板页面由前端用这些接口实现。
+// 重试和删除失败任务，暂停和恢复 topic 的处理。它只读写 queue 已有的数据，不新增存储；吞吐、耗时这类指标看
+// OpenTelemetry。面板页面由前端用这些接口实现。
 //
 // 接口注册在应用的 rest.API 上，路径以 /queue 开头，operationId 以 queue- 开头，生成的客户端中是 api.queue.xxx。
 // protect 保护全部接口，通常要求一项运维权限：
 //
 //	admin := queue.NewAdmin(nc, cfg.Queue) // nc 是应用的 NATS 连接，见 natsx.Connect
-//	queueapi.Register(api, rest.RequireToken(api, tokens.Validate, "queue:manage"), db, queueapi.Options{
-//		Admin: admin,
-//		Links: map[string]string{"Grafana": cfg.GrafanaURL},
-//	})
+//	queueapi.Register(api, rest.RequireToken(api, tokens.Validate, "queue:manage"), db, queueapi.Options{Admin: admin})
 //
 // 重试、删除、暂停和恢复各记一条 Info 日志，带上操作者（identity.Subject 的 Ref）、topic 和条数。
 package queueapi
@@ -62,8 +59,6 @@ type Options struct {
 	// Admin 读取 JetStream 中的状态：设置后概览带上 stream、定时消息和各 topic 等待处理、处理中的任务，
 	// 并注册暂停和恢复 topic 的接口。为 nil 时只有数据库一侧的状态。NATS 不可用时概览照常返回数据库一侧的状态。
 	Admin *queue.Admin
-	// Links 是外部链接，键是显示的名称，例如 Grafana、NATS；地址为空的项不返回。概览按名称排序返回它们。
-	Links map[string]string
 	// Logger 记录重试、删除、暂停和恢复，以及读不到 JetStream 的警告；nil 表示 slog.Default()。
 	Logger *slog.Logger
 }
@@ -71,7 +66,6 @@ type Options struct {
 type handlers struct {
 	db     *bun.DB
 	admin  *queue.Admin
-	links  []QueueLink
 	logger *slog.Logger
 }
 
@@ -100,12 +94,6 @@ func Register(api *rest.API, protect func(*huma.Operation), db *bun.DB, opts Opt
 		db: db, admin: opts.Admin,
 		logger: logging.Or(opts.Logger).With(logging.AttrComponent, "queueapi"),
 	}
-	for name, url := range opts.Links {
-		if url != "" {
-			h.links = append(h.links, QueueLink{Name: name, URL: url})
-		}
-	}
-	slices.SortFunc(h.links, func(a, b QueueLink) int { return strings.Compare(a.Name, b.Name) })
 
 	op := func(id, method, path, summary string) huma.Operation {
 		o := huma.Operation{OperationID: id, Method: method, Path: path, Summary: summary, Tags: []string{"queue"}}
@@ -138,8 +126,7 @@ func (h *handlers) status(ctx context.Context, _ *struct{}) (*statusOutput, erro
 		return nil, err
 	}
 	out := QueueStatus{
-		Slot:  QueueSlot{Name: st.Slot, Exists: st.Exists, Active: st.Active, ActivePID: st.ActivePID, WALStatus: st.WALStatus, Lag: st.Lag},
-		Links: append([]QueueLink{}, h.links...),
+		Slot: QueueSlot{Name: st.Slot, Exists: st.Exists, Active: st.Active, ActivePID: st.ActivePID, WALStatus: st.WALStatus, Lag: st.Lag},
 	}
 	var stream queue.StreamStatus
 	if h.admin != nil {

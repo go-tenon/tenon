@@ -151,19 +151,16 @@ ID                                    TOPIC      ATTEMPTS  FAILED AT            
 <a id="queue-api"></a>
 ## 运维接口
 
-`queue/queueapi` 把同样的内容做成 JSON 接口，注册在应用的 [REST API](../http/README.md) 上，供运维页面调用。它只读写队列已有的数据，不新增任何表：吞吐、耗时等指标交给 Grafana（见[可观测性](../general/telemetry.md#queue)），接口只把它的链接交给前端；重建复制槽只能用 `queue slot recreate`。
+`queue/queueapi` 把同样的内容做成 JSON 接口，注册在应用的 [REST API](../http/README.md) 上，供运维页面调用。它只读写队列已有的数据，不新增任何表；吞吐、耗时等指标看[可观测性](../general/telemetry.md#queue)，重建复制槽只能用 `queue slot recreate`。
 
 ```go
 // a.nc 是应用的 NATS 连接，Admin 不关闭它
 admin := queue.NewAdmin(a.nc, a.cfg.Queue)
 
-queueapi.Register(api, rest.RequireToken(api, a.tokens.Validate, "queue:manage"), a.db, queueapi.Options{
-    Admin: admin,
-    Links: map[string]string{"Grafana": a.cfg.GrafanaURL},
-})
+queueapi.Register(api, rest.RequireToken(api, a.tokens.Validate, "queue:manage"), a.db, queueapi.Options{Admin: admin})
 ```
 
-第二个参数保护全部接口，通常像上面这样要求一项运维权限，见[在路由上声明权限](../security/authorization.md#route-permissions)；权限名由应用决定，记得写进[权限目录](../security/authorization.md#permission-catalog)。不设置 `Admin` 时，概览只返回数据库一侧的状态，暂停和恢复返回 `503 queue.no_admin`；`Links` 中地址为空的项不返回。
+第二个参数保护全部接口，通常像上面这样要求一项运维权限，见[在路由上声明权限](../security/authorization.md#route-permissions)；权限名由应用决定，记得写进[权限目录](../security/authorization.md#permission-catalog)。不设置 `Admin` 时，概览只返回数据库一侧的状态，暂停和恢复返回 `503 queue.no_admin`。
 
 暂停和恢复的接口总是注册：生成文档和客户端的路由（例如入门教程中的 `DocRouter`）通常不连接 NATS，没有 `Admin`，接口却要和运行时一致，否则生成的客户端中缺少这两个方法，[`QueuePanel`](../frontend/features.md#queue-panel) 就不显示暂停和恢复。所以生成时 `Admin` 可以为 nil，运行时设置它：
 

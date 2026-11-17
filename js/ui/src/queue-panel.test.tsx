@@ -9,7 +9,7 @@ import { renderApp } from "./testing"
 
 afterEach(cleanup)
 
-function fakeApi(options: { admin?: boolean } = {}) {
+function fakeApi(options: { admin?: boolean; slotExists?: boolean } = {}) {
   let failed: QueueFailedJobData[] = [
     {
       id: "j1",
@@ -31,7 +31,7 @@ function fakeApi(options: { admin?: boolean } = {}) {
     status: vi.fn(async () => ({
       slot: {
         name: "tenon_queue_abc",
-        exists: true,
+        exists: options.slotExists ?? true,
         active: true,
         active_pid: 4821,
         wal_status: "reserved",
@@ -49,7 +49,6 @@ function fakeApi(options: { admin?: boolean } = {}) {
         paused_until: paused.has(topic) ? "2026-11-17T10:30:00Z" : undefined,
       })),
       failed: failed.length,
-      links: [{ name: "Grafana", url: "https://grafana.example.com/d/queue" }],
     })),
     failedList: vi.fn(async (input = {}) => {
       const rows = input.topic ? failed.filter((j) => j.topic === input.topic) : failed
@@ -86,25 +85,41 @@ async function mount(api: QueueApi) {
     component: () => <QueuePanel api={api} refreshInterval={60_000} />,
   })
   await renderApp(root)
-  await screen.findByText("tenon_queue_abc")
+  await screen.findByRole("heading", { name: "任务类型" })
 }
 
 const topicRow = (topic: string) =>
-  within(screen.getByRole("heading", { name: "Topic" }).parentElement as HTMLElement)
+  within(screen.getByRole("heading", { name: "任务类型" }).parentElement as HTMLElement)
     .getAllByText(topic)
     .map((e) => e.closest("tr") as HTMLElement)[0]
 
 describe("QueuePanel", () => {
-  it("概览：复制槽、JetStream、失败任务数和外部链接", async () => {
+  it("顶部是关键数字；系统正常时没有提示，系统详情默认收起", async () => {
     await mount(fakeApi())
-    expect(screen.getByText("转发中")).toBeTruthy()
+    const stat = (label: string) =>
+      (screen.getByText(label, { selector: ".mantine-Card-root p" }).nextElementSibling as HTMLElement).textContent
+    expect(stat("等待中")).toBe("27")
+    expect(stat("处理中")).toBe("9")
+    expect(stat("失败")).toBe("3")
+    expect(stat("定时投递")).toBe("5")
+    expect(screen.queryByRole("alert")).toBeNull()
+    expect(screen.queryByRole("link")).toBeNull()
+    const details = screen.getByRole("button", { name: "系统详情" })
+    expect(details.getAttribute("aria-expanded")).toBe("false")
+    await act(async () => fireEvent.click(details))
+    expect(details.getAttribute("aria-expanded")).toBe("true")
+    expect(screen.getByText("tenon_queue_abc")).toBeTruthy()
     expect(screen.getByText("12.4 KiB")).toBeTruthy()
     expect(screen.getByText("4821")).toBeTruthy()
-    expect(screen.getByText("定时投递")).toBeTruthy()
-    expect(screen.getByRole("link", { name: /Grafana/ }).getAttribute("href")).toBe(
-      "https://grafana.example.com/d/queue",
-    )
-    expect(within(topicRow("sms.send")).getByText("没有处理函数")).toBeTruthy()
+    expect(within(topicRow("sms.send")).getByText("没有处理程序")).toBeTruthy()
+    expect(within(topicRow("sms.send")).getByText(/没有 Worker 处理这类任务/)).toBeTruthy()
+  })
+
+  it("复制槽不存在时显示醒目的提示", async () => {
+    await mount(fakeApi({ slotExists: false }))
+    const alert = await screen.findByRole("alert")
+    expect(within(alert).getByText("任务转发已停止")).toBeTruthy()
+    expect(alert.textContent).toContain("queue slot recreate")
   })
 
   it("按状态显示暂停和恢复；暂停先确认", async () => {
@@ -124,38 +139,55 @@ describe("QueuePanel", () => {
     expect(within(topicRow("mail.send")).queryByRole("button", { name: "暂停" })).toBeNull()
   })
 
-  it("失败任务按 topic 筛选；单条重试先确认；全部重试提示条数", async () => {
+  it("失败任务按任务类型筛选；单条重试先确认；按钮写明一次处理的条数", async () => {
     const api = fakeApi()
     await mount(api)
-    const tabs = screen.getByRole("tablist", { name: "按 topic 筛选" })
-    await act(async () => fireEvent.click(within(tabs).getByRole("tab", { name: /report\.daily/ })))
+    await act(async () => fireEvent.click(screen.getByRole("radio", { name: /report\.daily/ })))
     await waitFor(() =>
       expect(api.failedList).toHaveBeenLastCalledWith({ topic: "report.daily", page: 1, per_page: 20 }),
     )
     await waitFor(() => expect(screen.queryByText("smtp: timeout")).toBeNull())
+    expect(screen.getByRole("button", { name: "重试这 1 个" })).toBeTruthy()
 
-    await act(async () => fireEvent.click(within(tabs).getByRole("tab", { name: /全部/ })))
+    await act(async () => fireEvent.click(screen.getByRole("radio", { name: /全部/ })))
     const row = (await screen.findByText("smtp: timeout")).closest("tr") as HTMLElement
     await act(async () => fireEvent.click(within(row).getByRole("button", { name: "重试" })))
-    await screen.findByText("重试这条失败任务？")
+    await screen.findByText("重试这个任务？")
     await act(async () => fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "重试" })))
     await waitFor(() => expect(api.failedRetry).toHaveBeenCalledWith("j2"))
 
-    await act(async () => fireEvent.click(screen.getByRole("button", { name: "全部重试" })))
-    await screen.findByText("重试全部失败任务？")
-    await act(async () => fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "全部重试" })))
-    expect(await screen.findByText("已重新发布 2 条")).toBeTruthy()
+    await act(async () => fireEvent.click(await screen.findByRole("button", { name: "重试全部 2 个" })))
+    await screen.findByText("重试全部 2 个失败任务？")
+    await act(async () => fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "重试" })))
+    expect(await screen.findByText("已重新发布 2 个")).toBeTruthy()
     expect(api.failedRetryAll).toHaveBeenCalledWith({ topic: undefined })
   })
 
-  it("点击一条失败任务显示完整的错误、元数据和 payload", async () => {
+  it("勾选几条一起删除：先确认，逐条调用接口", async () => {
+    const api = fakeApi()
+    await mount(api)
+    for (const text of ["smtp: timeout", "pdf: unavailable"]) {
+      const row = (await screen.findByText(text)).closest("tr") as HTMLElement
+      await act(async () => fireEvent.click(within(row).getByRole("checkbox")))
+    }
+    expect(screen.getByText("已选 2 项")).toBeTruthy()
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "删除" })))
+    await screen.findByText("删除选中的 2 个任务？")
+    await act(async () => fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "删除" })))
+    await waitFor(() => expect(api.failedDelete).toHaveBeenCalledTimes(2))
+    expect(api.failedDelete).toHaveBeenCalledWith("j2")
+    expect(api.failedDelete).toHaveBeenCalledWith("j3")
+  })
+
+  it("点击一条失败任务，在对话框中显示完整的错误、元数据和任务内容", async () => {
     const api = fakeApi()
     await mount(api)
     await act(async () => fireEvent.click(await screen.findByText("pdf: unavailable")))
-    const drawer = await screen.findByRole("dialog")
-    expect(await within(drawer).findByText(/at send \(mail\.go:42\)/)).toBeTruthy()
-    expect(within(drawer).getByText("REQ-42")).toBeTruthy()
-    expect(within(drawer).getByText(/ming@example\.com/)).toBeTruthy()
+    const dialog = await screen.findByRole("dialog")
+    expect(await within(dialog).findByText(/at send \(mail\.go:42\)/)).toBeTruthy()
+    expect(within(dialog).getByText("REQ-42")).toBeTruthy()
+    expect(within(dialog).getByText(/ming@example\.com/)).toBeTruthy()
+    expect(within(dialog).getByText("任务内容")).toBeTruthy()
     expect(api.failedGet).toHaveBeenCalledWith("j3")
   })
 })

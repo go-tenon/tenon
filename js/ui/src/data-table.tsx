@@ -199,6 +199,8 @@ export function DataTable<T>(props: DataTableProps<T>): ReactNode {
         storeColumnsKey={storeColumnsKey}
         idAccessor={key as never}
         fetching={props.loading}
+        // 放不下时显示横向滚动条：窄屏上提示表格还可以左右滚动。
+        scrollAreaProps={{ type: "auto" }}
         loaderBackgroundBlur={1}
         noRecordsText={typeof props.empty === "string" ? props.empty : "暂无数据"}
         noRecordsIcon={
