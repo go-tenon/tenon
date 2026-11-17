@@ -1,6 +1,6 @@
 // 定时任务面板：schedule/scheduleapi 的运维页面，分成两个页内标签（地址中的 ?tab=）：
 //   - 任务：每个任务的说明、表达式、下一次执行、上一次的结果，可以立即执行。
-//   - 执行记录：按任务、结果筛选，分页；点一行查看完整的错误。
+//   - 执行记录：按任务、结果筛选，分页；点失败的错误查看完整的错误。
 // 有任务错过了触发时，标签上面显示提示。数据来自应用生成的客户端分组 api.schedule。
 // 和其他列表一样按需读取：打开页面、切换标签和筛选、做完操作、切回浏览器窗口时读取，没有定时刷新。
 import {
@@ -23,7 +23,7 @@ import { IconDots } from "@tabler/icons-react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router"
 import { type ReactNode, useState } from "react"
-import { type Column, DataTable } from "./data-table"
+import { CellLink, type Column, DataTable } from "./data-table"
 import { confirm, notifyError, notifySuccess } from "./feedback"
 import { useFormatDateTime } from "./fields"
 import { Page } from "./page"
@@ -384,11 +384,15 @@ function Runs({
       accessor: "error",
       title: "错误",
       ellipsis: true,
-      render: (r) => (
-        <Text span size="sm" c={r.status === "failed" ? "red" : "dimmed"}>
-          {errorText(r.status, r.error) || "—"}
-        </Text>
-      ),
+      // 失败的错误可能很长、带堆栈：点它在对话框中看完整的；跳过的原因很短，直接显示。
+      render: (r) =>
+        r.status === "failed" && r.error ? (
+          <CellLink onClick={() => setOpen(r)}>{r.error}</CellLink>
+        ) : (
+          <Text span size="sm" c="dimmed">
+            {errorText(r.status, r.error) || "—"}
+          </Text>
+        ),
     },
   ]
 
@@ -446,7 +450,6 @@ function Runs({
         }}
         columns={columns}
         empty={task || status ? "没有符合条件的执行记录" : "还没有执行记录"}
-        onRowClick={(r) => setOpen(r)}
       />
       <Modal opened={!!open} onClose={() => setOpen(undefined)} title={open?.task} size="lg">
         {open && (

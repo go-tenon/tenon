@@ -1,6 +1,6 @@
 // 队列面板：queue/queueapi 的运维页面，分成三个页内标签（地址中的 ?tab=）：
 //   - 任务类型：每个 topic 的状态和任务数，可以暂停、恢复。
-//   - 失败任务：按任务类型筛选、分页，查看原因（对话框），单条或勾选多条重试、删除，也可以一次处理当前筛选的全部。
+//   - 失败任务：按任务类型筛选、分页，点错误查看完整的原因（对话框），单条或勾选多条重试、删除，也可以一次处理当前筛选的全部。
 //   - 系统状态：复制槽和 JetStream 的底层状态，给开发人员排查问题用。
 // 复制槽、JetStream 出问题时，标签上面显示醒目的提示。数据来自应用生成的客户端分组 api.queue。
 // 和其他列表一样按需读取：打开页面、切换标签和筛选、做完操作、切回浏览器窗口时读取，没有定时刷新。
@@ -26,7 +26,7 @@ import { IconDots, IconPlayerPause, IconPlayerPlay, IconRotateClockwise, IconTra
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import dayjs from "dayjs"
 import { type ReactNode, useState } from "react"
-import { type Column, DataTable } from "./data-table"
+import { CellLink, type Column, DataTable } from "./data-table"
 import { DescriptionList, StatusDot } from "./description-list"
 import { confirm, notifyError, notifySuccess } from "./feedback"
 import { useFormatDateTime } from "./fields"
@@ -548,7 +548,12 @@ function FailedJobs({
         </Text>
       ),
     },
-    { accessor: "error", title: "错误", ellipsis: true },
+    {
+      accessor: "error",
+      title: "错误",
+      ellipsis: true,
+      render: (j) => <CellLink onClick={() => setOpen(j.id)}>{j.error}</CellLink>,
+    },
     { accessor: "attempts", title: "执行次数", noWrap: true, width: 90 },
     {
       accessor: "failed_at",
@@ -579,8 +584,6 @@ function FailedJobs({
               </ActionIcon>
             </Menu.Target>
             <Menu.Dropdown>
-              <Menu.Item onClick={() => setOpen(j.id)}>查看详情</Menu.Item>
-              <Menu.Divider />
               <Menu.Item
                 color="red"
                 leftSection={<IconTrash size={14} stroke={1.6} />}
@@ -681,7 +684,6 @@ function FailedJobs({
           </>
         )}
         empty={topic ? "这类任务没有失败的" : "没有失败的任务"}
-        onRowClick={(j) => setOpen(j.id)}
       />
       <FailedJobDetail api={api} id={open} onClose={() => setOpen(undefined)} onAction={(a, id) => single(a, id)} />
     </>

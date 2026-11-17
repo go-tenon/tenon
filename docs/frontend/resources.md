@@ -202,7 +202,7 @@ export const Route = createFileRoute("/_app/articles/$id/edit")({
 | `inputs` | 覆盖某个表单字段的输入组件 |
 | `rowActions` | 行上的额外操作，排在声明的操作之后、删除之前 |
 | `toolbar` | 标题区的额外按钮，例如导入、导出 |
-| `expand` | 点击一行展开的内容 |
+| `expand` | 展开的内容：每行开头一个箭头按钮，点它展开 |
 | `form` | 新建和修改的表单：`page`（默认）是单独的页面，`modal` 是对话框 |
 
 ```tsx

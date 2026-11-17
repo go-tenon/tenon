@@ -120,7 +120,7 @@ describe("SchedulePanel", () => {
     await waitFor(() => expect(api.list).toHaveBeenCalledTimes(2))
   })
 
-  it("点任务名打开它的执行记录；按结果筛选；点一行看完整的错误", async () => {
+  it("点任务名打开它的执行记录；按结果筛选；点失败的错误看完整的错误", async () => {
     const api = fakeApi()
     const app = await mount(api)
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "report" })))
@@ -138,7 +138,7 @@ describe("SchedulePanel", () => {
     )
     await waitFor(() => expect(within(panel).queryByText("上一次还没结束")).toBeNull())
 
-    await act(async () => fireEvent.click(within(panel).getByText(/pdf: unavailable/)))
+    await act(async () => fireEvent.click(within(panel).getByRole("button", { name: /pdf: unavailable/ })))
     const dialog = await screen.findByRole("dialog")
     expect(dialog.textContent).toContain("report.go:42")
     expect(dialog.textContent).toContain("4.2 秒")
