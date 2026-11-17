@@ -25,6 +25,7 @@
     "@mantine/hooks": "^9.8.1",
     "@mantine/modals": "^9.8.1",
     "@mantine/notifications": "^9.8.1",
+    "@mantine/nprogress": "^9.8.1",
     "@mantine/spotlight": "^9.8.1",
     "@tabler/icons-react": "^3.50.0",
     "@tanstack/react-query": "^5.85.0",

@@ -303,18 +303,29 @@ export function createApp<TRouteTree extends AnyRoute>(options: AppOptions<TRout
 /**
  * 应用的 Provider：QueryClientProvider 和应用上下文。createApp 把它装在路由的 Wrap 中。
  *
- * 登录、退出、切换账号或租户时（会话的代次变化）重新挂载页面：页面中按身份计算的查询（例如 queryKey 中的
- * session.scope()）重新读取，上一个身份的页面状态不会留下。布局状态保存在应用中，不受影响。
+ * 这里包住的是整个路由，包括根路由的 HTML 文档（<html>、<head>）：身份变化时不能在这里重新挂载，
+ * 否则整个文档在浏览器中重建（每次打开已登录的页面都会发生一次，因为读到账号也是一次身份变化）。
+ * 页面的重新挂载由布局中的 SessionBoundary 负责。
  */
 function AppProviders({ app, children }: { app: App; children: ReactNode }): ReactNode {
-  const generation = useSyncExternalStore(app.session.subscribe, app.session.generation, app.session.generation)
   return (
     <QueryClientProvider client={app.queryClient}>
-      <AppContext.Provider value={app}>
-        <Fragment key={generation}>{children}</Fragment>
-      </AppContext.Provider>
+      <AppContext.Provider value={app}>{children}</AppContext.Provider>
     </QueryClientProvider>
   )
+}
+
+/**
+ * 登录、退出、切换账号或租户时（会话的代次变化）重新挂载其中的内容：页面中按身份计算的查询（例如 queryKey 中的
+ * session.scope()）重新读取，上一个身份的页面状态不会留下。AppLayout 用它包住页面；自己写的布局把页面
+ * （<Outlet /> 或 <TabsOutlet />）放在其中，不要包住布局本身或 HTML 文档。
+ *
+ *   <SessionBoundary><Outlet /></SessionBoundary>
+ */
+export function SessionBoundary({ children }: { children: ReactNode }): ReactNode {
+  const app = useApp()
+  const generation = useSyncExternalStore(app.session.subscribe, app.session.generation, app.session.generation)
+  return <Fragment key={generation}>{children}</Fragment>
 }
 
 /**

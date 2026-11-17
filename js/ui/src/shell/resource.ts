@@ -372,7 +372,8 @@ export interface ResourceList {
 export function useResourceList(model: ResourceModel, route: ListRoute<Record<string, unknown>>): ResourceList {
   const list = useList(route)
   const can = useCan()
-  const query = useQuery(model.listQuery(list.params))
+  // 换筛选、翻页、排序时总是向服务器读最新的，读取中显示加载状态；不用各自缓存的旧数据（例如刚删掉的一行不会又出现）。
+  const query = useQuery({ ...model.listQuery(list.params), gcTime: 0 })
   const page = query.data as ListResponse | undefined
   return {
     model,

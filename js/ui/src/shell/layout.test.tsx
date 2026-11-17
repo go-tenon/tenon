@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query"
 import { createMemoryHistory, createRootRouteWithContext, createRoute, Outlet } from "@tanstack/react-router"
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { AppRoot, createApp, type RouterContext, type TenancyOptions } from "./app"
+import { AppRoot, createApp, type RouterContext, SessionBoundary, type TenancyOptions } from "./app"
 import { Fill, Slot, useLayoutState, useMenuBadge, useNarrow, useNavigation, useSlotFilled } from "./layout"
 import { enterTenant, useTenant } from "./tenant"
 
@@ -43,7 +43,10 @@ function Layout() {
       <Fill name="actions">
         <span>帮助</span>
       </Fill>
-      <Outlet />
+      {/* 身份变化时重新挂载页面，布局本身保持不变。 */}
+      <SessionBoundary>
+        <Outlet />
+      </SessionBoundary>
     </div>
   )
 }

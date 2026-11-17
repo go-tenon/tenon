@@ -11,7 +11,6 @@ import {
   Burger,
   Group,
   Kbd,
-  LoadingOverlay,
   Menu,
   NavLink,
   ScrollArea,
@@ -30,13 +29,15 @@ import {
   IconSearch,
 } from "@tabler/icons-react"
 import { Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router"
-import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from "react"
+import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Icon } from "./icons"
 import { TabsAvailableProvider } from "./layout-context"
 import { NavLinkLink } from "./links"
 import { TenantSwitcher } from "./menus"
+import { ContentTransitionProvider, PageProgress } from "./page-progress"
 import {
   type MenuItem,
+  SessionBoundary,
   Slot,
   TabsOutlet,
   type TabsOutletProps,
@@ -44,7 +45,6 @@ import {
   useNarrow,
   useNavigation,
   useSlotFilled,
-  useTabs,
 } from "./shell"
 import { TabBar } from "./tab-bar"
 import { layoutMetrics } from "./theme"
@@ -95,24 +95,39 @@ export function AppLayout({ title, logo, user, actions, search = true, tabs, max
     if (state.navOpen) setState({ navOpen: false })
   }, [pathname])
 
-  // 刷新当前标签（刷新按钮、右键菜单）时，内容区短暂显示加载遮罩：页面的数据多半来自缓存，重新挂载后看不出变化。
-  const active = useTabs().active
-  const [reloading, setReloading] = useState(false)
-  const reloadMark = useRef({ key: active?.key, n: active?.refreshes ?? 0 })
-  useEffect(() => {
-    const prev = reloadMark.current
-    const n = active?.refreshes ?? 0
-    reloadMark.current = { key: active?.key, n }
-    if (active && prev.key === active.key && n > prev.n) setReloading(true)
-  }, [active])
-  useEffect(() => {
-    if (!reloading) return
-    const timer = setTimeout(() => setReloading(false), 450)
-    return () => clearTimeout(timer)
-  }, [reloading])
-
-  // 切换页面（点标签、点菜单、搜索跳转）时，新页面淡入，同时从下方上移 6px。只看路径：翻页、筛选不算。
+  // 切换页面（点标签、点菜单、搜索跳转）时，内容区淡入，同时从下方上移 6px。只看路径：翻页、筛选不算。
+  // 重新加载标签时先淡出，读取完成后再淡入（见 page-progress）。
   const content = useRef<HTMLDivElement>(null)
+  const held = useRef<Animation | null>(null)
+  const flash = useCallback(() => {
+    const el = content.current
+    held.current?.cancel()
+    held.current = null
+    if (!el?.animate || reducedMotion()) return
+    el.animate(
+      [
+        { opacity: 0, transform: "translateY(6px)" },
+        { opacity: 1, transform: "none" },
+      ],
+      { duration: 180, easing: "ease-out" },
+    )
+  }, [])
+  const transition = useMemo(
+    () => ({
+      async out() {
+        const el = content.current
+        if (!el?.animate || reducedMotion()) return
+        held.current = el.animate([{ opacity: 1 }, { opacity: 0 }], {
+          duration: 150,
+          easing: "ease-in",
+          fill: "forwards",
+        })
+        await held.current.finished.catch(() => {})
+      },
+      in: flash,
+    }),
+    [flash],
+  )
   const first = useRef(true)
   // biome-ignore lint/correctness/useExhaustiveDependencies: 只在路径变化时播放
   useEffect(() => {
@@ -120,18 +135,7 @@ export function AppLayout({ title, logo, user, actions, search = true, tabs, max
       first.current = false
       return
     }
-    const el = content.current
-    if (!el?.animate || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return
-    el.animate(
-      [
-        { opacity: 0, transform: "translateY(6px)" },
-        { opacity: 1, transform: "none" },
-      ],
-      {
-        duration: 180,
-        easing: "ease-out",
-      },
-    )
+    flash()
   }, [pathname])
 
   const vars = { "--tn-header-height": `${m.headerHeight}px` } as CSSProperties
@@ -151,14 +155,11 @@ export function AppLayout({ title, logo, user, actions, search = true, tabs, max
     >
       <AppShell.Header className="tn-header">
         <div className="tn-header-inner">
-          {/* 有标签栏时，标签栏从侧栏展开时的边线往右 6px 开始（选中的第一个标签向左外翻的圆弧正好落在边线上）；收起侧栏时标签不动。 */}
+          {/* 有标签栏时，标签栏从侧栏展开时的边线往右 6px 开始（选中的第一个标签向左外翻的圆弧正好落在边线上）；收起侧栏时标签不动。
+              名称长、放不下时这一块变宽，标签栏跟在名称后面（间隔 16px），不会盖住名称。 */}
           <div
             className="tn-header-start"
-            style={
-              showTabBar
-                ? { width: `calc(${m.navbarWidth + 6}px - var(--mantine-spacing-md))`, paddingRight: 0 }
-                : undefined
-            }
+            style={showTabBar ? { minWidth: `calc(${m.navbarWidth + 6}px - var(--mantine-spacing-md))` } : undefined}
           >
             <Burger
               hiddenFrom="sm"
@@ -184,7 +185,13 @@ export function AppLayout({ title, logo, user, actions, search = true, tabs, max
               {title && <span className="tn-brand-title">{title}</span>}
             </Link>
           </div>
-          {showTabBar ? <TabBar /> : <Box style={{ flex: 1 }} />}
+          {showTabBar ? (
+            <ContentTransitionProvider value={transition}>
+              <TabBar />
+            </ContentTransitionProvider>
+          ) : (
+            <Box style={{ flex: 1 }} />
+          )}
           <Group gap="xs" wrap="nowrap">
             <Slot name="actions" />
             {actions}
@@ -209,14 +216,17 @@ export function AppLayout({ title, logo, user, actions, search = true, tabs, max
         </AppShell.Aside>
       )}
 
-      <AppShell.Main pos="relative">
-        <LoadingOverlay visible={reloading} overlayProps={{ blur: 1 }} loaderProps={{ size: "sm" }} />
+      <AppShell.Main>
         <Box ref={content} className="tn-content" p={m.contentPadding} maw={maxWidth}>
-          {tabsOn ? <TabsOutlet home {...(typeof tabs === "object" ? tabs : {})} /> : <Outlet />}
+          {/* 身份变化时只重新挂载页面，布局和 HTML 文档保持不变。 */}
+          <SessionBoundary>
+            {tabsOn ? <TabsOutlet home {...(typeof tabs === "object" ? tabs : {})} /> : <Outlet />}
+          </SessionBoundary>
         </Box>
         <Slot name="footer" />
       </AppShell.Main>
       {search && <PageSearch />}
+      <PageProgress />
       <NewVersionNotice />
     </AppShell>
   )
@@ -425,3 +435,5 @@ function CollapsedItem({ item, active }: { item: MenuItem; active: string[] }): 
     </Tooltip>
   )
 }
+
+const reducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false

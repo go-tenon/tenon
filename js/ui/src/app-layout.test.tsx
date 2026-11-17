@@ -135,6 +135,30 @@ describe("AppLayout", () => {
     expect(screen.queryByRole("button", { name: /搜索/ })).toBeNull()
   })
 
+  it("切换身份时只重新挂载页面：根路由的文档（这里是 shell）和布局保持不变", async () => {
+    const root = createRootRouteWithContext<RouterContext>()({
+      component: () => (
+        <div data-testid="shell">
+          <Outlet />
+        </div>
+      ),
+    })
+    const layout = createRoute({
+      getParentRoute: () => root,
+      id: "_app",
+      component: () => <AppLayout title="测试后台" />,
+    })
+    const home = createRoute({ getParentRoute: () => layout, path: "/", component: () => <p>首页内容</p> })
+    const app = await renderApp(root.addChildren([layout.addChildren([home])]))
+    const page = await screen.findByText("首页内容")
+    const shell = screen.getByTestId("shell")
+    const header = document.querySelector(".tn-header")
+    await act(async () => app.session.setIdentity({ account: "u2" }))
+    await waitFor(() => expect(screen.getByText("首页内容")).not.toBe(page)) // 页面重新挂载
+    expect(screen.getByTestId("shell")).toBe(shell) // 文档没有重建
+    expect(document.querySelector(".tn-header")).toBe(header) // 布局没有重建
+  })
+
   it("没有登录时跳到登录页", async () => {
     const app = await renderApp(tree(), { signedIn: false })
     await screen.findByText("登录页")
@@ -158,7 +182,7 @@ describe("AppLayout 的多标签", () => {
     await renderApp(tree({ tabs: true }), { path: "/trade/orders", permissions: ["users:manage"] })
     await screen.findByText("订单页面")
     expect(document.querySelector(".tn-header")?.contains(bar())).toBe(true)
-    const start = () => (document.querySelector(".tn-header-start") as HTMLElement).style.width
+    const start = () => (document.querySelector(".tn-header-start") as HTMLElement).style.minWidth
     const width = start()
     expect(width).toMatch(/^calc\(\d+px - var\(--mantine-spacing-md\)\)$/)
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "收起侧栏" })))
@@ -185,15 +209,17 @@ describe("AppLayout 的多标签", () => {
     await waitFor(() => expect(titles()).toEqual(["*概览", ">用户"]))
   })
 
-  it("刷新按钮重新挂载当前页面，期间显示加载遮罩", async () => {
+  it("刷新按钮重新挂载当前页面，页面顶部显示进度条；第一次打开时不显示", async () => {
     await renderApp(tree({ tabs: true }), { path: "/trade/orders", permissions: ["users:manage"] })
     const before = await screen.findByText("订单页面")
-    expect(document.querySelector(".mantine-LoadingOverlay-root")).toBeNull()
+    const progress = () => document.querySelector(".mantine-Progress-root[data-mounted=true]")
+    expect(progress()).toBeNull() // 第一次打开（浏览器的整页加载）不显示
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "重新加载当前页面" })))
-    expect(document.querySelector(".mantine-LoadingOverlay-root")).not.toBeNull()
+    expect(progress()).not.toBeNull()
     const after = await screen.findByText("订单页面")
     expect(after).not.toBe(before) // 重新挂载：是新的元素
-    await waitFor(() => expect(document.querySelector(".mantine-LoadingOverlay-root")).toBeNull())
+    await waitFor(() => expect(progress()).toBeNull(), { timeout: 2000 }) // 请求都完成后走完、消失
+    expect(document.querySelector(".mantine-LoadingOverlay-root")).toBeNull()
   })
 
   it("用户在头像菜单中关掉多标签：没有标签栏，页面照常显示；按账号保存", async () => {

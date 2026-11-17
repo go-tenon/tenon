@@ -9,7 +9,7 @@ import { renderApp } from "./testing"
 
 afterEach(cleanup)
 
-function fakeApi(options: { admin?: boolean } = {}) {
+function fakeApi(options: { admin?: boolean; slotExists?: boolean } = {}) {
   let failed: QueueFailedJobData[] = [
     {
       id: "j1",
@@ -22,16 +22,11 @@ function fakeApi(options: { admin?: boolean } = {}) {
     { id: "j3", topic: "report.daily", attempts: 3, error: "pdf: unavailable", failed_at: "2026-11-17T07:00:00Z" },
   ]
   const paused = new Set<string>(["report.daily"])
-  const counts = () => {
-    const m = new Map<string, number>()
-    for (const j of failed) m.set(j.topic, (m.get(j.topic) ?? 0) + 1)
-    return [...m].map(([topic, count]) => ({ topic, count }))
-  }
   const api: QueueApi = {
     status: vi.fn(async () => ({
       slot: {
         name: "tenon_queue_abc",
-        exists: true,
+        exists: options.slotExists ?? true,
         active: true,
         active_pid: 4821,
         wal_status: "reserved",
@@ -49,11 +44,10 @@ function fakeApi(options: { admin?: boolean } = {}) {
         paused_until: paused.has(topic) ? "2026-11-17T10:30:00Z" : undefined,
       })),
       failed: failed.length,
-      links: [{ name: "Grafana", url: "https://grafana.example.com/d/queue" }],
     })),
     failedList: vi.fn(async (input = {}) => {
       const rows = input.topic ? failed.filter((j) => j.topic === input.topic) : failed
-      return { items: rows, total: rows.length, topics: counts() }
+      return { items: rows, total: rows.length }
     }),
     failedGet: vi.fn(async (id: string) => ({
       ...(failed.find((j) => j.id === id) as QueueFailedJobData),
@@ -83,28 +77,48 @@ function fakeApi(options: { admin?: boolean } = {}) {
 
 async function mount(api: QueueApi) {
   const root = createRootRouteWithContext<RouterContext>()({
-    component: () => <QueuePanel api={api} refreshInterval={60_000} />,
+    component: () => <QueuePanel api={api} />,
   })
-  await renderApp(root)
-  await screen.findByText("tenon_queue_abc")
+  const app = await renderApp(root)
+  await screen.findByText("mail.send")
+  return app
+}
+
+/** 切到一个页内标签。 */
+async function openTab(name: string) {
+  await act(async () => fireEvent.click(screen.getByRole("tab", { name: new RegExp(name) })))
 }
 
 const topicRow = (topic: string) =>
-  within(screen.getByRole("heading", { name: "Topic" }).parentElement as HTMLElement)
+  within(screen.getByRole("tabpanel"))
     .getAllByText(topic)
     .map((e) => e.closest("tr") as HTMLElement)[0]
 
 describe("QueuePanel", () => {
-  it("概览：复制槽、JetStream、失败任务数和外部链接", async () => {
-    await mount(fakeApi())
-    expect(screen.getByText("转发中")).toBeTruthy()
+  it("分成任务类型、失败任务、系统状态三个页内标签；当前标签记在地址中", async () => {
+    const app = await mount(fakeApi())
+    expect(screen.getByRole("tab", { name: "任务类型" }).getAttribute("aria-selected")).toBe("true")
+    expect(screen.getByRole("tab", { name: /失败任务/ }).textContent).toContain("3")
+    expect(screen.queryByRole("alert")).toBeNull()
+    expect(screen.queryByText("tenon_queue_abc")).toBeNull() // 没打开过的标签不渲染
+    expect(within(topicRow("sms.send")).getByText("没有处理程序")).toBeTruthy()
+    expect(within(topicRow("sms.send")).getByText(/没有 Worker 处理这类任务/)).toBeTruthy()
+
+    await openTab("系统状态")
+    expect(app.router.state.location.search).toEqual({ tab: "system" })
+    expect(screen.getByText("tenon_queue_abc")).toBeTruthy()
     expect(screen.getByText("12.4 KiB")).toBeTruthy()
     expect(screen.getByText("4821")).toBeTruthy()
-    expect(screen.getByText("定时投递")).toBeTruthy()
-    expect(screen.getByRole("link", { name: /Grafana/ }).getAttribute("href")).toBe(
-      "https://grafana.example.com/d/queue",
-    )
-    expect(within(topicRow("sms.send")).getByText("没有处理函数")).toBeTruthy()
+
+    await openTab("任务类型")
+    expect(app.router.state.location.search).toEqual({})
+  })
+
+  it("复制槽不存在时显示醒目的提示", async () => {
+    await mount(fakeApi({ slotExists: false }))
+    const alert = await screen.findByRole("alert")
+    expect(within(alert).getByText("任务转发已停止")).toBeTruthy()
+    expect(alert.textContent).toContain("queue slot recreate")
   })
 
   it("按状态显示暂停和恢复；暂停先确认", async () => {
@@ -124,38 +138,97 @@ describe("QueuePanel", () => {
     expect(within(topicRow("mail.send")).queryByRole("button", { name: "暂停" })).toBeNull()
   })
 
-  it("失败任务按 topic 筛选；单条重试先确认；全部重试提示条数", async () => {
+  it("失败任务按任务类型筛选；单条重试先确认；按钮写明一次处理的条数", async () => {
     const api = fakeApi()
     await mount(api)
-    const tabs = screen.getByRole("tablist", { name: "按 topic 筛选" })
-    await act(async () => fireEvent.click(within(tabs).getByRole("tab", { name: /report\.daily/ })))
+    await openTab("失败任务")
+    await act(async () => fireEvent.click(await screen.findByRole("radio", { name: /report\.daily/ })))
     await waitFor(() =>
       expect(api.failedList).toHaveBeenLastCalledWith({ topic: "report.daily", page: 1, per_page: 20 }),
     )
     await waitFor(() => expect(screen.queryByText("smtp: timeout")).toBeNull())
+    expect(screen.getByRole("button", { name: "重试这 1 个" })).toBeTruthy()
 
-    await act(async () => fireEvent.click(within(tabs).getByRole("tab", { name: /全部/ })))
+    await act(async () => fireEvent.click(screen.getByRole("radio", { name: /全部/ })))
     const row = (await screen.findByText("smtp: timeout")).closest("tr") as HTMLElement
     await act(async () => fireEvent.click(within(row).getByRole("button", { name: "重试" })))
-    await screen.findByText("重试这条失败任务？")
+    await screen.findByText("重试这个任务？")
     await act(async () => fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "重试" })))
     await waitFor(() => expect(api.failedRetry).toHaveBeenCalledWith("j2"))
 
-    await act(async () => fireEvent.click(screen.getByRole("button", { name: "全部重试" })))
-    await screen.findByText("重试全部失败任务？")
-    await act(async () => fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "全部重试" })))
-    expect(await screen.findByText("已重新发布 2 条")).toBeTruthy()
+    await act(async () => fireEvent.click(await screen.findByRole("button", { name: "重试全部 2 个" })))
+    await screen.findByText("重试全部 2 个失败任务？")
+    await act(async () => fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "重试" })))
+    expect(await screen.findByText("已重新发布 2 个")).toBeTruthy()
     expect(api.failedRetryAll).toHaveBeenCalledWith({ topic: undefined })
   })
 
-  it("点击一条失败任务显示完整的错误、元数据和 payload", async () => {
+  it("切换筛选时总是向服务器读最新的", async () => {
+    const api = fakeApi()
+    const root = createRootRouteWithContext<RouterContext>()({ component: () => <QueuePanel api={api} /> })
+    await renderApp(root, { path: "/?tab=failed" })
+    await screen.findByText("smtp: timeout")
+    const calls = () => (api.failedList as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0]?.topic ?? "全部")
+    await act(async () => fireEvent.click(await screen.findByRole("radio", { name: /report\.daily/ })))
+    await waitFor(() => expect(screen.queryByText("smtp: timeout")).toBeNull())
+    const before = calls().filter((t) => t === "全部").length
+    await act(async () => fireEvent.click(screen.getByRole("radio", { name: /全部/ })))
+    await waitFor(() => expect(calls().filter((t) => t === "全部").length).toBeGreaterThan(before))
+    expect(await screen.findByText("smtp: timeout")).toBeTruthy()
+  })
+
+  it("重试完一类之后直接回到“全部”，这一类不再出现在筛选中，也不会先显示 0", async () => {
     const api = fakeApi()
     await mount(api)
+    await openTab("失败任务")
+    await act(async () => fireEvent.click(await screen.findByRole("radio", { name: /report\.daily/ })))
+    await act(async () => fireEvent.click(await screen.findByRole("button", { name: "重试这 1 个" })))
+    await act(async () => fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "重试" })))
+    expect(screen.queryByRole("radio", { name: "report.daily 0" })).toBeNull()
+    expect((screen.getByRole("radio", { name: /全部/ }) as HTMLInputElement).checked).toBe(true)
+    expect(await screen.findByText("smtp: timeout")).toBeTruthy()
+    await waitFor(() => expect(screen.queryByRole("radio", { name: /report\.daily/ })).toBeNull())
+  })
+
+  it("单条重试让选中的一类没有失败任务后，也回到“全部”", async () => {
+    const api = fakeApi()
+    await mount(api)
+    await openTab("失败任务")
+    await act(async () => fireEvent.click(await screen.findByRole("radio", { name: /report\.daily/ })))
+    const row = (await screen.findByText("pdf: unavailable")).closest("tr") as HTMLElement
+    await act(async () => fireEvent.click(within(row).getByRole("button", { name: "重试" })))
+    await act(async () => fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "重试" })))
+    await waitFor(() => expect((screen.getByRole("radio", { name: /全部/ }) as HTMLInputElement).checked).toBe(true))
+    expect(screen.queryByRole("radio", { name: /report\.daily/ })).toBeNull()
+  })
+
+  it("勾选几条一起删除：先确认，逐条调用接口", async () => {
+    const api = fakeApi()
+    await mount(api)
+    await openTab("失败任务")
+    for (const text of ["smtp: timeout", "pdf: unavailable"]) {
+      const row = (await screen.findByText(text)).closest("tr") as HTMLElement
+      await act(async () => fireEvent.click(within(row).getByRole("checkbox")))
+    }
+    expect(screen.getByText("已选 2 项")).toBeTruthy()
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "删除" })))
+    await screen.findByText("删除选中的 2 个任务？")
+    await act(async () => fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "删除" })))
+    await waitFor(() => expect(api.failedDelete).toHaveBeenCalledTimes(2))
+    expect(api.failedDelete).toHaveBeenCalledWith("j2")
+    expect(api.failedDelete).toHaveBeenCalledWith("j3")
+  })
+
+  it("点击一条失败任务，在对话框中显示完整的错误、元数据和任务内容", async () => {
+    const api = fakeApi()
+    await mount(api)
+    await openTab("失败任务")
     await act(async () => fireEvent.click(await screen.findByText("pdf: unavailable")))
-    const drawer = await screen.findByRole("dialog")
-    expect(await within(drawer).findByText(/at send \(mail\.go:42\)/)).toBeTruthy()
-    expect(within(drawer).getByText("REQ-42")).toBeTruthy()
-    expect(within(drawer).getByText(/ming@example\.com/)).toBeTruthy()
+    const dialog = await screen.findByRole("dialog")
+    expect(await within(dialog).findByText(/at send \(mail\.go:42\)/)).toBeTruthy()
+    expect(within(dialog).getByText("REQ-42")).toBeTruthy()
+    expect(within(dialog).getByText(/ming@example\.com/)).toBeTruthy()
+    expect(within(dialog).getByText("任务内容")).toBeTruthy()
     expect(api.failedGet).toHaveBeenCalledWith("j3")
   })
 })

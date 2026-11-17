@@ -20,8 +20,10 @@ import {
   IconSquareX,
   IconX,
 } from "@tabler/icons-react"
+import { useQueryClient } from "@tanstack/react-query"
 import { type ReactNode, useEffect, useRef, useState } from "react"
 import { Icon } from "./icons"
+import { reloadWithProgress, useContentTransition } from "./page-progress"
 import { type Tabs, type TabView, useTabs } from "./shell"
 
 /** 标签栏，AppLayout 开启多标签时显示在顶栏中间。 */
@@ -31,6 +33,10 @@ export function TabBar(): ReactNode {
   // 拖动 6px 以上才算拖动，点击、中键照常。
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
   const [menu, setMenu] = useState<{ key: string; x: number; y: number } | null>(null)
+  const queryClient = useQueryClient()
+  const transition = useContentTransition()
+  // 重新加载（刷新按钮、右键菜单）：页面顶部的进度条走起来，主内容区淡出，页面的请求都完成后淡入、进度条走完。
+  const reload = (key: string) => void reloadWithProgress(() => tabs.refresh(key), queryClient, transition)
   const activeKey = tabs.active?.key
 
   useEffect(() => {
@@ -146,7 +152,7 @@ export function TabBar(): ReactNode {
         className="tn-tab-reload"
         aria-label="重新加载当前页面"
         disabled={!activeKey}
-        onClick={() => activeKey && void tabs.refresh(activeKey)}
+        onClick={() => activeKey && reload(activeKey)}
       >
         <IconRefresh size={16} stroke={1.6} />
       </ActionIcon>
@@ -160,14 +166,14 @@ export function TabBar(): ReactNode {
         <Menu.Target>
           <div style={{ position: "fixed", left: menu?.x ?? 0, top: menu?.y ?? 0, width: 1, height: 1 }} />
         </Menu.Target>
-        {target && <TabMenu tab={target} tabs={tabs} />}
+        {target && <TabMenu tab={target} tabs={tabs} reload={reload} />}
       </Menu>
     </div>
   )
 }
 
 /** 标签的右键菜单。 */
-function TabMenu({ tab, tabs }: { tab: TabView; tabs: Tabs }): ReactNode {
+function TabMenu({ tab, tabs, reload }: { tab: TabView; tabs: Tabs; reload: (key: string) => void }): ReactNode {
   const index = tabs.tabs.indexOf(tab)
   const others = tabs.tabs.some((t) => t.key !== tab.key && !t.pinned)
   const right = tabs.tabs.slice(index + 1).some((t) => !t.pinned)
@@ -183,7 +189,7 @@ function TabMenu({ tab, tabs }: { tab: TabView; tabs: Tabs }): ReactNode {
       >
         {tab.pinned ? "取消固定" : "固定"}
       </Menu.Item>
-      <Menu.Item leftSection={icon(IconRefresh)} onClick={() => void tabs.refresh(tab.key)}>
+      <Menu.Item leftSection={icon(IconRefresh)} onClick={() => reload(tab.key)}>
         重新加载
       </Menu.Item>
       <Menu.Divider />

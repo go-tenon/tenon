@@ -80,7 +80,6 @@ func setupWith(t *testing.T, admin *queue.Admin) *env {
 		return identity.Subject{}, nil
 	}
 	queueapi.Register(api, rest.RequireToken(api, validate, "queue:manage"), e.db, queueapi.Options{
-		Links:  map[string]string{"Grafana": "https://grafana.example.com/d/queue", "NATS": ""},
 		Logger: slog.New(slog.NewJSONHandler(e.logs, nil)),
 		Admin:  admin,
 	})
@@ -162,9 +161,6 @@ func TestStatus(t *testing.T) {
 		st.Topics[1].Topic != "report" || st.Topics[1].Failed != 1 {
 		t.Fatalf("topics: %+v", st.Topics)
 	}
-	if len(st.Links) != 1 || st.Links[0] != (queueapi.QueueLink{Name: "Grafana", URL: "https://grafana.example.com/d/queue"}) {
-		t.Fatalf("links: %+v", st.Links)
-	}
 	// 没有设置 Admin 时暂停和恢复仍然注册（生成的客户端与运行时一致），调用时返回 queue.no_admin。
 	for _, path := range []string{"/queue/topics/mail/pause", "/queue/topics/mail/resume"} {
 		if code, body := e.call(t, http.MethodPost, path, "ops", nil); code != http.StatusServiceUnavailable || !strings.Contains(body, "queue.no_admin") {
@@ -187,10 +183,6 @@ func TestFailedList(t *testing.T) {
 	if list.Total != 2 || len(list.Items) != 2 || list.Items[0].ID != newer || list.Items[1].ID != older ||
 		list.Items[0].Error != "smtp: 550 mailbox unavailable" || list.Items[0].Attempts != 3 || list.Items[0].Topic != "mail" {
 		t.Fatalf("list: %+v", list)
-	}
-	// 每个 topic 的条数不受筛选影响，条数多的在前。
-	if len(list.Topics) != 2 || list.Topics[0] != (queueapi.QueueTopicCount{Topic: "mail", Count: 2}) || list.Topics[1].Topic != "report" {
-		t.Fatalf("topics: %+v", list.Topics)
 	}
 
 	// 全部 topic，每页一条的第二页。

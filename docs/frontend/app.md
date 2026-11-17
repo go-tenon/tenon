@@ -102,7 +102,7 @@ export const session = createSession({ load: async () => ({ account: (await me()
 - 读取当前用户、检查权限只在浏览器中进行。服务端渲染时应用不读取身份，需要登录的页面设置 `ssr: false`，只在浏览器中渲染，见 [TanStack Start 的接入](start.md)。
 - 前端挂在子路径（例如 `/admin/`）时，路由的 `basepath` 默认是 Vite 的 `base`：页面中的地址、`<Link>`、登录回跳都不含它。
 - `id` 区分同一个域名下的前端，例如 `web` 和 `admin`，见[本地存储](#storage)。
-- QueryClient 对 `4xx` 不重试，其他错误重试 2 次；登录、退出、切换账号或租户时清空缓存，并重新挂载页面：页面中按身份计算的查询重新读取。也可以传入自己的 `queryClient`。
+- QueryClient 对 `4xx` 不重试，其他错误重试 2 次；登录、退出、切换账号或租户时清空缓存，并重新挂载页面：页面中按身份计算的查询重新读取。重新挂载的只是布局中的页面（`AppLayout` 用 `SessionBoundary` 包住页面），HTML 文档和布局保持不变。也可以传入自己的 `queryClient`。
 - `router` 传给 Router 的其他选项：CSP 的 `nonce`、默认的错误页 `RouteError` 和 404 页 `NotFoundPage`（见[错误页](#errors)）。`router.Wrap` 包住整个应用；`createApp` 在它里面提供 QueryClient 和应用。
 - 多租户应用还要设置 `tenancy`，见[租户](layout.md#tenants)。
 

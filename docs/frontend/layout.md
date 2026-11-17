@@ -153,6 +153,26 @@ function Orders() {
 
 面包屑在标题上面，来自路由的标题：最后一级是当前页面，前面的是链接。不需要时设置 `breadcrumbs={false}`，例如首页。
 
+<a id="page-tabs"></a>
+内容多的页面用 `tabs` 分成几个页内标签，在标题区下面切换，不要把几块内容上下平铺：
+
+```tsx
+<Page
+  title="队列"
+  tabs={[
+    { value: "topics", label: "任务类型", content: <Topics /> },
+    { value: "failed", label: "失败任务", count: failed, alert: true, content: <FailedJobs /> },
+    { value: "system", label: "系统状态", content: <SystemStatus /> },
+  ]}
+>
+  <Problems /> {/* children 在标签的上面：整个页面都要看到的提示 */}
+</Page>
+```
+
+- 当前的标签记在地址的 `?tab=` 中（第一个标签不写），刷新、分享链接后还在这个标签；切换标签不会打开新的[多标签](#tabs)。路由设置了 `validateSearch` 时要保留 `tab` 参数。
+- 没打开过的标签不渲染，也就不发请求；打开过的保留状态，切回来时筛选、翻页都还在。
+- `count` 显示在标签右边，例如失败的条数，0 时不显示；`alert` 让它是红色。
+
 页面中的其他内容直接使用 Mantine 的组件。表格和表单见[列表与表单](lists-forms.md)。
 
 <a id="tabs"></a>
@@ -184,7 +204,7 @@ function ArticlePage() {
 > [!NOTE]
 > 标签自己的路由上下文依赖 TanStack Router 内部的 `router.stores`。升级 TanStack Router 时，`js/ui/src/shell/tabs.test.tsx` 检查它是否仍然可用。`<Activity>` 需要 React 19.2。
 
-标签栏的操作：点击切换，中键点击关闭；标签上没有关闭按钮，右键菜单中有关闭、固定、重新加载、关闭其他标签页、关闭右侧标签页；可以拖动排序；固定的标签显示图钉，有未保存修改的显示一个圆点。放不下时两端出现箭头，点击向那一侧滚动，还有被挡住的标签的一端渐隐。最后一个标签右边是刷新按钮，重新加载当前页面。
+标签栏的操作：点击切换，中键点击关闭；标签上没有关闭按钮，右键菜单中有关闭、固定、重新加载、关闭其他标签页、关闭右侧标签页；可以拖动排序；固定的标签显示图钉，有未保存修改的显示一个圆点。放不下时两端出现箭头，点击向那一侧滚动，还有被挡住的标签的一端渐隐。最后一个标签右边是刷新按钮，重新加载当前页面：页面顶部显示一条进度条（`@mantine/nprogress`），主内容区淡出，页面的请求都完成后淡入、进度条走完；右键菜单中的“重新加载”相同。这条进度条只在重新加载标签时出现；打开页面、跳转和按浏览器的刷新保持浏览器原本的行为。
 
 | 操作 | 规则 |
 | --- | --- |
@@ -268,7 +288,9 @@ function TopLayout() {
       {useSlotFilled("aside") && <aside><Slot name="aside" /></aside>}
       <main>
         <TabBar />
-        <TabsOutlet max={10} />
+        <SessionBoundary>
+          <TabsOutlet max={10} />
+        </SessionBoundary>
       </main>
     </>
   )
@@ -281,6 +303,7 @@ function TopLayout() {
 | `useMenu()`、`useBreadcrumbs()` | 只要菜单或面包屑时用 |
 | `firstPage(menu)`、`pageUnder(menu, path)` | 第一个可以进入的页面；某个分组下第一个可以进入的页面，例如点击面包屑中的分组时跳转到它 |
 | `Slot`、`useSlotFilled(name)` | 放置插槽；插槽中是否有内容，例如没有侧边面板时不留出位置 |
+| `SessionBoundary` | 登录、退出、切换账号或租户时重新挂载其中的页面，上一个身份的页面状态不会留下。只包住页面（`Outlet` 或 `TabsOutlet`），不要包住布局或根路由的 HTML 文档：那样每次打开已登录的页面，整个文档都会在浏览器中重建 |
 | `useLayoutState()` | `[state, setState]`：`collapsed`（侧栏收起为图标）、`tabs`（用户打开了多标签），按账号保存；`navOpen`（窄屏时导航抽屉打开，不保存） |
 | `useNarrow()` | 是否是窄屏（默认宽度小于 768px） |
 | `TabBar`、`TabsOutlet` | 标签栏（32px 高，为顶栏设计）；代替 `Outlet` 渲染标签中的页面：`max` 数量上限，`confirm` 换掉询问未保存修改的浏览器确认框，`home` 第一次使用时固定菜单的第一个页面 |
@@ -316,10 +339,11 @@ function TopLayout() {
 | --- | --- |
 | `AppLayout` | 应用外壳：`title`、`logo`、`user`、`actions`、`search`、`tabs`、`maxWidth` |
 | `Fill`、`Slot`、`useSlotFilled`、`SlotName` | 插槽 |
+| `SessionBoundary` | 身份变化时重新挂载其中的页面 |
 | `UserMenu`、`TenantSwitcher`、`NotificationsMenu`、`OperationsMenu`、`LanguageMenu`、`ColorSchemeToggle` | 顶栏菜单；`UserMenu` 的选项：`name`、`avatar`、`logout`、`items`、`colorScheme` |
 | `Icon`、`useIcon`、`defaultIcons`、`IconsProvider` | 图标名称 |
 | `useMenuBadge(routeId, value)` | 登记菜单项的徽标 |
-| `Page` | 页面的标题区：`title`、`description`、`actions`、`breadcrumbs` |
+| `Page`、`PageTab` | 页面的标题区：`title`、`description`、`actions`、`breadcrumbs`、`crumb`；页内标签 `tabs`（`value`、`label`、`count`、`alert`、`content`） |
 | `TabBar`、`TabsOutlet` | 标签栏；标签中的页面（`max`、`confirm`、`home`） |
 | `useTabs`、`useTab`、`useTabActive`、`useTabTitle`、`useTabShortcuts` | 多标签 |
 | `confirmDiscard(app)` | 有未保存的修改时询问是否放弃，例如退出登录前 |

@@ -10,7 +10,7 @@ import {
   DataTable as MantineDataTable,
   useDataTableColumns,
 } from "mantine-datatable"
-import type { ReactNode } from "react"
+import { type ReactNode, type RefObject, useLayoutEffect, useRef } from "react"
 import type { ListState, Selection } from "./shell"
 import { layoutMetrics } from "./theme"
 
@@ -161,6 +161,13 @@ export function DataTable<T>(props: DataTableProps<T>): ReactNode {
     : {}
 
   const keys = selection ? [...selection.keys] : []
+  // 不在读取中时记下表格的高度。
+  const table = useRef<HTMLTableElement>(null) as RefObject<HTMLTableElement>
+  const height = useRef(0)
+  useLayoutEffect(() => {
+    if (!props.loading && table.current) height.current = table.current.offsetHeight
+  })
+
   return (
     <Stack gap="sm">
       {(toolbar || (bulkActions && keys.length > 0)) && (
@@ -183,6 +190,7 @@ export function DataTable<T>(props: DataTableProps<T>): ReactNode {
         </Group>
       )}
       <MantineDataTable<T>
+        tableRef={table}
         className="tn-datatable"
         withTableBorder
         borderRadius="md"
@@ -193,12 +201,15 @@ export function DataTable<T>(props: DataTableProps<T>): ReactNode {
         verticalSpacing={dense ? 6 : "sm"}
         horizontalSpacing={dense ? "sm" : "md"}
         fz="sm"
-        minHeight={records.length === 0 ? (props.minHeight ?? 160) : undefined}
+        // 读取中（例如换了筛选、翻页）保持原来的高度，加载的遮罩盖在上面，表格不会忽高忽低。
+        minHeight={records.length === 0 ? (props.loading && height.current) || (props.minHeight ?? 160) : undefined}
         records={records as T[]}
         columns={effectiveColumns}
         storeColumnsKey={storeColumnsKey}
         idAccessor={key as never}
         fetching={props.loading}
+        // 放不下时显示横向滚动条：窄屏上提示表格还可以左右滚动。
+        scrollAreaProps={{ type: "auto" }}
         loaderBackgroundBlur={1}
         noRecordsText={typeof props.empty === "string" ? props.empty : "暂无数据"}
         noRecordsIcon={
