@@ -172,8 +172,14 @@ function base(m: LayoutMetrics): MantineThemeOverride {
       Popover: { defaultProps: { shadow: "md", offset: 8, transitionProps: { duration: 120 } } },
       Tooltip: { defaultProps: { openDelay: 300, withArrow: false, color: "dark", fz: "xs" } },
       Badge: { defaultProps: { variant: "light", radius: "sm" } },
-      Modal: { defaultProps: { centered: true, overlayProps: { backgroundOpacity: 0.4, blur: 2 } } },
-      Drawer: { defaultProps: { overlayProps: { backgroundOpacity: 0.4, blur: 2 } } },
+      Modal: {
+        defaultProps: { centered: true, overlayProps: { backgroundOpacity: 0.4, blur: 2 } },
+        styles: { title: { fontWeight: 600 } },
+      },
+      Drawer: {
+        defaultProps: { overlayProps: { backgroundOpacity: 0.4, blur: 2 } },
+        styles: { title: { fontWeight: 600 } },
+      },
       Notification: { defaultProps: { withBorder: true } },
     },
     ...metrics(m),

@@ -24,7 +24,12 @@
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "@types/react": "^19.1.0",
-    "@types/react-dom": "^19.1.0"
+    "@types/react-dom": "^19.1.0",
+    "@mantine/dates": "^9.8.1",
+    "@mantine/form": "^9.8.1",
+    "@mantine/modals": "^9.8.1",
+    "mantine-datatable": "^9.8.1",
+    "dayjs": "^1.11.11"
   },
   "peerDependenciesMeta": {
     "@types/react": {

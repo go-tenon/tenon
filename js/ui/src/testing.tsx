@@ -28,6 +28,16 @@ export function polyfill(): void {
   Element.prototype.scrollTo ??= () => {}
 }
 
+/** 渲染应用骨架：已经创建好的应用，外面套上 UIProvider。 */
+export function renderRoot<R extends AnyRoute>(app: App<R>): void {
+  polyfill()
+  render(
+    <UIProvider theme={themes.console} defaultColorScheme="light" env="test">
+      <AppRoot app={app as unknown as App} />
+    </UIProvider>,
+  )
+}
+
 /** 渲染一个应用：signedIn 为 false 时未登录；permissions 是当前身份的权限。 */
 export async function renderApp(
   routeTree: AnyRoute,
@@ -43,7 +53,7 @@ export async function renderApp(
     router: { history: createMemoryHistory({ initialEntries: [options.path ?? "/"] }) },
   })
   render(
-    <UIProvider theme={themes.console} defaultColorScheme="light">
+    <UIProvider theme={themes.console} defaultColorScheme="light" env="test">
       <AppRoot app={app} />
     </UIProvider>,
   )

@@ -4,6 +4,8 @@
  */
 @import "@mantine/core/styles.css";
 @import "@mantine/notifications/styles.css";
+@import "@mantine/dates/styles.css";
+@import "mantine-datatable/styles.css";
 
 :root {
   --tn-canvas: var(--mantine-color-gray-0);
@@ -497,4 +499,26 @@ body {
   line-height: 1;
   letter-spacing: -0.04em;
   color: var(--tn-border-strong);
+}
+
+/* ———————————————— 表格 ———————————————— */
+
+.tn-datatable thead th {
+  background: var(--tn-canvas);
+  color: var(--tn-muted);
+  font-weight: 500;
+}
+
+.tn-datatable tbody td {
+  background: var(--tn-surface);
+}
+
+/* 没有排序时，排序图标只在悬停时出现。 */
+.tn-datatable th .mantine-datatable-header-cell-sortable-unsorted-icon {
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.tn-datatable th:hover .mantine-datatable-header-cell-sortable-unsorted-icon {
+  opacity: 0.5;
 }

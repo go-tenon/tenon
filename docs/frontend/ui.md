@@ -19,6 +19,12 @@
 - [错误页](#errors)
 - [官网](#site)
 - [文档页](#docs)
+- [表格](#data-table)
+- [表单](#forms)
+- [资源页面](#resources)
+- [设置](#settings)
+- [导入与导出](#transfer)
+- [确认与提示](#feedback)
 - [路由链接](#links)
 - [演示](#playground)
 - [API 参考](#api-reference)
@@ -42,7 +48,7 @@ createRoot(document.getElementById("root") as HTMLElement).render(
 )
 ```
 
-`UIProvider` 安装 Mantine 的主题、右上角的通知（`@mantine/notifications`）和图标名称的对应表。配色默认跟随系统，用户在顶栏切换后保存在浏览器中。
+`UIProvider` 安装 Mantine 的主题、右上角的通知（`@mantine/notifications`）、确认对话框（`@mantine/modals`）和图标名称的对应表。组件测试中传 `env="test"`，关闭过渡动画和 portal。配色默认跟随系统，用户在顶栏切换后保存在浏览器中。
 
 应用的路由使用 `RouteError` 和 `NotFoundPage` 作为默认的错误页：
 
@@ -310,6 +316,192 @@ function Doc({ html }: { html: string }) {
 - 底部是上一篇和下一篇，按目录的顺序。
 - 窄屏时隐藏左侧目录，中等宽度时隐藏本页目录。
 
+<a id="data-table"></a>
+## 表格
+
+`DataTable` 基于 [mantine-datatable](https://icflorescu.github.io/mantine-datatable/)，应用不直接依赖它。分页和排序接[应用骨架](app-shell-features.md)的列表模型 `useList`，保存在地址中：
+
+```tsx
+import { useQuery } from "@tanstack/react-query"
+import { useList, useSelection } from "@go-tenon/shell"
+import { Button } from "@mantine/core"
+import { type Column, DataTable } from "@go-tenon/ui"
+
+const columns: Column<Order>[] = [
+  { accessor: "number", title: "订单号", fixed: true },
+  { accessor: "customer", title: "客户" },
+  { accessor: "amount", title: "金额", sortable: true, textAlign: "right", render: (o) => money(o.amount) },
+  { accessor: "note", title: "备注", hidden: true },
+]
+
+function Orders() {
+  const list = useList(Route)
+  const orders = useQuery(queries.order.list(list.params))
+  const selection = useSelection<string>(list.filters)
+  return (
+    <DataTable
+      records={orders.data?.items ?? []}
+      total={orders.data?.total}
+      loading={orders.isPending}
+      list={list}
+      columns={columns}
+      selection={selection}
+      bulkActions={(ids) => <Button color="red" variant="light">删除 {ids.length} 项</Button>}
+      storeKey="orders"
+    />
+  )
+}
+```
+
+- 分页显示“1–20，共 N 条”，可以选择每页的条数；翻页、排序都写进地址，排序后回到第一页。没有 `total` 时（游标分页）不显示分页。
+- `selection` 显示勾选框，选中在翻页时保留；所以 `useSelection` 的 `resetOn` 用 `list.filters`，换了查询条件才清空。有选中的行时，表格上方显示 `bulkActions`。
+- `storeKey` 显示列设置按钮：勾选显示的列，上下移动调整顺序，保存在浏览器中。`fixed` 的列（例如名称、操作）不能隐藏和移动；`hidden` 的列默认隐藏。
+- `expand` 点击一行展开明细；`toolbar` 放在表格上方左侧，例如筛选条件。
+- 行高、字号随主题的预设：运营后台更紧凑。
+
+<a id="forms"></a>
+## 表单
+
+表单用 [@mantine/form](https://mantine.dev/form/use-form/)。`useSchemaForm` 用生成的 `schemas.ts` 校验，规则和提示与服务端相同：
+
+```tsx
+import { Button, TextInput } from "@mantine/core"
+import { useUnsavedChanges } from "@go-tenon/shell"
+import { applyServerErrors, FormError, useSchemaForm } from "@go-tenon/ui"
+import type { ErrorInfo } from "@go-tenon/client"
+import { useState } from "react"
+import { api } from "../app"
+import { components, schemas } from "@blog/client/api/schemas"
+import { messages } from "@blog/client/api/messages"
+
+function NewArticle() {
+  const form = useSchemaForm({
+    schema: schemas.article.create.body,
+    rules: { components, messages, language: "zh-CN" },
+    initialValues: { title: "", slug: "" },
+  })
+  const [error, setError] = useState<ErrorInfo>()
+  const unsaved = useUnsavedChanges(form.isDirty())
+  return (
+    <form
+      onSubmit={form.onSubmit(async (values) => {
+        try {
+          await api.article.create(values)
+          unsaved.release()
+        } catch (err) {
+          setError(applyServerErrors(form, err))
+        }
+      })}
+    >
+      <FormError error={error} />
+      <TextInput label="标题" {...form.getInputProps("title")} />
+      <TextInput label="链接名" {...form.getInputProps("slug")} />
+      <Button type="submit">保存</Button>
+    </form>
+  )
+}
+```
+
+- 提交时校验整个表单，之后离开一个字段时校验它。
+- `applyServerErrors` 把服务端返回的字段错误显示在对应的输入框下面，返回其他错误，交给 `FormError` 显示在表单上方。
+- `useUnsavedChanges`（应用骨架）在有未保存的修改时，离开页面之前询问；页面在标签中时，改为在关闭标签时询问。
+
+按字段类型选择输入组件用 `DefaultInput`，按类型显示一个值用 `FieldValue`，见[资源页面](#resources)。
+
+<a id="resources"></a>
+## 资源页面
+
+`ResourcePage` 按 Go 中声明的[资源](resources.md)渲染完整的增删改查页面：列表、搜索和筛选、新建和修改的表单、删除和其他操作，按权限显示按钮。
+
+```tsx title="src/routes/_app/roles.tsx"
+import { createFileRoute } from "@tanstack/react-router"
+import { ResourcePage } from "@go-tenon/ui"
+import { roles } from "../../resources"
+
+export const Route = createFileRoute("/_app/roles")({
+  staticData: { title: "角色", icon: "safety", permission: "roles:manage" },
+  validateSearch: roles.listSearch,
+  component: () => <ResourcePage model={roles} route={Route} />,
+})
+```
+
+`roles` 是应用骨架的 `resourceModel` 创建的模型，见[资源](resources.md)。页面的行为：
+
+- **列表**：列的显示文字、枚举的文字、布尔、时间按字段的类型显示。可以排序的列点击表头排序，列设置按资源的名称保存在浏览器中。
+- **搜索和筛选**：关键词搜索按回车或离开输入框时生效；枚举字段是下拉选择，布尔字段是“是/否”。条件写进地址，有条件时显示“清除筛选”。
+- **新建和修改**：右侧的抽屉。表单字段来自请求体，校验与服务端相同；修改时有详情接口就先读取完整的一行。服务端的字段错误显示在输入框下面。有未保存的修改时，关闭抽屉之前询问。
+- **删除和操作**：在每一行的“更多操作”菜单中。删除和声明了 `Confirm` 的操作先确认；完成或失败后右上角提示，列表随之刷新。
+
+需要覆盖的部分通过选项传入：
+
+| 选项 | 作用 |
+| --- | --- |
+| `title`、`description` | 页面的标题和说明；`title={null}` 不显示标题区 |
+| `render` | 覆盖某一列的显示，例如 `{ title: (v, row) => <AnchorLink to="/articles/$id" params={{ id: String(row.id) }}>{String(v)}</AnchorLink> }` |
+| `inputs` | 覆盖某个表单字段的输入组件，例如 `{ content: MarkdownInput }`，组件的属性是 `FieldInputProps` |
+| `rowActions` | 行上的额外操作，排在声明的操作之后、删除之前 |
+| `toolbar` | 标题区的额外按钮，例如导入、导出 |
+| `expand` | 点击一行展开的内容 |
+
+字段的输入方式按应用骨架的 `FieldKind`：
+
+| 类型 | 输入组件 |
+| --- | --- |
+| `text` | 文本框 |
+| `number` | 数字输入 |
+| `boolean` | 开关 |
+| `select` | 下拉选择，非必填时可以清除 |
+| `multiselect` | 多选 |
+| `tags` | 标签输入，回车添加 |
+| `date` | 日期选择，值是 `YYYY-MM-DD` |
+| `datetime` | 日期和时间选择，值是 ISO 时间 |
+| `json` | JSON 编辑，是合法的 JSON 时才交给表单 |
+
+<a id="settings"></a>
+## 设置
+
+`SettingsForm` 按 Go 中声明的设置渲染一组值的表单：读取设置作为初始值，没有保存的权限时只读。
+
+```tsx
+import { Page, SettingsForm } from "@go-tenon/ui"
+import { blogSettings } from "../../resources"
+
+function Settings() {
+  return (
+    <Page title="设置">
+      <SettingsForm model={blogSettings} title={null} />
+    </Page>
+  )
+}
+```
+
+- 有修改时“保存”按钮才可用；校验规则与服务端相同，服务端的字段错误显示在输入框下面。
+- `autoSave` 去掉保存按钮：修改后停下一会儿就保存，表单下方显示“有未保存的修改”“保存中…”“已保存”；校验不通过时不保存，离开页面时保存还在等待的修改。
+
+<a id="transfer"></a>
+## 导入与导出
+
+`ImportButton` 和 `ExportButton` 是[后台导入](../features/background-imports.md)和[后台导出](../features/background-exports.md)的界面，模型是应用骨架的 `useImport`、`useExport`：
+
+```tsx
+import { ExportButton, ImportButton } from "@go-tenon/ui"
+
+<ImportButton source={articleImport} template={downloadTemplate} onCompleted={() => list.refetch()} />
+<ExportButton source={{ start: () => api.article.exportStart({ format: "xlsx" }), progress }} />
+```
+
+- 导入：对话框中点击选择或拖入表格，显示上传和导入的进度；结束后显示成功和没有导入的行数，可以下载没有导入的行，改正后重新导入。失败时显示原因，可以重新选择文件。
+- 导出：点击后在后台导出，对话框显示进度，完成后下载。
+- 进度同时出现在顶栏的后台任务（`OperationsMenu`）中，关闭对话框不影响导入导出。
+
+<a id="feedback"></a>
+## 确认与提示
+
+- `confirm({ title, message, confirmLabel, danger })` 弹出确认对话框，用户确认时返回 `true`。
+- `notifySuccess(message)` 在右上角提示操作成功；`notifyError(err, title)` 提示失败，文案取服务端的翻译，没有时按错误的种类给出。
+
+它们需要 `UIProvider`（其中安装了对话框和通知）。
+
 <a id="links"></a>
 ## 路由链接
 
@@ -354,5 +546,12 @@ bun run playground
 | `ErrorPage`、`RouteError`、`NotFoundPage` | 错误页 |
 | `SiteLayout` | 官网的布局：`brand`、`nav`、`actions`、`footer`、`note`、`size` |
 | `DocsLayout`、`useToc`、`headingId` | 文档页、本页目录、标题的 `id` |
+| `DataTable`、`Column`、`TableList` | 表格 |
+| `useSchemaForm`、`applyServerErrors`、`FormError` | 表单的校验、服务端错误 |
+| `DefaultInput`、`FieldInput`、`FieldInputProps`、`FieldValue` | 按字段类型输入和显示 |
+| `ResourcePage`、`ResourceForm`、`RowAction` | 资源页面、新建和修改的表单 |
+| `SettingsForm` | 设置的表单 |
+| `ImportButton`、`ExportButton` | 导入和导出 |
+| `confirm`、`notifySuccess`、`notifyError` | 确认对话框和提示 |
 | `ButtonLink`、`AnchorLink`、`NavLinkLink`、`ActionIconLink` | 类型安全的路由链接 |
 | `Icon`、`useIcon`、`defaultIcons`、`IconsProvider` | 图标名称 |
