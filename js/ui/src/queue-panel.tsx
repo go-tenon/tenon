@@ -10,7 +10,6 @@ import {
   Badge,
   Box,
   Button,
-  Card,
   Code,
   Group,
   Loader,
@@ -21,7 +20,6 @@ import {
   Select,
   SimpleGrid,
   Stack,
-  Table,
   Text,
 } from "@mantine/core"
 import { IconDots, IconPlayerPause, IconPlayerPlay, IconRotateClockwise, IconTrash } from "@tabler/icons-react"
@@ -29,6 +27,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import dayjs from "dayjs"
 import { type ReactNode, useState } from "react"
 import { type Column, DataTable } from "./data-table"
+import { DescriptionList, StatusDot } from "./description-list"
 import { confirm, notifyError, notifySuccess } from "./feedback"
 import { useFormatDateTime } from "./fields"
 import { Page } from "./page"
@@ -235,40 +234,85 @@ function Problems({ status }: { status: QueueStatusData }): ReactNode {
   )
 }
 
+/** WAL 状态（pg_replication_slots.wal_status）的说明。 */
+const walText: Record<string, string> = {
+  reserved: "正常",
+  extended: "正常，积压超过了 max_wal_size",
+  unreserved: "积压即将超过保留上限",
+  lost: "已失效，积压超过了保留上限",
+}
+
 /** 系统状态：复制槽和 JetStream 的底层状态，给开发人员排查问题用。 */
 function SystemStatus({ status }: { status: QueueStatusData }): ReactNode {
   const { slot, jetstream: js } = status
-  const rows: [string, ReactNode][] = [
-    ["复制槽", <Code key="slot">{slot.name}</Code>],
-    ["复制槽状态", !slot.exists ? "不存在" : slot.active ? "转发中" : "没有 Worker"],
-    ["WAL 状态", slot.wal_status || "—"],
-    ["积压", formatBytes(slot.lag)],
-    ["进程", slot.active_pid || "—"],
-  ]
-  if (js && !js.error)
-    rows.push(
-      ["任务流", <Code key="stream">{js.stream}</Code>],
-      ["消息", `${js.messages}（${formatBytes(js.bytes)}）`],
-      ["定时投递", js.deferred],
-      ["副本", js.replicas],
-      ["Leader", js.leader ?? "—"],
+  const slotState = !slot.exists
+    ? { label: "不存在", color: "red" }
+    : slot.active
+      ? { label: "转发中", color: "teal" }
+      : { label: "没有 Worker", color: "orange" }
+  let stream: ReactNode
+  if (!js)
+    stream = (
+      <DescriptionList
+        title="任务流"
+        description="NATS JetStream"
+        items={[{ label: "状态", value: "应用没有设置 queueapi.Options.Admin，只显示数据库一侧的状态" }]}
+      />
     )
-  else if (!js) rows.push(["任务流", "应用没有设置 queueapi.Options.Admin，只显示数据库一侧的状态"])
+  else if (js.error)
+    stream = (
+      <DescriptionList
+        title="任务流"
+        description="NATS JetStream"
+        extra={<StatusDot color="red">读取失败</StatusDot>}
+        items={[{ label: "错误", value: js.error, mono: true }]}
+      />
+    )
+  else
+    stream = (
+      <DescriptionList
+        title="任务流"
+        description="NATS JetStream"
+        extra={js.exists ? <StatusDot color="teal">正常</StatusDot> : <StatusDot color="orange">还没有创建</StatusDot>}
+        items={[
+          { label: "名称", value: js.stream, mono: true },
+          { label: "消息", value: `${js.messages}（${formatBytes(js.bytes)}）` },
+          { label: "定时投递", value: js.deferred },
+          { label: "副本", value: js.replicas },
+          { label: "Leader", value: js.leader, mono: true },
+        ]}
+      />
+    )
   return (
-    <Card>
-      <Table fz="sm" verticalSpacing={8} withRowBorders={false}>
-        <Table.Tbody>
-          {rows.map(([k, v]) => (
-            <Table.Tr key={k}>
-              <Table.Td w={120} c="dimmed">
-                {k}
-              </Table.Td>
-              <Table.Td>{v}</Table.Td>
-            </Table.Tr>
-          ))}
-        </Table.Tbody>
-      </Table>
-    </Card>
+    <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md" style={{ alignItems: "start" }}>
+      <DescriptionList
+        title="复制槽"
+        description="PostgreSQL 逻辑复制"
+        extra={<StatusDot color={slotState.color}>{slotState.label}</StatusDot>}
+        items={[
+          { label: "名称", value: slot.name, mono: true },
+          {
+            label: "WAL 状态",
+            value: slot.wal_status && (
+              <>
+                <Text span inherit ff="monospace">
+                  {slot.wal_status}
+                </Text>
+                {walText[slot.wal_status] && (
+                  <Text span inherit c="dimmed">
+                    {" "}
+                    · {walText[slot.wal_status]}
+                  </Text>
+                )}
+              </>
+            ),
+          },
+          { label: "积压", value: formatBytes(slot.lag) },
+          { label: "Worker 进程", value: slot.active_pid || undefined },
+        ]}
+      />
+      {stream}
+    </SimpleGrid>
   )
 }
 
@@ -700,20 +744,7 @@ function FailedJobDetail({
                   没有元数据
                 </Text>
               ) : (
-                <Table withTableBorder fz="sm" verticalSpacing={6}>
-                  <Table.Tbody>
-                    {meta.map(([k, v]) => (
-                      <Table.Tr key={k}>
-                        <Table.Td w={160} c="dimmed" ff="monospace">
-                          {k}
-                        </Table.Td>
-                        <Table.Td ff="monospace" style={{ wordBreak: "break-all" }}>
-                          {v}
-                        </Table.Td>
-                      </Table.Tr>
-                    ))}
-                  </Table.Tbody>
-                </Table>
+                <DescriptionList items={meta.map(([k, v]) => ({ label: k, value: v, mono: true }))} monoLabels />
               )}
             </Section>
             <Section title="任务内容">

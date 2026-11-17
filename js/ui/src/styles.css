@@ -846,3 +846,61 @@ body {
 .tn-datatable th:hover .mantine-datatable-header-cell-sortable-unsorted-icon {
   opacity: 0.5;
 }
+
+/* ———————————————— 描述列表 ———————————————— */
+
+/* 卡片中名称在左、值靠右，行间一条淡线；标题没有底色。值太长时在右侧换行。 */
+.tn-dl {
+  margin: 0;
+  padding: 0 var(--mantine-spacing-lg) 4px;
+  font-size: var(--mantine-font-size-sm);
+}
+
+.tn-dl-header {
+  padding: var(--mantine-spacing-lg) var(--mantine-spacing-lg) var(--mantine-spacing-xs);
+}
+
+.tn-dl-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--mantine-spacing-lg);
+  padding: 12px 0;
+  line-height: 1.55;
+}
+
+.tn-dl-row + .tn-dl-row {
+  border-top: 1px solid var(--tn-border);
+}
+
+.tn-dl dt {
+  flex-shrink: 0;
+  max-width: 50%;
+  color: var(--tn-muted);
+}
+
+.tn-dl dd {
+  margin: 0;
+  min-width: 0;
+  text-align: right;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+
+.tn-dl [data-mono] {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 0.95em;
+}
+
+/* 不带卡片时（对话框中），行贴着左右边缘。 */
+.tn-dl-plain .tn-dl,
+.tn-dl-plain .tn-dl-header {
+  padding-inline: 0;
+}
+
+.tn-status-dot-mark {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}

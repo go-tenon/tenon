@@ -1,6 +1,6 @@
 # 列表与表单
 
-后台页面大多是一张表格和几个表单。这一页介绍自己写这类页面时用到的部分：列表的查询条件保存在地址中，表格接上分页、排序和批量操作；表单用与服务端相同的规则校验，服务端的错误显示在字段下面，离开时提醒未保存的修改。
+后台页面大多是一张表格和几个表单。这一页介绍自己写这类页面时用到的部分：列表的查询条件保存在地址中，表格接上分页、排序和批量操作，一个对象的属性用描述列表显示；表单用与服务端相同的规则校验，服务端的错误显示在字段下面，离开时提醒未保存的修改。
 
 只是对一个资源增删改查时，不用写这些代码：在 Go 中声明资源，`ResourcePage` 按声明渲染整个页面，见[资源与设置页面](resources.md)。
 
@@ -8,6 +8,7 @@
 
 - [列表](#lists)
     - [表格](#data-table)
+    - [描述列表](#description-list)
 - [表单](#forms)
     - [未保存的修改](#unsaved-changes)
     - [自动保存](#autosave)
@@ -84,6 +85,34 @@ function Orders() {
 - `storeKey` 开启 mantine-datatable 自带的列设置：拖动表头调整顺序，右键点击表头选择显示的列，拖动表头的边缘调整宽度，保存在浏览器中。`fixed` 的列（例如名称、操作）不能隐藏、拖动和调整宽度；`hidden` 的列默认隐藏。
 - `expand` 点击一行展开明细；`toolbar` 放在表格上方左侧，例如筛选条件。
 - 行高、字号随主题的预设：运营后台更紧凑。
+
+<a id="description-list"></a>
+### 描述列表
+
+一个对象的各项属性，例如详情页的基本信息、系统状态、请求的元数据，用 `DescriptionList` 显示成“名称 — 值”的列表，不用表格：
+
+```tsx
+import { DescriptionList, StatusDot } from "@go-tenon/ui"
+
+<DescriptionList
+  title="复制槽"
+  description="PostgreSQL 逻辑复制"
+  extra={<StatusDot color="teal">转发中</StatusDot>}
+  items={[
+    { label: "名称", value: slot.name, mono: true },
+    { label: "积压", value: "12.4 KiB" },
+    { label: "Worker 进程", value: slot.active_pid || undefined }, // 空值显示“—”
+  ]}
+/>
+```
+
+- 一张卡片，名称在左、值靠右，行间一条淡线；值太长时在右侧换行。用 `<dl>` 渲染。
+- `title`、`description` 显示在卡片顶部，`extra` 在标题右边，通常是 `StatusDot` 或按钮。几组属性用 `SimpleGrid` 并排，例如队列面板的“系统状态”。
+- `mono` 让值用等宽字体（ID、名称、路径），`monoLabels` 让名称也用等宽字体（例如元数据的键）。
+- 值是 `undefined`、`null` 或空字符串时显示“—”，`0` 照常显示。
+- 放进对话框或已有的卡片中时用 `withBorder={false}`。
+
+`StatusDot` 是一个带浅色光圈的圆点和文字，表示状态：正常用 `teal`，需要注意用 `orange`，出错用 `red`。
 
 <a id="forms"></a>
 ## 表单
@@ -206,6 +235,7 @@ import { ButtonLink } from "@go-tenon/ui"
 | `useList(Route)` | 地址中的列表状态：`params`、`page`、`perPage`、`sort`、`filters`、`setFilters`、`setPage`、`setSort`、`reset`、`tableState` |
 | `useSelection(resetOn)` | 列表的选中项 |
 | `DataTable`、`Column`、`TableList` | 表格 |
+| `DescriptionList`、`DescriptionItem`、`StatusDot` | 描述列表和状态圆点 |
 | `useSchemaForm({ schema, rules, initialValues })` | 用生成的规则校验的 `@mantine/form` 表单 |
 | `applyServerErrors(form, err)`、`FormError` | 服务端的字段错误设置到字段；表单上方的错误 |
 | `formValidator`、`serverErrors` | 与表单库无关的校验和错误拆分 |
