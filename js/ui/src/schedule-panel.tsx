@@ -398,7 +398,6 @@ function Runs({
       onChange={(v) => setTask(v || undefined)}
       data={[{ value: "", label: "全部任务" }, ...tasks.map((t) => ({ value: t.name, label: t.name }))]}
       allowDeselect={false}
-      searchable
       w={220}
       aria-label="按任务筛选"
     />
