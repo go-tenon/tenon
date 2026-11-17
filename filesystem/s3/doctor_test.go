@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httputil"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -67,5 +69,51 @@ func TestDoctorCORSOnlyWithOrigins(t *testing.T) {
 		if res.Check == "cors" {
 			t.Errorf("cors checked without upload origins: %+v", res)
 		}
+	}
+}
+
+// 直传时检查条件写入：支持时通过；存储忽略 If-None-Match 时失败。
+func TestDoctorConditionalWrite(t *testing.T) {
+	t.Parallel()
+	check := func(disk *s3disk.Disk) doctor.DoctorResult {
+		t.Helper()
+		for _, res := range doctor.Run(context.Background(), s3disk.Doctor(disk, "https://app.example.com")).Results {
+			if res.Check == "conditional_write" {
+				return res
+			}
+		}
+		t.Fatal("conditional_write not checked")
+		return doctor.DoctorResult{}
+	}
+	if res := check(fakeDisk(t, func(s string) string { return s + "/test" })); res.Status != doctor.Passed {
+		t.Errorf("supported: %+v", res)
+	}
+
+	// 去掉 If-None-Match 再转给内存服务，相当于存储忽略它。
+	fakes := httptest.NewServer(gofakes3.New(s3mem.New()).Server())
+	t.Cleanup(fakes.Close)
+	target, err := url.Parse(fakes.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	ignoring := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Header.Del("If-None-Match")
+		proxy.ServeHTTP(w, r)
+	}))
+	t.Cleanup(ignoring.Close)
+	client := awss3.New(awss3.Options{
+		BaseEndpoint: aws.String(ignoring.URL), Region: "us-east-1", UsePathStyle: true,
+		Credentials: credentials.NewStaticCredentialsProvider("k", "s", ""), RetryMaxAttempts: 1,
+	})
+	if _, err := client.CreateBucket(context.Background(), &awss3.CreateBucketInput{Bucket: aws.String("test")}); err != nil {
+		t.Fatal(err)
+	}
+	disk, err := s3disk.New(client, "test", ignoring.URL+"/test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res := check(disk); res.Status != doctor.Failed || !strings.Contains(res.Summary, "ignores If-None-Match") {
+		t.Errorf("ignored: %+v", res)
 	}
 }

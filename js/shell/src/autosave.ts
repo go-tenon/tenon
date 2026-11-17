@@ -6,7 +6,10 @@
 //   - 与上次保存成功的值相同时不保存；
 //   - 保存一次只进行一个：保存期间又有变化，本次完成后再保存一次最新的值；
 //   - save 返回 false 或抛出错误表示没有保存成功，下次变化时重新提交；
-//   - 停止（例如离开页面）时，还在等待的变化立即保存，除非 discard 放弃了它们。
+//   - 停止（例如离开页面）时，还在等待的变化立即保存，除非 discard 放弃了它们；resume 恢复接收变化。
+//
+// 在 React 中，effect 激活时 resume、清理时 stop：StrictMode 会先清理再重新激活，Activity 隐藏时清理、显示时
+// 重新激活，同一个实例要能停下再继续。
 
 /** 自动保存的状态，外观据此显示“保存中”“已保存”“保存失败”。 */
 export type AutoSaveStatus = "idle" | "pending" | "saving" | "saved" | "error"
@@ -33,8 +36,10 @@ export interface AutoSaver<T> {
   markSaved(values: T): void
   /** 放弃还在等待的变化，之后的 stop 不再保存它们。 */
   discard(): void
-  /** 停止：还在等待的变化立即保存（discard 之后除外）。之后的 change 不再生效。 */
+  /** 停止：还在等待的变化立即保存（discard 之后除外）。之后的 change 不再生效，直到 resume。 */
   stop(): Promise<void>
+  /** 停止之后恢复接收变化，例如组件重新显示。没有停止时什么也不做。 */
+  resume(): void
   status(): AutoSaveStatus
   subscribe(listener: () => void): () => void
 }
@@ -128,6 +133,9 @@ export function createAutoSaver<T>(initial: T, options: AutoSaverOptions<T>): Au
       stopped = true
       if (timer !== undefined) await flush()
       else if (saving) await saving
+    },
+    resume() {
+      stopped = false
     },
     status: () => current,
     subscribe(listener) {

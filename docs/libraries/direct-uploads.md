@@ -8,6 +8,7 @@
 
 - [直传的方法](#direct-upload)
     - [单次上传](#direct-put)
+    - [不能覆盖已上传的对象](#no-overwrite)
     - [分片上传](#multipart-upload)
 - [直传接口](#rest-direct-upload)
 - [常见问题](#troubleshooting)
@@ -46,6 +47,13 @@ await fetch(signed.url, { method: signed.method, headers: signed.headers, body: 
 ```
 
 上传成功后，业务使用文件时调用 [Confirm](filesystem.md#confirming-files)。
+
+<a id="no-overwrite"></a>
+### 不能覆盖已上传的对象
+
+签名带着 `If-None-Match: *`：这个地址只能创建对象，对象已经存在时存储返回 `412`。签名在有效期（最长 15 分钟）内可以重复使用，没有这个条件的话，文件确认之后，客户端还能用同一个地址把通过校验的内容换掉，记录仍然是 `ready`。分片上传的合并同样带着这个条件。
+
+因此直传要求存储支持条件写入：AWS S3、Cloudflare R2 和较新的 MinIO 都支持。不支持的存储可能直接忽略这个请求头，[`s3.Doctor`](../installation/doctor.md) 传入 `uploadOrigins` 时会检查（`conditional_write`）。
 
 <a id="multipart-upload"></a>
 ### 分片上传
@@ -191,7 +199,7 @@ const record = await uploadFile(input.files[0], {
 
 - 文件不超过 `multipartThreshold`（默认 64 MiB）时签名一次，用一个请求上传；更大的文件分片上传，默认 4 片并发，每一片在上传前才签名。
 - 某一片失败时重新签名并重传这一片（默认 2 次）；仍然失败或被 `signal` 取消时放弃分片会话。
-- 合并时要提交每一片的 `ETag`，它是对象存储的响应头：bucket 的 CORS 规则要允许 `PUT`，并在 `ExposeHeaders` 中列出 `ETag`，否则浏览器中的脚本读不到它，`uploadFile` 报错。
+- 合并时要提交每一片的 `ETag`，它是对象存储的响应头：bucket 的 CORS 规则要允许 `PUT` 和请求头 `Content-Type`、`If-None-Match`，并在 `ExposeHeaders` 中列出 `ETag`，否则浏览器中的脚本读不到它，`uploadFile` 报错。
 - 只使用本地磁盘时不提供 `multipart`，或者用服务端上传接口。
 
 步骤的格式见[客户端协议](../http/protocol.md#uploads)。
@@ -209,7 +217,11 @@ const record = await uploadFile(input.files[0], {
 
 **浏览器上传时报跨域错误**
 
-浏览器直接请求 S3 的域名，需要在存储桶上配置 CORS，允许应用的域名用 `PUT` 上传。`s3.Doctor(disk, "https://example.com")` 读取存储桶的 CORS 规则，检查它们是否允许这个来源直传，见[自检](../installation/doctor.md#framework-checks)。
+浏览器直接请求 S3 的域名，需要在存储桶上配置 CORS，允许应用的域名用 `PUT` 上传，允许请求头 `Content-Type` 和 `If-None-Match`。`s3.Doctor(disk, "https://example.com")` 读取存储桶的 CORS 规则，检查它们是否允许这个来源直传，见[自检](../installation/doctor.md#framework-checks)。
+
+**S3 返回 412 Precondition Failed**
+
+这个地址已经上传过，对象已经存在，签名地址不能覆盖它，见[不能覆盖已上传的对象](#no-overwrite)。重新登记一个文件再上传。
 
 **上传成功了，但文件过一段时间后不见了**
 

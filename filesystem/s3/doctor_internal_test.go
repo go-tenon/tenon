@@ -28,7 +28,7 @@ func TestCheckCORS(t *testing.T) {
 	upload := types.CORSRule{
 		AllowedOrigins: []string{"https://app.example.com"},
 		AllowedMethods: []string{"GET", "PUT"},
-		AllowedHeaders: []string{"Content-Type"},
+		AllowedHeaders: []string{"Content-Type", "If-None-Match"},
 		ExposeHeaders:  []string{"ETag"},
 	}
 	without := func(edit func(*types.CORSRule)) []types.CORSRule {
@@ -51,7 +51,8 @@ func TestCheckCORS(t *testing.T) {
 		{"other origin", []types.CORSRule{upload}, []string{"https://admin.example.com"}, "failed"},
 		{"one of two origins", []types.CORSRule{upload}, []string{"https://app.example.com", "https://admin.example.com"}, "failed"},
 		{"no PUT", without(func(r *types.CORSRule) { r.AllowedMethods = []string{"GET"} }), []string{"https://app.example.com"}, "failed"},
-		{"no content type", without(func(r *types.CORSRule) { r.AllowedHeaders = nil }), []string{"https://app.example.com"}, "failed"},
+		{"no content type", without(func(r *types.CORSRule) { r.AllowedHeaders = []string{"If-None-Match"} }), []string{"https://app.example.com"}, "failed"},
+		{"no if-none-match", without(func(r *types.CORSRule) { r.AllowedHeaders = []string{"Content-Type"} }), []string{"https://app.example.com"}, "failed"},
 		{"etag not exposed", without(func(r *types.CORSRule) { r.ExposeHeaders = nil }), []string{"https://app.example.com"}, "failed"},
 		{"no rules", nil, []string{"https://app.example.com"}, "failed"},
 	}

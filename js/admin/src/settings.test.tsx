@@ -5,6 +5,7 @@ import { AppRoot, createApp, type RouterContext, settingsModel } from "@go-tenon
 import { QueryClient } from "@tanstack/react-query"
 import { createMemoryHistory, createRootRouteWithContext } from "@tanstack/react-router"
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { StrictMode } from "react"
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest"
 import { createClient } from "../../../httpx/rest/clientgen/internal/example/ts/api"
 import { enums } from "../../../httpx/rest/clientgen/internal/example/ts/enums"
@@ -60,7 +61,7 @@ function server(options: { fail?: boolean } = {}) {
   return calls
 }
 
-async function mount(autoSave = false) {
+async function mount(autoSave = false, strict = false) {
   const session = createSession({ refresh: async () => ({ access_token: "t", expires_at: "" }) })
   await session.signIn({ access_token: "t", expires_at: "" }, { account: "u1" })
   const client = createClient({ baseURL: "/api" })
@@ -91,7 +92,15 @@ async function mount(autoSave = false) {
     session,
     router: { history: createMemoryHistory({ initialEntries: ["/"] }) },
   })
-  render(<AppRoot app={app} />)
+  render(
+    strict ? (
+      <StrictMode>
+        <AppRoot app={app} />
+      </StrictMode>
+    ) : (
+      <AppRoot app={app} />
+    ),
+  )
   await screen.findByText("博客设置")
 }
 
@@ -146,5 +155,14 @@ describe("SettingsForm", () => {
       timeout: 3000,
     })
     await waitFor(() => expect(screen.getByRole("status").textContent).toBe("已保存"))
+  })
+
+  it("自动保存：StrictMode 下照常保存", async () => {
+    const calls = server()
+    await mount(true, true)
+    fireEvent.change(screen.getByLabelText("博客名称"), { target: { value: "严格模式" } })
+    await waitFor(() => expect(calls.find((c) => c.method === "PUT")?.body).toMatchObject({ name: "严格模式" }), {
+      timeout: 3000,
+    })
   })
 })

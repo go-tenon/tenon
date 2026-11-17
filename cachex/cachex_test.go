@@ -284,6 +284,25 @@ func TestCallerCancellation(t *testing.T) {
 	}
 }
 
+// 加载带着第一个调用者的截止时间。
+func TestLoadDeadline(t *testing.T) {
+	c := cachex.New[*article](newFake(), "", time.Minute)
+	want := time.Now().Add(time.Hour)
+	ctx, cancel := context.WithDeadline(context.Background(), want)
+	defer cancel()
+	var got time.Time
+	var ok bool
+	if _, err := c.Remember(ctx, "article:1", func(ctx context.Context) (*article, error) {
+		got, ok = ctx.Deadline()
+		return &article{ID: 1}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !ok || !got.Equal(want) {
+		t.Fatalf("load deadline = %v, %v; want %v", got, ok, want)
+	}
+}
+
 func TestLoadErrorsAndPanics(t *testing.T) {
 	ctx := context.Background()
 	c := cachex.New[*article](newFake(), "", time.Minute)

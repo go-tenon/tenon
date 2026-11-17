@@ -100,7 +100,11 @@ function Loaded({
       validate: (v) => Object.keys(validate(v)).length === 0,
     })
   })
-  useEffect(() => () => void saver?.stop(), [saver])
+  // StrictMode 重新激活、Activity 重新显示时恢复。
+  useEffect(() => {
+    saver?.resume()
+    return () => void saver?.stop()
+  }, [saver])
   const status = useSyncExternalStore(
     saver?.subscribe ?? noopSubscribe,
     () => saver?.status() ?? "idle",

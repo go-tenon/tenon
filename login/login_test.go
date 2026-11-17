@@ -336,6 +336,39 @@ func TestRegisterResolvesAfterCommit(t *testing.T) {
 	}
 }
 
+// 校验之后密码被修改或删除时，重新哈希不覆盖：修改前的密码不能再登录，删除的密码不会回来。
+func TestRehashAfterChange(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	e := newRealm(t, login.Options{Hasher: hasher(4)})
+	e.account(t, ctx, "c1", "alice@example.com", "correct horse")
+	var old string
+	if err := e.db.NewSelect().Table("auth_passwords").Column("hash").Scan(ctx, &old); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.realm.SetPassword(ctx, e.db, ref("c1"), "battery staple"); err != nil {
+		t.Fatal(err)
+	}
+	if err := login.Rehash(ctx, e.realm, "c1", old, "correct horse"); err != nil {
+		t.Fatal(err)
+	}
+	_, err := e.realm.Password(ctx, login.Email("alice@example.com"), "correct horse")
+	is(t, err, login.ErrInvalidCredentials)
+	if _, err := e.realm.Password(ctx, login.Email("alice@example.com"), "battery staple"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := e.realm.RemovePassword(ctx, e.db, ref("c1")); err != nil {
+		t.Fatal(err)
+	}
+	if err := login.Rehash(ctx, e.realm, "c1", old, "correct horse"); err != nil {
+		t.Fatal(err)
+	}
+	if has, err := e.realm.HasPassword(ctx, ref("c1")); err != nil || has {
+		t.Fatalf("password restored: %v %v", has, err)
+	}
+}
+
 func TestSignInWithCode(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
