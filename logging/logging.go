@@ -72,7 +72,7 @@ func (c Config) Validate() error {
 	return nil
 }
 
-// location 返回 TimeZone 对应的时区；空值返回 nil，表示不转换。
+// location 返回 TimeZone 对应的时区；空值返回 nil，表示记录的时间保持本地时区。
 func (c Config) location() (*time.Location, error) {
 	if c.TimeZone == "" {
 		return nil, nil
@@ -111,7 +111,7 @@ func Fanout(handlers ...slog.Handler) Option {
 //
 //	context 字段 → 组件级别 → Pipe 中间件 → 格式化 → 基础输出 + Fanout 输出 + Export
 //
-// 格式化默认包含 ErrorFormatter；cfg.TimeZone 非空时还会把时间值转换到该时区。
+// 格式化默认包含 ErrorFormatter，并把字段中的时间值转换到 cfg.TimeZone（为空时是本地时区）。
 // New 只返回日志器，通常在入口处用 slog.SetDefault 安装它。cfg 不合法时 panic。
 func New(cfg Config, opts ...Option) *slog.Logger {
 	if err := cfg.Validate(); err != nil {
@@ -132,9 +132,13 @@ func New(cfg Config, opts ...Option) *slog.Logger {
 		h = slog.NewMultiHandler(append([]slog.Handler{h}, handlers...)...)
 	}
 	formatters := append([]slogformatter.Formatter{ErrorFormatter()}, o.formatters...)
-	if loc != nil {
-		formatters = append(formatters, slogformatter.TimezoneConverter(loc))
+	// 字段中的时间（包括分组中的）统一到记录时间的时区：没有设置 TimeZone 时是本地时区。
+	// 第三方组件写入的时间不一定是本地时区，例如 slog-chi 的 request.time、response.time 固定是 UTC。
+	fieldLoc := loc
+	if fieldLoc == nil {
+		fieldLoc = time.Local
 	}
+	formatters = append(formatters, slogformatter.TimezoneConverter(fieldLoc))
 	h = slogformatter.NewFormatterHandler(formatters...)(h)
 	if len(o.middlewares) > 0 {
 		h = slogmulti.Pipe(o.middlewares...).Handler(h)

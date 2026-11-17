@@ -187,7 +187,7 @@ logs:
 <a id="config-time-zone"></a>
 ### time_zone
 
-日志时间使用的时区，例如 `UTC`、`Asia/Shanghai`，同时作用于字段中的时间值。没有设置时使用进程的本地时区，它由 `TZ` 环境变量或 `/etc/localtime` 决定：开发机上通常是 `+08:00`，容器中往往是 UTC。
+日志时间使用的时区，例如 `UTC`、`Asia/Shanghai`，同时作用于字段中的时间值，包括分组中的，例如访问日志的 `request.time`、`response.time`。没有设置时使用进程的本地时区，它由 `TZ` 环境变量或 `/etc/localtime` 决定：开发机上通常是 `+08:00`，容器中往往是 UTC。
 
 时间始终带有时区偏移，含义明确。不过，多个环境的日志混合检索时，建议统一设为 `UTC`。
 
