@@ -276,8 +276,10 @@ func (c *Cache[T]) cached(ctx context.Context, key string) (raw string, ok bool)
 // fill 加载 key 的值，编码后写入缓存，返回编码后的内容。Missing 声明的错误写入「不存在」的标记后原样返回。
 // 写入的内容以 header 开头；store 为 false 时不写入。
 func (c *Cache[T]) fill(ctx context.Context, key, header string, store bool, load func(ctx context.Context) (T, error)) (string, error) {
+	// WithoutCancel 之后读不到截止时间，所以先取出来。
+	deadline, ok := ctx.Deadline()
 	ctx = context.WithoutCancel(ctx)
-	if deadline, ok := ctx.Deadline(); ok {
+	if ok {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithDeadline(ctx, deadline)
 		defer cancel()
