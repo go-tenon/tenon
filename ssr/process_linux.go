@@ -15,8 +15,14 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// process 是写入 memfd 的 SSR 可执行文件。
-type process struct{ path string }
+// process 是写入 memfd 的 SSR 可执行文件。file 要一直被引用到 close：
+// *os.File 被回收时终结器会关闭 fd，之后从 path 启动（重启）会失败，甚至执行到复用了这个 fd 的其他文件。
+type process struct {
+	file *os.File
+	path string
+}
+
+func (p *process) close() error { return p.file.Close() }
 
 // prepare 把可执行文件写进 memfd：从内存执行，不落盘，进程退出后自动释放。
 func (h *Host) prepare() (*process, error) {
@@ -29,9 +35,8 @@ func (h *Host) prepare() (*process, error) {
 		_ = f.Close()
 		return nil, errors.Wrap(err, "ssr: write executable")
 	}
-	// f 不关闭：进程的生命周期内一直从它启动 SSR 进程。
-	runtime.KeepAlive(f)
-	return &process{path: fmt.Sprintf("/proc/self/fd/%d", fd)}, nil
+	// f 在 Run 结束时关闭：在此之前一直从它启动 SSR 进程。
+	return &process{file: f, path: fmt.Sprintf("/proc/self/fd/%d", fd)}, nil
 }
 
 // supervise 启动 SSR 进程，意外退出后按退避重启，直到 ctx 取消；取消时先 SIGTERM，超过 StopTimeout 再 SIGKILL。
@@ -54,7 +59,15 @@ func (h *Host) supervise(ctx context.Context, p *process) error {
 		}
 		started := time.Now()
 		if err := cmd.Start(); err != nil {
-			return errors.Wrap(err, "ssr: start process")
+			// 不放弃：放弃后页面会一直返回 502。按退避重试，直到 ctx 取消。
+			h.logger.Error("ssr failed to start, retrying", "error", err, "backoff", backoff)
+			select {
+			case <-ctx.Done():
+				return errors.Wrap(err, "ssr: start process")
+			case <-time.After(backoff):
+			}
+			backoff = min(backoff*2, maxBackoff)
+			continue
 		}
 		h.pid.Store(int64(cmd.Process.Pid))
 		exited := make(chan struct{})

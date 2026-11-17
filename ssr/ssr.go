@@ -170,7 +170,7 @@ func (h *Host) Run(ctx context.Context, serve func(context.Context) error) error
 	}()
 	stop := func() error {
 		stopProc()
-		return errors.Join(<-procErr, closeInternal())
+		return errors.Join(<-procErr, proc.close(), closeInternal())
 	}
 
 	if err := h.waitReady(ctx, procDone); err != nil {

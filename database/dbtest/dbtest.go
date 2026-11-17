@@ -50,7 +50,8 @@ func Open(t testing.TB, migrations fs.FS) *bun.DB {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		cleanCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		// DROP DATABASE 要等一次检查点，CI 上多个包同时删除时可能超过十几秒。
+		cleanCtx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
 		db, err := database.Open(cleanCtx, database.Config{DSN: adminDSN})
 		if err != nil {
