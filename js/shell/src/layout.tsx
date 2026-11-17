@@ -7,6 +7,7 @@ import { createPortal } from "react-dom"
 import { useApp, useBreadcrumbs, useMenu } from "./app"
 import { type Badge, useBadgeOf } from "./badges"
 import { type Crumb, firstPage, type MenuItem } from "./menu"
+import { noAccount } from "./snapshot"
 import { createStore, perOwner, type Store } from "./store"
 
 // ———————————————————————————— 导航模型 ————————————————————————————
@@ -129,7 +130,8 @@ function useSlots(): Slots {
 /** 插槽中是否有内容：布局用它决定是否留出位置，例如没有侧边面板时不显示侧边栏。 */
 export function useSlotFilled(name: SlotName | (string & {})): boolean {
   const store = useSlots()
-  return useSyncExternalStore(store.subscribe, () => (store.get().counts.get(name) ?? 0) > 0)
+  const filled = () => (store.get().counts.get(name) ?? 0) > 0
+  return useSyncExternalStore(store.subscribe, filled, filled)
 }
 
 /** 布局中放置插槽。内容按放入的顺序排列；外层是 display: contents 的元素，不影响布局。 */
@@ -155,7 +157,8 @@ export function Slot({ name }: { name: SlotName | (string & {}) }): ReactNode {
  */
 export function Fill({ name, children }: { name: SlotName | (string & {}); children: ReactNode }): ReactNode {
   const store = useSlots()
-  const element = useSyncExternalStore(store.subscribe, () => store.get().elements.get(name))
+  const get = () => store.get().elements.get(name)
+  const element = useSyncExternalStore(store.subscribe, get, get)
   useLayoutEffect(() => {
     const change = (d: number) => {
       const { elements, counts } = store.get()
@@ -197,9 +200,9 @@ const layoutOf = perOwner(() => createStore<{ key: string; state: LayoutState }>
 export function useLayoutState(): [LayoutState, (changes: Partial<LayoutState>) => void] {
   const app = useApp()
   const store = layoutOf(app)
-  const account = useSyncExternalStore(app.session.subscribe, () => app.session.identity()?.account ?? "")
+  const account = useSyncExternalStore(app.session.subscribe, () => app.session.identity()?.account ?? "", noAccount)
   const key = `layout:${account}`
-  const current = useSyncExternalStore(store.subscribe, store.get)
+  const current = useSyncExternalStore(store.subscribe, store.get, store.get)
   const state = useMemo<LayoutState>(() => {
     if (current.key === key) return current.state
     const { navOpen: _, ...saved } = app.storage.get<Partial<LayoutState>>(key) ?? {}

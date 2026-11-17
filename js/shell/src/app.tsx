@@ -22,6 +22,7 @@ import { useBadges } from "./badges"
 import { breadcrumbs, buildMenu, type Crumb, firstPage, type MenuItem, routeInfos } from "./menu"
 import "./meta"
 import { safeRedirect } from "./redirect"
+import { signedOut } from "./snapshot"
 import { type AppStorage, appStorage } from "./storage"
 
 /** 路由上下文：根路由用 createRootRouteWithContext<RouterContext>() 创建，beforeLoad 中通过 context.app 使用。 */
@@ -363,7 +364,7 @@ export function useCan(): (permission: string) => boolean {
 /** 是否已经登录：登录、退出时更新，例如页头在“登录”和“退出”之间切换。 */
 export function useSignedIn(): boolean {
   const { session } = useApp()
-  return useSyncExternalStore(session.subscribe, () => session.signedIn())
+  return useSyncExternalStore(session.subscribe, () => session.signedIn(), signedOut)
 }
 
 /** 按当前身份的权限过滤后的菜单。 */

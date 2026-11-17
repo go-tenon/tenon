@@ -4,6 +4,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { useMemo, useSyncExternalStore } from "react"
 import { type App, type Tenant, useApp } from "./app"
+import { noAccount, noTenant } from "./snapshot"
 import { confirmDiscard } from "./tabs"
 
 /** 切换到租户 id。标签中有未保存的修改时先询问，放弃切换时返回 false。 */
@@ -50,8 +51,8 @@ export interface TenantState {
 /** 当前租户和切换租户，例如顶栏的租户菜单。 */
 export function useTenant(): TenantState {
   const app = useApp()
-  const current = useSyncExternalStore(app.session.subscribe, () => app.session.identity()?.tenant)
-  const account = useSyncExternalStore(app.session.subscribe, () => app.session.identity()?.account ?? "")
+  const current = useSyncExternalStore(app.session.subscribe, () => app.session.identity()?.tenant, noTenant)
+  const account = useSyncExternalStore(app.session.subscribe, () => app.session.identity()?.account ?? "", noAccount)
   const { data = [] } = useQuery({
     queryKey: ["tenon", "tenants", account],
     queryFn: () => app.tenancy?.tenants() ?? Promise.resolve([]),
