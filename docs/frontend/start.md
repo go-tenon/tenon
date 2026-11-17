@@ -113,7 +113,7 @@ bunx tenon-start compile --out ssr.bin --base /admin/
 模板中它是前端的 `bun run build`，由 `tenon build` 运行，见[开发工具](../installation/tooling.md#build)。
 
 - `--base` 是前端挂载的路径，与 `vite.config.ts` 的 `base` 相同，默认 `/`。静态文件按它提供。
-- `--target` 是运行的系统和架构，`bun-linux-x64` 或 `bun-linux-arm64`。没有写时按环境变量 `GOARCH`（`tenon build` 设为 Go 程序的架构），再没有时是当前机器的架构。
+- `--target` 是运行的系统和架构，`bun-linux-x64` 或 `bun-linux-arm64`。没有写时按环境变量 `GOARCH`（`tenon build` 设为 Go 程序的架构，见 `--arch`），再没有时是当前机器的架构。
 - `--skip-build` 跳过 `vite build`，直接编译已有的 `dist`。
 - 可执行文件中的静态文件：`assets/` 下的文件名带内容哈希，永久缓存；其余文件每次协商。source map 不嵌入。
 

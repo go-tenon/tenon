@@ -232,7 +232,7 @@ func devCommand() *cobra.Command {
 }
 
 func buildCommand() *cobra.Command {
-	var out string
+	var out, arch string
 	cmd := &cobra.Command{
 		Use:   "build",
 		Short: "把每个前端编译成 SSR 可执行文件，再编译应用（嵌入它们）",
@@ -242,6 +242,14 @@ func buildCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			env := os.Environ()
+			switch arch {
+			case "":
+			case "amd64", "arm64":
+				env = append(env, "GOOS=linux", "GOARCH="+arch)
+			default:
+				return fmt.Errorf("--arch %q: must be amd64 or arm64", arch)
+			}
 			if len(cfg.Frontends) > 0 {
 				if _, err := dev.SyncJS("."); err != nil {
 					return err
@@ -250,14 +258,18 @@ func buildCommand() *cobra.Command {
 					return err
 				}
 				// SSR 可执行文件的架构与 Go 程序相同：tenon-start compile 读取 GOARCH。
-				goarch, err := exec.CommandContext(cmd.Context(), "go", "env", "GOARCH").Output()
-				if err != nil {
-					return fmt.Errorf("go env GOARCH: %w", err)
+				goarch := arch
+				if goarch == "" {
+					out, err := exec.CommandContext(cmd.Context(), "go", "env", "GOARCH").Output()
+					if err != nil {
+						return fmt.Errorf("go env GOARCH: %w", err)
+					}
+					goarch = strings.TrimSpace(string(out))
 				}
 				for _, f := range cfg.Frontends {
 					c := exec.CommandContext(cmd.Context(), "bun", "run", "build")
 					c.Dir = f.Dir
-					c.Env = append(os.Environ(), "GOARCH="+strings.TrimSpace(string(goarch)))
+					c.Env = append(slices.Clone(env), "GOARCH="+goarch)
 					c.Stdout, c.Stderr = cmd.OutOrStdout(), cmd.ErrOrStderr()
 					if err := c.Run(); err != nil {
 						return fmt.Errorf("%s: bun run build: %w", f.Dir, err)
@@ -267,10 +279,18 @@ func buildCommand() *cobra.Command {
 			if out == "" {
 				out = filepath.Join("bin", path.Base(cfg.Main))
 			}
-			return run(cmd, ".", "go", "build", "-trimpath", "-o", out, cfg.Main)
+			c := exec.CommandContext(cmd.Context(), "go", "build", "-trimpath", "-o", out, cfg.Main)
+			c.Env = env
+			c.Stdout, c.Stderr = cmd.OutOrStdout(), cmd.ErrOrStderr()
+			if err := c.Run(); err != nil {
+				return fmt.Errorf("go build: %w", err)
+			}
+			return nil
 		},
 	}
 	cmd.Flags().StringVarP(&out, "output", "o", "", "输出的二进制，默认 bin/<入口包的目录名>")
+	cmd.Flags().StringVar(&arch, "arch", "", "目标架构 amd64 或 arm64（Linux），默认与本机相同。"+
+		"不要用 GOARCH 环境变量：go tool tenon 会按它把 tenon 本身编译成目标架构，在本机无法运行")
 	return cmd
 }
 
