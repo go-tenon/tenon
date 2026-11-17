@@ -7,13 +7,15 @@
     "client",
     "registry",
     "shell",
-    "start"
+    "start",
+    "ui"
   ],
   "scripts": {
     "check": "biome check .",
-    "typecheck": "bun run --filter '@go-tenon/*' typecheck && tsc --noEmit -p e2e",
+    "typecheck": "bun run --filter '@go-tenon/*' typecheck && tsc --noEmit -p e2e && tsc --noEmit -p playground",
     "test": "vitest run --passWithNoTests",
-    "e2e": "playwright test -c e2e/playwright.config.ts"
+    "e2e": "playwright test -c e2e/playwright.config.ts",
+    "playground": "vite --config playground/vite.config.ts"
   },
   "devDependencies": {
     "@ai-sdk/react": "4.0.177",
@@ -22,8 +24,12 @@
     "@ant-design/x": "2.10.0",
     "@ant-design/x-markdown": "2.10.0",
     "@biomejs/biome": "2.6.8",
+    "@mantine/core": "9.8.1",
+    "@mantine/hooks": "9.8.1",
+    "@mantine/notifications": "9.8.1",
     "@playwright/test": "1.65.1",
     "@shadcn/react": "0.3.1",
+    "@tabler/icons-react": "3.50.0",
     "@tanstack/react-query": "5.107.1",
     "@tanstack/react-router": "1.170.46",
     "@tanstack/react-table": "9.3.1",
