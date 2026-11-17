@@ -120,14 +120,7 @@ function AdminShell(): ReactNode {
           <NotificationsMenu source={notifications} />
         </>
       }
-      user={
-        <UserMenu
-          name="韩梅梅"
-          email="meimei@acme.cn"
-          logout={async () => {}}
-          items={[{ label: "账号设置", to: "/settings" }]}
-        />
-      }
+      user={<UserMenu name="韩梅梅" logout={async () => {}} items={[{ label: "账号设置", to: "/settings" }]} />}
     />
   )
 }
@@ -281,9 +274,9 @@ function adminApp() {
     layout.addChildren([
       page(layout, "/", "概览", "dashboard", AdminHome),
       trade.addChildren([
-        page(trade, "/orders", "订单", undefined, AdminOrders),
-        page(trade, "/refunds", "退款", undefined, () => <AdminPlaceholder title="退款" />),
-        page(trade, "/invoices", "发票", undefined, () => <AdminPlaceholder title="发票" />),
+        page(trade, "/orders", "订单", "order", AdminOrders),
+        page(trade, "/refunds", "退款", "receipt", () => <AdminPlaceholder title="退款" />),
+        page(trade, "/invoices", "发票", "file-text", () => <AdminPlaceholder title="发票" />),
       ]),
       page(layout, "/products", "商品", "product", () => <AdminPlaceholder title="商品" />),
       customers,
@@ -353,7 +346,7 @@ function ConsoleShell(): ReactNode {
       title="Acme Cloud"
       maxWidth={1200}
       actions={<NotificationsMenu source={notifications} />}
-      user={<UserMenu name="韩梅梅" email="meimei@acme.cn" logout={async () => {}} />}
+      user={<UserMenu name="韩梅梅" logout={async () => {}} />}
     />
   )
 }

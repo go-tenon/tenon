@@ -7,5 +7,5 @@ export const theme = createUiTheme({ preset: "site", landing: "[[.Landing]]", pr
 [[- else]]
 
 // 主题：样式预设加上品牌色和圆角。改品牌色只改这里。
-export const theme = createUiTheme({ preset: "[[.Style]]", primary: "#4f5bd5" })
+export const theme = createUiTheme({ preset: "[[.Style]]", primary: "[[if eq .Style "admin"]]#34507f[[else]]#4f5bd5[[end]]" })
 [[- end]]

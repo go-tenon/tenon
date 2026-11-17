@@ -4,6 +4,7 @@
  */
 @import "@mantine/core/styles.css";
 @import "@mantine/notifications/styles.css";
+@import "@mantine/spotlight/styles.css";
 @import "@mantine/dates/styles.css";
 @import "mantine-datatable/styles.css";
 @import "./landing.css";
@@ -43,6 +44,19 @@ body {
   font-feature-settings: "cv11", "ss01";
 }
 
+/* 按钮类的元素用手型指针（Mantine 默认跟随浏览器，按钮是箭头）；禁用时是 not-allowed。 */
+.mantine-Button-root,
+.mantine-ActionIcon-root,
+.mantine-UnstyledButton-root,
+.mantine-Pagination-control,
+.mantine-SegmentedControl-label {
+  cursor: pointer;
+}
+
+:is(.mantine-Button-root, .mantine-ActionIcon-root, .mantine-Pagination-control):is(:disabled, [data-disabled]) {
+  cursor: not-allowed;
+}
+
 /* ———————————————— 应用外壳 ———————————————— */
 
 .tn-shell {
@@ -50,26 +64,39 @@ body {
 }
 
 .tn-shell .mantine-AppShell-main {
-  background: var(--tn-canvas);
   min-height: 100dvh;
 }
 
+/* 侧栏比内容区深一档。 */
 .tn-navbar {
-  background: var(--tn-surface);
+  background: light-dark(var(--mantine-color-gray-1), var(--mantine-color-dark-8));
+}
+
+.tn-header-inner {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding-inline: var(--mantine-spacing-md);
+}
+
+/* 顶栏左边：收起侧栏的按钮（窄屏是汉堡按钮）和标志。 */
+.tn-header-start {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--mantine-spacing-sm);
+  padding-right: 16px;
 }
 
 .tn-brand {
   display: flex;
   align-items: center;
   gap: 10px;
-  height: var(--tn-header-height);
-  padding-inline: 16px;
-  font-weight: 600;
+  color: var(--mantine-color-text);
   font-size: var(--mantine-font-size-md);
-  color: var(--tn-text);
+  font-weight: 700;
+  text-decoration: none;
   white-space: nowrap;
-  overflow: hidden;
-  border-bottom: 1px solid transparent;
 }
 
 .tn-brand-mark {
@@ -78,113 +105,220 @@ body {
   flex: none;
   width: 26px;
   height: 26px;
-  border-radius: var(--mantine-radius-sm);
-  background: var(--mantine-color-brand-6);
-  color: white;
+  border-radius: var(--mantine-radius-md);
+  background: var(--mantine-primary-color-filled);
+  color: var(--mantine-color-white);
   font-size: 13px;
   font-weight: 700;
-  letter-spacing: -0.02em;
+}
+
+/* 侧栏顶部的搜索入口：像一个输入框。 */
+.tn-nav-search-wrap {
+  padding: var(--mantine-spacing-sm) var(--mantine-spacing-sm) 0;
+}
+
+.tn-nav-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 32px;
+  padding-inline: 10px;
+  border: 1px solid light-dark(var(--mantine-color-gray-3), var(--mantine-color-dark-4));
+  border-radius: var(--mantine-radius-sm);
+  background: var(--mantine-color-body);
+  color: var(--mantine-color-dimmed);
+  font-size: var(--mantine-font-size-sm);
+
+  & span {
+    flex: 1;
+  }
+
+  @media (hover: hover) {
+    &:hover {
+      border-color: light-dark(var(--mantine-color-gray-4), var(--mantine-color-dark-3));
+    }
+  }
 }
 
 .tn-nav {
-  padding: 8px;
+  padding-block: var(--mantine-spacing-sm);
 }
 
+/* 菜单项。第一级：左右留 8px，浅色底的图标；当前页面主色实底、白字。分组是 button，所以宽度要写明。 */
 .tn-nav-item {
+  --tn-nav-indent: 8px;
+  width: calc(100% - var(--tn-nav-indent) - 8px);
+  margin: 1px 8px 1px var(--tn-nav-indent);
+  padding: 6px 8px;
   border-radius: var(--mantine-radius-sm);
-  padding-block: 6px;
-  padding-inline: 10px;
-  color: var(--tn-muted);
+  color: var(--mantine-color-text);
   font-size: var(--mantine-font-size-sm);
   font-weight: 500;
-  margin-bottom: 1px;
-  transition:
-    background-color 120ms ease,
-    color 120ms ease;
+
+  & .mantine-NavLink-section[data-position="left"] {
+    margin-inline-end: var(--mantine-spacing-sm);
+  }
+
+  & .mantine-NavLink-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  @media (hover: hover) {
+    &:hover {
+      background-color: light-dark(var(--mantine-color-gray-2), var(--mantine-color-dark-6));
+    }
+  }
+
+  /* 当前页面所在的分组 */
+  &[data-in-path] {
+    color: var(--mantine-primary-color-filled);
+    font-weight: 600;
+  }
+
+  &[data-active],
+  &[data-active]:hover {
+    background-color: var(--mantine-primary-color-filled);
+    color: var(--mantine-color-white);
+    font-weight: 600;
+  }
 }
 
-.tn-nav-item:hover {
-  background: var(--tn-hover);
-  color: var(--tn-text);
+.tn-nav-chevron {
+  transition: transform 200ms ease;
 }
 
-.tn-nav-item[data-active] {
-  background: var(--tn-active-bg);
-  color: var(--tn-active-text);
+.tn-nav-item[data-opened] .tn-nav-chevron {
+  transform: rotate(90deg);
 }
 
-.tn-nav-item[data-active] .mantine-NavLink-section {
-  color: var(--tn-active-text);
+/* 下级菜单：左侧一条竖线（对准上级图标的中线），向右缩进；每深一级再缩进 16px。 */
+.tn-nav-item:not([data-depth="0"]) {
+  --tn-nav-indent: calc(29px + (var(--tn-nav-depth) - 1) * 16px);
+  padding: 6px 10px;
+  border-left: 1px solid light-dark(var(--mantine-color-gray-4), var(--mantine-color-dark-4));
+  border-radius: 0 var(--mantine-radius-sm) var(--mantine-radius-sm) 0;
+  color: light-dark(var(--mantine-color-gray-7), var(--mantine-color-dark-1));
+
+  & .mantine-NavLink-section[data-position="left"] {
+    margin-inline-end: 8px;
+  }
+
+  @media (hover: hover) {
+    &:hover {
+      color: var(--mantine-color-text);
+    }
+  }
+
+  &[data-in-path] {
+    color: var(--mantine-primary-color-filled);
+  }
+
+  &[data-active],
+  &[data-active]:hover {
+    border-left-color: var(--mantine-primary-color-filled);
+    color: var(--mantine-color-white);
+  }
 }
 
-.tn-nav-item .mantine-NavLink-section[data-position="left"] {
-  margin-inline-end: 10px;
-  color: var(--tn-subtle);
-}
-
-.tn-nav-item:hover .mantine-NavLink-section[data-position="left"] {
-  color: inherit;
-}
-
-.tn-nav-item .mantine-NavLink-label {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.tn-nav-children {
-  margin-inline-start: 19px;
-  padding-inline-start: 8px;
-  border-inline-start: 1px solid var(--tn-border);
-}
-
-.tn-nav-collapsed .tn-nav-item {
-  justify-content: center;
-  padding-inline: 0;
-  height: 36px;
-}
-
-.tn-nav-collapsed .tn-nav-item .mantine-NavLink-section[data-position="left"] {
-  margin: 0;
-}
-
-.tn-navbar-footer {
-  border-top: 1px solid var(--tn-border);
-  padding: 8px;
-}
-
-.tn-header {
-  background: var(--tn-header-blur);
-  backdrop-filter: saturate(180%) blur(12px);
-}
-
-.tn-header-inner {
+/* 收起时的窄栏：40px 的图标按钮，当前分组主色实底。 */
+.tn-nav-collapsed,
+.tn-nav-search-rail {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 12px;
-  height: 100%;
-  padding-inline: 16px;
+  gap: 4px;
+}
+
+.tn-nav-search-rail {
+  padding-top: var(--mantine-spacing-sm);
+}
+
+.tn-nav-rail-item {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--mantine-radius-md);
+  color: light-dark(var(--mantine-color-gray-7), var(--mantine-color-dark-1));
+
+  @media (hover: hover) {
+    &:hover {
+      background-color: light-dark(var(--mantine-color-gray-2), var(--mantine-color-dark-6));
+      color: var(--mantine-color-text);
+    }
+  }
+
+  &[data-active],
+  &[data-active]:hover {
+    background-color: var(--mantine-primary-color-filled);
+    color: var(--mantine-color-white);
+  }
+}
+
+.tn-nav-divider {
+  width: 24px;
+  height: 1px;
+  margin-top: 4px;
+  background: light-dark(var(--mantine-color-gray-3), var(--mantine-color-dark-4));
+}
+
+.tn-nav-menu-item[data-active] {
+  background-color: var(--mantine-primary-color-light);
+  color: var(--mantine-primary-color-light-color);
+  font-weight: 600;
+}
+
+/* 用户菜单：只有头像；菜单分成几段，配色是三格。 */
+.tn-avatar {
+  display: block;
+  border-radius: 50%;
+}
+
+.tn-menu-section {
+  padding: 4px;
+}
+
+.tn-menu-section + .tn-menu-section {
+  border-top: 1px solid light-dark(var(--mantine-color-gray-2), var(--mantine-color-dark-4));
+}
+
+.tn-schemes {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  padding: 4px;
+  border-block: 1px solid light-dark(var(--mantine-color-gray-2), var(--mantine-color-dark-4));
+
+  &:first-child {
+    border-top: 0;
+  }
+}
+
+.tn-scheme {
+  display: grid;
+  place-items: center;
+  height: 36px;
+  border-radius: var(--mantine-radius-sm);
+  color: var(--mantine-color-dimmed);
+
+  @media (hover: hover) {
+    &:hover {
+      background-color: light-dark(var(--mantine-color-gray-0), var(--mantine-color-dark-6));
+    }
+  }
+
+  &[data-active] {
+    background-color: light-dark(var(--mantine-color-gray-1), var(--mantine-color-dark-5));
+    color: var(--mantine-primary-color-filled);
+  }
 }
 
 .tn-crumbs .mantine-Breadcrumbs-separator {
-  color: var(--tn-subtle);
-  margin-inline: 6px;
-}
-
-.tn-crumbs a {
-  color: var(--tn-muted);
-  text-decoration: none;
-  font-size: var(--mantine-font-size-sm);
-}
-
-.tn-crumbs a:hover {
-  color: var(--tn-text);
-}
-
-.tn-crumbs [aria-current="page"] {
-  color: var(--tn-text);
-  font-weight: 500;
-  font-size: var(--mantine-font-size-sm);
+  color: var(--mantine-color-dimmed);
+  font-size: var(--mantine-font-size-xs);
 }
 
 .tn-content {

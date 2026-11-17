@@ -4,6 +4,7 @@ import { createRootRouteWithContext, createRoute, Outlet } from "@tanstack/react
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, describe, expect, it } from "vitest"
 import { AppLayout } from "./app-layout"
+import { Page } from "./page"
 import { Fill, type RouterContext, requireAuth } from "./shell"
 import { renderApp } from "./testing"
 
@@ -32,14 +33,14 @@ function tree() {
       path,
       staticData: { title, order, permission, icon: "home" },
       component: () => (
-        <>
+        <Page title={title}>
           {title === "用户" && (
             <Fill name="actions">
               <button type="button">新建用户</button>
             </Fill>
           )}
           <p>{`${title}页面`}</p>
-        </>
+        </Page>
       ),
     })
   const trade = createRoute({ getParentRoute: () => layout, path: "/trade", staticData: { title: "交易", order: 1 } })
@@ -56,7 +57,7 @@ function tree() {
 }
 
 describe("AppLayout", () => {
-  it("侧栏按权限过滤菜单，高亮当前页面并展开所在的分组；面包屑是当前位置", async () => {
+  it("侧栏按权限过滤菜单，高亮当前页面并展开所在的分组；页面标题上面的面包屑是当前位置", async () => {
     await renderApp(tree(), { path: "/trade/orders", permissions: ["users:manage"] })
     await screen.findByText("订单页面")
     const nav = screen.getByRole("navigation", { name: "主导航" })
@@ -65,6 +66,7 @@ describe("AppLayout", () => {
     const current = within(nav).getByText("订单").closest("a") as HTMLAnchorElement
     expect(current.dataset.active).toBe("true")
     expect(within(nav).getByText("退款")).toBeTruthy() // 当前页面所在的分组展开
+    expect((within(nav).getByText("交易").closest("[data-in-path]") as HTMLElement | null)?.tagName).toBe("BUTTON") // 分组是按钮，可以用键盘展开
     const crumbs = screen.getByText("交易", { selector: ".tn-crumbs a" })
     expect(crumbs.getAttribute("href")).toBe("/trade")
     expect(screen.getByText("订单", { selector: "[aria-current=page]" })).toBeTruthy()
@@ -93,6 +95,43 @@ describe("AppLayout", () => {
     expect(within(nav).getByLabelText("用户")).toBeTruthy()
     expect(within(nav).getByLabelText("交易")).toBeTruthy()
     expect(JSON.stringify(localStorage)).toContain("collapsed")
+  })
+
+  it("顶栏有标志和名称，点击回到首页", async () => {
+    await renderApp(tree(), { path: "/users", permissions: ["users:manage"] })
+    await screen.findByText("用户页面")
+    const header = document.querySelector(".tn-header") as HTMLElement
+    const brand = within(header).getByText("测试后台").closest("a") as HTMLAnchorElement
+    expect(brand.getAttribute("href")).toBe("/")
+    expect(within(brand).getByText("测")).toBeTruthy()
+  })
+
+  it("页面搜索列出有权限的页面，说明是所在的分组；选择后打开页面", async () => {
+    const app = await renderApp(tree(), { permissions: ["users:manage"] })
+    await screen.findByText("概览页面")
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: /搜索/ })))
+    const input = await screen.findByPlaceholderText("搜索页面…")
+    const options = () => [...document.querySelectorAll(".mantine-Spotlight-action")].map((a) => a.textContent)
+    expect(options()).toEqual(["概览", "订单交易", "退款交易", "用户"]) // 没有权限的“计费”不在其中
+    await act(async () => fireEvent.change(input, { target: { value: "退" } }))
+    expect(options()).toEqual(["退款交易"])
+    const option = document.querySelector(".mantine-Spotlight-action") as HTMLElement
+    await act(async () => fireEvent.click(option))
+    await screen.findByText("退款页面")
+    expect(app.router.state.location.pathname).toBe("/trade/refunds")
+  })
+
+  it("search 为 false 时没有页面搜索", async () => {
+    const root = createRootRouteWithContext<RouterContext>()({ component: Outlet })
+    const layout = createRoute({
+      getParentRoute: () => root,
+      id: "_app",
+      component: () => <AppLayout title="测试后台" search={false} />,
+    })
+    const home = createRoute({ getParentRoute: () => layout, path: "/", component: () => <p>首页</p> })
+    await renderApp(root.addChildren([layout.addChildren([home])]))
+    await screen.findByText("首页")
+    expect(screen.queryByRole("button", { name: /搜索/ })).toBeNull()
   })
 
   it("没有登录时跳到登录页", async () => {

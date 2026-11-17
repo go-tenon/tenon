@@ -140,7 +140,7 @@ function Document({ children }: { children: ReactNode }) {
 
 - `ColorSchemeScript` 在页面显示之前设置亮色或暗色，避免闪烁。它是内联脚本，要带上 Go 为这次请求生成的 CSP nonce（`createApp` 的 `router.ssr.nonce` 来自 `@go-tenon/start` 的 `cspNonce()`）。
 - `mantineHtmlProps` 让服务端渲染的 `<html>` 与浏览器设置的配色属性一致，不产生水合警告。
-- `UIProvider` 安装 Mantine 的主题、右上角的通知（`@mantine/notifications`）、确认对话框（`@mantine/modals`）和图标名称的对应表。组件测试中传 `env="test"`，关闭过渡动画和 portal。配色默认跟随系统，用户在顶栏切换后保存在浏览器中。
+- `UIProvider` 安装 Mantine 的主题、右上角的通知（`@mantine/notifications`）、确认对话框（`@mantine/modals`）和图标名称的对应表。组件测试中传 `env="test"`，关闭过渡动画和 portal。配色默认跟随系统，用户在用户菜单中切换后保存在浏览器中。
 
 <a id="presets"></a>
 ## 样式预设与主题
@@ -150,14 +150,14 @@ function Document({ children }: { children: ReactNode }) {
 ```ts title="src/theme.ts"
 import { createUiTheme } from "@go-tenon/ui"
 
-export const theme = createUiTheme({ preset: "admin", primary: "#4f5bd5" })
+export const theme = createUiTheme({ preset: "admin", primary: "#34507f" })
 ```
 
 三套预设共用一套设计语言：系统字体、偏冷的中性色、1 像素的细边框、几乎不用阴影，层级靠留白、字重和背景的明暗区分。亮色和暗色都完整定义，组件中不写死颜色。
 
 | 预设 | 适合 | 特点 |
 | --- | --- | --- |
-| `admin` | 运营后台、内部系统、以表格和表单为主的后台 | 正文 13px，控件 30px 高，顶栏 48px，圆角 4px，一屏能看到更多数据 |
+| `admin` | 运营后台、内部系统、以表格和表单为主的后台 | 正文 14px，控件 32px 高，顶栏 52px，圆角 4px，主色是沉稳的深蓝灰，一屏能看到更多数据 |
 | `console` | 面向客户的 SaaS 控制台、用户中心 | 正文 14px，控件 36px 高，顶栏 56px，圆角 8px，留白舒展 |
 | `site` | 官网、落地页、文章、文档 | 正文 16px，大标题随屏幕宽度缩放，行距宽松，顶栏 64px |
 
@@ -167,7 +167,7 @@ export const theme = createUiTheme({ preset: "admin", primary: "#4f5bd5" })
 `createUiTheme` 的选项是设计令牌：
 
 - `preset` 是样式预设；`themes.admin`、`themes.console`、`themes.site` 是不改令牌的三套主题。
-- `primary` 是品牌色，默认是偏冷的蓝紫 `#4f5bd5`。它生成 10 级色板：同一色相，按感知亮度（OKLCH）分级，第 6 级（亮色模式的主色）就是输入的颜色，很浅或很深的颜色也从浅到深单调。也可以单独调用 `palette(hex)`。
+- `primary` 是品牌色，默认是偏冷的蓝紫 `#4f5bd5`，`admin` 预设默认是深蓝灰 `#34507f`。它生成 10 级色板：同一色相，按感知亮度（OKLCH）分级，第 6 级（亮色模式的主色）就是输入的颜色，很浅或很深的颜色也从浅到深单调。也可以单独调用 `palette(hex)`。
 - `radius` 是基础圆角（像素），其他圆角按比例缩放。
 - `override` 是再合并的 Mantine 主题覆盖，用于令牌之外的调整，例如某个组件的默认属性。
 - `landing` 是落地页的风格（`classic`、`dusk`、`ink`、`mist`），只对 `site` 预设有意义，见[落地页](site.md#landing)。

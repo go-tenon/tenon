@@ -1,4 +1,4 @@
-// 顶栏的菜单：用户菜单、租户切换、通知、后台任务。作为 AppLayout 的参数（租户切换由 AppLayout 自己放）：
+// 顶栏的菜单：用户菜单（含配色）、租户切换、通知、后台任务。作为 AppLayout 的参数（租户切换由 AppLayout 自己放）：
 //
 //   <AppLayout user={<UserMenu name={me.name} logout={api.auth.logout} />} actions={<NotificationsMenu source={inbox} />} />
 
@@ -19,8 +19,19 @@ import {
   Text,
   Tooltip,
   UnstyledButton,
+  useMantineColorScheme,
 } from "@mantine/core"
-import { IconBell, IconCheck, IconListCheck, IconLogout, IconSelector, IconX } from "@tabler/icons-react"
+import {
+  IconBell,
+  IconCheck,
+  IconDeviceDesktop,
+  IconListCheck,
+  IconLogout,
+  IconMoon,
+  IconSelector,
+  IconSun,
+  IconX,
+} from "@tabler/icons-react"
 import { useNavigate } from "@tanstack/react-router"
 import { type ReactNode, useState } from "react"
 import {
@@ -45,20 +56,20 @@ export interface UserMenuItem {
 
 /** UserMenu 的选项。 */
 export interface UserMenuProps {
-  /** 显示的名称；读取中时为空。 */
+  /** 用户的名称：头像中显示首字，悬停时显示全名；读取中时为空。 */
   name?: string
-  /** 名称下面的一行，例如邮箱。 */
-  email?: string
   /** 头像的地址；没有时显示名称的首字。 */
   avatar?: string
   /** 调用应用的退出接口：撤销登录、清除会话 cookie。之后清除会话中的身份。 */
   logout?: () => Promise<unknown>
-  /** 退出之前的菜单项，例如“账号设置”。 */
+  /** 菜单最上面的菜单项，例如“个人资料”。 */
   items?: UserMenuItem[]
+  /** 菜单中的配色切换（亮色、暗色、跟随系统），默认显示；false 时不显示。 */
+  colorScheme?: boolean
 }
 
-/** 用户菜单：头像和名称，菜单中有应用的菜单项和退出登录。 */
-export function UserMenu({ name, email, avatar, logout, items = [] }: UserMenuProps): ReactNode {
+/** 用户菜单：只显示头像；菜单中有应用的菜单项、配色和退出登录。 */
+export function UserMenu({ name, avatar, logout, items = [], colorScheme = true }: UserMenuProps): ReactNode {
   const app = useApp()
   const navigate = useNavigate()
   const signOut = async () => {
@@ -73,44 +84,64 @@ export function UserMenu({ name, email, avatar, logout, items = [] }: UserMenuPr
   return (
     <Menu width={220} position="bottom-end">
       <Menu.Target>
-        <UnstyledButton aria-label="用户菜单" style={{ borderRadius: 999, padding: 2 }}>
-          <Group gap={8} wrap="nowrap">
-            <Avatar src={avatar} size={28} radius="xl" color="brand" variant="light">
-              {name?.slice(0, 1)}
-            </Avatar>
-          </Group>
+        <UnstyledButton className="tn-avatar" aria-label="用户菜单" title={name}>
+          <Avatar src={avatar} size={30} radius="xl" color="brand">
+            {name?.slice(0, 1)}
+          </Avatar>
         </UnstyledButton>
       </Menu.Target>
-      <Menu.Dropdown>
-        {(name || email) && (
-          <Box px="sm" py={8}>
-            <Text size="sm" fw={500} truncate>
-              {name}
-            </Text>
-            {email && (
-              <Text size="xs" c="dimmed" truncate>
-                {email}
-              </Text>
-            )}
-          </Box>
+      <Menu.Dropdown p={0}>
+        {items.length > 0 && (
+          <div className="tn-menu-section">
+            {items.map((item, i) => (
+              <Menu.Item
+                // biome-ignore lint/suspicious/noArrayIndexKey: 菜单项是固定的列表
+                key={i}
+                leftSection={item.icon}
+                onClick={() => (item.to ? navigate({ to: item.to }) : item.onClick?.())}
+              >
+                {item.label}
+              </Menu.Item>
+            ))}
+          </div>
         )}
-        {(name || email) && <Menu.Divider />}
-        {items.map((item, i) => (
-          <Menu.Item
-            // biome-ignore lint/suspicious/noArrayIndexKey: 菜单项是固定的列表
-            key={i}
-            leftSection={item.icon}
-            onClick={() => (item.to ? navigate({ to: item.to }) : item.onClick?.())}
-          >
-            {item.label}
+        {colorScheme && <ColorSchemePicker />}
+        <div className="tn-menu-section">
+          <Menu.Item leftSection={<IconLogout size={18} stroke={1.5} />} onClick={() => void signOut()}>
+            退出登录
           </Menu.Item>
-        ))}
-        {items.length > 0 && <Menu.Divider />}
-        <Menu.Item leftSection={<IconLogout size={16} stroke={1.6} />} onClick={() => void signOut()}>
-          退出登录
-        </Menu.Item>
+        </div>
       </Menu.Dropdown>
     </Menu>
+  )
+}
+
+const schemes = [
+  { value: "light", label: "亮色", icon: IconSun },
+  { value: "dark", label: "暗色", icon: IconMoon },
+  { value: "auto", label: "跟随系统", icon: IconDeviceDesktop },
+] as const
+
+/** 配色：亮色、暗色、跟随系统三格，当前的一格带底色。点击不关闭菜单。 */
+function ColorSchemePicker(): ReactNode {
+  const { colorScheme, setColorScheme } = useMantineColorScheme()
+  return (
+    <div className="tn-schemes" role="radiogroup" aria-label="配色">
+      {schemes.map(({ value, label, icon: SchemeIcon }) => (
+        <Tooltip key={value} label={label}>
+          <UnstyledButton
+            className="tn-scheme"
+            role="radio"
+            aria-checked={colorScheme === value}
+            aria-label={label}
+            data-active={colorScheme === value || undefined}
+            onClick={() => setColorScheme(value)}
+          >
+            <SchemeIcon size={20} stroke={1.6} />
+          </UnstyledButton>
+        </Tooltip>
+      ))}
+    </div>
   )
 }
 
@@ -169,11 +200,11 @@ export function NotificationsMenu({ source }: { source: NotificationsSource }): 
       <Popover.Target>
         <Indicator disabled={n.unread === 0} label={n.unread > 99 ? "99+" : n.unread} size={16} offset={6} color="red">
           <ActionIcon
-            size="lg"
+            size={32}
             aria-label={n.unread > 0 ? `通知，${n.unread} 条未读` : "通知"}
             onClick={() => setOpened((o) => !o)}
           >
-            <IconBell size={18} stroke={1.6} />
+            <IconBell size={16} stroke={1.5} />
           </ActionIcon>
         </Indicator>
       </Popover.Target>
@@ -256,8 +287,8 @@ export function OperationsMenu(): ReactNode {
     <Popover width={340} position="bottom-end">
       <Popover.Target>
         <Tooltip label={running > 0 ? `${running} 个任务进行中` : "后台任务"}>
-          <ActionIcon size="lg" aria-label="后台任务">
-            {running > 0 ? <Loader size={16} /> : <IconListCheck size={18} stroke={1.6} />}
+          <ActionIcon size={32} aria-label="后台任务">
+            {running > 0 ? <Loader size={16} /> : <IconListCheck size={16} stroke={1.5} />}
           </ActionIcon>
         </Tooltip>
       </Popover.Target>

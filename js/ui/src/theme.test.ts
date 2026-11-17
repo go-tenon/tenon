@@ -31,7 +31,13 @@ describe("createUiTheme", () => {
     const site = layoutMetrics(themes.site)
     expect(admin.headerHeight).toBeLessThan(console.headerHeight)
     expect(console.headerHeight).toBeLessThan(site.headerHeight)
-    expect([admin.controlSize, console.controlSize, site.controlSize]).toEqual(["xs", "sm", "md"])
+    expect(admin.navbarWidth).toBeLessThan(console.navbarWidth)
+    expect([admin.controlSize, console.controlSize, site.controlSize]).toEqual(["sm", "sm", "md"])
+  })
+
+  it("运营后台默认用深蓝灰的主色，项目的品牌色覆盖它", () => {
+    expect(themes.admin.colors?.brand?.[6]).toBe("#34507f")
+    expect(createUiTheme({ preset: "admin", primary: "#0f766e" }).colors?.brand?.[6]).toBe("#0f766e")
   })
 
   it("由设计令牌生成：品牌色、圆角、字体覆盖预设", () => {
