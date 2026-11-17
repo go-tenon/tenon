@@ -69,6 +69,7 @@ func Generate(api *rest.API, opts Options) (*Result, error) {
 	return g.run()
 }
 
+// generator 生成一个 API 的 Go 客户端。
 type generator struct {
 	api      *rest.API
 	opts     Options
@@ -88,6 +89,7 @@ type generator struct {
 	docs    map[string]map[token.Pos]string // 包路径 → 声明位置 → 注释
 }
 
+// newGenerator 为 API 和选项 opts 创建生成器。
 func newGenerator(api *rest.API, opts Options) (*generator, error) {
 	outPath, err := importPath(opts.Out)
 	if err != nil {
@@ -158,6 +160,7 @@ func (g *generator) load() error {
 	return nil
 }
 
+// endpointTypes 返回端点用到的类型：输入、输出和事件数据。
 func endpointTypes(ep rest.Endpoint) []reflect.Type {
 	ts := []reflect.Type{ep.Input, ep.Output}
 	for _, t := range ep.Events {

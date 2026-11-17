@@ -64,11 +64,13 @@ func (p *Problem) See(doc string) *Problem {
 	return p
 }
 
+// Error 返回问题的摘要。
 func (p *Problem) Error() string { return p.Summary }
 
 // skip 表示一项检查不适用。
 type skip struct{ reason string }
 
+// Error 返回检查不适用的原因。
 func (s *skip) Error() string { return s.reason }
 
 // Skip 返回表示检查不适用的错误，reason 说明原因，例如 "queue migrations have not been applied"。

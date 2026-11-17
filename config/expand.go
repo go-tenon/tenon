@@ -10,6 +10,7 @@ import (
 // lookupFunc 查找环境变量；第二个返回值表示是否已设置（空字符串仍算已设置）。
 type lookupFunc func(key string) (string, bool)
 
+// expandNode 展开 YAML 节点 n 及其子节点中的 ${NAME} 环境变量引用。
 func expandNode(n *yaml.Node, lookup lookupFunc) error {
 	switch n.Kind {
 	case yaml.ScalarNode:
@@ -30,6 +31,7 @@ func expandNode(n *yaml.Node, lookup lookupFunc) error {
 	return nil
 }
 
+// expandScalar 展开标量节点中的环境变量引用。
 func expandScalar(n *yaml.Node, lookup lookupFunc) error {
 	if !strings.Contains(n.Value, "${") {
 		return nil
@@ -45,6 +47,7 @@ func expandScalar(n *yaml.Node, lookup lookupFunc) error {
 	return nil
 }
 
+// expand 展开 s 中的 ${NAME} 和 ${NAME:-默认值}，变量由 lookup 查找。
 func expand(s string, lookup lookupFunc) (string, error) {
 	var b strings.Builder
 	for {
@@ -83,6 +86,7 @@ func expand(s string, lookup lookupFunc) (string, error) {
 	}
 }
 
+// validName 报告 name 是否是合法的环境变量名。
 func validName(name string) bool {
 	if name == "" {
 		return false

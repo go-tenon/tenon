@@ -49,6 +49,7 @@ type health struct {
 	} `json:"details"`
 }
 
+// checkHealth 请求 Gotenberg 的健康检查接口。
 func (r *Renderer) checkHealth(ctx context.Context) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(r.cfg.URL, "/")+"/health", nil)
 	if err != nil {
@@ -94,6 +95,7 @@ func checkHealth(status int, body []byte) error {
 		"restart Gotenberg and check its logs; Chromium needs enough memory (at least 1 GB)").See(docPDF)
 }
 
+// unauthorized 返回用户名或密码不对的检查结果。
 func unauthorized() error {
 	return doctor.Fail("Gotenberg rejected the username or password",
 		"set username and password to the values of --api-basic-auth-username and --api-basic-auth-password").See(docPDF)

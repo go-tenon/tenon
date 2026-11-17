@@ -191,6 +191,7 @@ func allowsUpload(r types.CORSRule, origin string) bool {
 		slices.ContainsFunc(r.ExposeHeaders, func(h string) bool { return strings.EqualFold(h, "etag") })
 }
 
+// allowsHeader 报告 CORS 规则 r 是否允许请求头 name。
 func allowsHeader(r types.CORSRule, name string) bool {
 	return slices.ContainsFunc(r.AllowedHeaders, func(h string) bool { return h == "*" || strings.EqualFold(h, name) })
 }

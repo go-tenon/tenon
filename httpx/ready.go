@@ -41,11 +41,13 @@ func Ready(opts ReadyOptions) http.Handler {
 	}
 }
 
+// ready 是就绪检查的处理器。
 type ready struct {
 	draining *Draining
 	checker  *health.Checker
 }
 
+// ServeHTTP 输出就绪状态：排空中或依赖检查失败时返回 503。
 func (r *ready) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	res := readyResult{Status: "ready"}
 	if r.draining != nil && r.draining.Load() {

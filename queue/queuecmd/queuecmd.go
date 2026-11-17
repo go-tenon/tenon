@@ -24,10 +24,12 @@ const errorWidth = 80
 // Option 调整 New 返回的命令。
 type Option func(*options)
 
+// options 是 queue 命令的选项。
 type options struct {
 	jetStream *jetStream
 }
 
+// jetStream 是连接 JetStream 需要的连接和配置。
 type jetStream struct {
 	nc  *nats.Conn
 	cfg queue.Config

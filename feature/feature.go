@@ -52,6 +52,7 @@ type Scope struct {
 	ref    identity.Ref
 }
 
+// scopeKind 是开关设置的作用范围的种类。
 type scopeKind uint8
 
 const (
@@ -109,6 +110,7 @@ type Setting struct {
 	UpdatedAt time.Time
 }
 
+// row 是 feature_settings 表中的一行：一个开关在一个范围内的设置。
 type row struct {
 	bun.BaseModel `bun:"table:feature_settings,alias:fs"`
 
@@ -215,6 +217,7 @@ func subjectOf(sub identity.Subject) identity.Ref {
 	return sub.Ref()
 }
 
+// evaluate 按主体、租户、所有人的顺序取第一个有设置的范围，判断开关 f 对 sub 是否开启；都没有设置时使用 f.Default。
 func evaluate(ctx context.Context, sub identity.Subject, f Flag, rows []row) bool {
 	var everyone, tenant, subject *row
 	for i := range rows {
@@ -343,6 +346,7 @@ func (s *Store) Prune(ctx context.Context) (int, error) {
 	return int(n), errors.Wrap(err, "feature: prune")
 }
 
+// checkScope 校验范围 scope 的租户或主体。
 func checkScope(scope Scope) error {
 	switch {
 	case scope.kind == tenantScope && !validKey(scope.tenant),
@@ -352,6 +356,7 @@ func checkScope(scope Scope) error {
 	return nil
 }
 
+// scopeOf 返回行 r 的作用范围。
 func scopeOf(r row) Scope {
 	switch {
 	case r.SubjectID != "":

@@ -16,6 +16,7 @@ type componentHandler struct {
 	grouped   bool
 }
 
+// threshold 返回组件 component 的最低级别，没有单独设置时用默认级别。
 func (h *componentHandler) threshold(component string) slog.Level {
 	if lv, ok := h.levels[component]; ok {
 		return lv
@@ -23,10 +24,12 @@ func (h *componentHandler) threshold(component string) slog.Level {
 	return h.root
 }
 
+// Enabled 报告级别 level 是否达到当前组件的最低级别。
 func (h *componentHandler) Enabled(ctx context.Context, level slog.Level) bool {
 	return level >= h.threshold(h.componentOf(ctx)) && h.inner.Enabled(ctx, level)
 }
 
+// Handle 按记录所属组件的最低级别过滤后交给下一个处理器。
 func (h *componentHandler) Handle(ctx context.Context, r slog.Record) error {
 	if component := h.componentOf(ctx); component == "" {
 		r.Attrs(func(a slog.Attr) bool {
@@ -60,6 +63,7 @@ func (h *componentHandler) componentOf(ctx context.Context) string {
 	return ""
 }
 
+// WithAttrs 返回追加了 attrs 的处理器，attrs 中有 component 时记下它。
 func (h *componentHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	c := *h
 	c.inner = h.inner.WithAttrs(attrs)
@@ -73,6 +77,7 @@ func (h *componentHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	return &c
 }
 
+// WithGroup 返回进入分组 name 的处理器。
 func (h *componentHandler) WithGroup(name string) slog.Handler {
 	if name == "" {
 		return h

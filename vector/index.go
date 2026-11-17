@@ -173,6 +173,7 @@ func (ix *Index[D]) Refresh(ctx context.Context, s *Store, load LoadFunc[D], key
 	return nil
 }
 
+// checkKey 检查文档的键不为空。
 func checkKey(key string) error {
 	if key == "" {
 		return errors.New("vector: empty key")
@@ -302,6 +303,7 @@ func (ix *Index[D]) entries(key string, docs []D) ([]entry, error) {
 	return out, nil
 }
 
+// pointID 返回文档 key 的第 pos 块在 Qdrant 中的 ID，由键和位置确定。
 func pointID(key string, pos int) *qdrant.PointId {
 	return qdrant.NewIDUUID(uuid.NewSHA1(pointSpace, []byte(key+"\x00"+strconv.Itoa(pos))).String())
 }

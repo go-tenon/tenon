@@ -34,6 +34,7 @@ func Migrations() fs.FS {
 	return f
 }
 
+// row 是 settings 表中的一行：一组设置在一个范围内的值。
 type row struct {
 	bun.BaseModel `bun:"table:settings,alias:s"`
 
@@ -164,6 +165,7 @@ func (g *Group[T]) Reset(ctx context.Context) error {
 	return errors.Wrapf(err, "settings: reset %q", g.name)
 }
 
+// check 检查租户范围的设置组有合法的租户。
 func (g *Group[T]) check() error {
 	if g.scoped && !validKey(g.tenant) {
 		return ErrInvalid.New(errorx.Public("field", "tenant"))
@@ -171,6 +173,7 @@ func (g *Group[T]) check() error {
 	return nil
 }
 
+// save 把 v 编码为 JSON 保存。
 func (g *Group[T]) save(ctx context.Context, db bun.IDB, v T) error {
 	b, err := json.Marshal(v)
 	if err != nil {
@@ -203,6 +206,7 @@ var (
 	textUnmarshaler = reflect.TypeFor[encoding.TextUnmarshaler]()
 )
 
+// shapeOf 返回结构体类型 t 的字段结构，用于合并保存的值和默认值。
 func shapeOf(t reflect.Type, path string) shape {
 	if t.Kind() != reflect.Struct {
 		return nil
@@ -215,6 +219,7 @@ func shapeOf(t reflect.Type, path string) shape {
 	return s
 }
 
+// addFields 把结构体 t 的字段按 JSON 路径加入 s。
 func addFields(s shape, t reflect.Type, path string) {
 	for i := range t.NumField() {
 		f := t.Field(i)

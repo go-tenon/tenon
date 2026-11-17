@@ -63,8 +63,8 @@ type Account func(ctx context.Context, client *http.Client, tok *oauth2.Token) (
 type Provider struct {
 	cfg      Config
 	oauth2   oauth2.Config
-	verifier *oidc.IDTokenVerifier // OpenID Connect
-	account  Account               // 只支持 OAuth 2.0
+	verifier *oidc.IDTokenVerifier // 校验 ID token，用于 OpenID Connect 提供方
+	account  Account               // 读取账号，用于只支持 OAuth 2.0 的提供方
 }
 
 // Discover 读取 cfg.Issuer 的发现文档，创建 OpenID Connect 提供方：账号来自 token 响应中的 ID token。
@@ -107,6 +107,7 @@ func New(cfg Config, endpoint oauth2.Endpoint, account Account) (*Provider, erro
 	return p, nil
 }
 
+// check 校验配置，返回第一个不合法之处。
 func (cfg Config) check() error {
 	if _, err := (login.External{Provider: cfg.Provider, Subject: "x"}).Identifier(); err != nil {
 		return errors.Wrap(err, "oauth: Config.Provider")
@@ -117,6 +118,7 @@ func (cfg Config) check() error {
 	return nil
 }
 
+// newProvider 按配置和端点创建提供方。
 func newProvider(cfg Config, endpoint oauth2.Endpoint) *Provider {
 	return &Provider{cfg: cfg, oauth2: oauth2.Config{
 		ClientID: cfg.ClientID, ClientSecret: cfg.ClientSecret, Endpoint: endpoint,
@@ -200,6 +202,7 @@ func (p *Provider) Exchange(ctx context.Context, g Grant) (login.External, error
 	return p.exchange(ctx, conf, g.Code, g.Verifier, g.Nonce)
 }
 
+// exchange 用授权码 code 换取 token，再由 Account 读取账号，没有 Account 时校验 ID token，返回第三方账号。
 func (p *Provider) exchange(ctx context.Context, conf oauth2.Config, code, verifier, nonce string) (login.External, error) {
 	if code == "" {
 		return login.External{}, ErrInvalid.New()
@@ -271,6 +274,7 @@ func (p *Provider) verify(ctx context.Context, raw, nonce string) (login.Externa
 // flexBool 接受 JSON 布尔值和字符串 "true"、"false"：Apple 的 email_verified 是字符串。
 type flexBool bool
 
+// UnmarshalJSON 接受布尔值和字符串，字符串只有 "true" 为真。
 func (b *flexBool) UnmarshalJSON(data []byte) error {
 	var v any
 	if err := json.Unmarshal(data, &v); err != nil {

@@ -159,6 +159,7 @@ func (c Content) resolve(ctx context.Context, files Files) (ai.Content, error) {
 	return out, nil
 }
 
+// readFile 从 files 读取文件 id 的内容；没有设置 files 时返回错误。
 func readFile(ctx context.Context, files Files, id uuid.UUID) (ai.Media, error) {
 	if files == nil {
 		return ai.Media{}, errors.Newf("vector: content refers to file %s, but the store has no files (vector.WithFiles)", id)

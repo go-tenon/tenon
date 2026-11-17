@@ -31,8 +31,8 @@ const credentialTimeout = 10 * time.Second
 
 // Options 配置 Realtime，零值可用。
 type Options struct {
-	Authenticate   identity.TokenValidator      // 校验连接的 token，返回主体，通常与 rest.RequireToken 使用同一个校验器。token 是客户端 SDK 连接时传入的（App 等客户端），没有时是浏览器在连接请求中带上的会话 cookie（SessionCookie），页面不需要传 token。ctx 是连接请求的 context。返回不是系统故障的错误或 ID 为空的主体表示 token 无效，SDK 停止重连；返回系统故障（identity.Failed 报告为 true）表示暂时无法判断，客户端稍后重连。连接期间用同一个 token 定期重新调用，token 被撤销后连接结束。nil 时带 token 的连接一律拒绝。
-	Accounts       identity.Accounts            // 用 token 连接时接受的账号体系，以及每一种的 Resolver：按 Authenticate 给出的主体的 Type 调用对应的 Resolver，得到这个连接的主体，例如按 identity.TenantFromContext 加载用户在租户中的权限，通常与 rest.Options.Accounts 相同；Type 不在其中的 token 被拒绝，Resolver 为 nil 时直接使用 Authenticate 给出的主体。Resolver 返回 errorx.Unauthenticated 类错误或 ID 为空的主体表示主体已失效，其他不是系统故障的错误同样拒绝连接；连接期间与 Authenticate 一起定期重新调用，用户被停用或移出租户后连接结束。设置了 Authenticate 时必须设置；名称不合法时 New panic。
+	Authenticate   identity.TokenValidator      // 校验连接的 token（SDK 传入的 token，没有时是浏览器的会话 cookie），返回主体，通常与 rest.RequireToken 使用同一个校验器；token 无效时 SDK 停止重连，系统故障时客户端稍后重连。连接期间定期重新调用，token 被撤销后连接结束。nil 时拒绝带 token 的连接
+	Accounts       identity.Accounts            // 用 token 连接时接受的账号体系和各自的 Resolver，通常与 rest.Options.Accounts 相同：按主体的 Type 调用 Resolver 得到连接的主体；Type 不在其中、或 Resolver 返回系统故障以外的错误时拒绝连接。连接期间与 Authenticate 一起定期重新调用，用户被停用或移出租户后连接结束。设置了 Authenticate 时必须设置
 	SessionCookie  httpx.SessionCookie          // 浏览器的会话 cookie，与 rest.Options.SessionCookie 相同；零值是 httpx.DefaultSessionCookieName。
 	Tenant         func(r *http.Request) string // 从连接请求中取出它所在的租户，例如路径参数 chi.URLParam(r, "tenant")、子域名或请求头，结果写入 identity.WithTenant：Resolver 据此加载权限，绑定了其他租户的 token 被拒绝。与 rest.Options.Tenant 的作用相同。nil 时使用外层中间件已经写入的租户，没有时是平台本身（""）。
 	Credentials    identity.CredentialWatcher   // 让连接在收到复查信号时立即重新校验凭据，撤销 token、退出登录后连接随即结束；nil 时只按 30 秒的间隔定期校验。通常是 broadcast.NewCredentials 的返回值，与 rest.Options.Credentials 相同。
@@ -153,6 +153,7 @@ func (rt *Realtime) Channel(pattern string, rule Rule) {
 	rt.rules = append(rt.rules, c)
 }
 
+// match 返回频道 channel 符合的第一条规则和其中的参数。
 func (rt *Realtime) match(channel string) (Rule, Params, bool) {
 	rt.mu.RLock()
 	defer rt.mu.RUnlock()
@@ -210,6 +211,7 @@ func hijackable(w http.ResponseWriter) http.ResponseWriter {
 	}
 }
 
+// checkOrigin 检查 WebSocket 请求的来源：没有 Origin、与请求同源或在允许的来源中时通过。
 func (rt *Realtime) checkOrigin(r *http.Request) bool {
 	origin := r.Header.Get("Origin")
 	if origin == "" {

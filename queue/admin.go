@@ -38,8 +38,6 @@ func NewAdmin(nc *nats.Conn, cfg Config) *Admin {
 	return &Admin{cfg: cfg, js: js}
 }
 
-func (a *Admin) jetStream() (jetstream.JetStream, error) { return a.js, nil }
-
 // StreamStatus 是队列在 JetStream 一侧的状态。
 type StreamStatus struct {
 	Stream   string        // stream 的名字，见 Config.Stream
@@ -75,12 +73,8 @@ func (s TopicStatus) Stalled() bool {
 
 // Status 读取 stream 和各 topic 的状态。
 func (a *Admin) Status(ctx context.Context) (StreamStatus, error) {
-	js, err := a.jetStream()
-	if err != nil {
-		return StreamStatus{}, err
-	}
 	st := StreamStatus{Stream: a.cfg.Stream}
-	stream, err := js.Stream(ctx, a.cfg.Stream)
+	stream, err := a.js.Stream(ctx, a.cfg.Stream)
 	if errors.Is(err, jetstream.ErrStreamNotFound) {
 		return st, nil
 	}
@@ -140,11 +134,7 @@ func (a *Admin) Pause(ctx context.Context, topic string, until time.Time) error 
 	if !validName(topic) {
 		return ErrTopicNotFound
 	}
-	js, err := a.jetStream()
-	if err != nil {
-		return err
-	}
-	_, err = js.PauseConsumer(ctx, a.cfg.Stream, consumerName(topic), until)
+	_, err := a.js.PauseConsumer(ctx, a.cfg.Stream, consumerName(topic), until)
 	return topicError(err, "pause", topic)
 }
 
@@ -153,14 +143,11 @@ func (a *Admin) Resume(ctx context.Context, topic string) error {
 	if !validName(topic) {
 		return ErrTopicNotFound
 	}
-	js, err := a.jetStream()
-	if err != nil {
-		return err
-	}
-	_, err = js.ResumeConsumer(ctx, a.cfg.Stream, consumerName(topic))
+	_, err := a.js.ResumeConsumer(ctx, a.cfg.Stream, consumerName(topic))
 	return topicError(err, "resume", topic)
 }
 
+// topicError 把 JetStream 的错误转换为 Admin 的错误：consumer 或 stream 不存在时返回 ErrTopicNotFound。
 func topicError(err error, op, topic string) error {
 	switch {
 	case err == nil:

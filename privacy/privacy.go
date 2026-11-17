@@ -310,6 +310,7 @@ func (s *Service) finish(ctx context.Context, tx bun.IDB, id uuid.UUID, now time
 	return errors.Wrap(err, "privacy: finish erasure")
 }
 
+// newErasure 为主体 ref 创建注销记录，due 是执行删除的时间。
 func newErasure(ref identity.Ref, now, due time.Time) (*Erasure, error) {
 	if err := ref.Validate(); err != nil {
 		return nil, errors.Wrap(err, "privacy")

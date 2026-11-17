@@ -35,6 +35,7 @@ type Templates struct {
 	mails map[string]*mailTemplate
 }
 
+// mailTemplate 是一封邮件的模板：主题、HTML 正文和纯文本正文。
 type mailTemplate struct {
 	subject *texttemplate.Template
 	html    *htmltemplate.Template
@@ -44,6 +45,7 @@ type mailTemplate struct {
 // 解析时的占位函数，渲染时替换为绑定 ctx 的版本。
 var placeholderFuncs = map[string]any{"t": func(string, ...any) string { return "" }}
 
+// translate 返回模板函数 t：按 ctx 的语言翻译消息 ID。
 func translate(ctx context.Context) map[string]any {
 	return map[string]any{"t": func(id string, data ...any) string {
 		var d any
@@ -133,6 +135,7 @@ func NewTemplates(fsys fs.FS) (*Templates, error) {
 	return &Templates{mails: mails}, nil
 }
 
+// parseWith 在 base 的副本上解析 HTML 模板 src，base 中的布局和片段可以直接使用。
 func parseWith(base *htmltemplate.Template, name, src string) (*htmltemplate.Template, error) {
 	t, err := base.Clone()
 	if err != nil {
@@ -141,6 +144,7 @@ func parseWith(base *htmltemplate.Template, name, src string) (*htmltemplate.Tem
 	return t.New(name).Parse(src)
 }
 
+// parseWithText 在 base 的副本上解析纯文本模板 src。
 func parseWithText(base *texttemplate.Template, name, src string) (*texttemplate.Template, error) {
 	t, err := base.Clone()
 	if err != nil {

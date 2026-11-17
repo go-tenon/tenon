@@ -19,7 +19,7 @@ const (
 	// relayBatch 是一次发给 JetStream 的最多任务数。
 	relayBatch = 500
 	// relayDelay 是攒批的最长等待：一批中的第一个任务到达之后最多等这么久，就把已经收到的发出去。
-	// 任务连续到达时也按时发出，而不是攒满 relayBatch 才发。
+	// 任务连续到达时同样按时发出，不等攒满 relayBatch。
 	relayDelay = 2 * time.Millisecond
 	// standbyInterval 是向 PostgreSQL 报告确认位置的间隔。它必须小于 wal_sender_timeout，否则连接被断开。
 	standbyInterval = 3 * time.Second

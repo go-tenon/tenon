@@ -121,6 +121,7 @@ func (m *Mailer) Send(ctx context.Context, msg mail.Message) error {
 	return nil
 }
 
+// emails 把地址列表转换为 SES 的格式，空列表返回 nil。
 func emails(list []mail.Address) []string {
 	if len(list) == 0 {
 		return nil

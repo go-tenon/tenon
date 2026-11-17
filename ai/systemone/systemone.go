@@ -31,6 +31,7 @@ func New(cfg ai.ModelConfig, opts ...openai.Option) *Client { return &Client{ope
 // Wrap 让 c 的 Decide 改用 System One 格式。
 func Wrap(c *openai.Client) *Client { return &Client{c} }
 
+// answer 是接口返回的一个问题的答案。
 type answer struct {
 	Type          string             `json:"type"`
 	Noul          float64            `json:"noul"`
@@ -40,6 +41,7 @@ type answer struct {
 	Probabilities map[string]float64 `json:"probabilities"`
 }
 
+// response 是接口的响应。
 type response struct {
 	Model   string            `json:"model"`
 	Answers map[string]answer `json:"answers"`
@@ -89,6 +91,7 @@ func state(req ai.DecisionRequest) any {
 	return parts
 }
 
+// questions 把问题转换为接口的请求参数，保持字段顺序。
 func questions(qs []ai.Question) object {
 	out := make(object, len(qs))
 	for i, q := range qs {
@@ -126,6 +129,7 @@ func questions(qs []ai.Question) object {
 	return out
 }
 
+// answerOf 把接口返回的答案 a 转换为问题 q 的 Answer。
 func answerOf(q ai.Question, a answer) (ai.Answer, error) {
 	if a.Type == "refusal" {
 		return ai.NewAnswer(q, ai.Answer{Refused: true}), nil
@@ -157,11 +161,13 @@ func answerOf(q ai.Question, a answer) (ai.Answer, error) {
 // object 是按顺序编码键的 JSON 对象：选择题的选项按传入的顺序发给模型。
 type object []field
 
+// field 是 object 中的一个键值对。
 type field struct {
 	k string
 	v any
 }
 
+// MarshalJSON 按字段的顺序把 o 编码为 JSON 对象。
 func (o object) MarshalJSON() ([]byte, error) {
 	var b bytes.Buffer
 	b.WriteByte('{')

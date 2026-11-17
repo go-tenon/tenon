@@ -75,6 +75,7 @@ func (t *Template) Wrap(cause error, opts ...Option) error {
 	return e
 }
 
+// instance 用模板 t 和选项 opts 创建一个错误实例，cause 是它包装的原因。
 func (t *Template) instance(cause error, opts []Option) *Error {
 	e := &Error{code: t.code, kind: t.kind, cause: cause}
 	for _, opt := range opts {

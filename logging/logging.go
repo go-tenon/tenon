@@ -75,6 +75,7 @@ func (c Config) location() (*time.Location, error) {
 // Option 扩展 New 构造的处理链。
 type Option func(*options)
 
+// options 是 New 的选项。
 type options struct {
 	formatters  []slogformatter.Formatter
 	middlewares []slogmulti.Middleware

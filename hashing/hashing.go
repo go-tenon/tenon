@@ -121,6 +121,7 @@ func (h *Hasher) NeedsRehash(hash string) bool {
 	return !ok || p.Argon2idConfig != h.cfg.Argon2id || len(p.key) != keyLen
 }
 
+// isBcrypt 报告 hash 是否是 bcrypt 的哈希。
 func isBcrypt(hash string) bool {
 	return strings.HasPrefix(hash, "$2a$") || strings.HasPrefix(hash, "$2b$") || strings.HasPrefix(hash, "$2y$")
 }
@@ -141,6 +142,7 @@ func (p argon2Params) String() string {
 		b64.EncodeToString(p.salt), b64.EncodeToString(p.key))
 }
 
+// parseArgon2id 解析 argon2id 的哈希，返回它的参数；格式不对时返回 false。
 func parseArgon2id(hash string) (argon2Params, bool) {
 	parts := strings.Split(hash, "$")
 	if len(parts) != 6 || parts[0] != "" || parts[1] != "argon2id" || parts[2] != fmt.Sprintf("v=%d", argon2.Version) {

@@ -48,11 +48,13 @@ func Retry(next http.RoundTripper, opts RetryOptions) http.RoundTripper {
 	return &retryTransport{next: next, opts: opts}
 }
 
+// retryTransport 在请求失败时按 RetryOptions 重试。
 type retryTransport struct {
 	next http.RoundTripper
 	opts RetryOptions
 }
 
+// RoundTrip 发出请求，失败时等待后重试；无法重放的请求只发一次。
 func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if !replayable(req) {
 		return t.next.RoundTrip(req)

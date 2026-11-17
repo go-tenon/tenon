@@ -54,10 +54,12 @@ func installBuilder() {
 // client 在应用的连接池上实现 storage.Client，行为与 trpc-agent-go 的默认实现相同，只是 Close 不关闭连接池。
 type client struct{ db *sql.DB }
 
+// ExecContext 在连接池上执行 query。
 func (c client) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	return c.db.ExecContext(ctx, query, args...)
 }
 
+// Query 在连接池上执行查询，把结果交给 handler。
 func (c client) Query(ctx context.Context, handler storage.HandlerFunc, query string, args ...any) error {
 	rows, err := c.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -70,6 +72,7 @@ func (c client) Query(ctx context.Context, handler storage.HandlerFunc, query st
 	return rows.Err()
 }
 
+// Transaction 在一个事务中执行 fn：fn 返回错误或 panic 时回滚，否则提交。
 func (c client) Transaction(ctx context.Context, fn storage.TxFunc) (err error) {
 	tx, err := c.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -88,6 +91,7 @@ func (c client) Transaction(ctx context.Context, fn storage.TxFunc) (err error) 
 	return tx.Commit()
 }
 
+// Close 什么也不做：连接池由应用关闭。
 func (client) Close() error { return nil }
 
 // sessionTables 是 Migrations 中按 user_id 保存对话的表。

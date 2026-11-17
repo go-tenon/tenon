@@ -125,6 +125,7 @@ func (c *client) allows(redirect string) bool {
 	return false
 }
 
+// loopback 报告 host 是否是本机地址。
 func loopback(host string) bool {
 	return host == "localhost" || host == "127.0.0.1" || host == "::1"
 }

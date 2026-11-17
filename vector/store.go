@@ -105,6 +105,7 @@ func New(db *bun.DB, client *qdrant.Client, model Model, opts ...Option) *Store 
 	return s
 }
 
+// addModel 登记一个向量模型，名称、维度或 Embedder 缺失时 panic。
 func (s *Store) addModel(m Model) {
 	if m.Name == "" || m.Dims <= 0 || m.Embedder == nil {
 		panic("vector: a model needs a name, positive dimensions and an embedder")

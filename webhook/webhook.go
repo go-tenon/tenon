@@ -104,6 +104,7 @@ func enqueue(ctx context.Context, db bun.IDB, deliveries []Delivery) error {
 	return errors.Wrap(Deliver.PublishAll(ctx, db, ids), "webhook: publish deliveries")
 }
 
+// checkType 检查事件类型不为空、不含 *。
 func checkType(t string) error {
 	if t == "" || strings.Contains(t, "*") {
 		return errors.Newf("webhook: invalid event type %q", t)

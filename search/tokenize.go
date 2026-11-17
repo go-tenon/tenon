@@ -29,9 +29,13 @@ type Tokenizer interface {
 // 它不认识词语，查询“文搜”也会命中“全文搜索”，召回多、精度一般。需要按词语切分时使用 search/gse。
 var Bigram Tokenizer = bigram{}
 
+// bigram 是默认的分词器：中日韩文字按相邻的两个字切分。
 type bigram struct{}
 
+// Index 切分要索引的文本。
 func (bigram) Index(text string) []Token { return Split(text, Bigrams) }
+
+// Query 切分查询的文本。
 func (bigram) Query(text string) []Token { return Split(text, Bigrams) }
 
 // Bigrams 把一段连续的中日韩文字切分为相邻的两个字，只有一个字时返回这个字，供 Split 使用。
@@ -103,6 +107,7 @@ func fold(r rune) rune {
 	return unicode.ToLower(r)
 }
 
+// isCJKRune 报告 r 是否是中日韩文字。
 func isCJKRune(r rune) bool {
 	return unicode.Is(unicode.Han, r) || unicode.Is(unicode.Hiragana, r) ||
 		unicode.Is(unicode.Katakana, r) || unicode.Is(unicode.Hangul, r) || r == 'ー' || r == '々'
@@ -132,6 +137,7 @@ type queryTerms struct {
 	prefix bool     // 最后一个词按前缀匹配：查询文本以它结尾，用户可能还没有输入完
 }
 
+// parseQuery 用分词器 tok 切分查询文本，去掉重复的词。
 func parseQuery(tok Tokenizer, text string) queryTerms {
 	var q queryTerms
 	seen := map[string]bool{}
@@ -156,6 +162,7 @@ func parseQuery(tok Tokenizer, text string) queryTerms {
 	return q
 }
 
+// removeTerm 从 terms 中去掉 s，原地修改。
 func removeTerm(terms []string, s string) []string {
 	out := terms[:0]
 	for _, t := range terms {

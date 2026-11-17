@@ -61,7 +61,7 @@
 <a id="graceful-shutdown"></a>
 ## 平滑停止
 
-应用收到 `SIGTERM` 或 Ctrl+C 时，我们希望它**先做完**手上的工作，而不是直接退出。入口取消 `ctx`，各部分同时开始平滑停止：
+应用收到 `SIGTERM` 或 Ctrl+C 时，我们希望它**先做完**手上的工作再退出。入口取消 `ctx`，各部分同时开始平滑停止：
 
 - **HTTP 服务**：就绪检查开始返回失败，停止接收新连接，等正在处理的请求完成，见[平滑停止](../http/lifecycle.md#graceful-shutdown)；
 - **worker**：停止领取新任务，等处理中的任务写回结果，见[任务的租约与停止](../background/queue.md#leases-and-shutdown)；

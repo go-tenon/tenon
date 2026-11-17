@@ -77,14 +77,20 @@ func (s *Server) sdkLogger() *slog.Logger {
 	return slog.New(warnOnly{s.logger.Handler()})
 }
 
+// warnOnly 只放行 Warn 及以上级别的日志。
 type warnOnly struct{ slog.Handler }
 
+// Enabled 报告级别 l 是否达到 Warn 并被下一个处理器接受。
 func (h warnOnly) Enabled(ctx context.Context, l slog.Level) bool {
 	return l >= slog.LevelWarn && h.Handler.Enabled(ctx, l)
 }
+
+// WithAttrs 返回追加了 attrs 的处理器。
 func (h warnOnly) WithAttrs(attrs []slog.Attr) slog.Handler {
 	return warnOnly{h.Handler.WithAttrs(attrs)}
 }
+
+// WithGroup 返回进入分组 name 的处理器。
 func (h warnOnly) WithGroup(name string) slog.Handler { return warnOnly{h.Handler.WithGroup(name)} }
 
 // SDK 返回底层的 *mcp.Server，用于直接添加 resource、prompt 等本包没有包装的功能。
@@ -185,6 +191,7 @@ func (s *Server) Tools() []Tool {
 	return tools
 }
 
+// annotations 按工具的声明生成 MCP 的工具注解。
 func annotations(t Tool) *mcp.ToolAnnotations {
 	closed := false
 	a := &mcp.ToolAnnotations{Title: t.Title, ReadOnlyHint: t.ReadOnly, OpenWorldHint: &closed}
@@ -275,6 +282,7 @@ func (s *Server) authorize(next mcp.MethodHandler) mcp.MethodHandler {
 	}
 }
 
+// allowed 报告 sub 是否拥有 permissions 中的全部权限。
 func allowed(sub identity.Subject, permissions []string) bool {
 	for _, p := range permissions {
 		if !sub.Can(p) {

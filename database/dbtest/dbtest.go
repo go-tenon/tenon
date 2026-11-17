@@ -156,6 +156,7 @@ func withDatabase(dsn, name string) string {
 	return dsn + " dbname=" + name
 }
 
+// randomName 返回 12 个字符的随机十六进制串，用于临时数据库的名字。
 func randomName() string {
 	var b [6]byte
 	_, _ = rand.Read(b[:])

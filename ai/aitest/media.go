@@ -22,6 +22,7 @@ import (
 // PNG 是一张 1x1 的透明 PNG，Imager 默认返回它。
 var PNG = ai.Media{Data: mustBase64("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="), MIME: "image/png"}
 
+// mustBase64 解码 base64 字符串，失败时 panic，用于测试数据。
 func mustBase64(s string) []byte {
 	b, err := base64.StdEncoding.DecodeString(s)
 	if err != nil {
@@ -40,6 +41,7 @@ type script[Req, Res any] struct {
 	requests []Req
 }
 
+// call 记录请求并返回下一个预设结果；设置了错误时返回错误，没有预设结果时用 fallback 生成。
 func (s *script[Req, Res]) call(req Req) (Res, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -58,12 +60,14 @@ func (s *script[Req, Res]) call(req Req) (Res, error) {
 	return s.results[n-1], nil
 }
 
+// failWith 让之后的调用都返回 err。
 func (s *script[Req, Res]) failWith(err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.err = err
 }
 
+// recorded 返回已经收到的请求的副本。
 func (s *script[Req, Res]) recorded() []Req {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -171,6 +175,7 @@ func (f *Embedder) Same(c ai.Content, others ...ai.Content) {
 	}
 }
 
+// key 返回内容 c 计算向量时使用的键：设置了别名时是别名指向的内容的键。
 func (f *Embedder) key(c ai.Content) string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -217,6 +222,7 @@ func contentKey(c ai.Content) string {
 	return b.String()
 }
 
+// vectorOf 按 key 生成确定的、长度为 dims 的单位向量。
 func vectorOf(key string, dims int) []float32 {
 	h := fnv.New64a()
 	_, _ = h.Write([]byte(key))
@@ -254,6 +260,7 @@ func NewReranker(results ...[]ai.Ranked) *Reranker {
 	return &Reranker{script[RerankRequest, []ai.Ranked]{name: "rerank", results: results, fallback: overlap}}
 }
 
+// overlap 按查询与各文档共有的字符数打分，返回从高到低的排名。
 func overlap(req RerankRequest) []ai.Ranked {
 	chars := map[rune]bool{}
 	for _, r := range req.Query.Text() {
@@ -325,6 +332,7 @@ func (f *Decider) Decide(_ context.Context, req ai.DecisionRequest) (ai.Decision
 	return out, nil
 }
 
+// defaultAnswer 返回问题 q 的默认答案：选择题选第一项，其他题型取各自的默认值。
 func defaultAnswer(q ai.Question) ai.Answer {
 	switch q.Kind {
 	case ai.ChoiceQuestion:

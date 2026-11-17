@@ -149,6 +149,7 @@ func (d *Daemon) reloads() {
 	}
 }
 
+// handedOver 报告是否已经把服务交给升级后的新进程。
 func (d *Daemon) handedOver() bool {
 	if d.upg == nil {
 		return false
@@ -174,6 +175,7 @@ func (d *Daemon) forward() error {
 	return errors.Wrap(syscall.Kill(pid, syscall.SIGHUP), "forward reload")
 }
 
+// upgrade 启动新版本的进程并把监听交给它；需要 unit 中设置 RuntimeDirectory=。
 func (d *Daemon) upgrade(ctx context.Context) error {
 	if d.upg == nil {
 		return errors.New("upgrades need RuntimeDirectory= in the unit")
@@ -213,12 +215,14 @@ func (d *Daemon) Stop() {
 	}
 }
 
+// sdNotify 向 systemd 报告状态 state，失败时记 Warn 日志。
 func (d *Daemon) sdNotify(state string) {
 	if _, err := daemon.SdNotify(false, state); err != nil {
 		d.log().Warn("sd_notify failed", "error", err)
 	}
 }
 
+// log 返回带 component=daemon 的日志器。
 func (d *Daemon) log() *slog.Logger {
 	return logging.Or(d.logger).With(logging.AttrComponent, "daemon")
 }

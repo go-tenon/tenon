@@ -8,6 +8,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+// ctxKey 是日志字段在 context 中的键。
 type ctxKey struct{}
 
 // WithAttrs 返回携带 attrs 的新 context；多次调用累加，父 context 保持原样。
@@ -57,6 +58,7 @@ func NewContextHandler(h slog.Handler) slog.Handler {
 	return contextHandler{h}
 }
 
+// contextHandler 把 context 中的字段和 trace_id、span_id 追加到每条记录。
 type contextHandler struct {
 	slog.Handler
 }
@@ -73,12 +75,15 @@ func (h contextHandler) Handle(ctx context.Context, r slog.Record) error {
 	return h.Handler.Handle(ctx, r)
 }
 
+// isTraceID 报告 a 是否是 trace_id 字段。
 func isTraceID(a slog.Attr) bool { return a.Key == AttrTraceID }
 
+// WithAttrs 返回追加了 attrs 的处理器。
 func (h contextHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	return contextHandler{h.Handler.WithAttrs(attrs)}
 }
 
+// WithGroup 返回进入分组 name 的处理器。
 func (h contextHandler) WithGroup(name string) slog.Handler {
 	return contextHandler{h.Handler.WithGroup(name)}
 }

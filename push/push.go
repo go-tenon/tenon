@@ -39,7 +39,7 @@ func (p Platform) Valid() bool {
 type Device struct {
 	bun.BaseModel `bun:"table:push_devices,alias:pd"`
 
-	ID          uuid.UUID            `bun:"id,pk,type:uuid"` // UUIDv7
+	ID          uuid.UUID            `bun:"id,pk,type:uuid"` // 设备记录的 ID，UUIDv7
 	Platform    Platform             `bun:"platform,notnull"`
 	Token       string               `bun:"token,notnull"` // 推送服务给设备的标识，例如阿里云的 deviceId
 	Tenant      string               `bun:"tenant,notnull"`
@@ -163,6 +163,7 @@ func Cleanup(db bun.IDB, keep time.Duration) func(ctx context.Context, limit int
 	}
 }
 
+// affected 返回删除的行数。
 func affected(res sql.Result, err error) (int, error) {
 	if err != nil {
 		return 0, errors.Wrap(err, "push: delete devices")

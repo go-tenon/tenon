@@ -33,6 +33,7 @@ type connector struct {
 	attrs    metric.MeasurementOption
 }
 
+// newConnector 在连接池上创建 database/sql 的连接器，设置了 meters 时记录连接池指标。
 func newConnector(pool *pgxpool.Pool, o options) *connector {
 	c := &connector{Connector: stdlib.GetPoolConnector(pool), pool: pool}
 	if o.meters != nil {
@@ -41,6 +42,7 @@ func newConnector(pool *pgxpool.Pool, o options) *connector {
 	return c
 }
 
+// Connect 从连接池取一个连接，等待时间受 acquire 的时限约束。
 func (c *connector) Connect(ctx context.Context) (driver.Conn, error) {
 	start := time.Now()
 	acquireCtx := ctx

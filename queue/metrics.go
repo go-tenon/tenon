@@ -17,6 +17,7 @@ type jobMetrics struct {
 	wait, duration metric.Float64Histogram
 }
 
+// newJobMetrics 在 mp 上创建任务的指标：等待时间、执行时间和结果计数。
 func newJobMetrics(mp metric.MeterProvider) jobMetrics {
 	meter := mp.Meter(scopeName)
 	wait, err := meter.Float64Histogram("queue.job.wait", metric.WithUnit("s"),

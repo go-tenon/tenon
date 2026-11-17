@@ -37,6 +37,7 @@ const (
 
 var b32 = base32.StdEncoding.WithPadding(base32.NoPadding)
 
+// twoFactorRow 是 auth_two_factor 表中的一行：主体的 TOTP 密钥。
 type twoFactorRow struct {
 	bun.BaseModel `bun:"table:auth_two_factor,alias:t"`
 
@@ -48,6 +49,7 @@ type twoFactorRow struct {
 	CreatedAt   time.Time `bun:"created_at,notnull"`
 }
 
+// recoveryRow 是 auth_recovery_codes 表中的一行：一个恢复码的哈希。
 type recoveryRow struct {
 	bun.BaseModel `bun:"table:auth_recovery_codes,alias:rc"`
 
@@ -191,6 +193,7 @@ func (r *Realm) DisableTwoFactor(ctx context.Context, db bun.IDB, ref identity.R
 	return r.forgetTwoFactor(ctx, db, ref.ID)
 }
 
+// forgetTwoFactor 删除主体的 TOTP 密钥和恢复码。
 func (r *Realm) forgetTwoFactor(ctx context.Context, db bun.IDB, subjectID string) error {
 	for _, model := range []any{(*twoFactorRow)(nil), (*recoveryRow)(nil)} {
 		_, err := db.NewDelete().Model(model).Where("subject_type = ? AND subject_id = ?", r.opts.Type, subjectID).Exec(ctx)
@@ -350,6 +353,7 @@ func (c *challengeRow) methods() ([]string, error) {
 	return data.Methods, nil
 }
 
+// twoFactor 读取主体的 TOTP 设置，没有时返回 nil。
 func (r *Realm) twoFactor(ctx context.Context, db bun.IDB, subjectID string) (*twoFactorRow, error) {
 	var row twoFactorRow
 	err := db.NewSelect().Model(&row).Where("subject_type = ? AND subject_id = ?", r.opts.Type, subjectID).Scan(ctx)
@@ -362,6 +366,7 @@ func (r *Realm) twoFactor(ctx context.Context, db bun.IDB, subjectID string) (*t
 	return &row, nil
 }
 
+// enabled 报告主体是否已经启用二次验证：TOTP 已经确认。
 func (r *Realm) enabled(ctx context.Context, db bun.IDB, subjectID string) (bool, error) {
 	row, err := r.twoFactor(ctx, db, subjectID)
 	return row != nil && !row.ConfirmedAt.IsZero(), err

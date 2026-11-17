@@ -70,20 +70,25 @@ type ScheduleTaskList struct {
 	Items []ScheduleTask `json:"items" nullable:"false"`
 }
 
+// listOutput 是任务列表的响应。
 type listOutput struct{ Body ScheduleTaskList }
 
+// nameInput 是按任务名操作的请求。
 type nameInput struct {
 	Name string `path:"name"`
 }
 
+// runsInput 是执行记录列表的请求。
 type runsInput struct {
 	page.OffsetParams
 	Task   string `query:"task" doc:"任务名，为空时全部任务"`
 	Status Status `query:"status" enum:"succeeded,failed,skipped" doc:"结果，为空时全部"`
 }
 
+// runsOutput 是执行记录列表的响应。
 type runsOutput struct{ Body page.Offset[ScheduleRun] }
 
+// handlers 实现定时任务的管理接口。
 type handlers struct {
 	db     *bun.DB
 	tasks  func() *schedule.Scheduler
@@ -150,6 +155,7 @@ func (h *handlers) lastTicks(ctx context.Context) (map[string]time.Time, error) 
 	return out, err
 }
 
+// list 列出全部任务，附带下一次执行的时间和最近一次执行。
 func (h *handlers) list(ctx context.Context, _ *struct{}) (*listOutput, error) {
 	sched := h.tasks()
 	running, err := sched.Running(ctx)
@@ -185,6 +191,7 @@ func (h *handlers) list(ctx context.Context, _ *struct{}) (*listOutput, error) {
 	return out, nil
 }
 
+// run 立即执行任务；任务不存在时返回 ErrNotFound。
 func (h *handlers) run(ctx context.Context, in *nameInput) (*struct{}, error) {
 	if !slices.ContainsFunc(h.tasks().Tasks(), func(t schedule.Task) bool { return t.Name == in.Name }) {
 		return nil, ErrNotFound.New()
@@ -196,6 +203,7 @@ func (h *handlers) run(ctx context.Context, in *nameInput) (*struct{}, error) {
 	return nil, nil
 }
 
+// runs 按条件列出执行记录，新的在前。
 func (h *handlers) runs(ctx context.Context, in *runsInput) (*runsOutput, error) {
 	var rows []run
 	q := h.db.NewSelect().Model(&rows).OrderExpr("started_at DESC").Limit(in.Limit()).Offset(in.Offset())

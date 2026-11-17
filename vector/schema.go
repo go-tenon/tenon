@@ -148,6 +148,7 @@ func jsonName(sf reflect.StructField) string {
 	return sf.Name
 }
 
+// setValueType 按 Go 类型 t 设置筛选字段的值类型，不支持的类型返回错误。
 func (f *field) setValueType(t reflect.Type) error {
 	switch {
 	case t.Kind() == reflect.Pointer:
@@ -265,6 +266,7 @@ func (f *field) value(v reflect.Value) (*qdrant.Value, error) {
 	}
 }
 
+// keyword 返回字段值 v 作为关键词的文本，实现了 encoding.TextMarshaler 时用它。
 func (f *field) keyword(v reflect.Value) (string, error) {
 	if m, ok := v.Interface().(encoding.TextMarshaler); ok {
 		b, err := m.MarshalText()

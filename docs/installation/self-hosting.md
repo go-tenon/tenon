@@ -24,7 +24,7 @@
 | `compose.yaml` | 应用和它依赖的服务，见下一节 |
 | `.env.example` | 客户要填写的设置：版本、访问地址、密码和密钥 |
 
-镜像中的应用要装配好[自检](doctor.md)：`doctor` 命令、[迁移之前的检查](doctor.md#before-migrating)和[启动之前的检查](doctor.md#before-starting)。客户的环境出问题时，程序会直接说出哪一项不对、怎样修改，而不是一句难懂的底层报错。还要装配 [queue 命令](../background/queue-monitoring.md#stats-command)，恢复备份之后要用它重建复制槽。
+镜像中的应用要装配好[自检](doctor.md)：`doctor` 命令、[迁移之前的检查](doctor.md#before-migrating)和[启动之前的检查](doctor.md#before-starting)。客户的环境出问题时，程序会直接说出哪一项不对、怎样修改。还要装配 [queue 命令](../background/queue-monitoring.md#stats-command)，恢复备份之后要用它重建复制槽。
 
 <a id="compose-file"></a>
 ## compose.yaml

@@ -57,6 +57,7 @@ func audioFormat(mediaType string) string {
 	return sub
 }
 
+// audioMIME 返回音频格式 format 的 MIME 类型。
 func audioMIME(format string) string {
 	switch format {
 	case "mp3":

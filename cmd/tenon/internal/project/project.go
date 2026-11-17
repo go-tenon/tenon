@@ -86,6 +86,7 @@ func Load(dir string) (*Config, error) {
 	return cfg, cfg.check()
 }
 
+// defaults 为没有设置的项填入默认值。
 func (c *Config) defaults(dir string) {
 	if c.Main == "" {
 		c.Main = "./cmd/api"
@@ -125,6 +126,7 @@ func (c *Config) discover(dir string) error {
 	return nil
 }
 
+// check 校验配置，返回第一个不合法之处。
 func (c *Config) check() error {
 	for i, t := range c.Tools {
 		if len(t.Watch) == 0 {
@@ -158,6 +160,7 @@ func SkipDir(name string) bool {
 	return strings.HasPrefix(name, ".") || name == "node_modules" || name == "vendor" || name == "testdata" || name == "dist"
 }
 
+// exists 报告 dir 中的路径 p 是否存在。
 func exists(dir, p string) bool {
 	_, err := os.Stat(filepath.Join(dir, filepath.FromSlash(p)))
 	return err == nil

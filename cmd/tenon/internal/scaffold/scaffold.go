@@ -208,6 +208,7 @@ func render(root, dir string, data any) error {
 	return nil
 }
 
+// writeFile 写入文件 p，先创建它所在的目录。
 func writeFile(p string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return err

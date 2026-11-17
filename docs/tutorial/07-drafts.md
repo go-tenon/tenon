@@ -49,7 +49,7 @@ ALTER TABLE articles DROP COLUMN author_id, DROP COLUMN published_at;
 这个迁移加了两列：
 
 - **`author_id`**：文章的作者。`REFERENCES users (id)` 是**外键**：数据库保证它一定是 `users` 表中存在的某个作者。
-- **`published_at`**：发布的时间。为空就是草稿，有值就是已发布。用时间而不是一个“是否发布”的布尔值，可以同时知道文章是什么时候发布的。
+- **`published_at`**：发布的时间。为空就是草稿，有值就是已发布。用时间表示是否发布，同时还能知道文章是什么时候发布的。
 
 `author_id` 应当不能为空，但为什么不直接写 `ADD COLUMN author_id uuid NOT NULL`？因为表中已经有第 4、5 章写的文章，它们没有作者，数据库会拒绝添加这个约束。所以分三步：先加一个允许为空的列，再给旧文章补上作者，最后加上 `NOT NULL` 约束。三步在同一个迁移中，也就在同一个事务中，任何一步失败都会整体回滚。
 
@@ -232,7 +232,7 @@ func (a *Mine) HTTP(ctx context.Context, in *ListInput) (*ListOutput, error) {
 }
 ```
 
-读取文章的接口是公开的，只返回已发布的文章。读取草稿时返回 404，而不是 403：草稿对外就像不存在一样，别人也无法通过 403 判断出“这个 ID 有一篇草稿”。修改 `internal/article/get.go`：
+读取文章的接口是公开的，只返回已发布的文章。读取草稿时返回 404：草稿对外就像不存在一样，别人无法判断出“这个 ID 有一篇草稿”。修改 `internal/article/get.go`：
 
 ```go title="internal/article/get.go"
 package article

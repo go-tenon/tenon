@@ -119,6 +119,7 @@ func setting(ctx context.Context, db bun.IDB, name string) (string, error) {
 	return v, errors.Wrapf(err, "queue: read %s", name)
 }
 
+// checkPostgresVersion 检查 PostgreSQL 的版本号 num 不低于 minPostgres。
 func checkPostgresVersion(num int, version string) error {
 	if num >= minPostgres {
 		return nil
@@ -129,6 +130,7 @@ func checkPostgresVersion(num int, version string) error {
 	).See(docPreparing)
 }
 
+// checkWALLevel 检查 wal_level 是 logical。
 func checkWALLevel(level string) error {
 	if level == "logical" {
 		return nil
@@ -141,6 +143,7 @@ func checkWALLevel(level string) error {
 	).See(docPreparing)
 }
 
+// checkReplicationLimits 检查 max_replication_slots 和 max_wal_senders 都大于 0。
 func checkReplicationLimits(slots, senders int) error {
 	if slots > 0 && senders > 0 {
 		return nil
@@ -180,6 +183,7 @@ func checkReplicationConnection(ctx context.Context, db *bun.DB, dsn string) err
 	).See(docSettings)
 }
 
+// checkWALKeepSize 检查 max_slot_wal_keep_size 设置了上限。
 func checkWALKeepSize(size string) error {
 	if size != "-1" {
 		return nil
@@ -190,6 +194,7 @@ func checkWALKeepSize(size string) error {
 	).See(docSettings)
 }
 
+// checkSlotStatus 检查复制槽存在、没有失效，保留的 WAL 没有即将超过上限（unreserved）。
 func checkSlotStatus(s Status) error {
 	switch {
 	case !s.Exists:
@@ -211,6 +216,7 @@ func checkSlotStatus(s Status) error {
 	return nil
 }
 
+// checkNATSVersion 检查 NATS 服务器的版本不低于要求。
 func checkNATSVersion(version string) error {
 	major, minor, ok := majorMinor(version)
 	if ok && (major > minNATSMajor || major == minNATSMajor && minor >= minNATSMinor) {
@@ -233,6 +239,7 @@ func majorMinor(version string) (major, minor int, ok bool) {
 	return major, minor, err1 == nil && err2 == nil
 }
 
+// checkJetStream 把访问 JetStream 的错误 err 转换为检查结果。
 func checkJetStream(err error) error {
 	switch {
 	case err == nil:

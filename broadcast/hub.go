@@ -137,6 +137,7 @@ func (h *Hub) Close() error {
 	return nil
 }
 
+// deliver 把消息交给订阅了它的主题的每个订阅。
 func (h *Hub) deliver(msg Message) {
 	h.mu.Lock()
 	for s := range h.topics[msg.Topic] {
@@ -155,6 +156,7 @@ func (h *Hub) deliver(msg Message) {
 	}
 }
 
+// lost 在后端可能丢了消息时调用：记录 Warn 日志并结束全部订阅。
 func (h *Hub) lost(err error) {
 	h.logger.Warn("broadcast messages may have been lost; ending subscriptions", "error", err)
 	h.mu.Lock()

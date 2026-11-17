@@ -1,6 +1,7 @@
 package clientgen
 
 import (
+	"cmp"
 	"fmt"
 	"maps"
 	"net/http"
@@ -52,6 +53,7 @@ func (t *tsGen) findOp(id string) (*tsOp, error) {
 	return nil, errors.Newf("operation %s has no client method (event streams and downloads cannot back a resource)", id)
 }
 
+// resourceTS 返回资源 r 的 TypeScript 描述，以及它用到的类型。
 func (t *tsGen) resourceTS(r rest.Resource, templates map[string]map[string]string) (string, []string, error) {
 	var b strings.Builder
 	b.WriteString("  " + tsKey(r.Name) + ": {\n")
@@ -104,7 +106,7 @@ func (t *tsGen) resourceTS(r rest.Resource, templates map[string]map[string]stri
 
 	// 表单：创建（没有时是修改）的请求体的字段。
 	b.WriteString("    form: [\n")
-	if id := cmpOr(r.Create, r.Update); id != "" {
+	if id := cmp.Or(r.Create, r.Update); id != "" {
 		o, err := t.findOp(id)
 		if err != nil {
 			return "", nil, err
@@ -206,13 +208,6 @@ func required(o *tsOp) string {
 		quoted[i] = strconv.Quote(p)
 	}
 	return "[" + strings.Join(quoted, ", ") + "]"
-}
-
-func cmpOr(a, b string) string {
-	if a != "" {
-		return a
-	}
-	return b
 }
 
 // resolve 解开 $ref。

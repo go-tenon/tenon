@@ -60,6 +60,7 @@ type Options struct {
 	Logger *slog.Logger // 记录重试、删除、暂停和恢复，以及读不到 JetStream 的警告；nil 表示 slog.Default()。
 }
 
+// handlers 实现队列管理接口。
 type handlers struct {
 	db     *bun.DB
 	admin  *queue.Admin
@@ -108,8 +109,10 @@ func Register(api *rest.API, protect func(*huma.Operation), db *bun.DB, opts Opt
 	rest.Register(api, op("queue-topic-resume", http.MethodPost, "/queue/topics/{topic}/resume", "恢复 topic"), h.resume)
 }
 
+// failed 返回失败任务表。
 func (h *handlers) failed() *queue.FailedJobs { return queue.NewFailedJobs(h.db) }
 
+// statusOutput 是队列概览的响应。
 type statusOutput struct{ Body QueueStatus }
 
 // status 读取概览。JetStream 的状态读不到时写在 JetStream.Error 中，数据库一侧照常返回。
@@ -184,6 +187,7 @@ func state(t queue.TopicStatus) string {
 	}
 }
 
+// timePtr 返回 t 的指针，零值时返回 nil。
 func timePtr(t time.Time) *time.Time {
 	if t.IsZero() {
 		return nil
@@ -198,8 +202,10 @@ type failedListInput struct {
 	page.OffsetParams
 }
 
+// failedListOutput 是失败任务列表的响应。
 type failedListOutput struct{ Body QueueFailedList }
 
+// failedList 列出失败的任务，附带各 topic 的数量。
 func (h *handlers) failedList(ctx context.Context, in *failedListInput) (*failedListOutput, error) {
 	failed := h.failed()
 	counts, err := failed.Counts(ctx)
@@ -228,8 +234,10 @@ type idInput struct {
 	ID uuid.UUID `path:"id" doc:"失败任务的 ID"`
 }
 
+// failedGetOutput 是一个失败任务的详情。
 type failedGetOutput struct{ Body QueueFailedJobDetail }
 
+// failedGet 返回一个失败任务的详情。
 func (h *handlers) failedGet(ctx context.Context, in *idInput) (*failedGetOutput, error) {
 	j, err := h.failed().Get(ctx, in.ID)
 	if err != nil {
@@ -252,10 +260,12 @@ func payload(raw []byte) json.RawMessage {
 	return s
 }
 
+// retry 重新发布一个失败的任务。
 func (h *handlers) retry(ctx context.Context, in *idInput) (*struct{}, error) {
 	return h.single(ctx, in.ID, "retried", h.failed().Retry)
 }
 
+// delete 删除一个失败的任务。
 func (h *handlers) delete(ctx context.Context, in *idInput) (*struct{}, error) {
 	return h.single(ctx, in.ID, "deleted", h.failed().Delete)
 }
@@ -278,12 +288,15 @@ type bulkInput struct {
 	Topic string `query:"topic" doc:"只处理这个 topic 的失败任务，为空时处理全部 topic"`
 }
 
+// bulkOutput 是批量操作的结果。
 type bulkOutput struct{ Body QueueBulkResult }
 
+// retryAll 重新发布 topic 中全部失败的任务，topic 为空时是全部。
 func (h *handlers) retryAll(ctx context.Context, in *bulkInput) (*bulkOutput, error) {
 	return h.bulk(ctx, in.Topic, "retried", h.failed().RetryAll)
 }
 
+// deleteAll 删除 topic 中全部失败的任务，topic 为空时是全部。
 func (h *handlers) deleteAll(ctx context.Context, in *bulkInput) (*bulkOutput, error) {
 	return h.bulk(ctx, in.Topic, "deleted", h.failed().DeleteAll)
 }
@@ -315,8 +328,10 @@ type topicInput struct {
 	Topic string `path:"topic" doc:"topic 的名字，例如 mail.send"`
 }
 
+// pauseOutput 是暂停的结果：恢复的时间。
 type pauseOutput struct{ Body QueuePaused }
 
+// pause 暂停 topic 的处理 PauseFor 这么久。
 func (h *handlers) pause(ctx context.Context, in *topicInput) (*pauseOutput, error) {
 	until := time.Now().Add(PauseFor)
 	err := h.topicAction(ctx, in.Topic, "paused", func(ctx context.Context, topic string) error {
@@ -328,6 +343,7 @@ func (h *handlers) pause(ctx context.Context, in *topicInput) (*pauseOutput, err
 	return &pauseOutput{Body: QueuePaused{Topic: in.Topic, PausedUntil: until.UTC()}}, nil
 }
 
+// resume 恢复 topic 的处理。
 func (h *handlers) resume(ctx context.Context, in *topicInput) (*struct{}, error) {
 	if err := h.topicAction(ctx, in.Topic, "resumed", func(ctx context.Context, topic string) error {
 		return h.admin.Resume(ctx, topic)

@@ -167,6 +167,7 @@ func (s *Stream) SendJSON(ev Event, v any) error {
 	return s.Send(ev, string(b))
 }
 
+// write 写出 text 并立即发送；流已经关闭时返回错误。
 func (s *Stream) write(text string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -184,4 +185,5 @@ func (s *Stream) write(text string) error {
 
 var errStreamClosed = errors.New("httpx: stream closed")
 
+// oneLine 把 s 中的换行换成空格。
 func oneLine(s string) string { return strings.NewReplacer("\n", " ", "\r", " ").Replace(s) }

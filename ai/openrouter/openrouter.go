@@ -44,6 +44,7 @@ func New(cfg ai.ModelConfig, opts ...openai.Option) *Client {
 
 var aspectRatios = map[ai.Aspect]string{ai.Square: "1:1", ai.Portrait: "2:3", ai.Landscape: "3:2"}
 
+// imageRef 是请求中引用的一张参考图。
 type imageRef struct {
 	Type     string `json:"type"`
 	ImageURL struct {
@@ -51,6 +52,7 @@ type imageRef struct {
 	} `json:"image_url"`
 }
 
+// imageParams 是生成图片接口的请求体。
 type imageParams struct {
 	Model           string     `json:"model"`
 	Prompt          string     `json:"prompt"`
@@ -59,6 +61,7 @@ type imageParams struct {
 	InputReferences []imageRef `json:"input_references,omitempty"`
 }
 
+// imageResponse 是生成图片接口的响应。
 type imageResponse struct {
 	Data []struct {
 		B64JSON   string `json:"b64_json"`

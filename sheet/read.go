@@ -117,6 +117,7 @@ func (r *Reader) read() ([]string, error) {
 // sniffSize 是判断 CSV 编码和分隔符时查看的字节数。
 const sniffSize = 64 << 10
 
+// csvReader 返回读取 CSV 的 Reader，去掉 UTF-8 BOM，按开头的内容判断分隔符和编码。
 func csvReader(r io.Reader) *Reader {
 	br := bufio.NewReaderSize(r, sniffSize)
 	head, _ := br.Peek(sniffSize)
@@ -175,6 +176,7 @@ func delimiter(head []byte) rune {
 	return best
 }
 
+// xlsxReader 返回读取 Excel 第一个工作表的 Reader。
 func xlsxReader(r io.Reader) (*Reader, error) {
 	f, err := excelize.OpenReader(r)
 	if err != nil {

@@ -227,6 +227,7 @@ func (r Response) Header(key, value string) Response {
 	}
 }
 
+// reply 返回固定的响应。
 func reply(status int, contentType string, body []byte) Response {
 	return func(*http.Request) (*http.Response, error) {
 		header := http.Header{}
@@ -254,6 +255,7 @@ type pattern struct {
 	query  bool   // url 包含查询参数
 }
 
+// parse 解析请求的匹配模式，例如 "POST https://api.example.com/v1/*"。
 func parse(s string) pattern {
 	s = strings.TrimSpace(s)
 	var p pattern
@@ -273,10 +275,12 @@ func parse(s string) pattern {
 	return p
 }
 
+// isMethod 报告 s 是否像 HTTP 方法：大写，不含路径和地址中的字符。
 func isMethod(s string) bool {
 	return s != "" && strings.ToUpper(s) == s && !strings.ContainsAny(s, "/:*.")
 }
 
+// match 报告请求的方法和地址是否符合模式。
 func (p pattern) match(method string, u *url.URL) bool {
 	if p.method != "" && p.method != method {
 		return false
@@ -316,6 +320,7 @@ func glob(pattern, s string) bool {
 	return len(s) >= len(last) && strings.HasSuffix(s, last)
 }
 
+// cloneURL 返回 u 的深拷贝。
 func cloneURL(u *url.URL) *url.URL {
 	c := *u
 	if u.User != nil {

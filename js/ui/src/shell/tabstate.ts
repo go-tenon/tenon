@@ -25,6 +25,7 @@ export interface TabsState {
   used: string[]
 }
 
+/** 没有任何标签的状态。 */
 export const emptyTabs: TabsState = { tabs: [], active: "", used: [] }
 
 /** 标签的标识：路由 + 按名称排序的路径参数。查询参数不算在内。 */

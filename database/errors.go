@@ -27,6 +27,7 @@ func IsCheckViolation(err error) bool { return hasCode(err, "23514") }
 // IsReadOnly 报告是否因为在只读事务中写入而失败（SQLSTATE 25006），例如通过 ReadOnly 的连接池写入只读副本。
 func IsReadOnly(err error) bool { return hasCode(err, "25006") }
 
+// hasCode 报告 err 是否是错误码为 code 的 PostgreSQL 错误。
 func hasCode(err error, code string) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == code

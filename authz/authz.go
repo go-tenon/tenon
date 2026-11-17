@@ -94,6 +94,7 @@ func Cache(mc cachex.Client, prefix string, ttl time.Duration) Option {
 	return func(s *Store) { s.cache, s.prefix = c, prefix }
 }
 
+// roleRow 是 authz_roles 表中的一行。
 type roleRow struct {
 	bun.BaseModel `bun:"table:authz_roles,alias:r"`
 
@@ -105,6 +106,7 @@ type roleRow struct {
 	UpdatedAt   time.Time `bun:"updated_at,notnull"`
 }
 
+// permissionRow 是 authz_role_permissions 表中的一行：角色的一项权限。
 type permissionRow struct {
 	bun.BaseModel `bun:"table:authz_role_permissions,alias:p"`
 
@@ -112,6 +114,7 @@ type permissionRow struct {
 	Permission string    `bun:"permission,pk"`
 }
 
+// assignmentRow 是 authz_assignments 表中的一行：主体在租户中的一个角色。
 type assignmentRow struct {
 	bun.BaseModel `bun:"table:authz_assignments,alias:a"`
 
@@ -648,6 +651,7 @@ func nameTaken(ctx context.Context, tx bun.Tx, tenant, name string, except uuid.
 	return nil
 }
 
+// setPermissions 在事务 tx 中把角色 id 的权限替换为 perms。
 func setPermissions(ctx context.Context, tx bun.Tx, id uuid.UUID, perms []string) error {
 	perms = normalize(perms)
 	if len(perms) == 0 {

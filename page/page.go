@@ -112,6 +112,7 @@ func NewCursor[T any](items []T, p CursorParams, key func(T) any) Cursor[T] {
 	return Cursor[T]{Items: items, NextCursor: base64.RawURLEncoding.EncodeToString(raw)}
 }
 
+// nonNil 返回 items，nil 时返回空切片，JSON 中输出 []。
 func nonNil[T any](items []T) []T {
 	if items == nil {
 		return []T{}

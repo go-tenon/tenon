@@ -260,7 +260,7 @@ ctx = logging.WithAttrs(ctx, slog.String(logging.AttrComponent, "billing"))
 
 **日志中没有 `request_id`**
 
-记录日志时没有传入请求的 `ctx`。用 `slog.InfoContext(ctx, ...)` 这类带 `Context` 的函数，而不是 `slog.Info(...)`，见[请求关联](#request-correlation)。
+记录日志时没有传入请求的 `ctx`。改用 `slog.InfoContext(ctx, ...)` 这类带 `Context` 的函数，见[请求关联](#request-correlation)。
 
 **`slog.Debug` 的日志没有输出**
 

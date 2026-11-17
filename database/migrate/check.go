@@ -43,6 +43,7 @@ func CheckFS(live, baseline fs.FS) error {
 	return nil
 }
 
+// sqlNames 返回 fsys 中全部 .sql 文件的路径。
 func sqlNames(fsys fs.FS) ([]string, error) {
 	var names []string
 	err := fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {

@@ -14,5 +14,7 @@ export interface TenonOptions extends VersionPluginOptions {
 /** 返回 TanStack Start 和 React 的 Vite 插件，加上构建版本：构建时写入 version.json 并注入版本号。 */
 export function tenon(options?: TenonOptions): PluginOption[]
 
+/** Go 把 CSP nonce 交给 Bun 时使用的请求头。 */
 export const HeaderNonce: "X-CSP-Nonce"
+/** 预渲染页面中 CSP nonce 的占位符，Bun 返回页面时换成本次请求的 nonce。 */
 export const PrerenderNonce: "__tenon_csp_nonce__"

@@ -88,6 +88,7 @@ func Reestablish(ctx context.Context, was Subject, authenticate Authenticator, r
 	return err
 }
 
+// recheckingKey 是复查标记在 context 中的键。
 type recheckingKey struct{}
 
 // Rechecking 报告 ctx 是否来自 Reestablish，即长连接期间对已建立连接的复查。

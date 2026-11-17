@@ -69,6 +69,7 @@ func (c SessionCookie) Clear() *http.Cookie {
 	return ck
 }
 
+// cookie 返回保存会话 value 的 cookie。
 func (c SessionCookie) cookie(value string) *http.Cookie {
 	mustValid("SessionCookie", c.Validate())
 	return &http.Cookie{Name: c.CookieName(), Value: value, Path: "/", HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode}

@@ -19,6 +19,7 @@ const (
 	TaskSkipped
 )
 
+// String 返回事件种类的名称，例如 started。
 func (k EventKind) String() string {
 	switch k {
 	case TaskStarted:

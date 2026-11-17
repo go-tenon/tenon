@@ -99,6 +99,7 @@ func parseAppVersion(value string) (platform, version string, ok bool) {
 	return platform, version, true
 }
 
+// validPlatform 报告平台名 s 是否合法：不超过 32 个字符的小写字母、数字、- 和 _。
 func validPlatform(s string) bool {
 	if s == "" || len(s) > 32 {
 		return false

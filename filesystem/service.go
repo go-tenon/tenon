@@ -338,6 +338,7 @@ func typeMatches(pattern, actual string) bool {
 	return pattern == actual
 }
 
+// disk 返回文件 r 所在的磁盘，没有配置时返回一个总是报错的磁盘。
 func (s *Service) disk(r File) Disk {
 	if d := s.disks[r.Disk]; d != nil {
 		return d
@@ -345,6 +346,7 @@ func (s *Service) disk(r File) Disk {
 	return missingDisk(r.Disk)
 }
 
+// withURL 为文件 r 填上公开地址，磁盘没有配置时保持原样。
 func (s *Service) withURL(r File) File {
 	if d := s.disks[r.Disk]; d != nil {
 		r.URL = d.URL(r.Key)
@@ -377,6 +379,7 @@ type exactReader struct {
 	left int64
 }
 
+// Read 从 r 读取，最多 left 字节；正文过短或过长时返回错误。
 func (e *exactReader) Read(p []byte) (int, error) {
 	if e.left == 0 {
 		var one [1]byte
@@ -403,15 +406,27 @@ func (e *exactReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
+// missingDisk 是没有配置的磁盘，所有操作都返回错误。
 type missingDisk string
 
+// err 返回磁盘没有配置的错误。
 func (m missingDisk) err() error {
 	return errors.Newf("filesystem: disk %q is not configured", string(m))
 }
+
+// Put 返回磁盘没有配置的错误。
 func (m missingDisk) Put(context.Context, string, string, io.Reader, int64) error {
 	return m.err()
 }
+
+// Open 返回磁盘没有配置的错误。
 func (m missingDisk) Open(context.Context, string) (io.ReadCloser, error) { return nil, m.err() }
-func (m missingDisk) Stat(context.Context, string) (Object, error)        { return Object{}, m.err() }
-func (m missingDisk) Delete(context.Context, string) error                { return m.err() }
-func (m missingDisk) URL(string) string                                   { return "" }
+
+// Stat 返回磁盘没有配置的错误。
+func (m missingDisk) Stat(context.Context, string) (Object, error) { return Object{}, m.err() }
+
+// Delete 返回磁盘没有配置的错误。
+func (m missingDisk) Delete(context.Context, string) error { return m.err() }
+
+// URL 返回空字符串：磁盘没有配置，文件没有地址。
+func (m missingDisk) URL(string) string { return "" }

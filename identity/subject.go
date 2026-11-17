@@ -74,8 +74,10 @@ func Grants(granted []string, perm string) bool {
 	return false
 }
 
+// ctxKey 是主体在 context 中的键。
 type ctxKey struct{}
 
+// tenantKey 是租户在 context 中的键。
 type tenantKey struct{}
 
 // WithSubject 将主体写入 context。

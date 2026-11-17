@@ -3,6 +3,7 @@
 
 import { createContext } from "react"
 
+/** 页面所在的标签。 */
 export interface TabPane {
   key: string
   active: boolean
@@ -10,4 +11,5 @@ export interface TabPane {
   setDirty(dirty: boolean): void
 }
 
+/** 当前页面所在标签的上下文，不在标签中时为 null。 */
 export const TabPaneContext = createContext<TabPane | null>(null)

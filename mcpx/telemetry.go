@@ -65,6 +65,7 @@ func WithTelemetry(mp metric.MeterProvider, tp trace.TracerProvider) ServerOptio
 	}
 }
 
+// observe 调用 next 处理一次 MCP 请求，记录链路和耗时。
 func (s *Server) observe(ctx context.Context, method string, req mcp.Request, next mcp.MethodHandler,
 	tracer trace.Tracer, duration metric.Float64Histogram) (mcp.Result, error) {
 	start := time.Now()

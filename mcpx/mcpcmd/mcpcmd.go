@@ -62,6 +62,7 @@ func Serve(ctx context.Context, srv *mcpx.Server, sub identity.Subject, transpor
 	return srv.SDK().Run(ctx, transport)
 }
 
+// hints 返回工具在列表中的提示：read-only、destructive、idempotent 或它们的组合。
 func hints(t mcpx.Tool) string {
 	switch {
 	case t.ReadOnly:

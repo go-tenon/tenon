@@ -13,6 +13,7 @@ import (
 	"time"
 )
 
+// key 是保存等待时限的 context 键。
 type key struct{}
 
 // WithTimeout 返回一个 ctx：用它向资源池取资源时，最多等待 d。d 不大于 0 时取消之前设置的时限。

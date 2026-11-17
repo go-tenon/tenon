@@ -166,6 +166,7 @@ func Template[T any](w RowWriter, examples ...T) error {
 	return nil
 }
 
+// field 是导入的结构体中对应表格一列的字段。
 type field struct {
 	name     string   // json 标签中的名称，也是 form.Decode 的字段名
 	header   string   // 写出模板时的列名
@@ -177,6 +178,7 @@ type field struct {
 
 var cache sync.Map // reflect.Type -> []field
 
+// fieldsOf 返回结构体类型 t 中对应表格列的字段，结果缓存。
 func fieldsOf(t reflect.Type) []field {
 	if fs, ok := cache.Load(t); ok {
 		return fs.([]field)

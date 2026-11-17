@@ -125,7 +125,7 @@ export interface LayoutMetrics {
 // 系统字体：中文优先用系统自带的苹方、思源黑体、微软雅黑，不额外加载字体。
 const fontFamily =
   '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Noto Sans CJK SC", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif'
-// 等宽字体：代码中的中文（注释、输出）回落到中文字体，而不是显示成方块。
+// 等宽字体：代码中的中文（注释、输出）回落到中文字体显示。
 const fontFamilyMonospace =
   'ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", "PingFang SC", "Noto Sans SC", "Noto Sans CJK SC", "Microsoft YaHei", monospace'
 

@@ -87,6 +87,7 @@ func AssignRequestID(cfg RequestIDConfig) func(http.Handler) http.Handler {
 	}
 }
 
+// validRequestID 报告客户端给出的请求 ID 是否可以沿用：1 到 128 个可打印的 ASCII 字符。
 func validRequestID(id string) bool {
 	if len(id) == 0 || len(id) > 128 {
 		return false
@@ -230,6 +231,7 @@ func Locale(languages *goi18n.Bundle) func(http.Handler) http.Handler {
 	}
 }
 
+// passthrough 原样返回 next，用于不需要的中间件。
 func passthrough(next http.Handler) http.Handler { return next }
 
 // WriteProblem 在 Huma 之外输出 Problem Details 错误，结构与 huma.NewError 一致。
@@ -244,6 +246,7 @@ func WriteProblem(w http.ResponseWriter, status int, detail string) {
 	_ = json.NewEncoder(w).Encode(problem)
 }
 
+// clientAddress 返回客户端的地址：请求来自 proxies 中的代理时，从 X-Forwarded-For 中由近及远取第一个不可信的地址。
 func clientAddress(r *http.Request, proxies []netip.Prefix) string {
 	trusted := func(a netip.Addr) bool {
 		for _, p := range proxies {

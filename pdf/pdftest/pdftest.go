@@ -76,6 +76,7 @@ func (r *Renderer) Reset() {
 // Blank 是一页空白的 A4 PDF，Render 返回它的副本。
 var Blank = blank()
 
+// blank 返回只有一页空白的 PDF。
 func blank() []byte {
 	objects := []string{
 		"<< /Type /Catalog /Pages 2 0 R >>",

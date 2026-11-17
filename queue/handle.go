@@ -28,8 +28,10 @@ func Concurrency(n int) HandleOption {
 	return func(h *handler) { h.concurrency = n }
 }
 
+// attemptKey 是执行次数在 context 中的键。
 type attemptKey struct{}
 
+// attemptInfo 是本次执行的次数 n 和最多执行的次数 max。
 type attemptInfo struct{ n, max int }
 
 // AttemptFromContext 返回处理中的任务本次是第几次执行（从 1 开始），以及这是否是最后一次：
@@ -54,9 +56,13 @@ func Permanent(err error) error {
 	return &permanentError{err}
 }
 
+// permanentError 标记不再重试的错误。
 type permanentError struct{ err error }
 
+// Error 返回包装的错误的信息。
 func (e *permanentError) Error() string { return e.err.Error() }
+
+// Unwrap 返回包装的错误。
 func (e *permanentError) Unwrap() error { return e.err }
 
 // IsPermanent 报告以 err 失败的任务是否直接结束，不再重试。依次判断：
@@ -108,7 +114,10 @@ type retryError struct {
 	delay time.Duration
 }
 
+// Error 返回包装的错误的信息。
 func (e *retryError) Error() string { return e.err.Error() }
+
+// Unwrap 返回包装的错误。
 func (e *retryError) Unwrap() error { return e.err }
 
 // retryDelay 返回第 attempts 次处理以 err 失败后到下一次处理的等待时间：

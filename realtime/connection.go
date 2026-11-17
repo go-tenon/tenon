@@ -16,6 +16,7 @@ type connection struct {
 	token string           // 由 Options.Authenticate 认证时的 token：SDK 传入的，或浏览器的会话 cookie
 }
 
+// connectionKey 是连接信息在客户端 context 中的键。
 type connectionKey struct{}
 
 // connecting 识别连接的主体：SDK 传入的 token 优先，其次是浏览器在连接请求中带上的会话 cookie，

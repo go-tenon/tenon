@@ -17,6 +17,7 @@ type TokenValidator func(ctx context.Context, token string) (Subject, error)
 // 连接保持，下次再查。
 type CredentialCheck func(ctx context.Context) error
 
+// credentialKey 是 CredentialCheck 在 context 中的键。
 type credentialKey struct{}
 
 // WithCredentialCheck 返回带有 check 的 context。入口的认证中间件在认证通过后调用它，
@@ -46,6 +47,7 @@ type CredentialWatcher interface {
 	Watch(ctx context.Context, sub Subject) <-chan struct{}
 }
 
+// watcherKey 是 CredentialWatcher 在 context 中的键。
 type watcherKey struct{}
 
 // WithCredentialWatcher 返回带有 w 的 context。认证中间件在安装 CredentialCheck 的同时调用它，

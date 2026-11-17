@@ -69,6 +69,7 @@ func New(ctx context.Context, nc *nats.Conn, opts Options) (*Store, error) {
 	return &Store{kv: kv}, nil
 }
 
+// stored 是保存在 KV 中的一个在线成员。
 type stored struct {
 	Subject string `json:"s"`
 	Info    []byte `json:"i,omitempty"`
@@ -77,8 +78,10 @@ type stored struct {
 
 var encoding = base64.RawURLEncoding
 
+// channelToken 返回频道在 KV 键中的编码。
 func channelToken(channel string) string { return encoding.EncodeToString([]byte(channel)) }
 
+// key 返回频道 channel 中连接 client 的 KV 键。
 func key(channel, client string) string {
 	return channelToken(channel) + "." + encoding.EncodeToString([]byte(client))
 }

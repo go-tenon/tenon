@@ -364,7 +364,7 @@ err := database.RunInTx(ctx, a.db, nil, func(ctx context.Context, tx database.Tx
 
 **事务中的查询没有生效，或者出现死锁**
 
-在 `RunInTx` 的函数中，要用参数 `tx` 执行语句，而不是外面的 `db`：用 `db` 执行的语句不在事务中，还可能因为等待事务释放锁而卡住。
+在 `RunInTx` 的函数中，要用参数 `tx` 执行语句：用外面的 `db` 执行的语句不在事务中，还可能因为等待事务释放锁而卡住。
 
 **在事务中发送了邮件，但事务回滚了，邮件却已经发出**
 

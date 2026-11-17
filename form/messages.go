@@ -27,6 +27,7 @@ type rule struct {
 	named bool // 第一个参数是缺少的字段名，要拼到位置上。
 }
 
+// on 返回一条规则：把 Huma 的消息格式 format 反解为消息 id，data 从格式中的参数得到模板数据。
 func on(format, id string, data func([]string) map[string]any) rule {
 	quoted := regexp.QuoteMeta(format)
 	for _, verb := range []string{"%v", "%d", "%s"} {
@@ -35,10 +36,16 @@ func on(format, id string, data func([]string) map[string]any) rule {
 	return rule{re: regexp.MustCompile("^" + quoted + "$"), id: id, data: data}
 }
 
+// named 让规则 r 把第一个参数当作缺少的字段名。
 func named(r rule) rule { r.named = true; return r }
 
-func minArg(a []string) map[string]any   { return map[string]any{"Min": a[0]} }
-func maxArg(a []string) map[string]any   { return map[string]any{"Max": a[0]} }
+// minArg 把参数当作 Min 的模板数据。
+func minArg(a []string) map[string]any { return map[string]any{"Min": a[0]} }
+
+// maxArg 把参数当作 Max 的模板数据。
+func maxArg(a []string) map[string]any { return map[string]any{"Max": a[0]} }
+
+// valueArg 把参数当作 Value 的模板数据。
 func valueArg(a []string) map[string]any { return map[string]any{"Value": a[0]} }
 
 // 顺序有意义：具体的格式规则必须排在 MsgExpectedBePattern（"expected string to be %s"）之前，
@@ -129,6 +136,7 @@ func Describe(ctx context.Context, d *huma.ErrorDetail) FieldError {
 	return e
 }
 
+// join 把字段名 name 接在位置 parent 之后。
 func join(parent, name string) string {
 	if parent == "" {
 		return name

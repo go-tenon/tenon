@@ -100,6 +100,7 @@ type UIRequest struct {
 	Messages []UIMessage `json:"messages,omitempty"`
 }
 
+// last 返回请求中最新的一条消息；请求中没有消息时返回 false。
 func (r UIRequest) last() (UIMessage, bool) {
 	if r.Message != nil {
 		return *r.Message, true
@@ -158,6 +159,7 @@ func (rs *Runs) Submit(ctx context.Context, userID string, req UIRequest, opts .
 	return nil, ErrBadRequest.New()
 }
 
+// text 返回消息中全部文字片段连起来的内容。
 func (m UIMessage) text() string {
 	var b strings.Builder
 	for _, p := range m.Parts {
@@ -214,6 +216,7 @@ func WriteUIStream(w http.ResponseWriter, r *http.Request, run *Run) error {
 	})
 }
 
+// logStreamError 记录推送事件流时的错误，客户端断开（context.Canceled）除外。
 func logStreamError(r *http.Request, err error) {
 	if err != nil && !errors.Is(err, context.Canceled) {
 		logging.Or(nil).ErrorContext(r.Context(), "ai stream failed", logging.AttrComponent, "ai", "error", err)
@@ -230,6 +233,7 @@ type uiEncoder struct {
 	failed     bool
 }
 
+// event 把一个事件编码为 UI 消息流的片段写出。
 func (e *uiEncoder) event(ev Event) error {
 	switch data := ev.Data.(type) {
 	case Text:
@@ -294,6 +298,7 @@ func (e *uiEncoder) event(ev Event) error {
 	return nil
 }
 
+// all 依次执行 steps，遇到错误时停止并返回它。
 func (e *uiEncoder) all(steps ...func() error) error {
 	for _, step := range steps {
 		if err := step(); err != nil {
@@ -303,6 +308,7 @@ func (e *uiEncoder) all(steps ...func() error) error {
 	return nil
 }
 
+// closeBlock 结束正在写的文字或思考块。
 func (e *uiEncoder) closeBlock() error {
 	if e.block == "" {
 		return nil
@@ -312,6 +318,7 @@ func (e *uiEncoder) closeBlock() error {
 	return e.send(UIChunk{Type: kind + "-end", ID: e.blockID})
 }
 
+// startStep 开始新的一步，已经在一步中时什么也不做。
 func (e *uiEncoder) startStep() error {
 	if e.step {
 		return nil
@@ -320,6 +327,7 @@ func (e *uiEncoder) startStep() error {
 	return e.send(UIChunk{Type: "start-step"})
 }
 
+// finishStep 结束当前这一步，不在一步中时什么也不做。
 func (e *uiEncoder) finishStep() error {
 	if !e.step {
 		return nil

@@ -10,6 +10,7 @@ import (
 	"github.com/go-tenon/tenon/logging"
 )
 
+// basicUserKey 是 Basic 认证的用户名在 context 中的键。
 type basicUserKey struct{}
 
 // BasicAuth 要求请求带 HTTP Basic 认证，用于运维页面和内部文档这类不接入应用账号体系的页面。

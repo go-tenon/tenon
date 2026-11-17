@@ -51,6 +51,7 @@ func Not(f Filter) Filter { return not{f} }
 // never 是总不满足的条件：没有 ID 的 has_id。
 func never() *qdrant.Condition { return qdrant.NewHasID() }
 
+// lookup 返回 schema 中名为 name 的筛选字段。
 func lookup(s *schema, name string) (*field, error) {
 	f := s.filters[name]
 	if f == nil {
@@ -59,12 +60,14 @@ func lookup(s *schema, name string) (*field, error) {
 	return f, nil
 }
 
+// compare 是字段与值的比较条件。
 type compare struct {
 	field string
 	op    string
 	value any
 }
 
+// condition 把条件转换为 Qdrant 的条件。
 func (c compare) condition(s *schema) (*qdrant.Condition, error) {
 	f, err := lookup(s, c.field)
 	if err != nil {
@@ -114,6 +117,7 @@ func (c compare) condition(s *schema) (*qdrant.Condition, error) {
 	}
 }
 
+// numberRange 返回数值比较 op x 对应的范围。
 func numberRange(op string, x float64) *qdrant.Range {
 	r := &qdrant.Range{}
 	switch op {
@@ -131,11 +135,13 @@ func numberRange(op string, x float64) *qdrant.Range {
 	return r
 }
 
+// in 是字段取值在 values 中的条件。
 type in struct {
 	field  string
 	values []any
 }
 
+// condition 把条件转换为 Qdrant 的条件。
 func (c in) condition(s *schema) (*qdrant.Condition, error) {
 	f, err := lookup(s, c.field)
 	if err != nil {
@@ -178,11 +184,13 @@ func (c in) condition(s *schema) (*qdrant.Condition, error) {
 	}
 }
 
+// logic 用 AND 或 OR 组合多个条件。
 type logic struct {
 	and     bool
 	filters []Filter
 }
 
+// condition 把组合的条件转换为 Qdrant 的条件；没有条件时 AND 总是满足，OR 总是不满足。
 func (l logic) condition(s *schema) (*qdrant.Condition, error) {
 	if len(l.filters) == 0 {
 		if l.and {
@@ -207,8 +215,10 @@ func (l logic) condition(s *schema) (*qdrant.Condition, error) {
 	return qdrant.NewFilterAsCondition(&qdrant.Filter{Should: conds}), nil
 }
 
+// not 是取反的条件。
 type not struct{ f Filter }
 
+// condition 把取反的条件转换为 Qdrant 的条件。
 func (n not) condition(s *schema) (*qdrant.Condition, error) {
 	if n.f == nil {
 		return nil, errors.New("vector: nil filter")

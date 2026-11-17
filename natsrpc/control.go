@@ -27,6 +27,7 @@ type endpointStats struct {
 	total     time.Duration
 }
 
+// record 记录一次请求的耗时 d；failed 不为空时记为失败，内容是错误。
 func (s *endpointStats) record(d time.Duration, failed string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -71,6 +72,7 @@ func (r *runner) subscribeControl(nc *nats.Conn, endpoints []*endpoint) ([]*nats
 	return subs, nil
 }
 
+// info 返回服务的 INFO 响应：服务信息和端点列表。
 func (r *runner) info(identity micro.ServiceIdentity, endpoints []*endpoint) micro.Info {
 	info := micro.Info{ServiceIdentity: identity, Type: micro.InfoResponseType, Description: r.opts.Description, Endpoints: []micro.EndpointInfo{}}
 	for _, ep := range endpoints {
@@ -84,6 +86,7 @@ func (r *runner) info(identity micro.ServiceIdentity, endpoints []*endpoint) mic
 	return info
 }
 
+// stats 返回服务的 STATS 响应：各端点的请求数、错误数和耗时。
 func (r *runner) stats(identity micro.ServiceIdentity, endpoints []*endpoint) micro.Stats {
 	stats := micro.Stats{ServiceIdentity: identity, Type: micro.StatsResponseType, Started: r.started, Endpoints: []*micro.EndpointStats{}}
 	for _, ep := range endpoints {

@@ -44,6 +44,7 @@ func (c Config) Validate() error {
 	return errors.Join(errs...)
 }
 
+// decodeKey 解码 base64 编码的密钥，检查长度。
 func decodeKey(s string) ([]byte, error) {
 	key, err := base64.StdEncoding.DecodeString(s)
 	if err != nil {

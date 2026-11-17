@@ -120,6 +120,7 @@ func qualifiedName(t reflect.Type, hint string) string {
 	return t.PkgPath() + "." + t.Name()
 }
 
+// resolve 解开 schema 的 $ref，返回它指向的 schema。
 func resolve(s *huma.Schema) *huma.Schema {
 	if s != nil && s.Ref != "" {
 		return registry.SchemaFromRef(s.Ref)
@@ -127,6 +128,7 @@ func resolve(s *huma.Schema) *huma.Schema {
 	return s
 }
 
+// isNumber 报告 schema 类型 typ 是否是数字。
 func isNumber(typ string) bool { return typ == huma.TypeInteger || typ == huma.TypeNumber }
 
 // convert 把文本转换为 schema 类型；无法转换时保留原文，由验证报出类型错误。

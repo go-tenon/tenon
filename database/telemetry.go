@@ -41,6 +41,7 @@ const (
 // Option 调整 Open 打开的连接池。
 type Option func(*options)
 
+// options 是 Open 的选项。
 type options struct {
 	meters   metric.MeterProvider
 	tracers  trace.TracerProvider
@@ -102,6 +103,7 @@ type queryHook struct {
 	logger   *slog.Logger
 }
 
+// spanKey 是查询的 span 在 context 中的键。
 type spanKey struct{}
 
 // newQueryHook 按 o 和 cfg 创建钩子；既不记录指标链路、也不记录慢查询时返回 nil。
@@ -139,6 +141,7 @@ func newQueryHook(o options, cfg Config, database, host string, port uint16) *qu
 
 var _ bun.QueryHook = (*queryHook)(nil)
 
+// BeforeQuery 在 ctx 中已有 span 时为查询开启子 span。
 func (h *queryHook) BeforeQuery(ctx context.Context, e *bun.QueryEvent) context.Context {
 	// 只在 ctx 中已有 span 时记录：队列转发任务、调度器加锁这些后台查询不属于任何请求或任务，
 	// 每条都成为一条单独的链路只会淹没真正的链路。它们的耗时仍然计入指标。
@@ -163,6 +166,7 @@ func (h *queryHook) BeforeQuery(ctx context.Context, e *bun.QueryEvent) context.
 	return spanCtx
 }
 
+// AfterQuery 在查询结束时记录指标、结束 span，超过阈值时记录慢查询日志。
 func (h *queryHook) AfterQuery(ctx context.Context, e *bun.QueryEvent) {
 	elapsed := time.Since(e.StartTime)
 	op, table := describe(e)

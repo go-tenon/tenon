@@ -283,6 +283,7 @@ func call[I, O any](ctx context.Context, fn func(context.Context, I) (O, error),
 	return fn(ctx, in)
 }
 
+// marshal 把响应编码为 JSON。
 func marshal(v any) ([]byte, error) {
 	data, err := json.Marshal(v)
 	return data, errors.Wrap(err, "natsrpc: encode response")

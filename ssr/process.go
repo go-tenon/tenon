@@ -47,6 +47,7 @@ type lineWriter struct {
 	level  slog.Level
 }
 
+// Write 按行转发 SSR 进程的输出。
 func (w *lineWriter) Write(p []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()

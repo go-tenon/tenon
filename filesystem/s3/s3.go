@@ -115,6 +115,7 @@ func (d *Disk) Put(ctx context.Context, key, contentType string, body io.Reader,
 	return wrap("put object", err)
 }
 
+// putMultipart 用分片上传写入对象：first 是已经读出的第一片，其余从 rest 读取；失败时取消上传。
 func (d *Disk) putMultipart(ctx context.Context, key, contentType string, first []byte, rest io.Reader) (err error) {
 	uploadID, err := d.CreateMultipart(ctx, key, contentType)
 	if err != nil {
@@ -267,6 +268,7 @@ func (d *Disk) AbortAllMultipart(ctx context.Context, key string) error {
 	}
 }
 
+// signed 返回预签名的请求，去掉客户端自动设置的请求头。
 func signed(rawURL, method string, headers http.Header) filesystem.SignedRequest {
 	h := headers.Clone()
 	// Host 和 Content-Length 由 HTTP 客户端自动设置，浏览器也不允许手工设置。
@@ -293,6 +295,7 @@ func wrap(op string, err error) error {
 	return errors.Wrapf(err, "s3: %s", op)
 }
 
+// optional 返回 s 的指针，s 为空时返回 nil。
 func optional(s string) *string {
 	if s == "" {
 		return nil

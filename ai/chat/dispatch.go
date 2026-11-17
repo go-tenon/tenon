@@ -71,6 +71,7 @@ type wireError struct {
 	Message string         `json:"message"`
 }
 
+// encodeError 把 err 转换为可以跨实例传递的 wireError；err 为 nil 时返回 nil。
 func encodeError(err error) *wireError {
 	if err == nil {
 		return nil
@@ -82,6 +83,7 @@ func encodeError(err error) *wireError {
 	return w
 }
 
+// decode 把 wireError 还原为错误，errorx 错误按错误码还原。
 func (w *wireError) decode() error {
 	if w.Code != "" {
 		var opts []errorx.Option
@@ -98,8 +100,13 @@ func (w *wireError) decode() error {
 	return errors.New(w.Message)
 }
 
-func (c *cluster) dispatchTopic() string       { return "ai.dispatch." + c.appID() }
-func replyTopic(req string) string             { return "ai.dispatch.reply." + req }
+// dispatchTopic 返回转交请求的主题。
+func (c *cluster) dispatchTopic() string { return "ai.dispatch." + c.appID() }
+
+// replyTopic 返回请求 req 的回复主题。
+func replyTopic(req string) string { return "ai.dispatch.reply." + req }
+
+// claimLock 返回认领请求 req 的锁名，保证只有一个 worker 接手。
 func (c *cluster) claimLock(req string) string { return "ai:dispatch:" + req }
 
 // dispatch 把请求转交给 worker，等它接手并给出结果，返回运行的镜像。

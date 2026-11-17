@@ -129,6 +129,7 @@ func (d *Deliverer) Handle(w *queue.Worker) {
 	Deliver.Handle(w, d.deliver, queue.MaxAttempts(d.maxAttempts))
 }
 
+// deliver 执行推送任务 job：读取收件人的设备，按平台分批交给推送服务发送，汇总需要重试和不再重试的错误。
 func (d *Deliverer) deliver(ctx context.Context, job Job) error {
 	var expires time.Time
 	if job.Message.TTL > 0 {

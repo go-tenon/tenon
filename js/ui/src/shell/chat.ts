@@ -182,6 +182,7 @@ function release(items: readonly PendingAttachment[]) {
   for (const a of items) if (a.preview) URL.revokeObjectURL(a.preview)
 }
 
+/** useAttachments 返回的附件状态和操作。 */
 export type Attachments = ReturnType<typeof useAttachments>
 
 /** 消息中的文件片段，例如显示在用户的气泡中。 */
@@ -350,6 +351,7 @@ export function useAssistantChat({
   }
 }
 
+/** useAssistantChat 返回的对话状态和操作。 */
 export type AssistantChat = ReturnType<typeof useAssistantChat>
 
 /** 错误的说明：附件的问题直接显示，其他按接口错误描述。 */
@@ -403,4 +405,5 @@ export function useAssistantComposer(chat: AssistantChat) {
   }
 }
 
+/** useAssistantComposer 返回的输入框状态和操作。 */
 export type AssistantComposer = ReturnType<typeof useAssistantComposer>

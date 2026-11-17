@@ -134,7 +134,7 @@ if err := doctor.Require(ctx, nil, app.doctor()...); err != nil {
 
 `run` 见[在入口中组装应用](../concepts/dependencies.md#assembling-the-application)。第二个参数是记录提示的日志器，`nil` 表示 `slog.Default()`。这一步通常不到一秒：每一项都是一两条查询，复制连接建立后立即关闭。
 
-最常见的收获是“忘了执行迁移”：升级镜像后直接启动，`migrations` 组失败，进程退出并提示先运行 `migrate up`，而不是带着旧的表结构运行，等到某个请求报“列不存在”。
+最常见的收获是“忘了执行迁移”：升级镜像后直接启动，`migrations` 组失败，进程退出并提示先运行 `migrate up`，避免带着旧的表结构运行、等到某个请求报“列不存在”。
 
 > [!NOTE]
 > 滚动升级时，旧版本的实例可能在新的表结构上重新启动，这时 `migrations` 组给出的是提示（数据库比程序新），不会阻止启动，见[新旧进程同时运行](operations.md#upgrade-overlap)。

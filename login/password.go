@@ -13,6 +13,7 @@ import (
 	"github.com/go-tenon/tenon/identity"
 )
 
+// passwordRow 是 auth_passwords 表中的一行：主体的密码哈希。
 type passwordRow struct {
 	bun.BaseModel `bun:"table:auth_passwords,alias:p"`
 

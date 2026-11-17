@@ -97,6 +97,7 @@ func collapseAnyMethod(routes []Route) []Route {
 	return out
 }
 
+// sameDescription 报告两条路由的描述（访问策略、操作 ID、摘要、权限）是否相同。
 func sameDescription(a, b Route) bool {
 	return a.Access == b.Access && a.OperationID == b.OperationID && a.Summary == b.Summary && slices.Equal(a.Permissions, b.Permissions)
 }

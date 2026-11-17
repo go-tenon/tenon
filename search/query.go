@@ -149,6 +149,7 @@ func (ix *Index[D]) Search(ctx context.Context, db bun.IDB, q Query) (*Result[D]
 	return res, nil
 }
 
+// highlights 返回文档 doc 中各文本字段命中查询词的片段。
 func (ix *Index[D]) highlights(q queryTerms, doc D) map[string]Snippet {
 	v := reflect.ValueOf(doc)
 	out := map[string]Snippet{}
@@ -160,6 +161,7 @@ func (ix *Index[D]) highlights(q queryTerms, doc D) map[string]Snippet {
 	return out
 }
 
+// facets 统计符合条件的文档在各分面字段上的取值和数量，每个字段最多 FacetLimit 个。
 func (ix *Index[D]) facets(ctx context.Context, db bun.IDB, q Query, from string, where sqlExpr) (map[string][]FacetValue, error) {
 	limit := q.FacetLimit
 	if limit <= 0 {
@@ -196,9 +198,11 @@ type sqlExpr struct {
 	args []any
 }
 
+// add 追加 SQL 片段和它的参数。
 func (e *sqlExpr) add(sql string, args ...any) {
 	e.b.WriteString(sql)
 	e.args = append(e.args, args...)
 }
 
+// sql 返回拼好的 SQL。
 func (e *sqlExpr) sql() string { return e.b.String() }

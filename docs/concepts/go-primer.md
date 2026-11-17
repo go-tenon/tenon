@@ -86,7 +86,7 @@ if err := tx.NewInsert().Model(a).Exec(ctx); err != nil {
 ```go
 a, err := article.Find(ctx, db, id)
 if errors.Is(err, article.ErrNotFound) {
-    // 文章不存在：返回 404，而不是 500
+    // 文章不存在：返回 404
 }
 ```
 
@@ -116,7 +116,7 @@ type CreateInput struct {
 <a id="method-values"></a>
 ## 把方法当作值传递
 
-在 Go 中，函数和方法都可以当作值传递。`h.Create` 不加括号时不是调用，而是“`h` 的 `Create` 方法”这个值，可以交给别的函数，由它在需要的时候调用：
+在 Go 中，函数和方法都可以当作值传递。`h.Create` 不加括号时表示“`h` 的 `Create` 方法”这个值，可以交给别的函数，由它在需要的时候调用：
 
 ```go
 h := &Handlers{db: db}

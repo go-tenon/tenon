@@ -58,6 +58,7 @@ func (m *Mailer) Send(ctx context.Context, msg mail.Message) error {
 	return nil
 }
 
+// join 把地址列表写成以逗号分隔的字符串。
 func join(list []mail.Address) string {
 	parts := make([]string, len(list))
 	for i, a := range list {

@@ -32,6 +32,7 @@ import (
 
 const framework = "github.com/go-tenon/tenon"
 
+// initCommand 返回 tenon init 命令：生成新项目。
 func initCommand() *cobra.Command {
 	var opts scaffold.Options
 	cmd := &cobra.Command{
@@ -118,6 +119,7 @@ func tenonVersion() (version, dir string) {
 	return "", ""
 }
 
+// main 执行 tenon 命令，收到中断信号时取消。
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	err := root().ExecuteContext(ctx)
@@ -128,6 +130,7 @@ func main() {
 	}
 }
 
+// root 返回 tenon 的根命令。
 func root() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "tenon",
@@ -144,6 +147,7 @@ func root() *cobra.Command {
 // moduleLine 是 go.mod 中的 module 行。
 var moduleLine = regexp.MustCompile(`(?m)^module\s+(\S+)`)
 
+// addFrontendCommand 返回 tenon add frontend 命令：在 apps/<name> 中生成一个前端，加入 Bun workspace。
 func addFrontendCommand() *cobra.Command {
 	var base, style, landing string
 	cmd := &cobra.Command{
@@ -221,6 +225,7 @@ ssr.Run(ctx, serve, webPages, %[3]sPages)。导入 %[5]q。
 	return cmd
 }
 
+// devCommand 返回 tenon dev 命令：运行应用和前端工具，修改代码后重新编译、重启并生成客户端。
 func devCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "dev",
@@ -236,6 +241,7 @@ func devCommand() *cobra.Command {
 	}
 }
 
+// buildCommand 返回 tenon build 命令：把每个前端编译成 SSR 代码，构建共用的运行时，再编译嵌入它们的应用。
 func buildCommand() *cobra.Command {
 	var out, arch string
 	cmd := &cobra.Command{
@@ -311,6 +317,7 @@ func buildCommand() *cobra.Command {
 	return cmd
 }
 
+// generateCommand 返回 tenon generate 命令：编译应用，生成 TypeScript 和 Go 客户端。
 func generateCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "generate",
@@ -359,6 +366,7 @@ func generateCommand() *cobra.Command {
 	}
 }
 
+// run 在目录 dir 中执行命令 name，输出写到 cmd 的输出，随 cmd 的 context 取消。
 func run(cmd *cobra.Command, dir, name string, args ...string) error {
 	c := exec.CommandContext(cmd.Context(), name, args...)
 	c.Dir = dir

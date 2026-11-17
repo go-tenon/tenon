@@ -29,6 +29,7 @@ type envelope struct {
 	Attempts    int               `json:"attempts,omitempty"` // 这条消息之前已经执行的次数：经由 outbox 重试的任务从这里接着计数。
 }
 
+// failedJob 是 queue_failed_jobs 表中的一行：一个失败的任务。
 type failedJob struct {
 	bun.BaseModel `bun:"table:queue_failed_jobs,alias:f"`
 

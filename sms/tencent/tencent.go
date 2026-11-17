@@ -131,6 +131,7 @@ func New(cfg Config, client *http.Client) (*Sender, error) {
 	return s, nil
 }
 
+// request 是发送短信接口的请求体。
 type request struct {
 	PhoneNumberSet   []string `json:"PhoneNumberSet"`
 	SmsSdkAppID      string   `json:"SmsSdkAppId"`
@@ -139,6 +140,7 @@ type request struct {
 	TemplateParamSet []string `json:"TemplateParamSet,omitempty"`
 }
 
+// response 是发送短信接口的响应。
 type response struct {
 	Response struct {
 		RequestID     string `json:"RequestId"`
@@ -147,6 +149,7 @@ type response struct {
 	}
 }
 
+// status 是接口返回的错误或一个号码的发送结果。
 type status struct {
 	Code    string
 	Message string

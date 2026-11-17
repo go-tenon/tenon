@@ -92,13 +92,13 @@ type IDInput struct {
 - **`Article` 是模型**：一个结构体对应数据表中的一行。我们用 [Bun](https://bun.uptrace.dev) 读写数据库，它按 `bun` 标签把字段对应到表的列，例如 `bun:"id,pk"` 表示这个字段是 `id` 列，并且是主键；`bun.BaseModel` 那一行告诉 Bun 表名是 `articles`。同一个字段上的 `json` 标签是接口返回的 JSON 中的名字，所以这个结构体既用来读写数据库，也直接作为接口的返回值。
 - **业务错误用 `errorx.Define` 定义。** 第一个参数是错误的分类，决定 HTTP 状态码：`NotFound` 是 404，`Conflict`（冲突）是 409。第二个参数是错误码，例如 `article.slug_taken`，客户端按它判断发生了什么，显示相应的提示。见[错误处理](../general/errors.md)。
 - **`Changes` 是新建和修改时提交的内容。** 字段上的 `minLength`、`maxLength`、`pattern` 等标签就是校验规则：标题不能为空、最长 200 个字符；slug 只能是小写字母、数字和连字符。不符合时，接口直接返回 `422`，列出每个字段的问题，你的代码不会被调用。见[验证](../http/validation.md)。
-- **`find`** 按 ID 读取一篇文章。查不到时数据库返回 `sql.ErrNoRows`，`find` 把它转换为业务错误 `ErrNotFound`，客户端就会得到 404，而不是 500。参数 `db` 的类型 `bun.IDB` 是一个接口：数据库连接池和事务都实现了它，所以同一个函数在事务内外都能用。
+- **`find`** 按 ID 读取一篇文章。查不到时数据库返回 `sql.ErrNoRows`，`find` 把它转换为业务错误 `ErrNotFound`，客户端就会得到 404。参数 `db` 的类型 `bun.IDB` 是一个接口：数据库连接池和事务都实现了它，所以同一个函数在事务内外都能用。
 - **`ArticleOutput` 和 `IDInput`** 是几个接口共用的输入和输出。`path:"id"` 表示 `ID` 来自路径中的 `{id}`，例如 `/articles/0193…` 中的那一段；类型是 `uuid.UUID`，不是合法的 UUID 时请求直接被拒绝。
 
 <a id="actions"></a>
 ## 动作
 
-**动作**是一个用例，例如“列出文章”“新建文章”。每个动作写在一个文件中：一个结构体保存它用到的依赖（现在只有数据库 `db`），构造函数 `NewList` 创建它，`HTTP` 方法处理请求。依赖由构造函数传入，而不是使用全局变量，这样测试时可以传入测试数据库，见[依赖装配](../concepts/dependencies.md)。
+**动作**是一个用例，例如“列出文章”“新建文章”。每个动作写在一个文件中：一个结构体保存它用到的依赖（现在只有数据库 `db`），构造函数 `NewList` 创建它，`HTTP` 方法处理请求。依赖由构造函数传入，测试时就可以传入测试数据库，见[依赖装配](../concepts/dependencies.md)。
 
 先写列表。新建 `internal/article/list.go`：
 

@@ -81,6 +81,7 @@ func (rs *Runs) Notify(ctx context.Context, userID, sessionID string) (*Run, err
 	return rs.notifyLocal(ctx, userID, sessionID)
 }
 
+// notifyLocal 在本实例上回应应用已写入存储的新消息：对话空闲时开始新的运行，正在运行时交给它下一轮读取。
 func (rs *Runs) notifyLocal(ctx context.Context, userID, sessionID string) (*Run, error) {
 	key := rs.key(userID, sessionID)
 	for {
@@ -128,6 +129,7 @@ func (r *Run) notify(ctx context.Context) error {
 	return nil
 }
 
+// conversation 返回对话 key 对应的 Conversation。
 func (rs *Runs) conversation(key session.Key) Conversation {
 	return Conversation{UserID: key.UserID, ID: key.SessionID}
 }

@@ -61,6 +61,7 @@ type redirectError struct {
 	code, description string
 }
 
+// Error 返回错误码和说明。
 func (e *redirectError) Error() string { return e.code + ": " + e.description }
 
 // parse 校验授权请求。client_id 或 redirect_uri 不对时返回 ErrInvalidClient、ErrInvalidRedirect：
@@ -143,6 +144,7 @@ func (s *Server) issue(ctx context.Context, req *authRequest, sub identity.Subje
 	return s.back(req, url.Values{"code": {plain}}), nil
 }
 
+// values 返回跳回客户端时带上的错误参数。
 func (e *redirectError) values() url.Values {
 	return url.Values{"error": {e.code}, "error_description": {e.description}}
 }
@@ -173,6 +175,7 @@ func (s *Server) consentURL(values url.Values) string {
 	return u.String()
 }
 
+// host 返回地址 raw 的主机，无法解析时返回空串。
 func host(raw string) string {
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -181,6 +184,7 @@ func host(raw string) string {
 	return u.Host
 }
 
+// hashCode 返回授权码 c 的 SHA-256，十六进制。
 func hashCode(c string) string {
 	sum := sha256.Sum256([]byte(c))
 	return hex.EncodeToString(sum[:])

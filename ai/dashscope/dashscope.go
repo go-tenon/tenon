@@ -168,11 +168,13 @@ func batches(items []item, size int) [][2]int {
 	return out
 }
 
+// embedParams 是向量接口的参数。
 type embedParams struct {
 	Dimension int    `json:"dimension,omitempty"`
 	Instruct  string `json:"instruct,omitempty"`
 }
 
+// embedBody 是向量接口的请求体。
 type embedBody struct {
 	Model string `json:"model"`
 	Input struct {
@@ -181,6 +183,7 @@ type embedBody struct {
 	Parameters *embedParams `json:"parameters,omitempty"`
 }
 
+// embedResponse 是向量接口的响应。
 type embedResponse struct {
 	Output struct {
 		Embeddings []struct {
@@ -242,6 +245,7 @@ func (c *Client) Embed(ctx context.Context, req ai.EmbedRequest) ([][]float32, e
 	return out, nil
 }
 
+// rerankBody 是重排接口的请求体。
 type rerankBody struct {
 	Model string `json:"model"`
 	Input struct {
@@ -254,6 +258,7 @@ type rerankBody struct {
 	} `json:"parameters"`
 }
 
+// rerankResponse 是重排接口的响应。
 type rerankResponse struct {
 	Output struct {
 		Results []struct {

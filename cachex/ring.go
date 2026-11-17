@@ -103,5 +103,8 @@ func parseAddr(s string) (net.Addr, error) {
 // addr 是未解析的地址。
 type addr struct{ network, address string }
 
+// Network 返回地址的网络类型。
 func (a addr) Network() string { return a.network }
-func (a addr) String() string  { return a.address }
+
+// String 返回地址。
+func (a addr) String() string { return a.address }
