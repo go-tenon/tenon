@@ -101,6 +101,16 @@ bun run e2e         # Playwright，第一次运行前执行 bunx playwright inst
 
 尽早暴露失败和错误，让问题尽早被发现、尽早修复：出错时返回错误，调用方处理不了就继续向上返回。不为不会发生的情况加防御检查，不吞掉错误，也不用默认值掩盖错误。
 
+### 颜色
+
+`js` 中的包、playground、脚手架的模板和文档中的示例，颜色都从 Mantine 的主题中取。主题中的彩色是 Mantine [颜色生成器](https://mantine.dev/colors-generator)的 26 种预设（`js/ui/src/theme.ts` 的 `primaryColors`），色板由 `@mantine/colors-generator` 生成，亮色和暗色模式下的取值由 Mantine 统一给出，应用换品牌色时整套界面一起变：
+
+- 品牌色是 `brand`，组件不写 `color` 时用的就是它。它由 `createUiTheme` 的 `primary` 设置，写预设的名称（例如 `pale-indigo`）或颜色值。
+- 其他彩色写预设的名称：组件的属性写 `color="deep-orange"`、`c="red"`、`bg="green.5"`，CSS 写 `var(--mantine-color-deep-orange-6)`。浅色底和上面的文字用 `-light`、`-light-color` 变体，它们在暗色模式下自动换成合适的值，不用另写暗色的规则。半透明用 `color-mix(in srgb, var(--mantine-color-violet-7) 50%, transparent)`。
+- Mantine 自带的 `teal`、`orange`、`blue`、`cyan`、`grape`、`indigo`、`lime` 不在预设中，不使用；`red`、`green`、`yellow`、`pink`、`violet` 与预设同名，用的是预设的色板。彩色不写十六进制或 `rgb()` 的值，写死的值不随品牌色和暗色模式变化。
+- 状态的颜色固定，同一种状态在各处用同一种颜色：成功、正常用 `green`；进行中用 `bright-blue`；暂停、等待处理用 `yellow`；需要注意用 `deep-orange`；失败、危险用 `red`；没有状态、已停用用 `gray`。
+- 中性色（文字、边框、背景）不在预设中，用主题的 `gray`、`dark` 色板、`c="dimmed"` 和 `--tn-*` 变量（`--tn-text`、`--tn-muted`、`--tn-border` 等）。中性色的值只写在 `theme.ts` 的色板和 `styles.css`、`landing.css` 中，组件里不写；阴影和遮罩可以用黑白的 `rgba()`。
+
 ## 接口契约
 
 API 的客户端包括网页、App、桌面端和其他服务，用的语言可能是 TypeScript 和 Go 以外的任何语言。[客户端协议](docs/http/protocol.md)和 [RPC 协议](docs/rpc/protocol.md)是写给这些客户端的，框架的改动不能让它们只能用某一种语言、只能在浏览器中实现：
