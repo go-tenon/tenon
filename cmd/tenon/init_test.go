@@ -175,8 +175,14 @@ func TestInitEndToEnd(t *testing.T) {
 	} else {
 		body, _ := io.ReadAll(res.Body)
 		_ = res.Body.Close()
-		if res.StatusCode != http.StatusOK || res.Header.Get("Cache-Control") != "no-cache" || !strings.Contains(string(body), `"version"`) {
+		var v struct{ Version string }
+		if res.StatusCode != http.StatusOK || res.Header.Get("Cache-Control") != "no-cache" || json.Unmarshal(body, &v) != nil || v.Version == "" {
 			t.Errorf("/admin/version.json: %d %q %s", res.StatusCode, res.Header.Get("Cache-Control"), body)
+		}
+		// 页面中注入的版本号与 version.json 相同，否则一打开页面就提示有新版本。
+		// TanStack Start 在一次构建中会加载好几次 vite.config，每次都调用 tenonVersion。
+		if !bundleContains(t, filepath.Join(dir, "apps", "admin", "dist", "client", "assets"), v.Version) {
+			t.Errorf("version %q from version.json is not in the page bundle", v.Version)
 		}
 	}
 	if _, err := os.Stat(filepath.Join(dir, "apps", "admin", "dist", "server", "version.json")); err == nil {
@@ -279,4 +285,23 @@ func freePort(t *testing.T) string {
 	defer ln.Close()
 	_, port, _ := net.SplitHostPort(ln.Addr().String())
 	return port
+}
+
+// bundleContains 报告 dir 中是否有脚本包含 s。
+func bundleContains(t *testing.T, dir, s string) bool {
+	t.Helper()
+	files, err := filepath.Glob(filepath.Join(dir, "*.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range files {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(b), s) {
+			return true
+		}
+	}
+	return false
 }

@@ -7,6 +7,18 @@ import { copyFile, mkdir, readdir, rm, unlink } from "node:fs/promises"
 import { dirname, join, relative, resolve } from "node:path"
 
 /**
+ * 默认的版本号：环境变量 TENON_BUILD_VERSION，没有时随机生成一个并写入它。
+ * 一次构建中 vite.config 可能被加载好几次（TanStack Start 为不同的环境各加载一次），每次都调用 tenonVersion；
+ * 版本号在进程中只生成一次，注入页面的和写进 version.json 的才是同一个。
+ *
+ * @returns {string}
+ */
+function buildVersion() {
+  process.env.TENON_BUILD_VERSION ||= randomUUID()
+  return process.env.TENON_BUILD_VERSION
+}
+
+/**
  * 构建时在 dist 中写入 {"version": "…"}，并把版本号和文件的地址（带上 base）注入为
  * import.meta.env.TENON_BUILD_VERSION、TENON_VERSION_URL。只在构建时生效，开发模式下不检查新版本。
  * 用 TanStack Start 时只作用于浏览器的构建（client 环境），version.json 写在 dist/client 中；
@@ -16,7 +28,7 @@ import { dirname, join, relative, resolve } from "node:path"
  * @returns {import("vite").Plugin}
  */
 export function tenonVersion(options = {}) {
-  const version = options.version ?? randomUUID()
+  const version = options.version ?? buildVersion()
   const fileName = (options.fileName ?? "version.json").replace(/^\/+/, "")
   /** @type {string | undefined} */
   let mapsDir

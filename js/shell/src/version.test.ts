@@ -66,6 +66,22 @@ describe("tenonVersion", () => {
     expect(code).toMatch(/["`]\/admin\/version\.json["`]/)
   })
 
+  it("默认的版本号在一个构建进程中只生成一次：vite.config 被加载多次时，页面和 version.json 中相同", async () => {
+    delete process.env.TENON_BUILD_VERSION
+    const versions: string[] = []
+    for (const plugin of [tenonVersion(), tenonVersion()]) {
+      const root = await mkdtemp(join(tmpdir(), "tenon-version-once-"))
+      await writeFile(join(root, "index.html"), '<script type="module" src="/main.js"></script>')
+      await writeFile(join(root, "main.js"), "console.log(import.meta.env.TENON_BUILD_VERSION)\n")
+      await build({ root, logLevel: "silent", plugins: [plugin] })
+      versions.push(JSON.parse(await readFile(join(root, "dist", "version.json"), "utf8")).version)
+    }
+    expect(versions[0]).toBeTruthy()
+    expect(versions[1]).toBe(versions[0])
+    expect(process.env.TENON_BUILD_VERSION).toBe(versions[0])
+    delete process.env.TENON_BUILD_VERSION
+  })
+
   it("sourcemaps：生成 hidden source map，移出 dist，放到指定的目录", async () => {
     const root = await mkdtemp(join(tmpdir(), "tenon-sourcemaps-"))
     await writeFile(join(root, "index.html"), '<script type="module" src="/main.js"></script>')

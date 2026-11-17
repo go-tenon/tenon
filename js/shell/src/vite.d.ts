@@ -2,7 +2,10 @@ import type { Plugin } from "vite"
 
 /** tenonVersion 的选项。 */
 export interface VersionPluginOptions {
-  /** 版本号，例如 git commit；默认每次构建随机生成。 */
+  /**
+   * 版本号，例如 git commit。默认取环境变量 TENON_BUILD_VERSION，没有时随机生成一个
+   * （一个构建进程中只生成一次：vite.config 被加载多次时版本号仍然相同）。
+   */
   version?: string
   /** 写入 dist 的文件名，默认 version.json。 */
   fileName?: string

@@ -284,7 +284,7 @@ const { available, reload, dismiss } = useNewVersion()
 // available 为 true 时显示提示：“刷新”调用 reload，“稍后”调用 dismiss
 ```
 
-- 版本号默认每次构建随机生成，可以用 `tenonVersion({ version: commit })` 传入。
+- 版本号默认取环境变量 `TENON_BUILD_VERSION`，没有时每次构建随机生成一个；可以用 `tenonVersion({ version: commit })` 传入。一次构建中 TanStack Start 会多次加载 `vite.config.ts`，默认的版本号在构建进程中只生成一次，页面中的与 `version.json` 中的相同。
 - 开发模式下不检查。
 - SSR 程序对 `assets/` 之外的文件返回 `Cache-Control: no-cache`，`version.json` 不会被缓存，见 [TanStack Start 的接入](start.md)。
 
