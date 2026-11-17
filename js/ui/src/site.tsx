@@ -1,4 +1,5 @@
 // 官网和内容站的布局：吸顶的页头（标志、导航、操作）、内容、页脚。窄屏时导航收进抽屉。
+// 外观随主题的落地页风格（createUiTheme 的 landing）变化，落地页区块见 landing.tsx。
 
 import { Box, Burger, Container, Drawer, Group, SimpleGrid, Stack, Text, useMantineTheme } from "@mantine/core"
 import { Link, Outlet } from "@tanstack/react-router"
@@ -62,7 +63,7 @@ export function SiteLayout({
   const [open, setOpen] = useState(false)
   const vars = { "--tn-header-height": `${m.headerHeight}px` } as CSSProperties
   return (
-    <div className="tn-site" style={vars}>
+    <div className="tn-site" data-landing={m.landing ?? "classic"} style={vars}>
       <header className="tn-site-header">
         <Container size={size} className="tn-site-header-inner">
           <Box fw={700} style={{ display: "flex", alignItems: "center", gap: 10 }}>

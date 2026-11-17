@@ -1,3 +1,7 @@
+import "@fontsource-variable/inter/index.css"
+import "@fontsource/noto-sans-sc/400.css"
+import "@fontsource/noto-sans-sc/500.css"
+import "@fontsource/noto-sans-sc/700.css"
 import "@go-tenon/ui/styles.css"
 import { createSession, type OperationLike } from "@go-tenon/client"
 import {
@@ -6,8 +10,8 @@ import {
   AppLayout,
   AppRoot,
   AuthLayout,
-  ButtonLink,
   createApp,
+  createUiTheme,
   DocsLayout,
   ExportButton,
   ImportButton,
@@ -34,7 +38,6 @@ import {
   Badge,
   Button,
   Card,
-  Container,
   Group,
   Paper,
   Progress,
@@ -49,19 +52,11 @@ import {
   ThemeIcon,
   Title,
 } from "@mantine/core"
-import {
-  IconArrowRight,
-  IconBolt,
-  IconDownload,
-  IconLock,
-  IconPlus,
-  IconRocket,
-  IconSearch,
-  IconStack2,
-} from "@tabler/icons-react"
+import { IconDownload, IconPlus, IconSearch, IconStack2 } from "@tabler/icons-react"
 import { type AnyRoute, createRootRouteWithContext, createRoute, Outlet, useParams } from "@tanstack/react-router"
 import { type ReactNode, useEffect } from "react"
 import { createRoot } from "react-dom/client"
+import { Landing, LandingSwitcher, landingStyle } from "./landing"
 import { customerExport, customerImport, customersModel, queryClient, queueApi, shopSettings } from "./resources"
 
 // ———————————————————————————— 共用的假数据 ————————————————————————————
@@ -516,71 +511,6 @@ function Site(): ReactNode {
   )
 }
 
-function Landing(): ReactNode {
-  const features = [
-    {
-      icon: IconBolt,
-      title: "一个二进制文件",
-      text: "后端、页面和后台任务打包成一个程序，部署和回滚都只是换一个文件。",
-    },
-    {
-      icon: IconLock,
-      title: "安全的默认值",
-      text: "会话 cookie、跨站请求防护、内容安全策略都已经配好，不需要逐项检查。",
-    },
-    {
-      icon: IconRocket,
-      title: "从第一天就能上线",
-      text: "登录、权限、队列、通知、导入导出，常见的需求都有现成的模块。",
-    },
-  ]
-  return (
-    <>
-      <Container size="lg" py={{ base: 64, sm: 112 }}>
-        <Stack align="center" gap="lg" ta="center">
-          <Badge variant="light" size="lg" radius="xl">
-            新版本：页面服务端渲染
-          </Badge>
-          <Title order={1} maw={760}>
-            用一个后端，交付你的整个产品
-          </Title>
-          <Text size="lg" c="dimmed" maw={560}>
-            Tenon 是面向中小团队的 Go 框架。接口、页面、后台任务和实时消息共用同一套代码和规则。
-          </Text>
-          <Group mt="md">
-            <ButtonLink
-              to="/docs/$slug"
-              params={{ slug: "getting-started" }}
-              size="md"
-              rightSection={<IconArrowRight size={16} />}
-            >
-              快速开始
-            </ButtonLink>
-            <Button size="md" variant="default">
-              查看示例
-            </Button>
-          </Group>
-        </Stack>
-      </Container>
-      <Container size="lg" pb={112}>
-        <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="xl">
-          {features.map((f) => (
-            <Stack key={f.title} gap="sm">
-              <ThemeIcon variant="light" size={40} radius="md">
-                <f.icon size={20} />
-              </ThemeIcon>
-              <Text fw={600} size="lg">
-                {f.title}
-              </Text>
-              <Text c="dimmed">{f.text}</Text>
-            </Stack>
-          ))}
-        </SimpleGrid>
-      </Container>
-    </>
-  )
-}
-
 const docsNav = [
   {
     title: "开始",
@@ -647,12 +577,13 @@ const [app, theme] = (
     ? [adminApp(), themes.admin]
     : path.startsWith("/console")
       ? [consoleApp(), themes.console]
-      : [siteApp(), themes.site]
+      : [siteApp(), createUiTheme({ preset: "site", landing: landingStyle() })]
 ) as [App, typeof themes.site]
 
 const scheme = new URLSearchParams(location.search).get("scheme")
 createRoot(document.getElementById("root") as HTMLElement).render(
   <UIProvider theme={theme} defaultColorScheme={scheme === "dark" ? "dark" : "light"}>
     <AppRoot app={app} />
+    {!path.startsWith("/admin") && !path.startsWith("/console") && <LandingSwitcher />}
   </UIProvider>,
 )

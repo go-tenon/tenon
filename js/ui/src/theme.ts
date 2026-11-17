@@ -84,9 +84,23 @@ function fromOklch([L, C, H]: [number, number, number]): RGB {
 /** 样式预设的名称。 */
 export type Preset = "admin" | "console" | "site"
 
+/**
+ * 落地页的风格，作用于 SiteLayout 和落地页区块（Hero、Features 等）：
+ *   - classic：朴素，跟随 Mantine 的主题；
+ *   - dusk：暗色优先，近黑底、光晕与细边框；
+ *   - ink：黑白高对比，网格、实线和等宽数字；
+ *   - mist：柔和的渐变背景、毛玻璃和大圆角。
+ */
+export type Landing = "classic" | "dusk" | "ink" | "mist"
+
+/** 落地页的风格。 */
+export const landings: readonly Landing[] = ["classic", "dusk", "ink", "mist"]
+
 /** 布局用到的尺寸，放在主题的 other.tenon 中，布局组件据此排版。 */
 export interface LayoutMetrics {
   preset: Preset
+  /** 落地页的风格，默认 classic。 */
+  landing?: Landing
   /** 顶栏的高度（像素）。 */
   headerHeight: number
   /** 侧栏展开时的宽度（像素）。 */
@@ -102,8 +116,9 @@ export interface LayoutMetrics {
 // 系统字体：中文优先用系统自带的苹方、思源黑体、微软雅黑，不额外加载字体。
 const fontFamily =
   '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Noto Sans CJK SC", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif'
+// 等宽字体：代码中的中文（注释、输出）回落到中文字体，而不是显示成方块。
 const fontFamilyMonospace =
-  'ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace'
+  'ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", "PingFang SC", "Noto Sans SC", "Noto Sans CJK SC", "Microsoft YaHei", monospace'
 
 // 默认的品牌色：偏冷的蓝紫，在亮色和暗色背景上都清楚，又不刺眼。
 const brand = "#4f5bd5"
@@ -238,6 +253,9 @@ const consolePreset: MantineThemeOverride = mergeThemeOverrides(
   }),
 )
 
+// 官网的字体：拉丁字母优先用 Inter（项目引入 @fontsource-variable/inter 时），中文仍是系统字体。
+const siteFontFamily = `"Inter Variable", Inter, ${fontFamily}`
+
 /** 官网和内容站：大标题、宽松的行距，适合落地页、文章和文档。 */
 const site: MantineThemeOverride = mergeThemeOverrides(
   base({
@@ -249,11 +267,13 @@ const site: MantineThemeOverride = mergeThemeOverrides(
     controlSize: "md",
   }),
   createTheme({
+    fontFamily: siteFontFamily,
     defaultRadius: "md",
     radius: { xs: "4px", sm: "6px", md: "10px", lg: "14px", xl: "20px" },
     fontSizes: { xs: "13px", sm: "14px", md: "16px", lg: "18px", xl: "20px" },
     lineHeights: { xs: "1.5", sm: "1.6", md: "1.7", lg: "1.7", xl: "1.65" },
     headings: {
+      fontFamily: siteFontFamily,
       fontWeight: "700",
       sizes: {
         h1: { fontSize: "clamp(32px, 5vw, 52px)", lineHeight: "1.1" },
@@ -278,6 +298,8 @@ export interface UiThemeOptions {
   radius?: number
   /** 字体，不设置时使用系统字体。 */
   fontFamily?: string
+  /** 落地页的风格，只对 site 预设有意义，默认 classic。 */
+  landing?: Landing
   /** 再合并的 Mantine 主题覆盖，用于令牌之外的调整。 */
   override?: MantineThemeOverride
 }
@@ -285,6 +307,15 @@ export interface UiThemeOptions {
 /** 由预设和设计令牌生成 Mantine 主题，交给 UIProvider。 */
 export function createUiTheme(options: UiThemeOptions = {}): MantineThemeOverride {
   const parts: MantineThemeOverride[] = [themes[options.preset ?? "console"]]
+  if (options.landing) {
+    if (!landings.includes(options.landing)) {
+      throw new Error(
+        `@go-tenon/ui: unknown landing ${JSON.stringify(options.landing)}, expected one of ${landings.join(", ")}`,
+      )
+    }
+    const m = layoutMetrics(parts[0] as { other?: Record<string, unknown> })
+    parts.push({ other: { tenon: { ...m, landing: options.landing } } })
+  }
   if (options.primary) parts.push({ colors: { brand: palette(options.primary) } })
   if (options.radius !== undefined) {
     const r = options.radius

@@ -1,22 +1,65 @@
-import { Button, Container, Group, Text, Title } from "@mantine/core"
+import { Button } from "@mantine/core"
+import { IconArrowRight, IconBolt, IconLock, IconRocket } from "@tabler/icons-react"
 import { createFileRoute } from "@tanstack/react-router"
-import { SiteLayout } from "@go-tenon/ui"
+import { CallToAction, Features, Hero, ProductShot, SiteLayout, Stats, Testimonial } from "@go-tenon/ui"
 
 // 首页在构建时预渲染（vite.config.ts 的 prerender），其余页面在请求时服务端渲染。
+// 落地页的区块随 src/theme.ts 中的风格（landing）变化，这里只写内容，见框架文档的“官网与文档站”。
 export const Route = createFileRoute("/")({ component: Home })
 
 function Home() {
   return (
-    <SiteLayout brand="[[.Title]]">
-      <Container size="md" py={96}>
-        <Title order={1}>[[.Title]]</Title>
-        <Text c="dimmed" size="lg" mt="md">
-          一句话说明产品是什么。
-        </Text>
-        <Group mt="xl">
-          <Button size="md">开始使用</Button>
-        </Group>
-      </Container>
+    <SiteLayout
+      brand="[[.Title]]"
+      actions={<Button size="sm">开始使用</Button>}
+      footer={[{ title: "产品", links: [{ label: "价格", href: "#" }, { label: "更新日志", href: "#" }] }]}
+      note="© [[.Title]]"
+    >
+      <Hero
+        badge="一条简短的公告"
+        title={
+          <>
+            一句话说明，
+            <br />
+            <em>产品能做什么</em>
+          </>
+        }
+        description="两三句话介绍产品：给谁用、解决什么问题、和别的方案有什么不同。"
+        actions={
+          <>
+            <Button size="md" rightSection={<IconArrowRight size={16} />}>
+              开始使用
+            </Button>
+            <Button size="md" variant="default">
+              了解更多
+            </Button>
+          </>
+        }
+        visual={
+          <ProductShot url="app.example.com">
+            {/* 换成产品截图：<img src="/screenshot.png" alt="产品截图" /> */}
+            <div style={{ aspectRatio: "16 / 9" }} />
+          </ProductShot>
+        }
+      />
+      <Features
+        eyebrow="特性"
+        title="为什么选择我们"
+        items={[
+          { icon: <IconBolt size={20} />, title: "第一个卖点", description: "一两句话说明它带来的好处。" },
+          { icon: <IconLock size={20} />, title: "第二个卖点", description: "一两句话说明它带来的好处。" },
+          { icon: <IconRocket size={20} />, title: "第三个卖点", description: "一两句话说明它带来的好处。" },
+        ]}
+      />
+      <Stats
+        items={[
+          { value: "99.9", unit: "%", label: "可用性" },
+          { value: "10", unit: "万+", label: "用户" },
+          { value: "24", unit: "小时", label: "响应" },
+        ]}
+      />
+      <Testimonial quote="一位用户的评价。" name="用户的名字" title="职位和公司" />
+      <CallToAction title="现在就开始" description="一句话说明开始需要做什么。" actions={<Button size="md">免费开始</Button>} />
     </SiteLayout>
   )
 }

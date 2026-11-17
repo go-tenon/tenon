@@ -104,7 +104,7 @@ Tenon 是一个用 Go 构建后端服务的框架。业务逻辑写成[业务动
 - [列表与表单](frontend/lists-forms.md)：地址中的列表状态、表格、按生成的规则校验的表单
 - [资源与设置页面](frontend/resources.md)：在 Go 中声明增删改查和设置的页面，界面按声明渲染
 - [后台功能](frontend/features.md)：通知、后台操作、操作记录、导入导出、队列面板和 AI 对话
-- [官网与文档站](frontend/site.md)：服务端渲染与预渲染、官网和文档页的布局
+- [官网与文档站](frontend/site.md)：服务端渲染与预渲染、官网的布局、四种风格的落地页和文档页
 - [服务端渲染](frontend/ssr.md)：SSR 程序嵌入 Go 程序，Go 是唯一的入口
 - [TanStack Start 的接入](frontend/start.md)：服务端渲染与浏览器调用同一组接口、预渲染和编译
 - [前端规范](frontend/conventions.md)：前端用什么技术、目录怎样组织、代码怎样写

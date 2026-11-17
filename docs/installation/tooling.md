@@ -155,6 +155,12 @@ return ssr.Run(ctx, serve, webPages, adminPages)
 | `admin` | 运营后台：紧凑，适合表格和表单，应用外壳带多标签，页面只在浏览器中渲染 |
 | `site` | 官网和内容站：页头、页脚，页面在服务端渲染，首页构建时预渲染 |
 
+`--landing` 只用于 `--style site`，选择落地页的风格：`classic`（默认）、`dusk`、`ink`、`mist`，写入 `src/theme.ts`，之后改这一处就能换风格，见[落地页](../frontend/site.md#landing)：
+
+```bash
+go tool tenon add frontend promo --style site --landing dusk
+```
+
 `--base` 可以指定其他的挂载路径，以 `/` 开头和结尾。`apps/admin` 必须还不存在。
 
 <a id="troubleshooting"></a>
