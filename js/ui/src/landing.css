@@ -156,19 +156,20 @@
   color: var(--tn-text);
 }
 
+/* 终端样式的代码块：亮色和暗色模式下都是暗色。 */
 .tn-lp-code[data-tone="terminal"] {
-  background: #0a0a0b;
-  border-color: #232326;
+  background: var(--mantine-color-dark-9);
+  border-color: var(--mantine-color-dark-5);
 }
 
 .tn-lp-code[data-tone="terminal"] .tn-lp-code-bar {
-  background: #0a0a0b;
-  border-color: #232326;
-  color: #8a8a90;
+  background: var(--mantine-color-dark-9);
+  border-color: var(--mantine-color-dark-5);
+  color: var(--mantine-color-dark-2);
 }
 
 .tn-lp-code[data-tone="terminal"] pre {
-  color: #e8e8ea;
+  color: var(--mantine-color-dark-0);
 }
 
 /* 区块 */
@@ -347,7 +348,7 @@
   overflow: hidden;
   border-radius: 50%;
   font-weight: 600;
-  color: #fff;
+  color: var(--mantine-color-white);
   background: var(--lp-accent);
 }
 
@@ -988,7 +989,7 @@
 
 .tn-site[data-landing="mist"] .tn-lp-cta {
   border-radius: 32px;
-  color: #fff;
+  color: var(--mantine-color-white);
   background:
     radial-gradient(80% 120% at 0% 0%, var(--mantine-color-brand-4), transparent 60%),
     radial-gradient(80% 120% at 100% 100%, var(--mantine-color-magenta-5), transparent 60%),
@@ -1001,7 +1002,7 @@
 }
 
 .tn-site[data-landing="mist"] .tn-lp-cta-text p {
-  color: rgba(255, 255, 255, 0.85);
+  color: color-mix(in srgb, var(--mantine-color-white) 85%, transparent);
 }
 
 .tn-site[data-landing="mist"] .mantine-Button-root {
@@ -1011,7 +1012,7 @@
 
 .tn-site[data-landing="mist"] .mantine-Button-root:is(:not([data-variant]), [data-variant="filled"]) {
   border: 0;
-  color: #fff;
+  color: var(--mantine-color-white);
   background: linear-gradient(135deg, var(--mantine-color-brand-5), var(--mantine-color-violet-5));
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.3),
@@ -1028,5 +1029,5 @@
 
 .tn-site[data-landing="mist"] .tn-lp-cta .mantine-Button-root:is(:not([data-variant]), [data-variant="filled"]) {
   color: var(--mantine-color-violet-7);
-  background: #fff;
+  background: var(--mantine-color-white);
 }
