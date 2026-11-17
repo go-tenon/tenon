@@ -118,11 +118,12 @@ if a.hasher.NeedsRehash(art.PasscodeHash) {
     if err != nil {
         return nil, err
     }
-    // 保存新的哈希
+    // 保存新的哈希，条件是保存的仍是 art.PasscodeHash：校验期间口令可能刚被作者修改，无条件写入会把旧口令写回去。
+    // UPDATE articles SET passcode_hash = <新哈希> WHERE id = ? AND passcode_hash = <art.PasscodeHash>
 }
 ```
 
-`login` 在密码登录成功时就是这样做的，用户在下次登录时自然迁移到新的算法和参数。从其他系统导入账号时，把旧的 bcrypt 或 argon2id 哈希原样写入 `auth_passwords` 表即可。
+`login` 在密码登录成功时就是这样做的（同样只在密码没有被修改时更新），用户在下次登录时自然迁移到新的算法和参数。从其他系统导入账号时，把旧的 bcrypt 或 argon2id 哈希原样写入 `auth_passwords` 表即可。
 
 <a id="troubleshooting"></a>
 ## 常见问题
