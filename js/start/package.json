@@ -8,7 +8,10 @@
     "./server": "./src/server.ts",
     "./serve": "./src/serve.ts",
     "./print": "./src/print.tsx",
-    "./vite": "./src/vite.ts"
+    "./vite": {
+      "types": "./src/vite.d.ts",
+      "default": "./src/vite.js"
+    }
   },
   "bin": {
     "tenon-start": "./src/cli.ts"
