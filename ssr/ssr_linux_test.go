@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -85,6 +86,16 @@ func fakeSSR() {
 		}
 		defer res.Body.Close()
 		io.Copy(w, res.Body)
+	})
+	mux.HandleFunc("POST /__tenon/print/{name}", func(w http.ResponseWriter, r *http.Request) {
+		if r.PathValue("name") != "invoice" {
+			http.NotFound(w, r)
+			return
+		}
+		var data map[string]any
+		json.NewDecoder(r.Body).Decode(&data)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprintf(w, "<!doctype html><title>%v</title><p>%s</p>", data["no"], r.Header.Get("X-Request-ID"))
 	})
 	mux.HandleFunc("/crash", func(http.ResponseWriter, *http.Request) { os.Exit(3) })
 	mux.HandleFunc("/slow", func(w http.ResponseWriter, r *http.Request) {
@@ -422,10 +433,64 @@ func TestDevServer(t *testing.T) {
 	}
 }
 
+// Render 用打印模板渲染数据：没有内部接口（队列 worker）也能运行；对外的请求访问不到打印模板。
+func TestRender(t *testing.T) {
+	h, err := New(Options{Executable: self(), Env: []string{"FAKE_SSR=1"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := logging.WithRequestID(context.Background(), "PRINT-1")
+	if _, err := h.Render(ctx, "invoice", nil); err == nil {
+		t.Fatal("rendered before the process was ready")
+	}
+	err = h.Run(context.Background(), func(context.Context) error {
+		html, err := h.Render(ctx, "invoice", map[string]any{"no": "INV-7"})
+		if err != nil || string(html) != "<!doctype html><title>INV-7</title><p>PRINT-1</p>" {
+			return fmt.Errorf("render: %q %v", html, err)
+		}
+		if _, err := h.Render(ctx, "missing", nil); !errors.Is(err, ErrUnknownTemplate) {
+			return fmt.Errorf("unknown template: %v", err)
+		}
+		if _, err := h.Render(ctx, "../secret", nil); err == nil {
+			return errors.New("accepted a name with a slash")
+		}
+		srv := httptest.NewServer(h.Handler())
+		defer srv.Close()
+		res, err := client.Post(srv.URL+PrintPath+"invoice", "application/json", strings.NewReader(`{"no":"x"}`))
+		if err != nil {
+			return err
+		}
+		res.Body.Close()
+		if res.StatusCode != http.StatusNotFound {
+			return fmt.Errorf("public print request: %d", res.StatusCode)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// 开发模式：Render 请求开发服务器。
+func TestRenderDev(t *testing.T) {
+	dev := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		io.WriteString(w, r.Method+" "+r.URL.Path+" "+string(b))
+	}))
+	defer dev.Close()
+	h, err := New(Options{DevServer: dev.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	html, err := h.Render(context.Background(), "invoice", map[string]int{"n": 1})
+	if err != nil || string(html) != `POST /__tenon/print/invoice {"n":1}` {
+		t.Fatalf("%q %v", html, err)
+	}
+}
+
 func TestNew(t *testing.T) {
 	for name, opts := range map[string]Options{
 		"no executable": {API: http.NotFoundHandler()},
-		"no API":        {Executable: []byte{1}},
 		"bad dev URL":   {DevServer: "localhost:5173"},
 	} {
 		if _, err := New(opts); err == nil {

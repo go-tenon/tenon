@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"log/slog"
+	"os"
 	"sync"
 	"time"
 )
@@ -76,4 +77,13 @@ func (w *lineWriter) flush() {
 		w.logger.Log(context.Background(), w.level, w.buf.String())
 		w.buf.Reset()
 	}
+}
+
+// env 是 SSR 进程的环境变量：继承 Go 程序的环境，加上 Options.Env 和两个 socket；没有 Options.API 时不传 API_SOCKET。
+func (h *Host) env() []string {
+	env := append(append(os.Environ(), h.opts.Env...), EnvSocket+"="+h.socket)
+	if h.opts.API != nil {
+		env = append(env, EnvAPISocket+"="+h.api)
+	}
+	return env
 }

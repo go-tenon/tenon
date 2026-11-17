@@ -25,24 +25,20 @@ var _ pdf.Renderer = (*Renderer)(nil)
 // New 创建一个空的 Renderer。
 func New() *Renderer { return &Renderer{} }
 
-// Render 渲染 doc.HTML 并记录，返回 Blank；设置了 FailWith 时返回该错误且不记录。
+// Render 记录 doc.HTML，返回 Blank；设置了 FailWith 时返回该错误且不记录。
 func (r *Renderer) Render(ctx context.Context, doc pdf.Document) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if doc.HTML == nil {
+	if len(doc.HTML) == 0 {
 		return nil, errors.New("pdftest: document has no HTML")
-	}
-	var html bytes.Buffer
-	if err := doc.HTML.Render(ctx, &html); err != nil {
-		return nil, errors.Wrap(err, "pdftest: render html")
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.err != nil {
 		return nil, r.err
 	}
-	r.rendered = append(r.rendered, html.String())
+	r.rendered = append(r.rendered, string(doc.HTML))
 	return slices.Clone(Blank), nil
 }
 

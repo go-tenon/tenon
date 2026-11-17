@@ -7,6 +7,7 @@
 - [安装到应用](#setup)
 - [调用接口](#calling-the-api)
 - [预渲染](#prerendering)
+- [打印模板](#print-templates)
 - [编译](#compiling)
 - [开发](#development)
 - [常见问题](#troubleshooting)
@@ -92,6 +93,11 @@ export const Route = createFileRoute("/articles/$id")({
 
 请求这些页面时，Bun 直接返回预渲染的 HTML，不再渲染。HTML 中的 nonce 在构建时是占位符，返回时换成本次请求的 nonce。其余页面在请求时渲染。
 
+<a id="print-templates"></a>
+## 打印模板
+
+`@go-tenon/start/print` 声明打印模板：Go 用 `ssr.Host.Render` 把数据交给它，渲染成完整的 HTML 后生成 PDF。`printHandler(templates)` 加在服务端入口中，写法见[生成 PDF：编写模板](../libraries/pdf.md#writing-templates)。
+
 <a id="compiling"></a>
 ## 编译
 
@@ -136,5 +142,6 @@ bunx tenon-start compile --out ../../internal/web/ssr.bin --target bun-linux-arm
 | | `forwardHeaders`、`socketPath` | 与 Go 的约定，见[与 SSR 进程的约定](ssr.md#contract) |
 | `@go-tenon/start/server` | `streamHandler` | 流式渲染页面，报告 `X-Tenon-Route` |
 | `@go-tenon/start/serve` | `serve(options)` | Bun 中的 SSR 服务，`tenon-start compile` 生成的入口调用它 |
+| `@go-tenon/start/print` | `definePrint`、`printHandler`、`PrintDocument` | 打印模板，见[打印模板](#print-templates) |
 | `@go-tenon/start/vite` | `tenon(options)` | Vite 插件：TanStack Start、React 和预渲染 |
 | 命令 | `tenon-start compile` | 构建并编译 SSR 可执行文件 |

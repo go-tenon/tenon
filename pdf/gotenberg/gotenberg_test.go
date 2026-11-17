@@ -8,7 +8,6 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/a-h/templ"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -17,12 +16,7 @@ import (
 	"github.com/go-tenon/tenon/pdf/gotenberg"
 )
 
-func html(s string) templ.Component {
-	return templ.ComponentFunc(func(_ context.Context, w io.Writer) error {
-		_, err := io.WriteString(w, s)
-		return err
-	})
-}
+func html(s string) []byte { return []byte(s) }
 
 // request 是测试服务器收到的一次请求。
 type request struct {
@@ -175,7 +169,6 @@ func TestInvalidDocument(t *testing.T) {
 		"no html":  {},
 		"subdir":   {HTML: html("x"), Assets: fstest.MapFS{"css/app.css": {Data: []byte("")}}},
 		"reserved": {HTML: html("x"), Assets: fstest.MapFS{"index.html": {Data: []byte("")}}},
-		"bad html": {HTML: templ.ComponentFunc(func(context.Context, io.Writer) error { return io.ErrUnexpectedEOF })},
 	} {
 		_, err := r.Render(context.Background(), doc)
 		assert.Error(t, err, name)

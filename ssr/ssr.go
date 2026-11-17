@@ -40,8 +40,8 @@ const (
 type Options struct {
 	// Executable 是 bun build --compile 编译出的 SSR 可执行文件，通常用 go:embed 嵌入。DevServer 为空时必填。
 	Executable []byte
-	// API 是 SSR 进程渲染页面时调用的接口，通常就是对外的那一组接口路由。DevServer 为空时必填。
-	// 它在内部 socket 上提供，只接受与本进程同一用户的连接。
+	// API 是 SSR 进程渲染页面时调用的接口，通常就是对外的那一组接口路由。
+	// 它在内部 socket 上提供，只接受与本进程同一用户的连接。nil 时不提供，例如只用 Render 生成 PDF 的队列 worker。
 	API http.Handler
 	// DevServer 是前端开发服务器的地址，例如 http://localhost:5173，只在 tenon dev 时设置：
 	// 不启动 SSR 进程，页面请求（包括热更新的 WebSocket）转给它，不设置 CSP。
@@ -69,12 +69,13 @@ type Host struct {
 	api      string // 内部接口入口的抽象 socket，@ 开头
 	restarts metric.Int64Counter
 	handler  http.Handler
+	client   *http.Client // Render 用
 	ready    atomic.Bool
 	pid      atomic.Int64
 	started  atomic.Bool
 }
 
-// New 检查 opts 并创建 Host。DevServer 为空时 Executable 和 API 必填。
+// New 检查 opts 并创建 Host。DevServer 为空时 Executable 必填。
 func New(opts Options) (*Host, error) {
 	h := &Host{opts: opts, logger: opts.Logger}
 	if h.logger == nil {
@@ -106,19 +107,18 @@ func New(opts Options) (*Host, error) {
 			return nil, errors.Newf("ssr: invalid dev server %q", opts.DevServer)
 		}
 		h.dev = u
-		h.handler = h.devProxy()
+		h.handler = private(h.devProxy())
+		h.client = h.renderClient()
 		return h, nil
 	}
 	if len(opts.Executable) == 0 {
 		return nil, errors.New("ssr: Options.Executable is required")
 	}
-	if opts.API == nil {
-		return nil, errors.New("ssr: Options.API is required")
-	}
 	id := rand.Text()
 	h.socket = "@tenon-ssr-" + id
 	h.api = "@tenon-api-" + id
-	h.handler = h.pageProxy()
+	h.handler = private(h.pageProxy())
+	h.client = h.renderClient()
 	return h, nil
 }
 
@@ -130,7 +130,7 @@ func (h *Host) Ready() bool { return h.dev != nil || h.ready.Load() }
 
 // Run 运行 serve（对外的 HTTP 服务，例如 httpx.ListenAndServe），并在它前后管理 SSR 进程：
 //
-//  1. 在内部 socket 上提供 Options.API，启动 SSR 进程，等它就绪（超过 ReadyTimeout 返回错误）；
+//  1. 在内部 socket 上提供 Options.API（不为 nil 时），启动 SSR 进程，等它就绪（超过 ReadyTimeout 返回错误）；
 //  2. 调用 serve(ctx)，SSR 进程意外退出时按退避重启，期间页面请求返回 502；
 //  3. serve 返回后（ctx 取消，请求已经排空），停止 SSR 进程，再关闭内部入口。
 //
@@ -142,16 +142,19 @@ func (h *Host) Run(ctx context.Context, serve func(context.Context) error) error
 	if h.dev != nil {
 		return serve(ctx)
 	}
-	ln, err := listenPeer(h.api)
-	if err != nil {
-		return errors.Wrap(err, "ssr: listen internal API")
-	}
-	internal := &http.Server{Handler: h.opts.API, ReadHeaderTimeout: 10 * time.Second}
-	go func() { _ = internal.Serve(ln) }()
-	closeInternal := func() error {
-		sctx, cancel := context.WithTimeout(context.Background(), h.opts.StopTimeout)
-		defer cancel()
-		return errors.Wrap(internal.Shutdown(sctx), "ssr: shut down internal API")
+	closeInternal := func() error { return nil }
+	if h.opts.API != nil {
+		ln, err := listenPeer(h.api)
+		if err != nil {
+			return errors.Wrap(err, "ssr: listen internal API")
+		}
+		internal := &http.Server{Handler: h.opts.API, ReadHeaderTimeout: 10 * time.Second}
+		go func() { _ = internal.Serve(ln) }()
+		closeInternal = func() error {
+			sctx, cancel := context.WithTimeout(context.Background(), h.opts.StopTimeout)
+			defer cancel()
+			return errors.Wrap(internal.Shutdown(sctx), "ssr: shut down internal API")
+		}
 	}
 
 	proc, err := h.prepare()

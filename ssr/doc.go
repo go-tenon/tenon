@@ -15,6 +15,9 @@
 //	    return httpx.ListenAndServe(ctx, cfg.HTTP, router)
 //	})
 //
+// Host.Render 用 SSR 进程中的打印模板把数据渲染成完整的 HTML，交给 pdf 包生成 PDF；需要生成 PDF 的进程
+// （例如队列 worker）同样用 Run 包住自己的运行函数。
+//
 // Options.DevServer 不为空时（tenon dev），不启动 SSR 进程，页面请求转给前端的开发服务器。
 // 从内存执行依赖 Linux 的 memfd；其他系统上 Run 返回 ErrUnsupported，开发时用 DevServer。
 package ssr
