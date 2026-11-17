@@ -112,7 +112,7 @@ func TestRoundTrip(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	list, err := anonymous.Article.List(ctx, article.ListInput{Tags: []string{"go"}, Q: "Other", OffsetParams: page.OffsetParams{Page: 2, PerPage: 1}})
+	list, err := anonymous.Article.List(ctx, article.ListInput{Tags: []string{"go"}, Title: "Other", OffsetParams: page.OffsetParams{Page: 2, PerPage: 1}})
 	if err != nil || list.Total != 2 || list.Page != 2 || len(list.Items) != 1 || list.Items[0].Slug != "third" {
 		t.Fatal(list, err)
 	}

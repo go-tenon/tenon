@@ -162,7 +162,7 @@ func (g ArticleGroup) List(ctx context.Context, in article.ListInput) (page.Offs
 	wire.SetQuery(q, "per_page", in.OffsetParams.PerPage, false)
 	wire.SetQuery(q, "status", in.Status, false)
 	wire.SetQuery(q, "tag", in.Tags, true)
-	wire.SetQuery(q, "q", in.Q, false)
+	wire.SetQuery(q, "title", in.Title, false)
 	err := g.c.Do(ctx, &wire.Request{
 		Method: "GET",
 		Path:   "/articles",

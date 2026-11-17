@@ -22,7 +22,7 @@ import {
   TextInput,
   useMantineTheme,
 } from "@mantine/core"
-import { IconDots, IconPencil, IconPlus, IconSearch, IconTrash } from "@tabler/icons-react"
+import { IconDots, IconPencil, IconPlus, IconTrash } from "@tabler/icons-react"
 import { useQueryClient } from "@tanstack/react-query"
 import {
   Outlet,
@@ -297,7 +297,7 @@ function ResourceList({
   )
 }
 
-/** 列表上方的搜索和筛选：修改后写进地址，回到第一页。 */
+/** 列表上方的筛选：列表接口的查询参数，按类型显示输入框、下拉选择；修改后写进地址，回到第一页。 */
 function Filters({
   model,
   list,
@@ -307,18 +307,11 @@ function Filters({
 }): ReactNode {
   const filters = list.filters as Record<string, unknown>
   const size = layoutMetrics(useMantineTheme()).controlSize
-  if (!model.search && model.filters.length === 0) return null
-  // 只看声明的搜索和筛选条件：地址中可能还有其他参数。
-  const active = [model.search, ...model.filters.map((f) => f.name)].some((n) => n && filters[n] !== undefined)
+  if (model.filters.length === 0) return null
+  // 只看声明的筛选条件：地址中可能还有其他参数。
+  const active = model.filters.some((f) => filters[f.name] !== undefined)
   return (
     <Group gap="xs">
-      {model.search && (
-        <SearchInput
-          value={filters[model.search] as string | undefined}
-          size={size}
-          onSearch={(q) => list.setFilters({ [model.search as string]: q })}
-        />
-      )}
       {model.filters.map((f) => (
         <FilterInput
           key={f.name}
@@ -334,44 +327,6 @@ function Filters({
         </Button>
       )}
     </Group>
-  )
-}
-
-function SearchInput({
-  value,
-  size,
-  onSearch,
-}: {
-  value?: string
-  size: string
-  onSearch: (q: string | undefined) => void
-}) {
-  const [text, setText] = useState(value ?? "")
-  useEffect(() => setText(value ?? ""), [value])
-  return (
-    <TextInput
-      size={size}
-      w={220}
-      placeholder="搜索"
-      aria-label="搜索"
-      leftSection={<IconSearch size={14} />}
-      value={text}
-      onChange={(e) => setText(e.currentTarget.value)}
-      onKeyDown={(e) => e.key === "Enter" && onSearch(text.trim() || undefined)}
-      onBlur={() => (text.trim() || undefined) !== value && onSearch(text.trim() || undefined)}
-      rightSection={
-        text ? (
-          <CloseButton
-            size="sm"
-            aria-label="清除搜索"
-            onClick={() => {
-              setText("")
-              onSearch(undefined)
-            }}
-          />
-        ) : undefined
-      }
-    />
   )
 }
 
@@ -431,6 +386,7 @@ function FilterInput({
   return <FilterText field={field} value={value as string | undefined} size={size} onChange={onChange} />
 }
 
+/** 文字的筛选条件，例如 name：回车或离开输入框时生效，有内容时右边是清除按钮。 */
 function FilterText({
   field,
   value,
@@ -447,13 +403,25 @@ function FilterText({
   return (
     <TextInput
       size={size}
-      w={160}
+      w={180}
       placeholder={field.label}
       aria-label={field.label}
       value={text}
       onChange={(e) => setText(e.currentTarget.value)}
       onKeyDown={(e) => e.key === "Enter" && onChange(text.trim() || undefined)}
       onBlur={() => (text.trim() || undefined) !== value && onChange(text.trim() || undefined)}
+      rightSection={
+        text ? (
+          <CloseButton
+            size="sm"
+            aria-label={`清除${field.label}`}
+            onClick={() => {
+              setText("")
+              onChange(undefined)
+            }}
+          />
+        ) : undefined
+      }
     />
   )
 }

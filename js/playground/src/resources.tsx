@@ -48,7 +48,7 @@ const client = {
   customer: {
     async list(params: Record<string, unknown>) {
       let rows = customers
-      if (params.q) rows = rows.filter((c) => c.name.includes(String(params.q)))
+      if (params.name) rows = rows.filter((c) => c.name.includes(String(params.name)))
       if (params.level) rows = rows.filter((c) => c.level === params.level)
       if (params.active !== undefined) rows = rows.filter((c) => c.active === params.active)
       const sort = params.sort as string | undefined
@@ -108,8 +108,8 @@ const customerDef: ResourceDef = {
     { name: "credit", type: "integer", sortable: true },
     { name: "last_order_at", type: "string", format: "date-time", sortable: true },
   ],
-  search: "q",
   filters: [
+    { name: "name", type: "string" },
     { name: "level", type: "string", enum: "Level" },
     { name: "active", type: "boolean" },
   ],
@@ -145,7 +145,7 @@ const schemas = {
       query: {
         type: "object",
         properties: {
-          q: { type: "string" },
+          name: { type: "string" },
           level: { type: "string", enum: levels },
           active: { type: "boolean" },
           sort: { type: "string" },

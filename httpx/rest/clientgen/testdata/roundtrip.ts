@@ -81,7 +81,7 @@ err = await rejects(api.article.get("00000000-0000-0000-0000-000000000000"), "mi
 check(err.status === 404 && err.code === ArticleErrors.NotFound, "not found", err)
 
 // 查询参数、请求头、没有响应体的接口。
-const list = await api.article.list({ q: "Hel", per_page: 10 })
+const list = await api.article.list({ title: "Hel", per_page: 10 })
 check(list.total === 1 && list.items[0].slug === "hello" && list.per_page === 10, "list", list)
 const published = await api.article.publish(hello.body.id, { idempotencyKey: "k1" })
 check(published.status === "published", "publish", published)
@@ -138,8 +138,8 @@ const queries = createQueries(api, {
   scope: () => ["tenant-1"],
   queryClient: { invalidateQueries: ({ queryKey }) => invalidated.push([...queryKey]) },
 })
-const listQuery = queries.article.list({ q: "Hel" })
-check(JSON.stringify(listQuery.queryKey) === JSON.stringify(["tenant-1", "api", "article", "list", { q: "Hel" }]), "query key", listQuery.queryKey)
+const listQuery = queries.article.list({ title: "Hel" })
+check(JSON.stringify(listQuery.queryKey) === JSON.stringify(["tenant-1", "api", "article", "list", { title: "Hel" }]), "query key", listQuery.queryKey)
 check((await listQuery.queryFn()).items.some((a) => a.slug === "hello"), "queryFn")
 const create = queries.article.create()
 const created = await create.mutationFn({ title: "Query", slug: "query" })
