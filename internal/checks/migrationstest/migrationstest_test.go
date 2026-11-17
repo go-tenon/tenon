@@ -33,6 +33,7 @@ import (
 	"github.com/go-tenon/tenon/push"
 	"github.com/go-tenon/tenon/queue"
 	"github.com/go-tenon/tenon/ratelimit/pglimit"
+	"github.com/go-tenon/tenon/schedule/scheduleapi"
 	"github.com/go-tenon/tenon/search"
 	"github.com/go-tenon/tenon/settings"
 	"github.com/go-tenon/tenon/sheet/exports"
@@ -44,29 +45,30 @@ import (
 // sources 是框架中带迁移的包，键是包相对模块根的目录。
 // 新增带迁移的包时在这里登记，TestEveryPackageIsListed 检查没有遗漏。
 var sources = map[string]fs.FS{
-	"activity":          activity.Migrations(),
-	"ai/chat":           chat.Migrations(),
-	"apitoken":          apitoken.Migrations(),
-	"authz":             authz.Migrations(),
-	"sheet/exports":     exports.Migrations(),
-	"feature":           feature.Migrations(),
-	"filesystem":        filesystem.Migrations(),
-	"sheet/imports":     imports.Migrations(),
-	"lock/pglock":       pglock.Migrations(),
-	"login":             login.Migrations(),
-	"login/passkey":     passkey.Migrations(),
-	"notification":      notification.Migrations(),
-	"oauthserver":       oauthserver.Migrations(),
-	"operation":         operation.Migrations(),
-	"privacy":           privacy.Migrations(),
-	"privacy/export":    privacyexport.Migrations(),
-	"push":              push.Migrations(),
-	"queue":             queue.Migrations(),
-	"ratelimit/pglimit": pglimit.Migrations(),
-	"search":            search.Migrations(),
-	"vector":            vector.Migrations(),
-	"settings":          settings.Migrations(),
-	"webhook":           webhook.Migrations(),
+	"activity":             activity.Migrations(),
+	"ai/chat":              chat.Migrations(),
+	"apitoken":             apitoken.Migrations(),
+	"authz":                authz.Migrations(),
+	"sheet/exports":        exports.Migrations(),
+	"feature":              feature.Migrations(),
+	"filesystem":           filesystem.Migrations(),
+	"sheet/imports":        imports.Migrations(),
+	"lock/pglock":          pglock.Migrations(),
+	"login":                login.Migrations(),
+	"login/passkey":        passkey.Migrations(),
+	"notification":         notification.Migrations(),
+	"oauthserver":          oauthserver.Migrations(),
+	"operation":            operation.Migrations(),
+	"privacy":              privacy.Migrations(),
+	"privacy/export":       privacyexport.Migrations(),
+	"push":                 push.Migrations(),
+	"queue":                queue.Migrations(),
+	"ratelimit/pglimit":    pglimit.Migrations(),
+	"schedule/scheduleapi": scheduleapi.Migrations(),
+	"search":               search.Migrations(),
+	"vector":               vector.Migrations(),
+	"settings":             settings.Migrations(),
+	"webhook":              webhook.Migrations(),
 }
 
 // TestEveryPackageIsListed 确保仓库中每个 migrations 目录都登记在 sources 中。

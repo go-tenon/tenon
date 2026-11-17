@@ -1,6 +1,6 @@
 # 后台功能
 
-框架的几项服务端功能在前端有现成的部分：通知、后台操作、操作记录、导入与导出和队列面板各有一个组件，放进页面就能用；AI 对话目前只有逻辑（`@go-tenon/ui/chat` 的 hook），对话界面由应用自己画。每项功能的接口由应用定义，把生成的客户端的方法交给组件即可。它们彼此独立，用到哪个读哪一节。
+框架的几项服务端功能在前端有现成的部分：通知、后台操作、操作记录、导入与导出、队列面板和定时任务面板各有一个组件，放进页面就能用；AI 对话目前只有逻辑（`@go-tenon/ui/chat` 的 hook），对话界面由应用自己画。每项功能的接口由应用定义，把生成的客户端的方法交给组件即可。它们彼此独立，用到哪个读哪一节。
 
 阅读前需要了解：[搭建前端应用](app.md)；[布局与导航](layout.md)。
 
@@ -9,6 +9,7 @@
 - [操作记录](#activity)
 - [导入与导出](#transfer)
 - [队列面板](#queue-panel)
+- [定时任务面板](#schedule-panel)
 - [AI 对话](#ai-chat)
     - [附件](#chat-attachments)
     - [输入框](#chat-composer)
@@ -116,6 +117,31 @@ export const Route = createFileRoute("/_app/queue")({
 
 `api.queue` 的形状由 `QueueApi` 描述，不依赖具体的应用；字段与 `queue/queueapi` 的类型一致。
 
+<a id="schedule-panel"></a>
+## 定时任务面板
+
+`SchedulePanel` 是[定时任务的接口](../background/scheduling.md#admin-pages)（`schedule/scheduleapi`）的页面，接收生成的客户端分组 `api.schedule`：
+
+```tsx title="src/routes/_app/schedules.tsx"
+import { createFileRoute } from "@tanstack/react-router"
+import { SchedulePanel } from "@go-tenon/ui"
+import { api } from "../../auth"
+
+export const Route = createFileRoute("/_app/schedules")({
+  staticData: { title: "定时任务", icon: "clock", permission: "jobs:manage" },
+  component: () => <SchedulePanel api={api.schedule} />,
+})
+```
+
+页面分成两个[页内标签](layout.md#page-tabs)：
+
+- **任务**：每个任务的名称和说明、表达式、下一次执行的时间、上一次的结果（成功、失败、跳过，立即执行的标为手动）和时间、耗时、上一次的错误；正在执行的显示“执行中”，错过触发的显示“错过”。每一行有“立即执行”（先确认，正在执行时不能点），“更多”菜单中是执行记录；点任务名也打开它的执行记录。
+- **执行记录**：按任务（下拉选择）、结果（全部、失败、成功、跳过）筛选，分页。跳过的原因显示成说明，例如“上一次还没结束”。点击一条，在对话框中显示完整的错误。
+
+有任务错过了上一次执行时，标签上面显示提示。数据和其他列表一样按需读取，不定时刷新。
+
+`api.schedule` 的形状由 `ScheduleApi` 描述，字段与 `schedule/scheduleapi` 的类型一致。
+
 <a id="ai-chat"></a>
 ## AI 对话
 
@@ -208,4 +234,5 @@ const composer = useAssistantComposer(chat)
 | `ActivityTimeline`、`useActivity` | 操作记录：时间线；从新到旧分页读取 |
 | `ImportButton`、`ExportButton`、`useImport`、`useExport` | 后台导入与导出 |
 | `QueuePanel`、`QueueApi` | 队列面板和它需要的接口 |
+| `SchedulePanel`、`ScheduleApi` | 定时任务面板和它需要的接口 |
 | `useAssistantChat`、`useAssistantHistory`、`useAssistantComposer`、`useAttachments`、`pendingApprovals`、`fileParts`、`AttachmentError` | `@go-tenon/ui/chat` 中的 AI 对话 |

@@ -94,6 +94,7 @@ validation.failed: 提交的内容有误
 queue.failed_job_not_found: 失败任务不存在
 queue.topic_not_found: "topic 不存在：没有 Worker 为它注册处理函数"
 queue.no_admin: 应用没有设置队列的 Admin，不能暂停和恢复 topic
+schedule.not_found: 没有这个定时任务
 apitoken.invalid: 登录已失效，请重新登录
 database.busy: 服务繁忙，请稍后再试
 database.unavailable: 服务暂时不可用，请稍后再试

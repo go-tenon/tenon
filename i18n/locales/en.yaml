@@ -94,6 +94,7 @@ validation.failed: Validation failed
 queue.failed_job_not_found: Failed job not found
 queue.topic_not_found: "Topic not found: no worker has registered a handler for it"
 queue.no_admin: The queue admin is not configured, topics cannot be paused or resumed
+schedule.not_found: Scheduled task not found
 apitoken.invalid: Your session has expired, please sign in again
 database.busy: The service is busy, please try again later
 database.unavailable: The service is temporarily unavailable, please try again later
