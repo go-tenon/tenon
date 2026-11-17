@@ -154,10 +154,15 @@ describe("AppLayout 的多标签", () => {
     await screen.findByText(text)
   }
 
-  it("标签栏在顶栏中；第一次使用时菜单的第一个页面固定在最前面", async () => {
+  it("标签栏在顶栏中，从侧栏展开时的边线开始，收起侧栏时不动；第一次使用时菜单的第一个页面固定在最前面", async () => {
     await renderApp(tree({ tabs: true }), { path: "/trade/orders", permissions: ["users:manage"] })
     await screen.findByText("订单页面")
     expect(document.querySelector(".tn-header")?.contains(bar())).toBe(true)
+    const start = () => (document.querySelector(".tn-header-start") as HTMLElement).style.width
+    const width = start()
+    expect(width).toMatch(/^calc\(\d+px - var\(--mantine-spacing-md\)\)$/)
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "收起侧栏" })))
+    expect(start()).toBe(width)
     await waitFor(() => expect(titles()).toEqual(["*概览", ">订单"]))
   })
 

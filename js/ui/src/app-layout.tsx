@@ -151,11 +151,11 @@ export function AppLayout({ title, logo, user, actions, search = true, tabs, max
     >
       <AppShell.Header className="tn-header">
         <div className="tn-header-inner">
-          {/* 侧栏展开时，这一块正好宽到侧栏与内容区之间的竖线，标签栏从竖线开始；收起时竖线太靠左，标签跟在标志后面。 */}
+          {/* 有标签栏时，这一块宽到侧栏展开时的边线，标签栏从那里开始；收起侧栏时标签不动。 */}
           <div
             className="tn-header-start"
             style={
-              showTabBar && !collapsed
+              showTabBar
                 ? { width: `calc(${m.navbarWidth}px - var(--mantine-spacing-md))`, paddingRight: 0 }
                 : undefined
             }
