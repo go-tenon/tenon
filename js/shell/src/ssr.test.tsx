@@ -1,6 +1,12 @@
 // 服务端渲染（没有 window）：shell 的 hook 都要有服务端快照，否则 React 报 Missing getServerSnapshot。
 import { createSession } from "@go-tenon/client"
-import { createMemoryHistory, createRootRouteWithContext, createRoute, Outlet, RouterProvider } from "@tanstack/react-router"
+import {
+  createMemoryHistory,
+  createRootRouteWithContext,
+  createRoute,
+  Outlet,
+  RouterProvider,
+} from "@tanstack/react-router"
 import { renderToString } from "react-dom/server"
 import { describe, expect, it, vi } from "vitest"
 import { createApp, type RouterContext, useSignedIn } from "./app"
