@@ -203,3 +203,16 @@ func dialSocket(ctx context.Context, name string) (net.Conn, error) {
 	var d net.Dialer
 	return d.DialContext(ctx, "unix", name)
 }
+
+// Run 用 hosts 包住 serve，每个前端一个 Host：全部 SSR 进程就绪后才开始运行 serve，停止时按相反的顺序关闭。
+// 只有一个前端时等同于 hosts[0].Run(ctx, serve)。
+//
+//	return ssr.Run(ctx, func(ctx context.Context) error {
+//	    return httpx.ListenAndServe(ctx, cfg.HTTP, router)
+//	}, web, admin)
+func Run(ctx context.Context, serve func(context.Context) error, hosts ...*Host) error {
+	if len(hosts) == 0 {
+		return serve(ctx)
+	}
+	return hosts[0].Run(ctx, func(ctx context.Context) error { return Run(ctx, serve, hosts[1:]...) })
+}

@@ -21,7 +21,7 @@
 <a id="installing"></a>
 ## 安装
 
-`tenon init` 和 `tenon add frontend` 生成的前端已经按本节配置好：`src/app.ts` 创建应用，页面在 `src/routes` 中。下面是各部分的作用，给已有的前端加上它时照着做。
+`tenon init` 和 `tenon add frontend` 生成的前端已经按本节配置好：`src/router.tsx` 创建应用，页面在 `src/routes` 中。前端用 [TanStack Start](start.md) 构建，由 Go 托管的 SSR 进程渲染。下面是各部分的作用，给已有的前端加上它时照着做。
 
 `@go-tenon/shell` 与 `@go-tenon/client` 一样随框架分发，`tenon` 把它复制到项目的 `.tenon/js/shell`（见[框架的前端包](../installation/tooling.md#framework-packages)）。它列在根目录 `package.json` 的 `workspaces` 中，前端依赖它：
 
@@ -30,12 +30,10 @@
   "dependencies": {
     "@go-tenon/client": "workspace:*",
     "@go-tenon/shell": "workspace:*",
+    "@go-tenon/start": "workspace:*",
     "@tanstack/react-query": "^5.85.0",
-    "@tanstack/react-router": "^1.170.0"
-  },
-  "devDependencies": {
-    "@tanstack/router-cli": "^1.167.46",
-    "@tanstack/router-plugin": "^1.168.48"
+    "@tanstack/react-router": "^1.170.0",
+    "@tanstack/react-start": "^1.169.5"
   },
   "scripts": {
     "typecheck": "tsr generate && tsc --noEmit"
@@ -43,78 +41,71 @@
 }
 ```
 
-页面使用 TanStack Router [基于文件的路由](https://tanstack.com/router/latest/docs/framework/react/routing/file-based-routing)：`src/routes` 中一个文件是一个页面，Vite 插件生成路由树 `src/routeTree.gen.ts`。路由树在 `tenon dev`、`tenon build` 运行 Vite 时自动更新；`typecheck` 先用 `tsr generate` 重新生成它，新加了页面但没有运行 `tenon dev` 时类型检查也是对的。`vite.config.ts` 加上路由插件（放在 React 插件之前）和[新版本提示](#new-version)的插件：
+页面使用 TanStack Router [基于文件的路由](https://tanstack.com/router/latest/docs/framework/react/routing/file-based-routing)：`src/routes` 中一个文件是一个页面，TanStack Start 的 Vite 插件生成路由树 `src/routeTree.gen.ts`。`typecheck` 先用 `tsr generate` 重新生成它，新加了页面但没有运行 `tenon dev` 时类型检查也是对的。`vite.config.ts` 用 `@go-tenon/start/vite` 的 `tenon()`，它包含 TanStack Start、React 和[新版本提示](#new-version)的插件：
 
 ```ts
-import { tanstackRouter } from "@tanstack/router-plugin/vite"
-import react from "@vitejs/plugin-react"
-import { tenonVersion } from "@go-tenon/shell/vite"
+import { tenon } from "@go-tenon/start/vite"
 import { defineConfig } from "vite"
 
 export default defineConfig({
   base: "/admin/",
-  plugins: [tanstackRouter({ target: "react", autoCodeSplitting: true }), react(), tenonVersion()],
+  plugins: [tenon()],
 })
 ```
 
 <a id="creating-the-app"></a>
 ## 创建应用
 
-`createApp` 创建 Router 和 QueryClient，`AppRoot` 渲染应用：
+`createApp` 创建 Router 和 QueryClient。TanStack Start 从 `src/router.tsx` 的 `getRouter` 取得 Router；服务端渲染时每个请求调用一次 `getRouter`，所以每次都创建新的应用，不在请求之间共享缓存：
 
-```ts title="src/app.ts"
-import { createSession } from "@go-tenon/client"
+```tsx title="src/router.tsx"
 import { createApp } from "@go-tenon/shell"
+import { cspNonce } from "@go-tenon/start"
+import { NotFoundPage, RouteError } from "@go-tenon/ui"
+import { me, session } from "./auth"
 import { routeTree } from "./routeTree.gen"
-import { api } from "./client"
 
-export const session = createSession({
-  // 读取当前用户；没有登录时接口返回 401
-  load: async () => ({ account: (await api.user.me()).id }),
-  // 登录失效（接口返回 401）时重新运行守卫，离开需要登录的页面
-  onSignedOut: () => void app.router.invalidate(),
-})
-
-export const app = createApp({
-  id: "admin",
-  routeTree,
-  session,
-  permissions: async () => (await api.user.me()).permissions,
-})
+export function getRouter() {
+  return createApp({
+    id: "admin",
+    routeTree,
+    session,
+    permissions: async () => (await me()).permissions ?? [],
+    router: { ssr: { nonce: cspNonce() }, defaultErrorComponent: RouteError, defaultNotFoundComponent: NotFoundPage },
+  }).router
+}
 
 declare module "@tanstack/react-router" {
   interface Register {
-    router: typeof app.router
+    router: ReturnType<typeof getRouter>
   }
 }
 ```
 
-```tsx title="src/main.tsx"
-import { AppRoot } from "@go-tenon/shell"
-import { StrictMode } from "react"
-import { createRoot } from "react-dom/client"
-import { app } from "./app"
+会话在 `src/auth.ts` 中创建，见[客户端代码](../http/clients.md#creating-the-client)：
 
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <AppRoot app={app} />
-  </StrictMode>,
-)
+```ts title="src/auth.ts"
+import { createSession } from "@go-tenon/client"
+
+// 读取当前用户；没有登录时接口返回 401
+export const session = createSession({ load: async () => ({ account: (await me()).id }) })
 ```
 
 - 没有登录功能的应用不传 `session`，应用一直是未登录的。
+- 会话变化（登录、退出、接口返回 `401`）时，应用重新运行路由的守卫：正在看的页面需要登录时，跳到登录页。
+- 读取当前用户、检查权限只在浏览器中进行。服务端渲染时应用不读取身份，需要登录的页面设置 `ssr: false`，只在浏览器中渲染，见 [TanStack Start 的接入](start.md)。
 - 前端挂在子路径（例如 `/admin/`）时，路由的 `basepath` 默认是 Vite 的 `base`：页面中的地址、`<Link>`、登录回跳都不含它。
 - `id` 区分同一个域名下的前端，例如 `web` 和 `admin`，见[本地存储](#storage)。
 - QueryClient 对 `4xx` 不重试，其他错误重试 2 次；登录、退出、切换账号或租户时清空缓存，并重新挂载页面：页面中按身份计算的查询重新读取。也可以传入自己的 `queryClient`。
-- `router` 传给 Router 的其他选项，例如外观提供的 `defaultErrorComponent`、`defaultNotFoundComponent`。
+- `router` 传给 Router 的其他选项，例如 CSP 的 `nonce`、`@go-tenon/ui` 提供的 `defaultErrorComponent`、`defaultNotFoundComponent`。`router.Wrap` 包住整个应用；`createApp` 在它里面提供 QueryClient 和应用。
 
-根路由用 `createRootRouteWithContext<RouterContext>()` 创建，各路由的 `beforeLoad` 通过 `context.app` 使用应用：
+根路由用 `createRootRouteWithContext<RouterContext>()` 创建，各路由的 `beforeLoad` 通过 `context.app` 使用应用。`shellComponent` 是整个 HTML 文档，见[界面组件](ui.md#setup)：
 
 ```tsx title="src/routes/__root.tsx"
 import type { RouterContext } from "@go-tenon/shell"
 import { createRootRouteWithContext, Outlet } from "@tanstack/react-router"
 
-export const Route = createRootRouteWithContext<RouterContext>()({ component: Outlet })
+export const Route = createRootRouteWithContext<RouterContext>()({ shellComponent: Document, component: Outlet })
 ```
 
 <a id="route-metadata"></a>
@@ -286,7 +277,7 @@ return variant === "top" ? <TopLayout /> : <SideLayout />
 <a id="new-version"></a>
 ## 新版本提示
 
-发布新版本后，已经打开的页面还在运行旧代码。`tenonVersion` 插件在构建时把 `version.json` 写入 `dist`，并把版本号注入代码；`useNewVersion` 每 60 秒和切回页面时读取 `version.json`，版本号不同时提示用户刷新：
+发布新版本后，已经打开的页面还在运行旧代码。`tenonVersion` 插件（模板的 `vite.config.ts` 中已经加上）在构建时把 `version.json` 写入浏览器的构建结果 `dist/client`，并把版本号注入代码；`useNewVersion` 每 60 秒和切回页面时读取 `version.json`，版本号不同时提示用户刷新：
 
 ```tsx
 const { available, reload, dismiss } = useNewVersion()
@@ -295,7 +286,7 @@ const { available, reload, dismiss } = useNewVersion()
 
 - 版本号默认每次构建随机生成，可以用 `tenonVersion({ version: commit })` 传入。
 - 开发模式下不检查。
-- `httpx.SPA` 对文件名没有哈希的文件返回 `Cache-Control: no-cache`，`version.json` 不会被缓存，见[缓存与前端路由](spa.md#caching-and-routing)。
+- SSR 程序对 `assets/` 之外的文件返回 `Cache-Control: no-cache`，`version.json` 不会被缓存，见 [TanStack Start 的接入](start.md)。
 
 <a id="storage"></a>
 ## 本地存储
@@ -332,12 +323,12 @@ app.storage.get<{ collapsed: boolean }>("sider")
 | 名称 | 说明 |
 | --- | --- |
 | `createApp(options)` | 创建应用：`id`、`routeTree`、`session`、`loginPath`、`homePath`、`permissions`、`queryClient`、`router` |
-| `AppRoot` | 渲染应用：QueryClientProvider 和 RouterProvider |
+| `AppRoot` | 不用 TanStack Start 时渲染应用（RouterProvider）；用 Start 时由它渲染 `getRouter` 返回的 Router |
 | `requireAuth` | 布局路由的 `beforeLoad`：没有登录时跳到登录页 |
 | `app.redirectAfterSignIn(redirect)` | 登录后回到原来的地址 |
 | `app.permissions()`、`app.permissionsQuery()` | 当前身份的权限；交给 `useQuery` 的查询选项 |
 | `ForbiddenError`、`isForbidden` | 缺少权限时抛出的错误 |
-| `useApp`、`useSignedIn`、`useCan`、`useMenu`、`useBreadcrumbs` | 在 `AppRoot` 之内使用 |
+| `useApp`、`useSignedIn`、`useCan`、`useMenu`、`useBreadcrumbs` | 在应用的路由之内使用 |
 | `buildMenu`、`firstPage`、`pageUnder`、`breadcrumbs` | 菜单和面包屑的纯函数，外观可以直接使用 |
 | `useNavigation`、`useMenuBadge` | 布局的导航模型；登记菜单项的徽标 |
 | `Slot`、`Fill`、`useSlotFilled` | 插槽 |

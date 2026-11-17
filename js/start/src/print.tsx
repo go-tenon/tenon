@@ -67,6 +67,7 @@ export function PrintDocument({ title, styles = [], lang = "zh-CN", children }: 
         <title>{title}</title>
         <style>{baseStyle}</style>
         {styles.map((css, i) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: 样式列表在一次渲染中固定，不会重排
           <style key={i}>{css}</style>
         ))}
       </head>

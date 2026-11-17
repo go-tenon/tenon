@@ -4,7 +4,7 @@
 
 - 页面出错时，路由的错误组件接住了错误，它不会冒泡到 `window`，SDK 捕获不到。`createApp` 的 `onError` 把这些错误交给你；
 - 浏览器的请求带上 `traceparent`，服务端的链路接在浏览器之后，从一个前端错误可以跳到它引起的后端链路；
-- 构建时生成 source map，但不放进 `dist`：它们等于源码，不能随应用一起公开，由 CI 上传给观测平台，用来还原压缩后的堆栈。
+- 构建时生成 source map，但不放进构建结果：它们等于源码，不能随应用一起公开，由 CI 上传给观测平台，用来还原压缩后的堆栈。
 
 两个术语：
 
@@ -33,7 +33,7 @@
 bun add @openobserve/browser-rum@0.4.3 @openobserve/browser-logs@0.4.3
 ```
 
-新建 `src/observe.ts`，在 `main.tsx` 中最先导入它：
+新建 `src/observe.ts`。它只在浏览器中运行，所以在 TanStack Start 的浏览器入口中最先导入它，见后面的 `src/client.tsx`：
 
 ```ts
 import { openobserveLogs } from "@openobserve/browser-logs"
@@ -68,6 +68,26 @@ if (clientToken && site) {
   openobserveLogs.init({ ...common, forwardErrorsToLogs: true })
 }
 ```
+
+TanStack Start 默认生成浏览器的入口。要在其他代码之前启动 SDK，自己写这个入口 `src/client.tsx`，第一行导入 `observe.ts`；其余部分与 Start 默认的入口相同：
+
+```tsx title="src/client.tsx"
+import "./observe"
+import { StartClient } from "@tanstack/react-start/client"
+import { StrictMode, startTransition } from "react"
+import { hydrateRoot } from "react-dom/client"
+
+startTransition(() => {
+  hydrateRoot(
+    document,
+    <StrictMode>
+      <StartClient />
+    </StrictMode>,
+  )
+})
+```
+
+服务端渲染不经过这个入口，SDK 只在浏览器中运行。
 
 环境变量写在前端目录的 `.env.production` 中（`VITE_` 开头的变量在构建时写进页面）。它们和 `MODE` 的类型在 `src/env.d.ts` 中声明：
 
@@ -155,13 +175,13 @@ if (observing) {
 tenonVersion({ sourcemaps: "sourcemaps" })
 ```
 
-构建时生成 source map，但脚本中不写 `sourceMappingURL`，构建结束后把 `.map` 从 `dist` 移到前端目录下的 `sourcemaps/`：它们不嵌入二进制，不会被公开。即使 `.map` 留在了 `dist` 中，`httpx.SPA` 也不提供它们。把 `sourcemaps/` 加入 `.gitignore`。
+构建时为浏览器的脚本生成 source map，但脚本中不写 `sourceMappingURL`，构建结束后把 `.map` 从 `dist/client` 移到前端目录下的 `sourcemaps/`：它们不嵌入二进制，不会被公开。即使 `.map` 留在了 `dist` 中，`tenon-start compile` 也不嵌入它们。把 `sourcemaps/` 加入 `.gitignore`。
 
-版本号是 `tenonVersion` 的构建版本，页面中是 `import.meta.env.TENON_BUILD_VERSION`（交给 SDK 的 `version`），构建结束后也写在 `dist/version.json` 中。CI 在构建之后上传，`service`、`env`、`version` 要与 SDK 中的完全一致：
+版本号是 `tenonVersion` 的构建版本，页面中是 `import.meta.env.TENON_BUILD_VERSION`（交给 SDK 的 `version`），构建结束后也写在 `dist/client/version.json` 中。CI 在构建之后上传，`service`、`env`、`version` 要与 SDK 中的完全一致：
 
 ```bash
 cd apps/admin
-version=$(jq -r .version dist/version.json)
+version=$(jq -r .version dist/client/version.json)
 (cd sourcemaps && zip -qr ../sourcemaps.zip .)
 curl -fsS -X POST "https://o2.example.com/api/default/sourcemaps" \
   -H "Authorization: Basic $O2_SOURCEMAP_TOKEN" \
@@ -202,4 +222,4 @@ source map 没有上传，或者上传时的版本号与页面上报的版本不
 | `shouldReport(error)` | 错误是否需要报告 |
 | `app.reportError(error, where)` | 直接报告一个错误，经过同样的过滤和去重 |
 | `tenonVersion({ sourcemaps })` | `@go-tenon/shell/vite`：生成 source map 并移出 `dist` |
-| `httpx.SPA` | 不提供 `.map` 文件 |
+| `tenon-start compile` | 不把 `.map` 文件嵌入 SSR 程序 |

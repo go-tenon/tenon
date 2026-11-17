@@ -17,11 +17,12 @@ import {
   useMatches,
   useRouterState,
 } from "@tanstack/react-router"
-import { createContext, type ReactNode, useContext, useEffect, useMemo, useSyncExternalStore } from "react"
+import { createContext, Fragment, type ReactNode, useContext, useEffect, useMemo, useSyncExternalStore } from "react"
 import { useBadges } from "./badges"
 import { breadcrumbs, buildMenu, type Crumb, firstPage, type MenuItem, routeInfos } from "./menu"
 import "./meta"
 import { safeRedirect } from "./redirect"
+import { signedOut } from "./snapshot"
 import { type AppStorage, appStorage } from "./storage"
 
 /** 路由上下文：根路由用 createRootRouteWithContext<RouterContext>() 创建，beforeLoad 中通过 context.app 使用。 */
@@ -208,6 +209,7 @@ export function createApp<TRouteTree extends AnyRoute>(options: AppOptions<TRout
       console.error("onError failed", err)
     }
   }
+  const Outer = options.router?.Wrap
   const router = createRouter({
     ...options.router,
     // 默认的错误组件先报告错误，再显示外观层的组件（没有时是 TanStack Router 的默认组件）。
@@ -215,6 +217,12 @@ export function createApp<TRouteTree extends AnyRoute>(options: AppOptions<TRout
     basepath,
     routeTree: options.routeTree,
     context: { app },
+    // QueryClient 和应用上下文由 Wrap 提供：TanStack Start 自己渲染 RouterProvider，AppRoot 中同样适用。
+    // biome-ignore lint/correctness/noComponentHookFactories: 每个应用只创建一次，组件的身份在应用的生命周期内不变
+    Wrap: ({ children }: { children: ReactNode }) => {
+      const inner = <AppProviders app={app as unknown as App}>{children}</AppProviders>
+      return Outer ? <Outer>{inner}</Outer> : inner
+    },
   }) as unknown as Router<TRouteTree>
 
   const permissionsQuery = (): PermissionsQuery => ({
@@ -276,11 +284,12 @@ export function createApp<TRouteTree extends AnyRoute>(options: AppOptions<TRout
   }
 
   // 首次加载任何页面之前恢复登录状态：公开页面的页头也能知道是否已经登录。
+  // 只在浏览器中进行：服务端渲染时不读取身份，页面按未登录渲染，浏览器接管后再更新。
   const root = router.routeTree as AnyRoute
   const rootBefore = root.options.beforeLoad
   root.update({
     beforeLoad: async (ctx: unknown) => {
-      await app.ready()
+      if (typeof window !== "undefined") await app.ready()
       return rootBefore?.(ctx as never)
     },
   } as never)
@@ -292,22 +301,30 @@ export function createApp<TRouteTree extends AnyRoute>(options: AppOptions<TRout
 }
 
 /**
- * 渲染应用：QueryClientProvider、应用上下文和 RouterProvider。
+ * 应用的 Provider：QueryClientProvider 和应用上下文。createApp 把它装在路由的 Wrap 中。
  *
  * 登录、退出、切换账号或租户时（会话的代次变化）重新挂载页面：页面中按身份计算的查询（例如 queryKey 中的
  * session.scope()）重新读取，上一个身份的页面状态不会留下。布局状态保存在应用中，不受影响。
+ */
+function AppProviders({ app, children }: { app: App; children: ReactNode }): ReactNode {
+  const generation = useSyncExternalStore(app.session.subscribe, app.session.generation, app.session.generation)
+  return (
+    <QueryClientProvider client={app.queryClient}>
+      <AppContext.Provider value={app}>
+        <Fragment key={generation}>{children}</Fragment>
+      </AppContext.Provider>
+    </QueryClientProvider>
+  )
+}
+
+/**
+ * 在浏览器中直接渲染应用，用于测试和不经过 TanStack Start 的页面。TanStack Start 的应用在 getRouter 中返回
+ * app.router，Provider 由路由的 Wrap 提供。
  *
  *   createRoot(document.getElementById("root")!).render(<AppRoot app={app} />)
  */
 export function AppRoot<TRouteTree extends AnyRoute>({ app }: { app: App<TRouteTree> }): ReactNode {
-  const generation = useSyncExternalStore(app.session.subscribe, app.session.generation)
-  return (
-    <QueryClientProvider client={app.queryClient}>
-      <AppContext.Provider value={app as unknown as App}>
-        <RouterProvider key={generation} router={app.router as unknown as Router<AnyRoute>} />
-      </AppContext.Provider>
-    </QueryClientProvider>
-  )
+  return <RouterProvider router={app.router as unknown as Router<AnyRoute>} />
 }
 
 /**
@@ -347,7 +364,7 @@ export function useCan(): (permission: string) => boolean {
 /** 是否已经登录：登录、退出时更新，例如页头在“登录”和“退出”之间切换。 */
 export function useSignedIn(): boolean {
   const { session } = useApp()
-  return useSyncExternalStore(session.subscribe, () => session.signedIn())
+  return useSyncExternalStore(session.subscribe, () => session.signedIn(), signedOut)
 }
 
 /** 按当前身份的权限过滤后的菜单。 */

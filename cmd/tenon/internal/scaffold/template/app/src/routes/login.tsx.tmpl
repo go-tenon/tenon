@@ -1,0 +1,20 @@
+import { createFileRoute } from "@tanstack/react-router"
+import { AuthLayout, LoginForm } from "@go-tenon/ui"
+import { login } from "../auth"
+
+export const Route = createFileRoute("/login")({
+  // ?redirect= 是登录前想去的页面
+  validateSearch: (search: Record<string, unknown>): { redirect?: string } => ({
+    redirect: typeof search.redirect === "string" ? search.redirect : undefined,
+  }),
+  component: Login,
+})
+
+function Login() {
+  const { redirect } = Route.useSearch()
+  return (
+    <AuthLayout brand="[[.Title]]" title="登录">
+      <LoginForm login={login} redirect={redirect} />
+    </AuthLayout>
+  )
+}

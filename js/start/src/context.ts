@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // 本次页面请求的请求头，只在服务端使用：SSR 调用 Go 接口时从这里取出要转交的请求头。
 
 import { AsyncLocalStorage } from "node:async_hooks"

@@ -29,6 +29,7 @@ import {
 } from "react"
 import { type App, useApp } from "./app"
 import "./meta"
+import { noAccount } from "./snapshot"
 import { createStore, perOwner } from "./store"
 import { type TabPane, TabPaneContext } from "./tabcontext"
 import {
@@ -208,8 +209,8 @@ export function TabsOutlet({ max = 10, confirm }: TabsOutletProps): ReactNode {
   const router = useRouter()
   configOf(app).current = { max, confirm: confirm ?? ((message) => window.confirm(message)) }
   const store = tabsOf(app)
-  const model = useSyncExternalStore(store.subscribe, store.get)
-  const account = useSyncExternalStore(app.session.subscribe, () => app.session.identity()?.account ?? "")
+  const model = useSyncExternalStore(store.subscribe, store.get, store.get)
+  const account = useSyncExternalStore(app.session.subscribe, () => app.session.identity()?.account ?? "", noAccount)
   const parentId = useMatch({ strict: false, select: (m) => String(m.routeId) })
   const matches = useRouterState({ select: (s) => s.matches })
   // 跳转进行中时地址已经变了、匹配结果还是原来的页面：只在路由空闲时记下标签的地址，否则会记到原来的标签上。
@@ -411,7 +412,7 @@ function tabsActions(app: App): Omit<Tabs, "tabs" | "active"> {
 export function useTabs(): Tabs {
   const app = useApp()
   const store = tabsOf(app)
-  const model = useSyncExternalStore(store.subscribe, store.get)
+  const model = useSyncExternalStore(store.subscribe, store.get, store.get)
   const actions = useMemo(() => tabsActions(app), [app])
   return useMemo(() => {
     const { tabs, active } = model.state

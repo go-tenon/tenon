@@ -12,6 +12,7 @@ import {
   useSyncExternalStore,
 } from "react"
 import { useApp } from "./app"
+import { noAccount } from "./snapshot"
 
 /** useResizable 的选项。 */
 export interface ResizableOptions {
@@ -67,7 +68,7 @@ export function clampSize(size: number, min: number, max: number): number {
 export function useResizable(options: ResizableOptions): Resizable {
   const { id, defaultSize, min = 160, max = 640, step = 16, side = "start" } = options
   const app = useApp()
-  const account = useSyncExternalStore(app.session.subscribe, () => app.session.identity()?.account ?? "")
+  const account = useSyncExternalStore(app.session.subscribe, () => app.session.identity()?.account ?? "", noAccount)
   const key = `resize:${account}:${id}`
   const saved = useMemo(() => app.storage.get<number>(key), [app.storage, key])
   const [size, setLocal] = useState(() => clampSize(saved ?? defaultSize, min, max))

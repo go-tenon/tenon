@@ -129,7 +129,7 @@ blog/
 <a id="the-frontend-directory"></a>
 ### apps 和 packages
 
-`apps` 中每个目录是一个前端，例如用户端 `apps/web`、运营后台 `apps/admin`，目录名是前端的名称。每个前端的 `frontend.go` 把构建产物嵌入程序，所以部署时仍然只有一个二进制文件，见[单页应用](../frontend/spa.md)。用 [tenon add frontend](../installation/tooling.md#add-frontend) 加入新的前端。
+`apps` 中每个目录是一个前端，例如用户端 `apps/web`、运营后台 `apps/admin`，目录名是前端的名称。每个前端的 `frontend.go` 把编译出的 SSR 程序（`ssr.bin`）嵌入 Go 程序，由 Go 托管运行，所以部署时仍然只有一个二进制文件，见[服务端渲染](../frontend/ssr.md)。用 [tenon add frontend](../installation/tooling.md#add-frontend) 加入新的前端。
 
 `packages` 中是多个前端共用的包。`packages/client` 是共用的客户端包，前端用 `@<作用域>/client/<名称>` 导入它，见[前端与 API](../installation/tooling.md#conventions)。
 

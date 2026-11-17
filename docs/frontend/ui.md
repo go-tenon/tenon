@@ -33,41 +33,57 @@
 <a id="setup"></a>
 ## 装配
 
-引入样式，在 `AppRoot` 外面套上 `UIProvider`，选一套样式预设：
+`tenon init` 和 `tenon add frontend --style <预设>` 生成的前端已经装配好。前端用 [TanStack Start](start.md) 渲染，`UIProvider` 放在根路由的 `shellComponent`（整个 HTML 文档）中，同时引入样式：
 
-```tsx title="src/main.tsx"
+```tsx title="src/routes/__root.tsx"
 import "@go-tenon/ui/styles.css"
-import { AppRoot } from "@go-tenon/shell"
-import { themes, UIProvider } from "@go-tenon/ui"
-import { createRoot } from "react-dom/client"
-import { app } from "./app"
+import type { ReactNode } from "react"
+import { ColorSchemeScript, mantineHtmlProps } from "@mantine/core"
+import { createRootRouteWithContext, HeadContent, Outlet, Scripts, useRouter } from "@tanstack/react-router"
+import type { RouterContext } from "@go-tenon/shell"
+import { UIProvider } from "@go-tenon/ui"
+import { theme } from "../theme"
 
-createRoot(document.getElementById("root") as HTMLElement).render(
-  <UIProvider theme={themes.admin}>
-    <AppRoot app={app} />
-  </UIProvider>,
-)
+export const Route = createRootRouteWithContext<RouterContext>()({ shellComponent: Document, component: Outlet })
+
+function Document({ children }: { children: ReactNode }) {
+  const nonce = useRouter().options.ssr?.nonce
+  return (
+    <html lang="zh-CN" {...mantineHtmlProps}>
+      <head>
+        <ColorSchemeScript nonce={nonce} />
+        <HeadContent />
+      </head>
+      <body>
+        <UIProvider theme={theme}>{children}</UIProvider>
+        <Scripts />
+      </body>
+    </html>
+  )
+}
+```
+
+- `ColorSchemeScript` 在页面显示之前设置亮色或暗色，避免闪烁。它是内联脚本，要带上 Go 为这次请求生成的 CSP nonce（`createApp` 的 `router.ssr.nonce` 来自 `@go-tenon/start` 的 `cspNonce()`）。
+- `mantineHtmlProps` 让服务端渲染的 `<html>` 与浏览器设置的配色属性一致，不产生水合警告。
+
+主题在 `src/theme.ts` 中，选一套样式预设，改品牌色：
+
+```ts title="src/theme.ts"
+import { createUiTheme } from "@go-tenon/ui"
+
+export const theme = createUiTheme({ preset: "admin", primary: "#4f5bd5" })
 ```
 
 `UIProvider` 安装 Mantine 的主题、右上角的通知（`@mantine/notifications`）、确认对话框（`@mantine/modals`）和图标名称的对应表。组件测试中传 `env="test"`，关闭过渡动画和 portal。配色默认跟随系统，用户在顶栏切换后保存在浏览器中。
 
-应用的路由使用 `RouteError` 和 `NotFoundPage` 作为默认的错误页：
+应用的路由使用 `RouteError` 和 `NotFoundPage` 作为默认的错误页，见[应用骨架](app-shell.md#creating-the-app)：
 
-```ts title="src/app.ts"
-import { createSession } from "@go-tenon/client"
-import { createApp } from "@go-tenon/shell"
-import { NotFoundPage, RouteError } from "@go-tenon/ui"
-import { createClient } from "@blog/client/api"
-import { routeTree } from "./routeTree.gen"
-
-export const session = createSession({ load: async () => ({ account: (await api.user.me()).id }) })
-export const api = createClient({ baseURL: "/api", session })
-
-export const app = createApp({
+```tsx title="src/router.tsx"
+createApp({
   id: "admin",
   routeTree,
   session,
-  router: { defaultErrorComponent: RouteError, defaultNotFoundComponent: NotFoundPage },
+  router: { ssr: { nonce: cspNonce() }, defaultErrorComponent: RouteError, defaultNotFoundComponent: NotFoundPage },
 })
 ```
 

@@ -13,7 +13,8 @@ import (
 // fake 记录参数；go list -m 输出框架的目录；go build -mod=mod -o BIN（generate 编译应用）写出一个记录参数的伪造应用。
 const fake = `#!/bin/sh
 if [ "$1 $2" = "list -m" ]; then echo "$TENON_FRAMEWORK"; exit 0; fi
-echo "$(basename "$0") $* @$(basename "$PWD")" >> "$TENON_LOG"
+echo "$(basename "$0") $* @$(basename "$PWD")${GOARCH:+ GOARCH=$GOARCH}" >> "$TENON_LOG"
+if [ "$1 $2" = "env GOARCH" ]; then echo arm64; exit 0; fi
 if [ "$1 $2 $3" = "build -mod=mod -o" ]; then
 	printf '#!/bin/sh\necho "app $*" >> "$TENON_LOG"\n' > "$4"; chmod +x "$4"
 fi
@@ -59,10 +60,11 @@ func TestBuild(t *testing.T) {
 	if err := execute(t, "build"); err != nil {
 		t.Fatal(err)
 	}
-	// 在根目录安装一次，逐个构建前端，最后编译应用。
+	// 在根目录安装一次，按 Go 的 GOARCH 逐个编译前端的 SSR 可执行文件，最后编译应用。
 	l, _ := os.ReadFile(log)
 	lines := strings.Split(strings.TrimSpace(string(l)), "\n")
-	want := []string{"bun install --frozen-lockfile @", "bun run build @admin", "bun run build @web", "go build -trimpath -o bin/api ./cmd/api @"}
+	want := []string{"bun install --frozen-lockfile @", "go env GOARCH @", "bun run build @admin GOARCH=arm64",
+		"bun run build @web GOARCH=arm64", "go build -trimpath -o bin/api ./cmd/api @"}
 	if len(lines) != len(want) {
 		t.Fatalf("log:\n%s", l)
 	}
@@ -95,7 +97,7 @@ func TestGenerate(t *testing.T) {
 			t.Fatalf("log missing %q:\n%s", want, l)
 		}
 	}
-	for _, f := range []string{"apps/web/dist/index.html", ".tenon/js/client/package.json"} {
+	for _, f := range []string{"apps/web/ssr.bin", ".tenon/js/client/package.json"} {
 		if _, err := os.Stat(f); err != nil {
 			t.Errorf("%s: %v", f, err)
 		}
@@ -120,28 +122,31 @@ func TestAddFrontend(t *testing.T) {
 		t.Fatal(err, out.String())
 	}
 	for name, want := range map[string]string{
-		"apps/admin/package.json":       `"name": "@helpdesk/admin"`,
-		"apps/admin/vite.config.ts":     `base: "/admin/"`,
-		"apps/admin/dist/index.html":    "前端还没有构建",
-		"package.json":                  `"apps/admin",`,
-		".tenon/js/client/package.json": `"name": "@go-tenon/client"`,
+		"apps/admin/package.json":         `"name": "@helpdesk/admin"`,
+		"apps/admin/vite.config.ts":       `base: "/admin/"`,
+		"apps/admin/src/theme.ts":         `preset: "console"`,
+		"apps/admin/src/routes/login.tsx": "LoginForm",
+		"package.json":                    `"apps/admin",`,
+		".tenon/js/client/package.json":   `"name": "@go-tenon/client"`,
 	} {
 		if b, _ := os.ReadFile(name); !strings.Contains(string(b), want) {
 			t.Errorf("%s missing %q:\n%s", name, want, b)
 		}
 	}
-	for _, want := range []string{`router.Handle("/admin/*", httpx.NewSPA(admin.Dist, httpx.SPAOptions{Base: "/admin/", DevServer: cfg.DevServers["admin"]}))`,
-		`"example.com/helpdesk/apps/admin"`} {
+	if _, err := os.Stat("apps/admin/ssr.bin"); err != nil {
+		t.Errorf("placeholder ssr.bin: %v", err)
+	}
+	for _, want := range []string{`adminPages, err := ssr.New(ssr.Options{Executable: admin.SSR, API: api, DevServer: cfg.DevServers["admin"]})`,
+		`"/admin/*"`, `"example.com/helpdesk/apps/admin"`} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("output missing %q:\n%s", want, out.String())
 		}
 	}
 	for args, want := range map[string]string{
-		"add frontend admin":                               "already exists",
-		"add frontend Admin":                               "must match",
-		"add frontend ops --base /ops":                     "must start and end with /",
-		"add frontend ops --layout side":                   `template "default" has no layouts`,
-		"add frontend ops --template admin --layout inset": `layout "inset" is not one of`,
+		"add frontend admin":            "already exists",
+		"add frontend Admin":            "must match",
+		"add frontend ops --base /ops":  "must start and end with /",
+		"add frontend ops --style antd": `--style "antd" is not one of`,
 	} {
 		if err := execute(t, strings.Fields(args)...); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%s: err = %v", args, err)

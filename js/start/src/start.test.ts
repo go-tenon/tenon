@@ -1,8 +1,8 @@
 import { spawnSync } from "node:child_process"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
-import { defaultTarget, entrySource } from "./compile"
-import { forwardHeaders, socketPath } from "./headers"
+import { defaultTarget, entrySource, normalizeBase } from "./compile"
+import { forwardHeaders, socketPath, stripBase } from "./headers"
 
 describe("headers", () => {
   it("只转交登录凭据、请求 ID、链路和语言", () => {
@@ -29,9 +29,20 @@ describe("headers", () => {
 })
 
 describe("compile", () => {
-  it("编译目标跟随机器架构", () => {
-    expect(defaultTarget("arm64")).toBe("bun-linux-arm64")
-    expect(defaultTarget("x64")).toBe("bun-linux-x64")
+  it("编译目标跟随 GOARCH，没有时是机器的架构", () => {
+    expect(defaultTarget("arm64", "x64")).toBe("bun-linux-arm64")
+    expect(defaultTarget("amd64", "arm64")).toBe("bun-linux-x64")
+    expect(defaultTarget(undefined, "arm64")).toBe("bun-linux-arm64")
+  })
+
+  it("挂载路径", () => {
+    expect(normalizeBase()).toBe("/")
+    expect(normalizeBase("admin")).toBe("/admin/")
+    expect(normalizeBase("/admin/")).toBe("/admin/")
+    expect(stripBase("/admin/assets/a.js", "/admin/")).toBe("/assets/a.js")
+    expect(stripBase("/admin", "/admin/")).toBe("/")
+    expect(stripBase("/assets/a.js", "/admin/")).toBeUndefined()
+    expect(stripBase("/docs/", "/")).toBe("/docs/")
   })
 
   it("入口嵌入每个静态文件，路径以 / 开头", () => {
@@ -45,6 +56,7 @@ describe("compile", () => {
     expect(src).toContain('import handler from "../../dist/server/server.js"')
     expect(src).toContain('import f0 from "../../dist/client/assets/a.js" with { type: "file" }')
     expect(src).toContain('"/index.html": f1,')
+    expect(src).toContain('base: "/"')
   })
 })
 

@@ -5,6 +5,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -15,8 +16,9 @@ import (
 	"time"
 )
 
-// TestInitEndToEnd 用 init 生成项目（指向本地的框架），用 add frontend 加入第二个前端并挂载，然后类型检查、
-// tenon build、运行二进制，通过 HTTP 检查两个前端的页面和深链接，走一遍待办事项的增删改查。它需要 bun 和网络，编译、安装依赖很占 CPU，会干扰其他包中
+// TestInitEndToEnd 用 init 生成项目（指向本地的框架），用 add frontend 加入两个前端并由 ssr 托管，然后类型检查、
+// tenon build（每个前端编译成 SSR 可执行文件，嵌入程序）、运行二进制，通过 HTTP 检查服务端渲染的页面、挂载路径、
+// 静态资源和品牌色，走一遍待办事项的增删改查。它需要 bun 和网络，编译、安装依赖很占 CPU，会干扰其他包中
 // 计时的测试，所以只在设置了 TENON_SCAFFOLD_TEST=1 时运行（CI 的 scaffold 任务）：
 //
 //	TENON_SCAFFOLD_TEST=1 go test -run TestInitEndToEnd ./cmd/tenon/
@@ -49,24 +51,36 @@ func TestInitEndToEnd(t *testing.T) {
 			t.Fatalf("%s %v: %v\n%s", name, args, err, b)
 		}
 	}
-	// 第二个前端挂在 /admin/：按 add frontend 的提示修改路由。
-	sh("go", "tool", "tenon", "add", "frontend", "admin", "--template", "admin")
-	// 第三个前端用 console 模板：shadcn 的组件和 tenon registry 的组件从框架复制进来，类型检查和构建都要通过。
-	sh("go", "tool", "tenon", "add", "frontend", "console", "--template", "console", "--layout", "mix")
+	// 两个前端：运营后台挂在 /admin/，控制台挂在 /console/。按 add frontend 的提示由 ssr 托管它们。
+	sh("go", "tool", "tenon", "add", "frontend", "admin", "--style", "admin")
+	sh("go", "tool", "tenon", "add", "frontend", "console")
 	mainGo := filepath.Join(dir, "cmd", "api", "main.go")
 	src, err := os.ReadFile(mainGo)
 	if err != nil {
 		t.Fatal(err)
 	}
-	mount := `	router.Handle("/admin/*", httpx.NewSPA(admin.Dist, httpx.SPAOptions{Base: "/admin/", DevServer: cfg.DevServers["admin"]}))` + "\n"
-	code := strings.Replace(string(src), `	router.Handle("/*"`, mount+`	router.Handle("/*"`, 1)
-	code = strings.Replace(code, `	"example.com/todo/apps/web"`, "\t\"example.com/todo/apps/admin\"\n\t\"example.com/todo/apps/web\"", 1)
+	code := string(src)
+	for _, r := range [][2]string{
+		{"\t\"example.com/todo/apps/web\"", "\t\"example.com/todo/apps/admin\"\n\t\"example.com/todo/apps/console\"\n\t\"example.com/todo/apps/web\""},
+		{"type pages struct{ web http.Handler }", "type pages struct{ web, admin, console http.Handler }"},
+		{"\trouter = routes(cfg, todo.NewStore(), pages{web: webPages.Handler()})",
+			"\tadminPages, err := ssr.New(ssr.Options{Executable: admin.SSR, API: api, DevServer: cfg.DevServers[\"admin\"]})\n\tif err != nil {\n\t\treturn err\n\t}\n" +
+				"\tconsolePages, err := ssr.New(ssr.Options{Executable: console.SSR, API: api, DevServer: cfg.DevServers[\"console\"]})\n\tif err != nil {\n\t\treturn err\n\t}\n" +
+				"\trouter = routes(cfg, todo.NewStore(), pages{web: webPages.Handler(), admin: adminPages.Handler(), console: consolePages.Handler()})"},
+		{"}, webPages)", "}, webPages, adminPages, consolePages)"},
+		{"\tif p.web != nil {", "\tif p.admin != nil {\n\t\trouter.Handle(\"/admin/*\", p.admin)\n\t\trouter.Handle(\"/console/*\", p.console)\n\t}\n\tif p.web != nil {"},
+	} {
+		if !strings.Contains(code, r[0]) {
+			t.Fatalf("main.go has no %q:\n%s", r[0], code)
+		}
+		code = strings.Replace(code, r[0], r[1], 1)
+	}
 	if err := os.WriteFile(mainGo, []byte(code), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	// 刚 clone 的项目没有 dist（被 .gitignore 忽略）和生成的客户端：generate 先写占位页再编译应用。
-	for _, p := range []string{"apps/web/dist", "apps/admin/dist", "packages/client/src/api"} {
+	// 刚 clone 的项目没有 ssr.bin（被 .gitignore 忽略）和生成的客户端：generate 先写占位文件再编译应用。
+	for _, p := range []string{"apps/web/ssr.bin", "apps/admin/ssr.bin", "packages/client/src/api"} {
 		if err := os.RemoveAll(filepath.Join(dir, p)); err != nil {
 			t.Fatal(err)
 		}
@@ -75,7 +89,7 @@ func TestInitEndToEnd(t *testing.T) {
 	// 生成的查询选项、校验规则、验证提示和权限从客户端包的子路径导入。
 	imports := "import { chatTransport, createSession, describeError, uploadFile, validate } from \"@go-tenon/client\"\nimport { createQueries } from \"@todo/client/api/queries\"\nimport { schemas } from \"@todo/client/api/schemas\"\n" +
 		"import { messages } from \"@todo/client/api/messages\"\nimport { permissions } from \"@todo/client/api/permissions\"\nimport { enums } from \"@todo/client/api/enums\"\n" +
-		"import { api } from \"../../web/src/client\"\n" +
+		"import { api } from \"../../web/src/api\"\n" +
 		"const session = createSession({ load: async () => ({ account: \"a\" }) })\n" +
 		// 浏览器的 fetch 和 File 可以直接交给按形状声明的参数；session.fetch(fetch) 仍是 typeof fetch，可以交给 AI SDK。
 		"const authed: typeof fetch = session.fetch(fetch)\n" +
@@ -84,72 +98,89 @@ func TestInitEndToEnd(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "apps", "admin", "src", "framework.ts"), []byte(imports), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	// 带路径参数的页面：拆分出的代码文件以 _ 开头（_id-<hash>.js），要能被嵌入并提供。
+	// 带路径参数的页面。
 	userPage := "import { createFileRoute } from \"@tanstack/react-router\"\n\n" +
-		"export const Route = createFileRoute(\"/users/$id\")({ staticData: { title: \"用户\" }, component: User })\n\n" +
+		"export const Route = createFileRoute(\"/_app/users/$id\")({ staticData: { title: \"用户\" }, component: User })\n\n" +
 		"function User() {\n  const { id } = Route.useParams()\n  return <p>user {id}</p>\n}\n"
-	if err := os.MkdirAll(filepath.Join(dir, "apps", "admin", "src", "routes", "users"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "apps", "admin", "src", "routes", "_app", "users"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "apps", "admin", "src", "routes", "users", "$id.tsx"), []byte(userPage), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "apps", "admin", "src", "routes", "_app", "users", "$id.tsx"), []byte(userPage), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.RemoveAll(filepath.Join(dir, ".tenon")); err != nil {
 		t.Fatal(err)
 	}
 	sh("go", "tool", "tenon", "generate")
-	if _, err := os.Stat(filepath.Join(dir, ".tenon", "js", "client", "package.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, ".tenon", "js", "start", "package.json")); err != nil {
 		t.Fatalf("front-end packages not synced: %v", err)
 	}
 	sh("bun", "run", "typecheck")
 	sh("go", "vet", "./...")
 	sh("go", "tool", "tenon", "build")
 
-	// 运行构建出的二进制：页面来自嵌入的 dist，接口在 /api 下。
+	// 运行构建出的二进制：页面由嵌入的 SSR 进程渲染，接口在 /api 下。
 	port := freePort(t)
 	if err := os.WriteFile(filepath.Join(dir, "config", "test.yaml"), []byte("http:\n  addr: 127.0.0.1:"+port+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	app := exec.Command(filepath.Join(dir, "bin", "api"), "serve", "--config", "config/app.yaml,config/test.yaml")
-	app.Dir = dir
-	if err := app.Start(); err != nil {
-		t.Fatal(err)
+	start := func() func() {
+		app := exec.Command(filepath.Join(dir, "bin", "api"), "serve", "--config", "config/app.yaml,config/test.yaml")
+		app.Dir = dir
+		if err := app.Start(); err != nil {
+			t.Fatal(err)
+		}
+		stop := func() { _ = app.Process.Signal(os.Interrupt); _ = app.Wait() }
+		t.Cleanup(func() { _ = app.Process.Kill() })
+		return stop
 	}
-	t.Cleanup(func() { _ = app.Process.Kill(); _ = app.Wait() })
+	stop := start()
 	base := "http://127.0.0.1:" + port
 	waitUp(t, base+"/api/todos")
 
-	page := get(t, base+"/")
-	if !strings.Contains(page, "<title>Todo</title>") || !strings.Contains(page, "/assets/") {
+	// 首页预渲染，带着本次请求的 nonce 和品牌色；不存在的页面由前端路由返回 404。
+	page := getHTML(t, base+"/")
+	if !strings.Contains(page, "<title>Todo</title>") || !strings.Contains(page, "/assets/") || strings.Contains(page, "__tenon_csp_nonce__") ||
+		!strings.Contains(strings.ToLower(page), "#4f5bd5") {
 		t.Fatalf("page:\n%s", page)
 	}
-	for _, url := range []string{base + "/admin/", base + "/admin/users/42"} {
-		if page := getHTML(t, url); !strings.Contains(page, "<title>admin</title>") || !strings.Contains(page, "/admin/assets/") {
+	for url, title := range map[string]string{base + "/admin/": "admin", base + "/admin/users/42": "admin", base + "/console/login": "console"} {
+		page := getHTML(t, url)
+		prefix := "/" + title + "/assets/"
+		if !strings.Contains(page, "<title>"+title+"</title>") || !strings.Contains(page, prefix) {
 			t.Fatalf("%s:\n%s", url, page)
 		}
 	}
-	if page := getHTML(t, base+"/todos/42"); !strings.Contains(page, "<title>Todo</title>") {
-		t.Fatalf("deep link:\n%s", page)
+	if res, err := http.Get(base + "/todos/42"); err != nil || res.StatusCode != http.StatusNotFound {
+		t.Fatalf("unknown page: %v %v", res, err)
 	}
-	// 构建产物中的每个文件都被嵌入程序：包括以 _ 开头的代码文件（frontend.go 用 go:embed all:dist）。
-	assets, err := os.ReadDir(filepath.Join(dir, "apps", "admin", "dist", "assets"))
+	// 构建产物中的每个静态文件都嵌入 SSR 可执行文件，按挂载路径提供。
+	assets, err := os.ReadDir(filepath.Join(dir, "apps", "admin", "dist", "client", "assets"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	underscore := false
 	for _, a := range assets {
-		underscore = underscore || strings.HasPrefix(a.Name(), "_")
 		res, err := http.Get(base + "/admin/assets/" + a.Name())
 		if err != nil {
 			t.Fatal(err)
 		}
 		_ = res.Body.Close()
-		if res.StatusCode != http.StatusOK {
-			t.Errorf("/admin/assets/%s: %d", a.Name(), res.StatusCode)
+		if res.StatusCode != http.StatusOK || !strings.Contains(res.Header.Get("Cache-Control"), "immutable") {
+			t.Errorf("/admin/assets/%s: %d %q", a.Name(), res.StatusCode, res.Header.Get("Cache-Control"))
 		}
 	}
-	if !underscore {
-		t.Errorf("no code-split file starting with _ in apps/admin/dist/assets: %v", assets)
+	// tenonVersion 只作用于浏览器的构建：version.json 在 dist/client 中，不缓存。
+	if res, err := http.Get(base + "/admin/version.json"); err != nil {
+		t.Fatal(err)
+	} else {
+		body, _ := io.ReadAll(res.Body)
+		_ = res.Body.Close()
+		if res.StatusCode != http.StatusOK || res.Header.Get("Cache-Control") != "no-cache" || !strings.Contains(string(body), `"version"`) {
+			t.Errorf("/admin/version.json: %d %q %s", res.StatusCode, res.Header.Get("Cache-Control"), body)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "apps", "admin", "dist", "server", "version.json")); err == nil {
+		t.Error("version.json written to the server build")
 	}
 	if res := send(t, http.MethodPost, base+"/api/todos", `{"title":"买牛奶"}`); res.status != http.StatusCreated || res.body["title"] != "买牛奶" {
 		t.Fatalf("create: %+v", res)
@@ -166,32 +197,19 @@ func TestInitEndToEnd(t *testing.T) {
 	if res := send(t, http.MethodDelete, base+"/api/todos/1", ""); res.status != http.StatusNotFound || res.body["code"] != "todo.not_found" {
 		t.Fatalf("delete again: %+v", res)
 	}
+	stop()
 
-	// 设计令牌：修改一次品牌色，重新构建后前端的样式（shadcn 的 CSS 变量）和 antd 的令牌都随之改变。
-	builtCSS := func() string {
-		var all strings.Builder
-		files, _ := filepath.Glob(filepath.Join(dir, "apps", "web", "dist", "assets", "*.css"))
-		for _, f := range files {
-			b, _ := os.ReadFile(f)
-			all.Write(b)
-		}
-		return all.String()
-	}
-	// 不同的 CSS 压缩器写法不同，例如 vite 8 的 Lightning CSS 把亮度写成百分比：oklch(51.1% .262 276.966)。
-	if css := builtCSS(); !strings.Contains(css, "oklch(.511 .262 276.966)") && !strings.Contains(css, "oklch(0.511 0.262 276.966)") &&
-		!strings.Contains(css, "oklch(51.1% .262 276.966)") {
-		t.Fatalf("default brand missing from built css:\n%s", css)
-	}
-	tokens := `{"color": {"brand": {"$type": "color", "$value": "#e11d48"}}, "radius": {"$type": "dimension", "$value": "0.25rem"}}`
-	if err := os.WriteFile(filepath.Join(dir, "theme", "tokens.json"), []byte(tokens), 0o644); err != nil {
+	// 品牌色只写在前端的 theme.ts 中：改一次，重新构建后页面随之改变。
+	themeTS := filepath.Join(dir, "apps", "web", "src", "theme.ts")
+	b, _ := os.ReadFile(themeTS)
+	if err := os.WriteFile(themeTS, []byte(strings.Replace(string(b), "#4f5bd5", "#e11d48", 1)), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	sh("go", "tool", "tenon", "build")
-	if css := builtCSS(); !strings.Contains(css, "#e11d48") || strings.Contains(css, "276.966") {
-		t.Fatalf("brand change not in built css:\n%s", css)
-	}
-	if ts, _ := os.ReadFile(filepath.Join(dir, "packages", "theme", "src", "index.ts")); !strings.Contains(string(ts), `"colorPrimary": "#e11d48"`) {
-		t.Fatalf("antd tokens not regenerated:\n%s", ts)
+	start()
+	waitUp(t, base+"/api/todos")
+	if page := strings.ToLower(getHTML(t, base+"/")); !strings.Contains(page, "#e11d48") || strings.Contains(page, "#4f5bd5") {
+		t.Fatalf("brand change not in page:\n%s", page)
 	}
 }
 

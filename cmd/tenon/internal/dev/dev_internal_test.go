@@ -35,24 +35,27 @@ func TestWatchersAndBuilds(t *testing.T) {
 		Tools:     []project.Tool{{Watch: []string{"esbuild", "--watch"}, Build: []string{"esbuild"}}},
 	}
 	d := dev{cfg: cfg, servers: map[string]string{"admin": "http://localhost:5174", "web": "http://localhost:5173"}}
+	front := []string{"API_ORIGIN=http://localhost:8080"}
 	want := []watcher{
-		{"apps/admin", []string{"bun", "run", "dev", "--port", "5174", "--strictPort"}},
-		{"apps/web", []string{"bun", "run", "dev", "--port", "5173", "--strictPort"}},
-		{".", []string{"go", "tool", "templ", "generate", "--watch", "--proxy=http://localhost:8080", "--proxyport=7331", "--open-browser=false"}},
-		{".", []string{"tailwindcss", "-i", "web/app.css", "-o", "web/static/app.css", "--watch=always"}},
-		{".", []string{"esbuild", "--watch"}},
+		{"apps/admin", []string{"bun", "run", "dev", "--port", "5174", "--strictPort"}, front},
+		{"apps/web", []string{"bun", "run", "dev", "--port", "5173", "--strictPort"}, front},
+		{".", []string{"go", "tool", "templ", "generate", "--watch", "--proxy=http://localhost:8080", "--proxyport=7331", "--open-browser=false"}, nil},
+		{".", []string{"tailwindcss", "-i", "web/app.css", "-o", "web/static/app.css", "--watch=always"}, nil},
+		{".", []string{"esbuild", "--watch"}, nil},
 	}
-	if got := d.watchers(); !slices.EqualFunc(got, want, func(a, b watcher) bool { return a.dir == b.dir && slices.Equal(a.args, b.args) }) {
+	same := func(a, b watcher) bool {
+		return a.dir == b.dir && slices.Equal(a.args, b.args) && slices.Equal(a.env, b.env)
+	}
+	if got := d.watchers(); !slices.EqualFunc(got, want, same) {
 		t.Errorf("watchers = %q", got)
 	}
+	// 停止后不再构建前端：SSR 可执行文件由 go tool tenon build 编译。
 	wantBuilds := []watcher{
-		{".", []string{"go", "tool", "templ", "generate"}},
-		{"apps/admin", []string{"bun", "run", "build"}},
-		{"apps/web", []string{"bun", "run", "build"}},
-		{".", []string{"tailwindcss", "-i", "web/app.css", "-o", "web/static/app.css", "--minify"}},
-		{".", []string{"esbuild"}},
+		{".", []string{"go", "tool", "templ", "generate"}, nil},
+		{".", []string{"tailwindcss", "-i", "web/app.css", "-o", "web/static/app.css", "--minify"}, nil},
+		{".", []string{"esbuild"}, nil},
 	}
-	if got := d.builds(); !slices.EqualFunc(got, wantBuilds, func(a, b watcher) bool { return a.dir == b.dir && slices.Equal(a.args, b.args) }) {
+	if got := d.builds(); !slices.EqualFunc(got, wantBuilds, same) {
 		t.Errorf("builds = %q", got)
 	}
 }

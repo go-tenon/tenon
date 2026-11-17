@@ -382,28 +382,43 @@ import (
     "github.com/go-tenon/tenon/httpx"
     "github.com/go-tenon/tenon/httpx/rest"
     "github.com/go-tenon/tenon/i18n"
+    "github.com/go-tenon/tenon/ssr"
 
-    "example.com/blog/apps/web"
+    webapp "example.com/blog/apps/web"
     "example.com/blog/internal/article"
     "example.com/blog/locales"
 )
 
-// HTTP 装配 HTTP 服务，serve 命令运行它。
+// HTTP 装配 HTTP 服务，serve 命令运行它。页面由 Go 托管的 SSR 进程渲染，它们渲染时经内部 socket 调用同一组路由。
 func (a *App) HTTP(d *command.Daemon) (func(context.Context) error, error) {
     var draining httpx.Draining
-    router := a.Router(&draining)
+    var router chi.Router
+    web, err := a.pages("web", webapp.SSR, &router)
+    if err != nil {
+        return nil, err
+    }
+    router = a.Router(&draining, pages{web: web.Handler()})
     ln, err := d.Listen("tcp", a.cfg.HTTP.Addr)
     if err != nil {
         return nil, err
     }
     return func(ctx context.Context) error {
-        return httpx.Serve(ctx, a.cfg.HTTP, ln, router, httpx.OnDraining(draining.Set))
+        return ssr.Run(ctx, func(ctx context.Context) error {
+            return httpx.Serve(ctx, a.cfg.HTTP, ln, router, httpx.OnDraining(draining.Set))
+        }, web)
     }, nil
 }
 
-// Router 构造应用的全部路由：健康检查、/api 下的接口和单页应用。
+// pages 创建托管前端 name 的 SSR 进程的 Host：exe 是嵌入的 SSR 可执行文件；开发时页面转给前端的开发服务器。
+// 进程渲染页面需要数据时调用 *router 中的接口，router 在 Host 创建之后才构造好，所以传它的地址。
+func (a *App) pages(name string, exe []byte, router *chi.Router) (*ssr.Host, error) {
+    api := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { (*router).ServeHTTP(w, r) })
+    return ssr.New(ssr.Options{Executable: exe, API: api, DevServer: a.cfg.DevServers[name]})
+}
+
+// Router 构造应用的全部路由：健康检查、/api 下的接口和页面。
 // 它只保存 App 的字段、不使用它们，所以 DocRouter 可以用一个没有打开任何资源的 App 调用它。
-func (a *App) Router(draining *httpx.Draining) chi.Router {
+func (a *App) Router(draining *httpx.Draining, p pages) chi.Router {
     router := chi.NewRouter()
     router.Use(httpx.Defaults(a.cfg.HTTP, httpx.Languages(i18n.MustNew("zh-CN", locales.FS)))...)
     router.Get("/livez", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
@@ -418,14 +433,19 @@ func (a *App) Router(draining *httpx.Draining) chi.Router {
         api := rest.New(r, rest.Options{Title: "Blog API", Version: "1.0.0", BasePath: "/api"})
         article.Register(api, a.db)
     })
-    router.Handle("/*", httpx.NewSPA(web.Dist, httpx.SPAOptions{DevServer: a.cfg.DevServers["web"]}))
+    if p.web != nil {
+        router.Handle("/*", p.web)
+    }
     return router
 }
 
 // DocRouter 用默认配置和没有打开任何资源的 App 构造路由，openapi、routes、client 命令用它。
 func DocRouter() chi.Routes {
-    return (&App{cfg: config.Default[Config]()}).Router(nil)
+    return (&App{cfg: config.Default[Config]()}).Router(nil, pages{})
 }
+
+// pages 是各前端的页面处理器，挂在接口之后；DocRouter 中为空。
+type pages struct{ web http.Handler }
 ```
 
 删除模板的示例 `internal/todo`。

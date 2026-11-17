@@ -9,7 +9,8 @@ import { parseArgs } from "node:util"
 import { Glob } from "bun"
 import { defaultTarget, entrySource } from "./compile"
 
-const usage = "usage: tenon-start compile --out <file> [--target bun-linux-x64|bun-linux-arm64] [--skip-build]"
+const usage =
+  "usage: tenon-start compile --out <file> [--base /admin/] [--target bun-linux-x64|bun-linux-arm64] [--skip-build]"
 
 async function run(cmd: string[]): Promise<void> {
   const p = Bun.spawn(cmd, { stdout: "inherit", stderr: "inherit" })
@@ -19,7 +20,12 @@ async function run(cmd: string[]): Promise<void> {
 async function compile(args: string[]): Promise<void> {
   const { values } = parseArgs({
     args,
-    options: { out: { type: "string" }, target: { type: "string" }, "skip-build": { type: "boolean" } },
+    options: {
+      out: { type: "string" },
+      base: { type: "string" },
+      target: { type: "string" },
+      "skip-build": { type: "boolean" },
+    },
   })
   if (!values.out) throw new Error(usage)
   const root = process.cwd()
@@ -34,7 +40,10 @@ async function compile(args: string[]): Promise<void> {
   rmSync(entryDir, { recursive: true, force: true })
   mkdirSync(entryDir, { recursive: true })
   const entry = join(entryDir, "entry.ts")
-  await Bun.write(entry, entrySource(join(root, "dist", "server", "server.js"), files, clientDir, entryDir))
+  await Bun.write(
+    entry,
+    entrySource(join(root, "dist", "server", "server.js"), files, clientDir, entryDir, values.base),
+  )
   await run([
     "bun",
     "build",

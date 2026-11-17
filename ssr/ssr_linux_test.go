@@ -474,6 +474,25 @@ func TestRender(t *testing.T) {
 	}
 }
 
+// Run 依次托管多个前端：serve 运行时全部就绪，结束后全部停止。
+func TestRunMany(t *testing.T) {
+	a, _ := New(Options{Executable: self(), Env: []string{"FAKE_SSR=1"}})
+	b, _ := New(Options{Executable: self(), Env: []string{"FAKE_SSR=1"}})
+	err := Run(context.Background(), func(context.Context) error {
+		if !a.Ready() || !b.Ready() {
+			return errors.New("not all hosts are ready")
+		}
+		return nil
+	}, a, b)
+	if err != nil || a.Ready() || b.Ready() {
+		t.Fatalf("run: %v ready %v %v", err, a.Ready(), b.Ready())
+	}
+	ran := false
+	if err := Run(context.Background(), func(context.Context) error { ran = true; return nil }); err != nil || !ran {
+		t.Fatal("no hosts")
+	}
+}
+
 // 开发模式：Render 请求开发服务器。
 func TestRenderDev(t *testing.T) {
 	dev := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -36,3 +36,10 @@ export function forwardHeaders(incoming: Headers): Record<string, string> {
 export function socketPath(name: string): string {
   return name.startsWith("@") ? `\0${name.slice(1)}` : name
 }
+
+/** 去掉挂载路径 base（以 / 开头和结尾），返回前端内部的路径；不在 base 之下时返回 undefined。 */
+export function stripBase(pathname: string, base = "/"): string | undefined {
+  if (pathname === base.slice(0, -1)) return "/"
+  if (!pathname.startsWith(base)) return undefined
+  return `/${pathname.slice(base.length)}`
+}

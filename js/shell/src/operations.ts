@@ -81,7 +81,7 @@ export function dismissOperation(app: App, id: string): void {
 /** 操作中心：登记过的操作，新的在前。 */
 export function useOperations(): readonly TrackedOperation[] {
   const store = operationsOf(useApp())
-  return useSyncExternalStore(store.subscribe, store.get)
+  return useSyncExternalStore(store.subscribe, store.get, store.get)
 }
 
 /** 一个操作的进度；没有登记时为空。 */

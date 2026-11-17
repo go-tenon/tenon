@@ -16,7 +16,10 @@
 <a id="setup"></a>
 ## 安装到应用
 
-前端是一个普通的 TanStack Start 应用，加上四处 Tenon 的约定。
+前端是一个普通的 TanStack Start 应用，加上四处 Tenon 的约定。`tenon init` 和 `tenon add frontend` 生成的前端已经按本节配置好。
+
+> [!NOTE]
+> `src/client.ts(x)` 和 `src/server.ts` 是 TanStack Start 约定的浏览器入口和服务端入口。调用接口的客户端不要放在 `src/client.ts` 中，否则它会被当成浏览器的入口，页面不会水合；模板中客户端在 `src/api.ts`。
 
 `vite.config.ts` 使用 `tenon`，它包含 TanStack Start 和 React 的插件：
 
@@ -104,10 +107,13 @@ export const Route = createFileRoute("/articles/$id")({
 `tenon-start compile` 构建前端，把服务端入口和全部静态文件（包括预渲染的 HTML）编译成一个不依赖外部文件的可执行文件，由 Go 用 `go:embed` 嵌入，交给 [`ssr.Options.Executable`](ssr.md#wiring)：
 
 ```bash
-bunx tenon-start compile --out ../../internal/web/ssr.bin --target bun-linux-arm64
+bunx tenon-start compile --out ssr.bin --base /admin/
 ```
 
-- `--target` 是运行的系统和架构，`bun-linux-x64` 或 `bun-linux-arm64`，默认是当前机器的架构。在 macOS 上构建 Linux 的程序时要写上它。
+模板中它是前端的 `bun run build`，由 `tenon build` 运行，见[开发工具](../installation/tooling.md#build)。
+
+- `--base` 是前端挂载的路径，与 `vite.config.ts` 的 `base` 相同，默认 `/`。静态文件按它提供。
+- `--target` 是运行的系统和架构，`bun-linux-x64` 或 `bun-linux-arm64`。没有写时按环境变量 `GOARCH`（`tenon build` 设为 Go 程序的架构），再没有时是当前机器的架构。
 - `--skip-build` 跳过 `vite build`，直接编译已有的 `dist`。
 - 可执行文件中的静态文件：`assets/` 下的文件名带内容哈希，永久缓存；其余文件每次协商。source map 不嵌入。
 

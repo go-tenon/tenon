@@ -14,7 +14,7 @@ export const badgesOf = perOwner<Badges>(() => createStore<ReadonlyMap<string, B
 /** 读取应用的全部徽标。 */
 export function useBadges(owner: object): ReadonlyMap<string, Badge> {
   const store = badgesOf(owner)
-  return useSyncExternalStore(store.subscribe, store.get)
+  return useSyncExternalStore(store.subscribe, store.get, store.get)
 }
 
 /** 登记 routeId 对应菜单项的徽标；组件卸载或 value 为空时去掉。 */
