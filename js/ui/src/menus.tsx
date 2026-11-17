@@ -1,6 +1,6 @@
-// 顶栏的菜单：用户菜单、租户切换、通知、后台任务。放进 AppLayout 的插槽：
+// 顶栏的菜单：用户菜单、租户切换、通知、后台任务。作为 AppLayout 的参数（租户切换由 AppLayout 自己放）：
 //
-//   <Fill name="user"><UserMenu name={me.name} logout={api.auth.logout} /></Fill>
+//   <AppLayout user={<UserMenu name={me.name} logout={api.auth.logout} />} actions={<NotificationsMenu source={inbox} />} />
 
 import {
   ActionIcon,

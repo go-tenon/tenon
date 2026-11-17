@@ -1,5 +1,6 @@
 // 应用外壳：运营后台和 SaaS 控制台共用。侧栏导航来自 shell/ 中的导航模型（按权限过滤的菜单），
-// 顶栏有面包屑和插槽（search、actions、tenant、user），可以开启多标签。密度、尺寸由主题的预设决定。
+// 顶栏有面包屑、搜索、操作、租户切换和用户菜单，可以开启多标签。密度、尺寸由主题的预设决定。
+// 每个页面都有的内容是 AppLayout 的参数；某个页面才有的内容由页面用 Fill 放进插槽（actions、aside、footer）。
 
 import {
   ActionIcon,
@@ -22,6 +23,7 @@ import { type CSSProperties, type ReactNode, useEffect, useState } from "react"
 import { ColorSchemeToggle } from "./color-scheme"
 import { Icon } from "./icons"
 import { NavLinkLink } from "./links"
+import { TenantSwitcher } from "./menus"
 import {
   type MenuItem,
   Slot,
@@ -38,10 +40,16 @@ import { NewVersionNotice } from "./version"
 
 /** AppLayout 的选项。 */
 export interface AppLayoutProps {
-  /** 产品名称，显示在侧栏顶部；也可以用 brand 插槽放标志。 */
+  /** 产品名称，显示在侧栏顶部。 */
   title?: string
   /** 侧栏顶部的标志；默认是名称的首字。 */
   logo?: ReactNode
+  /** 顶栏右侧的用户菜单，通常是 UserMenu。 */
+  user?: ReactNode
+  /** 顶栏中每个页面都有的操作，例如 NotificationsMenu、OperationsMenu。某个页面才有的操作用 <Fill name="actions">。 */
+  actions?: ReactNode
+  /** 顶栏中搜索或命令面板的入口，在操作之前。 */
+  search?: ReactNode
   /** 开启多标签：true 或者 TabsOutlet 的选项。 */
   tabs?: boolean | TabsOutletProps
   /** 内容区的最大宽度，例如 1200；默认铺满。 */
@@ -53,9 +61,23 @@ export interface AppLayoutProps {
 /**
  * 需要登录的布局路由的组件：
  *
- *   export const Route = createFileRoute("/_app")({ beforeLoad: requireAuth, component: () => <AppLayout title="博客后台" /> })
+ *   export const Route = createFileRoute("/_app")({ beforeLoad: requireAuth, component: Layout })
+ *   function Layout() {
+ *     return <AppLayout title="博客后台" user={<UserMenu name={me.name} logout={logout} />} />
+ *   }
+ *
+ * 多租户的应用（createApp 设置了 tenancy）在顶栏显示租户切换。
  */
-export function AppLayout({ title, logo, tabs, maxWidth, hideColorScheme }: AppLayoutProps): ReactNode {
+export function AppLayout({
+  title,
+  logo,
+  user,
+  actions,
+  search,
+  tabs,
+  maxWidth,
+  hideColorScheme,
+}: AppLayoutProps): ReactNode {
   const theme = useMantineTheme()
   const m = layoutMetrics(theme)
   const [state, setState] = useLayoutState()
@@ -94,7 +116,6 @@ export function AppLayout({ title, logo, tabs, maxWidth, hideColorScheme }: AppL
             {logo ?? <span className="tn-brand-mark">{(title ?? "T").slice(0, 1)}</span>}
             {!collapsed && title && <span>{title}</span>}
           </Link>
-          {!collapsed && <Slot name="brand" />}
         </AppShell.Section>
         <AppShell.Section grow component={ScrollArea} scrollbarSize={6}>
           <Nav collapsed={collapsed} />
@@ -130,11 +151,12 @@ export function AppLayout({ title, logo, tabs, maxWidth, hideColorScheme }: AppL
           <Crumbs />
           <Box style={{ flex: 1 }} />
           <Group gap={4} wrap="nowrap">
-            <Slot name="search" />
+            {search}
             <Slot name="actions" />
+            {actions}
             {!hideColorScheme && <ColorSchemeToggle />}
-            <Slot name="tenant" />
-            <Slot name="user" />
+            <TenantSwitcher />
+            {user}
           </Group>
         </div>
       </AppShell.Header>

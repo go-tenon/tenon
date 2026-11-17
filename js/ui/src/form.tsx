@@ -7,7 +7,7 @@ import { type UseFormReturnType, useForm } from "@mantine/form"
 import { IconAlertCircle } from "@tabler/icons-react"
 import { type ReactNode, useMemo } from "react"
 import { errorMessage } from "./auth"
-import { type FormRulesOptions, formValidator, setServerErrors } from "./shell"
+import { type FormRulesOptions, formValidator, serverErrors } from "./shell"
 
 /** useSchemaForm 的选项。 */
 export interface SchemaFormOptions<T> {
@@ -48,7 +48,9 @@ export function applyServerErrors(
   form: Pick<UseFormReturnType<never>, "setFieldError">,
   err: unknown,
 ): ErrorInfo | undefined {
-  return setServerErrors(err, { setError: (name, e) => form.setFieldError(name as never, e.message) })
+  const { fields, form: other } = serverErrors(err)
+  for (const [path, message] of Object.entries(fields)) form.setFieldError(path as never, message)
+  return other
 }
 
 /** 表单上方的错误：不属于某个字段的错误，例如 slug 已被使用、断网。 */

@@ -112,7 +112,7 @@ export interface FieldPath {
   source: string
   /** 字段路径的各段，数组下标是数字，例如 ["items", 0, "name"]。 */
   segments: (string | number)[]
-  /** 用点连接的字段路径，例如 items.0.name，react-hook-form 等表单库的写法。 */
+  /** 用点连接的字段路径，例如 items.0.name，@mantine/form 等表单库的写法。 */
   path: string
 }
 

@@ -122,13 +122,12 @@ export const theme = createUiTheme({ preset: "console", primary: "#0f766e", radi
 <a id="app-layout"></a>
 ## 应用外壳
 
-`AppLayout` 是运营后台和控制台需要登录的布局：左侧是侧栏菜单，顶部是面包屑和插槽，下面是页面。它放在受保护的布局路由上：
+`AppLayout` 是运营后台和控制台需要登录的布局：左侧是侧栏菜单，顶部是面包屑、操作和用户菜单，下面是页面。它放在受保护的布局路由上：
 
 ```tsx title="src/routes/_app.tsx"
 import { useQuery } from "@tanstack/react-query"
 import { createFileRoute } from "@tanstack/react-router"
-import { Fill, requireAuth } from "@go-tenon/ui"
-import { AppLayout, NotificationsMenu, OperationsMenu, TenantSwitcher, UserMenu } from "@go-tenon/ui"
+import { AppLayout, OperationsMenu, requireAuth, UserMenu } from "@go-tenon/ui"
 import { api } from "../app"
 
 export const Route = createFileRoute("/_app")({ beforeLoad: requireAuth, component: Layout })
@@ -136,21 +135,26 @@ export const Route = createFileRoute("/_app")({ beforeLoad: requireAuth, compone
 function Layout() {
   const me = useQuery({ queryKey: ["me"], queryFn: () => api.user.me() })
   return (
-    <>
-      <Fill name="actions">
-        <OperationsMenu />
-      </Fill>
-      <Fill name="tenant">
-        <TenantSwitcher />
-      </Fill>
-      <Fill name="user">
-        <UserMenu name={me.data?.name} logout={() => api.auth.logout()} />
-      </Fill>
-      <AppLayout title="博客后台" tabs />
-    </>
+    <AppLayout
+      title="博客后台"
+      tabs
+      actions={<OperationsMenu />}
+      user={<UserMenu name={me.data?.name} logout={() => api.auth.logout()} />}
+    />
   )
 }
 ```
+
+| 参数 | 内容 |
+| --- | --- |
+| `title`、`logo` | 侧栏顶部的名称和标志；没有标志时显示名称的首字 |
+| `user` | 顶栏最右边的用户菜单，通常是 `UserMenu` |
+| `actions` | 顶栏中每个页面都有的操作，例如 `NotificationsMenu`、`OperationsMenu` |
+| `search` | 顶栏中搜索框或命令面板的入口，在操作之前 |
+| `tabs` | 开启[多标签](#tabs) |
+| `maxWidth` | 内容区的最大宽度 |
+| `hideColorScheme` | 隐藏配色切换按钮 |
+
 
 - 侧栏可以收起为图标，状态按账号保存在浏览器中。窄屏时侧栏变成抽屉，由顶栏的按钮打开，打开页面后自动收起。
 - 面包屑来自路由的标题；最后一级是当前页面，不是链接。窄屏时只显示当前页面。
@@ -183,19 +187,26 @@ import { IconTruckDelivery } from "@tabler/icons-react"
 <a id="slots"></a>
 ### 顶栏与插槽
 
-页面和布局路由用 `Fill` 往插槽放内容，`AppLayout` 决定它们的位置：
+顶栏从左到右是面包屑、`search`、操作、配色切换、租户切换和 `user`。多租户的应用（`createApp` 设置了 `tenancy`）自动显示租户切换 `TenantSwitcher`，不需要自己放。
+
+每个页面都有的内容用参数传给 `AppLayout`；某个页面才有的内容由页面用 `Fill` 放进插槽，离开页面时移除：
+
+```tsx
+function ArticlesPage() {
+  return (
+    <>
+      <Fill name="actions"><Button>写文章</Button></Fill>
+      …
+    </>
+  )
+}
+```
 
 | 插槽 | 位置 |
 | --- | --- |
-| `brand` | 侧栏顶部，名称后面 |
-| `search` | 顶栏右侧，最左边，例如搜索框或命令面板的入口 |
-| `actions` | 顶栏右侧，例如通知、后台任务，或者当前页面的操作 |
-| `tenant` | 顶栏右侧，配色切换之后 |
-| `user` | 顶栏最右边 |
+| `actions` | 顶栏中，`actions` 参数之前 |
 | `aside` | 右侧面板，有内容时才出现 |
 | `footer` | 内容区的底部 |
-
-顶栏默认有配色切换按钮，`hideColorScheme` 隐藏它。
 
 <a id="tabs"></a>
 ### 多标签

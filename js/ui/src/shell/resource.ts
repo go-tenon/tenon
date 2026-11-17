@@ -62,7 +62,7 @@ export interface ResourceDef {
 
 type Generated = { readonly [key: string]: unknown }
 
-/** 表单的校验选项：交给 formValidator 或 resolver。 */
+/** 表单的校验选项：交给 formValidator 或 useSchemaForm。 */
 export interface RuleOptions {
   components?: { readonly [name: string]: Schema }
   messages?: { readonly [language: string]: { readonly [code: string]: string } }
@@ -143,9 +143,9 @@ export interface ResourceModel {
   update(key: string, body: Record<string, unknown>): Promise<unknown>
   remove(key: string): Promise<unknown>
   run(action: string, key: string): Promise<unknown>
-  /** 表单的校验规则（请求体的 schema），交给 formValidator 或 resolver。 */
+  /** 表单的校验规则（请求体的 schema），交给 formValidator 或 useSchemaForm。 */
   formSchema(mode: "create" | "update"): Schema
-  /** components、messages 和 language，与 formSchema 一起交给 formValidator 或 resolver。 */
+  /** components、messages 和 language，与 formSchema 一起交给 formValidator 或 useSchemaForm。 */
   ruleOptions: RuleOptions
   /** 一行的标识。 */
   rowKey(row: ResourceRow): string
@@ -441,7 +441,7 @@ export interface SettingsModel {
   query(): { queryKey: readonly unknown[]; queryFn: () => Promise<unknown> }
   /** 保存：调用保存接口，完成后让读取的查询失效。 */
   save(values: Record<string, unknown>): Promise<unknown>
-  /** 表单的校验规则（保存接口的请求体），交给 formValidator 或 resolver。 */
+  /** 表单的校验规则（保存接口的请求体），交给 formValidator 或 useSchemaForm。 */
   formSchema(): Schema
   ruleOptions: RuleOptions
   display(field: ResourceField, value: unknown): unknown
