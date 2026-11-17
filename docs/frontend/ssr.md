@@ -83,7 +83,7 @@ return pages.Run(ctx, func(ctx context.Context) error {
 <a id="contract"></a>
 ## 与 SSR 进程的约定
 
-`@go-tenon/start` 已经按这些约定实现，应用不需要自己处理。自己编写 SSR 进程时：
+[`@go-tenon/start`](start.md) 已经按这些约定实现，应用不需要自己处理。自己编写 SSR 进程时：
 
 | 约定 | 说明 |
 | --- | --- |
