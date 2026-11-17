@@ -62,7 +62,7 @@ export interface UserMenuItem {
 
 /** UserMenu 的选项。 */
 export interface UserMenuProps {
-  /** 用户的名称：头像中显示首字，悬停时显示全名；读取中时为空。 */
+  /** 用户的名称：头像中显示首字；读取中时为空。 */
   name?: string
   /** 头像的地址；没有时显示名称的首字。 */
   avatar?: string
@@ -90,7 +90,7 @@ export function UserMenu({ name, avatar, logout, items = [], colorScheme = true 
   return (
     <Menu width={220} position="bottom-end">
       <Menu.Target>
-        <UnstyledButton className="tn-avatar" aria-label="用户菜单" title={name}>
+        <UnstyledButton className="tn-avatar" aria-label="用户菜单">
           <Avatar src={avatar} size={30} radius="xl" color="brand">
             {name?.slice(0, 1)}
           </Avatar>
@@ -154,18 +154,17 @@ function ColorSchemePicker(): ReactNode {
   return (
     <div className="tn-schemes" role="radiogroup" aria-label="配色">
       {schemes.map(({ value, label, icon: SchemeIcon }) => (
-        <Tooltip key={value} label={label}>
-          <UnstyledButton
-            className="tn-scheme"
-            role="radio"
-            aria-checked={colorScheme === value}
-            aria-label={label}
-            data-active={colorScheme === value || undefined}
-            onClick={() => setColorScheme(value)}
-          >
-            <SchemeIcon size={20} stroke={1.6} />
-          </UnstyledButton>
-        </Tooltip>
+        <UnstyledButton
+          key={value}
+          className="tn-scheme"
+          role="radio"
+          aria-checked={colorScheme === value}
+          aria-label={label}
+          data-active={colorScheme === value || undefined}
+          onClick={() => setColorScheme(value)}
+        >
+          <SchemeIcon size={20} stroke={1.6} />
+        </UnstyledButton>
       ))}
     </div>
   )
@@ -349,11 +348,9 @@ export function OperationsMenu(): ReactNode {
   return (
     <Popover width={340} position="bottom-end">
       <Popover.Target>
-        <Tooltip label={running > 0 ? `${running} 个任务进行中` : "后台任务"}>
-          <ActionIcon size={32} aria-label="后台任务">
-            {running > 0 ? <Loader size={16} /> : <IconListCheck size={16} stroke={1.5} />}
-          </ActionIcon>
-        </Tooltip>
+        <ActionIcon size={32} aria-label={running > 0 ? `后台任务，${running} 个进行中` : "后台任务"}>
+          {running > 0 ? <Loader size={16} /> : <IconListCheck size={16} stroke={1.5} />}
+        </ActionIcon>
       </Popover.Target>
       <Popover.Dropdown p={0}>
         <Text fw={600} size="sm" px="md" py="sm" style={{ borderBottom: "1px solid var(--tn-border)" }}>

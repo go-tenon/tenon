@@ -9,7 +9,7 @@ import { closestCenter, DndContext, type DragEndEvent, PointerSensor, useSensor,
 import { restrictToHorizontalAxis, restrictToParentElement } from "@dnd-kit/modifiers"
 import { horizontalListSortingStrategy, SortableContext, useSortable } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
-import { ActionIcon, Menu, Tooltip, UnstyledButton } from "@mantine/core"
+import { ActionIcon, Menu, UnstyledButton } from "@mantine/core"
 import {
   IconArrowBarToRight,
   IconChevronLeft,
@@ -141,17 +141,15 @@ export function TabBar(): ReactNode {
           </UnstyledButton>
         )}
       </div>
-      <Tooltip label="重新加载当前页面">
-        <ActionIcon
-          size={32}
-          className="tn-tab-reload"
-          aria-label="重新加载当前页面"
-          disabled={!activeKey}
-          onClick={() => activeKey && void tabs.refresh(activeKey)}
-        >
-          <IconRefresh size={16} stroke={1.6} />
-        </ActionIcon>
-      </Tooltip>
+      <ActionIcon
+        size={32}
+        className="tn-tab-reload"
+        aria-label="重新加载当前页面"
+        disabled={!activeKey}
+        onClick={() => activeKey && void tabs.refresh(activeKey)}
+      >
+        <IconRefresh size={16} stroke={1.6} />
+      </ActionIcon>
       <Menu
         opened={Boolean(target)}
         onChange={(o) => !o && setMenu(null)}
@@ -223,7 +221,6 @@ function TabItem({
       {...listeners}
       role="tab"
       aria-selected={tab.active}
-      title={tab.title}
       className="tn-tab"
       data-active={tab.active || undefined}
       data-pinned={tab.pinned || undefined}
@@ -244,7 +241,7 @@ function TabItem({
     >
       {tab.icon && <Icon name={tab.icon} size={15} stroke={1.6} />}
       <span className="tn-tab-title">{tab.title}</span>
-      {tab.dirty && <span className="tn-tab-dot" title="未保存" />}
+      {tab.dirty && <span className="tn-tab-dot" aria-label="未保存" />}
       {tab.pinned && <IconPin size={12} stroke={1.6} className="tn-tab-pin" aria-hidden />}
     </UnstyledButton>
   )

@@ -167,20 +167,18 @@ export function AppLayout({ title, logo, user, actions, search = true, tabs, max
               onClick={() => setState({ navOpen: !state.navOpen })}
               aria-label={state.navOpen ? "关闭导航" : "打开导航"}
             />
-            <Tooltip label={collapseLabel}>
-              <ActionIcon
-                visibleFrom="sm"
-                size={32}
-                aria-label={collapseLabel}
-                onClick={() => setState({ collapsed: !state.collapsed })}
-              >
-                {collapsed ? (
-                  <IconLayoutSidebarLeftExpand size={18} stroke={1.5} />
-                ) : (
-                  <IconLayoutSidebarLeftCollapse size={18} stroke={1.5} />
-                )}
-              </ActionIcon>
-            </Tooltip>
+            <ActionIcon
+              visibleFrom="sm"
+              size={32}
+              aria-label={collapseLabel}
+              onClick={() => setState({ collapsed: !state.collapsed })}
+            >
+              {collapsed ? (
+                <IconLayoutSidebarLeftExpand size={18} stroke={1.5} />
+              ) : (
+                <IconLayoutSidebarLeftCollapse size={18} stroke={1.5} />
+              )}
+            </ActionIcon>
             <Link to="/" className="tn-brand">
               {logo ?? <span className="tn-brand-mark">{(title ?? "T").slice(0, 1)}</span>}
               {title && <span className="tn-brand-title">{title}</span>}
