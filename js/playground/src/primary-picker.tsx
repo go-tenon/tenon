@@ -4,7 +4,6 @@ import { type PrimaryColor, primaryColors } from "@go-tenon/ui"
 import {
   ActionIcon,
   Affix,
-  Button,
   ColorInput,
   ColorSwatch,
   Group,
@@ -19,19 +18,21 @@ import type { ReactNode } from "react"
 
 const storageKey = "playground-primary"
 
-/** 浏览器中保存的主题色；没有保存过时是 undefined，用预设的默认品牌色。 */
-export function savedPrimary(): string | undefined {
+// 没有选择过时用列表中的第一种颜色。
+const first = Object.keys(primaryColors)[0]
+
+/** 浏览器中保存的主题色；没有保存过时是列表中的第一种颜色。 */
+export function savedPrimary(): string {
   try {
-    return localStorage.getItem(storageKey) ?? undefined
+    return localStorage.getItem(storageKey) ?? first
   } catch {
-    return undefined
+    return first
   }
 }
 
-function save(value: string | undefined) {
+function save(value: string) {
   try {
-    if (value) localStorage.setItem(storageKey, value)
-    else localStorage.removeItem(storageKey)
+    localStorage.setItem(storageKey, value)
   } catch {
     // 浏览器禁用存储时只在本次打开期间生效。
   }
@@ -39,18 +40,18 @@ function save(value: string | undefined) {
 
 /** PrimaryPicker 的选项。 */
 export interface PrimaryPickerProps {
-  /** 当前的主题色：预设的名称或颜色值，undefined 是预设的默认品牌色。 */
-  value: string | undefined
-  onChange: (value: string | undefined) => void
+  /** 当前的主题色：预设的名称或颜色值。 */
+  value: string
+  onChange: (value: string) => void
 }
 
 /** 右下角的主题色按钮，选择后立即切换主题并保存在浏览器中。 */
 export function PrimaryPicker({ value, onChange }: PrimaryPickerProps): ReactNode {
-  const choose = (next: string | undefined) => {
+  const choose = (next: string) => {
     save(next)
     onChange(next)
   }
-  const custom = value && !(value in primaryColors) ? value : ""
+  const custom = value in primaryColors ? "" : value
   return (
     <Affix position={{ bottom: 20, right: 20 }} zIndex={150}>
       <Popover position="top-end" width={340} shadow="lg" withinPortal>
@@ -68,14 +69,9 @@ export function PrimaryPicker({ value, onChange }: PrimaryPickerProps): ReactNod
         </Popover.Target>
         <Popover.Dropdown>
           <Stack gap="sm">
-            <Group justify="space-between">
-              <Text fw={600} size="sm">
-                主题色
-              </Text>
-              <Button size="compact-xs" variant={value ? "default" : "light"} onClick={() => choose(undefined)}>
-                默认
-              </Button>
-            </Group>
+            <Text fw={600} size="sm">
+              主题色
+            </Text>
             <SimpleGrid cols={2} spacing={4} verticalSpacing={2}>
               {(Object.entries(primaryColors) as [PrimaryColor, string][]).map(([name, hex]) => (
                 <UnstyledButton
