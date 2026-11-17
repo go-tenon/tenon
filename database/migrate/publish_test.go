@@ -1,127 +1,71 @@
 package migrate
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
+	"slices"
 	"testing"
 	"testing/fstest"
 )
 
 const testMigration = "-- +goose Up\nCREATE TABLE example (id integer);\n-- +goose Down\nDROP TABLE example;\n"
 
-func TestPublishUpgradePreservesApplicationSQL(t *testing.T) {
+func TestPublishCopiesNewMigrations(t *testing.T) {
 	dir := t.TempDir()
-	source := Source{Name: "files", FS: fstest.MapFS{
-		"0001_create_files.sql": {Data: []byte(testMigration)},
-	}}
-	first, err := Publish(dir, source)
-	if err != nil || len(first) != 1 {
+	files := fstest.MapFS{
+		"2026_11_10_000001_create_files.sql": {Data: []byte(testMigration)},
+		"2026_11_10_000000_create_disks.sql": {Data: []byte(testMigration)},
+	}
+	first, err := Publish(dir, files)
+	if err != nil || !slices.Equal(first, []string{"2026_11_10_000000_create_disks.sql", "2026_11_10_000001_create_files.sql"}) {
 		t.Fatalf("first=%v err=%v", first, err)
 	}
-	data, err := os.ReadFile(filepath.Join(dir, first[0]))
-	if err != nil || !strings.HasPrefix(string(data), "-- tenon: files/0001_create_files\n") {
+	data, err := os.ReadFile(filepath.Join(dir, first[1]))
+	if err != nil || string(data) != testMigration {
 		t.Fatalf("data=%s err=%v", data, err)
 	}
-	// 应用可在首次部署前修改 SQL、重命名文件；来源标记使升级仍然只追加。
-	custom := "-- tenon: files/0001_create_files\n" + testMigration + "-- application column additions\n"
-	if err := os.Remove(filepath.Join(dir, first[0])); err != nil {
+	// 应用可以修改已发布的文件；升级后再次发布只复制新增的迁移，即使它比应用自己的迁移更早。
+	custom := testMigration + "-- application column additions\n"
+	if err := os.WriteFile(filepath.Join(dir, first[1]), []byte(custom), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	renamed := filepath.Join(dir, "2999_01_01_000000_custom_files.sql")
-	if err := os.WriteFile(renamed, []byte(custom), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "2026_12_01_000000_create_articles_table.sql"), []byte(testMigration), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	source.FS.(fstest.MapFS)["0002_add_field.sql"] = &fstest.MapFile{Data: []byte(testMigration)}
-	second, err := Publish(dir, source)
-	if err != nil || len(second) != 1 || second[0] != "2999_01_01_000001_add_field.sql" {
+	files["2026_11_20_000000_add_field.sql"] = &fstest.MapFile{Data: []byte(testMigration)}
+	second, err := Publish(dir, files)
+	if err != nil || !slices.Equal(second, []string{"2026_11_20_000000_add_field.sql"}) {
 		t.Fatalf("second=%v err=%v", second, err)
 	}
-	data, _ = os.ReadFile(renamed)
-	if string(data) != custom {
+	if data, _ := os.ReadFile(filepath.Join(dir, first[1])); string(data) != custom {
 		t.Fatal("application migration was overwritten")
 	}
-	again, err := Publish(dir, source)
-	if err != nil || len(again) != 0 {
+	if again, err := Publish(dir, files); err != nil || len(again) != 0 {
 		t.Fatalf("again=%v err=%v", again, err)
 	}
 }
 
-func TestPublishOrdersSourceVersionsNumerically(t *testing.T) {
-	files := fstest.MapFS{
-		"10_later.sql": {Data: []byte(testMigration)},
-		"2_first.sql":  {Data: []byte(testMigration)},
-	}
-	names, err := Publish(t.TempDir(), Source{Name: "files", FS: files})
-	if err != nil || len(names) != 2 || !strings.HasSuffix(names[0], "_first.sql") || !strings.HasSuffix(names[1], "_later.sql") {
-		t.Fatalf("names=%v err=%v", names, err)
-	}
-}
-
-func TestPublishTimestampAndNumericVersions(t *testing.T) {
-	for _, tc := range []struct {
-		name     string
-		existing int64
-		want     int64
-	}{
-		{"future timestamp", 29990101000059, 29990101000100},
-		{"numeric", 30000000000000, 30000000000001},
-		{"largest version", lastVersion - 1, lastVersion},
+func TestPublishPrevalidatesAllSources(t *testing.T) {
+	valid := fstest.MapFS{"2026_11_10_000000_valid.sql": {Data: []byte(testMigration)}}
+	for name, bad := range map[string]fs.FS{
+		"nil":            nil,
+		"empty":          fstest.MapFS{},
+		"numbered name":  fstest.MapFS{"0001_wrong.sql": {Data: []byte(testMigration)}},
+		"goose name":     fstest.MapFS{"20261110000001_wrong.sql": {Data: []byte(testMigration)}},
+		"missing up":     fstest.MapFS{"2026_11_10_000001_wrong.sql": {Data: []byte("select 1;")}},
+		"same version":   fstest.MapFS{"2026_11_10_000000_other.sql": {Data: []byte(testMigration)}},
+		"existing clash": fstest.MapFS{"2026_11_01_000000_other.sql": {Data: []byte(testMigration)}},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()
-			if err := os.WriteFile(filepath.Join(dir, formatVersion(tc.existing)+"_existing.sql"), []byte(testMigration), 0o600); err != nil {
+			if err := os.WriteFile(filepath.Join(dir, "2026_11_01_000000_app.sql"), []byte(testMigration), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			names, err := Publish(dir, Source{Name: "files", FS: fstest.MapFS{"1_new.sql": {Data: []byte(testMigration)}}})
-			if err != nil || len(names) != 1 || names[0] != formatVersion(tc.want)+"_new.sql" {
-				t.Fatalf("names=%v err=%v want=%d", names, err, tc.want)
-			}
-		})
-	}
-}
-
-func TestPublishPlansAllVersionsBeforeWriting(t *testing.T) {
-	dir := t.TempDir()
-	name := filepath.Join(dir, formatVersion(lastVersion-1)+"_existing.sql")
-	if err := os.WriteFile(name, []byte(testMigration), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	written, err := Publish(dir, Source{Name: "files", FS: fstest.MapFS{
-		"1_first.sql": {Data: []byte(testMigration)},
-		"2_next.sql":  {Data: []byte(testMigration)},
-	}})
-	if err == nil || !strings.Contains(err.Error(), "version overflow") || len(written) != 0 {
-		t.Fatalf("written=%v err=%v", written, err)
-	}
-	names, _ := filepath.Glob(filepath.Join(dir, "*.sql"))
-	if len(names) != 1 {
-		t.Fatalf("overflow published a partial batch: %v", names)
-	}
-}
-
-func TestPublishPrevalidatesAllSources(t *testing.T) {
-	valid := Source{Name: "files", FS: fstest.MapFS{"1_valid.sql": {Data: []byte(testMigration)}}}
-	for _, bad := range []Source{
-		{Name: "../escape", FS: valid.FS},
-		{Name: "nil"},
-		{Name: "files", FS: valid.FS},
-		{Name: "duplicate", FS: fstest.MapFS{
-			"01_first.sql": {Data: []byte(testMigration)},
-			"1_second.sql": {Data: []byte(testMigration)},
-		}},
-		{Name: "invalid", FS: fstest.MapFS{"wrong.sql": {Data: []byte(testMigration)}}},
-		{Name: "negative", FS: fstest.MapFS{"-1_wrong.sql": {Data: []byte(testMigration)}}},
-		{Name: "zero", FS: fstest.MapFS{"0_wrong.sql": {Data: []byte(testMigration)}}},
-		{Name: "missing_up", FS: fstest.MapFS{"1_wrong.sql": {Data: []byte("select 1;")}}},
-	} {
-		t.Run(bad.Name, func(t *testing.T) {
-			dir := t.TempDir()
 			if written, err := Publish(dir, valid, bad); err == nil || len(written) != 0 {
 				t.Fatalf("written=%v err=%v", written, err)
 			}
-			entries, _ := os.ReadDir(dir)
-			if len(entries) != 0 {
+			if entries, _ := os.ReadDir(dir); len(entries) != 1 {
 				t.Fatalf("prevalidation wrote %v", entries)
 			}
 		})
@@ -129,22 +73,13 @@ func TestPublishPrevalidatesAllSources(t *testing.T) {
 }
 
 func TestPublishRejectsInvalidApplicationDirectory(t *testing.T) {
-	for _, tc := range []struct {
-		name  string
-		files map[string]string
-	}{
-		{"invalid name", map[string]string{"notes.sql": testMigration}},
-		{"goose name", map[string]string{"20261117123456_old.sql": testMigration}},
-		{"overflow", map[string]string{"9999_99_99_999999_last.sql": testMigration}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
+	for _, name := range []string{"notes.sql", "20261117123456_old.sql"} {
+		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()
-			for name, data := range tc.files {
-				if err := os.WriteFile(filepath.Join(dir, name), []byte(data), 0o600); err != nil {
-					t.Fatal(err)
-				}
+			if err := os.WriteFile(filepath.Join(dir, name), []byte(testMigration), 0o600); err != nil {
+				t.Fatal(err)
 			}
-			written, err := Publish(dir, Source{Name: "new", FS: fstest.MapFS{"1_new.sql": {Data: []byte(testMigration)}}})
+			written, err := Publish(dir, fstest.MapFS{"2026_11_10_000000_new.sql": {Data: []byte(testMigration)}})
 			if err == nil || len(written) != 0 {
 				t.Fatalf("written=%v err=%v", written, err)
 			}
@@ -163,11 +98,5 @@ func TestPublishFileNeverOverwrites(t *testing.T) {
 	data, _ := os.ReadFile(filepath.Join(dir, "1_file.sql"))
 	if string(data) != "original" {
 		t.Fatalf("data=%s", data)
-	}
-}
-
-func TestPublishRequiresMigrations(t *testing.T) {
-	if _, err := Publish(t.TempDir(), Source{Name: "files", FS: fstest.MapFS{}}); err == nil || !strings.Contains(err.Error(), "has no migrations") {
-		t.Fatalf("err=%v", err)
 	}
 }

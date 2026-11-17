@@ -72,7 +72,7 @@ PostgreSQL 需要 17 以上的版本，开启逻辑复制（`wal_level = logical
 
 ```go
 migrationCmd.AddCommand(migratecmd.Publish(
-    migrate.Source{Name: "queue", FS: queue.Migrations()},
+    queue.Migrations(),
 ))
 ```
 

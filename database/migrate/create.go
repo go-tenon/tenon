@@ -27,9 +27,13 @@ func Create(dir, name string) (string, error) {
 	if !migrationName.MatchString(name) {
 		return "", errors.Newf("migrate: migration name %q must be snake_case, for example create_articles_table", name)
 	}
-	_, maxVersion, err := publishedSources(dir)
+	existing, err := migrationFiles(dir)
 	if err != nil {
 		return "", err
+	}
+	var maxVersion int64
+	for v := range existing {
+		maxVersion = max(maxVersion, v)
 	}
 	version, err := nextVersion(maxVersion)
 	if err != nil {

@@ -96,7 +96,7 @@ api_token:
 
 ```go
 migrationCmd.AddCommand(migratecmd.Publish(
-    migrate.Source{Name: "apitoken", FS: apitoken.Migrations()},
+    apitoken.Migrations(),
 ))
 ```
 

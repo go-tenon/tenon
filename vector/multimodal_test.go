@@ -86,7 +86,7 @@ type productFixture struct {
 
 func setupProducts(t *testing.T, inputs []ai.Modality, opts ...vector.Option) *productFixture {
 	t.Helper()
-	db := dbtest.Open(t, migrations(t))
+	db := dbtest.Open(t, migrations()...)
 	f := &productFixture{
 		emb:   aitest.NewEmbedder(dims),
 		files: &memFiles{files: map[uuid.UUID]ai.Media{}, opens: map[uuid.UUID]int{}},
@@ -309,7 +309,7 @@ func TestImageRejected(t *testing.T) {
 	}
 
 	// Store 没有 WithFiles。
-	db := dbtest.Open(t, migrations(t))
+	db := dbtest.Open(t, migrations()...)
 	plain := vectortest.New(t, db, vector.Model{Name: "mm", Dims: dims, Embedder: aitest.NewEmbedder(dims), Inputs: textAndImage})
 	load := func(context.Context, bun.IDB, string) ([]productDoc, error) {
 		return []productDoc{{Embed: vector.Content{vector.FilePart(uuid.New())}}}, nil
@@ -328,7 +328,7 @@ func TestLiveImageSearch(t *testing.T) {
 	ctx := context.Background()
 	files := &memFiles{files: map[uuid.UUID]ai.Media{}, opens: map[uuid.UUID]int{}}
 	emb := dashscope.New(ai.ModelConfig{Model: "qwen3-vl-embedding", BaseURL: base, APIKey: key}, dashscope.WithDimensions(1024))
-	db := dbtest.Open(t, migrations(t))
+	db := dbtest.Open(t, migrations()...)
 	store := vectortest.New(t, db, vector.Model{Name: "qwen3-vl-embedding", Dims: 1024, Embedder: emb, Inputs: textAndImage},
 		vector.WithFiles(files))
 	docs := map[string][]productDoc{}

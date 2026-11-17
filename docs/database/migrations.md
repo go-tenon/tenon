@@ -125,12 +125,12 @@ var FS embed.FS
 
 文件上传等可选功能自带迁移 SQL。使用这些功能时，把迁移发布到你的应用目录，审查并纳入版本控制，然后交给应用现有的 goose 迁移流程执行。
 
-发布命令需要显式注册。下面是加入已有命令装配代码的片段：`root` 是 `command.Root` 返回的根命令，`migrations.FS` 是应用嵌入的迁移，`dbConfig` 是应用命令装配中从配置取出数据库配置的函数。需要导入 `command/migratecmd`、`database/migrate` 和 `filesystem` 包：
+发布命令需要显式注册。下面是加入已有命令装配代码的片段：`root` 是 `command.Root` 返回的根命令，`migrations.FS` 是应用嵌入的迁移，`dbConfig` 是应用命令装配中从配置取出数据库配置的函数。需要导入 `command/migratecmd` 和 `filesystem` 包：
 
 ```go
 migrationCmd := migratecmd.New(migrations.FS, dbConfig)
 migrationCmd.AddCommand(migratecmd.Publish(
-    migrate.Source{Name: "filesystem", FS: filesystem.Migrations()},
+    filesystem.Migrations(),
 ))
 root.AddCommand(migrationCmd)
 ```
@@ -141,28 +141,22 @@ root.AddCommand(migrationCmd)
 go run ./cmd/api migrate publish --dir migrations
 ```
 
-`--dir` 默认是当前工作目录下的 `migrations`。命令只输出本次新生成的文件名；再次运行且没有新增迁移时，输出为空。发布过程只复制文件。
+`--dir` 默认是当前工作目录下的 `migrations`。命令把迁移文件原样复制过来，文件名和内容都不变，只输出本次新复制的文件名；再次运行且没有新增迁移时，输出为空。
 
-功能包中的迁移文件按包内的顺序编号，例如 `0001_create_files.sql`。发布时去掉编号，换成当前时间，和 `migrate make` 新建的文件同样命名：
+功能包中的迁移和你自己的迁移命名方式相同，例如 `filesystem` 包的：
 
 ```text
-migrations/2026_11_17_080000_create_files.sql
+migrations/2026_11_10_114451_create_files.sql
 ```
 
-每个发布文件的第一行包含稳定的来源标记，例如：
+目录中已有的迁移会跳过：你可以在首次执行前调整发布出来的 SQL，再次发布时你的修改保持原样；但不要给它改名，否则会被再复制一份。升级框架后再次运行命令，只会复制新增的迁移。发布之前先检查全部文件，有文件名不合格式、版本与目录中其他迁移重复等问题时，一个文件也不写。
 
-```sql
--- tenon: filesystem/0001_create_files
-```
-
-发布器通过这个标记识别已有迁移。你可以在首次执行前调整 SQL 或重命名文件，但应保留标记；再次发布时你的修改保持原样。升级框架后，再次运行命令只会发布新增的来源迁移。
-
-一次发布多个文件时，每个文件的时间比前一个晚一秒。目录中已有更晚的迁移时，从它之后的一秒开始，因此新迁移总是排在已有迁移之后。目标文件已存在时发布器报错，已有文件保持原样。发布中途遇到 I/O 错误时，已完成的文件会保留，修复后重试即可。
+发布出来的迁移时间通常早于你自己最近的迁移。和 Laravel 一样，`migrate up` 会执行所有还没有执行过的迁移，不管它们比已执行的迁移早还是晚，见[运行迁移](#migration-commands)。功能包之间的依赖由时间保证：例如 `sheet/exports` 引用 `operation` 的表，它的迁移时间晚于 `operation` 的迁移。
 
 > [!NOTE]
 > 发布完成后，需要审查和提交 SQL，再重新构建应用，将新文件嵌入二进制。然后运行 `migrate up`。已经在任何环境执行过的迁移保持原样，后续调整一律新增迁移。`CheckPublished` 只检查应用自身的历史基线。
 
-自定义命令或工具也可以直接调用 `migrate.Publish("migrations", sources...)`；`sources` 是应用显式选择的 `[]migrate.Source`。每个来源的 `Name` 是稳定的包标识，`FS` 根目录直接包含带数字版本的 SQL。来源按传入顺序发布，同一来源的文件按数字版本排序。
+自定义命令或工具也可以直接调用 `migrate.Publish("migrations", sources...)`，`sources` 是功能包的 `Migrations()`。
 
 <a id="running-migrations"></a>
 ## 运行迁移
@@ -184,6 +178,8 @@ root.AddCommand(migratecmd.New(migrations.FS, func(cfg settings.Config) database
 ./bin/api migrate up
 ./bin/api migrate status
 ```
+
+和 Laravel 一样，`migrate up` 按时间顺序执行所有还没有执行过的迁移，即使它比已经执行过的迁移更早，例如升级框架后发布的功能包迁移，或者两个分支各自新建、合并后时间交错的迁移。`migrate down` 回滚最后执行的那一个迁移。
 
 命令负责加载配置、连接数据库和关闭连接。数据库连不上时，命令以 `ExitUnavailable` 退出，部署脚本可以据此重试。各命令的输出见 [migrate 命令](../general/commands.md#migrate-command)。
 
@@ -208,6 +204,7 @@ err = migrate.Up(ctx, provider)
 
 - 使用 PostgreSQL 会话锁，保证多个实例同时执行迁移时也只会串行运行；
 - 只使用 SQL 文件，不使用 goose 的全局 Go 迁移注册；
+- 执行所有还没有执行过的迁移，包括比已执行的迁移更早的，见[迁移命令](#migration-commands)；
 - goose 把文件名中第一个下划线之前的数字当作版本，所以它看到的 `2026_11_17_080000_create_articles_table.sql` 名为 `20261117080000_create_articles_table.sql`。`Status` 等方法返回的 `Source.Path` 也是这个名字，用 `migrate.FileName(path)` 换回目录中的文件名。
 
 版本记录表、事务和锁都由 goose 管理。`migrate.Up(ctx, provider)` 在调用 `provider.Up` 的基础上为错误附加了上下文信息。`migrate` 命令使用的也是同一个迁移器。
@@ -327,9 +324,9 @@ err := migrate.CheckPublished("migrations", "baseline/migrations")
 
 迁移文件通过 `embed` 打包进程序，修改后要重新编译：`go run` 会自动编译，用 `./bin/api` 时要先重新构建。另外检查文件是否在 `migrations` 目录中、扩展名是否是 `.sql`。
 
-**`migrate up` 报错 `detected 1 missing (out-of-order) migration lower than …`**
+**`migrate up` 报错 `migration "…" must be named like 2026_11_17_123456_create_articles_table.sql`**
 
-两个分支各自新建了迁移，合并后出现了一个时间更早、但还没有执行的迁移。goose 拒绝乱序执行。如果这个迁移还没有发布到其他环境，用 `migrate make` 重新生成一个新的时间戳，把内容移过去，删掉旧文件。
+迁移目录中有不符合格式的 `.sql` 文件。用 `migrate make` 新建迁移，或者按 `年_月_日_时分秒_名称.sql` 给文件改名。
 
 **迁移执行到一半失败了**
 
@@ -365,18 +362,13 @@ func Create(dir, name string) (string, error)
 
 在 `dir` 中新建以 UTC 时间开头的迁移文件，例如 `2026_11_17_080000_create_articles_table.sql`，返回路径。`migrate make` 调用它。
 
-### Source、Publish
+### Publish
 
 ```go
-type Source struct {
-    Name string
-    FS   fs.FS
-}
-
-func Publish(dir string, sources ...Source) ([]string, error)
+func Publish(dir string, sources ...fs.FS) ([]string, error)
 ```
 
-把功能包自带的迁移复制到应用的 `dir` 中，只复制尚未发布的来源，返回新写入的文件。见[发布框架迁移](#publishing-framework-migrations)。
+把功能包自带的迁移原样复制到应用的 `dir` 中，跳过目录中已有的迁移，返回新写入的文件。见[发布框架迁移](#publishing-framework-migrations)。
 
 ### CheckPublished、CheckFS
 

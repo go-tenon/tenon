@@ -91,3 +91,18 @@ func must(path string, err error) string {
 	}
 	return path
 }
+
+func TestNextVersion(t *testing.T) {
+	for _, tc := range []struct{ existing, want int64 }{
+		{29990101000059, 29990101000100}, // 晚于现在：下一秒，按时间进位
+		{30000000000000, 30000000000001}, // 不是合法的时间：加一
+		{lastVersion - 1, lastVersion},
+	} {
+		if got, err := nextVersion(tc.existing); err != nil || got != tc.want {
+			t.Errorf("nextVersion(%d)=%d, %v, want %d", tc.existing, got, err, tc.want)
+		}
+	}
+	if _, err := nextVersion(lastVersion); err == nil {
+		t.Error("nextVersion(lastVersion) succeeded")
+	}
+}

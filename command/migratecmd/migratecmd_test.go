@@ -82,8 +82,8 @@ func TestNamedDatabase(t *testing.T) {
 		Database  database.Config `yaml:"database"`
 		Analytics database.Config `yaml:"analytics"`
 	}
-	main := dbtest.Open(t, nil)
-	analytics := dbtest.Open(t, nil)
+	main := dbtest.Open(t)
+	analytics := dbtest.Open(t)
 	dsn := func(db *bun.DB) string {
 		var name string
 		if err := db.NewRaw("SELECT current_database()").Scan(context.Background(), &name); err != nil {
@@ -98,7 +98,7 @@ func TestNamedDatabase(t *testing.T) {
 	}
 	cfg := writeConfig(t, "database:\n  dsn: "+dsn(main)+"\nanalytics:\n  dsn: "+dsn(analytics)+"\n")
 	mainFS := fstest.MapFS{"2026_11_17_000000_create_notes.sql": {Data: []byte("-- +goose Up\nCREATE TABLE notes (id int);\n-- +goose Down\nDROP TABLE notes;\n")}}
-	analyticsFS := fstest.MapFS{"00001_events.sql": {Data: []byte("-- +goose Up\nCREATE TABLE events (id int);\n-- +goose Down\nDROP TABLE events;\n")}}
+	analyticsFS := fstest.MapFS{"2026_01_01_000001_events.sql": {Data: []byte("-- +goose Up\nCREATE TABLE events (id int);\n-- +goose Down\nDROP TABLE events;\n")}}
 	newCmds := func() *cobra.Command {
 		mig := migratecmd.New(mainFS, func(c twoDBs) database.Config { return c.Database })
 		mig.AddCommand(migratecmd.New(analyticsFS, func(c twoDBs) database.Config { return c.Analytics }, migratecmd.Name("analytics")))

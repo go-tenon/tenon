@@ -5,11 +5,9 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
-	"path"
 	"slices"
 	"sync"
 	"testing"
-	"testing/fstest"
 	"time"
 
 	"github.com/cockroachdb/errors"
@@ -33,24 +31,8 @@ var (
 var errBadFile = errorx.Define(errorx.InvalidArgument, "test.bad_file")
 
 // migrations 合并队列和操作的迁移。
-func migrations(t *testing.T) fs.FS {
-	t.Helper()
-	merged := fstest.MapFS{}
-	for prefix, src := range map[string]fs.FS{"1": queue.Migrations(), "2": operation.Migrations()} {
-		err := fs.WalkDir(src, ".", func(p string, d fs.DirEntry, err error) error {
-			if err != nil || d.IsDir() {
-				return err
-			}
-			data, err := fs.ReadFile(src, p)
-			dir, name := path.Split(p)
-			merged[dir+prefix+name] = &fstest.MapFile{Data: data}
-			return err
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	return merged
+func migrations() []fs.FS {
+	return []fs.FS{queue.Migrations(), operation.Migrations()}
 }
 
 type env struct {
@@ -60,7 +42,7 @@ type env struct {
 
 func newEnv(t *testing.T) env {
 	t.Helper()
-	db := dbtest.Open(t, migrations(t))
+	db := dbtest.Open(t, migrations()...)
 	return env{db: db, ops: operation.New(db)}
 }
 

@@ -57,9 +57,9 @@ go get github.com/qdrant/go-client@v1.19.0
 
 ```go
 migratecmd.Publish(
-    migrate.Source{Name: "queue", FS: queue.Migrations()},
-    migrate.Source{Name: "operation", FS: operation.Migrations()},
-    migrate.Source{Name: "vector", FS: vector.Migrations()},
+    queue.Migrations(),
+    operation.Migrations(),
+    vector.Migrations(),
 )
 ```
 

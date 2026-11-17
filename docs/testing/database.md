@@ -24,7 +24,7 @@
 db := dbtest.Open(t, migrations.FS)
 ```
 
-`dbtest.Open` 返回一个已执行迁移的 `*bun.DB`，你可以把它直接传给业务动作的构造函数。迁移参数传 `nil` 时会创建一个空数据库。
+`dbtest.Open` 返回一个已执行迁移的 `*bun.DB`，你可以把它直接传给业务动作的构造函数。不传迁移时创建一个空数据库。
 
 `dbtest` 通过环境变量 `POSTGRES_TEST_URL` 获取一个管理员连接，该账户需要有创建和删除数据库的权限。没有设置这个变量时，测试直接失败——这样 CI 中的数据库测试一定真正运行过。
 
@@ -188,12 +188,12 @@ func TestPublishCommand(t *testing.T) {
 ### Open
 
 ```go
-func Open(t testing.TB, migrations fs.FS) *bun.DB
+func Open(t testing.TB, migrations ...fs.FS) *bun.DB
 ```
 
 - **参数**
     - `t`：当前测试，测试结束时删除数据库
-    - `migrations`：要执行的迁移，为 `nil` 时是一个空数据库
+    - `migrations`：要执行的迁移。可以传几个，例如功能包的 `dbtest.Open(t, queue.Migrations(), operation.Migrations())`，它们合在一起按时间顺序执行；不传时是一个空数据库
 - **返回**：已经执行了迁移的临时数据库
 
 管理员连接取自环境变量 `POSTGRES_TEST_URL`，没有设置时测试直接失败。

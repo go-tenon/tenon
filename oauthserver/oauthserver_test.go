@@ -12,11 +12,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"path"
 	"slices"
 	"strings"
 	"testing"
-	"testing/fstest"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -50,24 +48,8 @@ func challenge(v string) string {
 }
 
 // migrations 合并 apitoken 和 oauthserver 的迁移。
-func migrations(t *testing.T) fs.FS {
-	t.Helper()
-	merged := fstest.MapFS{}
-	for prefix, src := range map[string]fs.FS{"1": apitoken.Migrations(), "2": oauthserver.Migrations()} {
-		err := fs.WalkDir(src, ".", func(p string, d fs.DirEntry, err error) error {
-			if err != nil || d.IsDir() {
-				return err
-			}
-			data, err := fs.ReadFile(src, p)
-			dir, name := path.Split(p)
-			merged[dir+prefix+name] = &fstest.MapFile{Data: data}
-			return err
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	return merged
+func migrations() []fs.FS {
+	return []fs.FS{apitoken.Migrations(), oauthserver.Migrations()}
 }
 
 type env struct {
@@ -89,7 +71,7 @@ func setup(t *testing.T) *env {
 
 func setupWith(t *testing.T, edit func(*oauthserver.Options)) *env {
 	t.Helper()
-	db := dbtest.Open(t, migrations(t))
+	db := dbtest.Open(t, migrations()...)
 	tokens := apitoken.NewStore(db, apitoken.Config{Lifetime: time.Hour})
 	fake := outboundtest.New(t)
 	fake.On(cimdPattern).Reply(outboundtest.JSON(200, map[string]any{
@@ -500,7 +482,7 @@ func TestPreRegisteredLoopbackClient(t *testing.T) {
 
 func TestNewPanics(t *testing.T) {
 	t.Parallel()
-	db := dbtest.Open(t, migrations(t))
+	db := dbtest.Open(t, migrations()...)
 	tokens := apitoken.NewStore(db, apitoken.Config{Lifetime: time.Hour})
 	ok := oauthserver.Options{Issuer: issuer, Resources: []string{resource}, Scopes: []oauthserver.Scope{{Name: "articles:read"}}, ConsentURL: consentPage}
 	for name, edit := range map[string]func(*oauthserver.Options){

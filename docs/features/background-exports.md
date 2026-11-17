@@ -20,7 +20,7 @@
 `exports` 表记录导出的格式和生成的文件。与[后台导入](background-imports.md#background-imports)一样发布迁移、创建服务：
 
 ```go
-migrate.Source{Name: "exports", FS: exports.Migrations()},
+exports.Migrations(),
 ```
 
 ```go

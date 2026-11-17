@@ -49,8 +49,8 @@ App 登录之后调用你的接口登记设备；业务代码在事务中调用 
 
 ```go
 migratecmd.Publish(
-    migrate.Source{Name: "queue", FS: queue.Migrations()},
-    migrate.Source{Name: "push", FS: push.Migrations()},
+    queue.Migrations(),
+    push.Migrations(),
 )
 ```
 

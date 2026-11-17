@@ -96,7 +96,7 @@ if subject.Can("articles:read-drafts") {
 
 ```go
 migrationCmd.AddCommand(migratecmd.Publish(
-    migrate.Source{Name: "authz", FS: authz.Migrations()},
+    authz.Migrations(),
 ))
 ```
 

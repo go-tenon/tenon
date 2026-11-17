@@ -9,14 +9,12 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"path"
 	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
 	"sync"
 	"testing"
-	"testing/fstest"
 	"time"
 
 	"github.com/google/uuid"
@@ -45,28 +43,9 @@ var (
 
 var errLocked = errorx.Define(errorx.Conflict, "test.locked")
 
-func migrations(t *testing.T) fs.FS {
-	t.Helper()
-	merged := fstest.MapFS{}
-	sources := map[string]fs.FS{
-		"1": filesystem.Migrations(), "2": queue.Migrations(), "3": operation.Migrations(), "4": export.Migrations(),
-		"5": notification.Migrations(), "6": apitoken.Migrations(), "7": push.Migrations(), "8": activity.Migrations(),
-	}
-	for prefix, src := range sources {
-		err := fs.WalkDir(src, ".", func(p string, d fs.DirEntry, err error) error {
-			if err != nil || d.IsDir() {
-				return err
-			}
-			data, err := fs.ReadFile(src, p)
-			dir, name := path.Split(p)
-			merged[dir+prefix+name] = &fstest.MapFile{Data: data}
-			return err
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	return merged
+// migrations 是测试用到的迁移。
+func migrations() []fs.FS {
+	return []fs.FS{filesystem.Migrations(), queue.Migrations(), operation.Migrations(), export.Migrations(), notification.Migrations(), apitoken.Migrations(), push.Migrations(), activity.Migrations()}
 }
 
 type env struct {
@@ -81,7 +60,7 @@ type env struct {
 
 func newEnv(t *testing.T, extra ...privacy.Source) *env {
 	t.Helper()
-	db := dbtest.Open(t, migrations(t))
+	db := dbtest.Open(t, migrations()...)
 	disk, err := local.Open(filesystem.LocalConfig{Root: filepath.Join(t.TempDir(), "files"), PublicURL: "/storage"})
 	if err != nil {
 		t.Fatal(err)

@@ -5,13 +5,11 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
-	"path"
 	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
 	"testing"
-	"testing/fstest"
 	"time"
 
 	"github.com/cockroachdb/errors"
@@ -44,30 +42,15 @@ type env struct {
 	exports *exports.Service
 }
 
-func migrations(t *testing.T) fs.FS {
-	t.Helper()
-	merged := fstest.MapFS{}
-	for prefix, src := range map[string]fs.FS{"1": filesystem.Migrations(), "2": queue.Migrations(), "3": operation.Migrations(), "4": exports.Migrations()} {
-		err := fs.WalkDir(src, ".", func(p string, d fs.DirEntry, err error) error {
-			if err != nil || d.IsDir() {
-				return err
-			}
-			data, err := fs.ReadFile(src, p)
-			dir, name := path.Split(p)
-			merged[dir+prefix+name] = &fstest.MapFile{Data: data}
-			return err
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	return merged
+// migrations 是测试用到的迁移。
+func migrations() []fs.FS {
+	return []fs.FS{filesystem.Migrations(), queue.Migrations(), operation.Migrations(), exports.Migrations()}
 }
 
 func newEnv(t *testing.T) env {
 	t.Helper()
 	t.Cleanup(exports.SetSaveInterval(0)) // 每一行都保存进度，使保存的序列可以预期
-	db := dbtest.Open(t, migrations(t))
+	db := dbtest.Open(t, migrations()...)
 	disk, err := local.Open(filesystem.LocalConfig{Root: filepath.Join(t.TempDir(), "files"), PublicURL: "/storage"})
 	if err != nil {
 		t.Fatal(err)

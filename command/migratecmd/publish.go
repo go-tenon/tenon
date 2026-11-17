@@ -2,15 +2,16 @@ package migratecmd
 
 import (
 	"fmt"
+	"io/fs"
 
 	"github.com/spf13/cobra"
 
 	"github.com/go-tenon/tenon/database/migrate"
 )
 
-// Publish 创建按需注册的 publish 子命令，把 sources 中的迁移复制到 --dir。
-// 通过 New(...).AddCommand(Publish(...)) 挂载；只复制文件。
-func Publish(sources ...migrate.Source) *cobra.Command {
+// Publish 创建按需注册的 publish 子命令，把 sources 中的迁移原样复制到 --dir，例如
+// Publish(login.Migrations(), apitoken.Migrations())。通过 New(...).AddCommand(Publish(...)) 挂载；只复制文件。
+func Publish(sources ...fs.FS) *cobra.Command {
 	var dir string
 	cmd := leaf("publish", "把框架迁移发布到应用目录", func(cmd *cobra.Command) error {
 		if err := cmd.Context().Err(); err != nil {

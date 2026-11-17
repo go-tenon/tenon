@@ -10,7 +10,7 @@ import (
 	"github.com/cockroachdb/errors"
 )
 
-// 应用目录中的迁移文件名与 Laravel 相同：2026_11_17_123456_create_articles_table.sql。
+// 迁移文件名与 Laravel 相同：2026_11_17_123456_create_articles_table.sql，应用的迁移和功能包自带的迁移都是这样。
 // 去掉下划线的时间 20261117123456 是迁移的版本，goose 用它记录哪些迁移已经执行。
 var (
 	fileName  = regexp.MustCompile(`^(\d{4})_(\d{2})_(\d{2})_(\d{6})_(.+\.sql)$`)
@@ -39,9 +39,8 @@ func formatVersion(version int64) string {
 	return v[:4] + "_" + v[4:6] + "_" + v[6:8] + "_" + v[8:]
 }
 
-// FileName 返回 goose 迁移路径（Source.Path）对应的应用文件名：goose 看到的
-// 20261117123456_create_articles_table.sql 是应用目录中的 2026_11_17_123456_create_articles_table.sql，
-// 其他文件名原样返回。
+// FileName 返回 goose 迁移路径（Source.Path）对应的文件名：goose 看到的
+// 20261117123456_create_articles_table.sql 是迁移目录中的 2026_11_17_123456_create_articles_table.sql。
 func FileName(p string) string {
 	base := path.Base(p)
 	if m := gooseName.FindStringSubmatch(base); m != nil {
@@ -51,17 +50,30 @@ func FileName(p string) string {
 	return base
 }
 
-// gooseFS 让 goose 读取应用的迁移：goose 把第一个下划线之前的数字当作版本，
+// gooseFS 让 goose 读取迁移：goose 把第一个下划线之前的数字当作版本，
 // 因此根目录中的 2026_11_17_123456_create_articles_table.sql 以 20261117123456_create_articles_table.sql
-// 的名字出现；其他文件（例如功能包自带的 0001_create_files.sql）保持原名。
+// 的名字出现。文件名由 checkNames 预先检查。
 type gooseFS struct{ fsys fs.FS }
 
-func (g gooseFS) Open(name string) (fs.File, error) {
-	if m := gooseName.FindStringSubmatch(name); m != nil {
-		f, err := g.fsys.Open(FileName(name))
-		if !errors.Is(err, fs.ErrNotExist) {
-			return f, err
+// checkNames 检查 fsys 根目录中的 .sql 文件都按迁移文件名的格式命名：goose 会悄悄跳过它不认识的文件。
+func checkNames(fsys fs.FS) error {
+	entries, err := fs.ReadDir(fsys, ".")
+	if err != nil {
+		return errors.Wrap(err, "migrate: read migrations")
+	}
+	for _, e := range entries {
+		if !e.IsDir() && path.Ext(e.Name()) == ".sql" {
+			if _, _, err := parseFileName(e.Name()); err != nil {
+				return err
+			}
 		}
+	}
+	return nil
+}
+
+func (g gooseFS) Open(name string) (fs.File, error) {
+	if gooseName.MatchString(name) {
+		name = FileName(name)
 	}
 	return g.fsys.Open(name)
 }

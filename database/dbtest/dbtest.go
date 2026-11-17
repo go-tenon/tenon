@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/uptrace/bun"
@@ -32,9 +33,12 @@ func URL(t testing.TB) string {
 	return url
 }
 
-// Open 为当前测试创建一个空的临时数据库，migrations 非 nil 时执行迁移，返回 *bun.DB；测试结束时删除。
-func Open(t testing.TB, migrations fs.FS) *bun.DB {
+// Open 为当前测试创建一个空的临时数据库，执行 migrations 中的全部迁移，返回 *bun.DB；测试结束时删除。
+// 多个功能包的迁移一起传入，例如 dbtest.Open(t, queue.Migrations(), operation.Migrations())，
+// 它们合在一起按版本顺序执行，与发布到应用中之后相同。没有 migrations 时得到空数据库。
+func Open(t testing.TB, migrations ...fs.FS) *bun.DB {
 	t.Helper()
+	merged := merge(t, migrations)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -77,8 +81,8 @@ func Open(t testing.TB, migrations fs.FS) *bun.DB {
 		}
 	})
 
-	if migrations != nil {
-		p, err := migrate.NewProvider(db, migrations)
+	if merged != nil {
+		p, err := migrate.NewProvider(db, merged)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -156,4 +160,36 @@ func randomName() string {
 	var b [6]byte
 	_, _ = rand.Read(b[:])
 	return hex.EncodeToString(b[:])
+}
+
+// merge 把几个迁移目录的根目录合成一个，没有迁移时返回 nil。
+func merge(t testing.TB, migrations []fs.FS) fs.FS {
+	t.Helper()
+	switch len(migrations) {
+	case 0:
+		return nil
+	case 1:
+		return migrations[0]
+	}
+	merged := fstest.MapFS{}
+	for _, fsys := range migrations {
+		entries, err := fs.ReadDir(fsys, ".")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			if _, ok := merged[e.Name()]; ok {
+				t.Fatalf("dbtest: duplicate migration %s", e.Name())
+			}
+			data, err := fs.ReadFile(fsys, e.Name())
+			if err != nil {
+				t.Fatal(err)
+			}
+			merged[e.Name()] = &fstest.MapFile{Data: data}
+		}
+	}
+	return merged
 }

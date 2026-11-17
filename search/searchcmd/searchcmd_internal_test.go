@@ -3,12 +3,9 @@ package searchcmd
 import (
 	"bytes"
 	"context"
-	"io/fs"
 	"log/slog"
-	"path"
 	"strings"
 	"testing"
-	"testing/fstest"
 	"testing/synctest"
 	"time"
 
@@ -41,22 +38,7 @@ func scan(_ context.Context, _ bun.IDB, after string, _ int) ([]string, error) {
 
 func open(t *testing.T) *bun.DB {
 	t.Helper()
-	merged := fstest.MapFS{}
-	for prefix, src := range map[string]fs.FS{"1": queue.Migrations(), "2": operation.Migrations(), "3": search.Migrations()} {
-		err := fs.WalkDir(src, ".", func(p string, d fs.DirEntry, err error) error {
-			if err != nil || d.IsDir() {
-				return err
-			}
-			data, err := fs.ReadFile(src, p)
-			dir, name := path.Split(p)
-			merged[dir+prefix+name] = &fstest.MapFile{Data: data}
-			return err
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	return dbtest.Open(t, merged)
+	return dbtest.Open(t, queue.Migrations(), operation.Migrations(), search.Migrations())
 }
 
 func execute(ctx context.Context, db *bun.DB, args ...string) (string, error) {

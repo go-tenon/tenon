@@ -47,12 +47,12 @@ err = ops.Run(ctx, op.ID, func(ctx context.Context, r *operation.Run) error {
 <a id="installation"></a>
 ## 安装
 
-把 `operation` 的迁移加入[发布命令](../database/migrations.md#publishing-framework-migrations)，发布后执行 `migrate up`。它要排在 `imports`、`exports` 之前，它们的表引用 `operations` 表：
+把 `operation` 的迁移加入[发布命令](../database/migrations.md#publishing-framework-migrations)，发布后执行 `migrate up`。`imports`、`exports` 的表引用 `operations` 表，使用它们时也要发布 `operation`：
 
 ```go
 migratecmd.Publish(
-    migrate.Source{Name: "queue", FS: queue.Migrations()},
-    migrate.Source{Name: "operation", FS: operation.Migrations()},
+    queue.Migrations(),
+    operation.Migrations(),
 )
 ```
 
@@ -351,7 +351,7 @@ sched.Add("operations:cleanup", "0 3 * * *", schedule.Cleanup(a.ops.Cleanup(30*2
 
 **迁移报错，提示 `operations` 表不存在**
 
-`operation` 的迁移要排在 `imports`、`exports` 之前，它们的表引用 `operations` 表，见[安装](#installation)。
+`imports`、`exports` 的表引用 `operations` 表，发布它们时也要发布 `operation` 的迁移，见[安装](#installation)。
 
 **重试后，有的单位被处理了两次**
 

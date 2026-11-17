@@ -13,8 +13,10 @@ import (
 )
 
 // NewProvider 装配 goose 迁移执行器。fsys 根目录直接包含 SQL 迁移，文件名形如
-// 2026_11_17_123456_create_articles_table.sql，版本是 20261117123456；功能包自带的 0001_create_files.sql
-// 这类文件名也能执行，版本是 1。禁用全局 goose 注册机制。
+// 2026_11_17_123456_create_articles_table.sql，版本是 20261117123456。禁用全局 goose 注册机制。
+//
+// 与 Laravel 相同，没有执行过的迁移都会执行，即使比已经执行的迁移更早，例如升级框架后发布的功能包迁移、
+// 或者两个分支各自新建的迁移；它们先于更新的迁移按版本顺序执行。down 回滚最后执行的迁移。
 // 迁移持有 PostgreSQL 会话锁，多个实例同时迁移时串行执行。
 func NewProvider(db *bun.DB, fsys fs.FS) (*goose.Provider, error) {
 	if db == nil {
@@ -23,12 +25,15 @@ func NewProvider(db *bun.DB, fsys fs.FS) (*goose.Provider, error) {
 	if fsys == nil {
 		return nil, errors.New("migrate: nil fs")
 	}
+	if err := checkNames(fsys); err != nil {
+		return nil, err
+	}
 	locker, err := lock.NewPostgresSessionLocker(lock.WithLockTimeout(1, 300))
 	if err != nil {
 		return nil, errors.Wrap(err, "migrate")
 	}
 	p, err := goose.NewProvider(goose.DialectPostgres, db.DB, gooseFS{fsys},
-		goose.WithDisableGlobalRegistry(true), goose.WithSessionLocker(locker))
+		goose.WithDisableGlobalRegistry(true), goose.WithSessionLocker(locker), goose.WithAllowOutofOrder(true))
 	if err != nil {
 		return nil, errors.Wrap(err, "migrate")
 	}

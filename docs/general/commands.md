@@ -302,13 +302,13 @@ VERSION         STATE    APPLIED AT           FILE
 
 `make` 只生成迁移文件的骨架；其他命令会加载配置、连接数据库，并在结束后关闭连接。数据库连不上时以 `ExitUnavailable` 退出，部署脚本可以据此重试。迁移文件的编写与嵌入见[迁移](../database/migrations.md)。应用连接多个数据库时，用 `migratecmd.Name` 为其他数据库构造 `migrate <name> …` 命令，见[多个数据库](../database/advanced.md#multiple-databases)。
 
-需要文件上传等功能自带的 SQL 时，可在 `migratecmd.New` 返回的命令上显式添加 `migratecmd.Publish(sources...)`。其中 `sources` 是应用选择的 `[]migrate.Source`，例如 `migrate.Source{Name: "filesystem", FS: filesystem.Migrations()}`。注册后可以执行：
+需要文件上传等功能自带的 SQL 时，可在 `migratecmd.New` 返回的命令上显式添加 `migratecmd.Publish(sources...)`。其中 `sources` 是应用选择的功能包的迁移，例如 `filesystem.Migrations()`。注册后可以执行：
 
 ```bash
 go run ./cmd/api migrate publish --dir migrations
 ```
 
-这个命令只将尚未发布的 SQL 拷贝到应用目录，执行迁移仍用 `migrate up`。`--dir` 默认是 `migrations`；每个新增文件输出一行，重复执行时保留已有来源。注册代码、空项目首次发布方式及升级流程见[发布框架迁移](../database/migrations.md#publishing-framework-migrations)。
+这个命令只将尚未发布的 SQL 拷贝到应用目录，执行迁移仍用 `migrate up`。`--dir` 默认是 `migrations`；每个新增文件输出一行，目录中已有的迁移保持原样。注册代码、空项目首次发布方式及升级流程见[发布框架迁移](../database/migrations.md#publishing-framework-migrations)。
 
 <a id="config-command"></a>
 ### config 命令
@@ -448,7 +448,7 @@ func Routes(router func() chi.Routes) *cobra.Command
 ```go
 func New[C any](fsys fs.FS, dbConfig func(cfg C) database.Config, opts ...Option) *cobra.Command
 func Name(name string) Option
-func Publish(sources ...migrate.Source) *cobra.Command
+func Publish(sources ...fs.FS) *cobra.Command
 func Make() *cobra.Command
 ```
 

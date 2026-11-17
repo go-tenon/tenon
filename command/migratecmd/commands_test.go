@@ -15,8 +15,8 @@ import (
 func TestMigrateCommands(t *testing.T) {
 	path := serverConfig(t)
 	migrations := fstest.MapFS{
-		"00001_create_notes.sql": {Data: []byte("-- +goose Up\nCREATE TABLE notes (id int);\n-- +goose Down\nDROP TABLE notes;\n")},
-		"00002_add_body.sql":     {Data: []byte("-- +goose Up\nALTER TABLE notes ADD body text;\n-- +goose Down\nALTER TABLE notes DROP body;\n")},
+		"2026_01_01_000001_create_notes.sql": {Data: []byte("-- +goose Up\nCREATE TABLE notes (id int);\n-- +goose Down\nDROP TABLE notes;\n")},
+		"2026_01_01_000002_add_body.sql":     {Data: []byte("-- +goose Up\nALTER TABLE notes ADD body text;\n-- +goose Down\nALTER TABLE notes DROP body;\n")},
 	}
 	run := func(args ...string) string {
 		t.Helper()
@@ -27,7 +27,7 @@ func TestMigrateCommands(t *testing.T) {
 		}
 		return out
 	}
-	// status 每行形如 "1 applied 2026-11-10 09:00:00 00001_create_notes.sql"，只比较版本、状态和文件名
+	// status 每行形如 "20260101000001 applied 2026-11-10 09:00:00 2026_01_01_000001_create_notes.sql"，只比较版本、状态和文件名
 	status := func() string {
 		var rows []string
 		for _, line := range strings.Split(strings.TrimSpace(run("migrate", "status")), "\n")[1:] {
@@ -37,26 +37,26 @@ func TestMigrateCommands(t *testing.T) {
 		return strings.Join(rows, "\n")
 	}
 
-	if got := status(); got != "1 pending 00001_create_notes.sql\n2 pending 00002_add_body.sql" {
+	if got := status(); got != "20260101000001 pending 2026_01_01_000001_create_notes.sql\n20260101000002 pending 2026_01_01_000002_add_body.sql" {
 		t.Fatalf("status before up:\n%s", got)
 	}
-	if out := run("migrate", "up"); !strings.Contains(out, "up  00001_create_notes.sql") || !strings.Contains(out, "up  00002_add_body.sql") {
+	if out := run("migrate", "up"); !strings.Contains(out, "up  2026_01_01_000001_create_notes.sql") || !strings.Contains(out, "up  2026_01_01_000002_add_body.sql") {
 		t.Fatalf("up output:\n%s", out)
 	}
-	if got := status(); got != "1 applied 00001_create_notes.sql\n2 applied 00002_add_body.sql" {
+	if got := status(); got != "20260101000001 applied 2026_01_01_000001_create_notes.sql\n20260101000002 applied 2026_01_01_000002_add_body.sql" {
 		t.Fatalf("status after up:\n%s", got)
 	}
-	if out := run("migrate", "down"); !strings.Contains(out, "down  00002_add_body.sql") {
+	if out := run("migrate", "down"); !strings.Contains(out, "down  2026_01_01_000002_add_body.sql") {
 		t.Fatalf("down output:\n%s", out)
 	}
-	if got := status(); got != "1 applied 00001_create_notes.sql\n2 pending 00002_add_body.sql" {
+	if got := status(); got != "20260101000001 applied 2026_01_01_000001_create_notes.sql\n20260101000002 pending 2026_01_01_000002_add_body.sql" {
 		t.Fatalf("status after down:\n%s", got)
 	}
 }
 
 // serverConfig 创建临时数据库，返回指向它的配置文件路径。
 func serverConfig(t *testing.T) string {
-	db := dbtest.Open(t, nil)
+	db := dbtest.Open(t)
 	var name string
 	if err := db.QueryRowContext(context.Background(), "SELECT current_database()").Scan(&name); err != nil {
 		t.Fatal(err)

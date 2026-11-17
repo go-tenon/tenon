@@ -52,8 +52,8 @@ webhook 的投递任务由[队列](../background/queue.md)执行，把两者的�
 
 ```go
 migratecmd.Publish(
-    migrate.Source{Name: "queue", FS: queue.Migrations()},
-    migrate.Source{Name: "webhook", FS: webhook.Migrations()},
+    queue.Migrations(),
+    webhook.Migrations(),
 )
 ```
 
