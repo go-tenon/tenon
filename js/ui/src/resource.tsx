@@ -252,7 +252,6 @@ function ResourceList({
       records={view.rows}
       total={view.total}
       loading={view.loading}
-      stale={view.stale}
       list={view.list}
       columns={columns}
       rowKey={(row) => model.rowKey(row)}

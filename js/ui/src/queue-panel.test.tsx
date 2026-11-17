@@ -177,19 +177,29 @@ describe("QueuePanel", () => {
     expect(await screen.findByText("smtp: timeout")).toBeTruthy()
   })
 
-  it("把一类全部重试后，这一类留在筛选中，条数是 0、表格中没有任务；切换筛选不显示过时的数据", async () => {
+  it("重试完一类之后直接回到“全部”，这一类不再出现在筛选中，也不会先显示 0", async () => {
     const api = fakeApi()
     await mount(api)
     await openTab("失败任务")
     await act(async () => fireEvent.click(await screen.findByRole("radio", { name: /report\.daily/ })))
     await act(async () => fireEvent.click(await screen.findByRole("button", { name: "重试这 1 个" })))
     await act(async () => fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "重试" })))
-    expect(await screen.findByText("这类任务没有失败的")).toBeTruthy()
-    expect(screen.getByRole("radio", { name: "report.daily 0" })).toBeTruthy()
-    // 切到别的筛选再回到“全部”：都向服务器读最新的，不会显示重试之前的旧数据。
-    await act(async () => fireEvent.click(screen.getByRole("radio", { name: /全部/ })))
-    await waitFor(() => expect(screen.queryByText("pdf: unavailable")).toBeNull())
+    expect(screen.queryByRole("radio", { name: "report.daily 0" })).toBeNull()
+    expect((screen.getByRole("radio", { name: /全部/ }) as HTMLInputElement).checked).toBe(true)
     expect(await screen.findByText("smtp: timeout")).toBeTruthy()
+    await waitFor(() => expect(screen.queryByRole("radio", { name: /report\.daily/ })).toBeNull())
+  })
+
+  it("单条重试让选中的一类没有失败任务后，也回到“全部”", async () => {
+    const api = fakeApi()
+    await mount(api)
+    await openTab("失败任务")
+    await act(async () => fireEvent.click(await screen.findByRole("radio", { name: /report\.daily/ })))
+    const row = (await screen.findByText("pdf: unavailable")).closest("tr") as HTMLElement
+    await act(async () => fireEvent.click(within(row).getByRole("button", { name: "重试" })))
+    await act(async () => fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "重试" })))
+    await waitFor(() => expect((screen.getByRole("radio", { name: /全部/ }) as HTMLInputElement).checked).toBe(true))
+    expect(screen.queryByRole("radio", { name: /report\.daily/ })).toBeNull()
   })
 
   it("勾选几条一起删除：先确认，逐条调用接口", async () => {

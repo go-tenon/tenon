@@ -4,7 +4,7 @@
 // 设置（rest.API.Settings、settings.ts）是只有一组值的表单，用同样的字段模型，见 settingsModel。
 
 import { pickLanguage, type Schema } from "@go-tenon/client"
-import { keepPreviousData, type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useMemo } from "react"
 import { useCan } from "./app"
 import { type ListRoute, type ListSearch, type ListState, listSearch, useList } from "./list"
@@ -351,8 +351,6 @@ export interface ResourceList {
   rows: ResourceRow[]
   total?: number
   loading: boolean
-  /** 正在读取新的一页（换了筛选、翻页、排序），rows 还是原来的。 */
-  stale: boolean
   error: unknown
   /** 当前身份能否使用：没有声明的接口也是 false。 */
   can: {
@@ -374,9 +372,8 @@ export interface ResourceList {
 export function useResourceList(model: ResourceModel, route: ListRoute<Record<string, unknown>>): ResourceList {
   const list = useList(route)
   const can = useCan()
-  // 换筛选、翻页、排序时总是向服务器读最新的，不用各自缓存的旧数据（例如刚删掉的一行不会又出现）；
-  // 读到之前先显示原来的（表格变淡），读到后替换，表格不闪。
-  const query = useQuery({ ...model.listQuery(list.params), gcTime: 0, placeholderData: keepPreviousData })
+  // 换筛选、翻页、排序时总是向服务器读最新的，读取中显示加载状态；不用各自缓存的旧数据（例如刚删掉的一行不会又出现）。
+  const query = useQuery({ ...model.listQuery(list.params), gcTime: 0 })
   const page = query.data as ListResponse | undefined
   return {
     model,
@@ -384,7 +381,6 @@ export function useResourceList(model: ResourceModel, route: ListRoute<Record<st
     rows: page?.items ?? [],
     total: page?.total,
     loading: query.isPending,
-    stale: query.isPlaceholderData,
     error: query.error,
     can: {
       create: model.allowed(can, "create"),

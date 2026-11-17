@@ -25,7 +25,7 @@ import {
   Text,
 } from "@mantine/core"
 import { IconDots, IconPlayerPause, IconPlayerPlay, IconRotateClockwise, IconTrash } from "@tabler/icons-react"
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import dayjs from "dayjs"
 import { type ReactNode, useState } from "react"
 import { type Column, DataTable } from "./data-table"
@@ -413,18 +413,17 @@ function FailedJobs({
   const list = useQuery({
     queryKey: ["tenon", "queue", "failed", topic, page, perPage],
     queryFn: () => api.failedList({ topic, page, per_page: perPage }),
-    // 换筛选、翻页时总是向服务器读最新的，不用缓存（不会显示过时的数据）；读到之前先显示当前的（表格变淡），不闪。
+    // 换筛选、翻页时总是向服务器读最新的，读取中显示加载状态；不用缓存的旧数据。
     gcTime: 0,
-    placeholderData: keepPreviousData,
   })
   const selection = useSelection<string>([topic, page, perPage])
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["tenon", "queue"] })
   const data = list.data
-  // 筛选项和条数只看概览（定时刷新）。选中的类型没有失败的任务了（例如刚全部重试）也留着，表格显示没有失败的任务。
-  const topics = [...(counts ?? [])]
-  if (topic && !topics.some((t) => t.topic === topic)) {
-    topics.push({ topic, count: 0 })
-    topics.sort((a, b) => a.topic.localeCompare(b.topic)) // 概览按名字排序，留下的这一项不换位置
+  // 筛选项和条数只看概览：只列出有失败任务的类型。选中的类型没有失败的任务了（例如刚重试完），回到“全部”。
+  const topics = counts ?? []
+  if (topic && counts && !counts.some((t) => t.topic === topic)) {
+    setTopic(undefined)
+    setPage(1)
   }
   const all = topics.reduce((n, t) => n + t.count, 0)
   const count = topic ? (topics.find((t) => t.topic === topic)?.count ?? 0) : all
@@ -486,6 +485,7 @@ function FailedJobs({
     try {
       const r = await (retry ? api.failedRetryAll({ topic }) : api.failedDeleteAll({ topic }))
       notifySuccess(retry ? `已重新发布 ${r.count} 个` : `已删除 ${r.count} 个`)
+      setTopic(undefined) // 这一类（或全部）已经处理完，回到“全部”
       setPage(1)
       await refresh()
     } catch (err) {
@@ -613,7 +613,6 @@ function FailedJobs({
         records={data?.items ?? []}
         total={data?.total}
         loading={list.isPending}
-        stale={list.isPlaceholderData}
         list={{
           page,
           perPage,
