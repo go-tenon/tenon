@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"net/http"
 	"net/url"
@@ -128,7 +127,7 @@ func (s *Server) authorize(w http.ResponseWriter, r *http.Request) {
 
 // issue 为 sub 签发授权码，返回带着它跳回客户端的地址。
 func (s *Server) issue(ctx context.Context, req *authRequest, sub identity.Subject) (string, error) {
-	plain := randomCode()
+	plain := rand.Text()
 	now := time.Now().UTC()
 	c := &code{
 		CodeHash: hashCode(plain), ClientID: req.client.id, ClientName: req.client.name,
@@ -180,13 +179,6 @@ func host(raw string) string {
 		return ""
 	}
 	return u.Host
-}
-
-// randomCode 生成授权码：32 字节随机数的 base64url。
-func randomCode() string {
-	b := make([]byte, 32)
-	rand.Read(b)
-	return base64.RawURLEncoding.EncodeToString(b)
 }
 
 func hashCode(c string) string {

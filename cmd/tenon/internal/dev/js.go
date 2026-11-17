@@ -3,6 +3,7 @@ package dev
 import (
 	"bytes"
 	"encoding/json"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -42,7 +43,10 @@ func SyncJS(dir string) (changed bool, err error) {
 		}
 	}
 	// 框架中已经没有的包整个删除，其余的包删除 node_modules 之外的内容，再复制新的。
-	existing, _ := os.ReadDir(dst)
+	existing, err := os.ReadDir(dst)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return false, errors.Wrap(err, "dev: sync front-end packages")
+	}
 	for _, e := range existing {
 		if err := clearPackage(filepath.Join(dst, e.Name()), packages[e.Name()]); err != nil {
 			return false, errors.Wrap(err, "dev: sync front-end packages")

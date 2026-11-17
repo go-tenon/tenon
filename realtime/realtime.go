@@ -137,7 +137,7 @@ func New(hub *broadcast.Hub, opts Options) (*Realtime, error) {
 		return nil, errors.Wrap(err, "realtime: create node")
 	}
 	rt.node = node
-	b := newBridge(hub, node)
+	b := &bridge{hub: hub, node: node, logger: rt.logger, wake: make(chan struct{}, 1), done: make(chan struct{})}
 	node.SetBroker(b)
 	node.SetController(b)
 	b.members = newMembership(opts.PresenceGrace, rt.presence, b.sendNow, rt.logger)

@@ -3,6 +3,7 @@ package login
 import (
 	"context"
 	"database/sql"
+	"slices"
 	"time"
 
 	"github.com/cockroachdb/errors"
@@ -32,7 +33,7 @@ func (r *Realm) Password(ctx context.Context, id Identifier, password string) (O
 		return Outcome{}, err
 	}
 	id, err = id.Normalize()
-	if err != nil || !containsKind(p.PasswordKinds, id.Kind) {
+	if err != nil || !slices.Contains(p.PasswordKinds, id.Kind) {
 		return Outcome{}, ErrInvalidCredentials.New()
 	}
 	tenant := r.tenant(ctx)

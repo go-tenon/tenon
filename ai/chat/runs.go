@@ -755,6 +755,7 @@ func (r *Run) loop(ctx context.Context, msg *model.Message, opts []agent.RunOpti
 			failed = true
 		case ch != nil:
 			for _, m := range queued {
+				// 失败时消息仍在 steered 中，由下一轮发出。
 				_ = runner.EnqueueUserMessage(r.rs.runner, reqID, m)
 			}
 			failed = r.consume(ctx, ch, cursor, calls, answered)

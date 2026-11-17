@@ -309,12 +309,16 @@ func (w *Worker) process(h *handler, m jetstream.Msg) {
 	}
 	var env envelope
 	if err := json.Unmarshal(m.Data(), &env); err != nil {
-		w.logger.Error("drop undecodable message", "topic", h.topic, "error", err)
-		_ = withTimeout(func(ctx context.Context) error {
-			return w.failed.record(ctx, failedJob{ID: uuid.Must(uuid.NewV7()), Topic: h.topic, Payload: m.Data(),
-				Attempts: delivered, Error: fmt.Sprintf("%+v", errors.Wrap(err, "queue: decode message")), FailedAt: time.Now().UTC()})
-		})
+		record := failedJob{ID: uuid.Must(uuid.NewV7()), Topic: h.topic, Payload: m.Data(),
+			Attempts: delivered, Error: fmt.Sprintf("%+v", errors.Wrap(err, "queue: decode message")), FailedAt: time.Now().UTC()}
+		if err := withTimeout(func(ctx context.Context) error { return w.failed.record(ctx, record) }); err != nil {
+			// 写不进失败任务表时不确认：稍后重新投递，再次解码失败时再写。
+			w.logger.Error("move undecodable message to failed jobs failed", "topic", h.topic, "error", err)
+			nakAfter(m, time.Minute)
+			return
+		}
 		_ = m.Ack()
+		w.logger.Error("drop undecodable message", "topic", h.topic, "error", err)
 		return
 	}
 	j := Job{ID: env.ID, Topic: h.topic, Payload: env.Payload, Metadata: env.Metadata, Attempt: env.Attempts + delivered}

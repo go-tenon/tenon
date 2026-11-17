@@ -221,15 +221,13 @@ ssr.Run(ctx, serve, webPages, %[3]sPages)。导入 %[5]q。
 	return cmd
 }
 
-func load() (*project.Config, error) { return project.Load(".") }
-
 func devCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "dev",
 		Short: "运行应用和前端工具，修改代码后重新编译、重启并生成客户端",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			cfg, err := load()
+			cfg, err := project.Load(".")
 			if err != nil {
 				return err
 			}
@@ -245,7 +243,7 @@ func buildCommand() *cobra.Command {
 		Short: "把每个前端编译成 SSR 代码，构建共用的运行时，再编译应用（嵌入它们）",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			cfg, err := load()
+			cfg, err := project.Load(".")
 			if err != nil {
 				return err
 			}
@@ -319,7 +317,7 @@ func generateCommand() *cobra.Command {
 		Short: "编译应用，为每个 API 生成 TypeScript 客户端，按 tenon.json 生成 Go 客户端",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			cfg, err := load()
+			cfg, err := project.Load(".")
 			if err != nil {
 				return err
 			}

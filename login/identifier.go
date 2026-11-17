@@ -57,7 +57,7 @@ func (id Identifier) Normalize() (Identifier, error) {
 	if len(id.Kind) > maxKind || !kindPattern.MatchString(id.Kind) {
 		return Identifier{}, ErrInvalidIdentifier.New()
 	}
-	v := trimSpace(id.Value)
+	v := strings.TrimSpace(id.Value)
 	switch id.Kind {
 	case KindEmail:
 		v = strings.ToLower(v)
@@ -79,8 +79,6 @@ func (id Identifier) Normalize() (Identifier, error) {
 	}
 	return Identifier{Kind: id.Kind, Value: v}, nil
 }
-
-func trimSpace(s string) string { return strings.TrimFunc(s, unicode.IsSpace) }
 
 // Attached 是主体的一个登录标识。
 type Attached struct {
@@ -263,7 +261,7 @@ func (r *Realm) canSignIn(ctx context.Context, ids []Identifier, hasPassword boo
 	}
 	for _, id := range ids {
 		switch {
-		case hasPassword && containsKind(p.PasswordKinds, id.Kind):
+		case hasPassword && slices.Contains(p.PasswordKinds, id.Kind):
 			return true, nil
 		case id.Kind == KindEmail || id.Kind == KindPhone:
 			if r.opts.Send != nil {

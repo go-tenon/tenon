@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -142,7 +143,7 @@ func cmp[T int | time.Duration](v, def T) T {
 // defaultPolicy 要求 8 到 128 个字符，首尾没有空白。
 func defaultPolicy(password string) error {
 	n := len([]rune(password))
-	if n < 8 || n > 128 || password != trimSpace(password) {
+	if n < 8 || n > 128 || password != strings.TrimSpace(password) {
 		return ErrWeakPassword.New()
 	}
 	return nil
@@ -277,5 +278,3 @@ func affected(res sql.Result, err error) (int64, error) {
 	}
 	return res.RowsAffected()
 }
-
-func containsKind(kinds []string, kind string) bool { return slices.Contains(kinds, kind) }
