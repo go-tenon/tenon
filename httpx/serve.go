@@ -102,6 +102,7 @@ func Serve(ctx context.Context, cfg Config, ln net.Listener, handler http.Handle
 	return errors.Join(errors.Wrap(serveErr, "httpx: serve"), errors.Wrap(shutdownErr, "httpx: shutdown"))
 }
 
+// drainKey 是排空通道在 context 中的键。
 type drainKey struct{}
 
 // DrainStarted 返回一个在服务器开始排空时关闭的通道。
@@ -127,6 +128,7 @@ type freshConns struct {
 	conns map[net.Conn]struct{}
 }
 
+// track 随连接状态的变化记录还没读到第一个请求的连接。
 func (f *freshConns) track(c net.Conn, state http.ConnState) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -140,6 +142,7 @@ func (f *freshConns) track(c net.Conn, state http.ConnState) {
 	f.conns[c] = struct{}{}
 }
 
+// len 返回还没读到第一个请求的连接数。
 func (f *freshConns) len() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()

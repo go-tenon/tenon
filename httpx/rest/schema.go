@@ -53,6 +53,7 @@ func (n *schemaNames) bodies(types ...reflect.Type) {
 	}
 }
 
+// name 返回类型 t 的 schema 名称：匿名类型按 hint 命名，同一个匿名类型总是得到同一个名称。
 func (n *schemaNames) name(t reflect.Type, hint string) string {
 	if deref(t).Name() == "" {
 		n.mu.Lock()
@@ -65,6 +66,7 @@ func (n *schemaNames) name(t reflect.Type, hint string) string {
 	return schemaName(t, hint)
 }
 
+// schemaName 返回类型 t 的 schema 名称：具名类型用类型名，匿名类型用 hint。
 func schemaName(t reflect.Type, hint string) string {
 	t = deref(t)
 	name := t.Name()
@@ -85,6 +87,7 @@ func schemaName(t reflect.Type, hint string) string {
 	return b.String()
 }
 
+// deref 去掉 t 的全部指针，返回元素类型。
 func deref(t reflect.Type) reflect.Type {
 	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
@@ -128,6 +131,7 @@ func pkgName(path string) string {
 	}, last)
 }
 
+// upperFirst 把 s 的第一个字符改为大写。
 func upperFirst(s string) string {
 	r, size := utf8.DecodeRuneInString(s)
 	if r == utf8.RuneError {

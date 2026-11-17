@@ -52,6 +52,7 @@ func Observe(mp metric.MeterProvider, name string, l Limiter) Limiter {
 	return &observed{l: l, requests: requests, results: results}
 }
 
+// observed 在限流器 l 上记录请求数和结果。
 type observed struct {
 	l        Limiter
 	requests metric.Int64Counter
@@ -61,6 +62,7 @@ type observed struct {
 // Reset 不记录指标。
 func (o *observed) Reset(ctx context.Context, key string) error { return o.l.Reset(ctx, key) }
 
+// Allow 调用限流器，按结果计数。
 func (o *observed) Allow(ctx context.Context, key string) error {
 	err := o.l.Allow(ctx, key)
 	result := "allowed"

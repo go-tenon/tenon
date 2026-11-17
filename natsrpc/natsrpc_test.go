@@ -182,7 +182,7 @@ func TestCall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 主体、租户和请求 ID 都传到了处理函数；处理的时限是调用方剩余的时间，而不是服务端默认的 30 秒。
+	// 主体、租户和请求 ID 都传到了处理函数；处理的时限是调用方剩余的时间（2 秒以内）。
 	if out.Title != "hello" || out.By != "e3" || out.Tenant != "acme" || out.RequestID != "req-42" || out.Deadline <= 0 || out.Deadline > 2000 {
 		t.Fatalf("out %+v", out)
 	}
@@ -324,7 +324,7 @@ func TestTimeout(t *testing.T) {
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("caller timeout: %v", err)
 	}
-	// 服务端的时限更短：返回 504，记 Warn 日志而不是内部错误。
+	// 服务端的时限更短：返回 504，记 Warn 日志。
 	_, err = publish(t, f, PublishInput{Title: "x", Sleep: 2000}, natsrpc.Token("editor"))
 	if r := remote(t, err); r.Problem.Status != 504 || !errors.Is(err, context.DeadlineExceeded) || errorx.KindOf(err) != errorx.Unavailable {
 		t.Fatalf("server timeout: %v", err)

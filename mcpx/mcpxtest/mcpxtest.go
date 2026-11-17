@@ -59,6 +59,7 @@ func Connect(t testing.TB, s *mcpx.Server, sub identity.Subject) *Client {
 	return &Client{t: t, session: session}
 }
 
+// subjectType 返回主体的类型，为空时是 user。
 func subjectType(sub identity.Subject) identity.SubjectType {
 	if sub.Type == "" {
 		return "user"
@@ -66,8 +67,10 @@ func subjectType(sub identity.Subject) identity.SubjectType {
 	return sub.Type
 }
 
+// bearer 给每个请求带上测试的 token。
 type bearer struct{ next http.RoundTripper }
 
+// RoundTrip 在请求上设置 Authorization 后交给 next。
 func (b bearer) RoundTrip(r *http.Request) (*http.Response, error) {
 	r = r.Clone(r.Context())
 	r.Header.Set("Authorization", "Bearer "+token)

@@ -67,6 +67,7 @@ func TestBackend(t *testing.T, newBackends func(t *testing.T) (a, b broadcast.Ba
 	})
 }
 
+// hubs 用 newBackends 创建的两个后端各建一个 Hub，模拟两个实例。
 func hubs(t *testing.T, newBackends func(t *testing.T) (a, b broadcast.Backend)) (*broadcast.Hub, *broadcast.Hub) {
 	t.Helper()
 	ba, bb := newBackends(t)
@@ -75,6 +76,7 @@ func hubs(t *testing.T, newBackends func(t *testing.T) (a, b broadcast.Backend))
 	return a, b
 }
 
+// publish 在 h 上发布 data 到 topic，失败时结束测试。
 func publish(t *testing.T, h *broadcast.Hub, topic, data string) {
 	t.Helper()
 	if err := h.Publish(context.Background(), topic, []byte(data)); err != nil {

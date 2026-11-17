@@ -106,6 +106,7 @@ func PartSize(size int64) int64 {
 	return max(int64(minPartSize), part)
 }
 
+// partCount 返回 size 字节的文件分片上传时的分片数。
 func partCount(size int64) int {
 	part := PartSize(size)
 	return int((size + part - 1) / part)

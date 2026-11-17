@@ -37,6 +37,7 @@ export const settings = {
 	return b.String(), warnings, nil
 }
 
+// settingTS 返回设置页 s 的 TypeScript 描述，以及它用到的类型。
 func (t *tsGen) settingTS(s rest.Settings, templates map[string]map[string]string) (string, []string, error) {
 	var b strings.Builder
 	b.WriteString("  " + tsKey(s.Name) + ": {\n")

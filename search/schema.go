@@ -124,6 +124,7 @@ func jsonName(sf reflect.StructField) string {
 	return sf.Name
 }
 
+// checkText 检查文本字段的类型是 string 或 []string。
 func checkText(t reflect.Type) error {
 	if t.Kind() == reflect.String || (t.Kind() == reflect.Slice && t.Elem().Kind() == reflect.String) {
 		return nil
@@ -131,6 +132,7 @@ func checkText(t reflect.Type) error {
 	return errors.Newf("text field must be a string or []string, got %s", t)
 }
 
+// setValueType 按 Go 类型 t 设置筛选字段的值类型，不支持的类型返回错误。
 func (f *field) setValueType(t reflect.Type) error {
 	switch {
 	case t.Kind() == reflect.Pointer:

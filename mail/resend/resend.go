@@ -60,6 +60,7 @@ func NewWithClient(client *resendsdk.Client, from mail.Address) (*Mailer, error)
 // Client 返回底层 SDK 客户端，用于 Resend 特有的功能，如批量发送、定时发送。
 func (m *Mailer) Client() *resendsdk.Client { return m.client }
 
+// idempotencyKey 是幂等键在 context 中的键。
 type idempotencyKey struct{}
 
 // WithIdempotencyKey 返回携带幂等键的 ctx。用同一个键重复发送时，Resend 只会发出一封。
@@ -96,6 +97,7 @@ func (m *Mailer) Send(ctx context.Context, msg mail.Message) error {
 	return nil
 }
 
+// addresses 把地址列表转换为 Resend 的格式，空列表返回 nil。
 func addresses(list []mail.Address) []string {
 	if len(list) == 0 {
 		return nil

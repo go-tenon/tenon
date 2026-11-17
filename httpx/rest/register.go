@@ -98,6 +98,7 @@ type Endpoint struct {
 // Endpoints 按登记顺序返回已登记的端点。
 func (a *API) Endpoints() []Endpoint { return slices.Clone(a.endpoints) }
 
+// routeShape 返回路径模板的形状：参数名换成 {}，用于找出形状相同的路径。
 func routeShape(path string) string {
 	var b strings.Builder
 	inside := false

@@ -171,6 +171,7 @@ func (s *Service) Run(ctx context.Context, id uuid.UUID,
 	return err
 }
 
+// run 执行 fn：开始时把状态改为 running，结束时按结果改为 completed 或 failed。
 func (r *Run) run(ctx context.Context, fn func(ctx context.Context, r *Run) error) error {
 	if r.op.Status == StatusPending {
 		if err := r.save(ctx, r.next(StatusRunning), nil); err != nil {

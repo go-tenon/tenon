@@ -148,6 +148,7 @@ func (s *Server) CleanupClients(keep time.Duration) func(ctx context.Context, li
 	}
 }
 
+// writeRegistrationError 输出动态注册的错误响应。
 func writeRegistrationError(w http.ResponseWriter, code, description string) {
 	writeTokenError(w, http.StatusBadRequest, code, description)
 }

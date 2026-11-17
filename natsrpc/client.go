@@ -43,6 +43,7 @@ type RemoteError struct {
 	RequestID string  // 这次调用的 ID，与服务端日志关联。
 }
 
+// Error 返回远端错误的描述：subject、状态码、标题和错误码。
 func (e *RemoteError) Error() string {
 	msg := fmt.Sprintf("natsrpc: %s: %d %s", e.Subject, e.Problem.Status, e.Problem.Title)
 	if e.Problem.Code != "" {

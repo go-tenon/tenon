@@ -45,14 +45,18 @@ type Redirect struct {
 	URL string `json:"url"`
 }
 
+// consentInput 是读取同意页内容的请求。
 type consentInput struct {
 	Request string `query:"request" required:"true" minLength:"1" doc:"同意页地址中的 request 参数"`
 }
 
+// consentOutput 是同意页的内容。
 type consentOutput struct{ Body Consent }
 
+// decisionInput 是用户在同意页上的决定。
 type decisionInput struct{ Body Decision }
 
+// redirectOutput 是决定之后跳回客户端的地址。
 type redirectOutput struct{ Body Redirect }
 
 // Register 在 api 上注册同意页使用的两个接口，auth 要求登录，通常是 rest.RequireToken(api, tokens.Validate)：
@@ -78,6 +82,7 @@ func (s *Server) Register(api *rest.API, auth func(*huma.Operation)) {
 	rest.Register(api, decide, s.decide)
 }
 
+// consent 返回同意页要显示的内容：客户端、跳转去的主机和申请的范围。
 func (s *Server) consent(ctx context.Context, in *consentInput) (*consentOutput, error) {
 	req, err := s.request(ctx, in.Request)
 	if err != nil {

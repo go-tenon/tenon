@@ -164,6 +164,7 @@ func (p *Providers) Shutdown(ctx context.Context) error {
 	return nil
 }
 
+// newResource 返回描述本服务的 OpenTelemetry 资源：服务名、版本和运行环境。
 func newResource(ctx context.Context, cfg Config) (*resource.Resource, error) {
 	attrs := []resource.Option{
 		resource.WithAttributes(

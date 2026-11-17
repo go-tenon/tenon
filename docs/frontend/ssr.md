@@ -88,7 +88,7 @@ return ssr.Run(ctx, func(ctx context.Context) error {
 ## 链路与日志
 
 - Go 把请求 ID（`X-Request-ID`）和 W3C `traceparent` 转交给 Bun，Bun 调用接口时原样带回：页面请求、渲染和它调用的接口在同一条链路中，日志带同一个请求 ID。
-- Bun 在响应头 `X-Tenon-Route` 中报告匹配到的前端路由模板，例如 `/articles/$id`；Go 用它命名 span，例如 `GET /articles/$id`，而不是挂载页面处理器的 `/*`。这个头不会发给浏览器。
+- Bun 在响应头 `X-Tenon-Route` 中报告匹配到的前端路由模板，例如 `/articles/$id`；Go 用它命名 span，例如 `GET /articles/$id`。这个头不会发给浏览器。
 - SSR 进程的标准输出和标准错误逐行写入 Go 的日志，带 `component=ssr`；标准错误记为 WARN。
 
 <a id="development"></a>

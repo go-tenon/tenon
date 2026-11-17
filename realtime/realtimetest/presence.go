@@ -18,6 +18,7 @@ type Presence struct {
 	channels map[string]map[string]entry
 }
 
+// entry 是一个在线成员和它的过期时间。
 type entry struct {
 	realtime.PresenceEntry
 	expires time.Time

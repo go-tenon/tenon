@@ -13,6 +13,7 @@ import (
 
 var _ ai.Decider = (*Client)(nil)
 
+// decisionAnswer 是决策接口返回的一个问题的答案。
 type decisionAnswer struct {
 	Type          string  `json:"type"`
 	Name          string  `json:"name"`
@@ -26,6 +27,7 @@ type decisionAnswer struct {
 	} `json:"probabilities"`
 }
 
+// decisionResponse 是决策接口的响应。
 type decisionResponse struct {
 	Model   string           `json:"model"`
 	Answers []decisionAnswer `json:"answers"`
@@ -85,6 +87,7 @@ func decisionInput(req ai.DecisionRequest) any {
 	return []map[string]any{{"role": "user", "content": parts}}
 }
 
+// decisionQuestions 把问题转换为决策接口的请求参数。
 func decisionQuestions(qs []ai.Question) []map[string]any {
 	out := make([]map[string]any, len(qs))
 	for i, q := range qs {
@@ -128,6 +131,7 @@ func decisionQuestions(qs []ai.Question) []map[string]any {
 	return out
 }
 
+// decisionAnswerOf 把接口返回的答案 a 转换为问题 q 的 Answer。
 func decisionAnswerOf(q ai.Question, a decisionAnswer) (ai.Answer, error) {
 	if a.Type == "refusal" {
 		return ai.NewAnswer(q, ai.Answer{Refused: true}), nil

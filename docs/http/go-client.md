@@ -179,7 +179,7 @@ uploaded, err := c.File.Upload(ctx, file.UploadInputForm{
 
 **`errors.Is(err, article.ErrSlugTaken)` 判断不出来**
 
-检查导入的 `article` 是生成的客户端中的包，而不是服务端的包：生成的客户端在自己的包中复制了错误码常量，见[复制的类型](#copied-types)。
+检查导入的 `article` 是生成的客户端中的包：生成的客户端在自己的包中复制了错误码常量，见[复制的类型](#copied-types)。
 
 **所有受保护的接口都返回 401**
 

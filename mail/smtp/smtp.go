@@ -93,6 +93,7 @@ func (m *Mailer) Send(ctx context.Context, msg mail.Message) error {
 	return nil
 }
 
+// options 返回连接 SMTP 服务器的选项：端口、超时、TLS 方式和认证。
 func (m *Mailer) options() []gomail.Option {
 	opts := []gomail.Option{gomail.WithPort(m.cfg.Port), gomail.WithTimeout(m.cfg.Timeout)}
 	switch m.cfg.TLS {

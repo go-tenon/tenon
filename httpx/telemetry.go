@@ -94,6 +94,7 @@ func method(m string) string {
 	return "_OTHER"
 }
 
+// scheme 返回请求的协议：http 或 https。
 func scheme(r *http.Request) string {
 	if r.TLS != nil {
 		return "https"

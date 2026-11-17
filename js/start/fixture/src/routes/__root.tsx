@@ -1,6 +1,7 @@
 import { createRootRoute, HeadContent, Outlet, Scripts } from "@tanstack/react-router"
 import type { ReactNode } from "react"
 
+/** 根路由：输出 HTML 文档的外壳。 */
 export const Route = createRootRoute({
   head: () => ({ meta: [{ charSet: "utf-8" }, { title: "fixture" }] }),
   shellComponent: Document,

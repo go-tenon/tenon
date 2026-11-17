@@ -76,6 +76,7 @@ type Author struct {
 	Name string `json:"name"`
 }
 
+// ArticleOutput 是返回一篇文章的响应。
 type ArticleOutput struct {
 	Body ArticleDTO
 }
@@ -86,14 +87,17 @@ type CreatedOutput struct {
 	Body     ArticleDTO
 }
 
+// CreateInput 是创建文章的请求。
 type CreateInput struct {
 	Body Changes
 }
 
+// IDInput 是按 ID 操作文章的请求。
 type IDInput struct {
 	ID uuid.UUID `path:"id"`
 }
 
+// UpdateInput 是修改文章的请求。
 type UpdateInput struct {
 	ID   uuid.UUID `path:"id"`
 	Body Changes
@@ -113,6 +117,7 @@ type ListInput struct {
 	Title  string   `query:"title" doc:"标题包含的文字"`
 }
 
+// ListOutput 是文章列表的响应。
 type ListOutput struct {
 	Body page.Offset[ArticleDTO]
 }
@@ -149,10 +154,12 @@ type Cover struct {
 	Extras      []string `json:"extras"`
 }
 
+// CoverOutput 是上传封面的响应。
 type CoverOutput struct {
 	Body Cover
 }
 
+// PingOutput 是 ping 的响应。
 type PingOutput struct {
 	Body struct {
 		OK bool `json:"ok"`
@@ -189,12 +196,14 @@ func NewStore() *Store {
 	return &Store{keys: map[string]bool{}, settings: BlogSettings{Name: "博客", DefaultStatus: StatusDraft}}
 }
 
+// getSettings 返回博客设置。
 func (s *Store) getSettings(context.Context, *struct{}) (*BlogSettingsOutput, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return &BlogSettingsOutput{Body: s.settings}, nil
 }
 
+// updateSettings 保存博客设置。
 func (s *Store) updateSettings(_ context.Context, in *BlogSettingsInput) (*BlogSettingsOutput, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -252,18 +261,21 @@ type PreviewOutput struct {
 	}
 }
 
+// preview 返回预览地址，设置预览 cookie。
 func preview(_ context.Context, in *PreviewInput) (*PreviewOutput, error) {
 	out := &PreviewOutput{SetCookie: &http.Cookie{Name: "preview", Value: in.UserAgent, Path: "/articles", HttpOnly: true}}
 	out.Body.URL = "/articles/preview"
 	return out, nil
 }
 
+// ping 返回 ok。
 func ping(context.Context, *struct{}) (*PingOutput, error) {
 	out := &PingOutput{}
 	out.Body.OK = true
 	return out, nil
 }
 
+// create 创建文章；slug 已存在时返回冲突。
 func (s *Store) create(_ context.Context, in *CreateInput) (*CreatedOutput, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -276,6 +288,7 @@ func (s *Store) create(_ context.Context, in *CreateInput) (*CreatedOutput, erro
 	return &CreatedOutput{Location: "/articles/" + a.ID.String(), Body: a}, nil
 }
 
+// get 返回一篇文章。
 func (s *Store) get(_ context.Context, in *IDInput) (*ArticleOutput, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -286,6 +299,7 @@ func (s *Store) get(_ context.Context, in *IDInput) (*ArticleOutput, error) {
 	return &ArticleOutput{Body: s.articles[i]}, nil
 }
 
+// update 修改一篇文章。
 func (s *Store) update(_ context.Context, in *UpdateInput) (*ArticleOutput, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -301,6 +315,7 @@ func (s *Store) update(_ context.Context, in *UpdateInput) (*ArticleOutput, erro
 	return &ArticleOutput{Body: *a}, nil
 }
 
+// delete 删除一篇文章。
 func (s *Store) delete(_ context.Context, in *IDInput) (*struct{}, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -312,6 +327,7 @@ func (s *Store) delete(_ context.Context, in *IDInput) (*struct{}, error) {
 	return &struct{}{}, nil
 }
 
+// publish 发布一篇文章。
 func (s *Store) publish(_ context.Context, in *PublishInput) (*ArticleOutput, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -332,6 +348,7 @@ func (s *Store) publish(_ context.Context, in *PublishInput) (*ArticleOutput, er
 	return &ArticleOutput{Body: *a}, nil
 }
 
+// feature 设置文章是否推荐。
 func (s *Store) feature(_ context.Context, in *FeatureInput) (*ArticleOutput, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -343,6 +360,7 @@ func (s *Store) feature(_ context.Context, in *FeatureInput) (*ArticleOutput, er
 	return &ArticleOutput{Body: s.articles[i]}, nil
 }
 
+// list 按条件列出文章，分页返回。
 func (s *Store) list(_ context.Context, in *ListInput) (*ListOutput, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -396,6 +414,7 @@ func (s *Store) events(_ context.Context, in *EventsInput) (*huma.StreamResponse
 	}), nil
 }
 
+// cover 保存上传的封面。
 func (s *Store) cover(_ context.Context, in *CoverInput) (*CoverOutput, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -414,10 +433,12 @@ func (s *Store) cover(_ context.Context, in *CoverInput) (*CoverOutput, error) {
 	return &CoverOutput{Body: c}, nil
 }
 
+// find 返回 slug 对应的文章的下标，没有时返回 -1。
 func (s *Store) find(slug string) int {
 	return slices.IndexFunc(s.articles, func(a ArticleDTO) bool { return a.Slug == slug })
 }
 
+// index 返回 ID 对应的文章的下标，没有时返回 ErrNotFound。
 func (s *Store) index(id uuid.UUID) (int, error) {
 	if i := slices.IndexFunc(s.articles, func(a ArticleDTO) bool { return a.ID == id }); i >= 0 {
 		return i, nil
@@ -425,6 +446,7 @@ func (s *Store) index(id uuid.UUID) (int, error) {
 	return -1, ErrNotFound.New()
 }
 
+// hasAll 报告 have 是否包含 want 中的每一项。
 func hasAll(have, want []string) bool {
 	for _, w := range want {
 		if !slices.Contains(have, w) {

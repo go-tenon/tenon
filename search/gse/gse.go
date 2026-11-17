@@ -21,11 +21,13 @@ import (
 // Tokenizer 按词语切分中文，其他文字的切分与 search.Bigram 相同。词典在第一次分词时加载，所有索引共用。
 var Tokenizer search.Tokenizer = &tokenizer{}
 
+// tokenizer 用 gse 按词切分中文，词典在第一次使用时加载。
 type tokenizer struct {
 	once sync.Once
 	seg  gse.Segmenter
 }
 
+// segmenter 返回加载了中文词典的分词器，只加载一次。
 func (t *tokenizer) segmenter() *gse.Segmenter {
 	t.once.Do(func() {
 		t.seg.SkipLog = true
@@ -36,10 +38,12 @@ func (t *tokenizer) segmenter() *gse.Segmenter {
 	return &t.seg
 }
 
+// Index 切分要索引的文本：长词还输出其中词典里有的两字词和三字词。
 func (t *tokenizer) Index(text string) []search.Token {
 	return search.Split(text, func(run string, start int) []search.Token { return t.words(run, start, true) })
 }
 
+// Query 切分查询的文本，只输出分词结果。
 func (t *tokenizer) Query(text string) []search.Token {
 	return search.Split(text, func(run string, start int) []search.Token { return t.words(run, start, false) })
 }

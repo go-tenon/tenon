@@ -18,6 +18,7 @@ func Export(lp log.LoggerProvider) Option {
 	return func(o *options) { o.export = lp }
 }
 
+// newExportHandler 返回把日志导出到 lp 的处理器，级别不低于 cfg 的最低级别。
 func newExportHandler(lp log.LoggerProvider, cfg Config) slog.Handler {
 	return exportHandler{
 		Handler: otelslog.NewHandler(scopeName, otelslog.WithLoggerProvider(lp), otelslog.WithSource(cfg.AddSource)),
@@ -32,10 +33,12 @@ type exportHandler struct {
 	grouped bool // 已进入分组，记录的属性都在分组内
 }
 
+// Enabled 报告级别 level 是否需要导出。
 func (h exportHandler) Enabled(ctx context.Context, level slog.Level) bool {
 	return level >= h.level && h.Handler.Enabled(ctx, level)
 }
 
+// Handle 去掉顶层的 trace_id、span_id 后导出记录 r。
 func (h exportHandler) Handle(ctx context.Context, r slog.Record) error {
 	if !h.grouped && hasRedundant(r) {
 		kept := slog.NewRecord(r.Time, r.Level, r.Message, r.PC)
@@ -50,11 +53,13 @@ func (h exportHandler) Handle(ctx context.Context, r slog.Record) error {
 	return h.Handler.Handle(ctx, r)
 }
 
+// WithAttrs 返回追加了 attrs 的处理器。
 func (h exportHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	h.Handler = h.Handler.WithAttrs(attrs)
 	return h
 }
 
+// WithGroup 返回进入分组 name 的处理器。
 func (h exportHandler) WithGroup(name string) slog.Handler {
 	if name == "" {
 		return h
@@ -64,6 +69,7 @@ func (h exportHandler) WithGroup(name string) slog.Handler {
 	return h
 }
 
+// hasRedundant 报告记录 r 是否有 trace_id 或 span_id 字段。
 func hasRedundant(r slog.Record) bool {
 	found := false
 	r.Attrs(func(a slog.Attr) bool {
@@ -73,6 +79,7 @@ func hasRedundant(r slog.Record) bool {
 	return found
 }
 
+// redundant 报告字段 a 是否是导出时多余的 trace_id 或 span_id。
 func redundant(a slog.Attr) bool {
 	switch a.Key {
 	case AttrTraceID, AttrSpanID:

@@ -40,6 +40,7 @@ type Scheduler struct {
 	started bool
 }
 
+// task 是登记的一个定时任务。
 type task struct {
 	name          string
 	description   string
@@ -196,6 +197,7 @@ func (s *Scheduler) Run(ctx context.Context) error {
 	}
 }
 
+// start 标记调度器已经启动，返回登记的任务；重复启动或没有任务时返回错误。
 func (s *Scheduler) start() ([]*task, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -346,6 +348,7 @@ func (s *Scheduler) runLocked(ctx context.Context, t *task, tick time.Time, manu
 	return &finishedRun{Event: e, ctx: ctx}, err
 }
 
+// begin 标记任务开始执行；上一次还在执行时返回 false。
 func (t *task) begin() bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -356,6 +359,7 @@ func (t *task) begin() bool {
 	return true
 }
 
+// end 标记任务执行结束。
 func (t *task) end() {
 	t.mu.Lock()
 	t.running = false

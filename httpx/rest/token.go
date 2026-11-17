@@ -32,6 +32,7 @@ func tokenSchemes(cookie string) []namedScheme {
 	}
 }
 
+// namedScheme 是一个带名称的认证方案。
 type namedScheme struct {
 	name   string
 	scheme *huma.SecurityScheme
@@ -71,6 +72,7 @@ func RequireToken(api *API, validate identity.TokenValidator, permissions ...str
 	return requireAuth(api, AccessToken, tokenSchemes(session.CookieName()), "Bearer", crossSite, authenticate, permissions...)
 }
 
+// sameOrigin 检查请求来自同一来源，否则返回 403。
 func sameOrigin(ctx huma.Context) error {
 	if httpx.SameOrigin(ctx.Header("Sec-Fetch-Site"), ctx.Header("Origin"), ctx.Host()) {
 		return nil
@@ -262,6 +264,7 @@ func problem(api huma.API, ctx huma.Context, err error) huma.StatusError {
 	return FromError(err)
 }
 
+// bearerToken 从 Authorization 请求头 h 中取出 Bearer token，不是 Bearer 时返回空串。
 func bearerToken(h string) string {
 	const p = "Bearer "
 	if len(h) < len(p) || !strings.EqualFold(h[:len(p)], p) {

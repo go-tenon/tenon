@@ -67,6 +67,7 @@ func (c *Crypt) VerifyURL(u *url.URL) error {
 	return nil
 }
 
+// validMAC 报告 sig 是否是任一密钥对 u 和查询参数 q 的签名。
 func (c *Crypt) validMAC(sig []byte, u *url.URL, q url.Values) bool {
 	for _, key := range c.macKeys {
 		if hmac.Equal(sig, mac(key, u, q)) {

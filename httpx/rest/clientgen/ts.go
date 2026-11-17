@@ -114,6 +114,7 @@ func GenerateTS(api *rest.API, opts TSOptions) (*Result, error) {
 	return res, nil
 }
 
+// tsGen 生成一个 API 的 TypeScript 客户端。
 type tsGen struct {
 	api      *rest.API
 	registry huma.Registry
@@ -165,11 +166,13 @@ type tsOp struct {
 	download  bool
 }
 
+// tsParam 是 TypeScript 客户端方法的一个参数。
 type tsParam struct {
 	name, key, in, typ, doc string
 	required                bool
 }
 
+// client 生成客户端的全部接口，返回入口代码；分组的代码写入 res。
 func (t *tsGen) client(res *Result) (string, error) {
 	eps := t.api.Endpoints()
 	slices.SortFunc(eps, func(a, b rest.Endpoint) int { return strings.Compare(a.OperationID, b.OperationID) })
@@ -220,6 +223,7 @@ func (t *tsGen) client(res *Result) (string, error) {
 	return b.String(), nil
 }
 
+// analyze 分析端点 ep，返回生成方法需要的信息；事件类型写入 events。
 func (t *tsGen) analyze(ep rest.Endpoint, events *strings.Builder) (*tsOp, error) {
 	item := t.api.OpenAPI().Paths[ep.Path]
 	var op *huma.Operation
@@ -444,6 +448,7 @@ func (t *tsGen) method(o *tsOp, indent string) string {
 		indent + "  " + call + ",\n"
 }
 
+// kv 把 m 写成按键排序的 TypeScript 对象字面量。
 func kv(m map[string]string) string {
 	var parts []string
 	for _, k := range slices.Sorted(maps.Keys(m)) {
@@ -471,6 +476,7 @@ func (t *tsGen) schemas() string {
 	return b.String()
 }
 
+// isSchema 报告 v 是否是 *huma.Schema。
 func isSchema(v any) bool {
 	_, ok := v.(*huma.Schema)
 	return ok

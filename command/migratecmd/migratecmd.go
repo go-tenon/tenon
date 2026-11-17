@@ -23,6 +23,7 @@ import (
 // Option 调整 New 构造的命令。
 type Option func(*options)
 
+// options 是 migrate 命令的选项。
 type options struct {
 	name  string                                     // 为空时是主库的 migrate 命令
 	check func(cmd *cobra.Command, db *bun.DB) error // 在 up 执行迁移之前运行自检，为 nil 时不检查。

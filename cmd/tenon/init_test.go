@@ -122,7 +122,7 @@ func TestInitEndToEnd(t *testing.T) {
 	sh("bun", "run", "typecheck")
 	sh("go", "vet", "./...")
 	sh("go", "tool", "tenon", "build")
-	// 三个前端共用一份 Bun 运行时：程序只比一份运行时（约 100MB）大一点，而不是每个前端一份。
+	// 三个前端共用一份 Bun 运行时：程序只比一份运行时（约 100MB）大一点。
 	if info, err := os.Stat(filepath.Join(dir, "bin", "api")); err != nil || info.Size() > 180<<20 {
 		t.Fatalf("bin/api: %v, %d MB", err, info.Size()>>20)
 	}

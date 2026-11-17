@@ -196,6 +196,7 @@ export function useFormatDateTime(): (value: string | Date) => string {
   )
 }
 
+/** 按字段类型显示一个值：日期时间格式化，枚举用 display 的文字，空值显示为破折号。 */
 export function FieldValue({
   field,
   value,

@@ -142,10 +142,12 @@ func pkce(verifier, challenge string) bool {
 	return subtle.ConstantTimeCompare([]byte(got), []byte(challenge)) == 1
 }
 
+// writeTokenError 输出 OAuth 的错误响应。
 func writeTokenError(w http.ResponseWriter, status int, code, description string) {
 	writeJSON(w, status, tokenError{Error: code, Description: description})
 }
 
+// writeJSON 以状态码 status 输出 JSON。
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

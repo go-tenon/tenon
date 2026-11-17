@@ -47,6 +47,7 @@ type Code struct {
 	ExpiresAt  time.Time
 }
 
+// challengeRow 是 auth_challenges 表中的一行：一次验证码验证。
 type challengeRow struct {
 	bun.BaseModel `bun:"table:auth_challenges,alias:c"`
 
@@ -66,6 +67,7 @@ type challengeRow struct {
 	CreatedAt   time.Time `bun:"created_at,notnull"`
 }
 
+// identifier 返回接收验证码的标识。
 func (c *challengeRow) identifier() Identifier { return Identifier{Kind: c.Kind, Value: c.Value} }
 
 // SendCode 生成 purpose 用途的验证码，调用 Options.Send 发送给标识 id，返回请求 ID。
@@ -299,6 +301,7 @@ func (r *Realm) complete(ctx context.Context, db bun.IDB, c *challengeRow) error
 // RegisterOption 是 Register 的选项。
 type RegisterOption func(*registration)
 
+// registration 是 Register 的选项。
 type registration struct {
 	password string
 }
@@ -498,6 +501,7 @@ func token() string {
 	return base64.RawURLEncoding.EncodeToString(b)
 }
 
+// sha 返回 s 的 SHA-256，十六进制。
 func sha(s string) string {
 	sum := sha256.Sum256([]byte(s))
 	return hex.EncodeToString(sum[:])

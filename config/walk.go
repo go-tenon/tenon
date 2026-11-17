@@ -20,10 +20,12 @@ type Validator interface {
 	Validate() error
 }
 
+// setDefaults 对 dst 中实现了 Defaulter 的每一个值调用 SetDefaults，子值在前。
 func setDefaults(dst any) {
 	walk(reflect.ValueOf(dst), "", func(d Defaulter, _ string) { d.SetDefaults() })
 }
 
+// validate 对 dst 中实现了 Validator 的每一个值调用 Validate，返回全部错误，每个错误带上字段路径。
 func validate(dst any) error {
 	var errs []error
 	walk(reflect.ValueOf(dst), "", func(val Validator, path string) {
@@ -49,6 +51,7 @@ func walk[I any](v reflect.Value, path string, visit func(I, string)) {
 	walkValue(v, path, visit, false)
 }
 
+// walkValue 是 walk 的实现；skipSelf 为 true 时不对 v 本身调用 visit（方法已由外层调用）。
 func walkValue[I any](v reflect.Value, path string, visit func(I, string), skipSelf bool) {
 	switch v.Kind() {
 	case reflect.Pointer, reflect.Interface:
@@ -117,6 +120,7 @@ func fieldName(f reflect.StructField) (name string, skip bool) {
 	}
 }
 
+// joinPath 把字段名 name 接在路径 path 之后。
 func joinPath(path, name string) string {
 	if name == "" {
 		return path

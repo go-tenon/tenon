@@ -176,6 +176,7 @@ func (s *Service) Process(ctx context.Context, id uuid.UUID,
 	})
 }
 
+// export 把数据写入临时文件，上传后写入导出记录。
 func (s *Service) export(ctx context.Context, r *operation.Run, exp *Export, write func(ctx context.Context, exp *Export, w *Writer) error) error {
 	tmp, err := os.CreateTemp("", "export-*."+string(exp.Format))
 	if err != nil {

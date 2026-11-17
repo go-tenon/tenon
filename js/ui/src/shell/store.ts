@@ -1,11 +1,13 @@
 // 一个可以订阅的小型状态容器，供插槽、徽标和布局状态使用：React 用 useSyncExternalStore 读取。
 
+/** 可以订阅的状态容器。 */
 export interface Store<T> {
   get(): T
   set(next: T): void
   subscribe(listener: () => void): () => void
 }
 
+/** 创建初始值为 initial 的状态容器。 */
 export function createStore<T>(initial: T): Store<T> {
   let value = initial
   const listeners = new Set<() => void>()

@@ -20,6 +20,7 @@ const emitBatch = 1000
 // PublishOption 调整 Topic.Publish 发布的任务。
 type PublishOption func(*publishOptions)
 
+// publishOptions 是 Publish 的选项。
 type publishOptions struct {
 	at time.Time
 }

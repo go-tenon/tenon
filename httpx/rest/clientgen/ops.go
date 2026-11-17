@@ -20,6 +20,7 @@ import (
 // skip 表示端点的形式第一版不生成，原因写入 Result.Skipped。
 type skip string
 
+// Error 返回不生成的原因。
 func (s skip) Error() string { return string(s) }
 
 // param 是一个路径、查询或请求头参数。
@@ -56,6 +57,7 @@ type endpoint struct {
 	outHeaders []param // 输出副本中的响应头
 }
 
+// run 生成全部文件：错误码、类型、各分组的客户端和 wire 包。
 func (g *generator) run() (*Result, error) {
 	res := &Result{Files: map[string][]byte{}}
 	if err := g.scanCodes(); err != nil {
@@ -157,6 +159,7 @@ func (g *generator) run() (*Result, error) {
 	return res, nil
 }
 
+// clientDoc 返回客户端包的文档注释。
 func (g *generator) clientDoc() string {
 	title := "API"
 	if info := g.api.OpenAPI().Info; info != nil && info.Title != "" {
@@ -165,6 +168,7 @@ func (g *generator) clientDoc() string {
 	return "// Package " + g.rootName + " 是 " + title + " 的 Go 客户端，由 Tenon 的 client 命令生成。\n"
 }
 
+// client 返回客户端的入口代码：Client 类型和各分组的字段。
 func (g *generator) client(f *file, groups []string) string {
 	wire := f.use(g.outPath+"/wire", "wire")
 	base := ""
@@ -264,11 +268,13 @@ func (e *endpoint) analyzeEvents() error {
 	return nil
 }
 
+// groupSegment 返回操作 ID 的分组：第一个连字符之前的部分。
 func groupSegment(opID string) string {
 	first, _, _ := strings.Cut(opID, "-")
 	return first
 }
 
+// analyzeInput 分析端点的输入类型，得到路径、查询、请求头参数和请求体。
 func (g *generator) analyzeInput(e *endpoint) error {
 	t := e.ep.Input
 	if t.Kind() == reflect.Struct && t.NumField() == 0 {
@@ -366,16 +372,19 @@ func (e *endpoint) analyzeForm(t types.Type) error {
 	return nil
 }
 
+// isFormFile 报告 t 是否是 huma.FormFile。
 func isFormFile(t types.Type) bool {
 	n, ok := t.(*types.Named)
 	return ok && n.Obj().Pkg() != nil && n.Obj().Pkg().Path() == humaPath && n.Obj().Name() == "FormFile"
 }
 
+// isSliceOf 报告 t 是否是元素满足 elem 的切片。
 func isSliceOf(t types.Type, elem func(types.Type) bool) bool {
 	s, ok := t.(*types.Slice)
 	return ok && elem(s.Elem())
 }
 
+// add 按位置 loc 记录参数 p。
 func (e *endpoint) add(loc string, p param) {
 	switch loc {
 	case "path":
@@ -387,6 +396,7 @@ func (e *endpoint) add(loc string, p param) {
 	}
 }
 
+// hasParamTag 报告结构体标签中是否有参数位置的标签。
 func hasParamTag(tag reflect.StructTag) bool {
 	for _, k := range []string{"path", "query", "header", "cookie", "form"} {
 		if tag.Get(k) != "" {
@@ -463,6 +473,7 @@ func (e *endpoint) orderPath() error {
 	return nil
 }
 
+// placeholders 返回路径模板 p 中的参数名。
 func placeholders(p string) []string {
 	var names []string
 	for {
@@ -479,6 +490,7 @@ func placeholders(p string) []string {
 	}
 }
 
+// analyzeOutput 分析端点的输出类型，得到响应体、响应头和事件。
 func (g *generator) analyzeOutput(e *endpoint) error {
 	t := e.ep.Output
 	if t.Kind() == reflect.Struct && t.NumField() == 0 {
@@ -517,6 +529,7 @@ func (g *generator) analyzeOutput(e *endpoint) error {
 	return nil
 }
 
+// isInt 报告 t 的底层类型是否是整数。
 func isInt(t types.Type) bool {
 	b, ok := t.Underlying().(*types.Basic)
 	return ok && b.Info()&types.IsInteger != 0
@@ -812,6 +825,7 @@ func (g *generator) reflectRef(t reflect.Type, f *file) (string, error) {
 	return g.expr(obj.Type(), f)
 }
 
+// methodDoc 返回客户端方法的文档注释：接口的摘要和说明。
 func (g *generator) methodDoc(e *endpoint) string {
 	var b strings.Builder
 	if e.ep.Summary != "" {

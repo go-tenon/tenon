@@ -93,6 +93,7 @@ func Send(ctx context.Context, db bun.IDB, n Notification, to ...Recipient) ([]N
 	return rows, nil
 }
 
+// check 校验收件人 r。
 func check(r Recipient) error {
 	return errors.Wrap(r.Validate(), "notification: recipient")
 }
@@ -162,6 +163,7 @@ func MarkAllRead(ctx context.Context, db bun.IDB, r Recipient) error {
 	return markRead(ctx, db, r, nil)
 }
 
+// markRead 把收件人 r 的通知标为已读；ids 为 nil 时标记全部。
 func markRead(ctx context.Context, db bun.IDB, r Recipient, ids []uuid.UUID) error {
 	upd := of(db.NewUpdate().Model((*Notification)(nil)), r).
 		Set("read_at = ?", time.Now().UTC()).Where("read_at IS NULL")

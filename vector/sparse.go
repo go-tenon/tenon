@@ -54,6 +54,7 @@ func querySparse(tok search.Tokenizer, text string) sparse {
 	return build(tf, func(float64) float32 { return 1 })
 }
 
+// build 把词频 tf 转换为稀疏向量，按词的 ID 排序，权重由 value 计算。
 func build(tf map[uint32]float64, value func(float64) float32) sparse {
 	s := sparse{indices: make([]uint32, 0, len(tf))}
 	for id := range tf {

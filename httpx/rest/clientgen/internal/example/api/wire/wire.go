@@ -54,6 +54,7 @@ type FieldError struct {
 	Code     string `json:"code,omitempty"` // 违反的验证规则，例如 validation.min_length；无法识别的规则为空。
 }
 
+// Error 返回错误的描述：状态码、错误码、提示和请求 ID。
 func (e *Error) Error() string {
 	var b strings.Builder
 	b.WriteString("api: ")
@@ -94,9 +95,13 @@ type Auth interface {
 // StaticToken 返回总是使用 token 的 Auth，例如不透明的 API token；它的 Refresh 总是返回错误。
 func StaticToken(token string) Auth { return staticToken(token) }
 
+// staticToken 是固定不变的凭据。
 type staticToken string
 
+// Token 返回固定的凭据。
 func (t staticToken) Token(context.Context) (string, error) { return string(t), nil }
+
+// Refresh 返回错误：固定的凭据无法刷新。
 func (staticToken) Refresh(context.Context) error {
 	return errors.New("wire: a static token cannot be refreshed")
 }
@@ -119,6 +124,7 @@ type Client struct {
 	refreshing map[string]*refresh
 }
 
+// refresh 是一次进行中的凭据刷新，同时收到 401 的请求共用它的结果。
 type refresh struct {
 	done chan struct{}
 	err  error
@@ -178,6 +184,7 @@ type Event struct {
 	Data []byte
 }
 
+// lastEventIDKey 是 Last-Event-ID 在 context 中的键。
 type lastEventIDKey struct{}
 
 // WithLastEventID 让 ctx 中发出的 SSE 请求带上 Last-Event-ID 请求头，服务端从这个事件之后继续发送。
@@ -302,6 +309,7 @@ func rewind(r *Request) bool {
 	return true
 }
 
+// send 发出一次请求：拼上地址和查询参数，带上凭据和语言等请求头。
 func (c *Client) send(ctx context.Context, r *Request, body []byte, token, accept string) (*http.Response, error) {
 	target := c.base + r.Path
 	if len(r.Query) > 0 {
@@ -444,6 +452,7 @@ func (c *Client) renew(ctx context.Context, stale string) (string, bool) {
 	return fresh, err == nil && fresh != ""
 }
 
+// encodeBody 把 v 编码为 JSON 请求体，nil 或空指针时返回 nil。
 func encodeBody(v any) ([]byte, error) {
 	if v == nil {
 		return nil, nil
@@ -454,11 +463,13 @@ func encodeBody(v any) ([]byte, error) {
 	return json.Marshal(v)
 }
 
+// drain 读完并关闭响应体，让连接可以复用。
 func drain(res *http.Response) {
 	_, _ = io.Copy(io.Discard, io.LimitReader(res.Body, 64<<10))
 	_ = res.Body.Close()
 }
 
+// decodeError 把错误响应转换为 *Error。
 func decodeError(res *http.Response) error {
 	e := &Error{Status: res.StatusCode, RequestID: res.Header.Get("X-Request-ID"), RetryAfter: retryAfter(res.Header.Get("Retry-After"))}
 	var problem struct {

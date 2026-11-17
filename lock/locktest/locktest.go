@@ -26,6 +26,7 @@ type Store struct {
 // sweepInterval 是 Store 清除过期锁的最短间隔。
 const sweepInterval = time.Minute
 
+// held 是一把被持有的锁。
 type held struct {
 	owner   string
 	expires time.Time

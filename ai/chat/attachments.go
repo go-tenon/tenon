@@ -27,6 +27,7 @@ type Attachment struct {
 // attachmentLabel 是写在附件前面、让模型知道附件 ID 的文字。
 const attachmentLabel = "[attachment "
 
+// labelOf 返回附件 id 在消息中的标签。
 func labelOf(id string) string { return attachmentLabel + id + "]" }
 
 // attachmentOf 把消息的一部分转换为附件，ID 由内容（以链接发送的是链接）计算；文字和没有内容的部分返回 false。

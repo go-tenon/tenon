@@ -130,6 +130,7 @@ func (m *Model) GenerateContent(ctx context.Context, req *model.Request) (<-chan
 	return ch, nil
 }
 
+// partial 返回流式回复中携带 delta 的一块。
 func partial(delta model.Message) *model.Response {
 	return &model.Response{
 		Object:    model.ObjectTypeChatCompletionChunk,

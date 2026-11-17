@@ -10,6 +10,7 @@ import (
 // defaultTimeout 用于调用方未设置 deadline 的清理。
 const defaultTimeout = 10 * time.Second
 
+// entry 是栈中的一项清理函数。
 type entry struct {
 	name string
 	fn   func(context.Context) error
@@ -63,6 +64,7 @@ func (s *Stack) CloseWith(ctx context.Context, runErr error) error {
 	}
 }
 
+// close 按后进先出的顺序执行全部清理函数，只执行一次。
 func (s *Stack) close(ctx context.Context) error {
 	if s.closed {
 		return nil
@@ -84,6 +86,7 @@ func (s *Stack) close(ctx context.Context) error {
 	return errors.Join(errs...)
 }
 
+// detachedContext 返回不随 ctx 取消、但保留 ctx 截止时间的 context。
 func detachedContext(ctx context.Context) (context.Context, context.CancelFunc) {
 	base := context.WithoutCancel(ctx)
 	if deadline, ok := ctx.Deadline(); ok {

@@ -25,6 +25,7 @@ func (e Event[T]) Send(ctx context.Context, db bun.IDB, subject identity.Subject
 	return send(ctx, db, subject, e.Name, data)
 }
 
+// describe 返回事件的名称、说明和数据类型。
 func (e Event[T]) describe() description {
 	return description{name: e.Name, summary: e.Summary, data: reflect.TypeFor[T]()}
 }
@@ -34,6 +35,7 @@ type Documented interface {
 	describe() description
 }
 
+// description 是一种事件的名称、说明和数据类型。
 type description struct {
 	name, summary string
 	data          reflect.Type

@@ -72,6 +72,7 @@ type EndpointInput struct {
 	Disabled    bool // 停用的端点停止接收新事件，已有的投递在下次尝试时标记为失败
 }
 
+// check 校验端点的地址和订阅的事件。
 func (in EndpointInput) check() error {
 	u, err := url.Parse(in.URL)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || len(in.URL) > 2048 {
@@ -157,6 +158,7 @@ func RotateSecret(ctx context.Context, db bun.IDB, tenant string, id uuid.UUID) 
 	return update(ctx, db, tenant, id, ep, "secret", "previous_secret", "previous_secret_expires_at", "updated_at")
 }
 
+// update 修改租户 tenant 的端点 id 的 columns 列；端点不存在时返回 ErrEndpointNotFound。
 func update(ctx context.Context, db bun.IDB, tenant string, id uuid.UUID, ep *Endpoint, columns ...string) (*Endpoint, error) {
 	res, err := db.NewUpdate().Model(ep).Column(columns...).
 		Where("tenant = ?", tenant).Where("id = ?", id).Exec(ctx)

@@ -159,6 +159,7 @@ func (p *Provider) Push(ctx context.Context, b push.Batch) error {
 	return p.call(ctx, "PushV2", params)
 }
 
+// appKey 返回平台 platform 的应用在阿里云中的 AppKey。
 func (p *Provider) appKey(platform push.Platform) int64 {
 	switch platform {
 	case push.Android:

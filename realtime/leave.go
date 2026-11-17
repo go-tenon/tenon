@@ -36,6 +36,7 @@ type membership struct {
 	closed  bool
 }
 
+// leaveKey 标识频道中的一个连接。
 type leaveKey struct{ channel, client string }
 
 // pendingLeave 是一个已经离开、还在宽限期内的连接。
@@ -45,6 +46,7 @@ type pendingLeave struct {
 	rejoined bool                   // 同一个连接已经重新订阅，等它的加入事件到来时一并取消
 }
 
+// newMembership 创建成员管理：离开在宽限期 grace 之后才广播，grace 为 0 时用 DefaultPresenceGrace。
 func newMembership(grace time.Duration, store PresenceStore, send func(envelope) error, logger *slog.Logger) *membership {
 	if grace == 0 {
 		grace = DefaultPresenceGrace
@@ -207,12 +209,14 @@ func (m *membership) present(channel string, info *centrifuge.ClientInfo) bool {
 	return false
 }
 
+// list 返回频道 channel 的在线成员。
 func (m *membership) list(channel string) ([]PresenceEntry, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), presenceTimeout)
 	defer cancel()
 	return m.store.List(ctx, channel)
 }
 
+// delete 从在线成员中删除频道 channel 的连接 client。
 func (m *membership) delete(channel, client string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), presenceTimeout)
 	defer cancel()

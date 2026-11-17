@@ -50,6 +50,7 @@ type gcra struct {
 	ahead time.Duration // 理论到达时间最多可以领先当前时间的量，超出即拒绝。
 }
 
+// newGCRA 按配置创建 GCRA 算法的参数，配置不合法时 panic。
 func newGCRA(name string, cfg Config) gcra {
 	if err := cfg.Validate(); err != nil {
 		panic("ratelimit: " + name + ": " + err.Error())
@@ -70,6 +71,7 @@ func (g gcra) take(tat, now time.Time) (next time.Time, wait time.Duration) {
 	return tat.Add(g.step), 0
 }
 
+// exceeded 返回超过限流的错误，带上需要等待的时间。
 func exceeded(wait time.Duration) error {
 	return ErrExceeded.New(errorx.RetryAfter(wait))
 }

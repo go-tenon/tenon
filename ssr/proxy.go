@@ -23,6 +23,7 @@ func DefaultCSP(nonce string) string {
 		"img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'"
 }
 
+// nonceKey 是 CSP nonce 在 context 中的键。
 type nonceKey struct{}
 
 // pageProxy 把页面请求经 unix socket 转给 SSR 进程，流式转发，不缓冲。
@@ -87,8 +88,8 @@ func forward(ctx context.Context, header http.Header) {
 	propagation.TraceContext{}.Inject(ctx, propagation.HeaderCarrier(header))
 }
 
-// route 用 SSR 进程报告的前端路由模板替换 chi 的路由模板，httpx.Telemetry 据此命名 span（例如 GET /articles/$id），
-// 而不是挂载页面处理器的 /*。路由模板不对外暴露。
+// route 用 SSR 进程报告的前端路由模板替换 chi 的路由模板，httpx.Telemetry 据此命名 span，
+// 例如 GET /articles/$id。路由模板不对外暴露。
 func route(res *http.Response) {
 	r := res.Header.Get(HeaderRoute)
 	res.Header.Del(HeaderRoute)
@@ -100,6 +101,7 @@ func route(res *http.Response) {
 	}
 }
 
+// isHTML 报告响应是否是 HTML。
 func isHTML(res *http.Response) bool {
 	return strings.HasPrefix(strings.ToLower(res.Header.Get("Content-Type")), "text/html")
 }

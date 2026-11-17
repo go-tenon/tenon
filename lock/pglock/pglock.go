@@ -95,6 +95,7 @@ DELETE FROM locks WHERE name IN (
 	return int(n), errors.Wrap(err, "pglock: cleanup")
 }
 
+// exec 执行 query，返回是否有行受影响。
 func (s *Store) exec(ctx context.Context, op, query string, args ...any) (bool, error) {
 	res, err := s.db.NewRaw(query, args...).Exec(ctx)
 	if err != nil {

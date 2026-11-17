@@ -1,6 +1,7 @@
 package login
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"slices"
@@ -90,10 +91,10 @@ func New(db bun.IDB, opts Options) *Realm {
 	if err := opts.Type.Validate(); err != nil {
 		panic(errors.Wrap(err, "login: Options.Type"))
 	}
-	opts.CodeLength = cmp(opts.CodeLength, 6)
-	opts.CodeTTL = cmp(opts.CodeTTL, 15*time.Minute)
-	opts.CodeAttempts = cmp(opts.CodeAttempts, 3)
-	opts.ProofTTL = cmp(opts.ProofTTL, 15*time.Minute)
+	opts.CodeLength = cmp.Or(opts.CodeLength, 6)
+	opts.CodeTTL = cmp.Or(opts.CodeTTL, 15*time.Minute)
+	opts.CodeAttempts = cmp.Or(opts.CodeAttempts, 3)
+	opts.ProofTTL = cmp.Or(opts.ProofTTL, 15*time.Minute)
 	if opts.CodeLength < 4 || opts.CodeLength > 12 || opts.CodeTTL < 0 || opts.CodeAttempts < 0 || opts.ProofTTL < 0 {
 		panic("login: CodeLength must be 4 to 12, and durations and attempts must not be negative")
 	}
@@ -109,13 +110,6 @@ func New(db bun.IDB, opts Options) *Realm {
 		}),
 		now: time.Now,
 	}
-}
-
-func cmp[T int | time.Duration](v, def T) T {
-	if v == 0 {
-		return def
-	}
-	return v
 }
 
 // defaultPolicy 要求 8 到 128 个字符，首尾没有空白。
@@ -134,7 +128,7 @@ type Policy struct {
 	PasswordKinds    []string                    // 可以与密码一起登录的标识类型，默认 email、phone、username。
 	PasswordPolicy   func(password string) error // 检查新密码，不符合时返回错误（通常是 ErrWeakPassword）。默认要求 8 到 128 个字符，并且首尾没有空白。已设置的密码继续有效，新策略只在下次设置密码时检查。Hasher 使用 bcrypt 时，超过 72 字节的密码同样返回 ErrWeakPassword。
 	RequireTwoFactor bool                        // RequireTwoFactor 为 true 时必须使用二次验证，例如运营人员，或者要求成员使用二次验证的租户。这次登录没有经过二次验证（passkey 登录、External.TwoFactor 本身就算）时不签发凭据：账号已经启用二次验证的，返回 Outcome.Pending，第三方登录也是如此；还没有启用的，返回 Outcome.Enroll，先启用再登录，见 EnrollTOTP。
-	Methods          []string                    // 允许的登录方式，名称与 identity.Auth.Methods 相同：password、email、phone、第三方提供方的名称、passkey。nil 表示不限制；例如租户要求只用自己的企业 IdP 登录时，只列出这个提供方。不允许的方式返回 ErrMethodNotAllowed：Password、SendCode（SignIn）、VerifyCode（登录）和 External 都检查它。二次验证的第二步始终允许。
+	Methods          []string                    // 允许的登录方式（password、email、phone、第三方提供方的名称、passkey），nil 表示不限制；不允许的方式返回 ErrMethodNotAllowed，二次验证的第二步始终允许
 }
 
 // policy 返回 ctx 的登录策略，补上默认值。

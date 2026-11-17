@@ -164,6 +164,7 @@ const (
 // assembler 把分片发送的消息拼回原样。只在接收消息的协程中使用，不需要加锁。
 type assembler map[string]*pending
 
+// pending 是正在拼合的一条分片消息。
 type pending struct {
 	data    []byte
 	next    int // 下一片的序号

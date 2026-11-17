@@ -86,6 +86,7 @@ type Store struct {
 	cfg Config
 }
 
+// row 是 api_tokens 表中的一行。
 type row struct {
 	bun.BaseModel `bun:"table:api_tokens,alias:t"`
 
@@ -232,6 +233,7 @@ func (s *Store) Authorize(ctx context.Context, sub identity.Subject, g Grant) (s
 	return s.issue(ctx, sub, r, now)
 }
 
+// issue 为主体 sub 生成新的 token，写入 r 并保存，返回 token 明文。
 func (s *Store) issue(ctx context.Context, sub identity.Subject, r *row, now time.Time) (string, error) {
 	if err := sub.Ref().Validate(); err != nil {
 		return "", errors.Wrap(err, "apitoken")
@@ -501,6 +503,7 @@ func (s *Store) Cleanup(ctx context.Context, limit int) (int, error) {
 		Where("id IN (?)", expired).Exec(ctx))
 }
 
+// token 把行转换为 Token。
 func (r *row) token() Token {
 	return Token{
 		ID:           r.ID.String(),
@@ -525,6 +528,7 @@ func (r *row) auth() identity.Auth {
 	return identity.Auth{Methods: strings.Fields(r.AuthMethods), Time: r.AuthTime}
 }
 
+// impersonator 返回代为操作的主体，没有时为零值。
 func (r *row) impersonator() identity.Ref {
 	return identity.Ref{Type: identity.SubjectType(r.ImpersonatorType), ID: r.ImpersonatorID}
 }
@@ -534,6 +538,7 @@ func (s *Store) live(q *bun.SelectQuery, now time.Time) *bun.SelectQuery {
 	return q.Where("(expires_at IS NULL OR expires_at > ?)", now)
 }
 
+// hash 返回 token 的 SHA-256，十六进制。
 func hash(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
@@ -552,6 +557,7 @@ func joinWords(words []string, what string) (string, error) {
 	return strings.Join(words, " "), nil
 }
 
+// truncate 把 s 截断为最多 n 个字符。
 func truncate(s string, n int) string {
 	if r := []rune(s); len(r) > n {
 		return string(r[:n])
@@ -559,6 +565,7 @@ func truncate(s string, n int) string {
 	return s
 }
 
+// affected 返回删除的行数。
 func affected(res sql.Result, err error) (int, error) {
 	if err != nil {
 		return 0, errors.Wrap(err, "apitoken: delete")

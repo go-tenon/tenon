@@ -117,6 +117,7 @@ func dollarTag(s string, i int) (string, bool) {
 	return "", false
 }
 
+// prev 返回 s 中位置 i 之前的字节，i 为 0 时返回空格。
 func prev(s string, i int) byte {
 	if i == 0 {
 		return ' '
@@ -124,6 +125,7 @@ func prev(s string, i int) byte {
 	return s[i-1]
 }
 
+// isDigit 报告 c 是否是数字。
 func isDigit(c byte) bool { return '0' <= c && c <= '9' }
 
 // identByte 报告 c 能否出现在标识符中：此时紧跟其后的数字或引号是标识符的一部分，例如 t1、v2。

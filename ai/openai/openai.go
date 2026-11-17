@@ -1,6 +1,6 @@
 // Package openai 通过 OpenAI 兼容接口生成图片、合成语音、识别语音、计算向量、重排和决策。
 //
-// 重排不是 OpenAI 的接口，而是 Cohere、Jina 定义、被广泛沿用的 POST {BaseURL}/rerank，
+// 重排使用 Cohere、Jina 定义、被广泛沿用的 POST {BaseURL}/rerank，
 // 硅基流动、OpenRouter、vLLM 等都提供；Cohere 自己的地址是 https://api.cohere.com/v2。
 //
 // OpenAI、火山方舟、硅基流动、通义千问的兼容模式、Ollama 等都提供这类接口，但每家支持的能力不同，以厂商文档为准。
@@ -100,8 +100,10 @@ func (c *Client) Model() string { return c.model }
 // OpenAI 返回底层的 openai-go 客户端，已经设置好接口地址和密钥，用于调用厂商自己的接口。
 func (c *Client) OpenAI() *oa.Client { return &c.client }
 
+// isDallE 报告 model 是否是 DALL·E 模型。
 func isDallE(model string) bool { return strings.HasPrefix(model, "dall-e") }
 
+// imageSizes 返回模型 model 支持的各种宽高比例对应的尺寸。
 func imageSizes(model string) map[ai.Aspect]string {
 	if model == "dall-e-3" {
 		return map[ai.Aspect]string{ai.Square: "1024x1024", ai.Portrait: "1024x1792", ai.Landscape: "1792x1024"}
@@ -305,6 +307,7 @@ func (c *Client) Embed(ctx context.Context, req ai.EmbedRequest) ([][]float32, e
 	return out, nil
 }
 
+// rerankParams 是重排接口的请求体。
 type rerankParams struct {
 	Model     string   `json:"model"`
 	Query     string   `json:"query"`
@@ -312,6 +315,7 @@ type rerankParams struct {
 	TopN      int      `json:"top_n,omitempty"`
 }
 
+// rerankResponse 是重排接口的响应。
 type rerankResponse struct {
 	Results []struct {
 		Index          int     `json:"index"`
@@ -375,6 +379,7 @@ func extension(mime, fallback string) string {
 	return fallback
 }
 
+// audioMIME 返回音频格式 format 的 MIME 类型，空字符串按 mp3 处理。
 func audioMIME(format string) string {
 	switch format {
 	case "", "mp3":

@@ -150,6 +150,7 @@ func form(ctx context.Context, doc pdf.Document) (*bytes.Buffer, string, error) 
 	return body, w.FormDataContentType(), nil
 }
 
+// addFile 把文件 name 加入表单。
 func addFile(w *multipart.Writer, name string, data []byte) error {
 	part, err := w.CreateFormFile("files", name)
 	if err == nil {

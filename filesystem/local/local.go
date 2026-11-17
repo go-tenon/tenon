@@ -80,6 +80,7 @@ type safeWriter struct {
 	done bool
 }
 
+// secure 第一次调用时补上安全响应头：总是禁止嗅探类型，能在浏览器中执行的类型改为下载并加上沙箱。
 func (s *safeWriter) secure() {
 	if s.done {
 		return
@@ -94,16 +95,19 @@ func (s *safeWriter) secure() {
 	}
 }
 
+// WriteHeader 补上安全响应头后写出状态码。
 func (s *safeWriter) WriteHeader(code int) {
 	s.secure()
 	s.ResponseWriter.WriteHeader(code)
 }
 
+// Write 补上安全响应头后写出响应体。
 func (s *safeWriter) Write(b []byte) (int, error) {
 	s.secure()
 	return s.ResponseWriter.Write(b)
 }
 
+// Unwrap 返回被包装的 ResponseWriter。
 func (s *safeWriter) Unwrap() http.ResponseWriter { return s.ResponseWriter }
 
 // Put 写入同目录临时文件后原子重命名，失败时不发布部分内容。
@@ -172,6 +176,7 @@ func (d *Disk) Delete(_ context.Context, key string) error {
 	return nil
 }
 
+// validKey 检查 key 是合法的相对路径，不含反斜杠和空字符。
 func validKey(key string) error {
 	if !fs.ValidPath(key) || key == "." || strings.ContainsAny(key, "\\\x00") {
 		return errors.Wrapf(filesystem.ErrInvalid, "invalid key %q", key)
@@ -179,6 +184,7 @@ func validKey(key string) error {
 	return nil
 }
 
+// escapeKey 按路径段转义 key，用于地址。
 func escapeKey(key string) string {
 	parts := strings.Split(key, "/")
 	for i, p := range parts {
@@ -190,6 +196,7 @@ func escapeKey(key string) string {
 // publicFS 只公开普通文件：目录和以点开头的文件（写入中的临时文件）都视为不存在。
 type publicFS struct{ fs.FS }
 
+// Open 打开文件 name，以点开头的文件视为不存在。
 func (p publicFS) Open(name string) (fs.File, error) {
 	if strings.HasPrefix(path.Base(name), ".") && name != "." {
 		return nil, fs.ErrNotExist
@@ -205,11 +212,13 @@ func (p publicFS) Open(name string) (fs.File, error) {
 	return f, nil
 }
 
+// ctxReader 在 ctx 取消后停止读取。
 type ctxReader struct {
 	ctx context.Context
 	r   io.Reader
 }
 
+// Read 在 ctx 未取消时从 r 读取。
 func (c ctxReader) Read(p []byte) (int, error) {
 	if err := c.ctx.Err(); err != nil {
 		return 0, err

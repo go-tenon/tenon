@@ -29,6 +29,7 @@ type adapter struct {
 	spec30 map[string]func(huma.Context) // 3.0 文档端点的路径和它们的处理器，代替 Huma 自带的处理器。
 }
 
+// newAdapter 创建在 chi 路由 r 上注册操作的适配器。
 func newAdapter(r chi.Router, cfg huma.Config) *adapter {
 	a := &adapter{router: r, chi: humachi.NewAdapter(r), docs: docRoutes(cfg)}
 	if cfg.OpenAPIPath != "" {
@@ -41,6 +42,7 @@ func newAdapter(r chi.Router, cfg huma.Config) *adapter {
 	return a
 }
 
+// Handle 把操作 op 注册为实现 httpx.RouteDescriber 的路由，3.0 文档端点换用转换后的处理器。
 func (a *adapter) Handle(op *huma.Operation, handler func(huma.Context)) {
 	if h, ok := a.spec30[op.Path]; ok && op.Method == http.MethodGet {
 		handler = h
@@ -62,6 +64,7 @@ func spec30(contentType string, render func() ([]byte, error)) func(huma.Context
 	}
 }
 
+// ServeHTTP 交给底层的 chi 路由处理请求。
 func (a *adapter) ServeHTTP(w http.ResponseWriter, r *http.Request) { a.router.ServeHTTP(w, r) }
 
 // SanitizeInternalContext 委托给 humachi，供 Huma 的 autopatch 重新分发内部请求。
@@ -82,6 +85,7 @@ type route struct {
 	adapter *adapter
 }
 
+// ServeHTTP 用 Huma 的 context 调用操作的处理器。
 func (rt *route) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	rt.handler(humachi.NewContext(rt.op, r, w))
 }
@@ -95,6 +99,7 @@ func (rt *route) DescribeRoute() httpx.Route {
 	return httpx.Route{Access: access, Permissions: permissions, OperationID: rt.op.OperationID, Summary: rt.op.Summary}
 }
 
+// routeAccess 返回操作 op 在路由表中的访问策略和需要的权限。
 func routeAccess(op *huma.Operation) (string, []string) {
 	if op.Security == nil {
 		return httpx.AccessUnknown, nil
@@ -160,6 +165,7 @@ func Lookup(router chi.Routes, basePath string) (*API, error) {
 	return nil, errors.Newf("rest: no API with base path %q; registered: %s", basePath, basePaths(apis))
 }
 
+// basePaths 返回 apis 的路径前缀，用引号括起来以逗号分隔，用于错误消息。
 func basePaths(apis []*API) string {
 	paths := make([]string, len(apis))
 	for i, api := range apis {

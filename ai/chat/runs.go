@@ -222,6 +222,7 @@ func (rs *Runs) Close() error {
 	return err
 }
 
+// key 返回用户 userID 的对话 sessionID 在会话存储中的键。
 func (rs *Runs) key(userID, sessionID string) session.Key {
 	return session.Key{AppName: rs.app, UserID: userID, SessionID: sessionID}
 }
@@ -263,6 +264,7 @@ func (rs *Runs) Start(ctx context.Context, userID, sessionID string, msg model.M
 	return rs.startLocal(ctx, userID, sessionID, msg, opts)
 }
 
+// startLocal 在本实例上开始一次运行，回应用户消息 msg；对话正在运行时返回 ErrBusy。
 func (rs *Runs) startLocal(ctx context.Context, userID, sessionID string, msg model.Message, opts []agent.RunOption) (*Run, error) {
 	key := rs.key(userID, sessionID)
 	if rs.localBusy(key) {
@@ -445,6 +447,7 @@ func (rs *Runs) Approve(ctx context.Context, userID, sessionID, callID string, o
 	return rs.approveLocal(ctx, userID, sessionID, callID, opts)
 }
 
+// approveLocal 在本实例上执行批准的工具调用 callID，再继续运行。
 func (rs *Runs) approveLocal(ctx context.Context, userID, sessionID, callID string, opts []agent.RunOption) (*Run, error) {
 	key := rs.key(userID, sessionID)
 	return rs.resolve(ctx, key, callID, opts, func(call ToolCall) string {
@@ -475,12 +478,14 @@ func (rs *Runs) Reject(ctx context.Context, userID, sessionID, callID, reason st
 	return rs.rejectLocal(ctx, userID, sessionID, callID, reason, opts)
 }
 
+// rejectLocal 在本实例上拒绝工具调用 callID，把拒绝的原因作为调用结果交给模型，再继续运行。
 func (rs *Runs) rejectLocal(ctx context.Context, userID, sessionID, callID, reason string, opts []agent.RunOption) (*Run, error) {
 	return rs.resolve(ctx, rs.key(userID, sessionID), callID, opts, func(ToolCall) string {
 		return rejection(reason)
 	})
 }
 
+// resolve 取得对话的锁，用 result 给出待审批调用 callID 的结果，再开始下一次运行。
 func (rs *Runs) resolve(ctx context.Context, key session.Key, callID string, opts []agent.RunOption, result func(ToolCall) string) (*Run, error) {
 	// 先取得对话的锁再执行批准的工具：对话正忙时返回 ErrBusy，工具保持待执行，重试时也只执行一次。
 	own, err := rs.own(ctx, key)
@@ -564,6 +569,7 @@ func rejection(reason string) string {
 	return string(b)
 }
 
+// newToolResult 返回工具调用的结果，按内容判断是否是拒绝审批的结果。
 func newToolResult(id, name, content string) ToolResult {
 	var r struct{ Approval, Reason string }
 	denied := json.Unmarshal([]byte(content), &r) == nil && r.Approval == "rejected"
@@ -581,6 +587,7 @@ func toolAnswers(t transcript) map[string]string {
 	return out
 }
 
+// pendingCall 是一个等待审批的工具调用。
 type pendingCall struct {
 	call   ToolCall
 	source *event.Event // 调用所在的会话事件；使用 UseHistory 时为 nil
@@ -621,6 +628,7 @@ func (rs *Runs) pending(ctx context.Context, key session.Key) (transcript, []pen
 	return t, out, nil
 }
 
+// toolCall 把模型的工具调用转换为 ToolCall。
 func toolCall(tc model.ToolCall) ToolCall {
 	return ToolCall{ID: tc.ID, Name: tc.Function.Name, Arguments: string(tc.Function.Arguments)}
 }
@@ -671,12 +679,14 @@ func (r *Run) Cancel() { r.cancel() }
 // Done 在运行结束、最后一个事件（done）产生后关闭。
 func (r *Run) Done() <-chan struct{} { return r.done }
 
+// hasSteered 报告是否有还没发给模型的插话。
 func (r *Run) hasSteered() bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return len(r.steered) > 0
 }
 
+// isFinished 报告运行是否已经结束。
 func (r *Run) isFinished() bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -723,6 +733,7 @@ func (r *Run) Events(ctx context.Context, lastEventID string) func(yield func(Ev
 	}
 }
 
+// emit 追加一个事件，唤醒等待新事件的读者。
 func (r *Run) emit(name string, data any, raw *event.Event) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -840,6 +851,7 @@ func (r *Run) pendingCalls(calls map[string]ToolCall, answered map[string]bool) 
 	return out
 }
 
+// fail 记录运行失败的原因并发出错误事件；ctx 已取消时直接返回。
 func (r *Run) fail(ctx context.Context, err error) {
 	if ctx.Err() != nil {
 		return

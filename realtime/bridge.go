@@ -90,19 +90,25 @@ func (b *bridge) run() {
 // stop 结束 run，可以重复调用。
 func (b *bridge) stop() { b.once.Do(func() { close(b.done) }) }
 
+// RegisterBrokerEventHandler 记下 Centrifuge 处理发布、加入、离开的处理器。
 func (b *bridge) RegisterBrokerEventHandler(h centrifuge.BrokerEventHandler) error {
 	b.pubs = h
 	return nil
 }
 
+// RegisterControlEventHandler 记下 Centrifuge 处理控制消息的处理器。
 func (b *bridge) RegisterControlEventHandler(h centrifuge.ControlEventHandler) error {
 	b.ctl = h
 	return nil
 }
 
-func (b *bridge) Subscribe(...string) error   { return nil }
+// Subscribe 什么也不做：每个实例都收到全部主题。
+func (b *bridge) Subscribe(...string) error { return nil }
+
+// Unsubscribe 什么也不做：每个实例都收到全部主题。
 func (b *bridge) Unsubscribe(...string) error { return nil }
 
+// Publish 通过 Hub 发布频道 ch 的消息；带客户端信息的发布经由内部主题转发。
 func (b *bridge) Publish(ch string, data []byte, opts centrifuge.PublishOptions) (centrifuge.PublishResult, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), publishTimeout)
 	defer cancel()
@@ -118,26 +124,32 @@ func (b *bridge) PublishJoin(ch string, info *centrifuge.ClientInfo) error {
 	return b.members.join(ch, info)
 }
 
+// PublishLeave 交给 membership 决定是否发出离开、何时发出。
 func (b *bridge) PublishLeave(ch string, info *centrifuge.ClientInfo) error {
 	return b.members.leave(ch, info)
 }
 
+// PublishControl 通过 Hub 发送控制消息，nodeID 为空时发给所有节点。
 func (b *bridge) PublishControl(data []byte, nodeID, _ string) error {
 	return b.sendNow(envelope{Kind: kindControl, Node: nodeID, Data: data})
 }
 
+// History 返回 ErrorNotAvailable：只投递实时消息，没有历史。
 func (b *bridge) History(string, centrifuge.HistoryOptions) ([]*centrifuge.Publication, centrifuge.StreamPosition, error) {
 	return nil, centrifuge.StreamPosition{}, centrifuge.ErrorNotAvailable
 }
 
+// RemoveHistory 什么也不做：没有历史。
 func (b *bridge) RemoveHistory(string) error { return nil }
 
+// sendNow 发送内部消息，最多等待 publishTimeout。
 func (b *bridge) sendNow(e envelope) error {
 	ctx, cancel := context.WithTimeout(context.Background(), publishTimeout)
 	defer cancel()
 	return b.send(ctx, e)
 }
 
+// send 在内部主题上发送 e。
 func (b *bridge) send(ctx context.Context, e envelope) error {
 	return b.hub.PublishJSON(ctx, internalTopic, e)
 }

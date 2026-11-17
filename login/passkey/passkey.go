@@ -76,6 +76,7 @@ type Store struct {
 	now      func() time.Time
 }
 
+// row 是 auth_passkeys 表中的一行：一个 passkey。
 type row struct {
 	bun.BaseModel `bun:"table:auth_passkeys,alias:pk"`
 
@@ -141,9 +142,16 @@ type user struct {
 	credentials []webauthn.Credential
 }
 
-func (u *user) WebAuthnID() []byte                         { return u.id }
-func (u *user) WebAuthnName() string                       { return u.name }
-func (u *user) WebAuthnDisplayName() string                { return u.name }
+// WebAuthnID 返回主体在 WebAuthn 中的用户 ID。
+func (u *user) WebAuthnID() []byte { return u.id }
+
+// WebAuthnName 返回创建 passkey 时显示的账号名。
+func (u *user) WebAuthnName() string { return u.name }
+
+// WebAuthnDisplayName 返回显示名称，与账号名相同。
+func (u *user) WebAuthnDisplayName() string { return u.name }
+
+// WebAuthnCredentials 返回主体已有的 passkey。
 func (u *user) WebAuthnCredentials() []webauthn.Credential { return u.credentials }
 
 // BeginRegistration 开始创建 passkey。ref 是已登录的主体（添加 passkey），零值表示用 passkey 注册新账号；
@@ -360,6 +368,7 @@ func (s *Store) rows(ctx context.Context, ref identity.Ref) ([]row, error) {
 	return rows, errors.Wrap(err, "passkey: list")
 }
 
+// ids 返回主体 ref 的全部 passkey 的 ID。
 func (s *Store) ids(ctx context.Context, ref identity.Ref) ([]string, error) {
 	attached, err := s.realm.Identifiers(ctx, ref)
 	if err != nil {
@@ -374,6 +383,7 @@ func (s *Store) ids(ctx context.Context, ref identity.Ref) ([]string, error) {
 	return ids, nil
 }
 
+// owns 检查 passkey id 属于主体 ref，否则返回 ErrNotFound。
 func (s *Store) owns(ctx context.Context, ref identity.Ref, id string) error {
 	ids, err := s.ids(ctx, ref)
 	if err != nil {
@@ -385,6 +395,7 @@ func (s *Store) owns(ctx context.Context, ref identity.Ref, id string) error {
 	return nil
 }
 
+// row 读取 passkey id 的记录，没有时返回 ErrInvalid。
 func (s *Store) row(ctx context.Context, id string) (*row, error) {
 	var r row
 	err := s.db.NewSelect().Model(&r).Where("credential_id = ?", id).Where("subject_type = ?", s.realm.Type()).Scan(ctx)
@@ -394,6 +405,7 @@ func (s *Store) row(ctx context.Context, id string) (*row, error) {
 	return &r, errors.Wrap(err, "passkey: find")
 }
 
+// credential 解码记录中保存的 WebAuthn 凭据。
 func (r *row) credential() (webauthn.Credential, error) {
 	var cred webauthn.Credential
 	err := json.Unmarshal([]byte(r.Credential), &cred)
@@ -431,6 +443,7 @@ func (s *Store) open(ctx context.Context, token, purpose string) (state, error) 
 	return st, nil
 }
 
+// truncate 把 s 截断为最多 n 个字符。
 func truncate(s string, n int) string {
 	if r := []rune(s); len(r) > n {
 		return string(r[:n])

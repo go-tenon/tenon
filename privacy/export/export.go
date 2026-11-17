@@ -200,11 +200,13 @@ type manifest struct {
 	Files      []string  `json:"files"`
 }
 
+// subject 是导出文件中的主体。
 type subject struct {
 	Type identity.SubjectType `json:"type"`
 	ID   string               `json:"id"`
 }
 
+// export 收集主体的全部数据，打包上传，写入导出记录。
 func (s *Service) export(ctx context.Context, r *operation.Run, exp *Export) error {
 	owner := exp.Owner()
 	if err := s.check(owner.Ref()); err != nil {

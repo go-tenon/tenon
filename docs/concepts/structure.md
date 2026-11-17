@@ -172,7 +172,7 @@ blog/
 
 **编译报错 `import cycle not allowed`**
 
-两个包互相导入了对方。常见的情况是：`article` 导入了 `user`，`user` 又导入了 `article`。把两边都要用的部分移到其中一个包中，或者移到一个新的、更底层的包中；也可以让一方通过接口或函数参数拿到它需要的东西，而不是直接导入对方，见[依赖装配](dependencies.md)。
+两个包互相导入了对方。常见的情况是：`article` 导入了 `user`，`user` 又导入了 `article`。把两边都要用的部分移到其中一个包中，或者移到一个新的、更底层的包中；也可以让一方通过接口或函数参数拿到它需要的东西，不再直接导入对方，见[依赖装配](dependencies.md)。
 
 **其他项目导入不了我的包，报错 `use of internal package ... not allowed`**
 

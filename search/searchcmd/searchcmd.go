@@ -71,6 +71,7 @@ func New(db *bun.DB, indexes ...Index) *cobra.Command {
 	return root
 }
 
+// run 重建索引 ix；detach 为 true 时只发起任务并输出它的 ID，否则等待完成并显示进度。
 func run(cmd *cobra.Command, db *bun.DB, ix Index, detach bool) error {
 	ctx, out := cmd.Context(), cmd.OutOrStdout()
 	ops := operation.New(db)

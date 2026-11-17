@@ -65,6 +65,7 @@ func Record(ctx context.Context, db bun.IDB, actor identity.Subject, a Activity)
 	return errors.Wrap(err, "activity: record")
 }
 
+// check 校验记录的必填字段，返回第一个不合法之处。
 func check(a Activity) error {
 	if a.Event == "" {
 		return errors.New("activity: empty event")

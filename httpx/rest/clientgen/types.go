@@ -37,6 +37,7 @@ type file struct {
 	used    map[string]string // 名称 → 导入路径
 }
 
+// newFile 创建导入路径为 path 的生成文件。
 func newFile(path string) *file {
 	return &file{path: path, imports: map[string]string{}, used: map[string]string{}}
 }
@@ -54,6 +55,7 @@ func (f *file) use(p, name string) string {
 	return n
 }
 
+// importBlock 返回文件的 import 声明，按路径排序；没有导入时为空。
 func (f *file) importBlock() string {
 	if len(f.imports) == 0 {
 		return ""
@@ -154,6 +156,7 @@ func (g *generator) expr(t types.Type, f *file) (string, error) {
 	return "", errors.Newf("clientgen: type %s cannot be sent as JSON", t)
 }
 
+// named 返回命名类型 t 在文件 f 中的写法，需要复制的类型加入队列。
 func (g *generator) named(t *types.Named, f *file) (string, error) {
 	obj := t.Obj()
 	if obj.Pkg() == nil {
@@ -211,6 +214,7 @@ func (g *generator) copyable(pkgPath string) bool {
 	return p != nil && p.Module != nil && g.modules[p.Module.Path]
 }
 
+// enqueue 把类型 obj 加入待生成的队列，每个类型只加入一次。
 func (g *generator) enqueue(obj *types.TypeName) {
 	if !g.seen[obj] {
 		g.seen[obj] = true
@@ -262,6 +266,7 @@ func (g *generator) structExpr(s *types.Struct, f *file, keep fieldFilter, repla
 	return b.String(), nil
 }
 
+// quoteTag 返回结构体标签的 Go 字面量：含反引号时用双引号。
 func quoteTag(tag string) string {
 	if strings.Contains(tag, "`") {
 		return strconv.Quote(tag)
@@ -396,6 +401,7 @@ type codeGroup struct {
 	codes []codeDecl
 }
 
+// codeDecl 是一个错误码常量的声明。
 type codeDecl struct {
 	name, value, doc string
 }
@@ -485,6 +491,7 @@ func (g *generator) doc(pkg *types.Package, pos token.Pos) string {
 	return index[pos]
 }
 
+// indexDocs 把文件 f 中类型、字段、常量和变量的注释按声明的位置记入 index。
 func indexDocs(f *ast.File, index map[token.Pos]string) {
 	for _, d := range f.Decls {
 		gd, ok := d.(*ast.GenDecl)
@@ -522,6 +529,7 @@ func indexDocs(f *ast.File, index map[token.Pos]string) {
 	}
 }
 
+// text 返回声明的注释：优先用上方的注释；single 为 true 时（分组中只有这一项）用分组的注释；最后用行尾注释。
 func text(doc, trailing, outer *ast.CommentGroup, single bool) string {
 	switch {
 	case doc != nil:

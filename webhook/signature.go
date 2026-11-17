@@ -38,6 +38,7 @@ func newSecret() string {
 	return secretPrefix + base64.StdEncoding.EncodeToString(key)
 }
 
+// decodeSecret 解码密钥：去掉可选的 whsec_ 前缀后按 base64 解码。
 func decodeSecret(secret string) ([]byte, error) {
 	key, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(secret, secretPrefix))
 	if err != nil || len(key) == 0 {
@@ -56,6 +57,7 @@ func Sign(secret, id string, timestamp time.Time, body []byte) (string, error) {
 	return "v1," + signature(key, id, timestamp.Unix(), body), nil
 }
 
+// signature 返回请求的签名：对“ID.时间戳.请求体”计算 HMAC-SHA256。
 func signature(key []byte, id string, timestamp int64, body []byte) string {
 	mac := hmac.New(sha256.New, key)
 	mac.Write([]byte(id + "." + strconv.FormatInt(timestamp, 10) + "."))

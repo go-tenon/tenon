@@ -41,6 +41,7 @@ func Cluster(hub *broadcast.Hub, locker *lock.Locker) Option {
 	}
 }
 
+// cluster 在多个实例之间协调对话的运行：用锁保证同一对话只在一个实例上运行，用 Hub 转发事件和控制消息。
 type cluster struct {
 	hub    *broadcast.Hub
 	locker *lock.Locker
@@ -61,10 +62,16 @@ func (c *cluster) appID() string {
 	return hex.EncodeToString(h[:8])
 }
 
+// lockName 返回对话 key 的锁名。
 func (c *cluster) lockName(key session.Key) string { return "ai:run:" + c.id(key) }
+
+// runTopic 返回对话 key 的运行事件主题。
 func (c *cluster) runTopic(key session.Key) string { return "ai.run." + c.id(key) }
+
+// ctlTopic 返回对话 key 的控制消息主题。
 func (c *cluster) ctlTopic(key session.Key) string { return "ai.ctl." + c.id(key) }
 
+// publish 把 v 编码为 JSON 发布到主题 topic，最多等待 publishTimeout。
 func (c *cluster) publish(topic string, v any) error {
 	ctx, cancel := context.WithTimeout(context.Background(), publishTimeout)
 	defer cancel()
@@ -90,12 +97,14 @@ type ctlMsg struct {
 	Message *model.Message `json:"message,omitempty"`
 }
 
+// wireEvent 是在实例之间传递的事件，Data 保留 JSON 原文。
 type wireEvent struct {
 	ID   string          `json:"id"`
 	Name string          `json:"name"`
 	Data json.RawMessage `json:"data"`
 }
 
+// encodeEvents 把事件编码为 wireEvent。
 func encodeEvents(evs []Event) ([]wireEvent, error) {
 	out := make([]wireEvent, len(evs))
 	for i, ev := range evs {
@@ -108,6 +117,7 @@ func encodeEvents(evs []Event) ([]wireEvent, error) {
 	return out, nil
 }
 
+// decodeEvent 按事件名把 wireEvent 还原为 Event。
 func decodeEvent(w wireEvent) (Event, error) {
 	ev := Event{ID: w.ID, Name: w.Name}
 	var err error
@@ -193,6 +203,7 @@ type owner struct {
 	ctlDone   chan struct{}
 }
 
+// acquire 取得对话 key 的锁，成为运行所在的实例；对话已在别处运行时返回 ErrBusy。
 func (c *cluster) acquire(ctx context.Context, key session.Key) (*owner, error) {
 	lk, err := c.locker.Acquire(ctx, c.lockName(key), lockTTL)
 	if errors.Is(err, lock.ErrNotAcquired) {
@@ -205,6 +216,7 @@ func (c *cluster) acquire(ctx context.Context, key session.Key) (*owner, error) 
 		closing: make(chan struct{}), ctlDone: make(chan struct{})}, nil
 }
 
+// release 释放对话锁。
 func (o *owner) release() {
 	ctx, cancel := context.WithTimeout(context.Background(), publishTimeout)
 	defer cancel()
@@ -226,6 +238,7 @@ func (o *owner) serve(r *Run) {
 	go o.control(sub)
 }
 
+// publishLoop 定时广播积累的事件和心跳，并续期对话锁，直到运行结束；锁丢失时取消运行。
 func (o *owner) publishLoop() {
 	defer close(o.stopped)
 	flush := time.NewTicker(flushInterval)
@@ -279,6 +292,7 @@ func (o *owner) flush() {
 	o.sent += len(evs)
 }
 
+// send 在运行主题上广播 m，失败时记 Warn 日志。
 func (o *owner) send(m runMsg) {
 	if err := o.c.publish(o.c.runTopic(o.key), m); err != nil {
 		// 镜像会发现序号不连续或超时，并结束推送让客户端重连。
@@ -286,6 +300,7 @@ func (o *owner) send(m runMsg) {
 	}
 }
 
+// control 处理其他实例发来的控制消息（取快照、插话、通知、取消），直到 owner 关闭。
 func (o *owner) control(sub *broadcast.Subscription) {
 	defer close(o.ctlDone)
 	for {
@@ -511,6 +526,7 @@ func (r *Run) append(evs []Event, finished bool) {
 	r.changed = make(chan struct{})
 }
 
+// loop 接收运行所在实例的广播，更新镜像；长时间收不到消息时结束镜像。
 func (m *mirror) loop() {
 	idle := time.NewTimer(m.c.idle)
 	defer idle.Stop()
@@ -604,6 +620,7 @@ func (m *mirror) end(keep time.Duration) {
 	})
 }
 
+// close 关闭镜像并取消订阅，可以多次调用。
 func (m *mirror) close() {
 	m.closeOnce.Do(func() {
 		close(m.closing)

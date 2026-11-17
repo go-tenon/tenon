@@ -87,14 +87,17 @@ func (r *Recorder) Reset() {
 	r.records = nil
 }
 
+// handler 把日志写入 Recorder。
 type handler struct {
 	rec    *Recorder
 	attrs  map[string]any
 	prefix string
 }
 
+// Enabled 总是返回 true：记录全部级别。
 func (h *handler) Enabled(context.Context, slog.Level) bool { return true }
 
+// Handle 把记录 r 和它的字段写入 Recorder。
 func (h *handler) Handle(_ context.Context, r slog.Record) error {
 	attrs := make(map[string]any, len(h.attrs)+r.NumAttrs())
 	for k, v := range h.attrs {
@@ -110,6 +113,7 @@ func (h *handler) Handle(_ context.Context, r slog.Record) error {
 	return nil
 }
 
+// WithAttrs 返回追加了 as 的处理器。
 func (h *handler) WithAttrs(as []slog.Attr) slog.Handler {
 	attrs := make(map[string]any, len(h.attrs)+len(as))
 	for k, v := range h.attrs {
@@ -121,6 +125,7 @@ func (h *handler) WithAttrs(as []slog.Attr) slog.Handler {
 	return &handler{rec: h.rec, attrs: attrs, prefix: h.prefix}
 }
 
+// WithGroup 返回进入分组 name 的处理器，之后的字段名加上分组前缀。
 func (h *handler) WithGroup(name string) slog.Handler {
 	if name == "" {
 		return h

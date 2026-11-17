@@ -57,6 +57,7 @@ func compressible(contentType string) bool {
 	return false
 }
 
+// streaming 报告媒体类型 mediaType 是否是流式响应。
 func streaming(mediaType string) bool { return mediaType == "text/event-stream" }
 
 // compressWriter 在响应开始时按 Content-Type 选择出口：流式响应直接写到原始 ResponseWriter，
@@ -67,6 +68,7 @@ type compressWriter struct {
 	out     http.ResponseWriter // 响应开始后确定
 }
 
+// target 返回响应写往的出口：第一次调用时按 Content-Type 选择，流式响应直接写到原始的 ResponseWriter。
 func (w *compressWriter) target() http.ResponseWriter {
 	if w.out == nil {
 		w.out = w.gz
@@ -80,6 +82,7 @@ func (w *compressWriter) target() http.ResponseWriter {
 // Header 返回响应头。gzhttp 的 ResponseWriter 和原始的共用同一个响应头。
 func (w *compressWriter) Header() http.Header { return w.raw.Header() }
 
+// WriteHeader 写出状态码；1xx 直接写到原始的 ResponseWriter。
 func (w *compressWriter) WriteHeader(code int) {
 	if code >= 100 && code < 200 {
 		w.raw.WriteHeader(code)
@@ -88,6 +91,7 @@ func (w *compressWriter) WriteHeader(code int) {
 	w.target().WriteHeader(code)
 }
 
+// Write 把 b 写到选定的出口。
 func (w *compressWriter) Write(b []byte) (int, error) { return w.target().Write(b) }
 
 // FlushError 供 http.ResponseController.Flush 使用。

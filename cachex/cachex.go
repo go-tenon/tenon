@@ -75,6 +75,7 @@ type Cache[T any] struct {
 // Option 是 New 的选项。
 type Option func(*options)
 
+// options 是 Remember 等方法的选项。
 type options struct {
 	missing func() error
 }
@@ -339,6 +340,7 @@ type throttle struct {
 	suppressed int
 }
 
+// warn 记录 Warn 日志，同一个 throttle 在间隔内只记一次。
 func (t *throttle) warn(ctx context.Context, msg string, args ...any) {
 	t.mu.Lock()
 	now := time.Now()

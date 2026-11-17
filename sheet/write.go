@@ -59,6 +59,7 @@ func NewWriter(w io.Writer, f Format) *Writer {
 	return &Writer{err: ErrFormat.New()}
 }
 
+// xlsxWriter 返回写出 Excel 的 Writer。
 func xlsxWriter(w io.Writer) *Writer {
 	f := excelize.NewFile()
 	sw := &Writer{file: f, out: w}
@@ -224,6 +225,7 @@ func value(v any) any {
 	return fmt.Sprint(v)
 }
 
+// isTime 报告 v 是否是 time.Time。
 func isTime(v any) bool {
 	_, ok := v.(time.Time)
 	return ok

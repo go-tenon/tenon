@@ -64,6 +64,7 @@ func Failover(senders []Named, opts FailoverOptions) Sender {
 	return f
 }
 
+// failover 按顺序尝试多个发送方，失败的发送方冷却一段时间后再用。
 type failover struct {
 	senders  []Named
 	cooldown time.Duration
@@ -73,6 +74,7 @@ type failover struct {
 	downUntil []time.Time // 每个服务商最近一次失败后的冷却截止时间；零值表示正常
 }
 
+// Send 依次用各个发送方发送 msg，第一个成功时返回；遇到与发送方无关的错误时停止。
 func (f *failover) Send(ctx context.Context, msg Message) error {
 	var errs []error
 	var failed []string

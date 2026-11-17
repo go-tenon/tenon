@@ -88,6 +88,7 @@ type Attached struct {
 	CreatedAt time.Time
 }
 
+// identifierRow 是 auth_identifiers 表中的一行：主体的一个登录标识。
 type identifierRow struct {
 	bun.BaseModel `bun:"table:auth_identifiers,alias:i"`
 

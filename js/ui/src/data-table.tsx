@@ -57,7 +57,7 @@ export interface DataTableProps<T> {
   perPageOptions?: number[]
   /**
    * 选中的行，useSelection 的返回值：显示勾选框。翻页时保留其他页的选中，
-   * 所以 useSelection 的 resetOn 通常是 list.filters 而不是 list.params。
+   * 所以 useSelection 的 resetOn 通常是 list.filters：筛选条件变化时清空选中。
    */
   selection?: Selection<string>
   /** 有行被选中时显示在表格上方的批量操作，例如“批量删除”。 */

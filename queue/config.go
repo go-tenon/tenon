@@ -87,6 +87,7 @@ func validStream(s string) bool {
 	return true
 }
 
+// nameChar 报告 c 能否出现在 stream 名中：字母、数字、_ 和 -。
 func nameChar(c rune) bool {
 	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_' || c == '-'
 }

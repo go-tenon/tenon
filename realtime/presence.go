@@ -98,6 +98,7 @@ type presenceManager struct {
 	members *membership
 }
 
+// AddPresence 记下频道 ch 中的连接 clientID 在线。
 func (m presenceManager) AddPresence(ch, clientID string, info *centrifuge.ClientInfo) error {
 	ctx, cancel := context.WithTimeout(context.Background(), presenceTimeout)
 	defer cancel()
@@ -109,10 +110,12 @@ func (m presenceManager) AddPresence(ch, clientID string, info *centrifuge.Clien
 	return m.store.Add(ctx, PresenceEntry{Channel: ch, Client: clientID, Subject: ref, Info: info.ChanInfo}, presenceTTL)
 }
 
+// RemovePresence 记下连接离开，宽限期过后再删除。
 func (m presenceManager) RemovePresence(ch, clientID, _ string) error {
 	return m.members.remove(ch, clientID)
 }
 
+// Presence 返回频道 ch 的在线连接。
 func (m presenceManager) Presence(ch string) (map[string]*centrifuge.ClientInfo, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), presenceTimeout)
 	defer cancel()
@@ -127,6 +130,7 @@ func (m presenceManager) Presence(ch string) (map[string]*centrifuge.ClientInfo,
 	return out, nil
 }
 
+// PresenceStats 返回频道 ch 的在线连接数和用户数。
 func (m presenceManager) PresenceStats(ch string) (centrifuge.PresenceStats, error) {
 	clients, err := m.Presence(ch)
 	if err != nil {
@@ -142,10 +146,13 @@ func (m presenceManager) PresenceStats(ch string) (centrifuge.PresenceStats, err
 // noPresence 是没有设置 Options.Presence 时使用的存储：没有 presence 频道，也就没有在线记录。
 type noPresence struct{}
 
+// Add 返回错误：没有设置 Options.Presence。
 func (noPresence) Add(context.Context, PresenceEntry, time.Duration) error {
 	return errors.New("realtime: Options.Presence is not set")
 }
 
+// Remove 什么也不做。
 func (noPresence) Remove(context.Context, string, string) error { return nil }
 
+// List 返回空列表。
 func (noPresence) List(context.Context, string) ([]PresenceEntry, error) { return nil, nil }

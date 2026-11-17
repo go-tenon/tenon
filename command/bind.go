@@ -29,6 +29,7 @@ func Bind[C, D any](open func(ctx context.Context, cfg C, stack *cleanup.Stack) 
 	return cmds
 }
 
+// bind 让 cmd 及其子命令执行时先加载配置 C、用 open 装配依赖，再执行 declare 用这些依赖声明的同名命令；结束时按顺序清理依赖。
 func bind[C, D any](cmd *cobra.Command, parent []string, open func(context.Context, C, *cleanup.Stack) (*D, error), declare func(*D) []*cobra.Command) {
 	path := append(parent[:len(parent):len(parent)], cmd.Name())
 	if cmd.RunE != nil {

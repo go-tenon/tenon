@@ -21,8 +21,8 @@ type Authorizer func(ctx context.Context, sub identity.Subject, p Params) (bool,
 
 // Rule 是一类频道的订阅规则，由 Public、Private 或 Presence 创建。
 type Rule struct {
-	authorize Authorizer         // Private
-	presence  PresenceAuthorizer // Presence；两者都为 nil 表示公开
+	authorize Authorizer         // Private 频道的授权函数
+	presence  PresenceAuthorizer // Presence 频道的授权函数；两者都为 nil 表示公开
 	publish   bool
 }
 
@@ -48,6 +48,7 @@ func (r Rule) ClientPublish() Rule {
 	return r
 }
 
+// channelRule 是编译过的频道规则。
 type channelRule struct {
 	pattern string
 	re      *regexp.Regexp
@@ -84,6 +85,7 @@ func compile(pattern string, rule Rule) (channelRule, error) {
 	return c, nil
 }
 
+// match 报告频道名是否符合规则，返回其中的参数。
 func (c channelRule) match(channel string) (Params, bool) {
 	m := c.re.FindStringSubmatch(channel)
 	if m == nil {

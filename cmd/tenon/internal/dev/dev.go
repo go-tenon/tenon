@@ -47,6 +47,7 @@ func Run(ctx context.Context, cfg *project.Config, out, errOut io.Writer) error 
 	return errors.Join(err, d.finish())
 }
 
+// dev 是一次 tenon dev 的运行。
 type dev struct {
 	cfg         *project.Config
 	out, errOut io.Writer
@@ -61,11 +62,13 @@ func shared(w io.Writer) io.Writer {
 	return &lockedWriter{w: w}
 }
 
+// lockedWriter 让多个进程的输出逐次写入 w，不交错。
 type lockedWriter struct {
 	mu sync.Mutex
 	w  io.Writer
 }
 
+// Write 加锁后把 p 写入 w。
 func (l *lockedWriter) Write(p []byte) (int, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -191,6 +194,7 @@ func (d dev) serveArgs() []string {
 	return append(slices.Clone(d.cfg.Serve), "--config", DevConfig)
 }
 
+// exec 在目录 dir 中执行命令 args，输出写到 dev 的输出。
 func (d dev) exec(dir string, args ...string) error {
 	cmd := exec.Command(args[0], args[1:]...)
 	cmd.Dir = dir
@@ -237,6 +241,7 @@ func (d dev) builds() []watcher {
 	return bs
 }
 
+// runs 返回 tenon dev 同时运行的各项：应用本身和每个监视的工具。
 func (d dev) runs() []func(context.Context) error {
 	runs := []func(context.Context) error{d.serve}
 	for _, w := range d.watchers() {

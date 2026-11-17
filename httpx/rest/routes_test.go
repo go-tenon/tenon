@@ -27,7 +27,7 @@ func TestRoutesIncludesTypedNativeAndHiddenRoutesWithoutRuntime(t *testing.T) {
 		t.Fatal("route inspection validated a token")
 		return identity.Subject{}, nil
 	}
-	// Register out of display order, including two methods on one path.
+	// 登记的顺序与显示的顺序不同，其中一个路径上有两个方法。
 	create := huma.Operation{OperationID: "item-create", Method: http.MethodPost, Path: "/inventory/items", Summary: "创建条目"}
 	rest.RequireToken(api, validator, "items:write", "items:read")(&create)
 	rest.Register(api, create, handler)

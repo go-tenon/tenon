@@ -53,6 +53,7 @@ func MustNew(defaultLocale string, sources ...fs.FS) *goi18n.Bundle {
 	return b
 }
 
+// load 把 src 中全部消息文件加载到 b。
 func load(b *goi18n.Bundle, src fs.FS) error {
 	return fs.WalkDir(src, ".", func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
@@ -126,8 +127,10 @@ func Match(b *goi18n.Bundle, prefs ...string) string {
 	return supported[index].String()
 }
 
+// localeKey 是语言在 context 中的键。
 type localeKey struct{}
 
+// localeValue 是 context 中的语言和它的翻译器。
 type localeValue struct {
 	locale    string
 	localizer *goi18n.Localizer

@@ -71,6 +71,7 @@ func checkNames(fsys fs.FS) error {
 	return nil
 }
 
+// Open 打开文件 name，goose 使用的名字换回原来的文件名。
 func (g gooseFS) Open(name string) (fs.File, error) {
 	if gooseName.MatchString(name) {
 		name = FileName(name)
@@ -78,6 +79,7 @@ func (g gooseFS) Open(name string) (fs.File, error) {
 	return g.fsys.Open(name)
 }
 
+// ReadDir 读取目录 name，根目录中的迁移文件换成 goose 使用的名字。
 func (g gooseFS) ReadDir(name string) ([]fs.DirEntry, error) {
 	entries, err := fs.ReadDir(g.fsys, name)
 	if err != nil || name != "." {
@@ -97,8 +99,10 @@ type renamedEntry struct {
 	name string
 }
 
+// Name 返回换过的名字。
 func (e renamedEntry) Name() string { return e.name }
 
+// Info 返回文件信息，名字换成新的名字。
 func (e renamedEntry) Info() (fs.FileInfo, error) {
 	info, err := e.DirEntry.Info()
 	if err != nil {
@@ -107,9 +111,11 @@ func (e renamedEntry) Info() (fs.FileInfo, error) {
 	return renamedInfo{info, e.name}, nil
 }
 
+// renamedInfo 是换了名字的文件信息。
 type renamedInfo struct {
 	fs.FileInfo
 	name string
 }
 
+// Name 返回换过的名字。
 func (i renamedInfo) Name() string { return i.name }

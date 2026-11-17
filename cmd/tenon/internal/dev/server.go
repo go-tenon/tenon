@@ -49,8 +49,7 @@ func (d dev) serve(ctx context.Context) error {
 		}
 		d.generate(ctx, bin)
 	}
-	// 在首次编译之前记下源文件的状态并开始监听：编译、启动和生成客户端期间的修改在启动后触发一次重启，
-	// 而不是成为初始状态的一部分、一直不生效。
+	// 在首次编译之前记下源文件的状态并开始监听：编译、启动和生成客户端期间的修改在启动后触发一次重启。
 	changes := make(chan struct{}, 1)
 	watching := make(chan struct{})
 	defer func() { <-watching }()

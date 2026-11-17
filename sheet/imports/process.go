@@ -73,6 +73,7 @@ func retryable(err error) bool {
 	return false
 }
 
+// processor 执行一次导入。
 type processor[T any] struct {
 	s        *Service
 	r        *operation.Run
@@ -83,6 +84,7 @@ type processor[T any] struct {
 	rows     int       // 上次保存之后处理的行数
 }
 
+// run 执行导入：第一次运行时读出表头，之后从上次的位置继续逐行处理。
 func (p *processor[T]) run(ctx context.Context) error {
 	if len(p.imp.Header) == 0 {
 		if err := p.begin(ctx); err != nil {

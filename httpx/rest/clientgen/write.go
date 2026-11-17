@@ -64,6 +64,7 @@ func Write(out string, files map[string][]byte) error {
 	return nil
 }
 
+// generated 报告文件 p 是否是生成的代码：开头有 “Code generated” 的标记。
 func generated(p string) bool {
 	f, err := os.Open(p)
 	if err != nil {

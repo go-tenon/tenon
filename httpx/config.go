@@ -88,6 +88,7 @@ func (c Config) Validate() error {
 	return nil
 }
 
+// server 按配置创建 http.Server，处理器是 handler。
 func (c Config) server(handler http.Handler) *http.Server {
 	return &http.Server{
 		Handler:           handler,

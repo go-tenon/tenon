@@ -47,6 +47,7 @@ func Not(f Filter) Filter { return not{f} }
 
 const valueExists = "EXISTS (SELECT 1 FROM search_values AS v WHERE v.entry_id = e.id AND v.field = ? AND v.value "
 
+// lookup 返回 schema 中名为 name 的筛选字段。
 func lookup(s *schema, name string) (*field, error) {
 	f := s.filters[name]
 	if f == nil {
@@ -55,12 +56,14 @@ func lookup(s *schema, name string) (*field, error) {
 	return f, nil
 }
 
+// compare 是字段与值的比较条件。
 type compare struct {
 	field string
 	op    string
 	value any
 }
 
+// build 把条件写成 SQL。
 func (c compare) build(s *schema, e *sqlExpr) error {
 	f, err := lookup(s, c.field)
 	if err != nil {
@@ -74,11 +77,13 @@ func (c compare) build(s *schema, e *sqlExpr) error {
 	return nil
 }
 
+// in 是字段取值在 values 中的条件。
 type in struct {
 	field  string
 	values []any
 }
 
+// build 把条件写成 SQL。
 func (c in) build(s *schema, e *sqlExpr) error {
 	f, err := lookup(s, c.field)
 	if err != nil {
@@ -98,12 +103,14 @@ func (c in) build(s *schema, e *sqlExpr) error {
 	return nil
 }
 
+// logic 用 AND 或 OR 组合多个条件；没有条件时写 empty。
 type logic struct {
 	op      string
 	empty   string
 	filters []Filter
 }
 
+// build 把组合的条件写成 SQL。
 func (l logic) build(s *schema, e *sqlExpr) error {
 	if len(l.filters) == 0 {
 		e.add(l.empty)
@@ -125,8 +132,10 @@ func (l logic) build(s *schema, e *sqlExpr) error {
 	return nil
 }
 
+// not 是取反的条件。
 type not struct{ f Filter }
 
+// build 把取反的条件写成 SQL。
 func (n not) build(s *schema, e *sqlExpr) error {
 	if n.f == nil {
 		return errors.New("search: nil filter")

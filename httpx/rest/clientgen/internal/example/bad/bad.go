@@ -12,10 +12,12 @@ import (
 // Money 自定义了 JSON 编码，复制字段得不到相同的 JSON。
 type Money int64
 
+// MarshalJSON 把金额编码为字符串。
 func (m Money) MarshalJSON() ([]byte, error) {
 	return []byte(strconv.Quote(strconv.FormatInt(int64(m), 10))), nil
 }
 
+// MoneyOutput 是返回金额的响应。
 type MoneyOutput struct {
 	Body struct {
 		Price Money `json:"price"`

@@ -183,4 +183,4 @@ func TestOpenAPI(t *testing.T) {
 
 **命令测试的输出是空的**
 
-命令把结果写到了 `os.Stdout`，而不是 `cmd.OutOrStdout()`。改用后者，测试中用 `SetOut` 才能捕获，见[输入与输出](../general/commands.md#input-and-output)。
+命令把结果写到了 `os.Stdout`。改用 `cmd.OutOrStdout()`，测试中用 `SetOut` 才能捕获，见[输入与输出](../general/commands.md#input-and-output)。

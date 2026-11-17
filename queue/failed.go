@@ -145,6 +145,7 @@ type FailedJob struct {
 	FailedAt time.Time
 }
 
+// export 把行转换为 FailedJob。
 func (r *failedJob) export() FailedJob {
 	return FailedJob{ID: r.ID, Topic: r.Topic, Payload: r.Payload, Metadata: r.Metadata,
 		Attempts: r.Attempts, Error: r.Error, FailedAt: r.FailedAt}

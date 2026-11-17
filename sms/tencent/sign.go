@@ -35,6 +35,7 @@ func authorization(host, contentType string, payload []byte, t time.Time, servic
 	return algorithm + " Credential=" + secretID + "/" + scope + ", SignedHeaders=" + signedHeaders + ", Signature=" + signature
 }
 
+// hmacSHA256 返回 data 用 key 计算的 HMAC-SHA256。
 func hmacSHA256(key []byte, data string) []byte {
 	mac := hmac.New(sha256.New, key)
 	mac.Write([]byte(data))

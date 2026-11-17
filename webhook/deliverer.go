@@ -72,6 +72,7 @@ func (d *Deliverer) Handle(w *queue.Worker) {
 	Deliver.Handle(w, d.deliver, queue.MaxAttempts(d.maxAttempts))
 }
 
+// deliver 发送一次投递 id：读取投递记录和端点，签名后发出请求，记录结果。
 func (d *Deliverer) deliver(ctx context.Context, id uuid.UUID) error {
 	del := new(Delivery)
 	err := d.db.NewSelect().Model(del).Where("id = ?", id).Scan(ctx)

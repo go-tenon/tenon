@@ -36,6 +36,7 @@ type Index[D any] struct {
 // Option 是 Define 的选项。
 type Option func(*options)
 
+// options 是 New 的选项。
 type options struct{ tok Tokenizer }
 
 // WithTokenizer 设置分词器，默认是 Bigram。修改分词器之后要用 Reindex 重建索引。
@@ -143,6 +144,7 @@ func (ix *Index[D]) Refresh(ctx context.Context, db bun.IDB, load LoadFunc[D], k
 	return nil
 }
 
+// checkKey 检查文档的键不为空。
 func checkKey(key string) error {
 	if key == "" {
 		return errors.New("search: empty key")
@@ -194,6 +196,7 @@ type entry struct {
 	values map[string][]string // 过滤字段编码后的值
 }
 
+// entries 把文档转换为索引的行：键、分词结果和筛选字段的值。
 func (ix *Index[D]) entries(docs []D) ([]entry, error) {
 	out := make([]entry, len(docs))
 	for i, d := range docs {

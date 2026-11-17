@@ -39,6 +39,7 @@ func Commands(router func() chi.Routes, opts ...Option) []*cobra.Command {
 // Option 是 Commands 的选项。
 type Option func(*options)
 
+// options 是 Commands 的选项。
 type options struct {
 	translations []fs.FS
 }
@@ -103,6 +104,7 @@ func Routes(router func() chi.Routes) *cobra.Command {
 	return cmd
 }
 
+// access 返回路由表中访问策略一列的内容：访问策略，需要权限时附上权限。
 func access(route httpx.Route) string {
 	if len(route.Permissions) == 0 {
 		return route.Access
@@ -113,6 +115,7 @@ func access(route httpx.Route) string {
 // cell 把换行、制表符等空白合并为单个空格，保持每行一条记录。
 func cell(value string) string { return strings.Join(strings.Fields(value), " ") }
 
+// orDash 返回 value，为空时返回 "-"。
 func orDash(value string) string {
 	if value == "" {
 		return "-"

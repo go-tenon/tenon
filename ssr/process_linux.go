@@ -22,6 +22,7 @@ type process struct {
 	bundle  *os.File
 }
 
+// close 关闭进程使用的代码文件。
 func (p *process) close() error { return p.bundle.Close() }
 
 // memfd 把 data 写进一个内存文件：不落盘，关闭后自动释放。
@@ -157,11 +158,13 @@ func listenPeer(name string) (net.Listener, error) {
 	return &peerListener{Listener: ln, uid: uint32(os.Getuid())}, nil
 }
 
+// peerListener 只接受与本进程同一用户的连接。
 type peerListener struct {
 	net.Listener
 	uid uint32
 }
 
+// Accept 返回下一个同一用户的连接，其他连接直接关闭。
 func (l *peerListener) Accept() (net.Conn, error) {
 	for {
 		c, err := l.Listener.Accept()
@@ -175,6 +178,7 @@ func (l *peerListener) Accept() (net.Conn, error) {
 	}
 }
 
+// sameUser 报告 unix socket 连接对端的用户是否与本进程相同。
 func (l *peerListener) sameUser(c net.Conn) bool {
 	uc, ok := c.(*net.UnixConn)
 	if !ok {

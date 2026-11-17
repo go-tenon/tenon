@@ -122,6 +122,7 @@ func (c S3Config) Validate() error {
 	return errors.Join(errs...)
 }
 
+// httpURL 报告 raw 是否是没有查询参数和片段的 http(s) 地址。
 func httpURL(raw string) bool {
 	u, err := url.Parse(raw)
 	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" && u.RawQuery == "" && u.Fragment == ""

@@ -29,7 +29,10 @@ type ExitError struct {
 	Err  error
 }
 
+// Error 返回包装的错误的信息。
 func (e *ExitError) Error() string { return e.Err.Error() }
+
+// Unwrap 返回包装的错误。
 func (e *ExitError) Unwrap() error { return e.Err }
 
 // ExitCode 返回 err 对应的退出码，nil 为 0。显式标记的退出码优先；其次按 errorx.Kind 映射：
