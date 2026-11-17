@@ -293,7 +293,7 @@ http:
 | --- | --- |
 | [`RateLimit`](optional-middleware.md#rate-limiting) | 限制每个客户端的请求频率 |
 | [`CORS`](optional-middleware.md#cors) | 其他域名的网页要调用你的接口 |
-| [`BasicAuth`](optional-middleware.md#basic-auth) | 给内部页面（例如队列面板）加一道简单的密码 |
+| [`BasicAuth`](optional-middleware.md#basic-auth) | 给内部页面（例如文档页）加一道简单的密码 |
 | [`AppVersion`](optional-middleware.md#app-version) | 拒绝过旧版本的移动 App |
 | [`Compress`](optional-middleware.md#compression) | 程序直接面对用户、前面没有反向代理时压缩响应 |
 

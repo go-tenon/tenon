@@ -122,7 +122,7 @@ Tenon 是一个用 Go 构建后端服务的框架。业务逻辑写成[业务动
 后台任务：
 
 - [队列](background/queue.md)：把耗时的工作放到后台执行
-- [队列：失败任务与监控](background/queue-monitoring.md)：失败任务的重试、队列的状态与面板
+- [队列：失败任务与监控](background/queue-monitoring.md)：失败任务的重试、队列的状态与运维接口
 - [定时任务](background/scheduling.md)：每天、每小时执行的工作
 
 存储与通信：

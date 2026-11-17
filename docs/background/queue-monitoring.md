@@ -4,7 +4,7 @@
 
 - **失败任务**：重试次数用完的任务保存在表中，可以查看、重试或删除；
 - **日志**和**任务事件**：每个任务的执行记录；
-- **队列状态**命令和**队列面板**：查看积压和失败的情况。
+- **队列状态**命令和**运维接口**：查看积压和失败的情况，运维页面调用后者。
 
 阅读前需要了解：[队列](queue.md)。
 
@@ -12,7 +12,7 @@
 - [日志](#logging)
 - [任务事件](#job-events)
 - [队列状态](#stats-command)
-- [队列面板](#panel)
+- [运维接口](#queue-api)
 - [常见问题](#troubleshooting)
 
 <a id="failed-jobs"></a>
@@ -98,7 +98,7 @@ w := queue.NewWorker(a.db, a.nc, a.cfg.Queue, nil,
 <a id="stats-command"></a>
 ## 队列状态
 
-任务在两个地方等待：还没转发的在 PostgreSQL 的复制槽中；其余的在 JetStream 中，包括等待处理、处理中和定时投递的任务。`queue` 命令和[队列面板](#panel)把它们放在一起显示。
+任务在两个地方等待：还没转发的在 PostgreSQL 的复制槽中；其余的在 JetStream 中，包括等待处理、处理中和定时投递的任务。`queue` 命令和[运维接口](#queue-api)把它们放在一起显示。
 
 `queuecmd.New` 返回 `queue` 命令。它和其他需要数据库的命令一样在 [bootstrap.Commands](../concepts/actions.md#as-commands) 中声明，`queuecmd.WithJetStream` 让它同时显示 JetStream 中的状态，使用应用的 NATS 连接 `a.nc`：
 
@@ -148,42 +148,45 @@ ID                                    TOPIC      ATTEMPTS  FAILED AT            
 0193e7b1-2c4f-7d8e-9a1b-5f6c7d8e9f01  mail.send  5         2026-11-12 09:41:07  send mail: dial tcp 10.0.0.12:587: connection refused
 ```
 
-<a id="panel"></a>
-## 队列面板
+<a id="queue-api"></a>
+## 运维接口
 
-`queue/queueweb` 把同样的内容做成网页，只读写队列已有的数据：
-
-- **概览**，每 5 秒刷新一次：
-    - 复制槽是否有 worker 在转发、WAL 状态和积压；
-    - JetStream 的 stream：消息数、占用的存储、副本数，定时投递的任务数；
-    - 每个 topic 一行：等待处理、处理中、重新投递和失败的任务数，最近一次投递的时间，状态与 `queue status` 的 `STATE` 相同；
-- **暂停和恢复 topic**：概览中每个 topic 有“暂停 1 小时”按钮，暂停的 topic 有“恢复”按钮，见下文；
-- **失败任务**：按 topic 筛选、翻页；详情页显示格式化的 payload、元数据、完整的错误和堆栈；单条重试或删除，按 topic 全部重试或全部删除；
-
-吞吐、耗时等指标交给 Grafana（见[可观测性](../general/telemetry.md#queue)），面板只在页头放它的链接；重建复制槽只能用 `queue slot recreate`。面板不新增任何表。
-
-面板是框架自带的[服务端渲染页面](../web/views.md)，认证由应用决定，通常是 [HTTP Basic 认证](../http/optional-middleware.md#basic-auth)。挂在 HTTP 进程的路由上：
+`queue/queueapi` 把同样的内容做成 JSON 接口，注册在应用的 [REST API](../http/README.md) 上，供运维页面调用。它只读写队列已有的数据，不新增任何表：吞吐、耗时等指标交给 Grafana（见[可观测性](../general/telemetry.md#queue)），接口只把它的链接交给前端；重建复制槽只能用 `queue slot recreate`。
 
 ```go
-router.Handle(web.AssetsPath+"*", web.Assets())
-router.Handle(ui.AssetsPath+"*", ui.Assets())
-
 // a.nc 是应用的 NATS 连接，Admin 不关闭它
 admin := queue.NewAdmin(a.nc, a.cfg.Queue)
 
-ops := router.With(httpx.BasicAuth("ops", a.verifyOps))
-queueweb.Register(ops, "/ops/queue", a.db, queueweb.Options{
+queueapi.Register(api, rest.RequireToken(api, a.tokens.Validate, "queue:manage"), a.db, queueapi.Options{
     Admin: admin,
     Links: map[string]string{"Grafana": a.cfg.GrafanaURL},
 })
 ```
 
-`a.verifyOps` 校验运维账号，见 [HTTP Basic 认证](../http/optional-middleware.md#basic-auth)。`Options.Theme` 可以设置面板的[主题](../web/components.md#themes)。不设置 `Admin` 时，面板只显示数据库一侧的状态，也没有暂停按钮；NATS 不可用时，JetStream 一栏显示错误，其余照常显示。
+第二个参数保护全部接口，通常像上面这样要求一项运维权限，见[在路由上声明权限](../security/authorization.md#route-permissions)；权限名由应用决定，记得写进[权限目录](../security/authorization.md#permission-catalog)。不设置 `Admin` 时，接口只返回数据库一侧的状态，也不注册暂停和恢复；`Links` 中地址为空的项不返回。
 
-- 全部重试只处理点击之前失败的任务：重试后马上又失败的任务在这一轮里只放回一次。它分批处理，每批 1000 条，直到处理完。
+| 方法和路径 | operationId | 作用 |
+| --- | --- | --- |
+| `GET /queue/status` | `queue-status` | 概览：复制槽、JetStream 的 stream、每个 topic 一行，失败任务总数，外部链接 |
+| `GET /queue/failed?topic=&page=&per_page=` | `queue-failed-list` | 失败任务列表，从新到旧，按 topic 筛选、分页；同时返回每个 topic 的失败任务数 |
+| `GET /queue/failed/{id}` | `queue-failed-get` | 失败任务详情：payload（原样返回的 JSON）、元数据、完整的错误和堆栈 |
+| `POST /queue/failed/{id}/retry` | `queue-failed-retry` | 重新发布一条失败任务 |
+| `DELETE /queue/failed/{id}` | `queue-failed-delete` | 删除一条失败任务 |
+| `POST /queue/failed/retry?topic=` | `queue-failed-retry-all` | 重新发布一个 topic 的失败任务，`topic` 为空时是全部 topic，返回条数 |
+| `DELETE /queue/failed?topic=` | `queue-failed-delete-all` | 删除一个 topic 的失败任务，`topic` 为空时是全部 topic，返回条数 |
+| `POST /queue/topics/{topic}/pause` | `queue-topic-pause` | 暂停 topic 一小时，见下文；设置了 `Admin` 时才有 |
+| `POST /queue/topics/{topic}/resume` | `queue-topic-resume` | 恢复 topic；设置了 `Admin` 时才有 |
+
+路径相对于 API 的 `BasePath`。operationId 都以 `queue-` 开头，[生成的客户端](../http/clients.md)中是 `api.queue.status()`、`api.queue.failedList()` 这样的函数。时间都是 RFC 3339 格式。
+
+- 概览中每个 topic 的 `state` 与 `queue status` 的 `STATE` 相同：`ok`、`no_handler`、`paused`、`stalled`；`absent` 表示没有它在 JetStream 中的状态，只有失败任务数。`ok` 和 `stalled` 的 topic 可以暂停，`paused` 的可以恢复。
+- 读不到 JetStream（NATS 不可用，或者 3 秒内没有读完）时，概览照常返回数据库一侧的状态，`jetstream.error` 是错误信息。
+- 全部重试、全部删除只处理请求之前失败的任务：重试后马上又失败的任务在这一轮里只放回一次。它分批处理，每批 1000 条，直到处理完。
 - 暂停一个 topic 后，任务照常发布和保存，worker 不再领取新的任务，处理中的任务不受影响；worker 重启后仍然暂停，一小时后自动恢复。下游服务出了故障时先暂停对应的 topic，免得任务大量失败转入失败任务表。需要更长的暂停时调用 `admin.Pause(ctx, topic, until)`。
-- 每次重试、删除、暂停和恢复记一条 Info 日志，带上操作者（Basic 认证的用户名）、topic 和条数。
-- 浏览器会给跨站请求自动带上 Basic 凭据，所以面板拒绝跨站的 `POST`（`http.CrossOriginProtection`）。
+- 失败任务不存在时返回 `404 queue.failed_job_not_found`；没有 worker 为 topic 注册过处理函数时，暂停和恢复返回 `404 queue.topic_not_found`。
+- 每次重试、删除、暂停和恢复记一条 Info 日志，带上操作者（`subject`，主体的 `Ref`）、topic 和条数。
+
+接口只返回数据，面板页面由前端实现。框架计划在 `@go-tenon/ui` 中提供现成的队列面板页面，目前还没有，在那之前用生成的客户端自己搭建。
 
 <a id="troubleshooting"></a>
 ## 常见问题
