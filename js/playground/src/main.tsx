@@ -31,7 +31,6 @@ import {
   SchedulePanel,
   SettingsForm,
   SiteLayout,
-  themes,
   trackOperation,
   UIProvider,
   UserMenu,
@@ -58,9 +57,10 @@ import {
 } from "@mantine/core"
 import { IconDownload, IconPlus, IconSearch, IconStack2 } from "@tabler/icons-react"
 import { type AnyRoute, createRootRouteWithContext, createRoute, Outlet, useParams } from "@tanstack/react-router"
-import { type ReactNode, useEffect, useState } from "react"
+import { type ReactNode, useEffect, useMemo, useState } from "react"
 import { createRoot } from "react-dom/client"
 import { Landing, LandingSwitcher, landingStyle } from "./landing"
+import { PrimaryPicker, savedPrimary } from "./primary-picker"
 import {
   customerExport,
   customerImport,
@@ -600,18 +600,24 @@ function siteApp() {
 // ———————————————————————————— 入口 ————————————————————————————
 
 const path = location.pathname
-const [app, theme] = (
-  path.startsWith("/admin")
-    ? [adminApp(), themes.admin]
-    : path.startsWith("/console")
-      ? [consoleApp(), themes.console]
-      : [siteApp(), createUiTheme({ preset: "site", landing: landingStyle() })]
-) as [App, typeof themes.site]
-
+const preset = path.startsWith("/admin") ? "admin" : path.startsWith("/console") ? "console" : "site"
+const app: App = preset === "admin" ? adminApp() : preset === "console" ? consoleApp() : siteApp()
 const scheme = new URLSearchParams(location.search).get("scheme")
-createRoot(document.getElementById("root") as HTMLElement).render(
-  <UIProvider theme={theme} defaultColorScheme={scheme === "dark" ? "dark" : "light"}>
-    <AppRoot app={app} />
-    {!path.startsWith("/admin") && !path.startsWith("/console") && <LandingSwitcher />}
-  </UIProvider>,
-)
+
+/** 按右下角选择的主题色生成主题，换颜色时不重新加载页面。 */
+function Playground(): ReactNode {
+  const [primary, setPrimary] = useState(savedPrimary)
+  const theme = useMemo(
+    () => createUiTheme({ preset, landing: preset === "site" ? landingStyle() : undefined, primary }),
+    [primary],
+  )
+  return (
+    <UIProvider theme={theme} defaultColorScheme={scheme === "dark" ? "dark" : "light"}>
+      <AppRoot app={app} />
+      {preset === "site" && <LandingSwitcher />}
+      <PrimaryPicker value={primary} onChange={setPrimary} />
+    </UIProvider>
+  )
+}
+
+createRoot(document.getElementById("root") as HTMLElement).render(<Playground />)
