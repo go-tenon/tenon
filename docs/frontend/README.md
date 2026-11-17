@@ -2,7 +2,7 @@
 
 网页用 React、[Mantine](https://mantine.dev) 和 [TanStack Start](https://tanstack.com/start) 编写：官网和内容站在服务端渲染或预渲染，运营后台和控制台在浏览器中渲染，都调用同一组 [HTTP 接口](../http/README.md)。每个前端编译成一个 SSR 程序，嵌入 Go 程序，由 Go 托管运行，部署时仍然只有一个二进制文件。
 
-- [服务端渲染](ssr.md)：Bun 编译的 SSR 可执行文件嵌入 Go 程序，由 ssr 包托管，页面请求经 unix socket 转给它
+- [服务端渲染](ssr.md)：一份 Bun 运行时和每个前端的代码嵌入 Go 程序，由 ssr 包托管，页面请求经 unix socket 转给它
 - [TanStack Start 的接入](start.md)：@go-tenon/start，服务端渲染与浏览器调用同一组接口、预渲染和编译
 - [在 React 中调用接口](client-react.md)：TanStack Query、校验规则、权限、枚举与分页
 - [应用骨架](app-shell.md)：@go-tenon/shell 的路由、登录检查、权限、菜单和新版本提示

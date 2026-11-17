@@ -24,18 +24,21 @@ const api = Bun.serve({
     }),
 })
 
-const bin = join(dir, "dist", "ssr.bin")
-const compile = Bun.spawnSync(["bun", join(dir, "..", "src", "cli.ts"), "compile", "--out", bin], {
-  cwd: dir,
-  stdout: "inherit",
-  stderr: "inherit",
-})
-if (compile.exitCode !== 0) fail("compile")
-
-const ssr = Bun.spawn([bin], {
+// 与 Go 相同：前端编译成 ssr.js，加上共用的运行时；启动运行时，ssr.js 放在文件描述符 3 上。
+const cli = join(dir, "..", "src", "cli.ts")
+const bundle = join(dir, "dist", "ssr.js")
+const runtime = join(dir, "dist", "ssr-runtime.bin")
+for (const args of [
+  ["compile", "--out", bundle],
+  ["runtime", "--out", runtime],
+]) {
+  const r = Bun.spawnSync(["bun", cli, ...args], { cwd: dir, stdout: "inherit", stderr: "inherit" })
+  if (r.exitCode !== 0) fail(args[0])
+}
+const { openSync } = await import("node:fs")
+const ssr = Bun.spawn([runtime], {
   env: { ...process.env, SSR_SOCKET: ssrName, API_SOCKET: apiName },
-  stdout: "pipe",
-  stderr: "inherit",
+  stdio: ["ignore", "pipe", "inherit", openSync(bundle, "r")],
 })
 const page = (path: string, headers: Record<string, string> = {}) =>
   fetch(`http://ssr${path}`, { unix: unix(ssrName), headers } as RequestInit)

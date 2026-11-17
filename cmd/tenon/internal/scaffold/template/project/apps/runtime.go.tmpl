@@ -1,0 +1,11 @@
+// Package apps 嵌入几个前端共用的 SSR 运行时，由 ssr.NewRuntime 交给每个前端的 ssr.Host。
+package apps
+
+import _ "embed"
+
+// Runtime 是 go tool tenon build 构建的 Bun 运行时（tenon-start runtime），只含 Bun 和一个加载器：
+// 每个前端的代码（apps/<名称>/ssr.js）由它加载，所以几个前端只带一份 Bun。架构与 Go 程序相同。
+// 开发时 tenon dev 写入一个空的占位文件，页面由前端的开发服务器提供。
+//
+//go:embed ssr-runtime.bin
+var Runtime []byte

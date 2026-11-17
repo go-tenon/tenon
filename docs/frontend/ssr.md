@@ -1,6 +1,6 @@
 # 服务端渲染
 
-页面由 [TanStack Start](https://tanstack.com/start) 在 Bun 中渲染：公开页面在服务端渲染，搜索引擎可以收录，首屏更快；后台页面可以只在浏览器中渲染。Bun 编译出的 SSR 可执行文件嵌入 Go 程序，由 `ssr` 包从内存中启动和托管，部署时仍然只有一个文件、一个进程树。
+页面由 [TanStack Start](https://tanstack.com/start) 在 Bun 中渲染：公开页面在服务端渲染，搜索引擎可以收录，首屏更快；后台页面可以只在浏览器中渲染。一份 Bun 运行时和每个前端编译出的代码嵌入 Go 程序，由 `ssr` 包从内存中启动和托管，部署时仍然只有一个文件、一个进程树。
 
 阅读前需要了解：[脚手架](../installation/scaffolding.md)；[部署](../installation/deployment.md)。
 
@@ -27,7 +27,8 @@
 
 - **Go 是唯一的入口**：请求 ID、链路、访问日志、限流、安全响应头只在 Go 中处理一次。页面请求转给 Bun，流式转发，不缓冲。
 - **Bun 只负责渲染**：不连接数据库，不持有密钥。渲染时需要的数据，经内部 socket 调用 Go 的接口，和浏览器调用的是同一组接口。
-- **一个部署单元**：SSR 可执行文件用 `go:embed` 嵌入，启动时写入内存文件（memfd）执行，不落盘；Go 被强制结束时它随之结束。
+- **一个部署单元**：运行时和前端的代码用 `go:embed` 嵌入，启动时写入内存文件（memfd）执行，不落盘；Go 被强制结束时它随之结束。
+- **几个前端共用一份运行时**：运行时（`apps/ssr-runtime.bin`，`tenon-start runtime` 生成）只含 Bun 和一个加载器，约 100 MB；每个前端的代码（`apps/<名称>/ssr.js`，`tenon-start compile` 生成）只有一两 MB。每个前端仍是独立的进程，代码经文件描述符 3 交给加载器。
 
 两个 socket 都是 Linux 的抽象 unix socket，不在文件系统中留下文件。
 
@@ -35,10 +36,12 @@
 ## 装配
 
 ```go
+runtime := ssr.NewRuntime(apps.Runtime) // go:embed 嵌入的 Bun 运行时，几个前端共用一个
 pages, err := ssr.New(ssr.Options{
-    Executable: web.SSR,             // go:embed 嵌入的 SSR 可执行文件
-    API:        api,                 // Bun 渲染时调用的接口，通常就是对外的接口路由
-    DevServer:  cfg.DevServers["web"], // 只在 tenon dev 时有值
+    Runtime:   runtime,
+    Bundle:    web.SSR,               // go:embed 嵌入的前端代码 ssr.js
+    API:       api,                   // Bun 渲染时调用的接口，通常就是对外的接口路由
+    DevServer: cfg.DevServers["web"], // 只在 tenon dev 时有值
 })
 if err != nil {
     return err
@@ -52,7 +55,7 @@ return pages.Run(ctx, func(ctx context.Context) error {
 
 `Handler` 挂在接口之后，处理其余全部请求。`Run` 包住对外的 HTTP 服务，在它前后管理 SSR 进程，应用不需要自己安排启动和停止的顺序。`tenon init` 生成的 `cmd/api/main.go` 已经这样装配好了。
 
-有多个前端时（例如官网挂在 `/`，后台挂在 `/admin/`），每个前端一个 `Host`，各自挂载，再用 `ssr.Run` 一起运行：
+有多个前端时（例如官网挂在 `/`，后台挂在 `/admin/`），每个前端一个 `Host`（`Runtime` 用同一个），各自挂载，再用 `ssr.Run` 一起运行：
 
 ```go
 router.Handle("/admin/*", adminPages.Handler()) // 先挂子路径
@@ -125,7 +128,7 @@ html, err := pages.Render(ctx, "invoice", invoice)
 ## 限制
 
 - **只支持 Linux**：从内存执行依赖 memfd，抽象 socket 也是 Linux 特有的。其他系统上 `Run` 返回 `ssr.ErrUnsupported`；在 macOS 上开发时用开发服务器。Docker 容器中可以正常使用。
-- **程序体积**：Bun 的运行时编译进 SSR 可执行文件，约 100 MB，嵌入后 Go 程序相应变大。
+- **程序体积**：Bun 的运行时约 100 MB，嵌入后 Go 程序相应变大；几个前端共用它，每多一个前端只多一两 MB。
 - **内存**：SSR 进程常驻，空闲时约 40 MB，压力下约 150 MB。
 
 <a id="api-reference"></a>
@@ -144,12 +147,15 @@ html, err := pages.Render(ctx, "invoice", invoice)
 | `PrintPath`、`ErrUnknownTemplate` | 打印模板的地址前缀；没有这个模板 |
 | `DefaultCSP(nonce) string` | 默认的内容安全策略 |
 | `ErrUnsupported` | 当前系统不能运行 SSR 进程 |
+| `NewRuntime(executable) *Runtime` | 共用的 Bun 运行时；第一个 SSR 进程启动时写进内存文件，之后的进程共用 |
+| `BundleFD` | SSR 进程中前端代码所在的文件描述符（3） |
 | `EnvSocket`、`EnvAPISocket` | 传给 SSR 进程的环境变量名 |
 | `HeaderNonce`、`HeaderRoute` | 与 SSR 进程约定的请求头和响应头 |
 
 | `Options` 字段 | 说明 |
 | --- | --- |
-| `Executable` | SSR 可执行文件，`DevServer` 为空时必填 |
+| `Runtime` | 几个前端共用的运行时（`NewRuntime`），`DevServer` 为空时必填 |
+| `Bundle` | 这个前端的代码 `ssr.js`，`DevServer` 为空时必填 |
 | `API` | 内部入口提供的接口；nil 时不提供，例如只用 `Render` 生成 PDF 的队列 worker |
 | `DevServer` | 开发服务器地址 |
 | `CSP` | 由 nonce 生成内容安全策略，默认 `DefaultCSP` |

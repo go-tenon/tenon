@@ -16,6 +16,7 @@ import (
 	"github.com/go-tenon/tenon/logging"
 	"github.com/go-tenon/tenon/ssr"
 
+	"[[.Module]]/apps"
 	"[[.Module]]/apps/web"
 	"[[.Module]]/internal/todo"
 )
@@ -43,12 +44,13 @@ func main() {
 type pages struct{ web http.Handler }
 
 // serve 启动 HTTP 服务，直到收到停止信号。页面由 Go 托管的 SSR 进程渲染（见 ssr 包），
-// 它们渲染时经内部 socket 调用同一组路由。
+// 它们渲染时经内部 socket 调用同一组路由。几个前端共用一个运行时（runtime），各自一个进程。
 func serve(ctx context.Context, cfg Config) error {
 	slog.SetDefault(logging.New(logging.Config{}))
 	var router chi.Router
 	api := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { router.ServeHTTP(w, r) })
-	webPages, err := ssr.New(ssr.Options{Executable: web.SSR, API: api, DevServer: cfg.DevServers["web"]})
+	runtime := ssr.NewRuntime(apps.Runtime)
+	webPages, err := ssr.New(ssr.Options{Runtime: runtime, Bundle: web.SSR, API: api, DevServer: cfg.DevServers["web"]})
 	if err != nil {
 		return err
 	}

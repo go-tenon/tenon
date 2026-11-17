@@ -64,8 +64,8 @@ func TestInitEndToEnd(t *testing.T) {
 		{"\t\"example.com/todo/apps/web\"", "\t\"example.com/todo/apps/admin\"\n\t\"example.com/todo/apps/console\"\n\t\"example.com/todo/apps/web\""},
 		{"type pages struct{ web http.Handler }", "type pages struct{ web, admin, console http.Handler }"},
 		{"\trouter = routes(cfg, todo.NewStore(), pages{web: webPages.Handler()})",
-			"\tadminPages, err := ssr.New(ssr.Options{Executable: admin.SSR, API: api, DevServer: cfg.DevServers[\"admin\"]})\n\tif err != nil {\n\t\treturn err\n\t}\n" +
-				"\tconsolePages, err := ssr.New(ssr.Options{Executable: console.SSR, API: api, DevServer: cfg.DevServers[\"console\"]})\n\tif err != nil {\n\t\treturn err\n\t}\n" +
+			"\tadminPages, err := ssr.New(ssr.Options{Runtime: runtime, Bundle: admin.SSR, API: api, DevServer: cfg.DevServers[\"admin\"]})\n\tif err != nil {\n\t\treturn err\n\t}\n" +
+				"\tconsolePages, err := ssr.New(ssr.Options{Runtime: runtime, Bundle: console.SSR, API: api, DevServer: cfg.DevServers[\"console\"]})\n\tif err != nil {\n\t\treturn err\n\t}\n" +
 				"\trouter = routes(cfg, todo.NewStore(), pages{web: webPages.Handler(), admin: adminPages.Handler(), console: consolePages.Handler()})"},
 		{"}, webPages)", "}, webPages, adminPages, consolePages)"},
 		{"\tif p.web != nil {", "\tif p.admin != nil {\n\t\trouter.Handle(\"/admin/*\", p.admin)\n\t\trouter.Handle(\"/console/*\", p.console)\n\t}\n\tif p.web != nil {"},
@@ -79,8 +79,8 @@ func TestInitEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 刚 clone 的项目没有 ssr.bin（被 .gitignore 忽略）和生成的客户端：generate 先写占位文件再编译应用。
-	for _, p := range []string{"apps/web/ssr.bin", "apps/admin/ssr.bin", "packages/client/src/api"} {
+	// 刚 clone 的项目没有 ssr.js、共用的运行时（被 .gitignore 忽略）和生成的客户端：generate 先写占位文件再编译应用。
+	for _, p := range []string{"apps/web/ssr.js", "apps/admin/ssr.js", "apps/ssr-runtime.bin", "packages/client/src/api"} {
 		if err := os.RemoveAll(filepath.Join(dir, p)); err != nil {
 			t.Fatal(err)
 		}
@@ -118,6 +118,10 @@ func TestInitEndToEnd(t *testing.T) {
 	sh("bun", "run", "typecheck")
 	sh("go", "vet", "./...")
 	sh("go", "tool", "tenon", "build")
+	// 三个前端共用一份 Bun 运行时：程序只比一份运行时（约 100MB）大一点，而不是每个前端一份。
+	if info, err := os.Stat(filepath.Join(dir, "bin", "api")); err != nil || info.Size() > 180<<20 {
+		t.Fatalf("bin/api: %v, %d MB", err, info.Size()>>20)
+	}
 
 	// 运行构建出的二进制：页面由嵌入的 SSR 进程渲染，接口在 /api 下。
 	port := freePort(t)

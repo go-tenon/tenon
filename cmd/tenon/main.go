@@ -201,7 +201,7 @@ func addFrontendCommand() *cobra.Command {
 			fmt.Fprintf(cmd.OutOrStdout(), `
 已生成 apps/%[1]s，挂在 %[4]s。在 cmd/api/main.go 中托管它的 SSR 进程：
 
-	%[3]sPages, err := ssr.New(ssr.Options{Executable: %[3]s.SSR, API: api, DevServer: cfg.DevServers[%[1]q]})
+	%[3]sPages, err := ssr.New(ssr.Options{Runtime: runtime, Bundle: %[3]s.SSR, API: api, DevServer: cfg.DevServers[%[1]q]})
 
 把 %[3]sPages.Handler() 挂在 %[2]q（放在挂载 /* 的那一行之前），并加入 ssr.Run 的参数：
 ssr.Run(ctx, serve, webPages, %[3]sPages)。导入 %[5]q。
@@ -235,7 +235,7 @@ func buildCommand() *cobra.Command {
 	var out, arch string
 	cmd := &cobra.Command{
 		Use:   "build",
-		Short: "把每个前端编译成 SSR 可执行文件，再编译应用（嵌入它们）",
+		Short: "把每个前端编译成 SSR 代码，构建共用的运行时，再编译应用（嵌入它们）",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := load()
@@ -257,7 +257,7 @@ func buildCommand() *cobra.Command {
 				if err := run(cmd, ".", "bun", "install", "--frozen-lockfile"); err != nil {
 					return err
 				}
-				// SSR 可执行文件的架构与 Go 程序相同：tenon-start compile 读取 GOARCH。
+				// 共用的运行时的架构与 Go 程序相同：tenon-start runtime 读取 GOARCH。
 				goarch := arch
 				if goarch == "" {
 					out, err := exec.CommandContext(cmd.Context(), "go", "env", "GOARCH").Output()
@@ -274,6 +274,18 @@ func buildCommand() *cobra.Command {
 					if err := c.Run(); err != nil {
 						return fmt.Errorf("%s: bun run build: %w", f.Dir, err)
 					}
+				}
+				// 几个前端共用一份 Bun 运行时，构建一次。tenon-start 是前端的依赖，在第一个前端的目录中运行它。
+				rt, err := filepath.Abs(filepath.Join(project.AppsDir, dev.SSRRuntime))
+				if err != nil {
+					return err
+				}
+				c := exec.CommandContext(cmd.Context(), "bun", "x", "tenon-start", "runtime", "--out", rt)
+				c.Dir = cfg.Frontends[0].Dir
+				c.Env = append(slices.Clone(env), "GOARCH="+goarch)
+				c.Stdout, c.Stderr = cmd.OutOrStdout(), cmd.ErrOrStderr()
+				if err := c.Run(); err != nil {
+					return fmt.Errorf("tenon-start runtime: %w", err)
 				}
 			}
 			if out == "" {

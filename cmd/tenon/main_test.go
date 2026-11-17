@@ -60,11 +60,11 @@ func TestBuild(t *testing.T) {
 	if err := execute(t, "build"); err != nil {
 		t.Fatal(err)
 	}
-	// 在根目录安装一次，按 Go 的 GOARCH 逐个编译前端的 SSR 可执行文件，最后编译应用。
+	// 在根目录安装一次，逐个编译前端的 SSR 代码，按 Go 的 GOARCH 构建一次共用的运行时，最后编译应用。
 	l, _ := os.ReadFile(log)
 	lines := strings.Split(strings.TrimSpace(string(l)), "\n")
 	want := []string{"bun install --frozen-lockfile @", "go env GOARCH @", "bun run build @admin GOARCH=arm64",
-		"bun run build @web GOARCH=arm64", "go build -trimpath -o bin/api ./cmd/api @"}
+		"bun run build @web GOARCH=arm64", "bun x tenon-start runtime --out ", "go build -trimpath -o bin/api ./cmd/api @"}
 	if len(lines) != len(want) {
 		t.Fatalf("log:\n%s", l)
 	}
@@ -85,8 +85,9 @@ func TestBuildArch(t *testing.T) {
 	lines := strings.Split(strings.TrimSpace(string(l)), "\n")
 	want := []string{"bun install --frozen-lockfile @", "bun run build @web GOOS=linux GOARCH=amd64",
 		"go build -trimpath -o bin/api ./cmd/api @", "GOOS=linux GOARCH=amd64"}
-	if len(lines) != 3 || !strings.HasPrefix(lines[0], want[0]) || !strings.HasPrefix(lines[1], want[1]) ||
-		!strings.HasPrefix(lines[2], want[2]) || !strings.HasSuffix(lines[2], want[3]) {
+	if len(lines) != 4 || !strings.HasPrefix(lines[0], want[0]) || !strings.HasPrefix(lines[1], want[1]) ||
+		!strings.Contains(lines[2], "tenon-start runtime --out ") || !strings.HasSuffix(lines[2], want[3]) ||
+		!strings.HasPrefix(lines[3], want[2]) || !strings.HasSuffix(lines[3], want[3]) {
 		t.Fatalf("log:\n%s", l)
 	}
 	if err := execute(t, "build", "--arch", "386"); err == nil || !strings.Contains(err.Error(), "amd64 or arm64") {
@@ -116,7 +117,7 @@ func TestGenerate(t *testing.T) {
 			t.Fatalf("log missing %q:\n%s", want, l)
 		}
 	}
-	for _, f := range []string{"apps/web/ssr.bin", ".tenon/js/client/package.json"} {
+	for _, f := range []string{"apps/web/ssr.js", "apps/ssr-runtime.bin", ".tenon/js/client/package.json"} {
 		if _, err := os.Stat(f); err != nil {
 			t.Errorf("%s: %v", f, err)
 		}
@@ -152,10 +153,10 @@ func TestAddFrontend(t *testing.T) {
 			t.Errorf("%s missing %q:\n%s", name, want, b)
 		}
 	}
-	if _, err := os.Stat("apps/admin/ssr.bin"); err != nil {
-		t.Errorf("placeholder ssr.bin: %v", err)
+	if _, err := os.Stat("apps/admin/ssr.js"); err != nil {
+		t.Errorf("placeholder ssr.js: %v", err)
 	}
-	for _, want := range []string{`adminPages, err := ssr.New(ssr.Options{Executable: admin.SSR, API: api, DevServer: cfg.DevServers["admin"]})`,
+	for _, want := range []string{`adminPages, err := ssr.New(ssr.Options{Runtime: runtime, Bundle: admin.SSR, API: api, DevServer: cfg.DevServers["admin"]})`,
 		`"/admin/*"`, `"example.com/helpdesk/apps/admin"`} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("output missing %q:\n%s", want, out.String())

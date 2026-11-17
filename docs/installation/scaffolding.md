@@ -82,8 +82,9 @@ todo/
 ├── config/app.yaml        应用的配置，例如监听地址
 ├── cmd/api/main.go        程序的入口
 ├── internal/todo/todo.go  待办事项：类型、数据（保存在内存中）和四个接口
+├── apps/runtime.go      把几个前端共用的 Bun 运行时（ssr-runtime.bin）打包进 Go 程序
 ├── apps/web/              前端：React 写的网页，挂在 / 下
-│   ├── frontend.go        把前端编译成的 SSR 程序（ssr.bin）打包进 Go 程序
+│   ├── frontend.go        把前端编译成的 SSR 代码（ssr.js）打包进 Go 程序
 │   ├── vite.config.ts     前端构建工具 Vite 的配置
 │   └── src/
 │       ├── router.tsx     创建前端应用：路由、登录状态等
@@ -151,7 +152,8 @@ func serve(ctx context.Context, cfg Config) error {
     slog.SetDefault(logging.New(logging.Config{}))
     var router chi.Router
     api := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { router.ServeHTTP(w, r) })
-    webPages, err := ssr.New(ssr.Options{Executable: web.SSR, API: api, DevServer: cfg.DevServers["web"]})
+    runtime := ssr.NewRuntime(apps.Runtime)
+    webPages, err := ssr.New(ssr.Options{Runtime: runtime, Bundle: web.SSR, API: api, DevServer: cfg.DevServers["web"]})
     if err != nil {
         return err
     }
@@ -199,7 +201,7 @@ func routes(cfg Config, store *todo.Store, p pages) chi.Router {
 所以项目让页面和接口都在同一个端口上，Go 是唯一的入口：
 
 - **开发时**：前端的开发服务器（TanStack Start 的 Vite）在另一个端口上运行，但你不直接访问它。Go 程序在 8080 端口上处理 `/api` 的请求，把其余的请求（页面、热更新）转发给开发服务器。浏览器始终只访问 8080。
-- **发布时**：`tenon build` 把前端编译成一个渲染页面的程序（`apps/web/ssr.bin`），由 `frontend.go` 打包进 Go 程序（见 [embed](../concepts/go-primer.md#embed)）。Go 程序启动时从内存中运行它，页面请求经 unix socket 交给它渲染。
+- **发布时**：`tenon build` 把前端打包成一个渲染页面的 JS 文件（`apps/web/ssr.js`），再构建一份 Bun 运行时（`apps/ssr-runtime.bin`，几个前端共用），由 `frontend.go` 和 `apps/runtime.go` 打包进 Go 程序（见 [embed](../concepts/go-primer.md#embed)）。Go 程序启动时从内存中运行它们，页面请求经 unix socket 交给 SSR 进程渲染。
 
 细节见[服务端渲染](../frontend/ssr.md)和 [TanStack Start 的接入](../frontend/start.md)。
 
@@ -213,7 +215,7 @@ bun run build
 ./bin/api serve --config config/app.yaml
 ```
 
-`bun run build` 先把每个前端编译成渲染页面的程序（`ssr.bin`，架构与 Go 程序相同），再编译 Go 程序，把它们打包在其中。部署时只需要带上 `bin/api` 和配置文件，见[部署](deployment.md)。页面由 Go 托管的 SSR 进程渲染，只支持 Linux；在 macOS 上开发时用 `bun run dev`。
+`bun run build` 先把每个前端打包成 `ssr.js`，再构建共用的 Bun 运行时（架构与 Go 程序相同），最后编译 Go 程序，把它们打包在其中。部署时只需要带上 `bin/api` 和配置文件，见[部署](deployment.md)。页面由 Go 托管的 SSR 进程渲染，只支持 Linux；在 macOS 上开发时用 `bun run dev`。
 
 <a id="troubleshooting"></a>
 ## 常见问题
