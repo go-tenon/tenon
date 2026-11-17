@@ -6,7 +6,7 @@ import { type ReactNode, useCallback, useLayoutEffect, useMemo, useSyncExternalS
 import { createPortal } from "react-dom"
 import { useApp, useBreadcrumbs, useMenu } from "./app"
 import { type Badge, useBadgeOf } from "./badges"
-import { type Crumb, firstPage, type MenuItem } from "./menu"
+import type { Crumb, MenuItem } from "./menu"
 import { noAccount } from "./snapshot"
 import { createStore, perOwner, type Store } from "./store"
 
@@ -18,12 +18,6 @@ export interface Navigation {
   menu: MenuItem[]
   /** 当前位置在菜单中的路径：从第一级到最深一级的菜单项 id，用于高亮当前项、展开所在的分组。 */
   active: string[]
-  /** 第一级菜单，例如“顶栏 + 侧栏”的顶栏、“图标栏 + 二级面板”的图标栏。 */
-  modules: MenuItem[]
-  /** 当前所在的第一级菜单项。 */
-  module?: MenuItem
-  /** 当前第一级下的菜单，例如二级导航、二级面板。 */
-  secondary: MenuItem[]
   crumbs: Crumb[]
 }
 
@@ -47,50 +41,7 @@ export function useNavigation(): Navigation {
   const crumbs = useBreadcrumbs()
   const matches = useMatches()
   const matched = useMemo(() => new Set(matches.map((m) => m.routeId as string)), [matches])
-  return useMemo(() => {
-    const active = activePath(menu, matched)
-    const module = menu.find((m) => m.id === active[0])
-    return { menu, active, modules: menu, module, secondary: module?.children ?? [], crumbs }
-  }, [menu, matched, crumbs])
-}
-
-/** 底部标签栏中的一项。 */
-export interface BottomNavItem {
-  id: string
-  title: string
-  icon?: string
-  /** 点击后进入的页面：分组是它下面第一个可以进入的页面。 */
-  path: string
-  badge?: MenuItem["badge"]
-  active: boolean
-}
-
-/**
- * 窄屏时底部标签栏的项：第一级菜单，最多 max 项（默认 5）。分组进入它下面第一个可以进入的页面，
- * 没有可以进入的页面的分组不显示。底部标签栏只适合第一级菜单不多的前端，例如用户端。
- */
-export function bottomNav(menu: readonly MenuItem[], active: readonly string[], max = 5): BottomNavItem[] {
-  const out: BottomNavItem[] = []
-  for (const item of menu) {
-    if (out.length >= max) break
-    const path = item.children ? firstPage(item.children) : item.path
-    if (!path) continue
-    out.push({
-      id: item.id,
-      title: item.title,
-      icon: item.icon,
-      path,
-      badge: item.badge,
-      active: active[0] === item.id,
-    })
-  }
-  return out
-}
-
-/** 当前的底部标签栏，见 bottomNav。 */
-export function useBottomNav(max = 5): BottomNavItem[] {
-  const { menu, active } = useNavigation()
-  return useMemo(() => bottomNav(menu, active, max), [menu, active, max])
+  return useMemo(() => ({ menu, active: activePath(menu, matched), crumbs }), [menu, matched, crumbs])
 }
 
 /**
@@ -104,18 +55,14 @@ export function useMenuBadge(routeId: string, value: Badge | undefined | null): 
 
 // ———————————————————————————— 插槽 ————————————————————————————
 
-/** 约定的插槽。布局决定每个插槽放在哪里，可以只放一部分。 */
+/**
+ * AppLayout 中的插槽：页面往里面放随页面变化的内容。布局自带的部分（标志、搜索、租户切换、用户菜单）
+ * 是 AppLayout 的参数，不是插槽。自己写的布局可以用其他名字。
+ */
 export type SlotName =
-  | "brand" // 品牌：标志和名称
-  | "nav" // 主导航，通常由布局自己按 useNavigation 渲染
-  | "subnav" // 二级导航
-  | "actions" // 顶栏操作，随页面变化
-  | "search" // 搜索与命令面板入口
-  | "user" // 用户菜单
-  | "tenant" // 租户切换
-  | "tabs" // 标签栏（多标签）
-  | "aside" // 侧边面板，随页面变化
-  | "footer" // 页脚
+  | "actions" // 顶栏中的操作
+  | "aside" // 右侧面板，有内容时才显示
+  | "footer" // 内容区底部
 
 // 插槽用 portal 实现：Slot 登记一个 DOM 元素，Fill 把内容 portal 进去。内容随页面自己的渲染更新，
 // 状态只在插槽或内容出现、消失时变化，不会因为渲染而反复通知。
@@ -174,25 +121,15 @@ export function Fill({ name, children }: { name: SlotName | (string & {}); child
 
 // ———————————————————————————— 布局状态 ————————————————————————————
 
-/** 布局状态。navOpen 之外的字段按用户保存。 */
+/** 布局状态。collapsed 按账号保存。 */
 export interface LayoutState {
   /** 侧栏收起为图标。 */
   collapsed: boolean
-  /** 二级面板的宽度（像素）；没有调整过时为空，用布局的默认宽度。 */
-  secondaryWidth?: number
-  /** 侧边面板打开。 */
-  aside: boolean
-  /** 内容最大化：隐藏导航和顶栏。 */
-  maximized: boolean
-  /** 用户选择的布局变体，见 useLayoutVariant。 */
-  variant?: string
-  /** 密度。 */
-  density?: "compact" | "comfortable"
   /** 窄屏时导航抽屉打开。只在当前页面有效，不保存。 */
   navOpen: boolean
 }
 
-const defaultLayout: LayoutState = { collapsed: false, aside: false, maximized: false, navOpen: false }
+const defaultLayout: LayoutState = { collapsed: false, navOpen: false }
 
 const layoutOf = perOwner(() => createStore<{ key: string; state: LayoutState }>({ key: "", state: defaultLayout }))
 
@@ -220,19 +157,7 @@ export function useLayoutState(): [LayoutState, (changes: Partial<LayoutState>) 
   return [state, set]
 }
 
-/**
- * 用户可以在几种布局之间切换时（例如侧栏和顶部导航），布局路由用它决定当前用哪一种：
- * 用户选过并且在 allowed 中时用用户的选择，否则用 allowed[0]。setVariant 保存用户的选择。
- *
- *   const [variant, setVariant] = useLayoutVariant(["side", "top"])
- */
-export function useLayoutVariant<V extends string>(allowed: readonly [V, ...V[]]): [V, (variant: V) => void] {
-  const [state, set] = useLayoutState()
-  const variant = allowed.includes(state.variant as V) ? (state.variant as V) : allowed[0]
-  return [variant, (v: V) => set({ variant: v })]
-}
-
-/** 是否是窄屏（默认宽度小于 768px）：布局据此把主导航收进抽屉或底部标签栏。 */
+/** 是否是窄屏（默认宽度小于 768px）：布局据此把主导航收进抽屉。 */
 export function useNarrow(query = "(max-width: 767px)"): boolean {
   return useSyncExternalStore(
     (onChange) => {

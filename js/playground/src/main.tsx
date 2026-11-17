@@ -10,7 +10,6 @@ import {
   createApp,
   DocsLayout,
   ExportButton,
-  Fill,
   ImportButton,
   LoginForm,
   NotFoundPage,
@@ -25,7 +24,6 @@ import {
   requireAuth,
   SettingsForm,
   SiteLayout,
-  TenantSwitcher,
   themes,
   trackOperation,
   UIProvider,
@@ -118,24 +116,24 @@ function Root(): ReactNode {
 
 function AdminShell(): ReactNode {
   return (
-    <>
-      <Fill name="actions">
-        <OperationsMenu />
-        <NotificationsMenu source={notifications} />
-      </Fill>
-      <Fill name="tenant">
-        <TenantSwitcher />
-      </Fill>
-      <Fill name="user">
+    <AppLayout
+      title="Acme 运营后台"
+      tabs
+      actions={
+        <>
+          <OperationsMenu />
+          <NotificationsMenu source={notifications} />
+        </>
+      }
+      user={
         <UserMenu
           name="韩梅梅"
           email="meimei@acme.cn"
           logout={async () => {}}
           items={[{ label: "账号设置", to: "/settings" }]}
         />
-      </Fill>
-      <AppLayout title="Acme 运营后台" tabs />
-    </>
+      }
+    />
   )
 }
 
@@ -356,18 +354,12 @@ function LoginPage(): ReactNode {
 
 function ConsoleShell(): ReactNode {
   return (
-    <>
-      <Fill name="actions">
-        <NotificationsMenu source={notifications} />
-      </Fill>
-      <Fill name="tenant">
-        <TenantSwitcher />
-      </Fill>
-      <Fill name="user">
-        <UserMenu name="韩梅梅" email="meimei@acme.cn" logout={async () => {}} />
-      </Fill>
-      <AppLayout title="Acme Cloud" maxWidth={1200} />
-    </>
+    <AppLayout
+      title="Acme Cloud"
+      maxWidth={1200}
+      actions={<NotificationsMenu source={notifications} />}
+      user={<UserMenu name="韩梅梅" email="meimei@acme.cn" logout={async () => {}} />}
+    />
   )
 }
 

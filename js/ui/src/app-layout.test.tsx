@@ -18,14 +18,7 @@ function tree() {
     getParentRoute: () => root,
     id: "_app",
     beforeLoad: requireAuth,
-    component: () => (
-      <>
-        <Fill name="user">
-          <span>用户菜单</span>
-        </Fill>
-        <AppLayout title="测试后台" />
-      </>
-    ),
+    component: () => <AppLayout title="测试后台" user={<span>用户菜单</span>} actions={<span>通知</span>} />,
   })
   const page = (
     parent: typeof layout | typeof trade,
@@ -38,7 +31,16 @@ function tree() {
       getParentRoute: () => parent,
       path,
       staticData: { title, order, permission, icon: "home" },
-      component: () => <p>{`${title}页面`}</p>,
+      component: () => (
+        <>
+          {title === "用户" && (
+            <Fill name="actions">
+              <button type="button">新建用户</button>
+            </Fill>
+          )}
+          <p>{`${title}页面`}</p>
+        </>
+      ),
     })
   const trade = createRoute({ getParentRoute: () => layout, path: "/trade", staticData: { title: "交易", order: 1 } })
   const login = createRoute({ getParentRoute: () => root, path: "/login", component: () => <p>登录页</p> })
@@ -68,9 +70,17 @@ describe("AppLayout", () => {
     expect(screen.getByText("订单", { selector: "[aria-current=page]" })).toBeTruthy()
   })
 
-  it("插槽中的内容显示在顶栏", async () => {
-    await renderApp(tree())
-    expect(await screen.findByText("用户菜单")).toBeTruthy()
+  it("参数中的用户菜单和操作显示在顶栏；页面用 Fill 放的操作在前面，离开页面时移除", async () => {
+    const app = await renderApp(tree(), { path: "/users", permissions: ["users:manage"] })
+    await screen.findByText("用户页面")
+    const header = document.querySelector(".tn-header") as HTMLElement
+    expect(within(header).getByText("用户菜单")).toBeTruthy()
+    expect(within(header).getByText("新建用户")).toBeTruthy()
+    expect(header.textContent?.indexOf("新建用户")).toBeLessThan(header.textContent?.indexOf("通知") ?? 0)
+    await act(() => app.router.navigate({ href: "/" }))
+    await screen.findByText("概览页面")
+    expect(within(header).queryByText("新建用户")).toBeNull()
+    expect(within(header).getByText("通知")).toBeTruthy()
   })
 
   it("收起侧栏后只显示图标，名称在 aria-label 中；状态保存在本地", async () => {

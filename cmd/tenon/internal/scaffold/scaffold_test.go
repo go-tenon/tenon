@@ -98,14 +98,14 @@ func TestWriteFrontend(t *testing.T) {
 			"src/theme.ts":              `preset: "console"`,
 			"src/start.ts":              "defaultSsr: false",
 			"src/router.tsx":            "permissions: async () => (await me()).permissions ?? []",
-			"src/routes/_app.tsx":       `<AppLayout title="后台" />`,
+			"src/routes/_app.tsx":       `<AppLayout title="后台" user=`,
 			"src/routes/_app/index.tsx": `createFileRoute("/_app/")`,
 			"src/routes/login.tsx":      "<LoginForm login={login} redirect={redirect} />",
 			"src/auth.ts":               "createSession",
 		}, []string{"src/routes/index.tsx"}},
 		{"admin", map[string]string{
 			"src/theme.ts":        `preset: "admin"`,
-			"src/routes/_app.tsx": `<AppLayout title="后台" tabs />`,
+			"src/routes/_app.tsx": `<AppLayout title="后台" tabs user=`,
 		}, nil},
 		{"site", map[string]string{
 			"src/theme.ts":         `preset: "site"`,

@@ -5,17 +5,7 @@ import { createMemoryHistory, createRootRouteWithContext, createRoute, Outlet } 
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { AppRoot, createApp, type RouterContext, type TenancyOptions } from "./app"
-import {
-  bottomNav,
-  Fill,
-  Slot,
-  useLayoutState,
-  useLayoutVariant,
-  useMenuBadge,
-  useNarrow,
-  useNavigation,
-  useSlotFilled,
-} from "./layout"
+import { Fill, Slot, useLayoutState, useMenuBadge, useNarrow, useNavigation, useSlotFilled } from "./layout"
 import { enterTenant, useTenant } from "./tenant"
 
 // ———— 一个最小的布局：显示导航模型、布局状态和插槽 ————
@@ -23,7 +13,6 @@ import { enterTenant, useTenant } from "./tenant"
 function Layout() {
   const nav = useNavigation()
   const [state, setState] = useLayoutState()
-  const [variant, setVariant] = useLayoutVariant(["side", "top"])
   const aside = useSlotFilled("aside")
   const tenant = useTenant()
   const narrow = useNarrow()
@@ -33,11 +22,8 @@ function Layout() {
     <div>
       <p data-testid="menu">{flat(nav.menu).join(",")}</p>
       <p data-testid="active">{nav.active.join(" > ")}</p>
-      <p data-testid="module">{nav.module?.title ?? ""}</p>
-      <p data-testid="secondary">{nav.secondary.map((i) => i.title).join(",")}</p>
       <p data-testid="crumbs">{nav.crumbs.map((c) => c.title).join(" / ")}</p>
       <p data-testid="collapsed">{String(state.collapsed)}</p>
-      <p data-testid="variant">{variant}</p>
       <p data-testid="narrow">{String(narrow)}</p>
       <p data-testid="tenant">{`${tenant.current ?? ""}:${tenant.tenant?.name ?? ""}:${tenant.tenants.length}`}</p>
       <header data-testid="actions">
@@ -50,9 +36,6 @@ function Layout() {
       )}
       <button type="button" onClick={() => setState({ collapsed: !state.collapsed, navOpen: true })}>
         toggle
-      </button>
-      <button type="button" onClick={() => setVariant("top")}>
-        top
       </button>
       <button type="button" onClick={() => void tenant.switchTo("globex")}>
         switch
@@ -153,14 +136,12 @@ afterEach(() => {
 const text = (id: string) => screen.getByTestId(id).textContent
 
 describe("导航模型", () => {
-  it("当前位置、一级菜单和二级菜单；详情页高亮所在的分组", async () => {
+  it("当前位置和面包屑；详情页高亮所在的分组", async () => {
     const { app } = setup({ path: "/articles" })
     render(<AppRoot app={app} />)
     await screen.findByText("articles page")
     expect(text("menu")).toBe("文章,全部文章,通知")
     expect(text("active")).toBe("/_app/articles > /_app/articles/")
-    expect(text("module")).toBe("文章")
-    expect(text("secondary")).toBe("全部文章")
     expect(text("crumbs")).toBe("文章 / 全部文章")
 
     await act(() => app.router.navigate({ href: "/articles/42" }))
@@ -180,32 +161,6 @@ describe("导航模型", () => {
   })
 })
 
-describe("底部标签栏", () => {
-  const menu = [
-    { id: "home", title: "首页", icon: "home", path: "/" },
-    {
-      id: "orders",
-      title: "订单",
-      path: "/orders",
-      children: [{ id: "orders-all", title: "全部订单", path: "/orders/all" }],
-    },
-    { id: "empty", title: "空分组", path: "/empty", children: [] },
-    { id: "me", title: "我的", path: "/me", badge: 2 },
-  ]
-
-  it("第一级菜单；分组进入它下面第一个页面，没有页面的分组不显示", () => {
-    expect(bottomNav(menu, ["orders", "orders-all"])).toEqual([
-      { id: "home", title: "首页", icon: "home", path: "/", badge: undefined, active: false },
-      { id: "orders", title: "订单", icon: undefined, path: "/orders/all", badge: undefined, active: true },
-      { id: "me", title: "我的", icon: undefined, path: "/me", badge: 2, active: false },
-    ])
-  })
-
-  it("最多 max 项", () => {
-    expect(bottomNav(menu, [], 2).map((i) => i.id)).toEqual(["home", "orders"])
-  })
-})
-
 describe("插槽", () => {
   it("页面往插槽放内容，按放入的顺序排列，离开页面时移除", async () => {
     const { app } = setup({ path: "/articles" })
@@ -221,7 +176,7 @@ describe("插槽", () => {
 })
 
 describe("布局状态", () => {
-  it("按账号保存；navOpen 不保存；变体只能是允许的几种", async () => {
+  it("按账号保存；navOpen 不保存", async () => {
     const { app, session } = setup({ path: "/articles" })
     render(<AppRoot app={app} />)
     await signIn(session, "u1")
@@ -231,21 +186,12 @@ describe("布局状态", () => {
     expect(text("collapsed")).toBe("true")
     expect(JSON.parse(localStorage.getItem("tenon:layout-test:layout:u1") ?? "{}")).toEqual({
       collapsed: true,
-      aside: false,
-      maximized: false,
     })
 
     await signIn(session, "u2") // 换个账号：各是各的
     expect(text("collapsed")).toBe("false")
     await signIn(session, "u1")
     expect(text("collapsed")).toBe("true")
-
-    expect(text("variant")).toBe("side")
-    await act(async () => fireEvent.click(screen.getByText("top")))
-    expect(text("variant")).toBe("top")
-    localStorage.setItem("tenon:layout-test:layout:u3", JSON.stringify({ variant: "rail" }))
-    await signIn(session, "u3") // 保存的变体不在允许的范围内：用第一种
-    expect(text("variant")).toBe("side")
   })
 
   it("useNarrow 按媒体查询判断窄屏", async () => {

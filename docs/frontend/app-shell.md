@@ -202,7 +202,7 @@ const crumbs = useBreadcrumbs() // [{ title, path }]
 <a id="layouts"></a>
 ## 布局约定
 
-一个布局读取导航模型和布局状态，把插槽放到自己的位置上；页面只往插槽中放内容，不关心当前是哪一种布局。侧栏、顶部导航等具体的布局由 `@go-tenon/ui` 的 `AppLayout` 按这个约定实现，项目也可以自己写，只要遵守这个约定，页面、多标签和权限过滤都照常工作。
+一个布局读取导航模型和布局状态，把插槽放到自己的位置上；页面只往插槽中放内容，不关心当前是哪一种布局。`@go-tenon/ui` 的 `AppLayout`（侧栏布局）按这个约定实现，项目也可以自己写，只要遵守这个约定，页面、多标签和权限过滤都照常工作。
 
 **区域**用布局路由选择：一组页面共用一个布局，不同的组用不同的布局，例如 `_app` 用侧栏，`_settings` 用设置布局，`_auth` 用登录布局。
 
@@ -210,15 +210,13 @@ const crumbs = useBreadcrumbs() // [{ title, path }]
 ### 导航模型
 
 ```tsx
-const { menu, active, modules, module, secondary, crumbs } = useNavigation()
+const { menu, active, crumbs } = useNavigation()
 ```
 
 | 字段 | 内容 |
 | --- | --- |
 | `menu` | 按权限过滤后的菜单树，见[菜单与面包屑](#menu-and-breadcrumbs) |
 | `active` | 当前位置在菜单中的路径：从第一级到最深一级的菜单项 id，用于高亮当前项、展开所在的分组。详情页这类不在菜单中的页面，高亮它所在的分组 |
-| `modules`、`module` | 第一级菜单和当前所在的那一项，“顶栏 + 侧栏”、“图标栏 + 二级面板”用它们 |
-| `secondary` | 当前第一级下的菜单，用于二级导航、二级面板 |
 | `crumbs` | 面包屑 |
 
 菜单项的徽标（例如未读通知数）是运行时才知道的，由页面或功能模块登记，菜单项上带上 `badge`：
@@ -230,27 +228,22 @@ useMenuBadge("/_app/notifications", unread) // 组件卸载、值为 0 或空时
 <a id="slots"></a>
 ### 插槽
 
-布局用 `<Slot>` 放置插槽，页面用 `<Fill>` 往插槽放内容，离开页面时自动移除。同一个插槽可以有多份内容，按放入的顺序排列：
+每个页面都有的部分（用户菜单、通知、搜索）是 `AppLayout` 的参数，见[应用外壳](ui.md#app-layout)。某个页面才有的内容，页面用 `<Fill>` 放进布局的插槽，离开页面时自动移除。同一个插槽可以有多份内容，按放入的顺序排列：
 
 ```tsx
-// 布局
-<header>
-  <Slot name="brand" />
-  <Slot name="actions" />
-  <Slot name="user" />
-</header>
-{useSlotFilled("aside") && <aside><Slot name="aside" /></aside>}
-
 // 页面
 <Fill name="actions"><Button>写文章</Button></Fill>
+
+// 自己写的布局用 <Slot> 放置插槽
+<header><Slot name="actions" /></header>
+{useSlotFilled("aside") && <aside><Slot name="aside" /></aside>}
 ```
 
 | 插槽 | 内容 |
 | --- | --- |
-| `brand`、`user`、`tenant`、`search`、`footer` | 品牌、用户菜单、租户切换、搜索与命令面板入口、页脚，通常由应用在布局路由中放一次 |
-| `actions`、`aside` | 顶栏操作、侧边面板，随页面变化 |
-| `nav`、`subnav` | 主导航、二级导航，通常由布局按 `useNavigation` 自己渲染 |
-| `tabs` | 标签栏 |
+| `actions` | 顶栏中的操作，在 `AppLayout` 的 `actions` 参数之前 |
+| `aside` | 右侧面板，有内容时才显示 |
+| `footer` | 内容区底部 |
 
 内容用 portal 放进插槽，仍在页面自己的组件树中：读取页面的状态和上下文，随页面一起更新。`useSlotFilled(name)` 报告插槽中是否有内容，例如没有侧边面板时不留出位置。
 
@@ -259,20 +252,11 @@ useMenuBadge("/_app/notifications", unread) // 组件卸载、值为 0 或空时
 
 ```tsx
 const [state, setState] = useLayoutState()
-// state.collapsed、state.secondaryWidth、state.aside、state.maximized、state.density、state.navOpen
+// state.collapsed（侧栏收起为图标）、state.navOpen（窄屏时导航抽屉打开）
 setState({ collapsed: !state.collapsed })
 ```
 
-布局状态保存在[本地存储](#storage)中，按账号区分：换个账号登录各是各的。`navOpen`（窄屏时导航抽屉打开）只在当前页面有效，不保存。`useNarrow()` 报告是否是窄屏（默认宽度小于 768px），布局据此把主导航收进抽屉或底部标签栏。
-
-底部标签栏的内容由 `useBottomNav(max = 5)` 给出：第一级菜单，最多 `max` 项，分组进入它下面第一个可以进入的页面，每一项带着是否是当前位置（`active`）和徽标。它只适合第一级菜单不多的前端，例如用户端。
-
-项目允许用户切换布局时（例如在侧栏和顶部导航之间），布局路由用 `useLayoutVariant` 决定当前用哪一种，第一种是默认的；用户选过、并且在允许的范围内时用用户的选择：
-
-```tsx
-const [variant, setVariant] = useLayoutVariant(["side", "top"])
-return variant === "top" ? <TopLayout /> : <SideLayout />
-```
+布局状态保存在[本地存储](#storage)中，按账号区分：换个账号登录各是各的。`navOpen`（窄屏时导航抽屉打开）只在当前页面有效，不保存。`useNarrow()` 报告是否是窄屏（默认宽度小于 768px），布局据此把主导航收进抽屉。
 
 <a id="new-version"></a>
 ## 新版本提示
@@ -332,14 +316,12 @@ app.storage.get<{ collapsed: boolean }>("sider")
 | `buildMenu`、`firstPage`、`pageUnder`、`breadcrumbs` | 菜单和面包屑的纯函数，外观可以直接使用 |
 | `useNavigation`、`useMenuBadge` | 布局的导航模型；登记菜单项的徽标 |
 | `Slot`、`Fill`、`useSlotFilled` | 插槽 |
-| `useLayoutState`、`useLayoutVariant`、`useNarrow` | 布局状态、用户选择的布局、窄屏 |
-| `useBottomNav`、`bottomNav` | 窄屏时底部标签栏的项 |
-| `useResizable(options)`、`clampSize` | 可以拖动调整宽度的分栏：宽度按账号保存，分隔条的属性（拖动、方向键、双击恢复） |
+| `useLayoutState`、`useNarrow` | 布局状态、窄屏 |
 | `TabsOutlet`、`useTabs`、`useTab`、`useTabActive`、`useTabTitle`、`useTabShortcuts` | 多标签 |
 | `confirmDiscard(app)` | 有未保存的修改时询问是否放弃，例如退出登录前 |
 | `useTenant`、`switchTenant`、`enterTenant` | 当前租户、切换租户 |
-| `formValidator`、`resolver` | 用生成的规则校验表单：`@mantine/form`（经 `@go-tenon/ui` 的 `useSchemaForm`）、react-hook-form、其他表单库 |
-| `setServerErrors`、`serverErrors` | 把服务端的错误设置到表单的字段 |
+| `formValidator` | 用生成的规则校验整个表单，`useSchemaForm` 用它 |
+| `serverErrors` | 把服务端的错误拆成字段错误和整个表单的错误，`applyServerErrors` 用它 |
 | `useUnsavedChanges(dirty, options)` | 有未保存的修改时离开前询问 |
 | `createAutoSaver(initial, options)` | 自动保存，与表单库无关，见[表单](app-shell-features.md#forms) |
 | `listSearch(querySchema, options)`、`useList(Route)` | 列表的查询条件、排序和分页保存在地址中 |

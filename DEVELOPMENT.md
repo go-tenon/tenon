@@ -98,7 +98,7 @@ bun run test        # Vitest
 bun run e2e         # Playwright，第一次运行前执行 bunx playwright install chromium
 ```
 
-`@go-tenon/client` 不依赖 DOM：它的 `tsconfig.json` 中 `lib` 没有 `dom`，用到 `window`、`document` 等浏览器 API 时类型检查失败。`@go-tenon/ui` 用于网页，依赖 React、TanStack Router、TanStack Query 和 Mantine，都是 peer 依赖；开发和测试用到的包（React、Testing Library、happy-dom、Vite 等）写在 `js/package.json` 的 `devDependencies` 中，不写在包自己的 `package.json` 里，否则会随包复制到项目中被安装。需要 DOM 的测试文件在开头写 `// @vitest-environment happy-dom`。测试文件（`*.test.ts`、`*.test.tsx`）不复制到项目中，可以用只在 `js/package.json` 中的包，例如表单适配器的测试用真实的 react-hook-form。`js/e2e` 是在真实浏览器中运行的测试：一个只用 `ui/src/shell` 的小应用（Vite 启动），Playwright 检查多标签与保活中 happy-dom 测不到的部分，例如浏览器的前进后退、隐藏标签暂停 effect、刷新浏览器后恢复标签栏。它没有 `package.json`，不是 workspace 中的包：每个有 `package.json` 的目录都会被复制到项目中，框架的包在它的 `vite.config.ts` 和 `tsconfig.json` 中按路径引用。在生成的项目中试用改动时，用 `tenon init --tenon <框架目录>` 生成项目，`tenon dev` 每次启动时复制本地的 `js`。
+`@go-tenon/client` 不依赖 DOM：它的 `tsconfig.json` 中 `lib` 没有 `dom`，用到 `window`、`document` 等浏览器 API 时类型检查失败。`@go-tenon/ui` 用于网页，依赖 React、TanStack Router、TanStack Query 和 Mantine，都是 peer 依赖；开发和测试用到的包（React、Testing Library、happy-dom、Vite 等）写在 `js/package.json` 的 `devDependencies` 中，不写在包自己的 `package.json` 里，否则会随包复制到项目中被安装。需要 DOM 的测试文件在开头写 `// @vitest-environment happy-dom`。测试文件（`*.test.ts`、`*.test.tsx`）不复制到项目中，可以用只在 `js/package.json` 中的包，例如 Testing Library 和 happy-dom。`js/e2e` 是在真实浏览器中运行的测试：一个只用 `ui/src/shell` 的小应用（Vite 启动），Playwright 检查多标签与保活中 happy-dom 测不到的部分，例如浏览器的前进后退、隐藏标签暂停 effect、刷新浏览器后恢复标签栏。它没有 `package.json`，不是 workspace 中的包：每个有 `package.json` 的目录都会被复制到项目中，框架的包在它的 `vite.config.ts` 和 `tsconfig.json` 中按路径引用。在生成的项目中试用改动时，用 `tenon init --tenon <框架目录>` 生成项目，`tenon dev` 每次启动时复制本地的 `js`。
 
 <a id="continuous-integration"></a>
 ## 持续集成

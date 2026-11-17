@@ -24,17 +24,12 @@
 <a id="tabs"></a>
 ## 多标签
 
-运营后台常用多标签：打开的页面排成一行标签，切换标签时页面保留原来的状态（填了一半的表单、翻到的页、滚动位置）。多标签按需开启，在布局路由中用 `TabsOutlet` 代替 `Outlet`，标签栏由外观放在 `tabs` 插槽中：
+运营后台常用多标签：打开的页面排成一行标签，切换标签时页面保留原来的状态（填了一半的表单、翻到的页、滚动位置）。多标签按需开启，`AppLayout` 设置 `tabs` 即可，它显示标签栏 `TabBar`，并用 `TabsOutlet` 代替 `Outlet`；自己写的布局也这样放：
 
 ```tsx
 function Layout() {
   useTabShortcuts() // 可选：Alt+W 关闭当前标签，Alt+← / Alt+→ 切换
-  return (
-    <SideLayout>
-      <Slot name="tabs" />
-      <TabsOutlet max={10} />
-    </SideLayout>
-  )
+  return <AppLayout title="运营后台" tabs={{ max: 10 }} user={<UserMenu … />} />
 }
 ```
 
@@ -133,31 +128,11 @@ export const Route = createFileRoute("/t/$tenant")({
 <a id="forms"></a>
 ## 表单
 
-表单在前端用生成的 `schemas.ts` 和 `messages.ts` 校验：规则、提示的文字都与服务端相同，见[校验规则与验证提示](client-react.md#validation-rules)。服务端返回的字段错误显示在对应的输入框下面。shell 不提供表单组件，只提供与表单库无关的部分。用 Mantine 时直接用 `@go-tenon/ui` 的 `useSchemaForm`、`applyServerErrors` 和 `FormError`，见[界面组件的表单](ui.md#forms)，它们就是用下面这些函数接上 `@mantine/form` 的。
-
-用 react-hook-form 时，交给 `useForm` 一个 `resolver`：
-
-```tsx
-import { resolver, setServerErrors } from "@go-tenon/ui"
-import { components, schemas } from "@blog/client/api/schemas"
-import { messages } from "@blog/client/api/messages"
-
-const rules = { components, messages, language: "zh-CN" }
-
-function ArticleForm() {
-  const form = useForm<ArticleChanges>({ resolver: resolver(schemas.article.create.body, rules) })
-  const [formError, setFormError] = useState<string>()
-  const save = useMutation({
-    mutationFn: (changes: ArticleChanges) => api.article.create(changes),
-    onError: (err) => setFormError(setServerErrors(err, form)?.message),
-  })
-  return <form onSubmit={form.handleSubmit((v) => save.mutate(v))}>…</form>
-}
-```
+表单在前端用生成的 `schemas.ts` 和 `messages.ts` 校验：规则、提示的文字都与服务端相同，见[校验规则与验证提示](client-react.md#validation-rules)。服务端返回的字段错误显示在对应的输入框下面。表单用 `@mantine/form`，经 `useSchemaForm`、`applyServerErrors` 和 `FormError` 接上这些规则，见[界面组件的表单](ui.md#forms)。
 
 - 字段的路径用点连接，例如 `items.0.name`，与服务端错误的位置 `body.items[0].name` 对应。
-- `setServerErrors` 把请求体的字段错误设置到对应字段，返回不属于某个字段的错误（例如 slug 已被使用、断网），它是 `describeError` 的结果：`message` 是服务端翻译好的提示，断网等没有服务端提示时为空，按 `kind` 显示。
-- `serverErrors(err)` 只拆分，不设置：`{ fields, form }`；`formValidator(schema, rules)` 返回校验整个表单的函数，其他表单库可以用它们对接。
+- `applyServerErrors(form, err)` 把请求体的字段错误设置到对应字段，返回不属于某个字段的错误（例如 slug 已被使用、断网），它是 `describeError` 的结果：`message` 是服务端翻译好的提示，断网等没有服务端提示时为空，按 `kind` 显示。
+- 它们建立在两个与表单库无关的函数上：`formValidator(schema, rules)` 返回校验整个表单的函数，`serverErrors(err)` 把错误拆成 `{ fields, form }`。
 
 有未保存的修改时，`useUnsavedChanges` 在离开页面前询问，刷新或关闭浏览器时由浏览器提示。保存成功后先调用 `release`，跳转时不再询问：
 
@@ -359,7 +334,7 @@ const composer = useAssistantComposer(chat)
 
 **表单提交后，服务端返回的字段错误没有显示在输入框下面**
 
-在 `onError` 中把错误交给 `setServerErrors`，它把 `422` 的字段错误设置到对应的字段上。还要检查表单字段的名字是否与接口请求体中的字段名一致，嵌套字段用点连接，例如 `items.0.name`，见[表单](#forms)。
+在 `onError` 中把错误交给 `applyServerErrors`，它把 `422` 的字段错误设置到对应的字段上。还要检查表单字段的名字是否与接口请求体中的字段名一致，嵌套字段用点连接，例如 `items.0.name`，见[表单](#forms)。
 
 **列表的筛选条件刷新页面后丢失了**
 
