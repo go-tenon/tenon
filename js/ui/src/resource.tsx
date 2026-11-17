@@ -79,7 +79,7 @@ export interface ResourcePageProps {
   rowActions?: (row: ResourceRow) => RowAction[]
   /** 标题区的额外按钮，排在“新建”之前，例如导入、导出。 */
   toolbar?: ReactNode
-  /** 点击一行展开的内容。 */
+  /** 展开的内容：每行开头一个箭头按钮，点它展开、收起。 */
   expand?: (row: ResourceRow) => ReactNode
   /**
    * 新建和修改的表单：page（默认）是单独的页面，需要列表路由下的 new 和 $id/edit 两个子路由（渲染 ResourceFormPage）；

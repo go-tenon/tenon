@@ -219,11 +219,14 @@ describe("QueuePanel", () => {
     expect(api.failedDelete).toHaveBeenCalledWith("j3")
   })
 
-  it("点击一条失败任务，在对话框中显示完整的错误、元数据和任务内容", async () => {
+  it("点击行不打开详情；点错误，在对话框中显示完整的错误、元数据和任务内容", async () => {
     const api = fakeApi()
     await mount(api)
     await openTab("失败任务")
-    await act(async () => fireEvent.click(await screen.findByText("pdf: unavailable")))
+    const row = (await screen.findByText("pdf: unavailable")).closest("tr") as HTMLElement
+    await act(async () => fireEvent.click(within(row).getByText("report.daily")))
+    expect(screen.queryByRole("dialog")).toBeNull()
+    await act(async () => fireEvent.click(within(row).getByRole("button", { name: "pdf: unavailable" })))
     const dialog = await screen.findByRole("dialog")
     expect(await within(dialog).findByText(/at send \(mail\.go:42\)/)).toBeTruthy()
     expect(within(dialog).getByText("REQ-42")).toBeTruthy()

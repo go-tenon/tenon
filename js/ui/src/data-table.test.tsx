@@ -91,7 +91,14 @@ describe("DataTable", () => {
     await act(async () => fireEvent.click(await screen.findByRole("checkbox", { name: "备注" })))
     expect((await screen.findAllByText("备注内容")).length).toBeGreaterThan(0)
     expect(JSON.stringify(localStorage)).toContain("orders")
+    // 点击行不展开（行里的文字要能选中、复制），只有行首的箭头按钮展开、收起。
     await act(async () => fireEvent.click(screen.getByText("订单 3")))
+    expect(screen.queryByText("订单 3 的明细")).toBeNull()
+    const expander = within(screen.getByText("订单 3").closest("tr") as HTMLElement).getByRole("button", {
+      name: "展开",
+    })
+    await act(async () => fireEvent.click(expander))
     expect(await screen.findByText("订单 3 的明细")).toBeTruthy()
+    expect(expander.getAttribute("aria-expanded")).toBe("true")
   })
 })

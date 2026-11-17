@@ -2,15 +2,15 @@
 // 选中接 useSelection（可以跨页）。设置了 storeKey 时，用 mantine-datatable 自带的列设置：拖动表头调整顺序，
 // 右键点击表头选择显示的列，拖动表头的边缘调整宽度，设置保存在浏览器中。密度随主题的预设。
 
-import { Box, Button, Group, Stack, Text, useMantineTheme } from "@mantine/core"
-import { IconInbox } from "@tabler/icons-react"
+import { ActionIcon, Anchor, Box, Button, Group, Stack, Text, useMantineTheme } from "@mantine/core"
+import { IconChevronRight, IconInbox } from "@tabler/icons-react"
 import {
   type DataTableColumn,
   type DataTableSortStatus,
   DataTable as MantineDataTable,
   useDataTableColumns,
 } from "mantine-datatable"
-import { type ReactNode, type RefObject, useLayoutEffect, useRef } from "react"
+import { type ReactNode, type RefObject, useLayoutEffect, useRef, useState } from "react"
 import type { ListState, Selection } from "./shell"
 import { layoutMetrics } from "./theme"
 
@@ -62,7 +62,7 @@ export interface DataTableProps<T> {
   selection?: Selection<string>
   /** 有行被选中时显示在表格上方的批量操作，例如“批量删除”。 */
   bulkActions?: (keys: string[]) => ReactNode
-  /** 点击行展开的内容。 */
+  /** 展开的内容：每行开头一个箭头按钮，点它展开、收起。点击行的其他地方没有反应，文字可以照常选中、复制。 */
   expand?: (row: T) => ReactNode
   /** 保存列设置的键，例如 "orders"：可以拖动表头调整顺序、右键点击表头选择显示的列、拖动边缘调整宽度，保存在浏览器中。 */
   storeKey?: string
@@ -70,7 +70,6 @@ export interface DataTableProps<T> {
   toolbar?: ReactNode
   /** 没有数据时的说明，默认“暂无数据”。 */
   empty?: ReactNode
-  onRowClick?: (row: T) => void
   /** 表格的最小高度（像素），没有数据时撑开空状态，默认 160。 */
   minHeight?: number
 }
@@ -117,6 +116,35 @@ export function DataTable<T>(props: DataTableProps<T>): ReactNode {
           : {}),
       }) as DataTableColumn<T>,
   )
+  // 展开的行只由每行开头的箭头按钮切换，点击行不展开（行里的文字要能选中、复制）。
+  // 箭头这一列也交给 useDataTableColumns：带列设置时，不在其中的列会让表格和列设置互相更新、反复渲染。
+  const [expanded, setExpanded] = useState<string[]>([])
+  if (props.expand)
+    mapped.unshift({
+      accessor: "_expand",
+      title: "",
+      width: 40,
+      render: (row: T) => {
+        const k = key(row)
+        const open = expanded.includes(k)
+        return (
+          <ActionIcon
+            size="sm"
+            variant="subtle"
+            color="gray"
+            aria-label={open ? "收起" : "展开"}
+            aria-expanded={open}
+            onClick={() => setExpanded((cur) => (cur.includes(k) ? cur.filter((x) => x !== k) : [...cur, k]))}
+          >
+            <IconChevronRight
+              size={16}
+              stroke={1.6}
+              style={{ transform: open ? "rotate(90deg)" : undefined, transition: "transform 120ms ease" }}
+            />
+          </ActionIcon>
+        )
+      },
+    } as DataTableColumn<T>)
   const storeColumnsKey = storeKey ? `tenon:columns:${storeKey}` : undefined
   const { effectiveColumns } = useDataTableColumns<T>({ key: storeColumnsKey, columns: mapped })
 
@@ -217,14 +245,47 @@ export function DataTable<T>(props: DataTableProps<T>): ReactNode {
             <IconInbox size={28} stroke={1.4} />
           </Box>
         }
-        onRowClick={props.onRowClick ? ({ record }) => props.onRowClick?.(record) : undefined}
         rowExpansion={
-          props.expand ? { allowMultiple: true, content: ({ record }) => props.expand?.(record) } : undefined
+          props.expand
+            ? {
+                trigger: "never",
+                allowMultiple: true,
+                expanded: { recordIds: expanded, onRecordIdsChange: setExpanded as never },
+                content: ({ record }) => props.expand?.(record),
+              }
+            : undefined
         }
         {...(selectionProps as object)}
         {...(sortProps as object)}
         {...(paginationProps as object)}
       />
     </Stack>
+  )
+}
+
+/**
+ * 表格中打开详情的链接，例如错误摘要、订单号：过长时省略。表格的行不能点击（用户要能选中、复制各列的内容），
+ * 打开详情、对话框的入口用它或操作列中的按钮。
+ *
+ *	{ accessor: "error", title: "错误", ellipsis: true, render: (j) => <CellLink onClick={() => setOpen(j.id)}>{j.error}</CellLink> }
+ */
+export function CellLink({ onClick, children }: { onClick: () => void; children: ReactNode }): ReactNode {
+  return (
+    <Anchor
+      component="button"
+      type="button"
+      size="sm"
+      onClick={onClick}
+      style={{
+        display: "block",
+        maxWidth: "100%",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+        textAlign: "left",
+      }}
+    >
+      {children}
+    </Anchor>
   )
 }

@@ -83,7 +83,12 @@ function Orders() {
 - 分页显示“1–20，共 N 条”，可以选择每页的条数；翻页、排序都写进地址，排序后回到第一页。没有 `total` 时（游标分页）不显示分页。
 - `selection` 显示勾选框。`useSelection(resetOn)` 在 `resetOn` 变化时清空选中项；用 `list.filters` 时选中在翻页时保留，换了查询条件才清空。有选中的行时，表格上方显示 `bulkActions`。
 - `storeKey` 开启 mantine-datatable 自带的列设置：拖动表头调整顺序，右键点击表头选择显示的列，拖动表头的边缘调整宽度，保存在浏览器中。`fixed` 的列（例如名称、操作）不能隐藏、拖动和调整宽度；`hidden` 的列默认隐藏。
-- `expand` 点击一行展开明细；`toolbar` 放在表格上方左侧，例如筛选条件。
+- `expand` 在每行开头加一个箭头按钮，点它展开明细；`toolbar` 放在表格上方左侧，例如筛选条件。
+- 表格的行不能点击：用户要能选中、复制每一列的内容。打开详情、对话框的入口放在单元格里，用 `CellLink`（例如错误摘要、订单号，过长时省略），或者放在操作列的按钮中：
+
+```tsx
+{ accessor: "error", title: "错误", ellipsis: true, render: (j) => <CellLink onClick={() => setOpen(j.id)}>{j.error}</CellLink> }
+```
 - 行高、字号随主题的预设：运营后台更紧凑。
 
 <a id="description-list"></a>
@@ -234,7 +239,7 @@ import { ButtonLink } from "@go-tenon/ui"
 | `listSearch(querySchema, options)` | 列表路由的 `validateSearch`：查询条件、排序和分页保存在地址中 |
 | `useList(Route)` | 地址中的列表状态：`params`、`page`、`perPage`、`sort`、`filters`、`setFilters`、`setPage`、`setSort`、`reset`、`tableState` |
 | `useSelection(resetOn)` | 列表的选中项 |
-| `DataTable`、`Column`、`TableList` | 表格 |
+| `DataTable`、`Column`、`TableList`、`CellLink` | 表格和单元格中打开详情的链接 |
 | `DescriptionList`、`DescriptionItem`、`StatusDot` | 描述列表和状态圆点 |
 | `useSchemaForm({ schema, rules, initialValues })` | 用生成的规则校验的 `@mantine/form` 表单 |
 | `applyServerErrors(form, err)`、`FormError` | 服务端的字段错误设置到字段；表单上方的错误 |
