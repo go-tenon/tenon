@@ -1,10 +1,10 @@
 // 测试用的应用：内存中的路由、已经登录的会话，外面套上 UIProvider。只在本包的测试中使用。
 
 import { createSession } from "@go-tenon/client"
-import { type App, AppRoot, createApp } from "@go-tenon/shell"
 import { type AnyRoute, createMemoryHistory } from "@tanstack/react-router"
 import { render } from "@testing-library/react"
 import { UIProvider } from "./provider"
+import { type App, AppRoot, createApp } from "./shell"
 import { themes } from "./theme"
 
 /** happy-dom 缺少的浏览器接口：Mantine 用到 matchMedia 和 ResizeObserver。 */

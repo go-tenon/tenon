@@ -106,10 +106,10 @@ resources.article.labels["zh-CN"].fields.title // "标题"
 <a id="model"></a>
 ## 前端的资源模型
 
-`@go-tenon/shell` 的 `resourceModel` 把定义和生成的客户端、校验规则、枚举接在一起，得到与组件库无关的模型，运营后台和控制台都用它渲染：
+`@go-tenon/ui` 的 `resourceModel` 把定义和生成的客户端、校验规则、枚举接在一起，得到资源模型，`ResourcePage` 按它渲染：
 
 ```ts
-import { resourceModel } from "@go-tenon/shell"
+import { resourceModel } from "@go-tenon/ui"
 import { createQueries } from "@blog/client/api/queries"
 import { resources } from "@blog/client/api/resources"
 import { components, schemas } from "@blog/client/api/schemas"
@@ -204,10 +204,10 @@ api.Settings(rest.Settings{Name: "site", Get: "site-settings-get", Update: "site
 
 两个接口都没有路径参数：设置属于当前的用户、租户或者平台，由请求本身决定，见[租户的设置](../features/settings.md#tenant-settings)。声明的检查与资源相同，接口不存在、形式不对、字段不存在时 panic；名称不能与资源相同，因为显示文字在同一个命名空间中。
 
-显示文字是 `<名称>.title` 和 `<名称>.fields.<字段>` 的消息。`tenon generate` 生成 `settings.ts`，`@go-tenon/shell` 的 `settingsModel` 把它和生成的客户端接在一起：
+显示文字是 `<名称>.title` 和 `<名称>.fields.<字段>` 的消息。`tenon generate` 生成 `settings.ts`，`@go-tenon/ui` 的 `settingsModel` 把它和生成的客户端接在一起：
 
 ```ts
-import { settingsModel } from "@go-tenon/shell"
+import { settingsModel } from "@go-tenon/ui"
 import { settings } from "@blog/client/api/settings"
 
 export const siteSettings = settingsModel(settings.site, kit, queryClient)
@@ -249,9 +249,9 @@ export const siteSettings = settingsModel(settings.site, kit, queryClient)
 | `rest.Action` | 行上的操作 |
 | `(*rest.API).Resource(r)` | 声明资源，写入 `x-tenon-resources` |
 | `(*rest.API).Resources()` | 已声明的资源，列、表单字段和 `Key` 已经补全 |
-| `resourceModel(def, kit, queryClient)` | `@go-tenon/shell`：资源模型 |
-| `useResourceList`、`useResourceItem`、`useResourceMutations`、`formValues` | `@go-tenon/shell`：列表、详情、修改、表单的初始值 |
+| `resourceModel(def, kit, queryClient)` | `@go-tenon/ui`：资源模型 |
+| `useResourceList`、`useResourceItem`、`useResourceMutations`、`formValues` | `@go-tenon/ui`：列表、详情、修改、表单的初始值 |
 | `rest.Settings`、`(*rest.API).Settings(s)`、`(*rest.API).SettingsPages()` | 设置页面的声明，写入 `x-tenon-settings` |
-| `settingsModel(def, kit, queryClient)`、`useSettings(model)` | `@go-tenon/shell`：设置模型，读取与保存 |
+| `settingsModel(def, kit, queryClient)`、`useSettings(model)` | `@go-tenon/ui`：设置模型，读取与保存 |
 | `ResourcePage`、`ResourceForm`、`FieldValue`、`DefaultInput` | `@go-tenon/ui`：资源页面 |
 | `SettingsForm` | `@go-tenon/ui`：设置表单 |

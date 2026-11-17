@@ -1,10 +1,10 @@
 // 错误页：403、404、500、网络错误。RouteError 是路由的 defaultErrorComponent，按错误的种类选择页面。
 
 import { describeError } from "@go-tenon/client"
-import { isForbidden, useReportError } from "@go-tenon/shell"
 import { Button, Group, Stack, Text, Title } from "@mantine/core"
 import { type ErrorComponentProps, Link, useRouter } from "@tanstack/react-router"
 import type { ReactNode } from "react"
+import { isForbidden, useReportError } from "./shell"
 
 /** 错误页的种类。 */
 export type ErrorPageKind = "forbidden" | "not_found" | "server" | "network"

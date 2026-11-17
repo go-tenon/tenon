@@ -1,6 +1,6 @@
 # 应用骨架
 
-`@go-tenon/shell` 是前端应用骨架的逻辑：把 TanStack Router、TanStack Query 和[会话](client-react.md#client-runtime)接到一起，提供登录检查、按权限进入页面、菜单、面包屑、布局约定、多标签、租户切换、表单、列表和新版本提示。它不依赖组件库，界面由 [`@go-tenon/ui`](ui.md) 渲染。
+应用骨架是 `@go-tenon/ui` 中与外观无关的逻辑：把 TanStack Router、TanStack Query 和[会话](client-react.md#client-runtime)接到一起，提供登录检查、按权限进入页面、菜单、面包屑、布局约定、多标签、租户切换、表单、列表和新版本提示。界面组件见[界面组件](ui.md)，它们在同一个包中。
 
 这一页介绍创建应用、页面的元数据、登录检查、权限、菜单和布局。多标签、租户、表单、列表、通知等页面中的常用功能见[应用骨架：页面中的常用功能](app-shell-features.md)。
 
@@ -23,14 +23,14 @@
 
 `tenon init` 和 `tenon add frontend` 生成的前端已经按本节配置好：`src/router.tsx` 创建应用，页面在 `src/routes` 中。前端用 [TanStack Start](start.md) 构建，由 Go 托管的 SSR 进程渲染。下面是各部分的作用，给已有的前端加上它时照着做。
 
-`@go-tenon/shell` 与 `@go-tenon/client` 一样随框架分发，`tenon` 把它复制到项目的 `.tenon/js/shell`（见[框架的前端包](../installation/tooling.md#framework-packages)）。它列在根目录 `package.json` 的 `workspaces` 中，前端依赖它：
+`@go-tenon/ui` 与 `@go-tenon/client` 一样随框架分发，`tenon` 把它复制到项目的 `.tenon/js/ui`（见[框架的前端包](../installation/tooling.md#framework-packages)）。它列在根目录 `package.json` 的 `workspaces` 中，前端依赖它：
 
 ```json
 {
   "dependencies": {
     "@go-tenon/client": "workspace:*",
-    "@go-tenon/shell": "workspace:*",
     "@go-tenon/start": "workspace:*",
+    "@go-tenon/ui": "workspace:*",
     "@tanstack/react-query": "^5.85.0",
     "@tanstack/react-router": "^1.170.0",
     "@tanstack/react-start": "^1.169.5"
@@ -59,7 +59,7 @@ export default defineConfig({
 `createApp` 创建 Router 和 QueryClient。TanStack Start 从 `src/router.tsx` 的 `getRouter` 取得 Router；服务端渲染时每个请求调用一次 `getRouter`，所以每次都创建新的应用，不在请求之间共享缓存：
 
 ```tsx title="src/router.tsx"
-import { createApp } from "@go-tenon/shell"
+import { createApp } from "@go-tenon/ui"
 import { cspNonce } from "@go-tenon/start"
 import { NotFoundPage, RouteError } from "@go-tenon/ui"
 import { me, session } from "./auth"
@@ -102,7 +102,7 @@ export const session = createSession({ load: async () => ({ account: (await me()
 根路由用 `createRootRouteWithContext<RouterContext>()` 创建，各路由的 `beforeLoad` 通过 `context.app` 使用应用。`shellComponent` 是整个 HTML 文档，见[界面组件](ui.md#setup)：
 
 ```tsx title="src/routes/__root.tsx"
-import type { RouterContext } from "@go-tenon/shell"
+import type { RouterContext } from "@go-tenon/ui"
 import { createRootRouteWithContext, Outlet } from "@tanstack/react-router"
 
 export const Route = createRootRouteWithContext<RouterContext>()({ shellComponent: Document, component: Outlet })
@@ -136,7 +136,7 @@ export const Route = createFileRoute("/_app/articles/")({
 需要登录的页面放在一个布局路由之下，布局的 `beforeLoad` 使用 `requireAuth`：
 
 ```tsx title="src/routes/_app.tsx"
-import { requireAuth } from "@go-tenon/shell"
+import { requireAuth } from "@go-tenon/ui"
 import { createFileRoute } from "@tanstack/react-router"
 
 export const Route = createFileRoute("/_app")({ beforeLoad: requireAuth, component: Layout })
@@ -277,14 +277,14 @@ return variant === "top" ? <TopLayout /> : <SideLayout />
 <a id="new-version"></a>
 ## 新版本提示
 
-发布新版本后，已经打开的页面还在运行旧代码。`tenonVersion` 插件（模板的 `vite.config.ts` 中已经加上）在构建时把 `version.json` 写入浏览器的构建结果 `dist/client`，并把版本号注入代码；`useNewVersion` 每 60 秒和切回页面时读取 `version.json`，版本号不同时提示用户刷新：
+发布新版本后，已经打开的页面还在运行旧代码。`@go-tenon/start/vite` 的 `tenon()` 插件在构建时把 `version.json` 写入浏览器的构建结果 `dist/client`，并把版本号注入代码；`useNewVersion` 每 60 秒和切回页面时读取 `version.json`，版本号不同时提示用户刷新：
 
 ```tsx
 const { available, reload, dismiss } = useNewVersion()
 // available 为 true 时显示提示：“刷新”调用 reload，“稍后”调用 dismiss
 ```
 
-- 版本号默认取环境变量 `TENON_BUILD_VERSION`，没有时每次构建随机生成一个；可以用 `tenonVersion({ version: commit })` 传入。一次构建中 TanStack Start 会多次加载 `vite.config.ts`，默认的版本号在构建进程中只生成一次，页面中的与 `version.json` 中的相同。
+- 版本号默认取环境变量 `TENON_BUILD_VERSION`，没有时每次构建随机生成一个；可以用 `tenon({ version: commit })` 传入。一次构建中 TanStack Start 会多次加载 `vite.config.ts`，默认的版本号在构建进程中只生成一次，页面中的与 `version.json` 中的相同。
 - 开发模式下不检查。
 - SSR 程序对 `assets/` 之外的文件返回 `Cache-Control: no-cache`，`version.json` 不会被缓存，见 [TanStack Start 的接入](start.md)。
 
@@ -351,8 +351,8 @@ app.storage.get<{ collapsed: boolean }>("sider")
 | `useImport`、`useExport` | 后台导入与导出：上传、发起、进度和结果 |
 | `settingsModel`、`useSettings` | 设置页面的模型，见[设置页面](resources.md#settings) |
 | `trackOperation`、`dismissOperation`、`clearOperations`、`useOperations`、`useOperation` | 后台操作的进度 |
-| `useAssistantChat`、`useAssistantHistory`、`pendingApprovals` | `@go-tenon/shell/chat` 中的 AI 对话 |
+| `useAssistantChat`、`useAssistantHistory`、`pendingApprovals` | `@go-tenon/ui/chat` 中的 AI 对话 |
 | `useNewVersion`、`watchVersion` | 新版本提示 |
 | `onError`（`createApp` 的选项）、`useReportError`、`shouldReport` | 页面出错时报告给前端观测的 SDK，见[前端观测](../general/frontend-observability.md#route-errors) |
-| `tenonVersion(options)` | `@go-tenon/shell/vite` 中的构建插件；`sourcemaps` 生成 source map 并移出 `dist`，见[前端观测](../general/frontend-observability.md#source-maps) |
+| `tenon({ version, sourcemaps })` | `@go-tenon/start/vite` 的构建插件写入构建版本；`sourcemaps` 生成 source map 并移出 `dist`，见[前端观测](../general/frontend-observability.md#source-maps) |
 | `appStorage(id)` | 按应用隔离的本地存储 |

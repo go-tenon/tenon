@@ -1,7 +1,6 @@
-// 字段：按 @go-tenon/shell 的字段类型（FieldKind）选择 Mantine 的输入组件，按类型显示一个值。
+// 字段：按 shell/ 中的字段类型（FieldKind）选择 Mantine 的输入组件，按类型显示一个值。
 // 资源的表单、设置的表单和列表的单元格都用它们。
 
-import type { ResourceField } from "@go-tenon/shell"
 import {
   Badge,
   Box,
@@ -19,6 +18,7 @@ import {
 import { DateInput, DateTimePicker } from "@mantine/dates"
 import dayjs from "dayjs"
 import { type ReactNode, useEffect, useState } from "react"
+import type { ResourceField } from "./shell"
 
 /** 字段输入组件的属性：value、onChange、error 来自表单（@mantine/form 的 getInputProps）。 */
 export interface FieldInputProps {

@@ -742,7 +742,7 @@ export const api = createClient({ baseURL: "/api", fetch: apiFetch, session })
 再把会话交给应用。把 `apps/web/src/router.tsx` 改成下面这样：
 
 ```tsx title="apps/web/src/router.tsx"
-import { createApp } from "@go-tenon/shell"
+import { createApp } from "@go-tenon/ui"
 import { cspNonce } from "@go-tenon/start"
 import { NotFoundPage, RouteError } from "@go-tenon/ui"
 import { session } from "./api"
@@ -807,7 +807,7 @@ function Login() {
 ```tsx title="apps/web/src/routes/write.tsx"
 import { Container, Title } from "@mantine/core"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
-import { requireAuth } from "@go-tenon/shell"
+import { requireAuth } from "@go-tenon/ui"
 import { ArticleEditor } from "../ArticleEditor"
 
 export const Route = createFileRoute("/write")({ ssr: false, beforeLoad: requireAuth, component: Write })
@@ -831,7 +831,7 @@ function Write() {
 import { Container, Text, Title } from "@mantine/core"
 import { useQuery } from "@tanstack/react-query"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
-import { requireAuth } from "@go-tenon/shell"
+import { requireAuth } from "@go-tenon/ui"
 import { ArticleEditor } from "../../ArticleEditor"
 import { api } from "../../api"
 
@@ -868,7 +868,7 @@ import type { ReactNode } from "react"
 import { Button, ColorSchemeScript, Group, Text, mantineHtmlProps } from "@mantine/core"
 import { useMutation, useQuery } from "@tanstack/react-query"
 import { createRootRouteWithContext, HeadContent, Scripts, useRouter } from "@tanstack/react-router"
-import { type RouterContext, useSignedIn } from "@go-tenon/shell"
+import { type RouterContext, useSignedIn } from "@go-tenon/ui"
 import { AnchorLink, ButtonLink, SiteLayout, UIProvider } from "@go-tenon/ui"
 import { api, session } from "../api"
 import { theme } from "../theme"
@@ -939,7 +939,7 @@ function Layout() {
 import { Button, Container, Group, Paper, Stack, Text, Title } from "@mantine/core"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { createFileRoute } from "@tanstack/react-router"
-import { useSignedIn } from "@go-tenon/shell"
+import { useSignedIn } from "@go-tenon/ui"
 import { ButtonLink } from "@go-tenon/ui"
 import type { Article } from "@blog/client/api"
 import { api } from "../api"

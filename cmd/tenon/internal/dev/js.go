@@ -18,7 +18,7 @@ const JSDir = ".tenon/js"
 // SyncJS 把项目 dir 使用的框架版本中 js 下的前端包复制到 dir/JSDir，替换已有的内容。框架被 replace 到本地目录时
 // 复制本地的代码。changed 报告各包的 package.json 是否有变化：有变化时要重新 bun install。
 //
-// 各包自己的 node_modules 保留：Bun 把包的依赖链接放在其中（例如 @go-tenon/shell 的 react），
+// 各包自己的 node_modules 保留：Bun 把包的依赖链接放在其中（例如 @go-tenon/ui 的 react），
 // package.json 没有变化时不会重新 bun install，删掉它包就找不到依赖。
 func SyncJS(dir string) (changed bool, err error) {
 	fw, err := frameworkDir(dir)
@@ -61,7 +61,7 @@ func SyncJS(dir string) (changed bool, err error) {
 }
 
 // NeedsInstall 报告项目 dir 是否需要 bun install：没有 node_modules，或者某个框架前端包声明了依赖
-// （例如 @go-tenon/shell 的 react），但它自己的 node_modules 不存在（例如刚 clone 的项目，.tenon 被 .gitignore 忽略）。
+// （例如 @go-tenon/ui 的 react），但它自己的 node_modules 不存在（例如刚 clone 的项目，.tenon 被 .gitignore 忽略）。
 func NeedsInstall(dir string) bool {
 	if _, err := os.Stat(filepath.Join(dir, "node_modules")); err != nil {
 		return true

@@ -1,9 +1,10 @@
 // @vitest-environment happy-dom
-import { Fill, type RouterContext, requireAuth } from "@go-tenon/shell"
+
 import { createRootRouteWithContext, createRoute, Outlet } from "@tanstack/react-router"
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, describe, expect, it } from "vitest"
 import { AppLayout } from "./app-layout"
+import { Fill, type RouterContext, requireAuth } from "./shell"
 import { renderApp } from "./testing"
 
 afterEach(() => {

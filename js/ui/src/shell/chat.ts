@@ -1,5 +1,5 @@
 // AI 对话：在 Vercel AI SDK 的 useChat 之上，按框架的 AI 对话协议接好消息流、历史、停止、插话和工具的审批。
-// 这是单独的入口 @go-tenon/shell/chat：只有用到 AI 对话的前端才需要安装 ai 和 @ai-sdk/react。
+// 这是单独的入口 @go-tenon/ui/chat：只有用到 AI 对话的前端才需要安装 ai 和 @ai-sdk/react。
 
 import { useChat } from "@ai-sdk/react"
 import { type ChatPaths, chatControls, chatTransport, describeError } from "@go-tenon/client"

@@ -170,7 +170,7 @@ text := i18n.T(ctx, a.Event, a.Properties)
 <a id="history-page"></a>
 ### 在页面中显示
 
-框架提供了现成的时间线：`@go-tenon/ui` 的 `ActivityTimeline`，逻辑来自 `@go-tenon/shell` 的 `useActivity`。它读取应用自己的接口，每一条需要这些字段：
+框架提供了现成的时间线：`@go-tenon/ui` 的 `ActivityTimeline`，逻辑是同一个包中的 `useActivity`。它读取应用自己的接口，每一条需要这些字段：
 
 | 字段 | 内容 |
 | --- | --- |

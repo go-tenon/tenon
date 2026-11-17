@@ -19,7 +19,7 @@ import (
 //   - <Name>.actions.<操作>：操作的名称，例如 article.actions.publish: 发布。
 //
 // 资源写入 OpenAPI 文档的 x-tenon-resources，tenon generate 据此生成前端的 resources.ts，
-// 运营后台和 shadcn 的界面用同一份定义渲染。
+// @go-tenon/ui 的 ResourcePage 按这份定义渲染。
 type Resource struct {
 	// Name 是资源的名称，kebab-case，例如 article。
 	Name string `json:"name"`

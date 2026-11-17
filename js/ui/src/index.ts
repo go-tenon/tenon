@@ -1,6 +1,8 @@
-// @go-tenon/ui 是框架的界面层：Mantine 的三套样式预设（运营后台、SaaS 控制台、官网和内容站），
-// 以及按 @go-tenon/shell 的约定实现的布局和部件。逻辑（菜单、权限、多标签、会话）都在 shell 中，这里只负责外观。
-// 样式：import "@go-tenon/ui/styles.css"。
+// @go-tenon/ui 是框架的前端应用层，基于 Mantine：应用骨架（装配 Router、QueryClient 和会话，登录与权限检查、
+// 菜单、多标签、租户、表单、列表、资源模型），三套样式预设（运营后台、SaaS 控制台、官网和内容站），以及布局和部件。
+// 逻辑在 shell/ 目录中，不导入 Mantine；组件在本目录中。样式：import "@go-tenon/ui/styles.css"。
+// AI 对话是单独的入口 @go-tenon/ui/chat，只有用到它的前端才需要安装 ai 和 @ai-sdk/react。
+
 export * from "./activity"
 export * from "./app-layout"
 export * from "./auth"
@@ -19,6 +21,7 @@ export * from "./provider"
 export * from "./queue-panel"
 export * from "./resource"
 export * from "./settings"
+export * from "./shell"
 export * from "./site"
 export * from "./tab-bar"
 export * from "./theme"

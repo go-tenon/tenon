@@ -229,19 +229,19 @@ return ssr.Run(ctx, serve, webPages, adminPages)
 <a id="framework-packages"></a>
 ### 框架的前端包
 
-Tenon 也提供了一些前端包，例如 `@go-tenon/client`（调用接口、管理登录）和 `@go-tenon/shell`（应用骨架）。它们不从 npm 安装，而是随 Go module 一起分发：源码在框架的 `js` 目录中，版本就是 `go.mod` 中框架的版本，前后端的版本永远一致。
+Tenon 也提供了一些前端包，例如 `@go-tenon/client`（调用接口、管理登录）和 `@go-tenon/ui`（应用骨架和界面组件）。它们不从 npm 安装，而是随 Go module 一起分发：源码在框架的 `js` 目录中，版本就是 `go.mod` 中框架的版本，前后端的版本永远一致。
 
 `tenon` 在需要前端依赖之前（`init`、`add frontend`、`dev`、`build`、`generate`），把这些包复制到项目的 `.tenon/js/<包名>`。项目把它们列入 Bun 的 workspace，前端用 `workspace:*` 依赖它们：
 
 ```json
 {
-  "workspaces": [".tenon/js/client", ".tenon/js/shell", "apps/web", "packages/client"]
+  "workspaces": [".tenon/js/client", ".tenon/js/ui", "apps/web", "packages/client"]
 }
 ```
 
 ```json
 {
-  "dependencies": { "@go-tenon/client": "workspace:*", "@go-tenon/shell": "workspace:*" }
+  "dependencies": { "@go-tenon/client": "workspace:*", "@go-tenon/ui": "workspace:*" }
 }
 ```
 

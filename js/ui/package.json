@@ -5,37 +5,45 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./chat": "./src/shell/chat.ts",
     "./styles.css": "./src/styles.css"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@go-tenon/client": "workspace:*",
-    "@go-tenon/shell": "workspace:*"
+    "@go-tenon/client": "workspace:*"
   },
   "peerDependencies": {
     "@mantine/core": "^9.8.1",
+    "@mantine/dates": "^9.8.1",
+    "@mantine/form": "^9.8.1",
     "@mantine/hooks": "^9.8.1",
+    "@mantine/modals": "^9.8.1",
     "@mantine/notifications": "^9.8.1",
     "@tabler/icons-react": "^3.50.0",
     "@tanstack/react-query": "^5.85.0",
     "@tanstack/react-router": "^1.170.0",
+    "dayjs": "^1.11.11",
+    "mantine-datatable": "^9.8.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
-    "@mantine/dates": "^9.8.1",
-    "@mantine/form": "^9.8.1",
-    "@mantine/modals": "^9.8.1",
-    "mantine-datatable": "^9.8.1",
-    "dayjs": "^1.11.11"
+    "ai": "^7.0.159",
+    "@ai-sdk/react": "^4.0.163"
   },
   "peerDependenciesMeta": {
     "@types/react": {
       "optional": true
     },
     "@types/react-dom": {
+      "optional": true
+    },
+    "ai": {
+      "optional": true
+    },
+    "@ai-sdk/react": {
       "optional": true
     }
   }

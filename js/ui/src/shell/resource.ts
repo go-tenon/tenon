@@ -1,6 +1,6 @@
 // 资源：服务端用 rest.API.Resource 声明、tenon generate 生成在 resources.ts 中的后台页面定义。
 // 这里把定义和生成的客户端、校验规则、枚举接在一起，得到与组件库无关的模型：列、筛选条件、表单字段（带显示文字、
-// 输入方式和选项）、权限、读取和修改。@go-tenon/ui 的 ResourcePage 按这个模型渲染。
+// 输入方式和选项）、权限、读取和修改。上一级的 ResourcePage 按这个模型渲染。
 // 设置（rest.API.Settings、settings.ts）是只有一组值的表单，用同样的字段模型，见 settingsModel。
 
 import { pickLanguage, type Schema } from "@go-tenon/client"
@@ -328,7 +328,7 @@ export function resourceModel(def: ResourceDef, kit: ResourceKit, queryClient?: 
 }
 
 /** 列表的数据：page.Offset（items、total）或 page.Cursor（items、next_cursor）。 */
-export interface ResourcePage {
+interface ListResponse {
   items: ResourceRow[]
   total?: number
   next_cursor?: string
@@ -364,7 +364,7 @@ export function useResourceList(model: ResourceModel, route: ListRoute<Record<st
   const list = useList(route)
   const can = useCan()
   const query = useQuery(model.listQuery(list.params))
-  const page = query.data as ResourcePage | undefined
+  const page = query.data as ListResponse | undefined
   return {
     model,
     list,

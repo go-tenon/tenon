@@ -1,12 +1,12 @@
-// 表格：包装 mantine-datatable，应用不直接依赖它。分页和排序接 @go-tenon/shell 的列表模型（保存在地址中），
+// 表格：包装 mantine-datatable，应用不直接依赖它。分页和排序接 shell/ 中的列表模型（保存在地址中），
 // 选中接 useSelection（可以跨页），列的显隐和顺序可以保存在浏览器中。密度随主题的预设。
 
-import type { ListState, Selection } from "@go-tenon/shell"
 import { ActionIcon, Box, Button, Checkbox, Group, Popover, Stack, Text, Tooltip, useMantineTheme } from "@mantine/core"
 import { useLocalStorage } from "@mantine/hooks"
 import { IconArrowDown, IconArrowUp, IconColumns3, IconInbox } from "@tabler/icons-react"
 import { type DataTableColumn, type DataTableSortStatus, DataTable as MantineDataTable } from "mantine-datatable"
 import type { ReactNode } from "react"
+import type { ListState, Selection } from "./shell"
 import { layoutMetrics } from "./theme"
 
 /** 一列。 */

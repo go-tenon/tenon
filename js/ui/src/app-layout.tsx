@@ -1,16 +1,6 @@
-// 应用外壳：运营后台和 SaaS 控制台共用。侧栏导航来自 @go-tenon/shell 的导航模型（按权限过滤的菜单），
+// 应用外壳：运营后台和 SaaS 控制台共用。侧栏导航来自 shell/ 中的导航模型（按权限过滤的菜单），
 // 顶栏有面包屑和插槽（search、actions、tenant、user），可以开启多标签。密度、尺寸由主题的预设决定。
 
-import {
-  type MenuItem,
-  Slot,
-  TabsOutlet,
-  type TabsOutletProps,
-  useLayoutState,
-  useNarrow,
-  useNavigation,
-  useSlotFilled,
-} from "@go-tenon/shell"
 import {
   ActionIcon,
   AppShell,
@@ -32,6 +22,16 @@ import { type CSSProperties, type ReactNode, useEffect, useState } from "react"
 import { ColorSchemeToggle } from "./color-scheme"
 import { Icon } from "./icons"
 import { NavLinkLink } from "./links"
+import {
+  type MenuItem,
+  Slot,
+  TabsOutlet,
+  type TabsOutletProps,
+  useLayoutState,
+  useNarrow,
+  useNavigation,
+  useSlotFilled,
+} from "./shell"
 import { TabBar } from "./tab-bar"
 import { layoutMetrics } from "./theme"
 import { NewVersionNotice } from "./version"

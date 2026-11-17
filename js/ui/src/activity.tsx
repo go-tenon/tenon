@@ -1,12 +1,12 @@
 // 操作记录的时间线：一个对象的历史（例如文章的修改记录），或者一个人的操作记录。
-// 逻辑来自 @go-tenon/shell 的 useActivity，接口由应用定义，见文档“操作日志”。
+// 逻辑来自 shell/ 中的 useActivity，接口由应用定义，见文档“操作日志”。
 //
 //   <ActivityTimeline source={{ key: ["article", id], list: (before) => api.article.history(id, { before }).then((r) => r.items) }} />
 
-import { type ActivityItem, type ActivitySource, useActivity } from "@go-tenon/shell"
 import { Alert, Anchor, Button, Center, Loader, Stack, Text, Timeline } from "@mantine/core"
 import { useRouter } from "@tanstack/react-router"
 import type { ReactNode } from "react"
+import { type ActivityItem, type ActivitySource, useActivity } from "./shell"
 
 /** ActivityTimeline 的选项。 */
 export interface ActivityTimelineProps {

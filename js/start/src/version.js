@@ -1,6 +1,5 @@
-// @go-tenon/shell/vite：构建时写入 version.json 并注入版本号，供 useNewVersion 检查新版本。
-// 用 JavaScript 编写：Vite 加载 vite.config.ts 时，node_modules 中的包由 Node 直接导入，Node 不处理其中的 TypeScript。
-// 类型见 vite.d.ts。
+// 构建版本：tenon 插件（vite.js）的一部分，构建时写入 version.json 并注入版本号，供 @go-tenon/ui 的 useNewVersion
+// 检查新版本。用 JavaScript 编写，原因同 vite.js。类型见 version.d.ts。
 
 import { randomUUID } from "node:crypto"
 import { copyFile, mkdir, readdir, rm, unlink } from "node:fs/promises"
@@ -8,7 +7,7 @@ import { dirname, join, relative, resolve } from "node:path"
 
 /**
  * 默认的版本号：环境变量 TENON_BUILD_VERSION，没有时随机生成一个并写入它。
- * 一次构建中 vite.config 可能被加载好几次（TanStack Start 为不同的环境各加载一次），每次都调用 tenonVersion；
+ * 一次构建中 vite.config 可能被加载好几次（TanStack Start 为不同的环境各加载一次），每次都创建这个插件；
  * 版本号在进程中只生成一次，注入页面的和写进 version.json 的才是同一个。
  *
  * @returns {string}
@@ -24,12 +23,12 @@ function buildVersion() {
  * 用 TanStack Start 时只作用于浏览器的构建（client 环境），version.json 写在 dist/client 中；
  * 嵌入 SSR 程序后，没有哈希的文件返回 Cache-Control: no-cache，version.json 不会被缓存。
  *
- * @param {import("./vite").VersionPluginOptions} [options]
+ * @param {import("./version").VersionPluginOptions} [options]
  * @returns {import("vite").Plugin}
  */
-export function tenonVersion(options = {}) {
+export function versionPlugin(options = {}) {
   const version = options.version ?? buildVersion()
-  const fileName = (options.fileName ?? "version.json").replace(/^\/+/, "")
+  const fileName = "version.json"
   /** @type {string | undefined} */
   let mapsDir
   return {

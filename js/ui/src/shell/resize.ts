@@ -1,5 +1,5 @@
 // 可以拖动调整宽度的分栏：拖动分隔条或用方向键调整，宽度按账号保存在 app.storage 中。
-// 外观（分隔条的样子、两侧放什么）由组件库决定，例如 shadcn registry 的 SplitView。
+// 外观（分隔条的样子、两侧放什么）由页面决定。
 
 import {
   type KeyboardEvent,

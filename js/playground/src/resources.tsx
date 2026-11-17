@@ -2,7 +2,7 @@
 // 接口是内存中的假数据。
 
 import type { OperationLike } from "@go-tenon/client"
-import { type ResourceDef, resourceModel, type SettingsDef, settingsModel } from "@go-tenon/shell"
+import { type ResourceDef, resourceModel, type SettingsDef, settingsModel } from "@go-tenon/ui"
 import { QueryClient } from "@tanstack/react-query"
 
 export const queryClient = new QueryClient()

@@ -12,7 +12,6 @@
     "types": ["node", "vite/client"],
     "paths": {
       "@go-tenon/ui": ["../ui/src/index.ts"],
-      "@go-tenon/shell": ["../shell/src/index.ts"],
       "@go-tenon/client": ["../client/src/index.ts"]
     }
   },

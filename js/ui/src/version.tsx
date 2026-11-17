@@ -1,9 +1,9 @@
-// 新版本提示：部署了新版本后，已经打开的页面还在运行旧代码。useNewVersion（@go-tenon/shell）发现版本号变了时，
+// 新版本提示：部署了新版本后，已经打开的页面还在运行旧代码。useNewVersion（shell/version.ts）发现版本号变了时，
 // 右下角提示刷新。AppLayout 已经包含它；其他布局（例如官网）需要时自己放一个。
 
-import { useNewVersion } from "@go-tenon/shell"
 import { Affix, Button, Group, Paper, Text, Transition } from "@mantine/core"
 import type { ReactNode } from "react"
+import { useNewVersion } from "./shell"
 
 /** NewVersionNotice 的选项，交给 useNewVersion；测试中用来指定版本和地址。 */
 export interface NewVersionNoticeProps {

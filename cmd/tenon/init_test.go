@@ -175,7 +175,7 @@ func TestInitEndToEnd(t *testing.T) {
 			t.Errorf("/admin/assets/%s: %d %q", a.Name(), res.StatusCode, res.Header.Get("Cache-Control"))
 		}
 	}
-	// tenonVersion 只作用于浏览器的构建：version.json 在 dist/client 中，不缓存。
+	// 构建版本（tenon 插件中的 versionPlugin）只作用于浏览器的构建：version.json 在 dist/client 中，不缓存。
 	if res, err := http.Get(base + "/admin/version.json"); err != nil {
 		t.Fatal(err)
 	} else {
@@ -186,7 +186,7 @@ func TestInitEndToEnd(t *testing.T) {
 			t.Errorf("/admin/version.json: %d %q %s", res.StatusCode, res.Header.Get("Cache-Control"), body)
 		}
 		// 页面中注入的版本号与 version.json 相同，否则一打开页面就提示有新版本。
-		// TanStack Start 在一次构建中会加载好几次 vite.config，每次都调用 tenonVersion。
+		// TanStack Start 在一次构建中会加载好几次 vite.config，每次都创建 versionPlugin。
 		if !bundleContains(t, filepath.Join(dir, "apps", "admin", "dist", "client", "assets"), v.Version) {
 			t.Errorf("version %q from version.json is not in the page bundle", v.Version)
 		}

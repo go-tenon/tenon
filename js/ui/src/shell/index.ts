@@ -1,5 +1,5 @@
-// @go-tenon/shell 是应用骨架的逻辑：装配 Router、QueryClient 和会话，登录与权限检查、菜单、面包屑、布局约定、多标签、租户切换、表单、列表和新版本提示。
-// 它依赖 React、TanStack Router、TanStack Query 和 @go-tenon/client，不依赖组件库：外观由 @go-tenon/admin 和 shadcn registry 渲染。
+// 应用骨架的逻辑：装配 Router、QueryClient 和会话，登录与权限检查、菜单、面包屑、布局约定、多标签、租户切换、表单、列表和新版本提示。
+// 这个目录不导入 Mantine，外观在上一级的组件中；测试不必渲染组件就能覆盖逻辑。
 export * from "./activity"
 export * from "./app"
 export * from "./autosave"

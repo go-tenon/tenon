@@ -1,11 +1,11 @@
 // @vitest-environment happy-dom
 import { createSession } from "@go-tenon/client"
-import { createApp, type RouterContext } from "@go-tenon/shell"
 import { createMemoryHistory, createRootRouteWithContext } from "@tanstack/react-router"
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react"
 import type { ReactNode } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { ActivityTimeline } from "./activity"
+import { createApp, type RouterContext } from "./shell"
 import { renderRoot } from "./testing"
 import { NewVersionNotice } from "./version"
 

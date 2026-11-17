@@ -1,5 +1,5 @@
-// 新版本提示：构建插件（@go-tenon/shell/vite 的 tenonVersion）在 dist 中写入 version.json 并注入版本号，
-// 页面定期读取 version.json，版本号不同时提示用户刷新。提示的界面由外观层渲染。
+// 新版本提示：构建插件（@go-tenon/start/vite 的 tenon 插件）在 dist 中写入 version.json 并注入版本号，
+// 页面定期读取 version.json，版本号不同时提示用户刷新。提示的界面是 NewVersionNotice。
 
 import { useCallback, useEffect, useState } from "react"
 
@@ -10,7 +10,7 @@ declare global {
      * 否则引入 vite/client 类型的应用类型检查失败；version.test.ts 引入了它，检查两者兼容。
      */
     BASE_URL: string
-    /** tenonVersion 注入的版本号；开发模式和没有使用插件时没有。 */
+    /** tenon() 插件注入的版本号；开发模式和没有使用插件时没有。 */
     readonly TENON_BUILD_VERSION?: string
     /** version.json 的地址，已经带上 Vite 的 base。 */
     readonly TENON_VERSION_URL?: string
@@ -78,7 +78,7 @@ export interface NewVersion {
 }
 
 /**
- * 检查新版本。版本号和地址默认取自 tenonVersion 插件注入的值；开发模式下没有这些值，不检查。
+ * 检查新版本。版本号和地址默认取自 tenon() 插件注入的值；开发模式下没有这些值，不检查。
  */
 export function useNewVersion(
   options: Partial<Pick<VersionOptions, "current" | "url" | "interval" | "fetch">> = {},

@@ -855,7 +855,7 @@ go tool tenon generate
 `packages/client/src/api/resources.ts` 中多了 `user` 和 `role` 两个资源的定义：有哪些列、表单字段的类型和显示文字、每个接口要求的权限。在后台中把它们和生成的客户端接在一起。新建 `apps/admin/src/resources.ts`：
 
 ```ts title="apps/admin/src/resources.ts"
-import { resourceModel } from "@go-tenon/shell"
+import { resourceModel } from "@go-tenon/ui"
 import { createClient } from "@blog/client/api"
 import { enums } from "@blog/client/api/enums"
 import { messages } from "@blog/client/api/messages"

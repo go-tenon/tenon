@@ -1,4 +1,4 @@
-// 菜单与面包屑：由路由的元数据生成，与组件库无关。外观层把 MenuItem 渲染为 ProLayout 的菜单或 shadcn 的侧栏。
+// 菜单与面包屑：由路由的元数据生成，AppLayout 把 MenuItem 渲染为侧栏菜单。
 
 import type { StaticDataRouteOption } from "@tanstack/react-router"
 import "./meta"

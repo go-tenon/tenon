@@ -254,7 +254,7 @@ data: {"id":"0193e7a2-7c1e-7b4a-9d2f-3c5a1e8b6f10","kind":"articles.import","sta
 <a id="import-button"></a>
 ### 在页面中使用
 
-框架提供了现成的导入按钮：`@go-tenon/ui` 的 `ImportButton`，逻辑来自 `@go-tenon/shell` 的 `useImport`。点击按钮打开对话框，用户选择表格后，它依次上传文件、发起导入、显示进度，结束后显示成功和没有导入的行数，有没有导入的行时可以下载它们。进度同时出现在顶栏的[任务中心](../frontend/app-shell-features.md#operations)，用户关闭对话框也能看到。
+框架提供了现成的导入按钮：`@go-tenon/ui` 的 `ImportButton`，逻辑是同一个包中的 `useImport`。点击按钮打开对话框，用户选择表格后，它依次上传文件、发起导入、显示进度，结束后显示成功和没有导入的行数，有没有导入的行时可以下载它们。进度同时出现在顶栏的[任务中心](../frontend/app-shell-features.md#operations)，用户关闭对话框也能看到。
 
 把上面几个接口交给它：
 

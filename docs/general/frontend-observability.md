@@ -52,7 +52,7 @@ if (clientToken && site) {
     organizationIdentifier: "default",
     service: "admin", // 前端的名称，与上传 source map 时相同
     env: import.meta.env.MODE, // production、staging……与上传 source map 时相同
-    // tenonVersion 注入的构建版本；开发模式下没有
+    // tenon() 插件注入的构建版本；开发模式下没有
     version: import.meta.env.TENON_BUILD_VERSION ?? "dev",
   }
   openobserveRum.init({
@@ -169,15 +169,15 @@ if (observing) {
 
 生产构建的脚本是压缩过的，错误的堆栈指向 `index-BjXc12aB.js:1:23456`，没法看。上传 source map 后，OpenObserve 把堆栈还原为源码中的位置（企业版的功能）。
 
-在 `vite.config.ts` 的 `tenonVersion` 中打开：
+在 `vite.config.ts` 的 `tenon()` 插件中打开：
 
 ```ts
-tenonVersion({ sourcemaps: "sourcemaps" })
+tenon({ sourcemaps: "sourcemaps" })
 ```
 
 构建时为浏览器的脚本生成 source map，但脚本中不写 `sourceMappingURL`，构建结束后把 `.map` 从 `dist/client` 移到前端目录下的 `sourcemaps/`：它们不嵌入二进制，不会被公开。即使 `.map` 留在了 `dist` 中，`tenon-start compile` 也不嵌入它们。把 `sourcemaps/` 加入 `.gitignore`。
 
-版本号是 `tenonVersion` 的构建版本，页面中是 `import.meta.env.TENON_BUILD_VERSION`（交给 SDK 的 `version`），构建结束后也写在 `dist/client/version.json` 中。CI 在构建之后上传，`service`、`env`、`version` 要与 SDK 中的完全一致：
+版本号是 `tenon()` 插件写入的构建版本，页面中是 `import.meta.env.TENON_BUILD_VERSION`（交给 SDK 的 `version`），构建结束后也写在 `dist/client/version.json` 中。CI 在构建之后上传，`service`、`env`、`version` 要与 SDK 中的完全一致：
 
 ```bash
 cd apps/admin
@@ -188,7 +188,7 @@ curl -fsS -X POST "https://o2.example.com/api/default/sourcemaps" \
   -F "file=@sourcemaps.zip" -F "service=admin" -F "env=production" -F "version=$version"
 ```
 
-上传用的令牌要有 OpenObserve 的 `sourcemaps` 权限，只在 CI 中使用。默认的版本号每次构建随机生成；用 `tenonVersion({ version: commit, sourcemaps: "sourcemaps" })` 传入提交哈希，同一个提交的多次构建版本相同。
+上传用的令牌要有 OpenObserve 的 `sourcemaps` 权限，只在 CI 中使用。默认的版本号每次构建随机生成；用 `tenon({ version: commit, sourcemaps: "sourcemaps" })` 传入提交哈希，同一个提交的多次构建版本相同。
 
 <a id="privacy"></a>
 ## 隐私与内容安全策略
@@ -221,5 +221,5 @@ source map 没有上传，或者上传时的版本号与页面上报的版本不
 | `useReportError(error)` | 路由自己的错误组件中报告错误 |
 | `shouldReport(error)` | 错误是否需要报告 |
 | `app.reportError(error, where)` | 直接报告一个错误，经过同样的过滤和去重 |
-| `tenonVersion({ sourcemaps })` | `@go-tenon/shell/vite`：生成 source map 并移出 `dist` |
+| `tenon({ sourcemaps })` | `@go-tenon/start/vite`：生成 source map 并移出 `dist` |
 | `tenon-start compile` | 不把 `.map` 文件嵌入 SSR 程序 |

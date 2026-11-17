@@ -1,6 +1,5 @@
 // @vitest-environment happy-dom
 import { createSession } from "@go-tenon/client"
-import { createApp, type RouterContext, settingsModel } from "@go-tenon/shell"
 import { QueryClient } from "@tanstack/react-query"
 import { createMemoryHistory, createRootRouteWithContext } from "@tanstack/react-router"
 import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react"
@@ -12,6 +11,7 @@ import { createQueries } from "../../../httpx/rest/clientgen/internal/example/ts
 import { components, schemas } from "../../../httpx/rest/clientgen/internal/example/ts/schemas"
 import { settings } from "../../../httpx/rest/clientgen/internal/example/ts/settings"
 import { SettingsForm } from "./settings"
+import { createApp, type RouterContext, settingsModel } from "./shell"
 import { renderRoot } from "./testing"
 
 afterEach(() => {
