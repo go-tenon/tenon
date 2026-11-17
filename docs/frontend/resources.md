@@ -1,6 +1,6 @@
 # 资源
 
-后台的大部分页面是增删改查：列表、详情、表单和行上的操作。资源在 Go 中声明，`tenon generate` 生成与组件库无关的资源定义 `resources.ts`，运营后台（antd）和控制台（shadcn）用同一份定义渲染。入门教程的[后台：作者与角色](../tutorial/08-admin.md)是一个完整的例子。字段的类型、枚举和校验规则都取自接口的 OpenAPI schema，后端改了字段、校验或枚举，重新生成后页面随之改变。
+后台的大部分页面是增删改查：列表、详情、表单和行上的操作。资源在 Go 中声明，`tenon generate` 生成与组件库无关的资源定义 `resources.ts`，`@go-tenon/ui` 的 `ResourcePage` 按它渲染。入门教程的[后台：作者与角色](../tutorial/08-admin.md)是一个完整的例子。字段的类型、枚举和校验规则都取自接口的 OpenAPI schema，后端改了字段、校验或枚举，重新生成后页面随之改变。
 
 阅读前需要了解：[路由](../http/routing.md)；[应用骨架](app-shell.md)；[入门教程第 8 章](../tutorial/08-admin.md)。
 
@@ -9,8 +9,7 @@
 - [检查](#checks)
 - [生成的定义](#generated)
 - [前端的资源模型](#model)
-- [运营后台中的资源页面](#admin)
-- [控制台中的资源页面](#console)
+- [资源页面](#admin)
 - [设置页面](#settings)
 - [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
@@ -131,7 +130,7 @@ export const articles = resourceModel(resources.article, kit, queryClient)
 | `allowed(can, operation)` | 当前身份能否使用一个接口或操作 |
 | `listQuery`、`getQuery` | 列表和详情的查询选项，query key 与 `createQueries` 相同 |
 | `create`、`update`、`remove`、`run` | 调用生成的客户端，完成后让这个分组的查询失效 |
-| `formSchema(mode)`、`ruleOptions` | 表单的校验规则，交给 [`resolver`、`antdRule`](app-shell-features.md#forms)。`kit` 带上 `messages` 时提示是翻译好的文字，没有时是错误码，例如 `validation.filled` |
+| `formSchema(mode)`、`ruleOptions` | 表单的校验规则，交给 `@go-tenon/ui` 的 [`useSchemaForm`](ui.md#forms)。`kit` 带上 `messages` 时提示是翻译好的文字，没有时是错误码，例如 `validation.filled` |
 | `display(field, value)` | 枚举字段显示它的文字 |
 
 在页面中：
@@ -149,12 +148,12 @@ function Articles() {
 `useResourceItem(model, key)` 读取一行的详情，`formValues(model, row)` 得到表单的初始值。显示文字的语言与验证提示相同：`language` 本身，没有时它的主语言，再没有时第一种语言。
 
 <a id="admin"></a>
-## 运营后台中的资源页面
+## 资源页面
 
-`@go-tenon/admin` 的 `ResourcePage` 用 ProTable 渲染列表，用 DrawerForm 渲染创建和修改的表单。没有覆盖时，一个资源的页面只有路由：
+`@go-tenon/ui` 的 `ResourcePage` 用 `DataTable` 渲染列表，在右侧抽屉中渲染创建和修改的表单。没有覆盖时，一个资源的页面只有路由：
 
 ```tsx
-import { ResourcePage } from "@go-tenon/admin"
+import { ResourcePage } from "@go-tenon/ui"
 
 export const Route = createFileRoute("/_app/articles")({
   staticData: { title: "文章", icon: "file" },
@@ -168,6 +167,7 @@ export const Route = createFileRoute("/_app/articles")({
 - 表单的输入组件按字段的类型选择：文字、数字、开关、下拉、多选、标签、日期、日期时间，时间以 ISO 字符串提交。
 - 校验规则与服务端相同，服务端返回的字段错误显示在输入框下面。
 - “新建”“修改”、删除和行上的操作按权限显示。删除和带 `Confirm` 的操作先询问，完成后列表随之刷新。
+- 列设置（显示哪些列、顺序）按资源的名称保存在浏览器中。
 
 只写需要覆盖的部分：
 
@@ -175,35 +175,15 @@ export const Route = createFileRoute("/_app/articles")({
 <ResourcePage
   model={articles}
   route={Route}
-  render={{ title: (v, row) => <Link to="/articles/$id" params={{ id: String(row.id) }}>{String(v)}</Link> }}
-  inputs={{ content: (p) => <RichEditor id={p.id} value={p.value as string} onChange={p.onChange} /> }}
-  rowActions={(row) => [{ key: "preview", label: "预览", onClick: () => preview(row) }]}
+  render={{ title: (v, row) => <AnchorLink to="/articles/$id" params={{ id: String(row.id) }}>{String(v)}</AnchorLink> }}
+  inputs={{ content: ({ field, label, value, onChange, error }) => (
+    <RichEditor label={label} required={field.required} value={value as string} onChange={onChange} error={error} />
+  ) }}
+  rowActions={(row) => [{ label: "预览", onClick: () => preview(row) }]}
 />
 ```
 
-`inputs` 中的组件收到 `id`、`value`、`onChange`，`id` 要放在控件上，表单项的标签才能指向它。`FieldValue`、`defaultInput` 和 `ResourceForm` 也单独导出，可以在自己写的页面中使用。
-
-<a id="console"></a>
-## 控制台中的资源页面
-
-shadcn 的外观是 registry 中的 `tenon-resource-page`，console 模板已经带着它（`src/components/tenon/resource-page.tsx`）。用法与运营后台相同，同一个模型：
-
-```tsx
-import { ResourcePage } from "@/components/tenon/resource-page"
-
-export const Route = createFileRoute("/_app/articles")({
-  staticData: { title: "文章", icon: "folder" },
-  validateSearch: articles.listSearch,
-  component: () => <ResourcePage model={articles} route={Route} />,
-})
-```
-
-- 列表是 [`DataTable`](registry.md#blocks)：服务端分页，可以排序的列点击列头排序，状态写进地址；搜索框在输入停顿后更新，枚举的筛选条件是下拉选择。
-- 新建和修改在对话框中，表单是 react-hook-form 加上生成的校验规则（[`useApiForm`](registry.md#blocks)）。输入组件按字段的类型选择：文字、数字、复选框、下拉、多选、标签（逗号分隔）、日期、日期时间。
-- 删除和带 `Confirm` 的操作用 `useConfirm` 询问，根路由中要有 `ConfirmProvider`。
-- 覆盖方式与运营后台相同：`render`、`inputs`（组件收到 `id`、`value`、`onChange`、`invalid`）、`rowActions`、`actions`。
-
-组件复制在项目中，外观归项目所有，可以直接修改；逻辑仍然来自 `@go-tenon/shell` 的资源模型，随框架升级。
+`inputs` 中的组件收到 `FieldInputProps`：`field`、`label`、`value`、`onChange`（直接是值）、`error`、`disabled`。`FieldValue`、`DefaultInput` 和 `ResourceForm` 也单独导出，可以在自己写的页面中使用，见[界面组件](ui.md)。
 
 <a id="settings"></a>
 ## 设置页面
@@ -233,13 +213,13 @@ import { settings } from "@blog/client/api/settings"
 export const siteSettings = settingsModel(settings.site, kit, queryClient)
 ```
 
-两套外观都有 `SettingsForm`：读取设置作为初始值，按权限决定能否修改（没有保存的权限时只读），字段的输入组件与资源表单相同。默认有“保存”按钮，`autoSave` 改为修改后自动保存，并显示保存的状态：
+`@go-tenon/ui` 的 `SettingsForm` 读取设置作为初始值，按权限决定能否修改（没有保存的权限时只读），字段的输入组件与资源表单相同。默认有“保存”按钮，`autoSave` 改为修改后自动保存，并显示保存的状态：
 
 ```tsx
 <SettingsForm model={siteSettings} autoSave />
 ```
 
-`inputs` 覆盖某个字段的输入组件，与 `ResourcePage` 相同。较早生成的项目中，`packages/client/package.json` 的 `exports` 还没有 `"./*/settings": "./src/*/settings.ts"`，手动加上这一行。
+`inputs` 覆盖某个字段的输入组件，与 `ResourcePage` 相同。
 
 <a id="troubleshooting"></a>
 ## 常见问题
@@ -273,6 +253,5 @@ export const siteSettings = settingsModel(settings.site, kit, queryClient)
 | `useResourceList`、`useResourceItem`、`useResourceMutations`、`formValues` | `@go-tenon/shell`：列表、详情、修改、表单的初始值 |
 | `rest.Settings`、`(*rest.API).Settings(s)`、`(*rest.API).SettingsPages()` | 设置页面的声明，写入 `x-tenon-settings` |
 | `settingsModel(def, kit, queryClient)`、`useSettings(model)` | `@go-tenon/shell`：设置模型，读取与保存 |
-| `ResourcePage`、`ResourceForm`、`FieldValue`、`defaultInput` | `@go-tenon/admin`：antd 的资源页面 |
-| `SettingsForm` | `@go-tenon/admin`：antd 的设置表单；registry 的 `tenon-settings-form` 是 shadcn 的 |
-| `tenon-resource-page` | registry：shadcn 的资源页面，导出的名称与 antd 的相同 |
+| `ResourcePage`、`ResourceForm`、`FieldValue`、`DefaultInput` | `@go-tenon/ui`：资源页面 |
+| `SettingsForm` | `@go-tenon/ui`：设置表单 |

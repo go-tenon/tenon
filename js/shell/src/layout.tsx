@@ -1,5 +1,5 @@
 // 布局约定：一个布局读取导航模型和布局状态，把插槽放到自己的位置上；页面只往插槽中放内容，不关心当前是哪一种布局。
-// 侧栏、顶部导航、图标栏等具体的布局由 @go-tenon/admin（antd）和 shadcn registry 按这个约定实现。
+// 侧栏、顶部导航等具体的布局由 @go-tenon/ui 按这个约定实现。
 
 import { useMatches } from "@tanstack/react-router"
 import { type ReactNode, useCallback, useLayoutEffect, useMemo, useSyncExternalStore } from "react"

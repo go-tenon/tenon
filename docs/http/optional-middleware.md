@@ -58,7 +58,7 @@ http:
 <a id="basic-auth"></a>
 ## HTTP Basic 认证
 
-内部的[文档页](../web/doc-pages.md)这类给运维和团队成员看的页面，不值得接入应用的账号体系，用 `httpx.BasicAuth` 保护：浏览器弹出登录框，之后的请求自动带上用户名和密码。
+内部文档这类给运维和团队成员看的页面，不值得接入应用的账号体系，用 `httpx.BasicAuth` 保护：浏览器弹出登录框，之后的请求自动带上用户名和密码。
 
 账号写在配置中，密码保存为[哈希](../security/hashing.md)，用 `hashing.Hasher` 生成和校验：
 
@@ -147,10 +147,10 @@ router.Use(httpx.Compress())
 只有文本类响应会被压缩：`text/*`、JSON、JavaScript、XML、SVG 和 WebAssembly。图片、字体、PDF、压缩包等原样发送。以下响应也不压缩：
 
 - 小于 1 KiB 的响应；
-- 已经带 `Content-Encoding` 的响应，例如[界面组件](../web/components.md)预先压缩的样式表和脚本；
+- 已经带 `Content-Encoding` 的响应；
 - `Range` 请求的部分响应。
 
-[服务端推送](sse.md)和 [WebSocket](../libraries/realtime.md) 照常工作：`text/event-stream` 直接写出，每条事件立即送达；带 `Upgrade` 请求头的握手原样交给处理器。[静态资源](../web/assets.md)的 `ETag` 保持不变，浏览器协商时照常得到 `304`。
+[服务端推送](sse.md)和 [WebSocket](../libraries/realtime.md) 照常工作：`text/event-stream` 直接写出，每条事件立即送达；带 `Upgrade` 请求头的握手原样交给处理器。静态资源的 `ETag` 保持不变，浏览器协商时照常得到 `304`。
 
 <a id="troubleshooting"></a>
 ## 常见问题

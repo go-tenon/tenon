@@ -31,7 +31,7 @@ var (
 type Kind string
 
 const (
-	// KindLogin 是 SPA、App 登录时签发的 token，按 Config 滑动过期，代表一台设备。
+	// KindLogin 是网页、App 登录时签发的 token，按 Config 滑动过期，代表一台设备。
 	KindLogin Kind = "login"
 	// KindPersonal 是个人访问令牌，供脚本和第三方集成使用，过期时间由创建者指定。
 	KindPersonal Kind = "personal"

@@ -15,7 +15,7 @@ Tenon 是一个用 Go 构建后端服务的框架。业务逻辑写成[业务动
 | 入口 | 用途 | 文档 |
 | --- | --- | --- |
 | HTTP 接口 | JSON API、OpenAPI 文档、生成的客户端 | [HTTP 接口](http/README.md) |
-| 服务端页面 | 用 templ 和 htmx 渲染的公开页面 | [服务端页面](web/README.md) |
+| 网页 | React + Mantine + TanStack Start，由 Go 托管的 Bun 进程渲染，调用同一组 HTTP 接口 | [前端](frontend/README.md) |
 | 后台任务 | 队列 worker 与定时任务调度器，也可以单独部署为没有 HTTP 接口的服务 | [后台任务](background/README.md) |
 | 命令行 | 运维和一次性的操作 | [命令行](general/commands.md) |
 | MCP 工具 | 供 Claude、Cursor 等 AI 客户端调用 | [MCP 服务](ai/mcp.md) |
@@ -97,25 +97,16 @@ Tenon 是一个用 Go 构建后端服务的框架。业务逻辑写成[业务动
 
 ## 第四阶段：前端与页面
 
-调用 HTTP 接口的单页应用：
+网页用 React、Mantine 和 TanStack Start 编写，由 Go 托管的 Bun 进程渲染，调用 HTTP 接口：
 
-- [单页应用](frontend/spa.md)：把 React 前端打包进 Go 程序
+- [服务端渲染](frontend/ssr.md)：SSR 程序嵌入 Go 程序，Go 是唯一的入口
+- [TanStack Start 的接入](frontend/start.md)：服务端渲染与浏览器调用同一组接口、预渲染和编译
+- [界面组件](frontend/ui.md)：三套样式预设、应用外壳、登录页、表格、表单和资源页面
 - [应用骨架](frontend/app-shell.md)：登录检查、权限、菜单与布局
 - [应用骨架：页面中的常用功能](frontend/app-shell-features.md)：多标签、租户、表单、列表与通知
-- [运营后台](frontend/admin.md)：用 antd 搭建后台
-- [shadcn registry 与控制台](frontend/registry.md)：用 shadcn 搭建界面
 - [前端规范](frontend/conventions.md)：前端用什么技术、目录怎样组织、代码怎样写
-- [资源](frontend/resources.md)：在 Go 中声明增删改查的页面，两套界面直接渲染
-- [设计令牌](frontend/theme.md)：品牌色、圆角等在一处定义，所有界面共用
+- [资源](frontend/resources.md)：在 Go 中声明增删改查的页面，界面按声明渲染
 - [服务端推送](http/sse.md)：服务端主动把进度、通知推给浏览器
-
-服务端生成的公开页面：
-
-- [视图](web/views.md)：用 templ 渲染页面
-- [表单](web/forms.md)：页面中的表单
-- [前端资源](web/assets.md)：CSS、JavaScript 与静态文件
-- [界面组件](web/components.md)：web/ui 提供的组件
-- [文档页](web/doc-pages.md)：把 Markdown 目录发布为帮助中心
 
 ## 第五阶段：常用功能
 

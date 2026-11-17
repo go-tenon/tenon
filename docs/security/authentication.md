@@ -23,7 +23,7 @@
 2. 你告诉框架怎么验这把钥匙（校验器）
 3. 验过之后，框架知道「来的是谁」，以及「他能干什么」
 
-JSON API 只用 Bearer token。需要登录的一端——后台、网页、桌面客户端、移动端——都走 JSON API；网页和后台是[单页应用](../frontend/spa.md)。服务端渲染的[页面](../web/views.md)只放公开内容。
+需要登录的一端——后台、网页、桌面客户端、移动端——都走 JSON API。浏览器中的网页用 HttpOnly 的[会话 cookie](api-tokens.md#browser-sessions) 携带 token，其他客户端用 Bearer token；服务端校验的是同一个 token。网页由[服务端渲染](../frontend/ssr.md)时，渲染进程调用的也是这组接口，并带上页面请求的 cookie。
 
 Token 本身可以是什么都行：数据库里的 API Key，或者认证服务签发的 JWT。框架不限定种类，你只要写一个函数，把「这串 token → 对应哪个人」说清楚就行。
 

@@ -64,29 +64,6 @@ document.unsupported_format: 不支持这种文件格式
 document.encrypted: 文档设置了密码，无法读取
 document.corrupt: 文档已损坏或格式不正确
 document.too_large: 文档太大，超出了处理上限
-web.not_found: 页面不存在
-web.bad_form: 无法解析提交的表单
-web.bad_query: 查询参数 {{.field}} 不正确：{{.message}}
-web.request_id: 请求编号：{{.id}}
-ui.pagination.previous: 上一页
-ui.pagination.next: 下一页
-ui.confirm.action: 确定
-ui.confirm.cancel: 取消
-ui.sidebar.toggle: 展开或收起侧边栏
-ui.theme.toggle: 切换暗色模式
-docs.toc: 本页目录
-docs.previous: 上一页
-docs.next: 下一页
-docs.overview: 概览
-docs.copy: 复制
-docs.alert.note: 说明
-docs.alert.tip: 提示
-docs.alert.important: 重要
-docs.alert.warning: 警告
-docs.alert.caution: 注意
-docs.search: 搜索
-docs.search_placeholder: 搜索文档
-docs.no_results: 没有找到相关内容
 validation.required: 必填
 validation.filled: 不能为空
 validation.min_length: 至少 {{.Min}} 个字符

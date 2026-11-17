@@ -312,7 +312,7 @@ func (a *Publish) RPC(ctx context.Context, in PublishArgs) (*ArticleDTO, error) 
 <a id="direct-calls"></a>
 ### 页面、其他动作和脚本
 
-除了上面这些入口，其他地方直接调用 `Handle` 即可。例如[页面处理器](../web/views.md#rendering-pages)持有它用到的业务动作；[填充数据](../database/migrations.md#seeding)的 `seed` 命令组合了“创建”和“发布”两个动作，直接调用它们的 `Handle`：
+除了上面这些入口，其他地方直接调用 `Handle` 即可。例如另一个业务动作持有它用到的业务动作；[填充数据](../database/migrations.md#seeding)的 `seed` 命令组合了“创建”和“发布”两个动作，直接调用它们的 `Handle`：
 
 ```go
 item, err := article.NewCreate(db).Handle(ctx, alice, changes)
@@ -329,9 +329,6 @@ func NewImport(create *Create) *Import {
     return &Import{create: create}
 }
 ```
-
-> [!NOTE]
-> 页面处理器不放在 `article` 包中，而是放在子包 `articleweb` 中。templ 组件要导入 `article` 包的类型，放在同一个包里会造成循环导入。
 
 <a id="follow-ups"></a>
 ## 同步的后续动作
@@ -434,7 +431,6 @@ article.Commands(a.db, onPublished)
 | 用途 | 写法 |
 | --- | --- |
 | 验证并读取请求 | 带验证标签的结构体，例如 `Changes`；HTTP 输入类型写成 `Body Changes`，见[请求](../http/requests.md#json-body) |
-| 页面表单 | 同一个结构体：`web.ParseForm[article.Changes](r)`，见[表单](../web/forms.md) |
 | 表格导入 | 同一个结构体：`sheet.Decode[article.Changes](ctx, r)`，见[导入与导出](../features/import-export.md) |
 | 业务参数 | `Handle` 直接接收 `Changes`，验证标签对它没有影响 |
 | 响应 | `ArticleDTO` 和转换函数 `toDTO`，见[共享响应结构](../http/routing.md#shared-responses) |

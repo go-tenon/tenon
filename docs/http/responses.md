@@ -166,7 +166,7 @@ if err != nil {
 return &ListArticlesOutput{Body: page.NewOffset(toDTOs(rows), in.OffsetParams, total)}, nil
 ```
 
-页面中的列表同样使用 `page.OffsetParams` 和 `page.Offset`，`LastPage`、`Links` 用于渲染分页导航，见[列表页](../web/views.md#list-pages)。
+`LastPage`、`Links` 用于渲染分页导航。
 
 客户端请求 `/articles?page=2&per_page=20` 时得到：
 
@@ -246,7 +246,7 @@ return &ListPublishedOutput{Body: body}, nil
 <a id="filtering-and-sorting"></a>
 ### 筛选与排序
 
-筛选和排序也是查询参数，和分页参数写在同一个结构体中。下面是文章列表的查询参数，它同时带 `json` 标签，后台的[列表页](../web/views.md#list-pages)用 `web.ParseQuery` 解析同一个结构体：
+筛选和排序也是查询参数，和分页参数写在同一个结构体中。下面是文章列表的查询参数：
 
 ```go
 type ListQuery struct {
@@ -257,7 +257,7 @@ type ListQuery struct {
 }
 ```
 
-`sort` 的值是列名，前面加 `-` 表示降序，和页面上的 [`ui.SortHead`](../web/views.md#list-pages) 一致。Huma 在调用处理器之前检查这些参数：`?sort=views`、`?status=archived` 返回 `422`；空值等同于没有这个参数，取 `default` 的值。
+`sort` 的值是列名，前面加 `-` 表示降序，与 `@go-tenon/ui` 的表格点击列头排序时写入地址的值一致。Huma 在调用处理器之前检查这些参数：`?sort=views`、`?status=archived` 返回 `422`；空值等同于没有这个参数，取 `default` 的值。
 
 列表的业务动作把参数转换为查询条件。每个 `sort` 值对应一个固定的 `ORDER BY`：
 

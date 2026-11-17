@@ -1,5 +1,5 @@
 // Package realtime 在进程内嵌入 Centrifuge（https://github.com/centrifugal/centrifuge），
-// 为浏览器、SPA 和移动端提供 WebSocket 实时频道。客户端使用 Centrifuge 的官方 SDK。
+// 为浏览器和移动端提供 WebSocket 实时频道。客户端使用 Centrifuge 的官方 SDK。
 //
 //	rt, err := realtime.New(hub, realtime.Options{})
 //	rt.Channel("articles", realtime.Public())

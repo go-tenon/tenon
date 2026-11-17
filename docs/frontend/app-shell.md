@@ -1,10 +1,10 @@
 # 应用骨架
 
-`@go-tenon/shell` 是[单页应用](spa.md)骨架的逻辑：把 TanStack Router、TanStack Query 和[会话](client-react.md#client-runtime)接到一起，提供登录检查、按权限进入页面、菜单、面包屑、布局约定、多标签、租户切换、表单、列表和新版本提示。它不依赖组件库：同一份逻辑由运营后台的 antd 外观和 shadcn 外观渲染，外观只负责界面。
+`@go-tenon/shell` 是前端应用骨架的逻辑：把 TanStack Router、TanStack Query 和[会话](client-react.md#client-runtime)接到一起，提供登录检查、按权限进入页面、菜单、面包屑、布局约定、多标签、租户切换、表单、列表和新版本提示。它不依赖组件库，界面由 [`@go-tenon/ui`](ui.md) 渲染。
 
 这一页介绍创建应用、页面的元数据、登录检查、权限、菜单和布局。多标签、租户、表单、列表、通知等页面中的常用功能见[应用骨架：页面中的常用功能](app-shell-features.md)。
 
-阅读前需要了解：[单页应用](spa.md)；[入门教程第 5、6 章](../tutorial/05-pages.md)；TanStack Router 的文件路由（教程第 5 章介绍过）。
+阅读前需要了解：[TanStack Start 的接入](start.md)；[入门教程第 5、6 章](../tutorial/05-pages.md)；TanStack Router 的文件路由（教程第 5 章介绍过）。
 
 - [安装](#installing)
 - [创建应用](#creating-the-app)
@@ -202,7 +202,7 @@ const crumbs = useBreadcrumbs() // [{ title, path }]
 <a id="layouts"></a>
 ## 布局约定
 
-一个布局读取导航模型和布局状态，把插槽放到自己的位置上；页面只往插槽中放内容，不关心当前是哪一种布局。侧栏、顶部导航、图标栏等具体的布局由运营后台的 antd 外观和 shadcn 外观按这个约定实现，项目也可以自己写，只要遵守这个约定，页面、多标签和权限过滤都照常工作。
+一个布局读取导航模型和布局状态，把插槽放到自己的位置上；页面只往插槽中放内容，不关心当前是哪一种布局。侧栏、顶部导航等具体的布局由 `@go-tenon/ui` 的 `AppLayout` 按这个约定实现，项目也可以自己写，只要遵守这个约定，页面、多标签和权限过滤都照常工作。
 
 **区域**用布局路由选择：一组页面共用一个布局，不同的组用不同的布局，例如 `_app` 用侧栏，`_settings` 用设置布局，`_auth` 用登录布局。
 
@@ -265,7 +265,7 @@ setState({ collapsed: !state.collapsed })
 
 布局状态保存在[本地存储](#storage)中，按账号区分：换个账号登录各是各的。`navOpen`（窄屏时导航抽屉打开）只在当前页面有效，不保存。`useNarrow()` 报告是否是窄屏（默认宽度小于 768px），布局据此把主导航收进抽屉或底部标签栏。
 
-底部标签栏的内容由 `useBottomNav(max = 5)` 给出：第一级菜单，最多 `max` 项，分组进入它下面第一个可以进入的页面，每一项带着是否是当前位置（`active`）和徽标。它只适合第一级菜单不多的前端，例如用户端；shadcn 的外观见 [BottomNav](registry.md#blocks)。
+底部标签栏的内容由 `useBottomNav(max = 5)` 给出：第一级菜单，最多 `max` 项，分组进入它下面第一个可以进入的页面，每一项带着是否是当前位置（`active`）和徽标。它只适合第一级菜单不多的前端，例如用户端。
 
 项目允许用户切换布局时（例如在侧栏和顶部导航之间），布局路由用 `useLayoutVariant` 决定当前用哪一种，第一种是默认的；用户选过、并且在允许的范围内时用用户的选择：
 
@@ -338,7 +338,7 @@ app.storage.get<{ collapsed: boolean }>("sider")
 | `TabsOutlet`、`useTabs`、`useTab`、`useTabActive`、`useTabTitle`、`useTabShortcuts` | 多标签 |
 | `confirmDiscard(app)` | 有未保存的修改时询问是否放弃，例如退出登录前 |
 | `useTenant`、`switchTenant`、`enterTenant` | 当前租户、切换租户 |
-| `resolver`、`antdRule`、`formValidator` | 用生成的规则校验表单：react-hook-form、antd Form、其他表单库 |
+| `formValidator`、`resolver` | 用生成的规则校验表单：`@mantine/form`（经 `@go-tenon/ui` 的 `useSchemaForm`）、react-hook-form、其他表单库 |
 | `setServerErrors`、`serverErrors` | 把服务端的错误设置到表单的字段 |
 | `useUnsavedChanges(dirty, options)` | 有未保存的修改时离开前询问 |
 | `createAutoSaver(initial, options)` | 自动保存，与表单库无关，见[表单](app-shell-features.md#forms) |

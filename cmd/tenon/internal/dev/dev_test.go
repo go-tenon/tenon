@@ -5,15 +5,10 @@ package dev_test
 import (
 	"bytes"
 	"context"
-	"net"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -28,7 +23,6 @@ import (
 const fake = `#!/bin/sh
 trap 'echo "stopped $(basename "$0")" >> "$DEVCMD_LOG"; exit 0' INT
 echo "$(basename "$0") $* @$(basename "$PWD")" >> "$DEVCMD_LOG"
-if [ "$1 $2" = "tool -n" ]; then echo /fake/templ; exit 0; fi
 if [ "$1 $2" = "list -m" ]; then echo "$DEVCMD_FRAMEWORK"; exit 0; fi
 if [ "$1 $2 $3" = "build -mod=mod -o" ]; then
 	[ -n "$DEVCMD_BUILD_DELAY" ] && sleep "$DEVCMD_BUILD_DELAY"
@@ -36,7 +30,7 @@ if [ "$1 $2 $3" = "build -mod=mod -o" ]; then
 	cat > "$4" <<'APP'
 #!/bin/sh
 trap 'echo "app stopped" >> "$DEVCMD_LOG"; exit 0' TERM
-echo "app $* templ=$TEMPL_DEV_MODE" >> "$DEVCMD_LOG"
+echo "app $*" >> "$DEVCMD_LOG"
 [ "$1" = "serve" ] || exit 0
 while :; do sleep 0.02; done
 APP
@@ -116,68 +110,28 @@ func start(t *testing.T, cfg *project.Config, out, errOut *syncBuffer) func() er
 	}
 }
 
-// 服务端渲染的页面：templ 省略 --cmd，应用带 TEMPL_DEV_MODE；静态文件变化时刷新浏览器；Tailwind 先复制样式源。
-func TestDevPages(t *testing.T) {
-	dir, log := setup(t, "go", "tailwindcss", "esbuild")
-	var reloads atomic.Int32
-	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost && r.URL.Path == "/_templ/reload/events" {
-			reloads.Add(1)
-		}
-	}))
-	defer proxy.Close()
-	_, port, _ := net.SplitHostPort(strings.TrimPrefix(proxy.URL, "http://"))
-	proxyPort, _ := strconv.Atoi(port)
-	static := filepath.Join(dir, "static")
-	if err := os.Mkdir(static, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "layout.templ"), nil, 0o644); err != nil {
-		t.Fatal(err)
-	}
+// 其他工具与应用一起运行，停止后运行一次它们的构建命令。
+func TestDevTools(t *testing.T) {
+	_, log := setup(t, "go", "esbuild")
 	cfg := load(t)
-	cfg.Templ.ProxyPort, cfg.Templ.Static = proxyPort, "static"
-	cfg.Tailwind = &project.Tailwind{Input: "web/app.css", Output: "web/static/app.css"}
 	cfg.Tools = []project.Tool{{Watch: []string{"esbuild", "--watch"}, Build: []string{"esbuild", "--minify"}}}
 	var out, errOut syncBuffer
 	stop := start(t, cfg, &out, &errOut)
 
-	waitFor(t, "all watchers", func() bool {
+	waitFor(t, "watchers", func() bool {
 		l := read(log)
-		return strings.Contains(l, "go tool templ generate --watch") && strings.Contains(l, "tailwindcss -i") &&
-			strings.Contains(l, "esbuild --watch") && strings.Contains(l, "app serve")
+		return strings.Contains(l, "esbuild --watch") && strings.Contains(l, "app serve --config config/app.yaml\n")
 	})
-	l := read(log)
-	for _, want := range []string{
-		"go tool -n templ",
-		"--proxy=http://localhost:8080 --proxyport=" + port + " --open-browser=false @",
-		"app serve --config config/app.yaml templ=true",
-		"tailwindcss -i web/app.css -o web/static/app.css --watch=always",
-	} {
-		if !strings.Contains(l, want) {
-			t.Errorf("log missing %q:\n%s", want, l)
-		}
-	}
-	for _, f := range []string{"style-maia.css", "ui.css", "classes.txt"} {
-		if _, err := os.Stat(filepath.Join(dir, "web", dev.UIDir, f)); err != nil {
-			t.Errorf("ui styles: %v", err)
-		}
-	}
-	if err := os.WriteFile(filepath.Join(static, "app.css"), []byte("body{}"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	waitFor(t, "browser reload", func() bool { return reloads.Load() >= 1 })
-
 	if err := stop(); err != nil {
 		t.Fatalf("dev returned %v", err)
 	}
-	l = read(log)
-	for _, want := range []string{"stopped go", "app stopped", "stopped tailwindcss", "stopped esbuild", "go tool templ generate @", "--minify"} {
+	l := read(log)
+	for _, want := range []string{"app stopped", "stopped esbuild", "esbuild --minify @"} {
 		if !strings.Contains(l, want) {
 			t.Errorf("log missing %q after stop:\n%s", want, l)
 		}
 	}
-	if !strings.Contains(out.String(), "http://localhost:"+port) {
+	if !strings.Contains(out.String(), "http://localhost:8080") {
 		t.Errorf("output = %q", out.String())
 	}
 }
@@ -218,8 +172,7 @@ func TestDevMissingTools(t *testing.T) {
 	setup(t, "go")
 	cfg := load(t)
 	for name, edit := range map[string]func(*project.Config){
-		"tailwindcss not found": func(c *project.Config) { c.Tailwind = &project.Tailwind{Input: "a", Output: "b"} },
-		"bun not found":         func(c *project.Config) { c.Frontends = []project.Frontend{{Name: "web", Dir: "apps/web"}} },
+		"bun not found": func(c *project.Config) { c.Frontends = []project.Frontend{{Name: "web", Dir: "apps/web"}} },
 		"has no --config": func(c *project.Config) {
 			c.Frontends, c.Serve = []project.Frontend{{Name: "web", Dir: "apps/web"}}, []string{"serve"}
 		},
@@ -232,9 +185,9 @@ func TestDevMissingTools(t *testing.T) {
 	}
 }
 
-// 单页应用：没有 node_modules 时在根目录安装，没有 dist 时写入占位页；为每个前端选端口运行 vite，把地址写入 .tenon/dev.yaml
+// 前端：没有 node_modules 时在根目录安装，没有 ssr.bin 时写入空的占位文件；为每个前端选端口运行 vite，把地址写入 .tenon/dev.yaml
 // 交给应用；改了 Go 代码后重新编译、重启并生成客户端；编译失败时旧进程继续运行；测试文件和前端的变化不触发重新编译。
-func TestDevSPA(t *testing.T) {
+func TestDevFrontends(t *testing.T) {
 	defer dev.SetPollInterval(20 * time.Millisecond)()
 	defer dev.SetFrontendWait(50 * time.Millisecond)() // 伪造的 vite 不监听端口
 	dir, log := setup(t, "go", "bun")
@@ -261,7 +214,7 @@ func TestDevSPA(t *testing.T) {
 		return count("app serve") == 1 && count("app client --ts packages/client/src") == 1 && count("bun run dev --port") == 2
 	})
 	l := read(log)
-	for _, want := range []string{"bun install @" + filepath.Base(dir) + "\n", "app serve --config config/app.yaml --config .tenon/dev.yaml templ=\n",
+	for _, want := range []string{"bun install @" + filepath.Base(dir) + "\n", "app serve --config config/app.yaml --config .tenon/dev.yaml\n",
 		"--strictPort @web\n", "--strictPort @admin\n"} {
 		if !strings.Contains(l, want) {
 			t.Errorf("log missing %q:\n%s", want, l)
@@ -281,9 +234,6 @@ func TestDevSPA(t *testing.T) {
 	}
 	if count("bun run build") != 0 {
 		t.Errorf("built before start:\n%s", l)
-	}
-	if strings.Contains(l, "go tool") {
-		t.Errorf("templ used without .templ files:\n%s", l)
 	}
 
 	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\n\nfunc main() {}\n"), 0o644); err != nil {

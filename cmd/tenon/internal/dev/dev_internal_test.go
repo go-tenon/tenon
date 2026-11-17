@@ -13,25 +13,10 @@ import (
 	"time"
 )
 
-func TestHostPort(t *testing.T) {
-	for raw, want := range map[string]string{
-		"http://localhost:8080":   "localhost:8080",
-		"http://127.0.0.1":        "127.0.0.1:80",
-		"https://dev.example.com": "dev.example.com:443",
-		"http://[::1]:9000":       "[::1]:9000",
-	} {
-		if got := hostPort(raw); got != want {
-			t.Errorf("hostPort(%q) = %q", raw, got)
-		}
-	}
-}
-
 func TestWatchersAndBuilds(t *testing.T) {
 	cfg := &project.Config{
 		URL:       "http://localhost:8080",
 		Frontends: []project.Frontend{{Name: "admin", Dir: "apps/admin"}, {Name: "web", Dir: "apps/web"}},
-		Templ:     &project.Templ{ProxyPort: 7331},
-		Tailwind:  &project.Tailwind{Input: "web/app.css", Output: "web/static/app.css"},
 		Tools:     []project.Tool{{Watch: []string{"esbuild", "--watch"}, Build: []string{"esbuild"}}},
 	}
 	d := dev{cfg: cfg, servers: map[string]string{"admin": "http://localhost:5174", "web": "http://localhost:5173"}}
@@ -39,8 +24,6 @@ func TestWatchersAndBuilds(t *testing.T) {
 	want := []watcher{
 		{"apps/admin", []string{"bun", "run", "dev", "--port", "5174", "--strictPort"}, front},
 		{"apps/web", []string{"bun", "run", "dev", "--port", "5173", "--strictPort"}, front},
-		{".", []string{"go", "tool", "templ", "generate", "--watch", "--proxy=http://localhost:8080", "--proxyport=7331", "--open-browser=false"}, nil},
-		{".", []string{"tailwindcss", "-i", "web/app.css", "-o", "web/static/app.css", "--watch=always"}, nil},
 		{".", []string{"esbuild", "--watch"}, nil},
 	}
 	same := func(a, b watcher) bool {
@@ -51,8 +34,6 @@ func TestWatchersAndBuilds(t *testing.T) {
 	}
 	// 停止后不再构建前端：SSR 可执行文件由 go tool tenon build 编译。
 	wantBuilds := []watcher{
-		{".", []string{"go", "tool", "templ", "generate"}, nil},
-		{".", []string{"tailwindcss", "-i", "web/app.css", "-o", "web/static/app.css", "--minify"}, nil},
 		{".", []string{"esbuild"}, nil},
 	}
 	if got := d.builds(); !slices.EqualFunc(got, wantBuilds, same) {

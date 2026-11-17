@@ -1,11 +1,10 @@
 // @vitest-environment happy-dom
 
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
-import { Button, Form, Input } from "antd"
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { useState } from "react"
 import { useForm } from "react-hook-form"
 import { afterEach, describe, expect, it } from "vitest"
-import { antdRule, formValidator, resolver, serverErrors, setServerErrors } from "./form"
+import { formValidator, resolver, serverErrors, setServerErrors } from "./form"
 
 // 与生成的 schemas.ts、messages.ts 形状相同：命名类型在 components 中，提示按语言。
 const components = {
@@ -108,43 +107,5 @@ describe("react-hook-form", () => {
     fireEvent.change(screen.getByLabelText("name"), { target: { value: "a" } })
     fireEvent.click(screen.getByText("save"))
     await waitFor(() => expect(screen.getByTestId("form-error").textContent).toBe("slug 已被使用"))
-  })
-})
-
-function AntdForm({ server }: { server?: unknown }) {
-  const [form] = Form.useForm<Values>()
-  const rule = antdRule(schema, options)
-  return (
-    <Form
-      form={form}
-      initialValues={{ title: "", items: [{ name: "" }] }}
-      onFinish={() => setServerErrors(server, form)}
-    >
-      <Form.Item name="title" rules={[rule]}>
-        <Input aria-label="title" />
-      </Form.Item>
-      <Form.Item name={["items", 0, "name"]} rules={[rule]}>
-        <Input aria-label="name" />
-      </Form.Item>
-      <Button htmlType="submit">save</Button>
-    </Form>
-  )
-}
-
-describe("antd Form", () => {
-  it("Form.Item 用生成的规则校验，嵌套字段按 name 取提示", async () => {
-    const { container } = render(<AntdForm />)
-    await act(async () => fireEvent.submit(container.querySelector("form") as HTMLFormElement))
-    await screen.findByText("至少 2 个字符")
-    expect(screen.getByText("不能为空")).toBeTruthy()
-  })
-
-  it("服务端的字段错误显示在对应字段下面", async () => {
-    const { container } = render(<AntdForm server={unprocessable} />)
-    fireEvent.change(screen.getByLabelText("title"), { target: { value: "好标题" } })
-    fireEvent.change(screen.getByLabelText("name"), { target: { value: "a" } })
-    await act(async () => fireEvent.submit(container.querySelector("form") as HTMLFormElement))
-    await screen.findByText("标题已被使用")
-    expect(screen.getByText("名称不能为空")).toBeTruthy()
   })
 })

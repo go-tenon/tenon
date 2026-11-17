@@ -25,6 +25,8 @@
 - [设置](#settings)
 - [导入与导出](#transfer)
 - [队列面板](#queue-panel)
+- [操作记录](#activity)
+- [新版本提示](#new-version)
 - [确认与提示](#feedback)
 - [路由链接](#links)
 - [演示](#playground)
@@ -535,6 +537,22 @@ export const Route = createFileRoute("/_app/queue")({
 
 `api.queue` 的形状由 `QueueApi` 描述，不依赖具体的应用；字段与 `queue/queueapi` 的类型一致。
 
+<a id="activity"></a>
+## 操作记录
+
+`ActivityTimeline` 按时间从新到旧显示一个对象的历史或一个人的操作记录，到底时“加载更多”。`source.list(before)` 是应用自己的接口，见[操作日志](../features/activity.md#history-page)：
+
+```tsx
+<ActivityTimeline source={{ key: ["article", id], list: (before) => api.article.history(id, { before }).then((r) => r.items) }} />
+```
+
+点击带 `href` 的记录打开它；`onOpen` 可以换成自己的处理。
+
+<a id="new-version"></a>
+## 新版本提示
+
+部署了新版本后，已经打开的页面还在运行旧代码。`NewVersionNotice` 在发现新版本时于右下角提示“刷新”或“稍后”，版本号来自模板中的 `tenonVersion` 插件，见[新版本提示](app-shell.md#new-version)。`AppLayout` 已经包含它，其他布局需要时自己放一个。
+
 <a id="feedback"></a>
 ## 确认与提示
 
@@ -594,6 +612,8 @@ bun run playground
 | `SettingsForm` | 设置的表单 |
 | `ImportButton`、`ExportButton` | 导入和导出 |
 | `QueuePanel`、`QueueApi` | 队列面板和它需要的接口 |
+| `ActivityTimeline` | 操作记录的时间线 |
+| `NewVersionNotice` | 新版本提示，`AppLayout` 中已经包含 |
 | `confirm`、`notifySuccess`、`notifyError` | 确认对话框和提示 |
 | `ButtonLink`、`AnchorLink`、`NavLinkLink`、`ActionIconLink` | 类型安全的路由链接 |
 | `Icon`、`useIcon`、`defaultIcons`、`IconsProvider` | 图标名称 |

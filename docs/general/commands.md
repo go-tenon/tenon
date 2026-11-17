@@ -256,7 +256,7 @@ func Start(ctx context.Context, cfg Config) error {
 <a id="routes-command"></a>
 ### routes 命令
 
-当业务模块变多时，你可以用 `routes` 查看整个应用的路由，包括 JSON API 和[页面](../web/views.md#page-routes)。`httpcmd.Routes` 的参数是构造完整路由的函数，例如[入门教程](../tutorial/02-infrastructure.md#assembling)中的 `bootstrap.DocRouter`。它离线运行：
+当业务模块变多时，你可以用 `routes` 查看整个应用的路由，包括 JSON API 和挂载的页面。`httpcmd.Routes` 的参数是构造完整路由的函数，例如[入门教程](../tutorial/02-infrastructure.md#assembling)中的 `bootstrap.DocRouter`。它离线运行：
 
 ```bash
 ./bin/api routes

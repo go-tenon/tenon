@@ -1,4 +1,4 @@
-// Package dev 实现 tenon dev：与应用一起运行前端的开发服务器（TanStack Start 的 Vite）、templ、Tailwind 和其他工具，
+// Package dev 实现 tenon dev：与应用一起运行前端的开发服务器（TanStack Start 的 Vite）和其他工具，
 // 修改 Go 代码后重新编译、重启应用，并重新生成客户端。
 package dev
 
@@ -9,12 +9,10 @@ import (
 	"io/fs"
 	"maps"
 	"net"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -24,15 +22,12 @@ import (
 	"github.com/go-tenon/tenon/cmd/tenon/internal/project"
 )
 
-// UIDir 是 Tailwind 在样式入口旁边放置 web/ui 样式源的目录名。
-const UIDir = ".web-ui"
-
 const framework = "github.com/go-tenon/tenon"
 
 // DevConfig 是 tenon dev 写给应用的配置：各前端开发服务器的地址（dev_servers），追加在 serve 的 --config 之后。
 const DevConfig = ".tenon/dev.yaml"
 
-// Run 在当前目录运行开发模式，直到 ctx 取消；停止后生成正式的代码、样式表和前端构建产物。
+// Run 在当前目录运行开发模式，直到 ctx 取消；停止后运行工具的构建命令。
 func Run(ctx context.Context, cfg *project.Config, out, errOut io.Writer) error {
 	d := dev{cfg: cfg, out: shared(out), errOut: shared(errOut)}
 	if err := d.check(); err != nil {
@@ -46,13 +41,9 @@ func Run(ctx context.Context, cfg *project.Config, out, errOut io.Writer) error 
 	if err := d.prepare(); err != nil {
 		return err
 	}
-	if cfg.Templ != nil {
-		fmt.Fprintf(d.out, "dev: 打开 http://localhost:%d（代理 %s）\n", cfg.Templ.ProxyPort, cfg.URL)
-	} else {
-		fmt.Fprintf(d.out, "dev: 打开 %s\n", cfg.URL)
-	}
+	fmt.Fprintf(d.out, "dev: 打开 %s\n", cfg.URL)
 	err = concurrently(ctx, d.runs()...)
-	// 停止后恢复正式的生成结果：templ 的 watch 模式生成的代码读取 _templ.txt，工具的输出也没有压缩。
+	// 停止后运行工具的构建命令：监听模式的输出通常没有压缩。
 	return errors.Join(err, d.finish())
 }
 
@@ -82,7 +73,7 @@ func (l *lockedWriter) Write(p []byte) (int, error) {
 	return l.w.Write(p)
 }
 
-// check 确认用到的命令都已安装：go；有前端时 bun；有 templ 时 go.mod 中的 templ 工具；Tailwind 和其他工具。
+// check 确认用到的命令都已安装：go；有前端时 bun；其他工具。
 // 有前端时 serve 的参数中要有 --config，前端的地址追加在它之后。
 func (d dev) check() error {
 	need := []string{"go"}
@@ -91,9 +82,6 @@ func (d dev) check() error {
 		if !project.HasConfigFlag(d.cfg.Serve) {
 			return errors.Newf("dev: serve in %s has no --config; tenon dev appends --config %s to pass the frontend dev servers", project.File, DevConfig)
 		}
-	}
-	if d.cfg.Tailwind != nil {
-		need = append(need, "tailwindcss")
 	}
 	for _, t := range d.cfg.Tools {
 		need = append(need, t.Watch[0])
@@ -106,15 +94,8 @@ func (d dev) check() error {
 			switch name {
 			case "bun":
 				return errors.New("dev: bun not found in PATH, install it from https://bun.sh")
-			case "tailwindcss":
-				return errors.New("dev: tailwindcss not found in PATH, download the standalone CLI from https://github.com/tailwindlabs/tailwindcss/releases")
 			}
 			return errors.Newf("dev: %s not found in PATH", name)
-		}
-	}
-	if d.cfg.Templ != nil {
-		if out, err := exec.Command("go", "tool", "-n", "templ").CombinedOutput(); err != nil {
-			return errors.Newf("dev: templ is not a tool of this module, run: go get -tool github.com/a-h/templ/cmd/templ\n%s", out)
 		}
 	}
 	return nil
@@ -122,7 +103,7 @@ func (d dev) check() error {
 
 // prepare 在启动监听进程之前运行一次：把框架的前端包复制到 .tenon/js（见 SyncJS），前端包的 package.json 变了
 // 或者缺少依赖（见 NeedsInstall）时在根目录 bun install，确保每个前端的 ssr.bin 存在（见 EnsureDist），
-// 写入前端开发服务器的地址（见 DevConfig），把框架 web/ui 的样式源复制到 Tailwind 入口旁边。
+// 写入前端开发服务器的地址（见 DevConfig）。
 func (d dev) prepare() error {
 	if len(d.cfg.Frontends) > 0 {
 		changed, err := SyncJS(".")
@@ -138,13 +119,7 @@ func (d dev) prepare() error {
 			return err
 		}
 	}
-	if err := EnsureDist(d.cfg); err != nil {
-		return err
-	}
-	if t := d.cfg.Tailwind; t != nil {
-		return copyUI(filepath.Join(filepath.Dir(t.Input), UIDir))
-	}
-	return nil
+	return EnsureDist(d.cfg)
 }
 
 // SSRBinary 是前端目录中 SSR 可执行文件的名字，frontend.go 用 go:embed 嵌入它。
@@ -230,14 +205,6 @@ func (d dev) watchers() []watcher {
 		ws = append(ws, watcher{f.Dir, []string{"bun", "run", "dev", "--port", port(d.servers[f.Name]), "--strictPort"},
 			[]string{"API_ORIGIN=" + d.cfg.URL}})
 	}
-	if t := d.cfg.Templ; t != nil {
-		ws = append(ws, watcher{".", []string{"go", "tool", "templ", "generate", "--watch",
-			"--proxy=" + d.cfg.URL, "--proxyport=" + strconv.Itoa(t.ProxyPort), "--open-browser=false"}, nil})
-	}
-	if t := d.cfg.Tailwind; t != nil {
-		// --watch=always：标准输入不是终端时也继续监听，否则 tailwindcss 在标准输入关闭时退出。
-		ws = append(ws, watcher{".", []string{"tailwindcss", "-i", t.Input, "-o", t.Output, "--watch=always"}, nil})
-	}
 	for _, t := range d.cfg.Tools {
 		ws = append(ws, watcher{".", t.Watch, nil})
 	}
@@ -253,12 +220,6 @@ func port(addr string) string {
 // builds 返回停止后运行的生成命令。
 func (d dev) builds() []watcher {
 	var bs []watcher
-	if d.cfg.Templ != nil {
-		bs = append(bs, watcher{".", []string{"go", "tool", "templ", "generate"}, nil})
-	}
-	if t := d.cfg.Tailwind; t != nil {
-		bs = append(bs, watcher{".", []string{"tailwindcss", "-i", t.Input, "-o", t.Output, "--minify"}, nil})
-	}
 	for _, t := range d.cfg.Tools {
 		if len(t.Build) > 0 {
 			bs = append(bs, watcher{".", t.Build, nil})
@@ -271,11 +232,6 @@ func (d dev) runs() []func(context.Context) error {
 	runs := []func(context.Context) error{d.serve}
 	for _, w := range d.watchers() {
 		runs = append(runs, func(ctx context.Context) error { return d.run(ctx, w) })
-	}
-	if t := d.cfg.Templ; t != nil && t.Static != "" {
-		runs = append(runs, func(ctx context.Context) error {
-			return watch(ctx, func() string { return snapshot(t.Static, nil) }, 250*time.Millisecond, d.reload)
-		})
 	}
 	return runs
 }
@@ -295,14 +251,6 @@ func (d dev) run(ctx context.Context, w watcher) error {
 		return ctx.Err()
 	}
 	return errors.Wrapf(err, "dev: %s", strings.Join(w.args, " "))
-}
-
-// reload 通知 templ 的代理刷新浏览器。
-func (d dev) reload() {
-	url := fmt.Sprintf("http://127.0.0.1:%d/_templ/reload/events", d.cfg.Templ.ProxyPort)
-	if res, err := http.Post(url, "", nil); err == nil {
-		_ = res.Body.Close()
-	}
 }
 
 // finish 运行停止后的生成命令。
@@ -391,18 +339,6 @@ func goSource(path string) bool {
 	return strings.HasSuffix(base, ".go") && !strings.HasSuffix(base, "_test.go") || base == "go.mod" || base == "go.sum"
 }
 
-// copyUI 把框架的 web/ui/css 复制到 dst，替换已有的内容。框架的位置由 go list 给出（通常在模块缓存中）。
-func copyUI(dst string) error {
-	dir, err := frameworkDir(".")
-	if err != nil {
-		return err
-	}
-	if err := copyTree(filepath.Join(dir, "web", "ui", "css"), dst); err != nil {
-		return errors.Wrap(err, "dev: copy ui styles")
-	}
-	return errors.Wrap(os.WriteFile(filepath.Join(dst, ".gitignore"), []byte("*\n"), 0o644), "dev: copy ui styles")
-}
-
 // frameworkDir 返回项目 dir 使用的框架源码目录：通常在模块缓存中，replace 到本地时是本地的目录。
 func frameworkDir(dir string) (string, error) {
 	cmd := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", framework)
@@ -413,15 +349,6 @@ func frameworkDir(dir string) (string, error) {
 		return "", errors.Newf("dev: cannot locate %s with go list: %v", framework, err)
 	}
 	return fw, nil
-}
-
-// copyTree 把 src 复制到 dst，先删除 dst 中已有的内容。跳过隐藏目录、node_modules 和 dist。
-// 复制出的文件可写：模块缓存中的文件是只读的。
-func copyTree(src, dst string) error {
-	if err := os.RemoveAll(dst); err != nil {
-		return err
-	}
-	return copyInto(src, dst, nil)
 }
 
 // copyInto 把 src 复制到 dst，覆盖同名的文件，跳过 project.SkipDir 中的目录（例如 node_modules），

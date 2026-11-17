@@ -2,7 +2,7 @@
 
 页面由 [TanStack Start](https://tanstack.com/start) 在 Bun 中渲染：公开页面在服务端渲染，搜索引擎可以收录，首屏更快；后台页面可以只在浏览器中渲染。Bun 编译出的 SSR 可执行文件嵌入 Go 程序，由 `ssr` 包从内存中启动和托管，部署时仍然只有一个文件、一个进程树。
 
-阅读前需要了解：[单页应用](spa.md)；[部署](../installation/deployment.md)。
+阅读前需要了解：[脚手架](../installation/scaffolding.md)；[部署](../installation/deployment.md)。
 
 - [结构](#architecture)
 - [装配](#wiring)

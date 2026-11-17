@@ -166,7 +166,6 @@ func TestLoadConfig(t *testing.T) {
 | 包 | 用途 | 文档 |
 | --- | --- | --- |
 | `database/dbtest` | 每个测试一个临时数据库 | [数据库测试](database.md#database-tests) |
-| `web/webtest` | 页面测试：保存 cookie、htmx 请求头 | [页面测试](http.md#page-tests) |
 | `logging/logtest` | 捕获日志 | [测试日志](../general/logging-advanced.md#testing-logs) |
 | `outbound/outboundtest` | 登记外部 HTTP 服务的响应，检查发出的请求 | [出站请求](../libraries/outbound.md#testing) |
 | `login/logintest` | 读取发出的验证码，计算二次验证的数字 | [登录与注册](../security/login.md#testing) |

@@ -88,9 +88,7 @@ go test -race -count=1 ./...
 <a id="js-packages"></a>
 ### 前端包
 
-`js` 是前端包的 Bun workspace：`js/client` 是 `@go-tenon/client`，`js/shell` 是 `@go-tenon/shell`，`js/admin` 是 `@go-tenon/admin`（antd 的外观），`js/registry` 是 tenon 的 shadcn registry。
-
-`js/registry` 的 `src/components/tenon` 是框架的组件，`src/components/ui`、`src/hooks`、`src/lib`、`src/index.css` 是 shadcn 生成的代码，保持原样（Biome 跳过它们）。修改 `src/components/tenon` 或 `registry.json` 后运行 `bun registry/build.ts` 重新生成 `r/`，`registry.test.ts` 检查它是最新的，并检查每个条目带上了它导入的 shadcn 组件和 npm 包。更新 shadcn 的组件时，在一个单独的 Vite 项目中运行 `bunx shadcn@<版本> init` 和 `add`，再把生成的文件复制过来，组件用到的 npm 包（以那个项目的 `package.json` 为准）加到 `js/package.json` 的 `devDependencies`：在 `js` 这个 Bun workspace 中运行时，shadcn 没有把组件的 npm 依赖完整写进 `package.json`。已有的文件在提示覆盖时选否，保持与 registry 中的版本一致。AI 对话的组件（Message、Bubble、Trace、Message Scroller 等）来自 shadcn/ui 的 AI Elements，同样这样生成。console 模板安装的条目是 `cmd/tenon/internal/scaffold` 的 `ConsoleRegistryItems`，`TestInstallRegistry` 检查它们（连同逐层导入的文件）用到的 npm 包都在 console 模板的 `package.json` 中。它们不发布到 npm，随 Go 模块分发：应用中的 `tenon` 把框架版本中的 `js` 复制到项目的 `.tenon/js`，见[框架的前端包](docs/installation/tooling.md#framework-packages)。在 `js` 目录中运行：
+`js` 是前端包的 Bun workspace：`js/client` 是 `@go-tenon/client`（与界面无关的客户端运行时），`js/shell` 是 `@go-tenon/shell`（应用骨架的逻辑），`js/start` 是 `@go-tenon/start`（把 TanStack Start 接到 Go 托管的 Bun），`js/ui` 是 `@go-tenon/ui`（基于 Mantine 的界面和三套样式预设）。`js/playground` 是 ui 的演示（`bun run playground`）。它们不发布到 npm，随 Go 模块分发：应用中的 `tenon` 把框架版本中的 `js` 复制到项目的 `.tenon/js`，见[框架的前端包](docs/installation/tooling.md#framework-packages)。在 `js` 目录中运行：
 
 ```bash
 bun install --frozen-lockfile
@@ -100,7 +98,7 @@ bun run test        # Vitest
 bun run e2e         # Playwright，第一次运行前执行 bunx playwright install chromium
 ```
 
-`@go-tenon/client` 不依赖 DOM：它的 `tsconfig.json` 中 `lib` 没有 `dom`，用到 `window`、`document` 等浏览器 API 时类型检查失败。`@go-tenon/shell` 用于网页，依赖 React、TanStack Router 和 TanStack Query，都是 peer 依赖；开发和测试用到的包（React、Testing Library、happy-dom、Vite 等）写在 `js/package.json` 的 `devDependencies` 中，不写在包自己的 `package.json` 里，否则会随包复制到项目中被安装。需要 DOM 的测试文件在开头写 `// @vitest-environment happy-dom`。测试文件（`*.test.ts`、`*.test.tsx`）不复制到项目中，可以用只在 `js/package.json` 中的包，例如表单适配器的测试用真实的 react-hook-form 和 antd。`js/e2e` 是在真实浏览器中运行的测试：一个只用 `@go-tenon/shell` 的小应用（Vite 启动），Playwright 检查多标签与保活中 happy-dom 测不到的部分，例如浏览器的前进后退、隐藏标签暂停 effect、刷新浏览器后恢复标签栏。它没有 `package.json`，不是 workspace 中的包：每个有 `package.json` 的目录都会被复制到项目中，框架的包在它的 `vite.config.ts` 和 `tsconfig.json` 中按路径引用。在生成的项目中试用改动时，用 `tenon init --tenon <框架目录>` 生成项目，`tenon dev` 每次启动时复制本地的 `js`。
+`@go-tenon/client` 不依赖 DOM：它的 `tsconfig.json` 中 `lib` 没有 `dom`，用到 `window`、`document` 等浏览器 API 时类型检查失败。`@go-tenon/shell` 用于网页，依赖 React、TanStack Router 和 TanStack Query，都是 peer 依赖；开发和测试用到的包（React、Testing Library、happy-dom、Vite 等）写在 `js/package.json` 的 `devDependencies` 中，不写在包自己的 `package.json` 里，否则会随包复制到项目中被安装。需要 DOM 的测试文件在开头写 `// @vitest-environment happy-dom`。测试文件（`*.test.ts`、`*.test.tsx`）不复制到项目中，可以用只在 `js/package.json` 中的包，例如表单适配器的测试用真实的 react-hook-form。`js/e2e` 是在真实浏览器中运行的测试：一个只用 `@go-tenon/shell` 的小应用（Vite 启动），Playwright 检查多标签与保活中 happy-dom 测不到的部分，例如浏览器的前进后退、隐藏标签暂停 effect、刷新浏览器后恢复标签栏。它没有 `package.json`，不是 workspace 中的包：每个有 `package.json` 的目录都会被复制到项目中，框架的包在它的 `vite.config.ts` 和 `tsconfig.json` 中按路径引用。在生成的项目中试用改动时，用 `tenon init --tenon <框架目录>` 生成项目，`tenon dev` 每次启动时复制本地的 `js`。
 
 <a id="continuous-integration"></a>
 ## 持续集成
@@ -110,8 +108,7 @@ CI 配置位于 [.github/workflows/ci.yml](.github/workflows/ci.yml)，每次推
 - `lint` 依次执行：
   1. `gofmt` 格式检查；
   2. `go vet ./...`；
-  3. `golangci-lint run`，配置在 [.golangci.yml](.golangci.yml)；
-  4. 在 `web/ui` 中重新运行 `go tool templ generate`，确认提交的 `_templ.go` 是最新的。
+  3. `golangci-lint run`，配置在 [.golangci.yml](.golangci.yml)。
 - `js` 在 `js` 中安装依赖，运行 Biome、类型检查、测试和 Playwright 的 E2E 测试，见[前端包](#js-packages)。
 - `test` 执行 `go test ./...`，使用 PostgreSQL 18、Memcached、NATS、Gotenberg 和 Qdrant 服务容器。
 - `scaffold` 运行 `TestInitEndToEnd` 和 `TestTutorial`，见[文档用法测试](#doc-tests)。
