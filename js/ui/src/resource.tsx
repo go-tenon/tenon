@@ -1,23 +1,38 @@
-// 资源页面：shell/ 中的资源模型（resourceModel）的外观。列表、搜索和筛选、新建和修改的表单（抽屉）、
+// 资源页面：shell/ 中的资源模型（resourceModel）的外观。列表、搜索和筛选、新建和修改的表单、
 // 删除和其他操作都来自 Go 中的声明，页面只写需要覆盖的部分。
+//
+// 新建和修改默认是单独的页面：列表路由下的 new 和 $id/edit 两个子路由，各渲染一个 ResourceFormPage，
+// 每个页面是一个标签；字段少的资源可以设置 form="modal"，在列表上方的对话框中填写，不需要子路由。
 
 import { describeError, type ErrorInfo } from "@go-tenon/client"
 import {
   ActionIcon,
+  Alert,
   Box,
   Button,
+  Card,
   CloseButton,
-  Drawer,
   Group,
   Loader,
   Menu,
+  Modal,
   MultiSelect,
   Select,
   Stack,
   TextInput,
   useMantineTheme,
 } from "@mantine/core"
-import { IconDots, IconPencil, IconPlus, IconRefresh, IconSearch, IconTrash } from "@tabler/icons-react"
+import { IconDots, IconPencil, IconPlus, IconSearch, IconTrash } from "@tabler/icons-react"
+import { useQueryClient } from "@tanstack/react-query"
+import {
+  Outlet,
+  useChildMatches,
+  useMatch,
+  useMatches,
+  useNavigate,
+  useParams,
+  useRouter,
+} from "@tanstack/react-router"
 import { type ReactNode, useEffect, useRef, useState } from "react"
 import { type Column, DataTable } from "./data-table"
 import { confirm, notifyError, notifySuccess } from "./feedback"
@@ -33,6 +48,8 @@ import {
   useResourceItem,
   useResourceList,
   useResourceMutations,
+  useTab,
+  useTabTitle,
   useUnsavedChanges,
 } from "./shell"
 import { layoutMetrics } from "./theme"
@@ -64,14 +81,29 @@ export interface ResourcePageProps {
   toolbar?: ReactNode
   /** 点击一行展开的内容。 */
   expand?: (row: ResourceRow) => ReactNode
+  /**
+   * 新建和修改的表单：page（默认）是单独的页面，需要列表路由下的 new 和 $id/edit 两个子路由（渲染 ResourceFormPage）；
+   * modal 是列表上方的对话框，适合字段少的资源。
+   */
+  form?: "page" | "modal"
 }
 
 /**
  * 资源的页面：
  *
  *	export const Route = createFileRoute("/_app/articles")({ validateSearch: articles.listSearch, component: () => <ResourcePage model={articles} route={Route} /> })
+ *	// articles.new.tsx、articles.$id.edit.tsx：新建和修改的页面
+ *	export const Route = createFileRoute("/_app/articles/new")({ component: () => <ResourceFormPage model={articles} /> })
+ *
+ * 打开了新建或修改的页面（子路由）时，这里显示那个页面。
  */
-export function ResourcePage({
+export function ResourcePage(props: ResourcePageProps): ReactNode {
+  return useChildMatches().length > 0 ? <Outlet /> : <ResourceList {...props} />
+}
+
+const warned = new Set<string>()
+
+function ResourceList({
   model,
   route,
   title,
@@ -81,11 +113,41 @@ export function ResourcePage({
   rowActions,
   toolbar,
   expand,
+  form = "page",
 }: ResourcePageProps): ReactNode {
   const view = useResourceList(model, route)
   const { remove, run } = useResourceMutations(model)
-  const m = layoutMetrics(useMantineTheme())
   const [editing, setEditing] = useState<{ row?: ResourceRow } | undefined>()
+  const router = useRouter()
+  const navigate = useNavigate()
+  const here = useMatch({ strict: false })
+  const base = here.pathname.replace(/\/$/, "")
+
+  // 单独的页面：列表路由下的 new 和 $id/edit 子路由。没有对应的路由时不显示按钮，并提示一次。
+  const pages =
+    form === "page"
+      ? {
+          create: Boolean(router.routesById[`${here.routeId}/new` as never]),
+          update: Boolean(router.routesById[`${here.routeId}/$id/edit` as never]),
+        }
+      : { create: true, update: true }
+  for (const [op, ok, file] of [
+    ["create", pages.create, "new"],
+    ["update", pages.update, "$id/edit"],
+  ] as const) {
+    const id = `${here.routeId}/${file}`
+    if (!ok && view.can[op] && !warned.has(id)) {
+      warned.add(id)
+      console.warn(`@go-tenon/ui: ResourcePage 找不到路由 ${id}，不显示${op === "create" ? "新建" : "修改"}按钮。`)
+    }
+  }
+  const canCreate = view.can.create && pages.create
+  const canUpdate = view.can.update && pages.update
+  const openCreate = () => (form === "modal" ? setEditing({}) : void navigate({ to: `${base}/new` as never }))
+  const openEdit = (row: ResourceRow) =>
+    form === "modal"
+      ? setEditing({ row })
+      : void navigate({ to: `${base}/${encodeURIComponent(model.rowKey(row))}/edit` as never })
 
   const act = async (label: string, go: () => Promise<unknown>) => {
     try {
@@ -107,7 +169,7 @@ export function ResourcePage({
   }))
 
   const actions = model.actions.filter((a) => view.can.action(a.name))
-  const hasRowActions = view.can.update || view.can.delete || actions.length > 0 || !!rowActions
+  const hasRowActions = canUpdate || view.can.delete || actions.length > 0 || !!rowActions
   if (hasRowActions) {
     columns.push({
       accessor: "_actions",
@@ -121,8 +183,8 @@ export function ResourcePage({
         const more = actions.length > 0 || extra.length > 0 || view.can.delete
         return (
           <Group gap={2} justify="flex-end" wrap="nowrap" onClick={(e) => e.stopPropagation()}>
-            {view.can.update && (
-              <ActionIcon aria-label="修改" onClick={() => setEditing({ row })}>
+            {canUpdate && (
+              <ActionIcon aria-label="修改" onClick={() => openEdit(row)}>
                 <IconPencil size={16} stroke={1.6} />
               </ActionIcon>
             )}
@@ -202,17 +264,8 @@ export function ResourcePage({
   const buttons = (
     <Group gap="xs">
       {toolbar}
-      <ActionIcon
-        variant="default"
-        // 与旁边的按钮同高：运营后台的按钮是 32px。
-        size={m.preset === "admin" ? 32 : m.controlSize === "xs" ? "md" : "lg"}
-        aria-label="刷新"
-        onClick={view.refetch}
-      >
-        <IconRefresh size={16} stroke={1.6} />
-      </ActionIcon>
-      {view.can.create && (
-        <Button leftSection={<IconPlus size={16} />} onClick={() => setEditing({})}>
+      {canCreate && (
+        <Button leftSection={<IconPlus size={16} />} onClick={openCreate}>
           新建
         </Button>
       )}
@@ -231,13 +284,15 @@ export function ResourcePage({
           {table}
         </Page>
       )}
-      <ResourceForm
-        model={model}
-        open={!!editing}
-        row={editing?.row}
-        inputs={inputs}
-        onClose={() => setEditing(undefined)}
-      />
+      {form === "modal" && (
+        <ResourceForm
+          model={model}
+          open={!!editing}
+          row={editing?.row}
+          inputs={inputs}
+          onClose={() => setEditing(undefined)}
+        />
+      )}
     </>
   )
 }
@@ -403,6 +458,8 @@ function FilterText({
   )
 }
 
+const discard = () => confirm({ title: "放弃未保存的修改？", danger: true, confirmLabel: "放弃" })
+
 /** ResourceForm 的选项。 */
 export interface ResourceFormProps {
   model: ResourceModel
@@ -413,7 +470,7 @@ export interface ResourceFormProps {
   onClose(): void
 }
 
-/** 新建和修改的表单（右侧抽屉）：字段、校验规则（与服务端相同）来自声明，服务端的字段错误显示在输入框下面。 */
+/** 新建和修改的表单（对话框）：字段、校验规则（与服务端相同）来自声明，服务端的字段错误显示在输入框下面。 */
 export function ResourceForm({ model, open, row, inputs, onClose }: ResourceFormProps): ReactNode {
   const key = row ? model.rowKey(row) : undefined
   const item = useResourceItem(model, open ? key : undefined)
@@ -422,15 +479,14 @@ export function ResourceForm({ model, open, row, inputs, onClose }: ResourceForm
   // 表单有未保存的修改时，关闭（取消、关闭按钮、Esc）之前询问。
   const dirty = useRef<() => boolean>(() => false)
   const requestClose = async () => {
-    if (dirty.current() && !(await confirm({ title: "放弃未保存的修改？", danger: true, confirmLabel: "放弃" }))) return
+    if (dirty.current() && !(await discard())) return
     onClose()
   }
   return (
-    <Drawer
+    <Modal
       opened={open}
       onClose={() => void requestClose()}
-      position="right"
-      size="md"
+      size="lg"
       title={`${row ? "修改" : "新建"}${model.title}`}
       closeOnClickOutside={false}
     >
@@ -451,7 +507,77 @@ export function ResourceForm({ model, open, row, inputs, onClose }: ResourceForm
             onCancel={() => void requestClose()}
           />
         ))}
-    </Drawer>
+    </Modal>
+  )
+}
+
+/** ResourceFormPage 的选项。 */
+export interface ResourceFormPageProps {
+  model: ResourceModel
+  /** 覆盖某个表单字段的输入组件，与 ResourcePage 相同。 */
+  inputs?: { [field: string]: FieldInput }
+}
+
+/**
+ * 新建和修改的页面，放在列表路由的子路由中：new 是新建，$id/edit 是修改（$id 是行的标识）。
+ * 保存或取消后回到列表；在多标签中时同时关闭这个标签。有未保存的修改时，离开前询问。
+ *
+ *	export const Route = createFileRoute("/_app/articles/$id/edit")({ component: () => <ResourceFormPage model={articles} /> })
+ */
+export function ResourceFormPage({ model, inputs }: ResourceFormPageProps): ReactNode {
+  const { id } = useParams({ strict: false }) as { id?: string }
+  const matches = useMatches()
+  const navigate = useNavigate()
+  const tab = useTab()
+  const queryClient = useQueryClient()
+  const label = id ? "修改" : "新建"
+  useTabTitle(`${label}${model.title}`)
+
+  // 列表是上一级路由。
+  const list = matches[matches.length - 2]?.pathname ?? "/"
+  const leave = async () => {
+    await navigate({ to: list as never })
+    if (tab.key) void tab.close()
+  }
+
+  // 修改：有详情接口时读取完整的一行，否则从已经读过的列表中找。
+  const item = useResourceItem(model, id)
+  const cached = () => {
+    for (const [, data] of queryClient.getQueriesData<{ items?: ResourceRow[] }>({ queryKey: [...model.queryKey] })) {
+      const row = data?.items?.find((r) => model.rowKey(r) === id)
+      if (row) return row
+    }
+    return undefined
+  }
+  const row = id ? ((item.data as ResourceRow | undefined) ?? (model.has.get ? undefined : cached())) : undefined
+  const loading = !!id && model.has.get && item.isPending
+  const dirty = useRef<() => boolean>(() => false)
+
+  return (
+    <Page title={`${label}${model.title}`} crumb={label}>
+      <Card>
+        {loading ? (
+          <Group justify="center" py="xl">
+            <Loader size="sm" />
+          </Group>
+        ) : id && !row ? (
+          <Alert color="red" variant="light" title="读取失败" role="alert">
+            {model.has.get ? "这一项不存在，或者没有权限查看。" : "从列表中打开修改页面。"}
+          </Alert>
+        ) : (
+          <FormBody
+            key={id ?? "new"}
+            model={model}
+            row={row}
+            editKey={id}
+            inputs={inputs}
+            dirty={dirty}
+            onSaved={() => void leave()}
+            onCancel={() => void leave()}
+          />
+        )}
+      </Card>
+    </Page>
   )
 }
 
@@ -479,7 +605,8 @@ function FormBody({
   })
   const { save } = useResourceMutations(model)
   const [formError, setFormError] = useState<ErrorInfo>()
-  const unsaved = useUnsavedChanges(form.isDirty())
+  // 离开页面时询问是否放弃（在标签中时改为标记这个标签有未保存的修改）。
+  const unsaved = useUnsavedChanges(form.isDirty(), { confirm: discard })
   dirty.current = () => form.isDirty()
   useEffect(() => () => unsaved.release(), [unsaved])
   return (

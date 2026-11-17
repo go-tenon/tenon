@@ -177,7 +177,7 @@ function Loaded({
             </Group>
           )
         ) : view.canSave ? (
-          <Group>
+          <Group justify="flex-end">
             <Button type="submit" loading={saving} disabled={!form.isDirty()}>
               保存
             </Button>
