@@ -9,7 +9,7 @@ CREATE TABLE api_tokens (
     tenant text NOT NULL,
     impersonator_type text NOT NULL,
     impersonator_id text NOT NULL,
-    kind text NOT NULL CHECK (kind IN ('login', 'refresh', 'personal')),
+    kind text NOT NULL CHECK (kind IN ('login', 'refresh', 'personal', 'oauth')),
     name text NOT NULL,
     scopes text NOT NULL,
     idle_timeout bigint NOT NULL,
@@ -19,6 +19,11 @@ CREATE TABLE api_tokens (
     created_at timestamptz NOT NULL,
     last_used_at timestamptz NOT NULL,
     expires_at timestamptz,
+    client_id text NOT NULL,
+    client_name text NOT NULL,
+    resource text NOT NULL,
+    auth_methods text NOT NULL,
+    auth_time timestamptz,
     CONSTRAINT api_tokens_token_hash_unique UNIQUE (token_hash)
 );
 CREATE INDEX api_tokens_subject ON api_tokens (subject_type, subject_id);
@@ -34,6 +39,11 @@ COMMENT ON COLUMN api_tokens.scopes IS '个人访问令牌的权限限制，空�
 COMMENT ON COLUMN api_tokens.idle_timeout IS '登录 token 签发时确定的空闲时长（秒），使用时据此滑动延长；0 表示不延长，个人访问令牌为 0';
 COMMENT ON COLUMN api_tokens.ends_at IS '登录 token 签发时确定的最长期限（签发时间加 lifetime）；个人访问令牌为空';
 COMMENT ON COLUMN api_tokens.expires_at IS '实际截止时间；login 在使用时滑动为使用时间加 idle_timeout，不超过 ends_at；personal 为空表示不过期';
+COMMENT ON COLUMN api_tokens.client_id IS 'oauth：授权的 OAuth 客户端 ID；其余为空字符串';
+COMMENT ON COLUMN api_tokens.client_name IS 'oauth：授权时客户端的名称，用于“已连接的应用”列表；其余为空字符串';
+COMMENT ON COLUMN api_tokens.resource IS 'oauth：令牌只能用于这个资源（例如 MCP 服务的地址）；其余为空字符串';
+COMMENT ON COLUMN api_tokens.auth_methods IS '登录 token 这次登录通过的验证方式（空格分隔），如 password totp；确认身份时补充；其他种类为空';
+COMMENT ON COLUMN api_tokens.auth_time IS '登录 token 最近一次验证身份的时间：登录或确认身份；为空表示不经过本人登录（如代为登录）';
 
 -- +goose Down
 DROP TABLE api_tokens;
