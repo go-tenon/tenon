@@ -63,7 +63,7 @@ go test ./...       # 包括下文的模块检查
 - `start` 是 `@go-tenon/start`，把 TanStack Start 接到 Go 托管的 Bun，以及 Vite 插件。
 - `ui` 是 `@go-tenon/ui`，应用骨架、基于 Mantine 的界面和三套样式预设；`ui/src/shell` 是不导入 Mantine 的逻辑。React、TanStack Router、TanStack Query 和 Mantine 是 peer 依赖。
 - `playground` 是 ui 的演示，用 `bun run playground` 启动。
-- `e2e` 是 Playwright 在真实浏览器中运行的测试，检查 happy-dom 测不到的部分，例如浏览器的前进后退、隐藏标签暂停 effect、刷新后恢复标签栏。它的应用只用 `ui/src/shell`，没有 `package.json`，不是 workspace 中的包，在 `vite.config.ts` 和 `tsconfig.json` 中按路径引用框架的包。
+- `e2e` 是 Playwright 在真实浏览器中运行的测试，检查 happy-dom 测不到的部分，例如浏览器的前进后退、隐藏标签暂停 effect、刷新后恢复标签栏。它的应用只用 `ui/src/shell`。`e2e` 没有 `package.json`，在 `vite.config.ts` 和 `tsconfig.json` 中按路径引用框架的包。
 
 在 `js` 目录中运行：
 
@@ -75,20 +75,35 @@ bun run test        # Vitest
 bun run e2e         # Playwright，第一次运行前执行 bunx playwright install chromium
 ```
 
-- 每个有 `package.json` 的目录都会被复制到项目中安装，所以开发和测试用到的包（React、Testing Library、happy-dom、Vite 等）写在 `js/package.json` 的 `devDependencies` 中，不写在包自己的 `package.json` 里。测试文件（`*.test.ts`、`*.test.tsx`）不复制，可以用这些包。
+- 每个有 `package.json` 的目录都会被复制到项目中安装，所以开发和测试用到的包（React、Testing Library、happy-dom、Vite 等）都写在 `js/package.json` 的 `devDependencies` 中。测试文件（`*.test.ts`、`*.test.tsx`）不复制，可以用这些包。
 - 需要 DOM 的测试文件在开头写 `// @vitest-environment happy-dom`。
 - 在生成的项目中试用改动：用 `tenon init --tenon <框架目录>` 生成项目，`tenon dev` 每次启动时复制本地的 `js`。
 
-## 编码风格
+## 代码约定
 
-- 遵循[目录结构](docs/concepts/structure.md#naming-conventions)中的命名约定；
-- 直接暴露社区组件的原生类型（`*bun.DB`、`*slog.Logger`、`*cobra.Command` 等）；
-- 数据库句柄有两种约定：存储（`apitoken.NewStore`、`feature.NewStore` 等）接收 `bun.IDB`，可以用连接池或业务事务构造；自己开启事务的服务（`operation`、`sheet/imports`、`sheet/exports`、`filesystem`、`privacy`）接收 `*bun.DB`，要与业务数据一起提交的方法另外接收 `tx bun.IDB` 参数，或提供 `WithDB`；
+### 注释
+
+- 包、类型、函数都写中文注释，直接说明它是什么、做什么、返回什么，例如“`Open` 为当前测试创建一个空的临时数据库，返回 `*bun.DB`；测试结束时删除。”
+- 结构体字段的含义写在字段行尾的注释中。
+- 较长的函数可以按步骤加几行注释，说明每一段做什么。
+- 注释用简洁的直述句，直接说明它是什么，不用否定或对比来描述，例如写“`Bearer` 令牌放在 `Authorization` 头中”，不写“令牌不是放在 Cookie 里，而是放在 `Authorization` 头中”。
+
+### 函数
+
+- 保持函数的完整阅读流，单个函数可以写到 100–200 行。只在代码被复用、或者一段职责明显独立时才抽出函数。
+- 标准库和依赖直接调用，不再包一层。
+- 直接暴露社区组件的原生类型（`*bun.DB`、`*slog.Logger`、`*cobra.Command` 等）。
 - 所有依赖都通过参数显式传递，包级变量只用于只读的值（错误模板、正则表达式等）。
+- 数据库句柄有两种约定：存储（`apitoken.NewStore`、`feature.NewStore` 等）接收 `bun.IDB`，可以用连接池或业务事务构造；自己开启事务的服务（`operation`、`sheet/imports`、`sheet/exports`、`filesystem`、`privacy`）接收 `*bun.DB`，要与业务数据一起提交的方法另外接收 `tx bun.IDB` 参数，或提供 `WithDB`。
+- 命名遵循[目录结构](docs/concepts/structure.md#naming-conventions)中的约定。
+
+### 错误
+
+尽早暴露失败和错误，让问题尽早被发现、尽早修复：出错时返回错误，调用方处理不了就继续向上返回。不为不会发生的情况加防御检查，不吞掉错误，也不用默认值掩盖错误。
 
 ## 接口契约
 
-API 的客户端不只是网页：App、桌面端和其他服务都可能调用它，用的语言也不一定是 TypeScript 或 Go。[客户端协议](docs/http/protocol.md)和 [RPC 协议](docs/rpc/protocol.md)是写给这些客户端的，框架的改动不能让它们只能用某一种语言、只能在浏览器中实现：
+API 的客户端包括网页、App、桌面端和其他服务，用的语言可能是 TypeScript 和 Go 以外的任何语言。[客户端协议](docs/http/protocol.md)和 [RPC 协议](docs/rpc/protocol.md)是写给这些客户端的，框架的改动不能让它们只能用某一种语言、只能在浏览器中实现：
 
 - 认证只用 `Authorization: Bearer`，不依赖 Cookie 这类只有浏览器才有的机制；原生应用登录走授权码 + PKCE（[OAuth 服务端](docs/security/oauth-server.md)）；
 - 改动线路上的行为（请求头、状态码、错误响应、分页、事件流、实时频道等）时，同时更新客户端协议。规则以服务端和这一页为准，生成的运行时（`runtime.ts`、`wire/wire.go`）只是它的实现，不能只写在运行时里；
@@ -131,6 +146,7 @@ API 的客户端不只是网页：App、桌面端和其他服务都可能调用�
 - **代码之前**用一句话说明它展示什么，以冒号结尾。一个代码块只说明一件事，运行结果写在注释中。
 - **代码之后**按顺序解释它做了什么；能运行的例子说明运行后会看到什么。
 - **片段中的变量都要交代来源**，例如“`db` 是[连接数据库](docs/database/quick-start.md#connecting)时得到的连接”。以 `package` 开头的代码块是完整文件，必须能单独编译（`doctest` 会检查）。
+- **直述。** 直接说明它是什么、做什么，不用否定或对比来描述。
 - **对读者说“你”。** 句子要短，一句只说一件事；用具体的例子代替抽象的描述。
 - **配置项**：每一项依次说明作用、默认值、什么时候需要修改。表格只用于对照多种情况，例如“情况 → 处理方式”。
 - **提示块**：`> [!NOTE]` 补充说明和背后的机制；`> [!IMPORTANT]` 必须遵守的约定；`> [!WARNING]` 安全问题和容易踩的坑，并说明后果；`> [!TIP]` 实用建议。
@@ -140,3 +156,7 @@ API 的客户端不只是网页：App、桌面端和其他服务都可能调用�
 
 - 每页控制在 150–450 行，过长时按主题拆成同一目录下的几页，并在开头说明阅读顺序。
 - 新增一页时，把它加入本组的 `README.md` 和 [docs/README.md](docs/README.md) 中合适的学习阶段；新增的包同时加入[框架包一览](docs/concepts/structure.md#framework-packages)中同一分类的表格。
+
+## 提交与 PR
+
+提交信息、PR 的标题和描述都用中文。
