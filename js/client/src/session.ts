@@ -91,6 +91,8 @@ export function createSession(options: SessionOptions): Session {
   // 切换租户等只改身份、不换凭据，不影响进行中的刷新。
   let epoch = 0
   let refreshing: Promise<string | null> | null = null
+  // 对存储的写入排成一队，按发起的顺序执行：异步的存储也不会让先发起的写入晚完成、覆盖后面的。
+  let writes: Promise<void> = Promise.resolve()
 
   const setToken = (t: string) => {
     token = t
@@ -100,23 +102,38 @@ export function createSession(options: SessionOptions): Session {
     gen++
     for (const l of [...listeners]) l()
   }
-  const save = async (body: SessionBody) => {
-    if (options.storage && body.refresh_token) await options.storage.set(body.refresh_token)
-    setToken(body.access_token)
+  // persist 排队写入存储；轮到它时凭据已经不是 started 那一代，就跳过。
+  const persist = (started: number, write: (storage: TokenStorage) => void | Promise<void>): Promise<void> => {
+    const storage = options.storage
+    if (!storage) return Promise.resolve()
+    const p = writes.then(() => (epoch === started ? write(storage) : undefined))
+    writes = p.catch(() => {})
+    return p
   }
-  // replaced 让进行中的刷新作废：新的刷新不再共用它。
+  // save 保存 started 那一代的凭据：先写存储，再交给客户端。等待存储期间凭据被替换（登录、退出）时都不提交，
+  // 返回 false，免得旧账号的 token 覆盖新账号的。
+  const save = async (body: SessionBody, started: number): Promise<boolean> => {
+    const refreshToken = body.refresh_token
+    if (refreshToken) await persist(started, (s) => s.set(refreshToken))
+    if (epoch !== started) return false
+    setToken(body.access_token)
+    return true
+  }
+  // replaced 让进行中的刷新和保存作废：新的刷新不再共用它。返回新的代次。
   const replaced = () => {
     epoch++
     refreshing = null
+    return epoch
   }
+  // clear 立即清除内存中的凭据和身份，再排队删除存储中的 refresh token。
   const clear = async () => {
-    replaced()
-    await options.storage?.remove()
+    const started = replaced()
     setToken("")
     if (current !== null) {
       current = null
       changed()
     }
+    await persist(started, (s) => s.remove())
   }
 
   const refresh = (): Promise<string | null> => {
@@ -126,6 +143,9 @@ export function createSession(options: SessionOptions): Session {
     const p: Promise<string | null> = (async () => {
       let saved: string | undefined
       if (options.storage) {
+        // 先等之前的写入完成，否则可能读到刚登录的账号写入之前的旧 token。
+        await writes
+        if (stale()) return null
         saved = (await options.storage.get()) ?? undefined
         if (!saved || stale()) return null
       }
@@ -133,8 +153,7 @@ export function createSession(options: SessionOptions): Session {
         const body = await options.refresh(saved)
         // 等待期间退出或换了账号登录：这是旧凭据的结果，保存它会把旧账号的 token 写回去。
         if (stale()) return null
-        await save(body)
-        return body.access_token
+        return (await save(body, started)) ? body.access_token : null
       } catch (err) {
         // 刷新被拒绝（401）表示这次登录已经失效；网络错误等保留凭据，下次再试。凭据已被替换时与它无关。
         if (isApiErrorLike(err) && err.status === 401 && !stale()) {
@@ -160,17 +179,17 @@ export function createSession(options: SessionOptions): Session {
     },
     restore: async () => (await refresh()) !== null,
     async signIn(body, identity) {
-      replaced()
-      await save(body)
+      // 保存期间又登录了别的账号或退出了：以后面的为准，这次不再提交。
+      if (!(await save(body, replaced()))) return
       if (identity) this.setIdentity(identity)
       else changed()
     },
     async signOut() {
-      replaced()
-      await options.storage?.remove()
+      const started = replaced()
       setToken("")
       current = null
       changed()
+      await persist(started, (s) => s.remove())
     },
     identity: () => current,
     setIdentity(identity) {

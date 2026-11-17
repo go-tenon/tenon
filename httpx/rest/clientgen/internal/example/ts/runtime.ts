@@ -270,9 +270,10 @@ export class Runtime {
         }
       }
       const err = await toError(res)
-      if (err.code === confirmRequired && this.options.onConfirmRequired && !confirmed) {
+      // 确认身份前后都要还是发出时的身份，否则不确认、不重试。
+      if (err.code === confirmRequired && this.options.onConfirmRequired && !confirmed && auth?.generation?.() === sent) {
         confirmed = true
-        if (await this.options.onConfirmRequired()) continue
+        if ((await this.options.onConfirmRequired()) && auth?.generation?.() === sent) continue
       }
       throw err
     }

@@ -136,6 +136,66 @@ describe("createSession", () => {
     expect(onSignedOut).not.toHaveBeenCalled()
   })
 
+  // 异步的存储（例如 App 的安全存储）：set 要等 release 才完成。
+  function slowStorage(initial?: string) {
+    const s = memoryStorage(initial)
+    const pending: (() => void)[] = []
+    const slow: TokenStorage & { value?: string } = {
+      get: () => s.value,
+      set: (t) =>
+        new Promise<void>((resolve) =>
+          pending.push(() => {
+            s.value = t
+            resolve()
+          }),
+        ),
+      remove: () => {
+        s.value = undefined
+      },
+    }
+    Object.defineProperty(slow, "value", { get: () => s.value })
+    // release 完成最早的一次写入。
+    const release = async () => {
+      await vi.waitFor(() => expect(pending.length).toBeGreaterThan(0))
+      pending.shift()?.()
+    }
+    return { storage: slow, release }
+  }
+
+  it("刷新的结果正在写入存储时换了账号登录：旧结果不覆盖新账号的凭据", async () => {
+    const { storage, release } = slowStorage("r-alice")
+    const refresh = vi.fn().mockResolvedValue(body("alice2", "r-alice2"))
+    const session = createSession({ refresh, storage })
+    const pending = session.auth.refresh()
+    await vi.waitFor(() => expect(refresh).toHaveBeenCalled())
+    const bob = session.signIn(body("bob", "r-bob"), { account: "bob" })
+    await release() // Alice 的刷新写入存储
+    await release() // Bob 的登录写入存储
+    await bob
+    expect(await pending).toBeNull()
+    expect(storage.value).toBe("r-bob")
+    expect(session.accessToken()).toBe("bob")
+    expect(session.identity()).toEqual({ account: "bob" })
+  })
+
+  it("登录正在写入存储时退出：以退出为准；这时开始的刷新等写入完成再读取", async () => {
+    const { storage, release } = slowStorage()
+    const refresh = vi.fn().mockResolvedValue(body("bob2"))
+    const session = createSession({ refresh, storage })
+    const alice = session.signIn(body("alice", "r-alice"), { account: "alice" })
+    await Promise.all([alice, session.signOut()]) // 登录的写入还没轮到就被退出取代，不再执行
+    expect(session.accessToken()).toBe("")
+    expect(session.identity()).toBeNull()
+    expect(storage.value).toBeUndefined()
+
+    const bob = session.signIn(body("bob", "r-bob"), { account: "bob" })
+    const restored = session.restore()
+    await release()
+    await bob
+    expect(await restored).toBe(true)
+    expect(refresh).toHaveBeenCalledWith("r-bob")
+  })
+
   it("刷新期间切换租户：凭据没有换，结果照常保存", async () => {
     const { refresh, calls } = pendingRefresh()
     const session = createSession({ refresh })
