@@ -1,9 +1,9 @@
 [[if eq .Style "site"]]import "@fontsource-variable/inter/index.css"
 [[end]]import "@go-tenon/ui/styles.css"
 import type { ReactNode } from "react"
-import { ColorSchemeScript, mantineHtmlProps } from "@mantine/core"
-import { createRootRouteWithContext, HeadContent, Outlet, Scripts, useRouter } from "@tanstack/react-router"
-import { type RouterContext, UIProvider } from "@go-tenon/ui"
+import { mantineHtmlProps } from "@mantine/core"
+import { createRootRouteWithContext, HeadContent, Outlet, Scripts } from "@tanstack/react-router"
+import { ColorSchemeScript, type RouterContext, UIProvider } from "@go-tenon/ui"
 import { theme } from "../theme"
 
 // 根路由：整个 HTML 文档。页面在 <Outlet /> 中。
@@ -16,12 +16,11 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 })
 
 function Document({ children }: { children: ReactNode }) {
-  // nonce 由 Go 为每个请求生成，内联脚本带上它才能通过内容安全策略。
-  const nonce = useRouter().options.ssr?.nonce
+  // ColorSchemeScript 在页面显示之前设置配色；它带上 Go 为每个请求生成的 nonce，通过内容安全策略。
   return (
     <html lang="zh-CN" {...mantineHtmlProps}>
       <head>
-        <ColorSchemeScript nonce={nonce}[[if eq .Landing "dusk"]] defaultColorScheme="dark"[[end]] />
+        <ColorSchemeScript[[if eq .Landing "dusk"]] defaultColorScheme="dark"[[end]] />
         <HeadContent />
       </head>
       <body>

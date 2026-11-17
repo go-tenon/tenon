@@ -114,19 +114,18 @@ export const session = createSession({ load: async () => ({ account: (await me()
 ```tsx title="src/routes/__root.tsx"
 import "@go-tenon/ui/styles.css"
 import type { ReactNode } from "react"
-import { ColorSchemeScript, mantineHtmlProps } from "@mantine/core"
-import { createRootRouteWithContext, HeadContent, Outlet, Scripts, useRouter } from "@tanstack/react-router"
-import { type RouterContext, UIProvider } from "@go-tenon/ui"
+import { mantineHtmlProps } from "@mantine/core"
+import { createRootRouteWithContext, HeadContent, Outlet, Scripts } from "@tanstack/react-router"
+import { ColorSchemeScript, type RouterContext, UIProvider } from "@go-tenon/ui"
 import { theme } from "../theme"
 
 export const Route = createRootRouteWithContext<RouterContext>()({ shellComponent: Document, component: Outlet })
 
 function Document({ children }: { children: ReactNode }) {
-  const nonce = useRouter().options.ssr?.nonce
   return (
     <html lang="zh-CN" {...mantineHtmlProps}>
       <head>
-        <ColorSchemeScript nonce={nonce} />
+        <ColorSchemeScript />
         <HeadContent />
       </head>
       <body>
@@ -138,7 +137,7 @@ function Document({ children }: { children: ReactNode }) {
 }
 ```
 
-- `ColorSchemeScript` 在页面显示之前设置亮色或暗色，避免闪烁。它是内联脚本，要带上 Go 为这次请求生成的 CSP nonce（`createApp` 的 `router.ssr.nonce` 来自 `@go-tenon/start` 的 `cspNonce()`）。
+- `ColorSchemeScript`（`@go-tenon/ui` 的，不是 Mantine 的）在页面显示之前按用户的选择设置亮色或暗色，避免闪烁；`defaultColorScheme` 与 `UIProvider` 相同。它是只写进服务端渲染的 HTML 的内联脚本，自动带上 Go 为这次请求生成的 CSP nonce（`createApp` 的 `router.ssr.nonce` 来自 `@go-tenon/start` 的 `cspNonce()`），执行后移除自己；在浏览器中渲染时不输出，所以只在浏览器中渲染的页面（`defaultSsr: false`）不会出现 “Encountered a script tag” 的警告。
 - `mantineHtmlProps` 让服务端渲染的 `<html>` 与浏览器设置的配色属性一致，不产生水合警告。
 - `UIProvider` 安装 Mantine 的主题、右上角的通知（`@mantine/notifications`）、确认对话框（`@mantine/modals`）和图标名称的对应表。组件测试中传 `env="test"`，关闭过渡动画和 portal。配色默认跟随系统，用户在用户菜单中切换后保存在浏览器中。
 

@@ -56,10 +56,10 @@ bun run typecheck
 ```tsx title="apps/web/src/routes/__root.tsx"
 import "@go-tenon/ui/styles.css"
 import type { ReactNode } from "react"
-import { ColorSchemeScript, mantineHtmlProps } from "@mantine/core"
-import { createRootRouteWithContext, HeadContent, Scripts, useRouter } from "@tanstack/react-router"
+import { mantineHtmlProps } from "@mantine/core"
+import { createRootRouteWithContext, HeadContent, Scripts } from "@tanstack/react-router"
 import type { RouterContext } from "@go-tenon/ui"
-import { AnchorLink, ButtonLink, SiteLayout, UIProvider } from "@go-tenon/ui"
+import { AnchorLink, ButtonLink, ColorSchemeScript, SiteLayout, UIProvider } from "@go-tenon/ui"
 import { theme } from "../theme"
 
 export const Route = createRootRouteWithContext<RouterContext>()({
@@ -70,13 +70,12 @@ export const Route = createRootRouteWithContext<RouterContext>()({
   component: Layout,
 })
 
-// Document 是整个 HTML 文档。nonce 由 Go 为每个请求生成，内联脚本带上它才能通过内容安全策略。
+// Document 是整个 HTML 文档。ColorSchemeScript 在页面显示之前设置配色，带上 Go 为每个请求生成的 nonce。
 function Document({ children }: { children: ReactNode }) {
-  const nonce = useRouter().options.ssr?.nonce
   return (
     <html lang="zh-CN" {...mantineHtmlProps}>
       <head>
-        <ColorSchemeScript nonce={nonce} />
+        <ColorSchemeScript />
         <HeadContent />
       </head>
       <body>

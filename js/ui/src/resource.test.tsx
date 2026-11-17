@@ -93,14 +93,20 @@ async function mount(
   path = "/articles",
   ready = "你好",
   inputs?: ResourcePageProps["inputs"],
-  { form = "page", withPages = true }: { form?: "page" | "modal"; withPages?: boolean } = {},
+  {
+    form = "page",
+    withPages = true,
+    noGet = false,
+  }: { form?: "page" | "modal"; withPages?: boolean; noGet?: boolean } = {},
 ) {
   const session = createSession({ load: async () => ({ account: "u1" }) })
   await session.signIn({ account: "u1" })
   const client = createClient({ baseURL: "/api", session })
   const queryClient = new QueryClient()
   const model: ResourceModel = resourceModel(
-    resources.article,
+    noGet
+      ? { ...resources.article, operations: { ...resources.article.operations, get: undefined } }
+      : resources.article,
     {
       client,
       queries: createQueries(client, { queryClient }),
@@ -276,6 +282,20 @@ describe("ResourcePage", () => {
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "删除" })))
     await waitFor(() => expect(screen.queryByText("改过的草稿")).toBeNull())
     expect(calls.some((c) => c.method === "DELETE" && c.url === "/api/articles/a2")).toBe(true)
+  })
+
+  it("没有读取单条的接口时，修改页面在打开时从列表取出这一行并留住：之后列表的数据被丢掉也照样能编辑", async () => {
+    server()
+    const app = await mount("/articles", "你好", undefined, { noGet: true })
+    await act(async () => fireEvent.click(within(rowOf("草稿一篇")).getByRole("button", { name: "修改" })))
+    await screen.findByRole("heading", { name: "修改文章" })
+    const title = (await screen.findByLabelText(/标题/)) as HTMLInputElement
+    expect(title.value).toBe("草稿一篇")
+    // 列表不在眼前时它的数据被丢掉（例如切换标签）。
+    app.queryClient.removeQueries()
+    fireEvent.change(title, { target: { value: "继续编辑" } })
+    expect(screen.queryByText("读取失败")).toBeNull()
+    expect((screen.getByLabelText(/标题/) as HTMLInputElement).value).toBe("继续编辑")
   })
 
   it("没有新建和修改的子路由时不显示这两个按钮", async () => {

@@ -158,7 +158,7 @@ describe("AppLayout 的多标签", () => {
     await renderApp(tree({ tabs: true }), { path: "/trade/orders", permissions: ["users:manage"] })
     await screen.findByText("订单页面")
     expect(document.querySelector(".tn-header")?.contains(bar())).toBe(true)
-    const start = () => (document.querySelector(".tn-header-start") as HTMLElement).style.width
+    const start = () => (document.querySelector(".tn-header-start") as HTMLElement).style.minWidth
     const width = start()
     expect(width).toMatch(/^calc\(\d+px - var\(--mantine-spacing-md\)\)$/)
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "收起侧栏" })))

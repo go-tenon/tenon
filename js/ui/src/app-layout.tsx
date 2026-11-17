@@ -154,14 +154,11 @@ export function AppLayout({ title, logo, user, actions, search = true, tabs, max
     >
       <AppShell.Header className="tn-header">
         <div className="tn-header-inner">
-          {/* 有标签栏时，标签栏从侧栏展开时的边线往右 6px 开始（选中的第一个标签向左外翻的圆弧正好落在边线上）；收起侧栏时标签不动。 */}
+          {/* 有标签栏时，标签栏从侧栏展开时的边线往右 6px 开始（选中的第一个标签向左外翻的圆弧正好落在边线上）；收起侧栏时标签不动。
+              名称长、放不下时这一块变宽，标签栏跟在名称后面（间隔 16px），不会盖住名称。 */}
           <div
             className="tn-header-start"
-            style={
-              showTabBar
-                ? { width: `calc(${m.navbarWidth + 6}px - var(--mantine-spacing-md))`, paddingRight: 0 }
-                : undefined
-            }
+            style={showTabBar ? { minWidth: `calc(${m.navbarWidth + 6}px - var(--mantine-spacing-md))` } : undefined}
           >
             <Burger
               hiddenFrom="sm"

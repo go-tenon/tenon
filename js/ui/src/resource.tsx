@@ -540,16 +540,18 @@ export function ResourceFormPage({ model, inputs }: ResourceFormPageProps): Reac
     if (tab.key) void tab.close()
   }
 
-  // 修改：有详情接口时读取完整的一行，否则从已经读过的列表中找。
+  // 修改：有详情接口时读取完整的一行。没有时在打开页面的那一刻从列表中取出这一行并留住：之后列表不在眼前、
+  // 它的数据被丢掉（例如切换标签），这个页面照样有这一行。
   const item = useResourceItem(model, id)
-  const cached = () => {
+  const [fromList] = useState(() => {
+    if (!id || model.has.get) return undefined
     for (const [, data] of queryClient.getQueriesData<{ items?: ResourceRow[] }>({ queryKey: [...model.queryKey] })) {
       const row = data?.items?.find((r) => model.rowKey(r) === id)
       if (row) return row
     }
     return undefined
-  }
-  const row = id ? ((item.data as ResourceRow | undefined) ?? (model.has.get ? undefined : cached())) : undefined
+  })
+  const row = id ? ((item.data as ResourceRow | undefined) ?? fromList) : undefined
   const loading = !!id && model.has.get && item.isPending
   const dirty = useRef<() => boolean>(() => false)
 
@@ -562,7 +564,7 @@ export function ResourceFormPage({ model, inputs }: ResourceFormPageProps): Reac
           </Group>
         ) : id && !row ? (
           <Alert color="red" variant="light" title="读取失败" role="alert">
-            {model.has.get ? "这一项不存在，或者没有权限查看。" : "从列表中打开修改页面。"}
+            {model.has.get ? "这一项不存在，或者没有权限查看。" : "这类数据没有读取单条的接口，从列表中打开修改页面。"}
           </Alert>
         ) : (
           <FormBody
