@@ -5,7 +5,7 @@
   "title": "资源表格",
   "description": "服务端分页、排序和筛选，状态保存在地址中；列表工具栏、行操作菜单、状态标签、批量选择。",
   "dependencies": [
-    "@tanstack/react-table@^8.21.3"
+    "@tanstack/react-table@^9.3.1"
   ],
   "registryDependencies": [
     "badge",

@@ -117,7 +117,7 @@
       "title": "资源表格",
       "description": "服务端分页、排序和筛选，状态保存在地址中；列表工具栏、行操作菜单、状态标签、批量选择。",
       "registryDependencies": ["badge", "button", "checkbox", "dropdown-menu", "input", "table", "sheet", "skeleton"],
-      "dependencies": ["@tanstack/react-table@^8.21.3"],
+      "dependencies": ["@tanstack/react-table@^9.3.1"],
       "files": ["data-table.tsx", "page.tsx"]
     },
     {
@@ -126,7 +126,7 @@
       "title": "表单",
       "description": "react-hook-form 加上生成的校验规则；服务端的字段错误显示在对应的输入框下面；未保存的修改离开前询问；useAutoSave 让表单在修改后自动保存。",
       "registryDependencies": ["label"],
-      "dependencies": ["react-hook-form@^7.91.0"],
+      "dependencies": ["react-hook-form@^7.92.0"],
       "files": ["form.tsx"]
     },
     {
@@ -134,7 +134,7 @@
       "type": "registry:block",
       "title": "登录表单",
       "registryDependencies": ["button", "input", "label"],
-      "dependencies": ["react-hook-form@^7.91.0"],
+      "dependencies": ["react-hook-form@^7.92.0"],
       "files": ["login-form.tsx", "form.tsx"]
     },
     {
@@ -189,7 +189,7 @@
         "trace",
         "use-highlighted-code"
       ],
-      "dependencies": ["ai@^7.0.159", "@ai-sdk/react@^4.0.163", "streamdown@^2.7.1"],
+      "dependencies": ["ai@^7.0.173", "@ai-sdk/react@^4.0.177", "streamdown@^2.7.1"],
       "files": ["assistant-chat.tsx", "markdown.tsx"]
     },
     {
@@ -212,7 +212,7 @@
         "table",
         "textarea"
       ],
-      "dependencies": ["@tanstack/react-table@^8.21.3", "react-hook-form@^7.91.0"],
+      "dependencies": ["@tanstack/react-table@^9.3.1", "react-hook-form@^7.92.0"],
       "files": ["resource-page.tsx", "data-table.tsx", "page.tsx", "form.tsx", "dialogs.tsx"]
     },
     {
@@ -237,7 +237,7 @@
         "textarea"
       ],
       "files": ["settings-form.tsx", "resource-page.tsx", "data-table.tsx", "page.tsx", "form.tsx", "dialogs.tsx"],
-      "dependencies": ["@tanstack/react-table@^8.21.3", "react-hook-form@^7.91.0"]
+      "dependencies": ["@tanstack/react-table@^9.3.1", "react-hook-form@^7.92.0"]
     }
   ]
 }
