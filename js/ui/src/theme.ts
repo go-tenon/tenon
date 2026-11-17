@@ -171,7 +171,7 @@ function base(m: LayoutMetrics): MantineThemeOverride {
       Menu: { defaultProps: { shadow: "md", position: "bottom-end", offset: 6, transitionProps: { duration: 120 } } },
       Popover: { defaultProps: { shadow: "md", offset: 8, transitionProps: { duration: 120 } } },
       Tooltip: { defaultProps: { openDelay: 300, withArrow: false, color: "dark", fz: "xs" } },
-      Badge: { defaultProps: { variant: "light", radius: "sm" } },
+      Badge: { defaultProps: { variant: "light", radius: "sm", tt: "none", fw: 500 } },
       Modal: {
         defaultProps: { centered: true, overlayProps: { backgroundOpacity: 0.4, blur: 2 } },
         styles: { title: { fontWeight: 600 } },

@@ -186,7 +186,14 @@ queueapi.Register(api, rest.RequireToken(api, a.tokens.Validate, "queue:manage")
 - 失败任务不存在时返回 `404 queue.failed_job_not_found`；没有 worker 为 topic 注册过处理函数时，暂停和恢复返回 `404 queue.topic_not_found`。
 - 每次重试、删除、暂停和恢复记一条 Info 日志，带上操作者（`subject`，主体的 `Ref`）、topic 和条数。
 
-接口只返回数据，面板页面由前端实现。框架计划在 `@go-tenon/ui` 中提供现成的队列面板页面，目前还没有，在那之前用生成的客户端自己搭建。
+接口只返回数据。`@go-tenon/ui` 的 [`QueuePanel`](../frontend/ui.md#queue-panel) 是现成的面板页面：概览每 5 秒刷新，可以暂停和恢复 topic，按 topic 查看、重试和删除失败任务，查看失败任务的错误、元数据和 payload。把生成的客户端分组交给它，放在需要运维权限的路由上：
+
+```tsx
+export const Route = createFileRoute("/_app/queue")({
+  staticData: { title: "队列", icon: "list", permission: "queue:manage" },
+  component: () => <QueuePanel api={api.queue} />,
+})
+```
 
 <a id="troubleshooting"></a>
 ## 常见问题
