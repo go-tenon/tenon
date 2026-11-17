@@ -2,6 +2,7 @@
 // 资源页面：用 clientgen 示例 API 生成的代码渲染文章的列表、表单和操作。
 import { createSession } from "@go-tenon/client"
 import { createApp, type ResourceModel, type RouterContext, resourceModel } from "@go-tenon/shell"
+import { TextInput } from "@mantine/core"
 import { QueryClient } from "@tanstack/react-query"
 import { createMemoryHistory, createRootRouteWithContext, createRoute, Outlet } from "@tanstack/react-router"
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react"
@@ -12,7 +13,7 @@ import { messages } from "../../../httpx/rest/clientgen/internal/example/ts/mess
 import { createQueries } from "../../../httpx/rest/clientgen/internal/example/ts/queries"
 import { resources } from "../../../httpx/rest/clientgen/internal/example/ts/resources"
 import { components, schemas } from "../../../httpx/rest/clientgen/internal/example/ts/schemas"
-import { ResourcePage } from "./resource"
+import { ResourcePage, type ResourcePageProps } from "./resource"
 import { renderRoot } from "./testing"
 
 afterEach(() => {
@@ -88,7 +89,7 @@ function server() {
   return calls
 }
 
-async function mount(path = "/articles", ready = "你好") {
+async function mount(path = "/articles", ready = "你好", inputs?: ResourcePageProps["inputs"]) {
   const session = createSession({ load: async () => ({ account: "u1" }) })
   await session.signIn({ account: "u1" })
   const client = createClient({ baseURL: "/api", session })
@@ -111,7 +112,7 @@ async function mount(path = "/articles", ready = "你好") {
     getParentRoute: () => root,
     path: "/articles",
     validateSearch: model.listSearch,
-    component: () => <ResourcePage model={model} route={articles as never} />,
+    component: () => <ResourcePage model={model} route={articles as never} inputs={inputs} />,
   })
   const app = createApp({
     id: `ui-resource-${Math.random()}`,
@@ -178,6 +179,28 @@ describe("ResourcePage", () => {
       slug: "new-one",
       tags: [],
     })
+  })
+
+  it("覆盖的输入组件收到字段的显示文字作为标签", async () => {
+    server()
+    await mount("/articles", "你好", {
+      slug: ({ label, value, onChange, error }) => (
+        <TextInput
+          data-testid="custom-slug"
+          label={label}
+          error={error}
+          value={(value as string) ?? ""}
+          onChange={(e) => onChange?.(e.currentTarget.value)}
+        />
+      ),
+    })
+    fireEvent.click(screen.getByRole("button", { name: "新建" }))
+    const drawer = await screen.findByRole("dialog")
+    expect(
+      within(drawer)
+        .getByLabelText(/链接名/)
+        .getAttribute("data-testid"),
+    ).toBe("custom-slug")
   })
 
   it("关闭有未保存修改的表单之前询问", async () => {

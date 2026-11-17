@@ -157,6 +157,7 @@ function Loaded({
             <Input
               key={f.name}
               field={f}
+              label={f.label}
               {...props}
               disabled={!view.canSave}
               onChange={(v) => {
