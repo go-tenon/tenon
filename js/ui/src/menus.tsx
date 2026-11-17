@@ -24,6 +24,7 @@ import { IconBell, IconCheck, IconListCheck, IconLogout, IconSelector, IconX } f
 import { useNavigate } from "@tanstack/react-router"
 import { type ReactNode, useState } from "react"
 import {
+  confirmDiscard,
   dismissOperation,
   type NotificationsSource,
   type TrackedOperation,
@@ -61,6 +62,8 @@ export function UserMenu({ name, email, avatar, logout, items = [] }: UserMenuPr
   const app = useApp()
   const navigate = useNavigate()
   const signOut = async () => {
+    // 标签中有未保存的修改时先询问，用户选择留下时不退出。
+    if (!(await confirmDiscard(app))) return
     try {
       await logout?.()
     } finally {

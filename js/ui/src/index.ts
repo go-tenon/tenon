@@ -18,7 +18,16 @@ export * from "./links"
 export * from "./menus"
 export * from "./page"
 export * from "./provider"
-export * from "./queue-panel"
+export {
+  type QueueApi,
+  type QueueFailedJobData,
+  type QueueFailedJobDetailData,
+  type QueueFailedListData,
+  QueuePanel,
+  type QueuePanelProps,
+  type QueueStatusData,
+  type QueueTopicData,
+} from "./queue-panel"
 export * from "./resource"
 export * from "./settings"
 export * from "./shell"
