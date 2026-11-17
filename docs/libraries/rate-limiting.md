@@ -145,7 +145,7 @@ attempts := pglimit.New(db, "passcode", ratelimit.Config{Rate: 5, Interval: time
 多个实例共享配额时使用 PostgreSQL 限流器。计数保存在 `rate_limits` 表中，使用前先[发布](../database/migrations.md#publishing-framework-migrations)它的迁移：
 
 ```go
-migrate.Source{Name: "ratelimit", FS: pglimit.Migrations()}
+pglimit.Migrations()
 ```
 
 `pglimit.New` 接收应用的数据库连接池，第二个参数 `name` 区分不同的限流器：同名的限流器共享配额，所以每个 `name` 应该只对应一种配额。

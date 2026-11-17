@@ -77,7 +77,6 @@ import (
     "github.com/go-tenon/tenon/command/httpcmd"
     "github.com/go-tenon/tenon/command/migratecmd"
     "github.com/go-tenon/tenon/database"
-    "github.com/go-tenon/tenon/database/migrate"
     "github.com/go-tenon/tenon/login"
     "github.com/go-tenon/tenon/ratelimit/pglimit"
 
@@ -105,10 +104,10 @@ func main() {
 func migrateCommand() *cobra.Command {
     cmd := migratecmd.New(migrations.FS, func(cfg bootstrap.Config) database.Config { return cfg.Database })
     cmd.AddCommand(migratecmd.Publish(
-        migrate.Source{Name: "login", FS: login.Migrations()},
-        migrate.Source{Name: "apitoken", FS: apitoken.Migrations()},
-        migrate.Source{Name: "ratelimit", FS: pglimit.Migrations()},
-        migrate.Source{Name: "authz", FS: authz.Migrations()},
+        login.Migrations(),
+        apitoken.Migrations(),
+        pglimit.Migrations(),
+        authz.Migrations(),
     ))
     return cmd
 }

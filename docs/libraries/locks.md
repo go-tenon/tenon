@@ -132,7 +132,7 @@ if err := lk.Refresh(ctx, time.Minute); err != nil {
 `pglock` 把每把锁保存为 `locks` 表的一行：锁名、持有者和过期时间。使用前先[发布](../database/migrations.md#publishing-framework-migrations)它的迁移：
 
 ```go
-migrate.Source{Name: "lock", FS: pglock.Migrations()}
+pglock.Migrations()
 ```
 
 - **每个操作是一条语句。** 取得锁是插入，已有同名的锁时只接管已经过期的；续期和释放带着持有者的条件。并发取得同一把锁时只有一方成功。

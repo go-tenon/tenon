@@ -9,11 +9,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
-	"path"
 	"strings"
 	"sync"
 	"testing"
-	"testing/fstest"
 	"time"
 
 	"github.com/cockroachdb/errors"
@@ -33,29 +31,13 @@ var (
 )
 
 // migrations 合并队列和 webhook 的迁移，队列的版本号在前。
-func migrations(t *testing.T) fs.FS {
-	t.Helper()
-	merged := fstest.MapFS{}
-	for prefix, src := range map[string]fs.FS{"1": queue.Migrations(), "2": webhook.Migrations()} {
-		err := fs.WalkDir(src, ".", func(p string, d fs.DirEntry, err error) error {
-			if err != nil || d.IsDir() {
-				return err
-			}
-			data, err := fs.ReadFile(src, p)
-			dir, name := path.Split(p)
-			merged[dir+prefix+name] = &fstest.MapFile{Data: data}
-			return err
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	return merged
+func migrations() []fs.FS {
+	return []fs.FS{queue.Migrations(), webhook.Migrations()}
 }
 
 func openDB(t *testing.T) *bun.DB {
 	t.Helper()
-	return dbtest.Open(t, migrations(t))
+	return dbtest.Open(t, migrations()...)
 }
 
 func create(t *testing.T, db bun.IDB, tenant, url string, events ...string) *webhook.Endpoint {

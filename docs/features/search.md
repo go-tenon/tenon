@@ -59,9 +59,9 @@ res, err := SearchIndex.Search(ctx, db, search.Query{
 
 ```go
 migratecmd.Publish(
-    migrate.Source{Name: "queue", FS: queue.Migrations()},
-    migrate.Source{Name: "operation", FS: operation.Migrations()},
-    migrate.Source{Name: "search", FS: search.Migrations()},
+    queue.Migrations(),
+    operation.Migrations(),
+    search.Migrations(),
 )
 ```
 

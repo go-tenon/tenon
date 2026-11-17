@@ -3,6 +3,7 @@ package migrate
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -48,12 +49,27 @@ func TestCreateVersionFollowsExistingMigrations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "29990101000000_future.sql"), []byte(testMigration), 0o600); err != nil {
+	if !regexp.MustCompile(`^\d{4}_\d{2}_\d{2}_\d{6}_create_articles_table\.sql$`).MatchString(filepath.Base(first)) {
+		t.Fatalf("first=%s", first)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "2999_01_01_000000_future.sql"), []byte(testMigration), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	second, err := Create(dir, "add_status_to_articles_table")
-	if err != nil || filepath.Base(second) != "29990101000001_add_status_to_articles_table.sql" {
+	if err != nil || filepath.Base(second) != "2999_01_01_000001_add_status_to_articles_table.sql" {
 		t.Fatalf("first=%s second=%s err=%v", first, second, err)
+	}
+}
+
+func TestCreateRejectsOtherFileNames(t *testing.T) {
+	for _, name := range []string{"20261117123456_goose.sql", "notes.sql", "0000_00_00_000000_zero.sql", "9999_99_99_999999_last.sql"} {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(testMigration), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if path, err := Create(dir, "create_articles_table"); err == nil {
+			t.Errorf("%s: created %s", name, path)
+		}
 	}
 }
 
@@ -74,4 +90,19 @@ func must(path string, err error) string {
 		panic(err)
 	}
 	return path
+}
+
+func TestNextVersion(t *testing.T) {
+	for _, tc := range []struct{ existing, want int64 }{
+		{29990101000059, 29990101000100}, // 晚于现在：下一秒，按时间进位
+		{30000000000000, 30000000000001}, // 不是合法的时间：加一
+		{lastVersion - 1, lastVersion},
+	} {
+		if got, err := nextVersion(tc.existing); err != nil || got != tc.want {
+			t.Errorf("nextVersion(%d)=%d, %v, want %d", tc.existing, got, err, tc.want)
+		}
+	}
+	if _, err := nextVersion(lastVersion); err == nil {
+		t.Error("nextVersion(lastVersion) succeeded")
+	}
 }

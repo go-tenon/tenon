@@ -56,7 +56,7 @@ sched.Add("privacy:erase", "*/10 * * * *", schedule.Cleanup(deletions.EraseDue, 
 
 ```go
 migratecmd.Publish(
-    migrate.Source{Name: "privacy", FS: privacy.Migrations()},
+    privacy.Migrations(),
 )
 ```
 

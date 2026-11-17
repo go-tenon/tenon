@@ -12,7 +12,6 @@ import (
 	"errors"
 	"io/fs"
 	"testing"
-	"testing/fstest"
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
@@ -160,29 +159,13 @@ type env struct {
 }
 
 // migrations 合并 login 和 passkey 的迁移；passkey 的版本号排在 login 之后。
-func migrations(t *testing.T) fs.FS {
-	t.Helper()
-	merged := fstest.MapFS{}
-	for prefix, src := range map[string]fs.FS{"": login.Migrations(), "1": passkey.Migrations()} {
-		err := fs.WalkDir(src, ".", func(path string, d fs.DirEntry, err error) error {
-			if err != nil || d.IsDir() {
-				return err
-			}
-			data, err := fs.ReadFile(src, path)
-			dir, name := path[:len(path)-len(d.Name())], d.Name()
-			merged[dir+prefix+name] = &fstest.MapFile{Data: data}
-			return err
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	return merged
+func migrations() []fs.FS {
+	return []fs.FS{login.Migrations(), passkey.Migrations()}
 }
 
 func newEnv(t *testing.T, perTenant bool) *env {
 	t.Helper()
-	db := dbtest.Open(t, migrations(t))
+	db := dbtest.Open(t, migrations()...)
 	var hc hashing.Config
 	hc.SetDefaults()
 	hc.Driver, hc.Bcrypt.Cost = "bcrypt", 4
@@ -372,7 +355,7 @@ func TestPasskeyTenants(t *testing.T) {
 
 func TestNew(t *testing.T) {
 	t.Parallel()
-	db := dbtest.Open(t, migrations(t))
+	db := dbtest.Open(t, migrations()...)
 	c := crypt.New(crypt.Config{Key: appKey})
 	if _, err := passkey.New(db, nil, c, passkey.Config{RPID: rpID, Origins: []string{origin}}); err == nil {
 		t.Fatal("nil realm accepted")

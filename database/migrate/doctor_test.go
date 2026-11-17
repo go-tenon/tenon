@@ -18,8 +18,8 @@ func migration(table string) *fstest.MapFile {
 func TestDoctor(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	older := fstest.MapFS{"00001_a.sql": migration("a")}
-	newer := fstest.MapFS{"00001_a.sql": migration("a"), "00002_b.sql": migration("b")}
+	older := fstest.MapFS{"2026_01_01_000001_a.sql": migration("a")}
+	newer := fstest.MapFS{"2026_01_01_000001_a.sql": migration("a"), "2026_01_01_000002_b.sql": migration("b")}
 	db := dbtest.Open(t, nil)
 	check := func(fsys fstest.MapFS) doctor.DoctorResult {
 		t.Helper()

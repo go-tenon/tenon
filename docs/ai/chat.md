@@ -62,7 +62,7 @@ return chat.UIStream(run), nil
 
 ```go
 migrationCmd.AddCommand(migratecmd.Publish(
-    migrate.Source{Name: "ai", FS: chat.Migrations()},
+    chat.Migrations(),
 ))
 ```
 

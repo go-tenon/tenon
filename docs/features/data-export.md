@@ -50,13 +50,13 @@ body, exp, err := personal.Open(ctx, sub, id)
 <a id="installation"></a>
 ## 安装
 
-`privacy_exports` 表记录生成的压缩包，它引用 `operation` 的表，发布时排在后面：
+`privacy_exports` 表记录生成的压缩包，它引用 `operation` 的表，要和 `operation` 的迁移一起发布：
 
 ```go
 migratecmd.Publish(
-    migrate.Source{Name: "operation", FS: operation.Migrations()},
-    migrate.Source{Name: "privacy", FS: privacy.Migrations()},
-    migrate.Source{Name: "privacy_export", FS: export.Migrations()},
+    operation.Migrations(),
+    privacy.Migrations(),
+    export.Migrations(),
 )
 ```
 
@@ -243,7 +243,7 @@ JSON 缩进排版，普通的文本编辑器就能打开阅读，也方便用户
 `Export` 直接返回了 Bun 模型。返回一个只包含给用户看的字段的结构，见[登记数据](#sources)。
 
 **`relation "operations" does not exist`。**
-`privacy_export` 的迁移排在了 `operation` 前面。按[安装](#installation)中的顺序发布。
+没有发布 `operation` 的迁移。按[安装](#installation)把它加入发布命令。
 
 **导出一直是 `running`。**
 任务在重试：某一项返回了普通错误。查看 worker 的日志，修复后任务会从头重新导出；重试用完后导出变为 `failed`。

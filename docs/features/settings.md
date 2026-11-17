@@ -57,7 +57,7 @@ err = SiteSettings.Update(ctx, func(s *Site) error {
 
 ```go
 migratecmd.Publish(
-    migrate.Source{Name: "settings", FS: settings.Migrations()},
+    settings.Migrations(),
 )
 ```
 

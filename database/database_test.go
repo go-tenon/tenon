@@ -25,16 +25,16 @@ func TestCheckPublishedDetectsModification(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	base := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "00001_a.sql"), []byte("v1"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "2026_01_01_000001_a.sql"), []byte("v1"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(base, "00001_a.sql"), []byte("v1"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(base, "2026_01_01_000001_a.sql"), []byte("v1"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := migrate.CheckPublished(dir, base); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "00001_a.sql"), []byte("changed"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "2026_01_01_000001_a.sql"), []byte("changed"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	err := migrate.CheckPublished(dir, base)
@@ -50,17 +50,17 @@ func TestPublishedMigrationsIncludeNestedFiles(t *testing.T) {
 		if err := os.MkdirAll(filepath.Join(dir, "schema"), 0755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(dir, "schema/00001_init.sql"), []byte("SELECT 1;"), 0644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, "schema/2026_01_01_000001_init.sql"), []byte("SELECT 1;"), 0644); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := os.WriteFile(filepath.Join(live, "00002_next.sql"), []byte("SELECT 2;"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(live, "2026_01_01_000002_next.sql"), []byte("SELECT 2;"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	if err := migrate.CheckPublished(live, baseline); err != nil {
 		t.Fatal(err)
 	}
-	file := filepath.Join(live, "schema/00001_init.sql")
+	file := filepath.Join(live, "schema/2026_01_01_000001_init.sql")
 	if err := os.WriteFile(file, []byte("SELECT 3;"), 0644); err != nil {
 		t.Fatal(err)
 	}

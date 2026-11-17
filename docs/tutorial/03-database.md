@@ -84,11 +84,11 @@ go mod tidy
 go run ./cmd/api migrate make create_articles_table
 ```
 
-`go mod tidy` 下载新导入的包需要的依赖。`migrate make` 输出新文件的路径，例如 `migrations/20261113080000_create_articles_table.sql`。
+`go mod tidy` 下载新导入的包需要的依赖。`migrate make` 输出新文件的路径，例如 `migrations/2026_11_13_080000_create_articles_table.sql`。
 
 文件名开头是创建时的 UTC 时间，所以新的迁移总是排在已有的后面，执行顺序就是创建的顺序。你生成的文件名和这里不同，下文中的文件名以你生成的为准。名称写成 `create_…_table` 的形式时，文件中已经有建表语句的骨架。把它补全：
 
-```sql title="migrations/20261113080000_create_articles_table.sql"
+```sql title="migrations/2026_11_13_080000_create_articles_table.sql"
 -- +goose Up
 CREATE TABLE articles (
     id         uuid PRIMARY KEY,
@@ -126,7 +126,7 @@ go run ./cmd/api migrate status
 
 ```text
 VERSION         STATE    APPLIED AT           FILE
-20261113080000  applied  2026-11-13 08:01:12  20261113080000_create_articles_table.sql
+20261113080000  applied  2026-11-13 08:01:12  2026_11_13_080000_create_articles_table.sql
 ```
 
 `migrate up` 执行了这个迁移，`migrate status` 显示它已经执行（`applied`）。再运行一次 `migrate up`，什么也不会发生，因为没有新的迁移。

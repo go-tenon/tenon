@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"path"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -48,27 +47,14 @@ var errSoleOwner = errorx.Define(errorx.Conflict, "test.sole_owner")
 
 func user(id string) identity.Ref { return identity.Ref{Type: "user", ID: id} }
 
+// appMigrations 是应用自己的表。
+var appMigrations = fstest.MapFS{
+	"2026_01_01_000001_users.sql": &fstest.MapFile{Data: []byte("-- +goose Up\nCREATE TABLE users (id text PRIMARY KEY);\n-- +goose Down\nDROP TABLE users;\n")},
+}
+
 // migrations 合并注销、通知和 token 的迁移，再加上应用自己的 users 表。
-func migrations(t *testing.T) fs.FS {
-	t.Helper()
-	merged := fstest.MapFS{
-		"00001_users.sql": &fstest.MapFile{Data: []byte("-- +goose Up\nCREATE TABLE users (id text PRIMARY KEY);\n-- +goose Down\nDROP TABLE users;\n")},
-	}
-	for prefix, src := range map[string]fs.FS{"1": privacy.Migrations(), "2": notification.Migrations(), "3": apitoken.Migrations()} {
-		err := fs.WalkDir(src, ".", func(p string, d fs.DirEntry, err error) error {
-			if err != nil || d.IsDir() {
-				return err
-			}
-			data, err := fs.ReadFile(src, p)
-			dir, name := path.Split(p)
-			merged[dir+prefix+name] = &fstest.MapFile{Data: data}
-			return err
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	return merged
+func migrations() []fs.FS {
+	return []fs.FS{appMigrations, privacy.Migrations(), notification.Migrations(), apitoken.Migrations()}
 }
 
 // app 是测试中的应用：users 表、通知和 token，以及控制各项行为的开关。
@@ -86,7 +72,7 @@ type app struct {
 
 func newApp(t *testing.T) *app {
 	t.Helper()
-	db := dbtest.Open(t, migrations(t))
+	db := dbtest.Open(t, migrations()...)
 	return &app{db: db, tokens: apitoken.NewStore(db, apitoken.Config{Lifetime: time.Hour})}
 }
 

@@ -49,7 +49,7 @@ list, err := activity.List(ctx, db, activity.Query{TargetType: "article", Target
 
 ```go
 migratecmd.Publish(
-    migrate.Source{Name: "activity", FS: activity.Migrations()},
+    activity.Migrations(),
 )
 ```
 

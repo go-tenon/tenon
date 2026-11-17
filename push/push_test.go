@@ -5,12 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
-	"path"
 	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
-	"testing/fstest"
 	"time"
 
 	"github.com/cockroachdb/errors"
@@ -33,24 +31,8 @@ var (
 )
 
 // migrations 合并队列和推送的迁移，队列的版本号在前。
-func migrations(t *testing.T) fs.FS {
-	t.Helper()
-	merged := fstest.MapFS{}
-	for prefix, src := range map[string]fs.FS{"1": queue.Migrations(), "2": push.Migrations()} {
-		err := fs.WalkDir(src, ".", func(p string, d fs.DirEntry, err error) error {
-			if err != nil || d.IsDir() {
-				return err
-			}
-			data, err := fs.ReadFile(src, p)
-			dir, name := path.Split(p)
-			merged[dir+prefix+name] = &fstest.MapFile{Data: data}
-			return err
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	return merged
+func migrations() []fs.FS {
+	return []fs.FS{queue.Migrations(), push.Migrations()}
 }
 
 func register(t *testing.T, db bun.IDB, sub identity.Subject, platform push.Platform, token string) {
@@ -75,7 +57,7 @@ func devices(t *testing.T, db bun.IDB) map[string]push.Device {
 
 func TestRegister(t *testing.T) {
 	t.Parallel()
-	db := dbtest.Open(t, migrations(t))
+	db := dbtest.Open(t, migrations()...)
 	ctx := context.Background()
 
 	for name, tc := range map[string]struct {
@@ -117,7 +99,7 @@ func TestRegister(t *testing.T) {
 
 func TestUnregister(t *testing.T) {
 	t.Parallel()
-	db := dbtest.Open(t, migrations(t))
+	db := dbtest.Open(t, migrations()...)
 	ctx := context.Background()
 
 	alicePhone, alicePad := alice, alice
@@ -170,7 +152,7 @@ func TestUnregister(t *testing.T) {
 
 func TestCleanup(t *testing.T) {
 	t.Parallel()
-	db := dbtest.Open(t, migrations(t))
+	db := dbtest.Open(t, migrations()...)
 	ctx := context.Background()
 	register(t, db, alice, push.Android, "old1")
 	register(t, db, alice, push.Android, "old2")
@@ -201,7 +183,7 @@ func msg() push.Message {
 
 func TestSend(t *testing.T) {
 	t.Parallel()
-	db := dbtest.Open(t, migrations(t))
+	db := dbtest.Open(t, migrations()...)
 	ctx := context.Background()
 	a, b := notification.RecipientOf(alice), notification.RecipientOf(bob)
 
@@ -251,7 +233,7 @@ func TestSend(t *testing.T) {
 
 func TestSendSplitsRecipients(t *testing.T) {
 	t.Parallel()
-	db := dbtest.Open(t, migrations(t))
+	db := dbtest.Open(t, migrations()...)
 	to := make([]notification.Recipient, push.MaxBatch+1)
 	for i := range to {
 		to[i] = notification.Recipient{Tenant: "acme", Ref: identity.Ref{Type: "customer", ID: fmt.Sprint(i)}}
@@ -267,7 +249,7 @@ func TestSendSplitsRecipients(t *testing.T) {
 
 func TestDeliver(t *testing.T) {
 	t.Parallel()
-	db := dbtest.Open(t, migrations(t))
+	db := dbtest.Open(t, migrations()...)
 	ctx := context.Background()
 	fake := &pushtest.Provider{}
 	d := push.NewDeliverer(db, fake, push.Options{})
@@ -322,7 +304,7 @@ func TestDeliver(t *testing.T) {
 
 func TestDeliverTTL(t *testing.T) {
 	t.Parallel()
-	db := dbtest.Open(t, migrations(t))
+	db := dbtest.Open(t, migrations()...)
 	ctx := context.Background()
 	fake := &pushtest.Provider{}
 	d := push.NewDeliverer(db, fake, push.Options{})
@@ -350,7 +332,7 @@ func TestDeliverTTL(t *testing.T) {
 
 func TestDeliverErrors(t *testing.T) {
 	t.Parallel()
-	db := dbtest.Open(t, migrations(t))
+	db := dbtest.Open(t, migrations()...)
 	ctx := context.Background()
 	register(t, db, alice, push.Android, "a-android")
 	register(t, db, bob, push.IOS, "b-ios")
@@ -394,7 +376,7 @@ func TestDeliverErrors(t *testing.T) {
 
 func TestDeliverThroughQueue(t *testing.T) {
 	t.Parallel()
-	db := dbtest.Open(t, migrations(t))
+	db := dbtest.Open(t, migrations()...)
 	ctx := context.Background()
 	register(t, db, alice, push.Android, "a-android")
 
@@ -429,7 +411,7 @@ func TestDeliverThroughQueue(t *testing.T) {
 
 func TestErase(t *testing.T) {
 	t.Parallel()
-	db := dbtest.Open(t, migrations(t))
+	db := dbtest.Open(t, migrations()...)
 	ctx := context.Background()
 	register(t, db, alice, push.Android, "phone")
 	register(t, db, identity.Subject{Type: alice.Type, ID: alice.ID, Tenant: "globex", Credential: "token-a2"}, push.IOS, "pad")
@@ -480,7 +462,7 @@ func excludes(t *testing.T, got string, unwanted ...string) {
 
 func TestExport(t *testing.T) {
 	t.Parallel()
-	db := dbtest.Open(t, migrations(t))
+	db := dbtest.Open(t, migrations()...)
 	ctx := context.Background()
 	register(t, db, alice, push.IOS, "secret-device-token")
 	register(t, db, bob, push.Android, "bob-device")

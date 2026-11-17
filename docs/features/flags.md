@@ -53,7 +53,7 @@ err = flags.Set(ctx, NewEditor, feature.Everyone, feature.Percent(10))
 
 ```go
 migratecmd.Publish(
-    migrate.Source{Name: "feature", FS: feature.Migrations()},
+    feature.Migrations(),
 )
 ```
 

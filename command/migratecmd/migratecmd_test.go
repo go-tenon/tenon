@@ -82,8 +82,8 @@ func TestNamedDatabase(t *testing.T) {
 		Database  database.Config `yaml:"database"`
 		Analytics database.Config `yaml:"analytics"`
 	}
-	main := dbtest.Open(t, nil)
-	analytics := dbtest.Open(t, nil)
+	main := dbtest.Open(t)
+	analytics := dbtest.Open(t)
 	dsn := func(db *bun.DB) string {
 		var name string
 		if err := db.NewRaw("SELECT current_database()").Scan(context.Background(), &name); err != nil {
@@ -97,8 +97,8 @@ func TestNamedDatabase(t *testing.T) {
 		return u.String()
 	}
 	cfg := writeConfig(t, "database:\n  dsn: "+dsn(main)+"\nanalytics:\n  dsn: "+dsn(analytics)+"\n")
-	mainFS := fstest.MapFS{"00001_notes.sql": {Data: []byte("-- +goose Up\nCREATE TABLE notes (id int);\n-- +goose Down\nDROP TABLE notes;\n")}}
-	analyticsFS := fstest.MapFS{"00001_events.sql": {Data: []byte("-- +goose Up\nCREATE TABLE events (id int);\n-- +goose Down\nDROP TABLE events;\n")}}
+	mainFS := fstest.MapFS{"2026_11_17_000000_create_notes.sql": {Data: []byte("-- +goose Up\nCREATE TABLE notes (id int);\n-- +goose Down\nDROP TABLE notes;\n")}}
+	analyticsFS := fstest.MapFS{"2026_01_01_000001_events.sql": {Data: []byte("-- +goose Up\nCREATE TABLE events (id int);\n-- +goose Down\nDROP TABLE events;\n")}}
 	newCmds := func() *cobra.Command {
 		mig := migratecmd.New(mainFS, func(c twoDBs) database.Config { return c.Database })
 		mig.AddCommand(migratecmd.New(analyticsFS, func(c twoDBs) database.Config { return c.Analytics }, migratecmd.Name("analytics")))
@@ -121,17 +121,22 @@ func TestNamedDatabase(t *testing.T) {
 	if got := tables(main); len(got) != 0 {
 		t.Fatalf("main migrated by the analytics command: %v", got)
 	}
-	if _, _, err := execute(newCmds(), "migrate", "up", "--config", cfg); err != nil {
-		t.Fatal(err)
+	out, _, err := execute(newCmds(), "migrate", "up", "--config", cfg)
+	if err != nil || !strings.Contains(out, "2026_11_17_000000_create_notes.sql") {
+		t.Fatalf("up: %q %v", out, err)
 	}
 	if got := tables(main); len(got) != 1 || got[0] != "notes" {
 		t.Fatalf("main tables %v", got)
+	}
+	out, _, err = execute(newCmds(), "migrate", "status", "--config", cfg)
+	if err != nil || !strings.Contains(out, "20261117000000  applied") || !strings.Contains(out, "2026_11_17_000000_create_notes.sql") {
+		t.Fatalf("status: %q %v", out, err)
 	}
 
 	// make 默认写入 migrations/analytics。
 	dir := t.TempDir()
 	t.Chdir(dir)
-	out, _, err := execute(newCmds(), "migrate", "analytics", "make", "add_index")
+	out, _, err = execute(newCmds(), "migrate", "analytics", "make", "add_index")
 	if err != nil || !strings.HasPrefix(strings.TrimSpace(out), filepath.Join("migrations", "analytics")) {
 		t.Fatalf("make: %q %v", out, err)
 	}

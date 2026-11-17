@@ -16,7 +16,7 @@
 
 ```go
 migrationCmd.AddCommand(migratecmd.Publish(
-    migrate.Source{Name: "filesystem", FS: filesystem.Migrations()},
+    filesystem.Migrations(),
 ))
 ```
 

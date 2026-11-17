@@ -50,7 +50,7 @@ n, err := notification.UnreadCount(ctx, db, notification.RecipientOf(sub))
 
 ```go
 migratecmd.Publish(
-    migrate.Source{Name: "notification", FS: notification.Migrations()},
+    notification.Migrations(),
 )
 ```
 

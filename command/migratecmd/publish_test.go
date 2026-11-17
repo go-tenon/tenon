@@ -9,13 +9,12 @@ import (
 
 	"github.com/go-tenon/tenon/command"
 	"github.com/go-tenon/tenon/command/migratecmd"
-	"github.com/go-tenon/tenon/database/migrate"
 )
 
 func TestPublishWithoutConfigurationOrDatabase(t *testing.T) {
-	source := migrate.Source{Name: "files", FS: fstest.MapFS{
-		"0001_create_files.sql": {Data: []byte("-- +goose Up\nCREATE TABLE files (id integer);\n-- +goose Down\nDROP TABLE files;\n")},
-	}}
+	source := fstest.MapFS{
+		"2026_11_10_114451_create_files.sql": {Data: []byte("-- +goose Up\nCREATE TABLE files (id integer);\n-- +goose Down\nDROP TABLE files;\n")},
+	}
 	dir := filepath.Join(t.TempDir(), "migrations")
 	for i := range 2 {
 		migrationCmd := migratecmd.New(fstest.MapFS{}, dbConfig)
@@ -27,7 +26,7 @@ func TestPublishWithoutConfigurationOrDatabase(t *testing.T) {
 		}
 		if i == 0 {
 			name := strings.TrimSpace(out)
-			if !strings.HasSuffix(name, "_files_0001_create_files.sql") {
+			if name != "2026_11_10_114451_create_files.sql" {
 				t.Fatalf("out=%q", out)
 			}
 			if _, err := os.Stat(filepath.Join(dir, name)); err != nil {

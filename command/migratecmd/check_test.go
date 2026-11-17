@@ -17,7 +17,7 @@ import (
 func TestCheck(t *testing.T) {
 	path := serverConfig(t)
 	migrations := fstest.MapFS{
-		"00001_create_notes.sql": {Data: []byte("-- +goose Up\nCREATE TABLE notes (id int);\n-- +goose Down\nDROP TABLE notes;\n")},
+		"2026_01_01_000001_create_notes.sql": {Data: []byte("-- +goose Up\nCREATE TABLE notes (id int);\n-- +goose Down\nDROP TABLE notes;\n")},
 	}
 	var ready bool
 	var gotDSN string
@@ -52,7 +52,7 @@ func TestCheck(t *testing.T) {
 		t.Fatalf("status after the refused up: %v\n%s", err, out)
 	}
 	ready = true
-	if out, err := run("migrate", "up"); err != nil || !strings.Contains(out, "00001_create_notes.sql") {
+	if out, err := run("migrate", "up"); err != nil || !strings.Contains(out, "2026_01_01_000001_create_notes.sql") {
 		t.Fatalf("up with passing checks: %v\n%s", err, out)
 	}
 }

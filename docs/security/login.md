@@ -63,7 +63,7 @@ plain, err := tokens.Login(ctx, out.Subject, device)
 
 ```go
 migrationCmd.AddCommand(migratecmd.Publish(
-    migrate.Source{Name: "login", FS: login.Migrations()},
+    login.Migrations(),
 ))
 ```
 

@@ -40,9 +40,9 @@ var itemMigrations = [2]string{
 // items 返回前 n 个测试迁移。
 func items(n int) fs.FS {
 	m := itemMigrations
-	files := fstest.MapFS{"00001_init.sql": {Data: []byte("-- +goose Up\n" + m[0] + "\n-- +goose Down\nDROP TABLE items;\n")}}
+	files := fstest.MapFS{"2026_01_01_000001_init.sql": {Data: []byte("-- +goose Up\n" + m[0] + "\n-- +goose Down\nDROP TABLE items;\n")}}
 	if n > 1 {
-		files["00002_add_notes.sql"] = &fstest.MapFile{Data: []byte("-- +goose Up\n" + m[1] + "\n-- +goose Down\nALTER TABLE items DROP COLUMN note;\n")}
+		files["2026_01_01_000002_add_notes.sql"] = &fstest.MapFile{Data: []byte("-- +goose Up\n" + m[1] + "\n-- +goose Down\nALTER TABLE items DROP COLUMN note;\n")}
 	}
 	return files
 }
@@ -59,7 +59,7 @@ func TestMigrateEmptyAndUpgrade(t *testing.T) {
 		if err := migrate.Up(ctx, p); err != nil {
 			t.Fatal(err)
 		}
-		if ver, err := p.GetDBVersion(ctx); err != nil || ver != int64(want+1) {
+		if ver, err := p.GetDBVersion(ctx); err != nil || ver != int64(20260101000001+want) {
 			t.Fatalf("version=%d err=%v", ver, err)
 		}
 	}
@@ -93,7 +93,7 @@ func TestConcurrentMigrate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ver, err := p.GetDBVersion(ctx); err != nil || ver != 2 {
+	if ver, err := p.GetDBVersion(ctx); err != nil || ver != 20260101000002 {
 		t.Fatalf("version=%d err=%v", ver, err)
 	}
 }
@@ -156,7 +156,7 @@ func TestFailedMigrationRollsBack(t *testing.T) {
 	t.Parallel()
 	db := dbtest.Open(t, nil)
 	ctx := context.Background()
-	source := fstest.MapFS{"00001_partial.sql": {Data: []byte("-- +goose Up\nCREATE TABLE partial (id INT);\nINSERT INTO missing_table VALUES (1);\n-- +goose Down\nDROP TABLE partial;\n")}}
+	source := fstest.MapFS{"2026_01_01_000001_partial.sql": {Data: []byte("-- +goose Up\nCREATE TABLE partial (id INT);\nINSERT INTO missing_table VALUES (1);\n-- +goose Down\nDROP TABLE partial;\n")}}
 	p, err := migrate.NewProvider(db, source)
 	if err != nil {
 		t.Fatal(err)
@@ -177,7 +177,7 @@ func TestFailedMigrationRollsBack(t *testing.T) {
 	if err := migrate.Up(ctx, p); err != nil {
 		t.Fatal(err)
 	}
-	if ver, err := p.GetDBVersion(ctx); err != nil || ver != 1 {
+	if ver, err := p.GetDBVersion(ctx); err != nil || ver != 20260101000001 {
 		t.Fatalf("version=%d err=%v", ver, err)
 	}
 }

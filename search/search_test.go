@@ -4,12 +4,10 @@ import (
 	"context"
 	"io/fs"
 	"log/slog"
-	"path"
 	"slices"
 	"strings"
 	"sync"
 	"testing"
-	"testing/fstest"
 	"time"
 
 	"github.com/uptrace/bun"
@@ -71,30 +69,14 @@ func (s *source) scan(_ context.Context, _ bun.IDB, after string, limit int) ([]
 }
 
 // migrations 合并队列、操作和搜索的迁移，按这个顺序排列版本号。
-func migrations(t *testing.T) fs.FS {
-	t.Helper()
-	merged := fstest.MapFS{}
-	for prefix, src := range map[string]fs.FS{"1": queue.Migrations(), "2": operation.Migrations(), "3": search.Migrations()} {
-		err := fs.WalkDir(src, ".", func(p string, d fs.DirEntry, err error) error {
-			if err != nil || d.IsDir() {
-				return err
-			}
-			data, err := fs.ReadFile(src, p)
-			dir, name := path.Split(p)
-			merged[dir+prefix+name] = &fstest.MapFile{Data: data}
-			return err
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	return merged
+func migrations() []fs.FS {
+	return []fs.FS{queue.Migrations(), operation.Migrations(), search.Migrations()}
 }
 
 // fixture 打开数据库，写入 docs（每个文档的 key 是它的 ID）并同步。
 func fixture(t *testing.T, docs ...articleDoc) (*bun.DB, *source) {
 	t.Helper()
-	db := dbtest.Open(t, migrations(t))
+	db := dbtest.Open(t, migrations()...)
 	src := newSource()
 	for _, d := range docs {
 		src.set(d.ID, d)

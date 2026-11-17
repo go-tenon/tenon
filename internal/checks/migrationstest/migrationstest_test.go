@@ -1,9 +1,11 @@
-// Package migrationstest 检查框架各个包内嵌的迁移：每个包都登记在这里，并且能通过公开的 publish 命令原样发布。
+// Package migrationstest 检查框架各个包内嵌的迁移：每个包都登记在这里，能通过公开的 publish 命令原样发布，
+// 全部放在一起时能按版本顺序执行。
 package migrationstest
 
 import (
 	"bytes"
 	"io/fs"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,7 +19,7 @@ import (
 	"github.com/go-tenon/tenon/authz"
 	"github.com/go-tenon/tenon/command"
 	"github.com/go-tenon/tenon/command/migratecmd"
-	"github.com/go-tenon/tenon/database/migrate"
+	"github.com/go-tenon/tenon/database/dbtest"
 	"github.com/go-tenon/tenon/feature"
 	"github.com/go-tenon/tenon/filesystem"
 	"github.com/go-tenon/tenon/lock/pglock"
@@ -39,32 +41,32 @@ import (
 	"github.com/go-tenon/tenon/webhook"
 )
 
-// sources 是框架中带迁移的包：键是包相对模块根的目录，Name 是文档中发布它时使用的来源名。
+// sources 是框架中带迁移的包，键是包相对模块根的目录。
 // 新增带迁移的包时在这里登记，TestEveryPackageIsListed 检查没有遗漏。
-var sources = map[string]migrate.Source{
-	"activity":          {Name: "activity", FS: activity.Migrations()},
-	"ai/chat":           {Name: "ai", FS: chat.Migrations()},
-	"apitoken":          {Name: "apitoken", FS: apitoken.Migrations()},
-	"authz":             {Name: "authz", FS: authz.Migrations()},
-	"sheet/exports":     {Name: "exports", FS: exports.Migrations()},
-	"feature":           {Name: "feature", FS: feature.Migrations()},
-	"filesystem":        {Name: "filesystem", FS: filesystem.Migrations()},
-	"sheet/imports":     {Name: "imports", FS: imports.Migrations()},
-	"lock/pglock":       {Name: "lock", FS: pglock.Migrations()},
-	"login":             {Name: "login", FS: login.Migrations()},
-	"login/passkey":     {Name: "passkey", FS: passkey.Migrations()},
-	"notification":      {Name: "notification", FS: notification.Migrations()},
-	"oauthserver":       {Name: "oauthserver", FS: oauthserver.Migrations()},
-	"operation":         {Name: "operation", FS: operation.Migrations()},
-	"privacy":           {Name: "privacy", FS: privacy.Migrations()},
-	"privacy/export":    {Name: "privacy_export", FS: privacyexport.Migrations()},
-	"push":              {Name: "push", FS: push.Migrations()},
-	"queue":             {Name: "queue", FS: queue.Migrations()},
-	"ratelimit/pglimit": {Name: "ratelimit", FS: pglimit.Migrations()},
-	"search":            {Name: "search", FS: search.Migrations()},
-	"vector":            {Name: "vector", FS: vector.Migrations()},
-	"settings":          {Name: "settings", FS: settings.Migrations()},
-	"webhook":           {Name: "webhook", FS: webhook.Migrations()},
+var sources = map[string]fs.FS{
+	"activity":          activity.Migrations(),
+	"ai/chat":           chat.Migrations(),
+	"apitoken":          apitoken.Migrations(),
+	"authz":             authz.Migrations(),
+	"sheet/exports":     exports.Migrations(),
+	"feature":           feature.Migrations(),
+	"filesystem":        filesystem.Migrations(),
+	"sheet/imports":     imports.Migrations(),
+	"lock/pglock":       pglock.Migrations(),
+	"login":             login.Migrations(),
+	"login/passkey":     passkey.Migrations(),
+	"notification":      notification.Migrations(),
+	"oauthserver":       oauthserver.Migrations(),
+	"operation":         operation.Migrations(),
+	"privacy":           privacy.Migrations(),
+	"privacy/export":    privacyexport.Migrations(),
+	"push":              push.Migrations(),
+	"queue":             queue.Migrations(),
+	"ratelimit/pglimit": pglimit.Migrations(),
+	"search":            search.Migrations(),
+	"vector":            vector.Migrations(),
+	"settings":          settings.Migrations(),
+	"webhook":           webhook.Migrations(),
 }
 
 // TestEveryPackageIsListed 确保仓库中每个 migrations 目录都登记在 sources 中。
@@ -107,55 +109,53 @@ func TestEveryPackageIsListed(t *testing.T) {
 	}
 }
 
-// TestPublishThroughPublicCommand 确保内嵌的 SQL 能通过公开的 publish 命令原样发布，重复发布时文件保持原样。
+// TestPublishThroughPublicCommand 确保内嵌的 SQL 能通过公开的 publish 命令原样发布，重复发布时什么也不写。
 func TestPublishThroughPublicCommand(t *testing.T) {
-	for dir, src := range sources {
-		t.Run(dir, func(t *testing.T) {
-			embedded := src.FS
-			entries, err := fs.ReadDir(embedded, ".")
-			if err != nil || len(entries) == 0 {
-				t.Fatalf("embedded migrations=%v err=%v", entries, err)
-			}
-			target := filepath.Join(t.TempDir(), "migrations")
-			run := func() []string {
-				t.Helper()
-				root := command.Root("api", "test")
-				root.AddCommand(migratecmd.Publish(src))
-				root.SetArgs([]string{"publish", "--dir", target, "--config", filepath.Join(target, "absent.yaml")})
-				var output bytes.Buffer
-				root.SetOut(&output)
-				if err := root.Execute(); err != nil {
-					t.Fatal(err)
-				}
-				return strings.Fields(output.String())
-			}
-			names := run()
-			if len(names) != len(entries) {
-				t.Fatalf("published=%v embedded=%v", names, entries)
-			}
-			for _, entry := range entries {
-				original, err := fs.ReadFile(embedded, entry.Name())
-				if err != nil {
-					t.Fatal(err)
-				}
-				i := slices.IndexFunc(names, func(name string) bool {
-					return strings.HasSuffix(name, "_"+src.Name+"_"+entry.Name())
-				})
-				if i < 0 {
-					t.Fatalf("missing published %s in %v", entry.Name(), names)
-				}
-				published, err := os.ReadFile(filepath.Join(target, names[i]))
-				if err != nil {
-					t.Fatal(err)
-				}
-				want := append([]byte("-- tenon: "+src.Name+"/"+strings.TrimSuffix(entry.Name(), ".sql")+"\n"), original...)
-				if !bytes.Equal(published, want) {
-					t.Fatalf("published content differs from embedded SQL: %s", names[i])
-				}
-			}
-			if again := run(); len(again) != 0 {
-				t.Fatalf("repeat published=%v", again)
-			}
-		})
+	all := slices.Collect(maps.Values(sources))
+	target := filepath.Join(t.TempDir(), "migrations")
+	run := func() []string {
+		t.Helper()
+		root := command.Root("api", "test")
+		root.AddCommand(migratecmd.Publish(all...))
+		root.SetArgs([]string{"publish", "--dir", target, "--config", filepath.Join(target, "absent.yaml")})
+		var output bytes.Buffer
+		root.SetOut(&output)
+		if err := root.Execute(); err != nil {
+			t.Fatal(err)
+		}
+		return strings.Fields(output.String())
 	}
+	names := run()
+	var count int
+	for dir, src := range sources {
+		entries, err := fs.ReadDir(src, ".")
+		if err != nil || len(entries) == 0 {
+			t.Fatalf("%s: embedded migrations=%v err=%v", dir, entries, err)
+		}
+		for _, entry := range entries {
+			count++
+			original, err := fs.ReadFile(src, entry.Name())
+			if err != nil {
+				t.Fatal(err)
+			}
+			published, err := os.ReadFile(filepath.Join(target, entry.Name()))
+			if err != nil {
+				t.Fatalf("%s: %v", dir, err)
+			}
+			if !bytes.Equal(published, original) {
+				t.Fatalf("published content differs from embedded SQL: %s", entry.Name())
+			}
+		}
+	}
+	if len(names) != count {
+		t.Fatalf("published %d files, embedded %d", len(names), count)
+	}
+	if again := run(); len(again) != 0 {
+		t.Fatalf("repeat published=%v", again)
+	}
+}
+
+// TestAllMigrationsRun 把全部迁移放在一起执行：版本不重复，引用其他包的表的迁移排在那个包之后。
+func TestAllMigrationsRun(t *testing.T) {
+	dbtest.Open(t, slices.Collect(maps.Values(sources))...)
 }

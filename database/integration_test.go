@@ -18,7 +18,7 @@ func TestNonTransactionalMigrationRequiresManualRecovery(t *testing.T) {
 	t.Parallel()
 	db := dbtest.Open(t, nil)
 	ctx := context.Background()
-	source := fstest.MapFS{"00001_partial.sql": &fstest.MapFile{Data: []byte("-- +goose NO TRANSACTION\n-- +goose Up\nCREATE TABLE partial (id int);\nINSERT INTO missing_table VALUES (1);\n-- +goose Down\nDROP TABLE partial;\n")}}
+	source := fstest.MapFS{"2026_01_01_000001_partial.sql": &fstest.MapFile{Data: []byte("-- +goose NO TRANSACTION\n-- +goose Up\nCREATE TABLE partial (id int);\nINSERT INTO missing_table VALUES (1);\n-- +goose Down\nDROP TABLE partial;\n")}}
 	p, err := migrate.NewProvider(db, source)
 	if err != nil {
 		t.Fatal(err)
@@ -42,7 +42,7 @@ func TestNonTransactionalMigrationRequiresManualRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	ver, err = p.GetDBVersion(ctx)
-	if err != nil || ver != 1 {
+	if err != nil || ver != 20260101000001 {
 		t.Fatal(ver, err)
 	}
 }

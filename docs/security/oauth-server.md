@@ -54,8 +54,8 @@ oauth.Register(api, rest.RequireToken(api, tokens.Validate)) // 同意页调用�
 
 ```go
 migratecmd.Publish(
-    migrate.Source{Name: "apitoken", FS: apitoken.Migrations()},
-    migrate.Source{Name: "oauthserver", FS: oauthserver.Migrations()},
+    apitoken.Migrations(),
+    oauthserver.Migrations(),
 )
 ```
 

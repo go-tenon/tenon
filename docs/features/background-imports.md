@@ -18,11 +18,11 @@
 
 文件有几万行时，处理放到后台，用户可以先去做别的事。`sheet/imports` 包把导入放到[队列](../background/queue.md)中：用户上传文件后马上得到一个导入 ID，前端用它查询进度；任务每处理 100 行保存一次进度，重试时从中断的地方继续；没有导入的行保存下来，用户可以下载、改正后重新导入；结束时在同一个事务中通知用户。
 
-一次导入是一个[后台操作](operations.md)：状态和进度记在 `operations` 表中，`imports` 表记录上传的文件和处理到的行号，`import_failures` 表记录没有导入的行。和文件、队列的迁移一起[发布](../database/migrations.md#publishing-framework-migrations)，`operation` 排在 `imports` 之前：
+一次导入是一个[后台操作](operations.md)：状态和进度记在 `operations` 表中，`imports` 表记录上传的文件和处理到的行号，`import_failures` 表记录没有导入的行。和文件、队列、`operation` 的迁移一起[发布](../database/migrations.md#publishing-framework-migrations)：
 
 ```go
-migrate.Source{Name: "operation", FS: operation.Migrations()},
-migrate.Source{Name: "imports", FS: imports.Migrations()},
+operation.Migrations(),
+imports.Migrations(),
 ```
 
 `imports.New` 在[依赖装配](../concepts/dependencies.md#assembling-the-application)的 `open` 中创建，`ops` 是 `operation.New(db)`，`files` 是[文件存储](../libraries/filesystem.md)的 `*filesystem.Service`，`languages` 是应用的[语言目录](../general/localization.md)：
