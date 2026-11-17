@@ -283,12 +283,6 @@ func call[I, O any](ctx context.Context, fn func(context.Context, I) (O, error),
 	return fn(ctx, in)
 }
 
-// marshal 把响应编码为 JSON。
-func marshal(v any) ([]byte, error) {
-	data, err := json.Marshal(v)
-	return data, errors.Wrap(err, "natsrpc: encode response")
-}
-
 // bearerToken 取出 Authorization: Bearer 后的 token，Bearer 大小写不敏感；不是 Bearer 时返回空字符串。
 func bearerToken(h string) string {
 	scheme, token, ok := strings.Cut(strings.TrimSpace(h), " ")

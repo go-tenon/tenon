@@ -2,6 +2,7 @@ package natsrpc
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"reflect"
 	"regexp"
@@ -11,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cockroachdb/errors"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/nats-io/nats.go"
 	goi18n "github.com/nicksnyder/go-i18n/v2/i18n"
@@ -180,8 +182,8 @@ func Register[I, O any](s *Server, e Endpoint, fn func(context.Context, I) (O, e
 		if ep.empty {
 			return nil, nil, nil
 		}
-		data, err := marshal(out)
-		return data, nil, err
+		data, err := json.Marshal(out)
+		return data, nil, errors.Wrap(err, "natsrpc: encode response")
 	}
 	s.endpoints = append(s.endpoints, ep)
 	s.names[name] = true

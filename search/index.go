@@ -162,7 +162,7 @@ func (ix *Index[D]) refresh(ctx context.Context, db bun.IDB, load LoadFunc[D], k
 		versions := []int{build}
 		if build == 0 {
 			var err error
-			if versions, err = indexVersions(ctx, tx, ix.name); err != nil {
+			if versions, err = indexes.Versions(ctx, tx, ix.name); err != nil {
 				return err
 			}
 		}

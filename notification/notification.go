@@ -72,8 +72,8 @@ func Send(ctx context.Context, db bun.IDB, n Notification, to ...Recipient) ([]N
 			continue
 		}
 		seen[r] = true
-		if err := check(r); err != nil {
-			return nil, err
+		if err := r.Validate(); err != nil {
+			return nil, errors.Wrap(err, "notification: recipient")
 		}
 		id, err := uuid.NewV7()
 		if err != nil {
@@ -91,11 +91,6 @@ func Send(ctx context.Context, db bun.IDB, n Notification, to ...Recipient) ([]N
 		return nil, errors.Wrap(err, "notification: send")
 	}
 	return rows, nil
-}
-
-// check 校验收件人 r。
-func check(r Recipient) error {
-	return errors.Wrap(r.Validate(), "notification: recipient")
 }
 
 // of 把查询限定在 r 的通知上。

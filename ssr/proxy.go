@@ -45,7 +45,7 @@ func (h *Host) pageProxy() http.Handler {
 		},
 		ModifyResponse: func(res *http.Response) error {
 			route(res)
-			if isHTML(res) {
+			if strings.HasPrefix(strings.ToLower(res.Header.Get("Content-Type")), "text/html") {
 				nonce, _ := res.Request.Context().Value(nonceKey{}).(string)
 				res.Header.Set("Content-Security-Policy", h.opts.CSP(nonce))
 			}
@@ -99,11 +99,6 @@ func route(res *http.Response) {
 	if rctx := chi.RouteContext(res.Request.Context()); rctx != nil {
 		rctx.RoutePatterns = []string{r}
 	}
-}
-
-// isHTML 报告响应是否是 HTML。
-func isHTML(res *http.Response) bool {
-	return strings.HasPrefix(strings.ToLower(res.Header.Get("Content-Type")), "text/html")
 }
 
 // unavailable 在 SSR 进程不可用（重启中）时返回 502 页面；客户端已经断开时什么都不做。

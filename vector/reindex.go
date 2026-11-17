@@ -42,7 +42,7 @@ func (ix *Index[D]) Reindex(ctx context.Context, tx bun.IDB, ops *operation.Serv
 	if err != nil {
 		return nil, err
 	}
-	if _, err := startBuild(ctx, tx, ix.name, op.ID); err != nil {
+	if _, err := indexes.StartBuild(ctx, tx, ix.name, op.ID); err != nil {
 		return nil, err
 	}
 	if err := ix.reindex.Publish(ctx, tx, op.ID); err != nil {
@@ -58,7 +58,7 @@ func (ix *Index[D]) rebuild(ctx context.Context, s *Store, ops *operation.Servic
 		return err
 	}
 	err := ops.Run(ctx, id, func(ctx context.Context, r *operation.Run) error {
-		b, err := currentBuild(ctx, s.db, ix.name, id, false)
+		b, err := indexes.CurrentBuild(ctx, s.db, ix.name, id, false)
 		if err != nil {
 			return err
 		}
@@ -73,7 +73,7 @@ func (ix *Index[D]) rebuild(ctx context.Context, s *Store, ops *operation.Servic
 		op := r.Operation()
 		total, processed := op.Total, op.Processed
 		if after == "" {
-			if total, err = countKeys(ctx, s.db, ix.name); err != nil {
+			if total, err = indexes.CountKeys(ctx, s.db, ix.name); err != nil {
 				return err
 			}
 			r.SetTotal(total)
@@ -109,14 +109,14 @@ func (ix *Index[D]) rebuild(ctx context.Context, s *Store, ops *operation.Servic
 				r.SetTotal(total)
 			}
 			err = r.Save(ctx, func(ctx context.Context, tx database.Tx) error {
-				return saveProgress(ctx, tx, ix.name, id, after)
+				return indexes.SaveProgress(ctx, tx, ix.name, id, after)
 			})
 			if err != nil {
 				return err
 			}
 		}
 		return r.Complete(ctx, func(ctx context.Context, tx database.Tx) error {
-			return finishBuild(ctx, tx, ix.name, id)
+			return indexes.FinishBuild(ctx, tx, ix.name, id)
 		})
 	}, nil)
 	if err != nil {
