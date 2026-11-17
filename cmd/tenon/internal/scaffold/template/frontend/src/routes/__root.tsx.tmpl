@@ -1,4 +1,5 @@
-import "@go-tenon/ui/styles.css"
+[[if eq .Style "site"]]import "@fontsource-variable/inter/index.css"
+[[end]]import "@go-tenon/ui/styles.css"
 import type { ReactNode } from "react"
 import { ColorSchemeScript, mantineHtmlProps } from "@mantine/core"
 import { createRootRouteWithContext, HeadContent, Outlet, Scripts, useRouter } from "@tanstack/react-router"
@@ -20,11 +21,11 @@ function Document({ children }: { children: ReactNode }) {
   return (
     <html lang="zh-CN" {...mantineHtmlProps}>
       <head>
-        <ColorSchemeScript nonce={nonce} />
+        <ColorSchemeScript nonce={nonce}[[if eq .Landing "dusk"]] defaultColorScheme="dark"[[end]] />
         <HeadContent />
       </head>
       <body>
-        <UIProvider theme={theme}>{children}</UIProvider>
+        <UIProvider theme={theme}[[if eq .Landing "dusk"]] defaultColorScheme="dark"[[end]]>{children}</UIProvider>
         <Scripts />
       </body>
     </html>

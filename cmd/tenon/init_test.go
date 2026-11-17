@@ -56,6 +56,8 @@ func TestInitEndToEnd(t *testing.T) {
 	// 两个前端：运营后台挂在 /admin/，控制台挂在 /console/。按 add frontend 的提示由 ssr 托管它们。
 	sh("go", "tool", "tenon", "add", "frontend", "admin", "--style", "admin")
 	sh("go", "tool", "tenon", "add", "frontend", "console")
+	// 官网样式的落地页（不挂载，只检查首页的模板能通过类型检查和编译）。
+	sh("go", "tool", "tenon", "add", "frontend", "promo", "--style", "site", "--landing", "mist")
 	mainGo := filepath.Join(dir, "cmd", "api", "main.go")
 	src, err := os.ReadFile(mainGo)
 	if err != nil {

@@ -10,7 +10,8 @@
   "dependencies": {
     "@go-tenon/client": "workspace:*",
     "@go-tenon/start": "workspace:*",
-    "@go-tenon/ui": "workspace:*",
+    "@go-tenon/ui": "workspace:*",[[if eq .Style "site"]]
+    "@fontsource-variable/inter": "^5.2.8",[[end]]
     "@[[.Scope]]/client": "workspace:*",
     "@mantine/core": "^9.8.1",
     "@mantine/dates": "^9.8.1",

@@ -6,6 +6,7 @@
 @import "@mantine/notifications/styles.css";
 @import "@mantine/dates/styles.css";
 @import "mantine-datatable/styles.css";
+@import "./landing.css";
 
 :root {
   --tn-canvas: var(--mantine-color-gray-0);
@@ -302,7 +303,7 @@ body {
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
-  background: var(--tn-surface);
+  background: var(--lp-bg, var(--tn-surface));
 }
 
 .tn-site-header {

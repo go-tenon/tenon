@@ -145,7 +145,7 @@ func root() *cobra.Command {
 var moduleLine = regexp.MustCompile(`(?m)^module\s+(\S+)`)
 
 func addFrontendCommand() *cobra.Command {
-	var base, style string
+	var base, style, landing string
 	cmd := &cobra.Command{
 		Use:   "frontend <name>",
 		Short: "在 apps/<name> 中生成一个 TanStack Start 前端，加入 Bun workspace",
@@ -179,7 +179,13 @@ func addFrontendCommand() *cobra.Command {
 			if !slices.Contains(scaffold.Styles, style) {
 				return fmt.Errorf("--style %q is not one of %v", style, scaffold.Styles)
 			}
-			f := scaffold.Frontend{Scope: pkg.Name, Name: name, Base: base, Title: name, Style: style}
+			if landing != "" && style != "site" {
+				return fmt.Errorf("--landing needs --style site")
+			}
+			if landing != "" && !slices.Contains(scaffold.Landings, landing) {
+				return fmt.Errorf("--landing %q is not one of %v", landing, scaffold.Landings)
+			}
+			f := scaffold.Frontend{Scope: pkg.Name, Name: name, Base: base, Title: name, Style: style, Landing: landing}
 			if err := scaffold.WriteFrontend(".", f); err != nil {
 				return err
 			}
@@ -211,6 +217,7 @@ ssr.Run(ctx, serve, webPages, %[3]sPages)。导入 %[5]q。
 	}
 	cmd.Flags().StringVar(&base, "base", "", "前端挂载的路径，以 / 开头和结尾，默认 /<name>/")
 	cmd.Flags().StringVar(&style, "style", "console", "样式预设：console（SaaS 控制台）；admin（运营后台，高密度、多标签）；site（官网和内容站，服务端渲染）")
+	cmd.Flags().StringVar(&landing, "landing", "", "落地页的风格，只用于 --style site：classic（默认，朴素）；dusk（暗色、光晕）；ink（黑白、网格）；mist（柔和渐变、毛玻璃）")
 	return cmd
 }
 

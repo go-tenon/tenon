@@ -170,6 +170,7 @@ export const theme = createUiTheme({ preset: "admin", primary: "#4f5bd5" })
 - `primary` 是品牌色，默认是偏冷的蓝紫 `#4f5bd5`。它生成 10 级色板：同一色相，按感知亮度（OKLCH）分级，第 6 级（亮色模式的主色）就是输入的颜色，很浅或很深的颜色也从浅到深单调。也可以单独调用 `palette(hex)`。
 - `radius` 是基础圆角（像素），其他圆角按比例缩放。
 - `override` 是再合并的 Mantine 主题覆盖，用于令牌之外的调整，例如某个组件的默认属性。
+- `landing` 是落地页的风格（`classic`、`dusk`、`ink`、`mist`），只对 `site` 预设有意义，见[落地页](site.md#landing)。
 
 <a id="route-metadata"></a>
 ## 页面的元数据
@@ -350,7 +351,7 @@ bun run playground
 | `AppRoot` | 不用 TanStack Start 时渲染应用（RouterProvider）；用 Start 时由它渲染 `getRouter` 返回的 Router |
 | `UIProvider` | 安装主题、通知、对话框和图标：`theme`、`defaultColorScheme`、`icons`、`env` |
 | `themes`、`Preset` | 三套样式预设：`admin`、`console`、`site` |
-| `createUiTheme(options)` | 由预设和设计令牌生成主题：`preset`、`primary`、`radius`、`fontFamily`、`override` |
+| `createUiTheme(options)` | 由预设和设计令牌生成主题：`preset`、`primary`、`radius`、`fontFamily`、`landing`、`override` |
 | `palette(hex)` | 由一个颜色生成 10 级色板 |
 | `layoutMetrics(theme)`、`LayoutMetrics` | 主题中的布局尺寸 |
 | `requireAuth` | 布局路由的 `beforeLoad`：没有登录时跳到登录页 |
