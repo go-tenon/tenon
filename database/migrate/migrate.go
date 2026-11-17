@@ -12,7 +12,9 @@ import (
 	"github.com/uptrace/bun"
 )
 
-// NewProvider 装配 goose 迁移执行器。fsys 根目录为应用线性 SQL 迁移；禁用全局 goose 注册机制。
+// NewProvider 装配 goose 迁移执行器。fsys 根目录直接包含 SQL 迁移，文件名形如
+// 2026_11_17_123456_create_articles_table.sql，版本是 20261117123456；功能包自带的 0001_create_files.sql
+// 这类文件名也能执行，版本是 1。禁用全局 goose 注册机制。
 // 迁移持有 PostgreSQL 会话锁，多个实例同时迁移时串行执行。
 func NewProvider(db *bun.DB, fsys fs.FS) (*goose.Provider, error) {
 	if db == nil {
@@ -25,7 +27,7 @@ func NewProvider(db *bun.DB, fsys fs.FS) (*goose.Provider, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "migrate")
 	}
-	p, err := goose.NewProvider(goose.DialectPostgres, db.DB, fsys,
+	p, err := goose.NewProvider(goose.DialectPostgres, db.DB, gooseFS{fsys},
 		goose.WithDisableGlobalRegistry(true), goose.WithSessionLocker(locker))
 	if err != nil {
 		return nil, errors.Wrap(err, "migrate")

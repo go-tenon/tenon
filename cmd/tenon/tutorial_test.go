@@ -25,7 +25,7 @@ import (
 var tutorialFile = regexp.MustCompile("(?ms)^```\\w+ title=\"([^\"]+)\"\\n(.*?)^```")
 
 // migrationFile 是教程中的迁移文件名，时间戳之后是 migrate make 的名称。
-var migrationFile = regexp.MustCompile(`^migrations/\d+_(\w+)\.sql$`)
+var migrationFile = regexp.MustCompile(`^migrations/\d{4}_\d{2}_\d{2}_\d{6}_(\w+)\.sql$`)
 
 // TestTutorial 按 docs/tutorial 的章节做一遍教程：用 init 生成项目，按顺序把每章的完整文件写进去，
 // 执行正文中的命令（迁移用 migrate make 生成文件名，与读者的做法相同），每章结束时编译、生成客户端、

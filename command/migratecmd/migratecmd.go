@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"path"
 	"text/tabwriter"
 	"time"
 
@@ -118,7 +117,7 @@ func New[C any](fsys fs.FS, dbConfig func(cfg C) database.Config, opts ...Option
 				if !s.AppliedAt.IsZero() {
 					applied = s.AppliedAt.Local().Format(time.DateTime)
 				}
-				fmt.Fprintf(tw, "%d\t%s\t%s\t%s\n", s.Source.Version, s.State, applied, path.Base(s.Source.Path))
+				fmt.Fprintf(tw, "%d\t%s\t%s\t%s\n", s.Source.Version, s.State, applied, migrate.FileName(s.Source.Path))
 			}
 			return tw.Flush()
 		})),
@@ -134,12 +133,12 @@ func New[C any](fsys fs.FS, dbConfig func(cfg C) database.Config, opts ...Option
 	return root
 }
 
-// printResults 每行输出一个已完成的迁移，例如 "up    20261111090000_create_articles.sql  12ms"。
+// printResults 每行输出一个已完成的迁移，例如 "up    2026_11_11_090000_create_articles_table.sql  12ms"。
 func printResults(out io.Writer, results []*goose.MigrationResult) {
 	tw := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
 	for _, r := range results {
 		if r.Error == nil {
-			fmt.Fprintf(tw, "%s\t%s\t%s\n", r.Direction, path.Base(r.Source.Path), r.Duration.Round(time.Millisecond))
+			fmt.Fprintf(tw, "%s\t%s\t%s\n", r.Direction, migrate.FileName(r.Source.Path), r.Duration.Round(time.Millisecond))
 		}
 	}
 	_ = tw.Flush() // 写的是命令的输出，与 Fprintf 一样忽略错误

@@ -3,6 +3,7 @@ package migratecmd_test
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -27,7 +28,7 @@ func TestPublishWithoutConfigurationOrDatabase(t *testing.T) {
 		}
 		if i == 0 {
 			name := strings.TrimSpace(out)
-			if !strings.HasSuffix(name, "_files_0001_create_files.sql") {
+			if !regexp.MustCompile(`^\d{4}_\d{2}_\d{2}_\d{6}_create_files\.sql$`).MatchString(name) {
 				t.Fatalf("out=%q", out)
 			}
 			if _, err := os.Stat(filepath.Join(dir, name)); err != nil {

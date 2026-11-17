@@ -2,7 +2,6 @@ package migrate
 
 import (
 	"fmt"
-	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -19,8 +18,8 @@ var (
 )
 
 // Create 在 dir 中新建一个迁移，返回文件路径。name 必须是 snake_case，例如
-// create_articles_table 或 add_published_at_to_articles_table；文件名为
-// "<UTC 时间戳>_<name>.sql"，版本保证大于目录中已有的最大版本。
+// create_articles_table 或 add_published_at_to_articles_table；文件名与 Laravel 相同，是
+// UTC 时间加名称，例如 2026_11_17_123456_create_articles_table.sql，版本保证大于目录中已有的最大版本。
 //
 // Create 从 name 推断表名并生成对应的骨架：create_<table>[_table]
 // 生成 CREATE TABLE，主键是由应用用 uuid.NewV7() 生成的 UUID；..._to|from|in_<table>[_table] 生成 ALTER TABLE，其余只有 goose 注解。
@@ -32,13 +31,14 @@ func Create(dir, name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if maxVersion == math.MaxInt64 {
-		return "", errors.New("migrate: migration version overflow")
+	version, err := nextVersion(maxVersion)
+	if err != nil {
+		return "", err
 	}
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return "", errors.Wrap(err, "migrate: create migration directory")
 	}
-	path := filepath.Join(dir, fmt.Sprintf("%d_%s.sql", nextVersion(maxVersion), name))
+	path := filepath.Join(dir, formatVersion(version)+"_"+name+".sql")
 	if err := publishFile(path, []byte(stub(name))); err != nil {
 		return "", errors.Wrapf(err, "migrate: create %s", filepath.Base(path))
 	}
@@ -73,8 +73,22 @@ ALTER TABLE %[1]s;
 	return "-- +goose Up\n\n-- +goose Down\n"
 }
 
-// nextVersion 返回当前 UTC 时间戳形式的版本，并保证大于 maxVersion。
-func nextVersion(maxVersion int64) int64 {
-	now, _ := strconv.ParseInt(time.Now().UTC().Format("20060102150405"), 10, 64)
-	return max(now, maxVersion+1)
+// versionLayout 是版本的时间格式，例如 20261117123456。
+const versionLayout = "20060102150405"
+
+// nextVersion 返回当前 UTC 时间形式的版本，并保证大于 maxVersion：maxVersion 不早于现在时，
+// 取它之后的一秒（与 Laravel 相同，123459 之后是 123500）；maxVersion 不是合法的时间时加一。
+// 超过 lastVersion 时返回错误。
+func nextVersion(maxVersion int64) (int64, error) {
+	version, _ := strconv.ParseInt(time.Now().UTC().Format(versionLayout), 10, 64)
+	if version <= maxVersion {
+		version = maxVersion + 1
+		if t, err := time.Parse(versionLayout, fmt.Sprintf("%014d", maxVersion)); err == nil {
+			version, _ = strconv.ParseInt(t.Add(time.Second).Format(versionLayout), 10, 64)
+		}
+	}
+	if version > lastVersion {
+		return 0, errors.New("migrate: migration version overflow")
+	}
+	return version, nil
 }

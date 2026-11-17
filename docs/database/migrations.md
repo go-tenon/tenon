@@ -28,7 +28,7 @@ Tenon 使用 [goose](https://github.com/pressly/goose) 管理迁移。迁移是�
 用 `migrate make` 新建一个迁移：
 
 ```bash
-go run ./cmd/api migrate make create_articles_table   # 新建 migrations/20261113080000_create_articles_table.sql
+go run ./cmd/api migrate make create_articles_table   # 新建 migrations/2026_11_13_080000_create_articles_table.sql
 go run ./cmd/api migrate up                            # 执行全部未执行的迁移
 go run ./cmd/api migrate status
 ```
@@ -58,7 +58,7 @@ DROP TABLE articles;
 go run ./cmd/api migrate make create_articles_table
 ```
 
-命令输出新文件的路径，例如 `migrations/20261111090000_create_articles_table.sql`。文件名是 UTC 时间戳加名称，版本保证大于目录中已有的迁移，所以新迁移总是排在最后。命令只生成文件；`--dir` 默认是 `migrations`。
+命令输出新文件的路径，例如 `migrations/2026_11_11_090000_create_articles_table.sql`。文件名和 Laravel 一样，是 UTC 时间加名称；时间保证晚于目录中已有的迁移，所以新迁移总是排在最后。命令只生成文件；`--dir` 默认是 `migrations`。
 
 命令会从名称推断表名并生成骨架：
 
@@ -68,7 +68,7 @@ go run ./cmd/api migrate make create_articles_table
 | `add_published_at_to_articles_table`、`drop_summary_from_articles_table` | `ALTER TABLE articles`，补全后才能执行 |
 | 其他名称，例如 `backfill_article_slugs` | 只有 goose 注解 |
 
-时间戳使用 goose 的格式 `20261111090000`：goose 把第一个下划线之前的数字当作版本号。
+去掉下划线的时间 `20261111090000` 是迁移的版本，数据库用它记录哪些迁移已经执行，`migrate status` 的 `VERSION` 列显示的就是它。迁移目录中的 `.sql` 文件都要按这个格式命名，否则 `migrate make` 和 `migrate publish` 会报错。
 
 <a id="migration-structure"></a>
 ### 迁移文件结构
@@ -143,6 +143,12 @@ go run ./cmd/api migrate publish --dir migrations
 
 `--dir` 默认是当前工作目录下的 `migrations`。命令只输出本次新生成的文件名；再次运行且没有新增迁移时，输出为空。发布过程只复制文件。
 
+功能包中的迁移文件按包内的顺序编号，例如 `0001_create_files.sql`。发布时去掉编号，换成当前时间，和 `migrate make` 新建的文件同样命名：
+
+```text
+migrations/2026_11_17_080000_create_files.sql
+```
+
 每个发布文件的第一行包含稳定的来源标记，例如：
 
 ```sql
@@ -151,7 +157,7 @@ go run ./cmd/api migrate publish --dir migrations
 
 发布器通过这个标记识别已有迁移。你可以在首次执行前调整 SQL 或重命名文件，但应保留标记；再次发布时你的修改保持原样。升级框架后，再次运行命令只会发布新增的来源迁移。
 
-新文件的版本是当前 UTC 时间戳；目录中已有更大的版本时，从最大版本加一开始，因此新迁移总是排在已有迁移之后。目标文件已存在时发布器报错，已有文件保持原样。发布中途遇到 I/O 错误时，已完成的文件会保留，修复后重试即可。
+一次发布多个文件时，每个文件的时间比前一个晚一秒。目录中已有更晚的迁移时，从它之后的一秒开始，因此新迁移总是排在已有迁移之后。目标文件已存在时发布器报错，已有文件保持原样。发布中途遇到 I/O 错误时，已完成的文件会保留，修复后重试即可。
 
 > [!NOTE]
 > 发布完成后，需要审查和提交 SQL，再重新构建应用，将新文件嵌入二进制。然后运行 `migrate up`。已经在任何环境执行过的迁移保持原样，后续调整一律新增迁移。`CheckPublished` 只检查应用自身的历史基线。
@@ -201,7 +207,8 @@ err = migrate.Up(ctx, provider)
 `NewProvider` 返回的是原生的 `*goose.Provider`，你可以直接调用它的 `Up`、`Down`、`Status` 等方法。它已经配置好了以下行为：
 
 - 使用 PostgreSQL 会话锁，保证多个实例同时执行迁移时也只会串行运行；
-- 只使用 SQL 文件，不使用 goose 的全局 Go 迁移注册。
+- 只使用 SQL 文件，不使用 goose 的全局 Go 迁移注册；
+- goose 把文件名中第一个下划线之前的数字当作版本，所以它看到的 `2026_11_17_080000_create_articles_table.sql` 名为 `20261117080000_create_articles_table.sql`。`Status` 等方法返回的 `Source.Path` 也是这个名字，用 `migrate.FileName(path)` 换回目录中的文件名。
 
 版本记录表、事务和锁都由 goose 管理。`migrate.Up(ctx, provider)` 在调用 `provider.Up` 的基础上为错误附加了上下文信息。`migrate` 命令使用的也是同一个迁移器。
 
@@ -342,13 +349,21 @@ func Up(ctx context.Context, p *goose.Provider) error
 
 用嵌入的迁移文件创建 goose 的 Provider；`Up` 执行全部未执行的迁移。用法见[在代码中执行迁移](#creating-a-provider)。
 
+### FileName
+
+```go
+func FileName(path string) string
+```
+
+把 goose 返回的迁移路径换成迁移目录中的文件名，例如 `20261117080000_create_articles_table.sql` 换成 `2026_11_17_080000_create_articles_table.sql`。见[在代码中执行迁移](#creating-a-provider)。
+
 ### Create
 
 ```go
 func Create(dir, name string) (string, error)
 ```
 
-在 `dir` 中新建以时间戳开头的迁移文件，返回路径。`migrate make` 调用它。
+在 `dir` 中新建以 UTC 时间开头的迁移文件，例如 `2026_11_17_080000_create_articles_table.sql`，返回路径。`migrate make` 调用它。
 
 ### Source、Publish
 

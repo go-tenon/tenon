@@ -296,8 +296,8 @@ go run ./cmd/api migrate make create_articles_table  # 新建迁移文件
 
 ```text
 VERSION         STATE    APPLIED AT           FILE
-20261111090000  applied  2026-11-11 09:12:03  20261111090000_create_articles_table.sql
-20261112100000  pending  -                    20261112100000_create_article_tags_table.sql
+20261111090000  applied  2026-11-11 09:12:03  2026_11_11_090000_create_articles_table.sql
+20261112100000  pending  -                    2026_11_12_100000_create_article_tags_table.sql
 ```
 
 `make` 只生成迁移文件的骨架；其他命令会加载配置、连接数据库，并在结束后关闭连接。数据库连不上时以 `ExitUnavailable` 退出，部署脚本可以据此重试。迁移文件的编写与嵌入见[迁移](../database/migrations.md)。应用连接多个数据库时，用 `migratecmd.Name` 为其他数据库构造 `migrate <name> …` 命令，见[多个数据库](../database/advanced.md#multiple-databases)。

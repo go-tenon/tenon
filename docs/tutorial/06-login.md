@@ -154,7 +154,7 @@ go run ./cmd/api migrate publish
 go run ./cmd/api migrate make create_users_table
 ```
 
-```sql title="migrations/20261113080009_create_users_table.sql"
+```sql title="migrations/2026_11_13_080009_create_users_table.sql"
 -- +goose Up
 CREATE TABLE users (
     id         uuid PRIMARY KEY,

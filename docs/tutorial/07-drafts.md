@@ -32,7 +32,7 @@
 go run ./cmd/api migrate make add_author_and_published_at_to_articles_table
 ```
 
-```sql title="migrations/20261113080010_add_author_and_published_at_to_articles_table.sql"
+```sql title="migrations/2026_11_13_080010_add_author_and_published_at_to_articles_table.sql"
 -- +goose Up
 ALTER TABLE articles
     ADD COLUMN author_id    uuid REFERENCES users (id),

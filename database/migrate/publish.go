@@ -2,9 +2,7 @@ package migrate
 
 import (
 	"bytes"
-	"fmt"
 	"io/fs"
-	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -19,25 +17,25 @@ const sourceMarker = "-- tenon: "
 
 var sourceName = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
 
-// Source 是一个迁移来源。Name 是稳定标识；FS 根目录直接包含带数字版本前缀的 SQL，例如 0001_create_files.sql。
-// 已发布的源文件不改名，升级只追加更高版本。
+// Source 是一个迁移来源。Name 是稳定标识；FS 根目录直接包含带数字版本前缀的 SQL，例如 0001_create_files.sql，
+// 版本只决定来源内的顺序。已发布的源文件不改名，升级只追加更高版本。
 type Source struct {
 	Name string
 	FS   fs.FS
 }
 
 type publication struct {
-	source  string
-	name    string
+	name    string // 去掉版本的源文件名，例如 create_files.sql
 	marker  string
 	version int64
 	data    []byte
 }
 
 // Publish 把 sources 中尚未发布的迁移复制到 dir，返回本次写入的文件名。
+// 与 Laravel 发布包的迁移相同，新文件名是 UTC 时间加去掉版本的源文件名，例如 0001_create_files.sql 发布为
+// 2026_11_17_123456_create_files.sql，版本保证大于目录中已有的最大版本。
 // 每个文件首行写入来源标记（如 "-- tenon: files/0001_create_files"），
 // 目录中已有相同标记的迁移会被跳过，应用可以自由修改或重命名已发布的文件。
-// 新文件的版本取当前 UTC 时间戳，并保证大于目录中已有的最大版本。
 func Publish(dir string, sources ...Source) ([]string, error) {
 	if strings.TrimSpace(dir) == "" {
 		return nil, errors.New("migrate: publish directory is required")
@@ -62,20 +60,23 @@ func Publish(dir string, sources ...Source) ([]string, error) {
 	if len(pending) == 0 {
 		return nil, nil
 	}
-	if maxVersion > math.MaxInt64-int64(len(pending)) {
-		return nil, errors.New("migrate: migration version overflow")
+	// 写入之前先算出全部版本，版本不够用时一个文件也不写。
+	names := make([]string, len(pending))
+	for i, item := range pending {
+		if maxVersion, err = nextVersion(maxVersion); err != nil {
+			return nil, err
+		}
+		names[i] = formatVersion(maxVersion) + "_" + item.name
 	}
-	version := nextVersion(maxVersion)
 
 	var written []string
-	for _, item := range pending {
-		name := fmt.Sprintf("%d_%s_%s", version, item.source, item.name)
+	for i, item := range pending {
+		name := names[i]
 		content := append([]byte(sourceMarker+item.marker+"\n"), item.data...)
 		if err := publishFile(filepath.Join(dir, name), content); err != nil {
 			return written, errors.Wrapf(err, "migrate: publish %s", name)
 		}
 		written = append(written, name)
-		version++
 	}
 	return written, nil
 }
@@ -109,7 +110,7 @@ func publications(sources []Source) ([]publication, error) {
 		var group []publication
 		versions := make(map[int64]string)
 		for _, name := range names {
-			version, err := migrationVersion(name)
+			version, description, err := sourceVersion(name)
 			if err != nil {
 				return nil, err
 			}
@@ -125,7 +126,7 @@ func publications(sources []Source) ([]publication, error) {
 				return nil, errors.Newf("migrate: %s/%s is missing goose Up annotation", source.Name, name)
 			}
 			group = append(group, publication{
-				source: source.Name, name: name, version: version, data: data,
+				name: description, version: version, data: data,
 				marker: source.Name + "/" + strings.TrimSuffix(name, ".sql"),
 			})
 		}
@@ -135,13 +136,14 @@ func publications(sources []Source) ([]publication, error) {
 	return items, nil
 }
 
-func migrationVersion(name string) (int64, error) {
-	versionText, description, ok := strings.Cut(strings.TrimSuffix(name, ".sql"), "_")
+// sourceVersion 返回来源中迁移文件名的版本和版本之后的部分，例如 0001_create_files.sql 返回 1 和 create_files.sql。
+func sourceVersion(name string) (int64, string, error) {
+	versionText, description, ok := strings.Cut(name, "_")
 	version, err := strconv.ParseInt(versionText, 10, 64)
-	if !ok || description == "" || err != nil || version <= 0 || strings.ContainsAny(versionText, "+-") {
-		return 0, errors.Newf("migrate: invalid SQL migration filename %q", name)
+	if !ok || description == ".sql" || err != nil || version <= 0 || strings.ContainsAny(versionText, "+-") {
+		return 0, "", errors.Newf("migrate: invalid SQL migration filename %q", name)
 	}
-	return version, nil
+	return version, description, nil
 }
 
 // publishedSources 返回目录中已发布的来源标记和最大版本。
@@ -153,7 +155,7 @@ func publishedSources(dir string) (map[string]bool, int64, error) {
 	published := make(map[string]bool)
 	var maxVersion int64
 	for _, path := range names {
-		version, err := migrationVersion(filepath.Base(path))
+		version, _, err := parseFileName(filepath.Base(path))
 		if err != nil {
 			return nil, 0, err
 		}

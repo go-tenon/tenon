@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -138,18 +139,18 @@ func TestPublishThroughPublicCommand(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				i := slices.IndexFunc(names, func(name string) bool {
-					return strings.HasSuffix(name, "_"+src.Name+"_"+entry.Name())
-				})
+				_, description, _ := strings.Cut(entry.Name(), "_")
+				published := regexp.MustCompile(`^\d{4}_\d{2}_\d{2}_\d{6}_` + regexp.QuoteMeta(description) + `$`)
+				i := slices.IndexFunc(names, published.MatchString)
 				if i < 0 {
 					t.Fatalf("missing published %s in %v", entry.Name(), names)
 				}
-				published, err := os.ReadFile(filepath.Join(target, names[i]))
+				data, err := os.ReadFile(filepath.Join(target, names[i]))
 				if err != nil {
 					t.Fatal(err)
 				}
 				want := append([]byte("-- tenon: "+src.Name+"/"+strings.TrimSuffix(entry.Name(), ".sql")+"\n"), original...)
-				if !bytes.Equal(published, want) {
+				if !bytes.Equal(data, want) {
 					t.Fatalf("published content differs from embedded SQL: %s", names[i])
 				}
 			}

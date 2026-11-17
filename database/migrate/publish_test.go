@@ -1,8 +1,6 @@
 package migrate
 
 import (
-	"fmt"
-	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -30,13 +28,13 @@ func TestPublishUpgradePreservesApplicationSQL(t *testing.T) {
 	if err := os.Remove(filepath.Join(dir, first[0])); err != nil {
 		t.Fatal(err)
 	}
-	renamed := filepath.Join(dir, "29990101000000_custom_files.sql")
+	renamed := filepath.Join(dir, "2999_01_01_000000_custom_files.sql")
 	if err := os.WriteFile(renamed, []byte(custom), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	source.FS.(fstest.MapFS)["0002_add_field.sql"] = &fstest.MapFile{Data: []byte(testMigration)}
 	second, err := Publish(dir, source)
-	if err != nil || len(second) != 1 || !strings.HasPrefix(second[0], "29990101000001_files_0002_") {
+	if err != nil || len(second) != 1 || second[0] != "2999_01_01_000001_add_field.sql" {
 		t.Fatalf("second=%v err=%v", second, err)
 	}
 	data, _ = os.ReadFile(renamed)
@@ -55,7 +53,7 @@ func TestPublishOrdersSourceVersionsNumerically(t *testing.T) {
 		"2_first.sql":  {Data: []byte(testMigration)},
 	}
 	names, err := Publish(t.TempDir(), Source{Name: "files", FS: files})
-	if err != nil || len(names) != 2 || !strings.HasSuffix(names[0], "_2_first.sql") || !strings.HasSuffix(names[1], "_10_later.sql") {
+	if err != nil || len(names) != 2 || !strings.HasSuffix(names[0], "_first.sql") || !strings.HasSuffix(names[1], "_later.sql") {
 		t.Fatalf("names=%v err=%v", names, err)
 	}
 }
@@ -66,17 +64,17 @@ func TestPublishTimestampAndNumericVersions(t *testing.T) {
 		existing int64
 		want     int64
 	}{
-		{"future timestamp", 29990101000059, 29990101000060},
+		{"future timestamp", 29990101000059, 29990101000100},
 		{"numeric", 30000000000000, 30000000000001},
-		{"largest version", math.MaxInt64 - 1, math.MaxInt64},
+		{"largest version", lastVersion - 1, lastVersion},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("%d_existing.sql", tc.existing)), []byte(testMigration), 0o600); err != nil {
+			if err := os.WriteFile(filepath.Join(dir, formatVersion(tc.existing)+"_existing.sql"), []byte(testMigration), 0o600); err != nil {
 				t.Fatal(err)
 			}
 			names, err := Publish(dir, Source{Name: "files", FS: fstest.MapFS{"1_new.sql": {Data: []byte(testMigration)}}})
-			if err != nil || len(names) != 1 || names[0] != fmt.Sprintf("%d_files_1_new.sql", tc.want) {
+			if err != nil || len(names) != 1 || names[0] != formatVersion(tc.want)+"_new.sql" {
 				t.Fatalf("names=%v err=%v want=%d", names, err, tc.want)
 			}
 		})
@@ -85,7 +83,7 @@ func TestPublishTimestampAndNumericVersions(t *testing.T) {
 
 func TestPublishPlansAllVersionsBeforeWriting(t *testing.T) {
 	dir := t.TempDir()
-	name := filepath.Join(dir, fmt.Sprintf("%d_existing.sql", int64(math.MaxInt64-1)))
+	name := filepath.Join(dir, formatVersion(lastVersion-1)+"_existing.sql")
 	if err := os.WriteFile(name, []byte(testMigration), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +134,8 @@ func TestPublishRejectsInvalidApplicationDirectory(t *testing.T) {
 		files map[string]string
 	}{
 		{"invalid name", map[string]string{"notes.sql": testMigration}},
-		{"overflow", map[string]string{"9223372036854775807_last.sql": testMigration}},
+		{"goose name", map[string]string{"20261117123456_old.sql": testMigration}},
+		{"overflow", map[string]string{"9999_99_99_999999_last.sql": testMigration}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
