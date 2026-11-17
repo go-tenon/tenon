@@ -27,7 +27,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import dayjs from "dayjs"
 import { type ReactNode, useState } from "react"
 import { type Column, DataTable } from "./data-table"
-import { DescriptionList } from "./description-list"
+import { DescriptionList, StatusDot } from "./description-list"
 import { confirm, notifyError, notifySuccess } from "./feedback"
 import { useFormatDateTime } from "./fields"
 import { Page } from "./page"
@@ -254,23 +254,26 @@ function SystemStatus({ status }: { status: QueueStatusData }): ReactNode {
   if (!js)
     stream = (
       <DescriptionList
-        title="任务流（JetStream）"
+        title="任务流"
+        description="NATS JetStream"
         items={[{ label: "状态", value: "应用没有设置 queueapi.Options.Admin，只显示数据库一侧的状态" }]}
       />
     )
   else if (js.error)
     stream = (
       <DescriptionList
-        title="任务流（JetStream）"
-        extra={<Badge color="red">读取失败</Badge>}
+        title="任务流"
+        description="NATS JetStream"
+        extra={<StatusDot color="red">读取失败</StatusDot>}
         items={[{ label: "错误", value: js.error, mono: true }]}
       />
     )
   else
     stream = (
       <DescriptionList
-        title="任务流（JetStream）"
-        extra={js.exists ? <Badge color="teal">正常</Badge> : <Badge color="orange">还没有创建</Badge>}
+        title="任务流"
+        description="NATS JetStream"
+        extra={js.exists ? <StatusDot color="teal">正常</StatusDot> : <StatusDot color="orange">还没有创建</StatusDot>}
         items={[
           { label: "名称", value: js.stream, mono: true },
           { label: "消息", value: `${js.messages}（${formatBytes(js.bytes)}）` },
@@ -283,8 +286,9 @@ function SystemStatus({ status }: { status: QueueStatusData }): ReactNode {
   return (
     <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md" style={{ alignItems: "start" }}>
       <DescriptionList
-        title="复制槽（PostgreSQL）"
-        extra={<Badge color={slotState.color}>{slotState.label}</Badge>}
+        title="复制槽"
+        description="PostgreSQL 逻辑复制"
+        extra={<StatusDot color={slotState.color}>{slotState.label}</StatusDot>}
         items={[
           { label: "名称", value: slot.name, mono: true },
           {
@@ -740,11 +744,7 @@ function FailedJobDetail({
                   没有元数据
                 </Text>
               ) : (
-                <DescriptionList
-                  items={meta.map(([k, v]) => ({ label: k, value: v, mono: true }))}
-                  labelWidth={160}
-                  monoLabels
-                />
+                <DescriptionList items={meta.map(([k, v]) => ({ label: k, value: v, mono: true }))} monoLabels />
               )}
             </Section>
             <Section title="任务内容">

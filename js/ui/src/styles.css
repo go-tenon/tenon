@@ -849,18 +849,23 @@ body {
 
 /* ———————————————— 描述列表 ———————————————— */
 
-/* 名称在左、值在右，行间一条细线；窄屏（小于 36em）时名称在上、值在下。 */
+/* 卡片中名称在左、值靠右，行间一条淡线；标题没有底色。值太长时在右侧换行。 */
 .tn-dl {
   margin: 0;
+  padding: 0 var(--mantine-spacing-lg) 4px;
   font-size: var(--mantine-font-size-sm);
 }
 
+.tn-dl-header {
+  padding: var(--mantine-spacing-lg) var(--mantine-spacing-lg) var(--mantine-spacing-xs);
+}
+
 .tn-dl-row {
-  display: grid;
-  grid-template-columns: var(--tn-dl-label, 120px) minmax(0, 1fr);
-  column-gap: var(--mantine-spacing-md);
-  row-gap: 2px;
-  padding: 10px var(--mantine-spacing-md);
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--mantine-spacing-lg);
+  padding: 12px 0;
   line-height: 1.55;
 }
 
@@ -869,12 +874,15 @@ body {
 }
 
 .tn-dl dt {
+  flex-shrink: 0;
+  max-width: 50%;
   color: var(--tn-muted);
 }
 
 .tn-dl dd {
   margin: 0;
   min-width: 0;
+  text-align: right;
   overflow-wrap: anywhere;
   font-variant-numeric: tabular-nums;
 }
@@ -884,24 +892,15 @@ body {
   font-size: 0.95em;
 }
 
-.tn-dl-header {
-  padding: 10px var(--mantine-spacing-md);
-  border-bottom: 1px solid var(--tn-border);
-  background: var(--tn-canvas);
-}
-
-/* 不带卡片时（对话框中），行贴着左右边缘，标题没有底色。 */
-.tn-dl-plain .tn-dl-row {
-  padding-inline: 0;
-}
-
+/* 不带卡片时（对话框中），行贴着左右边缘。 */
+.tn-dl-plain .tn-dl,
 .tn-dl-plain .tn-dl-header {
   padding-inline: 0;
-  background: none;
 }
 
-@media (max-width: 36em) {
-  .tn-dl-row {
-    grid-template-columns: minmax(0, 1fr);
-  }
+.tn-status-dot-mark {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
 }

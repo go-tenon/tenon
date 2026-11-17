@@ -1,8 +1,9 @@
 // 描述列表：一组“名称 — 值”，例如详情页的基本信息、系统状态、请求的元数据。
-// 名称在左、值在右，行间一条细线；窄屏时名称在上、值在下。用 <dl> 渲染，读屏软件按名称和值朗读。
+// 卡片中名称在左、值靠右，行间一条淡线；标题没有底色，右边可以放状态（StatusDot）或按钮。
+// 用 <dl> 渲染，读屏软件按名称和值朗读。
 
-import { Box, Card, Group, Text } from "@mantine/core"
-import type { CSSProperties, ReactNode } from "react"
+import { Box, Card, Group, type MantineColor, Text } from "@mantine/core"
+import type { ReactNode } from "react"
 
 /** 描述列表中的一项。 */
 export interface DescriptionItem {
@@ -20,10 +21,10 @@ export interface DescriptionListProps {
   items: DescriptionItem[]
   /** 标题，显示在卡片顶部。 */
   title?: ReactNode
-  /** 标题右边的内容，例如状态标签、按钮。 */
+  /** 标题下面的一行小字，例如数据的来源。 */
+  description?: ReactNode
+  /** 标题右边的内容，通常是 StatusDot 或按钮。 */
   extra?: ReactNode
-  /** 名称列的宽度（px），默认 120。 */
-  labelWidth?: number
   /** 名称也用等宽字体，例如元数据的键。 */
   monoLabels?: boolean
   /** 放在卡片中（带边框），默认 true；放进对话框、已有卡片中时用 false。 */
@@ -37,9 +38,10 @@ const empty = (v: ReactNode) => v === undefined || v === null || v === ""
  *
  *	<DescriptionList
  *	  title="复制槽"
+ *	  description="PostgreSQL"
+ *	  extra={<StatusDot color="teal">转发中</StatusDot>}
  *	  items={[
  *	    { label: "名称", value: slot.name, mono: true },
- *	    { label: "状态", value: <Badge color="teal">转发中</Badge> },
  *	    { label: "积压", value: "12.4 KiB" },
  *	  ]}
  *	/>
@@ -47,43 +49,67 @@ const empty = (v: ReactNode) => v === undefined || v === null || v === ""
 export function DescriptionList({
   items,
   title,
+  description,
   extra,
-  labelWidth = 120,
   monoLabels,
   withBorder = true,
 }: DescriptionListProps): ReactNode {
-  const list = (
-    <Box component="dl" className="tn-dl" style={{ "--tn-dl-label": `${labelWidth}px` } as CSSProperties}>
-      {items.map((item) => (
-        <div key={item.key ?? String(item.label)} className="tn-dl-row">
-          <dt data-mono={monoLabels || undefined}>{item.label}</dt>
-          <dd data-mono={item.mono || undefined}>{empty(item.value) ? "—" : item.value}</dd>
-        </div>
-      ))}
-    </Box>
-  )
-  if (!withBorder)
-    return (
-      <Box className="tn-dl-plain">
-        {title && <Header title={title} extra={extra} />}
-        {list}
+  const content = (
+    <>
+      {(title || extra) && (
+        <Group justify="space-between" align="flex-start" gap="sm" wrap="nowrap" className="tn-dl-header">
+          <Box style={{ minWidth: 0 }}>
+            {title && <Text fw={600}>{title}</Text>}
+            {description && (
+              <Text size="xs" c="dimmed">
+                {description}
+              </Text>
+            )}
+          </Box>
+          {extra}
+        </Group>
+      )}
+      <Box component="dl" className="tn-dl">
+        {items.map((item) => (
+          <div key={item.key ?? String(item.label)} className="tn-dl-row">
+            <dt data-mono={monoLabels || undefined}>{item.label}</dt>
+            <dd data-mono={item.mono || undefined}>{empty(item.value) ? "—" : item.value}</dd>
+          </div>
+        ))}
       </Box>
-    )
+    </>
+  )
+  if (!withBorder) return <Box className="tn-dl-plain">{content}</Box>
   return (
-    <Card padding={0} className="tn-dl-card">
-      {title && <Header title={title} extra={extra} />}
-      {list}
+    <Card padding={0} radius="md" className="tn-dl-card">
+      {content}
     </Card>
   )
 }
 
-function Header({ title, extra }: { title: ReactNode; extra?: ReactNode }): ReactNode {
+/** StatusDot 的选项。 */
+export interface StatusDotProps {
+  /** 颜色：正常用 teal，需要注意用 orange，出错用 red，没有状态用 gray。 */
+  color: MantineColor
+  children: ReactNode
+}
+
+/** 状态：一个带浅色光圈的圆点和文字，例如描述列表、卡片标题右边的“转发中”“正常”。 */
+export function StatusDot({ color, children }: StatusDotProps): ReactNode {
   return (
-    <Group justify="space-between" gap="xs" wrap="nowrap" className="tn-dl-header">
-      <Text fw={600} size="sm">
-        {title}
+    <Group gap={6} wrap="nowrap" className="tn-status-dot" style={{ flexShrink: 0 }}>
+      <Box
+        component="span"
+        aria-hidden
+        className="tn-status-dot-mark"
+        style={{
+          background: `var(--mantine-color-${color}-filled)`,
+          boxShadow: `0 0 0 3px var(--mantine-color-${color}-light)`,
+        }}
+      />
+      <Text span size="sm" fw={500} c={`var(--mantine-color-${color}-text)`}>
+        {children}
       </Text>
-      {extra}
     </Group>
   )
 }
