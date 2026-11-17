@@ -857,21 +857,18 @@ go tool tenon generate
 ```ts title="apps/admin/src/resources.ts"
 import { resourceModel } from "@go-tenon/ui"
 import { createClient } from "@blog/client/api"
-import { enums } from "@blog/client/api/enums"
-import { messages } from "@blog/client/api/messages"
-import { createQueries } from "@blog/client/api/queries"
-import { resources } from "@blog/client/api/resources"
-import { components, schemas } from "@blog/client/api/schemas"
+import { createKit } from "@blog/client/api/kit"
 import { apiFetch } from "@go-tenon/start"
 import { session } from "./auth"
 
 // api 是生成的客户端。登录凭据是浏览器自动带上的会话 cookie；受保护的接口返回 401 时，会话随之变为未登录。
 export const api = createClient({ baseURL: "/api", fetch: apiFetch, session })
 
-// 资源模型：Go 中声明的资源，加上生成的客户端、校验规则、验证提示和枚举的显示文字。
-const kit = { client: api, queries: createQueries(api), schemas, components, enums, messages, language: "zh-CN" }
-export const users = resourceModel(resources.user, kit)
-export const roles = resourceModel(resources.role, kit)
+// kit 是生成的客户端和元数据：查询选项、校验规则、验证提示、枚举的显示文字和资源。
+// scope 让查询的缓存按登录的账号区分。
+const kit = createKit(api, { scope: session.scope, language: "zh-CN" })
+export const users = resourceModel(kit.resources.user, kit)
+export const roles = resourceModel(kit.resources.role, kit)
 ```
 
 角色的页面不需要写任何页面代码。新建 `apps/admin/src/routes/_app/roles.tsx`：

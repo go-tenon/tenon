@@ -219,6 +219,7 @@ return ssr.Run(ctx, serve, webPages, adminPages)
     "./*/resources": "./src/*/resources.ts",
     "./*/settings": "./src/*/settings.ts",
     "./*/schemas": "./src/*/schemas.ts",
+    "./*/kit": "./src/*/kit.ts",
     "./*": "./src/*/api.ts"
   }
 }

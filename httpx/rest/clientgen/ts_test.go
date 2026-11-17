@@ -60,7 +60,8 @@ func TestTSClientCompiles(t *testing.T) {
 	bun := requireBun(t)
 	cmd := exec.Command(bun, "x", "-p", "typescript@5.9.3", "tsc", "--noEmit", "--strict", "--target", "es2022",
 		"--lib", "es2022,dom,dom.iterable", "--module", "esnext", "--moduleResolution", "bundler", "--verbatimModuleSyntax",
-		"api.ts", "errors.ts", "runtime.ts", "schemas.ts", "messages.ts", "permissions.ts", "queries.ts", "enums.ts")
+		"api.ts", "errors.ts", "runtime.ts", "schemas.ts", "messages.ts", "permissions.ts", "queries.ts", "enums.ts",
+		"resources.ts", "settings.ts", "kit.ts")
 	cmd.Dir = exampleTSOut
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("tsc: %v\n%s", err, out)

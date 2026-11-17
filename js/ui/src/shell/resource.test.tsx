@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// 资源和设置的模型：用 clientgen 示例 API 生成的代码（resources.ts、settings.ts、api.ts、queries.ts、schemas.ts、enums.ts）。
+// 资源和设置的模型：用 clientgen 示例 API 生成的代码，经生成的 createKit 合在一起。
 import { createSession } from "@go-tenon/client"
 import { QueryClient } from "@tanstack/react-query"
 import { createMemoryHistory, createRootRouteWithContext, createRoute, Outlet } from "@tanstack/react-router"
@@ -7,12 +7,7 @@ import { act, cleanup, render, screen, waitFor } from "@testing-library/react"
 import { useEffect } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { createClient } from "../../../../httpx/rest/clientgen/internal/example/ts/api"
-import { enums } from "../../../../httpx/rest/clientgen/internal/example/ts/enums"
-import { messages } from "../../../../httpx/rest/clientgen/internal/example/ts/messages"
-import { createQueries } from "../../../../httpx/rest/clientgen/internal/example/ts/queries"
-import { resources } from "../../../../httpx/rest/clientgen/internal/example/ts/resources"
-import { components, schemas } from "../../../../httpx/rest/clientgen/internal/example/ts/schemas"
-import { settings } from "../../../../httpx/rest/clientgen/internal/example/ts/settings"
+import { createKit } from "../../../../httpx/rest/clientgen/internal/example/ts/kit"
 import { AppRoot, createApp, type RouterContext } from "./app"
 import { formValidator } from "./form"
 import {
@@ -32,6 +27,8 @@ afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
 })
+
+const { resources, settings } = createKit(createClient({ baseURL: "/api" }))
 
 type Call = { method: string; url: string; body?: unknown }
 
@@ -67,7 +64,7 @@ function kit(language = "zh-CN") {
   return {
     client,
     queryClient,
-    kit: { client, queries: createQueries(client, { queryClient }), schemas, components, enums, language },
+    kit: createKit(client, { queryClient, language }),
   }
 }
 
@@ -87,6 +84,9 @@ describe("resourceModel", () => {
       { value: "published", label: "已发布" },
     ])
     expect(m.display(m.columns[1] as never, "published")).toBe("已发布")
+    expect(m.display("status", "draft")).toBe("草稿") // 按字段名
+    expect(m.display("title", "你好")).toBe("你好")
+    expect(m.display("unknown", 1)).toBe(1)
     expect(m.form.map((f) => [f.name, f.kind, f.required])).toEqual([
       ["title", "text", true],
       ["slug", "text", true],
@@ -157,9 +157,8 @@ describe("resourceModel", () => {
     const client = createClient({ baseURL: "/api" })
     const queryClient = new QueryClient()
     let scope: unknown[] = []
-    const queries = createQueries(client, { queryClient, scope: () => scope })
     // 模型通常在模块中创建，那时还没有登录；之后登录、切换租户，scope 随之变化。
-    const m = resourceModel(resources.article, { client, queries, schemas, components, enums }, queryClient)
+    const m = resourceModel(resources.article, createKit(client, { queryClient, scope: () => scope }), queryClient)
     scope = ["u1", "acme"]
     expect(m.queryKey).toEqual(["u1", "acme", "api", "article"])
     expect(m.listQuery({}).queryKey.slice(0, 4)).toEqual(m.queryKey)
@@ -220,11 +219,13 @@ describe("useResourceList", () => {
 describe("验证提示", () => {
   it("kit 带上 messages 时，资源和设置表单的提示是翻译好的文字，否则是错误码", () => {
     const k = kit().kit
-    const article = resourceModel(resources.article, { ...k, messages })
+    const article = resourceModel(resources.article, k)
     expect(formValidator(article.formSchema("create"), article.ruleOptions)({ title: "" }).title).toBe("不能为空")
-    const blog = settingsModel(settings.blog, { ...k, messages })
+    // kit 本身可以作为 useSchemaForm 的 rules
+    expect(formValidator(k.schemas.article.create.body, k)({ title: "" }).title).toBe("不能为空")
+    const blog = settingsModel(settings.blog, k)
     expect(formValidator(blog.formSchema(), blog.ruleOptions)({ name: "" }).name).toBe("不能为空")
-    const bare = settingsModel(settings.blog, k)
+    const bare = settingsModel(settings.blog, { ...k, messages: undefined })
     expect(formValidator(bare.formSchema(), bare.ruleOptions)({ name: "" }).name).toBe("validation.filled")
   })
 })

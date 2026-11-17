@@ -88,6 +88,7 @@ go tool tenon generate   # 等价于 go run ./cmd/api client --ts packages/clien
 | `enums.ts` | 带显示文字的枚举，见[枚举](../frontend/client-react.md#ts-enums) |
 | `resources.ts` | 用 `api.Resource` 声明的资源，见[资源](../frontend/resources.md#generated) |
 | `settings.ts` | 用 `api.Settings` 声明的设置页面，见[设置页面](../frontend/resources.md#settings) |
+| `kit.ts` | `createKit`：把客户端和上面的元数据合成一个对象，交给资源和设置的模型，见[前端的资源模型](../frontend/resources.md#model) |
 
 生成的代码是独立的 TypeScript，由 Go 程序直接生成。重新生成时只删除带生成标记的文件，目录中手写的文件保持不变。把它们提交到仓库，CI 中重新生成后用 `git diff --exit-code` 检查是否忘了更新。
 
