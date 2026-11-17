@@ -82,6 +82,7 @@ var rules = map[string]rule{
 	"realtime":             {layerEntry, []string{"broadcast", "identity", "logging"}},
 	"mcpx":                 {layerEntry, []string{"errorx", "httpx", "identity", "internal/apischema", "logging"}},
 	"natsrpc":              {layerEntry, []string{"errorx", "form", "i18n", "identity", "internal/apischema", "logging"}},
+	"natsrpc/rpccmd":       {layerEntry, []string{"command", "natsrpc"}},
 	"mcpx/mcpxtest":        {layerEntry, []string{"identity", "mcpx"}},
 	"mcpx/mcpcmd":          {layerEntry, []string{"command", "identity", "mcpx"}},
 	"command":              {layerEntry, []string{"cleanup", "config", "errorx", "logging"}},

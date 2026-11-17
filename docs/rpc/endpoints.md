@@ -9,6 +9,7 @@ RPC 让其他服务经由 NATS 同步调用你的业务动作，就像调用一�
     - [登记端点](#registering)
     - [认证与权限](#authentication)
     - [运行](#running)
+    - [导出接口描述](#exporting)
 - [调用端点](#calling)
     - [处理错误](#handling-errors)
 - [测试](#testing)
@@ -103,8 +104,8 @@ func (a *Get) RPC(ctx context.Context, in GetInput) (*ArticleDTO, error) {
 `srv.Serve(ctx, nc)` 是进程的一个[运行部分](../concepts/dependencies.md#running-parts)，和 HTTP 服务、队列 worker 一样装配：
 
 ```go
-// RPC 装配 RPC 服务，返回的函数提供端点，直到 ctx 被取消。
-func (a *App) RPC(*command.Daemon) (func(context.Context) error, error) {
+// rpcServer 创建 RPC 服务并登记全部端点。它只保存 App 的字段、不使用它们，所以 DocRPC 也能调用它。
+func (a *App) rpcServer() *natsrpc.Server {
     srv := natsrpc.New(natsrpc.Options{
         Prefix:    "blog.v1",
         Version:   "1.4.0",
@@ -113,6 +114,12 @@ func (a *App) RPC(*command.Daemon) (func(context.Context) error, error) {
         Languages: a.languages,
     })
     article.RegisterRPC(srv, a.db)
+    return srv
+}
+
+// RPC 装配 RPC 服务，返回的函数提供端点，直到 ctx 被取消。
+func (a *App) RPC(*command.Daemon) (func(context.Context) error, error) {
+    srv := a.rpcServer()
     return func(ctx context.Context) error { return srv.Serve(ctx, a.nc) }, nil
 }
 ```
@@ -128,6 +135,33 @@ func (a *App) RPC(*command.Daemon) (func(context.Context) error, error) {
 - 收到停止信号时先不再接收新的请求，处理完已经收到的；最多等待 `ShutdownTimeout`（默认 10 秒）。
 
 RPC 可以和 HTTP 服务运行在同一个进程中，也可以单独运行，见[一个进程，还是三个进程](../installation/deployment.md#process-forms)。
+
+<a id="exporting"></a>
+### 导出接口描述
+
+调用方用其他语言编写时，需要知道每个端点的参数和返回值。`rpccmd.New` 提供 `rpc` 命令，把登记的端点导出为 [AsyncAPI 3.0](protocol.md#contract) 文档，交给对方的代码生成器。和 HTTP 接口的 `openapi` 命令一样，它离线运行，用零值的依赖构造 Server，只读取登记的端点：
+
+```go
+// DocRPC 用默认配置和没有打开任何资源的 App 构造 RPC 服务，rpc 命令用它。
+func DocRPC() *natsrpc.Server {
+    a := &App{cfg: config.Default[Config]()}
+    return a.rpcServer()
+}
+
+// 在 cmd/api/main.go 中
+root.AddCommand(rpccmd.New(bootstrap.DocRPC))
+```
+
+`rpcServer` 见上一节，`RPC` 和 `DocRPC` 都调用它，所以导出的文档总是与运行的服务一致。登记端点时只保存依赖，处理请求时才使用，所以用零值的 `App` 也能构造成功。
+
+```bash
+go run ./cmd/api rpc asyncapi > asyncapi.json
+go run ./cmd/api rpc endpoints
+```
+
+`rpc endpoints` 列出每个端点的 subject、需要的权限和是否幂等，用于检查暴露了哪些端点。
+
+参数和返回值的类型在文档的 `components.schemas` 中，与 [OpenAPI 文档](../http/openapi.md)的规则相同：一个类型同时用于 HTTP 接口和 RPC 端点时，两份文档中的定义完全相同。`Options.Permissions` 传入应用的权限目录（例如 `authz.Catalog`）时，文档中带有 `x-tenon-permissions`，与 OpenAPI 文档相同。
 
 <a id="calling"></a>
 ## 调用端点
@@ -228,7 +262,8 @@ func New(opts Options) *Server
 | --- | --- |
 | `Prefix string` | 端点 subject 的前缀，例如 `blog.v1`，必填 |
 | `Version string` | 服务的版本，语义化版本，默认 `0.0.0` |
-| `Description string` | 说明这个 API，出现在服务发现中 |
+| `Description string` | 说明这个 API，出现在服务发现和 AsyncAPI 文档中 |
+| `Permissions []identity.Permission` | 应用的权限目录，写入 AsyncAPI 文档的 `x-tenon-permissions` |
 | `Validate identity.TokenValidator`、`Accounts identity.Accounts` | 校验 token 和接受的账号体系；有需要登录的端点时必填 |
 | `Tenant func(h nats.Header) string` | 从请求头中取出租户 |
 | `Languages *goi18n.Bundle` | 消息目录，按 `Accept-Language` 翻译错误提示 |
@@ -259,9 +294,18 @@ func Register[I, O any](s *Server, e Endpoint, fn func(context.Context, I) (O, e
 func (s *Server) Serve(ctx context.Context, nc *nats.Conn) error
 func (s *Server) Endpoints() []Endpoint
 func (s *Server) Subject(name string) string
+func (s *Server) AsyncAPI() ([]byte, error)
 ```
 
-`Serve` 提供全部端点，直到 `ctx` 被取消，然后平滑停止并返回 `nil`，订阅失败时返回错误。`Endpoints` 返回登记的端点，按名称排序；`Subject` 返回端点的 subject。
+`Serve` 提供全部端点，直到 `ctx` 被取消，然后平滑停止并返回 `nil`，订阅失败时返回错误。`Endpoints` 返回登记的端点，按名称排序；`Subject` 返回端点的 subject；`AsyncAPI` 返回描述全部端点的 AsyncAPI 3.0 文档（JSON）。
+
+### rpccmd.New
+
+```go
+func New(server func() *natsrpc.Server) *cobra.Command
+```
+
+包 `github.com/go-tenon/tenon/natsrpc/rpccmd`。返回 `rpc` 命令，子命令 `asyncapi` 和 `endpoints`，见[导出接口描述](#exporting)。
 
 ### Call
 

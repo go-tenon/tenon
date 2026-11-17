@@ -2,9 +2,6 @@
 
 本页从线路层面说明 Tenon 的 RPC 入口：其他服务经由 NATS 调用应用的业务动作时，请求和响应长什么样、错误怎样表示、接口怎样描述。调用方无论用什么语言编写，都按本页实现；框架提供的 Go 客户端是其中的一种实现。
 
-> [!NOTE]
-> RPC 入口正在开发中：服务端和 Go 客户端已经实现（见[提供和调用端点](endpoints.md)），导出[接口描述](#contract)的命令还没有提供。实现完成之前，本页的内容可能调整。
-
 RPC 建立在 NATS 官方的[服务协议](https://github.com/nats-io/nats-architecture-and-design/blob/main/adr/ADR-32.md)（Service API）之上：负载均衡、服务发现和错误的响应头都沿用它，Tenon 只补充本页规定的部分。数据格式、错误模型和认证方式与 [HTTP 接口](../http/protocol.md)相同，同一个客户端处理两种入口的错误可以用同一套代码。
 
 阅读前需要了解：[NATS](../libraries/nats.md)；[客户端协议](../http/protocol.md)；[错误处理](../general/errors.md)。
@@ -161,11 +158,14 @@ blog.v1.articles.publish
 <a id="contract"></a>
 ## 接口描述
 
-每个 API 的端点、参数和返回值由一份 [AsyncAPI 3.0](https://www.asyncapi.com/docs/reference/specification/v3.0.0) 文档描述，用应用的命令导出。AsyncAPI 是描述消息接口的标准格式，其他语言的代码生成器可以根据它生成类型和客户端。文档中：
+每个 API 的端点、参数和返回值由一份 [AsyncAPI 3.0](https://www.asyncapi.com/docs/reference/specification/v3.0.0) 文档描述，用应用的 `rpc asyncapi` 命令导出，见[导出接口描述](endpoints.md#exporting)。AsyncAPI 是描述消息接口的标准格式，其他语言的代码生成器可以根据它生成类型和客户端。文档中：
 
-- 每个端点是一个 `receive` 操作，带 `reply`；它的 channel 的 `address` 是端点的 subject。
-- 参数和返回值是 JSON Schema，与同一个应用的 [OpenAPI 文档](../http/openapi.md)使用同一套类型定义：一个类型同时出现在 HTTP 接口和 RPC 端点中时，两边的结构相同。
-- 根上的 `x-tenon-permissions` 是应用的权限目录，每个操作上的 `x-required-permissions` 是调用它需要的权限，`x-tenon-idempotent` 标明幂等的端点；名字和含义与 [OpenAPI 文档中的扩展字段](../http/protocol.md#contract)相同。
+- `info.title` 是前缀，`info.version` 是服务的版本。
+- 每个端点是一个 `receive` 操作，名字是服务协议中的端点名（例如 `articles_get`）。它的 channel 的 `address` 是端点的 subject；`reply` 指向一个 `address` 为 `null` 的 channel，因为回复地址是调用方的 NATS 客户端为每个请求生成的。回复有两种消息：成功的响应，以及所有端点共用的 `error`。
+- 消息的 `headers` 列出[请求](#requests)和[响应](#responses)的请求头。`error` 消息的 payload 是 `components.schemas` 中的 `TenonRPCProblem`，即[错误](#errors)的响应体。
+- 参数和返回值是 `components.schemas` 中的命名类型，与同一个应用的 [OpenAPI 文档](../http/openapi.md)用同样的规则生成：一个 Go 类型同时出现在 HTTP 接口和 RPC 端点中时，两份文档中的名字和结构都相同，枚举同样带 `x-tenon-enum`。没有返回值的端点，成功的响应没有 payload。
+- 根上的 `x-tenon-permissions` 是应用的权限目录，每个操作上的 `x-required-permissions` 是调用它需要的权限；名字和含义与 [OpenAPI 文档中的扩展字段](../http/protocol.md#contract)相同。操作上还有 `x-tenon-idempotent`（是否幂等）和 `x-tenon-public`（是否不需要登录）。
+- 操作的 `bindings.nats.queue` 是队列组 `q`。
 - 错误码和它们的翻译与 HTTP 接口共用同一个来源，由各语言的生成器一起输出。
 
 <a id="between-applications"></a>
