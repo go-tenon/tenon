@@ -73,7 +73,7 @@ bun run dev
 <a id="layout"></a>
 ## 项目里有什么
 
-项目可以分成三部分：Go 写的后端、React 写的前端，以及根据它们自动生成的代码。
+项目可以分成三部分：Go 写的后端、React 写的前端（TanStack Start 和 Mantine），以及根据它们自动生成的代码。
 
 ```text
 todo/
@@ -83,16 +83,16 @@ todo/
 ├── cmd/api/main.go        程序的入口
 ├── internal/todo/todo.go  待办事项：类型、数据（保存在内存中）和四个接口
 ├── apps/web/              前端：React 写的网页，挂在 / 下
-│   ├── frontend.go        把前端的构建结果打包进 Go 程序
+│   ├── frontend.go        把前端编译成的 SSR 程序（ssr.bin）打包进 Go 程序
 │   ├── vite.config.ts     前端构建工具 Vite 的配置
 │   └── src/
-│       ├── main.tsx       前端的入口
-│       ├── app.ts         创建前端应用：路由、登录状态等
-│       ├── client.ts      创建调用接口的客户端
+│       ├── router.tsx     创建前端应用：路由、登录状态等
+│       ├── start.ts       TanStack Start 的设置：是否默认在服务端渲染
+│       ├── server.ts      服务端渲染的入口
+│       ├── theme.ts       主题：样式预设和品牌色
+│       ├── api.ts         创建调用接口的客户端
 │       └── routes/        页面：一个文件一个页面
-├── theme/                 品牌色、圆角等设计参数（设计令牌）
 ├── packages/client/       生成的 TypeScript 客户端，前端用它调用接口
-├── packages/theme/        由设计令牌生成的样式
 └── .tenon/                开发工具生成的内容，不提交到代码仓库
 ```
 
@@ -107,7 +107,7 @@ todo/
 <a id="entrypoint"></a>
 ## 入口文件
 
-打开 `cmd/api/main.go`。它和[安装](installing.md#graceful-shutdown)第三步的程序做的是同一件事：创建路由器、安装中间件、注册接口、启动服务、收到信号后平稳地停止。不同的是它多了三样东西：配置文件、命令行和前端页面。我们分段来看。
+打开 `cmd/api/main.go`。它和[安装](installing.md#graceful-shutdown)第三步的程序做的是同一件事：创建路由器、安装中间件、注册接口、启动服务、收到信号后平稳地停止。不同的是它多了三样东西：配置文件、命令行和渲染页面的 SSR 进程。我们分段来看。
 
 ### 配置
 
@@ -129,7 +129,7 @@ func main() {
         command.Run("serve", "启动 HTTP 服务", serve),
         command.Config[Config](),
     )
-    root.AddCommand(httpcmd.Commands(func() chi.Routes { return routes(config.Default[Config](), nil) })...)
+    root.AddCommand(httpcmd.Commands(func() chi.Routes { return routes(config.Default[Config](), nil, pages{}) })...)
     command.Execute(root)
 }
 ```
@@ -145,12 +145,23 @@ func main() {
 ### serve 和 routes
 
 ```go
+type pages struct{ web http.Handler }
+
 func serve(ctx context.Context, cfg Config) error {
     slog.SetDefault(logging.New(logging.Config{}))
-    return httpx.ListenAndServe(ctx, cfg.HTTP, routes(cfg, todo.NewStore()))
+    var router chi.Router
+    api := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { router.ServeHTTP(w, r) })
+    webPages, err := ssr.New(ssr.Options{Executable: web.SSR, API: api, DevServer: cfg.DevServers["web"]})
+    if err != nil {
+        return err
+    }
+    router = routes(cfg, todo.NewStore(), pages{web: webPages.Handler()})
+    return ssr.Run(ctx, func(ctx context.Context) error {
+        return httpx.ListenAndServe(ctx, cfg.HTTP, router)
+    }, webPages)
 }
 
-func routes(cfg Config, store *todo.Store) chi.Router {
+func routes(cfg Config, store *todo.Store, p pages) chi.Router {
     router := chi.NewRouter()
     router.Use(httpx.Defaults(cfg.HTTP)...)
     router.Route("/api", func(r chi.Router) {
@@ -158,35 +169,39 @@ func routes(cfg Config, store *todo.Store) chi.Router {
         api := rest.New(r, rest.Options{Title: "todo", Version: "0.1.0", BasePath: "/api"})
         todo.Register(api, store)
     })
-    router.Handle("/*", httpx.NewSPA(web.Dist, httpx.SPAOptions{DevServer: cfg.DevServers["web"]}))
+    if p.web != nil {
+        router.Handle("/*", p.web)
+    }
     return router
 }
 ```
 
-`serve` 和安装那一页的 `run` 几乎一样，只是把创建路由的部分拆到了 `routes` 中。`routes` 做了三件事：
+`routes` 做了三件事：
 
 1. 安装默认的中间件，和安装那一页的第二步相同。
 2. 在 `/api` 下创建 API，注册待办事项的接口。超时中间件只装在 `/api` 上，因为接口应当很快返回，而页面相关的连接可能保持很久。
-3. 其余的地址（`/*`）都交给前端页面，见下一节。
+3. 其余的地址（`/*`）都是页面，交给 `pages` 中的处理器，见下一节。
 
 为什么要把 `routes` 单独拆出来？因为它有两个调用者：
 
 - `serve` 用真实的配置和数据调用它，启动服务；
-- `openapi`、`client` 等命令用默认配置和 `nil` 调用它，只为了读出有哪些接口，生成文档和客户端，不需要真的连接数据库。
+- `openapi`、`client` 等命令用默认配置、`nil` 和空的 `pages` 调用它，只为了读出有哪些接口，生成文档和客户端，不需要真的连接数据库或启动页面。
 
 `todo.Register` 只是把 `store` 保存下来，处理请求时才使用它，所以传 `nil` 也能注册全部接口。以后你新增一个业务模块，只需要在 `routes` 中加一行 `Register`，服务、接口文档和客户端都会看到它。
 
+`serve` 比安装那一页的 `run` 多了页面：`ssr.New` 创建托管前端 SSR 进程的 `Host`，`ssr.Run` 先启动 SSR 进程、等它就绪，再运行 HTTP 服务；停止时先排空请求，再停 SSR 进程。SSR 进程渲染页面需要数据时，经内部 socket 调用同一个 `router`。
+
 <a id="frontend"></a>
-## 前端与 API 同源
+## 页面与 API 同源
 
 浏览器有一条安全规则：一个网页只能自由地调用**同源**的接口。同源指协议、域名和端口都相同，例如 `http://localhost:8080` 上的页面调用 `http://localhost:8080/api/todos`。如果页面在 5173 端口、接口在 8080 端口，就是跨域，需要额外配置，并且登录用的 cookie 也会受限。
 
-所以项目让页面和接口都在同一个端口上：
+所以项目让页面和接口都在同一个端口上，Go 是唯一的入口：
 
-- **开发时**：前端的开发服务器 Vite 在另一个端口上运行，但你不直接访问它。Go 程序在 8080 端口上处理 `/api` 的请求，把其余的请求（页面、热更新）转发给 Vite。浏览器始终只访问 8080。
-- **发布时**：前端被构建成静态文件，放进 `apps/web/dist`，再由 `frontend.go` 打包进 Go 程序（见 [embed](../concepts/go-primer.md#embed)）。Go 程序直接提供这些文件，不再需要 Vite。
+- **开发时**：前端的开发服务器（TanStack Start 的 Vite）在另一个端口上运行，但你不直接访问它。Go 程序在 8080 端口上处理 `/api` 的请求，把其余的请求（页面、热更新）转发给开发服务器。浏览器始终只访问 8080。
+- **发布时**：`tenon build` 把前端编译成一个渲染页面的程序（`apps/web/ssr.bin`），由 `frontend.go` 打包进 Go 程序（见 [embed](../concepts/go-primer.md#embed)）。Go 程序启动时从内存中运行它，页面请求经 unix socket 交给它渲染。
 
-细节见[单页应用](../frontend/spa.md)。
+细节见[服务端渲染](../frontend/ssr.md)和 [TanStack Start 的接入](../frontend/start.md)。
 
 <a id="building"></a>
 ## 构建
@@ -198,7 +213,7 @@ bun run build
 ./bin/api serve --config config/app.yaml
 ```
 
-`bun run build` 先构建前端，再编译 Go 程序，前端打包在其中。部署时只需要带上 `bin/api` 和配置文件，见[部署](deployment.md)。
+`bun run build` 先把每个前端编译成渲染页面的程序（`ssr.bin`，架构与 Go 程序相同），再编译 Go 程序，把它们打包在其中。部署时只需要带上 `bin/api` 和配置文件，见[部署](deployment.md)。页面由 Go 托管的 SSR 进程渲染，只支持 Linux；在 macOS 上开发时用 `bun run dev`。
 
 <a id="troubleshooting"></a>
 ## 常见问题

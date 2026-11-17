@@ -41,20 +41,25 @@
 bun run build
 ```
 
-它先构建前端，再编译 Go 程序，得到 `bin/api`，见[开发工具](tooling.md#build)。没有前端的项目直接用 `go build`：
+它先把每个前端编译成渲染页面的 SSR 程序，再编译 Go 程序，得到 `bin/api`，见[开发工具](tooling.md#build)。没有前端的项目直接用 `go build`：
 
 ```bash
 go build -trimpath -o bin/api ./cmd/api
 ```
 
-`-trimpath` 去掉二进制中你电脑上的文件路径。PostgreSQL 的驱动是纯 Go 写的，可以加上 `CGO_ENABLED=0` 构建一个不依赖系统库的静态二进制，放到任何 Linux 机器上都能运行。
+`-trimpath` 去掉二进制中你电脑上的文件路径。PostgreSQL 的驱动是纯 Go 写的，可以加上 `CGO_ENABLED=0` 构建一个不依赖系统库的静态二进制。
 
-迁移文件、翻译文件、前端页面都通过 [embed](../concepts/go-primer.md#embed) 打包进了二进制，所以部署时只需要两样东西：
+迁移文件、翻译文件、前端的 SSR 程序都通过 [embed](../concepts/go-primer.md#embed) 打包进了二进制，所以部署时只需要两样东西：
 
 - `bin/api` 这个文件；
 - `config` 目录。
 
-构建之前确认生成的代码都是最新的：服务端页面用到的 templ、Tailwind 生成的样式表，都提交在代码仓库中，修改源文件后忘了重新生成，二进制中就还是旧的内容。另外，记下每次构建对应的提交，出问题时能准确知道线上运行的是哪个版本。
+有前端时，运行的机器要求：
+
+- **Linux**：Go 程序从内存中运行 SSR 程序（memfd），见[服务端渲染](../frontend/ssr.md)。在 macOS 上构建时用 `GOOS=linux GOARCH=amd64 bun run build`，SSR 程序的架构随 `GOARCH`。
+- **glibc**：SSR 程序是 Bun 编译的，动态链接 glibc（`libc`、`libm`、`libpthread`、`libdl`），常见的 Debian、Ubuntu、RHEL 系统都有。Alpine 用的是 musl，不能直接运行。
+
+构建之前确认生成的代码都是最新的：生成的客户端提交在代码仓库中，修改接口后忘了重新生成，前端用的就还是旧的类型。另外，记下每次构建对应的提交，出问题时能准确知道线上运行的是哪个版本。
 
 <a id="release-process"></a>
 ## 第一次发布
@@ -240,18 +245,19 @@ done
 <a id="docker"></a>
 ## 用 Docker 运行
 
-Docker 把程序和它运行需要的文件打包成一个镜像，在任何装了 Docker 的机器上都能以同样的方式运行。我们的程序是一个静态二进制，所以镜像中只需要这个二进制和 `config` 目录：
+Docker 把程序和它运行需要的文件打包成一个镜像，在任何装了 Docker 的机器上都能以同样的方式运行。镜像中只需要这个二进制和 `config` 目录：
 
 ```dockerfile
 # Dockerfile
 FROM golang:1.27 AS build
+COPY --from=oven/bun:1.4.4 /usr/local/bin/bun /usr/local/bin/bun
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -o /out/api ./cmd/api && mkdir /out/storage
+RUN CGO_ENABLED=0 go tool tenon build -o /out/api && mkdir /out/storage
 
-FROM gcr.io/distroless/static-debian13:nonroot
+FROM gcr.io/distroless/base-debian13:nonroot
 WORKDIR /app
 COPY --from=build /out/api /app/api
 COPY config /app/config
@@ -263,7 +269,8 @@ CMD ["start"]
 这个文件分两段：第一段在 Go 的镜像中编译程序，第二段只把编译结果复制到一个很小的运行镜像中，最终的镜像不包含 Go 工具链和源代码。需要注意的几点：
 
 - **`ENTRYPOINT` 要写成 JSON 数组的形式。** 这样程序就是容器中的第一个进程，能直接收到 `docker stop` 发出的 `SIGTERM`。如果写成 `ENTRYPOINT ./api start`，信号会发给 shell，程序收不到，等待时间一到就被强制结束，正在处理的请求被中断。
-- **distroless 镜像中带有 CA 证书和时区数据**，访问 HTTPS 接口、按时区执行定时任务都能直接用。
+- **构建阶段需要 Bun**：`tenon build` 用它编译前端。这里从 Bun 的官方镜像复制可执行文件，版本与本地开发用的相同。
+- **运行镜像用 `distroless/base`**，它带有 glibc，前端的 SSR 程序需要它；没有前端的项目可以用更小的 `distroless/static`。两者都带有 CA 证书和时区数据，访问 HTTPS 接口、按时区执行定时任务都能直接用。
 - **`storage` 目录要挂载卷**，否则容器删除后上传的文件也没了。镜像中预先建好这个目录，并交给 `nonroot` 用户，否则新挂载的卷属于 root，程序无法写入。文件存放在 S3 这类对象存储中时不需要它。
 
 用 Docker Compose 分开运行三个部分，并在启动前执行迁移：

@@ -96,21 +96,20 @@ go tool tenon generate   # 等价于 go run ./cmd/api client --ts packages/clien
 <a id="creating-the-client"></a>
 ### 创建客户端
 
-浏览器中的登录凭据是服务端写入的 HttpOnly [会话 cookie](../security/api-tokens.md#browser-sessions)，浏览器随同源请求自动带上它，页面上的代码不保管 token。框架的 `@go-tenon/client` 提供会话 `createSession`，它只记录当前是谁。下面是 `apps/web/src/client.ts`：
+浏览器中的登录凭据是服务端写入的 HttpOnly [会话 cookie](../security/api-tokens.md#browser-sessions)，浏览器随同源请求自动带上它，页面上的代码不保管 token。框架的 `@go-tenon/client` 提供会话 `createSession`，它只记录当前是谁。下面是 `apps/web/src/api.ts`：
 
 ```ts
 import { createSession } from "@go-tenon/client"
+import { apiFetch } from "@go-tenon/start"
 import { createClient } from "@blog/client/api"
-import { router } from "./router"
 
 // session 记录当前的身份：打开页面、登录后调用 load 读取当前用户，没有登录时接口返回 401。
-export const session = createSession({
-  load: async () => ({ account: (await api.user.me()).id }),
-  onSignedOut: () => router.navigate({ to: "/login" }),
-})
+export const session = createSession({ load: async () => ({ account: (await api.user.me()).id }) })
 
 export const api = createClient({
   baseURL: "/api",
+  // 浏览器中就是 fetch；服务端渲染时经内部 socket 调用 Go，并带上页面请求的 cookie
+  fetch: apiFetch,
   // 受保护的接口返回 401：登录已经失效（过期、在别处退出或被撤销），会话随之变为未登录
   session,
   // 403 auth.confirm_required（rest.Confirmed）：弹出密码框，确认成功后重试原请求
@@ -120,7 +119,7 @@ export const api = createClient({
 
 - 打开页面（包括刷新页面、新标签页）时先调用一次 `await session.restore()`：它调用 `load`，返回 `true` 表示已经登录，决定显示登录页还是应用。已经知道身份时不再读取。
 - 登录接口成功后（服务端已经写入 cookie）调用 `await session.signIn()`，它用 `load` 读取身份；也可以直接传入身份。登出时先调用登出接口，服务端撤销这次登录并清除 cookie，再调用 `session.signOut()`。
-- 受保护的接口返回 `401` 时，客户端调用 `session.expired()`：清除身份，调用 `onSignedOut`。
+- 受保护的接口返回 `401` 时，客户端调用 `session.expired()`：清除身份，调用 `onSignedOut`（传了时）。用[应用骨架](../frontend/app-shell.md)时不需要它：会话变化后应用重新运行路由的守卫，需要登录的页面跳到登录页。
 - 请求只对发出时的身份有效：请求发出之后登录、退出或切换了身份（`session.generation()` 变了），收到的 `401` 原样抛出，不会让新的会话失效；`403 auth.confirm_required` 也不再确认重试，免得用别人的身份重发。`session.fetch` 同样如此。
 - 公开的接口（[`rest.Public`](routing.md#access-policies)）的 `401` 不影响会话，原样返回给调用者。
 - 请求带上 `Accept-Language`（默认是浏览器的语言，`language` 可以覆盖），错误的 `detail` 按它翻译。App 的 WebView 设置 `appVersion`，作为 [`X-App-Version`](#app-version) 发送。

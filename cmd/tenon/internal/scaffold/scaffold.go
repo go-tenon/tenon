@@ -1,11 +1,11 @@
-// Package scaffold 生成新项目和新前端：template/project 是项目，template/frontend 是 apps 中的一个前端。
+// Package scaffold 生成新项目和新前端：template/project 是项目，template/frontend 是 apps 中的一个前端
+// （TanStack Start 和 @go-tenon/ui），template/app 和 template/site 是按样式加上的页面。
 // 每个 .tmpl 文件按参数渲染后写入目标目录。模板的分隔符是 [[ ]]，与 JSX 的 {{ }} 区分开；gitignore.tmpl 写成 .gitignore。
 package scaffold
 
 import (
 	"bytes"
 	"embed"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -44,170 +44,24 @@ type Frontend struct {
 	Scope string
 	// Name 是前端的名称，即 apps 中的目录名。
 	Name string
-	// Base 是前端挂载的路径，以 / 开头和结尾，写入 Vite 的 base。
+	// Base 是前端挂载的路径，以 / 开头和结尾，写入 Vite 的 base 和编译 SSR 可执行文件的 --base。
 	Base string
 	// Title 是页面标题。
 	Title string
-	// Template 是前端的模板，见 Templates；为空时是 default。
-	Template string
-	// Layout 是默认布局，见 Layouts；为空时是模板的第一种布局。default 模板没有布局。
-	Layout string
+	// Style 是样式预设，见 Styles；为空时是 console。
+	Style string
 }
 
-// Layouts 是 admin 和 console 模板可选的布局，第一种是默认的。布局预览页（src/routes/_app/layouts.tsx）列出全部，
-// 用户可以在它们之间切换；--layout 选的那一种排在第一位，成为默认布局。
-var Layouts = map[string][]string{
-	"admin":   {"side", "top", "mix", "rail", "centered"},
-	"console": {"inset", "side", "floating", "top", "mix", "rail", "centered"},
-}
-
-// LayoutOrder 返回模板的全部布局，默认布局（f.Layout，为空时是第一种）排在第一位。
-func (f Frontend) LayoutOrder() []string {
-	all := Layouts[f.Template]
-	if f.Layout == "" || !slices.Contains(all, f.Layout) {
-		return all
-	}
-	out := []string{f.Layout}
-	for _, l := range all {
-		if l != f.Layout {
-			out = append(out, l)
-		}
-	}
-	return out
-}
-
-// LayoutArray 返回 LayoutOrder 的 TypeScript 数组字面量，例如 ["side", "top"]，写入模板的 src/layouts.ts。
-func (f Frontend) LayoutArray() string {
-	quoted := make([]string, 0, len(Layouts[f.Template]))
-	for _, l := range f.LayoutOrder() {
-		quoted = append(quoted, strconv.Quote(l))
-	}
-	return "[" + strings.Join(quoted, ", ") + "]"
-}
-
-// checkLayout 检查 f.Layout 是模板可选的布局。
-func (f Frontend) checkLayout() error {
-	if f.Layout == "" {
-		return nil
-	}
-	all, ok := Layouts[f.Template]
-	if !ok {
-		return fmt.Errorf("template %q has no layouts; --layout is for the admin and console templates", f.templateName())
-	}
-	if !slices.Contains(all, f.Layout) {
-		return fmt.Errorf("layout %q is not one of %v for the %s template", f.Layout, all, f.Template)
-	}
-	return nil
-}
-
-func (f Frontend) templateName() string {
-	if f.Template == "" {
-		return "default"
-	}
-	return f.Template
-}
-
-// Templates 是 tenon add frontend 的 --template 可选的模板：
-//   - default：React、TanStack Router 和 @go-tenon/shell 的最小前端；
-//   - admin：运营后台，antd 和 ProComponents，带登录页、侧栏布局和多标签（@go-tenon/admin）；
-//   - console：shadcn 和 Tailwind 的控制台，带登录页、侧栏布局、多标签和 tenon registry 的组件。
-var Templates = []string{"default", "admin", "console"}
-
-// AdminPackage 是 admin 模板依赖的框架前端包在项目中的位置，加入 Bun workspace。
-// 默认不加入：Bun 会安装包的 peer 依赖，不用 antd 的项目不应该因此装上 antd。
-const AdminPackage = ".tenon/js/admin"
-
-// AntdMCP 是 admin 模板写入项目 .mcp.json 的 antd MCP 服务：@ant-design/cli 的版本与模板中的 antd 相同。
-var AntdMCP = map[string]any{"command": "bunx", "args": []any{"@ant-design/cli@6.6.8", "mcp"}}
-
-// ShadcnMCP 是 console 模板写入项目 .mcp.json 的 shadcn MCP 服务，版本与模板中的 shadcn 相同。
-var ShadcnMCP = map[string]any{"command": "bunx", "args": []any{"shadcn@4.23.0", "mcp"}}
-
-// ConsoleRegistryItems 是 console 模板从 tenon 的 shadcn registry（框架的 js/registry，复制在项目的 .tenon/js/registry）
-// 加入前端的条目：布局、部件、页面、资源表格、表单和资源页面。通知、Markdown 和 AI 对话需要其他 npm 包，用到时用 shadcn add 加入。
-var ConsoleRegistryItems = []string{
-	"tenon-sidebar-layout", "tenon-topnav-layout", "tenon-mixed-layout", "tenon-rail-layout", "tenon-page-layouts", "tenon-tab-bar",
-	"tenon-color-mode", "tenon-user-menu", "tenon-tenant-switcher", "tenon-command-menu", "tenon-dialogs",
-	"tenon-page", "tenon-split-view", "tenon-data-table", "tenon-form", "tenon-login-form", "tenon-resource-page",
-}
-
-// registryImport 匹配 registry 源码中对项目内文件的导入，例如 "@/components/ui/button"、"@/hooks/use-mobile"。
-var registryImport = regexp.MustCompile(`from "@/((?:components/(?:ui|tenon)|hooks|lib)/[\w-]+)"`)
-
-// InstallRegistry 把 registry（项目中 .tenon/js/registry 的位置）中的条目 items 复制到前端目录 dir：
-// 条目的文件，以及它们导入的 shadcn 组件、tenon 组件、hooks 和 lib（逐层展开），与 shadcn add 加入的内容相同。
-// 已有的文件不覆盖。
-func InstallRegistry(registry, dir string, items []string) error {
-	var manifest struct {
-		Items []registryItem `json:"items"`
-	}
-	data, err := os.ReadFile(filepath.Join(registry, "registry.json"))
-	if err != nil {
-		return fmt.Errorf("scaffold: install registry: %w", err)
-	}
-	if err := json.Unmarshal(data, &manifest); err != nil {
-		return fmt.Errorf("scaffold: install registry: registry.json: %w", err)
-	}
-	queue := []string{"src/lib/utils.ts"}
-	for _, name := range items {
-		i := slices.IndexFunc(manifest.Items, func(it registryItem) bool { return it.Name == name })
-		if i < 0 {
-			return fmt.Errorf("scaffold: install registry: no item %q", name)
-		}
-		for _, f := range manifest.Items[i].Files {
-			queue = append(queue, "src/components/tenon/"+f)
-		}
-	}
-	seen := map[string]bool{}
-	for len(queue) > 0 {
-		rel := queue[0]
-		queue = queue[1:]
-		if seen[rel] {
-			continue
-		}
-		seen[rel] = true
-		src, err := os.ReadFile(filepath.Join(registry, filepath.FromSlash(rel)))
-		if err != nil {
-			return fmt.Errorf("scaffold: install registry: %w", err)
-		}
-		for _, m := range registryImport.FindAllStringSubmatch(string(src), -1) {
-			target, ok := registrySource(registry, "src/"+m[1])
-			if !ok {
-				return fmt.Errorf("scaffold: install registry: %s imports @/%s, which is not in the registry", rel, m[1])
-			}
-			queue = append(queue, target)
-		}
-		target := filepath.Join(dir, filepath.FromSlash(rel))
-		if _, err := os.Stat(target); err == nil {
-			continue
-		}
-		if err := writeFile(target, src); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// registryItem 是 registry.json 中的一个条目：files 是 src/components/tenon 中的文件名。
-type registryItem struct {
-	Name  string   `json:"name"`
-	Files []string `json:"files"`
-}
-
-// registrySource 返回导入路径（不带扩展名）对应的文件。
-func registrySource(registry, rel string) (string, bool) {
-	for _, ext := range []string{".tsx", ".ts"} {
-		if _, err := os.Stat(filepath.Join(registry, filepath.FromSlash(rel+ext))); err == nil {
-			return rel + ext, true
-		}
-	}
-	return "", false
-}
+// Styles 是前端可选的样式预设（@go-tenon/ui 的 themes），决定模板的内容：
+//   - console：SaaS 控制台，登录页和应用外壳，页面只在浏览器中渲染；
+//   - admin：运营后台，高密度，登录页和带多标签的应用外壳，页面只在浏览器中渲染；
+//   - site：官网和内容站，页面在服务端渲染，首页构建时预渲染。
+var Styles = []string{"console", "admin", "site"}
 
 // Package 是嵌入构建产物的 Go 包名：前端的名称去掉连字符。
 func (f Frontend) Package() string { return strings.ReplaceAll(f.Name, "-", "") }
 
-// Write 生成项目：一个名为 web 的前端挂在 /，带待办事项的示例。dir 必须是空目录或尚未创建。
+// Write 生成项目：一个名为 web 的前端挂在 /（site 样式），带待办事项的示例。dir 必须是空目录或尚未创建。
 func Write(dir string, opts Options) error {
 	if opts.GoVersion == "" {
 		opts.GoVersion = GoVersion
@@ -220,9 +74,9 @@ func Write(dir string, opts Options) error {
 	} else if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
-	// 先写前端，项目模板中的示例页面再覆盖它的 App.tsx 和 app.css。
-	web := Frontend{Scope: opts.Slug, Name: "web", Base: "/", Title: opts.Name}
-	if err := render("template/frontend", filepath.Join(dir, "apps", web.Name), web); err != nil {
+	// 先写前端，项目模板中的示例页面再覆盖它的首页。
+	web := Frontend{Scope: opts.Slug, Name: "web", Base: "/", Title: opts.Name, Style: "site"}
+	if err := writeFrontend(filepath.Join(dir, "apps", web.Name), web); err != nil {
 		return err
 	}
 	return render("template/project", dir, opts)
@@ -236,45 +90,24 @@ func WriteFrontend(root string, f Frontend) error {
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
-	if err := f.checkLayout(); err != nil {
-		return err
-	}
-	switch f.Template {
-	case "", "default":
-		return render("template/frontend", dir, f)
-	case "admin":
-		return render("template/admin", dir, f)
-	case "console":
-		return render("template/console", dir, f)
-	}
-	return fmt.Errorf("template %q is not one of %v", f.Template, Templates)
+	return writeFrontend(dir, f)
 }
 
-// AddMCPServer 在 root/.mcp.json 的 mcpServers 中加入 name，已有同名的服务时不修改；文件不存在时新建。
-func AddMCPServer(root, name string, server map[string]any) error {
-	p := filepath.Join(root, ".mcp.json")
-	doc := map[string]any{}
-	if data, err := os.ReadFile(p); err == nil {
-		if err := json.Unmarshal(data, &doc); err != nil {
-			return fmt.Errorf(".mcp.json: %w", err)
-		}
-	} else if !errors.Is(err, fs.ErrNotExist) {
+// writeFrontend 渲染共用的前端模板，再按样式加上 site 或 app（admin、console）的页面。
+func writeFrontend(dir string, f Frontend) error {
+	if f.Style == "" {
+		f.Style = Styles[0]
+	}
+	if !slices.Contains(Styles, f.Style) {
+		return fmt.Errorf("style %q is not one of %v", f.Style, Styles)
+	}
+	if err := render("template/frontend", dir, f); err != nil {
 		return err
 	}
-	servers, _ := doc["mcpServers"].(map[string]any)
-	if servers == nil {
-		servers = map[string]any{}
+	if f.Style == "site" {
+		return render("template/site", dir, f)
 	}
-	if _, ok := servers[name]; ok {
-		return nil
-	}
-	servers[name] = server
-	doc["mcpServers"] = servers
-	data, err := json.MarshalIndent(doc, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(p, append(data, '\n'), 0o644)
+	return render("template/app", dir, f)
 }
 
 // workspaces 是 package.json 中的 workspaces 数组。

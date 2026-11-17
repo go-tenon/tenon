@@ -517,9 +517,11 @@ func Register(api *rest.API, requireUser func(*huma.Operation), db *bun.DB) {
 首页 `apps/web/src/routes/index.tsx` 只列出已发布的文章，点标题阅读全文：
 
 ```tsx title="apps/web/src/routes/index.tsx"
+import { Container, Paper, Stack, Text, Title } from "@mantine/core"
 import { useQuery } from "@tanstack/react-query"
-import { createFileRoute, Link } from "@tanstack/react-router"
-import { api } from "../client"
+import { createFileRoute } from "@tanstack/react-router"
+import { AnchorLink } from "@go-tenon/ui"
+import { api } from "../api"
 
 export const Route = createFileRoute("/")({ component: ArticleList })
 
@@ -527,62 +529,80 @@ export const Route = createFileRoute("/")({ component: ArticleList })
 function ArticleList() {
   const articles = useQuery({ queryKey: ["article", "list"], queryFn: () => api.article.list() })
 
-  if (articles.isPending) return <p>加载中…</p>
-  if (articles.error) return <p className="error">{articles.error.message}</p>
-  if (articles.data.items.length === 0) return <p>还没有发布的文章。</p>
   return (
-    <ul className="articles">
-      {articles.data.items.map((a) => (
-        <li key={a.id}>
-          <h2>
-            <Link to="/articles/$id" params={{ id: a.id }}>
-              {a.title}
-            </Link>
-          </h2>
-          <time>{new Date(a.published_at!).toLocaleDateString()}</time>
-          <p>{a.content.slice(0, 120)}</p>
-        </li>
-      ))}
-    </ul>
+    <Container size="sm" py="xl">
+      {articles.isPending && <Text c="dimmed">加载中…</Text>}
+      {articles.error && <Text c="red">{articles.error.message}</Text>}
+      {articles.data?.items.length === 0 && <Text c="dimmed">还没有发布的文章。</Text>}
+      <Stack>
+        {articles.data?.items.map((a) => (
+          <Paper key={a.id} p="lg">
+            <Title order={3}>
+              <AnchorLink to="/articles/$id" params={{ id: a.id }} c="inherit">
+                {a.title}
+              </AnchorLink>
+            </Title>
+            <Text size="sm" c="dimmed">
+              {new Date(a.published_at!).toLocaleDateString()}
+            </Text>
+            <Text mt="xs" lineClamp={3}>
+              {a.content}
+            </Text>
+          </Paper>
+        ))}
+      </Stack>
+    </Container>
   )
 }
 ```
 
-接着，新建阅读页 `apps/web/src/routes/articles/$id.index.tsx`。文件名中的 `.index` 表示 `/articles/<文章 ID>` 这个地址本身；如果写成 `$id.tsx`，第 5 章的修改页 `$id.edit.tsx` 会成为它的下级页面，显示在它的里面：
+接着，新建阅读页 `apps/web/src/routes/articles/$id.index.tsx`。文件名中的 `.index` 表示 `/articles/<文章 ID>` 这个地址本身；如果写成 `$id.tsx`，第 5 章的修改页 `$id.edit.tsx` 会成为它的下级页面，显示在它的里面。
+
+阅读页是公开的，希望搜索引擎能收录，所以它在服务端读取文章：`loader` 在渲染页面之前读取数据，服务端渲染时由 Go 托管的 SSR 进程调用接口，返回的 HTML 中已经有文章的内容；`head` 用文章的标题作为页面标题：
 
 ```tsx title="apps/web/src/routes/articles/$id.index.tsx"
-import { useQuery } from "@tanstack/react-query"
+import { Container, Text, Title } from "@mantine/core"
 import { createFileRoute } from "@tanstack/react-router"
-import { api } from "../../client"
+import { api } from "../../api"
 
-export const Route = createFileRoute("/articles/$id/")({ component: ArticleView })
+export const Route = createFileRoute("/articles/$id/")({
+  loader: ({ params }) => api.article.get(params.id),
+  head: ({ loaderData }) => ({ meta: [{ title: loaderData?.title }] }),
+  component: ArticleView,
+})
 
 function ArticleView() {
-  const { id } = Route.useParams()
-  const article = useQuery({ queryKey: ["article", id], queryFn: () => api.article.get(id) })
-
-  if (article.isPending) return <p>加载中…</p>
-  if (article.error) return <p className="error">{article.error.message}</p>
+  const article = Route.useLoaderData()
   return (
-    <article>
-      <h2>{article.data.title}</h2>
-      {article.data.published_at && <time>{new Date(article.data.published_at).toLocaleString()}</time>}
-      <p className="content">{article.data.content}</p>
-    </article>
+    <Container size="sm" py="xl">
+      <Title order={1}>{article.title}</Title>
+      {article.published_at && (
+        <Text size="sm" c="dimmed" mt="xs">
+          {new Date(article.published_at).toLocaleString()}
+        </Text>
+      )}
+      <Text mt="lg" style={{ whiteSpace: "pre-wrap" }}>
+        {article.content}
+      </Text>
+    </Container>
   )
 }
 ```
 
-接着，新建 `apps/web/src/routes/mine.tsx`，作者在这里编辑、发布、删除自己的文章。它和第 6 章的写文章页面一样，用 `beforeLoad: requireAuth` 要求登录：
+`api` 在浏览器中直接请求 `/api`；服务端渲染时经 Go 的内部 socket 调用同一个接口，并带上页面请求的 cookie，所以两边得到的结果相同。文章不存在时接口返回 `404`，页面显示错误页。
+
+接着，新建 `apps/web/src/routes/mine.tsx`，作者在这里编辑、发布、删除自己的文章。它和第 6 章的写文章页面一样，用 `beforeLoad: requireAuth` 要求登录，并且只在浏览器中渲染：
 
 ```tsx title="apps/web/src/routes/mine.tsx"
+import { Badge, Button, Container, Group, Paper, Stack, Text, Title } from "@mantine/core"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { createFileRoute, Link } from "@tanstack/react-router"
+import { createFileRoute } from "@tanstack/react-router"
 import { requireAuth } from "@go-tenon/shell"
+import { ButtonLink } from "@go-tenon/ui"
 import type { Article } from "@blog/client/api"
-import { api } from "../client"
+import { api } from "../api"
 
-export const Route = createFileRoute("/mine")({ beforeLoad: requireAuth, component: MyArticles })
+export const Route = createFileRoute("/mine")({ ssr: false, beforeLoad: requireAuth, component: MyArticles })
 
 // MyArticles 是当前作者的全部文章，包括草稿：编辑、发布、删除。
 function MyArticles() {
@@ -593,23 +613,38 @@ function MyArticles() {
   const publish = useMutation({ mutationFn: (a: Article) => api.article.publish(a.id), onSuccess: refresh })
   const remove = useMutation({ mutationFn: (a: Article) => api.article.delete(a.id), onSuccess: refresh })
 
-  if (articles.isPending) return <p>加载中…</p>
-  if (articles.error) return <p className="error">{articles.error.message}</p>
-  if (articles.data.items.length === 0) return <p>你还没有写过文章。</p>
   return (
-    <ul className="articles">
-      {articles.data.items.map((a) => (
-        <li key={a.id}>
-          <h2>{a.title}</h2>
-          <p>{a.published_at ? `发布于 ${new Date(a.published_at).toLocaleString()}` : "草稿"}</p>
-          <Link to="/articles/$id/edit" params={{ id: a.id }}>
-            编辑
-          </Link>
-          {!a.published_at && <button onClick={() => publish.mutate(a)}>发布</button>}
-          <button onClick={() => confirm(`删除“${a.title}”？`) && remove.mutate(a)}>删除</button>
-        </li>
-      ))}
-    </ul>
+    <Container size="sm" py="xl">
+      <Title order={2} mb="lg">
+        我的文章
+      </Title>
+      {articles.isPending && <Text c="dimmed">加载中…</Text>}
+      {articles.error && <Text c="red">{articles.error.message}</Text>}
+      {articles.data?.items.length === 0 && <Text c="dimmed">你还没有写过文章。</Text>}
+      <Stack>
+        {articles.data?.items.map((a) => (
+          <Paper key={a.id} p="lg">
+            <Group justify="space-between">
+              <Title order={4}>{a.title}</Title>
+              {a.published_at ? <Badge color="green">已发布</Badge> : <Badge color="gray">草稿</Badge>}
+            </Group>
+            <Group mt="md" gap="xs">
+              <ButtonLink to="/articles/$id/edit" params={{ id: a.id }} variant="default" size="xs">
+                编辑
+              </ButtonLink>
+              {!a.published_at && (
+                <Button size="xs" onClick={() => publish.mutate(a)}>
+                  发布
+                </Button>
+              )}
+              <Button variant="subtle" color="red" size="xs" onClick={() => confirm(`删除“${a.title}”？`) && remove.mutate(a)}>
+                删除
+              </Button>
+            </Group>
+          </Paper>
+        ))}
+      </Stack>
+    </Container>
   )
 }
 ```
@@ -617,157 +652,127 @@ function MyArticles() {
 新写的文章是草稿，不出现在首页。写文章和修改文章的页面，保存后改为回到“我的文章”。把 `apps/web/src/routes/write.tsx` 改成下面这样：
 
 ```tsx title="apps/web/src/routes/write.tsx"
+import { Container, Title } from "@mantine/core"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { requireAuth } from "@go-tenon/shell"
 import { ArticleEditor } from "../ArticleEditor"
 
-export const Route = createFileRoute("/write")({ beforeLoad: requireAuth, component: Write })
+export const Route = createFileRoute("/write")({ ssr: false, beforeLoad: requireAuth, component: Write })
 
 function Write() {
   const navigate = useNavigate()
-  return <ArticleEditor onDone={() => navigate({ to: "/mine" })} />
+  return (
+    <Container size="sm" py="xl">
+      <Title order={2} mb="lg">
+        写文章
+      </Title>
+      <ArticleEditor onDone={() => navigate({ to: "/mine" })} />
+    </Container>
+  )
 }
 ```
 
 修改页也要改：公开的读取接口现在只返回已发布的文章，草稿读不到。修改页改为从“我的文章”中找到这篇文章，它与 `/mine` 页面共用同一个查询。把 `apps/web/src/routes/articles/$id.edit.tsx` 改成下面这样：
 
 ```tsx title="apps/web/src/routes/articles/$id.edit.tsx"
+import { Container, Text, Title } from "@mantine/core"
 import { useQuery } from "@tanstack/react-query"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { requireAuth } from "@go-tenon/shell"
 import { ArticleEditor } from "../../ArticleEditor"
-import { api } from "../../client"
+import { api } from "../../api"
 
-export const Route = createFileRoute("/articles/$id/edit")({ beforeLoad: requireAuth, component: EditArticle })
+export const Route = createFileRoute("/articles/$id/edit")({ ssr: false, beforeLoad: requireAuth, component: EditArticle })
 
 function EditArticle() {
   const { id } = Route.useParams()
   const navigate = useNavigate()
   const mine = useQuery({ queryKey: ["article", "mine"], queryFn: () => api.article.mine() })
+  const article = mine.data?.items.find((a) => a.id === id)
 
-  if (mine.isPending) return <p>加载中…</p>
-  if (mine.error) return <p className="error">{mine.error.message}</p>
-  const article = mine.data.items.find((a) => a.id === id)
-  if (!article) return <p className="error">没有找到这篇文章。</p>
-  return <ArticleEditor article={article} onDone={() => navigate({ to: "/mine" })} />
+  return (
+    <Container size="sm" py="xl">
+      <Title order={2} mb="lg">
+        修改文章
+      </Title>
+      {mine.isPending && <Text c="dimmed">加载中…</Text>}
+      {mine.error && <Text c="red">{mine.error.message}</Text>}
+      {mine.data && !article && <Text c="red">没有找到这篇文章。</Text>}
+      {article && <ArticleEditor article={article} onDone={() => navigate({ to: "/mine" })} />}
+    </Container>
+  )
 }
 ```
 
 最后，在页头 `apps/web/src/routes/__root.tsx` 中加上“我的文章”：
 
 ```tsx title="apps/web/src/routes/__root.tsx"
+import "@go-tenon/ui/styles.css"
+import type { ReactNode } from "react"
+import { Button, ColorSchemeScript, Group, Text, mantineHtmlProps } from "@mantine/core"
 import { useMutation, useQuery } from "@tanstack/react-query"
-import { createRootRouteWithContext, Link, Outlet } from "@tanstack/react-router"
+import { createRootRouteWithContext, HeadContent, Scripts, useRouter } from "@tanstack/react-router"
 import { type RouterContext, useSignedIn } from "@go-tenon/shell"
-import { api, session } from "../client"
+import { AnchorLink, ButtonLink, SiteLayout, UIProvider } from "@go-tenon/ui"
+import { api, session } from "../api"
+import { theme } from "../theme"
 
-export const Route = createRootRouteWithContext<RouterContext>()({ component: Layout })
+export const Route = createRootRouteWithContext<RouterContext>()({
+  head: () => ({
+    meta: [{ charSet: "utf-8" }, { name: "viewport", content: "width=device-width, initial-scale=1" }, { title: "博客" }],
+  }),
+  shellComponent: Document,
+  component: Layout,
+})
+
+// Document 是整个 HTML 文档。nonce 由 Go 为每个请求生成，内联脚本带上它才能通过内容安全策略。
+function Document({ children }: { children: ReactNode }) {
+  const nonce = useRouter().options.ssr?.nonce
+  return (
+    <html lang="zh-CN" {...mantineHtmlProps}>
+      <head>
+        <ColorSchemeScript nonce={nonce} />
+        <HeadContent />
+      </head>
+      <body>
+        <UIProvider theme={theme}>{children}</UIProvider>
+        <Scripts />
+      </body>
+    </html>
+  )
+}
 
 function Layout() {
   const signedIn = useSignedIn()
   const me = useQuery({ queryKey: ["me"], queryFn: () => api.user.me(), enabled: signedIn })
   const logout = useMutation({ mutationFn: () => api.auth.logout(), onSettled: () => session.signOut() })
-
   return (
-    <main>
-      <header>
-        <h1>
-          <Link to="/">博客</Link>
-        </h1>
-        {signedIn ? (
-          <nav>
-            <span>{me.data?.name}</span>
-            <Link to="/mine">我的文章</Link>
-            <Link to="/write">写文章</Link>
-            <button onClick={() => logout.mutate()}>退出</button>
-          </nav>
+    <SiteLayout
+      brand={
+        <AnchorLink to="/" c="inherit" underline="never" fw={700}>
+          博客
+        </AnchorLink>
+      }
+      actions={
+        signedIn ? (
+          <Group gap="sm">
+            <Text size="sm">{me.data?.name}</Text>
+            <ButtonLink to="/mine" variant="subtle">
+              我的文章
+            </ButtonLink>
+            <ButtonLink to="/write">写文章</ButtonLink>
+            <Button variant="default" onClick={() => logout.mutate()}>
+              退出
+            </Button>
+          </Group>
         ) : (
-          <Link to="/login">登录</Link>
-        )}
-      </header>
-      <Outlet />
-    </main>
+          <ButtonLink to="/login" variant="default">
+            登录
+          </ButtonLink>
+        )
+      }
+    />
   )
-}
-```
-
-`apps/web/src/app.css` 加几条样式：
-
-```css title="apps/web/src/app.css"
-body {
-  margin: 0;
-  font-family: system-ui, sans-serif;
-  background: #f6f6f6;
-}
-
-main {
-  max-width: 44rem;
-  margin: 2rem auto;
-  padding: 1.5rem;
-  background: #fff;
-  border-radius: 0.75rem;
-}
-
-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.articles {
-  list-style: none;
-  padding: 0;
-}
-
-.articles li {
-  padding: 1rem 0;
-  border-bottom: 1px solid #eee;
-}
-
-.editor label {
-  display: block;
-  margin: 0.75rem 0 0.25rem;
-}
-
-.editor input,
-.editor textarea {
-  display: block;
-  width: 100%;
-  box-sizing: border-box;
-  padding: 0.5rem;
-}
-
-a {
-  color: #0b57d0;
-}
-
-h1 a {
-  color: inherit;
-  text-decoration: none;
-}
-
-a + button,
-button + button {
-  margin-left: 0.5rem;
-}
-
-.error {
-  color: #c00;
-}
-
-nav {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-time {
-  color: #888;
-}
-
-.content {
-  white-space: pre-wrap;
 }
 ```
 

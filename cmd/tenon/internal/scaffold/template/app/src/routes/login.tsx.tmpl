@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router"
-import { AuthLayout, LoginPage } from "@go-tenon/admin"
+import { AuthLayout, LoginForm } from "@go-tenon/ui"
 import { login } from "../auth"
 
 export const Route = createFileRoute("/login")({
@@ -13,8 +13,8 @@ export const Route = createFileRoute("/login")({
 function Login() {
   const { redirect } = Route.useSearch()
   return (
-    <AuthLayout title="[[.Title]]">
-      <LoginPage login={login} redirect={redirect} />
+    <AuthLayout brand="[[.Title]]" title="登录">
+      <LoginForm login={login} redirect={redirect} />
     </AuthLayout>
   )
 }

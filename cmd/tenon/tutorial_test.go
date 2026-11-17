@@ -121,7 +121,7 @@ func (p *tutorial) api(args ...string) string {
 func (p *tutorial) before(name string) {
 	p.t.Helper()
 	if strings.HasPrefix(name, "08-") {
-		p.sh("go", "tool", "tenon", "add", "frontend", "admin", "--template", "admin")
+		p.sh("go", "tool", "tenon", "add", "frontend", "admin", "--style", "admin")
 	}
 }
 

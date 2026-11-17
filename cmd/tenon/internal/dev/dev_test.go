@@ -5,7 +5,6 @@ package dev_test
 import (
 	"bytes"
 	"context"
-	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -276,8 +275,8 @@ func TestDevSPA(t *testing.T) {
 		if !strings.Contains(devYAML, "  "+f+": http://localhost:") {
 			t.Errorf("dev.yaml missing %s:\n%s", f, devYAML)
 		}
-		if b, err := os.ReadFile(filepath.Join(dir, "apps", f, "dist", "index.html")); err != nil || string(b) != dev.Placeholder {
-			t.Errorf("%s dist placeholder = %q, %v", f, b, err)
+		if b, err := os.ReadFile(filepath.Join(dir, "apps", f, dev.SSRBinary)); err != nil || len(b) != 0 {
+			t.Errorf("%s ssr.bin placeholder = %q, %v", f, b, err)
 		}
 	}
 	if count("bun run build") != 0 {
@@ -315,7 +314,7 @@ func TestDevSPA(t *testing.T) {
 		t.Fatalf("dev returned %v", err)
 	}
 	l = read(log)
-	if count("stopped bun") != 2 || count("app stopped") != 2 || count("bun run build @admin") != 1 || count("bun run build @web") != 1 {
+	if count("stopped bun") != 2 || count("app stopped") != 2 || count("bun run build") != 0 {
 		t.Errorf("after stop:\n%s", l)
 	}
 	if !strings.Contains(out.String(), "dev: 打开 http://localhost:8080") {
@@ -426,53 +425,5 @@ func TestNeedsInstall(t *testing.T) {
 	write(".tenon/js/shell/node_modules/react/package.json", "{}")
 	if dev.NeedsInstall(dir) {
 		t.Error("everything installed: want no install")
-	}
-}
-
-func TestGenerateTheme(t *testing.T) {
-	dir := t.TempDir()
-	if ok, err := dev.GenerateTheme(dir); ok || err != nil {
-		t.Fatalf("without tokens: %v %v", ok, err)
-	}
-	write := func(p, content string) {
-		t.Helper()
-		full := filepath.Join(dir, p)
-		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	write("package.json", `{"name": "todo"}`)
-	write("theme/tokens.json", `{"color": {"brand": {"$value": "#4f46e5"}}, "radius": {"$value": "0.5rem"}}`)
-	if ok, err := dev.GenerateTheme(dir); !ok || err != nil {
-		t.Fatalf("generate: %v %v", ok, err)
-	}
-	css, _ := os.ReadFile(filepath.Join(dir, "packages/theme/src/tokens.css"))
-	ts, _ := os.ReadFile(filepath.Join(dir, "packages/theme/src/index.ts"))
-	pkg, _ := os.ReadFile(filepath.Join(dir, "packages/theme/package.json"))
-	if !strings.Contains(string(css), "--primary: #4f46e5;") || !strings.Contains(string(ts), `"colorPrimary": "#4f46e5"`) || !strings.Contains(string(pkg), `"name": "@todo/theme"`) {
-		t.Fatalf("css:\n%s\nts:\n%s\npkg:\n%s", css, ts, pkg)
-	}
-
-	// 内容没有变化时不改写（Vite 不会因此刷新页面）；已有的 package.json 不覆盖。
-	write("packages/theme/package.json", `{"name": "@todo/theme", "custom": true}`)
-	info, _ := os.Stat(filepath.Join(dir, "packages/theme/src/tokens.css"))
-	if _, err := dev.GenerateTheme(dir); err != nil {
-		t.Fatal(err)
-	}
-	again, _ := os.Stat(filepath.Join(dir, "packages/theme/src/tokens.css"))
-	if !again.ModTime().Equal(info.ModTime()) {
-		t.Error("unchanged tokens rewrote tokens.css")
-	}
-	if b, _ := os.ReadFile(filepath.Join(dir, "packages/theme/package.json")); !strings.Contains(string(b), "custom") {
-		t.Error("existing package.json was overwritten")
-	}
-
-	write("theme/tokens.json", `{"color": {"background": {"$value": "#fff"}}}`)
-	var te *dev.ThemeError
-	if _, err := dev.GenerateTheme(dir); !errors.As(err, &te) || !strings.Contains(err.Error(), "theme/tokens.json") {
-		t.Errorf("bad tokens: %v", err)
 	}
 }

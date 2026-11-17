@@ -721,9 +721,10 @@ import (
     "github.com/go-tenon/tenon/httpx/rest"
     "github.com/go-tenon/tenon/i18n"
     "github.com/go-tenon/tenon/identity"
+    "github.com/go-tenon/tenon/ssr"
 
-    "example.com/blog/apps/admin"
-    "example.com/blog/apps/web"
+    adminapp "example.com/blog/apps/admin"
+    webapp "example.com/blog/apps/web"
     "example.com/blog/internal/article"
     "example.com/blog/internal/auth"
     "example.com/blog/internal/role"
@@ -731,22 +732,40 @@ import (
     "example.com/blog/locales"
 )
 
-// HTTP 装配 HTTP 服务，serve 命令运行它。
+// HTTP 装配 HTTP 服务，serve 命令运行它。页面由 Go 托管的 SSR 进程渲染，它们渲染时经内部 socket 调用同一组路由。
 func (a *App) HTTP(d *command.Daemon) (func(context.Context) error, error) {
     var draining httpx.Draining
-    router := a.Router(&draining)
+    var router chi.Router
+    web, err := a.pages("web", webapp.SSR, &router)
+    if err != nil {
+        return nil, err
+    }
+    admin, err := a.pages("admin", adminapp.SSR, &router)
+    if err != nil {
+        return nil, err
+    }
+    router = a.Router(&draining, pages{web: web.Handler(), admin: admin.Handler()})
     ln, err := d.Listen("tcp", a.cfg.HTTP.Addr)
     if err != nil {
         return nil, err
     }
     return func(ctx context.Context) error {
-        return httpx.Serve(ctx, a.cfg.HTTP, ln, router, httpx.OnDraining(draining.Set))
+        return ssr.Run(ctx, func(ctx context.Context) error {
+            return httpx.Serve(ctx, a.cfg.HTTP, ln, router, httpx.OnDraining(draining.Set))
+        }, web, admin)
     }, nil
 }
 
-// Router 构造应用的全部路由：健康检查、/api 下的接口和单页应用。
+// pages 创建托管前端 name 的 SSR 进程的 Host：exe 是嵌入的 SSR 可执行文件；开发时页面转给前端的开发服务器。
+// 进程渲染页面需要数据时调用 *router 中的接口，router 在 Host 创建之后才构造好，所以传它的地址。
+func (a *App) pages(name string, exe []byte, router *chi.Router) (*ssr.Host, error) {
+    api := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { (*router).ServeHTTP(w, r) })
+    return ssr.New(ssr.Options{Executable: exe, API: api, DevServer: a.cfg.DevServers[name]})
+}
+
+// Router 构造应用的全部路由：健康检查、/api 下的接口和页面。
 // 它只保存 App 的字段、不使用它们，所以 DocRouter 可以用一个没有打开任何资源的 App 调用它。
-func (a *App) Router(draining *httpx.Draining) chi.Router {
+func (a *App) Router(draining *httpx.Draining, p pages) chi.Router {
     router := chi.NewRouter()
     router.Use(httpx.Defaults(a.cfg.HTTP, httpx.Languages(i18n.MustNew("zh-CN", locales.FS)))...)
     router.Get("/livez", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
@@ -772,15 +791,20 @@ func (a *App) Router(draining *httpx.Draining) chi.Router {
         role.Register(api, requireRoles, a.roles)
         article.Register(api, requireUser, a.db)
     })
-    router.Handle("/admin/*", httpx.NewSPA(admin.Dist, httpx.SPAOptions{Base: "/admin/", DevServer: a.cfg.DevServers["admin"]}))
-    router.Handle("/*", httpx.NewSPA(web.Dist, httpx.SPAOptions{DevServer: a.cfg.DevServers["web"]}))
+    if p.web != nil {
+        router.Handle("/admin/*", p.admin)
+        router.Handle("/*", p.web)
+    }
     return router
 }
 
 // DocRouter 用默认配置和没有打开任何资源的 App 构造路由，openapi、routes、client 命令用它。
 func DocRouter() chi.Routes {
-    return (&App{cfg: config.Default[Config]()}).Router(nil)
+    return (&App{cfg: config.Default[Config]()}).Router(nil, pages{})
 }
+
+// pages 是各前端的页面处理器，挂在接口之后；DocRouter 中为空。
+type pages struct{ web, admin http.Handler }
 ```
 
 后台中显示的文字，例如资源的名字“作者”、字段的名字“注册时间”、权限的名字“管理作者”，都写在 `locales/zh-CN.yaml` 中。消息键的格式是 `<资源>.title`、`<资源>.fields.<字段>` 和 `permission.<权限>`：
@@ -813,13 +837,13 @@ go run ./cmd/api user admin --email ming@example.com
 <a id="admin"></a>
 ## 后台
 
-后端完成了，现在创建后台的前端。后台是一个独立的前端应用，和博客的页面分开。用 Tenon 的后台模板新建它，模板基于 [Ant Design](https://ant.design) 组件库，见[运营后台](../frontend/admin.md)：
+后端完成了，现在创建后台的前端。后台是一个独立的前端应用，挂在 `/admin/`，和博客的页面分开。用 Tenon 的前端模板新建它，选运营后台的样式预设（紧凑、适合表格和表单），见[界面组件](../frontend/ui.md)：
 
 ```bash
-go tool tenon add frontend admin --template admin
+go tool tenon add frontend admin --style admin
 ```
 
-它在 `apps/admin` 中生成登录页、侧栏布局和首页，登录调用的正是第 6 章的 `/api/auth` 接口。另外还有一个“布局”页面，可以在浏览器中切换几种后台布局，对照着选；不需要时删除 `src/routes/_app/layouts.tsx` 即可，见[运营后台](../frontend/admin.md#template)。重新生成客户端：
+它在 `apps/admin` 中生成登录页、带侧栏和多标签的应用外壳和首页，登录调用的正是第 6 章的 `/api/auth` 接口。后台的页面只在浏览器中渲染，不需要搜索引擎收录。上一节的 `internal/bootstrap/http.go` 已经托管了它的 SSR 进程，并把它挂在 `/admin/`。重新生成客户端：
 
 ```bash
 go tool tenon generate
@@ -835,10 +859,11 @@ import { messages } from "@blog/client/api/messages"
 import { createQueries } from "@blog/client/api/queries"
 import { resources } from "@blog/client/api/resources"
 import { components, schemas } from "@blog/client/api/schemas"
+import { apiFetch } from "@go-tenon/start"
 import { session } from "./auth"
 
 // api 是生成的客户端。登录凭据是浏览器自动带上的会话 cookie；受保护的接口返回 401 时，会话随之变为未登录。
-export const api = createClient({ baseURL: "/api", session })
+export const api = createClient({ baseURL: "/api", fetch: apiFetch, session })
 
 // 资源模型：Go 中声明的资源，加上生成的客户端、校验规则、验证提示和枚举的显示文字。
 const kit = { client: api, queries: createQueries(api), schemas, components, enums, messages, language: "zh-CN" }
@@ -849,8 +874,8 @@ export const roles = resourceModel(resources.role, kit)
 角色的页面不需要写任何页面代码。新建 `apps/admin/src/routes/_app/roles.tsx`：
 
 ```tsx title="apps/admin/src/routes/_app/roles.tsx"
-import { ResourcePage } from "@go-tenon/admin"
 import { createFileRoute } from "@tanstack/react-router"
+import { ResourcePage } from "@go-tenon/ui"
 import { roles } from "../../resources"
 
 export const Route = createFileRoute("/_app/roles")({
@@ -860,17 +885,17 @@ export const Route = createFileRoute("/_app/roles")({
 })
 ```
 
-- `ResourcePage` 按资源的定义渲染列表、新建和修改的表单、删除前的确认。
+- `ResourcePage` 按资源的定义渲染列表、在右侧抽屉中新建和修改的表单、删除前的确认。
 - `permission` 让没有 `roles:manage` 权限的作者看不到这个菜单。
 - 表单的校验规则来自服务端的声明：名称为空、没有选择权限时，提交之前就会提示。
 
 作者的页面几乎也一样，只有一处不同：接口中作者的角色是角色的 ID，而页面上应该显示和选择角色的名称。这是唯一需要自己写的地方。新建 `apps/admin/src/routes/_app/users.tsx`：
 
 ```tsx title="apps/admin/src/routes/_app/users.tsx"
-import { type FieldInput, ResourcePage } from "@go-tenon/admin"
+import { Badge, Group, MultiSelect } from "@mantine/core"
 import { useQuery } from "@tanstack/react-query"
 import { createFileRoute } from "@tanstack/react-router"
-import { Select, Tag } from "antd"
+import { type FieldInput, ResourcePage } from "@go-tenon/ui"
 import { api, users } from "../../resources"
 
 export const Route = createFileRoute("/_app/users")({
@@ -884,20 +909,30 @@ function useRoles() {
   return useQuery({ queryKey: ["roles", "all"], queryFn: () => api.role.list({ per_page: 100 }) })
 }
 
-function RoleTags({ ids }: { ids: string[] }) {
-  const all = useRoles().data?.items ?? []
-  return ids.map((id) => <Tag key={id}>{all.find((r) => r.id === id)?.name ?? id}</Tag>)
-}
-
-const RoleSelect: FieldInput = ({ id, value, onChange }) => {
+function RoleBadges({ ids }: { ids: string[] }) {
   const all = useRoles().data?.items ?? []
   return (
-    <Select
-      id={id}
-      mode="multiple"
-      value={value as string[]}
+    <Group gap={4}>
+      {ids.map((id) => (
+        <Badge key={id} variant="light">
+          {all.find((r) => r.id === id)?.name ?? id}
+        </Badge>
+      ))}
+    </Group>
+  )
+}
+
+const RoleSelect: FieldInput = ({ field, label, value, onChange, error, disabled }) => {
+  const all = useRoles().data?.items ?? []
+  return (
+    <MultiSelect
+      label={label}
+      required={field.required}
+      error={error}
+      disabled={disabled}
+      value={(value as string[]) ?? []}
       onChange={onChange}
-      options={all.map((r) => ({ value: r.id, label: r.name }))}
+      data={all.map((r) => ({ value: r.id, label: r.name }))}
     />
   )
 }
@@ -908,7 +943,7 @@ function Users() {
     <ResourcePage
       model={users}
       route={Route}
-      render={{ roles: (ids) => <RoleTags ids={(ids as string[]) ?? []} /> }}
+      render={{ roles: (ids) => <RoleBadges ids={(ids as string[]) ?? []} /> }}
       inputs={{ roles: RoleSelect }}
     />
   )
@@ -950,8 +985,8 @@ function Users() {
 - 在 Go 中把作者和角色声明为资源，后台的页面按声明渲染；
 - 只为作者的角色字段写了一点页面代码。
 
-恭喜你完成了入门教程！回顾一下，你已经用到了一个常规项目需要的大部分东西：配置与装配、数据库与迁移、接口与校验、业务错误与本地化、React 页面与生成的客户端、登录与授权、角色与权限，以及按声明渲染的后台。
+恭喜你完成了入门教程！回顾一下，你已经用到了一个常规项目需要的大部分东西：配置与装配、数据库与迁移、接口与校验、业务错误与本地化、服务端渲染的页面与生成的客户端、登录与授权、角色与权限，以及按声明渲染的后台。
 
 接下来，你可以按需阅读各个参考页：例如用[缓存](../libraries/cache.md)加快首页，用[队列](../background/queue.md)在发布后给订阅者发邮件，用[定时任务](../background/scheduling.md)定时发布文章，最后参考[部署](../installation/deployment.md)把博客上线。
 
-深入了解：[授权](../security/authorization.md)、[资源](../frontend/resources.md)、[运营后台](../frontend/admin.md)。
+深入了解：[授权](../security/authorization.md)、[资源](../frontend/resources.md)、[界面组件](../frontend/ui.md)。

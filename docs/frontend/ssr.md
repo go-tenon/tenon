@@ -50,7 +50,19 @@ return pages.Run(ctx, func(ctx context.Context) error {
 })
 ```
 
-`Handler` 挂在接口之后，处理其余全部请求。`Run` 包住对外的 HTTP 服务，在它前后管理 SSR 进程，应用不需要自己安排启动和停止的顺序。
+`Handler` 挂在接口之后，处理其余全部请求。`Run` 包住对外的 HTTP 服务，在它前后管理 SSR 进程，应用不需要自己安排启动和停止的顺序。`tenon init` 生成的 `cmd/api/main.go` 已经这样装配好了。
+
+有多个前端时（例如官网挂在 `/`，后台挂在 `/admin/`），每个前端一个 `Host`，各自挂载，再用 `ssr.Run` 一起运行：
+
+```go
+router.Handle("/admin/*", adminPages.Handler()) // 先挂子路径
+router.Handle("/*", webPages.Handler())
+return ssr.Run(ctx, func(ctx context.Context) error {
+    return httpx.ListenAndServe(ctx, cfg.HTTP, router)
+}, webPages, adminPages)
+```
+
+`ssr.Run(ctx, serve, hosts...)` 依次启动每个 Host 的 SSR 进程，全部就绪后运行 `serve`，停止时按相反的顺序停止。
 
 <a id="lifecycle"></a>
 ## 启动与停止
@@ -126,6 +138,7 @@ html, err := pages.Render(ctx, "invoice", invoice)
 | `New(Options) (*Host, error)` | 检查选项并创建 Host；不启动进程 |
 | `(*Host).Handler() http.Handler` | 页面的处理器 |
 | `(*Host).Run(ctx, serve) error` | 启动 SSR 进程，运行 `serve`，停止时按顺序关闭；一个 Host 只能运行一次 |
+| `Run(ctx, serve, hosts...) error` | 多个 Host 一起运行：依次启动，全部就绪后运行 `serve`，按相反的顺序停止 |
 | `(*Host).Ready() bool` | SSR 进程是否可以接收请求；开发模式总是 true |
 | `(*Host).Render(ctx, name, data) ([]byte, error)` | 用打印模板渲染数据，返回完整的 HTML，见[渲染打印模板](#rendering) |
 | `PrintPath`、`ErrUnknownTemplate` | 打印模板的地址前缀；没有这个模板 |

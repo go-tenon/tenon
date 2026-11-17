@@ -143,28 +143,30 @@ helpdesk/
 <a id="inside-a-frontend"></a>
 ### 一个前端的内部
 
-模板生成的前端只有 `main.tsx`、`app.ts` 和 `routes/`。页面多了以后，按下面的结构增加目录：
+模板生成的前端只有 `router.tsx`、`start.ts`、`server.ts`、`theme.ts` 和 `routes/`。页面多了以后，按下面的结构增加目录：
 
 ```text
 apps/admin/
 ├── AGENTS.md
-├── frontend.go            go:embed dist
-├── index.html
+├── frontend.go            go:embed ssr.bin
 ├── package.json
 ├── vite.config.ts
 ├── tsconfig.json
 ├── public/
 ├── tests/                 unit/、e2e/
 └── src/
-    ├── main.tsx           挂载应用
-    ├── app.ts             创建应用：Router、QueryClient、会话
+    ├── router.tsx         getRouter：创建应用（Router、QueryClient、会话）
+    ├── start.ts           TanStack Start 的设置
+    ├── server.ts          服务端渲染的入口
+    ├── theme.ts           样式预设和品牌色
+    ├── auth.ts            会话和登录接口
     ├── routes/            文件路由
     ├── features/          按业务领域分组的页面和组件
     │   └── user/
     │       ├── queries.ts       组合多个接口的查询（单个接口的查询选项是生成的）
     │       ├── user-list-page.tsx
     │       └── user-form.tsx
-    ├── components/        本前端内跨领域共用的组件；shadcn 的组件在 components/ui
+    ├── components/        本前端内跨领域共用的组件
     ├── lib/               与界面无关的工具函数
     └── routeTree.gen.ts   生成的路由树
 ```

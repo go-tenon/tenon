@@ -1,16 +1,10 @@
-// Package [[.Package]] 嵌入前端 [[.Name]] 的构建产物 dist，由 httpx.SPA 提供。
+// Package [[.Package]] 嵌入前端 [[.Name]] 的 SSR 可执行文件，由 ssr.Host 托管。
 package [[.Package]]
 
-import (
-	"embed"
-	"io/fs"
-)
+import _ "embed"
 
-// all: 让以 _ 开头的文件也被嵌入：路由 $id.edit.tsx 拆分出的代码文件是 _id.edit-<hash>.js，
-// 不加 all: 时 go:embed 会跳过它，页面打不开。
+// SSR 是 go tool tenon build 编译出的 SSR 可执行文件（tenon-start compile），挂在 [[.Base]]。
+// 开发时 tenon dev 写入一个空的占位文件，页面由前端的开发服务器提供。
 //
-//go:embed all:dist
-var dist embed.FS
-
-// Dist 是 Vite 的构建产物，包含 index.html 和 assets 目录。
-var Dist, _ = fs.Sub(dist, "dist")
+//go:embed ssr.bin
+var SSR []byte

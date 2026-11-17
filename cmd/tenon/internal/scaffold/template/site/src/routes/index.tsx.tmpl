@@ -1,0 +1,22 @@
+import { Button, Container, Group, Text, Title } from "@mantine/core"
+import { createFileRoute } from "@tanstack/react-router"
+import { SiteLayout } from "@go-tenon/ui"
+
+// 首页在构建时预渲染（vite.config.ts 的 prerender），其余页面在请求时服务端渲染。
+export const Route = createFileRoute("/")({ component: Home })
+
+function Home() {
+  return (
+    <SiteLayout brand="[[.Title]]">
+      <Container size="md" py={96}>
+        <Title order={1}>[[.Title]]</Title>
+        <Text c="dimmed" size="lg" mt="md">
+          一句话说明产品是什么。
+        </Text>
+        <Group mt="xl">
+          <Button size="md">开始使用</Button>
+        </Group>
+      </Container>
+    </SiteLayout>
+  )
+}

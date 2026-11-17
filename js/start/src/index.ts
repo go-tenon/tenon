@@ -1,3 +1,4 @@
+/// <reference types="node" />
 // @go-tenon/start 把 TanStack Start 接到 Tenon：页面由 Go 托管的 Bun 渲染（见 Go 的 ssr 包），
 // SSR 与浏览器调用同一组 Go 接口。在 src/start.ts 中安装 requestMiddleware，在 src/router.tsx 中使用 cspNonce，
 // 把 apiFetch 交给生成的客户端：

@@ -1,8 +1,11 @@
 import { useState, type FormEvent } from "react"
+import { ActionIcon, Alert, Button, Checkbox, Container, Group, Paper, Stack, Text, TextInput, Title } from "@mantine/core"
+import { IconX } from "@tabler/icons-react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { isApiError, type Todo } from "@[[.Slug]]/client/api"
 import { createFileRoute } from "@tanstack/react-router"
-import { api } from "../client"
+import { SiteLayout } from "@go-tenon/ui"
+import { isApiError, type Todo } from "@[[.Slug]]/client/api"
+import { api } from "../api"
 
 export const Route = createFileRoute("/")({
   staticData: { title: "待办" },
@@ -35,24 +38,39 @@ function Todos() {
 
   const error = todos.error ?? create.error ?? toggle.error ?? remove.error
   return (
-    <main>
-      <h1>[[.Name]]</h1>
-      <form onSubmit={submit}>
-        <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="要做什么？" autoFocus />
-        <button disabled={create.isPending}>添加</button>
-      </form>
-      {error && <p className="error">{isApiError(error) ? (error.detail ?? error.message) : String(error)}</p>}
-      <ul>
-        {(todos.data ?? []).map((t) => (
-          <li key={t.id} className={t.done ? "done" : ""}>
-            <label>
-              <input type="checkbox" checked={t.done} onChange={() => toggle.mutate(t)} />
-              {t.title}
-            </label>
-            <button onClick={() => remove.mutate(t)} aria-label="删除">×</button>
-          </li>
-        ))}
-      </ul>
-    </main>
+    <SiteLayout brand="[[.Name]]">
+      <Container size="xs" py="xl">
+        <Title order={2}>[[.Name]]</Title>
+        <form onSubmit={submit}>
+          <Group mt="md" gap="xs">
+            <TextInput flex={1} value={title} onChange={(e) => setTitle(e.currentTarget.value)} placeholder="要做什么？" autoFocus />
+            <Button type="submit" loading={create.isPending}>
+              添加
+            </Button>
+          </Group>
+        </form>
+        {error && (
+          <Alert color="red" mt="md">
+            {isApiError(error) ? (error.detail ?? error.message) : String(error)}
+          </Alert>
+        )}
+        <Paper mt="md">
+          <Stack gap={0}>
+            {(todos.data ?? []).map((t) => (
+              <Group key={t.id} justify="space-between" px="md" py="xs">
+                <Checkbox
+                  checked={t.done}
+                  onChange={() => toggle.mutate(t)}
+                  label={<Text td={t.done ? "line-through" : undefined}>{t.title}</Text>}
+                />
+                <ActionIcon variant="subtle" color="gray" onClick={() => remove.mutate(t)} aria-label="删除">
+                  <IconX size={16} />
+                </ActionIcon>
+              </Group>
+            ))}
+          </Stack>
+        </Paper>
+      </Container>
+    </SiteLayout>
   )
 }

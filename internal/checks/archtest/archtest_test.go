@@ -90,7 +90,7 @@ var rules = map[string]rule{
 	"command/httpcmd":      {layerEntry, []string{"command", "httpx", "httpx/rest/clientgen"}},
 	// tenon 命令行（go tool tenon）：开发工具，不被框架的其他包引用。
 	"cmd/tenon":                   {layerEntry, []string{"cmd/tenon/internal/dev", "cmd/tenon/internal/project", "cmd/tenon/internal/scaffold"}},
-	"cmd/tenon/internal/dev":      {layerEntry, []string{"cmd/tenon/internal/project", "theme"}},
+	"cmd/tenon/internal/dev":      {layerEntry, []string{"cmd/tenon/internal/project"}},
 	"cmd/tenon/internal/project":  {layerEntry, nil},
 	"cmd/tenon/internal/scaffold": {layerEntry, nil},
 	"command/migratecmd":          {layerEntry, []string{"command", "database", "doctor"}},

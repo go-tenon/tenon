@@ -56,11 +56,11 @@ bun run dev
 
 `bun run dev` 运行的是 Tenon 的开发工具 `go tool tenon dev`，它同时做了几件事：
 
-- **运行前端的开发服务器。** 修改前端代码，页面立即更新，不需要刷新；
+- **运行前端的开发服务器。** 页面由 [TanStack Start](https://tanstack.com/start) 渲染，修改前端代码，页面立即更新，不需要刷新；
 - **编译并运行 Go 程序。** 修改 Go 代码，程序自动重新编译、重新启动；
 - **重新生成前端的客户端。** 每次重新编译后，根据 Go 中的接口重新生成 `packages/client/src/api` 中的 TypeScript 代码。Go 的接口加了一个字段，前端的代码马上就能用到它。
 
-页面和接口在同一个地址下：`/api` 开头的是 JSON 接口，其余的请求交给前端。接口文档在 <http://localhost:8080/api/docs>，可以在这里直接调用接口，试着调用一下 `todo-create`，再回到页面刷新，看看新加的待办事项。
+页面和接口在同一个地址下：`/api` 开头的是 JSON 接口，其余的请求交给前端，由它渲染页面。接口文档在 <http://localhost:8080/api/docs>，可以在这里直接调用接口，试着调用一下 `todo-create`，再回到页面刷新，看看新加的待办事项。
 
 在终端中按 `Ctrl-C` 停止。
 
@@ -75,14 +75,13 @@ blog/
 ├── cmd/api/main.go              程序的入口：serve 命令启动 HTTP 服务
 ├── internal/todo/todo.go        示例的接口
 ├── apps/web/                    前端
-│   ├── frontend.go              把构建好的页面打包进程序
-│   ├── index.html
-│   ├── package.json             React、TanStack Router、TanStack Query、Vite
+│   ├── frontend.go              把前端编译成的 SSR 程序打包进 Go 程序
+│   ├── package.json             React、TanStack Start、TanStack Query、Mantine
 │   ├── vite.config.ts
 │   └── src/
-│       ├── main.tsx             渲染应用
-│       ├── app.ts               装配路由和数据请求
-│       ├── client.ts            创建调用接口的客户端
+│       ├── router.tsx           装配路由和数据请求
+│       ├── theme.ts             主题：样式预设和品牌色
+│       ├── api.ts               创建调用接口的客户端
 │       └── routes/              页面，一个文件一个页面
 └── packages/client/src/api/     生成的客户端
 ```
@@ -90,10 +89,10 @@ blog/
 可以把项目分成三部分来看：
 
 - **Go 代码**在 `cmd` 和 `internal` 中。`cmd/api/main.go` 是程序的入口，`internal` 中按业务分成一个个包，例如现在的 `internal/todo`，以后的 `internal/article`。
-- **前端代码**在 `apps/web` 中，页面在 `src/routes` 中。
+- **前端代码**在 `apps/web` 中，页面在 `src/routes` 中。界面用 [Mantine](https://mantine.dev) 的组件，框架的 `@go-tenon/ui` 提供布局和样式预设。
 - **生成的代码**在 `packages/client` 中，前端用 `@blog/client/api` 导入它。不需要手动修改，它随接口自动更新。
 
-构建时，前端会被打包进 Go 程序，部署时只有一个可执行文件，见[部署](../installation/deployment.md)。每个目录的详细说明见[脚手架](../installation/scaffolding.md#layout)。
+构建时，前端被编译成一个渲染页面的程序（SSR 程序），再打包进 Go 程序：Go 程序启动时把它运行起来，页面请求交给它渲染。部署时仍然只有一个可执行文件，见[部署](../installation/deployment.md)和[服务端渲染](../frontend/ssr.md)。每个目录的详细说明见[脚手架](../installation/scaffolding.md#layout)。
 
 <a id="summary"></a>
 ## 小结

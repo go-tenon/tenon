@@ -1,5 +1,5 @@
-// Package dev 实现 tenon dev：与应用一起运行 Vite、templ、Tailwind 和其他工具，修改 Go 代码后重新编译、重启应用，
-// 并重新生成客户端。
+// Package dev 实现 tenon dev：与应用一起运行前端的开发服务器（TanStack Start 的 Vite）、templ、Tailwind 和其他工具，
+// 修改 Go 代码后重新编译、重启应用，并重新生成客户端。
 package dev
 
 import (
@@ -121,12 +121,9 @@ func (d dev) check() error {
 }
 
 // prepare 在启动监听进程之前运行一次：把框架的前端包复制到 .tenon/js（见 SyncJS），前端包的 package.json 变了
-// 或者缺少依赖（见 NeedsInstall）时在根目录 bun install，确保每个前端的 dist 存在（见 EnsureDist），
+// 或者缺少依赖（见 NeedsInstall）时在根目录 bun install，确保每个前端的 ssr.bin 存在（见 EnsureDist），
 // 写入前端开发服务器的地址（见 DevConfig），把框架 web/ui 的样式源复制到 Tailwind 入口旁边。
 func (d dev) prepare() error {
-	if _, err := GenerateTheme("."); err != nil {
-		return err
-	}
 	if len(d.cfg.Frontends) > 0 {
 		changed, err := SyncJS(".")
 		if err != nil {
@@ -150,25 +147,21 @@ func (d dev) prepare() error {
 	return nil
 }
 
-// Placeholder 是前端还没有构建时 dist/index.html 的内容。
-const Placeholder = "<!doctype html><p>前端还没有构建：运行 bun run dev 或 bun run build。</p>\n"
+// SSRBinary 是前端目录中 SSR 可执行文件的名字，frontend.go 用 go:embed 嵌入它。
+const SSRBinary = "ssr.bin"
 
-// EnsureDist 在前端的 dist 不存在时（例如刚 clone 的项目，dist 被 .gitignore 忽略）写入占位的 index.html，
-// 嵌入 dist 的代码才能编译。不运行 vite build：它可能依赖还没生成的客户端，开发时页面也来自 Vite 的开发服务器，
-// 构建发布时 build 会先构建前端。
+// EnsureDist 在前端的 ssr.bin 不存在时（例如刚 clone 的项目，它被 .gitignore 忽略）写入空的占位文件，
+// 嵌入它的代码才能编译。开发时页面来自前端的开发服务器，用不到它；go tool tenon build 编译出真正的可执行文件。
 func EnsureDist(cfg *project.Config) error {
 	for _, f := range cfg.Frontends {
-		dist := filepath.Join(f.Dir, "dist")
-		if _, err := os.Stat(dist); !errors.Is(err, fs.ErrNotExist) {
+		bin := filepath.Join(f.Dir, SSRBinary)
+		if _, err := os.Stat(bin); !errors.Is(err, fs.ErrNotExist) {
 			if err != nil {
 				return err
 			}
 			continue
 		}
-		if err := os.MkdirAll(dist, 0o755); err != nil {
-			return err
-		}
-		if err := os.WriteFile(filepath.Join(dist, "index.html"), []byte(Placeholder), 0o644); err != nil {
+		if err := os.WriteFile(bin, nil, 0o644); err != nil {
 			return err
 		}
 	}
@@ -225,6 +218,7 @@ func (d dev) exec(dir string, args ...string) error {
 type watcher struct {
 	dir  string
 	args []string
+	env  []string // 追加的环境变量
 }
 
 // watchers 返回与应用一起运行的监听进程。
@@ -232,18 +226,20 @@ func (d dev) watchers() []watcher {
 	var ws []watcher
 	for _, f := range d.cfg.Frontends {
 		// 前端 package.json 的 dev 脚本运行 vite。端口固定为选好的端口，被占用时直接失败：应用只把请求转给这个地址。
-		ws = append(ws, watcher{f.Dir, []string{"bun", "run", "dev", "--port", port(d.servers[f.Name]), "--strictPort"}})
+		// 服务端渲染时没有内部 socket，经 API_ORIGIN 调用应用的接口。
+		ws = append(ws, watcher{f.Dir, []string{"bun", "run", "dev", "--port", port(d.servers[f.Name]), "--strictPort"},
+			[]string{"API_ORIGIN=" + d.cfg.URL}})
 	}
 	if t := d.cfg.Templ; t != nil {
 		ws = append(ws, watcher{".", []string{"go", "tool", "templ", "generate", "--watch",
-			"--proxy=" + d.cfg.URL, "--proxyport=" + strconv.Itoa(t.ProxyPort), "--open-browser=false"}})
+			"--proxy=" + d.cfg.URL, "--proxyport=" + strconv.Itoa(t.ProxyPort), "--open-browser=false"}, nil})
 	}
 	if t := d.cfg.Tailwind; t != nil {
 		// --watch=always：标准输入不是终端时也继续监听，否则 tailwindcss 在标准输入关闭时退出。
-		ws = append(ws, watcher{".", []string{"tailwindcss", "-i", t.Input, "-o", t.Output, "--watch=always"}})
+		ws = append(ws, watcher{".", []string{"tailwindcss", "-i", t.Input, "-o", t.Output, "--watch=always"}, nil})
 	}
 	for _, t := range d.cfg.Tools {
-		ws = append(ws, watcher{".", t.Watch})
+		ws = append(ws, watcher{".", t.Watch, nil})
 	}
 	return ws
 }
@@ -258,17 +254,14 @@ func port(addr string) string {
 func (d dev) builds() []watcher {
 	var bs []watcher
 	if d.cfg.Templ != nil {
-		bs = append(bs, watcher{".", []string{"go", "tool", "templ", "generate"}})
-	}
-	for _, f := range d.cfg.Frontends {
-		bs = append(bs, watcher{f.Dir, []string{"bun", "run", "build"}})
+		bs = append(bs, watcher{".", []string{"go", "tool", "templ", "generate"}, nil})
 	}
 	if t := d.cfg.Tailwind; t != nil {
-		bs = append(bs, watcher{".", []string{"tailwindcss", "-i", t.Input, "-o", t.Output, "--minify"}})
+		bs = append(bs, watcher{".", []string{"tailwindcss", "-i", t.Input, "-o", t.Output, "--minify"}, nil})
 	}
 	for _, t := range d.cfg.Tools {
 		if len(t.Build) > 0 {
-			bs = append(bs, watcher{".", t.Build})
+			bs = append(bs, watcher{".", t.Build, nil})
 		}
 	}
 	return bs
@@ -284,23 +277,6 @@ func (d dev) runs() []func(context.Context) error {
 			return watch(ctx, func() string { return snapshot(t.Static, nil) }, 250*time.Millisecond, d.reload)
 		})
 	}
-	// 设计令牌变化后重新生成前端的主题包，Vite 随之更新页面。令牌写错时只打印错误，改对后再生成。
-	runs = append(runs, func(ctx context.Context) error {
-		file := func(string) string {
-			info, err := os.Stat(ThemeFile)
-			if err != nil {
-				return ""
-			}
-			return info.ModTime().String() + strconv.FormatInt(info.Size(), 10)
-		}
-		return watch(ctx, func() string { return file(ThemeFile) }, 250*time.Millisecond, func() {
-			if ok, err := GenerateTheme("."); err != nil {
-				fmt.Fprintf(d.errOut, "dev: %v\n", err)
-			} else if ok {
-				fmt.Fprintln(d.out, "dev: 设计令牌有变化，已重新生成 "+ThemeDir)
-			}
-		})
-	})
 	return runs
 }
 
@@ -308,6 +284,9 @@ func (d dev) runs() []func(context.Context) error {
 func (d dev) run(ctx context.Context, w watcher) error {
 	cmd := exec.CommandContext(ctx, w.args[0], w.args[1:]...)
 	cmd.Dir = w.dir
+	if len(w.env) > 0 {
+		cmd.Env = append(os.Environ(), w.env...)
+	}
 	cmd.Stdout, cmd.Stderr = d.out, d.errOut
 	interruptGroup(cmd)
 	cmd.WaitDelay = 5 * time.Second

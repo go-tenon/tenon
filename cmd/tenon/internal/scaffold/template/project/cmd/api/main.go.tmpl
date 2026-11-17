@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"log/slog"
+	"net/http"
 
 	"github.com/go-chi/chi/v5"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/go-tenon/tenon/httpx"
 	"github.com/go-tenon/tenon/httpx/rest"
 	"github.com/go-tenon/tenon/logging"
+	"github.com/go-tenon/tenon/ssr"
 
 	"[[.Module]]/apps/web"
 	"[[.Module]]/internal/todo"
@@ -22,7 +24,7 @@ import (
 type Config struct {
 	HTTP httpx.Config `yaml:"http"`
 	// DevServers 是各前端开发服务器的地址，按前端的名称（apps 中的目录名）。只在 tenon dev 时有值：
-	// 它把地址写入 .tenon/dev.yaml，SPA 把页面请求转给对应的开发服务器。
+	// 它把地址写入 .tenon/dev.yaml，页面请求转给对应的开发服务器。
 	DevServers map[string]string `yaml:"dev_servers"`
 }
 
@@ -33,19 +35,32 @@ func main() {
 		command.Config[Config](),
 	)
 	// openapi、routes、client 用默认配置和 nil 依赖构造同一套路由，从中读取路由表和接口定义。
-	root.AddCommand(httpcmd.Commands(func() chi.Routes { return routes(config.Default[Config](), nil) })...)
+	root.AddCommand(httpcmd.Commands(func() chi.Routes { return routes(config.Default[Config](), nil, pages{}) })...)
 	command.Execute(root)
 }
 
-// serve 启动 HTTP 服务，直到收到停止信号。
+// pages 是各前端的页面处理器，挂在接口之后。
+type pages struct{ web http.Handler }
+
+// serve 启动 HTTP 服务，直到收到停止信号。页面由 Go 托管的 SSR 进程渲染（见 ssr 包），
+// 它们渲染时经内部 socket 调用同一组路由。
 func serve(ctx context.Context, cfg Config) error {
 	slog.SetDefault(logging.New(logging.Config{}))
-	return httpx.ListenAndServe(ctx, cfg.HTTP, routes(cfg, todo.NewStore()))
+	var router chi.Router
+	api := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { router.ServeHTTP(w, r) })
+	webPages, err := ssr.New(ssr.Options{Executable: web.SSR, API: api, DevServer: cfg.DevServers["web"]})
+	if err != nil {
+		return err
+	}
+	router = routes(cfg, todo.NewStore(), pages{web: webPages.Handler()})
+	return ssr.Run(ctx, func(ctx context.Context) error {
+		return httpx.ListenAndServe(ctx, cfg.HTTP, router)
+	}, webPages)
 }
 
-// routes 是应用的全部路由：/api 下是接口，其余路径交给单页应用。
+// routes 是应用的全部路由：/api 下是接口，其余路径是页面。
 // 它只保存依赖，处理请求时才使用，所以 openapi 等命令可以传 nil。
-func routes(cfg Config, store *todo.Store) chi.Router {
+func routes(cfg Config, store *todo.Store, p pages) chi.Router {
 	router := chi.NewRouter()
 	router.Use(httpx.Defaults(cfg.HTTP)...)
 	router.Route("/api", func(r chi.Router) {
@@ -53,6 +68,8 @@ func routes(cfg Config, store *todo.Store) chi.Router {
 		api := rest.New(r, rest.Options{Title: "[[.Name]]", Version: "0.1.0", BasePath: "/api"})
 		todo.Register(api, store)
 	})
-	router.Handle("/*", httpx.NewSPA(web.Dist, httpx.SPAOptions{DevServer: cfg.DevServers["web"]}))
+	if p.web != nil {
+		router.Handle("/*", p.web)
+	}
 	return router
 }

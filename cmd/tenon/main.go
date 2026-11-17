@@ -36,7 +36,7 @@ func initCommand() *cobra.Command {
 	var opts scaffold.Options
 	cmd := &cobra.Command{
 		Use:   "init <dir>",
-		Short: "生成新项目：Go 应用加 React 单页应用，生成后即可运行",
+		Short: "生成新项目：Go 应用加 TanStack Start 的前端，生成后即可运行",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			dir := args[0]
@@ -77,9 +77,6 @@ func initCommand() *cobra.Command {
 			}
 			// 前端依赖框架的前端包和设计令牌生成的主题包，bun install 之前先准备好它们。
 			if _, err := dev.SyncJS(dir); err != nil {
-				return err
-			}
-			if _, err := dev.GenerateTheme(dir); err != nil {
 				return err
 			}
 			_, err := exec.LookPath("bun")
@@ -148,10 +145,10 @@ func root() *cobra.Command {
 var moduleLine = regexp.MustCompile(`(?m)^module\s+(\S+)`)
 
 func addFrontendCommand() *cobra.Command {
-	var base, template, layout string
+	var base, style string
 	cmd := &cobra.Command{
 		Use:   "frontend <name>",
-		Short: "在 apps/<name> 中生成一个 React 前端，加入 Bun workspace",
+		Short: "在 apps/<name> 中生成一个 TanStack Start 前端，加入 Bun workspace",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
@@ -179,40 +176,20 @@ func addFrontendCommand() *cobra.Command {
 			if err != nil || m == nil {
 				return fmt.Errorf("run add frontend in the project root: go.mod with a module line is required (%v)", err)
 			}
-			if !slices.Contains(scaffold.Templates, template) {
-				return fmt.Errorf("--template %q is not one of %v", template, scaffold.Templates)
+			if !slices.Contains(scaffold.Styles, style) {
+				return fmt.Errorf("--style %q is not one of %v", style, scaffold.Styles)
 			}
-			f := scaffold.Frontend{Scope: pkg.Name, Name: name, Base: base, Title: name, Template: template, Layout: layout}
+			f := scaffold.Frontend{Scope: pkg.Name, Name: name, Base: base, Title: name, Style: style}
 			if err := scaffold.WriteFrontend(".", f); err != nil {
 				return err
 			}
 			if err := scaffold.AddWorkspace(".", path.Join(project.AppsDir, name)); err != nil {
 				return err
 			}
-			if template == "admin" {
-				if err := scaffold.AddWorkspace(".", scaffold.AdminPackage); err != nil {
-					return err
-				}
-				if err := scaffold.AddMCPServer(".", "antd", scaffold.AntdMCP); err != nil {
-					return err
-				}
-			}
 			if err := dev.EnsureDist(&project.Config{Frontends: []project.Frontend{{Name: name, Dir: path.Join(project.AppsDir, name)}}}); err != nil {
 				return err
 			}
 			if _, err := dev.SyncJS("."); err != nil {
-				return err
-			}
-			if template == "console" {
-				// shadcn 的组件和 tenon 的组件从框架的 registry 复制进前端，不需要联网。
-				if err := scaffold.InstallRegistry(path.Join(dev.JSDir, "registry"), path.Join(project.AppsDir, name), scaffold.ConsoleRegistryItems); err != nil {
-					return err
-				}
-				if err := scaffold.AddMCPServer(".", "shadcn", scaffold.ShadcnMCP); err != nil {
-					return err
-				}
-			}
-			if _, err := dev.GenerateTheme("."); err != nil {
 				return err
 			}
 			if _, err := exec.LookPath("bun"); err == nil {
@@ -222,18 +199,18 @@ func addFrontendCommand() *cobra.Command {
 			}
 			pattern := base + "*"
 			fmt.Fprintf(cmd.OutOrStdout(), `
-已生成 apps/%[1]s。在路由中挂载它，放在挂载 /* 的那一行之前：
+已生成 apps/%[1]s，挂在 %[4]s。在 cmd/api/main.go 中托管它的 SSR 进程：
 
-	router.Handle(%[2]q, httpx.NewSPA(%[3]s.Dist, httpx.SPAOptions{Base: %[4]q, DevServer: cfg.DevServers[%[1]q]}))
+	%[3]sPages, err := ssr.New(ssr.Options{Executable: %[3]s.SSR, API: api, DevServer: cfg.DevServers[%[1]q]})
 
-并导入 %[5]q。
+把 %[3]sPages.Handler() 挂在 %[2]q（放在挂载 /* 的那一行之前），并加入 ssr.Run 的参数：
+ssr.Run(ctx, serve, webPages, %[3]sPages)。导入 %[5]q。
 `, name, pattern, f.Package(), base, string(m[1])+"/apps/"+name)
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&base, "base", "", "前端挂载的路径，以 / 开头和结尾，默认 /<name>/")
-	cmd.Flags().StringVar(&template, "template", "default", "前端的模板：default；admin（antd 的运营后台）；console（shadcn 的控制台）")
-	cmd.Flags().StringVar(&layout, "layout", "", "默认布局，只用于 admin 和 console 模板。admin："+strings.Join(scaffold.Layouts["admin"], "、")+"；console："+strings.Join(scaffold.Layouts["console"], "、")+"。默认是第一种")
+	cmd.Flags().StringVar(&style, "style", "console", "样式预设：console（SaaS 控制台）；admin（运营后台，高密度、多标签）；site（官网和内容站，服务端渲染）")
 	return cmd
 }
 
@@ -258,14 +235,11 @@ func buildCommand() *cobra.Command {
 	var out string
 	cmd := &cobra.Command{
 		Use:   "build",
-		Short: "构建前端，再编译应用（嵌入前端的构建产物）",
+		Short: "把每个前端编译成 SSR 可执行文件，再编译应用（嵌入它们）",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := load()
 			if err != nil {
-				return err
-			}
-			if _, err := dev.GenerateTheme("."); err != nil {
 				return err
 			}
 			if len(cfg.Frontends) > 0 {
@@ -275,9 +249,18 @@ func buildCommand() *cobra.Command {
 				if err := run(cmd, ".", "bun", "install", "--frozen-lockfile"); err != nil {
 					return err
 				}
+				// SSR 可执行文件的架构与 Go 程序相同：tenon-start compile 读取 GOARCH。
+				goarch, err := exec.CommandContext(cmd.Context(), "go", "env", "GOARCH").Output()
+				if err != nil {
+					return fmt.Errorf("go env GOARCH: %w", err)
+				}
 				for _, f := range cfg.Frontends {
-					if err := run(cmd, f.Dir, "bun", "run", "build"); err != nil {
-						return err
+					c := exec.CommandContext(cmd.Context(), "bun", "run", "build")
+					c.Dir = f.Dir
+					c.Env = append(os.Environ(), "GOARCH="+strings.TrimSpace(string(goarch)))
+					c.Stdout, c.Stderr = cmd.OutOrStdout(), cmd.ErrOrStderr()
+					if err := c.Run(); err != nil {
+						return fmt.Errorf("%s: bun run build: %w", f.Dir, err)
 					}
 				}
 			}
@@ -311,9 +294,6 @@ func generateCommand() *cobra.Command {
 			}
 			defer func() { _ = os.RemoveAll(tmp) }()
 			if err := dev.EnsureDist(cfg); err != nil {
-				return err
-			}
-			if _, err := dev.GenerateTheme("."); err != nil {
 				return err
 			}
 			// 生成之后通常接着做类型检查，前端依赖的框架前端包要已经就位，包的依赖要已经安装。

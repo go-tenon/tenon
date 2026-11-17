@@ -9,7 +9,8 @@ import { dirname, join, relative, resolve } from "node:path"
 /**
  * 构建时在 dist 中写入 {"version": "…"}，并把版本号和文件的地址（带上 base）注入为
  * import.meta.env.TENON_BUILD_VERSION、TENON_VERSION_URL。只在构建时生效，开发模式下不检查新版本。
- * Go 的 httpx.SPA 对没有哈希的文件返回 Cache-Control: no-cache，version.json 不会被缓存。
+ * 用 TanStack Start 时只作用于浏览器的构建（client 环境），version.json 写在 dist/client 中；
+ * 嵌入 SSR 程序后，没有哈希的文件返回 Cache-Control: no-cache，version.json 不会被缓存。
  *
  * @param {import("./vite").VersionPluginOptions} [options]
  * @returns {import("vite").Plugin}
@@ -17,11 +18,13 @@ import { dirname, join, relative, resolve } from "node:path"
 export function tenonVersion(options = {}) {
   const version = options.version ?? randomUUID()
   const fileName = (options.fileName ?? "version.json").replace(/^\/+/, "")
-  /** @type {{ outDir: string, mapsDir: string } | undefined} */
-  let maps
+  /** @type {string | undefined} */
+  let mapsDir
   return {
     name: "tenon:version",
     apply: "build",
+    // 服务端的构建（ssr 环境）不需要 version.json，它的 source map 也不公开。
+    applyToEnvironment: (environment) => environment.name === "client",
     config(config) {
       const base = config.base && config.base !== "./" ? config.base : "/"
       const url = `${base.endsWith("/") ? base : `${base}/`}${fileName}`
@@ -35,20 +38,16 @@ export function tenonVersion(options = {}) {
       }
     },
     configResolved(config) {
-      if (options.sourcemaps) {
-        maps = {
-          outDir: resolve(config.root, config.build.outDir),
-          mapsDir: resolve(config.root, options.sourcemaps),
-        }
-      }
+      if (options.sourcemaps) mapsDir = resolve(config.root, options.sourcemaps)
     },
     generateBundle() {
       this.emitFile({ type: "asset", fileName, source: JSON.stringify({ version }) })
     },
     // 构建结束后把 .map 移出 dist：它们不嵌入二进制、不公开，由 CI 上传给错误追踪服务。
     async closeBundle() {
-      if (!maps) return
-      const { outDir, mapsDir } = maps
+      if (!mapsDir) return
+      const { root, build } = this.environment.config
+      const outDir = resolve(root, build.outDir)
       await rm(mapsDir, { recursive: true, force: true })
       for (const entry of await readdir(outDir, { recursive: true, withFileTypes: true })) {
         if (!entry.isFile() || !entry.name.endsWith(".map")) continue

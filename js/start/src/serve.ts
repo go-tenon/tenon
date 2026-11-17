@@ -2,7 +2,7 @@
 // 这里不导入 TanStack 的包：服务端入口已经由 Vite 构建好（dist/server/server.js）。
 
 import { unlinkSync } from "node:fs"
-import { EnvSocket, HeaderNonce, PrerenderNonce, socketPath } from "./headers"
+import { EnvSocket, HeaderNonce, PrerenderNonce, socketPath, stripBase } from "./headers"
 
 /** serve 的选项。 */
 export interface ServeOptions {
@@ -13,6 +13,8 @@ export interface ServeOptions {
    * 由 tenon-start compile 生成。路径对应的文件、目录下的 index.html（预渲染的页面）直接返回，其余请求交给 handler。
    */
   files: Record<string, string>
+  /** 前端挂载的路径，与 Vite 的 base 相同，例如 /admin/；默认 /。查找静态文件前去掉它。 */
+  base?: string
   /** 监听的 socket，默认读环境变量 SSR_SOCKET。 */
   socket?: string
 }
@@ -30,7 +32,7 @@ export function serve(options: ServeOptions): void {
   const server = Bun.serve({
     unix,
     async fetch(request) {
-      const file = await staticFile(options.files, request)
+      const file = await staticFile(options.files, request, options.base)
       return file ?? options.handler.fetch(request)
     },
   })
@@ -45,8 +47,13 @@ export function serve(options: ServeOptions): void {
  * 返回请求路径对应的嵌入文件：assets 下的文件名带内容哈希，永久缓存；预渲染的 HTML 每次协商，
  * 其中的占位 nonce 换成本次请求的 nonce（X-CSP-Nonce）。
  */
-export async function staticFile(files: Record<string, string>, request: Request): Promise<Response | undefined> {
-  const path = new URL(request.url).pathname
+export async function staticFile(
+  files: Record<string, string>,
+  request: Request,
+  base = "/",
+): Promise<Response | undefined> {
+  const path = stripBase(new URL(request.url).pathname, base)
+  if (path === undefined) return undefined
   const dir = path.endsWith("/") ? path : `${path}/`
   for (const candidate of [path, `${dir}index.html`]) {
     const file = files[candidate]

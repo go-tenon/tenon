@@ -13,7 +13,8 @@ type HandlerContext = Parameters<typeof defaultStreamHandler>[0]
 
 /** 匹配到的最后一个路由的模板，例如 /articles/$id；没有匹配时为空字符串。 */
 export function routeTemplate(router: AnyRouter): string {
-  const matches = router.state.matches
+  // 应用注册的路由树不同，matches 的类型随之变化；这里只读两个字段。
+  const matches = router.state.matches as readonly { routeId: string; fullPath?: string }[]
   const last = matches[matches.length - 1]
   if (!last || last.routeId === "__root__") return ""
   return last.fullPath ?? last.routeId

@@ -1,0 +1,17 @@
+import { Text } from "@mantine/core"
+import { createFileRoute } from "@tanstack/react-router"
+import { Page } from "@go-tenon/ui"
+
+// 首页。页面放在 src/routes/_app/ 中，staticData 的 title、icon、order 决定菜单。
+export const Route = createFileRoute("/_app/")({
+  staticData: { title: "首页", icon: "home", order: 0 },
+  component: Home,
+})
+
+function Home() {
+  return (
+    <Page title="首页">
+      <Text c="dimmed">从这里开始。</Text>
+    </Page>
+  )
+}
