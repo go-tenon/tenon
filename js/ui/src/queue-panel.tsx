@@ -173,7 +173,13 @@ export function QueuePanel({ api, title = "队列", refreshInterval = 5000 }: Qu
           label: "失败任务",
           count: s?.failed,
           alert: true,
-          content: <FailedJobs api={api} refreshInterval={refreshInterval} />,
+          content: (
+            <FailedJobs
+              api={api}
+              refreshInterval={refreshInterval}
+              counts={s?.topics.filter((t) => t.failed > 0).map((t) => ({ topic: t.topic, count: t.failed }))}
+            />
+          ),
         },
         { value: "system", label: "系统状态", content: needStatus((s) => <SystemStatus status={s} />) },
       ]}
@@ -393,7 +399,16 @@ function Topics({ status, api }: { status: QueueStatusData; api: QueueApi }): Re
 
 // ———————————————————————————— 失败任务 ————————————————————————————
 
-function FailedJobs({ api, refreshInterval }: { api: QueueApi; refreshInterval: number }): ReactNode {
+function FailedJobs({
+  api,
+  refreshInterval,
+  counts,
+}: {
+  api: QueueApi
+  refreshInterval: number
+  /** 各任务类型的失败条数，来自定时刷新的概览：筛选项按它显示。 */
+  counts?: { topic: string; count: number }[]
+}): ReactNode {
   const [topic, setTopic] = useState<string>()
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(20)
@@ -405,14 +420,21 @@ function FailedJobs({ api, refreshInterval }: { api: QueueApi; refreshInterval: 
     queryFn: () => api.failedList({ topic, page, per_page: perPage }),
     // 和任务类型一样定时刷新：新出现的失败任务会自己出现。
     refetchInterval: refreshInterval,
-    // 换筛选、翻页时先显示原来的数据（表格变淡），新的读到后直接替换，表格不闪。
+    // 换筛选、翻页时总是向服务器读最新的，不用缓存（不会显示过时的数据）；读到之前先显示当前的（表格变淡），不闪。
+    gcTime: 0,
     placeholderData: keepPreviousData,
   })
   const selection = useSelection<string>([topic, page, perPage])
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["tenon", "queue"] })
   const data = list.data
-  const all = data?.topics.reduce((n, t) => n + t.count, 0) ?? 0
-  const count = topic ? (data?.topics.find((t) => t.topic === topic)?.count ?? 0) : all
+  // 筛选项和条数只看概览（定时刷新）。选中的类型没有失败的任务了（例如刚全部重试）也留着，表格显示没有失败的任务。
+  const topics = [...(counts ?? [])]
+  if (topic && !topics.some((t) => t.topic === topic)) {
+    topics.push({ topic, count: 0 })
+    topics.sort((a, b) => a.topic.localeCompare(b.topic)) // 概览按名字排序，留下的这一项不换位置
+  }
+  const all = topics.reduce((n, t) => n + t.count, 0)
+  const count = topic ? (topics.find((t) => t.topic === topic)?.count ?? 0) : all
 
   const single = async (action: "retry" | "delete", id: string) => {
     const retry = action === "retry"
@@ -539,7 +561,7 @@ function FailedJobs({ api, refreshInterval }: { api: QueueApi; refreshInterval: 
   // 按任务类型筛选：类型不多时并排，多了改成下拉选择。
   const options = [
     { value: "", label: `全部 ${all}` },
-    ...(data?.topics ?? []).map((t) => ({ value: t.topic, label: `${t.topic} ${t.count}` })),
+    ...topics.map((t) => ({ value: t.topic, label: `${t.topic} ${t.count}` })),
   ]
   const choose = (v: string | null) => {
     setTopic(v || undefined)

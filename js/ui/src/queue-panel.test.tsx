@@ -168,7 +168,7 @@ describe("QueuePanel", () => {
     expect(api.failedRetryAll).toHaveBeenCalledWith({ topic: undefined })
   })
 
-  it("切回看过的筛选时先显示缓存的数据，同时重新请求服务器；失败列表定时刷新", async () => {
+  it("切换筛选时总是向服务器读最新的；失败列表定时刷新", async () => {
     const api = fakeApi()
     const root = createRootRouteWithContext<RouterContext>()({
       component: () => <QueuePanel api={api} refreshInterval={200} />,
@@ -180,10 +180,25 @@ describe("QueuePanel", () => {
     await waitFor(() => expect(screen.queryByText("smtp: timeout")).toBeNull())
     const before = calls().filter((t) => t === "全部").length
     await act(async () => fireEvent.click(screen.getByRole("radio", { name: /全部/ })))
-    expect(screen.getByText("smtp: timeout")).toBeTruthy() // 缓存的数据立即显示
-    await waitFor(() => expect(calls().filter((t) => t === "全部").length).toBeGreaterThan(before)) // 同时重新请求
+    await waitFor(() => expect(calls().filter((t) => t === "全部").length).toBeGreaterThan(before))
+    expect(await screen.findByText("smtp: timeout")).toBeTruthy()
     const n = calls().length
     await waitFor(() => expect(calls().length).toBeGreaterThan(n), { timeout: 1000 }) // 定时刷新
+  })
+
+  it("把一类全部重试后，这一类留在筛选中，条数是 0、表格中没有任务；切换筛选不显示过时的数据", async () => {
+    const api = fakeApi()
+    await mount(api)
+    await openTab("失败任务")
+    await act(async () => fireEvent.click(await screen.findByRole("radio", { name: /report\.daily/ })))
+    await act(async () => fireEvent.click(await screen.findByRole("button", { name: "重试这 1 个" })))
+    await act(async () => fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "重试" })))
+    expect(await screen.findByText("这类任务没有失败的")).toBeTruthy()
+    expect(screen.getByRole("radio", { name: "report.daily 0" })).toBeTruthy()
+    // 切到别的筛选再回到“全部”：都向服务器读最新的，不会显示重试之前的旧数据。
+    await act(async () => fireEvent.click(screen.getByRole("radio", { name: /全部/ })))
+    await waitFor(() => expect(screen.queryByText("pdf: unavailable")).toBeNull())
+    expect(await screen.findByText("smtp: timeout")).toBeTruthy()
   })
 
   it("勾选几条一起删除：先确认，逐条调用接口", async () => {
