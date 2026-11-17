@@ -50,7 +50,7 @@ func appRoutes(t *testing.T) func() chi.Routes {
 			return nil, nil
 		}
 		create := huma.Operation{OperationID: "article-create", Method: http.MethodPost, Path: "/articles", Summary: "创建文章"}
-		rest.RequireBearer(api, func(context.Context, string) (identity.Subject, error) {
+		rest.RequireToken(api, func(context.Context, string) (identity.Subject, error) {
 			t.Fatal("token validator must not run")
 			return identity.Subject{}, nil
 		}, "articles")(&create)
@@ -147,9 +147,9 @@ func TestRoutes(t *testing.T) {
 		want []string
 		omit []string
 	}{
-		{"default", nil, []string{"GET /articles article-list public 获取文章 列表", "POST /articles article-create bearer: articles 创建文章", "GET /livez - unknown -", "GET /posts/{slug} - public -", "* /static/* - unknown -"}, []string{"/docs", "/openapi", "/schemas", "GET /static"}},
+		{"default", nil, []string{"GET /articles article-list public 获取文章 列表", "POST /articles article-create token: articles 创建文章", "GET /livez - unknown -", "GET /posts/{slug} - public -", "* /static/* - unknown -"}, []string{"/docs", "/openapi", "/schemas", "GET /static"}},
 		{"all", []string{"--all"}, []string{"GET /articles article-list public 获取文章 列表", "GET /docs - docs -", "GET /openapi.json - docs -", "GET /schemas/{schema} - docs -"}, nil},
-		{"method", []string{"--method", "post"}, []string{"POST /articles article-create bearer: articles 创建文章", "* /static/* - unknown -"}, []string{"article-list", "/livez", "/docs"}},
+		{"method", []string{"--method", "post"}, []string{"POST /articles article-create token: articles 创建文章", "* /static/* - unknown -"}, []string{"article-list", "/livez", "/docs"}},
 		{"path", []string{"--path", "live"}, []string{"GET /livez - unknown -"}, []string{"article-create", "article-list", "/docs"}},
 		{"pages", []string{"--path", "/posts"}, []string{"GET /posts/{slug} - public -"}, []string{"/livez", "article-create"}},
 		{"combined", []string{"--path", "articles", "--method", "get"}, []string{"GET /articles article-list public 获取文章 列表"}, []string{"article-create", "/docs"}},

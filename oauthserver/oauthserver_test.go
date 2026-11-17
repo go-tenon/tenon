@@ -120,7 +120,7 @@ func setupWith(t *testing.T, edit func(*oauthserver.Options)) *env {
 
 	apiRouter := chi.NewRouter()
 	api := rest.New(apiRouter, rest.Options{BasePath: base + "/api", Accounts: identity.Accounts{"editor": editors}, Logger: slog.New(slog.DiscardHandler)})
-	srv.Register(api, rest.RequireBearer(api, tokens.Validate))
+	srv.Register(api, rest.RequireToken(api, tokens.Validate))
 	router.Route(base+"/", func(r chi.Router) {
 		srv.Routes(r)
 		r.Mount("/api", apiRouter)

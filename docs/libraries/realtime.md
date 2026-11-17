@@ -48,7 +48,8 @@ err = hub.PublishJSON(ctx, "articles", ArticlePublished{ID: id})
 ```ts
 import { Centrifuge } from "centrifuge"
 
-const client = new Centrifuge("wss://example.com/realtime", { getToken })
+// 同源的连接自动带上会话 cookie，不需要传 token
+const client = new Centrifuge(`wss://${location.host}/realtime`)
 client.newSubscription("articles").on("publication", (ctx) => console.log(ctx.data)).subscribe()
 client.connect()
 ```
@@ -117,13 +118,11 @@ rt.Channel("t:{tenant}:articles", realtime.Private(func(_ context.Context, sub i
 <a id="subscribing"></a>
 ## 在浏览器中订阅
 
-编辑后台的单页应用安装 [centrifuge-js](https://github.com/centrifugal/centrifuge-js)（`bun add centrifuge`），带上登录 token 连接并订阅，认证见[下一节](#authentication)：
+编辑后台的单页应用安装 [centrifuge-js](https://github.com/centrifugal/centrifuge-js)（`bun add centrifuge`），连接并订阅；同源的连接自动带上会话 cookie，认证见[下一节](#authentication)：
 
 ```js
 import { Centrifuge } from 'centrifuge';
-import { api } from './client'; // API 客户端，见 clients.md
-
-const centrifuge = new Centrifuge(`wss://${location.host}/realtime`, { token: api.getAccessToken() });
+const centrifuge = new Centrifuge(`wss://${location.host}/realtime`);
 
 const articles = centrifuge.newSubscription('articles');
 articles.on('publication', (ctx) => {
@@ -140,7 +139,7 @@ centrifuge.connect();
 ## 认证
 
 <a id="tokens"></a>
-连接用 API 令牌认证。浏览器的 WebSocket 由浏览器决定请求头，所以 SDK 在连接时传入 token，由 `Options.Authenticate` 校验，它通常就是 [API 令牌](../security/api-tokens.md)的校验器。token 只标识用户，权限由 `Options.Accounts` 中这套账号的 Resolver 加载，与 API 的 [`rest.Options.Accounts`](../security/authorization.md#resolving-permissions) 相同；token 属于其他账号体系时连接被拒绝。设置了 `Authenticate` 就必须设置 `Accounts`：
+连接用 API 令牌认证，由 `Options.Authenticate` 校验，它通常就是 [API 令牌](../security/api-tokens.md)的校验器。浏览器中的页面不需要传 token：连接请求带着[会话 cookie](../security/api-tokens.md#browser-sessions)，用它认证；App 等其他客户端由 SDK 在连接时传入 token，SDK 传入的优先。token 只标识用户，权限由 `Options.Accounts` 中这套账号的 Resolver 加载，与 API 的 [`rest.Options.Accounts`](../security/authorization.md#resolving-permissions) 相同；token 属于其他账号体系时连接被拒绝。设置了 `Authenticate` 就必须设置 `Accounts`：
 
 ```go
 rt, err := realtime.New(hub, realtime.Options{
@@ -150,10 +149,13 @@ rt, err := realtime.New(hub, realtime.Options{
 router.Handle("/realtime", rt.Handler())
 ```
 
-连接独立于[请求超时](../http/middleware.md#request-timeout)。浏览器发起的连接只接受同源请求，其他来源的单页应用需要连接时，把它加入 `Options.TrustedOrigins`。
+连接独立于[请求超时](../http/middleware.md#request-timeout)。浏览器发起的连接只接受同源请求，其他网站的页面不能借用户的 cookie 建立连接；其他来源需要连接时，把它加入 `Options.TrustedOrigins`。
 
 ```js
-const centrifuge = new Centrifuge('wss://api.example.com/realtime', { token: apiToken });
+// 浏览器：同源连接自动带上会话 cookie
+const centrifuge = new Centrifuge(`wss://${location.host}/realtime`);
+// App：传入登录时得到的 token
+const app = new Centrifuge('wss://api.example.com/realtime', { token: apiToken });
 ```
 
 [多租户](../security/tenancy.md#identifying-tenants)应用还要告诉它连接属于哪个租户，`Options.Tenant` 与 API 的 `rest.Options.Tenant` 作用相同：Resolver 据此加载用户在这个租户中的权限，[租户频道](#private-channels)的授权函数才能与 `sub.Tenant` 比较，绑定了其他租户的 token 会被拒绝。
@@ -168,20 +170,6 @@ router.Handle("/t/{tenant}/realtime", rt.Handler())
 ```
 
 token 无效、属于其他账号体系，或 Resolver 拒绝主体时，连接以 3500 关闭，SDK 停止重连。连接期间两者每 30 秒重新运行一次，token 被撤销、用户被停用或移出租户后连接结束。没有 token 的连接是匿名的，只能订阅公开频道。
-
-使用 [JWT 模式](../security/jwt.md#jwt)时，SDK 传入 access token，并设置 `getToken`：
-
-```js
-import { realtimeAuth } from '@go-tenon/client';
-import { session } from './client';
-
-// { token, getToken }：连接时用当前的 access token；过期后通过会话刷新，失败时返回空字符串，SDK 停止重连
-const centrifuge = new Centrifuge('wss://api.example.com/realtime', { ...realtimeAuth(session) });
-```
-
-`session` 是 `@go-tenon/client` 的会话，见[创建客户端](../http/clients.md#creating-the-client)，刷新与 API 请求共用同一次。断线一段时间后重连，access token 可能已经过期，这时连接返回 109（token 已过期），SDK 调用 `getToken` 换新的再连。已经建立的连接跨过 access token 的有效期继续保持：复查只检查这次登录是否已被撤销。
-
-这个处理不限于 JWT：`Authenticate` 返回的错误匹配 `identity.ErrExpired` 时，连接返回 109；连接期间复查遇到它时以 3005 断开，SDK 重连时同样换新的 token。
 
 <a id="revocation"></a>
 ### 撤销后断开
@@ -372,7 +360,7 @@ func New(hub *broadcast.Hub, opts Options) (*Realtime, error)
 
 | 字段 | 说明 |
 | --- | --- |
-| `Authenticate identity.TokenValidator` | 校验客户端 SDK 传入的令牌，通常与 `rest.RequireBearer` 用同一个校验器，见[认证](#authentication) |
+| `Authenticate identity.TokenValidator` | 校验客户端 SDK 传入的令牌，通常与 `rest.RequireToken` 用同一个校验器，见[认证](#authentication) |
 | `Accounts identity.Accounts` | 接受的账号体系，通常与 `rest.Options.Accounts` 相同；设置了 `Authenticate` 时必须设置 |
 | `Tenant func(r *http.Request) string` | 取出连接所在的租户 |
 | `Credentials identity.CredentialWatcher` | 撤销凭据后立即断开，见[撤销后断开](#revocation) |

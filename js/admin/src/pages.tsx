@@ -1,7 +1,6 @@
 // 页面：登录、403、404，以及路由的错误组件。
 
 import { LockOutlined, MailOutlined } from "@ant-design/icons"
-import type { SessionBody } from "@go-tenon/client"
 import { isForbidden, setServerErrors, useApp } from "@go-tenon/shell"
 import { type ErrorComponentProps, useRouter } from "@tanstack/react-router"
 import { Alert, Button, Form, Input, Result } from "antd"
@@ -15,8 +14,8 @@ export interface LoginValues {
 
 /** LoginPage 的选项。 */
 export interface LoginPageProps {
-  /** 调用应用的登录接口，返回它的响应体（apitoken.Session）。 */
-  login: (values: LoginValues) => Promise<SessionBody>
+  /** 调用应用的登录接口：服务端写入会话 cookie。之后用会话的 load 读取身份。 */
+  login: (values: LoginValues) => Promise<unknown>
   /** 登录前想去的页面（登录页的 ?redirect=），登录后回到这里。 */
   redirect?: string
 }
@@ -34,7 +33,8 @@ export function LoginPage({ login, redirect }: LoginPageProps): ReactNode {
     setPending(true)
     setError(undefined)
     try {
-      await app.session.signIn(await login(values))
+      await login(values)
+      await app.session.signIn()
       await app.redirectAfterSignIn(redirect)
     } catch (err) {
       const info = setServerErrors(err, form)

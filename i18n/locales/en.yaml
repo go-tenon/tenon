@@ -3,6 +3,7 @@ auth.forbidden: Permission denied
 auth.confirm_required: Please confirm your identity first
 auth.two_factor_required: Two-factor authentication is required
 auth.method_required: Sign in again with a required method
+http.cross_site: Cross-site request rejected, please retry from this site
 url.invalid_signature: Invalid link
 url.expired: This link has expired
 pdf.unavailable: PDF service is temporarily unavailable, please try again later
@@ -160,7 +161,6 @@ queueweb.stream_missing: "Not created yet: start a worker"
 queueweb.title: Queue
 queueweb.wal_status: WAL status
 apitoken.invalid: Your session has expired, please sign in again
-auth.expired: Your session has expired, please refresh and try again
 database.busy: The service is busy, please try again later
 database.unavailable: The service is temporarily unavailable, please try again later
 doctor.failed: The service is temporarily unavailable, please try again later

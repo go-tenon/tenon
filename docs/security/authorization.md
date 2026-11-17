@@ -41,7 +41,7 @@ Tenon 的授权分为三层：
 
 ```go
 // 路由要求权限
-rest.RequireBearer(api, tokens.Validate, "articles:write")(&op)
+rest.RequireToken(api, tokens.Validate, "articles:write")(&op)
 
 // 业务规则中检查
 if !subject.Can("articles:admin") && item.AuthorID != subject.ID {
@@ -66,10 +66,10 @@ api := rest.New(router, rest.Options{Accounts: identity.Accounts{user.Type: role
 <a id="route-permissions"></a>
 ### 在路由上声明
 
-JSON API 在 `rest.RequireBearer` 中列出路由需要的权限：
+JSON API 在 `rest.RequireToken` 中列出路由需要的权限：
 
 ```go
-requireWrite := rest.RequireBearer(api, tokens.Validate, "articles:write")
+requireWrite := rest.RequireToken(api, tokens.Validate, "articles:write")
 ```
 
 传入多个权限时，调用者必须全部具备；缺少任何一个时返回 `403`。路由需要的权限会出现在 OpenAPI 文档的 `x-required-permissions` 字段和 [`routes` 命令](../general/commands.md)的输出中。

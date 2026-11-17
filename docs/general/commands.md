@@ -268,14 +268,14 @@ func Start(ctx context.Context, cfg Config) error {
 
 ```text
 METHOD  PATH                    OPERATION ID     ACCESS            SUMMARY
-POST    /articles               article-create   bearer: articles  创建文章
-GET     /articles/{id}          article-get      bearer: articles  获取文章
-POST    /articles/{id}/publish  article-publish  bearer: articles  发布文章
+POST    /articles               article-create   token: articles   创建文章
+GET     /articles/{id}          article-get      token: articles   获取文章
+POST    /articles/{id}/publish  article-publish  token: articles   发布文章
 ```
 
 各列的含义：
 
-- **ACCESS** 展示路由声明的访问策略：`public` 表示显式公开，`bearer` 表示 JSON API 要求 Bearer token，`bearer: articles` 同时列出所需的权限，`docs` 表示 Huma 的文档端点。`unknown` 表示无法从声明确定策略（例如直接注册在 chi 上的健康检查），**不**表示允许匿名访问；
+- **ACCESS** 展示路由声明的访问策略：`public` 表示显式公开，`token` 表示 JSON API 要求 token（会话 cookie 或 Bearer），`token: articles` 同时列出所需的权限，`docs` 表示 Huma 的文档端点。`unknown` 表示无法从声明确定策略（例如直接注册在 chi 上的健康检查），**不**表示允许匿名访问；
 - **OPERATION ID**、**SUMMARY** 来自 `huma.Operation`，页面路由没有，显示为 `-`。摘要中的换行会合并为空格。
 
 Huma 自动注册的 `/docs`、`/openapi.json`、`/schemas/{schema}` 等文档端点默认不显示，加上 `--all` 才会列出。列表也包含直接注册在 chi 上的原生路由和挂载的子路由；挂载的不透明 `http.Handler`（例如 `Mount("/files", handler)`）显示为一行 `* /files/*`，无法展开其内部路由。

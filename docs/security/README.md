@@ -16,7 +16,6 @@
 - [登录与注册](login.md)：邮箱、密码、验证码、找回密码
 - [登录的安全功能](login-security.md)：二次验证、Passkey、确认身份、人机验证
 - [API 令牌](api-tokens.md)：登录令牌与个人访问令牌
-- [JWT 与单页应用的登录](jwt.md)：短期的 access token 与 refresh cookie
 - [第三方登录](social-login.md)：OAuth 与 OpenID Connect 登录
 - [在 App 中使用第三方登录](social-login-apps.md)：App 登录与 Sign in with Apple
 - [企业单点登录](enterprise-sso.md)：对接企业身份提供方

@@ -40,7 +40,7 @@ func TestAccounts(t *testing.T) {
 	shop := rest.New(chi.NewRouter(), rest.Options{Accounts: identity.Accounts{"customer": grant("orders:read")}})
 	for _, api := range []*rest.API{console, shop} {
 		op := huma.Operation{OperationID: "who", Method: http.MethodGet, Path: "/who"}
-		rest.RequireBearer(api, validate)(&op)
+		rest.RequireToken(api, validate)(&op)
 		rest.Register(api, op, func(ctx context.Context, _ *struct{}) (*accountOut, error) {
 			sub, _ := identity.FromContext(ctx)
 			out := &accountOut{}
@@ -86,7 +86,7 @@ func TestAccountsRequired(t *testing.T) {
 		f()
 	}
 	panics("authenticated operation without Accounts", func() {
-		rest.RequireBearer(rest.New(chi.NewRouter(), rest.Options{}), validate)
+		rest.RequireToken(rest.New(chi.NewRouter(), rest.Options{}), validate)
 	})
 	panics("invalid account type", func() {
 		rest.New(chi.NewRouter(), rest.Options{Accounts: identity.Accounts{"Member": nil}})

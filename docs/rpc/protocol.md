@@ -57,7 +57,7 @@ blog.v1.articles.publish
 
 | 请求头 | 说明 |
 | --- | --- |
-| `Authorization: Bearer <token>` | 需要登录的端点都用它认证。token 与 HTTP 接口相同：access token、个人访问令牌或 OAuth 令牌，见[会话](../http/protocol.md#sessions) |
+| `Authorization: Bearer <token>` | 需要登录的端点都用它认证。token 与 HTTP 接口相同：登录 token、个人访问令牌或 OAuth 令牌，见[会话](../http/protocol.md#sessions) |
 | `Accept-Language` | 错误提示的语言，例如 `zh-CN`、`en`；不支持的语言使用应用的默认语言 |
 | `X-Request-ID` | 可选，1–128 个不含空格的可打印 ASCII 字符。带上时服务端沿用它，否则生成一个 |
 | `X-Timeout` | 可选，调用方还愿意等待的毫秒数，例如 `5000`，见[超时与重试](#timeouts) |

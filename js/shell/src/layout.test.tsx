@@ -129,7 +129,7 @@ function setup(options: { path?: string; tenancy?: TenancyOptions; account?: str
     layout.addChildren([home, articles.addChildren([articleList, article]), notifications]),
     globex,
   ])
-  const session: Session = createSession({ refresh: async () => ({ access_token: "a1", expires_at: "" }) })
+  const session: Session = createSession({ load: async () => ({ account: "u1" }) })
   const app = createApp({
     id: "layout-test",
     routeTree,
@@ -142,7 +142,7 @@ function setup(options: { path?: string; tenancy?: TenancyOptions; account?: str
 }
 
 async function signIn(session: Session, account = "u1", tenant = "acme") {
-  await act(() => session.signIn({ access_token: "a1", expires_at: "" }, { account, tenant }))
+  await act(() => session.signIn({ account, tenant }))
 }
 
 afterEach(() => {

@@ -34,7 +34,7 @@ type HandlerOptions struct {
 
 // Handler 返回以 Streamable HTTP 提供 s 的处理器，挂在一个路由上，例如 router.Handle("/mcp", h)。
 //
-// 每个请求先按 identity.Establish 确立主体，规则与 rest.RequireBearer 相同：没有或无效的 token 返回 401
+// 每个请求先按 identity.Establish 确立主体，规则与 rest.RequireToken 相同：没有或无效的 token 返回 401
 // 并带 WWW-Authenticate: Bearer，凭据绑定了其他租户或缺少 Permissions 返回 403，认证后端故障返回 5xx。
 // 主体写入 ctx，工具中用 identity.FromContext 取出。
 //

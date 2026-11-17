@@ -3,6 +3,7 @@ auth.forbidden: 没有访问权限
 auth.confirm_required: 请先确认身份
 auth.two_factor_required: 请先完成二次验证
 auth.method_required: 请使用指定的方式重新登录
+http.cross_site: 拒绝了来自其他网站的请求，请在本站页面上重试
 url.invalid_signature: 链接无效
 url.expired: 链接已过期
 pdf.unavailable: PDF 生成服务暂时不可用，请稍后再试
@@ -160,7 +161,6 @@ queueweb.stream_missing: 还没有创建：启动一个 Worker
 queueweb.title: 队列
 queueweb.wal_status: WAL 状态
 apitoken.invalid: 登录已失效，请重新登录
-auth.expired: 登录已过期，请刷新后重试
 database.busy: 服务繁忙，请稍后再试
 database.unavailable: 服务暂时不可用，请稍后再试
 doctor.failed: 服务暂时不可用，请稍后再试

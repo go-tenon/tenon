@@ -168,7 +168,7 @@ internal/file/
 
 客户端按这些接口上传的步骤见[客户端协议](../http/protocol.md#uploads)。只使用本地磁盘时，保留第一个路由即可。`Confirm` 在使用文件的业务接口中调用，见[在业务接口中确认](#rest-confirm)。
 
-`routes.go` 声明这些路由。所有接口都需要登录，`requireUser` 由入口传入，例如 `rest.RequireBearer(api, validateToken)`：
+`routes.go` 声明这些路由。所有接口都需要登录，`requireUser` 由入口传入，例如 `rest.RequireToken(api, validateToken)`：
 
 ```go
 // Register 注册文件模块的全部路由。
@@ -245,7 +245,7 @@ func Register(api *rest.API, requireUser func(*huma.Operation), files *filesyste
 入口在组装应用时调用它：
 
 ```go
-file.Register(api, rest.RequireBearer(api, validateToken), fileService)
+file.Register(api, rest.RequireToken(api, validateToken), fileService)
 ```
 
 `dto.go` 定义共享的输入和输出。响应体直接使用 `filesystem.File` 等类型，它们自带 JSON 标签，`File` 的 JSON 中包含公开地址 `url`，上传者信息只留在服务端：

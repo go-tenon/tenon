@@ -117,18 +117,19 @@ function LoginRoute() {
     </AuthLayout>
   )
 }
-let loginFn = vi.fn(async (_: { email: string; password: string }) => ({ access_token: "a2", expires_at: "" }))
+// signedInAs 是服务端会话中的账号：登录接口成功时设置，会话的 load 读取它。
+let signedInAs: string | null = null
+let loginFn = vi.fn(async (_: { email: string; password: string }) => {
+  signedInAs = "u2"
+})
 const routeTree = root.addChildren([appRoute.addChildren([home, articles, secret]), login])
 
 async function setup(path: string, options: { signedIn?: boolean } = {}) {
+  signedInAs = options.signedIn === false ? null : "u1"
   const session: Session = createSession({
-    refresh: async () => {
-      if (options.signedIn === false) throw { status: 401, fields: [] }
-      return { access_token: "a1", expires_at: "" }
-    },
+    load: async () => (signedInAs ? { account: signedInAs } : null),
   })
-  if (options.signedIn !== false)
-    await session.signIn({ access_token: "a1", expires_at: "" }, { account: "u1", tenant: "acme" })
+  if (options.signedIn !== false) await session.signIn({ account: "u1", tenant: "acme" })
   const app = createApp({
     id: "admin-test",
     routeTree,
@@ -224,7 +225,9 @@ describe("AdminLayout", () => {
 describe("LoginPage", () => {
   it("登录后回到原来的页面", async () => {
     layout = () => <AdminLayout title="运营后台" />
-    loginFn = vi.fn(async () => ({ access_token: "a2", expires_at: "" }))
+    loginFn = vi.fn(async () => {
+      signedInAs = "u2"
+    })
     const { app } = await setup("/articles", { signedIn: false })
     await screen.findByText("登录", { selector: "span" })
     expect(app.router.state.location.pathname).toBe("/login")

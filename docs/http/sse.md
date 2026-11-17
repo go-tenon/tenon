@@ -148,7 +148,7 @@ rest.RegisterSSE(api, op, map[string]any{"published": ArticlePublished{}},
 <a id="routes-and-timeouts"></a>
 ## 路由与超时
 
-SSE 接口和其他接口注册在同一个 API 上，认证方式相同，例如 `rest.RequireBearer(api, tokens.Validate, "articles")`。
+SSE 接口和其他接口注册在同一个 API 上，认证方式相同，例如 `rest.RequireToken(api, tokens.Validate, "articles")`。
 
 开始推送之后，连接脱离请求时限：
 
@@ -162,7 +162,7 @@ SSE 接口和其他接口注册在同一个 API 上，认证方式相同，例�
 
 长连接只在建立时经过认证。之后 API token 被[撤销](../security/api-tokens.md#revoking-tokens)、用户被停用或失去所需的权限，已经建立的连接也要随之结束。
 
-`rest.RequireBearer` 在认证通过后，会在请求中登记一个重新校验函数。SSE 每 30 秒运行一次：
+`rest.RequireToken` 在认证通过后，会在请求中登记一个重新校验函数。SSE 每 30 秒运行一次：
 
 | 校验结果 | 连接 |
 | --- | --- |
@@ -172,7 +172,7 @@ SSE 接口和其他接口注册在同一个 API 上，认证方式相同，例�
 
 连接结束后，客户端重连时按普通请求重新认证，得到 `401`。所以凭据失效后，最多 30 秒连接就会断开，检查由框架完成。
 
-复查会重新运行 token 校验器和 [`Options.Accounts`](../security/authentication.md#resolving-subjects) 中的 Resolver。校验器有副作用时（例如 `apitoken` 延长登录 token 的有效期），长连接期间也会每 30 秒发生一次。校验器可以用 `identity.Rechecking(ctx)` 区分复查和新的请求：[JWT 模式](../security/jwt.md#jwt)平时只验签名，复查时查询登录是否已被撤销。自己实现认证中间件时，用 `identity.WithCredentialCheck` 登记同样的校验函数，SSE 会照样运行它。
+复查会重新运行 token 校验器和 [`Options.Accounts`](../security/authentication.md#resolving-subjects) 中的 Resolver。校验器有副作用时（例如 `apitoken` 延长登录 token 的有效期），长连接期间也会每 30 秒发生一次。校验器可以用 `identity.Rechecking(ctx)` 区分复查和新的请求。自己实现认证中间件时，用 `identity.WithCredentialCheck` 登记同样的校验函数，SSE 会照样运行它。
 
 <a id="immediate-revocation"></a>
 ### 立即断开

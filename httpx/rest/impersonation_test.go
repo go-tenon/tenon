@@ -31,7 +31,7 @@ func TestResolveKeepsCredentialFields(t *testing.T) {
 		return identity.Subject{Type: "user", ID: "alice", Method: "bearer", Credential: "t1", Impersonator: identity.Ref{Type: "staff", ID: "s1"}, Scopes: []string{"articles:read"}}, nil
 	}
 	op := huma.Operation{OperationID: "me", Method: http.MethodGet, Path: "/me"}
-	rest.RequireBearer(api, validate, "articles:read")(&op)
+	rest.RequireToken(api, validate, "articles:read")(&op)
 	rest.Register(api, op, func(ctx context.Context, _ *struct{}) (*impersonationOut, error) {
 		sub, _ := identity.FromContext(ctx)
 		out := &impersonationOut{}

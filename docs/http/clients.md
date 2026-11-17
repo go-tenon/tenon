@@ -80,7 +80,7 @@ go tool tenon generate   # 等价于 go run ./cmd/api client --ts packages/clien
 | --- | --- |
 | `api.ts` | OpenAPI 中的全部类型、每个接口的输入类型、事件流的事件类型，以及 `createClient` |
 | `errors.ts` | 服务端用 [`errorx.Define`](../general/errors.md#defining-errors) 定义的错误码，按包分组，例如 `ArticleErrors.SlugTaken` |
-| `runtime.ts` | 发送请求、刷新 access token、`ApiError`、事件流和下载 |
+| `runtime.ts` | 发送请求、`ApiError`、事件流和下载 |
 | `queries.ts` | TanStack Query 的查询和修改选项，见 [TanStack Query](../frontend/client-react.md#tanstack) |
 | `schemas.ts` | 每个接口的请求体和查询参数的校验规则，见[校验规则与验证提示](../frontend/client-react.md#validation-rules) |
 | `messages.ts` | 各语言的验证提示模板，见[校验规则与验证提示](../frontend/client-react.md#validation-rules) |
@@ -96,48 +96,36 @@ go tool tenon generate   # 等价于 go run ./cmd/api client --ts packages/clien
 <a id="creating-the-client"></a>
 ### 创建客户端
 
-单页应用用 [JWT 模式](../security/jwt.md#jwt)登录，refresh token 保存在 [HttpOnly cookie](../security/jwt.md#single-page-applications) 中。access token 只放在内存里：请求自动带上它，受保护的接口返回 `401` 时刷新一次，再重试请求。框架的 `@go-tenon/client` 提供会话 `createSession`，按[客户端协议](protocol.md#sessions)保存和刷新凭据。下面是 `apps/web/src/client.ts`：
+浏览器中的登录凭据是服务端写入的 HttpOnly [会话 cookie](../security/api-tokens.md#browser-sessions)，浏览器随同源请求自动带上它，页面上的代码不保管 token。框架的 `@go-tenon/client` 提供会话 `createSession`，它只记录当前是谁。下面是 `apps/web/src/client.ts`：
 
 ```ts
 import { createSession } from "@go-tenon/client"
 import { createClient } from "@blog/client/api"
 import { router } from "./router"
 
-// 刷新接口靠 cookie 认证。单页应用与 API 在不同的子域名时需要 credentials: "include"。
-const plain = createClient({ baseURL: "/api", credentials: "include" })
-
+// session 记录当前的身份：打开页面、登录后调用 load 读取当前用户，没有登录时接口返回 401。
 export const session = createSession({
-  refresh: () => plain.auth.refresh(), // 浏览器：refresh token 在 cookie 中，请求体为空
+  load: async () => ({ account: (await api.user.me()).id }),
   onSignedOut: () => router.navigate({ to: "/login" }),
 })
 
 export const api = createClient({
   baseURL: "/api",
-  credentials: "include",
-  auth: session.auth,
+  // 受保护的接口返回 401：登录已经失效（过期、在别处退出或被撤销）
+  onUnauthorized: () => session.expired(),
   // 403 auth.confirm_required（rest.Confirmed）：弹出密码框，确认成功后重试原请求
   onConfirmRequired: () => confirmDialog.open(),
 })
-session.connect(api)
 ```
 
-- 打开页面（包括刷新页面、新标签页）时先调用一次 `await session.restore()`，返回 `true` 表示已经登录，决定显示登录页还是应用。
-- 登录接口返回后调用 `await session.signIn(out, { account: me.id })`：所有连接的客户端得到 access token，身份记为这个账号。登出时先调用登出接口，服务端撤销这次登录并清除 cookie，再调用 `await session.signOut()`。
-- 几个请求同时收到 `401` 时只刷新一次，它们都等这一次的结果。刷新返回 `401` 时这次登录已经失效：清除凭据和身份，调用 `onSignedOut`；网络错误不清除凭据，下次再试。
-- 请求、刷新都只对发出时的身份有效。请求发出之后登录、退出或切换了身份（`session.generation()` 变了），收到的 `401` 原样抛出，不刷新，也不用新的身份重发；刷新期间登录或退出时，刷新的结果被丢弃，不会把旧账号的 token 写回来。`session.auth` 带着 `generation`，接上会话的客户端自动这样处理。
-- 一个会话可以连接多个 API 的客户端（`session.connect`），例如同一次登录调用 `/api` 和 `/api/admin`。
-- 公开的接口（[`rest.Public`](routing.md#access-policies)）直接请求，`401` 原样返回给调用者。
+- 打开页面（包括刷新页面、新标签页）时先调用一次 `await session.restore()`：它调用 `load`，返回 `true` 表示已经登录，决定显示登录页还是应用。已经知道身份时不再读取。
+- 登录接口成功后（服务端已经写入 cookie）调用 `await session.signIn()`，它用 `load` 读取身份；也可以直接传入身份。登出时先调用登出接口，服务端撤销这次登录并清除 cookie，再调用 `session.signOut()`。
+- 受保护的接口返回 `401` 时，`onUnauthorized` 调用 `session.expired()`：清除身份，调用 `onSignedOut`。
+- 公开的接口（[`rest.Public`](routing.md#access-policies)）的 `401` 不调用 `onUnauthorized`，原样返回给调用者。
 - 请求带上 `Accept-Language`（默认是浏览器的语言，`language` 可以覆盖），错误的 `detail` 按它翻译。App 的 WebView 设置 `appVersion`，作为 [`X-App-Version`](#app-version) 发送。
 - `headers` 是每次请求附加的请求头，每次请求时读取，值为空时不发送，接口自己的请求头优先，例如租户在请求头中时 `headers: () => ({ "X-Tenant": session.identity()?.tenant })`。`baseURL` 也可以是函数，例如租户在路径中时 `` baseURL: () => `/api/t/${tenant}` ``。见[租户](../frontend/app-shell-features.md#tenants)。
 
-`/auth/login`、`/auth/refresh` 是应用自己注册的公开接口，写法见[单页应用](../security/jwt.md#single-page-applications)。App、桌面端和小程序用响应体传递：登录时省略 `cookie`，refresh token 在响应体中，保存在系统的安全存储中。给 `createSession` 传入存储，`refresh` 收到保存的 refresh token，把它放进请求体：
-
-```ts
-const session = createSession({
-  storage: secureStorage, // { get, set, remove }，例如 Expo SecureStore
-  refresh: (refreshToken) => plain.auth.refresh({ refresh_token: refreshToken }),
-})
-```
+会话 cookie 只在同源请求中发送，页面和 API 要由同一个源提供。在浏览器之外使用生成的客户端（例如 Node 脚本）时，用 `headers` 传 `Authorization: Bearer <token>`。
 
 <a id="calling-endpoints"></a>
 ### 调用接口
@@ -242,7 +230,7 @@ saveBlob(blob, filename || "failures.xlsx")
 | Android | openapi-generator 的 `kotlin`，或 [Kiota](https://learn.microsoft.com/openapi/kiota/) |
 | Python 脚本 | [openapi-python-client](https://github.com/openapi-generators/openapi-python-client) |
 
-生成的客户端同样需要处理认证：请求带 `Authorization: Bearer`，JWT 模式按[客户端的规则](../security/jwt.md#jwt)刷新，错误按 `code` 区分。
+生成的客户端同样需要处理认证：请求带 `Authorization: Bearer`，token 来自应用在响应体中返回 token 的登录接口（见[登录与登出](../security/api-tokens.md#login-and-logout)），错误按 `code` 区分。
 
 <a id="app-version"></a>
 ## App 版本
@@ -302,7 +290,7 @@ oasdiff 只比较请求和响应的结构。schema 改名时结构相同，由�
 
 **调用接口时报错 401，但已经登录了**
 
-客户端没有接上会话，access token 没有带上。创建客户端时传入 `auth: session.auth`，见[创建客户端](#creating-the-client)。
+会话 cookie 没有带上。页面和 API 必须同源：直接访问前端开发服务器的端口、或者用局域网 IP 访问 HTTP 页面时（`Secure` 的 cookie 只在 HTTPS 和 `localhost` 上保存），请求不带 cookie。见[浏览器的会话 cookie](../security/api-tokens.md#browser-sessions)。
 
 <a id="api-reference"></a>
 ## API 参考

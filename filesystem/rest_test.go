@@ -188,7 +188,7 @@ func TestRESTUploadAndConfirm(t *testing.T) {
 	e := newEnv(t)
 	api := rest.New(chi.NewRouter(), rest.Options{Accounts: identity.Accounts{"user": nil}, Title: "test"})
 	users := map[string]identity.Subject{"alice": alice, "bob": bob}
-	auth := rest.RequireBearer(api, func(_ context.Context, token string) (identity.Subject, error) {
+	auth := rest.RequireToken(api, func(_ context.Context, token string) (identity.Subject, error) {
 		return users[token], nil
 	})
 	registerFileRoutes(api, auth, e.svc)

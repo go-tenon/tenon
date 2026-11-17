@@ -31,7 +31,7 @@ func adminAPI(permissions []identity.Permission, required ...string) *rest.API {
 		return identity.Subject{Type: "staff", ID: "a"}, nil
 	}
 	create := huma.Operation{OperationID: "note-create", Method: http.MethodPost, Path: "/notes"}
-	rest.RequireBearer(api, validate, required...)(&create)
+	rest.RequireToken(api, validate, required...)(&create)
 	rest.Register(api, create, func(context.Context, *noteInput) (*struct{}, error) { return nil, nil })
 	list := huma.Operation{OperationID: "note-list", Method: http.MethodGet, Path: "/notes"}
 	rest.Public()(&list)
@@ -139,10 +139,10 @@ func TestTSResource(t *testing.T) {
 		return identity.Subject{Type: "staff", ID: "a"}, nil
 	}
 	list := huma.Operation{OperationID: "note-list", Method: http.MethodGet, Path: "/notes"}
-	rest.RequireBearer(api, validate, "notes:admin")(&list)
+	rest.RequireToken(api, validate, "notes:admin")(&list)
 	rest.Register(api, list, func(context.Context, *struct{}) (*noteListOut, error) { return nil, nil })
 	create := huma.Operation{OperationID: "note-create", Method: http.MethodPost, Path: "/notes"}
-	rest.RequireBearer(api, validate, "notes:write")(&create)
+	rest.RequireToken(api, validate, "notes:write")(&create)
 	rest.Register(api, create, func(context.Context, *noteInput) (*struct{}, error) { return nil, nil })
 	api.Resource(rest.Resource{Name: "note", List: "note-list", Create: "note-create"})
 
@@ -185,10 +185,10 @@ func TestTSSettings(t *testing.T) {
 		return identity.Subject{Type: "staff", ID: "a"}, nil
 	}
 	get := huma.Operation{OperationID: "site-settings-get", Method: http.MethodGet, Path: "/settings/site"}
-	rest.RequireBearer(api, validate, "notes:admin")(&get)
+	rest.RequireToken(api, validate, "notes:admin")(&get)
 	rest.Register(api, get, func(context.Context, *struct{}) (*siteSettingsOut, error) { return nil, nil })
 	update := huma.Operation{OperationID: "site-settings-update", Method: http.MethodPut, Path: "/settings/site"}
-	rest.RequireBearer(api, validate, "notes:write")(&update)
+	rest.RequireToken(api, validate, "notes:write")(&update)
 	rest.Register(api, update, func(context.Context, *siteSettingsIn) (*siteSettingsOut, error) { return nil, nil })
 	api.Settings(rest.Settings{Name: "site", Get: "site-settings-get", Update: "site-settings-update"})
 

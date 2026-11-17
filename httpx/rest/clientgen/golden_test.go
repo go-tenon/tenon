@@ -39,7 +39,7 @@ func exampleAPI(valid tokens) *rest.API {
 	// 往返测试故意触发 500，不输出它的错误日志。
 	api := rest.New(chi.NewRouter(), rest.Options{Title: "Blog", BasePath: "/api", Accounts: identity.Accounts{"user": nil},
 		Logger: slog.New(slog.DiscardHandler)})
-	article.Register(api, article.NewStore(), func(op *huma.Operation) { rest.RequireBearer(api, valid.validate)(op) })
+	article.Register(api, article.NewStore(), func(op *huma.Operation) { rest.RequireToken(api, valid.validate)(op) })
 	return api
 }
 

@@ -2,7 +2,6 @@ package identity
 
 import (
 	"context"
-	"errors"
 
 	"github.com/go-tenon/tenon/errorx"
 )
@@ -12,10 +11,6 @@ var (
 	ErrUnauthenticated = errorx.Define(errorx.Unauthenticated, "auth.unauthenticated")
 	// ErrForbidden 表示凭据有效但无权执行操作：凭据绑定了其他租户，或主体缺少所需的权限。
 	ErrForbidden = errorx.Define(errorx.PermissionDenied, "auth.forbidden")
-	// ErrExpired 表示凭据本身没有问题，只是已经过期，例如 JWT 模式的 access token：
-	// 客户端换一个新的凭据（刷新）后重试即可，当前的登录继续有效。认证器返回匹配它的错误时，
-	// Establish 返回的 ErrUnauthenticated 同样匹配它，入口据此提示客户端刷新，例如实时连接返回“token 已过期”。
-	ErrExpired = errorx.Define(errorx.Unauthenticated, "auth.expired")
 	// ErrConfirmRequired 表示操作要求最近确认过身份（rest.Confirmed）：客户端让用户再次输入密码或验证码，
 	// 确认后（apitoken 的 Confirm）重试。
 	ErrConfirmRequired = errorx.Define(errorx.PermissionDenied, "auth.confirm_required")
@@ -40,7 +35,7 @@ type Resolver func(ctx context.Context, sub Subject) (Subject, error)
 
 // Establish 得到本次调用的主体，JSON API、页面、MCP 和实时频道的入口都用它。依次：
 //
-//   - authenticate 识别调用者，没有有效的凭据时返回 ErrUnauthenticated，凭据只是过期时返回的错误同时匹配 ErrExpired；
+//   - authenticate 识别调用者，没有有效的凭据时返回 ErrUnauthenticated；
 //   - 凭据设置了 Tenant 且与本次请求的租户（TenantFromContext）不同时返回 ErrForbidden；
 //   - 调用 resolve（非 nil 时），错误的处理见 Resolver；
 //   - 主体缺少 permissions 中的某项权限（Subject.Can）时返回 ErrForbidden，公开参数 permission 是这项权限。
@@ -51,9 +46,6 @@ func Establish(ctx context.Context, authenticate Authenticator, resolve Resolver
 	cred, err := authenticate(ctx)
 	if Failed(err) {
 		return Subject{}, err
-	}
-	if errors.Is(err, ErrExpired) {
-		return Subject{}, ErrUnauthenticated.Wrap(err)
 	}
 	if err != nil || cred.ID == "" {
 		return Subject{}, ErrUnauthenticated.New()

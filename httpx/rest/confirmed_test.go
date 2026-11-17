@@ -32,7 +32,7 @@ func TestConfirmedDeclaration(t *testing.T) {
 	}()
 
 	op := huma.Operation{OperationID: "account-delete", Method: http.MethodDelete, Path: "/account"}
-	rest.RequireBearer(api, func(context.Context, string) (identity.Subject, error) { return identity.Subject{}, nil })(&op)
+	rest.RequireToken(api, func(context.Context, string) (identity.Subject, error) { return identity.Subject{}, nil })(&op)
 	rest.Confirmed(15 * time.Minute)(&op)
 	rest.Register(api, op, handler)
 	if got := api.OpenAPI().Paths["/account"].Delete.Extensions["x-confirm-max-age"]; got != 900 {

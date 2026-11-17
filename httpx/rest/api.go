@@ -23,6 +23,7 @@ type API struct {
 	basePath string
 	logger   *slog.Logger
 	accounts identity.Accounts
+	session  httpx.SessionCookie
 	watcher  identity.CredentialWatcher
 	names    *schemaNames
 
@@ -53,8 +54,11 @@ type Options struct {
 	// 例如不是租户成员时返回 errorx.NotFound 得到 404；5xx 类错误响应对应的状态码。
 	// 返回的主体中 Type、ID、Method、Credential、Scopes、Impersonator 总是取自凭据。
 	//
-	// 注册需要认证的操作（RequireAuth、RequireBearer）时必须设置；名称不合法时 New panic。
+	// 注册需要认证的操作（RequireAuth、RequireToken）时必须设置；名称不合法时 New panic。
 	Accounts identity.Accounts
+	// SessionCookie 是 RequireToken 读取的浏览器会话 cookie，零值是 httpx.DefaultSessionCookieName。
+	// 同一个源下的几个 API 属于不同的账号体系时，各用一个名称，见 httpx.SessionCookie。名称不合法时 New panic。
+	SessionCookie httpx.SessionCookie
 	// Credentials 让 RequireAuth 保护的长连接（例如 SSE）在收到复查信号时立即重新校验凭据，
 	// 撤销 token、停用用户后连接随即结束；nil 时只按 30 秒的间隔定期校验。通常是 broadcast.NewCredentials 的返回值。
 	Credentials identity.CredentialWatcher
@@ -73,6 +77,9 @@ func New(r chi.Router, opts Options) *API {
 		panic("rest: nil router")
 	}
 	if err := opts.Accounts.Validate(); err != nil {
+		panic(errors.Wrap(err, "rest"))
+	}
+	if err := opts.SessionCookie.Validate(); err != nil {
 		panic(errors.Wrap(err, "rest"))
 	}
 	opts.Logger = logging.Or(opts.Logger).With(logging.AttrComponent, "http")
@@ -111,7 +118,7 @@ func New(r chi.Router, opts Options) *API {
 		cfg.OpenAPI.Servers = []*huma.Server{{URL: opts.BasePath}}
 	}
 	adapter := newAdapter(r, cfg)
-	api := &API{router: r, basePath: opts.BasePath, logger: opts.Logger, accounts: opts.Accounts, watcher: opts.Credentials, names: names}
+	api := &API{router: r, basePath: opts.BasePath, logger: opts.Logger, accounts: opts.Accounts, session: opts.SessionCookie, watcher: opts.Credentials, names: names}
 	// Huma 在 NewAPI 中就注册文档端点，因此先让 adapter 指向 api，文档端点也能取回它。
 	adapter.api = api
 	api.API = huma.NewAPI(cfg, adapter)

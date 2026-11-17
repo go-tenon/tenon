@@ -29,13 +29,13 @@ func TestRoutesIncludesTypedNativeAndHiddenRoutesWithoutRuntime(t *testing.T) {
 	}
 	// Register out of display order, including two methods on one path.
 	create := huma.Operation{OperationID: "item-create", Method: http.MethodPost, Path: "/inventory/items", Summary: "创建条目"}
-	rest.RequireBearer(api, validator, "items:write", "items:read")(&create)
+	rest.RequireToken(api, validator, "items:write", "items:read")(&create)
 	rest.Register(api, create, handler)
 	get := huma.Operation{OperationID: "item-list", Method: http.MethodGet, Path: "/inventory/items", Summary: "查看条目列表\n支持分页"}
 	rest.Public()(&get)
 	rest.Register(api, get, handler)
 	private := huma.Operation{OperationID: "item-private", Method: http.MethodGet, Path: "/inventory/private"}
-	rest.RequireBearer(api, validator)(&private)
+	rest.RequireToken(api, validator)(&private)
 	rest.Register(api, private, handler)
 	hidden := huma.Operation{OperationID: "item-hidden", Method: http.MethodGet, Path: "/inventory/hidden", Summary: "隐藏条目详情", Hidden: true}
 	rest.Public()(&hidden)
@@ -61,8 +61,8 @@ func TestRoutesIncludesTypedNativeAndHiddenRoutesWithoutRuntime(t *testing.T) {
 		{Method: http.MethodGet, Path: "/inventory/health/ready", Access: "unknown"},
 		{Method: http.MethodGet, Path: "/inventory/hidden", OperationID: "item-hidden", Summary: "隐藏条目详情", Access: "public"},
 		{Method: http.MethodGet, Path: "/inventory/items", OperationID: "item-list", Summary: "查看条目列表\n支持分页", Access: "public"},
-		{Method: http.MethodPost, Path: "/inventory/items", OperationID: "item-create", Summary: "创建条目", Access: "bearer", Permissions: []string{"items:write", "items:read"}},
-		{Method: http.MethodGet, Path: "/inventory/private", OperationID: "item-private", Access: "bearer"},
+		{Method: http.MethodPost, Path: "/inventory/items", OperationID: "item-create", Summary: "创建条目", Access: "token", Permissions: []string{"items:write", "items:read"}},
+		{Method: http.MethodGet, Path: "/inventory/private", OperationID: "item-private", Access: "token"},
 	}
 	if !reflect.DeepEqual(inventory, want) {
 		t.Fatalf("routes = %#v, want %#v", inventory, want)

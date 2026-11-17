@@ -610,10 +610,9 @@ import (
 type App struct {
     cfg Config
     db  *bun.DB
-    // users 校验作者的邮箱和密码，jwt 签发和校验登录凭据。
+    // users 校验作者的邮箱和密码，tokens 签发和校验登录凭据。
     users  *login.Realm
     tokens *apitoken.Store
-    jwt    *apitoken.JWT
     // roles 是作者的角色和权限。
     roles *authz.Store
 }
@@ -644,7 +643,6 @@ func open(ctx context.Context, cfg Config, stack *cleanup.Stack) (*App, error) {
     return &App{
         cfg: cfg, db: db,
         users: users, tokens: tokens,
-        jwt:   apitoken.NewJWT(tokens, apitoken.JWTConfig{Keys: apitoken.HMACKeys(keys)}),
         roles: authz.NewStore(db, auth.Catalog),
     }, nil
 }
@@ -704,7 +702,7 @@ func Commands() []*cobra.Command {
 `internal/bootstrap/http.go` 有三处变化：
 
 - `Accounts` 中作者的 Resolver 换成 `a.roles.Resolve`，每个请求按作者的角色加载权限；`Permissions` 写入权限目录；
-- 后台的接口用带权限的 `rest.RequireBearer`，缺少权限时返回 `403`；
+- 后台的接口用带权限的 `rest.RequireToken`，缺少权限时返回 `403`；
 - `/admin/` 交给后台的单页应用（下一节创建）。
 
 ```go title="internal/bootstrap/http.go"
@@ -764,12 +762,12 @@ func (a *App) Router(draining *httpx.Draining) chi.Router {
         // Permissions 是权限目录，它写入 OpenAPI，生成的客户端据此得到权限常量。
         api := rest.New(r, rest.Options{Title: "Blog API", Version: "1.0.0", BasePath: "/api",
             Accounts: identity.Accounts{user.Type: a.roles.Resolve}, Permissions: auth.Catalog})
-        // requireUser 要求请求带着作者的 access token：Authorization: Bearer <token>
-        requireUser := rest.RequireBearer(api, a.jwt.Validate)
+        // requireUser 要求请求带着作者的登录凭据：浏览器的会话 cookie，或者 Authorization: Bearer <token>
+        requireUser := rest.RequireToken(api, a.tokens.Validate)
         // 后台的接口还要求权限，缺少时返回 403。
-        requireUsers := rest.RequireBearer(api, a.jwt.Validate, string(auth.UsersManage))
-        requireRoles := rest.RequireBearer(api, a.jwt.Validate, string(auth.RolesManage))
-        auth.Register(api, requireUser, a.users, a.tokens, a.jwt)
+        requireUsers := rest.RequireToken(api, a.tokens.Validate, string(auth.UsersManage))
+        requireRoles := rest.RequireToken(api, a.tokens.Validate, string(auth.RolesManage))
+        auth.Register(api, requireUser, a.users, a.tokens, a.cfg.Token.Lifetime)
         user.Register(api, requireUser, requireUsers, a.db, a.roles)
         role.Register(api, requireRoles, a.roles)
         article.Register(api, requireUser, a.db)
@@ -839,9 +837,8 @@ import { resources } from "@blog/client/api/resources"
 import { components, schemas } from "@blog/client/api/schemas"
 import { session } from "./auth"
 
-// api 是生成的客户端，带着登录凭据：受保护的接口返回 401 时，它通过 session 换一个新的 access token 再重试。
-export const api = createClient({ baseURL: "/api", auth: session.auth })
-session.connect(api)
+// api 是生成的客户端。登录凭据是浏览器自动带上的会话 cookie；受保护的接口返回 401 时，会话随之变为未登录。
+export const api = createClient({ baseURL: "/api", onUnauthorized: () => session.expired() })
 
 // 资源模型：Go 中声明的资源，加上生成的客户端、校验规则、验证提示和枚举的显示文字。
 const kit = { client: api, queries: createQueries(api), schemas, components, enums, messages, language: "zh-CN" }

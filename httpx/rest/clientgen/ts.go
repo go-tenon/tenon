@@ -195,27 +195,18 @@ func (t *tsGen) client(res *Result) (string, error) {
 		groups[o.group] = append(groups[o.group], o)
 	}
 	t.groups = groups
-	reserved := []string{"setAccessToken", "getAccessToken", "refresh"}
 	for _, o := range groups[""] {
-		if _, ok := groups[o.method]; ok || slices.Contains(reserved, o.method) {
+		if _, ok := groups[o.method]; ok {
 			return "", errors.Newf("clientgen: operation %s would collide with client.%s", o.ep.OperationID, o.method)
-		}
-	}
-	for name := range groups {
-		if slices.Contains(reserved, name) {
-			return "", errors.Newf("clientgen: group %s collides with client.%s", name, name)
 		}
 	}
 
 	var b strings.Builder
 	b.WriteString("import { Runtime, type ClientOptions, type Download, type StreamOptions } from \"./runtime\"\n\n")
-	b.WriteString("export * from \"./errors\"\nexport { ApiError, isApiError, saveBlob, type ClientOptions, type AuthOptions, type Download, type FieldError, type StreamOptions } from \"./runtime\"\n")
+	b.WriteString("export * from \"./errors\"\nexport { ApiError, isApiError, saveBlob, type ClientOptions, type Download, type FieldError, type StreamOptions } from \"./runtime\"\n")
 	b.WriteString(t.schemas())
 	b.WriteString(events.String())
 	b.WriteString("\n/** 创建客户端。 */\nexport function createClient(options: ClientOptions) {\n  const rt = new Runtime(options)\n  return {\n")
-	b.WriteString("    /** 设置 access token，例如登录成功后；空字符串表示退出登录。 */\n    setAccessToken: (token: string) => rt.setAccessToken(token),\n")
-	b.WriteString("    /** 当前的 access token，例如交给实时频道的 SDK。 */\n    getAccessToken: () => rt.getAccessToken(),\n")
-	b.WriteString("    /** 用 auth.refresh 换新的 access token，打开页面时先调用一次，返回是否已经登录。 */\n    refresh: () => rt.refresh(),\n")
 	for _, o := range groups[""] {
 		b.WriteString(t.method(o, "    "))
 	}

@@ -100,8 +100,8 @@ const result = createRoute({
 const routeTree = root.addChildren([layout.addChildren([user, about, result])])
 
 async function setup(path: string) {
-  const session: Session = createSession({ refresh: async () => ({ access_token: "a1", expires_at: "" }) })
-  await session.signIn({ access_token: "a1", expires_at: "" }, { account: "u1", tenant: "acme" })
+  const session: Session = createSession({ load: async () => ({ account: "u1" }) })
+  await session.signIn({ account: "u1", tenant: "acme" })
   const app = createApp({
     id: "tabs-test",
     routeTree,

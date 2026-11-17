@@ -45,8 +45,8 @@ afterEach(() => {
 })
 
 async function mount(children: () => ReactNode, path = "/") {
-  const session = createSession({ refresh: async () => ({ access_token: "a1", expires_at: "" }) })
-  await session.signIn({ access_token: "a1", expires_at: "" }, { account: "u1" })
+  const session = createSession({ load: async () => ({ account: "u1" }) })
+  await session.signIn({ account: "u1" })
   const root = createRootRouteWithContext<RouterContext>()({
     component: () => (
       <AdminProvider>

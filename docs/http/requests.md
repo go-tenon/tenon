@@ -94,7 +94,7 @@ type RequestInput struct {
 ```
 
 > [!TIP]
-> `Authorization` 头由 `rest.RequireBearer` 读取。用它保护路由后，认证通过的身份可以直接从 context 中获取，见[认证](../security/authentication.md)。
+> `Authorization` 头由 `rest.RequireToken` 读取。用它保护路由后，认证通过的身份可以直接从 context 中获取，见[认证](../security/authentication.md)。
 
 <a id="json-body"></a>
 ### JSON 请求体

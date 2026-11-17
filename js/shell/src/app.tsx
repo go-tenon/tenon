@@ -227,7 +227,7 @@ export function createApp<TRouteTree extends AnyRoute>(options: AppOptions<TRout
   const guard = async (location: Pick<ParsedLocation, "href">) => {
     if (!restoring) restoring = session.restore().catch(() => false)
     await restoring
-    if (session.accessToken() === "") {
+    if (!session.signedIn()) {
       throw redirect({ href: `${loginPath}?${new URLSearchParams({ redirect: location.href })}` })
     }
   }
@@ -245,7 +245,7 @@ export function createApp<TRouteTree extends AnyRoute>(options: AppOptions<TRout
       if (!restoring) restoring = session.restore().catch(() => false)
       return restoring
     },
-    signedIn: () => session.accessToken() !== "",
+    signedIn: () => session.signedIn(),
     permissions: loadPermissions,
     permissionsQuery,
     guard,
@@ -325,13 +325,9 @@ export function requireAuth({
   return context.app.guard(location)
 }
 
-/** 没有登录功能的应用使用的会话：刷新总是失败，一直是未登录。 */
+/** 没有登录功能的应用使用的会话：一直是未登录。 */
 function signedOutSession(): Session {
-  return createSession({
-    refresh: async () => {
-      throw { status: 401, fields: [] }
-    },
-  })
+  return createSession({ load: async () => null })
 }
 
 /** 当前的应用，在 AppRoot 之内使用。 */
@@ -351,7 +347,7 @@ export function useCan(): (permission: string) => boolean {
 /** 是否已经登录：登录、退出时更新，例如页头在“登录”和“退出”之间切换。 */
 export function useSignedIn(): boolean {
   const { session } = useApp()
-  return useSyncExternalStore(session.subscribe, () => session.accessToken() !== "")
+  return useSyncExternalStore(session.subscribe, () => session.signedIn())
 }
 
 /** 按当前身份的权限过滤后的菜单。 */

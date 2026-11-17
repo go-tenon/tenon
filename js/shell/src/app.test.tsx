@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { createSession, type SessionBody } from "@go-tenon/client"
+import { createSession } from "@go-tenon/client"
 import {
   createMemoryHistory,
   createRootRouteWithContext,
@@ -20,8 +20,6 @@ import {
   useMenu,
   useSignedIn,
 } from "./app"
-
-const body = (access: string): SessionBody => ({ access_token: access, expires_at: "2026-11-11T08:10:00Z" })
 
 function Layout() {
   const menu = useMenu()
@@ -69,11 +67,8 @@ function setup(options: { signedIn: boolean; permissions?: string[] }) {
   })
   const routeTree = root.addChildren([login, layout.addChildren([home, users])])
 
-  const refresh = vi.fn(async () => {
-    if (!options.signedIn) throw { status: 401, fields: [] }
-    return body("a1")
-  })
-  const session = createSession({ refresh })
+  const refresh = vi.fn(async () => (options.signedIn ? { account: "u1" } : null))
+  const session = createSession({ load: refresh })
   const permissions = vi.fn(async () => options.permissions ?? [])
   const app = createApp({
     id: "test",
@@ -169,7 +164,7 @@ describe("createApp", () => {
     await go(app, "/users")
     expect(await screen.findByText("login page")).toBeTruthy()
 
-    await act(() => session.signIn(body("a2"), { account: "u1" }))
+    await act(() => session.signIn({ account: "u1" }))
     await act(() => app.redirectAfterSignIn((app.router.state.location.search as { redirect?: string }).redirect))
     expect(await screen.findByText("users page")).toBeTruthy()
 
@@ -187,7 +182,7 @@ describe("子路径", () => {
     const layout = createRoute({ getParentRoute: () => root, id: "_app", beforeLoad: requireAuth, component: Outlet })
     const users = createRoute({ getParentRoute: () => layout, path: "/users", component: () => <p>users page</p> })
     const history = createMemoryHistory({ initialEntries: ["/admin/users"] })
-    const session = createSession({ refresh: async () => Promise.reject({ status: 401, fields: [] }) })
+    const session = createSession({ load: async () => Promise.reject({ status: 401, fields: [] }) })
     const app = createApp({
       id: "sub",
       routeTree: root.addChildren([login, layout.addChildren([users])]),
@@ -198,7 +193,7 @@ describe("子路径", () => {
     expect(await screen.findByText("login page")).toBeTruthy()
     expect(history.location.pathname).toBe("/admin/login")
     expect(app.router.state.location.search).toEqual({ redirect: "/users" })
-    await act(() => session.signIn(body("a1"), { account: "u1" }))
+    await act(() => session.signIn({ account: "u1" }))
     await act(() => app.redirectAfterSignIn("/users"))
     expect(await screen.findByText("users page")).toBeTruthy()
     expect(history.location.pathname).toBe("/admin/users")

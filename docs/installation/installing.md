@@ -258,7 +258,7 @@ func main() {
 <a id="troubleshooting"></a>
 ## 常见问题
 
-**启动时报错 `endpoint must explicitly declare Public, RequireBearer or another RequireAuth scheme`**
+**启动时报错 `endpoint must explicitly declare Public, RequireToken or another RequireAuth scheme`**
 
 注册接口之前没有声明它是否需要登录。公开的接口加上 `rest.Public()(&op)`；需要登录的接口见[认证](../security/authentication.md)。
 

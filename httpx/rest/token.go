@@ -20,23 +20,77 @@ type Authenticator func(ctx huma.Context) (identity.Subject, error)
 
 const (
 	authMetadata    = "tenon.auth"
+	schemesMetadata = "tenon.auth.schemes"
 	confirmMetadata = "tenon.confirmed"
 )
 
-// RequireBearer 要求请求携带有效的 Authorization: Bearer token，校验器返回有效主体，
-// 并且主体能执行 permissions 中的全部权限（identity.Subject.Can）。
-func RequireBearer(api *API, validate identity.TokenValidator, permissions ...string) func(op *huma.Operation) {
+// tokenSchemes 是 RequireToken 在 OpenAPI 中登记的两种携带方式，任选其一。
+func tokenSchemes(cookie string) []namedScheme {
+	return []namedScheme{
+		{"bearer", &huma.SecurityScheme{Type: "http", Scheme: "bearer"}},
+		{"session", &huma.SecurityScheme{Type: "apiKey", In: "cookie", Name: cookie}},
+	}
+}
+
+type namedScheme struct {
+	name   string
+	scheme *huma.SecurityScheme
+}
+
+// RequireToken 要求请求携带有效的 token，校验器 validate 返回有效主体，并且主体能执行 permissions 中的全部权限
+// （identity.Subject.Can）。token 有两种携带方式，是同一种 token：
+//
+//   - 浏览器：会话 cookie（Options.SessionCookie），由浏览器自动附加，页面上的脚本读不到它；
+//   - App、脚本和第三方：Authorization: Bearer。两者都有时以它为准。
+//
+// 用会话 cookie 认证的写请求（GET、HEAD、OPTIONS 以外）必须来自同源的页面（httpx.SameOrigin），
+// 否则返回 403 http.cross_site：cookie 是浏览器自动附加的，这一步防止跨站请求伪造。Bearer 不受影响。
+// 路由表中的访问策略为 AccessToken。
+func RequireToken(api *API, validate identity.TokenValidator, permissions ...string) func(op *huma.Operation) {
 	if validate == nil {
 		panic("rest: nil token validator")
 	}
-	scheme := &huma.SecurityScheme{Type: "http", Scheme: "bearer"}
-	return RequireAuth(api, "bearer", scheme, func(ctx huma.Context) (identity.Subject, error) {
+	session := api.session
+	authenticate := func(ctx huma.Context) (identity.Subject, error) {
 		token := bearerToken(ctx.Header("Authorization"))
+		if token == "" {
+			token = session.Token(ctx.Header("Cookie"))
+		}
 		if token == "" {
 			return identity.Subject{}, nil
 		}
 		return validate(ctx.Context(), token)
-	}, permissions...)
+	}
+	// crossSite 拒绝用会话 cookie 认证、来自其他站点的写请求。
+	crossSite := func(ctx huma.Context) error {
+		if httpx.SafeMethod(ctx.Method()) || bearerToken(ctx.Header("Authorization")) != "" || session.Token(ctx.Header("Cookie")) == "" {
+			return nil
+		}
+		return sameOrigin(ctx)
+	}
+	return requireAuth(api, AccessToken, tokenSchemes(session.CookieName()), "Bearer", crossSite, authenticate, permissions...)
+}
+
+func sameOrigin(ctx huma.Context) error {
+	if httpx.SameOrigin(ctx.Header("Sec-Fetch-Site"), ctx.Header("Origin"), ctx.Host()) {
+		return nil
+	}
+	return httpx.ErrCrossSite.New()
+}
+
+// SameOrigin 只接受同源页面发出的请求（httpx.SameOrigin），其他请求返回 403 http.cross_site。
+// 用于设置会话 cookie 的公开接口，例如浏览器的登录：防止其他网站让用户在不知情时登录攻击者的账号（登录 CSRF）。
+// App 等客户端不经过这些接口，它们调用在响应体中返回 token 的接口。
+func SameOrigin(api *API) func(op *huma.Operation) {
+	return func(op *huma.Operation) {
+		op.Middlewares = append(op.Middlewares, func(ctx huma.Context, next func(huma.Context)) {
+			if err := sameOrigin(ctx); err != nil {
+				writeError(api, ctx, problem(api, ctx, err))
+				return
+			}
+			next(ctx)
+		})
+	}
 }
 
 // RequireAuth 为路由声明名为 name 的安全方案：在 OpenAPI 组件中登记 scheme 并标记路由的 Security，
@@ -51,18 +105,30 @@ func RequireBearer(api *API, validate identity.TokenValidator, permissions ...st
 //
 // 认证通过后安装 identity.CredentialCheck：SSE 等长连接期间定期重新执行以上检查（identity.Reestablish），
 // 凭据失效或失去权限时结束连接。
-// 每条路由只能声明一种认证方案。RequireBearer 基于它实现。Options.Accounts 为空时 panic。
+// 每条路由只能声明一种认证方案。RequireToken 是同类的内置方案。Options.Accounts 为空时 panic。
 func RequireAuth(api *API, name string, scheme *huma.SecurityScheme, authenticate Authenticator, permissions ...string) func(op *huma.Operation) {
 	if name == "" || scheme == nil || authenticate == nil {
 		panic("rest: RequireAuth requires a scheme name, a security scheme and an authenticator")
 	}
-	if len(api.accounts) == 0 {
-		panic("rest: Options.Accounts is required for authenticated operations")
-	}
-	registerScheme(api, name, scheme)
 	challenge := ""
 	if scheme.Type == "http" && scheme.Scheme != "" {
 		challenge = strings.ToUpper(scheme.Scheme[:1]) + scheme.Scheme[1:]
+	}
+	return requireAuth(api, name, []namedScheme{{name, scheme}}, challenge, nil, authenticate, permissions...)
+}
+
+// requireAuth 是 RequireAuth 和 RequireToken 的共同实现：schemes 是在 OpenAPI 中任选其一的携带方式，
+// guard 不为 nil 时在认证之前检查请求，返回的错误原样呈现。
+func requireAuth(api *API, name string, schemes []namedScheme, challenge string, guard func(huma.Context) error, authenticate Authenticator, permissions ...string) func(op *huma.Operation) {
+	if len(api.accounts) == 0 {
+		panic("rest: Options.Accounts is required for authenticated operations")
+	}
+	names := make([]string, len(schemes))
+	security := make([]map[string][]string, len(schemes))
+	for i, s := range schemes {
+		registerScheme(api, s.name, s.scheme)
+		names[i] = s.name
+		security[i] = map[string][]string{s.name: {}}
 	}
 	required := append([]string(nil), permissions...)
 	resolve := api.accounts.Resolve
@@ -74,15 +140,22 @@ func RequireAuth(api *API, name string, scheme *huma.SecurityScheme, authenticat
 			panic("rest: duplicate authentication declaration")
 		}
 		op.Metadata[authMetadata] = name
+		op.Metadata[schemesMetadata] = names
 		if len(required) > 0 {
 			if op.Extensions == nil {
 				op.Extensions = map[string]any{}
 			}
 			op.Extensions["x-required-permissions"] = required
 		}
-		op.Security = []map[string][]string{{name: {}}}
+		op.Security = security
 		op.Middlewares = append(op.Middlewares, func(ctx huma.Context, next func(huma.Context)) {
 			ctx.SetHeader("Cache-Control", "no-store")
+			if guard != nil {
+				if err := guard(ctx); err != nil {
+					writeError(api, ctx, problem(api, ctx, err))
+					return
+				}
+			}
 			// authenticate 读取请求头等与 context 无关的部分，复查时只替换 context。
 			auth := func(c context.Context) (identity.Subject, error) {
 				return authenticate(huma.WithContext(ctx, c))
@@ -126,7 +199,7 @@ func RequireAuth(api *API, name string, scheme *huma.SecurityScheme, authenticat
 // 用于修改邮箱、邀请成员、删除账号等敏感操作；超过时返回 403 auth.confirm_required，客户端让用户再次输入密码或验证码，
 // 调用应用的确认接口后重试。个人访问令牌、OAuth 令牌和代为登录的 token 没有验证情况，总是返回 403。
 //
-// 与 RequireBearer 等认证方案一起使用，先后不限；只有它而没有认证方案时 Register panic。
+// 与 RequireToken 等认证方案一起使用，先后不限；只有它而没有认证方案时 Register panic。
 // OpenAPI 中记录为扩展字段 x-confirm-max-age（秒）。maxAge 不为正数时 panic。
 func Confirmed(maxAge time.Duration) func(op *huma.Operation) {
 	if maxAge <= 0 {
@@ -166,14 +239,17 @@ func Public() func(op *huma.Operation) {
 	}
 }
 
-// authScheme 返回 RequireAuth 为路由声明的方案名；声明缺失或 Security 被改动时返回空字符串。
+// authScheme 返回 RequireAuth 或 RequireToken 为路由声明的方案名；声明缺失或 Security 被改动时返回空字符串。
 func authScheme(op *huma.Operation) string {
 	name, _ := op.Metadata[authMetadata].(string)
-	if name == "" || len(op.Security) != 1 || len(op.Security[0]) != 1 {
+	names, _ := op.Metadata[schemesMetadata].([]string)
+	if name == "" || len(op.Security) != len(names) {
 		return ""
 	}
-	if _, ok := op.Security[0][name]; !ok {
-		return ""
+	for i, s := range names {
+		if _, ok := op.Security[i][s]; !ok || len(op.Security[i]) != 1 {
+			return ""
+		}
 	}
 	return name
 }

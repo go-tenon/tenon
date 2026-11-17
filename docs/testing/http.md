@@ -33,7 +33,7 @@ func newTestAPI() *rest.API {
         return identity.Subject{}, identity.ErrUnauthenticated.New()
     }
     // 这些请求在调用 Handle 之前就会被拒绝，所以 db 传 nil
-    article.Register(api, rest.RequireBearer(api, validate, "articles"), nil)
+    article.Register(api, rest.RequireToken(api, validate, "articles"), nil)
     return api
 }
 

@@ -22,11 +22,12 @@ async function rejects(p: Promise<unknown>, what: string): Promise<import("../in
   throw new Error("unreachable")
 }
 
-// 公开的接口直接请求。
-const anonymous = createClient({ baseURL, language: () => "en" })
+// 公开的接口直接请求；受保护的接口 401 时调用 onUnauthorized，公开的接口不调用。
+let unauthorized = 0
+const anonymous = createClient({ baseURL, language: () => "en", onUnauthorized: () => unauthorized++ })
 check((await anonymous.ping()).ok === true, "ping")
 let err = await rejects(anonymous.article.create({ title: "x", slug: "x" }), "anonymous create")
-check(err.status === 401 && isApiError(err, IdentityErrors.Unauthenticated), "401", err)
+check(err.status === 401 && isApiError(err, IdentityErrors.Unauthenticated) && unauthorized === 1, "401", err)
 
 // 函数形式的 baseURL 每次请求读取；headers 每次请求附加，空值不发送。
 let seen: { url: string; tenant: string | null; empty: boolean } | undefined
@@ -42,19 +43,16 @@ const tenanted = createClient({
 await tenanted.article.list()
 check(seen?.tenant === "acme" && !seen.empty && seen.url.startsWith(`${baseURL}/articles`), "headers and baseURL function", seen)
 
-// 受保护的接口收到 401 时刷新：并发的请求只刷新一次，然后重试。
-let refreshes = 0
+// 浏览器之外（例如脚本）用 headers 传 Authorization: Bearer；浏览器中是同源的会话 cookie。
 const api = createClient({
   baseURL,
   language: () => "en",
-  auth: { refresh: async () => (refreshes++, "secret") },
+  headers: () => ({ Authorization: "Bearer secret" }),
 })
 const [hello, hi] = await Promise.all([
   api.article.create({ title: "Hello", slug: "hello", tags: ["go"] }),
   api.article.create({ title: "Hi", slug: "hi" }),
 ])
-check(refreshes === 1, "refresh once", refreshes)
-check(api.getAccessToken() === "secret", "token kept")
 check(hello.body.slug === "hello" && hello.headers.location === "/articles/" + hello.body.id, "create with headers", hello)
 check(hi.body.tags !== undefined, "second create", hi)
 
@@ -102,69 +100,6 @@ err = await rejects(
   "stream error",
 )
 check(err.code === ArticleErrors.NotFound, "stream error before events", err)
-
-// 刷新失败：调用 onSignedOut，原来的 401 抛给调用方。
-let signedOut = false
-const expired = createClient({ baseURL, auth: { refresh: async () => null, onSignedOut: () => (signedOut = true) } })
-err = await rejects(expired.article.create({ title: "x", slug: "x" }), "refresh failed")
-check(err.status === 401 && signedOut && expired.getAccessToken() === "", "signed out", err)
-
-// 请求发出之后身份变了（auth.generation）：收到 401 不刷新、不重试，不能用新身份重发旧身份的请求。
-let generation = 1
-let switchedRefreshes = 0
-let switchedSends = 0
-const switching = createClient({
-  baseURL,
-  auth: { refresh: async () => (switchedRefreshes++, "secret"), generation: () => generation },
-  fetch: async (input, init) => {
-    switchedSends++
-    const res = await fetch(input, init)
-    generation++ // 响应到达之前换了账号
-    return res
-  },
-})
-err = await rejects(switching.article.create({ title: "x", slug: "x" }), "identity changed")
-check(err.status === 401 && switchedRefreshes === 0 && switchedSends === 1, "no retry after identity change", {
-  switchedRefreshes,
-  switchedSends,
-})
-
-// 确认身份期间身份变了：不重试，不能用新身份重发旧身份的请求。
-let confirmSends = 0
-const confirmSwitching = createClient({
-  baseURL,
-  auth: { refresh: async () => "secret", generation: () => generation },
-  onConfirmRequired: async () => {
-    generation++ // 确认期间换了账号
-    return true
-  },
-  fetch: async () => {
-    confirmSends++
-    return new Response(JSON.stringify({ status: 403, code: "auth.confirm_required", detail: "confirm" }), { status: 403 })
-  },
-})
-err = await rejects(confirmSwitching.article.create({ title: "x", slug: "x" }), "identity changed while confirming")
-check(err.status === 403 && confirmSends === 1, "no retry after confirming as another identity", { confirmSends })
-
-// 刷新期间身份变了：刷新的结果不使用，也不当作需要重新登录。
-let finishRefresh!: (token: string | null) => void
-let staleSignedOut = false
-const stale = createClient({
-  baseURL,
-  auth: {
-    refresh: () => new Promise((resolve) => (finishRefresh = resolve)),
-    generation: () => generation,
-    onSignedOut: () => (staleSignedOut = true),
-  },
-})
-const pending = stale.refresh()
-stale.setAccessToken("bob")
-generation++
-finishRefresh(null)
-check((await pending) === false && stale.getAccessToken() === "bob" && !staleSignedOut, "stale refresh ignored", {
-  token: stale.getAccessToken(),
-  staleSignedOut,
-})
 
 // 403 auth.confirm_required：确认身份后重试一次。
 let calls = 0

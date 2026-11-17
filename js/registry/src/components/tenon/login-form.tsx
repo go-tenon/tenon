@@ -1,6 +1,5 @@
-// 登录表单：邮箱和密码。登录成功后保存凭据，回到登录前想去的页面（只接受同源的相对路径）。
+// 登录表单：邮箱和密码。登录成功后（服务端已写入会话 cookie）设置身份，回到登录前想去的页面（只接受同源的相对路径）。
 
-import type { SessionBody } from "@go-tenon/client"
 import { serverErrors, useApp } from "@go-tenon/shell"
 import { type FormEvent, type ReactNode, useState } from "react"
 import { FormError } from "@/components/tenon/form"
@@ -10,8 +9,8 @@ import { Label } from "@/components/ui/label"
 
 /** LoginForm 的选项。 */
 export interface LoginFormProps {
-  /** 调用应用的登录接口，返回它的响应体（apitoken.Session）。 */
-  login: (values: { email: string; password: string }) => Promise<SessionBody>
+  /** 调用应用的登录接口：服务端写入会话 cookie。之后用会话的 load 读取身份。 */
+  login: (values: { email: string; password: string }) => Promise<unknown>
   /** 登录前想去的页面（登录页的 ?redirect=）。 */
   redirect?: string
 }
@@ -28,7 +27,8 @@ export function LoginForm({ login, redirect }: LoginFormProps): ReactNode {
     setPending(true)
     setErrors({ fields: {} })
     try {
-      await app.session.signIn(await login({ email, password }))
+      await login({ email, password })
+      await app.session.signIn()
       await app.redirectAfterSignIn(redirect)
     } catch (err) {
       setErrors(serverErrors(err))

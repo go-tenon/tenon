@@ -32,13 +32,13 @@ func register[I, O any](api *API, op huma.Operation, events map[string]reflect.T
 		panic("rest: operation ID must be kebab-case, e.g. article-publish; got " + strconv.Quote(op.OperationID))
 	}
 	if op.Security == nil {
-		panic("rest: endpoint must explicitly declare Public, RequireBearer or another RequireAuth scheme")
+		panic("rest: endpoint must explicitly declare Public, RequireToken or another RequireAuth scheme")
 	}
 	if len(op.Security) > 0 && authScheme(&op) == "" {
 		panic("rest: security must be declared through RequireAuth so it binds runtime validation")
 	}
 	if _, ok := op.Metadata[confirmMetadata]; ok && len(op.Security) == 0 {
-		panic("rest: Confirmed requires RequireBearer or another RequireAuth scheme")
+		panic("rest: Confirmed requires RequireToken or another RequireAuth scheme")
 	}
 	// 从 OpenAPI 路径表检查操作 ID 和路由冲突。
 	for path, item := range api.OpenAPI().Paths {

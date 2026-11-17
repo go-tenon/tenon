@@ -21,7 +21,7 @@ import (
 )
 
 // 设置了 Options.Credentials 时，撤销 token 并发出提醒后 SSE 立即结束，不等 30 秒的定期校验。
-func TestRequireBearerRechecksOnSignal(t *testing.T) {
+func TestRequireTokenRechecksOnSignal(t *testing.T) {
 	hub := broadcast.New(broadcasttest.NewBackend(), nil)
 	defer hub.Close()
 	creds := broadcast.NewCredentials(hub)
@@ -34,7 +34,7 @@ func TestRequireBearerRechecksOnSignal(t *testing.T) {
 	}
 	api := rest.New(chi.NewRouter(), rest.Options{Accounts: identity.Accounts{"user": nil}, Credentials: creds})
 	op := huma.Operation{OperationID: "events", Method: http.MethodGet, Path: "/events"}
-	rest.RequireBearer(api, validate)(&op)
+	rest.RequireToken(api, validate)(&op)
 	rest.RegisterSSE(api, op, map[string]any{}, func(context.Context, *struct{}) (*huma.StreamResponse, error) {
 		return rest.SSE(func(s *httpx.Stream) error {
 			if err := s.Send(httpx.Event{}, "ready"); err != nil {

@@ -29,8 +29,8 @@ afterEach(() => {
 
 /** 渲染 children，返回应用和会话。 */
 async function mount(children: () => ReactNode) {
-  const session: Session = createSession({ refresh: async () => ({ access_token: "a1", expires_at: "" }) })
-  await session.signIn({ access_token: "a1", expires_at: "" }, { account: "u1" })
+  const session: Session = createSession({ load: async () => ({ account: "u1" }) })
+  await session.signIn({ account: "u1" })
   const app = createApp({
     id: "features",
     routeTree: createRootRouteWithContext<RouterContext>()({
@@ -344,7 +344,7 @@ const textOf = (m: UIMessage) =>
     .join("")
 
 describe("useAssistantChat", () => {
-  type Call = { url: string; method: string; body?: unknown; auth?: string | null }
+  type Call = { url: string; method: string; body?: unknown; auth?: string | null; credentials?: RequestCredentials }
 
   function server(handler: (c: Call) => Response) {
     const calls: Call[] = []
@@ -356,6 +356,7 @@ describe("useAssistantChat", () => {
           method: init?.method ?? "GET",
           body: init?.body ? JSON.parse(String(init.body)) : undefined,
           auth: new Headers(init?.headers).get("Authorization"),
+          credentials: init?.credentials,
         }
         calls.push(call)
         return handler(call)
@@ -364,7 +365,7 @@ describe("useAssistantChat", () => {
     return calls
   }
 
-  it("发送：只发送最后一条消息、带上 access token；插话是回答中的 data-steering", async () => {
+  it("发送：只发送最后一条消息、同源发送 cookie，不带 token；插话是回答中的 data-steering", async () => {
     const calls = server((c) => {
       if (c.url.endsWith("/stream")) return new Response(null, { status: 204 })
       return uiStream([
@@ -387,7 +388,7 @@ describe("useAssistantChat", () => {
     expect(chat?.error).toBeUndefined()
     expect(chat?.messages[2]?.parts).toContainEqual({ type: "data-steering", id: "s1", data: { text: "再短一点" } })
     const post = calls.find((c) => c.method === "POST")
-    expect(post).toMatchObject({ url: "/api/chat", auth: "Bearer a1" })
+    expect(post).toMatchObject({ url: "/api/chat", auth: null, credentials: "same-origin" })
     expect((post?.body as { message?: UIMessage } | undefined)?.message?.parts).toEqual([
       { type: "text", text: "讲个故事" },
     ])

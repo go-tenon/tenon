@@ -1,35 +1,35 @@
-import { createSession, ensureOK, type SessionBody } from "@go-tenon/client"
+import { createSession, ensureOK } from "@go-tenon/client"
 
-// 登录相关的接口。模板按框架约定的路径调用它们，应用在 /api 下注册（写法见教程第 6 章“登录”和
-// “单页应用的登录”）：POST /api/auth/login、/api/auth/refresh、/api/auth/logout，GET /api/me。
+// 登录相关的接口。模板按框架约定的路径调用它们，应用在 /api 下注册（写法见教程第 6 章“登录”）：
+// POST /api/auth/login 写入会话 cookie，POST /api/auth/logout 清除它，GET /api/me 返回当前用户。
+// 登录凭据是 HttpOnly 的会话 cookie，浏览器随同源请求自动带上，页面上的脚本不接触它。
 // 接口名或路径不同时只改这个文件。
 
-async function post(path: string, body?: unknown): Promise<unknown> {
+async function send(method: string, path: string, body?: unknown): Promise<Response> {
   const res = await fetch(`/api${path}`, {
-    method: "POST",
+    method,
     credentials: "same-origin",
     headers: body === undefined ? undefined : { "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
   })
-  return (await ensureOK(res)).json()
+  if (res.status === 401 && path !== "/auth/login") session.expired()
+  return (await ensureOK(res)) as Response
 }
 
-// session 保管登录凭据：access token 只放在内存中，refresh token 在 HttpOnly cookie 中。
-export const session = createSession({ refresh: () => post("/auth/refresh") as Promise<SessionBody> })
-
-// 带上 access token、401 时刷新再重试的 fetch。
-const authed = session.fetch(fetch)
-
-export const login = (values: { email: string; password: string }) => post("/auth/login", values) as Promise<SessionBody>
-
-export const logout = async () => ensureOK(await authed("/api/auth/logout", { method: "POST" }))
-
-/** 当前登录的用户：显示名称；permissions 是可选的，用于菜单和按钮的权限。 */
+/** 当前登录的用户：id、显示名称；permissions 是可选的，用于菜单和按钮的权限。 */
 export interface Me {
+  id: string
   name: string
   permissions?: string[]
 }
 
 export async function me(): Promise<Me> {
-  return (await (await ensureOK(await authed("/api/me"))).json()) as Me
+  return (await (await send("GET", "/me")).json()) as Me
 }
+
+// session 记录当前的身份：打开页面、登录后读取 /api/me，没有登录时它返回 401。
+export const session = createSession({ load: async () => ({ account: (await me()).id }) })
+
+export const login = (values: { email: string; password: string }) => send("POST", "/auth/login", values)
+
+export const logout = () => send("POST", "/auth/logout")

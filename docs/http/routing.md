@@ -101,7 +101,7 @@ curl localhost:8080/ping
 | `Summary` | 路由的简短描述，显示在接口文档中 |
 | 输入类型 | 路径参数、查询参数、请求头和请求体的来源、类型及验证规则 |
 | 输出类型 | 响应体、状态码和响应头 |
-| 访问策略 | `rest.Public()` 或 `rest.RequireBearer(...)`，必须选择一个 |
+| 访问策略 | `rest.Public()` 或 `rest.RequireToken(...)`，必须选择一个 |
 | 处理器 | 处理请求的函数，通常是[业务动作](../concepts/actions.md)的 `HTTP` 方法 |
 
 输入和输出类型的写法分别在[请求](requests.md)和[响应](responses.md)中介绍。
@@ -124,7 +124,7 @@ func(ctx context.Context, in *Input) (*Output, error)
 
 路由的错误越早发现越好。`rest.Register` 会在注册时检查以下问题，一旦发现就直接 panic，让错误在应用启动时（甚至在 CI 中导出文档时）立刻暴露：
 
-- 路由没有声明访问策略（没有调用 `Public` 或 `RequireBearer`）；
+- 路由没有声明访问策略（没有调用 `Public` 或 `RequireToken`）；
 - `OperationID` 为空或不是 kebab-case，例如 `articleCreate`；
 - `OperationID` 与已注册的路由重复；
 - 与已注册的路由方法相同且路径形状冲突，例如 `/articles/{id}` 与 `/articles/{articleID}`。
@@ -159,14 +159,14 @@ Huma 会把路径中的值转换为字段的类型（这里是 `github.com/googl
 rest.Public()(&op)
 ```
 
-需要登录的路由使用 `rest.RequireBearer`，还可以要求调用者具备指定的权限：
+需要登录的路由使用 `rest.RequireToken`，还可以要求调用者具备指定的权限：
 
 ```go
-requireArticles := rest.RequireBearer(api, validateToken, "articles")
+requireArticles := rest.RequireToken(api, validateToken, "articles")
 requireArticles(&op)
 ```
 
-`validateToken` 是你提供的令牌校验函数。`RequireBearer` 同时完成两件事：在运行时检查请求的 `Authorization` 头；在 OpenAPI 文档中标记这条路由需要认证。这样，接口的实际行为和文档始终一致。完整的用法见[认证](../security/authentication.md)。
+`validateToken` 是你提供的令牌校验函数。`RequireToken` 同时完成两件事：在运行时检查请求的 `Authorization` 头；在 OpenAPI 文档中标记这条路由需要认证。这样，接口的实际行为和文档始终一致。完整的用法见[认证](../security/authentication.md)。
 
 <a id="organizing-routes"></a>
 ## 组织路由
@@ -221,7 +221,7 @@ func Register(api *rest.API, requireArticles func(*huma.Operation), db *bun.DB) 
 入口在组装应用时调用它，并决定这些路由的访问策略。`validateToken` 是令牌校验器，见[认证](../security/authentication.md)：
 
 ```go
-article.Register(api, rest.RequireBearer(api, validateToken, "articles"), db)
+article.Register(api, rest.RequireToken(api, validateToken, "articles"), db)
 ```
 
 <a id="http-actions"></a>
@@ -347,7 +347,7 @@ api.Router().Get("/livez", func(w http.ResponseWriter, r *http.Request) {
 <a id="troubleshooting"></a>
 ## 常见问题
 
-**启动时 panic：`endpoint must explicitly declare Public, RequireBearer or another RequireAuth scheme`**
+**启动时 panic：`endpoint must explicitly declare Public, RequireToken or another RequireAuth scheme`**
 
 注册路由之前没有声明访问策略。公开的接口加上 `rest.Public()(&op)`，需要登录的见[访问策略](#access-policies)。
 
@@ -405,7 +405,7 @@ func Register[I, O any](api *API, op huma.Operation, handler func(context.Contex
 
 - **参数**
     - `api`：由 `New` 创建的 API
-    - `op`：路由声明，已经用 `Public` 或 `RequireBearer` 声明了访问策略
+    - `op`：路由声明，已经用 `Public` 或 `RequireToken` 声明了访问策略
     - `handler`：处理器，通常是业务动作的 `HTTP` 方法
 
 把处理器挂载到路由上，并写入 OpenAPI 文档。`handler` 为 `nil` 或发现[注册时的检查](#registration-checks)中的问题时 panic。
@@ -423,11 +423,11 @@ func Lookup(router chi.Routes, basePath string) (*API, error)
 
 `APIs` 遍历 `router`（包括挂载的子路由），按出现的顺序返回其中用 `New` 创建的全部 API，只读取路由表。`Lookup` 返回 `BasePath` 为 `basePath` 的那个；`basePath` 为空时，`router` 中必须恰好有一个 API。`openapi`、`client` 命令用它从应用的路由中取出 API，见[离线导出](openapi.md#exporting-openapi)。
 
-### Public、RequireBearer
+### Public、RequireToken
 
 ```go
 func Public() func(op *huma.Operation)
-func RequireBearer(api *API, validate identity.TokenValidator, permissions ...string) func(op *huma.Operation)
+func RequireToken(api *API, validate identity.TokenValidator, permissions ...string) func(op *huma.Operation)
 ```
 
 - **参数**
@@ -436,7 +436,7 @@ func RequireBearer(api *API, validate identity.TokenValidator, permissions ...st
     - `permissions`：调用者必须具备的全部权限
 - **返回**：作用于路由声明的函数，在 `Register` 之前调用
 
-`Public` 把路由声明为公开的；`RequireBearer` 要求有效的 Bearer 令牌，并且调用者具备全部 `permissions`。
+`Public` 把路由声明为公开的；`RequireToken` 要求有效的 Bearer 令牌，并且调用者具备全部 `permissions`。
 
 ### API
 

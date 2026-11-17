@@ -25,8 +25,8 @@ function Pane({ side }: { side?: "start" | "end" }) {
 async function setup(side?: "start" | "end") {
   const root = createRootRouteWithContext<RouterContext>()()
   const page = createRoute({ getParentRoute: () => root, path: "/", component: () => <Pane side={side} /> })
-  const session = createSession({ refresh: async () => ({ access_token: "t", expires_at: "" }) })
-  await session.signIn({ access_token: "t", expires_at: "" }, { account: "u1" })
+  const session = createSession({ load: async () => ({ account: "u1" }) })
+  await session.signIn({ account: "u1" })
   const app = createApp({
     id: "resize-test",
     routeTree: root.addChildren([page]),

@@ -79,7 +79,7 @@ var rules = map[string]rule{
 	"httpx":                {layerEntry, []string{"acquire", "enum", "errorx", "form", "health", "i18n", "identity", "logging", "ratelimit"}},
 	"httpx/rest/clientgen": {layerEntry, []string{"command", "enum", "errorx", "httpx", "i18n", "identity", "page"}},
 	"web":                  {layerEntry, []string{"errorx", "form", "httpx", "i18n", "logging", "theme"}},
-	"realtime":             {layerEntry, []string{"broadcast", "identity", "logging"}},
+	"realtime":             {layerEntry, []string{"broadcast", "httpx", "identity", "logging"}},
 	"ssr":                  {layerEntry, []string{"logging"}},
 	"mcpx":                 {layerEntry, []string{"errorx", "httpx", "identity", "internal/apischema", "logging"}},
 	"natsrpc":              {layerEntry, []string{"errorx", "form", "i18n", "identity", "internal/apischema", "logging"}},
@@ -99,7 +99,7 @@ var rules = map[string]rule{
 	"queue/queueweb":              {layerEntry, []string{"httpx", "i18n", "logging", "page", "queue", "web"}},
 	"schedule/schedulecmd":        {layerEntry, []string{"command", "schedule"}},
 
-	"apitoken":          {layerFeature, []string{"crypt", "errorx", "identity"}},
+	"apitoken":          {layerFeature, []string{"errorx", "identity"}},
 	"authz":             {layerFeature, []string{"cachex", "database", "errorx", "identity", "logging"}},
 	"notification":      {layerFeature, []string{"errorx", "identity"}},
 	"feature":           {layerFeature, []string{"errorx", "identity"}},

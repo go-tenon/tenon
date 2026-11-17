@@ -194,10 +194,10 @@ declare module "@tanstack/react-router" {
   }
 }
 
-const session = createSession({ refresh: async () => ({ access_token: "t", expires_at: "" }) })
+const session = createSession({ load: async () => ({ account: "u1" }) })
 const app = createApp({ id: "e2e", routeTree, session })
 
-void session.signIn({ access_token: "t", expires_at: "" }, { account: "u1" }).then(() => {
+void session.signIn({ account: "u1" }).then(() => {
   const el = document.getElementById("root")
   if (el) createRoot(el).render(<AppRoot app={app} />)
 })

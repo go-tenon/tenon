@@ -30,8 +30,8 @@ afterEach(() => {
 async function mount(page: () => ReactNode, strict = false) {
   const root = createRootRouteWithContext<RouterContext>()()
   const route = createRoute({ getParentRoute: () => root, path: "/", component: page })
-  const session = createSession({ refresh: async () => ({ access_token: "t", expires_at: "" }) })
-  await session.signIn({ access_token: "t", expires_at: "" }, { account: "u1" })
+  const session = createSession({ load: async () => ({ account: "u1" }) })
+  await session.signIn({ account: "u1" })
   const app = createApp({
     id: "split-test",
     routeTree: root.addChildren([route]),

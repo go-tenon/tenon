@@ -1,6 +1,6 @@
 # 完整示例：单账号后台
 
-本页给出一套**数据库驱动的单账号后台**最短闭环：一张用户表、邮箱密码登录、JWT（access token + refresh cookie）、用 Bearer 保护业务接口。读完就能搭起可用的后台认证；细节由后面各章拆开讲，多租户与代登录见[运营后台与多租户](saas-example.md)。
+本页给出一套**数据库驱动的单账号后台**最短闭环：一张用户表、邮箱密码登录、会话 cookie、用 `RequireToken` 保护业务接口。读完就能搭起可用的后台认证；细节由后面各章拆开讲，多租户与代登录见[运营后台与多租户](saas-example.md)。
 
 阅读前需要了解：[入门教程第 6 章](../tutorial/06-login.md)；[依赖装配](../concepts/dependencies.md)。
 
@@ -10,7 +10,7 @@
 | 入口 | 单页应用调用 `/admin/api` |
 | 账号怎么来 | 管理员用命令创建（不开放注册） |
 | 怎么登录 | 邮箱 + 密码 |
-| 凭据 | JWT：access 在内存，refresh 在 HttpOnly cookie |
+| 凭据 | 登录 token 放在 HttpOnly 的会话 cookie 中，页面上的脚本读不到它 |
 
 - [怎么运转](#how-it-works)
 - [用户表](#users)
@@ -26,16 +26,16 @@
 
 ```text
 登录 ──► login.Realm 校验邮箱密码
-     ──► apitoken.JWT 签发 Pair
-     ──► access 回给前端；refresh 写入 cookie（Path=/admin/api/auth）
+     ──► apitoken.Store 签发登录 token
+     ──► 写入会话 cookie（__Host-session，HttpOnly）
 
-请求 ──► Authorization: Bearer <access>
-     ──► JWT.Validate 认出是谁
+请求 ──► 浏览器自动带上 cookie（写请求必须来自同源的页面）
+     ──► Store.Validate 认出是谁
      ──► Resolver 从库加载权限 / 检查停用
-     ──► RequireBearer 检查权限后进入处理器
+     ──► RequireToken 检查权限后进入处理器
 ```
 
-生命周期与其他模块相同：启动时 `Load` 校验配置 → 入口创建 `Realm` / `Store` / `JWT` 一次 → 请求时复用。
+生命周期与其他模块相同：启动时 `Load` 校验配置 → 入口创建 `Realm` / `Store` 一次 → 请求时复用。
 
 <a id="users"></a>
 ## 用户表
@@ -95,7 +95,7 @@ func Resolve(db bun.IDB) identity.Resolver {
 <a id="assembling"></a>
 ## 装配
 
-在入口的 `open` 中创建 `Realm`、`Store` 和 `JWT`。`Hashing` / `Crypt` / 限流的配置挂法见[哈希](hashing.md)、[加密](encryption.md)、[登录装配](login.md#assembling)。
+在入口的 `open` 中创建 `Realm` 和 `Store`。`Hashing` / `Crypt` / 限流的配置挂法见[哈希](hashing.md)、[加密](encryption.md)、[登录装配](login.md#assembling)。
 
 ```go
 every15 := ratelimit.Config{Rate: 5, Interval: 15 * time.Minute, Burst: 5}
@@ -109,16 +109,14 @@ users := login.New(db, login.Options{
     Sends:    pglimit.New(db, "login:sends", every15),
 })
 tokens := apitoken.NewStore(db, cfg.APIToken)
-jwt := apitoken.NewJWT(tokens, apitoken.JWTConfig{Keys: apitoken.HMACKeys(crypt.New(cfg.Crypt))})
-cookie := apitoken.RefreshCookie{Name: "admin_refresh", Path: "/admin/api/auth"}
 ```
 
-根配置里需要 `crypt`、`hashing`、`api_token`；限流计数保存在数据库中，记得发布 `pglimit` 的迁移。`apitoken.Config` 的 `idle_timeout` 必须长于 access token 有效期，否则 `NewJWT` 会 panic，见 [JWT 模式](jwt.md#jwt)。
+根配置里需要 `crypt`、`hashing`、`api_token`；限流计数保存在数据库中，记得发布 `pglimit` 的迁移。
 
 <a id="auth-api"></a>
 ## 登录接口
 
-单页应用用 [JWT + refresh cookie](jwt.md#single-page-applications)：access 只放内存；refresh 只随 `/admin/api/auth` 下的请求发送。
+登录成功后把 token 写进[会话 cookie](api-tokens.md#browser-sessions)，之后浏览器自动带上它，页面不保管 token。
 
 ```go
 package adminauth
@@ -126,10 +124,12 @@ package adminauth
 import (
     "context"
     "net/http"
+    "time"
 
     "github.com/danielgtaylor/huma/v2"
 
     "github.com/go-tenon/tenon/apitoken"
+    "github.com/go-tenon/tenon/httpx"
     "github.com/go-tenon/tenon/httpx/rest"
     "github.com/go-tenon/tenon/identity"
     "github.com/go-tenon/tenon/login"
@@ -143,30 +143,15 @@ type LoginInput struct {
     }
 }
 
-type RefreshInput struct {
-    Cookie string `cookie:"admin_refresh"`
-}
-
+// SessionOutput 写入或清除会话 cookie。
 type SessionOutput struct {
-    SetCookie *http.Cookie `header:"Set-Cookie"`
-    Body      apitoken.Session
-}
-
-type LogoutOutput struct {
     SetCookie *http.Cookie `header:"Set-Cookie"`
 }
 
 type handlers struct {
-    users  *login.Realm
-    tokens *apitoken.Store
-    jwt    *apitoken.JWT
-    cookie apitoken.RefreshCookie
-}
-
-func (h *handlers) session(pair apitoken.Pair) *SessionOutput {
-    out := &SessionOutput{}
-    out.Body, out.SetCookie = h.cookie.Session(pair)
-    return out
+    users    *login.Realm
+    tokens   *apitoken.Store
+    lifetime time.Duration
 }
 
 func (h *handlers) login(ctx context.Context, in *LoginInput) (*SessionOutput, error) {
@@ -174,39 +159,28 @@ func (h *handlers) login(ctx context.Context, in *LoginInput) (*SessionOutput, e
     if err != nil {
         return nil, err // 401 / 429
     }
-    pair, err := h.jwt.Login(ctx, out.Subject, apitoken.Device{UserAgent: in.UserAgent})
+    token, err := h.tokens.Login(ctx, out.Subject, apitoken.Device{UserAgent: in.UserAgent})
     if err != nil {
         return nil, err
     }
-    return h.session(pair), nil
+    return &SessionOutput{SetCookie: httpx.SessionCookie{}.Set(token, h.lifetime)}, nil
 }
 
-func (h *handlers) refresh(ctx context.Context, in *RefreshInput) (*SessionOutput, error) {
-    pair, err := h.jwt.Refresh(ctx, in.Cookie)
-    if err != nil {
-        return nil, err
-    }
-    return h.session(pair), nil
-}
-
-func (h *handlers) logout(ctx context.Context, _ *struct{}) (*LogoutOutput, error) {
+func (h *handlers) logout(ctx context.Context, _ *struct{}) (*SessionOutput, error) {
     sub, _ := identity.FromContext(ctx)
     if err := h.tokens.Revoke(ctx, sub, sub.Credential); err != nil {
         return nil, err
     }
-    return &LogoutOutput{SetCookie: h.cookie.Clear()}, nil
+    return &SessionOutput{SetCookie: httpx.SessionCookie{}.Clear()}, nil
 }
 
-func Register(api *rest.API, requireUser func(*huma.Operation), users *login.Realm, tokens *apitoken.Store, jwt *apitoken.JWT, cookie apitoken.RefreshCookie) {
-    h := &handlers{users: users, tokens: tokens, jwt: jwt, cookie: cookie}
+func Register(api *rest.API, requireUser func(*huma.Operation), users *login.Realm, tokens *apitoken.Store, lifetime time.Duration) {
+    h := &handlers{users: users, tokens: tokens, lifetime: lifetime}
 
-    op := huma.Operation{OperationID: "auth-login", Method: http.MethodPost, Path: "/auth/login"}
+    op := huma.Operation{OperationID: "auth-login", Method: http.MethodPost, Path: "/auth/login", DefaultStatus: http.StatusNoContent}
     rest.Public()(&op)
+    rest.SameOrigin(api)(&op) // 只接受本站页面的登录，防止登录 CSRF
     rest.Register(api, op, h.login)
-
-    op = huma.Operation{OperationID: "auth-refresh", Method: http.MethodPost, Path: "/auth/refresh"}
-    rest.Public()(&op)
-    rest.Register(api, op, h.refresh)
 
     op = huma.Operation{OperationID: "auth-logout", Method: http.MethodPost, Path: "/auth/logout", DefaultStatus: http.StatusNoContent}
     requireUser(&op)
@@ -214,14 +188,14 @@ func Register(api *rest.API, requireUser func(*huma.Operation), users *login.Rea
 }
 ```
 
-打开页面时先 `POST /auth/refresh`：有 cookie 就换到 access token，没有就进登录页。前端写法见 [API 客户端](../http/clients.md#creating-the-client)。
+打开页面时先读一次当前用户（例如 `GET /admin/api/me`）：cookie 有效就是已登录，`401` 就进登录页。前端写法见 [API 客户端](../http/clients.md#creating-the-client)。
 
 <a id="protecting-routes"></a>
 ## 保护业务路由
 
 ```go
-requireUser := rest.RequireBearer(api, jwt.Validate) // 只要登录
-requireWrite := rest.RequireBearer(api, jwt.Validate, "articles:write")
+requireUser := rest.RequireToken(api, tokens.Validate) // 只要登录
+requireWrite := rest.RequireToken(api, tokens.Validate, "articles:write")
 
 op := huma.Operation{OperationID: "article-create", Method: http.MethodPost, Path: "/articles"}
 requireWrite(&op)
@@ -240,9 +214,9 @@ router.Route("/admin/api", func(r chi.Router) {
         BasePath: "/admin/api",
         Accounts: identity.Accounts{user.Type: user.Resolve(a.db)},
     })
-    requireUser := rest.RequireBearer(api, a.jwt.Validate)
-    adminauth.Register(api, requireUser, a.users, a.tokens, a.jwt, a.cookie)
-    article.Register(api, requireUser, a.db) // 业务路由按需加 RequireBearer 的权限参数
+    requireUser := rest.RequireToken(api, a.tokens.Validate)
+    adminauth.Register(api, requireUser, a.users, a.tokens, a.cfg.APIToken.Lifetime)
+    article.Register(api, requireUser, a.db) // 业务路由按需加 RequireToken 的权限参数
 })
 router.Handle("/admin/*", adminSPA)
 ```
@@ -254,9 +228,9 @@ router.Handle("/admin/*", adminSPA)
 
 | 想弄清 | 去读 |
 | --- | --- |
-| Bearer、主体、`Accounts`、校验器 | [认证](authentication.md) |
+| 凭据、主体、`Accounts`、校验器 | [认证](authentication.md) |
 | 邮箱密码、邀请、二次验证、确认身份 | [登录与注册](login.md) |
-| JWT、cookie、撤销、设备列表 | [API 令牌](api-tokens.md) |
+| 会话 cookie、撤销、设备列表 | [API 令牌](api-tokens.md) |
 | 路由权限、角色、`authz` | [授权](authorization.md) |
 | 运营后台 + 租户后台 + 代登录 | [运营后台与多租户](saas-example.md) |
 
@@ -265,13 +239,13 @@ router.Handle("/admin/*", adminSPA)
 <a id="troubleshooting"></a>
 ## 常见问题
 
-**启动时 panic，提示 `idle_timeout` 太短**
-
-`apitoken.Config` 的 `idle_timeout` 必须长于 access token 的有效期，见 [JWT 模式](jwt.md#jwt)。
-
 **登录成功，刷新页面后又要登录**
 
-refresh cookie 的 `Path` 只包含 `/admin/api/auth`，刷新接口要在这个路径下；页面和接口要同源，见[登录接口](#auth-api)。
+会话 cookie 没有保存或没有带上：页面和接口要同源；`Secure` 的 cookie 只在 HTTPS 和 `localhost` 上保存，见[浏览器的会话 cookie](api-tokens.md#browser-sessions)。
+
+**修改数据时返回 `403 http.cross_site`**
+
+用 cookie 认证的写请求不是从本站的页面发出的。浏览器中的页面不会遇到；脚本和工具改用 `Authorization: Bearer`。
 
 **其他账号体系的 token 调用后台接口，得到 401**
 

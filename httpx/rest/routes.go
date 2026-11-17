@@ -16,8 +16,8 @@ import (
 	"github.com/go-tenon/tenon/httpx"
 )
 
-// AccessBearer 是 RequireBearer 路由在路由表中的访问策略；RequireAuth 声明的其他方案取其方案名。
-const AccessBearer = "bearer"
+// AccessToken 是 RequireToken 路由在路由表中的访问策略；RequireAuth 声明的其他方案取其方案名。
+const AccessToken = "token"
 
 // adapter 是 Huma 的 chi 适配器：每个操作注册为一个实现 httpx.RouteDescriber 的处理器，
 // 让 httpx.Routes 能从任意上层 Router 读出访问策略。其余行为委托给 humachi。
