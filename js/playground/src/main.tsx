@@ -76,7 +76,7 @@ const notifications: NotificationsSource = {
     {
       id: "n1",
       title: "订单 #10482 已付款",
-      body: "客户 华东分公司 支付了 ¥12,800.00",
+      body: "客户 华东分公司 支付了 ¥12800.00",
       read: false,
       created_at: "2026-11-17T09:12:00Z",
     },
@@ -102,7 +102,7 @@ const orders = Array.from({ length: 14 }, (_, i) => ({
   amount: 1280 + ((i * 3779) % 24000),
   created: `11-${String(17 - (i % 9)).padStart(2, "0")} ${String(9 + (i % 8)).padStart(2, "0")}:${String((i * 7) % 60).padStart(2, "0")}`,
 }))
-const money = (n: number) => n.toLocaleString("zh-CN", { style: "currency", currency: "CNY" })
+const money = (n: number) => `¥${n.toFixed(2)}`
 
 function Root(): ReactNode {
   return <Outlet />
@@ -163,7 +163,7 @@ function OrdersTable({ rows }: { rows: typeof orders }): ReactNode {
             <Table.Th>订单号</Table.Th>
             <Table.Th>客户</Table.Th>
             <Table.Th>状态</Table.Th>
-            <Table.Th ta="right">金额</Table.Th>
+            <Table.Th>金额</Table.Th>
             <Table.Th>下单时间</Table.Th>
           </Table.Tr>
         </Table.Thead>
@@ -175,9 +175,7 @@ function OrdersTable({ rows }: { rows: typeof orders }): ReactNode {
               <Table.Td>
                 <Badge color={statuses[o.status]}>{o.status}</Badge>
               </Table.Td>
-              <Table.Td ta="right" style={{ fontVariantNumeric: "tabular-nums" }}>
-                {money(o.amount)}
-              </Table.Td>
+              <Table.Td style={{ fontVariantNumeric: "tabular-nums" }}>{money(o.amount)}</Table.Td>
               <Table.Td c="dimmed">{o.created}</Table.Td>
             </Table.Tr>
           ))}
@@ -193,8 +191,8 @@ function AdminHome(): ReactNode {
   return (
     <Page title="概览" description="今天的经营数据，每 5 分钟更新一次。">
       <SimpleGrid cols={{ base: 2, md: 4 }} spacing="md">
-        <Stat label="今日成交额" value="¥128,460" delta="+12.4%" />
-        <Stat label="订单数" value="1,284" delta="+3.1%" />
+        <Stat label="今日成交额" value="¥128460" delta="+12.4%" />
+        <Stat label="订单数" value="1284" delta="+3.1%" />
         <Stat label="待发货" value="86" delta="-8.0%" />
         <Stat label="退款率" value="1.2%" delta="-0.3%" />
       </SimpleGrid>

@@ -56,7 +56,7 @@ import { type Column, DataTable, useList, useSelection } from "@go-tenon/ui"
 const columns: Column<Order>[] = [
   { accessor: "number", title: "订单号", fixed: true },
   { accessor: "customer", title: "客户" },
-  { accessor: "amount", title: "金额", sortable: true, textAlign: "right", render: (o) => money(o.amount) },
+  { accessor: "amount", title: "金额", sortable: true },
   { accessor: "note", title: "备注", hidden: true },
 ]
 

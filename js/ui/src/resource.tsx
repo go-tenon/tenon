@@ -102,7 +102,6 @@ export function ResourcePage({
     sortable: f.sortable,
     fixed: i === 0,
     noWrap: f.kind === "datetime" || f.kind === "date" || f.kind === "number",
-    textAlign: f.kind === "number" ? "right" : undefined,
     render: (row) =>
       render[f.name]?.(row[f.name], row) ?? <FieldValue field={f} value={row[f.name]} display={model.display} />,
   }))
