@@ -121,7 +121,9 @@ bun run build   # 即 go tool tenon build
 2. 在每个前端目录中运行 `bun run build`，即 `tenon-start compile`：构建前端，把渲染页面的程序和全部静态文件编译成一个可执行文件 `ssr.bin`，见 [TanStack Start 的接入](../frontend/start.md#compiling)。它的架构与 Go 程序相同（`go env GOARCH`）。
 3. 编译 Go 程序：`go build -trimpath -o bin/api ./cmd/api`。`-trimpath` 去掉二进制中你电脑上的文件路径。每个前端的 `frontend.go` 用 `go:embed` 嵌入它的 `ssr.bin`。
 
-`-o` 可以指定输出的文件；`GOARCH` 等环境变量照常生效。Go 托管 SSR 进程只支持 Linux，在 Mac 上构建时设置 `GOOS=linux`。部署见[部署](deployment.md)。
+`-o` 可以指定输出的文件。`--arch amd64` 或 `--arch arm64` 为另一种架构构建（Linux），例如在 arm64 的机器或 Mac 上构建部署到 amd64 服务器的程序；不写时与本机相同。Go 托管 SSR 进程只支持 Linux。部署见[部署](deployment.md)。
+
+不要用 `GOARCH=amd64 bun run build` 交叉构建：`go tool tenon` 会按 `GOARCH` 把 tenon 本身也编译成目标架构，在本机无法运行。
 
 <a id="add-frontend"></a>
 ## tenon add frontend：再加一个前端

@@ -56,7 +56,7 @@ go build -trimpath -o bin/api ./cmd/api
 
 有前端时，运行的机器要求：
 
-- **Linux**：Go 程序从内存中运行 SSR 程序（memfd），见[服务端渲染](../frontend/ssr.md)。在 macOS 上构建时用 `GOOS=linux GOARCH=amd64 bun run build`，SSR 程序的架构随 `GOARCH`。
+- **Linux**：Go 程序从内存中运行 SSR 程序（memfd），见[服务端渲染](../frontend/ssr.md)。支持 amd64 和 arm64。为另一种架构或在 macOS 上构建时用 `bun run build --arch amd64`（或 `arm64`），Go 程序和 SSR 程序都按这个架构编译。
 - **glibc**：SSR 程序是 Bun 编译的，动态链接 glibc（`libc`、`libm`、`libpthread`、`libdl`），常见的 Debian、Ubuntu、RHEL 系统都有。Alpine 用的是 musl，不能直接运行。
 
 构建之前确认生成的代码都是最新的：生成的客户端提交在代码仓库中，修改接口后忘了重新生成，前端用的就还是旧的类型。另外，记下每次构建对应的提交，出问题时能准确知道线上运行的是哪个版本。

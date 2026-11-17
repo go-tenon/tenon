@@ -13,7 +13,7 @@ import (
 // fake 记录参数；go list -m 输出框架的目录；go build -mod=mod -o BIN（generate 编译应用）写出一个记录参数的伪造应用。
 const fake = `#!/bin/sh
 if [ "$1 $2" = "list -m" ]; then echo "$TENON_FRAMEWORK"; exit 0; fi
-echo "$(basename "$0") $* @$(basename "$PWD")${GOARCH:+ GOARCH=$GOARCH}" >> "$TENON_LOG"
+echo "$(basename "$0") $* @$(basename "$PWD")${GOOS:+ GOOS=$GOOS}${GOARCH:+ GOARCH=$GOARCH}" >> "$TENON_LOG"
 if [ "$1 $2" = "env GOARCH" ]; then echo arm64; exit 0; fi
 if [ "$1 $2 $3" = "build -mod=mod -o" ]; then
 	printf '#!/bin/sh\necho "app $*" >> "$TENON_LOG"\n' > "$4"; chmod +x "$4"
@@ -72,6 +72,25 @@ func TestBuild(t *testing.T) {
 		if !strings.HasPrefix(lines[i], w) {
 			t.Fatalf("log:\n%s", l)
 		}
+	}
+}
+
+// --arch 交叉构建：前端和应用都按目标架构编译（Linux），不读取本机的 GOARCH。
+func TestBuildArch(t *testing.T) {
+	log := newProject(t, map[string]string{"package.json": "{}", "apps/web/vite.config.ts": ""}, "go", "bun")
+	if err := execute(t, "build", "--arch", "amd64"); err != nil {
+		t.Fatal(err)
+	}
+	l, _ := os.ReadFile(log)
+	lines := strings.Split(strings.TrimSpace(string(l)), "\n")
+	want := []string{"bun install --frozen-lockfile @", "bun run build @web GOOS=linux GOARCH=amd64",
+		"go build -trimpath -o bin/api ./cmd/api @", "GOOS=linux GOARCH=amd64"}
+	if len(lines) != 3 || !strings.HasPrefix(lines[0], want[0]) || !strings.HasPrefix(lines[1], want[1]) ||
+		!strings.HasPrefix(lines[2], want[2]) || !strings.HasSuffix(lines[2], want[3]) {
+		t.Fatalf("log:\n%s", l)
+	}
+	if err := execute(t, "build", "--arch", "386"); err == nil || !strings.Contains(err.Error(), "amd64 or arm64") {
+		t.Fatalf("bad arch: %v", err)
 	}
 }
 
