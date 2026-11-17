@@ -79,15 +79,6 @@ func eventually(t *testing.T, timeout time.Duration, cond func() bool) {
 	}
 }
 
-func scheduledCount(t *testing.T, db bun.IDB) int {
-	t.Helper()
-	n, err := db.NewSelect().Table("queue_scheduled").Count(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	return int(n)
-}
-
 type failedRow struct {
 	bun.BaseModel `bun:"table:queue_failed_jobs"`
 
@@ -125,7 +116,6 @@ func TestConfig(t *testing.T) {
 		"dotted stream":   func(c *queue.Config) { c.Stream = "blog.jobs" },
 		"zero replicas":   func(c *queue.Config) { c.Replicas = 0 },
 		"zero lease":      func(c *queue.Config) { c.Lease = 0 },
-		"zero max defer":  func(c *queue.Config) { c.MaxDefer = 0 },
 		"zero attempts":   func(c *queue.Config) { c.MaxAttempts = 0 },
 		"zero concurrent": func(c *queue.Config) { c.Concurrency = 0 },
 	} {
@@ -233,12 +223,11 @@ func TestPublishAll(t *testing.T) {
 	}
 }
 
-// 不超过 MaxDefer 的延迟由 JetStream 的定时消息完成；更晚的任务先存入 queue_scheduled，快到时间再写回 WAL。
+// 延迟由 JetStream 的定时消息完成，到时间才投递。
 func TestDelay(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
 	cfg := queuetest.Config(t)
-	cfg.MaxDefer = time.Second
 	got := make(chan int, 2)
 	start(t, db, cfg, func(w *queue.Worker) {
 		jobs.Handle(w, func(_ context.Context, p payload) error {
@@ -249,7 +238,6 @@ func TestDelay(t *testing.T) {
 	begin := time.Now()
 	publish(t, db, 1, queue.Delay(500*time.Millisecond))
 	publish(t, db, 2, queue.Delay(2*time.Second))
-	eventually(t, time.Second, func() bool { return scheduledCount(t, db) == 1 }) // 只有 2 秒的任务
 	// 定时消息精确到秒，向上取整。
 	at := map[int]time.Duration{}
 	for range 2 {
@@ -265,12 +253,11 @@ func TestDelay(t *testing.T) {
 	}
 }
 
-// 失败的任务按 RetryAfter 重试：不超过 MaxDefer 时由 JetStream 定时投递，更长的经由 queue_scheduled，执行次数接着计算。
+// 失败的任务按 RetryAfter 重试，由 JetStream 定时投递，执行次数接着计算。
 func TestRetry(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
 	cfg := queuetest.Config(t)
-	cfg.MaxDefer = time.Second
 	type attempt struct {
 		n  int
 		at time.Time

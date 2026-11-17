@@ -33,17 +33,6 @@ type envelope struct {
 	Attempts int `json:"attempts,omitempty"`
 }
 
-// scheduledRow 是 queue_scheduled 中的一行：执行时间离现在超过 Config.MaxDefer、等时间临近再交给 JetStream 的任务。
-type scheduledRow struct {
-	bun.BaseModel `bun:"table:queue_scheduled,alias:s"`
-
-	ID          uuid.UUID `bun:"id,pk,type:uuid"` // 任务 ID
-	Topic       string    `bun:"topic,notnull"`
-	Body        []byte    `bun:"body,notnull"`
-	AvailableAt time.Time `bun:"available_at,notnull"`
-	CreatedAt   time.Time `bun:"created_at,notnull"`
-}
-
 type failedJob struct {
 	bun.BaseModel `bun:"table:queue_failed_jobs,alias:f"`
 

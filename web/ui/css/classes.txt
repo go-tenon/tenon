@@ -3817,7 +3817,6 @@ ${width}px
 /pause
 /resume
 /retry
-/scheduled
 /subscription/cancel
 /topics/
 /transform|translate|scale|rotate|perspective|filter/;
@@ -11272,11 +11271,9 @@ ${width}px
 >>=
 >Close</span>
 >Error:
->ID</th>
 >More
 >More</span>
 >Next
->Payload</th>
 >Previous
 >Toggle
 >Topic</th>
@@ -15225,7 +15222,6 @@ Positioner
 Positioner(props
 Positioner,
 PositionerProps
-PostgreSQL
 PoundSterling
 Power
 PowerOff
@@ -21140,7 +21136,6 @@ count++;
 count,
 count:
 count;
-counted
 counter
 counterMap
 counterMap.set(element,
@@ -23891,7 +23886,6 @@ firstFocusableToast.ref?.current?.focus();
 firstInvalid
 firstItem:
 firstLine(j.Error)
-firstLine(string(j.Payload))
 firstLine(v.streamErr.Error())
 firstMeasurement
 firstMonth
@@ -24296,12 +24290,10 @@ formatNumber
 formatNumber(format(date,
 formatNumber,
 formatStep
-formatTime(j.AvailableAt)
 formatTime(j.FailedAt)
 formatTime(j.FailedAt))
 formatTime(r.LastDelivered)
 formatTime(r.PausedUntil)})
-formatTime(v.status.NextScheduled))
 formatWeekdayName(s,
 formats
 formatted
@@ -24418,7 +24410,6 @@ funnel
 funnel-plus
 funnel-x
 furnished
-further
 furthestAncestors
 furthestAncestors.a)
 furthestAncestors.b)
@@ -25925,7 +25916,6 @@ icon-sm
 icon-xs
 icon.
 icon.CircleCheck,
-icon.Clock,
 icon.FileText,
 icon.Inbox,
 icon/offcanvas
@@ -27865,7 +27855,6 @@ list[index];
 list[nextIndex];
 listbox
 listbox,
-listed
 listen
 listen(
 listenForClick(content)
@@ -28643,7 +28632,6 @@ maxY
 max]
 max];
 max]].forEach(([arrow,
-max_defer
 maximize
 maximize-2
 maximum
@@ -29473,7 +29461,6 @@ navGroupView(v
 navLink()})
 navLink(f
 navOverview,
-navScheduled,
 navStart
 navStart)
 navStart,
@@ -30596,7 +30583,6 @@ overshoot
 overshoot);
 overshoots
 overview
-overview.
 overviewSection
 overviewSection(v
 overviewView)
@@ -32289,7 +32275,6 @@ queued
 queueweb
 queueweb.all_topics
 queueweb.attempts
-queueweb.available_at
 queueweb.cannot_undo
 queueweb.confirm_delete
 queueweb.confirm_delete_all
@@ -32308,10 +32293,8 @@ queueweb.in_flight
 queueweb.lag
 queueweb.last_delivered
 queueweb.messages
-queueweb.next
 queueweb.no_failed
 queueweb.no_handler
-queueweb.no_scheduled
 queueweb.no_topics
 queueweb.overview
 queueweb.pause
@@ -32324,9 +32307,6 @@ queueweb.replicas
 queueweb.resume
 queueweb.retry
 queueweb.retry_all
-queueweb.scheduled
-queueweb.scheduled_db
-queueweb.scheduled_note
 queueweb.slot
 queueweb.slot_missing
 queueweb.slot_name
@@ -32336,7 +32316,6 @@ queueweb.state_ok
 queueweb.stream_error
 queueweb.stream_missing
 queueweb.title
-queueweb.view
 queueweb.wal_status
 quote
 r
@@ -34023,8 +34002,6 @@ scheduleVisibilitySync()
 scheduleVisibilitySync();
 scheduled
 scheduled.
-scheduledSection(v
-scheduledView)
 scheduler
 scheduler.
 scheduler.cancel(id);
@@ -35095,7 +35072,6 @@ some
 something
 somewhere
 soon
-sooner
 sooner,
 sort
 sort()).
@@ -36061,7 +36037,6 @@ strconv.Itoa(sideOffset)
 strconv.Itoa(spacing)
 strconv.Itoa(status)
 strconv.Itoa(t)
-strconv.Itoa(v.status.Scheduled))
 strconv.Itoa(v.stream.Deferred))
 strconv.ParseFloat(match[1],
 strconv.ParseFloat(str(value),
@@ -38200,7 +38175,6 @@ v.page.prev;
 v.page.toc
 v.pageTitle(r.page)
 v.pageURL,
-v.pageURL})
 v.query.Topic
 v.searchURL()
 v.searchURL(),

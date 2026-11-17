@@ -115,13 +115,12 @@ validation.unexpected: Unknown field
 validation.failed: Validation failed
 queueweb.all_topics: All
 queueweb.attempts: Attempts
-queueweb.available_at: Runs at
 queueweb.cannot_undo: This cannot be undone.
 queueweb.confirm_delete: Delete this failed job?
 queueweb.confirm_delete_all: Delete these failed jobs?
 queueweb.confirm_retry_all: Retry these failed jobs?
 queueweb.confirm_retry_all_description: Jobs that failed before now are published again.
-queueweb.deferred: In JetStream
+queueweb.deferred: Scheduled
 queueweb.delete: Delete
 queueweb.delete_all: Delete all
 queueweb.deleted: Deleted {{.n}} failed jobs
@@ -135,10 +134,8 @@ queueweb.in_flight: In flight
 queueweb.lag: Lag
 queueweb.last_delivered: Last delivered
 queueweb.messages: Messages
-queueweb.next: Next in PostgreSQL
 queueweb.no_failed: No failed jobs
 queueweb.no_handler: No handler registered
-queueweb.no_scheduled: No scheduled jobs
 queueweb.no_topics: No topics yet
 queueweb.overview: Overview
 queueweb.pause: Pause 1 hour
@@ -152,9 +149,6 @@ queueweb.resume: Resume
 queueweb.retried: Retried {{.n}} failed jobs
 queueweb.retry: Retry
 queueweb.retry_all: Retry all
-queueweb.scheduled: Scheduled jobs
-queueweb.scheduled_db: In PostgreSQL
-queueweb.scheduled_note: Jobs scheduled further out than max_defer wait in PostgreSQL and are listed here; sooner ones are held by JetStream and only counted on the overview.
 queueweb.slot: Replication slot
 queueweb.slot_missing: "Missing: run queue slot recreate"
 queueweb.slot_name: Name
@@ -164,7 +158,6 @@ queueweb.state_ok: OK
 queueweb.stream_error: Cannot read JetStream
 queueweb.stream_missing: "Not created yet: start a worker"
 queueweb.title: Queue
-queueweb.view: View
 queueweb.wal_status: WAL status
 apitoken.invalid: Your session has expired, please sign in again
 auth.expired: Your session has expired, please refresh and try again

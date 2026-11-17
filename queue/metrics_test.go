@@ -43,7 +43,6 @@ func TestRelayMetrics(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
 	cfg := queuetest.Config(t)
-	cfg.MaxDefer = time.Second
 	reader := sdkmetric.NewManualReader()
 	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
 	done := make(chan struct{}, 2)
@@ -65,9 +64,8 @@ func TestRelayMetrics(t *testing.T) {
 			t.Fatal("jobs not handled")
 		}
 	}
-	eventually(t, 5*time.Second, func() bool { return gauges(t, reader)["queue.relay.jobs/scheduled"] == 1 })
 	got := gauges(t, reader)
-	if got["queue.relay.jobs/published"] != 1 || got["queue.relay.jobs/deferred"] != 1 || got["queue.scheduled.jobs"] != 1 {
+	if got["queue.relay.jobs/published"] != 1 || got["queue.relay.jobs/deferred"] != 2 {
 		t.Fatalf("metrics %v", got)
 	}
 	if _, ok := got["queue.relay.lag"]; !ok {

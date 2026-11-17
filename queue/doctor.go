@@ -80,7 +80,7 @@ func Doctor(db *bun.DB, nc *nats.Conn, cfg Config) doctor.Group {
 		}},
 		{Name: "slot", Run: func(ctx context.Context) error {
 			var migrated bool
-			if err := db.NewRaw("SELECT to_regclass('queue_scheduled') IS NOT NULL").Scan(ctx, &migrated); err != nil {
+			if err := db.NewRaw("SELECT to_regclass('queue_failed_jobs') IS NOT NULL").Scan(ctx, &migrated); err != nil {
 				return err
 			}
 			if !migrated {

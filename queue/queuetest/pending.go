@@ -11,7 +11,7 @@ import (
 	"github.com/go-tenon/tenon/queue"
 )
 
-// Pending 返回 db 中 topic 还没转发的任务的 payload：先是 WAL 中的，按提交顺序，再是 queue_scheduled 中的，按存入顺序。
+// Pending 返回 db 中 topic 还没转发的任务的 payload，按提交顺序。
 // 用于只检查发布了哪些任务的测试；Worker 运行时任务会被转发，复制槽也被它占用，所以使用时停掉 Worker。
 // 只能看到已经提交的任务。读取或解码失败时使测试失败。
 //
@@ -41,13 +41,6 @@ func Pending[T any](t testing.TB, db bun.IDB, topic queue.Topic[T]) []T {
 			bodies = append(bodies, m.Content)
 		}
 	}
-	var scheduled [][]byte
-	err = db.NewSelect().Table("queue_scheduled").Column("body").
-		Where("topic = ?", string(topic)).OrderExpr("created_at, id").Scan(ctx, &scheduled)
-	if err != nil {
-		t.Fatalf("queuetest: read queue_scheduled: %v", err)
-	}
-	bodies = append(bodies, scheduled...)
 
 	payloads := make([]T, len(bodies))
 	for i, body := range bodies {

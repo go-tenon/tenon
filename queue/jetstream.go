@@ -37,7 +37,7 @@ func (c Config) streamConfig() jetstream.StreamConfig {
 	}
 }
 
-// ensureStream 创建任务的 stream。已经存在时检查保留策略、subject 和存储方式，
+// ensureStream 创建任务的 stream。已经存在时检查保留策略、subject、存储方式和容量限制（见 checkLimits），
 // 副本数和定时消息与配置不同时更新它；运维调整过的其他设置（例如容量上限）保持不变。
 func ensureStream(ctx context.Context, js jetstream.JetStream, cfg Config) error {
 	want := cfg.streamConfig()
@@ -55,12 +55,28 @@ func ensureStream(ctx context.Context, js jetstream.JetStream, cfg Config) error
 			"want %s, %s and %v: use another stream name", cfg.Stream, have.Retention, have.Storage, have.Subjects,
 			want.Retention, want.Storage, want.Subjects)
 	}
+	if err := checkLimits(cfg.Stream, have); err != nil {
+		return err
+	}
 	if have.Replicas == want.Replicas && have.AllowMsgSchedules && have.Duplicates >= want.Duplicates {
 		return nil
 	}
 	have.Replicas, have.AllowMsgSchedules, have.Duplicates = want.Replicas, true, max(have.Duplicates, want.Duplicates)
 	_, err = js.UpdateStream(ctx, have)
 	return errors.Wrapf(err, "queue: update stream %s", cfg.Stream)
+}
+
+// checkLimits 拒绝会删掉还没处理的任务的 stream 设置。延迟任务作为定时消息在 stream 中一直等到执行时间，
+// 可能是几天甚至几个月：max_age 会在那之前删除它们；容量满时丢弃最早的消息（discard old）删除的也是任务。
+// 容量上限要配合 discard new：满了之后发布失败，任务留在 WAL 中，有空间后再转发。
+func checkLimits(stream string, c jetstream.StreamConfig) error {
+	if c.MaxAge > 0 {
+		return errors.Newf("queue: stream %s has max_age %s, which deletes scheduled jobs before they run: remove the limit", stream, c.MaxAge)
+	}
+	if c.Discard == jetstream.DiscardOld && (c.MaxMsgs > 0 || c.MaxBytes > 0 || c.MaxMsgsPerSubject > 0) {
+		return errors.Newf("queue: stream %s discards old messages when full, which deletes jobs: set discard to new", stream)
+	}
+	return nil
 }
 
 // ensureConsumer 创建或更新 topic 的 consumer。同一个应用的所有 Worker 共用它，每个任务只交给其中一个。

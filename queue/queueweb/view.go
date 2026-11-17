@@ -23,7 +23,6 @@ type nav int
 const (
 	navOverview nav = iota
 	navFailed
-	navScheduled
 )
 
 // frame 是每个页面共用的页头：导航和外部链接。
@@ -115,15 +114,6 @@ func (v failedView) bulkURL(action string) string {
 		u += "?" + url.Values{"topic": {v.query.Topic}}.Encode()
 	}
 	return u
-}
-
-type scheduledView struct {
-	base string
-	list page.Offset[queue.ScheduledJob]
-}
-
-func (v scheduledView) pageURL(p int) string {
-	return web.QueryURL(v.base+"/scheduled", ScheduledQuery{OffsetParams: page.OffsetParams{Page: p, PerPage: v.list.PerPage}})
 }
 
 // t 按请求的语言翻译面板的文案；context 中没有语言（没有经过 httpx.Locale）时用英文的 fallback。

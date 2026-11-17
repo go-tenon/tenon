@@ -24,9 +24,6 @@ type Config struct {
 	// Lease 是 JetStream 等待处理结果的时间（AckWait）。处理期间每 Lease/3 自动延长；
 	// 进程崩溃时任务在 Lease 之后被重新投递。
 	Lease time.Duration `yaml:"lease"`
-	// MaxDefer 是交给 JetStream 定时投递的最长延迟。更晚执行的任务和重试先存入 queue_scheduled，
-	// 快到时间时再转发：它们保存在 PostgreSQL 中，可以在面板中查看，随数据库一起备份。
-	MaxDefer time.Duration `yaml:"max_defer"`
 	// ReplicationDSN 是转发任务的逻辑复制连接，为空时使用 Worker 的数据库连接的配置。
 	// 数据库连接经过 PgBouncer 等连接池时需要设置：复制连接必须直连 PostgreSQL。用户需要 REPLICATION 属性。
 	ReplicationDSN string `yaml:"replication_dsn"`
@@ -35,7 +32,7 @@ type Config struct {
 }
 
 // DefaultConfig 返回默认配置：stream 为 jobs，单副本，并发 10，最多处理 10 次，租约 30 秒，
-// 最长定时 1 小时，停止时最多等待 30 秒。
+// 停止时最多等待 30 秒。
 func DefaultConfig() Config {
 	return Config{
 		Stream:          "jobs",
@@ -43,7 +40,6 @@ func DefaultConfig() Config {
 		Concurrency:     10,
 		MaxAttempts:     10,
 		Lease:           30 * time.Second,
-		MaxDefer:        time.Hour,
 		ShutdownTimeout: 30 * time.Second,
 	}
 }
@@ -68,9 +64,6 @@ func (c Config) Validate() error {
 	}
 	if c.Lease < time.Second {
 		errs = append(errs, errors.New("lease must be at least 1s"))
-	}
-	if c.MaxDefer <= 0 {
-		errs = append(errs, errors.New("max_defer must be positive"))
 	}
 	if c.ShutdownTimeout < 0 {
 		errs = append(errs, errors.New("shutdown_timeout must not be negative"))

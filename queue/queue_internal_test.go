@@ -8,6 +8,7 @@ import (
 
 	"github.com/cockroachdb/errors"
 	"github.com/google/uuid"
+	"github.com/nats-io/nats.go/jetstream"
 
 	"github.com/go-tenon/tenon/errorx"
 )
@@ -97,5 +98,27 @@ func TestMsgID(t *testing.T) {
 	if msgID(id, 1, at) != msgID(id, 1, at.Add(time.Microsecond)) ||
 		msgID(id, 1, at) == msgID(id, 2, at) || msgID(id, 1, at) == msgID(id, 1, at.Add(time.Second)) {
 		t.Error("msgID must identify one execution of a job")
+	}
+}
+
+// 会删掉还没处理的任务的 stream 设置被拒绝：max_age，以及容量满时丢弃最早的消息。
+func TestCheckLimits(t *testing.T) {
+	for name, c := range map[string]jetstream.StreamConfig{
+		"max age":          {MaxAge: 24 * time.Hour, MaxMsgs: -1, MaxBytes: -1, MaxMsgsPerSubject: -1},
+		"max bytes, old":   {MaxBytes: 1 << 30, MaxMsgs: -1, MaxMsgsPerSubject: -1, Discard: jetstream.DiscardOld},
+		"max msgs, old":    {MaxMsgs: 1000, MaxBytes: -1, MaxMsgsPerSubject: -1, Discard: jetstream.DiscardOld},
+		"per subject, old": {MaxMsgsPerSubject: 10, MaxMsgs: -1, MaxBytes: -1, Discard: jetstream.DiscardOld},
+	} {
+		if checkLimits("jobs", c) == nil {
+			t.Errorf("%s accepted", name)
+		}
+	}
+	for name, c := range map[string]jetstream.StreamConfig{
+		"no limits":      {MaxMsgs: -1, MaxBytes: -1, MaxMsgsPerSubject: -1},
+		"max bytes, new": {MaxBytes: 1 << 30, MaxMsgs: -1, MaxMsgsPerSubject: -1, Discard: jetstream.DiscardNew},
+	} {
+		if err := checkLimits("jobs", c); err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
 	}
 }

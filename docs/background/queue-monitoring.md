@@ -98,7 +98,7 @@ w := queue.NewWorker(a.db, a.nc, a.cfg.Queue, nil,
 <a id="stats-command"></a>
 ## 队列状态
 
-任务在三个地方等待：还没转发的在 PostgreSQL 的复制槽中；延迟超过 `max_defer` 的在 `queue_scheduled` 表中；其余的在 JetStream 中，包括等待处理、处理中和定时投递的任务。`queue` 命令和[队列面板](#panel)把它们放在一起显示。
+任务在两个地方等待：还没转发的在 PostgreSQL 的复制槽中；其余的在 JetStream 中，包括等待处理、处理中和定时投递的任务。`queue` 命令和[队列面板](#panel)把它们放在一起显示。
 
 `queuecmd.New` 返回 `queue` 命令。它和其他需要数据库的命令一样在 [bootstrap.Commands](../concepts/actions.md#as-commands) 中声明，`queuecmd.WithJetStream` 让它同时显示 JetStream 中的状态，使用应用的 NATS 连接 `a.nc`：
 
@@ -106,7 +106,7 @@ w := queue.NewWorker(a.db, a.nc, a.cfg.Queue, nil,
 queuecmd.New(a.db, queuecmd.WithJetStream(a.nc, a.cfg.Queue)),
 ```
 
-`queue status` 显示复制槽是否有 worker 在转发、积压了多少 WAL、`queue_scheduled` 中等待的任务，以及 JetStream 中的 stream 和每个 topic：
+`queue status` 显示复制槽是否有 worker 在转发、积压了多少 WAL，以及 JetStream 中的 stream 和每个 topic：
 
 ```bash
 ./bin/api queue status
@@ -117,8 +117,6 @@ slot            tenon_queue_3f2a9c1e5b7d4e60
 state           relaying (pid 48213)
 wal status      reserved
 lag             12.4 KiB
-scheduled       3
-next scheduled  2026-11-14 09:00:00
 stream          jobs
 messages        28 (7.4 KiB)
 replicas        1
@@ -131,7 +129,7 @@ sms.send      4        0          0            -                    no handler: 
 ```
 
 - `state` 为 `idle` 时没有 worker 在转发；为 `missing` 或 `lost` 时 worker 拒绝启动，用 `queue slot recreate` 重建复制槽，见[重建复制槽](../installation/operations.md#queue-recovery)。
-- `scheduled` 是 `queue_scheduled` 中的任务，`deferred` 是 JetStream 中定时投递的任务，即延迟不超过 `max_defer` 的任务和重试。
+- `deferred` 是 JetStream 中定时投递的任务：延迟任务和等待重试的任务。
 - `PENDING` 是等待处理的任务，`IN FLIGHT` 是已经交给 worker、还没完成的任务，`REDELIVERED` 是租约到期或停止时放回、再次投递的任务。
 - `STATE` 为 `no handler` 时，没有 worker 为这个 topic 注册处理函数，任务一直等待，通常是忘了注册或者 topic 名写错了；为 `stalled` 时有任务在等待，却没有 worker 在领取，通常是 worker 全部停止了。
 
@@ -157,12 +155,10 @@ ID                                    TOPIC      ATTEMPTS  FAILED AT            
 
 - **概览**，每 5 秒刷新一次：
     - 复制槽是否有 worker 在转发、WAL 状态和积压；
-    - 延迟任务：JetStream 中定时投递的条数，`queue_scheduled` 中的条数和最早的执行时间；
-    - JetStream 的 stream：消息数、占用的存储、副本数；
+    - JetStream 的 stream：消息数、占用的存储、副本数，定时投递的任务数；
     - 每个 topic 一行：等待处理、处理中、重新投递和失败的任务数，最近一次投递的时间，状态与 `queue status` 的 `STATE` 相同；
 - **暂停和恢复 topic**：概览中每个 topic 有“暂停 1 小时”按钮，暂停的 topic 有“恢复”按钮，见下文；
 - **失败任务**：按 topic 筛选、翻页；详情页显示格式化的 payload、元数据、完整的错误和堆栈；单条重试或删除，按 topic 全部重试或全部删除；
-- **延迟任务**：`queue_scheduled` 中等待的任务，按执行时间排列。JetStream 中定时投递的任务只统计条数。
 
 吞吐、耗时等指标交给 Grafana（见[可观测性](../general/telemetry.md#queue)），面板只在页头放它的链接；重建复制槽只能用 `queue slot recreate`。面板不新增任何表。
 

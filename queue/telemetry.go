@@ -31,10 +31,9 @@ const system = "nats"
 // 转发的指标没有 messaging 属性：
 //
 //   - queue.relay.jobs（计数）：从 WAL 读到并转发的任务数，属性 queue.relay.route 是去向：
-//     published（立即交给 JetStream）、deferred（JetStream 定时消息）、scheduled（存入 queue_scheduled）。
+//     published（立即交给 JetStream）或 deferred（JetStream 定时消息）。
 //   - queue.relay.active（仪表）：这个实例正在转发时为 1，否则为 0。所有实例之和为 0 时没有实例在转发，WAL 会一直累积。
 //   - queue.relay.lag（仪表，字节）：复制槽中还没确认的 WAL，每个实例采集时查询一次。
-//   - queue.scheduled.jobs（仪表）：queue_scheduled 中等待的任务数。
 //
 // 每次执行是一个 consumer span，名称是 "process <topic>"，接在发布任务时的链路之后：
 // HTTP 请求中发布的任务，执行时出现在同一条链路中。处理失败或重试时 span 标记为错误。

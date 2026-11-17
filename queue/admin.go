@@ -51,8 +51,7 @@ type StreamStatus struct {
 	// Replicas 是副本数；Leader 是集群中负责这个 stream 的服务器，单个服务器时为空。
 	Replicas int
 	Leader   string
-	// Deferred 是等待 JetStream 到时间投递的定时消息：不超过 MaxDefer 的延迟任务和重试。
-	// 更晚的在 queue_scheduled 中，见 Status.Scheduled。
+	// Deferred 是等待 JetStream 到时间投递的定时消息：延迟任务和重试。
 	Deferred int
 	// Topics 是有 consumer 或者有任务的 topic，按名字排序。
 	Topics []TopicStatus

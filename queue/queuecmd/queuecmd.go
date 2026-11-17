@@ -41,7 +41,7 @@ func WithJetStream(nc *nats.Conn, cfg queue.Config) Option {
 
 // New 返回 queue 命令。db 是发布任务的数据库：
 //
-//	queue status                         复制槽是否有 worker 在转发、积压多少，queue_scheduled 中的任务；
+//	queue status                         复制槽是否有 worker 在转发、积压多少；
 //	                                     设置了 WithJetStream 时还有 JetStream 中的任务
 //	queue failed [--topic t] [--limit n] 从新到旧列出失败任务
 //	queue slot recreate [--force]        复制槽丢失或失效后重建它
@@ -78,10 +78,6 @@ func New(db bun.IDB, opts ...Option) *cobra.Command {
 			if s.Exists {
 				fmt.Fprintf(w, "wal status\t%s\n", s.WALStatus)
 				fmt.Fprintf(w, "lag\t%s\n", bytes(s.Lag))
-			}
-			fmt.Fprintf(w, "scheduled\t%d\n", s.Scheduled)
-			if !s.NextScheduled.IsZero() {
-				fmt.Fprintf(w, "next scheduled\t%s\n", s.NextScheduled.Local().Format(time.DateTime))
 			}
 			if o.jetStream == nil {
 				return w.Flush()

@@ -3,13 +3,12 @@ package queue
 import (
 	"context"
 	"database/sql"
-	"time"
 
 	"github.com/cockroachdb/errors"
 	"github.com/uptrace/bun"
 )
 
-// Status 是队列在数据库一侧的状态：转发任务的复制槽和 queue_scheduled。JetStream 中积压的任务由 NATS 统计。
+// Status 是队列在数据库一侧的状态：转发任务的复制槽。JetStream 中积压的任务由 NATS 统计，见 Admin.Status。
 type Status struct {
 	Slot string // 复制槽的名字，见 SlotName
 	// Exists 报告复制槽是否存在。不存在时没有执行迁移，或者槽在恢复备份、主备切换后丢失，见 RecreateSlot。
@@ -22,9 +21,6 @@ type Status struct {
 	WALStatus string
 	// Lag 是 Worker 还没确认的 WAL 字节数，即复制槽保留的积压。它包含整个数据库的写入，不只是任务。
 	Lag int64
-	// Scheduled 是 queue_scheduled 中等待的任务数，NextScheduled 是其中最早的执行时间，没有时为零值。
-	Scheduled     int
-	NextScheduled time.Time
 }
 
 // ReadStatus 读取 db 所在数据库的队列状态。
@@ -51,12 +47,6 @@ func ReadStatus(ctx context.Context, db bun.IDB) (Status, error) {
 		s.Exists, s.Active, s.ActivePID = true, row.Active, int(row.ActivePID.Int64)
 		s.WALStatus, s.Lag = row.WALStatus.String, row.Lag.Int64
 	}
-	var next sql.NullTime
-	err = db.NewRaw("SELECT count(*), min(available_at) FROM queue_scheduled").Scan(ctx, &s.Scheduled, &next)
-	if err != nil {
-		return Status{}, errors.Wrap(err, "queue: read queue_scheduled")
-	}
-	s.NextScheduled = next.Time
 	return s, nil
 }
 

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"testing"
 	"time"
 
@@ -121,32 +120,5 @@ func TestFailedJobsBulk(t *testing.T) {
 	}
 	if rows := failedRows(t, db); len(rows) != 1 || rows[0].ID != fresh {
 		t.Fatalf("remaining %+v", rows)
-	}
-}
-
-// 延迟太久的任务在 queue_scheduled 中等待，ListScheduled 按执行时间列出它们。
-func TestListScheduled(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	ctx := context.Background()
-	for _, n := range []int{72, 48} {
-		at := time.Now().UTC().Add(time.Duration(n) * time.Hour)
-		body := fmt.Sprintf(`{"id":%q,"payload":{"n":%d},"metadata":{"request_id":"r1"},"available_at":%q}`, uuid.New(), n, at.Format(time.RFC3339Nano))
-		_, err := db.ExecContext(ctx, `INSERT INTO queue_scheduled (id, topic, body, available_at, created_at) VALUES (?, 'report', ?, ?, now())`,
-			uuid.New(), []byte(body), at)
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	list, err := queue.ListScheduled(ctx, db, queue.ScheduledQuery{})
-	if err != nil || len(list) != 2 || list[0].Topic != "report" || string(list[0].Payload) != `{"n":48}` ||
-		list[0].Metadata["request_id"] != "r1" || !list[0].AvailableAt.Before(list[1].AvailableAt) {
-		t.Fatalf("list %+v err %v", list, err)
-	}
-	if other, err := queue.ListScheduled(ctx, db, queue.ScheduledQuery{Topic: "mail"}); err != nil || len(other) != 0 {
-		t.Fatalf("other topic %+v err %v", other, err)
-	}
-	if page, err := queue.ListScheduled(ctx, db, queue.ScheduledQuery{Limit: 1, Offset: 1}); err != nil || len(page) != 1 || string(page[0].Payload) != `{"n":72}` {
-		t.Fatalf("page %+v err %v", page, err)
 	}
 }

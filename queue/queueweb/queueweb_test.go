@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -142,24 +141,6 @@ func TestRejectsCrossSite(t *testing.T) {
 	}
 	if _, err := queue.NewFailedJobs(db).Get(context.Background(), id); err != nil {
 		t.Fatalf("deleted by cross-site request: %v", err)
-	}
-}
-
-func TestScheduled(t *testing.T) {
-	t.Parallel()
-	db, c := setup(t)
-	if res := c.Get("/ops/queue/scheduled", ops); res.Code != http.StatusOK || !strings.Contains(res.Text(), "No scheduled jobs") {
-		t.Fatalf("empty: %d\n%s", res.Code, res.Text())
-	}
-	at := time.Now().UTC().Add(72 * time.Hour)
-	body := fmt.Sprintf(`{"id":%q,"payload":{"n":1},"available_at":%q}`, uuid.New(), at.Format(time.RFC3339Nano))
-	if _, err := db.ExecContext(context.Background(), `INSERT INTO queue_scheduled (id, topic, body, available_at, created_at) VALUES (?, 'report', ?, ?, now())`,
-		uuid.New(), []byte(body), at); err != nil {
-		t.Fatal(err)
-	}
-	res := c.Get("/ops/queue/scheduled", ops)
-	if res.Code != http.StatusOK || !strings.Contains(res.Text(), "report") || !strings.Contains(res.Text(), "{&#34;n&#34;:1}") {
-		t.Fatalf("scheduled: %d\n%s", res.Code, res.Text())
 	}
 }
 

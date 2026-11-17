@@ -68,7 +68,7 @@ worker 启动时在 JetStream 中创建保存任务的 stream（默认名为 `jo
 
 PostgreSQL 需要 17 以上的版本，开启逻辑复制（`wal_level = logical`，修改后需要重启），应用的数据库用户需要 `REPLICATION` 属性（`ALTER ROLE app REPLICATION`）。其他设置和它们的作用见[运维](../installation/operations.md#queue)。云数据库在参数组中开启逻辑复制，例如 RDS 的 `rds.logical_replication`。本地开发时，[入门教程第 2 章](../tutorial/02-infrastructure.md#infrastructure)的 `compose.yaml` 已经设置好了。`queue.Doctor` 逐项检查这些要求，不满足时给出修改方法，见[自检](../installation/doctor.md)。
 
-队列的迁移创建两张表和一个逻辑复制槽：`queue_scheduled` 保存执行时间较晚的任务，`queue_failed_jobs` 保存失败的任务；复制槽记录 worker 转发到了哪里。使用前先[发布](../database/migrations.md#publishing-framework-migrations)这些迁移：
+队列的迁移创建一张表和一个逻辑复制槽：`queue_failed_jobs` 保存失败的任务，复制槽记录 worker 转发到了哪里。使用前先[发布](../database/migrations.md#publishing-framework-migrations)这些迁移：
 
 ```go
 migrationCmd.AddCommand(migratecmd.Publish(
@@ -140,7 +140,7 @@ var PublishAt = queue.Topic[uuid.UUID]("articles.publish")
 err := PublishAt.Publish(ctx, tx, item.ID, queue.At(item.PublishAt))
 ```
 
-离执行时间不超过 `max_defer`（默认 1 小时）的任务转发为 JetStream 的定时消息，到时间由 JetStream 投递，精确到秒；更晚的先存入 PostgreSQL 的 `queue_scheduled`，快到时间再转发，所以延迟多久都可以，还可以在[队列面板](queue-monitoring.md#panel)中查看。
+还没到执行时间的任务转发为 JetStream 的定时消息，到时间由 JetStream 投递，精确到秒，延迟多久都可以。它们一直保存在 JetStream 中，几天、几个月之后才执行的任务也是，所以生产环境的 stream 要有多个副本，见[运维](../installation/operations.md#queue-jetstream)。
 
 业务包自己的 topic 和处理它的业务动作声明在同一个文件中，见[队列任务](../concepts/actions.md#as-jobs)。
 
@@ -235,14 +235,13 @@ queue:
   concurrency: 10            # 每个 topic 同时处理的任务数
   max_attempts: 10           # 最多执行的次数
   lease: 30s                 # JetStream 等待处理结果的时间，见下文
-  max_defer: 1h              # 交给 JetStream 定时投递的最长延迟，更晚的存入 queue_scheduled
   replication_dsn: ""        # 转发任务的复制连接；数据库连接经过 PgBouncer 时设为直连 PostgreSQL 的地址
   shutdown_timeout: 30s      # 停止时等待处理中的任务的最长时间
 ```
 
 `concurrency` 是每个 worker 实例的上限，部署 3 个实例时同一个 topic 最多有 30 个任务同时执行。
 
-topic `mail.send` 的任务发布到 subject `jobs.job.mail.send`，等待投递的定时消息在 `jobs.delay.*` 中，`jobs` 是 `stream` 的值。worker 启动时创建 stream；它已经存在时，检查保留策略和 subject 是否符合要求，`replicas` 不同时更新它，运维调整过的其他设置（例如容量上限）保持不变。
+topic `mail.send` 的任务发布到 subject `jobs.job.mail.send`，等待投递的定时消息在 `jobs.delay.*` 中，`jobs` 是 `stream` 的值。worker 启动时创建 stream；它已经存在时，检查保留策略和 subject 是否符合要求，`replicas` 不同时更新它，运维调整过的其他设置（例如容量上限）保持不变。设置了 `max_age`，或者容量满时丢弃最早的消息（discard old）时，worker 拒绝启动：这两种设置会删掉还没执行的任务。
 
 `concurrency` 和 `max_attempts` 是所有 topic 的默认值。个别 topic 需要不同的值时，在注册时用 `queue.Concurrency`、`queue.MaxAttempts` 覆盖，例如调用模型的任务 `article.Summarize.Handle(w, summarize.Job, queue.Concurrency(2))`。
 
@@ -255,7 +254,7 @@ topic `mail.send` 的任务发布到 subject `jobs.job.mail.send`，等待投递
 | --- | --- | --- | --- | --- | --- | --- |
 | 等待 | 1 秒 | 16 秒 | 81 秒 | 约 4 分钟 | 约 10 分钟 | 约 1.8 小时 |
 
-默认最多执行 10 次，从第一次失败到最后一次重试约 4.3 小时，足以跨过大多数第三方服务的故障。不超过 `max_defer` 的等待由 JetStream 的定时消息完成，更长的等待存入 `queue_scheduled`。同一个 topic 的其他任务照常处理。
+默认最多执行 10 次，从第一次失败到最后一次重试约 4.3 小时，足以跨过大多数第三方服务的故障。重试之前的等待由 JetStream 的定时消息完成，同一个 topic 的其他任务照常处理。
 
 是否重试由错误的[分类](../general/errors.md#error-kinds)决定：
 

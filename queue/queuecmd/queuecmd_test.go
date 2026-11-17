@@ -103,17 +103,6 @@ func TestStatusAndRecreate(t *testing.T) {
 	if s := status(t, db, "wal status"); s != "reserved" {
 		t.Fatalf("wal status %q", s)
 	}
-	at := time.Now().Add(48 * time.Hour)
-	if _, err := db.ExecContext(ctx, `INSERT INTO queue_scheduled (id, topic, body, available_at, created_at)
-		VALUES (?, 'mail', '{}', ?, now())`, uuid.New(), at.UTC()); err != nil {
-		t.Fatal(err)
-	}
-	if s := status(t, db, "scheduled"); s != "1" {
-		t.Fatalf("scheduled %q", s)
-	}
-	if s := status(t, db, "next scheduled"); s != at.Local().Format(time.DateTime) {
-		t.Fatalf("next scheduled %q", s)
-	}
 
 	if _, err := execute(db, "slot", "recreate"); !errors.Is(err, queue.ErrSlotHealthy) {
 		t.Fatalf("recreate a healthy slot: %v", err)

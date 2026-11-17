@@ -38,18 +38,17 @@ func newJobMetrics(mp metric.MeterProvider) jobMetrics {
 const (
 	routePublished = "published" // 已经到时间，立即交给 JetStream
 	routeDeferred  = "deferred"  // 作为 JetStream 的定时消息
-	routeScheduled = "scheduled" // 存入 queue_scheduled
 )
 
 // statusTimeout 是采集指标时读取队列状态的超时。
 const statusTimeout = 5 * time.Second
 
-// observeRelay 创建转发的指标：转发的任务数，以及采集时读取的复制槽积压、是否在转发、queue_scheduled 的任务数。
+// observeRelay 创建转发的指标：转发的任务数，以及采集时读取的复制槽积压、是否在转发。
 // 每个 Worker 实例都报告积压，只要还有一个实例活着就能看到；所有实例的 queue.relay.active 之和为 0 说明没有实例在转发。
 func observeRelay(mp metric.MeterProvider, w *Worker) {
 	meter := mp.Meter(scopeName)
 	jobs, err := meter.Int64Counter("queue.relay.jobs", metric.WithUnit("{job}"),
-		metric.WithDescription("Jobs relayed from the WAL, by route: published, deferred or scheduled."))
+		metric.WithDescription("Jobs relayed from the WAL, by route: published or deferred."))
 	if err != nil {
 		panic(errors.Wrap(err, "queue: create queue.relay.jobs"))
 	}
@@ -62,11 +61,6 @@ func observeRelay(mp metric.MeterProvider, w *Worker) {
 		metric.WithDescription("WAL retained by the replication slot that workers have not confirmed."))
 	if err != nil {
 		panic(errors.Wrap(err, "queue: create queue.relay.lag"))
-	}
-	scheduled, err := meter.Int64ObservableGauge("queue.scheduled.jobs", metric.WithUnit("{job}"),
-		metric.WithDescription("Jobs waiting in queue_scheduled until they are within max_defer."))
-	if err != nil {
-		panic(errors.Wrap(err, "queue: create queue.scheduled.jobs"))
 	}
 	_, err = meter.RegisterCallback(func(ctx context.Context, o metric.Observer) error {
 		var a int64
@@ -83,9 +77,8 @@ func observeRelay(mp metric.MeterProvider, w *Worker) {
 		if s.Exists {
 			o.ObserveInt64(lag, s.Lag)
 		}
-		o.ObserveInt64(scheduled, int64(s.Scheduled))
 		return nil
-	}, active, lag, scheduled)
+	}, active, lag)
 	if err != nil {
 		panic(errors.Wrap(err, "queue: register relay metrics"))
 	}
