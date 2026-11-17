@@ -13,7 +13,7 @@
 
 下面以 [OpenObserve](https://openobserve.ai/) 的浏览器 SDK 为例。其他平台（例如 Sentry）的做法相同，换成它的 SDK 即可。
 
-阅读前需要了解：[可观测性](telemetry.md)；[应用骨架](../frontend/app-shell.md)中的 `createApp`。
+阅读前需要了解：[可观测性](telemetry.md)；[搭建前端应用](../frontend/app.md#creating-the-app)中的 `createApp`。
 
 - [安装 SDK](#installing)
 - [页面中的错误](#route-errors)

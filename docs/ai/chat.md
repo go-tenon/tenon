@@ -266,14 +266,14 @@ const { messages, sendMessage, addToolApprovalResponse } = useChat({
 });
 ```
 
-React 前端可以直接用 `@go-tenon/ui/chat` 的 [`useAssistantChat`](../frontend/app-shell-features.md#ai-chat)，它按上面的方式配置好 `useChat`，还处理了插话和停止。
+React 前端可以直接用 `@go-tenon/ui/chat` 的 [`useAssistantChat`](../frontend/features.md#ai-chat)，它按上面的方式配置好 `useChat`，还处理了插话和停止。
 
 `Runs.Submit` 在后台开始一次运行后立即返回，运行独立于请求，请求结束后照常继续。它也独立于 [`httpx.Timeout`](../http/middleware.md#request-timeout)，助手的路由和其他 API 装在同一组中间件下即可。对话正在回答时再次提交，`Submit` 返回 `chat.ErrBusy`（`409`）。
 
 <a id="files"></a>
 ### 发送图片和文件
 
-`useChat` 的 `sendMessage` 可以带上文件，`Submit` 把它们和文字一起交给模型，模型直接看到图片、听到音频、读到 PDF。使用 `@go-tenon/ui/chat` 时，`send(text, files)` 在发送前检查文件的类型和大小，现成的对话界面带有附件按钮，见[附件](../frontend/app-shell-features.md#chat-attachments)。直接使用 `useChat` 时：
+`useChat` 的 `sendMessage` 可以带上文件，`Submit` 把它们和文字一起交给模型，模型直接看到图片、听到音频、读到 PDF。使用 `@go-tenon/ui/chat` 时，`send(text, files)` 在发送前检查文件的类型和大小，`useAssistantComposer` 管理输入框中待发送的附件，见[附件](../frontend/features.md#chat-attachments)。直接使用 `useChat` 时：
 
 ```tsx
 <form onSubmit={(e) => {

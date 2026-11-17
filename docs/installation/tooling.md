@@ -147,7 +147,7 @@ return ssr.Run(ctx, serve, webPages, adminPages)
 
 挂载放在 `/*` 之前：路由按顺序匹配，放在后面的话，`/admin/` 下的请求已经被 `/*` 接走了。同时导入 `<你的 module>/apps/admin`。
 
-`--style` 选择样式预设，见[界面组件](../frontend/ui.md)：
+`--style` 选择样式预设，见[样式预设与主题](../frontend/app.md#presets)：
 
 | 样式 | 内容 |
 | --- | --- |

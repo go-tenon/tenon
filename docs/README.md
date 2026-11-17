@@ -99,13 +99,15 @@ Tenon 是一个用 Go 构建后端服务的框架。业务逻辑写成[业务动
 
 网页用 React、Mantine 和 TanStack Start 编写，由 Go 托管的 Bun 进程渲染，调用 HTTP 接口：
 
+- [搭建前端应用](frontend/app.md)：创建应用、样式预设、登录、权限、错误页和新版本提示
+- [布局与导航](frontend/layout.md)：应用外壳、侧栏菜单、顶栏、多标签和租户切换
+- [列表与表单](frontend/lists-forms.md)：地址中的列表状态、表格、按生成的规则校验的表单
+- [资源与设置页面](frontend/resources.md)：在 Go 中声明增删改查和设置的页面，界面按声明渲染
+- [后台功能](frontend/features.md)：通知、后台操作、操作记录、导入导出、队列面板和 AI 对话
+- [官网与文档站](frontend/site.md)：服务端渲染与预渲染、官网和文档页的布局
 - [服务端渲染](frontend/ssr.md)：SSR 程序嵌入 Go 程序，Go 是唯一的入口
 - [TanStack Start 的接入](frontend/start.md)：服务端渲染与浏览器调用同一组接口、预渲染和编译
-- [界面组件](frontend/ui.md)：三套样式预设、应用外壳、登录页、表格、表单和资源页面
-- [应用骨架](frontend/app-shell.md)：登录检查、权限、菜单与布局
-- [应用骨架：页面中的常用功能](frontend/app-shell-features.md)：多标签、租户、表单、列表与通知
 - [前端规范](frontend/conventions.md)：前端用什么技术、目录怎样组织、代码怎样写
-- [资源](frontend/resources.md)：在 Go 中声明增删改查的页面，界面按声明渲染
 - [服务端推送](http/sse.md)：服务端主动把进度、通知推给浏览器
 
 ## 第五阶段：常用功能

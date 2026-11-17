@@ -33,7 +33,7 @@
 <a id="choosing-ui-library"></a>
 ### 按前端选择样式预设
 
-所有前端都用同一套组件库 [Mantine](https://mantine.dev) 和框架的 [`@go-tenon/ui`](ui.md)，按前端的用途选择样式预设和渲染方式：
+所有前端都用同一套组件库 [Mantine](https://mantine.dev) 和框架的 [`@go-tenon/ui`](app.md)，按前端的用途选择样式预设和渲染方式：
 
 | 前端 | 样式预设 | 渲染 |
 | --- | --- | --- |
@@ -41,7 +41,7 @@
 | 面向客户的后台（如租户控制台）、用户端 | `--style console` | 只在浏览器中渲染 |
 | 公开页面（官网、内容站、帮助中心） | `--style site` | 服务端渲染，不随请求变化的页面构建时预渲染 |
 
-三套预设共用一套设计语言，品牌色在每个前端的 `src/theme.ts` 中设置，看起来仍然是一个产品，见[样式预设](ui.md#presets)。
+三套预设共用一套设计语言，品牌色在每个前端的 `src/theme.ts` 中设置，看起来仍然是一个产品，见[样式预设](app.md#presets)。
 
 <a id="shared-stack"></a>
 ### 技术栈
@@ -176,9 +176,9 @@ apps/admin/
 ### 路由
 
 - 路由文件只负责：路径与 search 参数的校验、权限要求、数据预加载、加载与错误状态。页面组件放在 `features/` 中。
-- 分页、排序、筛选、选中的子页签放在 search 参数中，刷新和分享链接后保持不变，见[列表](app-shell-features.md#lists)。
-- 登录检查放在布局路由上统一处理，见[登录检查](app-shell.md#requiring-sign-in)。
-- 菜单由路由的元数据（`staticData`）生成，不手写第二份路由表，见[页面的元数据](app-shell.md#route-metadata)。
+- 分页、排序、筛选、选中的子页签放在 search 参数中，刷新和分享链接后保持不变，见[列表](lists-forms.md#lists)。
+- 登录检查放在布局路由上统一处理，见[登录](app.md#requiring-sign-in)。
+- 菜单由路由的元数据（`staticData`）生成，不手写第二份路由表，见[页面的元数据](app.md#route-metadata)。
 - 前端的权限判断只决定显示什么，权限名使用生成的类型；接口的授权由后端负责。
 
 <a id="server-data"></a>
@@ -207,7 +207,7 @@ apps/admin/
 <a id="forms"></a>
 ### 表单
 
-- 表单用 `@mantine/form`，对接后端的表单用 `@go-tenon/ui` 的 `useSchemaForm`：校验规则是生成的，规则和提示与服务端相同，见[表单](ui.md#forms)。不用 zod 重写一遍规则；zod 只用于纯前端、不提交给后端的表单。
+- 表单用 `@mantine/form`，对接后端的表单用 `@go-tenon/ui` 的 `useSchemaForm`：校验规则是生成的，规则和提示与服务端相同，见[表单](lists-forms.md#forms)。不用 zod 重写一遍规则；zod 只用于纯前端、不提交给后端的表单。
 - 服务端返回的字段错误用 `applyServerErrors` 设置到对应字段上，其余错误交给 `FormError` 显示。
 - 枚举的选项和显示文字使用生成的枚举，不手写，见[枚举](client-react.md#ts-enums)。
 - 提交中禁用提交按钮；提交成功后关闭弹窗或跳转，并让相关查询失效。
@@ -215,7 +215,7 @@ apps/admin/
 <a id="styles"></a>
 ### 样式
 
-- 主题在 `src/theme.ts` 中用 `createUiTheme` 设置：样式预设、品牌色、圆角、字体，见[样式预设](ui.md#presets)。不在组件中写固定的颜色值，用 Mantine 的主题颜色（`c="dimmed"`、`color="red"`）和 CSS 变量。
+- 主题在 `src/theme.ts` 中用 `createUiTheme` 设置：样式预设、品牌色、圆角、字体，见[样式预设](app.md#presets)。不在组件中写固定的颜色值，用 Mantine 的主题颜色（`c="dimmed"`、`color="red"`）和 CSS 变量。
 - 布局用 Mantine 的 `Stack`、`Group`、`Grid`，间距用主题的尺寸（`gap="md"`）。组件局部的样式用 `classNames`/`styles` 或 CSS Modules，不覆盖 Mantine 的内部类名。
 - 亮色和暗色都要能用：用主题颜色就自动适配，自己写的 CSS 用 `light-dark()` 或 Mantine 的变量。
 
