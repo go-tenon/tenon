@@ -46,13 +46,11 @@ type bridge struct {
 
 	members *membership
 
-	// 控制消息和丢失消息的处理可能再向 Hub 发布（例如断开连接时的离开事件），
-	// 而 deliver 在 Hub 的投递中调用，此时禁止发布，所以它们排队交给 run 处理，保持先后顺序。
-	mu    sync.Mutex
-	tasks []func()
-	wake  chan struct{}
-	done  chan struct{}
-	once  sync.Once
+	mu    sync.Mutex    // 保护 tasks
+	tasks []func()      // 交给 run 依次执行的任务：控制消息和丢失消息的处理可能再向 Hub 发布（例如断开连接时的离开事件），deliver 在 Hub 的投递中调用时禁止发布，所以排队处理，保持先后顺序
+	wake  chan struct{} // 有新任务时唤醒 run
+	done  chan struct{} // 关闭时 run 退出
+	once  sync.Once     // 保证 done 只关闭一次
 }
 
 // later 把 task 排到 run 中执行，不阻塞。

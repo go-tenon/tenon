@@ -58,10 +58,8 @@ type recoveryRow struct {
 
 // TOTPSetup 是开始设置 TOTP 时交给用户的信息。
 type TOTPSetup struct {
-	// Secret 是 base32 编码的密钥，供无法扫码时手动输入。
-	Secret string
-	// URI 是 otpauth:// 地址，渲染成二维码，用身份验证器 App 扫描。
-	URI string
+	Secret string // base32 编码的密钥，供无法扫码时手动输入。
+	URI    string // otpauth:// 地址，渲染成二维码，用身份验证器 App 扫描。
 }
 
 // SetupTOTP 为 ref 生成新的 TOTP 密钥，返回给用户扫码；用户输入验证器显示的验证码后用 ConfirmTOTP 启用。

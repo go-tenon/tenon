@@ -12,16 +12,13 @@ func Describe(description string) TaskOption { return func(t *task) { t.descript
 
 // Task 描述一个注册的任务，由 Tasks 返回。
 type Task struct {
-	Name        string
-	Description string
-	// Expr 是 Add 时传入的表达式。
-	Expr string
-	// Location 是计算 cron 表达式使用的时区。
-	Location      *time.Location
+	Name          string
+	Description   string
+	Expr          string         // Add 时传入的表达式。
+	Location      *time.Location // 计算 cron 表达式使用的时区。
 	EveryInstance bool
 	AllowOverlap  bool
-	// Timeout 是 Timeout 选项设置的每次执行的时长上限，0 表示不限制。
-	Timeout time.Duration
+	Timeout       time.Duration // Timeout 选项设置的每次执行的时长上限，0 表示不限制。
 
 	when when
 }

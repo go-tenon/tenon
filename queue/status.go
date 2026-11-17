@@ -10,17 +10,12 @@ import (
 
 // Status 是队列在数据库一侧的状态：转发任务的复制槽。JetStream 中积压的任务由 NATS 统计，见 Admin.Status。
 type Status struct {
-	Slot string // 复制槽的名字，见 SlotName
-	// Exists 报告复制槽是否存在。不存在时没有执行迁移，或者槽在恢复备份、主备切换后丢失，见 RecreateSlot。
-	Exists bool
-	// Active 报告是否有 Worker 正在转发；ActivePID 是它的复制连接在 PostgreSQL 中的进程号。
-	Active    bool
-	ActivePID int
-	// WALStatus 是 pg_replication_slots.wal_status：reserved、extended 正常；unreserved 表示积压即将超过
-	// max_slot_wal_keep_size；lost 表示槽已失效，其中的任务已经丢失。
-	WALStatus string
-	// Lag 是 Worker 还没确认的 WAL 字节数，即复制槽保留的积压。它包含整个数据库的写入，不只是任务。
-	Lag int64
+	Slot      string // 复制槽的名字，见 SlotName
+	Exists    bool   // 报告复制槽是否存在。不存在时没有执行迁移，或者槽在恢复备份、主备切换后丢失，见 RecreateSlot。
+	Active    bool   // 有 Worker 正在转发
+	ActivePID int    // 转发的 Worker 的复制连接在 PostgreSQL 中的进程号
+	WALStatus string // pg_replication_slots.wal_status：reserved、extended 正常；unreserved 表示积压即将超过 max_slot_wal_keep_size；lost 表示槽已失效，其中的任务已经丢失。
+	Lag       int64  // Worker 还没确认的 WAL 字节数，即复制槽保留的积压。它包含整个数据库的写入，不只是任务。
 }
 
 // ReadStatus 读取 db 所在数据库的队列状态。

@@ -31,47 +31,16 @@ const credentialTimeout = 10 * time.Second
 
 // Options 配置 Realtime，零值可用。
 type Options struct {
-	// Authenticate 校验连接的 token，返回主体，通常与 rest.RequireToken 使用同一个校验器。
-	// token 是客户端 SDK 连接时传入的（App 等客户端），没有时是浏览器在连接请求中带上的会话 cookie
-	// （SessionCookie），页面不需要传 token。ctx 是连接请求的 context。
-	// 返回不是系统故障的错误或 ID 为空的主体表示 token 无效，SDK 停止重连；返回系统故障（identity.Failed 报告为 true）
-	// 表示暂时无法判断，客户端稍后重连。
-	// 连接期间用同一个 token 定期重新调用，token 被撤销后连接结束。
-	//
-	// nil 时带 token 的连接一律拒绝。
-	Authenticate identity.TokenValidator
-	// Accounts 是用 token 连接时接受的账号体系，以及每一种的 Resolver：按 Authenticate 给出的主体的 Type
-	// 调用对应的 Resolver，得到这个连接的主体，例如按 identity.TenantFromContext 加载用户在租户中的权限，
-	// 通常与 rest.Options.Accounts 相同；Type 不在其中的 token 被拒绝，Resolver 为 nil 时直接使用 Authenticate 给出的主体。
-	// Resolver 返回 errorx.Unauthenticated 类错误或 ID 为空的主体表示主体已失效，其他不是系统故障的错误同样拒绝连接；
-	// 连接期间与 Authenticate 一起定期重新调用，用户被停用或移出租户后连接结束。
-	//
-	// 设置了 Authenticate 时必须设置；名称不合法时 New panic。
-	Accounts identity.Accounts
-	// SessionCookie 是浏览器的会话 cookie，与 rest.Options.SessionCookie 相同；零值是 httpx.DefaultSessionCookieName。
-	SessionCookie httpx.SessionCookie
-	// Tenant 从连接请求中取出它所在的租户，例如路径参数 chi.URLParam(r, "tenant")、子域名或请求头，
-	// 结果写入 identity.WithTenant：Resolver 据此加载权限，绑定了其他租户的 token 被拒绝。
-	// 与 rest.Options.Tenant 的作用相同。nil 时使用外层中间件已经写入的租户，没有时是平台本身（""）。
-	Tenant func(r *http.Request) string
-	// Credentials 让连接在收到复查信号时立即重新校验凭据，撤销 token、退出登录后连接随即结束；
-	// nil 时只按 30 秒的间隔定期校验。通常是 broadcast.NewCredentials 的返回值，
-	// 与 rest.Options.Credentials 相同。
-	Credentials identity.CredentialWatcher
-	// TrustedOrigins 是允许跨站建立连接的来源，例如 https://app.example.com。
-	// 浏览器发起的连接默认只接受同源请求，没有 Origin 请求头的客户端（移动端、服务器）全部放行。
-	TrustedOrigins []string
-	// Presence 保存 presence 频道的在线成员，所有实例共用同一个存储，即 natspresence.New。
-	// 注册 presence 频道时必须设置；不停机升级时新旧进程同时运行，单实例部署同样需要共用的存储。
-	Presence PresenceStore
-	// PresenceGrace 是连接离开 presence 频道后保留在线记录的时间：期间主体重新加入时，
-	// 其他成员看不到离开和加入。零值为 DefaultPresenceGrace（10 秒），负数表示不保留，
-	// 最长 MaxPresenceGrace（30 秒）。
-	PresenceGrace time.Duration
-	// MeterProvider 非 nil 时记录 realtime.connections 和 realtime.subscriptions 两个指标。
-	MeterProvider metric.MeterProvider
-	// Logger 记录连接和授权中的错误；nil 表示 slog.Default()。
-	Logger *slog.Logger
+	Authenticate   identity.TokenValidator      // 校验连接的 token，返回主体，通常与 rest.RequireToken 使用同一个校验器。token 是客户端 SDK 连接时传入的（App 等客户端），没有时是浏览器在连接请求中带上的会话 cookie（SessionCookie），页面不需要传 token。ctx 是连接请求的 context。返回不是系统故障的错误或 ID 为空的主体表示 token 无效，SDK 停止重连；返回系统故障（identity.Failed 报告为 true）表示暂时无法判断，客户端稍后重连。连接期间用同一个 token 定期重新调用，token 被撤销后连接结束。nil 时带 token 的连接一律拒绝。
+	Accounts       identity.Accounts            // 用 token 连接时接受的账号体系，以及每一种的 Resolver：按 Authenticate 给出的主体的 Type 调用对应的 Resolver，得到这个连接的主体，例如按 identity.TenantFromContext 加载用户在租户中的权限，通常与 rest.Options.Accounts 相同；Type 不在其中的 token 被拒绝，Resolver 为 nil 时直接使用 Authenticate 给出的主体。Resolver 返回 errorx.Unauthenticated 类错误或 ID 为空的主体表示主体已失效，其他不是系统故障的错误同样拒绝连接；连接期间与 Authenticate 一起定期重新调用，用户被停用或移出租户后连接结束。设置了 Authenticate 时必须设置；名称不合法时 New panic。
+	SessionCookie  httpx.SessionCookie          // 浏览器的会话 cookie，与 rest.Options.SessionCookie 相同；零值是 httpx.DefaultSessionCookieName。
+	Tenant         func(r *http.Request) string // 从连接请求中取出它所在的租户，例如路径参数 chi.URLParam(r, "tenant")、子域名或请求头，结果写入 identity.WithTenant：Resolver 据此加载权限，绑定了其他租户的 token 被拒绝。与 rest.Options.Tenant 的作用相同。nil 时使用外层中间件已经写入的租户，没有时是平台本身（""）。
+	Credentials    identity.CredentialWatcher   // 让连接在收到复查信号时立即重新校验凭据，撤销 token、退出登录后连接随即结束；nil 时只按 30 秒的间隔定期校验。通常是 broadcast.NewCredentials 的返回值，与 rest.Options.Credentials 相同。
+	TrustedOrigins []string                     // 允许跨站建立连接的来源，例如 https://app.example.com。浏览器发起的连接默认只接受同源请求，没有 Origin 请求头的客户端（移动端、服务器）全部放行。
+	Presence       PresenceStore                // 保存 presence 频道的在线成员，所有实例共用同一个存储，即 natspresence.New。注册 presence 频道时必须设置；不停机升级时新旧进程同时运行，单实例部署同样需要共用的存储。
+	PresenceGrace  time.Duration                // 连接离开 presence 频道后保留在线记录的时间：期间主体重新加入时，其他成员看不到离开和加入。零值为 DefaultPresenceGrace（10 秒），负数表示不保留，最长 MaxPresenceGrace（30 秒）。
+	MeterProvider  metric.MeterProvider         // MeterProvider 非 nil 时记录 realtime.connections 和 realtime.subscriptions 两个指标。
+	Logger         *slog.Logger                 // 记录连接和授权中的错误；nil 表示 slog.Default()。
 }
 
 // Realtime 是嵌入的 Centrifuge 节点。每个进程创建一个，可以并发使用。

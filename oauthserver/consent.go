@@ -27,23 +27,17 @@ var (
 
 // Consent 是同意页要显示的授权请求。
 type Consent struct {
-	// ClientID 是申请授权的客户端，ClientName 是它的名称，例如 Claude。
-	ClientID   string `json:"client_id"`
-	ClientName string `json:"client_name"`
-	// RedirectHost 是授权后跳转去的主机，例如 claude.ai。
-	RedirectHost string `json:"redirect_host"`
-	// Resource 是令牌可以访问的资源，例如 https://blog.example.com/mcp。
-	Resource string `json:"resource"`
-	// Scopes 是申请的范围及说明。
-	Scopes []Scope `json:"scopes"`
+	ClientID     string  `json:"client_id"`     // 申请授权的客户端
+	ClientName   string  `json:"client_name"`   // 客户端的名称，例如 Claude
+	RedirectHost string  `json:"redirect_host"` // 授权后跳转去的主机，例如 claude.ai。
+	Resource     string  `json:"resource"`      // 令牌可以访问的资源，例如 https://blog.example.com/mcp。
+	Scopes       []Scope `json:"scopes"`        // 申请的范围及说明。
 }
 
 // Decision 是用户在同意页上的选择。
 type Decision struct {
-	// Request 是同意页地址中的 request 参数，原样交回。
-	Request string `json:"request" minLength:"1"`
-	// Approve 为 true 表示同意，false 表示拒绝。
-	Approve bool `json:"approve"`
+	Request string `json:"request" minLength:"1"` // 同意页地址中的 request 参数，原样交回。
+	Approve bool   `json:"approve"`               // Approve 为 true 表示同意，false 表示拒绝。
 }
 
 // Redirect 是用户做出选择后浏览器要跳转去的地址：同意时带着授权码，拒绝时带着 access_denied，都回到客户端。

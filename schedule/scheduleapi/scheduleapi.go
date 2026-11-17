@@ -41,16 +41,15 @@ var RunNow = queue.Topic[string]("schedules.run")
 
 // ScheduleTask 是任务列表（schedule-list）中的一个任务。类型名带前缀，避免与应用的类型在 OpenAPI 中重名。
 type ScheduleTask struct {
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	Expr        string    `json:"expr" doc:"表达式，例如 @daily、0 3 * * *"`
-	NextRun     time.Time `json:"next_run" doc:"下一次执行的时间"`
-	Running     bool      `json:"running" doc:"此刻是否在任何一个实例上执行"`
-	// LastStatus、LastRunAt、LastDurationMS、LastError 是最近一次执行，没有执行过时没有这些字段。
-	LastStatus     Status     `json:"last_status,omitempty" enum:"succeeded,failed,skipped" doc:"最近一次执行的结果"`
-	LastRunAt      *time.Time `json:"last_run_at,omitempty"`
-	LastDurationMS int64      `json:"last_duration_ms,omitempty"`
-	LastError      string     `json:"last_error,omitempty"`
+	Name           string     `json:"name"`
+	Description    string     `json:"description"`
+	Expr           string     `json:"expr" doc:"表达式，例如 @daily、0 3 * * *"`
+	NextRun        time.Time  `json:"next_run" doc:"下一次执行的时间"`
+	Running        bool       `json:"running" doc:"此刻是否在任何一个实例上执行"`
+	LastStatus     Status     `json:"last_status,omitempty" enum:"succeeded,failed,skipped" doc:"最近一次执行的结果"` // 最近一次执行的结果，没有执行过时没有这个字段
+	LastRunAt      *time.Time `json:"last_run_at,omitempty"`                                                 // 最近一次执行的时间，没有执行过时没有这个字段
+	LastDurationMS int64      `json:"last_duration_ms,omitempty"`                                            // 最近一次执行的耗时（毫秒），没有执行过时没有这个字段
+	LastError      string     `json:"last_error,omitempty"`                                                  // 最近一次执行的错误，没有执行过时没有这个字段
 	LastManual     bool       `json:"last_manual,omitempty" doc:"最近一次是立即执行的"`
 	Missed         bool       `json:"missed" doc:"上一次应当执行的触发没有执行记录，例如调度器停止或部署期间"`
 }
@@ -93,8 +92,7 @@ type handlers struct {
 
 // Options 是 Register 的选项，都可以为零值。
 type Options struct {
-	// Logger 记录立即执行；nil 表示 slog.Default()。
-	Logger *slog.Logger
+	Logger *slog.Logger // 记录立即执行；nil 表示 slog.Default()。
 }
 
 // Register 在 api 上注册定时任务的接口，protect 保护全部接口，通常是 rest.RequireToken(api, validate, 权限)。

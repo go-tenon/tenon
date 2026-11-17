@@ -23,10 +23,8 @@ import (
 
 // Config 是应用的配置：config/app.yaml。
 type Config struct {
-	HTTP httpx.Config `yaml:"http"`
-	// DevServers 是各前端开发服务器的地址，按前端的名称（apps 中的目录名）。只在 tenon dev 时有值：
-	// 它把地址写入 .tenon/dev.yaml，页面请求转给对应的开发服务器。
-	DevServers map[string]string `yaml:"dev_servers"`
+	HTTP       httpx.Config      `yaml:"http"`
+	DevServers map[string]string `yaml:"dev_servers"` // 各前端开发服务器的地址，按前端的名称（apps 中的目录名）；只在 tenon dev 时有值，它把地址写入 .tenon/dev.yaml，页面请求转给对应的开发服务器
 }
 
 func main() {

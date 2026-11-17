@@ -12,15 +12,12 @@ import (
 
 // Job 是一个任务，处理函数之外通过 Event 和失败任务看到它。
 type Job struct {
-	ID       uuid.UUID
-	Topic    string
-	Payload  []byte
-	Metadata map[string]string
-	// AvailableAt 是任务这次可以开始执行的时间：首次执行是发布时指定的时间，经由 outbox 的重试是退避后的时间；
-	// 租约到期或停止时放回、由 JetStream 重新投递的任务给不出，为零值。
-	AvailableAt time.Time
-	// Attempt 是本次是第几次执行，从 1 开始。
-	Attempt int
+	ID          uuid.UUID
+	Topic       string
+	Payload     []byte
+	Metadata    map[string]string
+	AvailableAt time.Time // 任务这次可以开始执行的时间：首次执行是发布时指定的时间，经由 outbox 的重试是退避后的时间；租约到期或停止时放回、由 JetStream 重新投递的任务给不出，为零值。
+	Attempt     int       // 本次是第几次执行，从 1 开始。
 }
 
 // envelope 是发给 JetStream 的消息体。
@@ -29,8 +26,7 @@ type envelope struct {
 	Payload     json.RawMessage   `json:"payload"`
 	Metadata    map[string]string `json:"metadata,omitempty"`
 	AvailableAt time.Time         `json:"available_at"`
-	// Attempts 是这条消息之前已经执行的次数：经由 outbox 重试的任务从这里接着计数。
-	Attempts int `json:"attempts,omitempty"`
+	Attempts    int               `json:"attempts,omitempty"` // 这条消息之前已经执行的次数：经由 outbox 重试的任务从这里接着计数。
 }
 
 type failedJob struct {

@@ -22,26 +22,21 @@ const (
 
 // Config 是哈希配置，对应配置文件的 hashing 段。
 type Config struct {
-	// Driver 是 Make 使用的算法：argon2id 或 bcrypt。
-	Driver   string         `yaml:"driver"`
+	Driver   string         `yaml:"driver"` // Make 使用的算法：argon2id 或 bcrypt。
 	Argon2id Argon2idConfig `yaml:"argon2id"`
 	Bcrypt   BcryptConfig   `yaml:"bcrypt"`
 }
 
 // Argon2idConfig 是 argon2id 的参数。
 type Argon2idConfig struct {
-	// Memory 是每次哈希使用的内存，单位 KiB。
-	Memory uint32 `yaml:"memory"`
-	// Time 是迭代次数。
-	Time uint32 `yaml:"time"`
-	// Threads 是并行度。
-	Threads uint8 `yaml:"threads"`
+	Memory  uint32 `yaml:"memory"`  // 每次哈希使用的内存，单位 KiB。
+	Time    uint32 `yaml:"time"`    // 迭代次数。
+	Threads uint8  `yaml:"threads"` // 并行度。
 }
 
 // BcryptConfig 是 bcrypt 的参数。
 type BcryptConfig struct {
-	// Cost 是计算成本，每加 1 耗时翻倍。
-	Cost int `yaml:"cost"`
+	Cost int `yaml:"cost"` // 计算成本，每加 1 耗时翻倍。
 }
 
 // SetDefaults 实现 config.Defaulter：argon2id，19 MiB 内存、2 次迭代、1 个线程（OWASP 推荐的最低配置）；

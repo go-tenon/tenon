@@ -44,11 +44,10 @@ type Export struct {
 
 	OperationID uuid.UUID    `bun:"operation_id,pk,type:uuid" json:"-"`
 	Format      sheet.Format `bun:"format,notnull"            json:"format"`
-	// FileID、Filename、URL 和 ExpiresAt 在 completed 时写入：上传的文件、它的公开地址和被回收的时间。
-	FileID    uuid.UUID  `bun:"file_id,type:uuid,nullzero" json:"file_id,omitzero"`
-	Filename  string     `bun:"filename,notnull"           json:"filename,omitempty"`
-	URL       string     `bun:"url,notnull"                json:"url,omitempty"`
-	ExpiresAt *time.Time `bun:"expires_at"                 json:"expires_at,omitempty"`
+	FileID      uuid.UUID    `bun:"file_id,type:uuid,nullzero" json:"file_id,omitzero"`     // 上传的文件，completed 时写入
+	Filename    string       `bun:"filename,notnull"           json:"filename,omitempty"`   // 文件名，completed 时写入
+	URL         string       `bun:"url,notnull"                json:"url,omitempty"`        // 文件的公开地址，completed 时写入
+	ExpiresAt   *time.Time   `bun:"expires_at"                 json:"expires_at,omitempty"` // 文件被回收的时间，completed 时写入
 }
 
 // Service 登记、处理和查询导出。

@@ -627,8 +627,7 @@ func toolCall(tc model.ToolCall) ToolCall {
 
 // Run 是对话的一次后台运行。它的方法可以并发调用。
 type Run struct {
-	// ID 唯一标识这次运行。
-	ID string
+	ID string // 唯一标识这次运行。
 
 	key    session.Key
 	rs     *Runs

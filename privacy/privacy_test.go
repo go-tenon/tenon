@@ -61,13 +61,10 @@ func migrations() []fs.FS {
 type app struct {
 	db     *bun.DB
 	tokens *apitoken.Store
-	// owner 中的用户是团队唯一的所有者，不能注销。
-	owner sync.Map
-	// fail 中的用户删除时失败。
-	fail sync.Map
-	// erased 记录 users 这一项的每次调用。
-	mu     sync.Mutex
-	erased []string
+	owner  sync.Map   // owner 中的用户是团队唯一的所有者，不能注销。
+	fail   sync.Map   // fail 中的用户删除时失败。
+	mu     sync.Mutex // 保护 erased
+	erased []string   // users 这一项的每次调用
 }
 
 func newApp(t *testing.T) *app {

@@ -21,43 +21,27 @@ import (
 // 资源写入 OpenAPI 文档的 x-tenon-resources，tenon generate 据此生成前端的 resources.ts，
 // @go-tenon/ui 的 ResourcePage 按这份定义渲染。
 type Resource struct {
-	// Name 是资源的名称，kebab-case，例如 article。
-	Name string `json:"name"`
-	// List 是列表接口的操作 ID：GET、没有路径参数，响应体有 items 数组（page.Offset 或 page.Cursor）。必须设置。
-	List string `json:"list"`
-	// Get、Create、Update、Delete 是详情、创建、修改和删除接口的操作 ID，没有的留空。
-	// Get、Update、Delete 有且只有一个路径参数，它的名称是列表项中标识一行的字段，例如 /articles/{id} 对应 id。
-	Get    string `json:"get,omitempty"`
-	Create string `json:"create,omitempty"`
-	Update string `json:"update,omitempty"`
-	Delete string `json:"delete,omitempty"`
-	// Columns 是列表显示的列：列表项的字段。为空时是列表项中除对象和数组外的全部字段。
-	Columns []string `json:"columns"`
-	// Search 是列表接口中关键词搜索的查询参数，例如 q；为空时没有搜索框。
-	Search string `json:"search,omitempty"`
-	// Filters 是列表的筛选条件：列表接口的查询参数，例如 status。
-	Filters []string `json:"filters,omitempty"`
-	// Sort 是可以排序的列。列表接口要有 sort 查询参数，取值是列名，前面加 - 表示降序；
-	// sort 限定了取值时，每一列的升序或降序至少有一个在其中。
-	Sort []string `json:"sort,omitempty"`
-	// Form 是创建和修改的表单字段：请求体的字段。为空时是请求体的全部字段（创建和修改都有时取创建的）。
-	Form []string `json:"form,omitempty"`
-	// Actions 是一行上的其他操作，例如发布。
-	Actions []Action `json:"actions,omitempty"`
-	// Key 是标识一行的字段，由 Get、Update、Delete 和 Actions 的路径参数得出，不需要设置。
-	Key string `json:"key,omitempty"`
+	Name    string   `json:"name"`              // 资源的名称，kebab-case，例如 article。
+	List    string   `json:"list"`              // 列表接口的操作 ID：GET、没有路径参数，响应体有 items 数组（page.Offset 或 page.Cursor）。必须设置。
+	Get     string   `json:"get,omitempty"`     // 详情接口的操作 ID，没有时留空；它有且只有一个路径参数，名称是列表项中标识一行的字段，例如 /articles/{id} 对应 id
+	Create  string   `json:"create,omitempty"`  // 创建接口的操作 ID，没有时留空
+	Update  string   `json:"update,omitempty"`  // 修改接口的操作 ID，没有时留空；路径参数与 Get 相同
+	Delete  string   `json:"delete,omitempty"`  // 删除接口的操作 ID，没有时留空；路径参数与 Get 相同
+	Columns []string `json:"columns"`           // 列表显示的列：列表项的字段。为空时是列表项中除对象和数组外的全部字段。
+	Search  string   `json:"search,omitempty"`  // 列表接口中关键词搜索的查询参数，例如 q；为空时没有搜索框。
+	Filters []string `json:"filters,omitempty"` // 列表的筛选条件：列表接口的查询参数，例如 status。
+	Sort    []string `json:"sort,omitempty"`    // 可以排序的列。列表接口要有 sort 查询参数，取值是列名，前面加 - 表示降序；sort 限定了取值时，每一列的升序或降序至少有一个在其中。
+	Form    []string `json:"form,omitempty"`    // 创建和修改的表单字段：请求体的字段。为空时是请求体的全部字段（创建和修改都有时取创建的）。
+	Actions []Action `json:"actions,omitempty"` // 一行上的其他操作，例如发布。
+	Key     string   `json:"key,omitempty"`     // 标识一行的字段，由 Get、Update、Delete 和 Actions 的路径参数得出，不需要设置。
 }
 
 // Action 是资源的一行上的操作。
 type Action struct {
-	// Name 是操作的名称，kebab-case，例如 publish；显示文字是 <资源>.actions.<Name> 的消息。
-	Name string `json:"name"`
-	// Operation 是接口的操作 ID，有且只有一个路径参数（行的标识），例如 article-publish。
-	Operation string `json:"operation"`
-	// Confirm 表示执行前先询问。
-	Confirm bool `json:"confirm,omitempty"`
-	// Danger 表示这是危险的操作，界面用醒目的颜色显示。
-	Danger bool `json:"danger,omitempty"`
+	Name      string `json:"name"`              // 操作的名称，kebab-case，例如 publish；显示文字是 <资源>.actions.<Name> 的消息。
+	Operation string `json:"operation"`         // 接口的操作 ID，有且只有一个路径参数（行的标识），例如 article-publish。
+	Confirm   bool   `json:"confirm,omitempty"` // 执行前先询问。
+	Danger    bool   `json:"danger,omitempty"`  // 这是危险的操作，界面用醒目的颜色显示。
 }
 
 var resourceName = regexp.MustCompile(`^[a-z][a-z0-9]*(-[a-z0-9]+)*$`)

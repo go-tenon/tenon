@@ -24,12 +24,9 @@ type Limiter interface {
 
 // Config 是限流参数：每个 key 平均每 Interval 允许 Rate 次，最多连续 Burst 次。
 type Config struct {
-	// Rate 是每个 Interval 补充的配额。
-	Rate int `yaml:"rate"`
-	// Interval 是补充 Rate 个配额的周期。
-	Interval time.Duration `yaml:"interval"`
-	// Burst 是允许连续使用的最大配额，即令牌桶容量。
-	Burst int `yaml:"burst"`
+	Rate     int           `yaml:"rate"`     // 每个 Interval 补充的配额。
+	Interval time.Duration `yaml:"interval"` // 补充 Rate 个配额的周期。
+	Burst    int           `yaml:"burst"`    // 允许连续使用的最大配额，即令牌桶容量。
 }
 
 // Validate 检查各字段为正数，且每个配额的补充间隔不小于 1 微秒。
@@ -49,10 +46,8 @@ func (c Config) Validate() error {
 
 // gcra 是 Config 换算出的 GCRA 参数。
 type gcra struct {
-	// step 是每次调用把理论到达时间推后的量，即补充一个配额的间隔。
-	step time.Duration
-	// ahead 是理论到达时间最多可以领先当前时间的量，超出即拒绝。
-	ahead time.Duration
+	step  time.Duration // 每次调用把理论到达时间推后的量，即补充一个配额的间隔。
+	ahead time.Duration // 理论到达时间最多可以领先当前时间的量，超出即拒绝。
 }
 
 func newGCRA(name string, cfg Config) gcra {

@@ -50,21 +50,13 @@ const version = "2016-08-01"
 //	    default: {huawei: WORK, honor: 1, vivo: TODO, oppo: TODO, xiaomi: "135001"}
 //	    promo:   {huawei: MARKETING, honor: 0, vivo: MARKETING, oppo: MARKETING, channel: promo}
 type Config struct {
-	// AccessKeyID 和 AccessKeySecret 是 RAM 用户的 AccessKey，需要 mpush:PushV2 权限。
-	AccessKeyID     string `yaml:"access_key_id"`
-	AccessKeySecret string `yaml:"access_key_secret"`
-	// Endpoint 是接口的域名，为空时是 DefaultEndpoint。
-	Endpoint string `yaml:"endpoint"`
-	// AppKeys 是各平台的应用在阿里云中的 AppKey，没有的平台填 0；给没有 AppKey 的平台推送时任务直接失败。
-	AppKeys AppKeys `yaml:"app_keys"`
-	// APNs 是 iOS 推送的环境：PRODUCT（默认）用于 App Store、TestFlight 和企业分发的 App，DEV 用于 Xcode 直接安装的 App。
-	APNs string `yaml:"apns"`
-	// Android 是 Android 通知的公共设置。
-	Android Android `yaml:"android"`
-	// Categories 把 push.Message.Category 换成各厂商的消息分类参数。消息没有指定分类时使用 default；
-	// 指定了这里没有的分类时任务直接失败。没有配置 default 时，省略分类的消息也省略厂商分类参数，
-	// 厂商通常把它当作资讯营销消息，每台设备每天能收到的条数有限。
-	Categories map[string]Category `yaml:"categories"`
+	AccessKeyID     string              `yaml:"access_key_id"`     // RAM 用户的 AccessKey ID，需要 mpush:PushV2 权限
+	AccessKeySecret string              `yaml:"access_key_secret"` // RAM 用户的 AccessKey Secret
+	Endpoint        string              `yaml:"endpoint"`          // 接口的域名，为空时是 DefaultEndpoint。
+	AppKeys         AppKeys             `yaml:"app_keys"`          // 各平台的应用在阿里云中的 AppKey，没有的平台填 0；给没有 AppKey 的平台推送时任务直接失败。
+	APNs            string              `yaml:"apns"`              // iOS 推送的环境：PRODUCT（默认）用于 App Store、TestFlight 和企业分发的 App，DEV 用于 Xcode 直接安装的 App。
+	Android         Android             `yaml:"android"`           // Android 通知的公共设置。
+	Categories      map[string]Category `yaml:"categories"`        // 把 push.Message.Category 换成各厂商的消息分类参数。消息没有指定分类时使用 default；指定了这里没有的分类时任务直接失败。没有配置 default 时，省略分类的消息也省略厂商分类参数，厂商通常把它当作资讯营销消息，每台设备每天能收到的条数有限。
 }
 
 // AppKeys 是各平台的应用的 AppKey。
@@ -76,30 +68,20 @@ type AppKeys struct {
 
 // Android 是 Android 通知的公共设置。
 type Android struct {
-	// Activity 是厂商通道的辅助弹窗 Activity 的完整类名（VendorChannelActivity），使用厂商通道时必填，
-	// 用户点击经厂商通道送达的通知时打开它。
-	Activity string `yaml:"activity"`
-	// Channel 是 Android 8 及以上的 NotificationChannel ID，App 需要先创建这个渠道；分类可以覆盖它。
-	Channel string `yaml:"channel"`
+	Activity string `yaml:"activity"` // 厂商通道的辅助弹窗 Activity 的完整类名（VendorChannelActivity），使用厂商通道时必填，用户点击经厂商通道送达的通知时打开它。
+	Channel  string `yaml:"channel"`  // Android 8 及以上的 NotificationChannel ID，App 需要先创建这个渠道；分类可以覆盖它。
 }
 
 // Category 是一个消息分类在各厂商通道中的参数，取值见各厂商的消息分类规范，大多需要先在厂商后台申请。
 // 没有填写的厂商省略分类参数。
 type Category struct {
-	// Channel 覆盖 Android.Channel，例如营销消息使用单独的通知渠道，用户可以只关闭它。
-	Channel string `yaml:"channel"`
-	// Huawei 是华为的 category，例如 IM、WORK、EXPRESS；营销消息为 MARKETING。
-	Huawei string `yaml:"huawei"`
-	// Honor 是荣耀的 importance：1 为服务与通讯，0 为资讯营销。
-	Honor *int `yaml:"honor"`
-	// Vivo 是 vivo 的 category，例如 IM、ACCOUNT、TODO；营销消息为 MARKETING。
-	Vivo string `yaml:"vivo"`
-	// Oppo 是 OPPO 的 category，例如 IM、ACCOUNT、ORDER；营销消息为 MARKETING。
-	Oppo string `yaml:"oppo"`
-	// Xiaomi 是小米的 channel ID，在小米推送后台申请，每个应用最多 8 个。
-	Xiaomi string `yaml:"xiaomi"`
-	// HarmonyOS 是鸿蒙的 category，例如 IM、WORK、EXPRESS；营销消息为 MARKETING。
-	HarmonyOS string `yaml:"harmony"`
+	Channel   string `yaml:"channel"` // 覆盖 Android.Channel，例如营销消息使用单独的通知渠道，用户可以只关闭它。
+	Huawei    string `yaml:"huawei"`  // 华为的 category，例如 IM、WORK、EXPRESS；营销消息为 MARKETING。
+	Honor     *int   `yaml:"honor"`   // 荣耀的 importance：1 为服务与通讯，0 为资讯营销。
+	Vivo      string `yaml:"vivo"`    // vivo 的 category，例如 IM、ACCOUNT、TODO；营销消息为 MARKETING。
+	Oppo      string `yaml:"oppo"`    // OPPO 的 category，例如 IM、ACCOUNT、ORDER；营销消息为 MARKETING。
+	Xiaomi    string `yaml:"xiaomi"`  // 小米的 channel ID，在小米推送后台申请，每个应用最多 8 个。
+	HarmonyOS string `yaml:"harmony"` // 鸿蒙的 category，例如 IM、WORK、EXPRESS；营销消息为 MARKETING。
 }
 
 // Validate 检查必填项和取值范围。

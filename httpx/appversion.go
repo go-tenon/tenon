@@ -22,9 +22,7 @@ const CodeUpgradeRequired = "app.upgrade_required"
 
 // AppVersionConfig 是 AppVersion 的参数，对应 http.app_version 段。
 type AppVersionConfig struct {
-	// Minimum 是各平台允许的最低版本，例如 {"ios": "1.4.0", "android": "1.3.0"}。
-	// 平台名是小写字母、数字、- 和 _；没有列出的平台不限制。
-	Minimum map[string]string `yaml:"minimum"`
+	Minimum map[string]string `yaml:"minimum"` // 各平台允许的最低版本，例如 {"ios": "1.4.0", "android": "1.3.0"}。平台名是小写字母、数字、- 和 _；没有列出的平台不限制。
 }
 
 // DefaultAppVersionConfig 返回不限制任何平台的配置。

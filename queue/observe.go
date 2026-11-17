@@ -39,16 +39,12 @@ func (k EventKind) String() string {
 
 // Event 是 Worker 报告的一次任务状态变化。除 JobStarted 外，事件都在结果写回之后报告。
 type Event struct {
-	Kind EventKind
-	Job  Job
-	// Started 是任务交给处理函数的时间。
-	Started time.Time
-	// Duration 是从交给处理函数到结束的时间；JobStarted 为 0。
-	Duration time.Duration
-	// Err 是 JobRetrying 和 JobFailed 的原因。
-	Err error
-	// RetryAt 是 JobRetrying 的下一次执行时间。
-	RetryAt time.Time
+	Kind     EventKind
+	Job      Job
+	Started  time.Time     // 任务交给处理函数的时间。
+	Duration time.Duration // 从交给处理函数到结束的时间；JobStarted 为 0。
+	Err      error         // JobRetrying 和 JobFailed 的原因。
+	RetryAt  time.Time     // JobRetrying 的下一次执行时间。
 }
 
 // Observer 接收任务事件，例如记录指标、写入执行历史。它在处理任务的 goroutine 中同步调用，

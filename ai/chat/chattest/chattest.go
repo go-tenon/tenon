@@ -14,14 +14,10 @@ import (
 
 // Reply 是模型的一次回复。
 type Reply struct {
-	// Text 是回答，按空格拆成多个增量流式发出。
-	Text string
-	// Reasoning 是思考过程，在回答之前发出。
-	Reasoning string
-	// Calls 是这次回复调用的工具。
-	Calls []Call
-	// Delay 是开始回复前等待的时间，用于模拟慢模型。
-	Delay time.Duration
+	Text      string        // 回答，按空格拆成多个增量流式发出。
+	Reasoning string        // 思考过程，在回答之前发出。
+	Calls     []Call        // 这次回复调用的工具。
+	Delay     time.Duration // 开始回复前等待的时间，用于模拟慢模型。
 }
 
 // Call 是一次工具调用。ID 为空时自动生成。

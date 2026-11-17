@@ -37,30 +37,21 @@ const ErrUpgradeRequired Code = "app.upgrade_required"
 
 // Error 是接口返回的非 2xx 响应。
 type Error struct {
-	// Status 是 HTTP 状态码。
-	Status int
-	// Code 是业务错误码；不是业务错误时为空。
-	Code Code
-	// Detail 是可以展示给用户的说明，按 Options.Language 翻译。
-	Detail string
-	// Fields 是输入格式错误（422）时每个字段的问题。
-	Fields []FieldError
-	// Params 是业务错误的公开参数，例如 auth.method_required 的 methods；没有时为 nil。
-	Params map[string]any
-	// RequestID 是响应头 X-Request-ID，报告问题时提供给服务端排查。
-	RequestID string
-	// RetryAfter 是响应头 Retry-After 建议的等待时间，出现在 429 和部分 503 中；没有时为 0。
-	RetryAfter time.Duration
+	Status     int            // HTTP 状态码。
+	Code       Code           // 业务错误码；不是业务错误时为空。
+	Detail     string         // 可以展示给用户的说明，按 Options.Language 翻译。
+	Fields     []FieldError   // 输入格式错误（422）时每个字段的问题。
+	Params     map[string]any // 业务错误的公开参数，例如 auth.method_required 的 methods；没有时为 nil。
+	RequestID  string         // 响应头 X-Request-ID，报告问题时提供给服务端排查。
+	RetryAfter time.Duration  // 响应头 Retry-After 建议的等待时间，出现在 429 和部分 503 中；没有时为 0。
 }
 
 // FieldError 是一个输入字段的问题。
 type FieldError struct {
-	// Message 是按 Options.Language 翻译的提示。
-	Message  string `json:"message"`
+	Message  string `json:"message"` // 按 Options.Language 翻译的提示。
 	Location string `json:"location"`
 	Value    any    `json:"value,omitempty"`
-	// Code 是违反的验证规则，例如 validation.min_length；无法识别的规则为空。
-	Code string `json:"code,omitempty"`
+	Code     string `json:"code,omitempty"` // 违反的验证规则，例如 validation.min_length；无法识别的规则为空。
 }
 
 func (e *Error) Error() string {
@@ -112,16 +103,11 @@ func (staticToken) Refresh(context.Context) error {
 
 // Options 配置客户端。
 type Options struct {
-	// BaseURL 是服务端的地址，例如 https://blog.example.com；路由的前缀（例如 /api）由生成的代码加上。
-	BaseURL string
-	// HTTPClient 发送请求；nil 时使用 http.DefaultClient。需要额外的请求头时在它的 Transport 中添加。
-	HTTPClient *http.Client
-	// Auth 提供受保护接口的凭据；nil 时受保护的接口返回 401。公开接口直接请求。
-	Auth Auth
-	// AppVersion 是 App 的平台和版本，例如 ios/1.4.2，写入每个请求的 X-App-Version。
-	AppVersion string
-	// Language 返回用户的语言，例如 zh-CN，写入 Accept-Language，错误的 Detail 按它翻译；可以为 nil。
-	Language func() string
+	BaseURL    string        // 服务端的地址，例如 https://blog.example.com；路由的前缀（例如 /api）由生成的代码加上。
+	HTTPClient *http.Client  // 发送请求；nil 时使用 http.DefaultClient。需要额外的请求头时在它的 Transport 中添加。
+	Auth       Auth          // 提供受保护接口的凭据；nil 时受保护的接口返回 401。公开接口直接请求。
+	AppVersion string        // App 的平台和版本，例如 ios/1.4.2，写入每个请求的 X-App-Version。
+	Language   func() string // 返回用户的语言，例如 zh-CN，写入 Accept-Language，错误的 Detail 按它翻译；可以为 nil。
 }
 
 // Client 发送生成的方法构造的请求。
@@ -152,24 +138,16 @@ func New(opts Options, basePath string) *Client {
 
 // Request 是一次接口调用。
 type Request struct {
-	Method string
-	// Path 是已经填好路径参数的路径，例如 /articles/0193a5c2-…/publish。
-	Path   string
-	Query  url.Values
-	Header http.Header
-	// Body 编码为 JSON 请求体；nil 或空指针表示没有请求体。
-	Body any
-	// Multipart 写出 multipart/form-data 请求体，边写边发送，不整个读进内存。
-	Multipart func(*multipart.Writer) error
-	// Files 是 Multipart 写出的文件。它们的内容都实现 io.Seeker 时，401 刷新凭据后回到开头重传；
-	// 否则不重传，调用方收到 401，凭据已经刷新，再调用一次即可。
-	Files []File
-	// Auth 表示接口需要凭据。
-	Auth bool
-	// Out 是 JSON 响应体的解码目标；nil 表示忽略响应体。
-	Out any
-	// Response 在成功时读取状态码和响应头。
-	Response func(*http.Response) error
+	Method    string
+	Path      string // 已经填好路径参数的路径，例如 /articles/0193a5c2-…/publish。
+	Query     url.Values
+	Header    http.Header
+	Body      any                           // 编码为 JSON 请求体；nil 或空指针表示没有请求体。
+	Multipart func(*multipart.Writer) error // 写出 multipart/form-data 请求体，边写边发送，不整个读进内存。
+	Files     []File                        // Multipart 写出的文件。它们的内容都实现 io.Seeker 时，401 刷新凭据后回到开头重传；否则不重传，调用方收到 401，凭据已经刷新，再调用一次即可。
+	Auth      bool                          // 接口需要凭据。
+	Out       any                           // JSON 响应体的解码目标；nil 表示忽略响应体。
+	Response  func(*http.Response) error    // 在成功时读取状态码和响应头。
 }
 
 // Do 发送请求：受保护的接口带上凭据，401 时刷新凭据并重试一次；非 2xx 响应返回 *Error。
@@ -195,10 +173,8 @@ func (c *Client) Do(ctx context.Context, r *Request) error {
 
 // Event 是 SSE 的一条消息。
 type Event struct {
-	// Name 是事件名，默认的 message 事件为空。
-	Name string
-	// ID 是事件 ID；断线后用 WithLastEventID 从它之后继续接收。
-	ID   string
+	Name string // 事件名，默认的 message 事件为空。
+	ID   string // 事件 ID；断线后用 WithLastEventID 从它之后继续接收。
 	Data []byte
 }
 
@@ -378,12 +354,9 @@ func (c *Client) send(ctx context.Context, r *Request, body []byte, token, accep
 
 // File 是上传的一个文件。
 type File struct {
-	// Name 是文件名，例如 cover.png。
-	Name string
-	// ContentType 是文件的类型，例如 image/png；为空时是 application/octet-stream。
-	ContentType string
-	// Body 是文件内容；为 nil 时不发送这个文件。实现 io.Seeker 时，凭据过期后可以自动重传。
-	Body io.Reader
+	Name        string    // 文件名，例如 cover.png。
+	ContentType string    // 文件的类型，例如 image/png；为空时是 application/octet-stream。
+	Body        io.Reader // 文件内容；为 nil 时不发送这个文件。实现 io.Seeker 时，凭据过期后可以自动重传。
 }
 
 var quoteEscaper = strings.NewReplacer("\\", "\\\\", `"`, "\\\"")

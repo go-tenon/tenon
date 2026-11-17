@@ -138,8 +138,7 @@ type RowWriter interface {
 
 // Column 是导出的一列。
 type Column[T any] struct {
-	// Key 是这一列的标识，Select 按它选择列，例如前端让用户勾选要导出的列。
-	Key    string
+	Key    string // 这一列的标识，Select 按它选择列，例如前端让用户勾选要导出的列。
 	Header string
 	Value  func(item T) any
 }

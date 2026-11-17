@@ -42,12 +42,11 @@ type field struct {
 
 // schema 是文档类型的结构，Define 时从 vector 标签解析。
 type schema struct {
-	typ     reflect.Type
-	embed   *field
-	filters map[string]*field
-	tenant  *field
-	// tokenizer 是混合索引切分文本的分词器，用于计算稀疏向量；nil 时只有模型计算的稠密向量。
-	tokenizer search.Tokenizer
+	typ       reflect.Type
+	embed     *field
+	filters   map[string]*field
+	tenant    *field
+	tokenizer search.Tokenizer // 混合索引切分文本的分词器，用于计算稀疏向量；nil 时只有模型计算的稠密向量。
 }
 
 // parseSchema 解析 D 中带 vector 标签的字段：

@@ -36,15 +36,10 @@ const DefaultTimeout = 30 * time.Second
 
 // Options 是 New 的选项，零值可用。
 type Options struct {
-	// Timeout 是整个请求的超时，包括连接、重定向和读取响应体；零值为 DefaultTimeout，负数表示不限制。
-	Timeout time.Duration
-	// Ports 是允许连接的端口，nil 时只允许 80 和 443。
-	Ports []uint16
-	// AnyPort 允许连接任何端口，Ports 被忽略。地址检查仍然生效。
-	AnyPort bool
-	// Allow 是额外允许的网段，先于内置的拒绝规则检查。用于本地开发（127.0.0.1/32、::1/128），
-	// 或者有意访问的内部服务。
-	Allow []netip.Prefix
+	Timeout time.Duration  // 整个请求的超时，包括连接、重定向和读取响应体；零值为 DefaultTimeout，负数表示不限制。
+	Ports   []uint16       // 允许连接的端口，nil 时只允许 80 和 443。
+	AnyPort bool           // 允许连接任何端口，Ports 被忽略。地址检查仍然生效。
+	Allow   []netip.Prefix // 额外允许的网段，先于内置的拒绝规则检查。用于本地开发（127.0.0.1/32、::1/128），或者有意访问的内部服务。
 }
 
 // New 返回只能访问公网地址的 HTTP 客户端。连接参数与 http.DefaultTransport 相同（包括 HTTP/2），

@@ -28,17 +28,12 @@ const DefaultMaxAttempts = 5
 
 // Message 是一条推送通知。文案由应用按收件人的语言生成好再交给 Send。
 type Message struct {
-	Title string `json:"title"`
-	Body  string `json:"body"`
-	// Data 随通知带给 App，用户点击通知后 App 据此打开对应的页面，例如 {"article_id": "42"}。
-	Data map[string]string `json:"data,omitempty"`
-	// Category 是应用自己命名的消息分类，例如 order、chat、promo。Provider 按配置把它换成各厂商要求的分类参数，
-	// 见 push/aliyun 的 Config.Categories。为空时使用名为 default 的分类。
-	Category string `json:"category,omitempty"`
-	// Badge 是 App 图标上的数字，nil 表示保持原值。
-	Badge *int `json:"badge,omitempty"`
-	// TTL 是设备离线时通知保留多久，从 Send 开始计算，超过后直接丢弃；0 表示使用推送服务的默认值。
-	TTL time.Duration `json:"ttl,omitempty"`
+	Title    string            `json:"title"`
+	Body     string            `json:"body"`
+	Data     map[string]string `json:"data,omitempty"`     // 随通知带给 App，用户点击通知后 App 据此打开对应的页面，例如 {"article_id": "42"}。
+	Category string            `json:"category,omitempty"` // 应用自己命名的消息分类，例如 order、chat、promo。Provider 按配置把它换成各厂商要求的分类参数，见 push/aliyun 的 Config.Categories。为空时使用名为 default 的分类。
+	Badge    *int              `json:"badge,omitempty"`    // App 图标上的数字，nil 表示保持原值。
+	TTL      time.Duration     `json:"ttl,omitempty"`      // 设备离线时通知保留多久，从 Send 开始计算，超过后直接丢弃；0 表示使用推送服务的默认值。
 }
 
 // Job 是 Deliver 的 payload：一条消息和它的收件人。
@@ -85,15 +80,12 @@ func Send(ctx context.Context, db bun.IDB, msg Message, to ...notification.Recip
 
 // Batch 是交给 Provider 的一次推送：同一个平台的一批设备，不超过 MaxBatch 台。
 type Batch struct {
-	// Key 标识这一批，同一个任务重试时不变，是 UUID 格式。推送服务支持去重时用它保证重试只推送一次。
-	Key string
-	// Job 是所属推送任务的 ID，同一次 Send 的各批相同，可以写入推送服务的回执，方便对照。
-	Job      uuid.UUID
+	Key      string    // 标识这一批，同一个任务重试时不变，是 UUID 格式。推送服务支持去重时用它保证重试只推送一次。
+	Job      uuid.UUID // 所属推送任务的 ID，同一次 Send 的各批相同，可以写入推送服务的回执，方便对照。
 	Platform Platform
 	Tokens   []string
 	Message  Message
-	// Expires 是通知的过期时间，由 Message.TTL 算出；零值表示使用推送服务的默认值。
-	Expires time.Time
+	Expires  time.Time // 通知的过期时间，由 Message.TTL 算出；零值表示使用推送服务的默认值。
 }
 
 // Provider 把一批通知交给推送服务，例如 push/aliyun。返回 queue.Permanent 包装的错误表示重试也是徒劳，
@@ -104,8 +96,7 @@ type Provider interface {
 
 // Options 是 Deliverer 的选项，零值可用。
 type Options struct {
-	// MaxAttempts 是一个推送任务最多执行的次数，覆盖 Worker 的 Config.MaxAttempts；不大于 0 时为 DefaultMaxAttempts。
-	MaxAttempts int
+	MaxAttempts int // 一个推送任务最多执行的次数，覆盖 Worker 的 Config.MaxAttempts；不大于 0 时为 DefaultMaxAttempts。
 }
 
 // Deliverer 处理推送任务：查出收件人的设备，按平台分批交给 Provider。

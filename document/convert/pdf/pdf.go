@@ -53,15 +53,10 @@ const (
 // Options 配置 PDF 转换器，零值即默认配置。
 type Options struct {
 	convert.Limits
-	// Workers 限制同时进行的转换和 PDFium 实例数，零值表示 2。
-	Workers int
-	// NoHeadings 把每一行都当作正文。
-	NoHeadings bool
-	// MaxPages 限制文档的页数。零值表示 DefaultMaxPages，负数表示不限制。
-	MaxPages int
-	// MaxPageChars 限制 PDFium 报告的一页的字符数，包括它生成的空格和换行。
-	// 零值表示 DefaultMaxPageChars，负数表示不限制。
-	MaxPageChars int
+	Workers      int  // 限制同时进行的转换和 PDFium 实例数，零值表示 2。
+	NoHeadings   bool // 把每一行都当作正文。
+	MaxPages     int  // 限制文档的页数。零值表示 DefaultMaxPages，负数表示不限制。
+	MaxPageChars int  // 限制 PDFium 报告的一页的字符数，包括它生成的空格和换行。零值表示 DefaultMaxPageChars，负数表示不限制。
 }
 
 // Converter 转换 PDF 文档。它可以并发使用，用完必须关闭以释放 PDFium 实例。
@@ -201,8 +196,7 @@ type line struct {
 // extractLimits 限制文字提取，负数字段表示不限制。
 type extractLimits struct {
 	pages, pageChars int
-	// output 限制行文字的字节数，Markdown 总是比它更长。
-	output int64
+	output           int64 // 限制行文字的字节数，Markdown 总是比它更长。
 }
 
 // extract 读取每一页的文字行和页数。
@@ -322,8 +316,8 @@ type lineBuilder struct {
 	text        []byte
 	weights     map[float64]int
 	open, space bool
-	// output 是行文字还能使用的字节数，负数表示不限制；max 是错误中报告的上限。
-	output, max int64
+	output      int64 // 行文字还能使用的字节数，负数表示不限制
+	max         int64 // 错误中报告的上限
 }
 
 // add 把一个字符连同字号和纵向范围加入当前行，需要时开始新的一行。

@@ -59,15 +59,10 @@ func Migrations() fs.FS {
 
 // Config 是依赖方（Relying Party）的配置。
 type Config struct {
-	// RPID 是 passkey 绑定的域名，例如 example.com；passkey 可以在它和它的子域名上使用，要长期固定。
-	RPID string
-	// RPName 是浏览器和系统在创建 passkey 时显示的名称，通常是应用的名称。
-	RPName string
-	// Origins 是允许发起仪式的来源，例如 https://example.com、https://admin.example.com；
-	// Android App 是 android:apk-key-hash:<签名证书的哈希>。iOS App 使用关联域名，来源就是网站的地址。
-	Origins []string
-	// Timeout 是一个仪式的有效期，默认 5 分钟。
-	Timeout time.Duration
+	RPID    string        // passkey 绑定的域名，例如 example.com；passkey 可以在它和它的子域名上使用，要长期固定。
+	RPName  string        // 浏览器和系统在创建 passkey 时显示的名称，通常是应用的名称。
+	Origins []string      // 允许发起仪式的来源，例如 https://example.com、https://admin.example.com；Android App 是 android:apk-key-hash:<签名证书的哈希>。iOS App 使用关联域名，来源就是网站的地址。
+	Timeout time.Duration // 一个仪式的有效期，默认 5 分钟。
 }
 
 // Store 为一套账号体系管理 passkey，可以并发使用。
@@ -127,11 +122,8 @@ func New(db bun.IDB, realm *login.Realm, c *crypt.Crypt, cfg Config) (*Store, er
 
 // Ceremony 是 Begin* 的结果。
 type Ceremony struct {
-	// Options 原样交给客户端：浏览器中是 navigator.credentials.create 或 get 的参数，
-	// 先用 PublicKeyCredential.parseCreationOptionsFromJSON 或 parseRequestOptionsFromJSON 转换其中的 publicKey。
-	Options json.RawMessage `json:"options"`
-	// Token 由客户端连同结果一起交回 Finish*。
-	Token string `json:"token"`
+	Options json.RawMessage `json:"options"` // 原样交给客户端：浏览器中是 navigator.credentials.create 或 get 的参数，先用 PublicKeyCredential.parseCreationOptionsFromJSON 或 parseRequestOptionsFromJSON 转换其中的 publicKey。
+	Token   string          `json:"token"`   // 由客户端连同结果一起交回 Finish*。
 }
 
 // state 是加密在 token 中的仪式状态。

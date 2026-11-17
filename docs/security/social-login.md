@@ -87,14 +87,11 @@ type Client struct {
 }
 
 type Config struct {
-    Google Client `yaml:"google"`
-    GitHub Client `yaml:"github"`
-    // RedirectURL 是单页应用中回调页的地址，{provider} 换成提供方的名称。
-    RedirectURL string `yaml:"redirect_url"`
-    // ClientRedirectURLs 是 App 登记的回调地址，Exchange 只接受这些地址。
-    ClientRedirectURLs []string `yaml:"client_redirect_urls"`
-    // GoogleAppClientIDs 是 App 原生登录使用的 Google client ID，例如 iOS 和 Android 各一个。
-    GoogleAppClientIDs []string `yaml:"google_app_client_ids"`
+    Google             Client   `yaml:"google"`
+    GitHub             Client   `yaml:"github"`
+    RedirectURL        string   `yaml:"redirect_url"`          // 单页应用中回调页的地址，{provider} 换成提供方的名称
+    ClientRedirectURLs []string `yaml:"client_redirect_urls"`  // App 登记的回调地址，Exchange 只接受这些地址
+    GoogleAppClientIDs []string `yaml:"google_app_client_ids"` // App 原生登录使用的 Google client ID，例如 iOS 和 Android 各一个
 }
 
 // Providers 按名称创建全部提供方。Google 在这里读取发现文档，所以应当在启动时调用一次。

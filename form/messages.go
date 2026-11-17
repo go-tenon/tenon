@@ -13,23 +13,18 @@ import (
 
 // FieldError 是翻译后的一条验证错误。
 type FieldError struct {
-	// Location 是出错的位置，例如 body.title。Huma 把必填错误报告在缺少字段的父对象上，
-	// 这里补上了字段名。
-	Location string
-	// Code 是验证规则，也是翻译用的消息 ID，例如 validation.min_length；无法识别的消息为空。
-	Code string
-	// Message 是按 ctx 的语言翻译的提示；无法识别或没有译文时是 Huma 的英文原文。
-	Message string
+	Location string // 出错的位置，例如 body.title。Huma 把必填错误报告在缺少字段的父对象上，这里补上了字段名。
+	Code     string // 验证规则，也是翻译用的消息 ID，例如 validation.min_length；无法识别的消息为空。
+	Message  string // 按 ctx 的语言翻译的提示；无法识别或没有译文时是 Huma 的英文原文。
 }
 
 // rule 把一条 Huma 验证消息反解为消息 ID 和模板数据。
 // Huma 只提供格式化好的英文消息，规则表由 validation.Msg* 生成，Huma 修改格式时测试会失败。
 type rule struct {
-	re   *regexp.Regexp
-	id   string
-	data func(args []string) map[string]any
-	// named 表示第一个参数是缺少的字段名，要拼到位置上。
-	named bool
+	re    *regexp.Regexp
+	id    string
+	data  func(args []string) map[string]any
+	named bool // 第一个参数是缺少的字段名，要拼到位置上。
 }
 
 func on(format, id string, data func([]string) map[string]any) rule {

@@ -86,22 +86,16 @@ func FormatOf(filename string) (Format, bool) {
 
 // Input 是一份原件。
 type Input struct {
-	// Reader 提供文档内容，由调用者关闭。
-	Reader io.Reader
-	// Name 可选，在错误信息中标识这份文档。
-	Name string
-	// Charset 可选，声明文本编码，例如取自 HTTP 响应头。
-	Charset string
-	// BaseURL 可选，用于解析 HTML 中的相对链接。
-	BaseURL string
+	Reader  io.Reader // 提供文档内容，由调用者关闭。
+	Name    string    // 可选，在错误信息中标识这份文档。
+	Charset string    // 可选，声明文本编码，例如取自 HTTP 响应头。
+	BaseURL string    // 可选，用于解析 HTML 中的相对链接。
 }
 
 // Document 是由原件转换得到的 Markdown。
 type Document struct {
-	// Markdown 是合法的 UTF-8，换行为 LF。
-	Markdown string
-	// Sections 记录原件的页、幻灯片或工作表在 Markdown 中的位置，按 Start 排序。
-	Sections []Section
+	Markdown string    // 合法的 UTF-8，换行为 LF。
+	Sections []Section // 记录原件的页、幻灯片或工作表在 Markdown 中的位置，按 Start 排序。
 }
 
 // SectionKind 是 Section 所代表的原件单位。
@@ -116,13 +110,10 @@ const (
 
 // Section 是原件中可以引用的一个单位，以及它在 Document.Markdown 中的字节区间。
 type Section struct {
-	Kind SectionKind
-	// Number 是这个单位在原件中的位置，从 1 开始，空的和跳过的单位也计数。
-	Number int
-	// Name 是已知的工作表名、幻灯片标题或页码标签。
-	Name string
-	// Start 和 End 界定这个单位的 Markdown，包括为它生成的标题。
-	Start, End int
+	Kind       SectionKind
+	Number     int    // 这个单位在原件中的位置，从 1 开始，空的和跳过的单位也计数。
+	Name       string // 已知的工作表名、幻灯片标题或页码标签。
+	Start, End int    // 界定这个单位的 Markdown，包括为它生成的标题。
 }
 
 // SectionsIn 返回区间与 [start, end) 相交的 Section，结果是新的切片。
@@ -211,13 +202,9 @@ const (
 // Limits 限制一次转换可以使用的资源。每个内置转换器的 Options 都嵌入了 Limits；
 // Registry.Convert 自己不施加任何上限。零值字段取默认值，负数表示不限制。
 type Limits struct {
-	// MaxBytes 限制读取的原件字节数，默认 32 MiB。
-	MaxBytes int64
-	// MaxExpandedBytes 限制从压缩包格式中解压读取的字节数，默认 128 MiB；Word 和 PowerPoint
-	// 解析的每个 XML 元素额外计 64 字节，HTML 展开合并单元格时按复制量的估计值计入。
-	MaxExpandedBytes int64
-	// MaxOutputBytes 限制生成的 Markdown 字节数，默认 64 MiB。
-	MaxOutputBytes int64
+	MaxBytes         int64 // 限制读取的原件字节数，默认 32 MiB。
+	MaxExpandedBytes int64 // 限制从压缩包格式中解压读取的字节数，默认 128 MiB；Word 和 PowerPoint 解析的每个 XML 元素额外计 64 字节，HTML 展开合并单元格时按复制量的估计值计入。
+	MaxOutputBytes   int64 // 限制生成的 Markdown 字节数，默认 64 MiB。
 }
 
 // Effective 返回填入默认值后的上限，-1 表示不限制。
@@ -265,11 +252,8 @@ const (
 
 // LimitError 表示转换超出了 Limits 中的某个上限，errors.Is(err, ErrTooLarge) 对它成立。
 type LimitError struct {
-	// Limit 是上面的上限名称之一。
-	Limit string
-	// Max 是上限的值：原件和输出是字节数；展开是字节数或 HTML 复制量的估计值；
-	// LimitPages 是页数；LimitPageChars 是字符数。
-	Max int64
+	Limit string // 上面的上限名称之一。
+	Max   int64  // 上限的值：原件和输出是字节数；展开是字节数或 HTML 复制量的估计值；LimitPages 是页数；LimitPageChars 是字符数。
 }
 
 // Error 说明超出了哪个上限。

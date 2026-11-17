@@ -36,46 +36,27 @@ var semver = regexp.MustCompile(`^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9
 
 // Options 是 New 的选项。
 type Options struct {
-	// Prefix 是端点 subject 的前缀，通常是应用名加 API 的版本，例如 blog.v1，必填。
-	// 不兼容的修改通过新的前缀发布，见 docs/rpc/protocol.md。
-	Prefix string
-	// Version 是服务的版本，格式为语义化版本，出现在服务发现中；为空时是 0.0.0。
-	Version string
-	// Description 说明这个 API，出现在服务发现和 AsyncAPI 文档中。
-	Description string
-	// Permissions 是应用的权限目录，例如 authz.Catalog，与 rest.Options.Permissions 相同。
-	// 它写入 AsyncAPI 文档的 x-tenon-permissions（按名称排序），客户端据此生成权限常量和说明；nil 时不写。
-	Permissions []identity.Permission
-	// Validate 校验请求头 Authorization: Bearer 中的 token，与 REST 用同一个校验器，例如 apitoken.Store 的 Validate。
-	// Accounts 是接受的账号体系和各自的 Resolver，与 rest.Options.Accounts 相同。有需要登录的端点时两者必填。
-	Validate identity.TokenValidator
-	Accounts identity.Accounts
-	// Tenant 从请求头中取出本次调用所在的租户，例如 X-Tenant；nil 表示平台本身（""）。凭据绑定了租户时，两者必须相同。
-	Tenant func(h nats.Header) string
-	// Languages 是消息目录，设置后按请求头 Accept-Language 协商错误提示的语言，与 httpx.Languages 相同。
-	Languages *goi18n.Bundle
-	// Timeout 是每次调用的处理上限，调用方的 X-Timeout 更短时以它为准；不大于 0 时为 DefaultTimeout。
-	Timeout time.Duration
-	// Concurrency 是同时处理的调用数上限，超过时新的请求在 NATS 客户端中排队；不大于 0 时为 DefaultConcurrency。
-	Concurrency int
-	// ShutdownTimeout 是停止时等待处理中的调用的最长时间，超时后取消它们的 ctx；不大于 0 时为 DefaultShutdownTimeout。
-	ShutdownTimeout time.Duration
-	// Logger 记录内部错误和认证后端的故障，nil 表示 slog.Default()。
-	Logger *slog.Logger
+	Prefix          string                     // 端点 subject 的前缀，通常是应用名加 API 的版本，例如 blog.v1，必填。不兼容的修改通过新的前缀发布，见 docs/rpc/protocol.md。
+	Version         string                     // 服务的版本，格式为语义化版本，出现在服务发现中；为空时是 0.0.0。
+	Description     string                     // 说明这个 API，出现在服务发现和 AsyncAPI 文档中。
+	Permissions     []identity.Permission      // 应用的权限目录，例如 authz.Catalog，与 rest.Options.Permissions 相同。它写入 AsyncAPI 文档的 x-tenon-permissions（按名称排序），客户端据此生成权限常量和说明；nil 时不写。
+	Validate        identity.TokenValidator    // 校验请求头 Authorization: Bearer 中的 token，与 REST 用同一个校验器，例如 apitoken.Store 的 Validate；有需要登录的端点时必填
+	Accounts        identity.Accounts          // 接受的账号体系和各自的 Resolver，与 rest.Options.Accounts 相同；有需要登录的端点时必填
+	Tenant          func(h nats.Header) string // 从请求头中取出本次调用所在的租户，例如 X-Tenant；nil 表示平台本身（""）。凭据绑定了租户时，两者必须相同。
+	Languages       *goi18n.Bundle             // 消息目录，设置后按请求头 Accept-Language 协商错误提示的语言，与 httpx.Languages 相同。
+	Timeout         time.Duration              // 每次调用的处理上限，调用方的 X-Timeout 更短时以它为准；不大于 0 时为 DefaultTimeout。
+	Concurrency     int                        // 同时处理的调用数上限，超过时新的请求在 NATS 客户端中排队；不大于 0 时为 DefaultConcurrency。
+	ShutdownTimeout time.Duration              // 停止时等待处理中的调用的最长时间，超时后取消它们的 ctx；不大于 0 时为 DefaultShutdownTimeout。
+	Logger          *slog.Logger               // 记录内部错误和认证后端的故障，nil 表示 slog.Default()。
 }
 
 // Endpoint 描述一个端点。
 type Endpoint struct {
-	// Name 是端点名，由 . 分隔的小写单词，例如 articles.publish。subject 是前缀加端点名，例如 blog.v1.articles.publish。
-	Name string
-	// Description 说明端点做什么，出现在服务发现中。
-	Description string
-	// Public 表示不需要登录。否则调用方必须带有效的 token，并拥有 Permissions 中的全部权限。
-	Public bool
-	// Permissions 是调用这个端点需要的全部权限，用 identity.Subject.Can 检查。
-	Permissions []string
-	// Idempotent 表示用相同的参数重复调用没有额外的效果，调用方超时后可以重试。
-	Idempotent bool
+	Name        string   // 端点名，由 . 分隔的小写单词，例如 articles.publish。subject 是前缀加端点名，例如 blog.v1.articles.publish。
+	Description string   // 说明端点做什么，出现在服务发现中。
+	Public      bool     // 不需要登录。否则调用方必须带有效的 token，并拥有 Permissions 中的全部权限。
+	Permissions []string // 调用这个端点需要的全部权限，用 identity.Subject.Can 检查。
+	Idempotent  bool     // 用相同的参数重复调用没有额外的效果，调用方超时后可以重试。
 }
 
 // Server 是一个 API：登记的端点，以及调用它们时的认证、参数校验和错误转换。用 Serve 在 NATS 连接上提供它。

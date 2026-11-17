@@ -34,30 +34,22 @@ const CheckTimeout = 10 * time.Second
 
 // Check 是一项检查。
 type Check struct {
-	// Name 出现在结果中，在组内唯一，例如 wal_level。
-	Name string
-	// Run 执行检查：返回 nil 表示通过；返回 *Problem 表示查到了问题，见 Fail 和 Warn；返回 Skip 表示这一项不适用。
-	// 返回其他错误表示检查本身没能完成，例如连接中断，结果为失败，同组后面的检查跳过。
-	Run func(ctx context.Context) error
+	Name string                          // 出现在结果中，在组内唯一，例如 wal_level。
+	Run  func(ctx context.Context) error // 执行检查：返回 nil 表示通过；返回 *Problem 表示查到了问题，见 Fail 和 Warn；返回 Skip 表示这一项不适用。返回其他错误表示检查本身没能完成，例如连接中断，结果为失败，同组后面的检查跳过。
 }
 
 // Group 是同一个依赖的一组检查。组内按顺序执行，前面的检查可以是后面的前提；各组之间并行执行。
 type Group struct {
-	// Name 是依赖的名字，例如 postgres、queue。
-	Name   string
+	Name   string // 依赖的名字，例如 postgres、queue。
 	Checks []Check
 }
 
 // Problem 是一项检查查到的问题。
 type Problem struct {
-	// Summary 说明哪里不对，例如 "wal_level is replica; the queue needs logical"。
-	Summary string
-	// Fix 说明怎样修改，可以有多行。
-	Fix string
-	// Doc 是相关文档的地址，可以为空。
-	Doc string
-	// Warning 为 true 时只是提示：程序可以运行，但存在隐患，例如可能写满磁盘的设置。
-	Warning bool
+	Summary string // 说明哪里不对，例如 "wal_level is replica; the queue needs logical"。
+	Fix     string // 说明怎样修改，可以有多行。
+	Doc     string // 相关文档的地址，可以为空。
+	Warning bool   // Warning 为 true 时只是提示：程序可以运行，但存在隐患，例如可能写满磁盘的设置。
 }
 
 // Fail 返回使检查失败的问题：程序在这种环境中不能正常工作。
@@ -95,11 +87,10 @@ const (
 
 // DoctorResult 是一项检查的结果。
 type DoctorResult struct {
-	Group  string `json:"group"`
-	Check  string `json:"check"`
-	Status Status `json:"status" enum:"passed,warning,failed,skipped"`
-	// Summary 是问题、跳过的原因，或者检查没能完成的错误；通过时为空。
-	Summary string `json:"summary,omitempty"`
+	Group   string `json:"group"`
+	Check   string `json:"check"`
+	Status  Status `json:"status" enum:"passed,warning,failed,skipped"`
+	Summary string `json:"summary,omitempty"` // 问题、跳过的原因，或者检查没能完成的错误；通过时为空。
 	Fix     string `json:"fix,omitempty"`
 	Doc     string `json:"doc,omitempty"`
 }
@@ -107,8 +98,7 @@ type DoctorResult struct {
 // DoctorReport 是一次自检的结果。DoctorReport 和 DoctorResult 的名称带上包名：它们作为接口的响应体时，
 // 框架的类型在 OpenAPI 中不加包名，这样不会与其他包的 Report、Result 同名。
 type DoctorReport struct {
-	// Results 按传入的顺序列出每一组的每一项检查。
-	Results []DoctorResult `json:"results"`
+	Results []DoctorResult `json:"results"` // 按传入的顺序列出每一组的每一项检查。
 }
 
 // Count 返回结果为 s 的检查数。

@@ -14,31 +14,14 @@ const purposeExternal Purpose = "external"
 // External 是第三方提供方确认过的账号，例如 login/oidc 校验 ID token 得到的结果，
 // 或者应用用 OAuth 2.0 读取的 GitHub、微信账号。
 type External struct {
-	// Provider 是提供方的名称，例如 google、apple、github、wechat，作为登录标识的 Kind：
-	// 小写字母开头，只含小写字母、数字和下划线，email、phone、username 为保留名称。
-	Provider string
-	// Subject 是对方的用户 ID，例如 OpenID Connect 的 sub、GitHub 的数字 id、微信的 unionid。
-	// 只用 ID：邮箱和用户名都可能变化。
-	Subject string
-	// Email 是对方提供的邮箱，EmailVerified 表示对方确认过它属于这个用户。
-	Email         string
-	EmailVerified bool
-	// Name 是对方提供的显示名称，供注册页预填，不参与登录。
-	Name string
-	// Claims 是 ID token 的全部声明（login/oauth 的 OpenID Connect 提供方填写），或 Account 读到的原始资料，
-	// 供应用读取 groups 等字段，例如每次登录时把企业 IdP 的分组同步为角色。它只供应用使用。
-	Claims map[string]any
-	// TwoFactor 表示提供方在这次登录中做过多因素认证，由应用按 Claims 判断后设置，例如 ID token 的 amr 含 mfa、otp 或 hwk；
-	// 各家 IdP 的写法不同，框架不自己解读。设置后这次登录的 Auth.Methods 记为 [提供方, idp_mfa]，计入二次验证。
-	// 只对应用信任其 MFA 的提供方设置，例如租户自己的企业 IdP。
-	TwoFactor bool
-	// TrustEmail 表示提供方对 Email 有管理权：第三方账号还没有绑定、EmailVerified 并且 Email 已属于当前租户的某个账号时，
-	// 直接把第三方账号绑定给那个账号并登录。用于租户验证过邮箱域名的企业 IdP，
-	// 例如公司改用 SSO 后员工原来的密码账号自动关联。
-	//
-	// 只在应用确认“这个连接属于当前租户，并且租户验证过 Email 的域名”（例如 DNS TXT 记录）时设置。
-	// 只对验证过域名的企业 IdP 设置，Google、GitHub 等公共提供方保持 false：否则任何人都能用一个声称别人邮箱的账号登录别人的账号。
-	TrustEmail bool
+	Provider      string         // 提供方的名称，例如 google、apple、github、wechat，作为登录标识的 Kind：小写字母开头，只含小写字母、数字和下划线，email、phone、username 为保留名称。
+	Subject       string         // 对方的用户 ID，例如 OpenID Connect 的 sub、GitHub 的数字 id、微信的 unionid。只用 ID：邮箱和用户名都可能变化。
+	Email         string         // 对方提供的邮箱
+	EmailVerified bool           // 对方确认过 Email 属于这个用户
+	Name          string         // 对方提供的显示名称，供注册页预填，不参与登录。
+	Claims        map[string]any // ID token 的全部声明（login/oauth 的 OpenID Connect 提供方填写），或 Account 读到的原始资料，供应用读取 groups 等字段，例如每次登录时把企业 IdP 的分组同步为角色。它只供应用使用。
+	TwoFactor     bool           // 提供方在这次登录中做过多因素认证，由应用按 Claims 判断后设置，例如 ID token 的 amr 含 mfa、otp 或 hwk；各家 IdP 的写法不同，框架不自己解读。设置后这次登录的 Auth.Methods 记为 [提供方, idp_mfa]，计入二次验证。只对应用信任其 MFA 的提供方设置，例如租户自己的企业 IdP。
+	TrustEmail    bool           // 提供方对 Email 有管理权：第三方账号还没有绑定、EmailVerified 并且 Email 已属于当前租户的某个账号时，直接把第三方账号绑定给那个账号并登录。用于租户验证过邮箱域名的企业 IdP，例如公司改用 SSO 后员工原来的密码账号自动关联。只在应用确认“这个连接属于当前租户，并且租户验证过 Email 的域名”（例如 DNS TXT 记录）时设置。只对验证过域名的企业 IdP 设置，Google、GitHub 等公共提供方保持 false：否则任何人都能用一个声称别人邮箱的账号登录别人的账号。
 }
 
 // externalData 是保存在注册凭证中的、对方确认过的邮箱。

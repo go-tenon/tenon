@@ -27,12 +27,8 @@ const MaxTTL = 5 * time.Minute
 
 // Options 是 New 的选项。
 type Options struct {
-	// Bucket 是保存在线记录的 KV bucket 的名字，例如 blog_presence。同一个应用的实例必须相同，
-	// 多个应用或环境共用 NATS 时用它区分。由字母、数字、'_' 和 '-' 组成。
-	Bucket string
-	// Replicas 是 bucket 的副本数，不大于 0 时为 1。NATS 集群中可以设为 3，一台服务器故障时在线记录不丢失；
-	// 单副本时丢失的记录在连接下一次续期时（最多 25 秒）恢复。
-	Replicas int
+	Bucket   string // 保存在线记录的 KV bucket 的名字，例如 blog_presence。同一个应用的实例必须相同，多个应用或环境共用 NATS 时用它区分。由字母、数字、'_' 和 '-' 组成。
+	Replicas int    // bucket 的副本数，不大于 0 时为 1。NATS 集群中可以设为 3，一台服务器故障时在线记录不丢失；单副本时丢失的记录在连接下一次续期时（最多 25 秒）恢复。
 }
 
 var validBucket = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)

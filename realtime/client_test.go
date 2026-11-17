@@ -16,13 +16,12 @@ const wait = 5 * time.Second
 
 // client 是测试用的最小 Centrifuge JSON 协议客户端。
 type client struct {
-	t    *testing.T
-	conn *websocket.Conn
-	id   int
-	in   chan frame // 后台读到的帧，连接结束时关闭
-	err  error      // 连接结束的原因，in 关闭后可读
-	// pending 保存已经取出、还没被使用的帧。
-	pending []frame
+	t       *testing.T
+	conn    *websocket.Conn
+	id      int
+	in      chan frame // 后台读到的帧，连接结束时关闭
+	err     error      // 连接结束的原因，in 关闭后可读
+	pending []frame    // 保存已经取出、还没被使用的帧。
 }
 
 type frame struct {

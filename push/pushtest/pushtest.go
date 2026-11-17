@@ -18,8 +18,7 @@ import (
 
 // Provider 记录收到的每一批推送，可并发使用，零值可用。
 type Provider struct {
-	// Err 不为 nil 时决定每一批的结果，用于测试失败和重试；返回 nil 的批次照常记录。
-	Err func(push.Batch) error
+	Err func(push.Batch) error // Err 不为 nil 时决定每一批的结果，用于测试失败和重试；返回 nil 的批次照常记录。
 
 	mu      sync.Mutex
 	batches []push.Batch

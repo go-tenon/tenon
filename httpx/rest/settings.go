@@ -16,14 +16,10 @@ import (
 //
 // 设置属于当前的用户、租户或者平台，由请求本身决定，所以两个接口都没有路径参数，见 settings 包。
 type Settings struct {
-	// Name 是名称，kebab-case，例如 site。不能与资源同名：两者的显示文字在同一个命名空间中。
-	Name string `json:"name"`
-	// Get 是读取设置的接口的操作 ID：GET，没有路径参数，响应体是包含全部表单字段的 JSON 对象。必须设置。
-	Get string `json:"get"`
-	// Update 是保存设置的接口的操作 ID：没有路径参数，请求体是 JSON 对象。必须设置。
-	Update string `json:"update"`
-	// Form 是表单的字段：保存接口请求体的字段。为空时是请求体的全部字段，按结构体中的顺序。
-	Form []string `json:"form"`
+	Name   string   `json:"name"`   // 名称，kebab-case，例如 site。不能与资源同名：两者的显示文字在同一个命名空间中。
+	Get    string   `json:"get"`    // 读取设置的接口的操作 ID：GET，没有路径参数，响应体是包含全部表单字段的 JSON 对象。必须设置。
+	Update string   `json:"update"` // 保存设置的接口的操作 ID：没有路径参数，请求体是 JSON 对象。必须设置。
+	Form   []string `json:"form"`   // 表单的字段：保存接口请求体的字段。为空时是请求体的全部字段，按结构体中的顺序。
 }
 
 // Settings 声明一组设置的页面，写入 OpenAPI 文档的 x-tenon-settings。引用的接口必须已经用 Register 登记；

@@ -34,37 +34,16 @@ type API struct {
 
 // Options 创建 API。
 type Options struct {
-	Title   string
-	Version string
-	// Logger 记录 5xx 错误；nil 表示 slog.Default()。
-	Logger *slog.Logger
-	// Transformers 追加在 Huma 默认 Transformer 之后。
-	Transformers []huma.Transformer
-	// BasePath 是 API 挂载的路径前缀，例如挂在 router.Route("/api", ...) 中时为 /api。
-	// 它写入 OpenAPI 的 servers，文档页和客户端据此拼出完整地址；路由本身仍按传给 New 的路由注册。
-	// 一个应用有多个 API 时，openapi、client 命令用 --base-path 按它选择。
-	BasePath string
-	// Tenant 从请求中取出本次请求所在的租户，例如路径参数 ctx.Param("tenant")、子域名或请求头；
-	// 结果在每个操作（包括公开的操作）开始时写入 identity.WithTenant。nil 表示始终是平台本身（""）。
-	Tenant func(ctx huma.Context) string
-	// Accounts 是这个 API 接受的账号体系，以及每一种的 Resolver：认证通过后，按凭据给出的主体的 Type
-	// 调用对应的 Resolver，得到本次请求的主体，例如按 identity.TenantFromContext 加载用户在租户中的权限。
-	// Type 不在其中的凭据响应 401，与凭据无效相同；Resolver 为 nil 时直接使用凭据给出的主体。
-	// Resolver 返回 errorx.Unauthenticated 类错误或 ID 为空的主体时响应 401，其他 4xx 类错误按其分类响应，
-	// 例如不是租户成员时返回 errorx.NotFound 得到 404；5xx 类错误响应对应的状态码。
-	// 返回的主体中 Type、ID、Method、Credential、Scopes、Impersonator 总是取自凭据。
-	//
-	// 注册需要认证的操作（RequireAuth、RequireToken）时必须设置；名称不合法时 New panic。
-	Accounts identity.Accounts
-	// SessionCookie 是 RequireToken 读取的浏览器会话 cookie，零值是 httpx.DefaultSessionCookieName。
-	// 同一个源下的几个 API 属于不同的账号体系时，各用一个名称，见 httpx.SessionCookie。名称不合法时 New panic。
-	SessionCookie httpx.SessionCookie
-	// Credentials 让 RequireAuth 保护的长连接（例如 SSE）在收到复查信号时立即重新校验凭据，
-	// 撤销 token、停用用户后连接随即结束；nil 时只按 30 秒的间隔定期校验。通常是 broadcast.NewCredentials 的返回值。
-	Credentials identity.CredentialWatcher
-	// Permissions 是应用的权限目录，例如 authz.Catalog。它写入 OpenAPI 文档的 x-tenon-permissions（按名称排序），
-	// 客户端据此生成权限常量和说明；路由需要的权限另外写在每个操作的 x-required-permissions 中。nil 时不写。
-	Permissions []identity.Permission
+	Title         string
+	Version       string
+	Logger        *slog.Logger                  // 记录 5xx 错误；nil 表示 slog.Default()。
+	Transformers  []huma.Transformer            // 追加在 Huma 默认 Transformer 之后。
+	BasePath      string                        // API 挂载的路径前缀，例如挂在 router.Route("/api", ...) 中时为 /api。它写入 OpenAPI 的 servers，文档页和客户端据此拼出完整地址；路由本身仍按传给 New 的路由注册。一个应用有多个 API 时，openapi、client 命令用 --base-path 按它选择。
+	Tenant        func(ctx huma.Context) string // 从请求中取出本次请求所在的租户，例如路径参数 ctx.Param("tenant")、子域名或请求头；结果在每个操作（包括公开的操作）开始时写入 identity.WithTenant。nil 表示始终是平台本身（""）。
+	Accounts      identity.Accounts             // 这个 API 接受的账号体系，以及每一种的 Resolver：认证通过后，按凭据给出的主体的 Type 调用对应的 Resolver，得到本次请求的主体，例如按 identity.TenantFromContext 加载用户在租户中的权限。Type 不在其中的凭据响应 401，与凭据无效相同；Resolver 为 nil 时直接使用凭据给出的主体。Resolver 返回 errorx.Unauthenticated 类错误或 ID 为空的主体时响应 401，其他 4xx 类错误按其分类响应，例如不是租户成员时返回 errorx.NotFound 得到 404；5xx 类错误响应对应的状态码。返回的主体中 Type、ID、Method、Credential、Scopes、Impersonator 总是取自凭据。注册需要认证的操作（RequireAuth、RequireToken）时必须设置；名称不合法时 New panic。
+	SessionCookie httpx.SessionCookie           // RequireToken 读取的浏览器会话 cookie，零值是 httpx.DefaultSessionCookieName。同一个源下的几个 API 属于不同的账号体系时，各用一个名称，见 httpx.SessionCookie。名称不合法时 New panic。
+	Credentials   identity.CredentialWatcher    // 让 RequireAuth 保护的长连接（例如 SSE）在收到复查信号时立即重新校验凭据，撤销 token、停用用户后连接随即结束；nil 时只按 30 秒的间隔定期校验。通常是 broadcast.NewCredentials 的返回值。
+	Permissions   []identity.Permission         // 应用的权限目录，例如 authz.Catalog。它写入 OpenAPI 文档的 x-tenon-permissions（按名称排序），客户端据此生成权限常量和说明；路由需要的权限另外写在每个操作的 x-required-permissions 中。nil 时不写。
 }
 
 // New 在 r 上创建 chi + Huma API，并让 r 上未匹配的路由与方法返回 Problem Details。

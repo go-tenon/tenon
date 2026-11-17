@@ -68,10 +68,9 @@ type Worker struct {
 	handlers []*handler
 	started  bool
 
-	// stopping 在停止时置位，之后收到的任务直接放回。lifecycle 保护它和 inflight 的计数。
-	lifecycle sync.RWMutex
-	stopping  bool
-	inflight  sync.WaitGroup
+	lifecycle sync.RWMutex   // 保护 stopping 和 inflight 的计数
+	stopping  bool           // 在停止时置位，之后收到的任务直接放回
+	inflight  sync.WaitGroup // 处理中的任务
 	running   sync.WaitGroup // 处理任务的 goroutine，包括停止后直接放回任务的
 	abandon   chan struct{}  // 停止等待超时，放回处理中的任务
 }

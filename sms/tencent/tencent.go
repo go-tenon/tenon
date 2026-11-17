@@ -48,18 +48,13 @@ const (
 //	  templates:
 //	    login_code: {id: "2000001", params: [code]}
 type Config struct {
-	SecretID  string `yaml:"secret_id"`
-	SecretKey string `yaml:"secret_key"`
-	// Region 是地域，为空时是 DefaultRegion。
-	Region string `yaml:"region"`
-	// Endpoint 是接口的域名，为空时是 DefaultEndpoint。
-	Endpoint string `yaml:"endpoint"`
-	// AppID 是短信应用的 SdkAppId，必填。
-	AppID string `yaml:"app_id"`
-	// SignName 是审核通过的签名内容（不是签名 ID）。国内短信必填，国际短信可以为空。
-	SignName string `yaml:"sign_name"`
-	// Templates 把应用的模板名对应到审核通过的模板，例如 login_code: {id: "2000001", params: [code]}。
-	Templates map[string]Template `yaml:"templates"`
+	SecretID  string              `yaml:"secret_id"`
+	SecretKey string              `yaml:"secret_key"`
+	Region    string              `yaml:"region"`    // 地域，为空时是 DefaultRegion。
+	Endpoint  string              `yaml:"endpoint"`  // 接口的域名，为空时是 DefaultEndpoint。
+	AppID     string              `yaml:"app_id"`    // 短信应用的 SdkAppId，必填。
+	SignName  string              `yaml:"sign_name"` // 审核通过的签名内容（不是签名 ID）。国内短信必填，国际短信可以为空。
+	Templates map[string]Template `yaml:"templates"` // 把应用的模板名对应到审核通过的模板，例如 login_code: {id: "2000001", params: [code]}。
 }
 
 // Template 是一个腾讯云模板：模板 ID，以及模板变量依次取 Message.Params 中的哪个键。

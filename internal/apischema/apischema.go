@@ -23,10 +23,8 @@ type Schema struct {
 	registry huma.Registry
 	root     *huma.Schema
 	mode     huma.ValidateMode
-	// Type 是顶层的 type，object 表示结构体或 map；类型没有 schema 时为空。
-	Type string
-	// JSON 是发给客户端的 schema，带 $defs。
-	JSON map[string]any
+	Type     string         // 顶层的 type，object 表示结构体或 map；类型没有 schema 时为空。
+	JSON     map[string]any // 发给客户端的 schema，带 $defs。
 }
 
 // New 为 t 生成 schema，mode 是校验的方向：输入用 huma.ModeWriteToServer，输出用 huma.ModeReadFromServer。

@@ -26,12 +26,9 @@ import (
 //	  key: ${IMGPROXY_KEY}
 //	  salt: ${IMGPROXY_SALT}
 type Config struct {
-	// URL 是 imgproxy 的公开地址。为空时 URL 直接返回原图地址。
-	URL string `yaml:"url"`
-	// Key 和 Salt 是签名用的密钥和盐，十六进制，与 imgproxy 的 IMGPROXY_KEY、IMGPROXY_SALT 相同。
-	// 为空时生成不签名的地址（insecure），只适合开发环境。
-	Key  string `yaml:"key"`
-	Salt string `yaml:"salt"`
+	URL  string `yaml:"url"`  // imgproxy 的公开地址。为空时 URL 直接返回原图地址。
+	Key  string `yaml:"key"`  // 签名用的密钥，十六进制，与 imgproxy 的 IMGPROXY_KEY 相同；和 Salt 都为空时生成不签名的地址（insecure），只适合开发环境
+	Salt string `yaml:"salt"` // 签名用的盐，十六进制，与 imgproxy 的 IMGPROXY_SALT 相同
 }
 
 // Validate 检查 url 是 http(s) 地址，key 和 salt 是十六进制并且同时填写。
@@ -69,12 +66,9 @@ const (
 //
 //	var cardCover = imgproxy.Options{Width: 600, Height: 400, Resize: imgproxy.Fill, Format: "webp"}
 type Options struct {
-	// Width、Height 是目标宽高（像素），0 表示按另一边等比计算；都为 0 时不缩放。
-	Width, Height int
-	// Resize 是缩放方式，默认 Fit。图片小于目标尺寸时不放大。
-	Resize Resize
-	// Format 是输出格式，例如 webp、avif、jpg；为空时保持原格式。
-	Format string
+	Width, Height int    // 目标宽高（像素），0 表示按另一边等比计算；都为 0 时不缩放。
+	Resize        Resize // 缩放方式，默认 Fit。图片小于目标尺寸时不放大。
+	Format        string // 输出格式，例如 webp、avif、jpg；为空时保持原格式。
 }
 
 // Proxy 生成 imgproxy 地址，可以并发使用。

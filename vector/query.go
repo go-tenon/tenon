@@ -21,31 +21,19 @@ const (
 
 // Query 是一次检索的条件。
 type Query struct {
-	// Input 是查询的内容，用建立索引当前版本的模型计算向量后检索语义最接近的文档。必填。
-	// 文字查询用 Text("…")；以图搜图用 Content{MediaPart(上传的图片)} 或 Content{FilePart(id)}，需要模型接受图片（Model.Inputs）。
-	Input Content
-	// Tenant 是查询的租户，"" 为平台本身。文档类型有 tenant 字段时总是只查询这个租户的文档；
-	// 没有 tenant 字段时必须为空。
-	Tenant string
-	Filter Filter // nil 时不过滤
-	// Limit 是最多返回的结果数，不大于 0 时为 DefaultLimit。
-	Limit int
-	// MinScore 是结果的最低相似度，0 时不限制。相似度是余弦相似度，范围是 -1 到 1。
-	// 混合索引中它只过滤语义那一路的候选，关键词命中的结果全部保留。
-	// 以文搜图这类跨模态的检索，相似度普遍偏低，合适的阈值很难定，通常不设。
-	MinScore float64
-	// GroupByKey 让每个 key 只返回最接近的一个文档，返回最多 Limit 个 key。
-	// 一个 key 有多个文档时使用，例如商品的标题和每张图片各是一个文档，结果中每个商品只出现一次。
-	GroupByKey bool
+	Input      Content // 查询的内容，用建立索引当前版本的模型计算向量后检索语义最接近的文档。必填。文字查询用 Text("…")；以图搜图用 Content{MediaPart(上传的图片)} 或 Content{FilePart(id)}，需要模型接受图片（Model.Inputs）。
+	Tenant     string  // 查询的租户，"" 为平台本身。文档类型有 tenant 字段时总是只查询这个租户的文档；没有 tenant 字段时必须为空。
+	Filter     Filter  // nil 时不过滤
+	Limit      int     // 最多返回的结果数，不大于 0 时为 DefaultLimit。
+	MinScore   float64 // 结果的最低相似度，0 时不限制。相似度是余弦相似度，范围是 -1 到 1。混合索引中它只过滤语义那一路的候选，关键词命中的结果全部保留。以文搜图这类跨模态的检索，相似度普遍偏低，合适的阈值很难定，通常不设。
+	GroupByKey bool    // 让每个 key 只返回最接近的一个文档，返回最多 Limit 个 key。一个 key 有多个文档时使用，例如商品的标题和每张图片各是一个文档，结果中每个商品只出现一次。
 }
 
 // Hit 是一条检索结果。
 type Hit[D any] struct {
-	Key string `json:"key"` // 文档所属的 key，即 Sync 时传入的 key
-	Doc D      `json:"doc"` // 同步时保存的文档
-	// Score 越大越相关，只用于比较同一次查询的结果：普通索引中是与查询文本的余弦相似度，
-	// 混合索引中是两路排名的 RRF 分数。
-	Score float64 `json:"score"`
+	Key   string  `json:"key"`   // 文档所属的 key，即 Sync 时传入的 key
+	Doc   D       `json:"doc"`   // 同步时保存的文档
+	Score float64 `json:"score"` // 越大越相关，只用于比较同一次查询的结果：普通索引中是与查询文本的余弦相似度，混合索引中是两路排名的 RRF 分数。
 }
 
 // Search 检索与 q.Input 语义最接近的文档，按相似度从高到低返回。查询使用索引当前的版本，

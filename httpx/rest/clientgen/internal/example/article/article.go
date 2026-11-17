@@ -47,11 +47,9 @@ var (
 
 // Changes 是创建和修改文章时提交的内容。
 type Changes struct {
-	// Title 是标题。
-	Title string `json:"title" minLength:"1" maxLength:"200"`
-	Slug  string `json:"slug" pattern:"^[a-z0-9]+(-[a-z0-9]+)*$"`
-	// Tags 是标签，可以为空。
-	Tags []string `json:"tags,omitempty" required:"false"`
+	Title string   `json:"title" minLength:"1" maxLength:"200"` // 标题。
+	Slug  string   `json:"slug" pattern:"^[a-z0-9]+(-[a-z0-9]+)*$"`
+	Tags  []string `json:"tags,omitempty" required:"false"` // 标签，可以为空。
 
 	Draft bool   `json:"-"`
 	notes string // 未导出的字段不复制
@@ -103,9 +101,8 @@ type UpdateInput struct {
 
 // PublishInput 是发布文章的参数。
 type PublishInput struct {
-	ID uuid.UUID `path:"id"`
-	// IdempotencyKey 让重试只发布一次。
-	IdempotencyKey string `header:"Idempotency-Key"`
+	ID             uuid.UUID `path:"id"`
+	IdempotencyKey string    `header:"Idempotency-Key"` // 让重试只发布一次。
 }
 
 // ListInput 是文章列表的筛选条件。

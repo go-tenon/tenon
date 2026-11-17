@@ -28,14 +28,9 @@ const maxError = 1024
 
 // Options 是 Deliverer 的选项，零值可用。
 type Options struct {
-	// Client 发送请求。nil 时使用 outbound.New(outbound.Options{AnyPort: true})：端点地址由租户填写，
-	// 默认拒绝内网、回环等地址，端口不限。本地开发时传入用 outbound.Options.Allow 放行本机的客户端。
-	// 投递不跟随重定向，3xx 响应视为失败，Client 的 CheckRedirect 被忽略。
-	Client *http.Client
-	// Timeout 是每次请求的超时，包括读取响应；不大于 0 时为 DefaultTimeout。
-	Timeout time.Duration
-	// MaxAttempts 是每次投递最多的请求次数，覆盖 Worker 的 Config.MaxAttempts；不大于 0 时为 DefaultMaxAttempts。
-	MaxAttempts int
+	Client      *http.Client  // 发送请求。nil 时使用 outbound.New(outbound.Options{AnyPort: true})：端点地址由租户填写，默认拒绝内网、回环等地址，端口不限。本地开发时传入用 outbound.Options.Allow 放行本机的客户端。投递不跟随重定向，3xx 响应视为失败，Client 的 CheckRedirect 被忽略。
+	Timeout     time.Duration // 每次请求的超时，包括读取响应；不大于 0 时为 DefaultTimeout。
+	MaxAttempts int           // 每次投递最多的请求次数，覆盖 Worker 的 Config.MaxAttempts；不大于 0 时为 DefaultMaxAttempts。
 }
 
 // Deliverer 处理投递任务：签名并发送请求，把结果写回投递记录。

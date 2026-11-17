@@ -81,14 +81,12 @@ import (
 
 // Config 是应用的配置：config/app.yaml。
 type Config struct {
-    HTTP     httpx.Config    `yaml:"http"`
-    Database database.Config `yaml:"database"`
-    // Crypt 是应用密钥，login 用它签名验证码等数据。
-    Crypt   crypt.Config    `yaml:"crypt"`
-    Hashing hashing.Config  `yaml:"hashing"`
-    Token   apitoken.Config `yaml:"token"`
-    // DevServers 是各前端开发服务器的地址，只在 tenon dev 时有值。
-    DevServers map[string]string `yaml:"dev_servers"`
+    HTTP       httpx.Config      `yaml:"http"`
+    Database   database.Config   `yaml:"database"`
+    Crypt      crypt.Config      `yaml:"crypt"` // 应用密钥，login 用它签名验证码等数据
+    Hashing    hashing.Config    `yaml:"hashing"`
+    Token      apitoken.Config   `yaml:"token"`
+    DevServers map[string]string `yaml:"dev_servers"` // 各前端开发服务器的地址，只在 tenon dev 时有值
 }
 ```
 

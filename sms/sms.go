@@ -38,12 +38,9 @@ type Sender interface {
 
 // Message 是一条短信。它可以完整地序列化为 JSON，便于交给队列发送。
 type Message struct {
-	// To 是 E.164 格式的号码，例如 +8613800138000。login 的手机号已经是这个格式。
-	To string `json:"to"`
-	// Template 是应用给模板起的名字，例如 login_code。驱动按配置换成服务商的模板 ID。
-	Template string `json:"template"`
-	// Params 是模板变量，例如 {"code": "123456"}。
-	Params map[string]string `json:"params,omitempty"`
+	To       string            `json:"to"`               // E.164 格式的号码，例如 +8613800138000。login 的手机号已经是这个格式。
+	Template string            `json:"template"`         // 应用给模板起的名字，例如 login_code。驱动按配置换成服务商的模板 ID。
+	Params   map[string]string `json:"params,omitempty"` // 模板变量，例如 {"code": "123456"}。
 }
 
 // Validate 检查号码是 E.164 格式、模板名不为空、变量名不为空。

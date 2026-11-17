@@ -10,8 +10,7 @@ import (
 
 // when 判断任务在某一秒是否到期。
 type when struct {
-	// cron 是带秒的 cron 表达式，every 为 0 时使用。5 段的表达式和 @hourly 等预定义写法在前面补上秒 0。
-	cron  string
+	cron  string        // 带秒的 cron 表达式，every 为 0 时使用。5 段的表达式和 @hourly 等预定义写法在前面补上秒 0。
 	every time.Duration // @every 的间隔，按 Unix 时间对齐
 }
 

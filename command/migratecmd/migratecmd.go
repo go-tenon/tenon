@@ -24,9 +24,8 @@ import (
 type Option func(*options)
 
 type options struct {
-	name string // 为空时是主库的 migrate 命令
-	// check 在 up 执行迁移之前运行自检，为 nil 时不检查。
-	check func(cmd *cobra.Command, db *bun.DB) error
+	name  string                                     // 为空时是主库的 migrate 命令
+	check func(cmd *cobra.Command, db *bun.DB) error // 在 up 执行迁移之前运行自检，为 nil 时不检查。
 }
 
 // Name 为另一个数据库构造迁移命令：命令名是 name，挂在主库的 migrate 命令下，例如 migrate analytics up；

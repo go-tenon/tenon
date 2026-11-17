@@ -42,39 +42,26 @@ func (a *Admin) jetStream() (jetstream.JetStream, error) { return a.js, nil }
 
 // StreamStatus 是队列在 JetStream 一侧的状态。
 type StreamStatus struct {
-	Stream string // stream 的名字，见 Config.Stream
-	// Exists 报告 stream 是否存在。Worker 第一次启动时创建它，之前为 false，其余字段为零值。
-	Exists bool
-	// Messages 和 Bytes 是 stream 中的消息数和占用的存储：等待处理、处理中的任务和定时消息，确认后删除。
-	Messages uint64
-	Bytes    uint64
-	// Replicas 是副本数；Leader 是集群中负责这个 stream 的服务器，单个服务器时为空。
-	Replicas int
-	Leader   string
-	// Deferred 是等待 JetStream 到时间投递的定时消息：延迟任务和重试。
-	Deferred int
-	// Topics 是有 consumer 或者有任务的 topic，按名字排序。
-	Topics []TopicStatus
+	Stream   string        // stream 的名字，见 Config.Stream
+	Exists   bool          // 报告 stream 是否存在。Worker 第一次启动时创建它，之前为 false，其余字段为零值。
+	Messages uint64        // stream 中的消息数：等待处理、处理中的任务和定时消息，确认后删除
+	Bytes    uint64        // 这些消息占用的存储
+	Replicas int           // 副本数
+	Leader   string        // 集群中负责这个 stream 的服务器，单个服务器时为空
+	Deferred int           // 等待 JetStream 到时间投递的定时消息：延迟任务和重试。
+	Topics   []TopicStatus // 有 consumer 或者有任务的 topic，按名字排序。
 }
 
 // TopicStatus 是一个 topic 在 JetStream 中的状态。
 type TopicStatus struct {
-	Topic string
-	// Handled 报告是否有 consumer：有 Worker 为这个 topic 注册过处理函数。为 false 时任务一直等待，
-	// 直到有 Worker 注册它，通常是忘了注册，或者 topic 名写错了。
-	Handled bool
-	// Pending 是等待处理的任务数。
-	Pending uint64
-	// InFlight 是已经交给 Worker、还没有确认的任务数。
-	InFlight int
-	// Redelivered 是租约到期或停止时放回、再次投递还没有确认的任务数。
-	Redelivered int
-	// Waiting 是 Worker 等待任务的拉取请求数：Worker 有空闲的并发名额时一直有拉取请求。
-	Waiting int
-	// LastDelivered 是最近一次把任务交给 Worker 的时间，没有交过时为零值。
-	LastDelivered time.Time
-	// PausedUntil 是暂停处理的截止时间，没有暂停时为零值，见 Admin.Pause。
-	PausedUntil time.Time
+	Topic         string
+	Handled       bool      // 报告是否有 consumer：有 Worker 为这个 topic 注册过处理函数。为 false 时任务一直等待，直到有 Worker 注册它，通常是忘了注册，或者 topic 名写错了。
+	Pending       uint64    // 等待处理的任务数。
+	InFlight      int       // 已经交给 Worker、还没有确认的任务数。
+	Redelivered   int       // 租约到期或停止时放回、再次投递还没有确认的任务数。
+	Waiting       int       // Worker 等待任务的拉取请求数：Worker 有空闲的并发名额时一直有拉取请求。
+	LastDelivered time.Time // 最近一次把任务交给 Worker 的时间，没有交过时为零值。
+	PausedUntil   time.Time // 暂停处理的截止时间，没有暂停时为零值，见 Admin.Pause。
 }
 
 // Paused 报告 topic 是否暂停了处理。

@@ -65,15 +65,14 @@ type tableBlock struct {
 
 // layout 保存切分器需要知道的关于一份输入的全部信息。
 type layout struct {
-	text       string
-	ranks      []rank  // 每个字节位置一项，共 len(text)+1 项
-	cp         []int32 // 每个字节位置之前的码点数，CRLF 计一次
-	headings   []headingBlock
-	tables     []tableBlock
-	hardStarts []int // 不依附于上一个标题的标题开始位置，升序
-	blocks     []int // 级别为 rankBlock 的位置，升序
-	// headingEnds 是紧跟在标题块之后的行首位置，升序；只有标题的正文放不下时才在这里切开。
-	headingEnds []int
+	text        string
+	ranks       []rank  // 每个字节位置一项，共 len(text)+1 项
+	cp          []int32 // 每个字节位置之前的码点数，CRLF 计一次
+	headings    []headingBlock
+	tables      []tableBlock
+	hardStarts  []int // 不依附于上一个标题的标题开始位置，升序
+	blocks      []int // 级别为 rankBlock 的位置，升序
+	headingEnds []int // 紧跟在标题块之后的行首位置，升序；只有标题的正文放不下时才在这里切开。
 
 	contentEnds map[int]int // contentEndBefore 的缓存
 }

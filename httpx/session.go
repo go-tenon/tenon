@@ -29,8 +29,7 @@ var ErrCrossSite = errorx.Define(errorx.PermissionDenied, "http.cross_site")
 // 同一个源下有多套账号体系时（例如运营后台和租户控制台），各用一个名称，例如 SessionCookie{Name: "__Host-ops"}，
 // 两个 cookie 同时存在、互不覆盖，各自的 API 只读自己的那一个（rest.Options.SessionCookie）。
 type SessionCookie struct {
-	// Name 以 __Host- 开头；空字符串表示 DefaultSessionCookieName。
-	Name string
+	Name string // 以 __Host- 开头；空字符串表示 DefaultSessionCookieName。
 }
 
 // Validate 检查名称以 __Host- 开头，并且是合法的 cookie 名称。

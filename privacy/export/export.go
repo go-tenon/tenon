@@ -53,11 +53,10 @@ type Export struct {
 	bun.BaseModel       `bun:"table:privacy_exports,alias:pex"`
 	operation.Operation `bun:"-"`
 
-	OperationID uuid.UUID `bun:"operation_id,pk,type:uuid" json:"-"`
-	// FileID、Filename 和 ExpiresAt 在 completed 时写入：压缩包、它的文件名和被回收的时间。
-	FileID    uuid.UUID  `bun:"file_id,type:uuid,nullzero" json:"-"`
-	Filename  string     `bun:"filename,notnull"           json:"filename,omitempty"`
-	ExpiresAt *time.Time `bun:"expires_at"                 json:"expires_at,omitempty"`
+	OperationID uuid.UUID  `bun:"operation_id,pk,type:uuid" json:"-"`
+	FileID      uuid.UUID  `bun:"file_id,type:uuid,nullzero" json:"-"`                    // 压缩包，completed 时写入
+	Filename    string     `bun:"filename,notnull"           json:"filename,omitempty"`   // 压缩包的文件名，completed 时写入
+	ExpiresAt   *time.Time `bun:"expires_at"                 json:"expires_at,omitempty"` // 压缩包被回收的时间，completed 时写入
 }
 
 // Service 登记、处理和读取导出，可以并发使用。

@@ -27,31 +27,22 @@ const GoVersion = "1.27.4"
 
 // Options 是项目模板的参数。
 type Options struct {
-	// Module 是 Go 模块路径，Name 是应用的名称（页面标题、命令的说明）。
-	Module, Name string
-	// Slug 是 npm 包名的作用域，例如 todo 时包名是 @todo/web、@todo/client；默认由 Name 得出。
-	Slug string
-	// TenonVersion 是 go.mod 中要求的框架版本。
-	TenonVersion string
-	// 设置了 TenonDir 时，go.mod 用 replace 指向这个本地的框架目录（开发框架本身时使用）。
-	TenonDir  string
-	GoVersion string
+	Module       string // Go 模块路径
+	Name         string // 应用的名称（页面标题、命令的说明）
+	Slug         string // npm 包名的作用域，例如 todo 时包名是 @todo/web、@todo/client；默认由 Name 得出。
+	TenonVersion string // go.mod 中要求的框架版本。
+	TenonDir     string // 本地的框架目录，设置时 go.mod 用 replace 指向它（开发框架本身时使用）
+	GoVersion    string
 }
 
 // Frontend 是前端模板的参数。
 type Frontend struct {
-	// Scope 是 npm 包名的作用域，与项目根目录 package.json 的 name 相同。
-	Scope string
-	// Name 是前端的名称，即 apps 中的目录名。
-	Name string
-	// Base 是前端挂载的路径，以 / 开头和结尾，写入 Vite 的 base 和编译 SSR 可执行文件的 --base。
-	Base string
-	// Title 是页面标题。
-	Title string
-	// Style 是样式预设，见 Styles；为空时是 console。
-	Style string
-	// Landing 是落地页的风格，见 Landings；只用于 site 样式，为空时是 classic。
-	Landing string
+	Scope   string // npm 包名的作用域，与项目根目录 package.json 的 name 相同。
+	Name    string // 前端的名称，即 apps 中的目录名。
+	Base    string // 前端挂载的路径，以 / 开头和结尾，写入 Vite 的 base 和编译 SSR 可执行文件的 --base。
+	Title   string // 页面标题。
+	Style   string // 样式预设，见 Styles；为空时是 console。
+	Landing string // 落地页的风格，见 Landings；只用于 site 样式，为空时是 classic。
 }
 
 // Styles 是前端可选的样式预设（@go-tenon/ui 的 themes），决定模板的内容：

@@ -140,10 +140,8 @@ type FailedJob struct {
 	Topic    string
 	Payload  []byte
 	Metadata map[string]string
-	// Attempts 是失败前执行的次数。
-	Attempts int
-	// Error 是最后一次的错误，包括堆栈。
-	Error    string
+	Attempts int    // 失败前执行的次数。
+	Error    string // 最后一次的错误，包括堆栈。
 	FailedAt time.Time
 }
 
@@ -154,10 +152,8 @@ func (r *failedJob) export() FailedJob {
 
 // FailedQuery 是 FailedJobs.List 的条件。
 type FailedQuery struct {
-	// Topic 为空时列出全部 topic。
-	Topic string
-	// Limit 是最多返回的条数，0 表示 100。
-	Limit  int
+	Topic  string // Topic 为空时列出全部 topic。
+	Limit  int    // 最多返回的条数，0 表示 100。
 	Offset int
 }
 
