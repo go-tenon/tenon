@@ -394,12 +394,13 @@ Tenon 遵循“**只在入口记录一次**”的原则：业务代码只负责�
 <a id="cross-process-errors"></a>
 ### 跨进程传递
 
-通过 gRPC、消息队列等方式在服务之间传递错误时，可以使用 `cockroachdb/errors` 的编解码功能。`errorx` 已经注册了编解码器，还原后错误码、分类、参数和 `errors.Is` 的结果都保持不变：
+错误在服务之间传递时，用各入口的错误响应，它们与语言无关：HTTP 接口和 RPC 返回同样的错误模型，带着错误码、状态码和公开参数，见[客户端协议的错误](../http/protocol.md#errors)和 [RPC 协议的错误](../rpc/protocol.md#errors)。
+
+Go 的客户端把错误响应还原为 `errorx` 的错误，错误码、分类、参数和 `errors.Is` 的结果都与服务端相同，例如 RPC 的 [`natsrpc.Call`](../rpc/endpoints.md#handling-errors)：
 
 ```go
-encoded := errors.EncodeError(ctx, err)     // 发送方
-decoded := errors.DecodeError(ctx, encoded) // 接收方
-errors.Is(decoded, article.ErrNotFound)     // true
+_, err := natsrpc.Call[ArticleDTO](ctx, nc, "blog.v1.articles.get", in)
+errors.Is(err, article.ErrNotFound) // 服务端返回 article.not_found 时为 true
 ```
 
 参数以 JSON 形式传输，还原后数值类型会变为 `float64`。

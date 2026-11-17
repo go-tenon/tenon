@@ -90,7 +90,7 @@ func (e *Error) Error() string { return fmt.Sprint(e) }
 func (e *Error) Unwrap() error { return e.cause }
 
 // Is 按错误码匹配模板或其他实例。错误码全局唯一且稳定，
-// 因此经 errors.EncodeError/DecodeError 跨进程传输后匹配依然成立。
+// 因此调用方把远程返回的错误还原为同一个错误码后（例如 natsrpc.Call），匹配依然成立。
 func (e *Error) Is(target error) bool {
 	switch t := target.(type) {
 	case *Template:

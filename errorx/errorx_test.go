@@ -1,7 +1,6 @@
 package errorx_test
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -110,50 +109,14 @@ func TestPublicParamsAndRedaction(t *testing.T) {
 	}
 }
 
-func TestNetworkRoundTripKeepsIdentity(t *testing.T) {
-	ctx := context.Background()
-	for name, err := range map[string]error{
-		"leaf":    errConflict.New(errorx.Public("sku", "s1"), errorx.Public("qty", 3)),
-		"wrapper": crdb.Wrap(errConflict.Wrap(crdb.New("pq: unique violation"), errorx.Public("sku", "s1"), errorx.Public("qty", 3)), "checkout"),
-	} {
-		got := crdb.DecodeError(ctx, crdb.EncodeError(ctx, err))
-		if !errors.Is(got, errConflict) || errors.Is(got, errNotFound) {
-			t.Fatalf("%s: identity lost after decode: %+v", name, got)
-		}
-		if errorx.CodeOf(got) != "order.insufficient_stock" || errorx.KindOf(got) != errorx.Conflict {
-			t.Fatalf("%s: code=%q kind=%v", name, errorx.CodeOf(got), errorx.KindOf(got))
-		}
-		if p := errorx.PublicOf(got); p["sku"] != "s1" || p["qty"] != float64(3) {
-			t.Fatalf("%s: public=%v", name, p)
-		}
-		if got.Error() != err.Error() {
-			t.Fatalf("%s: message changed: %q -> %q", name, err.Error(), got.Error())
-		}
-	}
-}
-
 func TestRetryAfter(t *testing.T) {
-	ctx := context.Background()
 	limited := errorx.Define(errorx.ResourceExhausted, "demo.limited")
 	err := crdb.Wrap(limited.New(errorx.RetryAfter(1500*time.Millisecond)), "login")
 	if errorx.RetryAfterOf(err) != 1500*time.Millisecond {
 		t.Fatalf("retry after=%v", errorx.RetryAfterOf(err))
 	}
-	if got := crdb.DecodeError(ctx, crdb.EncodeError(ctx, err)); errorx.RetryAfterOf(got) != 1500*time.Millisecond {
-		t.Fatalf("decoded retry after=%v", errorx.RetryAfterOf(got))
-	}
 	if errorx.RetryAfterOf(limited.New()) != 0 || errorx.RetryAfterOf(errors.New("plain")) != 0 {
 		t.Fatal("retry after must default to 0")
-	}
-}
-
-func TestEveryKindSurvivesRoundTrip(t *testing.T) {
-	ctx := context.Background()
-	for _, kind := range []errorx.Kind{errorx.InvalidArgument, errorx.Unauthenticated, errorx.PermissionDenied, errorx.NotFound, errorx.Conflict, errorx.ResourceExhausted, errorx.Unavailable, errorx.Internal} {
-		err := errorx.Define(kind, "demo."+kind.String()).New()
-		if got := errorx.KindOf(crdb.DecodeError(ctx, crdb.EncodeError(ctx, err))); got != kind {
-			t.Fatalf("%v decoded as %v", kind, got)
-		}
 	}
 }
 
