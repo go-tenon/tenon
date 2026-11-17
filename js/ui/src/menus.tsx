@@ -18,7 +18,6 @@ import {
   Stack,
   Switch,
   Text,
-  Tooltip,
   UnstyledButton,
   useMantineColorScheme,
 } from "@mantine/core"

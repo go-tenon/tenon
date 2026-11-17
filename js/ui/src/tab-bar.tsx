@@ -241,7 +241,7 @@ function TabItem({
     >
       {tab.icon && <Icon name={tab.icon} size={15} stroke={1.6} />}
       <span className="tn-tab-title">{tab.title}</span>
-      {tab.dirty && <span className="tn-tab-dot" aria-label="未保存" />}
+      {tab.dirty && <span className="tn-tab-dot" role="img" aria-label="未保存" />}
       {tab.pinned && <IconPin size={12} stroke={1.6} className="tn-tab-pin" aria-hidden />}
     </UnstyledButton>
   )
