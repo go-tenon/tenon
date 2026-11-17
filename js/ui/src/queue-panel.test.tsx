@@ -168,6 +168,24 @@ describe("QueuePanel", () => {
     expect(api.failedRetryAll).toHaveBeenCalledWith({ topic: undefined })
   })
 
+  it("切回看过的筛选时先显示缓存的数据，同时重新请求服务器；失败列表定时刷新", async () => {
+    const api = fakeApi()
+    const root = createRootRouteWithContext<RouterContext>()({
+      component: () => <QueuePanel api={api} refreshInterval={200} />,
+    })
+    await renderApp(root, { path: "/?tab=failed" })
+    await screen.findByText("smtp: timeout")
+    const calls = () => (api.failedList as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0]?.topic ?? "全部")
+    await act(async () => fireEvent.click(await screen.findByRole("radio", { name: /report\.daily/ })))
+    await waitFor(() => expect(screen.queryByText("smtp: timeout")).toBeNull())
+    const before = calls().filter((t) => t === "全部").length
+    await act(async () => fireEvent.click(screen.getByRole("radio", { name: /全部/ })))
+    expect(screen.getByText("smtp: timeout")).toBeTruthy() // 缓存的数据立即显示
+    await waitFor(() => expect(calls().filter((t) => t === "全部").length).toBeGreaterThan(before)) // 同时重新请求
+    const n = calls().length
+    await waitFor(() => expect(calls().length).toBeGreaterThan(n), { timeout: 1000 }) // 定时刷新
+  })
+
   it("勾选几条一起删除：先确认，逐条调用接口", async () => {
     const api = fakeApi()
     await mount(api)

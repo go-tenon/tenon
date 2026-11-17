@@ -49,6 +49,8 @@ export interface DataTableProps<T> {
   rowKey?: string | ((row: T) => string)
   /** 读取中：显示加载的遮罩。 */
   loading?: boolean
+  /** 正在读取新的数据，先显示的是原来的（例如换了筛选、翻页）：表格变淡，读到后替换。 */
+  stale?: boolean
   /** 总条数；没有时不显示分页（例如游标分页）。 */
   total?: number
   /** 分页和排序，通常是 useList(Route) 的返回值。 */
@@ -184,6 +186,7 @@ export function DataTable<T>(props: DataTableProps<T>): ReactNode {
       )}
       <MantineDataTable<T>
         className="tn-datatable"
+        data-stale={props.stale || undefined}
         withTableBorder
         borderRadius="md"
         borderColor="var(--tn-border)"

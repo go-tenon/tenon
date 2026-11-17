@@ -24,7 +24,7 @@ import {
   Text,
 } from "@mantine/core"
 import { IconDots, IconPlayerPause, IconPlayerPlay, IconRotateClockwise, IconTrash } from "@tabler/icons-react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import dayjs from "dayjs"
 import { type ReactNode, useState } from "react"
 import { type Column, DataTable } from "./data-table"
@@ -173,7 +173,7 @@ export function QueuePanel({ api, title = "队列", refreshInterval = 5000 }: Qu
           label: "失败任务",
           count: s?.failed,
           alert: true,
-          content: <FailedJobs api={api} />,
+          content: <FailedJobs api={api} refreshInterval={refreshInterval} />,
         },
         { value: "system", label: "系统状态", content: needStatus((s) => <SystemStatus status={s} />) },
       ]}
@@ -393,7 +393,7 @@ function Topics({ status, api }: { status: QueueStatusData; api: QueueApi }): Re
 
 // ———————————————————————————— 失败任务 ————————————————————————————
 
-function FailedJobs({ api }: { api: QueueApi }): ReactNode {
+function FailedJobs({ api, refreshInterval }: { api: QueueApi; refreshInterval: number }): ReactNode {
   const [topic, setTopic] = useState<string>()
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(20)
@@ -403,6 +403,10 @@ function FailedJobs({ api }: { api: QueueApi }): ReactNode {
   const list = useQuery({
     queryKey: ["tenon", "queue", "failed", topic, page, perPage],
     queryFn: () => api.failedList({ topic, page, per_page: perPage }),
+    // 和任务类型一样定时刷新：新出现的失败任务会自己出现。
+    refetchInterval: refreshInterval,
+    // 换筛选、翻页时先显示原来的数据（表格变淡），新的读到后直接替换，表格不闪。
+    placeholderData: keepPreviousData,
   })
   const selection = useSelection<string>([topic, page, perPage])
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["tenon", "queue"] })
@@ -594,6 +598,7 @@ function FailedJobs({ api }: { api: QueueApi }): ReactNode {
         records={data?.items ?? []}
         total={data?.total}
         loading={list.isPending}
+        stale={list.isPlaceholderData}
         list={{
           page,
           perPage,

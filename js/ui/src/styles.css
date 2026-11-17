@@ -551,6 +551,15 @@ body {
 
 /* ———————————————— 表格 ———————————————— */
 
+/* 正在读取新的数据时（先显示原来的），表格变淡。 */
+.tn-datatable {
+  transition: opacity 150ms ease;
+}
+
+.tn-datatable[data-stale] {
+  opacity: 0.55;
+}
+
 /* 列设置（mantine-datatable 自带）：整个表头格都可以拖动，不显示拖动手柄，指针变成手掌；
    隐藏列的按钮只在指针放在这一格上时显示。表头保持干净，标题和下面的内容左对齐。 */
 .tn-datatable .mantine-datatable-header-cell-draggable-action-icon {
