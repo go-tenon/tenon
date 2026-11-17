@@ -15,15 +15,17 @@ export interface PageProps {
   actions?: ReactNode
   /** 标题上面的面包屑（来自路由的标题），默认显示；false 时不显示。 */
   breadcrumbs?: boolean
+  /** 在面包屑最后再加一级表示当前页面，例如新建页面的“新建”：路由没有自己的标题时用，前面的各级都是链接。 */
+  crumb?: string
   children?: ReactNode
 }
 
 /** 页面：面包屑、标题区加内容。 */
-export function Page({ title, description, actions, breadcrumbs = true, children }: PageProps): ReactNode {
+export function Page({ title, description, actions, breadcrumbs = true, crumb, children }: PageProps): ReactNode {
   return (
     <Stack gap="md">
       <Stack gap={10}>
-        {breadcrumbs && <Crumbs />}
+        {breadcrumbs && <Crumbs extra={crumb} />}
         <div className="tn-page-header">
           <div>
             <Title order={2} className="tn-page-title">
@@ -44,8 +46,9 @@ export function Page({ title, description, actions, breadcrumbs = true, children
 }
 
 /** 面包屑：最后一级是当前页面，不是链接。 */
-function Crumbs(): ReactNode {
-  const { crumbs } = useNavigation()
+function Crumbs({ extra }: { extra?: string }): ReactNode {
+  const { crumbs: matched } = useNavigation()
+  const crumbs = extra ? [...matched, { title: extra, path: "" }] : matched
   if (crumbs.length === 0) return null
   return (
     <Breadcrumbs className="tn-crumbs" separatorMargin={6}>

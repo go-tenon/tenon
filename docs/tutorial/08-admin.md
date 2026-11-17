@@ -881,11 +881,12 @@ import { roles } from "../../resources"
 export const Route = createFileRoute("/_app/roles")({
   staticData: { title: "角色", icon: "safety", permission: "roles:manage" },
   validateSearch: roles.listSearch,
-  component: () => <ResourcePage model={roles} route={Route} />,
+  component: () => <ResourcePage model={roles} route={Route} form="modal" />,
 })
 ```
 
-- `ResourcePage` 按资源的定义渲染列表、在右侧抽屉中新建和修改的表单、删除前的确认。
+- `ResourcePage` 按资源的定义渲染列表、新建和修改的表单、删除前的确认。
+- 新建和修改默认是单独的页面，需要再加两个路由（见[资源页面](../frontend/resources.md#admin)）。角色只有名称和权限两个字段，`form="modal"` 让它在列表上方的对话框中填写，不需要另外的路由。
 - `permission` 让没有 `roles:manage` 权限的作者看不到这个菜单。
 - 表单的校验规则来自服务端的声明：名称为空、没有选择权限时，提交之前就会提示。
 
@@ -945,6 +946,7 @@ function Users() {
       route={Route}
       render={{ roles: (ids) => <RoleBadges ids={(ids as string[]) ?? []} /> }}
       inputs={{ roles: RoleSelect }}
+      form="modal"
     />
   )
 }

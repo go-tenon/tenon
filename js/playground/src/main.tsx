@@ -23,6 +23,7 @@ import {
   OperationsMenu,
   Page,
   QueuePanel,
+  ResourceFormPage,
   ResourcePage,
   RouteError,
   type RouterContext,
@@ -290,7 +291,19 @@ function adminApp() {
         page(trade, "/invoices", "发票", "file-text", () => <AdminPlaceholder title="发票" />),
       ]),
       page(layout, "/products", "商品", "product", () => <AdminPlaceholder title="商品" />),
-      customers,
+      // 新建和修改客户是单独的页面：客户列表路由下的 new 和 $id/edit。
+      customers.addChildren([
+        createRoute({
+          getParentRoute: () => customers,
+          path: "/new",
+          component: () => <ResourceFormPage model={customersModel} />,
+        }),
+        createRoute({
+          getParentRoute: () => customers,
+          path: "/$id/edit",
+          component: () => <ResourceFormPage model={customersModel} />,
+        }),
+      ]),
       page(layout, "/users", "用户", "users", () => <AdminPlaceholder title="用户" />, "users:manage"),
       page(layout, "/reports", "报表", "report", () => <AdminPlaceholder title="报表" />),
       page(layout, "/queue", "队列", "list", () => <QueuePanel api={queueApi} />),

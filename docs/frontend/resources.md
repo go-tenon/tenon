@@ -153,7 +153,7 @@ function Articles() {
 <a id="admin"></a>
 ## 资源页面
 
-`ResourcePage` 按资源模型渲染完整的增删改查页面：列表、搜索和筛选、新建和修改的表单、删除和其他操作，按权限显示按钮。没有覆盖时，一个资源的页面只有路由：
+`ResourcePage` 按资源模型渲染完整的增删改查页面：列表、搜索和筛选、新建和修改的表单、删除和其他操作，按权限显示按钮。没有覆盖时，一个资源的页面只有路由：列表一个，新建和修改的页面各一个，放在列表路由之下：
 
 ```tsx title="src/routes/_app/articles.tsx"
 import { createFileRoute } from "@tanstack/react-router"
@@ -167,9 +167,30 @@ export const Route = createFileRoute("/_app/articles")({
 })
 ```
 
-- **列表**：用 [`DataTable`](lists-forms.md#data-table) 渲染。列按字段的类型显示：枚举显示文字，布尔显示“是”“否”，时间按本地格式，标签逐个显示。可以排序的列点击列头排序；列设置（显示哪些列、顺序）按资源的名称保存在浏览器中。
+```tsx title="src/routes/_app/articles.new.tsx"
+import { createFileRoute } from "@tanstack/react-router"
+import { ResourceFormPage } from "@go-tenon/ui"
+import { articles } from "../../resources"
+
+export const Route = createFileRoute("/_app/articles/new")({
+  component: () => <ResourceFormPage model={articles} />,
+})
+```
+
+```tsx title="src/routes/_app/articles.$id.edit.tsx"
+import { createFileRoute } from "@tanstack/react-router"
+import { ResourceFormPage } from "@go-tenon/ui"
+import { articles } from "../../resources"
+
+export const Route = createFileRoute("/_app/articles/$id/edit")({
+  component: () => <ResourceFormPage model={articles} />,
+})
+```
+
+- **列表**：用 [`DataTable`](lists-forms.md#data-table) 渲染。列按字段的类型显示：枚举显示文字，布尔显示“是”“否”，时间按主题的格式，标签逐个显示。可以排序的列点击列头排序；拖动表头调整列的顺序，右键点击表头选择显示的列，拖动表头的边缘调整宽度，按资源的名称保存在浏览器中。
 - **搜索和筛选**：在表格上方。关键词搜索按回车或离开输入框时生效；枚举字段是下拉选择，布尔字段是“是/否”。翻页、排序和筛选都写进地址，有条件时显示“清除筛选”。
-- **新建和修改**：在右侧的抽屉中。表单字段来自请求体，校验与服务端相同，服务端的字段错误显示在输入框下面；修改时有详情接口就先读取完整的一行。有未保存的修改时，关闭抽屉之前询问。
+- **新建和修改**：默认是单独的页面，`/articles/new` 和 `/articles/{id}/edit`，由上面的两个子路由渲染；开启了[多标签](layout.md#tabs)时各是一个标签，可以和列表同时开着，填了一半的内容会保留。页面上的面包屑是“文章 / 新建”。表单字段来自请求体，校验与服务端相同，服务端的字段错误显示在输入框下面；修改时有详情接口就先读取完整的一行，没有时取列表中的那一行。保存或取消后回到列表，并关闭这个标签；有未保存的修改时，离开之前询问。没有这两个子路由时，列表中不显示“新建”和“修改”按钮。
+- **对话框**：字段少的资源可以设置 `form="modal"`，在列表上方的对话框中新建和修改，不需要子路由。
 - **删除和操作**：在每一行的“更多操作”菜单中，按权限显示。删除和声明了 `Confirm` 的操作先确认；完成或失败后右上角提示，列表随之刷新。
 
 需要覆盖的部分通过选项传入：
@@ -182,6 +203,7 @@ export const Route = createFileRoute("/_app/articles")({
 | `rowActions` | 行上的额外操作，排在声明的操作之后、删除之前 |
 | `toolbar` | 标题区的额外按钮，例如导入、导出 |
 | `expand` | 点击一行展开的内容 |
+| `form` | 新建和修改的表单：`page`（默认）是单独的页面，`modal` 是对话框 |
 
 ```tsx
 <ResourcePage
@@ -193,6 +215,24 @@ export const Route = createFileRoute("/_app/articles")({
   ) }}
   rowActions={(row) => [{ label: "预览", onClick: () => preview(row) }]}
 />
+```
+
+新建和修改的页面也要用到覆盖的输入组件：`ResourceFormPage` 同样有 `inputs`。把它们放在一个模块中，三个路由共用：
+
+```tsx title="src/inputs.tsx"
+import type { FieldInput } from "@go-tenon/ui"
+
+export const articleInputs: Record<string, FieldInput> = {
+  content: ({ field, label, value, onChange, error }) => (
+    <RichEditor label={label} required={field.required} value={value as string} onChange={onChange} error={error} />
+  ),
+}
+```
+
+```tsx title="src/routes/_app/articles.$id.edit.tsx"
+export const Route = createFileRoute("/_app/articles/$id/edit")({
+  component: () => <ResourceFormPage model={articles} inputs={articleInputs} />,
+})
 ```
 
 `inputs` 中的组件收到 `FieldInputProps`：`field`、`label`、`value`、`onChange`（直接是值）、`error`、`disabled`。没有覆盖的字段按 `kind`（`FieldKind`）选择输入组件：
@@ -209,7 +249,7 @@ export const Route = createFileRoute("/_app/articles")({
 | `datetime` | 日期和时间选择，值是 ISO 时间 |
 | `json` | JSON 编辑，是合法的 JSON 时才交给表单 |
 
-`FieldValue`（按类型显示一个值）、`DefaultInput`（按类型选择输入组件）和 `ResourceForm`（新建和修改的表单）也单独导出，可以在自己写的页面中使用。
+`FieldValue`（按类型显示一个值）、`DefaultInput`（按类型选择输入组件）和 `ResourceForm`（对话框中的新建和修改表单）也单独导出，可以在自己写的页面中使用。
 
 <a id="settings"></a>
 ## 设置页面
@@ -290,6 +330,6 @@ function Settings() {
 | `useResourceList`、`useResourceItem`、`useResourceMutations`、`formValues` | `@go-tenon/ui`：列表、详情、修改、表单的初始值 |
 | `rest.Settings`、`(*rest.API).Settings(s)`、`(*rest.API).SettingsPages()` | 设置页面的声明，写入 `x-tenon-settings` |
 | `settingsModel(def, kit, queryClient)`、`useSettings(model)` | `@go-tenon/ui`：设置模型，读取与保存 |
-| `ResourcePage`、`ResourceForm`、`RowAction`、`FieldValue`、`DefaultInput`、`FieldInputProps` | `@go-tenon/ui`：资源页面 |
+| `ResourcePage`、`ResourceFormPage`、`ResourceForm`、`RowAction`、`FieldValue`、`DefaultInput`、`FieldInputProps` | `@go-tenon/ui`：资源页面；新建和修改的页面；对话框中的表单 |
 | `FieldKind`、`ResourceField` | 模型中字段的输入方式和显示文字 |
 | `SettingsForm` | `@go-tenon/ui`：设置表单 |

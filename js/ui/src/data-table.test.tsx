@@ -83,12 +83,12 @@ describe("DataTable", () => {
     expect(screen.queryByText("已选 2 项")).toBeNull()
   })
 
-  it("默认隐藏的列可以在列设置中打开，保存在浏览器中；点击行展开", async () => {
+  it("默认隐藏的列可以右键点击表头打开，保存在浏览器中；点击行展开", async () => {
     await renderApp(tree())
     await screen.findByText("订单 1")
     expect(screen.queryByText("备注内容")).toBeNull()
-    await act(async () => fireEvent.click(screen.getByRole("button", { name: "列设置" })))
-    await act(async () => fireEvent.click(screen.getByRole("checkbox", { name: "备注" })))
+    await act(async () => fireEvent.contextMenu(document.querySelector("thead") as HTMLElement))
+    await act(async () => fireEvent.click(await screen.findByRole("checkbox", { name: "备注" })))
     expect((await screen.findAllByText("备注内容")).length).toBeGreaterThan(0)
     expect(JSON.stringify(localStorage)).toContain("orders")
     await act(async () => fireEvent.click(screen.getByText("订单 3")))

@@ -12,7 +12,7 @@ import { messages } from "../../../httpx/rest/clientgen/internal/example/ts/mess
 import { createQueries } from "../../../httpx/rest/clientgen/internal/example/ts/queries"
 import { resources } from "../../../httpx/rest/clientgen/internal/example/ts/resources"
 import { components, schemas } from "../../../httpx/rest/clientgen/internal/example/ts/schemas"
-import { ResourcePage, type ResourcePageProps } from "./resource"
+import { ResourceFormPage, ResourcePage, type ResourcePageProps } from "./resource"
 import { createApp, type ResourceModel, type RouterContext, resourceModel } from "./shell"
 import { renderRoot } from "./testing"
 
@@ -89,7 +89,12 @@ function server() {
   return calls
 }
 
-async function mount(path = "/articles", ready = "你好", inputs?: ResourcePageProps["inputs"]) {
+async function mount(
+  path = "/articles",
+  ready = "你好",
+  inputs?: ResourcePageProps["inputs"],
+  { form = "page", withPages = true }: { form?: "page" | "modal"; withPages?: boolean } = {},
+) {
   const session = createSession({ load: async () => ({ account: "u1" }) })
   await session.signIn({ account: "u1" })
   const client = createClient({ baseURL: "/api", session })
@@ -111,12 +116,26 @@ async function mount(path = "/articles", ready = "你好", inputs?: ResourcePage
   const articles = createRoute({
     getParentRoute: () => root,
     path: "/articles",
+    staticData: { title: "文章" },
     validateSearch: model.listSearch,
-    component: () => <ResourcePage model={model} route={articles as never} inputs={inputs} />,
+    component: () => <ResourcePage model={model} route={articles as never} inputs={inputs} form={form} />,
   })
+  // 新建和修改的页面：列表路由下的 new 和 $id/edit。
+  const pages = [
+    createRoute({
+      getParentRoute: () => articles,
+      path: "/new",
+      component: () => <ResourceFormPage model={model} inputs={inputs} />,
+    }),
+    createRoute({
+      getParentRoute: () => articles,
+      path: "/$id/edit",
+      component: () => <ResourceFormPage model={model} inputs={inputs} />,
+    }),
+  ]
   const app = createApp({
     id: `ui-resource-${Math.random()}`,
-    routeTree: root.addChildren([articles]),
+    routeTree: root.addChildren([form === "page" && withPages ? articles.addChildren(pages) : articles]),
     session,
     queryClient,
     router: { history: createMemoryHistory({ initialEntries: [path] }) },
@@ -153,27 +172,33 @@ describe("ResourcePage", () => {
     expect(app.router.state.location.search).toEqual({})
   })
 
-  it("新建：表单字段来自请求体，校验与服务端相同，服务端的字段错误显示在输入框下面", async () => {
+  it("新建是单独的页面：面包屑是“文章 / 新建”；校验与服务端相同，服务端的字段错误显示在输入框下面；创建后回到列表", async () => {
     const calls = server()
-    await mount()
-    fireEvent.click(screen.getByRole("button", { name: "新建" }))
-    const drawer = await screen.findByRole("dialog")
-    expect(within(drawer).getByText("新建文章")).toBeTruthy()
-    const slug = within(drawer).getByLabelText(/链接名/)
+    const app = await mount()
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "新建" })))
+    await screen.findByRole("heading", { name: "新建文章" })
+    expect(app.router.state.location.pathname).toBe("/articles/new")
+    expect(screen.getByText("文章", { selector: ".tn-crumbs a" })).toBeTruthy()
+    expect(screen.getByText("新建", { selector: "[aria-current=page]" })).toBeTruthy()
+    expect(screen.queryByRole("dialog")).toBeNull()
+
+    const form = document.querySelector("form") as HTMLElement
+    const slug = within(form).getByLabelText(/链接名/)
     fireEvent.change(slug, { target: { value: "Bad Slug" } })
-    await act(async () => fireEvent.click(within(drawer).getByRole("button", { name: "创建" })))
+    await act(async () => fireEvent.click(within(form).getByRole("button", { name: "创建" })))
     // 标题为空、链接名不合规：两个字段下面都有提示，没有调用接口。
-    await waitFor(() => expect(drawer.querySelectorAll("[aria-invalid=true]").length).toBe(2))
+    await waitFor(() => expect(form.querySelectorAll("[aria-invalid=true]").length).toBe(2))
     expect(calls.some((c) => c.method === "POST")).toBe(false)
 
-    fireEvent.change(within(drawer).getByLabelText(/标题/), { target: { value: "新文章" } })
+    fireEvent.change(within(form).getByLabelText(/标题/), { target: { value: "新文章" } })
     fireEvent.change(slug, { target: { value: "taken" } })
-    await act(async () => fireEvent.click(within(drawer).getByRole("button", { name: "创建" })))
-    await within(drawer).findByText("已被使用")
+    await act(async () => fireEvent.click(within(form).getByRole("button", { name: "创建" })))
+    await within(form).findByText("已被使用")
 
     fireEvent.change(slug, { target: { value: "new-one" } })
-    await act(async () => fireEvent.click(within(drawer).getByRole("button", { name: "创建" })))
+    await act(async () => fireEvent.click(within(form).getByRole("button", { name: "创建" })))
     await screen.findByText("新文章")
+    expect(app.router.state.location.pathname).toBe("/articles")
     expect(calls.filter((c) => c.method === "POST").at(-1)?.body).toEqual({
       title: "新文章",
       slug: "new-one",
@@ -183,7 +208,7 @@ describe("ResourcePage", () => {
 
   it("覆盖的输入组件收到字段的显示文字作为标签", async () => {
     server()
-    await mount("/articles", "你好", {
+    await mount("/articles/new", "新建文章", {
       slug: ({ label, value, onChange, error }) => (
         <TextInput
           data-testid="custom-slug"
@@ -194,36 +219,31 @@ describe("ResourcePage", () => {
         />
       ),
     })
-    fireEvent.click(screen.getByRole("button", { name: "新建" }))
-    const drawer = await screen.findByRole("dialog")
-    expect(
-      within(drawer)
-        .getByLabelText(/链接名/)
-        .getAttribute("data-testid"),
-    ).toBe("custom-slug")
+    expect(screen.getByLabelText(/链接名/).getAttribute("data-testid")).toBe("custom-slug")
   })
 
-  it("关闭有未保存修改的表单之前询问", async () => {
+  it("有未保存的修改时，取消之前询问；放弃后回到列表", async () => {
     server()
-    await mount()
-    fireEvent.click(screen.getByRole("button", { name: "新建" }))
-    const drawer = await screen.findByRole("dialog")
-    fireEvent.change(within(drawer).getByLabelText(/标题/), { target: { value: "写了一半" } })
-    fireEvent.click(within(drawer).getByRole("button", { name: "取消" }))
+    const app = await mount()
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "新建" })))
+    fireEvent.change(await screen.findByLabelText(/标题/), { target: { value: "写了一半" } })
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "取消" })))
     await screen.findByText("放弃未保存的修改？")
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "放弃" })))
-    await waitFor(() => expect(screen.queryByText("新建文章")).toBeNull())
+    await screen.findByText("你好")
+    expect(app.router.state.location.pathname).toBe("/articles")
   })
 
-  it("修改、删除和操作：操作和删除先确认，完成后刷新列表", async () => {
+  it("修改、删除和操作：修改是单独的页面，操作和删除先确认，完成后刷新列表", async () => {
     const calls = server()
-    await mount()
-    fireEvent.click(within(rowOf("草稿一篇")).getByRole("button", { name: "修改" }))
-    const drawer = await screen.findByRole("dialog")
-    const title = await within(drawer).findByLabelText(/标题/)
+    const app = await mount()
+    await act(async () => fireEvent.click(within(rowOf("草稿一篇")).getByRole("button", { name: "修改" })))
+    await screen.findByRole("heading", { name: "修改文章" })
+    expect(app.router.state.location.pathname).toBe("/articles/a2/edit")
+    const title = await screen.findByLabelText(/标题/)
     expect((title as HTMLInputElement).value).toBe("草稿一篇")
     fireEvent.change(title, { target: { value: "改过的草稿" } })
-    await act(async () => fireEvent.click(within(drawer).getByRole("button", { name: "保存" })))
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "保存" })))
     await screen.findByText("改过的草稿")
     expect(calls.find((c) => c.method === "PUT")?.url).toBe("/api/articles/a2")
 
@@ -240,5 +260,37 @@ describe("ResourcePage", () => {
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "删除" })))
     await waitFor(() => expect(screen.queryByText("改过的草稿")).toBeNull())
     expect(calls.some((c) => c.method === "DELETE" && c.url === "/api/articles/a2")).toBe(true)
+  })
+
+  it("没有新建和修改的子路由时不显示这两个按钮", async () => {
+    server()
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+    await mount("/articles", "你好", undefined, { withPages: false })
+    expect(screen.queryByRole("button", { name: "新建" })).toBeNull()
+    expect(within(rowOf("你好")).queryByRole("button", { name: "修改" })).toBeNull()
+    expect(warn).toHaveBeenCalled()
+    warn.mockRestore()
+  })
+
+  it("form 为 modal 时在对话框中新建和修改，不需要子路由；关闭有未保存修改的对话框之前询问", async () => {
+    const calls = server()
+    const app = await mount("/articles", "你好", undefined, { form: "modal", withPages: false })
+    fireEvent.click(screen.getByRole("button", { name: "新建" }))
+    const dialog = await screen.findByRole("dialog")
+    expect(within(dialog).getByText("新建文章")).toBeTruthy()
+    expect(app.router.state.location.pathname).toBe("/articles")
+    fireEvent.change(within(dialog).getByLabelText(/标题/), { target: { value: "写了一半" } })
+    fireEvent.click(within(dialog).getByRole("button", { name: "取消" }))
+    await screen.findByText("放弃未保存的修改？")
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "放弃" })))
+    await waitFor(() => expect(screen.queryByText("新建文章")).toBeNull())
+
+    fireEvent.click(within(rowOf("草稿一篇")).getByRole("button", { name: "修改" }))
+    const edit = await screen.findByRole("dialog")
+    const title = await within(edit).findByLabelText(/标题/)
+    fireEvent.change(title, { target: { value: "对话框改的" } })
+    await act(async () => fireEvent.click(within(edit).getByRole("button", { name: "保存" })))
+    await screen.findByText("对话框改的")
+    expect(calls.find((c) => c.method === "PUT")?.url).toBe("/api/articles/a2")
   })
 })

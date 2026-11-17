@@ -1,10 +1,15 @@
 // 表格：包装 mantine-datatable，应用不直接依赖它。分页和排序接 shell/ 中的列表模型（保存在地址中），
-// 选中接 useSelection（可以跨页），列的显隐和顺序可以保存在浏览器中。密度随主题的预设。
+// 选中接 useSelection（可以跨页）。设置了 storeKey 时，用 mantine-datatable 自带的列设置：拖动表头调整顺序，
+// 右键点击表头选择显示的列，拖动表头的边缘调整宽度，设置保存在浏览器中。密度随主题的预设。
 
-import { ActionIcon, Box, Button, Checkbox, Group, Popover, Stack, Text, Tooltip, useMantineTheme } from "@mantine/core"
-import { useLocalStorage } from "@mantine/hooks"
-import { IconArrowDown, IconArrowUp, IconColumns3, IconInbox } from "@tabler/icons-react"
-import { type DataTableColumn, type DataTableSortStatus, DataTable as MantineDataTable } from "mantine-datatable"
+import { Box, Button, Group, Stack, Text, useMantineTheme } from "@mantine/core"
+import { IconInbox } from "@tabler/icons-react"
+import {
+  type DataTableColumn,
+  type DataTableSortStatus,
+  DataTable as MantineDataTable,
+  useDataTableColumns,
+} from "mantine-datatable"
 import type { ReactNode } from "react"
 import type { ListState, Selection } from "./shell"
 import { layoutMetrics } from "./theme"
@@ -24,9 +29,9 @@ export interface Column<T> {
   noWrap?: boolean
   /** 超出时显示省略号。 */
   ellipsis?: boolean
-  /** 默认隐藏，用户可以在列设置中打开（需要 storeKey）。 */
+  /** 默认隐藏；设置了 storeKey 时，用户可以右键点击表头打开。 */
   hidden?: boolean
-  /** 不能在列设置中隐藏，例如名称列、操作列。 */
+  /** 不能隐藏、拖动和调整宽度，例如名称列、操作列。 */
   fixed?: boolean
 }
 
@@ -59,7 +64,7 @@ export interface DataTableProps<T> {
   bulkActions?: (keys: string[]) => ReactNode
   /** 点击行展开的内容。 */
   expand?: (row: T) => ReactNode
-  /** 保存列的显隐和顺序的键，例如 "orders"：显示列设置按钮，设置保存在浏览器中。 */
+  /** 保存列设置的键，例如 "orders"：可以拖动表头调整顺序、右键点击表头选择显示的列、拖动边缘调整宽度，保存在浏览器中。 */
   storeKey?: string
   /** 表格上方左侧的内容，例如筛选条件。 */
   toolbar?: ReactNode
@@ -96,11 +101,7 @@ export function DataTable<T>(props: DataTableProps<T>): ReactNode {
   const dense = m.preset === "admin"
   const key = keyOf(props.rowKey)
 
-  const [prefs, setPrefs] = useColumnPrefs(storeKey)
-  const visible = arrange(columns, prefs).filter((c) =>
-    prefs.hidden ? !prefs.hidden.includes(c.accessor) || c.fixed : !c.hidden,
-  )
-  const effective = visible.map(
+  const mapped = (storeKey ? columns : columns.filter((c) => !c.hidden)).map(
     (c) =>
       ({
         accessor: c.accessor,
@@ -111,8 +112,13 @@ export function DataTable<T>(props: DataTableProps<T>): ReactNode {
         textAlign: c.textAlign,
         // ellipsis 和 noWrap 只能二选一。
         ...(c.ellipsis ? { ellipsis: true } : { noWrap: c.noWrap }),
+        ...(storeKey && !c.fixed
+          ? { toggleable: true, draggable: true, resizable: true, defaultToggle: !c.hidden }
+          : {}),
       }) as DataTableColumn<T>,
   )
+  const storeColumnsKey = storeKey ? `tenon:columns:${storeKey}` : undefined
+  const { effectiveColumns } = useDataTableColumns<T>({ key: storeColumnsKey, columns: mapped })
 
   const selected = selection ? records.filter((r) => selection.has(key(r))) : undefined
   const selectionProps = selection
@@ -157,7 +163,7 @@ export function DataTable<T>(props: DataTableProps<T>): ReactNode {
   const keys = selection ? [...selection.keys] : []
   return (
     <Stack gap="sm">
-      {(toolbar || storeKey || (bulkActions && keys.length > 0)) && (
+      {(toolbar || (bulkActions && keys.length > 0)) && (
         <Group justify="space-between" gap="sm" wrap="nowrap" align="flex-end">
           <Box style={{ flex: 1, minWidth: 0 }}>
             {bulkActions && keys.length > 0 ? (
@@ -174,7 +180,6 @@ export function DataTable<T>(props: DataTableProps<T>): ReactNode {
               toolbar
             )}
           </Box>
-          {storeKey && <ColumnsMenu columns={columns} prefs={prefs} onChange={setPrefs} />}
         </Group>
       )}
       <MantineDataTable<T>
@@ -190,7 +195,8 @@ export function DataTable<T>(props: DataTableProps<T>): ReactNode {
         fz="sm"
         minHeight={records.length === 0 ? (props.minHeight ?? 160) : undefined}
         records={records as T[]}
-        columns={effective}
+        columns={effectiveColumns}
+        storeColumnsKey={storeColumnsKey}
         idAccessor={key as never}
         fetching={props.loading}
         loaderBackgroundBlur={1}
@@ -209,100 +215,5 @@ export function DataTable<T>(props: DataTableProps<T>): ReactNode {
         {...(paginationProps as object)}
       />
     </Stack>
-  )
-}
-
-/** 保存在浏览器中的列设置：隐藏的列和顺序；没有保存过时为空，按列的定义显示。 */
-interface ColumnPrefs {
-  hidden?: string[]
-  order?: string[]
-}
-
-function useColumnPrefs(key: string | undefined): [ColumnPrefs, (p: ColumnPrefs) => void] {
-  const [prefs, setPrefs] = useLocalStorage<ColumnPrefs>({
-    key: `tenon:columns:${key ?? ""}`,
-    defaultValue: {},
-    getInitialValueInEffect: false,
-  })
-  return key ? [prefs, setPrefs] : [{}, () => {}]
-}
-
-/** 按保存的顺序排列列：没有保存过的列（例如新增的列）排在原来的位置之后。 */
-function arrange<T>(columns: Column<T>[], prefs: ColumnPrefs): Column<T>[] {
-  if (!prefs.order) return columns
-  const rank = new Map(prefs.order.map((a, i) => [a, i]))
-  return [...columns].sort((a, b) => (rank.get(a.accessor) ?? 1e6) - (rank.get(b.accessor) ?? 1e6))
-}
-
-/** 列设置：勾选显示的列，上下移动调整顺序，恢复默认。固定的列不能隐藏和移动。 */
-function ColumnsMenu<T>({
-  columns,
-  prefs,
-  onChange,
-}: {
-  columns: Column<T>[]
-  prefs: ColumnPrefs
-  onChange: (p: ColumnPrefs) => void
-}): ReactNode {
-  const ordered = arrange(columns, prefs).filter((c) => !c.fixed)
-  const hidden = prefs.hidden ?? columns.filter((c) => c.hidden).map((c) => c.accessor)
-  const move = (index: number, delta: number) => {
-    const next = ordered.map((c) => c.accessor)
-    const [item] = next.splice(index, 1)
-    next.splice(index + delta, 0, item)
-    onChange({ ...prefs, hidden, order: next })
-  }
-  return (
-    <Popover position="bottom-end" width={240}>
-      <Popover.Target>
-        <Tooltip label="列设置">
-          <ActionIcon variant="default" size="lg" aria-label="列设置">
-            <IconColumns3 size={16} stroke={1.6} />
-          </ActionIcon>
-        </Tooltip>
-      </Popover.Target>
-      <Popover.Dropdown>
-        <Text size="xs" c="dimmed" mb="xs">
-          显示的列
-        </Text>
-        <Stack gap={4}>
-          {ordered.map((c, i) => (
-            <Group key={c.accessor} gap={4} wrap="nowrap" justify="space-between">
-              <Checkbox
-                label={c.title ?? c.accessor}
-                checked={!hidden.includes(c.accessor)}
-                onChange={(e) =>
-                  onChange({
-                    ...prefs,
-                    hidden: e.currentTarget.checked ? hidden.filter((h) => h !== c.accessor) : [...hidden, c.accessor],
-                  })
-                }
-              />
-              <Group gap={0} wrap="nowrap">
-                <ActionIcon
-                  size="sm"
-                  aria-label={`上移 ${String(c.title ?? c.accessor)}`}
-                  disabled={i === 0}
-                  onClick={() => move(i, -1)}
-                >
-                  <IconArrowUp size={14} />
-                </ActionIcon>
-                <ActionIcon
-                  size="sm"
-                  aria-label={`下移 ${String(c.title ?? c.accessor)}`}
-                  disabled={i === ordered.length - 1}
-                  onClick={() => move(i, 1)}
-                >
-                  <IconArrowDown size={14} />
-                </ActionIcon>
-              </Group>
-            </Group>
-          ))}
-        </Stack>
-        <Button variant="subtle" size="xs" mt="sm" px={0} onClick={() => onChange({})}>
-          恢复默认
-        </Button>
-      </Popover.Dropdown>
-    </Popover>
   )
 }
