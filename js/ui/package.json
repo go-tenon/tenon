@@ -12,7 +12,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@go-tenon/client": "workspace:*"
+    "@go-tenon/client": "workspace:*",
+    "@mantine/colors-generator": "^9.8.1",
+    "chroma-js": "^3.3.0"
   },
   "peerDependencies": {
     "@dnd-kit/core": "^6.3.1",

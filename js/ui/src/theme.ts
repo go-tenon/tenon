@@ -1,5 +1,6 @@
 // 主题：三套样式预设和由设计令牌生成主题。外观只通过 Mantine 的主题表达，组件不写死颜色和尺寸。
 
+import { generateColors } from "@mantine/colors-generator"
 import {
   Button,
   createTheme,
@@ -11,80 +12,54 @@ import {
 
 // ———————————————————————————— 色板 ————————————————————————————
 
-// 比第 6 级浅的 6 级：从输入颜色走向接近白色的比例（第 0 级最浅）。
-const lighter = [0.97, 0.88, 0.72, 0.55, 0.36, 0.18]
-// 比第 6 级深的 3 级：从输入颜色走向最深的比例。
-const darker = [0.25, 0.5, 0.75]
-// 每一级相对输入颜色的彩度：浅色降低彩度，避免发灰或过艳。
-const chroma = [0.18, 0.32, 0.55, 0.75, 0.9, 0.97, 1, 0.95, 0.88, 0.8]
+/**
+ * 预设的主题色：Mantine 颜色生成器（mantine.dev/colors-generator）中的 26 种颜色，
+ * 名称是官方英文名的小写连字符写法，例如 Sky blue 写作 sky-blue。
+ */
+export const primaryColors = {
+  "blue-gray": "#63687c",
+  brown: "#5d4037",
+  tomato: "#f06418",
+  "deep-orange": "#fc8a08",
+  "bright-orange": "#ffa903",
+  yellow: "#d9d02f",
+  "bright-green": "#6bd731",
+  green: "#2bdd66",
+  "light-blue": "#00b5ff",
+  "sky-blue": "#099cff",
+  "pale-blue": "#5474b4",
+  "bright-blue": "#0063ff",
+  "deep-blue": "#1f32c4",
+  "pale-indigo": "#4c5897",
+  purple: "#4f23c0",
+  "pale-purple": "#504c97",
+  violet: "#7b2eda",
+  "pale-violet": "#6b31b2",
+  "dark-pink": "#8931b2",
+  "bright-pink": "#c02adf",
+  pink: "#f018e8",
+  magenta: "#f01879",
+  "bright-red": "#f0185c",
+  "pale-red": "#c91a52",
+  "deep-red": "#c91a25",
+  red: "#f21616",
+} as const
+
+/** 预设主题色的名称。 */
+export type PrimaryColor = keyof typeof primaryColors
 
 /**
- * 由一个十六进制颜色生成 Mantine 的 10 级色板：同一色相，按感知亮度（OKLCH）相对输入颜色分级，
- * 第 6 级就是输入的颜色，所以很浅或很深的品牌色也从浅到深单调。
+ * 由主题色生成 Mantine 的 10 级色板，用 Mantine 官方的颜色生成器（@mantine/colors-generator），
+ * 结果与 mantine.dev/colors-generator 一致。color 是预设的名称（见 primaryColors）或者颜色值，例如 #0f766e。
  */
-export function palette(hex: string): MantineColorsTuple {
-  const [l, c, h] = toOklch(parseHex(hex))
-  const top = Math.max(0.985, l)
-  const bottom = Math.min(Math.max(0.12, l * 0.45), l)
-  const shades = Array.from({ length: 10 }, (_, i) => {
-    if (i === 6) return normalizeHex(hex)
-    const target = i < 6 ? l + (top - l) * lighter[i] : l - (l - bottom) * darker[i - 7]
-    return toHex(fromOklch([target, c * chroma[i], h]))
-  })
-  return shades as unknown as MantineColorsTuple
-}
-
-function normalizeHex(hex: string): string {
-  return toHex(parseHex(hex))
-}
-
-type RGB = [number, number, number]
-
-function parseHex(hex: string): RGB {
-  const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(hex.trim())
-  if (!m) throw new Error(`@go-tenon/ui: invalid color ${JSON.stringify(hex)}, expected #rrggbb`)
-  const s = m[1].length === 3 ? [...m[1]].map((c) => c + c).join("") : m[1]
-  return [0, 2, 4].map((i) => Number.parseInt(s.slice(i, i + 2), 16) / 255) as RGB
-}
-
-function toHex(rgb: RGB): string {
-  return `#${rgb
-    .map((v) =>
-      Math.round(Math.min(1, Math.max(0, v)) * 255)
-        .toString(16)
-        .padStart(2, "0"),
+export function palette(color: PrimaryColor | (string & {})): MantineColorsTuple {
+  const value = primaryColors[color as PrimaryColor] ?? color
+  try {
+    return generateColors(value)
+  } catch {
+    throw new Error(
+      `@go-tenon/ui: invalid color ${JSON.stringify(color)}, expected #rrggbb or one of ${Object.keys(primaryColors).join(", ")}`,
     )
-    .join("")}`
-}
-
-const toLinear = (v: number) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)
-const fromLinear = (v: number) => (v <= 0.0031308 ? v * 12.92 : 1.055 * v ** (1 / 2.4) - 0.055)
-
-function toOklch(rgb: RGB): [number, number, number] {
-  const [r, g, b] = rgb.map(toLinear)
-  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b)
-  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b)
-  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b)
-  const L = 0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s
-  const A = 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s
-  const B = 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s
-  return [L, Math.hypot(A, B), Math.atan2(B, A)]
-}
-
-function fromOklch([L, C, H]: [number, number, number]): RGB {
-  // 超出 sRGB 时逐步降低彩度，保持亮度和色相。
-  for (let c = C; ; c *= 0.92) {
-    const a = c * Math.cos(H)
-    const b = c * Math.sin(H)
-    const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3
-    const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3
-    const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3
-    const rgb = [
-      4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
-      -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
-      -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
-    ].map(fromLinear) as RGB
-    if (rgb.every((v) => v >= -0.001 && v <= 1.001) || c < 0.001) return rgb
   }
 }
 
@@ -210,8 +185,8 @@ function base(m: LayoutMetrics): MantineThemeOverride {
   })
 }
 
-// 运营后台的主色：沉稳的深蓝灰。
-const adminBrand = "#34507f"
+// 运营后台的主色：沉稳的浅灰蓝。
+const adminBrand: PrimaryColor = "pale-blue"
 
 // 运营后台的暗色：带一点主色调的深灰。[7] 是页面背景、[8] 是侧栏、[6] 是悬停、[4] 是边框。
 const adminDark: MantineColorsTuple = [
@@ -344,8 +319,11 @@ export const themes: Record<Preset, MantineThemeOverride> = { admin, console: co
 export interface UiThemeOptions {
   /** 样式预设，默认 console。 */
   preset?: Preset
-  /** 品牌色，十六进制，例如 #0f766e。生成 10 级色板，第 6 级（亮色模式的主色）就是它。 */
-  primary?: string
+  /**
+   * 品牌色：预设的名称（见 primaryColors，例如 sky-blue）或者颜色值（例如 #0f766e）。
+   * 用 Mantine 官方的颜色生成器生成 10 级色板，输入的颜色按亮度落在其中一级。
+   */
+  primary?: PrimaryColor | (string & {})
   /** 基础圆角（像素），其他圆角按比例缩放。 */
   radius?: number
   /** 字体，不设置时使用系统字体。 */
