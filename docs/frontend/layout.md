@@ -121,7 +121,7 @@ function ArticlesPage() {
 
 | 组件 | 作用 |
 | --- | --- |
-| `UserMenu` | 头像，菜单中有名称、邮箱、应用的菜单项（`items`）和退出登录。`logout` 调用应用的退出接口，之后清除会话中的身份 |
+| `UserMenu` | 头像，菜单中有名称、邮箱、应用的菜单项（`items`）和退出登录。`logout` 调用应用的退出接口，之后清除会话中的身份；标签中有未保存的修改时先询问 |
 | `TenantSwitcher` | 当前租户的名称，菜单中列出用户所属的全部租户；只有一个租户时只显示名称，不是多租户应用时不显示。`AppLayout` 已经放好 |
 | `NotificationsMenu` | 铃铛和未读数，弹出最近的通知，点击打开并标记已读，见[通知](features.md#notifications) |
 | `OperationsMenu` | 后台任务的进度：导入、导出等耗时的操作。有进行中的任务时显示转动的图标，没有任务时不显示，见[后台操作](features.md#operations) |
@@ -186,7 +186,7 @@ function ArticlePage() {
 
 布局路由中调用 `useTabShortcuts()` 开启快捷键：Alt+W 关闭当前标签，Alt+← / Alt+→ 切换。
 
-**未保存的修改。** 在标签中，[`useUnsavedChanges`](lists-forms.md#unsaved-changes) 不在切换标签时询问（切换标签会保留页面的状态），而是把标签标记为有未保存的修改。关闭、刷新这个标签时询问，刷新或关闭浏览器时由浏览器提示。切换租户前 `switchTenant` 会询问；退出登录前用 `confirmDiscard` 询问：
+**未保存的修改。** 在标签中，[`useUnsavedChanges`](lists-forms.md#unsaved-changes) 不在切换标签时询问（切换标签会保留页面的状态），而是把标签标记为有未保存的修改。关闭、刷新这个标签时询问，刷新或关闭浏览器时由浏览器提示。`UserMenu` 退出登录前、`switchTenant` 切换租户前都会询问；自己写的退出按钮用 `confirmDiscard`：
 
 ```tsx
 async function signOut() {
@@ -309,5 +309,5 @@ function TopLayout() {
 | `confirmDiscard(app)` | 有未保存的修改时询问是否放弃，例如退出登录前 |
 | `useTenant`、`switchTenant`、`enterTenant` | 当前租户、切换租户 |
 | `useNavigation`、`useMenu`、`useBreadcrumbs` | 导航模型、菜单、面包屑 |
-| `buildMenu`、`firstPage`、`pageUnder`、`breadcrumbs` | 菜单和面包屑的纯函数 |
+| `firstPage`、`pageUnder` | 菜单中第一个可以进入的页面 |
 | `useLayoutState`、`useNarrow` | 布局状态、窄屏 |
