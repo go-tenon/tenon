@@ -19,7 +19,7 @@ import {
   Stack,
   Text,
 } from "@mantine/core"
-import { IconDots, IconPlayerPlay } from "@tabler/icons-react"
+import { IconDots } from "@tabler/icons-react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router"
 import { type ReactNode, useState } from "react"
@@ -263,13 +263,11 @@ function Tasks({
       title: "",
       textAlign: "right",
       noWrap: true,
-      width: 130,
       render: (t) => (
         <Group gap={2} justify="flex-end" wrap="nowrap" onClick={(e) => e.stopPropagation()}>
           <Button
             size="compact-sm"
             variant="subtle"
-            leftSection={<IconPlayerPlay size={14} />}
             loading={runNow.isPending && runNow.variables === t.name}
             disabled={t.running}
             onClick={async () => {
