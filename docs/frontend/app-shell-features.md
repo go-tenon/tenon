@@ -118,8 +118,8 @@ const { current, tenant, tenants, switchTo } = useTenant()
 
 ```ts
 const tenant = () => session.identity()?.tenant
-export const api = createClient({ baseURL: "/api", onUnauthorized: () => session.expired(), headers: () => ({ "X-Tenant": tenant() }) })
-// 路径方式：createClient({ baseURL: () => `/api/t/${tenant()}`, onUnauthorized: () => session.expired() })
+export const api = createClient({ baseURL: "/api", session, headers: () => ({ "X-Tenant": tenant() }) })
+// 路径方式：createClient({ baseURL: () => `/api/t/${tenant()}`, session })
 ```
 
 租户在路径中时，用户也可能直接打开另一个租户的地址。租户布局路由的 `beforeLoad` 调用 `enterTenant`，会话的身份随之切换：

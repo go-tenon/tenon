@@ -838,7 +838,7 @@ import { components, schemas } from "@blog/client/api/schemas"
 import { session } from "./auth"
 
 // api 是生成的客户端。登录凭据是浏览器自动带上的会话 cookie；受保护的接口返回 401 时，会话随之变为未登录。
-export const api = createClient({ baseURL: "/api", onUnauthorized: () => session.expired() })
+export const api = createClient({ baseURL: "/api", session })
 
 // 资源模型：Go 中声明的资源，加上生成的客户端、校验规则、验证提示和枚举的显示文字。
 const kit = { client: api, queries: createQueries(api), schemas, components, enums, messages, language: "zh-CN" }

@@ -82,6 +82,19 @@ describe("createSession", () => {
     expect(onSignedOut).toHaveBeenCalledTimes(1)
   })
 
+  it("fetch：请求发出之后身份变了，401 不让新的会话失效", async () => {
+    const session = createSession({ load: async () => null })
+    await session.signIn({ account: "alice" })
+    let release!: () => void
+    const base: FetchLike = () => new Promise((r) => (release = () => r(response(401))))
+    const pending = session.fetch(base)("/api/x")
+    session.signOut()
+    await session.signIn({ account: "bob" })
+    release()
+    expect((await pending).status).toBe(401)
+    expect(session.identity()).toEqual({ account: "bob" })
+  })
+
   it("身份变化时代次加一，通知订阅者并清空查询缓存", async () => {
     const session = createSession({ load: async () => null })
     const queryClient = { clear: vi.fn() }

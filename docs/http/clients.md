@@ -111,8 +111,8 @@ export const session = createSession({
 
 export const api = createClient({
   baseURL: "/api",
-  // 受保护的接口返回 401：登录已经失效（过期、在别处退出或被撤销）
-  onUnauthorized: () => session.expired(),
+  // 受保护的接口返回 401：登录已经失效（过期、在别处退出或被撤销），会话随之变为未登录
+  session,
   // 403 auth.confirm_required（rest.Confirmed）：弹出密码框，确认成功后重试原请求
   onConfirmRequired: () => confirmDialog.open(),
 })
@@ -120,8 +120,9 @@ export const api = createClient({
 
 - 打开页面（包括刷新页面、新标签页）时先调用一次 `await session.restore()`：它调用 `load`，返回 `true` 表示已经登录，决定显示登录页还是应用。已经知道身份时不再读取。
 - 登录接口成功后（服务端已经写入 cookie）调用 `await session.signIn()`，它用 `load` 读取身份；也可以直接传入身份。登出时先调用登出接口，服务端撤销这次登录并清除 cookie，再调用 `session.signOut()`。
-- 受保护的接口返回 `401` 时，`onUnauthorized` 调用 `session.expired()`：清除身份，调用 `onSignedOut`。
-- 公开的接口（[`rest.Public`](routing.md#access-policies)）的 `401` 不调用 `onUnauthorized`，原样返回给调用者。
+- 受保护的接口返回 `401` 时，客户端调用 `session.expired()`：清除身份，调用 `onSignedOut`。
+- 请求只对发出时的身份有效：请求发出之后登录、退出或切换了身份（`session.generation()` 变了），收到的 `401` 原样抛出，不会让新的会话失效；`403 auth.confirm_required` 也不再确认重试，免得用别人的身份重发。`session.fetch` 同样如此。
+- 公开的接口（[`rest.Public`](routing.md#access-policies)）的 `401` 不影响会话，原样返回给调用者。
 - 请求带上 `Accept-Language`（默认是浏览器的语言，`language` 可以覆盖），错误的 `detail` 按它翻译。App 的 WebView 设置 `appVersion`，作为 [`X-App-Version`](#app-version) 发送。
 - `headers` 是每次请求附加的请求头，每次请求时读取，值为空时不发送，接口自己的请求头优先，例如租户在请求头中时 `headers: () => ({ "X-Tenant": session.identity()?.tenant })`。`baseURL` 也可以是函数，例如租户在路径中时 `` baseURL: () => `/api/t/${tenant}` ``。见[租户](../frontend/app-shell-features.md#tenants)。
 

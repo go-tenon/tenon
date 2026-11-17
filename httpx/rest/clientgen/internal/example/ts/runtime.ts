@@ -13,8 +13,12 @@ export interface ClientOptions {
   baseURL: string | (() => string)
   /** 每次请求附加的请求头，例如 () => ({ "X-Tenant": tenant })；值为空时不发送。接口自己的请求头优先。 */
   headers?: () => Record<string, string | undefined>
-  /** 受保护的接口返回 401 时调用：登录已经失效（退出、过期或被撤销），例如清除身份、跳到登录页。 */
-  onUnauthorized?: () => void
+  /**
+   * 会话（@go-tenon/client 的 createSession）：受保护的接口返回 401 时调用 expired，登录已经失效。
+   * 只对发出时的身份有效：请求发出之后登录、退出或切换了身份（generation 变了），401 原样抛出，
+   * 不让新的会话失效；403 auth.confirm_required 也不再确认重试，免得用别人的身份重发。
+   */
+  session?: SessionLike
   /**
    * 受保护的接口返回 403 auth.confirm_required（rest.Confirmed）时调用：让用户再次输入密码或验证码，
    * 确认成功后返回 true，原请求重试一次。不设置时直接抛出 ApiError。
@@ -26,6 +30,12 @@ export interface ClientOptions {
   appVersion?: string
   /** 发送请求的函数，默认是全局的 fetch。 */
   fetch?: typeof fetch
+}
+
+/** ClientOptions.session 用到的会话方法。 */
+export interface SessionLike {
+  generation(): number
+  expired(): void
 }
 
 /** 事件流的选项。 */
@@ -112,7 +122,7 @@ export interface Request {
   headers?: Record<string, unknown>
   body?: unknown
   form?: Record<string, unknown>
-  /** 公开的接口：401 不调用 onUnauthorized。 */
+  /** 公开的接口：401 不让会话失效。 */
   public?: boolean
 }
 
@@ -190,17 +200,23 @@ export class Runtime {
     }
   }
 
-  /** 发送请求：403 auth.confirm_required 时确认一次再重试；非 2xx 抛出 ApiError，受保护的接口 401 时先调用 onUnauthorized。 */
+  /**
+   * 发送请求：403 auth.confirm_required 时确认一次再重试；非 2xx 抛出 ApiError。
+   * 受保护的接口 401 时，身份没有变过就让会话失效。
+   */
   private async send(req: Request, signal?: AbortSignal): Promise<Response> {
+    const session = this.options.session
+    const issued = session?.generation()
+    const same = () => session === undefined || session.generation() === issued
     let confirmed = false
     for (;;) {
       const res = await this.fetchOnce(req, signal)
       if (res.ok) return res
-      if (res.status === 401 && !req.public) this.options.onUnauthorized?.()
+      if (res.status === 401 && !req.public && same()) session?.expired()
       const err = await toError(res)
-      if (err.code === confirmRequired && this.options.onConfirmRequired && !confirmed) {
+      if (err.code === confirmRequired && this.options.onConfirmRequired && !confirmed && same()) {
         confirmed = true
-        if (await this.options.onConfirmRequired()) continue
+        if ((await this.options.onConfirmRequired()) && same()) continue
       }
       throw err
     }

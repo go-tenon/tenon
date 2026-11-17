@@ -5,14 +5,13 @@ import { createSession, ensureOK } from "@go-tenon/client"
 // 登录凭据是 HttpOnly 的会话 cookie，浏览器随同源请求自动带上，页面上的脚本不接触它。
 // 接口名或路径不同时只改这个文件。
 
+// session.fetch 同源发送 cookie；受保护的接口返回 401 时（只对发出时的身份有效）会话随之变为未登录。
 async function send(method: string, path: string, body?: unknown): Promise<Response> {
-  const res = await fetch(`/api${path}`, {
+  const res = await session.fetch(fetch)(`/api${path}`, {
     method,
-    credentials: "same-origin",
     headers: body === undefined ? undefined : { "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
   })
-  if (res.status === 401 && path !== "/auth/login") session.expired()
   return (await ensureOK(res)) as Response
 }
 

@@ -29,7 +29,10 @@ export interface Session {
   signIn(identity?: Identity): Promise<void>
   /** 退出：清除身份。退出接口由应用自己调用，cookie 由它清除。 */
   signOut(): void
-  /** 受保护的请求返回 401 时调用：登录已经失效，清除身份并调用 onSignedOut。交给生成客户端的 onUnauthorized。 */
+  /**
+   * 受保护的请求返回 401 时调用：登录已经失效，清除身份并调用 onSignedOut。
+   * 把会话交给生成的客户端（createClient({ session })），它按请求发出时的代次调用这里。
+   */
   expired(): void
   /** 是否已经登录。 */
   signedIn(): boolean
@@ -42,8 +45,8 @@ export interface Session {
   /** query key 的作用域：[账号, 租户]，交给 createQueries 的 scope。 */
   scope(): readonly unknown[]
   /**
-   * 返回用于不经过生成客户端的请求的 fetch，例如 AI 对话的消息流：同源发送 cookie，收到 401 时调用 expired。
-   * 默认包装全局的 fetch。
+   * 返回用于不经过生成客户端的请求的 fetch，例如 AI 对话的消息流：同源发送 cookie；收到 401 时，
+   * 请求发出之后身份没有变过才调用 expired。默认包装全局的 fetch。
    */
   fetch<F extends FetchLike = FetchLike>(base?: F): F
   /** 订阅身份的变化（登录、退出、切换身份），返回取消订阅的函数。 */
@@ -108,8 +111,9 @@ export function createSession(options: SessionOptions): Session {
     fetch<F extends FetchLike = FetchLike>(base?: F): F {
       const send: FetchLike = base ?? globalFetch()
       const wrapped: FetchLike = async (url, init = {}) => {
+        const issued = gen
         const res = await send(url, { ...init, credentials: init.credentials ?? "same-origin" })
-        if (res.status === 401) session.expired()
+        if (res.status === 401 && gen === issued) session.expired()
         return res
       }
       return wrapped as F

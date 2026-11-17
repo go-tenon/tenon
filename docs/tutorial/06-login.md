@@ -711,7 +711,7 @@ export const session = createSession({ load: async () => ({ account: (await api.
 
 // api 是 tenon generate 生成的客户端（src/api），接口改了以后 tenon dev 会自动重新生成。
 // 受保护的接口返回 401 时（登录过期，或者在别处退出了），会话随之变为未登录。
-export const api = createClient({ baseURL: "/api", onUnauthorized: () => session.expired() })
+export const api = createClient({ baseURL: "/api", session })
 ```
 
 再把会话交给应用。把 `apps/web/src/app.ts` 改成下面这样：

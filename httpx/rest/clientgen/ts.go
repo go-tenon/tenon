@@ -202,8 +202,8 @@ func (t *tsGen) client(res *Result) (string, error) {
 	}
 
 	var b strings.Builder
-	b.WriteString("import { Runtime, type ClientOptions, type Download, type StreamOptions } from \"./runtime\"\n\n")
-	b.WriteString("export * from \"./errors\"\nexport { ApiError, isApiError, saveBlob, type ClientOptions, type Download, type FieldError, type StreamOptions } from \"./runtime\"\n")
+	b.WriteString("import { Runtime, type ClientOptions, type Download, type SessionLike, type StreamOptions } from \"./runtime\"\n\n")
+	b.WriteString("export * from \"./errors\"\nexport { ApiError, isApiError, saveBlob, type ClientOptions, type Download, type SessionLike, type FieldError, type StreamOptions } from \"./runtime\"\n")
 	b.WriteString(t.schemas())
 	b.WriteString(events.String())
 	b.WriteString("\n/** 创建客户端。 */\nexport function createClient(options: ClientOptions) {\n  const rt = new Runtime(options)\n  return {\n")

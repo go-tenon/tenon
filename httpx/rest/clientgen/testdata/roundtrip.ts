@@ -22,12 +22,26 @@ async function rejects(p: Promise<unknown>, what: string): Promise<import("../in
   throw new Error("unreachable")
 }
 
-// 公开的接口直接请求；受保护的接口 401 时调用 onUnauthorized，公开的接口不调用。
-let unauthorized = 0
-const anonymous = createClient({ baseURL, language: () => "en", onUnauthorized: () => unauthorized++ })
+// 公开的接口直接请求；受保护的接口 401 时让会话失效，公开的接口不会。
+let generation = 0
+let expired = 0
+const session = { generation: () => generation, expired: () => expired++ }
+const anonymous = createClient({ baseURL, language: () => "en", session })
 check((await anonymous.ping()).ok === true, "ping")
 let err = await rejects(anonymous.article.create({ title: "x", slug: "x" }), "anonymous create")
-check(err.status === 401 && isApiError(err, IdentityErrors.Unauthenticated) && unauthorized === 1, "401", err)
+check(err.status === 401 && isApiError(err, IdentityErrors.Unauthenticated) && expired === 1, "401", err)
+
+// 请求发出之后身份变了：401 原样抛出，不让新的会话失效。
+const switching = createClient({
+  baseURL,
+  session,
+  fetch: async (input, init) => {
+    generation++
+    return fetch(input, init)
+  },
+})
+err = await rejects(switching.article.create({ title: "x", slug: "x" }), "switched identity")
+check(err.status === 401 && expired === 1, "401 after identity change", { expired })
 
 // 函数形式的 baseURL 每次请求读取；headers 每次请求附加，空值不发送。
 let seen: { url: string; tenant: string | null; empty: boolean } | undefined
