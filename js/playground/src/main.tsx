@@ -101,8 +101,8 @@ const notifications: NotificationsSource = {
 
 const statuses: Record<string, string> = {
   待付款: "yellow",
-  待发货: "blue",
-  已发货: "cyan",
+  待发货: "bright-blue",
+  已发货: "light-blue",
   已完成: "green",
   已取消: "gray",
 }
@@ -158,7 +158,7 @@ function Stat({ label, value, delta }: { label: string; value: string; delta: st
         <Text fz={22} fw={600} style={{ letterSpacing: "-0.02em" }}>
           {value}
         </Text>
-        <Text size="xs" c={up ? "teal" : "red"} fw={500}>
+        <Text size="xs" c={up ? "green" : "red"} fw={500}>
           {delta}
         </Text>
       </Group>
@@ -413,7 +413,7 @@ function ConsoleHome(): ReactNode {
                   </Text>
                 </div>
               </Group>
-              <Badge color={p.status === "运行中" ? "teal" : "gray"} variant="dot">
+              <Badge color={p.status === "运行中" ? "green" : "gray"} variant="dot">
                 {p.status}
               </Badge>
             </Group>

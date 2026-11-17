@@ -149,7 +149,7 @@ func TestInitEndToEnd(t *testing.T) {
 	// 首页预渲染，带着本次请求的 nonce 和品牌色；不存在的页面由前端路由返回 404。
 	page := getHTML(t, base+"/")
 	if !strings.Contains(page, "<title>Todo</title>") || !strings.Contains(page, "/assets/") || strings.Contains(page, "__tenon_csp_nonce__") ||
-		!strings.Contains(strings.ToLower(page), "#4f5bd5") {
+		!strings.Contains(strings.ToLower(page), "--mantine-color-brand-6: #5c69ac;") {
 		t.Fatalf("page:\n%s", page)
 	}
 	for url, title := range map[string]string{base + "/admin/": "admin", base + "/admin/users/42": "admin", base + "/console/login": "console"} {
@@ -216,13 +216,13 @@ func TestInitEndToEnd(t *testing.T) {
 	// 品牌色只写在前端的 theme.ts 中：改一次，重新构建后页面随之改变。
 	themeTS := filepath.Join(dir, "apps", "web", "src", "theme.ts")
 	b, _ := os.ReadFile(themeTS)
-	if err := os.WriteFile(themeTS, []byte(strings.Replace(string(b), "#4f5bd5", "#e11d48", 1)), 0o644); err != nil {
+	if err := os.WriteFile(themeTS, []byte(strings.Replace(string(b), `"pale-indigo"`, `"bright-red"`, 1)), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	sh("go", "tool", "tenon", "build")
 	start()
 	waitUp(t, base+"/api/todos")
-	if page := strings.ToLower(getHTML(t, base+"/")); !strings.Contains(page, "#e11d48") || strings.Contains(page, "#4f5bd5") {
+	if page := strings.ToLower(getHTML(t, base+"/")); !strings.Contains(page, "--mantine-color-brand-6: #f0185c;") || strings.Contains(page, "--mantine-color-brand-6: #5c69ac;") {
 		t.Fatalf("brand change not in page:\n%s", page)
 	}
 

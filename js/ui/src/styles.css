@@ -541,7 +541,7 @@ body {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--mantine-color-orange-5);
+  background: var(--mantine-color-deep-orange-5);
 }
 
 /* 最后一个标签右边的刷新按钮：跟在标签后面；放不下时固定在标签栏的最右端。 */

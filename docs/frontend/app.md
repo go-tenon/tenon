@@ -167,7 +167,7 @@ export const theme = createUiTheme({ preset: "admin", primary: "pale-blue" })
 `createUiTheme` 的选项是设计令牌：
 
 - `preset` 是样式预设；`themes.admin`、`themes.console`、`themes.site` 是不改令牌的三套主题。
-- `primary` 是品牌色，默认是偏冷的蓝紫 `#4f5bd5`，`admin` 预设默认是 `pale-blue`。可以写颜色值，也可以写 Mantine [颜色生成器](https://mantine.dev/colors-generator)中预设的名称，名称是官方英文名的小写连字符写法：
+- `primary` 是品牌色，默认是偏冷的蓝紫 `pale-indigo`，`admin` 预设默认是浅灰蓝 `pale-blue`。可以写颜色值，也可以写 Mantine [颜色生成器](https://mantine.dev/colors-generator)中预设的名称，名称是官方英文名的小写连字符写法：
 
   `blue-gray`、`brown`、`tomato`、`deep-orange`、`bright-orange`、`yellow`、`bright-green`、`green`、`light-blue`、`sky-blue`、`pale-blue`、`bright-blue`、`deep-blue`、`pale-indigo`、`purple`、`pale-purple`、`violet`、`pale-violet`、`dark-pink`、`bright-pink`、`pink`、`magenta`、`bright-red`、`pale-red`、`deep-red`、`red`
 

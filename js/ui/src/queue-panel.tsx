@@ -114,8 +114,8 @@ export interface QueuePanelProps {
 
 /** topic 的状态：显示的文字、颜色，异常时的说明（显示在状态下面）。 */
 const stateText: Record<string, { label: string; color: string; hint?: string }> = {
-  ok: { label: "正常", color: "teal" },
-  no_handler: { label: "没有处理程序", color: "orange", hint: "没有 Worker 处理这类任务，任务会一直等待" },
+  ok: { label: "正常", color: "green" },
+  no_handler: { label: "没有处理程序", color: "deep-orange", hint: "没有 Worker 处理这类任务，任务会一直等待" },
   paused: { label: "已暂停", color: "yellow" },
   stalled: { label: "停滞", color: "red", hint: "有任务在等待，却没有 Worker 在处理" },
   absent: { label: "—", color: "gray" },
@@ -205,20 +205,20 @@ function Problems({ status }: { status: QueueStatusData }): ReactNode {
     })
   else if (!slot.active)
     problems.push({
-      color: "orange",
+      color: "deep-orange",
       title: "没有 Worker 在转发任务",
       text: "新发布的任务会积压在数据库中，直到 Worker 启动。",
     })
   else if (slot.wal_status === "unreserved")
     problems.push({
-      color: "orange",
+      color: "deep-orange",
       title: "任务转发积压过多",
       text: `积压 ${formatBytes(slot.lag)}，再多数据库可能丢弃还没转发的任务记录。`,
     })
   if (js?.error) problems.push({ color: "red", title: "读不到任务流", text: js.error })
   else if (js && !js.exists)
     problems.push({
-      color: "orange",
+      color: "deep-orange",
       title: "任务流还没有创建",
       text: `JetStream 中没有 ${js.stream}，Worker 启动时创建。`,
     })
@@ -248,8 +248,8 @@ function SystemStatus({ status }: { status: QueueStatusData }): ReactNode {
   const slotState = !slot.exists
     ? { label: "不存在", color: "red" }
     : slot.active
-      ? { label: "转发中", color: "teal" }
-      : { label: "没有 Worker", color: "orange" }
+      ? { label: "转发中", color: "green" }
+      : { label: "没有 Worker", color: "deep-orange" }
   let stream: ReactNode
   if (!js)
     stream = (
@@ -273,7 +273,9 @@ function SystemStatus({ status }: { status: QueueStatusData }): ReactNode {
       <DescriptionList
         title="任务流"
         description="NATS JetStream"
-        extra={js.exists ? <StatusDot color="teal">正常</StatusDot> : <StatusDot color="orange">还没有创建</StatusDot>}
+        extra={
+          js.exists ? <StatusDot color="green">正常</StatusDot> : <StatusDot color="deep-orange">还没有创建</StatusDot>
+        }
         items={[
           { label: "名称", value: js.stream, mono: true },
           { label: "消息", value: `${js.messages}（${formatBytes(js.bytes)}）` },

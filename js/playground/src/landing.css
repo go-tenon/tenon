@@ -189,11 +189,11 @@
 }
 
 .pg-mock-status[data-tone="info"] {
-  color: var(--mantine-color-blue-6);
+  color: var(--mantine-color-bright-blue-6);
 }
 
 .pg-mock-status[data-tone="warn"] {
-  color: var(--mantine-color-orange-6);
+  color: var(--mantine-color-deep-orange-6);
 }
 
 .pg-switcher {

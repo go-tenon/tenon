@@ -48,14 +48,19 @@ export const primaryColors = {
 /** 预设主题色的名称。 */
 export type PrimaryColor = keyof typeof primaryColors
 
+/** 26 种预设的色板，都放进主题的 colors，组件用名称取色，例如 color="deep-orange"。 */
+const presetColors = Object.fromEntries(
+  Object.entries(primaryColors).map(([name, hex]) => [name, generateColors(hex)]),
+) as Record<PrimaryColor, MantineColorsTuple>
+
 /**
  * 由主题色生成 Mantine 的 10 级色板，用 Mantine 官方的颜色生成器（@mantine/colors-generator），
  * 结果与 mantine.dev/colors-generator 一致。color 是预设的名称（见 primaryColors）或者颜色值，例如 #0f766e。
  */
 export function palette(color: PrimaryColor | (string & {})): MantineColorsTuple {
-  const value = primaryColors[color as PrimaryColor] ?? color
+  if (Object.hasOwn(presetColors, color)) return presetColors[color as PrimaryColor]
   try {
-    return generateColors(value)
+    return generateColors(color)
   } catch {
     throw new Error(
       `@go-tenon/ui: invalid color ${JSON.stringify(color)}, expected #rrggbb or one of ${Object.keys(primaryColors).join(", ")}`,
@@ -105,7 +110,7 @@ const fontFamilyMonospace =
   'ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", "PingFang SC", "Noto Sans SC", "Noto Sans CJK SC", "Microsoft YaHei", monospace'
 
 // 默认的品牌色：偏冷的蓝紫，在亮色和暗色背景上都清楚，又不刺眼。
-const brand = "#4f5bd5"
+const brand: PrimaryColor = "pale-indigo"
 
 // 中性色：比 Mantine 默认的灰略冷一点，线条和背景更干净。
 const slate: MantineColorsTuple = [
@@ -147,7 +152,7 @@ function base(m: LayoutMetrics): MantineThemeOverride {
     fontFamilyMonospace,
     primaryColor: "brand",
     primaryShade: { light: 6, dark: 5 },
-    colors: { brand: palette(brand), gray: slate, dark },
+    colors: { ...presetColors, brand: palette(brand), gray: slate, dark },
     cursorType: "pointer",
     focusRing: "auto",
     autoContrast: true,

@@ -13,6 +13,13 @@ describe("palette", () => {
     }
   })
 
+  it("26 种预设都在主题的 colors 中，组件可以用名称取色；控制台和官网默认用 pale-indigo", () => {
+    for (const t of Object.values(themes)) {
+      for (const name of Object.keys(primaryColors)) expect(t.colors?.[name]).toEqual(palette(name))
+    }
+    expect(themes.console.colors?.brand).toEqual(palette("pale-indigo"))
+  })
+
   it("颜色值直接交给官方生成器", () => {
     expect(palette("#0f766e")).toEqual(generateColors("#0f766e"))
   })

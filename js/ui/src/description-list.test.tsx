@@ -14,7 +14,7 @@ describe("DescriptionList", () => {
         <DescriptionList
           title="复制槽"
           description="PostgreSQL"
-          extra={<StatusDot color="teal">转发中</StatusDot>}
+          extra={<StatusDot color="green">转发中</StatusDot>}
           items={[
             { label: "名称", value: "tenon_queue_abc", mono: true },
             { label: "进程", value: undefined },

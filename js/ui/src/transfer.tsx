@@ -118,7 +118,7 @@ export function ImportButton({
       const failed = op?.failed ?? 0
       body = (
         <Stack align="center" gap="xs" py="md" ta="center">
-          <ThemeIcon size={44} radius="xl" variant="light" color={failed > 0 ? "orange" : "teal"}>
+          <ThemeIcon size={44} radius="xl" variant="light" color={failed > 0 ? "deep-orange" : "green"}>
             {failed > 0 ? <IconAlertTriangle size={22} /> : <IconCheck size={22} />}
           </ThemeIcon>
           <Text fw={600}>导入完成</Text>
@@ -256,7 +256,7 @@ export function ExportButton({ source, title = "导出" }: ExportButtonProps): R
     case "completed":
       body = (
         <Stack align="center" gap="xs" py="md" ta="center">
-          <ThemeIcon size={44} radius="xl" variant="light" color="teal">
+          <ThemeIcon size={44} radius="xl" variant="light" color="green">
             <IconCheck size={22} />
           </ThemeIcon>
           <Text fw={600}>导出完成</Text>
