@@ -70,11 +70,11 @@ export interface CloseResult {
 }
 
 /**
- * 关闭一个标签。固定的标签、唯一的标签不能关闭。关闭当前标签时接着显示右边的，没有时显示左边的。
+ * 关闭一个标签（固定的也可以单独关闭）。唯一的标签不能关闭。关闭当前标签时接着显示右边的，没有时显示左边的。
  */
 export function closeTab(state: TabsState, key: string): CloseResult {
   const index = state.tabs.findIndex((t) => t.key === key)
-  if (index < 0 || state.tabs[index].pinned || state.tabs.length <= 1) return { state, closed: [] }
+  if (index < 0 || state.tabs.length <= 1) return { state, closed: [] }
   const tabs = state.tabs.filter((t) => t.key !== key)
   const next = state.active === key ? (tabs[index] ?? tabs[index - 1]) : undefined
   return { state: keep(state, tabs, next?.key ?? state.active), closed: [key], next }
@@ -117,6 +117,13 @@ export function moveTab(state: TabsState, from: string, to: string): TabsState {
   const [tab] = tabs.splice(i, 1)
   tabs.splice(j, 0, tab)
   return { ...state, tabs }
+}
+
+/** 把一个页面作为固定的标签放在最前面（已经打开时改为固定），不改变当前标签。 */
+export function pinFirst(state: TabsState, tab: Omit<TabRecord, "pinned">): TabsState {
+  const rest = state.tabs.filter((t) => t.key !== tab.key)
+  const existing = state.tabs.find((t) => t.key === tab.key)
+  return { ...state, tabs: [{ ...tab, ...existing, pinned: true }, ...rest] }
 }
 
 /** 设置页面的标题。 */

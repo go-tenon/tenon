@@ -6,6 +6,7 @@
 import { Alert, Anchor, Button, Center, Loader, Stack, Text, Timeline } from "@mantine/core"
 import { useRouter } from "@tanstack/react-router"
 import type { ReactNode } from "react"
+import { useFormatDateTime } from "./fields"
 import { type ActivityItem, type ActivitySource, useActivity } from "./shell"
 
 /** ActivityTimeline 的选项。 */
@@ -19,6 +20,7 @@ export interface ActivityTimelineProps {
 
 /** 按时间从新到旧显示操作记录，到底时“加载更多”。 */
 export function ActivityTimeline({ source, onOpen, empty = "还没有操作记录" }: ActivityTimelineProps): ReactNode {
+  const formatDateTime = useFormatDateTime()
   const a = useActivity(source)
   const router = useRouter()
   if (a.loading) {
@@ -61,7 +63,11 @@ export function ActivityTimeline({ source, onOpen, empty = "还没有操作记�
               <Text size="sm">{item.text}</Text>
             )}
             <Text size="xs" c="dimmed" mt={2}>
-              {[item.actor ?? "系统", item.impersonator && `（${item.impersonator} 代为操作）`, when(item.created_at)]
+              {[
+                item.actor ?? "系统",
+                item.impersonator && `（${item.impersonator} 代为操作）`,
+                formatDateTime(item.created_at),
+              ]
                 .filter(Boolean)
                 .join(" · ")}
             </Text>
@@ -75,9 +81,4 @@ export function ActivityTimeline({ source, onOpen, empty = "还没有操作记�
       )}
     </Stack>
   )
-}
-
-function when(iso: string): string {
-  const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString()
 }

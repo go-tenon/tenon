@@ -102,7 +102,6 @@ export function ResourcePage({
     sortable: f.sortable,
     fixed: i === 0,
     noWrap: f.kind === "datetime" || f.kind === "date" || f.kind === "number",
-    textAlign: f.kind === "number" ? "right" : undefined,
     render: (row) =>
       render[f.name]?.(row[f.name], row) ?? <FieldValue field={f} value={row[f.name]} display={model.display} />,
   }))
@@ -205,7 +204,8 @@ export function ResourcePage({
       {toolbar}
       <ActionIcon
         variant="default"
-        size={m.controlSize === "xs" ? "md" : "lg"}
+        // 与旁边的按钮同高：运营后台的按钮是 32px。
+        size={m.preset === "admin" ? 32 : m.controlSize === "xs" ? "md" : "lg"}
         aria-label="刷新"
         onClick={view.refetch}
       >

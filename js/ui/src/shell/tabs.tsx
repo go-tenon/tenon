@@ -27,7 +27,8 @@ import {
   useRef,
   useSyncExternalStore,
 } from "react"
-import { type App, useApp } from "./app"
+import { type App, useApp, useMenu } from "./app"
+import type { MenuItem } from "./menu"
 import "./meta"
 import { noAccount } from "./snapshot"
 import { createStore, perOwner } from "./store"
@@ -40,6 +41,7 @@ import {
   evictTabs,
   moveTab,
   openTab,
+  pinFirst,
   pinTab,
   type TabRecord,
   type TabsState,
@@ -66,6 +68,8 @@ interface TabsModel {
   refresh: Readonly<Record<string, number>>
   /** 正在关闭的当前标签：跳到下一个标签之前，不要因为地址还没变就重新打开它。 */
   closing?: string
+  /** 这个账号还没有保存过标签：开启 home 时固定菜单的第一个页面。 */
+  fresh?: boolean
 }
 
 interface TabsConfig {
@@ -198,13 +202,15 @@ export interface TabsOutletProps {
   max?: number
   /** 询问是否放弃未保存的修改，返回 true 时继续。默认用 window.confirm，可以换成组件库的对话框。 */
   confirm?: (message: string) => boolean | Promise<boolean>
+  /** 第一次使用（这个账号没有保存过标签）时，把菜单的第一个页面固定在最前面。AppLayout 中默认开启。 */
+  home?: boolean
 }
 
 /**
  * 开启多标签：布局路由中代替 <Outlet />。布局之下的每个页面（路由 + 路径参数）是一个标签，隐藏的标签保留状态。
  * staticData.tab 为 false 的页面不进入标签，照常显示。
  */
-export function TabsOutlet({ max = 10, confirm }: TabsOutletProps): ReactNode {
+export function TabsOutlet({ max = 10, confirm, home = false }: TabsOutletProps): ReactNode {
   const app = useApp()
   const router = useRouter()
   configOf(app).current = { max, confirm: confirm ?? ((message) => window.confirm(message)) }
@@ -225,10 +231,30 @@ export function TabsOutlet({ max = 10, confirm }: TabsOutletProps): ReactNode {
   // 读取这个账号保存的标签：刷新浏览器后恢复标签栏，页面在打开时才加载。
   useLayoutEffect(() => {
     if (store.get().account === account) return
-    const tabs = (app.storage.get<TabRecord[]>(storageKey(account)) ?? []).filter((t) => t && typeof t.key === "string")
+    const saved = app.storage.get<TabRecord[]>(storageKey(account))
+    const tabs = (saved ?? []).filter((t) => t && typeof t.key === "string")
     const titles = Object.fromEntries(tabs.filter((t) => t.customTitle).map((t) => [t.key, t.customTitle as string]))
-    store.set({ account, state: { tabs, active: "", used: [] }, dirty: new Set(), titles, refresh: {} })
+    store.set({ account, state: { tabs, active: "", used: [] }, dirty: new Set(), titles, refresh: {}, fresh: !saved })
   }, [app, store, account])
+
+  // 第一次使用：菜单读到之后，把第一个页面固定在最前面。
+  const menu = useMenu()
+  const first = home ? firstItem(menu) : undefined
+  useLayoutEffect(() => {
+    if (!first || !store.get().fresh || store.get().account !== account) return
+    update(app, (m) => ({
+      ...m,
+      fresh: false,
+      state: pinFirst(m.state, {
+        key: tabKey(first.id),
+        routeId: first.id,
+        params: {},
+        href: first.path,
+        title: first.title,
+        icon: first.icon,
+      }),
+    }))
+  }, [app, store, account, first])
 
   // 打开（或回到）当前页面的标签，然后按数量上限关闭最久没用的。
   const loaded = model.account === account
@@ -332,6 +358,15 @@ export function TabsOutlet({ max = 10, confirm }: TabsOutletProps): ReactNode {
   )
 }
 
+/** 菜单中第一个可以进入的页面。 */
+function firstItem(items: readonly MenuItem[]): MenuItem | undefined {
+  for (const item of items) {
+    const found = item.children?.length ? firstItem(item.children) : item
+    if (found) return found
+  }
+  return undefined
+}
+
 // ———————————————————————————— 标签栏 ————————————————————————————
 
 /** 标签栏中的一个标签。 */
@@ -345,8 +380,10 @@ export interface TabView {
   /** 有未保存的修改。 */
   dirty: boolean
   active: boolean
-  /** 固定的标签、唯一的标签不能关闭。 */
+  /** 唯一的标签不能关闭。 */
   closable: boolean
+  /** 刷新过的次数：布局据此在刷新时显示加载的过渡。 */
+  refreshes: number
 }
 
 /** useTabs 的返回值：标签和操作。外观据此渲染标签栏（右键菜单、拖动排序、关闭按钮）。 */
@@ -424,7 +461,8 @@ export function useTabs(): Tabs {
       pinned: t.pinned,
       dirty: model.dirty.has(t.key),
       active: t.key === active,
-      closable: !t.pinned && tabs.length > 1,
+      closable: tabs.length > 1,
+      refreshes: model.refresh[t.key] ?? 0,
     }))
     return { tabs: views, active: views.find((t) => t.active), ...actions }
   }, [model, actions])

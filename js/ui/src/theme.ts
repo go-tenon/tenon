@@ -1,6 +1,13 @@
 // 主题：三套样式预设和由设计令牌生成主题。外观只通过 Mantine 的主题表达，组件不写死颜色和尺寸。
 
-import { createTheme, type MantineColorsTuple, type MantineThemeOverride, mergeThemeOverrides } from "@mantine/core"
+import {
+  Button,
+  createTheme,
+  Input,
+  type MantineColorsTuple,
+  type MantineThemeOverride,
+  mergeThemeOverrides,
+} from "@mantine/core"
 
 // ———————————————————————————— 色板 ————————————————————————————
 
@@ -111,6 +118,8 @@ export interface LayoutMetrics {
   contentPadding: "sm" | "md" | "lg" | "xl"
   /** 表单控件、按钮的默认尺寸。 */
   controlSize: "xs" | "sm" | "md"
+  /** 日期时间的显示格式（dayjs 的写法），例如 MM/DD HH:mm。表格、操作记录、通知中的时间都用它。 */
+  datetimeFormat: string
 }
 
 // 系统字体：中文优先用系统自带的苹方、思源黑体、微软雅黑，不额外加载字体。
@@ -201,29 +210,70 @@ function base(m: LayoutMetrics): MantineThemeOverride {
   })
 }
 
-/** 运营后台：信息密度高，偏表格和表单。字号小一号，控件矮，圆角小。 */
+// 运营后台的主色：沉稳的深蓝灰。
+const adminBrand = "#34507f"
+
+// 运营后台的暗色：带一点主色调的深灰。[7] 是页面背景、[8] 是侧栏、[6] 是悬停、[4] 是边框。
+const adminDark: MantineColorsTuple = [
+  "#d5d9e0",
+  "#b0b7c3",
+  "#8a93a3",
+  "#5f6878",
+  "#3d4452",
+  "#2c323d",
+  "#232831",
+  "#1b1f26",
+  "#15181e",
+  "#0f1115",
+]
+
+// 运营后台默认尺寸（sm）的按钮和输入框：32px 高、13px 字（Mantine 默认 36px、14px）。
+const adminControl = { height: "32px", fz: "13px" }
+
+/** 运营后台：信息密度高，偏表格和表单。正文 14px，控件 32px 高。 */
 const admin: MantineThemeOverride = mergeThemeOverrides(
   base({
     preset: "admin",
-    headerHeight: 48,
+    headerHeight: 52,
     navbarWidth: 224,
     navbarCollapsedWidth: 56,
     contentPadding: "md",
-    controlSize: "xs",
+    controlSize: "sm",
+    datetimeFormat: "MM/DD HH:mm",
   }),
   createTheme({
+    colors: { brand: palette(adminBrand), dark: adminDark },
     defaultRadius: "sm",
-    radius: { xs: "2px", sm: "4px", md: "6px", lg: "8px", xl: "12px" },
-    fontSizes: { xs: "11px", sm: "12px", md: "13px", lg: "15px", xl: "17px" },
-    lineHeights: { xs: "1.4", sm: "1.45", md: "1.5", lg: "1.5", xl: "1.5" },
-    spacing: { xs: "6px", sm: "8px", md: "12px", lg: "16px", xl: "24px" },
+    radius: { xs: "2px", sm: "4px", md: "8px", lg: "12px", xl: "16px" },
+    fontSizes: { xs: "12px", sm: "13px", md: "14px", lg: "16px", xl: "18px" },
+    spacing: { xs: "8px", sm: "10px", md: "14px", lg: "18px", xl: "24px" },
     headings: {
       sizes: {
-        h1: { fontSize: "22px", lineHeight: "1.3" },
-        h2: { fontSize: "18px", lineHeight: "1.35" },
-        h3: { fontSize: "15px", lineHeight: "1.4" },
-        h4: { fontSize: "13px", lineHeight: "1.45" },
+        h1: { fontSize: "26px", lineHeight: "1.3" },
+        h2: { fontSize: "20px", lineHeight: "1.35" },
+        h3: { fontSize: "17px", lineHeight: "1.4" },
+        h4: { fontSize: "15px", lineHeight: "1.45" },
       },
+    },
+    components: {
+      Button: Button.extend({
+        vars: (_, props) =>
+          props.size === undefined || props.size === "sm"
+            ? {
+                root: {
+                  "--button-height": adminControl.height,
+                  "--button-padding-x": "12px",
+                  "--button-fz": adminControl.fz,
+                },
+              }
+            : { root: {} },
+      }),
+      Input: Input.extend({
+        vars: (_, props) =>
+          props.size === undefined || props.size === "sm"
+            ? { wrapper: { "--input-height": adminControl.height, "--input-fz": adminControl.fz } }
+            : { wrapper: {} },
+      }),
     },
   }),
 )
@@ -237,6 +287,7 @@ const consolePreset: MantineThemeOverride = mergeThemeOverrides(
     navbarCollapsedWidth: 64,
     contentPadding: "lg",
     controlSize: "sm",
+    datetimeFormat: "YYYY-MM-DD HH:mm",
   }),
   createTheme({
     defaultRadius: "md",
@@ -265,6 +316,7 @@ const site: MantineThemeOverride = mergeThemeOverrides(
     navbarCollapsedWidth: 64,
     contentPadding: "xl",
     controlSize: "md",
+    datetimeFormat: "YYYY-MM-DD HH:mm",
   }),
   createTheme({
     fontFamily: siteFontFamily,
@@ -300,6 +352,8 @@ export interface UiThemeOptions {
   fontFamily?: string
   /** 落地页的风格，只对 site 预设有意义，默认 classic。 */
   landing?: Landing
+  /** 日期时间的显示格式（dayjs 的写法），默认随预设：admin 是 MM/DD HH:mm，其他是 YYYY-MM-DD HH:mm。 */
+  datetimeFormat?: string
   /** 再合并的 Mantine 主题覆盖，用于令牌之外的调整。 */
   override?: MantineThemeOverride
 }
@@ -307,14 +361,22 @@ export interface UiThemeOptions {
 /** 由预设和设计令牌生成 Mantine 主题，交给 UIProvider。 */
 export function createUiTheme(options: UiThemeOptions = {}): MantineThemeOverride {
   const parts: MantineThemeOverride[] = [themes[options.preset ?? "console"]]
-  if (options.landing) {
-    if (!landings.includes(options.landing)) {
-      throw new Error(
-        `@go-tenon/ui: unknown landing ${JSON.stringify(options.landing)}, expected one of ${landings.join(", ")}`,
-      )
-    }
+  if (options.landing && !landings.includes(options.landing)) {
+    throw new Error(
+      `@go-tenon/ui: unknown landing ${JSON.stringify(options.landing)}, expected one of ${landings.join(", ")}`,
+    )
+  }
+  if (options.landing || options.datetimeFormat) {
     const m = layoutMetrics(parts[0] as { other?: Record<string, unknown> })
-    parts.push({ other: { tenon: { ...m, landing: options.landing } } })
+    parts.push({
+      other: {
+        tenon: {
+          ...m,
+          ...(options.landing && { landing: options.landing }),
+          ...(options.datetimeFormat && { datetimeFormat: options.datetimeFormat }),
+        },
+      },
+    })
   }
   if (options.primary) parts.push({ colors: { brand: palette(options.primary) } })
   if (options.radius !== undefined) {

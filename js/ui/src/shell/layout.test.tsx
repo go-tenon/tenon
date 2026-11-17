@@ -186,6 +186,7 @@ describe("布局状态", () => {
     expect(text("collapsed")).toBe("true")
     expect(JSON.parse(localStorage.getItem("tenon:layout-test:layout:u1") ?? "{}")).toEqual({
       collapsed: true,
+      tabs: true,
     })
 
     await signIn(session, "u2") // 换个账号：各是各的

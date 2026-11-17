@@ -104,7 +104,7 @@ func TestWriteFrontend(t *testing.T) {
 			"src/auth.ts":               "createSession",
 		}, []string{"src/routes/index.tsx"}},
 		{"admin", map[string]string{
-			"src/theme.ts":        `preset: "admin"`,
+			"src/theme.ts":        `preset: "admin", primary: "#34507f"`,
 			"src/routes/_app.tsx": `<AppLayout title="后台" tabs user=`,
 		}, nil},
 		{"site", map[string]string{

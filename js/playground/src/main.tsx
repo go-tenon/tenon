@@ -15,6 +15,7 @@ import {
   DocsLayout,
   ExportButton,
   ImportButton,
+  LanguageMenu,
   LoginForm,
   NotFoundPage,
   NotificationsMenu,
@@ -33,6 +34,7 @@ import {
   UIProvider,
   UserMenu,
   useApp,
+  useFormatDateTime,
 } from "@go-tenon/ui"
 import {
   Badge,
@@ -54,7 +56,7 @@ import {
 } from "@mantine/core"
 import { IconDownload, IconPlus, IconSearch, IconStack2 } from "@tabler/icons-react"
 import { type AnyRoute, createRootRouteWithContext, createRoute, Outlet, useParams } from "@tanstack/react-router"
-import { type ReactNode, useEffect } from "react"
+import { type ReactNode, useEffect, useState } from "react"
 import { createRoot } from "react-dom/client"
 import { Landing, LandingSwitcher, landingStyle } from "./landing"
 import { customerExport, customerImport, customersModel, queryClient, queueApi, shopSettings } from "./resources"
@@ -75,7 +77,7 @@ const notifications: NotificationsSource = {
     {
       id: "n1",
       title: "订单 #10482 已付款",
-      body: "客户 华东分公司 支付了 ¥12,800.00",
+      body: "客户 华东分公司 支付了 ¥12800.00",
       read: false,
       created_at: "2026-11-17T09:12:00Z",
     },
@@ -99,9 +101,10 @@ const orders = Array.from({ length: 14 }, (_, i) => ({
   customer: ["华东分公司", "北辰贸易", "青木设计", "远山物流", "星河零售", "海岸咨询"][i % 6],
   status: Object.keys(statuses)[i % 5],
   amount: 1280 + ((i * 3779) % 24000),
-  created: `11-${String(17 - (i % 9)).padStart(2, "0")} ${String(9 + (i % 8)).padStart(2, "0")}:${String((i * 7) % 60).padStart(2, "0")}`,
+  // 和后端一样是带时区的 ISO 时间，显示时按主题的格式。
+  created: `2026-11-${String(17 - (i % 9)).padStart(2, "0")}T${String(1 + (i % 8)).padStart(2, "0")}:${String((i * 7) % 60).padStart(2, "0")}:00Z`,
 }))
-const money = (n: number) => n.toLocaleString("zh-CN", { style: "currency", currency: "CNY" })
+const money = (n: number) => `¥${n.toFixed(2)}`
 
 function Root(): ReactNode {
   return <Outlet />
@@ -109,7 +112,15 @@ function Root(): ReactNode {
 
 // ———————————————————————————— 运营后台 ————————————————————————————
 
+const languages = [
+  { value: "zh-CN", label: "简体中文" },
+  { value: "zh-TW", label: "繁體中文" },
+  { value: "en", label: "English" },
+]
+
 function AdminShell(): ReactNode {
+  // 演示：只记下选择，不换文案。
+  const [language, setLanguage] = useState("zh-CN")
   return (
     <AppLayout
       title="Acme 运营后台"
@@ -118,16 +129,10 @@ function AdminShell(): ReactNode {
         <>
           <OperationsMenu />
           <NotificationsMenu source={notifications} />
+          <LanguageMenu languages={languages} value={language} onChange={setLanguage} />
         </>
       }
-      user={
-        <UserMenu
-          name="韩梅梅"
-          email="meimei@acme.cn"
-          logout={async () => {}}
-          items={[{ label: "账号设置", to: "/settings" }]}
-        />
-      }
+      user={<UserMenu name="韩梅梅" logout={async () => {}} items={[{ label: "账号设置", to: "/settings" }]} />}
     />
   )
 }
@@ -152,6 +157,7 @@ function Stat({ label, value, delta }: { label: string; value: string; delta: st
 }
 
 function OrdersTable({ rows }: { rows: typeof orders }): ReactNode {
+  const formatDateTime = useFormatDateTime()
   return (
     <Paper style={{ overflow: "hidden" }}>
       <Table highlightOnHover verticalSpacing={8} horizontalSpacing="md" striped={false}>
@@ -160,7 +166,7 @@ function OrdersTable({ rows }: { rows: typeof orders }): ReactNode {
             <Table.Th>订单号</Table.Th>
             <Table.Th>客户</Table.Th>
             <Table.Th>状态</Table.Th>
-            <Table.Th ta="right">金额</Table.Th>
+            <Table.Th>金额</Table.Th>
             <Table.Th>下单时间</Table.Th>
           </Table.Tr>
         </Table.Thead>
@@ -172,10 +178,8 @@ function OrdersTable({ rows }: { rows: typeof orders }): ReactNode {
               <Table.Td>
                 <Badge color={statuses[o.status]}>{o.status}</Badge>
               </Table.Td>
-              <Table.Td ta="right" style={{ fontVariantNumeric: "tabular-nums" }}>
-                {money(o.amount)}
-              </Table.Td>
-              <Table.Td c="dimmed">{o.created}</Table.Td>
+              <Table.Td style={{ fontVariantNumeric: "tabular-nums" }}>{money(o.amount)}</Table.Td>
+              <Table.Td c="dimmed">{formatDateTime(o.created)}</Table.Td>
             </Table.Tr>
           ))}
         </Table.Tbody>
@@ -190,8 +194,8 @@ function AdminHome(): ReactNode {
   return (
     <Page title="概览" description="今天的经营数据，每 5 分钟更新一次。">
       <SimpleGrid cols={{ base: 2, md: 4 }} spacing="md">
-        <Stat label="今日成交额" value="¥128,460" delta="+12.4%" />
-        <Stat label="订单数" value="1,284" delta="+3.1%" />
+        <Stat label="今日成交额" value="¥128460" delta="+12.4%" />
+        <Stat label="订单数" value="1284" delta="+3.1%" />
         <Stat label="待发货" value="86" delta="-8.0%" />
         <Stat label="退款率" value="1.2%" delta="-0.3%" />
       </SimpleGrid>
@@ -281,9 +285,9 @@ function adminApp() {
     layout.addChildren([
       page(layout, "/", "概览", "dashboard", AdminHome),
       trade.addChildren([
-        page(trade, "/orders", "订单", undefined, AdminOrders),
-        page(trade, "/refunds", "退款", undefined, () => <AdminPlaceholder title="退款" />),
-        page(trade, "/invoices", "发票", undefined, () => <AdminPlaceholder title="发票" />),
+        page(trade, "/orders", "订单", "order", AdminOrders),
+        page(trade, "/refunds", "退款", "receipt", () => <AdminPlaceholder title="退款" />),
+        page(trade, "/invoices", "发票", "file-text", () => <AdminPlaceholder title="发票" />),
       ]),
       page(layout, "/products", "商品", "product", () => <AdminPlaceholder title="商品" />),
       customers,
@@ -305,16 +309,17 @@ function adminApp() {
     session,
     queryClient,
     permissions,
-    tenancy,
     router: { basepath: "/admin", defaultErrorComponent: RouteError, defaultNotFoundComponent: NotFoundPage },
   })
   return app
 }
 
+// 演示的后台任务：大约 12 秒跑完，期间顶栏的“后台任务”按钮转圈，结束后显示完成。
 async function* progress(): AsyncIterable<{ event: string; data: OperationLike }> {
   for (let i = 0; i <= 10; i++) {
-    yield { event: "progress", data: { id: "op1", status: "running", total: 10, processed: Math.min(i, 6), failed: 0 } }
-    await new Promise((r) => setTimeout(r, 60_000))
+    const status = i === 10 ? "completed" : "running"
+    yield { event: "progress", data: { id: "op1", status, total: 10, processed: i, failed: 0 } }
+    await new Promise((r) => setTimeout(r, 1_200))
   }
 }
 
@@ -353,7 +358,7 @@ function ConsoleShell(): ReactNode {
       title="Acme Cloud"
       maxWidth={1200}
       actions={<NotificationsMenu source={notifications} />}
-      user={<UserMenu name="韩梅梅" email="meimei@acme.cn" logout={async () => {}} />}
+      user={<UserMenu name="韩梅梅" logout={async () => {}} />}
     />
   )
 }
