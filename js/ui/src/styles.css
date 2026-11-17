@@ -549,6 +549,23 @@ body {
   margin-left: 12px;
 }
 
+/* 点击刷新后图标转一圈。 */
+.tn-tab-reload-spin {
+  animation: tn-spin 600ms ease;
+}
+
+@keyframes tn-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tn-tab-reload-spin {
+    animation: none;
+  }
+}
+
 /* ———————————————— 表格 ———————————————— */
 
 /* 列设置（mantine-datatable 自带）：整个表头格都可以拖动，不显示拖动手柄，指针变成手掌；

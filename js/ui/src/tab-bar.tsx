@@ -31,6 +31,7 @@ export function TabBar(): ReactNode {
   // 拖动 6px 以上才算拖动，点击、中键照常。
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
   const [menu, setMenu] = useState<{ key: string; x: number; y: number } | null>(null)
+  const [spins, setSpins] = useState(0)
   const activeKey = tabs.active?.key
 
   useEffect(() => {
@@ -146,9 +147,12 @@ export function TabBar(): ReactNode {
         className="tn-tab-reload"
         aria-label="重新加载当前页面"
         disabled={!activeKey}
-        onClick={() => activeKey && void tabs.refresh(activeKey)}
+        onClick={async () => {
+          // 刷新后图标转一圈作为反馈；页面重新挂载，列表各自显示读取中的状态。有未保存的修改、用户选择留下时不转。
+          if (activeKey && (await tabs.refresh(activeKey))) setSpins((n) => n + 1)
+        }}
       >
-        <IconRefresh size={16} stroke={1.6} />
+        <IconRefresh key={spins} size={16} stroke={1.6} className={spins > 0 ? "tn-tab-reload-spin" : undefined} />
       </ActionIcon>
       <Menu
         opened={Boolean(target)}
