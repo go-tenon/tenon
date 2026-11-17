@@ -109,9 +109,6 @@ const fontFamily =
 const fontFamilyMonospace =
   'ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", "PingFang SC", "Noto Sans SC", "Noto Sans CJK SC", "Microsoft YaHei", monospace'
 
-// 默认的品牌色：偏冷的蓝紫，在亮色和暗色背景上都清楚，又不刺眼。
-const brand: PrimaryColor = "pale-indigo"
-
 // 中性色：比 Mantine 默认的灰略冷一点，线条和背景更干净。
 const slate: MantineColorsTuple = [
   "#f8f9fb",
@@ -152,7 +149,7 @@ function base(m: LayoutMetrics): MantineThemeOverride {
     fontFamilyMonospace,
     primaryColor: "brand",
     primaryShade: { light: 6, dark: 5 },
-    colors: { ...presetColors, brand: palette(brand), gray: slate, dark },
+    colors: { ...presetColors, brand: presetColors["blue-gray"], gray: slate, dark },
     cursorType: "pointer",
     focusRing: "auto",
     autoContrast: true,
@@ -190,9 +187,6 @@ function base(m: LayoutMetrics): MantineThemeOverride {
   })
 }
 
-// 运营后台的主色：沉稳的浅灰蓝。
-const adminBrand: PrimaryColor = "pale-blue"
-
 // 运营后台的暗色：带一点主色调的深灰。[7] 是页面背景、[8] 是侧栏、[6] 是悬停、[4] 是边框。
 const adminDark: MantineColorsTuple = [
   "#d5d9e0",
@@ -222,7 +216,7 @@ const admin: MantineThemeOverride = mergeThemeOverrides(
     datetimeFormat: "MM/DD HH:mm",
   }),
   createTheme({
-    colors: { brand: palette(adminBrand), dark: adminDark },
+    colors: { dark: adminDark },
     defaultRadius: "sm",
     radius: { xs: "2px", sm: "4px", md: "8px", lg: "12px", xl: "16px" },
     fontSizes: { xs: "12px", sm: "13px", md: "14px", lg: "16px", xl: "18px" },
@@ -325,7 +319,7 @@ export interface UiThemeOptions {
   /** 样式预设，默认 console。 */
   preset?: Preset
   /**
-   * 品牌色：预设的名称（见 primaryColors，例如 sky-blue）或者颜色值（例如 #0f766e）。
+   * 品牌色：预设的名称（见 primaryColors，例如 sky-blue）或者颜色值（例如 #0f766e），默认是第一种预设 blue-gray。
    * 用 Mantine 官方的颜色生成器生成 10 级色板，输入的颜色按亮度落在其中一级。
    */
   primary?: PrimaryColor | (string & {})

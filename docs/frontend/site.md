@@ -119,7 +119,7 @@ function Home() {
 风格在 `src/theme.ts` 中设置，`tenon add frontend --style site --landing <风格>` 生成的前端已经写好：
 
 ```ts title="src/theme.ts"
-export const theme = createUiTheme({ preset: "site", landing: "dusk", primary: "pale-indigo" })
+export const theme = createUiTheme({ preset: "site", landing: "dusk", primary: "blue-gray" })
 ```
 
 | 风格 | 样子 | 适合 |

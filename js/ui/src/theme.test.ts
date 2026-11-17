@@ -13,11 +13,11 @@ describe("palette", () => {
     }
   })
 
-  it("26 种预设都在主题的 colors 中，组件可以用名称取色；控制台和官网默认用 pale-indigo", () => {
+  it("26 种预设都在主题的 colors 中，组件可以用名称取色；品牌色默认是第一种预设 blue-gray", () => {
     for (const t of Object.values(themes)) {
       for (const name of Object.keys(primaryColors)) expect(t.colors?.[name]).toEqual(palette(name))
     }
-    expect(themes.console.colors?.brand).toEqual(palette("pale-indigo"))
+    for (const t of Object.values(themes)) expect(t.colors?.brand).toEqual(palette("blue-gray"))
   })
 
   it("颜色值直接交给官方生成器", () => {
@@ -47,8 +47,7 @@ describe("createUiTheme", () => {
     expect(layoutMetrics(t)).toMatchObject({ preset: "admin", datetimeFormat: "YYYY/MM/DD HH:mm", headerHeight: 52 })
   })
 
-  it("运营后台默认用 pale-blue 的主色，项目的品牌色覆盖它，可以写预设的名称", () => {
-    expect(themes.admin.colors?.brand).toEqual(palette("pale-blue"))
+  it("项目的品牌色覆盖默认的，可以写预设的名称", () => {
     expect(createUiTheme({ preset: "admin", primary: "sky-blue" }).colors?.brand).toEqual(palette("#099cff"))
   })
 

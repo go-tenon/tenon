@@ -150,14 +150,14 @@ function Document({ children }: { children: ReactNode }) {
 ```ts title="src/theme.ts"
 import { createUiTheme } from "@go-tenon/ui"
 
-export const theme = createUiTheme({ preset: "admin", primary: "pale-blue" })
+export const theme = createUiTheme({ preset: "admin", primary: "blue-gray" })
 ```
 
 三套预设共用一套设计语言：系统字体、偏冷的中性色、1 像素的细边框、几乎不用阴影，层级靠留白、字重和背景的明暗区分。亮色和暗色都完整定义，组件中不写死颜色。
 
 | 预设 | 适合 | 特点 |
 | --- | --- | --- |
-| `admin` | 运营后台、内部系统、以表格和表单为主的后台 | 正文 14px，控件 32px 高，顶栏 52px，圆角 4px，主色是沉稳的浅灰蓝，一屏能看到更多数据 |
+| `admin` | 运营后台、内部系统、以表格和表单为主的后台 | 正文 14px，控件 32px 高，顶栏 52px，圆角 4px，一屏能看到更多数据 |
 | `console` | 面向客户的 SaaS 控制台、用户中心 | 正文 14px，控件 36px 高，顶栏 56px，圆角 8px，留白舒展 |
 | `site` | 官网、落地页、文章、文档 | 正文 16px，大标题随屏幕宽度缩放，行距宽松，顶栏 64px |
 
@@ -167,7 +167,7 @@ export const theme = createUiTheme({ preset: "admin", primary: "pale-blue" })
 `createUiTheme` 的选项是设计令牌：
 
 - `preset` 是样式预设；`themes.admin`、`themes.console`、`themes.site` 是不改令牌的三套主题。
-- `primary` 是品牌色，默认是偏冷的蓝紫 `pale-indigo`，`admin` 预设默认是浅灰蓝 `pale-blue`。可以写颜色值，也可以写 Mantine [颜色生成器](https://mantine.dev/colors-generator)中预设的名称，名称是官方英文名的小写连字符写法：
+- `primary` 是品牌色，默认是第一种预设 `blue-gray`。可以写颜色值，也可以写 Mantine [颜色生成器](https://mantine.dev/colors-generator)中预设的名称，名称是官方英文名的小写连字符写法：
 
   `blue-gray`、`brown`、`tomato`、`deep-orange`、`bright-orange`、`yellow`、`bright-green`、`green`、`light-blue`、`sky-blue`、`pale-blue`、`bright-blue`、`deep-blue`、`pale-indigo`、`purple`、`pale-purple`、`violet`、`pale-violet`、`dark-pink`、`bright-pink`、`pink`、`magenta`、`bright-red`、`pale-red`、`deep-red`、`red`
 
