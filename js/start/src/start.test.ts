@@ -2,7 +2,8 @@ import { spawnSync } from "node:child_process"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import { defaultTarget, entrySource, normalizeBase } from "./compile"
-import { forwardHeaders, socketPath, stripBase } from "./headers"
+import { forwardHeaders, HeaderNonce, PrerenderNonce, socketPath, stripBase } from "./headers"
+import * as vite from "./vite.js"
 
 describe("headers", () => {
   it("只转交登录凭据、请求 ID、链路和语言", () => {
@@ -56,6 +57,25 @@ describe("compile", () => {
     expect(src).toContain('import handler from "../../dist/server/server.js"')
     expect(src).toContain('  "/assets/a.js": "YQ==",\n  "/index.html": "PGgxPg==",')
     expect(src).toContain('base: "/admin/"')
+  })
+})
+
+describe("vite", () => {
+  it("常量与 headers.ts 相同", () => {
+    expect(vite.HeaderNonce).toBe(HeaderNonce)
+    expect(vite.PrerenderNonce).toBe(PrerenderNonce)
+  })
+
+  // vite dev 在 Node 中运行，由 Node 直接导入 @go-tenon/start/vite：它不能是 TypeScript。
+  it("Node 可以直接导入", () => {
+    const file = fileURLToPath(new URL("./vite.js", import.meta.url))
+    const r = spawnSync(
+      "node",
+      ["--input-type=module", "-e", `const m = await import(${JSON.stringify(file)}); console.log(typeof m.tenon)`],
+      { encoding: "utf8" },
+    )
+    expect(r.stderr).toBe("")
+    expect(r.stdout.trim()).toBe("function")
   })
 })
 

@@ -12,6 +12,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -221,6 +223,51 @@ func TestInitEndToEnd(t *testing.T) {
 	if page := strings.ToLower(getHTML(t, base+"/")); !strings.Contains(page, "#e11d48") || strings.Contains(page, "#4f5bd5") {
 		t.Fatalf("brand change not in page:\n%s", page)
 	}
+
+	// 开发时 tenon dev 运行每个前端的 bun run dev（vite dev，在 Node 中运行）：开发服务器要能加载
+	// vite.config.ts（其中的框架插件由 Node 直接导入）并渲染页面。
+	devPort := freePort(t)
+	dev := exec.Command("bun", "run", "dev", "--port", devPort, "--strictPort")
+	dev.Dir = filepath.Join(dir, "apps", "admin")
+	dev.Env = append(os.Environ(), "API_ORIGIN="+base)
+	var devOut syncBuffer
+	dev.Stdout, dev.Stderr = &devOut, &devOut
+	dev.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := dev.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = syscall.Kill(-dev.Process.Pid, syscall.SIGKILL); _ = dev.Wait() }()
+	devURL := "http://localhost:" + devPort + "/admin/login"
+	for deadline := time.Now().Add(60 * time.Second); ; time.Sleep(200 * time.Millisecond) {
+		if res, err := http.Get(devURL); err == nil {
+			body, _ := io.ReadAll(res.Body)
+			_ = res.Body.Close()
+			if res.StatusCode == http.StatusOK && strings.Contains(string(body), "<html") {
+				break
+			}
+		}
+		if time.Now().After(deadline) || dev.ProcessState != nil {
+			t.Fatalf("dev server: %s", devOut.String())
+		}
+	}
+}
+
+// syncBuffer 收集子进程的输出，可以并发写入和读取。
+type syncBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (s *syncBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *syncBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
 }
 
 type response struct {
