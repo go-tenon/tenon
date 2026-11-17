@@ -4,6 +4,8 @@ import (
 	"context"
 	"sync"
 	"time"
+
+	"github.com/go-tenon/tenon/errorx"
 )
 
 // Memory 在进程内存中计数，多实例部署时每个实例分别计数。
@@ -31,7 +33,7 @@ func (m *Memory) Allow(_ context.Context, key string) error {
 	m.sweep(now)
 	next, wait := m.take(m.tats[key], now)
 	if wait > 0 {
-		return exceeded(wait)
+		return ErrExceeded.New(errorx.RetryAfter(wait))
 	}
 	m.tats[key] = next
 	return nil

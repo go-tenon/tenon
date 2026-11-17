@@ -181,7 +181,7 @@ func checkKey(key string) error {
 	return nil
 }
 
-// refresh 在一个事务中同步 key：build 为 0 时写入 indexVersions 返回的版本，否则只写入重建的版本 build。
+// refresh 在一个事务中同步 key：build 为 0 时写入 indexes.Versions 返回的版本，否则只写入重建的版本 build。
 func (ix *Index[D]) refresh(ctx context.Context, s *Store, load LoadFunc[D], key string, build int) error {
 	err := s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 		// 先锁住这个 key：同一个 key 的同步依次执行，后执行的读到的数据更新，最终保存的总是最新的数据
@@ -193,7 +193,7 @@ func (ix *Index[D]) refresh(ctx context.Context, s *Store, load LoadFunc[D], key
 		}
 		versions := []int{build}
 		if build == 0 {
-			if versions, err = indexVersions(ctx, tx, ix.name); err != nil {
+			if versions, err = indexes.Versions(ctx, tx, ix.name); err != nil {
 				return err
 			}
 		}

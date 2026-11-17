@@ -99,7 +99,7 @@ func (ix *Index[D]) filter(q Query) (*qdrant.Filter, error) {
 // query 在查询使用的版本中检索与 in 最接近的 limit 个文档（q.GroupByKey 时是 limit 个 key 中各自最接近的文档），
 // 用建立这个版本的模型计算 in 的向量。
 func (ix *Index[D]) query(ctx context.Context, s *Store, in ai.Content, q Query, filter *qdrant.Filter, limit int) ([]*qdrant.ScoredPoint, error) {
-	st, err := readState(ctx, s.db, ix.name, false)
+	st, err := indexes.Read(ctx, s.db, ix.name, false)
 	if err != nil {
 		return nil, err
 	}

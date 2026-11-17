@@ -5,6 +5,7 @@ import (
 	"go/constant"
 	"go/token"
 	"go/types"
+	"path"
 	"reflect"
 	"slices"
 	"sort"
@@ -77,7 +78,7 @@ func (f *file) importBlock() string {
 			b.WriteString("\n")
 		}
 		for _, p := range group {
-			if n := f.imports[p]; n != lastElem(p) {
+			if n := f.imports[p]; n != path.Base(p) {
 				b.WriteString(n + " ")
 			}
 			b.WriteString(strconv.Quote(p) + "\n")
@@ -85,11 +86,6 @@ func (f *file) importBlock() string {
 	}
 	b.WriteString(")\n\n")
 	return b.String()
-}
-
-// lastElem 返回导入路径的最后一段，用于判断是否需要别名。
-func lastElem(p string) string {
-	return p[strings.LastIndex(p, "/")+1:]
 }
 
 // mirrorOf 返回服务端包的镜像，第一次用到时创建；镜像包名冲突时返回错误。

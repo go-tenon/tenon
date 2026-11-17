@@ -70,8 +70,3 @@ func (g gcra) take(tat, now time.Time) (next time.Time, wait time.Duration) {
 	}
 	return tat.Add(g.step), 0
 }
-
-// exceeded 返回超过限流的错误，带上需要等待的时间。
-func exceeded(wait time.Duration) error {
-	return ErrExceeded.New(errorx.RetryAfter(wait))
-}

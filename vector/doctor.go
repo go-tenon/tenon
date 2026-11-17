@@ -42,7 +42,7 @@ func (s *Store) checkIndex(ctx context.Context, index string) error {
 	if !migrated {
 		return doctor.Skip("the vector migrations have not been applied yet")
 	}
-	st, err := readState(ctx, s.db, index, false)
+	st, err := indexes.Read(ctx, s.db, index, false)
 	if err != nil {
 		return err
 	}
