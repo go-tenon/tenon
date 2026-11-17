@@ -1,0 +1,500 @@
+/*
+ * @go-tenon/ui 的样式：Mantine 的样式加上布局用到的少量类名。颜色全部来自主题的 CSS 变量，
+ * 亮色和暗色各定义一次语义变量，组件只用语义变量。
+ */
+@import "@mantine/core/styles.css";
+@import "@mantine/notifications/styles.css";
+
+:root {
+  --tn-canvas: var(--mantine-color-gray-0);
+  --tn-surface: var(--mantine-color-white);
+  --tn-border: var(--mantine-color-gray-2);
+  --tn-border-strong: var(--mantine-color-gray-3);
+  --tn-hover: var(--mantine-color-gray-1);
+  --tn-text: var(--mantine-color-gray-9);
+  --tn-muted: var(--mantine-color-gray-6);
+  --tn-subtle: var(--mantine-color-gray-5);
+  --tn-active-bg: var(--mantine-color-brand-0);
+  --tn-active-text: var(--mantine-color-brand-7);
+  --tn-header-blur: rgba(255, 255, 255, 0.78);
+}
+
+[data-mantine-color-scheme="dark"] {
+  --tn-canvas: var(--mantine-color-dark-8);
+  --tn-surface: var(--mantine-color-dark-7);
+  --tn-border: var(--mantine-color-dark-5);
+  --tn-border-strong: var(--mantine-color-dark-4);
+  --tn-hover: var(--mantine-color-dark-6);
+  --tn-text: var(--mantine-color-dark-0);
+  --tn-muted: var(--mantine-color-dark-2);
+  --tn-subtle: var(--mantine-color-dark-3);
+  --tn-active-bg: color-mix(in srgb, var(--mantine-color-brand-5) 16%, transparent);
+  --tn-active-text: var(--mantine-color-brand-2);
+  --tn-header-blur: rgba(20, 22, 27, 0.72);
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "cv11", "ss01";
+}
+
+/* ———————————————— 应用外壳 ———————————————— */
+
+.tn-shell {
+  --app-shell-border-color: var(--tn-border);
+}
+
+.tn-shell .mantine-AppShell-main {
+  background: var(--tn-canvas);
+  min-height: 100dvh;
+}
+
+.tn-navbar {
+  background: var(--tn-surface);
+}
+
+.tn-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: var(--tn-header-height);
+  padding-inline: 16px;
+  font-weight: 600;
+  font-size: var(--mantine-font-size-md);
+  color: var(--tn-text);
+  white-space: nowrap;
+  overflow: hidden;
+  border-bottom: 1px solid transparent;
+}
+
+.tn-brand-mark {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--mantine-radius-sm);
+  background: var(--mantine-color-brand-6);
+  color: white;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.tn-nav {
+  padding: 8px;
+}
+
+.tn-nav-item {
+  border-radius: var(--mantine-radius-sm);
+  padding-block: 6px;
+  padding-inline: 10px;
+  color: var(--tn-muted);
+  font-size: var(--mantine-font-size-sm);
+  font-weight: 500;
+  margin-bottom: 1px;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+
+.tn-nav-item:hover {
+  background: var(--tn-hover);
+  color: var(--tn-text);
+}
+
+.tn-nav-item[data-active] {
+  background: var(--tn-active-bg);
+  color: var(--tn-active-text);
+}
+
+.tn-nav-item[data-active] .mantine-NavLink-section {
+  color: var(--tn-active-text);
+}
+
+.tn-nav-item .mantine-NavLink-section[data-position="left"] {
+  margin-inline-end: 10px;
+  color: var(--tn-subtle);
+}
+
+.tn-nav-item:hover .mantine-NavLink-section[data-position="left"] {
+  color: inherit;
+}
+
+.tn-nav-item .mantine-NavLink-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tn-nav-children {
+  margin-inline-start: 19px;
+  padding-inline-start: 8px;
+  border-inline-start: 1px solid var(--tn-border);
+}
+
+.tn-nav-collapsed .tn-nav-item {
+  justify-content: center;
+  padding-inline: 0;
+  height: 36px;
+}
+
+.tn-nav-collapsed .tn-nav-item .mantine-NavLink-section[data-position="left"] {
+  margin: 0;
+}
+
+.tn-navbar-footer {
+  border-top: 1px solid var(--tn-border);
+  padding: 8px;
+}
+
+.tn-header {
+  background: var(--tn-header-blur);
+  backdrop-filter: saturate(180%) blur(12px);
+}
+
+.tn-header-inner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 100%;
+  padding-inline: 16px;
+}
+
+.tn-crumbs .mantine-Breadcrumbs-separator {
+  color: var(--tn-subtle);
+  margin-inline: 6px;
+}
+
+.tn-crumbs a {
+  color: var(--tn-muted);
+  text-decoration: none;
+  font-size: var(--mantine-font-size-sm);
+}
+
+.tn-crumbs a:hover {
+  color: var(--tn-text);
+}
+
+.tn-crumbs [aria-current="page"] {
+  color: var(--tn-text);
+  font-weight: 500;
+  font-size: var(--mantine-font-size-sm);
+}
+
+.tn-content {
+  width: 100%;
+  margin-inline: auto;
+}
+
+/* ———————————————— 标签栏 ———————————————— */
+
+.tn-tabbar {
+  position: sticky;
+  top: var(--app-shell-header-offset, 0px);
+  z-index: 3;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  padding: 6px 12px 0;
+  background: var(--tn-canvas);
+  border-bottom: 1px solid var(--tn-border);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tn-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+  height: 32px;
+  padding-inline: 12px 6px;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: var(--mantine-radius-sm) var(--mantine-radius-sm) 0 0;
+  color: var(--tn-muted);
+  font-size: var(--mantine-font-size-sm);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  margin-bottom: -1px;
+}
+
+.tn-tab:hover {
+  color: var(--tn-text);
+  background: var(--tn-hover);
+}
+
+.tn-tab[data-active] {
+  color: var(--tn-text);
+  background: var(--tn-surface);
+  border-color: var(--tn-border);
+  font-weight: 500;
+}
+
+.tn-tab-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tn-tab-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--mantine-color-orange-5);
+  flex: none;
+}
+
+/* ———————————————— 页面 ———————————————— */
+
+.tn-page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.tn-page-title {
+  letter-spacing: -0.01em;
+}
+
+/* ———————————————— 认证页 ———————————————— */
+
+.tn-auth {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 48px 16px;
+  background:
+    radial-gradient(
+      1200px 500px at 50% -10%,
+      color-mix(in srgb, var(--mantine-color-brand-5) 10%, transparent),
+      transparent 70%
+    ),
+    var(--tn-canvas);
+}
+
+.tn-auth-card {
+  width: 100%;
+  max-width: 400px;
+  background: var(--tn-surface);
+  border: 1px solid var(--tn-border);
+  border-radius: var(--mantine-radius-lg);
+  padding: 32px;
+  box-shadow:
+    0 1px 2px rgba(16, 24, 40, 0.04),
+    0 12px 32px -12px rgba(16, 24, 40, 0.12);
+}
+
+[data-mantine-color-scheme="dark"] .tn-auth-card {
+  box-shadow: none;
+}
+
+/* ———————————————— 官网 ———————————————— */
+
+.tn-site {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--tn-surface);
+}
+
+.tn-site-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  border-bottom: 1px solid var(--tn-border);
+  background: var(--tn-header-blur);
+  backdrop-filter: saturate(180%) blur(12px);
+}
+
+.tn-site-header-inner {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  height: var(--tn-header-height);
+}
+
+.tn-site-nav a {
+  color: var(--tn-muted);
+  font-size: var(--mantine-font-size-sm);
+  font-weight: 500;
+  text-decoration: none;
+  padding: 6px 10px;
+  border-radius: var(--mantine-radius-sm);
+}
+
+.tn-site-nav a:hover,
+.tn-site-nav a[data-status="active"] {
+  color: var(--tn-text);
+}
+
+.tn-site-main {
+  flex: 1;
+}
+
+.tn-site-footer {
+  border-top: 1px solid var(--tn-border);
+  padding-block: 48px 32px;
+  color: var(--tn-muted);
+  font-size: var(--mantine-font-size-sm);
+}
+
+.tn-site-footer a {
+  color: var(--tn-muted);
+  text-decoration: none;
+}
+
+.tn-site-footer a:hover {
+  color: var(--tn-text);
+}
+
+/* ———————————————— 文档 ———————————————— */
+
+.tn-docs {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr) 200px;
+  gap: 48px;
+  align-items: start;
+  padding-block: 32px 64px;
+}
+
+@media (max-width: 1199px) {
+  .tn-docs {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+  .tn-docs-toc {
+    display: none;
+  }
+}
+
+@media (max-width: 767px) {
+  .tn-docs {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .tn-docs-sidebar {
+    display: none;
+  }
+}
+
+.tn-docs-sidebar,
+.tn-docs-toc {
+  position: sticky;
+  top: calc(var(--tn-header-height) + 24px);
+  max-height: calc(100dvh - var(--tn-header-height) - 48px);
+  overflow-y: auto;
+}
+
+.tn-docs-section {
+  font-size: var(--mantine-font-size-xs);
+  font-weight: 600;
+  color: var(--tn-text);
+  margin: 20px 0 6px 10px;
+}
+
+.tn-docs-sidebar > div:first-child .tn-docs-section {
+  margin-top: 0;
+}
+
+.tn-docs-article {
+  max-width: 760px;
+  min-width: 0;
+}
+
+.tn-docs-toc a {
+  display: block;
+  padding: 3px 0 3px 12px;
+  border-inline-start: 1px solid var(--tn-border);
+  color: var(--tn-muted);
+  font-size: var(--mantine-font-size-xs);
+  line-height: 1.6;
+  text-decoration: none;
+}
+
+.tn-docs-toc a[data-depth="3"] {
+  padding-inline-start: 24px;
+}
+
+.tn-docs-toc a:hover {
+  color: var(--tn-text);
+}
+
+.tn-docs-toc a[data-active] {
+  color: var(--tn-active-text);
+  border-inline-start-color: var(--mantine-color-brand-6);
+}
+
+.tn-prose h1,
+.tn-prose h2,
+.tn-prose h3 {
+  scroll-margin-top: calc(var(--tn-header-height) + 16px);
+  letter-spacing: -0.015em;
+}
+
+/* 文档正文的标题比官网的大标题小一号，层级靠字号和间距区分。 */
+.tn-docs-article .tn-prose h1 {
+  font-size: 34px;
+  line-height: 1.2;
+  margin-bottom: 16px;
+}
+
+.tn-docs-article .tn-prose h2 {
+  font-size: 24px;
+  line-height: 1.3;
+  margin-top: 48px;
+  padding-top: 8px;
+}
+
+.tn-docs-article .tn-prose h3 {
+  font-size: 18px;
+  margin-top: 32px;
+}
+
+.tn-prose pre {
+  border: 1px solid var(--tn-border);
+  border-radius: var(--mantine-radius-md);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.tn-prose pre code {
+  background: none;
+  padding: 0;
+  font-size: inherit;
+}
+
+.tn-prose :not(pre) > code {
+  font-size: 0.875em;
+  padding: 2px 6px;
+  border-radius: var(--mantine-radius-sm);
+  border: 1px solid var(--tn-border);
+  background: var(--tn-canvas);
+}
+
+.tn-prose blockquote {
+  border-inline-start: 3px solid var(--mantine-color-brand-5);
+  border-radius: 0 var(--mantine-radius-md) var(--mantine-radius-md) 0;
+  font-size: inherit;
+}
+
+/* ———————————————— 错误页 ———————————————— */
+
+.tn-error {
+  display: grid;
+  place-items: center;
+  min-height: 60dvh;
+  padding: 48px 16px;
+  text-align: center;
+}
+
+.tn-error-code {
+  font-size: 64px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  color: var(--tn-border-strong);
+}

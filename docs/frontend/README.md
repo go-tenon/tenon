@@ -8,6 +8,7 @@
 - [在 React 中调用接口](client-react.md)：TanStack Query、校验规则、权限、枚举与分页
 - [应用骨架](app-shell.md)：@go-tenon/shell 的路由、登录检查、权限、菜单和新版本提示
 - [应用骨架：页面中的常用功能](app-shell-features.md)：多标签、租户、表单、列表、通知、后台操作与 AI 对话
+- [界面组件](ui.md)：@go-tenon/ui，Mantine 的三套样式预设（运营后台、SaaS 控制台、官网），应用外壳、登录页、错误页、官网和文档页的布局
 - [运营后台](admin.md)：@go-tenon/admin，antd 的布局、标签栏、登录页和 admin 模板
 - [shadcn registry 与控制台](registry.md)：shadcn 的布局、表格、表单等组件和 console 模板
 - [前端规范](conventions.md)：组件库的选择、目录结构与编码规范
