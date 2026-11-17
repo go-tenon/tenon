@@ -1,33 +1,15 @@
-// 页面顶部的进度条（@mantine/nprogress）：应用内跳转到还在加载的页面时、重新加载标签时显示，读取完成后走完。
-// 第一次打开（包括按浏览器的刷新）时不显示：那是整页加载，浏览器自己显示进度。
+// 页面顶部的进度条（@mantine/nprogress）：只在重新加载标签（刷新按钮、右键菜单）时显示，页面的请求都完成后走完。
+// 页面加载（包括按浏览器的刷新）和跳转不显示，保持浏览器原本的行为。
 // 重新加载标签时主内容区先淡出，读取完成后淡入；淡出、淡入由 AppLayout 提供。
 
 import { createNprogress, NavigationProgress } from "@mantine/nprogress"
 import type { QueryClient } from "@tanstack/react-query"
-import { useRouterState } from "@tanstack/react-router"
-import { createContext, type ReactNode, useContext, useEffect, useRef } from "react"
+import { createContext, type ReactNode, useContext } from "react"
 
 const [store, progress] = createNprogress()
 
-/** 页面顶部的进度条：放在布局中一次。应用内跳转、路由在加载新页面（代码、loader）时显示。 */
+/** 页面顶部的进度条：放在布局中一次。 */
 export function PageProgress(): ReactNode {
-  const pending = useRouterState({ select: (s) => s.status === "pending" })
-  const started = useRef(false)
-  // 第一次打开时的加载不算：等路由第一次空闲之后才跟随它。
-  const ready = useRef(false)
-  useEffect(() => {
-    if (!ready.current) {
-      if (!pending) ready.current = true
-      return
-    }
-    if (pending && !started.current) {
-      started.current = true
-      progress.start()
-    } else if (!pending && started.current) {
-      started.current = false
-      progress.complete()
-    }
-  }, [pending])
   return <NavigationProgress store={store} size={2} />
 }
 
