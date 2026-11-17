@@ -281,20 +281,45 @@ body {
   padding: 4px;
 }
 
-.tn-menu-section + .tn-menu-section {
-  border-top: 1px solid light-dark(var(--mantine-color-gray-2), var(--mantine-color-dark-4));
-}
-
 .tn-schemes {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 4px;
   padding: 4px;
-  border-block: 1px solid light-dark(var(--mantine-color-gray-2), var(--mantine-color-dark-4));
+}
 
-  &:first-child {
-    border-top: 0;
+.tn-menu-toggles {
+  padding-top: 0;
+}
+
+.tn-menu-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: var(--mantine-radius-sm);
+  font-size: var(--mantine-font-size-sm);
+
+  & span {
+    flex: 1;
   }
+
+  @media (hover: hover) {
+    &:hover {
+      background-color: light-dark(var(--mantine-color-gray-0), var(--mantine-color-dark-6));
+    }
+  }
+}
+
+/* 各段之间一条横线；配色和下面的多标签开关算一段（开关在窄屏时隐藏，横线只画在每段的上边）。 */
+.tn-menu-section + .tn-menu-section,
+.tn-menu-section + .tn-schemes {
+  border-top: 1px solid light-dark(var(--mantine-color-gray-2), var(--mantine-color-dark-4));
+}
+
+.tn-schemes + .tn-menu-section:not(.tn-menu-toggles) {
+  border-top: 1px solid light-dark(var(--mantine-color-gray-2), var(--mantine-color-dark-4));
 }
 
 .tn-scheme {
@@ -328,48 +353,176 @@ body {
 
 /* ———————————————— 标签栏 ———————————————— */
 
+/*
+ * 标签栏在顶栏中间，上下居中，32px 高（与两侧的图标按钮同高）。底部一条细线，只覆盖已经打开的标签和两端的箭头，
+ * 标签站在线上，连成一个整体：
+ *   - 未选中的标签没有底色，相邻的之间一条细竖线；悬停时缩进的灰底；
+ *   - 选中的标签是主色实底、白字，底部左右外翻的圆弧落在底线上。
+ */
 .tn-tabbar {
-  position: sticky;
-  top: var(--app-shell-header-offset, 0px);
-  z-index: 3;
   display: flex;
+  flex: 1;
+  align-items: center;
+  min-width: 0;
+  height: 100%;
+  margin-right: var(--mantine-spacing-sm);
+}
+
+.tn-tab-strip {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: stretch;
+  min-width: 0;
+  height: 32px;
+  box-shadow: inset 0 -1px 0 light-dark(var(--mantine-color-gray-3), var(--mantine-color-dark-4));
+}
+
+/* 放不下时收缩并左右滚动（滚动条隐藏，用两端的箭头）；还有被挡住的标签的一端渐隐，底线一起渐隐。 */
+.tn-tab-scroller {
+  display: flex;
+  flex: 0 1 auto;
   align-items: flex-end;
-  gap: 2px;
-  padding: 6px 12px 0;
-  background: var(--tn-canvas);
-  border-bottom: 1px solid var(--tn-border);
+  min-width: 0;
   overflow-x: auto;
   scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+
+  &[data-fade-left] {
+    mask-image: linear-gradient(to right, transparent, #000 28px);
+  }
+
+  &[data-fade-right] {
+    mask-image: linear-gradient(to left, transparent, #000 28px);
+  }
+
+  &[data-fade-left][data-fade-right] {
+    mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+  }
+}
+
+/* 一组标签（固定或未固定）：拖动被限制在组内。 */
+.tn-tab-group {
+  display: flex;
+  align-items: flex-end;
+  height: 100%;
+}
+
+/* 未选中的标签和两端的箭头：悬停时灰底的顶部与标签齐平，左、右和底部各留 3px（画在 ::after 上，::before 是竖线）。 */
+.tn-tab,
+.tn-tab-arrow {
+  position: relative;
+  isolation: isolate;
+  color: light-dark(var(--mantine-color-gray-7), var(--mantine-color-dark-1));
+
+  @media (hover: hover) {
+    &:not([data-active], :disabled):hover {
+      color: var(--mantine-color-text);
+
+      &::after {
+        content: "";
+        position: absolute;
+        inset: 0 3px 3px;
+        z-index: -1;
+        border-radius: var(--mantine-radius-sm);
+        background-color: light-dark(var(--mantine-color-gray-2), var(--mantine-color-dark-5));
+      }
+    }
+  }
+}
+
+.tn-tab-arrow {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 26px;
+
+  &:disabled {
+    opacity: 0.3;
+    cursor: default;
+  }
 }
 
 .tn-tab {
-  display: inline-flex;
+  display: flex;
+  flex-shrink: 0;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  height: 100%;
   max-width: 220px;
-  height: 32px;
-  padding-inline: 12px 6px;
-  border: 1px solid transparent;
-  border-bottom: none;
-  border-radius: var(--mantine-radius-sm) var(--mantine-radius-sm) 0 0;
-  color: var(--tn-muted);
+  /* 左边的图标线条离边框还有约 2px 的空白，汉字却几乎撑满字框，所以右边多留一些，看起来左右才均匀。 */
+  padding-inline: 16px 20px;
+  border-radius: var(--mantine-radius-md) var(--mantine-radius-md) 0 0;
   font-size: var(--mantine-font-size-sm);
-  white-space: nowrap;
-  cursor: pointer;
-  user-select: none;
-  margin-bottom: -1px;
-}
-
-.tn-tab:hover {
-  color: var(--tn-text);
-  background: var(--tn-hover);
-}
-
-.tn-tab[data-active] {
-  color: var(--tn-text);
-  background: var(--tn-surface);
-  border-color: var(--tn-border);
   font-weight: 500;
+  white-space: nowrap;
+  touch-action: none;
+  user-select: none;
+
+  &[data-pinned] {
+    padding-right: 18px;
+  }
+
+  /* 选中：主色实底、白字，与侧栏菜单的选中样式一致；底部左右各向外伸出一段反向圆弧。 */
+  &[data-active] {
+    z-index: 1;
+    background-color: var(--mantine-primary-color-filled);
+    color: var(--mantine-color-white);
+    font-weight: 600;
+
+    &::before,
+    &::after {
+      content: "";
+      position: absolute;
+      bottom: 0;
+      width: 6px;
+      height: 6px;
+      pointer-events: none;
+    }
+
+    &::before {
+      left: -6px;
+      background: radial-gradient(circle at 0 0, transparent 5.5px, var(--mantine-primary-color-filled) 6px);
+    }
+
+    &::after {
+      right: -6px;
+      background: radial-gradient(circle at 100% 0, transparent 5.5px, var(--mantine-primary-color-filled) 6px);
+    }
+  }
+}
+
+/* 未选中的标签之间一条细竖线（是否显示由代码按整行的顺序算出）；悬停的标签两侧不显示。 */
+.tn-tab[data-separator]::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 1px;
+  height: 14px;
+  transform: translateY(-50%);
+  background: light-dark(var(--mantine-color-gray-4), var(--mantine-color-dark-4));
+}
+
+@media (hover: hover) {
+  .tn-tab[data-separator]:hover::before,
+  .tn-tab:hover + .tn-tab[data-separator]::before {
+    display: none;
+  }
+}
+
+.tn-tab[data-dragging] {
+  z-index: 2;
+  background-color: var(--mantine-color-body);
+  box-shadow: var(--mantine-shadow-sm);
+  cursor: grabbing;
+}
+
+.tn-tab[data-dragging]::before,
+.tn-tab[data-dragging] + .tn-tab::before {
+  display: none;
 }
 
 .tn-tab-title {
@@ -377,12 +530,23 @@ body {
   text-overflow: ellipsis;
 }
 
+.tn-tab-pin {
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+
 .tn-tab-dot {
+  flex: none;
   width: 6px;
   height: 6px;
   border-radius: 50%;
   background: var(--mantine-color-orange-5);
-  flex: none;
+}
+
+/* 最后一个标签右边的刷新按钮：跟在标签后面；放不下时固定在标签栏的最右端。 */
+.tn-tab-reload {
+  flex-shrink: 0;
+  margin-left: 12px;
 }
 
 /* ———————————————— 页面 ———————————————— */

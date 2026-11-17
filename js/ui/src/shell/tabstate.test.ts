@@ -6,6 +6,7 @@ import {
   evictTabs,
   moveTab,
   openTab,
+  pinFirst,
   pinTab,
   type TabsState,
   tabKey,
@@ -46,9 +47,16 @@ describe("closeTab", () => {
     expect([keys(r.state), r.next, r.state.active]).toEqual(["b,c", undefined, "c"])
   })
 
-  it("固定的标签、唯一的标签不能关闭", () => {
-    expect(closeTab(pinTab(open("a", "b"), "a", true), "a").closed).toEqual([])
+  it("固定的标签可以单独关闭；唯一的标签不能关闭", () => {
+    expect(closeTab(pinTab(open("a", "b"), "a", true), "a").closed).toEqual(["a"])
     expect(closeTab(open("a"), "a").closed).toEqual([])
+  })
+
+  it("pinFirst：固定在最前面，已经打开的改为固定，当前标签不变", () => {
+    const home = { key: "h", routeId: "h", params: {}, href: "/" }
+    expect(keys(pinFirst(open("a", "b"), home))).toBe("*h,a,b")
+    const s = pinFirst(open("a", "h", "b"), home)
+    expect([keys(s), s.active]).toEqual(["*h,a,b", "b"])
   })
 })
 

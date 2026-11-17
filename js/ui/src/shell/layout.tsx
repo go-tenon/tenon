@@ -121,15 +121,17 @@ export function Fill({ name, children }: { name: SlotName | (string & {}); child
 
 // ———————————————————————————— 布局状态 ————————————————————————————
 
-/** 布局状态。collapsed 按账号保存。 */
+/** 布局状态。collapsed、tabs 按账号保存。 */
 export interface LayoutState {
   /** 侧栏收起为图标。 */
   collapsed: boolean
+  /** 用户打开了多标签（布局开启了多标签时才有意义），默认打开。 */
+  tabs: boolean
   /** 窄屏时导航抽屉打开。只在当前页面有效，不保存。 */
   navOpen: boolean
 }
 
-const defaultLayout: LayoutState = { collapsed: false, navOpen: false }
+const defaultLayout: LayoutState = { collapsed: false, tabs: true, navOpen: false }
 
 const layoutOf = perOwner(() => createStore<{ key: string; state: LayoutState }>({ key: "", state: defaultLayout }))
 

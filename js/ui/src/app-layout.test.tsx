@@ -3,7 +3,8 @@
 import { createRootRouteWithContext, createRoute, Outlet } from "@tanstack/react-router"
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, describe, expect, it } from "vitest"
-import { AppLayout } from "./app-layout"
+import { AppLayout, type AppLayoutProps } from "./app-layout"
+import { UserMenu } from "./menus"
 import { Page } from "./page"
 import { Fill, type RouterContext, requireAuth } from "./shell"
 import { renderApp } from "./testing"
@@ -13,13 +14,13 @@ afterEach(() => {
   localStorage.clear()
 })
 
-function tree() {
+function tree(extra: Partial<AppLayoutProps> = {}) {
   const root = createRootRouteWithContext<RouterContext>()({ component: Outlet })
   const layout = createRoute({
     getParentRoute: () => root,
     id: "_app",
     beforeLoad: requireAuth,
-    component: () => <AppLayout title="测试后台" user={<span>用户菜单</span>} actions={<span>通知</span>} />,
+    component: () => <AppLayout title="测试后台" user={<span>用户菜单</span>} actions={<span>通知</span>} {...extra} />,
   })
   const page = (
     parent: typeof layout | typeof trade,
@@ -138,5 +139,67 @@ describe("AppLayout", () => {
     const app = await renderApp(tree(), { signedIn: false })
     await screen.findByText("登录页")
     expect(app.router.state.location.pathname).toBe("/login")
+  })
+})
+
+describe("AppLayout 的多标签", () => {
+  const bar = () => screen.getByRole("tablist", { name: "已打开的页面" })
+  const tab = (title: string) => within(bar()).getByRole("tab", { name: title })
+  const titles = () =>
+    within(bar())
+      .getAllByRole("tab")
+      .map((t) => `${t.dataset.active ? ">" : ""}${t.dataset.pinned ? "*" : ""}${t.textContent}`)
+  const open = async (app: Awaited<ReturnType<typeof renderApp>>, href: string, text: string) => {
+    await act(() => app.router.navigate({ href }))
+    await screen.findByText(text)
+  }
+
+  it("标签栏在顶栏中；第一次使用时菜单的第一个页面固定在最前面", async () => {
+    await renderApp(tree({ tabs: true }), { path: "/trade/orders", permissions: ["users:manage"] })
+    await screen.findByText("订单页面")
+    expect(document.querySelector(".tn-header")?.contains(bar())).toBe(true)
+    await waitFor(() => expect(titles()).toEqual(["*概览", ">订单"]))
+  })
+
+  it("右键菜单：固定、关闭其他标签页；中键关闭，固定的标签也可以单独关闭", async () => {
+    const app = await renderApp(tree({ tabs: true }), { path: "/trade/orders", permissions: ["users:manage"] })
+    await screen.findByText("订单页面")
+    await open(app, "/trade/refunds", "退款页面")
+    await open(app, "/users", "用户页面")
+    await waitFor(() => expect(titles()).toEqual(["*概览", "订单", "退款", ">用户"]))
+
+    await act(async () => fireEvent.contextMenu(tab("退款")))
+    await act(async () => fireEvent.click(await screen.findByRole("menuitem", { name: "固定" })))
+    expect(titles()).toEqual(["*概览", "*退款", "订单", ">用户"])
+
+    await act(async () => fireEvent.contextMenu(tab("用户")))
+    await act(async () => fireEvent.click(await screen.findByRole("menuitem", { name: "关闭其他标签页" })))
+    await waitFor(() => expect(titles()).toEqual(["*概览", "*退款", ">用户"]))
+
+    await act(async () => fireEvent(tab("退款"), new MouseEvent("auxclick", { button: 1, bubbles: true })))
+    await waitFor(() => expect(titles()).toEqual(["*概览", ">用户"]))
+  })
+
+  it("用户在头像菜单中关掉多标签：没有标签栏，页面照常显示；按账号保存", async () => {
+    await renderApp(tree({ tabs: true, user: <UserMenu name="小明" /> }), {
+      path: "/trade/orders",
+      permissions: ["users:manage"],
+    })
+    await screen.findByText("订单页面")
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "用户菜单" })))
+    const toggle = await screen.findByRole("switch", { name: "多标签" })
+    expect(toggle.getAttribute("aria-checked")).toBe("true")
+    await act(async () => fireEvent.click(toggle))
+    await waitFor(() => expect(screen.queryByRole("tablist")).toBeNull())
+    expect(screen.getByText("订单页面")).toBeTruthy()
+    expect(JSON.stringify(localStorage)).toContain('\\"tabs\\":false')
+  })
+
+  it("布局没有开启多标签时，头像菜单中没有开关", async () => {
+    await renderApp(tree({ user: <UserMenu name="小明" /> }), { permissions: ["users:manage"] })
+    await screen.findByText("概览页面")
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "用户菜单" })))
+    await screen.findByText("退出登录")
+    expect(screen.queryByRole("switch", { name: "多标签" })).toBeNull()
   })
 })

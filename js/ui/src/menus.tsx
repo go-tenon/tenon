@@ -16,6 +16,7 @@ import {
   Progress,
   ScrollArea,
   Stack,
+  Switch,
   Text,
   Tooltip,
   UnstyledButton,
@@ -23,6 +24,7 @@ import {
 } from "@mantine/core"
 import {
   IconBell,
+  IconBrowser,
   IconCheck,
   IconDeviceDesktop,
   IconListCheck,
@@ -34,12 +36,14 @@ import {
 } from "@tabler/icons-react"
 import { useNavigate } from "@tanstack/react-router"
 import { type ReactNode, useState } from "react"
+import { useTabsAvailable } from "./layout-context"
 import {
   confirmDiscard,
   dismissOperation,
   type NotificationsSource,
   type TrackedOperation,
   useApp,
+  useLayoutState,
   useNotifications,
   useOperations,
   useTenant,
@@ -68,7 +72,7 @@ export interface UserMenuProps {
   colorScheme?: boolean
 }
 
-/** 用户菜单：只显示头像；菜单中有应用的菜单项、配色和退出登录。 */
+/** 用户菜单：只显示头像；菜单中有应用的菜单项、配色、多标签的开关（布局开启了多标签时）和退出登录。 */
 export function UserMenu({ name, avatar, logout, items = [], colorScheme = true }: UserMenuProps): ReactNode {
   const app = useApp()
   const navigate = useNavigate()
@@ -106,6 +110,7 @@ export function UserMenu({ name, avatar, logout, items = [], colorScheme = true 
           </div>
         )}
         {colorScheme && <ColorSchemePicker />}
+        {useTabsAvailable() && <TabsSwitch />}
         <div className="tn-menu-section">
           <Menu.Item leftSection={<IconLogout size={18} stroke={1.5} />} onClick={() => void signOut()}>
             退出登录
@@ -113,6 +118,25 @@ export function UserMenu({ name, avatar, logout, items = [], colorScheme = true 
         </div>
       </Menu.Dropdown>
     </Menu>
+  )
+}
+
+/** 多标签的开关，按账号保存。窄屏时不显示标签栏，也不显示开关。 */
+function TabsSwitch(): ReactNode {
+  const [layout, setLayout] = useLayoutState()
+  return (
+    <Box visibleFrom="sm" className="tn-menu-section tn-menu-toggles">
+      <UnstyledButton
+        className="tn-menu-toggle"
+        role="switch"
+        aria-checked={layout.tabs}
+        onClick={() => setLayout({ tabs: !layout.tabs })}
+      >
+        <IconBrowser size={18} stroke={1.5} />
+        <span>多标签</span>
+        <Switch size="xs" checked={layout.tabs} readOnly tabIndex={-1} aria-hidden style={{ pointerEvents: "none" }} />
+      </UnstyledButton>
+    </Box>
   )
 }
 

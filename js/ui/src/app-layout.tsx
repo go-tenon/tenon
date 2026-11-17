@@ -1,4 +1,5 @@
-// 应用外壳：运营后台和 SaaS 控制台共用。顶栏占满整行：左边是收起侧栏的按钮和标志，右边是操作、租户切换和用户菜单；
+// 应用外壳：运营后台和 SaaS 控制台共用。顶栏占满整行：左边是收起侧栏的按钮和标志，中间是多标签（开启时），
+// 右边是操作、租户切换和用户菜单；
 // 侧栏在顶栏下面，顶部是页面搜索，下面是 shell/ 中的导航模型（按权限过滤的菜单），可以收起为只有图标的窄栏。
 // 窄屏时侧栏是顶栏下面的抽屉。密度、尺寸由主题的预设决定。
 // 每个页面都有的内容是 AppLayout 的参数；某个页面才有的内容由页面用 Fill 放进插槽（actions、aside、footer）。
@@ -28,8 +29,9 @@ import {
   IconSearch,
 } from "@tabler/icons-react"
 import { Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router"
-import { type CSSProperties, type ReactNode, useEffect, useMemo, useState } from "react"
+import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from "react"
 import { Icon } from "./icons"
+import { TabsAvailableProvider } from "./layout-context"
 import { NavLinkLink } from "./links"
 import { TenantSwitcher } from "./menus"
 import {
@@ -58,7 +60,7 @@ export interface AppLayoutProps {
   actions?: ReactNode
   /** 侧栏顶部的页面搜索（Ctrl+K 或 / 打开），默认开启；false 时不显示。 */
   search?: boolean
-  /** 开启多标签：true 或者 TabsOutlet 的选项。 */
+  /** 开启多标签：true 或者 TabsOutlet 的选项。用户可以在 UserMenu 中关掉，窄屏时不显示标签栏。 */
   tabs?: boolean | TabsOutletProps
   /** 内容区的最大宽度，例如 1200；默认铺满。 */
   maxWidth?: number
@@ -82,11 +84,36 @@ export function AppLayout({ title, logo, user, actions, search = true, tabs, max
   const collapsed = state.collapsed && !narrow
   const aside = useSlotFilled("aside")
   const pathname = useRouterState({ select: (s) => s.location.pathname })
+  const tabsOn = Boolean(tabs) && state.tabs
+  const showTabBar = tabsOn && !narrow
 
   // 窄屏时打开页面后收起导航抽屉。
   // biome-ignore lint/correctness/useExhaustiveDependencies: 只在地址变化时收起
   useEffect(() => {
     if (state.navOpen) setState({ navOpen: false })
+  }, [pathname])
+
+  // 切换页面（点标签、点菜单、搜索跳转）时，新页面淡入，同时从下方上移 6px。只看路径：翻页、筛选不算。
+  const content = useRef<HTMLDivElement>(null)
+  const first = useRef(true)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 只在路径变化时播放
+  useEffect(() => {
+    if (first.current) {
+      first.current = false
+      return
+    }
+    const el = content.current
+    if (!el?.animate || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return
+    el.animate(
+      [
+        { opacity: 0, transform: "translateY(6px)" },
+        { opacity: 1, transform: "none" },
+      ],
+      {
+        duration: 180,
+        easing: "ease-out",
+      },
+    )
   }, [pathname])
 
   const vars = { "--tn-header-height": `${m.headerHeight}px` } as CSSProperties
@@ -106,7 +133,15 @@ export function AppLayout({ title, logo, user, actions, search = true, tabs, max
     >
       <AppShell.Header className="tn-header">
         <div className="tn-header-inner">
-          <div className="tn-header-start">
+          {/* 侧栏展开时，这一块正好宽到侧栏与内容区之间的竖线，标签栏从竖线开始；收起时竖线太靠左，标签跟在标志后面。 */}
+          <div
+            className="tn-header-start"
+            style={
+              showTabBar && !collapsed
+                ? { width: `calc(${m.navbarWidth}px - var(--mantine-spacing-md))`, paddingRight: 0 }
+                : undefined
+            }
+          >
             <Burger
               hiddenFrom="sm"
               size="sm"
@@ -133,12 +168,12 @@ export function AppLayout({ title, logo, user, actions, search = true, tabs, max
               {title && <span className="tn-brand-title">{title}</span>}
             </Link>
           </div>
-          <Box style={{ flex: 1 }} />
+          {showTabBar ? <TabBar /> : <Box style={{ flex: 1 }} />}
           <Group gap="xs" wrap="nowrap">
             <Slot name="actions" />
             {actions}
             <TenantSwitcher />
-            {user}
+            <TabsAvailableProvider value={Boolean(tabs)}>{user}</TabsAvailableProvider>
           </Group>
         </div>
       </AppShell.Header>
@@ -159,9 +194,8 @@ export function AppLayout({ title, logo, user, actions, search = true, tabs, max
       )}
 
       <AppShell.Main>
-        {tabs && <TabBar />}
-        <Box className="tn-content" p={m.contentPadding} maw={maxWidth}>
-          {tabs ? <TabsOutlet {...(typeof tabs === "object" ? tabs : {})} /> : <Outlet />}
+        <Box ref={content} className="tn-content" p={m.contentPadding} maw={maxWidth}>
+          {tabsOn ? <TabsOutlet home {...(typeof tabs === "object" ? tabs : {})} /> : <Outlet />}
         </Box>
         <Slot name="footer" />
       </AppShell.Main>
