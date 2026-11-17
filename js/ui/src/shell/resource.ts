@@ -69,7 +69,7 @@ export interface RuleOptions {
   language?: string
 }
 
-/** 生成的代码：一个 API 的客户端和元数据，交给 resourceModel。 */
+/** 生成的代码：一个 API 的客户端和元数据，交给 resourceModel。生成的 kit.ts 中 createKit 的返回值满足它。 */
 export interface ResourceKit {
   /** createClient 创建的客户端。 */
   client: object
@@ -149,8 +149,11 @@ export interface ResourceModel {
   ruleOptions: RuleOptions
   /** 一行的标识。 */
   rowKey(row: ResourceRow): string
-  /** 字段的值的显示文字：枚举显示它的文字，其他原样返回。 */
-  display(field: ResourceField, value: unknown): unknown
+  /**
+   * 字段的值的显示文字：枚举显示它的文字，其他原样返回。field 可以是字段名，依次在列、筛选条件和表单字段中查找，
+   * 例如在自定义的列中显示枚举：model.display("status", row.status)。
+   */
+  display(field: ResourceField | string, value: unknown): unknown
   /**
    * 资源所在分组全部查询的 key 前缀：完成修改后让它们失效。每次读取时计算，createQueries 带 scope 时
    * 包含当前的身份（模型通常在登录之前创建）。
@@ -242,8 +245,8 @@ function displayValue(f: ResourceField, value: unknown): unknown {
 /**
  * 由 resources.ts 中的定义得到资源模型：
  *
- *	const kit = { client: api, queries, schemas, components, enums, messages, language: "zh-CN" }
- *	export const articles = resourceModel(resources.article, kit, queryClient)
+ *	export const kit = createKit(api, { scope: session.scope, language: "zh-CN" }) // 生成的 kit.ts
+ *	export const articles = resourceModel(kit.resources.article, kit)
  *
  * queryClient 用来在修改后让查询失效。
  */
@@ -265,13 +268,16 @@ export function resourceModel(def: ResourceDef, kit: ResourceKit, queryClient?: 
     return result
   }
 
+  const columns = def.columns.map(field)
+  const filters = def.filters.map(field)
+  const form = def.form.map(field)
   return {
     name: def.name,
     title: labels?.title ?? def.name,
     key: def.key,
-    columns: def.columns.map(field),
-    filters: def.filters.map(field),
-    form: def.form.map(field),
+    columns,
+    filters,
+    form,
     search: def.search,
     actions: def.actions.map((a) => ({
       name: a.name,
@@ -320,7 +326,10 @@ export function resourceModel(def: ResourceDef, kit: ResourceKit, queryClient?: 
     rowKey(row) {
       return String(row[def.key ?? "id"] ?? "")
     },
-    display: displayValue,
+    display(f, value) {
+      const found = typeof f === "string" ? [...columns, ...filters, ...form].find((c) => c.name === f) : f
+      return found ? displayValue(found, value) : value
+    },
     get queryKey() {
       return queryKey()
     },
@@ -450,7 +459,7 @@ export interface SettingsModel {
 /**
  * 由 settings.ts 中的定义得到设置模型：
  *
- *	export const site = settingsModel(settings.site, kit, queryClient)
+ *	export const site = settingsModel(kit.settings.site, kit)
  *
  * queryClient 用来在保存后让读取的查询失效。
  */

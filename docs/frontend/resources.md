@@ -106,22 +106,23 @@ resources.article.labels["zh-CN"].fields.title // "标题"
 <a id="model"></a>
 ## 前端的资源模型
 
-`@go-tenon/ui` 的 `resourceModel` 把定义和生成的客户端、校验规则、枚举接在一起，得到资源模型，`ResourcePage` 按它渲染：
+`tenon generate` 为每个 API 生成 `kit.ts`，其中的 `createKit` 把客户端和生成的查询选项、校验规则、验证提示、枚举、资源和设置合成一个对象。`@go-tenon/ui` 的 `resourceModel` 由资源的定义和它得到资源模型，`ResourcePage` 按模型渲染：
 
 ```ts
 import { resourceModel } from "@go-tenon/ui"
-import { createQueries } from "@blog/client/api/queries"
-import { resources } from "@blog/client/api/resources"
-import { components, schemas } from "@blog/client/api/schemas"
-import { enums } from "@blog/client/api/enums"
-import { messages } from "@blog/client/api/messages"
+import { createKit } from "@blog/client/api/kit"
 
-const queries = createQueries(api, { queryClient, scope: session.scope })
-const kit = { client: api, queries, schemas, components, enums, messages, language: "zh-CN" }
-export const articles = resourceModel(resources.article, kit, queryClient)
+export const kit = createKit(api, { scope: session.scope, language: "zh-CN" })
+export const articles = resourceModel(kit.resources.article, kit)
 ```
 
-模型通常在模块中创建，那时还没有登录。query key 在每次使用时按当前的身份计算，所以 `createQueries` 可以带上 [`scope`](client-react.md#tanstack)：登录、切换租户之后，列表和失效的范围都属于新的身份。
+模型通常在模块中创建，那时还没有登录。query key 在每次使用时按当前的身份计算，所以 `createKit` 可以带上 [`scope`](client-react.md#tanstack)：登录、切换租户之后，列表和失效的范围都属于新的身份。`language` 是显示文字和验证提示的语言，不设置时用浏览器的语言。
+
+自己写的表单用同样的规则时，把 `kit` 作为 `useSchemaForm` 的 `rules`：
+
+```ts
+const form = useSchemaForm({ schema: kit.schemas.article.create.body, rules: kit, initialValues })
+```
 
 | 成员 | 说明 |
 | --- | --- |
@@ -130,8 +131,8 @@ export const articles = resourceModel(resources.article, kit, queryClient)
 | `allowed(can, operation)` | 当前身份能否使用一个接口或操作 |
 | `listQuery`、`getQuery` | 列表和详情的查询选项，query key 与 `createQueries` 相同 |
 | `create`、`update`、`remove`、`run` | 调用生成的客户端，完成后让这个分组的查询失效 |
-| `formSchema(mode)`、`ruleOptions` | 表单的校验规则，交给 `@go-tenon/ui` 的 [`useSchemaForm`](ui.md#forms)。`kit` 带上 `messages` 时提示是翻译好的文字，没有时是错误码，例如 `validation.filled` |
-| `display(field, value)` | 枚举字段显示它的文字 |
+| `formSchema(mode)`、`ruleOptions` | 表单的校验规则，交给 `@go-tenon/ui` 的 [`useSchemaForm`](ui.md#forms) |
+| `display(field, value)` | 枚举字段显示它的文字，其他原样返回。`field` 可以是字段名，例如在自定义的列中显示枚举：`articles.display("status", row.status)` |
 
 在页面中：
 
@@ -208,9 +209,8 @@ api.Settings(rest.Settings{Name: "site", Get: "site-settings-get", Update: "site
 
 ```ts
 import { settingsModel } from "@go-tenon/ui"
-import { settings } from "@blog/client/api/settings"
 
-export const siteSettings = settingsModel(settings.site, kit, queryClient)
+export const siteSettings = settingsModel(kit.settings.site, kit)
 ```
 
 `@go-tenon/ui` 的 `SettingsForm` 读取设置作为初始值，按权限决定能否修改（没有保存的权限时只读），字段的输入组件与资源表单相同。默认有“保存”按钮，`autoSave` 改为修改后自动保存，并显示保存的状态：
@@ -249,6 +249,7 @@ export const siteSettings = settingsModel(settings.site, kit, queryClient)
 | `rest.Action` | 行上的操作 |
 | `(*rest.API).Resource(r)` | 声明资源，写入 `x-tenon-resources` |
 | `(*rest.API).Resources()` | 已声明的资源，列、表单字段和 `Key` 已经补全 |
+| `createKit(client, { scope, queryClient, language })` | 生成的 `kit.ts`：客户端和元数据 |
 | `resourceModel(def, kit, queryClient)` | `@go-tenon/ui`：资源模型 |
 | `useResourceList`、`useResourceItem`、`useResourceMutations`、`formValues` | `@go-tenon/ui`：列表、详情、修改、表单的初始值 |
 | `rest.Settings`、`(*rest.API).Settings(s)`、`(*rest.API).SettingsPages()` | 设置页面的声明，写入 `x-tenon-settings` |
