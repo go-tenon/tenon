@@ -53,15 +53,15 @@ func migrations() []fs.FS {
 }
 
 type env struct {
-	db     *bun.DB
-	tokens *apitoken.Store
-	fake   *outboundtest.Transport
-	router chi.Router
-	srv    *oauthserver.Server
-	// login 是 editor 在单页应用中登录得到的 token。
-	login string
-	// base 是 Issuer 的路径，Routes 和 API 挂在它下面；resource、consentPage 是这次的 MCP 地址和同意页路径。
-	base, resource, consentPage string
+	db          *bun.DB
+	tokens      *apitoken.Store
+	fake        *outboundtest.Transport
+	router      chi.Router
+	srv         *oauthserver.Server
+	login       string // editor 在单页应用中登录得到的 token。
+	base        string // Issuer 的路径，Routes 和 API 挂在它下面
+	resource    string // 这次的 MCP 地址
+	consentPage string // 这次的同意页路径
 }
 
 func setup(t *testing.T) *env {

@@ -54,18 +54,16 @@ func New(opts Options) *Converter {
 
 // document 保存渲染正文需要的信息：标题样式、列表格式和链接地址。
 type document struct {
-	ctx     context.Context
-	limits  convert.Limits
-	ordered map[string]map[string]bool
-	links   map[string]string
-	styles  map[string]styleInfo
-	// numAbstract 把编号实例映射到它的抽象定义；styleLevels 把抽象定义中的样式映射到它们使用的级别。
-	numAbstract map[string]string
-	styleLevels map[string]map[string]string
-	inCell      bool // 表格单元格不转义：块标记在那里不起作用
-	inLink      bool // 链接文字中的超链接只渲染为文字
-	// output 是留给顶层块及其分隔符的输出预算，负数表示不限制。
-	output int64
+	ctx         context.Context
+	limits      convert.Limits
+	ordered     map[string]map[string]bool
+	links       map[string]string
+	styles      map[string]styleInfo
+	numAbstract map[string]string            // 编号实例到它的抽象定义
+	styleLevels map[string]map[string]string // 抽象定义中的样式到它们使用的级别
+	inCell      bool                         // 表格单元格不转义：块标记在那里不起作用
+	inLink      bool                         // 链接文字中的超链接只渲染为文字
+	output      int64                        // 留给顶层块及其分隔符的输出预算，负数表示不限制。
 }
 
 // Convert 把 in 转换为 Markdown。

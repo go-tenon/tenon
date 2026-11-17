@@ -12,14 +12,10 @@ import (
 
 // ReadyOptions 是 Ready 的选项。
 type ReadyOptions struct {
-	// Draining 是 Serve 开始排空时设置的标志，与传给 OnDraining 的是同一个；为 nil 时跳过排空检查。
-	Draining *Draining
-	// Checks 是要检查的依赖。只放处理请求必需的依赖，以及标为 Optional 的降级依赖。
-	Checks []health.Check
-	// Timeout 是每项检查的超时，不大于 0 时为 health.DefaultTimeout。
-	Timeout time.Duration
-	// Logger 记录检查结果的变化，nil 表示 slog.Default()。
-	Logger *slog.Logger
+	Draining *Draining      // Serve 开始排空时设置的标志，与传给 OnDraining 的是同一个；为 nil 时跳过排空检查。
+	Checks   []health.Check // 要检查的依赖。只放处理请求必需的依赖，以及标为 Optional 的降级依赖。
+	Timeout  time.Duration  // 每项检查的超时，不大于 0 时为 health.DefaultTimeout。
+	Logger   *slog.Logger   // 记录检查结果的变化，nil 表示 slog.Default()。
 }
 
 // readyResult 是就绪检查的响应体。

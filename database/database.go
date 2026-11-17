@@ -21,18 +21,12 @@ var ErrUnavailable = errorx.Define(errorx.Unavailable, "database.unavailable")
 
 // Config 是数据库连接配置。连接池由 pgxpool 管理；MaxConns、MaxConnLifetime、MaxConnIdleTime 为 0 时使用 DefaultConfig 的值。
 type Config struct {
-	// DSN 是 pgx 支持的连接串，例如 postgres://user:pass@localhost:5432/app?sslmode=disable。
-	DSN string `yaml:"dsn"`
-	// MaxConns 是连接池的最大连接数。所有实例、所有进程的连接数之和要控制在数据库或 PgBouncer 的上限以内。
-	MaxConns int `yaml:"max_conns"`
-	// MinConns 是连接池保持的最少连接数，空闲时也不关闭。
-	MinConns int `yaml:"min_conns"`
-	// MaxConnLifetime 是连接的最长存活时间，到期后在空闲时关闭，例如让数据库的配置变更和负载均衡生效。
-	MaxConnLifetime time.Duration `yaml:"max_conn_lifetime"`
-	// MaxConnIdleTime 是空闲连接的最长保留时间，超过 MinConns 的空闲连接到期后关闭。
-	MaxConnIdleTime time.Duration `yaml:"max_conn_idle_time"`
-	// SlowQuery 是慢查询的阈值：执行时间达到它的语句记录一条 Warn 日志，带着把字面量换成 ? 之后的 SQL；0 表示不记录。
-	SlowQuery time.Duration `yaml:"slow_query"`
+	DSN             string        `yaml:"dsn"`                // pgx 支持的连接串，例如 postgres://user:pass@localhost:5432/app?sslmode=disable。
+	MaxConns        int           `yaml:"max_conns"`          // 连接池的最大连接数。所有实例、所有进程的连接数之和要控制在数据库或 PgBouncer 的上限以内。
+	MinConns        int           `yaml:"min_conns"`          // 连接池保持的最少连接数，空闲时也不关闭。
+	MaxConnLifetime time.Duration `yaml:"max_conn_lifetime"`  // 连接的最长存活时间，到期后在空闲时关闭，例如让数据库的配置变更和负载均衡生效。
+	MaxConnIdleTime time.Duration `yaml:"max_conn_idle_time"` // 空闲连接的最长保留时间，超过 MinConns 的空闲连接到期后关闭。
+	SlowQuery       time.Duration `yaml:"slow_query"`         // 慢查询的阈值：执行时间达到它的语句记录一条 Warn 日志，带着把字面量换成 ? 之后的 SQL；0 表示不记录。
 }
 
 // DefaultConfig 返回默认连接池参数；DSN 必须由应用配置。

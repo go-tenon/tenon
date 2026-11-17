@@ -109,10 +109,9 @@ import (
 
 // Config 是应用的配置：config/app.yaml。
 type Config struct {
-    HTTP     httpx.Config    `yaml:"http"`
-    Database database.Config `yaml:"database"`
-    // DevServers 是各前端开发服务器的地址，只在 tenon dev 时有值。
-    DevServers map[string]string `yaml:"dev_servers"`
+    HTTP       httpx.Config      `yaml:"http"`
+    Database   database.Config   `yaml:"database"`
+    DevServers map[string]string `yaml:"dev_servers"` // 各前端开发服务器的地址，只在 tenon dev 时有值
 }
 ```
 

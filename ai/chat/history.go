@@ -30,19 +30,14 @@ type HistoryStore interface {
 // History 是 HistoryStore.Load 读出的上下文。
 type History struct {
 	Messages []model.Message
-	// Cursor 标记读到哪里，由应用定义，例如最后一条消息的序号。这一轮产生的消息带着它交给 Save。
-	Cursor string
+	Cursor   string // 标记读到哪里，由应用定义，例如最后一条消息的序号。这一轮产生的消息带着它交给 Save。
 }
 
 // Entry 是交给 HistoryStore.Save 的一条消息。
 type Entry struct {
 	Message model.Message
-	// RunID 是产生它的运行；Approve、Reject 在其他调用还没有决定时只写入结果，此时为空。
-	RunID string
-	// After 是这条消息基于的上下文：产生它的那一轮 Load 返回的 Cursor。Load 把它排在这个位置之后、
-	// 同一位置的消息按保存的先后。为空表示它不基于读出的上下文（Start、Submit 发来的用户消息，Approve、
-	// Reject 的结果），排在当前所有消息之后。
-	After string
+	RunID   string // 产生它的运行；Approve、Reject 在其他调用还没有决定时只写入结果，此时为空。
+	After   string // 这条消息基于的上下文：产生它的那一轮 Load 返回的 Cursor。Load 把它排在这个位置之后、同一位置的消息按保存的先后。为空表示它不基于读出的上下文（Start、Submit 发来的用户消息，Approve、Reject 的结果），排在当前所有消息之后。
 }
 
 // Conversation 标识一个对话，即 Runs 的方法传入的 userID 和 sessionID。

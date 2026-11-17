@@ -14,12 +14,9 @@ import (
 
 // RetryOptions 是 Retry 的选项，零值可用。
 type RetryOptions struct {
-	// Attempts 是包括第一次在内的最多尝试次数，零值为 3。
-	Attempts int
-	// Backoff 是第一次重试前的等待时间，之后每次翻倍并加上随机抖动，零值为 200ms。
-	Backoff time.Duration
-	// MaxWait 是两次尝试之间最长的等待时间，零值为 5s。响应的 Retry-After 超过它时直接返回这个响应。
-	MaxWait time.Duration
+	Attempts int           // 包括第一次在内的最多尝试次数，零值为 3。
+	Backoff  time.Duration // 第一次重试前的等待时间，之后每次翻倍并加上随机抖动，零值为 200ms。
+	MaxWait  time.Duration // 两次尝试之间最长的等待时间，零值为 5s。响应的 Retry-After 超过它时直接返回这个响应。
 }
 
 // Retry 包装 next（nil 时为 http.DefaultTransport），对可以安全重复的请求在临时失败时重试：

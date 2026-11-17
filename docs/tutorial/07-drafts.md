@@ -89,13 +89,12 @@ import (
 type Article struct {
     bun.BaseModel `bun:"table:articles"`
 
-    ID       uuid.UUID `bun:"id,pk" json:"id"`
-    AuthorID string    `bun:"author_id,notnull" json:"author_id"`
-    Title    string    `bun:"title,notnull" json:"title"`
-    Slug     string    `bun:"slug,notnull" json:"slug"`
-    Content  string    `bun:"content,notnull" json:"content"`
-    // PublishedAt 为空时是草稿，只有作者能看到。
-    PublishedAt *time.Time `bun:"published_at" json:"published_at,omitempty"`
+    ID          uuid.UUID  `bun:"id,pk" json:"id"`
+    AuthorID    string     `bun:"author_id,notnull" json:"author_id"`
+    Title       string     `bun:"title,notnull" json:"title"`
+    Slug        string     `bun:"slug,notnull" json:"slug"`
+    Content     string     `bun:"content,notnull" json:"content"`
+    PublishedAt *time.Time `bun:"published_at" json:"published_at,omitempty"` // 发布时间，为空时是草稿，只有作者能看到
     CreatedAt   time.Time  `bun:"created_at,notnull" json:"created_at"`
     UpdatedAt   time.Time  `bun:"updated_at,notnull" json:"updated_at"`
 }

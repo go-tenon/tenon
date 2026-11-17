@@ -31,8 +31,7 @@ type Reader struct {
 
 // Row 是表格中的一行。
 type Row struct {
-	// Line 是这一行在文件中的行号，从 1 开始，与 Excel 中看到的行号一致。
-	Line   int
+	Line   int // 这一行在文件中的行号，从 1 开始，与 Excel 中看到的行号一致。
 	Values []string
 }
 

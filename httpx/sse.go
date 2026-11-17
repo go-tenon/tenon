@@ -125,12 +125,9 @@ type Stream struct {
 
 // Event 是一条消息的可选字段。
 type Event struct {
-	// Name 是事件名，客户端按它分发；为空时是默认的 message 事件。
-	Name string
-	// ID 在重连时由客户端通过 Last-Event-ID 请求头发回，用于补发断线期间的消息。
-	ID string
-	// Retry 覆盖客户端的重连延迟。
-	Retry time.Duration
+	Name  string        // 事件名，客户端按它分发；为空时是默认的 message 事件。
+	ID    string        // 在重连时由客户端通过 Last-Event-ID 请求头发回，用于补发断线期间的消息。
+	Retry time.Duration // 覆盖客户端的重连延迟。
 }
 
 // Context 返回在客户端断开、服务器开始排空或凭据失效时取消的 context。

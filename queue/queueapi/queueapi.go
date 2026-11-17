@@ -56,11 +56,8 @@ const (
 
 // Options 是 Register 的选项，都可以为零值。
 type Options struct {
-	// Admin 读取 JetStream 中的状态：设置后概览带上 stream、定时消息和各 topic 等待处理、处理中的任务，
-	// 并注册暂停和恢复 topic 的接口。为 nil 时只有数据库一侧的状态。NATS 不可用时概览照常返回数据库一侧的状态。
-	Admin *queue.Admin
-	// Logger 记录重试、删除、暂停和恢复，以及读不到 JetStream 的警告；nil 表示 slog.Default()。
-	Logger *slog.Logger
+	Admin  *queue.Admin // 读取 JetStream 中的状态：设置后概览带上 stream、定时消息和各 topic 等待处理、处理中的任务，并注册暂停和恢复 topic 的接口。为 nil 时只有数据库一侧的状态。NATS 不可用时概览照常返回数据库一侧的状态。
+	Logger *slog.Logger // 记录重试、删除、暂停和恢复，以及读不到 JetStream 的警告；nil 表示 slog.Default()。
 }
 
 type handlers struct {

@@ -38,16 +38,13 @@ const (
 
 // Code 是要发送给用户的验证码，由 Options.Send 发送。
 type Code struct {
-	Purpose Purpose
-	// To 是接收验证码的标识，已规范化。
-	To     Identifier
-	Tenant string
-	// Registered 表示发送时标识已注册，例如 SignIn 时据此决定内容写“登录”还是“注册”。
-	Registered bool
-	// RequestID 标识这次验证，与 Code 一起交给 VerifyCode；放进链接时，链接中同时带上两者。
-	RequestID string
-	Code      string
-	ExpiresAt time.Time
+	Purpose    Purpose
+	To         Identifier // 接收验证码的标识，已规范化。
+	Tenant     string
+	Registered bool   // 发送时标识已注册，例如 SignIn 时据此决定内容写“登录”还是“注册”。
+	RequestID  string // 标识这次验证，与 Code 一起交给 VerifyCode；放进链接时，链接中同时带上两者。
+	Code       string
+	ExpiresAt  time.Time
 }
 
 type challengeRow struct {

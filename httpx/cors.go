@@ -15,14 +15,9 @@ var corsExposed = []string{"X-Request-ID", "Content-Language", "Retry-After", "L
 
 // CORSConfig 是 CORS 的参数，对应 http.cors 段。
 type CORSConfig struct {
-	// AllowedOrigins 是允许跨域调用的来源，例如 https://app.example.com、capacitor://localhost；
-	// 一个来源中可以有一个 * 通配，例如 https://*.example.com；单独的 * 允许任何来源。
-	AllowedOrigins []string `yaml:"allowed_origins"`
-	// ExposeHeaders 是在 X-Request-ID、Content-Language、Retry-After、Location、Content-Disposition
-	// 之外还要让前端读取的响应头。
-	ExposeHeaders []string `yaml:"expose_headers"`
-	// MaxAge 是浏览器缓存预检结果的时间。Chrome 最多缓存 2 小时。
-	MaxAge time.Duration `yaml:"max_age"`
+	AllowedOrigins []string      `yaml:"allowed_origins"` // 允许跨域调用的来源，例如 https://app.example.com、capacitor://localhost；一个来源中可以有一个 * 通配，例如 https://*.example.com；单独的 * 允许任何来源。
+	ExposeHeaders  []string      `yaml:"expose_headers"`  // 在 X-Request-ID、Content-Language、Retry-After、Location、Content-Disposition 之外还要让前端读取的响应头。
+	MaxAge         time.Duration `yaml:"max_age"`         // 浏览器缓存预检结果的时间。Chrome 最多缓存 2 小时。
 }
 
 // DefaultCORSConfig 返回允许任何来源、预检结果缓存 2 小时的配置。

@@ -19,15 +19,13 @@ var errorxDefine = frameworkModule + "/errorx"
 
 // mirror 是服务端一个包在客户端的镜像：接口用到的类型和这个包的错误码。
 type mirror struct {
-	src   string // 服务端包路径
-	name  string
-	path  string // 镜像包的导入路径
-	pkg   *types.Package
-	decls map[string]string // 类型名 → 声明
-	// overrides 是输入、输出类型去掉服务端字段后的副本，以及匿名请求体、响应体的命名类型，
-	// 优先于复制的原类型。
-	overrides map[string]string
-	bodies    map[string]bool // overrides 中为匿名请求体、响应体生成的类型
+	src       string // 服务端包路径
+	name      string
+	path      string // 镜像包的导入路径
+	pkg       *types.Package
+	decls     map[string]string // 类型名 → 声明
+	overrides map[string]string // 输入、输出类型去掉服务端字段后的副本，以及匿名请求体、响应体的命名类型，优先于复制的原类型。
+	bodies    map[string]bool   // overrides 中为匿名请求体、响应体生成的类型
 	codes     []string
 	file      *file
 }
@@ -237,7 +235,6 @@ func (g *generator) structExpr(s *types.Struct, f *file, keep fieldFilter, repla
 		if keep != nil && !keep(i, v, tag) {
 			continue
 		}
-		b.WriteString(comment(g.doc(v.Pkg(), v.Pos())))
 		e, ok := "", false
 		if len(replace) > 0 {
 			e, ok = replace[0][i]
@@ -254,6 +251,10 @@ func (g *generator) structExpr(s *types.Struct, f *file, keep fieldFilter, repla
 		b.WriteString(e)
 		if s.Tag(i) != "" {
 			b.WriteString(" " + quoteTag(s.Tag(i)))
+		}
+		// 字段的说明写在行尾。
+		if doc := strings.TrimSpace(g.doc(v.Pkg(), v.Pos())); doc != "" {
+			b.WriteString(" // " + strings.ReplaceAll(doc, "\n", " "))
 		}
 		b.WriteString("\n")
 	}

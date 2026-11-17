@@ -40,14 +40,11 @@ const version = "2017-05-25"
 //	  templates:
 //	    login_code: SMS_465000001
 type Config struct {
-	AccessKeyID     string `yaml:"access_key_id"`
-	AccessKeySecret string `yaml:"access_key_secret"`
-	// Endpoint 是接口的域名，为空时是 DefaultEndpoint。
-	Endpoint string `yaml:"endpoint"`
-	// SignName 是审核通过的短信签名，必填。
-	SignName string `yaml:"sign_name"`
-	// Templates 把应用的模板名对应到审核通过的模板 Code，例如 login_code: SMS_465000001。
-	Templates map[string]string `yaml:"templates"`
+	AccessKeyID     string            `yaml:"access_key_id"`
+	AccessKeySecret string            `yaml:"access_key_secret"`
+	Endpoint        string            `yaml:"endpoint"`  // 接口的域名，为空时是 DefaultEndpoint。
+	SignName        string            `yaml:"sign_name"` // 审核通过的短信签名，必填。
+	Templates       map[string]string `yaml:"templates"` // 把应用的模板名对应到审核通过的模板 Code，例如 login_code: SMS_465000001。
 }
 
 // Validate 检查必填项。

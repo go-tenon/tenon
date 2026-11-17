@@ -21,10 +21,8 @@ const (
 
 // ChoiceOption 是选择题的一个选项。
 type ChoiceOption struct {
-	// Value 是选项的值，在同一个问题中唯一。
-	Value string
-	// Description 说明什么情况下选它。
-	Description string
+	Value       string // 选项的值，在同一个问题中唯一。
+	Description string // 说明什么情况下选它。
 }
 
 // Level 是打分题的一个级别。
@@ -44,17 +42,12 @@ func Levels(labels ...string) []Level {
 
 // Question 是决策中的一个问题，用 YesNo、Choice 或 Score 创建。
 type Question struct {
-	// Name 标识问题，答案按它取用，在同一次决策中唯一。
-	Name string
-	Kind QuestionKind
-	// Instructions 是问题本身。
-	Instructions string
-	// IfTrue 和 IfFalse 是是非题判断成立与不成立的标准，可以为空。
-	IfTrue, IfFalse string
-	// Options 是选择题的选项，至少 2 个。
-	Options []ChoiceOption
-	// Levels 是打分题的级别，从低到高，至少 2 个。
-	Levels []Level
+	Name            string // 标识问题，答案按它取用，在同一次决策中唯一。
+	Kind            QuestionKind
+	Instructions    string         // 问题本身。
+	IfTrue, IfFalse string         // 是非题判断成立与不成立的标准，可以为空。
+	Options         []ChoiceOption // 选择题的选项，至少 2 个。
+	Levels          []Level        // 打分题的级别，从低到高，至少 2 个。
 }
 
 // YesNo 创建是非题。
@@ -80,12 +73,9 @@ func Score(name, instructions string, levels ...Level) Question {
 
 // DecisionRequest 描述一次决策：一份材料和关于它的若干问题。
 type DecisionRequest struct {
-	// Input 是材料。字符串按文本发送，其他值按 JSON 发送，例如结构体或 map。
-	Input any
-	// Images 是一起判断的图片，可以用 Media.Name 命名。
-	Images []Media
-	// Questions 是要回答的问题。
-	Questions []Question
+	Input     any        // 材料。字符串按文本发送，其他值按 JSON 发送，例如结构体或 map。
+	Images    []Media    // 一起判断的图片，可以用 Media.Name 命名。
+	Questions []Question // 要回答的问题。
 }
 
 // Validate 检查问题的名称、选项和级别。
@@ -131,19 +121,13 @@ func (r DecisionRequest) Validate() error {
 
 // Answer 是一个问题的回答。
 type Answer struct {
-	Kind QuestionKind
-	// Refused 表示模型拒绝回答这个问题，其余字段都是零值。
-	Refused bool
-	// Probability 是是非题中条件成立的概率。
-	Probability float64
-	// Choice 是选择题选中的选项值。
-	Choice string
-	// Score 是打分题各级别序号（从 0 开始）按概率加权的平均值，可能落在两个级别之间。
-	Score float64
-	// Probabilities 是选择题每个选项值的概率，或打分题每个级别的概率（按级别顺序）。
-	Probabilities []float64
-	// Confidence 是模型给出的置信度，没有给出时为 0。
-	Confidence float64
+	Kind          QuestionKind
+	Refused       bool      // 模型拒绝回答这个问题，其余字段都是零值。
+	Probability   float64   // 是非题中条件成立的概率。
+	Choice        string    // 选择题选中的选项值。
+	Score         float64   // 打分题各级别序号（从 0 开始）按概率加权的平均值，可能落在两个级别之间。
+	Probabilities []float64 // 选择题每个选项值的概率，或打分题每个级别的概率（按级别顺序）。
+	Confidence    float64   // 模型给出的置信度，没有给出时为 0。
 
 	question Question
 }
@@ -191,12 +175,9 @@ func (a Answer) Label() string {
 
 // Decision 是一次决策的结果。
 type Decision struct {
-	// Answers 按问题名称给出回答，每个问题都有。
-	Answers map[string]Answer
-	// Model 是实际使用的模型。
-	Model string
-	// InputTokens 和 OutputTokens 是用量，模型服务没有给出时为 0。
-	InputTokens, OutputTokens int
+	Answers                   map[string]Answer // 按问题名称给出回答，每个问题都有。
+	Model                     string            // 实际使用的模型。
+	InputTokens, OutputTokens int               // 用量，模型服务没有给出时为 0。
 }
 
 // Decider 回答关于一份材料的是非、选择和打分问题，给出概率。

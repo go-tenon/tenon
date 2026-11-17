@@ -19,12 +19,9 @@ var ErrAttachmentNotFound = errorx.Define(errorx.NotFound, "ai.attachment_not_fo
 
 // Attachment 是用户在对话中发送的一个附件：图片、音频、视频或文件。
 type Attachment struct {
-	// ID 标识附件，由内容计算，同一个附件总是同一个 ID。模型在消息中看到 [attachment <ID>]，调用工具时用它指明附件。
-	ID string
-	// Media 是附件的内容和 MIME 类型；以链接发送的附件没有内容，见 URL。
-	Media ai.Media
-	// URL 是以链接发送的附件的地址。
-	URL string
+	ID    string   // 标识附件，由内容计算，同一个附件总是同一个 ID。模型在消息中看到 [attachment <ID>]，调用工具时用它指明附件。
+	Media ai.Media // 附件的内容和 MIME 类型；以链接发送的附件没有内容，见 URL。
+	URL   string   // 以链接发送的附件的地址。
 }
 
 // attachmentLabel 是写在附件前面、让模型知道附件 ID 的文字。

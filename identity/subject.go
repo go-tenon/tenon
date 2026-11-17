@@ -29,12 +29,8 @@ type Subject struct {
 // Auth 记录一次登录怎样验证了主体的身份，由凭据保存（见 apitoken），对应 OIDC 的 amr 和 auth_time。
 // 个人访问令牌、OAuth 令牌、代为登录等凭据为零值，过不了 rest.Confirmed 和二次验证的要求。
 type Auth struct {
-	// Methods 是这次登录依次通过的验证方式，之后确认身份时补充新的方式，例如：
-	// password；email、phone（验证码发到哪里）；totp、recovery（二次验证）；passkey；第三方提供方的名称，如 google，
-	// 提供方做过多因素认证时再加上 idp_mfa。
-	Methods []string
-	// Time 是最近一次验证身份的时间：登录，或之后的确认身份。
-	Time time.Time
+	Methods []string  // 这次登录依次通过的验证方式，之后确认身份时补充新的方式，例如：password；email、phone（验证码发到哪里）；totp、recovery（二次验证）；passkey；第三方提供方的名称，如 google，提供方做过多因素认证时再加上 idp_mfa。
+	Time    time.Time // 最近一次验证身份的时间：登录，或之后的确认身份。
 }
 
 // 计入二次验证的方式：TOTP 和恢复码是第二步，passkey 本身同时验证了设备和使用者，idp_mfa 是第三方提供方做过的多因素认证。

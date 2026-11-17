@@ -24,10 +24,8 @@ import (
 // Options 配置 Excel 转换器，零值即默认配置。
 type Options struct {
 	convert.Limits
-	// RawValues 显示单元格中保存的原始值，跳过数字格式。
-	RawValues bool
-	// IncludeHidden 也转换隐藏的工作表。
-	IncludeHidden bool
+	RawValues     bool // 显示单元格中保存的原始值，跳过数字格式。
+	IncludeHidden bool // IncludeHidden 也转换隐藏的工作表。
 }
 
 // Converter 转换 Excel 工作簿，可以并发使用。

@@ -25,8 +25,7 @@ type Record struct {
 	Time    time.Time
 	Level   slog.Level
 	Message string
-	// Attrs 是展开后的字段，分组以 . 连接，例如 response.status；值为 slog.Value.Any() 的结果。
-	Attrs map[string]any
+	Attrs   map[string]any // 展开后的字段，分组以 . 连接，例如 response.status；值为 slog.Value.Any() 的结果。
 }
 
 // Attr 返回字段值，不存在时返回 nil。

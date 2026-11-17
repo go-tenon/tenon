@@ -35,39 +35,27 @@ var Name = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 
 // Config 是 tenon.json。所有字段都可以省略，Load 按约定补上默认值。
 type Config struct {
-	// Schema 是编辑器补全用的 JSON Schema 地址，只供编辑器使用。
-	Schema string `json:"$schema,omitempty"`
-	// Main 是应用入口的包，默认 ./cmd/api。
-	Main string `json:"main,omitempty"`
-	// Serve 是开发时运行应用的参数，默认 serve --config config/app.yaml,config/local.yaml（local.yaml 存在时才加上它）。
-	Serve []string `json:"serve,omitempty"`
-	// URL 是应用的地址，dev 打印它，前端的开发服务器经它调用接口，默认 http://localhost:8080。
-	URL string `json:"url,omitempty"`
-	// APIs 按 BasePath 覆盖 API 客户端的约定，例如改名或生成 Go 客户端。没有写的 API 按约定生成。
-	APIs map[string]*API `json:"apis,omitempty"`
-	// Tools 是与应用一起运行的其他工具，可空。
-	Tools []Tool `json:"tools,omitempty"`
+	Schema string          `json:"$schema,omitempty"` // 编辑器补全用的 JSON Schema 地址，只供编辑器使用。
+	Main   string          `json:"main,omitempty"`    // 应用入口的包，默认 ./cmd/api。
+	Serve  []string        `json:"serve,omitempty"`   // 开发时运行应用的参数，默认 serve --config config/app.yaml,config/local.yaml（local.yaml 存在时才加上它）。
+	URL    string          `json:"url,omitempty"`     // 应用的地址，dev 打印它，前端的开发服务器经它调用接口，默认 http://localhost:8080。
+	APIs   map[string]*API `json:"apis,omitempty"`    // 按 BasePath 覆盖 API 客户端的约定，例如改名或生成 Go 客户端。没有写的 API 按约定生成。
+	Tools  []Tool          `json:"tools,omitempty"`   // 与应用一起运行的其他工具，可空。
 
-	// Frontends 是 apps 中的前端，按名称排序。由 Load 从目录中发现，不在 tenon.json 中。
-	Frontends []Frontend `json:"-"`
-	// Client 报告项目中是否有共用的客户端包 packages/client。由 Load 发现，不在 tenon.json 中。
-	Client bool `json:"-"`
+	Frontends []Frontend `json:"-"` // apps 中的前端，按名称排序。由 Load 从目录中发现，不在 tenon.json 中。
+	Client    bool       `json:"-"` // 报告项目中是否有共用的客户端包 packages/client。由 Load 发现，不在 tenon.json 中。
 }
 
 // API 覆盖一个 API 客户端的约定。
 type API struct {
-	// Name 是 TypeScript 客户端的目录名，默认是 BasePath 的最后一段，例如 /api/admin 是 admin。
-	Name string `json:"name,omitempty"`
-	// Go 是 Go 客户端的目录，例如 ../api，设置后才生成。
-	Go string `json:"go,omitempty"`
+	Name string `json:"name,omitempty"` // TypeScript 客户端的目录名，默认是 BasePath 的最后一段，例如 /api/admin 是 admin。
+	Go   string `json:"go,omitempty"`   // Go 客户端的目录，例如 ../api，设置后才生成。
 }
 
 // Frontend 是一个 Vite 项目。
 type Frontend struct {
-	// Name 是前端的名称，即 apps 中的目录名。应用按它取开发服务器的地址。
-	Name string
-	// Dir 是前端的目录，例如 apps/web，其中有 frontend.go（go:embed ssr.js）。
-	Dir string
+	Name string // 前端的名称，即 apps 中的目录名。应用按它取开发服务器的地址。
+	Dir  string // 前端的目录，例如 apps/web，其中有 frontend.go（go:embed ssr.js）。
 }
 
 // Tool 是一个与应用一起运行的工具：开发时运行 Watch，停止后运行一次 Build。

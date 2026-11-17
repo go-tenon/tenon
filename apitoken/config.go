@@ -11,12 +11,9 @@ import (
 // 登录 token 的截止时间是“创建时间 + Lifetime”与“最近使用时间 + 空闲时长”中较早的一个，
 // 两者在签发时写入 token，之后修改配置只影响新签发的 token。
 type Config struct {
-	// Lifetime 是登录 token 从签发起的最长有效期，到期后必须重新登录。
-	Lifetime time.Duration `yaml:"lifetime"`
-	// IdleTimeout 是登录 token 的最长空闲时间，0 表示不限制。
-	IdleTimeout time.Duration `yaml:"idle_timeout"`
-	// RememberIdleTimeout 是登录时选择“记住我”的 token 的最长空闲时间，0 表示不限制。
-	RememberIdleTimeout time.Duration `yaml:"remember_idle_timeout"`
+	Lifetime            time.Duration `yaml:"lifetime"`              // 登录 token 从签发起的最长有效期，到期后必须重新登录。
+	IdleTimeout         time.Duration `yaml:"idle_timeout"`          // 登录 token 的最长空闲时间，0 表示不限制。
+	RememberIdleTimeout time.Duration `yaml:"remember_idle_timeout"` // 登录时选择“记住我”的 token 的最长空闲时间，0 表示不限制。
 }
 
 // SetDefaults 实现 config.Defaulter：最长 30 天，空闲 1 天失效，“记住我”空闲 7 天失效。

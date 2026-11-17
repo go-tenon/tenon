@@ -13,12 +13,9 @@ import (
 
 // Media 是一段图片、音频或视频。
 type Media struct {
-	// Data 是文件内容。
-	Data []byte
-	// MIME 是内容类型，例如 image/png、audio/mpeg。
-	MIME string
-	// Name 是可选的名称。决策时写在图片前面，问题可以用它指代这张图片，例如“front 中的商品是否有破损”。
-	Name string
+	Data []byte // 文件内容。
+	MIME string // 内容类型，例如 image/png、audio/mpeg。
+	Name string // 可选的名称。决策时写在图片前面，问题可以用它指代这张图片，例如“front 中的商品是否有破损”。
 }
 
 // DataURL 把内容编码为 data URL，例如 data:image/png;base64,…。
@@ -70,14 +67,10 @@ const (
 
 // ImageRequest 描述要生成的图片。
 type ImageRequest struct {
-	// Prompt 描述图片内容。
-	Prompt string
-	// Aspect 是宽高比例，为空时使用模型的默认尺寸。
-	Aspect Aspect
-	// Quality 是 high、medium 或 low，为空时使用模型的默认质量。
-	Quality string
-	// References 是参考图。不为空时按这些图片编辑或改绘。
-	References []Media
+	Prompt     string  // 描述图片内容。
+	Aspect     Aspect  // 宽高比例，为空时使用模型的默认尺寸。
+	Quality    string  // high、medium 或 low，为空时使用模型的默认质量。
+	References []Media // 参考图。不为空时按这些图片编辑或改绘。
 }
 
 // Imager 根据描述生成图片。
@@ -87,14 +80,10 @@ type Imager interface {
 
 // SpeechRequest 描述要合成的语音。
 type SpeechRequest struct {
-	// Text 是要朗读的文字。
-	Text string
-	// Voice 是音色，取值由模型决定，例如 OpenAI 的 alloy。
-	Voice string
-	// Instructions 描述语气和风格，例如“像在讲睡前故事”，只有部分模型支持。
-	Instructions string
-	// Format 是音频格式，例如 mp3、wav、opus，为空时使用模型的默认格式。
-	Format string
+	Text         string // 要朗读的文字。
+	Voice        string // 音色，取值由模型决定，例如 OpenAI 的 alloy。
+	Instructions string // 描述语气和风格，例如“像在讲睡前故事”，只有部分模型支持。
+	Format       string // 音频格式，例如 mp3、wav、opus，为空时使用模型的默认格式。
 }
 
 // Speaker 把文字合成为语音。
@@ -104,12 +93,9 @@ type Speaker interface {
 
 // TranscriptionRequest 描述要识别的音频。
 type TranscriptionRequest struct {
-	// Audio 是音频，MIME 用于告诉模型服务音频格式。
-	Audio Media
-	// Language 是音频的语言，例如 zh、en，为空时自动识别。
-	Language string
-	// Prompt 是提示词，例如音频中会出现的专有名词。
-	Prompt string
+	Audio    Media  // 音频，MIME 用于告诉模型服务音频格式。
+	Language string // 音频的语言，例如 zh、en，为空时自动识别。
+	Prompt   string // 提示词，例如音频中会出现的专有名词。
 }
 
 // Transcriber 把语音识别为文字。
@@ -130,10 +116,8 @@ const (
 
 // EmbedRequest 是一次计算向量的请求。
 type EmbedRequest struct {
-	// Inputs 是要计算向量的输入，每一项得到一个向量。
-	Inputs []Content
-	// Purpose 是用途，为空时是 ForDocument。
-	Purpose Purpose
+	Inputs  []Content // 要计算向量的输入，每一项得到一个向量。
+	Purpose Purpose   // 用途，为空时是 ForDocument。
 }
 
 // Embedder 计算向量，返回的向量与 req.Inputs 一一对应。模型不接受某项输入时返回 ErrUnsupportedInput。
@@ -143,10 +127,8 @@ type Embedder interface {
 
 // Ranked 是重排后的一项。
 type Ranked struct {
-	// Index 是它在传入的文档中的位置。
-	Index int
-	// Score 是与查询的相关度，越大越相关，取值范围由模型决定。
-	Score float64
+	Index int     // 它在传入的文档中的位置。
+	Score float64 // 与查询的相关度，越大越相关，取值范围由模型决定。
 }
 
 // Reranker 按与 query 的相关度给 docs 排序，返回最相关的 limit 项，按相关度从高到低排列；limit 不大于 0 时返回全部。

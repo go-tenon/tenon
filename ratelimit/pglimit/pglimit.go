@@ -44,10 +44,10 @@ func Migrations() fs.FS {
 //
 // tat 早于当前时间的行与不存在的行等价，由 Cleanup 删除。
 type Limiter struct {
-	db   bun.IDB
-	name string
-	// step 是补充一个配额的间隔，ahead 是 tat 最多领先当前时间的量。
-	step, ahead time.Duration
+	db    bun.IDB
+	name  string
+	step  time.Duration // 补充一个配额的间隔
+	ahead time.Duration // tat 最多领先当前时间的量
 }
 
 // New 创建 PostgreSQL 限流器。name 区分不同的限流器，同名的限流器共享配额，因此 name 应与 cfg 一一对应。

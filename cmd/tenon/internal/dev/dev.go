@@ -50,8 +50,7 @@ func Run(ctx context.Context, cfg *project.Config, out, errOut io.Writer) error 
 type dev struct {
 	cfg         *project.Config
 	out, errOut io.Writer
-	// servers 是各前端开发服务器的地址，按前端的名称。
-	servers map[string]string
+	servers     map[string]string // 各前端开发服务器的地址，按前端的名称。
 }
 
 // shared 让多个子进程可以同时写 w。*os.File 直接交给子进程，它们能识别终端、输出颜色。

@@ -38,12 +38,9 @@ func Header(key, value string) CallOption {
 
 // RemoteError 是服务端返回的错误响应。Call 返回的错误包装着它，用 errors.As 取出。
 type RemoteError struct {
-	// Subject 是调用的端点。
-	Subject string
-	// Problem 是错误响应体；响应体不是 JSON 时只有 Status 和 Title，取自响应头。
-	Problem Problem
-	// RequestID 是这次调用的 ID，与服务端日志关联。
-	RequestID string
+	Subject   string  // 调用的端点。
+	Problem   Problem // 错误响应体；响应体不是 JSON 时只有 Status 和 Title，取自响应头。
+	RequestID string  // 这次调用的 ID，与服务端日志关联。
 }
 
 func (e *RemoteError) Error() string {

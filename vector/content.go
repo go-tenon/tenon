@@ -22,12 +22,9 @@ const MaxFileSize = 50 << 20
 
 // Part 是 Content 的一段：文字、文件或媒体，三者选一，用 TextPart、FilePart、MediaPart 创建。
 type Part struct {
-	// Text 是一段文字。
-	Text string
-	// File 是文件存储中的文件 ID，计算向量时通过 WithFiles 传入的 Files 读取内容。
-	File uuid.UUID
-	// Media 是直接给出的内容，例如用户上传的查询图片。
-	Media *ai.Media
+	Text  string    // 一段文字。
+	File  uuid.UUID // 文件存储中的文件 ID，计算向量时通过 WithFiles 传入的 Files 读取内容。
+	Media *ai.Media // 直接给出的内容，例如用户上传的查询图片。
 }
 
 // TextPart 返回一段文字。

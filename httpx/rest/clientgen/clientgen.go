@@ -37,28 +37,18 @@ var wireSource string
 
 // Options 配置生成。
 type Options struct {
-	// Out 是输出目录，必须位于某个 Go 模块中；目录名就是根包的包名，例如 api。
-	Out string
-	// Main 是应用的主包（导入路径或相对 Dir 的模式，例如 ./cmd/api）。在它依赖的、属于应用模块和
-	// Tenon 的包中查找 errorx.Define 定义的错误码。
-	Main string
-	// Dir 是加载源码的工作目录，空表示当前目录。
-	Dir string
-	// Imports 是在标准库和 github.com/google/uuid 之外，客户端可以直接导入的包，
-	// 也包括它们的子包，例如 github.com/uptrace/bun 也允许 github.com/uptrace/bun/schema。
-	Imports []string
-	// Rename 把服务端包的导入路径映射为镜像包名，用于两个包同名的情况。
-	Rename map[string]string
+	Out     string            // 输出目录，必须位于某个 Go 模块中；目录名就是根包的包名，例如 api。
+	Main    string            // 应用的主包（导入路径或相对 Dir 的模式，例如 ./cmd/api）。在它依赖的、属于应用模块和 Tenon 的包中查找 errorx.Define 定义的错误码。
+	Dir     string            // 加载源码的工作目录，空表示当前目录。
+	Imports []string          // 在标准库和 github.com/google/uuid 之外，客户端可以直接导入的包，也包括它们的子包，例如 github.com/uptrace/bun 也允许 github.com/uptrace/bun/schema。
+	Rename  map[string]string // 把服务端包的导入路径映射为镜像包名，用于两个包同名的情况。
 }
 
 // Result 是生成结果。
 type Result struct {
-	// Files 是相对 Out 的文件路径到内容。
-	Files map[string][]byte
-	// Skipped 列出没有生成的端点及原因。
-	Skipped []string
-	// Warnings 列出生成了但需要注意的问题，例如枚举缺少某种语言的显示文字。
-	Warnings []string
+	Files    map[string][]byte // 相对 Out 的文件路径到内容。
+	Skipped  []string          // 列出没有生成的端点及原因。
+	Warnings []string          // 列出生成了但需要注意的问题，例如枚举缺少某种语言的显示文字。
 }
 
 // defaultImports 是总是可以直接导入的第三方包。

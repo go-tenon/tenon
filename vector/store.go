@@ -23,15 +23,10 @@ var validPrefix = regexp.MustCompile(`^[a-z0-9_.-]{0,32}$`)
 
 // Model 是计算向量的模型。
 type Model struct {
-	// Name 是模型的名称，例如 text-embedding-3-small。它和 Dims 一起记录在索引的每个版本中：
-	// 向量只在同一个模型、同一个维度之间比较，一个版本的写入和查询总是使用建立它的模型和维度。
-	Name string
-	// Dims 是向量的维度，与模型输出的一致。同一个模型可以输出不同的维度，例如 openai.WithDimensions。
-	Dims int
-	// Embedder 计算向量，通常是 openai.New(cfg.Embedding)；有图片时用多模态向量模型，例如 dashscope.New(cfg.Embedding)。
-	Embedder ai.Embedder
-	// Inputs 是模型接受的输入种类，为空时只接受文字。文档或查询中有模型不接受的内容时，不调用模型直接返回错误。
-	Inputs []ai.Modality
+	Name     string        // 模型的名称，例如 text-embedding-3-small。它和 Dims 一起记录在索引的每个版本中：向量只在同一个模型、同一个维度之间比较，一个版本的写入和查询总是使用建立它的模型和维度。
+	Dims     int           // 向量的维度，与模型输出的一致。同一个模型可以输出不同的维度，例如 openai.WithDimensions。
+	Embedder ai.Embedder   // 计算向量，通常是 openai.New(cfg.Embedding)；有图片时用多模态向量模型，例如 dashscope.New(cfg.Embedding)。
+	Inputs   []ai.Modality // 模型接受的输入种类，为空时只接受文字。文档或查询中有模型不接受的内容时，不调用模型直接返回错误。
 }
 
 // check 检查模型接受 c 中的每一种内容，不接受时返回标记了 errInvalid 的错误。

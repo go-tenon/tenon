@@ -21,28 +21,20 @@ const (
 
 // Problem 是失败的响应体，与 HTTP 接口的错误响应相同（Problem Details）。
 type Problem struct {
-	Title  string `json:"title"`
-	Status int    `json:"status"`
-	// Detail 是展示给用户的文案，按 Accept-Language 翻译，可能随语言和版本变化，不用于判断。
-	Detail string `json:"detail,omitempty"`
-	// Code 是稳定的错误码，只有业务错误包含。
-	Code string `json:"code,omitempty"`
-	// Params 是业务错误的公开参数。
-	Params map[string]any `json:"params,omitempty"`
-	// Errors 是字段错误的明细，只有请求格式错误包含。
-	Errors []FieldError `json:"errors,omitempty"`
+	Title  string         `json:"title"`
+	Status int            `json:"status"`
+	Detail string         `json:"detail,omitempty"` // 展示给用户的文案，按 Accept-Language 翻译，可能随语言和版本变化，不用于判断。
+	Code   string         `json:"code,omitempty"`   // 稳定的错误码，只有业务错误包含。
+	Params map[string]any `json:"params,omitempty"` // 业务错误的公开参数。
+	Errors []FieldError   `json:"errors,omitempty"` // 字段错误的明细，只有请求格式错误包含。
 }
 
 // FieldError 是一个字段的错误。
 type FieldError struct {
-	// Message 是按请求的语言翻译的提示。
-	Message string `json:"message"`
-	// Location 是出错的位置：body. 之后是请求体中的字段路径，例如 body.items[0].name。
-	Location string `json:"location"`
-	// Value 是服务端收到的值。
-	Value any `json:"value,omitempty"`
-	// Code 是违反的规则，例如 validation.min_length。
-	Code string `json:"code,omitempty"`
+	Message  string `json:"message"`         // 按请求的语言翻译的提示。
+	Location string `json:"location"`        // 出错的位置：body. 之后是请求体中的字段路径，例如 body.items[0].name。
+	Value    any    `json:"value,omitempty"` // 服务端收到的值。
+	Code     string `json:"code,omitempty"`  // 违反的规则，例如 validation.min_length。
 }
 
 // statusOf 返回错误的分类对应的状态码，与 HTTP 接口相同（httpx.StatusOf）。

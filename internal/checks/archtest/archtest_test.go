@@ -26,10 +26,8 @@ const (
 
 // rule 是一棵包树的依赖规则。
 type rule struct {
-	layer layer
-	// imports 是它可以引用的其他包树（rules 的键）。只列出实际用到的引用，
-	// TestDependencyRulesAreUsed 检查没有多余的条目。
-	imports []string
+	layer   layer
+	imports []string // 它可以引用的其他包树（rules 的键）。只列出实际用到的引用，TestDependencyRulesAreUsed 检查没有多余的条目。
 }
 
 // rules 的键是相对模块根的包路径，规则对这个包和它的子包生效；子包另有规则时用子包的（最长的键优先）。

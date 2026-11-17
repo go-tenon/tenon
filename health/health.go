@@ -18,39 +18,29 @@ const DefaultTimeout = time.Second
 
 // Check 是一项检查：一个依赖，以及确认它可用的方法。
 type Check struct {
-	// Name 出现在结果和日志中，例如 database、nats。
-	Name string
-	// Ping 确认依赖可用，返回错误表示不可用，例如 db.PingContext。超过 Options.Timeout 视为失败。
-	Ping func(ctx context.Context) error
-	// Optional 表示这个依赖坏了服务仍然可以降级运行，例如缓存：失败时在结果中报告，不让整体检查失败。
-	// 否则一个缓存节点的短暂故障就会让全部实例同时被摘除。
-	Optional bool
+	Name     string                          // 出现在结果和日志中，例如 database、nats。
+	Ping     func(ctx context.Context) error // 确认依赖可用，返回错误表示不可用，例如 db.PingContext。超过 Options.Timeout 视为失败。
+	Optional bool                            // 这个依赖坏了服务仍然可以降级运行，例如缓存：失败时在结果中报告，不让整体检查失败。否则一个缓存节点的短暂故障就会让全部实例同时被摘除。
 }
 
 // Options 是 New 的选项。
 type Options struct {
-	// Checks 是要检查的依赖。只放必需的依赖，以及标为 Optional 的降级依赖。
-	Checks []Check
-	// Timeout 是每项检查的超时，不大于 0 时为 DefaultTimeout。
-	Timeout time.Duration
-	// Logger 记录检查结果的变化，nil 表示带 component=health 的 slog.Default()。
-	Logger *slog.Logger
+	Checks  []Check       // 要检查的依赖。只放必需的依赖，以及标为 Optional 的降级依赖。
+	Timeout time.Duration // 每项检查的超时，不大于 0 时为 DefaultTimeout。
+	Logger  *slog.Logger  // 记录检查结果的变化，nil 表示带 component=health 的 slog.Default()。
 }
 
 // Result 是一项检查的结果。
 type Result struct {
 	Name     string
 	Optional bool
-	// Err 是失败的原因，通过时为 nil。原因可能包含内部信息，只适合写日志，不要返回给调用方。
-	Err error
+	Err      error // 失败的原因，通过时为 nil。原因可能包含内部信息，只适合写日志，不要返回给调用方。
 }
 
 // Report 是一次检查的结果。
 type Report struct {
-	// Ready 报告必需的检查是否都通过。
-	Ready bool
-	// Results 是每项检查的结果，顺序与 Options.Checks 相同。
-	Results []Result
+	Ready   bool     // 报告必需的检查是否都通过。
+	Results []Result // 每项检查的结果，顺序与 Options.Checks 相同。
 }
 
 // Checker 执行一组检查。它可以被并发使用。

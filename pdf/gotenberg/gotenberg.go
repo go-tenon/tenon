@@ -22,11 +22,9 @@ import (
 
 // Config 是 Gotenberg 的连接配置。
 type Config struct {
-	// URL 是 Gotenberg 的地址，例如 http://gotenberg:3000。
-	URL string `yaml:"url"`
-	// Username 和 Password 可选，对应 Gotenberg 的 --api-enable-basic-auth。
-	Username string `yaml:"username"`
-	Password string `yaml:"password"`
+	URL      string `yaml:"url"`      // Gotenberg 的地址，例如 http://gotenberg:3000。
+	Username string `yaml:"username"` // 可选，对应 Gotenberg 的 --api-enable-basic-auth
+	Password string `yaml:"password"` // 可选，对应 Gotenberg 的 --api-enable-basic-auth
 }
 
 // Validate 检查 url 是 http 或 https 地址。

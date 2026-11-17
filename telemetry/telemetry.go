@@ -33,17 +33,11 @@ import (
 
 // Config 是推送配置，对应配置文件的 telemetry 段；Endpoint 为空时不推送。
 type Config struct {
-	// Endpoint 是 OTLP/HTTP 接收端的基础地址，例如 http://openobserve:5080/api/default；
-	// 日志、指标、链路分别发往其下的 /v1/logs、/v1/metrics、/v1/traces。
-	Endpoint string `yaml:"endpoint"`
-	// Headers 附加到每个请求，通常是认证信息，例如 {Authorization: "Basic ${O2_TOKEN}"}。
-	Headers map[string]string `yaml:"headers"`
-	// Service 是 service.name；空值取可执行文件名。
-	Service string `yaml:"service"`
-	// Version 是 service.version；空值取构建信息中的主模块版本，取不到时省略。
-	Version string `yaml:"version"`
-	// SampleRatio 是新链路的采样比例，0 到 1；接在调用方链路上的 span 跟随调用方的决定。
-	SampleRatio float64 `yaml:"sample_ratio"`
+	Endpoint    string            `yaml:"endpoint"`     // OTLP/HTTP 接收端的基础地址，例如 http://openobserve:5080/api/default；日志、指标、链路分别发往其下的 /v1/logs、/v1/metrics、/v1/traces。
+	Headers     map[string]string `yaml:"headers"`      // 附加到每个请求，通常是认证信息，例如 {Authorization: "Basic ${O2_TOKEN}"}。
+	Service     string            `yaml:"service"`      // service.name；空值取可执行文件名。
+	Version     string            `yaml:"version"`      // service.version；空值取构建信息中的主模块版本，取不到时省略。
+	SampleRatio float64           `yaml:"sample_ratio"` // 新链路的采样比例，0 到 1；接在调用方链路上的 span 跟随调用方的决定。
 }
 
 // DefaultConfig 返回默认配置：不推送，开启时记录全部链路。

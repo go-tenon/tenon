@@ -49,31 +49,28 @@ type UISteering struct {
 
 // UIMessage 是 useChat 中的一条消息。
 type UIMessage struct {
-	_     struct{} `additionalProperties:"true"`
-	ID    string   `json:"id"`
-	Role  string   `json:"role" enum:"system,user,assistant"`
-	Parts []UIPart `json:"parts"`
-	// Metadata 是消息的附加信息。Runs.Append 加入的消息带有 author，模型的回答和用户发送的消息没有。
-	Metadata *UIMetadata `json:"metadata,omitempty"`
+	_        struct{}    `additionalProperties:"true"`
+	ID       string      `json:"id"`
+	Role     string      `json:"role" enum:"system,user,assistant"`
+	Parts    []UIPart    `json:"parts"`
+	Metadata *UIMetadata `json:"metadata,omitempty"` // 消息的附加信息。Runs.Append 加入的消息带有 author，模型的回答和用户发送的消息没有。
 }
 
 // UIMetadata 是 UIMessage 的附加信息。
 type UIMetadata struct {
-	_ struct{} `additionalProperties:"true"`
-	// Author 是 Runs.Append 加入消息时给出的作者。
-	Author string `json:"author,omitempty"`
+	_      struct{} `additionalProperties:"true"`
+	Author string   `json:"author,omitempty"` // Runs.Append 加入消息时给出的作者。
 }
 
 // UIPart 是消息的一部分：文本、文件、思考过程、工具调用、插话等。
 type UIPart struct {
-	_    struct{} `additionalProperties:"true"`
-	Type string   `json:"type"`
-	ID   string   `json:"id,omitempty"`
-	Text string   `json:"text,omitempty"`
-	// MediaType、Filename 和 URL 是文件片段（type 为 file）的 MIME 类型、文件名和内容，URL 是 data URL 或 http(s) 链接。
-	MediaType  string      `json:"mediaType,omitempty"`
-	Filename   string      `json:"filename,omitempty"`
-	URL        string      `json:"url,omitempty"`
+	_          struct{}    `additionalProperties:"true"`
+	Type       string      `json:"type"`
+	ID         string      `json:"id,omitempty"`
+	Text       string      `json:"text,omitempty"`
+	MediaType  string      `json:"mediaType,omitempty"` // 文件片段（type 为 file）的 MIME 类型
+	Filename   string      `json:"filename,omitempty"`  // 文件片段的文件名
+	URL        string      `json:"url,omitempty"`       // 文件片段的内容：data URL 或 http(s) 链接
 	State      string      `json:"state,omitempty"`
 	ToolCallID string      `json:"toolCallId,omitempty"`
 	ToolName   string      `json:"toolName,omitempty"`

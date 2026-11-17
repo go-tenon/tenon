@@ -68,8 +68,7 @@ type Cache[T any] struct {
 	ttl     time.Duration
 	missing func() error
 	group   singleflight.Group
-	// forgets 是 Forget 的次数，计入合并加载的键：Forget 之前开始的加载不与之后的 Remember 共用。
-	forgets atomic.Uint64
+	forgets atomic.Uint64 // Forget 的次数，计入合并加载的键：Forget 之前开始的加载不与之后的 Remember 共用。
 	logs    throttle
 }
 

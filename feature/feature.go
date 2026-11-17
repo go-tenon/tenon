@@ -36,14 +36,10 @@ func Migrations() fs.FS {
 
 // Flag 是在代码中声明的一个开关。
 type Flag struct {
-	// Name 是开关名，例如 articles.new-editor，保存在设置中。
-	Name string
-	// Description 在后台页面中显示。
-	Description string
-	// ByTenant 为 true 时按租户放量，同一租户的人结果一致；否则按主体放量。
-	ByTenant bool
-	// Default 在没有任何设置命中时决定结果，nil 表示关闭。它可能在每次检查时调用，应当足够快。
-	Default func(ctx context.Context, sub identity.Subject) bool
+	Name        string                                               // 开关名，例如 articles.new-editor，保存在设置中。
+	Description string                                               // 在后台页面中显示。
+	ByTenant    bool                                                 // ByTenant 为 true 时按租户放量，同一租户的人结果一致；否则按主体放量。
+	Default     func(ctx context.Context, sub identity.Subject) bool // 在没有任何设置命中时决定结果，nil 表示关闭。它可能在每次检查时调用，应当足够快。
 }
 
 // Catalog 是应用声明的全部开关。Set 只接受目录中的开关，Prune 删除不在目录中的开关的设置。

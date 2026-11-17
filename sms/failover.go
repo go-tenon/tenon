@@ -22,11 +22,8 @@ type Named struct {
 
 // FailoverOptions 是 Failover 的选项，零值可用。
 type FailoverOptions struct {
-	// Cooldown 是一个服务商失败后被排到最后的时长：这段时间内的短信直接从下一个开始。
-	// 过后重新按顺序尝试，它恢复了就继续使用。不大于 0 时为 DefaultCooldown。
-	Cooldown time.Duration
-	// Logger 记录换用后面的服务商和服务商恢复，nil 表示 slog.Default()。
-	Logger *slog.Logger
+	Cooldown time.Duration // 一个服务商失败后被排到最后的时长：这段时间内的短信直接从下一个开始。过后重新按顺序尝试，它恢复了就继续使用。不大于 0 时为 DefaultCooldown。
+	Logger   *slog.Logger  // 记录换用后面的服务商和服务商恢复，nil 表示 slog.Default()。
 }
 
 // Failover 返回依次尝试 senders 的 Sender：前一个发送失败时换下一个，第一个成功的为准，全部失败时返回合并的错误。

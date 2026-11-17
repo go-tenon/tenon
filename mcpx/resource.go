@@ -12,13 +12,9 @@ import (
 // Resource 描述 MCP 服务作为 OAuth 受保护资源的信息（RFC 9728）。claude.ai、ChatGPT 的远程连接器据此找到授权服务器，
 // 让用户在浏览器中登录并同意授权，见 oauthserver。
 type Resource struct {
-	// URL 是 MCP 服务的规范地址，例如 https://blog.example.com/mcp，必须与用户在客户端中填写的完全相同。
-	// 授权服务器签发的令牌只能用于这个地址。
-	URL string
-	// AuthorizationServers 是授权服务器的 issuer，第一个是主要的。
-	AuthorizationServers []string
-	// Scopes 是客户端可以申请的范围。
-	Scopes []string
+	URL                  string   // MCP 服务的规范地址，例如 https://blog.example.com/mcp，必须与用户在客户端中填写的完全相同。授权服务器签发的令牌只能用于这个地址。
+	AuthorizationServers []string // 授权服务器的 issuer，第一个是主要的。
+	Scopes               []string // 客户端可以申请的范围。
 }
 
 // Validate 检查 URL 是带路径的 https 地址（本机地址可以用 http），且至少有一个授权服务器。

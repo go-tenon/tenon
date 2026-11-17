@@ -22,10 +22,8 @@ import (
 // Options 配置 PowerPoint 转换器，零值即默认配置。
 type Options struct {
 	convert.Limits
-	// SkipNotes 不输出演讲者备注。
-	SkipNotes bool
-	// IncludeHidden 也转换隐藏的幻灯片。
-	IncludeHidden bool
+	SkipNotes     bool // 不输出演讲者备注。
+	IncludeHidden bool // IncludeHidden 也转换隐藏的幻灯片。
 }
 
 // Converter 转换 PowerPoint 演示文稿，可以并发使用。
@@ -45,8 +43,7 @@ type slide struct {
 	relationships map[string]ooxml.Relationship
 	limits        convert.Limits
 	title         string
-	// output 是留给这张幻灯片的块及其分隔符的输出预算，负数表示不限制。
-	output int64
+	output        int64 // 留给这张幻灯片的块及其分隔符的输出预算，负数表示不限制。
 }
 
 // Convert 把 in 转换为 Markdown，每张幻灯片一个 Section。

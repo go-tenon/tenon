@@ -39,11 +39,9 @@ type BlogSettings struct {
 
 // Changes 是创建和修改文章时提交的内容。
 type Changes struct {
-	// Title 是标题。
-	Title string `json:"title" minLength:"1" maxLength:"200"`
-	Slug  string `json:"slug" pattern:"^[a-z0-9]+(-[a-z0-9]+)*$"`
-	// Tags 是标签，可以为空。
-	Tags []string `json:"tags,omitempty" required:"false"`
+	Title string   `json:"title" minLength:"1" maxLength:"200"` // 标题。
+	Slug  string   `json:"slug" pattern:"^[a-z0-9]+(-[a-z0-9]+)*$"`
+	Tags  []string `json:"tags,omitempty" required:"false"` // 标签，可以为空。
 }
 
 // Cover 是上传的封面。
@@ -109,8 +107,7 @@ type PreviewOutputBody struct {
 
 // PublishInput 是发布文章的参数。
 type PublishInput struct {
-	// IdempotencyKey 让重试只发布一次。
-	IdempotencyKey string `header:"Idempotency-Key"`
+	IdempotencyKey string `header:"Idempotency-Key"` // 让重试只发布一次。
 }
 
 // Status 是文章的状态。

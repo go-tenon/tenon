@@ -25,11 +25,8 @@ const PingInterval = 10 * time.Second
 
 // Config 是 NATS 的连接配置，对应配置文件的 nats 段。
 type Config struct {
-	// URL 是 NATS 服务器的地址，集群的多个地址用逗号分隔，例如 "nats://10.0.0.1:4222,nats://10.0.0.2:4222"。
-	// 用户名和密码可以写在地址中：nats://user:password@host:4222。服务器需要开启 JetStream。
-	URL string `yaml:"url"`
-	// Credentials 是 NATS 凭据文件（.creds）的路径，服务器使用 JWT 认证时设置，为空时不使用。
-	Credentials string `yaml:"credentials"`
+	URL         string `yaml:"url"`         // NATS 服务器的地址，集群的多个地址用逗号分隔，例如 "nats://10.0.0.1:4222,nats://10.0.0.2:4222"。用户名和密码可以写在地址中：nats://user:password@host:4222。服务器需要开启 JetStream。
+	Credentials string `yaml:"credentials"` // NATS 凭据文件（.creds）的路径，服务器使用 JWT 认证时设置，为空时不使用。
 }
 
 // DefaultConfig 返回默认配置：本机的 NATS。

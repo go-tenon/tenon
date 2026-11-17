@@ -45,19 +45,14 @@ const (
 
 // Event 是一次执行的状态变化。
 type Event struct {
-	Kind EventKind
-	Task string
-	// Tick 是这次触发的时刻，即任务应当执行的时间，与 Task.Prev 的结果对应。
-	Tick time.Time
-	// Started 是实际开始执行的时间，TaskSkipped 为零值。Started 减去 Tick 是调度延迟。
-	Started time.Time
-	// Duration 是执行耗时，只用于 TaskSucceeded 和 TaskFailed。
-	Duration time.Duration
-	// Err 是 TaskFailed 和 SkipLockFailed 的原因。
-	Err        error
+	Kind       EventKind
+	Task       string
+	Tick       time.Time     // 这次触发的时刻，即任务应当执行的时间，与 Task.Prev 的结果对应。
+	Started    time.Time     // 实际开始执行的时间，TaskSkipped 为零值。Started 减去 Tick 是调度延迟。
+	Duration   time.Duration // 执行耗时，只用于 TaskSucceeded 和 TaskFailed。
+	Err        error         // TaskFailed 和 SkipLockFailed 的原因。
 	SkipReason SkipReason
-	// Manual 表示这次执行来自 RunNow（例如后台的“立即执行”），不是按表达式触发；这时 Tick 为零值。
-	Manual bool
+	Manual     bool // 这次执行来自 RunNow（例如后台的“立即执行”），不是按表达式触发；这时 Tick 为零值。
 }
 
 // Observer 接收执行事件，例如把执行记录写入数据库，供后台页面查看。它在执行任务的 goroutine 中同步调用，

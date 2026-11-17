@@ -17,12 +17,9 @@ const maxMetadata = 64 << 10
 
 // Client 是预先登记的客户端，例如自研的 agent。
 type Client struct {
-	// ID 是客户端 ID，使用 https 地址以外的字符串（https 地址的 client_id 按 Client ID Metadata Document 处理）。
-	ID string
-	// Name 显示在同意页上。
-	Name string
-	// RedirectURIs 是允许的回调地址，按完整地址匹配；本机地址（localhost、127.0.0.1、[::1]）忽略端口。
-	RedirectURIs []string
+	ID           string   // 客户端 ID，使用 https 地址以外的字符串（https 地址的 client_id 按 Client ID Metadata Document 处理）。
+	Name         string   // 显示在同意页上。
+	RedirectURIs []string // 允许的回调地址，按完整地址匹配；本机地址（localhost、127.0.0.1、[::1]）忽略端口。
 }
 
 // client 是一次授权中确定的客户端。

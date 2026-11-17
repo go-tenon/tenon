@@ -86,17 +86,13 @@ func register[I, O any](api *API, op huma.Operation, events map[string]reflect.T
 type Endpoint struct {
 	OperationID string
 	Method      string
-	// Path 是登记时的路径模板，不含 Options.BasePath，例如 /articles/{id}。
-	Path        string
+	Path        string // 登记时的路径模板，不含 Options.BasePath，例如 /articles/{id}。
 	Summary     string
 	Description string
-	// Public 表示端点用 Public 声明，任何人都可以访问。
-	Public bool
-	// Input 和 Output 是处理器的输入、输出类型（不是指针）。
-	Input  reflect.Type
-	Output reflect.Type
-	// Events 是 SSE 端点的事件名到事件数据类型（不是指针），其他端点为 nil。
-	Events map[string]reflect.Type
+	Public      bool                    // 端点用 Public 声明，任何人都可以访问。
+	Input       reflect.Type            // 处理器的输入类型（不是指针）
+	Output      reflect.Type            // 处理器的输出类型（不是指针）
+	Events      map[string]reflect.Type // SSE 端点的事件名到事件数据类型（不是指针），其他端点为 nil。
 }
 
 // Endpoints 按登记顺序返回已登记的端点。

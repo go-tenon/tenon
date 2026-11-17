@@ -16,29 +16,22 @@ import (
 // Config 是 HTTP 配置，对应配置文件的 http 段：顶层是服务器参数，
 // 各子段是同名中间件的参数。配置只提供参数，中间件是否启用取决于代码是否安装它。
 type Config struct {
-	// Addr 是监听地址，格式为 host:port，端口为 0–65535 的数字。
-	Addr string `yaml:"addr"`
-	// ReadHeaderTimeout、ReadTimeout、WriteTimeout、IdleTimeout 对应 http.Server 的同名字段。
-	ReadHeaderTimeout time.Duration `yaml:"read_header_timeout"`
-	ReadTimeout       time.Duration `yaml:"read_timeout"`
-	WriteTimeout      time.Duration `yaml:"write_timeout"`
-	IdleTimeout       time.Duration `yaml:"idle_timeout"`
-	// ShutdownTimeout 是停机时排空请求的上限。
-	ShutdownTimeout time.Duration `yaml:"shutdown_timeout"`
-	// AcquireTimeout 是请求等待共享资源（例如空闲的数据库连接）的最长时间，超过时请求以 503 快速失败，见 acquire 包。
-	// 0 表示不限制，等到请求超时为止。由 Defaults 中的 AcquireTimeout 中间件使用。
-	AcquireTimeout time.Duration `yaml:"acquire_timeout"`
+	Addr              string        `yaml:"addr"`                // 监听地址，格式为 host:port，端口为 0–65535 的数字。
+	ReadHeaderTimeout time.Duration `yaml:"read_header_timeout"` // 对应 http.Server 的 ReadHeaderTimeout
+	ReadTimeout       time.Duration `yaml:"read_timeout"`        // 对应 http.Server 的 ReadTimeout
+	WriteTimeout      time.Duration `yaml:"write_timeout"`       // 对应 http.Server 的 WriteTimeout
+	IdleTimeout       time.Duration `yaml:"idle_timeout"`        // 对应 http.Server 的 IdleTimeout
+	ShutdownTimeout   time.Duration `yaml:"shutdown_timeout"`    // 停机时排空请求的上限。
+	AcquireTimeout    time.Duration `yaml:"acquire_timeout"`     // 请求等待共享资源（例如空闲的数据库连接）的最长时间，超过时请求以 503 快速失败，见 acquire 包。0 表示不限制，等到请求超时为止。由 Defaults 中的 AcquireTimeout 中间件使用。
 
-	RequestID RequestIDConfig `yaml:"request_id"`
-	ClientIP  ClientIPConfig  `yaml:"client_ip"`
-	AccessLog AccessLogConfig `yaml:"access_log"`
-	Timeout   TimeoutConfig   `yaml:"timeout"`
-	BodyLimit BodyLimitConfig `yaml:"body_limit"`
-	// RateLimit 是全局限流的参数，通常传给 ratelimit.NewMemory 后安装 RateLimit 中间件。
-	RateLimit ratelimit.Config `yaml:"rate_limit"`
-	CORS      CORSConfig       `yaml:"cors"`
-	// AppVersion 是各平台 App 的最低版本，安装 AppVersion 中间件后生效。
-	AppVersion AppVersionConfig `yaml:"app_version"`
+	RequestID  RequestIDConfig  `yaml:"request_id"`
+	ClientIP   ClientIPConfig   `yaml:"client_ip"`
+	AccessLog  AccessLogConfig  `yaml:"access_log"`
+	Timeout    TimeoutConfig    `yaml:"timeout"`
+	BodyLimit  BodyLimitConfig  `yaml:"body_limit"`
+	RateLimit  ratelimit.Config `yaml:"rate_limit"` // 全局限流的参数，通常传给 ratelimit.NewMemory 后安装 RateLimit 中间件。
+	CORS       CORSConfig       `yaml:"cors"`
+	AppVersion AppVersionConfig `yaml:"app_version"` // 各平台 App 的最低版本，安装 AppVersion 中间件后生效。
 }
 
 // DefaultConfig 返回默认 HTTP 配置。
@@ -107,9 +100,7 @@ func (c Config) server(handler http.Handler) *http.Server {
 
 // RequestIDConfig 是 AssignRequestID 的参数，对应 http.request_id 段。
 type RequestIDConfig struct {
-	// Header 是读取入站请求 ID 的请求头，例如反向代理写入的 X-Amzn-Trace-Id。
-	// 响应始终通过 X-Request-ID 回写。
-	Header string `yaml:"header"`
+	Header string `yaml:"header"` // 读取入站请求 ID 的请求头，例如反向代理写入的 X-Amzn-Trace-Id。响应始终通过 X-Request-ID 回写。
 }
 
 // DefaultRequestIDConfig 返回读取 X-Request-ID 的配置。
@@ -143,16 +134,12 @@ func isTokenChar(c byte) bool {
 // AccessLogConfig 是 AccessLog 的参数，对应 http.access_log 段。
 // 请求头记录中 Authorization、Cookie 等敏感头始终隐藏。
 type AccessLogConfig struct {
-	// IgnorePaths 中的路径（精确匹配）不记录访问日志，例如健康检查。
-	IgnorePaths []string `yaml:"ignore_paths"`
-	// UserAgent 记录 User-Agent。
-	UserAgent bool `yaml:"user_agent"`
-	// RequestHeader、ResponseHeader 记录请求头与响应头。
-	RequestHeader  bool `yaml:"request_header"`
-	ResponseHeader bool `yaml:"response_header"`
-	// RequestBody、ResponseBody 记录请求体与响应体，各最多 64 KiB。
-	RequestBody  bool `yaml:"request_body"`
-	ResponseBody bool `yaml:"response_body"`
+	IgnorePaths    []string `yaml:"ignore_paths"`    // IgnorePaths 中的路径（精确匹配）不记录访问日志，例如健康检查。
+	UserAgent      bool     `yaml:"user_agent"`      // 记录 User-Agent。
+	RequestHeader  bool     `yaml:"request_header"`  // 记录请求头
+	ResponseHeader bool     `yaml:"response_header"` // 记录响应头
+	RequestBody    bool     `yaml:"request_body"`    // 记录请求体，最多 64 KiB
+	ResponseBody   bool     `yaml:"response_body"`   // 记录响应体，最多 64 KiB
 }
 
 // DefaultAccessLogConfig 返回只记录基本字段的配置。
@@ -173,9 +160,7 @@ func (c AccessLogConfig) Validate() error {
 
 // ClientIPConfig 是 ClientIP 的参数，对应 http.client_ip 段。
 type ClientIPConfig struct {
-	// TrustedProxies 是可信反向代理网段；为空时不信任任何代理。
-	// 每一项必须是网络地址，即主机位全为零，例如 10.0.0.0/8；单个地址写作 10.0.0.5/32。
-	TrustedProxies []netip.Prefix `yaml:"trusted_proxies"`
+	TrustedProxies []netip.Prefix `yaml:"trusted_proxies"` // 可信反向代理网段；为空时不信任任何代理。每一项必须是网络地址，即主机位全为零，例如 10.0.0.0/8；单个地址写作 10.0.0.5/32。
 }
 
 // DefaultClientIPConfig 返回不信任任何代理的配置。
@@ -202,8 +187,7 @@ func (c ClientIPConfig) Validate() error {
 
 // TimeoutConfig 是 Timeout 的参数，对应 http.timeout 段。
 type TimeoutConfig struct {
-	// Duration 是每个请求 context 的超时。
-	Duration time.Duration `yaml:"duration"`
+	Duration time.Duration `yaml:"duration"` // 每个请求 context 的超时。
 }
 
 // DefaultTimeoutConfig 返回 30 秒超时。
@@ -222,8 +206,7 @@ func (c TimeoutConfig) Validate() error {
 
 // BodyLimitConfig 是 BodyLimit 的参数，对应 http.body_limit 段。
 type BodyLimitConfig struct {
-	// MaxBytes 是请求体的最大字节数。
-	MaxBytes int64 `yaml:"max_bytes"`
+	MaxBytes int64 `yaml:"max_bytes"` // 请求体的最大字节数。
 }
 
 // DefaultBodyLimitConfig 返回 1 MiB 上限。

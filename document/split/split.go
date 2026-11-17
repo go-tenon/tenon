@@ -12,13 +12,9 @@ import (
 
 // Options 配置 Splitter。长度按码点计算，CRLF 和单独的 CR 算作一个 LF，无效 UTF-8 序列的每个字节算一个。
 type Options struct {
-	// Size 是目标分段长度，必须为正数。
-	Size int
-	// MaxSize 是分段长度的硬上限。零表示 Size + Size/5，略长于 Size 的小节因此保持完整，
-	// 尾段长度适中；非零时必须大于等于 Size。
-	MaxSize int
-	// Overlap 是相邻分段的最大重叠，从 0 到 Size-1。
-	Overlap int
+	Size    int // 目标分段长度，必须为正数。
+	MaxSize int // 分段长度的硬上限。零表示 Size + Size/5，略长于 Size 的小节因此保持完整，尾段长度适中；非零时必须大于等于 Size。
+	Overlap int // 相邻分段的最大重叠，从 0 到 Size-1。
 }
 
 // Splitter 把 Markdown 切分为分段。它不可变，可以并发使用。
@@ -48,34 +44,24 @@ func New(opts Options) (*Splitter, error) {
 
 // Chunk 是输入中连续的一个字节区间。
 type Chunk struct {
-	// Text 是 input[Start:End]，与输入共用内存。
-	Text string
-	// Start 和 End 是在输入中的字节偏移。
-	Start, End int
-	// Length 是按 Options 的标准测量的 Text 长度。
-	Length int
-	// Headings 是继承的标题路径，最外层在前。不包括从分段第一个非空白字节开始或包含它的标题。
-	Headings []Heading
-	// TableHeader 在分段的第一个非空白字节位于表格正文中时设置。
-	TableHeader *TableHeader
+	Text        string       // input[Start:End]，与输入共用内存。
+	Start, End  int          // 在输入中的字节偏移。
+	Length      int          // 按 Options 的标准测量的 Text 长度。
+	Headings    []Heading    // 继承的标题路径，最外层在前。不包括从分段第一个非空白字节开始或包含它的标题。
+	TableHeader *TableHeader // 在分段的第一个非空白字节位于表格正文中时设置。
 }
 
 // Heading 是分段继承的一个标题。
 type Heading struct {
-	// Level 是 1 到 6。
-	Level int
-	// Text 是标题的行内 Markdown，不含块标记。
-	Text string
-	// Start 和 End 界定标题块在输入中的位置，不含行终止符。
-	Start, End int
+	Level      int    // 1 到 6。
+	Text       string // 标题的行内 Markdown，不含块标记。
+	Start, End int    // 界定标题块在输入中的位置，不含行终止符。
 }
 
 // TableHeader 是分段开始处所在表格的表头行和分隔行。
 type TableHeader struct {
-	// Text 是这两行在输入中的原文。
-	Text string
-	// Start 和 End 界定这两行在输入中的位置，不含最后的行终止符。
-	Start, End int
+	Text       string // 这两行在输入中的原文。
+	Start, End int    // 界定这两行在输入中的位置，不含最后的行终止符。
 }
 
 // Context 渲染标题路径和表头：标题文本用 " > " 连接（不转义），表头原样；两部分之间用一个换行分隔，

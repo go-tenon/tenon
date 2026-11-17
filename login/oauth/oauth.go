@@ -34,31 +34,17 @@ var (
 
 // Config 是在提供方登记的一个应用。
 type Config struct {
-	// Provider 是提供方的名称，作为 login.External.Provider，例如 google、apple、github。
-	Provider string
-	// Issuer 是 OpenID Connect 的签发者地址，例如 https://accounts.google.com、https://appleid.apple.com；
-	// Discover 从它的发现文档中读取授权、token 端点和公钥地址。New 不使用它。
-	Issuer string
-	// ClientID、ClientSecret 是登记应用时得到的凭据。
-	ClientID     string
-	ClientSecret string
-	// RedirectURL 是 Start、Finish 的回调地址，通常是单页应用中的回调页。
-	RedirectURL string
-	// ClientRedirectURLs 是 App 自己发起授权时登记的回调地址，Exchange 只接受这些地址。
-	ClientRedirectURLs []string
-	// Audiences 是 ID token 可以接受的受众（aud），默认只有 ClientID。
-	// App 原生登录时，SDK 签发的 ID token 的受众是 App 自己的 client ID，例如 iOS、Android 各一个，加在这里。
-	Audiences []string
-	// Scopes 是申请的范围。Discover 默认 openid、email、profile；New 没有默认值，例如 GitHub 用 read:user、user:email。
-	Scopes []string
-	// NoPKCE 不发送 PKCE 参数，用于不支持 PKCE 的提供方，例如 Apple、微信。
-	NoPKCE bool
-	// FormPost 让提供方用表单 POST 提交回调（response_mode=form_post），例如 Apple 申请邮箱或姓名时要求这样做。
-	FormPost bool
-	// Client 发出全部请求：发现文档、校验 ID token 的公钥、换取 token，以及 Account 读取账号。
-	// Issuer 来自租户后台填写的企业 SSO 等不可信来源时，必须使用 outbound 的客户端，拒绝访问内网地址；
-	// 发现文档中的 token 端点同样不可信。为 nil 时使用 http.DefaultClient。
-	Client *http.Client
+	Provider           string       // 提供方的名称，作为 login.External.Provider，例如 google、apple、github。
+	Issuer             string       // OpenID Connect 的签发者地址，例如 https://accounts.google.com、https://appleid.apple.com；Discover 从它的发现文档中读取授权、token 端点和公钥地址。New 不使用它。
+	ClientID           string       // 登记应用时得到的客户端 ID
+	ClientSecret       string       // 登记应用时得到的客户端密钥
+	RedirectURL        string       // Start、Finish 的回调地址，通常是单页应用中的回调页。
+	ClientRedirectURLs []string     // App 自己发起授权时登记的回调地址，Exchange 只接受这些地址。
+	Audiences          []string     // ID token 可以接受的受众（aud），默认只有 ClientID。App 原生登录时，SDK 签发的 ID token 的受众是 App 自己的 client ID，例如 iOS、Android 各一个，加在这里。
+	Scopes             []string     // 申请的范围。Discover 默认 openid、email、profile；New 没有默认值，例如 GitHub 用 read:user、user:email。
+	NoPKCE             bool         // 不发送 PKCE 参数，用于不支持 PKCE 的提供方，例如 Apple、微信。
+	FormPost           bool         // 让提供方用表单 POST 提交回调（response_mode=form_post），例如 Apple 申请邮箱或姓名时要求这样做。
+	Client             *http.Client // 发出全部请求：发现文档、校验 ID token 的公钥、换取 token，以及 Account 读取账号。Issuer 来自租户后台填写的企业 SSO 等不可信来源时，必须使用 outbound 的客户端，拒绝访问内网地址；发现文档中的 token 端点同样不可信。为 nil 时使用 http.DefaultClient。
 }
 
 // with 让 ctx 中的出站请求使用 Config.Client。
@@ -195,13 +181,10 @@ func (p *Provider) Finish(ctx context.Context, f Flow, params url.Values) (login
 
 // Grant 是 App 自己完成授权后交给 API 的内容。
 type Grant struct {
-	Code string
-	// Verifier 是客户端生成的 PKCE 原值。客户端没有 client secret，PKCE 是它唯一的保护，所以必填（NoPKCE 时除外）。
-	Verifier string
-	// RedirectURI 是客户端跳转时使用的回调地址，必须在 Config.ClientRedirectURLs 中。
-	RedirectURI string
-	// Nonce 是客户端放进授权请求的值，OpenID Connect 提供方必填。
-	Nonce string
+	Code        string
+	Verifier    string // 客户端生成的 PKCE 原值。客户端没有 client secret，PKCE 是它唯一的保护，所以必填（NoPKCE 时除外）。
+	RedirectURI string // 客户端跳转时使用的回调地址，必须在 Config.ClientRedirectURLs 中。
+	Nonce       string // 客户端放进授权请求的值，OpenID Connect 提供方必填。
 }
 
 // Exchange 用客户端自己完成授权得到的授权码换取 token，读取第三方账号；client secret 只在服务器上使用。

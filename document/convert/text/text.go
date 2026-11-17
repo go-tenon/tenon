@@ -18,9 +18,7 @@ import (
 // Options 配置文本转换器，零值即默认配置。
 type Options struct {
 	convert.Limits
-	// Fallback 解码既没有声明编码、又不是合法 UTF-8 的输入，例如 simplifiedchinese.GB18030。
-	// nil 时把无效字节替换为 U+FFFD。
-	Fallback encoding.Encoding
+	Fallback encoding.Encoding // 解码既没有声明编码、又不是合法 UTF-8 的输入，例如 simplifiedchinese.GB18030。nil 时把无效字节替换为 U+FFFD。
 }
 
 // New 返回纯文本和 Markdown 的转换器。

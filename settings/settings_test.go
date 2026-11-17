@@ -196,9 +196,8 @@ func TestNewPanics(t *testing.T) {
 		} `json:"m"`
 	}
 	type leaf struct {
-		// 切片元素和指针整体替换，不合并，可以用 omitempty
-		Items []omit `json:"items"`
-		P     *omit  `json:"p"`
+		Items []omit `json:"items"` // 切片元素整体替换，不合并，可以用 omitempty
+		P     *omit  `json:"p"`     // 指针整体替换，不合并，可以用 omitempty
 	}
 
 	assert.PanicsWithError(t, `settings: site.a: omitempty is not allowed, the zero value would read back as the default`,

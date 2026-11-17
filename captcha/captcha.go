@@ -52,13 +52,9 @@ const maxToken = 2048
 //	  secret: ${TURNSTILE_SECRET}
 //	  hostnames: [blog.example.com]
 type Config struct {
-	// Secret 是服务端密钥（secret key），不是前端组件使用的 site key。
-	Secret string `yaml:"secret"`
-	// Hostnames 是允许的站点域名，验证结果中的 hostname 必须是其中之一；为空时跳过。
-	// App 中的 Turnstile 返回的 hostname 不是网站域名，同时用于 App 时需要把它也列进来。
-	Hostnames []string `yaml:"hostnames"`
-	// Endpoint 是校验接口的地址，为空时是 Turnstile。
-	Endpoint string `yaml:"endpoint"`
+	Secret    string   `yaml:"secret"`    // 服务端密钥（secret key），不是前端组件使用的 site key。
+	Hostnames []string `yaml:"hostnames"` // 允许的站点域名，验证结果中的 hostname 必须是其中之一；为空时跳过。App 中的 Turnstile 返回的 hostname 不是网站域名，同时用于 App 时需要把它也列进来。
+	Endpoint  string   `yaml:"endpoint"`  // 校验接口的地址，为空时是 Turnstile。
 }
 
 // Validate 检查 secret 已填写，endpoint 是 https 地址。

@@ -164,8 +164,7 @@ type Request struct {
 	Method string
 	URL    *url.URL
 	Header http.Header
-	// Body 是完整的请求体，没有请求体时为 nil。
-	Body []byte
+	Body   []byte // 完整的请求体，没有请求体时为 nil。
 }
 
 // JSON 把请求体解析到 v 中。

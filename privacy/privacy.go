@@ -33,32 +33,17 @@ const maxError = 1000
 
 // Source 是保存了主体数据的一个地方，例如框架的 login、push，或者应用自己的用户表。
 type Source struct {
-	// Name 区分各项，出现在错误和日志中，例如 login、notifications。
-	Name string
-	// Check 报告 ref 现在能否注销，不能时返回业务错误（errorx），例如“你是团队唯一的所有者”。
-	// Request 和 Erase 在开始时依次调用全部 Check；冷静期结束、EraseDue 执行时不再检查。可以为 nil。
-	Check func(ctx context.Context, ref identity.Ref) error
-	// Erase 在 db 中删除 ref 的数据。全部 Source 的 Erase 按登记的顺序在同一个事务中执行，db 是这个 database.Tx：
-	// 任何一项返回错误，整个事务回滚，稍后重试。要删除外部系统中的数据（对象存储、向量库、支付平台）时，
-	// 在这个事务中用 queue 发布任务，与删除一起提交。可以为 nil。
-	//
-	// Erase 可能执行多次（失败后重试），必须是幂等的：数据已经不存在时直接返回 nil。
-	Erase func(ctx context.Context, db bun.IDB, ref identity.Ref) error
-	// Export 返回 ref 在这里的数据，导出个人数据时编码为 JSON，写成压缩包中的 <Name>.json，见 privacy/export。
-	// 全部 Export 在同一个只读事务中执行，db 是这个事务，读到的是同一时刻的数据。返回 nil 时不写这个文件。可以为 nil。
-	Export func(ctx context.Context, db bun.IDB, ref identity.Ref) (any, error)
+	Name   string                                                               // 区分各项，出现在错误和日志中，例如 login、notifications。
+	Check  func(ctx context.Context, ref identity.Ref) error                    // 报告 ref 现在能否注销，不能时返回业务错误（errorx），例如“你是团队唯一的所有者”。Request 和 Erase 在开始时依次调用全部 Check；冷静期结束、EraseDue 执行时不再检查。可以为 nil。
+	Erase  func(ctx context.Context, db bun.IDB, ref identity.Ref) error        // 在 db 中删除 ref 的数据。全部 Source 的 Erase 按登记的顺序在同一个事务中执行，db 是这个 database.Tx：任何一项返回错误，整个事务回滚，稍后重试。要删除外部系统中的数据（对象存储、向量库、支付平台）时，在这个事务中用 queue 发布任务，与删除一起提交。可以为 nil。Erase 可能执行多次（失败后重试），必须是幂等的：数据已经不存在时直接返回 nil。
+	Export func(ctx context.Context, db bun.IDB, ref identity.Ref) (any, error) // 返回 ref 在这里的数据，导出个人数据时编码为 JSON，写成压缩包中的 <Name>.json，见 privacy/export。全部 Export 在同一个只读事务中执行，db 是这个事务，读到的是同一时刻的数据。返回 nil 时不写这个文件。可以为 nil。
 }
 
 // Options 是 New 的选项。
 type Options struct {
-	// Type 是这个服务处理的账号体系，例如 user，必填。一个服务只注销一套账号体系的主体，
-	// 与 login.Realm 一一对应：Sources 中的函数只会收到这个类型的主体。有多套账号体系时，各建一个服务。
-	Type identity.SubjectType
-	// Grace 是冷静期：Request 之后经过这么久，EraseDue 才删除数据；期间用户可以 Cancel。
-	// 0 表示没有冷静期，下一次 EraseDue 就删除。不能为负数。
-	Grace time.Duration
-	// Sources 是保存了主体数据的地方，至少一项。Name 不能为空或重复，Check、Erase 和 Export 至少有一个。
-	Sources []Source
+	Type    identity.SubjectType // 这个服务处理的账号体系，例如 user，必填。一个服务只注销一套账号体系的主体，与 login.Realm 一一对应：Sources 中的函数只会收到这个类型的主体。有多套账号体系时，各建一个服务。
+	Grace   time.Duration        // 冷静期：Request 之后经过这么久，EraseDue 才删除数据；期间用户可以 Cancel。0 表示没有冷静期，下一次 EraseDue 就删除。不能为负数。
+	Sources []Source             // 保存了主体数据的地方，至少一项。Name 不能为空或重复，Check、Erase 和 Export 至少有一个。
 }
 
 // Erasure 是一次注销，也是 privacy_erasures 表的 Bun 模型，本包函数之外的查询（例如后台列表）可以直接用 Bun 编写。

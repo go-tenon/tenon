@@ -22,11 +22,9 @@ import (
 // 字段错误带上验证规则，提示按请求的语言翻译。OpenAPI 统一用本类型描述错误响应。
 type ErrorModel struct {
 	huma.ErrorModel
-	Code string `json:"code,omitempty" doc:"Stable business error code. Present only on business errors."`
-	// Params 是 errorx.Public 附加的公开参数，客户端据此处理错误，例如 auth.method_required 的 methods。
-	Params map[string]any `json:"params,omitempty" doc:"Public parameters of a business error, e.g. methods for auth.method_required. Present only when the error has any."`
-	// Errors 覆盖 huma.ErrorModel 的同名字段。
-	Errors []*ErrorDetail `json:"errors,omitempty" doc:"Field errors. Present only on validation errors."`
+	Code   string         `json:"code,omitempty" doc:"Stable business error code. Present only on business errors."`
+	Params map[string]any `json:"params,omitempty" doc:"Public parameters of a business error, e.g. methods for auth.method_required. Present only when the error has any."` // errorx.Public 附加的公开参数，客户端据此处理错误，例如 auth.method_required 的 methods。
+	Errors []*ErrorDetail `json:"errors,omitempty" doc:"Field errors. Present only on validation errors."`                                                                   // 覆盖 huma.ErrorModel 的同名字段。
 
 	headers http.Header
 }

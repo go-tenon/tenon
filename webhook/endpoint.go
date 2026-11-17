@@ -30,16 +30,14 @@ const PreviousSecretTTL = 24 * time.Hour
 type Endpoint struct {
 	bun.BaseModel `bun:"table:webhook_endpoints,alias:we"`
 
-	ID          uuid.UUID `bun:"id,pk,type:uuid"`
-	Tenant      string    `bun:"tenant,notnull"`
-	URL         string    `bun:"url,notnull"`
-	Description string    `bun:"description,notnull"`
-	// Events 是订阅的事件类型：完整的类型如 article.published，以 .* 结尾的前缀如 article.*，或者 * 表示全部。
-	Events   []string `bun:"events,notnull"`
-	Secret   string   `bun:"secret,notnull"` // 签名密钥，whsec_ 开头；创建时生成，交给接收方校验签名
-	Disabled bool     `bun:"disabled,notnull"`
-	// PreviousSecret 是轮换前的密钥，在 PreviousSecretExpiresAt 之前与 Secret 一起签名。
-	PreviousSecret          string    `bun:"previous_secret,notnull"`
+	ID                      uuid.UUID `bun:"id,pk,type:uuid"`
+	Tenant                  string    `bun:"tenant,notnull"`
+	URL                     string    `bun:"url,notnull"`
+	Description             string    `bun:"description,notnull"`
+	Events                  []string  `bun:"events,notnull"` // 订阅的事件类型：完整的类型如 article.published，以 .* 结尾的前缀如 article.*，或者 * 表示全部。
+	Secret                  string    `bun:"secret,notnull"` // 签名密钥，whsec_ 开头；创建时生成，交给接收方校验签名
+	Disabled                bool      `bun:"disabled,notnull"`
+	PreviousSecret          string    `bun:"previous_secret,notnull"` // 轮换前的密钥，在 PreviousSecretExpiresAt 之前与 Secret 一起签名。
 	PreviousSecretExpiresAt time.Time `bun:"previous_secret_expires_at,nullzero"`
 	CreatedAt               time.Time `bun:"created_at,notnull"`
 	UpdatedAt               time.Time `bun:"updated_at,notnull"`

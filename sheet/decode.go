@@ -15,15 +15,11 @@ import (
 
 // Record 是 Decode 解码出的一行。
 type Record[T any] struct {
-	// Line 是这一行在文件中的行号，与 Excel 中看到的行号一致。
-	Line int
-	// Data 是解码后的数据。验证失败时只包含能转换的字段。
-	Data T
-	// Values 是这一行的原始单元格，与 Reader.Header 一一对应，包括没有对应字段的列。
-	Values []string
-	// Errors 以字段名（json 标签）为键，是验证失败的提示；全部有效时为 nil。
-	Errors map[string]string
-	labels []label // 有对应字段的列，按表头的顺序
+	Line   int               // 这一行在文件中的行号，与 Excel 中看到的行号一致。
+	Data   T                 // 解码后的数据。验证失败时只包含能转换的字段。
+	Values []string          // 这一行的原始单元格，与 Reader.Header 一一对应，包括没有对应字段的列。
+	Errors map[string]string // 以字段名（json 标签）为键，是验证失败的提示；全部有效时为 nil。
+	labels []label           // 有对应字段的列，按表头的顺序
 }
 
 // label 是一个字段在表格中的列名。

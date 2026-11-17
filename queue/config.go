@@ -11,24 +11,13 @@ import (
 // 注册处理函数时可以用同名的 HandleOption 覆盖。NATS 的地址和凭据不在这里：连接由应用用 natsx.Connect 创建，
 // 交给 NewWorker 和 NewAdmin。
 type Config struct {
-	// Stream 是保存任务的 JetStream stream 的名字，也是任务 subject 的第一段：topic mail.send 的任务
-	// 发布到 <stream>.job.mail.send。多个应用或环境共用 NATS 时用它区分。由 1 到 32 个字母、数字、'_' 或 '-' 组成。
-	// Worker 启动时创建这个 stream，已经存在时检查它的设置。
-	Stream string `yaml:"stream"`
-	// Replicas 是 stream 的副本数：单个 NATS 服务器时为 1；集群中设为 3，一台服务器损坏时任务不丢失。
-	Replicas int `yaml:"replicas"`
-	// Concurrency 是每个 topic 同时处理的任务数上限。
-	Concurrency int `yaml:"concurrency"`
-	// MaxAttempts 是任务最多处理的次数，用完后转入失败任务表。
-	MaxAttempts int `yaml:"max_attempts"`
-	// Lease 是 JetStream 等待处理结果的时间（AckWait）。处理期间每 Lease/3 自动延长；
-	// 进程崩溃时任务在 Lease 之后被重新投递。
-	Lease time.Duration `yaml:"lease"`
-	// ReplicationDSN 是转发任务的逻辑复制连接，为空时使用 Worker 的数据库连接的配置。
-	// 数据库连接经过 PgBouncer 等连接池时需要设置：复制连接必须直连 PostgreSQL。用户需要 REPLICATION 属性。
-	ReplicationDSN string `yaml:"replication_dsn"`
-	// ShutdownTimeout 是停止时等待处理中的任务完成的最长时间，超时的任务立即放回 JetStream。
-	ShutdownTimeout time.Duration `yaml:"shutdown_timeout"`
+	Stream          string        `yaml:"stream"`           // 保存任务的 JetStream stream 的名字，也是任务 subject 的第一段：topic mail.send 的任务发布到 <stream>.job.mail.send。多个应用或环境共用 NATS 时用它区分。由 1 到 32 个字母、数字、'_' 或 '-' 组成。Worker 启动时创建这个 stream，已经存在时检查它的设置。
+	Replicas        int           `yaml:"replicas"`         // stream 的副本数：单个 NATS 服务器时为 1；集群中设为 3，一台服务器损坏时任务不丢失。
+	Concurrency     int           `yaml:"concurrency"`      // 每个 topic 同时处理的任务数上限。
+	MaxAttempts     int           `yaml:"max_attempts"`     // 任务最多处理的次数，用完后转入失败任务表。
+	Lease           time.Duration `yaml:"lease"`            // JetStream 等待处理结果的时间（AckWait）。处理期间每 Lease/3 自动延长；进程崩溃时任务在 Lease 之后被重新投递。
+	ReplicationDSN  string        `yaml:"replication_dsn"`  // 转发任务的逻辑复制连接，为空时使用 Worker 的数据库连接的配置。数据库连接经过 PgBouncer 等连接池时需要设置：复制连接必须直连 PostgreSQL。用户需要 REPLICATION 属性。
+	ShutdownTimeout time.Duration `yaml:"shutdown_timeout"` // 停止时等待处理中的任务完成的最长时间，超时的任务立即放回 JetStream。
 }
 
 // DefaultConfig 返回默认配置：stream 为 jobs，单副本，并发 10，最多处理 10 次，租约 30 秒，

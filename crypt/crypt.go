@@ -24,10 +24,8 @@ var b64 = base64.RawURLEncoding
 
 // Config 是加密配置，对应配置文件的 crypt 段。
 type Config struct {
-	// Key 是应用密钥：32 字节随机数的 base64，用 openssl rand -base64 32 生成。
-	Key string `yaml:"key"`
-	// PreviousKeys 是轮换前的旧密钥，只用于解密和验签。
-	PreviousKeys []string `yaml:"previous_keys"`
+	Key          string   `yaml:"key"`           // 应用密钥：32 字节随机数的 base64，用 openssl rand -base64 32 生成。
+	PreviousKeys []string `yaml:"previous_keys"` // 轮换前的旧密钥，只用于解密和验签。
 }
 
 // Validate 检查 key 已填写，key 与 previous_keys 都是 32 字节的 base64。
@@ -66,10 +64,9 @@ func GenerateKey() string {
 
 // Crypt 加解密数据、签名和校验链接，可以并发使用。
 type Crypt struct {
-	// aeads 与 macKeys 的第一项来自当前密钥，其余来自 PreviousKeys。
-	aeads   []cipher.AEAD
-	macKeys [][]byte
-	masters [][]byte
+	aeads   []cipher.AEAD // 各密钥的加密器，第一项来自当前密钥，其余来自 PreviousKeys
+	macKeys [][]byte      // 各密钥的签名密钥，顺序与 aeads 相同
+	masters [][]byte      // 各密钥的主密钥，顺序与 aeads 相同
 }
 
 // New 创建 Crypt。cfg 无效时 panic。

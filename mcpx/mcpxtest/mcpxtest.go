@@ -103,12 +103,9 @@ func (c *Client) Tool(name string) *mcp.Tool {
 
 // Result 是一次工具调用的结果。
 type Result struct {
-	// IsError 表示工具报告了错误：业务错误、参数不合法或内部错误，Text 是给模型看的说明。
-	IsError bool
-	// Text 是结果的文本内容；成功时是返回值的 JSON。
-	Text string
-	// Structured 是结构化内容，返回值不是对象时为 nil。
-	Structured json.RawMessage
+	IsError    bool            // 工具报告了错误：业务错误、参数不合法或内部错误，Text 是给模型看的说明。
+	Text       string          // 结果的文本内容；成功时是返回值的 JSON。
+	Structured json.RawMessage // 结构化内容，返回值不是对象时为 nil。
 }
 
 // Decode 把成功结果的 JSON 解码到 v。

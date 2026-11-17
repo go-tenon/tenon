@@ -24,15 +24,10 @@ import (
 // Options 配置 CSV 转换器，零值即默认配置。
 type Options struct {
 	convert.Limits
-	// Fallback 解码既没有声明编码、又不是合法 UTF-8 的输入，例如 simplifiedchinese.GB18030。
-	// nil 时把无效字节替换为 U+FFFD。
-	Fallback encoding.Encoding
-	// Comma 是字段分隔符，零值表示 ','。
-	Comma rune
-	// NoHeader 把第一条记录当作数据。
-	NoHeader bool
-	// LazyQuotes 允许无引号的字段中出现引号，以及带引号的字段中出现未转义的引号。
-	LazyQuotes bool
+	Fallback   encoding.Encoding // 解码既没有声明编码、又不是合法 UTF-8 的输入，例如 simplifiedchinese.GB18030。nil 时把无效字节替换为 U+FFFD。
+	Comma      rune              // 字段分隔符，零值表示 ','。
+	NoHeader   bool              // 把第一条记录当作数据。
+	LazyQuotes bool              // 允许无引号的字段中出现引号，以及带引号的字段中出现未转义的引号。
 }
 
 // Converter 转换 CSV，可以并发使用。

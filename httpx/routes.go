@@ -10,18 +10,12 @@ import (
 
 // Route 描述一条已注册的路由。
 type Route struct {
-	// Method 是 HTTP 方法；同一路径上所有方法都由同样描述的处理器响应时（例如 router.Handle、Mount）合并为一条，Method 为 AnyMethod。
-	Method string
-	Path   string
-	// Access 是路由声明的访问策略：AccessPublic、AccessDocs、AccessUnknown，
-	// 或认证方式的名字，例如 JSON API 的 bearer、页面的 session。
-	// 没有可识别声明的路由一律为 AccessUnknown，它不表示允许匿名访问。
-	Access string
-	// Permissions 是需要认证的路由要求调用者能执行的全部权限。
-	Permissions []string
-	// OperationID、Summary 来自 JSON API 的 huma.Operation，页面路由没有。
-	OperationID string
-	Summary     string
+	Method      string // HTTP 方法；同一路径上所有方法都由同样描述的处理器响应时（例如 router.Handle、Mount）合并为一条，Method 为 AnyMethod。
+	Path        string
+	Access      string   // 路由声明的访问策略：AccessPublic、AccessDocs、AccessUnknown，或认证方式的名字，例如 JSON API 的 bearer、页面的 session。没有可识别声明的路由一律为 AccessUnknown，它不表示允许匿名访问。
+	Permissions []string // 需要认证的路由要求调用者能执行的全部权限。
+	OperationID string   // JSON API 的 huma.Operation 的 OperationID，页面路由为空
+	Summary     string   // JSON API 的 huma.Operation 的 Summary，页面路由为空
 }
 
 // Route.Access 的通用取值。

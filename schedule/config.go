@@ -8,8 +8,7 @@ import (
 
 // Config 是调度器的配置，对应配置文件的 schedule 段。
 type Config struct {
-	// ShutdownTimeout 是停止时等待执行中的任务结束的最长时间，超时后取消它们的 ctx。
-	ShutdownTimeout time.Duration `yaml:"shutdown_timeout"`
+	ShutdownTimeout time.Duration `yaml:"shutdown_timeout"` // 停止时等待执行中的任务结束的最长时间，超时后取消它们的 ctx。
 }
 
 // DefaultConfig 返回默认配置：停止时最多等待 30 秒。

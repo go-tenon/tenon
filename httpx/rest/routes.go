@@ -22,13 +22,11 @@ const AccessToken = "token"
 // adapter 是 Huma 的 chi 适配器：每个操作注册为一个实现 httpx.RouteDescriber 的处理器，
 // 让 httpx.Routes 能从任意上层 Router 读出访问策略。其余行为委托给 humachi。
 type adapter struct {
-	// api 是使用这个 adapter 的 API，New 在 huma.NewAPI 之前设置，APIs 据此从路由中取回它。
-	api    *API
+	api    *API // 使用这个 adapter 的 API，New 在 huma.NewAPI 之前设置，APIs 据此从路由中取回它。
 	router chi.Router
 	chi    huma.Adapter
 	docs   map[string]bool
-	// spec30 是 3.0 文档端点的路径和它们的处理器，代替 Huma 自带的处理器。
-	spec30 map[string]func(huma.Context)
+	spec30 map[string]func(huma.Context) // 3.0 文档端点的路径和它们的处理器，代替 Huma 自带的处理器。
 }
 
 func newAdapter(r chi.Router, cfg huma.Config) *adapter {

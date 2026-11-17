@@ -41,12 +41,9 @@ const (
 
 // Device 描述登录 token 所在的设备，用于设备列表。
 type Device struct {
-	// Remember 表示登录时选择了“记住我”，空闲时长使用 Config.RememberIdleTimeout。
-	Remember bool
-	// IP 是登录请求的客户端地址。
-	IP string
-	// UserAgent 是登录请求的 User-Agent，超过 255 个字符时截断。
-	UserAgent string
+	Remember  bool   // 登录时选择了“记住我”，空闲时长使用 Config.RememberIdleTimeout。
+	IP        string // 登录请求的客户端地址。
+	UserAgent string // 登录请求的 User-Agent，超过 255 个字符时截断。
 }
 
 // Token 是已签发 token 的信息，token 明文只在签发时返回。
@@ -164,15 +161,10 @@ func (s *Store) login(ctx context.Context, sub identity.Subject, d Device, kind 
 
 // Personal 描述一个个人访问令牌。
 type Personal struct {
-	// Name 用于在令牌列表中辨认，长度为 1 到 255 个字符。
-	Name string
-	// Scopes 是令牌被限制在内的权限，至少一个，支持通配符（见 identity.Subject.Can）。
-	// 令牌实际能做的是用户当前权限与 Scopes 的交集，用户被收回权限后令牌随之收窄。
-	Scopes []string
-	// Tenant 不为空时，令牌只能在这个租户中使用。
-	Tenant string
-	// ExpiresAt 为零值表示不过期，否则必须晚于当前时间。
-	ExpiresAt time.Time
+	Name      string    // 用于在令牌列表中辨认，长度为 1 到 255 个字符。
+	Scopes    []string  // 令牌被限制在内的权限，至少一个，支持通配符（见 identity.Subject.Can）。令牌实际能做的是用户当前权限与 Scopes 的交集，用户被收回权限后令牌随之收窄。
+	Tenant    string    // Tenant 不为空时，令牌只能在这个租户中使用。
+	ExpiresAt time.Time // ExpiresAt 为零值表示不过期，否则必须晚于当前时间。
 }
 
 // Create 为 sub 创建个人访问令牌，返回 token 明文，明文只在这里返回一次。
@@ -199,16 +191,12 @@ func (s *Store) Create(ctx context.Context, sub identity.Subject, p Personal) (s
 
 // Grant 描述用户对一个 OAuth 客户端的授权，由 OAuth 授权服务器（oauthserver）在用户同意后使用。
 type Grant struct {
-	// ClientID 是客户端 ID，ClientName 是同意页上显示的名称，记录下来用于“已连接的应用”列表。
-	ClientID   string
-	ClientName string
-	// Resource 是令牌只能用于的资源，例如 MCP 服务的地址 https://blog.example.com/mcp。
-	Resource string
-	// Scopes 是用户同意的范围，至少一个，与个人访问令牌的 Scopes 相同：令牌能做的是用户当前权限与它的交集。
-	Scopes []string
-	// Lifetime 是令牌从签发起的最长有效期，IdleTimeout 是最长空闲时间（0 表示不限制），与登录 token 相同按使用滑动延长。
-	Lifetime    time.Duration
-	IdleTimeout time.Duration
+	ClientID    string        // 客户端 ID，记录下来用于“已连接的应用”列表
+	ClientName  string        // 同意页上显示的客户端名称，记录下来用于“已连接的应用”列表
+	Resource    string        // 令牌只能用于的资源，例如 MCP 服务的地址 https://blog.example.com/mcp。
+	Scopes      []string      // 用户同意的范围，至少一个，与个人访问令牌的 Scopes 相同：令牌能做的是用户当前权限与它的交集。
+	Lifetime    time.Duration // 令牌从签发起的最长有效期
+	IdleTimeout time.Duration // 最长空闲时间，0 表示不限制；与登录 token 相同按使用滑动延长
 }
 
 // Authorize 为 sub 签发 OAuth 令牌，返回 token 明文，明文只在这里返回一次。sub.Tenant 不为空时令牌只能在这个租户中使用。

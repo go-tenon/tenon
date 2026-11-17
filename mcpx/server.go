@@ -28,13 +28,10 @@ var toolName = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
 
 // Options 是 New 的选项。
 type Options struct {
-	// Name 和 Version 在初始化时告诉客户端这是哪个服务，Name 必填；Version 为空时是 0.0.0。
-	Name    string
-	Version string
-	// Instructions 告诉模型这个服务是做什么的、工具之间怎么配合，例如“文章 ID 是 UUID，先用 article_search 查找”。
-	Instructions string
-	// Logger 记录工具中的内部错误，nil 表示 slog.Default()。
-	Logger *slog.Logger
+	Name         string       // 服务名，初始化时告诉客户端这是哪个服务，必填
+	Version      string       // 服务的版本，初始化时告诉客户端；为空时是 0.0.0
+	Instructions string       // 告诉模型这个服务是做什么的、工具之间怎么配合，例如“文章 ID 是 UUID，先用 article_search 查找”。
+	Logger       *slog.Logger // 记录工具中的内部错误，nil 表示 slog.Default()。
 }
 
 // Server 是一个 MCP 服务：登记的工具，以及调用它们时的权限检查、参数校验和错误转换。
@@ -97,21 +94,13 @@ func (s *Server) SDK() *mcp.Server { return s.sdk }
 // Tool 描述一个工具。模型只看得到 Name、Title、Description、参数的说明和注解，
 // 它们决定了模型是否以及怎样调用这个工具，像写给新同事的说明一样写清楚。
 type Tool struct {
-	// Name 是工具名，小写字母开头，只有小写字母、数字和下划线，最长 64 个字符，例如 article_publish。
-	Name string
-	// Title 是给人看的名称，例如“发布文章”，可以为空。
-	Title string
-	// Description 说明工具做什么、什么时候用、有什么限制，必填。
-	Description string
-	// Permissions 是调用这个工具需要的全部权限，用 identity.Subject.Can 检查：
-	// 主体缺少其中任何一项时，工具不出现在列表中，调用时与不存在的工具相同。
-	Permissions []string
-	// ReadOnly 表示工具只读取数据。客户端通常直接调用只读工具。
-	ReadOnly bool
-	// Destructive 表示工具会删除或覆盖数据，客户端据此在调用前请用户确认。ReadOnly 时忽略。
-	Destructive bool
-	// Idempotent 表示用相同的参数重复调用没有额外的效果。ReadOnly 时忽略。
-	Idempotent bool
+	Name        string   // 工具名，小写字母开头，只有小写字母、数字和下划线，最长 64 个字符，例如 article_publish。
+	Title       string   // 给人看的名称，例如“发布文章”，可以为空。
+	Description string   // 说明工具做什么、什么时候用、有什么限制，必填。
+	Permissions []string // 调用这个工具需要的全部权限，用 identity.Subject.Can 检查：主体缺少其中任何一项时，工具不出现在列表中，调用时与不存在的工具相同。
+	ReadOnly    bool     // 工具只读取数据。客户端通常直接调用只读工具。
+	Destructive bool     // 工具会删除或覆盖数据，客户端据此在调用前请用户确认。ReadOnly 时忽略。
+	Idempotent  bool     // 用相同的参数重复调用没有额外的效果。ReadOnly 时忽略。
 }
 
 // Register 把 fn 登记为工具 t。fn 通常是 action 的方法值，例如 article.NewPublish(db).Tool。

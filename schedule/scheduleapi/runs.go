@@ -26,10 +26,9 @@ const (
 type run struct {
 	bun.BaseModel `bun:"table:schedule_runs"`
 
-	ID   uuid.UUID `bun:"id,pk"`
-	Task string    `bun:"task,notnull"`
-	// Tick 是这次触发应当执行的时间；立即执行时为空。
-	Tick       *time.Time `bun:"tick"`
+	ID         uuid.UUID  `bun:"id,pk"`
+	Task       string     `bun:"task,notnull"`
+	Tick       *time.Time `bun:"tick"` // 这次触发应当执行的时间；立即执行时为空。
 	StartedAt  time.Time  `bun:"started_at,notnull"`
 	DurationMS int64      `bun:"duration_ms,notnull"`
 	Status     Status     `bun:"status,notnull"`

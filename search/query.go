@@ -20,28 +20,21 @@ const DefaultFacetLimit = 20
 
 // Query 是一次搜索的条件。
 type Query struct {
-	// Text 是用户输入的查询文本，切分出的每个词都要出现在文档中，最后一个词按前缀匹配（输入到一半也能搜到）。
-	// 为空或者没有切分出词时不按文本过滤，相当于列出符合 Filter 的所有文档。
-	Text string
-	// Tenant 是查询的租户，"" 为平台本身。文档类型有 tenant 字段时总是只查询这个租户的文档；
-	// 没有 tenant 字段时必须为空。
-	Tenant string
-	Filter Filter   // nil 时不过滤
-	Sort   []Sort   // 为空时有查询文本的按相关度排序，否则按 key 排序
-	Facets []string // 统计这些过滤字段在结果中各个值的文档数
-	// FacetLimit 是每个分面最多返回的值的个数，按文档数从多到少；不大于 0 时为 DefaultFacetLimit。
-	FacetLimit int
-	// Page 是分页参数，零值为第 1 页、每页 DefaultPerPage 条。
-	Page page.OffsetParams
+	Text       string            // 用户输入的查询文本，切分出的每个词都要出现在文档中，最后一个词按前缀匹配（输入到一半也能搜到）。为空或者没有切分出词时不按文本过滤，相当于列出符合 Filter 的所有文档。
+	Tenant     string            // 查询的租户，"" 为平台本身。文档类型有 tenant 字段时总是只查询这个租户的文档；没有 tenant 字段时必须为空。
+	Filter     Filter            // nil 时不过滤
+	Sort       []Sort            // 为空时有查询文本的按相关度排序，否则按 key 排序
+	Facets     []string          // 统计这些过滤字段在结果中各个值的文档数
+	FacetLimit int               // 每个分面最多返回的值的个数，按文档数从多到少；不大于 0 时为 DefaultFacetLimit。
+	Page       page.OffsetParams // 分页参数，零值为第 1 页、每页 DefaultPerPage 条。
 }
 
 // Hit 是一条搜索结果。
 type Hit[D any] struct {
-	Key   string  `json:"key"`   // 文档所属的 key，即 Sync 时传入的 key
-	Doc   D       `json:"doc"`   // 同步时保存的文档
-	Score float64 `json:"score"` // 相关度，越大越相关；不同数据库的计算方法不同，只用于比较同一次查询的结果
-	// Highlights 是命中查询的文本字段的摘要，按字段的 JSON 名称索引；没有查询文本时为空。
-	Highlights map[string]Snippet `json:"highlights,omitempty"`
+	Key        string             `json:"key"`                  // 文档所属的 key，即 Sync 时传入的 key
+	Doc        D                  `json:"doc"`                  // 同步时保存的文档
+	Score      float64            `json:"score"`                // 相关度，越大越相关；不同数据库的计算方法不同，只用于比较同一次查询的结果
+	Highlights map[string]Snippet `json:"highlights,omitempty"` // 命中查询的文本字段的摘要，按字段的 JSON 名称索引；没有查询文本时为空。
 }
 
 // Result 是一页搜索结果。

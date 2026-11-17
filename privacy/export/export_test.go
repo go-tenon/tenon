@@ -54,8 +54,8 @@ type env struct {
 	ops      *operation.Service
 	tokens   *apitoken.Store
 	personal *export.Service
-	// profile 是应用自己的一项：返回本人的资料；locked 中的用户返回业务错误，down 中的返回其他错误。
-	locked, down sync.Map
+	locked   sync.Map // 其中的用户在应用自己的 profile 一项中返回业务错误
+	down     sync.Map // 其中的用户在应用自己的 profile 一项中返回其他错误
 }
 
 func newEnv(t *testing.T, extra ...privacy.Source) *env {
