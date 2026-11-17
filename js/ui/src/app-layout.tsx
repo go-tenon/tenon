@@ -34,7 +34,7 @@ import { Icon } from "./icons"
 import { TabsAvailableProvider } from "./layout-context"
 import { NavLinkLink } from "./links"
 import { TenantSwitcher } from "./menus"
-import { ContentFlashProvider, PageProgress } from "./page-progress"
+import { ContentTransitionProvider, PageProgress } from "./page-progress"
 import {
   type MenuItem,
   Slot,
@@ -94,11 +94,15 @@ export function AppLayout({ title, logo, user, actions, search = true, tabs, max
     if (state.navOpen) setState({ navOpen: false })
   }, [pathname])
 
-  // 切换页面（点标签、点菜单、搜索跳转）和重新加载标签时，内容区淡入，同时从下方上移 6px。只看路径：翻页、筛选不算。
+  // 切换页面（点标签、点菜单、搜索跳转）时，内容区淡入，同时从下方上移 6px。只看路径：翻页、筛选不算。
+  // 重新加载标签时先淡出，读取完成后再淡入（见 page-progress）。
   const content = useRef<HTMLDivElement>(null)
+  const held = useRef<Animation | null>(null)
   const flash = useCallback(() => {
     const el = content.current
-    if (!el?.animate || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return
+    held.current?.cancel()
+    held.current = null
+    if (!el?.animate || reducedMotion()) return
     el.animate(
       [
         { opacity: 0, transform: "translateY(6px)" },
@@ -107,6 +111,22 @@ export function AppLayout({ title, logo, user, actions, search = true, tabs, max
       { duration: 180, easing: "ease-out" },
     )
   }, [])
+  const transition = useMemo(
+    () => ({
+      async out() {
+        const el = content.current
+        if (!el?.animate || reducedMotion()) return
+        held.current = el.animate([{ opacity: 1 }, { opacity: 0 }], {
+          duration: 150,
+          easing: "ease-in",
+          fill: "forwards",
+        })
+        await held.current.finished.catch(() => {})
+      },
+      in: flash,
+    }),
+    [flash],
+  )
   const first = useRef(true)
   // biome-ignore lint/correctness/useExhaustiveDependencies: 只在路径变化时播放
   useEffect(() => {
@@ -168,9 +188,9 @@ export function AppLayout({ title, logo, user, actions, search = true, tabs, max
             </Link>
           </div>
           {showTabBar ? (
-            <ContentFlashProvider value={flash}>
+            <ContentTransitionProvider value={transition}>
               <TabBar />
-            </ContentFlashProvider>
+            </ContentTransitionProvider>
           ) : (
             <Box style={{ flex: 1 }} />
           )}
@@ -414,3 +434,5 @@ function CollapsedItem({ item, active }: { item: MenuItem; active: string[] }): 
     </Tooltip>
   )
 }
+
+const reducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false

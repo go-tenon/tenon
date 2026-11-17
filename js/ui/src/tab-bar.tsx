@@ -23,7 +23,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query"
 import { type ReactNode, useEffect, useRef, useState } from "react"
 import { Icon } from "./icons"
-import { reloadWithProgress, useContentFlash } from "./page-progress"
+import { reloadWithProgress, useContentTransition } from "./page-progress"
 import { type Tabs, type TabView, useTabs } from "./shell"
 
 /** 标签栏，AppLayout 开启多标签时显示在顶栏中间。 */
@@ -34,9 +34,9 @@ export function TabBar(): ReactNode {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
   const [menu, setMenu] = useState<{ key: string; x: number; y: number } | null>(null)
   const queryClient = useQueryClient()
-  const flash = useContentFlash()
-  // 重新加载（刷新按钮、右键菜单）：页面顶部的进度条走起来，内容区淡入一次，页面的请求都完成后进度条走完。
-  const reload = (key: string) => void reloadWithProgress(() => tabs.refresh(key), queryClient, flash)
+  const transition = useContentTransition()
+  // 重新加载（刷新按钮、右键菜单）：页面顶部的进度条走起来，主内容区淡出，页面的请求都完成后淡入、进度条走完。
+  const reload = (key: string) => void reloadWithProgress(() => tabs.refresh(key), queryClient, transition)
   const activeKey = tabs.active?.key
 
   useEffect(() => {

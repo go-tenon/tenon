@@ -1,5 +1,6 @@
-// 页面顶部的进度条（@mantine/nprogress）：跳转到还在加载的页面时、重新加载标签时显示，读取完成后走完。
-// 内容区的淡入由 AppLayout 提供（与切换页面时相同），重新加载时也播放一次。
+// 页面顶部的进度条（@mantine/nprogress）：应用内跳转到还在加载的页面时、重新加载标签时显示，读取完成后走完。
+// 第一次打开（包括按浏览器的刷新）时不显示：那是整页加载，浏览器自己显示进度。
+// 重新加载标签时主内容区先淡出，读取完成后淡入；淡出、淡入由 AppLayout 提供。
 
 import { createNprogress, NavigationProgress } from "@mantine/nprogress"
 import type { QueryClient } from "@tanstack/react-query"
@@ -8,11 +9,17 @@ import { createContext, type ReactNode, useContext, useEffect, useRef } from "re
 
 const [store, progress] = createNprogress()
 
-/** 页面顶部的进度条：放在布局中一次。路由在加载新页面（代码、loader）时显示。 */
+/** 页面顶部的进度条：放在布局中一次。应用内跳转、路由在加载新页面（代码、loader）时显示。 */
 export function PageProgress(): ReactNode {
   const pending = useRouterState({ select: (s) => s.status === "pending" })
   const started = useRef(false)
+  // 第一次打开时的加载不算：等路由第一次空闲之后才跟随它。
+  const ready = useRef(false)
   useEffect(() => {
+    if (!ready.current) {
+      if (!pending) ready.current = true
+      return
+    }
     if (pending && !started.current) {
       started.current = true
       progress.start()
@@ -41,31 +48,39 @@ async function settled(queryClient: QueryClient): Promise<void> {
   })
 }
 
+/** 主内容区的过渡：淡出（等动画完成）、淡入。 */
+export interface ContentTransition {
+  out(): Promise<void>
+  in(): void
+}
+
 /**
  * 带进度条地重新加载：进度条开始，执行 reload（返回 false 表示用户取消，例如有未保存的修改时选择留下），
- * 内容区淡入一次，等页面的请求都完成后进度条走完。
+ * 主内容区淡出，等页面的请求都完成后淡入，进度条走完。
  */
 export async function reloadWithProgress(
   reload: () => Promise<boolean>,
   queryClient: QueryClient,
-  flash: () => void,
+  transition: ContentTransition,
 ): Promise<void> {
   progress.start()
   if (!(await reload())) {
     progress.reset()
     return
   }
-  flash()
+  await transition.out()
   await settled(queryClient)
+  transition.in()
   progress.complete()
 }
 
-const FlashContext = createContext<() => void>(() => {})
+const none: ContentTransition = { out: async () => {}, in: () => {} }
+const TransitionContext = createContext<ContentTransition>(none)
 
-/** AppLayout 提供：内容区播放一次进入的动画。 */
-export const ContentFlashProvider = FlashContext.Provider
+/** AppLayout 提供：主内容区的淡出、淡入。 */
+export const ContentTransitionProvider = TransitionContext.Provider
 
-/** 内容区播放一次进入的动画（不在 AppLayout 中时什么也不做）。 */
-export function useContentFlash(): () => void {
-  return useContext(FlashContext)
+/** 主内容区的过渡（不在 AppLayout 中时什么也不做）。 */
+export function useContentTransition(): ContentTransition {
+  return useContext(TransitionContext)
 }

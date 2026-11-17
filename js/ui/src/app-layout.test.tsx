@@ -185,11 +185,11 @@ describe("AppLayout 的多标签", () => {
     await waitFor(() => expect(titles()).toEqual(["*概览", ">用户"]))
   })
 
-  it("刷新按钮重新挂载当前页面，页面顶部显示进度条，页面不加遮罩", async () => {
+  it("刷新按钮重新挂载当前页面，页面顶部显示进度条；第一次打开时不显示", async () => {
     await renderApp(tree({ tabs: true }), { path: "/trade/orders", permissions: ["users:manage"] })
     const before = await screen.findByText("订单页面")
     const progress = () => document.querySelector(".mantine-Progress-root[data-mounted=true]")
-    await waitFor(() => expect(progress()).toBeNull(), { timeout: 2000 }) // 打开页面时的进度条先走完
+    expect(progress()).toBeNull() // 第一次打开（浏览器的整页加载）不显示
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "重新加载当前页面" })))
     expect(progress()).not.toBeNull()
     const after = await screen.findByText("订单页面")
