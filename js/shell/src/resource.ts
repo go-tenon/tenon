@@ -1,6 +1,6 @@
 // 资源：服务端用 rest.API.Resource 声明、tenon generate 生成在 resources.ts 中的后台页面定义。
 // 这里把定义和生成的客户端、校验规则、枚举接在一起，得到与组件库无关的模型：列、筛选条件、表单字段（带显示文字、
-// 输入方式和选项）、权限、读取和修改。运营后台（antd）和控制台（shadcn）用同一个模型渲染。
+// 输入方式和选项）、权限、读取和修改。@go-tenon/ui 的 ResourcePage 按这个模型渲染。
 // 设置（rest.API.Settings、settings.ts）是只有一组值的表单，用同样的字段模型，见 settingsModel。
 
 import { pickLanguage, type Schema } from "@go-tenon/client"
@@ -62,7 +62,7 @@ export interface ResourceDef {
 
 type Generated = { readonly [key: string]: unknown }
 
-/** 表单的校验选项：交给 resolver、antdRule 或 formValidator。 */
+/** 表单的校验选项：交给 formValidator 或 resolver。 */
 export interface RuleOptions {
   components?: { readonly [name: string]: Schema }
   messages?: { readonly [language: string]: { readonly [code: string]: string } }
@@ -143,9 +143,9 @@ export interface ResourceModel {
   update(key: string, body: Record<string, unknown>): Promise<unknown>
   remove(key: string): Promise<unknown>
   run(action: string, key: string): Promise<unknown>
-  /** 表单的校验规则（请求体的 schema），交给 resolver、antdRule 或 formValidator。 */
+  /** 表单的校验规则（请求体的 schema），交给 formValidator 或 resolver。 */
   formSchema(mode: "create" | "update"): Schema
-  /** components、messages 和 language，与 formSchema 一起交给 resolver、antdRule。 */
+  /** components、messages 和 language，与 formSchema 一起交给 formValidator 或 resolver。 */
   ruleOptions: RuleOptions
   /** 一行的标识。 */
   rowKey(row: ResourceRow): string
@@ -441,7 +441,7 @@ export interface SettingsModel {
   query(): { queryKey: readonly unknown[]; queryFn: () => Promise<unknown> }
   /** 保存：调用保存接口，完成后让读取的查询失效。 */
   save(values: Record<string, unknown>): Promise<unknown>
-  /** 表单的校验规则（保存接口的请求体），交给 resolver、antdRule 或 formValidator。 */
+  /** 表单的校验规则（保存接口的请求体），交给 formValidator 或 resolver。 */
   formSchema(): Schema
   ruleOptions: RuleOptions
   display(field: ResourceField, value: unknown): unknown

@@ -64,29 +64,6 @@ document.unsupported_format: This file format is not supported
 document.encrypted: The document is password-protected and cannot be read
 document.corrupt: The document is damaged or not in the expected format
 document.too_large: The document is too large to process
-web.not_found: Page not found
-web.bad_form: The submitted form could not be parsed
-web.bad_query: "Invalid query parameter {{.field}}: {{.message}}"
-web.request_id: "Request ID: {{.id}}"
-ui.pagination.previous: Previous
-ui.pagination.next: Next
-ui.confirm.action: Confirm
-ui.confirm.cancel: Cancel
-ui.sidebar.toggle: Toggle sidebar
-ui.theme.toggle: Toggle dark mode
-docs.toc: On this page
-docs.previous: Previous
-docs.next: Next
-docs.overview: Overview
-docs.copy: Copy
-docs.alert.note: Note
-docs.alert.tip: Tip
-docs.alert.important: Important
-docs.alert.warning: Warning
-docs.alert.caution: Caution
-docs.search: Search
-docs.search_placeholder: Search docs
-docs.no_results: No results
 validation.required: This field is required
 validation.filled: This field must not be empty
 validation.min_length: Must be at least {{.Min}} characters

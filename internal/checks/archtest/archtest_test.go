@@ -51,7 +51,6 @@ var rules = map[string]rule{
 	"form":      {layerFoundation, []string{"i18n"}},
 	"telemetry": {layerFoundation, nil},
 	// 设计令牌：解析 theme/tokens.json，生成三套界面的主题。
-	"theme": {layerFoundation, nil},
 
 	"lock":        {layerInfrastructure, nil},
 	"outbound":    {layerInfrastructure, nil},
@@ -78,7 +77,6 @@ var rules = map[string]rule{
 
 	"httpx":                {layerEntry, []string{"acquire", "enum", "errorx", "form", "health", "i18n", "identity", "logging", "ratelimit"}},
 	"httpx/rest/clientgen": {layerEntry, []string{"command", "enum", "errorx", "httpx", "i18n", "identity", "page"}},
-	"web":                  {layerEntry, []string{"errorx", "form", "httpx", "i18n", "logging", "theme"}},
 	"realtime":             {layerEntry, []string{"broadcast", "httpx", "identity", "logging"}},
 	"ssr":                  {layerEntry, []string{"logging"}},
 	"mcpx":                 {layerEntry, []string{"errorx", "httpx", "identity", "internal/apischema", "logging"}},
@@ -284,13 +282,9 @@ func TestDependencyRules(t *testing.T) {
 		{module + "/mail", module + "/i18n", true},
 		{module + "/mail", module + "/database", false},
 		{module + "/httpx", module + "/mail", false},
-		{module + "/web", module + "/httpx", true},
-		{module + "/httpx", module + "/web", false},
-		{module + "/web", module + "/database", false},
 		{module + "/apitoken", module + "/httpx/rest", false},
 		{module + "/apitoken", module + "/database", false},
 		{module + "/authz", module + "/httpx/rest", false},
-		{module + "/authz", module + "/web", false},
 		{module + "/lock", "github.com/uptrace/bun", true},
 		{module + "/lock", module + "/database", false},
 		{module + "/cleanup", "github.com/jackc/pgx/v5", false},
@@ -309,14 +303,10 @@ func TestDependencyRules(t *testing.T) {
 		{module + "/httpx", module + "/cmd/tenon", false},
 		{module + "/ai/openai", module + "/ai", true},
 		{module + "/ai", module + "/httpx", false},
-		{module + "/web", module + "/filesystem", false},
-		{module + "/web/docs", module + "/web", true},
-		{module + "/web/ui", module + "/web", true},
 		// 引用只能指向同层或更低层。
 		{module + "/errorx", module + "/database", false},
 		{module + "/queue", module + "/httpx", false},
 		{module + "/httpx", module + "/apitoken", false},
-		{module + "/web", module + "/authz", false},
 		{module + "/form", "github.com/danielgtaylor/huma/v2", true},
 		{module + "/page", "net/http", false},
 	} {
@@ -345,7 +335,7 @@ func TestLocalFilesDoesNotLinkS3(t *testing.T) {
 // TestOnlyRealtimeLinksCentrifuge 确保 Centrifuge 只出现在使用 WebSocket 实时频道的应用中：
 // 广播、SSE 和 AI 的集群协作都只依赖 broadcast。
 func TestOnlyRealtimeLinksCentrifuge(t *testing.T) {
-	for _, pkg := range []string{"/broadcast", "/broadcast/natsbroadcast", "/httpx/rest", "/web", "/ai", "/ai/chat"} {
+	for _, pkg := range []string{"/broadcast", "/broadcast/natsbroadcast", "/httpx/rest", "/ssr", "/ai", "/ai/chat"} {
 		out, err := exec.Command("go", "list", "-deps", module+pkg).CombinedOutput()
 		if err != nil {
 			t.Fatalf("go list: %v\n%s", err, out)
@@ -428,21 +418,6 @@ func TestMailCoreDoesNotLinkDrivers(t *testing.T) {
 		}
 		for _, dep := range strings.Fields(string(out)) {
 			if under(dep, "github.com/wneessen/go-mail") || under(dep, "github.com/resend/resend-go") {
-				t.Errorf("%s depends on %s", pkg, dep)
-			}
-		}
-	}
-}
-
-// TestAPIDoesNotLinkTempl 确保 templ 只由 web 引入，JSON API 与认证、授权的依赖中排除了它。
-func TestAPIDoesNotLinkTempl(t *testing.T) {
-	for _, pkg := range []string{module + "/httpx", module + "/httpx/rest", module + "/apitoken", module + "/authz", module + "/oauthserver"} {
-		out, err := exec.Command("go", "list", "-deps", pkg).CombinedOutput()
-		if err != nil {
-			t.Fatalf("go list: %v\n%s", err, out)
-		}
-		for _, dep := range strings.Fields(string(out)) {
-			if under(dep, "github.com/a-h/templ") {
 				t.Errorf("%s depends on %s", pkg, dep)
 			}
 		}

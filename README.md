@@ -1,6 +1,6 @@
 # Tenon
 
-Tenon 是一个用 Go 构建后端服务的框架：业务逻辑写成 action，HTTP 接口、服务端页面、队列任务、定时任务、命令行和 MCP 工具都是调用它的入口。HTTP API 是目前最完整的入口：后台和用户端是调用 API 的单页应用或 App，官网、帮助中心这类公开页面可以在服务端渲染。它为配置、路由、验证、错误处理、日志、认证、数据库、迁移和命令行提供一套统一的约定，同时让你直接使用社区组件的原生能力：chi 与 Huma、templ、htmx 与 shadcn-templ、slog 与 slog-multi / slog-formatter / slog-chi、Bun 与 pgx、goose、Cobra、go-i18n 和 cockroachdb/errors。
+Tenon 是一个用 Go 构建后端服务的框架：业务逻辑写成 action，HTTP 接口、服务端页面、队列任务、定时任务、命令行和 MCP 工具都是调用它的入口。HTTP API 是目前最完整的入口：网页用 React、Mantine 和 TanStack Start 编写，由 Go 托管的 Bun 进程渲染，和 App 一样调用同一组 API；官网、文档这类公开页面在服务端渲染或构建时预渲染。它为配置、路由、验证、错误处理、日志、认证、数据库、迁移和命令行提供一套统一的约定，同时让你直接使用社区组件的原生能力：chi 与 Huma、slog 与 slog-multi / slog-formatter / slog-chi、Bun ORM 与 pgx、goose、Cobra、go-i18n 和 cockroachdb/errors。
 
 - **依赖一目了然**：没有服务容器和全局状态，所有依赖都通过普通的构造函数显式传递。
 - **一个动作一个文件**：业务逻辑写成 action，HTTP 接口、队列任务、定时任务、命令行和 MCP 工具都是它的入口方法。
@@ -29,8 +29,7 @@ go get github.com/go-tenon/tenon@main
 | 组织项目代码 | [目录结构](docs/concepts/structure.md) · [依赖装配](docs/concepts/dependencies.md) · [业务动作](docs/concepts/actions.md) |
 | 编写接口 | [路由](docs/http/routing.md) · [请求](docs/http/requests.md) · [验证](docs/http/validation.md) · [响应](docs/http/responses.md) · [认证](docs/security/authentication.md) |
 | 为前端和 App 生成接口类型 | [客户端代码](docs/http/clients.md) |
-| 把 React、Vue 等单页应用打进二进制 | [单页应用](docs/frontend/spa.md) |
-| 渲染公开页面 | [视图](docs/web/views.md) · [表单](docs/web/forms.md) · [界面组件](docs/web/components.md) · [文档页](docs/web/doc-pages.md) |
+| 编写网页并打进二进制 | [服务端渲染](docs/frontend/ssr.md) · [TanStack Start 的接入](docs/frontend/start.md) · [界面组件](docs/frontend/ui.md) |
 | 推送实时消息 | [服务端推送](docs/http/sse.md) · [广播](docs/libraries/broadcasting.md) · [实时频道](docs/libraries/realtime.md) |
 | 查看全部路由 | [routes 命令](docs/general/commands.md#routes-command) |
 | 处理错误与日志 | [错误处理](docs/general/errors.md) · [日志](docs/general/logging.md) |

@@ -298,17 +298,11 @@ res, err := SearchIndex.Search(ctx, db, search.Query{Text: in.Q, Facets: []strin
 <a id="highlighting"></a>
 ### 高亮
 
-有查询文本时，`Hit.Highlights` 给出命中的文本字段的摘要。摘要按命中与否分成若干段，页面中把命中的部分放进 `<mark>`：
+有查询文本时，`Hit.Highlights` 给出命中的文本字段的摘要。摘要按命中与否分成若干段（JSON 中是 `[{"text": "…", "mark": true}, …]`），页面中把命中的部分放进 `<mark>`：
 
-```templ
-templ snippet(s search.Snippet) {
-    for _, p := range s {
-        if p.Mark {
-            <mark>{ p.Text }</mark>
-        } else {
-            { p.Text }
-        }
-    }
+```tsx
+function Snippet({ parts }: { parts: { text: string; mark?: boolean }[] }) {
+  return parts.map((p, i) => (p.mark ? <mark key={i}>{p.text}</mark> : <span key={i}>{p.text}</span>))
 }
 ```
 

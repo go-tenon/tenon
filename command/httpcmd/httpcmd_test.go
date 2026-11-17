@@ -9,16 +9,15 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/a-h/templ"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/go-chi/chi/v5"
+	"github.com/go-tenon/tenon/httpx"
 	"github.com/spf13/cobra"
 
 	"github.com/go-tenon/tenon/command"
 	"github.com/go-tenon/tenon/command/httpcmd"
 	"github.com/go-tenon/tenon/httpx/rest"
 	"github.com/go-tenon/tenon/identity"
-	"github.com/go-tenon/tenon/web"
 )
 
 func newRoot(cmds ...*cobra.Command) *cobra.Command {
@@ -64,18 +63,19 @@ func appRoutes(t *testing.T) func() chi.Routes {
 		router.Handle("/static/*", http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 			t.Fatal("native handler must not run")
 		}))
-		page := func(http.ResponseWriter, *http.Request) error {
-			t.Fatal("page handler must not run")
-			return nil
-		}
-		site := web.New(web.Options{ErrorPage: errorPage}).Routes(router)
-		site.Get("/", page)
-		site.Get("/posts/{slug}", page)
+		router.Method(http.MethodGet, "/", publicPage{t})
+		router.Method(http.MethodGet, "/posts/{slug}", publicPage{t})
 		return router
 	}
 }
 
-func errorPage(int, string) templ.Component { return templ.NopComponent }
+// publicPage 是声明为公开的页面路由。
+type publicPage struct{ t *testing.T }
+
+func (p publicPage) ServeHTTP(http.ResponseWriter, *http.Request) {
+	p.t.Fatal("page handler must not run")
+}
+func (publicPage) DescribeRoute() httpx.Route { return httpx.Route{Access: httpx.AccessPublic} }
 
 // versioned 构造挂着 /v1、/v2 两个 API 的路由。
 func versioned() chi.Routes {

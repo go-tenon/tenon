@@ -12,7 +12,6 @@
 - [命令测试](#command-tests)
 - [测试 OpenAPI 文档](#testing-openapi)
 - [常见问题](#troubleshooting)
-- [API 参考](#api-reference)
 
 <a id="http-tests"></a>
 ## HTTP 测试
@@ -100,55 +99,7 @@ func TestCreateRejectsBadRequests(t *testing.T) {
 <a id="page-tests"></a>
 ## 页面测试
 
-[服务端渲染的页面](../web/views.md)用 `web/webtest` 测试。`webtest.Client` 像浏览器一样向页面路由发送请求，保存响应设置的 cookie，并读取 htmx 的响应头。下面测试文章页和列表页：
-
-```go
-func TestPages(t *testing.T) {
-    db := dbtest.Open(t, migrations.FS)
-    alice := identity.Subject{Type: user.Type, ID: "alice", Permissions: []string{"articles"}}
-    ctx := context.Background()
-    draft, err := article.NewCreate(db).Handle(ctx, alice, article.Changes{Title: "Draft", Slug: "draft"})
-    if err != nil {
-        t.Fatal(err)
-    }
-    hello, err := article.NewCreate(db).Handle(ctx, alice, article.Changes{Title: "Hello", Slug: "hello"})
-    if err != nil {
-        t.Fatal(err)
-    }
-    if _, err := article.NewPublish(db).Handle(ctx, alice, hello.ID); err != nil {
-        t.Fatal(err)
-    }
-
-    pages := web.New(web.Options{ErrorPage: ui.ErrorPage})
-    router := chi.NewRouter()
-    articleweb.Register(router, pages, db)
-    c := webtest.New(t, router)
-
-    // 已发布的文章可以访问，草稿对访客是 404
-    if res := c.Get("/articles/hello"); res.Code != http.StatusOK || !strings.Contains(res.Text(), "<h1>Hello</h1>") {
-        t.Fatalf("published: %d", res.Code)
-    }
-    if res := c.Get("/articles/" + draft.Slug); res.Code != http.StatusNotFound {
-        t.Fatalf("draft: %d", res.Code)
-    }
-    // 列表的局部请求只返回列表区域，并把地址栏改为这个状态
-    res := c.Get("/articles?q=hel&page=1", webtest.HTMX)
-    if !strings.Contains(res.Text(), "Hello") || res.PushURL() != "/articles?q=hel" {
-        t.Fatalf("list: %d %q", res.Code, res.PushURL())
-    }
-}
-```
-
-页面路由与应用相同，测试覆盖了授权、错误页和局部更新。请求默认是浏览器的整页请求。`webtest.HTMX` 让它像 htmx 替换页面中某个元素时发出的一样，`webtest.Header` 设置其他请求头，例如 `Accept-Language`。multipart 表单等其他请求用 `c.Do` 发送。响应除了 `Code`、`Text()`，还可以读取 htmx 的响应头：
-
-| 方法 | 返回 |
-| --- | --- |
-| `Redirect()` | 跳转的目标：`303` 的 `Location`，或 htmx 请求的 `HX-Redirect` |
-| `Messages()` | 随局部请求送达的错误提示，见[错误页](../web/views.md#error-pages) |
-| `Event(name)` | `HX-Trigger` 中事件 `name` 的 detail |
-| `PushURL()` | `web.PushURL` 推送的地址 |
-
-`webtest` 不运行浏览器中的脚本：确认对话框能否打开、提示是否弹出这类交互，由框架的组件保证，应用测试服务端的响应即可。
+页面由前端渲染，数据来自 JSON 接口，所以服务端只需要测试接口，见上文。页面本身在前端测试：组件和 hook 用 Vitest 和 Testing Library，需要真实浏览器的交互用 Playwright，见[前端规范](../frontend/conventions.md)。`@go-tenon/ui` 的 `UIProvider` 传 `env="test"`，关闭过渡动画和 portal。
 
 <a id="command-tests"></a>
 ## 命令测试
@@ -230,33 +181,6 @@ func TestOpenAPI(t *testing.T) {
 
 有构造函数或 `Register` 在注册时使用了依赖，而生成文档时依赖是 `nil`。构造函数只保存依赖，见[依赖装配](../concepts/dependencies.md#constructor-injection)。
 
-**页面测试中，确认对话框、提示没有出现**
-
-`webtest` 不运行浏览器中的脚本，这些交互由框架的组件保证。测试服务端的响应即可。
-
 **命令测试的输出是空的**
 
 命令把结果写到了 `os.Stdout`，而不是 `cmd.OutOrStdout()`。改用后者，测试中用 `SetOut` 才能捕获，见[输入与输出](../general/commands.md#input-and-output)。
-
-<a id="api-reference"></a>
-## API 参考
-
-包 `github.com/go-tenon/tenon/web/webtest`。
-
-### New
-
-```go
-func New(t testing.TB, h http.Handler) *Client
-```
-
-创建测试页面用的客户端，在多个请求之间保存 cookie。
-
-### HTMX、HTMXPage、Header
-
-```go
-func HTMX(r *http.Request)
-func HTMXPage(r *http.Request)
-func Header(name, value string) Option
-```
-
-请求选项：`HTMX` 模拟局部 htmx 请求，`HTMXPage` 模拟整页 htmx 请求，`Header` 设置请求头。

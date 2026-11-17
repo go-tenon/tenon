@@ -27,10 +27,6 @@ jobs:
         with:
           version: v2.15.0
 
-      # 提交的 templ 代码必须是最新生成的。
-      - name: Generated code
-        run: cd web/ui && go tool templ generate && git diff --exit-code -- .
-
   # js 中的前端包：Biome 检查、类型检查和测试。
   js:
     runs-on: ubuntu-latest

@@ -4,5 +4,5 @@
 // Defaults 按 Config 返回基础中间件栈，其中每个中间件也可单独使用，
 // RateLimit 等可选中间件由应用按需安装；
 // ListenAndServe 按 Config 启动服务器，并在 ctx 取消时排空请求后退出。
-// SPA 提供嵌入二进制的单页应用，开发时转发给前端的开发服务器。
+// SessionCookie 在浏览器的会话 cookie 中携带登录 token，SameOrigin 检查跨站请求。
 package httpx

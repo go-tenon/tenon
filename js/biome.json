@@ -1,18 +1,7 @@
 {
   "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
   "files": {
-    "includes": [
-      "**",
-      "!**/node_modules",
-      "!**/dist",
-      "!e2e/test-results",
-      "!registry/src/components/ui",
-      "!registry/src/hooks",
-      "!registry/src/lib",
-      "!registry/r",
-      "!registry/src/index.css",
-      "!**/routeTree.gen.ts"
-    ]
+    "includes": ["**", "!**/node_modules", "!**/dist", "!e2e/test-results", "!**/routeTree.gen.ts"]
   },
   "formatter": {
     "indentStyle": "space",

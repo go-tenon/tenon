@@ -84,13 +84,11 @@ bun run dev   # 即 go tool tenon dev
 2. **你的 Go 程序**：用 `serve` 命令运行。它把页面请求转发给对应的开发服务器，所以你只需要访问 Go 程序的地址（默认 <http://localhost:8080>），页面和接口都在这里，见[前端与 API 同源](scaffolding.md#frontend)。
 3. **监视 Go 代码**：`.go` 文件（测试文件除外）、`go.mod`、`go.sum` 变化后重新编译。编译成功时，先平滑地停止旧的程序（等它处理完正在处理的请求），再启动新的；然后运行一次 [`generate`](#generate)，前端的类型随之更新。编译失败时打印错误，旧的程序继续运行，你改好代码保存后再试。
 
-此外：
-
-- 项目中有服务端渲染的页面（`.templ` 文件）时，同时运行 templ 的生成和自动刷新，这时打开 <http://localhost:7331>，见[视图](../web/views.md)。
+此外，`tenon.json` 的 `tools` 中的工具也一起运行，见[配置](#configuration)。
 
 启动前，`tenon dev` 会检查需要的命令（Go、Bun 等）是否已经安装，缺少时直接告诉你。
 
-按 Ctrl+C 停止。它先平滑地停止程序，再生成正式的 templ 代码和样式表（用到它们时）。前端不在这时构建：发布时由 `tenon build` 编译。
+按 Ctrl+C 停止。它先平滑地停止程序，再运行 `tools` 的 `build` 命令。前端不在这时构建：发布时由 `tenon build` 编译。
 
 <a id="generate"></a>
 ## tenon generate：生成客户端
@@ -161,7 +159,7 @@ return ssr.Run(ctx, serve, webPages, adminPages)
 
 **`tenon dev` 提示缺少某个命令**
 
-按提示安装，例如 Bun 见[准备工作](scaffolding.md#requirements)；用到 templ 时运行 `go get -tool github.com/a-h/templ/cmd/templ`。
+按提示安装，例如 Bun 见[准备工作](scaffolding.md#requirements)。
 
 **修改了 Go 代码，程序没有更新**
 
@@ -271,18 +269,15 @@ Tenon 也提供了一些前端包，例如 `@go-tenon/client`（调用接口、�
 | `url` | `http://localhost:8080` | 应用的地址 |
 | `apis.<BasePath>.name` | `BasePath` 的最后一段 | 这个 API 的 TypeScript 客户端的目录名 |
 | `apis.<BasePath>.go` | 不生成 | 这个 API 的 Go 客户端的目录 |
-| `templ.proxyPort` | `7331` | templ 自动刷新代理的端口 |
-| `templ.static` | 不监视 | 文件变化时刷新浏览器的目录 |
-| `tailwind.input`、`tailwind.output` | 不使用 | Tailwind 的入口和生成的样式表，见[用 Tailwind 编写样式](../web/assets.md#tailwind) |
 | `tools` | 空 | 其他工具：`watch` 是开发时运行的命令，`build` 是停止后运行的命令 |
 
-例如开发时用 esbuild 打包公开页面的脚本：
+例如开发时用 esbuild 打包一个嵌入到其他网站的小组件脚本：
 
 ```json
 {
   "tools": [{
-    "watch": ["esbuild", "internal/web/js/app.js", "--bundle", "--outdir=internal/web/static/js", "--watch=forever"],
-    "build": ["esbuild", "internal/web/js/app.js", "--bundle", "--outdir=internal/web/static/js", "--minify"]
+    "watch": ["esbuild", "widget/src/widget.js", "--bundle", "--outdir=widget/dist", "--watch=forever"],
+    "build": ["esbuild", "widget/src/widget.js", "--bundle", "--outdir=widget/dist", "--minify"]
   }]
 }
 ```

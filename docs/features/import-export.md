@@ -1,6 +1,6 @@
 # 导入与导出
 
-后台管理系统几乎都要支持用 Excel 批量导入数据，以及把列表导出成表格。`sheet` 包读写 CSV 和 Excel（XLSX）两种格式，导入时按[验证](../http/validation.md)规则检查每一行，规则与 JSON 接口和[页面表单](../web/forms.md)用的是同一个结构体。
+后台管理系统几乎都要支持用 Excel 批量导入数据，以及把列表导出成表格。`sheet` 包读写 CSV 和 Excel（XLSX）两种格式，导入时按[验证](../http/validation.md)规则检查每一行，规则与 JSON 接口用的是同一个结构体。
 
 阅读前需要了解：[验证](../http/validation.md)；[业务动作](../concepts/actions.md)；[迭代器](https://go.dev/blog/range-functions)（`sheet.Decode` 返回 `iter.Seq2`，用 `for record, err := range ...` 遍历）。
 
@@ -161,7 +161,7 @@ func (a *Import) HTTP(ctx context.Context, in *ImportInput) (*ImportOutput, erro
 }
 ```
 
-`sheet.Decode` 返回一个迭代器，每次产出一行 `sheet.Record`：`Line` 是这一行在 Excel 中的行号，`Data` 是解码后的 `Changes`，`Errors` 是验证失败的提示，与[表单的验证提示](../web/forms.md#validation-messages)相同，按请求的语言翻译。验证失败的行同样会产出，用 `Valid` 判断。
+`sheet.Decode` 返回一个迭代器，每次产出一行 `sheet.Record`：`Line` 是这一行在 Excel 中的行号，`Data` 是解码后的 `Changes`，`Errors` 是验证失败的提示，与[接口的验证提示](../http/validation.md#validation-messages)相同，按请求的语言翻译。验证失败的行同样会产出，用 `Valid` 判断。
 
 `row` 把 `Create` 返回的业务错误分两种处理：slug 重复只是这一行的问题，用 `SetError` 放到 `slug` 字段上，接着处理下一行；其他错误（例如没有权限、数据库不可用）对每一行都一样，直接结束导入。[后台导入](background-imports.md#processing-imports)也用这个 `row`。前端拿到的结果类似：
 
@@ -220,7 +220,7 @@ func (a *Import) Template(ctx context.Context, in *TemplateInput) (*huma.StreamR
 - **XLSX** 读取第一个工作表。单元格的值是 Excel 中显示的文本，例如日期按单元格设置的格式显示，布尔值是 `TRUE`、`FALSE`。整个文件会被读入内存，所以上传接口要限制文件大小，用完调用 `Close`。
 - **CSV** 去掉开头的 BOM；内容按 UTF-8 解码，解码失败时改用 GB18030，Excel 中文版另存的 CSV 就是这种编码。分隔符按表头一行在逗号、分号和制表符中自动选择。
 
-转换规则与[表单](../web/forms.md#defining-forms)相同，例如数字字段的空单元格视为未填写，布尔字段接受 `true`、`false`、`1`、`0`（不区分大小写）。切片字段的单元格按逗号拆分为多个值，中文逗号也可以。
+转换规则由 `form` 包实现，例如数字字段的空单元格视为未填写，布尔字段接受 `true`、`false`、`1`、`0`（不区分大小写）。切片字段的单元格按逗号拆分为多个值，中文逗号也可以。
 
 <a id="exporting"></a>
 ## 导出
@@ -372,7 +372,7 @@ func Header[T any]() []string
 func Template[T any](w RowWriter, examples ...T) error
 ```
 
-`Decode` 按表头找到每一列，逐行转换并验证，规则与[表单](../web/forms.md)相同；表头中有不认识的列时返回 `ErrUnknownColumn`。`Template` 写出只有表头和示例行的模板。
+`Decode` 按表头找到每一列，逐行转换并验证，规则与 JSON 接口相同；表头中有不认识的列时返回 `ErrUnknownColumn`。`Template` 写出只有表头和示例行的模板。
 
 ### 写入
 

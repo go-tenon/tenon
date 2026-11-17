@@ -13,6 +13,6 @@
 - [邮件](mail.md)：装配发送器、编写模板、发送邮件
 - [邮件服务商](mail-providers.md)：SMTP、Resend、SES，多个服务商自动切换
 - [短信](sms.md)：发送短信，模板与服务商
-- [生成 PDF](pdf.md)：用 templ 和 CSS 生成 PDF
+- [生成 PDF](pdf.md)：用前端的 React 打印模板生成 PDF
 - [出站请求](outbound.md)：安全地请求外部 HTTP 服务
 - [NATS](nats.md)：广播与在线成员共用的 NATS 连接

@@ -1,6 +1,7 @@
 // @go-tenon/ui 是框架的界面层：Mantine 的三套样式预设（运营后台、SaaS 控制台、官网和内容站），
 // 以及按 @go-tenon/shell 的约定实现的布局和部件。逻辑（菜单、权限、多标签、会话）都在 shell 中，这里只负责外观。
 // 样式：import "@go-tenon/ui/styles.css"。
+export * from "./activity"
 export * from "./app-layout"
 export * from "./auth"
 export * from "./color-scheme"
@@ -22,3 +23,4 @@ export * from "./site"
 export * from "./tab-bar"
 export * from "./theme"
 export * from "./transfer"
+export * from "./version"

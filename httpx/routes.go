@@ -32,7 +32,7 @@ const (
 )
 
 // RouteDescriber 由路由的处理器实现，向 Routes 报告访问策略等信息。
-// httpx/rest 注册的 API 路由、web 注册的页面路由和 web.Assets 都实现了它。
+// httpx/rest 注册的 API 路由实现了它。
 type RouteDescriber interface {
 	// DescribeRoute 返回除 Method、Path 以外的字段。
 	DescribeRoute() Route

@@ -133,7 +133,7 @@ export const Route = createFileRoute("/t/$tenant")({
 <a id="forms"></a>
 ## 表单
 
-表单在前端用生成的 `schemas.ts` 和 `messages.ts` 校验：规则、提示的文字都与服务端相同，见[校验规则与验证提示](client-react.md#validation-rules)。服务端返回的字段错误显示在对应的输入框下面。shell 不提供表单组件，只对接 react-hook-form 和 antd Form。
+表单在前端用生成的 `schemas.ts` 和 `messages.ts` 校验：规则、提示的文字都与服务端相同，见[校验规则与验证提示](client-react.md#validation-rules)。服务端返回的字段错误显示在对应的输入框下面。shell 不提供表单组件，只提供与表单库无关的部分。用 Mantine 时直接用 `@go-tenon/ui` 的 `useSchemaForm`、`applyServerErrors` 和 `FormError`，见[界面组件的表单](ui.md#forms)，它们就是用下面这些函数接上 `@mantine/form` 的。
 
 用 react-hook-form 时，交给 `useForm` 一个 `resolver`：
 
@@ -155,17 +155,6 @@ function ArticleForm() {
 }
 ```
 
-用 antd Form 时，每个 `Form.Item` 用同一条规则，出错时把 Form 实例交给 `setServerErrors`：
-
-```tsx
-const rule = antdRule(schemas.article.create.body, rules)
-
-<Form form={form} onFinish={(v) => save.mutate(v, { onError: (err) => setServerErrors(err, form) })}>
-  <Form.Item name="title" rules={[rule]}><Input /></Form.Item>
-  <Form.Item name={["items", 0, "name"]} rules={[rule]}><Input /></Form.Item>
-</Form>
-```
-
 - 字段的路径用点连接，例如 `items.0.name`，与服务端错误的位置 `body.items[0].name` 对应。
 - `setServerErrors` 把请求体的字段错误设置到对应字段，返回不属于某个字段的错误（例如 slug 已被使用、断网），它是 `describeError` 的结果：`message` 是服务端翻译好的提示，断网等没有服务端提示时为空，按 `kind` 显示。
 - `serverErrors(err)` 只拆分，不设置：`{ fields, form }`；`formValidator(schema, rules)` 返回校验整个表单的函数，其他表单库可以用它们对接。
@@ -173,7 +162,7 @@ const rule = antdRule(schemas.article.create.body, rules)
 有未保存的修改时，`useUnsavedChanges` 在离开页面前询问，刷新或关闭浏览器时由浏览器提示。保存成功后先调用 `release`，跳转时不再询问：
 
 ```tsx
-const unsaved = useUnsavedChanges(form.formState.isDirty)
+const unsaved = useUnsavedChanges(form.isDirty())
 const save = useMutation({
   mutationFn: …,
   onSuccess: () => {
@@ -183,9 +172,9 @@ const save = useMutation({
 })
 ```
 
-默认用浏览器的确认框，`useUnsavedChanges(dirty, { confirm })` 换成组件库的对话框（`confirm` 返回 `true` 时离开）。页面在[标签](#tabs)中时，切换标签不询问，关闭标签时才询问。
+默认用浏览器的确认框，`useUnsavedChanges(dirty, { confirm })` 换成组件库的对话框（例如 `@go-tenon/ui` 的 `confirm`）（`confirm` 返回 `true` 时离开）。页面在[标签](#tabs)中时，切换标签不询问，关闭标签时才询问。
 
-**自动保存。** 设置这类页面可以不要“保存”按钮，修改后自动保存。`createAutoSaver(initial, { save, validate, delay })` 是与表单库无关的部分：把值的变化交给 `change`，它在用户停下 `delay`（默认 600 毫秒）后保存；校验不通过、与上次保存成功的值相同时不保存；保存一次只进行一个，期间的变化在完成后再保存一次；`stop` 立即保存还在等待的变化并停止接收，`resume` 恢复接收，`discard` 放弃等待的变化。在 React 中，effect 激活时调用 `resume`、清理时调用 `stop`：`StrictMode` 会先清理再重新激活，`Activity` 隐藏时清理、显示时重新激活，同一个实例要能停下再继续。`status()` 和 `subscribe` 给出状态（`pending`、`saving`、`saved`、`error`）。shadcn 外观的 `useAutoSave` 用它接上 react-hook-form，见 [shadcn registry](registry.md#blocks)；antd Form 可以在 `onValuesChange` 中调用 `change`。
+**自动保存。** 设置这类页面可以不要“保存”按钮，修改后自动保存。`createAutoSaver(initial, { save, validate, delay })` 是与表单库无关的部分：把值的变化交给 `change`，它在用户停下 `delay`（默认 600 毫秒）后保存；校验不通过、与上次保存成功的值相同时不保存；保存一次只进行一个，期间的变化在完成后再保存一次；`stop` 立即保存还在等待的变化并停止接收，`resume` 恢复接收，`discard` 放弃等待的变化。在 React 中，effect 激活时调用 `resume`、清理时调用 `stop`：`StrictMode` 会先清理再重新激活，`Activity` 隐藏时清理、显示时重新激活，同一个实例要能停下再继续。`status()` 和 `subscribe` 给出状态（`pending`、`saving`、`saved`、`error`）。`@go-tenon/ui` 的 `SettingsForm` 用它实现自动保存，见[设置](ui.md#settings)。
 
 <a id="lists"></a>
 ## 列表

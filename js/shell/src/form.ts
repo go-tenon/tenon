@@ -1,5 +1,5 @@
 // 表单：用生成的 schemas.ts 和 messages.ts 在前端校验（规则和提示与服务端相同），把服务端返回的错误显示到字段上。
-// 只按形状对接 react-hook-form 和 antd Form，不依赖它们。
+// 只按形状对接 react-hook-form 和 @mantine/form，不依赖它们。
 
 import {
   describeError,
@@ -70,30 +70,6 @@ export function resolver<T>(schema: Schema, options: FormRulesOptions = {}): (va
   }
 }
 
-/** antd Form.Item 的校验规则：校验整个表单，取出这个字段的提示。 */
-export type AntdRule = (form: { getFieldsValue(all: true): unknown }) => {
-  /** rule 中的 field 是字段的路径，例如 items.0.name（antd 在运行时传入，类型中没有声明）。 */
-  validator(rule: object, value: unknown): Promise<void>
-}
-
-/**
- * antd Form.Item 的 rules：
- *
- *   const rule = antdRule(schemas.article.create.body, { components, messages, language })
- *   <Form.Item name="title" rules={[rule]}>
- *
- * 字段的路径来自 Form.Item 的 name，嵌套的 ["items", 0, "name"] 对应 items.0.name。
- */
-export function antdRule(schema: Schema, options: FormRulesOptions = {}): AntdRule {
-  const check = formValidator(schema, options)
-  return (form) => ({
-    async validator(rule) {
-      const message = check(form.getFieldsValue(true))[(rule as { field?: string }).field ?? ""]
-      if (message) throw new Error(message)
-    },
-  })
-}
-
 /** 服务端错误拆分的结果。 */
 export interface ServerErrors {
   /** 请求体中字段的错误：字段路径到提示。 */
@@ -111,29 +87,18 @@ export function serverErrors(err: unknown): ServerErrors {
   return Object.keys(fields).length > 0 ? { fields } : { fields, form: describeError(err) }
 }
 
-/** react-hook-form 的 setError，或者 antd Form 实例的 setFields。 */
-export type ErrorTarget =
-  | { setError(name: string, error: ResolverFieldError): void }
-  | { setFields(fields: { name: unknown; errors?: string[] }[]): void }
+/** 接收字段错误的表单，例如 react-hook-form 的 useForm() 返回值。 */
+export type ErrorTarget = { setError(name: string, error: ResolverFieldError): void }
 
 /**
  * 把接口返回的错误设置到表单：字段错误显示在字段下面，返回整个表单的错误（没有时为 undefined）。
- * target 是 react-hook-form 的 useForm() 返回值，或者 antd 的 Form 实例：
+ * target 是 react-hook-form 的 useForm() 返回值；@mantine/form 见 @go-tenon/ui 的 applyServerErrors：
  *
  *   onError: (err) => setFormError(setServerErrors(err, form)?.message)
  */
 export function setServerErrors(err: unknown, target: ErrorTarget): ErrorInfo | undefined {
   const { fields, form } = serverErrors(err)
-  if ("setError" in target) {
-    for (const [path, msg] of Object.entries(fields)) target.setError(path, { type: "server", message: msg })
-  } else {
-    target.setFields(
-      Object.entries(fields).map(([path, msg]) => ({
-        name: path.split(".").map((p) => (/^\d+$/.test(p) ? Number(p) : p)),
-        errors: [msg],
-      })),
-    )
-  }
+  for (const [path, msg] of Object.entries(fields)) target.setError(path, { type: "server", message: msg })
   return form
 }
 
@@ -153,7 +118,7 @@ export interface UnsavedChanges {
 
 /**
  * 有未保存的修改（dirty 为 true）时：在应用内离开页面前询问，刷新或关闭浏览器时由浏览器提示。
- * dirty 来自表单库，例如 react-hook-form 的 formState.isDirty、antd 的 form.isFieldsTouched()。
+ * dirty 来自表单库，例如 @mantine/form 的 form.isDirty()、react-hook-form 的 formState.isDirty。
  *
  * 页面在标签中时（见 TabsOutlet），切换标签会保留页面的状态，所以不询问；改为登记这个标签有未保存的修改，
  * 在关闭、刷新这个标签，以及 confirmDiscard（退出登录、切换租户）时询问。

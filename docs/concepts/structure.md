@@ -113,9 +113,6 @@ blog/
 
 你会发现模块里没有一个包揽所有操作的 `Service`：动作多了，只是文件多了，每个文件仍然只关心一件事。当动作多到一个目录难以浏览时，按子领域拆成新的包，例如把评论拆到 `internal/comment`。
 
-> [!NOTE]
-> 服务端渲染的页面放在子包中，例如 `article/articleweb`。templ 组件要导入 `article` 的类型，放在同一个包里会循环导入。
-
 <a id="the-migrations-directory"></a>
 ### migrations
 
@@ -214,7 +211,7 @@ Tenon 的每个包都可以单独使用，按需引入即可。顶层的包分�
 | `crypt` | 用应用密钥加密、签名链接 | [加密与签名链接](../security/encryption.md) |
 | `enum` | 带显示文字的枚举：取值、校验和按语言翻译的显示文字 | [带显示文字的枚举](../http/validation.md#enums) |
 | `errorx` | 带稳定错误码和分类的业务错误 | [错误处理](../general/errors.md) |
-| `form` | 按 Huma 标签转换、验证文本字段，表单和表格导入共用 | [表单](../web/forms.md) |
+| `form` | 按 Huma 标签转换、验证文本字段，表格导入和 RPC 共用 | [导入与导出](../features/import-export.md) |
 | `hashing` | 密码哈希 | [哈希](../security/hashing.md) |
 | `health` | 检查依赖是否可用，供就绪检查使用 | [健康检查](../http/lifecycle.md#health-checks) |
 | `doctor` | 检查运行环境的版本、设置和权限，给出修改方法；`doctorcmd` 是 `doctor` 命令 | [自检](../installation/doctor.md) |
@@ -257,11 +254,10 @@ Tenon 的每个包都可以单独使用，按需引入即可。顶层的包分�
 
 | 包 | 用途 | 文档 |
 | --- | --- | --- |
-| `httpx` | 中间件、平滑停机、HTTP 就绪检查、单页应用 | [中间件](../http/middleware.md)、[HTTP 服务的生命周期](../http/lifecycle.md) |
+| `httpx` | 中间件、平滑停机、HTTP 就绪检查、会话 cookie | [中间件](../http/middleware.md)、[HTTP 服务的生命周期](../http/lifecycle.md) |
 | `httpx/rest` | 基于 Huma 的路由注册、错误转换与 OpenAPI | [路由](../http/routing.md) |
 | `httpx/rest/clientgen` | 从路由生成 TypeScript 与 Go 客户端 | [客户端代码](../http/clients.md) |
-| `web` | 服务端渲染的公开页面：组件、错误页、表单、静态文件 | [视图](../web/views.md) |
-| `web/ui`、`web/docs` | 界面组件；Markdown 文档页 | [界面组件](../web/components.md)、[文档页](../web/doc-pages.md) |
+| `ssr` | 托管前端编译出的 SSR 程序，页面请求经 unix socket 交给它渲染 | [服务端渲染](../frontend/ssr.md) |
 | `realtime` | 嵌入 Centrifuge 的 WebSocket 频道 | [实时频道](../libraries/realtime.md) |
 | `mcpx` | 把动作作为 MCP 工具提供给 AI 客户端 | [MCP 服务](../ai/mcp.md) |
 | `natsrpc` | 把动作作为 RPC 端点，其他服务经由 NATS 同步调用 | [提供和调用端点](../rpc/endpoints.md) |

@@ -4,9 +4,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
-	"net"
 	"net/http"
-	neturl "net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -48,9 +46,6 @@ func (d dev) serve(ctx context.Context) error {
 		app, exited = d.start(bin)
 		if app == nil {
 			return
-		}
-		if d.cfg.Templ != nil {
-			go d.reloadWhenUp(ctx)
 		}
 		d.generate(ctx, bin)
 	}
@@ -108,14 +103,6 @@ func (d dev) start(bin string) (*exec.Cmd, chan error) {
 	cmd := exec.Command(bin, d.serveArgs()...)
 	cmd.Stdout, cmd.Stderr = d.out, d.errOut
 	cmd.Env = os.Environ()
-	if d.cfg.Templ != nil {
-		// 与 templ generate --watch 的 --cmd 相同：生成的代码从 _templ.txt 读取文本，只改文字时直接生效，跳过重新编译。
-		root, _ := filepath.Abs(".")
-		if resolved, err := filepath.EvalSymlinks(root); err == nil {
-			root = resolved
-		}
-		cmd.Env = append(cmd.Env, "TEMPL_DEV_MODE=true", "TEMPL_DEV_MODE_WATCH_ROOT="+root)
-	}
 	ownGroup(cmd)
 	exited := make(chan error, 1)
 	if err := cmd.Start(); err != nil {
@@ -194,32 +181,4 @@ func waitHTTP(ctx context.Context, url string, limit time.Duration) {
 			return
 		}
 	}
-}
-
-// reloadWhenUp 等应用开始监听后刷新浏览器，最多等 10 秒。
-func (d dev) reloadWhenUp(ctx context.Context) {
-	host := hostPort(d.cfg.URL)
-	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline) && ctx.Err() == nil; time.Sleep(100 * time.Millisecond) {
-		if c, err := net.DialTimeout("tcp", host, time.Second); err == nil {
-			_ = c.Close()
-			d.reload()
-			return
-		}
-	}
-}
-
-// hostPort 返回 raw 的主机和端口，没有端口时按协议补上。
-func hostPort(raw string) string {
-	u, err := neturl.Parse(raw)
-	if err != nil {
-		return raw
-	}
-	if u.Port() != "" {
-		return u.Host
-	}
-	port := "80"
-	if u.Scheme == "https" {
-		port = "443"
-	}
-	return net.JoinHostPort(u.Hostname(), port)
 }

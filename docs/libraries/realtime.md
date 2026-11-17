@@ -279,7 +279,7 @@ Centrifuge 只链接进使用了 `realtime` 的应用。
 
 `serve` 和 `start` 都挂载了 `/realtime`，起步阶段直接使用即可。WebSocket 是长连接：每次升级，旧进程停止时断开它上面的全部连接，客户端在同一时刻重连。接口发布频繁、连接很多时，把实时连接交给单独的一组 `realtime` 进程，升级接口时它们保持在线，大量空闲连接也与接口分开占用资源。
 
-`realtime` 进程运行与 `serve` 相同的路由，只是监听另一个地址。把[装配页面](../web/views.md#assembling-pages)中 `HTTP` 方法的内容移到 `serveOn`，两个部分共用：
+`realtime` 进程运行与 `serve` 相同的路由，只是监听另一个地址。把[入门教程](../tutorial/02-infrastructure.md#assembling)中 `HTTP` 方法的内容移到 `serveOn`，两个部分共用：
 
 ```go
 // HTTP 运行全部路由，serve 和 start 命令使用它。

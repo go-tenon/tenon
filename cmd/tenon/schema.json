@@ -13,7 +13,7 @@
       "items": { "type": "string" },
       "description": "开发时运行应用的参数，默认 [\"serve\", \"--config\", \"config/app.yaml,config/local.yaml\"]（local.yaml 不存在时去掉它）。"
     },
-    "url": { "type": "string", "description": "应用的地址，dev 打印它，templ 的代理访问它，默认 http://localhost:8080。", "default": "http://localhost:8080" },
+    "url": { "type": "string", "description": "应用的地址，dev 打印它，前端的开发服务器经它调用接口，默认 http://localhost:8080。", "default": "http://localhost:8080" },
     "apis": {
       "type": "object",
       "description": "按 BasePath 覆盖 API 客户端的约定，例如 {\"/api/v1\": {\"name\": \"public\", \"go\": \"../api\"}}。有 packages/client/package.json 时，每个 API 的 TypeScript 客户端生成到 packages/client/src/<名称>；没有写的 API 按约定生成。",
@@ -25,25 +25,6 @@
           "name": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$", "description": "TypeScript 客户端的目录名，默认是 BasePath 的最后一段，例如 /api/admin 是 admin。" },
           "go": { "type": "string", "description": "Go 客户端的目录，例如 ../api，设置后才生成。" }
         }
-      }
-    },
-    "templ": {
-      "type": "object",
-      "additionalProperties": false,
-      "description": "服务端渲染的页面。项目中有 .templ 文件时默认启用。",
-      "properties": {
-        "proxyPort": { "type": "integer", "description": "浏览器访问的端口，templ 在这里代理应用并注入自动刷新的脚本，默认 7331。", "default": 7331 },
-        "static": { "type": "string", "description": "静态文件目录，其中的文件变化时刷新浏览器。" }
-      }
-    },
-    "tailwind": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["input", "output"],
-      "description": "用 Tailwind standalone CLI 生成的样式表。启动前把框架 web/ui 的样式源复制到 input 旁边的 .web-ui 目录。",
-      "properties": {
-        "input": { "type": "string", "description": "样式入口，例如 internal/web/app.css。" },
-        "output": { "type": "string", "description": "生成的样式表，例如 internal/web/static/css/app.css。" }
       }
     },
     "tools": {

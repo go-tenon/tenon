@@ -34,6 +34,7 @@ import { Icon } from "./icons"
 import { NavLinkLink } from "./links"
 import { TabBar } from "./tab-bar"
 import { layoutMetrics } from "./theme"
+import { NewVersionNotice } from "./version"
 
 /** AppLayout 的选项。 */
 export interface AppLayoutProps {
@@ -153,6 +154,7 @@ export function AppLayout({ title, logo, tabs, maxWidth, hideColorScheme }: AppL
         </Box>
         <Slot name="footer" />
       </AppShell.Main>
+      <NewVersionNotice />
     </AppShell>
   )
 }

@@ -23,7 +23,7 @@ func write(t *testing.T, dir, name, content string) {
 	}
 }
 
-// 没有 tenon.json 时全部用默认值；前端、客户端包和 templ 按项目中的文件发现。
+// 没有 tenon.json 时全部用默认值；前端和客户端包按项目中的文件发现。
 func TestDefaults(t *testing.T) {
 	dir := t.TempDir()
 	cfg, err := project.Load(dir)
@@ -31,7 +31,7 @@ func TestDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	if cfg.Main != "./cmd/api" || strings.Join(cfg.Serve, " ") != "serve --config config/app.yaml" || cfg.URL != "http://localhost:8080" ||
-		cfg.Frontends != nil || cfg.Client || cfg.Templ != nil {
+		cfg.Frontends != nil || cfg.Client {
 		t.Fatalf("empty project %+v", cfg)
 	}
 
@@ -41,16 +41,14 @@ func TestDefaults(t *testing.T) {
 	write(t, dir, "apps/notes/README.md", "") // 没有 vite.config 的目录不是前端
 	write(t, dir, "apps/.cache/vite.config.ts", "")
 	write(t, dir, "packages/client/package.json", "{}")
-	write(t, dir, "internal/web/layout.templ", "")
-	write(t, dir, "node_modules/x/y.templ", "") // 依赖中的 .templ 不算
 	cfg, err = project.Load(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := []project.Frontend{{Name: "admin", Dir: "apps/admin"}, {Name: "web", Dir: "apps/web"}}
 	if strings.Join(cfg.Serve, " ") != "serve --config config/app.yaml,config/local.yaml" ||
-		!slices.Equal(cfg.Frontends, want) || !cfg.Client || cfg.Templ == nil || cfg.Templ.ProxyPort != 7331 {
-		t.Fatalf("project %+v %+v", cfg, cfg.Templ)
+		!slices.Equal(cfg.Frontends, want) || !cfg.Client {
+		t.Fatalf("project %+v", cfg)
 	}
 
 	write(t, dir, "apps/Admin_2/vite.config.ts", "")
@@ -63,20 +61,20 @@ func TestConfigFile(t *testing.T) {
 	dir := t.TempDir()
 	write(t, dir, "tenon.json", `{"$schema": "x", "main": "./cmd/web", "url": "http://localhost:3000",
 		"apis": {"/api/v1": {"name": "public", "go": "../api"}},
-		"tailwind": {"input": "a.css", "output": "b.css"}, "tools": [{"watch": ["esbuild", "--watch"]}]}`)
+		"tools": [{"watch": ["esbuild", "--watch"]}]}`)
 	cfg, err := project.Load(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if cfg.Main != "./cmd/web" || cfg.APIs["/api/v1"].Name != "public" || cfg.APIs["/api/v1"].Go != "../api" ||
-		cfg.Tailwind.Output != "b.css" || len(cfg.Tools) != 1 || cfg.Templ != nil {
+		len(cfg.Tools) != 1 {
 		t.Fatalf("%+v", cfg)
 	}
 	for name, content := range map[string]string{
 		"unknown field": `{"mian": "./cmd/api"}`,
 		"old frontend":  `{"frontend": {"dir": "web"}}`,
 		"bad url":       `{"url": "localhost:8080"}`,
-		"tailwind":      `{"tailwind": {"input": "a.css"}}`,
+		"templ":         `{"templ": {"proxyPort": 7331}}`,
 		"empty tool":    `{"tools": [{"build": ["x"]}]}`,
 		"api key":       `{"apis": {"api/v1": {"name": "v1"}}}`,
 		"api name":      `{"apis": {"/api/v1": {"name": "V1"}}}`,
