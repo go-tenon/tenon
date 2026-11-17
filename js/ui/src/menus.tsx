@@ -1,4 +1,4 @@
-// 顶栏的菜单：用户菜单（含配色）、租户切换、通知、后台任务。作为 AppLayout 的参数（租户切换由 AppLayout 自己放）：
+// 顶栏的菜单：用户菜单（含配色）、租户切换、通知、后台任务、语言。作为 AppLayout 的参数（租户切换由 AppLayout 自己放）：
 //
 //   <AppLayout user={<UserMenu name={me.name} logout={api.auth.logout} />} actions={<NotificationsMenu source={inbox} />} />
 
@@ -27,6 +27,7 @@ import {
   IconBrowser,
   IconCheck,
   IconDeviceDesktop,
+  IconLanguage,
   IconListCheck,
   IconLogout,
   IconMoon,
@@ -166,6 +167,48 @@ function ColorSchemePicker(): ReactNode {
         </Tooltip>
       ))}
     </div>
+  )
+}
+
+/** 语言菜单中的一种语言。 */
+export interface LanguageOption {
+  /** 语言的代码，例如 zh-CN。 */
+  value: string
+  /** 显示的名称，用这种语言自己的写法，例如 English。 */
+  label: string
+}
+
+/** LanguageMenu 的选项。 */
+export interface LanguageMenuProps {
+  languages: LanguageOption[]
+  /** 当前的语言。 */
+  value: string
+  /** 用户选择了一种语言。换文案、记住选择、告诉后端由应用决定。 */
+  onChange: (value: string) => void
+}
+
+/** 语言切换：顶栏的图标按钮，菜单中列出语言，当前的一项打勾。作为 AppLayout 的 actions 放在用户菜单的左边。 */
+export function LanguageMenu({ languages, value, onChange }: LanguageMenuProps): ReactNode {
+  return (
+    <Menu width={160} position="bottom-end">
+      <Menu.Target>
+        <ActionIcon size={32} aria-label="切换语言">
+          <IconLanguage size={16} stroke={1.5} />
+        </ActionIcon>
+      </Menu.Target>
+      <Menu.Dropdown>
+        {languages.map((l) => (
+          <Menu.Item
+            key={l.value}
+            aria-checked={l.value === value}
+            rightSection={l.value === value ? <IconCheck size={14} stroke={2} /> : undefined}
+            onClick={() => onChange(l.value)}
+          >
+            {l.label}
+          </Menu.Item>
+        ))}
+      </Menu.Dropdown>
+    </Menu>
   )
 }
 

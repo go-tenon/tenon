@@ -15,6 +15,7 @@ import {
   DocsLayout,
   ExportButton,
   ImportButton,
+  LanguageMenu,
   LoginForm,
   NotFoundPage,
   NotificationsMenu,
@@ -54,7 +55,7 @@ import {
 } from "@mantine/core"
 import { IconDownload, IconPlus, IconSearch, IconStack2 } from "@tabler/icons-react"
 import { type AnyRoute, createRootRouteWithContext, createRoute, Outlet, useParams } from "@tanstack/react-router"
-import { type ReactNode, useEffect } from "react"
+import { type ReactNode, useEffect, useState } from "react"
 import { createRoot } from "react-dom/client"
 import { Landing, LandingSwitcher, landingStyle } from "./landing"
 import { customerExport, customerImport, customersModel, queryClient, queueApi, shopSettings } from "./resources"
@@ -109,7 +110,15 @@ function Root(): ReactNode {
 
 // ———————————————————————————— 运营后台 ————————————————————————————
 
+const languages = [
+  { value: "zh-CN", label: "简体中文" },
+  { value: "zh-TW", label: "繁體中文" },
+  { value: "en", label: "English" },
+]
+
 function AdminShell(): ReactNode {
+  // 演示：只记下选择，不换文案。
+  const [language, setLanguage] = useState("zh-CN")
   return (
     <AppLayout
       title="Acme 运营后台"
@@ -118,6 +127,7 @@ function AdminShell(): ReactNode {
         <>
           <OperationsMenu />
           <NotificationsMenu source={notifications} />
+          <LanguageMenu languages={languages} value={language} onChange={setLanguage} />
         </>
       }
       user={<UserMenu name="韩梅梅" logout={async () => {}} items={[{ label: "账号设置", to: "/settings" }]} />}
@@ -298,16 +308,17 @@ function adminApp() {
     session,
     queryClient,
     permissions,
-    tenancy,
     router: { basepath: "/admin", defaultErrorComponent: RouteError, defaultNotFoundComponent: NotFoundPage },
   })
   return app
 }
 
+// 演示的后台任务：大约 12 秒跑完，期间顶栏的“后台任务”按钮转圈，结束后显示完成。
 async function* progress(): AsyncIterable<{ event: string; data: OperationLike }> {
   for (let i = 0; i <= 10; i++) {
-    yield { event: "progress", data: { id: "op1", status: "running", total: 10, processed: Math.min(i, 6), failed: 0 } }
-    await new Promise((r) => setTimeout(r, 60_000))
+    const status = i === 10 ? "completed" : "running"
+    yield { event: "progress", data: { id: "op1", status, total: 10, processed: i, failed: 0 } }
+    await new Promise((r) => setTimeout(r, 1_200))
   }
 }
 

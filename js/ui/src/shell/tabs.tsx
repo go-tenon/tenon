@@ -382,6 +382,8 @@ export interface TabView {
   active: boolean
   /** 唯一的标签不能关闭。 */
   closable: boolean
+  /** 刷新过的次数：布局据此在刷新时显示加载的过渡。 */
+  refreshes: number
 }
 
 /** useTabs 的返回值：标签和操作。外观据此渲染标签栏（右键菜单、拖动排序、关闭按钮）。 */
@@ -460,6 +462,7 @@ export function useTabs(): Tabs {
       dirty: model.dirty.has(t.key),
       active: t.key === active,
       closable: tabs.length > 1,
+      refreshes: model.refresh[t.key] ?? 0,
     }))
     return { tabs: views, active: views.find((t) => t.active), ...actions }
   }, [model, actions])

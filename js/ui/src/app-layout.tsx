@@ -11,6 +11,7 @@ import {
   Burger,
   Group,
   Kbd,
+  LoadingOverlay,
   Menu,
   NavLink,
   ScrollArea,
@@ -43,6 +44,7 @@ import {
   useNarrow,
   useNavigation,
   useSlotFilled,
+  useTabs,
 } from "./shell"
 import { TabBar } from "./tab-bar"
 import { layoutMetrics } from "./theme"
@@ -92,6 +94,22 @@ export function AppLayout({ title, logo, user, actions, search = true, tabs, max
   useEffect(() => {
     if (state.navOpen) setState({ navOpen: false })
   }, [pathname])
+
+  // 刷新当前标签（刷新按钮、右键菜单）时，内容区短暂显示加载遮罩：页面的数据多半来自缓存，重新挂载后看不出变化。
+  const active = useTabs().active
+  const [reloading, setReloading] = useState(false)
+  const reloadMark = useRef({ key: active?.key, n: active?.refreshes ?? 0 })
+  useEffect(() => {
+    const prev = reloadMark.current
+    const n = active?.refreshes ?? 0
+    reloadMark.current = { key: active?.key, n }
+    if (active && prev.key === active.key && n > prev.n) setReloading(true)
+  }, [active])
+  useEffect(() => {
+    if (!reloading) return
+    const timer = setTimeout(() => setReloading(false), 450)
+    return () => clearTimeout(timer)
+  }, [reloading])
 
   // 切换页面（点标签、点菜单、搜索跳转）时，新页面淡入，同时从下方上移 6px。只看路径：翻页、筛选不算。
   const content = useRef<HTMLDivElement>(null)
@@ -193,7 +211,8 @@ export function AppLayout({ title, logo, user, actions, search = true, tabs, max
         </AppShell.Aside>
       )}
 
-      <AppShell.Main>
+      <AppShell.Main pos="relative">
+        <LoadingOverlay visible={reloading} overlayProps={{ blur: 1 }} loaderProps={{ size: "sm" }} />
         <Box ref={content} className="tn-content" p={m.contentPadding} maw={maxWidth}>
           {tabsOn ? <TabsOutlet home {...(typeof tabs === "object" ? tabs : {})} /> : <Outlet />}
         </Box>

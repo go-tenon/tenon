@@ -180,6 +180,17 @@ describe("AppLayout 的多标签", () => {
     await waitFor(() => expect(titles()).toEqual(["*概览", ">用户"]))
   })
 
+  it("刷新按钮重新挂载当前页面，期间显示加载遮罩", async () => {
+    await renderApp(tree({ tabs: true }), { path: "/trade/orders", permissions: ["users:manage"] })
+    const before = await screen.findByText("订单页面")
+    expect(document.querySelector(".mantine-LoadingOverlay-root")).toBeNull()
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "重新加载当前页面" })))
+    expect(document.querySelector(".mantine-LoadingOverlay-root")).not.toBeNull()
+    const after = await screen.findByText("订单页面")
+    expect(after).not.toBe(before) // 重新挂载：是新的元素
+    await waitFor(() => expect(document.querySelector(".mantine-LoadingOverlay-root")).toBeNull())
+  })
+
   it("用户在头像菜单中关掉多标签：没有标签栏，页面照常显示；按账号保存", async () => {
     await renderApp(tree({ tabs: true, user: <UserMenu name="小明" /> }), {
       path: "/trade/orders",

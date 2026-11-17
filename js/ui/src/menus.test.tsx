@@ -4,7 +4,7 @@ import { createRootRouteWithContext, createRoute, Outlet } from "@tanstack/react
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { AppLayout } from "./app-layout"
-import { UserMenu } from "./menus"
+import { LanguageMenu, UserMenu } from "./menus"
 import { type RouterContext, requireAuth, useUnsavedChanges } from "./shell"
 import { renderApp } from "./testing"
 
@@ -72,5 +72,38 @@ describe("UserMenu", () => {
     await clickSignOut()
     await waitFor(() => expect(logout).toHaveBeenCalledTimes(1))
     expect(await screen.findByText("登录页")).toBeTruthy()
+  })
+})
+
+describe("LanguageMenu", () => {
+  it("列出语言，当前的一项打勾；选择后交给 onChange", async () => {
+    const onChange = vi.fn()
+    const root = createRootRouteWithContext<RouterContext>()({ component: Outlet })
+    const layout = createRoute({
+      getParentRoute: () => root,
+      id: "_app",
+      component: () => (
+        <AppLayout
+          title="测试后台"
+          actions={
+            <LanguageMenu
+              languages={[
+                { value: "zh-CN", label: "简体中文" },
+                { value: "en", label: "English" },
+              ]}
+              value="zh-CN"
+              onChange={onChange}
+            />
+          }
+        />
+      ),
+    })
+    const home = createRoute({ getParentRoute: () => layout, path: "/", component: () => <p>首页</p> })
+    await renderApp(root.addChildren([layout.addChildren([home])]))
+    await screen.findByText("首页")
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "切换语言" })))
+    expect((await screen.findByRole("menuitem", { name: "简体中文" })).getAttribute("aria-checked")).toBe("true")
+    await act(async () => fireEvent.click(screen.getByRole("menuitem", { name: "English" })))
+    expect(onChange).toHaveBeenCalledWith("en")
   })
 })

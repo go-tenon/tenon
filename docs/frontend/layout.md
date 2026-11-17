@@ -130,6 +130,7 @@ function ArticlesPage() {
 | `TenantSwitcher` | 当前租户的名称，菜单中列出用户所属的全部租户；只有一个租户时只显示名称，不是多租户应用时不显示。`AppLayout` 已经放好 |
 | `NotificationsMenu` | 铃铛和未读数，弹出最近的通知，点击打开并标记已读，见[通知](features.md#notifications) |
 | `OperationsMenu` | 后台任务的进度：导入、导出等耗时的操作。有进行中的任务时显示转动的图标，没有任务时不显示，见[后台操作](features.md#operations) |
+| `LanguageMenu` | 语言切换：图标按钮，菜单中列出 `languages`，当前的 `value` 打勾，选择后调用 `onChange`。换文案、记住选择由应用决定。放在 `actions` 中 |
 | `ColorSchemeToggle` | 亮色和暗色之间切换的图标按钮，自己写布局时用；`AppLayout` 中配色在 `UserMenu` 里 |
 
 <a id="page"></a>
@@ -315,7 +316,7 @@ function TopLayout() {
 | --- | --- |
 | `AppLayout` | 应用外壳：`title`、`logo`、`user`、`actions`、`search`、`tabs`、`maxWidth` |
 | `Fill`、`Slot`、`useSlotFilled`、`SlotName` | 插槽 |
-| `UserMenu`、`TenantSwitcher`、`NotificationsMenu`、`OperationsMenu`、`ColorSchemeToggle` | 顶栏菜单；`UserMenu` 的选项：`name`、`avatar`、`logout`、`items`、`colorScheme` |
+| `UserMenu`、`TenantSwitcher`、`NotificationsMenu`、`OperationsMenu`、`LanguageMenu`、`ColorSchemeToggle` | 顶栏菜单；`UserMenu` 的选项：`name`、`avatar`、`logout`、`items`、`colorScheme` |
 | `Icon`、`useIcon`、`defaultIcons`、`IconsProvider` | 图标名称 |
 | `useMenuBadge(routeId, value)` | 登记菜单项的徽标 |
 | `Page` | 页面的标题区：`title`、`description`、`actions`、`breadcrumbs` |
