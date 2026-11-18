@@ -306,6 +306,10 @@ func TestSyncJS(t *testing.T) {
 			t.Error(err)
 		}
 	}
+	// package.json 的 bin 指向的文件可以执行（框架中的文件没有执行权限）：前端的 typecheck 直接运行 tenon-start。
+	if info, err := os.Stat(filepath.Join(dir, ".tenon", "js", "start", "src", "cli.ts")); err != nil || info.Mode().Perm()&0o111 == 0 {
+		t.Errorf("tenon-start is not executable: %v %v", info.Mode(), err)
+	}
 	// 测试文件只在框架中运行，不复制：它们可能依赖项目中没有的包（例如 happy-dom）。
 	for _, p := range []string{".tenon/js/node_modules", ".tenon/js/client/node_modules", ".tenon/js/package.json",
 		".tenon/js/client/src/errors.test.ts", ".tenon/js/start/src/start.test.ts"} {
