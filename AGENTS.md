@@ -146,6 +146,7 @@ API 的客户端包括网页、App、桌面端和其他服务，用的语言可�
 - 认证只用 `Authorization: Bearer`，不依赖 Cookie 这类只有浏览器才有的机制；原生应用登录走授权码 + PKCE（[OAuth 服务端](docs/security/oauth-server.md)）；
 - 改动线路上的行为（请求头、状态码、错误响应、分页、事件流、实时频道等）时，同时更新客户端协议。规则以服务端和这一页为准，生成的运行时（`runtime.ts`、`wire/wire.go`）只是它的实现，不能只写在运行时里；
 - 客户端需要的元数据先放进语言无关的来源：接口的信息写进 OpenAPI，框架的扩展字段如 `x-tenon-permissions`、`x-required-permissions`、`x-tenon-enum`；OpenAPI 表达不了的，例如 `errorx.Define` 的错误码和验证提示的翻译，由 `clientgen` 中各语言共用的部分收集。各语言的生成器只负责输出，不自己从 Go 代码推导别的生成器拿不到的信息；
+- HTTP、RPC、MCP 三个入口共用的结构描述放在 `contract` 中：Go 类型的 JSON Schema 和校验（`NewSchema`）、schema 名（`SchemaName`）、枚举的命名类型（`EnumSchema`）、验证错误的规则码和译文（`Describe`）。入口用到它们时从 `contract` 取，不各写一套；登记、认证和响应格式各入口不同，留在各自的包中；
 - `@go-tenon/client` 不依赖 DOM，是其他语言实现客户端时的参考；只在网页中成立的功能放在 `@go-tenon/ui`。
 
 ## 编写文档
