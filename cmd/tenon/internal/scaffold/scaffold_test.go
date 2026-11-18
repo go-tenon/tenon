@@ -243,6 +243,8 @@ func TestWriteClient(t *testing.T) {
 		"clients/admin-desktop/src/main.ts":          `base: "/admin/"`,
 		"clients/admin-desktop/src/preload.ts":       `import "@go-tenon/electron/preload"`,
 		"clients/admin-desktop/.gitignore":           "release/",
+		"clients/admin-desktop/assets/tray.png":      "\x89PNG", // 图标原样复制，不经过模板
+		"clients/admin-desktop/build/icon.png":       "\x89PNG",
 		"apps/admin/src/routes/oauth/consent.tsx":    `createFileRoute("/oauth/consent")`,
 		"apps/admin/src/routes/login.tsx":            "<BrowserSignIn signIn={desktop.auth.signIn}",
 		"apps/admin/src/auth.ts":                     "await host()?.auth.signOut()",
