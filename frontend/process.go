@@ -1,4 +1,4 @@
-package ssr
+package frontend
 
 import (
 	"bytes"
@@ -19,14 +19,14 @@ var (
 // processName 是 SSR 进程的 argv[0]，ps 中显示为它。
 const processName = "tenon-ssr"
 
-// pollReady 等待 SSR 进程的 socket 可以连接，或者 exited 关闭。
-func (h *Host) pollReady(ctx context.Context, exited <-chan struct{}, started time.Time) {
+// pollReady 等待前端 a 的 SSR 进程的 socket 可以连接，或者 exited 关闭。
+func pollReady(ctx context.Context, a *app, exited <-chan struct{}, started time.Time) {
 	for {
-		c, err := dialSocket(ctx, h.socket)
+		c, err := dialSocket(ctx, a.socket)
 		if err == nil {
 			_ = c.Close()
-			h.ready.Store(true)
-			h.logger.Info("ssr ready", "pid", h.pid.Load(), "startup", time.Since(started).Round(time.Millisecond))
+			a.ready.Store(true)
+			a.logger.Info("ssr ready", "pid", a.pid.Load(), "startup", time.Since(started).Round(time.Millisecond))
 			return
 		}
 		select {
@@ -80,9 +80,10 @@ func (w *lineWriter) flush() {
 	}
 }
 
-// env 是 SSR 进程的环境变量：继承 Go 程序的环境，加上 Options.Env 和两个 socket；没有 Options.API 时不传 API_SOCKET。
-func (h *Host) env() []string {
-	env := append(append(os.Environ(), h.opts.Env...), EnvSocket+"="+h.socket)
+// env 是前端 a 的 SSR 进程的环境变量：继承 Go 程序的环境，加上 Options.Env、前端的名称和两个 socket；
+// 没有 Options.API 时不传 API_SOCKET。
+func (h *Host) env(a *app) []string {
+	env := append(append(os.Environ(), h.opts.Env...), EnvFrontend+"="+a.Name, EnvSocket+"="+a.socket)
 	if h.opts.API != nil {
 		env = append(env, EnvAPISocket+"="+h.api)
 	}

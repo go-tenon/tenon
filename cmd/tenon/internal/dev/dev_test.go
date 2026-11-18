@@ -5,8 +5,10 @@ package dev_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -14,6 +16,7 @@ import (
 
 	"github.com/go-tenon/tenon/cmd/tenon/internal/dev"
 	"github.com/go-tenon/tenon/cmd/tenon/internal/project"
+	"github.com/go-tenon/tenon/frontend"
 )
 
 // fake 是伪造的命令：记录参数和所在的目录；监听模式（--watch、bun run dev）一直运行，直到收到 SIGINT。
@@ -185,7 +188,7 @@ func TestDevMissingTools(t *testing.T) {
 	}
 }
 
-// 前端：没有 node_modules 时在根目录安装，没有 ssr.bin 时写入空的占位文件；为每个前端选端口运行 vite，把地址写入 .tenon/dev.yaml
+// 前端：没有 node_modules 时在根目录安装，写入前端的清单；为每个前端选端口运行 vite，把地址写入 .tenon/dev.yaml
 // 交给应用；改了 Go 代码后重新编译、重启并生成客户端；编译失败时旧进程继续运行；测试文件和前端的变化不触发重新编译。
 func TestDevFrontends(t *testing.T) {
 	defer dev.SetPollInterval(20 * time.Millisecond)()
@@ -194,7 +197,9 @@ func TestDevFrontends(t *testing.T) {
 	for name, content := range map[string]string{
 		"package.json":                 "{}",
 		"apps/web/vite.config.ts":      "",
+		"apps/web/package.json":        `{"tenon": {"base": "/", "ssr": true}}`,
 		"apps/admin/vite.config.ts":    "",
+		"apps/admin/package.json":      `{"tenon": {"base": "/admin/"}}`,
 		"packages/client/package.json": "{}",
 	} {
 		p := filepath.Join(dir, name)
@@ -228,12 +233,11 @@ func TestDevFrontends(t *testing.T) {
 		if !strings.Contains(devYAML, "  "+f+": http://localhost:") {
 			t.Errorf("dev.yaml missing %s:\n%s", f, devYAML)
 		}
-		if b, err := os.ReadFile(filepath.Join(dir, "apps", f, dev.SSRBundle)); err != nil || len(b) != 0 {
-			t.Errorf("%s ssr.js placeholder = %q, %v", f, b, err)
-		}
 	}
-	if b, err := os.ReadFile(filepath.Join(dir, "apps", dev.SSRRuntime)); err != nil || len(b) != 0 {
-		t.Errorf("runtime placeholder = %q, %v", b, err)
+	var manifest []frontend.Entry
+	if err := json.Unmarshal([]byte(read(filepath.Join(dir, dev.DistDir, frontend.ManifestFile))), &manifest); err != nil ||
+		!slices.Equal(manifest, []frontend.Entry{{Name: "admin", Base: "/admin/"}, {Name: "web", Base: "/", SSR: true}}) {
+		t.Errorf("manifest %+v, %v", manifest, err)
 	}
 	if count("bun run build") != 0 {
 		t.Errorf("built before start:\n%s", l)

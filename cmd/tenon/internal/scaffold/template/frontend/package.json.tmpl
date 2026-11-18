@@ -2,9 +2,10 @@
   "name": "@[[.Scope]]/[[.Name]]",
   "private": true,
   "type": "module",
+  "tenon": { "base": "[[.Base]]", "ssr": [[.SSR]] },
   "scripts": {
     "dev": "vite dev",
-    "build": "tenon-start compile --out ssr.js --base [[.Base]]",
+    "build": "bunx --bun vite build",
     "typecheck": "tsr generate && tsc --noEmit"
   },
   "dependencies": {

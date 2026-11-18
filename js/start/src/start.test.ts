@@ -1,8 +1,11 @@
 import { spawnSync } from "node:child_process"
+import { mkdtempSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
-import { defaultTarget, entrySource, normalizeBase } from "./compile"
-import { forwardHeaders, HeaderNonce, PrerenderNonce, socketPath, stripBase } from "./headers"
+import { defaultTarget, entrySource } from "./compile"
+import { forwardHeaders, HeaderNonce, PrerenderNonce, socketPath } from "./headers"
 import * as vite from "./vite.js"
 
 describe("headers", () => {
@@ -36,27 +39,17 @@ describe("compile", () => {
     expect(defaultTarget(undefined, "arm64")).toBe("bun-linux-arm64")
   })
 
-  it("挂载路径", () => {
-    expect(normalizeBase()).toBe("/")
-    expect(normalizeBase("admin")).toBe("/admin/")
-    expect(normalizeBase("/admin/")).toBe("/admin/")
-    expect(stripBase("/admin/assets/a.js", "/admin/")).toBe("/assets/a.js")
-    expect(stripBase("/admin", "/admin/")).toBe("/")
-    expect(stripBase("/assets/a.js", "/admin/")).toBeUndefined()
-    expect(stripBase("/docs/", "/")).toBe("/docs/")
-  })
-
-  it("入口以 base64 内联每个静态文件，路径以 / 开头", () => {
+  it("入口按 TENON_FRONTEND 动态导入其中一个前端的服务端入口", () => {
     const src = entrySource(
-      "/app/dist/server/server.js",
-      { "index.html": "PGgxPg==", "assets/a.js": "YQ==" },
-      "/app/node_modules/.tenon-start",
-      "admin",
+      { web: "/app/apps/web/dist/server/server.js", admin: "/app/apps/admin/dist/server/server.js" },
+      "/app/apps/web/node_modules/.tenon-start",
+      "/app/.tenon/js/start/src",
     )
-    expect(src).toContain('import { serve } from "@go-tenon/start/serve"')
-    expect(src).toContain('import handler from "../../dist/server/server.js"')
-    expect(src).toContain('  "/assets/a.js": "YQ==",\n  "/index.html": "PGgxPg==",')
-    expect(src).toContain('base: "/admin/"')
+    expect(src).toContain('import { type Handler, serve } from "../../../../.tenon/js/start/src/serve.ts"')
+    expect(src).toContain(
+      '  "admin": () => import("../../../admin/dist/server/server.js"),\n  "web": () => import("../../dist/server/server.js"),',
+    )
+    expect(src).toContain("const name = process.env[EnvFrontend]")
   })
 })
 
@@ -64,6 +57,31 @@ describe("vite", () => {
   it("常量与 headers.ts 相同", () => {
     expect(vite.HeaderNonce).toBe(HeaderNonce)
     expect(vite.PrerenderNonce).toBe(PrerenderNonce)
+  })
+
+  it("从 package.json 的 tenon 字段读取挂载路径和是否服务端渲染", () => {
+    const dir = mkdtempSync(join(tmpdir(), "tenon-start-"))
+    const write = (tenon: unknown) => writeFileSync(join(dir, "package.json"), JSON.stringify({ tenon }))
+    write({ base: "/admin/" })
+    expect(vite.frontendConfig(dir)).toEqual({ base: "/admin/", ssr: false })
+    write({ base: "/", ssr: true })
+    expect(vite.frontendConfig(dir)).toEqual({ base: "/", ssr: true })
+    write({ base: "/admin" })
+    expect(() => vite.frontendConfig(dir)).toThrow("tenon.base must start and end with /")
+  })
+
+  it("只在浏览器中渲染时打开 SPA 模式，页面外壳带占位 nonce", () => {
+    const headers = { [HeaderNonce]: PrerenderNonce }
+    expect(vite.startOptions(true, [])).toEqual({})
+    expect(vite.startOptions(false, [])).toEqual({ spa: { enabled: true, prerender: { headers } } })
+    const spa = vite.startOptions(false, ["/docs"])
+    // 页面外壳的地址 / 和 /docs 下的页面都要预渲染，其余不预渲染。
+    const filter = spa.prerender?.filter as (page: { path: string }) => boolean
+    expect(["/", "/docs", "/docs/intro", "/blog"].map((path) => filter({ path }))).toEqual([true, true, true, false])
+    expect(spa.prerender?.headers).toEqual(headers)
+    const ssr = vite.startOptions(true, ["/"]).prerender?.filter as (page: { path: string }) => boolean
+    expect(["/", "/docs"].map((path) => ssr({ path }))).toEqual([true, false])
+    expect(() => vite.startOptions(false, ["/"])).toThrow('prerender "/" needs "ssr": true')
   })
 
   // vite dev 在 Node 中运行，由 Node 直接导入 @go-tenon/start/vite：它不能是 TypeScript。

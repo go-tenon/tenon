@@ -1,6 +1,6 @@
 # 搭建前端应用
 
-一个前端是项目中的 `apps/<名称>` 目录：用 [TanStack Start](start.md) 构建，由 Go 托管的 Bun 进程渲染，界面和应用骨架来自框架的 `@go-tenon/ui`。`@go-tenon/ui` 基于 [Mantine](https://mantine.dev)，把 TanStack Router、TanStack Query 和[会话](client-react.md#client-runtime)接到一起，提供登录检查、按权限进入页面、菜单、布局、表格、表单和资源页面。
+一个前端是项目中的 `apps/<名称>` 目录：用 [TanStack Start](start.md) 构建，由 Go 托管（见[托管前端与服务端渲染](hosting.md)），界面和应用骨架来自框架的 `@go-tenon/ui`。`@go-tenon/ui` 基于 [Mantine](https://mantine.dev)，把 TanStack Router、TanStack Query 和[会话](client-react.md#client-runtime)接到一起，提供登录检查、按权限进入页面、菜单、布局、表格、表单和资源页面。
 
 这一页介绍一个前端怎样装配起来：创建应用、主题、页面的元数据、登录、权限、错误页和新版本提示。页面放在什么布局中见[布局与导航](layout.md)，页面里的列表和表单见[列表与表单](lists-forms.md)。
 
@@ -99,7 +99,7 @@ export const session = createSession({ load: async () => ({ account: (await me()
 
 - 没有登录功能的应用不传 `session`，应用一直是未登录的。
 - 会话变化（登录、退出、接口返回 `401`）时，应用重新运行路由的守卫：正在看的页面需要登录时，跳到登录页。
-- 读取当前用户、检查权限只在浏览器中进行。服务端渲染时应用不读取身份，需要登录的页面设置 `ssr: false`，只在浏览器中渲染，见 [TanStack Start 的接入](start.md)。
+- 读取当前用户、检查权限只在浏览器中进行。后台这类要登录的前端整个只在浏览器中渲染（`package.json` 中 `"ssr": false`）；服务端渲染的前端中，需要登录的页面设置 `ssr: false`，见 [TanStack Start 的接入](start.md)。
 - 前端挂在子路径（例如 `/admin/`）时，路由的 `basepath` 默认是 Vite 的 `base`：页面中的地址、`<Link>`、登录回跳都不含它。
 - `id` 区分同一个域名下的前端，例如 `web` 和 `admin`，见[本地存储](#storage)。
 - QueryClient 对 `4xx` 不重试，其他错误重试 2 次；登录、退出、切换账号或租户时清空缓存，并重新挂载页面：页面中按身份计算的查询重新读取。重新挂载的只是布局中的页面（`FrameLayout` 用 `SessionBoundary` 包住页面），HTML 文档和布局保持不变。也可以传入自己的 `queryClient`。
@@ -308,7 +308,7 @@ return can("articles:write") && <Button>写文章</Button>
 - `FrameLayout` 已经包含提示 `NewVersionNotice`，其他布局需要时自己放一个；自己画提示时用 `useNewVersion()`，它返回 `{ available, reload, dismiss }`。
 - 版本号默认取环境变量 `TENON_BUILD_VERSION`，没有时每次构建随机生成一个；可以用 `tenon({ version: commit })` 传入。一次构建中 TanStack Start 会多次加载 `vite.config.ts`，默认的版本号在构建进程中只生成一次，页面中的与 `version.json` 中的相同。
 - 开发模式下不检查。
-- SSR 程序对 `assets/` 之外的文件返回 `Cache-Control: no-cache`，`version.json` 不会被缓存，见 [TanStack Start 的接入](start.md)。
+- Go 对 `assets/` 之外的文件返回 `Cache-Control: no-cache`，`version.json` 不会被缓存，见[托管前端与服务端渲染](hosting.md#wiring)。
 
 <a id="storage"></a>
 ## 本地存储

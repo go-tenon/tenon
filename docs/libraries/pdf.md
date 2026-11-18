@@ -1,6 +1,6 @@
 # 生成 PDF
 
-`pdf` 包把一个 HTML 页面生成为 PDF。你用写页面的方式编写 PDF：前端的一个 React 打印模板，由 Go 托管的 Bun 渲染成 HTML，交给 Chromium 打印。发票、合同、报表都可以这样生成，模板与页面共用组件和样式。
+`pdf` 包把一个 HTML 页面生成为 PDF。你用写页面的方式编写 PDF：服务端渲染的前端中的一个 React 打印模板，由 Go 托管的 Bun 渲染成 HTML，交给 Chromium 打印。发票、合同、报表都可以这样生成，模板与页面共用组件和样式。
 
 `pdf` 包定义了文档和生成器：
 
@@ -17,7 +17,7 @@ type Renderer interface {
 
 `pdf/gotenberg` 实现 `Renderer`，调用 [Gotenberg](https://gotenberg.dev) 服务中的 Chromium。浏览器运行在独立的容器中，崩溃、内存占用、排队和定期重启都由 Gotenberg 负责；它的镜像带有 Noto CJK 字体，中文直接可用。
 
-阅读前需要了解：[服务端渲染](../frontend/ssr.md)；[TanStack Start 的接入](../frontend/start.md)；CSS 的基本写法。
+阅读前需要了解：[托管前端与服务端渲染](../frontend/hosting.md)；[TanStack Start 的接入](../frontend/start.md)；CSS 的基本写法。
 
 - [示例用法](#example-usage)
 - [启动 Gotenberg](#running-gotenberg)
@@ -43,14 +43,14 @@ if err != nil {
     return err
 }
 
-html, err := pages.Render(ctx, "invoice", invoice) // 前端的打印模板 invoice，pages 是 *ssr.Host
+html, err := pages.Render(ctx, "web", "invoice", invoice) // 前端 web 的打印模板 invoice，pages 是 *frontend.Host
 if err != nil {
     return err
 }
 data, err := renderer.Render(ctx, pdf.Document{HTML: html})
 ```
 
-`invoice` 是前端的一个打印模板，纸张大小、边距和页眉页脚都用 CSS 设置。`Render` 返回 PDF 的字节，你可以把它作为下载返回，或者保存到[文件存储](filesystem.md)。下面先启动 Gotenberg，再介绍怎样编写页面。
+`invoice` 是前端 `web` 的一个打印模板。打印模板在服务端渲染，所以这个前端的 `package.json` 中要有 `"ssr": true`，见[两种渲染方式](../frontend/hosting.md#modes)。纸张大小、边距和页眉页脚都用 CSS 设置。`Render` 返回 PDF 的字节，你可以把它作为下载返回，或者保存到[文件存储](filesystem.md)。下面先启动 Gotenberg，再介绍怎样编写页面。
 
 <a id="running-gotenberg"></a>
 ## 启动 Gotenberg
@@ -131,7 +131,7 @@ const start = createStartHandler(streamHandler)
 export default createServerEntry({ fetch: (request) => print(request) ?? start(request) })
 ```
 
-Go 用 [`ssr.Host.Render`](../frontend/ssr.md#rendering) 调用它：数据编码为 JSON 交给模板，返回完整的 HTML。打印模板的地址只供 Go 调用，对外的请求返回 `404`。
+Go 用 [`frontend.Host.Render`](../frontend/hosting.md#rendering) 调用它：数据编码为 JSON 交给模板，返回完整的 HTML。打印模板的地址只供 Go 调用，对外的请求返回 `404`。
 
 <a id="page-setup"></a>
 ### 纸张、边距与页码
@@ -190,7 +190,7 @@ var assets, _ = fs.Sub(files, "assets")
 `internal/article/articlepdf/download.go` 中的业务动作先用 `article.Get` 读取文章，同样只允许作者本人看到草稿，再用打印模板生成 PDF：
 
 ```go
-// Print 用前端的打印模板渲染数据，通常是 ssr.Host 的 Render。
+// Print 用前端的打印模板渲染数据，通常调用 frontend.Host 的 Render。
 type Print func(ctx context.Context, template string, data any) ([]byte, error)
 
 type Download struct {
@@ -252,7 +252,7 @@ func (a *Download) HTTP(ctx context.Context, in *DownloadInput) (*DownloadOutput
 | 情况 | 错误 | 响应 |
 | --- | --- | --- |
 | 连不上 Gotenberg、排队已满或超时 | `pdf.ErrUnavailable` | 503，“PDF 生成服务暂时不可用” |
-| 没有这个打印模板 | `ssr.ErrUnknownTemplate` | 500，记录日志 |
+| 没有这个打印模板 | `frontend.ErrUnknownTemplate` | 500，记录日志 |
 | 引用的文件加载失败、模板渲染出错等 | 带有原因的普通错误 | 500，记录日志 |
 
 <a id="mail-attachments"></a>
@@ -275,10 +275,10 @@ msg.Attachments = append(msg.Attachments, mail.Attachment{
 
 一份几页的 PDF 通常在一秒内生成，在请求中同步生成即可。页数很多，或者要一次生成一批时，交给[队列](../background/queue.md)：任务中调用 `Render`。
 
-队列 worker 是另一个进程，同样要托管 SSR 进程才能渲染打印模板：用 `ssr.Host.Run` 包住 worker 的运行函数。worker 不提供接口，`ssr.Options.API` 留空：
+队列 worker 是另一个进程，同样要托管 SSR 进程才能渲染打印模板：用 `frontend.Host.Run` 包住 worker 的运行函数。worker 不提供接口，`frontend.Options.API` 留空：
 
 ```go
-pages, err := ssr.New(ssr.Options{Runtime: ssr.NewRuntime(apps.Runtime), Bundle: web.SSR})
+pages, err := frontend.New(apps.Dist, frontend.Options{})
 if err != nil {
     return err
 }
@@ -387,7 +387,7 @@ type Renderer interface {
 
 | 字段 | 说明 |
 | --- | --- |
-| `HTML []byte` | 完整的 HTML 页面，`<title>` 成为 PDF 的标题；通常由 `ssr.Host.Render` 渲染 |
+| `HTML []byte` | 完整的 HTML 页面，`<title>` 成为 PDF 的标题；通常由 `frontend.Host.Render` 渲染 |
 | `Assets fs.FS` | 页面引用的图片和字体，只能有顶层文件，见[图片和字体](#assets) |
 
 ### gotenberg.New

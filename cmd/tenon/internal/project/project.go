@@ -52,10 +52,12 @@ type API struct {
 	Go   string `json:"go,omitempty"`   // Go 客户端的目录，例如 ../api，设置后才生成。
 }
 
-// Frontend 是一个 Vite 项目。
+// Frontend 是一个 Vite 项目。Base 和 SSR 来自它 package.json 的 tenon 字段，@go-tenon/start 的 Vite 插件读取同一个字段。
 type Frontend struct {
 	Name string // 前端的名称，即 apps 中的目录名。应用按它取开发服务器的地址。
-	Dir  string // 前端的目录，例如 apps/web，其中有 frontend.go（go:embed ssr.js）。
+	Dir  string // 前端的目录，例如 apps/web。
+	Base string // 挂载的路径，以 / 开头和结尾，例如 /admin/。
+	SSR  bool   // 是否在服务端渲染；有 SSR 前端时 tenon build 才构建 Bun 可执行文件。
 }
 
 // Tool 是一个与应用一起运行的工具：开发时运行 Watch，停止后运行一次 Build。
@@ -120,10 +122,40 @@ func (c *Config) discover(dir string) error {
 		if !Name.MatchString(e.Name()) {
 			return fmt.Errorf("%s: frontend name %q must match %s", fdir, e.Name(), Name)
 		}
-		c.Frontends = append(c.Frontends, Frontend{Name: e.Name(), Dir: fdir})
+		f, err := readFrontend(dir, fdir)
+		if err != nil {
+			return err
+		}
+		if i := slices.IndexFunc(c.Frontends, func(o Frontend) bool { return o.Base == f.Base }); i >= 0 {
+			return fmt.Errorf("%s and %s are both mounted at %s", c.Frontends[i].Dir, fdir, f.Base)
+		}
+		c.Frontends = append(c.Frontends, f)
 	}
 	c.Client = exists(dir, path.Join(ClientDir, "package.json"))
 	return nil
+}
+
+// readFrontend 读取前端目录 fdir 中 package.json 的 tenon 字段。
+func readFrontend(dir, fdir string) (Frontend, error) {
+	file := path.Join(fdir, "package.json")
+	data, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(file)))
+	if err != nil {
+		return Frontend{}, err
+	}
+	var pkg struct {
+		Tenon struct {
+			Base string `json:"base"`
+			SSR  bool   `json:"ssr"`
+		} `json:"tenon"`
+	}
+	if err := json.Unmarshal(data, &pkg); err != nil {
+		return Frontend{}, fmt.Errorf("%s: %w", file, err)
+	}
+	base := pkg.Tenon.Base
+	if !strings.HasPrefix(base, "/") || !strings.HasSuffix(base, "/") {
+		return Frontend{}, fmt.Errorf(`%s: tenon.base %q must start and end with /, for example "/admin/"`, file, base)
+	}
+	return Frontend{Name: path.Base(fdir), Dir: fdir, Base: base, SSR: pkg.Tenon.SSR}, nil
 }
 
 // check 校验配置，返回第一个不合法之处。

@@ -1,4 +1,4 @@
-// 打印模板：Go 用 ssr.Host.Render 把数据交给 SSR 进程，这里用 React 渲染成完整的 HTML，交给 pdf 包生成 PDF。
+// 打印模板：Go 用 frontend.Host.Render 把数据交给 SSR 进程，这里用 React 渲染成完整的 HTML，交给 pdf 包生成 PDF。
 // 模板只用传入的数据渲染，不调用接口，所以队列任务中没有用户的 cookie 也能使用。
 //
 //	// src/print.tsx
@@ -12,7 +12,7 @@
 import type { ReactElement, ReactNode } from "react"
 import { renderToString } from "react-dom/server"
 
-/** 地址前缀，与 Go 的 ssr.PrintPath 相同。 */
+/** 地址前缀，与 Go 的 frontend.PrintPath 相同。 */
 export const PrintPath = "/__tenon/print/"
 
 /** 打印模板：用 data 渲染一个完整的页面，通常以 PrintDocument 为根。 */

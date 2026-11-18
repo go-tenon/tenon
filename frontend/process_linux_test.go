@@ -1,4 +1,4 @@
-package ssr
+package frontend
 
 import (
 	"bufio"
@@ -20,6 +20,7 @@ import (
 	"sync"
 	"syscall"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -50,7 +51,6 @@ func fakeSSR() {
 	if os.Getenv("FAKE_SSR") == "silent" {
 		time.Sleep(time.Hour)
 	}
-	bundle := readBundle()
 	journal := func(s string) {
 		if p := os.Getenv("FAKE_LOG"); p != "" {
 			f, _ := os.OpenFile(p, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
@@ -62,15 +62,18 @@ func fakeSSR() {
 		return (&net.Dialer{}).DialContext(ctx, "unix", os.Getenv(EnvAPISocket))
 	}}}
 	mux := http.NewServeMux()
-	mux.HandleFunc("/echo/{id}", func(w http.ResponseWriter, r *http.Request) {
+	echo := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set(HeaderRoute, "/echo/$id")
 		json.NewEncoder(w).Encode(map[string]string{
 			"nonce": r.Header.Get(HeaderNonce), "request_id": r.Header.Get("X-Request-ID"),
 			"traceparent": r.Header.Get("Traceparent"), "host": r.Host, "env": os.Getenv("FAKE_EXTRA"),
-			"bundle": bundle,
+			"frontend": os.Getenv(EnvFrontend), "path": r.URL.Path,
 		})
-	})
+	}
+	// 页面请求带着前端的挂载路径：shop 挂在 /shop/。
+	mux.HandleFunc("/echo/{id}", echo)
+	mux.HandleFunc("/shop/echo/{id}", echo)
 	mux.HandleFunc("/stream", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		io.WriteString(w, "first\n")
@@ -128,44 +131,46 @@ func fakeSSR() {
 
 // fakeHost 托管 fakeSSR，就绪后打印子进程的 pid，然后一直运行，等测试把它强制结束。
 func fakeHost() {
-	h, err := New(Options{Runtime: testRuntime(), Bundle: testBundle, API: http.NotFoundHandler(), Env: []string{"FAKE_SSR=1"}})
+	h, err := New(ssrDist(Entry{Name: "web", Base: "/", SSR: true}), Options{API: http.NotFoundHandler(), Env: []string{"FAKE_SSR=1"}})
 	if err != nil {
 		panic(err)
 	}
 	h.Run(context.Background(), func(ctx context.Context) error {
-		fmt.Printf("child %d\n", h.pid.Load())
+		fmt.Printf("child %d\n", h.app("web").pid.Load())
 		<-ctx.Done()
 		return nil
 	})
 }
 
-var selfOnce = sync.OnceValue(func() []byte {
+// self 是测试二进制自己，充当 SSR 可执行文件：环境变量 FAKE_SSR 让它运行 fakeSSR。
+var self = sync.OnceValue(func() string {
 	b, err := os.ReadFile("/proc/self/exe")
 	if err != nil {
 		panic(err)
 	}
-	return b
+	return string(b)
 })
 
-func self() []byte { return selfOnce() }
-
-// testRuntime 是全部测试共用的运行时：测试二进制自己。testBundle 是交给它的“前端代码”，fakeSSR 从 fd 3 读出来。
-var testRuntime = sync.OnceValue(func() *Runtime { return NewRuntime(self()) })
-
-var testBundle = []byte("fake bundle")
-
-// readBundle 从 BundleFD 读出前端代码。用 pread（从头读），不移动共享的偏移：重启后的进程同样能读到。
-func readBundle() string {
-	f := os.NewFile(BundleFD, "bundle")
-	info, err := f.Stat()
-	if err != nil {
-		return "stat: " + err.Error()
+// ssrDist 返回构建产物：清单是 entries，SSR 可执行文件是测试二进制自己；web 有一个预渲染的首页，
+// 只在浏览器中渲染的前端有页面外壳。
+func ssrDist(entries ...Entry) fstest.MapFS {
+	files := map[string]string{ExecutableFile: self(), "web/index.html": "<h1>prerendered</h1>"}
+	for _, e := range entries {
+		if !e.SSR {
+			files[e.Name+"/"+ShellFile] = "<title>" + e.Name + "</title>"
+		}
 	}
-	b := make([]byte, info.Size())
-	if _, err := f.ReadAt(b, 0); err != nil {
-		return "read: " + err.Error()
+	return testDist(entries, files)
+}
+
+// app 返回名为 name 的前端。
+func (h *Host) app(name string) *app {
+	for _, a := range h.apps {
+		if a.Name == name {
+			return a
+		}
 	}
-	return string(b)
+	panic("no frontend " + name)
 }
 
 // client 不复用连接：DefaultClient 可能预先建立一条连接却不发请求，服务器关停时要等满 5 秒才把它当作空闲连接。
@@ -195,8 +200,8 @@ func TestHost(t *testing.T) {
 	api := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, "pong "+logging.RequestID(r.Context()))
 	})
-	h, err := New(Options{
-		Runtime: testRuntime(), Bundle: testBundle, API: httpx.AssignRequestID(httpx.DefaultRequestIDConfig())(api),
+	h, err := New(ssrDist(Entry{Name: "web", Base: "/", SSR: true}, Entry{Name: "admin", Base: "/admin/"}), Options{
+		API:    httpx.AssignRequestID(httpx.DefaultRequestIDConfig())(api),
 		Env:    []string{"FAKE_SSR=1", "FAKE_LOG=" + journal, "FAKE_EXTRA=extra"},
 		Logger: slog.New(slog.NewTextHandler(logs, nil)), MeterProvider: mp,
 	})
@@ -256,7 +261,7 @@ func TestHost(t *testing.T) {
 			t.Fatalf("csp %q", csp)
 		}
 		if got["request_id"] != "REQ-1" || got["env"] != "extra" || !strings.HasPrefix(got["host"], "127.0.0.1:") ||
-			got["bundle"] != string(testBundle) {
+			got["frontend"] != "web" || got["path"] != "/echo/7" {
 			t.Fatalf("forwarded %v", got)
 		}
 		if res.Header.Get(HeaderRoute) != "" {
@@ -276,6 +281,20 @@ func TestHost(t *testing.T) {
 		}
 		if !strings.Contains(got["traceparent"], span.SpanContext().TraceID().String()) {
 			t.Fatalf("traceparent %q, trace %s", got["traceparent"], span.SpanContext().TraceID())
+		}
+	})
+
+	t.Run("static files and other frontends are served by Go", func(t *testing.T) {
+		for path, want := range map[string]string{"/": "<h1>prerendered</h1>", "/admin/users": "<title>admin</title>"} {
+			res, err := client.Get(base + path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			b, _ := io.ReadAll(res.Body)
+			res.Body.Close()
+			if res.StatusCode != http.StatusOK || string(b) != want {
+				t.Fatalf("%s: %d %q", path, res.StatusCode, b)
+			}
 		}
 	})
 
@@ -311,14 +330,15 @@ func TestHost(t *testing.T) {
 
 	t.Run("logs process output", func(t *testing.T) {
 		out := logs.String()
-		if !strings.Contains(out, `level=INFO msg="fake ssr listening" component=ssr`) ||
-			!strings.Contains(out, `level=WARN msg="fake ssr warning" component=ssr`) {
+		if !strings.Contains(out, `level=INFO msg="fake ssr listening" component=ssr frontend=web`) ||
+			!strings.Contains(out, `level=WARN msg="fake ssr warning" component=ssr frontend=web`) {
 			t.Fatalf("logs:\n%s", out)
 		}
 	})
 
 	t.Run("restarts after a crash", func(t *testing.T) {
-		pid := h.pid.Load()
+		web := h.app("web")
+		pid := web.pid.Load()
 		res, err := client.Get(base + "/crash")
 		if err != nil {
 			t.Fatal(err)
@@ -328,9 +348,9 @@ func TestHost(t *testing.T) {
 			t.Fatalf("status %d", res.StatusCode)
 		}
 		deadline := time.Now().Add(10 * time.Second)
-		for !h.Ready() || h.pid.Load() == pid {
+		for !h.Ready() || web.pid.Load() == pid {
 			if time.Now().After(deadline) {
-				t.Fatalf("not restarted, pid %d -> %d, ready %v; logs:\n%s", pid, h.pid.Load(), h.Ready(), logs.String())
+				t.Fatalf("not restarted, pid %d -> %d, ready %v; logs:\n%s", pid, web.pid.Load(), h.Ready(), logs.String())
 			}
 			time.Sleep(10 * time.Millisecond)
 		}
@@ -338,12 +358,12 @@ func TestHost(t *testing.T) {
 		if err != nil || res.StatusCode != http.StatusOK {
 			t.Fatalf("after restart: %v %v", res, err)
 		}
-		// 重启后的进程同样从 fd 3 读到前端代码。
+		// 重启后的进程从同一个内存文件启动，渲染同一个前端。
 		var got map[string]string
 		json.NewDecoder(res.Body).Decode(&got)
 		res.Body.Close()
-		if got["bundle"] != string(testBundle) {
-			t.Fatalf("bundle after restart: %q", got["bundle"])
+		if got["frontend"] != "web" {
+			t.Fatalf("frontend after restart: %q", got["frontend"])
 		}
 		var rm metricdata.ResourceMetrics
 		reader.Collect(context.Background(), &rm)
@@ -353,7 +373,7 @@ func TestHost(t *testing.T) {
 	})
 
 	t.Run("drains pages before stopping the process", func(t *testing.T) {
-		pid := int(h.pid.Load())
+		pid := int(h.app("web").pid.Load())
 		body := make(chan string, 1)
 		go func() {
 			res, err := client.Get(base + "/slow")
@@ -388,7 +408,7 @@ func TestHost(t *testing.T) {
 }
 
 func TestReadyTimeout(t *testing.T) {
-	h, err := New(Options{Runtime: testRuntime(), Bundle: testBundle, API: http.NotFoundHandler(), Env: []string{"FAKE_SSR=silent"},
+	h, err := New(ssrDist(Entry{Name: "web", Base: "/", SSR: true}), Options{API: http.NotFoundHandler(), Env: []string{"FAKE_SSR=silent"},
 		ReadyTimeout: 300 * time.Millisecond, StopTimeout: time.Second, Logger: slog.New(slog.DiscardHandler)})
 	if err != nil {
 		t.Fatal(err)
@@ -430,59 +450,25 @@ func TestParentDeathKillsProcess(t *testing.T) {
 	}
 }
 
-func TestDevServer(t *testing.T) {
-	var got http.Header
-	dev := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		got = r.Header.Clone()
-		w.Header().Set("Content-Type", "text/html")
-		io.WriteString(w, "dev "+r.URL.Path)
-	}))
-	defer dev.Close()
-	h, err := New(Options{DevServer: dev.URL})
-	if err != nil {
-		t.Fatal(err)
-	}
-	srv := httptest.NewServer(httpx.AssignRequestID(httpx.DefaultRequestIDConfig())(h.Handler()))
-	defer srv.Close()
-	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/hello", nil)
-	req.Header.Set("X-Request-ID", "DEV-1")
-	res, err := client.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	b, _ := io.ReadAll(res.Body)
-	res.Body.Close()
-	if string(b) != "dev /hello" || res.Header.Get("Content-Security-Policy") != "" || got.Get("X-Request-ID") != "DEV-1" || got.Get(HeaderNonce) != "" {
-		t.Fatalf("body %q csp %q headers %v", b, res.Header.Get("Content-Security-Policy"), got)
-	}
-	if !h.Ready() {
-		t.Fatal("dev mode is always ready")
-	}
-	ran := false
-	if err := h.Run(context.Background(), func(context.Context) error { ran = true; return nil }); err != nil || !ran {
-		t.Fatalf("dev Run: %v %v", err, ran)
-	}
-}
-
 // Render 用打印模板渲染数据：没有内部接口（队列 worker）也能运行；对外的请求访问不到打印模板。
 func TestRender(t *testing.T) {
-	h, err := New(Options{Runtime: testRuntime(), Bundle: testBundle, Env: []string{"FAKE_SSR=1"}})
+	h, err := New(ssrDist(Entry{Name: "web", Base: "/", SSR: true}), Options{Env: []string{"FAKE_SSR=1"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx := logging.WithRequestID(context.Background(), "PRINT-1")
-	if _, err := h.Render(ctx, "invoice", nil); err == nil {
+	if _, err := h.Render(ctx, "web", "invoice", nil); err == nil {
 		t.Fatal("rendered before the process was ready")
 	}
 	err = h.Run(context.Background(), func(context.Context) error {
-		html, err := h.Render(ctx, "invoice", map[string]any{"no": "INV-7"})
+		html, err := h.Render(ctx, "web", "invoice", map[string]any{"no": "INV-7"})
 		if err != nil || string(html) != "<!doctype html><title>INV-7</title><p>PRINT-1</p>" {
 			return fmt.Errorf("render: %q %v", html, err)
 		}
-		if _, err := h.Render(ctx, "missing", nil); !errors.Is(err, ErrUnknownTemplate) {
+		if _, err := h.Render(ctx, "web", "missing", nil); !errors.Is(err, ErrUnknownTemplate) {
 			return fmt.Errorf("unknown template: %v", err)
 		}
-		if _, err := h.Render(ctx, "../secret", nil); err == nil {
+		if _, err := h.Render(ctx, "web", "../secret", nil); err == nil {
 			return errors.New("accepted a name with a slash")
 		}
 		srv := httptest.NewServer(h.Handler())
@@ -502,71 +488,38 @@ func TestRender(t *testing.T) {
 	}
 }
 
-// Run 依次托管多个前端：serve 运行时全部就绪，结束后全部停止。
-func TestRunMany(t *testing.T) {
-	a, _ := New(Options{Runtime: testRuntime(), Bundle: testBundle, Env: []string{"FAKE_SSR=1"}})
-	b, _ := New(Options{Runtime: testRuntime(), Bundle: testBundle, Env: []string{"FAKE_SSR=1"}})
-	err := Run(context.Background(), func(context.Context) error {
-		if !a.Ready() || !b.Ready() {
-			return errors.New("not all hosts are ready")
+// 两个 SSR 前端共用一个可执行文件，各自一个进程：请求按挂载路径到达各自的进程，Run 结束后全部停止。
+func TestTwoSSRFrontends(t *testing.T) {
+	h, err := New(ssrDist(Entry{Name: "web", Base: "/", SSR: true}, Entry{Name: "shop", Base: "/shop/", SSR: true}),
+		Options{Env: []string{"FAKE_SSR=1"}, Logger: slog.New(slog.DiscardHandler)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = h.Run(context.Background(), func(context.Context) error {
+		if !h.Ready() {
+			return errors.New("not all processes are ready")
+		}
+		if h.app("web").pid.Load() == h.app("shop").pid.Load() {
+			return errors.New("frontends share a process")
+		}
+		srv := httptest.NewServer(h.Handler())
+		defer srv.Close()
+		for path, want := range map[string]string{"/echo/1": "web", "/shop/echo/2": "shop"} {
+			res, err := client.Get(srv.URL + path)
+			if err != nil {
+				return err
+			}
+			var got map[string]string
+			json.NewDecoder(res.Body).Decode(&got)
+			res.Body.Close()
+			if got["frontend"] != want {
+				return fmt.Errorf("%s reached %q", path, got["frontend"])
+			}
 		}
 		return nil
-	}, a, b)
-	if err != nil || a.Ready() || b.Ready() {
-		t.Fatalf("run: %v ready %v %v", err, a.Ready(), b.Ready())
-	}
-	// 两个 Host 共用一个运行时：它只写进一次 memfd。
-	if a.opts.Runtime != b.opts.Runtime || testRuntime().path == "" {
-		t.Fatal("runtime not shared")
-	}
-	ran := false
-	if err := Run(context.Background(), func(context.Context) error { ran = true; return nil }); err != nil || !ran {
-		t.Fatal("no hosts")
-	}
-}
-
-// 不是开发模式时，运行时和前端代码必填；运行时是空的占位文件（还没有 tenon build）时 Run 报错。
-func TestRuntimeRequired(t *testing.T) {
-	if _, err := New(Options{Bundle: testBundle}); err == nil {
-		t.Fatal("missing runtime")
-	}
-	if _, err := New(Options{Runtime: testRuntime()}); err == nil {
-		t.Fatal("missing bundle")
-	}
-	h, err := New(Options{Runtime: NewRuntime(nil), Bundle: testBundle})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := h.Run(context.Background(), func(context.Context) error { return nil }); err == nil || !strings.Contains(err.Error(), "runtime is empty") {
-		t.Fatalf("empty runtime: %v", err)
-	}
-}
-
-// 开发模式：Render 请求开发服务器。
-func TestRenderDev(t *testing.T) {
-	dev := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		b, _ := io.ReadAll(r.Body)
-		io.WriteString(w, r.Method+" "+r.URL.Path+" "+string(b))
-	}))
-	defer dev.Close()
-	h, err := New(Options{DevServer: dev.URL})
-	if err != nil {
-		t.Fatal(err)
-	}
-	html, err := h.Render(context.Background(), "invoice", map[string]int{"n": 1})
-	if err != nil || string(html) != `POST /__tenon/print/invoice {"n":1}` {
-		t.Fatalf("%q %v", html, err)
-	}
-}
-
-func TestNew(t *testing.T) {
-	for name, opts := range map[string]Options{
-		"no executable": {API: http.NotFoundHandler()},
-		"bad dev URL":   {DevServer: "localhost:5173"},
-	} {
-		if _, err := New(opts); err == nil {
-			t.Errorf("%s: want error", name)
-		}
+	})
+	if err != nil || h.Ready() {
+		t.Fatalf("run: %v, ready after Run %v", err, h.Ready())
 	}
 }
 
