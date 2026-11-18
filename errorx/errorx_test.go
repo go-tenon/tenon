@@ -136,3 +136,14 @@ func TestSystemic(t *testing.T) {
 		t.Fatal("plain error must be systemic")
 	}
 }
+
+func TestField(t *testing.T) {
+	missing := errorx.Define(errorx.InvalidArgument, "demo.missing_url")
+	err := crdb.Wrap(missing.New(errorx.Field("base_urls.anthropic")), "save provider")
+	if errorx.FieldOf(err) != "base_urls.anthropic" {
+		t.Fatalf("field=%q", errorx.FieldOf(err))
+	}
+	if errorx.FieldOf(missing.New()) != "" || errorx.FieldOf(errors.New("plain")) != "" {
+		t.Fatal("field must default to empty")
+	}
+}

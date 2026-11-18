@@ -76,13 +76,15 @@ OpenAPI 文档中有三个框架的扩展字段：根上的 `x-tenon-permissions
 | `detail` | 展示给用户的文案，按 `Accept-Language` 翻译。可能随语言和版本变化，不用于判断 |
 | `code` | 稳定的错误码，只有业务错误包含，例如 `article.slug_taken` |
 | `params` | 业务错误的参数，只有带参数的业务错误包含，例如 `auth.method_required` 的 `{"methods": ["acme_sso"]}`。每个错误码的参数是固定的，可以用于处理错误 |
-| `errors` | 字段错误的明细，只有请求格式错误包含 |
+| `errors` | 字段错误的明细：请求格式错误时包含；业务错误指出了某个字段时，也有这个字段的一项，它的 `code` 是业务错误码，`message` 与 `detail` 相同 |
 
 客户端按这个顺序判断：
 
 1. 有 `code` 时按 `code` 处理。
-2. 有 `errors` 时把每一项的 `message` 显示在 `location` 对应的字段旁边。
+2. 有 `errors` 时把每一项的 `message` 显示在 `location` 对应的字段旁边；界面中没有这个字段时，显示在表单上方。
 3. 两者都没有时按 `status` 处理，例如显示通用的错误提示。
+
+业务错误可以同时有 `code` 和 `errors`：例如缺少某个条件下必填的地址，`errors` 中是这个地址字段，客户端按 `code` 判断是什么错误，把提示显示在这个字段旁边。
 
 请求格式错误：请求体不是合法的 JSON 时返回 `400`，字段验证失败时返回 `422`，两者都带 `errors`：
 

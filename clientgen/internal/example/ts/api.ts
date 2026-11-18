@@ -45,7 +45,7 @@ export interface Cover {
 }
 
 export interface ErrorDetail {
-  /** Validation rule, e.g. validation.min_length. Absent when the rule is not recognized. */
+  /** Validation rule, e.g. validation.min_length, or the business error code. Absent when the rule is not recognized. */
   code?: string
   /** Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id' */
   location?: string
@@ -60,7 +60,7 @@ export interface ErrorModel {
   code?: string
   /** A human-readable explanation specific to this occurrence of the problem. */
   detail?: string
-  /** Field errors. Present only on validation errors. */
+  /** Field errors. Present on validation errors, and on business errors that name a field (the entry then carries the business error code). */
   errors?: ErrorDetail[] | null
   /** A URI reference that identifies the specific occurrence of the problem. */
   instance?: string

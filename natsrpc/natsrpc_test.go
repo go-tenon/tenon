@@ -96,7 +96,7 @@ func newServer(f *fixture, opts natsrpc.Options) *natsrpc.Server {
 			}
 			switch in.Fail {
 			case "conflict":
-				return nil, errSlugTaken.New(errorx.Public("slug", in.Slug))
+				return nil, errSlugTaken.New(errorx.Public("slug", in.Slug), errorx.Field("slug"))
 			case "internal":
 				return nil, errors.New("database password is hunter2")
 			case "panic":
@@ -277,6 +277,11 @@ func TestErrors(t *testing.T) {
 	}
 	if !errors.Is(err, errSlugTaken) || errorx.KindOf(err) != errorx.Conflict || errorx.PublicOf(err)["slug"] != "hello" {
 		t.Fatalf("conflict not mapped back: %v", err)
+	}
+	// 业务错误指出的字段：errors 中带着同一个错误码的那一项，调用方用 errorx.FieldOf 取回。
+	if len(r.Problem.Errors) != 1 || r.Problem.Errors[0].Location != "body.slug" || r.Problem.Errors[0].Code != "article.slug_taken" ||
+		r.Problem.Errors[0].Message != r.Problem.Detail || errorx.FieldOf(err) != "slug" {
+		t.Fatalf("field: %+v %q", r.Problem.Errors, errorx.FieldOf(err))
 	}
 
 	// Retry-After 随错误带回。

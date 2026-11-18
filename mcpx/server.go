@@ -218,6 +218,9 @@ func (s *Server) failure(ctx context.Context, tool string, err error) *mcp.CallT
 	var text string
 	if code := errorx.CodeOf(err); code != "" && !errorx.KindOf(err).Systemic() {
 		text = code + ": " + httpx.ErrorDetail(ctx, err)
+		if f := errorx.FieldOf(err); f != "" {
+			text += " (field " + f + ")"
+		}
 	} else {
 		s.logger.ErrorContext(ctx, "tool failed", "mcp.tool", tool, "error", err)
 		text = "internal error"

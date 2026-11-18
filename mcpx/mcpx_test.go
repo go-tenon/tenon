@@ -66,7 +66,7 @@ func registerTools(srv *mcpx.Server) {
 	}, func(ctx context.Context, in PublishArgs) (*Published, error) {
 		switch in.Fail {
 		case "conflict":
-			return nil, errAlreadyPublished.New()
+			return nil, errAlreadyPublished.New(errorx.Field("id"))
 		case "internal":
 			return nil, errors.New("database password is hunter2")
 		case "panic":
@@ -226,7 +226,7 @@ func TestErrors(t *testing.T) {
 	}
 
 	// 业务错误：错误码和消息交给模型，不记录错误日志。
-	if res := call("conflict"); !strings.HasPrefix(res.Text, "article.already_published: ") {
+	if res := call("conflict"); !strings.HasPrefix(res.Text, "article.already_published: ") || !strings.HasSuffix(res.Text, " (field id)") {
 		t.Fatalf("conflict %q", res.Text)
 	}
 	if rec.Has(slog.LevelError, "tool failed") {

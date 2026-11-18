@@ -157,7 +157,7 @@ func Execute(root *cobra.Command, opts ...ExecuteOption) {
 }
 
 // ErrorText 返回命令失败时显示的文字。业务错误（errorx 定义的、不是系统故障的错误）显示按 ctx 中的语言翻译的提示，
-// 后面附上错误码，例如“这个邮箱已经被使用（user.email_taken）”，其他语言用半角括号；没有译文的业务错误、系统故障和其他错误显示 err 本身。
+// 后面附上错误码，例如“这个邮箱已经被使用（user.email_taken）”，指出了字段时写在错误码之前（见 errorx.Field），其他语言用半角括号；没有译文的业务错误、系统故障和其他错误显示 err 本身。
 func ErrorText(ctx context.Context, err error) string {
 	code := errorx.CodeOf(err)
 	if code == "" || errorx.KindOf(err).Systemic() {
@@ -167,8 +167,15 @@ func ErrorText(ctx context.Context, err error) string {
 	if msg == "" || msg == code {
 		return err.Error()
 	}
+	field := errorx.FieldOf(err)
 	if strings.HasPrefix(i18n.Locale(ctx), "zh") {
+		if field != "" {
+			return msg + "（字段 " + field + "，" + code + "）"
+		}
 		return msg + "（" + code + "）"
+	}
+	if field != "" {
+		return msg + " (field " + field + ", " + code + ")"
 	}
 	return msg + " (" + code + ")"
 }

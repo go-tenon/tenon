@@ -26,7 +26,7 @@ type Problem struct {
 	Detail string         `json:"detail,omitempty"` // 展示给用户的文案，按 Accept-Language 翻译，可能随语言和版本变化，不用于判断。
 	Code   string         `json:"code,omitempty"`   // 稳定的错误码，只有业务错误包含。
 	Params map[string]any `json:"params,omitempty"` // 业务错误的公开参数。
-	Errors []FieldError   `json:"errors,omitempty"` // 字段错误的明细，只有请求格式错误包含。
+	Errors []FieldError   `json:"errors,omitempty"` // 字段错误的明细：请求格式错误，以及指出了字段的业务错误（errorx.Field，Code 是业务错误码）。
 }
 
 // FieldError 是一个字段的错误。
