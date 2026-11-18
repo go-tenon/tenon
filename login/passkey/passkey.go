@@ -3,10 +3,11 @@
 // 一个 passkey 是 login.Realm 中的一个登录标识，Kind 为 "passkey"，Value 是 credential ID：
 // 注册得到完成凭证，交给 Realm.Link（已登录的用户添加 passkey）或 Realm.Register（用 passkey 注册新账号）；
 // 登录经过 Realm.External，所以租户隔离、Options.Resolve、“始终保留至少一种登录方式”都与其他标识相同，
-// 也跳过二次验证——passkey 本身就同时验证了设备和用户。本包只另外保存公钥，见 Migrations。
+// 也跳过二次验证——passkey 本身就同时验证了设备和用户。本包另外保存公钥和完成过的仪式，见 Migrations。
 //
 // 每个仪式分两步：Begin* 返回交给浏览器或 App 的选项和一个 token，Finish* 收到客户端的结果和这个 token。
-// token 是用应用密钥加密的仪式状态，几分钟内有效，由客户端带回。
+// token 是用应用密钥加密的仪式状态，几分钟内有效，由客户端带回。仪式完成后记录它的 challenge，
+// 同一个结果再次提交时被拒绝：同步的 passkey 签名计数始终为 0，计数挡不住重放。
 package passkey
 
 import (
@@ -48,7 +49,7 @@ var (
 //go:embed migrations
 var migrationFiles embed.FS
 
-// Migrations 返回 auth_passkeys 表的迁移，供应用发布；还需要 login.Migrations。
+// Migrations 返回 auth_passkeys 和 auth_passkey_ceremonies 表的迁移，供应用发布；还需要 login.Migrations。
 func Migrations() fs.FS {
 	f, err := fs.Sub(migrationFiles, "migrations")
 	if err != nil {
@@ -127,6 +128,14 @@ type Ceremony struct {
 	Token   string          `json:"token"`   // 由客户端连同结果一起交回 Finish*。
 }
 
+// ceremonyRow 是 auth_passkey_ceremonies 表中的一行：一个已经完成的仪式，过期后由 Cleanup 删除。
+type ceremonyRow struct {
+	bun.BaseModel `bun:"table:auth_passkey_ceremonies,alias:pc"`
+
+	Challenge string    `bun:"challenge,pk"`
+	ExpiresAt time.Time `bun:"expires_at,notnull"`
+}
+
 // state 是加密在 token 中的仪式状态。
 type state struct {
 	Purpose string               `json:"p"`
@@ -201,6 +210,9 @@ func (s *Store) FinishRegistration(ctx context.Context, token string, response [
 	if err != nil {
 		return "", ErrInvalid.Wrap(err)
 	}
+	if err := s.consume(ctx, st); err != nil {
+		return "", err
+	}
 	id := base64.RawURLEncoding.EncodeToString(cred.ID)
 	if len(id) > 191 {
 		return "", ErrInvalid.New()
@@ -237,8 +249,8 @@ func (s *Store) BeginLogin(ctx context.Context) (Ceremony, error) {
 }
 
 // FinishLogin 校验客户端用 passkey 签名的结果（navigator.credentials.get 返回的 PublicKeyCredential 的 JSON），
-// 返回登录成功的主体，交给 tokens.Login 或 JWT.Login。passkey 不存在、没有绑定账号、属于其他租户，
-// 或者签名计数倒退（疑似被克隆）时返回 ErrInvalid。
+// 返回登录成功的主体，交给 tokens.Login 或 JWT.Login。passkey 不存在、没有绑定账号、属于其他租户、
+// 签名计数倒退（疑似被克隆），或者这个仪式已经完成过时返回 ErrInvalid。
 func (s *Store) FinishLogin(ctx context.Context, token string, response []byte) (login.Outcome, error) {
 	st, err := s.open(ctx, token, "login")
 	if err != nil {
@@ -268,6 +280,9 @@ func (s *Store) FinishLogin(ctx context.Context, token string, response []byte) 
 	}
 	if cred.Authenticator.CloneWarning {
 		return login.Outcome{}, ErrInvalid.New()
+	}
+	if err := s.consume(ctx, st); err != nil {
+		return login.Outcome{}, err
 	}
 	encoded, err := json.Marshal(cred)
 	if err != nil {
@@ -337,24 +352,35 @@ func (s *Store) Remove(ctx context.Context, db bun.IDB, ref identity.Ref, id str
 	return errors.Wrap(err, "passkey: remove")
 }
 
-// Cleanup 删除最多 limit 个没有绑定到任何账号、创建超过一天的 passkey，返回删除的个数：
-// 注册后没有完成 Link 或 Register 的，以及账号注销（Realm.Forget）之后留下的。由应用定时调用。
+// Cleanup 删除没有绑定到任何账号、创建超过一天的 passkey，以及已经过期的仪式记录，每种最多 limit 个，返回删除的总数。
+// 没有绑定的 passkey 是注册后没有完成 Link 或 Register 的，以及账号注销（Realm.Forget）之后留下的。由应用定时调用。
 func (s *Store) Cleanup(ctx context.Context, limit int) (int, error) {
 	if limit <= 0 {
 		return 0, errors.New("passkey: cleanup limit must be positive")
 	}
+	now := s.now().UTC()
 	bound := s.db.NewSelect().Table("auth_identifiers").Column("value").
 		Where("subject_type = ? AND kind = ?", s.realm.Type(), Kind)
 	orphans := s.db.NewSelect().Model((*row)(nil)).Column("credential_id").
-		Where("subject_type = ?", s.realm.Type()).Where("created_at < ?", s.now().UTC().Add(-24*time.Hour)).
+		Where("subject_type = ?", s.realm.Type()).Where("created_at < ?", now.Add(-24*time.Hour)).
 		Where("credential_id NOT IN (?)", bound).OrderExpr("created_at").Limit(int64(limit))
 	res, err := s.db.NewDelete().Model((*row)(nil)).
 		Where("credential_id IN (?)", orphans).Exec(ctx)
 	if err != nil {
 		return 0, errors.Wrap(err, "passkey: cleanup")
 	}
-	n, err := res.RowsAffected()
-	return int(n), errors.Wrap(err, "passkey: cleanup")
+	keys, err := res.RowsAffected()
+	if err != nil {
+		return 0, errors.Wrap(err, "passkey: cleanup")
+	}
+	expired := s.db.NewSelect().Model((*ceremonyRow)(nil)).Column("challenge").
+		Where("expires_at < ?", now).OrderExpr("expires_at").Limit(int64(limit))
+	res, err = s.db.NewDelete().Model((*ceremonyRow)(nil)).Where("challenge IN (?)", expired).Exec(ctx)
+	if err != nil {
+		return 0, errors.Wrap(err, "passkey: cleanup ceremonies")
+	}
+	ceremonies, err := res.RowsAffected()
+	return int(keys + ceremonies), errors.Wrap(err, "passkey: cleanup ceremonies")
 }
 
 // rows 返回 ref 的 passkey：ref 的 passkey 登录标识对应的行。
@@ -441,6 +467,24 @@ func (s *Store) open(ctx context.Context, token, purpose string) (state, error) 
 		return state{}, ErrInvalid.New()
 	}
 	return st, nil
+}
+
+// consume 记录仪式 st 已经完成，它已经完成过时返回 ErrInvalid。客户端的结果签了仪式的 challenge，
+// 记录保留到仪式过期，在此之前同一个结果无法再次通过。
+func (s *Store) consume(ctx context.Context, st state) error {
+	res, err := s.db.NewInsert().Model(&ceremonyRow{Challenge: st.Session.Challenge, ExpiresAt: st.Expires.UTC()}).
+		On("CONFLICT DO NOTHING").Exec(ctx)
+	if err != nil {
+		return errors.Wrap(err, "passkey: consume ceremony")
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return errors.Wrap(err, "passkey: consume ceremony")
+	}
+	if n == 0 {
+		return ErrInvalid.New()
+	}
+	return nil
 }
 
 // truncate 把 s 截断为最多 n 个字符。

@@ -144,7 +144,9 @@ err = users.Link(ctx, a.db, sub.Ref(), proof)
 
 `email` 是系统在保存 passkey 时显示的账号名，`in.Body.Name` 是给这个 passkey 起的名称，例如“iPhone”。同一个账号在每个设备上只创建一个 passkey。
 
-账号设置中，`List` 列出账号的 passkey（名称、是否在设备之间同步、最近使用时间），`Rename` 改名，`Remove` 移除；账号始终保留至少一种登录方式。签名计数倒退（疑似 passkey 被复制）时登录失败。创建后没有绑定到账号的 passkey，以及账号[注销](#forget)后留下的公钥，由 `passkeys.Cleanup` 定时删除。
+账号设置中，`List` 列出账号的 passkey（名称、是否在设备之间同步、最近使用时间），`Rename` 改名，`Remove` 移除；账号始终保留至少一种登录方式。签名计数倒退（疑似 passkey 被复制）时登录失败。
+
+每个 `token` 只能完成一次仪式：完成后记录它的 challenge，截获的客户端结果再次提交时返回 `passkey.ErrInvalid`。在设备之间同步的 passkey 签名计数始终为 0，计数挡不住这种重放，所以靠这条记录。创建后没有绑定到账号的 passkey、账号[注销](#forget)后留下的公钥，以及过期的仪式记录，由 `passkeys.Cleanup` 定时删除。
 
 <a id="policies"></a>
 ## 按租户的登录策略
