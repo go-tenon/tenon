@@ -8,19 +8,23 @@ import {
   Badge,
   Box,
   Button,
+  Center,
   Group,
   Indicator,
   Loader,
+  type MantineColorScheme,
   Menu,
   type MenuProps,
   Popover,
   Progress,
   ScrollArea,
+  SegmentedControl,
   Stack,
   Switch,
   Text,
   UnstyledButton,
   useMantineColorScheme,
+  VisuallyHidden,
 } from "@mantine/core"
 import {
   IconBell,
@@ -31,6 +35,7 @@ import {
   IconListCheck,
   IconLogout,
   IconMoon,
+  IconPalette,
   IconSelector,
   IconSun,
   IconX,
@@ -177,25 +182,32 @@ const schemes = [
   { value: "auto", label: "跟随系统", icon: IconDeviceDesktop },
 ] as const
 
-/** 配色：亮色、暗色、跟随系统三格，当前的一格带底色。点击不关闭菜单。 */
+/** 配色：一行“主题”，右边是亮色、暗色、跟随系统的三段切换（SegmentedControl）。切换不关闭菜单。 */
 function ColorSchemePicker(): ReactNode {
   const { colorScheme, setColorScheme } = useMantineColorScheme()
   return (
-    <div className="tn-schemes" role="radiogroup" aria-label="配色">
-      {schemes.map(({ value, label, icon: SchemeIcon }) => (
-        <UnstyledButton
-          key={value}
-          className="tn-scheme"
-          role="radio"
-          aria-checked={colorScheme === value}
-          aria-label={label}
-          data-active={colorScheme === value || undefined}
-          onClick={() => setColorScheme(value)}
-        >
-          <SchemeIcon size={20} stroke={1.6} />
-        </UnstyledButton>
-      ))}
-    </div>
+    <Group className="tn-schemes" justify="space-between" gap="sm" wrap="nowrap">
+      <Group gap={10} wrap="nowrap">
+        <IconPalette size={18} stroke={1.5} />
+        <Text size="sm">主题</Text>
+      </Group>
+      <SegmentedControl
+        size="xs"
+        radius="xl"
+        aria-label="配色"
+        value={colorScheme}
+        onChange={(v) => setColorScheme(v as MantineColorScheme)}
+        data={schemes.map(({ value, label, icon: SchemeIcon }) => ({
+          value,
+          label: (
+            <Center>
+              <SchemeIcon size={14} stroke={1.8} />
+              <VisuallyHidden>{label}</VisuallyHidden>
+            </Center>
+          ),
+        }))}
+      />
+    </Group>
   )
 }
 

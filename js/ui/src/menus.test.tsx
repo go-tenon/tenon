@@ -53,10 +53,10 @@ describe("UserMenu", () => {
     expect(screen.getByText("ming@example.com")).toBeTruthy()
     const schemes = await screen.findByRole("radiogroup", { name: "配色" })
     const dark = within(schemes).getByRole("radio", { name: "暗色" })
-    expect(dark.getAttribute("aria-checked")).toBe("false")
+    expect((dark as HTMLInputElement).checked).toBe(false)
     await act(async () => fireEvent.click(dark))
     await waitFor(() => expect(document.documentElement.dataset.mantineColorScheme).toBe("dark"))
-    expect(within(schemes).getByRole("radio", { name: "暗色" }).getAttribute("aria-checked")).toBe("true")
+    expect((within(schemes).getByRole("radio", { name: "暗色" }) as HTMLInputElement).checked).toBe(true)
     expect(screen.getByText("退出登录")).toBeTruthy() // 选择配色不关闭菜单
   })
 
