@@ -47,11 +47,17 @@ type resUpdateIn struct {
 	ID   string `path:"id"`
 	Body resChanges
 }
+type resRenameIn struct {
+	ID   string `path:"id"`
+	Body struct {
+		Title string `json:"title" minLength:"1"`
+	}
+}
 type resSlugIn struct {
 	Slug string `path:"slug"`
 }
 
-// resourceAPI 登记文章的接口：列表、详情、创建、修改、删除、发布，以及一个路径参数不同的接口。
+// resourceAPI 登记文章的接口：列表、详情、创建、修改、删除、发布、只改标题，以及一个路径参数不同的接口。
 func resourceAPI() *rest.API {
 	api := rest.New(chi.NewRouter(), rest.Options{})
 	reg := func(id, method, path string) huma.Operation {
@@ -72,6 +78,9 @@ func resourceAPI() *rest.API {
 	})
 	rest.Register(api, reg("article-delete", http.MethodDelete, "/articles/{id}"), ok)
 	rest.Register(api, reg("article-publish", http.MethodPost, "/articles/{id}/publish"), ok)
+	rest.Register(api, reg("article-rename", http.MethodPut, "/articles/{id}/title"), func(context.Context, *resRenameIn) (*resOneOut, error) {
+		return &resOneOut{}, nil
+	})
 	rest.Register(api, reg("article-by-slug", http.MethodGet, "/articles/by-slug/{slug}"), func(context.Context, *resSlugIn) (*resOneOut, error) {
 		return &resOneOut{}, nil
 	})
@@ -94,8 +103,8 @@ func TestResource(t *testing.T) {
 	if !slices.Equal(r.Columns, []string{"id", "title", "status", "updated_at"}) {
 		t.Errorf("columns %q", r.Columns)
 	}
-	if !slices.Equal(r.Form, []string{"title", "content", "status"}) {
-		t.Errorf("form %q", r.Form)
+	if !slices.Equal(r.CreateForm, []string{"title", "content", "status"}) || !slices.Equal(r.UpdateForm, []string{"title", "content", "status"}) {
+		t.Errorf("forms %q %q", r.CreateForm, r.UpdateForm)
 	}
 	if r.Key != "id" {
 		t.Errorf("key %q", r.Key)
@@ -115,6 +124,17 @@ func TestResource(t *testing.T) {
 	}
 }
 
+func TestResourceForms(t *testing.T) {
+	t.Parallel()
+	api := resourceAPI()
+	// 新建和修改的请求体不同时，两个表单各取自己的字段。
+	api.Resource(rest.Resource{Name: "article", List: "article-list", Create: "article-create", Update: "article-rename"})
+	r := api.Resources()[0]
+	if !slices.Equal(r.CreateForm, []string{"title", "content", "status"}) || !slices.Equal(r.UpdateForm, []string{"title"}) {
+		t.Errorf("forms %q %q", r.CreateForm, r.UpdateForm)
+	}
+}
+
 func TestResourceRejects(t *testing.T) {
 	base := rest.Resource{Name: "article", List: "article-list"}
 	for name, tc := range map[string]struct {
@@ -130,8 +150,8 @@ func TestResourceRejects(t *testing.T) {
 		"filter":          {func(r *rest.Resource) { r.Filters = []string{"author"} }, `filter "author" is not a query parameter`},
 		"sort column":     {func(r *rest.Resource) { r.Sort = []string{"nope"} }, "sort column nope not found"},
 		"sort value":      {func(r *rest.Resource) { r.Sort = []string{"status"} }, "sort column status is not an allowed value"},
-		"form field":      {func(r *rest.Resource) { r.Create = "article-create"; r.Form = []string{"slug"} }, "form field slug not found"},
-		"form without op": {func(r *rest.Resource) { r.Form = []string{"title"} }, "Form needs a Create or Update"},
+		"form field":      {func(r *rest.Resource) { r.Create = "article-create"; r.CreateForm = []string{"slug"} }, "create form field slug not found"},
+		"form without op": {func(r *rest.Resource) { r.UpdateForm = []string{"title"} }, "update form needs the update operation"},
 		"create no body":  {func(r *rest.Resource) { r.Create = "article-publish" }, "must not have path parameters"},
 		"key mismatch": {func(r *rest.Resource) {
 			r.Get = "article-get"

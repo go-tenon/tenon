@@ -568,10 +568,12 @@ function FormBody({
   onSaved(): void
   onCancel(): void
 }): ReactNode {
+  // 新建和修改的字段各来自自己接口的请求体。
+  const fields = editKey ? model.updateForm : model.createForm
   const form = useSchemaForm({
     schema: model.formSchema(editKey ? "update" : "create"),
     rules: model.ruleOptions,
-    initialValues: formValues(model, row),
+    initialValues: formValues(fields, row),
   })
   const { save } = useResourceMutations(model)
   const [formError, setFormError] = useState<ErrorInfo>()
@@ -597,7 +599,7 @@ function FormBody({
     >
       <Stack gap="md">
         <FormError error={formError} />
-        {model.form.map((f) => {
+        {fields.map((f) => {
           const Input = inputs[f.name] ?? DefaultInput
           return (
             <Box key={f.name}>

@@ -42,7 +42,8 @@ export interface ResourceDef {
   readonly permissions: { readonly [operation: string]: readonly string[] }
   readonly columns: readonly ResourceFieldDef[]
   readonly filters: readonly ResourceFieldDef[]
-  readonly form: readonly ResourceFieldDef[]
+  readonly createForm: readonly ResourceFieldDef[]
+  readonly updateForm: readonly ResourceFieldDef[]
   readonly actions: readonly {
     readonly name: string
     readonly operation: OperationRef
@@ -123,7 +124,10 @@ export interface ResourceModel {
   key?: string
   columns: ResourceField[]
   filters: ResourceField[]
-  form: ResourceField[]
+  /** 新建表单的字段：新建接口请求体的字段。 */
+  createForm: ResourceField[]
+  /** 修改表单的字段：修改接口请求体的字段，常常与新建不同。 */
+  updateForm: ResourceField[]
   actions: ResourceAction[]
   /** 有哪些接口。 */
   has: Record<ResourceOperation, boolean>
@@ -267,14 +271,16 @@ export function resourceModel(def: ResourceDef, kit: ResourceKit, queryClient?: 
 
   const columns = def.columns.map(field)
   const filters = def.filters.map(field)
-  const form = def.form.map(field)
+  const createForm = def.createForm.map(field)
+  const updateForm = def.updateForm.map(field)
   return {
     name: def.name,
     title: labels?.title ?? def.name,
     key: def.key,
     columns,
     filters,
-    form,
+    createForm,
+    updateForm,
     actions: def.actions.map((a) => ({
       name: a.name,
       label: labels?.actions[a.name] ?? a.name,
@@ -323,7 +329,8 @@ export function resourceModel(def: ResourceDef, kit: ResourceKit, queryClient?: 
       return String(row[def.key ?? "id"] ?? "")
     },
     display(f, value) {
-      const found = typeof f === "string" ? [...columns, ...filters, ...form].find((c) => c.name === f) : f
+      const found =
+        typeof f === "string" ? [...columns, ...filters, ...createForm, ...updateForm].find((c) => c.name === f) : f
       return found ? displayValue(found, value) : value
     },
     get queryKey() {
@@ -411,10 +418,10 @@ export function useResourceMutations(model: ResourceModel) {
   return useMemo(() => ({ save, remove, run }), [save, remove, run])
 }
 
-/** 表单的初始值：编辑时取详情（或列表中的这一行）中表单字段的值，新建时为空。设置的模型同样适用。 */
-export function formValues(model: { form: readonly ResourceField[] }, row?: ResourceRow): Record<string, unknown> {
+/** 表单的初始值：fields 在 row（详情、列表中的这一行或设置）中的值；新建时 row 为空，布尔是 false，数组是空数组。 */
+export function formValues(fields: readonly ResourceField[], row?: ResourceRow): Record<string, unknown> {
   const out: Record<string, unknown> = {}
-  for (const f of model.form) {
+  for (const f of fields) {
     const v = row?.[f.name]
     if (v !== undefined) out[f.name] = v
     else if (f.kind === "boolean") out[f.name] = false
@@ -507,7 +514,7 @@ export function useSettings(model: SettingsModel): Settings {
   const query = useQuery(model.query())
   const queryClient = useQueryClient()
   const values = useMemo(
-    () => (query.data ? formValues(model, query.data as ResourceRow) : undefined),
+    () => (query.data ? formValues(model.form, query.data as ResourceRow) : undefined),
     [model, query.data],
   )
   return {

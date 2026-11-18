@@ -30,17 +30,17 @@ rest.Register(api, remove, h.Delete) // DELETE /articles/{id}
 rest.Register(api, publish, h.Publish)
 
 api.Resource(rest.Resource{
-    Name:   "article",
-    List:   "article-list",
-    Get:    "article-get",
-    Create: "article-create",
-    Update: "article-update",
-    Delete: "article-delete",
-    Columns: []string{"title", "status", "updated_at"},
-    Filters: []string{"status"},
-    Sort:    []string{"updated_at"},
-    Form:    []string{"title", "content", "status"},
-    Actions: []rest.Action{{Name: "publish", Operation: "article-publish", Confirm: true}},
+    Name:       "article",
+    List:       "article-list",
+    Get:        "article-get",
+    Create:     "article-create",
+    Update:     "article-update",
+    Delete:     "article-delete",
+    Columns:    []string{"title", "status", "updated_at"},
+    Filters:    []string{"status"},
+    Sort:       []string{"updated_at"},
+    CreateForm: []string{"title", "content", "status"},
+    Actions:    []rest.Action{{Name: "publish", Operation: "article-publish", Confirm: true}},
 })
 ```
 
@@ -51,7 +51,8 @@ api.Resource(rest.Resource{
 | `Columns` | 列表的列：列表项的字段。为空时是除对象和数组外的全部字段，按结构体中的顺序 |
 | `Filters` | 列表上方的筛选条件：列表接口的查询参数，按业务命名，例如 `name`、`status`、`min_age`。文字是输入框（提示是字段的显示文字），枚举是下拉选择，布尔是“是 / 否” |
 | `Sort` | 可以排序的列。列表接口要有 `sort` 查询参数，取值是列名，前面加 `-` 表示降序，与 [`useList`](lists-forms.md#lists) 相同 |
-| `Form` | 创建和修改的表单字段：请求体的字段。为空时是请求体的全部字段，按结构体中的顺序 |
+| `CreateForm` | 新建表单的字段：新建接口请求体的字段，按显示的顺序。为空时是请求体的全部字段，按结构体中的顺序 |
+| `UpdateForm` | 修改表单的字段：修改接口请求体的字段。为空时同样是请求体的全部字段。新建和修改的字段常常不同，例如新建租户时还要填写管理员的账号，修改时只改名称 |
 | `Actions` | 行上的其他操作：`Operation` 是接口，`Confirm` 执行前询问，`Danger` 用醒目的颜色 |
 
 详情、修改、删除和操作的接口有且只有一个路径参数，它是标识一行的字段，例如 `/articles/{id}` 对应列表项的 `id`。列的类型、枚举，表单字段的类型、是否必填和校验规则，都来自接口的 schema，不在资源中重复。资源只描述呈现上的选择：哪些列、哪些筛选条件、表单中有哪些字段、行上有哪些操作。
@@ -96,7 +97,7 @@ import { resources } from "@blog/client/api/resources"
 
 resources.article.operations.list     // ["article", "list"]：client.article.list
 resources.article.columns[1]          // { name: "status", type: "string", enum: "ArticleStatus", required: true }
-resources.article.form[0]             // { name: "title", type: "string", required: true }
+resources.article.createForm[0]       // { name: "title", type: "string", required: true }
 resources.article.permissions.create  // ["article:write"]
 resources.article.labels["zh-CN"].fields.title // "标题"
 ```
@@ -126,7 +127,7 @@ const form = useSchemaForm({ schema: kit.schemas.article.create.body, rules: kit
 
 | 成员 | 说明 |
 | --- | --- |
-| `title`、`columns`、`filters`、`form`、`actions` | 带显示文字。字段有 `kind`（`text`、`number`、`boolean`、`select`、`multiselect`、`tags`、`date`、`datetime`、`json`，由类型、格式和枚举得出）、`required`、`sortable`，枚举字段有 `options` |
+| `title`、`columns`、`filters`、`createForm`、`updateForm`、`actions` | 带显示文字。字段有 `kind`（`text`、`number`、`boolean`、`select`、`multiselect`、`tags`、`date`、`datetime`、`json`，由类型、格式和枚举得出）、`required`、`sortable`，枚举字段有 `options` |
 | `listSearch` | 列表路由的 `validateSearch`，查询条件、排序和分页保存在地址中，规则来自列表接口的查询参数 |
 | `allowed(can, operation)` | 当前身份能否使用一个接口或操作 |
 | `listQuery`、`getQuery` | 列表和详情的查询选项，query key 与 `createQueries` 相同 |

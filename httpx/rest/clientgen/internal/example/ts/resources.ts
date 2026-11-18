@@ -34,7 +34,12 @@ export const resources = {
       { name: "title", type: "string" },
       { name: "status", type: "string", enum: "ArticleStatus" },
     ],
-    form: [
+    createForm: [
+      { name: "title", type: "string", required: true },
+      { name: "slug", type: "string", required: true },
+      { name: "tags", type: "array", items: "string", nullable: true },
+    ],
+    updateForm: [
       { name: "title", type: "string", required: true },
       { name: "slug", type: "string", required: true },
       { name: "tags", type: "array", items: "string", nullable: true },

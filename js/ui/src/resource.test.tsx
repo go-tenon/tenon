@@ -13,7 +13,7 @@ import { createQueries } from "../../../httpx/rest/clientgen/internal/example/ts
 import { resources } from "../../../httpx/rest/clientgen/internal/example/ts/resources"
 import { components, schemas } from "../../../httpx/rest/clientgen/internal/example/ts/schemas"
 import { ResourceFormPage, ResourcePage, type ResourcePageProps } from "./resource"
-import { createApp, type ResourceModel, type RouterContext, resourceModel } from "./shell"
+import { createApp, type ResourceDef, type ResourceModel, type RouterContext, resourceModel } from "./shell"
 import { renderRoot } from "./testing"
 
 afterEach(() => {
@@ -97,16 +97,18 @@ async function mount(
     form = "page",
     withPages = true,
     noGet = false,
-  }: { form?: "page" | "modal"; withPages?: boolean; noGet?: boolean } = {},
+    titleOnlyUpdate = false,
+  }: { form?: "page" | "modal"; withPages?: boolean; noGet?: boolean; titleOnlyUpdate?: boolean } = {},
 ) {
   const session = createSession({ load: async () => ({ account: "u1" }) })
   await session.signIn({ account: "u1" })
   const client = createClient({ baseURL: "/api", session })
   const queryClient = new QueryClient()
+  let def: ResourceDef = resources.article
+  if (noGet) def = { ...def, operations: { ...def.operations, get: undefined } }
+  if (titleOnlyUpdate) def = { ...def, updateForm: def.updateForm.filter((f) => f.name === "title") }
   const model: ResourceModel = resourceModel(
-    noGet
-      ? { ...resources.article, operations: { ...resources.article.operations, get: undefined } }
-      : resources.article,
+    def,
     {
       client,
       queries: createQueries(client, { queryClient }),
@@ -266,6 +268,16 @@ describe("ResourcePage", () => {
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "放弃" })))
     await screen.findByText("你好")
     expect(app.router.state.location.pathname).toBe("/articles")
+  })
+
+  it("新建和修改的表单各用自己的字段：修改接口只改标题时，修改页面只有标题", async () => {
+    server()
+    await mount("/articles/new", "新建文章", undefined, { titleOnlyUpdate: true })
+    expect(await screen.findByLabelText(/链接名/)).toBeTruthy()
+    cleanup()
+    await mount("/articles/a2/edit", "修改文章", undefined, { titleOnlyUpdate: true })
+    expect(((await screen.findByLabelText(/标题/)) as HTMLInputElement).value).toBe("草稿一篇")
+    expect(screen.queryByLabelText(/链接名/)).toBeNull()
   })
 
   it("修改、删除和操作：修改是单独的页面，操作和删除先确认，完成后刷新列表", async () => {

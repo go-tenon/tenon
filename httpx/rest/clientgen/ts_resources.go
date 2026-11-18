@@ -1,7 +1,6 @@
 package clientgen
 
 import (
-	"cmp"
 	"fmt"
 	"maps"
 	"net/http"
@@ -101,19 +100,26 @@ func (t *tsGen) resourceTS(r rest.Resource, templates map[string]map[string]stri
 	}
 	b.WriteString("    ],\n")
 
-	// 表单：创建（没有时是修改）的请求体的字段。
-	b.WriteString("    form: [\n")
-	if id := cmp.Or(r.Create, r.Update); id != "" {
-		o, err := t.findOp(id)
-		if err != nil {
-			return "", nil, err
+	// 表单：新建和修改各取自己接口的请求体，字段的类型和是否必填也来自各自的请求体。
+	for _, f := range []struct {
+		key, id string
+		fields  []string
+	}{
+		{"createForm", r.Create, r.CreateForm}, {"updateForm", r.Update, r.UpdateForm},
+	} {
+		b.WriteString("    " + f.key + ": [\n")
+		if f.id != "" {
+			o, err := t.findOp(f.id)
+			if err != nil {
+				return "", nil, err
+			}
+			body := t.requestBody(o.op)
+			for _, name := range f.fields {
+				b.WriteString("      " + t.fieldTS(name, body.Properties[name], slices.Contains(body.Required, name), false) + ",\n")
+			}
 		}
-		body := t.requestBody(o.op)
-		for _, f := range r.Form {
-			b.WriteString("      " + t.fieldTS(f, body.Properties[f], slices.Contains(body.Required, f), false) + ",\n")
-		}
+		b.WriteString("    ],\n")
 	}
-	b.WriteString("    ],\n")
 
 	// 操作。
 	b.WriteString("    actions: [\n")
@@ -129,7 +135,7 @@ func (t *tsGen) resourceTS(r rest.Resource, templates map[string]map[string]stri
 
 	// 显示文字。
 	fields := slices.Clone(r.Columns)
-	for _, f := range append(slices.Clone(r.Filters), r.Form...) {
+	for _, f := range slices.Concat(r.Filters, r.CreateForm, r.UpdateForm) {
 		if !slices.Contains(fields, f) {
 			fields = append(fields, f)
 		}
