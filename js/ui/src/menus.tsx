@@ -12,6 +12,7 @@ import {
   Indicator,
   Loader,
   Menu,
+  type MenuProps,
   Popover,
   Progress,
   ScrollArea,
@@ -71,10 +72,19 @@ export interface UserMenuProps {
   items?: UserMenuItem[]
   /** 菜单中的配色切换（亮色、暗色、跟随系统），默认显示；false 时不显示。 */
   colorScheme?: boolean
+  /** 菜单弹出的方向，默认 bottom-end（顶栏右侧）；放在侧栏底部时用 right-end。 */
+  position?: MenuProps["position"]
 }
 
 /** 用户菜单：只显示头像；菜单中有应用的菜单项、配色、多标签的开关（布局开启了多标签时）和退出登录。 */
-export function UserMenu({ name, avatar, logout, items = [], colorScheme = true }: UserMenuProps): ReactNode {
+export function UserMenu({
+  name,
+  avatar,
+  logout,
+  items = [],
+  colorScheme = true,
+  position = "bottom-end",
+}: UserMenuProps): ReactNode {
   const app = useApp()
   const navigate = useNavigate()
   const signOut = async () => {
@@ -87,7 +97,7 @@ export function UserMenu({ name, avatar, logout, items = [], colorScheme = true 
     }
   }
   return (
-    <Menu width={220} position="bottom-end">
+    <Menu width={220} position={position}>
       <Menu.Target>
         <UnstyledButton className="tn-avatar" aria-label="用户菜单">
           <Avatar src={avatar} size={30} radius="xl" color="brand">

@@ -619,6 +619,185 @@ body {
   box-shadow: none;
 }
 
+/* ———————————————— Rail 布局（RailLayout） ———————————————— */
+
+/*
+ * 最左侧是 48px 的模块图标栏，底色与画布相同；右侧的工作区是一张左侧带圆角的卡片，
+ * 其中是 260px 的二级导航（可以收起）和内容。窄屏时二级导航是抽屉。
+ */
+.tn-rail {
+  --tn-rail-rail: 48px;
+  --tn-rail-secondary: 260px;
+  display: flex;
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--tn-canvas);
+}
+
+.tn-rail-rail {
+  display: flex;
+  width: var(--tn-rail-rail);
+  flex-shrink: 0;
+  flex-direction: column;
+  align-items: center;
+}
+
+.tn-rail-logo {
+  display: grid;
+  height: 44px;
+  flex-shrink: 0;
+  place-items: center;
+}
+
+.tn-rail-modules {
+  flex: 1;
+  min-height: 0;
+  padding-top: 4px;
+  overflow-y: auto;
+}
+
+.tn-rail-module {
+  position: relative;
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: var(--mantine-radius-sm);
+  color: var(--tn-muted);
+
+  &:not([aria-current]):hover {
+    background: light-dark(var(--mantine-color-gray-1), var(--mantine-color-dark-5));
+    color: var(--tn-text);
+  }
+
+  &[aria-current] {
+    background: var(--mantine-primary-color-light);
+    color: var(--mantine-primary-color-light-color);
+  }
+}
+
+.tn-rail-module-icon {
+  display: grid;
+  place-items: center;
+}
+
+.tn-rail-module-expand {
+  position: absolute;
+  opacity: 0;
+}
+
+.tn-rail-module[data-expand]:is(:hover, :focus-visible) {
+  .tn-rail-module-icon {
+    opacity: 0;
+  }
+
+  .tn-rail-module-expand {
+    opacity: 1;
+  }
+}
+
+.tn-rail-footer {
+  padding-bottom: 10px;
+}
+
+.tn-rail-workspace {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--tn-border);
+  border-top-width: 0;
+  border-radius: 12px 0 0 12px;
+  background: var(--tn-surface);
+}
+
+.tn-rail-secondary {
+  width: 0;
+  flex-shrink: 0;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--tn-surface) 65%, var(--tn-canvas));
+  transition: width 160ms ease;
+}
+
+.tn-rail[data-open] .tn-rail-secondary {
+  width: var(--tn-rail-secondary);
+}
+
+.tn-rail-secondary-inner,
+.tn-rail-secondary-drawer {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+}
+
+.tn-rail-secondary-inner {
+  width: var(--tn-rail-secondary);
+  border-right: 1px solid var(--tn-border);
+}
+
+.tn-rail-secondary-drawer {
+  height: 100dvh;
+}
+
+.tn-rail-secondary-header {
+  height: 44px;
+  flex-shrink: 0;
+  padding: 6px 12px 2px;
+}
+
+.tn-rail-secondary-content {
+  flex: 1;
+  min-height: 0;
+}
+
+.tn-rail-secondary .mantine-NavLink-root,
+.tn-rail-secondary-drawer .mantine-NavLink-root {
+  border-radius: var(--mantine-radius-sm);
+}
+
+.tn-rail-section + .tn-rail-section {
+  margin-top: 10px;
+}
+
+.tn-rail-main {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  outline: none;
+}
+
+.tn-rail-page {
+  padding: 28px 24px 24px;
+}
+
+@media (max-width: 48em) {
+  .tn-rail-page {
+    padding: 20px 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tn-rail-secondary {
+    transition: none;
+  }
+}
+
+/* 跳到主要内容的链接：平时在屏幕外，用 Tab 键聚焦时出现在左上角。 */
+.tn-skip-link {
+  position: fixed;
+  top: -80px;
+  left: 16px;
+  z-index: 300;
+  padding: 10px 16px;
+  border-radius: var(--mantine-radius-md);
+  background: var(--mantine-primary-color-filled);
+  color: var(--mantine-color-white);
+
+  &:focus {
+    top: 8px;
+  }
+}
+
 /* ———————————————— 官网 ———————————————— */
 
 .tn-site {
