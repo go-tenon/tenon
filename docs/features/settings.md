@@ -80,7 +80,7 @@ var Defaults = Settings{
 }
 ```
 
-在[入口](../concepts/dependencies.md#assembling-the-application)的 `open` 中创建 `Group`，保存在 `App` 中，再传给需要它的业务动作：
+在[入口](../concepts/dependencies.md#assembling-the-application)的 `Open` 中创建 `Group`，保存在 `App` 中，再传给需要它的业务动作：
 
 ```go
 siteSettings := settings.New(db, "site", site.Defaults)

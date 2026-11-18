@@ -106,7 +106,7 @@ func Command(router func() chi.Routes, translations ...fs.FS) *cobra.Command {
 	cmd.Flags().StringSliceVar(&gen.Imports, "import", nil, "客户端可以直接导入的包（含子包），可重复")
 	cmd.Flags().StringVar(&basePath, "base-path", "", "只生成 BasePath 为它的 API，例如 /api/v1；路由中有多个 API 时 --out 需要它")
 	cmd.Flags().StringToStringVar(&gen.Rename, "rename", nil, "服务端包路径=镜像包名，可重复")
-	return cmd
+	return command.InGroup(cmd, command.GroupDev)
 }
 
 // TSDirs 返回每个 API 的 TypeScript 客户端目录名，与 apis 一一对应：names 中按 BasePath 指定的名称，

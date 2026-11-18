@@ -277,31 +277,33 @@ Centrifuge 只链接进使用了 `realtime` 的应用。
 <a id="separate-process"></a>
 ### 单独部署实时连接
 
-`serve` 和 `start` 都挂载了 `/realtime`，起步阶段直接使用即可。WebSocket 是长连接：每次升级，旧进程停止时断开它上面的全部连接，客户端在同一时刻重连。接口发布频繁、连接很多时，把实时连接交给单独的一组 `realtime` 进程，升级接口时它们保持在线，大量空闲连接也与接口分开占用资源。
+运行全部部分的 `serve` 和单独运行的 `serve http` 都在 HTTP 服务上挂载了 `/realtime`，起步阶段直接使用即可。WebSocket 是长连接：每次升级，旧进程停止时断开它上面的全部连接，客户端在同一时刻重连。接口发布频繁、连接很多时，把实时连接交给单独的一组进程，升级接口时它们保持在线，大量空闲连接也与接口分开占用资源。
 
-`realtime` 进程运行与 `serve` 相同的路由，只是监听另一个地址。把[入门教程](../tutorial/02-infrastructure.md#assembling)中 `HTTP` 方法的内容移到 `serveOn`，两个部分共用：
+给 `App` 加一个只承接实时连接的部分。连接的认证由 `realtime` 自己完成（`Options.Authenticate`），所以这个部分的路由中只需要 `/realtime` 和默认的中间件：
 
 ```go
-// HTTP 运行全部路由，serve 和 start 命令使用它。
-func (a *App) HTTP(d *command.Daemon) (func(context.Context) error, error) {
-    return a.serveOn(d, a.cfg.HTTP.Addr)
-}
-
-// Realtime 运行同样的路由，专门承接实时连接，realtime 命令使用它。
+// Realtime 只承接实时频道的连接，在 RealtimeAddr 上监听。
 func (a *App) Realtime(d *command.Daemon) (func(context.Context) error, error) {
-    return a.serveOn(d, a.cfg.RealtimeAddr)
-}
-
-// serveOn 装配路由并在 addr 上监听，就是原来 HTTP 方法的内容，只是 d.Listen("tcp", addr)。
-func (a *App) serveOn(d *command.Daemon, addr string) (func(context.Context) error, error)
-
-// Realtime 只运行实时连接，realtime 命令调用它。
-func Realtime(ctx context.Context, cfg settings.Config) error {
-    return run(ctx, cfg, (*App).Realtime)
+    router := chi.NewRouter()
+    router.Use(httpx.Defaults(a.cfg.HTTP)...)
+    router.Handle("/realtime", a.rt.Handler())
+    ln, err := d.Listen("tcp", a.cfg.RealtimeAddr)
+    if err != nil {
+        return nil, err
+    }
+    return func(ctx context.Context) error {
+        return httpx.Serve(ctx, a.cfg.HTTP, ln, router)
+    }, nil
 }
 ```
 
-`RealtimeAddr` 是应用配置中新增的一项，例如 `:8081`。路由相同，所以 token 照常认证。反向代理把 `/realtime` 转给 `realtime` 进程，其余请求仍然转给 `serve`：
+`a.rt` 是 `Open` 中创建的 `realtime.Realtime`，HTTP 服务的路由挂载的也是它。在 `Parts` 中把它登记为只单独运行的部分，`serve` 运行全部部分时不包含它，`serve realtime` 只运行它：
+
+```go
+{Name: "realtime", Short: "只承接实时频道的连接", Start: a.Realtime, Standalone: true},
+```
+
+`RealtimeAddr` 是应用配置中新增的一项，例如 `:8081`。反向代理把 `/realtime` 转给 `serve realtime` 进程，其余请求仍然转给 HTTP 服务：
 
 ```nginx
 location /realtime {
@@ -315,9 +317,9 @@ location / {
 }
 ```
 
-- 只改了接口和页面时，[升级](../installation/operations.md#zero-downtime-upgrades) `serve` 即可，实时连接保持在线；改了频道规则、授权函数，或者升级了框架，再升级 `realtime`。
-- `start` 中的 `HTTP` 已经挂载了实时频道，`Realtime` 只在单独部署时使用。
-- `realtime` 进程同样可以运行多个实例，它们与 `serve`、`work` 共用 Hub 后端，业务代码在哪个进程中发布都一样。
+- 只改了接口和页面时，[升级](../installation/operations.md#zero-downtime-upgrades) HTTP 服务即可，实时连接保持在线；改了频道规则、授权函数，或者升级了框架，再升级 `serve realtime` 的进程。
+- 频道挂在带租户的路径上时（例如 `/t/{tenant}/realtime`），这个部分的路由用同样的路径。
+- `serve realtime` 同样可以运行多个实例，它们与其他进程共用 Hub 后端，业务代码在哪个进程中发布都一样。
 
 <a id="troubleshooting"></a>
 ## 常见问题

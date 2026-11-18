@@ -85,7 +85,7 @@ type Config struct {
 }
 ```
 
-在[入口](../concepts/dependencies.md#assembling-the-application)的 `open` 中创建客户端和 `vector.Store`，并登记关闭：
+在[入口](../concepts/dependencies.md#assembling-the-application)的 `Open` 中创建客户端和 `vector.Store`，并登记关闭：
 
 ```go
 qc, err := qdrant.NewClient(&qdrant.Config{

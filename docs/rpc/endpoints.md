@@ -124,7 +124,13 @@ func (a *App) RPC(*command.Daemon) (func(context.Context) error, error) {
 }
 ```
 
-`a.nc` 是 `open` 中创建的 NATS 连接，`Serve` 不关闭它；`a.tokens` 是 [apitoken.Store](../security/api-tokens.md)，`a.languages` 是[消息目录](../general/localization.md#loading-translations)，设置后错误提示按请求头 `Accept-Language` 翻译。`Version` 是应用的版本号（语义化版本），出现在服务发现中。`article.RegisterRPC` 是 `article` 模块中登记它的全部端点的函数，与登记 HTTP 路由的 `Register` 放在一起。
+`a.nc` 是 `Open` 中创建的 NATS 连接，`Serve` 不关闭它；`a.tokens` 是 [apitoken.Store](../security/api-tokens.md)，`a.languages` 是[消息目录](../general/localization.md#loading-translations)，设置后错误提示按请求头 `Accept-Language` 翻译。`Version` 是应用的版本号（语义化版本），出现在服务发现中。`article.RegisterRPC` 是 `article` 模块中登记它的全部端点的函数，写在模块的 `rpc.go` 中，与登记 HTTP 路由的 `RegisterRoutes`（`routes.go`）并列，见[业务包](../concepts/structure.md#business-packages)。
+
+最后把它登记为 `Parts` 中的一个部分，`serve` 就会运行它，`serve rpc` 只运行它，见[serve：运行常驻进程](../general/commands.md#serve-command)：
+
+```go
+{Name: "rpc", Short: "RPC 端点", Start: a.RPC},
+```
 
 `Serve` 做的事情：
 
@@ -134,7 +140,7 @@ func (a *App) RPC(*command.Daemon) (func(context.Context) error, error) {
 - 请求 ID、链路（`traceparent`）和语言从请求头中取出，放进 `ctx`，日志和数据库查询都带着它们。
 - 收到停止信号时先不再接收新的请求，处理完已经收到的；最多等待 `ShutdownTimeout`（默认 10 秒）。
 
-RPC 可以和 HTTP 服务运行在同一个进程中，也可以单独运行，见[一个进程，还是三个进程](../installation/deployment.md#process-forms)。
+RPC 可以和 HTTP 服务运行在同一个进程中，也可以单独运行（`serve rpc`），单独运行时不需要健康检查，见[一个进程，还是每个部分一个进程](../installation/deployment.md#process-forms)。
 
 <a id="exporting"></a>
 ### 导出接口描述

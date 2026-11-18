@@ -65,7 +65,7 @@ blog/
 │   └── local.yaml         只在本机开发时叠加的配置，可以没有
 ├── cmd/api/main.go        程序入口
 ├── internal/
-│   ├── bootstrap/         装配：配置结构、打开资源、HTTP 服务、命令
+│   ├── bootstrap/         装配：配置结构、打开资源、运行的部分、命令
 │   ├── auth/              令牌校验
 │   ├── article/           业务包，每个业务动作一个文件
 │   └── user/
@@ -93,11 +93,11 @@ blog/
 | 文件 | 内容 |
 | --- | --- |
 | `config.go` | 应用的配置结构体 |
-| `app.go` | `App`：各个进程部分共用的资源；`open` 打开它们 |
-| `http.go` | 中间件、路由注册，`serve` 命令运行的 HTTP 服务 |
+| `app.go` | `App`：各个进程部分共用的资源；`Open` 打开它们，`Parts` 列出常驻进程的运行部分 |
+| `http.go` | 中间件、路由注册，HTTP 服务这个部分 |
 | `commands.go` | 需要数据库等资源的命令 |
 
-队列 worker、定时任务调度器等其他运行部分也放在这里，每个一个文件。
+RPC 服务、队列 worker、定时任务调度器等其他运行部分也放在这里，每个一个文件，例如 `rpc.go`、`background.go`。每个部分只调用各业务包的登记函数（见下一节），不关心业务包里有哪些动作。
 
 <a id="business-packages"></a>
 ### 业务包
@@ -108,8 +108,13 @@ blog/
 | --- | --- |
 | `article.go` | 模型、业务错误、几个动作共用的查询与授权函数 |
 | `create.go`、`publish.go`…… | 一个业务动作一个文件 |
-| `routes.go` | 本模块的路由：路径、方法、访问策略 |
-| `commands.go` | 本模块的命令 |
+| `routes.go` | `RegisterRoutes`：本模块的 HTTP 路由，路径、方法、访问策略 |
+| `rpc.go` | `RegisterRPC`：本模块的 [RPC 端点](../rpc/endpoints.md) |
+| `jobs.go` | `RegisterJobs`：本模块的[队列任务](actions.md#as-jobs)的处理函数 |
+| `tasks.go` | `RegisterTasks`：本模块的[定时任务](actions.md#as-scheduled-tasks) |
+| `commands.go` | `Commands`：本模块的命令 |
+
+模块用到哪几种入口，就有哪几个文件。`bootstrap` 中的各个部分调用这些登记函数：HTTP 服务调用 `RegisterRoutes`，RPC 服务调用 `RegisterRPC`，worker 调用 `RegisterJobs`，调度器调用 `RegisterTasks`。模块不知道自己运行在哪个进程中：`serve` 运行全部部分，`serve worker` 只运行 worker，同一个 `RegisterJobs` 在两种进程中都会被调用。
 
 你会发现模块里没有一个包揽所有操作的 `Service`：动作多了，只是文件多了，每个文件仍然只关心一件事。当动作多到一个目录难以浏览时，按子领域拆成新的包，例如把评论拆到 `internal/comment`。
 
@@ -140,8 +145,8 @@ blog/
 
 1. **表结构**：`go run ./cmd/api migrate make create_comments_table`，在 `migrations/` 中写建表语句。
 2. **业务代码**：新建 `internal/comment/`。`comment.go` 放模型和业务错误，`create.go`、`delete.go` 等每个动作一个文件，见[业务动作](actions.md)。
-3. **路由**：在 `internal/comment/routes.go` 中写 `Register` 函数，注册本模块的接口。
-4. **装配**：在 `internal/bootstrap/http.go` 的路由中调用 `comment.Register`，把需要的依赖（例如数据库）传进去，见[依赖装配](dependencies.md)。
+3. **路由**：在 `internal/comment/routes.go` 中写 `RegisterRoutes` 函数，注册本模块的接口。
+4. **装配**：在 `internal/bootstrap/http.go` 的路由中调用 `comment.RegisterRoutes`，把需要的依赖（例如数据库）传进去，见[依赖装配](dependencies.md)。
 5. **错误提示**：在 `locales/zh-CN.yaml` 中加上新错误码的提示。
 6. **前端**：开发环境重新生成客户端后，在 `apps/web/src/routes/` 中写页面，用 `api.comment.create()` 调用接口。
 
@@ -160,6 +165,8 @@ blog/
 | 构造函数 | `New` + 类型名 | `NewCreate` |
 | 业务方法 | `Handle` | `(*Publish).Handle` |
 | 入口方法 | 入口名 | `(*Publish).HTTP`、`(*Publish).Job`、`(*Publish).Command` |
+| 模块的登记函数 | `Register` + 入口 | `RegisterRoutes`、`RegisterRPC`、`RegisterJobs`、`RegisterTasks` |
+| 运行的部分 | 小写的入口名 | `http`、`rpc`、`worker`、`scheduler` |
 | 输入、输出 | 动作名 + `Input` / `Output` | `CreateInput` |
 | 资源路径 | 复数 | `/articles`、`/articles/{id}` |
 | JSON 字段 | snake_case | `author_id` |
@@ -180,7 +187,7 @@ blog/
 
 **新加的业务模块的接口没有出现在接口文档中**
 
-还没有在 `internal/bootstrap/http.go` 中调用它的 `Register`。Tenon 不会自动发现包，每个模块都要在装配时注册。
+还没有在 `internal/bootstrap/http.go` 中调用它的 `RegisterRoutes`。Tenon 不会自动发现包，每个模块都要在装配时注册。
 
 <a id="framework-packages"></a>
 ## 框架包一览

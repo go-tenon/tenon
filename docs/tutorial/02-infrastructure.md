@@ -149,8 +149,8 @@ type App struct {
     db  *bun.DB
 }
 
-// open 安装日志器，连接数据库，把关闭操作登记到 stack。
-func open(ctx context.Context, cfg Config, stack *cleanup.Stack) (*App, error) {
+// Open 安装日志器，连接数据库，把关闭操作登记到 stack。
+func Open(ctx context.Context, cfg Config, stack *cleanup.Stack) (*App, error) {
     slog.SetDefault(logging.New(logging.Config{}))
 
     db, err := database.Open(ctx, cfg.Database)
@@ -162,46 +162,21 @@ func open(ctx context.Context, cfg Config, stack *cleanup.Stack) (*App, error) {
     return &App{cfg: cfg, db: db}, nil
 }
 
-// part 是进程中的一个运行部分，例如 HTTP 服务：装配时返回 run，run 一直运行到 ctx 被取消。
-type part func(*App, *command.Daemon) (run func(context.Context) error, err error)
-
-// run 装配 App 和 parts，然后在同一个进程中运行 parts，直到收到停止信号，最后关闭资源。
-func run(ctx context.Context, cfg Config, parts ...part) (err error) {
-    d, err := command.NewDaemon(nil)
-    if err != nil {
-        return err
+// Parts 是常驻进程的运行部分：serve 运行全部部分，serve <名字> 只运行其中一个。
+func Parts(a *App) []command.Part {
+    return []command.Part{
+        {Name: "http", Short: "接口和页面", Start: a.HTTP},
     }
-    defer d.Stop()
-
-    var stack cleanup.Stack
-    defer func() { err = stack.CloseWith(context.Background(), err) }()
-
-    app, err := open(ctx, cfg, &stack)
-    if err != nil {
-        return err
-    }
-    runs := make([]func(context.Context) error, len(parts))
-    for i, p := range parts {
-        if runs[i], err = p(app, d); err != nil {
-            return err
-        }
-    }
-    return d.Run(ctx, runs...)
-}
-
-// Serve 运行 HTTP 服务，serve 命令调用它。
-func Serve(ctx context.Context, cfg Config) error {
-    return run(ctx, cfg, (*App).HTTP)
 }
 ```
 
 逐个看这几部分：
 
-- **`App`** 保存各部分共用的资源，现在只有数据库连接 `db`。之后的章节需要新的资源时，就在 `open` 中打开它，保存到 `App` 中。
-- **`open`** 打开资源，同时把“怎样关闭它”登记到 `stack` 中。程序退出时，`stack` 按打开的相反顺序关闭资源，例如先关闭依赖数据库的部分，再关闭数据库。如果打开到一半失败了（例如数据库连不上），已经打开的资源也会被关闭，不会泄漏。
-- **`part`** 是一个函数类型，表示进程中的一个运行部分，例如 HTTP 服务。它先做准备工作，返回一个一直运行、直到 ctx 被取消的 `run` 函数（函数作为值，见[把方法当作值传递](../concepts/go-primer.md#method-values)）。
-- **`run`** 把这些串起来：打开资源，准备好各个部分，然后一直运行到收到停止信号（`Ctrl-C` 或 `SIGTERM`），最后由 `defer` 关闭资源。
-- **`Serve`** 是 `serve` 命令调用的函数，它只运行 HTTP 服务一个部分。以后加上处理后台任务的 worker 时，再写一个只运行 worker 的 `Work`，见[队列](../background/queue.md#running-workers)。
+- **`App`** 保存各部分共用的资源，现在只有数据库连接 `db`。之后的章节需要新的资源时，就在 `Open` 中打开它，保存到 `App` 中。
+- **`Open`** 打开资源，同时把“怎样关闭它”登记到 `stack` 中。程序退出时，`stack` 按打开的相反顺序关闭资源，例如先关闭依赖数据库的部分，再关闭数据库。如果打开到一半失败了（例如数据库连不上），已经打开的资源也会被关闭，不会泄漏。
+- **`Parts`** 列出进程中一直运行的**部分**，现在只有 HTTP 服务一个。`Start` 是装配这个部分的方法（方法作为值，见[把方法当作值传递](../concepts/go-primer.md#method-values)）：它做好准备工作，返回一个一直运行、直到收到停止信号才返回的函数。以后加上处理后台任务的 worker 时，在这里再加一行，见[队列](../background/queue.md#running-workers)。
+
+`Open` 和 `Parts` 交给框架的 `command.Serve`（下文的入口中），由它打开资源、装配各个部分、一直运行到收到停止信号（`Ctrl-C` 或 `SIGTERM`），最后关闭资源。
 
 接着，新建 `internal/bootstrap/http.go`，装配 HTTP 服务：
 
@@ -225,10 +200,9 @@ import (
     "example.com/blog/internal/todo"
 )
 
-// HTTP 装配 HTTP 服务，serve 命令运行它。apps 中的前端由 frontend.Host 按挂载路径提供：服务端渲染的前端由
+// HTTP 装配 HTTP 服务。apps 中的前端由 frontend.Host 按挂载路径提供：服务端渲染的前端由
 // Go 托管的 SSR 进程渲染，它们渲染时经内部 socket 调用同一组路由。
 func (a *App) HTTP(d *command.Daemon) (func(context.Context) error, error) {
-    var draining httpx.Draining
     var router chi.Router
     // router 在 pages 创建之后才构造好，SSR 进程调用接口时经这个函数转给它。
     api := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { router.ServeHTTP(w, r) })
@@ -236,26 +210,25 @@ func (a *App) HTTP(d *command.Daemon) (func(context.Context) error, error) {
     if err != nil {
         return nil, err
     }
-    router = a.Router(&draining, pages.Handler())
+    router = a.Router(pages.Handler())
     ln, err := d.Listen("tcp", a.cfg.HTTP.Addr)
     if err != nil {
         return nil, err
     }
     return func(ctx context.Context) error {
         return pages.Run(ctx, func(ctx context.Context) error {
-            return httpx.Serve(ctx, a.cfg.HTTP, ln, router, httpx.OnDraining(draining.Set))
+            return httpx.Serve(ctx, a.cfg.HTTP, ln, router)
         })
     }, nil
 }
 
 // Router 构造应用的全部路由：健康检查、/api 下的接口和页面。
 // 它只保存 App 的字段、不使用它们，所以 DocRouter 可以用一个没有打开任何资源的 App 调用它。
-func (a *App) Router(draining *httpx.Draining, pages http.Handler) chi.Router {
+func (a *App) Router(pages http.Handler) chi.Router {
     router := chi.NewRouter()
     router.Use(httpx.Defaults(a.cfg.HTTP)...)
     router.Get("/livez", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
     router.Handle("/readyz", httpx.Ready(httpx.ReadyOptions{
-        Draining: draining,
         Checks: []health.Check{
             {Name: "database", Ping: func(ctx context.Context) error { return a.db.PingContext(ctx) }},
         },
@@ -263,7 +236,7 @@ func (a *App) Router(draining *httpx.Draining, pages http.Handler) chi.Router {
     router.Route("/api", func(r chi.Router) {
         r.Use(httpx.Timeout(a.cfg.HTTP.Timeout))
         api := rest.New(r, rest.Options{Title: "Blog API", Version: "1.0.0", BasePath: "/api"})
-        todo.Register(api, todo.NewStore())
+        todo.RegisterRoutes(api, todo.NewStore())
     })
     if pages != nil {
         router.Handle("/*", pages)
@@ -273,13 +246,13 @@ func (a *App) Router(draining *httpx.Draining, pages http.Handler) chi.Router {
 
 // DocRouter 用默认配置和没有打开任何资源的 App 构造路由，openapi、routes、client 命令用它。
 func DocRouter() chi.Routes {
-    return (&App{cfg: config.Default[Config]()}).Router(nil, nil)
+    return (&App{cfg: config.Default[Config]()}).Router(nil)
 }
 
 ```
 
-- **`HTTP`** 就是上面说的一个 `part`：它监听端口，返回运行服务的函数。收到停止信号时，服务先把 `draining` 标记为“正在停止”，再等正在处理的请求完成（排空）。
-- **`/livez` 和 `/readyz`** 是健康检查，部署平台定期访问它们，判断程序是否还活着、能否接收请求。`/readyz` 会检查数据库，数据库连不上、或者程序正在停止时返回 `503`。
+- **`HTTP`** 就是上面 `Parts` 中的 `Start`：它监听端口，返回运行服务的函数。收到停止信号时，服务先停止接收新的连接，再等正在处理的请求完成（排空）。
+- **`/livez` 和 `/readyz`** 是健康检查。`/livez` 只要程序能响应就返回 `204`；`/readyz` 还会检查数据库，数据库连不上、或者程序正在停止时返回 `503`，反向代理据此不再把请求转给这个实例。
 - **`/api`** 下是 JSON 接口，`rest.New` 在这个子路由上创建 API。现在注册的还是模板的待办接口，第 4 章换成文章。
 - **其余的请求**是页面，交给 `pages`：`frontend.New` 读取嵌入的 `apps.Dist`，按挂载路径把请求交给 `apps` 中的前端，静态文件由 Go 直接返回，`web` 的页面由 Go 托管的 SSR 进程渲染，开发时转给前端的开发服务器。`pages.Run` 先启动 SSR 进程、等它就绪，再开始接收请求；停止时先排空请求，再停 SSR 进程。见[托管前端与服务端渲染](../frontend/hosting.md)。
 - **`DocRouter`** 在不打开任何资源的情况下构造全部路由，`tenon` 用它生成接口文档和客户端。为此，`Router` 中只能保存 `App` 的字段、不能立即使用它们。数据库的检查写成了一个闭包 `func(ctx context.Context) error { return a.db.PingContext(ctx) }`，原因也在这里：`DocRouter` 中的 `a.db` 是 `nil`，如果直接写 `a.db.PingContext`，构造路由时就会 panic；写成闭包后，要到真的执行检查时才会用到 `a.db`。
@@ -296,6 +269,7 @@ package main
 import (
     "github.com/go-tenon/tenon/command"
     "github.com/go-tenon/tenon/command/httpcmd"
+    "github.com/go-tenon/tenon/httpx"
 
     "example.com/blog/internal/bootstrap"
 )
@@ -303,8 +277,9 @@ import (
 func main() {
     root := command.Root("api", "博客")
     root.AddCommand(
-        command.Run("serve", "启动 HTTP 服务", bootstrap.Serve),
+        command.Serve(bootstrap.Open, bootstrap.Parts),
         command.Config[bootstrap.Config](),
+        httpcmd.Health(func(cfg bootstrap.Config) httpx.Config { return cfg.HTTP }),
     )
     // openapi、routes、client：导出接口文档、列出路由、生成客户端，go tool tenon 调用它们。
     root.AddCommand(httpcmd.Commands(bootstrap.DocRouter)...)
@@ -314,8 +289,9 @@ func main() {
 
 和第 1 章相比，`main.go` 变短了，它只回答“程序有哪些命令”：
 
-- **`serve`**：加载配置，调用 `bootstrap.Serve`。
-- **`config`**：打印加载后的完整配置。配置不符合预期时用它检查：`go run ./cmd/api config`。
+- **`serve`**：加载配置，调用 `bootstrap.Open` 打开资源，再运行 `bootstrap.Parts` 中的部分。`serve` 运行全部部分，`serve http` 只运行 HTTP 服务；现在只有一个部分，两者一样。
+- **`config`**：打印加载后的完整配置。配置不符合预期时用它检查：`go run ./cmd/api config show`。
+- **`health`**：请求本机的 `/livez`，在 Docker 中用作健康检查，见[部署](../installation/deployment.md#health-checks)。
 - **`openapi`、`routes`、`client`**：导出接口文档、列出全部路由、生成客户端，`tenon` 在开发时调用它们。
 
 代码导入了新的包，可能用到 `go.mod` 中还没有的依赖。`bun run dev` 编译时会自动补全 `go.mod`；直接用 `go run ./cmd/api …` 运行命令之前，先运行一次 `go mod tidy`。
@@ -346,8 +322,8 @@ curl localhost:8080/readyz
 
 - 数据库等服务由 Docker Compose 启动；
 - 配置从 `config/app.yaml` 和环境变量中加载，写错时启动就会报错；
-- 资源在 `open` 中打开，程序退出时按相反的顺序关闭；
-- HTTP 服务能平滑地停止，部署平台能通过 `/readyz` 检查它是否就绪。
+- 资源在 `Open` 中打开，程序退出时按相反的顺序关闭；
+- HTTP 服务能平滑地停止，反向代理能通过 `/readyz` 检查它是否就绪。
 
 下一章，我们创建第一张数据表。
 

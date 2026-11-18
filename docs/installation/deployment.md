@@ -10,7 +10,7 @@
     - [检查配置](#checking-configuration)
     - [执行迁移](#running-migrations)
     - [启动服务](#starting-the-server)
-- [一个进程，还是三个进程](#process-forms)
+- [一个进程，还是每个部分一个进程](#process-forms)
 - [用 systemd 运行](#systemd)
     - [发布新版本](#systemd-releases)
 - [用 Docker 运行](#docker)
@@ -108,30 +108,31 @@ go build -trimpath -o bin/api ./cmd/api
 ### 启动服务
 
 ```bash
-./bin/api start
+./bin/api serve
 ```
 
-`start` 在一个进程中同时运行三样东西：HTTP 服务、队列的 worker（在后台执行任务）和定时任务的调度器。下一节说明什么时候应该把它们分开运行。
+`serve` 在一个进程中运行应用的全部部分，例如 HTTP 服务、队列的 worker（在后台执行任务）和定时任务的调度器。下一节说明什么时候应该把它们分开运行。
 
 在终端中直接运行时，关闭终端程序就停了，也不会在崩溃后重启。正式的部署交给 [systemd](#systemd) 或 [Docker](#docker)。
 
 <a id="process-forms"></a>
-## 一个进程，还是三个进程
+## 一个进程，还是每个部分一个进程
 
-按[命令行](../general/commands.md#running-together)一章写好的应用，有三个一直运行的部分：
+按[命令行](../general/commands.md#serve-command)一章写好的应用，有几个一直运行的部分，例如：
 
-- **HTTP 服务**（`serve`）：处理接口请求；
-- **队列的 worker**（`work`）：在后台执行耗时的任务，例如发送邮件，见[队列](../background/queue.md)；
-- **调度器**（`schedule`）：到点执行定时任务，见[定时任务](../background/scheduling.md)。
+- **HTTP 服务**（`http`）：处理接口请求和页面；
+- **RPC 服务**（`rpc`）：处理其他服务的调用，见 [RPC](../rpc/endpoints.md)；
+- **队列的 worker**（`worker`）：在后台执行耗时的任务，例如发送邮件，见[队列](../background/queue.md)；
+- **调度器**（`scheduler`）：到点执行定时任务，见[定时任务](../background/scheduling.md)。
 
-它们可以在一个进程中一起运行，也可以分开运行。代码完全相同，只是启动的命令不同：
+它们可以在一个进程中一起运行，也可以每个部分一个进程。代码和配置完全相同，只是启动的命令不同：
 
 | 方式 | 命令 | 适合 |
 | --- | --- | --- |
-| 一起运行 | `start` | 刚上线、规模不大：只有一个进程，部署和监控最简单 |
-| 分开运行 | `serve`、`work`、`schedule` | 任务很多，或者耗时的任务拖慢了接口：各自按负载增减实例 |
+| 一起运行 | `serve` | 刚上线、规模不大：只有一个进程，部署和监控最简单 |
+| 分开运行 | `serve http`、`serve worker`、`serve scheduler`…… | 任务很多，或者耗时的任务拖慢了接口：各自按负载增减实例 |
 
-建议从 `start` 开始，确实需要时再分开。分开时只需要把 `start` 换成三组分别运行 `serve`、`work`、`schedule` 的实例；`work` 和 `schedule` 的健康检查见[健康检查](#health-checks)。
+建议从 `serve` 开始，确实需要时再分开。分开时，把运行 `serve` 的实例换成每个部分一组的实例；只有 HTTP 服务需要健康检查，见[健康检查](#health-checks)。
 
 每一部分都可以运行多个实例：
 
@@ -172,7 +173,7 @@ PIDFile=/run/blog/%i/daemon.pid
 User=blog
 WorkingDirectory=/opt/blog
 EnvironmentFile=/etc/blog/env
-ExecStart=/opt/blog/bin/api %i
+ExecStart=/opt/blog/bin/api serve %i
 Restart=on-failure
 RestartSec=5s
 RestartPreventExitStatus=2 3
@@ -186,15 +187,15 @@ PrivateTmp=yes
 WantedBy=multi-user.target
 ```
 
-文件名中的 `@` 表示这是一个模板：`%i` 会被替换为启用时写在 `@` 后面的名字，在这里就是要运行的命令。所以一个文件可以运行任何一种[方式](#process-forms)：
+文件名中的 `@` 表示这是一个模板：`%i` 会被替换为启用时写在 `@` 后面的名字，在这里就是要运行的部分，`all` 表示全部部分（`serve all` 与 `serve` 相同）。所以一个文件可以运行任何一种[方式](#process-forms)：
 
 ```bash
-sudo systemctl daemon-reload                                    # 让 systemd 读取新的文件
-sudo systemctl enable --now blog@start                          # 一起运行
-sudo systemctl enable --now blog@serve blog@work blog@schedule  # 或者分开运行
+sudo systemctl daemon-reload                                          # 让 systemd 读取新的文件
+sudo systemctl enable --now blog@all                                  # 一起运行
+sudo systemctl enable --now blog@http blog@worker blog@scheduler      # 或者分开运行
 ```
 
-`enable --now` 既立即启动，也设置为开机启动。从一起运行改为分开运行时，先 `sudo systemctl disable --now blog@start`，再启用另外三个。
+`enable --now` 既立即启动，也设置为开机启动。从一起运行改为分开运行时，先 `sudo systemctl disable --now blog@all`，再启用各个部分。
 
 文件中几组设置的作用：
 
@@ -202,7 +203,7 @@ sudo systemctl enable --now blog@serve blog@work blog@schedule  # 或者分开�
 - **崩溃后重启**：`Restart=on-failure` 在程序以非 0 状态退出时重启它，每次间隔 `RestartSec`（5 秒）。数据库暂时连不上时，程序以退出码 4 结束，systemd 每 5 秒重试，直到连上为止。`RestartPreventExitStatus=2 3` 排除了用法错误（2）和配置错误（3）：这两种错误重启多少次都一样，服务直接进入失败状态，用 `systemctl status` 能看到原因。
 - **停止**：`TimeoutStopSec` 是发送 `SIGTERM` 后等待程序退出的时间，超时后强制结束。它要比程序的平滑停止时间长，见[平滑停止](#graceful-shutdown)。
 - **安全**：`ProtectSystem=strict` 让整个文件系统只读，只有 `ReadWritePaths` 中的目录可写；`PrivateTmp` 给程序一个独立的 `/tmp`；`NoNewPrivileges` 禁止程序获得更多权限。程序需要写其他目录时，把它加到 `ReadWritePaths` 中。
-- **就绪与升级**：`Type=notify-reload` 让 systemd 等程序报告“已经就绪”才认为启动完成，并且支持用 `systemctl reload` 不停机地升级；`NotifyAccess`、`RuntimeDirectory`、`PIDFile` 都是为升级准备的。升级的过程见[不停机升级](operations.md#zero-downtime-upgrades)。这几项要求程序的入口使用 `command.Daemon`，见[依赖装配](../concepts/dependencies.md#assembling-the-application)；没有使用时改为 `Type=exec`，并删掉这三行。
+- **就绪与升级**：`Type=notify-reload` 让 systemd 等程序报告“已经就绪”才认为启动完成，并且支持用 `systemctl reload` 不停机地升级；`NotifyAccess`、`RuntimeDirectory`、`PIDFile` 都是为升级准备的。升级的过程见[不停机升级](operations.md#zero-downtime-upgrades)。`serve` 命令已经支持它们，见[serve：运行常驻进程](../general/commands.md#serve-command)。
 
 程序输出到标准错误的 JSON 日志由 systemd 的 journald 收集，这样查看：
 
@@ -241,7 +242,7 @@ done
 - **`set -e`**：任何一步失败，脚本立即停止，不会带着错误继续发布。
 - **`run`**：用 `systemd-run` 执行一次性的命令，它使用和服务相同的用户、环境变量和工作目录，所以检查的结果和服务真正运行时一致。
 - **先写到 `api.new`**：用新的二进制检查配置，通过后再改名覆盖。直接覆盖正在运行的二进制会失败，报错 `Text file busy`。
-- **迁移只在脚本中执行一次。** 不要把迁移写进 unit 文件的 `ExecStartPre`：那样程序每次崩溃重启都会再执行一次迁移，分开运行时三个实例还会同时执行。
+- **迁移只在脚本中执行一次。** 不要把迁移写进 unit 文件的 `ExecStartPre`：那样程序每次崩溃重启都会再执行一次迁移，分开运行时几个实例还会同时执行。
 - **`systemctl reload`**：让每个服务不停机地换成新版本。新版本启动失败时，旧版本会继续运行，`reload` 仍然返回成功，所以脚本再检查服务的状态文字，以 `upgrade failed` 开头就是升级失败。
 
 <a id="docker"></a>
@@ -265,17 +266,17 @@ COPY --from=build /out/api /app/api
 COPY config /app/config
 COPY --from=build --chown=nonroot:nonroot /out/storage /app/storage
 ENTRYPOINT ["/app/api"]
-CMD ["start"]
+CMD ["serve"]
 ```
 
 这个文件分两段：第一段在 Go 的镜像中编译程序，第二段只把编译结果复制到一个很小的运行镜像中，最终的镜像不包含 Go 工具链和源代码。需要注意的几点：
 
-- **`ENTRYPOINT` 要写成 JSON 数组的形式。** 这样程序就是容器中的第一个进程，能直接收到 `docker stop` 发出的 `SIGTERM`。如果写成 `ENTRYPOINT ./api start`，信号会发给 shell，程序收不到，等待时间一到就被强制结束，正在处理的请求被中断。
+- **`ENTRYPOINT` 要写成 JSON 数组的形式。** 这样程序就是容器中的第一个进程，能直接收到 `docker stop` 发出的 `SIGTERM`。如果写成 `ENTRYPOINT ./api serve`，信号会发给 shell，程序收不到，等待时间一到就被强制结束，正在处理的请求被中断。
 - **构建阶段需要 Bun**：`tenon build` 用它编译前端。这里从 Bun 的官方镜像复制可执行文件，版本与本地开发用的相同。
 - **运行镜像用 `distroless/base`**，它带有 glibc，前端的 SSR 程序需要它；没有服务端渲染的前端时可以用更小的 `distroless/static`。两者都带有 CA 证书和时区数据，访问 HTTPS 接口、按时区执行定时任务都能直接用。
 - **`storage` 目录要挂载卷**，否则容器删除后上传的文件也没了。镜像中预先建好这个目录，并交给 `nonroot` 用户，否则新挂载的卷属于 root，程序无法写入。文件存放在 S3 这类对象存储中时不需要它。
 
-用 Docker Compose 分开运行三个部分，并在启动前执行迁移：
+用 Docker Compose 每个部分运行一个服务，并在启动前执行迁移：
 
 ```yaml
 # compose.yaml
@@ -297,23 +298,26 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL}
     command: [migrate, up]
-  serve:
+  http:
     <<: *app
-    command: [serve]
+    command: [serve, http]
     ports: ["8080:8080"]
-  work:
+    healthcheck:
+      test: [CMD, /app/api, health]
+  worker:
     <<: *app
-    command: [work]
-  schedule:
+    command: [serve, worker]
+  scheduler:
     <<: *app
-    command: [schedule]
+    command: [serve, scheduler]
 ```
 
 - `migrate` 是一个执行完就结束的服务；其他服务的 `depends_on` 要求它成功结束后才启动，所以迁移一定在服务启动之前完成。
-- `x-app` 是三个服务共用的设置，`<<: *app` 把它合并进来。
+- `x-app` 是几个服务共用的设置，`<<: *app` 把它合并进来。
+- 只有 `http` 有健康检查，见[健康检查](#health-checks)。
 - **`stop_grace_period` 必须写上。** Docker 默认只等 10 秒就强制结束容器，比队列和调度器默认的平滑停止时间（30 秒）还短。
 
-一起运行时，把三个服务换成一个运行 `start` 的服务即可。
+一起运行时，把这几个服务换成一个运行 `serve` 的服务即可，健康检查照样写在它上面。
 
 发布新版本时，先单独执行迁移，再替换容器：
 
@@ -348,14 +352,30 @@ NATS 的 `-js` 开启 JetStream，任务保存在 `/data` 中；`8222` 是它的
 <a id="health-checks"></a>
 ## 健康检查
 
-部署平台和负载均衡器会定期访问程序的两个地址，判断它的状态：
+HTTP 服务提供两个检查的地址，写法见[健康检查](../http/lifecycle.md#health-checks)：
 
-- **存活检查**（例如 `/livez`）：程序还能响应吗？失败时平台会重启程序。所以它只检查程序本身，不检查数据库：数据库出了问题，重启程序也没有用。
-- **就绪检查**（例如 `/readyz`）：程序现在能处理请求吗？它检查程序没有在停止，并且数据库等必需的依赖可用。失败时负载均衡暂时不把请求交给这个实例，等依赖恢复后自动重新加入。
+- **存活检查**（`/livez`）：程序还能响应吗？它只检查程序本身，不检查数据库：数据库出了问题，重启程序也没有用。
+- **就绪检查**（`/readyz`）：程序现在能处理请求吗？它检查程序没有在停止，并且数据库等必需的依赖可用。
 
-这两个地址由应用自己注册，写法见[健康检查](../http/lifecycle.md#health-checks)；再在部署平台中填写对应的路径。
+不同的部署方式这样使用它们：
 
-分开运行时，`work` 和 `schedule` 的进程没有 HTTP 服务。在 Kubernetes 这类平台上，给它们设置环境变量 `PROBE_ADDR`，在单独的端口上提供同样的两个路径，见[没有 HTTP 服务的进程](../http/lifecycle.md#probe-listener)。用 systemd 运行时不需要，systemd 通过就绪通知和退出状态管理进程。
+| 部署方式 | 发现程序出了问题 | 健康检查的用处 |
+| --- | --- | --- |
+| systemd | 程序以非 0 状态退出时按 `Restart=` 重启；`Type=notify-reload` 让它知道程序什么时候就绪 | 不访问 HTTP 地址，用不到 |
+| Docker Compose | 程序退出时按 `restart` 重启；检查失败的容器不会被重启 | `depends_on` 的 `service_healthy`，以及 `docker ps` 中的状态 |
+| Docker Swarm | 程序退出时重新调度；检查失败的容器会被替换 | 滚动升级时，等新的容器健康之后再继续 |
+| 反向代理（Caddy、Traefik、HAProxy） | 主动访问 `/readyz` | 不再把请求转给未就绪或正在停止的实例 |
+
+Docker 的健康检查用程序自带的 [health 命令](../general/commands.md#health-command)，它请求本机的 `/livez`，镜像中不需要 curl：
+
+```yaml
+    healthcheck:
+      test: [CMD, /app/api, health]
+```
+
+- **Docker 检查 `/livez`，不检查 `/readyz`。** Swarm 会替换检查失败的容器，而 `/readyz` 会检查数据库：数据库出故障时，全部容器都会被反复替换，重启并不能解决问题。`/livez` 在程序开始处理请求之后才成功，这时数据库已经连上，前端的 SSR 进程也已经就绪，足够让滚动升级判断新版本有没有起来。
+- **健康检查只写在运行 HTTP 服务的服务上**，不写进 Dockerfile 的 `HEALTHCHECK`。同一个镜像也用来运行 worker 和调度器，写进 Dockerfile 的话，这些容器中也会执行 `health`；它们没有 HTTP 服务，检查总是失败，Swarm 会不断替换它们。
+- **只运行 worker、调度器或 RPC 的进程不需要健康检查。** 它们出错时程序以非 0 状态退出，交给重启策略处理；数据库或 NATS 暂时断开时，程序不退出，等依赖恢复后自动继续，这时重启也没有用。程序没有退出却卡住的情况，用队列积压的监控发现，见[队列：失败任务与监控](../background/queue-monitoring.md)：卡住的任务租约到期后，会由其他实例重新执行。
 
 <a id="graceful-shutdown"></a>
 ## 平滑停止
@@ -364,13 +384,13 @@ NATS 的 `-js` 开启 JetStream，任务保存在 `/data` 中；`8222` 是它的
 
 要让平滑停止生效，有两件事要做对：
 
-**信号要能到达程序。** 在 Docker 中，程序要是容器中的第一个进程，见上文的 `ENTRYPOINT`。用 shell 脚本启动程序时，脚本最后要用 `exec ./bin/api start`，把进程交给程序，否则信号只发给了 shell。
+**信号要能到达程序。** 在 Docker 中，程序要是容器中的第一个进程，见上文的 `ENTRYPOINT`。用 shell 脚本启动程序时，脚本最后要用 `exec ./bin/api serve`，把进程交给程序，否则信号只发给了 shell。
 
 **平台要等得够久。** 平台发出 `SIGTERM` 后只等一段时间，超时后强制结束程序。这段时间要比程序平滑停止所需的时间长：
 
 - 程序等待的时间由三项配置决定：`http.shutdown_timeout`（等待请求）、`queue.shutdown_timeout`（等待后台任务）、`schedule.shutdown_timeout`（等待定时任务）。一起运行时它们同时开始，取最长的一项。
 - 使用 [AI 助手](../ai/chat-advanced.md#deployment)时，还要等进行中的回答说完，这段时间要加上去。
-- 平台的等待时间（systemd 的 `TimeoutStopSec`、Docker 的 `stop_grace_period`、Kubernetes 的 `terminationGracePeriodSeconds`）应当比上面的时间再长一些，留出关闭数据库等资源的时间。
+- 平台的等待时间（systemd 的 `TimeoutStopSec`、Docker 的 `stop_grace_period`）应当比上面的时间再长一些，留出关闭数据库等资源的时间。
 
 即使超时被强制结束，也不会丢失工作：没有完成的队列任务会在其他实例上重新执行，错过的定时任务等下一次触发。
 
@@ -412,4 +432,4 @@ NATS 的 `-js` 开启 JetStream，任务保存在 `/data` 中；`8222` 是它的
 
 **服务启动后反复重启**
 
-用 `systemctl status blog@start` 或 `docker logs` 查看程序退出前的日志。退出码 3 是配置错误，修正配置后再启动。
+用 `systemctl status blog@all` 或 `docker logs` 查看程序退出前的日志。退出码 3 是配置错误，修正配置后再启动。

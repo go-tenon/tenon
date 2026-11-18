@@ -318,8 +318,8 @@ import (
     "github.com/go-tenon/tenon/httpx/rest"
 )
 
-// Register 注册文章的接口。db 为 nil 时只登记路由（生成文档时）。
-func Register(api *rest.API, db *bun.DB) {
+// RegisterRoutes 注册文章的接口。db 为 nil 时只登记路由（生成文档时）。
+func RegisterRoutes(api *rest.API, db *bun.DB) {
     route := func(id, method, path, summary string) huma.Operation {
         op := huma.Operation{OperationID: id, Method: method, Path: path, Summary: summary}
         rest.Public()(&op) // 第 6 章加上登录后改为需要认证
@@ -389,10 +389,9 @@ import (
     "example.com/blog/locales"
 )
 
-// HTTP 装配 HTTP 服务，serve 命令运行它。apps 中的前端由 frontend.Host 按挂载路径提供：服务端渲染的前端由
+// HTTP 装配 HTTP 服务。apps 中的前端由 frontend.Host 按挂载路径提供：服务端渲染的前端由
 // Go 托管的 SSR 进程渲染，它们渲染时经内部 socket 调用同一组路由。
 func (a *App) HTTP(d *command.Daemon) (func(context.Context) error, error) {
-    var draining httpx.Draining
     var router chi.Router
     // router 在 pages 创建之后才构造好，SSR 进程调用接口时经这个函数转给它。
     api := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { router.ServeHTTP(w, r) })
@@ -400,26 +399,25 @@ func (a *App) HTTP(d *command.Daemon) (func(context.Context) error, error) {
     if err != nil {
         return nil, err
     }
-    router = a.Router(&draining, pages.Handler())
+    router = a.Router(pages.Handler())
     ln, err := d.Listen("tcp", a.cfg.HTTP.Addr)
     if err != nil {
         return nil, err
     }
     return func(ctx context.Context) error {
         return pages.Run(ctx, func(ctx context.Context) error {
-            return httpx.Serve(ctx, a.cfg.HTTP, ln, router, httpx.OnDraining(draining.Set))
+            return httpx.Serve(ctx, a.cfg.HTTP, ln, router)
         })
     }, nil
 }
 
 // Router 构造应用的全部路由：健康检查、/api 下的接口和页面。
 // 它只保存 App 的字段、不使用它们，所以 DocRouter 可以用一个没有打开任何资源的 App 调用它。
-func (a *App) Router(draining *httpx.Draining, pages http.Handler) chi.Router {
+func (a *App) Router(pages http.Handler) chi.Router {
     router := chi.NewRouter()
     router.Use(httpx.Defaults(a.cfg.HTTP, httpx.Languages(i18n.MustNew("zh-CN", locales.FS)))...)
     router.Get("/livez", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
     router.Handle("/readyz", httpx.Ready(httpx.ReadyOptions{
-        Draining: draining,
         Checks: []health.Check{
             {Name: "database", Ping: func(ctx context.Context) error { return a.db.PingContext(ctx) }},
         },
@@ -427,7 +425,7 @@ func (a *App) Router(draining *httpx.Draining, pages http.Handler) chi.Router {
     router.Route("/api", func(r chi.Router) {
         r.Use(httpx.Timeout(a.cfg.HTTP.Timeout))
         api := rest.New(r, rest.Options{Title: "Blog API", Version: "1.0.0", BasePath: "/api"})
-        article.Register(api, a.db)
+        article.RegisterRoutes(api, a.db)
     })
     if pages != nil {
         router.Handle("/*", pages)
@@ -437,7 +435,7 @@ func (a *App) Router(draining *httpx.Draining, pages http.Handler) chi.Router {
 
 // DocRouter 用默认配置和没有打开任何资源的 App 构造路由，openapi、routes、client 命令用它。
 func DocRouter() chi.Routes {
-    return (&App{cfg: config.Default[Config]()}).Router(nil, nil)
+    return (&App{cfg: config.Default[Config]()}).Router(nil)
 }
 
 ```

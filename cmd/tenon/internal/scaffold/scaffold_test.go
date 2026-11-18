@@ -57,7 +57,7 @@ func TestWrite(t *testing.T) {
 	}
 	main, _ := os.ReadFile(filepath.Join(dir, "cmd/api/main.go"))
 	for _, want := range []string{`"example.com/todo/internal/todo"`, `"example.com/todo/apps"`,
-		"frontend.New(apps.Dist, frontend.Options{API: api, DevServers: cfg.DevServers})", "pages.Run("} {
+		"frontend.New(apps.Dist, frontend.Options{API: api, DevServers: a.cfg.DevServers})", "pages.Run(", "command.Serve(open, parts)"} {
 		if !strings.Contains(string(main), want) {
 			t.Errorf("main.go missing %q:\n%s", want, main)
 		}

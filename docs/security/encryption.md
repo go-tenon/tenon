@@ -64,7 +64,7 @@ openssl rand -base64 32
 
 密钥一旦用来加密了数据，就要妥善保管：没有它，已经加密的值无法解开，已经发出的链接全部失效。更换密钥见[轮换密钥](#rotating-keys)。
 
-生命周期是：启动时 `Load` 校验配置 → 在[入口](../concepts/dependencies.md#assembling-the-application)的 `open` 中创建一次 `Crypt` → 之后加解密和签链接都复用它。把它保存在 `App` 中，传给需要它的业务动作和处理器。`Crypt` 可以并发使用，整个应用共用一个：
+生命周期是：启动时 `Load` 校验配置 → 在[入口](../concepts/dependencies.md#assembling-the-application)的 `Open` 中创建一次 `Crypt` → 之后加解密和签链接都复用它。把它保存在 `App` 中，传给需要它的业务动作和处理器。`Crypt` 可以并发使用，整个应用共用一个：
 
 ```go
 c := crypt.New(cfg.Crypt)

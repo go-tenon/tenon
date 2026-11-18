@@ -171,8 +171,8 @@ internal/file/
 `routes.go` 声明这些路由。所有接口都需要登录，`requireUser` 由入口传入，例如 `rest.RequireToken(api, validateToken)`：
 
 ```go
-// Register 注册文件模块的全部路由。
-func Register(api *rest.API, requireUser func(*huma.Operation), files *filesystem.Service) {
+// RegisterRoutes 注册文件模块的全部路由。
+func RegisterRoutes(api *rest.API, requireUser func(*huma.Operation), files *filesystem.Service) {
     upload := huma.Operation{
         OperationID:     "file-upload",
         Method:          http.MethodPost,
@@ -245,7 +245,7 @@ func Register(api *rest.API, requireUser func(*huma.Operation), files *filesyste
 入口在组装应用时调用它：
 
 ```go
-file.Register(api, rest.RequireToken(api, validateToken), fileService)
+file.RegisterRoutes(api, rest.RequireToken(api, validateToken), fileService)
 ```
 
 `dto.go` 定义共享的输入和输出。响应体直接使用 `filesystem.File` 等类型，它们自带 JSON 标签，`File` 的 JSON 中包含公开地址 `url`，上传者信息只留在服务端：

@@ -74,7 +74,7 @@ telemetry:
 
 `logging.Export` 让日志同时推送出去，经过和标准错误上同样的级别和格式化。`ctx` 中有 span 时，日志记录带上它的链路，日志平台可以从一条日志跳到它所在的链路。标准错误上的日志照常输出，启动阶段的错误和接收端不可用时的排查都靠它。只想推送指标和链路时，不传 `logging.Export` 即可。
 
-三种数据共用一组资源属性：`service.name`、`service.version`、`service.instance.id`、主机名和进程号。`service.instance.id` 每个进程随机生成，同一服务的 `serve`、`work` 进程和多个副本靠它区分，各自写进自己的指标序列。
+三种数据共用一组资源属性：`service.name`、`service.version`、`service.instance.id`、主机名和进程号。`service.instance.id` 每个进程随机生成，同一服务的各个进程（例如 `serve http`、`serve worker`）和多个副本靠它区分，各自写进自己的指标序列。
 
 推送在后台批量进行，请求照常处理，缓冲满时丢弃新数据。推送失败记录为 `component=telemetry` 的错误日志。
 

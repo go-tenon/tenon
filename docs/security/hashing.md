@@ -75,7 +75,7 @@ argon2id 的默认值是 OWASP 推荐的最低配置。参数越大越难暴力�
 <a id="hashing-passwords"></a>
 ## 哈希与校验密码
 
-生命周期是：启动时 `Load` 校验配置 → 在[入口](../concepts/dependencies.md#assembling-the-application)的 `open` 中创建一次 `Hasher` → 之后每次设密码 / 登录校验都复用它。把它交给 [`login.New`](login.md#assembling) 和其他需要它的业务动作：
+生命周期是：启动时 `Load` 校验配置 → 在[入口](../concepts/dependencies.md#assembling-the-application)的 `Open` 中创建一次 `Hasher` → 之后每次设密码 / 登录校验都复用它。把它交给 [`login.New`](login.md#assembling) 和其他需要它的业务动作：
 
 ```go
 hasher := hashing.New(cfg.Hashing)

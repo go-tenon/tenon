@@ -50,6 +50,7 @@ import (
     "github.com/go-tenon/tenon/command/httpcmd"
     "github.com/go-tenon/tenon/command/migratecmd"
     "github.com/go-tenon/tenon/database"
+    "github.com/go-tenon/tenon/httpx"
 
     "example.com/blog/internal/bootstrap"
     "example.com/blog/migrations"
@@ -58,8 +59,9 @@ import (
 func main() {
     root := command.Root("api", "博客")
     root.AddCommand(
-        command.Run("serve", "启动 HTTP 服务", bootstrap.Serve),
+        command.Serve(bootstrap.Open, bootstrap.Parts),
         command.Config[bootstrap.Config](),
+        httpcmd.Health(func(cfg bootstrap.Config) httpx.Config { return cfg.HTTP }),
         // migrate up、status、down、make
         migratecmd.New(migrations.FS, func(cfg bootstrap.Config) database.Config { return cfg.Database }),
     )

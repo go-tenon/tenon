@@ -127,8 +127,9 @@ type Config struct {
 func main() {
     root := command.Root("api", "todo")
     root.AddCommand(
-        command.Run("serve", "启动 HTTP 服务", serve),
+        command.Serve(open, parts),
         command.Config[Config](),
+        httpcmd.Health(func(cfg Config) httpx.Config { return cfg.HTTP }),
     )
     root.AddCommand(httpcmd.Commands(func() chi.Routes { return routes(config.Default[Config](), nil, nil) })...)
     command.Execute(root)
@@ -137,36 +138,65 @@ func main() {
 
 程序现在有了子命令。`go run ./cmd/api serve` 启动服务，`go run ./cmd/api config check` 检查配置文件，以后还可以加上 `migrate`（数据库迁移）等命令：
 
-- **`command.Run("serve", …, serve)`** 创建 `serve` 命令。它先读取并检查配置，再调用 `serve` 函数；收到停止信号时取消 ctx，和安装那一页的第三步一样。
+- **`command.Serve(open, parts)`** 创建 `serve` 命令。它先读取并检查配置，调用 `open` 准备好程序要用的资源，再运行 `parts` 中列出的部分；收到停止信号时取消 ctx，和安装那一页的第三步一样。
 - **`command.Config[Config]()`** 加上 `config check`、`config show` 两个命令。
+- **`httpcmd.Health`** 加上 `health` 命令，在 Docker 中用作健康检查，见[部署](deployment.md#health-checks)。
 - **`httpcmd.Commands`** 加上 `openapi`（导出接口文档）、`routes`（列出全部路由）、`client`（生成客户端）。开发工具用它们生成前端的客户端。
 
 命令行的写法见[命令行](../general/commands.md)。
 
-### serve 和 routes
+### open 和 parts
 
 ```go
-func serve(ctx context.Context, cfg Config) error {
+type App struct {
+    cfg   Config
+    store *todo.Store
+}
+
+func open(_ context.Context, cfg Config, _ *cleanup.Stack) (*App, error) {
     slog.SetDefault(logging.New(logging.Config{}))
+    return &App{cfg: cfg, store: todo.NewStore()}, nil
+}
+
+func parts(a *App) []command.Part {
+    return []command.Part{{Name: "http", Short: "接口和页面", Start: a.serveHTTP}}
+}
+```
+
+`App` 保存程序运行时共用的东西，现在是配置和待办事项的存储。`open` 创建它们；以后接上数据库，也在这里打开数据库，并把关闭操作登记到 `stack`，程序退出时自动关闭。
+
+`parts` 列出程序中一直运行的**部分**。现在只有 HTTP 服务一个；以后加上处理后台任务的 worker、执行定时任务的调度器，就在这里各加一行。`serve` 运行全部部分，`serve http` 只运行其中一个，见[serve：运行常驻进程](../general/commands.md#serve-command)。
+
+### serveHTTP 和 routes
+
+```go
+func (a *App) serveHTTP(d *command.Daemon) (func(context.Context) error, error) {
     var router chi.Router
     api := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { router.ServeHTTP(w, r) })
-    pages, err := frontend.New(apps.Dist, frontend.Options{API: api, DevServers: cfg.DevServers})
+    pages, err := frontend.New(apps.Dist, frontend.Options{API: api, DevServers: a.cfg.DevServers})
     if err != nil {
-        return err
+        return nil, err
     }
-    router = routes(cfg, todo.NewStore(), pages.Handler())
-    return pages.Run(ctx, func(ctx context.Context) error {
-        return httpx.ListenAndServe(ctx, cfg.HTTP, router)
-    })
+    router = routes(a.cfg, a.store, pages.Handler())
+    ln, err := d.Listen("tcp", a.cfg.HTTP.Addr)
+    if err != nil {
+        return nil, err
+    }
+    return func(ctx context.Context) error {
+        return pages.Run(ctx, func(ctx context.Context) error {
+            return httpx.Serve(ctx, a.cfg.HTTP, ln, router)
+        })
+    }, nil
 }
 
 func routes(cfg Config, store *todo.Store, pages http.Handler) chi.Router {
     router := chi.NewRouter()
     router.Use(httpx.Defaults(cfg.HTTP)...)
+    router.Get("/livez", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
     router.Route("/api", func(r chi.Router) {
         r.Use(httpx.Timeout(cfg.HTTP.Timeout))
         api := rest.New(r, rest.Options{Title: "todo", Version: "0.1.0", BasePath: "/api"})
-        todo.Register(api, store)
+        todo.RegisterRoutes(api, store)
     })
     if pages != nil {
         router.Handle("/*", pages)
@@ -175,20 +205,23 @@ func routes(cfg Config, store *todo.Store, pages http.Handler) chi.Router {
 }
 ```
 
-`routes` 做了三件事：
+`serveHTTP` 分两步：先准备好一切，包括取得监听端口 `ln`；再返回运行服务的函数。端口被占用这类错误在服务开始运行之前就会返回。
+
+`routes` 做了四件事：
 
 1. 安装默认的中间件，和安装那一页的第二步相同。
-2. 在 `/api` 下创建 API，注册待办事项的接口。超时中间件只装在 `/api` 上，因为接口应当很快返回，而页面相关的连接可能保持很久。
-3. 其余的地址（`/*`）都是页面，交给 `pages`，见下一节。
+2. 注册存活检查 `/livez`：程序能响应就返回 `204`，`health` 命令请求的就是它。
+3. 在 `/api` 下创建 API，注册待办事项的接口。超时中间件只装在 `/api` 上，因为接口应当很快返回，而页面相关的连接可能保持很久。
+4. 其余的地址（`/*`）都是页面，交给 `pages`，见下一节。
 
 为什么要把 `routes` 单独拆出来？因为它有两个调用者：
 
-- `serve` 用真实的配置和数据调用它，启动服务；
+- `serveHTTP` 用真实的配置和数据调用它，启动服务；
 - `openapi`、`client` 等命令用默认配置和 `nil` 调用它，只为了读出有哪些接口，生成文档和客户端，不需要真的连接数据库或启动页面。
 
-`todo.Register` 只是把 `store` 保存下来，处理请求时才使用它，所以传 `nil` 也能注册全部接口。以后你新增一个业务模块，只需要在 `routes` 中加一行 `Register`，服务、接口文档和客户端都会看到它。
+`todo.RegisterRoutes` 只是把 `store` 保存下来，处理请求时才使用它，所以传 `nil` 也能注册全部接口。以后你新增一个业务模块，只需要在 `routes` 中加一行 `RegisterRoutes`，服务、接口文档和客户端都会看到它。
 
-`serve` 比安装那一页的 `run` 多了页面：`frontend.New` 读取嵌入的 `apps.Dist`，创建托管全部前端的 `Host`，它的 `Handler` 按挂载路径返回页面。`web` 在服务端渲染，所以 `pages.Run` 先启动它的 SSR 进程、等它就绪，再运行 HTTP 服务；停止时先排空请求，再停 SSR 进程。SSR 进程渲染页面需要数据时，经内部 socket 调用同一个 `router`。
+`serveHTTP` 比安装那一页的 `run` 多了页面：`frontend.New` 读取嵌入的 `apps.Dist`，创建托管全部前端的 `Host`，它的 `Handler` 按挂载路径返回页面。`web` 在服务端渲染，所以 `pages.Run` 先启动它的 SSR 进程、等它就绪，再运行 HTTP 服务；停止时先排空请求，再停 SSR 进程。SSR 进程渲染页面需要数据时，经内部 socket 调用同一个 `router`。
 
 <a id="frontend"></a>
 ## 页面与 API 同源

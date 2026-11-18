@@ -130,7 +130,7 @@ func New[C any](fsys fs.FS, dbConfig func(cfg C) database.Config, opts ...Option
 		})),
 		makeIn(dir),
 	)
-	return root
+	return command.InGroup(root, command.GroupOps)
 }
 
 // printResults 每行输出一个已完成的迁移，例如 "up    2026_11_11_090000_create_articles_table.sql  12ms"。

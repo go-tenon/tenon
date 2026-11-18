@@ -84,7 +84,7 @@ var NewEditor = feature.Flag{
 
 `Default` 可能在每次检查时调用，要足够快。它可以读取主体的权限，也可以按租户的套餐等条件判断。
 
-在[入口](../concepts/dependencies.md#assembling-the-application)的 `open` 中用全部开关创建 `Store`，保存在 `App` 中：
+在[入口](../concepts/dependencies.md#assembling-the-application)的 `Open` 中用全部开关创建 `Store`，保存在 `App` 中：
 
 ```go
 features := feature.NewStore(db, feature.Catalog{

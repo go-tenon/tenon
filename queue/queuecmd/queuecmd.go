@@ -134,7 +134,7 @@ func New(db bun.IDB, opts ...Option) *cobra.Command {
 
 	root := &cobra.Command{Use: "queue", Short: "队列"}
 	root.AddCommand(status, list, slot)
-	return root
+	return command.InGroup(root, command.GroupOps)
 }
 
 // bytes 把字节数写成便于阅读的形式。

@@ -26,15 +26,16 @@ func TestUnexpectedListenerExitDrainsRequests(t *testing.T) {
 	}
 	entered := make(chan struct{})
 	release := make(chan struct{})
-	draining := make(chan struct{})
+	var draining <-chan struct{}
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		draining = httpx.DrainStarted(r.Context())
 		close(entered)
 		<-release
 		_, _ = io.WriteString(w, "done")
 	})
 	done := make(chan error, 1)
 	go func() {
-		done <- httpx.Serve(context.Background(), shutdownIn(time.Second), ln, handler, httpx.OnDraining(func() { close(draining) }))
+		done <- httpx.Serve(context.Background(), shutdownIn(time.Second), ln, handler)
 	}()
 	requestDone := make(chan struct{})
 	go func() {

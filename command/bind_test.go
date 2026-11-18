@@ -113,3 +113,29 @@ func TestBindReportsErrors(t *testing.T) {
 		}
 	})
 }
+
+// 用 StringVar、StringSliceVar 绑定的选项在重新声明的命令上也取得解析到的值。
+func TestBindCopiesFlagsToRedeclaredCommand(t *testing.T) {
+	t.Parallel()
+	open := func(_ context.Context, cfg settings, _ *cleanup.Stack) (*app, error) {
+		return &app{prefix: cfg.Name}, nil
+	}
+	cmds := command.Bind(open, func(a *app) []*cobra.Command {
+		var title string
+		var tags []string
+		cmd := &cobra.Command{Use: "post", Args: command.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+			_, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %s %s", a.prefix, title, strings.Join(tags, "+"))
+			return err
+		}}
+		cmd.Flags().StringVar(&title, "title", "untitled", "标题")
+		cmd.Flags().StringSliceVar(&tags, "tag", nil, "标签")
+		return []*cobra.Command{cmd}
+	})
+	out, _, err := execute(newRoot(cmds...), "post", "--title", "hello", "--tag", "go,web", "--tag", "x", "--config", writeConfig(t, minimalConfig))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != "blog hello go+web+x" {
+		t.Fatalf("stdout = %q", out)
+	}
+}

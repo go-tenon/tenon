@@ -40,7 +40,7 @@
 
 这项功能由 `command.Daemon` 提供，只在按[用 systemd 运行](deployment.md#systemd)配置的服务中启用；在开发环境和容器中，程序的行为不变。如果上一次升级的旧进程还没有退出，`reload` 会先等它退出，再开始这一次升级；systemd 等待 `reload` 的时间受 `TimeoutStartSec`（默认 90 秒）限制。
 
-**用容器运行时**，镜像是不可变的，升级就是换一个新容器。要不中断服务，让部署平台先启动新容器，等它的[就绪检查](deployment.md#health-checks)（`/readyz`）通过，再停止旧容器。例如 [Kamal](https://kamal-deploy.org)、Docker Swarm 的 `update_config.order: start-first`、Kubernetes 的 `maxUnavailable: 0`。
+**用容器运行时**，镜像是不可变的，升级就是换一个新容器。要不中断服务，让部署平台先启动新容器，等它的[健康检查](deployment.md#health-checks)通过，再停止旧容器。例如 [Kamal](https://kamal-deploy.org)、Docker Swarm 的 `update_config.order: start-first`。
 
 <a id="upgrade-overlap"></a>
 ### 新旧进程同时运行
@@ -136,7 +136,7 @@ sudo systemctl stop 'blog@*'
 
 # 维护数据库；换上新二进制并执行迁移，见“发布新版本”
 
-sudo systemctl start blog@serve blog@work blog@schedule
+sudo systemctl start blog@http blog@worker blog@scheduler
 curl -fsS https://example.com/readyz  # 在办公网络中检查
 sudo rm /etc/nginx/blog.maintenance
 ```
@@ -157,7 +157,7 @@ sudo rm /etc/nginx/blog.maintenance
 | --- | --- |
 | 某个功能出了问题 | 把它的[功能开关](../features/flags.md#evaluation-order)对所有人关闭，立即生效 |
 | 维护期间只允许读 | 安装一个拒绝写请求的中间件，见[全局中间件](../http/middleware.md#chi-middleware)中的例子 |
-| 只暂停后台任务 | 分开运行时只停止 `work` 或 `schedule`，任务留在队列中，恢复后继续执行 |
+| 只暂停后台任务 | 分开运行时只停止 worker 或调度器的进程，任务留在队列中，恢复后继续执行 |
 
 <a id="pgbouncer"></a>
 ## 数据库连接不够用：PgBouncer

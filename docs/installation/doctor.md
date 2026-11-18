@@ -54,7 +54,7 @@ func (a *App) doctor() []doctor.Group {
 
 ```go
 func Commands() []*cobra.Command {
-    return command.Bind(open, func(a *App) []*cobra.Command {
+    return command.Bind(Open, func(a *App) []*cobra.Command {
         return []*cobra.Command{
             doctorcmd.New(a.doctor()...),
             queuecmd.New(a.db, queuecmd.WithJetStream(a.nc, a.cfg.Queue)),
@@ -120,19 +120,20 @@ doctor.failed: 2 check(s) failed
 <a id="before-starting"></a>
 ## 启动之前检查
 
-`doctor.Require` 执行检查，把提示写入日志，有检查失败时返回错误。在 `run` 中打开资源之后、启动各个部分之前调用它，环境不对时进程拒绝启动：
+`doctor.Require` 执行检查，把提示写入日志，有检查失败时返回错误。在 `bootstrap` 中包一层 `Open`：打开资源之后先运行检查，再交给 `serve` 启动各个部分，环境不对时进程拒绝启动：
 
 ```go
-app, err := open(ctx, cfg, &stack)
-if err != nil {
-    return err
-}
-if err := doctor.Require(ctx, nil, app.doctor()...); err != nil {
-    return err // 以退出码 4 结束，错误中有修改方法
+// OpenChecked 打开资源，再运行启动之前的检查，serve 命令用它。
+func OpenChecked(ctx context.Context, cfg Config, stack *cleanup.Stack) (*App, error) {
+    app, err := Open(ctx, cfg, stack)
+    if err != nil {
+        return nil, err
+    }
+    return app, doctor.Require(ctx, nil, app.doctor()...) // 失败时以退出码 4 结束，错误中有修改方法
 }
 ```
 
-`run` 见[在入口中组装应用](../concepts/dependencies.md#assembling-the-application)。第二个参数是记录提示的日志器，`nil` 表示 `slog.Default()`。这一步通常不到一秒：每一项都是一两条查询，复制连接建立后立即关闭。
+`main.go` 中改为 `command.Serve(bootstrap.OpenChecked, bootstrap.Parts)`；`Open` 见[在入口中组装应用](../concepts/dependencies.md#assembling-the-application)。一次性命令仍然用 `Open`，所以 `doctor` 命令本身在环境不对时也能运行。`Require` 的第二个参数是记录提示的日志器，`nil` 表示 `slog.Default()`。这一步通常不到一秒：每一项都是一两条查询，复制连接建立后立即关闭。
 
 最常见的收获是“忘了执行迁移”：升级镜像后直接启动，`migrations` 组失败，进程退出并提示先运行 `migrate up`，避免带着旧的表结构运行、等到某个请求报“列不存在”。
 
@@ -142,15 +143,15 @@ if err := doctor.Require(ctx, nil, app.doctor()...); err != nil {
 <a id="with-compose"></a>
 ## 在 Docker Compose 中使用
 
-[Docker 部署](deployment.md#docker)中的镜像基于 distroless，里面没有 shell，不能写 `doctor && migrate up` 这样的命令。所以检查要装配在命令内部：`migrate` 服务照常运行 `[migrate, up]`，迁移之前的检查由 `migratecmd.Check` 完成；`serve`、`start` 启动之前的检查由 `doctor.Require` 完成。
+[Docker 部署](deployment.md#docker)中的镜像基于 distroless，里面没有 shell，不能写 `doctor && migrate up` 这样的命令。所以检查要装配在命令内部：`migrate` 服务照常运行 `[migrate, up]`，迁移之前的检查由 `migratecmd.Check` 完成；`serve` 启动之前的检查由 `doctor.Require` 完成。
 
 排查问题时，在同一个镜像中单独运行 `doctor`：
 
 ```bash
-docker compose run --rm --no-deps serve doctor
+docker compose run --rm --no-deps http doctor
 ```
 
-`--rm` 在命令结束后删除这个临时容器。它使用 `serve` 服务的环境变量和网络，与正式运行时连接的是同一组服务。`--no-deps` 不启动 `serve` 依赖的服务：没有它时会先执行一次 `migrate`，迁移失败时 `doctor` 就运行不了。
+`--rm` 在命令结束后删除这个临时容器。它使用 `http` 服务的环境变量和网络，与正式运行时连接的是同一组服务。`--no-deps` 不启动 `http` 依赖的服务：没有它时会先执行一次 `migrate`，迁移失败时 `doctor` 就运行不了。
 
 交给客户自托管时的完整部署见[交给客户自托管](self-hosting.md)。
 
@@ -268,7 +269,7 @@ rest.Register(api, status, func(ctx context.Context, _ *struct{}) (*DoctorOutput
 
 **`doctor` 命令只输出了一行“连不上数据库”的错误，没有列出检查结果**
 
-`command.Bind` 在执行命令之前先运行 `open` 打开资源，数据库或 NATS 连不上时 `open` 就失败了，还没轮到自检。这时的错误已经说明了原因（地址、认证或网络），先让 `open` 成功，再运行 `doctor` 查看其他设置。
+`command.Bind` 在执行命令之前先运行 `Open` 打开资源，数据库或 NATS 连不上时 `Open` 就失败了，还没轮到自检。这时的错误已经说明了原因（地址、认证或网络），先让 `Open` 成功，再运行 `doctor` 查看其他设置。
 
 **`migrate up` 报 `doctor.failed`，但 `doctor` 命令没有失败**
 

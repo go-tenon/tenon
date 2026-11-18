@@ -21,7 +21,7 @@ import (
 // tasks 返回注册了全部任务的调度器，命令执行时才调用，通常是应用中注册任务的方法，例如 a.tasks。
 // 它和其他需要数据库的命令一样在 command.Bind 中声明，声明时 App 还没有装配，所以传入的是方法。
 func New(tasks func() *schedule.Scheduler) *cobra.Command {
-	return &cobra.Command{
+	return command.InGroup(&cobra.Command{
 		Use:   "schedules",
 		Short: "列出定时任务",
 		Args:  command.NoArgs,
@@ -50,5 +50,5 @@ func New(tasks func() *schedule.Scheduler) *cobra.Command {
 			}
 			return w.Flush()
 		},
-	}
+	}, command.GroupOps)
 }

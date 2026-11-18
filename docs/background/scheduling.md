@@ -94,8 +94,7 @@ sched.Add("reports:daily", "0 3 * * *", reports.Generate, schedule.In(shanghai))
 // tasks 创建调度器并注册全部定时任务。
 func (a *App) tasks() *schedule.Scheduler {
     sched := schedule.New(a.locker, a.cfg.Schedule, nil)
-    sched.Add("articles:publish-scheduled", "* * * * *", article.NewPublishScheduled(a.db).Handle,
-        schedule.Describe("发布到了预定时间的文章"))
+    article.RegisterTasks(sched, a.db)
     sched.Add("queue:prune-failed", "@daily", schedule.Cleanup(a.failed.Cleanup(30*24*time.Hour), 1000),
         schedule.Describe("删除 30 天前的失败任务"))
     return sched
@@ -105,22 +104,17 @@ func (a *App) tasks() *schedule.Scheduler {
 func (a *App) Scheduler(*command.Daemon) (func(context.Context) error, error) {
     return a.tasks().Run, nil
 }
-
-// Schedule 只运行调度器，schedule 命令调用它。
-func Schedule(ctx context.Context, cfg Config) error {
-    return run(ctx, cfg, (*App).Scheduler)
-}
 ```
 
 `Run` 每秒检查一次到期的任务，每个任务在自己的 goroutine 中执行，一个任务执行很久时，其他任务照常按时触发。
 
-在根命令中注册 `schedule` 命令；`app.go` 中的 `Start` 已经包含调度器，见[在一个进程中运行多个部分](../general/commands.md#running-together)：
+业务模块的定时任务由模块的 `RegisterTasks` 登记，见[定时任务](../concepts/actions.md#as-scheduled-tasks)；框架数据的清理这类不属于某个模块的任务直接写在 `tasks` 中。最后把调度器登记为 `Parts` 中的一个部分，`serve` 就会运行它，`serve scheduler` 只运行它，见[serve：运行常驻进程](../general/commands.md#serve-command)：
 
 ```go
-root.AddCommand(command.Run("schedule", "执行定时任务", bootstrap.Schedule))
+{Name: "scheduler", Short: "执行定时任务", Start: a.Scheduler},
 ```
 
-单独部署调度器时的健康检查见[没有 HTTP 服务的进程](../http/lifecycle.md#probe-listener)。
+单独部署调度器时不需要健康检查，见[部署](../installation/deployment.md#health-checks)。
 
 <a id="multiple-instances"></a>
 ## 多个实例
@@ -351,7 +345,7 @@ func TestDailyReport(t *testing.T) {
 
 **任务没有按时执行**
 
-检查调度器是否在运行（`schedule` 或 `start` 命令）。再看时区：表达式按 `TZ` 环境变量计算，容器中通常是 UTC，见[时区](#timezones)。
+检查调度器是否在运行（`serve` 或 `serve scheduler`）。再看时区：表达式按 `TZ` 环境变量计算，容器中通常是 UTC，见[时区](#timezones)。
 
 **任务每次都被跳过，日志中提示上一次还没结束**
 
