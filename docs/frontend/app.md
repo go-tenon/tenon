@@ -224,7 +224,7 @@ export const Route = createFileRoute("/_app")({ beforeLoad: requireAuth, compone
 - 退出（`session.signOut()`）、切换身份时重新运行检查，离开需要登录的页面。
 
 <a id="auth"></a>
-**登录页。** 登录、注册、找回密码等页面有自己的样式，现在有一种：`CenteredAuthLayout`，页面中央一张卡片。表单和样式分开，`LoginForm` 是邮箱和密码的登录表单，可以放进任何一种样式：
+**登录页。** 登录、注册、找回密码等页面有自己的样式，现在有两种：`CenteredAuthLayout` 在页面中央放一张卡片；`SplitAuthLayout` 左右分栏，见下文。表单和样式分开，`LoginForm` 是邮箱和密码的登录表单，可以放进任何一种样式：
 
 ```tsx title="src/routes/login.tsx"
 import { createFileRoute } from "@tanstack/react-router"
@@ -252,6 +252,20 @@ function Login() {
 
 - `login` 调用应用的登录接口，服务端把登录凭据写进会话 cookie。成功后表单调用 `app.session.signIn()`，由会话的 `load` 读取当前用户，再回到登录前想去的页面。
 - 接口返回的字段错误显示在对应的输入框下面，其他错误（例如密码不对、尝试次数过多）显示在表单上方。断网等没有服务端文案的错误，按种类显示提示，见 `errorMessage`。
+
+换成左右分栏时，把 `CenteredAuthLayout` 换成 `SplitAuthLayout`，表单不变。左栏是品牌色的展示区：`brand` 是顶部的标志，`aside` 是中间的内容，例如一句口号和几条产品介绍，`asideFooter` 是底部的一行小字。左栏的文字是白色，放在里面的 `Title`、`Text` 不用另设颜色。窄屏时左栏隐藏，`brand` 移到表单上方：
+
+```tsx
+<SplitAuthLayout
+  brand="Acme"
+  aside={<Title order={1}>把团队的工作放在一处</Title>}
+  asideFooter="© 2026 Acme"
+  title="登录"
+  description="欢迎回来。"
+>
+  <LoginForm login={(values) => api.auth.login(values)} redirect={redirect} />
+</SplitAuthLayout>
+```
 
 自己写登录表单时，登录成功后用 `redirectAfterSignIn` 回到原来的地址：
 
@@ -369,7 +383,7 @@ bun run playground
 | `layoutMetrics(theme)`、`LayoutMetrics` | 主题中的布局尺寸 |
 | `requireAuth` | 布局路由的 `beforeLoad`：没有登录时跳到登录页 |
 | `app.redirectAfterSignIn(redirect)`、`safeRedirect(redirect, fallback)` | 登录后回到原来的地址；只接受同源相对路径的回跳地址 |
-| `CenteredAuthLayout`、`LoginForm`、`errorMessage` | 认证页的布局、登录表单、错误的提示文字 |
+| `CenteredAuthLayout`、`SplitAuthLayout`、`LoginForm`、`errorMessage` | 认证页的两种布局（中央卡片、左右分栏）、登录表单、错误的提示文字 |
 | `app.permissions()`、`app.permissionsQuery()` | 当前身份的权限；交给 `useQuery` 的查询选项 |
 | `useApp`、`useSignedIn`、`useCan` | 在应用的路由之内使用 |
 | `ForbiddenError`、`isForbidden` | 缺少权限时抛出的错误 |

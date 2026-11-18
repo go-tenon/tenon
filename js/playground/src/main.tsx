@@ -32,6 +32,7 @@ import {
   SchedulePanel,
   SettingsForm,
   SiteLayout,
+  SplitAuthLayout,
   trackOperation,
   UIProvider,
   UserMenu,
@@ -53,7 +54,7 @@ import {
   TextInput,
   Title,
 } from "@mantine/core"
-import { IconDownload, IconPlus, IconSearch, IconSettings } from "@tabler/icons-react"
+import { IconCircleCheck, IconDownload, IconPlus, IconSearch, IconSettings } from "@tabler/icons-react"
 import { type AnyRoute, createRootRouteWithContext, createRoute, Link, Outlet, useParams } from "@tanstack/react-router"
 import { type ReactNode, useEffect, useMemo, useState } from "react"
 import { createRoot } from "react-dom/client"
@@ -391,18 +392,39 @@ function ConsoleShell(): ReactNode {
   )
 }
 
-/** /console/ 演示的登录页。 */
+/** /console/ 演示的登录页：左右分栏。 */
 function ConsoleLoginPage(): ReactNode {
   return (
-    <CenteredAuthLayout
+    <SplitAuthLayout
       brand={
         <Group gap={10}>
           <span className="tn-brand-mark">A</span>
           <Text fw={600}>Acme</Text>
         </Group>
       }
+      aside={
+        <Stack gap="xl">
+          <Stack gap="sm">
+            <Title order={1} fz={36} lh={1.2}>
+              把团队的工作放在一处
+            </Title>
+            <Text size="lg" opacity={0.8}>
+              任务、文档和讨论在同一个地方，随时知道每件事进行到哪一步。
+            </Text>
+          </Stack>
+          <Stack gap="sm">
+            {["几分钟建好第一个项目", "按角色分配权限", "手机和电脑上都能用"].map((item) => (
+              <Group key={item} gap="sm" wrap="nowrap">
+                <IconCircleCheck size={20} stroke={1.75} />
+                <Text>{item}</Text>
+              </Group>
+            ))}
+          </Stack>
+        </Stack>
+      }
+      asideFooter="© 2026 Acme"
       title="登录"
-      description="登录 Acme。"
+      description="欢迎回来，登录 Acme。"
       footer={
         <>
           还没有账号？<AnchorLink to="/login">免费注册</AnchorLink>
@@ -415,7 +437,7 @@ function ConsoleLoginPage(): ReactNode {
         }
         forgot={<AnchorLink to="/login">忘记密码？</AnchorLink>}
       />
-    </CenteredAuthLayout>
+    </SplitAuthLayout>
   )
 }
 
