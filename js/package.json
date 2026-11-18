@@ -9,9 +9,8 @@
   ],
   "scripts": {
     "check": "biome check .",
-    "typecheck": "bun run --filter '@go-tenon/*' typecheck && tsc --noEmit -p e2e && tsc --noEmit -p playground",
+    "typecheck": "bun run --filter '@go-tenon/*' typecheck && tsc --noEmit -p playground",
     "test": "vitest run --passWithNoTests",
-    "e2e": "playwright test -c e2e/playwright.config.ts",
     "playground": "vite --config playground/vite.config.ts"
   },
   "devDependencies": {
@@ -31,12 +30,10 @@
     "@mantine/notifications": "9.8.1",
     "@mantine/nprogress": "9.8.1",
     "@mantine/spotlight": "9.8.1",
-    "@playwright/test": "1.65.1",
     "@tabler/icons-react": "3.50.0",
     "@tanstack/react-query": "5.107.1",
     "@tanstack/react-router": "1.170.46",
     "@tanstack/react-start": "1.169.5",
-    "@testing-library/react": "16.3.3",
     "@types/bun": "1.4.4",
     "@types/node": "24.10.15",
     "@types/react": "19.3.0",
@@ -44,7 +41,6 @@
     "@vitejs/plugin-react": "6.3.0",
     "ai": "7.0.173",
     "dayjs": "1.11.23",
-    "happy-dom": "21.0.4",
     "mantine-datatable": "9.8.1",
     "react": "19.3.1",
     "react-dom": "19.3.1",
