@@ -77,15 +77,18 @@ func Establish(ctx context.Context, authenticate Authenticator, resolve Resolver
 	return sub, nil
 }
 
-// Reestablish 在长连接期间重新执行 Establish，确认 was 仍然有效：凭据被撤销、凭据换了主体或代为登录者、
-// 主体退出租户或失去权限时返回拒绝调用者的错误（Failed 报告为 false），连接应当结束；Failed 报告为 true 的错误表示暂时无法判断，连接保持。
-// authenticate 和 resolve 收到的 ctx 中 Rechecking 报告为 true。
-func Reestablish(ctx context.Context, was Subject, authenticate Authenticator, resolve Resolver, permissions ...string) error {
+// Reestablish 在长连接期间重新执行 Establish，确认 was 仍然有效，返回重新加载的主体（权限可能已经变化）。
+// 凭据被撤销、凭据换了主体或代为登录者、主体退出租户或失去权限时返回拒绝调用者的错误（Failed 报告为 false），连接应当结束；
+// Failed 报告为 true 的错误表示暂时无法判断，连接保持。authenticate 和 resolve 收到的 ctx 中 Rechecking 报告为 true。
+func Reestablish(ctx context.Context, was Subject, authenticate Authenticator, resolve Resolver, permissions ...string) (Subject, error) {
 	sub, err := Establish(context.WithValue(ctx, recheckingKey{}, true), authenticate, resolve, permissions...)
-	if err == nil && (sub.Ref() != was.Ref() || sub.Impersonator != was.Impersonator) {
-		return ErrUnauthenticated.New()
+	if err != nil {
+		return Subject{}, err
 	}
-	return err
+	if sub.Ref() != was.Ref() || sub.Impersonator != was.Impersonator {
+		return Subject{}, ErrUnauthenticated.New()
+	}
+	return sub, nil
 }
 
 // recheckingKey 是复查标记在 context 中的键。

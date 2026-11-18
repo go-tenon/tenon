@@ -569,6 +569,55 @@ func TestPeriodicRecheckDisconnects(t *testing.T) {
 	}
 }
 
+// 复查凭据时按重新加载的权限重新授权已订阅的频道：失去权限的频道被退订，之后也不能重新订阅；其他频道保持。
+func TestRecheckReauthorizesChannels(t *testing.T) {
+	t.Parallel()
+	var (
+		mu    sync.Mutex
+		perms = []string{"articles:read", "comments:read"}
+	)
+	signals := broadcast.New(broadcasttest.NewBackend(), nil)
+	defer signals.Close()
+	creds := broadcast.NewCredentials(signals)
+	n := start(t, broadcasttest.NewBackend(), realtime.Options{
+		Authenticate: (&tokens{}).validate,
+		Credentials:  creds,
+		Accounts: identity.Accounts{"user": func(_ context.Context, sub identity.Subject) (identity.Subject, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			sub.Permissions = perms
+			return sub, nil
+		}},
+	}, nil)
+	for _, name := range []string{"articles", "comments"} {
+		perm := name + ":read"
+		n.rt.Channel(name, realtime.Private(func(_ context.Context, sub identity.Subject, _ realtime.Params) (bool, error) {
+			return sub.Can(perm), nil
+		}))
+	}
+	c := mustConnect(t, n.url, "alice", nil)
+	c.mustSubscribe("articles")
+	c.mustSubscribe("comments")
+
+	mu.Lock()
+	perms = []string{"comments:read"}
+	mu.Unlock()
+	if err := creds.RecheckSubject(context.Background(), identity.Ref{Type: "user", ID: "alice"}); err != nil {
+		t.Fatal(err)
+	}
+	if ch := c.unsubscribed(); ch != "articles" {
+		t.Fatalf("unsubscribed from %q", ch)
+	}
+	if reply := c.subscribe("articles"); reply.Error == nil || reply.Error.Code != 103 {
+		t.Fatalf("resubscribed after losing access: %+v", reply)
+	}
+	publish(t, n.hub, "articles", map[string]int{"n": 1})
+	publish(t, n.hub, "comments", map[string]int{"n": 2})
+	if p := c.push(); p.Channel != "comments" {
+		t.Fatalf("received a push on %s", p.Channel)
+	}
+}
+
 // wrapped 是只提供 Unwrap 的 ResponseWriter，与框架的中间件相同。
 type wrapped struct{ http.ResponseWriter }
 
