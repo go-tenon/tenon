@@ -13,7 +13,7 @@ function Layout() {
   // tabs 开启多标签。
   return <AdminLayout title="[[.Title]]" tabs user={<UserMenu name={user.data?.name} logout={logout} />} />
 [[- else]]
-  // console 的布局 Rail：双栏导航（模块的图标栏和二级导航），设置从用户菜单进入。
+  // RailLayout：双栏导航（模块的图标栏和二级导航），设置从用户菜单进入。
   return <RailLayout title="[[.Title]]" user={<UserMenu name={user.data?.name} position="right-end" logout={logout} />} />
 [[- end]]
 }

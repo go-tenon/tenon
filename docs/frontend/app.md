@@ -157,11 +157,11 @@ export const theme = createUiTheme({ preset: "admin", primary: "blue-gray" })
 
 | 预设 | 适合 | 特点 |
 | --- | --- | --- |
-| `admin` | 运营后台、内部系统、以表格和表单为主的后台 | 正文 14px，控件 32px 高，顶栏 52px，圆角 4px，一屏能看到更多数据 |
-| `console` | 面向客户的 SaaS 控制台、用户中心 | 正文 14px，控件 36px 高，顶栏 56px，圆角 8px，留白舒展 |
+| `admin` | 表格和表单多的后台，例如运营后台、商家后台、内部系统 | 正文 14px，控件 32px 高，顶栏 52px，圆角 4px，一屏能看到更多数据 |
+| `console` | 页面不密集、以模块切换为主的应用，例如 SaaS 控制台、聊天工具、用户中心 | 正文 14px，控件 36px 高，顶栏 56px，圆角 8px，留白舒展 |
 | `site` | 官网、落地页、文章、文档 | 正文 16px，大标题随屏幕宽度缩放，行距宽松，顶栏 64px |
 
-一个前端只用一套预设。运营后台和面向客户的控制台可以是两个前端，各用自己的预设，品牌色相同。布局用到的尺寸（顶栏高度、侧栏宽度、内容的内边距、控件的默认尺寸）放在主题的 `other.tenon` 中，`AdminLayout` 等布局据此排版，用 `layoutMetrics(theme)` 读取。
+一个前端只用一套预设。一个项目中的几个前端可以各用自己的预设，品牌色相同，例如表格多的后台用 `admin`，另一个应用用 `console`。布局用到的尺寸（顶栏高度、侧栏宽度、内容的内边距、控件的默认尺寸）放在主题的 `other.tenon` 中，`AdminLayout` 等布局据此排版，用 `layoutMetrics(theme)` 读取。
 
 <a id="tokens"></a>
 `createUiTheme` 的选项是设计令牌：
@@ -321,7 +321,7 @@ app.storage.get<{ compact: boolean }>("density")
 <a id="playground"></a>
 ## 演示
 
-框架的 `js/playground` 是三套预设的演示：运营后台（`/admin/`）、SaaS 控制台（`/console/`）、官网（`/`）和文档页（`/docs/getting-started`）、登录页（`/admin/login`）。在框架仓库的 `js` 目录中运行：
+框架的 `js/playground` 是三套预设的演示：`admin` 和 `AdminLayout`（`/admin/`）、`console` 和 `RailLayout`（`/console/`）、官网（`/`）和文档页（`/docs/getting-started`）、登录页（`/admin/login`）。在框架仓库的 `js` 目录中运行：
 
 ```bash
 bun run playground

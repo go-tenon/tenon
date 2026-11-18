@@ -173,7 +173,7 @@ function base(m: LayoutMetrics): MantineThemeOverride {
   })
 }
 
-// 运营后台的暗色：带一点主色调的深灰。[7] 是页面背景、[8] 是侧栏、[6] 是悬停、[4] 是边框。
+// admin 预设的暗色：带一点主色调的深灰。[7] 是页面背景、[8] 是侧栏、[6] 是悬停、[4] 是边框。
 const adminDark: MantineColorsTuple = [
   "#d5d9e0",
   "#b0b7c3",
@@ -187,10 +187,10 @@ const adminDark: MantineColorsTuple = [
   "#0f1115",
 ]
 
-// 运营后台默认尺寸（sm）的按钮和输入框：32px 高、13px 字（Mantine 默认 36px、14px）。
+// admin 预设默认尺寸（sm）的按钮和输入框：32px 高、13px 字（Mantine 默认 36px、14px）。
 const adminControl = { height: "32px", fz: "13px" }
 
-/** 运营后台：信息密度高，偏表格和表单。正文 14px，控件 32px 高。 */
+/** admin 预设：紧凑，信息密度高，适合表格和表单多的界面。正文 14px，控件 32px 高。 */
 const admin: MantineThemeOverride = mergeThemeOverrides(
   base({
     preset: "admin",
@@ -238,7 +238,7 @@ const admin: MantineThemeOverride = mergeThemeOverrides(
   }),
 )
 
-/** SaaS 控制台：舒展的留白、柔和的圆角，适合面向客户的后台。 */
+/** console 预设：舒展的留白、柔和的圆角，适合页面不密集、以模块切换为主的应用。 */
 const consolePreset: MantineThemeOverride = mergeThemeOverrides(
   base({
     preset: "console",
@@ -297,7 +297,7 @@ const site: MantineThemeOverride = mergeThemeOverrides(
   }),
 )
 
-/** 三套样式预设：运营后台、SaaS 控制台、官网和内容站。 */
+/** 三套样式预设：紧凑的 admin、舒展的 console、官网和内容站的 site。 */
 export const themes: Record<Preset, MantineThemeOverride> = { admin, console: consolePreset, site }
 
 /** createUiTheme 的选项，通常来自项目的设计令牌（theme/tokens.json）。 */
@@ -351,7 +351,7 @@ export function createUiTheme(options: UiThemeOptions = {}): MantineThemeOverrid
   return mergeThemeOverrides(...parts)
 }
 
-/** 主题中的布局尺寸；没有时（没有用 createUiTheme 或 themes）返回控制台的尺寸。 */
+/** 主题中的布局尺寸；没有时（没有用 createUiTheme 或 themes）返回 console 预设的尺寸。 */
 export function layoutMetrics(theme: { other?: Record<string, unknown> }): LayoutMetrics {
   return (theme.other?.tenon as LayoutMetrics | undefined) ?? (consolePreset.other?.tenon as LayoutMetrics)
 }

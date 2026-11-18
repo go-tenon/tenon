@@ -1,12 +1,15 @@
 # 布局与导航
 
-框架有两个后台的布局：管理后台（运营后台）用 `AdminLayout`，console（SaaS 控制台）用 `RailLayout`。`AdminLayout` 的顶栏占满整行，左边是标志，中间是多标签（开启时），右边是操作和用户菜单；顶栏下面左侧是页面搜索和按权限过滤的侧栏菜单，右侧是页面。这一页介绍这两个布局、顶栏、页面搜索、多标签、租户和页面的标题区，最后是自己写布局时用到的导航模型和插槽。
+框架有两个后台类的布局，按界面的样子选择，与使用者是谁无关：
 
-console 的布局见[console 的布局](#console-layouts)；官网和文档站用 `SiteLayout`、`DocsLayout`，见[官网与文档站](site.md)。
+- `AdminLayout`：顶栏加侧栏菜单，信息密集，可以开启多标签。适合表格和表单多的后台，例如运营后台、外卖平台给商家用的商家后台、内部系统。
+- `RailLayout`：双栏导航，最左侧是模块的图标栏，旁边是当前模块的二级导航。适合以模块切换为主的应用，例如 SaaS 控制台、聊天工具。
+
+谁能看到哪些页面（权限）、当前属于哪个租户，由应用把后端的逻辑接进来，布局本身不预设这些。这一页先介绍 `AdminLayout`、顶栏、页面搜索、多标签、租户和页面的标题区，然后是 [`RailLayout`](#rail-layout)，最后是自己写布局时用到的导航模型和插槽。官网和文档站用 `SiteLayout`、`DocsLayout`，见[官网与文档站](site.md)。
 
 阅读前需要了解：[搭建前端应用](app.md)。
 
-- [管理后台的布局](#admin-layout)
+- [AdminLayout](#admin-layout)
     - [侧栏菜单与图标](#menu)
     - [页面搜索](#search)
     - [顶栏与插槽](#slots)
@@ -14,13 +17,13 @@ console 的布局见[console 的布局](#console-layouts)；官网和文档站�
 - [页面的标题区](#page)
 - [多标签](#tabs)
 - [租户](#tenants)
-- [console 的布局](#console-layouts)
+- [RailLayout](#rail-layout)
 - [自己写布局](#custom-layouts)
 - [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
 <a id="admin-layout"></a>
-## 管理后台的布局
+## AdminLayout
 
 `AdminLayout` 放在需要登录的布局路由上，它之下的页面都在其中显示：
 
@@ -56,7 +59,7 @@ function Layout() {
 
 - 顶栏最左边的按钮把侧栏收起为只有图标的窄栏，状态按账号保存在浏览器中。窄屏（小于 768px）时侧栏是顶栏下面的抽屉，由顶栏的汉堡按钮打开、关闭，打开页面后自动收起。
 - 面包屑在页面的标题上面，由 [`Page`](#page) 显示。
-- 行高、字号、顶栏高度随主题的[样式预设](app.md#presets)：运营后台更紧凑。
+- 行高、字号、顶栏高度随主题的[样式预设](app.md#presets)：`admin` 预设更紧凑。
 - 右下角的[新版本提示](app.md#new-version)已经包含在内。
 
 **区域**用布局路由区分：一组页面共用一个布局，例如 `_app` 用 `AdminLayout`，登录页不在 `_app` 之下，用 `AuthLayout`。
@@ -178,7 +181,7 @@ function Orders() {
 <a id="tabs"></a>
 ## 多标签
 
-运营后台常用多标签：打开的页面排成一行标签，切换标签时页面保留原来的状态（填了一半的表单、翻到的页、滚动位置）。`AdminLayout` 设置 `tabs` 即可开启：标签栏在顶栏中间，从侧栏展开时的边线往右 6px 开始（收起侧栏时标签不动）；布局之下的每个页面是一个标签。
+表格和表单多的后台常用多标签：打开的页面排成一行标签，切换标签时页面保留原来的状态（填了一半的表单、翻到的页、滚动位置）。`AdminLayout` 设置 `tabs` 即可开启：标签栏在顶栏中间，从侧栏展开时的边线往右 6px 开始（收起侧栏时标签不动）；布局之下的每个页面是一个标签。
 
 - 用户可以在头像菜单中关掉多标签，按账号保存；关掉后页面不再保留状态。窄屏时不显示标签栏。
 - 第一次使用（这个账号没有保存过标签）时，菜单的第一个页面作为固定的标签放在最前面；`tabs={{ home: false }}` 时不这样做。
@@ -271,10 +274,10 @@ export const Route = createFileRoute("/t/$tenant")({
 
 自己画租户菜单时用 `useTenant()`：`{ current, tenant, tenants, switchTo }`，用户选择留下时 `switchTo` 返回 `false`。
 
-<a id="console-layouts"></a>
-## console 的布局
+<a id="rail-layout"></a>
+## RailLayout
 
-console（SaaS 控制台）用 `RailLayout`（Rail 布局），双栏导航：最左侧是模块的图标栏（标志、模块、用户菜单），旁边是当前模块的二级导航，右侧是页面。`tenon add frontend --style console` 生成的前端已经这样写好：
+`RailLayout` 是双栏导航的布局：最左侧是模块的图标栏（标志、模块、用户菜单），旁边是当前模块的二级导航，右侧是页面。`tenon add frontend --style console` 生成的前端已经这样写好：
 
 ```tsx title="src/routes/_app.tsx"
 function Layout() {
@@ -372,8 +375,8 @@ function TopLayout() {
 
 | 名称 | 说明 |
 | --- | --- |
-| `AdminLayout` | 管理后台的布局：`title`、`logo`、`user`、`actions`、`search`、`tabs`、`maxWidth` |
-| `RailLayout` | console 的布局，双栏导航：`title`、`logo`、`user`、`settings`、`maxWidth` |
+| `AdminLayout` | 顶栏加侧栏菜单的布局：`title`、`logo`、`user`、`actions`、`search`、`tabs`、`maxWidth` |
+| `RailLayout` | 双栏导航的布局：`title`、`logo`、`user`、`settings`、`maxWidth` |
 | `Fill`、`Slot`、`useSlotFilled`、`SlotName` | 插槽 |
 | `SessionBoundary` | 身份变化时重新挂载其中的页面 |
 | `UserMenu`、`NotificationsMenu`、`OperationsMenu`、`LanguageMenu`、`ColorSchemeToggle` | 顶栏菜单；`UserMenu` 的选项：`name`、`email`、`avatar`、`logout`、`items`、`colorScheme`、`position` |

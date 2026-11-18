@@ -111,7 +111,7 @@ function Root(): ReactNode {
   return <Outlet />
 }
 
-// ———————————————————————————— 运营后台 ————————————————————————————
+// ———————————————————————————— admin 预设：AdminLayout ————————————————————————————
 
 const languages = [
   { value: "zh-CN", label: "简体中文" },
@@ -124,7 +124,7 @@ function AdminShell(): ReactNode {
   const [language, setLanguage] = useState("zh-CN")
   return (
     <AdminLayout
-      title="Acme 运营后台"
+      title="Acme 后台"
       tabs
       actions={
         <>
@@ -354,7 +354,7 @@ function LoginPage(): ReactNode {
         </Group>
       }
       title="登录"
-      description="使用工作邮箱登录 Acme 运营后台。"
+      description="使用工作邮箱登录 Acme 后台。"
       footer={
         <>
           还没有账号？<AnchorLink to="/">联系管理员</AnchorLink>
@@ -371,13 +371,13 @@ function LoginPage(): ReactNode {
   )
 }
 
-// ———————————————————————————— SaaS 控制台 ————————————————————————————
+// ———————————————————————————— console 预设：RailLayout ————————————————————————————
 
 // console 的布局：Rail（双栏导航）。
 function ConsoleShell(): ReactNode {
   return (
     <RailLayout
-      title="Acme Cloud"
+      title="Acme"
       user={
         <UserMenu
           name="韩梅梅"
@@ -391,18 +391,18 @@ function ConsoleShell(): ReactNode {
   )
 }
 
-/** console 的登录页。 */
+/** console 预设的登录页。 */
 function ConsoleLoginPage(): ReactNode {
   return (
     <AuthLayout
       brand={
         <Group gap={10}>
           <span className="tn-brand-mark">A</span>
-          <Text fw={600}>Acme Cloud</Text>
+          <Text fw={600}>Acme</Text>
         </Group>
       }
       title="登录"
-      description="登录 Acme Cloud 控制台。"
+      description="登录 Acme。"
       footer={
         <>
           还没有账号？<AnchorLink to="/login">免费注册</AnchorLink>
@@ -419,11 +419,11 @@ function ConsoleLoginPage(): ReactNode {
   )
 }
 
-/** console 页面的占位。 */
+/** RailLayout 中页面的占位。 */
 function ConsolePlaceholder({ title }: { title: string }): ReactNode {
   return (
     <Page title={title}>
-      <Text c="dimmed">console 页面的占位。</Text>
+      <Text c="dimmed">页面的占位。</Text>
     </Page>
   )
 }
@@ -445,10 +445,10 @@ function consoleApp() {
       staticData: { title, icon, order },
       component: () => <ConsolePlaceholder title={title} />,
     })
-  const people = createRoute({
+  const content = createRoute({
     getParentRoute: () => layout,
-    id: "people",
-    staticData: { title: "伙伴", icon: "team", order: 1 },
+    id: "content",
+    staticData: { title: "内容", icon: "file", order: 1 },
   })
   const settings = createRoute({
     getParentRoute: () => layout,
@@ -460,7 +460,7 @@ function consoleApp() {
     createRoute({ getParentRoute: () => root, path: "/login", component: ConsoleLoginPage }),
     layout.addChildren([
       page(layout, "/", "首页", "home"),
-      people.addChildren([page(people, "/members", "找人", "team")]),
+      content.addChildren([page(content, "/items", "全部", "list"), page(content, "/archive", "归档", "file", 1)]),
       settings.addChildren([personal.addChildren([page(personal, "/profile", "个人资料", "user")])]),
     ]),
   ])

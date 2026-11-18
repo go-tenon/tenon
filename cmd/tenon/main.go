@@ -214,7 +214,7 @@ ssr.Run(ctx, serve, webPages, %[3]sPages)。导入 %[5]q。
 		},
 	}
 	cmd.Flags().StringVar(&base, "base", "", "前端挂载的路径，以 / 开头和结尾，默认 /<name>/")
-	cmd.Flags().StringVar(&style, "style", "console", "样式预设：console（SaaS 控制台）；admin（运营后台，高密度、多标签）；site（官网和内容站，服务端渲染）")
+	cmd.Flags().StringVar(&style, "style", "console", "样式预设：console（舒展，双栏导航）；admin（紧凑，顶栏加侧栏菜单、多标签）；site（官网和内容站，服务端渲染）")
 	return cmd
 }
 
