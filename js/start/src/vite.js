@@ -25,6 +25,8 @@ export const PrerenderNonce = "__tenon_csp_nonce__"
 /**
  * 读取前端目录（dir，默认当前目录，即 vite 运行的目录）中 package.json 的 tenon 字段：挂载路径 base 和
  * 是否在服务端渲染 ssr。go tool tenon 读取同一个字段，决定 Go 怎样提供这个前端、程序中是否带 Bun。
+ * 环境变量 TENON_RENDER 为 csr 时不论 tenon.ssr 都只在浏览器中渲染：go tool tenon build --client 为桌面端等宿主
+ * 构建前端时设置它，宿主从本地加载页面外壳。
  *
  * @param {string} [dir]
  * @returns {import("./vite").FrontendConfig}
@@ -36,7 +38,7 @@ export function frontendConfig(dir = process.cwd()) {
   if (typeof base !== "string" || !base.startsWith("/") || !base.endsWith("/")) {
     throw new Error(`@go-tenon/start: ${file}: tenon.base must start and end with /, for example "/admin/"`)
   }
-  return { base, ssr: tenon.ssr === true }
+  return { base, ssr: process.env.TENON_RENDER === "csr" ? false : tenon.ssr === true }
 }
 
 /**
@@ -98,7 +100,8 @@ export function tenon(options = {}) {
         return { base }
       },
     },
-    tanstackStart(startOptions(ssr, options.prerender ?? [])),
+    // 为宿主构建时（TENON_RENDER=csr）不预渲染页面：宿主中的页面都由前端路由渲染。
+    tanstackStart(startOptions(ssr, process.env.TENON_RENDER === "csr" ? [] : (options.prerender ?? []))),
     viteReact(),
     versionPlugin({ version: options.version, sourcemaps: options.sourcemaps }),
   ]

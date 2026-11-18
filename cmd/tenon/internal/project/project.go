@@ -1,4 +1,4 @@
-// Package project 读取项目根目录的 tenon.json，补上约定的默认值，并发现项目中的前端。
+// Package project 读取项目根目录的 tenon.json，补上约定的默认值，并发现项目中的前端和客户端。
 package project
 
 import (
@@ -20,6 +20,16 @@ const File = "tenon.json"
 
 // AppsDir 是前端所在的目录：其中每个带 vite.config 的子目录是一个前端，子目录名是前端的名称。
 const AppsDir = "apps"
+
+// ClientsDir 是网页以外的客户端（桌面端、App）所在的目录：其中每个带 ClientFile 的子目录是一个客户端，
+// 子目录名是客户端的名称，也是它的 OAuth client ID 和 X-App-Version 中的平台名。
+const ClientsDir = "clients"
+
+// ClientFile 是客户端目录中声明种类的文件，各种工具链的客户端都用它，tenon 的命令按它识别客户端。
+const ClientFile = "tenon.json"
+
+// Kinds 是 tenon 支持的客户端种类。
+var Kinds = []string{"electron"}
 
 // ClientDir 是共用的客户端包；有它的 package.json 时，每个 API 的 TypeScript 客户端生成到 ClientSrc/<名称>。
 const (
@@ -43,6 +53,7 @@ type Config struct {
 	Tools  []Tool          `json:"tools,omitempty"`   // 与应用一起运行的其他工具，可空。
 
 	Frontends []Frontend `json:"-"` // apps 中的前端，按名称排序。由 Load 从目录中发现，不在 tenon.json 中。
+	Clients   []Client   `json:"-"` // clients 中的客户端，按名称排序。由 Load 从目录中发现。
 	Client    bool       `json:"-"` // 报告项目中是否有共用的客户端包 packages/client。由 Load 发现，不在 tenon.json 中。
 }
 
@@ -58,6 +69,14 @@ type Frontend struct {
 	Dir  string // 前端的目录，例如 apps/web。
 	Base string // 挂载的路径，以 / 开头和结尾，例如 /admin/。
 	SSR  bool   // 是否在服务端渲染；有 SSR 前端时 tenon build 才构建 Bun 可执行文件。
+}
+
+// Client 是 clients 中的一个客户端，来自它的 ClientFile。
+type Client struct {
+	Name     string `json:"-"`                  // 客户端的名称，即 clients 中的目录名。
+	Dir      string `json:"-"`                  // 客户端的目录，例如 clients/admin-desktop。
+	Kind     string `json:"kind"`               // 种类，见 Kinds。
+	Frontend string `json:"frontend,omitempty"` // 网页宿主（electron）显示的前端，即 apps 中的目录名。
 }
 
 // Tool 是一个与应用一起运行的工具：开发时运行 Watch，停止后运行一次 Build。
@@ -132,7 +151,60 @@ func (c *Config) discover(dir string) error {
 		c.Frontends = append(c.Frontends, f)
 	}
 	c.Client = exists(dir, path.Join(ClientDir, "package.json"))
+
+	entries, err = os.ReadDir(filepath.Join(dir, ClientsDir))
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	for _, e := range entries {
+		cdir := path.Join(ClientsDir, e.Name())
+		if !e.IsDir() || SkipDir(e.Name()) || !exists(dir, path.Join(cdir, ClientFile)) {
+			continue
+		}
+		if !Name.MatchString(e.Name()) {
+			return fmt.Errorf("%s: client name %q must match %s", cdir, e.Name(), Name)
+		}
+		cl, err := readClient(dir, cdir)
+		if err != nil {
+			return err
+		}
+		c.Clients = append(c.Clients, cl)
+	}
 	return nil
+}
+
+// readClient 读取客户端目录 cdir 中的 ClientFile。
+func readClient(dir, cdir string) (Client, error) {
+	file := path.Join(cdir, ClientFile)
+	data, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(file)))
+	if err != nil {
+		return Client{}, err
+	}
+	cl := Client{Name: path.Base(cdir), Dir: cdir}
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&cl); err != nil {
+		return Client{}, fmt.Errorf("%s: %w", file, err)
+	}
+	return cl, nil
+}
+
+// FindClient 返回名为 name 的客户端。
+func (c *Config) FindClient(name string) (Client, bool) {
+	i := slices.IndexFunc(c.Clients, func(cl Client) bool { return cl.Name == name })
+	if i < 0 {
+		return Client{}, false
+	}
+	return c.Clients[i], true
+}
+
+// FindFrontend 返回名为 name 的前端。
+func (c *Config) FindFrontend(name string) (Frontend, bool) {
+	i := slices.IndexFunc(c.Frontends, func(f Frontend) bool { return f.Name == name })
+	if i < 0 {
+		return Frontend{}, false
+	}
+	return c.Frontends[i], true
 }
 
 // readFrontend 读取前端目录 fdir 中 package.json 的 tenon 字段。
@@ -167,6 +239,15 @@ func (c *Config) check() error {
 	}
 	if !strings.HasPrefix(c.URL, "http://") && !strings.HasPrefix(c.URL, "https://") {
 		return fmt.Errorf("%s: url %q must start with http:// or https://", File, c.URL)
+	}
+	for _, cl := range c.Clients {
+		file := path.Join(cl.Dir, ClientFile)
+		if !slices.Contains(Kinds, cl.Kind) {
+			return fmt.Errorf("%s: kind %q is not one of %v", file, cl.Kind, Kinds)
+		}
+		if _, ok := c.FindFrontend(cl.Frontend); !ok {
+			return fmt.Errorf("%s: frontend %q is not in %s", file, cl.Frontend, AppsDir)
+		}
 	}
 	for base, api := range c.APIs {
 		if !strings.HasPrefix(base, "/") {

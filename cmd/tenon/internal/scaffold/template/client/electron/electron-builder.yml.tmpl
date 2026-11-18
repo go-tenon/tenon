@@ -1,0 +1,28 @@
+# electron-builder 的配置，见 https://www.electron.build/configuration。
+# go tool tenon build --client [[.Name]] 先把前端构建到 dist/renderer、把主进程和 preload 打包到 dist，再运行它。
+appId: com.[[.Scope]].[[.Name]]
+productName: [[.Title]]
+executableName: [[.Name]] # 默认取 package.json 的 name，带作用域的包名不能作为文件名
+directories:
+  output: release
+files:
+  - dist/**/*
+  - package.json
+asar: true
+# Electron 的安全开关（fuses）：不能当作 Node 运行，只从 app.asar 加载代码并校验它的完整性。
+electronFuses:
+  runAsNode: false
+  enableCookieEncryption: true
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+mac:
+  target: dmg
+  category: public.app-category.productivity
+win:
+  target: nsis
+linux:
+  target: AppImage
+  category: Utility
+  syncDesktopName: true # 窗口与 .desktop 文件关联（package.json 的 desktopName）

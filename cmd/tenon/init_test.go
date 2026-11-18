@@ -46,19 +46,27 @@ func TestInitEndToEnd(t *testing.T) {
 		t.Errorf("next steps missing:\n%s", out.String())
 	}
 
-	sh := func(name string, args ...string) {
+	// shIn 在项目的子目录 sub 中运行命令，env 是追加的环境变量。
+	shIn := func(sub string, env []string, name string, args ...string) {
 		t.Helper()
 		c := exec.Command(name, args...)
-		c.Dir = dir
+		c.Dir = filepath.Join(dir, sub)
+		c.Env = append(os.Environ(), env...)
 		if b, err := c.CombinedOutput(); err != nil {
 			t.Fatalf("%s %v: %v\n%s", name, args, err, b)
 		}
+	}
+	sh := func(name string, args ...string) {
+		t.Helper()
+		shIn(".", nil, name, args...)
 	}
 	// 三个前端：运营后台挂在 /admin/，控制台挂在 /console/（左右分栏的登录页），都只在浏览器中渲染；官网样式的 promo
 	// 挂在 /promo/，带登录页，和 web 一样在服务端渲染。main.go 不用改：frontend.Host 按 apps/dist 中的清单托管全部前端。
 	sh("go", "tool", "tenon", "add", "frontend", "admin", "--layout", "frame")
 	sh("go", "tool", "tenon", "add", "frontend", "console", "--login", "split")
 	sh("go", "tool", "tenon", "add", "frontend", "promo", "--layout", "site", "--login", "centered")
+	// Electron 桌面端显示 admin：admin 中加上授权页，客户端的类型检查随项目的 typecheck 一起运行。
+	sh("go", "tool", "tenon", "add", "client", "admin-desktop", "--kind", "electron", "--frontend", "admin", "--title", "Todo 后台")
 
 	// 刚 clone 的项目没有 apps/dist（被 .gitignore 忽略）和生成的客户端：generate 先写前端的清单再编译应用。
 	for _, p := range []string{"apps/dist", "packages/client/src/api"} {
@@ -98,6 +106,18 @@ func TestInitEndToEnd(t *testing.T) {
 	}
 	sh("bun", "run", "typecheck")
 	sh("go", "vet", "./...")
+	// 桌面端的主进程和 preload 打包成 dist/main.js、dist/preload.js。
+	shIn("clients/admin-desktop", nil, "bun", "run", "bundle")
+	for _, f := range []string{"main.js", "preload.js"} {
+		if _, err := os.Stat(filepath.Join(dir, "clients", "admin-desktop", "dist", f)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// 为宿主构建时（TENON_RENDER=csr），服务端渲染的 promo 也只在浏览器中渲染：构建出页面外壳。之后的 tenon build 照常构建。
+	shIn("apps/promo", []string{"TENON_RENDER=csr"}, "bun", "run", "build")
+	if _, err := os.Stat(filepath.Join(dir, "apps", "promo", "dist", "client", "_shell.html")); err != nil {
+		t.Fatalf("promo built for a host has no page shell: %v", err)
+	}
 	sh("go", "tool", "tenon", "build")
 	// 两个 SSR 前端编进同一个 Bun 可执行文件：程序只比一份 Bun（约 100MB）大一点。
 	if info, err := os.Stat(filepath.Join(dir, "bin", "api")); err != nil || info.Size() > 180<<20 {

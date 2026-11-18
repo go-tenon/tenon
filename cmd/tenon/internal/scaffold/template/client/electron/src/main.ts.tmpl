@@ -1,0 +1,30 @@
+// [[.Title]]的主进程：在窗口中打开前端 apps/[[.Frontend]]（挂在 [[.Base]]），接口转发到服务器，用户在浏览器中登录。
+// 桌面能力（托盘、通知、自动更新等）在这里逐项加上，见文档“桌面端”。
+
+import { createHost } from "@go-tenon/electron/main"
+import { app } from "electron"
+import { join } from "node:path"
+
+// 服务器的地址：接口转发到这里，用户也在这里登录。tenon dev 运行时是本机的应用（TENON_SERVER）。
+const server = process.env.TENON_SERVER ?? "https://example.com"
+
+// 打包出的文件在 dist 中：主进程、preload 和按 SPA 模式构建的前端（renderer）。app.getAppPath() 开发时是客户端的目录，
+// 安装后是 app.asar。
+const dist = join(app.getAppPath(), "dist")
+
+const host = createHost({
+  id: "[[.Name]]", // 也是授权服务器中登记的 client ID
+  server,
+  base: "[[.Base]]",
+  renderer: join(dist, "renderer"),
+  preload: join(dist, "preload.js"),
+  dev: process.env.TENON_DEV_FRONTEND, // tenon dev 运行时是前端开发服务器的地址
+  window: { title: "[[.Title]]" },
+})
+
+host.start().catch((err) => {
+  console.error(err)
+  app.exit(1)
+})
+
+app.on("window-all-closed", () => app.quit())
