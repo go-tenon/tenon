@@ -10,7 +10,7 @@ import {
   validate,
 } from "@go-tenon/client"
 import { useBlocker } from "@tanstack/react-router"
-import { useCallback, useContext, useEffect, useRef } from "react"
+import { useCallback, useContext, useEffect, useMemo, useRef } from "react"
 import { TabPaneContext } from "../../app/tabs/context"
 
 /** 校验的选项：生成的 components、messages，以及提示的语言。 */
@@ -88,5 +88,7 @@ export function useUnsavedChanges(dirty: boolean, options: UnsavedChangesOptions
     state.current.released = true
     setTabDirty?.(false)
   }, [setTabDirty])
-  return { release }
+  // 返回同一个对象：调用方常在 useEffect 的清理中 release（卸载时释放），对象每次都变的话，
+  // 每次重新渲染都会 release，标签上“有未保存的修改”的标记随之丢失，关闭标签时不再询问。
+  return useMemo(() => ({ release }), [release])
 }

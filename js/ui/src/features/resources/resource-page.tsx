@@ -439,10 +439,12 @@ export interface ResourceFormProps {
   row?: ResourceRow
   inputs?: { [field: string]: FieldInput }
   onClose(): void
+  /** 自己写的表单内容，代替按声明渲染的字段，见 useResourceForm。 */
+  children?: (ctx: ResourceFormContext) => ReactNode
 }
 
 /** 新建和修改的表单（对话框）：字段、校验规则（与服务端相同）来自声明，服务端的字段错误显示在输入框下面。 */
-export function ResourceForm({ model, open, row, inputs, onClose }: ResourceFormProps): ReactNode {
+export function ResourceForm({ model, open, row, inputs, onClose, children }: ResourceFormProps): ReactNode {
   const key = row ? model.rowKey(row) : undefined
   const item = useResourceItem(model, open ? key : undefined)
   const loading = !!key && model.has.get && item.isPending
@@ -467,15 +469,11 @@ export function ResourceForm({ model, open, row, inputs, onClose }: ResourceForm
             <Loader size="sm" />
           </Group>
         ) : (
-          <FormBody
+          <FormContent
             key={key ?? "new"}
-            model={model}
-            row={initial}
-            editKey={key}
+            ctx={{ model, row: initial, editKey: key, dirty, onSaved: onClose, onCancel: () => void requestClose() }}
             inputs={inputs}
-            dirty={dirty}
-            onSaved={onClose}
-            onCancel={() => void requestClose()}
+            render={children}
           />
         ))}
     </Modal>
@@ -487,6 +485,11 @@ export interface ResourceFormPageProps {
   model: ResourceModel
   /** 覆盖某个表单字段的输入组件，与 ResourcePage 相同。 */
   inputs?: { [field: string]: FieldInput }
+  /**
+   * 自己写的表单内容，代替按声明渲染的字段：嵌套的字段、字段之间的联动等声明表达不了的表单。
+   * 页面的其余部分不变：标签标题、读取要修改的行、保存或取消后回到列表、关闭标签、离开前询问未保存的修改。见 useResourceForm。
+   */
+  children?: (ctx: ResourceFormContext) => ReactNode
 }
 
 /**
@@ -495,7 +498,7 @@ export interface ResourceFormPageProps {
  *
  *	export const Route = createFileRoute("/_app/articles/$id/edit")({ component: () => <ResourceFormPage model={articles} /> })
  */
-export function ResourceFormPage({ model, inputs }: ResourceFormPageProps): ReactNode {
+export function ResourceFormPage({ model, inputs, children }: ResourceFormPageProps): ReactNode {
   const { id } = useParams({ strict: false }) as { id?: string }
   const matches = useMatches()
   const navigate = useNavigate()
@@ -504,11 +507,12 @@ export function ResourceFormPage({ model, inputs }: ResourceFormPageProps): Reac
   const label = id ? "修改" : "新建"
   useTabTitle(`${label}${model.title}`)
 
-  // 列表是上一级路由。
+  // 列表是上一级路由。在标签中时先关闭这个标签：有未保存的修改时由标签询问，选择不放弃就留在这里；
+  // 先跳转的话，这个页面先被卸载、未保存的标记随之释放，关闭时就不再询问。不在标签中时，跳转由 useUnsavedChanges 询问。
   const list = matches[matches.length - 2]?.pathname ?? "/"
   const leave = async () => {
+    if (tab.key && !(await tab.close())) return
     await navigate({ to: list as never })
-    if (tab.key) void tab.close()
   }
 
   // 修改：有详情接口时读取完整的一行。没有时在打开页面的那一刻从列表中取出这一行并留住：之后列表不在眼前、
@@ -538,15 +542,11 @@ export function ResourceFormPage({ model, inputs }: ResourceFormPageProps): Reac
             {model.has.get ? "这一项不存在，或者没有权限查看。" : "这类数据没有读取单条的接口，从列表中打开修改页面。"}
           </Alert>
         ) : (
-          <FormBody
+          <FormContent
             key={id ?? "new"}
-            model={model}
-            row={row}
-            editKey={id}
+            ctx={{ model, row, editKey: id, dirty, onSaved: () => void leave(), onCancel: () => void leave() }}
             inputs={inputs}
-            dirty={dirty}
-            onSaved={() => void leave()}
-            onCancel={() => void leave()}
+            render={children}
           />
         )}
       </Card>
@@ -554,54 +554,121 @@ export function ResourceFormPage({ model, inputs }: ResourceFormPageProps): Reac
   )
 }
 
-function FormBody({
-  model,
-  row,
-  editKey,
-  inputs = {},
-  dirty,
-  onSaved,
-  onCancel,
-}: {
+/** 自己写的资源表单收到的上下文：ResourceFormPage、ResourceForm 的 children 收到它，交给 useResourceForm。 */
+export interface ResourceFormContext {
   model: ResourceModel
-  row?: ResourceRow
+  /** 修改时是行的标识，新建时为空。 */
   editKey?: string
-  inputs?: { [field: string]: FieldInput }
-  dirty: { current: () => boolean }
+  /** 修改的行：有详情接口时是读取到的完整一行；新建时为空。 */
+  row?: ResourceRow
+  /** 保存成功之后调用：页面中回到列表并关闭标签，对话框中关闭。 */
   onSaved(): void
+  /** 取消：页面中回到列表，对话框中关闭；有未保存的修改时先询问。 */
   onCancel(): void
-}): ReactNode {
-  // 新建和修改的字段各来自自己接口的请求体。
-  const fields = editKey ? model.updateForm : model.createForm
-  const form = useSchemaForm({
+  /** useResourceForm 在这里登记表单有没有未保存的修改，对话框关闭前据此询问。 */
+  dirty: { current: () => boolean }
+}
+
+/** useResourceForm 的选项。 */
+export interface ResourceFormOptions<T> {
+  /** 表单的初始值。修改时通常由 ctx.row 得出，例如 formValues(ctx.model.updateForm, ctx.row) 再补上嵌套的字段。 */
+  initialValues: T
+  /** 保存前把表单的值转换为请求体，例如去掉只在界面中使用的字段。默认原样提交。 */
+  toBody?: (values: T) => Record<string, unknown>
+}
+
+/**
+ * 自己写的资源表单：表单的校验规则（与服务端相同）来自资源的新建或修改接口，提交时调用这个接口，服务端的字段错误
+ * （包括业务错误用 errorx.Field 指出的字段）显示在输入框下面，其他错误交给 FormError；保存成功后提示“已保存”或
+ * “已创建”，回到列表或关闭对话框；有未保存的修改时离开前询问。表单的内容自己写，嵌套的字段用 form.getInputProps("a.b")：
+ *
+ *	<ResourceFormPage model={providers}>{(ctx) => <ProviderForm ctx={ctx} />}</ResourceFormPage>
+ *
+ *	function ProviderForm({ ctx }: { ctx: ResourceFormContext }) {
+ *	  const { form, error, submit, saving } = useResourceForm(ctx, { initialValues: { vendor: "", base_urls: {} } })
+ *	  return (
+ *	    <form noValidate onSubmit={submit}>
+ *	      <FormError error={error} />
+ *	      ……
+ *	      <ResourceFormButtons ctx={ctx} saving={saving} />
+ *	    </form>
+ *	  )
+ *	}
+ */
+// biome-ignore lint/suspicious/noExplicitAny: 与 useSchemaForm 相同的约束，生成的请求体类型（interface）可以直接作为 T
+export function useResourceForm<T extends Record<string, any>>(
+  ctx: ResourceFormContext,
+  options: ResourceFormOptions<T>,
+) {
+  const { model, editKey } = ctx
+  const form = useSchemaForm<T>({
     schema: model.formSchema(editKey ? "update" : "create"),
     rules: model.ruleOptions,
-    initialValues: formValues(fields, row),
+    initialValues: options.initialValues,
   })
   const { save } = useResourceMutations(model)
-  const [formError, setFormError] = useState<ErrorInfo>()
+  const [error, setError] = useState<ErrorInfo>()
   // 离开页面时询问是否放弃（在标签中时改为标记这个标签有未保存的修改）。
   const unsaved = useUnsavedChanges(form.isDirty(), { confirm: discard })
-  dirty.current = () => form.isDirty()
+  ctx.dirty.current = () => form.isDirty()
   useEffect(() => () => unsaved.release(), [unsaved])
+  const submit = form.onSubmit(async (values) => {
+    setError(undefined)
+    try {
+      const body = options.toBody ? options.toBody(values) : (values as Record<string, unknown>)
+      await save.mutateAsync({ key: editKey, values: body })
+      unsaved.release()
+      notifySuccess(editKey ? "已保存" : "已创建")
+      ctx.dirty.current = () => false
+      ctx.onSaved()
+    } catch (err) {
+      setError(applyServerErrors(form, err))
+    }
+  })
+  return { form, error, submit, saving: save.isPending }
+}
+
+/** 资源表单底部的按钮：取消和保存（新建时是“创建”），靠右。 */
+export function ResourceFormButtons({ ctx, saving }: { ctx: ResourceFormContext; saving?: boolean }): ReactNode {
   return (
-    <form
-      noValidate
-      onSubmit={form.onSubmit(async (values) => {
-        setFormError(undefined)
-        try {
-          await save.mutateAsync({ key: editKey, values })
-          unsaved.release()
-          notifySuccess(editKey ? "已保存" : "已创建")
-          dirty.current = () => false
-          onSaved()
-        } catch (err) {
-          setFormError(applyServerErrors(form, err))
-        }
-      })}
-    >
+    <Group justify="flex-end" gap="xs" mt="sm">
+      <Button variant="default" onClick={ctx.onCancel}>
+        取消
+      </Button>
+      <Button type="submit" loading={saving}>
+        {ctx.editKey ? "保存" : "创建"}
+      </Button>
+    </Group>
+  )
+}
+
+/** 表单的内容：有 render 时是自己写的表单，否则按声明渲染字段。 */
+function FormContent({
+  ctx,
+  inputs,
+  render,
+}: {
+  ctx: ResourceFormContext
+  inputs?: { [field: string]: FieldInput }
+  render?: (ctx: ResourceFormContext) => ReactNode
+}): ReactNode {
+  return render ? render(ctx) : <FormBody ctx={ctx} inputs={inputs} />
+}
+
+/** 按声明渲染的表单：新建和修改的字段各来自自己接口的请求体。 */
+function FormBody({
+  ctx,
+  inputs = {},
+}: {
+  ctx: ResourceFormContext
+  inputs?: { [field: string]: FieldInput }
+}): ReactNode {
+  const fields = ctx.editKey ? ctx.model.updateForm : ctx.model.createForm
+  const { form, error, submit, saving } = useResourceForm(ctx, { initialValues: formValues(fields, ctx.row) })
+  return (
+    <form noValidate onSubmit={submit}>
       <Stack gap="md">
-        <FormError error={formError} />
+        <FormError error={error} />
         {fields.map((f) => {
           const Input = inputs[f.name] ?? DefaultInput
           return (
@@ -610,14 +677,7 @@ function FormBody({
             </Box>
           )
         })}
-        <Group justify="flex-end" gap="xs" mt="sm">
-          <Button variant="default" onClick={onCancel}>
-            取消
-          </Button>
-          <Button type="submit" loading={save.isPending}>
-            {editKey ? "保存" : "创建"}
-          </Button>
-        </Group>
+        <ResourceFormButtons ctx={ctx} saving={saving} />
       </Stack>
     </form>
   )
