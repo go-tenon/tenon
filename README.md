@@ -332,7 +332,25 @@ go get github.com/go-tenon/tenon@latest
 
 ## 给 AI 编程助手
 
-[llms.txt](llms.txt) 是给大模型读的文档目录（格式见 [llmstxt.org](https://llmstxt.org)），每一项链接到一页文档的 Markdown 原文。在 ChatGPT、Claude 这类在线对话中使用 Tenon 时，把它的地址发给 AI：
+`tenon init` 生成的项目已经为 Claude Code、Codex、Cursor、Antigravity 准备好了 Tenon 自己的部分，`bun run agents` 保持更新：
+
+- `AGENTS.md`：怎样运行、提交前检查什么、代码按什么约定写；
+- `.tenon/docs`：与 `go.mod` 中的框架版本一致的文档；
+- `tenon-*` 技能：新增业务动作、写接口、加表、写页面等常做的事的步骤；
+- MCP 服务 `tenon`：检索框架的文档、查看项目信息、读开发环境的输出。
+
+项目依赖的组件按它们的官方方案接入，生成的项目的 `README.md` 写好了命令：
+
+| 组件 | 给 AI 的资源 |
+| --- | --- |
+| Go | [gopls 的 MCP 服务](https://go.dev/gopls/features/mcp) |
+| Mantine | [llms.txt、MCP 服务和技能](https://mantine.dev/guides/llms/) |
+| TanStack Router、Start、Query | [llms.txt](https://tanstack.com/llms.txt)，随包发布的技能用 [TanStack Intent](https://tanstack.com/intent/latest) 接入 |
+| React、Vite、Bun | [react.dev/llms.txt](https://react.dev/llms.txt)、[vite.dev/llms.txt](https://vite.dev/llms.txt)、[bun.com/llms.txt](https://bun.com/llms.txt) |
+
+它们讲的是各自的通用用法，与 Tenon 的约定冲突时以 Tenon 为准，例如前端不写 TanStack Start 的服务端函数。详见[AI 编程助手](docs/installation/ai-assistants.md)。
+
+Tenon 自己的 [llms.txt](llms.txt) 是给大模型读的文档目录（格式见 [llmstxt.org](https://llmstxt.org)），每一项链接到一页文档的 Markdown 原文。在 ChatGPT、Claude 这类在线对话中使用 Tenon 时，把它的地址发给 AI：
 
 ```text
 https://raw.githubusercontent.com/go-tenon/tenon/main/llms.txt

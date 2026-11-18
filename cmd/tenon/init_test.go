@@ -72,15 +72,16 @@ func TestInitEndToEnd(t *testing.T) {
 	sh("go", "tool", "tenon", "add", "client", "admin-desktop", "--kind", "electron", "--frontend", "admin", "--title", "Todo 后台")
 
 	// add frontend、add client 之后 AGENTS.md 中 tenon 的一段列出了它们；框架文档复制到了 .tenon/docs，
-	// 三个助手的 MCP 配置中有 gopls 和 mantine。
+	// 助手的 MCP 配置中有 tenon；README 中写着 gopls、Mantine、TanStack 的官方接入方法。
 	for f, wants := range map[string][]string{
 		"AGENTS.md": {"# Todo\n", "- `apps/admin`：挂在 `/admin/`", "- `clients/admin-desktop`：electron 客户端，显示 `apps/admin`。",
-			"| Mantine | ", "| Electron | ", "## 代码约定"},
+			"`README.md` 的“AI 编程助手”一节", "## 代码约定"},
+		"README.md":                              {"# Todo\n", "gopls mcp", "@mantine/mcp-server", "@tanstack/intent"},
 		".tenon/docs/README.md":                  {"# Tenon 文档"},
-		".mcp.json":                              {`"gopls"`, `"mantine"`},
-		".codex/config.toml":                     {"[mcp_servers.gopls]"},
-		".cursor/mcp.json":                       {`"mantine"`},
-		".agents/mcp_config.json":                {`"tenon"`, `"gopls"`},
+		".mcp.json":                              {`"tenon"`},
+		".codex/config.toml":                     {"[mcp_servers.tenon]"},
+		".cursor/mcp.json":                       {`"tenon"`},
+		".agents/mcp_config.json":                {`"tenon"`},
 		".claude/skills/tenon-electron/SKILL.md": {"name: tenon-electron"},
 		".agents/skills/tenon-frontend/SKILL.md": {"name: tenon-frontend"},
 	} {

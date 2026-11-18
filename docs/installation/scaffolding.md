@@ -79,6 +79,7 @@ bun run dev
 todo/
 ├── go.mod                 Go module；Tenon 的开发工具也记在这里，版本与框架相同
 ├── package.json           前端的 workspace，以及 dev、build、generate 等脚本
+├── README.md              怎样运行，以及 AI 编程助手怎样接入 Go、Mantine、TanStack 的官方资源
 ├── AGENTS.md              项目说明：怎样运行、提交前检查什么、代码约定；AI 编程助手读它
 ├── .mcp.json              Claude Code 的 MCP 配置（Codex 在 .codex/，Cursor 在 .cursor/，Antigravity 在 .agents/）
 ├── .claude/skills/        给 AI 编程助手的技能（Codex 读 .agents/skills/）
