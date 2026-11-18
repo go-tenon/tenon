@@ -281,6 +281,11 @@ body {
   padding: 4px;
 }
 
+/* 用户菜单顶部的名称和邮箱。 */
+.tn-menu-user {
+  padding: 10px;
+}
+
 .tn-schemes {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -750,9 +755,17 @@ body {
   min-height: 0;
 }
 
+/* 二级导航的链接 32px 高、13px 的字，比 Mantine 默认的 NavLink 紧凑。 */
 .tn-rail-secondary .mantine-NavLink-root,
 .tn-rail-secondary-drawer .mantine-NavLink-root {
+  height: 32px;
+  padding-block: 0;
   border-radius: var(--mantine-radius-sm);
+}
+
+.tn-rail-secondary .mantine-NavLink-label,
+.tn-rail-secondary-drawer .mantine-NavLink-label {
+  font-size: var(--mantine-font-size-sm);
 }
 
 .tn-rail-section + .tn-rail-section {

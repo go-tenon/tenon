@@ -62,8 +62,10 @@ export interface UserMenuItem {
 
 /** UserMenu 的选项。 */
 export interface UserMenuProps {
-  /** 用户的名称：头像中显示首字；读取中时为空。 */
+  /** 用户的名称：头像中显示首字，菜单顶部显示全名；读取中时为空。 */
   name?: string
+  /** 用户的邮箱或账号，显示在菜单顶部的名称下面。 */
+  email?: string
   /** 头像的地址；没有时显示名称的首字。 */
   avatar?: string
   /** 调用应用的退出接口：撤销登录、清除会话 cookie。之后清除会话中的身份。 */
@@ -76,9 +78,10 @@ export interface UserMenuProps {
   position?: MenuProps["position"]
 }
 
-/** 用户菜单：只显示头像；菜单中有应用的菜单项、配色、多标签的开关（布局开启了多标签时）和退出登录。 */
+/** 用户菜单：只显示头像；菜单顶部是用户的名称和邮箱，下面是应用的菜单项、配色、多标签的开关（布局开启了多标签时）和退出登录。 */
 export function UserMenu({
   name,
+  email,
   avatar,
   logout,
   items = [],
@@ -106,6 +109,23 @@ export function UserMenu({
         </UnstyledButton>
       </Menu.Target>
       <Menu.Dropdown p={0}>
+        {name && (
+          <Group gap="sm" wrap="nowrap" className="tn-menu-section tn-menu-user">
+            <Avatar src={avatar} size={32} radius="xl" color="brand">
+              {name.slice(0, 1)}
+            </Avatar>
+            <Box style={{ minWidth: 0 }}>
+              <Text size="sm" fw={500} truncate>
+                {name}
+              </Text>
+              {email && (
+                <Text size="xs" c="dimmed" truncate>
+                  {email}
+                </Text>
+              )}
+            </Box>
+          </Group>
+        )}
         {items.length > 0 && (
           <div className="tn-menu-section">
             {items.map((item, i) => (

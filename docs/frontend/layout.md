@@ -288,6 +288,7 @@ function Layout() {
       user={
         <UserMenu
           name={user.data?.name}
+          email={user.data?.email}
           position="right-end"
           items={[{ label: "设置", icon: <IconSettings size={16} />, to: "/settings/profile" }]}
           logout={logout}
@@ -379,7 +380,7 @@ function TopLayout() {
 | `TopbarLayout` | Topbar 模板，顶部导航（占位）：`title`、`user` |
 | `Fill`、`Slot`、`useSlotFilled`、`SlotName` | 插槽 |
 | `SessionBoundary` | 身份变化时重新挂载其中的页面 |
-| `UserMenu`、`TenantSwitcher`、`NotificationsMenu`、`OperationsMenu`、`LanguageMenu`、`ColorSchemeToggle` | 顶栏菜单；`UserMenu` 的选项：`name`、`avatar`、`logout`、`items`、`colorScheme`、`position` |
+| `UserMenu`、`TenantSwitcher`、`NotificationsMenu`、`OperationsMenu`、`LanguageMenu`、`ColorSchemeToggle` | 顶栏菜单；`UserMenu` 的选项：`name`、`email`、`avatar`、`logout`、`items`、`colorScheme`、`position` |
 | `Icon`、`useIcon`、`defaultIcons`、`IconsProvider` | 图标名称 |
 | `useMenuBadge(routeId, value)` | 登记菜单项的徽标 |
 | `Page`、`PageTab` | 页面的标题区：`title`、`description`、`actions`、`breadcrumbs`、`crumb`；页内标签 `tabs`（`value`、`label`、`count`、`alert`、`content`） |

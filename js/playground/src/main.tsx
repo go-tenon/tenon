@@ -140,7 +140,14 @@ function AdminShell(): ReactNode {
           <LanguageMenu languages={languages} value={language} onChange={setLanguage} />
         </>
       }
-      user={<UserMenu name="韩梅梅" logout={async () => {}} items={[{ label: "账号设置", to: "/settings" }]} />}
+      user={
+        <UserMenu
+          name="韩梅梅"
+          email="hanmeimei@acme.cn"
+          logout={async () => {}}
+          items={[{ label: "账号设置", to: "/settings" }]}
+        />
+      }
     />
   )
 }
@@ -378,19 +385,53 @@ const consoleLayout = new URLSearchParams(location.search).get("layout") === "to
 
 function ConsoleShell(): ReactNode {
   if (consoleLayout === "top")
-    return <TopbarLayout title="Acme Cloud" user={<UserMenu name="韩梅梅" logout={async () => {}} />} />
+    return (
+      <TopbarLayout
+        title="Acme Cloud"
+        user={<UserMenu name="韩梅梅" email="hanmeimei@acme.cn" logout={async () => {}} />}
+      />
+    )
   return (
     <RailLayout
       title="Acme Cloud"
       user={
         <UserMenu
           name="韩梅梅"
+          email="hanmeimei@acme.cn"
           position="right-end"
           items={[{ label: "设置", icon: <IconSettings size={16} />, to: "/settings/profile" }]}
           logout={async () => {}}
         />
       }
     />
+  )
+}
+
+/** console 的登录页。 */
+function ConsoleLoginPage(): ReactNode {
+  return (
+    <AuthLayout
+      brand={
+        <Group gap={10}>
+          <span className="tn-brand-mark">A</span>
+          <Text fw={600}>Acme Cloud</Text>
+        </Group>
+      }
+      title="登录"
+      description="登录 Acme Cloud 控制台。"
+      footer={
+        <>
+          还没有账号？<AnchorLink to="/login">免费注册</AnchorLink>
+        </>
+      }
+    >
+      <LoginForm
+        login={async () =>
+          Promise.reject({ status: 401, code: "auth.invalid_credentials", detail: "邮箱或密码不对", fields: [] })
+        }
+        forgot={<AnchorLink to="/login">忘记密码？</AnchorLink>}
+      />
+    </AuthLayout>
   )
 }
 
@@ -432,6 +473,7 @@ function consoleApp() {
   })
   const personal = createRoute({ getParentRoute: () => settings, id: "personal", staticData: { title: "个人" } })
   const routeTree = root.addChildren([
+    createRoute({ getParentRoute: () => root, path: "/login", component: ConsoleLoginPage }),
     layout.addChildren([
       page(layout, "/", "首页", "home"),
       people.addChildren([page(people, "/members", "找人", "team")]),

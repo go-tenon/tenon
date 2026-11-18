@@ -20,7 +20,9 @@ function tree(logout: () => Promise<unknown>) {
     getParentRoute: () => root,
     id: "_app",
     beforeLoad: requireAuth,
-    component: () => <AppLayout title="测试后台" tabs user={<UserMenu name="小明" logout={logout} />} />,
+    component: () => (
+      <AppLayout title="测试后台" tabs user={<UserMenu name="小明" email="ming@example.com" logout={logout} />} />
+    ),
   })
   const editor = createRoute({
     getParentRoute: () => layout,
@@ -41,12 +43,14 @@ async function clickSignOut() {
 }
 
 describe("UserMenu", () => {
-  it("只显示头像；菜单中有菜单项、配色（亮色、暗色、跟随系统）和退出登录", async () => {
+  it("只显示头像；菜单顶部是名称和邮箱，下面有配色（亮色、暗色、跟随系统）和退出登录", async () => {
     await renderApp(tree(async () => {}))
     await screen.findByText("编辑页面")
     const trigger = screen.getByRole("button", { name: "用户菜单" })
     expect(trigger.textContent).toBe("小")
     await act(async () => fireEvent.click(trigger))
+    expect(await screen.findByText("小明")).toBeTruthy()
+    expect(screen.getByText("ming@example.com")).toBeTruthy()
     const schemes = await screen.findByRole("radiogroup", { name: "配色" })
     const dark = within(schemes).getByRole("radio", { name: "暗色" })
     expect(dark.getAttribute("aria-checked")).toBe("false")
