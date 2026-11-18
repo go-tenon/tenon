@@ -48,7 +48,7 @@ const (
 	// maxRelative 是 Memcached 按相对秒数理解的最长过期时间，更长的要写成 Unix 时间。
 	maxRelative = 30 * 24 * time.Hour
 	// tagPrefix 是 tag 版本在 Memcached 中的键的前缀。tag 不属于某个 Cache，不加 Cache 的前缀。
-	tagPrefix = "cachex:tag:"
+	tagPrefix = "cache:tag:"
 )
 
 // Client 是 Cache 用到的 Memcached 操作，*memcache.Client 实现了它。

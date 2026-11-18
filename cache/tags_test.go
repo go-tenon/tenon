@@ -71,7 +71,7 @@ func TestTagEvicted(t *testing.T) {
 	if _, err := c.Remember(ctx, "1", load, "t"); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.Delete("cachex:tag:t"); err != nil {
+	if err := f.Delete("cache:tag:t"); err != nil {
 		t.Fatal(err)
 	}
 	// 版本不存在时 Invalidate 直接返回。
