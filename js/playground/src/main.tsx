@@ -8,6 +8,7 @@ import {
   AnchorLink,
   type App,
   AppRoot,
+  BrowserSignIn,
   CenteredAuthLayout,
   createApp,
   createUiTheme,
@@ -497,9 +498,35 @@ function SplitLogin(): ReactNode {
   )
 }
 
+/** BrowserSignIn：桌面端、App 的登录方式，在系统浏览器中登录。这里点击后等两秒，然后提示登录没有完成。 */
+function BrowserLogin(): ReactNode {
+  return (
+    <CenteredAuthLayout
+      brand={
+        <Group gap={10}>
+          <span className="tn-brand-mark">A</span>
+          <Text fw={600}>Acme</Text>
+        </Group>
+      }
+      title="登录"
+      description="欢迎回来，登录 Acme。"
+    >
+      <BrowserSignIn
+        signIn={() => new Promise((_, reject) => setTimeout(() => reject(new Error("cancelled")), 2000))}
+      />
+    </CenteredAuthLayout>
+  )
+}
+
 const loginStyles = [
   { path: "/centered", name: "CenteredAuthLayout", description: "居中卡片", component: CenteredLogin },
   { path: "/split", name: "SplitAuthLayout", description: "左右分栏", component: SplitLogin },
+  {
+    path: "/browser",
+    name: "BrowserSignIn",
+    description: "桌面端、App 的登录方式：在系统浏览器中登录，可以放在任何一种登录页中",
+    component: BrowserLogin,
+  },
 ]
 
 /** /login/ 列出全部登录页样式。 */
