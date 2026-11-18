@@ -291,7 +291,7 @@ return signedIn ? <button onClick={() => session.signOut()}>退出</button> : <L
 <a id="permissions"></a>
 ## 权限
 
-`createApp` 的 `permissions` 读取当前身份的权限，通常调用应用的“当前用户”接口。结果缓存在 QueryClient 中，身份变化后重新读取。
+`createApp` 的 `permissions` 读取当前身份的权限，通常调用应用的“当前用户”接口，原样返回账号的权限。结果缓存在 QueryClient 中，身份变化后重新读取。权限中可以有 `*`（全部权限）和 `articles:*`（`articles:` 开头的每个权限）这样的[通配符](../security/authorization.md#route-permissions)，页面、菜单和 `useCan` 都按与服务端相同的规则匹配，例如拥有 `*` 的管理员能进入每个页面。
 
 带 `permission` 的页面在进入之前检查：
 

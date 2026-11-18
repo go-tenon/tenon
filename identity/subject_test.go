@@ -29,6 +29,7 @@ func TestTenantContext(t *testing.T) {
 	}
 }
 
+// TestGrants 的表与 js/client/src/permissions.test.ts 相同，改动时两边一起改。
 func TestGrants(t *testing.T) {
 	for _, tc := range []struct {
 		granted []string

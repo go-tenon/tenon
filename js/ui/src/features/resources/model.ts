@@ -130,6 +130,13 @@ export type ResourceOperation = "list" | "get" | "create" | "update" | "delete"
 /** 一行数据。 */
 export type ResourceRow = { readonly [field: string]: unknown }
 
+/**
+ * 写入接口的请求体：新建、修改和保存设置时交给模型的值。约束与 @mantine/form 的 useForm、useSchemaForm 相同，
+ * 生成的客户端中的请求体类型（interface）可以直接传入，例如 save.mutateAsync({ values: changes as ArticleChanges })。
+ */
+// biome-ignore lint/suspicious/noExplicitAny: 与 @mantine/form 的 useForm 相同的约束，interface 才能满足它
+export type RequestValues = Record<string, any>
+
 /** 与组件库无关的资源模型。 */
 export interface ResourceModel {
   name: string
@@ -154,8 +161,8 @@ export interface ResourceModel {
   /** 详情的查询选项。 */
   getQuery(key: string): { queryKey: readonly unknown[]; queryFn: () => Promise<unknown> }
   /** 创建、修改、删除和其他操作；完成后让这个资源所在分组的查询失效。 */
-  create(body: Record<string, unknown>): Promise<unknown>
-  update(key: string, body: Record<string, unknown>): Promise<unknown>
+  create(body: RequestValues): Promise<unknown>
+  update(key: string, body: RequestValues): Promise<unknown>
   remove(key: string): Promise<unknown>
   run(action: string, key: string): Promise<unknown>
   /** 表单的校验规则（请求体的 schema），交给 formValidator 或 useSchemaForm。 */
@@ -425,7 +432,7 @@ export function useResourceMutations(model: ResourceModel) {
   // 调用它，例如 await api.tenant.changeOwner(id, body); await invalidate()。
   const done = useCallback(() => queryClient.invalidateQueries({ queryKey: [...model.queryKey] }), [queryClient, model])
   const save = useMutation({
-    mutationFn: ({ key, values }: { key?: string; values: Record<string, unknown> }) =>
+    mutationFn: ({ key, values }: { key?: string; values: RequestValues }) =>
       key ? model.update(key, values) : model.create(values),
     onSuccess: done,
   })
@@ -472,7 +479,7 @@ export interface SettingsModel {
   /** 读取设置的查询选项，交给 useQuery。 */
   query(): { queryKey: readonly unknown[]; queryFn: () => Promise<unknown> }
   /** 保存：调用保存接口，完成后让读取的查询失效。 */
-  save(values: Record<string, unknown>): Promise<unknown>
+  save(values: RequestValues): Promise<unknown>
   /** 表单的校验规则（保存接口的请求体），交给 formValidator 或 useSchemaForm。 */
   formSchema(): Schema
   ruleOptions: RuleOptions
@@ -523,7 +530,7 @@ export interface Settings {
   error: unknown
   /** 当前身份能否保存。 */
   canSave: boolean
-  save(values: Record<string, unknown>): Promise<unknown>
+  save(values: RequestValues): Promise<unknown>
   refetch(): void
 }
 

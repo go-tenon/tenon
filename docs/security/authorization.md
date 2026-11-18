@@ -379,10 +379,10 @@ func toDTO(sub identity.Subject, a *Article) ArticleDTO {
 
 ```tsx
 {article.can_edit && <Link to="/articles/$id/edit" params={{ id: article.id }}>编辑</Link>}
-{me.permissions.includes("comments:delete") && <button onClick={clearComments}>清空评论</button>}
+{can("comments:delete") && <button onClick={clearComments}>清空评论</button>}
 ```
 
-`me.permissions` 是 `sub.Permissions`，其中可能有 `articles:*` 这样的通配符；需要判断某个具体权限时，让接口直接返回布尔值，通配符匹配只在服务端进行。隐藏按钮只是为了界面友好，安全由服务端的检查保证：业务动作仍然要按上面的方式授权。
+`can` 是 `@go-tenon/ui` 的 [`useCan()`](../frontend/app.md#permissions)，它检查 `createApp` 的 `permissions` 读到的权限，例如“当前用户”接口返回的 `sub.Permissions`。其中可以有 `*`、`articles:*` 这样的通配符，前端按与 `Subject.Can` 相同的规则匹配；不用 React 时用 `@go-tenon/client` 的 `grants(permissions, "comments:delete")`。隐藏按钮只是为了界面友好，安全由服务端的检查保证：业务动作仍然要按上面的方式授权。
 
 <a id="authorization-failures"></a>
 ## 授权失败的响应

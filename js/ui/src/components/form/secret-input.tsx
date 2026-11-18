@@ -21,7 +21,7 @@ export type SecretInputProps = Omit<TextInputProps, "value" | "onChange"> & {
 
 /**
  * 密钥的输入框：平时显示 maskSecret 的结果，不能编辑；点眼睛图标显示完整的值并可以修改，再点一次遮住。
- * 还没有值时直接可以输入。可以直接展开 @mantine/form 的 getInputProps：
+ * 还没有值时直接可以输入，输入的内容完整显示，之后同样可以点眼睛遮住。可以直接展开 @mantine/form 的 getInputProps：
  *
  *   <SecretInput label="密钥" {...form.getInputProps("api_key")} />
  *
@@ -34,7 +34,15 @@ export function SecretInput({ value = "", onChange, rightSection, ...props }: Se
     <TextInput
       {...props}
       value={editable ? value : maskSecret(value)}
-      onChange={editable ? onChange : undefined}
+      onChange={
+        editable
+          ? (e) => {
+              // 在空的输入框中开始输入时切换为显示：继续输入时不遮住，输入框保持可以编辑。
+              if (value === "") setShown(true)
+              onChange?.(e)
+            }
+          : undefined
+      }
       readOnly={!editable || props.readOnly}
       autoComplete="off"
       spellCheck={false}
