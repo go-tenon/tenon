@@ -1,10 +1,23 @@
 // [[.Title]]的主进程：在窗口中打开前端 apps/[[.Frontend]]（挂在 [[.Base]]），接口转发到服务器，用户在浏览器中登录。
 // 下面逐项加上桌面能力，不需要的删掉那一行。
 
-import { createHost, logs, singleInstance, standardMenu, windowState } from "@go-tenon/electron/main"
+import {
+  autostart,
+  badge,
+  createHost,
+  deepLinks,
+  logs,
+  notifications,
+  singleInstance,
+  standardMenu,
+  tray,
+  windowState,
+} from "@go-tenon/electron/main"
 import { autoUpdate } from "@go-tenon/electron/update"
-import { app } from "electron"
+import { app, nativeImage } from "electron"
 import { join } from "node:path"
+
+const appId = "com.[[.Scope]].[[.Name]]" // 与 electron-builder.yml 的 appId 相同
 
 // 服务器的地址：接口转发到这里，用户也在这里登录。tenon dev 运行时是本机的应用（TENON_SERVER）。
 const server = process.env.TENON_SERVER ?? "https://example.com"
@@ -28,9 +41,17 @@ const host = createHost({
 windowState(host) // 记住窗口的位置和大小
 standardMenu(host) // 应用菜单（macOS 的编辑快捷键）和右键菜单
 autoUpdate(host) // 自动更新，服务端要求升级时立即更新；更新源见 electron-builder.yml 的 publish
+notifications(host, { appId }) // 系统通知：页面调用 host()?.notify?.({ title, body, path })
+badge(host) // 未读角标：页面调用 host()?.badge?.(count)
+// 关闭窗口时隐藏到托盘，应用继续运行。图标在 assets 中（tray@2x.png 用于高分屏），换成应用自己的。
+tray(host, { title: "[[.Title]]", icon: nativeImage.createFromPath(join(app.getAppPath(), "assets", "tray.png")) }).catch(
+  (err) => console.error("tray", err),
+)
+autostart(host, { name: "[[.Name]]" }) // 开机自启：页面调用 host()?.autostart?.set(true)
+const openLink = deepLinks(host, { scheme: "[[.Name]]", base: "[[.Base]]" }) // [[.Name]]://open[[.Base]]… 打开对应的页面
 
-// 只运行一个实例：再次打开时回到已有的窗口。
-if (singleInstance(host)) {
+// 只运行一个实例：再次打开（包括点击深度链接）时回到已有的窗口。
+if (singleInstance(host, openLink)) {
   host.start().catch((err) => {
     console.error(err)
     app.exit(1)

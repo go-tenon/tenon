@@ -2,7 +2,8 @@
 // （TanStack Start 和 @go-tenon/ui）。前端按几个互相独立的维度组合：template/app 和 template/site 是按布局加上的页面，
 // template/login 是登录页和登录接口。template/client/<种类> 是 clients 中的一个客户端，网页宿主（electron）
 // 另外在它显示的前端中加上 template/consent 的授权页。
-// 每个 .tmpl 文件按参数渲染后写入目标目录。模板的分隔符是 [[ ]]，与 JSX 的 {{ }} 区分开；gitignore.tmpl 写成 .gitignore。
+// 每个 .tmpl 文件按参数渲染后写入目标目录，其他文件（例如图标）原样复制。模板的分隔符是 [[ ]]，与 JSX 的 {{ }} 区分开；
+// gitignore.tmpl 写成 .gitignore。
 package scaffold
 
 import (
@@ -255,7 +256,7 @@ func Slug(name string) string {
 	return "app"
 }
 
-// render 把 files 中 root 下的模板渲染到 dir，已有的文件被覆盖。
+// render 把 files 中 root 下的模板渲染到 dir（.tmpl 以外的文件原样复制），已有的文件被覆盖。
 func render(root, dir string, data any) error {
 	err := fs.WalkDir(files, root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
@@ -264,6 +265,9 @@ func render(root, dir string, data any) error {
 		src, err := files.ReadFile(p)
 		if err != nil {
 			return err
+		}
+		if !strings.HasSuffix(p, ".tmpl") {
+			return writeFile(filepath.Join(dir, filepath.FromSlash(strings.TrimPrefix(p, root+"/"))), src)
 		}
 		tmpl, err := template.New(p).Delims("[[", "]]").Option("missingkey=error").Parse(string(src))
 		if err != nil {
