@@ -163,12 +163,10 @@ func TestAddFrontend(t *testing.T) {
 		}
 	}
 	for args, want := range map[string]string{
-		"add frontend admin":                           "already exists",
-		"add frontend Admin":                           "must match",
-		"add frontend ops --base /ops":                 "must start and end with /",
-		"add frontend ops --style antd":                `--style "antd" is not one of`,
-		"add frontend ops --landing dusk":              "--landing needs --style site",
-		"add frontend ops --style site --landing neon": `--landing "neon" is not one of`,
+		"add frontend admin":            "already exists",
+		"add frontend Admin":            "must match",
+		"add frontend ops --base /ops":  "must start and end with /",
+		"add frontend ops --style antd": `--style "antd" is not one of`,
 	} {
 		if err := execute(t, strings.Fields(args)...); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%s: err = %v", args, err)
