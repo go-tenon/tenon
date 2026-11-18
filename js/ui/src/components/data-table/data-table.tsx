@@ -10,7 +10,7 @@ import {
   DataTable as MantineDataTable,
   useDataTableColumns,
 } from "mantine-datatable"
-import { type ReactNode, type RefObject, useLayoutEffect, useRef, useState } from "react"
+import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { layoutMetrics } from "../../theme/theme"
 import type { ListState, Selection } from "./list"
 
@@ -81,6 +81,14 @@ function sortStatus<T>(sort: string | undefined): DataTableSortStatus<T> | undef
   return { columnAccessor: desc ? sort.slice(1) : sort, direction: desc ? "desc" : "asc" }
 }
 
+/** 列标识的短哈希（djb2，base36），用在列设置的键中。 */
+function columnsHash(accessors: string[]): string {
+  let h = 5381
+  for (const ch of accessors.join(",")) h = (h * 33 + (ch.codePointAt(0) ?? 0)) >>> 0
+  return h.toString(36)
+}
+
+/** 把 rowKey 选项转换为取行标识的函数。 */
 function keyOf<T>(rowKey: DataTableProps<T>["rowKey"]): (row: T) => string {
   if (typeof rowKey === "function") return rowKey
   const field = rowKey ?? "id"
@@ -145,8 +153,17 @@ export function DataTable<T>(props: DataTableProps<T>): ReactNode {
         )
       },
     } as DataTableColumn<T>)
-  const storeColumnsKey = storeKey ? `tenon:columns:${storeKey}` : undefined
+  // 列设置的键带上全部列的标识。mantine-datatable 把保存的顺序中没有的列排到最后（新加的列会跑到操作列后面），
+  // 所以列增减、改名后换一个键，按代码中的顺序重新开始，并删除旧键的设置。
+  const storePrefix = storeKey ? `tenon:columns:${storeKey}:` : undefined
+  const storeColumnsKey = storePrefix ? storePrefix + columnsHash(mapped.map((c) => String(c.accessor))) : undefined
   const { effectiveColumns } = useDataTableColumns<T>({ key: storeColumnsKey, columns: mapped })
+  useEffect(() => {
+    if (!storePrefix || !storeColumnsKey) return
+    for (const k of Object.keys(localStorage)) {
+      if (k.startsWith(storePrefix) && !k.startsWith(`${storeColumnsKey}-`)) localStorage.removeItem(k)
+    }
+  }, [storePrefix, storeColumnsKey])
 
   const selected = selection ? records.filter((r) => selection.has(key(r))) : undefined
   const selectionProps = selection
