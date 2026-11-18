@@ -159,6 +159,11 @@ func TestInitEndToEnd(t *testing.T) {
 		t.Fatalf("front-end packages not synced: %v", err)
 	}
 	sh("bun", "run", "typecheck")
+	// typecheck 用 tenon-start routes 生成路由树：有新加的页面，也有 Start 的 Register 声明，与 tenon dev 生成的相同。
+	if tree, err := os.ReadFile(filepath.Join(dir, "apps", "admin", "src", "routeTree.gen.ts")); err != nil ||
+		!strings.Contains(string(tree), "'/_app/users/$id'") || !strings.Contains(string(tree), "declare module '@tanstack/react-start'") {
+		t.Fatalf("admin route tree after typecheck: %v\n%s", err, tree)
+	}
 	sh("go", "vet", "./...")
 	// 桌面端的主进程和 preload 打包成 dist/main.js、dist/preload.js。
 	shIn("clients/admin-desktop", nil, "bun", "run", "bundle")

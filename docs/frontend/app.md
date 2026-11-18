@@ -43,12 +43,12 @@
     "@tanstack/react-start": "^1.169.5"
   },
   "scripts": {
-    "typecheck": "tsr generate && tsc --noEmit"
+    "typecheck": "tenon-start routes && tsc --noEmit"
   }
 }
 ```
 
-页面使用 TanStack Router [基于文件的路由](https://tanstack.com/router/latest/docs/framework/react/routing/file-based-routing)：`src/routes` 中一个文件是一个页面，TanStack Start 的 Vite 插件生成路由树 `src/routeTree.gen.ts`。`typecheck` 先用 `tsr generate` 重新生成它，新加了页面但没有运行 `tenon dev` 时类型检查也是对的。`vite.config.ts` 用 `@go-tenon/start/vite` 的 `tenon()`，它包含 TanStack Start、React 和[新版本提示](#new-version)的插件：
+页面使用 TanStack Router [基于文件的路由](https://tanstack.com/router/latest/docs/framework/react/routing/file-based-routing)：`src/routes` 中一个文件是一个页面，TanStack Start 的 Vite 插件生成路由树 `src/routeTree.gen.ts`。`typecheck` 先用 `tenon-start routes` 重新生成它，新加了页面但没有运行 `tenon dev` 时类型检查也是对的；它用的是同一个 Vite 插件，生成的文件与 `tenon dev` 生成的相同，见 [TanStack Start 的接入](start.md#api-reference)。`vite.config.ts` 用 `@go-tenon/start/vite` 的 `tenon()`，它包含 TanStack Start、React 和[新版本提示](#new-version)的插件：
 
 ```ts
 import { tenon } from "@go-tenon/start/vite"

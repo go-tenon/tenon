@@ -158,3 +158,4 @@ bunx tenon-start compile --out apps/dist/ssr web=apps/web/dist/server/server.js 
 | `@go-tenon/start/vite` | `tenon(options)` | Vite 插件：TanStack Start、React、挂载路径、预渲染和 SPA 模式 |
 | | `frontendConfig(dir?)` | 读取前端 `package.json` 的 `tenon` 字段：`{ base, ssr }` |
 | 命令 | `tenon-start compile` | 把服务端渲染的前端连同 Bun 编译成一个可执行文件 |
+| 命令 | `tenon-start routes` | 在前端的目录中生成路由树 `src/routeTree.gen.ts`：按 `vite.config.ts` 启动一次不监听端口的 Vite，TanStack Start 的插件生成它，与 `vite dev` 生成的相同（包括 Start 的 `Register` 类型声明）。前端的 `typecheck` 先运行它 |

@@ -217,7 +217,7 @@ bun run agents   # 即 go tool tenon agents
   "scripts": {
     "dev": "vite dev",
     "build": "bunx --bun vite build",
-    "typecheck": "tsr generate && tsc --noEmit"
+    "typecheck": "tenon-start routes && tsc --noEmit"
   }
 }
 ```

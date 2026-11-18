@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process"
-import { mkdtempSync, writeFileSync } from "node:fs"
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -99,6 +99,22 @@ describe("vite", () => {
     expect(r.stderr).toBe("")
     expect(r.stdout.trim()).toBe("function")
   })
+})
+
+// tenon-start routes 用 Start 的 Vite 插件生成路由树：有全部页面，末尾有 Start 的 Register 类型声明（tsr generate 没有）。
+describe("routes", () => {
+  it("生成与 vite dev 相同的路由树", () => {
+    const dir = fileURLToPath(new URL("../fixture", import.meta.url))
+    const file = join(dir, "src", "routeTree.gen.ts")
+    rmSync(file, { force: true })
+    const cli = fileURLToPath(new URL("./cli.ts", import.meta.url))
+    const r = spawnSync("bun", [cli, "routes"], { cwd: dir, encoding: "utf8", timeout: 60_000 })
+    expect(r.status, r.stderr).toBe(0)
+    const tree = readFileSync(file, "utf8")
+    expect(tree).toContain("'/articles/$id'")
+    expect(tree).toContain("declare module '@tanstack/react-start'")
+    expect(tree).toContain("router: Awaited<ReturnType<typeof getRouter>>")
+  }, 90_000)
 })
 
 // 构建并编译 fixture，在 unix socket 上运行，用假的 Go 接口检查：转交请求头、路由模板、nonce、预渲染、退出。
