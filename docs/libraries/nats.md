@@ -2,13 +2,14 @@
 
 NATS 在 Tenon 中负责**消息的传递**：[队列](../background/queue.md)的任务保存在 JetStream 中；[广播](broadcasting.md)经由 NATS 的发布订阅把消息送到每个实例；[实时频道](realtime.md)的在线成员保存在 JetStream 的键值存储（KV）中。锁和限流这类低频的协调数据在 PostgreSQL 中，见[原子锁](locks.md#postgres-store)和[限流](rate-limiting.md#postgres-limiter)。
 
-Tenon 使用官方的 [nats.go](https://github.com/nats-io/nats.go)，用 `natsx.Connect` 按框架的约定创建连接。每个进程一条连接，队列、广播和在线成员共用它。
+Tenon 使用官方的 [nats.go](https://github.com/nats-io/nats.go)，用 `natsx.Connect` 按框架的约定创建连接。每个进程一条连接，队列、广播和在线成员共用它；调用另一个账号中应用的 RPC 时另建一条，见[连接另一个账号或另一套 NATS](#other-accounts)。
 
 阅读前需要了解：[依赖装配](../concepts/dependencies.md)。
 
 - [部署](#deploying)
 - [连接 NATS](#connecting)
 - [在其他组件中使用](#using-with-components)
+- [连接另一个账号或另一套 NATS](#other-accounts)
 - [测试](#testing)
 - [常见问题](#troubleshooting)
 
@@ -72,6 +73,47 @@ stack.MustAdd("nats", func(context.Context) error {
 - **在线成员**：`natspresence.New(ctx, nc, opts)`，见[实时频道](realtime.md#presence-stores)。
 
 多个应用或环境共用一套 NATS 时，用广播的 subject 前缀、在线成员的 bucket 名和队列的 stream 名区分它们。
+
+<a id="other-accounts"></a>
+## 连接另一个账号或另一套 NATS
+
+NATS 的[账号](https://docs.nats.io/running-a-nats-service/configuration/securing_nats/accounts)把 subject 隔离开：一条连接只能收发它所属账号里的消息。调用另一个应用的 [RPC 端点](../rpc/endpoints.md)，而对方在另一个账号中、或者在另一套 NATS 上时，用对方账号中的用户再建一条连接。
+
+在应用配置中为这条连接加一段，例如商城调用博客应用：
+
+```go
+type Config struct {
+    // ...
+    NATS     natsx.Config `yaml:"nats"`
+    BlogNATS natsx.Config `yaml:"blog_nats"` // 连到博客应用的账号，调用它的 RPC
+}
+```
+
+```yaml
+blog_nats:
+  url: ${BLOG_NATS_URL:-nats://127.0.0.1:4222} # nats://用户名:密码@地址:4222，用户属于博客应用的账号
+```
+
+在打开共用资源的地方，像应用自己的连接一样创建它，并登记关闭：
+
+```go
+blogNC, err := natsx.Connect(cfg.BlogNATS, "shop", nil)
+if err != nil {
+    return nil, err
+}
+stack.MustAdd("blog-nats", func(context.Context) error {
+    blogNC.Close()
+    return nil
+})
+```
+
+调用博客应用的端点时传入这条连接，`GetInput`、`ArticleDTO`、`id` 和 `token` 见[调用端点](../rpc/endpoints.md#calling)：
+
+```go
+item, err := natsrpc.Call[ArticleDTO](ctx, blogNC, "blog.v1.articles.get", GetInput{ID: id}, natsrpc.Token(token))
+```
+
+队列、广播和在线成员继续使用应用自己的连接 `nc`。`natsx.Connect` 在对方的 NATS 不可达时返回错误，进程启动失败。
 
 <a id="testing"></a>
 ## 测试
