@@ -26,8 +26,8 @@
 ## 示例用法
 
 ```bash
-go run ./cmd/api client --ts packages/client/src   # TypeScript：每个 API 一个目录
-go run ./cmd/api client --out ../api            # Go
+go run ./cmd/blog client --ts packages/client/src   # TypeScript：每个 API 一个目录
+go run ./cmd/blog client --out ../api            # Go
 ```
 
 ```ts
@@ -46,7 +46,7 @@ if errors.Is(err, article.ErrSlugTaken) {
 把 OpenAPI 文档也提交到仓库，接口的每次变化都会出现在代码评审中，CI 还可以[检查不兼容的变更](#checking-changes)：
 
 ```bash
-./bin/api openapi > openapi.json
+./bin/blog openapi > openapi.json
 ```
 
 <a id="generated-names"></a>
@@ -71,7 +71,7 @@ if errors.Is(err, article.ErrSlugTaken) {
 [tenon generate](../installation/tooling.md#generate) 从路由生成 TypeScript 客户端：项目中有共用的客户端包 `packages/client` 时，每个 API 生成到 `packages/client/src/<名称>`，名称默认是 `BasePath` 的最后一段，例如 `/api` 是 `api`、`/api/admin` 是 `admin`，见[前端与 API](../installation/tooling.md#conventions)。它编译应用，运行应用的 `client` 命令（见 [httpcmd.Commands](../installation/tooling.md#app-side)），与 [Go 客户端](go-client.md#generating-go-client)是同一个命令：
 
 ```bash
-go tool tenon generate   # 等价于 go run ./cmd/api client --ts packages/client/src
+go tool tenon generate   # 等价于 go run ./cmd/blog client --ts packages/client/src
 ```
 
 前端从客户端包的子路径导入：`@blog/client/api` 是 `api.ts`，`@blog/client/api/queries` 等是同一目录中的其他文件。下面的例子都是 `/api` 的客户端。
@@ -221,7 +221,7 @@ saveBlob(blob, filename || "failures.xlsx")
 各语言的生成器对 OpenAPI 3.1 的支持不一。生成器报错或丢失字段时，改用 `openapi --spec 3.0` 导出的文档：
 
 ```bash
-./bin/api openapi --spec 3.0 > openapi-3.0.json
+./bin/blog openapi --spec 3.0 > openapi-3.0.json
 ```
 
 | 调用方 | 生成器 |
@@ -254,7 +254,7 @@ X-App-Version: android/2.3.1
 ```bash
 go install github.com/oasdiff/oasdiff@v1.37.0
 
-./bin/api openapi > openapi.json
+./bin/blog openapi > openapi.json
 git diff --exit-code openapi.json   # 改了接口，却没有重新导出、提交
 
 git show origin/main:openapi.json > base.json

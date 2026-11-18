@@ -5,7 +5,7 @@
 自检把这些情况在启动之前一次查出来。它读取依赖的版本和设置、迁移的状态、文件存储的权限，每一个问题都附带修改方法和文档：
 
 ```text
-$ ./bin/api doctor
+$ ./bin/blog doctor
 queue
   ok    postgres_version
   FAIL  wal_level: wal_level is replica; the queue needs logical
@@ -68,7 +68,7 @@ func Commands() []*cobra.Command {
 运行它：
 
 ```bash
-./bin/api doctor
+./bin/blog doctor
 ```
 
 <a id="reading-results"></a>

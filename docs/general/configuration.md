@@ -118,8 +118,8 @@ logs:
 ```
 
 ```bash
-./bin/api serve --config config/app.yaml --config config/local.yaml
-./bin/api serve --config config/app.yaml,config/local.yaml   # 与上一行等价
+./bin/blog serve --config config/app.yaml --config config/local.yaml
+./bin/blog serve --config config/app.yaml,config/local.yaml   # 与上一行等价
 ```
 
 在代码中加载时，同样按顺序传入：
@@ -241,8 +241,8 @@ type HTTPConfig struct {
 多个文件、默认值和环境变量叠加之后，最终生效的配置是什么样的？在[命令行](commands.md#declaring-the-cli)中装配 `command.Config` 之后，应用就有了两个检查配置的命令：
 
 ```bash
-./bin/api config check   # 只加载并校验，不访问网络
-./bin/api config show    # 输出合并后的配置
+./bin/blog config check   # 只加载并校验，不访问网络
+./bin/blog config show    # 输出合并后的配置
 ```
 
 `config show` 的输出包括默认值、多个文件合并的结果和展开后的环境变量，`--format json` 输出 JSON。发布之前运行 `config check`，可以尽早发现缺失的环境变量或写错的字段。配置文件缺失或校验失败时，这两个命令都以 `ExitConfig` 退出，见 [config 命令](commands.md#config-command)。

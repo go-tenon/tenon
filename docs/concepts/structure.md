@@ -31,13 +31,13 @@ Tenon 不会按目录自动发现代码：路由、命令和队列任务都在�
 ```text
 todo/
 ├── config/app.yaml        配置
-├── cmd/api/main.go        程序的入口
+├── cmd/todo/main.go       程序的入口
 ├── internal/todo/         一个业务模块
 ├── apps/web/              前端
 └── packages/client/       生成的 TypeScript 客户端
 ```
 
-刚开始时，所有的装配代码都在 `cmd/api/main.go` 中。随着应用变大，会依次出现新的目录：
+刚开始时，所有的装配代码都在 `cmd/todo/main.go` 中。随着应用变大，会依次出现新的目录：
 
 | 什么时候 | 新增 | 见 |
 | --- | --- | --- |
@@ -63,7 +63,7 @@ blog/
 ├── config/
 │   ├── app.yaml           配置
 │   └── local.yaml         只在本机开发时叠加的配置，可以没有
-├── cmd/api/main.go        程序入口
+├── cmd/blog/main.go       程序入口
 ├── internal/
 │   ├── bootstrap/         装配：配置结构、打开资源、运行的部分、命令
 │   ├── auth/              令牌校验
@@ -83,7 +83,7 @@ blog/
 <a id="the-cmd-directory"></a>
 ### cmd
 
-`cmd` 存放应用的进程入口，每个子目录对应一个可执行文件，例如 `cmd/api` 构建出 API 服务。入口文件应当尽量短小：它只组装根命令并执行，具体做什么都交给 `bootstrap`，见[命令行](../general/commands.md#declaring-the-cli)。
+`cmd` 存放应用的入口，目录名就是程序的名字：`cmd/blog` 构建出 `bin/blog`，部署时运行 `./bin/blog serve`。`tenon init` 用项目的名字创建这个目录，所以部署后的进程名、链路中的服务名（OpenTelemetry 的 `service.name` 默认取程序的文件名）都是项目自己的名字，同一台机器上的几个项目不会混在一起。入口文件应当尽量短小：它只组装根命令并执行，具体做什么都交给 `bootstrap`，见[命令行](../general/commands.md#declaring-the-cli)。
 
 <a id="the-bootstrap-directory"></a>
 ### internal/bootstrap
@@ -143,7 +143,7 @@ RPC 服务、队列 worker、定时任务调度器等其他运行部分也放在
 
 以给博客加上评论为例，看看一个新模块会涉及哪些目录：
 
-1. **表结构**：`go run ./cmd/api migrate make create_comments_table`，在 `migrations/` 中写建表语句。
+1. **表结构**：`go run ./cmd/blog migrate make create_comments_table`，在 `migrations/` 中写建表语句。
 2. **业务代码**：新建 `internal/comment/`。`comment.go` 放模型和业务错误，`create.go`、`delete.go` 等每个动作一个文件，见[业务动作](actions.md)。
 3. **路由**：在 `internal/comment/routes.go` 中写 `RegisterRoutes` 函数，注册本模块的接口。
 4. **装配**：在 `internal/bootstrap/http.go` 的路由中调用 `comment.RegisterRoutes`，把需要的依赖（例如数据库）传进去，见[依赖装配](dependencies.md)。

@@ -269,7 +269,7 @@ func Commands(db *bun.DB) *cobra.Command {
 这里有一个问题：构造命令行时，配置还没有加载，数据库也没有打开，`db` 从哪里来？入口用 `command.Bind` 把依赖推迟到执行命令时才装配，写法见[只在执行时装配的命令](dependencies.md#deferred-commands)。把这些命令[加到根命令上](../general/commands.md#declaring-the-cli)之后，就可以这样运行：
 
 ```bash
-./bin/api article publish 0193e7a2-7c1e-7b4a-9d2f-3c5a1e8b6f10
+./bin/blog article publish 0193e7a2-7c1e-7b4a-9d2f-3c5a1e8b6f10
 # hello-world
 ```
 

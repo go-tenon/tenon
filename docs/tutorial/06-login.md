@@ -93,10 +93,10 @@ type Config struct {
 <a id="tables"></a>
 ## 数据表
 
-`login` 和 `apitoken` 需要自己的表（保存邮箱、密码哈希、签发过的 token），`login` 还要记录每个邮箱输错密码的次数，错太多次就暂时拒绝登录，防止有人不断猜密码，计数保存在限流的 `rate_limits` 表中。这些表的迁移由框架提供。我们先把这些迁移复制（发布）到 `migrations` 目录中。在 `cmd/api/main.go` 中给 `migrate` 加上 `publish` 子命令；顺便加上 `bootstrap.Commands()`，下文创建作者的命令在其中：
+`login` 和 `apitoken` 需要自己的表（保存邮箱、密码哈希、签发过的 token），`login` 还要记录每个邮箱输错密码的次数，错太多次就暂时拒绝登录，防止有人不断猜密码，计数保存在限流的 `rate_limits` 表中。这些表的迁移由框架提供。我们先把这些迁移复制（发布）到 `migrations` 目录中。在 `cmd/blog/main.go` 中给 `migrate` 加上 `publish` 子命令；顺便加上 `bootstrap.Commands()`，下文创建作者的命令在其中：
 
-```go title="cmd/api/main.go"
-// Command api 是博客的入口。
+```go title="cmd/blog/main.go"
+// Command blog 是博客的入口。
 package main
 
 import (
@@ -116,7 +116,7 @@ import (
 )
 
 func main() {
-    root := command.Root("api", "博客")
+    root := command.Root("blog", "博客")
     root.AddCommand(
         command.Serve(bootstrap.Open, bootstrap.Parts),
         command.Config[bootstrap.Config](),
@@ -144,13 +144,13 @@ func migrateCommand() *cobra.Command {
 
 ```bash
 go mod tidy
-go run ./cmd/api migrate publish
+go run ./cmd/blog migrate publish
 ```
 
 命令把迁移复制到 `migrations` 中，它们和你自己写的迁移一样提交到代码仓库、一起执行。再为作者建一张自己的表：
 
 ```bash
-go run ./cmd/api migrate make create_users_table
+go run ./cmd/blog migrate make create_users_table
 ```
 
 ```sql title="migrations/2026_11_13_080009_create_users_table.sql"
@@ -671,8 +671,8 @@ func RegisterRoutes(api *rest.API, requireUser func(*huma.Operation), db *bun.DB
 后端完成了。执行迁移，用新命令创建一个作者：
 
 ```bash
-go run ./cmd/api migrate up
-go run ./cmd/api user create --name 小明 --email ming@example.com --password secret123
+go run ./cmd/blog migrate up
+go run ./cmd/blog user create --name 小明 --email ming@example.com --password secret123
 ```
 
 没有登录就新建文章，返回 `401`：

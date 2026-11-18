@@ -46,7 +46,7 @@ var Name = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 // Config 是 tenon.json。所有字段都可以省略，Load 按约定补上默认值。
 type Config struct {
 	Schema string          `json:"$schema,omitempty"` // 编辑器补全用的 JSON Schema 地址，只供编辑器使用。
-	Main   string          `json:"main,omitempty"`    // 应用入口的包，默认 ./cmd/api。
+	Main   string          `json:"main,omitempty"`    // 应用入口的包，默认是 cmd 下唯一一个有 main.go 的目录，例如 ./cmd/blog。
 	Serve  []string        `json:"serve,omitempty"`   // 开发时运行应用的参数，默认 serve --config config/app.yaml,config/local.yaml（local.yaml 存在时才加上它）。
 	URL    string          `json:"url,omitempty"`     // 应用的地址，dev 打印它，前端的开发服务器经它调用接口，默认 http://localhost:8080。
 	APIs   map[string]*API `json:"apis,omitempty"`    // 按 BasePath 覆盖 API 客户端的约定，例如改名或生成 Go 客户端。没有写的 API 按约定生成。
@@ -109,9 +109,6 @@ func Load(dir string) (*Config, error) {
 
 // defaults 为没有设置的项填入默认值。
 func (c *Config) defaults(dir string) {
-	if c.Main == "" {
-		c.Main = "./cmd/api"
-	}
 	if c.Serve == nil {
 		configs := "config/app.yaml"
 		if exists(dir, "config/local.yaml") {
@@ -124,8 +121,18 @@ func (c *Config) defaults(dir string) {
 	}
 }
 
-// discover 找出 apps 中的前端和共用的客户端包。
+// discover 找出应用的入口（没有设置 Main 时）、apps 中的前端和共用的客户端包。
 func (c *Config) discover(dir string) error {
+	if c.Main == "" {
+		mains, err := filepath.Glob(filepath.Join(dir, "cmd", "*", "main.go"))
+		if err != nil {
+			return err
+		}
+		if len(mains) != 1 {
+			return fmt.Errorf("%s: found %d cmd/<name>/main.go, want exactly one; set main in %s", dir, len(mains), File)
+		}
+		c.Main = "./cmd/" + filepath.Base(filepath.Dir(mains[0]))
+	}
 	entries, err := os.ReadDir(filepath.Join(dir, AppsDir))
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err

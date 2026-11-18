@@ -206,7 +206,7 @@ running["reports:daily"]
 schedulecmd.New(a.tasks),
 ```
 
-执行 `./bin/api schedules`：
+执行 `./bin/blog schedules`：
 
 ```text
 TASK                        EXPRESSION    NEXT RUN             IN        RUNNING  DESCRIPTION

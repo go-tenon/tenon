@@ -115,13 +115,13 @@ bun run generate   # 即 go tool tenon generate
 bun run build   # 即 go tool tenon build
 ```
 
-构建出一个可以部署的可执行文件 `bin/api`，前端打包在其中。它依次做这些事：
+构建出一个可以部署的可执行文件 `bin/blog`，前端打包在其中。它依次做这些事：
 
 1. 安装前端的依赖：`bun install --frozen-lockfile`。`--frozen-lockfile` 要求依赖的版本与 `bun.lock` 完全一致，所以 CI 中构建出的结果和你本地的相同。
 2. 清空 `apps/dist`，在每个前端目录中运行 `bun run build`（`vite build`），把浏览器的构建（`dist/client`，不含 source map）复制到 `apps/dist/<名称>`。
 3. 有前端在服务端渲染（`package.json` 中 `"ssr": true`）时，用 `tenon-start compile` 把这些前端的服务端入口连同 Bun 编译成一个可执行文件 `apps/dist/ssr`，架构与 Go 程序相同（`go env GOARCH`，或 `--arch`），见 [TanStack Start 的接入](../frontend/start.md#compiling)。没有时跳过这一步，程序中不带 Bun。
 4. 写入前端的清单 `apps/dist/frontends.json`。
-5. 编译 Go 程序：`go build -trimpath -o bin/api ./cmd/api`。`-trimpath` 去掉二进制中你电脑上的文件路径。`apps/apps.go` 用 `go:embed` 嵌入整个 `apps/dist`。
+5. 编译 Go 程序：`go build -trimpath -o bin/blog ./cmd/blog`。`-trimpath` 去掉二进制中你电脑上的文件路径。`apps/apps.go` 用 `go:embed` 嵌入整个 `apps/dist`。
 
 `-o` 可以指定输出的文件。`--arch amd64` 或 `--arch arm64` 为另一种架构构建（Linux），例如在 arm64 的机器或 Mac 上构建部署到 amd64 服务器的程序；不写时与本机相同。Go 托管 SSR 进程只支持 Linux；前端都只在浏览器中渲染时，程序可以在任何系统上运行。部署见[部署](deployment.md)。
 
@@ -136,7 +136,7 @@ bun run build   # 即 go tool tenon build
 go tool tenon add frontend admin --layout frame
 ```
 
-它在 `apps/admin` 中生成一个前端，挂在 `/admin/` 下，加入根目录 `package.json` 的 workspace，安装依赖。`cmd/api/main.go` 不用改：`frontend.Host` 按 `apps/dist` 中的清单托管全部前端，`/admin/` 下的请求交给新的前端，见[托管前端与服务端渲染](../frontend/hosting.md#wiring)。
+它在 `apps/admin` 中生成一个前端，挂在 `/admin/` 下，加入根目录 `package.json` 的 workspace，安装依赖。`cmd/blog/main.go` 不用改：`frontend.Host` 按 `apps/dist` 中的清单托管全部前端，`/admin/` 下的请求交给新的前端，见[托管前端与服务端渲染](../frontend/hosting.md#wiring)。
 
 生成的前端由四个互相独立的选项组合而成：布局、登录页、样式预设和渲染方式。只写 `--layout` 时，其余三个取这种布局的默认值；任何一个都可以单独换掉，例如 `--layout rail --login split --preset compact`。
 
@@ -270,7 +270,7 @@ Tenon 也提供了一些前端包，例如 `@go-tenon/client`（调用接口、�
 
 | 字段 | 默认值 | 说明 |
 | --- | --- | --- |
-| `main` | `./cmd/api` | 应用入口的包 |
+| `main` | `cmd` 下唯一一个有 `main.go` 的目录，例如 `./cmd/blog` | 应用入口的包；`cmd` 下有多个程序时写明 |
 | `serve` | `["serve", "--config", "config/app.yaml,config/local.yaml"]`，`local.yaml` 不存在时去掉它 | 开发时运行应用的参数 |
 | `url` | `http://localhost:8080` | 应用的地址 |
 | `apis.<BasePath>.name` | `BasePath` 的最后一段 | 这个 API 的 TypeScript 客户端的目录名 |

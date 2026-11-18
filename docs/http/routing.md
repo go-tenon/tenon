@@ -316,7 +316,7 @@ func toDTO(a *Article) ArticleDTO {
 模块增多之后，你可以通过应用的 `routes` 命令查看全局路由表。按[命令行](../general/commands.md#routes-command)一章安装命令后，执行：
 
 ```bash
-./bin/api routes
+./bin/blog routes
 ```
 
 该命令用默认配置和 `nil` 依赖调用应用构造路由的函数，离线生成路由表。路由表直接来自各模块 `routes.go` 中的声明。

@@ -154,15 +154,15 @@ func DocRPC() *natsrpc.Server {
     return a.rpcServer()
 }
 
-// 在 cmd/api/main.go 中
+// 在 cmd/blog/main.go 中
 root.AddCommand(rpccmd.New(bootstrap.DocRPC))
 ```
 
 `rpcServer` 见上一节，`RPC` 和 `DocRPC` 都调用它，所以导出的文档总是与运行的服务一致。登记端点时只保存依赖，处理请求时才使用，所以用零值的 `App` 也能构造成功。
 
 ```bash
-go run ./cmd/api rpc asyncapi > asyncapi.json
-go run ./cmd/api rpc endpoints
+go run ./cmd/blog rpc asyncapi > asyncapi.json
+go run ./cmd/blog rpc endpoints
 ```
 
 `rpc endpoints` 列出每个端点的 subject、需要的权限和是否幂等，用于检查暴露了哪些端点。

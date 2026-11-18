@@ -56,7 +56,7 @@ services:
     command: [serve]
     ports: ["8080:8080"]
     healthcheck:
-      test: [CMD, /app/api, health]
+      test: [CMD, /app/acme, health]
     volumes: [storage:/app/storage]
     restart: unless-stopped
     stop_grace_period: 45s

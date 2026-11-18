@@ -221,7 +221,7 @@ searchcmd.New(a.db, article.SearchIndex)
 部署新版本之后执行：
 
 ```bash
-$ ./bin/api search reindex articles
+$ ./bin/blog search reindex articles
 已发起 articles 的重建，操作 0193e7b1-…，由 worker 执行
 已处理 500 / 约 12000 个 key
 已处理 1000 / 约 12000 个 key
