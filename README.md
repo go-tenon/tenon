@@ -147,7 +147,7 @@ flowchart TB
 flowchart TB
   F["功能<br/>apitoken · login · oauthserver · authz · notification · push · activity · feature<br/>settings · operation · privacy · webhook · search · vector · sheet/imports · sheet/exports · ai"]
   E["入口<br/>httpx · httpx/rest · clientgen · frontend · realtime · mcpx · natsrpc · command"]
-  I["基础设施<br/>database · natsx · queue · schedule · cachex · lock · ratelimit · broadcast<br/>filesystem · imgproxy · mail · sms · pdf · outbound · captcha · sheet · document · contract · form"]
+  I["基础设施<br/>database · natsx · queue · schedule · cache · lock · ratelimit · broadcast<br/>filesystem · imgproxy · mail · sms · pdf · outbound · captcha · sheet · document · contract · form"]
   BASE["基础<br/>errorx · identity · config · cleanup · logging · telemetry · health · doctor<br/>i18n · enum · page · hashing · crypt · acquire"]
   F --> E --> I --> BASE
 ```

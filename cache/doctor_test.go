@@ -1,4 +1,4 @@
-package cachex_test
+package cache_test
 
 import (
 	"context"
@@ -8,13 +8,13 @@ import (
 
 	"github.com/bradfitz/gomemcache/memcache"
 
-	"github.com/go-tenon/tenon/cachex"
+	"github.com/go-tenon/tenon/cache"
 	"github.com/go-tenon/tenon/doctor"
 )
 
 func TestDoctor(t *testing.T) {
 	t.Parallel()
-	if res := doctor.Run(context.Background(), cachex.Doctor(openMemcached(t))).Results[0]; res.Status != doctor.Passed {
+	if res := doctor.Run(context.Background(), cache.Doctor(openMemcached(t))).Results[0]; res.Status != doctor.Passed {
 		t.Errorf("reachable server: %+v", res)
 	}
 
@@ -26,7 +26,7 @@ func TestDoctor(t *testing.T) {
 	ln.Close()
 	mc := memcache.New(os.Getenv("MEMCACHED_TEST_ADDR"), closed)
 	t.Cleanup(func() { _ = mc.Close() })
-	if res := doctor.Run(context.Background(), cachex.Doctor(mc)).Results[0]; res.Status != doctor.Warning {
+	if res := doctor.Run(context.Background(), cache.Doctor(mc)).Results[0]; res.Status != doctor.Warning {
 		t.Errorf("one server down: %+v", res)
 	}
 }

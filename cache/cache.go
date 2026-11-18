@@ -1,4 +1,4 @@
-// Package cachex 在 Memcached 之上提供 cache-aside 读取。Remember 先读缓存，没有时加载并写回，并处理三个常见问题：
+// Package cache 在 Memcached 之上提供 cache-aside 读取。Remember 先读缓存，没有时加载并写回，并处理三个常见问题：
 //
 //   - 击穿：热点键过期的瞬间，同一个进程中同一个键的并发加载合并为一次；
 //   - 雪崩：写入时过期时间加上随机抖动，同一批写入的键在不同时刻过期；
@@ -9,11 +9,11 @@
 // 值编码为 JSON 存进 Memcached，客户端是应用共用的 *memcache.Client（github.com/bradfitz/gomemcache）。
 // 缓存读写失败或缓存中的内容无法解码时直接加载，结果照常返回：查询缓存随时可以从数据库重建，请求照常成功。
 //
-//	articles := cachex.New[*article.Article](mc, "blog:article:v1:", 10*time.Minute, cachex.Missing(article.ErrNotFound.New))
+//	articles := cache.New[*article.Article](mc, "blog:article:v1:", 10*time.Minute, cache.Missing(article.ErrNotFound.New))
 //	item, err := articles.Remember(ctx, id.String(), func(ctx context.Context) (*article.Article, error) {
 //		return find(ctx, db, id)
 //	})
-package cachex
+package cache
 
 import (
 	"context"
@@ -86,7 +86,7 @@ type options struct {
 // newErr 为 nil 时 panic。
 func Missing(newErr func() error) Option {
 	if newErr == nil {
-		panic("cachex: nil missing error")
+		panic("cache: nil missing error")
 	}
 	return func(o *options) { o.missing = newErr }
 }
@@ -98,9 +98,9 @@ func Missing(newErr func() error) Option {
 func New[T any](mc Client, prefix string, ttl time.Duration, opts ...Option) *Cache[T] {
 	switch {
 	case mc == nil:
-		panic("cachex: nil client")
+		panic("cache: nil client")
 	case ttl <= 0:
-		panic("cachex: ttl must be positive")
+		panic("cache: ttl must be positive")
 	}
 	var o options
 	for _, opt := range opts {
@@ -141,7 +141,7 @@ func (c *Cache[T]) Remember(ctx context.Context, key string, load func(ctx conte
 			return zero, r.Err
 		}
 		v, err := decode[T](r.Val.(string))
-		return v, errors.Wrap(err, "cachex: decode")
+		return v, errors.Wrap(err, "cache: decode")
 	case <-ctx.Done():
 		return zero, context.Cause(ctx)
 	}
@@ -154,7 +154,7 @@ func (c *Cache[T]) Forget(ctx context.Context, key string) error {
 	key = c.storedKey(key)
 	c.forgets.Add(1)
 	if err := c.mc.Delete(key); err != nil && !errors.Is(err, memcache.ErrCacheMiss) {
-		return errors.Wrapf(err, "cachex: forget %q", key)
+		return errors.Wrapf(err, "cache: forget %q", key)
 	}
 	return nil
 }
@@ -167,7 +167,7 @@ func (c *Cache[T]) Invalidate(ctx context.Context, tags ...string) error {
 	for _, tag := range tags {
 		// 版本不存在（从未读取或已被淘汰）时直接返回：之后的 Remember 会创建一个随机的新版本，与缓存中的值都不一致。
 		if _, err := c.mc.Increment(tagKey(tag), 1); err != nil && !errors.Is(err, memcache.ErrCacheMiss) {
-			errs = append(errs, errors.Wrapf(err, "cachex: invalidate %q", tag))
+			errs = append(errs, errors.Wrapf(err, "cache: invalidate %q", tag))
 		}
 	}
 	return errors.Join(errs...)
@@ -294,7 +294,7 @@ func (c *Cache[T]) fill(ctx context.Context, key, header string, store bool, loa
 	}
 	data, err := json.Marshal(v)
 	if err != nil {
-		return "", errors.Wrapf(err, "cachex: encode %q", key)
+		return "", errors.Wrapf(err, "cache: encode %q", key)
 	}
 	if store {
 		c.write(ctx, key, header+string(data), c.ttl)
@@ -313,7 +313,7 @@ func (c *Cache[T]) write(ctx context.Context, key, raw string, ttl time.Duration
 func call[T any](ctx context.Context, load func(ctx context.Context) (T, error)) (v T, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = errors.Newf("cachex: panic: %v\n%s", r, debug.Stack())
+			err = errors.Newf("cache: panic: %v\n%s", r, debug.Stack())
 		}
 	}()
 	return load(ctx)

@@ -15,7 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/uptrace/bun"
 
-	"github.com/go-tenon/tenon/cachex"
+	"github.com/go-tenon/tenon/cache"
 	"github.com/go-tenon/tenon/database"
 	"github.com/go-tenon/tenon/errorx"
 	"github.com/go-tenon/tenon/identity"
@@ -69,8 +69,8 @@ type Member struct {
 type Store struct {
 	db      bun.IDB
 	catalog Catalog
-	cache   *cachex.Cache[grant] // nil 表示不缓存
-	prefix  string               // 缓存的命名空间，见 Cache
+	cache   *cache.Cache[grant] // nil 表示不缓存
+	prefix  string              // 缓存的命名空间，见 Cache
 }
 
 // grant 是缓存的权限，即 Permissions 的结果。
@@ -92,8 +92,8 @@ type Option func(*Store)
 // 失效失败时修改照常成功，记录 Error 日志，旧的权限最多保留 ttl。绕过 Store 直接修改表时同样最多保留 ttl。
 //
 // 修改角色和分配的每个 Store 都要使用同一个 mc 和 prefix 的 Cache，缓存才会随修改失效。
-func Cache(mc cachex.Client, prefix string, ttl time.Duration) Option {
-	c := cachex.New[grant](mc, prefix+"authz:v1:permissions:", ttl)
+func Cache(mc cache.Client, prefix string, ttl time.Duration) Option {
+	c := cache.New[grant](mc, prefix+"authz:v1:permissions:", ttl)
 	return func(s *Store) { s.cache, s.prefix = c, prefix }
 }
 

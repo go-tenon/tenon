@@ -174,6 +174,16 @@ RPC 服务、队列 worker、定时任务调度器等其他运行部分也放在
 | 业务错误码 | `资源.原因` | `article.not_found` |
 | 缩写 | 全大写 | `ID`、`HTTP`、`URL`、`TTL` |
 
+<a id="package-suffix"></a>
+包名与调用方通常要在同一个文件中同时导入的包同名时，加后缀 `x`；其他时候用本来的名字。两个同名的包出现在同一个文件中时，必须给其中一个起别名，读代码的人还要分辨哪个是哪个，后缀省去了这一步。框架中带后缀的包都是这种情况：
+
+- `errorx`：调用方同时用 `errors.Is`、`errors.As`；
+- `httpx`：调用方同时用 `net/http`；
+- `mcpx`：调用方同时用官方 SDK 的 `mcp`；
+- `natsx`：调用方同时用 `nats.go` 的 `nats`。
+
+同名的包只在包的内部用到时不加后缀，在包内给它起别名即可。例如 `mail` 在内部导入 `net/mail`，`filesystem/s3` 在内部导入 AWS SDK 的 `s3`，调用方只导入框架的包，所以它们仍叫 `mail`、`s3`。
+
 <a id="troubleshooting"></a>
 ## 常见问题
 
@@ -199,7 +209,7 @@ Tenon 的每个包都可以单独使用，按需引入即可。顶层的包分�
 ```text
 功能        apitoken  login  oauthserver  authz  notification  push  activity  feature  settings  operation  privacy  privacy/export  webhook  search  vector  sheet/imports  sheet/exports  ai
 入口        httpx  web  realtime  mcpx  natsrpc  command  clientgen
-基础设施    database  natsx  queue  schedule  cachex  lock  ratelimit  captcha  broadcast  filesystem  imgproxy  mail  sms  pdf  outbound  sheet  document  contract  form
+基础设施    database  natsx  queue  schedule  cache  lock  ratelimit  captcha  broadcast  filesystem  imgproxy  mail  sms  pdf  outbound  sheet  document  contract  form
 基础        errorx  identity  config  cleanup  logging  telemetry  health  doctor  i18n  enum  page  hashing  crypt  acquire
 ```
 
@@ -239,7 +249,7 @@ Tenon 的每个包都可以单独使用，按需引入即可。顶层的包分�
 | `natsx` | 按框架的约定连接 NATS，队列、广播和在线成员共用这条连接 | [NATS](../libraries/nats.md) |
 | `queue` | NATS JetStream 任务队列，数据库发件箱，重试与失败任务 | [队列](../background/queue.md) |
 | `schedule` | 按 cron 表达式定时执行，多实例去重 | [定时任务](../background/scheduling.md) |
-| `cachex` | Memcached 上的先读缓存再加载 | [缓存](../libraries/cache.md) |
+| `cache` | Memcached 上的先读缓存再加载 | [缓存](../libraries/cache.md) |
 | `lock` | 带过期时间的原子锁，`lock/pglock` 是 PostgreSQL 存储 | [原子锁](../libraries/locks.md) |
 | `ratelimit` | 按键限流，`ratelimit/pglimit` 是 PostgreSQL 限流器 | [限流](../libraries/rate-limiting.md) |
 | `broadcast` | 实例之间广播消息，`broadcast/natsbroadcast` 是 NATS 后端 | [广播](../libraries/broadcasting.md) |

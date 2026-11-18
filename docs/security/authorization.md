@@ -204,7 +204,7 @@ roles := authz.NewStore(a.db, auth.Permissions, authz.Cache(mc, "app:prod:", tim
 
 第二个参数是命名空间，共用一个 Memcached 的应用和环境要各不相同，否则会读到别的数据库中的权限；第三个参数是过期时间。`Resolve` 和 `Permissions` 先读缓存，用法不变。
 
-缓存不改变“立即生效”：`Assign`、`Unassign`、`RemoveMember` 使这个用户的缓存失效，`UpdateRole`、`DeleteRole` 使全部缓存失效，方法返回之后，所有实例的下一个请求都读到新的权限。所以修改后照常调用 `RecheckSubject`、`RecheckTenant`。缓存用的是 `cachex` 的 [tag](../libraries/cache.md#tags)，每次读取是 Memcached 的一次请求。
+缓存不改变“立即生效”：`Assign`、`Unassign`、`RemoveMember` 使这个用户的缓存失效，`UpdateRole`、`DeleteRole` 使全部缓存失效，方法返回之后，所有实例的下一个请求都读到新的权限。所以修改后照常调用 `RecheckSubject`、`RecheckTenant`。缓存用的是 `cache` 的 [tag](../libraries/cache.md#tags)，每次读取是 Memcached 的一次请求。
 
 几点限制：
 
@@ -405,7 +405,7 @@ func toDTO(sub identity.Subject, a *Article) ArticleDTO {
 
 ```go
 func NewStore(db bun.IDB, catalog Catalog, opts ...Option) *Store
-func Cache(mc cachex.Client, prefix string, ttl time.Duration) Option
+func Cache(mc cache.Client, prefix string, ttl time.Duration) Option
 ```
 
 `catalog` 是代码中声明的全部权限（`Permission{Name, Description}`）。`Cache` 把每个主体的权限缓存在 Memcached 中，修改角色后同步失效。
