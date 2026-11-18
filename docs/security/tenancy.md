@@ -79,11 +79,11 @@ Tenant: func(ctx huma.Context) string { return ctx.Header("X-Tenant") },
 - **全局角色**（`Tenant` 为 `""`）：`owner`、`admin`、`member` 这类模板，所有租户都可以分配，修改它会影响所有租户；
 - **租户角色**（`Tenant` 为租户 ID）：租户管理员按需创建，只在本租户中可见、可分配。
 
-全局角色通常在[填充数据](../database/migrations.md#seeding)时创建：
+全局角色通常是应用的一部分，在代码中声明，应用启动时用 [`EnsureRole`](authorization.md#preset-roles) 确保存在：
 
 ```go
-owner, err := roles.CreateRole(ctx, authz.Role{Name: "owner", Permissions: []string{"*"}})
-member, err := roles.CreateRole(ctx, authz.Role{Name: "member", Permissions: []string{"articles:read", "articles:write"}})
+owner, err := roles.EnsureRole(ctx, authz.Role{Name: "owner", Permissions: []string{"*"}})
+member, err := roles.EnsureRole(ctx, authz.Role{Name: "member", Permissions: []string{"articles:read", "articles:write"}})
 ```
 
 <a id="creating-tenants"></a>

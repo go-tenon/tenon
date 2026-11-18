@@ -281,12 +281,11 @@ n, err := users.Cleanup(ctx, 1000)
 <a id="testing"></a>
 ## 测试
 
-`login/logintest` 提供两个工具。`Outbox` 记录发出的验证码，测试中把 `outbox.Send` 作为 `Options.Send`：
+`login/logintest` 提供三个工具。`Realm` 组装测试用的 `Realm`：没有设置的 `Hasher`、`Crypt`、`Attempts`、`Sends` 用适合测试的值补上，即最低成本的 bcrypt、随机的应用密钥和宽松的内存限流。`Outbox` 记录发出的验证码，测试中把 `outbox.Send` 作为 `Options.Send`：
 
 ```go
 outbox := logintest.NewOutbox()
-loose := ratelimit.NewMemory(ratelimit.Config{Rate: 100, Interval: time.Minute, Burst: 100})
-users := login.New(db, login.Options{Type: user.Type, Hasher: hasher, Crypt: c, Send: outbox.Send, Attempts: loose, Sends: loose})
+users := logintest.Realm(t, db, login.Options{Type: user.Type, Send: outbox.Send})
 
 requestID, err := users.SendCode(ctx, login.SignIn, login.Email("alice@example.com"))
 code, _ := outbox.Last(login.Email("alice@example.com"))
@@ -300,7 +299,7 @@ setup, err := users.SetupTOTP(ctx, db, ref, "alice@example.com")
 codes, err := users.ConfirmTOTP(ctx, db, ref, logintest.TOTP(setup.Secret))
 ```
 
-同一个 30 秒内的验证码只能用一次，测试接着还要输入时（例如启用后重新登录），在 [`synctest`](../testing/overview.md#controlling-time) 中 `time.Sleep(30 * time.Second)`。密码哈希按生产配置计算很慢，测试中把 bcrypt 的 `cost` 调到最低值 4。
+同一个 30 秒内的验证码只能用一次，测试接着还要输入时（例如启用后重新登录），在 [`synctest`](../testing/overview.md#controlling-time) 中 `time.Sleep(30 * time.Second)`。密码哈希按生产配置计算很慢，`logintest.Realm` 用的是成本最低的 bcrypt；自己组装 `Realm` 时用 `hashing.New(hashing.Config{Driver: "bcrypt", Bcrypt: hashing.BcryptConfig{Cost: 4}})`。
 
 <a id="troubleshooting"></a>
 ## 常见问题

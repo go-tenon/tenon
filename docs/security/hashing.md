@@ -155,7 +155,7 @@ bcrypt 只处理前 72 字节。在输入中用 `maxLength:"72"` 限制长度，
 func New(cfg Config) *Hasher
 ```
 
-`Config` 选择算法（默认 Argon2id，可选 bcrypt）和各自的参数，见[配置](#configuration)。
+`Config` 选择算法（默认 Argon2id，可选 bcrypt）和各自的参数，见[配置](#configuration)。没有设置的项（零值的 `Driver`、整组 `Argon2id` 参数、`Bcrypt.Cost`）使用默认值，所以 `New(Config{})` 与默认配置相同；测试中只写要改的项，例如 `Config{Driver: "bcrypt", Bcrypt: BcryptConfig{Cost: 4}}`。补上默认值之后仍然无效时 panic。
 
 ### Hasher
 

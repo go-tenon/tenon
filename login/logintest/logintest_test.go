@@ -7,13 +7,10 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/go-tenon/tenon/crypt"
 	"github.com/go-tenon/tenon/database/dbtest"
-	"github.com/go-tenon/tenon/hashing"
 	"github.com/go-tenon/tenon/identity"
 	"github.com/go-tenon/tenon/login"
 	"github.com/go-tenon/tenon/login/logintest"
-	"github.com/go-tenon/tenon/ratelimit"
 )
 
 func TestOutbox(t *testing.T) {
@@ -52,23 +49,18 @@ func TestWithRealm(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx := context.Background()
 		outbox := logintest.NewOutbox()
-		loose := ratelimit.Config{Rate: 100, Interval: time.Minute, Burst: 100}
 		db := dbtest.Open(t, login.Migrations())
-		var hc hashing.Config
-		hc.SetDefaults()
-		hc.Driver, hc.Bcrypt.Cost = "bcrypt", 4 // 测试中用最低成本，哈希密码不拖慢测试
-		users := login.New(db, login.Options{
-			Type:     "user",
-			Hasher:   hashing.New(hc),
-			Crypt:    crypt.New(crypt.Config{Key: crypt.GenerateKey()}),
-			Send:     outbox.Send,
-			Attempts: ratelimit.NewMemory(loose),
-			Sends:    ratelimit.NewMemory(loose),
-		})
+		users := logintest.Realm(t, db, login.Options{Type: "user", Send: outbox.Send})
 		alice := identity.Ref{Type: "user", ID: "alice"}
 		email := login.Email("alice@example.com")
 		if err := users.Attach(ctx, db, alice, email, true); err != nil {
 			t.Fatal(err)
+		}
+		if err := users.SetPassword(ctx, db, alice, "secret-pass"); err != nil {
+			t.Fatal(err)
+		}
+		if out, err := users.Password(ctx, email, "secret-pass"); err != nil || out.Subject.Ref() != alice {
+			t.Fatalf("password: %+v %v", out, err)
 		}
 
 		requestID, err := users.SendCode(ctx, login.SignIn, email)

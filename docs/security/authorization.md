@@ -160,10 +160,26 @@ err = roles.Assign(ctx, identity.Ref{Type: user.Type, ID: userID}, "", editor.ID
 | --- | --- |
 | `CreateRole`、`UpdateRole`、`DeleteRole` | 管理角色；修改立即影响拥有该角色的所有用户，删除角色同时撤销它的分配。`UpdateRole`、`DeleteRole` 的最后一个参数是租户：租户管理员的界面传入当前租户，只能修改本租户自定义的角色；平台管理员传 `""` |
 | `Role`、`Roles` | 读取角色，用于角色列表和编辑页 |
+| `RoleByName` | 按名称读取角色：全局角色传租户 `""` |
+| `EnsureRole` | 让代码中声明的预置角色存在且与声明一致，见下文 |
 | `Assign`、`Unassign` | 分配和撤销角色；重复分配保持原样 |
 | `RolesOf`、`Members` | 某个用户的角色、拥有角色的全部用户 |
 
-初始角色通常在[填充数据](../database/migrations.md#seeding)的命令中创建。
+<a id="preset-roles"></a>
+**预置角色。** 有些角色是应用的一部分，每个环境都要有，例如平台管理员、租户的所有者。把它们声明在代码中，应用启动时用 `EnsureRole` 逐个确保存在：不存在时创建，已经存在时把说明和权限改成声明的样子，返回带 ID 的角色。重复调用、多个实例同时启动都是安全的；代码中改了权限，下一次启动时生效，拥有这个角色的用户随之得到新的权限：
+
+```go
+// Owner 是租户的所有者，在入口的 open 中调用一次。
+var Owner = authz.Role{Name: "owner", Description: "所有者", Permissions: []string{"*"}}
+
+owner, err := roles.EnsureRole(ctx, Owner)
+if err != nil {
+    return nil, err
+}
+// owner.ID 交给需要分配它的业务动作；也可以在用到时 roles.RoleByName(ctx, "owner", "")
+```
+
+这样的角色以代码为准，在界面中修改它，下一次启动时会被改回去；角色管理的界面通常只列出租户自定义的角色，或者把预置角色显示为只读。只在开发和演示时需要的角色和分配，写在[填充数据](../database/migrations.md#seeding)的命令中。
 
 <a id="resolving-permissions"></a>
 ### 每次请求加载权限
@@ -420,6 +436,8 @@ func (s *Store) UpdateRole(ctx context.Context, r Role, tenant string) (Role, er
 func (s *Store) DeleteRole(ctx context.Context, id, tenant string) error
 func (s *Store) Role(ctx context.Context, id, tenant string) (Role, error)
 func (s *Store) Roles(ctx context.Context, tenant string) ([]Role, error)
+func (s *Store) RoleByName(ctx context.Context, name, tenant string) (Role, error)
+func (s *Store) EnsureRole(ctx context.Context, r Role) (Role, error)
 func (s *Store) Assign(ctx context.Context, ref identity.Ref, tenant, roleID string) error
 func (s *Store) Unassign(ctx context.Context, ref identity.Ref, tenant, roleID string) error
 func (s *Store) RolesOf(ctx context.Context, ref identity.Ref, tenant string) ([]Role, error)
@@ -430,7 +448,7 @@ func (s *Store) Erase(ctx context.Context, db bun.IDB, ref identity.Ref) error
 func (s *Store) Export(ctx context.Context, db bun.IDB, ref identity.Ref) (any, error)
 ```
 
-`Erase` 在 `db` 中撤销主体在所有域中的角色，登记到[注销账号](../features/privacy.md#framework-sources)；`Export` 列出这些角色，登记到[导出个人数据](../features/data-export.md#sources)。`Resolve` 作为 `identity.Accounts` 的 Resolver，按请求所在的租户加载主体的权限；不是租户成员时返回 `ErrNotMember`（404）。`Role.Tenant` 为空的是全局角色，可以在任何租户中分配。`UpdateRole`、`DeleteRole` 的 `tenant` 不为空时，只能修改、删除这个租户自定义的角色，全局角色和其他租户的角色返回 `ErrRoleNotFound`：租户管理员的界面直接把请求中的角色 ID 交给它们也是安全的；`tenant` 为空时不限制，供平台管理员使用。`Role` 的 `tenant` 不为空时还能读到全局角色，因为租户中可以分配它们。
+`Erase` 在 `db` 中撤销主体在所有域中的角色，登记到[注销账号](../features/privacy.md#framework-sources)；`Export` 列出这些角色，登记到[导出个人数据](../features/data-export.md#sources)。`Resolve` 作为 `identity.Accounts` 的 Resolver，按请求所在的租户加载主体的权限；不是租户成员时返回 `ErrNotMember`（404）。`Role.Tenant` 为空的是全局角色，可以在任何租户中分配。`UpdateRole`、`DeleteRole` 的 `tenant` 不为空时，只能修改、删除这个租户自定义的角色，全局角色和其他租户的角色返回 `ErrRoleNotFound`：租户管理员的界面直接把请求中的角色 ID 交给它们也是安全的；`tenant` 为空时不限制，供平台管理员使用。`Role` 的 `tenant` 不为空时还能读到全局角色，因为租户中可以分配它们。`RoleByName` 只在 `tenant` 这一个域中按名称查找：`""` 是全局角色，租户 ID 是该租户自定义的角色，不存在时返回 `ErrRoleNotFound`。`EnsureRole` 按 `r.Tenant` 和 `r.Name` 找到角色，让它的说明和权限与 `r` 一致，见[预置角色](#preset-roles)。
 
 ### identity.Subject.Can
 

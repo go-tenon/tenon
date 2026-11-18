@@ -1,5 +1,5 @@
-// Package logintest 提供测试账号流程的工具：Outbox 记录 login.Options.Send 发出的验证码，
-// TOTP 计算验证器上显示的数字。
+// Package logintest 提供测试账号流程的工具：Realm 用适合测试的依赖组装 login.Realm，Outbox 记录 login.Options.Send
+// 发出的验证码，TOTP 计算验证器上显示的数字。
 package logintest
 
 import (

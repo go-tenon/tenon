@@ -386,3 +386,81 @@ func TestExport(t *testing.T) {
 		t.Fatal("expected error for empty subject")
 	}
 }
+
+// 不缓存和缓存的 Store 结果相同：EnsureRole 改了权限之后，读取立即得到新的权限。
+func TestEnsureRoleAndRoleByName(t *testing.T) {
+	t.Parallel()
+	for name, open := range map[string]func(t *testing.T) *authz.Store{"database": newStore, "cached": newCachedStore} {
+		t.Run(name, func(t *testing.T) { testEnsureRole(t, open(t)) })
+	}
+}
+
+func testEnsureRole(t *testing.T, s *authz.Store) {
+	ctx := context.Background()
+
+	// 不存在时创建；同名的租户角色和全局角色互不影响。
+	owner, err := s.EnsureRole(ctx, authz.Role{Name: "owner", Description: "所有者", Permissions: []string{"members:manage", "articles:*"}})
+	if err != nil || owner.ID == "" || strings.Join(owner.Permissions, ",") != "articles:*,members:manage" {
+		t.Fatalf("create: %+v, %v", owner, err)
+	}
+	acmeOwner, err := s.EnsureRole(ctx, authz.Role{Tenant: "acme", Name: "owner", Permissions: []string{"articles:read"}})
+	if err != nil || acmeOwner.ID == owner.ID {
+		t.Fatalf("tenant role: %+v, %v", acmeOwner, err)
+	}
+	mustAssign(t, s, user("alice"), "acme", owner.ID)
+	if perms, _, err := s.Permissions(ctx, user("alice"), "acme"); err != nil || strings.Join(perms, ",") != "articles:*,members:manage" {
+		t.Fatalf("alice permissions %v, %v", perms, err)
+	}
+
+	// 没有变化时保持原样，ID 不变。
+	again, err := s.EnsureRole(ctx, authz.Role{Name: "owner", Description: "所有者", Permissions: []string{"articles:*", "members:manage", "articles:*"}})
+	if err != nil || again.ID != owner.ID {
+		t.Fatalf("again: %+v, %v", again, err)
+	}
+
+	// 代码中改了说明和权限：同一个角色被改成新的样子，拥有它的主体立即得到新的权限。
+	changed, err := s.EnsureRole(ctx, authz.Role{Name: "owner", Description: "工作区的所有者", Permissions: []string{"articles:read"}})
+	if err != nil || changed.ID != owner.ID {
+		t.Fatalf("changed: %+v, %v", changed, err)
+	}
+	got, err := s.RoleByName(ctx, "owner", "")
+	if err != nil || got.ID != owner.ID || got.Description != "工作区的所有者" || strings.Join(got.Permissions, ",") != "articles:read" {
+		t.Fatalf("RoleByName: %+v, %v", got, err)
+	}
+	if perms, _, err := s.Permissions(ctx, user("alice"), "acme"); err != nil || strings.Join(perms, ",") != "articles:read" {
+		t.Fatalf("alice permissions %v, %v", perms, err)
+	}
+	if got, err := s.RoleByName(ctx, "owner", "acme"); err != nil || got.ID != acmeOwner.ID {
+		t.Fatalf("tenant RoleByName: %+v, %v", got, err)
+	}
+	if _, err := s.RoleByName(ctx, "missing", ""); !errors.Is(err, authz.ErrRoleNotFound) {
+		t.Fatalf("missing: %v", err)
+	}
+	if _, err := s.EnsureRole(ctx, authz.Role{Name: "bad", Permissions: []string{"unknown:perm"}}); !errors.Is(err, authz.ErrInvalid) {
+		t.Fatalf("unknown permission: %v", err)
+	}
+}
+
+// 多个实例同时启动、同时调用 EnsureRole：都成功，得到同一个角色。
+func TestEnsureRoleConcurrently(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s := newStore(t)
+	roles := make([]authz.Role, 8)
+	errs := make([]error, len(roles))
+	var wg sync.WaitGroup
+	for i := range roles {
+		wg.Go(func() {
+			roles[i], errs[i] = s.EnsureRole(ctx, authz.Role{Name: "platform-admin", Permissions: []string{"platform:tenants"}})
+		})
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil || roles[i].ID != roles[0].ID {
+			t.Fatalf("call %d: %+v, %v", i, roles[i], err)
+		}
+	}
+	if all, err := s.Roles(ctx, ""); err != nil || len(all) != 1 {
+		t.Fatalf("roles %v, %v", all, err)
+	}
+}
