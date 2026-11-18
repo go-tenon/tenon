@@ -81,8 +81,8 @@ type Client struct {
 
 // Tool 是一个与应用一起运行的工具：开发时运行 Watch，停止后运行一次 Build。
 type Tool struct {
-	Watch []string `json:"watch"`
-	Build []string `json:"build,omitempty"`
+	Watch []string `json:"watch"`           // 开发时与应用一起运行的命令，例如 ["esbuild", "--watch"]
+	Build []string `json:"build,omitempty"` // tenon dev 停止后运行一次的命令，可以没有
 }
 
 // Load 读取 dir 中的 tenon.json（缺省时全部用默认值），补上默认值、发现前端并检查。

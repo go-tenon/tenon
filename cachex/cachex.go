@@ -148,7 +148,8 @@ func (c *Cache[T]) Remember(ctx context.Context, key string, load func(ctx conte
 }
 
 // Forget 删除 key 的值，例如数据修改之后。之后的 Remember 发起新的加载。
-// 缓存的删除失败时返回错误。
+// 缓存的删除失败时返回错误。缓存是最终一致的：Forget 之前已经开始的加载（包括其他实例上的），可能在 Forget 之后
+// 把读到的旧值写回，保留到过期；要求即时一致时用 tag，见 Invalidate。
 func (c *Cache[T]) Forget(ctx context.Context, key string) error {
 	key = c.storedKey(key)
 	c.forgets.Add(1)

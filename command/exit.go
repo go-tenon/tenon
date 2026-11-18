@@ -25,8 +25,8 @@ func AsExitError(code int, err error) error {
 
 // ExitError 携带进程退出码。
 type ExitError struct {
-	Code int
-	Err  error
+	Code int   // 进程的退出码，例如 ExitConfig
+	Err  error // 包装的错误
 }
 
 // Error 返回包装的错误的信息。

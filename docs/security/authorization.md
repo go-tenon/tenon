@@ -158,7 +158,7 @@ err = roles.Assign(ctx, identity.Ref{Type: user.Type, ID: userID}, "", editor.ID
 
 | 方法 | 用途 |
 | --- | --- |
-| `CreateRole`、`UpdateRole`、`DeleteRole` | 管理角色；修改立即影响拥有该角色的所有用户，删除角色同时撤销它的分配 |
+| `CreateRole`、`UpdateRole`、`DeleteRole` | 管理角色；修改立即影响拥有该角色的所有用户，删除角色同时撤销它的分配。`UpdateRole`、`DeleteRole` 的最后一个参数是租户：租户管理员的界面传入当前租户，只能修改本租户自定义的角色；平台管理员传 `""` |
 | `Role`、`Roles` | 读取角色，用于角色列表和编辑页 |
 | `Assign`、`Unassign` | 分配和撤销角色；重复分配保持原样 |
 | `RolesOf`、`Members` | 某个用户的角色、拥有角色的全部用户 |
@@ -416,8 +416,8 @@ func Cache(mc cachex.Client, prefix string, ttl time.Duration) Option
 func (s *Store) Resolve(ctx context.Context, sub identity.Subject) (identity.Subject, error)
 func (s *Store) Permissions(ctx context.Context, ref identity.Ref, tenant string) ([]string, bool, error)
 func (s *Store) CreateRole(ctx context.Context, r Role) (Role, error)
-func (s *Store) UpdateRole(ctx context.Context, r Role) (Role, error)
-func (s *Store) DeleteRole(ctx context.Context, id string) error
+func (s *Store) UpdateRole(ctx context.Context, r Role, tenant string) (Role, error)
+func (s *Store) DeleteRole(ctx context.Context, id, tenant string) error
 func (s *Store) Role(ctx context.Context, id, tenant string) (Role, error)
 func (s *Store) Roles(ctx context.Context, tenant string) ([]Role, error)
 func (s *Store) Assign(ctx context.Context, ref identity.Ref, tenant, roleID string) error
@@ -430,7 +430,7 @@ func (s *Store) Erase(ctx context.Context, db bun.IDB, ref identity.Ref) error
 func (s *Store) Export(ctx context.Context, db bun.IDB, ref identity.Ref) (any, error)
 ```
 
-`Erase` 在 `db` 中撤销主体在所有域中的角色，登记到[注销账号](../features/privacy.md#framework-sources)；`Export` 列出这些角色，登记到[导出个人数据](../features/data-export.md#sources)。`Resolve` 作为 `identity.Accounts` 的 Resolver，按请求所在的租户加载主体的权限；不是租户成员时返回 `ErrNotMember`（404）。`Role.Tenant` 为空的是全局角色，可以在任何租户中分配。
+`Erase` 在 `db` 中撤销主体在所有域中的角色，登记到[注销账号](../features/privacy.md#framework-sources)；`Export` 列出这些角色，登记到[导出个人数据](../features/data-export.md#sources)。`Resolve` 作为 `identity.Accounts` 的 Resolver，按请求所在的租户加载主体的权限；不是租户成员时返回 `ErrNotMember`（404）。`Role.Tenant` 为空的是全局角色，可以在任何租户中分配。`UpdateRole`、`DeleteRole` 的 `tenant` 不为空时，只能修改、删除这个租户自定义的角色，全局角色和其他租户的角色返回 `ErrRoleNotFound`：租户管理员的界面直接把请求中的角色 ID 交给它们也是安全的；`tenant` 为空时不限制，供平台管理员使用。`Role` 的 `tenant` 不为空时还能读到全局角色，因为租户中可以分配它们。
 
 ### identity.Subject.Can
 

@@ -338,7 +338,7 @@ var SearchIndex = search.Define[SearchDoc]("articles", search.WithTokenizer(gse.
 
 建索引时它还输出长词中包含的短词（“搜索引擎”还输出“搜索”“引擎”），查询短词也能命中。代价是程序增大约 25 MB，第一次分词时加载词典约 0.5 秒，常驻内存约 300 MB。
 
-也可以实现 `search.Tokenizer` 接入其他分词方式，`search.Split` 处理了字母、数字和标点，只需要提供切分中日韩文字的函数。更换分词器之后要[重建索引](#reindexing)。
+也可以实现 `search.Tokenizer` 接入其他分词方式，`search.Split` 处理了字母、数字和标点，只需要提供切分中日韩文字的函数。默认的分词器就是 `search.Split(text, search.Bigrams)`：`Bigrams` 把连续的中日韩文字切成相邻的两个字。更换分词器之后要[重建索引](#reindexing)。
 
 <a id="troubleshooting"></a>
 ## 常见问题

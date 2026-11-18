@@ -24,13 +24,13 @@ type Stack struct {
 	closed bool
 }
 
-// Add 登记清理函数。name 用于错误信息。Stack 已关闭时返回错误。
+// Add 登记清理函数。name 是资源的名称，出现在错误信息中。name 为空、fn 为 nil 或 Stack 已关闭时返回错误。
 func (s *Stack) Add(name string, fn func(context.Context) error) error {
 	if fn == nil {
 		return errors.New("cleanup: nil cleanup function")
 	}
 	if name == "" {
-		name = "resource"
+		return errors.New("cleanup: empty resource name")
 	}
 	if s.closed {
 		return errors.Newf("cleanup: cannot add %q after close", name)

@@ -466,6 +466,7 @@ func TestShutdown(t *testing.T) {
 	started := make(chan struct{}, 2)
 	causes := make(chan error, 1)
 	var finished atomic.Int64
+	var slowReturned atomic.Bool
 	stop := start(t, db, cfg, func(w *queue.Worker) {
 		jobs.Handle(w, func(context.Context, payload) error {
 			started <- struct{}{}
@@ -477,6 +478,8 @@ func TestShutdown(t *testing.T) {
 			started <- struct{}{}
 			<-ctx.Done()
 			causes <- context.Cause(ctx)
+			time.Sleep(100 * time.Millisecond) // 取消之后还要一会儿才返回，例如回滚事务
+			slowReturned.Store(true)
 			return ctx.Err()
 		})
 	})
@@ -497,6 +500,9 @@ func TestShutdown(t *testing.T) {
 	}
 	if cause := <-causes; !errors.Is(cause, queue.ErrShuttingDown) {
 		t.Fatalf("cause %v", cause)
+	}
+	if !slowReturned.Load() {
+		t.Fatal("worker stopped before the released job's handler returned")
 	}
 
 	again := make(chan int, 1)
