@@ -2,6 +2,14 @@
 
 // 业务错误码：与 ApiError.code 比较，或交给 isApiError(err, code)。
 
+/** github.com/go-tenon/tenon/clientgen/internal/example/article 的错误码。 */
+export const ArticleErrors = {
+  /** ErrNotFound 表示文章不存在。 */
+  NotFound: "article.not_found",
+  /** ErrSlugTaken 表示 slug 已被其他文章使用。 */
+  SlugTaken: "article.slug_taken",
+} as const
+
 /** github.com/go-tenon/tenon/httpx 的错误码。 */
 export const HttpxErrors = {
   /**
@@ -9,14 +17,6 @@ export const HttpxErrors = {
    * 会话 cookie 的登录接口。
    */
   CrossSite: "http.cross_site",
-} as const
-
-/** github.com/go-tenon/tenon/httpx/rest/clientgen/internal/example/article 的错误码。 */
-export const ArticleErrors = {
-  /** ErrNotFound 表示文章不存在。 */
-  NotFound: "article.not_found",
-  /** ErrSlugTaken 表示 slug 已被其他文章使用。 */
-  SlugTaken: "article.slug_taken",
 } as const
 
 /** github.com/go-tenon/tenon/identity 的错误码。 */

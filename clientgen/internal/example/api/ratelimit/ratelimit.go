@@ -4,7 +4,7 @@
 package ratelimit
 
 import (
-	"github.com/go-tenon/tenon/httpx/rest/clientgen/internal/example/api/wire"
+	"github.com/go-tenon/tenon/clientgen/internal/example/api/wire"
 )
 
 // 错误码，用 errors.Is(err, ErrXxx) 判断接口返回的错误。

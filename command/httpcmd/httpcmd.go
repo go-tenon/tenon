@@ -12,10 +12,10 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/spf13/cobra"
 
+	"github.com/go-tenon/tenon/clientgen"
 	"github.com/go-tenon/tenon/command"
 	"github.com/go-tenon/tenon/httpx"
 	"github.com/go-tenon/tenon/httpx/rest"
-	"github.com/go-tenon/tenon/httpx/rest/clientgen"
 )
 
 // Commands 返回 openapi、routes、client 三个命令，加入应用的根命令。router 构造应用的完整路由，

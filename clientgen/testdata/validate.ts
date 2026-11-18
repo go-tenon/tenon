@@ -1,7 +1,7 @@
 // TestTSValidationMatchesServer 用 bun 运行它：同一批输入分别用 @go-tenon/client 的 validate 和示例服务校验，
 // 比较两边的位置、错误码和提示。BASE_URL 是示例服务的 API 地址，EXAMPLE 是生成的示例客户端目录，LIB 是 @go-tenon/client 的入口。
 
-type Lib = typeof import("../../../../js/client/src/index")
+type Lib = typeof import("../../js/client/src/index")
 type Schemas = typeof import("../internal/example/ts/schemas")
 type Messages = typeof import("../internal/example/ts/messages")
 

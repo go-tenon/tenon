@@ -86,7 +86,7 @@ bun run test        # Vitest：client、start 和 electron 的测试
 ```
 tenon/
 ├── go.mod                                  # 主模块：服务端各包和 cmd/tenon，不引入任何客户端的依赖
-├── httpx/rest/clientgen/                   # 生成器：公共部分 + 各语言（ts、go，以后 swift、kotlin、csharp、dart）
+├── clientgen/                              # 生成器：公共部分 + 各语言（ts、go，以后 swift、kotlin、csharp、dart）
 ├── cmd/tenon/internal/
 │   ├── project/                            # 发现 clients/<名>/tenon.json，Kinds 是支持的种类
 │   ├── dev/clients.go                      # 每个种类：需要的框架包、开发时怎样运行、怎样打包

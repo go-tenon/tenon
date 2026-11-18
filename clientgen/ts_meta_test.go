@@ -11,8 +11,8 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/go-chi/chi/v5"
 
+	"github.com/go-tenon/tenon/clientgen"
 	"github.com/go-tenon/tenon/httpx/rest"
-	"github.com/go-tenon/tenon/httpx/rest/clientgen"
 	"github.com/go-tenon/tenon/identity"
 	"github.com/go-tenon/tenon/page"
 )

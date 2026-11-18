@@ -12,16 +12,16 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/go-tenon/tenon/clientgen"
+	"github.com/go-tenon/tenon/clientgen/internal/example/article"
 	"github.com/go-tenon/tenon/httpx/rest"
-	"github.com/go-tenon/tenon/httpx/rest/clientgen"
-	"github.com/go-tenon/tenon/httpx/rest/clientgen/internal/example/article"
 	"github.com/go-tenon/tenon/identity"
 )
 
 var update = flag.Bool("update", false, "rewrite the generated example client in internal/example/api")
 
 const (
-	exampleMain = "github.com/go-tenon/tenon/httpx/rest/clientgen/internal/example/article"
+	exampleMain = "github.com/go-tenon/tenon/clientgen/internal/example/article"
 	exampleOut  = "internal/example/api"
 )
 
@@ -72,7 +72,7 @@ func TestGeneratedExampleIsUpToDate(t *testing.T) {
 	for name, data := range res.Files {
 		disk, err := os.ReadFile(filepath.Join(exampleOut, name))
 		if err != nil || string(disk) != string(data) {
-			t.Errorf("%s is out of date; run go test ./httpx/rest/clientgen -run TestGeneratedExampleIsUpToDate -update", name)
+			t.Errorf("%s is out of date; run go test ./clientgen -run TestGeneratedExampleIsUpToDate -update", name)
 		}
 	}
 	_ = filepath.WalkDir(exampleOut, func(p string, d fs.DirEntry, err error) error {

@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-tenon/tenon/httpx/rest/clientgen/internal/example/api"
-	"github.com/go-tenon/tenon/httpx/rest/clientgen/internal/example/api/article"
-	"github.com/go-tenon/tenon/httpx/rest/clientgen/internal/example/api/identity"
-	"github.com/go-tenon/tenon/httpx/rest/clientgen/internal/example/api/wire"
+	"github.com/go-tenon/tenon/clientgen/internal/example/api"
+	"github.com/go-tenon/tenon/clientgen/internal/example/api/article"
+	"github.com/go-tenon/tenon/clientgen/internal/example/api/identity"
+	"github.com/go-tenon/tenon/clientgen/internal/example/api/wire"
 )
 
 // collect 读取全部事件，返回事件 ID 和对应字段的描述。

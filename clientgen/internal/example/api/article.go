@@ -9,9 +9,9 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/go-tenon/tenon/httpx/rest/clientgen/internal/example/api/article"
-	"github.com/go-tenon/tenon/httpx/rest/clientgen/internal/example/api/page"
-	"github.com/go-tenon/tenon/httpx/rest/clientgen/internal/example/api/wire"
+	"github.com/go-tenon/tenon/clientgen/internal/example/api/article"
+	"github.com/go-tenon/tenon/clientgen/internal/example/api/page"
+	"github.com/go-tenon/tenon/clientgen/internal/example/api/wire"
 	"github.com/google/uuid"
 )
 

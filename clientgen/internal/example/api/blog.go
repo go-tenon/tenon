@@ -5,8 +5,8 @@ package api
 import (
 	"context"
 
-	"github.com/go-tenon/tenon/httpx/rest/clientgen/internal/example/api/article"
-	"github.com/go-tenon/tenon/httpx/rest/clientgen/internal/example/api/wire"
+	"github.com/go-tenon/tenon/clientgen/internal/example/api/article"
+	"github.com/go-tenon/tenon/clientgen/internal/example/api/wire"
 )
 
 // BlogGroup 包含 operationId 以 blog- 开头的接口。

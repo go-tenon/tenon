@@ -4,7 +4,7 @@
 package page
 
 import (
-	"github.com/go-tenon/tenon/httpx/rest/clientgen/internal/example/api/wire"
+	"github.com/go-tenon/tenon/clientgen/internal/example/api/wire"
 )
 
 // Offset 是固定分页的响应体。

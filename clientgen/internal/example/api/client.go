@@ -6,8 +6,8 @@ package api
 import (
 	"context"
 
-	"github.com/go-tenon/tenon/httpx/rest/clientgen/internal/example/api/article"
-	"github.com/go-tenon/tenon/httpx/rest/clientgen/internal/example/api/wire"
+	"github.com/go-tenon/tenon/clientgen/internal/example/api/article"
+	"github.com/go-tenon/tenon/clientgen/internal/example/api/wire"
 )
 
 // Options 配置客户端，见 wire.Options。

@@ -9,8 +9,8 @@ import (
 	"testing"
 	"testing/fstest"
 
+	"github.com/go-tenon/tenon/clientgen"
 	"github.com/go-tenon/tenon/httpx/rest"
-	"github.com/go-tenon/tenon/httpx/rest/clientgen"
 )
 
 const exampleTSOut = "internal/example/ts"
@@ -50,7 +50,7 @@ func TestGeneratedTSExampleIsUpToDate(t *testing.T) {
 	for name, data := range res.Files {
 		disk, err := os.ReadFile(filepath.Join(exampleTSOut, name))
 		if err != nil || string(disk) != string(data) {
-			t.Errorf("%s is out of date; run go test ./httpx/rest/clientgen -run TestGeneratedTSExampleIsUpToDate -update", name)
+			t.Errorf("%s is out of date; run go test ./clientgen -run TestGeneratedTSExampleIsUpToDate -update", name)
 		}
 	}
 }
@@ -93,7 +93,7 @@ func TestTSValidationMatchesServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	lib, err := filepath.Abs("../../../js/client/src/index.ts")
+	lib, err := filepath.Abs("../js/client/src/index.ts")
 	if err != nil {
 		t.Fatal(err)
 	}

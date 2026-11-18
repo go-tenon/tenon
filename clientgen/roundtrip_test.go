@@ -12,13 +12,13 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
+	"github.com/go-tenon/tenon/clientgen/internal/example/api"
+	"github.com/go-tenon/tenon/clientgen/internal/example/api/article"
+	"github.com/go-tenon/tenon/clientgen/internal/example/api/identity"
+	"github.com/go-tenon/tenon/clientgen/internal/example/api/page"
+	"github.com/go-tenon/tenon/clientgen/internal/example/api/wire"
 	"github.com/go-tenon/tenon/httpx"
 	"github.com/go-tenon/tenon/httpx/rest"
-	"github.com/go-tenon/tenon/httpx/rest/clientgen/internal/example/api"
-	"github.com/go-tenon/tenon/httpx/rest/clientgen/internal/example/api/article"
-	"github.com/go-tenon/tenon/httpx/rest/clientgen/internal/example/api/identity"
-	"github.com/go-tenon/tenon/httpx/rest/clientgen/internal/example/api/page"
-	"github.com/go-tenon/tenon/httpx/rest/clientgen/internal/example/api/wire"
 )
 
 // serve 用示例接口启动服务端，返回它的地址。

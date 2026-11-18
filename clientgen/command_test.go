@@ -11,9 +11,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/go-tenon/tenon/clientgen"
 	"github.com/go-tenon/tenon/command"
 	"github.com/go-tenon/tenon/httpx/rest"
-	"github.com/go-tenon/tenon/httpx/rest/clientgen"
 )
 
 func runClient(t *testing.T, args ...string) (string, error) {

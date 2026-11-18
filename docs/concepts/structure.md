@@ -198,7 +198,7 @@ Tenon 的每个包都可以单独使用，按需引入即可。顶层的包分�
 
 ```text
 功能        apitoken  login  oauthserver  authz  notification  push  activity  feature  settings  operation  privacy  privacy/export  webhook  search  vector  sheet/imports  sheet/exports  ai
-入口        httpx  web  realtime  mcpx  natsrpc  command
+入口        httpx  web  realtime  mcpx  natsrpc  command  clientgen
 基础设施    database  natsx  queue  schedule  cachex  lock  ratelimit  captcha  broadcast  filesystem  imgproxy  mail  sms  pdf  outbound  sheet  document
 基础        errorx  identity  config  cleanup  logging  telemetry  health  doctor  i18n  enum  page  form  hashing  crypt  acquire
 ```
@@ -263,7 +263,7 @@ Tenon 的每个包都可以单独使用，按需引入即可。顶层的包分�
 | --- | --- | --- |
 | `httpx` | 中间件、平滑停机、HTTP 就绪检查、会话 cookie | [中间件](../http/middleware.md)、[HTTP 服务的生命周期](../http/lifecycle.md) |
 | `httpx/rest` | 基于 Huma 的路由注册、错误转换与 OpenAPI | [路由](../http/routing.md) |
-| `httpx/rest/clientgen` | 从路由生成 TypeScript 与 Go 客户端 | [客户端代码](../http/clients.md) |
+| `clientgen` | 从路由生成 TypeScript 与 Go 客户端 | [客户端代码](../http/clients.md) |
 | `frontend` | 托管前端：按挂载路径返回页面和静态文件，服务端渲染的页面经 unix socket 交给 Bun 渲染 | [托管前端与服务端渲染](../frontend/hosting.md) |
 | `realtime` | 嵌入 Centrifuge 的 WebSocket 频道 | [实时频道](../libraries/realtime.md) |
 | `mcpx` | 把动作作为 MCP 工具提供给 AI 客户端 | [MCP 服务](../ai/mcp.md) |
