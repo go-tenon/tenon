@@ -330,6 +330,16 @@ bun run dev
 go get github.com/go-tenon/tenon@latest
 ```
 
+## 给 AI 编程助手
+
+[llms.txt](llms.txt) 是给大模型读的文档目录（格式见 [llmstxt.org](https://llmstxt.org)），每一项链接到一页文档的 Markdown 原文。在 ChatGPT、Claude 这类在线对话中使用 Tenon 时，把它的地址发给 AI：
+
+```text
+https://raw.githubusercontent.com/go-tenon/tenon/main/llms.txt
+```
+
+全部文档合成的一个文件是每个发布版本的附件 [llms-full.txt](https://github.com/go-tenon/tenon/releases/latest/download/llms-full.txt)。
+
 ## 许可证
 
 Tenon 按 [MIT 许可证](LICENSE) 发布。
