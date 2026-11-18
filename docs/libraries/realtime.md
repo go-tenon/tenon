@@ -139,7 +139,7 @@ centrifuge.connect();
 ## 认证
 
 <a id="tokens"></a>
-连接用 API 令牌认证，由 `Options.Authenticate` 校验，它通常就是 [API 令牌](../security/api-tokens.md)的校验器。浏览器中的页面不需要传 token：连接请求带着[会话 cookie](../security/api-tokens.md#browser-sessions)，用它认证；App 等其他客户端由 SDK 在连接时传入 token，SDK 传入的优先。token 只标识用户，权限由 `Options.Accounts` 中这套账号的 Resolver 加载，与 API 的 [`rest.Options.Accounts`](../security/authorization.md#resolving-permissions) 相同；token 属于其他账号体系时连接被拒绝。设置了 `Authenticate` 就必须设置 `Accounts`：
+连接用 API 令牌认证，由 `Options.Authenticate` 校验，它通常就是 [API 令牌](../security/api-tokens.md)的校验器。浏览器中的页面不需要传 token：连接请求带着[会话 cookie](../security/api-tokens.md#browser-sessions)，用它认证。App 等其他客户端由 SDK 在连接时传入 token，或者把 token 放在连接请求的 `Authorization: Bearer` 请求头中；依次取 SDK 传入的、请求头中的、cookie 中的。token 只标识用户，权限由 `Options.Accounts` 中这套账号的 Resolver 加载，与 API 的 [`rest.Options.Accounts`](../security/authorization.md#resolving-permissions) 相同；token 属于其他账号体系时连接被拒绝。设置了 `Authenticate` 就必须设置 `Accounts`：
 
 ```go
 rt, err := realtime.New(hub, realtime.Options{
@@ -149,7 +149,7 @@ rt, err := realtime.New(hub, realtime.Options{
 router.Handle("/realtime", rt.Handler())
 ```
 
-连接独立于[请求超时](../http/middleware.md#request-timeout)。浏览器发起的连接只接受同源请求，其他网站的页面不能借用户的 cookie 建立连接；其他来源需要连接时，把它加入 `Options.TrustedOrigins`。
+连接独立于[请求超时](../http/middleware.md#request-timeout)。浏览器发起的连接只接受同源请求，其他网站的页面不能借用户的 cookie 建立连接；其他来源需要连接时，把它加入 `Options.TrustedOrigins`。带 `Authorization` 请求头的连接不检查来源：这个请求头只能由客户端自己设置，浏览器不会自动附加。例如桌面端的页面来自 `app://`，宿主在连接请求上加上这个请求头，不需要把 `app://` 加入 `TrustedOrigins`。
 
 ```js
 // 浏览器：同源连接自动带上会话 cookie

@@ -111,3 +111,13 @@ func SameOrigin(secFetchSite, origin, host string) bool {
 func SafeMethod(method string) bool {
 	return method == http.MethodGet || method == http.MethodHead || method == http.MethodOptions
 }
+
+// BearerToken 取出 Authorization 请求头的值 h 中 Bearer 后的 token，Bearer 大小写不敏感；不是 Bearer 时返回空字符串。
+// rest.RequireToken、mcpx 和 realtime 都用它读取客户端的 token。
+func BearerToken(h string) string {
+	scheme, token, ok := strings.Cut(strings.TrimSpace(h), " ")
+	if !ok || !strings.EqualFold(scheme, "Bearer") {
+		return ""
+	}
+	return strings.TrimSpace(token)
+}

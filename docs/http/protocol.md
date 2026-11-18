@@ -213,7 +213,8 @@ data: {"id":"0193e7a2-7c1e-7b4a-9d2f-3c5a1e8b6f10","title":"Hello"}
 双向的实时连接使用 [Centrifuge](https://centrifugal.dev) 的协议，用它的官方 SDK 连接（JavaScript、Dart、Swift、Java、Go 等），见[实时频道](../libraries/realtime.md)。
 
 - 连接地址是应用挂载的 WebSocket 路径，例如 `wss://example.com/realtime`。
-- 浏览器中的页面不传 token：同源的连接请求带着会话 cookie，用它认证；其他客户端连接时传入与 API 相同的 token。两者都没有的连接是匿名的，只能订阅公开频道。其他站点的页面不能建立连接。
+- 浏览器中的页面不传 token：同源的连接请求带着会话 cookie，用它认证。其他客户端用与 API 相同的 token，有两种传法：由 SDK 在连接时传入，或者放在连接请求的 `Authorization: Bearer` 请求头中（能设置请求头的客户端，例如桌面端的宿主替页面加上）。依次取 SDK 传入的、请求头中的、cookie 中的；都没有的连接是匿名的，只能订阅公开频道。
+- 其他站点的页面不能用 cookie 建立连接。带 `Authorization` 请求头的连接不检查来源：这个请求头只能由客户端自己设置，浏览器不会自动附加。
 - token 无效或这次登录已被撤销时，连接以关闭码 `3500` 结束，SDK 不再重连。连接期间服务端每 30 秒重新检查一次。
 - 订阅被拒绝时，错误码 `103` 表示没有权限，`102` 表示没有这个频道。
 - 频道中的消息（publication）的数据是 JSON。频道名称和消息结构由应用定义。

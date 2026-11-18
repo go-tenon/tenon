@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -65,7 +64,7 @@ func Handler(s *Server, opts HandlerOptions) http.Handler {
 		if opts.Tenant != nil {
 			ctx = identity.WithTenant(ctx, opts.Tenant(r))
 		}
-		token := bearerToken(r.Header.Get("Authorization"))
+		token := httpx.BearerToken(r.Header.Get("Authorization"))
 		authenticate := func(ctx context.Context) (identity.Subject, error) {
 			if token == "" {
 				return identity.Subject{}, nil
@@ -89,13 +88,4 @@ func Handler(s *Server, opts HandlerOptions) http.Handler {
 		}
 		sdk.ServeHTTP(w, r.WithContext(identity.WithSubject(ctx, sub)))
 	})
-}
-
-// bearerToken 取出 Authorization: Bearer 后的 token，大小写不敏感；不是 Bearer 时返回空字符串。
-func bearerToken(h string) string {
-	scheme, token, ok := strings.Cut(strings.TrimSpace(h), " ")
-	if !ok || !strings.EqualFold(scheme, "Bearer") {
-		return ""
-	}
-	return strings.TrimSpace(token)
 }
