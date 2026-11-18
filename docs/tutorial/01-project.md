@@ -37,7 +37,7 @@ docker --version
 在你放代码的目录中运行：
 
 ```bash
-go run github.com/go-tenon/tenon/cmd/tenon@main init blog --module example.com/blog
+go run github.com/go-tenon/tenon/cmd/tenon@latest init blog --module example.com/blog
 ```
 
 这条命令在 `blog` 目录中生成一个项目，包括一个 Go 写的后端和一个 React 写的前端；然后下载 Go 和前端的依赖，并生成前端调用接口用的代码。

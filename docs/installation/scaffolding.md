@@ -32,7 +32,7 @@ bun --version
 在你想放项目的位置运行（`todo` 是新项目的目录名）：
 
 ```bash
-go run github.com/go-tenon/tenon/cmd/tenon@main init todo
+go run github.com/go-tenon/tenon/cmd/tenon@latest init todo
 ```
 
 这条命令会：
@@ -43,7 +43,7 @@ go run github.com/go-tenon/tenon/cmd/tenon@main init todo
 
 Go module 的路径和应用的名称默认都是目录名，可以用 `--module` 和 `--name` 指定，例如 `--module github.com/acme/todo`。其他选项见[开发工具](tooling.md#init)。
 
-项目的 `go.mod` 中记录了生成时使用的 Tenon 版本：用 `@main` 生成时是主分支当时的提交，用 `@v1.2.0` 时是这个版本。
+项目的 `go.mod` 中记录了生成时使用的 Tenon 版本：用 `@latest` 生成时是当时最新发布的版本，用 `@v0.0.1` 时是这个版本，用 `@main` 时是主分支当时的提交。
 
 <a id="developing"></a>
 ## 运行开发环境
