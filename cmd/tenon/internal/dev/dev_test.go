@@ -374,6 +374,9 @@ func TestNeedsInstall(t *testing.T) {
 		t.Error("no node_modules: want install")
 	}
 	write("node_modules/.keep", "")
+	write("package.json", `{"workspaces":[".tenon/js/client",".tenon/js/ui","apps/web"]}`)
+	// 不在 workspaces 中的框架包不会被安装，有依赖也不检查。
+	write(".tenon/js/electron/package.json", `{"name":"@go-tenon/electron","peerDependencies":{"electron":"^39"}}`)
 	write(".tenon/js/client/package.json", `{"name":"@go-tenon/client"}`)
 	write(".tenon/js/ui/package.json", `{"name":"@go-tenon/ui","peerDependencies":{"react":"^19"}}`)
 	if !dev.NeedsInstall(dir) {

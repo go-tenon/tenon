@@ -64,16 +64,19 @@ func SyncJS(dir string) (changed bool, err error) {
 	return !slices.EqualFunc(before, after, func(a, b []byte) bool { return bytes.Equal(a, b) }), nil
 }
 
-// NeedsInstall 报告项目 dir 是否需要 bun install：没有 node_modules，或者某个框架前端包声明了依赖
-// （例如 @go-tenon/ui 的 react），但它自己的 node_modules 不存在（例如刚 clone 的项目，.tenon 被 .gitignore 忽略）。
+// NeedsInstall 报告项目 dir 是否需要 bun install：没有 node_modules，或者根 package.json 的 workspaces 中的某个框架
+// 前端包声明了依赖（例如 @go-tenon/ui 的 react），但它自己的 node_modules 不存在（例如刚 clone 的项目，.tenon 被
+// .gitignore 忽略）。不在 workspaces 中的框架包（例如没有 Electron 客户端的项目中的 @go-tenon/electron）不会被安装，不检查。
 func NeedsInstall(dir string) bool {
 	if _, err := os.Stat(filepath.Join(dir, "node_modules")); err != nil {
 		return true
 	}
-	root := filepath.Join(dir, filepath.FromSlash(JSDir))
-	entries, _ := os.ReadDir(root)
-	for _, e := range entries {
-		b, err := os.ReadFile(filepath.Join(root, e.Name(), "package.json"))
+	for _, pkg := range workspaces(dir) {
+		rel, err := filepath.Rel(filepath.Join(dir, filepath.FromSlash(JSDir)), pkg)
+		if err != nil || strings.HasPrefix(rel, "..") {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join(pkg, "package.json"))
 		if err != nil {
 			continue
 		}
@@ -84,11 +87,42 @@ func NeedsInstall(dir string) bool {
 		if json.Unmarshal(b, &m) != nil || len(m.Dependencies)+len(m.PeerDependencies) == 0 {
 			continue
 		}
-		if _, err := os.Stat(filepath.Join(root, e.Name(), "node_modules")); err != nil {
+		if _, err := os.Stat(filepath.Join(pkg, "node_modules")); err != nil {
 			return true
 		}
 	}
 	return false
+}
+
+// workspaces 返回项目 dir 的根 package.json 中 workspaces 列出的目录（展开通配符）。workspaces 可以是数组，
+// 也可以是带 packages 的对象。
+func workspaces(dir string) []string {
+	b, err := os.ReadFile(filepath.Join(dir, "package.json"))
+	if err != nil {
+		return nil
+	}
+	var m struct {
+		Workspaces json.RawMessage `json:"workspaces"`
+	}
+	if json.Unmarshal(b, &m) != nil || len(m.Workspaces) == 0 {
+		return nil
+	}
+	var patterns []string
+	if json.Unmarshal(m.Workspaces, &patterns) != nil {
+		var obj struct {
+			Packages []string `json:"packages"`
+		}
+		if json.Unmarshal(m.Workspaces, &obj) != nil {
+			return nil
+		}
+		patterns = obj.Packages
+	}
+	var dirs []string
+	for _, p := range patterns {
+		matches, _ := filepath.Glob(filepath.Join(dir, filepath.FromSlash(p)))
+		dirs = append(dirs, matches...)
+	}
+	return dirs
 }
 
 // isTest 报告 name 是否是包的测试文件（例如 form.test.tsx）：它们只在框架中运行，可能依赖项目中没有的包，不复制。
