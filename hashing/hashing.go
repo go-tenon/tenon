@@ -75,8 +75,21 @@ type Hasher struct {
 	cfg Config
 }
 
-// New 创建 Hasher。cfg 无效时 panic。
+// New 创建 Hasher。cfg 中没有设置的项（零值：driver、整组 argon2id 参数、bcrypt.cost）用 SetDefaults 的默认值，
+// 所以 New(Config{}) 与生产的默认配置相同，测试中只写要改的项，例如 Config{Driver: "bcrypt", Bcrypt: BcryptConfig{Cost: 4}}。
+// 补上默认值之后 cfg 仍然无效时 panic。
 func New(cfg Config) *Hasher {
+	var d Config
+	d.SetDefaults()
+	if cfg.Driver == "" {
+		cfg.Driver = d.Driver
+	}
+	if cfg.Argon2id == (Argon2idConfig{}) {
+		cfg.Argon2id = d.Argon2id
+	}
+	if cfg.Bcrypt.Cost == 0 {
+		cfg.Bcrypt.Cost = d.Bcrypt.Cost
+	}
 	if err := cfg.Validate(); err != nil {
 		panic("hashing: " + err.Error())
 	}

@@ -144,3 +144,27 @@ func TestConfig(t *testing.T) {
 	}()
 	hashing.New(bad)
 }
+
+// 没有设置的项使用默认值：零值的 Config 与默认配置相同，只设置 bcrypt 的成本也可以。
+func TestNewFillsDefaults(t *testing.T) {
+	t.Parallel()
+	for name, cfg := range map[string]hashing.Config{
+		"zero":   {},
+		"bcrypt": {Driver: "bcrypt", Bcrypt: hashing.BcryptConfig{Cost: 4}},
+	} {
+		h := hashing.New(cfg)
+		hash, err := h.Make("secret-pass")
+		if err != nil || !h.Check("secret-pass", hash) {
+			t.Fatalf("%s: hash %q, %v", name, hash, err)
+		}
+		if name == "zero" && !strings.HasPrefix(hash, "$argon2id$") || name == "bcrypt" && !strings.HasPrefix(hash, "$2a$04$") {
+			t.Errorf("%s: hash %q", name, hash)
+		}
+	}
+	defer func() {
+		if recover() == nil {
+			t.Error("invalid config did not panic")
+		}
+	}()
+	hashing.New(hashing.Config{Driver: "md5"})
+}

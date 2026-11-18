@@ -346,6 +346,83 @@ func (s *Store) Role(ctx context.Context, id, tenant string) (Role, error) {
 	return roles[0], nil
 }
 
+// RoleByName 返回 tenant 中名为 name 的角色：tenant 为 "" 时是全局角色，否则是该租户自定义的角色（不包括同名的全局角色）。
+// 不存在时返回 ErrRoleNotFound。预置的角色按名称引用，例如 roles.RoleByName(ctx, "owner", "")。
+func (s *Store) RoleByName(ctx context.Context, name, tenant string) (Role, error) {
+	q := s.db.NewSelect().Model((*roleRow)(nil)).Where("tenant = ?", tenant).Where("name = ?", name)
+	roles, err := s.loadRoles(ctx, q)
+	if err != nil {
+		return Role{}, err
+	}
+	if len(roles) == 0 {
+		return Role{}, ErrRoleNotFound.New()
+	}
+	return roles[0], nil
+}
+
+// EnsureRole 让 r.Tenant 中名为 r.Name 的角色与 r 一致：不存在时创建，存在时把说明和权限改成 r 的；返回带 ID 的角色。
+// 用于在代码中声明的预置角色（例如平台管理员、租户的所有者），应用启动时为每个预置角色调用一次：重复调用、多个实例同时调用
+// 都是安全的，代码中改了权限，下一次启动时生效。r.ID 不起作用。在界面中修改这样的角色，下一次调用时会被改回代码中的样子。
+func (s *Store) EnsureRole(ctx context.Context, r Role) (Role, error) {
+	if err := s.checkRole(r); err != nil {
+		return Role{}, err
+	}
+	newID, err := uuid.NewV7()
+	if err != nil {
+		return Role{}, errors.Wrap(err, "authz: new id")
+	}
+	perms := normalize(r.Permissions)
+	var id uuid.UUID
+	changed := false
+	err = s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		// 同时调用时只有一个插入成功，其余的等它提交后读到同一行。
+		now := time.Now().UTC()
+		row := &roleRow{ID: newID, Tenant: r.Tenant, Name: r.Name, Description: r.Description, CreatedAt: now, UpdatedAt: now}
+		res, err := tx.NewInsert().Model(row).On("CONFLICT ON CONSTRAINT " + roleNameConstraint + " DO NOTHING").Exec(ctx)
+		if err != nil {
+			return errors.Wrap(err, "authz: insert role")
+		}
+		if n, err := res.RowsAffected(); err != nil {
+			return errors.Wrap(err, "authz: insert role")
+		} else if n == 1 {
+			id = newID
+			return setPermissions(ctx, tx, id, perms)
+		}
+		var cur roleRow
+		err = tx.NewSelect().Model(&cur).Where("tenant = ?", r.Tenant).Where("name = ?", r.Name).For("UPDATE").Scan(ctx)
+		if err != nil {
+			return errors.Wrap(err, "authz: load role")
+		}
+		id = cur.ID
+		var have []string
+		err = tx.NewSelect().Model((*permissionRow)(nil)).Column("permission").Where("role_id = ?", id).OrderExpr("permission").Scan(ctx, &have)
+		if err != nil {
+			return errors.Wrap(err, "authz: load permissions")
+		}
+		if cur.Description == r.Description && slices.Equal(have, perms) {
+			return nil
+		}
+		changed = true
+		_, err = tx.NewUpdate().Model((*roleRow)(nil)).
+			Set("description = ?", r.Description).Set("updated_at = ?", now).Where("id = ?", id).Exec(ctx)
+		if err != nil {
+			return errors.Wrap(err, "authz: update role")
+		}
+		if _, err := tx.NewDelete().Model((*permissionRow)(nil)).Where("role_id = ?", id).Exec(ctx); err != nil {
+			return errors.Wrap(err, "authz: clear permissions")
+		}
+		return setPermissions(ctx, tx, id, perms)
+	})
+	if err != nil {
+		return Role{}, err
+	}
+	if changed {
+		s.invalidate(ctx, s.rolesTag())
+	}
+	r.ID, r.Permissions = id.String(), perms
+	return r, nil
+}
+
 // Roles 返回 tenant 中可以分配的角色：全局角色，以及 tenant 自定义的角色（tenant 为空时只有全局角色），
 // 全局角色在前，各自按名称排序。
 func (s *Store) Roles(ctx context.Context, tenant string) ([]Role, error) {

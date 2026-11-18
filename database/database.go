@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"github.com/cockroachdb/errors"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect/pgdialect"
@@ -149,6 +151,7 @@ func openPool(ctx context.Context, cfg Config, dsn string, o options) (*sql.DB, 
 	if o.readOnly {
 		poolCfg.ConnConfig.RuntimeParams["default_transaction_read_only"] = "on"
 	}
+	poolCfg.AfterConnect = scanTimesInUTC
 	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "database: create pool")
@@ -161,4 +164,11 @@ func openPool(ctx context.Context, cfg Config, dsn string, o options) (*sql.DB, 
 		return nil, nil, ErrUnavailable.Wrap(errors.Wrap(err, "database: ping"))
 	}
 	return sqlDB, &poolCfg.ConnConfig.Config, nil
+}
+
+// scanTimesInUTC 让连接 c 把读出的 timestamptz 放在 UTC 中。pgx 默认转成进程的本地时区，同一个时刻在不同时区的
+// 机器上编码成不同的 JSON，刚写入时又是调用方给出的时区，接口的输出不一致。时刻本身不变。
+func scanTimesInUTC(_ context.Context, c *pgx.Conn) error {
+	c.TypeMap().RegisterType(&pgtype.Type{Name: "timestamptz", OID: pgtype.TimestamptzOID, Codec: &pgtype.TimestamptzCodec{ScanLocation: time.UTC}})
+	return nil
 }

@@ -96,7 +96,7 @@ func Resolve(db bun.IDB, roles *authz.Store) identity.Resolver {
 }
 ```
 
-填充数据时创建全局角色，例如平台 `support`（含 `users:impersonate`、只读权限），租户模板 `owner` / `member`，见[授权](authorization.md#creating-roles)和[运营后台](tenancy.md#platform)。
+全局角色在代码中声明，应用启动时用 `EnsureRole` 确保存在，例如平台 `support`（含 `users:impersonate`、只读权限），租户模板 `owner` / `member`，见[预置角色](authorization.md#preset-roles)和[运营后台](tenancy.md#platform)。
 
 <a id="assembling"></a>
 ## 装配

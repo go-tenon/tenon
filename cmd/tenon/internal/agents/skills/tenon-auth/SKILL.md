@@ -14,7 +14,7 @@ description: Tenon 应用中的认证与授权：用 rest.RequireToken 保护路
 3. **资源归属写在业务规则中**：例如只有作者或管理员能修改，`if !subject.Can("articles:admin") && item.AuthorID != subject.ID { return ErrForbidden.New() }`。页面也要用的规则写成导出的授权函数（`CanEdit`），见 `.tenon/docs/security/authorization.md#ownership`、`.tenon/docs/security/authorization.md#authorization-functions`。
 4. **查询按调用者限定范围**：列表只返回调用者能看到的数据，见 `.tenon/docs/security/authorization.md#scoping-queries`。
 5. **权限名**：“资源:操作”，例如 `articles:read`、`articles:write`；`articles:*` 包含所有文章权限。把权限目录交给 `rest.Options.Permissions`，前端拿到每个权限的说明，见 `.tenon/docs/security/authorization.md#permission-catalog`。
-6. **角色**：需要管理员在后台分配角色时，用 `authz` 把角色和权限保存在数据库中，见 `.tenon/docs/security/authorization.md#roles`。
+6. **角色**：需要管理员在后台分配角色时，用 `authz` 把角色和权限保存在数据库中，见 `.tenon/docs/security/authorization.md#roles`。应用自带的角色（平台管理员、租户的所有者等）在代码中声明，启动时用 `EnsureRole` 确保存在，不在迁移中写固定的 ID，见 `.tenon/docs/security/authorization.md#preset-roles`。
 
 ## 登录与令牌
 

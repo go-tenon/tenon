@@ -222,6 +222,8 @@ _, err := db.NewUpdate().
 
 如果使用 `Set(...)` 显式指定更新表达式，需要同时设置 `Set("updated_at = ?", time.Now().UTC())`。`Model((*Article)(nil))` 和原生 SQL 绕过模型钩子，这些写入路径需要自行维护时间戳。迁移中的时间列不设默认值，时间总是由应用写入，这样测试才能用假时钟控制时间，见[控制时间](../testing/overview.md#controlling-time)。
 
+时间列用 `timestamptz`。`database.Open` 打开的连接把读出的时间放在 UTC 中，与运行程序的机器的时区无关，接口返回的时间因此总是 `...Z` 的形式。PostgreSQL 只保存到微秒：要让刚写入的值与之后读出的值完全相同（例如接口在创建后直接返回模型），写入前用 `time.Now().UTC().Truncate(time.Microsecond)`。
+
 <a id="running-queries"></a>
 ## 执行查询
 
