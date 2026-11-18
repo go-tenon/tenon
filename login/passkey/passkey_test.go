@@ -42,6 +42,7 @@ type device struct {
 	id        []byte // credential ID
 	user      []byte // 用户句柄
 	signCount uint32
+	synced    bool // 同步的 passkey：签名计数始终为 0
 	origin    string
 }
 
@@ -127,7 +128,9 @@ func (d *device) create(t *testing.T, c passkey.Ceremony) []byte {
 func (d *device) get(t *testing.T, c passkey.Ceremony) []byte {
 	t.Helper()
 	o := parse(t, c)
-	d.signCount++
+	if !d.synced {
+		d.signCount++
+	}
 	auth := d.authData(0x05, nil) // UP | UV
 	client := d.clientData(t, "webauthn.get", o.PublicKey.Challenge)
 	hash := sha256.Sum256(client)
@@ -326,12 +329,51 @@ func TestPasskeyRejects(t *testing.T) {
 		t.Fatalf("cleanup of fresh passkeys: %d %v", n, err)
 	}
 	passkey.SetClock(e.passkeys, func() time.Time { return time.Now().Add(25 * time.Hour) })
-	if n, err := e.passkeys.Cleanup(ctx, 10); err != nil || n != 1 {
+	// 一个没有绑定的 passkey，以及完成过的四个仪式：两次注册、d 和 stray 各一次通过校验的登录。
+	if n, err := e.passkeys.Cleanup(ctx, 10); err != nil || n != 5 {
 		t.Fatalf("cleanup: %d %v", n, err)
 	}
 	// 过期的仪式。
 	_, err = e.passkeys.FinishLogin(ctx, c.Token, d.get(t, c))
 	is(t, err, passkey.ErrInvalid)
+}
+
+// 同一个仪式的结果只能提交一次：同步的 passkey 签名计数始终为 0，重放靠记录完成过的仪式拒绝。
+func TestPasskeyReplay(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	e := newEnv(t, false)
+	d := newDevice(t)
+	d.synced = true
+	c, err := e.passkeys.BeginRegistration(ctx, identity.Ref{}, "alice@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	created := d.create(t, c)
+	proof, err := e.passkeys.FinishRegistration(ctx, c.Token, created, "iPhone")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.realm.Register(ctx, e.db, proof, ref("c1")); err != nil {
+		t.Fatal(err)
+	}
+	_, err = e.passkeys.FinishRegistration(ctx, c.Token, created, "iPhone")
+	is(t, err, passkey.ErrInvalid)
+
+	lc, err := e.passkeys.BeginLogin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signed := d.get(t, lc)
+	if out, err := e.passkeys.FinishLogin(ctx, lc.Token, signed); err != nil || out.Subject.Ref() != ref("c1") {
+		t.Fatalf("sign in: %+v %v", out, err)
+	}
+	_, err = e.passkeys.FinishLogin(ctx, lc.Token, signed)
+	is(t, err, passkey.ErrInvalid)
+	// 新的仪式照常登录。
+	if _, err := e.signIn(t, ctx, d); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // PerTenant：passkey 只能在注册时的租户中登录。
