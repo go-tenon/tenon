@@ -171,6 +171,7 @@ func TestSchemaMatchesConfig(t *testing.T) {
 func TestClients(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
+	write(t, dir, "cmd/blog/main.go", "package main\n")
 	write(t, dir, "apps/admin/vite.config.ts", "")
 	write(t, dir, "apps/admin/package.json", `{"tenon": {"base": "/admin/"}}`)
 	write(t, dir, "clients/admin-desktop/tenon.json", `{"kind": "electron", "frontend": "admin"}`)
