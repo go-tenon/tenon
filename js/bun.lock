@@ -44,6 +44,10 @@
       "name": "@go-tenon/client",
       "version": "0.0.0",
     },
+    "host": {
+      "name": "@go-tenon/host",
+      "version": "0.0.0",
+    },
     "start": {
       "name": "@go-tenon/start",
       "version": "0.0.0",
@@ -201,6 +205,8 @@
     "@fontsource/noto-sans-sc": ["@fontsource/noto-sans-sc@5.2.8", "", {}, "sha512-8T8HxIS3uAMCfaQawKRH/6yYZ1oRnJZB/CrGwfxGgJa+zAOBgx2lqZMiTY/WbQpLGlPRqX4zHXJYI09CI2q6tA=="],
 
     "@go-tenon/client": ["@go-tenon/client@workspace:client"],
+
+    "@go-tenon/host": ["@go-tenon/host@workspace:host"],
 
     "@go-tenon/start": ["@go-tenon/start@workspace:start"],
 
