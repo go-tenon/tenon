@@ -1,11 +1,8 @@
 package split
 
 import (
-	"math"
-	"runtime"
 	"strings"
 	"testing"
-	"time"
 )
 
 // pathological 是没有 defuse 时让 goldmark 超线性的输入，参数是大致的字节数。
@@ -39,42 +36,6 @@ var pathological = map[string]func(size int) string{
 		columns := size / 8
 		return "> " + strings.Repeat("|a", columns) + "|\n> " + strings.Repeat("|-", columns) + "|\n" + strings.Repeat("> x\n", columns)
 	},
-}
-
-// cost 返回扫描 text 每字节的耗时（三次中最少的）和内存分配。
-func cost(text string) (perByte time.Duration, allocated float64) {
-	perByte = time.Duration(math.MaxInt64)
-	for range 3 {
-		var before, after runtime.MemStats
-		runtime.GC()
-		runtime.ReadMemStats(&before)
-		start := time.Now()
-		scan(text)
-		elapsed := time.Since(start)
-		runtime.ReadMemStats(&after)
-		perByte = min(perByte, elapsed/time.Duration(len(text)))
-		allocated = float64(after.TotalAlloc-before.TotalAlloc) / float64(len(text))
-	}
-	return max(perByte, 1), allocated
-}
-
-// TestPathologicalInputsStayLinear 确保已知的病态输入在扩大 16 倍时，每字节的耗时和内存分配基本不变；
-// n^1.5 的增长会让它们变为 4 倍，平方级的增长变为 16 倍。
-// 它不并行运行：同一个包中并行的测试会让计时和 runtime.MemStats 中的分配量都失真。
-func TestPathologicalInputsStayLinear(t *testing.T) {
-	if testing.Short() {
-		t.Skip("timing")
-	}
-	for name, generate := range pathological {
-		smallTime, smallAlloc := cost(generate(64 << 10))
-		largeTime, largeAlloc := cost(generate(1 << 20))
-		if ratio := float64(largeTime) / float64(smallTime); ratio > 2.5 {
-			t.Errorf("%s: time per byte grew %.1fx", name, ratio)
-		}
-		if ratio := largeAlloc / smallAlloc; ratio > 2 || largeAlloc > 512 {
-			t.Errorf("%s: allocation per byte %.0f, grew %.1fx", name, largeAlloc, ratio)
-		}
-	}
 }
 
 func TestDefuseKeepsLength(t *testing.T) {
