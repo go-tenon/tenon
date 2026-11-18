@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -57,8 +58,8 @@ type Scope struct {
 // Options 是 New 的选项。
 type Options struct {
 	Issuer              string        // 授权服务器的标识，也是各端点的地址前缀，例如 https://blog.example.com。必须是不带查询参数的 https 地址（本机开发可以用 http://localhost）。应用部署在路径之下时带上路径，例如 https://example.com/blog：Routes 挂在这个路径上，元数据仍然在域名的根上，见 MetadataPath。
-	Resources           []string      // 令牌可以用于的资源，例如 MCP 服务的地址 https://blog.example.com/mcp，至少一个。授权请求的 resource 参数必须是其中之一；只有一个时可以省略。
-	Scopes              []Scope       // 客户端可以申请的范围，至少一个。客户端不传 scope 时申请全部范围。
+	Resources           []string      // 令牌可以用于的资源，例如 MCP 服务的地址 https://blog.example.com/mcp。授权请求的 resource 参数必须是其中之一；只有一个时可以省略。为空时只接受应用自己的客户端（Client.FirstParty），与 Scopes 同时为空或同时设置。
+	Scopes              []Scope       // 客户端可以申请的范围，与 Resources 同时设置。客户端不传 scope 时申请全部范围。
 	Clients             []Client      // 预先登记的客户端。https 地址形式的 client_id 即来即用，按 Client ID Metadata Document 取回。
 	ConsentURL          string        // 单页应用中同意页的地址，必须设置，例如 /oauth/consent，也可以是完整的 https 地址。授权端点校验请求后跳到这里，附上 request 参数；请求无法跳回客户端时附上 error 参数（错误码，例如 oauth.invalid_client）。同意页用 Register 注册的接口读取请求、提交用户的选择。
 	DynamicRegistration bool          // 开启动态客户端注册（RFC 7591，POST /oauth/register）。MCP 客户端优先使用 Client ID Metadata Document，需要兼容只支持注册的客户端时开启；注册接口是公开的，要为它限流，并定时调用 CleanupClients
@@ -68,7 +69,8 @@ type Options struct {
 	Logger              *slog.Logger  // 记录签发令牌和取回元数据失败，nil 表示 slog.Default()。
 }
 
-// Server 是 OAuth 2.1 授权服务器：用户在单页应用的同意页上同意后，为 OAuth 客户端签发 apitoken 的 OAuth 令牌。可以并发使用。
+// Server 是 OAuth 2.1 授权服务器：用户在单页应用的同意页上同意后，为第三方客户端签发 apitoken 的 OAuth 令牌，
+// 为应用自己的客户端（Client.FirstParty）签发登录 token。可以并发使用。
 type Server struct {
 	db       bun.IDB
 	tokens   *apitoken.Store
@@ -136,10 +138,12 @@ func validate(opts Options) error {
 		return errors.Newf("issuer %q must be a URL such as https://blog.example.com, without query or fragment", opts.Issuer)
 	case u.Scheme != "https" && !(u.Scheme == "http" && loopback(u.Hostname())):
 		return errors.Newf("issuer %q must use https", opts.Issuer)
-	case len(opts.Resources) == 0:
-		return errors.New("at least one resource is required")
-	case len(opts.Scopes) == 0:
-		return errors.New("at least one scope is required")
+	case (len(opts.Resources) == 0) != (len(opts.Scopes) == 0):
+		return errors.New("resources and scopes go together: set both for third-party clients, or neither when only first-party clients sign in")
+	case len(opts.Resources) == 0 && !slices.ContainsFunc(opts.Clients, func(c Client) bool { return c.FirstParty }):
+		return errors.New("at least one resource is required, unless a first-party client is registered")
+	case len(opts.Resources) == 0 && opts.DynamicRegistration:
+		return errors.New("dynamic registration needs resources and scopes")
 	case !consentURL(opts.ConsentURL):
 		return errors.Newf("consent URL %q must be a path such as /oauth/consent or an https URL", opts.ConsentURL)
 	}
@@ -218,7 +222,7 @@ func (s *Server) encodeMetadata() []byte {
 		"code_challenge_methods_supported":               []string{"S256"},
 		"token_endpoint_auth_methods_supported":          []string{"none"},
 		"revocation_endpoint_auth_methods_supported":     []string{"none"},
-		"client_id_metadata_document_supported":          true,
+		"client_id_metadata_document_supported":          len(s.opts.Resources) > 0,
 		"authorization_response_iss_parameter_supported": true,
 	}
 	if s.opts.DynamicRegistration {

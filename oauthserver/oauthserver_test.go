@@ -108,6 +108,17 @@ func setupWith(t *testing.T, edit func(*oauthserver.Options)) *env {
 		r.Mount("/api", apiRouter)
 	})
 
+	login, err := tokens.Login(context.Background(), editor, apitoken.Device{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	consentURL, _ := url.Parse(opts.ConsentURL)
+	e := &env{db: db, tokens: tokens, fake: fake, router: router, srv: srv, login: login, base: base, consentPage: consentURL.Path}
+	if len(opts.Resources) == 0 {
+		return e
+	}
+	e.resource = opts.Resources[0]
+
 	tools := mcpx.New(mcpx.Options{Name: "blog"})
 	mcpx.Register(tools, mcpx.Tool{Name: "whoami", Description: "当前主体", Permissions: []string{"articles:read"}, ReadOnly: true},
 		func(ctx context.Context, _ struct{}) (map[string]any, error) {
@@ -120,13 +131,7 @@ func setupWith(t *testing.T, edit func(*oauthserver.Options)) *env {
 	router.Handle(resourceURL.Path, mcpx.Handler(tools, mcpx.HandlerOptions{
 		Validate: tokens.ValidateFor(res.URL), Accounts: identity.Accounts{"editor": editors}, Resource: &res,
 	}))
-	login, err := tokens.Login(context.Background(), editor, apitoken.Device{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	consentURL, _ := url.Parse(opts.ConsentURL)
-	return &env{db: db, tokens: tokens, fake: fake, router: router, srv: srv, login: login,
-		base: base, resource: opts.Resources[0], consentPage: consentURL.Path}
+	return e
 }
 
 // do 发出请求；token 不为空时带上 Bearer，body 不为 nil 时编码为 JSON。
@@ -486,9 +491,14 @@ func TestNewPanics(t *testing.T) {
 	tokens := apitoken.NewStore(db, apitoken.Config{Lifetime: time.Hour})
 	ok := oauthserver.Options{Issuer: issuer, Resources: []string{resource}, Scopes: []oauthserver.Scope{{Name: "articles:read"}}, ConsentURL: consentPage}
 	for name, edit := range map[string]func(*oauthserver.Options){
-		"issuer query": func(o *oauthserver.Options) { o.Issuer = issuer + "?a=1" },
-		"http issuer":  func(o *oauthserver.Options) { o.Issuer = "http://example.com" },
-		"no resources": func(o *oauthserver.Options) { o.Resources = nil },
+		"issuer query":                        func(o *oauthserver.Options) { o.Issuer = issuer + "?a=1" },
+		"http issuer":                         func(o *oauthserver.Options) { o.Issuer = "http://example.com" },
+		"no resources":                        func(o *oauthserver.Options) { o.Resources = nil },
+		"no resources, no first-party client": func(o *oauthserver.Options) { o.Resources, o.Scopes = nil, nil },
+		"first-party only with registration": func(o *oauthserver.Options) {
+			o.Resources, o.Scopes, o.DynamicRegistration = nil, nil, true
+			o.Clients = []oauthserver.Client{desktop}
+		},
 		"bad resource": func(o *oauthserver.Options) { o.Resources = []string{"ftp://example.com/mcp"} },
 		"no scopes":    func(o *oauthserver.Options) { o.Scopes = nil },
 		"bad scope":    func(o *oauthserver.Options) { o.Scopes = []oauthserver.Scope{{Name: "a b"}} },
@@ -513,6 +523,7 @@ func TestNewPanics(t *testing.T) {
 		}()
 	}
 	oauthserver.New(db, tokens, ok)
+	oauthserver.New(db, tokens, oauthserver.Options{Issuer: issuer, Clients: []oauthserver.Client{desktop}, ConsentURL: consentPage})
 }
 
 // 客户端换一种认证方式重试时，同一个授权码仍然可以使用，例如 golang.org/x/oauth2 先用 Basic 认证、失败后改放表单。
@@ -606,5 +617,89 @@ func TestErase(t *testing.T) {
 	}
 	if err := oauthserver.Erase(ctx, e.db, identity.Ref{}); err == nil {
 		t.Fatal("expected error for empty subject")
+	}
+}
+
+// desktop 是应用自己的桌面端，回调到本机地址。
+var desktop = oauthserver.Client{ID: "blog-desktop", Name: "博客桌面端", RedirectURIs: []string{"http://127.0.0.1/callback"}, FirstParty: true}
+
+// desktopQuery 是桌面端的授权请求：不带范围和资源，回调地址带着本次的端口。
+func desktopQuery(edit func(url.Values)) url.Values {
+	q := url.Values{
+		"response_type": {"code"}, "client_id": {desktop.ID}, "redirect_uri": {"http://127.0.0.1:53123/callback"},
+		"state": {"s1"}, "code_challenge": {challenge(verifier)}, "code_challenge_method": {"S256"},
+	}
+	if edit != nil {
+		edit(q)
+	}
+	return q
+}
+
+// 应用自己的客户端：同意页只确认登录，换到的是登录 token，可以访问整个 API，出现在设备列表中。
+func TestFirstPartyClient(t *testing.T) {
+	t.Parallel()
+	e := setupWith(t, func(o *oauthserver.Options) { o.Clients = append(o.Clients, desktop) })
+	ctx := context.Background()
+
+	q := desktopQuery(nil)
+	status, c := e.consent(e.login, e.request(t, q))
+	if status != http.StatusOK || c["first_party"] != true || c["client_name"] != "博客桌面端" || c["redirect_host"] != "127.0.0.1:53123" ||
+		c["resource"] != "" || fmt.Sprint(c["scopes"]) != "[]" {
+		t.Fatalf("consent: %d %v", status, c)
+	}
+	back := e.approve(t, q, true)
+	if back.Host != "127.0.0.1:53123" || back.Query().Get("state") != "s1" || back.Query().Get("code") == "" {
+		t.Fatalf("redirect %s", back)
+	}
+	form := url.Values{
+		"grant_type": {"authorization_code"}, "code": {back.Query().Get("code")}, "client_id": {desktop.ID},
+		"redirect_uri": {q.Get("redirect_uri")}, "code_verifier": {verifier},
+	}
+	status, body := e.exchange(t, form)
+	access, _ := body["access_token"].(string)
+	if status != http.StatusOK || access == "" || body["token_type"] != "Bearer" || body["expires_in"] != nil {
+		t.Fatalf("token: %d %v", status, body)
+	}
+	sub, err := e.tokens.Validate(ctx, access)
+	if err != nil || sub.ID != editor.ID || sub.Scopes != nil {
+		t.Fatalf("login token: %+v %v", sub, err)
+	}
+	list, err := e.tokens.List(ctx, editor)
+	if err != nil || !slices.ContainsFunc(list, func(tk apitoken.Token) bool {
+		return tk.Kind == apitoken.KindLogin && tk.ClientID == "" && tk.IP == "192.0.2.1"
+	}) {
+		t.Fatalf("tokens %+v %v", list, err)
+	}
+
+	// 应用自己的客户端不申请范围和资源，带着时跳回客户端。
+	for _, param := range []string{"scope", "resource"} {
+		u := e.authorize(t, desktopQuery(func(q url.Values) { q.Set(param, "x") }))
+		if u.Host != "127.0.0.1:53123" || u.Query().Get("error") != "invalid_request" {
+			t.Fatalf("%s: %s", param, u)
+		}
+	}
+}
+
+// 没有设置 Resources 时只接受应用自己的客户端，其他客户端留在同意页上报错，也不去取回客户端元数据。
+func TestFirstPartyOnly(t *testing.T) {
+	t.Parallel()
+	e := setupWith(t, func(o *oauthserver.Options) {
+		o.Resources, o.Scopes = nil, nil
+		o.Clients = []oauthserver.Client{desktop}
+	})
+	if back := e.approve(t, desktopQuery(nil), true); back.Query().Get("code") == "" {
+		t.Fatalf("redirect %s", back)
+	}
+	u := e.authorize(t, authorizeQuery(nil))
+	if u.Path != e.consentPage || u.Query().Get("error") != "oauth.invalid_client" {
+		t.Fatalf("third-party client: %s", u)
+	}
+	if n := len(e.fake.Requests()); n != 0 {
+		t.Fatalf("fetched client metadata %d times", n)
+	}
+	var meta map[string]any
+	if err := json.Unmarshal(e.do(http.MethodGet, e.srv.MetadataPath(), "", nil).Body.Bytes(), &meta); err != nil ||
+		meta["client_id_metadata_document_supported"] != false {
+		t.Fatalf("metadata %v %v", meta, err)
 	}
 }

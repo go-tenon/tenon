@@ -9,6 +9,10 @@
 // 自研的客户端在 Options.Clients 中预先登记。只支持公开客户端（token_endpoint_auth_method 为 none）和授权码流程，
 // 不发刷新令牌：令牌按使用滑动过期，到期后客户端重新授权。
 //
+// 应用自己的桌面端、App 在 Options.Clients 中登记并设置 Client.FirstParty：用户在系统浏览器中登录，
+// 同意页只确认登录，客户端换到的是 apitoken 的登录 token，与密码登录得到的相同。只给自己的客户端登录时，
+// Options.Resources 和 Options.Scopes 都不设置。
+//
 //	srv := oauthserver.New(db, tokens, oauthserver.Options{
 //	    Issuer:     "https://blog.example.com",
 //	    Resources:  []string{"https://blog.example.com/mcp"},

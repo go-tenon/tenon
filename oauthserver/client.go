@@ -15,11 +15,12 @@ import (
 // maxMetadata 是取回的客户端元数据文档的最大字节数。
 const maxMetadata = 64 << 10
 
-// Client 是预先登记的客户端，例如自研的 agent。
+// Client 是预先登记的客户端，例如自研的 agent，或者应用自己的桌面端、App。
 type Client struct {
 	ID           string   // 客户端 ID，使用 https 地址以外的字符串（https 地址的 client_id 按 Client ID Metadata Document 处理）。
 	Name         string   // 显示在同意页上。
-	RedirectURIs []string // 允许的回调地址，按完整地址匹配；本机地址（localhost、127.0.0.1、[::1]）忽略端口。
+	RedirectURIs []string // 允许的回调地址，按完整地址匹配；本机地址（localhost、127.0.0.1、[::1]）忽略端口。App 可以用自定义 scheme，例如 com.example.app:/oauth/callback。
+	FirstParty   bool     // 应用自己的客户端（桌面端、App）：授权请求不带范围和资源，同意页只确认“在这个客户端上登录”；换到的是 apitoken 的登录 token，与密码登录得到的相同，代表一台设备，可以访问整个 API。
 }
 
 // client 是一次授权中确定的客户端。
@@ -27,6 +28,7 @@ type client struct {
 	id           string
 	name         string
 	redirectURIs []string
+	firstParty   bool
 }
 
 // clientMetadata 是 Client ID Metadata Document 中本包使用的字段。
@@ -38,8 +40,16 @@ type clientMetadata struct {
 }
 
 // resolve 返回 id 对应的客户端：预先登记的客户端，或者从 https 地址取回 Client ID Metadata Document。
+// 没有设置 Options.Resources 时只接受应用自己的客户端。
 func (s *Server) resolve(ctx context.Context, id string) (*client, error) {
-	if c, ok := s.clients[id]; ok {
+	c, ok := s.clients[id]
+	if ok && c.FirstParty {
+		return &client{id: c.ID, name: c.Name, redirectURIs: c.RedirectURIs, firstParty: true}, nil
+	}
+	if len(s.opts.Resources) == 0 {
+		return nil, errors.Newf("client %q is not first-party, and no resources are configured for other clients", id)
+	}
+	if ok {
 		return &client{id: c.ID, name: c.Name, redirectURIs: c.RedirectURIs}, nil
 	}
 	if s.opts.DynamicRegistration && strings.HasPrefix(id, registeredPrefix) {

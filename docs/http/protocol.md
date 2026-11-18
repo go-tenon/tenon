@@ -11,6 +11,7 @@
 - [错误](#errors)
 - [分页、筛选与排序](#pagination)
 - [会话](#sessions)
+- [原生客户端](#native-clients)
 - [事件流](#event-streams)
 - [实时频道](#realtime)
 - [后台操作](#operations)
@@ -174,7 +175,7 @@ token 是不透明的随机字符串，服务端每个请求查一次表，撤�
 | 客户端 | 携带方式 |
 | --- | --- |
 | 浏览器中的页面 | 登录接口把 token 写进会话 cookie：`HttpOnly`、`Secure`、`SameSite=Lax`、`Path=/`，名称以 `__Host-` 开头（默认 `__Host-session`）。浏览器随同源请求自动带上它，页面上的脚本读不到也不需要读它 |
-| App、桌面端、小程序、脚本 | 登录接口在响应体中返回 token，保存在设备的安全存储中，请求时放在 `Authorization: Bearer` 中 |
+| App、桌面端、小程序、脚本 | 登录接口在响应体中返回 token，保存在设备的安全存储中，请求时放在 `Authorization: Bearer` 中。App 和桌面端通常在系统浏览器中登录，见[原生客户端](#native-clients) |
 
 浏览器的规则：
 
@@ -184,6 +185,47 @@ token 是不透明的随机字符串，服务端每个请求查一次表，撤�
 4. 用 cookie 认证的写请求（GET、HEAD、OPTIONS 以外）必须来自同源的页面：服务端按浏览器发送的 `Sec-Fetch-Site` 判断，没有时比较 `Origin`，否则返回 `403 http.cross_site`。浏览器会自动带上这两个请求头，页面不需要做任何事，也不需要 CSRF token。会设置 cookie 的登录接口同样只接受同源页面的请求。
 
 登出接口撤销当前这次登录，并清除 cookie。服务端也可能在用户修改密码、管理员停用账号时撤销登录，之后的请求返回 `401`。
+
+<a id="native-clients"></a>
+## 原生客户端
+
+安装在设备上的客户端（桌面端、App，用什么语言和界面技术都一样）按这一节登录。登录放在系统浏览器中完成（RFC 8252）：密码、第三方登录、企业单点登录、二次验证都在网页上，客户端不用各做一遍，也接触不到用户的密码。客户端由应用在授权服务器中登记，见[应用自己的客户端](../security/oauth-server.md#first-party-clients)。
+
+1. 客户端生成 `code_verifier`（43–128 个字符的随机串）、它的 S256 摘要 `code_challenge`，以及随机的 `state`。
+2. 在系统浏览器中打开授权地址，不带 `scope` 和 `resource`：
+
+   ```text
+   https://example.com/oauth/authorize?response_type=code&client_id=admin-desktop
+     &redirect_uri=http://127.0.0.1:53123/callback&state=…&code_challenge=…&code_challenge_method=S256
+   ```
+
+3. 用户在网页上登录并确认，浏览器跳回回调地址，带着 `code`、`state` 和 `iss`。客户端检查 `state` 与第 1 步相同、`iss` 是应用的地址。出错时带着 `error`（例如 `access_denied`）。
+4. 客户端用表单换取 token：
+
+   ```http
+   POST /oauth/token
+   Content-Type: application/x-www-form-urlencoded
+
+   grant_type=authorization_code&code=…&client_id=admin-desktop&redirect_uri=http://127.0.0.1:53123/callback&code_verifier=…
+   ```
+
+   响应是 `{"access_token": "…", "token_type": "Bearer"}`。这是登录 token，与密码登录得到的相同。
+
+回调地址按客户端的种类选择：
+
+| 客户端 | 回调地址 |
+| --- | --- |
+| 桌面端 | `http://127.0.0.1:<端口>/callback`：在随机端口上临时监听，收到回调后关闭 |
+| App | 自定义 scheme（例如 `com.example.admin:/oauth/callback`）或 Universal Link / App Link |
+
+之后：
+
+- **保存 token**：放在系统的安全存储中，例如 macOS 和 iOS 的钥匙串、Windows 的凭据管理器、Android Keystore，请求时放在 `Authorization: Bearer` 中。收到 `401` 时删除它，回到登录。
+- **退出**：调用应用的退出接口，或者把 token 交给 `POST /oauth/revoke`（表单 `token=…`），再删除本地的 token。
+- **版本**：每个请求带上 `X-App-Version`，见 [App 版本](#app-version)。同一个应用有多个客户端时，每个客户端用自己的平台名，例如 `admin-desktop`、`ios`。
+- **实时频道**：连接时传入同一个 token，见[实时频道](#realtime)。
+- **自己网站的页面**：在系统浏览器中打开，不放进客户端内嵌的网页视图。登录同样不放进内嵌的网页视图：应用能读到其中输入的密码，Google 等第三方登录也会拒绝。
+- **深度链接**：客户端中的页面使用与网页相同的路径，例如 `/admin/orders/123`。邮件和通知中只生成一种链接，各客户端把它对应到自己的页面。
 
 <a id="event-streams"></a>
 ## 事件流
