@@ -1,6 +1,13 @@
 // 应用装配：把 Router、QueryClient 和会话接到一起，提供登录检查、权限检查、菜单和面包屑。
 
-import { clearOnIdentityChange, createSession, describeError, type ErrorInfo, type Session } from "@go-tenon/client"
+import {
+  clearOnIdentityChange,
+  createSession,
+  describeError,
+  type ErrorInfo,
+  grants,
+  type Session,
+} from "@go-tenon/client"
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query"
 import {
   type AnyRoute,
@@ -67,7 +74,7 @@ export interface AppOptions<TRouteTree extends AnyRoute> {
   loginPath?: string
   /** 登录后没有回跳地址时的去处；默认是菜单中第一个可以进入的页面，没有时为 /。 */
   homePath?: string
-  /** 读取当前身份的权限，通常调用应用的“当前用户”接口。不提供时没有任何权限。 */
+  /** 读取当前身份的权限，通常调用应用的“当前用户”接口，原样返回账号的权限，其中可以有通配符。不提供时没有任何权限。 */
   permissions?: () => Promise<Iterable<string>>
   /** 不传时创建一个：4xx 不重试，其他错误重试 2 次。 */
   queryClient?: QueryClient
@@ -261,7 +268,7 @@ export function createApp<TRouteTree extends AnyRoute>(options: AppOptions<TRout
       let home = options.homePath
       if (!home) {
         const held = await loadPermissions()
-        home = firstPage(buildMenu(routeInfos(router.routesById), (p) => held.has(p))) ?? "/"
+        home = firstPage(buildMenu(routeInfos(router.routesById), (p) => grants(held, p))) ?? "/"
       }
       const to = safeRedirect(target, home)
       await router.navigate({ href: to.startsWith(loginPath) ? home : to })
@@ -277,7 +284,7 @@ export function createApp<TRouteTree extends AnyRoute>(options: AppOptions<TRout
     route.update({
       beforeLoad: async (ctx: { location: ParsedLocation }) => {
         await guard(ctx.location)
-        if (!(await loadPermissions()).has(permission)) throw new ForbiddenError(permission)
+        if (!grants(await loadPermissions(), permission)) throw new ForbiddenError(permission)
         return before?.(ctx as never)
       },
     } as never)
@@ -365,11 +372,11 @@ export function useApp(): App {
   return app
 }
 
-/** 当前身份的权限：返回 can(permission)。权限读取完成之前都返回 false。 */
+/** 当前身份的权限：返回 can(permission)，按 grants 匹配，权限中的 *、articles:* 这类通配符有效。权限读取完成之前都返回 false。 */
 export function useCan(): (permission: string) => boolean {
   const app = useApp()
   const { data } = useQuery({ ...app.permissionsQuery(), enabled: app.signedIn() })
-  return useMemo(() => (permission: string) => data?.has(permission) ?? false, [data])
+  return useMemo(() => (permission: string) => (data ? grants(data, permission) : false), [data])
 }
 
 /** 是否已经登录：登录、退出时更新，例如页头在“登录”和“退出”之间切换。 */
