@@ -103,6 +103,36 @@ func TestRelayFailover(t *testing.T) {
 	}
 }
 
+// 没有任务时，复制槽的确认位置也随业务写入前进：否则任务少的库会一直保留 WAL，直到槽失效。
+func TestRelayAdvancesWithoutJobs(t *testing.T) {
+	t.Parallel()
+	db := openDB(t)
+	ctx := context.Background()
+	start(t, db, queuetest.Config(t), func(*queue.Worker) {})
+	eventually(t, 5*time.Second, func() bool { return slotActive(t, db) })
+
+	// 只写业务表，不发任务。
+	if _, err := db.ExecContext(ctx, "CREATE TABLE notes (id bigserial PRIMARY KEY, body text)"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, "INSERT INTO notes (body) SELECT repeat('x', 100) FROM generate_series(1, 1000)"); err != nil {
+		t.Fatal(err)
+	}
+	var written string
+	if err := db.NewRaw("SELECT pg_current_wal_lsn()::text").Scan(ctx, &written); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, 15*time.Second, func() bool {
+		var caughtUp bool
+		err := db.NewRaw("SELECT confirmed_flush_lsn >= ?::pg_lsn FROM pg_replication_slots WHERE database = current_database()", written).
+			Scan(ctx, &caughtUp)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return caughtUp
+	})
+}
+
 // 复制槽不存在（没有执行迁移或被删除）时 Run 返回错误，问题在启动时就暴露出来。
 func TestRunWithoutSlot(t *testing.T) {
 	t.Parallel()

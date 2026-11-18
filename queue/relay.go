@@ -67,6 +67,10 @@ func (w *Worker) relay(ctx context.Context) {
 // 任务按事务提交的顺序到达。一个事务的任务全部收到（Commit）之后才会发出；JetStream 确认之后，才向 PostgreSQL 确认
 // 这个事务的位置。连接中断时，没有确认的事务会被再次读到，重新发布的任务在去重窗口内被 JetStream 丢弃；
 // 窗口之外的重复投递与处理函数需要能重复执行的约定一致。
+//
+// 不含任务的事务不会发到这里（publication 是空的），所以确认位置还要随 PostgreSQL 的心跳前进：心跳带着 walsender
+// 已经处理到的位置，在它之前提交的事务都已经发来。不在事务中途时，把这个位置记为已提交，下一次 flush 发出已收到的任务后
+// 一起确认。否则任务少、业务写入多的库，复制槽会一直保留 WAL，直到超过 max_slot_wal_keep_size 而失效。
 func (w *Worker) stream(ctx context.Context) error {
 	cfg, err := replicationConfig(ctx, w.db, w.cfg.ReplicationDSN)
 	if err != nil {
@@ -89,6 +93,7 @@ func (w *Worker) stream(ctx context.Context) error {
 
 	var (
 		open, ready          []relayed // 当前事务中的任务；已提交、还没发出的任务
+		inTx                 bool      // 收到了 Begin，还没收到 Commit
 		readySince           time.Time // ready 中第一个任务到达的时间
 		committed, confirmed pglogrepl.LSN
 		nextReport           = time.Now().Add(standbyInterval)
@@ -153,6 +158,9 @@ func (w *Worker) stream(ctx context.Context) error {
 				if err != nil {
 					return errors.Wrap(err, "queue: parse keepalive")
 				}
+				if !inTx && pkm.ServerWALEnd > committed {
+					committed = pkm.ServerWALEnd
+				}
 				if pkm.ReplyRequested {
 					if err := report(ctx); err != nil {
 						return err
@@ -170,6 +178,7 @@ func (w *Worker) stream(ctx context.Context) error {
 				switch msg := msg.(type) {
 				case *pglogrepl.BeginMessage:
 					open = open[:0]
+					inTx = true
 				case *pglogrepl.LogicalDecodingMessage:
 					if topic, ok := strings.CutPrefix(msg.Prefix, MessagePrefix); ok {
 						// Content 引用接收缓冲区，下一次接收时会被覆盖。
@@ -181,7 +190,8 @@ func (w *Worker) stream(ctx context.Context) error {
 					}
 					ready = append(ready, open...)
 					open = open[:0]
-					committed = msg.TransactionEndLSN
+					inTx = false
+					committed = max(committed, msg.TransactionEndLSN)
 					if len(ready) >= relayBatch || len(ready) > 0 && !time.Now().Before(readySince.Add(relayDelay)) {
 						if err := flush(ctx); err != nil {
 							return err
