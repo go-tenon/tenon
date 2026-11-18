@@ -241,7 +241,7 @@ func Register(api *rest.API, s *Store, auth func(*huma.Operation)) {
 	api.Resource(rest.Resource{
 		Name: "article", List: "article-list", Get: "article-get", Create: "article-create", Update: "article-update", Delete: "article-delete",
 		Columns: []string{"title", "status", "published_at", "featured"}, Filters: []string{"title", "status"},
-		Actions: []rest.Action{{Name: "publish", Operation: "article-publish", Confirm: true}},
+		Actions: []rest.Action{{Name: "publish", Operation: "article-publish", Confirm: true, When: map[string][]string{"status": {string(StatusDraft)}}}},
 	})
 	// 博客的设置页面：显示文字是 blog.title、blog.fields.<字段> 的消息。
 	rest.Register(api, op("blog-settings-get", http.MethodGet, "/settings", "博客设置", true), s.getSettings)

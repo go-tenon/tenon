@@ -45,7 +45,7 @@ export const resources = {
       { name: "tags", type: "array", items: "string", nullable: true },
     ],
     actions: [
-      { name: "publish", operation: ["article", "publish"], permissions: [], confirm: true, danger: false },
+      { name: "publish", operation: ["article", "publish"], permissions: [], confirm: true, danger: false, when: { "status": ["draft"] } },
     ],
     labels: {
       "en": {

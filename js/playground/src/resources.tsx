@@ -24,6 +24,7 @@ type Customer = {
   credit: number
   joined: string
   last_order_at?: string
+  api_key: string
 }
 
 const levels = ["普通", "银卡", "金卡", "钻石"]
@@ -38,6 +39,7 @@ let customers: Customer[] = Array.from({ length: 46 }, (_, i) => ({
   credit: 5000 + ((i * 1733) % 50000),
   joined: `2025-${String((i % 12) + 1).padStart(2, "0")}-${String((i % 27) + 1).padStart(2, "0")}`,
   last_order_at: i % 3 === 0 ? undefined : `2026-11-${String((i % 16) + 1).padStart(2, "0")}T0${i % 9}:30:00Z`,
+  api_key: i % 4 === 2 ? "" : `sk-live-${(i * 7919).toString(36).padStart(6, "0")}${i}abcd`,
 }))
 
 const delay = <T,>(v: T) => new Promise<T>((r) => setTimeout(() => r(v), 150))
@@ -75,6 +77,10 @@ const client = {
       customers = customers.filter((c) => c.id !== id)
       return delay(undefined)
     },
+    async enable(id: string) {
+      customers = customers.map((c) => (c.id === id ? { ...c, active: true } : c))
+      return delay(undefined)
+    },
     async disable(id: string) {
       customers = customers.map((c) => (c.id === id ? { ...c, active: false } : c))
       return delay(undefined)
@@ -97,6 +103,7 @@ const customerForm = [
   { name: "credit", type: "integer" },
   { name: "joined", type: "string", format: "date" },
   { name: "active", type: "boolean" },
+  { name: "api_key", type: "string", format: "password" },
 ] as const
 
 const customerDef: ResourceDef = {
@@ -117,6 +124,7 @@ const customerDef: ResourceDef = {
     { name: "active", type: "boolean", required: true },
     { name: "credit", type: "integer", sortable: true },
     { name: "last_order_at", type: "string", format: "date-time", sortable: true },
+    { name: "api_key", type: "string", format: "password" },
   ],
   filters: [
     { name: "name", type: "string" },
@@ -125,7 +133,25 @@ const customerDef: ResourceDef = {
   ],
   createForm: customerForm,
   updateForm: customerForm,
-  actions: [{ name: "disable", operation: ["customer", "disable"], permissions: [], confirm: true, danger: true }],
+  // 停用只在启用的客户上显示，启用只在停用的客户上显示。
+  actions: [
+    {
+      name: "disable",
+      operation: ["customer", "disable"],
+      permissions: [],
+      confirm: true,
+      danger: true,
+      when: { active: ["true"] },
+    },
+    {
+      name: "enable",
+      operation: ["customer", "enable"],
+      permissions: [],
+      confirm: true,
+      danger: false,
+      when: { active: ["false"] },
+    },
+  ],
   labels: {
     "zh-CN": {
       title: "客户",
@@ -137,8 +163,9 @@ const customerDef: ResourceDef = {
         credit: "信用额度",
         last_order_at: "最近下单",
         joined: "加入日期",
+        api_key: "接口密钥",
       },
-      actions: { disable: "停用" },
+      actions: { disable: "停用", enable: "启用" },
     },
   },
 }

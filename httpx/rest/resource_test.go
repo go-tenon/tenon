@@ -92,7 +92,7 @@ func TestResource(t *testing.T) {
 	api.Resource(rest.Resource{
 		Name: "article", List: "article-list", Get: "article-get", Create: "article-create", Update: "article-update", Delete: "article-delete",
 		Filters: []string{"status"}, Sort: []string{"updated_at"},
-		Actions: []rest.Action{{Name: "publish", Operation: "article-publish", Confirm: true}},
+		Actions: []rest.Action{{Name: "publish", Operation: "article-publish", Confirm: true, When: map[string][]string{"status": {"draft"}}}},
 	})
 	got := api.Resources()
 	if len(got) != 1 {
@@ -119,7 +119,7 @@ func TestResource(t *testing.T) {
 		Resources []rest.Resource `json:"x-tenon-resources"`
 	}
 	if err := json.Unmarshal(doc, &parsed); err != nil || len(parsed.Resources) != 1 || parsed.Resources[0].Key != "id" ||
-		!parsed.Resources[0].Actions[0].Confirm {
+		!parsed.Resources[0].Actions[0].Confirm || !slices.Equal(parsed.Resources[0].Actions[0].When["status"], []string{"draft"}) {
 		t.Fatalf("x-tenon-resources %+v %v", parsed.Resources, err)
 	}
 }
@@ -160,6 +160,15 @@ func TestResourceRejects(t *testing.T) {
 		"key not a field": {func(r *rest.Resource) { r.Get = "article-by-slug" }, "row key slug"},
 		"action op":       {func(r *rest.Resource) { r.Actions = []rest.Action{{Name: "publish"}} }, "has no Operation"},
 		"action key":      {func(r *rest.Resource) { r.Actions = []rest.Action{{Name: "copy", Operation: "article-create"}} }, "exactly one path parameter"},
+		"when field": {func(r *rest.Resource) {
+			r.Actions = []rest.Action{{Name: "publish", Operation: "article-publish", When: map[string][]string{"state": {"draft"}}}}
+		}, `when field "state" is not a field`},
+		"when empty": {func(r *rest.Resource) {
+			r.Actions = []rest.Action{{Name: "publish", Operation: "article-publish", When: map[string][]string{"status": nil}}}
+		}, "lists no values"},
+		"when enum": {func(r *rest.Resource) {
+			r.Actions = []rest.Action{{Name: "publish", Operation: "article-publish", When: map[string][]string{"status": {"archived"}}}}
+		}, `when status="archived" is not one of`},
 	} {
 		t.Run(name, func(t *testing.T) {
 			r := base

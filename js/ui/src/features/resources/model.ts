@@ -5,7 +5,7 @@
 
 import { pickLanguage, type Schema } from "@go-tenon/client"
 import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { useMemo } from "react"
+import { useCallback, useMemo } from "react"
 import { useCan } from "../../app/app"
 import { type ListRoute, type ListSearch, type ListState, listSearch, useList } from "../../components/data-table/list"
 
@@ -50,6 +50,8 @@ export interface ResourceDef {
     readonly permissions: readonly string[]
     readonly confirm: boolean
     readonly danger: boolean
+    /** 显示的条件：字段 → 允许的取值，见 rest.Action 的 When。 */
+    readonly when?: { readonly [field: string]: readonly string[] }
   }[]
   readonly labels: {
     readonly [language: string]: {
@@ -86,8 +88,18 @@ export interface ResourceKit {
   language?: string
 }
 
-/** 字段的输入和显示方式，由类型、格式和枚举得出。 */
-export type FieldKind = "text" | "number" | "boolean" | "select" | "multiselect" | "tags" | "date" | "datetime" | "json"
+/** 字段的输入和显示方式，由类型、格式和枚举得出。secret 是格式为 password 的字符串，例如密钥：显示时遮住中间部分。 */
+export type FieldKind =
+  | "text"
+  | "secret"
+  | "number"
+  | "boolean"
+  | "select"
+  | "multiselect"
+  | "tags"
+  | "date"
+  | "datetime"
+  | "json"
 
 /** 模型中的字段：显示文字、输入方式、选项。 */
 export interface ResourceField {
@@ -108,6 +120,8 @@ export interface ResourceAction {
   confirm: boolean
   danger: boolean
   permissions: readonly string[]
+  /** 这个操作是否显示在 row 上：声明了 When 时，row 的每个字段都取允许的值之一。 */
+  appliesTo(row: ResourceRow): boolean
 }
 
 /** 资源的操作：读取、创建、修改、删除和其他操作。 */
@@ -181,6 +195,7 @@ function kindOf(def: ResourceFieldDef, hasOptions: boolean): FieldKind {
     case "object":
       return "json"
   }
+  if (def.format === "password") return "secret"
   if (def.format === "date-time") return "datetime"
   if (def.format === "date") return "date"
   return "text"
@@ -287,6 +302,8 @@ export function resourceModel(def: ResourceDef, kit: ResourceKit, queryClient?: 
       confirm: a.confirm,
       danger: a.danger,
       permissions: a.permissions,
+      appliesTo: (row) =>
+        Object.entries(a.when ?? {}).every(([field, values]) => values.includes(String(row[field] ?? ""))),
     })),
     has: { list: true, get: !!ops.get, create: !!ops.create, update: !!ops.update, delete: !!ops.delete },
     listSearch: listSearch(schemaAt(kit.schemas, ops.list, "query"), { components: kit.components }),
@@ -401,10 +418,12 @@ export function useResourceItem(model: ResourceModel, key: string | undefined) {
   return useQuery({ ...model.getQuery(key ?? ""), enabled: !!key && model.has.get })
 }
 
-/** 资源的修改：创建、修改、删除和其他操作，带进行中的状态；完成后列表随之刷新。 */
+/** 资源的修改：创建、修改、删除和其他操作，带进行中的状态；完成后列表随之刷新。invalidate 在自己调用接口修改了数据之后刷新列表和详情。 */
 export function useResourceMutations(model: ResourceModel) {
   const queryClient = useQueryClient()
-  const done = () => queryClient.invalidateQueries({ queryKey: [...model.queryKey] })
+  // invalidate 让这个资源所在分组的查询失效：列表和详情重新读取。自己调用接口修改了数据时（不经过 save、remove、run）
+  // 调用它，例如 await api.tenant.changeOwner(id, body); await invalidate()。
+  const done = useCallback(() => queryClient.invalidateQueries({ queryKey: [...model.queryKey] }), [queryClient, model])
   const save = useMutation({
     mutationFn: ({ key, values }: { key?: string; values: Record<string, unknown> }) =>
       key ? model.update(key, values) : model.create(values),
@@ -415,7 +434,7 @@ export function useResourceMutations(model: ResourceModel) {
     mutationFn: ({ action, key }: { action: string; key: string }) => model.run(action, key),
     onSuccess: done,
   })
-  return useMemo(() => ({ save, remove, run }), [save, remove, run])
+  return useMemo(() => ({ save, remove, run, invalidate: done }), [save, remove, run, done])
 }
 
 /** 表单的初始值：fields 在 row（详情、列表中的这一行或设置）中的值；新建时 row 为空，布尔是 false，数组是空数组。 */

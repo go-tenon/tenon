@@ -179,7 +179,8 @@ function ResourceList({
       render: (row) => {
         const key = model.rowKey(row)
         const extra = rowActions?.(row) ?? []
-        const more = actions.length > 0 || extra.length > 0 || view.can.delete
+        const shown = actions.filter((a) => a.appliesTo(row)) // 声明了 When 的操作只在满足条件的行上显示
+        const more = shown.length > 0 || extra.length > 0 || view.can.delete
         return (
           <Group gap={2} justify="flex-end" wrap="nowrap" onClick={(e) => e.stopPropagation()}>
             {canUpdate && (
@@ -195,7 +196,7 @@ function ResourceList({
                   </ActionIcon>
                 </Menu.Target>
                 <Menu.Dropdown>
-                  {actions.map((a) => (
+                  {shown.map((a) => (
                     <Menu.Item
                       key={a.name}
                       color={a.danger ? "red" : undefined}
