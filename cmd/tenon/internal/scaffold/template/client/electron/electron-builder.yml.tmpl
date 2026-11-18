@@ -17,8 +17,12 @@ electronFuses:
   enableNodeCliInspectArguments: false
   enableEmbeddedAsarIntegrityValidation: true
   onlyLoadAppFromAsar: true
+# 自动更新的来源：把 release 中的安装包和 latest*.yml 放到这个地址，见 @go-tenon/electron/update。
+publish:
+  provider: generic
+  url: https://example.com/downloads/[[.Name]]
 mac:
-  target: dmg
+  target: [dmg, zip] # zip 用于自动更新
   category: public.app-category.productivity
 win:
   target: nsis
