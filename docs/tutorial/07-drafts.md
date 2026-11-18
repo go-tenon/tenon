@@ -29,7 +29,7 @@
 第 3 章说过，已经执行过的迁移不要修改，要改表结构就写一个新的迁移：
 
 ```bash
-go run ./cmd/api migrate make add_author_and_published_at_to_articles_table
+go run ./cmd/blog migrate make add_author_and_published_at_to_articles_table
 ```
 
 ```sql title="migrations/2026_11_13_080010_add_author_and_published_at_to_articles_table.sql"
@@ -56,7 +56,7 @@ ALTER TABLE articles DROP COLUMN author_id, DROP COLUMN published_at;
 最后的 `CREATE INDEX` 为 `author_id` 建了一个**索引**。“我的文章”要按作者查询，有了索引，数据库不用逐行扫描整张表。
 
 ```bash
-go run ./cmd/api migrate up
+go run ./cmd/blog migrate up
 ```
 
 <a id="rules"></a>
@@ -780,7 +780,7 @@ function Layout() {
 再创建第二个作者小红：
 
 ```bash
-go run ./cmd/api user create --name 小红 --email hong@example.com --password secret123
+go run ./cmd/blog user create --name 小红 --email hong@example.com --password secret123
 ```
 
 用小红登录，看不到小明的草稿，也改不了小明的文章。

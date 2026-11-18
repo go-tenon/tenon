@@ -1,6 +1,6 @@
 # 命令行
 
-一个 API 应用除了启动 HTTP 服务，通常还要执行一些运维任务：检查配置、执行数据库迁移、导出接口文档、查看路由，或者手动执行一次业务操作，例如立即发布某篇文章。这些都写成程序的**子命令**，例如 `./bin/api serve`、`./bin/api migrate up`。
+一个 API 应用除了启动 HTTP 服务，通常还要执行一些运维任务：检查配置、执行数据库迁移、导出接口文档、查看路由，或者手动执行一次业务操作，例如立即发布某篇文章。这些都写成程序的**子命令**，例如 `./bin/blog serve`、`./bin/blog migrate up`。
 
 `command` 包基于 [Cobra](https://github.com/spf13/cobra) 提供这些命令。Cobra 是 Go 中最常用的命令行库：一个命令是一个 `*cobra.Command` 结构体，写明命令名、说明和执行的函数；命令可以嵌套，组成 `migrate up` 这样的多级命令。`command` 包在 Cobra 之上加了几件事：加载配置、收到停止信号时取消 ctx、把错误转换为退出码。
 
@@ -42,7 +42,7 @@ type Config struct {
 }
 
 func main() {
-    root := command.Root("api", "示例")
+    root := command.Root("blog", "示例")
     root.AddCommand(
         command.Run("hello", "打个招呼", func(ctx context.Context, cfg Config) error {
             fmt.Println(cfg.Greeting)
@@ -66,11 +66,11 @@ go run . config show
 <a id="declaring-the-cli"></a>
 ## 装配命令行
 
-`command.Root` 创建根命令，然后用 Cobra 原生的 `AddCommand` 装配命令。一个 API 应用的 `cmd/api/main.go`：
+`command.Root` 创建根命令，然后用 Cobra 原生的 `AddCommand` 装配命令。一个 API 应用的 `cmd/blog/main.go`：
 
 ```go
 func main() {
-    root := command.Root("api", "Blog API")
+    root := command.Root("blog", "Blog API")
     root.AddCommand(
         command.Serve(bootstrap.Open, bootstrap.Parts),
         migratecmd.New(migrations.FS, func(cfg bootstrap.Config) database.Config { return cfg.Database }),
@@ -151,7 +151,7 @@ func Commands() []*cobra.Command {
 <a id="input-and-output"></a>
 ## 输入与输出
 
-请遵循这个约定：**标准输出只用于命令结果，诊断信息写入标准错误**。内置命令都是这样做的，因此 `./bin/api openapi > openapi.json` 之类的重定向可以得到干净的结果；日志默认也写到标准错误（见[日志](logging.md#creating-a-logger)）。
+请遵循这个约定：**标准输出只用于命令结果，诊断信息写入标准错误**。内置命令都是这样做的，因此 `./bin/blog openapi > openapi.json` 之类的重定向可以得到干净的结果；日志默认也写到标准错误（见[日志](logging.md#creating-a-logger)）。
 
 自定义命令中，用 `cmd.OutOrStdout()` 和 `cmd.ErrOrStderr()` 写输出。这样在测试中可以用 Cobra 的 `SetOut`、`SetErr` 把输出重定向到缓冲区，见[命令测试](../testing/http.md#command-tests)。
 
@@ -236,7 +236,7 @@ httpcmd.Health(func(cfg bootstrap.Config) httpx.Config { return cfg.HTTP })
 ```
 
 ```bash
-./bin/api health && echo alive
+./bin/blog health && echo alive
 ```
 
 它用于 Docker Compose 和 Swarm 的健康检查，镜像中不需要 curl，写法见[部署](../installation/deployment.md#health-checks)。应用要在路由中注册 `/livez`，见[健康检查](../http/lifecycle.md#health-checks)。`--timeout` 是等待响应的最长时间，默认 3 秒。
@@ -247,8 +247,8 @@ httpcmd.Health(func(cfg bootstrap.Config) httpx.Config { return cfg.HTTP })
 `httpcmd.OpenAPI(router)` 调用 `router` 构造应用的路由，用 [`rest.Lookup`](../http/openapi.md#exporting-openapi) 取出其中的 API，把 OpenAPI 文档输出到标准输出：
 
 ```bash
-./bin/api openapi > openapi.json
-./bin/api openapi --spec 3.0 > openapi-3.0.json
+./bin/blog openapi > openapi.json
+./bin/blog openapi --spec 3.0 > openapi-3.0.json
 ```
 
 默认输出 OpenAPI 3.1；有的客户端生成器只支持 3.0，例如 oapi-codegen，这时加上 `--spec 3.0`。路由中有[多个 API](../http/openapi.md#api-versioning) 时，用 `--base-path` 选择其中一个，例如 `--base-path /api/v2`。
@@ -261,9 +261,9 @@ httpcmd.Health(func(cfg bootstrap.Config) httpx.Config { return cfg.HTTP })
 当业务模块变多时，你可以用 `routes` 查看整个应用的路由，包括 JSON API 和挂载的页面。`httpcmd.Routes` 的参数是构造完整路由的函数，例如[入门教程](../tutorial/02-infrastructure.md#assembling)中的 `bootstrap.DocRouter`。它离线运行：
 
 ```bash
-./bin/api routes
-./bin/api routes --method post --path /articles
-./bin/api routes --all
+./bin/blog routes
+./bin/blog routes --method post --path /articles
+./bin/blog routes --all
 ```
 
 `--method` 不区分大小写，`--path` 按路径包含的文本匹配，两者同时使用时取交集。用 `Handle`、`Mount` 注册、响应任意方法的路由（例如单页应用的 `/*`）合并为一行，方法显示为 `*`，按方法过滤时总是列出。结果按路径、HTTP 方法排序，例如 `--path /articles` 会输出：
@@ -288,10 +288,10 @@ Huma 自动注册的 `/docs`、`/openapi.json`、`/schemas/{schema}` 等文档�
 `migratecmd.New(fsys, dbConfig)` 创建四个迁移命令。`fsys` 是[嵌入的迁移文件](../database/migrations.md#embedding-migrations)，`dbConfig` 从应用配置中取出数据库配置：
 
 ```bash
-./bin/api migrate up       # 执行全部未执行的迁移
-./bin/api migrate status   # 查看每个迁移的状态
-./bin/api migrate down     # 回滚最近一次迁移
-go run ./cmd/api migrate make create_articles_table  # 新建迁移文件
+./bin/blog migrate up       # 执行全部未执行的迁移
+./bin/blog migrate status   # 查看每个迁移的状态
+./bin/blog migrate down     # 回滚最近一次迁移
+go run ./cmd/blog migrate make create_articles_table  # 新建迁移文件
 ```
 
 `up` 和 `down` 每完成一个迁移输出一行，`status` 输出一张表：
@@ -307,7 +307,7 @@ VERSION         STATE    APPLIED AT           FILE
 需要文件上传等功能自带的 SQL 时，可在 `migratecmd.New` 返回的命令上显式添加 `migratecmd.Publish(sources...)`。其中 `sources` 是应用选择的功能包的迁移，例如 `filesystem.Migrations()`。注册后可以执行：
 
 ```bash
-go run ./cmd/api migrate publish --dir migrations
+go run ./cmd/blog migrate publish --dir migrations
 ```
 
 这个命令只将尚未发布的 SQL 拷贝到应用目录，执行迁移仍用 `migrate up`。`--dir` 默认是 `migrations`；每个新增文件输出一行，目录中已有的迁移保持原样。注册代码、空项目首次发布方式及升级流程见[发布框架迁移](../database/migrations.md#publishing-framework-migrations)。
@@ -321,8 +321,8 @@ go run ./cmd/api migrate publish --dir migrations
 - `config show` 输出加载后的配置，包括默认值和展开后的环境变量。默认输出 YAML，`--format json` 输出 JSON。
 
 ```bash
-./bin/api config check
-./bin/api config show --format json
+./bin/blog config check
+./bin/blog config show --format json
 ```
 
 配置文件缺失或校验失败时，这两个命令以及所有需要读取配置的命令都以 `ExitConfig` 退出。配置的读取与校验见[配置](configuration.md)。
@@ -352,7 +352,7 @@ go run ./cmd/api migrate publish --dir migrations
 <a id="troubleshooting"></a>
 ## 常见问题
 
-**报错 `unknown command "xxx" for "api"`，退出码 2**
+**报错 `unknown command "xxx" for "blog"`，退出码 2**
 
 这个命令没有装配到根命令上。检查 `main.go` 中的 `root.AddCommand`；需要数据库的命令是否加进了 `bootstrap.Commands()`。
 
@@ -364,7 +364,7 @@ go run ./cmd/api migrate publish --dir migrations
 
 这个名字不在 `Parts` 中。`serve --help` 列出全部部分的名字；`serve` 最多接受一个名字，要运行全部部分时不带参数。
 
-**`./bin/api openapi > openapi.json` 得到的文件中混入了日志**
+**`./bin/blog openapi > openapi.json` 得到的文件中混入了日志**
 
 有代码把诊断信息写到了标准输出。日志和诊断信息写到标准错误，见[输入与输出](#input-and-output)。
 

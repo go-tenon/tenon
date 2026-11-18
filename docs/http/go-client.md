@@ -36,7 +36,7 @@ if errors.Is(err, article.ErrSlugTaken) {
 也可以在服务端的源码目录中直接运行，`--out` 是输出目录：
 
 ```bash
-go run ./cmd/api client --out ../api
+go run ./cmd/blog client --out ../api
 ```
 
 类型声明和错误码从源码复制，所以命令要在源码目录中运行；它用 `nil` 依赖构造应用的路由，离线运行。输出目录通常是 [go.work](https://go.dev/ref/mod#workspaces) 中的另一个模块，调用方只依赖它，App 保持精简：

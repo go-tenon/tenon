@@ -41,17 +41,17 @@
 bun run build
 ```
 
-它先构建每个前端（有服务端渲染的前端时，把它们连同 Bun 编译成 SSR 程序），再编译 Go 程序，得到 `bin/api`，见[开发工具](tooling.md#build)。没有前端的项目直接用 `go build`：
+它先构建每个前端（有服务端渲染的前端时，把它们连同 Bun 编译成 SSR 程序），再编译 Go 程序，得到 `bin/blog`，见[开发工具](tooling.md#build)。没有前端的项目直接用 `go build`：
 
 ```bash
-go build -trimpath -o bin/api ./cmd/api
+go build -trimpath -o bin/blog ./cmd/blog
 ```
 
 `-trimpath` 去掉二进制中你电脑上的文件路径。PostgreSQL 的驱动是纯 Go 写的，可以加上 `CGO_ENABLED=0` 构建一个不依赖系统库的静态二进制。
 
 迁移文件、翻译文件、前端的构建产物都通过 [embed](../concepts/go-primer.md#embed) 打包进了二进制，所以部署时只需要两样东西：
 
-- `bin/api` 这个文件；
+- `bin/blog` 这个文件；
 - `config` 目录。
 
 有前端在服务端渲染（`package.json` 中 `"ssr": true`）时，运行的机器要求：
@@ -72,7 +72,7 @@ go build -trimpath -o bin/api ./cmd/api
 ### 检查配置
 
 ```bash
-./bin/api config check
+./bin/blog config check
 ```
 
 它只读取和检查配置文件，不连接数据库，可以在启动服务之前发现缺少的环境变量和写错的字段。
@@ -80,12 +80,12 @@ go build -trimpath -o bin/api ./cmd/api
 再检查数据库能不能连上，同时看看哪些迁移将要执行：
 
 ```bash
-./bin/api migrate status
+./bin/blog migrate status
 ```
 
 数据库连不上时，这条命令以退出码 4 结束。
 
-应用装配了[自检](doctor.md)时，再运行 `./bin/api doctor`：它检查 PostgreSQL、队列和文件存储的版本、设置与权限，例如 `wal_level` 和 `REPLICATION` 属性，每个问题都附带修改方法。
+应用装配了[自检](doctor.md)时，再运行 `./bin/blog doctor`：它检查 PostgreSQL、队列和文件存储的版本、设置与权限，例如 `wal_level` 和 `REPLICATION` 属性，每个问题都附带修改方法。
 
 数据库密码、密钥这类敏感信息不要写在配置文件中。配置文件中写 `${DATABASE_URL}`，真正的值由部署平台的环境变量或密钥管理功能提供，配置文件就可以放心地提交到代码仓库。
 
@@ -95,7 +95,7 @@ go build -trimpath -o bin/api ./cmd/api
 在启动新版本**之前**执行迁移：
 
 ```bash
-./bin/api migrate up
+./bin/blog migrate up
 ```
 
 为什么要在启动之前？新代码可能用到新的表和字段，如果先启动服务，第一批请求就会因为表不存在而出错。
@@ -108,7 +108,7 @@ go build -trimpath -o bin/api ./cmd/api
 ### 启动服务
 
 ```bash
-./bin/api serve
+./bin/blog serve
 ```
 
 `serve` 在一个进程中运行应用的全部部分，例如 HTTP 服务、队列的 worker（在后台执行任务）和定时任务的调度器。下一节说明什么时候应该把它们分开运行。
@@ -147,7 +147,7 @@ go build -trimpath -o bin/api ./cmd/api
 
 在云服务器或物理机上，用 systemd 管理程序。systemd 是大多数 Linux 发行版自带的服务管理器，它负责：开机时启动程序、程序崩溃后重启、收集程序输出的日志，以及停止时给程序发送 `SIGTERM` 信号，让它平稳地停下。
 
-**准备部署目录。** 假设部署目录是 `/opt/blog`，其中有 `bin/api`、`config`，以及保存上传文件的 `storage`。程序用一个专门的系统用户 `blog` 运行，这个用户只能写 `storage` 目录，即使程序被攻破，也改不了其他文件：
+**准备部署目录。** 假设部署目录是 `/opt/blog`，其中有 `bin/blog`、`config`，以及保存上传文件的 `storage`。程序用一个专门的系统用户 `blog` 运行，这个用户只能写 `storage` 目录，即使程序被攻破，也改不了其他文件：
 
 ```bash
 sudo useradd --system --no-create-home --shell /usr/sbin/nologin blog
@@ -173,7 +173,7 @@ PIDFile=/run/blog/%i/daemon.pid
 User=blog
 WorkingDirectory=/opt/blog
 EnvironmentFile=/etc/blog/env
-ExecStart=/opt/blog/bin/api serve %i
+ExecStart=/opt/blog/bin/blog serve %i
 Restart=on-failure
 RestartSec=5s
 RestartPreventExitStatus=2 3
@@ -223,10 +223,10 @@ run() {
         -p EnvironmentFile=/etc/blog/env -p WorkingDirectory=/opt/blog "$@"
 }
 
-sudo install -m 755 api /opt/blog/bin/api.new
-run /opt/blog/bin/api.new config check
-sudo mv /opt/blog/bin/api.new /opt/blog/bin/api
-run /opt/blog/bin/api migrate up
+sudo install -m 755 blog /opt/blog/bin/blog.new
+run /opt/blog/bin/blog.new config check
+sudo mv /opt/blog/bin/blog.new /opt/blog/bin/blog
+run /opt/blog/bin/blog migrate up
 
 for unit in $(systemctl list-units 'blog@*' --state=active --plain --no-legend | awk '{print $1}'); do
     sudo systemctl reload "$unit"
@@ -241,7 +241,7 @@ done
 
 - **`set -e`**：任何一步失败，脚本立即停止，不会带着错误继续发布。
 - **`run`**：用 `systemd-run` 执行一次性的命令，它使用和服务相同的用户、环境变量和工作目录，所以检查的结果和服务真正运行时一致。
-- **先写到 `api.new`**：用新的二进制检查配置，通过后再改名覆盖。直接覆盖正在运行的二进制会失败，报错 `Text file busy`。
+- **先写到 `blog.new`**：用新的二进制检查配置，通过后再改名覆盖。直接覆盖正在运行的二进制会失败，报错 `Text file busy`。
 - **迁移只在脚本中执行一次。** 不要把迁移写进 unit 文件的 `ExecStartPre`：那样程序每次崩溃重启都会再执行一次迁移，分开运行时几个实例还会同时执行。
 - **`systemctl reload`**：让每个服务不停机地换成新版本。新版本启动失败时，旧版本会继续运行，`reload` 仍然返回成功，所以脚本再检查服务的状态文字，以 `upgrade failed` 开头就是升级失败。
 
@@ -258,20 +258,20 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go tool tenon build -o /out/api && mkdir /out/storage
+RUN CGO_ENABLED=0 go tool tenon build -o /out/blog && mkdir /out/storage
 
 FROM gcr.io/distroless/base-debian13:nonroot
 WORKDIR /app
-COPY --from=build /out/api /app/api
+COPY --from=build /out/blog /app/blog
 COPY config /app/config
 COPY --from=build --chown=nonroot:nonroot /out/storage /app/storage
-ENTRYPOINT ["/app/api"]
+ENTRYPOINT ["/app/blog"]
 CMD ["serve"]
 ```
 
 这个文件分两段：第一段在 Go 的镜像中编译程序，第二段只把编译结果复制到一个很小的运行镜像中，最终的镜像不包含 Go 工具链和源代码。需要注意的几点：
 
-- **`ENTRYPOINT` 要写成 JSON 数组的形式。** 这样程序就是容器中的第一个进程，能直接收到 `docker stop` 发出的 `SIGTERM`。如果写成 `ENTRYPOINT ./api serve`，信号会发给 shell，程序收不到，等待时间一到就被强制结束，正在处理的请求被中断。
+- **`ENTRYPOINT` 要写成 JSON 数组的形式。** 这样程序就是容器中的第一个进程，能直接收到 `docker stop` 发出的 `SIGTERM`。如果写成 `ENTRYPOINT ./blog serve`，信号会发给 shell，程序收不到，等待时间一到就被强制结束，正在处理的请求被中断。
 - **构建阶段需要 Bun**：`tenon build` 用它编译前端。这里从 Bun 的官方镜像复制可执行文件，版本与本地开发用的相同。
 - **运行镜像用 `distroless/base`**，它带有 glibc，前端的 SSR 程序需要它；没有服务端渲染的前端时可以用更小的 `distroless/static`。两者都带有 CA 证书和时区数据，访问 HTTPS 接口、按时区执行定时任务都能直接用。
 - **`storage` 目录要挂载卷**，否则容器删除后上传的文件也没了。镜像中预先建好这个目录，并交给 `nonroot` 用户，否则新挂载的卷属于 root，程序无法写入。文件存放在 S3 这类对象存储中时不需要它。
@@ -303,7 +303,7 @@ services:
     command: [serve, http]
     ports: ["8080:8080"]
     healthcheck:
-      test: [CMD, /app/api, health]
+      test: [CMD, /app/blog, health]
   worker:
     <<: *app
     command: [serve, worker]
@@ -370,7 +370,7 @@ Docker 的健康检查用程序自带的 [health 命令](../general/commands.md#
 
 ```yaml
     healthcheck:
-      test: [CMD, /app/api, health]
+      test: [CMD, /app/blog, health]
 ```
 
 - **Docker 检查 `/livez`，不检查 `/readyz`。** Swarm 会替换检查失败的容器，而 `/readyz` 会检查数据库：数据库出故障时，全部容器都会被反复替换，重启并不能解决问题。`/livez` 在程序开始处理请求之后才成功，这时数据库已经连上，前端的 SSR 进程也已经就绪，足够让滚动升级判断新版本有没有起来。
@@ -384,7 +384,7 @@ Docker 的健康检查用程序自带的 [health 命令](../general/commands.md#
 
 要让平滑停止生效，有两件事要做对：
 
-**信号要能到达程序。** 在 Docker 中，程序要是容器中的第一个进程，见上文的 `ENTRYPOINT`。用 shell 脚本启动程序时，脚本最后要用 `exec ./bin/api serve`，把进程交给程序，否则信号只发给了 shell。
+**信号要能到达程序。** 在 Docker 中，程序要是容器中的第一个进程，见上文的 `ENTRYPOINT`。用 shell 脚本启动程序时，脚本最后要用 `exec ./bin/blog serve`，把进程交给程序，否则信号只发给了 shell。
 
 **平台要等得够久。** 平台发出 `SIGTERM` 后只等一段时间，超时后强制结束程序。这段时间要比程序平滑停止所需的时间长：
 

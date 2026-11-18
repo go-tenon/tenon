@@ -2,7 +2,8 @@
 // （TanStack Start 和 @go-tenon/ui）。前端按几个互相独立的维度组合：template/app 和 template/site 是按布局加上的页面，
 // template/login 是登录页和登录接口。template/client/<种类> 是 clients 中的一个客户端，网页宿主（electron）
 // 另外在它显示的前端中加上 template/consent 的授权页。
-// 每个 .tmpl 文件按参数渲染后写入目标目录。模板的分隔符是 [[ ]]，与 JSX 的 {{ }} 区分开；gitignore.tmpl 写成 .gitignore。
+// 每个 .tmpl 文件按参数渲染后写入目标目录，路径中的模板标记同样展开（cmd/[[.Slug]] 写成 cmd/todo）。
+// 模板的分隔符是 [[ ]]，与 JSX 的 {{ }} 区分开；gitignore.tmpl 写成 .gitignore。
 package scaffold
 
 import (
@@ -274,6 +275,16 @@ func render(root, dir string, data any) error {
 			return err
 		}
 		rel := strings.TrimSuffix(strings.TrimPrefix(p, root+"/"), ".tmpl")
+		// 路径中也可以有模板标记，例如 cmd/[[.Slug]]/main.go 写成 cmd/todo/main.go。
+		pathTmpl, err := template.New(p).Delims("[[", "]]").Option("missingkey=error").Parse(rel)
+		if err != nil {
+			return err
+		}
+		var name bytes.Buffer
+		if err := pathTmpl.Execute(&name, data); err != nil {
+			return err
+		}
+		rel = name.String()
 		if path.Base(rel) == "gitignore" {
 			rel = path.Join(path.Dir(rel), ".gitignore")
 		}

@@ -65,7 +65,7 @@ data, err := api.OpenAPIJSON()
 `data` 就是 OpenAPI 文档的 JSON 内容。`Lookup` 的第二个参数是 `BasePath`，路由中只有一个 API 时传空字符串。因为服务运行和导出文档用的是同一个路由函数，导出的文档与实际运行的接口始终保持一致。
 
 > [!TIP]
-> 应用的 [`openapi` 命令](../general/commands.md#openapi-command)就是这样导出的：`./bin/api openapi > openapi.json`。
+> 应用的 [`openapi` 命令](../general/commands.md#openapi-command)就是这样导出的：`./bin/blog openapi > openapi.json`。
 
 <a id="checking-changes"></a>
 ## 在 CI 中发现接口的变化
@@ -73,7 +73,7 @@ data, err := api.OpenAPIJSON()
 改了一个字段的名字，前端和其他调用方就可能出错。把导出的文档提交到代码仓库，CI 中重新导出一次，和提交的版本比较，接口有变化就让检查失败：
 
 ```bash
-./bin/api openapi > openapi.json
+./bin/blog openapi > openapi.json
 git diff --exit-code openapi.json
 ```
 
@@ -104,7 +104,7 @@ router.Route("/api/v2", func(r chi.Router) {
 })
 ```
 
-一个应用中有多个 API 时，[`openapi`](../general/commands.md#openapi-command) 和 [`client`](clients.md) 命令用 `--base-path` 选择其中一个，例如 `./bin/api openapi --base-path /api/v2`。
+一个应用中有多个 API 时，[`openapi`](../general/commands.md#openapi-command) 和 [`client`](clients.md) 命令用 `--base-path` 选择其中一个，例如 `./bin/blog openapi --base-path /api/v2`。
 
 <a id="troubleshooting"></a>
 ## 常见问题

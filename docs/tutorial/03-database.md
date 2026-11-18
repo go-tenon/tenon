@@ -39,10 +39,10 @@ import "embed"
 var FS embed.FS
 ```
 
-在 `cmd/api/main.go` 中加上 `migrate` 命令：
+在 `cmd/blog/main.go` 中加上 `migrate` 命令：
 
-```go title="cmd/api/main.go"
-// Command api 是博客的入口。
+```go title="cmd/blog/main.go"
+// Command blog 是博客的入口。
 package main
 
 import (
@@ -57,7 +57,7 @@ import (
 )
 
 func main() {
-    root := command.Root("api", "博客")
+    root := command.Root("blog", "博客")
     root.AddCommand(
         command.Serve(bootstrap.Open, bootstrap.Parts),
         command.Config[bootstrap.Config](),
@@ -83,7 +83,7 @@ func main() {
 
 ```bash
 go mod tidy
-go run ./cmd/api migrate make create_articles_table
+go run ./cmd/blog migrate make create_articles_table
 ```
 
 `go mod tidy` 下载新导入的包需要的依赖。`migrate make` 输出新文件的路径，例如 `migrations/2026_11_13_080000_create_articles_table.sql`。
@@ -122,8 +122,8 @@ DROP TABLE articles;
 ## 执行迁移
 
 ```bash
-go run ./cmd/api migrate up
-go run ./cmd/api migrate status
+go run ./cmd/blog migrate up
+go run ./cmd/blog migrate status
 ```
 
 ```text

@@ -235,7 +235,7 @@ FROM pg_replication_slots WHERE slot_name LIKE 'tenon_queue_%';
 复制槽丢失（例如恢复了备份、主备切换时没有同步）或失效（`wal_status` 为 `lost`）时，worker 拒绝启动。用 `queue slot recreate` 删除失效的槽，用同样的名字重建：
 
 ```bash
-./bin/api queue slot recreate
+./bin/blog queue slot recreate
 ```
 
 复制槽还能用的时候，这个命令拒绝执行，因为重建会丢弃其中还没转发的任务。确实需要时加上 `--force`。
@@ -288,7 +288,7 @@ Tenon 不提供备份命令：只有数据库自己的备份机制能持续备�
 只有真的恢复过，才能确定备份是可用的。定期把备份恢复到一个临时数据库，再用同一个二进制连上去检查：
 
 ```bash
-./bin/api migrate status --config=config/app.yaml,config/restore.yaml
+./bin/blog migrate status --config=config/app.yaml,config/restore.yaml
 ```
 
 `config/restore.yaml` 只把数据库地址改为临时库。确认迁移的版本与预期一致后，再抽查几张业务表中最新的数据。每次演练都记下恢复用了多长时间：真的出事时，停服大约也要这么久。

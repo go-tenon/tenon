@@ -227,7 +227,7 @@ searchcmd.New(a.db, article.SearchIndex, attachment.Chunks)
 部署新版本之后执行：
 
 ```bash
-$ ./bin/api search reindex attachment-chunks
+$ ./bin/blog search reindex attachment-chunks
 已发起 attachment-chunks 的重建，操作 0193e7b1-…，由 worker 执行
 已处理 500 / 约 3200 个 key
 ……

@@ -114,7 +114,7 @@ func (p *tutorial) sh(name string, args ...string) string {
 
 func (p *tutorial) api(args ...string) string {
 	p.t.Helper()
-	return p.sh("go", append([]string{"run", "./cmd/api"}, args...)...)
+	return p.sh("go", append([]string{"run", "./cmd/blog"}, args...)...)
 }
 
 // before 执行一章中写入文件之前的命令：第 8 章先用模板生成后台，再写入后台的页面。
@@ -192,7 +192,7 @@ func (p *tutorial) run() {
 
 	port := freePort(t)
 	p.write("config/test.yaml", "http:\n  addr: 127.0.0.1:"+port+"\n")
-	app := exec.Command(filepath.Join(p.dir, "bin", "api"), "serve", "--config", "config/app.yaml,config/test.yaml")
+	app := exec.Command(filepath.Join(p.dir, "bin", "blog"), "serve", "--config", "config/app.yaml,config/test.yaml")
 	app.Dir = p.dir
 	app.Env = append(os.Environ(), p.env...)
 	var logs bytes.Buffer

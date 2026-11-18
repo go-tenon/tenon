@@ -4,6 +4,7 @@ package main
 
 import (
 	"bytes"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -34,6 +35,14 @@ func newProject(t *testing.T, files map[string]string, tools ...string) string {
 		if err := os.WriteFile(filepath.Join(bin, name), []byte(fake), 0o755); err != nil {
 			t.Fatal(err)
 		}
+	}
+	files = maps.Clone(files)
+	if files == nil {
+		files = map[string]string{}
+	}
+	// 应用的入口：tenon.json 没有写 main 时是 cmd 下唯一的目录。
+	if !strings.Contains(files["tenon.json"], `"main"`) {
+		files["cmd/blog/main.go"] = "package main\n"
 	}
 	for name, content := range files {
 		p := filepath.Join(dir, name)
@@ -83,7 +92,7 @@ func TestBuild(t *testing.T) {
 	dir, _ := os.Getwd()
 	want := []string{"bun install --frozen-lockfile @", "bun run build @admin", "bun run build @web", "go env GOARCH @",
 		"bun x tenon-start compile --out " + dir + "/apps/dist/ssr web=" + dir + "/apps/web/dist/server/server.js @web GOARCH=arm64",
-		"go build -trimpath -o bin/api ./cmd/api @"}
+		"go build -trimpath -o bin/blog ./cmd/blog @"}
 	if len(lines) != len(want) {
 		t.Fatalf("log:\n%s", l)
 	}
@@ -117,7 +126,7 @@ func TestBuildWithoutSSR(t *testing.T) {
 	}
 	l, _ := os.ReadFile(log)
 	lines := strings.Split(strings.TrimSpace(string(l)), "\n")
-	want := []string{"bun install --frozen-lockfile @", "bun run build @admin", "go build -trimpath -o bin/api ./cmd/api @"}
+	want := []string{"bun install --frozen-lockfile @", "bun run build @admin", "go build -trimpath -o bin/blog ./cmd/blog @"}
 	if len(lines) != len(want) {
 		t.Fatalf("log:\n%s", l)
 	}
@@ -141,7 +150,7 @@ func TestBuildArch(t *testing.T) {
 	lines := strings.Split(strings.TrimSpace(string(l)), "\n")
 	if len(lines) != 4 || !strings.HasPrefix(lines[0], "bun install --frozen-lockfile @") || lines[1] != "bun run build @web" ||
 		!strings.Contains(lines[2], "tenon-start compile --out ") || !strings.HasSuffix(lines[2], "GOOS=linux GOARCH=amd64") ||
-		!strings.HasPrefix(lines[3], "go build -trimpath -o bin/api ./cmd/api @") || !strings.HasSuffix(lines[3], "GOOS=linux GOARCH=amd64") {
+		!strings.HasPrefix(lines[3], "go build -trimpath -o bin/blog ./cmd/blog @") || !strings.HasSuffix(lines[3], "GOOS=linux GOARCH=amd64") {
 		t.Fatalf("log:\n%s", l)
 	}
 	if err := execute(t, "build", "--arch", "386"); err == nil || !strings.Contains(err.Error(), "amd64 or arm64") {

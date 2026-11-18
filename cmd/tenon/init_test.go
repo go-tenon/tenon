@@ -120,8 +120,8 @@ func TestInitEndToEnd(t *testing.T) {
 	}
 	sh("go", "tool", "tenon", "build")
 	// 两个 SSR 前端编进同一个 Bun 可执行文件：程序只比一份 Bun（约 100MB）大一点。
-	if info, err := os.Stat(filepath.Join(dir, "bin", "api")); err != nil || info.Size() > 180<<20 {
-		t.Fatalf("bin/api: %v, %d MB", err, info.Size()>>20)
+	if info, err := os.Stat(filepath.Join(dir, "bin", "todo")); err != nil || info.Size() > 180<<20 {
+		t.Fatalf("bin/todo: %v, %d MB", err, info.Size()>>20)
 	}
 
 	// 运行构建出的二进制：页面由嵌入的 SSR 进程渲染，接口在 /api 下。
@@ -130,7 +130,7 @@ func TestInitEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	start := func() func() {
-		app := exec.Command(filepath.Join(dir, "bin", "api"), "serve", "--config", "config/app.yaml,config/test.yaml")
+		app := exec.Command(filepath.Join(dir, "bin", "todo"), "serve", "--config", "config/app.yaml,config/test.yaml")
 		app.Dir = dir
 		if err := app.Start(); err != nil {
 			t.Fatal(err)
@@ -244,8 +244,8 @@ func TestInitEndToEnd(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "apps", "dist", "ssr")); err == nil {
 		t.Fatal("apps/dist/ssr left after every frontend stopped server rendering")
 	}
-	if info, err := os.Stat(filepath.Join(dir, "bin", "api")); err != nil || info.Size() > 80<<20 {
-		t.Fatalf("bin/api without SSR: %v, %d MB", err, info.Size()>>20)
+	if info, err := os.Stat(filepath.Join(dir, "bin", "todo")); err != nil || info.Size() > 80<<20 {
+		t.Fatalf("bin/todo without SSR: %v, %d MB", err, info.Size()>>20)
 	}
 	start()
 	waitUp(t, base+"/api/todos")

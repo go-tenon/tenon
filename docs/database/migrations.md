@@ -28,9 +28,9 @@ Tenon 使用 [goose](https://github.com/pressly/goose) 管理迁移。迁移是�
 用 `migrate make` 新建一个迁移：
 
 ```bash
-go run ./cmd/api migrate make create_articles_table   # 新建 migrations/2026_11_13_080000_create_articles_table.sql
-go run ./cmd/api migrate up                            # 执行全部未执行的迁移
-go run ./cmd/api migrate status
+go run ./cmd/blog migrate make create_articles_table   # 新建 migrations/2026_11_13_080000_create_articles_table.sql
+go run ./cmd/blog migrate up                            # 执行全部未执行的迁移
+go run ./cmd/blog migrate status
 ```
 
 在生成的文件中写上建表和回滚的 SQL：
@@ -55,7 +55,7 @@ DROP TABLE articles;
 用 `migrate make` 新建迁移。名称使用 snake_case，以动作开头、表名结尾：
 
 ```bash
-go run ./cmd/api migrate make create_articles_table
+go run ./cmd/blog migrate make create_articles_table
 ```
 
 命令输出新文件的路径，例如 `migrations/2026_11_11_090000_create_articles_table.sql`。文件名和 Laravel 一样，是 UTC 时间加名称；时间保证晚于目录中已有的迁移，所以新迁移总是排在最后。命令只生成文件；`--dir` 默认是 `migrations`。
@@ -138,7 +138,7 @@ root.AddCommand(migrationCmd)
 在应用根目录执行：
 
 ```bash
-go run ./cmd/api migrate publish --dir migrations
+go run ./cmd/blog migrate publish --dir migrations
 ```
 
 `--dir` 默认是当前工作目录下的 `migrations`。命令把迁移文件原样复制过来，文件名和内容都不变，只输出本次新复制的文件名；再次运行且没有新增迁移时，输出为空。
@@ -175,8 +175,8 @@ root.AddCommand(migratecmd.New(migrations.FS, func(cfg settings.Config) database
 之后，你就可以在部署流程中执行：
 
 ```bash
-./bin/api migrate up
-./bin/api migrate status
+./bin/blog migrate up
+./bin/blog migrate status
 ```
 
 和 Laravel 一样，`migrate up` 按时间顺序执行所有还没有执行过的迁移，即使它比已经执行过的迁移更早，例如升级框架后发布的功能包迁移，或者两个分支各自新建、合并后时间交错的迁移。`migrate down` 回滚最后执行的那一个迁移。
@@ -254,8 +254,8 @@ func seed(db *bun.DB) *cobra.Command {
 `seed` 组合了 `Create` 和 `Publish` 两个动作，直接调用它们的 `Handle`。在本地准备数据库：
 
 ```bash
-go run ./cmd/api migrate up
-go run ./cmd/api seed
+go run ./cmd/blog migrate up
+go run ./cmd/blog seed
 ```
 
 `seed` 只用于开发环境。需要大量随机数据时，可以用 [gofakeit](https://github.com/brianvoe/gofakeit) 生成 `article.Changes`。测试各自准备数据，每个测试在自己的数据库中创建，见[测试业务动作](../testing/database.md#testing-actions)。
@@ -322,7 +322,7 @@ err := migrate.CheckPublished("migrations", "baseline/migrations")
 
 **新建的迁移文件没有被执行**
 
-迁移文件通过 `embed` 打包进程序，修改后要重新编译：`go run` 会自动编译，用 `./bin/api` 时要先重新构建。另外检查文件是否在 `migrations` 目录中、扩展名是否是 `.sql`。
+迁移文件通过 `embed` 打包进程序，修改后要重新编译：`go run` 会自动编译，用 `./bin/blog` 时要先重新构建。另外检查文件是否在 `migrations` 目录中、扩展名是否是 `.sql`。
 
 **`migrate up` 报错 `migration "…" must be named like 2026_11_17_123456_create_articles_table.sql`**
 

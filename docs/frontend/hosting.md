@@ -72,7 +72,7 @@ apps/dist/
 <a id="wiring"></a>
 ## 装配
 
-`tenon init` 生成的 `cmd/api/main.go` 已经在 HTTP 服务这个部分中装配好：
+`tenon init` 生成的 `cmd/blog/main.go` 已经在 HTTP 服务这个部分中装配好：
 
 ```go
 pages, err := frontend.New(apps.Dist, frontend.Options{
