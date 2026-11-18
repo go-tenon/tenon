@@ -38,7 +38,7 @@
 | 后台、控制台：要登录才能看，不需要搜索引擎收录 | `false` | Go 返回页面外壳，页面在浏览器中渲染。程序中不带 Bun，可以在任何系统上运行 |
 | 官网、文档、商品页：要被搜索引擎收录，首屏要快 | `true` | 页面在 Bun 中渲染好再返回，浏览器接着接管页面 |
 
-`tenon add frontend` 按布局写好这个字段：`site` 布局是 `true`，`rail` 和 `frame` 是 `false`。`go tool tenon` 和 `@go-tenon/start` 的 Vite 插件读取同一个字段，所以切换方式只改这一处，见[切换渲染方式](#switching)。
+`tenon add frontend` 按 `--render` 写好这个字段，不写时按布局：`site` 是 `true`，`rail` 和 `frame` 是 `false`。`go tool tenon` 和 `@go-tenon/start` 的 Vite 插件读取同一个字段，所以切换方式只改这一处，见[切换渲染方式](#switching)。
 
 只在浏览器中渲染的前端，构建时由 TanStack Start 生成一个页面外壳 `_shell.html`：只含根布局（`__root.tsx`），不含任何页面的内容。浏览器拿到外壳后加载脚本，再由前端路由渲染当前地址的页面。
 

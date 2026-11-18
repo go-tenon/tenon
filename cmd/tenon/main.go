@@ -150,7 +150,7 @@ func root() *cobra.Command {
 
 // addFrontendCommand 返回 tenon add frontend 命令：在 apps/<name> 中生成一个前端，加入 Bun workspace。
 func addFrontendCommand() *cobra.Command {
-	var base, layout, preset string
+	var base, layout, login, preset, render string
 	cmd := &cobra.Command{
 		Use:   "frontend <name>",
 		Short: "在 apps/<name> 中生成一个 TanStack Start 前端，加入 Bun workspace",
@@ -183,13 +183,10 @@ func addFrontendCommand() *cobra.Command {
 			if i := slices.IndexFunc(existing.Frontends, func(f project.Frontend) bool { return f.Base == base && f.Name != name }); i >= 0 {
 				return fmt.Errorf("%s is already mounted at %s; choose another --base", existing.Frontends[i].Dir, base)
 			}
-			if !slices.Contains(scaffold.Layouts, layout) {
-				return fmt.Errorf("--layout %q is not one of %v", layout, scaffold.Layouts)
+			f, err := scaffold.Frontend{Scope: pkg.Name, Name: name, Base: base, Title: name, Layout: layout, Login: login, Preset: preset, Render: render}.Resolve()
+			if err != nil {
+				return err
 			}
-			if preset != "" && !slices.Contains(scaffold.Presets, preset) {
-				return fmt.Errorf("--preset %q is not one of %v", preset, scaffold.Presets)
-			}
-			f := scaffold.Frontend{Scope: pkg.Name, Name: name, Base: base, Title: name, Layout: layout, Preset: preset}
 			if err := scaffold.WriteFrontend(".", f); err != nil {
 				return err
 			}
@@ -211,18 +208,20 @@ func addFrontendCommand() *cobra.Command {
 					return err
 				}
 			}
-			render := "页面只在浏览器中渲染"
+			rendering := "页面只在浏览器中渲染"
 			if f.SSR() {
-				render = "页面在服务端渲染"
+				rendering = "页面在服务端渲染"
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "\n已生成 apps/%s，挂在 %s，%s（apps/%s/package.json 的 tenon 字段）。运行 bun run dev 打开它。\n",
-				name, base, render, name)
+				name, base, rendering, name)
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&base, "base", "", "前端挂载的路径，以 / 开头和结尾，默认 /<name>/")
-	cmd.Flags().StringVar(&layout, "layout", "rail", "布局：rail（双栏导航）；frame（顶栏加侧栏菜单、多标签）；site（官网和内容站，服务端渲染）")
+	cmd.Flags().StringVar(&layout, "layout", "rail", "布局：rail（双栏导航）；frame（顶栏加侧栏菜单、多标签）；site（官网和内容站）")
+	cmd.Flags().StringVar(&login, "login", "", "登录页：centered（居中的卡片）；split（左右分栏）；none（没有登录）。默认按布局：frame、rail 是 centered，site 是 none")
 	cmd.Flags().StringVar(&preset, "preset", "", "样式预设：compact（紧凑）；comfortable（舒展）；spacious（宽松）。默认按布局：frame 是 compact，rail 是 comfortable，site 是 spacious")
+	cmd.Flags().StringVar(&render, "render", "", "渲染方式：csr（只在浏览器中渲染）；ssr（服务端渲染）。默认按布局：frame、rail 是 csr，site 是 ssr")
 	return cmd
 }
 

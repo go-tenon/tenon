@@ -138,17 +138,21 @@ go tool tenon add frontend admin --layout frame
 
 它在 `apps/admin` 中生成一个前端，挂在 `/admin/` 下，加入根目录 `package.json` 的 workspace，安装依赖。`cmd/api/main.go` 不用改：`frontend.Host` 按 `apps/dist` 中的清单托管全部前端，`/admin/` 下的请求交给新的前端，见[托管前端与服务端渲染](../frontend/hosting.md#wiring)。
 
+生成的前端由四个互相独立的选项组合而成：布局、登录页、样式预设和渲染方式。只写 `--layout` 时，其余三个取这种布局的默认值；任何一个都可以单独换掉，例如 `--layout rail --login split --preset compact`。
+
 `--layout` 选择布局，见[布局与导航](../frontend/layout.md)：
 
 | 布局 | 内容 |
 | --- | --- |
-| `rail`（默认） | 登录页和双栏导航的布局（`RailLayout`），页面只在浏览器中渲染 |
-| `frame` | 登录页和顶栏加侧栏菜单、带多标签的布局（`FrameLayout`），页面只在浏览器中渲染 |
-| `site` | 官网和内容站（`SiteLayout`）：页头、页脚，页面在服务端渲染，首页构建时预渲染 |
+| `rail`（默认） | 双栏导航的布局（`RailLayout`），页面在布局路由 `_app` 之下 |
+| `frame` | 顶栏加侧栏菜单、带多标签的布局（`FrameLayout`），页面在布局路由 `_app` 之下 |
+| `site` | 官网和内容站（`SiteLayout`）：页头、页脚，首页是落地页的占位 |
 
-布局决定 `package.json` 中 `tenon.ssr` 的初始值，之后可以改，见[切换渲染方式](../frontend/hosting.md#switching)。
+`--login` 选择登录页的样式，见[登录页](../frontend/app.md#auth)：`centered`（居中的卡片，`CenteredAuthLayout`）、`split`（左右分栏，`SplitAuthLayout`）、`none`（不生成登录页和登录接口，页面都是公开的）。不写时按布局：`rail`、`frame` 是 `centered`，`site` 是 `none`。有登录页时，`rail`、`frame` 的 `_app` 要求先登录；`site` 的页头多一个“登录”按钮。
 
-`--preset` 选择样式预设：`compact`（紧凑）、`comfortable`（舒展）、`spacious`（宽松），见[样式预设与主题](../frontend/app.md#presets)。不写时按布局：`frame` 是 `compact`，`rail` 是 `comfortable`，`site` 是 `spacious`。布局和预设可以分开选，例如 `--layout rail --preset compact`。
+`--preset` 选择样式预设：`compact`（紧凑）、`comfortable`（舒展）、`spacious`（宽松），见[样式预设与主题](../frontend/app.md#presets)。不写时按布局：`frame` 是 `compact`，`rail` 是 `comfortable`，`site` 是 `spacious`。
+
+`--render` 选择渲染方式：`csr` 只在浏览器中渲染，程序中不需要 Bun；`ssr` 在服务端渲染，搜索引擎可以收录。不写时按布局：`rail`、`frame` 是 `csr`，`site` 是 `ssr`，`site` 的首页还在构建时预渲染。服务端渲染的前端中，需要登录的 `_app` 设置了 `ssr: false`，只在浏览器中渲染。它写在 `package.json` 的 `tenon.ssr` 中，之后可以改，见[切换渲染方式](../frontend/hosting.md#switching)。
 
 `--base` 可以指定其他的挂载路径，以 `/` 开头和结尾，不能与已有的前端相同。`apps/admin` 必须还不存在。
 

@@ -1,17 +1,17 @@
 import { cspNonce } from "@go-tenon/start"
 import { createApp, NotFoundPage, RouteError } from "@go-tenon/ui"
-[[- if ne .Layout "site"]]
+[[- if .HasLogin]]
 import { me, session } from "./auth"
 [[- end]]
 import { routeTree } from "./routeTree.gen"
 
-// getRouter 创建应用：路由、TanStack Query[[if ne .Layout "site"]]、会话和权限[[end]]，见框架文档的“应用骨架”。
+// getRouter 创建应用：路由、TanStack Query[[if .HasLogin]]、会话和权限[[end]]，见框架文档的“应用骨架”。
 // 服务端渲染时每个请求调用一次，所以每次都创建新的应用。
 export function getRouter() {
   return createApp({
     id: "[[.Name]]",
     routeTree,
-[[- if ne .Layout "site"]]
+[[- if .HasLogin]]
     session,
     permissions: async () => (await me()).permissions ?? [],
 [[- end]]

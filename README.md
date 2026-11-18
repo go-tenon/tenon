@@ -308,7 +308,7 @@ flowchart LR
 | 命令 | 做什么 |
 | --- | --- |
 | `tenon init` | 生成一个能直接运行的 Go + React 项目：一个挂在 `/` 的官网前端，带示例模块 |
-| `tenon add frontend <名称>` | 再加一个前端：`--layout rail\|frame\|site` 选择布局，`--preset compact\|comfortable\|spacious` 选择样式预设 |
+| `tenon add frontend <名称>` | 再加一个前端：`--layout rail\|frame\|site` 选择布局，`--login centered\|split\|none` 选择登录页，`--preset compact\|comfortable\|spacious` 选择样式预设，`--render csr\|ssr` 选择渲染方式；四个选项互相独立，默认值随布局 |
 | `tenon dev` | 运行应用和各前端的开发服务器；修改 Go 代码后重新编译、重启并重新生成客户端 |
 | `tenon generate` | 编译应用，生成 TypeScript 和 Go 客户端 |
 | `tenon build` | 构建前端（有服务端渲染的前端时连同 Bun 编译成 SSR 程序），编译出一个嵌入了它们的二进制文件 |

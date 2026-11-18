@@ -1,5 +1,6 @@
 // Package scaffold 生成新项目和新前端：template/project 是项目，template/frontend 是 apps 中的一个前端
-// （TanStack Start 和 @go-tenon/ui），template/app 和 template/site 是按样式加上的页面。
+// （TanStack Start 和 @go-tenon/ui）。前端按几个互相独立的维度组合：template/app 和 template/site 是按布局加上的页面，
+// template/login 是登录页和登录接口。
 // 每个 .tmpl 文件按参数渲染后写入目标目录。模板的分隔符是 [[ ]]，与 JSX 的 {{ }} 区分开；gitignore.tmpl 写成 .gitignore。
 package scaffold
 
@@ -42,24 +43,39 @@ type Frontend struct {
 	Base   string // 前端挂载的路径，以 / 开头和结尾，写入 package.json 的 tenon.base。
 	Title  string // 页面标题。
 	Layout string // 布局，见 Layouts；为空时是 rail。
+	Login  string // 登录页的样式，见 Logins；为空时按布局：frame、rail 是 centered，site 是 none。
 	Preset string // 样式预设（@go-tenon/ui 的 Preset），见 Presets；为空时按布局：frame 是 compact，rail 是 comfortable，site 是 spacious。
+	Render string // 渲染方式，见 Renders；为空时按布局：site 是 ssr，frame、rail 是 csr。
 }
 
-// Layouts 是前端可选的布局，决定模板的页面和是否在服务端渲染：
-//   - rail：双栏导航（RailLayout），登录页，页面只在浏览器中渲染；
-//   - frame：顶栏加侧栏菜单、带多标签（FrameLayout），登录页，页面只在浏览器中渲染；
-//   - site：官网和内容站（SiteLayout），页面在服务端渲染，首页构建时预渲染。
+// Layouts 是前端可选的布局：
+//   - rail：双栏导航（RailLayout），首页在需要登录的布局路由 _app 之下；
+//   - frame：顶栏加侧栏菜单、带多标签（FrameLayout），首页同样在 _app 之下；
+//   - site：官网和内容站（SiteLayout），首页是公开的落地页占位。
 var Layouts = []string{"rail", "frame", "site"}
+
+// Logins 是登录页可选的样式：centered 是居中的卡片（CenteredAuthLayout），split 是左右分栏（SplitAuthLayout），
+// none 不生成登录页和登录接口，页面都是公开的。
+var Logins = []string{"centered", "split", "none"}
 
 // Presets 是可选的样式预设，按密度区分：compact 紧凑，comfortable 舒展，spacious 宽松。
 var Presets = []string{"compact", "comfortable", "spacious"}
 
-// defaultPresets 是每种布局默认的样式预设。
-var defaultPresets = map[string]string{"frame": "compact", "rail": "comfortable", "site": "spacious"}
+// Renders 是可选的渲染方式：csr 只在浏览器中渲染，程序中不需要 Bun；ssr 在服务端渲染，搜索引擎可以收录，首页构建时预渲染。
+var Renders = []string{"csr", "ssr"}
 
-// SSR 报告前端是否在服务端渲染，写入 package.json 的 tenon.ssr：site 布局的页面要被搜索引擎收录，在服务端渲染；
-// 后台的布局只在浏览器中渲染，程序中不需要 Bun。
-func (f Frontend) SSR() bool { return f.Layout == "site" }
+// defaults 是每种布局在各个维度上的默认值：后台的布局有登录页、只在浏览器中渲染，官网没有登录页、在服务端渲染。
+var defaults = map[string]Frontend{
+	"rail":  {Login: "centered", Preset: "comfortable", Render: "csr"},
+	"frame": {Login: "centered", Preset: "compact", Render: "csr"},
+	"site":  {Login: "none", Preset: "spacious", Render: "ssr"},
+}
+
+// SSR 报告前端是否在服务端渲染，写入 package.json 的 tenon.ssr。
+func (f Frontend) SSR() bool { return f.Render == "ssr" }
+
+// HasLogin 报告前端是否有登录页和登录接口。
+func (f Frontend) HasLogin() bool { return f.Login != "none" }
 
 // Write 生成项目：一个名为 web 的前端挂在 /（site 布局），带待办事项的示例。dir 必须是空目录或尚未创建。
 func Write(dir string, opts Options) error {
@@ -93,27 +109,55 @@ func WriteFrontend(root string, f Frontend) error {
 	return writeFrontend(dir, f)
 }
 
-// writeFrontend 渲染共用的前端模板，再按布局加上 site 或 app（frame、rail）的页面。
-func writeFrontend(dir string, f Frontend) error {
+// Resolve 返回补上默认值的 f：没有写的维度按布局取默认值，见 defaults。某个维度的值不在可选的范围内时返回错误。
+func (f Frontend) Resolve() (Frontend, error) {
 	if f.Layout == "" {
 		f.Layout = Layouts[0]
 	}
 	if !slices.Contains(Layouts, f.Layout) {
-		return fmt.Errorf("layout %q is not one of %v", f.Layout, Layouts)
+		return f, fmt.Errorf("layout %q is not one of %v", f.Layout, Layouts)
 	}
-	if f.Preset == "" {
-		f.Preset = defaultPresets[f.Layout]
+	def := defaults[f.Layout]
+	for _, d := range []struct {
+		name   string
+		value  *string
+		def    string
+		values []string
+	}{
+		{"login", &f.Login, def.Login, Logins},
+		{"preset", &f.Preset, def.Preset, Presets},
+		{"render", &f.Render, def.Render, Renders},
+	} {
+		if *d.value == "" {
+			*d.value = d.def
+		}
+		if !slices.Contains(d.values, *d.value) {
+			return f, fmt.Errorf("%s %q is not one of %v", d.name, *d.value, d.values)
+		}
 	}
-	if !slices.Contains(Presets, f.Preset) {
-		return fmt.Errorf("preset %q is not one of %v", f.Preset, Presets)
+	return f, nil
+}
+
+// writeFrontend 渲染共用的前端模板，再按布局加上 site 或 app（frame、rail）的页面，有登录页时加上 login。
+func writeFrontend(dir string, f Frontend) error {
+	f, err := f.Resolve()
+	if err != nil {
+		return err
 	}
 	if err := render("template/frontend", dir, f); err != nil {
 		return err
 	}
+	pages := "template/app"
 	if f.Layout == "site" {
-		return render("template/site", dir, f)
+		pages = "template/site"
 	}
-	return render("template/app", dir, f)
+	if err := render(pages, dir, f); err != nil {
+		return err
+	}
+	if f.HasLogin() {
+		return render("template/login", dir, f)
+	}
+	return nil
 }
 
 // workspaces 是 package.json 中的 workspaces 数组。
