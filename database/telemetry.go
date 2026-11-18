@@ -98,7 +98,7 @@ func WithLogger(l *slog.Logger) Option {
 type queryHook struct {
 	tracer   trace.Tracer            // nil 表示不记录链路
 	duration metric.Float64Histogram // nil 表示不记录指标
-	base     []attribute.KeyValue    // 每条语句都有的属性：数据库、地址
+	servers  [][]attribute.KeyValue  // 每个库的语句都有的属性：数据库、地址；第 0 个是主库，其余是读库
 	slow     time.Duration           // 0 表示不记录慢查询
 	logger   *slog.Logger
 }
@@ -106,20 +106,19 @@ type queryHook struct {
 // spanKey 是查询的 span 在 context 中的键。
 type spanKey struct{}
 
-// newQueryHook 按 o 和 cfg 创建钩子；既不记录指标链路、也不记录慢查询时返回 nil。
-func newQueryHook(o options, cfg Config, database, host string, port uint16) *queryHook {
+// newQueryHook 按 o 和 cfg 创建钩子，servers 是主库和各个读库的连接参数；既不记录指标链路、也不记录慢查询时返回 nil。
+func newQueryHook(o options, cfg Config, servers []*pgconn.Config) *queryHook {
 	if o.meters == nil && cfg.SlowQuery <= 0 {
 		return nil
 	}
-	h := &queryHook{
-		base: []attribute.KeyValue{
+	h := &queryHook{slow: cfg.SlowQuery, logger: o.logger}
+	for _, c := range servers {
+		h.servers = append(h.servers, []attribute.KeyValue{
 			attrSystem.String("postgresql"),
-			attrNamespace.String(database),
-			attrAddress.String(host),
-			attrPort.Int(int(port)),
-		},
-		slow:   cfg.SlowQuery,
-		logger: o.logger,
+			attrNamespace.String(c.Database),
+			attrAddress.String(c.Host),
+			attrPort.Int(int(c.Port)),
+		})
 	}
 	if h.logger == nil {
 		h.logger = slog.Default()
@@ -141,8 +140,13 @@ func newQueryHook(o options, cfg Config, database, host string, port uint16) *qu
 
 var _ bun.QueryHook = (*queryHook)(nil)
 
-// BeforeQuery 在 ctx 中已有 span 时为查询开启子 span。
+// BeforeQuery 在 ctx 中已有 span 时为查询开启子 span。有读库时在 ctx 中放一个 target，选择器把选中的库记在里面。
 func (h *queryHook) BeforeQuery(ctx context.Context, e *bun.QueryEvent) context.Context {
+	if len(h.servers) > 1 {
+		t := &target{}
+		ctx = context.WithValue(ctx, targetKey{}, t)
+		stash(e)[targetKey{}] = t
+	}
 	// 只在 ctx 中已有 span 时记录：队列转发任务、调度器加锁这些后台查询不属于任何请求或任务，
 	// 每条都成为一条单独的链路只会淹没真正的链路。它们的耗时仍然计入指标。
 	if h.tracer == nil || !trace.SpanContextFromContext(ctx).IsValid() {
@@ -154,10 +158,7 @@ func (h *queryHook) BeforeQuery(ctx context.Context, e *bun.QueryEvent) context.
 		name += " " + table
 	}
 	spanCtx, span := h.tracer.Start(ctx, name, trace.WithSpanKind(trace.SpanKindClient))
-	if e.Stash == nil {
-		e.Stash = map[any]any{}
-	}
-	e.Stash[spanKey{}] = span
+	stash(e)[spanKey{}] = span
 	if op == "BEGIN" {
 		// Bun 把这里返回的 ctx 保存为事务的 ctx，COMMIT 和 ROLLBACK 用它执行：
 		// 返回原来的 ctx，它们才会和事务中的语句一样接在调用方之下。
@@ -170,7 +171,11 @@ func (h *queryHook) BeforeQuery(ctx context.Context, e *bun.QueryEvent) context.
 func (h *queryHook) AfterQuery(ctx context.Context, e *bun.QueryEvent) {
 	elapsed := time.Since(e.StartTime)
 	op, table := describe(e)
-	attrs := append(h.base[:len(h.base):len(h.base)], attrOperation.String(op))
+	base := h.servers[0]
+	if t, ok := e.Stash[targetKey{}].(*target); ok {
+		base = h.servers[t.server]
+	}
+	attrs := append(base[:len(base):len(base)], attrOperation.String(op))
 	if table != "" {
 		attrs = append(attrs, attrCollection.String(table))
 	}
@@ -203,6 +208,14 @@ func (h *queryHook) AfterQuery(ctx context.Context, e *bun.QueryEvent) {
 		h.logger.WarnContext(ctx, "slow query",
 			"duration", elapsed, string(attrOperation), op, string(attrCollection), table, "query", text)
 	}
+}
+
+// stash 返回 e.Stash，为 nil 时先创建。
+func stash(e *bun.QueryEvent) map[any]any {
+	if e.Stash == nil {
+		e.Stash = map[any]any{}
+	}
+	return e.Stash
 }
 
 // describe 返回语句的操作（SELECT、INSERT、BEGIN 等，大写）和 Bun 查询的表名；原始 SQL 没有表名。

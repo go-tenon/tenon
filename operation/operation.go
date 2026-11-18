@@ -28,6 +28,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/uptrace/bun"
 
+	"github.com/go-tenon/tenon/database"
 	"github.com/go-tenon/tenon/errorx"
 	"github.com/go-tenon/tenon/i18n"
 	"github.com/go-tenon/tenon/identity"
@@ -118,7 +119,8 @@ func (s *Service) Start(ctx context.Context, tx bun.IDB, owner identity.Subject,
 // Get 返回 owner 发起的操作；不存在或者不是 owner 发起的时返回 ErrNotFound。
 func (s *Service) Get(ctx context.Context, owner identity.Subject, id uuid.UUID) (*Operation, error) {
 	op := new(Operation)
-	err := owned(s.db.NewSelect().Model(op), owner).Where("id = ?", id).Scan(ctx)
+	// 在主库读取：客户端发起操作后立即查询进度，读库可能还没有这一行。
+	err := owned(s.db.NewSelect().Model(op), owner).Where("id = ?", id).Scan(database.Primary(ctx))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound.New()
 	}

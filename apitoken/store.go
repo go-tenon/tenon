@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/uptrace/bun"
 
+	"github.com/go-tenon/tenon/database"
 	"github.com/go-tenon/tenon/errorx"
 	"github.com/go-tenon/tenon/identity"
 )
@@ -291,7 +292,8 @@ func (s *Store) validate(ctx context.Context, token, resource string) (identity.
 	} else {
 		q = q.Where("(kind <> ? OR resource = ?)", KindOAuth, resource)
 	}
-	err := q.Scan(ctx)
+	// 在主库校验：登录后客户端立即用新 token 发请求，撤销后旧 token 立即失效，都不受读库延迟影响。
+	err := q.Scan(database.Primary(ctx))
 	if errors.Is(err, sql.ErrNoRows) {
 		return identity.Subject{}, ErrInvalid.New()
 	}

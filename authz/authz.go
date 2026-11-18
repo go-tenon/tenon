@@ -178,7 +178,8 @@ func (s *Store) Permissions(ctx context.Context, ref identity.Ref, tenant string
 		return s.permissions(ctx, ref, tenant)
 	}
 	g, err := s.cache.Remember(ctx, lengthPrefixed(string(ref.Type), ref.ID, tenant), func(ctx context.Context) (grant, error) {
-		perms, member, err := s.permissions(ctx, ref, tenant)
+		// 缓存在修改提交后失效，接着的读取要在主库：读库上的旧数据写进缓存后，要等它过期才会更正。
+		perms, member, err := s.permissions(database.Primary(ctx), ref, tenant)
 		return grant{Permissions: perms, Member: member}, err
 	}, s.subjectTag(ref), s.rolesTag())
 	return g.Permissions, g.Member, err

@@ -18,6 +18,7 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/go-tenon/tenon/database"
 	"github.com/go-tenon/tenon/logging"
 )
 
@@ -408,6 +409,7 @@ func nakAfter(m jetstream.Msg, d time.Duration) {
 }
 
 // jobContext 返回处理函数的 context：还原发布方的链路和 request_id，附上任务 ID、执行次数。
+// 其中的查询都在主库执行（database.Primary）：任务在发布它的事务提交后立即送达，读库可能还没有这个事务写入的数据。
 func (w *Worker) jobContext(j Job, maxAttempts int) context.Context {
 	attrs := []slog.Attr{slog.String(logging.AttrMessageID, j.ID.String()), slog.Int(logging.AttrAttempt, j.Attempt)}
 	for _, key := range propagated {
@@ -416,7 +418,7 @@ func (w *Worker) jobContext(j Job, maxAttempts int) context.Context {
 		}
 	}
 	ctx := logging.WithAttrs(w.startSpan(context.Background(), j), attrs...)
-	return context.WithValue(ctx, attemptKey{}, attemptInfo{j.Attempt, maxAttempts})
+	return context.WithValue(database.Primary(ctx), attemptKey{}, attemptInfo{j.Attempt, maxAttempts})
 }
 
 // call 调用处理函数，把 panic 转为错误。

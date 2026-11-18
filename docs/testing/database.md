@@ -208,7 +208,15 @@ db := dbtest.Open(t, migrations.FS)
 func Replica(t testing.TB, db *bun.DB) *bun.DB
 ```
 
-返回同一个测试数据库的只读连接池，模拟[只读副本](../database/advanced.md#read-replicas)。
+返回同一个测试数据库的只读连接池，模拟[单独的副本连接池](../database/advanced.md#explicit-replica)。
+
+### DSN
+
+```go
+func DSN(t testing.TB, db *bun.DB) string
+```
+
+返回 `db` 所在测试数据库的连接串，例如用它再打开一个配置了 `Replicas` 的连接池。
 
 ### URL
 
