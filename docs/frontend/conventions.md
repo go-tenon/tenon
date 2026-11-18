@@ -108,7 +108,7 @@ helpdesk/
 
 - 每个前端是 `apps/` 下的一个目录，有自己的 `package.json`（其中的 `tenon` 字段声明挂载路径和是否在服务端渲染）和 `vite.config.ts`。全部前端的构建产物在 `apps/dist` 中，由 `apps/apps.go` 嵌入程序。
 - `packages/client` 由工具生成，从第一个前端起就有。`packages/ui` 在第二个前端用到同一个业务组件时，才从前端中抽出来。
-- 生成的客户端按 API 分目录：每个 API（`rest.New` 的一个 `BasePath`）生成到 `packages/client/src/<名称>`，名称默认是 `BasePath` 的最后一段，前端用 `@<项目名>/client/<名称>` 导入，例如 `@helpdesk/client/admin`。一个前端只导入自己调用的 API。见[开发工具](../installation/tooling.md#conventions)。
+- 生成的客户端按 API 分目录：每个 API（`rest.New` 的一个 `BasePath`）生成到 `packages/client/src/<名称>`，名称默认是 `BasePath` 的最后一段（跳过 `api` 和路径参数），前端用 `@<项目名>/client/<名称>` 导入，例如 `@helpdesk/client/admin`。一个前端只导入自己调用的 API。见[开发工具](../installation/tooling.md#conventions)。
 - 后端的目录见[目录结构](../concepts/structure.md)。
 
 <a id="layering"></a>

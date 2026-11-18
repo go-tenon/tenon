@@ -87,7 +87,7 @@ func main() {
 
 `command.Execute` 执行根命令。收到 `SIGINT` 或 `SIGTERM` 时，它会取消命令的 context；命令失败时，它把错误写到标准错误，并以对应的[退出码](#exit-codes)结束进程。
 
-`command.Root` 在根命令上定义了 `--config` 选项，所有子命令共用它。它可以传入多次，后面的文件覆盖前面的；没有传入时读取环境变量 `APP_CONFIG`（格式相同，用逗号分隔），它也没有设置时是 `config/app.yaml`，见[叠加多个配置文件](configuration.md#overriding-configuration)。需要配置的命令由框架负责读取项目根目录的 [.env](configuration.md#env-files)、按 `--config` 加载配置并校验，你的代码只会拿到校验通过的配置。配置结构见[配置](configuration.md#loading-configuration)，类型参数通常可以从你传入的函数推断出来。
+`command.Root` 在根命令上定义了 `--config` 选项，所有子命令共用它。它可以传入多次，后面的文件覆盖前面的；没有传入时读取环境变量 `APP_CONFIG`（格式相同，用逗号分隔），它也没有设置时是 `config/app.yaml`，`config/local.yaml` 存在时叠加在它之后，见[叠加多个配置文件](configuration.md#overriding-configuration)。需要配置的命令由框架负责读取项目根目录的 [.env](configuration.md#env-files)、按 `--config` 加载配置并校验，你的代码只会拿到校验通过的配置。配置结构见[配置](configuration.md#loading-configuration)，类型参数通常可以从你传入的函数推断出来。
 
 | 构造函数 | 创建的命令 | 需要配置 |
 | --- | --- | --- |
@@ -155,6 +155,20 @@ func Commands() []*cobra.Command {
 
 自定义命令中，用 `cmd.OutOrStdout()` 和 `cmd.ErrOrStderr()` 写输出。这样在测试中可以用 Cobra 的 `SetOut`、`SetErr` 把输出重定向到缓冲区，见[命令测试](../testing/http.md#command-tests)。
 
+密码这类值不要作为命令行参数传入：参数会留在 shell 的历史和进程列表中。用 `command.ReadSecret` 读取：标准输入是终端时关闭回显，显示提示后读取，第三个参数不为空时再读一次确认；标准输入不是终端时（脚本、`docker compose run -T`）读取第一行。
+
+```go
+password, err := command.ReadSecret(cmd, "密码：", "再输入一次：")
+if err != nil {
+    return err // 两次不一致时是 command.ErrSecretMismatch
+}
+```
+
+```bash
+./bin/blog user create --email ming@example.com                     # 在终端中输入两次
+printf '%s\n' "$PASSWORD" | ./bin/blog user create --email ming@example.com   # 脚本中从标准输入读取
+```
+
 <a id="exit-codes"></a>
 ## 退出码
 
@@ -182,6 +196,23 @@ func Commands() []*cobra.Command {
 ```go
 return command.AsExitError(command.ExitUnavailable, err)
 ```
+
+<a id="error-messages"></a>
+### 错误提示
+
+命令失败时，业务错误显示翻译后的提示，后面附上错误码，与 HTTP 响应中的 `detail` 是同一句话：
+
+```text
+这个邮箱已经被使用（user.email_taken）
+```
+
+系统故障（`errorx.Unavailable`、`errorx.Internal`）和没有译文的错误显示错误本身，方便排查。提示按命令的 context 中的语言翻译：`command.Execute` 默认使用框架内置的中英文消息，默认语言是中文；应用有自己的[翻译文件](localization.md)时，用 `command.Languages` 交给它，通常与 HTTP 的 `httpx.Languages` 是同一个：
+
+```go
+command.Execute(root, command.Languages(i18n.MustNew("zh-CN", locales.FS)))
+```
+
+命令中的代码也可以用 `i18n.T(cmd.Context(), id, data)` 按同一种语言翻译自己的输出。`command.ErrorText(ctx, err)` 返回失败时显示的文字，自己处理错误输出时使用。
 
 <a id="built-in-commands"></a>
 ## 内置命令
@@ -378,15 +409,25 @@ go run ./cmd/blog migrate publish --dir migrations
 
 ```go
 func Root(name, short string) *cobra.Command
-func Execute(root *cobra.Command)
+func Execute(root *cobra.Command, opts ...ExecuteOption)
+func Languages(b *goi18n.Bundle) ExecuteOption
+func ErrorText(ctx context.Context, err error) string
 ```
+
+### ReadSecret
+
+```go
+func ReadSecret(cmd *cobra.Command, prompt, confirm string) (string, error)
+```
+
+读取一个不应出现在命令行参数中的值，见[输入与输出](#input-and-output)。标准输入是终端时关闭回显，在标准错误上显示 `prompt`；`confirm` 不为空时再读一次，两次不同时返回 `ErrSecretMismatch`。标准输入不是终端时读取第一行，不显示提示。返回的值去掉了行尾的换行符。
 
 - **参数**
     - `name`：程序名，出现在帮助信息中
     - `short`：一句话说明
 - **返回**：带 `--config` 选项的根命令
 
-未知命令、未知选项和多余参数都标记为 `ExitUsage`。`Execute` 执行根命令：收到停止信号时取消命令的 context；命令失败时把错误写到标准错误，并以 `ExitCode(err)` 退出进程。
+未知命令、未知选项和多余参数都标记为 `ExitUsage`。`Execute` 执行根命令：收到停止信号时取消命令的 context，context 带有消息目录的默认语言；命令失败时把 `ErrorText(ctx, err)` 写到标准错误，并以 `ExitCode(err)` 退出进程。`Languages` 设置消息目录，没有设置时使用框架内置的中英文消息，见[错误提示](#error-messages)。
 
 ### Serve、Part
 

@@ -146,3 +146,76 @@ func (n named) Validate() error {
 type validated struct {
 	Inner named `yaml:"inner"`
 }
+
+// 前面文件中引用了未设置的环境变量的项，由后面的文件给出时不是错误，例如 app.yaml 的 ${APP_KEY} 由 local.yaml 给出。
+func TestLaterFileSetsUnsetEnv(t *testing.T) {
+	cfg, err := loadFiles(t, map[string]string{
+		"app.yaml":   "http:\n  port: ${TENON_TEST_UNSET}\n  addr: :8000\ndb:\n  password: ${TENON_TEST_UNSET}\n",
+		"local.yaml": "http:\n  port: 2\ndb:\n  password: local\n",
+	}, "app.yaml", "local.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.HTTP.Port != 2 || cfg.HTTP.Addr != ":8000" || cfg.DB.Password != "local" {
+		t.Fatalf("got %+v", cfg)
+	}
+
+	// 列表整体替换：后面的文件给出列表时，前面列表中未设置的项不再需要。
+	dir := writeFiles(t, map[string]string{
+		"app.yaml":  "tags: [a, '${TENON_TEST_UNSET}']\n",
+		"prod.yaml": "tags: [c]\n",
+	})
+	if c, err := config.Load[collections](filepath.Join(dir, "app.yaml"), filepath.Join(dir, "prod.yaml")); err != nil || strings.Join(c.Tags, ",") != "c" {
+		t.Fatalf("tags %+v, %v", c.Tags, err)
+	}
+}
+
+func TestUnsetEnvNotSetLaterFails(t *testing.T) {
+	for name, files := range map[string]map[string]string{
+		"not overridden":    {"app.yaml": "db:\n  dsn: base\n  password: ${TENON_TEST_UNSET}\n", "local.yaml": "db:\n  dsn: local\n"},
+		"set earlier only":  {"app.yaml": "db:\n  password: base\n", "local.yaml": "db:\n  password: ${TENON_TEST_UNSET}\n"},
+		"overridden by map": {"app.yaml": "db:\n  password: ${TENON_TEST_UNSET}\n", "local.yaml": "db: {}\n"},
+	} {
+		_, err := loadFiles(t, files, "app.yaml", "local.yaml")
+		if err == nil || !strings.Contains(err.Error(), "environment variable TENON_TEST_UNSET is not set") {
+			t.Errorf("%s: err = %v", name, err)
+		}
+	}
+	_, err := loadFiles(t, map[string]string{"app.yaml": "db:\n  password: ${TENON_TEST_UNSET}\n", "local.yaml": "db:\n  dsn: x\n"}, "app.yaml", "local.yaml")
+	if err == nil || !strings.Contains(err.Error(), "app.yaml: line 2") {
+		t.Errorf("error should name the file and line: %v", err)
+	}
+}
+
+func TestValue(t *testing.T) {
+	t.Setenv("TENON_TEST_PORT", "9100")
+	dir := writeFiles(t, map[string]string{
+		"app.yaml":   "http:\n  addr: :8000\n  port: ${TENON_TEST_PORT}\ndb:\n  dsn: ${TENON_TEST_UNSET}\n",
+		"local.yaml": "http:\n  addr: :8081\n",
+		"empty.yaml": "",
+	})
+	app, local, empty := filepath.Join(dir, "app.yaml"), filepath.Join(dir, "local.yaml"), filepath.Join(dir, "empty.yaml")
+	for _, tc := range []struct {
+		key   string
+		files []string
+		want  string
+		ok    bool
+	}{
+		{"http.addr", []string{app}, ":8000", true},
+		{"http.addr", []string{app, local}, ":8081", true}, // 后面的文件覆盖前面的
+		{"http.port", []string{app, local}, "9100", true},  // 展开环境变量
+		{"http.timeout", []string{app, local}, "", false},
+		{"logs.level", []string{empty}, "", false},
+	} {
+		v, ok, err := config.Value(tc.key, tc.files...)
+		if err != nil || v != tc.want || ok != tc.ok {
+			t.Errorf("Value(%s) = %q, %v, %v", tc.key, v, ok, err)
+		}
+	}
+	if _, _, err := config.Value("db.dsn", app); err == nil || !strings.Contains(err.Error(), "TENON_TEST_UNSET is not set") {
+		t.Errorf("unset env: %v", err)
+	}
+	if _, _, err := config.Value("http", app); err == nil || !strings.Contains(err.Error(), "not a single value") {
+		t.Errorf("mapping: %v", err)
+	}
+}

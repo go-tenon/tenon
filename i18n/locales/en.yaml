@@ -20,6 +20,7 @@ ai.busy: The conversation is in progress, please try again later
 ai.awaiting_approval: The conversation is waiting for approval
 ai.finished: The answer has already finished
 ai.not_pending: No such pending action
+command.secret_mismatch: The two entries do not match
 apitoken.not_found: Token not found
 login.invalid_credentials: Incorrect account or password
 login.invalid_code: The code is incorrect or has expired

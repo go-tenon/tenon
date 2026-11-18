@@ -18,8 +18,10 @@ import (
 // @go-tenon/client。项目把它们列入 Bun workspace，前端用 workspace:* 依赖。
 const JSDir = ".tenon/js"
 
-// SyncJS 把项目 dir 使用的框架版本中 js 下的前端包复制到 dir/JSDir，替换已有的内容。框架被 replace 到本地目录时
-// 复制本地的代码。changed 报告各包的 package.json 是否有变化：有变化时要重新 bun install。
+// SyncJS 把项目 dir 使用的框架版本中 js 下的前端包同步到 dir/JSDir：内容有变化或缺少的文件才写入，框架中已经没有的
+// 文件和包删除，没有变化的文件不碰。所以开发服务器运行时执行 tenon generate，Vite 不会因为文件被重写而重新加载、
+// 重新预构建依赖。框架被 replace 到本地目录时同步本地的代码。changed 报告各包的 package.json 是否有变化：
+// 有变化时要重新 bun install。
 //
 // 各包自己的 node_modules 保留：Bun 把包的依赖链接放在其中（例如 @go-tenon/ui 的 react），
 // package.json 没有变化时不会重新 bun install，删掉它包就找不到依赖。
@@ -44,18 +46,20 @@ func SyncJS(dir string) (changed bool, err error) {
 			packages[e.Name()] = true
 		}
 	}
-	// 框架中已经没有的包整个删除，其余的包删除 node_modules 之外的内容，再复制新的。
+	// 框架中已经没有的包整个删除，其余的包逐个文件同步。
 	existing, err := os.ReadDir(dst)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return false, errors.Wrap(err, "dev: sync front-end packages")
 	}
 	for _, e := range existing {
-		if err := clearPackage(filepath.Join(dst, e.Name()), packages[e.Name()]); err != nil {
-			return false, errors.Wrap(err, "dev: sync front-end packages")
+		if !packages[e.Name()] {
+			if err := os.RemoveAll(filepath.Join(dst, e.Name())); err != nil {
+				return false, errors.Wrap(err, "dev: sync front-end packages")
+			}
 		}
 	}
 	for name := range packages {
-		if err := copyInto(filepath.Join(src, name), filepath.Join(dst, name), isTest); err != nil {
+		if err := syncPackage(filepath.Join(src, name), filepath.Join(dst, name)); err != nil {
 			return false, errors.Wrap(err, "dev: sync front-end packages")
 		}
 		if err := markBins(filepath.Join(dst, name)); err != nil {
@@ -98,7 +102,15 @@ func markBins(dir string) error {
 		return errors.Newf("%s/package.json: bin must be a path or an object of paths", dir)
 	}
 	for _, p := range paths {
-		if err := os.Chmod(filepath.Join(dir, filepath.FromSlash(p)), 0o755); err != nil {
+		f := filepath.Join(dir, filepath.FromSlash(p))
+		info, err := os.Stat(f)
+		if err != nil {
+			return err
+		}
+		if info.Mode().Perm()&0o111 != 0 {
+			continue // 已经可以执行：不改动文件，开发服务器不会看到变化
+		}
+		if err := os.Chmod(f, 0o755); err != nil {
 			return err
 		}
 	}
@@ -176,24 +188,59 @@ func isTest(name string) bool {
 	return false
 }
 
-// clearPackage 删除包目录 dir；keepDeps 为 true 时保留其中的 node_modules。
-func clearPackage(dir string, keepDeps bool) error {
-	if !keepDeps {
-		return os.RemoveAll(dir)
-	}
-	entries, err := os.ReadDir(dir)
+// syncPackage 让包目录 dst 与框架中的 src 一致：内容不同或缺少的文件才写入，src 中没有的文件和目录删除；
+// 跳过 project.SkipDir 中的目录和测试文件（isTest），保留 dst 的 node_modules（Bun 链接的依赖）。
+func syncPackage(src, dst string) error {
+	want := map[string]bool{} // dst 中应有的文件和目录，相对于包目录
+	err := filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() && path != src && project.SkipDir(d.Name()) {
+			return filepath.SkipDir
+		}
+		if !d.IsDir() && isTest(d.Name()) {
+			return nil
+		}
+		rel, _ := filepath.Rel(src, path)
+		want[rel] = true
+		target := filepath.Join(dst, rel)
+		if d.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if old, err := os.ReadFile(target); err == nil && bytes.Equal(old, b) {
+			return nil
+		}
+		return os.WriteFile(target, b, 0o644)
+	})
 	if err != nil {
 		return err
 	}
-	for _, e := range entries {
-		if e.Name() == "node_modules" {
-			continue
-		}
-		if err := os.RemoveAll(filepath.Join(dir, e.Name())); err != nil {
+	return filepath.WalkDir(dst, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
 			return err
 		}
-	}
-	return nil
+		rel, _ := filepath.Rel(dst, path)
+		switch {
+		case path == dst:
+			return nil
+		case d.IsDir() && rel == "node_modules":
+			return filepath.SkipDir
+		case want[rel]:
+			return nil
+		}
+		if err := os.RemoveAll(path); err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return filepath.SkipDir
+		}
+		return nil
+	})
 }
 
 // manifests 返回 dir 中各包的 package.json，按包名排序；把包名写在内容前面，增删包也算变化。

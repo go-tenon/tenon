@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/go-tenon/tenon/cmd/tenon/internal/dev"
 )
 
 // fake 记录参数；go list -m 输出框架的目录；go build -mod=mod -o BIN（generate 编译应用）写出一个记录参数的伪造应用；
@@ -116,6 +118,10 @@ func TestBuild(t *testing.T) {
 	if !strings.Contains(string(manifest), `"name": "admin",`) || !strings.Contains(string(manifest), `"ssr": true`) {
 		t.Errorf("manifest:\n%s", manifest)
 	}
+	// 提交在 apps/dist 中的 .gitignore 在清空之后写回去。
+	if b, _ := os.ReadFile("apps/dist/.gitignore"); string(b) != dev.DistIgnore {
+		t.Errorf("apps/dist/.gitignore:\n%s", b)
+	}
 }
 
 // 没有服务端渲染的前端：不编译 Bun 可执行文件，程序中不带 Bun。
@@ -180,7 +186,7 @@ func TestGenerate(t *testing.T) {
 			t.Fatalf("log missing %q:\n%s", want, l)
 		}
 	}
-	for _, f := range []string{"apps/dist/frontends.json", ".tenon/js/client/package.json"} {
+	for _, f := range []string{"apps/dist/frontends.json", "apps/dist/.gitignore", ".tenon/js/client/package.json"} {
 		if _, err := os.Stat(f); err != nil {
 			t.Errorf("%s: %v", f, err)
 		}
@@ -199,7 +205,7 @@ func TestAddFrontend(t *testing.T) {
 	}, "go", "bun")
 	cmd := root()
 	var out bytes.Buffer
-	cmd.SetArgs([]string{"add", "frontend", "admin"})
+	cmd.SetArgs([]string{"add", "frontend", "admin", "--api", "/admin/api"})
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
 	if err := cmd.Execute(); err != nil {
@@ -210,6 +216,7 @@ func TestAddFrontend(t *testing.T) {
 		"apps/dist/frontends.json":               `"base": "/admin/",`,
 		"apps/admin/src/theme.ts":                `preset: "comfortable"`,
 		"apps/admin/src/routes/login.tsx":        "LoginForm",
+		"apps/admin/src/auth.ts":                 "session.fetch(fetch)(`/admin/api${path}`",
 		"package.json":                           `"apps/admin",`,
 		".tenon/js/client/package.json":          `"name": "@go-tenon/client"`,
 		".tenon/docs/README.md":                  "# Tenon 文档",
@@ -238,6 +245,8 @@ func TestAddFrontend(t *testing.T) {
 		"add frontend ops --login modal":  `login "modal" is not one of`,
 		"add frontend ops --preset dense": `preset "dense" is not one of`,
 		"add frontend ops --render spa":   `render "spa" is not one of`,
+		"add frontend ops --api ops/api":  `api "ops/api" must start with /`,
+		"add frontend ops --api /ops/":    `api "/ops/" must start with / and not end with /`,
 	} {
 		if err := execute(t, strings.Fields(args)...); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%s: err = %v", args, err)

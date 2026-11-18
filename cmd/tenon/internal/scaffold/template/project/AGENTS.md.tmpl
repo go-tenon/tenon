@@ -26,14 +26,14 @@ go run ./cmd/[[.Slug]] openapi    # OpenAPI 文档
 go run ./cmd/[[.Slug]] --help     # 应用的其他命令
 ```
 
-加前端用 `go tool tenon add frontend <名称>`，加桌面端用 `go tool tenon add client <名称>`，见框架文档的 `installation/tooling.md`。
+加前端用 `go tool tenon add frontend <名称>`（这个前端使用另一套账号、有自己的 API 时加 `--api`，例如 `--api /admin/api`），加桌面端用 `go tool tenon add client <名称>`，见框架文档的 `installation/tooling.md`。
 
 ## 目录
 
 ```
 cmd/[[.Slug]]/main.go    入口：配置、装配依赖、登记命令和路由
 internal/<模块>/         业务代码，一个业务动作一个文件
-config/app.yaml          配置；本机的覆盖写在 config/local.yaml，不提交
+config/app.yaml          配置；本机的覆盖写在 config/local.yaml，不提交，命令和 tenon dev 自动叠加它
 apps/<前端>/             TanStack Start 前端，挂载路径写在 package.json 的 tenon 字段
 packages/client/         bun run generate 生成的客户端，不手改
 .tenon/                  tenon 复制的框架前端包和文档，不提交

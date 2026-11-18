@@ -1,0 +1,3 @@
+# 构建产物，由 tenon build、tenon dev 生成，不提交。这个文件让 go:embed all:dist 在还没有生成时也能编译。
+*
+!.gitignore

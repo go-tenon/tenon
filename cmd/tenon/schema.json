@@ -13,7 +13,7 @@
       "items": { "type": "string" },
       "description": "开发时运行应用的参数，默认 [\"serve\", \"--config\", \"config/app.yaml,config/local.yaml\"]（local.yaml 不存在时去掉它）。"
     },
-    "url": { "type": "string", "description": "应用的地址，dev 打印它，前端的开发服务器经它调用接口，默认 http://localhost:8080。", "default": "http://localhost:8080" },
+    "url": { "type": "string", "description": "应用的地址，dev 打印它，前端的开发服务器经它调用接口。默认按应用配置中的 http.addr 推出（端口相同，主机是 localhost），没有 http.addr 时是 http://localhost:8080；只在应用不在本机这个端口上时才需要写。" },
     "apis": {
       "type": "object",
       "description": "按 BasePath 覆盖 API 客户端的约定，例如 {\"/api/v1\": {\"name\": \"public\", \"go\": \"../api\"}}。有 packages/client/package.json 时，每个 API 的 TypeScript 客户端生成到 packages/client/src/<名称>；没有写的 API 按约定生成。",
@@ -22,7 +22,7 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "name": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$", "description": "TypeScript 客户端的目录名，默认是 BasePath 的最后一段，例如 /api/admin 是 admin。" },
+          "name": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$", "description": "TypeScript 客户端的目录名，默认是 BasePath 中从后往前第一个不是 api、也不是路径参数的段，例如 /api/admin 和 /admin/api 都是 admin。" },
           "go": { "type": "string", "description": "Go 客户端的目录，例如 ../api，设置后才生成。" }
         }
       }

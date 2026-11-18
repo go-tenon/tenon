@@ -245,7 +245,7 @@ func root() *cobra.Command {
 
 // addFrontendCommand 返回 tenon add frontend 命令：在 apps/<name> 中生成一个前端，加入 Bun workspace。
 func addFrontendCommand() *cobra.Command {
-	var base, layout, login, preset, render string
+	var base, layout, login, preset, render, api string
 	cmd := &cobra.Command{
 		Use:   "frontend <name>",
 		Short: "在 apps/<name> 中生成一个 TanStack Start 前端，加入 Bun workspace",
@@ -272,7 +272,7 @@ func addFrontendCommand() *cobra.Command {
 			if i := slices.IndexFunc(existing.Frontends, func(f project.Frontend) bool { return f.Base == base && f.Name != name }); i >= 0 {
 				return fmt.Errorf("%s is already mounted at %s; choose another --base", existing.Frontends[i].Dir, base)
 			}
-			f, err := scaffold.Frontend{Scope: scope, Name: name, Base: base, Title: name, Layout: layout, Login: login, Preset: preset, Render: render}.Resolve()
+			f, err := scaffold.Frontend{Scope: scope, Name: name, Base: base, Title: name, Layout: layout, Login: login, Preset: preset, Render: render, API: api}.Resolve()
 			if err != nil {
 				return err
 			}
@@ -320,6 +320,7 @@ func addFrontendCommand() *cobra.Command {
 	cmd.Flags().StringVar(&login, "login", "", "登录页：centered（居中的卡片）；split（左右分栏）；none（没有登录）。默认按布局：frame、rail 是 centered，site 是 none")
 	cmd.Flags().StringVar(&preset, "preset", "", "样式预设：compact（紧凑）；comfortable（舒展）；spacious（宽松）。默认按布局：frame 是 compact，rail 是 comfortable，site 是 spacious")
 	cmd.Flags().StringVar(&render, "render", "", "渲染方式：csr（只在浏览器中渲染）；ssr（服务端渲染）。默认按布局：frame、rail 是 csr，site 是 ssr")
+	cmd.Flags().StringVar(&api, "api", "/api", "登录页调用的 API 的路径：它的 /auth/login、/auth/logout 和 /me。前端使用另一套账号时写它自己的 API，例如 /admin/api")
 	return cmd
 }
 
@@ -484,8 +485,11 @@ func buildCommand() *cobra.Command {
 				if err := run(cmd, ".", "bun", "install", "--frozen-lockfile"); err != nil {
 					return err
 				}
-				// apps/dist 每次从头生成：改成只在浏览器中渲染的前端不留下上次的 SSR 可执行文件。
+				// apps/dist 每次从头生成：改成只在浏览器中渲染的前端不留下上次的 SSR 可执行文件。提交在其中的 .gitignore 写回去。
 				if err := os.RemoveAll(filepath.FromSlash(dev.DistDir)); err != nil {
+					return err
+				}
+				if err := dev.WriteDistIgnore("."); err != nil {
 					return err
 				}
 				var ssr []project.Frontend

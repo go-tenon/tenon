@@ -52,6 +52,7 @@ type Frontend struct {
 	Login  string // 登录页的样式，见 Logins；为空时按布局：frame、rail 是 centered，site 是 none。
 	Preset string // 样式预设（@go-tenon/ui 的 Preset），见 Presets；为空时按布局：frame 是 compact，rail 是 comfortable，site 是 spacious。
 	Render string // 渲染方式，见 Renders；为空时按布局：site 是 ssr，frame、rail 是 csr。
+	API    string // 登录页调用的 API 的路径，例如 /admin/api，以 / 开头、不以 / 结尾；为空时是 /api。
 }
 
 // Client 是客户端模板的参数。
@@ -155,6 +156,12 @@ func WriteClient(root string, c Client) (consent bool, err error) {
 
 // Resolve 返回补上默认值的 f：没有写的维度按布局取默认值，见 defaults。某个维度的值不在可选的范围内时返回错误。
 func (f Frontend) Resolve() (Frontend, error) {
+	if f.API == "" {
+		f.API = "/api"
+	}
+	if !strings.HasPrefix(f.API, "/") || strings.HasSuffix(f.API, "/") {
+		return f, fmt.Errorf("api %q must start with / and not end with /", f.API)
+	}
 	if f.Layout == "" {
 		f.Layout = Layouts[0]
 	}
