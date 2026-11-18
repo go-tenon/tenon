@@ -43,7 +43,7 @@ err := srv.Serve(ctx, nc) // 直到 ctx 被取消
 item, err := natsrpc.Call[ArticleDTO](ctx, nc, "blog.v1.articles.get", GetInput{ID: id}, natsrpc.Token(token))
 ```
 
-`nc` 是两边各自用 [`natsx.Connect`](../libraries/nats.md#connecting) 创建的连接，连到同一套 NATS 即可，不需要知道对方的地址。
+`nc` 是两边各自用 [`natsx.Connect`](../libraries/nats.md#connecting) 创建的连接，连到同一套 NATS 的同一个账号即可，不需要知道对方的地址；对方在另一个账号或另一套 NATS 上时，见[连接另一个账号或另一套 NATS](../libraries/nats.md#other-accounts)。
 
 <a id="providing-endpoints"></a>
 ## 提供端点
