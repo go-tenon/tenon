@@ -58,6 +58,7 @@ blog/
 ├── go.mod
 ├── tenon.json             开发工具的配置，可以没有
 ├── package.json           Bun workspace 与 dev、build、generate 脚本
+├── AGENTS.md              项目说明和代码约定，AI 编程助手读它，见“AI 编程助手”一页
 ├── compose.yaml           本机开发用的 PostgreSQL、NATS 等
 ├── .env                   本机的环境变量，不提交
 ├── config/

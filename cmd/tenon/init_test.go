@@ -68,6 +68,27 @@ func TestInitEndToEnd(t *testing.T) {
 	// Electron 桌面端显示 admin：admin 中加上授权页，客户端的类型检查随项目的 typecheck 一起运行。
 	sh("go", "tool", "tenon", "add", "client", "admin-desktop", "--kind", "electron", "--frontend", "admin", "--title", "Todo 后台")
 
+	// add frontend、add client 之后 AGENTS.md 中 tenon 的一段列出了它们；框架文档复制到了 .tenon/docs，
+	// 三个助手的 MCP 配置中有 gopls 和 mantine。
+	for f, wants := range map[string][]string{
+		"AGENTS.md": {"# Todo\n", "- `apps/admin`：挂在 `/admin/`", "- `clients/admin-desktop`：electron 客户端，显示 `apps/admin`。",
+			"| Mantine | ", "| Electron | ", "## 代码约定"},
+		".tenon/docs/README.md": {"# Tenon 文档"},
+		".mcp.json":             {`"gopls"`, `"mantine"`},
+		".codex/config.toml":    {"[mcp_servers.gopls]"},
+		".cursor/mcp.json":      {`"mantine"`},
+	} {
+		b, err := os.ReadFile(filepath.Join(dir, f))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range wants {
+			if !strings.Contains(string(b), want) {
+				t.Errorf("%s missing %q:\n%s", f, want, b)
+			}
+		}
+	}
+
 	// 刚 clone 的项目没有 apps/dist（被 .gitignore 忽略）和生成的客户端：generate 先写前端的清单再编译应用。
 	for _, p := range []string{"apps/dist", "packages/client/src/api"} {
 		if err := os.RemoveAll(filepath.Join(dir, p)); err != nil {

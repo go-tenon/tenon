@@ -1,5 +1,5 @@
 // Command tenon 是 Tenon 应用的开发工具：init 生成新项目，add frontend 加入新的前端，dev 运行应用和前端工具，
-// build 构建前端和二进制，generate 生成客户端。
+// build 构建前端和二进制，generate 生成客户端，agents 更新 AI 编程助手用到的文档和配置。
 // 它读取项目根目录的 tenon.json（可选，缺省时全部用约定的默认值）。应用把它加入 go.mod 的工具，版本随框架固定：
 //
 //	go get -tool github.com/go-tenon/tenon/cmd/tenon
@@ -24,6 +24,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/go-tenon/tenon/cmd/tenon/internal/agents"
 	"github.com/go-tenon/tenon/cmd/tenon/internal/dev"
 	"github.com/go-tenon/tenon/cmd/tenon/internal/project"
 	"github.com/go-tenon/tenon/cmd/tenon/internal/scaffold"
@@ -35,6 +36,7 @@ const framework = "github.com/go-tenon/tenon"
 // initCommand 返回 tenon init 命令：生成新项目。
 func initCommand() *cobra.Command {
 	var opts scaffold.Options
+	var targets []string
 	cmd := &cobra.Command{
 		Use:   "init <dir>",
 		Short: "生成新项目：Go 应用加 TanStack Start 的前端，生成后即可运行",
@@ -59,6 +61,14 @@ func initCommand() *cobra.Command {
 				}
 				opts.TenonDir, version = abs, "v0.0.0"
 			}
+			if slices.Equal(targets, []string{"none"}) {
+				targets = []string{}
+			}
+			for _, t := range targets {
+				if !slices.Contains(project.Targets, t) {
+					return fmt.Errorf("--agents %q is not one of %v (or none)", t, project.Targets)
+				}
+			}
 			if version == "" || version == "(devel)" {
 				return fmt.Errorf("cannot tell which version of %s to use; run go run %s/cmd/tenon@latest init, or pass --tenon <checkout>", framework, framework)
 			}
@@ -66,6 +76,12 @@ func initCommand() *cobra.Command {
 			opts.Slug = scaffold.Slug(base)
 			if err := scaffold.Write(dir, opts); err != nil {
 				return err
+			}
+			// 与默认不同时把选择的 AI 编程助手写进 tenon.json，tenon agents 以后按它更新配置。
+			if !slices.Equal(targets, project.DefaultTargets) {
+				if err := writeTargets(dir, targets); err != nil {
+					return err
+				}
 			}
 			// 生成客户端要编译应用，嵌入的 apps/dist 中要先有前端的清单。
 			cfg, err := project.Load(dir)
@@ -91,6 +107,9 @@ func initCommand() *cobra.Command {
 					return err
 				}
 			}
+			if err := agents.Sync(dir, cfg, cmd.OutOrStdout()); err != nil {
+				return err
+			}
 			next := "  cd " + dir + "\n"
 			if !hasBun {
 				next += "  # 先安装 Bun：https://bun.sh\n  bun install\n"
@@ -102,7 +121,38 @@ func initCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.Module, "module", "", "Go 模块路径，默认是目录名")
 	cmd.Flags().StringVar(&opts.Name, "name", "", "应用的名称，默认是目录名")
 	cmd.Flags().StringVar(&opts.TenonDir, "tenon", "", "本地的框架目录，go.mod 用 replace 指向它（开发框架本身时使用）")
+	cmd.Flags().StringSliceVar(&targets, "agents", project.DefaultTargets,
+		fmt.Sprintf("为哪些 AI 编程助手写 MCP 配置：%s，可以写多个；none 表示都不写（AGENTS.md 照样生成）", strings.Join(project.Targets, "、")))
 	return cmd
+}
+
+// writeTargets 把 AI 编程助手的选择写进项目 dir 的 tenon.json。
+func writeTargets(dir string, targets []string) error {
+	cfg := project.Config{
+		Schema: "https://raw.githubusercontent.com/go-tenon/tenon/main/cmd/tenon/schema.json",
+		Agents: &project.Agents{Targets: targets},
+	}
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, project.File), append(data, '\n'), 0o644)
+}
+
+// agentsCommand 返回 tenon agents 命令：更新 AI 编程助手用到的文档、AGENTS.md 中 tenon 的一段和 MCP 配置。
+func agentsCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "agents",
+		Short: "更新 AI 编程助手用到的内容：.tenon/docs 中的框架文档、AGENTS.md 中 tenon 的一段、MCP 配置",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := project.Load(".")
+			if err != nil {
+				return err
+			}
+			return agents.Sync(".", cfg, cmd.OutOrStdout())
+		},
+	}
 }
 
 // tenonVersion 返回编译这个程序时框架的版本；框架被 replace 到本地目录时还返回这个目录。
@@ -144,7 +194,7 @@ func root() *cobra.Command {
 	}
 	add := &cobra.Command{Use: "add", Short: "给项目加入新的部分"}
 	add.AddCommand(addFrontendCommand(), addClientCommand())
-	root.AddCommand(initCommand(), add, devCommand(), buildCommand(), generateCommand())
+	root.AddCommand(initCommand(), add, devCommand(), buildCommand(), generateCommand(), agentsCommand())
 	return root
 }
 
@@ -201,6 +251,12 @@ func addFrontendCommand() *cobra.Command {
 				if err := run(cmd, ".", "bun", "install"); err != nil {
 					return err
 				}
+			}
+			if cfg, err = project.Load("."); err != nil {
+				return err
+			}
+			if err := agents.Sync(".", cfg, cmd.OutOrStdout()); err != nil {
+				return err
 			}
 			rendering := "页面只在浏览器中渲染"
 			if f.SSR() {
@@ -285,6 +341,12 @@ func addClientCommand() *cobra.Command {
 				if err := run(cmd, ".", "bun", "install"); err != nil {
 					return err
 				}
+			}
+			if cfg, err = project.Load("."); err != nil {
+				return err
+			}
+			if err := agents.Sync(".", cfg, cmd.OutOrStdout()); err != nil {
+				return err
 			}
 			w := cmd.OutOrStdout()
 			fmt.Fprintf(w, "\n已生成 %s/%s：Electron 桌面端，窗口中显示 %s（%s）。\n", project.ClientsDir, name, f.Dir, f.Base)

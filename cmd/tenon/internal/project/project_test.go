@@ -80,14 +80,29 @@ func TestConfigFile(t *testing.T) {
 	dir := t.TempDir()
 	write(t, dir, "tenon.json", `{"$schema": "x", "main": "./cmd/web", "url": "http://localhost:3000",
 		"apis": {"/api/v1": {"name": "public", "go": "../api"}},
-		"tools": [{"watch": ["esbuild", "--watch"]}]}`)
+		"tools": [{"watch": ["esbuild", "--watch"]}], "agents": {"targets": ["codex"]}}`)
 	cfg, err := project.Load(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if cfg.Main != "./cmd/web" || cfg.APIs["/api/v1"].Name != "public" || cfg.APIs["/api/v1"].Go != "../api" ||
-		len(cfg.Tools) != 1 {
+		len(cfg.Tools) != 1 || !slices.Equal(cfg.AgentTargets(), []string{"codex"}) {
 		t.Fatalf("%+v", cfg)
+	}
+	// agents.targets 省略时是默认的助手，空数组时不接入任何助手。
+	for content, want := range map[string][]string{
+		``:                            project.DefaultTargets,
+		`, "agents": {}`:              project.DefaultTargets,
+		`, "agents": {"targets": []}`: {},
+	} {
+		write(t, dir, "tenon.json", `{"main": "./cmd/web"`+content+`}`)
+		cfg, err := project.Load(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(cfg.AgentTargets(), want) {
+			t.Errorf("%s: targets %v, want %v", content, cfg.AgentTargets(), want)
+		}
 	}
 	for name, content := range map[string]string{
 		"unknown field": `{"mian": "./cmd/api"}`,
@@ -98,6 +113,7 @@ func TestConfigFile(t *testing.T) {
 		"api key":       `{"apis": {"api/v1": {"name": "v1"}}}`,
 		"api name":      `{"apis": {"/api/v1": {"name": "V1"}}}`,
 		"empty api":     `{"apis": {"/api/v1": null}}`,
+		"agent":         `{"agents": {"targets": ["copilot"]}}`,
 	} {
 		write(t, dir, "tenon.json", content)
 		if _, err := project.Load(dir); err == nil {

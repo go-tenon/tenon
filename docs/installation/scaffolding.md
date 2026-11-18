@@ -79,6 +79,8 @@ bun run dev
 todo/
 ├── go.mod                 Go module；Tenon 的开发工具也记在这里，版本与框架相同
 ├── package.json           前端的 workspace，以及 dev、build、generate 等脚本
+├── AGENTS.md              项目说明：怎样运行、提交前检查什么、代码约定；AI 编程助手读它
+├── .mcp.json              Claude Code 的 MCP 配置（Codex 在 .codex/，Cursor 在 .cursor/）
 ├── config/app.yaml        应用的配置，例如监听地址
 ├── cmd/todo/main.go       程序的入口
 ├── internal/todo/todo.go  待办事项：类型、数据（保存在内存中）和四个接口
@@ -94,7 +96,7 @@ todo/
 │       ├── api.ts         创建调用接口的客户端
 │       └── routes/        页面：一个文件一个页面
 ├── packages/client/       生成的 TypeScript 客户端，前端用它调用接口
-└── .tenon/                开发工具生成的内容，不提交到代码仓库
+└── .tenon/                开发工具生成的内容（框架的前端包和文档），不提交到代码仓库
 ```
 
 刚开始只需要关心三个地方：
@@ -103,7 +105,7 @@ todo/
 - **`cmd/todo/main.go`**：程序的入口，把业务模块注册到路由上。目录名取自项目名，构建出的程序是 `bin/todo`。
 - **`apps/web/src/routes/`**：前端页面。
 
-`packages/` 和 `.tenon/` 由工具生成，不需要手动修改。各个目录的详细约定见[目录结构](../concepts/structure.md)。
+`packages/` 和 `.tenon/` 由工具生成，不需要手动修改。各个目录的详细约定见[目录结构](../concepts/structure.md)。`AGENTS.md` 和 MCP 配置让 Claude Code、Codex、Cursor 按项目的约定写代码，见 [AI 编程助手](ai-assistants.md)。
 
 <a id="entrypoint"></a>
 ## 入口文件

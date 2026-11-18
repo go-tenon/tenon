@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -51,6 +52,7 @@ type Config struct {
 	URL    string          `json:"url,omitempty"`     // 应用的地址，dev 打印它，前端的开发服务器经它调用接口，默认 http://localhost:8080。
 	APIs   map[string]*API `json:"apis,omitempty"`    // 按 BasePath 覆盖 API 客户端的约定，例如改名或生成 Go 客户端。没有写的 API 按约定生成。
 	Tools  []Tool          `json:"tools,omitempty"`   // 与应用一起运行的其他工具，可空。
+	Agents *Agents         `json:"agents,omitempty"`  // 接入哪些 AI 编程助手，见 tenon agents；省略时接入 DefaultTargets。
 
 	Frontends []Frontend `json:"-"` // apps 中的前端，按名称排序。由 Load 从目录中发现，不在 tenon.json 中。
 	Clients   []Client   `json:"-"` // clients 中的客户端，按名称排序。由 Load 从目录中发现。
@@ -83,6 +85,40 @@ type Client struct {
 type Tool struct {
 	Watch []string `json:"watch"`           // 开发时与应用一起运行的命令，例如 ["esbuild", "--watch"]
 	Build []string `json:"build,omitempty"` // tenon dev 停止后运行一次的命令，可以没有
+}
+
+// Targets 是 tenon agents 支持的 AI 编程助手：它们都读项目根目录的 AGENTS.md，区别在 MCP 配置的位置和格式。
+var Targets = []string{"claude", "codex", "cursor"}
+
+// DefaultTargets 是 tenon.json 没有写 agents.targets 时接入的 AI 编程助手。
+var DefaultTargets = Targets
+
+// Agents 是 tenon.json 的 agents：tenon agents 为哪些 AI 编程助手写配置。
+type Agents struct {
+	Targets []string `json:"targets"` // AI 编程助手，见 Targets；省略时是 DefaultTargets，空数组时不写任何助手的配置，只维护 AGENTS.md。
+}
+
+// AgentTargets 返回要接入的 AI 编程助手：tenon.json 中的 agents.targets，没有写时是 DefaultTargets。
+func (c *Config) AgentTargets() []string {
+	if c.Agents == nil || c.Agents.Targets == nil {
+		return DefaultTargets
+	}
+	return c.Agents.Targets
+}
+
+// Framework 是框架的模块路径。
+const Framework = "github.com/go-tenon/tenon"
+
+// FrameworkDir 返回项目 dir 使用的框架源码目录：通常在模块缓存中，replace 到本地时是本地的目录。
+func FrameworkDir(dir string) (string, error) {
+	cmd := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", Framework)
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	fw := strings.TrimSpace(string(out))
+	if err != nil || fw == "" {
+		return "", fmt.Errorf("cannot locate %s with go list: %v", Framework, err)
+	}
+	return fw, nil
 }
 
 // Load 读取 dir 中的 tenon.json（缺省时全部用默认值），补上默认值、发现前端并检查。
@@ -254,6 +290,13 @@ func (c *Config) check() error {
 		}
 		if _, ok := c.FindFrontend(cl.Frontend); !ok {
 			return fmt.Errorf("%s: frontend %q is not in %s", file, cl.Frontend, AppsDir)
+		}
+	}
+	if c.Agents != nil {
+		for _, t := range c.Agents.Targets {
+			if !slices.Contains(Targets, t) {
+				return fmt.Errorf("%s: agents.targets: %q is not one of %v", File, t, Targets)
+			}
 		}
 	}
 	for base, api := range c.APIs {

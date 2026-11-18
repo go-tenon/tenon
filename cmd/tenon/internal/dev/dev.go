@@ -20,11 +20,10 @@ import (
 
 	"github.com/cockroachdb/errors"
 
+	"github.com/go-tenon/tenon/cmd/tenon/internal/agents"
 	"github.com/go-tenon/tenon/cmd/tenon/internal/project"
 	"github.com/go-tenon/tenon/frontend"
 )
-
-const framework = "github.com/go-tenon/tenon"
 
 // DevConfig 是 tenon dev 写给应用的配置：各前端开发服务器的地址（dev_servers），追加在 serve 的 --config 之后。
 const DevConfig = ".tenon/dev.yaml"
@@ -107,10 +106,17 @@ func (d dev) check() error {
 	return nil
 }
 
-// prepare 在启动监听进程之前运行一次：把框架的前端包复制到 .tenon/js（见 SyncJS），前端包的 package.json 变了
-// 或者缺少依赖（见 NeedsInstall）时在根目录 bun install，写入前端的清单（见 WriteManifest）和前端开发服务器的地址
-// （见 DevConfig）。
+// prepare 在启动监听进程之前运行一次：把框架的文档复制到 .tenon/docs（见 agents.SyncDocs），把框架的前端包复制到
+// .tenon/js（见 SyncJS），前端包的 package.json 变了或者缺少依赖（见 NeedsInstall）时在根目录 bun install，
+// 写入前端的清单（见 WriteManifest）和前端开发服务器的地址（见 DevConfig）。
 func (d dev) prepare() error {
+	fw, err := project.FrameworkDir(".")
+	if err != nil {
+		return err
+	}
+	if err := agents.SyncDocs(".", fw); err != nil {
+		return err
+	}
 	if len(d.cfg.Frontends) > 0 {
 		changed, err := SyncJS(".")
 		if err != nil {
@@ -396,18 +402,6 @@ func snapshot(dir string, include func(path string) bool) string {
 func goSource(path string) bool {
 	base := filepath.Base(path)
 	return strings.HasSuffix(base, ".go") && !strings.HasSuffix(base, "_test.go") || base == "go.mod" || base == "go.sum"
-}
-
-// frameworkDir 返回项目 dir 使用的框架源码目录：通常在模块缓存中，replace 到本地时是本地的目录。
-func frameworkDir(dir string) (string, error) {
-	cmd := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", framework)
-	cmd.Dir = dir
-	out, err := cmd.Output()
-	fw := strings.TrimSpace(string(out))
-	if err != nil || fw == "" {
-		return "", errors.Newf("dev: cannot locate %s with go list: %v", framework, err)
-	}
-	return fw, nil
 }
 
 // copyInto 把 src 复制到 dst，覆盖同名的文件，跳过 project.SkipDir 中的目录（例如 node_modules），

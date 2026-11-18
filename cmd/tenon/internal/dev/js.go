@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"github.com/cockroachdb/errors"
+
+	"github.com/go-tenon/tenon/cmd/tenon/internal/project"
 )
 
 // JSDir 是项目中框架前端包的目录：SyncJS 把框架 js 中的每个包复制到这里，例如 .tenon/js/client 是
@@ -22,7 +24,7 @@ const JSDir = ".tenon/js"
 // 各包自己的 node_modules 保留：Bun 把包的依赖链接放在其中（例如 @go-tenon/ui 的 react），
 // package.json 没有变化时不会重新 bun install，删掉它包就找不到依赖。
 func SyncJS(dir string) (changed bool, err error) {
-	fw, err := frameworkDir(dir)
+	fw, err := project.FrameworkDir(dir)
 	if err != nil {
 		return false, err
 	}
