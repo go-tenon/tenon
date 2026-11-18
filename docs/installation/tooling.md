@@ -62,7 +62,7 @@ go get -tool github.com/go-tenon/tenon/cmd/tenon
 ## tenon init：生成项目
 
 ```bash
-go run github.com/go-tenon/tenon/cmd/tenon@main init todo
+go run github.com/go-tenon/tenon/cmd/tenon@latest init todo
 ```
 
 在 `todo` 目录中生成一个能直接运行的项目，生成的内容见[脚手架](scaffolding.md#creating-a-project)。这里还没有项目，所以用 `go run` 直接运行 `tenon`，不需要先安装。

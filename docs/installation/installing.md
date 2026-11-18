@@ -46,10 +46,13 @@ go mod init example.com/hello-api
 然后添加 Tenon：
 
 ```bash
-go get github.com/go-tenon/tenon@main
+go get github.com/go-tenon/tenon@latest
 ```
 
-`@main` 表示使用主分支上最新的代码。也可以写成一个具体的提交，例如 `@a1b2c3d`，这样每次构建用到的都是同一个版本。
+`@latest` 表示最新发布的版本，例如 `v0.0.1`，版本号记录在 `go.mod` 中，之后每次构建用到的都是这个版本。要试用还没有发布的改动时写 `@main`，表示主分支上最新的代码。
+
+> [!NOTE]
+> Tenon 还处在 0.x 版本，版本之间可能有不兼容的修改。升级前先看这个版本的发布说明。
 
 <a id="first-api"></a>
 ## 第一步：最小的服务

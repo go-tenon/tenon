@@ -317,7 +317,7 @@ flowchart LR
 需要 Go 1.27.4 或更高版本，以及 [Bun](https://bun.sh)。生成一个新项目（`todo` 是项目的目录名）：
 
 ```bash
-go run github.com/go-tenon/tenon/cmd/tenon@main init todo
+go run github.com/go-tenon/tenon/cmd/tenon@latest init todo
 cd todo
 bun run dev
 ```
@@ -327,5 +327,9 @@ bun run dev
 只想在已有的项目中使用框架的包：
 
 ```bash
-go get github.com/go-tenon/tenon@main
+go get github.com/go-tenon/tenon@latest
 ```
+
+## 许可证
+
+Tenon 按 [MIT 许可证](LICENSE) 发布。
