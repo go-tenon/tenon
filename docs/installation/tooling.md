@@ -57,6 +57,7 @@ go get -tool github.com/go-tenon/tenon/cmd/tenon
 | `tenon add frontend` | 需要再加一个前端时，例如运营后台 |
 | `tenon add client` | 需要桌面端等网页以外的客户端时 |
 | `tenon agents` | 升级框架、加了前端或客户端以后，更新给 AI 编程助手的内容 |
+| `tenon mcp` | 不用手动运行：AI 编程助手按 MCP 配置启动它，检索框架文档、读开发环境的输出 |
 
 `serve`、`migrate`、`routes` 这类命令不属于 `tenon`，它们在你的应用自己的程序中，部署到服务器上以后照样可以运行，见[命令行](../general/commands.md)。
 
@@ -179,7 +180,7 @@ go tool tenon add client admin-desktop --kind electron --frontend admin
 bun run agents   # 即 go tool tenon agents
 ```
 
-更新 AI 编程助手用到的内容：把项目所用版本的框架文档复制到 `.tenon/docs`，重新生成 `AGENTS.md` 中由 tenon 维护的一段（框架的版本、前端与客户端、依赖的版本和文档），为 Claude Code、Codex、Cursor 安装技能（`tenon-action`、`tenon-http-api` 等）、改写 MCP 配置。升级框架、加减依赖以后运行它；`tenon add frontend`、`tenon add client` 结束时会自动运行一次，`tenon dev` 每次启动时更新 `.tenon/docs`。详细的说明见 [AI 编程助手](ai-assistants.md)。
+更新 AI 编程助手用到的内容：把项目所用版本的框架文档复制到 `.tenon/docs`，重新生成 `AGENTS.md` 中由 tenon 维护的一段（框架的版本、前端与客户端、依赖的版本和文档），为 Claude Code、Codex、Cursor 安装技能（`tenon-action`、`tenon-http-api` 等）、改写 MCP 配置。升级框架、加减依赖以后运行它；`tenon add frontend`、`tenon add client` 结束时会自动运行一次，`tenon dev` 每次启动时更新 `.tenon/docs`。AI 编程助手还会按 MCP 配置启动 `tenon mcp`，用它检索框架的文档、读 `tenon dev` 的输出（`.tenon/dev.log`）。详细的说明见 [AI 编程助手](ai-assistants.md)。
 
 <a id="troubleshooting"></a>
 ## 常见问题

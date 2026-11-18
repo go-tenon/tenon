@@ -50,7 +50,7 @@ func TestBlock(t *testing.T) {
 		"| Mantine | 9.8.1 | https://mantine.dev/llms.txt；MCP 服务 `mantine` |",
 		"| Electron | 45.2.3 |",
 		"| Bun（JavaScript 运行环境） | — |",
-		"- `gopls`：", "- `mantine`：",
+		"- `tenon`：", "- `gopls`：", "- `mantine`：", "`tenon_search_docs`",
 		"## 技能", "`.claude/skills`、`.agents/skills`", "- `tenon-action`：在 Tenon 应用中新增或修改一个业务用例（业务动作）。",
 	} {
 		if !strings.Contains(block, want) {
@@ -134,11 +134,13 @@ func TestWriteMCP(t *testing.T) {
 		t.Fatal(err)
 	}
 	if s := claude.MCPServers; s["db"].Command != "psql-mcp" || s["gopls"].Command != "gopls" ||
+		s["tenon"].Command != "go" || strings.Join(s["tenon"].Args, " ") != "tool tenon mcp" ||
 		s["mantine"].Command != "bunx" || strings.Join(s["mantine"].Args, " ") != "@mantine/mcp-server" {
 		t.Errorf(".mcp.json %+v", s)
 	}
 	codex := read(".codex/config.toml")
 	for _, want := range []string{"model = \"gpt\"\n", "[mcp_servers.db]\n", "[mcp_servers.gopls]\ncommand = \"gopls\"\nargs = [\"mcp\"]\n",
+		"[mcp_servers.tenon]\ncommand = \"go\"\nargs = [\"tool\", \"tenon\", \"mcp\"]\n",
 		"[mcp_servers.mantine]\ncommand = \"bunx\"\nargs = [\"@mantine/mcp-server\"]\n"} {
 		if !strings.Contains(codex, want) {
 			t.Errorf(".codex/config.toml missing %q:\n%s", want, codex)
@@ -157,7 +159,7 @@ func TestWriteMCP(t *testing.T) {
 	}
 
 	// 去掉前端以后，mantine 从配置中删除，项目自己的服务保留。
-	if _, err := agents.WriteMCP(dir, []string{"claude", "codex"}, servers[:1]); err != nil {
+	if _, err := agents.WriteMCP(dir, []string{"claude", "codex"}, servers[:2]); err != nil {
 		t.Fatal(err)
 	}
 	if got := read(".mcp.json") + read(".codex/config.toml"); strings.Contains(got, "mantine") || !strings.Contains(got, "psql-mcp") {

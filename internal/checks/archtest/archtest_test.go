@@ -87,7 +87,8 @@ var rules = map[string]rule{
 	"command":         {layerEntry, []string{"cleanup", "config", "errorx", "logging"}},
 	"command/httpcmd": {layerEntry, []string{"clientgen", "command", "httpx"}},
 	// tenon 命令行（go tool tenon）：开发工具，不被框架的其他包引用。
-	"cmd/tenon":                   {layerEntry, []string{"cmd/tenon/internal/agents", "cmd/tenon/internal/dev", "cmd/tenon/internal/project", "cmd/tenon/internal/scaffold", "frontend"}},
+	"cmd/tenon":                   {layerEntry, []string{"cmd/tenon/internal/agents", "cmd/tenon/internal/dev", "cmd/tenon/internal/devmcp", "cmd/tenon/internal/project", "cmd/tenon/internal/scaffold", "frontend"}},
+	"cmd/tenon/internal/devmcp":   {layerEntry, []string{"cmd/tenon/internal/agents", "cmd/tenon/internal/dev", "cmd/tenon/internal/project"}},
 	"cmd/tenon/internal/agents":   {layerEntry, []string{"cmd/tenon/internal/project"}},
 	"cmd/tenon/internal/dev":      {layerEntry, []string{"cmd/tenon/internal/agents", "cmd/tenon/internal/project", "frontend"}},
 	"cmd/tenon/internal/project":  {layerEntry, nil},

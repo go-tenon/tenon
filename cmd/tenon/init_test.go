@@ -4,6 +4,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net"
@@ -16,6 +17,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // TestInitEndToEnd 用 init 生成项目（指向本地的框架），用 add frontend 加入三个前端，然后类型检查、tenon build
@@ -90,6 +93,32 @@ func TestInitEndToEnd(t *testing.T) {
 			}
 		}
 	}
+
+	// 助手按 .mcp.json 在项目的子目录中运行 go tool tenon mcp：它找到项目的根目录，检索文档，列出项目的前端。
+	mcpCmd := exec.Command("go", "tool", "tenon", "mcp")
+	mcpCmd.Dir = filepath.Join(dir, "internal")
+	session, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1"}, nil).Connect(context.Background(), &mcp.CommandTransport{Command: mcpCmd}, nil)
+	if err != nil {
+		t.Fatalf("tenon mcp: %v", err)
+	}
+	for _, c := range []struct {
+		name string
+		args map[string]any
+		want string
+	}{
+		{"tenon_search_docs", map[string]any{"query": "访问策略"}, ".tenon/docs/http/routing.md#access-policies"},
+		{"tenon_app_info", map[string]any{}, `"base":"/admin/"`},
+	} {
+		name, want := c.name, c.want
+		res, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: name, Arguments: c.args})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if text := res.Content[0].(*mcp.TextContent).Text; res.IsError || !strings.Contains(text, want) {
+			t.Errorf("%s: want %q:\n%s", name, want, text)
+		}
+	}
+	_ = session.Close()
 
 	// 刚 clone 的项目没有 apps/dist（被 .gitignore 忽略）和生成的客户端：generate 先写前端的清单再编译应用。
 	for _, p := range []string{"apps/dist", "packages/client/src/api"} {

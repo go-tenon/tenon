@@ -1,5 +1,5 @@
 // Command tenon 是 Tenon 应用的开发工具：init 生成新项目，add frontend 加入新的前端，dev 运行应用和前端工具，
-// build 构建前端和二进制，generate 生成客户端，agents 更新 AI 编程助手用到的文档和配置。
+// build 构建前端和二进制，generate 生成客户端，agents 更新 AI 编程助手用到的文档和配置，mcp 运行给助手用的 MCP 服务。
 // 它读取项目根目录的 tenon.json（可选，缺省时全部用约定的默认值）。应用把它加入 go.mod 的工具，版本随框架固定：
 //
 //	go get -tool github.com/go-tenon/tenon/cmd/tenon
@@ -22,10 +22,12 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
 
 	"github.com/go-tenon/tenon/cmd/tenon/internal/agents"
 	"github.com/go-tenon/tenon/cmd/tenon/internal/dev"
+	"github.com/go-tenon/tenon/cmd/tenon/internal/devmcp"
 	"github.com/go-tenon/tenon/cmd/tenon/internal/project"
 	"github.com/go-tenon/tenon/cmd/tenon/internal/scaffold"
 	"github.com/go-tenon/tenon/frontend"
@@ -155,6 +157,43 @@ func agentsCommand() *cobra.Command {
 	}
 }
 
+// mcpCommand 返回 tenon mcp 命令：以 stdio 运行开发时给 AI 编程助手用的 MCP 服务，见 devmcp。
+// 助手可能在项目的子目录中启动它，项目的根目录取 go env GOMOD 所在的目录。
+func mcpCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "mcp",
+		Short: "以 stdio 运行给 AI 编程助手用的 MCP 服务：检索框架文档、项目信息、开发环境的输出",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			out, err := exec.CommandContext(cmd.Context(), "go", "env", "GOMOD").Output()
+			gomod := strings.TrimSpace(string(out))
+			if err != nil || gomod == "" || gomod == os.DevNull {
+				return fmt.Errorf("run tenon mcp inside a Tenon project: go env GOMOD = %q (%v)", gomod, err)
+			}
+			root := filepath.Dir(gomod)
+			fw, err := project.FrameworkDir(root)
+			if err != nil {
+				return err
+			}
+			if err := agents.SyncDocs(root, fw); err != nil {
+				return err
+			}
+			version, _ := tenonVersion()
+			srv, err := devmcp.New(devmcp.Options{Root: root, Version: version, Inspect: func() (*agents.Project, error) {
+				cfg, err := project.Load(root)
+				if err != nil {
+					return nil, err
+				}
+				return agents.Inspect(root, cfg)
+			}})
+			if err != nil {
+				return err
+			}
+			return srv.Run(cmd.Context(), &mcp.StdioTransport{})
+		},
+	}
+}
+
 // tenonVersion 返回编译这个程序时框架的版本；框架被 replace 到本地目录时还返回这个目录。
 func tenonVersion() (version, dir string) {
 	info, ok := debug.ReadBuildInfo()
@@ -194,7 +233,7 @@ func root() *cobra.Command {
 	}
 	add := &cobra.Command{Use: "add", Short: "给项目加入新的部分"}
 	add.AddCommand(addFrontendCommand(), addClientCommand())
-	root.AddCommand(initCommand(), add, devCommand(), buildCommand(), generateCommand(), agentsCommand())
+	root.AddCommand(initCommand(), add, devCommand(), buildCommand(), generateCommand(), agentsCommand(), mcpCommand())
 	return root
 }
 

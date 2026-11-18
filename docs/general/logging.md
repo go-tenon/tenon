@@ -176,7 +176,7 @@ logs:
   2026-11-10 17:05:12.401 ERR request failed error.message=boom request_id=9F2K…
   ```
 
-  输出到终端时，时间变暗、级别按颜色区分。输出到管道、文件或 CI 时自动去掉颜色；设置 `NO_COLOR=1` 也会关闭颜色（见 [no-color.org](https://no-color.org)）。
+  输出到终端时，时间变暗、级别按颜色区分。输出到管道、文件或 CI 时自动去掉颜色；设置 `NO_COLOR=1` 也会关闭颜色（见 [no-color.org](https://no-color.org)）。输出经管道转给终端时设置 `FORCE_COLOR=1`，日志按终端处理：格式是 `text` 并着色。`tenon dev` 就是这样运行应用的：它把应用的输出同时写进终端和 `.tenon/dev.log`，见 [AI 编程助手](../installation/ai-assistants.md#mcp-servers)。
 
 需要固定格式时显式写出，例如容器分配了终端（`docker run -t`、Compose 的 `tty: true`）时自动选择的是 `text`，而日志系统要的是 JSON：
 
