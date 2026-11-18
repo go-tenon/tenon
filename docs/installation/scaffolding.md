@@ -80,7 +80,7 @@ todo/
 ├── go.mod                 Go module；Tenon 的开发工具也记在这里，版本与框架相同
 ├── package.json           前端的 workspace，以及 dev、build、generate 等脚本
 ├── config/app.yaml        应用的配置，例如监听地址
-├── cmd/api/main.go        程序的入口
+├── cmd/todo/main.go       程序的入口
 ├── internal/todo/todo.go  待办事项：类型、数据（保存在内存中）和四个接口
 ├── apps/apps.go           把前端的构建产物（apps/dist）打包进 Go 程序
 ├── apps/web/              前端：React 写的网页，挂在 / 下
@@ -100,7 +100,7 @@ todo/
 刚开始只需要关心三个地方：
 
 - **`internal/`**：业务代码。`internal/todo` 是一个例子，你的业务也按模块放在这里，例如 `internal/article`。
-- **`cmd/api/main.go`**：程序的入口，把业务模块注册到路由上。
+- **`cmd/todo/main.go`**：程序的入口，把业务模块注册到路由上。目录名取自项目名，构建出的程序是 `bin/todo`。
 - **`apps/web/src/routes/`**：前端页面。
 
 `packages/` 和 `.tenon/` 由工具生成，不需要手动修改。各个目录的详细约定见[目录结构](../concepts/structure.md)。
@@ -108,7 +108,7 @@ todo/
 <a id="entrypoint"></a>
 ## 入口文件
 
-打开 `cmd/api/main.go`。它和[安装](installing.md#graceful-shutdown)第三步的程序做的是同一件事：创建路由器、安装中间件、注册接口、启动服务、收到信号后平稳地停止。不同的是它多了三样东西：配置文件、命令行和前端的页面。我们分段来看。
+打开 `cmd/todo/main.go`。它和[安装](installing.md#graceful-shutdown)第三步的程序做的是同一件事：创建路由器、安装中间件、注册接口、启动服务、收到信号后平稳地停止。不同的是它多了三样东西：配置文件、命令行和前端的页面。我们分段来看。
 
 ### 配置
 
@@ -125,7 +125,7 @@ type Config struct {
 
 ```go
 func main() {
-    root := command.Root("api", "todo")
+    root := command.Root("todo", "todo")
     root.AddCommand(
         command.Serve(open, parts),
         command.Config[Config](),
@@ -136,7 +136,7 @@ func main() {
 }
 ```
 
-程序现在有了子命令。`go run ./cmd/api serve` 启动服务，`go run ./cmd/api config check` 检查配置文件，以后还可以加上 `migrate`（数据库迁移）等命令：
+程序现在有了子命令。`go run ./cmd/todo serve` 启动服务，`go run ./cmd/todo config check` 检查配置文件，以后还可以加上 `migrate`（数据库迁移）等命令：
 
 - **`command.Serve(open, parts)`** 创建 `serve` 命令。它先读取并检查配置，调用 `open` 准备好程序要用的资源，再运行 `parts` 中列出的部分；收到停止信号时取消 ctx，和安装那一页的第三步一样。
 - **`command.Config[Config]()`** 加上 `config check`、`config show` 两个命令。
@@ -242,10 +242,10 @@ func routes(cfg Config, store *todo.Store, pages http.Handler) chi.Router {
 
 ```bash
 bun run build
-./bin/api serve --config config/app.yaml
+./bin/todo serve --config config/app.yaml
 ```
 
-`bun run build` 先构建每个前端，把服务端渲染的前端连同 Bun 编译成 SSR 程序（架构与 Go 程序相同），最后编译 Go 程序，把它们打包在其中。部署时只需要带上 `bin/api` 和配置文件，见[部署](deployment.md)。Go 托管的 SSR 进程只支持 Linux；在 macOS 上开发时用 `bun run dev`。
+`bun run build` 先构建每个前端，把服务端渲染的前端连同 Bun 编译成 SSR 程序（架构与 Go 程序相同），最后编译 Go 程序，把它们打包在其中。部署时只需要带上 `bin/todo` 和配置文件，见[部署](deployment.md)。Go 托管的 SSR 进程只支持 Linux；在 macOS 上开发时用 `bun run dev`。
 
 <a id="troubleshooting"></a>
 ## 常见问题

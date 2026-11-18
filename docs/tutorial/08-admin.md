@@ -62,10 +62,10 @@ var Catalog = authz.Catalog{
 - **`Catalog`** 是[权限目录](../security/authorization.md#permission-catalog)，列出全部权限。角色只能包含其中的权限，写错一个字母会被拒绝。它也写入接口文档，前端由此知道有哪些权限。
 - **`Permission`** 同时是一个[枚举](../http/validation.md#enums)：一个只能取几个固定值的类型。接口只接受目录中的权限；在后台的角色表单中，它显示为一个多选框，每个选项的显示文字写在翻译文件中（见下文）。
 
-角色，以及“哪个作者有哪些角色”，保存在框架的 [`authz`](../security/authorization.md#roles) 包的表中。和第 6 章的 `login` 一样，它自带迁移，在 `cmd/api/main.go` 的 `migrate publish` 中加上它。同时把翻译文件交给 `httpcmd.Commands`：生成客户端时，枚举和资源的显示文字从翻译文件中读取：
+角色，以及“哪个作者有哪些角色”，保存在框架的 [`authz`](../security/authorization.md#roles) 包的表中。和第 6 章的 `login` 一样，它自带迁移，在 `cmd/blog/main.go` 的 `migrate publish` 中加上它。同时把翻译文件交给 `httpcmd.Commands`：生成客户端时，枚举和资源的显示文字从翻译文件中读取：
 
-```go title="cmd/api/main.go"
-// Command api 是博客的入口。
+```go title="cmd/blog/main.go"
+// Command blog 是博客的入口。
 package main
 
 import (
@@ -87,7 +87,7 @@ import (
 )
 
 func main() {
-    root := command.Root("api", "博客")
+    root := command.Root("blog", "博客")
     root.AddCommand(
         command.Serve(bootstrap.Open, bootstrap.Parts),
         command.Config[bootstrap.Config](),
@@ -117,8 +117,8 @@ func migrateCommand() *cobra.Command {
 
 ```bash
 go mod tidy
-go run ./cmd/api migrate publish
-go run ./cmd/api migrate up
+go run ./cmd/blog migrate publish
+go run ./cmd/blog migrate up
 ```
 
 <a id="roles"></a>
@@ -792,7 +792,7 @@ role.fields.permissions: 权限
 把小明设为管理员：
 
 ```bash
-go run ./cmd/api user admin --email ming@example.com
+go run ./cmd/blog user admin --email ming@example.com
 ```
 
 这条命令创建一个拥有全部权限的“管理员”角色，并分配给小明。

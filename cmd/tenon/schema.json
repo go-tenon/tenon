@@ -7,7 +7,7 @@
   "additionalProperties": false,
   "properties": {
     "$schema": { "type": "string" },
-    "main": { "type": "string", "description": "应用入口的包，默认 ./cmd/api。", "default": "./cmd/api" },
+    "main": { "type": "string", "description": "应用入口的包，默认是 cmd 下唯一一个有 main.go 的目录，例如 ./cmd/blog。" },
     "serve": {
       "type": "array",
       "items": { "type": "string" },

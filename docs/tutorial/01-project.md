@@ -72,7 +72,7 @@ blog/
 ├── go.mod                       Go module；Tenon 的开发工具也记在这里，版本与框架相同
 ├── package.json                 前端的 workspace；dev、build、generate 脚本
 ├── config/app.yaml              应用的配置
-├── cmd/api/main.go              程序的入口：serve 命令启动 HTTP 服务
+├── cmd/blog/main.go             程序的入口：serve 命令启动 HTTP 服务
 ├── internal/todo/todo.go        示例的接口
 ├── apps/apps.go                 把前端的构建产物打包进 Go 程序
 ├── apps/web/                    前端
@@ -88,7 +88,7 @@ blog/
 
 可以把项目分成三部分来看：
 
-- **Go 代码**在 `cmd` 和 `internal` 中。`cmd/api/main.go` 是程序的入口，`internal` 中按业务分成一个个包，例如现在的 `internal/todo`，以后的 `internal/article`。
+- **Go 代码**在 `cmd` 和 `internal` 中。`cmd/blog/main.go` 是程序的入口，`internal` 中按业务分成一个个包，例如现在的 `internal/todo`，以后的 `internal/article`。
 - **前端代码**在 `apps/web` 中，页面在 `src/routes` 中。界面用 [Mantine](https://mantine.dev) 的组件，框架的 `@go-tenon/ui` 提供布局和样式预设。
 - **生成的代码**在 `packages/client` 中，前端用 `@blog/client/api` 导入它。不需要手动修改，它随接口自动更新。
 

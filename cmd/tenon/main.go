@@ -75,7 +75,7 @@ func initCommand() *cobra.Command {
 			if err := dev.WriteManifest(dir, cfg); err != nil {
 				return err
 			}
-			for _, s := range [][]string{{"go", "mod", "tidy"}, {"go", "run", "./cmd/api", "client", "--ts", project.ClientSrc}} {
+			for _, s := range [][]string{{"go", "mod", "tidy"}, {"go", "run", cfg.Main, "client", "--ts", project.ClientSrc}} {
 				if err := run(cmd, dir, s[0], s[1:]...); err != nil {
 					return err
 				}

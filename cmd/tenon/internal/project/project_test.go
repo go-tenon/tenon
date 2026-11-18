@@ -26,11 +26,12 @@ func write(t *testing.T, dir, name, content string) {
 // 没有 tenon.json 时全部用默认值；前端和客户端包按项目中的文件发现。
 func TestDefaults(t *testing.T) {
 	dir := t.TempDir()
+	write(t, dir, "cmd/blog/main.go", "package main\n")
 	cfg, err := project.Load(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Main != "./cmd/api" || strings.Join(cfg.Serve, " ") != "serve --config config/app.yaml" || cfg.URL != "http://localhost:8080" ||
+	if cfg.Main != "./cmd/blog" || strings.Join(cfg.Serve, " ") != "serve --config config/app.yaml" || cfg.URL != "http://localhost:8080" ||
 		cfg.Frontends != nil || cfg.Client {
 		t.Fatalf("empty project %+v", cfg)
 	}
@@ -170,6 +171,7 @@ func TestSchemaMatchesConfig(t *testing.T) {
 func TestClients(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
+	write(t, dir, "cmd/blog/main.go", "package main\n")
 	write(t, dir, "apps/admin/vite.config.ts", "")
 	write(t, dir, "apps/admin/package.json", `{"tenon": {"base": "/admin/"}}`)
 	write(t, dir, "clients/admin-desktop/tenon.json", `{"kind": "electron", "frontend": "admin"}`)

@@ -17,7 +17,7 @@ func TestWrite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, f := range []string{".gitignore", "go.mod", "package.json", "config/app.yaml", "cmd/api/main.go", "internal/todo/todo.go",
+	for _, f := range []string{".gitignore", "go.mod", "package.json", "config/app.yaml", "cmd/todo/main.go", "internal/todo/todo.go",
 		"packages/client/package.json", "apps/web/package.json", "apps/web/vite.config.ts", "apps/web/tsconfig.json",
 		"apps/apps.go", "apps/web/src/start.ts", "apps/web/src/server.ts", "apps/web/src/router.tsx", "apps/web/src/theme.ts",
 		"apps/web/src/api.ts", "apps/web/src/routes/__root.tsx", "apps/web/src/routes/index.tsx"} {
@@ -55,7 +55,7 @@ func TestWrite(t *testing.T) {
 			t.Errorf("go.mod missing %q:\n%s", want, goMod)
 		}
 	}
-	main, _ := os.ReadFile(filepath.Join(dir, "cmd/api/main.go"))
+	main, _ := os.ReadFile(filepath.Join(dir, "cmd/todo/main.go"))
 	for _, want := range []string{`"example.com/todo/internal/todo"`, `"example.com/todo/apps"`,
 		"frontend.New(apps.Dist, frontend.Options{API: api, DevServers: a.cfg.DevServers})", "pages.Run(", "command.Serve(open, parts)"} {
 		if !strings.Contains(string(main), want) {

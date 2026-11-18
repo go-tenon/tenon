@@ -112,7 +112,7 @@ flowchart LR
 
 ```text
 blog/
-├── cmd/api/main.go        程序入口：组装根命令
+├── cmd/blog/main.go       程序入口：组装根命令
 ├── config/app.yaml        配置
 ├── internal/
 │   ├── bootstrap/         装配：配置结构、打开资源、HTTP 服务、worker、调度器、命令
@@ -127,7 +127,7 @@ blog/
 
 ```mermaid
 flowchart TB
-  BIN["一个二进制文件 ./bin/api"]
+  BIN["一个二进制文件 ./bin/blog"]
   BIN --> SERVE["serve：一个进程运行全部部分"]
   BIN --> PART["serve worker 等：只运行一个部分"]
   BIN --> OTHER["migrate、openapi、routes、client、doctor 等运维命令"]

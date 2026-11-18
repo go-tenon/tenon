@@ -260,10 +260,10 @@ func DocRouter() chi.Routes {
 <a id="entrypoint"></a>
 ## 入口
 
-现在，把 `cmd/api/main.go` 改成下面这样。它只声明有哪些命令，具体做什么都在 `bootstrap` 中：
+现在，把 `cmd/blog/main.go` 改成下面这样。它只声明有哪些命令，具体做什么都在 `bootstrap` 中：
 
-```go title="cmd/api/main.go"
-// Command api 是博客的入口。
+```go title="cmd/blog/main.go"
+// Command blog 是博客的入口。
 package main
 
 import (
@@ -275,7 +275,7 @@ import (
 )
 
 func main() {
-    root := command.Root("api", "博客")
+    root := command.Root("blog", "博客")
     root.AddCommand(
         command.Serve(bootstrap.Open, bootstrap.Parts),
         command.Config[bootstrap.Config](),
@@ -290,11 +290,11 @@ func main() {
 和第 1 章相比，`main.go` 变短了，它只回答“程序有哪些命令”：
 
 - **`serve`**：加载配置，调用 `bootstrap.Open` 打开资源，再运行 `bootstrap.Parts` 中的部分。`serve` 运行全部部分，`serve http` 只运行 HTTP 服务；现在只有一个部分，两者一样。
-- **`config`**：打印加载后的完整配置。配置不符合预期时用它检查：`go run ./cmd/api config show`。
+- **`config`**：打印加载后的完整配置。配置不符合预期时用它检查：`go run ./cmd/blog config show`。
 - **`health`**：请求本机的 `/livez`，在 Docker 中用作健康检查，见[部署](../installation/deployment.md#health-checks)。
 - **`openapi`、`routes`、`client`**：导出接口文档、列出全部路由、生成客户端，`tenon` 在开发时调用它们。
 
-代码导入了新的包，可能用到 `go.mod` 中还没有的依赖。`bun run dev` 编译时会自动补全 `go.mod`；直接用 `go run ./cmd/api …` 运行命令之前，先运行一次 `go mod tidy`。
+代码导入了新的包，可能用到 `go.mod` 中还没有的依赖。`bun run dev` 编译时会自动补全 `go.mod`；直接用 `go run ./cmd/blog …` 运行命令之前，先运行一次 `go mod tidy`。
 
 <a id="checking"></a>
 ## 检查一下

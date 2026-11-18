@@ -109,7 +109,7 @@ queuecmd.New(a.db, queuecmd.WithJetStream(a.nc, a.cfg.Queue)),
 `queue status` 显示复制槽是否有 worker 在转发、积压了多少 WAL，以及 JetStream 中的 stream 和每个 topic：
 
 ```bash
-./bin/api queue status
+./bin/blog queue status
 ```
 
 ```text
@@ -140,7 +140,7 @@ stream 和 consumer 也可以用 [nats 命令行](https://docs.nats.io/using-nat
 `queue failed` 从新到旧列出失败任务，错误信息只显示第一行，完整的错误和堆栈用 `FailedJobs.Get` 查看：
 
 ```bash
-./bin/api queue failed --topic mail.send --limit 10
+./bin/blog queue failed --topic mail.send --limit 10
 ```
 
 ```text

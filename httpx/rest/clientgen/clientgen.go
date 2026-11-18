@@ -38,7 +38,7 @@ var wireSource string
 // Options 配置生成。
 type Options struct {
 	Out     string            // 输出目录，必须位于某个 Go 模块中；目录名就是根包的包名，例如 api。
-	Main    string            // 应用的主包（导入路径或相对 Dir 的模式，例如 ./cmd/api）。在它依赖的、属于应用模块和 Tenon 的包中查找 errorx.Define 定义的错误码。
+	Main    string            // 应用的主包（导入路径或相对 Dir 的模式，例如 ./cmd/blog）。在它依赖的、属于应用模块和 Tenon 的包中查找 errorx.Define 定义的错误码。
 	Dir     string            // 加载源码的工作目录，空表示当前目录。
 	Imports []string          // 在标准库和 github.com/google/uuid 之外，客户端可以直接导入的包，也包括它们的子包，例如 github.com/uptrace/bun 也允许 github.com/uptrace/bun/schema。
 	Rename  map[string]string // 把服务端包的导入路径映射为镜像包名，用于两个包同名的情况。

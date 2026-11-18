@@ -21,7 +21,7 @@ import (
 var clientDirName = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 
 // Command 构造 client 命令：调用 router 构造应用的路由，生成其中 API 的客户端。离线运行，只登记处理器；
-// 需要在应用源码目录中运行（例如 go run ./cmd/api client --out ../api），因为类型声明和错误码从源码复制。
+// 需要在应用源码目录中运行（例如 go run ./cmd/blog client --out ../api），因为类型声明和错误码从源码复制。
 //
 // --ts 为每个 API 生成 TypeScript 客户端（见 GenerateTS），写到 --ts 目录下以 API 名称命名的子目录：
 // 名称默认是 BasePath 的最后一段（/api 是 api，/api/admin 是 admin），--name 按 BasePath 改名，例如

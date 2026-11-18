@@ -68,6 +68,13 @@ func setup(t *testing.T, tools ...string) (dir, log string) {
 	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// 应用的入口：cmd 下唯一的目录。
+	if err := os.MkdirAll(filepath.Join(dir, "cmd", "blog"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "cmd", "blog", "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	return dir, log
 }
 
