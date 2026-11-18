@@ -13,19 +13,19 @@ import (
 // connection 是一个连接的身份。
 type connection struct {
 	sub   identity.Subject // ID 为空表示匿名
-	token string           // 由 Options.Authenticate 认证时的 token：SDK 传入的，或浏览器的会话 cookie
+	token string           // 由 Options.Authenticate 认证时的 token：SDK 传入的、Authorization 请求头中的，或浏览器的会话 cookie
 }
 
 // connectionKey 是连接信息在客户端 context 中的键。
 type connectionKey struct{}
 
-// connecting 识别连接的主体：SDK 传入的 token 优先，其次是浏览器在连接请求中带上的会话 cookie，
-// 都由 Options.Authenticate 校验；两者都没有时是匿名连接。
+// connecting 识别连接的主体：SDK 传入的 token 优先，其次是连接请求带来的 token（Authorization: Bearer 请求头，
+// 没有时是浏览器的会话 cookie），都由 Options.Authenticate 校验；都没有时是匿名连接。
 func (rt *Realtime) connecting(ctx context.Context, e centrifuge.ConnectEvent) (centrifuge.ConnectReply, error) {
 	conn := &connection{}
 	token := e.Token
 	if token == "" {
-		token, _ = ctx.Value(sessionKey{}).(string)
+		token, _ = ctx.Value(requestTokenKey{}).(string)
 	}
 	if token != "" {
 		sub, err := identity.Establish(ctx, rt.authenticator(token), rt.opts.Accounts.Resolve)

@@ -377,6 +377,15 @@ func TestTokenAuthentication(t *testing.T) {
 	if rejected(t, n.url, "", http.Header{"Cookie": {httpx.DefaultSessionCookieName + "=revoked"}}) != 3500 {
 		t.Fatal("revoked session cookie was accepted")
 	}
+	// 客户端在连接请求的 Authorization 请求头中带 token：优先于会话 cookie，不检查来源。
+	desktop := http.Header{"Authorization": {"Bearer erin"}, "Origin": {"app://admin"}, "Cookie": {httpx.DefaultSessionCookieName + "=carol"}}
+	mustConnect(t, n.url, "", desktop).mustSubscribe("inbox")
+	if sub := <-seen; sub.ID != "erin" {
+		t.Fatalf("authorization header subject %+v", sub)
+	}
+	if rejected(t, n.url, "", http.Header{"Authorization": {"Bearer revoked"}}) != 3500 {
+		t.Fatal("revoked bearer header was accepted")
+	}
 	// 其他网站的页面不能借用户的 cookie 建立连接。
 	if _, resp, err := dial(t, n.url, http.Header{"Cookie": {httpx.DefaultSessionCookieName + "=carol"}, "Origin": {"https://evil.example"}}); err == nil || resp == nil || resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("cross-site connection: %v", err)

@@ -23,20 +23,20 @@ import (
 // credentialInterval 是连接期间重新校验凭据的间隔，与 SSE 相同。
 var credentialInterval = 30 * time.Second
 
-// sessionKey 是连接请求中会话 cookie 的值在 context 中的键。
-type sessionKey struct{}
+// requestTokenKey 是连接请求中带来的 token 在 context 中的键：Authorization: Bearer 请求头，没有时是浏览器的会话 cookie。
+type requestTokenKey struct{}
 
 // credentialTimeout 是一次凭据校验或订阅授权的时限。
 const credentialTimeout = 10 * time.Second
 
 // Options 配置 Realtime，零值可用。
 type Options struct {
-	Authenticate   identity.TokenValidator      // 校验连接的 token（SDK 传入的 token，没有时是浏览器的会话 cookie），返回主体，通常与 rest.RequireToken 使用同一个校验器；token 无效时 SDK 停止重连，系统故障时客户端稍后重连。连接期间定期重新调用，token 被撤销后连接结束。nil 时拒绝带 token 的连接
+	Authenticate   identity.TokenValidator      // 校验连接的 token（依次取 SDK 传入的 token、连接请求的 Authorization: Bearer 请求头、浏览器的会话 cookie），返回主体，通常与 rest.RequireToken 使用同一个校验器；token 无效时 SDK 停止重连，系统故障时客户端稍后重连。连接期间定期重新调用，token 被撤销后连接结束。nil 时拒绝带 token 的连接
 	Accounts       identity.Accounts            // 用 token 连接时接受的账号体系和各自的 Resolver，通常与 rest.Options.Accounts 相同：按主体的 Type 调用 Resolver 得到连接的主体；Type 不在其中、或 Resolver 返回系统故障以外的错误时拒绝连接。连接期间与 Authenticate 一起定期重新调用，用户被停用或移出租户后连接结束。设置了 Authenticate 时必须设置
 	SessionCookie  httpx.SessionCookie          // 浏览器的会话 cookie，与 rest.Options.SessionCookie 相同；零值是 httpx.DefaultSessionCookieName。
 	Tenant         func(r *http.Request) string // 从连接请求中取出它所在的租户，例如路径参数 chi.URLParam(r, "tenant")、子域名或请求头，结果写入 identity.WithTenant：Resolver 据此加载权限，绑定了其他租户的 token 被拒绝。与 rest.Options.Tenant 的作用相同。nil 时使用外层中间件已经写入的租户，没有时是平台本身（""）。
 	Credentials    identity.CredentialWatcher   // 让连接在收到复查信号时立即重新校验凭据，撤销 token、退出登录后连接随即结束；nil 时只按 30 秒的间隔定期校验。通常是 broadcast.NewCredentials 的返回值，与 rest.Options.Credentials 相同。
-	TrustedOrigins []string                     // 允许跨站建立连接的来源，例如 https://app.example.com。浏览器发起的连接默认只接受同源请求，没有 Origin 请求头的客户端（移动端、服务器）全部放行。
+	TrustedOrigins []string                     // 允许跨站建立连接的来源，例如 https://app.example.com。浏览器发起的连接默认只接受同源请求；没有 Origin 请求头、或带 Authorization: Bearer 请求头的客户端（App、桌面端、服务器）全部放行。
 	Presence       PresenceStore                // 保存 presence 频道的在线成员，所有实例共用同一个存储，即 natspresence.New。注册 presence 频道时必须设置；不停机升级时新旧进程同时运行，单实例部署同样需要共用的存储。
 	PresenceGrace  time.Duration                // 连接离开 presence 频道后保留在线记录的时间：期间主体重新加入时，其他成员看不到离开和加入。零值为 DefaultPresenceGrace（10 秒），负数表示不保留，最长 MaxPresenceGrace（30 秒）。
 	MeterProvider  metric.MeterProvider         // MeterProvider 非 nil 时记录 realtime.connections 和 realtime.subscriptions 两个指标。
@@ -180,8 +180,11 @@ func (rt *Realtime) Unsubscribe(ref identity.Ref, channel string) error {
 
 // Handler 返回接受 WebSocket 连接的处理器，客户端 SDK 连接到它所在的地址。
 //
-// Options.Authenticate 校验 SDK 传入的 token 或浏览器的会话 cookie；两者都没有的连接是匿名的，只能订阅 Public 频道。
+// Options.Authenticate 校验连接的 token，依次取 SDK 传入的 token、连接请求的 Authorization: Bearer 请求头、
+// 浏览器的会话 cookie；都没有的连接是匿名的，只能订阅 Public 频道。
 // 浏览器的连接只接受同源的页面（以及 TrustedOrigins），其他网站的页面不能借用户的 cookie 建立连接。
+// 带 Authorization 请求头的连接不检查来源：请求头由客户端自己设置，浏览器不会自动附加，例如桌面端的宿主
+// 在 app:// 页面的连接请求上加上它。
 // 连接脱离 Timeout 中间件的超时和 http.Server.WriteTimeout。
 func (rt *Realtime) Handler() http.Handler {
 	ws := centrifuge.NewWebsocketHandler(rt.node, centrifuge.WebsocketConfig{CheckOrigin: rt.checkOrigin})
@@ -189,8 +192,12 @@ func (rt *Realtime) Handler() http.Handler {
 		if tenant := rt.opts.Tenant; tenant != nil {
 			r = r.WithContext(identity.WithTenant(r.Context(), tenant(r)))
 		}
-		if token := rt.opts.SessionCookie.Token(r.Header.Get("Cookie")); token != "" {
-			r = r.WithContext(context.WithValue(r.Context(), sessionKey{}, token))
+		token := httpx.BearerToken(r.Header.Get("Authorization"))
+		if token == "" {
+			token = rt.opts.SessionCookie.Token(r.Header.Get("Cookie"))
+		}
+		if token != "" {
+			r = r.WithContext(context.WithValue(r.Context(), requestTokenKey{}, token))
 		}
 		ws.ServeHTTP(hijackable(w), r)
 	})
@@ -211,10 +218,10 @@ func hijackable(w http.ResponseWriter) http.ResponseWriter {
 	}
 }
 
-// checkOrigin 检查 WebSocket 请求的来源：没有 Origin、与请求同源或在允许的来源中时通过。
+// checkOrigin 检查 WebSocket 请求的来源：没有 Origin、带 Bearer 请求头、与请求同源或在允许的来源中时通过。
 func (rt *Realtime) checkOrigin(r *http.Request) bool {
 	origin := r.Header.Get("Origin")
-	if origin == "" {
+	if origin == "" || httpx.BearerToken(r.Header.Get("Authorization")) != "" {
 		return true
 	}
 	u, err := url.Parse(origin)

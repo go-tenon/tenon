@@ -53,7 +53,7 @@ func RequireToken(api *API, validate identity.TokenValidator, permissions ...str
 	}
 	session := api.session
 	authenticate := func(ctx huma.Context) (identity.Subject, error) {
-		token := bearerToken(ctx.Header("Authorization"))
+		token := httpx.BearerToken(ctx.Header("Authorization"))
 		if token == "" {
 			token = session.Token(ctx.Header("Cookie"))
 		}
@@ -64,7 +64,7 @@ func RequireToken(api *API, validate identity.TokenValidator, permissions ...str
 	}
 	// crossSite 拒绝用会话 cookie 认证、来自其他站点的写请求。
 	crossSite := func(ctx huma.Context) error {
-		if httpx.SafeMethod(ctx.Method()) || bearerToken(ctx.Header("Authorization")) != "" || session.Token(ctx.Header("Cookie")) == "" {
+		if httpx.SafeMethod(ctx.Method()) || httpx.BearerToken(ctx.Header("Authorization")) != "" || session.Token(ctx.Header("Cookie")) == "" {
 			return nil
 		}
 		return sameOrigin(ctx)
@@ -262,13 +262,4 @@ func problem(api huma.API, ctx huma.Context, err error) huma.StatusError {
 		return a.httpError(ctx.Context(), err)
 	}
 	return FromError(err)
-}
-
-// bearerToken 从 Authorization 请求头 h 中取出 Bearer token，不是 Bearer 时返回空串。
-func bearerToken(h string) string {
-	const p = "Bearer "
-	if len(h) < len(p) || !strings.EqualFold(h[:len(p)], p) {
-		return ""
-	}
-	return strings.TrimSpace(h[len(p):])
 }
