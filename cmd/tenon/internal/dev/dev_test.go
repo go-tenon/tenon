@@ -290,14 +290,14 @@ func TestSyncJS(t *testing.T) {
 	if b, _ := os.ReadFile(pkg); !strings.Contains(string(b), `"name": "@go-tenon/client"`) {
 		t.Fatalf("package.json:\n%s", b)
 	}
-	for _, p := range []string{".tenon/js/client/src/index.ts", ".tenon/js/ui/src/shell/form.ts", ".tenon/.gitignore"} {
+	for _, p := range []string{".tenon/js/client/src/index.ts", ".tenon/js/ui/src/components/form/rules.ts", ".tenon/.gitignore"} {
 		if _, err := os.Stat(filepath.Join(dir, p)); err != nil {
 			t.Error(err)
 		}
 	}
 	// 测试文件只在框架中运行，不复制：它们可能依赖项目中没有的包（例如 happy-dom）。
 	for _, p := range []string{".tenon/js/node_modules", ".tenon/js/client/node_modules", ".tenon/js/package.json",
-		".tenon/js/client/src/errors.test.ts", ".tenon/js/ui/src/shell/form.test.tsx"} {
+		".tenon/js/client/src/errors.test.ts", ".tenon/js/start/src/start.test.ts"} {
 		if _, err := os.Stat(filepath.Join(dir, p)); !os.IsNotExist(err) {
 			t.Errorf("%s copied", p)
 		}

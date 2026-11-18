@@ -53,6 +53,7 @@ go test ./...       # 包括下文的模块检查
 - `clocktest`：SQL 和迁移中的时间都由 Go 算出后作为参数传入，不用 `NOW()`、`CURRENT_TIMESTAMP` 这类数据库的时钟函数。这样 [testing/synctest](docs/testing/overview.md#controlling-time) 的假时钟对整个框架有效。
 - `doctest`：编译文档中的代码。除入门教程外，每个以 `package` 开头的代码块都是完整文件，单独放进临时 module 编译；其余片段只用于阅读。入门教程由 `cmd/tenon` 的 `TestTutorial` 在 CI 的 scaffold 任务中按章节做一遍。
 - `doclinks`：`README.md`、`AGENTS.md` 和 `docs` 中的相对链接指向的文件存在，带锚点时目标文档中有 `<a id="锚点"></a>`。
+- `uilayertest`：`@go-tenon/ui` 的分层，见下文“前端包”。`js/ui/src` 下的每个文件都在 `theme`、`app`、`components`、`blocks`、`features` 之一中，相对导入只指向同层或更低层，`blocks` 和 `features` 互相不引用。
 - `i18ntest`：框架用 `errorx.Define` 定义的每个错误码在内置的每种语言中都有翻译。
 
 ## 前端包
@@ -61,7 +62,7 @@ go test ./...       # 包括下文的模块检查
 
 - `client` 是 `@go-tenon/client`，与界面无关的客户端运行时。它不依赖 DOM：`tsconfig.json` 的 `lib` 没有 `dom`，用到 `window`、`document` 等浏览器 API 时类型检查失败。
 - `start` 是 `@go-tenon/start`，把 TanStack Start 接到 Go 的 `frontend` 包：Vite 插件（挂载路径、服务端渲染或页面外壳）、服务端渲染时调用 Go 接口的运行时，以及编译 SSR 可执行文件的 `tenon-start`。
-- `ui` 是 `@go-tenon/ui`，应用骨架、基于 Mantine 的界面和三套样式预设；`ui/src/shell` 是不导入 Mantine 的逻辑。React、TanStack Router、TanStack Query 和 Mantine 是 peer 依赖。
+- `ui` 是 `@go-tenon/ui`，基于 Mantine 的应用骨架和界面。`ui/src` 分成五层，上层只引用下层：`theme`（预设、主题、图标）→ `app`（应用骨架：装配、导航、插槽、多标签）→ `components`（页面中用的部件）→ `blocks`（布局、登录页的布局这类只描述样子的整块界面）和 `features`（框架功能的前端，逻辑和外观放在同一个目录）。`blocks` 和 `features` 互相不引用，把它们组合起来的是脚手架生成的项目。新文件按它依赖什么放进对应的层，`uilayertest` 检查引用方向。React、TanStack Router、TanStack Query 和 Mantine 是 peer 依赖。
 - `playground` 是 ui 的演示，用 `bun run playground` 启动。ui 不写测试，界面的改动在 playground 中看效果。
 
 在 `js` 目录中运行：
@@ -100,7 +101,7 @@ bun run test        # Vitest：client 和 start 的测试
 
 ### 颜色
 
-`js` 中的包、playground、脚手架的模板和文档中的示例，颜色都从 Mantine 的主题中取。主题中的彩色是 Mantine [颜色生成器](https://mantine.dev/colors-generator)的 26 种预设（`js/ui/src/theme.ts` 的 `primaryColors`），色板由 `@mantine/colors-generator` 生成，亮色和暗色模式下的取值由 Mantine 统一给出，应用换品牌色时整套界面一起变：
+`js` 中的包、playground、脚手架的模板和文档中的示例，颜色都从 Mantine 的主题中取。主题中的彩色是 Mantine [颜色生成器](https://mantine.dev/colors-generator)的 26 种预设（`js/ui/src/theme/theme.ts` 的 `primaryColors`），色板由 `@mantine/colors-generator` 生成，亮色和暗色模式下的取值由 Mantine 统一给出，应用换品牌色时整套界面一起变：
 
 - 品牌色是 `brand`，组件不写 `color` 时用的就是它。它由 `createUiTheme` 的 `primary` 设置，写预设的名称（例如 `pale-indigo`）或颜色值。
 - 其他彩色写预设的名称：组件的属性写 `color="deep-orange"`、`c="red"`、`bg="green.5"`，CSS 写 `var(--mantine-color-deep-orange-6)`。浅色底和上面的文字用 `-light`、`-light-color` 变体，它们在暗色模式下自动换成合适的值，不用另写暗色的规则。半透明用 `color-mix(in srgb, var(--mantine-color-violet-7) 50%, transparent)`。
