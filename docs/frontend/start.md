@@ -1,8 +1,8 @@
 # TanStack Start 的接入
 
-`@go-tenon/start` 把 [TanStack Start](https://tanstack.com/start) 接到 Tenon：页面由 Go 托管的 Bun 渲染（见[服务端渲染](ssr.md)），服务端渲染和浏览器调用同一组 Go 接口，前端代码不需要区分自己在哪一边运行。
+`@go-tenon/start` 把 [TanStack Start](https://tanstack.com/start) 接到 Tenon：前端由 Go 托管，服务端渲染的页面由 Go 托管的 Bun 渲染（见[托管前端与服务端渲染](hosting.md)），服务端渲染和浏览器调用同一组 Go 接口，前端代码不需要区分自己在哪一边运行。
 
-阅读前需要了解：[服务端渲染](ssr.md)；[客户端代码](../http/clients.md)。
+阅读前需要了解：[托管前端与服务端渲染](hosting.md)；[客户端代码](../http/clients.md)。
 
 - [安装到应用](#setup)
 - [调用接口](#calling-the-api)
@@ -16,12 +16,18 @@
 <a id="setup"></a>
 ## 安装到应用
 
-前端是一个普通的 TanStack Start 应用，加上四处 Tenon 的约定。`tenon init` 和 `tenon add frontend` 生成的前端已经按本节配置好。
+前端是一个普通的 TanStack Start 应用，加上五处 Tenon 的约定。`tenon init` 和 `tenon add frontend` 生成的前端已经按本节配置好。
 
 > [!NOTE]
 > `src/client.ts(x)` 和 `src/server.ts` 是 TanStack Start 约定的浏览器入口和服务端入口。调用接口的客户端不要放在 `src/client.ts` 中，否则它会被当成浏览器的入口，页面不会水合；模板中客户端在 `src/api.ts`。
 
-`vite.config.ts` 使用 `tenon`，它包含 TanStack Start 和 React 的插件：
+`package.json` 的 `tenon` 字段写挂载路径和是否在服务端渲染，见[两种渲染方式](hosting.md#modes)：
+
+```json title="package.json"
+"tenon": { "base": "/", "ssr": true }
+```
+
+`vite.config.ts` 使用 `tenon`，它包含 TanStack Start 和 React 的插件，并从 `package.json` 读取上面的字段：`base` 作为 Vite 的 `base`，`ssr` 为 `false` 时打开 TanStack Start 的 SPA 模式，构建时生成页面外壳。`vite.config.ts` 中不另写 `base`：
 
 ```ts title="vite.config.ts"
 import { defineConfig } from "vite"
@@ -87,47 +93,40 @@ export const Route = createFileRoute("/articles/$id")({
 })
 ```
 
-不需要服务端渲染的页面（例如后台）在路由上设置 `ssr: false`，只在浏览器中渲染。
+服务端渲染的前端中，不需要服务端渲染的页面（例如要登录才能看的页面）在路由上设置 `ssr: false`，只在浏览器中渲染。整个前端都不需要服务端渲染时，把 `package.json` 中的 `ssr` 设为 `false`，见[切换渲染方式](hosting.md#switching)。
 
 <a id="prerendering"></a>
 ## 预渲染
 
 `tenon` 的 `prerender` 列出构建时渲染成 HTML 的页面，适合官网首页、产品文档这类内容在代码仓库中、不随请求变化的页面。从这些页面出发跟随链接，同一前缀下的页面一起预渲染；`"/"` 只表示首页本身。
 
-请求这些页面时，Bun 直接返回预渲染的 HTML，不再渲染。HTML 中的 nonce 在构建时是占位符，返回时换成本次请求的 nonce。其余页面在请求时渲染。
+请求这些页面时，Go 直接返回预渲染的 HTML，不再渲染。HTML 中的 nonce 在构建时是占位符，返回时换成本次请求的 nonce。其余页面在请求时渲染。
+
+只在浏览器中渲染的前端（`"ssr": false`）同样可以预渲染页面，但不能预渲染 `"/"`：页面外壳由首页渲染而来，构建时报错。
 
 <a id="print-templates"></a>
 ## 打印模板
 
-`@go-tenon/start/print` 声明打印模板：Go 用 `ssr.Host.Render` 把数据交给它，渲染成完整的 HTML 后生成 PDF。`printHandler(templates)` 加在服务端入口中，写法见[生成 PDF：编写模板](../libraries/pdf.md#writing-templates)。
+`@go-tenon/start/print` 声明打印模板：Go 用 `frontend.Host.Render` 把数据交给它，渲染成完整的 HTML 后生成 PDF。打印模板在服务端渲染，只能放在 `"ssr": true` 的前端中。`printHandler(templates)` 加在服务端入口中，写法见[生成 PDF：编写模板](../libraries/pdf.md#writing-templates)。
 
 <a id="compiling"></a>
 ## 编译
 
-`tenon-start compile` 构建前端，把服务端入口和全部静态文件（包括预渲染的 HTML，以 base64 内联）打包成一个 JS 文件 `ssr.js`，由 Go 用 `go:embed` 嵌入，交给 [`ssr.Options.Bundle`](ssr.md#wiring)。它与架构无关：
+前端的 `bun run build` 运行 `vite build`，结果在前端目录的 `dist` 中：`dist/client` 是浏览器的文件（脚本、样式、预渲染的页面、页面外壳），`dist/server` 是服务端入口。`tenon build` 把每个前端的 `dist/client` 复制到 `apps/dist/<名称>`，由 Go 直接返回，见[开发工具](../installation/tooling.md#build)。
+
+有前端在服务端渲染时，`tenon build` 再用 `tenon-start compile` 把这些前端的服务端入口连同 Bun 编译成一个可执行文件：
 
 ```bash
-bunx tenon-start compile --out ssr.js --base /admin/
+bunx tenon-start compile --out apps/dist/ssr web=apps/web/dist/server/server.js shop=apps/shop/dist/server/server.js
 ```
 
-模板中它是前端的 `bun run build`，由 `tenon build` 运行，见[开发工具](../installation/tooling.md#build)。
-
-- `--base` 是前端挂载的路径，与 `vite.config.ts` 的 `base` 相同，默认 `/`。静态文件按它提供。
-- `--skip-build` 跳过 `vite build`，直接打包已有的 `dist`。
-- 内联的静态文件：`assets/` 下的文件名带内容哈希，永久缓存；其余文件每次协商。source map 不嵌入。
-
-`tenon-start runtime` 构建几个前端共用的运行时：Bun 和一个加载器编译成的可执行文件，交给 [`ssr.NewRuntime`](ssr.md#wiring)。加载器从文件描述符 3 读出前端的 `ssr.js` 并运行它。`tenon build` 构建一次，写到 `apps/ssr-runtime.bin`：
-
-```bash
-bunx tenon-start runtime --out ../ssr-runtime.bin --target bun-linux-arm64
-```
-
+- 每个参数是 `<前端的名称>=<服务端入口>`。可执行文件按环境变量 `TENON_FRONTEND` 只加载其中一个前端，Go 为每个服务端渲染的前端启动一个进程。
 - `--target` 是运行的系统和架构，`bun-linux-x64` 或 `bun-linux-arm64`。没有写时按环境变量 `GOARCH`（`tenon build` 设为 Go 程序的架构，见 `--arch`），再没有时是当前机器的架构。
 
 <a id="development"></a>
 ## 开发
 
-开发时 Go 不启动 SSR 进程，把页面请求转给 Vite 的开发服务器（见[服务端渲染：开发](ssr.md#development)）。这时没有内部 socket，`apiFetch` 经环境变量 `API_ORIGIN` 中的地址调用 Go，例如 `http://localhost:8080`，由 `tenon dev` 设置。
+开发时 Go 不启动 SSR 进程，把页面请求转给 Vite 的开发服务器（见[托管前端：开发](hosting.md#development)）。这时没有内部 socket，`apiFetch` 经环境变量 `API_ORIGIN` 中的地址调用 Go，例如 `http://localhost:8080`，由 `tenon dev` 设置。
 
 <a id="troubleshooting"></a>
 ## 常见问题
@@ -152,10 +151,10 @@ bunx tenon-start runtime --out ../ssr-runtime.bin --target bun-linux-arm64
 | `@go-tenon/start` | `requestMiddleware` | 记住页面请求的请求头，安装在 `createStart` 的 `requestMiddleware` 中 |
 | | `apiFetch` | 调用 Go 接口的 `fetch`，交给生成的客户端 |
 | | `cspNonce()` | 本次页面请求的 nonce，浏览器中为 `undefined` |
-| | `forwardHeaders`、`socketPath` | 与 Go 的约定，见[与 SSR 进程的约定](ssr.md#contract) |
+| | `forwardHeaders`、`socketPath` | 与 Go 的约定，见[与 SSR 进程的约定](hosting.md#contract) |
 | `@go-tenon/start/server` | `streamHandler` | 流式渲染页面，报告 `X-Tenon-Route` |
-| `@go-tenon/start/serve` | `serve(options)` | Bun 中的 SSR 服务，`tenon-start compile` 生成的入口调用它 |
+| `@go-tenon/start/serve` | `serve(options)` | Bun 中的 SSR 服务，`tenon-start compile` 生成的入口调用它；静态文件由 Go 返回，不经过它 |
 | `@go-tenon/start/print` | `definePrint`、`printHandler`、`PrintDocument` | 打印模板，见[打印模板](#print-templates) |
-| `@go-tenon/start/vite` | `tenon(options)` | Vite 插件：TanStack Start、React 和预渲染 |
-| 命令 | `tenon-start compile` | 构建前端，打包成 `ssr.js` |
-| 命令 | `tenon-start runtime` | 构建几个前端共用的运行时 |
+| `@go-tenon/start/vite` | `tenon(options)` | Vite 插件：TanStack Start、React、挂载路径、预渲染和 SPA 模式 |
+| | `frontendConfig(dir?)` | 读取前端 `package.json` 的 `tenon` 字段：`{ base, ssr }` |
+| 命令 | `tenon-start compile` | 把服务端渲染的前端连同 Bun 编译成一个可执行文件 |

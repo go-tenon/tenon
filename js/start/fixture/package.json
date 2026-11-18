@@ -1,0 +1,9 @@
+{
+  "name": "@go-tenon/start-fixture",
+  "private": true,
+  "type": "module",
+  "tenon": {
+    "base": "/",
+    "ssr": true
+  }
+}

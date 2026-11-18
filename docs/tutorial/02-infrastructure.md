@@ -216,48 +216,41 @@ import (
 
     "github.com/go-tenon/tenon/command"
     "github.com/go-tenon/tenon/config"
+    "github.com/go-tenon/tenon/frontend"
     "github.com/go-tenon/tenon/health"
     "github.com/go-tenon/tenon/httpx"
     "github.com/go-tenon/tenon/httpx/rest"
-    "github.com/go-tenon/tenon/ssr"
 
     "example.com/blog/apps"
-    webapp "example.com/blog/apps/web"
     "example.com/blog/internal/todo"
 )
 
-// HTTP 装配 HTTP 服务，serve 命令运行它。页面由 Go 托管的 SSR 进程渲染，它们渲染时经内部 socket 调用同一组路由。
+// HTTP 装配 HTTP 服务，serve 命令运行它。apps 中的前端由 frontend.Host 按挂载路径提供：服务端渲染的前端由
+// Go 托管的 SSR 进程渲染，它们渲染时经内部 socket 调用同一组路由。
 func (a *App) HTTP(d *command.Daemon) (func(context.Context) error, error) {
     var draining httpx.Draining
     var router chi.Router
-    rt := ssr.NewRuntime(apps.Runtime) // 几个前端共用的 Bun 运行时
-    web, err := a.pages(rt, "web", webapp.SSR, &router)
+    // router 在 pages 创建之后才构造好，SSR 进程调用接口时经这个函数转给它。
+    api := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { router.ServeHTTP(w, r) })
+    pages, err := frontend.New(apps.Dist, frontend.Options{API: api, DevServers: a.cfg.DevServers})
     if err != nil {
         return nil, err
     }
-    router = a.Router(&draining, pages{web: web.Handler()})
+    router = a.Router(&draining, pages.Handler())
     ln, err := d.Listen("tcp", a.cfg.HTTP.Addr)
     if err != nil {
         return nil, err
     }
     return func(ctx context.Context) error {
-        return ssr.Run(ctx, func(ctx context.Context) error {
+        return pages.Run(ctx, func(ctx context.Context) error {
             return httpx.Serve(ctx, a.cfg.HTTP, ln, router, httpx.OnDraining(draining.Set))
-        }, web)
+        })
     }, nil
-}
-
-// pages 创建托管前端 name 的 SSR 进程的 Host：bundle 是嵌入的前端代码，由几个前端共用的运行时 rt 运行；
-// 开发时页面转给前端的开发服务器。进程渲染页面需要数据时调用 *router 中的接口，
-// router 在 Host 创建之后才构造好，所以传它的地址。
-func (a *App) pages(rt *ssr.Runtime, name string, bundle []byte, router *chi.Router) (*ssr.Host, error) {
-    api := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { (*router).ServeHTTP(w, r) })
-    return ssr.New(ssr.Options{Runtime: rt, Bundle: bundle, API: api, DevServer: a.cfg.DevServers[name]})
 }
 
 // Router 构造应用的全部路由：健康检查、/api 下的接口和页面。
 // 它只保存 App 的字段、不使用它们，所以 DocRouter 可以用一个没有打开任何资源的 App 调用它。
-func (a *App) Router(draining *httpx.Draining, p pages) chi.Router {
+func (a *App) Router(draining *httpx.Draining, pages http.Handler) chi.Router {
     router := chi.NewRouter()
     router.Use(httpx.Defaults(a.cfg.HTTP)...)
     router.Get("/livez", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
@@ -272,25 +265,23 @@ func (a *App) Router(draining *httpx.Draining, p pages) chi.Router {
         api := rest.New(r, rest.Options{Title: "Blog API", Version: "1.0.0", BasePath: "/api"})
         todo.Register(api, todo.NewStore())
     })
-    if p.web != nil {
-        router.Handle("/*", p.web)
+    if pages != nil {
+        router.Handle("/*", pages)
     }
     return router
 }
 
 // DocRouter 用默认配置和没有打开任何资源的 App 构造路由，openapi、routes、client 命令用它。
 func DocRouter() chi.Routes {
-    return (&App{cfg: config.Default[Config]()}).Router(nil, pages{})
+    return (&App{cfg: config.Default[Config]()}).Router(nil, nil)
 }
 
-// pages 是各前端的页面处理器，挂在接口之后；DocRouter 中为空。
-type pages struct{ web http.Handler }
 ```
 
 - **`HTTP`** 就是上面说的一个 `part`：它监听端口，返回运行服务的函数。收到停止信号时，服务先把 `draining` 标记为“正在停止”，再等正在处理的请求完成（排空）。
 - **`/livez` 和 `/readyz`** 是健康检查，部署平台定期访问它们，判断程序是否还活着、能否接收请求。`/readyz` 会检查数据库，数据库连不上、或者程序正在停止时返回 `503`。
 - **`/api`** 下是 JSON 接口，`rest.New` 在这个子路由上创建 API。现在注册的还是模板的待办接口，第 4 章换成文章。
-- **其余的请求**是页面，交给 `pages` 中的处理器：`ssr` 包托管的 SSR 进程渲染它们，开发时转给前端的开发服务器。`ssr.Run` 先启动 SSR 进程、等它就绪，再开始接收请求；停止时先排空请求，再停 SSR 进程。见[服务端渲染](../frontend/ssr.md)。
+- **其余的请求**是页面，交给 `pages`：`frontend.New` 读取嵌入的 `apps.Dist`，按挂载路径把请求交给 `apps` 中的前端，静态文件由 Go 直接返回，`web` 的页面由 Go 托管的 SSR 进程渲染，开发时转给前端的开发服务器。`pages.Run` 先启动 SSR 进程、等它就绪，再开始接收请求；停止时先排空请求，再停 SSR 进程。见[托管前端与服务端渲染](../frontend/hosting.md)。
 - **`DocRouter`** 在不打开任何资源的情况下构造全部路由，`tenon` 用它生成接口文档和客户端。为此，`Router` 中只能保存 `App` 的字段、不能立即使用它们。数据库的检查写成了一个闭包 `func(ctx context.Context) error { return a.db.PingContext(ctx) }`，原因也在这里：`DocRouter` 中的 `a.db` 是 `nil`，如果直接写 `a.db.PingContext`，构造路由时就会 panic；写成闭包后，要到真的执行检查时才会用到 `a.db`。
 
 <a id="entrypoint"></a>

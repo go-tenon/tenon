@@ -84,7 +84,7 @@ git diff --exit-code openapi.json
 <a id="api-versioning"></a>
 ## API 版本
 
-只提供 JSON API 的应用，通常直接挂在根路径上，由部署决定前缀，例如 `https://api.example.com/v1`。但如果 API 要和[页面](../frontend/ssr.md)共用一个 Router，就需要把它挂在带版本号的子路由下，并把同一个前缀设为 `BasePath`：
+只提供 JSON API 的应用，通常直接挂在根路径上，由部署决定前缀，例如 `https://api.example.com/v1`。但如果 API 要和[页面](../frontend/hosting.md)共用一个 Router，就需要把它挂在带版本号的子路由下，并把同一个前缀设为 `BasePath`：
 
 ```go
 router.Route("/api/v1", func(r chi.Router) {

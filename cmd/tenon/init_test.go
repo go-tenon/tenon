@@ -18,9 +18,10 @@ import (
 	"time"
 )
 
-// TestInitEndToEnd 用 init 生成项目（指向本地的框架），用 add frontend 加入两个前端并由 ssr 托管，然后类型检查、
-// tenon build（每个前端编译成 SSR 可执行文件，嵌入程序）、运行二进制，通过 HTTP 检查服务端渲染的页面、挂载路径、
-// 静态资源和品牌色，走一遍待办事项的增删改查。它需要 bun 和网络，编译、安装依赖很占 CPU，会干扰其他包中
+// TestInitEndToEnd 用 init 生成项目（指向本地的框架），用 add frontend 加入三个前端，然后类型检查、tenon build
+// （前端的静态文件和服务端渲染的 Bun 可执行文件嵌入程序）、运行二进制，通过 HTTP 检查服务端渲染和只在浏览器中渲染的页面、
+// 挂载路径、静态资源和品牌色，走一遍待办事项的增删改查；再把全部前端改成只在浏览器中渲染，检查程序中不再带 Bun。
+// 它需要 bun 和网络，编译、安装依赖很占 CPU，会干扰其他包中
 // 计时的测试，所以只在设置了 TENON_SCAFFOLD_TEST=1 时运行（CI 的 scaffold 任务）：
 //
 //	TENON_SCAFFOLD_TEST=1 go test -run TestInitEndToEnd ./cmd/tenon/
@@ -53,38 +54,14 @@ func TestInitEndToEnd(t *testing.T) {
 			t.Fatalf("%s %v: %v\n%s", name, args, err, b)
 		}
 	}
-	// 两个前端：运营后台挂在 /admin/，控制台挂在 /console/。按 add frontend 的提示由 ssr 托管它们。
+	// 三个前端：运营后台挂在 /admin/，控制台挂在 /console/，都只在浏览器中渲染；官网样式的 promo 挂在 /promo/，
+	// 和 web 一样在服务端渲染。main.go 不用改：frontend.Host 按 apps/dist 中的清单托管全部前端。
 	sh("go", "tool", "tenon", "add", "frontend", "admin", "--layout", "frame")
 	sh("go", "tool", "tenon", "add", "frontend", "console")
-	// 官网样式的首页占位（不挂载，只检查首页的模板能通过类型检查和编译）。
 	sh("go", "tool", "tenon", "add", "frontend", "promo", "--layout", "site")
-	mainGo := filepath.Join(dir, "cmd", "api", "main.go")
-	src, err := os.ReadFile(mainGo)
-	if err != nil {
-		t.Fatal(err)
-	}
-	code := string(src)
-	for _, r := range [][2]string{
-		{"\t\"example.com/todo/apps/web\"", "\t\"example.com/todo/apps/admin\"\n\t\"example.com/todo/apps/console\"\n\t\"example.com/todo/apps/web\""},
-		{"type pages struct{ web http.Handler }", "type pages struct{ web, admin, console http.Handler }"},
-		{"\trouter = routes(cfg, todo.NewStore(), pages{web: webPages.Handler()})",
-			"\tadminPages, err := ssr.New(ssr.Options{Runtime: runtime, Bundle: admin.SSR, API: api, DevServer: cfg.DevServers[\"admin\"]})\n\tif err != nil {\n\t\treturn err\n\t}\n" +
-				"\tconsolePages, err := ssr.New(ssr.Options{Runtime: runtime, Bundle: console.SSR, API: api, DevServer: cfg.DevServers[\"console\"]})\n\tif err != nil {\n\t\treturn err\n\t}\n" +
-				"\trouter = routes(cfg, todo.NewStore(), pages{web: webPages.Handler(), admin: adminPages.Handler(), console: consolePages.Handler()})"},
-		{"}, webPages)", "}, webPages, adminPages, consolePages)"},
-		{"\tif p.web != nil {", "\tif p.admin != nil {\n\t\trouter.Handle(\"/admin/*\", p.admin)\n\t\trouter.Handle(\"/console/*\", p.console)\n\t}\n\tif p.web != nil {"},
-	} {
-		if !strings.Contains(code, r[0]) {
-			t.Fatalf("main.go has no %q:\n%s", r[0], code)
-		}
-		code = strings.Replace(code, r[0], r[1], 1)
-	}
-	if err := os.WriteFile(mainGo, []byte(code), 0o644); err != nil {
-		t.Fatal(err)
-	}
 
-	// 刚 clone 的项目没有 ssr.js、共用的运行时（被 .gitignore 忽略）和生成的客户端：generate 先写占位文件再编译应用。
-	for _, p := range []string{"apps/web/ssr.js", "apps/admin/ssr.js", "apps/ssr-runtime.bin", "packages/client/src/api"} {
+	// 刚 clone 的项目没有 apps/dist（被 .gitignore 忽略）和生成的客户端：generate 先写前端的清单再编译应用。
+	for _, p := range []string{"apps/dist", "packages/client/src/api"} {
 		if err := os.RemoveAll(filepath.Join(dir, p)); err != nil {
 			t.Fatal(err)
 		}
@@ -122,7 +99,7 @@ func TestInitEndToEnd(t *testing.T) {
 	sh("bun", "run", "typecheck")
 	sh("go", "vet", "./...")
 	sh("go", "tool", "tenon", "build")
-	// 三个前端共用一份 Bun 运行时：程序只比一份运行时（约 100MB）大一点。
+	// 两个 SSR 前端编进同一个 Bun 可执行文件：程序只比一份 Bun（约 100MB）大一点。
 	if info, err := os.Stat(filepath.Join(dir, "bin", "api")); err != nil || info.Size() > 180<<20 {
 		t.Fatalf("bin/api: %v, %d MB", err, info.Size()>>20)
 	}
@@ -152,17 +129,19 @@ func TestInitEndToEnd(t *testing.T) {
 		!strings.Contains(strings.ToLower(page), "--mantine-color-brand-6: #777c91;") {
 		t.Fatalf("page:\n%s", page)
 	}
-	for url, title := range map[string]string{base + "/admin/": "admin", base + "/admin/users/42": "admin", base + "/console/login": "console"} {
+	// 只在浏览器中渲染的前端：Go 返回页面外壳，带本次请求的 nonce；服务端渲染的 promo 由它的 SSR 进程渲染。
+	for url, title := range map[string]string{base + "/admin/": "admin", base + "/admin/users/42": "admin", base + "/console/login": "console",
+		base + "/promo/": "promo"} {
 		page := getHTML(t, url)
 		prefix := "/" + title + "/assets/"
-		if !strings.Contains(page, "<title>"+title+"</title>") || !strings.Contains(page, prefix) {
+		if !strings.Contains(page, "<title>"+title+"</title>") || !strings.Contains(page, prefix) || strings.Contains(page, "__tenon_csp_nonce__") {
 			t.Fatalf("%s:\n%s", url, page)
 		}
 	}
 	if res, err := http.Get(base + "/todos/42"); err != nil || res.StatusCode != http.StatusNotFound {
 		t.Fatalf("unknown page: %v %v", res, err)
 	}
-	// 构建产物中的每个静态文件都嵌入 SSR 可执行文件，按挂载路径提供。
+	// 构建产物中的每个静态文件都嵌入程序，由 Go 按挂载路径提供。
 	assets, err := os.ReadDir(filepath.Join(dir, "apps", "admin", "dist", "client", "assets"))
 	if err != nil {
 		t.Fatal(err)
@@ -220,10 +199,40 @@ func TestInitEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	sh("go", "tool", "tenon", "build")
-	start()
+	stop = start()
 	waitUp(t, base+"/api/todos")
 	if page := strings.ToLower(getHTML(t, base+"/")); !strings.Contains(page, "--mantine-color-brand-6: #f0185c;") || strings.Contains(page, "--mantine-color-brand-6: #777c91;") {
 		t.Fatalf("brand change not in page:\n%s", page)
+	}
+	stop()
+
+	// 全部前端改成只在浏览器中渲染（package.json 的 tenon.ssr），去掉首页的预渲染（页面外壳由 / 渲染而来）：
+	// 重新构建后程序中不带 Bun，页面仍然可以打开。
+	for _, name := range []string{"web", "promo"} {
+		for file, r := range map[string][2]string{"package.json": {`"ssr": true`, `"ssr": false`}, "vite.config.ts": {`{ prerender: ["/"] }`, ""}} {
+			p := filepath.Join(dir, "apps", name, file)
+			b, _ := os.ReadFile(p)
+			if !strings.Contains(string(b), r[0]) {
+				t.Fatalf("%s has no %q:\n%s", p, r[0], b)
+			}
+			if err := os.WriteFile(p, []byte(strings.Replace(string(b), r[0], r[1], 1)), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	sh("go", "tool", "tenon", "build")
+	if _, err := os.Stat(filepath.Join(dir, "apps", "dist", "ssr")); err == nil {
+		t.Fatal("apps/dist/ssr left after every frontend stopped server rendering")
+	}
+	if info, err := os.Stat(filepath.Join(dir, "bin", "api")); err != nil || info.Size() > 80<<20 {
+		t.Fatalf("bin/api without SSR: %v, %d MB", err, info.Size()>>20)
+	}
+	start()
+	waitUp(t, base+"/api/todos")
+	for url, title := range map[string]string{base + "/": "Todo", base + "/todos/42": "Todo", base + "/promo/": "promo"} {
+		if page := getHTML(t, url); !strings.Contains(page, "<title>"+title+"</title>") || strings.Contains(page, "__tenon_csp_nonce__") {
+			t.Fatalf("%s without SSR:\n%s", url, page)
+		}
 	}
 
 	// 开发时 tenon dev 运行每个前端的 bun run dev（vite dev，在 Node 中运行）：开发服务器要能加载

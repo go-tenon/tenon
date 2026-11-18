@@ -1,4 +1,4 @@
-package ssr
+package frontend
 
 import (
 	"context"
@@ -26,11 +26,24 @@ func DefaultCSP(nonce string) string {
 // nonceKey 是 CSP nonce 在 context 中的键。
 type nonceKey struct{}
 
-// pageProxy 把页面请求经 unix socket 转给 SSR 进程，流式转发，不缓冲。
-func (h *Host) pageProxy() http.Handler {
-	proxy := &httputil.ReverseProxy{
+// newNonce 生成一个 CSP nonce：16 个随机字节的 base64。
+func newNonce() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return base64.RawStdEncoding.EncodeToString(b)
+}
+
+// requestNonce 返回 serveHTTP 为这次请求生成的 nonce。
+func requestNonce(r *http.Request) string {
+	nonce, _ := r.Context().Value(nonceKey{}).(string)
+	return nonce
+}
+
+// pageProxy 把前端 a 的页面请求经 unix socket 转给它的 SSR 进程，流式转发，不缓冲。
+func (h *Host) pageProxy(a *app) http.Handler {
+	return &httputil.ReverseProxy{
 		Transport: &http.Transport{
-			DialContext:         func(ctx context.Context, _, _ string) (net.Conn, error) { return dialSocket(ctx, h.socket) },
+			DialContext:         func(ctx context.Context, _, _ string) (net.Conn, error) { return dialSocket(ctx, a.socket) },
 			MaxIdleConnsPerHost: 64,
 		},
 		FlushInterval: -1,
@@ -38,34 +51,27 @@ func (h *Host) pageProxy() http.Handler {
 			r.Out.URL.Scheme, r.Out.URL.Host = "http", "ssr"
 			r.Out.Host = r.In.Host
 			r.SetXForwarded()
-			ctx := r.In.Context()
-			forward(ctx, r.Out.Header)
-			nonce, _ := ctx.Value(nonceKey{}).(string)
-			r.Out.Header.Set(HeaderNonce, nonce)
+			forward(r.In.Context(), r.Out.Header)
+			r.Out.Header.Set(HeaderNonce, requestNonce(r.In))
 		},
 		ModifyResponse: func(res *http.Response) error {
 			route(res)
 			if strings.HasPrefix(strings.ToLower(res.Header.Get("Content-Type")), "text/html") {
-				nonce, _ := res.Request.Context().Value(nonceKey{}).(string)
-				res.Header.Set("Content-Security-Policy", h.opts.CSP(nonce))
+				res.Header.Set("Content-Security-Policy", h.opts.CSP(requestNonce(res.Request)))
 			}
 			return nil
 		},
-		ErrorHandler: h.unavailable,
+		ErrorHandler: a.unavailable,
 	}
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		b := make([]byte, 16)
-		_, _ = rand.Read(b)
-		proxy.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), nonceKey{}, base64.RawStdEncoding.EncodeToString(b))))
-	})
 }
 
-// devProxy 把页面请求转给开发服务器，包括热更新的 WebSocket。开发服务器注入的内联脚本没有 nonce，所以不设置 CSP。
-func (h *Host) devProxy() http.Handler {
+// devProxy 把前端 a 的页面请求转给它的开发服务器，包括热更新的 WebSocket。开发服务器注入的内联脚本没有 nonce，
+// 所以不设置 CSP。
+func (h *Host) devProxy(a *app) http.Handler {
 	return &httputil.ReverseProxy{
 		FlushInterval: -1,
 		Rewrite: func(r *httputil.ProxyRequest) {
-			r.SetURL(h.dev)
+			r.SetURL(a.dev)
 			r.Out.Host = r.In.Host
 			r.SetXForwarded()
 			forward(r.In.Context(), r.Out.Header)
@@ -74,7 +80,7 @@ func (h *Host) devProxy() http.Handler {
 			route(res)
 			return nil
 		},
-		ErrorHandler: h.unavailable,
+		ErrorHandler: a.unavailable,
 	}
 }
 
@@ -101,12 +107,12 @@ func route(res *http.Response) {
 	}
 }
 
-// unavailable 在 SSR 进程不可用（重启中）时返回 502 页面；客户端已经断开时什么都不做。
-func (h *Host) unavailable(w http.ResponseWriter, r *http.Request, err error) {
+// unavailable 在 SSR 进程或开发服务器不可用（重启中）时返回 502 页面；客户端已经断开时什么都不做。
+func (a *app) unavailable(w http.ResponseWriter, r *http.Request, err error) {
 	if errors.Is(err, context.Canceled) {
 		return
 	}
-	h.logger.WarnContext(r.Context(), "ssr unavailable", "error", err)
+	a.logger.WarnContext(r.Context(), "ssr unavailable", "error", err)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Retry-After", "1")

@@ -698,11 +698,12 @@ func Commands() []*cobra.Command {
 }
 ```
 
-`internal/bootstrap/http.go` 有三处变化：
+`internal/bootstrap/http.go` 有两处变化：
 
 - `Accounts` 中作者的 Resolver 换成 `a.roles.Resolve`，每个请求按作者的角色加载权限；`Permissions` 写入权限目录；
-- 后台的接口用带权限的 `rest.RequireToken`，缺少权限时返回 `403`；
-- `/admin/` 交给后台的单页应用（下一节创建）。
+- 后台的接口用带权限的 `rest.RequireToken`，缺少权限时返回 `403`。
+
+后台的单页应用（下一节创建）挂在 `/admin/`，页面不用改：`frontend.Host` 按挂载路径托管 `apps` 中的全部前端。
 
 ```go title="internal/bootstrap/http.go"
 package bootstrap
@@ -715,16 +716,14 @@ import (
 
     "github.com/go-tenon/tenon/command"
     "github.com/go-tenon/tenon/config"
+    "github.com/go-tenon/tenon/frontend"
     "github.com/go-tenon/tenon/health"
     "github.com/go-tenon/tenon/httpx"
     "github.com/go-tenon/tenon/httpx/rest"
     "github.com/go-tenon/tenon/i18n"
     "github.com/go-tenon/tenon/identity"
-    "github.com/go-tenon/tenon/ssr"
 
     "example.com/blog/apps"
-    adminapp "example.com/blog/apps/admin"
-    webapp "example.com/blog/apps/web"
     "example.com/blog/internal/article"
     "example.com/blog/internal/auth"
     "example.com/blog/internal/role"
@@ -732,42 +731,32 @@ import (
     "example.com/blog/locales"
 )
 
-// HTTP 装配 HTTP 服务，serve 命令运行它。页面由 Go 托管的 SSR 进程渲染，它们渲染时经内部 socket 调用同一组路由。
+// HTTP 装配 HTTP 服务，serve 命令运行它。apps 中的前端由 frontend.Host 按挂载路径提供：服务端渲染的前端由
+// Go 托管的 SSR 进程渲染，它们渲染时经内部 socket 调用同一组路由。
 func (a *App) HTTP(d *command.Daemon) (func(context.Context) error, error) {
     var draining httpx.Draining
     var router chi.Router
-    rt := ssr.NewRuntime(apps.Runtime) // 几个前端共用的 Bun 运行时
-    web, err := a.pages(rt, "web", webapp.SSR, &router)
+    // router 在 pages 创建之后才构造好，SSR 进程调用接口时经这个函数转给它。
+    api := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { router.ServeHTTP(w, r) })
+    pages, err := frontend.New(apps.Dist, frontend.Options{API: api, DevServers: a.cfg.DevServers})
     if err != nil {
         return nil, err
     }
-    admin, err := a.pages(rt, "admin", adminapp.SSR, &router)
-    if err != nil {
-        return nil, err
-    }
-    router = a.Router(&draining, pages{web: web.Handler(), admin: admin.Handler()})
+    router = a.Router(&draining, pages.Handler())
     ln, err := d.Listen("tcp", a.cfg.HTTP.Addr)
     if err != nil {
         return nil, err
     }
     return func(ctx context.Context) error {
-        return ssr.Run(ctx, func(ctx context.Context) error {
+        return pages.Run(ctx, func(ctx context.Context) error {
             return httpx.Serve(ctx, a.cfg.HTTP, ln, router, httpx.OnDraining(draining.Set))
-        }, web, admin)
+        })
     }, nil
-}
-
-// pages 创建托管前端 name 的 SSR 进程的 Host：bundle 是嵌入的前端代码，由几个前端共用的运行时 rt 运行；
-// 开发时页面转给前端的开发服务器。进程渲染页面需要数据时调用 *router 中的接口，
-// router 在 Host 创建之后才构造好，所以传它的地址。
-func (a *App) pages(rt *ssr.Runtime, name string, bundle []byte, router *chi.Router) (*ssr.Host, error) {
-    api := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { (*router).ServeHTTP(w, r) })
-    return ssr.New(ssr.Options{Runtime: rt, Bundle: bundle, API: api, DevServer: a.cfg.DevServers[name]})
 }
 
 // Router 构造应用的全部路由：健康检查、/api 下的接口和页面。
 // 它只保存 App 的字段、不使用它们，所以 DocRouter 可以用一个没有打开任何资源的 App 调用它。
-func (a *App) Router(draining *httpx.Draining, p pages) chi.Router {
+func (a *App) Router(draining *httpx.Draining, pages http.Handler) chi.Router {
     router := chi.NewRouter()
     router.Use(httpx.Defaults(a.cfg.HTTP, httpx.Languages(i18n.MustNew("zh-CN", locales.FS)))...)
     router.Get("/livez", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
@@ -793,20 +782,17 @@ func (a *App) Router(draining *httpx.Draining, p pages) chi.Router {
         role.Register(api, requireRoles, a.roles)
         article.Register(api, requireUser, a.db)
     })
-    if p.web != nil {
-        router.Handle("/admin/*", p.admin)
-        router.Handle("/*", p.web)
+    if pages != nil {
+        router.Handle("/*", pages)
     }
     return router
 }
 
 // DocRouter 用默认配置和没有打开任何资源的 App 构造路由，openapi、routes、client 命令用它。
 func DocRouter() chi.Routes {
-    return (&App{cfg: config.Default[Config]()}).Router(nil, pages{})
+    return (&App{cfg: config.Default[Config]()}).Router(nil, nil)
 }
 
-// pages 是各前端的页面处理器，挂在接口之后；DocRouter 中为空。
-type pages struct{ web, admin http.Handler }
 ```
 
 后台中显示的文字，例如资源的名字“作者”、字段的名字“注册时间”、权限的名字“管理作者”，都写在 `locales/zh-CN.yaml` 中。消息键的格式是 `<资源>.title`、`<资源>.fields.<字段>` 和 `permission.<权限>`：
@@ -845,7 +831,7 @@ go run ./cmd/api user admin --email ming@example.com
 go tool tenon add frontend admin --layout frame
 ```
 
-它在 `apps/admin` 中生成登录页、带侧栏和多标签的管理后台布局（`FrameLayout`）和首页，登录调用的正是第 6 章的 `/api/auth` 接口。后台的页面只在浏览器中渲染，不需要搜索引擎收录。上一节的 `internal/bootstrap/http.go` 已经托管了它的 SSR 进程，并把它挂在 `/admin/`。重新生成客户端：
+它在 `apps/admin` 中生成登录页、带侧栏和多标签的管理后台布局（`FrameLayout`）和首页，登录调用的正是第 6 章的 `/api/auth` 接口。后台不需要搜索引擎收录，所以它只在浏览器中渲染（`apps/admin/package.json` 中 `"ssr": false`）：Go 直接返回页面外壳，页面在浏览器中渲染，程序不为它启动 SSR 进程。`internal/bootstrap/http.go` 不用改，`/admin/` 下的请求已经交给它。重新生成客户端：
 
 ```bash
 go tool tenon generate

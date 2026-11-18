@@ -74,10 +74,9 @@ blog/
 ├── config/app.yaml              应用的配置
 ├── cmd/api/main.go              程序的入口：serve 命令启动 HTTP 服务
 ├── internal/todo/todo.go        示例的接口
-├── apps/runtime.go              把渲染页面用的 Bun 运行时打包进 Go 程序，几个前端共用
+├── apps/apps.go                 把前端的构建产物打包进 Go 程序
 ├── apps/web/                    前端
-│   ├── frontend.go              把前端编译成的 SSR 代码打包进 Go 程序
-│   ├── package.json             React、TanStack Start、TanStack Query、Mantine
+│   ├── package.json             React、TanStack Start、TanStack Query、Mantine；挂载路径和是否在服务端渲染
 │   ├── vite.config.ts
 │   └── src/
 │       ├── router.tsx           装配路由和数据请求
@@ -93,7 +92,7 @@ blog/
 - **前端代码**在 `apps/web` 中，页面在 `src/routes` 中。界面用 [Mantine](https://mantine.dev) 的组件，框架的 `@go-tenon/ui` 提供布局和样式预设。
 - **生成的代码**在 `packages/client` 中，前端用 `@blog/client/api` 导入它。不需要手动修改，它随接口自动更新。
 
-构建时，前端被打包成渲染页面的代码，连同一份 Bun 运行时打包进 Go 程序：Go 程序启动时用运行时把它运行起来，页面请求交给它渲染。部署时仍然只有一个可执行文件，见[部署](../installation/deployment.md)和[服务端渲染](../frontend/ssr.md)。每个目录的详细说明见[脚手架](../installation/scaffolding.md#layout)。
+博客的页面要被搜索引擎收录，所以 `apps/web` 在服务端渲染（`package.json` 中 `"ssr": true`）。构建时，前端的文件连同渲染页面用的 Bun 打包进 Go 程序：Go 程序直接返回静态文件，启动时把 Bun 运行起来，页面请求交给它渲染。部署时仍然只有一个可执行文件，见[部署](../installation/deployment.md)和[托管前端与服务端渲染](../frontend/hosting.md)。每个目录的详细说明见[脚手架](../installation/scaffolding.md#layout)。
 
 <a id="summary"></a>
 ## 小结

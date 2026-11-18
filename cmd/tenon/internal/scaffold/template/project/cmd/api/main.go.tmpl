@@ -11,13 +11,12 @@ import (
 	"github.com/go-tenon/tenon/command"
 	"github.com/go-tenon/tenon/command/httpcmd"
 	"github.com/go-tenon/tenon/config"
+	"github.com/go-tenon/tenon/frontend"
 	"github.com/go-tenon/tenon/httpx"
 	"github.com/go-tenon/tenon/httpx/rest"
 	"github.com/go-tenon/tenon/logging"
-	"github.com/go-tenon/tenon/ssr"
 
 	"[[.Module]]/apps"
-	"[[.Module]]/apps/web"
 	"[[.Module]]/internal/todo"
 )
 
@@ -34,33 +33,29 @@ func main() {
 		command.Config[Config](),
 	)
 	// openapi、routes、client 用默认配置和 nil 依赖构造同一套路由，从中读取路由表和接口定义。
-	root.AddCommand(httpcmd.Commands(func() chi.Routes { return routes(config.Default[Config](), nil, pages{}) })...)
+	root.AddCommand(httpcmd.Commands(func() chi.Routes { return routes(config.Default[Config](), nil, nil) })...)
 	command.Execute(root)
 }
 
-// pages 是各前端的页面处理器，挂在接口之后。
-type pages struct{ web http.Handler }
-
-// serve 启动 HTTP 服务，直到收到停止信号。页面由 Go 托管的 SSR 进程渲染（见 ssr 包），
-// 它们渲染时经内部 socket 调用同一组路由。几个前端共用一个运行时（runtime），各自一个进程。
+// serve 启动 HTTP 服务，直到收到停止信号。apps 中的前端由 frontend.Host 按挂载路径提供：只在浏览器中渲染的前端
+// 由 Go 直接返回页面；服务端渲染的前端由 Go 托管的 SSR 进程渲染，它们渲染时经内部 socket 调用同一组路由。
 func serve(ctx context.Context, cfg Config) error {
 	slog.SetDefault(logging.New(logging.Config{}))
 	var router chi.Router
 	api := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { router.ServeHTTP(w, r) })
-	runtime := ssr.NewRuntime(apps.Runtime)
-	webPages, err := ssr.New(ssr.Options{Runtime: runtime, Bundle: web.SSR, API: api, DevServer: cfg.DevServers["web"]})
+	pages, err := frontend.New(apps.Dist, frontend.Options{API: api, DevServers: cfg.DevServers})
 	if err != nil {
 		return err
 	}
-	router = routes(cfg, todo.NewStore(), pages{web: webPages.Handler()})
-	return ssr.Run(ctx, func(ctx context.Context) error {
+	router = routes(cfg, todo.NewStore(), pages.Handler())
+	return pages.Run(ctx, func(ctx context.Context) error {
 		return httpx.ListenAndServe(ctx, cfg.HTTP, router)
-	}, webPages)
+	})
 }
 
-// routes 是应用的全部路由：/api 下是接口，其余路径是页面。
+// routes 是应用的全部路由：/api 下是接口，其余路径是页面（pages）。
 // 它只保存依赖，处理请求时才使用，所以 openapi 等命令可以传 nil。
-func routes(cfg Config, store *todo.Store, p pages) chi.Router {
+func routes(cfg Config, store *todo.Store, pages http.Handler) chi.Router {
 	router := chi.NewRouter()
 	router.Use(httpx.Defaults(cfg.HTTP)...)
 	router.Route("/api", func(r chi.Router) {
@@ -68,8 +63,8 @@ func routes(cfg Config, store *todo.Store, p pages) chi.Router {
 		api := rest.New(r, rest.Options{Title: "[[.Name]]", Version: "0.1.0", BasePath: "/api"})
 		todo.Register(api, store)
 	})
-	if p.web != nil {
-		router.Handle("/*", p.web)
+	if pages != nil {
+		router.Handle("/*", pages)
 	}
 	return router
 }

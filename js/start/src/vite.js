@@ -1,48 +1,104 @@
 // @go-tenon/start/vite：Vite 配置，TanStack Start 加上 Tenon 的约定。
 //
+//	// package.json
+//	"tenon": { "base": "/admin/", "ssr": false }
+//
 //	// vite.config.ts
 //	import { tenon } from "@go-tenon/start/vite"
-//	export default defineConfig({ plugins: [tenon({ prerender: ["/", "/docs"] })] })
+//	export default defineConfig({ plugins: [tenon({ prerender: ["/docs"] })] })
 //
 // 用 JavaScript 编写：开发时 vite dev 在 Node 中运行，加载 vite.config.ts 时由 Node 直接导入这个文件，
 // Node 不处理其中的 TypeScript。类型见 vite.d.ts。
 // 不导入 ./headers（TypeScript）：用到的两个常量写在这里，start.test.ts 检查它们与 headers.ts 相同。
 
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
 import { tanstackStart } from "@tanstack/react-start/plugin/vite"
 import viteReact from "@vitejs/plugin-react"
 import { versionPlugin } from "./version.js"
 
 /** Go 为页面请求生成的 CSP nonce 的请求头，同 headers.ts 的 HeaderNonce。 */
 export const HeaderNonce = "X-CSP-Nonce"
-/** 预渲染时写在页面中的占位 nonce，Bun 返回页面时换成本次请求的，同 headers.ts 的 PrerenderNonce。 */
+/** 构建时写在页面中的占位 nonce，Go 返回页面时换成本次请求的，同 headers.ts 的 PrerenderNonce。 */
 export const PrerenderNonce = "__tenon_csp_nonce__"
 
 /**
- * 返回 TanStack Start 和 React 的 Vite 插件，加上构建版本（version.json，见 version.js）。
+ * 读取前端目录（dir，默认当前目录，即 vite 运行的目录）中 package.json 的 tenon 字段：挂载路径 base 和
+ * 是否在服务端渲染 ssr。go tool tenon 读取同一个字段，决定 Go 怎样提供这个前端、程序中是否带 Bun。
+ *
+ * @param {string} [dir]
+ * @returns {import("./vite").FrontendConfig}
+ */
+export function frontendConfig(dir = process.cwd()) {
+  const file = join(dir, "package.json")
+  const { tenon } = JSON.parse(readFileSync(file, "utf8"))
+  const base = tenon?.base
+  if (typeof base !== "string" || !base.startsWith("/") || !base.endsWith("/")) {
+    throw new Error(`@go-tenon/start: ${file}: tenon.base must start and end with /, for example "/admin/"`)
+  }
+  return { base, ssr: tenon.ssr === true }
+}
+
+/**
+ * 返回 TanStack Start 的选项：ssr 为 false 时打开 SPA 模式，构建时生成页面外壳 _shell.html；
+ * pages 是构建时渲染成 HTML 的页面。页面中的内联脚本带占位 nonce，Go 返回页面时换成本次请求的。
+ * SPA 模式的页面外壳由首页 / 渲染而来，所以这时不能再预渲染 /。
+ *
+ * @param {boolean} ssr
+ * @param {string[]} pages
+ * @returns {NonNullable<Parameters<typeof tanstackStart>[0]>}
+ */
+export function startOptions(ssr, pages) {
+  if (!ssr && pages.includes("/")) {
+    throw new Error(
+      '@go-tenon/start: prerender "/" needs "ssr": true: without server rendering, / renders the page shell',
+    )
+  }
+  const headers = { [HeaderNonce]: PrerenderNonce }
+  /** @param {string} path */
+  const within = (path) => pages.some((p) => (p === "/" ? path === "/" : path === p || path.startsWith(`${p}/`)))
+  return {
+    ...(ssr ? {} : { spa: { enabled: true, prerender: { headers } } }),
+    ...(pages.length === 0
+      ? {}
+      : {
+          pages: pages.map((path) => ({ path })),
+          prerender: {
+            enabled: true,
+            crawlLinks: true,
+            failOnError: true,
+            // SPA 模式下页面外壳的地址是 /，它同样要经过这个过滤。
+            filter: (/** @type {{ path: string }} */ page) => within(page.path) || (!ssr && page.path === "/"),
+            headers,
+          },
+        }),
+  }
+}
+
+/**
+ * 返回 TanStack Start 和 React 的 Vite 插件，加上挂载路径（package.json 的 tenon.base）和构建版本
+ * （version.json，见 version.js）。是否在服务端渲染由 package.json 的 tenon.ssr 决定，见 frontendConfig。
  *
  * @param {import("./vite").TenonOptions} [options]
  * @returns {import("vite").PluginOption[]}
  */
 export function tenon(options = {}) {
-  const pages = options.prerender ?? []
-  /** @param {string} path */
-  const within = (path) => pages.some((p) => (p === "/" ? path === "/" : path === p || path.startsWith(`${p}/`)))
+  const { base, ssr } = frontendConfig()
   return [
-    tanstackStart(
-      pages.length === 0
-        ? {}
-        : {
-            pages: pages.map((path) => ({ path })),
-            prerender: {
-              enabled: true,
-              crawlLinks: true,
-              failOnError: true,
-              filter: (page) => within(page.path),
-              // 构建时没有请求，用占位 nonce；Bun 返回页面时换成本次请求的。
-              headers: { [HeaderNonce]: PrerenderNonce },
-            },
-          },
-    ),
+    {
+      name: "tenon:base",
+      // TanStack Start 的插件在 pre 阶段读取 base，这个插件要排在它之前。
+      enforce: "pre",
+      config(config) {
+        if (config.base !== undefined && config.base !== base) {
+          throw new Error(
+            `@go-tenon/start: base ${JSON.stringify(config.base)} in vite.config differs from tenon.base ${JSON.stringify(base)} in package.json; remove it from vite.config`,
+          )
+        }
+        return { base }
+      },
+    },
+    tanstackStart(startOptions(ssr, options.prerender ?? [])),
     viteReact(),
     versionPlugin({ version: options.version, sourcemaps: options.sourcemaps }),
   ]

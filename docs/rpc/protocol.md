@@ -173,7 +173,7 @@ blog.v1.articles.publish
 
 两个应用（例如都用 Tenon 开发的项目 A 和项目 B）互相调用时，按同一份协议进行，不需要额外的约定。A 调用 B 时：
 
-- **连接**：A 要能向 B 的 subject 发送请求。两个应用可以连接同一个 NATS 集群；也可以各用各的 NATS，通过 NATS 的[账号导入导出](https://docs.nats.io/running-a-nats-service/configuration/securing_nats/accounts)或[叶子节点](https://docs.nats.io/running-a-nats-service/configuration/leafnodes)把 B 的 subject 接进 A 的 NATS。两个应用使用不同的前缀，例如 `a.v1`、`b.v1`。
+- **连接**：A 要能向 B 的 subject 发送请求。两个应用在同一套 NATS 的同一个账号中时，各自的连接就能互相调用；B 在另一个账号或另一套 NATS 上时，A 用 B 账号中的用户另建一条连接，见[连接另一个账号或另一套 NATS](../libraries/nats.md#other-accounts)。两个应用使用不同的前缀，例如 `a.v1`、`b.v1`。
 - **认证**：A 带着 B 认可的 token 调用。两个应用各有自己的用户时，B 给 A 签发一个代表 A 的个人访问令牌，权限只包含 A 需要调用的端点；两个应用接受同一个 [OAuth 服务](../security/oauth-server.md)签发的令牌时，A 也可以转发用户的 token，B 按用户的权限检查。
 - **类型**：A 根据 B 导出的[接口描述](#contract)生成 B 的客户端，不直接引用 B 的代码。B 的内部实现怎样修改都不影响 A，B 以后换成其他语言也一样。B 返回的业务错误带着错误码，A 按错误码判断。
 

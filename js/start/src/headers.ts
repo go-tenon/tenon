@@ -3,12 +3,14 @@
 /** Go 为每个页面请求生成的 CSP nonce，Bun 把它写到内联脚本上。 */
 export const HeaderNonce = "X-CSP-Nonce"
 /**
- * 预渲染时使用的占位 nonce：构建时还没有请求，Bun 返回预渲染的页面时把它换成本次请求的 nonce，
+ * 构建时写在页面外壳和预渲染页面中的占位 nonce：构建时还没有请求，Go 返回这些页面时把它换成本次请求的 nonce，
  * 内联脚本才能通过 Go 设置的 CSP。
  */
 export const PrerenderNonce = "__tenon_csp_nonce__"
 /** Bun 在响应中报告匹配到的路由模板（例如 /articles/$id），Go 用它命名链路的 span，随后从响应中删掉。 */
 export const HeaderRoute = "X-Tenon-Route"
+/** SSR 进程渲染的前端的名称：可执行文件中有全部 SSR 前端，按它加载其中一个。 */
+export const EnvFrontend = "TENON_FRONTEND"
 /** Bun 监听的页面 socket。 */
 export const EnvSocket = "SSR_SOCKET"
 /** Bun 回调 Go 接口的内部 socket。 */
@@ -35,11 +37,4 @@ export function forwardHeaders(incoming: Headers): Record<string, string> {
  */
 export function socketPath(name: string): string {
   return name.startsWith("@") ? `\0${name.slice(1)}` : name
-}
-
-/** 去掉挂载路径 base（以 / 开头和结尾），返回前端内部的路径；不在 base 之下时返回 undefined。 */
-export function stripBase(pathname: string, base = "/"): string | undefined {
-  if (pathname === base.slice(0, -1)) return "/"
-  if (!pathname.startsWith(base)) return undefined
-  return `/${pathname.slice(base.length)}`
 }

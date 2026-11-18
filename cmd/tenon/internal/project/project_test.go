@@ -37,7 +37,9 @@ func TestDefaults(t *testing.T) {
 
 	write(t, dir, "config/local.yaml", "")
 	write(t, dir, "apps/web/vite.config.ts", "")
+	write(t, dir, "apps/web/package.json", `{"tenon": {"base": "/", "ssr": true}}`)
 	write(t, dir, "apps/admin/vite.config.mjs", "")
+	write(t, dir, "apps/admin/package.json", `{"tenon": {"base": "/admin/"}}`)
 	write(t, dir, "apps/notes/README.md", "") // 没有 vite.config 的目录不是前端
 	write(t, dir, "apps/.cache/vite.config.ts", "")
 	write(t, dir, "packages/client/package.json", "{}")
@@ -45,10 +47,26 @@ func TestDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []project.Frontend{{Name: "admin", Dir: "apps/admin"}, {Name: "web", Dir: "apps/web"}}
+	want := []project.Frontend{{Name: "admin", Dir: "apps/admin", Base: "/admin/"}, {Name: "web", Dir: "apps/web", Base: "/", SSR: true}}
 	if strings.Join(cfg.Serve, " ") != "serve --config config/app.yaml,config/local.yaml" ||
 		!slices.Equal(cfg.Frontends, want) || !cfg.Client {
 		t.Fatalf("project %+v", cfg)
+	}
+
+	// package.json 的 tenon 字段：挂载路径必须以 / 开头和结尾，两个前端不能挂在同一个路径。
+	write(t, dir, "apps/shop/vite.config.ts", "")
+	for content, want := range map[string]string{
+		`{}`:                             "tenon.base",
+		`{"tenon": {"base": "/shop"}}`:   "must start and end with /",
+		`{"tenon": {"base": "/admin/"}}`: "both mounted at /admin/",
+	} {
+		write(t, dir, "apps/shop/package.json", content)
+		if _, err := project.Load(dir); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: err = %v, want %q", content, err, want)
+		}
+	}
+	if err := os.RemoveAll(filepath.Join(dir, "apps", "shop")); err != nil {
+		t.Fatal(err)
 	}
 
 	write(t, dir, "apps/Admin_2/vite.config.ts", "")

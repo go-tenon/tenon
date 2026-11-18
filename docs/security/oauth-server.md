@@ -238,7 +238,7 @@ function Consent() {
 - **登录**：同意页和编辑后台的其他页面一样要求登录。没有登录时，编辑后台照常跳到登录页，登录后回到原地址（包括 `request` 参数）。
 - **只接受用户本人的登录 token**：个人访问令牌和 OAuth 令牌带有权限限制，[代为登录](authentication-advanced.md#impersonation)的 token 是客服在操作，它们都不代表用户本人，调用这两个接口返回 `403 oauth.restricted_credential`。
 - **重新校验**：`request` 就是原始的授权参数，两个接口每次都重新校验，被改过的请求返回 `422`（`oauth.invalid_client`、`oauth.invalid_redirect_uri` 或 `oauth.invalid_request`）。
-- **禁止嵌入框架**：同意页要防止诱导点击。`ssr` 的默认内容安全策略带 `frame-ancestors 'none'`，见[服务端渲染](../frontend/ssr.md#security)；用 `Options.CSP` 放开了它时，同意页所在的路由仍然保持禁止。
+- **禁止嵌入框架**：同意页要防止诱导点击。`frontend` 的默认内容安全策略带 `frame-ancestors 'none'`，见[托管前端：安全](../frontend/hosting.md#security)；用 `Options.CSP` 放开了它时，同意页所在的路由仍然保持禁止。
 
 <a id="deployment"></a>
 ## 部署

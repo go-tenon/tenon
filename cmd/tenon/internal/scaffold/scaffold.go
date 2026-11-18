@@ -39,13 +39,13 @@ type Options struct {
 type Frontend struct {
 	Scope  string // npm 包名的作用域，与项目根目录 package.json 的 name 相同。
 	Name   string // 前端的名称，即 apps 中的目录名。
-	Base   string // 前端挂载的路径，以 / 开头和结尾，写入 Vite 的 base 和编译 SSR 可执行文件的 --base。
+	Base   string // 前端挂载的路径，以 / 开头和结尾，写入 package.json 的 tenon.base。
 	Title  string // 页面标题。
 	Layout string // 布局，见 Layouts；为空时是 rail。
 	Preset string // 样式预设（@go-tenon/ui 的 Preset），见 Presets；为空时按布局：frame 是 compact，rail 是 comfortable，site 是 spacious。
 }
 
-// Layouts 是前端可选的布局，决定模板的页面：
+// Layouts 是前端可选的布局，决定模板的页面和是否在服务端渲染：
 //   - rail：双栏导航（RailLayout），登录页，页面只在浏览器中渲染；
 //   - frame：顶栏加侧栏菜单、带多标签（FrameLayout），登录页，页面只在浏览器中渲染；
 //   - site：官网和内容站（SiteLayout），页面在服务端渲染，首页构建时预渲染。
@@ -57,8 +57,9 @@ var Presets = []string{"compact", "comfortable", "spacious"}
 // defaultPresets 是每种布局默认的样式预设。
 var defaultPresets = map[string]string{"frame": "compact", "rail": "comfortable", "site": "spacious"}
 
-// Package 是嵌入构建产物的 Go 包名：前端的名称去掉连字符。
-func (f Frontend) Package() string { return strings.ReplaceAll(f.Name, "-", "") }
+// SSR 报告前端是否在服务端渲染，写入 package.json 的 tenon.ssr：site 布局的页面要被搜索引擎收录，在服务端渲染；
+// 后台的布局只在浏览器中渲染，程序中不需要 Bun。
+func (f Frontend) SSR() bool { return f.Layout == "site" }
 
 // Write 生成项目：一个名为 web 的前端挂在 /（site 布局），带待办事项的示例。dir 必须是空目录或尚未创建。
 func Write(dir string, opts Options) error {

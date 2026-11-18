@@ -118,11 +118,12 @@ bun run build   # 即 go tool tenon build
 构建出一个可以部署的可执行文件 `bin/api`，前端打包在其中。它依次做这些事：
 
 1. 安装前端的依赖：`bun install --frozen-lockfile`。`--frozen-lockfile` 要求依赖的版本与 `bun.lock` 完全一致，所以 CI 中构建出的结果和你本地的相同。
-2. 在每个前端目录中运行 `bun run build`，即 `tenon-start compile`：构建前端，把渲染页面的代码和全部静态文件打包成一个 JS 文件 `ssr.js`，见 [TanStack Start 的接入](../frontend/start.md#compiling)。
-3. 构建一次几个前端共用的 Bun 运行时 `apps/ssr-runtime.bin`（`tenon-start runtime`），架构与 Go 程序相同（`go env GOARCH`，或 `--arch`）。
-4. 编译 Go 程序：`go build -trimpath -o bin/api ./cmd/api`。`-trimpath` 去掉二进制中你电脑上的文件路径。每个前端的 `frontend.go` 用 `go:embed` 嵌入它的 `ssr.js`，`apps/runtime.go` 嵌入运行时。
+2. 清空 `apps/dist`，在每个前端目录中运行 `bun run build`（`vite build`），把浏览器的构建（`dist/client`，不含 source map）复制到 `apps/dist/<名称>`。
+3. 有前端在服务端渲染（`package.json` 中 `"ssr": true`）时，用 `tenon-start compile` 把这些前端的服务端入口连同 Bun 编译成一个可执行文件 `apps/dist/ssr`，架构与 Go 程序相同（`go env GOARCH`，或 `--arch`），见 [TanStack Start 的接入](../frontend/start.md#compiling)。没有时跳过这一步，程序中不带 Bun。
+4. 写入前端的清单 `apps/dist/frontends.json`。
+5. 编译 Go 程序：`go build -trimpath -o bin/api ./cmd/api`。`-trimpath` 去掉二进制中你电脑上的文件路径。`apps/apps.go` 用 `go:embed` 嵌入整个 `apps/dist`。
 
-`-o` 可以指定输出的文件。`--arch amd64` 或 `--arch arm64` 为另一种架构构建（Linux），例如在 arm64 的机器或 Mac 上构建部署到 amd64 服务器的程序；不写时与本机相同。Go 托管 SSR 进程只支持 Linux。部署见[部署](deployment.md)。
+`-o` 可以指定输出的文件。`--arch amd64` 或 `--arch arm64` 为另一种架构构建（Linux），例如在 arm64 的机器或 Mac 上构建部署到 amd64 服务器的程序；不写时与本机相同。Go 托管 SSR 进程只支持 Linux；前端都只在浏览器中渲染时，程序可以在任何系统上运行。部署见[部署](deployment.md)。
 
 不要用 `GOARCH=amd64 bun run build` 交叉构建：`go tool tenon` 会按 `GOARCH` 把 tenon 本身也编译成目标架构，在本机无法运行。
 
@@ -135,17 +136,7 @@ bun run build   # 即 go tool tenon build
 go tool tenon add frontend admin --layout frame
 ```
 
-它在 `apps/admin` 中生成一个前端，挂在 `/admin/` 下，加入根目录 `package.json` 的 workspace，安装依赖。最后打印要加到 `cmd/api/main.go` 中的代码：为它创建一个托管 SSR 进程的 `Host`，把它的页面挂在 `/admin/*`，并交给 `ssr.Run`：
-
-```go
-adminPages, err := ssr.New(ssr.Options{Runtime: runtime, Bundle: admin.SSR, API: api, DevServer: cfg.DevServers["admin"]})
-// …
-router.Handle("/admin/*", adminPages.Handler()) // 放在挂载 /* 的那一行之前
-// …
-return ssr.Run(ctx, serve, webPages, adminPages)
-```
-
-挂载放在 `/*` 之前：路由按顺序匹配，放在后面的话，`/admin/` 下的请求已经被 `/*` 接走了。同时导入 `<你的 module>/apps/admin`。
+它在 `apps/admin` 中生成一个前端，挂在 `/admin/` 下，加入根目录 `package.json` 的 workspace，安装依赖。`cmd/api/main.go` 不用改：`frontend.Host` 按 `apps/dist` 中的清单托管全部前端，`/admin/` 下的请求交给新的前端，见[托管前端与服务端渲染](../frontend/hosting.md#wiring)。
 
 `--layout` 选择布局，见[布局与导航](../frontend/layout.md)：
 
@@ -155,9 +146,11 @@ return ssr.Run(ctx, serve, webPages, adminPages)
 | `frame` | 登录页和顶栏加侧栏菜单、带多标签的布局（`FrameLayout`），页面只在浏览器中渲染 |
 | `site` | 官网和内容站（`SiteLayout`）：页头、页脚，页面在服务端渲染，首页构建时预渲染 |
 
+布局决定 `package.json` 中 `tenon.ssr` 的初始值，之后可以改，见[切换渲染方式](../frontend/hosting.md#switching)。
+
 `--preset` 选择样式预设：`compact`（紧凑）、`comfortable`（舒展）、`spacious`（宽松），见[样式预设与主题](../frontend/app.md#presets)。不写时按布局：`frame` 是 `compact`，`rail` 是 `comfortable`，`site` 是 `spacious`。布局和预设可以分开选，例如 `--layout rail --preset compact`。
 
-`--base` 可以指定其他的挂载路径，以 `/` 开头和结尾。`apps/admin` 必须还不存在。
+`--base` 可以指定其他的挂载路径，以 `/` 开头和结尾，不能与已有的前端相同。`apps/admin` 必须还不存在。
 
 <a id="troubleshooting"></a>
 ## 常见问题
@@ -186,19 +179,22 @@ return ssr.Run(ctx, serve, webPages, adminPages)
 
 `tenon` 不需要你登记有哪些前端和 API，它按目录约定找到它们。
 
-**前端**是 `apps` 中带 `vite.config.ts`（或 `.mts`、`.js`、`.mjs`）的目录，目录名就是前端的名称，例如 `apps/web`、`apps/admin`。名称以小写字母开头，由小写字母、数字和连字符组成。每个前端的 `package.json` 中有三个脚本：
+**前端**是 `apps` 中带 `vite.config.ts`（或 `.mts`、`.js`、`.mjs`）的目录，目录名就是前端的名称，例如 `apps/web`、`apps/admin`。名称以小写字母开头，由小写字母、数字和连字符组成。每个前端的 `package.json` 用 `tenon` 字段声明挂载路径和是否在服务端渲染，并有三个脚本：
 
 ```json
 {
+  "tenon": { "base": "/admin/", "ssr": false },
   "scripts": {
     "dev": "vite dev",
-    "build": "tenon-start compile --out ssr.js --base /admin/",
+    "build": "bunx --bun vite build",
     "typecheck": "tsr generate && tsc --noEmit"
   }
 }
 ```
 
-构建的结果是前端目录中的 `ssr.js`，由同一目录中的 `frontend.go` 打包进程序；几个前端共用的运行时在 `apps/ssr-runtime.bin`，由 `apps/runtime.go` 打包，见[服务端渲染](../frontend/ssr.md)。它们不提交到代码仓库；还没有构建时，`tenon dev`、`tenon generate` 写入一个空的占位文件，Go 程序照样能编译。
+`base` 以 `/` 开头和结尾，两个前端不能相同。`tenon` 和 `@go-tenon/start` 的 Vite 插件读取同一个字段，见[托管前端与服务端渲染](../frontend/hosting.md#modes)。
+
+构建的结果在 `apps/dist` 中，由 `apps/apps.go` 打包进程序。它不提交到代码仓库；还没有构建时，`tenon dev`、`tenon generate` 只写入其中的清单 `frontends.json`，Go 程序照样能编译。
 
 **API** 是你在路由中用 `rest.New` 创建的每一个 API。每个 API 的 TypeScript 客户端生成到 `packages/client/src/<名称>`，名称默认是它的 `BasePath` 的最后一段：
 
@@ -298,12 +294,12 @@ Tenon 也提供了一些前端包，例如 `@go-tenon/client`（调用接口、�
 **导出接口。** 接口是程序运行时注册的，`tenon generate` 要运行你的程序才能读到它们。应用在根命令中加入 `httpcmd.Commands`，它提供 `openapi`、`routes`、`client` 三个命令，参数是构造全部路由的函数，见[命令行](../general/commands.md#declaring-the-cli)：
 
 ```go
-root.AddCommand(httpcmd.Commands(func() chi.Routes { return routes(config.Default[Config](), nil, pages{}) })...)
+root.AddCommand(httpcmd.Commands(func() chi.Routes { return routes(config.Default[Config](), nil, nil) })...)
 ```
 
-`routes` 就是 `serve` 也在用的那个函数。这些命令用默认配置、`nil` 和空的 `pages` 调用它，只读取构造出的路由，不连接数据库，也不启动 SSR 进程。
+`routes` 就是 `serve` 也在用的那个函数。这些命令用默认配置和 `nil` 调用它，只读取构造出的路由，不连接数据库，也不启动 SSR 进程。
 
-**接收前端开发服务器的地址。** 开发时，`tenon dev` 把各前端的开发服务器地址写进 `.tenon/dev.yaml` 的 `dev_servers`，再用 `--config` 把它交给应用。应用的配置中有这个字段，创建 `ssr.Host` 时按名称取出地址，作为 `DevServer`，见[服务端渲染](../frontend/ssr.md)：
+**接收前端开发服务器的地址。** 开发时，`tenon dev` 把各前端的开发服务器地址写进 `.tenon/dev.yaml` 的 `dev_servers`，再用 `--config` 把它交给应用。应用的配置中有这个字段，创建 `frontend.Host` 时把它交给 `DevServers`，每个前端的请求转给自己的开发服务器，见[托管前端：开发](../frontend/hosting.md#development)：
 
 ```go
 type Config struct {

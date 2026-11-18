@@ -16,7 +16,7 @@
 
 构建和运行：
 
-- [服务端渲染](ssr.md)：一份 Bun 运行时和每个前端的代码嵌入 Go 程序，由 ssr 包托管，页面请求经 unix socket 转给它
+- [托管前端与服务端渲染](hosting.md)：前端嵌入 Go 程序，由 frontend 包按挂载路径提供；服务端渲染的前端由 Bun 渲染，只在这时程序中才带 Bun
 - [TanStack Start 的接入](start.md)：@go-tenon/start，服务端渲染与浏览器调用同一组接口、预渲染、打印模板和编译
 
 规范：

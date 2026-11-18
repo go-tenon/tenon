@@ -60,7 +60,7 @@ go test ./...       # 包括下文的模块检查
 `js` 是前端包的 Bun workspace。这些包不发布到 npm，随 Go 模块分发：应用中的 `tenon` 把框架版本中的 `js` 复制到项目的 `.tenon/js`，见[框架的前端包](docs/installation/tooling.md#framework-packages)。
 
 - `client` 是 `@go-tenon/client`，与界面无关的客户端运行时。它不依赖 DOM：`tsconfig.json` 的 `lib` 没有 `dom`，用到 `window`、`document` 等浏览器 API 时类型检查失败。
-- `start` 是 `@go-tenon/start`，把 TanStack Start 接到 Go 托管的 Bun，以及 Vite 插件。
+- `start` 是 `@go-tenon/start`，把 TanStack Start 接到 Go 的 `frontend` 包：Vite 插件（挂载路径、服务端渲染或页面外壳）、服务端渲染时调用 Go 接口的运行时，以及编译 SSR 可执行文件的 `tenon-start`。
 - `ui` 是 `@go-tenon/ui`，应用骨架、基于 Mantine 的界面和三套样式预设；`ui/src/shell` 是不导入 Mantine 的逻辑。React、TanStack Router、TanStack Query 和 Mantine 是 peer 依赖。
 - `playground` 是 ui 的演示，用 `bun run playground` 启动。ui 不写测试，界面的改动在 playground 中看效果。
 

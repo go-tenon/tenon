@@ -21,7 +21,7 @@ function buildVersion() {
  * 构建时在 dist 中写入 {"version": "…"}，并把版本号和文件的地址（带上 base）注入为
  * import.meta.env.TENON_BUILD_VERSION、TENON_VERSION_URL。只在构建时生效，开发模式下不检查新版本。
  * 用 TanStack Start 时只作用于浏览器的构建（client 环境），version.json 写在 dist/client 中；
- * 嵌入 SSR 程序后，没有哈希的文件返回 Cache-Control: no-cache，version.json 不会被缓存。
+ * 由 Go 返回时，没有哈希的文件带 Cache-Control: no-cache，version.json 不会被缓存。
  *
  * @param {import("./version").VersionPluginOptions} [options]
  * @returns {import("vite").Plugin}
