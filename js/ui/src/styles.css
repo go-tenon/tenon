@@ -602,6 +602,97 @@ body {
   box-shadow: none;
 }
 
+/*
+ * 左右分栏（SplitAuthLayout）：左栏是品牌色的展示区，上面叠一层淡淡的网格和光晕；右栏是表单。
+ * 窄屏（小于 Mantine 的 md 断点）时去掉左栏。
+ */
+.tn-auth-split {
+  min-height: 100dvh;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  background: var(--tn-surface);
+}
+
+.tn-auth-split-aside {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  padding: 40px 48px;
+  color: var(--mantine-color-white);
+  background:
+    radial-gradient(
+      900px 600px at 0% 0%,
+      color-mix(in srgb, var(--mantine-color-white) 16%, transparent),
+      transparent 60%
+    ),
+    radial-gradient(
+      700px 500px at 100% 100%,
+      color-mix(in srgb, var(--mantine-color-black) 22%, transparent),
+      transparent 70%
+    ),
+    var(--mantine-primary-color-filled);
+}
+
+/* 网格线：越靠近中间越清楚，向四周淡出。 */
+.tn-auth-split-aside::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--mantine-color-white) 9%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--mantine-color-white) 9%, transparent) 1px, transparent 1px);
+  background-size: 40px 40px;
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 45%, #000 20%, transparent 75%);
+}
+
+.tn-auth-split-brand {
+  font-weight: 600;
+}
+
+/* 左栏是品牌色，标志反过来用白底品牌色字。 */
+.tn-auth-split-aside .tn-brand-mark {
+  background: var(--mantine-color-white);
+  color: var(--mantine-primary-color-filled);
+}
+
+.tn-auth-split-aside-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  max-width: 480px;
+}
+
+.tn-auth-split-aside-footer {
+  color: color-mix(in srgb, var(--mantine-color-white) 70%, transparent);
+}
+
+.tn-auth-split-main {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+}
+
+@media (max-width: 61.99em) {
+  .tn-auth-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .tn-auth-split-aside {
+    display: none;
+  }
+
+  .tn-auth-split-main {
+    align-items: flex-start;
+    padding-top: 64px;
+  }
+}
+
 /* ———————————————— Rail 布局（RailLayout） ———————————————— */
 
 /*
