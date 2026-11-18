@@ -59,6 +59,7 @@ import { IconCircleCheck, IconDownload, IconPlus, IconSearch, IconSettings } fro
 import { type AnyRoute, createRootRouteWithContext, createRoute, Link, Outlet, useParams } from "@tanstack/react-router"
 import { type ReactNode, useEffect, useMemo, useState } from "react"
 import { createRoot } from "react-dom/client"
+import { CustomerForm } from "./customer-form"
 import { PrimaryPicker, savedPrimary } from "./primary-picker"
 import {
   customerExport,
@@ -302,10 +303,13 @@ function frameApp() {
       page(layout, "/products", "商品", "product", () => <FramePlaceholder title="商品" />),
       // 新建和修改客户是单独的页面：客户列表路由下的 new 和 $id/edit。
       customers.addChildren([
+        // 新建用自己写的表单（选了等级就预填信用额度），修改按声明渲染。
         createRoute({
           getParentRoute: () => customers,
           path: "/new",
-          component: () => <ResourceFormPage model={customersModel} />,
+          component: () => (
+            <ResourceFormPage model={customersModel}>{(ctx) => <CustomerForm ctx={ctx} />}</ResourceFormPage>
+          ),
         }),
         createRoute({
           getParentRoute: () => customers,

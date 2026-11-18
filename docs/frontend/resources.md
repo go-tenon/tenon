@@ -269,6 +269,47 @@ export const Route = createFileRoute("/_app/articles/$id/edit")({
 
 `FieldValue`（按类型显示一个值）、`DefaultInput`（按类型选择输入组件）、`ResourceForm`（对话框中的新建和修改表单）和 `SecretInput`（密钥的输入框，可以直接展开 `form.getInputProps`）也单独导出，可以在自己写的页面中使用。
 
+<a id="custom-forms"></a>
+### 自己写表单的内容
+
+有的表单声明表达不了：字段是嵌套的对象（例如按协议分开的 `base_urls`），或者字段之间有联动（选了供应商就预填协议和地址）。这时只自己写表单的内容，页面的其余部分仍由框架提供：标签标题、读取要修改的行、保存或取消后回到列表并关闭标签、有未保存的修改时离开前询问。`ResourceFormPage` 和 `ResourceForm` 都接受一个渲染函数作为 `children`，它收到 `ResourceFormContext`，交给 `useResourceForm`：
+
+```tsx
+import { Select, Stack, TextInput } from "@mantine/core"
+import { FormError, ResourceFormButtons, type ResourceFormContext, ResourceFormPage, useResourceForm } from "@go-tenon/ui"
+
+export const Route = createFileRoute("/_app/providers/new")({
+  component: () => <ResourceFormPage model={providers}>{(ctx) => <ProviderForm ctx={ctx} />}</ResourceFormPage>,
+})
+
+function ProviderForm({ ctx }: { ctx: ResourceFormContext }) {
+  const { form, error, submit, saving } = useResourceForm(ctx, {
+    initialValues: { vendor: "", base_urls: { openai: "", anthropic: "" } } as ProviderChanges,
+  })
+  return (
+    <form noValidate onSubmit={submit}>
+      <Stack>
+        <FormError error={error} />
+        <Select
+          label="供应商"
+          data={vendors}
+          {...form.getInputProps("vendor")}
+          onChange={(v) => {
+            form.setFieldValue("vendor", v ?? "")
+            if (v) form.setFieldValue("base_urls", defaultURLs[v]) // 联动：按供应商预填地址
+          }}
+        />
+        <TextInput label="OpenAI 兼容地址" {...form.getInputProps("base_urls.openai")} />
+        <TextInput label="Anthropic 兼容地址" {...form.getInputProps("base_urls.anthropic")} />
+        <ResourceFormButtons ctx={ctx} saving={saving} />
+      </Stack>
+    </form>
+  )
+}
+```
+
+`useResourceForm` 用资源的新建或修改接口（`ctx.editKey` 为空时是新建）的校验规则，提交时调用这个接口；服务端的字段错误，包括业务错误用 [`errorx.Field`](../general/errors.md) 指出的嵌套字段，显示在对应的输入框下面，其他错误由 `FormError` 显示；保存成功后提示“已保存”或“已创建”，再调用 `ctx.onSaved()` 回到列表或关闭对话框。修改时用 `ctx.row` 得出初始值，例如 `formValues(ctx.model.updateForm, ctx.row)` 再补上嵌套的字段；`toBody` 在提交前把表单的值转换为请求体。`ResourceFormButtons` 是右侧的“取消”和“保存”（新建时是“创建”）。
+
 <a id="settings"></a>
 ## 设置页面
 
@@ -349,5 +390,6 @@ function Settings() {
 | `rest.Settings`、`(*rest.API).Settings(s)`、`(*rest.API).SettingsPages()` | 设置页面的声明，写入 `x-tenon-settings` |
 | `settingsModel(def, kit, queryClient)`、`useSettings(model)` | `@go-tenon/ui`：设置模型，读取与保存 |
 | `ResourcePage`、`ResourceFormPage`、`ResourceForm`、`RowAction`、`FieldValue`、`DefaultInput`、`FieldInputProps` | `@go-tenon/ui`：资源页面；新建和修改的页面；对话框中的表单 |
+| `useResourceForm`、`ResourceFormContext`、`ResourceFormButtons` | `@go-tenon/ui`：自己写表单的内容，页面的其余部分由 `ResourceFormPage`、`ResourceForm` 提供，见[自己写表单的内容](#custom-forms) |
 | `FieldKind`、`ResourceField` | 模型中字段的输入方式和显示文字 |
 | `SettingsForm` | `@go-tenon/ui`：设置表单 |
