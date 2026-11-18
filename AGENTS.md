@@ -55,6 +55,7 @@ go test ./...       # 包括下文的模块检查
 - `doclinks`：`README.md`、`AGENTS.md` 和 `docs` 中的相对链接指向的文件存在，带锚点时目标文档中有 `<a id="锚点"></a>`。
 - `uilayertest`：`@go-tenon/ui` 的分层，见下文“前端包”。`js/ui/src` 下的每个文件都在 `theme`、`app`、`components`、`blocks`、`features` 之一中，相对导入只指向同层或更低层，`blocks` 和 `features` 互相不引用。
 - `i18ntest`：框架用 `errorx.Define` 定义的每个错误码在内置的每种语言中都有翻译。
+- `llmstest`：根目录的 [llms.txt](llms.txt) 与 `docs/README.md` 生成的结果一致，`docs` 中的每一页都列在 `docs/README.md` 中。改了 `docs/README.md` 后在仓库根目录运行 `go run ./internal/llmstxt/gen` 重新生成。llms.txt 是给在线对话的 AI 读的目录（格式见 [llmstxt.org](https://llmstxt.org)），全部文档合成的 `llms-full.txt` 在发布版本时由 [release.yml](.github/workflows/release.yml) 生成，作为 Release 的附件。
 
 ## 前端包
 
@@ -194,7 +195,7 @@ API 的客户端包括网页、App、桌面端和其他服务，用的语言可�
 ### 篇幅与新增页面
 
 - 每页控制在 150–450 行，过长时按主题拆成同一目录下的几页，并在开头说明阅读顺序。
-- 新增一页时，把它加入本组的 `README.md` 和 [docs/README.md](docs/README.md) 中合适的学习阶段；新增的包同时加入[框架包一览](docs/concepts/structure.md#framework-packages)中同一分类的表格。
+- 新增一页时，把它加入本组的 `README.md` 和 [docs/README.md](docs/README.md) 中合适的学习阶段，再重新生成 `llms.txt`；新增的包同时加入[框架包一览](docs/concepts/structure.md#framework-packages)中同一分类的表格。
 
 ## 提交与 PR
 
