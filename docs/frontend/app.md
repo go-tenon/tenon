@@ -175,6 +175,7 @@ export const theme = createUiTheme({ preset: "compact", primary: "blue-gray" })
 
   色板由 Mantine 官方的生成器（`@mantine/colors-generator`）生成，与颜色生成器页面上的结果一致：输入的颜色按亮度落在 10 级中的一级，亮色模式的主色是第 6 级，暗色模式是第 5 级，所以很深的颜色（例如 `brown`、`deep-red`）在按钮上会比输入的颜色浅一些。名称对应的颜色值在 `primaryColors` 中，也可以单独调用 `palette(color)`。
 - `radius` 是基础圆角（像素），其他圆角按比例缩放。
+- `fontFamily` 是字体，不设置时用系统字体，不额外加载字体：西文字体在前，字母、数字和 `•` 这类西文符号用西文字体；汉字回落到后面的苹方、思源黑体、微软雅黑。引号 `‘’“”`、省略号 `…`、破折号 `—`、间隔号 `·` 是中英文共用的字符，中文页面（`<html lang="zh-CN">`）中它们由中文字体显示为全角，英文页面中是西文的样式；自己设置 `fontFamily` 时同样如此。
 - `datetimeFormat` 是日期时间的显示格式（dayjs 的写法），默认 `YYYY-MM-DD HH:mm`；表格多的界面可以用短一些的 `MM/DD HH:mm`。表格、操作记录、通知中的时间都用它。
 - `override` 是再合并的 Mantine 主题覆盖，用于令牌之外的调整，例如某个组件的默认属性。
 - `datetimeFormat` 是日期时间的显示格式（[dayjs 的写法](https://day.js.org/docs/en/display/format)），默认随预设：`admin` 是 `MM/DD HH:mm`（例如 11/03 10:12），其他是 `YYYY-MM-DD HH:mm`。后端返回带时区的 ISO 时间，显示为浏览器所在时区的时间。表格中的日期时间字段、操作记录、通知都用它；自己写的页面用 `useFormatDateTime()`：
