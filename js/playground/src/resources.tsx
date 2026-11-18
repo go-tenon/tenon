@@ -89,6 +89,16 @@ const client = {
   },
 }
 
+// 客户的新建和修改填写同样的字段。
+const customerForm = [
+  { name: "name", type: "string", required: true },
+  { name: "level", type: "string", enum: "Level", required: true },
+  { name: "tags", type: "array", items: "string" },
+  { name: "credit", type: "integer" },
+  { name: "joined", type: "string", format: "date" },
+  { name: "active", type: "boolean" },
+] as const
+
 const customerDef: ResourceDef = {
   name: "customer",
   key: "id",
@@ -113,14 +123,8 @@ const customerDef: ResourceDef = {
     { name: "level", type: "string", enum: "Level" },
     { name: "active", type: "boolean" },
   ],
-  form: [
-    { name: "name", type: "string", required: true },
-    { name: "level", type: "string", enum: "Level", required: true },
-    { name: "tags", type: "array", items: "string" },
-    { name: "credit", type: "integer" },
-    { name: "joined", type: "string", format: "date" },
-    { name: "active", type: "boolean" },
-  ],
+  createForm: customerForm,
+  updateForm: customerForm,
   actions: [{ name: "disable", operation: ["customer", "disable"], permissions: [], confirm: true, danger: true }],
   labels: {
     "zh-CN": {

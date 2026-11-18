@@ -21,18 +21,19 @@ import (
 // 资源写入 OpenAPI 文档的 x-tenon-resources，tenon generate 据此生成前端的 resources.ts，
 // @go-tenon/ui 的 ResourcePage 按这份定义渲染。
 type Resource struct {
-	Name    string   `json:"name"`              // 资源的名称，kebab-case，例如 article。
-	List    string   `json:"list"`              // 列表接口的操作 ID：GET、没有路径参数，响应体有 items 数组（page.Offset 或 page.Cursor）。必须设置。
-	Get     string   `json:"get,omitempty"`     // 详情接口的操作 ID，没有时留空；它有且只有一个路径参数，名称是列表项中标识一行的字段，例如 /articles/{id} 对应 id
-	Create  string   `json:"create,omitempty"`  // 创建接口的操作 ID，没有时留空
-	Update  string   `json:"update,omitempty"`  // 修改接口的操作 ID，没有时留空；路径参数与 Get 相同
-	Delete  string   `json:"delete,omitempty"`  // 删除接口的操作 ID，没有时留空；路径参数与 Get 相同
-	Columns []string `json:"columns"`           // 列表显示的列：列表项的字段。为空时是列表项中除对象和数组外的全部字段。
-	Filters []string `json:"filters,omitempty"` // 列表上方的筛选条件：列表接口的查询参数，按业务命名，例如 name、status、min_age；文字是输入框，枚举是下拉选择，布尔是“是 / 否”。
-	Sort    []string `json:"sort,omitempty"`    // 可以排序的列。列表接口要有 sort 查询参数，取值是列名，前面加 - 表示降序；sort 限定了取值时，每一列的升序或降序至少有一个在其中。
-	Form    []string `json:"form,omitempty"`    // 创建和修改的表单字段：请求体的字段。为空时是请求体的全部字段（创建和修改都有时取创建的）。
-	Actions []Action `json:"actions,omitempty"` // 一行上的其他操作，例如发布。
-	Key     string   `json:"key,omitempty"`     // 标识一行的字段，由 Get、Update、Delete 和 Actions 的路径参数得出，不需要设置。
+	Name       string   `json:"name"`                  // 资源的名称，kebab-case，例如 article。
+	List       string   `json:"list"`                  // 列表接口的操作 ID：GET、没有路径参数，响应体有 items 数组（page.Offset 或 page.Cursor）。必须设置。
+	Get        string   `json:"get,omitempty"`         // 详情接口的操作 ID，没有时留空；它有且只有一个路径参数，名称是列表项中标识一行的字段，例如 /articles/{id} 对应 id
+	Create     string   `json:"create,omitempty"`      // 创建接口的操作 ID，没有时留空
+	Update     string   `json:"update,omitempty"`      // 修改接口的操作 ID，没有时留空；路径参数与 Get 相同
+	Delete     string   `json:"delete,omitempty"`      // 删除接口的操作 ID，没有时留空；路径参数与 Get 相同
+	Columns    []string `json:"columns"`               // 列表显示的列：列表项的字段。为空时是列表项中除对象和数组外的全部字段。
+	Filters    []string `json:"filters,omitempty"`     // 列表上方的筛选条件：列表接口的查询参数，按业务命名，例如 name、status、min_age；文字是输入框，枚举是下拉选择，布尔是“是 / 否”。
+	Sort       []string `json:"sort,omitempty"`        // 可以排序的列。列表接口要有 sort 查询参数，取值是列名，前面加 - 表示降序；sort 限定了取值时，每一列的升序或降序至少有一个在其中。
+	CreateForm []string `json:"create_form,omitempty"` // 新建表单的字段：新建接口请求体的字段，按显示的顺序。为空时是请求体的全部字段，按结构体中的顺序。
+	UpdateForm []string `json:"update_form,omitempty"` // 修改表单的字段：修改接口请求体的字段，按显示的顺序。为空时是请求体的全部字段，按结构体中的顺序。
+	Actions    []Action `json:"actions,omitempty"`     // 一行上的其他操作，例如发布。
+	Key        string   `json:"key,omitempty"`         // 标识一行的字段，由 Get、Update、Delete 和 Actions 的路径参数得出，不需要设置。
 }
 
 // Action 是资源的一行上的操作。
@@ -156,36 +157,32 @@ func (a *API) checkResource(r *Resource) error {
 		}
 	}
 
-	var bodies []*huma.Schema
-	var bodyOrder []string
-	for _, id := range []string{r.Create, r.Update} {
-		if id == "" {
+	// 新建和修改的表单各取自己接口的请求体：两个接口的字段常常不同，例如新建时还要填写管理员的账号。
+	for _, f := range []struct {
+		what, id string
+		fields   *[]string
+	}{{"create form", r.Create, &r.CreateForm}, {"update form", r.Update, &r.UpdateForm}} {
+		if f.id == "" {
+			if len(*f.fields) > 0 {
+				return fmt.Errorf("%s needs the %s operation", f.what, strings.TrimSuffix(f.what, " form"))
+			}
 			continue
 		}
-		op, err := a.resourceOp(id, "")
+		op, err := a.resourceOp(f.id, "")
 		if err != nil {
 			return err
 		}
-		if id == r.Create && len(params(op, "path")) > 0 {
-			return fmt.Errorf("create operation %s must not have path parameters", id)
+		if f.id == r.Create && len(params(op, "path")) > 0 {
+			return fmt.Errorf("create operation %s must not have path parameters", f.id)
 		}
 		body := a.requestBody(op)
 		if body == nil {
-			return fmt.Errorf("operation %s has no JSON object request body", id)
+			return fmt.Errorf("operation %s has no JSON object request body", f.id)
 		}
-		if bodyOrder == nil {
-			bodyOrder = fieldOrder(a.bodyType(id))
+		if len(*f.fields) == 0 {
+			*f.fields = orderedFields(body, fieldOrder(a.bodyType(f.id)))
 		}
-		bodies = append(bodies, body)
-	}
-	if len(r.Form) == 0 && len(bodies) > 0 {
-		r.Form = orderedFields(bodies[0], bodyOrder)
-	}
-	if len(r.Form) > 0 && len(bodies) == 0 {
-		return fmt.Errorf("a Form needs a Create or Update operation")
-	}
-	for _, body := range bodies {
-		if err := hasFields("form field", r.Form, body); err != nil {
+		if err := hasFields(f.what+" field", *f.fields, body); err != nil {
 			return err
 		}
 	}

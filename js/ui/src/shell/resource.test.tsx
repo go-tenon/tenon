@@ -87,11 +87,12 @@ describe("resourceModel", () => {
     expect(m.display("status", "draft")).toBe("草稿") // 按字段名
     expect(m.display("title", "你好")).toBe("你好")
     expect(m.display("unknown", 1)).toBe(1)
-    expect(m.form.map((f) => [f.name, f.kind, f.required])).toEqual([
+    expect(m.createForm.map((f) => [f.name, f.kind, f.required])).toEqual([
       ["title", "text", true],
       ["slug", "text", true],
       ["tags", "tags", false],
     ])
+    expect(m.updateForm.map((f) => f.name)).toEqual(["title", "slug", "tags"])
     expect(m.filters.map((f) => [f.name, f.kind])).toEqual([
       ["title", "text"],
       ["status", "select"],
@@ -99,8 +100,8 @@ describe("resourceModel", () => {
     expect(m.actions).toEqual([{ name: "publish", label: "发布", confirm: true, danger: false, permissions: [] }])
     expect(m.has).toEqual({ list: true, get: true, create: true, update: true, delete: true })
     expect(m.rowKey({ id: "a1" })).toBe("a1")
-    expect(formValues(m)).toEqual({ tags: [] })
-    expect(formValues(m, { id: "a1", title: "你好", slug: "hello", tags: ["x"], status: "draft" })).toEqual({
+    expect(formValues(m.createForm)).toEqual({ tags: [] })
+    expect(formValues(m.updateForm, { id: "a1", title: "你好", slug: "hello", tags: ["x"], status: "draft" })).toEqual({
       title: "你好",
       slug: "hello",
       tags: ["x"],
