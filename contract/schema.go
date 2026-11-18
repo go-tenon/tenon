@@ -26,9 +26,9 @@ type Schema struct {
 }
 
 // NewSchema 为 t 生成 schema，mode 是校验的方向：输入用 huma.ModeWriteToServer，输出用 huma.ModeReadFromServer。
-// 每个类型使用自己的 registry，$defs 中只有它用到的类型。
+// 每个类型使用自己的 registry，$defs 中只有它用到的类型，名称由 SchemaName 得出，与 OpenAPI 文档相同。
 func NewSchema(t reflect.Type, mode huma.ValidateMode) *Schema {
-	registry := huma.NewMapRegistry(defsPrefix, huma.DefaultSchemaNamer)
+	registry := huma.NewMapRegistry(defsPrefix, SchemaName)
 	root := registry.Schema(t, false, "")
 	s := &Schema{registry: registry, root: root, mode: mode}
 	if root == nil {

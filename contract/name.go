@@ -16,8 +16,8 @@ var bare = []string{
 	"github.com/danielgtaylor/huma/v2",
 }
 
-// SchemaName 返回类型 t 在 OpenAPI 和 AsyncAPI 文档中的 schema 名称，也是生成的客户端中的类型名，
-// 用作 huma.NewMapRegistry 的 namer。具名类型用类型名，匿名类型用 hint。
+// SchemaName 返回类型 t 的 schema 名称：OpenAPI 和 AsyncAPI 文档的 components.schemas、NewSchema 的 $defs 中的名称，
+// 也是生成的客户端中的类型名。它用作 huma.NewMapRegistry 的 namer。具名类型用类型名，匿名类型用 hint。
 //
 // 名称是包名加类型名，例如 article.Changes 为 ArticleChanges、comment.Changes 为 CommentChanges，
 // 不同包的同名类型因此各有自己的名字；类型名已经以包名开头时只保留一次，例如 article.ArticleDTO 仍为 ArticleDTO。
