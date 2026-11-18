@@ -1,6 +1,6 @@
 # AI 编程助手
 
-Claude Code、Codex、Cursor 这类 AI 编程助手能替你写不少代码，前提是它知道项目的约定，读的是项目所用版本的文档。`tenon init` 生成的项目已经为它们准备好了：根目录的 `AGENTS.md` 写明怎样运行、提交前检查什么、代码按什么约定写；框架的文档复制在项目中，版本与 `go.mod` 一致；新增业务动作、写接口、加表这类常做的事各有一个技能，写明步骤和要点；Go 的语言服务和 Mantine 的文档服务配置成了 MCP 服务。这一页介绍这些内容是什么、怎样保持更新，以及怎样按自己的需要调整。
+Claude Code、Codex、Cursor、Antigravity、GitHub Copilot 这类 AI 编程助手能替你写不少代码，前提是它知道项目的约定，读的是项目所用版本的文档。`tenon init` 生成的项目已经为它们准备好了：根目录的 `AGENTS.md` 写明怎样运行、提交前检查什么、代码按什么约定写；框架的文档复制在项目中，版本与 `go.mod` 一致；新增业务动作、写接口、加表这类常做的事各有一个技能，写明步骤和要点；Go 的语言服务和 Mantine 的文档服务配置成了 MCP 服务。这一页介绍这些内容是什么、怎样保持更新，以及怎样按自己的需要调整。
 
 阅读前需要了解：[脚手架](scaffolding.md)；[开发工具](tooling.md)。
 
@@ -36,7 +36,7 @@ Codex 和 Cursor 的用法相同：在项目目录中打开它们，它们同样
 <a id="agents-md"></a>
 ## AGENTS.md
 
-`AGENTS.md` 是写给 AI 编程助手的项目说明，Claude Code、Codex、Cursor、GitHub Copilot 都会读它。它也适合人读：新加入的同事从它了解项目怎样运行。
+`AGENTS.md` 是写给 AI 编程助手的项目说明，Claude Code、Codex、Cursor、Antigravity、GitHub Copilot 都会读它。它也适合人读：新加入的同事从它了解项目怎样运行。
 
 文件分成两部分：
 
@@ -86,7 +86,7 @@ rg 迁移 .tenon/docs   # 列出讲迁移的文档
 <a id="skills"></a>
 ## 技能
 
-`AGENTS.md` 每次都会读进助手的上下文，所以只写每次都要遵守的约定。做某件具体的事需要的步骤放在**技能**（skill）中：每个技能是一个目录，里面的 `SKILL.md` 开头写着名称和什么时候用它，助手只在任务与之相符时才读全文。技能是 Claude Code、Codex、Cursor 共用的开放格式（[agentskills.io](https://agentskills.io)）。
+`AGENTS.md` 每次都会读进助手的上下文，所以只写每次都要遵守的约定。做某件具体的事需要的步骤放在**技能**（skill）中：每个技能是一个目录，里面的 `SKILL.md` 开头写着名称和什么时候用它，助手只在任务与之相符时才读全文。技能是各个助手共用的开放格式（[agentskills.io](https://agentskills.io)）。
 
 `tenon` 为项目安装这些技能：
 
@@ -104,7 +104,7 @@ rg 迁移 .tenon/docs   # 列出讲迁移的文档
 
 技能只写步骤和要点，细节链接到 `.tenon/docs` 中的文档页，与项目的框架版本一致。例如助手要加一个接口时读到 `tenon-http-api`，它按步骤写输入类型、声明访问策略、在 `routes.go` 中注册，最后运行 `bun run generate`。
 
-Claude Code 从 `.claude/skills` 读取技能，Codex 从 `.agents/skills` 读取，Cursor 两个目录都读。`tenon` 按[选择的助手](#choosing-assistants)写进对应的目录；三个助手都选时两个目录中各有一份，Cursor 中会看到两份同名的技能。技能目录也要提交。
+各个助手从不同的目录读取技能，`tenon` 按[选择的助手](#choosing-assistants)写进对应的目录，表格见那一节。同时选了 Claude Code 和 Codex（或 Antigravity）时，`.claude/skills` 和 `.agents/skills` 中各有一份，Cursor 两个目录都读，会看到两份同名的技能。技能目录也要提交。
 
 `tenon` 只管理名字以 `tenon-` 开头的技能目录，你自己写的技能放在同样的目录中，`tenon` 不会改动。想改写某个框架的技能时，复制一份换个名字（例如 `acme-frontend`），在 `tenon.json` 中跳过原来的：
 
@@ -138,17 +138,11 @@ Claude Code 从 `.claude/skills` 读取技能，Codex 从 `.agents/skills` 读�
 
 - **`mantine`**：Mantine 官方的文档服务（`@mantine/mcp-server`），提供 `search_docs`、`get_item_props` 等工具，查组件的属性和用法。项目中有前端时才配置，用 `bunx` 运行，第一次使用时自动下载。
 
-每个助手的配置文件位置不同：
-
-| 助手 | MCP 配置 |
-| --- | --- |
-| Claude Code | `.mcp.json` |
-| Codex | `.codex/config.toml` |
-| Cursor | `.cursor/mcp.json` |
+每个助手的 MCP 配置文件位置不同，见[选择助手](#choosing-assistants)中的表格。
 
 `tenon` 只改写配置中名为 `tenon`、`gopls` 和 `mantine` 的三项，你自己加的其他 MCP 服务和设置保持原样。在 `.codex/config.toml` 中，这两项放在 `# tenon:begin` 和 `# tenon:end` 两行之间。这些文件也要提交。
 
-确认服务已经连上：Claude Code 中输入 `/mcp`；Codex 运行 `codex mcp list`；Cursor 在设置的 MCP 页面中查看。
+确认服务已经连上：Claude Code、Antigravity 中输入 `/mcp`；Codex 运行 `codex mcp list`；Cursor 在设置的 MCP 页面中查看；VS Code 中运行命令“MCP: List Servers”。
 
 > [!NOTE]
 > Codex 只读取受信任的项目中的 `.codex/config.toml`。第一次在项目中打开 Codex 时，选择信任这个项目。Claude Code 第一次遇到 `.mcp.json` 中的服务时也会询问是否启用。
@@ -175,17 +169,31 @@ bun run agents   # 即 go tool tenon agents
 <a id="choosing-assistants"></a>
 ## 选择助手
 
-默认为 Claude Code、Codex、Cursor 三个助手安装技能、写 MCP 配置。只用其中一部分时，生成项目时用 `--agents` 选择：
+`tenon` 支持五个助手，它们都读 `AGENTS.md`，区别在技能目录和 MCP 配置的位置：
+
+| 助手 | `--agents` 中的名字 | 技能 | MCP 配置 | 默认 |
+| --- | --- | --- | --- | --- |
+| Claude Code | `claude` | `.claude/skills` | `.mcp.json` | 是 |
+| Codex | `codex` | `.agents/skills` | `.codex/config.toml` | 是 |
+| Cursor | `cursor` | 读 `.claude/skills` 和 `.agents/skills` | `.cursor/mcp.json` | 是 |
+| Antigravity | `antigravity` | `.agents/skills` | `.agents/mcp_config.json` | 是 |
+| GitHub Copilot（VS Code） | `copilot` | `.github/skills` | `.vscode/mcp.json` | 否 |
+
+Antigravity 是 Google 的编程助手，它的 CLI（`agy`）取代了 Gemini CLI，项目中的配置与 Gemini CLI 不同：MCP 服务写在 `.agents/mcp_config.json`，技能在 `.agents/skills`。还在用 Gemini CLI 的，从 Gemini CLI 迁移到 Antigravity 即可，见 Google 的[迁移说明](https://antigravity.google/docs/cli/gcli-migration)。
+
+Copilot 只从 `.github/skills` 读取技能，选它就要再装一份技能，所以默认不选。用 Copilot 时把它加进 `--agents`。
+
+只用其中一部分时，生成项目时用 `--agents` 选择：
 
 ```bash
-go run github.com/go-tenon/tenon/cmd/tenon@latest init todo --agents claude
+go run github.com/go-tenon/tenon/cmd/tenon@latest init todo --agents claude,copilot
 ```
 
 `--agents none` 不安装技能，也不写任何助手的配置，`AGENTS.md` 和 `.tenon/docs` 照样生成。选择记在 `tenon.json` 中，之后的 `tenon agents` 按它更新：
 
 ```json
 {
-  "agents": { "targets": ["claude"] }
+  "agents": { "targets": ["claude", "copilot"] }
 }
 ```
 
@@ -265,14 +273,14 @@ go tool tenon mcp
 ### tenon init --agents
 
 ```bash
-go run github.com/go-tenon/tenon/cmd/tenon@latest init <dir> --agents claude,codex,cursor
+go run github.com/go-tenon/tenon/cmd/tenon@latest init <dir> --agents claude,codex,cursor,antigravity
 ```
 
-为哪些助手安装技能、写 MCP 配置，可选 `claude`、`codex`、`cursor`，默认是全部三个；`none` 表示都不写。与默认不同时写进 `tenon.json`。
+为哪些助手安装技能、写 MCP 配置，可选 `claude`、`codex`、`cursor`、`antigravity`、`copilot`，默认是除 `copilot` 以外的四个；`none` 表示都不写。与默认不同时写进 `tenon.json`。
 
 ### tenon.json 的 agents
 
 | 字段 | 默认值 | 说明 |
 | --- | --- | --- |
-| `agents.targets` | `["claude", "codex", "cursor"]` | 安装技能、写 MCP 配置的助手；空数组时都不写 |
+| `agents.targets` | `["claude", "codex", "cursor", "antigravity"]` | 安装技能、写 MCP 配置的助手，可选的见[选择助手](#choosing-assistants)；空数组时都不写 |
 | `agents.skip` | 空 | 不安装的框架技能，例如 `["tenon-electron"]` |

@@ -34,9 +34,9 @@
       "properties": {
         "targets": {
           "type": "array",
-          "items": { "enum": ["claude", "codex", "cursor"] },
+          "items": { "enum": ["claude", "codex", "cursor", "antigravity", "copilot"] },
           "uniqueItems": true,
-          "description": "AI 编程助手：claude 写 .mcp.json 和 .claude/skills，codex 写 .codex/config.toml 和 .agents/skills，cursor 写 .cursor/mcp.json（技能读 .claude/skills 或 .agents/skills）。省略时是全部三个，空数组时一个都不写。"
+          "description": "AI 编程助手：claude 写 .mcp.json 和 .claude/skills，codex 写 .codex/config.toml 和 .agents/skills，cursor 写 .cursor/mcp.json（技能读 .claude/skills 或 .agents/skills），antigravity（取代 Gemini CLI）写 .agents/mcp_config.json 和 .agents/skills，copilot 写 .vscode/mcp.json 和 .github/skills。省略时是除 copilot 以外的四个，空数组时一个都不写。"
         },
         "skip": {
           "type": "array",

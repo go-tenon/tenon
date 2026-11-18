@@ -121,15 +121,19 @@ func Skills(p *Project) ([]Skill, error) {
 	return skills, nil
 }
 
-// SkillDirs 返回 targets 中的助手读取技能的目录：Claude Code 读 .claude/skills，Codex 读 .agents/skills；
-// Cursor 两个都读，所以只有 Cursor 时才为它写 .agents/skills。
+// SkillDirs 返回 targets 中的助手读取技能的目录：Claude Code 读 .claude/skills，Codex 和 Antigravity 读 .agents/skills，
+// GitHub Copilot 读 .github/skills；Cursor 读 .claude/skills 和 .agents/skills，所以没有 Claude Code 时才为它写 .agents/skills。
 func SkillDirs(targets []string) []string {
+	has := func(t string) bool { return slices.Contains(targets, t) }
 	var dirs []string
-	if slices.Contains(targets, "claude") {
+	if has("claude") {
 		dirs = append(dirs, ".claude/skills")
 	}
-	if slices.Contains(targets, "codex") || slices.Contains(targets, "cursor") && !slices.Contains(targets, "claude") {
+	if has("codex") || has("antigravity") || has("cursor") && !has("claude") {
 		dirs = append(dirs, ".agents/skills")
+	}
+	if has("copilot") {
+		dirs = append(dirs, ".github/skills")
 	}
 	return dirs
 }
