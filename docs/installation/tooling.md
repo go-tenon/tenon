@@ -11,6 +11,7 @@
 - [tenon generate：生成客户端](#generate)
 - [tenon build：构建](#build)
 - [tenon add frontend：再加一个前端](#add-frontend)
+- [tenon add client：桌面端等客户端](#add-client)
 - [常见问题](#troubleshooting)
 - [进阶](#advanced)
     - [前端与 API 怎样被发现](#conventions)
@@ -53,6 +54,7 @@ go get -tool github.com/go-tenon/tenon/cmd/tenon
 | `tenon generate` | 接口变了以后，重新生成前端的客户端。`dev` 会自动运行它 |
 | `tenon build` | 上线前：构建出一个可执行文件 |
 | `tenon add frontend` | 需要再加一个前端时，例如运营后台 |
+| `tenon add client` | 需要桌面端等网页以外的客户端时 |
 
 `serve`、`migrate`、`routes` 这类命令不属于 `tenon`，它们在你的应用自己的程序中，部署到服务器上以后照样可以运行，见[命令行](../general/commands.md)。
 
@@ -155,6 +157,17 @@ go tool tenon add frontend admin --layout frame
 `--render` 选择渲染方式：`csr` 只在浏览器中渲染，程序中不需要 Bun；`ssr` 在服务端渲染，搜索引擎可以收录。不写时按布局：`rail`、`frame` 是 `csr`，`site` 是 `ssr`，`site` 的首页还在构建时预渲染。服务端渲染的前端中，需要登录的 `_app` 设置了 `ssr: false`，只在浏览器中渲染。它写在 `package.json` 的 `tenon.ssr` 中，之后可以改，见[切换渲染方式](../frontend/hosting.md#switching)。
 
 `--base` 可以指定其他的挂载路径，以 `/` 开头和结尾，不能与已有的前端相同。`apps/admin` 必须还不存在。
+
+<a id="add-client"></a>
+## tenon add client：桌面端等客户端
+
+把一个前端做成桌面端：
+
+```bash
+go tool tenon add client admin-desktop --kind electron --frontend admin
+```
+
+它在 `clients/admin-desktop` 中生成一个 Electron 桌面端，窗口中显示 `apps/admin`，并在 `apps/admin` 中加上授权页。`--title` 是窗口标题和安装包的名称，默认是客户端的名字。之后用 `go tool tenon dev --client admin-desktop` 同时运行它，用 `go tool tenon build --client admin-desktop` 打包。详细的用法见 [Electron 桌面端](../clients/electron.md)，有哪些种类见[客户端](../clients/README.md)。
 
 <a id="troubleshooting"></a>
 ## 常见问题

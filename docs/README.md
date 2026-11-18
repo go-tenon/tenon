@@ -110,6 +110,14 @@ Tenon 是一个用 Go 构建后端服务的框架。业务逻辑写成[业务动
 - [前端规范](frontend/conventions.md)：前端用什么技术、目录怎样组织、代码怎样写
 - [服务端推送](http/sse.md)：服务端主动把进度、通知推给浏览器
 
+网页以外的客户端：
+
+- [客户端](clients/README.md)：桌面端、App 有哪几类，放在项目的哪里，怎样生成和运行
+- [原生客户端](clients/native.md)：安装在设备上的客户端在系统浏览器中登录、保存 token、上报版本
+- [Electron 桌面端](clients/electron.md)：把前端做成桌面端，托盘、通知、开机自启和深度链接
+- [打包、签名与更新](clients/electron-release.md)：为三个平台打包、签名，自动更新和强制升级
+- [网页宿主的约定](clients/host.md)：宿主要做到的事和页面能调用的 `tenonHost`
+
 ## 第五阶段：常用功能
 
 后台任务：
