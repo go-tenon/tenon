@@ -436,11 +436,7 @@ func (a *Me) HTTP(ctx context.Context, _ *struct{}) (*ProfileOutput, error) {
     if err != nil {
         return nil, err
     }
-    perms := sub.Permissions
-    if perms == nil {
-        perms = []string{}
-    }
-    return &ProfileOutput{Body: Profile{ID: u.ID, Name: u.Name, CreatedAt: u.CreatedAt, Permissions: perms}}, nil
+    return &ProfileOutput{Body: Profile{ID: u.ID, Name: u.Name, CreatedAt: u.CreatedAt, Permissions: sub.Permissions}}, nil
 }
 ```
 

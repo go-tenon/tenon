@@ -14,7 +14,7 @@ export interface ArticleDTO {
   published_at?: string
   slug: string
   status: ArticleStatus
-  tags: string[] | null
+  tags: string[]
   title: string
 }
 
@@ -32,14 +32,14 @@ export interface BlogSettings {
 
 export interface Changes {
   slug: string
-  tags?: string[] | null
+  tags?: string[]
   title: string
 }
 
 export interface Cover {
   alt: string
   content_type: string
-  extras: string[] | null
+  extras: string[]
   filename: string
   size: number
 }
@@ -61,7 +61,7 @@ export interface ErrorModel {
   /** A human-readable explanation specific to this occurrence of the problem. */
   detail?: string
   /** Field errors. Present on validation errors, and on business errors that name a field (the entry then carries the business error code). */
-  errors?: ErrorDetail[] | null
+  errors?: ErrorDetail[]
   /** A URI reference that identifies the specific occurrence of the problem. */
   instance?: string
   /** Public parameters of a business error, e.g. methods for auth.method_required. Present only when the error has any. */
@@ -126,7 +126,7 @@ export interface ArticleListInput {
   /** Items per page. */
   per_page?: number
   status?: ArticleStatus
-  tag?: string[] | null
+  tag?: string[]
   /** 标题包含的文字 */
   title?: string
 }

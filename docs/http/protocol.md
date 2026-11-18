@@ -60,6 +60,8 @@ OpenAPI 文档中有三个框架的扩展字段：根上的 `x-tenon-permissions
 
 跨域访问的客户端可以读取上面这些响应头，以及 `Location`、`Content-Disposition`，见[跨域请求](optional-middleware.md#cors)。
 
+请求体和响应体是 JSON。数组和对象不为 `null`：没有元素的数组是 `[]`，没有键的对象是 `{}`，客户端不用处理 `null`；请求中把数组写成 `null` 是验证错误，接口文档中声明为可为空（`nullable`）的除外。单个值可以为 `null` 的字段在接口文档中标为可为空。HTTP 响应、事件流、RPC 的响应、MCP 工具的结果和 Webhook 的载荷都按这个规则编码。
+
 <a id="errors"></a>
 ## 错误
 

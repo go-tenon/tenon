@@ -66,6 +66,8 @@ type CreateInput struct {
 - **查询参数和请求头**默认可选，添加 `required:"true"` 可变为必填；
 - **路径参数**总是必填。
 
+数组字段不可为空：响应中 Go 的 nil 切片编码为 `[]`、nil 的 map 编码为 `{}`，处理器不用把 nil 换成空切片；请求中写成 `null` 的数组不能通过验证。确实要接受 `null` 的数组加上 `nullable:"true"`。
+
 ```go
 type PatchInput struct {
     ID   uuid.UUID `path:"id"`

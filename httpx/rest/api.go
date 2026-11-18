@@ -1,7 +1,9 @@
 package rest
 
 import (
+	"encoding/json"
 	"log/slog"
+	"maps"
 	"net/http"
 	"reflect"
 	"slices"
@@ -11,6 +13,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/go-chi/chi/v5"
 
+	"github.com/go-tenon/tenon/contract"
 	"github.com/go-tenon/tenon/httpx"
 	"github.com/go-tenon/tenon/identity"
 	"github.com/go-tenon/tenon/logging"
@@ -75,6 +78,10 @@ func New(r chi.Router, opts Options) *API {
 		httpx.WriteProblem(w, http.StatusMethodNotAllowed, "method not allowed")
 	})
 	cfg := huma.DefaultConfig(opts.Title, opts.Version)
+	// 响应体用 contract.EncodeJSON 编码：nil 的切片是 []、nil 的 map 是 {}，与文档中不可为空的数组和对象一致。
+	cfg.Formats = maps.Clone(cfg.Formats)
+	jsonFormat := huma.Format{Marshal: contract.EncodeJSON, Unmarshal: json.Unmarshal}
+	cfg.Formats["application/json"], cfg.Formats["json"] = jsonFormat, jsonFormat
 	// 默认的唯一创建钩子会在响应体加入 $schema 字段并设置 Link 响应头，对 API 使用者价值不大，不启用。
 	cfg.CreateHooks = nil
 	// schema 名带包名，不同包的同名类型（例如 article.Changes 和 comment.Changes）各有自己的名字，见 schemaNames。
