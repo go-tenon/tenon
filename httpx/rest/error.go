@@ -10,8 +10,8 @@ import (
 	"github.com/cockroachdb/errors"
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/go-tenon/tenon/contract"
 	"github.com/go-tenon/tenon/errorx"
-	"github.com/go-tenon/tenon/form"
 	"github.com/go-tenon/tenon/httpx"
 	"github.com/go-tenon/tenon/i18n"
 )
@@ -36,7 +36,7 @@ type ErrorDetail struct {
 }
 
 // localizeErrors 是 Huma 的 Transformer：把 Huma 产生的错误（验证失败、参数格式错误等）转为 ErrorModel，
-// 字段错误由 form.Describe 识别规则、按请求的语言翻译，"validation failed" 同样翻译。
+// 字段错误由 contract.Describe 识别规则、按请求的语言翻译，"validation failed" 同样翻译。
 func localizeErrors(hctx huma.Context, _ string, v any) (any, error) {
 	e, ok := v.(*huma.ErrorModel)
 	if !ok {
@@ -51,7 +51,7 @@ func localizeErrors(hctx huma.Context, _ string, v any) (any, error) {
 		}
 	}
 	for _, d := range e.Errors {
-		fe := form.Describe(ctx, d)
+		fe := contract.Describe(ctx, d)
 		value := d.Value
 		if fe.Location != d.Location {
 			value = nil // 必填错误的位置换成了缺少的字段，原来的值是父对象

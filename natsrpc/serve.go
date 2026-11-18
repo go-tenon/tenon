@@ -19,11 +19,10 @@ import (
 	"github.com/nats-io/nuid"
 	"go.opentelemetry.io/otel/propagation"
 
+	"github.com/go-tenon/tenon/contract"
 	"github.com/go-tenon/tenon/errorx"
-	"github.com/go-tenon/tenon/form"
 	"github.com/go-tenon/tenon/i18n"
 	"github.com/go-tenon/tenon/identity"
-	"github.com/go-tenon/tenon/internal/apischema"
 	"github.com/go-tenon/tenon/logging"
 )
 
@@ -199,7 +198,7 @@ func (r *runner) handle(root context.Context, ep *endpoint, m *nats.Msg) (resp *
 
 	data, fields, err := ep.handle(ctx, m.Data)
 	switch {
-	case errors.Is(err, apischema.ErrInvalidJSON):
+	case errors.Is(err, contract.ErrInvalidJSON):
 		return fail(&Problem{Status: http.StatusBadRequest, Title: http.StatusText(http.StatusBadRequest), Detail: "request body is " + err.Error()}, nil)
 	case len(fields) > 0:
 		detail := http.StatusText(http.StatusUnprocessableEntity)
@@ -263,7 +262,7 @@ func (r *runner) problem(ctx context.Context, ep *endpoint, err error) *Problem 
 func describe(ctx context.Context, details []*huma.ErrorDetail) []FieldError {
 	out := make([]FieldError, len(details))
 	for i, d := range details {
-		fe := form.Describe(ctx, d)
+		fe := contract.Describe(ctx, d)
 		value := d.Value
 		if fe.Location != d.Location {
 			value = nil // 必填错误的位置换成了缺少的字段，原来的值是父对象

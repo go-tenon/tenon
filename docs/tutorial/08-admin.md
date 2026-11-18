@@ -34,8 +34,8 @@ import (
     "github.com/danielgtaylor/huma/v2"
 
     "github.com/go-tenon/tenon/authz"
+    "github.com/go-tenon/tenon/contract"
     "github.com/go-tenon/tenon/enum"
-    "github.com/go-tenon/tenon/httpx/rest"
 )
 
 // Permission 是一个权限，例如 users:manage。
@@ -50,7 +50,7 @@ const (
 var Permissions = enum.New("permission", UsersManage, RolesManage)
 
 // Schema 让 OpenAPI 中的 Permission 只接受上面的取值：角色表单中是带显示文字的多选。
-func (Permission) Schema(r huma.Registry) *huma.Schema { return rest.EnumSchema(r, Permissions) }
+func (Permission) Schema(r huma.Registry) *huma.Schema { return contract.EnumSchema(r, Permissions) }
 
 // Catalog 是权限目录：authz 只接受其中的权限，它也写入 OpenAPI 文档。
 var Catalog = authz.Catalog{

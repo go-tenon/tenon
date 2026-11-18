@@ -146,16 +146,16 @@ flowchart TB
 ```mermaid
 flowchart TB
   F["功能<br/>apitoken · login · oauthserver · authz · notification · push · activity · feature<br/>settings · operation · privacy · webhook · search · vector · sheet/imports · sheet/exports · ai"]
-  E["入口<br/>httpx · httpx/rest · frontend · realtime · mcpx · natsrpc · command"]
-  I["基础设施<br/>database · natsx · queue · schedule · cachex · lock · ratelimit · broadcast<br/>filesystem · imgproxy · mail · sms · pdf · outbound · captcha · sheet · document"]
-  BASE["基础<br/>errorx · identity · config · cleanup · logging · telemetry · health · doctor<br/>i18n · enum · page · form · hashing · crypt · acquire"]
+  E["入口<br/>httpx · httpx/rest · clientgen · frontend · realtime · mcpx · natsrpc · command"]
+  I["基础设施<br/>database · natsx · queue · schedule · cachex · lock · ratelimit · broadcast<br/>filesystem · imgproxy · mail · sms · pdf · outbound · captcha · sheet · document · contract · form"]
+  BASE["基础<br/>errorx · identity · config · cleanup · logging · telemetry · health · doctor<br/>i18n · enum · page · hashing · crypt · acquire"]
   F --> E --> I --> BASE
 ```
 
 | 层 | 作用 | 举例 |
 | --- | --- | --- |
-| 基础 | 不碰外部资源的通用部分，可以在任何地方使用 | `errorx` 带错误码的业务错误；`identity` 已认证的主体；`config` 读取并校验配置；`logging` 日志；`telemetry` 推送日志、指标、链路 |
-| 基础设施 | 与外部资源打交道 | `database` 连接池与事务；`queue` 任务队列；`schedule` 定时任务；`lock` 原子锁；`filesystem` 文件；`mail`、`sms` 发送；`pdf` 生成 PDF |
+| 基础 | 最底层的通用部分，只导入同层的包，可以在任何地方使用 | `errorx` 带错误码的业务错误；`identity` 已认证的主体；`config` 读取并校验配置；`logging` 日志；`telemetry` 推送日志、指标、链路 |
+| 基础设施 | 与入口无关的能力：外部资源，以及各入口共用的契约和格式 | `database` 连接池与事务；`queue` 任务队列；`schedule` 定时任务；`lock` 原子锁；`filesystem` 文件；`mail`、`sms` 发送；`pdf` 生成 PDF |
 | 入口 | 请求进入应用的方式 | `httpx/rest` 基于 Huma 的接口；`frontend` 托管前端和服务端渲染的进程；`realtime` WebSocket 频道；`mcpx` AI 工具；`natsrpc` RPC；`command` 命令行 |
 | 功能 | 自带数据表的应用功能，由应用把路由和命令接进来 | 登录与注册、API 令牌、角色与权限、站内通知、操作日志、功能开关、设置、后台操作、注销与导出个人数据、Webhook、全文搜索、AI 助手 |
 

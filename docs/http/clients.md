@@ -312,7 +312,7 @@ oasdiff 只比较请求和响应的结构。schema 改名时结构相同，由�
 
 ### clientgen
 
-包 `github.com/go-tenon/tenon/httpx/rest/clientgen`。
+包 `github.com/go-tenon/tenon/clientgen`。
 
 ```go
 func Command(router func() chi.Routes, translations ...fs.FS) *cobra.Command

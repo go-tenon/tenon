@@ -16,7 +16,7 @@ type layer int
 const (
 	// 基础：错误、身份、配置、日志等，只依赖同层的包。
 	layerFoundation layer = iota + 1
-	// 基础设施：数据库、队列、锁、文件、邮件等，与入口无关。
+	// 基础设施：与入口无关的能力，包括数据库、队列、锁、文件、邮件等外部资源，以及各入口共用的契约和格式。
 	layerInfrastructure
 	// 入口：HTTP API、页面、实时频道和命令行。
 	layerEntry
@@ -46,7 +46,6 @@ var rules = map[string]rule{
 	"logging":   {layerFoundation, []string{"errorx"}},
 	"page":      {layerFoundation, []string{"errorx"}},
 	"crypt":     {layerFoundation, []string{"errorx"}},
-	"form":      {layerFoundation, []string{"i18n"}},
 	"telemetry": {layerFoundation, nil},
 	// 设计令牌：解析 theme/tokens.json，生成三套界面的主题。
 
@@ -65,7 +64,6 @@ var rules = map[string]rule{
 	// 阿里云 OpenAPI 的签名和调用，push/aliyun 和 sms/aliyun 共用。
 	"internal/aliyunapi":    {layerInfrastructure, nil},
 	"internal/indexversion": {layerInfrastructure, []string{"errorx"}},
-	"internal/apischema":    {layerEntry, nil},
 	"natsx":                 {layerInfrastructure, []string{"logging"}},
 	"queue":                 {layerInfrastructure, []string{"database", "doctor", "errorx", "logging", "natsx"}},
 	"cachex":                {layerInfrastructure, []string{"doctor", "logging"}},
@@ -73,18 +71,21 @@ var rules = map[string]rule{
 	"broadcast":             {layerInfrastructure, []string{"identity", "logging"}},
 	"filesystem":            {layerInfrastructure, []string{"doctor", "errorx", "identity"}},
 	"sheet":                 {layerInfrastructure, []string{"errorx", "form"}},
+	// 接口契约：Go 类型的 schema、校验、枚举和验证错误，HTTP、RPC、MCP 三个入口共用；Huma 的 schema 引擎在这一层。
+	"contract": {layerInfrastructure, []string{"enum", "i18n"}},
+	"form":     {layerInfrastructure, []string{"contract", "i18n"}},
 
-	"httpx":                {layerEntry, []string{"acquire", "enum", "errorx", "form", "health", "i18n", "identity", "logging", "ratelimit"}},
-	"httpx/rest/clientgen": {layerEntry, []string{"command", "enum", "errorx", "httpx", "i18n", "identity", "page"}},
-	"realtime":             {layerEntry, []string{"broadcast", "httpx", "identity", "logging"}},
-	"frontend":             {layerEntry, []string{"logging"}},
-	"mcpx":                 {layerEntry, []string{"errorx", "httpx", "identity", "internal/apischema", "logging"}},
-	"natsrpc":              {layerEntry, []string{"errorx", "form", "i18n", "identity", "internal/apischema", "logging"}},
-	"natsrpc/rpccmd":       {layerEntry, []string{"command", "natsrpc"}},
-	"mcpx/mcpxtest":        {layerEntry, []string{"identity", "mcpx"}},
-	"mcpx/mcpcmd":          {layerEntry, []string{"command", "identity", "mcpx"}},
-	"command":              {layerEntry, []string{"cleanup", "config", "errorx", "logging"}},
-	"command/httpcmd":      {layerEntry, []string{"command", "httpx", "httpx/rest/clientgen"}},
+	"httpx":           {layerEntry, []string{"acquire", "contract", "errorx", "health", "i18n", "identity", "logging", "ratelimit"}},
+	"clientgen":       {layerEntry, []string{"command", "contract", "enum", "errorx", "httpx", "i18n", "identity", "page"}},
+	"realtime":        {layerEntry, []string{"broadcast", "httpx", "identity", "logging"}},
+	"frontend":        {layerEntry, []string{"logging"}},
+	"mcpx":            {layerEntry, []string{"contract", "errorx", "httpx", "identity", "logging"}},
+	"natsrpc":         {layerEntry, []string{"contract", "errorx", "i18n", "identity", "logging"}},
+	"natsrpc/rpccmd":  {layerEntry, []string{"command", "natsrpc"}},
+	"mcpx/mcpxtest":   {layerEntry, []string{"identity", "mcpx"}},
+	"mcpx/mcpcmd":     {layerEntry, []string{"command", "identity", "mcpx"}},
+	"command":         {layerEntry, []string{"cleanup", "config", "errorx", "logging"}},
+	"command/httpcmd": {layerEntry, []string{"clientgen", "command", "httpx"}},
 	// tenon 命令行（go tool tenon）：开发工具，不被框架的其他包引用。
 	"cmd/tenon":                   {layerEntry, []string{"cmd/tenon/internal/dev", "cmd/tenon/internal/project", "cmd/tenon/internal/scaffold", "frontend"}},
 	"cmd/tenon/internal/dev":      {layerEntry, []string{"cmd/tenon/internal/project", "frontend"}},
@@ -135,9 +136,6 @@ var components = []string{
 	"github.com/nats-io/nats.go",
 }
 
-// 基础层中的例外：form 按 Huma 的标签和校验规则转换字段值。
-var componentExceptions = map[string]string{"form": "github.com/danielgtaylor/huma"}
-
 func under(pkg, prefix string) bool {
 	return pkg == prefix || strings.HasPrefix(pkg, prefix+"/")
 }
@@ -181,7 +179,7 @@ func importViolation(from, to string) string {
 	}
 	if fromRule.layer == layerFoundation {
 		for _, prefix := range components {
-			if under(to, prefix) && componentExceptions[fromKey] != prefix {
+			if under(to, prefix) {
 				return "foundation package imports an infrastructure component"
 			}
 		}
@@ -307,7 +305,9 @@ func TestDependencyRules(t *testing.T) {
 		{module + "/errorx", module + "/database", false},
 		{module + "/queue", module + "/httpx", false},
 		{module + "/httpx", module + "/apitoken", false},
-		{module + "/form", "github.com/danielgtaylor/huma/v2", true},
+		{module + "/contract", "github.com/danielgtaylor/huma/v2", true},
+		{module + "/enum", "github.com/danielgtaylor/huma/v2", false},
+		{module + "/enum", module + "/contract", false},
 		{module + "/page", "net/http", false},
 	} {
 		t.Run(tc.from+"->"+tc.to, func(t *testing.T) {

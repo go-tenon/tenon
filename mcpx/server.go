@@ -16,10 +16,10 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/go-tenon/tenon/contract"
 	"github.com/go-tenon/tenon/errorx"
 	"github.com/go-tenon/tenon/httpx"
 	"github.com/go-tenon/tenon/identity"
-	"github.com/go-tenon/tenon/internal/apischema"
 	"github.com/go-tenon/tenon/logging"
 )
 
@@ -134,11 +134,11 @@ func Register[I, O any](s *Server, t Tool, fn func(context.Context, I) (O, error
 	if _, ok := s.tools[t.Name]; ok {
 		panic("mcpx: duplicate tool " + strconv.Quote(t.Name))
 	}
-	in := apischema.New(reflect.TypeFor[I](), huma.ModeWriteToServer)
+	in := contract.NewSchema(reflect.TypeFor[I](), huma.ModeWriteToServer)
 	if in.Type != "object" {
 		panic("mcpx: tool " + strconv.Quote(t.Name) + " input must be a struct")
 	}
-	out := apischema.New(reflect.TypeFor[O](), huma.ModeReadFromServer)
+	out := contract.NewSchema(reflect.TypeFor[O](), huma.ModeReadFromServer)
 	t.Permissions = slices.Clone(t.Permissions)
 	tool := &mcp.Tool{
 		Name:        t.Name,
@@ -232,10 +232,10 @@ func (s *Server) failure(ctx context.Context, tool string, err error) *mcp.CallT
 }
 
 // validate 校验工具的参数并解码到 dst，返回每个问题的描述，例如 "id: expected string to be RFC 4122 uuid"。
-func validate(s *apischema.Schema, raw json.RawMessage, dst any) []string {
+func validate(s *contract.Schema, raw json.RawMessage, dst any) []string {
 	details, err := s.Validate(raw, dst, "")
 	switch {
-	case errors.Is(err, apischema.ErrInvalidJSON):
+	case errors.Is(err, contract.ErrInvalidJSON):
 		return []string{"arguments are " + err.Error()}
 	case err != nil:
 		return []string{err.Error()}

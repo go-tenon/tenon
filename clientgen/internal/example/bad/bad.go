@@ -1,0 +1,37 @@
+// Package bad 是 clientgen 测试用的、无法生成客户端的类型。
+package bad
+
+import (
+	"strconv"
+
+	"github.com/uptrace/bun"
+
+	other "github.com/go-tenon/tenon/clientgen/internal/example/bad/article"
+)
+
+// Money 自定义了 JSON 编码，复制字段得不到相同的 JSON。
+type Money int64
+
+// MarshalJSON 把金额编码为字符串。
+func (m Money) MarshalJSON() ([]byte, error) {
+	return []byte(strconv.Quote(strconv.FormatInt(int64(m), 10))), nil
+}
+
+// MoneyOutput 是返回金额的响应。
+type MoneyOutput struct {
+	Body struct {
+		Price Money `json:"price"`
+	}
+}
+
+// RowOutput 用到了一个无法复制、也没有列入允许导入的第三方类型。
+type RowOutput struct {
+	Body struct {
+		Deleted bun.NullTime `json:"deleted"`
+	}
+}
+
+// ConflictOutput 用到了另一个名为 article 的包。
+type ConflictOutput struct {
+	Body other.Note
+}
