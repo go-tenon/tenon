@@ -54,11 +54,11 @@ func TestInitEndToEnd(t *testing.T) {
 			t.Fatalf("%s %v: %v\n%s", name, args, err, b)
 		}
 	}
-	// 三个前端：运营后台挂在 /admin/，控制台挂在 /console/，都只在浏览器中渲染；官网样式的 promo 挂在 /promo/，
-	// 和 web 一样在服务端渲染。main.go 不用改：frontend.Host 按 apps/dist 中的清单托管全部前端。
+	// 三个前端：运营后台挂在 /admin/，控制台挂在 /console/（左右分栏的登录页），都只在浏览器中渲染；官网样式的 promo
+	// 挂在 /promo/，带登录页，和 web 一样在服务端渲染。main.go 不用改：frontend.Host 按 apps/dist 中的清单托管全部前端。
 	sh("go", "tool", "tenon", "add", "frontend", "admin", "--layout", "frame")
-	sh("go", "tool", "tenon", "add", "frontend", "console")
-	sh("go", "tool", "tenon", "add", "frontend", "promo", "--layout", "site")
+	sh("go", "tool", "tenon", "add", "frontend", "console", "--login", "split")
+	sh("go", "tool", "tenon", "add", "frontend", "promo", "--layout", "site", "--login", "centered")
 
 	// 刚 clone 的项目没有 apps/dist（被 .gitignore 忽略）和生成的客户端：generate 先写前端的清单再编译应用。
 	for _, p := range []string{"apps/dist", "packages/client/src/api"} {
@@ -131,7 +131,7 @@ func TestInitEndToEnd(t *testing.T) {
 	}
 	// 只在浏览器中渲染的前端：Go 返回页面外壳，带本次请求的 nonce；服务端渲染的 promo 由它的 SSR 进程渲染。
 	for url, title := range map[string]string{base + "/admin/": "admin", base + "/admin/users/42": "admin", base + "/console/login": "console",
-		base + "/promo/": "promo"} {
+		base + "/promo/": "promo", base + "/promo/login": "promo"} {
 		page := getHTML(t, url)
 		prefix := "/" + title + "/assets/"
 		if !strings.Contains(page, "<title>"+title+"</title>") || !strings.Contains(page, prefix) || strings.Contains(page, "__tenon_csp_nonce__") {

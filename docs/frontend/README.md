@@ -19,7 +19,7 @@
 
 按钮、输入框、弹窗这些基础组件直接用 Mantine，图表用 [`@mantine/charts`](https://mantine.dev/charts/getting-started/)，`@go-tenon/ui` 中没有对应的一层。
 
-上层只引用下层。区块和功能在同一层，但互相不引用：布局只描述界面的样子，不知道通知、后台任务这些功能；把它们组合起来的是你的应用。`tenon init` 生成的项目就是这样一个组合：它选定一种布局和一种样式预设，把 `UserMenu` 放进布局，登录页在 `CenteredAuthLayout` 中放 `LoginForm`。布局、登录页的样式和样式预设互相独立，换掉其中一个不影响其他的；通知菜单这类功能由你按需放进布局的参数或插槽。
+上层只引用下层。区块和功能在同一层，但互相不引用：布局只描述界面的样子，不知道通知、后台任务这些功能；把它们组合起来的是你的应用。`tenon add frontend` 生成的前端就是这样一个组合：布局（`--layout`）、登录页（`--login`）、样式预设（`--preset`）和渲染方式（`--render`）各选一种，把 `UserMenu` 放进布局，把 `LoginForm` 放进登录页的布局。这几个维度互相独立，换掉其中一个不影响其他的，见 [tenon add frontend](../installation/tooling.md#add-frontend)；通知菜单这类功能由你按需放进布局的参数或插槽。
 
 写页面时按这个顺序读：
 

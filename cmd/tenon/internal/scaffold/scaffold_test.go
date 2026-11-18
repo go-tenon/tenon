@@ -91,33 +91,52 @@ func TestGoVersionMatchesFramework(t *testing.T) {
 
 func TestWriteFrontend(t *testing.T) {
 	for _, c := range []struct {
-		style   string
+		name    string
+		f       scaffold.Frontend // 布局、登录页、渲染方式，其余维度按布局取默认值
+		ssr     bool
 		files   map[string]string
 		missing []string
 	}{
-		{"rail", map[string]string{
+		{"rail", scaffold.Frontend{Layout: "rail"}, false, map[string]string{
 			"src/theme.ts":              `preset: "comfortable", primary: "blue-gray" })`,
 			"vite.config.ts":            "plugins: [tenon()],",
 			"src/router.tsx":            "permissions: async () => (await me()).permissions ?? []",
 			"src/routes/_app.tsx":       `<RailLayout title="后台" user=`,
 			"src/routes/_app/index.tsx": `createFileRoute("/_app/")`,
-			"src/routes/login.tsx":      "<LoginForm login={login} redirect={redirect} />",
+			"src/routes/login.tsx":      "<CenteredAuthLayout brand=\"后台\" title=\"登录\">",
 			"src/auth.ts":               "createSession",
 		}, []string{"src/routes/index.tsx"}},
-		{"frame", map[string]string{
+		{"frame", scaffold.Frontend{Layout: "frame"}, false, map[string]string{
 			"src/theme.ts":        `preset: "compact", primary: "blue-gray", datetimeFormat: "MM/DD HH:mm"`,
 			"src/routes/_app.tsx": `<FrameLayout title="后台" tabs user=`,
 		}, nil},
-		{"site", map[string]string{
+		{"site", scaffold.Frontend{Layout: "site"}, true, map[string]string{
 			"src/theme.ts":          `createUiTheme({ preset: "spacious", primary: "blue-gray"`,
-			"src/routes/index.tsx":  `<SiteLayout brand="后台"`,
+			"src/routes/index.tsx":  `actions={<Button size="sm">开始使用</Button>}`,
 			"src/routes/__root.tsx": `import "@fontsource-variable/inter/index.css"`,
 			"package.json":          `"@fontsource-variable/inter"`,
 			"vite.config.ts":        `tenon({ prerender: ["/"] })`,
 		}, []string{"src/auth.ts", "src/routes/login.tsx"}},
+		// 各个维度互相独立：后台的布局可以换登录页、去掉登录、改为服务端渲染，官网可以加上登录。
+		{"rail split", scaffold.Frontend{Layout: "rail", Login: "split"}, false, map[string]string{
+			"src/routes/login.tsx": "<SplitAuthLayout brand=\"后台\" title=\"登录\">",
+		}, nil},
+		{"frame no login", scaffold.Frontend{Layout: "frame", Login: "none"}, false, map[string]string{
+			"src/routes/_app.tsx": `createFileRoute("/_app")({ component: Layout })`,
+		}, []string{"src/auth.ts", "src/routes/login.tsx"}},
+		{"frame ssr", scaffold.Frontend{Layout: "frame", Render: "ssr"}, true, map[string]string{
+			"src/routes/_app.tsx": `({ ssr: false, beforeLoad: requireAuth, component: Layout })`,
+			"vite.config.ts":      "plugins: [tenon()],",
+		}, nil},
+		{"site login", scaffold.Frontend{Layout: "site", Login: "centered"}, true, map[string]string{
+			"src/routes/index.tsx": `<ButtonLink to="/login" size="sm">登录</ButtonLink>`,
+			"src/router.tsx":       "session,",
+			"src/auth.ts":          "createSession",
+		}, nil},
 	} {
 		root := t.TempDir()
-		f := scaffold.Frontend{Scope: "helpdesk", Name: "admin-console", Base: "/admin/", Title: "后台", Layout: c.style}
+		f := c.f
+		f.Scope, f.Name, f.Base, f.Title = "helpdesk", "admin-console", "/admin/", "后台"
 		if err := scaffold.WriteFrontend(root, f); err != nil {
 			t.Fatal(err)
 		}
@@ -132,17 +151,17 @@ func TestWriteFrontend(t *testing.T) {
 		}
 		for name, want := range files {
 			if b, _ := os.ReadFile(filepath.Join(dir, name)); !strings.Contains(string(b), want) {
-				t.Errorf("%s %s missing %q:\n%s", c.style, name, want, b)
+				t.Errorf("%s %s missing %q:\n%s", c.name, name, want, b)
 			}
 		}
-		// 挂载路径和是否服务端渲染写在 package.json 的 tenon 字段中：只有 site 布局在服务端渲染。
-		tenon := fmt.Sprintf(`"tenon": { "base": "/admin/", "ssr": %t },`, c.style == "site")
+		// 挂载路径和是否服务端渲染写在 package.json 的 tenon 字段中。
+		tenon := fmt.Sprintf(`"tenon": { "base": "/admin/", "ssr": %t },`, c.ssr)
 		if b, _ := os.ReadFile(filepath.Join(dir, "package.json")); !strings.Contains(string(b), tenon) {
-			t.Errorf("%s package.json missing %q:\n%s", c.style, tenon, b)
+			t.Errorf("%s package.json missing %q:\n%s", c.name, tenon, b)
 		}
 		for _, name := range c.missing {
 			if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
-				t.Errorf("%s: unexpected %s", c.style, name)
+				t.Errorf("%s: unexpected %s", c.name, name)
 			}
 		}
 		if err := scaffold.WriteFrontend(root, f); err == nil || !strings.Contains(err.Error(), "already exists") {
@@ -152,8 +171,11 @@ func TestWriteFrontend(t *testing.T) {
 	if err := scaffold.WriteFrontend(t.TempDir(), scaffold.Frontend{Name: "x", Layout: "antd"}); err == nil {
 		t.Error("unknown layout accepted")
 	}
-	if err := scaffold.WriteFrontend(t.TempDir(), scaffold.Frontend{Name: "x", Layout: "rail", Preset: "dense"}); err == nil {
-		t.Error("unknown preset accepted")
+	for _, f := range []scaffold.Frontend{{Login: "modal"}, {Preset: "dense"}, {Render: "spa"}} {
+		f.Name, f.Layout = "x", "rail"
+		if err := scaffold.WriteFrontend(t.TempDir(), f); err == nil {
+			t.Errorf("%+v accepted", f)
+		}
 	}
 	// 预设可以和布局分开选。
 	root := t.TempDir()

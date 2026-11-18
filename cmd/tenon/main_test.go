@@ -216,8 +216,10 @@ func TestAddFrontend(t *testing.T) {
 		"add frontend Admin":              "must match",
 		"add frontend ops --base /ops":    "must start and end with /",
 		"add frontend ops --base /":       "apps/web is already mounted at /",
-		"add frontend ops --layout antd":  `--layout "antd" is not one of`,
-		"add frontend ops --preset dense": `--preset "dense" is not one of`,
+		"add frontend ops --layout antd":  `layout "antd" is not one of`,
+		"add frontend ops --login modal":  `login "modal" is not one of`,
+		"add frontend ops --preset dense": `preset "dense" is not one of`,
+		"add frontend ops --render spa":   `render "spa" is not one of`,
 	} {
 		if err := execute(t, strings.Fields(args)...); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%s: err = %v", args, err)

@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router"
-import { CenteredAuthLayout, LoginForm } from "@go-tenon/ui"
+import { [[if eq .Login "split"]]LoginForm, SplitAuthLayout[[else]]CenteredAuthLayout, LoginForm[[end]] } from "@go-tenon/ui"
 import { login } from "../auth"
 
 export const Route = createFileRoute("/login")({
@@ -13,8 +13,8 @@ export const Route = createFileRoute("/login")({
 function Login() {
   const { redirect } = Route.useSearch()
   return (
-    <CenteredAuthLayout brand="[[.Title]]" title="登录">
+    <[[if eq .Login "split"]]SplitAuthLayout[[else]]CenteredAuthLayout[[end]] brand="[[.Title]]" title="登录">
       <LoginForm login={login} redirect={redirect} />
-    </CenteredAuthLayout>
+    </[[if eq .Login "split"]]SplitAuthLayout[[else]]CenteredAuthLayout[[end]]>
   )
 }

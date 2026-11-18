@@ -1,14 +1,15 @@
-import { Button, Container, Stack, Text, Title } from "@mantine/core"
+import { [[if not .HasLogin]]Button, [[end]]Container, Stack, Text, Title } from "@mantine/core"
 import { createFileRoute } from "@tanstack/react-router"
-import { SiteLayout } from "@go-tenon/ui"
+import { [[if .HasLogin]]ButtonLink, [[end]]SiteLayout } from "@go-tenon/ui"
 
-// 首页在构建时预渲染（vite.config.ts 的 prerender），其余页面在请求时服务端渲染。
+[[if .SSR]]// 首页在构建时预渲染（vite.config.ts 的 prerender），其余页面在请求时服务端渲染。
+[[end -]]
 // 这是首页的占位：页头用 SiteLayout，内容换成自己的落地页；文档页用 DocsLayout，见框架文档的“官网与文档站”。
 export const Route = createFileRoute("/")({ component: Home })
 
 function Home() {
   return (
-    <SiteLayout brand="[[.Title]]" actions={<Button size="sm">开始使用</Button>}>
+    <SiteLayout brand="[[.Title]]" actions={[[if .HasLogin]]<ButtonLink to="/login" size="sm">登录</ButtonLink>[[else]]<Button size="sm">开始使用</Button>[[end]]}>
       <Container size="sm" py={96}>
         <Stack gap="md" align="flex-start">
           <Title order={1}>[[.Title]]</Title>
