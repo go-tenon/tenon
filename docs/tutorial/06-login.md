@@ -693,6 +693,7 @@ go run ./cmd/blog user create --name 小明 --email ming@example.com --password 
 import { createSession } from "@go-tenon/client"
 import { apiFetch } from "@go-tenon/start"
 import { createClient } from "@blog/client/api"
+import { createKit } from "@blog/client/api/kit"
 
 // session 记录当前的作者：打开页面、登录后读取 /api/me，没有登录时它返回 401。
 export const session = createSession({ load: async () => ({ account: (await api.user.me()).id }) })
@@ -700,6 +701,9 @@ export const session = createSession({ load: async () => ({ account: (await api.
 // api 是 tenon generate 生成的客户端（src/api），接口改了以后 tenon dev 会自动重新生成。
 // 受保护的接口返回 401 时（登录过期，或者在别处退出了），会话随之变为未登录。
 export const api = createClient({ baseURL: "/api", fetch: apiFetch, session })
+
+// kit 中按身份缓存的查询随会话切换。
+export const kit = createKit(api, { scope: session.scope })
 ```
 
 再把会话交给应用。把 `apps/web/src/router.tsx` 改成下面这样：

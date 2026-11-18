@@ -162,7 +162,15 @@ go tool tenon add frontend admin --layout frame
 
 `--base` 可以指定其他的挂载路径，以 `/` 开头和结尾，不能与已有的前端相同。`apps/admin` 必须还不存在。
 
-`--api` 是登录页调用的 API 的路径，默认 `/api`：生成的 `src/auth.ts` 调用它的 `/auth/login`、`/auth/logout` 和 `/me`。这个前端使用另一套账号、有自己的 API 时写这个 API 的路径，例如运营后台用 `--api /ops/api`，见[运营后台与多租户](../security/saas-example.md)。登录接口注册之前，`auth.ts` 用的是手写的请求，之后可以换成生成的客户端。
+`--api` 是这个前端调用的 API 的路径，默认 `/api`。这个前端使用另一套账号、有自己的 API 时写这个 API 的路径，例如运营后台用 `--api /ops/api`，见[运营后台与多租户](../security/saas-example.md)。生成的文件按这个 API 的客户端（`packages/client/src/<名称>`，名称见[前端与 API 怎样被发现](#conventions)）是否已经生成而不同：
+
+| 情况 | `src/api.ts` | `src/auth.ts` |
+| --- | --- | --- |
+| 客户端已经生成，其中有 `POST /auth/login`、`POST /auth/logout` 和 `GET /me` | 会话 `session`、客户端 `api`、元数据 `kit` | 登录、退出、读取当前用户都调用 `api` 中生成的方法 |
+| 客户端已经生成，其中没有这三个接口 | 客户端 `api`、元数据 `kit`，会话来自 `auth.ts` | 会话，按约定的路径自己发请求 |
+| 客户端还没有生成（API 还没有注册） | 不生成 | 同上 |
+
+没有登录页（`--login none`）时 `api.ts` 中没有会话，也不生成 `auth.ts`。先注册 API 和登录接口、运行一次 `tenon generate`，再加前端，生成的代码就直接调用客户端；之后再注册的，照第一行的写法修改这两个文件。
 
 <a id="add-client"></a>
 ## tenon add client：桌面端等客户端

@@ -161,7 +161,7 @@ func TestWriteFrontend(t *testing.T) {
 			"src/routes/_app/index.tsx": `createFileRoute("/_app/")`,
 			"src/routes/login.tsx":      "<CenteredAuthLayout brand=\"后台\" title=\"登录\">",
 			"src/auth.ts":               "createSession",
-		}, []string{"src/routes/index.tsx"}},
+		}, []string{"src/routes/index.tsx", "src/api.ts"}}, // API 的客户端还没有生成：没有 api.ts
 		{"frame", scaffold.Frontend{Layout: "frame"}, false, map[string]string{
 			"src/theme.ts":        `preset: "compact", primary: "blue-gray", datetimeFormat: "MM/DD HH:mm"`,
 			"src/routes/_app.tsx": `<FrameLayout title="后台" tabs user=`,
@@ -382,5 +382,121 @@ func TestDistIgnore(t *testing.T) {
 	got := git("ls-files", "--others", "--exclude-standard", "apps")
 	if !strings.Contains(got, "apps/dist/.gitignore\n") || strings.Contains(got, "frontends.json") || strings.Contains(got, "index.html") || strings.Contains(got, "a.js") {
 		t.Fatalf("files git would add under apps:\n%s", got)
+	}
+}
+
+// generatedClient 是生成的客户端 api.ts 中与 FindClient 有关的部分：登录、退出在 auth 分组，读取当前用户在 user 分组。
+const generatedClient = `export function createClient(options: ClientOptions) {
+  const rt = new Runtime(options)
+  return {
+    /** operationId 以 auth- 开头的接口。 */
+    auth: {
+      /**
+       * 用邮箱和密码登录
+       *
+       * POST /auth/login
+       */
+      login: (body: LoginBody): Promise<void> =>
+        rt.request<void>({ method: "POST", path: ` + "`/auth/login`" + `, public: true, body }),
+      /**
+       * POST /auth/logout
+       */
+      logout: (): Promise<void> =>
+        rt.request<void>({ method: "POST", path: ` + "`/auth/logout`" + ` }),
+    },
+    user: {
+      /**
+       * GET /me
+       */
+      me: (): Promise<Profile> =>
+        rt.request<Profile>({ method: "GET", path: ` + "`/me`" + ` }),
+    },
+  }
+}
+`
+
+func TestFindClient(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	if _, ok, err := scaffold.FindClient(root, "admin"); ok || err != nil {
+		t.Fatalf("没有生成的客户端：ok=%v err=%v", ok, err)
+	}
+	dir := filepath.Join(root, "packages", "client", "src", "admin")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "api.ts"), []byte(generatedClient), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	calls, ok, err := scaffold.FindClient(root, "admin")
+	if err != nil || !ok {
+		t.Fatalf("ok=%v err=%v", ok, err)
+	}
+	if want := (scaffold.AuthCalls{Login: "auth.login", Logout: "auth.logout", Me: "user.me"}); calls != want {
+		t.Fatalf("%+v，期望 %+v", calls, want)
+	}
+}
+
+func TestWriteFrontendWithClient(t *testing.T) {
+	t.Parallel()
+	read := func(dir, name string) string {
+		b, _ := os.ReadFile(filepath.Join(dir, name))
+		return string(b)
+	}
+	base := scaffold.Frontend{Scope: "helpdesk", Name: "admin", Base: "/admin/", Title: "后台", Layout: "frame", API: "/admin/api", Client: "admin"}
+
+	// 客户端中有登录相关的接口：会话、客户端和 kit 都在 api.ts 中，auth.ts 调用生成的方法。
+	root := t.TempDir()
+	f := base
+	f.Auth = scaffold.AuthCalls{Login: "auth.login", Logout: "auth.logout", Me: "user.me"}
+	if err := scaffold.WriteFrontend(root, f); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(root, "apps", "admin")
+	api, auth := read(dir, "src/api.ts"), read(dir, "src/auth.ts")
+	for _, want := range []string{
+		`import { createClient } from "@helpdesk/client/admin"`,
+		`import { createKit } from "@helpdesk/client/admin/kit"`,
+		"export const session = createSession({ load: async () => ({ account: (await api.user.me()).id }) })",
+		`export const api = createClient({ baseURL: "/admin/api", fetch: apiFetch, session })`,
+		"export const kit = createKit(api, { scope: session.scope })",
+	} {
+		if !strings.Contains(api, want) {
+			t.Errorf("api.ts missing %q:\n%s", want, api)
+		}
+	}
+	for _, want := range []string{`import { api, session } from "./api"`, "api.user.me()", "api.auth.login(values)", "await api.auth.logout()"} {
+		if !strings.Contains(auth, want) {
+			t.Errorf("auth.ts missing %q:\n%s", want, auth)
+		}
+	}
+	if strings.Contains(auth, "send(") || strings.HasPrefix(auth, "\n") || !strings.HasSuffix(auth, "}\n") {
+		t.Errorf("auth.ts:\n%q", auth)
+	}
+
+	// 客户端中没有登录相关的接口：auth.ts 自己发请求，api.ts 用它的会话。
+	root = t.TempDir()
+	if err := scaffold.WriteFrontend(root, base); err != nil {
+		t.Fatal(err)
+	}
+	dir = filepath.Join(root, "apps", "admin")
+	api, auth = read(dir, "src/api.ts"), read(dir, "src/auth.ts")
+	if !strings.Contains(api, `import { session } from "./auth"`) || strings.Contains(api, "createSession") {
+		t.Errorf("api.ts:\n%s", api)
+	}
+	if !strings.Contains(auth, `send("POST", "/auth/login", values)`) || !strings.Contains(auth, "/admin/api${path}") {
+		t.Errorf("auth.ts:\n%s", auth)
+	}
+
+	// 没有登录页：api.ts 中没有会话。
+	root = t.TempDir()
+	f = base
+	f.Login = "none"
+	if err := scaffold.WriteFrontend(root, f); err != nil {
+		t.Fatal(err)
+	}
+	api = read(filepath.Join(root, "apps", "admin"), "src/api.ts")
+	if strings.Contains(api, "session") || !strings.Contains(api, `createClient({ baseURL: "/admin/api", fetch: apiFetch })`) || !strings.Contains(api, "createKit(api)") {
+		t.Errorf("api.ts without login:\n%s", api)
 	}
 }

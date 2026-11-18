@@ -142,6 +142,7 @@ apps/admin/
     ├── start.ts           TanStack Start 的设置
     ├── server.ts          服务端渲染的入口
     ├── theme.ts           样式预设和品牌色
+    ├── api.ts             生成的客户端 api 和元数据 kit
     ├── auth.ts            会话和登录接口
     ├── routes/            文件路由
     ├── features/          按业务领域分组的页面和组件

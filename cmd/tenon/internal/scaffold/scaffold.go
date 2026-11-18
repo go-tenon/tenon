@@ -1,6 +1,6 @@
 // Package scaffold 生成新项目、新前端和新客户端：template/project 是项目，template/frontend 是 apps 中的一个前端
 // （TanStack Start 和 @go-tenon/ui）。前端按几个互相独立的维度组合：template/app 和 template/site 是按布局加上的页面，
-// template/login 是登录页和登录接口。template/client/<种类> 是 clients 中的一个客户端，网页宿主（electron）
+// template/login 是登录页和登录接口，template/api 是调用 API 的客户端（API 的客户端已经生成时加上）。template/client/<种类> 是 clients 中的一个客户端，网页宿主（electron）
 // 另外在它显示的前端中加上 template/consent 的授权页。
 // 每个 .tmpl 文件按参数渲染后写入目标目录，其他文件（例如图标）原样复制；所有文件路径中的模板标记都展开
 // （cmd/[[.Slug]] 写成 cmd/todo）。模板的分隔符是 [[ ]]，与 JSX 的 {{ }} 区分开；gitignore.tmpl 写成 .gitignore。
@@ -44,15 +44,24 @@ type Options struct {
 
 // Frontend 是前端模板的参数。
 type Frontend struct {
-	Scope  string // npm 包名的作用域，与项目根目录 package.json 的 name 相同。
-	Name   string // 前端的名称，即 apps 中的目录名。
-	Base   string // 前端挂载的路径，以 / 开头和结尾，写入 package.json 的 tenon.base。
-	Title  string // 页面标题。
-	Layout string // 布局，见 Layouts；为空时是 rail。
-	Login  string // 登录页的样式，见 Logins；为空时按布局：frame、rail 是 centered，site 是 none。
-	Preset string // 样式预设（@go-tenon/ui 的 Preset），见 Presets；为空时按布局：frame 是 compact，rail 是 comfortable，site 是 spacious。
-	Render string // 渲染方式，见 Renders；为空时按布局：site 是 ssr，frame、rail 是 csr。
-	API    string // 登录页调用的 API 的路径，例如 /admin/api，以 / 开头、不以 / 结尾；为空时是 /api。
+	Scope  string    // npm 包名的作用域，与项目根目录 package.json 的 name 相同。
+	Name   string    // 前端的名称，即 apps 中的目录名。
+	Base   string    // 前端挂载的路径，以 / 开头和结尾，写入 package.json 的 tenon.base。
+	Title  string    // 页面标题。
+	Layout string    // 布局，见 Layouts；为空时是 rail。
+	Login  string    // 登录页的样式，见 Logins；为空时按布局：frame、rail 是 centered，site 是 none。
+	Preset string    // 样式预设（@go-tenon/ui 的 Preset），见 Presets；为空时按布局：frame 是 compact，rail 是 comfortable，site 是 spacious。
+	Render string    // 渲染方式，见 Renders；为空时按布局：site 是 ssr，frame、rail 是 csr。
+	API    string    // 登录页调用的 API 的路径，例如 /admin/api，以 / 开头、不以 / 结尾；为空时是 /api。
+	Client string    // API 生成的 TypeScript 客户端的目录名（packages/client/src/<名称>）；为空时客户端还没有生成，不写 src/api.ts。
+	Auth   AuthCalls // 生成的客户端中登录相关接口的方法，见 FindClient。
+}
+
+// AuthCalls 是生成的客户端中登录相关接口的方法，写成“分组.方法”，例如 auth.login；客户端中没有这个接口时为空。
+type AuthCalls struct {
+	Login  string // POST /auth/login
+	Logout string // POST /auth/logout
+	Me     string // GET /me
 }
 
 // Client 是客户端模板的参数。
@@ -94,6 +103,44 @@ func (f Frontend) SSR() bool { return f.Render == "ssr" }
 
 // HasLogin 报告前端是否有登录页和登录接口。
 func (f Frontend) HasLogin() bool { return f.Login != "none" }
+
+// GeneratedAuth 报告登录、退出和读取当前用户是否调用生成的客户端：前端有登录页，API 的客户端已经生成，
+// 并且其中有这三个接口。否则 src/auth.ts 按约定的路径自己发请求。
+func (f Frontend) GeneratedAuth() bool {
+	return f.HasLogin() && f.Client != "" && f.Auth.Login != "" && f.Auth.Logout != "" && f.Auth.Me != ""
+}
+
+// clientLine 匹配生成的客户端 api.ts 中的三种行：分组的开头（4 个空格缩进）、注释中的“方法 路径”、方法的定义（6 个空格缩进）。
+var clientLine = regexp.MustCompile(`^(?:    (\w+): \{$|\s+\* (GET|POST|PUT|PATCH|DELETE) (\S+)$|      (\w+): )`)
+
+// FindClient 读取项目 root 中名为 name 的 API 生成的 TypeScript 客户端（packages/client/src/<name>/api.ts），
+// 返回其中登录相关接口的方法。客户端还没有生成时 ok 为 false。
+func FindClient(root, name string) (calls AuthCalls, ok bool, err error) {
+	data, err := os.ReadFile(filepath.Join(root, "packages", "client", "src", name, "api.ts"))
+	if errors.Is(err, fs.ErrNotExist) {
+		return calls, false, nil
+	} else if err != nil {
+		return calls, false, err
+	}
+	targets := map[string]*string{"POST /auth/login": &calls.Login, "POST /auth/logout": &calls.Logout, "GET /me": &calls.Me}
+	var group, route string
+	for line := range strings.Lines(string(data)) {
+		m := clientLine.FindStringSubmatch(strings.TrimRight(line, "\n"))
+		switch {
+		case m == nil:
+		case m[1] != "":
+			group, route = m[1], ""
+		case m[2] != "":
+			route = m[2] + " " + m[3]
+		case route != "":
+			if p := targets[route]; p != nil && *p == "" {
+				*p = group + "." + m[4]
+			}
+			route = ""
+		}
+	}
+	return calls, true, nil
+}
 
 // Write 生成项目：一个名为 web 的前端挂在 /（site 布局），带待办事项的示例。dir 必须是空目录或尚未创建。
 func Write(dir string, opts Options) error {
@@ -204,6 +251,11 @@ func writeFrontend(dir string, f Frontend) error {
 	}
 	if err := render(pages, dir, f); err != nil {
 		return err
+	}
+	if f.Client != "" {
+		if err := render("template/api", dir, f); err != nil {
+			return err
+		}
 	}
 	if f.HasLogin() {
 		return render("template/login", dir, f)

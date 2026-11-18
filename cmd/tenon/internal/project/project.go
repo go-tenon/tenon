@@ -380,3 +380,18 @@ func exists(dir, p string) bool {
 	_, err := os.Stat(filepath.Join(dir, filepath.FromSlash(p)))
 	return err == nil
 }
+
+// ClientName 返回 BasePath 为 base 的 API 的 TypeScript 客户端目录名：tenon.json 的 apis 中写了 name 时用它，
+// 否则是 base 中从后往前第一个不是 api、也不是路径参数的段（与 clientgen.DefaultTSDir 相同），例如 /admin/api 是 admin、/api 是 api。
+func (c *Config) ClientName(base string) string {
+	if api := c.APIs[base]; api != nil && api.Name != "" {
+		return api.Name
+	}
+	segs := strings.Split(strings.Trim(base, "/"), "/")
+	for i := len(segs) - 1; i >= 0; i-- {
+		if s := segs[i]; s != "" && s != "api" && !strings.HasPrefix(s, "{") {
+			return s
+		}
+	}
+	return path.Base("/" + strings.Trim(base, "/"))
+}
