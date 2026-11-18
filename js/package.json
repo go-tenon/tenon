@@ -8,7 +8,7 @@
     "ui"
   ],
   "scripts": {
-    "check": "biome check .",
+    "check": "biome check --error-on-warnings .",
     "typecheck": "bun run --filter '@go-tenon/*' typecheck && tsc --noEmit -p playground",
     "test": "vitest run --passWithNoTests",
     "playground": "vite --config playground/vite.config.ts"

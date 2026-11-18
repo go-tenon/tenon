@@ -41,27 +41,6 @@ export function globalFetch(): FetchLike {
   return f.bind(globalThis)
 }
 
-/** 把 headers 转为普通对象，支持普通对象和带 forEach 的 Headers。 */
-export function headerRecord(headers: unknown): Record<string, string> {
-  const out: Record<string, string> = {}
-  if (!headers) return out
-  const h = headers as { forEach?: (cb: (value: string, key: string) => void) => void }
-  if (typeof h.forEach === "function" && !Array.isArray(headers)) {
-    h.forEach((value, key) => {
-      out[key] = value
-    })
-    return out
-  }
-  if (Array.isArray(headers)) {
-    for (const [k, v] of headers as [string, string][]) out[k] = v
-    return out
-  }
-  for (const [k, v] of Object.entries(headers as Record<string, unknown>)) {
-    if (v !== undefined && v !== null) out[k] = String(v)
-  }
-  return out
-}
-
 /** 不经过生成客户端的请求失败时抛出的错误，形状与生成客户端的 ApiError 相同，describeError 照常分类。 */
 export class HttpError extends Error {
   readonly status: number

@@ -307,7 +307,7 @@ function Layout() {
 - 窄屏（小于 48em）时图标栏保留，二级导航是从左侧滑出的抽屉，点击模块打开。
 - 页面的标题、说明和按钮用 [`Page`](#page)；内容区最宽 `maxWidth`（默认 1152px）。
 
-框架的 `js/playground` 中打开 `/console/` 看效果。
+框架的 `js/playground` 中打开 `/rail/` 看效果。
 
 <a id="custom-layouts"></a>
 ## 自己写布局

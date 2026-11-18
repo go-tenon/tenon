@@ -338,7 +338,15 @@ app.storage.get<{ compact: boolean }>("density")
 <a id="playground"></a>
 ## 演示
 
-框架的 `js/playground` 是三套预设的演示：`admin` 和 `FrameLayout`（`/admin/`）、`console` 和 `RailLayout`（`/console/`）、官网（`/`）和文档页（`/docs/getting-started`）、登录页（`/admin/login`）。在框架仓库的 `js` 目录中运行：
+框架的 `js/playground` 是布局、登录页和样式预设的演示：
+
+| 地址 | 布局 | 预设 |
+| --- | --- | --- |
+| `/frame/` | `FrameLayout`，登录页 `/frame/login` 是 `CenteredAuthLayout` | `compact` |
+| `/rail/` | `RailLayout`，登录页 `/rail/login` 是 `SplitAuthLayout` | `comfortable` |
+| `/`、`/docs/getting-started` | `SiteLayout`、`DocsLayout` | `spacious` |
+
+在框架仓库的 `js` 目录中运行：
 
 ```bash
 bun run playground

@@ -25,11 +25,6 @@ export function toTableState(params: Partial<PageParams>): TableState {
   return { pageIndex: Math.max((params.page ?? 1) - 1, 0), pageSize: params.per_page ?? pageDefaults.perPage }
 }
 
-/** 总页数：total 条记录、每页 perPage 条，至少 1 页。 */
-export function pageCount(total: number, perPage: number): number {
-  return Math.max(Math.ceil(total / Math.max(perPage, 1)), 1)
-}
-
 /**
  * 从地址的查询参数中读取分页：不是正整数的值取默认值，per_page 限制在 1 到 100 之间，与服务端接受的范围相同。
  * search 可以是 URLSearchParams 这类带 get 方法的对象，也可以是路由解析出的对象。
