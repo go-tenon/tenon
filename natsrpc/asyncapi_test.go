@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"reflect"
 	"strings"
@@ -35,6 +36,7 @@ type ArticleDTO struct {
 	Title  string        `json:"title" doc:"标题"`
 	Status articleStatus `json:"status"`
 	Author Author        `json:"author"`
+	Source *slog.Source  `json:"source,omitempty"` // 框架以外的类型，名称带包名：SlogSource。
 }
 
 type Author struct {
@@ -177,7 +179,7 @@ func TestAsyncAPIMatchesOpenAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 	asyncapi := asyncAPI(t)
-	for _, name := range []string{"ArticleDTO", "Author", "ArticleStatus"} {
+	for _, name := range []string{"ArticleDTO", "Author", "ArticleStatus", "SlogSource"} {
 		a, b := get(t, openapi, "components", "schemas", name), get(t, asyncapi, "components", "schemas", name)
 		if !reflect.DeepEqual(a, b) {
 			t.Errorf("%s differs:\nOpenAPI  %v\nAsyncAPI %v", name, a, b)

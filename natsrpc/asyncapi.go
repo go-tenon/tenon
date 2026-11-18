@@ -9,10 +9,12 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/nats-io/nats.go/micro"
 
+	"github.com/go-tenon/tenon/contract"
 	"github.com/go-tenon/tenon/identity"
 )
 
-// schemaPrefix 是 AsyncAPI 文档中命名类型的引用前缀，与 OpenAPI 文档相同：同一个 Go 类型在两份文档中名字和结构都相同。
+// schemaPrefix 是 AsyncAPI 文档中命名类型的引用前缀，与 OpenAPI 文档相同；名称同样由 contract.SchemaName 得出，
+// 同一个 Go 类型在两份文档中名字和结构都相同。
 const schemaPrefix = "#/components/schemas/"
 
 // problemSchema 是错误响应体在 components.schemas 中的名字。
@@ -91,7 +93,7 @@ func (s *Server) AsyncAPI() ([]byte, error) {
 	s.mu.Unlock()
 	slices.SortFunc(endpoints, func(a, b *endpoint) int { return strings.Compare(a.spec.Name, b.spec.Name) })
 
-	registry := huma.NewMapRegistry(schemaPrefix, huma.DefaultSchemaNamer)
+	registry := huma.NewMapRegistry(schemaPrefix, contract.SchemaName)
 	channels := map[string]any{}
 	operations := map[string]any{}
 	messages := map[string]any{
