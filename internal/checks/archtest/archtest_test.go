@@ -16,7 +16,7 @@ type layer int
 const (
 	// 基础：错误、身份、配置、日志等，只依赖同层的包。
 	layerFoundation layer = iota + 1
-	// 基础设施：数据库、队列、锁、文件、邮件等，与入口无关。
+	// 基础设施：与入口无关的能力，包括数据库、队列、锁、文件、邮件等外部资源，以及各入口共用的契约和格式。
 	layerInfrastructure
 	// 入口：HTTP API、页面、实时频道和命令行。
 	layerEntry
