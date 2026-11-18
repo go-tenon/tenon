@@ -37,12 +37,12 @@ export const resources = {
     createForm: [
       { name: "title", type: "string", required: true },
       { name: "slug", type: "string", required: true },
-      { name: "tags", type: "array", items: "string", nullable: true },
+      { name: "tags", type: "array", items: "string" },
     ],
     updateForm: [
       { name: "title", type: "string", required: true },
       { name: "slug", type: "string", required: true },
-      { name: "tags", type: "array", items: "string", nullable: true },
+      { name: "tags", type: "array", items: "string" },
     ],
     actions: [
       { name: "publish", operation: ["article", "publish"], permissions: [], confirm: true, danger: false, when: { "status": ["draft"] } },

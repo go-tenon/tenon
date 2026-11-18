@@ -2,7 +2,6 @@ package webhook
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
 	"time"
 
@@ -10,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/uptrace/bun"
 
+	"github.com/go-tenon/tenon/contract"
 	"github.com/go-tenon/tenon/identity"
 	"github.com/go-tenon/tenon/queue"
 )
@@ -75,7 +75,7 @@ func send(ctx context.Context, db bun.IDB, subject identity.Subject, typ string,
 	if len(deliveries) == 0 {
 		return nil
 	}
-	payload, err := json.Marshal(body{Type: typ, Timestamp: now, Data: data})
+	payload, err := contract.MarshalJSON(body{Type: typ, Timestamp: now, Data: data})
 	if err != nil {
 		return errors.Wrapf(err, "webhook: encode %q", typ)
 	}

@@ -2,7 +2,6 @@ package httpx
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -11,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-tenon/tenon/contract"
 	"github.com/go-tenon/tenon/identity"
 )
 
@@ -160,7 +160,7 @@ func (s *Stream) Send(ev Event, data string) error {
 
 // SendJSON 把 v 编码为一行 JSON 发出。
 func (s *Stream) SendJSON(ev Event, v any) error {
-	b, err := json.Marshal(v)
+	b, err := contract.MarshalJSON(v)
 	if err != nil {
 		return err
 	}

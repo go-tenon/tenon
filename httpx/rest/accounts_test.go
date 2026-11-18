@@ -62,7 +62,7 @@ func TestAccounts(t *testing.T) {
 		body   string
 	}{
 		{console, "member:alice", http.StatusOK, `{"subject":"member:alice","permissions":["articles:*"]}`},
-		{console, "staff:alice", http.StatusOK, `{"subject":"staff:alice","permissions":null}`}, // Resolver 为 nil
+		{console, "staff:alice", http.StatusOK, `{"subject":"staff:alice","permissions":[]}`}, // Resolver 为 nil：没有权限，nil 切片编码为 []
 		{console, "customer:alice", http.StatusUnauthorized, ""},
 		{shop, "customer:alice", http.StatusOK, `{"subject":"customer:alice","permissions":["orders:read"]}`},
 		{shop, "member:alice", http.StatusUnauthorized, ""},

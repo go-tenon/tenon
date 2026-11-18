@@ -49,10 +49,7 @@ export const schemas = {
             "items": {
               "type": "string"
             },
-            "type": [
-              "array",
-              "null"
-            ]
+            "type": "array"
           },
           "title": {
             "type": "string"
@@ -118,10 +115,7 @@ export const components = {
         "items": {
           "type": "string"
         },
-        "type": [
-          "array",
-          "null"
-        ]
+        "type": "array"
       },
       "title": {
         "maxLength": 200,

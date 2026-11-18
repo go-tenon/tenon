@@ -166,7 +166,7 @@ func Register[I, O any](s *Server, t Tool, fn func(context.Context, I) (O, error
 		if err != nil {
 			return s.failure(ctx, name, err), nil
 		}
-		text, err := json.Marshal(output)
+		text, err := contract.MarshalJSON(output)
 		if err != nil {
 			return s.failure(ctx, name, err), nil
 		}
