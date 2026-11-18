@@ -315,9 +315,9 @@ oasdiff 只比较请求和响应的结构。schema 改名时结构相同，由�
 包 `github.com/go-tenon/tenon/httpx/rest/clientgen`。
 
 ```go
-func Command(router func() chi.Routes) *cobra.Command
+func Command(router func() chi.Routes, translations ...fs.FS) *cobra.Command
 func Generate(api *rest.API, opts Options) (*Result, error)
 func GenerateTS(api *rest.API, opts TSOptions) (*Result, error)
 ```
 
-`Command` 单独构造 `client` 命令；`Generate`、`GenerateTS` 在代码中生成，例如写自己的生成工具时。
+`Command` 单独构造 `client` 命令，`translations` 与 `httpcmd.Translations` 相同；`Generate`、`GenerateTS` 在代码中生成，例如写自己的生成工具时。

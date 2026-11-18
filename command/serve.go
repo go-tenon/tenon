@@ -32,7 +32,7 @@ const AllParts = "all"
 // 任何一个部分装配失败时，没有部分开始运行。
 //
 // 构造命令时，parts 收到指向零值 D 的指针，只用来列出部分的名字和说明，所以 parts 中只取方法值，不使用依赖。
-// 名字为空、重复或者是 AllParts，以及 Start 为 nil 时 panic。
+// 名字为空、重复、含空白或者是 AllParts，以及 Start 为 nil 时 panic。
 func Serve[C, D any](open func(ctx context.Context, cfg C, stack *cleanup.Stack) (*D, error), parts func(*D) []Part) *cobra.Command {
 	declared := parts(new(D))
 	names := make([]string, 0, len(declared))

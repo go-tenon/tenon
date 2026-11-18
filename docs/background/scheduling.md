@@ -47,7 +47,7 @@ err := sched.Run(ctx) // 一直运行到 ctx 被取消
 <a id="defining-tasks"></a>
 ## 定义任务
 
-`schedule.New` 创建调度器，`Add` 注册任务。名称在调度器中唯一，也是锁名的一部分，最长 `schedule.MaxNameLength`（225）字节：
+`schedule.New` 创建调度器，`Add` 注册任务。名称在调度器中唯一，也是锁名的一部分：
 
 ```go
 sched := schedule.New(locker, cfg.Schedule, nil)

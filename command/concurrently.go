@@ -14,7 +14,7 @@ var ErrStoppedEarly = errors.New("command: stopped before shutdown")
 //
 // 每个函数都收到同一个派生的 ctx：ctx 被取消（通常是收到停止信号），或者任何一个函数返回时，
 // 派生的 ctx 随之取消，其余函数据此平滑停止。在停止之前就返回 nil 的函数视为异常退出，
-// 返回值包含 ErrStoppedEarly，进程以非 0 状态退出，交给 systemd、Kubernetes 等重启。
+// 返回值包含 ErrStoppedEarly，进程以非 0 状态退出，交给 systemd、Docker 等重启。
 // 停止过程中返回的 context.Canceled 不计为错误。
 //
 // 返回值合并了全部错误；没有错误时返回 nil。函数中的 panic 照常向上传递。

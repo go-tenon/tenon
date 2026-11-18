@@ -209,6 +209,7 @@ func Parts(a *App) []command.Part {
 | 命令 | 运行的部分 |
 | --- | --- |
 | `serve` | 全部部分，`Standalone` 的除外 |
+| `serve all` | 与 `serve` 相同，供 systemd 的模板单元（`blog@all`）使用 |
 | `serve http` | 只运行 HTTP 服务；`serve worker`、`serve scheduler` 等同理 |
 
 小型部署只运行 `serve`：一个进程、一份配置、一套资源。业务量增长后改为每个部分一个进程，各自按负载增减实例，代码和配置保持原样。`serve` 也可以部署多个实例：worker 竞争领取任务，调度器通过锁保证[每次触发只执行一次](../background/scheduling.md#multiple-instances)。
@@ -398,6 +399,8 @@ type Part struct {
     Standalone bool
     Start      func(d *Daemon) (run func(context.Context) error, err error)
 }
+
+const AllParts = "all"
 ```
 
 - **参数**
@@ -405,7 +408,7 @@ type Part struct {
     - `parts`：返回全部部分；构造命令时用零值的 `D` 调用，只用来列出名字和说明
 - **返回**：`serve` 命令
 
-`Part` 的 `Name` 是 `serve` 中的名字，`Short` 出现在 `serve --help` 中，`Standalone` 的部分只单独运行；`Start` 装配这个部分并用 `d.Listen` 取得监听端口，返回一直运行到 `ctx` 被取消的函数。名字为空或重复、`Start` 为 `nil` 时 panic。行为见[serve：运行常驻进程](#serve-command)。
+`Part` 的 `Name` 是 `serve` 中的名字，`Short` 出现在 `serve --help` 中，`Standalone` 的部分只单独运行；`Start` 装配这个部分并用 `d.Listen` 取得监听端口，返回一直运行到 `ctx` 被取消的函数。名字为空、重复、含空白或者是 `all`（`command.AllParts`），以及 `Start` 为 `nil` 时 panic。行为见[serve：运行常驻进程](#serve-command)。
 
 ### Run
 
@@ -493,12 +496,13 @@ func ExitCode(err error) int
 包 `github.com/go-tenon/tenon/command/httpcmd`。
 
 ```go
-func Commands(router func() chi.Routes) []*cobra.Command
+func Commands(router func() chi.Routes, opts ...Option) []*cobra.Command
+func Translations(sources ...fs.FS) Option
 func OpenAPI(router func() chi.Routes) *cobra.Command
 func Routes(router func() chi.Routes) *cobra.Command
 ```
 
-`Commands` 返回 `openapi`、`routes` 和 `client` 三个命令。`router` 构造应用的全部路由，通常用默认配置和 `nil` 依赖调用 `serve` 也在用的路由函数，例如 `func() chi.Routes { return routes(config.Default[Config](), nil) }`；三个命令执行时才调用它。
+`Commands` 返回 `openapi`、`routes` 和 `client` 三个命令；`Translations` 传入应用的翻译文件，`client` 命令生成的验证提示和显示文字与服务端相同。`router` 构造应用的全部路由，通常用默认配置和 `nil` 依赖调用 `serve` 也在用的路由函数，例如 `func() chi.Routes { return routes(config.Default[Config](), nil) }`；三个命令执行时才调用它。
 
 ```go
 func Health[C any](http func(C) httpx.Config) *cobra.Command

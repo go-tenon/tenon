@@ -443,10 +443,14 @@ func RequireToken(api *API, validate identity.TokenValidator, permissions ...str
 ```go
 func (a *API) Handler() http.Handler
 func (a *API) Router() chi.Router
-func (a *API) Mode() Mode
+func (a *API) BasePath() string
 func (a *API) OpenAPIJSON() ([]byte, error)
 func (a *API) OpenAPI30JSON() ([]byte, error)
 func (a *API) Endpoints() []Endpoint
+func (a *API) Resource(r Resource)
+func (a *API) Resources() []Resource
+func (a *API) Settings(s Settings)
+func (a *API) SettingsPages() []Settings
 ```
 
-`Handler` 是挂载了全部路由的处理器；`OpenAPIJSON`、`OpenAPI30JSON` 导出 OpenAPI 3.1、3.0 文档；`Endpoints` 列出已注册的路由及其访问策略，`routes` 命令用它。
+`Handler` 是挂载了全部路由的处理器，`Router` 是创建 API 时传入的路由，`BasePath` 是 `Options.BasePath`；`OpenAPIJSON`、`OpenAPI30JSON` 导出 OpenAPI 3.1、3.0 文档；`Endpoints` 列出已注册的路由及其访问策略，`routes` 命令用它。`Resource`、`Settings` 声明后台的资源和设置页面，`Resources`、`SettingsPages` 返回已声明的，见[资源与设置](../frontend/resources.md)。`API` 内嵌 `huma.API`，`OpenAPI()` 等方法来自 Huma。

@@ -111,14 +111,17 @@ webhook-signature: v1,K5oZfzN95Z9UVu1EsfQmfVNQhnkZ2pj9o9NDN/H/pI4=
 <a id="documenting"></a>
 ### 写入接口文档
 
-在注册全部路由的 `bootstrap.Routes`（见[依赖装配](../concepts/dependencies.md#assembling-the-application)）中用 `webhook.Document` 列出全部事件，[openapi 命令](../general/commands.md#openapi-command)导出的文档就会在 `webhooks` 中描述它们：
+在构造路由的 `App.Router`（见[依赖装配](../concepts/dependencies.md#running-parts)）中，创建 API、注册各模块的路由之后，用 `webhook.Document` 列出全部事件，[openapi 命令](../general/commands.md#openapi-command)导出的文档就会在 `webhooks` 中描述它们：
 
 ```go
-func Routes(api *rest.API, validate identity.TokenValidator, db *bun.DB) {
-    article.RegisterRoutes(api, rest.RequireToken(api, validate, "articles"), db)
+router.Route("/api", func(r chi.Router) {
+    api := rest.New(r, rest.Options{Title: "Blog API", Version: "1.0.0", BasePath: "/api"})
+    article.RegisterRoutes(api, rest.RequireToken(api, a.tokens.Validate, "articles"), a.db)
     webhook.Document(api.OpenAPI(), article.Published)
-}
+})
 ```
+
+`router` 是 `Router` 中创建的路由，`a.tokens` 是[令牌存储](../security/api-tokens.md)。
 
 新增事件时记得加到这里；事件名称重复时 `Document` 会 panic。事件内容一旦发布就是租户依赖的接口，修改时的检查见[检查接口变更](../http/clients.md#checking-changes)。
 
