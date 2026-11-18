@@ -105,7 +105,7 @@ if fresh, err := sitemapFresh(ctx); err != nil || fresh {
 return generateSitemap(ctx)
 ```
 
-取得锁之后要再检查一次：等待的请求拿到锁时，前一个请求通常已经生成好了。读缓存时同一个进程内的并发加载由 [cachex](cache.md#hot-keys) 合并。
+取得锁之后要再检查一次：等待的请求拿到锁时，前一个请求通常已经生成好了。读缓存时同一个进程内的并发加载由 [`cache`](cache.md#hot-keys) 包合并。
 
 `Wait` 每 100 毫秒重试一次，`ctx` 取消时立即返回 `ctx` 的错误。
 

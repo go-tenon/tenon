@@ -2,7 +2,7 @@
 
 框架提供的基础库，按需使用。HTTP 接口、后台任务和命令行都可以使用它们。
 
-- [缓存](cache.md)：cachex 与 Memcached
+- [缓存](cache.md)：`cache` 包与 Memcached
 - [原子锁](locks.md)：基于 PostgreSQL 的分布式锁
 - [限流](rate-limiting.md)：按键限制请求或操作的频率
 - [广播](broadcasting.md)：跨实例发布消息

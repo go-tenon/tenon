@@ -4,7 +4,7 @@ Tenon 的缓存建立在 [Memcached](https://memcached.org) 之上。对于查�
 
 Memcached 只做缓存这一件事：内存满了就淘汰最久没用的数据，多个实例共享同一份缓存，缓存丢了也能随时从数据库重建。因此，锁、限流计数这类**必须保留**的数据放在 PostgreSQL 中，见[原子锁](locks.md)和[限流](rate-limiting.md)。
 
-Tenon 不封装 Memcached 客户端，而是直接使用社区的 [gomemcache](https://github.com/bradfitz/gomemcache)。在它之上，`cachex` 包提供“先读缓存，没有就查库再写回”的读取方式，并替你处理热点过期、集中过期和不存在的数据这几个常见问题。
+Tenon 不封装 Memcached 客户端，而是直接使用社区的 [gomemcache](https://github.com/bradfitz/gomemcache)。在它之上，`cache` 包提供“先读缓存，没有就查库再写回”的读取方式，并替你处理热点过期、集中过期和不存在的数据这几个常见问题。
 
 几个术语：**命中**是要读的数据在缓存中，**未命中**是不在、要去查数据库；**过期时间**（TTL）是数据在缓存中保留多久。
 
@@ -93,25 +93,25 @@ stack.MustAdd("memcached", func(context.Context) error { return mc.Close() })
 
 整个应用共享这一个 `mc`，它可以被并发使用。gomemcache 的方法不接收 `ctx`，每次操作的超时由 `Timeout` 控制，默认是 500 毫秒。缓存处在请求的路径上，所以超时应当设得短一些：Memcached 变慢时，与其等它，不如直接查数据库。
 
-接着，为每一种要缓存的值创建一个 `cachex.Cache`。例如文章详情：
+接着，为每一种要缓存的值创建一个 `cache.Cache`。例如文章详情：
 
 ```go
-articles := cachex.New[*article.Article](mc, "app:article:v1:", cfg.Cache.DefaultTTL,
-    cachex.Missing(article.ErrNotFound.New))
+articles := cache.New[*article.Article](mc, "app:article:v1:", cfg.Cache.DefaultTTL,
+    cache.Missing(article.ErrNotFound.New))
 ```
 
-第一个参数是客户端，第二个参数是缓存键的前缀（见[缓存键](#keys-and-serialization)），第三个参数是过期时间。`cachex.Missing` 是可选的，它的作用见[不存在的数据](#hot-keys)。
+第一个参数是客户端，第二个参数是缓存键的前缀（见[缓存键](#keys-and-serialization)），第三个参数是过期时间。`cache.Missing` 是可选的，它的作用见[不存在的数据](#hot-keys)。
 
 然后，把它像数据库一样传给需要它的业务动作：
 
 ```go
-func NewGet(db *bun.DB, articles *cachex.Cache[*Article]) *Get {
+func NewGet(db *bun.DB, articles *cache.Cache[*Article]) *Get {
     return &Get{db: db, articles: articles}
 }
 ```
 
 > [!IMPORTANT]
-> `cachex.New` 遇到 `nil` 客户端会 panic，所以要在入口中创建 `Cache`，再传给模块的 `RegisterRoutes`：[生成 OpenAPI 文档](../http/openapi.md#exporting-openapi)时，`RegisterRoutes` 收到的依赖都是 `nil`。
+> `cache.New` 遇到 `nil` 客户端会 panic，所以要在入口中创建 `Cache`，再传给模块的 `RegisterRoutes`：[生成 OpenAPI 文档](../http/openapi.md#exporting-openapi)时，`RegisterRoutes` 收到的依赖都是 `nil`。
 
 同一种值只创建一个 `Cache`，读取和删除都使用它。
 
@@ -141,7 +141,7 @@ func (a *Get) Handle(ctx context.Context, subject identity.Subject, id uuid.UUID
 }
 ```
 
-注意，传给 `Remember` 的只是文章 ID。`cachex` 会在它前面加上创建时的前缀，实际的缓存键是 `app:article:v1:<id>`。
+注意，传给 `Remember` 的只是文章 ID。`cache` 会在它前面加上创建时的前缀，实际的缓存键是 `app:article:v1:<id>`。
 
 > [!WARNING]
 > 草稿同样会被缓存。所以命中缓存之后，**仍然要检查访问权限**，草稿只返回给作者本人。修改数据时的权限检查使用事务中读取的数据，见[在事务中检查](../security/authorization.md#checking-in-transactions)。
@@ -175,10 +175,10 @@ Memcached 不可用时，每个请求都会遇到读取失败。为了不让日�
 
 **雪崩**：同一批写入的大量缓存在同一时刻过期，数据库瞬间承受所有的加载。`Remember` 写入时会把过期时间随机增加至多 10%，让它们错开过期。
 
-**穿透**：请求一个不存在的 ID 时，每次请求都会查询数据库。在创建 `Cache` 时用 `cachex.Missing` 声明“不存在”的错误，这样的请求也能命中缓存：
+**穿透**：请求一个不存在的 ID 时，每次请求都会查询数据库。在创建 `Cache` 时用 `cache.Missing` 声明“不存在”的错误，这样的请求也能命中缓存：
 
 ```go
-cachex.Missing(article.ErrNotFound.New)
+cache.Missing(article.ErrNotFound.New)
 ```
 
 之后，加载函数返回的错误与它匹配（`errors.Is`）时，这个结果也会被缓存约一分钟，期间直接返回一个新的同类错误。`errorx` 的错误按错误码匹配，所以传入错误模板的 `New` 方法即可，上面的 `find` 保持原样。只有匹配的错误会被缓存。
@@ -236,27 +236,27 @@ tag 是即时一致的：`Invalidate` 返回之后，`Remember` 只返回在它�
 <a id="keys-and-serialization"></a>
 ## 缓存键
 
-一个缓存键建议由四部分组成：命名空间、资源类型、格式版本和资源 ID，例如 `app:article:v1:<id>`。前三部分作为前缀传给 `cachex.New`，读取和删除时只需要传入 ID。每一部分都有它的用处：
+一个缓存键建议由四部分组成：命名空间、资源类型、格式版本和资源 ID，例如 `app:article:v1:<id>`。前三部分作为前缀传给 `cache.New`，读取和删除时只需要传入 ID。每一部分都有它的用处：
 
 - **命名空间**区分不同的应用和部署环境。多个环境共用一个 Memcached 时，它们的缓存各自独立。
 - **格式版本**用于修改缓存内容的结构。把 `v1` 改为 `v2` 后，新代码只读新格式的值，旧的键过期后自然消失。
 - **租户**：多租户应用的键还要带上租户，例如传入 `<tenant>:<id>`，见[缓存、广播与其他资源](../security/tenancy.md#other-resources)。
 
-Memcached 的键最长 250 字节，只能使用可见字符。超出这些限制的键（例如很长的搜索条件）由 `cachex` 自动换成 SHA-256 摘要。值以 JSON 编码保存。
+Memcached 的键最长 250 字节，只能使用可见字符。超出这些限制的键（例如很长的搜索条件）由 `cache` 自动换成 SHA-256 摘要。值以 JSON 编码保存。
 
 <a id="deployment"></a>
 ## 部署
 
-部署时有几件事需要留意。`cachex.Doctor(mc)` 检查每一台服务器都连得上，见[自检](../installation/doctor.md#framework-checks)。
+部署时有几件事需要留意。`cache.Doctor(mc)` 检查每一台服务器都连得上，见[自检](../installation/doctor.md#framework-checks)。
 
-**值的大小。** Memcached 默认单个值最大 1 MB，更大的值会写入失败。这时 `cachex` 记录日志后照常返回加载的结果，相当于没有缓存。如果你要缓存很大的列表，可以只缓存 ID，或者调大 Memcached 的 `-I` 参数。
+**值的大小。** Memcached 默认单个值最大 1 MB，更大的值会写入失败。这时 `cache` 记录日志后照常返回加载的结果，相当于没有缓存。如果你要缓存很大的列表，可以只缓存 ID，或者调大 Memcached 的 `-I` 参数。
 
-**过期时间。** Memcached 按秒计时，`cachex` 会把过期时间向上取整到秒。
+**过期时间。** Memcached 按秒计时，`cache` 会把过期时间向上取整到秒。
 
-**多个节点。** `memcache.New` 传入多个地址时，键按哈希取模分配到各个节点。增减一个节点时，大部分键都会换到别的节点上，相当于一次大面积失效。需要扩缩容时，请改用 `cachex.NewRing` 提供的一致性哈希：
+**多个节点。** `memcache.New` 传入多个地址时，键按哈希取模分配到各个节点。增减一个节点时，大部分键都会换到别的节点上，相当于一次大面积失效。需要扩缩容时，请改用 `cache.NewRing` 提供的一致性哈希：
 
 ```go
-ring, err := cachex.NewRing(cfg.Cache.Servers...)
+ring, err := cache.NewRing(cfg.Cache.Servers...)
 if err != nil {
     return nil, err
 }
@@ -266,7 +266,7 @@ mc := memcache.NewFromSelector(ring)
 这样增加一个节点时，只有约 1/(N+1) 的键会换节点；去掉一个节点时，也只影响它自己的键。节点在环上的位置只由地址字符串决定，所以**所有实例的地址写法必须一致**，顺序则无关紧要。
 
 > [!NOTE]
-> 某个节点不可用时，它负责的键会读写超时，`cachex` 照常从数据库加载，这些键仍然固定在原来的节点上。
+> 某个节点不可用时，它负责的键会读写超时，`cache` 照常从数据库加载，这些键仍然固定在原来的节点上。
 
 **内存。** 内存满时，Memcached 会淘汰最久没用的数据。这正是缓存需要的行为，保持默认配置即可。
 
@@ -276,7 +276,7 @@ mc := memcache.NewFromSelector(ring)
 测试缓存逻辑时，请连接真实的 Memcached。和[数据库测试](../testing/database.md#database-tests)一样，通过环境变量取得服务器的地址，并让每个测试使用随机的前缀，这样并行运行的测试相互隔离：
 
 ```go
-func newTestCache(t *testing.T) *cachex.Cache[*article.Article] {
+func newTestCache(t *testing.T) *cache.Cache[*article.Article] {
     t.Helper()
     addr := os.Getenv("MEMCACHED_TEST_ADDR")
     if addr == "" {
@@ -284,8 +284,8 @@ func newTestCache(t *testing.T) *cachex.Cache[*article.Article] {
     }
     mc := memcache.New(addr)
     t.Cleanup(func() { mc.Close() })
-    return cachex.New[*article.Article](mc, "test:"+rand.Text()+":article:", time.Minute,
-        cachex.Missing(article.ErrNotFound.New))
+    return cache.New[*article.Article](mc, "test:"+rand.Text()+":article:", time.Minute,
+        cache.Missing(article.ErrNotFound.New))
 }
 ```
 
@@ -301,7 +301,7 @@ func newTestCache(t *testing.T) *cachex.Cache[*article.Article] {
 
 **修改了文章，页面上还是旧的内容**
 
-修改后没有删除缓存，或者删除时用的键与读取时不同。读取和删除都用同一个 `cachex.Cache`，见[示例用法](#example-usage)。
+修改后没有删除缓存，或者删除时用的键与读取时不同。读取和删除都用同一个 `cache.Cache`，见[示例用法](#example-usage)。
 
 **Memcached 停了以后，接口变得很慢**
 
@@ -309,7 +309,7 @@ func newTestCache(t *testing.T) *cachex.Cache[*article.Article] {
 
 **生成接口文档时 panic**
 
-`cachex.New` 遇到 `nil` 客户端会 panic。在入口中创建 `Cache`，再传给模块的 `RegisterRoutes`，见[创建客户端](#creating-the-client)。
+`cache.New` 遇到 `nil` 客户端会 panic。在入口中创建 `Cache`，再传给模块的 `RegisterRoutes`，见[创建客户端](#creating-the-client)。
 
 **别人的草稿被返回了**
 
@@ -318,7 +318,7 @@ func newTestCache(t *testing.T) *cachex.Cache[*article.Article] {
 <a id="api-reference"></a>
 ## API 参考
 
-包 `github.com/go-tenon/tenon/cachex`。
+包 `github.com/go-tenon/tenon/cache`。
 
 ### New
 
@@ -391,7 +391,7 @@ func (c *Cache[T]) Invalidate(ctx context.Context, tags ...string) error
 
 ### Client
 
-`cachex` 用到的 Memcached 操作。`*memcache.Client` 实现了这个接口。
+`cache` 用到的 Memcached 操作。`*memcache.Client` 实现了这个接口。
 
 ### NewRing
 

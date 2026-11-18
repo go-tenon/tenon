@@ -258,7 +258,7 @@ rest.Register(api, status, func(ctx context.Context, _ *struct{}) (*DoctorOutput
 
 **`smtp.Doctor(mailer)`**，组名 `smtp`：`connection` 连接服务器，按 `tls` 的设置升级到 TLS，用 `username` 和 `password` 登录，然后断开，不发送邮件。失败时区分四种原因：连不上（地址、端口、防火墙，很多云服务器禁止访问外部的 25 端口）、TLS 方式与端口不符、证书不受信任、用户名或密码被拒绝。
 
-**`cachex.Doctor(mc)`**，组名 `memcached`：`connection` 确认每一台服务器都连得上。连不上时只是提示：缓存不可用时 `Cache` 直接读取数据库，应用照常工作，只是数据库的压力变大。
+**`cache.Doctor(mc)`**，组名 `memcached`：`connection` 确认每一台服务器都连得上。连不上时只是提示：缓存不可用时 `Cache` 直接读取数据库，应用照常工作，只是数据库的压力变大。
 
 **`gotenberg.Doctor(renderer)`**，组名 `gotenberg`：`health` 确认 Gotenberg 和其中的 Chromium 都在运行；`render` 生成一页很小的 PDF，确认地址、用户名和密码都正确。
 
@@ -354,7 +354,7 @@ func queue.Doctor(db *bun.DB, nc *nats.Conn, cfg queue.Config) doctor.Group
 func filesystem.Doctor(disk filesystem.Disk) doctor.Group
 func s3.Doctor(d *s3.Disk, uploadOrigins ...string) doctor.Group
 func smtp.Doctor(m *smtp.Mailer) doctor.Group
-func cachex.Doctor(mc *memcache.Client) doctor.Group
+func cache.Doctor(mc *memcache.Client) doctor.Group
 func gotenberg.Doctor(r *gotenberg.Renderer) doctor.Group
 func vector.Doctor(s *vector.Store, indexes ...string) doctor.Group
 ```

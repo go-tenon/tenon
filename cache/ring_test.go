@@ -1,4 +1,4 @@
-package cachex_test
+package cache_test
 
 import (
 	"crypto/rand"
@@ -9,11 +9,11 @@ import (
 
 	"github.com/bradfitz/gomemcache/memcache"
 
-	"github.com/go-tenon/tenon/cachex"
+	"github.com/go-tenon/tenon/cache"
 )
 
 // pick 返回每个键所在节点的地址。
-func pick(t *testing.T, r *cachex.Ring, keys []string) []string {
+func pick(t *testing.T, r *cache.Ring, keys []string) []string {
 	t.Helper()
 	got := make([]string, len(keys))
 	for i, k := range keys {
@@ -26,9 +26,9 @@ func pick(t *testing.T, r *cachex.Ring, keys []string) []string {
 	return got
 }
 
-func mustRing(t *testing.T, servers ...string) *cachex.Ring {
+func mustRing(t *testing.T, servers ...string) *cache.Ring {
 	t.Helper()
-	r, err := cachex.NewRing(servers...)
+	r, err := cache.NewRing(servers...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func TestRingInvalid(t *testing.T) {
 		{":11211"},
 		{"10.0.0.1:"},
 	} {
-		if _, err := cachex.NewRing(servers...); err == nil {
+		if _, err := cache.NewRing(servers...); err == nil {
 			t.Errorf("NewRing(%q) succeeded", servers)
 		}
 	}

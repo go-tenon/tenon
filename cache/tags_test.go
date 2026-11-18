@@ -1,4 +1,4 @@
-package cachex_test
+package cache_test
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-tenon/tenon/cachex"
+	"github.com/go-tenon/tenon/cache"
 )
 
 // Invalidate 一个 tag 后，带有它的值重新加载；其他 tag 保持有效，tag 在 Cache 之间共享。
@@ -16,8 +16,8 @@ func TestTags(t *testing.T) {
 	ctx := context.Background()
 	mc := openMemcached(t)
 	ns := "test:" + rand.Text() + ":"
-	articles := cachex.New[*article](mc, ns+"article:", time.Minute)
-	lists := cachex.New[[]int](mc, ns+"list:", time.Minute)
+	articles := cache.New[*article](mc, ns+"article:", time.Minute)
+	lists := cache.New[[]int](mc, ns+"list:", time.Minute)
 	author, all := ns+"author:7", ns+"articles"
 
 	var loads, listLoads atomic.Int64
@@ -65,13 +65,13 @@ func TestTags(t *testing.T) {
 func TestTagEvicted(t *testing.T) {
 	ctx := context.Background()
 	f := newFake()
-	c := cachex.New[*article](f, "article:", time.Minute)
+	c := cache.New[*article](f, "article:", time.Minute)
 	var loads atomic.Int64
 	load := counter(&loads, &article{ID: 1}, nil)
 	if _, err := c.Remember(ctx, "1", load, "t"); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.Delete("cachex:tag:t"); err != nil {
+	if err := f.Delete("cache:tag:t"); err != nil {
 		t.Fatal(err)
 	}
 	// 版本不存在时 Invalidate 直接返回。
@@ -91,7 +91,7 @@ func TestTagEvicted(t *testing.T) {
 // 加载期间 Invalidate：之后的 Remember 发起新的加载，这次加载写入的旧值随即作废。
 func TestInvalidateDuringLoad(t *testing.T) {
 	ctx := context.Background()
-	c := cachex.New[*article](newFake(), "article:", time.Minute)
+	c := cache.New[*article](newFake(), "article:", time.Minute)
 	started, release := make(chan struct{}), make(chan struct{})
 	var loads atomic.Int64
 	stale := func(context.Context) (*article, error) {
@@ -130,7 +130,7 @@ func TestInvalidateDuringLoad(t *testing.T) {
 // Forget 之后的 Remember 不等待 Forget 之前开始的加载。
 func TestForgetDuringLoad(t *testing.T) {
 	ctx := context.Background()
-	c := cachex.New[*article](newFake(), "article:", time.Minute)
+	c := cache.New[*article](newFake(), "article:", time.Minute)
 	started, release := make(chan struct{}), make(chan struct{})
 	go func() {
 		_, _ = c.Remember(ctx, "1", func(context.Context) (*article, error) {
@@ -153,7 +153,7 @@ func TestForgetDuringLoad(t *testing.T) {
 // 「不存在」同样带有 tag 的版本。
 func TestTagsMissing(t *testing.T) {
 	ctx := context.Background()
-	c := cachex.New[*article](newFake(), "article:", time.Minute, cachex.Missing(errNotFound))
+	c := cache.New[*article](newFake(), "article:", time.Minute, cache.Missing(errNotFound))
 	var loads atomic.Int64
 	for range 2 {
 		if _, err := c.Remember(ctx, "404", counter(&loads, nil, errNotFound()), "t"); !errors.Is(err, errNotFound()) {
@@ -182,7 +182,7 @@ func TestTagFailures(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			f := newFake()
 			fail(f)
-			c := cachex.New[*article](f, "article:", time.Minute)
+			c := cache.New[*article](f, "article:", time.Minute)
 			var loads atomic.Int64
 			for range 2 {
 				if got, err := c.Remember(ctx, "1", counter(&loads, &article{ID: 1}, nil), "t"); err != nil || got.ID != 1 {
@@ -196,7 +196,7 @@ func TestTagFailures(t *testing.T) {
 	}
 
 	f := newFake()
-	c := cachex.New[*article](f, "article:", time.Minute)
+	c := cache.New[*article](f, "article:", time.Minute)
 	if _, err := c.Remember(ctx, "1", counter(new(atomic.Int64), &article{ID: 1}, nil), "a", "b"); err != nil {
 		t.Fatal(err)
 	}

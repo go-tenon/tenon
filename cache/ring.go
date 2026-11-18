@@ -1,4 +1,4 @@
-package cachex
+package cache
 
 import (
 	"cmp"
@@ -17,7 +17,7 @@ const replicas = 160
 
 // Ring 用一致性哈希把键分到多个 Memcached 节点，实现 memcache.ServerSelector，传给 memcache.NewFromSelector：
 //
-//	ring, err := cachex.NewRing(cfg.Cache.Servers...)
+//	ring, err := cache.NewRing(cfg.Cache.Servers...)
 //	mc := memcache.NewFromSelector(ring)
 //
 // 和 memcache.New 的取模分片相比，增加一个节点时只有约 1/(N+1) 的键换到新节点，去掉一个节点时只有它的键换到别的节点。
@@ -38,13 +38,13 @@ type point struct {
 // servers 为空、地址无法解析或有重复时返回错误。
 func NewRing(servers ...string) (*Ring, error) {
 	if len(servers) == 0 {
-		return nil, errors.New("cachex: ring needs at least one server")
+		return nil, errors.New("cache: ring needs at least one server")
 	}
 	r := &Ring{servers: make([]net.Addr, len(servers)), points: make([]point, 0, len(servers)*replicas)}
 	seen := make(map[string]bool, len(servers))
 	for i, s := range servers {
 		if seen[s] {
-			return nil, errors.Newf("cachex: duplicate server %q", s)
+			return nil, errors.Newf("cache: duplicate server %q", s)
 		}
 		seen[s] = true
 		addr, err := parseAddr(s)
@@ -92,10 +92,10 @@ func parseAddr(s string) (net.Addr, error) {
 	}
 	host, port, err := net.SplitHostPort(s)
 	if err != nil {
-		return nil, errors.Wrapf(err, "cachex: server %q", s)
+		return nil, errors.Wrapf(err, "cache: server %q", s)
 	}
 	if host == "" || port == "" {
-		return nil, errors.Newf("cachex: server %q needs host and port", s)
+		return nil, errors.Newf("cache: server %q needs host and port", s)
 	}
 	return addr{"tcp", s}, nil
 }

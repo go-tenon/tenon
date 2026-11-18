@@ -1,4 +1,4 @@
-package cachex_test
+package cache_test
 
 import (
 	"context"
@@ -16,7 +16,7 @@ import (
 
 	"github.com/bradfitz/gomemcache/memcache"
 
-	"github.com/go-tenon/tenon/cachex"
+	"github.com/go-tenon/tenon/cache"
 )
 
 type article struct {
@@ -150,7 +150,7 @@ func counter(n *atomic.Int64, v *article, err error) func(context.Context) (*art
 
 func TestRemember(t *testing.T) {
 	ctx := context.Background()
-	c := cachex.New[*article](openMemcached(t), "test:"+rand.Text()+":article:", 10*time.Minute)
+	c := cache.New[*article](openMemcached(t), "test:"+rand.Text()+":article:", 10*time.Minute)
 	var loads atomic.Int64
 	load := counter(&loads, &article{ID: 1, Title: "hello"}, nil)
 	for range 3 {
@@ -176,7 +176,7 @@ func TestRemember(t *testing.T) {
 // 超过 250 字节或含有空白的 key 以摘要保存，仍然按 key 区分。
 func TestIllegalKeys(t *testing.T) {
 	ctx := context.Background()
-	c := cachex.New[*article](openMemcached(t), "test:"+rand.Text()+":", time.Minute)
+	c := cache.New[*article](openMemcached(t), "test:"+rand.Text()+":", time.Minute)
 	var loads atomic.Int64
 	for i, key := range []string{strings.Repeat("k", 300), strings.Repeat("k", 299) + "x", "with space", "with\nnewline"} {
 		for range 2 {
@@ -194,7 +194,7 @@ func TestIllegalKeys(t *testing.T) {
 func TestLongTTL(t *testing.T) {
 	ctx := context.Background()
 	f := newFake()
-	c := cachex.New[*article](f, "", 60*24*time.Hour)
+	c := cache.New[*article](f, "", 60*24*time.Hour)
 	var loads atomic.Int64
 	if _, err := c.Remember(ctx, "1", counter(&loads, &article{ID: 1}, nil)); err != nil {
 		t.Fatal(err)
@@ -208,7 +208,7 @@ func TestLongTTL(t *testing.T) {
 // 热点键过期时，并发的读取只加载一次，每个调用者得到独立的一份。
 func TestConcurrentLoadsMerge(t *testing.T) {
 	ctx := context.Background()
-	c := cachex.New[*article](newFake(), "", time.Minute)
+	c := cache.New[*article](newFake(), "", time.Minute)
 	var loads atomic.Int64
 	release := make(chan struct{})
 	load := func(context.Context) (*article, error) {
@@ -248,7 +248,7 @@ func TestConcurrentLoadsMerge(t *testing.T) {
 
 // 一个调用者取消只影响它自己，加载继续，其他调用者得到结果。
 func TestCallerCancellation(t *testing.T) {
-	c := cachex.New[*article](newFake(), "", time.Minute)
+	c := cache.New[*article](newFake(), "", time.Minute)
 	started, release := make(chan struct{}), make(chan struct{})
 	var once sync.Once
 	var loadErr atomic.Value
@@ -286,7 +286,7 @@ func TestCallerCancellation(t *testing.T) {
 
 // 加载带着第一个调用者的截止时间。
 func TestLoadDeadline(t *testing.T) {
-	c := cachex.New[*article](newFake(), "", time.Minute)
+	c := cache.New[*article](newFake(), "", time.Minute)
 	want := time.Now().Add(time.Hour)
 	ctx, cancel := context.WithDeadline(context.Background(), want)
 	defer cancel()
@@ -305,7 +305,7 @@ func TestLoadDeadline(t *testing.T) {
 
 func TestLoadErrorsAndPanics(t *testing.T) {
 	ctx := context.Background()
-	c := cachex.New[*article](newFake(), "", time.Minute)
+	c := cache.New[*article](newFake(), "", time.Minute)
 	var loads atomic.Int64
 	boom := errors.New("database down")
 	for range 2 {
@@ -317,7 +317,7 @@ func TestLoadErrorsAndPanics(t *testing.T) {
 		t.Fatalf("errors must not be cached: loaded %d times", loads.Load())
 	}
 	_, err := c.Remember(ctx, "article:2", func(context.Context) (*article, error) { panic("oops") })
-	if err == nil || !strings.HasPrefix(err.Error(), "cachex: panic: oops") {
+	if err == nil || !strings.HasPrefix(err.Error(), "cache: panic: oops") {
 		t.Fatalf("panic: %v", err)
 	}
 }
@@ -326,7 +326,7 @@ func TestLoadErrorsAndPanics(t *testing.T) {
 func TestTTL(t *testing.T) {
 	ctx := context.Background()
 	f := newFake()
-	c := cachex.New[*article](f, "", 10*time.Minute)
+	c := cache.New[*article](f, "", 10*time.Minute)
 	var loads atomic.Int64
 	seen := map[time.Duration]bool{}
 	for i := range 20 {
@@ -361,7 +361,7 @@ func errNotFound() error { return &codeError{"article.not_found"} }
 func TestMissing(t *testing.T) {
 	ctx := context.Background()
 	f := newFake()
-	c := cachex.New[*article](f, "article:", 10*time.Minute, cachex.Missing(errNotFound))
+	c := cache.New[*article](f, "article:", 10*time.Minute, cache.Missing(errNotFound))
 	var loads atomic.Int64
 	notFound := func(context.Context) (*article, error) {
 		loads.Add(1)
@@ -398,7 +398,7 @@ func TestMissing(t *testing.T) {
 	}
 
 	// 没有声明 Missing 的 Cache 把标记当作无法解码的内容，重新加载。
-	plain := cachex.New[*article](f, "article:", 10*time.Minute)
+	plain := cache.New[*article](f, "article:", 10*time.Minute)
 	if got, err := plain.Remember(ctx, "404", counter(&loads, &article{ID: 404}, nil)); err != nil || got.ID != 404 {
 		t.Fatalf("plain got %+v err %v", got, err)
 	}
@@ -408,7 +408,7 @@ func TestMissing(t *testing.T) {
 func TestDegradation(t *testing.T) {
 	ctx := context.Background()
 	f := newFake()
-	c := cachex.New[*article](f, "", time.Minute)
+	c := cache.New[*article](f, "", time.Minute)
 	var loads atomic.Int64
 	load := counter(&loads, &article{ID: 1, Title: "hello"}, nil)
 
@@ -430,9 +430,9 @@ func TestDegradation(t *testing.T) {
 
 func TestInvalidArguments(t *testing.T) {
 	for name, f := range map[string]func(){
-		"nil client":  func() { cachex.New[int](nil, "", time.Minute) },
-		"ttl":         func() { cachex.New[int](newFake(), "", 0) },
-		"nil missing": func() { cachex.Missing(nil) },
+		"nil client":  func() { cache.New[int](nil, "", time.Minute) },
+		"ttl":         func() { cache.New[int](newFake(), "", 0) },
+		"nil missing": func() { cache.Missing(nil) },
 	} {
 		func() {
 			defer func() {
@@ -461,7 +461,7 @@ func TestLogThrottle(t *testing.T) {
 		ctx := context.Background()
 		f := newFake()
 		f.getErr, f.setErr = errors.New("connection refused"), errors.New("connection refused")
-		c := cachex.New[*article](f, "", time.Minute)
+		c := cache.New[*article](f, "", time.Minute)
 		load := func(context.Context) (*article, error) { return &article{ID: 1}, nil }
 		for range 5 {
 			if _, err := c.Remember(ctx, "1", load); err != nil {

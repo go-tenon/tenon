@@ -152,7 +152,7 @@ type Offset[T any] struct {
 
 使用时在方括号中写出具体的类型，例如 `page.Offset[ArticleDTO]` 是“一页文章”，`Items` 的类型就是 `[]ArticleDTO`。`any` 表示任何类型都可以。
 
-读到 `func New[T any](client *memcache.Client) *Cache[T]` 这样的签名时，可以这样理解：`New` 创建一个缓存，缓存中保存的值的类型由你决定，例如 `cachex.New[Profile](client)` 创建保存 `Profile` 的缓存，取出的值直接就是 `Profile`，不需要再做类型转换。
+读到 `func New[T any](client *memcache.Client) *Cache[T]` 这样的签名时，可以这样理解：`New` 创建一个缓存，缓存中保存的值的类型由你决定，例如 `cache.New[Profile](client)` 创建保存 `Profile` 的缓存，取出的值直接就是 `Profile`，不需要再做类型转换。
 
 <a id="embed"></a>
 ## embed：把文件编译进程序
