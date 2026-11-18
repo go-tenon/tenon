@@ -73,10 +73,12 @@ func TestInitEndToEnd(t *testing.T) {
 	for f, wants := range map[string][]string{
 		"AGENTS.md": {"# Todo\n", "- `apps/admin`：挂在 `/admin/`", "- `clients/admin-desktop`：electron 客户端，显示 `apps/admin`。",
 			"| Mantine | ", "| Electron | ", "## 代码约定"},
-		".tenon/docs/README.md": {"# Tenon 文档"},
-		".mcp.json":             {`"gopls"`, `"mantine"`},
-		".codex/config.toml":    {"[mcp_servers.gopls]"},
-		".cursor/mcp.json":      {`"mantine"`},
+		".tenon/docs/README.md":                  {"# Tenon 文档"},
+		".mcp.json":                              {`"gopls"`, `"mantine"`},
+		".codex/config.toml":                     {"[mcp_servers.gopls]"},
+		".cursor/mcp.json":                       {`"mantine"`},
+		".claude/skills/tenon-electron/SKILL.md": {"name: tenon-electron"},
+		".agents/skills/tenon-frontend/SKILL.md": {"name: tenon-frontend"},
 	} {
 		b, err := os.ReadFile(filepath.Join(dir, f))
 		if err != nil {

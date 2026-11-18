@@ -94,6 +94,7 @@ func TestConfigFile(t *testing.T) {
 		``:                            project.DefaultTargets,
 		`, "agents": {}`:              project.DefaultTargets,
 		`, "agents": {"targets": []}`: {},
+		`, "agents": {"skip": ["tenon-electron"]}`: project.DefaultTargets,
 	} {
 		write(t, dir, "tenon.json", `{"main": "./cmd/web"`+content+`}`)
 		cfg, err := project.Load(dir)

@@ -81,6 +81,7 @@ todo/
 ├── package.json           前端的 workspace，以及 dev、build、generate 等脚本
 ├── AGENTS.md              项目说明：怎样运行、提交前检查什么、代码约定；AI 编程助手读它
 ├── .mcp.json              Claude Code 的 MCP 配置（Codex 在 .codex/，Cursor 在 .cursor/）
+├── .claude/skills/        给 AI 编程助手的技能（Codex 读 .agents/skills/）
 ├── config/app.yaml        应用的配置，例如监听地址
 ├── cmd/todo/main.go       程序的入口
 ├── internal/todo/todo.go  待办事项：类型、数据（保存在内存中）和四个接口

@@ -1,6 +1,6 @@
 // Package agents 实现 tenon agents：让 AI 编程助手（Claude Code、Codex、Cursor）按项目所用的框架版本写代码。
 // 它把框架的文档复制到 DocsDir，改写 AGENTS.md 中由 tenon 维护的一段（框架的版本、文档的位置、前端与客户端、
-// 依赖的版本和给 AI 读的文档），并为 tenon.json 中的每个助手写 MCP 服务的配置。
+// 依赖的版本和给 AI 读的文档、技能），并为 tenon.json 中的每个助手安装技能、写 MCP 服务的配置。
 // AGENTS.md 中这一段以外的内容由项目自己维护，tenon init 生成初稿，之后 tenon agents 不再改动。
 package agents
 
@@ -41,8 +41,8 @@ type Project struct {
 	NPM     map[string]string // 前端和客户端依赖的 npm 包的版本：安装了的是 node_modules 中的版本，否则是 package.json 中写的范围。
 }
 
-// Sync 运行一次 tenon agents：同步 DocsDir，改写 AGENTS.md 中 tenon 的一段，为 cfg 中的每个助手写 MCP 配置，
-// 把做了什么写到 out。
+// Sync 运行一次 tenon agents：同步 DocsDir，改写 AGENTS.md 中 tenon 的一段，为 cfg 中的每个助手安装技能、
+// 写 MCP 配置，把做了什么写到 out。
 func Sync(dir string, cfg *project.Config, out io.Writer) error {
 	fw, err := project.FrameworkDir(dir)
 	if err != nil {
@@ -55,7 +55,17 @@ func Sync(dir string, cfg *project.Config, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if err := WriteFile(dir, p); err != nil {
+	var skills []Skill
+	dirs := SkillDirs(cfg.AgentTargets())
+	if len(dirs) > 0 {
+		if skills, err = Skills(p); err != nil {
+			return err
+		}
+	}
+	if err := WriteFile(dir, p, skills); err != nil {
+		return err
+	}
+	if err := WriteSkills(dir, dirs, skills); err != nil {
 		return err
 	}
 	written, err := WriteMCP(dir, cfg.AgentTargets(), Servers(p))
@@ -63,6 +73,9 @@ func Sync(dir string, cfg *project.Config, out io.Writer) error {
 		return err
 	}
 	fmt.Fprintf(out, "agents: 已更新 %s 中 tenon 的一段，框架文档在 %s", File, DocsDir)
+	if len(dirs) > 0 {
+		fmt.Fprintf(out, "，技能在 %s", strings.Join(dirs, "、"))
+	}
 	if len(written) > 0 {
 		fmt.Fprintf(out, "，MCP 配置：%s", strings.Join(written, "、"))
 	}
@@ -225,8 +238,8 @@ func Servers(p *Project) []Server {
 	return servers
 }
 
-// Block 返回 AGENTS.md 中 tenon 的一段，含 Begin 和 End 两行。
-func Block(p *Project) string {
+// Block 返回 AGENTS.md 中 tenon 的一段，含 Begin 和 End 两行。skills 是为助手安装的技能，列在其中。
+func Block(p *Project, skills []Skill) string {
 	var b strings.Builder
 	w := func(format string, args ...any) { fmt.Fprintf(&b, format+"\n", args...) }
 	w("%s", Begin)
@@ -287,6 +300,17 @@ func Block(p *Project) string {
 		w("| %s | %s | %s |", s.name, version, doc)
 	}
 
+	if len(skills) > 0 {
+		w("")
+		w("## 技能")
+		w("")
+		w("`go tool tenon agents` 在 %s 中安装了这些技能，做对应的事情之前先读它们：", strings.Join(quoted(SkillDirs(p.Config.AgentTargets())), "、"))
+		w("")
+		for _, s := range skills {
+			w("- `%s`：%s。", s.Name, s.Summary())
+		}
+	}
+
 	w("")
 	w("## MCP 服务")
 	w("")
@@ -299,15 +323,24 @@ func Block(p *Project) string {
 	return b.String()
 }
 
-// WriteFile 把项目 dir 的 AGENTS.md 中 Begin 到 End 的一段换成 Block(p)。文件中没有这一段时把它加在末尾，
+// WriteFile 把项目 dir 的 AGENTS.md 中 Begin 到 End 的一段换成 Block(p, skills)。文件中没有这一段时把它加在末尾，
 // 没有这个文件时新建它。
-func WriteFile(dir string, p *Project) error {
+func WriteFile(dir string, p *Project, skills []Skill) error {
 	file := filepath.Join(dir, File)
 	data, err := os.ReadFile(file)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
-	return os.WriteFile(file, []byte(Replace(string(data), Block(p))), 0o644)
+	return os.WriteFile(file, []byte(Replace(string(data), Block(p, skills))), 0o644)
+}
+
+// quoted 给每一项加上反引号。
+func quoted(items []string) []string {
+	out := make([]string, len(items))
+	for i, s := range items {
+		out[i] = "`" + s + "`"
+	}
+	return out
 }
 
 // Replace 把 text 中 Begin 到 End 的一段（这两行各自独占一行）换成 block；没有这一段时把 block 加在末尾，

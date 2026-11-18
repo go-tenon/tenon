@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -31,7 +32,11 @@ func sample() *agents.Project {
 // Block 写出框架的版本、文档的位置、前端与客户端，只列出项目用到的依赖。
 func TestBlock(t *testing.T) {
 	t.Parallel()
-	block := agents.Block(sample())
+	skills, err := agents.Skills(sample())
+	if err != nil {
+		t.Fatal(err)
+	}
+	block := agents.Block(sample(), skills)
 	for _, want := range []string{
 		agents.Begin + "\n", agents.End + "\n",
 		"`github.com/go-tenon/tenon` v0.0.2",
@@ -46,6 +51,7 @@ func TestBlock(t *testing.T) {
 		"| Electron | 45.2.3 |",
 		"| Bun（JavaScript 运行环境） | — |",
 		"- `gopls`：", "- `mantine`：",
+		"## 技能", "`.claude/skills`、`.agents/skills`", "- `tenon-action`：在 Tenon 应用中新增或修改一个业务用例（业务动作）。",
 	} {
 		if !strings.Contains(block, want) {
 			t.Errorf("block missing %q:\n%s", want, block)
@@ -60,8 +66,8 @@ func TestBlock(t *testing.T) {
 	// 没有前端的项目：没有前端一节，也没有 Mantine 的 MCP 服务。
 	p := sample()
 	p.Config.Frontends, p.Config.Clients, p.NPM = nil, nil, map[string]string{}
-	block = agents.Block(p)
-	if strings.Contains(block, "## 前端与客户端") || strings.Contains(block, "mantine") {
+	block = agents.Block(p, nil)
+	if strings.Contains(block, "## 前端与客户端") || strings.Contains(block, "mantine") || strings.Contains(block, "## 技能") {
 		t.Errorf("project without frontends:\n%s", block)
 	}
 }
@@ -190,5 +196,131 @@ func TestSyncDocs(t *testing.T) {
 	}
 	if _, err := os.Stat(stale); err == nil {
 		t.Error("a page removed from the framework is still in .tenon/docs")
+	}
+}
+
+// Skills 按项目的内容和 agents.skip 选出技能：没有前端时不装 tenon-frontend，没有 Electron 客户端时不装 tenon-electron。
+func TestSkills(t *testing.T) {
+	t.Parallel()
+	names := func(p *agents.Project) string {
+		t.Helper()
+		skills, err := agents.Skills(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, s := range skills {
+			out = append(out, s.Name)
+		}
+		return strings.Join(out, " ")
+	}
+	all := "tenon-action tenon-auth tenon-background tenon-database tenon-electron tenon-frontend tenon-http-api tenon-mcp-tools tenon-testing"
+	if got := names(sample()); got != all {
+		t.Errorf("full project: %s", got)
+	}
+	p := sample()
+	p.Config.Frontends, p.Config.Clients = nil, nil
+	if got := names(p); strings.Contains(got, "tenon-frontend") || strings.Contains(got, "tenon-electron") {
+		t.Errorf("project without frontends: %s", got)
+	}
+	p = sample()
+	p.Config.Agents = &project.Agents{Skip: []string{"tenon-mcp-tools"}}
+	if got := names(p); strings.Contains(got, "tenon-mcp-tools") {
+		t.Errorf("skipped skill installed: %s", got)
+	}
+	p.Config.Agents.Skip = []string{"tenon-nothing"}
+	if _, err := agents.Skills(p); err == nil || !strings.Contains(err.Error(), "tenon-nothing") {
+		t.Errorf("unknown skip: %v", err)
+	}
+}
+
+// SkillDirs：Claude Code 读 .claude/skills，Codex 读 .agents/skills，Cursor 两个都读。
+func TestSkillDirs(t *testing.T) {
+	t.Parallel()
+	for targets, want := range map[string]string{
+		"claude codex cursor": ".claude/skills .agents/skills",
+		"claude cursor":       ".claude/skills",
+		"cursor":              ".agents/skills",
+		"codex":               ".agents/skills",
+		"":                    "",
+	} {
+		if got := strings.Join(agents.SkillDirs(strings.Fields(targets)), " "); got != want {
+			t.Errorf("%q: %q, want %q", targets, got, want)
+		}
+	}
+}
+
+// WriteSkills 替换框架的技能，删除框架不再提供的，项目自己的技能保持原样。
+func TestWriteSkills(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	for _, f := range []string{".claude/skills/tenon-old/SKILL.md", ".claude/skills/release/SKILL.md"} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, f)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, f), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	skills, err := agents.Skills(sample())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := agents.WriteSkills(dir, []string{".claude/skills", ".agents/skills"}, skills); err != nil {
+		t.Fatal(err)
+	}
+	for f, exists := range map[string]bool{
+		".claude/skills/tenon-action/SKILL.md":   true,
+		".agents/skills/tenon-frontend/SKILL.md": true,
+		".claude/skills/release/SKILL.md":        true,
+		".claude/skills/tenon-old":               false,
+	} {
+		if _, err := os.Stat(filepath.Join(dir, f)); (err == nil) != exists {
+			t.Errorf("%s exists = %v, want %v", f, err == nil, exists)
+		}
+	}
+}
+
+// 技能、AGENTS.md 的模板和 tenon 的一段中写的 .tenon/docs/<页面>#<锚点> 都存在于框架的 docs 中，
+// 提到的其他技能（技能 `tenon-x`）也存在。改了文档的路径或锚点时，这个测试指出要同步修改的技能。
+func TestSkillReferences(t *testing.T) {
+	t.Parallel()
+	docs := "../../../../docs"
+	ref := regexp.MustCompile(`\.tenon/docs/([A-Za-z0-9_/.-]+\.md)(?:#([a-z0-9-]+))?`)
+	mention := regexp.MustCompile("技能 `(tenon-[a-z-]+)`")
+	all, err := agents.AllSkills()
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]bool{}
+	sources := map[string]string{"block": agents.Block(sample(), all)}
+	for _, s := range all {
+		names[s.Name] = true
+		sources[s.Name] = string(s.Content)
+	}
+	tmpl, err := os.ReadFile("../scaffold/template/project/AGENTS.md.tmpl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sources["AGENTS.md.tmpl"] = string(tmpl)
+	for source, text := range sources {
+		for _, m := range ref.FindAllStringSubmatch(text, -1) {
+			page, err := os.ReadFile(filepath.Join(docs, filepath.FromSlash(m[1])))
+			if err != nil {
+				t.Errorf("%s: %s does not exist", source, m[0])
+				continue
+			}
+			if m[2] != "" && !strings.Contains(string(page), `<a id="`+m[2]+`"></a>`) {
+				t.Errorf("%s: %s has no anchor %q", source, m[1], m[2])
+			}
+		}
+		for _, m := range mention.FindAllStringSubmatch(text, -1) {
+			if !names[m[1]] {
+				t.Errorf("%s mentions skill %s, which does not exist", source, m[1])
+			}
+		}
+	}
+	if len(all) < 9 {
+		t.Errorf("only %d skills", len(all))
 	}
 }
