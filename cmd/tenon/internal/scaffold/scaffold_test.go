@@ -2,6 +2,7 @@ package scaffold_test
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -273,5 +274,31 @@ func TestWriteClient(t *testing.T) {
 	c.Name, c.Frontend, c.Base = "promo-desktop", "promo", "/promo/"
 	if _, err := scaffold.WriteClient(root, c); err == nil || !strings.Contains(err.Error(), "has no login") {
 		t.Errorf("frontend without login: %v", err)
+	}
+}
+
+// 模板中的名称（项目名、标题）不直接与汉字相连：名称是英文时中间要加空格，是中文时不加，模板无法兼顾，
+// 所以写成不把名称嵌在中文句子中的形式，例如标题是名称，正文写“这是一个 Tenon 应用”。
+func TestNamesStandApartFromChinese(t *testing.T) {
+	t.Parallel()
+	touching := regexp.MustCompile(`\p{Han}\[\[\.(Name|Title)\]\]|\[\[\.(Name|Title)\]\]\p{Han}`)
+	templates := os.DirFS("template")
+	err := fs.WalkDir(templates, ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		b, err := fs.ReadFile(templates, p)
+		if err != nil {
+			return err
+		}
+		for i, line := range strings.Split(string(b), "\n") {
+			if touching.MatchString(line) {
+				t.Errorf("%s:%d: a name touches Chinese text: %s", p, i+1, line)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
