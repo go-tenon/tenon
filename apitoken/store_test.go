@@ -396,7 +396,8 @@ func TestTenantBinding(t *testing.T) {
 	s := newStore(t)
 	customer := identity.Subject{ID: "carol", Type: "user", Tenant: "acme"}
 	loginToken := login(t, s, customer, apitoken.Device{})
-	personal := create(t, s, alice, apitoken.Personal{Name: "acme 报表", Scopes: read, Tenant: "globex"})
+	// 在租户中创建的个人访问令牌绑定这个租户。
+	personal := create(t, s, identity.Subject{ID: "alice", Type: "user", Tenant: "globex"}, apitoken.Personal{Name: "globex 报表", Scopes: read})
 	if sub, ok := valid(t, s, loginToken); !ok || sub.Tenant != "acme" {
 		t.Fatalf("login token tenant=%q ok=%v", sub.Tenant, ok)
 	}
@@ -407,6 +408,25 @@ func TestTenantBinding(t *testing.T) {
 	if list, err := s.List(ctx, sub); err != nil || len(list) != 1 || list[0].Tenant != "globex" {
 		t.Fatalf("list=%+v err=%v", list, err)
 	}
+}
+
+// 新令牌不比创建它的凭据更宽：受限的凭据只能在自己的 Scopes 之内创建令牌。
+func TestCreateNarrows(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s := newStore(t)
+	limited := alice
+	limited.Scopes = []string{"articles:*"}
+	for _, scopes := range [][]string{{"*"}, {"articles:read", "comments:read"}} {
+		_, err := s.Create(ctx, limited, apitoken.Personal{Name: "越权", Scopes: scopes})
+		if !errors.Is(err, identity.ErrForbidden) {
+			t.Fatalf("scopes %v: err=%v", scopes, err)
+		}
+	}
+	for _, scopes := range [][]string{{"articles:*"}, {"articles:read"}} {
+		create(t, s, limited, apitoken.Personal{Name: "收窄", Scopes: scopes})
+	}
+	create(t, s, alice, apitoken.Personal{Name: "登录 token 不受限", Scopes: []string{"*"}})
 }
 
 // 不同账号体系中 ID 相同的主体相互独立：列表、撤销都按类型和 ID 一起区分。

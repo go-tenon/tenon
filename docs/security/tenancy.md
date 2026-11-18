@@ -296,17 +296,17 @@ plain, err := customerTokens.Login(ctx, out.Subject, device) // out.Subject.Tena
 <a id="tokens"></a>
 ## 令牌与租户
 
-登录令牌不绑定租户，用户可以带着同一个令牌访问他所属的每个租户。为脚本或集成创建的个人访问令牌通常只应该访问一个租户：
+登录令牌不绑定租户，用户可以带着同一个令牌访问他所属的每个租户。个人访问令牌绑定创建它时请求所在的租户：在 acme 中创建的令牌只能访问 acme，带着它访问其他租户时请求返回 `403`：
 
 ```go
+// sub.Tenant 是 "acme"
 plain, err := tokens.Create(ctx, sub, apitoken.Personal{
     Name:   "acme 报表",
     Scopes: []string{"articles:read"},
-    Tenant: sub.Tenant,
 })
 ```
 
-令牌能做的是用户在该租户中的权限与 `Scopes` 的交集，见 [API 令牌](api-tokens.md#personal-access-tokens)。
+脚本或集成通常只需要访问一个租户，所以在租户中创建令牌即可；在平台本身（`sub.Tenant` 为空）创建的令牌不绑定租户。令牌能做的是用户在该租户中的权限与 `Scopes` 的交集，见 [API 令牌](api-tokens.md#personal-access-tokens)。
 
 <a id="troubleshooting"></a>
 ## 常见问题
