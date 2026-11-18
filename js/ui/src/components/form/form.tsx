@@ -23,8 +23,12 @@ export interface SchemaFormOptions<T> {
  *
  *   const form = useSchemaForm({ schema: schemas.article.create.body, rules: { components, messages }, initialValues })
  *   <form onSubmit={form.onSubmit(save)}><TextInput {...form.getInputProps("title")} /></form>
+ *
+ * T 的约束与 useForm 相同（Record<string, any>）：生成的客户端中请求体是 interface，可以直接作为 T，
+ * 例如 initialValues: { name: "" } as ArticleChanges。
  */
-export function useSchemaForm<T extends Record<string, unknown>>({
+// biome-ignore lint/suspicious/noExplicitAny: 与 @mantine/form 的 useForm 相同的约束，interface 才能满足它
+export function useSchemaForm<T extends Record<string, any>>({
   schema,
   rules,
   initialValues,
