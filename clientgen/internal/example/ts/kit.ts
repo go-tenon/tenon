@@ -14,12 +14,21 @@ export interface KitOptions extends QueryOptions {
   language?: string
 }
 
+/** enums.ts 中的命名类型，例如 ArticleStatus。 */
+export type EnumName = keyof typeof enums
+
+/** 各枚举按语言列出的显示文字。 */
+type Labels = {
+  readonly [name: string]: { readonly labels: { readonly [language: string]: { readonly [value: string]: string } } }
+}
+
 /**
  * 一个 API 的客户端和生成的元数据：查询选项、校验规则、验证提示、枚举、资源和设置。交给 @go-tenon/ui：
  *
  *   export const kit = createKit(api, { scope: session.scope, language: "zh-CN" })
  *   export const articles = resourceModel(kit.resources.article, kit)
  *   useSchemaForm({ schema: kit.schemas.article.create.body, rules: kit, initialValues })
+ *   kit.label("ArticleStatus", article.status) // 枚举取值的显示文字
  */
 export function createKit(client: Client, options: KitOptions = {}) {
   const { language, ...queryOptions } = options
@@ -33,7 +42,33 @@ export function createKit(client: Client, options: KitOptions = {}) {
     resources,
     settings,
     language,
+    /**
+     * 枚举取值的显示文字，例如 label("ArticleStatus", "draft")。语言是 language，没有设置时用浏览器的语言；
+     * 没有这种语言时依次用它的主语言和第一种语言，与资源模型的 display 相同。没有显示文字时返回取值本身。
+     */
+    label(name: EnumName, value: string): string {
+      const all: Labels = enums // 没有枚举时 EnumName 是 never，按名称读取前先放宽类型
+      const byLanguage = all[name]?.labels
+      return (byLanguage && pickLanguage(byLanguage, language ?? browserLanguage())?.[value]) ?? value
+    },
   }
+}
+
+/** 浏览器的语言；服务端渲染时没有。 */
+function browserLanguage(): string | undefined {
+  return typeof navigator === "undefined" ? undefined : navigator.language
+}
+
+/** 按 language 选择一种语言的值：language 本身，没有时它的主语言，再没有时第一种语言。 */
+function pickLanguage<T>(byLanguage: { readonly [language: string]: T }, language?: string): T | undefined {
+  if (language) {
+    if (byLanguage[language]) return byLanguage[language]
+    const primary = language.split("-")[0]
+    const match = Object.keys(byLanguage).find((l) => l === primary || l.split("-")[0] === primary)
+    if (match) return byLanguage[match]
+  }
+  const first = Object.keys(byLanguage)[0]
+  return first ? byLanguage[first] : undefined
 }
 
 export type Kit = ReturnType<typeof createKit>

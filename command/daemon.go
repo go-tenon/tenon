@@ -76,7 +76,7 @@ func NewDaemon(logger *slog.Logger) (*Daemon, error) {
 	return d, nil
 }
 
-// Listen 监听 addr。由升级启动的进程直接取得旧进程交来的同一个 socket。
+// Listen 监听 addr。由升级启动的进程直接取得旧进程交来的同一个 socket。地址已被占用时，错误中说明怎样换一个地址。
 func (d *Daemon) Listen(network, addr string) (net.Listener, error) {
 	var (
 		ln  net.Listener
@@ -87,6 +87,12 @@ func (d *Daemon) Listen(network, addr string) (net.Listener, error) {
 		ln, err = lc.Listen(context.Background(), network, addr)
 	} else {
 		ln, err = d.upg.Listen(network, addr)
+	}
+	if errors.Is(err, syscall.EADDRINUSE) {
+		// 端口被占用是开发时最常见的启动失败，给出改法：通常是另一个实例或另一个项目在用这个端口。
+		return nil, errors.Wrapf(err, "command: listen %s %s: the address is already in use by another process "+
+			"(another instance of this app, or another project); stop it, or listen on another address, "+
+			"e.g. set http.addr in config/local.yaml", network, addr)
 	}
 	return ln, errors.Wrapf(err, "command: listen %s %s", network, addr)
 }

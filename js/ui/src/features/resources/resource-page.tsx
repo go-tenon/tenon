@@ -168,7 +168,10 @@ function ResourceList({
   }))
 
   const actions = model.actions.filter((a) => view.can.action(a.name))
-  const hasRowActions = canUpdate || view.can.delete || actions.length > 0 || !!rowActions
+  // 操作列：能修改或删除，或者这一页至少有一行有可用的操作（声明的操作满足 When，或 rowActions 返回了操作）时才显示。
+  const rowHasActions = (row: ResourceRow) =>
+    actions.some((a) => a.appliesTo(row)) || (rowActions?.(row).length ?? 0) > 0
+  const hasRowActions = canUpdate || view.can.delete || view.rows.some(rowHasActions)
   if (hasRowActions) {
     columns.push({
       accessor: "_actions",

@@ -199,6 +199,10 @@ bun run agents   # 即 go tool tenon agents
 
 修改了前端的依赖，但没有提交更新后的 `bun.lock`。在本地运行 `bun install`，提交 `bun.lock`。
 
+**启动时报 `address already in use`**
+
+应用的端口被另一个进程占用了，常见的是另一个项目或者没有停掉的上一次运行。停掉那个进程，或者让应用监听另一个端口：在 `config/local.yaml` 中改 `http.addr`，例如 `":8082"`。`tenon.json` 中没有写 `url` 时，前端的开发服务器调用的地址跟着变。
+
 **`tenon generate` 报错两个 API 的名称相同**
 
 客户端的目录名默认是 API 地址的最后一段（跳过 `api` 和路径参数），`/api/v1` 和 `/admin/v1` 都叫 `v1`。在 [tenon.json](#configuration) 中给其中一个改名，报错信息中给出了写法，例如 `"apis": {"/admin/v1": {"name": "admin"}}`。
