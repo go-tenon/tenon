@@ -56,8 +56,8 @@ export function useMenuBadge(routeId: string, value: Badge | undefined | null): 
 // ———————————————————————————— 插槽 ————————————————————————————
 
 /**
- * AppLayout 中的插槽：页面往里面放随页面变化的内容。布局自带的部分（标志、搜索、租户切换、用户菜单）
- * 是 AppLayout 的参数，不是插槽。自己写的布局可以用其他名字。
+ * AdminLayout 中的插槽：页面往里面放随页面变化的内容。布局自带的部分（标志、搜索、用户菜单）
+ * 是 AdminLayout 的参数，不是插槽。自己写的布局可以用其他名字。
  */
 export type SlotName =
   | "actions" // 顶栏中的操作

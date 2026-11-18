@@ -845,7 +845,7 @@ go run ./cmd/api user admin --email ming@example.com
 go tool tenon add frontend admin --style admin
 ```
 
-它在 `apps/admin` 中生成登录页、带侧栏和多标签的应用外壳和首页，登录调用的正是第 6 章的 `/api/auth` 接口。后台的页面只在浏览器中渲染，不需要搜索引擎收录。上一节的 `internal/bootstrap/http.go` 已经托管了它的 SSR 进程，并把它挂在 `/admin/`。重新生成客户端：
+它在 `apps/admin` 中生成登录页、带侧栏和多标签的管理后台布局（`AdminLayout`）和首页，登录调用的正是第 6 章的 `/api/auth` 接口。后台的页面只在浏览器中渲染，不需要搜索引擎收录。上一节的 `internal/bootstrap/http.go` 已经托管了它的 SSR 进程，并把它挂在 `/admin/`。重新生成客户端：
 
 ```bash
 go tool tenon generate

@@ -1,12 +1,15 @@
 # 布局与导航
 
-运营后台的页面放在 `AppLayout` 中：顶栏占满整行，左边是标志，中间是多标签（开启时），右边是操作和用户菜单；顶栏下面左侧是页面搜索和按权限过滤的侧栏菜单，右侧是页面，可以开启多标签。这一页介绍 `AppLayout`、顶栏、页面搜索、多标签、租户切换和页面的标题区，最后是自己写布局时用到的导航模型和插槽。
+框架有两个后台类的布局，按界面的样子选择，与使用者是谁无关：
 
-console（SaaS 控制台）有两套布局模板，见[console 的布局](#console-layouts)；官网和文档站用 `SiteLayout`、`DocsLayout`，见[官网与文档站](site.md)。
+- `AdminLayout`：顶栏加侧栏菜单，信息密集，可以开启多标签。适合表格和表单多的后台，例如运营后台、外卖平台给商家用的商家后台、内部系统。
+- `RailLayout`：双栏导航，最左侧是模块的图标栏，旁边是当前模块的二级导航。适合以模块切换为主的应用，例如 SaaS 控制台、聊天工具。
+
+谁能看到哪些页面（权限）、当前属于哪个租户，由应用把后端的逻辑接进来，布局本身不预设这些。这一页先介绍 `AdminLayout`、顶栏、页面搜索、多标签、租户和页面的标题区，然后是 [`RailLayout`](#rail-layout)，最后是自己写布局时用到的导航模型和插槽。官网和文档站用 `SiteLayout`、`DocsLayout`，见[官网与文档站](site.md)。
 
 阅读前需要了解：[搭建前端应用](app.md)。
 
-- [应用外壳](#app-layout)
+- [AdminLayout](#admin-layout)
     - [侧栏菜单与图标](#menu)
     - [页面搜索](#search)
     - [顶栏与插槽](#slots)
@@ -14,20 +17,20 @@ console（SaaS 控制台）有两套布局模板，见[console 的布局](#conso
 - [页面的标题区](#page)
 - [多标签](#tabs)
 - [租户](#tenants)
-- [console 的布局](#console-layouts)
+- [RailLayout](#rail-layout)
 - [自己写布局](#custom-layouts)
 - [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
-<a id="app-layout"></a>
-## 应用外壳
+<a id="admin-layout"></a>
+## AdminLayout
 
-`AppLayout` 放在需要登录的布局路由上，它之下的页面都在其中显示：
+`AdminLayout` 放在需要登录的布局路由上，它之下的页面都在其中显示：
 
 ```tsx title="src/routes/_app.tsx"
 import { useQuery } from "@tanstack/react-query"
 import { createFileRoute } from "@tanstack/react-router"
-import { AppLayout, OperationsMenu, requireAuth, UserMenu } from "@go-tenon/ui"
+import { AdminLayout, OperationsMenu, requireAuth, UserMenu } from "@go-tenon/ui"
 import { api, logout, me } from "../auth"
 
 export const Route = createFileRoute("/_app")({ beforeLoad: requireAuth, component: Layout })
@@ -35,7 +38,7 @@ export const Route = createFileRoute("/_app")({ beforeLoad: requireAuth, compone
 function Layout() {
   const user = useQuery({ queryKey: ["me"], queryFn: me })
   return (
-    <AppLayout
+    <AdminLayout
       title="博客后台"
       tabs
       actions={<OperationsMenu />}
@@ -52,14 +55,14 @@ function Layout() {
 | `actions` | 顶栏中每个页面都有的操作，例如 `NotificationsMenu`、`OperationsMenu` |
 | `search` | 侧栏顶部的[页面搜索](#search)，默认开启；`false` 时不显示 |
 | `tabs` | 开启[多标签](#tabs)：`true` 或者 `TabsOutlet` 的选项，例如 `{ max: 8 }`、`{ home: false }` |
-| `maxWidth` | 内容区的最大宽度，适合表单为主的控制台；运营后台通常铺满 |
+| `maxWidth` | 内容区的最大宽度，例如 1200；默认铺满 |
 
 - 顶栏最左边的按钮把侧栏收起为只有图标的窄栏，状态按账号保存在浏览器中。窄屏（小于 768px）时侧栏是顶栏下面的抽屉，由顶栏的汉堡按钮打开、关闭，打开页面后自动收起。
 - 面包屑在页面的标题上面，由 [`Page`](#page) 显示。
-- 行高、字号、顶栏高度随主题的[样式预设](app.md#presets)：运营后台更紧凑。
+- 行高、字号、顶栏高度随主题的[样式预设](app.md#presets)：`admin` 预设更紧凑。
 - 右下角的[新版本提示](app.md#new-version)已经包含在内。
 
-**区域**用布局路由区分：一组页面共用一个布局，例如 `_app` 用 `AppLayout`，登录页不在 `_app` 之下，用 `AuthLayout`。
+**区域**用布局路由区分：一组页面共用一个布局，例如 `_app` 用 `AdminLayout`，登录页不在 `_app` 之下，用 `AuthLayout`。
 
 <a id="menu"></a>
 ### 侧栏菜单与图标
@@ -97,9 +100,9 @@ useMenuBadge("/_app/notifications", unread) // 组件卸载、值为 0 或空时
 <a id="slots"></a>
 ### 顶栏与插槽
 
-顶栏左边是收起侧栏的按钮（窄屏时是汉堡按钮）和标志，中间是[标签栏](#tabs)（开启多标签时）；右边从左到右是 `actions` 插槽、`actions` 参数、租户切换和 `user`。多租户的应用（`createApp` 设置了 `tenancy`）自动显示租户切换 `TenantSwitcher`，不需要自己放。
+顶栏左边是收起侧栏的按钮（窄屏时是汉堡按钮）和标志，中间是[标签栏](#tabs)（开启多标签时）；右边从左到右是 `actions` 插槽、`actions` 参数和 `user`。
 
-每个页面都有的内容用参数传给 `AppLayout`；某个页面才有的内容由页面用 `Fill` 放进插槽，离开页面时移除：
+每个页面都有的内容用参数传给 `AdminLayout`；某个页面才有的内容由页面用 `Fill` 放进插槽，离开页面时移除：
 
 ```tsx
 function ArticlesPage() {
@@ -128,11 +131,10 @@ function ArticlesPage() {
 | 组件 | 作用 |
 | --- | --- |
 | `UserMenu` | 只显示头像（`avatar`，没有时是 `name` 的首字），菜单中有应用的菜单项（`items`）、配色（亮色、暗色、跟随系统，`colorScheme={false}` 时不显示）、“多标签”的开关（布局开启了多标签时）和退出登录。`logout` 调用应用的退出接口，之后清除会话中的身份；标签中有未保存的修改时先询问 |
-| `TenantSwitcher` | 当前租户的名称，菜单中列出用户所属的全部租户；只有一个租户时只显示名称，不是多租户应用时不显示。`AppLayout` 已经放好 |
 | `NotificationsMenu` | 铃铛和未读数，弹出最近的通知，点击打开并标记已读，见[通知](features.md#notifications) |
 | `OperationsMenu` | 后台任务的进度：导入、导出等耗时的操作。有进行中的任务时显示转动的图标，没有任务时不显示，见[后台操作](features.md#operations) |
 | `LanguageMenu` | 语言切换：图标按钮，菜单中列出 `languages`，当前的 `value` 打勾，选择后调用 `onChange`。换文案、记住选择由应用决定。放在 `actions` 中 |
-| `ColorSchemeToggle` | 亮色和暗色之间切换的图标按钮，自己写布局时用；`AppLayout` 中配色在 `UserMenu` 里 |
+| `ColorSchemeToggle` | 亮色和暗色之间切换的图标按钮，自己写布局时用；`AdminLayout` 中配色在 `UserMenu` 里 |
 
 <a id="page"></a>
 ## 页面的标题区
@@ -179,7 +181,7 @@ function Orders() {
 <a id="tabs"></a>
 ## 多标签
 
-运营后台常用多标签：打开的页面排成一行标签，切换标签时页面保留原来的状态（填了一半的表单、翻到的页、滚动位置）。`AppLayout` 设置 `tabs` 即可开启：标签栏在顶栏中间，从侧栏展开时的边线往右 6px 开始（收起侧栏时标签不动）；布局之下的每个页面是一个标签。
+表格和表单多的后台常用多标签：打开的页面排成一行标签，切换标签时页面保留原来的状态（填了一半的表单、翻到的页、滚动位置）。`AdminLayout` 设置 `tabs` 即可开启：标签栏在顶栏中间，从侧栏展开时的边线往右 6px 开始（收起侧栏时标签不动）；布局之下的每个页面是一个标签。
 
 - 用户可以在头像菜单中关掉多标签，按账号保存；关掉后页面不再保留状态。窄屏时不显示标签栏。
 - 第一次使用（这个账号没有保存过标签）时，菜单的第一个页面作为固定的标签放在最前面；`tabs={{ home: false }}` 时不这样做。
@@ -232,7 +234,7 @@ async function signOut() {
 <a id="tenants"></a>
 ## 租户
 
-多租户应用中，当前租户是会话身份中的 `tenant`。`createApp` 的 `tenancy` 提供租户列表和切换后的去处，顶栏的 `TenantSwitcher` 据此显示租户菜单：
+多租户应用中，当前租户是会话身份中的 `tenant`。`createApp` 的 `tenancy` 提供租户列表和切换后的去处；框架的布局中没有租户菜单，需要时用 `useTenant()` 自己画（见本节最后）：
 
 ```tsx
 createApp({
@@ -272,12 +274,10 @@ export const Route = createFileRoute("/t/$tenant")({
 
 自己画租户菜单时用 `useTenant()`：`{ current, tenant, tenants, switchTo }`，用户选择留下时 `switchTo` 返回 `false`。
 
-<a id="console-layouts"></a>
-## console 的布局
+<a id="rail-layout"></a>
+## RailLayout
 
-console（SaaS 控制台）有两套布局模板：Rail 和 Topbar。
-
-`RailLayout` 是 Rail 模板，双栏导航：最左侧是模块的图标栏（标志、模块、用户菜单），旁边是当前模块的二级导航，右侧是页面。`tenon add frontend --style console` 生成的前端已经这样写好：
+`RailLayout` 是双栏导航的布局：最左侧是模块的图标栏（标志、模块、用户菜单），旁边是当前模块的二级导航，右侧是页面。`tenon add frontend --style console` 生成的前端已经这样写好：
 
 ```tsx title="src/routes/_app.tsx"
 function Layout() {
@@ -299,7 +299,7 @@ function Layout() {
 }
 ```
 
-导航与 `AppLayout` 一样来自路由的 `staticData`（`title`、`icon`、`order`），按权限过滤：
+导航与 `AdminLayout` 一样来自路由的 `staticData`（`title`、`icon`、`order`），按权限过滤：
 
 - 第一级是模块，显示在图标栏中，鼠标移上去显示名称。模块下的页面显示在二级导航中，模块下的分组是二级导航中的一节；只有一个页面的模块（例如首页），二级导航中就是它自己。
 - `settings`（默认 `/settings`）下的页面不进图标栏，从用户菜单进入。这时二级导航是“设置”：顶部一个搜索框，下面按分组列出设置项。分组可以是没有路径的路由，例如 `createRoute({ getParentRoute: () => settings, id: "personal", staticData: { title: "个人" } })`。
@@ -307,12 +307,12 @@ function Layout() {
 - 窄屏（小于 48em）时图标栏保留，二级导航是从左侧滑出的抽屉，点击模块打开。
 - 页面的标题、说明和按钮用 [`Page`](#page)；内容区最宽 `maxWidth`（默认 1152px）。
 
-`TopbarLayout` 是 Topbar 模板，顶部导航，现在是占位，只有顶栏和导航。框架的 `js/playground` 中打开 `/console/` 看 Rail，`/console/?layout=top` 看 Topbar。
+框架的 `js/playground` 中打开 `/console/` 看效果。
 
 <a id="custom-layouts"></a>
 ## 自己写布局
 
-`AppLayout` 不合适时（例如顶部导航的布局），可以自己写一个。布局读取导航模型和布局状态，把插槽放到自己的位置上；页面只往插槽中放内容，不关心当前是哪一种布局，多标签和权限过滤照常工作：
+`AdminLayout` 不合适时（例如顶部导航的布局），可以自己写一个。布局读取导航模型和布局状态，把插槽放到自己的位置上；页面只往插槽中放内容，不关心当前是哪一种布局，多标签和权限过滤照常工作：
 
 ```tsx
 function TopLayout() {
@@ -356,7 +356,7 @@ function TopLayout() {
 
 **页面放进 `Fill` 的按钮没有出现在顶栏**
 
-插槽的名字写错了：`AppLayout` 只有 `actions`、`aside`、`footer` 三个插槽。用户菜单这类每个页面都有的内容是 `AppLayout` 的参数。
+插槽的名字写错了：`AdminLayout` 只有 `actions`、`aside`、`footer` 三个插槽。用户菜单这类每个页面都有的内容是 `AdminLayout` 的参数。
 
 **页面上没有面包屑**
 
@@ -375,12 +375,11 @@ function TopLayout() {
 
 | 名称 | 说明 |
 | --- | --- |
-| `AppLayout` | 应用外壳：`title`、`logo`、`user`、`actions`、`search`、`tabs`、`maxWidth` |
-| `RailLayout` | Rail 模板，双栏导航：`title`、`logo`、`user`、`settings`、`maxWidth` |
-| `TopbarLayout` | Topbar 模板，顶部导航（占位）：`title`、`user` |
+| `AdminLayout` | 顶栏加侧栏菜单的布局：`title`、`logo`、`user`、`actions`、`search`、`tabs`、`maxWidth` |
+| `RailLayout` | 双栏导航的布局：`title`、`logo`、`user`、`settings`、`maxWidth` |
 | `Fill`、`Slot`、`useSlotFilled`、`SlotName` | 插槽 |
 | `SessionBoundary` | 身份变化时重新挂载其中的页面 |
-| `UserMenu`、`TenantSwitcher`、`NotificationsMenu`、`OperationsMenu`、`LanguageMenu`、`ColorSchemeToggle` | 顶栏菜单；`UserMenu` 的选项：`name`、`email`、`avatar`、`logout`、`items`、`colorScheme`、`position` |
+| `UserMenu`、`NotificationsMenu`、`OperationsMenu`、`LanguageMenu`、`ColorSchemeToggle` | 顶栏菜单；`UserMenu` 的选项：`name`、`email`、`avatar`、`logout`、`items`、`colorScheme`、`position` |
 | `Icon`、`useIcon`、`defaultIcons`、`IconsProvider` | 图标名称 |
 | `useMenuBadge(routeId, value)` | 登记菜单项的徽标 |
 | `Page`、`PageTab` | 页面的标题区：`title`、`description`、`actions`、`breadcrumbs`、`crumb`；页内标签 `tabs`（`value`、`label`、`count`、`alert`、`content`） |

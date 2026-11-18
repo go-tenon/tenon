@@ -9,7 +9,7 @@ import { themes } from "./theme"
 
 /** UIProvider 的选项。 */
 export interface UIProviderProps {
-  /** 主题：themes 中的一套，或者 createUiTheme 生成的主题。默认是 SaaS 控制台。 */
+  /** 主题：themes 中的一套，或者 createUiTheme 生成的主题。默认是 console 预设。 */
   theme?: MantineThemeOverride
   /** 默认的配色：auto 跟随系统。用户切换后的选择保存在浏览器中。 */
   defaultColorScheme?: MantineColorScheme

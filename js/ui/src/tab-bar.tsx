@@ -26,7 +26,7 @@ import { Icon } from "./icons"
 import { reloadWithProgress, useContentTransition } from "./page-progress"
 import { type Tabs, type TabView, useTabs } from "./shell"
 
-/** 标签栏，AppLayout 开启多标签时显示在顶栏中间。 */
+/** 标签栏，AdminLayout 开启多标签时显示在顶栏中间。 */
 export function TabBar(): ReactNode {
   const tabs = useTabs()
   const scroller = useRef<HTMLDivElement>(null)

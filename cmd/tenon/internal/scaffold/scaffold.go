@@ -45,8 +45,8 @@ type Frontend struct {
 }
 
 // Styles 是前端可选的样式预设（@go-tenon/ui 的 themes），决定模板的内容：
-//   - console：SaaS 控制台，登录页和双栏导航的布局（RailLayout），页面只在浏览器中渲染；
-//   - admin：运营后台，高密度，登录页和带多标签的应用外壳，页面只在浏览器中渲染；
+//   - console：舒展的样式，登录页和双栏导航的布局（RailLayout），页面只在浏览器中渲染；
+//   - admin：紧凑的样式，登录页和顶栏加侧栏菜单、带多标签的布局（AdminLayout），页面只在浏览器中渲染；
 //   - site：官网和内容站，页面在服务端渲染，首页构建时预渲染。
 var Styles = []string{"console", "admin", "site"}
 
