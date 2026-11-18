@@ -56,6 +56,7 @@ go test ./...       # 包括下文的模块检查
 - `uilayertest`：`@go-tenon/ui` 的分层，见下文“前端包”。`js/ui/src` 下的每个文件都在 `theme`、`app`、`components`、`blocks`、`features` 之一中，相对导入只指向同层或更低层，`blocks` 和 `features` 互相不引用。
 - `i18ntest`：框架用 `errorx.Define` 定义的每个错误码在内置的每种语言中都有翻译。
 - `llmstest`：根目录的 [llms.txt](llms.txt) 与 `docs/README.md` 生成的结果一致，`docs` 中的每一页都列在 `docs/README.md` 中。改了 `docs/README.md` 后在仓库根目录运行 `go run ./internal/llmstxt/gen` 重新生成。llms.txt 是给在线对话的 AI 读的目录（格式见 [llmstxt.org](https://llmstxt.org)），全部文档合成的 `llms-full.txt` 在发布版本时由 [release.yml](.github/workflows/release.yml) 生成，作为 Release 的附件。
+- `agents` 的 `TestSkillReferences`：`cmd/tenon/internal/agents/skills` 中给 AI 编程助手的技能（`tenon init` 装进生成的项目）、项目 `AGENTS.md` 的模板中写的 `.tenon/docs/<页面>#<锚点>` 都存在于 `docs` 中。技能是从文档摘出的步骤和要点，改了文档中的写法、路径或锚点时同步修改对应的技能。
 
 ## 前端包
 

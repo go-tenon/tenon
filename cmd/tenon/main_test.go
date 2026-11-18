@@ -207,15 +207,17 @@ func TestAddFrontend(t *testing.T) {
 		t.Fatal(err, out.String())
 	}
 	for name, want := range map[string]string{
-		"apps/admin/package.json":         `"tenon": { "base": "/admin/", "ssr": false },`,
-		"apps/dist/frontends.json":        `"base": "/admin/",`,
-		"apps/admin/src/theme.ts":         `preset: "comfortable"`,
-		"apps/admin/src/routes/login.tsx": "LoginForm",
-		"package.json":                    `"apps/admin",`,
-		".tenon/js/client/package.json":   `"name": "@go-tenon/client"`,
-		".tenon/docs/README.md":           "# Tenon 文档",
-		"AGENTS.md":                       "- `apps/admin`：挂在 `/admin/`，只在浏览器中渲染。",
-		".mcp.json":                       `"mantine"`,
+		"apps/admin/package.json":                `"tenon": { "base": "/admin/", "ssr": false },`,
+		"apps/dist/frontends.json":               `"base": "/admin/",`,
+		"apps/admin/src/theme.ts":                `preset: "comfortable"`,
+		"apps/admin/src/routes/login.tsx":        "LoginForm",
+		"package.json":                           `"apps/admin",`,
+		".tenon/js/client/package.json":          `"name": "@go-tenon/client"`,
+		".tenon/docs/README.md":                  "# Tenon 文档",
+		"AGENTS.md":                              "- `apps/admin`：挂在 `/admin/`，只在浏览器中渲染。",
+		".mcp.json":                              `"mantine"`,
+		".claude/skills/tenon-frontend/SKILL.md": "name: tenon-frontend",
+		".agents/skills/tenon-action/SKILL.md":   "name: tenon-action",
 	} {
 		if b, _ := os.ReadFile(name); !strings.Contains(string(b), want) {
 			t.Errorf("%s missing %q:\n%s", name, want, b)

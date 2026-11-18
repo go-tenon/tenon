@@ -95,7 +95,8 @@ var DefaultTargets = Targets
 
 // Agents 是 tenon.json 的 agents：tenon agents 为哪些 AI 编程助手写配置。
 type Agents struct {
-	Targets []string `json:"targets"` // AI 编程助手，见 Targets；省略时是 DefaultTargets，空数组时不写任何助手的配置，只维护 AGENTS.md。
+	Targets []string `json:"targets"`        // AI 编程助手，见 Targets；省略时是 DefaultTargets，空数组时不写任何助手的配置，只维护 AGENTS.md。
+	Skip    []string `json:"skip,omitempty"` // 不安装的框架技能，例如 ["tenon-electron"]；项目要改写某个框架技能时，复制一份换个名字，再跳过原来的。
 }
 
 // AgentTargets 返回要接入的 AI 编程助手：tenon.json 中的 agents.targets，没有写时是 DefaultTargets。

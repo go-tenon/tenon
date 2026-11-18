@@ -1,6 +1,6 @@
 # AI 编程助手
 
-Claude Code、Codex、Cursor 这类 AI 编程助手能替你写不少代码，前提是它知道项目的约定，读的是项目所用版本的文档。`tenon init` 生成的项目已经为它们准备好了：根目录的 `AGENTS.md` 写明怎样运行、提交前检查什么、代码按什么约定写；框架的文档复制在项目中，版本与 `go.mod` 一致；Go 的语言服务和 Mantine 的文档服务配置成了 MCP 服务。这一页介绍这些内容是什么、怎样保持更新，以及怎样按自己的需要调整。
+Claude Code、Codex、Cursor 这类 AI 编程助手能替你写不少代码，前提是它知道项目的约定，读的是项目所用版本的文档。`tenon init` 生成的项目已经为它们准备好了：根目录的 `AGENTS.md` 写明怎样运行、提交前检查什么、代码按什么约定写；框架的文档复制在项目中，版本与 `go.mod` 一致；新增业务动作、写接口、加表这类常做的事各有一个技能，写明步骤和要点；Go 的语言服务和 Mantine 的文档服务配置成了 MCP 服务。这一页介绍这些内容是什么、怎样保持更新，以及怎样按自己的需要调整。
 
 阅读前需要了解：[脚手架](scaffolding.md)；[开发工具](tooling.md)。
 
@@ -8,6 +8,7 @@ Claude Code、Codex、Cursor 这类 AI 编程助手能替你写不少代码，�
 - [AGENTS.md](#agents-md)
 - [框架的文档](#framework-docs)
 - [依赖的文档](#dependency-docs)
+- [技能](#skills)
 - [MCP 服务](#mcp-servers)
 - [保持更新](#updating)
 - [选择助手](#choosing-assistants)
@@ -40,7 +41,7 @@ Codex 和 Cursor 的用法相同：在项目目录中打开它们，它们同样
 文件分成两部分：
 
 - **项目自己的约定**：开发环境、常用命令、目录、提交前的检查、编写测试的规则、代码约定（业务动作、注释、函数、错误、前端、接口）。`tenon init` 写出初稿，内容取自 Tenon 框架自己的开发约定。之后它归项目所有，按你的实际情况修改，`tenon` 不会再改动它。
-- **tenon 维护的一段**：夹在 `<!-- tenon:begin -->` 和 `<!-- tenon:end -->` 两行注释之间，写着框架的版本、框架文档的位置、项目中的前端和客户端、依赖的版本和给 AI 读的文档、配置好的 MCP 服务。这一段由 `go tool tenon agents` 生成，不要手改，下次生成时会被覆盖。
+- **tenon 维护的一段**：夹在 `<!-- tenon:begin -->` 和 `<!-- tenon:end -->` 两行注释之间，写着框架的版本、框架文档的位置、项目中的前端和客户端、依赖的版本和给 AI 读的文档、安装的技能、配置好的 MCP 服务。这一段由 `go tool tenon agents` 生成，不要手改，下次生成时会被覆盖。
 
 例如加了一个运营后台以后，tenon 那一段中多出一行：
 
@@ -82,6 +83,37 @@ rg 迁移 .tenon/docs   # 列出讲迁移的文档
 
 网上的文档总是最新的版本。`AGENTS.md` 写明了：两者不一致时以项目的版本为准。Go 的组件大多没有 `llms.txt`，助手用 `go doc` 读与 `go.mod` 一致的版本，例如 `go doc github.com/danielgtaylor/huma/v2.Register`。
 
+<a id="skills"></a>
+## 技能
+
+`AGENTS.md` 每次都会读进助手的上下文，所以只写每次都要遵守的约定。做某件具体的事需要的步骤放在**技能**（skill）中：每个技能是一个目录，里面的 `SKILL.md` 开头写着名称和什么时候用它，助手只在任务与之相符时才读全文。技能是 Claude Code、Codex、Cursor 共用的开放格式（[agentskills.io](https://agentskills.io)）。
+
+`tenon` 为项目安装这些技能：
+
+| 技能 | 什么时候用 |
+| --- | --- |
+| `tenon-action` | 新增或修改业务动作：`Handle` 和 HTTP、队列、命令行、MCP 等入口 |
+| `tenon-http-api` | 写接口：路由、访问策略、输入与验证、响应与分页，改完重新生成客户端 |
+| `tenon-database` | 接入数据库、新建迁移、模型、查询与事务 |
+| `tenon-testing` | 测试业务动作、HTTP 入口和命令 |
+| `tenon-background` | 队列任务和定时任务 |
+| `tenon-auth` | 保护路由、权限、资源归属、角色、登录与令牌 |
+| `tenon-mcp-tools` | 把业务动作作为 MCP 工具提供给应用的用户 |
+| `tenon-frontend` | 写前端页面：路由与菜单、查询、列表与表单、颜色。项目有前端时才安装 |
+| `tenon-electron` | Electron 桌面端。项目有 Electron 客户端时才安装 |
+
+技能只写步骤和要点，细节链接到 `.tenon/docs` 中的文档页，与项目的框架版本一致。例如助手要加一个接口时读到 `tenon-http-api`，它按步骤写输入类型、声明访问策略、在 `routes.go` 中注册，最后运行 `bun run generate`。
+
+Claude Code 从 `.claude/skills` 读取技能，Codex 从 `.agents/skills` 读取，Cursor 两个目录都读。`tenon` 按[选择的助手](#choosing-assistants)写进对应的目录；三个助手都选时两个目录中各有一份，Cursor 中会看到两份同名的技能。技能目录也要提交。
+
+`tenon` 只管理名字以 `tenon-` 开头的技能目录，你自己写的技能放在同样的目录中，`tenon` 不会改动。想改写某个框架的技能时，复制一份换个名字（例如 `acme-frontend`），在 `tenon.json` 中跳过原来的：
+
+```json
+{
+  "agents": { "skip": ["tenon-frontend"] }
+}
+```
+
 <a id="mcp-servers"></a>
 ## MCP 服务
 
@@ -113,7 +145,7 @@ rg 迁移 .tenon/docs   # 列出讲迁移的文档
 <a id="updating"></a>
 ## 保持更新
 
-下面这些变化之后，`AGENTS.md` 中 tenon 的一段和 MCP 配置要跟着更新：
+下面这些变化之后，`AGENTS.md` 中 tenon 的一段、技能和 MCP 配置要跟着更新：
 
 - 升级框架：`go get github.com/go-tenon/tenon@latest`；
 - 加了前端或客户端；
@@ -125,18 +157,18 @@ rg 迁移 .tenon/docs   # 列出讲迁移的文档
 bun run agents   # 即 go tool tenon agents
 ```
 
-它更新 `.tenon/docs`，重新生成 `AGENTS.md` 中 tenon 的一段，改写 MCP 配置。可以反复运行，没有变化时文件保持不变。`tenon add frontend` 和 `tenon add client` 结束时会自动运行一次。运行后用 `git diff` 看一眼变化，再一起提交。
+它更新 `.tenon/docs`，重新生成 `AGENTS.md` 中 tenon 的一段，重新安装技能，改写 MCP 配置。可以反复运行，没有变化时文件保持不变。`tenon add frontend` 和 `tenon add client` 结束时会自动运行一次。运行后用 `git diff` 看一眼变化，再一起提交。
 
 <a id="choosing-assistants"></a>
 ## 选择助手
 
-默认为 Claude Code、Codex、Cursor 三个助手写 MCP 配置。只用其中一部分时，生成项目时用 `--agents` 选择：
+默认为 Claude Code、Codex、Cursor 三个助手安装技能、写 MCP 配置。只用其中一部分时，生成项目时用 `--agents` 选择：
 
 ```bash
 go run github.com/go-tenon/tenon/cmd/tenon@latest init todo --agents claude
 ```
 
-`--agents none` 不写任何助手的配置，`AGENTS.md` 和 `.tenon/docs` 照样生成。选择记在 `tenon.json` 中，之后的 `tenon agents` 按它更新：
+`--agents none` 不安装技能，也不写任何助手的配置，`AGENTS.md` 和 `.tenon/docs` 照样生成。选择记在 `tenon.json` 中，之后的 `tenon agents` 按它更新：
 
 ```json
 {
@@ -144,7 +176,7 @@ go run github.com/go-tenon/tenon/cmd/tenon@latest init todo --agents claude
 }
 ```
 
-已有的项目直接改 `tenon.json`，再运行 `bun run agents`。从列表中去掉的助手，它的配置文件留在原处，不再更新，不需要时自己删除。
+已有的项目直接改 `tenon.json`，再运行 `bun run agents`。从列表中去掉的助手，它的配置文件和技能目录留在原处，不再更新，不需要时自己删除。
 
 <a id="troubleshooting"></a>
 ## 常见问题
@@ -160,6 +192,10 @@ go run github.com/go-tenon/tenon/cmd/tenon@latest init todo --agents claude
 **`AGENTS.md` 中 tenon 的一段还是旧的版本号**
 
 升级框架以后没有运行 `bun run agents`。运行它，提交变化。
+
+**助手没有用技能**
+
+助手按技能开头的 `description` 判断要不要读它。任务描述得太笼统时可能没有匹配上，直接点名，例如“按 tenon-http-api 技能加一个接口”。Claude Code 中输入 `/` 能看到已安装的技能，Codex 中是 `/skills`。
 
 **`tenon agents` 把我写在 tenon 那一段中的内容删掉了**
 
@@ -182,7 +218,7 @@ https://raw.githubusercontent.com/go-tenon/tenon/main/llms.txt
 <a id="mantine-skills"></a>
 ### Mantine 的技能
 
-Mantine 还提供了几个技能（skill）：写给助手的、完成某类任务的详细步骤，例如用 `Combobox` 做自定义的选择框。它们取自 GitHub 上最新的版本，可能与项目中的 Mantine 版本不一致，所以 `tenon` 不默认安装。需要时自己安装：
+Mantine 还提供了几个[技能](#skills)，例如用 `Combobox` 做自定义的选择框。它们取自 GitHub 上最新的版本，可能与项目中的 Mantine 版本不一致，所以 `tenon` 不默认安装。需要时自己安装：
 
 ```bash
 npx skills add https://github.com/mantinedev/skills --skill mantine-combobox
@@ -199,7 +235,7 @@ npx skills add https://github.com/mantinedev/skills --skill mantine-combobox
 go tool tenon agents
 ```
 
-更新 AI 编程助手用到的内容：把项目所用版本的框架文档复制到 `.tenon/docs`；重新生成 `AGENTS.md` 中 `<!-- tenon:begin -->` 到 `<!-- tenon:end -->` 的一段，文件中没有这一段时加在末尾，没有这个文件时新建；为 `tenon.json` 中的每个助手改写 MCP 配置中的 `gopls` 和 `mantine`。没有安装 gopls 时打印安装命令。
+更新 AI 编程助手用到的内容：把项目所用版本的框架文档复制到 `.tenon/docs`；重新生成 `AGENTS.md` 中 `<!-- tenon:begin -->` 到 `<!-- tenon:end -->` 的一段，文件中没有这一段时加在末尾，没有这个文件时新建；为 `tenon.json` 中的每个助手重新安装 `tenon-` 开头的技能，改写 MCP 配置中的 `gopls` 和 `mantine`。没有安装 gopls 时打印安装命令。
 
 ### tenon init --agents
 
@@ -207,10 +243,11 @@ go tool tenon agents
 go run github.com/go-tenon/tenon/cmd/tenon@latest init <dir> --agents claude,codex,cursor
 ```
 
-为哪些助手写 MCP 配置，可选 `claude`、`codex`、`cursor`，默认是全部三个；`none` 表示都不写。与默认不同时写进 `tenon.json`。
+为哪些助手安装技能、写 MCP 配置，可选 `claude`、`codex`、`cursor`，默认是全部三个；`none` 表示都不写。与默认不同时写进 `tenon.json`。
 
 ### tenon.json 的 agents
 
 | 字段 | 默认值 | 说明 |
 | --- | --- | --- |
-| `agents.targets` | `["claude", "codex", "cursor"]` | 写 MCP 配置的助手；空数组时都不写 |
+| `agents.targets` | `["claude", "codex", "cursor"]` | 安装技能、写 MCP 配置的助手；空数组时都不写 |
+| `agents.skip` | 空 | 不安装的框架技能，例如 `["tenon-electron"]` |
