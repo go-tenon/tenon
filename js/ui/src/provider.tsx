@@ -15,7 +15,7 @@ export interface UIProviderProps {
   defaultColorScheme?: MantineColorScheme
   /** 增加或替换图标名称，见 defaultIcons。 */
   icons?: Record<string, IconComponent>
-  /** test 关闭过渡动画和 portal，用于组件测试。 */
+  /** test 关闭过渡动画和 portal，用于应用的组件测试。 */
   env?: "default" | "test"
   children: ReactNode
 }
@@ -24,7 +24,7 @@ export interface UIProviderProps {
  * 安装主题、通知和图标：
  *
  *   import "@go-tenon/ui/styles.css"
- *   <UIProvider theme={themes.admin}><AppRoot app={app} /></UIProvider>
+ *   <UIProvider theme={createUiTheme({ preset: "compact" })}><AppRoot app={app} /></UIProvider>
  */
 export function UIProvider({
   theme = themes.comfortable,

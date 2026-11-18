@@ -20,7 +20,6 @@ import {
   ScrollArea,
   SegmentedControl,
   Stack,
-  Switch,
   Text,
   UnstyledButton,
   useMantineColorScheme,
@@ -28,7 +27,6 @@ import {
 } from "@mantine/core"
 import {
   IconBell,
-  IconBrowser,
   IconCheck,
   IconDeviceDesktop,
   IconLanguage,
@@ -36,7 +34,6 @@ import {
   IconLogout,
   IconMoon,
   IconPalette,
-  IconSelector,
   IconSun,
   IconX,
 } from "@tabler/icons-react"
@@ -50,10 +47,8 @@ import {
   type NotificationsSource,
   type TrackedOperation,
   useApp,
-  useLayoutState,
   useNotifications,
   useOperations,
-  useTenant,
 } from "./shell"
 
 /** 用户菜单中的一项。 */

@@ -120,12 +120,12 @@ const languages = [
   { value: "en", label: "English" },
 ]
 
-function AdminShell(): ReactNode {
+function FrameShell(): ReactNode {
   // 演示：只记下选择，不换文案。
   const [language, setLanguage] = useState("zh-CN")
   return (
     <FrameLayout
-      title="Acme 后台"
+      title="Acme"
       tabs
       actions={
         <>
@@ -197,7 +197,7 @@ function OrdersTable({ rows }: { rows: typeof orders }): ReactNode {
   )
 }
 
-function AdminHome(): ReactNode {
+function FrameHome(): ReactNode {
   const app = useApp()
   useEffect(() => trackOperation(app, { id: "op1", title: "导出 11 月订单", open: progress }), [app])
   return (
@@ -214,7 +214,7 @@ function AdminHome(): ReactNode {
   )
 }
 
-function AdminOrders(): ReactNode {
+function FrameOrders(): ReactNode {
   return (
     <Page
       title="订单"
@@ -238,7 +238,7 @@ function AdminOrders(): ReactNode {
   )
 }
 
-function AdminPlaceholder({ title }: { title: string }): ReactNode {
+function FramePlaceholder({ title }: { title: string }): ReactNode {
   return (
     <Page title={title} description="这个页面还在建设中。">
       <Paper p="xl">
@@ -248,9 +248,9 @@ function AdminPlaceholder({ title }: { title: string }): ReactNode {
   )
 }
 
-function adminApp() {
+function frameApp() {
   const root = createRootRouteWithContext<RouterContext>()({ component: Root })
-  const layout = createRoute({ getParentRoute: () => root, id: "_app", beforeLoad: requireAuth, component: AdminShell })
+  const layout = createRoute({ getParentRoute: () => root, id: "_app", beforeLoad: requireAuth, component: FrameShell })
   let order = 0
   const page = (
     parent: AnyRoute,
@@ -292,13 +292,13 @@ function adminApp() {
   })
   const routeTree = root.addChildren([
     layout.addChildren([
-      page(layout, "/", "概览", "dashboard", AdminHome),
+      page(layout, "/", "概览", "dashboard", FrameHome),
       trade.addChildren([
-        page(trade, "/orders", "订单", "order", AdminOrders),
-        page(trade, "/refunds", "退款", "receipt", () => <AdminPlaceholder title="退款" />),
-        page(trade, "/invoices", "发票", "file-text", () => <AdminPlaceholder title="发票" />),
+        page(trade, "/orders", "订单", "order", FrameOrders),
+        page(trade, "/refunds", "退款", "receipt", () => <FramePlaceholder title="退款" />),
+        page(trade, "/invoices", "发票", "file-text", () => <FramePlaceholder title="发票" />),
       ]),
-      page(layout, "/products", "商品", "product", () => <AdminPlaceholder title="商品" />),
+      page(layout, "/products", "商品", "product", () => <FramePlaceholder title="商品" />),
       // 新建和修改客户是单独的页面：客户列表路由下的 new 和 $id/edit。
       customers.addChildren([
         createRoute({
@@ -312,26 +312,26 @@ function adminApp() {
           component: () => <ResourceFormPage model={customersModel} />,
         }),
       ]),
-      page(layout, "/users", "用户", "users", () => <AdminPlaceholder title="用户" />, "users:manage"),
-      page(layout, "/reports", "报表", "report", () => <AdminPlaceholder title="报表" />),
+      page(layout, "/users", "用户", "users", () => <FramePlaceholder title="用户" />, "users:manage"),
+      page(layout, "/reports", "报表", "report", () => <FramePlaceholder title="报表" />),
       page(layout, "/queue", "队列", "list", () => <QueuePanel api={queueApi} />),
       page(layout, "/schedules", "定时任务", "clock", () => <SchedulePanel api={scheduleApi} />),
-      page(layout, "/billing", "计费", "wallet", () => <AdminPlaceholder title="计费" />, "billing:manage"),
+      page(layout, "/billing", "计费", "wallet", () => <FramePlaceholder title="计费" />, "billing:manage"),
       page(layout, "/settings", "设置", "settings", () => (
         <Page title="设置" description="店铺的基本信息，对所有渠道生效。">
           <SettingsForm model={shopSettings} title={null} />
         </Page>
       )),
     ]),
-    createRoute({ getParentRoute: () => root, path: "/login", component: LoginPage }),
+    createRoute({ getParentRoute: () => root, path: "/login", component: FrameLoginPage }),
   ])
   const app = createApp({
-    id: "playground-admin",
+    id: "playground-frame",
     routeTree,
     session,
     queryClient,
     permissions,
-    router: { basepath: "/admin", defaultErrorComponent: RouteError, defaultNotFoundComponent: NotFoundPage },
+    router: { basepath: "/frame", defaultErrorComponent: RouteError, defaultNotFoundComponent: NotFoundPage },
   })
   return app
 }
@@ -345,7 +345,8 @@ async function* progress(): AsyncIterable<{ event: string; data: OperationLike }
   }
 }
 
-function LoginPage(): ReactNode {
+/** /frame/ 演示的登录页：居中卡片。 */
+function FrameLoginPage(): ReactNode {
   return (
     <CenteredAuthLayout
       brand={
@@ -355,10 +356,10 @@ function LoginPage(): ReactNode {
         </Group>
       }
       title="登录"
-      description="使用工作邮箱登录 Acme 后台。"
+      description="欢迎回来，登录 Acme。"
       footer={
         <>
-          还没有账号？<AnchorLink to="/">联系管理员</AnchorLink>
+          还没有账号？<AnchorLink to="/login">免费注册</AnchorLink>
         </>
       }
     >
@@ -366,7 +367,7 @@ function LoginPage(): ReactNode {
         login={async () =>
           Promise.reject({ status: 401, code: "auth.invalid_credentials", detail: "邮箱或密码不对", fields: [] })
         }
-        forgot={<AnchorLink to="/">忘记密码？</AnchorLink>}
+        forgot={<AnchorLink to="/login">忘记密码？</AnchorLink>}
       />
     </CenteredAuthLayout>
   )
@@ -374,8 +375,7 @@ function LoginPage(): ReactNode {
 
 // ———————————————————————————— RailLayout 和 comfortable 预设 ————————————————————————————
 
-// console 的布局：Rail（双栏导航）。
-function ConsoleShell(): ReactNode {
+function RailShell(): ReactNode {
   return (
     <RailLayout
       title="Acme"
@@ -392,8 +392,8 @@ function ConsoleShell(): ReactNode {
   )
 }
 
-/** /console/ 演示的登录页：左右分栏。 */
-function ConsoleLoginPage(): ReactNode {
+/** /rail/ 演示的登录页：左右分栏。 */
+function RailLoginPage(): ReactNode {
   return (
     <SplitAuthLayout
       brand={
@@ -442,7 +442,7 @@ function ConsoleLoginPage(): ReactNode {
 }
 
 /** RailLayout 中页面的占位。 */
-function ConsolePlaceholder({ title }: { title: string }): ReactNode {
+function RailPlaceholder({ title }: { title: string }): ReactNode {
   return (
     <Page title={title}>
       <Text c="dimmed">页面的占位。</Text>
@@ -450,13 +450,13 @@ function ConsolePlaceholder({ title }: { title: string }): ReactNode {
   )
 }
 
-function consoleApp() {
+function railApp() {
   const root = createRootRouteWithContext<RouterContext>()({ component: Root })
   const layout = createRoute({
     getParentRoute: () => root,
     id: "_app",
     beforeLoad: requireAuth,
-    component: ConsoleShell,
+    component: RailShell,
   })
   // 导航来自路由：第一级是图标栏中的模块，模块下的页面在二级导航中；/settings 下的页面从用户菜单进入，
   // 其中没有路径的分组（个人）是二级导航中的一节。
@@ -465,7 +465,7 @@ function consoleApp() {
       getParentRoute: () => parent,
       path,
       staticData: { title, icon, order },
-      component: () => <ConsolePlaceholder title={title} />,
+      component: () => <RailPlaceholder title={title} />,
     })
   const content = createRoute({
     getParentRoute: () => layout,
@@ -479,7 +479,7 @@ function consoleApp() {
   })
   const personal = createRoute({ getParentRoute: () => settings, id: "personal", staticData: { title: "个人" } })
   const routeTree = root.addChildren([
-    createRoute({ getParentRoute: () => root, path: "/login", component: ConsoleLoginPage }),
+    createRoute({ getParentRoute: () => root, path: "/login", component: RailLoginPage }),
     layout.addChildren([
       page(layout, "/", "首页", "home"),
       content.addChildren([page(content, "/items", "全部", "list"), page(content, "/archive", "归档", "file", 1)]),
@@ -487,11 +487,11 @@ function consoleApp() {
     ]),
   ])
   return createApp({
-    id: "playground-console",
+    id: "playground-rail",
     routeTree,
     session,
     permissions,
-    router: { basepath: "/console", defaultErrorComponent: RouteError, defaultNotFoundComponent: NotFoundPage },
+    router: { basepath: "/rail", defaultErrorComponent: RouteError, defaultNotFoundComponent: NotFoundPage },
   })
 }
 
@@ -514,11 +514,11 @@ function Site(): ReactNode {
       ]}
       actions={
         <>
-          <Button variant="subtle" color="gray" size="sm" component="a" href="/admin/login">
-            登录
+          <Button variant="subtle" color="gray" size="sm" component="a" href="/frame/">
+            FrameLayout
           </Button>
-          <Button size="sm" component="a" href="/console/">
-            免费试用
+          <Button size="sm" component="a" href="/rail/">
+            RailLayout
           </Button>
         </>
       }
@@ -601,14 +601,14 @@ function siteApp() {
 
 // ———————————————————————————— 入口 ————————————————————————————
 
-// 三个演示各用一套预设：/admin/ 是 FrameLayout 和 compact，/console/ 是 RailLayout 和 comfortable，
-// 其余是官网和文档页，用 spacious。
+// 三个演示各用一套预设：/frame/ 是 FrameLayout 和 compact，/rail/ 是 RailLayout 和 comfortable，
+// 其余是 SiteLayout、DocsLayout 和 spacious。
 const path = location.pathname
-const demo = path.startsWith("/admin") ? "admin" : path.startsWith("/console") ? "console" : "site"
-const app: App = demo === "admin" ? adminApp() : demo === "console" ? consoleApp() : siteApp()
-const preset = demo === "admin" ? "compact" : demo === "console" ? "comfortable" : "spacious"
+const demo = path.startsWith("/frame") ? "frame" : path.startsWith("/rail") ? "rail" : "site"
+const app: App = demo === "frame" ? frameApp() : demo === "rail" ? railApp() : siteApp()
+const preset = demo === "frame" ? "compact" : demo === "rail" ? "comfortable" : "spacious"
 // 日期时间的格式是应用的设置：表格多的演示用短格式。
-const datetimeFormat = demo === "admin" ? "MM/DD HH:mm" : undefined
+const datetimeFormat = demo === "frame" ? "MM/DD HH:mm" : undefined
 const scheme = new URLSearchParams(location.search).get("scheme")
 
 /** 按右下角选择的主题色生成主题，换颜色时不重新加载页面。 */

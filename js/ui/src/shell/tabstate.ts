@@ -127,12 +127,6 @@ export function pinFirst(state: TabsState, tab: Omit<TabRecord, "pinned">): Tabs
   return { ...state, tabs: [{ ...tab, ...existing, pinned: true }, ...rest] }
 }
 
-/** 设置页面的标题。 */
-export function titleTab(state: TabsState, key: string, title: string | undefined): TabsState {
-  if (!state.tabs.some((t) => t.key === key && t.customTitle !== title)) return state
-  return { ...state, tabs: state.tabs.map((t) => (t.key === key ? { ...t, customTitle: title } : t)) }
-}
-
 /** 超过 max 个标签时，关闭最久没用的标签；固定的、当前的和 protect 中的（例如有未保存的修改）不关闭。 */
 export function evictTabs(state: TabsState, max: number, protect: ReadonlySet<string> = new Set()): CloseResult {
   const overflow = state.tabs.length - max
