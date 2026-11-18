@@ -192,7 +192,7 @@ func TestGenerate(t *testing.T) {
 }
 
 func TestAddFrontend(t *testing.T) {
-	newProject(t, map[string]string{
+	log := newProject(t, map[string]string{
 		"package.json":            "{\n  \"name\": \"helpdesk\",\n  \"workspaces\": [\"apps/web\", \"packages/client\"]\n}\n",
 		"apps/web/vite.config.ts": "",
 		"apps/web/package.json":   `{"tenon": {"base": "/", "ssr": true}}`,
@@ -221,6 +221,10 @@ func TestAddFrontend(t *testing.T) {
 		if b, _ := os.ReadFile(name); !strings.Contains(string(b), want) {
 			t.Errorf("%s missing %q:\n%s", name, want, b)
 		}
+	}
+	// 安装依赖之后为新的前端生成路由树。
+	if b, _ := os.ReadFile(log); !strings.Contains(string(b), "bun x tenon-start routes @admin") {
+		t.Errorf("route tree not generated:\n%s", b)
 	}
 	if !strings.Contains(out.String(), "已生成 apps/admin，挂在 /admin/，页面只在浏览器中渲染") {
 		t.Errorf("output:\n%s", out.String())

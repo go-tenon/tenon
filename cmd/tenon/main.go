@@ -108,6 +108,12 @@ func initCommand() *cobra.Command {
 				if err := run(cmd, dir, "bun", "install"); err != nil {
 					return err
 				}
+				// 生成路由树，项目第一次提交时就带着它，CI 检查生成的文件时不会缺。
+				for _, f := range cfg.Frontends {
+					if err := run(cmd, filepath.Join(dir, filepath.FromSlash(f.Dir)), "bun", "x", "tenon-start", "routes"); err != nil {
+						return err
+					}
+				}
 			}
 			if err := agents.Sync(dir, cfg, cmd.OutOrStdout()); err != nil {
 				return err
@@ -288,6 +294,9 @@ func addFrontendCommand() *cobra.Command {
 			}
 			if _, err := exec.LookPath("bun"); err == nil {
 				if err := run(cmd, ".", "bun", "install"); err != nil {
+					return err
+				}
+				if err := run(cmd, path.Join(project.AppsDir, name), "bun", "x", "tenon-start", "routes"); err != nil {
 					return err
 				}
 			}

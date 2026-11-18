@@ -1,0 +1,69 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# 两个任务并行：check 是 Go 的检查和测试，以及生成的代码是否已经提交；build 是前端的类型检查和完整的构建。
+# go tool tenon 的版本由 go.mod 固定，Bun 的版本由 package.json 的 packageManager 固定，与本地相同。
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # 生成前端的清单（apps/dist，go:embed 需要它）和接口的客户端。客户端提交在仓库中：
+      # 改了接口却没有提交重新生成的客户端时，git status 列出有差异或新出现的文件。
+      - name: Generate
+        run: |
+          go tool tenon generate
+          git status --porcelain
+          test -z "$(git status --porcelain)"
+
+      # 升级框架后没有运行 bun run agents 时，AGENTS.md 中 tenon 的一段和技能与框架的版本不一致。
+      - name: Agents
+        run: |
+          go tool tenon agents
+          git status --porcelain -- AGENTS.md .claude/skills .agents/skills .github/skills
+          test -z "$(git status --porcelain -- AGENTS.md .claude/skills .agents/skills .github/skills)"
+
+      - name: Format
+        run: test -z "$(gofmt -l $(go list -f '{{.Dir}}' ./...))"
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: oven-sh/setup-bun@v2
+
+      # .tenon/js 中框架的前端包不提交，generate 把它们复制过来，bun install 才能安装 workspace。
+      - name: Install
+        run: |
+          go tool tenon generate
+          bun install --frozen-lockfile
+
+      # typecheck 重新生成路由树 routeTree.gen.ts：新加了页面却没有提交它时，这里有差异。
+      - name: Typecheck
+        run: |
+          bun run typecheck
+          git status --porcelain
+          test -z "$(git status --porcelain)"
+
+      - name: Build
+        run: bun run build

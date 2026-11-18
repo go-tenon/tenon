@@ -49,6 +49,8 @@ bun run typecheck
 bun run generate && git diff --exit-code   # 改了接口要提交重新生成的客户端
 ```
 
+CI（`.github/workflows/ci.yml`）在每次推送和 PR 中运行同样的检查，并构建一次；生成的代码（客户端、路由树、本文中 tenon 的一段、技能）没有提交时失败。
+
 ## 编写测试
 
 - 顶层测试的第一行调用 `t.Parallel()`。修改全局状态的测试串行运行，例如用到 `t.Setenv`、`slog.SetDefault` 的测试。

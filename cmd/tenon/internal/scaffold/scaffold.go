@@ -28,6 +28,9 @@ var files embed.FS
 // GoVersion 是生成的 go.mod 中的 go 版本，与框架要求的最低版本相同。
 const GoVersion = "1.27.4"
 
+// BunVersion 是生成的 package.json 中 packageManager 的 Bun 版本，与框架的 CI 相同；项目的 CI（setup-bun）读取它。
+const BunVersion = "1.4.4"
+
 // Options 是项目模板的参数。
 type Options struct {
 	Module       string // Go 模块路径
@@ -36,6 +39,7 @@ type Options struct {
 	TenonVersion string // go.mod 中要求的框架版本。
 	TenonDir     string // 本地的框架目录，设置时 go.mod 用 replace 指向它（开发框架本身时使用）
 	GoVersion    string
+	BunVersion   string // package.json 中 packageManager 的 Bun 版本，为空时是 BunVersion
 }
 
 // Frontend 是前端模板的参数。
@@ -94,6 +98,9 @@ func (f Frontend) HasLogin() bool { return f.Login != "none" }
 func Write(dir string, opts Options) error {
 	if opts.GoVersion == "" {
 		opts.GoVersion = GoVersion
+	}
+	if opts.BunVersion == "" {
+		opts.BunVersion = BunVersion
 	}
 	if opts.Slug == "" {
 		opts.Slug = Slug(opts.Name)
