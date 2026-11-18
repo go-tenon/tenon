@@ -1,7 +1,11 @@
 // 注意：src/client.ts 和 src/server.ts 是 TanStack Start 约定的入口文件名，API 客户端放在 src/api.ts。
 // api 是 tenon generate 生成的 /api 客户端（packages/client/src/api），接口改了以后 tenon dev 会自动重新生成。
 // apiFetch 在浏览器中是同源的 fetch；服务端渲染时经 Go 的内部 socket 调用同一组接口。
+// kit 是同一个 API 生成的元数据（查询选项、校验规则、资源、设置），交给 @go-tenon/ui 的资源页面和表单。
 import { apiFetch } from "@go-tenon/start"
 import { createClient } from "@[[.Slug]]/client/api"
+import { createKit } from "@[[.Slug]]/client/api/kit"
 
 export const api = createClient({ baseURL: "/api", fetch: apiFetch })
+
+export const kit = createKit(api)

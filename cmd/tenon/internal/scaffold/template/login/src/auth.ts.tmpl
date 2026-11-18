@@ -1,3 +1,31 @@
+[[- if .GeneratedAuth -]]
+import { host } from "@go-tenon/host"
+import { api, session } from "./api"
+
+// 登录相关的接口在 [[.API]] 下，调用生成的客户端（src/api.ts）：
+// POST [[.API]]/auth/login 写入会话 cookie，POST [[.API]]/auth/logout 清除它，GET [[.API]]/me 返回当前用户。
+// 登录凭据是 HttpOnly 的会话 cookie，浏览器随同源请求自动带上，页面上的脚本不接触它。
+// 在桌面端（Electron 等宿主）中，token 保存在宿主中，由宿主加在转发的请求上，页面同样不接触它。
+
+export { session }
+
+/** 当前登录的用户：id、显示名称；permissions 是可选的，用于菜单和按钮的权限。 */
+export interface Me {
+  id: string
+  name: string
+  permissions?: string[] | null
+}
+
+export const me = (): Promise<Me> => api.[[.Auth.Me]]()
+
+export const login = (values: { email: string; password: string }) => api.[[.Auth.Login]](values)
+
+// 退出：撤销这次登录；在桌面端中再让宿主删除保存的 token。
+export async function logout(): Promise<void> {
+  await api.[[.Auth.Logout]]()
+  await host()?.auth.signOut()
+}
+[[- else -]]
 import { createSession, ensureOK } from "@go-tenon/client"
 import { host } from "@go-tenon/host"
 
@@ -5,7 +33,7 @@ import { host } from "@go-tenon/host"
 // POST [[.API]]/auth/login 写入会话 cookie，POST [[.API]]/auth/logout 清除它，GET [[.API]]/me 返回当前用户。
 // 登录凭据是 HttpOnly 的会话 cookie，浏览器随同源请求自动带上，页面上的脚本不接触它。
 // 在桌面端（Electron 等宿主）中，token 保存在宿主中，由宿主加在转发的请求上，页面同样不接触它。
-// 接口名或路径不同时只改这个文件。
+// 注册了这三个接口、运行 tenon generate 之后，可以改为调用生成的客户端（tenon add frontend 在客户端中找到它们时就这样生成）。
 
 // session.fetch 同源发送 cookie；受保护的接口返回 401 时（只对发出时的身份有效）会话随之变为未登录。
 async function send(method: string, path: string, body?: unknown): Promise<Response> {
@@ -38,3 +66,4 @@ export async function logout(): Promise<void> {
   await send("POST", "/auth/logout")
   await host()?.auth.signOut()
 }
+[[- end]]

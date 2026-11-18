@@ -276,6 +276,15 @@ func addFrontendCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// API 的客户端已经生成时，前端用它调用接口（src/api.ts），登录也调用其中的接口。
+			client := existing.ClientName(f.API)
+			calls, generated, err := scaffold.FindClient(".", client)
+			if err != nil {
+				return err
+			}
+			if generated {
+				f.Client, f.Auth = client, calls
+			}
 			if err := scaffold.WriteFrontend(".", f); err != nil {
 				return err
 			}
