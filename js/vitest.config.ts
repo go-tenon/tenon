@@ -1,6 +1,4 @@
-import { configDefaults, defineConfig } from "vitest/config"
+import { defineConfig } from "vitest/config"
 
-// e2e/ 中是 Playwright 的测试，用 bun run e2e 运行。
-export default defineConfig({
-  test: { exclude: [...configDefaults.exclude, "e2e/**"] },
-})
+// 前端包中只有 client 和 start 有测试；ui 不写测试，改动在 playground 中看效果。
+export default defineConfig({})

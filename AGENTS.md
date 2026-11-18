@@ -62,8 +62,7 @@ go test ./...       # 包括下文的模块检查
 - `client` 是 `@go-tenon/client`，与界面无关的客户端运行时。它不依赖 DOM：`tsconfig.json` 的 `lib` 没有 `dom`，用到 `window`、`document` 等浏览器 API 时类型检查失败。
 - `start` 是 `@go-tenon/start`，把 TanStack Start 接到 Go 托管的 Bun，以及 Vite 插件。
 - `ui` 是 `@go-tenon/ui`，应用骨架、基于 Mantine 的界面和三套样式预设；`ui/src/shell` 是不导入 Mantine 的逻辑。React、TanStack Router、TanStack Query 和 Mantine 是 peer 依赖。
-- `playground` 是 ui 的演示，用 `bun run playground` 启动。
-- `e2e` 是 Playwright 在真实浏览器中运行的测试，检查 happy-dom 测不到的部分，例如浏览器的前进后退、隐藏标签暂停 effect、刷新后恢复标签栏。它的应用只用 `ui/src/shell`。`e2e` 没有 `package.json`，在 `vite.config.ts` 和 `tsconfig.json` 中按路径引用框架的包。
+- `playground` 是 ui 的演示，用 `bun run playground` 启动。ui 不写测试，界面的改动在 playground 中看效果。
 
 在 `js` 目录中运行：
 
@@ -71,12 +70,10 @@ go test ./...       # 包括下文的模块检查
 bun install --frozen-lockfile
 bun run check       # Biome
 bun run typecheck   # 每个包的 tsc --noEmit
-bun run test        # Vitest
-bun run e2e         # Playwright，第一次运行前执行 bunx playwright install chromium
+bun run test        # Vitest：client 和 start 的测试
 ```
 
-- 每个有 `package.json` 的目录都会被复制到项目中安装，所以开发和测试用到的包（React、Testing Library、happy-dom、Vite 等）都写在 `js/package.json` 的 `devDependencies` 中。测试文件（`*.test.ts`、`*.test.tsx`）不复制，可以用这些包。
-- 需要 DOM 的测试文件在开头写 `// @vitest-environment happy-dom`。
+- 每个有 `package.json` 的目录都会被复制到项目中安装，所以开发和测试用到的包（React、Vite、Vitest 等）都写在 `js/package.json` 的 `devDependencies` 中。测试文件（`*.test.ts`）不复制，可以用这些包。
 - 在生成的项目中试用改动：用 `tenon init --tenon <框架目录>` 生成项目，`tenon dev` 每次启动时复制本地的 `js`。
 
 ## 代码约定
