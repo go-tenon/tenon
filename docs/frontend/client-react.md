@@ -128,6 +128,12 @@ enums.ArticleStatus.labels["zh-CN"].draft // "草稿"
 
 显示文字取自翻译文件中 `<前缀>.<取值>` 的消息，应用的翻译文件由 `httpcmd.Translations` 传入，见[校验规则与验证提示](#validation-rules)。某种语言只写了部分取值的显示文字，或者所有语言都没有时，`generate` 输出警告；界面中缺少的显示文字先用默认语言，再用取值本身。
 
+在页面中显示一个取值时，用 `kit.label`（`kit` 是 `createKit` 的结果）。它按 `createKit` 的 `language`（没有设置时用浏览器的语言）选择语言，没有这种语言时依次用它的主语言和第一种语言，与资源页面中枚举的显示相同：
+
+```tsx
+<Badge>{kit.label("ArticleStatus", article.status)}</Badge> // 草稿
+```
+
 <a id="client-runtime"></a>
 ## 错误、校验与分页
 

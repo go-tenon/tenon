@@ -3,6 +3,7 @@ package command_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -107,6 +108,18 @@ func TestDaemonListenError(t *testing.T) {
 	}
 	if _, err := d.Listen("tcp", "256.0.0.1:0"); err == nil || !strings.Contains(err.Error(), "command: listen tcp 256.0.0.1:0") {
 		t.Fatalf("Listen error = %v", err)
+	}
+
+	// 端口已被占用：错误中说明怎样换一个地址。
+	busy, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer busy.Close()
+	_, err = d.Listen("tcp", busy.Addr().String())
+	if !errors.Is(err, syscall.EADDRINUSE) || !strings.Contains(err.Error(), "already in use by another process") ||
+		!strings.Contains(err.Error(), "http.addr in config/local.yaml") {
+		t.Fatalf("address in use: %v", err)
 	}
 }
 
