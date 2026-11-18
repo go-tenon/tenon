@@ -1,9 +1,9 @@
-// AdminLayout：顶栏加侧栏菜单的布局，信息密集，适合表格和表单多的后台，例如运营后台、商家后台、内部系统。
+// FrameLayout：顶栏加侧栏菜单的布局，信息密集，适合表格和表单多的后台，例如运营后台、商家后台、内部系统。
 // 顶栏占满整行：左边是收起侧栏的按钮和标志，中间是多标签（开启时），
 // 右边是操作和用户菜单；
 // 侧栏在顶栏下面，顶部是页面搜索，下面是 shell/ 中的导航模型（按权限过滤的菜单），可以收起为只有图标的窄栏。
-// 窄屏时侧栏是顶栏下面的抽屉。密度、尺寸由主题的预设决定。
-// 每个页面都有的内容是 AdminLayout 的参数；某个页面才有的内容由页面用 Fill 放进插槽（actions、aside、footer）。
+// 窄屏时侧栏是顶栏下面的抽屉。顶栏和侧栏的尺寸是这个布局自己的，控件和内边距的密度随主题的预设。
+// 每个页面都有的内容是 FrameLayout 的参数；某个页面才有的内容由页面用 Fill 放进插槽（actions、aside、footer）。
 
 import {
   ActionIcon,
@@ -15,6 +15,7 @@ import {
   Menu,
   NavLink,
   ScrollArea,
+  Switch,
   Text,
   ThemeIcon,
   Tooltip,
@@ -24,6 +25,7 @@ import {
 import { useOs } from "@mantine/hooks"
 import { Spotlight, type SpotlightActionData, spotlight } from "@mantine/spotlight"
 import {
+  IconBrowser,
   IconChevronRight,
   IconLayoutSidebarLeftCollapse,
   IconLayoutSidebarLeftExpand,
@@ -32,7 +34,7 @@ import {
 import { Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router"
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Icon } from "./icons"
-import { TabsAvailableProvider } from "./layout-context"
+import { UserMenuExtraProvider } from "./layout-context"
 import { NavLinkLink } from "./links"
 import { ContentTransitionProvider, PageProgress } from "./page-progress"
 import {
@@ -50,8 +52,13 @@ import { TabBar } from "./tab-bar"
 import { layoutMetrics } from "./theme"
 import { NewVersionNotice } from "./version"
 
-/** AdminLayout 的选项。 */
-export interface AdminLayoutProps {
+// 布局自己的尺寸（像素）：顶栏高度，侧栏展开和收起为图标时的宽度。
+const headerHeight = 52
+const navbarWidth = 224
+const navbarCollapsedWidth = 56
+
+/** FrameLayout 的选项。 */
+export interface FrameLayoutProps {
   /** 产品名称，显示在顶栏左侧。 */
   title?: string
   /** 顶栏左侧的标志；默认是名称的首字。 */
@@ -73,10 +80,10 @@ export interface AdminLayoutProps {
  *
  *   export const Route = createFileRoute("/_app")({ beforeLoad: requireAuth, component: Layout })
  *   function Layout() {
- *     return <AdminLayout title="博客后台" user={<UserMenu name={me.name} logout={logout} />} />
+ *     return <FrameLayout title="博客后台" user={<UserMenu name={me.name} logout={logout} />} />
  *   }
  */
-export function AdminLayout({
+export function FrameLayout({
   title,
   logo,
   user,
@@ -84,7 +91,7 @@ export function AdminLayout({
   search = true,
   tabs,
   maxWidth,
-}: AdminLayoutProps): ReactNode {
+}: FrameLayoutProps): ReactNode {
   const theme = useMantineTheme()
   const m = layoutMetrics(theme)
   const [state, setState] = useLayoutState()
@@ -144,15 +151,15 @@ export function AdminLayout({
     flash()
   }, [pathname])
 
-  const vars = { "--tn-header-height": `${m.headerHeight}px` } as CSSProperties
+  const vars = { "--tn-header-height": `${headerHeight}px` } as CSSProperties
   const collapseLabel = collapsed ? "展开侧栏" : "收起侧栏"
   return (
     <AppShell
       className="tn-shell"
       style={vars}
-      header={{ height: m.headerHeight }}
+      header={{ height: headerHeight }}
       navbar={{
-        width: collapsed ? m.navbarCollapsedWidth : m.navbarWidth,
+        width: collapsed ? navbarCollapsedWidth : navbarWidth,
         breakpoint: "sm",
         collapsed: { mobile: !state.navOpen },
       }}
@@ -165,7 +172,7 @@ export function AdminLayout({
               名称长、放不下时这一块变宽，标签栏跟在名称后面（间隔 16px），不会盖住名称。 */}
           <div
             className="tn-header-start"
-            style={showTabBar ? { minWidth: `calc(${m.navbarWidth + 6}px - var(--mantine-spacing-md))` } : undefined}
+            style={showTabBar ? { minWidth: `calc(${navbarWidth + 6}px - var(--mantine-spacing-md))` } : undefined}
           >
             <Burger
               hiddenFrom="sm"
@@ -201,7 +208,7 @@ export function AdminLayout({
           <Group gap="xs" wrap="nowrap">
             <Slot name="actions" />
             {actions}
-            <TabsAvailableProvider value={Boolean(tabs)}>{user}</TabsAvailableProvider>
+            <UserMenuExtraProvider value={tabs ? <TabsSwitch /> : null}>{user}</UserMenuExtraProvider>
           </Group>
         </div>
       </AppShell.Header>
@@ -442,3 +449,22 @@ function CollapsedItem({ item, active }: { item: MenuItem; active: string[] }): 
 }
 
 const reducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false
+
+/** 多标签的开关，按账号保存。窄屏时不显示标签栏，也不显示开关。 */
+function TabsSwitch(): ReactNode {
+  const [layout, setLayout] = useLayoutState()
+  return (
+    <Box visibleFrom="sm" className="tn-menu-section tn-menu-toggles">
+      <UnstyledButton
+        className="tn-menu-toggle"
+        role="switch"
+        aria-checked={layout.tabs}
+        onClick={() => setLayout({ tabs: !layout.tabs })}
+      >
+        <IconBrowser size={18} stroke={1.5} />
+        <span>多标签</span>
+        <Switch size="xs" checked={layout.tabs} readOnly tabIndex={-1} aria-hidden style={{ pointerEvents: "none" }} />
+      </UnstyledButton>
+    </Box>
+  )
+}

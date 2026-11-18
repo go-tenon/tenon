@@ -132,7 +132,7 @@ bun run build   # 即 go tool tenon build
 一个项目可以有多个前端，例如面向用户的网站，加上给运营人员用的后台。在项目根目录运行：
 
 ```bash
-go tool tenon add frontend admin --style admin
+go tool tenon add frontend admin --layout frame
 ```
 
 它在 `apps/admin` 中生成一个前端，挂在 `/admin/` 下，加入根目录 `package.json` 的 workspace，安装依赖。最后打印要加到 `cmd/api/main.go` 中的代码：为它创建一个托管 SSR 进程的 `Host`，把它的页面挂在 `/admin/*`，并交给 `ssr.Run`：
@@ -147,13 +147,15 @@ return ssr.Run(ctx, serve, webPages, adminPages)
 
 挂载放在 `/*` 之前：路由按顺序匹配，放在后面的话，`/admin/` 下的请求已经被 `/*` 接走了。同时导入 `<你的 module>/apps/admin`。
 
-`--style` 选择样式预设，见[样式预设与主题](../frontend/app.md#presets)：
+`--layout` 选择布局，见[布局与导航](../frontend/layout.md)：
 
-| 样式 | 内容 |
+| 布局 | 内容 |
 | --- | --- |
-| `console`（默认） | 舒展的样式：登录页和双栏导航的布局（`RailLayout`），适合以模块切换为主的应用，页面只在浏览器中渲染 |
-| `admin` | 紧凑的样式：登录页和顶栏加侧栏菜单的布局（`AdminLayout`），带多标签，适合表格和表单多的后台，页面只在浏览器中渲染 |
-| `site` | 官网和内容站：页头、页脚，页面在服务端渲染，首页构建时预渲染 |
+| `rail`（默认） | 登录页和双栏导航的布局（`RailLayout`），页面只在浏览器中渲染 |
+| `frame` | 登录页和顶栏加侧栏菜单、带多标签的布局（`FrameLayout`），页面只在浏览器中渲染 |
+| `site` | 官网和内容站（`SiteLayout`）：页头、页脚，页面在服务端渲染，首页构建时预渲染 |
+
+`--preset` 选择样式预设：`compact`（紧凑）、`comfortable`（舒展）、`spacious`（宽松），见[样式预设与主题](../frontend/app.md#presets)。不写时按布局：`frame` 是 `compact`，`rail` 是 `comfortable`，`site` 是 `spacious`。布局和预设可以分开选，例如 `--layout rail --preset compact`。
 
 `--base` 可以指定其他的挂载路径，以 `/` 开头和结尾。`apps/admin` 必须还不存在。
 

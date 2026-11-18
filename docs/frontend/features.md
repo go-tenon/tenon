@@ -28,7 +28,7 @@ const inbox: NotificationsSource = {
   badge: (o) => api.notification.inbox(o), // 未读数的事件流，见“实时推送”
 }
 
-<AdminLayout actions={<NotificationsMenu source={inbox} />} … />
+<FrameLayout actions={<NotificationsMenu source={inbox} />} … />
 ```
 
 - 未读数来自事件流的 `badge` 事件（`{ "unread": 3 }`），断开后自动重连（等待时间从 1 秒加倍到 30 秒）；每次收到都重新读取列表。没有事件流时传 `unread`，每 60 秒读取一次（`pollInterval`）。

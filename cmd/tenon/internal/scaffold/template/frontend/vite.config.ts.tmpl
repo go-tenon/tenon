@@ -5,5 +5,5 @@ import { tenon } from "@go-tenon/start/vite"
 // （页面在部署了新版本时提示刷新）；prerender 列出构建时渲染成 HTML 的页面，见框架文档的“TanStack Start 的接入”。
 export default defineConfig({
   base: "[[.Base]]",
-  plugins: [tenon([[if eq .Style "site"]]{ prerender: ["/"] }[[end]])],
+  plugins: [tenon([[if eq .Layout "site"]]{ prerender: ["/"] }[[end]])],
 })

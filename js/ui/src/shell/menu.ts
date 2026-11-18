@@ -1,4 +1,4 @@
-// 菜单与面包屑：由路由的元数据生成，AdminLayout 把 MenuItem 渲染为侧栏菜单。
+// 菜单与面包屑：由路由的元数据生成，FrameLayout 把 MenuItem 渲染为侧栏菜单。
 
 import type { StaticDataRouteOption } from "@tanstack/react-router"
 import "./meta"

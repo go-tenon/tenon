@@ -37,23 +37,30 @@ type Options struct {
 
 // Frontend 是前端模板的参数。
 type Frontend struct {
-	Scope string // npm 包名的作用域，与项目根目录 package.json 的 name 相同。
-	Name  string // 前端的名称，即 apps 中的目录名。
-	Base  string // 前端挂载的路径，以 / 开头和结尾，写入 Vite 的 base 和编译 SSR 可执行文件的 --base。
-	Title string // 页面标题。
-	Style string // 样式预设，见 Styles；为空时是 console。
+	Scope  string // npm 包名的作用域，与项目根目录 package.json 的 name 相同。
+	Name   string // 前端的名称，即 apps 中的目录名。
+	Base   string // 前端挂载的路径，以 / 开头和结尾，写入 Vite 的 base 和编译 SSR 可执行文件的 --base。
+	Title  string // 页面标题。
+	Layout string // 布局，见 Layouts；为空时是 rail。
+	Preset string // 样式预设（@go-tenon/ui 的 Preset），见 Presets；为空时按布局：frame 是 compact，rail 是 comfortable，site 是 spacious。
 }
 
-// Styles 是前端可选的样式预设（@go-tenon/ui 的 themes），决定模板的内容：
-//   - console：舒展的样式，登录页和双栏导航的布局（RailLayout），页面只在浏览器中渲染；
-//   - admin：紧凑的样式，登录页和顶栏加侧栏菜单、带多标签的布局（AdminLayout），页面只在浏览器中渲染；
-//   - site：官网和内容站，页面在服务端渲染，首页构建时预渲染。
-var Styles = []string{"console", "admin", "site"}
+// Layouts 是前端可选的布局，决定模板的页面：
+//   - rail：双栏导航（RailLayout），登录页，页面只在浏览器中渲染；
+//   - frame：顶栏加侧栏菜单、带多标签（FrameLayout），登录页，页面只在浏览器中渲染；
+//   - site：官网和内容站（SiteLayout），页面在服务端渲染，首页构建时预渲染。
+var Layouts = []string{"rail", "frame", "site"}
+
+// Presets 是可选的样式预设，按密度区分：compact 紧凑，comfortable 舒展，spacious 宽松。
+var Presets = []string{"compact", "comfortable", "spacious"}
+
+// defaultPresets 是每种布局默认的样式预设。
+var defaultPresets = map[string]string{"frame": "compact", "rail": "comfortable", "site": "spacious"}
 
 // Package 是嵌入构建产物的 Go 包名：前端的名称去掉连字符。
 func (f Frontend) Package() string { return strings.ReplaceAll(f.Name, "-", "") }
 
-// Write 生成项目：一个名为 web 的前端挂在 /（site 样式），带待办事项的示例。dir 必须是空目录或尚未创建。
+// Write 生成项目：一个名为 web 的前端挂在 /（site 布局），带待办事项的示例。dir 必须是空目录或尚未创建。
 func Write(dir string, opts Options) error {
 	if opts.GoVersion == "" {
 		opts.GoVersion = GoVersion
@@ -67,7 +74,7 @@ func Write(dir string, opts Options) error {
 		return err
 	}
 	// 先写前端，项目模板中的示例页面再覆盖它的首页。
-	web := Frontend{Scope: opts.Slug, Name: "web", Base: "/", Title: opts.Name, Style: "site"}
+	web := Frontend{Scope: opts.Slug, Name: "web", Base: "/", Title: opts.Name, Layout: "site"}
 	if err := writeFrontend(filepath.Join(dir, "apps", web.Name), web); err != nil {
 		return err
 	}
@@ -85,18 +92,24 @@ func WriteFrontend(root string, f Frontend) error {
 	return writeFrontend(dir, f)
 }
 
-// writeFrontend 渲染共用的前端模板，再按样式加上 site 或 app（admin、console）的页面。
+// writeFrontend 渲染共用的前端模板，再按布局加上 site 或 app（frame、rail）的页面。
 func writeFrontend(dir string, f Frontend) error {
-	if f.Style == "" {
-		f.Style = Styles[0]
+	if f.Layout == "" {
+		f.Layout = Layouts[0]
 	}
-	if !slices.Contains(Styles, f.Style) {
-		return fmt.Errorf("style %q is not one of %v", f.Style, Styles)
+	if !slices.Contains(Layouts, f.Layout) {
+		return fmt.Errorf("layout %q is not one of %v", f.Layout, Layouts)
+	}
+	if f.Preset == "" {
+		f.Preset = defaultPresets[f.Layout]
+	}
+	if !slices.Contains(Presets, f.Preset) {
+		return fmt.Errorf("preset %q is not one of %v", f.Preset, Presets)
 	}
 	if err := render("template/frontend", dir, f); err != nil {
 		return err
 	}
-	if f.Style == "site" {
+	if f.Layout == "site" {
 		return render("template/site", dir, f)
 	}
 	return render("template/app", dir, f)

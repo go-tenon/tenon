@@ -771,7 +771,7 @@ declare module "@tanstack/react-router" {
 
 ```tsx title="apps/web/src/routes/login.tsx"
 import { createFileRoute } from "@tanstack/react-router"
-import { AuthLayout, LoginForm } from "@go-tenon/ui"
+import { CenteredAuthLayout, LoginForm } from "@go-tenon/ui"
 import { api } from "../api"
 
 export const Route = createFileRoute("/login")({
@@ -785,9 +785,9 @@ export const Route = createFileRoute("/login")({
 function Login() {
   const { redirect } = Route.useSearch()
   return (
-    <AuthLayout brand="博客" title="登录">
+    <CenteredAuthLayout brand="博客" title="登录">
       <LoginForm login={(values) => api.auth.login(values)} redirect={redirect} />
-    </AuthLayout>
+    </CenteredAuthLayout>
   )
 }
 ```

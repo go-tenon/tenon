@@ -149,7 +149,7 @@ var moduleLine = regexp.MustCompile(`(?m)^module\s+(\S+)`)
 
 // addFrontendCommand 返回 tenon add frontend 命令：在 apps/<name> 中生成一个前端，加入 Bun workspace。
 func addFrontendCommand() *cobra.Command {
-	var base, style string
+	var base, layout, preset string
 	cmd := &cobra.Command{
 		Use:   "frontend <name>",
 		Short: "在 apps/<name> 中生成一个 TanStack Start 前端，加入 Bun workspace",
@@ -180,10 +180,13 @@ func addFrontendCommand() *cobra.Command {
 			if err != nil || m == nil {
 				return fmt.Errorf("run add frontend in the project root: go.mod with a module line is required (%v)", err)
 			}
-			if !slices.Contains(scaffold.Styles, style) {
-				return fmt.Errorf("--style %q is not one of %v", style, scaffold.Styles)
+			if !slices.Contains(scaffold.Layouts, layout) {
+				return fmt.Errorf("--layout %q is not one of %v", layout, scaffold.Layouts)
 			}
-			f := scaffold.Frontend{Scope: pkg.Name, Name: name, Base: base, Title: name, Style: style}
+			if preset != "" && !slices.Contains(scaffold.Presets, preset) {
+				return fmt.Errorf("--preset %q is not one of %v", preset, scaffold.Presets)
+			}
+			f := scaffold.Frontend{Scope: pkg.Name, Name: name, Base: base, Title: name, Layout: layout, Preset: preset}
 			if err := scaffold.WriteFrontend(".", f); err != nil {
 				return err
 			}
@@ -214,7 +217,8 @@ ssr.Run(ctx, serve, webPages, %[3]sPages)。导入 %[5]q。
 		},
 	}
 	cmd.Flags().StringVar(&base, "base", "", "前端挂载的路径，以 / 开头和结尾，默认 /<name>/")
-	cmd.Flags().StringVar(&style, "style", "console", "样式预设：console（舒展，双栏导航）；admin（紧凑，顶栏加侧栏菜单、多标签）；site（官网和内容站，服务端渲染）")
+	cmd.Flags().StringVar(&layout, "layout", "rail", "布局：rail（双栏导航）；frame（顶栏加侧栏菜单、多标签）；site（官网和内容站，服务端渲染）")
+	cmd.Flags().StringVar(&preset, "preset", "", "样式预设：compact（紧凑）；comfortable（舒展）；spacious（宽松）。默认按布局：frame 是 compact，rail 是 comfortable，site 是 spacious")
 	return cmd
 }
 

@@ -839,13 +839,13 @@ go run ./cmd/api user admin --email ming@example.com
 <a id="admin"></a>
 ## 后台
 
-后端完成了，现在创建后台的前端。后台是一个独立的前端应用，挂在 `/admin/`，和博客的页面分开。用 Tenon 的前端模板新建它，选运营后台的样式预设（紧凑、适合表格和表单），见[样式预设与主题](../frontend/app.md#presets)：
+后端完成了，现在创建后台的前端。后台是一个独立的前端应用，挂在 `/admin/`，和博客的页面分开。用 Tenon 的前端模板新建它，选 `frame` 布局（顶栏加侧栏菜单、带多标签），它默认用紧凑的 `compact` 样式预设，适合表格和表单，见[布局与导航](../frontend/layout.md)和[样式预设与主题](../frontend/app.md#presets)：
 
 ```bash
-go tool tenon add frontend admin --style admin
+go tool tenon add frontend admin --layout frame
 ```
 
-它在 `apps/admin` 中生成登录页、带侧栏和多标签的管理后台布局（`AdminLayout`）和首页，登录调用的正是第 6 章的 `/api/auth` 接口。后台的页面只在浏览器中渲染，不需要搜索引擎收录。上一节的 `internal/bootstrap/http.go` 已经托管了它的 SSR 进程，并把它挂在 `/admin/`。重新生成客户端：
+它在 `apps/admin` 中生成登录页、带侧栏和多标签的管理后台布局（`FrameLayout`）和首页，登录调用的正是第 6 章的 `/api/auth` 接口。后台的页面只在浏览器中渲染，不需要搜索引擎收录。上一节的 `internal/bootstrap/http.go` 已经托管了它的 SSR 进程，并把它挂在 `/admin/`。重新生成客户端：
 
 ```bash
 go tool tenon generate

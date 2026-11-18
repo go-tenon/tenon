@@ -4,7 +4,6 @@
 // AI 对话是单独的入口 @go-tenon/ui/chat，只有用到它的前端才需要安装 ai 和 @ai-sdk/react。
 
 export * from "./activity"
-export * from "./admin-layout"
 export * from "./auth"
 export * from "./color-scheme"
 export * from "./data-table"
@@ -14,6 +13,7 @@ export * from "./errors"
 export * from "./feedback"
 export * from "./fields"
 export * from "./form"
+export * from "./frame-layout"
 export * from "./icons"
 export * from "./links"
 export * from "./menus"

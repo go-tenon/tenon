@@ -97,7 +97,7 @@ function keyOf<T>(rowKey: DataTableProps<T>["rowKey"]): (row: T) => string {
 export function DataTable<T>(props: DataTableProps<T>): ReactNode {
   const { records, columns, list, selection, storeKey, toolbar, bulkActions } = props
   const m = layoutMetrics(useMantineTheme())
-  const dense = m.preset === "admin"
+  const dense = m.preset === "compact"
   const key = keyOf(props.rowKey)
 
   const mapped = (storeKey ? columns : columns.filter((c) => !c.hidden)).map(

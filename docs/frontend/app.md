@@ -24,7 +24,7 @@
 <a id="setup"></a>
 ## 装配
 
-`tenon init` 和 `tenon add frontend --style <预设>` 生成的前端已经按本节装配好。下面是各部分的作用，给已有的前端加上它时照着做。
+`tenon init` 和 `tenon add frontend --layout <布局>` 生成的前端已经按本节装配好。下面是各部分的作用，给已有的前端加上它时照着做。
 
 <a id="installing"></a>
 ### 依赖与构建
@@ -102,7 +102,7 @@ export const session = createSession({ load: async () => ({ account: (await me()
 - 读取当前用户、检查权限只在浏览器中进行。服务端渲染时应用不读取身份，需要登录的页面设置 `ssr: false`，只在浏览器中渲染，见 [TanStack Start 的接入](start.md)。
 - 前端挂在子路径（例如 `/admin/`）时，路由的 `basepath` 默认是 Vite 的 `base`：页面中的地址、`<Link>`、登录回跳都不含它。
 - `id` 区分同一个域名下的前端，例如 `web` 和 `admin`，见[本地存储](#storage)。
-- QueryClient 对 `4xx` 不重试，其他错误重试 2 次；登录、退出、切换账号或租户时清空缓存，并重新挂载页面：页面中按身份计算的查询重新读取。重新挂载的只是布局中的页面（`AdminLayout` 用 `SessionBoundary` 包住页面），HTML 文档和布局保持不变。也可以传入自己的 `queryClient`。
+- QueryClient 对 `4xx` 不重试，其他错误重试 2 次；登录、退出、切换账号或租户时清空缓存，并重新挂载页面：页面中按身份计算的查询重新读取。重新挂载的只是布局中的页面（`FrameLayout` 用 `SessionBoundary` 包住页面），HTML 文档和布局保持不变。也可以传入自己的 `queryClient`。
 - `router` 传给 Router 的其他选项：CSP 的 `nonce`、默认的错误页 `RouteError` 和 404 页 `NotFoundPage`（见[错误页](#errors)）。`router.Wrap` 包住整个应用；`createApp` 在它里面提供 QueryClient 和应用。
 - 多租户应用还要设置 `tenancy`，见[租户](layout.md#tenants)。
 
@@ -150,29 +150,32 @@ function Document({ children }: { children: ReactNode }) {
 ```ts title="src/theme.ts"
 import { createUiTheme } from "@go-tenon/ui"
 
-export const theme = createUiTheme({ preset: "admin", primary: "blue-gray" })
+export const theme = createUiTheme({ preset: "compact", primary: "blue-gray" })
 ```
 
 三套预设共用一套设计语言：系统字体、偏冷的中性色、1 像素的细边框、几乎不用阴影，层级靠留白、字重和背景的明暗区分。亮色和暗色都完整定义，组件中不写死颜色。
 
-| 预设 | 适合 | 特点 |
-| --- | --- | --- |
-| `admin` | 表格和表单多的后台，例如运营后台、商家后台、内部系统 | 正文 14px，控件 32px 高，顶栏 52px，圆角 4px，一屏能看到更多数据 |
-| `console` | 页面不密集、以模块切换为主的应用，例如 SaaS 控制台、聊天工具、用户中心 | 正文 14px，控件 36px 高，顶栏 56px，圆角 8px，留白舒展 |
-| `site` | 官网、落地页、文章、文档 | 正文 16px，大标题随屏幕宽度缩放，行距宽松，顶栏 64px |
+预设只管密度，按样子命名，与布局无关：`compact` 也可以配 `RailLayout`，`comfortable` 也可以配 `FrameLayout`。
 
-一个前端只用一套预设。一个项目中的几个前端可以各用自己的预设，品牌色相同，例如表格多的后台用 `admin`，另一个应用用 `console`。布局用到的尺寸（顶栏高度、侧栏宽度、内容的内边距、控件的默认尺寸）放在主题的 `other.tenon` 中，`AdminLayout` 等布局据此排版，用 `layoutMetrics(theme)` 读取。
+| 预设 | 样子 | 适合 |
+| --- | --- | --- |
+| `compact` | 紧凑：正文 14px，控件 32px 高，圆角 4px，一屏能看到更多数据 | 表格和表单多的界面，例如运营后台、商家后台、内部系统 |
+| `comfortable` | 舒展：正文 14px，控件 36px 高，圆角 8px，留白舒展 | 页面不密集的应用，例如 SaaS 控制台、聊天工具、用户中心 |
+| `spacious` | 宽松：正文 16px，大标题随屏幕宽度缩放，行距宽松 | 官网、落地页、文章、文档 |
+
+一个前端只用一套预设。一个项目中的几个前端可以各用自己的预设，品牌色相同。控件的默认尺寸和内容的内边距放在主题的 `other.tenon` 中，组件据此排版，用 `layoutMetrics(theme)` 读取；顶栏高度、侧栏宽度这些是各个布局自己的，不随预设变化。
 
 <a id="tokens"></a>
 `createUiTheme` 的选项是设计令牌：
 
-- `preset` 是样式预设；`themes.admin`、`themes.console`、`themes.site` 是不改令牌的三套主题。
+- `preset` 是样式预设，默认 `comfortable`；`themes.compact`、`themes.comfortable`、`themes.spacious` 是不改令牌的三套主题。
 - `primary` 是品牌色，默认是第一种预设 `blue-gray`。可以写颜色值，也可以写 Mantine [颜色生成器](https://mantine.dev/colors-generator)中预设的名称，名称是官方英文名的小写连字符写法：
 
   `blue-gray`、`brown`、`tomato`、`deep-orange`、`bright-orange`、`yellow`、`bright-green`、`green`、`light-blue`、`sky-blue`、`pale-blue`、`bright-blue`、`deep-blue`、`pale-indigo`、`purple`、`pale-purple`、`violet`、`pale-violet`、`dark-pink`、`bright-pink`、`pink`、`magenta`、`bright-red`、`pale-red`、`deep-red`、`red`
 
   色板由 Mantine 官方的生成器（`@mantine/colors-generator`）生成，与颜色生成器页面上的结果一致：输入的颜色按亮度落在 10 级中的一级，亮色模式的主色是第 6 级，暗色模式是第 5 级，所以很深的颜色（例如 `brown`、`deep-red`）在按钮上会比输入的颜色浅一些。名称对应的颜色值在 `primaryColors` 中，也可以单独调用 `palette(color)`。
 - `radius` 是基础圆角（像素），其他圆角按比例缩放。
+- `datetimeFormat` 是日期时间的显示格式（dayjs 的写法），默认 `YYYY-MM-DD HH:mm`；表格多的界面可以用短一些的 `MM/DD HH:mm`。表格、操作记录、通知中的时间都用它。
 - `override` 是再合并的 Mantine 主题覆盖，用于令牌之外的调整，例如某个组件的默认属性。
 - `datetimeFormat` 是日期时间的显示格式（[dayjs 的写法](https://day.js.org/docs/en/display/format)），默认随预设：`admin` 是 `MM/DD HH:mm`（例如 11/03 10:12），其他是 `YYYY-MM-DD HH:mm`。后端返回带时区的 ISO 时间，显示为浏览器所在时区的时间。表格中的日期时间字段、操作记录、通知都用它；自己写的页面用 `useFormatDateTime()`：
 
@@ -221,11 +224,11 @@ export const Route = createFileRoute("/_app")({ beforeLoad: requireAuth, compone
 - 退出（`session.signOut()`）、切换身份时重新运行检查，离开需要登录的页面。
 
 <a id="auth"></a>
-**登录页。** `AuthLayout` 是登录、注册、找回密码等页面的布局：页面中央一张卡片。`LoginForm` 是邮箱和密码的登录表单：
+**登录页。** 登录、注册、找回密码等页面有自己的样式，现在有一种：`CenteredAuthLayout`，页面中央一张卡片。表单和样式分开，`LoginForm` 是邮箱和密码的登录表单，可以放进任何一种样式：
 
 ```tsx title="src/routes/login.tsx"
 import { createFileRoute } from "@tanstack/react-router"
-import { AnchorLink, AuthLayout, LoginForm } from "@go-tenon/ui"
+import { AnchorLink, CenteredAuthLayout, LoginForm } from "@go-tenon/ui"
 import { api } from "../auth"
 
 export const Route = createFileRoute("/login")({
@@ -236,13 +239,13 @@ export const Route = createFileRoute("/login")({
 function Login() {
   const { redirect } = Route.useSearch()
   return (
-    <AuthLayout title="登录" description="使用工作邮箱登录。">
+    <CenteredAuthLayout title="登录" description="使用工作邮箱登录。">
       <LoginForm
         login={(values) => api.auth.login(values)}
         redirect={redirect}
         forgot={<AnchorLink to="/forgot">忘记密码？</AnchorLink>}
       />
-    </AuthLayout>
+    </CenteredAuthLayout>
   )
 }
 ```
@@ -302,7 +305,7 @@ return can("articles:write") && <Button>写文章</Button>
 
 发布新版本后，已经打开的页面还在运行旧代码。`@go-tenon/start/vite` 的 `tenon()` 插件在构建时把 `version.json` 写入浏览器的构建结果 `dist/client`，并把版本号注入代码；页面每 60 秒和切回页面时读取 `version.json`，版本号不同时在右下角提示“刷新”或“稍后”。
 
-- `AdminLayout` 已经包含提示 `NewVersionNotice`，其他布局需要时自己放一个；自己画提示时用 `useNewVersion()`，它返回 `{ available, reload, dismiss }`。
+- `FrameLayout` 已经包含提示 `NewVersionNotice`，其他布局需要时自己放一个；自己画提示时用 `useNewVersion()`，它返回 `{ available, reload, dismiss }`。
 - 版本号默认取环境变量 `TENON_BUILD_VERSION`，没有时每次构建随机生成一个；可以用 `tenon({ version: commit })` 传入。一次构建中 TanStack Start 会多次加载 `vite.config.ts`，默认的版本号在构建进程中只生成一次，页面中的与 `version.json` 中的相同。
 - 开发模式下不检查。
 - SSR 程序对 `assets/` 之外的文件返回 `Cache-Control: no-cache`，`version.json` 不会被缓存，见 [TanStack Start 的接入](start.md)。
@@ -321,7 +324,7 @@ app.storage.get<{ compact: boolean }>("density")
 <a id="playground"></a>
 ## 演示
 
-框架的 `js/playground` 是三套预设的演示：`admin` 和 `AdminLayout`（`/admin/`）、`console` 和 `RailLayout`（`/console/`）、官网（`/`）和文档页（`/docs/getting-started`）、登录页（`/admin/login`）。在框架仓库的 `js` 目录中运行：
+框架的 `js/playground` 是三套预设的演示：`admin` 和 `FrameLayout`（`/admin/`）、`console` 和 `RailLayout`（`/console/`）、官网（`/`）和文档页（`/docs/getting-started`）、登录页（`/admin/login`）。在框架仓库的 `js` 目录中运行：
 
 ```bash
 bun run playground
@@ -366,7 +369,7 @@ bun run playground
 | `layoutMetrics(theme)`、`LayoutMetrics` | 主题中的布局尺寸 |
 | `requireAuth` | 布局路由的 `beforeLoad`：没有登录时跳到登录页 |
 | `app.redirectAfterSignIn(redirect)`、`safeRedirect(redirect, fallback)` | 登录后回到原来的地址；只接受同源相对路径的回跳地址 |
-| `AuthLayout`、`LoginForm`、`errorMessage` | 认证页的布局、登录表单、错误的提示文字 |
+| `CenteredAuthLayout`、`LoginForm`、`errorMessage` | 认证页的布局、登录表单、错误的提示文字 |
 | `app.permissions()`、`app.permissionsQuery()` | 当前身份的权限；交给 `useQuery` 的查询选项 |
 | `useApp`、`useSignedIn`、`useCan` | 在应用的路由之内使用 |
 | `ForbiddenError`、`isForbidden` | 缺少权限时抛出的错误 |

@@ -1,13 +1,13 @@
-// AdminLayout 告诉放在其中的组件的信息。
+// 布局交给放在其中的组件的内容。
 
-import { createContext, useContext } from "react"
+import { createContext, type ReactNode, useContext } from "react"
 
-const TabsAvailable = createContext(false)
+const UserMenuExtra = createContext<ReactNode>(null)
 
-/** AdminLayout 开启了多标签时为 true：UserMenu 据此显示“多标签”的开关。 */
-export const TabsAvailableProvider = TabsAvailable.Provider
+/** 布局放进用户菜单的内容，例如 FrameLayout 开启多标签时的“多标签”开关；UserMenu 把它显示在配色的下面。 */
+export const UserMenuExtraProvider = UserMenuExtra.Provider
 
-/** 所在的 AdminLayout 是否开启了多标签。 */
-export function useTabsAvailable(): boolean {
-  return useContext(TabsAvailable)
+/** 所在布局放进用户菜单的内容；没有时为 null。 */
+export function useUserMenuExtra(): ReactNode {
+  return useContext(UserMenuExtra)
 }

@@ -31,15 +31,15 @@
 ## 技术选型
 
 <a id="choosing-ui-library"></a>
-### 按前端选择样式预设
+### 按前端选择布局和样式预设
 
-所有前端都用同一套组件库 [Mantine](https://mantine.dev) 和框架的 [`@go-tenon/ui`](app.md)，按前端的用途选择样式预设和渲染方式：
+所有前端都用同一套组件库 [Mantine](https://mantine.dev) 和框架的 [`@go-tenon/ui`](app.md)，按界面的样子选择布局、样式预设和渲染方式：
 
-| 前端 | 样式预设 | 渲染 |
+| 界面 | 选项 | 渲染 |
 | --- | --- | --- |
-| 运营后台、纯内部系统、以表格和大表单为主的后台（ERP、财务、仓储） | `--style admin` | 只在浏览器中渲染 |
-| 面向客户的后台（如租户控制台）、用户端 | `--style console` | 只在浏览器中渲染 |
-| 公开页面（官网、内容站、帮助中心） | `--style site` | 服务端渲染，不随请求变化的页面构建时预渲染 |
+| 表格和大表单多的后台（运营后台、商家后台、ERP、财务、仓储） | `--layout frame`（默认 `compact`） | 只在浏览器中渲染 |
+| 以模块切换为主、页面不密集的应用（SaaS 控制台、聊天工具、用户中心） | `--layout rail`（默认 `comfortable`） | 只在浏览器中渲染 |
+| 公开页面（官网、内容站、帮助中心） | `--layout site`（默认 `spacious`） | 服务端渲染，不随请求变化的页面构建时预渲染 |
 
 三套预设共用一套设计语言，品牌色在每个前端的 `src/theme.ts` 中设置，看起来仍然是一个产品，见[样式预设](app.md#presets)。
 
@@ -95,9 +95,9 @@ helpdesk/
 ├── tenon.json             开发工具的配置，可以没有
 ├── AGENTS.md              各个前端的使用者、样式预设、挂载路径和调用的 API
 ├── apps/                  每个前端一个目录
-│   ├── admin/             运营后台（--style admin）
-│   ├── console/           租户控制台（--style console）
-│   └── web/               官网和用户端（--style site）
+│   ├── admin/             运营后台（--layout frame）
+│   ├── console/           控制台（--layout rail）
+│   └── web/               官网和用户端（--layout site）
 ├── packages/
 │   ├── client/            生成的客户端
 │   └── ui/                多个前端共用的业务组件（需要时才建）
