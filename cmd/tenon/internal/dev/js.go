@@ -58,12 +58,51 @@ func SyncJS(dir string) (changed bool, err error) {
 		if err := copyInto(filepath.Join(src, name), filepath.Join(dst, name), isTest); err != nil {
 			return false, errors.Wrap(err, "dev: sync front-end packages")
 		}
+		if err := markBins(filepath.Join(dst, name)); err != nil {
+			return false, errors.Wrap(err, "dev: sync front-end packages")
+		}
 	}
 	if err := os.WriteFile(filepath.Join(filepath.Dir(dst), ".gitignore"), []byte("*\n"), 0o644); err != nil {
 		return false, errors.Wrap(err, "dev: sync front-end packages")
 	}
 	after := manifests(dst)
 	return !slices.EqualFunc(before, after, func(a, b []byte) bool { return bytes.Equal(a, b) }), nil
+}
+
+// markBins 给包目录 dir 中 package.json 的 bin 指向的文件加上执行权限，例如 @go-tenon/start 的 tenon-start。
+// bun install 链接命令时会这样做，但模块缓存中的文件没有执行权限，复制过来的文件也没有；package.json 没有变化时
+// 不会重新 bun install，前端的脚本运行 tenon-start 时就会因为没有执行权限而失败。
+func markBins(dir string) error {
+	data, err := os.ReadFile(filepath.Join(dir, "package.json"))
+	if err != nil {
+		return err
+	}
+	var pkg struct {
+		Bin json.RawMessage `json:"bin"`
+	}
+	if err := json.Unmarshal(data, &pkg); err != nil || len(pkg.Bin) == 0 {
+		return err
+	}
+	// bin 可以是一个路径，也可以是命令名到路径的对象。
+	var paths []string
+	var one string
+	var many map[string]string
+	switch {
+	case json.Unmarshal(pkg.Bin, &one) == nil:
+		paths = []string{one}
+	case json.Unmarshal(pkg.Bin, &many) == nil:
+		for _, p := range many {
+			paths = append(paths, p)
+		}
+	default:
+		return errors.Newf("%s/package.json: bin must be a path or an object of paths", dir)
+	}
+	for _, p := range paths {
+		if err := os.Chmod(filepath.Join(dir, filepath.FromSlash(p)), 0o755); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // NeedsInstall 报告项目 dir 是否需要 bun install：没有 node_modules，或者根 package.json 的 workspaces 中的某个框架
