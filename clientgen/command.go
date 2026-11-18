@@ -24,7 +24,7 @@ var clientDirName = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 // 需要在应用源码目录中运行（例如 go run ./cmd/blog client --out ../api），因为类型声明和错误码从源码复制。
 //
 // --ts 为每个 API 生成 TypeScript 客户端（见 GenerateTS），写到 --ts 目录下以 API 名称命名的子目录：
-// 名称默认是 BasePath 的最后一段（/api 是 api，/api/admin 是 admin），--name 按 BasePath 改名，例如
+// 名称默认见 DefaultTSDir（/api 是 api，/api/admin 和 /admin/api 是 admin），--name 按 BasePath 改名，例如
 // --name /api/v1=public；两个 API 名称相同时报错。--out 生成 Go 客户端，路由中有多个 API 时用 --base-path 选择一个；
 // --base-path 同样把 --ts 限定为这一个 API。
 //
@@ -101,7 +101,7 @@ func Command(router func() chi.Routes, translations ...fs.FS) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&gen.Out, "out", "", "Go 客户端的输出目录，目录名是根包的包名，例如 ../api")
 	cmd.Flags().StringVar(&ts, "ts", "", "TypeScript 客户端的输出目录，每个 API 一个子目录，例如 packages/client/src")
-	cmd.Flags().StringToStringVar(&names, "name", nil, "BasePath=TypeScript 客户端的目录名，默认是 BasePath 的最后一段，可重复")
+	cmd.Flags().StringToStringVar(&names, "name", nil, "BasePath=TypeScript 客户端的目录名，默认是 BasePath 中最后一个不是 api、也不是路径参数的段，可重复")
 	cmd.Flags().StringVar(&gen.Main, "main", "", "应用的主包，在它的依赖中查找错误码；默认是当前程序")
 	cmd.Flags().StringSliceVar(&gen.Imports, "import", nil, "客户端可以直接导入的包（含子包），可重复")
 	cmd.Flags().StringVar(&basePath, "base-path", "", "只生成 BasePath 为它的 API，例如 /api/v1；路由中有多个 API 时 --out 需要它")
@@ -110,7 +110,7 @@ func Command(router func() chi.Routes, translations ...fs.FS) *cobra.Command {
 }
 
 // TSDirs 返回每个 API 的 TypeScript 客户端目录名，与 apis 一一对应：names 中按 BasePath 指定的名称，
-// 否则是 BasePath 的最后一段。名称不合法或重复时返回错误。
+// 否则是 DefaultTSDir。名称不合法或重复时返回错误，错误中给出在 tenon.json 中改名的写法。
 func TSDirs(apis []*rest.API, names map[string]string) ([]string, error) {
 	if len(apis) == 0 {
 		return nil, errors.New("no API registered in the router")
@@ -126,16 +126,34 @@ func TSDirs(apis []*rest.API, names map[string]string) ([]string, error) {
 		base := api.BasePath()
 		name, ok := names[base]
 		if !ok {
-			name = path.Base("/" + strings.Trim(base, "/"))
+			name = DefaultTSDir(base)
 		}
 		if !clientDirName.MatchString(name) {
-			return nil, errors.Newf("API %q: client name %q must match %s; set another name with --name %s=<name>", base, name, clientDirName, base)
+			return nil, errors.Newf("API %q: client name %q must match %s; set another name in tenon.json: %s", base, name, clientDirName, renameHint(base))
 		}
 		if other, ok := seen[name]; ok {
-			return nil, errors.Newf("APIs %q and %q are both named %q; rename one with --name <base path>=<name>", other, base, name)
+			return nil, errors.Newf("APIs %q and %q are both named %q; rename one in tenon.json: %s", other, base, name, renameHint(base))
 		}
 		seen[name] = base
 		dirs[i] = name
 	}
 	return dirs, nil
+}
+
+// DefaultTSDir 返回 BasePath 默认的 TypeScript 客户端目录名：从后往前第一个不是 api、也不是路径参数的段，
+// 例如 /api → api、/api/v1 → v1、/api/admin → admin、/admin/api → admin、/t/{tenant}/api → t。
+// 只有 api 这一段时是 api；BasePath 为空时返回 "/"，它不是合法的名称。
+func DefaultTSDir(base string) string {
+	segs := strings.Split(strings.Trim(base, "/"), "/")
+	for i := len(segs) - 1; i >= 0; i-- {
+		if s := segs[i]; s != "" && s != "api" && !strings.HasPrefix(s, "{") {
+			return s
+		}
+	}
+	return path.Base("/" + strings.Trim(base, "/"))
+}
+
+// renameHint 返回在 tenon.json 中给 BasePath 为 base 的 API 指定客户端目录名的写法。
+func renameHint(base string) string {
+	return fmt.Sprintf(`"apis": {%q: {"name": "<name>"}}`, base)
 }

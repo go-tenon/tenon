@@ -1,15 +1,15 @@
 import { createSession, ensureOK } from "@go-tenon/client"
 import { host } from "@go-tenon/host"
 
-// 登录相关的接口。模板按框架约定的路径调用它们，应用在 /api 下注册（写法见教程第 6 章“登录”）：
-// POST /api/auth/login 写入会话 cookie，POST /api/auth/logout 清除它，GET /api/me 返回当前用户。
+// 登录相关的接口。模板按框架约定的路径调用它们，应用在 [[.API]] 下注册（写法见教程第 6 章“登录”）：
+// POST [[.API]]/auth/login 写入会话 cookie，POST [[.API]]/auth/logout 清除它，GET [[.API]]/me 返回当前用户。
 // 登录凭据是 HttpOnly 的会话 cookie，浏览器随同源请求自动带上，页面上的脚本不接触它。
 // 在桌面端（Electron 等宿主）中，token 保存在宿主中，由宿主加在转发的请求上，页面同样不接触它。
 // 接口名或路径不同时只改这个文件。
 
 // session.fetch 同源发送 cookie；受保护的接口返回 401 时（只对发出时的身份有效）会话随之变为未登录。
 async function send(method: string, path: string, body?: unknown): Promise<Response> {
-  const res = await session.fetch(fetch)(`/api${path}`, {
+  const res = await session.fetch(fetch)(`[[.API]]${path}`, {
     method,
     headers: body === undefined ? undefined : { "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -28,7 +28,7 @@ export async function me(): Promise<Me> {
   return (await (await send("GET", "/me")).json()) as Me
 }
 
-// session 记录当前的身份：打开页面、登录后读取 /api/me，没有登录时它返回 401。
+// session 记录当前的身份：打开页面、登录后读取 [[.API]]/me，没有登录时它返回 401。
 export const session = createSession({ load: async () => ({ account: (await me()).id }) })
 
 export const login = (values: { email: string; password: string }) => send("POST", "/auth/login", values)

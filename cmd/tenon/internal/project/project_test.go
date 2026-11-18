@@ -218,3 +218,47 @@ func TestClients(t *testing.T) {
 		}
 	}
 }
+
+// 没有写 url 时，应用的地址按 tenon dev 运行应用时加载的配置中的 http.addr 推出。
+func TestURLFromAppConfig(t *testing.T) {
+	t.Setenv("TENON_TEST_DEV_PORT", "")
+	os.Unsetenv("TENON_TEST_DEV_PORT") // 由下面的 .env 提供；测试结束时恢复
+	t.Setenv("APP_CONFIG", "")
+	load := func(dir string) string {
+		t.Helper()
+		cfg, err := project.Load(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return cfg.URL
+	}
+	dir := t.TempDir()
+	write(t, dir, "cmd/blog/main.go", "package main\n")
+	if got := load(dir); got != "http://localhost:8080" {
+		t.Fatalf("no config: %s", got)
+	}
+	write(t, dir, "config/app.yaml", "http:\n  addr: \":8081\"\n")
+	if got := load(dir); got != "http://localhost:8081" {
+		t.Fatalf("app.yaml: %s", got)
+	}
+	write(t, dir, ".env", "TENON_TEST_DEV_PORT=9100\n")
+	write(t, dir, "config/local.yaml", "http:\n  addr: 0.0.0.0:${TENON_TEST_DEV_PORT}\n")
+	if got := load(dir); got != "http://localhost:9100" {
+		t.Fatalf("local.yaml with .env: %s", got)
+	}
+	// serve 指定了配置文件时按它读取；tenon.json 写了 url 时用它。
+	write(t, dir, "config/dev.yaml", "http:\n  addr: :7000\n")
+	write(t, dir, "tenon.json", `{"serve": ["serve", "--config=config/app.yaml,config/dev.yaml"]}`)
+	if got := load(dir); got != "http://localhost:7000" {
+		t.Fatalf("serve --config: %s", got)
+	}
+	write(t, dir, "tenon.json", `{"url": "https://app.test"}`)
+	if got := load(dir); got != "https://app.test" {
+		t.Fatalf("url in tenon.json: %s", got)
+	}
+	write(t, dir, "tenon.json", `{}`)
+	write(t, dir, "config/local.yaml", "http:\n  addr: :0\n")
+	if _, err := project.Load(dir); err == nil || !strings.Contains(err.Error(), "set url in tenon.json") {
+		t.Fatalf("random port: %v", err)
+	}
+}

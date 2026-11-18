@@ -111,9 +111,9 @@ func TestTSDirs(t *testing.T) {
 	api := func(base string) *rest.API {
 		return rest.New(chi.NewRouter(), rest.Options{Title: "x", BasePath: base})
 	}
-	apis := []*rest.API{api("/api"), api("/api/admin"), api("/api/v1/")}
+	apis := []*rest.API{api("/api"), api("/api/admin"), api("/api/v1/"), api("/ops/api"), api("/t/{tenant}/api")}
 	dirs, err := clientgen.TSDirs(apis, nil)
-	if err != nil || strings.Join(dirs, " ") != "api admin v1" {
+	if err != nil || strings.Join(dirs, " ") != "api admin v1 ops t" {
 		t.Fatalf("dirs %q, %v", dirs, err)
 	}
 	if dirs, err := clientgen.TSDirs(apis, map[string]string{"/api/v1/": "public"}); err != nil || dirs[2] != "public" {
@@ -124,7 +124,7 @@ func TestTSDirs(t *testing.T) {
 		names map[string]string
 		want  string
 	}{
-		"duplicate":  {[]*rest.API{api("/api/v1"), api("/admin/v1")}, nil, `both named "v1"`},
+		"duplicate":  {[]*rest.API{api("/api/v1"), api("/admin/v1")}, nil, `both named "v1"; rename one in tenon.json: "apis": {"/admin/v1": {"name": "<name>"}}`},
 		"invalid":    {[]*rest.API{api("/API")}, nil, "must match"},
 		"empty base": {[]*rest.API{api("")}, nil, "must match"},
 		"bad rename": {apis, map[string]string{"/api": "Public"}, "must match"},

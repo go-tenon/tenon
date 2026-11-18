@@ -141,14 +141,30 @@ func (d dev) prepare() error {
 }
 
 // DistDir 是构建产物的目录，apps 包用 go:embed 嵌入它（frontend.New 读取）：前端的清单、每个前端的静态文件，
-// 以及有 SSR 前端时的 Bun 可执行文件。它被 .gitignore 忽略，由 tenon build 生成；tenon dev、generate 只写清单。
+// 以及有 SSR 前端时的 Bun 可执行文件。它由 tenon build 生成；tenon dev、generate 只写清单。
 const DistDir = project.AppsDir + "/" + frontend.DistDir
 
-// WriteManifest 把项目 root 中的前端（名称、挂载路径、是否服务端渲染）写入 DistDir 中的清单。应用按清单分发页面请求，
-// 嵌入 DistDir 的代码也要它存在才能编译（例如刚 clone 的项目）。没有前端时什么也不做。
+// DistIgnore 是提交在 DistDir 中的 .gitignore：目录中的其他文件都不提交。它让刚 clone 的项目在还没有生成清单时，
+// apps 包的 embed 指令也有文件可嵌入，go build、go vet 照常通过；项目根目录的 .gitignore 用 !apps/dist/ 放行这个目录。
+const DistIgnore = "# 构建产物，由 tenon build、tenon dev 生成，不提交。这个文件让 go:embed all:dist 在还没有生成时也能编译。\n*\n!.gitignore\n"
+
+// WriteDistIgnore 在项目 root 的 DistDir 中写入 DistIgnore，目录不存在时创建它。
+func WriteDistIgnore(root string) error {
+	dir := filepath.Join(root, filepath.FromSlash(DistDir))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return errors.Wrap(err, "dev: write apps/dist/.gitignore")
+	}
+	return errors.Wrap(os.WriteFile(filepath.Join(dir, ".gitignore"), []byte(DistIgnore), 0o644), "dev: write apps/dist/.gitignore")
+}
+
+// WriteManifest 把项目 root 中的前端（名称、挂载路径、是否服务端渲染）写入 DistDir 中的清单，并写入 DistIgnore。
+// 应用按清单分发页面请求。没有前端时什么也不做。
 func WriteManifest(root string, cfg *project.Config) error {
 	if len(cfg.Frontends) == 0 {
 		return nil
+	}
+	if err := WriteDistIgnore(root); err != nil {
+		return err
 	}
 	entries := make([]frontend.Entry, len(cfg.Frontends))
 	for i, f := range cfg.Frontends {
@@ -408,30 +424,4 @@ func snapshot(dir string, include func(path string) bool) string {
 func goSource(path string) bool {
 	base := filepath.Base(path)
 	return strings.HasSuffix(base, ".go") && !strings.HasSuffix(base, "_test.go") || base == "go.mod" || base == "go.sum"
-}
-
-// copyInto 把 src 复制到 dst，覆盖同名的文件，跳过 project.SkipDir 中的目录（例如 node_modules），
-// 以及 skip 返回 true 的文件（skip 为 nil 时不跳过）。
-func copyInto(src, dst string, skip func(name string) bool) error {
-	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() && path != src && project.SkipDir(d.Name()) {
-			return filepath.SkipDir
-		}
-		rel, _ := filepath.Rel(src, path)
-		target := filepath.Join(dst, rel)
-		if d.IsDir() {
-			return os.MkdirAll(target, 0o755)
-		}
-		if skip != nil && skip(d.Name()) {
-			return nil
-		}
-		b, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		return os.WriteFile(target, b, 0o644)
-	})
 }

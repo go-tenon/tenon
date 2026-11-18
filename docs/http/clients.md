@@ -68,7 +68,7 @@ if errors.Is(err, article.ErrSlugTaken) {
 <a id="generating-types"></a>
 ### 生成客户端
 
-[tenon generate](../installation/tooling.md#generate) 从路由生成 TypeScript 客户端：项目中有共用的客户端包 `packages/client` 时，每个 API 生成到 `packages/client/src/<名称>`，名称默认是 `BasePath` 的最后一段，例如 `/api` 是 `api`、`/api/admin` 是 `admin`，见[前端与 API](../installation/tooling.md#conventions)。它编译应用，运行应用的 `client` 命令（见 [httpcmd.Commands](../installation/tooling.md#app-side)），与 [Go 客户端](go-client.md#generating-go-client)是同一个命令：
+[tenon generate](../installation/tooling.md#generate) 从路由生成 TypeScript 客户端：项目中有共用的客户端包 `packages/client` 时，每个 API 生成到 `packages/client/src/<名称>`，名称默认是 `BasePath` 的最后一段，跳过 `api` 和路径参数，例如 `/api` 是 `api`、`/api/admin` 和 `/admin/api` 都是 `admin`，见[前端与 API](../installation/tooling.md#conventions)。它编译应用，运行应用的 `client` 命令（见 [httpcmd.Commands](../installation/tooling.md#app-side)），与 [Go 客户端](go-client.md#generating-go-client)是同一个命令：
 
 ```bash
 go tool tenon generate   # 等价于 go run ./cmd/blog client --ts packages/client/src
@@ -303,7 +303,7 @@ oasdiff 只比较请求和响应的结构。schema 改名时结构相同，由�
 | 选项 | 说明 |
 | --- | --- |
 | `--ts <dir>` | TypeScript 客户端的输出目录，每个 API 写到其中以名称命名的子目录，例如 `packages/client/src`。应用的翻译文件由 `httpcmd.Translations` 传入，见[校验规则与验证提示](../frontend/client-react.md#validation-rules) |
-| `--name <path>=<name>` | 按 `BasePath` 指定 TypeScript 客户端的目录名，默认是 `BasePath` 的最后一段，可重复；两个 API 名称相同时报错 |
+| `--name <path>=<name>` | 按 `BasePath` 指定 TypeScript 客户端的目录名，默认是 `BasePath` 的最后一段（跳过 `api` 和路径参数），可重复；两个 API 名称相同时报错 |
 | `--out <dir>` | Go 客户端的输出目录，目录名是根包的包名，例如 `../api` |
 | `--main <pkg>` | 应用的主包，在它的依赖中查找错误码；默认是当前程序 |
 | `--import <pkg>` | 生成的 Go 代码可以直接导入的包（含子包），可重复；默认只有 `github.com/google/uuid` |

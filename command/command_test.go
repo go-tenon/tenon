@@ -3,16 +3,19 @@ package command_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/spf13/cobra"
 
 	"github.com/go-tenon/tenon/command"
 	"github.com/go-tenon/tenon/errorx"
+	"github.com/go-tenon/tenon/i18n"
 )
 
 type settings struct {
@@ -246,7 +249,8 @@ func TestConfigFiles(t *testing.T) {
 		args []string
 		want string
 	}{
-		{nil, "app"}, // 默认 config/app.yaml
+		{nil, "local"}, // 默认 config/app.yaml，config/local.yaml 存在时叠加在它之后
+		{[]string{"--config", "config/app.yaml"}, "app"}, // 传入 --config 时只加载传入的文件
 		{[]string{"--config", "config/app.yaml", "--config", "config/prod.yaml"}, "prod"},
 		{[]string{"--config", "config/app.yaml,config/prod.yaml,config/local.yaml"}, "local"},
 		{[]string{"--config", "config/prod.yaml", "--config", "config/app.yaml"}, "app"},
@@ -254,6 +258,14 @@ func TestConfigFiles(t *testing.T) {
 		if got := loadedName(t, tc.args...); got != tc.want {
 			t.Errorf("args=%v name=%q want %q", tc.args, got, tc.want)
 		}
+	}
+}
+
+// 没有 config/local.yaml 时默认只加载 config/app.yaml。
+func TestConfigFilesWithoutLocal(t *testing.T) {
+	projectDir(t, map[string]string{"config/app.yaml": "name: app\n"})
+	if got := loadedName(t); got != "app" {
+		t.Fatalf("name=%q", got)
 	}
 }
 
@@ -271,7 +283,8 @@ func TestConfigEnv(t *testing.T) {
 		{"config/app.yaml,config/prod.yaml", nil, "prod"},
 		{" config/app.yaml , config/local.yaml ,", nil, "local"},
 		{"config/app.yaml,config/prod.yaml", []string{"--config", "config/app.yaml"}, "app"}, // --config 优先
-		{"", nil, "app"},
+		{"config/app.yaml", nil, "app"},                                                      // APP_CONFIG 中没有 local.yaml 时不叠加
+		{"", nil, "local"},
 	} {
 		t.Setenv("APP_CONFIG", tc.env)
 		if got := loadedName(t, tc.args...); got != tc.want {
@@ -332,5 +345,53 @@ func TestInvalidDotEnvIsConfigError(t *testing.T) {
 	root := newRoot(command.Config[settings]())
 	if _, _, err := execute(root, "config", "check"); command.ExitCode(err) != command.ExitConfig {
 		t.Fatalf("exit=%d err=%v", command.ExitCode(err), err)
+	}
+}
+
+func TestErrorText(t *testing.T) {
+	t.Parallel()
+	b, err := i18n.New(i18n.LocaleZhCN, fstest.MapFS{
+		"zh-CN.yaml": {Data: []byte("demo.taken: \"“{{.name}}”已被使用\"\n")},
+		"en.yaml":    {Data: []byte("demo.taken: \"{{.name}} is taken\"\n")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	taken := errorx.Define(errorx.Conflict, "demo.taken").New(errorx.Public("name", "acme"))
+	zh := i18n.WithLocale(context.Background(), b, i18n.LocaleZhCN)
+	en := i18n.WithLocale(context.Background(), b, i18n.LocaleEn)
+	for _, tc := range []struct {
+		ctx  context.Context
+		err  error
+		want string
+	}{
+		{zh, taken, "“acme”已被使用（demo.taken）"},
+		{en, taken, "acme is taken (demo.taken)"},
+		{zh, fmt.Errorf("create: %w", taken), "“acme”已被使用（demo.taken）"},                      // 包装后仍按错误码翻译
+		{zh, errorx.Define(errorx.Conflict, "demo.untranslated").New(), "demo.untranslated"}, // 没有译文
+		{zh, errorx.Define(errorx.Unavailable, "demo.taken").New(), "demo.taken"},            // 系统故障显示错误本身
+		{zh, errors.New("plain failure"), "plain failure"},
+		{context.Background(), taken, "demo.taken"}, // context 中没有语言
+	} {
+		if got := command.ErrorText(tc.ctx, tc.err); got != tc.want {
+			t.Errorf("ErrorText(%v) = %q, want %q", tc.err, got, tc.want)
+		}
+	}
+}
+
+// 标准输入不是终端时，ReadSecret 读取第一行，不显示提示，不要求确认。
+func TestReadSecretFromPipe(t *testing.T) {
+	t.Parallel()
+	cmd := &cobra.Command{}
+	var stderr bytes.Buffer
+	cmd.SetIn(strings.NewReader("s3cret pass\r\nignored\n"))
+	cmd.SetErr(&stderr)
+	got, err := command.ReadSecret(cmd, "密码：", "再输入一次：")
+	if err != nil || got != "s3cret pass" || stderr.Len() != 0 {
+		t.Fatalf("got %q, %v, stderr %q", got, err, stderr.String())
+	}
+	cmd.SetIn(strings.NewReader("no newline"))
+	if got, err := command.ReadSecret(cmd, "密码：", ""); err != nil || got != "no newline" {
+		t.Fatalf("got %q, %v", got, err)
 	}
 }

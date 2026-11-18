@@ -73,7 +73,7 @@ cfg, err := config.Load[Config]("config/app.yaml")
 ```
 
 > [!TIP]
-> 使用[命令行](commands.md)时，命令会按 `--config` 选项加载配置；没有传入时读取环境变量 `APP_CONFIG`，它也没有设置时是 `config/app.yaml`，见[叠加多个配置文件](#overriding-configuration)。
+> 使用[命令行](commands.md)时，命令会按 `--config` 选项加载配置；没有传入时读取环境变量 `APP_CONFIG`，它也没有设置时是 `config/app.yaml`，`config/local.yaml` 存在时叠加在它之后，见[叠加多个配置文件](#overriding-configuration)。
 
 应用自己的配置，例如第三方服务的地址，同样定义成结构体，作为新的字段加入 `Config`。假设你要把图片上传到对象存储：
 
@@ -120,7 +120,10 @@ logs:
 ```bash
 ./bin/blog serve --config config/app.yaml --config config/local.yaml
 ./bin/blog serve --config config/app.yaml,config/local.yaml   # 与上一行等价
+./bin/blog serve                                              # 与上一行等价：config/local.yaml 存在时自动叠加
 ```
+
+`config/local.yaml` 是约定的本机覆盖：没有传入 `--config`、也没有设置 `APP_CONFIG` 时，命令加载 `config/app.yaml`，`config/local.yaml` 存在就叠加在它之后，`migrate up` 这类命令不用每次写 `--config`。`tenon dev` 运行应用时同样如此。它只在本机存在，把它加入 `.gitignore`；部署的机器上没有这个文件，只加载 `config/app.yaml`。
 
 在代码中加载时，同样按顺序传入：
 
@@ -138,7 +141,7 @@ cfg, err := config.Load[Config]("config/app.yaml", "config/local.yaml")
 APP_CONFIG=config/app.yaml,config/local.yaml
 ```
 
-传入了 `--config` 时，`APP_CONFIG` 被忽略；两者都没有时，只加载 `config/app.yaml`。
+传入了 `--config` 时，`APP_CONFIG` 被忽略；两者都没有时，加载 `config/app.yaml` 和存在时的 `config/local.yaml`。
 
 <a id="environment-variables"></a>
 ## 环境变量
@@ -147,12 +150,26 @@ APP_CONFIG=config/app.yaml,config/local.yaml
 
 | 写法 | 行为 |
 | --- | --- |
-| `${NAME}` | 变量必须已设置，否则报错；设置为空字符串也算已设置 |
+| `${NAME}` | 变量必须已设置，否则报错；设置为空字符串也算已设置。后面叠加的文件给出了这一项时不报错，见下文 |
 | `${NAME:-fallback}` | 变量未设置或为空时，使用 `fallback` |
 | `${NAME:-}` | 允许变量未设置，此时使用空字符串 |
 | `$${NAME}` | 转义，得到字面量 `${NAME}` |
 
 变量在 YAML 解析之后才展开，所以变量的内容只会成为字段的值，文件的结构保持原样。
+
+`${NAME}` 引用的变量没有设置时，这一项先跳过；全部文件叠加之后，后面的文件给出了这一项就不报错。这样 `app.yaml` 中可以写 `key: ${APP_KEY}`，部署时由环境变量提供，本机写在 `config/local.yaml` 中，不用为了本机开发改成 `${APP_KEY:-}`：
+
+```yaml
+# config/app.yaml
+crypt:
+  key: ${APP_KEY}
+
+# config/local.yaml（不提交）
+crypt:
+  key: 本机用的密钥
+```
+
+后面的文件也没有给出时，报错指出是哪个文件的哪一行。
 
 <a id="env-files"></a>
 ### .env 文件

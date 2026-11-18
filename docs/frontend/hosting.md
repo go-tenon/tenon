@@ -59,7 +59,7 @@
 - **Bun 只负责渲染**：它不连接数据库，也不持有密钥。渲染时需要的数据，经内部 socket 调用 Go 的接口，和浏览器调用的是同一组接口。页面请求流式转发，不缓冲。
 - **最多一个 Bun 可执行文件**：全部服务端渲染的前端编进同一个可执行文件（约 100 MB）。每个前端仍然是独立的进程，进程按环境变量 `TENON_FRONTEND` 只加载自己的前端。可执行文件启动时写入内存文件（memfd）执行，不落盘；Go 被强制结束时，SSR 进程随之结束。
 
-`go tool tenon build` 的产物在 `apps/dist` 中（被 `.gitignore` 忽略），`apps/apps.go` 用 `go:embed` 嵌入它：
+`go tool tenon build` 的产物在 `apps/dist` 中（不提交，目录中只提交一个 `.gitignore`），`apps/apps.go` 用 `go:embed` 嵌入它：
 
 ```
 apps/dist/
@@ -175,7 +175,7 @@ html, err := pages.Render(ctx, "web", "invoice", invoice)
 <a id="faq"></a>
 ## 常见问题
 
-**启动时报 `read dist/frontends.json`。** 原因：`apps/dist` 被 `.gitignore` 忽略，刚 clone 的项目中没有它，直接用 `go run` 或 `go build` 编译了应用。解决：开发时用 `bun run dev`（`tenon dev` 写入清单），部署时用 `go tool tenon build`。
+**启动时报 `read dist/frontends.json`。** 原因：清单不提交，刚 clone 的项目中没有它，直接用 `go run` 或 `go build` 编译了应用。解决：开发时用 `bun run dev`（`tenon dev` 写入清单），部署时用 `go tool tenon build`。
 
 **启动时报 `server rendering needs dist/ssr` 或 `missing dist/<名称>/_shell.html`。** 原因：改了 `package.json` 中的 `tenon` 字段，但没有重新构建，清单和构建产物对不上。解决：重新运行 `go tool tenon build`。
 

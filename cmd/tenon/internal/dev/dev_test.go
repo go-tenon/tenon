@@ -317,8 +317,17 @@ func TestSyncJS(t *testing.T) {
 			t.Errorf("%s copied", p)
 		}
 	}
+	// 再次同步时没有变化的文件不重写：开发服务器（Vite）运行时执行 tenon generate，不会看到文件变化而重新加载。
+	index := filepath.Join(dir, ".tenon", "js", "client", "src", "index.ts")
+	old := time.Now().Add(-time.Hour).Truncate(time.Second)
+	if err := os.Chtimes(index, old, old); err != nil {
+		t.Fatal(err)
+	}
 	if changed, err := dev.SyncJS("."); err != nil || changed {
 		t.Fatalf("second sync: changed %v, %v", changed, err)
+	}
+	if info, err := os.Stat(index); err != nil || !info.ModTime().Equal(old) {
+		t.Errorf("unchanged file rewritten: %v %v", info.ModTime(), err)
 	}
 	// 项目中的副本被改动后恢复为框架的版本，并报告变化。
 	if err := os.WriteFile(pkg, []byte("{}"), 0o644); err != nil {

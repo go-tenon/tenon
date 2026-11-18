@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net"
 	"os"
 	"os/exec"
 	"path"
@@ -14,6 +15,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/go-tenon/tenon/config"
 )
 
 // File 是项目配置文件的名字。
@@ -49,7 +52,7 @@ type Config struct {
 	Schema string          `json:"$schema,omitempty"` // 编辑器补全用的 JSON Schema 地址，只供编辑器使用。
 	Main   string          `json:"main,omitempty"`    // 应用入口的包，默认是 cmd 下唯一一个有 main.go 的目录，例如 ./cmd/blog。
 	Serve  []string        `json:"serve,omitempty"`   // 开发时运行应用的参数，默认 serve --config config/app.yaml,config/local.yaml（local.yaml 存在时才加上它）。
-	URL    string          `json:"url,omitempty"`     // 应用的地址，dev 打印它，前端的开发服务器经它调用接口，默认 http://localhost:8080。
+	URL    string          `json:"url,omitempty"`     // 应用的地址，dev 打印它，前端的开发服务器经它调用接口。默认按应用配置中的 http.addr 推出，见 appURL。
 	APIs   map[string]*API `json:"apis,omitempty"`    // 按 BasePath 覆盖 API 客户端的约定，例如改名或生成 Go 客户端。没有写的 API 按约定生成。
 	Tools  []Tool          `json:"tools,omitempty"`   // 与应用一起运行的其他工具，可空。
 	Agents *Agents         `json:"agents,omitempty"`  // 接入哪些 AI 编程助手，见 tenon agents；省略时接入 DefaultTargets。
@@ -61,7 +64,7 @@ type Config struct {
 
 // API 覆盖一个 API 客户端的约定。
 type API struct {
-	Name string `json:"name,omitempty"` // TypeScript 客户端的目录名，默认是 BasePath 的最后一段，例如 /api/admin 是 admin。
+	Name string `json:"name,omitempty"` // TypeScript 客户端的目录名，默认是 BasePath 中从后往前第一个不是 api、也不是路径参数的段，例如 /api/admin 和 /admin/api 都是 admin。
 	Go   string `json:"go,omitempty"`   // Go 客户端的目录，例如 ../api，设置后才生成。
 }
 
@@ -140,6 +143,11 @@ func Load(dir string) (*Config, error) {
 		}
 	}
 	cfg.defaults(dir)
+	if cfg.URL == "" {
+		if cfg.URL, err = appURL(dir, cfg.Serve); err != nil {
+			return nil, err
+		}
+	}
 	if err := cfg.discover(dir); err != nil {
 		return nil, err
 	}
@@ -155,9 +163,50 @@ func (c *Config) defaults(dir string) {
 		}
 		c.Serve = []string{"serve", "--config", configs}
 	}
-	if c.URL == "" {
-		c.URL = "http://localhost:8080"
+}
+
+// appURL 返回开发时应用的地址：从 tenon dev 运行应用时加载的配置文件（serve 参数中的 --config，没有时是环境变量
+// APP_CONFIG，再没有时是 config/app.yaml，存在时叠加 config/local.yaml）读出 http.addr，端口不变，主机换成 localhost。
+// 配置中没有 http.addr 时是 http://localhost:8080，与应用的默认值相同。先读取项目根目录的 .env，
+// 配置中 ${PORT} 这类引用与应用读到的值相同。改了应用的端口，前端的开发服务器跟着调用新的地址。
+func appURL(dir string, serve []string) (string, error) {
+	if err := config.LoadEnv(filepath.Join(dir, ".env")); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return "", err
 	}
+	var files []string
+	for i, a := range serve {
+		switch {
+		case a == "--config" && i+1 < len(serve):
+			files = append(files, strings.Split(serve[i+1], ",")...)
+		case strings.HasPrefix(a, "--config="):
+			files = append(files, strings.Split(strings.TrimPrefix(a, "--config="), ",")...)
+		}
+	}
+	if len(files) == 0 {
+		if v := os.Getenv("APP_CONFIG"); v != "" {
+			files = strings.Split(v, ",")
+		} else {
+			files = []string{"config/app.yaml", "config/local.yaml"}
+		}
+	}
+	var paths []string
+	for _, f := range files {
+		if f = strings.TrimSpace(f); f != "" && exists(dir, f) {
+			paths = append(paths, filepath.Join(dir, filepath.FromSlash(f)))
+		}
+	}
+	addr, ok, err := config.Value("http.addr", paths...)
+	if err != nil {
+		return "", fmt.Errorf("%s: url: %w (or set url in %s)", File, err, File)
+	}
+	if !ok {
+		return "http://localhost:8080", nil
+	}
+	_, port, err := net.SplitHostPort(addr)
+	if err != nil || port == "" || port == "0" {
+		return "", fmt.Errorf("%s: url: http.addr %q in the app config has no fixed port; set url in %s", File, addr, File)
+	}
+	return "http://localhost:" + port, nil
 }
 
 // discover 找出应用的入口（没有设置 Main 时）、apps 中的前端和共用的客户端包。

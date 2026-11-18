@@ -20,6 +20,7 @@ ai.busy: 对话正在进行，请稍后再试
 ai.awaiting_approval: 对话正在等待审批，请先处理待审批的操作
 ai.finished: 回答已经结束
 ai.not_pending: 没有这个待审批的操作
+command.secret_mismatch: 两次输入的不一致
 apitoken.not_found: 令牌不存在
 login.invalid_credentials: 账号或密码不正确
 login.invalid_code: 验证码不正确或已失效

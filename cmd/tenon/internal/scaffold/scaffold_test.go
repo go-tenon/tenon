@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -11,6 +12,7 @@ import (
 
 	"go.yaml.in/yaml/v4"
 
+	"github.com/go-tenon/tenon/cmd/tenon/internal/dev"
 	"github.com/go-tenon/tenon/cmd/tenon/internal/scaffold"
 )
 
@@ -41,7 +43,9 @@ func TestWrite(t *testing.T) {
 		"apps/web/src/routes/index.tsx":  `from "@todo/client/api"`, // 示例页面覆盖前端模板的首页
 		"apps/web/src/api.ts":            "fetch: apiFetch",
 		"go.mod":                         "\nignore node_modules\n",
-		".gitignore":                     "\ndist/\n",
+		".gitignore":                     "\ndist/\n# apps/dist 中提交了一个 .gitignore，见其中的说明\n!apps/dist/\n",
+		"apps/dist/.gitignore":           "*\n!.gitignore\n",
+		"./.gitignore":                   "\nconfig/local.yaml\n",
 		"apps/apps.go":                   "//go:embed all:dist\nvar Dist embed.FS\n",
 		"AGENTS.md":                      "\n<!-- tenon:begin -->\n<!-- tenon:end -->\n", // tenon agents 填写这一段
 		"cmd/../package.json":            `"agents": "go tool tenon agents"`,
@@ -343,5 +347,40 @@ func TestNamesStandApartFromChinese(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestDistIgnore 检查新项目的 apps/dist：模板中的 .gitignore 与 tenon build 写回的相同；git 提交它，
+// 不提交目录中的清单和构建产物，刚 clone 的项目中 go:embed all:dist 也有文件可嵌入。
+func TestDistIgnore(t *testing.T) {
+	t.Parallel()
+	dir := filepath.Join(t.TempDir(), "todo")
+	if err := scaffold.Write(dir, scaffold.Options{Module: "example.com/todo", Name: "Todo", TenonVersion: "v0.0.0"}); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "apps/dist/.gitignore")); string(b) != dev.DistIgnore {
+		t.Fatalf("apps/dist/.gitignore differs from dev.DistIgnore:\n%s", b)
+	}
+	for _, f := range []string{"apps/dist/frontends.json", "apps/dist/web/index.html", "apps/web/dist/client/a.js"} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, f)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, f), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	git := func(args ...string) string {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+		return string(out)
+	}
+	git("init", "-q")
+	got := git("ls-files", "--others", "--exclude-standard", "apps")
+	if !strings.Contains(got, "apps/dist/.gitignore\n") || strings.Contains(got, "frontends.json") || strings.Contains(got, "index.html") || strings.Contains(got, "a.js") {
+		t.Fatalf("files git would add under apps:\n%s", got)
 	}
 }
