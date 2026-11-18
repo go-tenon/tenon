@@ -1,8 +1,8 @@
 # 布局与导航
 
-运营后台和控制台的页面放在 `AppLayout` 中：顶栏占满整行，左边是标志，中间是多标签（开启时），右边是操作和用户菜单；顶栏下面左侧是页面搜索和按权限过滤的侧栏菜单，右侧是页面，可以开启多标签。这一页介绍 `AppLayout`、顶栏、页面搜索、多标签、租户切换和页面的标题区，最后是自己写布局时用到的导航模型和插槽。
+运营后台的页面放在 `AppLayout` 中：顶栏占满整行，左边是标志，中间是多标签（开启时），右边是操作和用户菜单；顶栏下面左侧是页面搜索和按权限过滤的侧栏菜单，右侧是页面，可以开启多标签。这一页介绍 `AppLayout`、顶栏、页面搜索、多标签、租户切换和页面的标题区，最后是自己写布局时用到的导航模型和插槽。
 
-官网和文档站用 `SiteLayout`、`DocsLayout`，见[官网与文档站](site.md)。
+商户侧（SaaS 控制台）的布局见[商户侧的布局](#console-layouts)，官网和文档站用 `SiteLayout`、`DocsLayout`，见[官网与文档站](site.md)。
 
 阅读前需要了解：[搭建前端应用](app.md)。
 
@@ -14,6 +14,7 @@
 - [页面的标题区](#page)
 - [多标签](#tabs)
 - [租户](#tenants)
+- [商户侧的布局](#console-layouts)
 - [自己写布局](#custom-layouts)
 - [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
@@ -271,6 +272,20 @@ export const Route = createFileRoute("/t/$tenant")({
 
 自己画租户菜单时用 `useTenant()`：`{ current, tenant, tenants, switchTo }`，用户选择留下时 `switchTo` 返回 `false`。
 
+<a id="console-layouts"></a>
+## 商户侧的布局
+
+商户侧有两种布局方案，现在都是占位，以后逐步设计：`ConsoleSideLayout` 是侧栏导航，`ConsoleTopLayout` 是顶部导航。它们只有顶栏（名称、用户菜单）、按权限过滤的导航和页面内容，导航与 `AppLayout` 一样来自路由的 `staticData`。`tenon add frontend --style console` 生成的前端用侧栏导航：
+
+```tsx title="src/routes/_app.tsx"
+function Layout() {
+  const user = useQuery({ queryKey: ["me"], queryFn: me })
+  return <ConsoleSideLayout title="Acme" user={<UserMenu name={user.data?.name} logout={logout} />} />
+}
+```
+
+换成顶部导航只改组件名。框架的 `js/playground` 中打开 `/console/?layout=top` 看顶部导航的占位。
+
 <a id="custom-layouts"></a>
 ## 自己写布局
 
@@ -338,6 +353,7 @@ function TopLayout() {
 | 名称 | 说明 |
 | --- | --- |
 | `AppLayout` | 应用外壳：`title`、`logo`、`user`、`actions`、`search`、`tabs`、`maxWidth` |
+| `ConsoleSideLayout`、`ConsoleTopLayout` | 商户侧的两种布局（占位）：`title`、`user` |
 | `Fill`、`Slot`、`useSlotFilled`、`SlotName` | 插槽 |
 | `SessionBoundary` | 身份变化时重新挂载其中的页面 |
 | `UserMenu`、`TenantSwitcher`、`NotificationsMenu`、`OperationsMenu`、`LanguageMenu`、`ColorSchemeToggle` | 顶栏菜单；`UserMenu` 的选项：`name`、`avatar`、`logout`、`items`、`colorScheme` |

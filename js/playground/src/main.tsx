@@ -10,6 +10,8 @@ import {
   AppLayout,
   AppRoot,
   AuthLayout,
+  ConsoleSideLayout,
+  ConsoleTopLayout,
   createApp,
   createUiTheme,
   DocsLayout,
@@ -44,19 +46,15 @@ import {
   Container,
   Group,
   Paper,
-  Progress,
   Select,
   SimpleGrid,
   Stack,
-  Switch,
   Table,
   Text,
-  Textarea,
   TextInput,
-  ThemeIcon,
   Title,
 } from "@mantine/core"
-import { IconDownload, IconPlus, IconSearch, IconStack2 } from "@tabler/icons-react"
+import { IconDownload, IconPlus, IconSearch } from "@tabler/icons-react"
 import { type AnyRoute, createRootRouteWithContext, createRoute, Link, Outlet, useParams } from "@tanstack/react-router"
 import { type ReactNode, useEffect, useMemo, useState } from "react"
 import { createRoot } from "react-dom/client"
@@ -375,71 +373,19 @@ function LoginPage(): ReactNode {
 
 // ———————————————————————————— SaaS 控制台 ————————————————————————————
 
+// 商户侧的两种布局方案（占位）：地址中 ?layout=top 用顶部导航，默认侧栏导航。
+const consoleLayout = new URLSearchParams(location.search).get("layout") === "top" ? "top" : "side"
+
 function ConsoleShell(): ReactNode {
-  return (
-    <AppLayout
-      title="Acme Cloud"
-      maxWidth={1200}
-      actions={<NotificationsMenu source={notifications} />}
-      user={<UserMenu name="韩梅梅" logout={async () => {}} />}
-    />
-  )
+  const Layout = consoleLayout === "top" ? ConsoleTopLayout : ConsoleSideLayout
+  return <Layout title="Acme Cloud" user={<UserMenu name="韩梅梅" logout={async () => {}} />} />
 }
 
-function ConsoleHome(): ReactNode {
-  const projects = [
-    { name: "官网", env: "生产", usage: 64, status: "运行中" },
-    { name: "订单服务", env: "生产", usage: 82, status: "运行中" },
-    { name: "数据分析", env: "预发布", usage: 23, status: "已暂停" },
-  ]
+/** 商户侧页面的占位。 */
+function ConsolePlaceholder({ title }: { title: string }): ReactNode {
   return (
-    <Page
-      title="概览"
-      description="Acme 科技 · 专业版"
-      actions={<Button leftSection={<IconPlus size={16} />}>新建项目</Button>}
-    >
-      <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="lg">
-        {projects.map((p) => (
-          <Card key={p.name}>
-            <Group justify="space-between">
-              <Group gap="sm">
-                <ThemeIcon variant="light" radius="md" size={36}>
-                  <IconStack2 size={18} />
-                </ThemeIcon>
-                <div>
-                  <Text fw={600}>{p.name}</Text>
-                  <Text size="xs" c="dimmed">
-                    {p.env}环境
-                  </Text>
-                </div>
-              </Group>
-              <Badge color={p.status === "运行中" ? "green" : "gray"} variant="dot">
-                {p.status}
-              </Badge>
-            </Group>
-            <Text size="xs" c="dimmed" mt="lg" mb={6}>
-              本月用量 {p.usage}%
-            </Text>
-            <Progress value={p.usage} size="sm" />
-          </Card>
-        ))}
-      </SimpleGrid>
-      <Card>
-        <Title order={4} mb={4}>
-          团队设置
-        </Title>
-        <Text size="sm" c="dimmed" mb="lg">
-          修改后对团队的所有成员生效。
-        </Text>
-        <Stack gap="md" maw={480}>
-          <TextInput label="团队名称" defaultValue="Acme 科技" />
-          <Textarea label="简介" placeholder="一句话介绍你的团队" autosize minRows={2} />
-          <Switch label="要求成员使用二次验证" defaultChecked />
-          <Group>
-            <Button>保存</Button>
-          </Group>
-        </Stack>
-      </Card>
+    <Page title={title}>
+      <Text c="dimmed">商户侧页面的占位，布局方案：{consoleLayout === "top" ? "顶部导航" : "侧栏导航"}。</Text>
     </Page>
   )
 }
@@ -458,17 +404,10 @@ function consoleApp() {
       getParentRoute: () => layout,
       path,
       staticData: { title, icon, order: order++ },
-      component: path === "/" ? ConsoleHome : () => <AdminPlaceholder title={title} />,
+      component: () => <ConsolePlaceholder title={title} />,
     })
   const routeTree = root.addChildren([
-    layout.addChildren([
-      page("/", "概览", "home"),
-      page("/projects", "项目", "apps"),
-      page("/members", "成员", "team"),
-      page("/api-keys", "API 密钥", "key"),
-      page("/billing", "账单", "payment"),
-      page("/settings", "设置", "settings"),
-    ]),
+    layout.addChildren([page("/", "首页", "home"), page("/settings", "设置", "settings")]),
   ])
   return createApp({
     id: "playground-console",
