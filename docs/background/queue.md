@@ -269,10 +269,10 @@ topic `mail.send` 的任务发布到 subject `jobs.job.mail.send`，等待投递
 两种情况需要自己标记：
 
 - 不是业务错误、但重试也是徒劳的错误，例如推送服务拒绝了配置不对的请求，用 `queue.Permanent` 包装，任务直接转入失败任务表；
-- 业务错误确实可能在稍后消失，例如从只读副本读到了还没有同步的数据而得到 `NotFound`，用 `queue.Retry` 包装，任务照常重试。
+- 业务错误确实可能在稍后消失，例如任务要用的数据由另一个系统同步过来，还没有同步到而得到 `NotFound`，用 `queue.Retry` 包装，任务照常重试。
 
 ```go
-if errors.Is(err, article.ErrNotFound) && replica {
+if errors.Is(err, crm.ErrCustomerNotFound) {
     return queue.Retry(err)
 }
 ```

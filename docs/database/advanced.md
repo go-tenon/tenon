@@ -5,7 +5,7 @@
 - **慢查询日志**：找出执行得慢的语句；
 - **软删除**：删除时只做一个标记，数据仍然留在表中，可以恢复；
 - **隔离级别与死锁**：多个事务同时修改同一批数据时会发生什么；
-- **只读副本**：把只读的查询分给从库，减轻主库的压力；
+- **只读副本**：把事务之外的查询自动分给从库，减轻主库的压力；
 - **多个数据库**：一个应用连接两个或更多数据库。
 
 用到哪个读哪一节即可。
@@ -90,29 +90,61 @@ for attempt := 1; ; attempt++ {
 <a id="read-replicas"></a>
 ## 只读副本
 
-读多写少的应用可以把一部分读取交给只读副本，减轻主库的压力。副本是主库之外的另一个连接池，用 `database.ReadOnly` 打开，在入口和主库一起创建：
+读多写少的应用可以把读取分给只读副本（从库），减轻主库的压力。副本由 PostgreSQL 的流复制从主库同步数据，只能读，不能写。在 `database` 配置中列出副本的连接串：
 
-```go
-replica, err := database.Open(ctx, cfg.Replica, database.Name("replica"), database.ReadOnly())
+```yaml
+database:
+  dsn: ${DATABASE_URL}                  # 主库
+  replicas:
+    - ${DATABASE_REPLICA_1_URL}
+    - ${DATABASE_REPLICA_2_URL}
 ```
 
-`ReadOnly` 让副本的会话默认只读：误把写操作交给它时，立即得到 `database.IsReadOnly` 能识别的错误。`Name` 是连接池的名字，区分主库和副本。有多个副本时，在它们前面放一个负载均衡（云数据库的只读地址、HAProxy 等），`replica.dsn` 指向它。
+业务代码不用改。`database.Open` 返回的还是一个 `*bun.DB`，它按每条语句选择在哪个库执行：
 
-哪些读取交给副本，由业务动作在构造函数中声明。文章列表能容忍几百毫秒的复制延迟，交给副本；发布文章要在事务中读取并修改，用主库：
+| 语句 | 在哪里执行 |
+| --- | --- |
+| 事务之外的 `NewSelect()` 查询，包括 `Count`、`Exists` | 副本，多个副本轮流 |
+| 写操作：`NewInsert`、`NewUpdate`、`NewDelete` 等 | 主库 |
+| 事务中的全部语句，包括查询 | 主库 |
+| 原始 SQL：`NewRaw`、`ExecContext`、`QueryContext` | 主库 |
+| `database.Primary` 返回的 `ctx` 中的语句 | 主库 |
+
+每个副本有自己的连接池，参数与主库相同（`max_conns` 等），会话默认只读：误把写操作交给副本时，立即得到 `database.IsReadOnly` 能识别的错误。连接池的名字是 `primary-replica-1`、`primary-replica-2`……，链路和指标的 `server.address` 是语句实际执行的那个库，见[可观测性](../general/telemetry.md#database)。`Open` 时每个副本都要能连上，否则返回 `database.ErrUnavailable`。
+
+<a id="replication-lag"></a>
+### 复制延迟
+
+副本上的数据比主库晚一点，通常是几毫秒到几百毫秒。刚写入的数据，紧接着在副本上可能还读不到。在一个事务中先写后读不受影响，因为事务中的语句都在主库执行。需要在事务之外读到最新数据时，用 `database.Primary` 包装 `ctx`：
 
 ```go
-list := article.NewList(a.replica)
-publish := article.NewPublish(a.db, a.emails)
+ctx = database.Primary(ctx)
+err := db.NewSelect().Model(&order).Where("id = ?", id).Scan(ctx) // 在主库执行
 ```
 
-副本上的数据比主库晚一点，选择时注意：
+`ctx` 是请求的上下文，`db` 是打开的连接池，`order` 和 `id` 是要读取的订单和它的 ID。需要读主库的典型场景：
 
-- **刚写入的数据可能还读不到。** 写完立即要读的地方用主库，例如修改后返回最新内容、标记已读后刷新未读数。
-- **授权检查和事务中的读取用主库**，见[在事务中检查](../security/authorization.md#checking-in-transactions)。
-- **框架的组件都用主库**：权限、token、功能开关、队列。`search.Search` 这类只读取的函数接收 `db` 参数，可以传入副本。
-- 副本上运行很久的查询可能因为与复制冲突被取消，报表类的长查询可以在副本上开启 `hot_standby_feedback`。监控副本的复制延迟（`pg_stat_replication.replay_lag`）。
+- **客户端写完立即读。** 例如提交订单后马上请求订单详情：这是两个请求，第二个请求读副本时可能得到 `NotFound`。让详情接口读主库，或者让提交接口直接返回订单的内容，客户端不必再查一次。
+- **填充缓存。** 缓存在修改提交后删除，接下来的读取把数据重新写进缓存。从副本读到旧数据时，旧数据会一直留在缓存中，直到过期。
+- **读取之后要做判断再修改。** 这类逻辑放进事务，并用 `FOR UPDATE` 锁住要修改的行，见[隔离级别与死锁](#isolation-and-deadlocks)。事务之外的 `FOR UPDATE` 会分到副本，副本拒绝它。
 
-测试中用 `dbtest.Replica(t, db)` 代替副本：它连接同一个测试库，没有延迟，写入时失败，能发现误把写操作交给副本的代码。
+框架已经处理了自己的组件：[队列](../background/queue.md)任务中的查询都在主库执行，因为任务在发布它的事务提交后立即送达；token 的校验、权限缓存的填充、[操作](../features/operations.md)进度的查询也在主库执行。
+
+监控副本的复制延迟（主库上 `pg_stat_replication` 的 `replay_lag`）。副本上运行很久的查询可能因为与复制冲突被取消，报表类的长查询可以在副本上开启 `hot_standby_feedback`。
+
+<a id="explicit-replica"></a>
+### 单独的副本连接池
+
+报表、导出这类需要明确指定、只在副本上执行的读取，可以另开一个只读连接池，把它交给对应的业务动作：
+
+```go
+reports, err := database.Open(ctx, cfg.Reports, database.Name("reports"), database.ReadOnly())
+summary := report.NewSummary(reports)
+```
+
+`cfg.Reports` 是配置中另一段 `database.Config`，`dsn` 指向副本。`ReadOnly` 让会话默认只读，`Name` 是连接池的名字。通过它执行的全部语句都在这个副本上，包括原始 SQL 和队列任务中的查询。
+
+测试中用 `dbtest.Replica(t, db)` 代替这样的连接池：它连接同一个测试库，没有延迟，写入时失败，能发现误把写操作交给副本的代码。
 
 <a id="multiple-databases"></a>
 ## 多个数据库
@@ -156,13 +188,13 @@ mig.AddCommand(migratecmd.New(analyticsmigrations.FS, func(c Config) database.Co
 
 两个事务按不同的顺序锁住了同一批行，互相等待。让所有事务按相同的顺序加锁（例如按 ID 排序），并在出现死锁时重试，见[隔离级别与死锁](#isolation-and-deadlocks)。
 
-**刚写入的数据，从副本中读不到**
+**刚写入的数据，偶尔查不到**
 
-副本上的数据比主库晚一点。写入之后马上要读的场景（例如保存后跳转到详情页）读主库，见[只读副本](#read-replicas)。
+配置了副本时，事务之外的查询在副本上执行，副本上的数据比主库晚一点。写入之后马上要读的地方用 `database.Primary(ctx)` 读主库，见[复制延迟](#replication-lag)。
 
-**发给副本的语句报错只读**
+**查询报错只读（`cannot execute ... in a read-only transaction`）**
 
-副本的会话是只读的，写操作要交给主库。用 `database.IsReadOnly` 可以识别这个错误。
+语句被交给了副本，副本的会话是只读的。常见原因是在事务之外写了 `FOR UPDATE`，或者 `NewSelect` 中调用了会写数据的函数（例如 `nextval`）：把它放进事务，或者用 `database.Primary(ctx)`。用 `database.IsReadOnly` 可以识别这个错误。
 
 **拆库后，某个库中发布的任务一直没有执行**
 

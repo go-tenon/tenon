@@ -93,6 +93,7 @@ database:
   max_conn_lifetime: 1h
   max_conn_idle_time: 30m
   slow_query: 1s
+  replicas: []
 ```
 
 | 字段 | 说明 | `DefaultConfig` 中的默认值 |
@@ -103,6 +104,7 @@ database:
 | `max_conn_lifetime` | 连接的最长存活时间，到期后在空闲时关闭 | `1h` |
 | `max_conn_idle_time` | 超过 `min_conns` 的空闲连接的最长保留时间 | `30m` |
 | `slow_query` | 执行时间达到它的语句记为[慢查询](advanced.md#slow-queries)；`0` 表示不记录 | `1s` |
+| `replicas` | [只读副本](advanced.md#read-replicas)的连接串，事务之外的查询分给它们；为空时全部在主库 | 空 |
 
 这些字段对应 `database.Config` 结构体。把它放进应用的根配置结构体，`config.Load` 会自动填充上表中的默认值：
 
@@ -117,7 +119,7 @@ if err != nil {
 }
 ```
 
-`database.Config` 实现了 `Validate` 方法，`config.Load` 会自动检查 DSN 是否为空、连接池参数是否合法；DSN 的格式在打开连接时检查。
+`database.Config` 实现了 `Validate` 方法，`config.Load` 会自动检查 DSN 是否为空、副本的连接串是否为空、连接池参数是否合法；DSN 的格式在打开连接时检查。
 
 > [!TIP]
 > 设置 `max_conns` 时，请考虑应用的部署副本数：所有副本的连接数之和要控制在数据库的最大连接数以内。
@@ -386,7 +388,15 @@ func Open(ctx context.Context, cfg Config, opts ...Option) (*bun.DB, error)
     - `opts`：可选的设置，见下面的 `Option`
 - **返回**：Bun 的数据库对象；连不上数据库时返回 `ErrUnavailable`
 
-创建连接池并立即 Ping 数据库，失败时关闭已经打开的资源。
+创建连接池并立即 Ping 数据库，失败时关闭已经打开的资源。`cfg.Replicas` 非空时，每个副本另有一个连接池，事务之外的查询分给它们，见[只读副本](advanced.md#read-replicas)。
+
+### Primary
+
+```go
+func Primary(ctx context.Context) context.Context
+```
+
+返回的 `ctx` 中的语句都在主库执行，用于需要读到刚写入的数据的地方，见[复制延迟](advanced.md#replication-lag)。没有配置副本时不改变任何行为。
 
 ### Option
 
@@ -397,7 +407,7 @@ func Name(name string) Option
 func ReadOnly() Option
 ```
 
-`WithTelemetry` 报告每条语句的指标和链路，见[可观测性](../general/telemetry.md#database)；`WithLogger` 指定慢查询的日志器；`Name` 是连接池的名称，默认 `primary`；`ReadOnly` 让会话默认只读，用于[只读副本](advanced.md#read-replicas)。
+`WithTelemetry` 报告每条语句的指标和链路，见[可观测性](../general/telemetry.md#database)；`WithLogger` 指定慢查询的日志器；`Name` 是连接池的名称，默认 `primary`；`ReadOnly` 让会话默认只读，用于[单独的副本连接池](advanced.md#explicit-replica)。
 
 ### Config、DefaultConfig
 
@@ -445,5 +455,5 @@ func IsReadOnly(err error) bool
 
 | 错误 | 分类 | 何时返回 |
 | --- | --- | --- |
-| `ErrUnavailable` | `Unavailable` | `Open` 时连不上数据库 |
+| `ErrUnavailable` | `Unavailable` | `Open` 时连不上数据库或某个副本 |
 | `ErrBusy` | `Unavailable` | 取连接超过 [`acquire` 的时限](#pool-exhaustion) |
