@@ -284,6 +284,10 @@ func TestDevFrontends(t *testing.T) {
 	if !strings.Contains(out.String(), "dev: 打开 http://localhost:8080") {
 		t.Errorf("output = %q", out.String())
 	}
+	// 各进程的输出同时写进 .tenon/dev.log，AI 编程助手经 tenon_dev_logs 读取。
+	if devLog := read(filepath.Join(dir, dev.LogFile)); !strings.Contains(devLog, "dev: 打开 http://localhost:8080") || !strings.Contains(devLog, "编译失败") {
+		t.Errorf("%s:\n%s", dev.LogFile, devLog)
+	}
 }
 
 // SyncJS 把框架 js 中的包复制到 .tenon/js，跳过 node_modules；package.json 有变化时报告 changed。

@@ -30,8 +30,22 @@ const DevConfig = ".tenon/dev.yaml"
 
 // Run 在当前目录运行开发模式，直到 ctx 取消；停止后运行工具的构建命令。clients 是同时运行的客户端，
 // 例如 Electron 桌面端，它们的页面来自前端的开发服务器。
-func Run(ctx context.Context, cfg *project.Config, clients []project.Client, out, errOut io.Writer) error {
-	d := dev{cfg: cfg, clients: clients, out: shared(out), errOut: shared(errOut)}
+//
+// 各进程的输出同时写进 out、errOut 和 LogFile。子进程的输出因此是管道：out 是终端时设置 FORCE_COLOR，
+// 应用的日志和前端工具的输出照样按终端着色，写进 LogFile 时去掉颜色。
+func Run(ctx context.Context, cfg *project.Config, clients []project.Client, out, errOut io.Writer) (err error) {
+	log, err := openLog()
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, log.Close()) }()
+	if isTerminal(out) && os.Getenv("NO_COLOR") == "" {
+		if err := os.Setenv("FORCE_COLOR", "1"); err != nil {
+			return err
+		}
+	}
+	d := dev{cfg: cfg, clients: clients,
+		out: &lockedWriter{w: io.MultiWriter(out, log)}, errOut: &lockedWriter{w: io.MultiWriter(errOut, log)}}
 	if err := d.check(); err != nil {
 		return err
 	}
@@ -55,14 +69,6 @@ type dev struct {
 	clients     []project.Client // 同时运行的客户端
 	out, errOut io.Writer
 	servers     map[string]string // 各前端开发服务器的地址，按前端的名称。
-}
-
-// shared 让多个子进程可以同时写 w。*os.File 直接交给子进程，它们能识别终端、输出颜色。
-func shared(w io.Writer) io.Writer {
-	if _, ok := w.(*os.File); ok {
-		return w
-	}
-	return &lockedWriter{w: w}
 }
 
 // lockedWriter 让多个进程的输出逐次写入 w，不交错。

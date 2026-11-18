@@ -221,11 +221,14 @@ type Server struct {
 }
 
 // managed 是 tenon agents 维护的 MCP 服务的名称：配置中这些键由它改写或删除，其他键保持原样。
-var managed = []string{"gopls", "mantine"}
+var managed = []string{"tenon", "gopls", "mantine"}
 
-// Servers 返回项目 p 要配置的 MCP 服务：总是有 Go 的语言服务 gopls，有 Mantine 时加上它的文档服务。
+// Servers 返回项目 p 要配置的 MCP 服务：总是有 tenon mcp 和 Go 的语言服务 gopls，有 Mantine 时加上它的文档服务。
 func Servers(p *Project) []Server {
 	servers := []Server{{
+		Name: "tenon", Command: "go", Args: []string{"tool", "tenon", "mcp"},
+		Doc: "Tenon 的开发工具：`tenon_search_docs` 按小节检索框架的文档，`tenon_read_doc` 读一页的目录或一个小节，`tenon_app_info` 列出项目的版本、前端、客户端和依赖，`tenon_dev_logs` 读 `bun run dev` 中的编译错误和应用日志",
+	}, {
 		Name: "gopls", Command: "gopls", Args: []string{"mcp"},
 		Doc: "Go 的语言服务：在项目和依赖（与 go.mod 的版本一致）中查找符号、读文档、检查编译错误。需要安装 gopls：`go install golang.org/x/tools/gopls@latest`",
 	}}
@@ -236,6 +239,42 @@ func Servers(p *Project) []Server {
 		})
 	}
 	return servers
+}
+
+// Dependency 是项目用到的一个社区组件。
+type Dependency struct {
+	Name    string `json:"name"`              // 显示的名称
+	Version string `json:"version,omitempty"` // 项目中的版本；没有版本的（例如 Bun）为空
+	Docs    string `json:"docs"`              // 给 AI 读的 llms.txt，没有时是文档首页
+	MCP     string `json:"mcp,omitempty"`     // 项目配置的 MCP 服务，没有时为空
+}
+
+// Dependencies 返回项目 p 用到的社区组件，按 sources 的顺序：Go 模块在应用的构建中、npm 包写在前端或客户端的
+// package.json 中时列出。
+func Dependencies(p *Project) []Dependency {
+	servers := Servers(p)
+	var deps []Dependency
+	for _, s := range sources {
+		version, ok := "", s.always
+		switch {
+		case s.module != "":
+			version, ok = p.Modules[s.module]
+		case s.npm != "":
+			version, ok = p.NPM[s.npm]
+		}
+		if !ok {
+			continue
+		}
+		d := Dependency{Name: s.name, Version: version, Docs: s.docs}
+		if s.llms != "" {
+			d.Docs = s.llms
+		}
+		if s.mcp != "" && slices.ContainsFunc(servers, func(sv Server) bool { return sv.Name == s.mcp }) {
+			d.MCP = s.mcp
+		}
+		deps = append(deps, d)
+	}
+	return deps
 }
 
 // Block 返回 AGENTS.md 中 tenon 的一段，含 Begin 和 End 两行。skills 是为助手安装的技能，列在其中。
@@ -249,7 +288,7 @@ func Block(p *Project, skills []Skill) string {
 	w("")
 	w("- 框架是 `%s` %s。", project.Framework, p.Tenon)
 	w("- 框架的文档在 `%s` 中，与上面的版本一致，`bun run dev` 每次启动时更新。先读目录 `%s/README.md`，写某一部分的代码前读对应的页面，写法以这个版本的文档为准。", DocsDir, DocsDir)
-	w("- 搜索框架的文档时指定目录，例如 `rg 迁移 %s`：`.tenon` 被 .gitignore 忽略，在项目根目录搜索时不包含它。", DocsDir)
+	w("- 查框架的文档用 MCP 工具 `tenon_search_docs`、`tenon_read_doc`；用 rg 搜索时指定目录，例如 `rg 迁移 %s`：`.tenon` 被 .gitignore 忽略，在项目根目录搜索时不包含它。", DocsDir)
 	w("- 应用的入口是 `%s`，`go run %s --help` 列出应用的命令。", p.Config.Main, p.Config.Main)
 
 	if len(p.Config.Frontends)+len(p.Config.Clients) > 0 {
@@ -275,29 +314,15 @@ func Block(p *Project, skills []Skill) string {
 	w("")
 	w("| 依赖 | 版本 | 文档 |")
 	w("| --- | --- | --- |")
-	servers := Servers(p)
-	for _, s := range sources {
-		version, ok := "", s.always
-		switch {
-		case s.module != "":
-			version, ok = p.Modules[s.module]
-		case s.npm != "":
-			version, ok = p.NPM[s.npm]
-		}
-		if !ok {
-			continue
-		}
+	for _, d := range Dependencies(p) {
+		version, doc := d.Version, d.Docs
 		if version == "" {
 			version = "—"
 		}
-		doc := s.docs
-		if s.llms != "" {
-			doc = s.llms
+		if d.MCP != "" {
+			doc += "；MCP 服务 `" + d.MCP + "`"
 		}
-		if s.mcp != "" && slices.ContainsFunc(servers, func(sv Server) bool { return sv.Name == s.mcp }) {
-			doc += "；MCP 服务 `" + s.mcp + "`"
-		}
-		w("| %s | %s | %s |", s.name, version, doc)
+		w("| %s | %s | %s |", d.Name, version, doc)
 	}
 
 	if len(skills) > 0 {
@@ -316,7 +341,7 @@ func Block(p *Project, skills []Skill) string {
 	w("")
 	w("`go tool tenon agents` 为 tenon.json 中 `agents.targets` 列出的助手配置了这些 MCP 服务：")
 	w("")
-	for _, s := range servers {
+	for _, s := range Servers(p) {
 		w("- `%s`：%s。", s.Name, s.Doc)
 	}
 	w("%s", End)

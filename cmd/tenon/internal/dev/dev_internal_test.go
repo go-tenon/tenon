@@ -159,3 +159,27 @@ func waitUntil(t *testing.T, ok func() bool) {
 	}
 	t.Fatal("timed out")
 }
+
+// devLog 去掉颜色后写进 LogFile，超过上限时清空，从头写起。
+func TestDevLog(t *testing.T) {
+	t.Chdir(t.TempDir())
+	l, err := openLog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	msg := []byte("\x1b[2m2026-11-19\x1b[0m \x1b[91mERR\x1b[0m boom\n")
+	if n, err := l.Write(msg); err != nil || n != len(msg) {
+		t.Fatalf("write = %d, %v", n, err)
+	}
+	if b, _ := os.ReadFile(LogFile); string(b) != "2026-11-19 ERR boom\n" {
+		t.Fatalf("log = %q", b)
+	}
+	l.size = logLimit + 1
+	if _, err := l.Write([]byte("after\n")); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(LogFile); string(b) != "after\n" {
+		t.Fatalf("log after the limit = %q", b)
+	}
+}

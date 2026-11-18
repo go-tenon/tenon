@@ -117,7 +117,18 @@ Claude Code 从 `.claude/skills` 读取技能，Codex 从 `.agents/skills` 读�
 <a id="mcp-servers"></a>
 ## MCP 服务
 
-[MCP](https://modelcontextprotocol.io) 让 AI 助手调用外部的工具。项目为助手配置了两个以 stdio 运行的 MCP 服务：
+[MCP](https://modelcontextprotocol.io) 让 AI 助手调用外部的工具。项目为助手配置了三个以 stdio 运行的 MCP 服务：
+
+- **`tenon`**：Tenon 自己的开发工具，用 `go tool tenon mcp` 运行，版本与项目的框架版本相同，不需要另外安装。它提供四个工具，名字都以 `tenon_` 开头，与其他服务的同名工具（例如 Mantine 的 `search_docs`）区分开：
+
+  | 工具 | 作用 |
+  | --- | --- |
+  | `tenon_search_docs` | 在 `.tenon/docs` 中按小节检索，返回最相关的小节的标题、路径和锚点、片段。中文按相邻的两个字切分，不需要分词词典 |
+  | `tenon_read_doc` | 读一页的目录（全部小节的锚点）、一个小节连同它的子小节，或者整页 |
+  | `tenon_app_info` | 项目的框架版本、入口、前端与客户端、用到的组件的版本和文档、安装的技能 |
+  | `tenon_dev_logs` | `bun run dev` 运行期间的输出：编译错误、应用的日志、前端开发服务器的输出；可以只取包含某段文字的行，例如 `ERR` |
+
+  助手改完代码后调用 `tenon_dev_logs`，就能看到重新编译有没有失败、应用有没有报错，不用你把终端里的内容复制给它。
 
 - **`gopls`**：Go 官方的语言服务，提供 `go_search`（查找符号）、`go_package_api`（读一个包的 API）、`go_diagnostics`（编译错误）等工具。它读的是项目和依赖的源码，版本与 `go.mod` 一致。需要先安装：
 
@@ -135,12 +146,14 @@ Claude Code 从 `.claude/skills` 读取技能，Codex 从 `.agents/skills` 读�
 | Codex | `.codex/config.toml` |
 | Cursor | `.cursor/mcp.json` |
 
-`tenon` 只改写配置中名为 `gopls` 和 `mantine` 的两项，你自己加的其他 MCP 服务和设置保持原样。在 `.codex/config.toml` 中，这两项放在 `# tenon:begin` 和 `# tenon:end` 两行之间。这些文件也要提交。
+`tenon` 只改写配置中名为 `tenon`、`gopls` 和 `mantine` 的三项，你自己加的其他 MCP 服务和设置保持原样。在 `.codex/config.toml` 中，这两项放在 `# tenon:begin` 和 `# tenon:end` 两行之间。这些文件也要提交。
 
 确认服务已经连上：Claude Code 中输入 `/mcp`；Codex 运行 `codex mcp list`；Cursor 在设置的 MCP 页面中查看。
 
 > [!NOTE]
 > Codex 只读取受信任的项目中的 `.codex/config.toml`。第一次在项目中打开 Codex 时，选择信任这个项目。Claude Code 第一次遇到 `.mcp.json` 中的服务时也会询问是否启用。
+
+`tenon_dev_logs` 读的是 `.tenon/dev.log`。`tenon dev` 把各进程的输出同时写进终端和这个文件，写进文件时去掉颜色；每次启动时清空，超过 8 MB 时从头写起。因为子进程的输出先经过 `tenon dev` 再到终端，它给子进程设置 `FORCE_COLOR=1`，终端中的日志照样是着色的文本，见[日志的格式](../general/logging.md#formats)。
 
 <a id="updating"></a>
 ## 保持更新
@@ -184,6 +197,10 @@ go run github.com/go-tenon/tenon/cmd/tenon@latest init todo --agents claude
 **助手写出的代码用了不存在的函数或旧的写法**
 
 它没有读项目中的文档，凭记忆写了别的版本的用法。确认 `.tenon/docs` 存在（运行一次 `bun run dev` 或 `bun run agents`），然后在提示中指明“先读 `.tenon/docs` 中讲 X 的那一页”。
+
+**`/mcp` 中 tenon 第一次连接很慢或超时**
+
+`go tool tenon` 第一次运行时要编译 `tenon`，之后用缓存。先在终端中运行一次 `bun run dev` 或 `bun run agents`，再重启助手。
 
 **`/mcp` 中 gopls 显示连接失败**
 
@@ -235,7 +252,15 @@ npx skills add https://github.com/mantinedev/skills --skill mantine-combobox
 go tool tenon agents
 ```
 
-更新 AI 编程助手用到的内容：把项目所用版本的框架文档复制到 `.tenon/docs`；重新生成 `AGENTS.md` 中 `<!-- tenon:begin -->` 到 `<!-- tenon:end -->` 的一段，文件中没有这一段时加在末尾，没有这个文件时新建；为 `tenon.json` 中的每个助手重新安装 `tenon-` 开头的技能，改写 MCP 配置中的 `gopls` 和 `mantine`。没有安装 gopls 时打印安装命令。
+更新 AI 编程助手用到的内容：把项目所用版本的框架文档复制到 `.tenon/docs`；重新生成 `AGENTS.md` 中 `<!-- tenon:begin -->` 到 `<!-- tenon:end -->` 的一段，文件中没有这一段时加在末尾，没有这个文件时新建；为 `tenon.json` 中的每个助手重新安装 `tenon-` 开头的技能，改写 MCP 配置中的 `tenon`、`gopls` 和 `mantine`。没有安装 gopls 时打印安装命令。
+
+### go tool tenon mcp
+
+```bash
+go tool tenon mcp
+```
+
+以 stdio 运行给 AI 编程助手用的 MCP 服务，提供 `tenon_search_docs`、`tenon_read_doc`、`tenon_app_info`、`tenon_dev_logs` 四个工具。助手按 MCP 配置启动它，不需要手动运行。可以在项目的任何子目录中运行：项目的根目录取 `go env GOMOD` 所在的目录。启动时先更新 `.tenon/docs`。
 
 ### tenon init --agents
 

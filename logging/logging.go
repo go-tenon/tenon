@@ -34,7 +34,7 @@ const (
 type Config struct {
 	Level     slog.Level            `yaml:"level"`      // 支持 debug、info、warn、error，以及 info+2 这类偏移写法。
 	Levels    map[string]slog.Level `yaml:"levels"`     // 按 component 字段覆盖 Level，例如 {http: warn, billing: debug}；框架组件的 component 见 docs/general/logging.md。
-	Format    string                `yaml:"format"`     // Format 为 json 或 text；空值按输出自动选择：输出到终端时是 text，其余（文件、管道、systemd、容器）是 json。json 供日志系统采集；text 供本地开发阅读，输出到终端时着色（遵守 NO_COLOR），不是严格的 logfmt。
+	Format    string                `yaml:"format"`     // Format 为 json 或 text；空值按输出自动选择：输出到终端（或设置了 FORCE_COLOR）时是 text，其余（文件、管道、systemd、容器）是 json。json 供日志系统采集；text 供本地开发阅读，输出到终端时着色（遵守 NO_COLOR），不是严格的 logfmt。
 	AddSource bool                  `yaml:"add_source"` // 在日志中附加源码位置。
 	TimeZone  string                `yaml:"time_zone"`  // 日志时间使用的时区，例如 UTC、Asia/Shanghai；空值表示本地时区。
 	Writer    io.Writer             `yaml:"-"`          // 基础输出的目标，nil 表示 os.Stderr；只能在代码中设置。
@@ -190,13 +190,17 @@ func textFormat(format string, terminal bool) bool {
 	return format == FormatText
 }
 
-// terminal 报告 w 是否是终端。
+// terminal 报告 w 是否按终端处理：w 是终端，或者设置了 FORCE_COLOR（非空且不是 0）。程序的输出经管道转给终端时
+// 设置 FORCE_COLOR，例如 tenon dev 把应用的输出同时写进终端和日志文件，日志照样是着色的 text 格式。
 func terminal(w io.Writer) bool {
+	if v := os.Getenv("FORCE_COLOR"); v != "" && v != "0" {
+		return true
+	}
 	f, ok := w.(interface{ Fd() uintptr })
 	return ok && term.IsTerminal(int(f.Fd()))
 }
 
-// colorful 报告是否为 w 输出颜色：w 是终端且未设置 NO_COLOR（https://no-color.org）。
+// colorful 报告是否为 w 输出颜色：w 按终端处理且未设置 NO_COLOR（https://no-color.org）。
 func colorful(w io.Writer) bool {
 	return os.Getenv("NO_COLOR") == "" && terminal(w)
 }
