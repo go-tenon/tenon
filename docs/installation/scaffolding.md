@@ -14,6 +14,7 @@
 - [入口文件](#entrypoint)
 - [前端与 API 同源](#frontend)
 - [构建](#building)
+- [CI](#ci)
 - [常见问题](#troubleshooting)
 - [下一步](#next-steps)
 
@@ -80,6 +81,7 @@ todo/
 ├── go.mod                 Go module；Tenon 的开发工具也记在这里，版本与框架相同
 ├── package.json           前端的 workspace，以及 dev、build、generate 等脚本
 ├── README.md              怎样运行，以及 AI 编程助手怎样接入 Go、Mantine、TanStack 的官方资源
+├── .github/workflows/     CI：检查、测试和构建，见下文的 CI
 ├── AGENTS.md              项目说明：怎样运行、提交前检查什么、代码约定；AI 编程助手读它
 ├── .mcp.json              Claude Code 的 MCP 配置（Codex 在 .codex/，Cursor 在 .cursor/，Antigravity 在 .agents/）
 ├── .claude/skills/        给 AI 编程助手的技能（Codex 读 .agents/skills/）
@@ -250,6 +252,22 @@ bun run build
 ```
 
 `bun run build` 先构建每个前端，把服务端渲染的前端连同 Bun 编译成 SSR 程序（架构与 Go 程序相同），最后编译 Go 程序，把它们打包在其中。部署时只需要带上 `bin/todo` 和配置文件，见[部署](deployment.md)。Go 托管的 SSR 进程只支持 Linux；在 macOS 上开发时用 `bun run dev`。
+
+<a id="ci"></a>
+## CI
+
+项目带着 GitHub Actions 的配置 `.github/workflows/ci.yml`，推送到 GitHub 后，每次推送到 `main` 和每个 PR 都会运行。它有两个并行的任务：
+
+| 任务 | 做什么 |
+| --- | --- |
+| `check` | `go tool tenon generate` 之后检查工作区没有变化：改了接口却没有提交重新生成的客户端时失败；`go tool tenon agents` 之后检查 `AGENTS.md` 和技能没有变化：升级框架后没有运行 `bun run agents` 时失败；然后是 `gofmt`、`go vet` 和 `go test` |
+| `build` | 同步框架的前端包，`bun install --frozen-lockfile`；`bun run typecheck` 之后检查路由树 `routeTree.gen.ts` 没有变化；最后 `bun run build` |
+
+`tenon` 的版本由 `go.mod` 固定，Bun 的版本写在 `package.json` 的 `packageManager` 中，CI 与本地用的是同样的版本。
+
+生成的代码（客户端、路由树、`AGENTS.md` 中 tenon 的一段、技能）都要提交：CI 重新生成一次，有差异就说明有人忘了提交。`tenon init` 已经生成了它们，第一次提交时就是完整的。
+
+项目用到数据库以后，在 `check` 任务中加上 PostgreSQL，见[在 CI 中运行数据库测试](../testing/database.md#database-tests-in-ci)。代码不放在 GitHub 上时，删掉 `.github` 目录，按同样的步骤写你所用平台的 CI。
 
 <a id="troubleshooting"></a>
 ## 常见问题

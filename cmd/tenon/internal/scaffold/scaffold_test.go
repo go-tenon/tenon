@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.yaml.in/yaml/v4"
+
 	"github.com/go-tenon/tenon/cmd/tenon/internal/scaffold"
 )
 
@@ -95,6 +97,47 @@ func TestGoVersionMatchesFramework(t *testing.T) {
 	m := regexp.MustCompile(`(?m)^go (\S+)$`).FindSubmatch(b)
 	if m == nil || string(m[1]) != scaffold.GoVersion {
 		t.Fatalf("framework go %s, scaffold.GoVersion %s", m[1], scaffold.GoVersion)
+	}
+}
+
+// 生成的 package.json 中的 Bun 版本与框架的 CI 相同。
+func TestBunVersionMatchesFramework(t *testing.T) {
+	t.Parallel()
+	b, err := os.ReadFile("../../../../.github/workflows/ci.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range regexp.MustCompile(`bun-version: (\S+)`).FindAllSubmatch(b, -1) {
+		if string(m[1]) != scaffold.BunVersion {
+			t.Errorf("framework CI bun %s, scaffold.BunVersion %s", m[1], scaffold.BunVersion)
+		}
+	}
+}
+
+// 生成的项目带 GitHub Actions 的 CI：两个任务 check、build，是合法的 YAML。
+func TestWriteCI(t *testing.T) {
+	t.Parallel()
+	dir := filepath.Join(t.TempDir(), "todo")
+	if err := scaffold.Write(dir, scaffold.Options{Module: "example.com/todo", Name: "Todo", TenonVersion: "v0.0.0"}); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(dir, ".github", "workflows", "ci.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ci struct {
+		Jobs map[string]struct {
+			Steps []map[string]any `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal(b, &ci); err != nil {
+		t.Fatal(err)
+	}
+	if len(ci.Jobs) != 2 || len(ci.Jobs["check"].Steps) == 0 || len(ci.Jobs["build"].Steps) == 0 {
+		t.Errorf("jobs %+v", ci.Jobs)
+	}
+	if pkg, _ := os.ReadFile(filepath.Join(dir, "package.json")); !strings.Contains(string(pkg), `"packageManager": "bun@`+scaffold.BunVersion+`"`) {
+		t.Errorf("package.json:\n%s", pkg)
 	}
 }
 

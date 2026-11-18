@@ -77,6 +77,8 @@ func TestInitEndToEnd(t *testing.T) {
 		"AGENTS.md": {"# Todo\n", "- `apps/admin`：挂在 `/admin/`", "- `clients/admin-desktop`：electron 客户端，显示 `apps/admin`。",
 			"`README.md` 的“AI 编程助手”一节", "## 代码约定"},
 		"README.md":                              {"# Todo\n", "gopls mcp", "@mantine/mcp-server", "@tanstack/intent"},
+		".github/workflows/ci.yml":               {"go tool tenon generate", "bun run typecheck", "bun run build"},
+		"apps/web/src/routeTree.gen.ts":          {"declare module '@tanstack/react-start'"},
 		".tenon/docs/README.md":                  {"# Tenon 文档"},
 		".mcp.json":                              {`"tenon"`},
 		".codex/config.toml":                     {"[mcp_servers.tenon]"},

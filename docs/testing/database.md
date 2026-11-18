@@ -7,6 +7,7 @@
 - [数据库测试](#database-tests)
     - [创建测试数据库](#creating-test-databases)
     - [在本地运行数据库测试](#running-database-tests-locally)
+    - [在 CI 中运行数据库测试](#database-tests-in-ci)
 - [测试业务动作](#testing-actions)
     - [测试命令入口](#testing-action-commands)
 - [常见问题](#troubleshooting)
@@ -76,6 +77,33 @@ go test -race -count=1 ./...
 ```
 
 每个测试使用自己的临时库，服务可以一直开着反复运行测试。数据放在 tmpfs 中，执行 `docker compose -f compose.test.yml down -v` 清理后数据全部消失。
+
+<a id="database-tests-in-ci"></a>
+### 在 CI 中运行数据库测试
+
+`tenon init` 生成的 [CI](../installation/scaffolding.md#ci) 中，`check` 任务运行 `go test ./...`。用到数据库以后，在它之前启动 PostgreSQL，并设置 `POSTGRES_TEST_URL`。GitHub Actions 的服务容器不能传启动参数，而队列需要开启逻辑复制，所以用 `docker run` 启动它：
+
+```yaml
+  check:
+    runs-on: ubuntu-latest
+    env:
+      POSTGRES_TEST_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+
+      # 队列经由逻辑复制转发任务，每个测试数据库一个复制槽。
+      - name: Start PostgreSQL
+        run: |
+          docker run -d --name postgres -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres:18 \
+            -c wal_level=logical -c max_replication_slots=256 -c max_wal_senders=64
+          for i in $(seq 1 60); do docker exec postgres pg_isready -U postgres -h 127.0.0.1 && exit 0; sleep 1; done
+          docker logs postgres
+          exit 1
+
+      # 之后是原有的步骤：setup-go、Generate、Agents、Format、Vet、Test
+```
+
+没有设置 `POSTGRES_TEST_URL` 时数据库测试直接失败，所以 CI 中忘了启动 PostgreSQL 会立即发现，不会悄悄跳过。用到 Memcached、NATS 时同样启动它们，并设置对应的环境变量，例如 `MEMCACHED_TEST_ADDR`。
 
 <a id="testing-actions"></a>
 ## 测试业务动作
