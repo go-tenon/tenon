@@ -279,10 +279,11 @@ rest.Register(api, op, createToken(tokens))
 | --- | --- |
 | `Name` | 在令牌列表中显示的名称，1 到 255 个字符 |
 | `Scopes` | 令牌被限制在内的权限，至少一个，支持通配符，例如 `articles:*` |
-| `Tenant` | 不为空时，令牌只能在这个租户中使用 |
 | `ExpiresAt` | 过期时间，零值表示不过期 |
 
 令牌能做的是**用户当前的权限与 `Scopes` 的交集**：`Scopes` 写了 `*`，也以用户本人的权限为上限；用户被收回权限后，令牌随之收窄。个人访问令牌按 `ExpiresAt` 过期，`RevokeOthers` 保留它。
+
+新令牌不比创建它的凭据更宽：请求用的是带 `Scopes` 的令牌时，`Personal.Scopes` 的每一项都要在它的 `Scopes` 之内，否则 `Create` 返回 `identity.ErrForbidden`（`403`），例如只读令牌不能创建可写的令牌。请求所在的租户不为空时（`sub.Tenant`），新令牌只能在这个租户中使用，见[令牌与租户](tenancy.md#tokens)。
 
 <a id="listing-tokens"></a>
 ## 设备与令牌列表
@@ -405,7 +406,7 @@ func Export(ctx context.Context, db bun.IDB, ref identity.Ref) (any, error)
 | 方法 | 说明 |
 | --- | --- |
 | `Login` | 登录令牌，空闲超时后失效；`Device` 记下“记住我”、IP 和 User-Agent |
-| `Create` | 个人访问令牌，`Personal` 指定名称、`Scopes` 和可选的租户 |
+| `Create` | 个人访问令牌，`Personal` 指定名称、`Scopes` 和过期时间；不超出 `sub` 的 `Scopes`，绑定 `sub.Tenant` |
 | `Validate` | 校验令牌，交给 `rest.RequireToken` |
 | `ValidateFor` | 只接受签发给 `resource` 的 OAuth 令牌，见 [OAuth 授权服务器](oauth-server.md) |
 | `Confirm` | 记下主体刚刚确认过身份，供 `rest.Confirmed` 检查 |

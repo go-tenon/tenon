@@ -165,11 +165,12 @@ func (s *Store) login(ctx context.Context, sub identity.Subject, d Device, kind 
 type Personal struct {
 	Name      string    // 用于在令牌列表中辨认，长度为 1 到 255 个字符。
 	Scopes    []string  // 令牌被限制在内的权限，至少一个，支持通配符（见 identity.Subject.Can）。令牌实际能做的是用户当前权限与 Scopes 的交集，用户被收回权限后令牌随之收窄。
-	Tenant    string    // Tenant 不为空时，令牌只能在这个租户中使用。
 	ExpiresAt time.Time // ExpiresAt 为零值表示不过期，否则必须晚于当前时间。
 }
 
 // Create 为 sub 创建个人访问令牌，返回 token 明文，明文只在这里返回一次。
+// 新令牌不比 sub 所用的凭据更宽：sub.Scopes 不为 nil 时，p.Scopes 的每一项都要在 sub.Scopes 之内，否则返回 identity.ErrForbidden；
+// sub.Tenant 不为空时令牌只能在这个租户中使用。
 // 代为登录期间（sub.Impersonator 不为零值）创建的令牌记录 Impersonator，之后每次使用都归于这个操作者。
 func (s *Store) Create(ctx context.Context, sub identity.Subject, p Personal) (string, error) {
 	now := time.Now().UTC()
@@ -187,7 +188,14 @@ func (s *Store) Create(ctx context.Context, sub identity.Subject, p Personal) (s
 	if err != nil {
 		return "", err
 	}
-	r := &row{Kind: KindPersonal, Name: name, Scopes: joined, Tenant: p.Tenant, ExpiresAt: p.ExpiresAt.UTC()}
+	if sub.Scopes != nil {
+		for _, scope := range p.Scopes {
+			if !identity.Grants(sub.Scopes, scope) {
+				return "", identity.ErrForbidden.New(errorx.Public("permission", scope))
+			}
+		}
+	}
+	r := &row{Kind: KindPersonal, Name: name, Scopes: joined, Tenant: sub.Tenant, ExpiresAt: p.ExpiresAt.UTC()}
 	return s.issue(ctx, sub, r, now)
 }
 
