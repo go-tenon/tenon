@@ -162,7 +162,7 @@ Tenon 是一个用 Go 构建后端服务的框架。业务逻辑写成[业务动
 - [第三方登录](security/social-login.md)：用微信、GitHub 等账号登录
 - [在 App 中使用第三方登录](security/social-login-apps.md)：App 登录与 Sign in with Apple
 - [企业单点登录](security/enterprise-sso.md)：用企业自己的账号系统登录
-- [OAuth 授权服务器](security/oauth-server.md)：让第三方应用代表用户调用你的接口
+- [OAuth 授权服务器](security/oauth-server.md)：让第三方应用代表用户调用你的接口，也负责自己的桌面端、App 在浏览器中登录
 - [认证进阶](security/authentication-advanced.md)：多套账号、多租户与代为登录
 - [多租户](security/tenancy.md)：一套系统同时服务多个客户
 - [运营后台与多租户](security/saas-example.md)：一个完整的例子

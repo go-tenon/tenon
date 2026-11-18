@@ -6,6 +6,8 @@
 - 客户端即来即用：claude.ai、ChatGPT 的 client_id 是一个 https 地址，授权时从这个地址取回客户端的名称和回调地址（Client ID Metadata Document）。
 - 令牌是 [`apitoken`](api-tokens.md) 的 OAuth 令牌：只能用于授权时的 MCP 服务，权限是用户本人的权限与同意的范围的交集，按使用滑动过期，出现在用户的令牌列表中，可以随时撤销。
 
+同一个授权服务器也负责应用**自己的**桌面端和 App 的登录：用户在系统浏览器中登录，客户端拿到与密码登录相同的登录 token，见[应用自己的客户端](#first-party-clients)。
+
 同意页是应用[前端](../frontend/README.md)中的一个页面：授权端点校验请求后跳到同意页，同意页以当前登录的身份调用两个接口，读取请求、提交用户的选择。所以能授权的是这两个接口接受的账号体系。例子中授权的是编辑：他们在编辑后台登录，在 Claude 中查找和发布文章。
 
 **OAuth** 是一种授权协议：第三方应用（这里是 claude.ai 这类 AI 客户端）把用户带到你的网站，用户登录并点“允许”后，第三方拿到一个只能做有限的事、可以随时撤销的令牌，而不需要知道用户的密码。
@@ -21,6 +23,7 @@
 - [客户端](#clients)
     - [动态客户端注册](#dynamic-registration)
 - [令牌](#tokens)
+- [应用自己的客户端](#first-party-clients)
 - [同意页](#consent-page)
 - [部署](#deployment)
     - [部署在路径之下](#path-prefix)
@@ -84,9 +87,9 @@ oauth.Register(api, rest.RequireToken(api, tokens.Validate)) // 同意页的接�
 | 选项 | 说明 |
 | --- | --- |
 | `Issuer` | 授权服务器的地址，也是各端点的前缀。必须是 https 地址，本机开发可以用 `http://localhost:8080`；部署在路径之下时带上路径，见[部署在路径之下](#path-prefix) |
-| `Resources` | 令牌可以用于的 MCP 服务地址，与用户在客户端中填写的完全相同 |
-| `Scopes` | 客户端可以申请的范围，见下一节 |
-| `Clients` | 预先登记的客户端，见[客户端](#clients) |
+| `Resources` | 令牌可以用于的 MCP 服务地址，与用户在客户端中填写的完全相同。只给应用自己的客户端登录时不设置，见[应用自己的客户端](#first-party-clients) |
+| `Scopes` | 客户端可以申请的范围，见下一节；与 `Resources` 同时设置 |
+| `Clients` | 预先登记的客户端，见[客户端](#clients)和[应用自己的客户端](#first-party-clients) |
 | `DynamicRegistration` | 开启动态客户端注册，默认关闭，见[动态客户端注册](#dynamic-registration) |
 | `ConsentURL` | 单页应用中同意页的地址，见[同意页](#consent-page)。通常是本站的路径；单页应用部署在别的地址时写完整的 https 地址 |
 | `TokenLifetime`、`TokenIdleTimeout` | 令牌的最长有效期和最长空闲时间，默认 1 年和 30 天 |
@@ -151,7 +154,7 @@ router.Handle("/mcp", mcpx.Handler(tools, mcpx.HandlerOptions{
 ## 客户端
 
 - **https 地址形式的 client_id**（Client ID Metadata Document）：claude.ai、ChatGPT、Claude Code 都用这种方式。授权时用[出站请求](../libraries/outbound.md)取回这个地址上的 JSON，检查其中的 `client_id` 与地址完全相同、`redirect_uris` 包含本次的回调地址。即来即用，取回的地址拒绝内网地址。
-- **预先登记的客户端**：自研的 agent 在 `Options.Clients` 中登记 ID、名称和回调地址。
+- **预先登记的客户端**：自研的 agent 在 `Options.Clients` 中登记 ID、名称和回调地址。应用自己的桌面端和 App 也在这里登记，设置 `FirstParty`，见[应用自己的客户端](#first-party-clients)。
 
 只支持公开客户端（靠 PKCE 保证安全）。回调地址按完整地址匹配；本机地址（`localhost`、`127.0.0.1`）忽略端口，Claude Code 每次用不同的端口接收回调。
 
@@ -185,6 +188,39 @@ sched.Add("oauth:cleanup-clients", "@daily", schedule.Cleanup(oauth.CleanupClien
 - **不发刷新令牌**，令牌按使用滑动过期：30 天内用过就继续有效，最长 1 年。到期后客户端让用户重新授权一次。每次请求都查库校验，撤销立即生效。
 - 出现在用户的[令牌列表](api-tokens.md#listing-tokens)中，`ClientName` 是授权时的应用名，用来做“已连接的应用”页面；用 `Revoke` 断开连接。
 - “退出其他设备”（`RevokeOthers`）保留已连接的应用；封禁账号、修改密码时的 `RevokeSubject` 一并撤销它们。
+
+<a id="first-party-clients"></a>
+## 应用自己的客户端
+
+应用自己的桌面端、App 也在系统浏览器中登录：密码、第三方登录、企业单点登录、二次验证都在网页上完成，客户端不用各做一遍，也接触不到用户的密码（RFC 8252）。这类客户端在 `Clients` 中登记，设置 `FirstParty`：
+
+```go
+oauth := oauthserver.New(a.db, tokens, oauthserver.Options{
+    Issuer: "https://example.com",
+    Clients: []oauthserver.Client{{
+        ID:           "admin-desktop",
+        Name:         "编辑后台桌面端",
+        RedirectURIs: []string{"http://127.0.0.1/callback"}, // 桌面端：本机地址，端口每次不同
+        FirstParty:   true,
+    }},
+    ConsentURL: "/oauth/consent",
+})
+```
+
+它和第三方客户端有三点不同：
+
+- **不申请范围和资源**：授权请求不带 `scope` 和 `resource`，带了会带着 `invalid_request` 跳回客户端。
+- **同意页只确认登录**：`oauth-consent-get` 返回 `first_party: true`，同意页显示“在编辑后台桌面端上登录”和一个按钮，不列范围。仍然要用户点一下：否则本机上任何程序打开授权地址，就能悄悄拿到一个登录 token。
+- **换到的是登录 token**：与密码登录得到的相同，权限不受限制，可以访问整个 API；代表一台设备，出现在设备列表中，“退出其他设备”会撤销它。令牌端点的响应只有 `access_token` 和 `token_type`，没有 `expires_in`：登录 token 按 [apitoken 的配置](api-tokens.md)滑动过期。
+
+回调地址按客户端的种类登记：
+
+| 客户端 | 回调地址 |
+| --- | --- |
+| 桌面端 | `http://127.0.0.1/callback`：客户端在随机端口上临时监听，端口不用登记 |
+| App | 自定义 scheme，例如 `com.example.admin:/oauth/callback`；或者 Universal Link / App Link 的 https 地址 |
+
+只给自己的客户端登录、不对第三方开放时，`Resources` 和 `Scopes` 都不设置：这时只接受 `FirstParty` 的客户端，https 地址形式的 client_id 和动态注册都不可用。客户端退出登录时，调用应用的退出接口，或者把令牌交给 `POST /oauth/revoke`。客户端一侧的完整流程见[客户端协议：原生客户端](../http/protocol.md#native-clients)。
 
 <a id="consent-page"></a>
 ## 同意页
@@ -223,6 +259,15 @@ function Consent() {
   if (consent.error) return <p>{isApiError(consent.error) ? consent.error.detail : "出错了"}</p>
   if (!consent.data) return null
   const c = consent.data
+  if (c.first_party) {
+    // 应用自己的客户端：只确认登录
+    return (
+      <div>
+        <h1>在{c.client_name}上登录</h1>
+        <button disabled={decide.isPending} onClick={() => decide.mutate(true)}>继续</button>
+      </div>
+    )
+  }
   return (
     <div>
       <h1>{c.client_name} 请求访问你的账号</h1>
@@ -320,10 +365,10 @@ func New(db bun.IDB, tokens *apitoken.Store, opts Options) *Server
 | `Options` 字段 | 说明 |
 | --- | --- |
 | `Issuer` | 授权服务器的地址 |
-| `Resources` | 可以授权访问的资源，例如 MCP 服务的地址 |
-| `Scopes` | 可以授权的范围及其说明，显示在同意页上 |
+| `Resources` | 可以授权访问的资源，例如 MCP 服务的地址；为空时只接受应用自己的客户端 |
+| `Scopes` | 可以授权的范围及其说明，显示在同意页上；与 `Resources` 同时设置 |
 | `ConsentURL` | 单页应用中同意页的地址 |
-| `Clients` | 预先登记的客户端 |
+| `Clients` | 预先登记的客户端：`ID`、`Name`、`RedirectURIs`，应用自己的客户端设置 `FirstParty` |
 | `DynamicRegistration` | 允许客户端动态注册，默认关闭 |
 | `TokenLifetime` | 签发的令牌的有效期 |
 

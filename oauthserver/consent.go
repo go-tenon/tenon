@@ -29,9 +29,10 @@ var (
 type Consent struct {
 	ClientID     string  `json:"client_id"`     // 申请授权的客户端
 	ClientName   string  `json:"client_name"`   // 客户端的名称，例如 Claude
-	RedirectHost string  `json:"redirect_host"` // 授权后跳转去的主机，例如 claude.ai。
-	Resource     string  `json:"resource"`      // 令牌可以访问的资源，例如 https://blog.example.com/mcp。
-	Scopes       []Scope `json:"scopes"`        // 申请的范围及说明。
+	RedirectHost string  `json:"redirect_host"` // 授权后跳转去的主机，例如 claude.ai；桌面端是 127.0.0.1 加端口。
+	FirstParty   bool    `json:"first_party"`   // 应用自己的客户端：同意页只确认“在这个客户端上登录”，不列范围。
+	Resource     string  `json:"resource"`      // 令牌可以访问的资源，例如 https://blog.example.com/mcp；应用自己的客户端为空。
+	Scopes       []Scope `json:"scopes"`        // 申请的范围及说明；应用自己的客户端为空数组。
 }
 
 // Decision 是用户在同意页上的选择。
@@ -82,13 +83,16 @@ func (s *Server) Register(api *rest.API, auth func(*huma.Operation)) {
 	rest.Register(api, decide, s.decide)
 }
 
-// consent 返回同意页要显示的内容：客户端、跳转去的主机和申请的范围。
+// consent 返回同意页要显示的内容：客户端、跳转去的主机、是否是应用自己的客户端和申请的范围。
 func (s *Server) consent(ctx context.Context, in *consentInput) (*consentOutput, error) {
 	req, err := s.request(ctx, in.Request)
 	if err != nil {
 		return nil, err
 	}
-	c := Consent{ClientID: req.client.id, ClientName: req.client.name, RedirectHost: host(req.redirect), Resource: req.resource}
+	c := Consent{
+		ClientID: req.client.id, ClientName: req.client.name, RedirectHost: host(req.redirect),
+		FirstParty: req.client.firstParty, Resource: req.resource, Scopes: []Scope{},
+	}
 	for _, name := range req.scopes {
 		c.Scopes = append(c.Scopes, s.scopes[name])
 	}

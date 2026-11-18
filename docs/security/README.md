@@ -19,7 +19,7 @@
 - [第三方登录](social-login.md)：OAuth 与 OpenID Connect 登录
 - [在 App 中使用第三方登录](social-login-apps.md)：App 登录与 Sign in with Apple
 - [企业单点登录](enterprise-sso.md)：对接企业身份提供方
-- [OAuth 授权服务器](oauth-server.md)：让 MCP 客户端等第三方获得授权
+- [OAuth 授权服务器](oauth-server.md)：让 MCP 客户端等第三方获得授权，也负责应用自己的桌面端、App 在浏览器中登录
 - [运营后台与多租户](saas-example.md)：运营人员、租户成员与代登录
 - [多租户](tenancy.md)：单数据库多租户
 - [授权](authorization.md)：角色、权限与租户范围

@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -95,6 +96,10 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 		Type: identity.SubjectType(c.SubjectType), ID: c.SubjectID, Tenant: c.Tenant,
 		Impersonator: identity.Ref{Type: identity.SubjectType(c.ImpersonatorType), ID: c.ImpersonatorID},
 	}
+	if cl, ok := s.clients[c.ClientID]; ok && cl.FirstParty {
+		s.signIn(w, r, sub, c.ClientID)
+		return
+	}
 	access, err := s.tokens.Authorize(r.Context(), sub, apitoken.Grant{
 		ClientID: c.ClientID, ClientName: c.ClientName, Resource: c.Resource,
 		Scopes:   strings.Fields(c.Scopes),
@@ -116,6 +121,23 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 		"expires_in":   int64(expiresIn / time.Second),
 		"scope":        c.Scopes,
 	})
+}
+
+// signIn 为应用自己的客户端签发登录 token：与密码登录得到的相同，代表一台设备，记下令牌请求的地址和 User-Agent。
+// 登录 token 按 apitoken.Config 滑动过期，响应中没有 expires_in。
+func (s *Server) signIn(w http.ResponseWriter, r *http.Request, sub identity.Subject, clientID string) {
+	ip := r.RemoteAddr
+	if host, _, err := net.SplitHostPort(ip); err == nil {
+		ip = host
+	}
+	access, err := s.tokens.Login(r.Context(), sub, apitoken.Device{Remember: true, IP: ip, UserAgent: r.UserAgent()})
+	if err != nil {
+		s.logger.ErrorContext(r.Context(), "oauth sign-in failed", "error", err)
+		writeTokenError(w, http.StatusInternalServerError, "server_error", "")
+		return
+	}
+	s.logger.InfoContext(r.Context(), "oauth sign-in", "client_id", clientID, "subject", sub.Ref().String())
+	writeJSON(w, http.StatusOK, map[string]any{"access_token": access, "token_type": "Bearer"})
 }
 
 // revoke 撤销客户端交回的令牌（RFC 7009）。令牌无效时同样返回 200。

@@ -88,6 +88,10 @@ func (s *Server) parse(ctx context.Context, values url.Values) (*authRequest, er
 		return req, &redirectError{"unsupported_response_type", "response_type must be code"}
 	case params.Get("code_challenge_method") != "S256" || !codeChallenge.MatchString(req.challenge):
 		return req, &redirectError{"invalid_request", "PKCE with code_challenge_method S256 is required"}
+	case cl.firstParty && (params.Get("scope") != "" || params.Get("resource") != ""):
+		return req, &redirectError{"invalid_request", "first-party clients sign in without scope or resource"}
+	case cl.firstParty:
+		return req, nil
 	}
 	if scope := strings.Fields(params.Get("scope")); len(scope) > 0 {
 		for _, sc := range scope {
