@@ -71,23 +71,9 @@ export function palette(color: PrimaryColor | (string & {})): MantineColorsTuple
 /** 样式预设的名称。 */
 export type Preset = "admin" | "console" | "site"
 
-/**
- * 落地页的风格，作用于 SiteLayout 和落地页区块（Hero、Features 等）：
- *   - classic：朴素，跟随 Mantine 的主题；
- *   - dusk：暗色优先，近黑底、光晕与细边框；
- *   - ink：黑白高对比，网格、实线和等宽数字；
- *   - mist：柔和的渐变背景、毛玻璃和大圆角。
- */
-export type Landing = "classic" | "dusk" | "ink" | "mist"
-
-/** 落地页的风格。 */
-export const landings: readonly Landing[] = ["classic", "dusk", "ink", "mist"]
-
 /** 布局用到的尺寸，放在主题的 other.tenon 中，布局组件据此排版。 */
 export interface LayoutMetrics {
   preset: Preset
-  /** 落地页的风格，默认 classic。 */
-  landing?: Landing
   /** 顶栏的高度（像素）。 */
   headerHeight: number
   /** 侧栏展开时的宽度（像素）。 */
@@ -327,8 +313,6 @@ export interface UiThemeOptions {
   radius?: number
   /** 字体，不设置时使用系统字体。 */
   fontFamily?: string
-  /** 落地页的风格，只对 site 预设有意义，默认 classic。 */
-  landing?: Landing
   /** 日期时间的显示格式（dayjs 的写法），默认随预设：admin 是 MM/DD HH:mm，其他是 YYYY-MM-DD HH:mm。 */
   datetimeFormat?: string
   /** 再合并的 Mantine 主题覆盖，用于令牌之外的调整。 */
@@ -338,19 +322,13 @@ export interface UiThemeOptions {
 /** 由预设和设计令牌生成 Mantine 主题，交给 UIProvider。 */
 export function createUiTheme(options: UiThemeOptions = {}): MantineThemeOverride {
   const parts: MantineThemeOverride[] = [themes[options.preset ?? "console"]]
-  if (options.landing && !landings.includes(options.landing)) {
-    throw new Error(
-      `@go-tenon/ui: unknown landing ${JSON.stringify(options.landing)}, expected one of ${landings.join(", ")}`,
-    )
-  }
-  if (options.landing || options.datetimeFormat) {
+  if (options.datetimeFormat) {
     const m = layoutMetrics(parts[0] as { other?: Record<string, unknown> })
     parts.push({
       other: {
         tenon: {
           ...m,
-          ...(options.landing && { landing: options.landing }),
-          ...(options.datetimeFormat && { datetimeFormat: options.datetimeFormat }),
+          datetimeFormat: options.datetimeFormat,
         },
       },
     })

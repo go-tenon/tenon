@@ -41,6 +41,7 @@ import {
   Badge,
   Button,
   Card,
+  Container,
   Group,
   Paper,
   Progress,
@@ -56,10 +57,9 @@ import {
   Title,
 } from "@mantine/core"
 import { IconDownload, IconPlus, IconSearch, IconStack2 } from "@tabler/icons-react"
-import { type AnyRoute, createRootRouteWithContext, createRoute, Outlet, useParams } from "@tanstack/react-router"
+import { type AnyRoute, createRootRouteWithContext, createRoute, Link, Outlet, useParams } from "@tanstack/react-router"
 import { type ReactNode, useEffect, useMemo, useState } from "react"
 import { createRoot } from "react-dom/client"
-import { Landing, LandingSwitcher, landingStyle } from "./landing"
 import { PrimaryPicker, savedPrimary } from "./primary-picker"
 import {
   customerExport,
@@ -494,10 +494,8 @@ function Site(): ReactNode {
     <SiteLayout
       brand={brand}
       nav={[
-        { label: "产品", to: "/" },
+        { label: "首页", to: "/" },
         { label: "文档", to: "/docs/getting-started" },
-        { label: "价格", href: "#pricing" },
-        { label: "博客", href: "#blog" },
       ]}
       actions={
         <>
@@ -509,33 +507,22 @@ function Site(): ReactNode {
           </Button>
         </>
       }
-      footer={[
-        {
-          title: "产品",
-          links: [
-            { label: "功能", href: "#" },
-            { label: "价格", href: "#" },
-            { label: "更新日志", href: "#" },
-          ],
-        },
-        {
-          title: "开发者",
-          links: [
-            { label: "文档", to: "/docs/getting-started" },
-            { label: "API", href: "#" },
-            { label: "状态", href: "#" },
-          ],
-        },
-        {
-          title: "公司",
-          links: [
-            { label: "关于", href: "#" },
-            { label: "联系我们", href: "#" },
-          ],
-        },
-      ]}
-      note="© 2026 Tenon · 沪ICP备00000000号"
     />
+  )
+}
+
+/** 首页的占位：做实际产品时换成自己的落地页。 */
+function Home(): ReactNode {
+  return (
+    <Container size="sm" py={96}>
+      <Stack gap="md" align="flex-start">
+        <Title order={1}>Tenon</Title>
+        <Text c="dimmed">这里是首页的占位，做实际产品时换成自己的落地页。页头和文档页是现成的。</Text>
+        <Button component={Link} to="/docs/getting-started">
+          阅读文档
+        </Button>
+      </Stack>
+    </Container>
   )
 }
 
@@ -591,7 +578,7 @@ function Doc(): ReactNode {
 function siteApp() {
   const root = createRootRouteWithContext<RouterContext>()({ component: Site })
   const routeTree = root.addChildren([
-    createRoute({ getParentRoute: () => root, path: "/", component: Landing }),
+    createRoute({ getParentRoute: () => root, path: "/", component: Home }),
     createRoute({ getParentRoute: () => root, path: "/docs/$slug", component: Doc }),
   ])
   return createApp({ id: "playground-site", routeTree, router: { defaultNotFoundComponent: NotFoundPage } })
@@ -607,14 +594,10 @@ const scheme = new URLSearchParams(location.search).get("scheme")
 /** 按右下角选择的主题色生成主题，换颜色时不重新加载页面。 */
 function Playground(): ReactNode {
   const [primary, setPrimary] = useState(savedPrimary)
-  const theme = useMemo(
-    () => createUiTheme({ preset, landing: preset === "site" ? landingStyle() : undefined, primary }),
-    [primary],
-  )
+  const theme = useMemo(() => createUiTheme({ preset, primary }), [primary])
   return (
     <UIProvider theme={theme} defaultColorScheme={scheme === "dark" ? "dark" : "light"}>
       <AppRoot app={app} />
-      {preset === "site" && <LandingSwitcher />}
       <PrimaryPicker value={primary} onChange={setPrimary} />
     </UIProvider>
   )

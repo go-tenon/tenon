@@ -6,9 +6,7 @@
 
 - [渲染方式](#rendering)
 - [官网的布局](#site)
-- [落地页](#landing)
-    - [风格](#landing-styles)
-    - [区块](#landing-blocks)
+- [首页](#home)
 - [文档页](#docs)
 - [API 参考](#api-reference)
 
@@ -56,100 +54,33 @@ function Site() {
 - 没有传 `children` 时内容是子路由。
 - 页头中的“登录”“进入控制台”按是否登录切换时，用 [`useSignedIn`](app.md#requiring-sign-in)。
 
-<a id="landing"></a>
-## 落地页
+<a id="home"></a>
+## 首页
 
-首页、产品介绍这类落地页由几个区块拼成：首屏、客户标识、特性、数据、用户评价和行动号召。区块放在 `SiteLayout` 之中，只写内容；外观由主题中的落地页风格决定，四种风格用同一份代码：
+框架不提供落地页的模板：首页、产品介绍这类页面因产品而异，放在 `SiteLayout` 之中，用 Mantine 的组件自己写。`tenon add frontend --style site` 生成的首页是一个占位，只有页头和一段文字，做实际产品时换成自己的内容：
 
 ```tsx title="src/routes/index.tsx"
-import { Button } from "@mantine/core"
-import { IconArrowRight, IconBolt, IconLock } from "@tabler/icons-react"
-import { CallToAction, Features, Hero, LogoCloud, ProductShot, SiteLayout, Stats, Testimonial } from "@go-tenon/ui"
+import { Button, Container, Stack, Text, Title } from "@mantine/core"
+import { createFileRoute } from "@tanstack/react-router"
+import { SiteLayout } from "@go-tenon/ui"
+
+export const Route = createFileRoute("/")({ component: Home })
 
 function Home() {
   return (
-    <SiteLayout brand="Acme" nav={nav} actions={<Button size="sm">开始使用</Button>}>
-      <Hero
-        badge="1.0 正式发布"
-        title={
-          <>
-            一个后端，
-            <br />
-            <em>交付整个产品</em>
-          </>
-        }
-        description="两三句话介绍产品。"
-        actions={
-          <>
-            <Button size="md" rightSection={<IconArrowRight size={16} />}>开始使用</Button>
-            <Button size="md" variant="default">阅读文档</Button>
-          </>
-        }
-        note="go install example.com/acme@latest"
-        visual={
-          <ProductShot url="app.acme.cn">
-            <img src="/screenshot.png" alt="产品截图" />
-          </ProductShot>
-        }
-      />
-      <LogoCloud title="正在使用的团队" items={["云栈科技", "北辰物流", "青禾教育"]} />
-      <Features
-        eyebrow="特性"
-        title="为什么选择 Acme"
-        items={[
-          { icon: <IconBolt size={20} />, title: "快", description: "一两句话说明好处。" },
-          { icon: <IconLock size={20} />, title: "安全", description: "一两句话说明好处。" },
-        ]}
-      />
-      <Stats items={[{ value: "99.9", unit: "%", label: "可用性" }]} />
-      <Testimonial quote="一位用户的评价。" name="林舟" title="技术负责人" />
-      <CallToAction title="现在就开始" actions={<Button size="md">免费开始</Button>} />
+    <SiteLayout brand="Acme" actions={<Button size="sm">开始使用</Button>}>
+      <Container size="sm" py={96}>
+        <Stack gap="md" align="flex-start">
+          <Title order={1}>Acme</Title>
+          <Text c="dimmed">这里是首页的占位，换成自己的落地页。</Text>
+        </Stack>
+      </Container>
     </SiteLayout>
   )
 }
 ```
 
-- 按钮直接用 Mantine 的 `Button`：主要按钮用默认的 `filled`，次要按钮用 `variant="default"`，风格会改变它们的形状和颜色。
-- 标题中的 `<em>` 是强调的部分，各风格用品牌色、渐变字等方式突出，不显示为斜体。
-- 页面中的其他内容照常用 Mantine 的组件，文字、边框和背景的颜色随风格变化。
-
-<a id="landing-styles"></a>
-### 风格
-
-风格在 `src/theme.ts` 中设置，`tenon add frontend --style site --landing <风格>` 生成的前端已经写好：
-
-```ts title="src/theme.ts"
-export const theme = createUiTheme({ preset: "site", landing: "dusk", primary: "blue-gray" })
-```
-
-| 风格 | 样子 | 适合 |
-| --- | --- | --- |
-| `classic`（默认） | 朴素，跟随 Mantine 的主题：浅色背景、品牌色的按钮和图标 | 先上线、以后再设计的官网 |
-| `dusk` | 暗色优先：近黑的背景、品牌色的光晕、渐变的标题、半透明的细边框，产品截图带透视 | 开发者工具、技术产品 |
-| `ink` | 黑白高对比：首屏的网格线、粗而紧的标题、共用边线的特性格子、等宽数字，按钮是黑色 | 偏工程、偏专业的产品 |
-| `mist` | 柔和：粉紫蓝的渐变背景、悬浮的胶囊形页头、毛玻璃卡片、彩色图标、渐变按钮 | 面向大众的产品 |
-
-- 每种风格都有亮色和暗色。`dusk` 的模板默认暗色（`UIProvider` 和 `ColorSchemeScript` 的 `defaultColorScheme="dark"`）。
-- `dusk` 的光晕和强调色、`mist` 的按钮和渐变用主题的品牌色；`dusk` 的按钮是黑白的，`ink` 整体是黑白的，不用品牌色。
-- 拉丁字母用 Inter：`site` 预设的字体以 Inter 开头，模板在根路由中引入 `@fontsource-variable/inter`；中文仍是系统字体。
-- 框架的 `js/playground` 可以对比四种风格：`bun run playground` 后打开 `/?landing=dusk`，页面底部可以切换风格和配色。
-
-<a id="landing-blocks"></a>
-### 区块
-
-| 区块 | 内容 |
-| --- | --- |
-| `Hero` | 首屏：`badge`（短公告）、`title`、`description`、`actions`（按钮）、`note`（按钮下方的一行，例如安装命令）、`visual`（下方的画面） |
-| `ProductShot` | 带浏览器窗口边框的产品截图：`url` 是地址栏中的地址，`children` 是截图（`<img>`）或界面 |
-| `CodeWindow` | 代码或终端窗口：`title`、`code`；`tone="terminal"` 总是暗色 |
-| `LogoCloud` | 客户标识：`title`、`items`（图片或文字） |
-| `Features` | 特性：标题区（`eyebrow`、`title`、`description`）和三列卡片。每一项有 `icon`、`title`、`description`，`wide` 占两列，`children` 放在说明下方，例如一段 `CodeWindow` |
-| `Stats` | 一行关键数据：`value`、`unit`、`label` |
-| `Testimonial` | 用户评价：`quote`、`name`、`title`（职位和公司）、`avatar`（没有时显示名字的第一个字） |
-| `CallToAction` | 页面底部的行动号召：`title`、`description`、`actions` |
-| `Section` | 自己的区块：同样的宽度、上下间距和标题区（`eyebrow`、`title`、`description`），内容是 `children` |
-
-区块之外的内容（例如价格表）放在 `Section` 中，用 Mantine 的组件写，颜色随风格变化。
+拉丁字母用 Inter：`site` 预设的字体以 Inter 开头，模板在根路由中引入 `@fontsource-variable/inter`；中文仍是系统字体。
 
 <a id="docs"></a>
 ## 文档页
@@ -185,7 +116,5 @@ function Doc({ html }: { html: string }) {
 
 | 名称 | 说明 |
 | --- | --- |
-| `SiteLayout`、`SiteLink`、`FooterColumn` | 官网的布局：`brand`、`nav`、`actions`、`footer`、`note`、`size`；外观随主题的落地页风格 |
-| `Landing`、`landings` | 落地页的风格：`classic`、`dusk`、`ink`、`mist`，用于 `createUiTheme({ landing })` |
-| `Hero`、`ProductShot`、`CodeWindow`、`LogoCloud`、`Features`、`Stats`、`Testimonial`、`CallToAction`、`Section` | 落地页的区块 |
+| `SiteLayout`、`SiteLink`、`FooterColumn` | 官网的布局：`brand`、`nav`、`actions`、`footer`、`note`、`size` |
 | `DocsLayout`、`DocsSection`、`useToc`、`headingId` | 文档页、本页目录、标题的 `id` |

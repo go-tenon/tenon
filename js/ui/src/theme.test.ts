@@ -60,11 +60,4 @@ describe("createUiTheme", () => {
     expect(layoutMetrics(t).preset).toBe("admin")
     expect(t.primaryColor).toBe("brand")
   })
-
-  it("落地页的风格写在布局尺寸中，默认没有；不认识的风格报错", () => {
-    expect(layoutMetrics(themes.site).landing).toBeUndefined()
-    const t = createUiTheme({ preset: "site", landing: "ink", primary: "#0f766e" })
-    expect(layoutMetrics(t)).toMatchObject({ preset: "site", landing: "ink", headerHeight: 64 })
-    expect(() => createUiTheme({ preset: "site", landing: "neon" as never })).toThrow(/unknown landing/)
-  })
 })

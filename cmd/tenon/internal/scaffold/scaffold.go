@@ -37,12 +37,11 @@ type Options struct {
 
 // Frontend 是前端模板的参数。
 type Frontend struct {
-	Scope   string // npm 包名的作用域，与项目根目录 package.json 的 name 相同。
-	Name    string // 前端的名称，即 apps 中的目录名。
-	Base    string // 前端挂载的路径，以 / 开头和结尾，写入 Vite 的 base 和编译 SSR 可执行文件的 --base。
-	Title   string // 页面标题。
-	Style   string // 样式预设，见 Styles；为空时是 console。
-	Landing string // 落地页的风格，见 Landings；只用于 site 样式，为空时是 classic。
+	Scope string // npm 包名的作用域，与项目根目录 package.json 的 name 相同。
+	Name  string // 前端的名称，即 apps 中的目录名。
+	Base  string // 前端挂载的路径，以 / 开头和结尾，写入 Vite 的 base 和编译 SSR 可执行文件的 --base。
+	Title string // 页面标题。
+	Style string // 样式预设，见 Styles；为空时是 console。
 }
 
 // Styles 是前端可选的样式预设（@go-tenon/ui 的 themes），决定模板的内容：
@@ -50,13 +49,6 @@ type Frontend struct {
 //   - admin：运营后台，高密度，登录页和带多标签的应用外壳，页面只在浏览器中渲染；
 //   - site：官网和内容站，页面在服务端渲染，首页构建时预渲染。
 var Styles = []string{"console", "admin", "site"}
-
-// Landings 是 site 样式的落地页风格（@go-tenon/ui 的 Landing），写入 theme.ts，首页用落地页区块：
-//   - classic：朴素，跟随主题；
-//   - dusk：暗色优先，光晕与细边框，默认暗色；
-//   - ink：黑白高对比，网格与等宽数字；
-//   - mist：柔和渐变、毛玻璃和大圆角。
-var Landings = []string{"classic", "dusk", "ink", "mist"}
 
 // Package 是嵌入构建产物的 Go 包名：前端的名称去掉连字符。
 func (f Frontend) Package() string { return strings.ReplaceAll(f.Name, "-", "") }
@@ -100,15 +92,6 @@ func writeFrontend(dir string, f Frontend) error {
 	}
 	if !slices.Contains(Styles, f.Style) {
 		return fmt.Errorf("style %q is not one of %v", f.Style, Styles)
-	}
-	if f.Style != "site" && f.Landing != "" {
-		return fmt.Errorf("landing %q needs the site style", f.Landing)
-	}
-	if f.Style == "site" && f.Landing == "" {
-		f.Landing = Landings[0]
-	}
-	if f.Style == "site" && !slices.Contains(Landings, f.Landing) {
-		return fmt.Errorf("landing %q is not one of %v", f.Landing, Landings)
 	}
 	if err := render("template/frontend", dir, f); err != nil {
 		return err

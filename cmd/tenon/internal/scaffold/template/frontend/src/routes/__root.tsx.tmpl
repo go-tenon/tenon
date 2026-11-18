@@ -21,11 +21,11 @@ function Document({ children }: { children: ReactNode }) {
   return (
     <html lang="zh-CN" {...mantineHtmlProps}>
       <head>
-        <ColorSchemeScript nonce={nonce}[[if eq .Landing "dusk"]] defaultColorScheme="dark"[[end]] />
+        <ColorSchemeScript nonce={nonce} />
         <HeadContent />
       </head>
       <body>
-        <UIProvider theme={theme}[[if eq .Landing "dusk"]] defaultColorScheme="dark"[[end]]>{children}</UIProvider>
+        <UIProvider theme={theme}>{children}</UIProvider>
         <Scripts />
       </body>
     </html>

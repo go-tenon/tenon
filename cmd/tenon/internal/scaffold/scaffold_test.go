@@ -108,8 +108,8 @@ func TestWriteFrontend(t *testing.T) {
 			"src/routes/_app.tsx": `<AppLayout title="后台" tabs user=`,
 		}, nil},
 		{"site", map[string]string{
-			"src/theme.ts":          `createUiTheme({ preset: "site", landing: "classic"`,
-			"src/routes/index.tsx":  `<Hero`,
+			"src/theme.ts":          `createUiTheme({ preset: "site", primary: "blue-gray"`,
+			"src/routes/index.tsx":  `<SiteLayout brand="后台"`,
 			"src/routes/__root.tsx": `import "@fontsource-variable/inter/index.css"`,
 			"package.json":          `"@fontsource-variable/inter"`,
 			"vite.config.ts":        `tenon({ prerender: ["/"] })`,
@@ -146,25 +146,6 @@ func TestWriteFrontend(t *testing.T) {
 	}
 	if err := scaffold.WriteFrontend(t.TempDir(), scaffold.Frontend{Name: "x", Style: "antd"}); err == nil {
 		t.Error("unknown style accepted")
-	}
-	if err := scaffold.WriteFrontend(t.TempDir(), scaffold.Frontend{Name: "x", Style: "site", Landing: "neon"}); err == nil {
-		t.Error("unknown landing accepted")
-	}
-	if err := scaffold.WriteFrontend(t.TempDir(), scaffold.Frontend{Name: "x", Style: "admin", Landing: "dusk"}); err == nil {
-		t.Error("landing accepted for admin")
-	}
-	// dusk 默认暗色。
-	root := t.TempDir()
-	if err := scaffold.WriteFrontend(root, scaffold.Frontend{Scope: "s", Name: "web", Base: "/", Title: "官网", Style: "site", Landing: "dusk"}); err != nil {
-		t.Fatal(err)
-	}
-	for name, want := range map[string]string{
-		"src/theme.ts":          `landing: "dusk"`,
-		"src/routes/__root.tsx": `<UIProvider theme={theme} defaultColorScheme="dark">`,
-	} {
-		if b, _ := os.ReadFile(filepath.Join(root, "apps", "web", name)); !strings.Contains(string(b), want) {
-			t.Errorf("dusk %s missing %q:\n%s", name, want, b)
-		}
 	}
 }
 

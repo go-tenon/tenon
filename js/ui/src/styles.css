@@ -8,7 +8,6 @@
 @import "@mantine/spotlight/styles.css";
 @import "@mantine/dates/styles.css";
 @import "mantine-datatable/styles.css";
-@import "./landing.css";
 
 :root {
   --tn-canvas: var(--mantine-color-gray-0);
@@ -626,7 +625,8 @@ body {
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
-  background: var(--lp-bg, var(--tn-surface));
+  background: var(--tn-surface);
+  color: var(--tn-text);
 }
 
 .tn-site-header {
@@ -643,6 +643,15 @@ body {
   align-items: center;
   gap: 24px;
   height: var(--tn-header-height);
+}
+
+.tn-site-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  color: var(--tn-text);
+  text-decoration: none;
 }
 
 .tn-site-nav a {
