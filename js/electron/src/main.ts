@@ -286,11 +286,30 @@ export function createHost(options: HostOptions): Host {
       })
       const shown = win
       shown.once("ready-to-show", () => shown.show())
+      if (options.dev) await waitForServer(options.dev, DEV_SERVER_TIMEOUT)
       await shown.loadURL(`${origin}${options.base}`)
       return shown
     },
   }
   return host
+}
+
+/** 开发时等待前端开发服务器启动的最长时间：tenon dev 同时启动它和 Electron。 */
+const DEV_SERVER_TIMEOUT = 60 * 1000
+
+/** 等到 url 能够访问；超过 timeoutMs 时抛出错误。 */
+async function waitForServer(url: string, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    try {
+      await net.fetch(url, { method: "HEAD" })
+      return
+    } catch (err) {
+      if (Date.now() > deadline)
+        throw new Error(`@go-tenon/electron: dev server ${url} is not reachable`, { cause: err })
+      await new Promise((resolve) => setTimeout(resolve, 300))
+    }
+  }
 }
 
 /** 在系统浏览器或邮件程序中打开 url；其他协议不打开。 */

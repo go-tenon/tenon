@@ -143,7 +143,7 @@ func root() *cobra.Command {
 		SilenceErrors: true,
 	}
 	add := &cobra.Command{Use: "add", Short: "给项目加入新的部分"}
-	add.AddCommand(addFrontendCommand())
+	add.AddCommand(addFrontendCommand(), addClientCommand())
 	root.AddCommand(initCommand(), add, devCommand(), buildCommand(), generateCommand())
 	return root
 }
@@ -166,15 +166,9 @@ func addFrontendCommand() *cobra.Command {
 			if !strings.HasPrefix(base, "/") || !strings.HasSuffix(base, "/") {
 				return fmt.Errorf("--base %q must start and end with /", base)
 			}
-			var pkg struct {
-				Name string `json:"name"`
-			}
-			data, err := os.ReadFile("package.json")
-			if err == nil {
-				err = json.Unmarshal(data, &pkg)
-			}
-			if err != nil || pkg.Name == "" {
-				return fmt.Errorf("run add frontend in the project root: package.json with a name is required (%v)", err)
+			scope, err := rootPackageName("add frontend")
+			if err != nil {
+				return err
 			}
 			existing, err := project.Load(".")
 			if err != nil {
@@ -183,7 +177,7 @@ func addFrontendCommand() *cobra.Command {
 			if i := slices.IndexFunc(existing.Frontends, func(f project.Frontend) bool { return f.Base == base && f.Name != name }); i >= 0 {
 				return fmt.Errorf("%s is already mounted at %s; choose another --base", existing.Frontends[i].Dir, base)
 			}
-			f, err := scaffold.Frontend{Scope: pkg.Name, Name: name, Base: base, Title: name, Layout: layout, Login: login, Preset: preset, Render: render}.Resolve()
+			f, err := scaffold.Frontend{Scope: scope, Name: name, Base: base, Title: name, Layout: layout, Login: login, Preset: preset, Render: render}.Resolve()
 			if err != nil {
 				return err
 			}
@@ -225,9 +219,96 @@ func addFrontendCommand() *cobra.Command {
 	return cmd
 }
 
+// rootPackageName 返回项目根目录 package.json 的 name，它是前端和客户端的 npm 包名的作用域。command 是出错时提示的命令。
+func rootPackageName(command string) (string, error) {
+	var pkg struct {
+		Name string `json:"name"`
+	}
+	data, err := os.ReadFile("package.json")
+	if err == nil {
+		err = json.Unmarshal(data, &pkg)
+	}
+	if err != nil || pkg.Name == "" {
+		return "", fmt.Errorf("run %s in the project root: package.json with a name is required (%v)", command, err)
+	}
+	return pkg.Name, nil
+}
+
+// addClientCommand 返回 tenon add client 命令：在 clients/<name> 中生成一个客户端，加入 Bun workspace。
+func addClientCommand() *cobra.Command {
+	var kind, frontendName, title string
+	cmd := &cobra.Command{
+		Use:   "client <name>",
+		Short: "在 clients/<name> 中生成一个客户端（例如 Electron 桌面端），加入 Bun workspace",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := args[0]
+			if !project.Name.MatchString(name) {
+				return fmt.Errorf("client name %q must match %s", name, project.Name)
+			}
+			if !slices.Contains(project.Kinds, kind) {
+				return fmt.Errorf("--kind %q is not one of %v", kind, project.Kinds)
+			}
+			scope, err := rootPackageName("add client")
+			if err != nil {
+				return err
+			}
+			cfg, err := project.Load(".")
+			if err != nil {
+				return err
+			}
+			if frontendName == "" {
+				return fmt.Errorf("--frontend is required: the %s client shows one of the frontends in %s", kind, project.AppsDir)
+			}
+			f, ok := cfg.FindFrontend(frontendName)
+			if !ok {
+				return fmt.Errorf("--frontend %q is not in %s", frontendName, project.AppsDir)
+			}
+			if title == "" {
+				title = name
+			}
+			consent, err := scaffold.WriteClient(".", scaffold.Client{
+				Scope: scope, Name: name, Kind: kind, Frontend: f.Name, Base: f.Base, SSR: f.SSR, Title: title,
+			})
+			if err != nil {
+				return err
+			}
+			for _, member := range append(dev.ClientWorkspaces(kind), path.Join(project.ClientsDir, name)) {
+				if err := scaffold.AddWorkspace(".", member); err != nil {
+					return err
+				}
+			}
+			if _, err := dev.SyncJS("."); err != nil {
+				return err
+			}
+			if _, err := exec.LookPath("bun"); err == nil {
+				if err := run(cmd, ".", "bun", "install"); err != nil {
+					return err
+				}
+			}
+			w := cmd.OutOrStdout()
+			fmt.Fprintf(w, "\n已生成 %s/%s：Electron 桌面端，窗口中显示 %s（%s）。\n", project.ClientsDir, name, f.Dir, f.Base)
+			if consent {
+				fmt.Fprintf(w, "已在 %s/src/routes/oauth/consent.tsx 加上授权页：用户在浏览器中登录桌面端时在这里确认。\n", f.Dir)
+			}
+			fmt.Fprintf(w, "接下来：\n"+
+				"  1. 服务端用 oauthserver 登记这个客户端：ID %s，FirstParty，回调地址 http://127.0.0.1/callback，ConsentURL 是 %soauth/consent（见文档“桌面端”）；\n"+
+				"  2. 把 %s/%s/src/main.ts 中服务器的地址改成线上的地址；\n"+
+				"  3. go tool tenon dev --client %s 运行它，go tool tenon build --client %s 打包。\n",
+				name, f.Base, project.ClientsDir, name, name, name)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&kind, "kind", "", fmt.Sprintf("客户端的种类：%s", strings.Join(project.Kinds, "、")))
+	cmd.Flags().StringVar(&frontendName, "frontend", "", "窗口中显示的前端，即 apps 中的目录名；它要有登录页")
+	cmd.Flags().StringVar(&title, "title", "", "应用的名称：窗口标题和安装包的名称，默认是 <name>")
+	return cmd
+}
+
 // devCommand 返回 tenon dev 命令：运行应用和前端工具，修改代码后重新编译、重启并生成客户端。
 func devCommand() *cobra.Command {
-	return &cobra.Command{
+	var names []string
+	cmd := &cobra.Command{
 		Use:   "dev",
 		Short: "运行应用和前端工具，修改代码后重新编译、重启并生成客户端",
 		Args:  cobra.NoArgs,
@@ -236,23 +317,47 @@ func devCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return dev.Run(cmd.Context(), cfg, cmd.OutOrStdout(), cmd.ErrOrStderr())
+			var clients []project.Client
+			for _, name := range names {
+				c, ok := cfg.FindClient(name)
+				if !ok {
+					return fmt.Errorf("--client %q is not in %s", name, project.ClientsDir)
+				}
+				clients = append(clients, c)
+			}
+			return dev.Run(cmd.Context(), cfg, clients, cmd.OutOrStdout(), cmd.ErrOrStderr())
 		},
 	}
+	cmd.Flags().StringSliceVar(&names, "client", nil, "同时运行的客户端（clients 中的目录名），可以写多个")
+	return cmd
 }
 
 // buildCommand 返回 tenon build 命令：构建每个前端，把它们的静态文件放进 apps/dist；有服务端渲染的前端时，
 // 把它们编进一个 Bun 可执行文件（apps/dist/ssr）；最后编译嵌入 apps/dist 的应用。
 func buildCommand() *cobra.Command {
-	var out, arch string
+	var out, arch, client string
 	cmd := &cobra.Command{
 		Use:   "build",
-		Short: "构建每个前端（有服务端渲染的前端时连同 Bun），再编译嵌入它们的应用",
+		Short: "构建每个前端（有服务端渲染的前端时连同 Bun），再编译嵌入它们的应用；--client 打包一个客户端",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := project.Load(".")
 			if err != nil {
 				return err
+			}
+			if client != "" {
+				c, ok := cfg.FindClient(client)
+				if !ok {
+					return fmt.Errorf("--client %q is not in %s", client, project.ClientsDir)
+				}
+				f, _ := cfg.FindFrontend(c.Frontend)
+				if _, err := dev.SyncJS("."); err != nil {
+					return err
+				}
+				if err := run(cmd, ".", "bun", "install", "--frozen-lockfile"); err != nil {
+					return err
+				}
+				return dev.BuildClient(cmd.Context(), c, f, cmd.OutOrStdout(), cmd.ErrOrStderr())
 			}
 			env := os.Environ()
 			switch arch {
@@ -333,6 +438,7 @@ func buildCommand() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVarP(&out, "output", "o", "", "输出的二进制，默认 bin/<入口包的目录名>")
+	cmd.Flags().StringVar(&client, "client", "", "只打包这个客户端（clients 中的目录名）：网页宿主先按 SPA 模式构建它的前端，安装包在客户端的 release 目录中")
 	cmd.Flags().StringVar(&arch, "arch", "", "目标架构 amd64 或 arm64（Linux），默认与本机相同。"+
 		"不要用 GOARCH 环境变量：go tool tenon 会按它把 tenon 本身编译成目标架构，在本机无法运行")
 	return cmd

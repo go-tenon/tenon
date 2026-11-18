@@ -4,6 +4,7 @@
   "type": "module",
   "workspaces": [
     ".tenon/js/client",
+    ".tenon/js/host",
     ".tenon/js/start",
     ".tenon/js/ui",
     "apps/web",
@@ -13,6 +14,6 @@
     "dev": "go tool tenon dev",
     "build": "go tool tenon build",
     "generate": "go tool tenon generate",
-    "typecheck": "bun run --filter './apps/*' typecheck"
+    "typecheck": "bun run --filter './apps/*' --filter './clients/*' typecheck"
   }
 }

@@ -165,3 +165,37 @@ func TestSchemaMatchesConfig(t *testing.T) {
 	}
 	compare("tenon", reflect.TypeFor[project.Config](), schema["properties"].(map[string]any))
 }
+
+// clients 中带 tenon.json 的目录是客户端；种类和前端要存在。
+func TestClients(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	write(t, dir, "apps/admin/vite.config.ts", "")
+	write(t, dir, "apps/admin/package.json", `{"tenon": {"base": "/admin/"}}`)
+	write(t, dir, "clients/admin-desktop/tenon.json", `{"kind": "electron", "frontend": "admin"}`)
+	write(t, dir, "clients/notes/README.md", "") // 没有 tenon.json 的目录不是客户端
+	cfg, err := project.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []project.Client{{Name: "admin-desktop", Dir: "clients/admin-desktop", Kind: "electron", Frontend: "admin"}}
+	if !slices.Equal(cfg.Clients, want) {
+		t.Fatalf("clients %+v", cfg.Clients)
+	}
+	if cl, ok := cfg.FindClient("admin-desktop"); !ok || cl.Kind != "electron" {
+		t.Fatalf("FindClient: %+v %v", cl, ok)
+	}
+	if f, ok := cfg.FindFrontend("admin"); !ok || f.Base != "/admin/" {
+		t.Fatalf("FindFrontend: %+v %v", f, ok)
+	}
+	for content, want := range map[string]string{
+		`{"kind": "swiftui"}`:                               `kind "swiftui" is not one of`,
+		`{"kind": "electron", "frontend": "shop"}`:          `frontend "shop" is not in apps`,
+		`{"kind": "electron", "frontend": "admin", "x": 1}`: "unknown field",
+	} {
+		write(t, dir, "clients/admin-desktop/tenon.json", content)
+		if _, err := project.Load(dir); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: err = %v, want %q", content, err, want)
+		}
+	}
+}

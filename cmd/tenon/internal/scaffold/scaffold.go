@@ -1,6 +1,7 @@
-// Package scaffold 生成新项目和新前端：template/project 是项目，template/frontend 是 apps 中的一个前端
+// Package scaffold 生成新项目、新前端和新客户端：template/project 是项目，template/frontend 是 apps 中的一个前端
 // （TanStack Start 和 @go-tenon/ui）。前端按几个互相独立的维度组合：template/app 和 template/site 是按布局加上的页面，
-// template/login 是登录页和登录接口。
+// template/login 是登录页和登录接口。template/client/<种类> 是 clients 中的一个客户端，网页宿主（electron）
+// 另外在它显示的前端中加上 template/consent 的授权页。
 // 每个 .tmpl 文件按参数渲染后写入目标目录。模板的分隔符是 [[ ]]，与 JSX 的 {{ }} 区分开；gitignore.tmpl 写成 .gitignore。
 package scaffold
 
@@ -46,6 +47,17 @@ type Frontend struct {
 	Login  string // 登录页的样式，见 Logins；为空时按布局：frame、rail 是 centered，site 是 none。
 	Preset string // 样式预设（@go-tenon/ui 的 Preset），见 Presets；为空时按布局：frame 是 compact，rail 是 comfortable，site 是 spacious。
 	Render string // 渲染方式，见 Renders；为空时按布局：site 是 ssr，frame、rail 是 csr。
+}
+
+// Client 是客户端模板的参数。
+type Client struct {
+	Scope    string // npm 包名的作用域，与项目根目录 package.json 的 name 相同。
+	Name     string // 客户端的名称，即 clients 中的目录名。
+	Kind     string // 种类，见 project.Kinds。
+	Frontend string // 网页宿主显示的前端的名称。
+	Base     string // 这个前端挂载的路径。
+	SSR      bool   // 这个前端是否在服务端渲染：授权页在服务端渲染的前端中只在浏览器中渲染。
+	Title    string // 应用的名称：窗口标题、安装包的名称。
 }
 
 // Layouts 是前端可选的布局：
@@ -107,6 +119,30 @@ func WriteFrontend(root string, f Frontend) error {
 		return err
 	}
 	return writeFrontend(dir, f)
+}
+
+// WriteClient 在项目 root 的 clients/<名称> 中生成客户端 c，这个目录必须尚未创建。网页宿主在它显示的前端中加上授权页
+// src/routes/oauth/consent.tsx（用户在浏览器中登录时确认的页面），这个文件已经存在时不覆盖；consent 报告是否加上了。
+// 授权页用前端的登录（src/auth.ts），前端没有登录时返回错误。
+func WriteClient(root string, c Client) (consent bool, err error) {
+	dir := filepath.Join(root, "clients", c.Name)
+	if _, err := os.Stat(dir); err == nil {
+		return false, fmt.Errorf("%s already exists", filepath.ToSlash(filepath.Join("clients", c.Name)))
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return false, err
+	}
+	fdir := filepath.Join(root, "apps", c.Frontend)
+	if _, err := os.Stat(filepath.Join(fdir, "src", "auth.ts")); err != nil {
+		return false, fmt.Errorf("apps/%s has no login (src/auth.ts): the %s client signs users in through it", c.Frontend, c.Kind)
+	}
+	if err := render("template/client/"+c.Kind, dir, c); err != nil {
+		return false, err
+	}
+	page := filepath.Join(fdir, "src", "routes", "oauth", "consent.tsx")
+	if _, err := os.Stat(page); err == nil {
+		return false, nil
+	}
+	return true, render("template/consent", fdir, c)
 }
 
 // Resolve 返回补上默认值的 f：没有写的维度按布局取默认值，见 defaults。某个维度的值不在可选的范围内时返回错误。

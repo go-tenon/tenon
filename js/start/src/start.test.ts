@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { defaultTarget, entrySource } from "./compile"
 import { forwardHeaders, HeaderNonce, PrerenderNonce, socketPath } from "./headers"
 import * as vite from "./vite.js"
@@ -66,6 +66,10 @@ describe("vite", () => {
     expect(vite.frontendConfig(dir)).toEqual({ base: "/admin/", ssr: false })
     write({ base: "/", ssr: true })
     expect(vite.frontendConfig(dir)).toEqual({ base: "/", ssr: true })
+    // 为宿主构建时（TENON_RENDER=csr）不论 tenon.ssr 都只在浏览器中渲染。
+    vi.stubEnv("TENON_RENDER", "csr")
+    expect(vite.frontendConfig(dir)).toEqual({ base: "/", ssr: false })
+    vi.unstubAllEnvs()
     write({ base: "/admin" })
     expect(() => vite.frontendConfig(dir)).toThrow("tenon.base must start and end with /")
   })

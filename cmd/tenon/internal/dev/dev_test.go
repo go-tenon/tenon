@@ -100,7 +100,7 @@ func start(t *testing.T, cfg *project.Config, out, errOut *syncBuffer) func() er
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- dev.Run(ctx, cfg, out, errOut) }()
+	go func() { done <- dev.Run(ctx, cfg, nil, out, errOut) }()
 	return func() error {
 		cancel()
 		select {
@@ -147,7 +147,7 @@ func TestDevStopsWhenAWatcherExits(t *testing.T) {
 	}
 	cfg := load(t)
 	cfg.Tools = []project.Tool{{Watch: []string{"esbuild", "--watch"}}}
-	err := dev.Run(context.Background(), cfg, &bytes.Buffer{}, &bytes.Buffer{})
+	err := dev.Run(context.Background(), cfg, nil, &bytes.Buffer{}, &bytes.Buffer{})
 	if err == nil || !strings.Contains(err.Error(), "esbuild") {
 		t.Errorf("err = %v", err)
 	}
@@ -182,7 +182,7 @@ func TestDevMissingTools(t *testing.T) {
 	} {
 		c := *cfg
 		edit(&c)
-		if err := dev.Run(context.Background(), &c, &bytes.Buffer{}, &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), name) {
+		if err := dev.Run(context.Background(), &c, nil, &bytes.Buffer{}, &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), name) {
 			t.Errorf("%s: err = %v", name, err)
 		}
 	}

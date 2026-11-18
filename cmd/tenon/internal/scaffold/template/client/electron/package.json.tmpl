@@ -1,0 +1,21 @@
+{
+  "name": "@[[.Scope]]/[[.Name]]",
+  "version": "0.1.0",
+  "private": true,
+  "description": "[[.Title]]",
+  "main": "dist/main.js",
+  "desktopName": "[[.Name]].desktop",
+  "scripts": {
+    "bundle": "bun build src/main.ts src/preload.ts --outdir dist --target node --format cjs --external electron",
+    "dev": "bun run bundle && electron .",
+    "package": "bun run bundle && electron-builder",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@go-tenon/electron": "workspace:*",
+    "@types/node": "^24.10.15",
+    "electron": "45.2.3",
+    "electron-builder": "26.18.0",
+    "typescript": "^7.0.2"
+  }
+}

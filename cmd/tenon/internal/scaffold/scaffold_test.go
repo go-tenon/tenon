@@ -218,3 +218,50 @@ func TestSlug(t *testing.T) {
 		}
 	}
 }
+
+// 客户端生成在 clients/<名称> 中；网页宿主在前端中加上授权页，前端没有登录时报错，已有的授权页不覆盖。
+func TestWriteClient(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	for _, f := range []scaffold.Frontend{
+		{Scope: "todo", Name: "admin", Base: "/admin/", Title: "Admin", Layout: "frame"},
+		{Scope: "todo", Name: "promo", Base: "/promo/", Title: "Promo", Layout: "site"},
+	} {
+		if err := scaffold.WriteFrontend(root, f); err != nil {
+			t.Fatal(err)
+		}
+	}
+	c := scaffold.Client{Scope: "todo", Name: "admin-desktop", Kind: "electron", Frontend: "admin", Base: "/admin/", Title: "管理后台"}
+	consent, err := scaffold.WriteClient(root, c)
+	if err != nil || !consent {
+		t.Fatalf("WriteClient: %v, consent %v", err, consent)
+	}
+	for f, want := range map[string]string{
+		"clients/admin-desktop/tenon.json":           `"kind": "electron"`,
+		"clients/admin-desktop/package.json":         `"name": "@todo/admin-desktop"`,
+		"clients/admin-desktop/electron-builder.yml": "productName: 管理后台",
+		"clients/admin-desktop/src/main.ts":          `base: "/admin/"`,
+		"clients/admin-desktop/src/preload.ts":       `import "@go-tenon/electron/preload"`,
+		"clients/admin-desktop/.gitignore":           "release/",
+		"apps/admin/src/routes/oauth/consent.tsx":    `createFileRoute("/oauth/consent")`,
+		"apps/admin/src/routes/login.tsx":            "<BrowserSignIn signIn={desktop.auth.signIn}",
+		"apps/admin/src/auth.ts":                     "await host()?.auth.signOut()",
+	} {
+		b, err := os.ReadFile(filepath.Join(root, f))
+		if err != nil || !strings.Contains(string(b), want) {
+			t.Errorf("%s: want %q, err %v\n%s", f, want, err, b)
+		}
+	}
+
+	if _, err := scaffold.WriteClient(root, c); err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Errorf("existing client: %v", err)
+	}
+	c.Name = "admin-mac"
+	if consent, err := scaffold.WriteClient(root, c); err != nil || consent {
+		t.Errorf("second client of the same frontend: %v, consent %v", err, consent)
+	}
+	c.Name, c.Frontend, c.Base = "promo-desktop", "promo", "/promo/"
+	if _, err := scaffold.WriteClient(root, c); err == nil || !strings.Contains(err.Error(), "has no login") {
+		t.Errorf("frontend without login: %v", err)
+	}
+}

@@ -29,9 +29,10 @@ const framework = "github.com/go-tenon/tenon"
 // DevConfig 是 tenon dev 写给应用的配置：各前端开发服务器的地址（dev_servers），追加在 serve 的 --config 之后。
 const DevConfig = ".tenon/dev.yaml"
 
-// Run 在当前目录运行开发模式，直到 ctx 取消；停止后运行工具的构建命令。
-func Run(ctx context.Context, cfg *project.Config, out, errOut io.Writer) error {
-	d := dev{cfg: cfg, out: shared(out), errOut: shared(errOut)}
+// Run 在当前目录运行开发模式，直到 ctx 取消；停止后运行工具的构建命令。clients 是同时运行的客户端，
+// 例如 Electron 桌面端，它们的页面来自前端的开发服务器。
+func Run(ctx context.Context, cfg *project.Config, clients []project.Client, out, errOut io.Writer) error {
+	d := dev{cfg: cfg, clients: clients, out: shared(out), errOut: shared(errOut)}
 	if err := d.check(); err != nil {
 		return err
 	}
@@ -52,6 +53,7 @@ func Run(ctx context.Context, cfg *project.Config, out, errOut io.Writer) error 
 // dev 是一次 tenon dev 的运行。
 type dev struct {
 	cfg         *project.Config
+	clients     []project.Client // 同时运行的客户端
 	out, errOut io.Writer
 	servers     map[string]string // 各前端开发服务器的地址，按前端的名称。
 }
@@ -152,13 +154,17 @@ func WriteManifest(root string, cfg *project.Config) error {
 }
 
 // CopyClient 把当前目录中前端 f 的浏览器构建（vite build 生成的 dist/client）复制到 DistDir/<名称>，不复制 source map。
-// 只在浏览器中渲染的前端要有页面外壳（frontend.ShellFile），没有时说明它的 Vite 配置没有用 @go-tenon/start 的插件。
+// 只在浏览器中渲染的前端要有页面外壳（frontend.ShellFile）。
 func CopyClient(f project.Frontend) error {
 	src := filepath.Join(f.Dir, "dist", "client")
-	dst := filepath.Join(filepath.FromSlash(DistDir), f.Name)
-	if !f.SSR {
-		if _, err := os.Stat(filepath.Join(src, frontend.ShellFile)); err != nil {
-			return errors.Wrapf(err, "dev: %s has no page shell; use tenon() from @go-tenon/start/vite in its vite.config", f.Dir)
+	return errors.Wrapf(copyBuild(src, filepath.Join(filepath.FromSlash(DistDir), f.Name), !f.SSR), "dev: %s", f.Dir)
+}
+
+// copyBuild 把前端的浏览器构建 src 复制到 dst，不复制 source map；shell 为 true 时 src 中必须有页面外壳。
+func copyBuild(src, dst string, shell bool) error {
+	if shell {
+		if err := ensureShell(src); err != nil {
+			return err
 		}
 	}
 	err := filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
@@ -179,7 +185,7 @@ func CopyClient(f project.Frontend) error {
 		}
 		return os.WriteFile(target, b, 0o644)
 	})
-	return errors.Wrapf(err, "dev: copy %s", src)
+	return errors.Wrapf(err, "copy %s", src)
 }
 
 // devServers 为每个前端选一个空闲端口，返回开发服务器的地址。
@@ -268,11 +274,23 @@ func (d dev) builds() []watcher {
 	return bs
 }
 
-// runs 返回 tenon dev 同时运行的各项：应用本身和每个监视的工具。
+// runs 返回 tenon dev 同时运行的各项：应用本身、每个监视的工具和每个客户端。客户端正常退出（例如关闭了窗口）时
+// 开发模式继续运行；客户端出错时整体停止。
 func (d dev) runs() []func(context.Context) error {
 	runs := []func(context.Context) error{d.serve}
 	for _, w := range d.watchers() {
 		runs = append(runs, func(ctx context.Context) error { return d.run(ctx, w) })
+	}
+	for _, c := range d.clients {
+		w := d.clientWatcher(c)
+		runs = append(runs, func(ctx context.Context) error {
+			if err := d.run(ctx, w); err != nil {
+				return err
+			}
+			fmt.Fprintf(d.out, "dev: %s 已退出，应用和前端继续运行\n", c.Dir)
+			<-ctx.Done()
+			return ctx.Err()
+		})
 	}
 	return runs
 }

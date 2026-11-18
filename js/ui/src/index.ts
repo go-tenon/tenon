@@ -52,6 +52,7 @@ export * from "./components/status-dot"
 // ———————————————————————————— features ————————————————————————————
 export * from "./features/activity/activity-timeline"
 export * from "./features/activity/model"
+export * from "./features/browser-sign-in"
 export * from "./features/login-form"
 export * from "./features/notifications/model"
 export * from "./features/notifications/notifications-menu"
