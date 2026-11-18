@@ -122,6 +122,7 @@ function ArticlesPage() {
 | `actions` | 顶栏中，`actions` 参数之前 |
 | `aside` | 右侧面板，有内容时才出现 |
 | `footer` | 内容区的底部 |
+| `user-menu` | [用户菜单](#menus)中，配色的下面；开启多标签时 `FrameLayout` 在这里放“多标签”开关 |
 
 同一个插槽可以有多份内容，按放入的顺序排列。内容用 portal 放进插槽，仍在页面自己的组件树中：读取页面的状态和上下文，随页面一起更新。
 
@@ -130,7 +131,7 @@ function ArticlesPage() {
 
 | 组件 | 作用 |
 | --- | --- |
-| `UserMenu` | 只显示头像（`avatar`，没有时是 `name` 的首字），菜单顶部是名称和邮箱（`email`），下面是应用的菜单项（`items`）、配色（亮色、暗色、跟随系统，`colorScheme={false}` 时不显示）、所在布局放进来的内容（`FrameLayout` 开启多标签时的“多标签”开关）和退出登录。`logout` 调用应用的退出接口，之后清除会话中的身份；标签中有未保存的修改时先询问 |
+| `UserMenu` | 只显示头像（`avatar`，没有时是 `name` 的首字），菜单顶部是名称和邮箱（`email`），下面是应用的菜单项（`items`）、配色（亮色、暗色、跟随系统，`colorScheme={false}` 时不显示）、`user-menu` 插槽中的内容（`FrameLayout` 开启多标签时的“多标签”开关）和退出登录。`logout` 调用应用的退出接口，之后清除会话中的身份；标签中有未保存的修改时先询问 |
 | `NotificationsMenu` | 铃铛和未读数，弹出最近的通知，点击打开并标记已读，见[通知](features.md#notifications) |
 | `OperationsMenu` | 后台任务的进度：导入、导出等耗时的操作。有进行中的任务时显示转动的图标，没有任务时不显示，见[后台操作](features.md#operations) |
 | `LanguageMenu` | 语言切换：图标按钮，菜单中列出 `languages`，当前的 `value` 打勾，选择后调用 `onChange`。换文案、记住选择由应用决定。放在 `actions` 中 |
@@ -205,7 +206,7 @@ function ArticlePage() {
 页面照常使用 Router 的标准 hooks（`Route.useParams()`、`useSearch()`、`useLocation()` 等），不需要知道自己是否在标签中：每个标签有自己的路由上下文，隐藏的标签读到的是它最后一次显示时的状态。隐藏的标签放在 React 的 `<Activity mode="hidden">` 中，组件状态保留，effect 暂停：隐藏期间不发出请求，切回时照常恢复。页面需要知道自己是否显示时（例如暂停轮询）用 `useTabActive()`。
 
 > [!NOTE]
-> 标签自己的路由上下文依赖 TanStack Router 内部的 `router.stores`。升级 TanStack Router 时，`js/ui/src/shell/tabs.test.tsx` 检查它是否仍然可用。`<Activity>` 需要 React 19.2。
+> 标签自己的路由上下文依赖 TanStack Router 内部的 `router.stores`。升级 TanStack Router 之后，在 playground 的 FrameLayout 演示中打开几个标签来回切换，确认每个标签读到的参数仍然是自己的。`<Activity>` 需要 React 19.2。
 
 标签栏的操作：点击切换，中键点击关闭；标签上没有关闭按钮，右键菜单中有关闭、固定、重新加载、关闭其他标签页、关闭右侧标签页；可以拖动排序；固定的标签显示图钉，有未保存修改的显示一个圆点。放不下时两端出现箭头，点击向那一侧滚动，还有被挡住的标签的一端渐隐。最后一个标签右边是刷新按钮，重新加载当前页面：页面顶部显示一条进度条（`@mantine/nprogress`），主内容区淡出，页面的请求都完成后淡入、进度条走完；右键菜单中的“重新加载”相同。这条进度条只在重新加载标签时出现；打开页面、跳转和按浏览器的刷新保持浏览器原本的行为。
 
@@ -356,7 +357,7 @@ function TopLayout() {
 
 **页面放进 `Fill` 的按钮没有出现在顶栏**
 
-插槽的名字写错了：`FrameLayout` 只有 `actions`、`aside`、`footer` 三个插槽。用户菜单这类每个页面都有的内容是 `FrameLayout` 的参数。
+插槽的名字写错了：`FrameLayout` 中有 `actions`、`aside`、`footer` 三个插槽，用户菜单中有 `user-menu`。用户菜单这类每个页面都有的内容是 `FrameLayout` 的参数。
 
 **页面上没有面包屑**
 

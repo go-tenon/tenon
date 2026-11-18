@@ -4,6 +4,23 @@
 
 框架的前端包有三个：`@go-tenon/client` 是与界面无关的客户端运行时（会话、错误、校验、上传），`@go-tenon/start` 把 TanStack Start 接到 Go，`@go-tenon/ui` 是应用骨架和界面组件。
 
+<a id="ui-layers"></a>
+## 前端包的分层
+
+`@go-tenon/ui` 中的东西按粒度分成五层。找一个组件或函数时，先想它属于哪一层：
+
+| 层 | 内容 | 例子 |
+| --- | --- | --- |
+| 主题 `theme` | 样式预设、由品牌色生成主题、图标、配色切换 | `createUiTheme`、`UIProvider`、`ColorSchemeToggle` |
+| 应用骨架 `app` | 装配 Router、QueryClient 和会话，登录与权限检查，由路由生成菜单和面包屑，插槽，多标签，租户，新版本提示 | `createApp`、`requireAuth`、`Fill`、`TabsOutlet` |
+| 部件 `components` | 页面中用的部件，Mantine 中没有的那些 | `DataTable`、`useSchemaForm`、`Page`、`DescriptionList`、`confirm` |
+| 区块 `blocks` | 整块的界面，只描述样子：布局、登录页的布局、错误页、用户菜单 | `FrameLayout`、`RailLayout`、`SiteLayout`、`CenteredAuthLayout`、`UserMenu` |
+| 功能 `features` | 框架功能的前端，接后端的模型和它的外观放在一起 | `ResourcePage`、`SettingsForm`、`LoginForm`、`NotificationsMenu`、`QueuePanel` |
+
+按钮、输入框、弹窗这些基础组件直接用 Mantine，图表用 [`@mantine/charts`](https://mantine.dev/charts/getting-started/)，`@go-tenon/ui` 中没有对应的一层。
+
+上层只引用下层。区块和功能在同一层，但互相不引用：布局只描述界面的样子，不知道通知、后台任务这些功能；把它们组合起来的是你的应用。`tenon init` 生成的项目就是这样一个组合：它选定一种布局和一种样式预设，把 `UserMenu` 放进布局，登录页在 `CenteredAuthLayout` 中放 `LoginForm`。布局、登录页的样式和样式预设互相独立，换掉其中一个不影响其他的；通知菜单这类功能由你按需放进布局的参数或插槽。
+
 写页面时按这个顺序读：
 
 - [搭建前端应用](app.md)：创建应用、样式预设与主题、页面的元数据、登录、权限、错误页和新版本提示
