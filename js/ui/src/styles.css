@@ -645,6 +645,15 @@ body {
   height: var(--tn-header-height);
 }
 
+.tn-site-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  color: var(--tn-text);
+  text-decoration: none;
+}
+
 .tn-site-nav a {
   color: var(--tn-muted);
   font-size: var(--mantine-font-size-sm);

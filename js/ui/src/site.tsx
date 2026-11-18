@@ -21,7 +21,7 @@ export interface FooterColumn {
 
 /** SiteLayout 的选项。 */
 export interface SiteLayoutProps {
-  /** 页头左侧的标志和名称。 */
+  /** 页头左侧的标志和名称，点击回到首页。 */
   brand: ReactNode
   /** 页头的导航。 */
   nav?: SiteLink[]
@@ -66,9 +66,9 @@ export function SiteLayout({
     <div className="tn-site" style={vars}>
       <header className="tn-site-header">
         <Container size={size} className="tn-site-header-inner">
-          <Box fw={700} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <Link to="/" className="tn-site-brand">
             {brand}
-          </Box>
+          </Link>
           <Group gap={2} className="tn-site-nav" visibleFrom="sm" component="nav" aria-label="网站导航">
             {nav.map((l, i) => (
               // biome-ignore lint/suspicious/noArrayIndexKey: 导航是固定的列表
