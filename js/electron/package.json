@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     "./main": "./src/main.ts",
-    "./preload": "./src/preload.ts"
+    "./preload": "./src/preload.ts",
+    "./update": "./src/update.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
@@ -16,6 +17,12 @@
     "@types/node": "^24.10.15"
   },
   "peerDependencies": {
-    "electron": ">=45.0.0"
+    "electron": ">=45.0.0",
+    "electron-updater": ">=6.8.0"
+  },
+  "peerDependenciesMeta": {
+    "electron-updater": {
+      "optional": true
+    }
   }
 }

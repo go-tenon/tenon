@@ -44,6 +44,7 @@
     "ai": "7.0.173",
     "dayjs": "1.11.23",
     "electron": "45.2.3",
+    "electron-updater": "6.8.12",
     "mantine-datatable": "9.8.1",
     "react": "19.3.1",
     "react-dom": "19.3.1",

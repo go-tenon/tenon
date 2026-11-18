@@ -1,7 +1,8 @@
 // [[.Title]]的主进程：在窗口中打开前端 apps/[[.Frontend]]（挂在 [[.Base]]），接口转发到服务器，用户在浏览器中登录。
-// 桌面能力（托盘、通知、自动更新等）在这里逐项加上，见文档“桌面端”。
+// 下面逐项加上桌面能力，不需要的删掉那一行。
 
-import { createHost } from "@go-tenon/electron/main"
+import { createHost, logs, singleInstance, standardMenu, windowState } from "@go-tenon/electron/main"
+import { autoUpdate } from "@go-tenon/electron/update"
 import { app } from "electron"
 import { join } from "node:path"
 
@@ -11,6 +12,8 @@ const server = process.env.TENON_SERVER ?? "https://example.com"
 // 打包出的文件在 dist 中：主进程、preload 和按 SPA 模式构建的前端（renderer）。app.getAppPath() 开发时是客户端的目录，
 // 安装后是 app.asar。
 const dist = join(app.getAppPath(), "dist")
+
+logs() // 主进程的日志写入文件，收集崩溃报告
 
 const host = createHost({
   id: "[[.Name]]", // 也是授权服务器中登记的 client ID
@@ -22,9 +25,16 @@ const host = createHost({
   window: { title: "[[.Title]]" },
 })
 
-host.start().catch((err) => {
-  console.error(err)
-  app.exit(1)
-})
+windowState(host) // 记住窗口的位置和大小
+standardMenu(host) // 应用菜单（macOS 的编辑快捷键）和右键菜单
+autoUpdate(host) // 自动更新，服务端要求升级时立即更新；更新源见 electron-builder.yml 的 publish
+
+// 只运行一个实例：再次打开时回到已有的窗口。
+if (singleInstance(host)) {
+  host.start().catch((err) => {
+    console.error(err)
+    app.exit(1)
+  })
+}
 
 app.on("window-all-closed", () => app.quit())

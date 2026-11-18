@@ -66,6 +66,12 @@ export interface Host {
   handle(name: string, fn: (...args: never[]) => unknown): void
   /** 向页面发出事件，例如通知被点击后的 navigate。 */
   emit<E extends keyof HostEvents>(event: E, data: HostEvents[E]): void
+  /** 主窗口创建之后、加载页面之前调用 fn，例如恢复窗口的位置。在 start 之前调用。 */
+  whenWindow(fn: (win: BrowserWindow) => void): void
+  /** 每个转发到服务器的请求得到响应后调用 fn，例如服务端要求升级（426）时开始更新。 */
+  onResponse(fn: (res: Response) => void): void
+  /** 是否在开发模式（设置了 HostOptions.dev）。 */
+  readonly dev: boolean
 }
 
 /** 宿主的种类。 */
@@ -94,6 +100,8 @@ export function createHost(options: HostOptions): Host {
   const origin = `https://${hostname}`
   const proxy = options.proxy ?? ["/api/"]
   const methods = new Map<string, (...args: never[]) => unknown>()
+  const windowHooks: ((win: BrowserWindow) => void)[] = []
+  const responseHooks: ((res: Response) => void)[] = []
   let win: BrowserWindow | undefined
   let tokens: TokenStore | undefined
   let started = false
@@ -116,6 +124,7 @@ export function createHost(options: HostOptions): Host {
     }
     const res = await net.fetch(serverOrigin + url.pathname + url.search, init)
     if (res.status === 401 && token && tokens?.current() === token) tokens.clear()
+    for (const fn of responseHooks) fn(res)
     return new Response(nullBodyStatus(res.status) ? null : res.body, {
       status: res.status,
       statusText: res.statusText,
@@ -193,6 +202,14 @@ export function createHost(options: HostOptions): Host {
 
   const host: Host = {
     origin,
+    dev: options.dev !== undefined,
+    whenWindow(fn) {
+      if (started) throw new Error("@go-tenon/electron: call whenWindow before start")
+      windowHooks.push(fn)
+    },
+    onResponse(fn) {
+      responseHooks.push(fn)
+    },
     window: () => win,
     handle(name, fn) {
       if (started) throw new Error(`@go-tenon/electron: register ${name} before start`)
@@ -285,6 +302,7 @@ export function createHost(options: HostOptions): Host {
         },
       })
       const shown = win
+      for (const fn of windowHooks) fn(shown)
       shown.once("ready-to-show", () => shown.show())
       if (options.dev) await waitForServer(options.dev, DEV_SERVER_TIMEOUT)
       await shown.loadURL(`${origin}${options.base}`)
@@ -329,3 +347,8 @@ function platform(): HostPlatform {
       return "linux"
   }
 }
+
+export { type LogOptions, logs } from "./logs"
+export { standardMenu } from "./menu"
+export { singleInstance } from "./single-instance"
+export { windowState } from "./window-state"
