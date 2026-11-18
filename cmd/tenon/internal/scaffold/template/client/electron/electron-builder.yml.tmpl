@@ -7,7 +7,9 @@ directories:
   output: release
 files:
   - dist/**/*
+  - assets/**/*
   - package.json
+# 应用图标：build/icon.png（至少 512×512），换成应用自己的。
 asar: true
 # Electron 的安全开关（fuses）：不能当作 Node 运行，只从 app.asar 加载代码并校验它的完整性。
 electronFuses:
@@ -17,6 +19,11 @@ electronFuses:
   enableNodeCliInspectArguments: false
   enableEmbeddedAsarIntegrityValidation: true
   onlyLoadAppFromAsar: true
+# 深度链接：[[.Name]]://open/<路径> 打开应用中的页面，路径与网页上的相同。
+protocols:
+  - name: [[.Title]]
+    schemes:
+      - [[.Name]]
 # 自动更新的来源：把 release 中的安装包和 latest*.yml 放到这个地址，见 @go-tenon/electron/update。
 publish:
   provider: generic

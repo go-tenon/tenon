@@ -348,6 +348,15 @@ function platform(): HostPlatform {
   }
 }
 
+export {
+  autostart,
+  badge,
+  type DeepLinkOptions,
+  deepLinks,
+  notifications,
+  type TrayOptions,
+  tray,
+} from "./integrations"
 export { type LogOptions, logs } from "./logs"
 export { standardMenu } from "./menu"
 export { singleInstance } from "./single-instance"

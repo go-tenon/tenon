@@ -4,6 +4,7 @@ import { join } from "node:path"
 import { describe, expect, it, vi } from "vitest"
 import { parseState, visible } from "./bounds"
 import { contextTemplate, type MenuParams } from "./context-menu"
+import { autostartEntry, linkInArgv, linkPath } from "./links"
 import { appendLog } from "./logfile"
 
 describe("窗口状态", () => {
@@ -87,5 +88,35 @@ describe("appendLog", () => {
     writeFileSync(file, "x".repeat(40))
     appendLog(file, "d", 30)
     expect(readFileSync(`${file}.old`, "utf8")).toBe("x".repeat(40))
+  })
+})
+
+describe("深度链接", () => {
+  it("取出 base 之下的页面路径和查询参数", () => {
+    expect(linkPath("admin-desktop://open/admin/orders/123?tab=items", "admin-desktop", "/admin/")).toBe(
+      "/admin/orders/123?tab=items",
+    )
+    expect(linkPath("admin-desktop://open/admin", "admin-desktop", "/admin/")).toBe("/admin")
+  })
+
+  it("其他协议、其他动作、base 以外的路径不打开", () => {
+    expect(linkPath("other://open/admin/x", "admin-desktop", "/admin/")).toBeUndefined()
+    expect(linkPath("admin-desktop://run/admin/x", "admin-desktop", "/admin/")).toBeUndefined()
+    expect(linkPath("admin-desktop://open/console/x", "admin-desktop", "/admin/")).toBeUndefined()
+    expect(linkPath("admin-desktop://open//evil.example/admin/", "admin-desktop", "/admin/")).toBeUndefined()
+    expect(linkPath("not a url", "admin-desktop", "/admin/")).toBeUndefined()
+  })
+
+  it("从命令行参数中找到链接", () => {
+    expect(linkInArgv(["/opt/app", "--flag", "admin-desktop://open/admin/"], "admin-desktop")).toBe(
+      "admin-desktop://open/admin/",
+    )
+    expect(linkInArgv(["/opt/app"], "admin-desktop")).toBeUndefined()
+  })
+
+  it("Linux 开机自启的 .desktop 文件给路径加上引号", () => {
+    expect(autostartEntry("Todo 后台", '/home/u/Apps/Todo "x".AppImage')).toBe(
+      '[Desktop Entry]\nType=Application\nName=Todo 后台\nExec="/home/u/Apps/Todo \\"x\\".AppImage"\nX-GNOME-Autostart-enabled=true\n',
+    )
   })
 })
