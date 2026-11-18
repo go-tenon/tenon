@@ -227,7 +227,7 @@ func (h *handlers) create(ctx context.Context, in *CreateInput) (*RoleOutput, er
 }
 
 func (h *handlers) update(ctx context.Context, in *UpdateInput) (*RoleOutput, error) {
-    r, err := h.roles.UpdateRole(ctx, in.Body.role(in.ID))
+    r, err := h.roles.UpdateRole(ctx, in.Body.role(in.ID), "")
     if err != nil {
         return nil, err
     }
@@ -236,7 +236,7 @@ func (h *handlers) update(ctx context.Context, in *UpdateInput) (*RoleOutput, er
 
 // delete 删除角色，同时撤销它的分配。
 func (h *handlers) delete(ctx context.Context, in *IDInput) (*struct{}, error) {
-    return nil, h.roles.DeleteRole(ctx, in.ID)
+    return nil, h.roles.DeleteRole(ctx, in.ID, "")
 }
 
 // RegisterRoutes 注册角色的接口，并声明角色的后台页面。require 要求 roles:manage 权限。
@@ -269,6 +269,8 @@ func RegisterRoutes(api *rest.API, require func(*huma.Operation), roles *authz.S
 - **每个操作需要的权限**来自注册接口时的声明，后台据此隐藏用户没有权限的按钮。
 
 资源写入接口文档，`tenon generate` 据此生成前端的资源定义。
+
+`UpdateRole`、`DeleteRole` 的最后一个参数是租户。博客只有一个后台，传 `""` 表示不按租户限制；多租户应用中，租户管理员的接口传入当前租户，这样只能修改本租户的角色，见[授权](../security/authorization.md#roles)。
 
 `authz` 的错误（例如“已有同名角色”）已经有翻译，接口直接返回它们即可。
 

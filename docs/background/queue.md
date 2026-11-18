@@ -307,7 +307,7 @@ if err != nil {
 JetStream 把任务交给 worker 后，等待处理结果的时间是 `lease`（默认 30 秒），处理期间 worker 每 10 秒自动延长一次。任务执行多久都可以，长任务也保持默认配置。worker 只在有空闲的并发名额时才领取任务，任务不会在 worker 中排队等待。
 
 - **worker 崩溃**：延长随之停止，`lease` 到期后 JetStream 把任务交给其他 worker。
-- **停止 worker**：收到停止信号后，worker 停止接收新任务，等待处理中的任务完成，最多等待 `shutdown_timeout`。这期间处理函数的 `ctx` 保持有效。超时仍未完成的任务立即放回 JetStream，处理函数的 `ctx` 以 `queue.ErrShuttingDown` 取消；放回的任务再次执行时计入一次执行。
+- **停止 worker**：收到停止信号后，worker 停止接收新任务，等待处理中的任务完成，最多等待 `shutdown_timeout`。这期间处理函数的 `ctx` 保持有效。超时仍未完成的任务立即放回 JetStream，处理函数的 `ctx` 以 `queue.ErrShuttingDown` 取消；worker 等这些处理函数返回之后才停止，之后才关闭数据库。放回的任务再次执行时计入一次执行。
 
 处理函数应当把 `ctx` 传给数据库查询和外部调用，这样停止超时时能尽快退出。
 

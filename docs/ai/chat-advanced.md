@@ -185,7 +185,7 @@ if mentionsAssistant(msg) {
 
 这些能力是单独的调用。在对话中让模型看图、听音频，见[发送图片和文件](chat.md#files)。
 
-`ai/openai` 通过 OpenAI 兼容接口实现这五种能力。`openai.New` 和 `chat.NewModel` 一样接收 `ai.ModelConfig`，不访问网络，可以在每次使用时按当时的配置创建。OpenAI、火山方舟、硅基流动、通义千问的兼容模式等都提供这类接口，但每家支持的能力不同，以厂商文档为准。
+`ai/openai` 通过 OpenAI 兼容接口实现这五种能力。`openai.New` 和 `chat.NewModel` 一样接收 `ai.ModelConfig`，不访问网络，可以在每次使用时按当时的配置创建。OpenAI、火山方舟、硅基流动、通义千问的兼容模式等都提供这类接口，但每家支持的能力不同，以厂商文档为准。厂商有自己的请求参数时，用 `openai.WithRequestOptions` 追加 openai-go 的请求选项，例如 `option.WithJSONSet("enable_thinking", false)`；`openai.WithHTTPClient` 换用自己的 HTTP 客户端。`ai/dashscope` 内部也用 `ai/openai`，`dashscope.WithOpenAI` 把这些选项传给它。
 
 [OpenRouter](https://openrouter.ai) 使用 `ai/openrouter`，用法与 `ai/openai` 相同。它的语音和向量是 OpenAI 兼容接口，图片则使用 OpenRouter 自己的接口，所以单独提供一个包；`BaseURL` 可以不填。
 

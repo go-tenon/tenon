@@ -43,8 +43,8 @@ const dbTimeout = 30 * time.Second
 // 次数用完或 IsPermanent 报告为 true 时转入失败任务表。处理期间每 Lease/3 延长一次租约。
 //
 // Run 的 ctx 取消后，先停止接收新任务和转发，再等待处理中的任务完成，最多等待 Config.ShutdownTimeout；
-// 超时仍未完成的任务立即放回 JetStream，处理函数的 context 以 ErrShuttingDown 取消。Run 在这一切完成后返回，
-// 之后可以关闭数据库。
+// 超时仍未完成的任务立即放回 JetStream，处理函数的 context 以 ErrShuttingDown 取消。Run 等全部处理函数返回之后才返回，
+// 之后可以关闭数据库；不理会 ctx 的处理函数会让停止一直等下去。
 //
 //	w := queue.NewWorker(db, nc, cfg, logger)
 //	SendMail.Handle(w, mailer.Send)
@@ -350,6 +350,8 @@ func (w *Worker) process(h *handler, m jetstream.Msg) {
 			_ = m.Nak()
 			w.observe(ctx, Event{Kind: JobReleased, Job: j, Started: started, Duration: time.Since(started)})
 			cancel(ErrShuttingDown)
+			// 等处理函数返回：Run 返回之后关闭数据库，处理函数不能还在使用它。任务已经放回，结果只记录下来。
+			w.logger.DebugContext(ctx, "released job's handler returned", "topic", h.topic, "error", <-result)
 			return
 		}
 	}

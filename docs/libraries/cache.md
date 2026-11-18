@@ -375,7 +375,7 @@ func (c *Cache[T]) Forget(ctx context.Context, key string) error
     - `key`：缓存键，不含前缀
 - **返回**：删除失败时的错误
 
-删除一个缓存。
+删除一个缓存。删除之前已经开始的加载可能把旧值写回，见[删除缓存](#invalidation)中的说明。
 
 ### Cache.Invalidate
 

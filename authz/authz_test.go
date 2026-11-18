@@ -6,6 +6,7 @@ import (
 	"errors"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/go-tenon/tenon/authz"
@@ -123,21 +124,84 @@ func TestRoles(t *testing.T) {
 	}
 
 	// 修改名称和权限；租户保持不变。
-	updated, err := s.UpdateRole(ctx, authz.Role{ID: reviewer.ID, Tenant: "", Name: "auditor", Permissions: []string{"comments:delete"}})
+	updated, err := s.UpdateRole(ctx, authz.Role{ID: reviewer.ID, Tenant: "", Name: "auditor", Permissions: []string{"comments:delete"}}, "")
 	if err != nil || updated.Tenant != "acme" {
 		t.Fatalf("update=%+v err=%v", updated, err)
 	}
 	if got, _ := s.Role(ctx, reviewer.ID, ""); got.Name != "auditor" || got.Tenant != "acme" || strings.Join(got.Permissions, ",") != "comments:delete" {
 		t.Fatalf("after update=%+v", got)
 	}
-	if _, err := s.UpdateRole(ctx, authz.Role{ID: editor.ID, Name: "owner"}); !errors.Is(err, authz.ErrRoleExists) {
+	if _, err := s.UpdateRole(ctx, authz.Role{ID: editor.ID, Name: "owner"}, ""); !errors.Is(err, authz.ErrRoleExists) {
 		t.Fatalf("rename onto existing: %v", err)
 	}
-	if _, err := s.UpdateRole(ctx, authz.Role{ID: editor.ID, Name: "editor", Permissions: []string{"nope"}}); !errors.Is(err, authz.ErrInvalid) {
+	if _, err := s.UpdateRole(ctx, authz.Role{ID: editor.ID, Name: "editor", Permissions: []string{"nope"}}, ""); !errors.Is(err, authz.ErrInvalid) {
 		t.Fatalf("update with unknown permission: %v", err)
 	}
-	if _, err := s.UpdateRole(ctx, authz.Role{ID: "00000000-0000-0000-0000-000000000000", Name: "x"}); !errors.Is(err, authz.ErrRoleNotFound) {
+	if _, err := s.UpdateRole(ctx, authz.Role{ID: "00000000-0000-0000-0000-000000000000", Name: "x"}, ""); !errors.Is(err, authz.ErrRoleNotFound) {
 		t.Fatalf("update missing: %v", err)
+	}
+
+	// 租户管理员只能修改、删除本租户自定义的角色：全局角色和其他租户的角色视为不存在。
+	for name, err := range map[string]error{
+		"update global": func() error { _, err := s.UpdateRole(ctx, authz.Role{ID: editor.ID, Name: "x"}, "acme"); return err }(),
+		"update other tenant": func() error {
+			_, err := s.UpdateRole(ctx, authz.Role{ID: reviewer.ID, Name: "x"}, "globex")
+			return err
+		}(),
+		"delete global":       s.DeleteRole(ctx, editor.ID, "acme"),
+		"delete other tenant": s.DeleteRole(ctx, reviewer.ID, "globex"),
+	} {
+		if !errors.Is(err, authz.ErrRoleNotFound) {
+			t.Errorf("%s: err=%v", name, err)
+		}
+	}
+	if got, err := s.UpdateRole(ctx, authz.Role{ID: reviewer.ID, Name: "reviewer"}, "acme"); err != nil || got.Tenant != "acme" {
+		t.Fatalf("update own role=%+v err=%v", got, err)
+	}
+	if roles, err := s.Roles(ctx, "acme"); err != nil || names(roles) != "/editor,/owner,acme/reviewer" {
+		t.Fatalf("roles after scoped changes=%s err=%v", names(roles), err)
+	}
+}
+
+// 并发创建同名角色时只有一个成功，其余返回 ErrRoleExists；并发分配同一个角色都成功。
+func TestConcurrentWrites(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s := newStore(t)
+	errs := make([]error, 4)
+	var wg sync.WaitGroup
+	for i := range errs {
+		wg.Go(func() { _, errs[i] = s.CreateRole(ctx, authz.Role{Name: "editor"}) })
+	}
+	wg.Wait()
+	created := 0
+	for _, err := range errs {
+		switch {
+		case err == nil:
+			created++
+		case !errors.Is(err, authz.ErrRoleExists):
+			t.Fatalf("create: %v", err)
+		}
+	}
+	if created != 1 {
+		t.Fatalf("created %d roles", created)
+	}
+
+	role, err := s.CreateRole(ctx, authz.Role{Name: "reader", Permissions: []string{"articles:read"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range errs {
+		wg.Go(func() { errs[i] = s.Assign(ctx, user("alice"), "acme", role.ID) })
+	}
+	wg.Wait()
+	for _, err := range errs {
+		if err != nil {
+			t.Fatalf("assign: %v", err)
+		}
+	}
+	if roles, err := s.RolesOf(ctx, user("alice"), "acme"); err != nil || len(roles) != 1 {
+		t.Fatalf("roles=%v err=%v", roles, err)
 	}
 }
 
@@ -249,13 +313,13 @@ func testAssignAndResolve(t *testing.T, s *authz.Store) {
 	}
 
 	// 删除角色同时删除它的分配。
-	if err := s.DeleteRole(ctx, owner.ID); err != nil {
+	if err := s.DeleteRole(ctx, owner.ID, ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := resolve(alice, "acme"); !errors.Is(err, authz.ErrNotMember) {
 		t.Fatalf("deleted role still assigned: %v", err)
 	}
-	if err := s.DeleteRole(ctx, owner.ID); !errors.Is(err, authz.ErrRoleNotFound) {
+	if err := s.DeleteRole(ctx, owner.ID, ""); !errors.Is(err, authz.ErrRoleNotFound) {
 		t.Fatalf("delete twice: %v", err)
 	}
 }

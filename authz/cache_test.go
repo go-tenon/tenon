@@ -76,7 +76,7 @@ func TestCacheSharedAcrossInstances(t *testing.T) {
 
 	// 另一个 Store 修改分配，a 读到新的权限。
 	mustAssign(t, b, bob, "acme", reader.ID)
-	if _, err := b.UpdateRole(ctx, authz.Role{ID: reader.ID, Name: "reader", Permissions: []string{"articles:read", "articles:write"}}); err != nil {
+	if _, err := b.UpdateRole(ctx, authz.Role{ID: reader.ID, Name: "reader", Permissions: []string{"articles:read", "articles:write"}}, ""); err != nil {
 		t.Fatal(err)
 	}
 	if got := perms(t, a, bob, "acme"); got != "articles:read,articles:write" {

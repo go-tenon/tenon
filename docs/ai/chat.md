@@ -446,12 +446,21 @@ try {
 ```go
 func NewRuns(app string, ag agent.Agent, sessions session.Service, opts ...Option) *Runs
 func RequireApproval(tools ...tool.CallableTool) Option
+func RequireApprovalOf(names ...string) Option
 func Cluster(hub *broadcast.Hub, locker *lock.Locker) Option
+func RunOnWorkers() Option
 func AgentFor(choose func(ctx context.Context, c Conversation) (agent.Agent, error)) Option
+func UseHistory(store HistoryStore) Option
 func KeepFinished(d time.Duration) Option
+func WithLogger(l *slog.Logger) Option
+func RunnerOptions(opts ...runner.Option) Option
 ```
 
-`RequireApproval` 列出需要审批的工具；`Cluster` 让多个实例共同承担对话，见[多个实例](chat-advanced.md#multiple-instances)；`AgentFor` 按对话选择 agent。
+- `RequireApproval` 列出需要审批的工具；`RequireApprovalOf` 按名称列出，用于工具由 `AgentFor` 按对话提供的情况。
+- `Cluster` 让多个实例共同承担对话，见[多个实例](chat-advanced.md#multiple-instances)；`RunOnWorkers` 把运行交给 worker 进程，见[在 worker 上运行](chat-advanced.md#running-on-workers)。
+- `AgentFor` 按对话选择 agent，见[按对话选择 agent](chat-advanced.md#choosing-agents)；`UseHistory` 使用应用自己的消息表，见[使用应用自己的消息表](chat-advanced.md#own-history)。
+- `KeepFinished` 设置运行结束后保留的时间，期间重连的客户端仍能取得剩余的事件；`WithLogger` 设置记录运行错误的日志，默认是 `slog.Default()`。
+- `RunnerOptions` 把选项原样传给 trpc-agent-go 的 `runner.NewRunner`，例如 `runner.WithMemoryService` 接入长期记忆。
 
 ### Runs
 

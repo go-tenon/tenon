@@ -26,6 +26,9 @@ import (
 // 平台本身（""）另行处理。
 const AllTenants = "*"
 
+// roleNameConstraint 是“同一租户中的角色名唯一”的约束名，见 authz 的迁移。
+const roleNameConstraint = "authz_roles_tenant_name_unique"
+
 var (
 	// ErrNotMember 表示主体在本次请求的租户中没有任何角色。Resolve 返回它，请求得到 404，不暴露租户是否存在。
 	ErrNotMember = errorx.Define(errorx.NotFound, "authz.not_member")
@@ -229,10 +232,9 @@ func (s *Store) CreateRole(ctx context.Context, r Role) (Role, error) {
 	now := time.Now().UTC()
 	row := &roleRow{ID: id, Tenant: r.Tenant, Name: r.Name, Description: r.Description, CreatedAt: now, UpdatedAt: now}
 	err = s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		if err := nameTaken(ctx, tx, r.Tenant, r.Name, uuid.Nil); err != nil {
-			return err
-		}
-		if _, err := tx.NewInsert().Model(row).Exec(ctx); err != nil {
+		if _, err := tx.NewInsert().Model(row).Exec(ctx); database.IsUniqueViolation(err, roleNameConstraint) {
+			return ErrRoleExists.New()
+		} else if err != nil {
 			return errors.Wrap(err, "authz: insert role")
 		}
 		return setPermissions(ctx, tx, id, r.Permissions)
@@ -244,16 +246,21 @@ func (s *Store) CreateRole(ctx context.Context, r Role) (Role, error) {
 	return r, nil
 }
 
-// UpdateRole 修改角色的名称、说明和权限；r.ID 指定角色，角色所属的租户保持不变。
-// 修改立即影响所有拥有这个角色的主体。
-func (s *Store) UpdateRole(ctx context.Context, r Role) (Role, error) {
+// UpdateRole 修改角色的名称、说明和权限；r.ID 指定角色，角色所属的租户保持不变，r.Tenant 不起作用。
+// tenant 不为空时只能修改该租户自定义的角色，全局角色和其他租户的角色视为不存在，返回 ErrRoleNotFound，
+// 供租户管理员的界面使用；tenant 为空时不限制，供平台管理员使用。修改立即影响所有拥有这个角色的主体。
+func (s *Store) UpdateRole(ctx context.Context, r Role, tenant string) (Role, error) {
 	id, err := uuid.Parse(r.ID)
 	if err != nil {
 		return Role{}, ErrRoleNotFound.New()
 	}
 	err = s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 		var row roleRow
-		if err := tx.NewSelect().Model(&row).Where("id = ?", id).Scan(ctx); errors.Is(err, sql.ErrNoRows) {
+		q := tx.NewSelect().Model(&row).Where("id = ?", id)
+		if tenant != "" {
+			q = q.Where("tenant = ?", tenant)
+		}
+		if err := q.Scan(ctx); errors.Is(err, sql.ErrNoRows) {
 			return ErrRoleNotFound.New()
 		} else if err != nil {
 			return errors.Wrap(err, "authz: load role")
@@ -262,13 +269,12 @@ func (s *Store) UpdateRole(ctx context.Context, r Role) (Role, error) {
 		if err := s.checkRole(r); err != nil {
 			return err
 		}
-		if err := nameTaken(ctx, tx, r.Tenant, r.Name, id); err != nil {
-			return err
-		}
 		_, err := tx.NewUpdate().Model((*roleRow)(nil)).
 			Set("name = ?", r.Name).Set("description = ?", r.Description).Set("updated_at = ?", time.Now().UTC()).
 			Where("id = ?", id).Exec(ctx)
-		if err != nil {
+		if database.IsUniqueViolation(err, roleNameConstraint) {
+			return ErrRoleExists.New()
+		} else if err != nil {
 			return errors.Wrap(err, "authz: update role")
 		}
 		if _, err := tx.NewDelete().Model((*permissionRow)(nil)).Where("role_id = ?", id).Exec(ctx); err != nil {
@@ -284,14 +290,19 @@ func (s *Store) UpdateRole(ctx context.Context, r Role) (Role, error) {
 	return r, nil
 }
 
-// DeleteRole 删除角色及其全部分配。角色不存在时返回 ErrRoleNotFound。
-func (s *Store) DeleteRole(ctx context.Context, id string) error {
+// DeleteRole 删除角色及其全部分配。tenant 的含义与 UpdateRole 相同：不为空时只能删除该租户自定义的角色。
+// 角色不存在时返回 ErrRoleNotFound。
+func (s *Store) DeleteRole(ctx context.Context, id, tenant string) error {
 	rid, err := uuid.Parse(id)
 	if err != nil {
 		return ErrRoleNotFound.New()
 	}
 	err = s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		res, err := tx.NewDelete().Model((*roleRow)(nil)).Where("id = ?", rid).Exec(ctx)
+		q := tx.NewDelete().Model((*roleRow)(nil)).Where("id = ?", rid)
+		if tenant != "" {
+			q = q.Where("tenant = ?", tenant)
+		}
+		res, err := q.Exec(ctx)
 		if err != nil {
 			return errors.Wrap(err, "authz: delete role")
 		}
@@ -392,16 +403,8 @@ func (s *Store) Assign(ctx context.Context, ref identity.Ref, tenant, roleID str
 		if role.Tenant != "" && role.Tenant != tenant {
 			return ErrInvalid.New(errorx.Public("field", "tenant"))
 		}
-		exists, err := tx.NewSelect().Model((*assignmentRow)(nil)).
-			Where("subject_type = ? AND subject_id = ?", ref.Type, ref.ID).Where("tenant = ?", tenant).Where("role_id = ?", rid).Exists(ctx)
-		if err != nil {
-			return errors.Wrap(err, "authz: assign")
-		}
-		if exists {
-			return nil
-		}
 		row := &assignmentRow{SubjectType: string(ref.Type), SubjectID: ref.ID, Tenant: tenant, RoleID: rid, CreatedAt: time.Now().UTC()}
-		_, err = tx.NewInsert().Model(row).Exec(ctx)
+		_, err := tx.NewInsert().Model(row).On("CONFLICT DO NOTHING").Exec(ctx)
 		return errors.Wrap(err, "authz: assign")
 	})
 	if err != nil {
@@ -635,19 +638,6 @@ func (s *Store) known(perm string) bool {
 func checkName(name, field string) error {
 	if name == "" || strings.ContainsFunc(name, unicode.IsSpace) {
 		return ErrInvalid.New(errorx.Public("field", field))
-	}
-	return nil
-}
-
-// nameTaken 在同一租户中已有名为 name 的其他角色时返回 ErrRoleExists。
-func nameTaken(ctx context.Context, tx bun.Tx, tenant, name string, except uuid.UUID) error {
-	exists, err := tx.NewSelect().Model((*roleRow)(nil)).
-		Where("tenant = ?", tenant).Where("name = ?", name).Where("id <> ?", except).Exists(ctx)
-	if err != nil {
-		return errors.Wrap(err, "authz: check role name")
-	}
-	if exists {
-		return ErrRoleExists.New()
 	}
 	return nil
 }
