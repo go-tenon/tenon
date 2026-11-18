@@ -224,7 +224,7 @@ export const Route = createFileRoute("/_app")({ beforeLoad: requireAuth, compone
 - 退出（`session.signOut()`）、切换身份时重新运行检查，离开需要登录的页面。
 
 <a id="auth"></a>
-**登录页。** 登录、注册、找回密码等页面有自己的样式，现在有两种：`CenteredAuthLayout` 在页面中央放一张卡片；`SplitAuthLayout` 左右分栏，见下文。表单和样式分开，`LoginForm` 是邮箱和密码的登录表单，可以放进任何一种样式：
+**登录页。** 登录、注册、找回密码等页面有自己的样式，现在有两种：`CenteredAuthLayout` 在页面中央放一张卡片；`SplitAuthLayout` 左右分栏，见下文。登录页不在布局之下，用哪种样式与应用用哪种布局无关，可以任意搭配。表单和样式分开，`LoginForm` 是邮箱和密码的登录表单，可以放进任何一种样式：
 
 ```tsx title="src/routes/login.tsx"
 import { createFileRoute } from "@tanstack/react-router"
@@ -340,11 +340,12 @@ app.storage.get<{ compact: boolean }>("density")
 
 框架的 `js/playground` 是布局、登录页和样式预设的演示：
 
-| 地址 | 布局 | 预设 |
+| 地址 | 演示 | 预设 |
 | --- | --- | --- |
-| `/frame/` | `FrameLayout`，登录页 `/frame/login` 是 `CenteredAuthLayout` | `compact` |
-| `/rail/` | `RailLayout`，登录页 `/rail/login` 是 `SplitAuthLayout` | `comfortable` |
+| `/frame/` | `FrameLayout` | `compact` |
+| `/rail/` | `RailLayout` | `comfortable` |
 | `/`、`/docs/getting-started` | `SiteLayout`、`DocsLayout` | `spacious` |
+| `/login/` | 登录页的全部样式，每种一个地址：`/login/centered` 是 `CenteredAuthLayout`，`/login/split` 是 `SplitAuthLayout` | `comfortable` |
 
 在框架仓库的 `js` 目录中运行：
 
@@ -391,7 +392,7 @@ bun run playground
 | `layoutMetrics(theme)`、`LayoutMetrics` | 主题中的布局尺寸 |
 | `requireAuth` | 布局路由的 `beforeLoad`：没有登录时跳到登录页 |
 | `app.redirectAfterSignIn(redirect)`、`safeRedirect(redirect, fallback)` | 登录后回到原来的地址；只接受同源相对路径的回跳地址 |
-| `CenteredAuthLayout`、`SplitAuthLayout`、`LoginForm`、`errorMessage` | 认证页的两种布局（中央卡片、左右分栏）、登录表单、错误的提示文字 |
+| `CenteredAuthLayout`、`SplitAuthLayout`、`LoginForm`、`errorMessage` | 登录页的两种样式（中央卡片、左右分栏）、登录表单、错误的提示文字 |
 | `app.permissions()`、`app.permissionsQuery()` | 当前身份的权限；交给 `useQuery` 的查询选项 |
 | `useApp`、`useSignedIn`、`useCan` | 在应用的路由之内使用 |
 | `ForbiddenError`、`isForbidden` | 缺少权限时抛出的错误 |

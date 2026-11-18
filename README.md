@@ -245,7 +245,7 @@ flowchart LR
 | 后台布局 | `FrameLayout` | 满宽的顶栏加左侧侧栏菜单，可开多标签，信息密集 |
 | | `RailLayout` | 双栏导航：模块的图标栏加二级导航，设置从用户菜单进入 |
 | 官网与文档 | `SiteLayout`、`DocsLayout` | 吸顶页头、导航、页脚；文档三栏 |
-| 登录页 | `CenteredAuthLayout` | 居中卡片，表单 `LoginForm` 与样式分开 |
+| 登录页 | `CenteredAuthLayout`、`SplitAuthLayout` | 居中卡片；左右分栏。与布局任意搭配，表单 `LoginForm` 与样式分开 |
 | 样式预设 | `compact`、`comfortable`、`spacious` | 只管密度：紧凑、舒展、宽松 |
 
 按 Go 中 `rest.Resource` 的声明，`ResourcePage` 渲染整个列表、筛选、新建、修改、删除和操作；队列、定时任务、导入导出、通知、后台操作、操作记录都有现成的组件。

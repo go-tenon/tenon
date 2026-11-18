@@ -323,7 +323,6 @@ function frameApp() {
         </Page>
       )),
     ]),
-    createRoute({ getParentRoute: () => root, path: "/login", component: FrameLoginPage }),
   ])
   const app = createApp({
     id: "playground-frame",
@@ -345,34 +344,6 @@ async function* progress(): AsyncIterable<{ event: string; data: OperationLike }
   }
 }
 
-/** /frame/ 演示的登录页：居中卡片。 */
-function FrameLoginPage(): ReactNode {
-  return (
-    <CenteredAuthLayout
-      brand={
-        <Group gap={10}>
-          <span className="tn-brand-mark">A</span>
-          <Text fw={600}>Acme</Text>
-        </Group>
-      }
-      title="登录"
-      description="欢迎回来，登录 Acme。"
-      footer={
-        <>
-          还没有账号？<AnchorLink to="/login">免费注册</AnchorLink>
-        </>
-      }
-    >
-      <LoginForm
-        login={async () =>
-          Promise.reject({ status: 401, code: "auth.invalid_credentials", detail: "邮箱或密码不对", fields: [] })
-        }
-        forgot={<AnchorLink to="/login">忘记密码？</AnchorLink>}
-      />
-    </CenteredAuthLayout>
-  )
-}
-
 // ———————————————————————————— RailLayout 和 comfortable 预设 ————————————————————————————
 
 function RailShell(): ReactNode {
@@ -389,55 +360,6 @@ function RailShell(): ReactNode {
         />
       }
     />
-  )
-}
-
-/** /rail/ 演示的登录页：左右分栏。 */
-function RailLoginPage(): ReactNode {
-  return (
-    <SplitAuthLayout
-      brand={
-        <Group gap={10}>
-          <span className="tn-brand-mark">A</span>
-          <Text fw={600}>Acme</Text>
-        </Group>
-      }
-      aside={
-        <Stack gap="xl">
-          <Stack gap="sm">
-            <Title order={1} fz={36} lh={1.2}>
-              把团队的工作放在一处
-            </Title>
-            <Text size="lg" opacity={0.8}>
-              任务、文档和讨论在同一个地方，随时知道每件事进行到哪一步。
-            </Text>
-          </Stack>
-          <Stack gap="sm">
-            {["几分钟建好第一个项目", "按角色分配权限", "手机和电脑上都能用"].map((item) => (
-              <Group key={item} gap="sm" wrap="nowrap">
-                <IconCircleCheck size={20} stroke={1.75} />
-                <Text>{item}</Text>
-              </Group>
-            ))}
-          </Stack>
-        </Stack>
-      }
-      asideFooter="© 2026 Acme"
-      title="登录"
-      description="欢迎回来，登录 Acme。"
-      footer={
-        <>
-          还没有账号？<AnchorLink to="/login">免费注册</AnchorLink>
-        </>
-      }
-    >
-      <LoginForm
-        login={async () =>
-          Promise.reject({ status: 401, code: "auth.invalid_credentials", detail: "邮箱或密码不对", fields: [] })
-        }
-        forgot={<AnchorLink to="/login">忘记密码？</AnchorLink>}
-      />
-    </SplitAuthLayout>
   )
 }
 
@@ -479,7 +401,6 @@ function railApp() {
   })
   const personal = createRoute({ getParentRoute: () => settings, id: "personal", staticData: { title: "个人" } })
   const routeTree = root.addChildren([
-    createRoute({ getParentRoute: () => root, path: "/login", component: RailLoginPage }),
     layout.addChildren([
       page(layout, "/", "首页", "home"),
       content.addChildren([page(content, "/items", "全部", "list"), page(content, "/archive", "归档", "file", 1)]),
@@ -492,6 +413,124 @@ function railApp() {
     session,
     permissions,
     router: { basepath: "/rail", defaultErrorComponent: RouteError, defaultNotFoundComponent: NotFoundPage },
+  })
+}
+
+// ———————————————————————————— 登录页 ————————————————————————————
+
+// 登录页的样式与布局无关，任何布局都可以搭配任何一种登录页。/login/ 列出全部样式，每种样式一个地址，
+// 例如 /login/centered、/login/split；新增一种样式时在 loginStyles 中加一项。
+/** CenteredAuthLayout：居中卡片。 */
+function CenteredLogin(): ReactNode {
+  return (
+    <CenteredAuthLayout
+      brand={
+        <Group gap={10}>
+          <span className="tn-brand-mark">A</span>
+          <Text fw={600}>Acme</Text>
+        </Group>
+      }
+      title="登录"
+      description="欢迎回来，登录 Acme。"
+      footer={
+        <>
+          还没有账号？<AnchorLink to="/centered">免费注册</AnchorLink>
+        </>
+      }
+    >
+      <LoginForm
+        login={async () =>
+          Promise.reject({ status: 401, code: "auth.invalid_credentials", detail: "邮箱或密码不对", fields: [] })
+        }
+        forgot={<AnchorLink to="/centered">忘记密码？</AnchorLink>}
+      />
+    </CenteredAuthLayout>
+  )
+}
+
+/** SplitAuthLayout：左右分栏。 */
+function SplitLogin(): ReactNode {
+  return (
+    <SplitAuthLayout
+      brand={
+        <Group gap={10}>
+          <span className="tn-brand-mark">A</span>
+          <Text fw={600}>Acme</Text>
+        </Group>
+      }
+      aside={
+        <Stack gap="xl">
+          <Stack gap="sm">
+            <Title order={1} fz={36} lh={1.2}>
+              把团队的工作放在一处
+            </Title>
+            <Text size="lg" opacity={0.8}>
+              任务、文档和讨论在同一个地方，随时知道每件事进行到哪一步。
+            </Text>
+          </Stack>
+          <Stack gap="sm">
+            {["几分钟建好第一个项目", "按角色分配权限", "手机和电脑上都能用"].map((item) => (
+              <Group key={item} gap="sm" wrap="nowrap">
+                <IconCircleCheck size={20} stroke={1.75} />
+                <Text>{item}</Text>
+              </Group>
+            ))}
+          </Stack>
+        </Stack>
+      }
+      asideFooter="© 2026 Acme"
+      title="登录"
+      description="欢迎回来，登录 Acme。"
+      footer={
+        <>
+          还没有账号？<AnchorLink to="/split">免费注册</AnchorLink>
+        </>
+      }
+    >
+      <LoginForm
+        login={async () =>
+          Promise.reject({ status: 401, code: "auth.invalid_credentials", detail: "邮箱或密码不对", fields: [] })
+        }
+        forgot={<AnchorLink to="/split">忘记密码？</AnchorLink>}
+      />
+    </SplitAuthLayout>
+  )
+}
+
+const loginStyles = [
+  { path: "/centered", name: "CenteredAuthLayout", description: "居中卡片", component: CenteredLogin },
+  { path: "/split", name: "SplitAuthLayout", description: "左右分栏", component: SplitLogin },
+]
+
+/** /login/ 列出全部登录页样式。 */
+function LoginStyles(): ReactNode {
+  return (
+    <Container size="sm" py={64}>
+      <Stack gap="md">
+        <Title order={2}>登录页</Title>
+        {loginStyles.map((style) => (
+          <Card key={style.path} component={Link} to={style.path}>
+            <Text fw={600}>{style.name}</Text>
+            <Text size="sm" c="dimmed">
+              {style.description}
+            </Text>
+          </Card>
+        ))}
+      </Stack>
+    </Container>
+  )
+}
+
+function loginApp() {
+  const root = createRootRouteWithContext<RouterContext>()({ component: Root })
+  const routeTree = root.addChildren([
+    createRoute({ getParentRoute: () => root, path: "/", component: LoginStyles }),
+    ...loginStyles.map(({ path, component }) => createRoute({ getParentRoute: () => root, path, component })),
+  ])
+  return createApp({
+    id: "playground-login",
+    routeTree,
+    router: { basepath: "/login", defaultErrorComponent: RouteError, defaultNotFoundComponent: NotFoundPage },
   })
 }
 
@@ -514,6 +553,9 @@ function Site(): ReactNode {
       ]}
       actions={
         <>
+          <Button variant="subtle" color="gray" size="sm" component="a" href="/login/">
+            登录页
+          </Button>
           <Button variant="subtle" color="gray" size="sm" component="a" href="/frame/">
             FrameLayout
           </Button>
@@ -601,12 +643,14 @@ function siteApp() {
 
 // ———————————————————————————— 入口 ————————————————————————————
 
-// 三个演示各用一套预设：/frame/ 是 FrameLayout 和 compact，/rail/ 是 RailLayout 和 comfortable，
-// 其余是 SiteLayout、DocsLayout 和 spacious。
+// 布局的演示各用一套预设：/frame/ 是 FrameLayout 和 compact，/rail/ 是 RailLayout 和 comfortable，
+// 其余是 SiteLayout、DocsLayout 和 spacious；登录页（/login/）用默认的 comfortable。
 const path = location.pathname
-const demo = path.startsWith("/frame") ? "frame" : path.startsWith("/rail") ? "rail" : "site"
-const app: App = demo === "frame" ? frameApp() : demo === "rail" ? railApp() : siteApp()
-const preset = demo === "frame" ? "compact" : demo === "rail" ? "comfortable" : "spacious"
+const demos = { frame: frameApp, rail: railApp, login: loginApp }
+const demo =
+  (Object.keys(demos) as (keyof typeof demos)[]).find((d) => path === `/${d}` || path.startsWith(`/${d}/`)) ?? "site"
+const app: App = demo === "site" ? siteApp() : demos[demo]()
+const preset = demo === "frame" ? "compact" : demo === "site" ? "spacious" : "comfortable"
 // 日期时间的格式是应用的设置：表格多的演示用短格式。
 const datetimeFormat = demo === "frame" ? "MM/DD HH:mm" : undefined
 const scheme = new URLSearchParams(location.search).get("scheme")
