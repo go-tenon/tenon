@@ -60,7 +60,8 @@ go test ./...       # 包括下文的模块检查
 
 `js` 是前端包的 Bun workspace。这些包不发布到 npm，随 Go 模块分发：应用中的 `tenon` 把框架版本中的 `js` 复制到项目的 `.tenon/js`，见[框架的前端包](docs/installation/tooling.md#framework-packages)。
 
-- `client` 是 `@go-tenon/client`，与界面无关的客户端运行时。它不依赖 DOM：`tsconfig.json` 的 `lib` 没有 `dom`，用到 `window`、`document` 等浏览器 API 时类型检查失败。
+- `client` 是 `@go-tenon/client`，与界面无关的客户端运行时。它不依赖 DOM，也不依赖 Node：`tsconfig.json` 的 `lib` 只有 `es2022`，用到 `window`、`document`、`URL`、`node:*` 等时类型检查失败（测试文件同样检查）。所以网页、Electron 的主进程、React Native 都能用它，例如原生客户端登录用的 `createAuthorization`。
+- `host` 是 `@go-tenon/host`，网页宿主（Electron 等）的约定在页面一侧的类型：`host()` 取得宿主放在全局的 `tenonHost`。它只有类型，不依赖任何包和 DOM，任何语言写的宿主都按它实现。
 - `start` 是 `@go-tenon/start`，把 TanStack Start 接到 Go 的 `frontend` 包：Vite 插件（挂载路径、服务端渲染或页面外壳）、服务端渲染时调用 Go 接口的运行时，以及编译 SSR 可执行文件的 `tenon-start`。
 - `ui` 是 `@go-tenon/ui`，基于 Mantine 的应用骨架和界面。`ui/src` 分成五层，上层只引用下层：`theme`（预设、主题、图标）→ `app`（应用骨架：装配、导航、插槽、多标签）→ `components`（页面中用的部件）→ `blocks`（布局、登录页的布局这类只描述样子的整块界面）和 `features`（框架功能的前端，逻辑和外观放在同一个目录）。`blocks` 和 `features` 互相不引用，把它们组合起来的是脚手架生成的项目。新文件按它依赖什么放进对应的层，`uilayertest` 检查引用方向。React、TanStack Router、TanStack Query 和 Mantine 是 peer 依赖。
 - `playground` 是 ui 的演示，用 `bun run playground` 启动。ui 不写测试，界面的改动在 playground 中看效果。
