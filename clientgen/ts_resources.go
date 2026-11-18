@@ -128,8 +128,20 @@ func (t *tsGen) resourceTS(r rest.Resource, templates map[string]map[string]stri
 		if err != nil {
 			return "", nil, err
 		}
-		fmt.Fprintf(&b, "      { name: %s, operation: %s, permissions: %s, confirm: %t, danger: %t },\n",
-			strconv.Quote(a.Name), opRef(o), required(o), a.Confirm, a.Danger)
+		when := ""
+		if len(a.When) > 0 {
+			var conds []string
+			for _, field := range slices.Sorted(maps.Keys(a.When)) {
+				vals := make([]string, len(a.When[field]))
+				for i, v := range a.When[field] {
+					vals[i] = strconv.Quote(v)
+				}
+				conds = append(conds, strconv.Quote(field)+": ["+strings.Join(vals, ", ")+"]")
+			}
+			when = ", when: { " + strings.Join(conds, ", ") + " }"
+		}
+		fmt.Fprintf(&b, "      { name: %s, operation: %s, permissions: %s, confirm: %t, danger: %t%s },\n",
+			strconv.Quote(a.Name), opRef(o), required(o), a.Confirm, a.Danger, when)
 	}
 	b.WriteString("    ],\n")
 

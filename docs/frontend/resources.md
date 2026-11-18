@@ -53,7 +53,18 @@ api.Resource(rest.Resource{
 | `Sort` | 可以排序的列。列表接口要有 `sort` 查询参数，取值是列名，前面加 `-` 表示降序，与 [`useList`](lists-forms.md#lists) 相同 |
 | `CreateForm` | 新建表单的字段：新建接口请求体的字段，按显示的顺序。为空时是请求体的全部字段，按结构体中的顺序 |
 | `UpdateForm` | 修改表单的字段：修改接口请求体的字段。为空时同样是请求体的全部字段。新建和修改的字段常常不同，例如新建租户时还要填写管理员的账号，修改时只改名称 |
-| `Actions` | 行上的其他操作：`Operation` 是接口，`Confirm` 执行前询问，`Danger` 用醒目的颜色 |
+| `Actions` | 行上的其他操作：`Operation` 是接口，`Confirm` 执行前询问，`Danger` 用醒目的颜色，`When` 是显示的条件，见下文 |
+
+有的操作只对一部分行有意义，例如“停用”只对启用的行、“启用”只对停用的行。`When` 写出显示的条件：键是列表项的字段，值是允许的取值，一行的每个字段都取其中之一时，“更多操作”中才有这个操作。取值按字符串比较，布尔是 `true`、`false`；字段是枚举时，取值必须是枚举的值，声明时检查：
+
+```go
+Actions: []rest.Action{
+    {Name: "disable", Operation: "tenant-disable", Confirm: true, Danger: true, When: map[string][]string{"status": {"active"}}},
+    {Name: "enable", Operation: "tenant-enable", Confirm: true, When: map[string][]string{"status": {"disabled"}}},
+},
+```
+
+条件只决定界面上显示什么，接口仍要自己拒绝不合规则的调用（或者像这个例子一样，重复操作是安全的）。
 
 详情、修改、删除和操作的接口有且只有一个路径参数，它是标识一行的字段，例如 `/articles/{id}` 对应列表项的 `id`。列的类型、枚举，表单字段的类型、是否必填和校验规则，都来自接口的 schema，不在资源中重复。资源只描述呈现上的选择：哪些列、哪些筛选条件、表单中有哪些字段、行上有哪些操作。
 
@@ -127,7 +138,7 @@ const form = useSchemaForm({ schema: kit.schemas.article.create.body, rules: kit
 
 | 成员 | 说明 |
 | --- | --- |
-| `title`、`columns`、`filters`、`createForm`、`updateForm`、`actions` | 带显示文字。字段有 `kind`（`text`、`number`、`boolean`、`select`、`multiselect`、`tags`、`date`、`datetime`、`json`，由类型、格式和枚举得出）、`required`、`sortable`，枚举字段有 `options` |
+| `title`、`columns`、`filters`、`createForm`、`updateForm`、`actions` | 带显示文字。字段有 `kind`（`text`、`secret`、`number`、`boolean`、`select`、`multiselect`、`tags`、`date`、`datetime`、`json`，由类型、格式和枚举得出）、`required`、`sortable`，枚举字段有 `options` |
 | `listSearch` | 列表路由的 `validateSearch`，查询条件、排序和分页保存在地址中，规则来自列表接口的查询参数 |
 | `allowed(can, operation)` | 当前身份能否使用一个接口或操作 |
 | `listQuery`、`getQuery` | 列表和详情的查询选项，query key 与 `createQueries` 相同 |
@@ -142,9 +153,16 @@ export const Route = createFileRoute("/_app/articles")({ validateSearch: article
 
 function Articles() {
   const view = useResourceList(articles, Route) // rows、total、list（地址中的状态）、can（按权限能用的按钮）
-  const { save, remove, run } = useResourceMutations(articles)
+  const { save, remove, run, invalidate } = useResourceMutations(articles)
   // ……
 }
+```
+
+自己调用接口修改了数据时（不经过 `save`、`remove`、`run`，例如在自己写的对话框中更换所有者），完成后调用 `invalidate()`，列表和详情重新读取：
+
+```tsx
+await api.tenant.changeOwner(tenant.id, values)
+await invalidate()
 ```
 
 `useResourceItem(model, key)` 读取一行的详情，`formValues(model, row)` 得到表单的初始值。显示文字的语言与验证提示相同：`language` 本身，没有时它的主语言，再没有时第一种语言。
@@ -247,8 +265,9 @@ export const Route = createFileRoute("/_app/articles/$id/edit")({
 | `date` | 日期选择，值是 `YYYY-MM-DD` |
 | `datetime` | 日期和时间选择，值是 ISO 时间 |
 | `json` | JSON 编辑，是合法的 JSON 时才交给表单 |
+| `secret` | 密钥：`SecretInput`，平时遮住中间部分、不能编辑，点眼睛图标查看和修改。格式为 `password` 的字符串字段（Go 中写 `format:"password"`）是这一类；列表中同样遮住中间部分 |
 
-`FieldValue`（按类型显示一个值）、`DefaultInput`（按类型选择输入组件）和 `ResourceForm`（对话框中的新建和修改表单）也单独导出，可以在自己写的页面中使用。
+`FieldValue`（按类型显示一个值）、`DefaultInput`（按类型选择输入组件）、`ResourceForm`（对话框中的新建和修改表单）和 `SecretInput`（密钥的输入框，可以直接展开 `form.getInputProps`）也单独导出，可以在自己写的页面中使用。
 
 <a id="settings"></a>
 ## 设置页面

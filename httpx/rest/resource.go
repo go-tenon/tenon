@@ -42,6 +42,9 @@ type Action struct {
 	Operation string `json:"operation"`         // 接口的操作 ID，有且只有一个路径参数（行的标识），例如 article-publish。
 	Confirm   bool   `json:"confirm,omitempty"` // 执行前先询问。
 	Danger    bool   `json:"danger,omitempty"`  // 这是危险的操作，界面用醒目的颜色显示。
+	// When 是显示这个操作的条件：键是列表项的字段，值是允许的取值，一行的每个字段都取其中之一时才显示，
+	// 例如 {"status": {"active"}} 只在启用的行上显示“停用”。为空时每一行都显示。取值按字符串比较，布尔是 true、false。
+	When map[string][]string `json:"when,omitempty"`
 }
 
 var resourceName = regexp.MustCompile(`^[a-z][a-z0-9]*(-[a-z0-9]+)*$`)
@@ -130,6 +133,22 @@ func (a *API) checkResource(r *Resource) error {
 		}
 		if act.Operation == "" {
 			return fmt.Errorf("action %s has no Operation", act.Name)
+		}
+		for field, values := range act.When {
+			s, ok := item.Properties[field]
+			if !ok {
+				return fmt.Errorf("action %s: when field %q is not a field of the list items", act.Name, field)
+			}
+			if len(values) == 0 {
+				return fmt.Errorf("action %s: when field %q lists no values", act.Name, field)
+			}
+			if allowed := a.resolveSchema(s).Enum; len(allowed) > 0 {
+				for _, v := range values {
+					if !slices.ContainsFunc(allowed, func(e any) bool { return fmt.Sprint(e) == v }) {
+						return fmt.Errorf("action %s: when %s=%q is not one of %v", act.Name, field, v, allowed)
+					}
+				}
+			}
 		}
 		keyed = append(keyed, struct{ id, method string }{act.Operation, ""})
 	}

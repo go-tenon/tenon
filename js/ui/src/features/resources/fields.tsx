@@ -18,6 +18,7 @@ import {
 import { DateInput, DateTimePicker } from "@mantine/dates"
 import dayjs from "dayjs"
 import { type ReactNode, useEffect, useState } from "react"
+import { maskSecret, SecretInput } from "../../components/form/secret-input"
 import { useFormatDateTime } from "../../theme/format"
 import type { ResourceField } from "./model"
 
@@ -114,6 +115,14 @@ export function DefaultInput({
       )
     case "json":
       return <JsonField {...common} value={value} onChange={onChange} />
+    case "secret":
+      return (
+        <SecretInput
+          {...common}
+          value={(value as string | undefined) ?? ""}
+          onChange={(e) => onChange?.(e.currentTarget.value)}
+        />
+      )
     default:
       return (
         <TextInput
@@ -231,6 +240,8 @@ export function FieldValue({
       return <span style={{ fontVariantNumeric: "tabular-nums" }}>{String(value)}</span>
     case "json":
       return <Code>{JSON.stringify(value)}</Code>
+    case "secret":
+      return maskSecret(String(value))
     default:
       return String(value)
   }
