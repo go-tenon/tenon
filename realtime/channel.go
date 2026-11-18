@@ -31,8 +31,8 @@ func Public() Rule { return Rule{} }
 
 // Private 返回私有频道的规则：只有已认证、并且 authorize 同意的主体可以订阅。authorize 为 nil 时 panic。
 //
-// 授权只在订阅时进行：之后主体失去访问权限时（例如被移出会话），已有的订阅保持到连接断开，
-// 需要立即生效时调用 Realtime.Unsubscribe。
+// 订阅时授权一次，之后每次复查凭据（每 30 秒，以及收到 Options.Credentials 的信号时）按重新加载的主体再授权一次，
+// 不再允许时主体被移出频道。主体失去访问权限（例如被移出会话）需要立即生效时调用 Realtime.Unsubscribe。
 func Private(authorize Authorizer) Rule {
 	if authorize == nil {
 		panic("realtime: nil authorizer")

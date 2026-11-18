@@ -3,6 +3,7 @@ package realtime
 import (
 	"context"
 	"encoding/json"
+	"sync"
 	"time"
 
 	"github.com/centrifugal/centrifuge"
@@ -10,10 +11,26 @@ import (
 	"github.com/go-tenon/tenon/identity"
 )
 
-// connection 是一个连接的身份。
+// connection 是一个连接的身份。主体在复查凭据时更新，订阅的处理器在另一个 goroutine 中读取它。
 type connection struct {
-	sub   identity.Subject // ID 为空表示匿名
-	token string           // 由 Options.Authenticate 认证时的 token：SDK 传入的、Authorization 请求头中的，或浏览器的会话 cookie
+	token string // 由 Options.Authenticate 认证时的 token：SDK 传入的、Authorization 请求头中的，或浏览器的会话 cookie
+
+	mu  sync.Mutex
+	sub identity.Subject // ID 为空表示匿名
+}
+
+// subject 返回连接当前的主体。
+func (c *connection) subject() identity.Subject {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.sub
+}
+
+// setSubject 换上复查凭据时重新加载的主体。
+func (c *connection) setSubject(sub identity.Subject) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.sub = sub
 }
 
 // connectionKey 是连接信息在客户端 context 中的键。
@@ -55,16 +72,35 @@ func (rt *Realtime) authenticator(token string) identity.Authenticator {
 	}
 }
 
-// check 重新校验连接的凭据，只有确定已经失效时返回 DisconnectInvalidToken，SDK 收到后停止重连。
-func (rt *Realtime) check(ctx context.Context, conn *connection) *centrifuge.Disconnect {
-	ctx, cancel := context.WithTimeout(ctx, credentialTimeout)
-	defer cancel()
-	err := identity.Reestablish(ctx, conn.sub, rt.authenticator(conn.token), rt.opts.Accounts.Resolve)
+// check 重新校验连接的凭据。确定已经失效时返回 DisconnectInvalidToken，SDK 收到后停止重连；
+// 校验通过时换上重新加载的主体（权限可能已经变化），按它重新授权已经订阅的频道，见 reauthorize；暂时无法判断时连接保持原样。
+func (rt *Realtime) check(ctx context.Context, client *centrifuge.Client, conn *connection) *centrifuge.Disconnect {
+	cctx, cancel := context.WithTimeout(ctx, credentialTimeout)
+	sub, err := identity.Reestablish(cctx, conn.subject(), rt.authenticator(conn.token), rt.opts.Accounts.Resolve)
+	cancel()
 	switch {
-	case err == nil, identity.Failed(err):
+	case identity.Failed(err):
 		return nil
-	default:
+	case err != nil:
 		return &centrifuge.DisconnectInvalidToken
+	}
+	conn.setSubject(sub)
+	rt.reauthorize(ctx, client, conn)
+	return nil
+}
+
+// reauthorize 按连接当前的主体重新授权它订阅的每个频道。不再允许的频道用 Unsubscribe 把主体移出，
+// 与应用自己调用时相同：主体在各个实例上的连接都退订，presence 频道立即发出离开事件。授权暂时失败的频道保持订阅。
+func (rt *Realtime) reauthorize(ctx context.Context, client *centrifuge.Client, conn *connection) {
+	ref := conn.subject().Ref()
+	for _, channel := range client.Channels() {
+		_, err := rt.authorize(ctx, conn, channel)
+		if err == nil || err == centrifuge.ErrorInternal {
+			continue
+		}
+		if err := rt.Unsubscribe(ref, channel); err != nil {
+			rt.logger.ErrorContext(ctx, "unsubscribe after losing access", "channel", channel, "error", err)
+		}
 	}
 }
 
@@ -102,7 +138,7 @@ func (rt *Realtime) connected(client *centrifuge.Client) {
 	client.OnPresenceStats(func(e centrifuge.PresenceStatsEvent, cb centrifuge.PresenceStatsCallback) {
 		cb(centrifuge.PresenceStatsReply{}, member(e.Channel))
 	})
-	if conn.sub.ID != "" {
+	if conn.subject().ID != "" {
 		go rt.watch(client, conn)
 	}
 }
@@ -117,7 +153,8 @@ func (rt *Realtime) authorize(ctx context.Context, conn *connection, channel str
 	if rule.authorize == nil && rule.presence == nil {
 		return opts, nil
 	}
-	if conn.sub.ID == "" {
+	sub := conn.subject()
+	if sub.ID == "" {
 		return opts, centrifuge.ErrorPermissionDenied
 	}
 	ctx, cancel := context.WithTimeout(ctx, credentialTimeout)
@@ -128,9 +165,9 @@ func (rt *Realtime) authorize(ctx context.Context, conn *connection, channel str
 		err     error
 	)
 	if rule.presence != nil {
-		info, allowed, err = rule.presence(ctx, conn.sub, params)
+		info, allowed, err = rule.presence(ctx, sub, params)
 	} else {
-		allowed, err = rule.authorize(ctx, conn.sub, params)
+		allowed, err = rule.authorize(ctx, sub, params)
 	}
 	switch {
 	case identity.Failed(err):
@@ -153,12 +190,12 @@ func (rt *Realtime) authorize(ctx context.Context, conn *connection, channel str
 	return opts, nil
 }
 
-// watch 在连接期间定期复查凭据，收到 Options.Credentials 的信号时立即复查；凭据失效后断开连接，见 check。
+// watch 在连接期间定期复查凭据和频道授权，收到 Options.Credentials 的信号时立即复查；凭据失效后断开连接，见 check。
 func (rt *Realtime) watch(client *centrifuge.Client, conn *connection) {
 	ctx := client.Context()
 	var changed <-chan struct{}
 	if rt.opts.Credentials != nil {
-		changed = rt.opts.Credentials.Watch(ctx, conn.sub)
+		changed = rt.opts.Credentials.Watch(ctx, conn.subject())
 	}
 	t := time.NewTicker(rt.recheck)
 	defer t.Stop()
@@ -173,7 +210,7 @@ func (rt *Realtime) watch(client *centrifuge.Client, conn *connection) {
 				continue
 			}
 		}
-		if d := rt.check(ctx, conn); d != nil {
+		if d := rt.check(ctx, client, conn); d != nil {
 			client.Disconnect(*d)
 			return
 		}

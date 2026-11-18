@@ -186,7 +186,8 @@ func requireAuth(api *API, name string, schemes []namedScheme, challenge string,
 			}
 			// 长连接期间（例如 SSE）重新执行全部检查：凭据被撤销、主体变化、退出租户或失去权限时结束连接。
 			recheck := func(c context.Context) error {
-				return identity.Reestablish(c, sub, auth, resolve, required...)
+				_, err := identity.Reestablish(c, sub, auth, resolve, required...)
+				return err
 			}
 			reqCtx := identity.WithCredentialCheck(identity.WithSubject(ctx.Context(), sub), recheck)
 			if api.watcher != nil {

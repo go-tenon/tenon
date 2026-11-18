@@ -105,7 +105,7 @@ rt.Channel("article:{id}", realtime.Private(func(ctx context.Context, sub identi
 
 私有频道只对登录的连接开放。授权函数返回[系统故障](../general/errors.md#error-kinds)（`errorx.Unavailable`、`errorx.Internal` 类错误或普通错误）时，SDK 会稍后重新订阅。
 
-授权只在订阅时进行。主体之后失去访问权限时，调用 `rt.Unsubscribe(sub.Ref(), channel)` 取消他在所有实例上的订阅。
+连接期间每 30 秒复查一次凭据（见[认证](#authentication)），复查时按重新加载的权限把已订阅的私有频道再授权一遍，不再允许的频道被退订，客户端收到退订通知后不再重新订阅；授权函数暂时故障时订阅保持。所以授权函数在复查时也会被调用，要和订阅时一样快。主体失去访问权限需要立即生效时，调用 `rt.Unsubscribe(sub.Ref(), channel)` 取消他在所有实例上的订阅，或者用 [`Options.Credentials`](#revocation) 发出复查信号。
 
 多租户应用的频道名要带上租户，并在授权函数中与主体的租户比较，见[缓存、广播与其他资源](../security/tenancy.md#other-resources)：
 
@@ -169,12 +169,12 @@ rt, err := realtime.New(hub, realtime.Options{
 router.Handle("/t/{tenant}/realtime", rt.Handler())
 ```
 
-token 无效、属于其他账号体系，或 Resolver 拒绝主体时，连接以 3500 关闭，SDK 停止重连。连接期间两者每 30 秒重新运行一次，token 被撤销、用户被停用或移出租户后连接结束。没有 token 的连接是匿名的，只能订阅公开频道。
+token 无效、属于其他账号体系，或 Resolver 拒绝主体时，连接以 3500 关闭，SDK 停止重连。连接期间两者每 30 秒重新运行一次，token 被撤销、用户被停用或移出租户后连接结束；用户失去某个私有频道的权限时，这个频道被退订，见[私有频道](#private-channels)。没有 token 的连接是匿名的，只能订阅公开频道。
 
 <a id="revocation"></a>
 ### 撤销后断开
 
-连接期间每 30 秒重新校验一次凭据，与 [SSE](../http/sse.md#revoked-credentials) 相同。需要撤销后立即断开时，把 [`broadcast.Credentials`](../http/sse.md#immediate-revocation) 交给 `Options.Credentials`，之后退出登录、撤销 token 时照常调用 `Recheck*`，实时连接随之生效。
+连接期间每 30 秒重新校验一次凭据，与 [SSE](../http/sse.md#revoked-credentials) 相同。需要撤销后立即断开时，把 [`broadcast.Credentials`](../http/sse.md#immediate-revocation) 交给 `Options.Credentials`，之后退出登录、撤销 token 时照常调用 `Recheck*`，实时连接随之生效。修改用户的角色和权限后调用 `RecheckSubject`，失去权限的私有频道随即退订。
 
 <a id="presence"></a>
 ## 在线成员

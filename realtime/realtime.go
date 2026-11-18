@@ -35,7 +35,7 @@ type Options struct {
 	Accounts       identity.Accounts            // 用 token 连接时接受的账号体系和各自的 Resolver，通常与 rest.Options.Accounts 相同：按主体的 Type 调用 Resolver 得到连接的主体；Type 不在其中、或 Resolver 返回系统故障以外的错误时拒绝连接。连接期间与 Authenticate 一起定期重新调用，用户被停用或移出租户后连接结束。设置了 Authenticate 时必须设置
 	SessionCookie  httpx.SessionCookie          // 浏览器的会话 cookie，与 rest.Options.SessionCookie 相同；零值是 httpx.DefaultSessionCookieName。
 	Tenant         func(r *http.Request) string // 从连接请求中取出它所在的租户，例如路径参数 chi.URLParam(r, "tenant")、子域名或请求头，结果写入 identity.WithTenant：Resolver 据此加载权限，绑定了其他租户的 token 被拒绝。与 rest.Options.Tenant 的作用相同。nil 时使用外层中间件已经写入的租户，没有时是平台本身（""）。
-	Credentials    identity.CredentialWatcher   // 让连接在收到复查信号时立即重新校验凭据，撤销 token、退出登录后连接随即结束；nil 时只按 30 秒的间隔定期校验。通常是 broadcast.NewCredentials 的返回值，与 rest.Options.Credentials 相同。
+	Credentials    identity.CredentialWatcher   // 让连接在收到复查信号时立即重新校验凭据并重新授权已订阅的频道，撤销 token、退出登录后连接随即结束；nil 时只按 30 秒的间隔定期校验。通常是 broadcast.NewCredentials 的返回值，与 rest.Options.Credentials 相同。
 	TrustedOrigins []string                     // 允许跨站建立连接的来源，例如 https://app.example.com。浏览器发起的连接默认只接受同源请求；没有 Origin 请求头、或带 Authorization: Bearer 请求头的客户端（App、桌面端、服务器）全部放行。
 	Presence       PresenceStore                // 保存 presence 频道的在线成员，所有实例共用同一个存储，即 natspresence.New。注册 presence 频道时必须设置；不停机升级时新旧进程同时运行，单实例部署同样需要共用的存储。
 	PresenceGrace  time.Duration                // 连接离开 presence 频道后保留在线记录的时间：期间主体重新加入时，其他成员看不到离开和加入。零值为 DefaultPresenceGrace（10 秒），负数表示不保留，最长 MaxPresenceGrace（30 秒）。

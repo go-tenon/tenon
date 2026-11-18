@@ -126,7 +126,10 @@ func TestReestablish(t *testing.T) {
 		sub.Permissions = perms
 		return sub, resolveErr
 	}
-	check := func() error { return identity.Reestablish(context.Background(), was, auth, resolve, "events") }
+	check := func() error {
+		_, err := identity.Reestablish(context.Background(), was, auth, resolve, "events")
+		return err
+	}
 	if identity.Rechecking(context.Background()) {
 		t.Fatal("plain context is rechecking")
 	}
