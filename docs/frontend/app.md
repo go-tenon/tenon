@@ -102,7 +102,7 @@ export const session = createSession({ load: async () => ({ account: (await me()
 - 读取当前用户、检查权限只在浏览器中进行。服务端渲染时应用不读取身份，需要登录的页面设置 `ssr: false`，只在浏览器中渲染，见 [TanStack Start 的接入](start.md)。
 - 前端挂在子路径（例如 `/admin/`）时，路由的 `basepath` 默认是 Vite 的 `base`：页面中的地址、`<Link>`、登录回跳都不含它。
 - `id` 区分同一个域名下的前端，例如 `web` 和 `admin`，见[本地存储](#storage)。
-- QueryClient 对 `4xx` 不重试，其他错误重试 2 次；登录、退出、切换账号或租户时清空缓存，并重新挂载页面：页面中按身份计算的查询重新读取。重新挂载的只是布局中的页面（`AppLayout` 用 `SessionBoundary` 包住页面），HTML 文档和布局保持不变。也可以传入自己的 `queryClient`。
+- QueryClient 对 `4xx` 不重试，其他错误重试 2 次；登录、退出、切换账号或租户时清空缓存，并重新挂载页面：页面中按身份计算的查询重新读取。重新挂载的只是布局中的页面（`AdminLayout` 用 `SessionBoundary` 包住页面），HTML 文档和布局保持不变。也可以传入自己的 `queryClient`。
 - `router` 传给 Router 的其他选项：CSP 的 `nonce`、默认的错误页 `RouteError` 和 404 页 `NotFoundPage`（见[错误页](#errors)）。`router.Wrap` 包住整个应用；`createApp` 在它里面提供 QueryClient 和应用。
 - 多租户应用还要设置 `tenancy`，见[租户](layout.md#tenants)。
 
@@ -161,7 +161,7 @@ export const theme = createUiTheme({ preset: "admin", primary: "blue-gray" })
 | `console` | 面向客户的 SaaS 控制台、用户中心 | 正文 14px，控件 36px 高，顶栏 56px，圆角 8px，留白舒展 |
 | `site` | 官网、落地页、文章、文档 | 正文 16px，大标题随屏幕宽度缩放，行距宽松，顶栏 64px |
 
-一个前端只用一套预设。运营后台和面向客户的控制台可以是两个前端，各用自己的预设，品牌色相同。布局用到的尺寸（顶栏高度、侧栏宽度、内容的内边距、控件的默认尺寸）放在主题的 `other.tenon` 中，`AppLayout` 等布局据此排版，用 `layoutMetrics(theme)` 读取。
+一个前端只用一套预设。运营后台和面向客户的控制台可以是两个前端，各用自己的预设，品牌色相同。布局用到的尺寸（顶栏高度、侧栏宽度、内容的内边距、控件的默认尺寸）放在主题的 `other.tenon` 中，`AdminLayout` 等布局据此排版，用 `layoutMetrics(theme)` 读取。
 
 <a id="tokens"></a>
 `createUiTheme` 的选项是设计令牌：
@@ -302,7 +302,7 @@ return can("articles:write") && <Button>写文章</Button>
 
 发布新版本后，已经打开的页面还在运行旧代码。`@go-tenon/start/vite` 的 `tenon()` 插件在构建时把 `version.json` 写入浏览器的构建结果 `dist/client`，并把版本号注入代码；页面每 60 秒和切回页面时读取 `version.json`，版本号不同时在右下角提示“刷新”或“稍后”。
 
-- `AppLayout` 已经包含提示 `NewVersionNotice`，其他布局需要时自己放一个；自己画提示时用 `useNewVersion()`，它返回 `{ available, reload, dismiss }`。
+- `AdminLayout` 已经包含提示 `NewVersionNotice`，其他布局需要时自己放一个；自己画提示时用 `useNewVersion()`，它返回 `{ available, reload, dismiss }`。
 - 版本号默认取环境变量 `TENON_BUILD_VERSION`，没有时每次构建随机生成一个；可以用 `tenon({ version: commit })` 传入。一次构建中 TanStack Start 会多次加载 `vite.config.ts`，默认的版本号在构建进程中只生成一次，页面中的与 `version.json` 中的相同。
 - 开发模式下不检查。
 - SSR 程序对 `assets/` 之外的文件返回 `Cache-Control: no-cache`，`version.json` 不会被缓存，见 [TanStack Start 的接入](start.md)。

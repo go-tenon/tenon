@@ -202,7 +202,7 @@ export interface TabsOutletProps {
   max?: number
   /** 询问是否放弃未保存的修改，返回 true 时继续。默认用 window.confirm，可以换成组件库的对话框。 */
   confirm?: (message: string) => boolean | Promise<boolean>
-  /** 第一次使用（这个账号没有保存过标签）时，把菜单的第一个页面固定在最前面。AppLayout 中默认开启。 */
+  /** 第一次使用（这个账号没有保存过标签）时，把菜单的第一个页面固定在最前面。AdminLayout 中默认开启。 */
   home?: boolean
 }
 

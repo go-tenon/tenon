@@ -105,7 +105,7 @@ func TestWriteFrontend(t *testing.T) {
 		}, []string{"src/routes/index.tsx"}},
 		{"admin", map[string]string{
 			"src/theme.ts":        `preset: "admin", primary: "blue-gray"`,
-			"src/routes/_app.tsx": `<AppLayout title="后台" tabs user=`,
+			"src/routes/_app.tsx": `<AdminLayout title="后台" tabs user=`,
 		}, nil},
 		{"site", map[string]string{
 			"src/theme.ts":          `createUiTheme({ preset: "site", primary: "blue-gray"`,

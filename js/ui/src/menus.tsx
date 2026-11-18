@@ -1,6 +1,6 @@
-// 顶栏的菜单：用户菜单（含配色）、租户切换、通知、后台任务、语言。作为 AppLayout 的参数（租户切换由 AppLayout 自己放）：
+// 顶栏的菜单：用户菜单（含配色）、通知、后台任务、语言。作为 AdminLayout 的参数：
 //
-//   <AppLayout user={<UserMenu name={me.name} logout={api.auth.logout} />} actions={<NotificationsMenu source={inbox} />} />
+//   <AdminLayout user={<UserMenu name={me.name} logout={api.auth.logout} />} actions={<NotificationsMenu source={inbox} />} />
 
 import {
   ActionIcon,
@@ -228,7 +228,7 @@ export interface LanguageMenuProps {
   onChange: (value: string) => void
 }
 
-/** 语言切换：顶栏的图标按钮，菜单中列出语言，当前的一项打勾。作为 AppLayout 的 actions 放在用户菜单的左边。 */
+/** 语言切换：顶栏的图标按钮，菜单中列出语言，当前的一项打勾。作为 AdminLayout 的 actions 放在用户菜单的左边。 */
 export function LanguageMenu({ languages, value, onChange }: LanguageMenuProps): ReactNode {
   return (
     <Menu width={160} position="bottom-end">
@@ -246,45 +246,6 @@ export function LanguageMenu({ languages, value, onChange }: LanguageMenuProps):
             onClick={() => onChange(l.value)}
           >
             {l.label}
-          </Menu.Item>
-        ))}
-      </Menu.Dropdown>
-    </Menu>
-  )
-}
-
-/** 租户切换：当前租户的名称，菜单中列出用户所属的全部租户。只有一个租户或不是多租户应用时只显示名称或不显示。 */
-export function TenantSwitcher(): ReactNode {
-  const { tenant, tenants, switchTo, current } = useTenant()
-  if (tenants.length === 0) return null
-  if (tenants.length === 1)
-    return (
-      <Text size="sm" fw={500} px="xs">
-        {tenant?.name ?? tenants[0].name}
-      </Text>
-    )
-  return (
-    <Menu width={240} position="bottom-end">
-      <Menu.Target>
-        <Button
-          variant="subtle"
-          color="gray"
-          rightSection={<IconSelector size={14} stroke={1.6} />}
-          aria-label="切换租户"
-          fw={500}
-        >
-          {tenant?.name ?? "选择租户"}
-        </Button>
-      </Menu.Target>
-      <Menu.Dropdown>
-        <Menu.Label>切换到</Menu.Label>
-        {tenants.map((t) => (
-          <Menu.Item
-            key={t.id}
-            onClick={() => void switchTo(t.id)}
-            rightSection={t.id === current ? <IconCheck size={14} stroke={2} /> : undefined}
-          >
-            {t.name}
           </Menu.Item>
         ))}
       </Menu.Dropdown>

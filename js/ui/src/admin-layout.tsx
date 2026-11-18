@@ -1,8 +1,8 @@
-// 应用外壳：运营后台和 SaaS 控制台共用。顶栏占满整行：左边是收起侧栏的按钮和标志，中间是多标签（开启时），
-// 右边是操作、租户切换和用户菜单；
+// 管理后台（运营后台）的布局。顶栏占满整行：左边是收起侧栏的按钮和标志，中间是多标签（开启时），
+// 右边是操作和用户菜单；
 // 侧栏在顶栏下面，顶部是页面搜索，下面是 shell/ 中的导航模型（按权限过滤的菜单），可以收起为只有图标的窄栏。
 // 窄屏时侧栏是顶栏下面的抽屉。密度、尺寸由主题的预设决定。
-// 每个页面都有的内容是 AppLayout 的参数；某个页面才有的内容由页面用 Fill 放进插槽（actions、aside、footer）。
+// 每个页面都有的内容是 AdminLayout 的参数；某个页面才有的内容由页面用 Fill 放进插槽（actions、aside、footer）。
 
 import {
   ActionIcon,
@@ -33,7 +33,6 @@ import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, us
 import { Icon } from "./icons"
 import { TabsAvailableProvider } from "./layout-context"
 import { NavLinkLink } from "./links"
-import { TenantSwitcher } from "./menus"
 import { ContentTransitionProvider, PageProgress } from "./page-progress"
 import {
   type MenuItem,
@@ -50,8 +49,8 @@ import { TabBar } from "./tab-bar"
 import { layoutMetrics } from "./theme"
 import { NewVersionNotice } from "./version"
 
-/** AppLayout 的选项。 */
-export interface AppLayoutProps {
+/** AdminLayout 的选项。 */
+export interface AdminLayoutProps {
   /** 产品名称，显示在顶栏左侧。 */
   title?: string
   /** 顶栏左侧的标志；默认是名称的首字。 */
@@ -73,12 +72,18 @@ export interface AppLayoutProps {
  *
  *   export const Route = createFileRoute("/_app")({ beforeLoad: requireAuth, component: Layout })
  *   function Layout() {
- *     return <AppLayout title="博客后台" user={<UserMenu name={me.name} logout={logout} />} />
+ *     return <AdminLayout title="博客后台" user={<UserMenu name={me.name} logout={logout} />} />
  *   }
- *
- * 多租户的应用（createApp 设置了 tenancy）在顶栏显示租户切换。
  */
-export function AppLayout({ title, logo, user, actions, search = true, tabs, maxWidth }: AppLayoutProps): ReactNode {
+export function AdminLayout({
+  title,
+  logo,
+  user,
+  actions,
+  search = true,
+  tabs,
+  maxWidth,
+}: AdminLayoutProps): ReactNode {
   const theme = useMantineTheme()
   const m = layoutMetrics(theme)
   const [state, setState] = useLayoutState()
@@ -195,7 +200,6 @@ export function AppLayout({ title, logo, user, actions, search = true, tabs, max
           <Group gap="xs" wrap="nowrap">
             <Slot name="actions" />
             {actions}
-            <TenantSwitcher />
             <TabsAvailableProvider value={Boolean(tabs)}>{user}</TabsAvailableProvider>
           </Group>
         </div>

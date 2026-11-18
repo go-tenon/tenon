@@ -1,7 +1,7 @@
-// Rail 布局：console（SaaS 控制台）的一套模板，双栏导航。最左侧是模块的图标栏（标志、模块、用户菜单），
+// Rail 布局：console（SaaS 控制台）的布局，双栏导航。最左侧是模块的图标栏（标志、模块、用户菜单），
 // 旁边是当前模块的二级导航，二级导航可以收起；设置从用户菜单进入，二级导航换成按分组列出的设置项和搜索。
-// 窄屏时二级导航是抽屉。另一套模板是顶部导航的 TopbarLayout。
-// 导航来自路由的 staticData（title、icon、order），与 AppLayout 相同：第一级是模块，模块下的页面在二级导航中，
+// 窄屏时二级导航是抽屉。
+// 导航来自路由的 staticData（title、icon、order），与 AdminLayout 相同：第一级是模块，模块下的页面在二级导航中，
 // 模块下的分组是二级导航中的一节；settings 路径下的页面不进图标栏。身份变化时只重新挂载页面（SessionBoundary）。
 
 import {

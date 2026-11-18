@@ -5,9 +5,9 @@ import "@fontsource/noto-sans-sc/700.css"
 import "@go-tenon/ui/styles.css"
 import { createSession, type OperationLike } from "@go-tenon/client"
 import {
+  AdminLayout,
   AnchorLink,
   type App,
-  AppLayout,
   AppRoot,
   AuthLayout,
   createApp,
@@ -32,7 +32,6 @@ import {
   SchedulePanel,
   SettingsForm,
   SiteLayout,
-  TopbarLayout,
   trackOperation,
   UIProvider,
   UserMenu,
@@ -73,12 +72,6 @@ import {
 
 const session = createSession({ load: async () => ({ account: "u1", tenant: "acme" }) })
 const permissions = async () => ["orders:read", "users:manage"]
-const tenancy = {
-  tenants: async () => [
-    { id: "acme", name: "Acme 科技" },
-    { id: "globex", name: "Globex 零售" },
-  ],
-}
 
 const notifications: NotificationsSource = {
   list: async () => [
@@ -130,7 +123,7 @@ function AdminShell(): ReactNode {
   // 演示：只记下选择，不换文案。
   const [language, setLanguage] = useState("zh-CN")
   return (
-    <AppLayout
+    <AdminLayout
       title="Acme 运营后台"
       tabs
       actions={
@@ -380,17 +373,8 @@ function LoginPage(): ReactNode {
 
 // ———————————————————————————— SaaS 控制台 ————————————————————————————
 
-// console 的两套布局模板：默认是 Rail（双栏导航）；地址中 ?layout=top 是 Topbar（顶部导航，占位）。
-const consoleLayout = new URLSearchParams(location.search).get("layout") === "top" ? "top" : "side"
-
+// console 的布局：Rail（双栏导航）。
 function ConsoleShell(): ReactNode {
-  if (consoleLayout === "top")
-    return (
-      <TopbarLayout
-        title="Acme Cloud"
-        user={<UserMenu name="韩梅梅" email="hanmeimei@acme.cn" logout={async () => {}} />}
-      />
-    )
   return (
     <RailLayout
       title="Acme Cloud"
@@ -439,7 +423,7 @@ function ConsoleLoginPage(): ReactNode {
 function ConsolePlaceholder({ title }: { title: string }): ReactNode {
   return (
     <Page title={title}>
-      <Text c="dimmed">console 页面的占位，布局：{consoleLayout === "top" ? "Topbar" : "Rail"}。</Text>
+      <Text c="dimmed">console 页面的占位。</Text>
     </Page>
   )
 }
@@ -485,7 +469,6 @@ function consoleApp() {
     routeTree,
     session,
     permissions,
-    tenancy,
     router: { basepath: "/console", defaultErrorComponent: RouteError, defaultNotFoundComponent: NotFoundPage },
   })
 }
