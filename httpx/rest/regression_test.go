@@ -339,12 +339,14 @@ func TestBusinessErrorParams(t *testing.T) {
 	register("/params", method.New(errorx.Public("methods", []string{"acme_sso"})))
 	register("/plain", method.New())
 	register("/unencodable", method.New(errorx.Public("callback", func() {})))
+	register("/field", method.New(errorx.Field("secret")))
 	schema := api.OpenAPI().Paths["/params"].Post.Responses["default"].Content["application/problem+json"].Schema
 
 	for path, want := range map[string]string{
 		"/params":      `{"methods":["acme_sso"]}`,
 		"/plain":       "",
 		"/unencodable": "",
+		"/field":       "",
 	} {
 		req := httptest.NewRequest("POST", path, strings.NewReader(`{"secret":"valid"}`))
 		req.Header.Set("Content-Type", "application/json")
@@ -366,6 +368,16 @@ func TestBusinessErrorParams(t *testing.T) {
 		}
 		if rr.Code != 403 || obj["code"] != "auth.method_required" || got != want {
 			t.Fatalf("%s: %d %s", path, rr.Code, rr.Body.String())
+		}
+		// 指出了字段的业务错误：errors 中有这个字段，提示与 detail 相同，code 是业务错误码；其他业务错误没有 errors。
+		errs, _ := obj["errors"].([]any)
+		if path == "/field" {
+			e, _ := errs[0].(map[string]any)
+			if len(errs) != 1 || e["location"] != "body.secret" || e["code"] != "auth.method_required" || e["message"] != obj["detail"] {
+				t.Fatalf("field error: %s", rr.Body.String())
+			}
+		} else if errs != nil {
+			t.Fatalf("%s: unexpected errors: %s", path, rr.Body.String())
 		}
 	}
 }

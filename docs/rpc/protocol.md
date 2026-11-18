@@ -97,7 +97,7 @@ blog.v1.articles.publish
 {"title": "Conflict", "status": 409, "detail": "slug“hello-world”已被使用", "code": "article.slug_taken", "params": {"slug": "hello-world"}}
 ```
 
-字段的含义和客户端的判断顺序与 HTTP 接口相同，见[客户端协议的错误](../http/protocol.md#errors)：有 `code` 时按 `code` 处理；有 `errors` 时把每一项的 `message` 显示在对应的字段旁边；两者都没有时按 `status` 处理。字段错误的 `location` 以 `body.` 开头，后面是请求体中的字段路径，例如 `body.items[0].name`。
+字段的含义和客户端的判断顺序与 HTTP 接口相同，见[客户端协议的错误](../http/protocol.md#errors)：有 `code` 时按 `code` 处理；有 `errors` 时把每一项的 `message` 显示在对应的字段旁边；两者都没有时按 `status` 处理。字段错误的 `location` 以 `body.` 开头，后面是请求体中的字段路径，例如 `body.items[0].name`。业务错误用 `errorx.Field` 指出了字段时，`errors` 中有这个字段的一项，它的 `code` 是业务错误码；Go 的调用方用 `errorx.FieldOf` 取回这个字段。
 
 状态码与[错误的分类](../general/errors.md#status-mapping)一一对应：
 

@@ -23,8 +23,8 @@ import (
 type ErrorModel struct {
 	huma.ErrorModel
 	Code   string         `json:"code,omitempty" doc:"Stable business error code. Present only on business errors."`
-	Params map[string]any `json:"params,omitempty" doc:"Public parameters of a business error, e.g. methods for auth.method_required. Present only when the error has any."` // errorx.Public 附加的公开参数，客户端据此处理错误，例如 auth.method_required 的 methods。
-	Errors []*ErrorDetail `json:"errors,omitempty" doc:"Field errors. Present only on validation errors."`                                                                   // 覆盖 huma.ErrorModel 的同名字段。
+	Params map[string]any `json:"params,omitempty" doc:"Public parameters of a business error, e.g. methods for auth.method_required. Present only when the error has any."`                     // errorx.Public 附加的公开参数，客户端据此处理错误，例如 auth.method_required 的 methods。
+	Errors []*ErrorDetail `json:"errors,omitempty" doc:"Field errors. Present on validation errors, and on business errors that name a field (the entry then carries the business error code)."` // 覆盖 huma.ErrorModel 的同名字段。
 
 	headers http.Header
 }
@@ -32,7 +32,7 @@ type ErrorModel struct {
 // ErrorDetail 是一条字段错误：Huma 的 message、location、value，加上验证规则 code。
 type ErrorDetail struct {
 	huma.ErrorDetail
-	Code string `json:"code,omitempty" doc:"Validation rule, e.g. validation.min_length. Absent when the rule is not recognized."`
+	Code string `json:"code,omitempty" doc:"Validation rule, e.g. validation.min_length, or the business error code. Absent when the rule is not recognized."`
 }
 
 // localizeErrors 是 Huma 的 Transformer：把 Huma 产生的错误（验证失败、参数格式错误等）转为 ErrorModel，
@@ -106,6 +106,10 @@ func (a *API) httpError(ctx context.Context, err error) huma.StatusError {
 	se := FromError(err)
 	if m, ok := se.(*ErrorModel); ok && m.Code != "" {
 		m.Detail = httpx.ErrorDetail(ctx, err)
+		// 业务错误指出了字段（errorx.Field）：同一句提示也作为这个字段的错误，表单把它显示在字段下面。
+		if f := errorx.FieldOf(err); f != "" {
+			m.Errors = []*ErrorDetail{{ErrorDetail: huma.ErrorDetail{Message: m.Detail, Location: "body." + f}, Code: m.Code}}
+		}
 		if m.Params == nil && len(errorx.PublicOf(err)) > 0 {
 			a.logger.WarnContext(ctx, "public error params are not JSON-serializable; omitted from response", "code", m.Code)
 		}

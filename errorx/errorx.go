@@ -47,11 +47,19 @@ func RetryAfter(d time.Duration) Option {
 	return func(e *Error) { e.retryAfter = d }
 }
 
-// Error 是一次具体失败，带 cause、公开参数和建议的重试等待时间。
+// Field 指出错误与输入中的哪个字段有关。path 相对于业务动作的输入，用点连接，数组下标写在方括号中，
+// 例如 base_urls.anthropic、items[0].name。各入口按自己的方式呈现：HTTP 和 RPC 的错误响应在 errors 中给出
+// 这个字段（location 为 body.<path>），表单把提示显示在这个字段下面；MCP 工具和命令行在提示中写出字段。
+func Field(path string) Option {
+	return func(e *Error) { e.field = path }
+}
+
+// Error 是一次具体失败，带 cause、公开参数、相关的字段和建议的重试等待时间。
 type Error struct {
 	code       string
 	kind       Kind
 	public     map[string]any
+	field      string
 	retryAfter time.Duration
 	cause      error
 }
@@ -115,6 +123,9 @@ func (e *Error) Public() map[string]any { return maps.Clone(e.public) }
 // RetryAfter 返回建议的重试等待时间，未设置时为 0。
 func (e *Error) RetryAfter() time.Duration { return e.retryAfter }
 
+// Field 返回相关的字段，未设置时为空。
+func (e *Error) Field() string { return e.field }
+
 // Format 实现 fmt.Formatter，%+v 输出完整错误链与各层堆栈。
 func (e *Error) Format(s fmt.State, verb rune) { errors.FormatError(e, s, verb) }
 
@@ -161,6 +172,15 @@ func PublicOf(err error) map[string]any {
 		return e.Public()
 	}
 	return nil
+}
+
+// FieldOf 从错误链提取相关的字段（见 Field）；没有则返回空。
+func FieldOf(err error) string {
+	var e *Error
+	if errors.As(err, &e) {
+		return e.field
+	}
+	return ""
 }
 
 // RetryAfterOf 从错误链提取建议的重试等待时间；没有则返回 0。

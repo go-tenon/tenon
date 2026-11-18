@@ -325,6 +325,15 @@ article.slug_taken: "slug“{{.slug}}”已被使用"
 return ErrTooFrequent.New(errorx.RetryAfter(30 * time.Second))
 ```
 
+<a id="field-errors"></a>
+有的业务错误是某一个字段的问题，例如“选了 Anthropic 协议却没有填 Anthropic 兼容的地址”。用 `errorx.Field` 指出这个字段，表单就把提示显示在这个输入框下面，而不是表单上方。路径相对于业务动作的输入，用点连接，数组下标写在方括号中：
+
+```go
+return ErrMissingURL.New(errorx.Field("base_urls.anthropic"))
+```
+
+各入口按自己的方式呈现它：HTTP 和 [RPC](../rpc/protocol.md#errors) 的错误响应除了 `code` 和 `detail`，在 `errors` 中给出这个字段（`location` 是 `body.base_urls.anthropic`，`message` 与 `detail` 相同，`code` 是业务错误码）；MCP 工具在提示后面写上 `(field base_urls.anthropic)`；命令行写成“提示（字段 base_urls.anthropic，错误码）”。`errorx.FieldOf(err)` 取出这个字段，RPC 的调用方同样可以取回。前端的 `applyServerErrors` 把它显示在字段下面；表单中没有这个字段时，提示显示在表单上方。
+
 <a id="inspecting-errors"></a>
 ## 判断错误
 
@@ -350,7 +359,7 @@ if errors.Is(err, article.ErrSlugTaken) {
 | `detail` | 展示给用户的文案 |
 | `code` | 稳定的错误码，**只有业务错误包含** |
 | `params` | [公开参数](#public-parameters)，**只有带参数的业务错误包含** |
-| `errors` | 字段级的错误明细，**只有输入格式错误包含**，每一项带有违反的规则 `code` 和翻译后的 `message`，见[验证](../http/validation.md#validation-error-response) |
+| `errors` | 字段级的错误明细：输入格式错误时，每一项带有违反的规则 `code` 和翻译后的 `message`，见[验证](../http/validation.md#validation-error-response)；业务错误用 `errorx.Field` 指出了字段时，有这个字段的一项，`code` 是业务错误码，见[指出字段](#field-errors) |
 
 客户端可以这样区分错误：有 `code` 时按 `code` 处理；有 `errors` 时把提示显示在对应字段旁边；两者都没有时（路由不存在、服务端故障等）按 `status` 处理。各状态码和框架定义的错误码的处理方式见[客户端协议](../http/protocol.md#errors)。
 
@@ -430,21 +439,23 @@ func (t *Template) Wrap(cause error, opts ...Option) error
 
 返回一次具体的失败。`Wrap` 把引起失败的底层错误 `cause` 保留在错误链中。只有 `Unavailable` 和 `Internal` 两类会在调用处记录堆栈。`errors.Is(err, tmpl)` 按错误码匹配。
 
-### Public、RetryAfter
+### Public、Field、RetryAfter
 
 ```go
 func Public(key string, value any) Option
+func Field(path string) Option
 func RetryAfter(d time.Duration) Option
 ```
 
-`New` 和 `Wrap` 的选项。`Public` 附加可以出现在提示文案和响应中的参数，见[在提示中带上参数](#public-parameters)；`RetryAfter` 附加建议的等待时间，HTTP 响应带上 `Retry-After` 头。
+`New` 和 `Wrap` 的选项。`Public` 附加可以出现在提示文案和响应中的参数，见[在提示中带上参数](#public-parameters)；`Field` 指出错误与输入中的哪个字段有关，见[指出字段](#field-errors)；`RetryAfter` 附加建议的等待时间，HTTP 响应带上 `Retry-After` 头。
 
-### CodeOf、KindOf、PublicOf、RetryAfterOf
+### CodeOf、KindOf、PublicOf、FieldOf、RetryAfterOf
 
 ```go
 func CodeOf(err error) string
 func KindOf(err error) Kind
 func PublicOf(err error) map[string]any
+func FieldOf(err error) string
 func RetryAfterOf(err error) time.Duration
 ```
 

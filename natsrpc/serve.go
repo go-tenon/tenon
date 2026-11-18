@@ -255,6 +255,9 @@ func (r *runner) problem(ctx context.Context, ep *endpoint, err error) *Problem 
 			p.Params = params
 		}
 	}
+	if f := errorx.FieldOf(err); f != "" {
+		p.Errors = []FieldError{{Message: p.Detail, Location: "body." + f, Code: code}}
+	}
 	return p
 }
 

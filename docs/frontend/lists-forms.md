@@ -163,7 +163,7 @@ function NewArticle() {
 - 初始值的类型可以直接用生成的客户端中请求体的类型，例如 `initialValues: { title: "", slug: "" } as ArticleChanges`；嵌套的对象同样可以。
 - 提交时校验整个表单，之后离开一个字段时校验它，修改时清除它的错误。
 - 字段的路径用点连接，例如 `items.0.name`，与服务端错误的位置 `body.items[0].name` 对应。
-- `applyServerErrors(form, err)` 把请求体的字段错误设置到对应字段，返回不属于某个字段的错误（例如 slug 已被使用、断网），交给 `FormError` 显示在表单上方。它是 `describeError` 的结果：`message` 是服务端翻译好的提示，断网等没有服务端提示时为空，`FormError` 按 `kind` 显示。
+- `applyServerErrors(form, err)` 把请求体的字段错误设置到对应字段，包括业务错误用 [`errorx.Field`](../general/errors.md#field-errors) 指出的字段；返回不属于某个字段的错误（例如 slug 已被使用、断网），以及指出的字段不在这个表单中的错误，交给 `FormError` 显示在表单上方。它是 `describeError` 的结果：`message` 是服务端翻译好的提示，断网等没有服务端提示时为空，`FormError` 按 `kind` 显示。
 - 按字段类型选择输入组件用 `DefaultInput`，按类型显示一个值用 `FieldValue`，见[资源页面](resources.md#admin)。
 
 它们建立在两个与表单库无关的函数上：`formValidator(schema, rules)` 返回校验整个表单的函数，`serverErrors(err)` 把错误拆成 `{ fields, form }`。

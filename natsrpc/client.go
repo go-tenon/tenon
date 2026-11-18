@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/cockroachdb/errors"
@@ -66,7 +67,7 @@ func (e *RemoteError) Error() string {
 //
 // 失败时返回的错误：
 //   - 服务端返回了错误：包装着 *RemoteError。errorx.CodeOf 是服务端的错误码，errorx.KindOf 是状态码对应的分类，
-//     errors.Is 按错误码匹配本地用 errorx.Define 定义的同名模板；errorx.PublicOf、errorx.RetryAfterOf 也照常可用。
+//     errors.Is 按错误码匹配本地用 errorx.Define 定义的同名模板；errorx.PublicOf、errorx.FieldOf、errorx.RetryAfterOf 也照常可用。
 //   - 没有在线的实例：满足 errors.Is(err, ErrNoResponders)。
 //   - 超时或 ctx 被取消：满足 errors.Is(err, context.DeadlineExceeded) 或 context.Canceled。服务端返回 504
 //     （处理超过了时限）时同样满足 errors.Is(err, context.DeadlineExceeded)。结果不确定，只有幂等的端点可以直接重试。
@@ -129,6 +130,13 @@ func remoteError(subject, code string, resp *nats.Msg) error {
 	}
 	if secs, err := strconv.Atoi(resp.Header.Get(HeaderRetryAfter)); err == nil && secs > 0 {
 		opts = append(opts, errorx.RetryAfter(time.Duration(secs)*time.Second))
+	}
+	// 业务错误指出的字段：errors 中带着同一个错误码的那一项。
+	for _, fe := range remote.Problem.Errors {
+		if f, ok := strings.CutPrefix(fe.Location, "body."); ok && fe.Code != "" && fe.Code == remote.Problem.Code {
+			opts = append(opts, errorx.Field(f))
+			break
+		}
 	}
 	err := errorx.Define(kindOf(remote.Problem.Status), remote.Problem.Code).Wrap(remote, opts...)
 	if remote.Problem.Status == http.StatusGatewayTimeout {

@@ -367,7 +367,9 @@ func TestErrorText(t *testing.T) {
 	}{
 		{zh, taken, "“acme”已被使用（demo.taken）"},
 		{en, taken, "acme is taken (demo.taken)"},
-		{zh, fmt.Errorf("create: %w", taken), "“acme”已被使用（demo.taken）"},                      // 包装后仍按错误码翻译
+		{zh, fmt.Errorf("create: %w", taken), "“acme”已被使用（demo.taken）"}, // 包装后仍按错误码翻译
+		{zh, errorx.Define(errorx.Conflict, "demo.taken").New(errorx.Public("name", "acme"), errorx.Field("slug")), "“acme”已被使用（字段 slug，demo.taken）"},
+		{en, errorx.Define(errorx.Conflict, "demo.taken").New(errorx.Public("name", "acme"), errorx.Field("slug")), "acme is taken (field slug, demo.taken)"},
 		{zh, errorx.Define(errorx.Conflict, "demo.untranslated").New(), "demo.untranslated"}, // 没有译文
 		{zh, errorx.Define(errorx.Unavailable, "demo.taken").New(), "demo.taken"},            // 系统故障显示错误本身
 		{zh, errors.New("plain failure"), "plain failure"},
