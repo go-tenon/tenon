@@ -88,9 +88,16 @@ export interface LayoutMetrics {
   datetimeFormat?: string
 }
 
-// 系统字体：中文优先用系统自带的苹方、思源黑体、微软雅黑，不额外加载字体。
-const fontFamily =
-  '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Noto Sans CJK SC", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif'
+// cjkPunctuation 是字体栈的前缀：中文页面（<html lang="zh-...">）中是 styles.css 定义的 "Tenon CJK Punctuation"，
+// 它只包含中英文共用码位的引号、省略号、破折号和间隔号，交给中文字体显示为全角；其他语言的页面中为空。
+// 自定义属性在 :root 上计算，所以按 <html> 的 lang 生效。
+const cjkPunctuation = "var(--tn-cjk-punctuation,)"
+
+// 系统字体，不额外加载字体。西文字体在前：字母、数字和 •、- 这类西文符号用西文字体；汉字回落到后面的
+// 中文字体（苹方、思源黑体、微软雅黑）。Linux 上常见的西文字体是 Noto Sans 和 Liberation Sans。
+const systemFonts =
+  '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif'
+const fontFamily = `${cjkPunctuation} ${systemFonts}`
 // 等宽字体：代码中的中文（注释、输出）回落到中文字体显示。
 const fontFamilyMonospace =
   'ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", "PingFang SC", "Noto Sans SC", "Noto Sans CJK SC", "Microsoft YaHei", monospace'
@@ -249,7 +256,7 @@ const comfortable: MantineThemeOverride = mergeThemeOverrides(
 )
 
 // spacious 预设的字体：拉丁字母优先用 Inter（项目引入 @fontsource-variable/inter 时），中文仍是系统字体。
-const spaciousFontFamily = `"Inter Variable", Inter, ${fontFamily}`
+const spaciousFontFamily = `${cjkPunctuation} "Inter Variable", Inter, ${systemFonts}`
 
 /** spacious 预设：大标题、宽松的行距，适合官网、文章和文档。 */
 const spacious: MantineThemeOverride = mergeThemeOverrides(
@@ -287,7 +294,7 @@ export interface UiThemeOptions {
   primary?: PrimaryColor | (string & {})
   /** 基础圆角（像素），其他圆角按比例缩放。 */
   radius?: number
-  /** 字体，不设置时使用系统字体。 */
+  /** 字体，不设置时使用系统字体。中文页面中，引号、省略号、破折号和间隔号仍由中文字体显示为全角。 */
   fontFamily?: string
   /** 日期时间的显示格式（dayjs 的写法），例如 MM/DD HH:mm，默认 YYYY-MM-DD HH:mm。表格、操作记录、通知中的时间都用它。 */
   datetimeFormat?: string
@@ -322,7 +329,10 @@ export function createUiTheme(options: UiThemeOptions = {}): MantineThemeOverrid
       },
     })
   }
-  if (options.fontFamily) parts.push({ fontFamily: options.fontFamily, headings: { fontFamily: options.fontFamily } })
+  if (options.fontFamily) {
+    const family = `${cjkPunctuation} ${options.fontFamily}`
+    parts.push({ fontFamily: family, headings: { fontFamily: family } })
+  }
   if (options.override) parts.push(options.override)
   return mergeThemeOverrides(...parts)
 }
