@@ -199,8 +199,8 @@ Tenon 的每个包都可以单独使用，按需引入即可。顶层的包分�
 ```text
 功能        apitoken  login  oauthserver  authz  notification  push  activity  feature  settings  operation  privacy  privacy/export  webhook  search  vector  sheet/imports  sheet/exports  ai
 入口        httpx  web  realtime  mcpx  natsrpc  command  clientgen
-基础设施    database  natsx  queue  schedule  cachex  lock  ratelimit  captcha  broadcast  filesystem  imgproxy  mail  sms  pdf  outbound  sheet  document
-基础        errorx  identity  config  cleanup  logging  telemetry  health  doctor  i18n  enum  page  form  hashing  crypt  acquire
+基础设施    database  natsx  queue  schedule  cachex  lock  ratelimit  captcha  broadcast  filesystem  imgproxy  mail  sms  pdf  outbound  sheet  document  contract  form
+基础        errorx  identity  config  cleanup  logging  telemetry  health  doctor  i18n  enum  page  hashing  crypt  acquire
 ```
 
 这条规则由架构测试 `internal/checks/archtest` 保证，新增的导入违反分层时测试会失败。名字以 `test` 结尾的子包（`dbtest`、`queuetest`、`mailtest` 等）是测试用的替身和工具。
@@ -218,7 +218,6 @@ Tenon 的每个包都可以单独使用，按需引入即可。顶层的包分�
 | `crypt` | 用应用密钥加密、签名链接 | [加密与签名链接](../security/encryption.md) |
 | `enum` | 带显示文字的枚举：取值、校验和按语言翻译的显示文字 | [带显示文字的枚举](../http/validation.md#enums) |
 | `errorx` | 带稳定错误码和分类的业务错误 | [错误处理](../general/errors.md) |
-| `form` | 按 Huma 标签转换、验证文本字段，表格导入和 RPC 共用 | [导入与导出](../features/import-export.md) |
 | `hashing` | 密码哈希 | [哈希](../security/hashing.md) |
 | `health` | 检查依赖是否可用，供就绪检查使用 | [健康检查](../http/lifecycle.md#health-checks) |
 | `doctor` | 检查运行环境的版本、设置和权限，给出修改方法；`doctorcmd` 是 `doctor` 命令 | [自检](../installation/doctor.md) |
@@ -253,6 +252,8 @@ Tenon 的每个包都可以单独使用，按需引入即可。顶层的包分�
 | `captcha` | 服务端校验 Turnstile、hCaptcha | [人机验证](../security/login-security.md#captcha) |
 | `sheet` | 读写 CSV 和 Excel，按结构体解码并验证每一行 | [导入与导出](../features/import-export.md) |
 | `document` | `convert` 把文件转为 Markdown，`split` 切分 Markdown | [文档转换与切分](../ai/documents.md) |
+| `contract` | 接口契约中与入口无关的部分：按 Huma 标签生成 JSON Schema 并校验、枚举的命名类型、验证错误的规则和译文，HTTP、RPC、MCP 共用 | [验证](../http/validation.md) |
+| `form` | 按 Huma 标签转换、验证文本字段，表格导入使用 | [导入与导出](../features/import-export.md) |
 
 <a id="entry"></a>
 ### 入口

@@ -17,6 +17,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/go-tenon/tenon/contract"
 	"github.com/go-tenon/tenon/i18n"
 )
 
@@ -26,7 +27,7 @@ import (
 // 按 schema 的类型转换：数字字段的空字符串视为未填写；布尔字段没有提交时为 false，
 // on、true、1 为 true，off、false、0 和空字符串为 false（不区分大小写）。多余的字段被忽略。
 //
-// 返回的错误以字段名为键，提示按 ctx 中的语言翻译，见 i18n 的 validation.* 消息；全部有效时为 nil。
+// 返回的错误以字段名为键，提示由 contract.Describe 按 ctx 中的语言翻译，见 i18n 的 validation.* 消息；全部有效时为 nil。
 // 验证失败时 T 只包含能转换的字段。
 func Decode[T any](ctx context.Context, values map[string][]string) (T, map[string]string) {
 	var data T
@@ -64,7 +65,7 @@ func Decode[T any](ctx context.Context, values map[string][]string) (T, map[stri
 	huma.Validate(registry, s, huma.NewPathBuffer(nil, 0), huma.ModeWriteToServer, input, res)
 	for _, e := range res.Errors {
 		if d, ok := e.(*huma.ErrorDetail); ok {
-			fe := Describe(ctx, d)
+			fe := contract.Describe(ctx, d)
 			set(fe.Location, fe.Message)
 		}
 	}

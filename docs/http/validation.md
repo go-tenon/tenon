@@ -147,8 +147,8 @@ package article
 import (
     "github.com/danielgtaylor/huma/v2"
 
+    "github.com/go-tenon/tenon/contract"
     "github.com/go-tenon/tenon/enum"
-    "github.com/go-tenon/tenon/httpx/rest"
 )
 
 // Status 是文章的状态。
@@ -163,7 +163,7 @@ const (
 var Statuses = enum.New("article.status", Draft, Published)
 
 // Schema 让 OpenAPI 中的 Status 引用命名类型 ArticleStatus。
-func (Status) Schema(r huma.Registry) *huma.Schema { return rest.EnumSchema(r, Statuses) }
+func (Status) Schema(r huma.Registry) *huma.Schema { return contract.EnumSchema(r, Statuses) }
 ```
 
 显示文字写在[翻译文件](../general/localization.md#translation-files)中，消息 ID 是前缀加取值：
@@ -175,7 +175,7 @@ article.status.published: 已发布
 ```
 
 - 字段的类型是 `Status` 时，请求体和查询参数只接受声明的取值，其他值返回 `422`，错误码 `validation.one_of`。不需要再写 `enum` 标签。
-- `rest.EnumSchema` 把它登记为 OpenAPI 的命名类型，名称由前缀得出（`article.status` 是 `ArticleStatus`），带有全部取值和 `x-tenon-enum`（消息前缀）。生成的客户端得到取值的联合类型和各语言的显示文字，见[客户端的枚举](../frontend/client-react.md#ts-enums)。两个枚举得出同一个名称时 panic。
+- `contract.EnumSchema` 把它登记为 OpenAPI 的命名类型，名称由前缀得出（`article.status` 是 `ArticleStatus`），带有全部取值和 `x-tenon-enum`（消息前缀）。生成的客户端得到取值的联合类型和各语言的显示文字，见[客户端的枚举](../frontend/client-react.md#ts-enums)。两个枚举得出同一个名称时 panic。
 - `Statuses.Label(ctx, v)` 按请求的语言返回显示文字，没有翻译时返回取值本身，例如在页面中显示状态；`Statuses.Values()` 按声明的顺序返回全部取值，例如生成下拉框的选项；`Statuses.Valid(v)` 判断取值是否合法。
 - `Schema` 方法是 Huma 的 `SchemaProvider`：类型自己声明 schema，不需要在装配时逐个登记。
 

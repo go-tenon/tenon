@@ -43,7 +43,7 @@ type TSOptions struct {
 //   - messages.ts：各语言的验证提示模板，框架内置的文案加上 Translations 中的覆盖；
 //   - permissions.ts：权限目录（rest.Options.Permissions）和每个接口要求的权限；
 //   - queries.ts：TanStack Query 的查询和修改选项；
-//   - enums.ts：rest.EnumSchema 登记的枚举的取值和各语言的显示文字；
+//   - enums.ts：contract.EnumSchema 登记的枚举的取值和各语言的显示文字；
 //   - resources.ts：rest.API.Resource 声明的资源；
 //   - settings.ts：rest.API.Settings 声明的设置页面；
 //   - kit.ts：createKit，把客户端和上面的元数据合成一个对象，交给 @go-tenon/ui 的资源和设置模型。

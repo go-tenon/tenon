@@ -1,7 +1,4 @@
-// Package apischema 按 Huma 的规则为 Go 类型生成 JSON Schema，并按它校验、解码 JSON 参数。
-// MCP 工具（mcpx）和 RPC 端点（natsrpc）用它处理参数，规则与 REST 接口的请求体相同：
-// 同一个类型可以同时用作三者的输入。
-package apischema
+package contract
 
 import (
 	"encoding/json"
@@ -18,7 +15,8 @@ const defsPrefix = "#/$defs/"
 // ErrInvalidJSON 表示参数不是合法的 JSON。
 var ErrInvalidJSON = errors.New("not valid JSON")
 
-// Schema 是一个类型按 Huma 规则生成的 JSON Schema，以及校验它所需的 registry。
+// Schema 是一个类型按 Huma 规则生成的独立 JSON Schema，以及校验它所需的 registry。
+// MCP 工具（mcpx）和 RPC 端点（natsrpc）用它校验、解码参数，规则与 REST 接口的请求体相同。
 type Schema struct {
 	registry huma.Registry
 	root     *huma.Schema
@@ -27,9 +25,9 @@ type Schema struct {
 	JSON     map[string]any // 发给客户端的 schema，带 $defs。
 }
 
-// New 为 t 生成 schema，mode 是校验的方向：输入用 huma.ModeWriteToServer，输出用 huma.ModeReadFromServer。
+// NewSchema 为 t 生成 schema，mode 是校验的方向：输入用 huma.ModeWriteToServer，输出用 huma.ModeReadFromServer。
 // 每个类型使用自己的 registry，$defs 中只有它用到的类型。
-func New(t reflect.Type, mode huma.ValidateMode) *Schema {
+func NewSchema(t reflect.Type, mode huma.ValidateMode) *Schema {
 	registry := huma.NewMapRegistry(defsPrefix, huma.DefaultSchemaNamer)
 	root := registry.Schema(t, false, "")
 	s := &Schema{registry: registry, root: root, mode: mode}
@@ -38,10 +36,10 @@ func New(t reflect.Type, mode huma.ValidateMode) *Schema {
 	}
 	data, err := json.Marshal(root)
 	if err != nil {
-		panic(errors.Wrapf(err, "apischema: encode schema of %s", t))
+		panic(errors.Wrapf(err, "contract: encode schema of %s", t))
 	}
 	if err := json.Unmarshal(data, &s.JSON); err != nil {
-		panic(errors.Wrapf(err, "apischema: encode schema of %s", t))
+		panic(errors.Wrapf(err, "contract: encode schema of %s", t))
 	}
 	s.Type, _ = s.JSON["type"].(string)
 	if defs := registry.Map(); len(defs) > 0 {

@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
+	"github.com/go-tenon/tenon/contract"
 	"github.com/go-tenon/tenon/enum"
 	"github.com/go-tenon/tenon/httpx/rest"
 	"github.com/go-tenon/tenon/identity"
@@ -24,7 +25,9 @@ type articleStatus string
 
 var articleStatuses = enum.New("article.status", articleStatus("draft"), articleStatus("published"))
 
-func (articleStatus) Schema(r huma.Registry) *huma.Schema { return rest.EnumSchema(r, articleStatuses) }
+func (articleStatus) Schema(r huma.Registry) *huma.Schema {
+	return contract.EnumSchema(r, articleStatuses)
+}
 
 // ArticleDTO 同时是 HTTP 接口和 RPC 端点的返回值。
 type ArticleDTO struct {

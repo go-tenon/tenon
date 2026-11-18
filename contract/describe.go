@@ -1,4 +1,4 @@
-package form
+package contract
 
 import (
 	"context"
@@ -108,8 +108,8 @@ var rules = []rule{
 }
 
 // Describe 识别 Huma 的一条验证错误，返回它的规则和按 ctx 的语言翻译的提示。
-// 表单（Decode）和 JSON API（rest）的验证错误都由它翻译。消息 ID 以 validation. 开头，
-// 应用的翻译文件中写同名消息即可覆盖。
+// HTTP 接口（rest）、RPC 端点（natsrpc）和表单（form.Decode）的验证错误都由它翻译，规则就是错误响应中字段错误的 code。
+// 消息 ID 以 validation. 开头，应用的翻译文件中写同名消息即可覆盖。
 func Describe(ctx context.Context, d *huma.ErrorDetail) FieldError {
 	e := FieldError{Location: d.Location, Message: d.Message}
 	for _, r := range rules {

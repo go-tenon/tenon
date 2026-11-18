@@ -307,7 +307,7 @@ func (g *generator) copyType(obj *types.TypeName) error {
 	for i := range named.NumMethods() {
 		name := named.Method(i).Name()
 		if schemaOnly(name) && isString(named) {
-			continue // 例如 rest.EnumSchema 的枚举：方法只影响 OpenAPI，复制类型和常量得到同样的 JSON
+			continue // 例如 contract.EnumSchema 的枚举：方法只影响 OpenAPI，复制类型和常量得到同样的 JSON
 		}
 		if slices.Contains(marshalers, name) {
 			return errors.Newf("clientgen: %s.%s has method %s, so copying its fields would not produce the same JSON; "+

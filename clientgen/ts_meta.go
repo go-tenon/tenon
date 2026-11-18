@@ -357,7 +357,7 @@ func queryEntry(o *tsOp, indent string) string {
 		indent + "  onSuccess: () => invalidate(" + strconv.Quote(group) + "),\n" + indent + "}),\n"
 }
 
-// enumsTS 生成 enums.ts：带 x-tenon-enum 的命名类型（rest.EnumSchema 登记的枚举）的取值和各语言的显示文字。
+// enumsTS 生成 enums.ts：带 x-tenon-enum 的命名类型（contract.EnumSchema 登记的枚举）的取值和各语言的显示文字。
 // 显示文字是 templates 中 <前缀>.<取值> 的消息。一种语言只有部分取值有显示文字，或者所有语言都没有时返回警告。
 func (t *tsGen) enumsTS(templates map[string]map[string]string) (string, []string) {
 	var b strings.Builder

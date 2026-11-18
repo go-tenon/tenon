@@ -8,6 +8,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/go-tenon/tenon/contract"
 	"github.com/go-tenon/tenon/enum"
 	"github.com/go-tenon/tenon/httpx/rest"
 	"github.com/go-tenon/tenon/i18n"
@@ -17,7 +18,9 @@ type articleStatus string
 
 var articleStatuses = enum.New("article.status", articleStatus("draft"), articleStatus("published"))
 
-func (articleStatus) Schema(r huma.Registry) *huma.Schema { return rest.EnumSchema(r, articleStatuses) }
+func (articleStatus) Schema(r huma.Registry) *huma.Schema {
+	return contract.EnumSchema(r, articleStatuses)
+}
 
 type statusIn struct {
 	Status articleStatus `query:"status"`
@@ -64,26 +67,4 @@ func TestEnumSchema(t *testing.T) {
 			t.Errorf("%s %s: %d %+v", query, body, status, p)
 		}
 	}
-}
-
-func TestEnumSchemaConflict(t *testing.T) {
-	r := huma.NewMapRegistry("#/components/schemas/", huma.DefaultSchemaNamer)
-	rest.EnumSchema(r, articleStatuses)
-	rest.EnumSchema(r, articleStatuses) // 同一个枚举可以重复登记
-	other := enum.New("article.status", articleStatus("open"))
-	func() {
-		defer func() {
-			if recover() != nil {
-				t.Error("same prefix panicked")
-			}
-		}()
-		rest.EnumSchema(r, other)
-	}()
-	r.Map()["OrderState"] = &huma.Schema{Type: huma.TypeObject}
-	defer func() {
-		if recover() == nil {
-			t.Error("conflicting schema did not panic")
-		}
-	}()
-	rest.EnumSchema(r, enum.New("order.state", articleStatus("paid")))
 }

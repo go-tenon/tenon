@@ -14,6 +14,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
+	"github.com/go-tenon/tenon/contract"
 	"github.com/go-tenon/tenon/enum"
 	"github.com/go-tenon/tenon/errorx"
 	"github.com/go-tenon/tenon/httpx"
@@ -35,7 +36,7 @@ const (
 var Statuses = enum.New("article.status", StatusDraft, StatusPublished)
 
 // Schema 让 OpenAPI 中的 Status 引用命名类型 ArticleStatus。
-func (Status) Schema(r huma.Registry) *huma.Schema { return rest.EnumSchema(r, Statuses) }
+func (Status) Schema(r huma.Registry) *huma.Schema { return contract.EnumSchema(r, Statuses) }
 
 var (
 	// ErrNotFound 表示文章不存在。

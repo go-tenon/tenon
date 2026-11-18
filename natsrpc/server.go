@@ -17,8 +17,8 @@ import (
 	"github.com/nats-io/nats.go"
 	goi18n "github.com/nicksnyder/go-i18n/v2/i18n"
 
+	"github.com/go-tenon/tenon/contract"
 	"github.com/go-tenon/tenon/identity"
-	"github.com/go-tenon/tenon/internal/apischema"
 	"github.com/go-tenon/tenon/logging"
 )
 
@@ -78,7 +78,7 @@ type endpoint struct {
 	spec    Endpoint
 	subject string
 	name    string // 服务协议中的端点名：端点名中的 . 换成 _
-	input   *apischema.Schema
+	input   *contract.Schema
 	inType  reflect.Type
 	outType reflect.Type
 	empty   bool // 返回值是 struct{}：成功时响应体为空
@@ -152,7 +152,7 @@ func Register[I, O any](s *Server, e Endpoint, fn func(context.Context, I) (O, e
 	if s.names[name] {
 		panic("natsrpc: duplicate endpoint " + strconv.Quote(e.Name))
 	}
-	input := apischema.New(reflect.TypeFor[I](), huma.ModeWriteToServer)
+	input := contract.NewSchema(reflect.TypeFor[I](), huma.ModeWriteToServer)
 	if input.Type != "object" {
 		panic("natsrpc: endpoint " + strconv.Quote(e.Name) + " input must be a struct")
 	}

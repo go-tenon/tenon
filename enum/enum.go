@@ -15,7 +15,7 @@
 //	// article.status.draft: 草稿
 //	// article.status.published: 已发布
 //
-// JSON API 中的类型用 rest.EnumSchema 声明为 OpenAPI 的命名类型，生成的客户端得到取值和各语言的显示文字。
+// JSON API 中的类型用 contract.EnumSchema 声明为 OpenAPI 的命名类型，生成的客户端得到取值和各语言的显示文字。
 package enum
 
 import (
@@ -32,7 +32,7 @@ import (
 // prefixPattern 是消息前缀：以点分隔的若干段，每段以小写字母开头，由小写字母、数字和下划线组成。
 var prefixPattern = regexp.MustCompile(`^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$`)
 
-// Definition 是不带类型参数的枚举，*Enum 实现它，供 rest.EnumSchema 等只需要名称和取值的地方使用。
+// Definition 是不带类型参数的枚举，*Enum 实现它，供 contract.EnumSchema 等只需要名称和取值的地方使用。
 type Definition interface {
 	Name() string
 	Prefix() string
