@@ -4,6 +4,7 @@ package dev
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
@@ -20,6 +21,7 @@ import (
 	"github.com/cockroachdb/errors"
 
 	"github.com/go-tenon/tenon/cmd/tenon/internal/project"
+	"github.com/go-tenon/tenon/frontend"
 )
 
 const framework = "github.com/go-tenon/tenon"
@@ -104,8 +106,8 @@ func (d dev) check() error {
 }
 
 // prepare 在启动监听进程之前运行一次：把框架的前端包复制到 .tenon/js（见 SyncJS），前端包的 package.json 变了
-// 或者缺少依赖（见 NeedsInstall）时在根目录 bun install，确保每个前端的 ssr.js 和共用的运行时存在（见 EnsureDist），
-// 写入前端开发服务器的地址（见 DevConfig）。
+// 或者缺少依赖（见 NeedsInstall）时在根目录 bun install，写入前端的清单（见 WriteManifest）和前端开发服务器的地址
+// （见 DevConfig）。
 func (d dev) prepare() error {
 	if len(d.cfg.Frontends) > 0 {
 		changed, err := SyncJS(".")
@@ -121,38 +123,63 @@ func (d dev) prepare() error {
 			return err
 		}
 	}
-	return EnsureDist(d.cfg)
+	return WriteManifest(".", d.cfg)
 }
 
-// SSRBundle 是前端目录中 SSR 代码的名字（tenon-start compile 生成），frontend.go 用 go:embed 嵌入它。
-const SSRBundle = "ssr.js"
+// DistDir 是构建产物的目录，apps 包用 go:embed 嵌入它（frontend.New 读取）：前端的清单、每个前端的静态文件，
+// 以及有 SSR 前端时的 Bun 可执行文件。它被 .gitignore 忽略，由 tenon build 生成；tenon dev、generate 只写清单。
+const DistDir = project.AppsDir + "/" + frontend.DistDir
 
-// SSRRuntime 是几个前端共用的 Bun 运行时（tenon-start runtime 生成），在 apps 目录中，apps/runtime.go 嵌入它。
-const SSRRuntime = "ssr-runtime.bin"
-
-// EnsureDist 在前端的 ssr.js 和共用的运行时不存在时（例如刚 clone 的项目，它们被 .gitignore 忽略）写入空的
-// 占位文件，嵌入它们的代码才能编译。开发时页面来自前端的开发服务器，用不到它们；go tool tenon build 生成真正的文件。
-func EnsureDist(cfg *project.Config) error {
+// WriteManifest 把项目 root 中的前端（名称、挂载路径、是否服务端渲染）写入 DistDir 中的清单。应用按清单分发页面请求，
+// 嵌入 DistDir 的代码也要它存在才能编译（例如刚 clone 的项目）。没有前端时什么也不做。
+func WriteManifest(root string, cfg *project.Config) error {
 	if len(cfg.Frontends) == 0 {
 		return nil
 	}
-	// 前端都在 apps 目录中，共用的运行时在它们的上一级。
-	paths := []string{filepath.Join(filepath.Dir(cfg.Frontends[0].Dir), SSRRuntime)}
-	for _, f := range cfg.Frontends {
-		paths = append(paths, filepath.Join(f.Dir, SSRBundle))
+	entries := make([]frontend.Entry, len(cfg.Frontends))
+	for i, f := range cfg.Frontends {
+		entries[i] = frontend.Entry{Name: f.Name, Base: f.Base, SSR: f.SSR}
 	}
-	for _, p := range paths {
-		if _, err := os.Stat(p); !errors.Is(err, fs.ErrNotExist) {
-			if err != nil {
-				return err
-			}
-			continue
+	data, err := json.MarshalIndent(entries, "", "  ")
+	if err != nil {
+		return errors.Wrap(err, "dev: encode frontend manifest")
+	}
+	dir := filepath.Join(root, filepath.FromSlash(DistDir))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return errors.Wrap(err, "dev: write frontend manifest")
+	}
+	return errors.Wrap(os.WriteFile(filepath.Join(dir, frontend.ManifestFile), append(data, '\n'), 0o644), "dev: write frontend manifest")
+}
+
+// CopyClient 把当前目录中前端 f 的浏览器构建（vite build 生成的 dist/client）复制到 DistDir/<名称>，不复制 source map。
+// 只在浏览器中渲染的前端要有页面外壳（frontend.ShellFile），没有时说明它的 Vite 配置没有用 @go-tenon/start 的插件。
+func CopyClient(f project.Frontend) error {
+	src := filepath.Join(f.Dir, "dist", "client")
+	dst := filepath.Join(filepath.FromSlash(DistDir), f.Name)
+	if !f.SSR {
+		if _, err := os.Stat(filepath.Join(src, frontend.ShellFile)); err != nil {
+			return errors.Wrapf(err, "dev: %s has no page shell; use tenon() from @go-tenon/start/vite in its vite.config", f.Dir)
 		}
-		if err := os.WriteFile(p, nil, 0o644); err != nil {
+	}
+	err := filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
 			return err
 		}
-	}
-	return nil
+		rel, _ := filepath.Rel(src, p)
+		target := filepath.Join(dst, rel)
+		if d.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		if strings.HasSuffix(d.Name(), ".map") {
+			return nil // source map 等于源码，不嵌入
+		}
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, b, 0o644)
+	})
+	return errors.Wrapf(err, "dev: copy %s", src)
 }
 
 // devServers 为每个前端选一个空闲端口，返回开发服务器的地址。

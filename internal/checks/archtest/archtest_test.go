@@ -77,7 +77,7 @@ var rules = map[string]rule{
 	"httpx":                {layerEntry, []string{"acquire", "enum", "errorx", "form", "health", "i18n", "identity", "logging", "ratelimit"}},
 	"httpx/rest/clientgen": {layerEntry, []string{"command", "enum", "errorx", "httpx", "i18n", "identity", "page"}},
 	"realtime":             {layerEntry, []string{"broadcast", "httpx", "identity", "logging"}},
-	"ssr":                  {layerEntry, []string{"logging"}},
+	"frontend":             {layerEntry, []string{"logging"}},
 	"mcpx":                 {layerEntry, []string{"errorx", "httpx", "identity", "internal/apischema", "logging"}},
 	"natsrpc":              {layerEntry, []string{"errorx", "form", "i18n", "identity", "internal/apischema", "logging"}},
 	"natsrpc/rpccmd":       {layerEntry, []string{"command", "natsrpc"}},
@@ -86,8 +86,8 @@ var rules = map[string]rule{
 	"command":              {layerEntry, []string{"cleanup", "config", "errorx", "logging"}},
 	"command/httpcmd":      {layerEntry, []string{"command", "httpx", "httpx/rest/clientgen"}},
 	// tenon 命令行（go tool tenon）：开发工具，不被框架的其他包引用。
-	"cmd/tenon":                   {layerEntry, []string{"cmd/tenon/internal/dev", "cmd/tenon/internal/project", "cmd/tenon/internal/scaffold"}},
-	"cmd/tenon/internal/dev":      {layerEntry, []string{"cmd/tenon/internal/project"}},
+	"cmd/tenon":                   {layerEntry, []string{"cmd/tenon/internal/dev", "cmd/tenon/internal/project", "cmd/tenon/internal/scaffold", "frontend"}},
+	"cmd/tenon/internal/dev":      {layerEntry, []string{"cmd/tenon/internal/project", "frontend"}},
 	"cmd/tenon/internal/project":  {layerEntry, nil},
 	"cmd/tenon/internal/scaffold": {layerEntry, nil},
 	"command/migratecmd":          {layerEntry, []string{"command", "database", "doctor"}},
@@ -335,7 +335,7 @@ func TestLocalFilesDoesNotLinkS3(t *testing.T) {
 // TestOnlyRealtimeLinksCentrifuge 确保 Centrifuge 只出现在使用 WebSocket 实时频道的应用中：
 // 广播、SSE 和 AI 的集群协作都只依赖 broadcast。
 func TestOnlyRealtimeLinksCentrifuge(t *testing.T) {
-	for _, pkg := range []string{"/broadcast", "/broadcast/natsbroadcast", "/httpx/rest", "/ssr", "/ai", "/ai/chat"} {
+	for _, pkg := range []string{"/broadcast", "/broadcast/natsbroadcast", "/httpx/rest", "/frontend", "/ai", "/ai/chat"} {
 		out, err := exec.Command("go", "list", "-deps", module+pkg).CombinedOutput()
 		if err != nil {
 			t.Fatalf("go list: %v\n%s", err, out)

@@ -3,35 +3,37 @@
 import { relative } from "node:path"
 
 /**
- * 运行时的默认编译目标：Go 的程序是为 GOARCH 构建的（go tool tenon build 设置它），没有时是当前机器的架构。
- * Go 托管 SSR 进程只支持 Linux。前端的 ssr.js 与架构无关。
+ * 可执行文件的默认编译目标：Go 的程序是为 GOARCH 构建的（go tool tenon build 设置它），没有时是当前机器的架构。
+ * Go 托管 SSR 进程只支持 Linux。
  */
 export function defaultTarget(goarch = process.env.GOARCH, arch = process.arch): string {
   const a = goarch || arch
   return `bun-linux-${a === "arm64" ? "arm64" : "x64"}`
 }
 
-/** 规范挂载路径：以 / 开头和结尾，例如 /admin/。 */
-export function normalizeBase(base = "/"): string {
-  const trimmed = base.replace(/^\/+|\/+$/g, "")
-  return trimmed ? `/${trimmed}/` : "/"
-}
-
 /**
- * 生成编译入口的源码：导入服务端入口，把 dist/client 中的每个文件以 base64 内联（files 是路径到内容的映射）。
- * 编译出的 ssr.js 是一个文件，不依赖任何外部文件，由共用的运行时加载（见 tenon-start runtime）。
+ * 生成编译入口的源码，入口写在 entryDir 中：entries 是前端的名称到它的服务端入口（dist/server/server.js 的绝对路径），
+ * srcDir 是这个包的 src 目录，serve 和 headers 按路径导入（入口所在的项目不一定能按包名解析到它们）。
+ * 入口按环境变量 TENON_FRONTEND 动态导入其中一个前端，交给 serve：几个 SSR 前端编进同一个可执行文件，
+ * 每个进程只加载并运行自己的那一个。
  */
-export function entrySource(serverEntry: string, files: Record<string, string>, entryDir: string, base = "/"): string {
-  const map = Object.keys(files)
+export function entrySource(entries: Record<string, string>, entryDir: string, srcDir: string): string {
+  const loaders = Object.keys(entries)
     .sort()
-    .map((f) => `  ${JSON.stringify(f.startsWith("/") ? f : `/${f}`)}: ${JSON.stringify(files[f])},`)
+    .map(
+      (name) => `  ${JSON.stringify(name)}: () => import(${JSON.stringify(relativeImport(entryDir, entries[name]))}),`,
+    )
   return [
-    'import { serve } from "@go-tenon/start/serve"',
-    `import handler from ${JSON.stringify(relativeImport(entryDir, serverEntry))}`,
+    `import { EnvFrontend } from ${JSON.stringify(relativeImport(entryDir, `${srcDir}/headers.ts`))}`,
+    `import { type Handler, serve } from ${JSON.stringify(relativeImport(entryDir, `${srcDir}/serve.ts`))}`,
     "",
-    `serve({ handler, base: ${JSON.stringify(normalizeBase(base))}, files: {`,
-    ...map,
-    "} })",
+    "const frontends: Record<string, () => Promise<{ default: Handler }>> = {",
+    ...loaders,
+    "}",
+    'const name = process.env[EnvFrontend] ?? ""',
+    "const load = frontends[name]",
+    'if (!load) throw new Error("tenon-start: unknown frontend " + JSON.stringify(name) + " in " + EnvFrontend)',
+    "serve({ handler: (await load()).default })",
     "",
   ].join("\n")
 }

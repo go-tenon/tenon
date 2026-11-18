@@ -96,7 +96,7 @@ func TestGenerations(t *testing.T) {
 func TestGoSourceSnapshot(t *testing.T) {
 	dir := t.TempDir()
 	for _, f := range []string{"main.go", "go.mod", "go.sum", "a_test.go", "README.md", "internal/x.go",
-		".git/x.go", "apps/web/node_modules/y.go", "testdata/z.go", "apps/web/dist/w.go", "apps/web/frontend.go"} {
+		".git/x.go", "apps/web/node_modules/y.go", "testdata/z.go", "apps/web/dist/w.go", "apps/dist/v.go", "apps/apps.go"} {
 		path := filepath.Join(dir, f)
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)
@@ -111,7 +111,7 @@ func TestGoSourceSnapshot(t *testing.T) {
 		rel, _ := filepath.Rel(dir, strings.Fields(line)[0])
 		files = append(files, rel)
 	}
-	want := []string{"apps/web/frontend.go", "go.mod", "go.sum", "internal/x.go", "main.go"}
+	want := []string{"apps/apps.go", "go.mod", "go.sum", "internal/x.go", "main.go"}
 	if !slices.Equal(files, want) {
 		t.Errorf("files = %q", files)
 	}

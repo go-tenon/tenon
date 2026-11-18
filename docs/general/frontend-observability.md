@@ -175,7 +175,7 @@ if (observing) {
 tenon({ sourcemaps: "sourcemaps" })
 ```
 
-构建时为浏览器的脚本生成 source map，但脚本中不写 `sourceMappingURL`，构建结束后把 `.map` 从 `dist/client` 移到前端目录下的 `sourcemaps/`：它们不嵌入二进制，不会被公开。即使 `.map` 留在了 `dist` 中，`tenon-start compile` 也不嵌入它们。把 `sourcemaps/` 加入 `.gitignore`。
+构建时为浏览器的脚本生成 source map，但脚本中不写 `sourceMappingURL`，构建结束后把 `.map` 从 `dist/client` 移到前端目录下的 `sourcemaps/`：它们不嵌入二进制，不会被公开。即使 `.map` 留在了 `dist` 中，`tenon build` 也不嵌入它们。把 `sourcemaps/` 加入 `.gitignore`。
 
 版本号是 `tenon()` 插件写入的构建版本，页面中是 `import.meta.env.TENON_BUILD_VERSION`（交给 SDK 的 `version`），构建结束后也写在 `dist/client/version.json` 中。CI 在构建之后上传，`service`、`env`、`version` 要与 SDK 中的完全一致：
 
@@ -222,4 +222,4 @@ source map 没有上传，或者上传时的版本号与页面上报的版本不
 | `shouldReport(error)` | 错误是否需要报告 |
 | `app.reportError(error, where)` | 直接报告一个错误，经过同样的过滤和去重 |
 | `tenon({ sourcemaps })` | `@go-tenon/start/vite`：生成 source map 并移出 `dist` |
-| `tenon-start compile` | 不把 `.map` 文件嵌入 SSR 程序 |
+| `tenon build` | 不把 `.map` 文件嵌入程序 |

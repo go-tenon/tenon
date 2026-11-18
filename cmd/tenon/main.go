@@ -17,7 +17,6 @@ import (
 	"os/signal"
 	"path"
 	"path/filepath"
-	"regexp"
 	"runtime/debug"
 	"slices"
 	"strings"
@@ -28,6 +27,7 @@ import (
 	"github.com/go-tenon/tenon/cmd/tenon/internal/dev"
 	"github.com/go-tenon/tenon/cmd/tenon/internal/project"
 	"github.com/go-tenon/tenon/cmd/tenon/internal/scaffold"
+	"github.com/go-tenon/tenon/frontend"
 )
 
 const framework = "github.com/go-tenon/tenon"
@@ -67,8 +67,12 @@ func initCommand() *cobra.Command {
 			if err := scaffold.Write(dir, opts); err != nil {
 				return err
 			}
-			// 生成客户端要编译应用，嵌入的 dist 要先存在。
-			if err := dev.EnsureDist(&project.Config{Frontends: []project.Frontend{{Name: "web", Dir: filepath.Join(dir, "apps", "web")}}}); err != nil {
+			// 生成客户端要编译应用，嵌入的 apps/dist 中要先有前端的清单。
+			cfg, err := project.Load(dir)
+			if err != nil {
+				return err
+			}
+			if err := dev.WriteManifest(dir, cfg); err != nil {
 				return err
 			}
 			for _, s := range [][]string{{"go", "mod", "tidy"}, {"go", "run", "./cmd/api", "client", "--ts", project.ClientSrc}} {
@@ -80,7 +84,7 @@ func initCommand() *cobra.Command {
 			if _, err := dev.SyncJS(dir); err != nil {
 				return err
 			}
-			_, err := exec.LookPath("bun")
+			_, err = exec.LookPath("bun")
 			hasBun := err == nil
 			if hasBun {
 				if err := run(cmd, dir, "bun", "install"); err != nil {
@@ -144,9 +148,6 @@ func root() *cobra.Command {
 	return root
 }
 
-// moduleLine 是 go.mod 中的 module 行。
-var moduleLine = regexp.MustCompile(`(?m)^module\s+(\S+)`)
-
 // addFrontendCommand 返回 tenon add frontend 命令：在 apps/<name> 中生成一个前端，加入 Bun workspace。
 func addFrontendCommand() *cobra.Command {
 	var base, layout, preset string
@@ -175,10 +176,12 @@ func addFrontendCommand() *cobra.Command {
 			if err != nil || pkg.Name == "" {
 				return fmt.Errorf("run add frontend in the project root: package.json with a name is required (%v)", err)
 			}
-			goMod, err := os.ReadFile("go.mod")
-			m := moduleLine.FindSubmatch(goMod)
-			if err != nil || m == nil {
-				return fmt.Errorf("run add frontend in the project root: go.mod with a module line is required (%v)", err)
+			existing, err := project.Load(".")
+			if err != nil {
+				return err
+			}
+			if i := slices.IndexFunc(existing.Frontends, func(f project.Frontend) bool { return f.Base == base && f.Name != name }); i >= 0 {
+				return fmt.Errorf("%s is already mounted at %s; choose another --base", existing.Frontends[i].Dir, base)
 			}
 			if !slices.Contains(scaffold.Layouts, layout) {
 				return fmt.Errorf("--layout %q is not one of %v", layout, scaffold.Layouts)
@@ -193,7 +196,11 @@ func addFrontendCommand() *cobra.Command {
 			if err := scaffold.AddWorkspace(".", path.Join(project.AppsDir, name)); err != nil {
 				return err
 			}
-			if err := dev.EnsureDist(&project.Config{Frontends: []project.Frontend{{Name: name, Dir: path.Join(project.AppsDir, name)}}}); err != nil {
+			cfg, err := project.Load(".")
+			if err != nil {
+				return err
+			}
+			if err := dev.WriteManifest(".", cfg); err != nil {
 				return err
 			}
 			if _, err := dev.SyncJS("."); err != nil {
@@ -204,15 +211,12 @@ func addFrontendCommand() *cobra.Command {
 					return err
 				}
 			}
-			pattern := base + "*"
-			fmt.Fprintf(cmd.OutOrStdout(), `
-已生成 apps/%[1]s，挂在 %[4]s。在 cmd/api/main.go 中托管它的 SSR 进程：
-
-	%[3]sPages, err := ssr.New(ssr.Options{Runtime: runtime, Bundle: %[3]s.SSR, API: api, DevServer: cfg.DevServers[%[1]q]})
-
-把 %[3]sPages.Handler() 挂在 %[2]q（放在挂载 /* 的那一行之前），并加入 ssr.Run 的参数：
-ssr.Run(ctx, serve, webPages, %[3]sPages)。导入 %[5]q。
-`, name, pattern, f.Package(), base, string(m[1])+"/apps/"+name)
+			render := "页面只在浏览器中渲染"
+			if f.SSR() {
+				render = "页面在服务端渲染"
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "\n已生成 apps/%s，挂在 %s，%s（apps/%s/package.json 的 tenon 字段）。运行 bun run dev 打开它。\n",
+				name, base, render, name)
 			return nil
 		},
 	}
@@ -238,12 +242,13 @@ func devCommand() *cobra.Command {
 	}
 }
 
-// buildCommand 返回 tenon build 命令：把每个前端编译成 SSR 代码，构建共用的运行时，再编译嵌入它们的应用。
+// buildCommand 返回 tenon build 命令：构建每个前端，把它们的静态文件放进 apps/dist；有服务端渲染的前端时，
+// 把它们编进一个 Bun 可执行文件（apps/dist/ssr）；最后编译嵌入 apps/dist 的应用。
 func buildCommand() *cobra.Command {
 	var out, arch string
 	cmd := &cobra.Command{
 		Use:   "build",
-		Short: "把每个前端编译成 SSR 代码，构建共用的运行时，再编译应用（嵌入它们）",
+		Short: "构建每个前端（有服务端渲染的前端时连同 Bun），再编译嵌入它们的应用",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := project.Load(".")
@@ -265,35 +270,55 @@ func buildCommand() *cobra.Command {
 				if err := run(cmd, ".", "bun", "install", "--frozen-lockfile"); err != nil {
 					return err
 				}
-				// 共用的运行时的架构与 Go 程序相同：tenon-start runtime 读取 GOARCH。
-				goarch := arch
-				if goarch == "" {
-					out, err := exec.CommandContext(cmd.Context(), "go", "env", "GOARCH").Output()
-					if err != nil {
-						return fmt.Errorf("go env GOARCH: %w", err)
-					}
-					goarch = strings.TrimSpace(string(out))
+				// apps/dist 每次从头生成：改成只在浏览器中渲染的前端不留下上次的 SSR 可执行文件。
+				if err := os.RemoveAll(filepath.FromSlash(dev.DistDir)); err != nil {
+					return err
 				}
+				var ssr []project.Frontend
 				for _, f := range cfg.Frontends {
-					c := exec.CommandContext(cmd.Context(), "bun", "run", "build")
-					c.Dir = f.Dir
+					if err := run(cmd, f.Dir, "bun", "run", "build"); err != nil {
+						return err
+					}
+					if err := dev.CopyClient(f); err != nil {
+						return err
+					}
+					if f.SSR {
+						ssr = append(ssr, f)
+					}
+				}
+				if len(ssr) > 0 {
+					// 可执行文件的架构与 Go 程序相同：tenon-start compile 读取 GOARCH。
+					goarch := arch
+					if goarch == "" {
+						out, err := exec.CommandContext(cmd.Context(), "go", "env", "GOARCH").Output()
+						if err != nil {
+							return fmt.Errorf("go env GOARCH: %w", err)
+						}
+						goarch = strings.TrimSpace(string(out))
+					}
+					exe, err := filepath.Abs(filepath.Join(filepath.FromSlash(dev.DistDir), frontend.ExecutableFile))
+					if err != nil {
+						return err
+					}
+					args := []string{"x", "tenon-start", "compile", "--out", exe}
+					for _, f := range ssr {
+						entry, err := filepath.Abs(filepath.Join(f.Dir, "dist", "server", "server.js"))
+						if err != nil {
+							return err
+						}
+						args = append(args, f.Name+"="+entry)
+					}
+					// tenon-start 是前端的依赖，在第一个 SSR 前端的目录中运行它。
+					c := exec.CommandContext(cmd.Context(), "bun", args...)
+					c.Dir = ssr[0].Dir
 					c.Env = append(slices.Clone(env), "GOARCH="+goarch)
 					c.Stdout, c.Stderr = cmd.OutOrStdout(), cmd.ErrOrStderr()
 					if err := c.Run(); err != nil {
-						return fmt.Errorf("%s: bun run build: %w", f.Dir, err)
+						return fmt.Errorf("tenon-start compile: %w", err)
 					}
 				}
-				// 几个前端共用一份 Bun 运行时，构建一次。tenon-start 是前端的依赖，在第一个前端的目录中运行它。
-				rt, err := filepath.Abs(filepath.Join(project.AppsDir, dev.SSRRuntime))
-				if err != nil {
+				if err := dev.WriteManifest(".", cfg); err != nil {
 					return err
-				}
-				c := exec.CommandContext(cmd.Context(), "bun", "x", "tenon-start", "runtime", "--out", rt)
-				c.Dir = cfg.Frontends[0].Dir
-				c.Env = append(slices.Clone(env), "GOARCH="+goarch)
-				c.Stdout, c.Stderr = cmd.OutOrStdout(), cmd.ErrOrStderr()
-				if err := c.Run(); err != nil {
-					return fmt.Errorf("tenon-start runtime: %w", err)
 				}
 			}
 			if out == "" {
@@ -334,7 +359,7 @@ func generateCommand() *cobra.Command {
 				return err
 			}
 			defer func() { _ = os.RemoveAll(tmp) }()
-			if err := dev.EnsureDist(cfg); err != nil {
+			if err := dev.WriteManifest(".", cfg); err != nil {
 				return err
 			}
 			// 生成之后通常接着做类型检查，前端依赖的框架前端包要已经就位，包的依赖要已经安装。

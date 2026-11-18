@@ -1,4 +1,4 @@
-// 集成测试（bun 运行，start.test.ts 调用它）：编译 fixture，在 unix socket 上运行，用假的 Go 接口检查约定。
+// 集成测试（bun 运行，start.test.ts 调用它）：构建并编译 fixture，在 unix socket 上运行，用假的 Go 接口检查约定。
 import { join } from "node:path"
 
 const dir = import.meta.dir
@@ -24,29 +24,28 @@ const api = Bun.serve({
     }),
 })
 
-// 与 Go 相同：前端编译成 ssr.js，加上共用的运行时；启动运行时，ssr.js 放在文件描述符 3 上。
+// 与 go tool tenon build 相同：vite build，再把服务端入口编译成 SSR 可执行文件；进程按 TENON_FRONTEND 运行其中的前端。
 const cli = join(dir, "..", "src", "cli.ts")
-const bundle = join(dir, "dist", "ssr.js")
-const runtime = join(dir, "dist", "ssr-runtime.bin")
-for (const args of [
-  ["compile", "--out", bundle],
-  ["runtime", "--out", runtime],
+const exe = join(dir, "dist", "ssr")
+for (const cmd of [
+  ["bunx", "--bun", "vite", "build"],
+  ["bun", cli, "compile", "--out", exe, "fixture=dist/server/server.js"],
 ]) {
-  const r = Bun.spawnSync(["bun", cli, ...args], { cwd: dir, stdout: "inherit", stderr: "inherit" })
-  if (r.exitCode !== 0) fail(args[0])
+  const r = Bun.spawnSync(cmd, { cwd: dir, stdout: "inherit", stderr: "inherit" })
+  if (r.exitCode !== 0) fail(cmd.join(" "))
 }
-const { openSync } = await import("node:fs")
-const ssr = Bun.spawn([runtime], {
-  env: { ...process.env, SSR_SOCKET: ssrName, API_SOCKET: apiName },
-  stdio: ["ignore", "pipe", "inherit", openSync(bundle, "r")],
-})
+const env = { ...process.env, TENON_FRONTEND: "fixture", SSR_SOCKET: ssrName, API_SOCKET: apiName }
+const unknown = Bun.spawnSync([exe], { env: { ...env, TENON_FRONTEND: "nope" }, stdout: "ignore", stderr: "pipe" })
+if (unknown.exitCode === 0 || !unknown.stderr.toString().includes("unknown frontend"))
+  fail("unknown frontend", unknown.stderr.toString())
+const ssr = Bun.spawn([exe], { env, stdio: ["ignore", "pipe", "inherit"] })
 const page = (path: string, headers: Record<string, string> = {}) =>
   fetch(`http://ssr${path}`, { unix: unix(ssrName), headers } as RequestInit)
 
 let ready = false
 for (let i = 0; i < 100 && !ready; i++) {
   try {
-    await page("/assets/none")
+    await page("/")
     ready = true
   } catch {
     await Bun.sleep(50)
@@ -76,17 +75,12 @@ if (
 const inline = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>/g)].map((m) => m[0])
 if (inline.length === 0 || inline.some((s) => !s.includes('nonce="n1"'))) fail("inline scripts without nonce", inline)
 
-const home = await page("/", { "X-CSP-Nonce": "n2" })
-const homeHtml = await home.text()
-if (!homeHtml.includes("预渲染的首页") || homeHtml.includes("__tenon_csp_nonce__") || !homeHtml.includes('nonce="n2"'))
+// 预渲染的首页在 dist/client 中，由 Go 返回：内联脚本带占位 nonce，Go 返回时换成本次请求的。
+const homeHtml = await Bun.file(join(dir, "dist", "client", "index.html")).text()
+if (!homeHtml.includes("预渲染的首页") || !homeHtml.includes('nonce="__tenon_csp_nonce__"'))
   fail("prerendered page", homeHtml.slice(0, 400))
-if (home.headers.get("X-Tenon-Route")) fail("prerendered page reports a route")
 
-const asset = homeHtml.match(/\/assets\/[^"]+\.js/)?.[0]
-const assetRes = asset ? await page(asset) : undefined
-if (assetRes?.status !== 200 || !assetRes.headers.get("Cache-Control")?.includes("immutable")) fail("asset", asset)
-
-// 打印模板：Go 的 ssr.Host.Render 发来数据，返回完整的 HTML，样式内联。
+// 打印模板：Go 的 frontend.Host.Render 发来数据，返回完整的 HTML，样式内联。
 const printed = await fetch("http://ssr/__tenon/print/invoice", {
   unix: unix(ssrName),
   method: "POST",

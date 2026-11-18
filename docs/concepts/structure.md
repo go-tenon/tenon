@@ -126,7 +126,7 @@ blog/
 <a id="the-frontend-directory"></a>
 ### apps 和 packages
 
-`apps` 中每个目录是一个前端，例如用户端 `apps/web`、运营后台 `apps/admin`，目录名是前端的名称。每个前端的 `frontend.go` 把编译出的 SSR 代码（`ssr.js`）嵌入 Go 程序，`apps/runtime.go` 嵌入几个前端共用的 Bun 运行时，由 Go 托管运行，所以部署时仍然只有一个二进制文件，见[服务端渲染](../frontend/ssr.md)。用 [tenon add frontend](../installation/tooling.md#add-frontend) 加入新的前端。
+`apps` 中每个目录是一个前端，例如用户端 `apps/web`、运营后台 `apps/admin`，目录名是前端的名称。`tenon build` 把每个前端构建好，放进 `apps/dist`，`apps/apps.go` 把它嵌入 Go 程序，由 Go 托管运行，所以部署时仍然只有一个二进制文件；只有前端需要服务端渲染时，程序中才带 Bun，见[托管前端与服务端渲染](../frontend/hosting.md)。用 [tenon add frontend](../installation/tooling.md#add-frontend) 加入新的前端。
 
 `packages` 中是多个前端共用的包。`packages/client` 是共用的客户端包，前端用 `@<作用域>/client/<名称>` 导入它，见[前端与 API](../installation/tooling.md#conventions)。
 
@@ -257,7 +257,7 @@ Tenon 的每个包都可以单独使用，按需引入即可。顶层的包分�
 | `httpx` | 中间件、平滑停机、HTTP 就绪检查、会话 cookie | [中间件](../http/middleware.md)、[HTTP 服务的生命周期](../http/lifecycle.md) |
 | `httpx/rest` | 基于 Huma 的路由注册、错误转换与 OpenAPI | [路由](../http/routing.md) |
 | `httpx/rest/clientgen` | 从路由生成 TypeScript 与 Go 客户端 | [客户端代码](../http/clients.md) |
-| `ssr` | 托管前端编译出的 SSR 程序，页面请求经 unix socket 交给它渲染 | [服务端渲染](../frontend/ssr.md) |
+| `frontend` | 托管前端：按挂载路径返回页面和静态文件，服务端渲染的页面经 unix socket 交给 Bun 渲染 | [托管前端与服务端渲染](../frontend/hosting.md) |
 | `realtime` | 嵌入 Centrifuge 的 WebSocket 频道 | [实时频道](../libraries/realtime.md) |
 | `mcpx` | 把动作作为 MCP 工具提供给 AI 客户端 | [MCP 服务](../ai/mcp.md) |
 | `natsrpc` | 把动作作为 RPC 端点，其他服务经由 NATS 同步调用 | [提供和调用端点](../rpc/endpoints.md) |

@@ -1,6 +1,7 @@
 package scaffold_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -18,7 +19,7 @@ func TestWrite(t *testing.T) {
 	}
 	for _, f := range []string{".gitignore", "go.mod", "package.json", "config/app.yaml", "cmd/api/main.go", "internal/todo/todo.go",
 		"packages/client/package.json", "apps/web/package.json", "apps/web/vite.config.ts", "apps/web/tsconfig.json",
-		"apps/web/frontend.go", "apps/web/src/start.ts", "apps/web/src/server.ts", "apps/web/src/router.tsx", "apps/web/src/theme.ts",
+		"apps/apps.go", "apps/web/src/start.ts", "apps/web/src/server.ts", "apps/web/src/router.tsx", "apps/web/src/theme.ts",
 		"apps/web/src/api.ts", "apps/web/src/routes/__root.tsx", "apps/web/src/routes/index.tsx"} {
 		if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
 			t.Errorf("%s: %v", f, err)
@@ -28,9 +29,8 @@ func TestWrite(t *testing.T) {
 		"package.json":                   `"name": "todo"`,
 		"packages/client/package.json":   `"name": "@todo/client"`,
 		"./package.json":                 `".tenon/js/ui"`,
-		"apps/web/package.json":          `"build": "tenon-start compile --out ssr.js --base /"`,
+		"apps/web/package.json":          `"tenon": { "base": "/", "ssr": true },`,
 		"apps/web/vite.config.ts":        `plugins: [tenon({ prerender: ["/"] })]`,
-		"apps/web/frontend.go":           "//go:embed ssr.js\nvar SSR []byte\n",
 		"apps/web/src/theme.ts":          `preset: "spacious"`,
 		"apps/web/src/start.ts":          "requestMiddleware: [requestMiddleware] }",
 		"apps/web/src/router.tsx":        `id: "web"`,
@@ -38,8 +38,8 @@ func TestWrite(t *testing.T) {
 		"apps/web/src/routes/index.tsx":  `from "@todo/client/api"`, // 示例页面覆盖前端模板的首页
 		"apps/web/src/api.ts":            "fetch: apiFetch",
 		"go.mod":                         "\nignore node_modules\n",
-		".gitignore":                     "/apps/ssr-runtime.bin\n/apps/*/ssr.js",
-		"apps/runtime.go":                "//go:embed ssr-runtime.bin\nvar Runtime []byte\n",
+		".gitignore":                     "\ndist/\n",
+		"apps/apps.go":                   "//go:embed all:dist\nvar Dist embed.FS\n",
 	} {
 		if b, _ := os.ReadFile(filepath.Join(dir, f)); !strings.Contains(string(b), want) {
 			t.Errorf("%s missing %q:\n%s", f, want, b)
@@ -56,7 +56,8 @@ func TestWrite(t *testing.T) {
 		}
 	}
 	main, _ := os.ReadFile(filepath.Join(dir, "cmd/api/main.go"))
-	for _, want := range []string{`"example.com/todo/internal/todo"`, `"example.com/todo/apps/web"`, `cfg.DevServers["web"]`, "web.SSR", "ssr.Run("} {
+	for _, want := range []string{`"example.com/todo/internal/todo"`, `"example.com/todo/apps"`,
+		"frontend.New(apps.Dist, frontend.Options{API: api, DevServers: cfg.DevServers})", "pages.Run("} {
 		if !strings.Contains(string(main), want) {
 			t.Errorf("main.go missing %q:\n%s", want, main)
 		}
@@ -96,7 +97,7 @@ func TestWriteFrontend(t *testing.T) {
 	}{
 		{"rail", map[string]string{
 			"src/theme.ts":              `preset: "comfortable", primary: "blue-gray" })`,
-			"src/start.ts":              "defaultSsr: false",
+			"vite.config.ts":            "plugins: [tenon()],",
 			"src/router.tsx":            "permissions: async () => (await me()).permissions ?? []",
 			"src/routes/_app.tsx":       `<RailLayout title="后台" user=`,
 			"src/routes/_app/index.tsx": `createFileRoute("/_app/")`,
@@ -122,9 +123,8 @@ func TestWriteFrontend(t *testing.T) {
 		}
 		dir := filepath.Join(root, "apps", "admin-console")
 		files := map[string]string{
-			"package.json":   `"build": "tenon-start compile --out ssr.js --base /admin/"`,
-			"vite.config.ts": `base: "/admin/"`,
-			"frontend.go":    "package adminconsole\n",
+			"package.json":   `"build": "bunx --bun vite build"`,
+			"src/start.ts":   "createStart(() => ({ requestMiddleware: [requestMiddleware] }))",
 			"src/router.tsx": `id: "admin-console"`,
 		}
 		for k, v := range c.files {
@@ -134,6 +134,11 @@ func TestWriteFrontend(t *testing.T) {
 			if b, _ := os.ReadFile(filepath.Join(dir, name)); !strings.Contains(string(b), want) {
 				t.Errorf("%s %s missing %q:\n%s", c.style, name, want, b)
 			}
+		}
+		// 挂载路径和是否服务端渲染写在 package.json 的 tenon 字段中：只有 site 布局在服务端渲染。
+		tenon := fmt.Sprintf(`"tenon": { "base": "/admin/", "ssr": %t },`, c.style == "site")
+		if b, _ := os.ReadFile(filepath.Join(dir, "package.json")); !strings.Contains(string(b), tenon) {
+			t.Errorf("%s package.json missing %q:\n%s", c.style, tenon, b)
 		}
 		for _, name := range c.missing {
 			if _, err := os.Stat(filepath.Join(dir, name)); err == nil {

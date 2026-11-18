@@ -49,7 +49,7 @@
 | 层 | 选择 |
 | --- | --- |
 | 语言 | TypeScript，开启 `strict` |
-| 框架 | React、[TanStack Start](start.md)，编译成 SSR 程序嵌入 Go 程序，见[服务端渲染](ssr.md) |
+| 框架 | React、[TanStack Start](start.md)，构建后嵌入 Go 程序，见[托管前端与服务端渲染](hosting.md) |
 | 路由 | TanStack Router，文件路由 |
 | 服务端数据 | TanStack Query + `tenon generate` 生成的客户端，见[客户端代码](../http/clients.md) |
 | 框架的前端包 | `@go-tenon/client`、`@go-tenon/start`、`@go-tenon/ui` |
@@ -104,7 +104,7 @@ helpdesk/
 └── docs/adr/              架构决策记录
 ```
 
-- 每个前端是 `apps/` 下的一个目录，有自己的 `package.json`、`vite.config.ts`、`AGENTS.md`，以及把编译出的 `ssr.js` 嵌入程序的 `frontend.go`。几个前端共用的运行时由 `apps/runtime.go` 嵌入。
+- 每个前端是 `apps/` 下的一个目录，有自己的 `package.json`（其中的 `tenon` 字段声明挂载路径和是否在服务端渲染）、`vite.config.ts` 和 `AGENTS.md`。全部前端的构建产物在 `apps/dist` 中，由 `apps/apps.go` 嵌入程序。
 - `packages/client` 由工具生成，从第一个前端起就有。`packages/ui` 在第二个前端用到同一个业务组件时，才从前端中抽出来。
 - 生成的客户端按 API 分目录：每个 API（`rest.New` 的一个 `BasePath`）生成到 `packages/client/src/<名称>`，名称默认是 `BasePath` 的最后一段，前端用 `@<项目名>/client/<名称>` 导入，例如 `@helpdesk/client/admin`。一个前端只导入自己调用的 API。见[开发工具](../installation/tooling.md#conventions)。
 - 后端的目录见[目录结构](../concepts/structure.md)。
@@ -131,7 +131,6 @@ helpdesk/
 ```text
 apps/admin/
 ├── AGENTS.md
-├── frontend.go            go:embed ssr.js
 ├── package.json
 ├── vite.config.ts
 ├── tsconfig.json

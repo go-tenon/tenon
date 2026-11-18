@@ -1,10 +1,10 @@
 // Package pdf 把 HTML 页面生成为 PDF。
 //
 // Document 是一个完整的 HTML 页面和它引用的文件，纸张、方向、边距和页码都用 CSS @page 设置。
-// 页面通常由前端的打印模板渲染（ssr.Host.Render），与页面共用组件和样式。
+// 页面通常由前端的打印模板渲染（frontend.Host.Render），与页面共用组件和样式。
 // Renderer 由驱动实现：pdf/gotenberg 调用 Gotenberg 服务中的 Chromium，pdf/pdftest 用于测试。
 //
-//	html, err := pages.Render(ctx, "invoice", inv)
+//	html, err := pages.Render(ctx, "web", "invoice", inv)
 //	data, err := renderer.Render(ctx, pdf.Document{HTML: html})
 package pdf
 

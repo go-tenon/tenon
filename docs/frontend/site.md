@@ -1,6 +1,6 @@
 # 官网与文档站
 
-官网、落地页、内容站和文档站用 `spacious` 样式预设：正文 16px，大标题随屏幕宽度缩放，行距宽松。页面在服务端渲染，搜索引擎可以收录；不随请求变化的页面在构建时预渲染。`tenon add frontend <名称> --layout site` 生成的前端已经这样设置好。
+官网、落地页、内容站和文档站用 `spacious` 样式预设：正文 16px，大标题随屏幕宽度缩放，行距宽松。页面在服务端渲染（`package.json` 中 `"ssr": true`），搜索引擎可以收录；不随请求变化的页面在构建时预渲染。`tenon add frontend <名称> --layout site` 生成的前端已经这样设置好。
 
 阅读前需要了解：[搭建前端应用](app.md)；[TanStack Start 的接入](start.md)。
 
@@ -15,11 +15,13 @@
 
 | 页面 | 渲染 | 设置 |
 | --- | --- | --- |
-| 首页、产品介绍、文档等内容在代码仓库中的页面 | 构建时预渲染，Bun 直接返回 HTML | `vite.config.ts` 中 `tenon({ prerender: ["/", "/docs"] })`，见[预渲染](start.md#prerendering) |
+| 首页、产品介绍、文档等内容在代码仓库中的页面 | 构建时预渲染，Go 直接返回 HTML | `vite.config.ts` 中 `tenon({ prerender: ["/", "/docs"] })`，见[预渲染](start.md#prerendering) |
 | 文章、商品等内容在数据库中的页面 | 请求时在服务端渲染，调用同一组 Go 接口 | 默认 |
 | 用户中心等需要登录的页面 | 只在浏览器中渲染 | 路由上设置 `ssr: false` |
 
 服务端渲染时调用接口的方式与浏览器中相同，见[调用接口](start.md#calling-the-api)。读取当前用户、检查权限只在浏览器中进行，所以需要登录的页面不在服务端渲染。
+
+不需要搜索引擎收录的站点可以整个只在浏览器中渲染，程序中不带 Bun，见[切换渲染方式](hosting.md#switching)。
 
 <a id="site"></a>
 ## 官网的布局

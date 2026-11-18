@@ -28,7 +28,7 @@ flowchart LR
   end
   subgraph Entries[入口]
     REST[HTTP 接口<br/>httpx/rest]
-    PAGES[网页<br/>ssr + 前端]
+    PAGES[网页<br/>frontend + 前端]
     RT[实时频道<br/>realtime]
     MCP[AI 工具<br/>mcpx]
     RPC[RPC<br/>natsrpc]
@@ -147,7 +147,7 @@ flowchart TB
 ```mermaid
 flowchart TB
   F["功能<br/>apitoken · login · oauthserver · authz · notification · push · activity · feature<br/>settings · operation · privacy · webhook · search · vector · sheet/imports · sheet/exports · ai"]
-  E["入口<br/>httpx · httpx/rest · ssr · realtime · mcpx · natsrpc · command"]
+  E["入口<br/>httpx · httpx/rest · frontend · realtime · mcpx · natsrpc · command"]
   I["基础设施<br/>database · natsx · queue · schedule · cachex · lock · ratelimit · broadcast<br/>filesystem · imgproxy · mail · sms · pdf · outbound · captcha · sheet · document"]
   BASE["基础<br/>errorx · identity · config · cleanup · logging · telemetry · health · doctor<br/>i18n · enum · page · form · hashing · crypt · acquire"]
   F --> E --> I --> BASE
@@ -157,7 +157,7 @@ flowchart TB
 | --- | --- | --- |
 | 基础 | 不碰外部资源的通用部分，可以在任何地方使用 | `errorx` 带错误码的业务错误；`identity` 已认证的主体；`config` 读取并校验配置；`logging` 日志；`telemetry` 推送日志、指标、链路 |
 | 基础设施 | 与外部资源打交道 | `database` 连接池与事务；`queue` 任务队列；`schedule` 定时任务；`lock` 原子锁；`filesystem` 文件；`mail`、`sms` 发送；`pdf` 生成 PDF |
-| 入口 | 请求进入应用的方式 | `httpx/rest` 基于 Huma 的接口；`ssr` 托管网页的渲染进程；`realtime` WebSocket 频道；`mcpx` AI 工具；`natsrpc` RPC；`command` 命令行 |
+| 入口 | 请求进入应用的方式 | `httpx/rest` 基于 Huma 的接口；`frontend` 托管前端和服务端渲染的进程；`realtime` WebSocket 频道；`mcpx` AI 工具；`natsrpc` RPC；`command` 命令行 |
 | 功能 | 自带数据表的应用功能，由应用把路由和命令接进来 | 登录与注册、API 令牌、角色与权限、站内通知、操作日志、功能开关、设置、后台操作、注销与导出个人数据、Webhook、全文搜索、AI 助手 |
 
 功能包的数据表随包内嵌迁移，`migrate publish` 把它们复制到应用的 `migrations/` 中，与应用自己的迁移一起执行。保存个人数据的功能包同时提供删除和导出，注销账号、导出个人数据时一并处理。
@@ -235,7 +235,7 @@ flowchart LR
 | 包 | 作用 |
 | --- | --- |
 | `@go-tenon/client` | 客户端运行时：会话、错误分类、校验、分页、查询缓存随身份清空、上传、后台操作的进度、AI 对话。不依赖任何包和 DOM |
-| `@go-tenon/start` | 把 TanStack Start 接到 Go：编译、共用的运行时、请求头转交、CSP nonce |
+| `@go-tenon/start` | 把 TanStack Start 接到 Go：Vite 插件（挂载路径、服务端渲染或页面外壳）、编译 SSR 程序、请求头转交、CSP nonce |
 | `@go-tenon/ui` | 应用骨架和界面。`shell` 是不依赖 Mantine 的逻辑（菜单、权限、列表、资源模型、多标签、表单），其余是 Mantine 写的布局和组件 |
 
 `@go-tenon/ui` 的布局、登录页和样式预设按界面的样子命名，与使用者是谁无关；权限、租户、身份是应用接进来的逻辑：
@@ -250,7 +250,12 @@ flowchart LR
 
 按 Go 中 `rest.Resource` 的声明，`ResourcePage` 渲染整个列表、筛选、新建、修改、删除和操作；队列、定时任务、导入导出、通知、后台操作、操作记录都有现成的组件。
 
-网页由 Go 托管：前端编译成 SSR 程序，与一份共用的 Bun 运行时一起嵌入 Go 程序。Go 是唯一的 HTTP 入口，页面请求经 unix socket 交给 Bun 渲染；渲染需要数据时，Bun 经另一个 unix socket 调用 Go 的接口，带上原请求的 cookie。Bun 不连数据库，也不持有密钥：
+网页由 Go 托管：前端构建后嵌入 Go 程序，Go 是唯一的 HTTP 入口，静态文件、预渲染的页面由 Go 直接返回。每个前端在 `package.json` 中声明是否在服务端渲染（`"tenon": { "base": "/admin/", "ssr": false }`）：
+
+- 只在浏览器中渲染的前端，Go 返回页面外壳，页面由浏览器中的路由渲染；
+- 服务端渲染的前端，页面请求经 unix socket 交给 Bun 渲染。全部 SSR 前端编进同一个 Bun 可执行文件，只在有 SSR 前端时才嵌入，没有时程序中不带 Bun。
+
+渲染需要数据时，Bun 经另一个 unix socket 调用 Go 的接口，带上原请求的 cookie。Bun 不连数据库，也不持有密钥：
 
 ```mermaid
 sequenceDiagram
@@ -267,7 +272,7 @@ sequenceDiagram
 ```
 
 - 官网、文档这类公开页面在服务端渲染，不随请求变化的页面在构建时预渲染。
-- 后台类的应用默认只在浏览器中渲染。
+- 后台类的应用默认只在浏览器中渲染，程序中不需要 Bun。
 - PDF 的打印模板也写成 React 组件，由 Bun 渲染成 HTML，再交给 Gotenberg 转成 PDF。
 
 ## 身份与安全
@@ -306,7 +311,7 @@ flowchart LR
 | `tenon add frontend <名称>` | 再加一个前端：`--layout rail\|frame\|site` 选择布局，`--preset compact\|comfortable\|spacious` 选择样式预设 |
 | `tenon dev` | 运行应用和各前端的开发服务器；修改 Go 代码后重新编译、重启并重新生成客户端 |
 | `tenon generate` | 编译应用，生成 TypeScript 和 Go 客户端 |
-| `tenon build` | 构建前端和共用的运行时，编译出一个嵌入了它们的二进制文件 |
+| `tenon build` | 构建前端（有服务端渲染的前端时连同 Bun 编译成 SSR 程序），编译出一个嵌入了它们的二进制文件 |
 
 ## 快速开始
 

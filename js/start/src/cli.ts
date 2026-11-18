@@ -1,61 +1,41 @@
 #!/usr/bin/env bun
-// tenon-start：把前端编译成 Go 的 ssr 包托管的 SSR 服务。
+// tenon-start：把服务端渲染的前端编译成 Go 的 frontend 包托管的 SSR 可执行文件。go tool tenon build 在每个前端
+// vite build 之后运行它，参数是每个 SSR 前端的名称和服务端入口：
 //
-//	bunx tenon-start compile --out ssr.js --base /admin/     # 每个前端：服务端入口和全部静态文件，一个 JS 文件
-//	bunx tenon-start runtime --out ssr-runtime.bin           # 整个程序一份：Bun 和加载器，几个前端共用
+//	bunx tenon-start compile --out apps/dist/ssr web=apps/web/dist/server/server.js
 
 import { mkdirSync, rmSync } from "node:fs"
 import { join, resolve } from "node:path"
 import { parseArgs } from "node:util"
-import { Glob } from "bun"
 import { defaultTarget, entrySource } from "./compile"
 
 const usage = `usage:
-  tenon-start compile --out <ssr.js> [--base /admin/] [--skip-build]
-  tenon-start runtime --out <file> [--target bun-linux-x64|bun-linux-arm64]`
+  tenon-start compile --out <file> [--target bun-linux-x64|bun-linux-arm64] <name>=<dist/server/server.js>...`
 
 async function run(cmd: string[]): Promise<void> {
   const p = Bun.spawn(cmd, { stdout: "inherit", stderr: "inherit" })
   if ((await p.exited) !== 0) throw new Error(`${cmd.join(" ")} failed`)
 }
 
+/** 把几个前端的服务端入口和 Bun 编译成一个可执行文件，进程按 TENON_FRONTEND 运行其中一个。 */
 async function compile(args: string[]): Promise<void> {
-  const { values } = parseArgs({
+  const { values, positionals } = parseArgs({
     args,
-    options: { out: { type: "string" }, base: { type: "string" }, "skip-build": { type: "boolean" } },
+    options: { out: { type: "string" }, target: { type: "string" } },
+    allowPositionals: true,
   })
-  if (!values.out) throw new Error(usage)
-  const root = process.cwd()
-  if (!values["skip-build"]) await run(["bunx", "--bun", "vite", "build"])
-  const clientDir = join(root, "dist", "client")
-  const files: Record<string, string> = {}
-  for await (const f of new Glob("**/*").scan({ cwd: clientDir, onlyFiles: true })) {
-    if (f.endsWith(".map")) continue // source map 等于源码，不嵌入
-    files[f] = Buffer.from(await Bun.file(join(clientDir, f)).arrayBuffer()).toString("base64")
+  if (!values.out || positionals.length === 0) throw new Error(usage)
+  const entries: Record<string, string> = {}
+  for (const p of positionals) {
+    const [name, entry] = p.split("=", 2)
+    if (!name || !entry) throw new Error(usage)
+    entries[name] = resolve(entry)
   }
-  const entryDir = join(root, "node_modules", ".tenon-start")
+  const entryDir = join(process.cwd(), "node_modules", ".tenon-start")
   rmSync(entryDir, { recursive: true, force: true })
   mkdirSync(entryDir, { recursive: true })
   const entry = join(entryDir, "entry.ts")
-  await Bun.write(entry, entrySource(join(root, "dist", "server", "server.js"), files, entryDir, values.base))
-  // 打包成一个文件（动态导入也内联）：共用的运行时从内存中加载它。
-  await run([
-    "bun",
-    "build",
-    "--target=bun",
-    "--format=esm",
-    "--minify",
-    "--sourcemap=none",
-    entry,
-    "--outfile",
-    resolve(values.out),
-  ])
-}
-
-async function runtime(args: string[]): Promise<void> {
-  const { values } = parseArgs({ args, options: { out: { type: "string" }, target: { type: "string" } } })
-  if (!values.out) throw new Error(usage)
-  const loader = join(import.meta.dir, "runtime.ts")
+  await Bun.write(entry, entrySource(entries, entryDir, import.meta.dir))
   await run([
     "bun",
     "build",
@@ -63,13 +43,13 @@ async function runtime(args: string[]): Promise<void> {
     "--minify",
     "--sourcemap=none",
     `--target=${values.target ?? defaultTarget()}`,
-    loader,
+    entry,
     "--outfile",
     resolve(values.out),
   ])
 }
 
-const commands: Record<string, (args: string[]) => Promise<void>> = { compile, runtime }
+const commands: Record<string, (args: string[]) => Promise<void>> = { compile }
 
 if (import.meta.main) {
   const [command, ...rest] = Bun.argv.slice(2)
