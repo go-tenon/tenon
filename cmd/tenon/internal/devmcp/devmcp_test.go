@@ -29,9 +29,7 @@ func connect(t *testing.T) (string, *mcp.ClientSession) {
 				Main: "./cmd/blog", URL: "http://localhost:8080",
 				Frontends: []project.Frontend{{Name: "admin", Dir: "apps/admin", Base: "/admin/"}},
 			},
-			Tenon:   "v0.0.2",
-			Modules: map[string]string{"github.com/danielgtaylor/huma/v2": "v2.40.0"},
-			NPM:     map[string]string{"@mantine/core": "9.8.1"},
+			Tenon: "v0.0.2",
 		}, nil
 	}})
 	if err != nil {
@@ -132,7 +130,7 @@ func TestReadDoc(t *testing.T) {
 	}
 }
 
-// tenon_app_info 列出项目的版本、前端、依赖和技能。
+// tenon_app_info 列出项目的版本、前端和技能。
 func TestAppInfo(t *testing.T) {
 	t.Parallel()
 	_, s := connect(t)
@@ -141,11 +139,10 @@ func TestAppInfo(t *testing.T) {
 		t.Fatal(err)
 	}
 	var info struct {
-		Framework    string `json:"framework"`
-		Main         string `json:"main"`
-		Frontends    []struct{ Dir, Base string }
-		Dependencies []agents.Dependency
-		Skills       []string
+		Framework string `json:"framework"`
+		Main      string `json:"main"`
+		Frontends []struct{ Dir, Base string }
+		Skills    []string
 	}
 	b, _ := json.Marshal(res.StructuredContent)
 	if err := json.Unmarshal(b, &info); err != nil {
@@ -153,13 +150,6 @@ func TestAppInfo(t *testing.T) {
 	}
 	if info.Framework != "v0.0.2" || info.Main != "./cmd/blog" || len(info.Frontends) != 1 || info.Frontends[0].Base != "/admin/" {
 		t.Errorf("info %+v", info)
-	}
-	deps := ""
-	for _, d := range info.Dependencies {
-		deps += d.Name + "@" + d.Version + " "
-	}
-	if !strings.Contains(deps, "Huma@v2.40.0") || !strings.Contains(deps, "Mantine@9.8.1") {
-		t.Errorf("dependencies: %s", deps)
 	}
 	if !strings.Contains(strings.Join(info.Skills, " "), "tenon-frontend") {
 		t.Errorf("skills: %v", info.Skills)

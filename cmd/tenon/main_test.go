@@ -11,11 +11,10 @@ import (
 	"testing"
 )
 
-// fake 记录参数；go list -m 输出框架的目录；go list -e -deps（tenon agents）输出框架和 Huma 两个模块；go build -mod=mod -o BIN（generate 编译应用）写出一个记录参数的伪造应用；
+// fake 记录参数；go list -m 输出框架的目录；go build -mod=mod -o BIN（generate 编译应用）写出一个记录参数的伪造应用；
 // bun run build（vite build）写出浏览器的构建：页面外壳、脚本和 source map。
 const fake = `#!/bin/sh
 if [ "$1 $2" = "list -m" ]; then echo "$TENON_FRAMEWORK"; exit 0; fi
-if [ "$1 $2 $3" = "list -e -deps" ]; then echo "github.com/go-tenon/tenon v0.0.1"; echo "github.com/danielgtaylor/huma/v2 v2.40.0"; exit 0; fi
 echo "$(basename "$0") $* @$(basename "$PWD")${GOOS:+ GOOS=$GOOS}${GOARCH:+ GOARCH=$GOARCH}" >> "$TENON_LOG"
 if [ "$1 $2" = "env GOARCH" ]; then echo arm64; exit 0; fi
 if [ "$1 $2" = "run build" ]; then
@@ -215,7 +214,7 @@ func TestAddFrontend(t *testing.T) {
 		".tenon/js/client/package.json":          `"name": "@go-tenon/client"`,
 		".tenon/docs/README.md":                  "# Tenon 文档",
 		"AGENTS.md":                              "- `apps/admin`：挂在 `/admin/`，只在浏览器中渲染。",
-		".mcp.json":                              `"mantine"`,
+		".mcp.json":                              `"tenon"`,
 		".claude/skills/tenon-frontend/SKILL.md": "name: tenon-frontend",
 		".agents/skills/tenon-action/SKILL.md":   "name: tenon-action",
 	} {

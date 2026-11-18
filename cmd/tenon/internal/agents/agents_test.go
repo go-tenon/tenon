@@ -12,7 +12,7 @@ import (
 	"github.com/go-tenon/tenon/cmd/tenon/internal/project"
 )
 
-// sample 返回一个有 SSR 前端和 Electron 客户端、用到 Huma 和 NATS 的项目。
+// sample 返回一个有 SSR 前端和 Electron 客户端的项目。
 func sample() *agents.Project {
 	return &agents.Project{
 		Config: &project.Config{
@@ -21,15 +21,10 @@ func sample() *agents.Project {
 			Clients:   []project.Client{{Name: "desk", Dir: "clients/desk", Kind: "electron", Frontend: "admin"}},
 		},
 		Tenon: "v0.0.2",
-		Modules: map[string]string{
-			"github.com/danielgtaylor/huma/v2": "v2.40.0",
-			"github.com/nats-io/nats.go":       "v1.55.0",
-		},
-		NPM: map[string]string{"@mantine/core": "9.8.1", "electron": "45.2.3"},
 	}
 }
 
-// Block 写出框架的版本、文档的位置、前端与客户端，只列出项目用到的依赖。
+// Block 写出框架的版本、文档的位置、前端与客户端、技能和 tenon 的 MCP 服务；依赖指向 README 中的官方接入方法。
 func TestBlock(t *testing.T) {
 	t.Parallel()
 	skills, err := agents.Skills(sample())
@@ -45,29 +40,25 @@ func TestBlock(t *testing.T) {
 		"- `apps/web`：挂在 `/`，在服务端渲染。",
 		"- `apps/admin`：挂在 `/admin/`，只在浏览器中渲染。",
 		"- `clients/desk`：electron 客户端，显示 `apps/admin`。",
-		"| Huma | v2.40.0 | https://huma.rocks |",
-		"| NATS | v1.55.0 | https://docs.nats.io/llms.txt |",
-		"| Mantine | 9.8.1 | https://mantine.dev/llms.txt；MCP 服务 `mantine` |",
-		"| Electron | 45.2.3 |",
-		"| Bun（JavaScript 运行环境） | — |",
-		"- `tenon`：", "- `gopls`：", "- `mantine`：", "`tenon_search_docs`",
+		"`README.md` 的“AI 编程助手”一节",
+		"- `tenon`：", "`tenon_search_docs`",
 		"## 技能", "`.claude/skills`、`.agents/skills`", "- `tenon-action`：在 Tenon 应用中新增或修改一个业务用例（业务动作）。",
 	} {
 		if !strings.Contains(block, want) {
 			t.Errorf("block missing %q:\n%s", want, block)
 		}
 	}
-	for _, absent := range []string{"Qdrant", "TanStack Query", "Bun（ORM）"} {
+	for _, absent := range []string{"`gopls`：", "`mantine`："} {
 		if strings.Contains(block, absent) {
-			t.Errorf("block lists %s, which the project does not use", absent)
+			t.Errorf("block configures %s, which projects add from the official instructions", absent)
 		}
 	}
 
-	// 没有前端的项目：没有前端一节，也没有 Mantine 的 MCP 服务。
+	// 没有前端、没有安装技能的项目：没有这两节。
 	p := sample()
-	p.Config.Frontends, p.Config.Clients, p.NPM = nil, nil, map[string]string{}
+	p.Config.Frontends, p.Config.Clients = nil, nil
 	block = agents.Block(p, nil)
-	if strings.Contains(block, "## 前端与客户端") || strings.Contains(block, "mantine") || strings.Contains(block, "## 技能") {
+	if strings.Contains(block, "## 前端与客户端") || strings.Contains(block, "## 技能") {
 		t.Errorf("project without frontends:\n%s", block)
 	}
 }
@@ -92,7 +83,7 @@ func TestReplace(t *testing.T) {
 	}
 }
 
-// WriteMCP 改写 tenon 维护的服务，保留项目自己的服务和设置；再写一次结果不变。
+// WriteMCP 只改写 tenon 一项，保留项目自己的服务（例如按官方方法加上的 gopls、mantine）和设置；再写一次结果不变。
 func TestWriteMCP(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -113,9 +104,9 @@ func TestWriteMCP(t *testing.T) {
 		}
 		return string(b)
 	}
-	write(".mcp.json", `{"mcpServers": {"db": {"command": "psql-mcp"}, "mantine": {"command": "old"}}}`)
-	write(".codex/config.toml", "model = \"gpt\"\n\n[mcp_servers.db]\ncommand = \"psql-mcp\"\n")
-	servers := agents.Servers(sample())
+	write(".mcp.json", `{"mcpServers": {"gopls": {"command": "gopls", "args": ["mcp"]}, "tenon": {"command": "old"}}}`)
+	write(".codex/config.toml", "model = \"gpt\"\n\n[mcp_servers.gopls]\ncommand = \"gopls\"\n")
+	servers := agents.Servers()
 
 	written, err := agents.WriteMCP(dir, project.Targets, servers)
 	if err != nil {
@@ -133,15 +124,13 @@ func TestWriteMCP(t *testing.T) {
 	if err := json.Unmarshal([]byte(read(".mcp.json")), &claude); err != nil {
 		t.Fatal(err)
 	}
-	if s := claude.MCPServers; s["db"].Command != "psql-mcp" || s["gopls"].Command != "gopls" ||
-		s["tenon"].Command != "go" || strings.Join(s["tenon"].Args, " ") != "tool tenon mcp" ||
-		s["mantine"].Command != "bunx" || strings.Join(s["mantine"].Args, " ") != "@mantine/mcp-server" {
+	if s := claude.MCPServers; s["gopls"].Command != "gopls" || len(s) != 2 ||
+		s["tenon"].Command != "go" || strings.Join(s["tenon"].Args, " ") != "tool tenon mcp" {
 		t.Errorf(".mcp.json %+v", s)
 	}
 	codex := read(".codex/config.toml")
-	for _, want := range []string{"model = \"gpt\"\n", "[mcp_servers.db]\n", "[mcp_servers.gopls]\ncommand = \"gopls\"\nargs = [\"mcp\"]\n",
-		"[mcp_servers.tenon]\ncommand = \"go\"\nargs = [\"tool\", \"tenon\", \"mcp\"]\n",
-		"[mcp_servers.mantine]\ncommand = \"bunx\"\nargs = [\"@mantine/mcp-server\"]\n"} {
+	for _, want := range []string{"model = \"gpt\"\n", "[mcp_servers.gopls]\ncommand = \"gopls\"\n",
+		"[mcp_servers.tenon]\ncommand = \"go\"\nargs = [\"tool\", \"tenon\", \"mcp\"]\n"} {
 		if !strings.Contains(codex, want) {
 			t.Errorf(".codex/config.toml missing %q:\n%s", want, codex)
 		}
@@ -150,7 +139,7 @@ func TestWriteMCP(t *testing.T) {
 		var doc map[string]map[string]struct {
 			Command string `json:"command"`
 		}
-		if err := json.Unmarshal([]byte(read(file)), &doc); err != nil || doc[key]["tenon"].Command != "go" || doc[key]["gopls"].Command != "gopls" {
+		if err := json.Unmarshal([]byte(read(file)), &doc); err != nil || doc[key]["tenon"].Command != "go" || len(doc[key]) != 1 {
 			t.Errorf("%s: %v\n%s", file, err, read(file))
 		}
 	}
@@ -161,14 +150,6 @@ func TestWriteMCP(t *testing.T) {
 	}
 	if after := read(".mcp.json") + read(".codex/config.toml"); after != before {
 		t.Errorf("second write changed the files:\n%s", after)
-	}
-
-	// 去掉前端以后，mantine 从配置中删除，项目自己的服务保留。
-	if _, err := agents.WriteMCP(dir, []string{"claude", "codex"}, servers[:2]); err != nil {
-		t.Fatal(err)
-	}
-	if got := read(".mcp.json") + read(".codex/config.toml"); strings.Contains(got, "mantine") || !strings.Contains(got, "psql-mcp") {
-		t.Errorf("after removing mantine:\n%s", got)
 	}
 }
 
@@ -290,7 +271,7 @@ func TestWriteSkills(t *testing.T) {
 	}
 }
 
-// 技能、AGENTS.md 的模板和 tenon 的一段中写的 .tenon/docs/<页面>#<锚点> 都存在于框架的 docs 中，
+// 技能、AGENTS.md 和 README.md 的模板、tenon 的一段中写的 .tenon/docs/<页面>#<锚点> 都存在于框架的 docs 中，
 // 提到的其他技能（技能 `tenon-x`）也存在。改了文档的路径或锚点时，这个测试指出要同步修改的技能。
 func TestSkillReferences(t *testing.T) {
 	t.Parallel()
@@ -307,11 +288,13 @@ func TestSkillReferences(t *testing.T) {
 		names[s.Name] = true
 		sources[s.Name] = string(s.Content)
 	}
-	tmpl, err := os.ReadFile("../scaffold/template/project/AGENTS.md.tmpl")
-	if err != nil {
-		t.Fatal(err)
+	for _, name := range []string{"AGENTS.md.tmpl", "README.md.tmpl"} {
+		tmpl, err := os.ReadFile("../scaffold/template/project/" + name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sources[name] = string(tmpl)
 	}
-	sources["AGENTS.md.tmpl"] = string(tmpl)
 	for source, text := range sources {
 		for _, m := range ref.FindAllStringSubmatch(text, -1) {
 			page, err := os.ReadFile(filepath.Join(docs, filepath.FromSlash(m[1])))

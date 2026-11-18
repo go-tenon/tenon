@@ -1,0 +1,69 @@
+# [[.Name]]
+
+[[.Name]]是一个 [Tenon](https://github.com/go-tenon/tenon) 应用：Go 写的后端加 TanStack Start 写的前端，整个应用编译成一个二进制文件。
+
+## 开始
+
+需要 Go（版本见 [go.mod](go.mod)）和 [Bun](https://bun.sh)：
+
+```bash
+bun install
+bun run dev      # 打开 http://localhost:8080，接口文档在 /api/docs
+bun run build    # 构建 bin/[[.Slug]]
+```
+
+目录、常用命令、提交前的检查和代码约定见 [AGENTS.md](AGENTS.md)，框架的文档在 `.tenon/docs` 中（`bun run dev` 时生成），也可以在线阅读 [Tenon 文档](https://github.com/go-tenon/tenon/tree/main/docs)。
+
+## AI 编程助手
+
+### Tenon 自动接入的
+
+`tenon init` 和 `bun run agents`（`go tool tenon agents`）为 Claude Code、Codex、Cursor、Antigravity 准备好了这些，升级框架、加前端或客户端后运行 `bun run agents` 更新：
+
+- `AGENTS.md`：项目说明，其中 `tenon:begin` 到 `tenon:end` 之间由 Tenon 生成；
+- `.tenon/docs`：与 `go.mod` 中的框架版本一致的文档；
+- `tenon-*` 技能：新增业务动作、写接口、加表、写页面等常做的事的步骤；
+- MCP 服务 `tenon`（`go tool tenon mcp`）：检索框架的文档、查看项目信息、读 `bun run dev` 的输出。
+
+选择接入哪些助手见 `.tenon/docs/installation/ai-assistants.md#choosing-assistants`。
+
+### 依赖的官方方案
+
+项目用到的 Go、Mantine、TanStack 等也为 AI 编程助手提供了文档、MCP 服务和技能，按它们的官方方法接入。它们的写法与 Tenon 的约定冲突时，以 `AGENTS.md` 和 `.tenon/docs` 为准。
+
+下面以 Claude Code 和 Codex 的命令为例。Claude Code 的命令加上 `-s project` 时写进项目的 `.mcp.json`，提交后团队共用。Cursor（`.cursor/mcp.json`）、Antigravity（`.agents/mcp_config.json`）在 `mcpServers` 中加上同样的 `command` 和 `args`，VS Code（`.vscode/mcp.json`）写在 `servers` 中。`bun run agents` 只改写其中的 `tenon` 一项，你加上的服务保持原样。
+
+**Go：gopls**（[官方说明](https://go.dev/gopls/features/mcp)）。Go 的语言服务，在项目和依赖（与 `go.mod` 的版本一致）中查找符号、读包的 API、检查编译错误：
+
+```bash
+go install golang.org/x/tools/gopls@latest
+claude mcp add gopls -- gopls mcp
+codex mcp add gopls -- gopls mcp
+gopls mcp -instructions    # 输出给模型看的使用说明，可以放进助手的上下文
+```
+
+Go 的其他依赖（Huma、chi、Bun ORM、goose 等）用 `go doc` 读与 `go.mod` 一致的版本，例如 `go doc github.com/danielgtaylor/huma/v2.Register`。
+
+**Mantine**（[官方说明](https://mantine.dev/guides/llms/)）。文档目录 <https://mantine.dev/llms.txt>；MCP 服务查组件的属性和用法：
+
+```bash
+claude mcp add mantine -- npx -y @mantine/mcp-server
+codex mcp add mantine -- npx -y @mantine/mcp-server
+```
+
+需要时安装 Mantine 的技能，例如表单、自定义选择框：
+
+```bash
+npx skills add https://github.com/mantinedev/skills --skill mantine-form
+npx skills add https://github.com/mantinedev/skills --skill mantine-combobox
+```
+
+**TanStack Router、Start、Query**。文档目录：<https://tanstack.com/router/latest/llms.txt>、<https://tanstack.com/start/latest/llms.txt>、<https://tanstack.com/query/latest/llms.txt>。Router 和 Start 的包中带有技能，版本与安装的包一致，用 [TanStack Intent](https://tanstack.com/intent/latest) 接入（在终端中交互选择）：
+
+```bash
+bunx @tanstack/intent@latest install
+```
+
+选择时启用 `@tanstack/react-router`、`@tanstack/router-core` 的技能。`@tanstack/react-start`、`@tanstack/start-client-core` 中讲服务端函数、服务端路由、部署的技能不要启用：这个项目的前端不写服务端逻辑，业务逻辑都在 Go 的接口中。
+
+**React、Vite、Bun**。文档目录：<https://react.dev/llms.txt>、<https://vite.dev/llms.txt>、<https://bun.com/llms.txt>。

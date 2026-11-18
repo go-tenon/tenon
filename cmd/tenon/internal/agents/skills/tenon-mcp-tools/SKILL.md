@@ -5,7 +5,7 @@ description: 把 Tenon 应用的业务动作作为 MCP 工具提供给 Claude、
 
 # MCP 工具
 
-`mcpx` 把业务动作作为 MCP 工具提供出去，认证和权限与 JSON 接口相同。这是应用给自己的用户提供的 AI 工具，与开发时助手用的 MCP 服务（gopls、mantine）无关。先读 `.tenon/docs/ai/mcp.md`。
+`mcpx` 把业务动作作为 MCP 工具提供出去，认证和权限与 JSON 接口相同。这是应用给自己的用户提供的 AI 工具，与开发时助手用的 MCP 服务（tenon、gopls 等）无关。先读 `.tenon/docs/ai/mcp.md`。
 
 ## 步骤
 

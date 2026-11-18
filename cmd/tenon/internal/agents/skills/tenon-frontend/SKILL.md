@@ -5,7 +5,7 @@ description: 在 Tenon 应用的前端（apps/<前端>，TanStack Start + Mantin
 
 # 前端页面
 
-每个前端是 `apps/` 下的一个 TanStack Start 项目，界面用 Mantine 和 `@go-tenon/ui`，调用接口用 `bun run generate` 生成的客户端。先读 `.tenon/docs/frontend/conventions.md`，组件的用法查 Mantine 的文档（项目配置了 MCP 服务 `mantine`）。
+每个前端是 `apps/` 下的一个 TanStack Start 项目，界面用 Mantine 和 `@go-tenon/ui`，调用接口用 `bun run generate` 生成的客户端。先读 `.tenon/docs/frontend/conventions.md`，组件的用法查 Mantine 的文档（Mantine 给 AI 的文档和 MCP 服务按 `README.md` 中的方法接入）。TanStack、Mantine 的官方技能与本技能冲突时，以本技能和 `AGENTS.md` 为准，例如前端不写 TanStack Start 的服务端函数，业务逻辑都在 Go 的接口中。
 
 ## 步骤
 

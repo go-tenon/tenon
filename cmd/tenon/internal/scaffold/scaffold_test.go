@@ -17,7 +17,7 @@ func TestWrite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, f := range []string{".gitignore", "AGENTS.md", "go.mod", "package.json", "config/app.yaml", "cmd/todo/main.go", "internal/todo/todo.go",
+	for _, f := range []string{".gitignore", "AGENTS.md", "README.md", "go.mod", "package.json", "config/app.yaml", "cmd/todo/main.go", "internal/todo/todo.go",
 		"packages/client/package.json", "apps/web/package.json", "apps/web/vite.config.ts", "apps/web/tsconfig.json",
 		"apps/apps.go", "apps/web/src/start.ts", "apps/web/src/server.ts", "apps/web/src/router.tsx", "apps/web/src/theme.ts",
 		"apps/web/src/api.ts", "apps/web/src/routes/__root.tsx", "apps/web/src/routes/index.tsx"} {

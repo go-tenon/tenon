@@ -1,21 +1,22 @@
 # AI 编程助手
 
-Claude Code、Codex、Cursor、Antigravity、GitHub Copilot 这类 AI 编程助手能替你写不少代码，前提是它知道项目的约定，读的是项目所用版本的文档。`tenon init` 生成的项目已经为它们准备好了：根目录的 `AGENTS.md` 写明怎样运行、提交前检查什么、代码按什么约定写；框架的文档复制在项目中，版本与 `go.mod` 一致；新增业务动作、写接口、加表这类常做的事各有一个技能，写明步骤和要点；Go 的语言服务和 Mantine 的文档服务配置成了 MCP 服务。这一页介绍这些内容是什么、怎样保持更新，以及怎样按自己的需要调整。
+Claude Code、Codex、Cursor、Antigravity、GitHub Copilot 这类 AI 编程助手能替你写不少代码，前提是它知道项目的约定，读的是项目所用版本的文档。`tenon init` 生成的项目已经为它们准备好了：根目录的 `AGENTS.md` 写明怎样运行、提交前检查什么、代码按什么约定写；框架的文档复制在项目中，版本与 `go.mod` 一致；新增业务动作、写接口、加表这类常做的事各有一个技能，写明步骤和要点；Tenon 的 MCP 服务让助手检索文档、读开发环境的输出。这一页介绍这些内容是什么、怎样保持更新，以及怎样按自己的需要调整。
+
+Tenon 只接入它自己的这些内容。项目依赖的 Go、Mantine、TanStack 等也为 AI 编程助手提供了文档、MCP 服务和技能，按它们各自的官方方案接入：生成的项目的 `README.md` 写好了接入的命令，见[依赖的官方方案](#dependencies)。
 
 阅读前需要了解：[脚手架](scaffolding.md)；[开发工具](tooling.md)。
 
 - [示例用法](#example-usage)
 - [AGENTS.md](#agents-md)
 - [框架的文档](#framework-docs)
-- [依赖的文档](#dependency-docs)
 - [技能](#skills)
 - [MCP 服务](#mcp-servers)
 - [保持更新](#updating)
 - [选择助手](#choosing-assistants)
+- [依赖的官方方案](#dependencies)
 - [常见问题](#troubleshooting)
 - [进阶](#advanced)
     - [在线对话](#online-chat)
-    - [Mantine 的技能](#mantine-skills)
 - [参考](#reference)
 
 <a id="example-usage"></a>
@@ -41,7 +42,7 @@ Codex 和 Cursor 的用法相同：在项目目录中打开它们，它们同样
 文件分成两部分：
 
 - **项目自己的约定**：开发环境、常用命令、目录、提交前的检查、编写测试的规则、代码约定（业务动作、注释、函数、错误、前端、接口）。`tenon init` 写出初稿，内容取自 Tenon 框架自己的开发约定。之后它归项目所有，按你的实际情况修改，`tenon` 不会再改动它。
-- **tenon 维护的一段**：夹在 `<!-- tenon:begin -->` 和 `<!-- tenon:end -->` 两行注释之间，写着框架的版本、框架文档的位置、项目中的前端和客户端、依赖的版本和给 AI 读的文档、安装的技能、配置好的 MCP 服务。这一段由 `go tool tenon agents` 生成，不要手改，下次生成时会被覆盖。
+- **tenon 维护的一段**：夹在 `<!-- tenon:begin -->` 和 `<!-- tenon:end -->` 两行注释之间，写着框架的版本、框架文档的位置、项目中的前端和客户端、安装的技能、配置好的 MCP 服务，并指向 `README.md` 中依赖的接入方法。这一段由 `go tool tenon agents` 生成，不要手改，下次生成时会被覆盖。
 
 例如加了一个运营后台以后，tenon 那一段中多出一行：
 
@@ -66,23 +67,6 @@ rg 迁移 .tenon/docs   # 列出讲迁移的文档
 
 `.tenon/docs` 中有一个内容为 `!*` 的 `.ignore` 文件，它让指定目录的搜索不受 `.gitignore` 影响。
 
-<a id="dependency-docs"></a>
-## 依赖的文档
-
-项目还直接用到 Mantine、TanStack Router、Huma 这些社区组件。很多组件提供了给 AI 读的文档目录 `llms.txt`（格式见 [llmstxt.org](https://llmstxt.org)），`AGENTS.md` 中 tenon 的一段为项目用到的每个组件列出项目中的版本和这份文档，例如：
-
-```markdown
-| 依赖 | 版本 | 文档 |
-| --- | --- | --- |
-| Huma | v2.40.0 | https://huma.rocks |
-| Mantine | 9.8.1 | https://mantine.dev/llms.txt；MCP 服务 `mantine` |
-| TanStack Router | 1.170.46 | https://tanstack.com/router/latest/llms.txt |
-```
-
-只列出项目用到的组件：Go 的组件出现在应用的构建中才列出（例如用了队列才有 NATS），前端的组件写在某个前端或客户端的 `package.json` 中才列出。版本取自 `go.mod` 和 `node_modules`，还没有安装依赖时取 `package.json` 中写的范围。
-
-网上的文档总是最新的版本。`AGENTS.md` 写明了：两者不一致时以项目的版本为准。Go 的组件大多没有 `llms.txt`，助手用 `go doc` 读与 `go.mod` 一致的版本，例如 `go doc github.com/danielgtaylor/huma/v2.Register`。
-
 <a id="skills"></a>
 ## 技能
 
@@ -106,7 +90,7 @@ rg 迁移 .tenon/docs   # 列出讲迁移的文档
 
 各个助手从不同的目录读取技能，`tenon` 按[选择的助手](#choosing-assistants)写进对应的目录，表格见那一节。同时选了 Claude Code 和 Codex（或 Antigravity）时，`.claude/skills` 和 `.agents/skills` 中各有一份，Cursor 两个目录都读，会看到两份同名的技能。技能目录也要提交。
 
-`tenon` 只管理名字以 `tenon-` 开头的技能目录，你自己写的技能放在同样的目录中，`tenon` 不会改动。想改写某个框架的技能时，复制一份换个名字（例如 `acme-frontend`），在 `tenon.json` 中跳过原来的：
+`tenon` 只管理名字以 `tenon-` 开头的技能目录，你自己写的技能和按[官方方案](#dependencies)装上的依赖的技能放在同样的目录中，`tenon` 不会改动。想改写某个框架的技能时，复制一份换个名字（例如 `acme-frontend`），在 `tenon.json` 中跳过原来的：
 
 ```json
 {
@@ -117,30 +101,18 @@ rg 迁移 .tenon/docs   # 列出讲迁移的文档
 <a id="mcp-servers"></a>
 ## MCP 服务
 
-[MCP](https://modelcontextprotocol.io) 让 AI 助手调用外部的工具。项目为助手配置了三个以 stdio 运行的 MCP 服务：
+[MCP](https://modelcontextprotocol.io) 让 AI 助手调用外部的工具。项目为助手配置了 Tenon 自己的 MCP 服务 `tenon`：用 `go tool tenon mcp` 以 stdio 运行，版本与项目的框架版本相同，不需要另外安装。它提供四个工具，名字都以 `tenon_` 开头，与其他服务的同名工具（例如 Mantine 的 `search_docs`）区分开：
 
-- **`tenon`**：Tenon 自己的开发工具，用 `go tool tenon mcp` 运行，版本与项目的框架版本相同，不需要另外安装。它提供四个工具，名字都以 `tenon_` 开头，与其他服务的同名工具（例如 Mantine 的 `search_docs`）区分开：
+| 工具 | 作用 |
+| --- | --- |
+| `tenon_search_docs` | 在 `.tenon/docs` 中按小节检索，返回最相关的小节的标题、路径和锚点、片段。中文按相邻的两个字切分，不需要分词词典 |
+| `tenon_read_doc` | 读一页的目录（全部小节的锚点）、一个小节连同它的子小节，或者整页 |
+| `tenon_app_info` | 项目的框架版本、入口、前端与客户端、安装的技能 |
+| `tenon_dev_logs` | `bun run dev` 运行期间的输出：编译错误、应用的日志、前端开发服务器的输出；可以只取包含某段文字的行，例如 `ERR` |
 
-  | 工具 | 作用 |
-  | --- | --- |
-  | `tenon_search_docs` | 在 `.tenon/docs` 中按小节检索，返回最相关的小节的标题、路径和锚点、片段。中文按相邻的两个字切分，不需要分词词典 |
-  | `tenon_read_doc` | 读一页的目录（全部小节的锚点）、一个小节连同它的子小节，或者整页 |
-  | `tenon_app_info` | 项目的框架版本、入口、前端与客户端、用到的组件的版本和文档、安装的技能 |
-  | `tenon_dev_logs` | `bun run dev` 运行期间的输出：编译错误、应用的日志、前端开发服务器的输出；可以只取包含某段文字的行，例如 `ERR` |
+助手改完代码后调用 `tenon_dev_logs`，就能看到重新编译有没有失败、应用有没有报错，不用你把终端里的内容复制给它。
 
-  助手改完代码后调用 `tenon_dev_logs`，就能看到重新编译有没有失败、应用有没有报错，不用你把终端里的内容复制给它。
-
-- **`gopls`**：Go 官方的语言服务，提供 `go_search`（查找符号）、`go_package_api`（读一个包的 API）、`go_diagnostics`（编译错误）等工具。它读的是项目和依赖的源码，版本与 `go.mod` 一致。需要先安装：
-
-  ```bash
-  go install golang.org/x/tools/gopls@latest
-  ```
-
-- **`mantine`**：Mantine 官方的文档服务（`@mantine/mcp-server`），提供 `search_docs`、`get_item_props` 等工具，查组件的属性和用法。项目中有前端时才配置，用 `bunx` 运行，第一次使用时自动下载。
-
-每个助手的 MCP 配置文件位置不同，见[选择助手](#choosing-assistants)中的表格。
-
-`tenon` 只改写配置中名为 `tenon`、`gopls` 和 `mantine` 的三项，你自己加的其他 MCP 服务和设置保持原样。在 `.codex/config.toml` 中，这两项放在 `# tenon:begin` 和 `# tenon:end` 两行之间。这些文件也要提交。
+每个助手的 MCP 配置文件位置不同，见[选择助手](#choosing-assistants)中的表格。`tenon` 只改写配置中名为 `tenon` 的一项，按[官方方案](#dependencies)加上的 gopls、Mantine 等服务和其他设置保持原样。在 `.codex/config.toml` 中，这一项放在 `# tenon:begin` 和 `# tenon:end` 两行之间。这些文件也要提交。
 
 确认服务已经连上：Claude Code、Antigravity 中输入 `/mcp`；Codex 运行 `codex mcp list`；Cursor 在设置的 MCP 页面中查看；VS Code 中运行命令“MCP: List Servers”。
 
@@ -155,8 +127,7 @@ rg 迁移 .tenon/docs   # 列出讲迁移的文档
 下面这些变化之后，`AGENTS.md` 中 tenon 的一段、技能和 MCP 配置要跟着更新：
 
 - 升级框架：`go get github.com/go-tenon/tenon@latest`；
-- 加了前端或客户端；
-- 加减了依赖，例如开始使用队列。
+- 加了前端或客户端。
 
 运行：
 
@@ -199,6 +170,34 @@ go run github.com/go-tenon/tenon/cmd/tenon@latest init todo --agents claude,copi
 
 已有的项目直接改 `tenon.json`，再运行 `bun run agents`。从列表中去掉的助手，它的配置文件和技能目录留在原处，不再更新，不需要时自己删除。
 
+<a id="dependencies"></a>
+## 依赖的官方方案
+
+项目直接用到的组件也为 AI 编程助手准备了资源：给 AI 读的文档目录 `llms.txt`（格式见 [llmstxt.org](https://llmstxt.org)）、MCP 服务和技能。它们由各自的项目维护，接入方式随版本变化，所以 `tenon` 不替你安装，而是在生成的项目的 `README.md` 中写好按官方方法接入的命令，你按需执行：
+
+| 组件 | 给 AI 的资源 | 官方说明 |
+| --- | --- | --- |
+| Go | gopls 的 MCP 服务（`gopls mcp`）：查找符号、读包的 API、检查编译错误，版本与 `go.mod` 一致 | [Gopls: MCP](https://go.dev/gopls/features/mcp) |
+| Mantine | `llms.txt`、MCP 服务 `@mantine/mcp-server`、技能（`mantinedev/skills`） | [Mantine：LLMs](https://mantine.dev/guides/llms/) |
+| TanStack Router、Start、Query | `llms.txt`；Router 和 Start 随包发布的技能，用 TanStack Intent 接入 | [TanStack Intent](https://tanstack.com/intent/latest) |
+| React、Vite、Bun | `llms.txt` | [react.dev/llms.txt](https://react.dev/llms.txt)、[vite.dev/llms.txt](https://vite.dev/llms.txt)、[bun.com/llms.txt](https://bun.com/llms.txt) |
+| Electron | 文档 | [electronjs.org/docs](https://www.electronjs.org/docs/latest) |
+
+例如在 Claude Code 中加上 gopls 和 Mantine 的 MCP 服务（官方的命令）：
+
+```bash
+go install golang.org/x/tools/gopls@latest
+claude mcp add gopls -- gopls mcp
+claude mcp add mantine -- npx -y @mantine/mcp-server
+```
+
+加上 `-s project` 时写进项目的 `.mcp.json`，提交后团队共用。
+
+> [!IMPORTANT]
+> 依赖的文档和技能讲的是它们自己的通用用法，不知道 Tenon 的约定。两者冲突时以 `AGENTS.md`、`.tenon/docs` 和 `tenon-*` 技能为准。最常见的是 TanStack Start：它的技能教你在前端写服务端函数、服务端路由，而 Tenon 的前端不写服务端逻辑，业务逻辑都在 Go 的接口中。用 TanStack Intent 选择技能时，不要启用 Start 中讲服务端函数、服务端路由和部署的技能。
+
+Go 的其他依赖（Huma、chi、Bun ORM、goose 等）大多没有 `llms.txt`，助手用 `go doc` 读与 `go.mod` 一致的版本，例如 `go doc github.com/danielgtaylor/huma/v2.Register`。网上的文档总是最新的版本，与项目的版本不一致时以项目的版本为准。
+
 <a id="troubleshooting"></a>
 ## 常见问题
 
@@ -212,7 +211,7 @@ go run github.com/go-tenon/tenon/cmd/tenon@latest init todo --agents claude,copi
 
 **`/mcp` 中 gopls 显示连接失败**
 
-没有安装 gopls，或者它不在 `PATH` 中。按[MCP 服务](#mcp-servers)中的命令安装，确认 `gopls version` 能运行，再重启助手。
+没有安装 gopls，或者它不在 `PATH` 中。按[依赖的官方方案](#dependencies)中的命令安装，确认 `gopls version` 能运行，再重启助手。
 
 **`AGENTS.md` 中 tenon 的一段还是旧的版本号**
 
@@ -240,17 +239,6 @@ https://raw.githubusercontent.com/go-tenon/tenon/main/llms.txt
 
 它是文档的目录，每一项链接到一页文档的 Markdown 原文。全部文档合成的一个文件是每个发布版本的附件：<https://github.com/go-tenon/tenon/releases/latest/download/llms-full.txt>。
 
-<a id="mantine-skills"></a>
-### Mantine 的技能
-
-Mantine 还提供了几个[技能](#skills)，例如用 `Combobox` 做自定义的选择框。它们取自 GitHub 上最新的版本，可能与项目中的 Mantine 版本不一致，所以 `tenon` 不默认安装。需要时自己安装：
-
-```bash
-npx skills add https://github.com/mantinedev/skills --skill mantine-combobox
-```
-
-可用的技能见 [mantinedev/skills](https://github.com/mantinedev/skills)。
-
 <a id="reference"></a>
 ## 参考
 
@@ -260,7 +248,7 @@ npx skills add https://github.com/mantinedev/skills --skill mantine-combobox
 go tool tenon agents
 ```
 
-更新 AI 编程助手用到的内容：把项目所用版本的框架文档复制到 `.tenon/docs`；重新生成 `AGENTS.md` 中 `<!-- tenon:begin -->` 到 `<!-- tenon:end -->` 的一段，文件中没有这一段时加在末尾，没有这个文件时新建；为 `tenon.json` 中的每个助手重新安装 `tenon-` 开头的技能，改写 MCP 配置中的 `tenon`、`gopls` 和 `mantine`。没有安装 gopls 时打印安装命令。
+更新 AI 编程助手用到的内容：把项目所用版本的框架文档复制到 `.tenon/docs`；重新生成 `AGENTS.md` 中 `<!-- tenon:begin -->` 到 `<!-- tenon:end -->` 的一段，文件中没有这一段时加在末尾，没有这个文件时新建；为 `tenon.json` 中的每个助手重新安装 `tenon-` 开头的技能，改写 MCP 配置中的 `tenon`。
 
 ### go tool tenon mcp
 

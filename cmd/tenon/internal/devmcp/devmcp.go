@@ -3,7 +3,7 @@
 //
 //	tenon_search_docs  按小节检索 .tenon/docs 中的框架文档
 //	tenon_read_doc     读一页文档的目录、一个小节或整页
-//	tenon_app_info     项目的框架版本、入口、前端与客户端、依赖和技能
+//	tenon_app_info     项目的框架版本、入口、前端与客户端和技能
 //	tenon_dev_logs     tenon dev 运行期间各进程的输出（dev.LogFile）
 package devmcp
 
@@ -94,7 +94,7 @@ func New(opts Options) (*mcp.Server, error) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "tenon_app_info",
 		Title:       "项目信息",
-		Description: "列出当前 Tenon 项目的信息：框架版本、应用入口和地址、前端（目录、挂载路径、是否服务端渲染）、客户端、用到的社区组件的版本和给 AI 读的文档、安装的技能。",
+		Description: "列出当前 Tenon 项目的信息：框架版本、应用入口和地址、前端（目录、挂载路径、是否服务端渲染）、客户端、安装的技能。依赖的版本见 go.mod 和各前端的 package.json。",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, func(context.Context, *mcp.CallToolRequest, struct{}) (*mcp.CallToolResult, appInfo, error) {
 		p, err := opts.Inspect()
@@ -102,14 +102,13 @@ func New(opts Options) (*mcp.Server, error) {
 			return nil, appInfo{}, err
 		}
 		info := appInfo{
-			Framework:    p.Tenon,
-			Main:         p.Config.Main,
-			URL:          p.Config.URL,
-			Docs:         agents.DocsDir,
-			Frontends:    []frontend{},
-			Clients:      []client{},
-			Dependencies: agents.Dependencies(p),
-			Skills:       []string{},
+			Framework: p.Tenon,
+			Main:      p.Config.Main,
+			URL:       p.Config.URL,
+			Docs:      agents.DocsDir,
+			Frontends: []frontend{},
+			Clients:   []client{},
+			Skills:    []string{},
 		}
 		for _, f := range p.Config.Frontends {
 			info.Frontends = append(info.Frontends, frontend{Dir: f.Dir, Base: f.Base, SSR: f.SSR})
@@ -185,14 +184,13 @@ type logArgs struct {
 
 // appInfo 是 tenon_app_info 的结果。
 type appInfo struct {
-	Framework    string              `json:"framework"`    // 框架的版本
-	Main         string              `json:"main"`         // 应用入口的包
-	URL          string              `json:"url"`          // 开发时应用的地址
-	Docs         string              `json:"docs"`         // 框架文档的目录
-	Frontends    []frontend          `json:"frontends"`    // 前端
-	Clients      []client            `json:"clients"`      // 网页以外的客户端
-	Dependencies []agents.Dependency `json:"dependencies"` // 用到的社区组件
-	Skills       []string            `json:"skills"`       // 安装的技能
+	Framework string     `json:"framework"` // 框架的版本
+	Main      string     `json:"main"`      // 应用入口的包
+	URL       string     `json:"url"`       // 开发时应用的地址
+	Docs      string     `json:"docs"`      // 框架文档的目录
+	Frontends []frontend `json:"frontends"` // 前端
+	Clients   []client   `json:"clients"`   // 网页以外的客户端
+	Skills    []string   `json:"skills"`    // 安装的技能
 }
 
 // frontend 是 appInfo 中的一个前端。
