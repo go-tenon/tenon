@@ -36,8 +36,8 @@ describe("转发的请求头和响应头", () => {
   it("去掉页面的来源、cookie 和自己设置的认证，加上宿主的 token 和版本", () => {
     const h = requestHeaders(
       new Headers({
-        Origin: "app://admin",
-        Referer: "app://admin/admin/",
+        Origin: "https://admin.localhost",
+        Referer: "https://admin.localhost/admin/",
         Cookie: "a=1",
         Authorization: "Bearer from-page",
         "X-App-Version": "fake/9",
@@ -76,30 +76,32 @@ describe("页面外壳的 CSP", () => {
 
 describe("TokenStore", () => {
   const cipher = {
-    encrypt: (s: string) => new TextEncoder().encode(`enc:${s}`),
-    decrypt: (b: Uint8Array) => {
+    encrypt: async (s: string) => new TextEncoder().encode(`enc:${s}`),
+    decrypt: async (b: Uint8Array) => {
       const s = new TextDecoder().decode(b)
       if (!s.startsWith("enc:")) throw new Error("bad key")
       return s.slice(4)
     },
   }
 
-  it("加密保存，重新打开后读出；clear 删除文件", () => {
+  it("加密保存，重新打开后读出；clear 删除文件", async () => {
     const file = join(mkdtempSync(join(tmpdir(), "tenon-token-")), "dir", "token")
-    new TokenStore(file, cipher).set("tok")
+    await new TokenStore(file, cipher).set("tok")
     expect(readFileSync(file, "utf8")).toBe("enc:tok")
     const store = new TokenStore(file, cipher)
-    expect(store.get()).toBe("tok")
+    expect(store.current()).toBeUndefined()
+    expect(await store.get()).toBe("tok")
+    expect(store.current()).toBe("tok")
     store.clear()
     expect(existsSync(file)).toBe(false)
-    expect(new TokenStore(file, cipher).get()).toBeUndefined()
+    expect(await new TokenStore(file, cipher).get()).toBeUndefined()
   })
 
-  it("无法解密时删除文件，当作没有登录", () => {
+  it("无法解密时删除文件，当作没有登录", async () => {
     const file = join(mkdtempSync(join(tmpdir(), "tenon-token-")), "token")
     writeFileSync(file, "garbage")
     const unreadable = vi.fn()
-    expect(new TokenStore(file, cipher, unreadable).get()).toBeUndefined()
+    expect(await new TokenStore(file, cipher, unreadable).get()).toBeUndefined()
     expect(unreadable).toHaveBeenCalledOnce()
     expect(existsSync(file)).toBe(false)
   })

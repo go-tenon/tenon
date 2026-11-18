@@ -1,6 +1,6 @@
 // 转发到服务器时请求头和响应头的处理。
 
-/** 页面发出的请求中不转发的请求头：来源和 cookie 属于 app:// 页面，Authorization 和 X-App-Version 由宿主设置。 */
+/** 页面发出的请求中不转发的请求头：来源和 cookie 属于宿主中的页面，Authorization 和 X-App-Version 由宿主设置。 */
 const droppedRequestHeaders = new Set(["origin", "referer", "cookie", "host", "authorization", "x-app-version"])
 
 /** 返回转发给服务器的请求头：去掉页面的来源和 cookie，加上宿主保存的 token 和客户端版本。 */

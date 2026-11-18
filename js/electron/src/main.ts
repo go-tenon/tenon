@@ -1,6 +1,8 @@
 // @go-tenon/electron/main 在 Electron 的主进程中实现网页宿主的约定（@go-tenon/host）：
 //
-//   - 注册 app:// 协议：前端按 SPA 模式构建的文件从安装包返回，前端路由中的页面返回页面外壳（带 CSP 和 nonce）；
+//   - 页面来自 https://<id>.localhost：用 protocol.handle 接管这个主机（其他 https 请求原样放行），前端按 SPA 模式
+//     构建的文件从安装包返回，前端路由中的页面返回页面外壳（带 CSP 和 nonce）。用 https 而不是自定义协议：前端路由
+//     只把 http(s) 的同源地址当作站内跳转，例如登录检查跳到登录页；.localhost 是保留的域名，不会解析到外部；
 //   - 同源的 /api/* 转发到服务器，加上 Authorization: Bearer 和 X-App-Version，响应流式返回；收到 401 时删除 token；
 //   - 实时频道的 WebSocket 握手加上 Authorization；
 //   - 登录：在系统浏览器中走 OAuth 授权码 + PKCE，回调到 127.0.0.1，token 用 safeStorage 加密保存；
@@ -38,7 +40,7 @@ export const SIGN_IN_TIMEOUT = 10 * 60 * 1000
 
 /** createHost 的选项。 */
 export interface HostOptions {
-  id: string // 客户端的名字（clients/<名>），小写字母、数字和 -：app:// 的主机名、OAuth 的 client ID、X-App-Version 的平台名
+  id: string // 客户端的名字（clients/<名>），小写字母、数字和 -：页面的主机名 <id>.localhost、OAuth 的 client ID、X-App-Version 的平台名
   server: string // 服务器的地址，例如 https://example.com：转发的目标，也是授权服务器的地址
   base: string // 前端的挂载路径，以 / 开头和结尾，例如 /admin/
   renderer: string // 前端按 SPA 模式构建的目录，其中有页面外壳 _shell.html
@@ -52,7 +54,7 @@ export interface HostOptions {
 
 /** createHost 返回的宿主。 */
 export interface Host {
-  readonly origin: string // 页面的来源，例如 app://admin-desktop
+  readonly origin: string // 页面的来源，例如 https://admin-desktop.localhost
   /** 等应用就绪后注册协议、打开主窗口并返回它。只调用一次。 */
   start(): Promise<BrowserWindow>
   /** 主窗口；start 之前为 undefined。 */
@@ -75,12 +77,8 @@ const defaultSignedInPage =
 const defaultFailedPage =
   "<!doctype html><meta charset=utf-8><title>登录失败</title><p>登录没有完成，请回到应用重试。</p>"
 
-/**
- * 创建宿主。必须在应用就绪之前调用（注册 app:// 协议的特权只能在就绪前进行），之后调用 start 打开主窗口。
- * 选项不合法时抛出错误。
- */
+/** 创建宿主，之后调用 start 打开主窗口。选项不合法时抛出错误。 */
 export function createHost(options: HostOptions): Host {
-  if (app.isReady()) throw new Error("@go-tenon/electron: call createHost before the app is ready")
   if (!/^[a-z0-9][a-z0-9-]*$/.test(options.id)) throw new Error(`@go-tenon/electron: invalid id ${options.id}`)
   if (!options.base.startsWith("/") || !options.base.endsWith("/")) {
     throw new Error(`@go-tenon/electron: base ${options.base} must start and end with /`)
@@ -92,7 +90,8 @@ export function createHost(options: HostOptions): Host {
   const serverOrigin = server.origin
   const realtimeOrigin = serverOrigin.replace(/^http/, "ws")
   const issuer = options.server.replace(/\/$/, "")
-  const origin = `app://${options.id}`
+  const hostname = `${options.id}.localhost`
+  const origin = `https://${hostname}`
   const proxy = options.proxy ?? ["/api/"]
   const methods = new Map<string, (...args: never[]) => unknown>()
   let win: BrowserWindow | undefined
@@ -100,29 +99,23 @@ export function createHost(options: HostOptions): Host {
   let started = false
   let signingIn: Promise<void> | undefined
 
-  protocol.registerSchemesAsPrivileged([
-    {
-      scheme: "app",
-      privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true },
-    },
-  ])
-
   const appVersion = () => `${options.id}/${app.getVersion()}`
 
   /** 转发到服务器：带上 token 和版本，流式返回；收到 401 时删除发出请求时用的 token。 */
   const forward = async (req: Request, url: URL): Promise<Response> => {
-    const token = tokens?.get()
-    const init: RequestInit & { duplex?: "half" } = {
+    const token = await tokens?.get()
+    const init: RequestInit & { duplex?: "half"; bypassCustomProtocolHandlers: boolean } = {
       method: req.method,
       headers: requestHeaders(req.headers, token, appVersion()),
       redirect: "manual",
+      bypassCustomProtocolHandlers: true, // 服务器的 https 请求不再经过宿主自己的处理器
     }
     if (req.body) {
       init.body = req.body
       init.duplex = "half"
     }
     const res = await net.fetch(serverOrigin + url.pathname + url.search, init)
-    if (res.status === 401 && token && tokens?.get() === token) tokens.clear()
+    if (res.status === 401 && token && tokens?.current() === token) tokens.clear()
     return new Response(nullBodyStatus(res.status) ? null : res.body, {
       status: res.status,
       statusText: res.statusText,
@@ -130,10 +123,10 @@ export function createHost(options: HostOptions): Host {
     })
   }
 
-  /** 处理 app:// 请求。 */
+  /** 处理 https 请求：页面的主机由宿主返回，其他主机原样放行。 */
   const serve = async (req: Request): Promise<Response> => {
     const url = new URL(req.url)
-    if (url.host !== options.id) return new Response(null, { status: 404 })
+    if (url.host !== hostname) return net.fetch(req, { bypassCustomProtocolHandlers: true })
     const target = route(url.pathname, { root: options.renderer, base: options.base, proxy })
     if (target.kind === "proxy") return forward(req, url)
     if (options.dev) {
@@ -141,6 +134,7 @@ export function createHost(options: HostOptions): Host {
       return net.fetch(options.dev.replace(/\/$/, "") + url.pathname + url.search, {
         method: req.method,
         headers: { Accept: req.headers.get("Accept") ?? "*/*" },
+        bypassCustomProtocolHandlers: true,
       })
     }
     switch (target.kind) {
@@ -182,8 +176,10 @@ export function createHost(options: HostOptions): Host {
           throw err
         }
         callback.respond(200, options.signedInPage ?? defaultSignedInPage)
-        const token = await exchangeCode({ issuer, clientId: options.id, auth, code, fetch: net.fetch as FetchLike })
-        tokens?.set(token)
+        const fetch = ((url: string, init?: RequestInit) =>
+          net.fetch(url, { ...init, bypassCustomProtocolHandlers: true })) as FetchLike
+        const token = await exchangeCode({ issuer, clientId: options.id, auth, code, fetch })
+        await tokens?.set(token)
         if (win?.isMinimized()) win.restore()
         win?.focus()
       } finally {
@@ -216,23 +212,28 @@ export function createHost(options: HostOptions): Host {
       await app.whenReady()
 
       // Linux 上没有钥匙串服务（gnome-keyring、KWallet）时，与 Chromium 一样退回固定的密钥。
-      if (process.platform === "linux" && !safeStorage.isEncryptionAvailable()) {
+      if (process.platform === "linux" && !(await safeStorage.isAsyncEncryptionAvailable())) {
         safeStorage.setUsePlainTextEncryption(true)
         console.warn("@go-tenon/electron: no system keyring; the token is encrypted with a fixed key, as Chromium does")
       }
       tokens = new TokenStore(
         join(app.getPath("userData"), "token"),
-        { encrypt: (s) => safeStorage.encryptString(s), decrypt: (b) => safeStorage.decryptString(Buffer.from(b)) },
+        {
+          encrypt: (s) => safeStorage.encryptStringAsync(s),
+          decrypt: async (b) => (await safeStorage.decryptStringAsync(Buffer.from(b))).result,
+        },
         (err) => console.warn("@go-tenon/electron: the saved token could not be decrypted; sign in again", err),
       )
-      protocol.handle("app", serve)
+      protocol.handle("https", serve)
       session.defaultSession.webRequest.onBeforeSendHeaders({ urls: [`${realtimeOrigin}/*`] }, (details, done) => {
-        const token = details.resourceType === "webSocket" ? tokens?.get() : undefined
-        done({
-          requestHeaders: token
-            ? { ...details.requestHeaders, Authorization: `Bearer ${token}` }
-            : details.requestHeaders,
-        })
+        if (details.resourceType !== "webSocket") return done({ requestHeaders: details.requestHeaders })
+        void tokens?.get().then((token) =>
+          done({
+            requestHeaders: token
+              ? { ...details.requestHeaders, Authorization: `Bearer ${token}` }
+              : details.requestHeaders,
+          }),
+        )
       })
       session.defaultSession.setPermissionRequestHandler((_contents, permission, allow) => {
         allow(permission === "clipboard-sanitized-write" || permission === "fullscreen")

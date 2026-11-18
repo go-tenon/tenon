@@ -4,7 +4,7 @@
 export const PRERENDER_NONCE = "__tenon_csp_nonce__"
 
 /**
- * 返回页面外壳的 CSP：脚本只能来自 app:// 本身，内联脚本必须带 nonce；样式允许内联；连接只能到 app:// 本身和 connect
+ * 返回页面外壳的 CSP：脚本只能来自页面的来源，内联脚本必须带 nonce；样式允许内联；连接只能到页面的来源和 connect
  * 中的地址（实时频道的 wss:// 地址）。
  */
 export function shellCSP(nonce: string, connect: string[]): string {

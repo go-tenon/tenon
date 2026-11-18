@@ -1,9 +1,9 @@
-// app:// 请求的去向：转发到服务器、安装包中的文件、页面外壳，或者不存在。
+// 宿主中页面请求的去向：转发到服务器、安装包中的文件、页面外壳，或者不存在。
 
 import { existsSync, statSync } from "node:fs"
 import { resolve, sep } from "node:path"
 
-/** 一个 app:// 请求的去向。 */
+/** 宿主中一个页面请求的去向。 */
 export type Route =
   | { kind: "proxy" } // 转发到服务器，例如 /api/*
   | { kind: "file"; path: string } // 安装包中前端构建出的文件
