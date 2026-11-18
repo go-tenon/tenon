@@ -5,15 +5,15 @@ import "@fontsource/noto-sans-sc/700.css"
 import "@go-tenon/ui/styles.css"
 import { createSession, type OperationLike } from "@go-tenon/client"
 import {
-  AdminLayout,
   AnchorLink,
   type App,
   AppRoot,
-  AuthLayout,
+  CenteredAuthLayout,
   createApp,
   createUiTheme,
   DocsLayout,
   ExportButton,
+  FrameLayout,
   ImportButton,
   LanguageMenu,
   LoginForm,
@@ -111,7 +111,7 @@ function Root(): ReactNode {
   return <Outlet />
 }
 
-// ———————————————————————————— admin 预设：AdminLayout ————————————————————————————
+// ———————————————————————————— FrameLayout 和 compact 预设 ————————————————————————————
 
 const languages = [
   { value: "zh-CN", label: "简体中文" },
@@ -123,7 +123,7 @@ function AdminShell(): ReactNode {
   // 演示：只记下选择，不换文案。
   const [language, setLanguage] = useState("zh-CN")
   return (
-    <AdminLayout
+    <FrameLayout
       title="Acme 后台"
       tabs
       actions={
@@ -346,7 +346,7 @@ async function* progress(): AsyncIterable<{ event: string; data: OperationLike }
 
 function LoginPage(): ReactNode {
   return (
-    <AuthLayout
+    <CenteredAuthLayout
       brand={
         <Group gap={10}>
           <span className="tn-brand-mark">A</span>
@@ -367,11 +367,11 @@ function LoginPage(): ReactNode {
         }
         forgot={<AnchorLink to="/">忘记密码？</AnchorLink>}
       />
-    </AuthLayout>
+    </CenteredAuthLayout>
   )
 }
 
-// ———————————————————————————— console 预设：RailLayout ————————————————————————————
+// ———————————————————————————— RailLayout 和 comfortable 预设 ————————————————————————————
 
 // console 的布局：Rail（双栏导航）。
 function ConsoleShell(): ReactNode {
@@ -391,10 +391,10 @@ function ConsoleShell(): ReactNode {
   )
 }
 
-/** console 预设的登录页。 */
+/** /console/ 演示的登录页。 */
 function ConsoleLoginPage(): ReactNode {
   return (
-    <AuthLayout
+    <CenteredAuthLayout
       brand={
         <Group gap={10}>
           <span className="tn-brand-mark">A</span>
@@ -415,7 +415,7 @@ function ConsoleLoginPage(): ReactNode {
         }
         forgot={<AnchorLink to="/login">忘记密码？</AnchorLink>}
       />
-    </AuthLayout>
+    </CenteredAuthLayout>
   )
 }
 
@@ -579,15 +579,20 @@ function siteApp() {
 
 // ———————————————————————————— 入口 ————————————————————————————
 
+// 三个演示各用一套预设：/admin/ 是 FrameLayout 和 compact，/console/ 是 RailLayout 和 comfortable，
+// 其余是官网和文档页，用 spacious。
 const path = location.pathname
-const preset = path.startsWith("/admin") ? "admin" : path.startsWith("/console") ? "console" : "site"
-const app: App = preset === "admin" ? adminApp() : preset === "console" ? consoleApp() : siteApp()
+const demo = path.startsWith("/admin") ? "admin" : path.startsWith("/console") ? "console" : "site"
+const app: App = demo === "admin" ? adminApp() : demo === "console" ? consoleApp() : siteApp()
+const preset = demo === "admin" ? "compact" : demo === "console" ? "comfortable" : "spacious"
+// 日期时间的格式是应用的设置：表格多的演示用短格式。
+const datetimeFormat = demo === "admin" ? "MM/DD HH:mm" : undefined
 const scheme = new URLSearchParams(location.search).get("scheme")
 
 /** 按右下角选择的主题色生成主题，换颜色时不重新加载页面。 */
 function Playground(): ReactNode {
   const [primary, setPrimary] = useState(savedPrimary)
-  const theme = useMemo(() => createUiTheme({ preset, primary }), [primary])
+  const theme = useMemo(() => createUiTheme({ preset, primary, datetimeFormat }), [primary])
   return (
     <UIProvider theme={theme} defaultColorScheme={scheme === "dark" ? "dark" : "light"}>
       <AppRoot app={app} />

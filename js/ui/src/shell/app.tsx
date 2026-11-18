@@ -317,7 +317,7 @@ function AppProviders({ app, children }: { app: App; children: ReactNode }): Rea
 
 /**
  * 登录、退出、切换账号或租户时（会话的代次变化）重新挂载其中的内容：页面中按身份计算的查询（例如 queryKey 中的
- * session.scope()）重新读取，上一个身份的页面状态不会留下。AdminLayout 用它包住页面；自己写的布局把页面
+ * session.scope()）重新读取，上一个身份的页面状态不会留下。FrameLayout 用它包住页面；自己写的布局把页面
  * （<Outlet /> 或 <TabsOutlet />）放在其中，不要包住布局本身或 HTML 文档。
  *
  *   <SessionBoundary><Outlet /></SessionBoundary>

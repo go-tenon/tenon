@@ -1,10 +1,12 @@
 // 官网和内容站的布局：吸顶的页头（标志、导航、操作）、内容、页脚。窄屏时导航收进抽屉。
 // 首页的内容由应用自己写；文档页用 DocsLayout。
 
-import { Box, Burger, Container, Drawer, Group, SimpleGrid, Stack, Text, useMantineTheme } from "@mantine/core"
+import { Box, Burger, Container, Drawer, Group, SimpleGrid, Stack, Text } from "@mantine/core"
 import { Link, Outlet } from "@tanstack/react-router"
 import { type CSSProperties, type ReactNode, useState } from "react"
-import { layoutMetrics } from "./theme"
+
+// 页头的高度（像素）。
+const headerHeight = 64
 
 /** 页头或页脚中的一个链接：应用内的地址用 to，外部地址用 href。 */
 export interface SiteLink {
@@ -59,9 +61,8 @@ export function SiteLayout({
   size = "xl",
   children,
 }: SiteLayoutProps): ReactNode {
-  const m = layoutMetrics(useMantineTheme())
   const [open, setOpen] = useState(false)
-  const vars = { "--tn-header-height": `${m.headerHeight}px` } as CSSProperties
+  const vars = { "--tn-header-height": `${headerHeight}px` } as CSSProperties
   return (
     <div className="tn-site" style={vars}>
       <header className="tn-site-header">

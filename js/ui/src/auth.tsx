@@ -6,8 +6,8 @@ import { IconAlertCircle } from "@tabler/icons-react"
 import { type FormEvent, type ReactNode, useState } from "react"
 import { serverErrors, useApp } from "./shell"
 
-/** AuthLayout 的选项。 */
-export interface AuthLayoutProps {
+/** CenteredAuthLayout 的选项。 */
+export interface CenteredAuthLayoutProps {
   /** 卡片上方的标志和名称。 */
   brand?: ReactNode
   title: ReactNode
@@ -18,8 +18,14 @@ export interface AuthLayoutProps {
   children: ReactNode
 }
 
-/** 认证页的布局：页面中央一张卡片。 */
-export function AuthLayout({ brand, title, description, footer, children }: AuthLayoutProps): ReactNode {
+/** 登录、注册、找回密码等页面的样式之一：页面中央一张卡片。以后的其他样式（例如左右分栏）是另外的组件。 */
+export function CenteredAuthLayout({
+  brand,
+  title,
+  description,
+  footer,
+  children,
+}: CenteredAuthLayoutProps): ReactNode {
   return (
     <div className="tn-auth">
       <Stack gap="lg" w="100%" maw={400} align="stretch">

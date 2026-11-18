@@ -7,7 +7,7 @@
 写页面时按这个顺序读：
 
 - [搭建前端应用](app.md)：创建应用、样式预设与主题、页面的元数据、登录、权限、错误页和新版本提示
-- [布局与导航](layout.md)：`AdminLayout` 和 `RailLayout` 两个布局、侧栏菜单、顶栏、多标签、租户，以及自己写布局
+- [布局与导航](layout.md)：`FrameLayout` 和 `RailLayout` 两个布局、侧栏菜单、顶栏、多标签、租户，以及自己写布局
 - [在 React 中调用接口](client-react.md)：TanStack Query、校验规则、权限、枚举与分页
 - [列表与表单](lists-forms.md)：地址中的列表状态、表格、按生成的规则校验的表单、未保存的修改
 - [资源与设置页面](resources.md)：在 Go 中声明增删改查和设置的页面，`ResourcePage`、`SettingsForm` 按声明渲染

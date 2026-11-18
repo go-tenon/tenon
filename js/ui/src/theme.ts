@@ -68,24 +68,24 @@ export function palette(color: PrimaryColor | (string & {})): MantineColorsTuple
   }
 }
 
-/** 样式预设的名称。 */
-export type Preset = "admin" | "console" | "site"
+/**
+ * 样式预设的名称，按密度区分：
+ *   - compact：紧凑，控件矮、圆角小、行距紧，一屏能看到更多数据；
+ *   - comfortable：舒展，Mantine 默认的控件尺寸和柔和的圆角；
+ *   - spacious：宽松，大字号、宽行距，适合阅读。
+ * 预设只管密度，与布局无关：布局自己的尺寸（顶栏高度、侧栏宽度）由布局决定。
+ */
+export type Preset = "compact" | "comfortable" | "spacious"
 
-/** 布局用到的尺寸，放在主题的 other.tenon 中，布局组件据此排版。 */
+/** 组件按密度排版用到的值，放在主题的 other.tenon 中。 */
 export interface LayoutMetrics {
   preset: Preset
-  /** 顶栏的高度（像素）。 */
-  headerHeight: number
-  /** 侧栏展开时的宽度（像素）。 */
-  navbarWidth: number
-  /** 侧栏收起为图标时的宽度（像素）。 */
-  navbarCollapsedWidth: number
-  /** 内容区的内边距（Mantine 的间距名）。 */
+  /** 内容区和卡片的内边距（Mantine 的间距名）。 */
   contentPadding: "sm" | "md" | "lg" | "xl"
   /** 表单控件、按钮的默认尺寸。 */
   controlSize: "xs" | "sm" | "md"
-  /** 日期时间的显示格式（dayjs 的写法），例如 MM/DD HH:mm。表格、操作记录、通知中的时间都用它。 */
-  datetimeFormat: string
+  /** 日期时间的显示格式（dayjs 的写法），由应用用 createUiTheme 的 datetimeFormat 设置；没有设置时是 YYYY-MM-DD HH:mm。 */
+  datetimeFormat?: string
 }
 
 // 系统字体：中文优先用系统自带的苹方、思源黑体、微软雅黑，不额外加载字体。
@@ -173,8 +173,8 @@ function base(m: LayoutMetrics): MantineThemeOverride {
   })
 }
 
-// admin 预设的暗色：带一点主色调的深灰。[7] 是页面背景、[8] 是侧栏、[6] 是悬停、[4] 是边框。
-const adminDark: MantineColorsTuple = [
+// compact 预设的暗色：带一点主色调的深灰。[7] 是页面背景、[8] 是侧栏、[6] 是悬停、[4] 是边框。
+const compactDark: MantineColorsTuple = [
   "#d5d9e0",
   "#b0b7c3",
   "#8a93a3",
@@ -187,22 +187,14 @@ const adminDark: MantineColorsTuple = [
   "#0f1115",
 ]
 
-// admin 预设默认尺寸（sm）的按钮和输入框：32px 高、13px 字（Mantine 默认 36px、14px）。
-const adminControl = { height: "32px", fz: "13px" }
+// compact 预设默认尺寸（sm）的按钮和输入框：32px 高、13px 字（Mantine 默认 36px、14px）。
+const compactControl = { height: "32px", fz: "13px" }
 
-/** admin 预设：紧凑，信息密度高，适合表格和表单多的界面。正文 14px，控件 32px 高。 */
-const admin: MantineThemeOverride = mergeThemeOverrides(
-  base({
-    preset: "admin",
-    headerHeight: 52,
-    navbarWidth: 224,
-    navbarCollapsedWidth: 56,
-    contentPadding: "md",
-    controlSize: "sm",
-    datetimeFormat: "MM/DD HH:mm",
-  }),
+/** compact 预设：紧凑，信息密度高，适合表格和表单多的界面。正文 14px，控件 32px 高。 */
+const compact: MantineThemeOverride = mergeThemeOverrides(
+  base({ preset: "compact", contentPadding: "md", controlSize: "sm" }),
   createTheme({
-    colors: { dark: adminDark },
+    colors: { dark: compactDark },
     defaultRadius: "sm",
     radius: { xs: "2px", sm: "4px", md: "8px", lg: "12px", xl: "16px" },
     fontSizes: { xs: "12px", sm: "13px", md: "14px", lg: "16px", xl: "18px" },
@@ -221,9 +213,9 @@ const admin: MantineThemeOverride = mergeThemeOverrides(
           props.size === undefined || props.size === "sm"
             ? {
                 root: {
-                  "--button-height": adminControl.height,
+                  "--button-height": compactControl.height,
                   "--button-padding-x": "12px",
-                  "--button-fz": adminControl.fz,
+                  "--button-fz": compactControl.fz,
                 },
               }
             : { root: {} },
@@ -231,24 +223,16 @@ const admin: MantineThemeOverride = mergeThemeOverrides(
       Input: Input.extend({
         vars: (_, props) =>
           props.size === undefined || props.size === "sm"
-            ? { wrapper: { "--input-height": adminControl.height, "--input-fz": adminControl.fz } }
+            ? { wrapper: { "--input-height": compactControl.height, "--input-fz": compactControl.fz } }
             : { wrapper: {} },
       }),
     },
   }),
 )
 
-/** console 预设：舒展的留白、柔和的圆角，适合页面不密集、以模块切换为主的应用。 */
-const consolePreset: MantineThemeOverride = mergeThemeOverrides(
-  base({
-    preset: "console",
-    headerHeight: 56,
-    navbarWidth: 248,
-    navbarCollapsedWidth: 64,
-    contentPadding: "lg",
-    controlSize: "sm",
-    datetimeFormat: "YYYY-MM-DD HH:mm",
-  }),
+/** comfortable 预设：舒展的留白、柔和的圆角，适合页面不密集的应用。正文 14px，控件 36px 高。 */
+const comfortable: MantineThemeOverride = mergeThemeOverrides(
+  base({ preset: "comfortable", contentPadding: "lg", controlSize: "sm" }),
   createTheme({
     defaultRadius: "md",
     radius: { xs: "4px", sm: "6px", md: "8px", lg: "12px", xl: "16px" },
@@ -264,28 +248,20 @@ const consolePreset: MantineThemeOverride = mergeThemeOverrides(
   }),
 )
 
-// 官网的字体：拉丁字母优先用 Inter（项目引入 @fontsource-variable/inter 时），中文仍是系统字体。
-const siteFontFamily = `"Inter Variable", Inter, ${fontFamily}`
+// spacious 预设的字体：拉丁字母优先用 Inter（项目引入 @fontsource-variable/inter 时），中文仍是系统字体。
+const spaciousFontFamily = `"Inter Variable", Inter, ${fontFamily}`
 
-/** 官网和内容站：大标题、宽松的行距，适合落地页、文章和文档。 */
-const site: MantineThemeOverride = mergeThemeOverrides(
-  base({
-    preset: "site",
-    headerHeight: 64,
-    navbarWidth: 260,
-    navbarCollapsedWidth: 64,
-    contentPadding: "xl",
-    controlSize: "md",
-    datetimeFormat: "YYYY-MM-DD HH:mm",
-  }),
+/** spacious 预设：大标题、宽松的行距，适合官网、文章和文档。 */
+const spacious: MantineThemeOverride = mergeThemeOverrides(
+  base({ preset: "spacious", contentPadding: "xl", controlSize: "md" }),
   createTheme({
-    fontFamily: siteFontFamily,
+    fontFamily: spaciousFontFamily,
     defaultRadius: "md",
     radius: { xs: "4px", sm: "6px", md: "10px", lg: "14px", xl: "20px" },
     fontSizes: { xs: "13px", sm: "14px", md: "16px", lg: "18px", xl: "20px" },
     lineHeights: { xs: "1.5", sm: "1.6", md: "1.7", lg: "1.7", xl: "1.65" },
     headings: {
-      fontFamily: siteFontFamily,
+      fontFamily: spaciousFontFamily,
       fontWeight: "700",
       sizes: {
         h1: { fontSize: "clamp(32px, 5vw, 52px)", lineHeight: "1.1" },
@@ -297,12 +273,12 @@ const site: MantineThemeOverride = mergeThemeOverrides(
   }),
 )
 
-/** 三套样式预设：紧凑的 admin、舒展的 console、官网和内容站的 site。 */
-export const themes: Record<Preset, MantineThemeOverride> = { admin, console: consolePreset, site }
+/** 三套样式预设：紧凑的 compact、舒展的 comfortable、宽松的 spacious。 */
+export const themes: Record<Preset, MantineThemeOverride> = { compact, comfortable, spacious }
 
 /** createUiTheme 的选项，通常来自项目的设计令牌（theme/tokens.json）。 */
 export interface UiThemeOptions {
-  /** 样式预设，默认 console。 */
+  /** 样式预设，默认 comfortable。 */
   preset?: Preset
   /**
    * 品牌色：预设的名称（见 primaryColors，例如 sky-blue）或者颜色值（例如 #0f766e），默认是第一种预设 blue-gray。
@@ -313,7 +289,7 @@ export interface UiThemeOptions {
   radius?: number
   /** 字体，不设置时使用系统字体。 */
   fontFamily?: string
-  /** 日期时间的显示格式（dayjs 的写法），默认随预设：admin 是 MM/DD HH:mm，其他是 YYYY-MM-DD HH:mm。 */
+  /** 日期时间的显示格式（dayjs 的写法），例如 MM/DD HH:mm，默认 YYYY-MM-DD HH:mm。表格、操作记录、通知中的时间都用它。 */
   datetimeFormat?: string
   /** 再合并的 Mantine 主题覆盖，用于令牌之外的调整。 */
   override?: MantineThemeOverride
@@ -321,7 +297,7 @@ export interface UiThemeOptions {
 
 /** 由预设和设计令牌生成 Mantine 主题，交给 UIProvider。 */
 export function createUiTheme(options: UiThemeOptions = {}): MantineThemeOverride {
-  const parts: MantineThemeOverride[] = [themes[options.preset ?? "console"]]
+  const parts: MantineThemeOverride[] = [themes[options.preset ?? "comfortable"]]
   if (options.datetimeFormat) {
     const m = layoutMetrics(parts[0] as { other?: Record<string, unknown> })
     parts.push({
@@ -351,7 +327,7 @@ export function createUiTheme(options: UiThemeOptions = {}): MantineThemeOverrid
   return mergeThemeOverrides(...parts)
 }
 
-/** 主题中的布局尺寸；没有时（没有用 createUiTheme 或 themes）返回 console 预设的尺寸。 */
+/** 主题中按密度排版用到的值；没有时（没有用 createUiTheme 或 themes）返回 comfortable 预设的值。 */
 export function layoutMetrics(theme: { other?: Record<string, unknown> }): LayoutMetrics {
-  return (theme.other?.tenon as LayoutMetrics | undefined) ?? (consolePreset.other?.tenon as LayoutMetrics)
+  return (theme.other?.tenon as LayoutMetrics | undefined) ?? (comfortable.other?.tenon as LayoutMetrics)
 }

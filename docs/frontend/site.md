@@ -1,6 +1,6 @@
 # 官网与文档站
 
-官网、落地页、内容站和文档站用 `site` 样式预设：正文 16px，大标题随屏幕宽度缩放，行距宽松。页面在服务端渲染，搜索引擎可以收录；不随请求变化的页面在构建时预渲染。`tenon add frontend <名称> --style site` 生成的前端已经这样设置好。
+官网、落地页、内容站和文档站用 `spacious` 样式预设：正文 16px，大标题随屏幕宽度缩放，行距宽松。页面在服务端渲染，搜索引擎可以收录；不随请求变化的页面在构建时预渲染。`tenon add frontend <名称> --layout site` 生成的前端已经这样设置好。
 
 阅读前需要了解：[搭建前端应用](app.md)；[TanStack Start 的接入](start.md)。
 
@@ -57,7 +57,7 @@ function Site() {
 <a id="home"></a>
 ## 首页
 
-框架不提供落地页的模板：首页、产品介绍这类页面因产品而异，放在 `SiteLayout` 之中，用 Mantine 的组件自己写。`tenon add frontend --style site` 生成的首页是一个占位，只有页头和一段文字，做实际产品时换成自己的内容：
+框架不提供落地页的模板：首页、产品介绍这类页面因产品而异，放在 `SiteLayout` 之中，用 Mantine 的组件自己写。`tenon add frontend --layout site` 生成的首页是一个占位，只有页头和一段文字，做实际产品时换成自己的内容：
 
 ```tsx title="src/routes/index.tsx"
 import { Button, Container, Stack, Text, Title } from "@mantine/core"
@@ -80,7 +80,7 @@ function Home() {
 }
 ```
 
-拉丁字母用 Inter：`site` 预设的字体以 Inter 开头，模板在根路由中引入 `@fontsource-variable/inter`；中文仍是系统字体。
+拉丁字母用 Inter：`spacious` 预设的字体以 Inter 开头，模板在根路由中引入 `@fontsource-variable/inter`；中文仍是系统字体。
 
 <a id="docs"></a>
 ## 文档页

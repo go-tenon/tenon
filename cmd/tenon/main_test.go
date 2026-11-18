@@ -144,7 +144,7 @@ func TestAddFrontend(t *testing.T) {
 	for name, want := range map[string]string{
 		"apps/admin/package.json":         `"name": "@helpdesk/admin"`,
 		"apps/admin/vite.config.ts":       `base: "/admin/"`,
-		"apps/admin/src/theme.ts":         `preset: "console"`,
+		"apps/admin/src/theme.ts":         `preset: "comfortable"`,
 		"apps/admin/src/routes/login.tsx": "LoginForm",
 		"package.json":                    `"apps/admin",`,
 		".tenon/js/client/package.json":   `"name": "@go-tenon/client"`,
@@ -163,10 +163,11 @@ func TestAddFrontend(t *testing.T) {
 		}
 	}
 	for args, want := range map[string]string{
-		"add frontend admin":            "already exists",
-		"add frontend Admin":            "must match",
-		"add frontend ops --base /ops":  "must start and end with /",
-		"add frontend ops --style antd": `--style "antd" is not one of`,
+		"add frontend admin":              "already exists",
+		"add frontend Admin":              "must match",
+		"add frontend ops --base /ops":    "must start and end with /",
+		"add frontend ops --layout antd":  `--layout "antd" is not one of`,
+		"add frontend ops --preset dense": `--preset "dense" is not one of`,
 	} {
 		if err := execute(t, strings.Fields(args)...); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%s: err = %v", args, err)

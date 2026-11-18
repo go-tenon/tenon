@@ -179,7 +179,7 @@ function JsonField({
 
 /** 按字段的类型显示一个值：枚举显示文字，布尔显示是否，时间按本地格式，标签逐个显示，空值显示破折号。 */
 /**
- * 按主题的 datetimeFormat（admin 预设是 MM/DD HH:mm）显示日期时间。后端返回的是带时区的 ISO 时间，显示为浏览器所在时区的时间；
+ * 按主题的 datetimeFormat（createUiTheme 的选项，默认 YYYY-MM-DD HH:mm）显示日期时间。后端返回的是带时区的 ISO 时间，显示为浏览器所在时区的时间；
  * 解析不了时原样返回。
  *
  *   const formatDateTime = useFormatDateTime()

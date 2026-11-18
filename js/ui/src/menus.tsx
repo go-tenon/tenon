@@ -1,6 +1,6 @@
-// 顶栏的菜单：用户菜单（含配色）、通知、后台任务、语言。作为 AdminLayout 的参数：
+// 顶栏的菜单：用户菜单（含配色）、通知、后台任务、语言。作为 FrameLayout 的参数：
 //
-//   <AdminLayout user={<UserMenu name={me.name} logout={api.auth.logout} />} actions={<NotificationsMenu source={inbox} />} />
+//   <FrameLayout user={<UserMenu name={me.name} logout={api.auth.logout} />} actions={<NotificationsMenu source={inbox} />} />
 
 import {
   ActionIcon,
@@ -43,7 +43,7 @@ import {
 import { useNavigate } from "@tanstack/react-router"
 import { type ReactNode, useState } from "react"
 import { useFormatDateTime } from "./fields"
-import { useTabsAvailable } from "./layout-context"
+import { useUserMenuExtra } from "./layout-context"
 import {
   confirmDiscard,
   dismissOperation,
@@ -83,7 +83,7 @@ export interface UserMenuProps {
   position?: MenuProps["position"]
 }
 
-/** 用户菜单：只显示头像；菜单顶部是用户的名称和邮箱，下面是应用的菜单项、配色、多标签的开关（布局开启了多标签时）和退出登录。 */
+/** 用户菜单：只显示头像；菜单顶部是用户的名称和邮箱，下面是应用的菜单项、配色、所在布局放进来的内容（例如 FrameLayout 的“多标签”开关）和退出登录。 */
 export function UserMenu({
   name,
   email,
@@ -146,7 +146,7 @@ export function UserMenu({
           </div>
         )}
         {colorScheme && <ColorSchemePicker />}
-        {useTabsAvailable() && <TabsSwitch />}
+        {useUserMenuExtra()}
         <div className="tn-menu-section">
           <Menu.Item leftSection={<IconLogout size={18} stroke={1.5} />} onClick={() => void signOut()}>
             退出登录
@@ -154,25 +154,6 @@ export function UserMenu({
         </div>
       </Menu.Dropdown>
     </Menu>
-  )
-}
-
-/** 多标签的开关，按账号保存。窄屏时不显示标签栏，也不显示开关。 */
-function TabsSwitch(): ReactNode {
-  const [layout, setLayout] = useLayoutState()
-  return (
-    <Box visibleFrom="sm" className="tn-menu-section tn-menu-toggles">
-      <UnstyledButton
-        className="tn-menu-toggle"
-        role="switch"
-        aria-checked={layout.tabs}
-        onClick={() => setLayout({ tabs: !layout.tabs })}
-      >
-        <IconBrowser size={18} stroke={1.5} />
-        <span>多标签</span>
-        <Switch size="xs" checked={layout.tabs} readOnly tabIndex={-1} aria-hidden style={{ pointerEvents: "none" }} />
-      </UnstyledButton>
-    </Box>
   )
 }
 
@@ -228,7 +209,7 @@ export interface LanguageMenuProps {
   onChange: (value: string) => void
 }
 
-/** 语言切换：顶栏的图标按钮，菜单中列出语言，当前的一项打勾。作为 AdminLayout 的 actions 放在用户菜单的左边。 */
+/** 语言切换：顶栏的图标按钮，菜单中列出语言，当前的一项打勾。作为 FrameLayout 的 actions 放在用户菜单的左边。 */
 export function LanguageMenu({ languages, value, onChange }: LanguageMenuProps): ReactNode {
   return (
     <Menu width={160} position="bottom-end">

@@ -31,7 +31,7 @@ func TestWrite(t *testing.T) {
 		"apps/web/package.json":          `"build": "tenon-start compile --out ssr.js --base /"`,
 		"apps/web/vite.config.ts":        `plugins: [tenon({ prerender: ["/"] })]`,
 		"apps/web/frontend.go":           "//go:embed ssr.js\nvar SSR []byte\n",
-		"apps/web/src/theme.ts":          `preset: "site"`,
+		"apps/web/src/theme.ts":          `preset: "spacious"`,
 		"apps/web/src/start.ts":          "requestMiddleware: [requestMiddleware] }",
 		"apps/web/src/router.tsx":        `id: "web"`,
 		"apps/web/src/routes/__root.tsx": `{ title: "Todo" }`,
@@ -94,8 +94,8 @@ func TestWriteFrontend(t *testing.T) {
 		files   map[string]string
 		missing []string
 	}{
-		{"console", map[string]string{
-			"src/theme.ts":              `preset: "console"`,
+		{"rail", map[string]string{
+			"src/theme.ts":              `preset: "comfortable", primary: "blue-gray" })`,
 			"src/start.ts":              "defaultSsr: false",
 			"src/router.tsx":            "permissions: async () => (await me()).permissions ?? []",
 			"src/routes/_app.tsx":       `<RailLayout title="后台" user=`,
@@ -103,12 +103,12 @@ func TestWriteFrontend(t *testing.T) {
 			"src/routes/login.tsx":      "<LoginForm login={login} redirect={redirect} />",
 			"src/auth.ts":               "createSession",
 		}, []string{"src/routes/index.tsx"}},
-		{"admin", map[string]string{
-			"src/theme.ts":        `preset: "admin", primary: "blue-gray"`,
-			"src/routes/_app.tsx": `<AdminLayout title="后台" tabs user=`,
+		{"frame", map[string]string{
+			"src/theme.ts":        `preset: "compact", primary: "blue-gray", datetimeFormat: "MM/DD HH:mm"`,
+			"src/routes/_app.tsx": `<FrameLayout title="后台" tabs user=`,
 		}, nil},
 		{"site", map[string]string{
-			"src/theme.ts":          `createUiTheme({ preset: "site", primary: "blue-gray"`,
+			"src/theme.ts":          `createUiTheme({ preset: "spacious", primary: "blue-gray"`,
 			"src/routes/index.tsx":  `<SiteLayout brand="后台"`,
 			"src/routes/__root.tsx": `import "@fontsource-variable/inter/index.css"`,
 			"package.json":          `"@fontsource-variable/inter"`,
@@ -116,7 +116,7 @@ func TestWriteFrontend(t *testing.T) {
 		}, []string{"src/auth.ts", "src/routes/login.tsx"}},
 	} {
 		root := t.TempDir()
-		f := scaffold.Frontend{Scope: "helpdesk", Name: "admin-console", Base: "/admin/", Title: "后台", Style: c.style}
+		f := scaffold.Frontend{Scope: "helpdesk", Name: "admin-console", Base: "/admin/", Title: "后台", Layout: c.style}
 		if err := scaffold.WriteFrontend(root, f); err != nil {
 			t.Fatal(err)
 		}
@@ -144,8 +144,19 @@ func TestWriteFrontend(t *testing.T) {
 			t.Errorf("second write: %v", err)
 		}
 	}
-	if err := scaffold.WriteFrontend(t.TempDir(), scaffold.Frontend{Name: "x", Style: "antd"}); err == nil {
-		t.Error("unknown style accepted")
+	if err := scaffold.WriteFrontend(t.TempDir(), scaffold.Frontend{Name: "x", Layout: "antd"}); err == nil {
+		t.Error("unknown layout accepted")
+	}
+	if err := scaffold.WriteFrontend(t.TempDir(), scaffold.Frontend{Name: "x", Layout: "rail", Preset: "dense"}); err == nil {
+		t.Error("unknown preset accepted")
+	}
+	// 预设可以和布局分开选。
+	root := t.TempDir()
+	if err := scaffold.WriteFrontend(root, scaffold.Frontend{Scope: "s", Name: "x", Base: "/x/", Title: "X", Layout: "rail", Preset: "compact"}); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(root, "apps", "x", "src", "theme.ts")); !strings.Contains(string(b), `preset: "compact"`) {
+		t.Errorf("rail with compact theme.ts:\n%s", b)
 	}
 }
 
