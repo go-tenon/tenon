@@ -151,7 +151,7 @@ return ssr.Run(ctx, serve, webPages, adminPages)
 
 | 样式 | 内容 |
 | --- | --- |
-| `console`（默认） | SaaS 控制台（商户侧）：登录页和布局的占位（`ConsoleSideLayout`），页面只在浏览器中渲染 |
+| `console`（默认） | SaaS 控制台：登录页和双栏导航的布局（`RailLayout`），页面只在浏览器中渲染 |
 | `admin` | 运营后台：紧凑，适合表格和表单，应用外壳带多标签，页面只在浏览器中渲染 |
 | `site` | 官网和内容站：页头、页脚，页面在服务端渲染，首页构建时预渲染 |
 

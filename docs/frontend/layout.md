@@ -2,7 +2,7 @@
 
 运营后台的页面放在 `AppLayout` 中：顶栏占满整行，左边是标志，中间是多标签（开启时），右边是操作和用户菜单；顶栏下面左侧是页面搜索和按权限过滤的侧栏菜单，右侧是页面，可以开启多标签。这一页介绍 `AppLayout`、顶栏、页面搜索、多标签、租户切换和页面的标题区，最后是自己写布局时用到的导航模型和插槽。
 
-商户侧（SaaS 控制台）的布局见[商户侧的布局](#console-layouts)，官网和文档站用 `SiteLayout`、`DocsLayout`，见[官网与文档站](site.md)。
+console（SaaS 控制台）有两套布局模板，见[console 的布局](#console-layouts)；官网和文档站用 `SiteLayout`、`DocsLayout`，见[官网与文档站](site.md)。
 
 阅读前需要了解：[搭建前端应用](app.md)。
 
@@ -14,7 +14,7 @@
 - [页面的标题区](#page)
 - [多标签](#tabs)
 - [租户](#tenants)
-- [商户侧的布局](#console-layouts)
+- [console 的布局](#console-layouts)
 - [自己写布局](#custom-layouts)
 - [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
@@ -273,18 +273,41 @@ export const Route = createFileRoute("/t/$tenant")({
 自己画租户菜单时用 `useTenant()`：`{ current, tenant, tenants, switchTo }`，用户选择留下时 `switchTo` 返回 `false`。
 
 <a id="console-layouts"></a>
-## 商户侧的布局
+## console 的布局
 
-商户侧有两种布局方案，现在都是占位，以后逐步设计：`ConsoleSideLayout` 是侧栏导航，`ConsoleTopLayout` 是顶部导航。它们只有顶栏（名称、用户菜单）、按权限过滤的导航和页面内容，导航与 `AppLayout` 一样来自路由的 `staticData`。`tenon add frontend --style console` 生成的前端用侧栏导航：
+console（SaaS 控制台）有两套布局模板：Rail 和 Topbar。
+
+`RailLayout` 是 Rail 模板，双栏导航：最左侧是模块的图标栏（标志、模块、用户菜单），旁边是当前模块的二级导航，右侧是页面。`tenon add frontend --style console` 生成的前端已经这样写好：
 
 ```tsx title="src/routes/_app.tsx"
 function Layout() {
   const user = useQuery({ queryKey: ["me"], queryFn: me })
-  return <ConsoleSideLayout title="Acme" user={<UserMenu name={user.data?.name} logout={logout} />} />
+  return (
+    <RailLayout
+      title="Acme"
+      user={
+        <UserMenu
+          name={user.data?.name}
+          email={user.data?.email}
+          position="right-end"
+          items={[{ label: "设置", icon: <IconSettings size={16} />, to: "/settings/profile" }]}
+          logout={logout}
+        />
+      }
+    />
+  )
 }
 ```
 
-换成顶部导航只改组件名。框架的 `js/playground` 中打开 `/console/?layout=top` 看顶部导航的占位。
+导航与 `AppLayout` 一样来自路由的 `staticData`（`title`、`icon`、`order`），按权限过滤：
+
+- 第一级是模块，显示在图标栏中，鼠标移上去显示名称。模块下的页面显示在二级导航中，模块下的分组是二级导航中的一节；只有一个页面的模块（例如首页），二级导航中就是它自己。
+- `settings`（默认 `/settings`）下的页面不进图标栏，从用户菜单进入。这时二级导航是“设置”：顶部一个搜索框，下面按分组列出设置项。分组可以是没有路径的路由，例如 `createRoute({ getParentRoute: () => settings, id: "personal", staticData: { title: "个人" } })`。
+- 二级导航可以收起，是否收起记在浏览器中。收起后，鼠标移到当前模块的图标上，图标变成“展开”，点击展开。
+- 窄屏（小于 48em）时图标栏保留，二级导航是从左侧滑出的抽屉，点击模块打开。
+- 页面的标题、说明和按钮用 [`Page`](#page)；内容区最宽 `maxWidth`（默认 1152px）。
+
+`TopbarLayout` 是 Topbar 模板，顶部导航，现在是占位，只有顶栏和导航。框架的 `js/playground` 中打开 `/console/` 看 Rail，`/console/?layout=top` 看 Topbar。
 
 <a id="custom-layouts"></a>
 ## 自己写布局
@@ -353,10 +376,11 @@ function TopLayout() {
 | 名称 | 说明 |
 | --- | --- |
 | `AppLayout` | 应用外壳：`title`、`logo`、`user`、`actions`、`search`、`tabs`、`maxWidth` |
-| `ConsoleSideLayout`、`ConsoleTopLayout` | 商户侧的两种布局（占位）：`title`、`user` |
+| `RailLayout` | Rail 模板，双栏导航：`title`、`logo`、`user`、`settings`、`maxWidth` |
+| `TopbarLayout` | Topbar 模板，顶部导航（占位）：`title`、`user` |
 | `Fill`、`Slot`、`useSlotFilled`、`SlotName` | 插槽 |
 | `SessionBoundary` | 身份变化时重新挂载其中的页面 |
-| `UserMenu`、`TenantSwitcher`、`NotificationsMenu`、`OperationsMenu`、`LanguageMenu`、`ColorSchemeToggle` | 顶栏菜单；`UserMenu` 的选项：`name`、`avatar`、`logout`、`items`、`colorScheme` |
+| `UserMenu`、`TenantSwitcher`、`NotificationsMenu`、`OperationsMenu`、`LanguageMenu`、`ColorSchemeToggle` | 顶栏菜单；`UserMenu` 的选项：`name`、`email`、`avatar`、`logout`、`items`、`colorScheme`、`position` |
 | `Icon`、`useIcon`、`defaultIcons`、`IconsProvider` | 图标名称 |
 | `useMenuBadge(routeId, value)` | 登记菜单项的徽标 |
 | `Page`、`PageTab` | 页面的标题区：`title`、`description`、`actions`、`breadcrumbs`、`crumb`；页内标签 `tabs`（`value`、`label`、`count`、`alert`、`content`） |

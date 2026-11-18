@@ -98,7 +98,7 @@ func TestWriteFrontend(t *testing.T) {
 			"src/theme.ts":              `preset: "console"`,
 			"src/start.ts":              "defaultSsr: false",
 			"src/router.tsx":            "permissions: async () => (await me()).permissions ?? []",
-			"src/routes/_app.tsx":       `<ConsoleSideLayout title="后台" user=`,
+			"src/routes/_app.tsx":       `<RailLayout title="后台" user=`,
 			"src/routes/_app/index.tsx": `createFileRoute("/_app/")`,
 			"src/routes/login.tsx":      "<LoginForm login={login} redirect={redirect} />",
 			"src/auth.ts":               "createSession",

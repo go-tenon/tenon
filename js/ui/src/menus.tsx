@@ -8,18 +8,23 @@ import {
   Badge,
   Box,
   Button,
+  Center,
   Group,
   Indicator,
   Loader,
+  type MantineColorScheme,
   Menu,
+  type MenuProps,
   Popover,
   Progress,
   ScrollArea,
+  SegmentedControl,
   Stack,
   Switch,
   Text,
   UnstyledButton,
   useMantineColorScheme,
+  VisuallyHidden,
 } from "@mantine/core"
 import {
   IconBell,
@@ -30,6 +35,7 @@ import {
   IconListCheck,
   IconLogout,
   IconMoon,
+  IconPalette,
   IconSelector,
   IconSun,
   IconX,
@@ -61,8 +67,10 @@ export interface UserMenuItem {
 
 /** UserMenu 的选项。 */
 export interface UserMenuProps {
-  /** 用户的名称：头像中显示首字；读取中时为空。 */
+  /** 用户的名称：头像中显示首字，菜单顶部显示全名；读取中时为空。 */
   name?: string
+  /** 用户的邮箱或账号，显示在菜单顶部的名称下面。 */
+  email?: string
   /** 头像的地址；没有时显示名称的首字。 */
   avatar?: string
   /** 调用应用的退出接口：撤销登录、清除会话 cookie。之后清除会话中的身份。 */
@@ -71,10 +79,20 @@ export interface UserMenuProps {
   items?: UserMenuItem[]
   /** 菜单中的配色切换（亮色、暗色、跟随系统），默认显示；false 时不显示。 */
   colorScheme?: boolean
+  /** 菜单弹出的方向，默认 bottom-end（顶栏右侧）；放在侧栏底部时用 right-end。 */
+  position?: MenuProps["position"]
 }
 
-/** 用户菜单：只显示头像；菜单中有应用的菜单项、配色、多标签的开关（布局开启了多标签时）和退出登录。 */
-export function UserMenu({ name, avatar, logout, items = [], colorScheme = true }: UserMenuProps): ReactNode {
+/** 用户菜单：只显示头像；菜单顶部是用户的名称和邮箱，下面是应用的菜单项、配色、多标签的开关（布局开启了多标签时）和退出登录。 */
+export function UserMenu({
+  name,
+  email,
+  avatar,
+  logout,
+  items = [],
+  colorScheme = true,
+  position = "bottom-end",
+}: UserMenuProps): ReactNode {
   const app = useApp()
   const navigate = useNavigate()
   const signOut = async () => {
@@ -87,7 +105,7 @@ export function UserMenu({ name, avatar, logout, items = [], colorScheme = true 
     }
   }
   return (
-    <Menu width={220} position="bottom-end">
+    <Menu width={220} position={position}>
       <Menu.Target>
         <UnstyledButton className="tn-avatar" aria-label="用户菜单">
           <Avatar src={avatar} size={30} radius="xl" color="brand">
@@ -96,6 +114,23 @@ export function UserMenu({ name, avatar, logout, items = [], colorScheme = true 
         </UnstyledButton>
       </Menu.Target>
       <Menu.Dropdown p={0}>
+        {name && (
+          <Group gap="sm" wrap="nowrap" className="tn-menu-section tn-menu-user">
+            <Avatar src={avatar} size={32} radius="xl" color="brand">
+              {name.slice(0, 1)}
+            </Avatar>
+            <Box style={{ minWidth: 0 }}>
+              <Text size="sm" fw={500} truncate>
+                {name}
+              </Text>
+              {email && (
+                <Text size="xs" c="dimmed" truncate>
+                  {email}
+                </Text>
+              )}
+            </Box>
+          </Group>
+        )}
         {items.length > 0 && (
           <div className="tn-menu-section">
             {items.map((item, i) => (
@@ -147,25 +182,32 @@ const schemes = [
   { value: "auto", label: "跟随系统", icon: IconDeviceDesktop },
 ] as const
 
-/** 配色：亮色、暗色、跟随系统三格，当前的一格带底色。点击不关闭菜单。 */
+/** 配色：一行“主题”，右边是亮色、暗色、跟随系统的三段切换（SegmentedControl）。切换不关闭菜单。 */
 function ColorSchemePicker(): ReactNode {
   const { colorScheme, setColorScheme } = useMantineColorScheme()
   return (
-    <div className="tn-schemes" role="radiogroup" aria-label="配色">
-      {schemes.map(({ value, label, icon: SchemeIcon }) => (
-        <UnstyledButton
-          key={value}
-          className="tn-scheme"
-          role="radio"
-          aria-checked={colorScheme === value}
-          aria-label={label}
-          data-active={colorScheme === value || undefined}
-          onClick={() => setColorScheme(value)}
-        >
-          <SchemeIcon size={20} stroke={1.6} />
-        </UnstyledButton>
-      ))}
-    </div>
+    <Group className="tn-schemes" justify="space-between" gap="sm" wrap="nowrap">
+      <Group gap={10} wrap="nowrap">
+        <IconPalette size={18} stroke={1.5} />
+        <Text size="sm">主题</Text>
+      </Group>
+      <SegmentedControl
+        size="xs"
+        radius="xl"
+        aria-label="配色"
+        value={colorScheme}
+        onChange={(v) => setColorScheme(v as MantineColorScheme)}
+        data={schemes.map(({ value, label, icon: SchemeIcon }) => ({
+          value,
+          label: (
+            <Center>
+              <SchemeIcon size={14} stroke={1.8} />
+              <VisuallyHidden>{label}</VisuallyHidden>
+            </Center>
+          ),
+        }))}
+      />
+    </Group>
   )
 }
 

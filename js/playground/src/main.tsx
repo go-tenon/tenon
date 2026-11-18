@@ -10,8 +10,6 @@ import {
   AppLayout,
   AppRoot,
   AuthLayout,
-  ConsoleSideLayout,
-  ConsoleTopLayout,
   createApp,
   createUiTheme,
   DocsLayout,
@@ -25,6 +23,7 @@ import {
   OperationsMenu,
   Page,
   QueuePanel,
+  RailLayout,
   ResourceFormPage,
   ResourcePage,
   RouteError,
@@ -33,6 +32,7 @@ import {
   SchedulePanel,
   SettingsForm,
   SiteLayout,
+  TopbarLayout,
   trackOperation,
   UIProvider,
   UserMenu,
@@ -54,7 +54,7 @@ import {
   TextInput,
   Title,
 } from "@mantine/core"
-import { IconDownload, IconPlus, IconSearch } from "@tabler/icons-react"
+import { IconDownload, IconPlus, IconSearch, IconSettings } from "@tabler/icons-react"
 import { type AnyRoute, createRootRouteWithContext, createRoute, Link, Outlet, useParams } from "@tanstack/react-router"
 import { type ReactNode, useEffect, useMemo, useState } from "react"
 import { createRoot } from "react-dom/client"
@@ -140,7 +140,14 @@ function AdminShell(): ReactNode {
           <LanguageMenu languages={languages} value={language} onChange={setLanguage} />
         </>
       }
-      user={<UserMenu name="韩梅梅" logout={async () => {}} items={[{ label: "账号设置", to: "/settings" }]} />}
+      user={
+        <UserMenu
+          name="韩梅梅"
+          email="hanmeimei@acme.cn"
+          logout={async () => {}}
+          items={[{ label: "账号设置", to: "/settings" }]}
+        />
+      }
     />
   )
 }
@@ -373,19 +380,66 @@ function LoginPage(): ReactNode {
 
 // ———————————————————————————— SaaS 控制台 ————————————————————————————
 
-// 商户侧的两种布局方案（占位）：地址中 ?layout=top 用顶部导航，默认侧栏导航。
+// console 的两套布局模板：默认是 Rail（双栏导航）；地址中 ?layout=top 是 Topbar（顶部导航，占位）。
 const consoleLayout = new URLSearchParams(location.search).get("layout") === "top" ? "top" : "side"
 
 function ConsoleShell(): ReactNode {
-  const Layout = consoleLayout === "top" ? ConsoleTopLayout : ConsoleSideLayout
-  return <Layout title="Acme Cloud" user={<UserMenu name="韩梅梅" logout={async () => {}} />} />
+  if (consoleLayout === "top")
+    return (
+      <TopbarLayout
+        title="Acme Cloud"
+        user={<UserMenu name="韩梅梅" email="hanmeimei@acme.cn" logout={async () => {}} />}
+      />
+    )
+  return (
+    <RailLayout
+      title="Acme Cloud"
+      user={
+        <UserMenu
+          name="韩梅梅"
+          email="hanmeimei@acme.cn"
+          position="right-end"
+          items={[{ label: "设置", icon: <IconSettings size={16} />, to: "/settings/profile" }]}
+          logout={async () => {}}
+        />
+      }
+    />
+  )
 }
 
-/** 商户侧页面的占位。 */
+/** console 的登录页。 */
+function ConsoleLoginPage(): ReactNode {
+  return (
+    <AuthLayout
+      brand={
+        <Group gap={10}>
+          <span className="tn-brand-mark">A</span>
+          <Text fw={600}>Acme Cloud</Text>
+        </Group>
+      }
+      title="登录"
+      description="登录 Acme Cloud 控制台。"
+      footer={
+        <>
+          还没有账号？<AnchorLink to="/login">免费注册</AnchorLink>
+        </>
+      }
+    >
+      <LoginForm
+        login={async () =>
+          Promise.reject({ status: 401, code: "auth.invalid_credentials", detail: "邮箱或密码不对", fields: [] })
+        }
+        forgot={<AnchorLink to="/login">忘记密码？</AnchorLink>}
+      />
+    </AuthLayout>
+  )
+}
+
+/** console 页面的占位。 */
 function ConsolePlaceholder({ title }: { title: string }): ReactNode {
   return (
     <Page title={title}>
-      <Text c="dimmed">商户侧页面的占位，布局方案：{consoleLayout === "top" ? "顶部导航" : "侧栏导航"}。</Text>
+      <Text c="dimmed">console 页面的占位，布局：{consoleLayout === "top" ? "Topbar" : "Rail"}。</Text>
     </Page>
   )
 }
@@ -398,16 +452,33 @@ function consoleApp() {
     beforeLoad: requireAuth,
     component: ConsoleShell,
   })
-  let order = 0
-  const page = (path: string, title: string, icon: string) =>
+  // 导航来自路由：第一级是图标栏中的模块，模块下的页面在二级导航中；/settings 下的页面从用户菜单进入，
+  // 其中没有路径的分组（个人）是二级导航中的一节。
+  const page = (parent: AnyRoute, path: string, title: string, icon: string, order = 0) =>
     createRoute({
-      getParentRoute: () => layout,
+      getParentRoute: () => parent,
       path,
-      staticData: { title, icon, order: order++ },
+      staticData: { title, icon, order },
       component: () => <ConsolePlaceholder title={title} />,
     })
+  const people = createRoute({
+    getParentRoute: () => layout,
+    id: "people",
+    staticData: { title: "伙伴", icon: "team", order: 1 },
+  })
+  const settings = createRoute({
+    getParentRoute: () => layout,
+    path: "/settings",
+    staticData: { title: "设置", icon: "settings", order: 9 },
+  })
+  const personal = createRoute({ getParentRoute: () => settings, id: "personal", staticData: { title: "个人" } })
   const routeTree = root.addChildren([
-    layout.addChildren([page("/", "首页", "home"), page("/settings", "设置", "settings")]),
+    createRoute({ getParentRoute: () => root, path: "/login", component: ConsoleLoginPage }),
+    layout.addChildren([
+      page(layout, "/", "首页", "home"),
+      people.addChildren([page(people, "/members", "找人", "team")]),
+      settings.addChildren([personal.addChildren([page(personal, "/profile", "个人资料", "user")])]),
+    ]),
   ])
   return createApp({
     id: "playground-console",

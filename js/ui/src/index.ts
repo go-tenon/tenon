@@ -7,7 +7,6 @@ export * from "./activity"
 export * from "./app-layout"
 export * from "./auth"
 export * from "./color-scheme"
-export * from "./console-layout"
 export * from "./data-table"
 export * from "./description-list"
 export * from "./docs"
@@ -30,6 +29,7 @@ export {
   type QueueStatusData,
   type QueueTopicData,
 } from "./queue-panel"
+export * from "./rail-layout"
 export * from "./resource"
 export {
   type ScheduleApi,
@@ -44,5 +44,6 @@ export * from "./shell"
 export * from "./site"
 export * from "./tab-bar"
 export * from "./theme"
+export * from "./topbar-layout"
 export * from "./transfer"
 export * from "./version"
