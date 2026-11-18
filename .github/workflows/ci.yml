@@ -42,6 +42,8 @@ jobs:
 
       - name: Install
         run: bun install --frozen-lockfile
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1" # 类型检查和测试只需要 electron 的类型，不下载 Electron 本体
 
       - name: Check
         run: bun run check
