@@ -74,7 +74,7 @@ go run github.com/go-tenon/tenon/cmd/tenon@latest init todo
 
 - `--module`：Go module 的路径，默认是目录名。
 - `--name`：应用的名称，默认是目录名。
-- `--agents`：为哪些 AI 编程助手安装技能、写 MCP 配置，默认 `claude,codex,cursor`，`none` 表示都不写，见 [AI 编程助手](ai-assistants.md#choosing-assistants)。
+- `--agents`：为哪些 AI 编程助手安装技能、写 MCP 配置，默认 `claude,codex,cursor,antigravity`，还可以选 `copilot`，`none` 表示都不写，见 [AI 编程助手](ai-assistants.md#choosing-assistants)。
 - `--tenon <框架目录>`：只在开发 Tenon 框架本身时使用，让项目使用本地的框架代码（`go.mod` 中写入 `replace`）。
 
 <a id="dev"></a>
@@ -180,7 +180,7 @@ go tool tenon add client admin-desktop --kind electron --frontend admin
 bun run agents   # 即 go tool tenon agents
 ```
 
-更新 AI 编程助手用到的内容：把项目所用版本的框架文档复制到 `.tenon/docs`，重新生成 `AGENTS.md` 中由 tenon 维护的一段（框架的版本、前端与客户端、依赖的版本和文档），为 Claude Code、Codex、Cursor 安装技能（`tenon-action`、`tenon-http-api` 等）、改写 MCP 配置。升级框架、加减依赖以后运行它；`tenon add frontend`、`tenon add client` 结束时会自动运行一次，`tenon dev` 每次启动时更新 `.tenon/docs`。AI 编程助手还会按 MCP 配置启动 `tenon mcp`，用它检索框架的文档、读 `tenon dev` 的输出（`.tenon/dev.log`）。详细的说明见 [AI 编程助手](ai-assistants.md)。
+更新 AI 编程助手用到的内容：把项目所用版本的框架文档复制到 `.tenon/docs`，重新生成 `AGENTS.md` 中由 tenon 维护的一段（框架的版本、前端与客户端、依赖的版本和文档），为 Claude Code、Codex、Cursor、Antigravity 等助手安装技能（`tenon-action`、`tenon-http-api` 等）、改写 MCP 配置。升级框架、加减依赖以后运行它；`tenon add frontend`、`tenon add client` 结束时会自动运行一次，`tenon dev` 每次启动时更新 `.tenon/docs`。AI 编程助手还会按 MCP 配置启动 `tenon mcp`，用它检索框架的文档、读 `tenon dev` 的输出（`.tenon/dev.log`）。详细的说明见 [AI 编程助手](ai-assistants.md)。
 
 <a id="troubleshooting"></a>
 ## 常见问题
@@ -302,7 +302,7 @@ Tenon 也提供了一些前端包，例如 `@go-tenon/client`（调用接口、�
 | `apis.<BasePath>.name` | `BasePath` 的最后一段 | 这个 API 的 TypeScript 客户端的目录名 |
 | `apis.<BasePath>.go` | 不生成 | 这个 API 的 Go 客户端的目录 |
 | `tools` | 空 | 其他工具：`watch` 是开发时运行的命令，`build` 是停止后运行的命令 |
-| `agents.targets` | `["claude", "codex", "cursor"]` | `tenon agents` 为哪些 AI 编程助手安装技能、写 MCP 配置，见 [AI 编程助手](ai-assistants.md#choosing-assistants) |
+| `agents.targets` | `["claude", "codex", "cursor", "antigravity"]` | `tenon agents` 为哪些 AI 编程助手安装技能、写 MCP 配置，见 [AI 编程助手](ai-assistants.md#choosing-assistants) |
 | `agents.skip` | 空 | 不安装的框架技能，见 [AI 编程助手](ai-assistants.md#skills) |
 
 例如开发时用 esbuild 打包一个嵌入到其他网站的小组件脚本：

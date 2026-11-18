@@ -94,7 +94,7 @@ Tenon 是一个用 Go 构建后端服务的框架。业务逻辑写成[业务动
 - [客户端代码](http/clients.md)：由接口生成 TypeScript 客户端
 - [在 React 中调用接口](frontend/client-react.md)：TanStack Query、校验规则、权限、枚举与分页
 - [开发工具](installation/tooling.md)：`tenon dev`、`tenon generate`、`tenon build`
-- [AI 编程助手](installation/ai-assistants.md)：让 Claude Code、Codex、Cursor 按项目的约定和框架的版本写代码
+- [AI 编程助手](installation/ai-assistants.md)：让 Claude Code、Codex、Cursor、Antigravity、Copilot 按项目的约定和框架的版本写代码
 
 ## 第四阶段：前端与页面
 

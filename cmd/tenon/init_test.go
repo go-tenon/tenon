@@ -80,6 +80,7 @@ func TestInitEndToEnd(t *testing.T) {
 		".mcp.json":                              {`"gopls"`, `"mantine"`},
 		".codex/config.toml":                     {"[mcp_servers.gopls]"},
 		".cursor/mcp.json":                       {`"mantine"`},
+		".agents/mcp_config.json":                {`"tenon"`, `"gopls"`},
 		".claude/skills/tenon-electron/SKILL.md": {"name: tenon-electron"},
 		".agents/skills/tenon-frontend/SKILL.md": {"name: tenon-frontend"},
 	} {

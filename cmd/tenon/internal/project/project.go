@@ -87,11 +87,13 @@ type Tool struct {
 	Build []string `json:"build,omitempty"` // tenon dev 停止后运行一次的命令，可以没有
 }
 
-// Targets 是 tenon agents 支持的 AI 编程助手：它们都读项目根目录的 AGENTS.md，区别在 MCP 配置的位置和格式。
-var Targets = []string{"claude", "codex", "cursor"}
+// Targets 是 tenon agents 支持的 AI 编程助手：它们都读项目根目录的 AGENTS.md，区别在技能目录和 MCP 配置的位置、格式。
+// antigravity 是 Google 的 Antigravity（取代了 Gemini CLI）。
+var Targets = []string{"claude", "codex", "cursor", "antigravity", "copilot"}
 
-// DefaultTargets 是 tenon.json 没有写 agents.targets 时接入的 AI 编程助手。
-var DefaultTargets = Targets
+// DefaultTargets 是 tenon.json 没有写 agents.targets 时接入的 AI 编程助手。copilot 要单独装一份技能（.github/skills），
+// 用到时再选。
+var DefaultTargets = []string{"claude", "codex", "cursor", "antigravity"}
 
 // Agents 是 tenon.json 的 agents：tenon agents 为哪些 AI 编程助手写配置。
 type Agents struct {

@@ -121,7 +121,7 @@ func TestWriteMCP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(written, " ") != ".mcp.json .codex/config.toml .cursor/mcp.json" {
+	if strings.Join(written, " ") != ".mcp.json .codex/config.toml .cursor/mcp.json .agents/mcp_config.json .vscode/mcp.json" {
 		t.Errorf("written %v", written)
 	}
 	var claude struct {
@@ -146,8 +146,13 @@ func TestWriteMCP(t *testing.T) {
 			t.Errorf(".codex/config.toml missing %q:\n%s", want, codex)
 		}
 	}
-	if !strings.Contains(read(".cursor/mcp.json"), `"gopls"`) {
-		t.Error(".cursor/mcp.json has no gopls")
+	for file, key := range map[string]string{".cursor/mcp.json": "mcpServers", ".agents/mcp_config.json": "mcpServers", ".vscode/mcp.json": "servers"} {
+		var doc map[string]map[string]struct {
+			Command string `json:"command"`
+		}
+		if err := json.Unmarshal([]byte(read(file)), &doc); err != nil || doc[key]["tenon"].Command != "go" || doc[key]["gopls"].Command != "gopls" {
+			t.Errorf("%s: %v\n%s", file, err, read(file))
+		}
 	}
 
 	before := read(".mcp.json") + read(".codex/config.toml")
@@ -241,6 +246,8 @@ func TestSkillDirs(t *testing.T) {
 	t.Parallel()
 	for targets, want := range map[string]string{
 		"claude codex cursor": ".claude/skills .agents/skills",
+		"claude antigravity":  ".claude/skills .agents/skills",
+		"claude copilot":      ".claude/skills .github/skills",
 		"claude cursor":       ".claude/skills",
 		"cursor":              ".agents/skills",
 		"codex":               ".agents/skills",

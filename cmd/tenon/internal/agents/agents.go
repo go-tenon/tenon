@@ -1,4 +1,5 @@
-// Package agents 实现 tenon agents：让 AI 编程助手（Claude Code、Codex、Cursor）按项目所用的框架版本写代码。
+// Package agents 实现 tenon agents：让 AI 编程助手（Claude Code、Codex、Cursor、Antigravity、GitHub Copilot）
+// 按项目所用的框架版本写代码。
 // 它把框架的文档复制到 DocsDir，改写 AGENTS.md 中由 tenon 维护的一段（框架的版本、文档的位置、前端与客户端、
 // 依赖的版本和给 AI 读的文档、技能），并为 tenon.json 中的每个助手安装技能、写 MCP 服务的配置。
 // AGENTS.md 中这一段以外的内容由项目自己维护，tenon init 生成初稿，之后 tenon agents 不再改动。
@@ -398,9 +399,11 @@ type target struct {
 
 // targets 是 project.Targets 中每个助手的 MCP 配置。
 var targets = map[string]target{
-	"claude": {file: ".mcp.json", key: "mcpServers"},
-	"codex":  {file: ".codex/config.toml"},
-	"cursor": {file: ".cursor/mcp.json", key: "mcpServers"},
+	"claude":      {file: ".mcp.json", key: "mcpServers"},
+	"codex":       {file: ".codex/config.toml"},
+	"cursor":      {file: ".cursor/mcp.json", key: "mcpServers"},
+	"antigravity": {file: ".agents/mcp_config.json", key: "mcpServers"},
+	"copilot":     {file: ".vscode/mcp.json", key: "servers"},
 }
 
 // WriteMCP 为 names 中的每个助手把 servers 写进它在项目 dir 中的 MCP 配置，返回写了的文件。
