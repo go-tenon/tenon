@@ -128,17 +128,16 @@ blog/
 ```mermaid
 flowchart TB
   BIN["一个二进制文件 ./bin/api"]
-  BIN --> START["start：一个进程运行全部部分"]
-  BIN --> SERVE["serve：HTTP 服务（接口 + 网页）"]
-  BIN --> WORKC["work：队列 worker"]
-  BIN --> SCHEDC["schedule：定时任务调度器"]
+  BIN --> SERVE["serve：一个进程运行全部部分"]
+  BIN --> PART["serve worker 等：只运行一个部分"]
   BIN --> OTHER["migrate、openapi、routes、client、doctor 等运维命令"]
-  START -.-> SERVE
-  START -.-> WORKC
-  START -.-> SCHEDC
+  SERVE -.-> HTTPP["http：接口 + 网页 + 实时频道"]
+  SERVE -.-> RPCP["rpc：RPC 端点"]
+  SERVE -.-> WORKP["worker：队列 worker"]
+  SERVE -.-> SCHEDP["scheduler：定时任务调度器"]
 ```
 
-小型部署只运行 `start`：一个进程、一份配置、一套资源。业务量增长后分别部署 `serve`、`work`、`schedule`，各自按负载增减实例，代码不变。多个实例同时运行时，worker 竞争领取任务，调度器用锁保证每次触发只执行一次。
+小型部署只运行 `serve`：一个进程、一份配置、一套资源。业务量增长后每个部分一个进程（`serve http`、`serve worker`、`serve scheduler`），各自按负载增减实例，代码不变。多个实例同时运行时，worker 竞争领取任务，调度器用锁保证每次触发只执行一次。
 
 ## 框架的包
 

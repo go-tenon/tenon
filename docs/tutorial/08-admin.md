@@ -77,6 +77,7 @@ import (
     "github.com/go-tenon/tenon/command/httpcmd"
     "github.com/go-tenon/tenon/command/migratecmd"
     "github.com/go-tenon/tenon/database"
+    "github.com/go-tenon/tenon/httpx"
     "github.com/go-tenon/tenon/login"
     "github.com/go-tenon/tenon/ratelimit/pglimit"
 
@@ -88,8 +89,9 @@ import (
 func main() {
     root := command.Root("api", "博客")
     root.AddCommand(
-        command.Run("serve", "启动 HTTP 服务", bootstrap.Serve),
+        command.Serve(bootstrap.Open, bootstrap.Parts),
         command.Config[bootstrap.Config](),
+        httpcmd.Health(func(cfg bootstrap.Config) httpx.Config { return cfg.HTTP }),
         migrateCommand(),
     )
     // 需要数据库的命令，例如 user create
@@ -237,8 +239,8 @@ func (h *handlers) delete(ctx context.Context, in *IDInput) (*struct{}, error) {
     return nil, h.roles.DeleteRole(ctx, in.ID)
 }
 
-// Register 注册角色的接口，并声明角色的后台页面。require 要求 roles:manage 权限。
-func Register(api *rest.API, require func(*huma.Operation), roles *authz.Store) {
+// RegisterRoutes 注册角色的接口，并声明角色的后台页面。require 要求 roles:manage 权限。
+func RegisterRoutes(api *rest.API, require func(*huma.Operation), roles *authz.Store) {
     h := &handlers{roles: roles}
     op := func(id, method, path, summary string) huma.Operation {
         o := huma.Operation{OperationID: id, Method: method, Path: path, Summary: summary}
@@ -455,8 +457,8 @@ import (
     "github.com/go-tenon/tenon/httpx/rest"
 )
 
-// Register 注册作者的接口。requireUser 要求登录，requireManage 还要求 users:manage 权限。
-func Register(api *rest.API, requireUser, requireManage func(*huma.Operation), db *bun.DB, roles *authz.Store) {
+// RegisterRoutes 注册作者的接口。requireUser 要求登录，requireManage 还要求 users:manage 权限。
+func RegisterRoutes(api *rest.API, requireUser, requireManage func(*huma.Operation), db *bun.DB, roles *authz.Store) {
     me := huma.Operation{OperationID: "user-me", Method: http.MethodGet, Path: "/me", Summary: "当前登录的作者"}
     requireUser(&me)
     rest.Register(api, me, NewMe(db).HTTP)
@@ -616,8 +618,8 @@ type App struct {
     roles *authz.Store
 }
 
-// open 安装日志器，连接数据库，把关闭操作登记到 stack。
-func open(ctx context.Context, cfg Config, stack *cleanup.Stack) (*App, error) {
+// Open 安装日志器，连接数据库，把关闭操作登记到 stack。
+func Open(ctx context.Context, cfg Config, stack *cleanup.Stack) (*App, error) {
     slog.SetDefault(logging.New(logging.Config{}))
 
     db, err := database.Open(ctx, cfg.Database)
@@ -646,36 +648,11 @@ func open(ctx context.Context, cfg Config, stack *cleanup.Stack) (*App, error) {
     }, nil
 }
 
-// part 是进程中的一个运行部分，例如 HTTP 服务：装配时返回 run，run 一直运行到 ctx 被取消。
-type part func(*App, *command.Daemon) (run func(context.Context) error, err error)
-
-// run 装配 App 和 parts，然后在同一个进程中运行 parts，直到收到停止信号，最后关闭资源。
-func run(ctx context.Context, cfg Config, parts ...part) (err error) {
-    d, err := command.NewDaemon(nil)
-    if err != nil {
-        return err
+// Parts 是常驻进程的运行部分：serve 运行全部部分，serve <名字> 只运行其中一个。
+func Parts(a *App) []command.Part {
+    return []command.Part{
+        {Name: "http", Short: "接口和页面", Start: a.HTTP},
     }
-    defer d.Stop()
-
-    var stack cleanup.Stack
-    defer func() { err = stack.CloseWith(context.Background(), err) }()
-
-    app, err := open(ctx, cfg, &stack)
-    if err != nil {
-        return err
-    }
-    runs := make([]func(context.Context) error, len(parts))
-    for i, p := range parts {
-        if runs[i], err = p(app, d); err != nil {
-            return err
-        }
-    }
-    return d.Run(ctx, runs...)
-}
-
-// Serve 运行 HTTP 服务，serve 命令调用它。
-func Serve(ctx context.Context, cfg Config) error {
-    return run(ctx, cfg, (*App).HTTP)
 }
 ```
 
@@ -690,9 +667,9 @@ import (
     "example.com/blog/internal/user"
 )
 
-// Commands 返回需要数据库等资源的命令。声明时 App 是零值，执行其中一个命令时才调用 open 装配。
+// Commands 返回需要数据库等资源的命令。声明时 App 是零值，执行其中一个命令时才调用 Open 装配。
 func Commands() []*cobra.Command {
-    return command.Bind(open, func(a *App) []*cobra.Command {
+    return command.Bind(Open, func(a *App) []*cobra.Command {
         return []*cobra.Command{user.Commands(a.db, a.users, a.roles)}
     })
 }
@@ -731,10 +708,9 @@ import (
     "example.com/blog/locales"
 )
 
-// HTTP 装配 HTTP 服务，serve 命令运行它。apps 中的前端由 frontend.Host 按挂载路径提供：服务端渲染的前端由
+// HTTP 装配 HTTP 服务。apps 中的前端由 frontend.Host 按挂载路径提供：服务端渲染的前端由
 // Go 托管的 SSR 进程渲染，它们渲染时经内部 socket 调用同一组路由。
 func (a *App) HTTP(d *command.Daemon) (func(context.Context) error, error) {
-    var draining httpx.Draining
     var router chi.Router
     // router 在 pages 创建之后才构造好，SSR 进程调用接口时经这个函数转给它。
     api := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { router.ServeHTTP(w, r) })
@@ -742,26 +718,25 @@ func (a *App) HTTP(d *command.Daemon) (func(context.Context) error, error) {
     if err != nil {
         return nil, err
     }
-    router = a.Router(&draining, pages.Handler())
+    router = a.Router(pages.Handler())
     ln, err := d.Listen("tcp", a.cfg.HTTP.Addr)
     if err != nil {
         return nil, err
     }
     return func(ctx context.Context) error {
         return pages.Run(ctx, func(ctx context.Context) error {
-            return httpx.Serve(ctx, a.cfg.HTTP, ln, router, httpx.OnDraining(draining.Set))
+            return httpx.Serve(ctx, a.cfg.HTTP, ln, router)
         })
     }, nil
 }
 
 // Router 构造应用的全部路由：健康检查、/api 下的接口和页面。
 // 它只保存 App 的字段、不使用它们，所以 DocRouter 可以用一个没有打开任何资源的 App 调用它。
-func (a *App) Router(draining *httpx.Draining, pages http.Handler) chi.Router {
+func (a *App) Router(pages http.Handler) chi.Router {
     router := chi.NewRouter()
     router.Use(httpx.Defaults(a.cfg.HTTP, httpx.Languages(i18n.MustNew("zh-CN", locales.FS)))...)
     router.Get("/livez", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
     router.Handle("/readyz", httpx.Ready(httpx.ReadyOptions{
-        Draining: draining,
         Checks: []health.Check{
             {Name: "database", Ping: func(ctx context.Context) error { return a.db.PingContext(ctx) }},
         },
@@ -777,10 +752,10 @@ func (a *App) Router(draining *httpx.Draining, pages http.Handler) chi.Router {
         // 后台的接口还要求权限，缺少时返回 403。
         requireUsers := rest.RequireToken(api, a.tokens.Validate, string(auth.UsersManage))
         requireRoles := rest.RequireToken(api, a.tokens.Validate, string(auth.RolesManage))
-        auth.Register(api, requireUser, a.users, a.tokens, a.cfg.Token.Lifetime)
-        user.Register(api, requireUser, requireUsers, a.db, a.roles)
-        role.Register(api, requireRoles, a.roles)
-        article.Register(api, requireUser, a.db)
+        auth.RegisterRoutes(api, requireUser, a.users, a.tokens, a.cfg.Token.Lifetime)
+        user.RegisterRoutes(api, requireUser, requireUsers, a.db, a.roles)
+        role.RegisterRoutes(api, requireRoles, a.roles)
+        article.RegisterRoutes(api, requireUser, a.db)
     })
     if pages != nil {
         router.Handle("/*", pages)
@@ -790,7 +765,7 @@ func (a *App) Router(draining *httpx.Draining, pages http.Handler) chi.Router {
 
 // DocRouter 用默认配置和没有打开任何资源的 App 构造路由，openapi、routes、client 命令用它。
 func DocRouter() chi.Routes {
-    return (&App{cfg: config.Default[Config]()}).Router(nil, nil)
+    return (&App{cfg: config.Default[Config]()}).Router(nil)
 }
 
 ```

@@ -1,6 +1,6 @@
 # 应用生命周期
 
-这一页从整体上介绍一个 Tenon 应用的一生：它怎样启动，运行时由哪些部分组成，一次调用的 context 里带着什么，停止时怎样做到不中断正在进行的工作，以及部署平台怎样判断它是否正常。这些对 HTTP 服务和后台任务都一样。
+这一页从整体上介绍一个 Tenon 应用的一生：它怎样启动，运行时由哪些部分组成，一次调用的 context 里带着什么，停止时怎样做到不中断正在进行的工作，以及部署工具怎样判断它是否正常。这些对 HTTP 服务和后台任务都一样。
 
 先建立一个整体的印象即可，每一部分的细节都在链接的页面中。HTTP 服务特有的部分，例如一个请求经过哪些中间件、`httpx.Serve` 怎样排空，见 [HTTP 服务的生命周期](../http/lifecycle.md)。
 
@@ -20,7 +20,7 @@
 
 1. 读取并校验[配置](../general/configuration.md)；
 2. 打开数据库等资源，每打开一个，就登记对应的关闭操作；
-3. 构造[业务动作](actions.md)，交给要运行的各个部分：HTTP 服务注册路由，worker 注册任务的处理函数，调度器登记定时任务；
+3. 构造[业务动作](actions.md)，交给要运行的各个部分：HTTP 服务注册路由，RPC 服务登记端点，worker 注册任务的处理函数，调度器登记定时任务；
 4. 同时运行这些部分，直到收到停止信号。
 
 这些都是普通的 Go 代码，没有隐藏的步骤，写法见[依赖装配](dependencies.md#assembling-the-application)。
@@ -35,12 +35,13 @@
 
 | 部分 | 做什么 | 见 |
 | --- | --- | --- |
-| HTTP 服务 | 处理接口请求和页面 | [HTTP 服务的生命周期](../http/lifecycle.md) |
+| HTTP 服务 | 处理接口请求和页面，也承接实时频道的连接 | [HTTP 服务的生命周期](../http/lifecycle.md) |
+| RPC 服务 | 处理其他服务经 NATS 发来的调用 | [运行 RPC 服务](../rpc/endpoints.md#running) |
 | 队列 worker | 执行后台任务 | [启动 worker](../background/queue.md#running-workers) |
 | 定时任务调度器 | 到点执行定时任务 | [运行调度器](../background/scheduling.md#running-the-scheduler) |
-| 实时频道 | 承接 WebSocket 连接，可选 | [单独部署实时连接](../libraries/realtime.md#separate-process) |
+| 实时频道 | 单独承接 WebSocket 连接，可选 | [单独部署实时连接](../libraries/realtime.md#separate-process) |
 
-启动哪个命令，就运行哪些部分：`serve` 只运行 HTTP 服务，`start` 在一个进程中运行 HTTP 服务、worker 和调度器。只运行 `work` 和 `schedule` 的进程不对外提供 HTTP 接口，就是一个纯后台服务，见[在一个进程中运行多个部分](../general/commands.md#running-together)。
+每个部分在 `bootstrap` 的 `Parts` 中登记。`serve` 运行全部部分，`serve worker` 只运行一个部分：只运行 worker 或调度器的进程不对外提供 HTTP 接口，就是一个纯后台服务，见[serve：运行常驻进程](../general/commands.md#serve-command)。
 
 同一个进程中的各部分共用第 2 步打开的资源，例如同一个数据库连接池。
 
@@ -75,12 +76,12 @@
 <a id="health-checks"></a>
 ## 健康检查
 
-部署平台（如 Kubernetes）和负载均衡器通常用两类检查判断实例的状态：
+部署工具和反向代理通常用两类检查判断实例的状态：
 
-- **存活检查**（liveness）：进程是否还能响应，失败时平台重启它。它只确认进程能响应，不检查数据库等依赖：数据库故障时重启应用无济于事。
-- **就绪检查**（readiness）：现在能否处理工作，失败时平台不再把流量转给这个实例。它检查必需的依赖是否可用。
+- **存活检查**（liveness）：进程是否还能响应。Docker Swarm 会替换检查失败的容器。它只确认进程能响应，不检查数据库等依赖：数据库故障时重启应用无济于事。
+- **就绪检查**（readiness）：现在能否处理请求，失败时反向代理不再把请求转给这个实例。它检查必需的依赖是否可用，进程开始停止时也立即失败。
 
-要检查哪些依赖、怎样执行检查，由与传输方式无关的 `health` 包负责；HTTP 服务用 `httpx.Ready` 把结果作为就绪检查返回，写法见[健康检查](../http/lifecycle.md#health-checks)。只运行队列 worker 或调度器的进程没有 HTTP 服务，可以另开一个只提供健康检查的端口，见[没有 HTTP 服务的进程](../http/lifecycle.md#probe-listener)。
+这两个检查都由 HTTP 服务提供（`/livez` 和 `/readyz`）：要检查哪些依赖、怎样执行检查，由与传输方式无关的 `health` 包负责，HTTP 服务用 `httpx.Ready` 把结果作为就绪检查返回，写法见[健康检查](../http/lifecycle.md#health-checks)。只运行 worker、调度器或 RPC 的进程不需要健康检查：它们出错时进程以非 0 状态退出，由 systemd 或 Docker 的重启策略处理，见[部署](../installation/deployment.md#health-checks)。
 
 <a id="troubleshooting"></a>
 ## 常见问题
@@ -91,4 +92,4 @@
 
 **一个部分出错退出后，整个进程都停了**
 
-这是预期的行为：一个部分运行时出错，其余部分随之平滑停止，进程以非 0 状态退出，交给 systemd、Kubernetes 等重启，见[在一个进程中运行多个部分](../general/commands.md#running-together)。
+这是预期的行为：一个部分运行时出错，其余部分随之平滑停止，进程以非 0 状态退出，交给 systemd、Docker 等重启，见[serve：运行常驻进程](../general/commands.md#serve-command)。

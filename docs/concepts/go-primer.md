@@ -130,7 +130,7 @@ rest.Register(api, createOp, h.Create)
 同样，参数的类型也可以是一个函数。例如下面的 `require` 是“修改一个接口定义”的函数，调用方传入不同的函数，就能给接口加上不同的登录要求：
 
 ```go
-func Register(api *rest.API, require func(*huma.Operation), db *bun.DB) {
+func RegisterRoutes(api *rest.API, require func(*huma.Operation), db *bun.DB) {
     op := huma.Operation{OperationID: "article-create", Method: http.MethodPost, Path: "/articles"}
     require(&op) // 由调用方决定这个接口需要怎样的登录
     rest.Register(api, op, NewCreate(db).HTTP)

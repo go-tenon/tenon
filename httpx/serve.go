@@ -5,7 +5,6 @@ import (
 	"net"
 	"net/http"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/cockroachdb/errors"
@@ -32,7 +31,7 @@ func ListenAndServe(ctx context.Context, cfg Config, handler http.Handler, opts 
 // Serve 返回时 ln 已关闭，包括因参数错误提前返回的情况。
 //
 // 排空开始和服务器停止记录到 slog.Default()，用 Logger 选项改变。
-// 停止时：先调用 OnDraining 选项给出的函数，再关闭 DrainStarted 返回的通道，然后在 cfg.ShutdownTimeout 内排空请求；
+// 停止时：先关闭 DrainStarted 返回的通道（Ready 随即返回 503），然后在 cfg.ShutdownTimeout 内排空请求；
 // 超时则取消请求 context 并强制关闭。调用方在 Serve 返回后关闭数据库等请求依赖。
 func Serve(ctx context.Context, cfg Config, ln net.Listener, handler http.Handler, opts ...ServeOption) error {
 	if ln == nil {
@@ -74,9 +73,6 @@ func Serve(ctx context.Context, cfg Config, ln net.Listener, handler http.Handle
 		returned = true
 	case <-ctx.Done():
 	}
-	if o.onDraining != nil {
-		o.onDraining()
-	}
 	close(draining)
 	logger.Info("http server draining")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
@@ -112,15 +108,6 @@ func DrainStarted(ctx context.Context) <-chan struct{} {
 	ch, _ := ctx.Value(drainKey{}).(chan struct{})
 	return ch
 }
-
-// Draining 是可在就绪检查中观察的排空标志。
-type Draining struct{ v atomic.Bool }
-
-// Set 标记开始排空。
-func (d *Draining) Set() { d.v.Store(true) }
-
-// Load 报告是否正在排空。
-func (d *Draining) Load() bool { return d.v.Load() }
 
 // freshConns 记录已经接收、还没读到第一个请求的连接。
 type freshConns struct {

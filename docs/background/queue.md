@@ -198,20 +198,20 @@ func (a *App) Worker(*command.Daemon) (func(context.Context) error, error) {
 
     w := queue.NewWorker(a.db, a.nc, a.cfg.Queue, nil)
     mailjob.Send.Handle(w, mailer.Send)
+    article.RegisterJobs(w, a.db)
     return w.Run, nil
-}
-
-// Work 只运行队列 worker，work 命令调用它。
-func Work(ctx context.Context, cfg Config) error {
-    return run(ctx, cfg, (*App).Worker)
 }
 ```
 
-`a.nc` 是入口中用 `natsx.Connect` 创建的 NATS 连接，广播等组件也用它，见[连接 NATS](../libraries/nats.md#connecting)；worker 不关闭它。`newMailer` 见[装配发送器](../libraries/mail.md#assembling-mailer)。业务动作的任务入口也注册在这里，例如定时发布文章，见[队列任务](../concepts/actions.md#as-jobs)。在根命令中用 `command.Run("work", "处理队列任务", bootstrap.Work)` 注册它。
+`a.nc` 是入口中用 `natsx.Connect` 创建的 NATS 连接，广播等组件也用它，见[连接 NATS](../libraries/nats.md#connecting)；worker 不关闭它。`newMailer` 见[装配发送器](../libraries/mail.md#assembling-mailer)。业务模块的任务由模块的 `RegisterJobs` 登记，例如定时发布文章，见[队列任务](../concepts/actions.md#as-jobs)。最后把它登记为 `Parts` 中的一个部分，`serve` 就会运行它，`serve worker` 只运行它，见[serve：运行常驻进程](../general/commands.md#serve-command)：
 
-发布的任务要等 worker 转发才会执行，所以部署时**至少运行一个 worker**。`w.Run` 建不了 stream 或 consumer（例如 NATS 不可用）时返回错误；运行后一直到进程收到停止信号，然后停止接收任务，等处理中的任务写回结果才返回；数据库由 `run` 在所有部分都返回之后才关闭。
+```go
+{Name: "worker", Short: "处理队列任务", Start: a.Worker},
+```
 
-worker 可以和 HTTP 服务、调度器[运行在同一个进程中](../general/commands.md#running-together)，任务量大了再单独部署，按任务量增减实例数；单独部署时的健康检查见[没有 HTTP 服务的进程](../http/lifecycle.md#probe-listener)。多个 worker 同时运行是安全的：转发时互不重复，同一个应用的 worker 共用每个 topic 的 consumer，每个任务只交给其中一个。
+发布的任务要等 worker 转发才会执行，所以部署时**至少运行一个 worker**。`w.Run` 建不了 stream 或 consumer（例如 NATS 不可用）时返回错误；运行后一直到进程收到停止信号，然后停止接收任务，等处理中的任务写回结果才返回；数据库在所有部分都返回之后才关闭。
+
+worker 可以和 HTTP 服务、调度器[运行在同一个进程中](../general/commands.md#serve-command)，任务量大了再单独部署（`serve worker`），按任务量增减实例数；单独部署时不需要健康检查，见[部署](../installation/deployment.md#health-checks)。多个 worker 同时运行是安全的：转发时互不重复，同一个应用的 worker 共用每个 topic 的 consumer，每个任务只交给其中一个。
 
 <a id="configuration"></a>
 ### 配置
@@ -340,7 +340,7 @@ queuetest.Run(t, w) // 测试结束时停止
 
 **发布了任务，但处理函数一直没有执行**
 
-检查三点：worker 是否在运行（`work` 或 `start` 命令）；处理函数是否为这个 topic 注册了；发布任务的事务是否提交了，回滚时任务一起取消。
+检查三点：worker 是否在运行（`serve` 或 `serve worker`）；处理函数是否为这个 topic 注册了；发布任务的事务是否提交了，回滚时任务一起取消。
 
 **worker 启动时报错复制槽不存在或已失效**
 

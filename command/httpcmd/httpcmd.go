@@ -76,7 +76,7 @@ func OpenAPI(router func() chi.Routes) *cobra.Command {
 	})
 	cmd.Flags().StringVar(&spec, "spec", "3.1", "OpenAPI 版本：3.1 或 3.0")
 	cmd.Flags().StringVar(&basePath, "base-path", "", "路由中有多个 API 时，按 BasePath 选择一个，例如 /api/v1")
-	return cmd
+	return command.InGroup(cmd, command.GroupDev)
 }
 
 // Routes 构造 routes 命令：调用 router 构造路由，用 httpx.Routes 输出路由表。
@@ -101,7 +101,7 @@ func Routes(router func() chi.Routes) *cobra.Command {
 	cmd.Flags().StringVar(&method, "method", "", "按 HTTP 方法过滤（不区分大小写），响应任意方法的 * 路由总是列出")
 	cmd.Flags().StringVar(&path, "path", "", "按路径包含的文本过滤")
 	cmd.Flags().BoolVar(&all, "all", false, "同时列出 /docs、/openapi.json 等文档端点")
-	return cmd
+	return command.InGroup(cmd, command.GroupDev)
 }
 
 // access 返回路由表中访问策略一列的内容：访问策略，需要权限时附上权限。

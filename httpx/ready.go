@@ -1,6 +1,7 @@
 package httpx
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -12,10 +13,19 @@ import (
 
 // ReadyOptions 是 Ready 的选项。
 type ReadyOptions struct {
-	Draining *Draining      // Serve 开始排空时设置的标志，与传给 OnDraining 的是同一个；为 nil 时跳过排空检查。
-	Checks   []health.Check // 要检查的依赖。只放处理请求必需的依赖，以及标为 Optional 的降级依赖。
-	Timeout  time.Duration  // 每项检查的超时，不大于 0 时为 health.DefaultTimeout。
-	Logger   *slog.Logger   // 记录检查结果的变化，nil 表示 slog.Default()。
+	Checks  []health.Check // 要检查的依赖。只放处理请求必需的依赖，以及标为 Optional 的降级依赖。
+	Timeout time.Duration  // 每项检查的超时，不大于 0 时为 health.DefaultTimeout。
+	Logger  *slog.Logger   // 记录检查结果的变化，nil 表示 slog.Default()。
+}
+
+// draining 报告处理 ctx 的 Serve 是否已经开始排空。
+func draining(ctx context.Context) bool {
+	select {
+	case <-DrainStarted(ctx):
+		return true
+	default:
+		return false
+	}
 }
 
 // readyResult 是就绪检查的响应体。
@@ -26,13 +36,12 @@ type readyResult struct {
 
 // Ready 返回就绪检查的处理器，通常注册为 /readyz，部署平台和负载均衡器据此决定是否向这个实例转发请求。
 //
-// 正在排空时直接返回 503；否则用 health.Checker 执行全部检查，必需的检查都通过时返回 200，
+// Serve 开始排空之后（进程开始停止时）直接返回 503，排空的状态取自请求的 context，见 DrainStarted；否则用 health.Checker 执行全部检查，必需的检查都通过时返回 200，
 // 有一项失败时返回 503。响应体列出每项的结果，例如 {"status":"ready","checks":{"database":"ok","cache":"failed"}}；
 // 失败的原因不出现在响应中，而是记录在日志里，日志只记录变化，见 health.Checker.Run。
 // 名称为空、重复或 Ping 为 nil 时 panic。
 func Ready(opts ReadyOptions) http.Handler {
 	return &ready{
-		draining: opts.Draining,
 		checker: health.New(health.Options{
 			Checks:  opts.Checks,
 			Timeout: opts.Timeout,
@@ -43,14 +52,13 @@ func Ready(opts ReadyOptions) http.Handler {
 
 // ready 是就绪检查的处理器。
 type ready struct {
-	draining *Draining
-	checker  *health.Checker
+	checker *health.Checker
 }
 
 // ServeHTTP 输出就绪状态：排空中或依赖检查失败时返回 503。
 func (r *ready) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	res := readyResult{Status: "ready"}
-	if r.draining != nil && r.draining.Load() {
+	if draining(req.Context()) {
 		res.Status = "draining"
 	} else {
 		report := r.checker.Run(req.Context())

@@ -167,22 +167,32 @@ func main() {
 
 `httpx.ListenAndServe` 会等正在处理的请求全部完成之后才返回，所以数据库总是在最后一个请求结束之后才关闭。
 
+这个例子把每一步都写了出来。应用变大、有了好几个一直运行的部分以后，打开资源、运行各部分、关闭资源这几步由 `command.Serve` 完成，见下一节。
+
 每个路由都要声明访问策略，这里用 `rest.Public()` 声明为公开接口。需要登录的接口见[认证](../security/authentication.md)。
 
 <a id="running-parts"></a>
 ### 多个运行部分
 
-应用变大以后，入口通常放在 `internal/bootstrap` 包中，并分成两部分：`App` 保存各部分共用的资源，由 `open` 打开；HTTP 服务、[队列 worker](../background/queue.md#running-workers)、[定时任务调度器](../background/scheduling.md#running-the-scheduler)各是 `App` 的一个方法。[入门教程](../tutorial/02-infrastructure.md#assembling)按这个结构写出了完整的 `app.go` 和 `http.go`：
+应用变大以后，入口通常放在 `internal/bootstrap` 包中，并分成两部分：`App` 保存各部分共用的资源，由 `Open` 打开；HTTP 服务、[RPC 服务](../rpc/endpoints.md#running)、[队列 worker](../background/queue.md#running-workers)、[定时任务调度器](../background/scheduling.md#running-the-scheduler)各是 `App` 的一个方法，在 `Parts` 中登记。[入门教程](../tutorial/02-infrastructure.md#assembling)按这个结构写出了完整的 `app.go` 和 `http.go`：
 
 ```go
-// open 打开各部分共用的资源，把关闭操作登记到 stack。
-func open(ctx context.Context, cfg Config, stack *cleanup.Stack) (*App, error) {
+// Open 打开各部分共用的资源，把关闭操作登记到 stack。
+func Open(ctx context.Context, cfg Config, stack *cleanup.Stack) (*App, error) {
     db, err := database.Open(ctx, cfg.Database)
     if err != nil {
         return nil, err
     }
     stack.MustAdd("database", func(context.Context) error { return db.Close() })
     return &App{cfg: cfg, db: db}, nil
+}
+
+// Parts 是常驻进程的运行部分：serve 运行全部部分，serve <名字> 只运行其中一个。
+func Parts(a *App) []command.Part {
+    return []command.Part{
+        {Name: "http", Short: "接口和页面", Start: a.HTTP},
+        {Name: "worker", Short: "处理队列任务", Start: a.Worker},
+    }
 }
 
 // HTTP 装配 HTTP 服务并取得监听端口，返回运行它的函数。
@@ -210,55 +220,23 @@ func DocRouter() chi.Routes {
 }
 ```
 
-`Router` 有两个调用者：`HTTP` 用打开了资源的 `App` 运行服务；`DocRouter` 用零值的 `App` 构造同一套路由，交给 [`httpcmd.Commands`](../general/commands.md#declaring-the-cli) 生成接口文档和客户端、列出路由。所以导出的文档总是与运行的服务一致，生成文档只需要源代码。相应地，`Router` 中只保存依赖，处理请求时才使用它们：例如健康检查的 `Ping` 要写成闭包，见[健康检查](../http/lifecycle.md#health-checks)。
-
-`run` 先装配全部部分，再用 `command.Daemon` 同时运行它们：
-
-```go
-func run(ctx context.Context, cfg Config, parts ...func(*App, *command.Daemon) (func(context.Context) error, error)) (err error) {
-    d, err := command.NewDaemon(nil)
-    if err != nil {
-        return err
-    }
-    defer d.Stop()
-
-    var stack cleanup.Stack
-    defer func() { err = stack.CloseWith(context.Background(), err) }()
-
-    app, err := open(ctx, cfg, &stack)
-    if err != nil {
-        return err
-    }
-    runs := make([]func(context.Context) error, len(parts))
-    for i, part := range parts {
-        if runs[i], err = part(app, d); err != nil {
-            return err
-        }
-    }
-    return d.Run(ctx, runs...)
-}
-
-func Serve(ctx context.Context, cfg Config) error { return run(ctx, cfg, (*App).HTTP) }
-func Start(ctx context.Context, cfg Config) error {
-    return run(ctx, cfg, (*App).HTTP, (*App).Worker, (*App).Scheduler)
-}
-```
+`main.go` 用 `command.Serve(bootstrap.Open, bootstrap.Parts)` 创建 `serve` 命令。它先调用 `Open` 打开资源，再调用每个部分的 `Start` 装配它，然后同时运行全部部分，直到收到停止信号，最后关闭资源，见[serve：运行常驻进程](../general/commands.md#serve-command)。
 
 你会注意到，每个部分都分两步：先装配好它需要的一切，包括取得监听端口；再返回运行它的函数。这样做的好处是，路由冲突、端口被占用这类错误在开始运行之前就会返回，[不停机升级](../installation/operations.md#zero-downtime-upgrades)时，旧版本继续服务，直到新版本装配成功。
 
-`d.Run` 让各部分共用同一个 `ctx`，其中一个出错时，其余的会一起停止。
+`Router` 有两个调用者：`HTTP` 用打开了资源的 `App` 运行服务；`DocRouter` 用零值的 `App` 构造同一套路由，交给 [`httpcmd.Commands`](../general/commands.md#declaring-the-cli) 生成接口文档和客户端、列出路由。所以导出的文档总是与运行的服务一致，生成文档只需要源代码。相应地，`Router` 中只保存依赖，处理请求时才使用它们：例如健康检查的 `Ping` 要写成闭包，见[健康检查](../http/lifecycle.md#health-checks)。`Parts` 也一样：`serve --help` 用零值的 `App` 调用它，列出各部分的名字，所以其中只取方法值。
 
 > [!TIP]
-> 多个部分都用到的资源（数据库、NATS、缓存）放进 `open`；只有一个部分用到的（例如 HTTP 中间件）在它自己的方法里创建。
+> 多个部分都用到的资源（数据库、NATS、缓存）放进 `Open`；只有一个部分用到的（例如 HTTP 中间件）在它自己的方法里创建。
 
 <a id="deferred-commands"></a>
 ### 只在执行时装配的命令
 
-构造命令行时还没有加载配置，也没有打开数据库。`command.Bind` 先用零值的 `App` 声明命令，执行其中一个命令时再调用 `open`，用装配好的 `App` 重新声明并执行，命令返回后关闭资源：
+构造命令行时还没有加载配置，也没有打开数据库。`command.Bind` 先用零值的 `App` 声明命令，执行其中一个命令时再调用 `Open`，用装配好的 `App` 重新声明并执行，命令返回后关闭资源：
 
 ```go
 func Commands() []*cobra.Command {
-    return command.Bind(open, func(a *App) []*cobra.Command {
+    return command.Bind(Open, func(a *App) []*cobra.Command {
         return []*cobra.Command{
             article.Commands(a.db),
         }
@@ -333,7 +311,7 @@ setCover := article.NewSetCover(db, memoryImages{})
 
 **`openapi`、`client` 等命令 panic：`nil pointer dereference`**
 
-有代码在构造路由或声明命令时**使用**了依赖，而这时依赖是零值。检查构造函数和 `Register` 函数，确保它们只保存依赖；方法值（例如 `db.PingContext`）改成闭包。
+有代码在构造路由或声明命令时**使用**了依赖，而这时依赖是零值。检查构造函数和 `RegisterRoutes` 这类登记函数，确保它们只保存依赖；方法值（例如 `db.PingContext`）改成闭包。
 
 **新加的资源在程序退出时没有关闭**
 
@@ -384,7 +362,7 @@ func (d *Daemon) Run(ctx context.Context, runs ...func(context.Context) error) e
 func (d *Daemon) Stop()
 ```
 
-包 `github.com/go-tenon/tenon/command`。常驻进程：`Listen` 取得监听端口，`Run` 报告就绪后同时运行 `runs`，直到停止。
+包 `github.com/go-tenon/tenon/command`。常驻进程：`Listen` 取得监听端口，`Run` 报告就绪后同时运行 `runs`，直到停止。`serve` 命令创建它，并把它传给每个部分的 `Start`，应用通常不直接调用 `NewDaemon` 和 `Run`。
 
 在 systemd 的 `Type=notify-reload` 服务中运行时，`Run` 向 systemd 报告就绪，收到 `SIGHUP` 时不停机升级，见[部署](../installation/operations.md#zero-downtime-upgrades)；不在其中时，`Run` 等同于 `command.Concurrently`。
 
@@ -403,6 +381,10 @@ func Concurrently(ctx context.Context, runs ...func(context.Context) error) erro
 
 `ctx` 被取消或者任何一个函数返回时，派生的 `ctx` 随之取消，其余的函数据此停止。在停止之前就返回 `nil` 的函数视为异常退出，返回值包含 `command.ErrStoppedEarly`。
 
+### command.Serve、command.Part
+
+见[命令行的 API 参考](../general/commands.md#api-reference)。
+
 ### command.Bind
 
 ```go
@@ -413,7 +395,7 @@ func Bind[C, D any](
 ```
 
 - **参数**
-    - `open`：执行命令时装配依赖的函数，与 `serve` 用的是同一个
+    - `open`：执行命令时装配依赖的函数，与 `serve` 用的是同一个，即 `bootstrap.Open`
     - `declare`：声明命令的函数；构造命令行时收到零值的 `*D`
 - **返回**：声明的命令
 

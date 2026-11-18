@@ -358,7 +358,7 @@ runs := chat.NewRuns("app", agent, sessions,
 )
 ```
 
-`hub` 是[广播](../libraries/broadcasting.md#creating-the-hub)的 Hub，`locker` 是[原子锁](../libraries/locks.md)，都在 `open` 中创建，所有实例必须共用同一套 NATS（广播）和数据库（锁）。
+`hub` 是[广播](../libraries/broadcasting.md#creating-the-hub)的 Hub，`locker` 是[原子锁](../libraries/locks.md)，都在 `Open` 中创建，所有实例必须共用同一套 NATS（广播）和数据库（锁）。
 
 - 对话正在运行时，运行所在的实例持有这个对话的锁。其他实例上的 `Submit`、`Start` 因此返回 `chat.ErrBusy`，每个对话同一时刻只运行一次。
 - 运行的事件每 50 毫秒批量广播一次。其他实例上的 `Runs.Get` 先向运行所在的实例要一份目前为止的快照，再接收之后的事件，返回的 `Run` 用法与本地的相同；`Steer` 和 `Cancel` 转发给运行所在的实例，`Steer` 等待它的回执。
@@ -393,7 +393,7 @@ func (a *App) Worker(d *command.Daemon) (func(context.Context) error, error) {
 }
 ```
 
-HTTP 实例上的 `Submit`、`Start`、`Notify`、`Approve`、`Reject` 把请求转交给某一个 worker，在那里开始运行，返回的是这次运行的镜像，`UIStream`、插话、停止的用法都不变。多个 worker 同时 `Serve` 时，每个请求只由其中一个处理；需要审批的工具也在 worker 上执行。用 `start` 在一个进程中运行全部部分时，同一个进程里的 `Serve` 接手请求，代码保持原样。
+HTTP 实例上的 `Submit`、`Start`、`Notify`、`Approve`、`Reject` 把请求转交给某一个 worker，在那里开始运行，返回的是这次运行的镜像，`UIStream`、插话、停止的用法都不变。多个 worker 同时 `Serve` 时，每个请求只由其中一个处理；需要审批的工具也在 worker 上执行。用 `serve` 在一个进程中运行全部部分时，同一个进程里的 `Serve` 接手请求，代码保持原样。
 
 - **没有 worker：** 请求经由广播转交、不排队。没有 worker 在 `Serve`，或者它们都在停止时，返回 `chat.ErrNoWorker`（`503`），由前端稍后重试。
 - **停止与崩溃：** worker 收到停止信号后停止接手新的请求，进行中的回答由 `runs.Shutdown` 等它说完。worker 崩溃时进行中的回答随之结束，这与在 HTTP 进程中运行时相同。

@@ -59,8 +59,8 @@ type IDInput struct {
 	ID int64 `path:"id"`
 }
 
-// Register 注册待办事项的接口。它只保存 s，处理请求时才调用，所以生成文档时 s 可以是 nil。
-func Register(api *rest.API, s *Store) {
+// RegisterRoutes 注册待办事项的接口。它只保存 s，处理请求时才调用，所以生成文档时 s 可以是 nil。
+func RegisterRoutes(api *rest.API, s *Store) {
 	op := func(id, method, path, summary string) huma.Operation {
 		o := huma.Operation{OperationID: id, Method: method, Path: path, Summary: summary}
 		rest.Public()(&o)

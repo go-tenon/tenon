@@ -81,7 +81,7 @@ gotenberg:
 
 Gotenberg 用 `--api-enable-basic-auth` 开启了基本认证时，再填写 `username` 和 `password`。
 
-在[入口](../concepts/dependencies.md#assembling-the-application)的 `open` 中创建一次生成器，保存在 `App` 中，之后渲染都复用它。`gotenberg.New` 不访问网络：
+在[入口](../concepts/dependencies.md#assembling-the-application)的 `Open` 中创建一次生成器，保存在 `App` 中，之后渲染都复用它。`gotenberg.New` 不访问网络：
 
 ```go
 renderer, err := gotenberg.New(cfg.Gotenberg)

@@ -60,5 +60,5 @@ func New(server func() *natsrpc.Server) *cobra.Command {
 			return w.Flush()
 		},
 	})
-	return cmd
+	return command.InGroup(cmd, command.GroupDev)
 }

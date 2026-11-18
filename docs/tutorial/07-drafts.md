@@ -474,8 +474,8 @@ import (
     "github.com/go-tenon/tenon/httpx/rest"
 )
 
-// Register 注册文章的接口：读已发布的文章是公开的，其余要先登录。
-func Register(api *rest.API, requireUser func(*huma.Operation), db *bun.DB) {
+// RegisterRoutes 注册文章的接口：读已发布的文章是公开的，其余要先登录。
+func RegisterRoutes(api *rest.API, requireUser func(*huma.Operation), db *bun.DB) {
     route := func(access func(*huma.Operation), id, method, path, summary string) huma.Operation {
         op := huma.Operation{OperationID: id, Method: method, Path: path, Summary: summary}
         access(&op)

@@ -1,6 +1,7 @@
 package command
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"io/fs"
@@ -21,6 +22,25 @@ const (
 	configEnv = "APP_CONFIG"
 )
 
+// 命令的分组。Execute 按子命令的 Annotations[GroupKey] 把根命令的子命令分组显示在帮助中，没有标注的归入 GroupApp，
+// help 和 completion 归入 GroupOps。
+const (
+	GroupKey = "tenon.group" // Annotations 中分组的键，用 InGroup 设置
+	GroupRun = "run"         // 常驻进程：serve
+	GroupOps = "ops"         // 运维：migrate、config、doctor、queue、schedules、health 等
+	GroupApp = "app"         // 应用自己的命令，例如 article publish
+	GroupDev = "dev"         // 开发：openapi、routes、client、rpc 等离线生成文档和代码的命令
+)
+
+// InGroup 把 cmd 标注为分组 id，返回 cmd。挂在根命令下、用 Execute 执行时，帮助按分组列出命令。
+func InGroup(cmd *cobra.Command, id string) *cobra.Command {
+	if cmd.Annotations == nil {
+		cmd.Annotations = map[string]string{}
+	}
+	cmd.Annotations[GroupKey] = id
+	return cmd
+}
+
 // Root 返回应用的根命令，用 AddCommand 装配需要的命令。
 // 根命令定义了所有子命令共用的 --config 选项：可以重复传入多个配置文件，
 // 后面的覆盖前面的。没有传入时读取环境变量 APP_CONFIG，它也没有设置时为 config/app.yaml。未知命令、未知选项和多余参数标记为 ExitUsage。
@@ -38,8 +58,8 @@ func Root(name, short string) *cobra.Command {
 	return root
 }
 
-// Run 构造一个加载配置后执行 run 的命令，适合 serve、worker 这类常驻进程，
-// 也适合一次性任务。run 的 ctx 在进程收到 SIGINT、SIGTERM 时被取消。
+// Run 构造一个加载配置后执行 run 的命令，适合只需要配置的一次性任务，例如发送一次报表。
+// run 的 ctx 在进程收到 SIGINT、SIGTERM 时被取消。常驻进程用 Serve，需要应用资源的命令用 Bind。
 func Run[C any](use, short string, run func(ctx context.Context, cfg C) error) *cobra.Command {
 	return leaf(use, short, func(cmd *cobra.Command) error {
 		cfg, err := LoadConfig[C](cmd)
@@ -86,6 +106,7 @@ func splitList(s string) []string {
 // Execute 执行根命令：SIGINT、SIGTERM 会取消命令的 context；
 // 失败时把错误写到标准错误，并以 ExitCode(err) 结束进程。
 func Execute(root *cobra.Command) {
+	assignGroups(root)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	err := root.ExecuteContext(ctx)
 	stop()
@@ -93,6 +114,33 @@ func Execute(root *cobra.Command) {
 		fmt.Fprintln(root.ErrOrStderr(), err)
 		os.Exit(ExitCode(err))
 	}
+}
+
+// groupTitles 是各分组在帮助中的标题，按显示的顺序排列。
+var groupTitles = []cobra.Group{
+	{ID: GroupRun, Title: "运行："},
+	{ID: GroupOps, Title: "运维："},
+	{ID: GroupApp, Title: "应用："},
+	{ID: GroupDev, Title: "开发："},
+}
+
+// assignGroups 按 InGroup 的标注设置 root 子命令的 GroupID，没有标注的归入 GroupApp，help 和 completion 归入 GroupOps；
+// 只添加用到的分组。已经设置了 GroupID 的命令保持原样。
+func assignGroups(root *cobra.Command) {
+	used := map[string]bool{GroupOps: true}
+	for _, cmd := range root.Commands() {
+		if cmd.GroupID == "" {
+			cmd.GroupID = cmp.Or(cmd.Annotations[GroupKey], GroupApp)
+		}
+		used[cmd.GroupID] = true
+	}
+	for _, g := range groupTitles {
+		if used[g.ID] && !root.ContainsGroup(g.ID) {
+			root.AddGroup(&g)
+		}
+	}
+	root.SetHelpCommandGroupID(GroupOps)
+	root.SetCompletionCommandGroupID(GroupOps)
 }
 
 // leaf 构造不接受位置参数的命令。

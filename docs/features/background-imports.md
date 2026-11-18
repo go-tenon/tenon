@@ -25,7 +25,7 @@ operation.Migrations(),
 imports.Migrations(),
 ```
 
-`imports.New` 在[依赖装配](../concepts/dependencies.md#assembling-the-application)的 `open` 中创建，`ops` 是 `operation.New(db)`，`files` 是[文件存储](../libraries/filesystem.md)的 `*filesystem.Service`，`languages` 是应用的[语言目录](../general/localization.md)：
+`imports.New` 在[依赖装配](../concepts/dependencies.md#assembling-the-application)的 `Open` 中创建，`ops` 是 `operation.New(db)`，`files` 是[文件存储](../libraries/filesystem.md)的 `*filesystem.Service`，`languages` 是应用的[语言目录](../general/localization.md)：
 
 ```go
 importer := imports.New(db, ops, files, languages)

@@ -62,5 +62,5 @@ func New(groups ...doctor.Group) *cobra.Command {
 	}
 	cmd.Flags().String("format", "text", "输出格式：text 或 json")
 	cmd.Flags().Bool("strict", false, "提示也算失败")
-	return cmd
+	return command.InGroup(cmd, command.GroupOps)
 }

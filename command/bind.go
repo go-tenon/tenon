@@ -6,6 +6,7 @@ import (
 
 	"github.com/cockroachdb/errors"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/go-tenon/tenon/cleanup"
 )
@@ -17,8 +18,8 @@ import (
 // 执行其中一个命令时，Bind 加载配置，调用 open 装配依赖，用装配好的 *D 再调用一次 declare，
 // 然后执行同一路径上命令的 RunE。命令返回后，open 登记到 stack 的资源按相反顺序关闭。
 //
-// 选项解析在第一次声明的命令上，RunE 收到的 cmd 就是它，所以 RunE 用 cmd.Flags().GetString 这类方法读取选项：
-// 重新声明时用 StringVar 绑定的是另一组变量，它们始终是零值。
+// 选项解析在第一次声明的命令上，RunE 收到的 cmd 就是它；执行前 Bind 把解析到的选项复制到重新声明的命令上，
+// 所以用 cmd.Flags().GetString 读取和用 StringVar 绑定变量都可以。
 //
 // 只有设置了 RunE 的命令会被替换，--help 等直接返回的调用跳过装配。
 func Bind[C, D any](open func(ctx context.Context, cfg C, stack *cleanup.Stack) (*D, error), declare func(*D) []*cobra.Command) []*cobra.Command {
@@ -50,12 +51,35 @@ func bind[C, D any](cmd *cobra.Command, parent []string, open func(context.Conte
 			if target == nil || target.RunE == nil {
 				return errors.Newf("command: %q is not declared with the assembled dependencies", strings.Join(path, " "))
 			}
+			if err := copyFlags(cmd, target); err != nil {
+				return err
+			}
 			return target.RunE(cmd, args)
 		}
 	}
 	for _, child := range cmd.Commands() {
 		bind(child, path, open, declare)
 	}
+}
+
+// copyFlags 把 from 上解析到的选项复制到 to 上的同名选项，用 StringVar 这类方法绑定到 to 的变量随之取得同样的值。
+func copyFlags(from, to *cobra.Command) error {
+	var err error
+	from.Flags().Visit(func(f *pflag.Flag) {
+		t := to.Flags().Lookup(f.Name)
+		if t == nil || err != nil {
+			return
+		}
+		t.Changed = true
+		if s, ok := f.Value.(pflag.SliceValue); ok {
+			if ts, ok := t.Value.(pflag.SliceValue); ok {
+				err = ts.Replace(s.GetSlice())
+				return
+			}
+		}
+		err = t.Value.Set(f.Value.String())
+	})
+	return errors.Wrap(err, "command: copy flags")
 }
 
 // find 在 cmds 中按名称逐级查找 path 指向的命令。

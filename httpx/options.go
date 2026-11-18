@@ -9,7 +9,7 @@ import (
 // DefaultsOption 是 Defaults 的选项：Logger、Languages。
 type DefaultsOption interface{ applyDefaults(*defaultsOptions) }
 
-// ServeOption 是 Serve 和 ListenAndServe 的选项：Logger、OnDraining。
+// ServeOption 是 Serve 和 ListenAndServe 的选项：Logger。
 type ServeOption interface{ applyServe(*serveOptions) }
 
 // defaultsOptions 是 Defaults 的选项。
@@ -20,8 +20,7 @@ type defaultsOptions struct {
 
 // serveOptions 是 Serve 的选项。
 type serveOptions struct {
-	logger     *slog.Logger
-	onDraining func()
+	logger *slog.Logger
 }
 
 // LoggerOption 指定日志记录器，既是 DefaultsOption 也是 ServeOption，见 Logger。
@@ -46,12 +45,3 @@ func (o languagesOption) applyDefaults(d *defaultsOptions) { d.languages = o.bun
 // Languages 让 Defaults 中的 Locale 按 bundle 协商请求语言、翻译错误消息，见 i18n 包。
 // 不传时只使用框架内置的中英文消息，默认语言为 zh-CN。
 func Languages(bundle *goi18n.Bundle) DefaultsOption { return languagesOption{bundle: bundle} }
-
-// onDrainingOption 是 OnDraining 返回的选项。
-type onDrainingOption struct{ fn func() }
-
-// applyServe 设置 Serve 开始排空时调用的函数。
-func (o onDrainingOption) applyServe(s *serveOptions) { s.onDraining = o.fn }
-
-// OnDraining 让 Serve 在开始排空请求之前调用 fn，例如 Draining.Set，让就绪检查随即失败。
-func OnDraining(fn func()) ServeOption { return onDrainingOption{fn: fn} }

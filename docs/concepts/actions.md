@@ -200,10 +200,13 @@ func (a *Publish) Job(ctx context.Context, id uuid.UUID) error {
 err := PublishAt.Publish(ctx, tx, item.ID, queue.At(publishAt))
 ```
 
-最后，在 worker 中注册处理方法，见[启动 worker](../background/queue.md#running-workers)：
+最后，在模块的 `jobs.go` 中登记处理方法。worker 装配时调用 `RegisterJobs`，见[启动 worker](../background/queue.md#running-workers)：
 
 ```go
-article.PublishAt.Handle(w, article.NewPublish(a.db).Job)
+// RegisterJobs 登记文章模块的队列任务。
+func RegisterJobs(w *queue.Worker, db *bun.DB) {
+    PublishAt.Handle(w, NewPublish(db).Job)
+}
 ```
 
 > [!NOTE]
@@ -212,13 +215,17 @@ article.PublishAt.Handle(w, article.NewPublish(a.db).Job)
 <a id="as-scheduled-tasks"></a>
 ### 定时任务
 
-调度器的任务是一个 `func(ctx context.Context) error`。如果业务动作的 `Handle` 正好是这个签名，就可以直接注册。例如每分钟发布一次到期文章的 `PublishScheduled`：
+调度器的任务是一个 `func(ctx context.Context) error`。如果业务动作的 `Handle` 正好是这个签名，就可以直接注册。例如每分钟发布一次到期文章的 `PublishScheduled`，在模块的 `tasks.go` 中登记：
 
 ```go
-sched.Add("articles:publish-scheduled", "* * * * *", article.NewPublishScheduled(a.db).Handle)
+// RegisterTasks 登记文章模块的定时任务。
+func RegisterTasks(s *schedule.Scheduler, db *bun.DB) {
+    s.Add("articles:publish-scheduled", "* * * * *", NewPublishScheduled(db).Handle,
+        schedule.Describe("发布到了预定时间的文章"))
+}
 ```
 
-调度器的用法见[定时任务](../background/scheduling.md#defining-tasks)。
+调度器装配时调用 `RegisterTasks`，用法见[定时任务](../background/scheduling.md#defining-tasks)。
 
 <a id="as-commands"></a>
 ### 命令行
@@ -400,12 +407,12 @@ var onPublished = []article.PublishedHook{points.ArticlePublished}
 ```
 
 ```go
-article.Register(api, rest.RequireToken(api, validate, "articles"), db, onPublished)
+article.RegisterRoutes(api, rest.RequireToken(api, validate, "articles"), db, onPublished)
 article.PublishAt.Handle(w, article.NewPublish(a.db, onPublished...).Job)
 article.Commands(a.db, onPublished)
 ```
 
-`article.Register` 和 `article.Commands` 各多了一个参数，用来构造 `Publish`。这里的钩子没有依赖，所以是一个变量；如果钩子需要依赖，就在 `open` 中构造这个列表，保存在 `App` 中。
+`article.RegisterRoutes` 和 `article.Commands` 各多了一个参数，用来构造 `Publish`。这里的钩子没有依赖，所以是一个变量；如果钩子需要依赖，就在 `Open` 中构造这个列表，保存在 `App` 中。
 
 测试 `Publish` 时可以不传钩子，或者传一个记录调用的函数；测试 `points.ArticlePublished` 时，在测试事务中直接调用它，见[测试](../testing/database.md#testing-actions)。
 
@@ -453,7 +460,7 @@ article.Commands(a.db, onPublished)
 
 **`openapi`、`routes` 或 `--help` 时 panic**
 
-构造函数或 `Register` 中使用了依赖。生成文档、[查看路由](../http/routing.md#listing-routes)和[声明命令](#as-commands)时，动作会被构造，但传入的依赖都是零值。构造函数只保存依赖，方法执行时才使用它们。
+构造函数或 `RegisterRoutes` 这类登记函数中使用了依赖。生成文档、[查看路由](../http/routing.md#listing-routes)和[声明命令](#as-commands)时，动作会被构造，但传入的依赖都是零值。构造函数只保存依赖，方法执行时才使用它们。
 
 **并发请求时数据错乱：一个请求读到了另一个请求的数据**
 

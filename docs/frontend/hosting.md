@@ -72,21 +72,27 @@ apps/dist/
 <a id="wiring"></a>
 ## 装配
 
-`tenon init` 生成的 `cmd/api/main.go` 已经装配好：
+`tenon init` 生成的 `cmd/api/main.go` 已经在 HTTP 服务这个部分中装配好：
 
 ```go
 pages, err := frontend.New(apps.Dist, frontend.Options{
-    API:        api,             // SSR 进程渲染时调用的接口，通常就是对外的接口路由
-    DevServers: cfg.DevServers,  // 只在 tenon dev 时有值
+    API:        api,               // SSR 进程渲染时调用的接口，通常就是对外的接口路由
+    DevServers: a.cfg.DevServers,  // 只在 tenon dev 时有值
 })
 if err != nil {
-    return err
+    return nil, err
 }
 router.Mount("/api", api)
 router.Handle("/*", pages.Handler())
-return pages.Run(ctx, func(ctx context.Context) error {
-    return httpx.ListenAndServe(ctx, cfg.HTTP, router)
-})
+ln, err := d.Listen("tcp", a.cfg.HTTP.Addr)
+if err != nil {
+    return nil, err
+}
+return func(ctx context.Context) error {
+    return pages.Run(ctx, func(ctx context.Context) error {
+        return httpx.Serve(ctx, a.cfg.HTTP, ln, router)
+    })
+}, nil
 ```
 
 `frontend.New` 读取 `apps/dist` 中的清单，为每个前端准备处理器。`Handler` 挂在接口之后，处理其余全部请求：请求交给挂载路径最长匹配的前端，例如 `/admin/users` 交给挂在 `/admin/` 的前端，`/about` 交给挂在 `/` 的前端；不在任何前端之下的路径返回 404。`Run` 包住对外的 HTTP 服务，在它前后管理 SSR 进程，应用不需要自己安排启动和停止的顺序。

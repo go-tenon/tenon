@@ -33,11 +33,11 @@ func Config[C any]() *cobra.Command {
 		return enc.Close()
 	})
 	show.Flags().StringVar(&format, "format", "yaml", "输出格式：yaml 或 json")
-	return group("config", "配置工具",
+	return InGroup(group("config", "配置工具",
 		leaf("check", "加载并校验配置，不访问网络", func(cmd *cobra.Command) error {
 			_, err := LoadConfig[C](cmd)
 			return err
 		}),
 		show,
-	)
+	), GroupOps)
 }

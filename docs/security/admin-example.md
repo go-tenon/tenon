@@ -95,7 +95,7 @@ func Resolve(db bun.IDB) identity.Resolver {
 <a id="assembling"></a>
 ## 装配
 
-在入口的 `open` 中创建 `Realm` 和 `Store`。`Hashing` / `Crypt` / 限流的配置挂法见[哈希](hashing.md)、[加密](encryption.md)、[登录装配](login.md#assembling)。
+在入口的 `Open` 中创建 `Realm` 和 `Store`。`Hashing` / `Crypt` / 限流的配置挂法见[哈希](hashing.md)、[加密](encryption.md)、[登录装配](login.md#assembling)。
 
 ```go
 every15 := ratelimit.Config{Rate: 5, Interval: 15 * time.Minute, Burst: 5}
@@ -174,7 +174,7 @@ func (h *handlers) logout(ctx context.Context, _ *struct{}) (*SessionOutput, err
     return &SessionOutput{SetCookie: httpx.SessionCookie{}.Clear()}, nil
 }
 
-func Register(api *rest.API, requireUser func(*huma.Operation), users *login.Realm, tokens *apitoken.Store, lifetime time.Duration) {
+func RegisterRoutes(api *rest.API, requireUser func(*huma.Operation), users *login.Realm, tokens *apitoken.Store, lifetime time.Duration) {
     h := &handlers{users: users, tokens: tokens, lifetime: lifetime}
 
     op := huma.Operation{OperationID: "auth-login", Method: http.MethodPost, Path: "/auth/login", DefaultStatus: http.StatusNoContent}
@@ -215,8 +215,8 @@ router.Route("/admin/api", func(r chi.Router) {
         Accounts: identity.Accounts{user.Type: user.Resolve(a.db)},
     })
     requireUser := rest.RequireToken(api, a.tokens.Validate)
-    adminauth.Register(api, requireUser, a.users, a.tokens, a.cfg.APIToken.Lifetime)
-    article.Register(api, requireUser, a.db) // 业务路由按需加 RequireToken 的权限参数
+    adminauth.RegisterRoutes(api, requireUser, a.users, a.tokens, a.cfg.APIToken.Lifetime)
+    article.RegisterRoutes(api, requireUser, a.db) // 业务路由按需加 RequireToken 的权限参数
 })
 router.Handle("/admin/*", adminSPA)
 ```

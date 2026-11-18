@@ -255,7 +255,7 @@ router.Route("/ops/api", func(r chi.Router) {
         Accounts:      identity.Accounts{staff.Type: staff.Resolve(a.db, acc.Roles)},
         SessionCookie: accounts.StaffCookie, // 运营只读 __Host-ops
     })
-    opsapi.Register(ops, acc)
+    opsapi.RegisterRoutes(ops, acc)
 })
 router.Handle("/ops/*", opsSPA)
 
@@ -266,7 +266,7 @@ router.Route("/t/{tenant}", func(r chi.Router) {
             Tenant:   func(ctx huma.Context) string { return ctx.Param("tenant") },
             Accounts: identity.Accounts{member.Type: member.Resolve(a.db, acc.Roles)},
         })
-        consoleapi.Register(console, acc)
+        consoleapi.RegisterRoutes(console, acc)
     })
     r.Handle("/app/*", consoleSPA)
 })

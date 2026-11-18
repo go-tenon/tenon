@@ -68,7 +68,7 @@ func New(db *bun.DB, indexes ...Index) *cobra.Command {
 	reindex.Flags().Bool("detach", false, "发起重建后立即返回，不等待完成")
 	root := &cobra.Command{Use: "search", Short: "全文搜索索引和向量索引"}
 	root.AddCommand(reindex)
-	return root
+	return command.InGroup(root, command.GroupOps)
 }
 
 // run 重建索引 ix；detach 为 true 时只发起任务并输出它的 ID，否则等待完成并显示进度。

@@ -188,11 +188,11 @@ internal/article/
 <a id="module-registration"></a>
 ### 模块内注册
 
-`routes.go` 与业务动作同属一个包，提供模块的 `Register` 入口。它只做一件事：声明路由，并把业务动作的 `HTTP` 方法注册为处理器：
+`routes.go` 与业务动作同属一个包，提供模块的 `RegisterRoutes` 入口。它只做一件事：声明路由，并把业务动作的 `HTTP` 方法注册为处理器：
 
 ```go
-// Register 注册文章模块的全部路由。
-func Register(api *rest.API, requireArticles func(*huma.Operation), db *bun.DB) {
+// RegisterRoutes 注册文章模块的全部路由。
+func RegisterRoutes(api *rest.API, requireArticles func(*huma.Operation), db *bun.DB) {
     create := huma.Operation{
         OperationID:   "article-create",
         Method:        http.MethodPost,
@@ -216,12 +216,12 @@ func Register(api *rest.API, requireArticles func(*huma.Operation), db *bun.DB) 
 }
 ```
 
-`Register` 接收模块的动作需要的依赖，在注册时构造它们。生成 OpenAPI 或查看路由时，`db` 为 `nil`，处理器只被登记。
+`RegisterRoutes` 接收模块的动作需要的依赖，在注册时构造它们。生成 OpenAPI 或查看路由时，`db` 为 `nil`，处理器只被登记。
 
 入口在组装应用时调用它，并决定这些路由的访问策略。`validateToken` 是令牌校验器，见[认证](../security/authentication.md)：
 
 ```go
-article.Register(api, rest.RequireToken(api, validateToken, "articles"), db)
+article.RegisterRoutes(api, rest.RequireToken(api, validateToken, "articles"), db)
 ```
 
 <a id="http-actions"></a>

@@ -10,7 +10,6 @@
 - [请求的处理过程](#request-flow)
 - [平滑停止](#graceful-shutdown)
 - [健康检查](#health-checks)
-    - [没有 HTTP 服务的进程](#probe-listener)
 - [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
@@ -72,14 +71,12 @@
 应用收到 `SIGTERM` 或 Ctrl+C 时，各个部分同时开始[平滑停止](../concepts/lifecycle.md#graceful-shutdown)。对 HTTP 服务来说，就是**先处理完**正在处理的请求。`httpx.Serve` 负责这件事：
 
 ```go
-var draining httpx.Draining
-
-err := httpx.Serve(ctx, cfg.HTTP, ln, handler, httpx.OnDraining(draining.Set))
+err := httpx.Serve(ctx, cfg.HTTP, ln, handler)
 ```
 
-`draining` 是一个标志，表示“正在停止”。当 `ctx` 被取消时（收到停止信号，或者[不停机升级](../installation/operations.md#zero-downtime-upgrades)时交给了新进程），`httpx.Serve` 按以下顺序停止：
+当 `ctx` 被取消时（收到停止信号，或者[不停机升级](../installation/operations.md#zero-downtime-upgrades)时交给了新进程），`httpx.Serve` 按以下顺序停止：
 
-1. 调用 `OnDraining`，让[就绪检查](#health-checks)开始返回失败；
+1. 标记为“正在排空”：[就绪检查](#health-checks)从这一刻起返回失败，SSE 等长连接也据此主动结束，见 `DrainStarted`；
 2. 停止接收新连接，等待正在处理的请求完成，这个过程叫**排空**；
 3. 超过 `shutdown_timeout`（默认 10 秒）仍未完成的请求，取消它们的 context 并强制关闭连接。
 
@@ -93,16 +90,15 @@ err := httpx.Serve(ctx, cfg.HTTP, ln, handler, httpx.OnDraining(draining.Set))
 <a id="health-checks"></a>
 ## 健康检查
 
-部署平台用存活检查和就绪检查判断实例的状态，两者的区别见[健康检查](../concepts/lifecycle.md#health-checks)。HTTP 服务的就绪检查还要看是否正在排空：开始排空之后返回失败，平台就不再向这个实例转发新的请求。
+Docker 和反向代理用存活检查和就绪检查判断实例的状态，两者的区别见[健康检查](../concepts/lifecycle.md#health-checks)。HTTP 服务的就绪检查还要看是否正在排空：开始排空之后返回失败，反向代理就不再向这个实例转发新的请求。
 
-路径由部署环境决定，所以这两个路由由应用自己注册。下面把它们注册在 `/livez` 和 `/readyz`：
+这两个路由由应用自己注册，通常是 `/livez` 和 `/readyz`。[health 命令](../general/commands.md#health-command)请求的是 `/livez`：
 
 ```go
 router.Get("/livez", func(w http.ResponseWriter, _ *http.Request) {
     w.WriteHeader(http.StatusNoContent)
 })
 router.Handle("/readyz", httpx.Ready(httpx.ReadyOptions{
-    Draining: &draining,
     Checks: []health.Check{
         {Name: "database", Ping: func(ctx context.Context) error { return db.PingContext(ctx) }},
         {Name: "cache", Ping: func(context.Context) error { return mc.Ping() }, Optional: true},
@@ -110,7 +106,7 @@ router.Handle("/readyz", httpx.Ready(httpx.ReadyOptions{
 }))
 ```
 
-`draining` 与传给 `httpx.OnDraining` 的是同一个。每个 `Ping` 都写成闭包，到检查时才使用依赖：`openapi`、`routes` 命令用 `nil` 依赖构造同一套路由（见[依赖装配](../concepts/dependencies.md#assembling-the-application)），`db.PingContext` 这样的方法值在 `db` 为 `nil` 时取值就会 panic。检查项 `health.Check` 和执行检查的 `health.Checker` 在与传输方式无关的 `health` 包中，`httpx.Ready` 只负责排空的判断和响应格式。全部检查并行执行，每项最多 1 秒，超时按失败处理。必需的检查都通过时返回 `200`，否则返回 `503`；正在排空时直接返回 `503`。响应体列出每项的结果：
+每个 `Ping` 都写成闭包，到检查时才使用依赖：`openapi`、`routes` 命令用 `nil` 依赖构造同一套路由（见[依赖装配](../concepts/dependencies.md#assembling-the-application)），`db.PingContext` 这样的方法值在 `db` 为 `nil` 时取值就会 panic。检查项 `health.Check` 和执行检查的 `health.Checker` 在与传输方式无关的 `health` 包中，`httpx.Ready` 只负责排空的判断和响应格式：是否正在排空取自请求的 context，由处理这个请求的 `httpx.Serve` 设置。全部检查并行执行，每项最多 1 秒，超时按失败处理。必需的检查都通过时返回 `200`，否则返回 `503`；正在排空时直接返回 `503`。响应体列出每项的结果：
 
 ```json
 {"status":"ready","checks":{"cache":"failed","database":"ok"}}
@@ -124,62 +120,7 @@ router.Handle("/readyz", httpx.Ready(httpx.ReadyOptions{
 > [!TIP]
 > 探测很频繁，在[访问日志](middleware.md#http-configuration)的 `ignore_paths` 中排除这两个路径。
 
-<a id="probe-listener"></a>
-### 没有 HTTP 服务的进程
-
-分开部署时（见[一个进程，还是三个进程](../installation/deployment.md#process-forms)），只运行 `work` 或 `schedule` 的进程没有 HTTP 服务，也就没有 `/readyz`。在 Kubernetes 这类平台上，它们同样需要健康检查：
-
-- **存活检查**让平台发现卡死的进程并重启它。
-- **就绪检查**决定滚动升级能否继续：新版本的实例连不上数据库时一直不就绪，平台暂停升级，旧版本的实例继续处理任务。worker 不接收请求，所以就绪检查只影响升级，不影响分流。
-
-给这类进程加一个运行部分 `Probes`，在单独的地址上只提供这两个路径。先把检查项提成 `App` 的方法，HTTP 服务的 `/readyz` 改为 `Checks: a.checks()`，两边共用：
-
-```go
-// checks 是就绪检查的依赖，HTTP 服务的 /readyz 和 Probes 共用。
-func (a *App) checks() []health.Check {
-    return []health.Check{
-        {Name: "database", Ping: func(ctx context.Context) error { return a.db.PingContext(ctx) }},
-        {Name: "nats", Ping: natsx.Ping(a.nc)},
-    }
-}
-
-// Probes 在 cfg.ProbeAddr 上只提供存活检查和就绪检查，给没有 HTTP 服务的进程使用。
-// ProbeAddr 为空时不监听，返回的函数一直等到停止。
-func (a *App) Probes(d *command.Daemon) (func(context.Context) error, error) {
-    if a.cfg.ProbeAddr == "" {
-        return func(ctx context.Context) error { <-ctx.Done(); return nil }, nil
-    }
-    mux := http.NewServeMux()
-    mux.HandleFunc("GET /livez", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
-    mux.Handle("GET /readyz", httpx.Ready(httpx.ReadyOptions{Checks: a.checks()}))
-    ln, err := d.Listen("tcp", a.cfg.ProbeAddr)
-    if err != nil {
-        return nil, err
-    }
-    return func(ctx context.Context) error {
-        return httpx.Serve(ctx, a.cfg.HTTP, ln, mux)
-    }, nil
-}
-
-func Work(ctx context.Context, cfg Config) error {
-    return run(ctx, cfg, (*App).Worker, (*App).Probes)
-}
-
-func Schedule(ctx context.Context, cfg Config) error {
-    return run(ctx, cfg, (*App).Scheduler, (*App).Probes)
-}
-```
-
-`Config` 中加上 ``ProbeAddr string `yaml:"probe_addr"` ``，配置文件中由环境变量决定，默认不监听：
-
-```yaml
-probe_addr: ${PROBE_ADDR:-}
-```
-
-- **只在需要的平台上打开。** 容器中每个进程有自己的网络，设置 `PROBE_ADDR=:8080`，探测的端口和路径与 HTTP 服务相同，部署配置可以照搬。用 systemd 在同一台机器上运行 `work` 和 `schedule` 时不设置它：两个进程会争用同一个端口，而 systemd 通过 [`command.Daemon`](../concepts/dependencies.md#running-parts) 的就绪通知和退出状态管理进程，用不到 HTTP 探测。
-- **`serve` 和 `start` 不需要它**，HTTP 服务自己就有这两个路由。
-- **检查项按进程的需要选择。** worker 需要数据库和 NATS（任务从 NATS 取来），调度器需要数据库（锁在数据库中）；HTTP 服务独有的依赖不必放进来。`a.nc` 是入口中创建的 [NATS 连接](../libraries/nats.md#connecting)，`natsx.Ping` 在它正在重连时检查失败。
-- `httpx.Serve` 沿用 `http` 段的超时设置，停止时探测端口和其他部分同时开始关闭。
+只运行 worker、调度器或 RPC 的进程没有 HTTP 服务，也不需要健康检查：它们出错时进程以非 0 状态退出，由 systemd 或 Docker 的重启策略处理，见[部署](../installation/deployment.md#health-checks)。
 
 <a id="troubleshooting"></a>
 ## 常见问题
@@ -212,7 +153,7 @@ func Serve(ctx context.Context, cfg Config, ln net.Listener, handler http.Handle
     - `cfg`：服务器的超时等参数；不使用其中的 `Addr`，但 `cfg` 仍需合法
     - `ln`：监听端口，通常由 `command.Daemon` 取得
     - `handler`：处理请求的 Router
-    - `opts`：见下面的 `Logger`、`OnDraining`
+    - `opts`：见下面的 `Logger`
 - **返回**：监听出错时的错误；平滑停止后返回 `nil`
 
 在 `ln` 上运行 `handler`，直到 `ctx` 被取消或监听出错，然后按[平滑停止](#graceful-shutdown)中的顺序停止。返回时 `ln` 已经关闭。
@@ -225,23 +166,21 @@ func ListenAndServe(ctx context.Context, cfg Config, handler http.Handler, opts 
 
 与 `Serve` 相同，只是自己监听 `cfg.Addr`。适合简单的程序。
 
-### Logger、OnDraining
+### Logger
 
 ```go
 func Logger(l *slog.Logger) LoggerOption
-func OnDraining(fn func()) ServeOption
 ```
 
-`Serve` 和 `ListenAndServe` 的选项。`Logger` 让排空开始和服务器停止记录到 `l`，不传时使用 `slog.Default()`；它也可以传给 [`Defaults`](middleware.md#default-middleware)。`OnDraining` 在开始排空之前调用 `fn`，通常是 `Draining.Set`。
+`Serve` 和 `ListenAndServe` 的选项，让排空开始和服务器停止记录到 `l`，不传时使用 `slog.Default()`；它也可以传给 [`Defaults`](middleware.md#default-middleware)。
 
-### Draining
+### DrainStarted
 
 ```go
-func (d *Draining) Set()
-func (d *Draining) Load() bool
+func DrainStarted(ctx context.Context) <-chan struct{}
 ```
 
-排空标志，零值即可使用。把 `Set` 传给 `OnDraining`，把同一个值的地址传给 `ReadyOptions.Draining`。
+返回一个在处理这个请求的 `Serve` 开始排空时关闭的通道。`Ready` 用它判断是否正在排空；SSE 等长连接监听它并主动结束。请求不是由 `Serve` 处理时返回 `nil`。
 
 ### Ready
 
@@ -259,14 +198,13 @@ func Ready(opts ReadyOptions) http.Handler
 
 ```go
 type ReadyOptions struct {
-    Draining *Draining
     Checks   []health.Check
     Timeout  time.Duration
     Logger   *slog.Logger
 }
 ```
 
-`Draining` 为 `nil` 时跳过排空检查。`Timeout` 是每项检查的超时，默认 1 秒。`Logger` 记录检查结果的变化。
+`Timeout` 是每项检查的超时，默认 1 秒。`Logger` 记录检查结果的变化。
 
 ### health.Check、health.Checker
 

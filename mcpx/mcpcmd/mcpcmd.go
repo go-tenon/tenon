@@ -52,7 +52,7 @@ func New(srv *mcpx.Server, sub identity.Subject) *cobra.Command {
 	}
 	root := &cobra.Command{Use: "mcp", Short: "MCP 服务"}
 	root.AddCommand(serve, tools)
-	return root
+	return command.InGroup(root, command.GroupRun)
 }
 
 // Serve 以 sub 的身份在 transport 上运行 srv，直到客户端断开或 ctx 被取消。mcp serve 用它运行 stdio，

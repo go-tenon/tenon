@@ -29,7 +29,7 @@
 <a id="compose-file"></a>
 ## compose.yaml
 
-下面是完整的 `compose.yaml`。应用在一个容器中运行 `start`（HTTP 服务、队列 worker 和定时任务在同一个进程中，见[一个进程，还是三个进程](deployment.md#process-forms)），这是单台服务器上最简单的形态：
+下面是完整的 `compose.yaml`。应用在一个容器中运行 `serve`（HTTP 服务、队列 worker 和定时任务在同一个进程中，见[一个进程，还是每个部分一个进程](deployment.md#process-forms)），这是单台服务器上最简单的形态：
 
 ```yaml
 # compose.yaml：复制 .env.example 为 .env 并填写后，执行 docker compose up -d
@@ -53,8 +53,10 @@ services:
 
   app:
     <<: *app
-    command: [start]
+    command: [serve]
     ports: ["8080:8080"]
+    healthcheck:
+      test: [CMD, /app/api, health]
     volumes: [storage:/app/storage]
     restart: unless-stopped
     stop_grace_period: 45s

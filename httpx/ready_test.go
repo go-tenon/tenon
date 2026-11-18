@@ -25,8 +25,14 @@ type readyBody struct {
 
 func probe(t *testing.T, h http.Handler) (int, readyBody) {
 	t.Helper()
+	return probeRequest(t, h, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+}
+
+// probeRequest 用 req 请求就绪检查，返回状态码和响应体。
+func probeRequest(t *testing.T, h http.Handler, req *http.Request) (int, readyBody) {
+	t.Helper()
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	h.ServeHTTP(w, req)
 	var body readyBody
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatalf("body %q: %v", w.Body, err)
@@ -48,10 +54,8 @@ func TestReady(t *testing.T) {
 			return nil
 		}
 	}
-	var draining httpx.Draining
 	rec := logtest.New()
 	h := httpx.Ready(httpx.ReadyOptions{
-		Draining: &draining,
 		Checks: []health.Check{
 			{Name: "database", Ping: check(&dbDown)},
 			{Name: "cache", Ping: check(&cacheDown), Optional: true},
@@ -105,9 +109,9 @@ func TestReady(t *testing.T) {
 		t.Fatalf("failure record %+v", r)
 	}
 
-	// 排空时跳过检查，直接返回未就绪。
-	draining.Set()
-	if code, body = probe(t, h); code != http.StatusServiceUnavailable || body.Status != "draining" || body.Checks != nil {
+	// Serve 开始排空之后跳过检查，直接返回未就绪。
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	if code, body = probeRequest(t, h, req.WithContext(httpx.WithDrainStarted(req.Context()))); code != http.StatusServiceUnavailable || body.Status != "draining" || body.Checks != nil {
 		t.Fatalf("draining: %d %+v", code, body)
 	}
 }

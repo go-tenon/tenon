@@ -12,12 +12,13 @@
 - [输入与输出](#input-and-output)
 - [退出码](#exit-codes)
 - [内置命令](#built-in-commands)
-    - [Run：serve 与常驻进程](#run-command)
-    - [在一个进程中运行多个部分](#running-together)
+    - [serve：运行常驻进程](#serve-command)
+    - [health 命令](#health-command)
     - [openapi 命令](#openapi-command)
     - [routes 命令](#routes-command)
     - [migrate 命令](#migrate-command)
     - [config 命令](#config-command)
+- [帮助中的分组](#groups)
 - [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
@@ -71,12 +72,10 @@ go run . config show
 func main() {
     root := command.Root("api", "Blog API")
     root.AddCommand(
-        command.Run("serve", "启动 HTTP 服务", bootstrap.Serve),
-        command.Run("work", "处理队列任务", bootstrap.Work),
-        command.Run("schedule", "执行定时任务", bootstrap.Schedule),
-        command.Run("start", "在一个进程中运行 HTTP 服务、队列和定时任务", bootstrap.Start),
+        command.Serve(bootstrap.Open, bootstrap.Parts),
         migratecmd.New(migrations.FS, func(cfg bootstrap.Config) database.Config { return cfg.Database }),
         command.Config[bootstrap.Config](),
+        httpcmd.Health(func(cfg bootstrap.Config) httpx.Config { return cfg.HTTP }),
     )
     root.AddCommand(httpcmd.Commands(bootstrap.DocRouter)...)
     root.AddCommand(bootstrap.Commands()...)
@@ -84,7 +83,7 @@ func main() {
 }
 ```
 
-`bootstrap` 中的 `Serve`、`Start`、`DocRouter` 见[依赖装配](../concepts/dependencies.md#assembling-the-application)和[入门教程](../tutorial/02-infrastructure.md#entrypoint)，`bootstrap.Commands` 是需要数据库的命令，见[自定义命令](#custom-commands)。
+`bootstrap` 中的 `Open`、`Parts`、`DocRouter` 见[依赖装配](../concepts/dependencies.md#assembling-the-application)和[入门教程](../tutorial/02-infrastructure.md#entrypoint)，`bootstrap.Commands` 是需要数据库的命令，见[自定义命令](#custom-commands)。
 
 `command.Execute` 执行根命令。收到 `SIGINT` 或 `SIGTERM` 时，它会取消命令的 context；命令失败时，它把错误写到标准错误，并以对应的[退出码](#exit-codes)结束进程。
 
@@ -92,18 +91,20 @@ func main() {
 
 | 构造函数 | 创建的命令 | 需要配置 |
 | --- | --- | --- |
-| `command.Run(use, short, run)` | 任意名称，例如 `serve`、`worker` | 是 |
+| `command.Serve(open, parts)` | `serve`：运行常驻进程，见[serve：运行常驻进程](#serve-command) | 是 |
+| `command.Run(use, short, run)` | 任意名称，只需要配置的一次性任务，例如发送一次报表 | 是 |
 | `command.Config[C]()` | `config check`、`config show` | 是 |
 | `migratecmd.New(fsys, dbConfig, opts...)` | `migrate up`、`migrate status`、`migrate down`、`migrate make`；`migratecmd.Name` 构造其他数据库的命令，见[多个数据库](../database/advanced.md#multiple-databases) | 是 |
 | `migratecmd.Publish(sources...)` | 显式挂载的 `migrate publish` | 否 |
+| `httpcmd.Health(http)` | `health`：检查本机的 HTTP 服务是否存活，见[health 命令](#health-command) | 是 |
 | `httpcmd.Commands(router, opts...)` | `openapi`、`routes`、`client`（生成 TypeScript 或 Go 客户端，见[客户端代码](../http/clients.md)）；`httpcmd.Translations(locales.FS)` 传入应用的翻译文件，生成的验证提示与服务端相同。也可以用 `httpcmd.OpenAPI`、`httpcmd.Routes`、`clientgen.Command` 单独装配 | 否 |
 | `rpccmd.New(server)` | `rpc asyncapi`（输出 RPC 端点的 AsyncAPI 文档）、`rpc endpoints`（列出端点），见[导出接口描述](../rpc/endpoints.md#exporting) | 否 |
-| `command.Bind(open, declare)` | 应用声明的命令，例如 `article publish`，见[从命令行运行动作](../concepts/actions.md#as-commands) | 是 |
+| `command.Bind(Open, declare)` | 应用声明的命令，例如 `article publish`，见[从命令行运行动作](../concepts/actions.md#as-commands) | 是 |
 | `queuecmd.New(db, opts...)` | `queue status`、`queue failed`、`queue slot recreate`，在 `command.Bind` 中声明；`queuecmd.WithJetStream(nc, cfg)` 让 `queue status` 同时显示 JetStream 中的任务，见[队列状态](../background/queue-monitoring.md#stats-command) | 是 |
 | `schedulecmd.New(tasks, m)` | `schedules`，在 `command.Bind` 中声明，见[列出任务的命令](../background/scheduling.md#schedules-command) | 是 |
 | `doctorcmd.New(groups...)` | `doctor`，在 `command.Bind` 中声明；`migratecmd.Check` 让 `migrate up` 在迁移之前运行同样的检查，见[自检](../installation/doctor.md) | 是 |
 
-开发时用的 `dev`、`build`、`generate` 不在这里，它们由[开发工具](../installation/tooling.md) `go tool tenon` 提供。命令行中只有你装配了的命令：不提供 HTTP API 的程序，例如一个只消费消息的常驻进程，只装配 `command.Run("run", ...)` 和 `migrate` 即可。
+开发时用的 `dev`、`build`、`generate` 不在这里，它们由[开发工具](../installation/tooling.md) `go tool tenon` 提供。命令行中只有你装配了的命令：不提供 HTTP API 的程序，例如一个只消费消息的常驻进程，`Parts` 中只登记消费消息的部分，再装配 `command.Serve` 和 `migrate` 即可。
 
 <a id="custom-commands"></a>
 ## 自定义命令
@@ -136,7 +137,7 @@ root.AddCommand(&cobra.Command{
 ```go
 // bootstrap.Commands 返回需要 App 的命令。
 func Commands() []*cobra.Command {
-    return command.Bind(open, func(a *App) []*cobra.Command {
+    return command.Bind(Open, func(a *App) []*cobra.Command {
         return []*cobra.Command{
             article.Commands(a.db),
             queuecmd.New(a.db, queuecmd.WithJetStream(a.nc, a.cfg.Queue)),
@@ -145,7 +146,7 @@ func Commands() []*cobra.Command {
 }
 ```
 
-`open` 与 `serve` 用的是同一个，见[只在执行时装配的命令](../concepts/dependencies.md#deferred-commands)。执行某个业务动作的命令写成动作的 `Command` 入口，见[从命令行运行动作](../concepts/actions.md#as-commands)。
+`Open` 与 `serve` 用的是同一个，见[只在执行时装配的命令](../concepts/dependencies.md#deferred-commands)。执行某个业务动作的命令写成动作的 `Command` 入口，见[从命令行运行动作](../concepts/actions.md#as-commands)。
 
 <a id="input-and-output"></a>
 ## 输入与输出
@@ -185,59 +186,60 @@ return command.AsExitError(command.ExitUnavailable, err)
 <a id="built-in-commands"></a>
 ## 内置命令
 
-<a id="run-command"></a>
-### Run：serve 与常驻进程
+<a id="serve-command"></a>
+### serve：运行常驻进程
 
-`command.Run` 创建一个先加载配置、再调用 `run(ctx, cfg)` 的命令。`ctx` 会在进程收到停止信号时被取消，常驻进程据此退出。`bootstrap.Serve` 装配应用并启动 HTTP 服务，见[依赖装配](../concepts/dependencies.md#assembling-the-application)，HTTP 服务会据此[平滑停止](../http/lifecycle.md#graceful-shutdown)：
-
-```bash
-./bin/api serve                                                      # 使用 config/app.yaml
-./bin/api serve --config config/app.yaml --config config/local.yaml  # 再叠加 config/local.yaml
-```
-
-`Run` 不限于常驻进程，任何“读取配置然后做一件事”的命令都可以用它创建，例如数据回填、发送一次报表。
-
-<a id="running-together"></a>
-### 在一个进程中运行多个部分
-
-一个完整的应用通常有三个常驻部分：HTTP 服务、[队列 worker](../background/queue.md#running-workers) 和[定时任务调度器](../background/scheduling.md#running-the-scheduler)，分别是 `App` 的 `HTTP`、`Worker` 和 `Scheduler` 方法（见[依赖装配](../concepts/dependencies.md#assembling-the-application)）。每个命令只是选择运行哪些部分：
+一个完整的应用通常有几个一直运行的**部分**：HTTP 服务、[RPC 服务](../rpc/endpoints.md#running)、[队列 worker](../background/queue.md#running-workers)、[定时任务调度器](../background/scheduling.md#running-the-scheduler)。每个部分是 `App` 的一个方法，在 `bootstrap` 的 `Parts` 中登记，`command.Serve` 用它们构造 `serve` 命令：
 
 ```go
-func Serve(ctx context.Context, cfg Config) error {
-    return run(ctx, cfg, (*App).HTTP)
-}
-
-func Work(ctx context.Context, cfg Config) error {
-    return run(ctx, cfg, (*App).Worker)
-}
-
-func Schedule(ctx context.Context, cfg Config) error {
-    return run(ctx, cfg, (*App).Scheduler)
-}
-
-func Start(ctx context.Context, cfg Config) error {
-    return run(ctx, cfg, (*App).HTTP, (*App).Worker, (*App).Scheduler)
+// Parts 是常驻进程的运行部分：serve 运行全部部分，serve <名字> 只运行其中一个。
+func Parts(a *App) []command.Part {
+    return []command.Part{
+        {Name: "http", Short: "接口、页面和实时频道", Start: a.HTTP},
+        {Name: "rpc", Short: "RPC 端点", Start: a.RPC},
+        {Name: "worker", Short: "处理队列任务", Start: a.Worker},
+        {Name: "scheduler", Short: "执行定时任务", Start: a.Scheduler},
+        {Name: "realtime", Short: "只承接实时频道的连接", Start: a.Realtime, Standalone: true},
+    }
 }
 ```
+
+`a.HTTP` 这些方法见[多个运行部分](../concepts/dependencies.md#running-parts)。进程只有两种形态：
 
 | 命令 | 运行的部分 |
 | --- | --- |
-| `serve` | HTTP 服务 |
-| `work` | 队列 worker |
-| `schedule` | 定时任务调度器 |
-| `start` | 以上三者，在同一个进程中 |
-| `realtime` | 只承接[实时频道](../libraries/realtime.md)的连接，可选，见[单独部署实时连接](../libraries/realtime.md#separate-process) |
+| `serve` | 全部部分，`Standalone` 的除外 |
+| `serve http` | 只运行 HTTP 服务；`serve worker`、`serve scheduler` 等同理 |
 
-小型部署只运行 `start`：一个进程、一份配置、一套资源。业务量增长后改为分别部署 `serve`、`work` 和 `schedule`，各自按负载增减实例，代码保持原样。`start` 也可以部署多个实例：worker 竞争领取任务，调度器通过锁保证[每次触发只执行一次](../background/scheduling.md#multiple-instances)。
+小型部署只运行 `serve`：一个进程、一份配置、一套资源。业务量增长后改为每个部分一个进程，各自按负载增减实例，代码和配置保持原样。`serve` 也可以部署多个实例：worker 竞争领取任务，调度器通过锁保证[每次触发只执行一次](../background/scheduling.md#multiple-instances)。
 
-`run` 先装配全部部分，再用 `d.Run` 同时运行它们（内部是 `command.Concurrently`）：
+`Standalone` 的部分只单独运行。例如 `realtime` 只承接实时频道的连接：`serve` 运行全部时，实时频道已经挂在 HTTP 服务的 `/realtime` 上，不需要再多开一个端口，见[单独部署实时连接](../libraries/realtime.md#separate-process)。
 
-- 一个部分装配失败（例如端口被占用）时，`run` 在任何部分开始运行之前就返回错误，进程以非 0 状态退出。
-- 收到停止信号时，各部分同时平滑停止：HTTP 服务排空请求，worker 停止领取并等待处理中的任务，调度器停止触发并等待执行中的任务。全部返回之后才关闭数据库。
+`serve` 执行时：
+
+- 先加载配置、调用 `Open` 打开共用的资源，再按顺序调用每个选中部分的 `Start`。一个部分装配失败（例如端口被占用）时，在任何部分开始运行之前就返回错误，进程以非 0 状态退出。
+- 全部装配成功后同时运行这些部分（内部是 `Daemon.Run`）。收到停止信号时，各部分同时平滑停止：HTTP 服务排空请求，worker 停止领取并等待处理中的任务，调度器停止触发并等待执行中的任务。全部返回之后才关闭数据库。
 - 一个部分运行时出错退出，其余部分随之停止，进程以非 0 状态退出。
-- 一个部分在收到停止信号之前就正常返回，同样视为异常，错误中包含 `command.ErrStoppedEarly`，交给 systemd、Kubernetes 等重启。
+- 一个部分在收到停止信号之前就正常返回，同样视为异常，错误中包含 `command.ErrStoppedEarly`，交给 systemd、Docker 等重启。
 
-各部分共用 `open` 中创建的数据库连接池，HTTP 请求和 worker 的并发任务都会占用连接，设置 [`max_conns`](../database/quick-start.md#configuration) 时要按两者之和估算。
+`serve --help` 列出全部部分的名字和说明，名字写错或者给出多个名字时以 `ExitUsage` 退出。构造命令行时还没有打开任何资源，`Parts` 收到的是零值的 `App`，所以其中只取方法值（`a.HTTP`），不使用依赖。
+
+各部分共用 `Open` 中创建的数据库连接池，HTTP 请求和 worker 的并发任务都会占用连接，设置 [`max_conns`](../database/quick-start.md#configuration) 时要按两者之和估算。
+
+<a id="health-command"></a>
+### health 命令
+
+`httpcmd.Health` 创建 `health` 命令：加载配置，请求本机 HTTP 服务的 `/livez`，返回 2xx 时以 0 退出，否则以 `ExitFailure` 退出。它的参数从应用配置中取出 HTTP 服务的配置；监听地址的主机为空、`0.0.0.0` 或 `::` 时请求 `127.0.0.1`：
+
+```go
+httpcmd.Health(func(cfg bootstrap.Config) httpx.Config { return cfg.HTTP })
+```
+
+```bash
+./bin/api health && echo alive
+```
+
+它用于 Docker Compose 和 Swarm 的健康检查，镜像中不需要 curl，写法见[部署](../installation/deployment.md#health-checks)。应用要在路由中注册 `/livez`，见[健康检查](../http/lifecycle.md#health-checks)。`--timeout` 是等待响应的最长时间，默认 3 秒。
 
 <a id="openapi-command"></a>
 ### openapi 命令
@@ -325,6 +327,28 @@ go run ./cmd/api migrate publish --dir migrations
 
 配置文件缺失或校验失败时，这两个命令以及所有需要读取配置的命令都以 `ExitConfig` 退出。配置的读取与校验见[配置](configuration.md)。
 
+<a id="groups"></a>
+## 帮助中的分组
+
+`command.Execute` 把根命令的子命令分组显示在帮助中：
+
+```text
+运行：
+  serve       运行常驻进程：不带参数时运行全部部分，带参数时只运行这一个部分
+运维：
+  config      配置工具
+  health      检查本机的 HTTP 服务是否存活，供 Docker 的健康检查使用
+  migrate     数据库迁移
+应用：
+  user        作者账号
+开发：
+  client      生成 Go 或 TypeScript 客户端
+  openapi     输出 OpenAPI 文档
+  routes      查看应用的全部路由
+```
+
+框架的命令已经标好了分组；应用自己的命令没有标注时归入“应用”。要放进别的分组，用 `command.InGroup`，例如 `command.InGroup(cmd, command.GroupOps)` 把一个数据回填命令放进“运维”。
+
 <a id="troubleshooting"></a>
 ## 常见问题
 
@@ -336,9 +360,9 @@ go run ./cmd/api migrate publish --dir migrations
 
 配置文件缺失或无效。用 `config check` 查看具体的原因；确认在项目根目录执行（`config/app.yaml` 和 `.env` 都按工作目录查找）。
 
-**自定义命令中用 `StringVar` 绑定的选项始终是空的**
+**`serve` 报错 `unknown part "xxx"`，退出码 2**
 
-用 `command.Bind` 声明的命令，执行时会重新声明一次，绑定的变量属于第一次声明的命令。在 `RunE` 中用 `cmd.Flags().GetString` 读取选项，见[从命令行运行动作](../concepts/actions.md#as-commands)。
+这个名字不在 `Parts` 中。`serve --help` 列出全部部分的名字；`serve` 最多接受一个名字，要运行全部部分时不带参数。
 
 **`./bin/api openapi > openapi.json` 得到的文件中混入了日志**
 
@@ -363,6 +387,26 @@ func Execute(root *cobra.Command)
 
 未知命令、未知选项和多余参数都标记为 `ExitUsage`。`Execute` 执行根命令：收到停止信号时取消命令的 context；命令失败时把错误写到标准错误，并以 `ExitCode(err)` 退出进程。
 
+### Serve、Part
+
+```go
+func Serve[C, D any](open func(ctx context.Context, cfg C, stack *cleanup.Stack) (*D, error), parts func(*D) []Part) *cobra.Command
+
+type Part struct {
+    Name       string
+    Short      string
+    Standalone bool
+    Start      func(d *Daemon) (run func(context.Context) error, err error)
+}
+```
+
+- **参数**
+    - `open`：打开各部分共用的资源，把关闭操作登记到 `stack`，与 `Bind` 的相同
+    - `parts`：返回全部部分；构造命令时用零值的 `D` 调用，只用来列出名字和说明
+- **返回**：`serve` 命令
+
+`Part` 的 `Name` 是 `serve` 中的名字，`Short` 出现在 `serve --help` 中，`Standalone` 的部分只单独运行；`Start` 装配这个部分并用 `d.Listen` 取得监听端口，返回一直运行到 `ctx` 被取消的函数。名字为空或重复、`Start` 为 `nil` 时 panic。行为见[serve：运行常驻进程](#serve-command)。
+
 ### Run
 
 ```go
@@ -370,12 +414,12 @@ func Run[C any](use, short string, run func(ctx context.Context, cfg C) error) *
 ```
 
 - **参数**
-    - `use`：命令名，例如 `serve`
+    - `use`：命令名，例如 `report`
     - `short`：一句话说明
     - `run`：命令要做的事，收到加载并校验后的配置
 - **返回**：命令
 
-`run` 的 `ctx` 在进程收到 `SIGINT`、`SIGTERM` 时被取消，常驻进程据此退出。
+适合只需要配置的一次性任务。`run` 的 `ctx` 在进程收到 `SIGINT`、`SIGTERM` 时被取消。
 
 ### Config
 
@@ -405,7 +449,22 @@ func LoadConfig[C any](cmd *cobra.Command) (C, error)
 func Bind[C, D any](open func(ctx context.Context, cfg C, stack *cleanup.Stack) (*D, error), declare func(*D) []*cobra.Command) []*cobra.Command
 ```
 
-依赖推迟到执行时装配的命令，见[只在执行时装配的命令](../concepts/dependencies.md#deferred-commands)。
+依赖推迟到执行时装配的命令，见[只在执行时装配的命令](../concepts/dependencies.md#deferred-commands)。执行时 `Bind` 把解析到的选项复制到重新声明的命令上，用 `cmd.Flags().GetString` 读取和用 `StringVar` 绑定变量都可以。
+
+### InGroup
+
+```go
+func InGroup(cmd *cobra.Command, id string) *cobra.Command
+
+const (
+    GroupRun = "run"
+    GroupOps = "ops"
+    GroupApp = "app"
+    GroupDev = "dev"
+)
+```
+
+把 `cmd` 标注为分组 `id`，返回 `cmd`。`Execute` 按标注把根命令的子命令分组显示在帮助中，见[帮助中的分组](#groups)。
 
 ### NoArgs、ExactArgs
 
@@ -440,6 +499,13 @@ func Routes(router func() chi.Routes) *cobra.Command
 ```
 
 `Commands` 返回 `openapi`、`routes` 和 `client` 三个命令。`router` 构造应用的全部路由，通常用默认配置和 `nil` 依赖调用 `serve` 也在用的路由函数，例如 `func() chi.Routes { return routes(config.Default[Config](), nil) }`；三个命令执行时才调用它。
+
+```go
+func Health[C any](http func(C) httpx.Config) *cobra.Command
+const LivePath = "/livez"
+```
+
+`Health` 返回 `health` 命令，请求本机 HTTP 服务的 `LivePath`，见[health 命令](#health-command)。
 
 ### migratecmd
 

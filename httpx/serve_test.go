@@ -179,7 +179,7 @@ func (l *countingListener) Accept() (net.Conn, error) {
 	return c, err
 }
 
-// Logger 选项让 Serve 的排空和停止记录写到指定的记录器；OnDraining 在排空之前调用。
+// Logger 选项让 Serve 的排空和停止记录写到指定的记录器。
 func TestServeOptions(t *testing.T) {
 	t.Parallel()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -187,15 +187,14 @@ func TestServeOptions(t *testing.T) {
 		t.Fatal(err)
 	}
 	var logs strings.Builder
-	var drained atomic.Bool
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	err = httpx.Serve(ctx, httpx.DefaultConfig(), ln, http.NotFoundHandler(),
-		httpx.Logger(slog.New(slog.NewTextHandler(&logs, nil))), httpx.OnDraining(func() { drained.Store(true) }))
+		httpx.Logger(slog.New(slog.NewTextHandler(&logs, nil))))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !drained.Load() || !strings.Contains(logs.String(), "http server draining") || !strings.Contains(logs.String(), "http server stopped") {
-		t.Fatalf("drained=%v logs=%s", drained.Load(), logs.String())
+	if !strings.Contains(logs.String(), "http server draining") || !strings.Contains(logs.String(), "http server stopped") {
+		t.Fatalf("logs=%s", logs.String())
 	}
 }

@@ -166,7 +166,7 @@ logs:
 <a id="formats"></a>
 ### format
 
-输出格式，`json` 或 `text`。不写时按输出自动选择：输出到终端时是 `text`，其余（文件、管道、systemd、容器）是 `json`。所以开发时在终端中运行（包括 `tenon dev`）看到的是彩色的文本，部署后由 systemd、Docker、Kubernetes 采集的是 JSON，不用为两个环境各写一份配置。两种格式分别面向机器和人：
+输出格式，`json` 或 `text`。不写时按输出自动选择：输出到终端时是 `text`，其余（文件、管道、systemd、容器）是 `json`。所以开发时在终端中运行（包括 `tenon dev`）看到的是彩色的文本，部署后由 systemd、Docker 采集的是 JSON，不用为两个环境各写一份配置。两种格式分别面向机器和人：
 
 - `json`：每行一个 JSON 对象，供日志系统采集和检索。生产环境使用它。
 - `text`：本地开发时阅读，基于 [tint](https://github.com/lmittmann/tint)。时间显示到毫秒，级别缩写为 `DBG`、`INF`、`WRN`、`ERR`，分组字段以 `.` 连接：

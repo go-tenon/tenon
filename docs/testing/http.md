@@ -32,7 +32,7 @@ func newTestAPI() *rest.API {
         return identity.Subject{}, identity.ErrUnauthenticated.New()
     }
     // 这些请求在调用 Handle 之前就会被拒绝，所以 db 传 nil
-    article.Register(api, rest.RequireToken(api, validate, "articles"), nil)
+    article.RegisterRoutes(api, rest.RequireToken(api, validate, "articles"), nil)
     return api
 }
 
@@ -179,7 +179,7 @@ func TestOpenAPI(t *testing.T) {
 
 **测试 OpenAPI 文档时 panic**
 
-有构造函数或 `Register` 在注册时使用了依赖，而生成文档时依赖是 `nil`。构造函数只保存依赖，见[依赖装配](../concepts/dependencies.md#constructor-injection)。
+有构造函数或 `RegisterRoutes` 在注册时使用了依赖，而生成文档时依赖是 `nil`。构造函数只保存依赖，见[依赖装配](../concepts/dependencies.md#constructor-injection)。
 
 **命令测试的输出是空的**
 
