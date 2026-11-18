@@ -2,7 +2,7 @@
 
 一个产品的后端和全部前端放在同一个仓库中：Go 写的后端，加上运营后台、租户控制台、用户端等几个网页前端。前端多了以后，如果每个前端各选一套组件库、各写一套请求和表单的方式，代码很快就难以维护，AI 编程助手也不知道该照哪种写法生成代码。
 
-这一页规定 Tenon 应用的网页前端用什么技术、目录怎样组织、代码怎样写。`tenon init` 和 `tenon add frontend` 生成的前端已经按这里的规定组织好，每个前端的 `AGENTS.md` 也是从这里摘出来的。
+这一页规定 Tenon 应用的网页前端用什么技术、目录怎样组织、代码怎样写。`tenon init` 和 `tenon add frontend` 生成的前端已经按这里的规定组织好，项目根目录 `AGENTS.md` 中前端的约定也是从这里摘出来的。
 
 阅读前需要了解：[脚手架](../installation/scaffolding.md)；[TanStack Start 的接入](start.md)；[在 React 中调用接口](client-react.md)。
 
@@ -95,7 +95,7 @@ helpdesk/
 ├── package.json           Bun workspace（apps/*、packages/*）；dev、build、generate 脚本
 ├── bun.lock
 ├── tenon.json             开发工具的配置，可以没有
-├── AGENTS.md              各个前端的使用者、样式预设、挂载路径和调用的 API
+├── AGENTS.md              项目说明和代码约定，AI 编程助手读它；其中 tenon 维护的一段列出各个前端
 ├── apps/                  每个前端一个目录
 │   ├── admin/             运营后台（--layout frame）
 │   ├── console/           控制台（--layout rail）
@@ -106,7 +106,7 @@ helpdesk/
 └── docs/adr/              架构决策记录
 ```
 
-- 每个前端是 `apps/` 下的一个目录，有自己的 `package.json`（其中的 `tenon` 字段声明挂载路径和是否在服务端渲染）、`vite.config.ts` 和 `AGENTS.md`。全部前端的构建产物在 `apps/dist` 中，由 `apps/apps.go` 嵌入程序。
+- 每个前端是 `apps/` 下的一个目录，有自己的 `package.json`（其中的 `tenon` 字段声明挂载路径和是否在服务端渲染）和 `vite.config.ts`。全部前端的构建产物在 `apps/dist` 中，由 `apps/apps.go` 嵌入程序。
 - `packages/client` 由工具生成，从第一个前端起就有。`packages/ui` 在第二个前端用到同一个业务组件时，才从前端中抽出来。
 - 生成的客户端按 API 分目录：每个 API（`rest.New` 的一个 `BasePath`）生成到 `packages/client/src/<名称>`，名称默认是 `BasePath` 的最后一段，前端用 `@<项目名>/client/<名称>` 导入，例如 `@helpdesk/client/admin`。一个前端只导入自己调用的 API。见[开发工具](../installation/tooling.md#conventions)。
 - 后端的目录见[目录结构](../concepts/structure.md)。
@@ -132,7 +132,6 @@ helpdesk/
 
 ```text
 apps/admin/
-├── AGENTS.md
 ├── package.json
 ├── vite.config.ts
 ├── tsconfig.json
@@ -241,12 +240,12 @@ apps/admin/
 <a id="agents"></a>
 ## 给 AI 编程助手的约束
 
-AI 编程助手按项目中的说明写代码。说明越具体，它生成的代码越符合规范：
+AI 编程助手按项目中的说明写代码。说明越具体，它生成的代码越符合规范。`tenon init` 生成的项目已经准备好这些说明，详细的介绍见 [AI 编程助手](../installation/ai-assistants.md)：
 
-- **每个前端的 `AGENTS.md`**：列出本前端允许使用的库和写法，内容取自本页。
-- **根目录的 `AGENTS.md`**：列出每个前端的使用者、样式预设、挂载路径和调用的 API，并写明：业务规则和权限判断写在 Go 的业务动作中，前端只负责展示和交互。
-- **Biome 的 `noRestrictedImports`**：禁止[不使用的库](#not-used)，例如 antd、Tailwind。写错了，`bun run lint` 直接报错。
-- **Mantine 的 LLM 文档**：Mantine 提供给 AI 编程助手读的 `llms.txt`，版本与项目的 Mantine 一致时，生成的代码用对了组件的属性。
+- **根目录的 `AGENTS.md`**：前端的约定（用 Mantine 和 `@go-tenon/ui`、颜色从主题取、调用生成的客户端、不手改生成的代码）取自本页，并写明业务规则和权限判断写在 Go 的业务动作中，前端只负责展示和交互。其中由 tenon 维护的一段列出每个前端的挂载路径和渲染方式。
+- **依赖的文档**：同一段列出 Mantine、TanStack Router、TanStack Query、React、Vite 在项目中的版本和它们给 AI 读的 `llms.txt`。
+- **Mantine 的 MCP 服务**：助手用它搜索 Mantine 的文档、查组件的属性，生成的代码用对了组件的写法。
+- **本页**：助手在 `.tenon/docs/frontend/conventions.md` 中读到与项目框架版本一致的这一页。[不使用的库](#not-used)写在这里，需要强制检查时，自己给前端加上 Biome 的 `noRestrictedImports`。
 
 <a id="other-platforms"></a>
 ## 以后增加的端
@@ -265,10 +264,6 @@ AI 编程助手按项目中的说明写代码。说明越具体，它生成的�
 
 <a id="troubleshooting"></a>
 ## 常见问题
-
-**`bun run lint` 报错某个导入被禁止**
-
-这个前端不允许使用这个库，例如导入了 antd 或 Tailwind。改用 Mantine 或 `@go-tenon/ui` 中对应的组件；确实需要时，先写架构决策记录，再修改本规范和 `biome.json`。
 
 **两个前端要用同一个组件**
 

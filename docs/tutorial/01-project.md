@@ -71,6 +71,7 @@ bun run dev
 blog/
 ├── go.mod                       Go module；Tenon 的开发工具也记在这里，版本与框架相同
 ├── package.json                 前端的 workspace；dev、build、generate 脚本
+├── AGENTS.md                    项目说明和代码约定，AI 编程助手读它
 ├── config/app.yaml              应用的配置
 ├── cmd/blog/main.go             程序的入口：serve 命令启动 HTTP 服务
 ├── internal/todo/todo.go        示例的接口

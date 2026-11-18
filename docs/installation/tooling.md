@@ -12,6 +12,7 @@
 - [tenon build：构建](#build)
 - [tenon add frontend：再加一个前端](#add-frontend)
 - [tenon add client：桌面端等客户端](#add-client)
+- [tenon agents：AI 编程助手](#agents)
 - [常见问题](#troubleshooting)
 - [进阶](#advanced)
     - [前端与 API 怎样被发现](#conventions)
@@ -55,6 +56,7 @@ go get -tool github.com/go-tenon/tenon/cmd/tenon
 | `tenon build` | 上线前：构建出一个可执行文件 |
 | `tenon add frontend` | 需要再加一个前端时，例如运营后台 |
 | `tenon add client` | 需要桌面端等网页以外的客户端时 |
+| `tenon agents` | 升级框架、加了前端或客户端以后，更新给 AI 编程助手的内容 |
 
 `serve`、`migrate`、`routes` 这类命令不属于 `tenon`，它们在你的应用自己的程序中，部署到服务器上以后照样可以运行，见[命令行](../general/commands.md)。
 
@@ -71,6 +73,7 @@ go run github.com/go-tenon/tenon/cmd/tenon@latest init todo
 
 - `--module`：Go module 的路径，默认是目录名。
 - `--name`：应用的名称，默认是目录名。
+- `--agents`：为哪些 AI 编程助手写 MCP 配置，默认 `claude,codex,cursor`，`none` 表示都不写，见 [AI 编程助手](ai-assistants.md#choosing-assistants)。
 - `--tenon <框架目录>`：只在开发 Tenon 框架本身时使用，让项目使用本地的框架代码（`go.mod` 中写入 `replace`）。
 
 <a id="dev"></a>
@@ -168,6 +171,15 @@ go tool tenon add client admin-desktop --kind electron --frontend admin
 ```
 
 它在 `clients/admin-desktop` 中生成一个 Electron 桌面端，窗口中显示 `apps/admin`，并在 `apps/admin` 中加上授权页。`--title` 是窗口标题和安装包的名称，默认是客户端的名字。之后用 `go tool tenon dev --client admin-desktop` 同时运行它，用 `go tool tenon build --client admin-desktop` 打包。详细的用法见 [Electron 桌面端](../clients/electron.md)，有哪些种类见[客户端](../clients/README.md)。
+
+<a id="agents"></a>
+## tenon agents：AI 编程助手
+
+```bash
+bun run agents   # 即 go tool tenon agents
+```
+
+更新 AI 编程助手用到的内容：把项目所用版本的框架文档复制到 `.tenon/docs`，重新生成 `AGENTS.md` 中由 tenon 维护的一段（框架的版本、前端与客户端、依赖的版本和文档），改写 Claude Code、Codex、Cursor 的 MCP 配置。升级框架、加减依赖以后运行它；`tenon add frontend`、`tenon add client` 结束时会自动运行一次，`tenon dev` 每次启动时更新 `.tenon/docs`。详细的说明见 [AI 编程助手](ai-assistants.md)。
 
 <a id="troubleshooting"></a>
 ## 常见问题
@@ -289,6 +301,7 @@ Tenon 也提供了一些前端包，例如 `@go-tenon/client`（调用接口、�
 | `apis.<BasePath>.name` | `BasePath` 的最后一段 | 这个 API 的 TypeScript 客户端的目录名 |
 | `apis.<BasePath>.go` | 不生成 | 这个 API 的 Go 客户端的目录 |
 | `tools` | 空 | 其他工具：`watch` 是开发时运行的命令，`build` 是停止后运行的命令 |
+| `agents.targets` | `["claude", "codex", "cursor"]` | `tenon agents` 为哪些 AI 编程助手写 MCP 配置，见 [AI 编程助手](ai-assistants.md#choosing-assistants) |
 
 例如开发时用 esbuild 打包一个嵌入到其他网站的小组件脚本：
 

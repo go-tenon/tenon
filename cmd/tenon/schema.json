@@ -27,6 +27,19 @@
         }
       }
     },
+    "agents": {
+      "type": "object",
+      "description": "tenon agents 为哪些 AI 编程助手写 MCP 配置。AGENTS.md 中 tenon 的一段和 .tenon/docs 中的框架文档不论选择都会更新。",
+      "additionalProperties": false,
+      "properties": {
+        "targets": {
+          "type": "array",
+          "items": { "enum": ["claude", "codex", "cursor"] },
+          "uniqueItems": true,
+          "description": "AI 编程助手：claude 写 .mcp.json，codex 写 .codex/config.toml，cursor 写 .cursor/mcp.json。省略时是全部三个，空数组时一个都不写。"
+        }
+      }
+    },
     "tools": {
       "type": "array",
       "description": "与应用一起运行的其他工具：开发时运行 watch，停止后运行一次 build。",
