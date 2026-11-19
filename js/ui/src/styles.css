@@ -568,25 +568,14 @@ body {
 /* ———————————————— 表格 ———————————————— */
 
 /* 列设置（mantine-datatable 自带）：整个表头格都可以拖动，不显示拖动手柄，指针变成手掌；
-   隐藏列的按钮只在指针放在这一格上时显示。表头保持干净，标题和下面的内容左对齐。 */
-.tn-datatable .mantine-datatable-header-cell-draggable-action-icon {
+   表头上不显示隐藏列的按钮，显示哪些列在表格上方的“列设置”菜单中选择。表头保持干净，标题和下面的内容左对齐。 */
+.tn-datatable .mantine-datatable-header-cell-draggable-action-icon,
+.tn-datatable .mantine-datatable-header-cell-toggleable-icon {
   display: none;
 }
 
 .tn-datatable .mantine-datatable-header-cell-draggable {
   cursor: grab;
-}
-
-@media (hover: hover) {
-  .tn-datatable .mantine-datatable-header-cell-toggleable-icon {
-    opacity: 0;
-    transition: opacity 120ms ease;
-  }
-
-  .tn-datatable th:hover .mantine-datatable-header-cell-toggleable-icon,
-  .tn-datatable .mantine-datatable-header-cell-toggleable-icon:focus-visible {
-    opacity: 1;
-  }
 }
 
 /* ———————————————— 页面 ———————————————— */
