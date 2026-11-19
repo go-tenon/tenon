@@ -25,6 +25,7 @@ type Customer = {
   joined: string
   last_order_at?: string
   api_key: string
+  note: string // 备注：有空的、短的和很长的，演示文字列的截断和弹出全文
 }
 
 const levels = ["普通", "银卡", "金卡", "钻石"]
@@ -40,6 +41,12 @@ let customers: Customer[] = Array.from({ length: 46 }, (_, i) => ({
   joined: `2025-${String((i % 12) + 1).padStart(2, "0")}-${String((i % 27) + 1).padStart(2, "0")}`,
   last_order_at: i % 3 === 0 ? undefined : `2026-11-${String((i % 16) + 1).padStart(2, "0")}T0${i % 9}:30:00Z`,
   api_key: i % 4 === 2 ? "" : `sk-live-${(i * 7919).toString(36).padStart(6, "0")}${i}abcd`,
+  note: [
+    "",
+    "月结客户",
+    "每月 5 日前对账，发票抬头与合同一致；大宗订单需提前三个工作日通知仓库备货，节假日前后的订单按华东仓的发货时间表执行。",
+    "联系人：王经理，电话见合同附件",
+  ][i % 4],
 }))
 
 const delay = <T,>(v: T) => new Promise<T>((r) => setTimeout(() => r(v), 150))
@@ -119,6 +126,7 @@ const customerDef: ResourceDef = {
   permissions: { list: [], get: [], create: [], update: [], delete: [] },
   columns: [
     { name: "name", type: "string", required: true },
+    { name: "note", type: "string" },
     { name: "level", type: "string", enum: "Level", required: true, sortable: true },
     { name: "tags", type: "array", items: "string" },
     { name: "active", type: "boolean", required: true },
@@ -157,6 +165,7 @@ const customerDef: ResourceDef = {
       title: "客户",
       fields: {
         name: "名称",
+        note: "备注",
         level: "等级",
         tags: "标签",
         active: "启用",

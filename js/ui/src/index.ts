@@ -50,6 +50,7 @@ export * from "./components/form/secret-input"
 export * from "./components/links"
 export * from "./components/page"
 export * from "./components/status-dot"
+export * from "./components/truncated-text"
 // ———————————————————————————— features ————————————————————————————
 export * from "./features/activity/activity-timeline"
 export * from "./features/activity/model"
