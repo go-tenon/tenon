@@ -26,14 +26,16 @@ func TestEnumSchemaConflict(t *testing.T) {
 	r := huma.NewMapRegistry("#/components/schemas/", huma.DefaultSchemaNamer)
 	contract.EnumSchema(r, articleStatuses)
 	contract.EnumSchema(r, articleStatuses) // 同一个枚举可以重复登记
-	other := enum.New("article.status", articleStatus("open"))
+	// 前缀和取值都相同的另一份声明（例如两个 Go 类型共用一份枚举）是同一个类型
+	contract.EnumSchema(r, enum.New("article.status", articleStatus("draft"), articleStatus("published")))
+	// 前缀相同、取值不同：后登记的会悄悄用先登记的取值校验，所以 panic
 	func() {
 		defer func() {
-			if recover() != nil {
-				t.Error("same prefix panicked")
+			if msg, _ := recover().(string); !strings.Contains(msg, "need different prefixes") {
+				t.Errorf("same prefix with different values: %v", msg)
 			}
 		}()
-		contract.EnumSchema(r, other)
+		contract.EnumSchema(r, enum.New("article.status", articleStatus("draft")))
 	}()
 	r.Map()["OrderState"] = &huma.Schema{Type: huma.TypeObject}
 	defer func() {

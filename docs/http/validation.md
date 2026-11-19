@@ -177,7 +177,7 @@ article.status.published: 已发布
 ```
 
 - 字段的类型是 `Status` 时，请求体和查询参数只接受声明的取值，其他值返回 `422`，错误码 `validation.one_of`。不需要再写 `enum` 标签。[MCP 工具](../ai/mcp.md)和 [RPC 端点](../rpc/endpoints.md)的参数同样只接受这些取值。
-- `contract.EnumSchema` 把它登记为 OpenAPI 的命名类型，名称由前缀得出（`article.status` 是 `ArticleStatus`），带有全部取值和 `x-tenon-enum`（消息前缀）。生成的客户端得到取值的联合类型和各语言的显示文字，见[客户端的枚举](../frontend/client-react.md#ts-enums)。两个枚举得出同一个名称时 panic。
+- `contract.EnumSchema` 把它登记为 OpenAPI 的命名类型，名称由前缀得出（`article.status` 是 `ArticleStatus`），带有全部取值和 `x-tenon-enum`（消息前缀）。生成的客户端得到取值的联合类型和各语言的显示文字，见[客户端的枚举](../frontend/client-react.md#ts-enums)。名称只由前缀决定，所以前缀相同、取值也相同的两份声明是同一个类型；前缀相同而取值不同时，注册路由时 panic，例如“全部角色”（含主管理员）和“可以分配的角色”（不含）不能都用前缀 `role`，否则后者会按前者的取值校验、接受主管理员。取值不同的枚举用不同的前缀，例如 `assignable_role`，显示文字另写一份。
 - `Statuses.Label(ctx, v)` 按请求的语言返回显示文字，没有翻译时返回取值本身，例如在页面中显示状态；`Statuses.Values()` 按声明的顺序返回全部取值，例如生成下拉框的选项；`Statuses.Valid(v)` 判断取值是否合法。
 - `Schema` 方法是 Huma 的 `SchemaProvider`：类型自己声明 schema，不需要在装配时逐个登记。
 
