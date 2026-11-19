@@ -22,16 +22,23 @@ var refPrefixes = []string{"#/components/schemas/", defsPrefix}
 // 命名类型的名称是 e.Name()（例如 ArticleStatus），带有 enum（全部取值）和 x-tenon-enum（显示文字的消息前缀）。
 // 它出现在 OpenAPI 和 AsyncAPI 文档的 components.schemas 中，MCP 工具和 RPC 端点的参数 schema 则把它放在 $defs 中；
 // 取值照常由 Huma 校验，生成的客户端据此得到取值和各语言的显示文字。
-// 同名的命名类型已经是另一个枚举或其他类型时 panic。
+//
+// 命名类型的名称由前缀得出，所以前缀相同、取值也相同的枚举是同一个类型，可以重复登记（例如两个 Go 类型共用一份枚举）。
+// 同名的命名类型是取值不同的枚举（例如“全部角色”和“可以分配的角色”都用了前缀 role）、或者是其他类型时 panic：
+// 否则后登记的枚举会悄悄用先登记的取值校验，接受它本不该接受的值。取值不同的枚举要用不同的前缀。
 func EnumSchema(r huma.Registry, e enum.Definition) *huma.Schema {
 	name, prefix := e.Name(), e.Prefix()
+	values := e.Strings()
 	if s, ok := r.Map()[name]; ok {
 		if s.Extensions["x-tenon-enum"] != prefix {
 			panic(fmt.Sprintf("contract: schema %s is already registered for something other than enum %s", name, prefix))
 		}
+		if !slices.Equal(enumValues(s), values) {
+			panic(fmt.Sprintf("contract: enum %s is already registered with values %v, not %v; enums with different values need different prefixes",
+				prefix, enumValues(s), values))
+		}
 		return &huma.Schema{Ref: ref(r, name)}
 	}
-	values := e.Strings()
 	s := &huma.Schema{Type: huma.TypeString, Enum: make([]any, len(values)), Extensions: map[string]any{"x-tenon-enum": prefix}}
 	for i, v := range slices.Clone(values) {
 		s.Enum[i] = v
@@ -50,4 +57,13 @@ func ref(r huma.Registry, name string) string {
 		}
 	}
 	panic("contract: registry uses a schema reference prefix other than " + strings.Join(refPrefixes, " or "))
+}
+
+// enumValues 返回已登记的枚举 schema s 的取值。
+func enumValues(s *huma.Schema) []string {
+	out := make([]string, len(s.Enum))
+	for i, v := range s.Enum {
+		out[i] = fmt.Sprint(v)
+	}
+	return out
 }
