@@ -246,9 +246,9 @@ export function TabsOutlet({ max = 10, confirm, home = false }: TabsOutletProps)
       ...m,
       fresh: false,
       state: pinFirst(m.state, {
-        key: tabKey(first.id),
+        key: tabKey(first.id, first.params),
         routeId: first.id,
-        params: {},
+        params: first.params ?? {},
         href: first.path,
         title: first.title,
         icon: first.icon,

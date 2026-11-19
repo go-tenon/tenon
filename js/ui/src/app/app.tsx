@@ -22,6 +22,7 @@ import {
   type StaticDataRouteOption,
   useMatch,
   useMatches,
+  useParams,
   useRouterState,
 } from "@tanstack/react-router"
 import { createContext, Fragment, type ReactNode, useContext, useEffect, useMemo, useSyncExternalStore } from "react"
@@ -385,12 +386,19 @@ export function useSignedIn(): boolean {
   return useSyncExternalStore(session.subscribe, () => session.signedIn(), signedOut)
 }
 
-/** 按当前身份的权限过滤后的菜单。 */
+/** 按当前身份的权限过滤后的菜单。上级路由的路径参数（例如租户）取当前地址中的值，见 buildMenu。 */
 export function useMenu(): MenuItem[] {
   const app = useApp()
   const can = useCan()
   const badges = useBadges(app)
-  return useMemo(() => buildMenu(routeInfos(app.router.routesById), can, badges), [app, can, badges])
+  const current = useParams({ strict: false }) as Record<string, unknown>
+  const key = JSON.stringify(current)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 按参数的内容而不是对象的标识重新计算
+  const params = useMemo(
+    () => Object.fromEntries(Object.entries(current).map(([k, v]) => [k, String(v)])) as Record<string, string>,
+    [key],
+  )
+  return useMemo(() => buildMenu(routeInfos(app.router.routesById), can, badges, params), [app, can, badges, params])
 }
 
 /** 当前位置的面包屑。 */
