@@ -405,9 +405,19 @@ function railApp() {
     staticData: { title: "设置", icon: "settings", order: 9 },
   })
   const personal = createRoute({ getParentRoute: () => settings, id: "personal", staticData: { title: "个人" } })
+  // 租户在路径中：/t/$tenant 是没有标题的布局路由，其下页面的链接填上当前地址中的租户，例如 /t/acme/inbox；
+  // 详情页 /t/$tenant/tickets/$id 自己引入了 id，不出现在菜单中。打开 /rail/t/acme/inbox 查看。
+  const tenant = createRoute({ getParentRoute: () => layout, path: "/t/$tenant" })
+  const ticket = createRoute({
+    getParentRoute: () => tenant,
+    path: "/tickets/$id",
+    staticData: { title: "工单详情" },
+    component: () => <RailPlaceholder title="工单详情" />,
+  })
   const routeTree = root.addChildren([
     layout.addChildren([
       page(layout, "/", "首页", "home"),
+      tenant.addChildren([page(tenant, "/inbox", "收件箱", "message", 2), ticket]),
       content.addChildren([page(content, "/items", "全部", "list"), page(content, "/archive", "归档", "file", 1)]),
       settings.addChildren([personal.addChildren([page(personal, "/profile", "个人资料", "user")])]),
     ]),

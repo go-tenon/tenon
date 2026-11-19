@@ -205,7 +205,7 @@ export const Route = createFileRoute("/_app/articles/")({
 | `icon` | 图标的名字，见[侧栏菜单与图标](layout.md#menu) |
 | `order` | 在同级菜单中的顺序，小的在前，默认 0；相同时按路径排序 |
 | `permission` | 进入页面需要的权限，见[权限](#permissions) |
-| `menu` | `false` 时不出现在菜单中；带路径参数的页面（例如 `/articles/$id`）总是不出现 |
+| `menu` | `false` 时不出现在菜单中；自己引入路径参数的页面（例如详情页 `/articles/$id`）总是不出现，参数来自上级路由的见[租户](layout.md#tenants) |
 | `tab` | `false` 时不进入[多标签](layout.md#tabs)，照常显示 |
 
 <a id="requiring-sign-in"></a>
@@ -361,7 +361,7 @@ bun run playground
 
 **新加的页面没有出现在菜单中**
 
-检查路由的 `staticData` 中有没有 `title`：没有标题的路由不出现在菜单中。带路径参数的页面（例如 `/articles/$id`）、`menu: false` 的页面也不出现。另外，当前用户缺少 `permission` 中的权限时，菜单中也看不到它。
+检查路由的 `staticData` 中有没有 `title`：没有标题的路由不出现在菜单中。自己引入路径参数的页面（例如 `/articles/$id`）、`menu: false` 的页面也不出现；路径参数来自上级路由（例如 `/t/$tenant`）时，当前地址中要有这个参数。另外，当前用户缺少 `permission` 中的权限时，菜单中也看不到它。
 
 **登录后又跳回了登录页**
 

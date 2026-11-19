@@ -76,7 +76,7 @@ export const Route = createFileRoute("/_app/orders")({
 })
 ```
 
-- 带 `title` 的路由按路由树嵌套，跳过没有标题的布局路由；按 `order`、再按路径排序。没有权限、`menu: false`、带路径参数的页面不出现，其中没有页面的分组也不出现。
+- 带 `title` 的路由按路由树嵌套，跳过没有标题的布局路由；按 `order`、再按路径排序。没有权限、`menu: false`、自己引入路径参数（例如详情页 `/articles/$id`）的页面不出现，其中没有页面的分组也不出现。路径参数来自上级路由时（例如租户布局路由 `/t/$tenant` 下的页面），链接填上当前地址中的值，见[租户](#tenants)。
 - 有子页面的路由是分组，可以展开；当前页面所在的分组自动展开，名称用主色，当前页面是主色实底；详情页这类不在菜单中的页面高亮它所在的分组。第一级菜单的图标在浅色的方块中；下级菜单向右缩进，左侧一条竖线，设置了 `icon` 时也显示图标。侧栏收起时，页面悬停显示名称，分组点击或悬停弹出子页面。
 - `icon` 是图标的名称，对应 [Tabler 图标](https://tabler.io/icons)。内置的名称见 `defaultIcons`，例如 `home`、`dashboard`、`article`、`users`、`team`、`settings`、`safety`、`order`、`product`、`report`、`wallet`。写错的名称显示为一个空心圆，不会报错。需要其他图标时，通过 `UIProvider` 的 `icons` 增加：
 
@@ -272,6 +272,8 @@ export const Route = createFileRoute("/t/$tenant")({
   beforeLoad: ({ context, params }) => enterTenant(context.app, params.tenant),
 })
 ```
+
+租户布局路由下的页面照常出现在菜单中：`/t/$tenant/inbox` 的链接填上当前地址中的租户，例如在 `/t/acme/` 下是 `/t/acme/inbox`，切换到 globex 后是 `/t/globex/inbox`。租户布局路由本身不写 `title`，它下面的页面才是菜单项；还没有进入租户的页面（例如选择租户的首页）中，这些页面不出现。
 
 自己画租户菜单时用 `useTenant()`：`{ current, tenant, tenants, switchTo }`，用户选择留下时 `switchTo` 返回 `false`。
 
