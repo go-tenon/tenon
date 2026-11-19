@@ -31,12 +31,6 @@ type Skill struct {
 	Content     []byte // SKILL.md 的全部内容
 }
 
-// Summary 返回 Description 中第一个全角冒号之前的部分，写进 AGENTS.md 的技能列表。
-func (s Skill) Summary() string {
-	summary, _, _ := strings.Cut(s.Description, "：")
-	return summary
-}
-
 // conditions 是只在部分项目中安装的技能和安装的条件；其余技能每个项目都安装。
 var conditions = map[string]func(p *Project) bool{
 	"tenon-frontend": func(p *Project) bool { return len(p.Config.Frontends) > 0 },

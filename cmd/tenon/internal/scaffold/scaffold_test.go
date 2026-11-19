@@ -47,7 +47,6 @@ func TestWrite(t *testing.T) {
 		"apps/dist/.gitignore":           "*\n!.gitignore\n",
 		"./.gitignore":                   "\nconfig/local.yaml\n",
 		"apps/apps.go":                   "//go:embed all:dist\nvar Dist embed.FS\n",
-		"AGENTS.md":                      "\n<!-- tenon:begin -->\n<!-- tenon:end -->\n", // tenon agents 填写这一段
 		"cmd/../package.json":            `"agents": "go tool tenon agents"`,
 	} {
 		if b, _ := os.ReadFile(filepath.Join(dir, f)); !strings.Contains(string(b), want) {
@@ -58,7 +57,7 @@ func TestWrite(t *testing.T) {
 		t.Errorf("site frontend without login has a session:\n%s", b)
 	}
 	agentsMD, _ := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
-	for _, want := range []string{"# Todo\n", "go run ./cmd/todo routes", "bin/todo", "## 代码约定"} {
+	for _, want := range []string{"# Todo\n", "`.tenon/docs/README.md`", "go run ./cmd/todo routes", "bin/todo", "## 代码约定"} {
 		if !strings.Contains(string(agentsMD), want) {
 			t.Errorf("AGENTS.md missing %q:\n%s", want, agentsMD)
 		}

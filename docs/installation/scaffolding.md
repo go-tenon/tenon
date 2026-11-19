@@ -260,12 +260,12 @@ bun run build
 
 | 任务 | 做什么 |
 | --- | --- |
-| `check` | `go tool tenon generate` 之后检查工作区没有变化：改了接口却没有提交重新生成的客户端时失败；`go tool tenon agents` 之后检查 `AGENTS.md` 和技能没有变化：升级框架后没有运行 `bun run agents` 时失败；然后是 `gofmt`、`go vet` 和 `go test` |
+| `check` | `go tool tenon generate` 之后检查工作区没有变化：改了接口却没有提交重新生成的客户端时失败；`go tool tenon agents` 之后检查技能没有变化：升级框架后没有运行 `bun run agents` 时失败；然后是 `gofmt`、`go vet` 和 `go test` |
 | `build` | 同步框架的前端包，`bun install --frozen-lockfile`；`bun run typecheck` 之后检查路由树 `routeTree.gen.ts` 没有变化；最后 `bun run build` |
 
 `tenon` 的版本由 `go.mod` 固定，Bun 的版本写在 `package.json` 的 `packageManager` 中，CI 与本地用的是同样的版本。
 
-生成的代码（客户端、路由树、`AGENTS.md` 中 tenon 的一段、技能）都要提交：CI 重新生成一次，有差异就说明有人忘了提交。`tenon init` 已经生成了它们，第一次提交时就是完整的。
+生成的代码（客户端、路由树、技能）都要提交：CI 重新生成一次，有差异就说明有人忘了提交。`tenon init` 已经生成了它们，第一次提交时就是完整的。
 
 项目用到数据库以后，在 `check` 任务中加上 PostgreSQL，见[在 CI 中运行数据库测试](../testing/database.md#database-tests-in-ci)。代码不放在 GitHub 上时，删掉 `.github` 目录，按同样的步骤写你所用平台的 CI。
 

@@ -71,11 +71,10 @@ func TestInitEndToEnd(t *testing.T) {
 	// Electron 桌面端显示 admin：admin 中加上授权页，客户端的类型检查随项目的 typecheck 一起运行。
 	sh("go", "tool", "tenon", "add", "client", "admin-desktop", "--kind", "electron", "--frontend", "admin", "--title", "Todo 后台")
 
-	// add frontend、add client 之后 AGENTS.md 中 tenon 的一段列出了它们；框架文档复制到了 .tenon/docs，
+	// add frontend、add client 之后装上了前端和 Electron 的技能；框架文档复制到了 .tenon/docs，
 	// 助手的 MCP 配置中有 tenon；README 中写着 gopls、Mantine、TanStack 的官方接入方法。
 	for f, wants := range map[string][]string{
-		"AGENTS.md": {"# Todo\n", "- `apps/admin`：挂在 `/admin/`", "- `clients/admin-desktop`：electron 客户端，显示 `apps/admin`。",
-			"`README.md` 的“AI 编程助手”一节", "## 代码约定"},
+		"AGENTS.md":                              {"# Todo\n", "`README.md` 的“AI 编程助手”一节", "## 代码约定"},
 		"README.md":                              {"# Todo\n", "gopls mcp", "@mantine/mcp-server", "@tanstack/intent"},
 		".github/workflows/ci.yml":               {"go tool tenon generate", "bun run typecheck", "bun run build"},
 		"apps/web/src/routeTree.gen.ts":          {"declare module '@tanstack/react-start'"},

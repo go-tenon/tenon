@@ -2,10 +2,15 @@
 
 这是一个 [Tenon](https://github.com/go-tenon/tenon) 应用：Go 写的后端加 TanStack Start 写的前端，整个应用编译成一个二进制文件。本文写给在这个项目中工作的人和 AI 编程助手：怎样运行、提交前检查什么、代码按什么约定写。
 
-下面 `tenon:begin` 和 `tenon:end` 两行注释之间的一段由 `bun run agents`（`go tool tenon agents`）生成，其余部分归项目自己维护，按项目的实际情况修改。
+本文由 `tenon init` 生成初稿，之后归项目自己维护，按项目的实际情况修改。
 
-<!-- tenon:begin -->
-<!-- tenon:end -->
+## 框架与文档
+
+- 框架的版本以 `go.mod` 中的 `github.com/go-tenon/tenon` 为准。这个版本的文档在 `.tenon/docs` 中，`bun run dev` 和 `bun run agents` 会更新它。先读目录 `.tenon/docs/README.md`，写某一部分的代码前读对应的页面，写法以这个版本的文档为准。
+- 查框架的文档用 MCP 工具 `tenon_search_docs`、`tenon_read_doc`；用 rg 搜索时指定目录，例如 `rg 迁移 .tenon/docs`：`.tenon` 被 .gitignore 忽略，在项目根目录搜索时不包含它。
+- 项目的前端、客户端和安装的技能用 MCP 工具 `tenon_app_info` 查看，也可以直接看 `tenon.json` 和 `apps/`。
+- 依赖的版本以 `go.mod` 和各前端的 `package.json` 为准。Go 的依赖用 `go doc` 读与 `go.mod` 一致的版本，例如 `go doc github.com/danielgtaylor/huma/v2.Register`。
+- Mantine、TanStack 等依赖给 AI 的文档、MCP 服务和技能按它们的官方方案接入，见 `README.md` 的“AI 编程助手”一节；它们的写法与 Tenon 的约定冲突时，以本文和 `.tenon/docs` 为准。
 
 ## 开发环境
 
@@ -20,7 +25,7 @@ bun run dev                       # 运行应用和前端的开发服务器，�
 bun run generate                  # 接口变了以后重新生成前端的客户端（dev 会自动运行）
 bun run build                     # 构建可执行文件 bin/[[.Slug]]，前端打包在其中
 bun run typecheck                 # 前端的类型检查
-bun run agents                    # 升级框架、加前端或客户端之后，更新本文中 tenon 生成的一段和 AI 编程助手的配置
+bun run agents                    # 升级框架之后，更新框架文档、技能和 AI 编程助手的配置（加前端或客户端时自动运行）
 go run ./cmd/[[.Slug]] routes     # 全部路由
 go run ./cmd/[[.Slug]] openapi    # OpenAPI 文档
 go run ./cmd/[[.Slug]] --help     # 应用的其他命令
@@ -49,7 +54,7 @@ bun run typecheck
 bun run generate && git diff --exit-code   # 改了接口要提交重新生成的客户端
 ```
 
-CI（`.github/workflows/ci.yml`）在每次推送和 PR 中运行同样的检查，并构建一次；生成的代码（客户端、路由树、本文中 tenon 的一段、技能）没有提交时失败。
+CI（`.github/workflows/ci.yml`）在每次推送和 PR 中运行同样的检查，并构建一次；生成的代码（客户端、路由树、技能）没有提交时失败。
 
 ## 编写测试
 

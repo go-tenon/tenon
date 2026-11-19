@@ -39,16 +39,9 @@ Codex 和 Cursor 的用法相同：在项目目录中打开它们，它们同样
 
 `AGENTS.md` 是写给 AI 编程助手的项目说明，Claude Code、Codex、Cursor、Antigravity、GitHub Copilot 都会读它。它也适合人读：新加入的同事从它了解项目怎样运行。
 
-文件分成两部分：
+`tenon init` 写出初稿：框架文档在哪里、怎样查，开发环境、常用命令、目录、提交前的检查、编写测试的规则、代码约定（业务动作、注释、函数、错误、前端、接口），内容取自 Tenon 框架自己的开发约定。之后它归项目所有，按你的实际情况修改，`tenon` 不会再改动它。
 
-- **项目自己的约定**：开发环境、常用命令、目录、提交前的检查、编写测试的规则、代码约定（业务动作、注释、函数、错误、前端、接口）。`tenon init` 写出初稿，内容取自 Tenon 框架自己的开发约定。之后它归项目所有，按你的实际情况修改，`tenon` 不会再改动它。
-- **tenon 维护的一段**：夹在 `<!-- tenon:begin -->` 和 `<!-- tenon:end -->` 两行注释之间，写着框架的版本、框架文档的位置、项目中的前端和客户端、安装的技能、配置好的 MCP 服务，并指向 `README.md` 中依赖的接入方法。这一段由 `go tool tenon agents` 生成，不要手改，下次生成时会被覆盖。
-
-例如加了一个运营后台以后，tenon 那一段中多出一行：
-
-```markdown
-- `apps/admin`：挂在 `/admin/`，只在浏览器中渲染。
-```
+`AGENTS.md` 只写不随项目变化的内容。会变的信息各有来源，助手需要时自己去读：框架的版本在 `go.mod` 中；前端和客户端在 `tenon.json` 和 `apps/` 中，MCP 工具 `tenon_app_info` 也会列出它们；技能的名称和用途由助手自动读进上下文；MCP 工具自带说明。
 
 `AGENTS.md` 要提交到代码仓库：别人 clone 下来不运行任何命令，打开助手就能用。
 
@@ -124,7 +117,7 @@ rg 迁移 .tenon/docs   # 列出讲迁移的文档
 <a id="updating"></a>
 ## 保持更新
 
-下面这些变化之后，`AGENTS.md` 中 tenon 的一段、技能和 MCP 配置要跟着更新：
+下面这些变化之后，框架文档、技能和 MCP 配置要跟着更新：
 
 - 升级框架：`go get github.com/go-tenon/tenon@latest`；
 - 加了前端或客户端。
@@ -135,7 +128,7 @@ rg 迁移 .tenon/docs   # 列出讲迁移的文档
 bun run agents   # 即 go tool tenon agents
 ```
 
-它更新 `.tenon/docs`，重新生成 `AGENTS.md` 中 tenon 的一段，重新安装技能，改写 MCP 配置。可以反复运行，没有变化时文件保持不变。`tenon add frontend` 和 `tenon add client` 结束时会自动运行一次。运行后用 `git diff` 看一眼变化，再一起提交。
+它更新 `.tenon/docs`，重新安装技能，改写 MCP 配置。可以反复运行，没有变化时文件保持不变。`tenon add frontend` 和 `tenon add client` 结束时会自动运行一次。运行后用 `git diff` 看一眼变化，再一起提交。
 
 <a id="choosing-assistants"></a>
 ## 选择助手
@@ -213,17 +206,13 @@ Go 的其他依赖（Huma、chi、Bun ORM、goose 等）大多没有 `llms.txt`�
 
 没有安装 gopls，或者它不在 `PATH` 中。按[依赖的官方方案](#dependencies)中的命令安装，确认 `gopls version` 能运行，再重启助手。
 
-**`AGENTS.md` 中 tenon 的一段还是旧的版本号**
+**CI 的 Agents 一步失败，技能有差异**
 
-升级框架以后没有运行 `bun run agents`。运行它，提交变化。
+升级框架以后没有运行 `bun run agents`，提交的技能还是旧版本的。运行它，提交变化。
 
 **助手没有用技能**
 
 助手按技能开头的 `description` 判断要不要读它。任务描述得太笼统时可能没有匹配上，直接点名，例如“按 tenon-http-api 技能加一个接口”。Claude Code 中输入 `/` 能看到已安装的技能，Codex 中是 `/skills`。
-
-**`tenon agents` 把我写在 tenon 那一段中的内容删掉了**
-
-这一段每次都重新生成。把你的内容移到 `<!-- tenon:begin -->` 之前或 `<!-- tenon:end -->` 之后。
 
 <a id="advanced"></a>
 ## 进阶
@@ -248,7 +237,7 @@ https://raw.githubusercontent.com/go-tenon/tenon/main/llms.txt
 go tool tenon agents
 ```
 
-更新 AI 编程助手用到的内容：把项目所用版本的框架文档复制到 `.tenon/docs`；重新生成 `AGENTS.md` 中 `<!-- tenon:begin -->` 到 `<!-- tenon:end -->` 的一段，文件中没有这一段时加在末尾，没有这个文件时新建；为 `tenon.json` 中的每个助手重新安装 `tenon-` 开头的技能，改写 MCP 配置中的 `tenon`。
+更新 AI 编程助手用到的内容：把项目所用版本的框架文档复制到 `.tenon/docs`；为 `tenon.json` 中的每个助手重新安装 `tenon-` 开头的技能，改写 MCP 配置中的 `tenon`。
 
 ### go tool tenon mcp
 
