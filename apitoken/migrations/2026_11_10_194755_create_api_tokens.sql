@@ -1,6 +1,8 @@
 -- +goose Up
 CREATE TABLE api_tokens (
     id uuid PRIMARY KEY,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
     token_hash text NOT NULL,
     subject_type text NOT NULL,
     subject_id text NOT NULL,
@@ -14,7 +16,6 @@ CREATE TABLE api_tokens (
     ends_at timestamptz,
     ip text NOT NULL,
     user_agent text NOT NULL,
-    created_at timestamptz NOT NULL,
     last_used_at timestamptz NOT NULL,
     expires_at timestamptz,
     client_id text NOT NULL,

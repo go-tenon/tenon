@@ -1,14 +1,14 @@
 -- +goose Up
 CREATE TABLE push_devices (
     id uuid PRIMARY KEY,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
     platform text NOT NULL CHECK (platform IN ('android', 'ios', 'harmony')),
     token text NOT NULL,
     tenant text NOT NULL,
     subject_type text NOT NULL,
     subject_id text NOT NULL,
     credential text NOT NULL,
-    created_at timestamptz NOT NULL,
-    updated_at timestamptz NOT NULL,
     CONSTRAINT push_devices_token_unique UNIQUE (platform, token)
 );
 CREATE INDEX push_devices_subject ON push_devices (subject_type, subject_id);

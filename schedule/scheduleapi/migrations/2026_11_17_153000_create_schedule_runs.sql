@@ -2,6 +2,8 @@
 -- 定时任务的执行记录：scheduleapi.Observer 在每次执行结束、被跳过时写入一行，后台的“定时任务”页面读取。
 CREATE TABLE schedule_runs (
     id          uuid PRIMARY KEY,
+    created_at  timestamptz NOT NULL,
+    updated_at  timestamptz NOT NULL,
     task        text NOT NULL,
     tick        timestamptz,
     started_at  timestamptz NOT NULL,

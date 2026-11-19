@@ -1,9 +1,10 @@
 -- +goose Up
 CREATE TABLE oauth_clients (
     id text PRIMARY KEY,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
     name text NOT NULL,
     redirect_uris jsonb NOT NULL,
-    created_at timestamptz NOT NULL,
     last_used_at timestamptz NOT NULL
 );
 CREATE INDEX oauth_clients_last_used_at ON oauth_clients (last_used_at);

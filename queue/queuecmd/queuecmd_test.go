@@ -49,8 +49,8 @@ func executeWith(db bun.IDB, opts []queuecmd.Option, args ...string) (string, er
 func insertFailed(t *testing.T, db *bun.DB, topic, msg string, at time.Time) uuid.UUID {
 	t.Helper()
 	id := uuid.New()
-	_, err := db.ExecContext(context.Background(), `INSERT INTO queue_failed_jobs (id, topic, payload, attempts, error, failed_at)
-		VALUES (?, ?, ?, 3, ?, ?)`, id, topic, []byte("{}"), msg, at.UTC())
+	_, err := db.ExecContext(context.Background(), `INSERT INTO queue_failed_jobs (id, created_at, updated_at, topic, payload, attempts, error)
+		VALUES (?, ?, ?, ?, ?, 3, ?)`, id, at.UTC(), at.UTC(), topic, []byte("{}"), msg)
 	if err != nil {
 		t.Fatal(err)
 	}

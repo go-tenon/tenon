@@ -95,7 +95,7 @@ func (r *Realm) External(ctx context.Context, ext External) (Outcome, error) {
 	row := &challengeRow{
 		ID: rid, Purpose: purposeExternal, SubjectType: string(r.opts.Type), Tenant: tenant,
 		Kind: id.Kind, Value: id.Value, ProofHash: sha(secret), Data: string(encoded),
-		ExpiresAt: now.Add(r.opts.ProofTTL), CreatedAt: now,
+		ExpiresAt: now.Add(r.opts.ProofTTL), CreatedAt: now, UpdatedAt: now,
 	}
 	if _, err := r.db.NewInsert().Model(row).Exec(ctx); err != nil {
 		return Outcome{}, errors.Wrap(err, "login: save external account")

@@ -156,21 +156,21 @@ const (
 
 type Article struct {
     ID          uuid.UUID  `bun:"id,pk"`
+    CreatedAt   time.Time  `bun:"created_at,notnull,skipupdate"`
+    UpdatedAt   time.Time  `bun:"updated_at,notnull"`
     AuthorID    string     `bun:"author_id,notnull"`
     Title       string     `bun:"title,notnull"`
     Slug        string     `bun:"slug,notnull"`
     Content     string     `bun:"content,notnull"`
     Status      string     `bun:"status,notnull"`
     PublishedAt *time.Time `bun:"published_at"`
-    CreatedAt   time.Time  `bun:"created_at,notnull,skipupdate"`
-    UpdatedAt   time.Time  `bun:"updated_at,notnull"`
     DeletedAt   time.Time  `bun:"deleted_at,soft_delete,nullzero"`
 }
 ```
 
 `Slug` 是文章在网址中的标识，例如 `/blog/hello-world` 中的 `hello-world`，它在所有文章中必须唯一。文章创建时是草稿（`draft`），发布后变为 `published`，并记录发布时间。
 
-模型声明字段映射和下面介绍的 Bun 行为，表结构本身由[迁移](migrations.md#migration-structure)管理。`created_at`、`updated_at`、`deleted_at` 由你按需在模型和迁移中声明。本文的 `Article` 示例同时使用时间戳和软删除。
+模型声明字段映射和下面介绍的 Bun 行为，表结构本身由[迁移](migrations.md#migration-structure)管理。以 `id` 为主键的表在 `id` 之后紧跟 `created_at`、`updated_at`，见[时间列](migrations.md#timestamp-columns)；模型中的字段按同样的顺序写。`deleted_at` 由你按需声明。本文的 `Article` 示例同时使用时间戳和软删除。
 
 <a id="primary-keys"></a>
 ### 主键

@@ -91,7 +91,7 @@ type failedRow struct {
 func failedRows(t *testing.T, db bun.IDB) []failedRow {
 	t.Helper()
 	var rows []failedRow
-	if err := db.NewSelect().Model(&rows).Order("failed_at").Scan(context.Background()); err != nil {
+	if err := db.NewSelect().Model(&rows).Order("created_at").Scan(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	return rows

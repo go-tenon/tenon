@@ -46,11 +46,11 @@ type Article struct {
     bun.BaseModel `bun:"table:articles"`
 
     ID        uuid.UUID `bun:"id,pk" json:"id"`
+    CreatedAt time.Time `bun:"created_at,notnull" json:"created_at"`
+    UpdatedAt time.Time `bun:"updated_at,notnull" json:"updated_at"`
     Title     string    `bun:"title,notnull" json:"title"`
     Slug      string    `bun:"slug,notnull" json:"slug"`
     Content   string    `bun:"content,notnull" json:"content"`
-    CreatedAt time.Time `bun:"created_at,notnull" json:"created_at"`
-    UpdatedAt time.Time `bun:"updated_at,notnull" json:"updated_at"`
 }
 
 // 业务错误：错误码返回给客户端，前端按它显示提示。

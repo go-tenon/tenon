@@ -157,8 +157,9 @@ go run ./cmd/blog migrate make create_users_table
 -- +goose Up
 CREATE TABLE users (
     id         uuid PRIMARY KEY,
-    name       text NOT NULL,
-    created_at timestamptz NOT NULL
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    name       text NOT NULL
 );
 
 -- +goose Down
@@ -197,8 +198,9 @@ type User struct {
     bun.BaseModel `bun:"table:users"`
 
     ID        string    `bun:"id,pk" json:"id"`
-    Name      string    `bun:"name,notnull" json:"name"`
     CreatedAt time.Time `bun:"created_at,notnull" json:"created_at"`
+    UpdatedAt time.Time `bun:"updated_at,notnull" json:"updated_at"`
+    Name      string    `bun:"name,notnull" json:"name"`
 }
 
 // Ref 是这个作者在 login、apitoken 中的引用。
@@ -248,7 +250,8 @@ func NewCreate(db *bun.DB, logins *login.Realm) *Create { return &Create{db: db,
 // Handle 在一个事务中创建账号、写入邮箱和密码，任何一步失败时整体回滚。
 // 邮箱已被使用时返回 login.ErrTaken，密码不符合要求时返回 login.ErrWeakPassword。
 func (a *Create) Handle(ctx context.Context, name, email, password string) (*User, error) {
-    u := &User{ID: newID(), Name: name, CreatedAt: time.Now().UTC()}
+    now := time.Now().UTC()
+    u := &User{ID: newID(), CreatedAt: now, UpdatedAt: now, Name: name}
     err := database.RunInTx(ctx, a.db, nil, func(ctx context.Context, tx database.Tx) error {
         if _, err := tx.NewInsert().Model(u).Exec(ctx); err != nil {
             return err

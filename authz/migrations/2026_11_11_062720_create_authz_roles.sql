@@ -1,11 +1,11 @@
 -- +goose Up
 CREATE TABLE authz_roles (
     id uuid PRIMARY KEY,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
     tenant text NOT NULL,
     name text NOT NULL,
     description text NOT NULL,
-    created_at timestamptz NOT NULL,
-    updated_at timestamptz NOT NULL,
     CONSTRAINT authz_roles_tenant_name_unique UNIQUE (tenant, name)
 );
 COMMENT ON TABLE authz_roles IS '角色：一组权限';

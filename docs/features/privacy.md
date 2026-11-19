@@ -344,7 +344,7 @@ func (s *Service) EraseDue(ctx context.Context, limit int) (int, error)
 
 ### Erasure
 
-`privacy_erasures` 表的 Bun 模型，后台列表等其他查询可以直接用 Bun 编写。字段：`ID`、`SubjectType`、`SubjectID`、`RequestedAt`、`DueAt`（冷静期结束或下一次重试的时间）、`ErasedAt`（零值表示还没有删除）、`Attempts`、`LastError`。方法 `Subject()` 返回主体，`Erased()` 报告是否已经删除。
+`privacy_erasures` 表的 Bun 模型，后台列表等其他查询可以直接用 Bun 编写。字段：`ID`、`CreatedAt`（申请注销的时间）、`UpdatedAt`、`SubjectType`、`SubjectID`、`DueAt`（冷静期结束或下一次重试的时间）、`ErasedAt`（零值表示还没有删除）、`Attempts`、`LastError`。方法 `Subject()` 返回主体，`Erased()` 报告是否已经删除。
 
 ### 错误
 

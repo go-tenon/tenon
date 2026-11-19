@@ -94,11 +94,11 @@ go run ./cmd/blog migrate make create_articles_table
 -- +goose Up
 CREATE TABLE articles (
     id         uuid PRIMARY KEY,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
     title      text NOT NULL,
     slug       text NOT NULL,
     content    text NOT NULL,
-    created_at timestamptz NOT NULL,
-    updated_at timestamptz NOT NULL,
     CONSTRAINT articles_slug_key UNIQUE (slug)
 );
 

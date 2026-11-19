@@ -27,6 +27,8 @@ type run struct {
 	bun.BaseModel `bun:"table:schedule_runs"`
 
 	ID         uuid.UUID  `bun:"id,pk"`
+	CreatedAt  time.Time  `bun:"created_at,notnull"` // 写入记录的时间，即执行结束或被跳过的时间
+	UpdatedAt  time.Time  `bun:"updated_at,notnull"`
 	Task       string     `bun:"task,notnull"`
 	Tick       *time.Time `bun:"tick"` // 这次触发应当执行的时间；立即执行时为空。
 	StartedAt  time.Time  `bun:"started_at,notnull"`
@@ -69,7 +71,8 @@ func Observer(db bun.IDB) schedule.Observer {
 		default:
 			return
 		}
-		r.ID = uuid.Must(uuid.NewV7())
+		now := time.Now().UTC()
+		r.ID, r.CreatedAt, r.UpdatedAt = uuid.Must(uuid.NewV7()), now, now
 		// 任务被取消（例如超时、停止）时 ctx 已经结束，记录照样写入。
 		if _, err := db.NewInsert().Model(r).Exec(context.WithoutCancel(ctx)); err != nil {
 			slog.ErrorContext(ctx, "record schedule run failed", "task", r.Task, "error", err)

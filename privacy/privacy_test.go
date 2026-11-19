@@ -203,7 +203,7 @@ func TestRequestAndCancel(t *testing.T) {
 
 	before := time.Now()
 	e := request(t, s, a.db, "alice")
-	if e.Subject() != user("alice") || e.Erased() || e.DueAt.Sub(e.RequestedAt) != 24*time.Hour || e.RequestedAt.Before(before.Add(-time.Second)) {
+	if e.Subject() != user("alice") || e.Erased() || e.DueAt.Sub(e.CreatedAt) != 24*time.Hour || e.CreatedAt.Before(before.Add(-time.Second)) {
 		t.Fatalf("request: %+v", e)
 	}
 	if _, err := s.Request(ctx, a.db, user("alice")); !errors.Is(err, privacy.ErrPending) {
@@ -421,7 +421,7 @@ func TestEraseNow(t *testing.T) {
 	if list := a.erasures(t, "alice"); len(list) != 1 || list[0].ID != pending.ID || !list[0].Erased() {
 		t.Fatalf("alice records: %+v", list)
 	}
-	if list := a.erasures(t, "bob"); len(list) != 1 || !list[0].Erased() || !list[0].DueAt.Equal(list[0].RequestedAt) {
+	if list := a.erasures(t, "bob"); len(list) != 1 || !list[0].Erased() || !list[0].DueAt.Equal(list[0].CreatedAt) {
 		t.Fatalf("bob records: %+v", list)
 	}
 

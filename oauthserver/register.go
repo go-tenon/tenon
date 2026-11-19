@@ -33,9 +33,10 @@ type registeredClient struct {
 	bun.BaseModel `bun:"table:oauth_clients,alias:ocl"`
 
 	ID           string    `bun:"id,pk"`
+	CreatedAt    time.Time `bun:"created_at,notnull"`
+	UpdatedAt    time.Time `bun:"updated_at,notnull"`
 	Name         string    `bun:"name,notnull"`
 	RedirectURIs []string  `bun:"redirect_uris,type:jsonb,notnull"`
-	CreatedAt    time.Time `bun:"created_at,notnull"`
 	LastUsedAt   time.Time `bun:"last_used_at,notnull"`
 }
 
@@ -67,7 +68,7 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC()
 	c := &registeredClient{
 		ID: registeredPrefix + rand.Text(), Name: strings.TrimSpace(req.ClientName), RedirectURIs: req.RedirectURIs,
-		CreatedAt: now, LastUsedAt: now,
+		CreatedAt: now, UpdatedAt: now, LastUsedAt: now,
 	}
 	if c.Name == "" {
 		c.Name = host(c.RedirectURIs[0])
@@ -116,7 +117,8 @@ func checkRegistration(req registration) string {
 // registered 返回动态注册的客户端 id，并记录它被用于授权；不存在时返回 nil。
 func (s *Server) registered(ctx context.Context, id string) (*client, error) {
 	var c registeredClient
-	err := s.db.NewUpdate().Model(&c).Set("last_used_at = ?", time.Now().UTC()).
+	now := time.Now().UTC()
+	err := s.db.NewUpdate().Model(&c).Set("last_used_at = ?", now).Set("updated_at = ?", now).
 		Where("id = ?", id).Returning("*").Scan(ctx)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil

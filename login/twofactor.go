@@ -323,7 +323,7 @@ func (r *Realm) challenge(ctx context.Context, db bun.IDB, purpose Purpose, subj
 	now := r.now().UTC()
 	row := &challengeRow{
 		ID: id, Purpose: purpose, SubjectType: string(r.opts.Type), Tenant: tenant, SubjectID: subjectID,
-		ProofHash: sha(secret), Data: string(data), ExpiresAt: now.Add(r.opts.ProofTTL), CreatedAt: now,
+		ProofHash: sha(secret), Data: string(data), ExpiresAt: now.Add(r.opts.ProofTTL), CreatedAt: now, UpdatedAt: now,
 	}
 	if _, err := db.NewInsert().Model(row).Exec(ctx); err != nil {
 		return "", errors.Wrap(err, "login: save pending login")
@@ -333,7 +333,7 @@ func (r *Realm) challenge(ctx context.Context, db bun.IDB, purpose Purpose, subj
 
 // attemptPending 为待完成的登录 c 计一次尝试，超过 pendingAttempts 次或已经完成时返回 ErrInvalidProof。
 func (r *Realm) attemptPending(ctx context.Context, c *challengeRow) error {
-	n, err := affected(r.db.NewUpdate().Model((*challengeRow)(nil)).Set("attempts = attempts + 1").
+	n, err := affected(r.db.NewUpdate().Model((*challengeRow)(nil)).Set("updated_at = ?", r.now().UTC()).Set("attempts = attempts + 1").
 		Where("id = ?", c.ID).Where("attempts < ?", pendingAttempts).Where("completed_at IS NULL").Exec(ctx))
 	if err != nil {
 		return errors.Wrap(err, "login: count attempt")

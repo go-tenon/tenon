@@ -26,9 +26,9 @@ import (
 
 func insertFailed(t *testing.T, db bun.IDB, topic string, age time.Duration) uuid.UUID {
 	t.Helper()
-	id := uuid.New()
-	_, err := db.ExecContext(context.Background(), `INSERT INTO queue_failed_jobs (id, topic, payload, metadata, attempts, error, failed_at)
-		VALUES (?, ?, ?, '{"request_id":"r1"}', 3, ?, ?)`, id, topic, []byte(`{"to":"a@example.com"}`), "smtp: 550 mailbox unavailable\nstack…", time.Now().UTC().Add(-age))
+	id, at := uuid.New(), time.Now().UTC().Add(-age)
+	_, err := db.ExecContext(context.Background(), `INSERT INTO queue_failed_jobs (id, created_at, updated_at, topic, payload, metadata, attempts, error)
+		VALUES (?, ?, ?, ?, ?, '{"request_id":"r1"}', 3, ?)`, id, at, at, topic, []byte(`{"to":"a@example.com"}`), "smtp: 550 mailbox unavailable\nstack…")
 	if err != nil {
 		t.Fatal(err)
 	}

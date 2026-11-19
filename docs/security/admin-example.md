@@ -65,10 +65,11 @@ type User struct {
     bun.BaseModel `bun:"table:users"`
 
     ID          string    `bun:"id,pk"`
+    CreatedAt   time.Time `bun:"created_at,notnull"`
+    UpdatedAt   time.Time `bun:"updated_at,notnull"`
     Name        string    `bun:"name,notnull"`
     Disabled    bool      `bun:"disabled,notnull"`
     Permissions []string  `bun:"permissions,array,notnull"`
-    CreatedAt   time.Time `bun:"created_at,notnull"`
 }
 
 func (u *User) Ref() identity.Ref { return identity.Ref{Type: Type, ID: u.ID} }

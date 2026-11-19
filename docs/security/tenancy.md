@@ -134,6 +134,8 @@ func (a *Create) Handle(ctx context.Context, subject identity.Subject, name stri
 ```sql
 CREATE TABLE articles (
     id uuid PRIMARY KEY,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
     tenant_id text NOT NULL,
     slug text NOT NULL,
     -- ...

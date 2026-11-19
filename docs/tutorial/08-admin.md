@@ -370,8 +370,8 @@ func (a *Admin) Update(ctx context.Context, in *UpdateInput) (*AuthorOutput, err
     if err != nil {
         return nil, err
     }
-    u.Name = in.Body.Name
-    if _, err := a.db.NewUpdate().Model(u).Column("name").WherePK().Exec(ctx); err != nil {
+    u.Name, u.UpdatedAt = in.Body.Name, time.Now().UTC()
+    if _, err := a.db.NewUpdate().Model(u).Column("name", "updated_at").WherePK().Exec(ctx); err != nil {
         return nil, err
     }
     current, err := a.author(ctx, u)

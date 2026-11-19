@@ -38,9 +38,11 @@ go run ./cmd/blog migrate status
 ```sql
 -- +goose Up
 CREATE TABLE articles (
-    id    uuid PRIMARY KEY,
-    title text NOT NULL,
-    slug  text NOT NULL UNIQUE
+    id         uuid PRIMARY KEY,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    title      text NOT NULL,
+    slug       text NOT NULL UNIQUE
 );
 
 -- +goose Down
@@ -81,14 +83,14 @@ go run ./cmd/blog migrate make create_articles_table
 -- +goose Up
 CREATE TABLE articles (
     id           uuid PRIMARY KEY,
+    created_at   timestamptz NOT NULL,
+    updated_at   timestamptz NOT NULL,
     author_id    text NOT NULL,
     title        text NOT NULL,
     slug         text NOT NULL,
     content      text NOT NULL,
     status       text NOT NULL DEFAULT 'draft',
     published_at timestamptz,
-    created_at   timestamptz NOT NULL,
-    updated_at   timestamptz NOT NULL,
     deleted_at   timestamptz,
     CONSTRAINT articles_slug_key UNIQUE (slug)
 );
@@ -98,6 +100,9 @@ DROP TABLE articles;
 ```
 
 这里显式声明了三个时间字段，与[文章模型](quick-start.md#defining-models)保持一致。时间列不设数据库默认值，`created_at` 和 `updated_at` 由[模型钩子](quick-start.md#timestamps)写入；允许为空的 `deleted_at` 配合 Bun 的[软删除标签](advanced.md#soft-deletes)使用。表结构只由迁移修改。
+
+<a id="timestamp-columns"></a>
+以 `id` 为主键的表，前三列依次是 `id`、`created_at`、`updated_at`，两个时间列都是 `timestamptz NOT NULL`。这样排查问题时，从每一行就能看出它什么时候创建、最后一次什么时候修改；三列的位置固定，用 `SELECT *` 查看数据时它们总在最前面。只追加、不修改的表（例如日志）同样声明 `updated_at`，插入时与 `created_at` 相同。以其他列为主键的表，例如两张表之间的关联表、按名称加锁的表，按需要声明时间列。`migrate make create_…_table` 生成的骨架已经是这三列，框架自带的表也遵守这个约定，`ai/chat` 中结构由 trpc-agent-go 决定的表除外。
 
 默认情况下，每个迁移文件在一个事务中执行，失败时整体回滚。
 

@@ -49,7 +49,7 @@ go test ./...       # 包括下文的模块检查
 `internal/checks` 下的测试检查整个模块，随 `go test ./...` 运行：
 
 - `archtest`：分层和依赖方向。每个包属于[四层](docs/concepts/structure.md#framework-packages)之一：基础、基础设施、入口、功能。包只能引用同层或更低层的包，并且每一个引用都要列在测试的 `rules` 中，例如 `database` 只能引用 `errorx`。规则的键是包路径，对子包同样生效；子包需要更多依赖时单独写一条，例如 `sheet` 只引用 `errorx` 和 `form`，`sheet/imports` 另外引用 `operation` 和 `filesystem`。新增依赖时先确认它符合分层，再更新规则；不再使用的依赖也要从规则中删除。
-- `migrationstest`：各个包内嵌的迁移能通过 `publish` 命令原样发布。新增带迁移的包时在它的 `sources` 中登记。
+- `migrationstest`：各个包内嵌的迁移能通过 `publish` 命令原样发布，全部执行之后，以 `id` 为主键的表前三列依次是 `id`、`created_at`、`updated_at`（[时间列](docs/database/migrations.md#timestamp-columns)），两个时间列都是 `timestamptz NOT NULL`，插入时一起写入，每次更新都写 `updated_at`。新增带迁移的包时在它的 `sources` 中登记；结构由上游库决定的表登记在 `timestampExempt` 中。
 - `clocktest`：SQL 和迁移中的时间都由 Go 算出后作为参数传入，不用 `NOW()`、`CURRENT_TIMESTAMP` 这类数据库的时钟函数。这样 [testing/synctest](docs/testing/overview.md#controlling-time) 的假时钟对整个框架有效。
 - `doctest`：编译文档中的代码。除入门教程外，每个以 `package` 开头的代码块都是完整文件，单独放进临时 module 编译；其余片段只用于阅读。入门教程由 `cmd/tenon` 的 `TestTutorial` 在 CI 的 scaffold 任务中按章节做一遍。
 - `doclinks`：`README.md`、`AGENTS.md` 和 `docs` 中的相对链接指向的文件存在，带锚点时目标文档中有 `<a id="锚点"></a>`。

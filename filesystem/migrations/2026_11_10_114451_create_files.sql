@@ -1,6 +1,8 @@
 -- +goose Up
 CREATE TABLE files (
     id uuid PRIMARY KEY,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
     disk text NOT NULL,
     key text NOT NULL,
     filename text NOT NULL,
@@ -10,8 +12,6 @@ CREATE TABLE files (
     owner_id text NOT NULL,
     status text NOT NULL CHECK (status IN ('temporary', 'ready', 'deleted')),
     expires_at timestamptz,
-    created_at timestamptz NOT NULL,
-    updated_at timestamptz NOT NULL,
     CONSTRAINT files_disk_key_unique UNIQUE (disk, key)
 );
 CREATE INDEX files_owner ON files (owner_type, owner_id);

@@ -1,6 +1,8 @@
 -- +goose Up
 CREATE TABLE search_entries (
     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
     index_name text NOT NULL,
     version integer NOT NULL,
     doc_key text NOT NULL,

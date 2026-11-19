@@ -90,13 +90,13 @@ type Article struct {
     bun.BaseModel `bun:"table:articles"`
 
     ID          uuid.UUID  `bun:"id,pk" json:"id"`
+    CreatedAt   time.Time  `bun:"created_at,notnull" json:"created_at"`
+    UpdatedAt   time.Time  `bun:"updated_at,notnull" json:"updated_at"`
     AuthorID    string     `bun:"author_id,notnull" json:"author_id"`
     Title       string     `bun:"title,notnull" json:"title"`
     Slug        string     `bun:"slug,notnull" json:"slug"`
     Content     string     `bun:"content,notnull" json:"content"`
     PublishedAt *time.Time `bun:"published_at" json:"published_at,omitempty"` // 发布时间，为空时是草稿，只有作者能看到
-    CreatedAt   time.Time  `bun:"created_at,notnull" json:"created_at"`
-    UpdatedAt   time.Time  `bun:"updated_at,notnull" json:"updated_at"`
 }
 
 // 业务错误：错误码返回给客户端，前端按它显示提示。

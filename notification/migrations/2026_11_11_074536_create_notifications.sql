@@ -1,13 +1,14 @@
 -- +goose Up
 CREATE TABLE notifications (
     id uuid PRIMARY KEY,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
     tenant text NOT NULL,
     recipient_type text NOT NULL,
     recipient_id text NOT NULL,
     event text NOT NULL,
     data jsonb NOT NULL,
-    read_at timestamptz,
-    created_at timestamptz NOT NULL
+    read_at timestamptz
 );
 CREATE INDEX notifications_recipient ON notifications (tenant, recipient_type, recipient_id, id);
 CREATE INDEX notifications_unread ON notifications (tenant, recipient_type, recipient_id, id) WHERE read_at IS NULL;
