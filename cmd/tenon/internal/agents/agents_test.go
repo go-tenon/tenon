@@ -24,65 +24,6 @@ func sample() *agents.Project {
 	}
 }
 
-// Block 写出框架的版本、文档的位置、前端与客户端、技能和 tenon 的 MCP 服务；依赖指向 README 中的官方接入方法。
-func TestBlock(t *testing.T) {
-	t.Parallel()
-	skills, err := agents.Skills(sample())
-	if err != nil {
-		t.Fatal(err)
-	}
-	block := agents.Block(sample(), skills)
-	for _, want := range []string{
-		agents.Begin + "\n", agents.End + "\n",
-		"`github.com/go-tenon/tenon` v0.0.2",
-		"`.tenon/docs/README.md`",
-		"`go run ./cmd/blog --help`",
-		"- `apps/web`：挂在 `/`，在服务端渲染。",
-		"- `apps/admin`：挂在 `/admin/`，只在浏览器中渲染。",
-		"- `clients/desk`：electron 客户端，显示 `apps/admin`。",
-		"`README.md` 的“AI 编程助手”一节",
-		"- `tenon`：", "`tenon_search_docs`",
-		"## 技能", "`.claude/skills`、`.agents/skills`", "- `tenon-action`：在 Tenon 应用中新增或修改一个业务用例（业务动作）。",
-	} {
-		if !strings.Contains(block, want) {
-			t.Errorf("block missing %q:\n%s", want, block)
-		}
-	}
-	for _, absent := range []string{"`gopls`：", "`mantine`："} {
-		if strings.Contains(block, absent) {
-			t.Errorf("block configures %s, which projects add from the official instructions", absent)
-		}
-	}
-
-	// 没有前端、没有安装技能的项目：没有这两节。
-	p := sample()
-	p.Config.Frontends, p.Config.Clients = nil, nil
-	block = agents.Block(p, nil)
-	if strings.Contains(block, "## 前端与客户端") || strings.Contains(block, "## 技能") {
-		t.Errorf("project without frontends:\n%s", block)
-	}
-}
-
-// Replace 只换掉独占一行的标记之间的内容，前后的内容保持原样；没有标记时加在末尾。
-func TestReplace(t *testing.T) {
-	t.Parallel()
-	block := agents.Begin + "\nnew\n" + agents.End + "\n"
-	text := "# App\n\n说明中提到 `" + agents.Begin + "`。\n\n" + agents.Begin + "\nold\n" + agents.End + "\n\n## 约定\n"
-	want := "# App\n\n说明中提到 `" + agents.Begin + "`。\n\n" + block + "\n## 约定\n"
-	if got := agents.Replace(text, block); got != want {
-		t.Errorf("replace:\n%s\nwant:\n%s", got, want)
-	}
-	if got := agents.Replace(want, block); got != want {
-		t.Errorf("second replace changed the text:\n%s", got)
-	}
-	if got := agents.Replace("# App\n", block); got != "# App\n\n"+block {
-		t.Errorf("append:\n%s", got)
-	}
-	if got := agents.Replace("", block); got != block {
-		t.Errorf("new file:\n%s", got)
-	}
-}
-
 // WriteMCP 只改写 tenon 一项，保留项目自己的服务（例如按官方方法加上的 gopls、mantine）和设置；再写一次结果不变。
 func TestWriteMCP(t *testing.T) {
 	t.Parallel()
@@ -271,7 +212,7 @@ func TestWriteSkills(t *testing.T) {
 	}
 }
 
-// 技能、AGENTS.md 和 README.md 的模板、tenon 的一段中写的 .tenon/docs/<页面>#<锚点> 都存在于框架的 docs 中，
+// 技能、AGENTS.md 和 README.md 的模板中写的 .tenon/docs/<页面>#<锚点> 都存在于框架的 docs 中，
 // 提到的其他技能（技能 `tenon-x`）也存在。改了文档的路径或锚点时，这个测试指出要同步修改的技能。
 func TestSkillReferences(t *testing.T) {
 	t.Parallel()
@@ -283,7 +224,7 @@ func TestSkillReferences(t *testing.T) {
 		t.Fatal(err)
 	}
 	names := map[string]bool{}
-	sources := map[string]string{"block": agents.Block(sample(), all)}
+	sources := map[string]string{}
 	for _, s := range all {
 		names[s.Name] = true
 		sources[s.Name] = string(s.Content)

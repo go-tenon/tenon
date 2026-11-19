@@ -190,7 +190,7 @@ go tool tenon add client admin-desktop --kind electron --frontend admin
 bun run agents   # 即 go tool tenon agents
 ```
 
-更新 AI 编程助手用到的内容：把项目所用版本的框架文档复制到 `.tenon/docs`，重新生成 `AGENTS.md` 中由 tenon 维护的一段（框架的版本、前端与客户端、技能），为 Claude Code、Codex、Cursor、Antigravity 等助手安装技能（`tenon-action`、`tenon-http-api` 等）、在 MCP 配置中写上 `tenon`。升级框架以后运行它；`tenon add frontend`、`tenon add client` 结束时会自动运行一次，`tenon dev` 每次启动时更新 `.tenon/docs`。AI 编程助手还会按 MCP 配置启动 `tenon mcp`，用它检索框架的文档、读 `tenon dev` 的输出（`.tenon/dev.log`）。Go、Mantine、TanStack 等依赖给 AI 的资源按它们的官方方案接入，见[依赖的官方方案](ai-assistants.md#dependencies)。详细的说明见 [AI 编程助手](ai-assistants.md)。
+更新 AI 编程助手用到的内容：把项目所用版本的框架文档复制到 `.tenon/docs`，为 Claude Code、Codex、Cursor、Antigravity 等助手安装技能（`tenon-action`、`tenon-http-api` 等）、在 MCP 配置中写上 `tenon`。升级框架以后运行它；`tenon add frontend`、`tenon add client` 结束时会自动运行一次，`tenon dev` 每次启动时更新 `.tenon/docs`。AI 编程助手还会按 MCP 配置启动 `tenon mcp`，用它检索框架的文档、读 `tenon dev` 的输出（`.tenon/dev.log`）。Go、Mantine、TanStack 等依赖给 AI 的资源按它们的官方方案接入，见[依赖的官方方案](ai-assistants.md#dependencies)。详细的说明见 [AI 编程助手](ai-assistants.md)。
 
 <a id="troubleshooting"></a>
 ## 常见问题

@@ -95,7 +95,7 @@ helpdesk/
 ├── package.json           Bun workspace（apps/*、packages/*）；dev、build、generate 脚本
 ├── bun.lock
 ├── tenon.json             开发工具的配置，可以没有
-├── AGENTS.md              项目说明和代码约定，AI 编程助手读它；其中 tenon 维护的一段列出各个前端
+├── AGENTS.md              项目说明和代码约定，AI 编程助手读它
 ├── apps/                  每个前端一个目录
 │   ├── admin/             运营后台（--layout frame）
 │   ├── console/           控制台（--layout rail）
@@ -243,7 +243,7 @@ apps/admin/
 
 AI 编程助手按项目中的说明写代码。说明越具体，它生成的代码越符合规范。`tenon init` 生成的项目已经准备好这些说明，详细的介绍见 [AI 编程助手](../installation/ai-assistants.md)：
 
-- **根目录的 `AGENTS.md`**：前端的约定（用 Mantine 和 `@go-tenon/ui`、颜色从主题取、调用生成的客户端、不手改生成的代码）取自本页，并写明业务规则和权限判断写在 Go 的业务动作中，前端只负责展示和交互。其中由 tenon 维护的一段列出每个前端的挂载路径和渲染方式。
+- **根目录的 `AGENTS.md`**：前端的约定（用 Mantine 和 `@go-tenon/ui`、颜色从主题取、调用生成的客户端、不手改生成的代码）取自本页，并写明业务规则和权限判断写在 Go 的业务动作中，前端只负责展示和交互。
 - **`tenon-frontend` 技能**：写页面的步骤和要点，取自本页。
 - **依赖的官方方案**：Mantine 的 `llms.txt`、MCP 服务和技能，TanStack 的 `llms.txt` 和随包发布的技能，按它们的官方方法接入，生成的项目的 `README.md` 写好了命令，见 [AI 编程助手](../installation/ai-assistants.md#dependencies)。它们与本页冲突时以本页为准，例如不写 TanStack Start 的服务端函数。
 - **本页**：助手在 `.tenon/docs/frontend/conventions.md` 中读到与项目框架版本一致的这一页。[不使用的库](#not-used)写在这里，需要强制检查时，自己给前端加上 Biome 的 `noRestrictedImports`。
