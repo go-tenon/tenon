@@ -55,8 +55,13 @@ jobs:
   # tenon init 生成的项目能安装、生成客户端、类型检查、构建并运行（TestInitEndToEnd）；
   # 按 docs/tutorial 做一遍入门教程，用教程的 compose.yaml 启动基础设施（TestTutorial）。
   # 单独一个 job：编译和安装依赖很占 CPU，放在 test 中会干扰计时的测试。
+  # 两个测试互不依赖，各用一台机器并行运行。
   scaffold:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        test: [TestInitEndToEnd, TestTutorial]
     steps:
       - uses: actions/checkout@v4
 
@@ -68,8 +73,16 @@ jobs:
         with:
           bun-version: 1.4.4
 
+      # 生成的项目每次 bun install 都要下载依赖，缓存 Bun 的包缓存。依赖由框架的 js 和模板中的 package.json 决定；
+      # 两个测试装的包不同，键中带上测试名。
+      - uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ matrix.test }}-${{ hashFiles('js/bun.lock', 'cmd/tenon/internal/scaffold/template/**/package.json.tmpl') }}
+          restore-keys: bun-${{ runner.os }}-${{ matrix.test }}-
+
       - name: Scaffold
-        run: go test -count=1 -run 'TestInitEndToEnd|TestTutorial' -v ./cmd/tenon/
+        run: go test -count=1 -run '^${{ matrix.test }}$' -v ./cmd/tenon/
         env:
           TENON_SCAFFOLD_TEST: "1"
 
