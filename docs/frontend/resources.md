@@ -54,6 +54,7 @@ api.Resource(rest.Resource{
 | `CreateForm` | 新建表单的字段：新建接口请求体的字段，按显示的顺序。为空时是请求体的全部字段，按结构体中的顺序 |
 | `UpdateForm` | 修改表单的字段：修改接口请求体的字段。为空时同样是请求体的全部字段。新建和修改的字段常常不同，例如新建租户时还要填写管理员的账号，修改时只改名称 |
 | `Actions` | 行上的其他操作：`Operation` 是接口，`Confirm` 执行前询问，`Danger` 用醒目的颜色，`When` 是显示的条件，见下文 |
+| `UpdateWhen`、`DeleteWhen` | 一行上显示“修改”“删除”的条件，写法与 `When` 相同，为空时每一行都显示，见下文 |
 
 有的操作只对一部分行有意义，例如“停用”只对启用的行、“启用”只对停用的行。`When` 写出显示的条件：键是列表项的字段，值是允许的取值，一行的每个字段都取其中之一时，“更多操作”中才有这个操作。取值按字符串比较，布尔是 `true`、`false`；字段是枚举时，取值必须是枚举的值，声明时检查：
 
@@ -62,6 +63,13 @@ Actions: []rest.Action{
     {Name: "disable", Operation: "tenant-disable", Confirm: true, Danger: true, When: map[string][]string{"status": {"active"}}},
     {Name: "enable", Operation: "tenant-enable", Confirm: true, When: map[string][]string{"status": {"disabled"}}},
 },
+```
+
+“修改”和“删除”同样可以按行决定是否显示：`UpdateWhen`、`DeleteWhen` 的写法与 `When` 相同。例如只有草稿能删除；又如成员列表中，主管理员和自己那一行没有“修改”。后者取决于当前用户，列表接口可以为每一行算出一个布尔字段，例如 `self`，再在条件中使用它：
+
+```go
+DeleteWhen: map[string][]string{"status": {"draft"}},
+UpdateWhen: map[string][]string{"role": {"admin", "lead", "agent"}, "self": {"false"}},
 ```
 
 条件只决定界面上显示什么，接口仍要自己拒绝不合规则的调用（或者像这个例子一样，重复操作是安全的）。

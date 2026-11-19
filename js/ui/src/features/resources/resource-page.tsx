@@ -175,10 +175,16 @@ function ResourceList({
   }))
 
   const actions = model.actions.filter((a) => view.can.action(a.name))
-  // 操作列：能修改或删除，或者这一页至少有一行有可用的操作（声明的操作满足 When，或 rowActions 返回了操作）时才显示。
+  // 一行上能否修改、删除：有权限，并且满足声明的 UpdateWhen、DeleteWhen。
+  const rowUpdatable = (row: ResourceRow) => canUpdate && model.updatable(row)
+  const rowDeletable = (row: ResourceRow) => view.can.delete && model.deletable(row)
+  // 操作列：这一页至少有一行能修改、删除，或者有可用的操作（声明的操作满足 When，或 rowActions 返回了操作）时才显示。
   const rowHasActions = (row: ResourceRow) =>
-    actions.some((a) => a.appliesTo(row)) || (rowActions?.(row).length ?? 0) > 0
-  const hasRowActions = canUpdate || view.can.delete || view.rows.some(rowHasActions)
+    rowUpdatable(row) ||
+    rowDeletable(row) ||
+    actions.some((a) => a.appliesTo(row)) ||
+    (rowActions?.(row).length ?? 0) > 0
+  const hasRowActions = view.rows.some(rowHasActions)
   if (hasRowActions) {
     columns.push({
       accessor: "_actions",
@@ -190,10 +196,11 @@ function ResourceList({
         const key = model.rowKey(row)
         const extra = rowActions?.(row) ?? []
         const shown = actions.filter((a) => a.appliesTo(row)) // 声明了 When 的操作只在满足条件的行上显示
-        const more = shown.length > 0 || extra.length > 0 || view.can.delete
+        const deletable = rowDeletable(row)
+        const more = shown.length > 0 || extra.length > 0 || deletable
         return (
           <Group gap={2} justify="flex-end" wrap="nowrap" onClick={(e) => e.stopPropagation()}>
-            {canUpdate && (
+            {rowUpdatable(row) && (
               <ActionIcon aria-label="修改" onClick={() => openEdit(row)}>
                 <IconPencil size={16} stroke={1.6} />
               </ActionIcon>
@@ -228,8 +235,8 @@ function ResourceList({
                       {x.label}
                     </Menu.Item>
                   ))}
-                  {view.can.delete && (actions.length > 0 || extra.length > 0) && <Menu.Divider />}
-                  {view.can.delete && (
+                  {deletable && (shown.length > 0 || extra.length > 0) && <Menu.Divider />}
+                  {deletable && (
                     <Menu.Item
                       color="red"
                       leftSection={<IconTrash size={14} stroke={1.6} />}

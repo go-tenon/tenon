@@ -130,20 +130,19 @@ func (t *tsGen) resourceTS(r rest.Resource, templates map[string]map[string]stri
 		}
 		when := ""
 		if len(a.When) > 0 {
-			var conds []string
-			for _, field := range slices.Sorted(maps.Keys(a.When)) {
-				vals := make([]string, len(a.When[field]))
-				for i, v := range a.When[field] {
-					vals[i] = strconv.Quote(v)
-				}
-				conds = append(conds, strconv.Quote(field)+": ["+strings.Join(vals, ", ")+"]")
-			}
-			when = ", when: { " + strings.Join(conds, ", ") + " }"
+			when = ", when: " + whenTS(a.When)
 		}
 		fmt.Fprintf(&b, "      { name: %s, operation: %s, permissions: %s, confirm: %t, danger: %t%s },\n",
 			strconv.Quote(a.Name), opRef(o), required(o), a.Confirm, a.Danger, when)
 	}
 	b.WriteString("    ],\n")
+	// 修改、删除按钮的显示条件。
+	if len(r.UpdateWhen) > 0 {
+		b.WriteString("    updateWhen: " + whenTS(r.UpdateWhen) + ",\n")
+	}
+	if len(r.DeleteWhen) > 0 {
+		b.WriteString("    deleteWhen: " + whenTS(r.DeleteWhen) + ",\n")
+	}
 
 	// 显示文字。
 	fields := slices.Clone(r.Columns)
@@ -310,4 +309,17 @@ func (t *tsGen) fieldTS(name string, s *huma.Schema, req, sortable bool) string 
 		parts = append(parts, "sortable: true")
 	}
 	return "{ " + strings.Join(parts, ", ") + " }"
+}
+
+// whenTS 返回显示条件 when 的 TypeScript 字面量，例如 { "status": ["draft"] }，字段按名称排序。
+func whenTS(when map[string][]string) string {
+	var conds []string
+	for _, field := range slices.Sorted(maps.Keys(when)) {
+		vals := make([]string, len(when[field]))
+		for i, v := range when[field] {
+			vals[i] = strconv.Quote(v)
+		}
+		conds = append(conds, strconv.Quote(field)+": ["+strings.Join(vals, ", ")+"]")
+	}
+	return "{ " + strings.Join(conds, ", ") + " }"
 }

@@ -92,7 +92,9 @@ func TestResource(t *testing.T) {
 	api.Resource(rest.Resource{
 		Name: "article", List: "article-list", Get: "article-get", Create: "article-create", Update: "article-update", Delete: "article-delete",
 		Filters: []string{"status"}, Sort: []string{"updated_at"},
-		Actions: []rest.Action{{Name: "publish", Operation: "article-publish", Confirm: true, When: map[string][]string{"status": {"draft"}}}},
+		Actions:    []rest.Action{{Name: "publish", Operation: "article-publish", Confirm: true, When: map[string][]string{"status": {"draft"}}}},
+		UpdateWhen: map[string][]string{"status": {"draft"}},
+		DeleteWhen: map[string][]string{"status": {"draft"}},
 	})
 	got := api.Resources()
 	if len(got) != 1 {
@@ -119,7 +121,8 @@ func TestResource(t *testing.T) {
 		Resources []rest.Resource `json:"x-tenon-resources"`
 	}
 	if err := json.Unmarshal(doc, &parsed); err != nil || len(parsed.Resources) != 1 || parsed.Resources[0].Key != "id" ||
-		!parsed.Resources[0].Actions[0].Confirm || !slices.Equal(parsed.Resources[0].Actions[0].When["status"], []string{"draft"}) {
+		!parsed.Resources[0].Actions[0].Confirm || !slices.Equal(parsed.Resources[0].Actions[0].When["status"], []string{"draft"}) ||
+		!slices.Equal(parsed.Resources[0].UpdateWhen["status"], []string{"draft"}) || !slices.Equal(parsed.Resources[0].DeleteWhen["status"], []string{"draft"}) {
 		t.Fatalf("x-tenon-resources %+v %v", parsed.Resources, err)
 	}
 }
@@ -169,6 +172,15 @@ func TestResourceRejects(t *testing.T) {
 		"when enum": {func(r *rest.Resource) {
 			r.Actions = []rest.Action{{Name: "publish", Operation: "article-publish", When: map[string][]string{"status": {"archived"}}}}
 		}, `when status="archived" is not one of`},
+		"update_when without update": {func(r *rest.Resource) { r.UpdateWhen = map[string][]string{"status": {"draft"}} }, "update_when is set but the resource has no update operation"},
+		"delete_when field": {func(r *rest.Resource) {
+			r.Delete = "article-delete"
+			r.DeleteWhen = map[string][]string{"state": {"draft"}}
+		}, `delete_when field "state" is not a field`},
+		"update_when enum": {func(r *rest.Resource) {
+			r.Update = "article-update"
+			r.UpdateWhen = map[string][]string{"status": {"archived"}}
+		}, `update_when status="archived" is not one of`},
 	} {
 		t.Run(name, func(t *testing.T) {
 			r := base
