@@ -578,6 +578,12 @@ body {
   cursor: grab;
 }
 
+/* mantine-datatable 在指针放在可拖动的表头上时加一层按钮似的背景，这里去掉：拖动只靠手掌指针提示，
+   可以排序的列仍然有表头格自己的悬停背景。选择器带上 th，在暗色模式下同样盖过库的规则。 */
+.tn-datatable th .mantine-datatable-header-cell-draggable:hover:not(:has(button:hover)) {
+  background: none;
+}
+
 /* ———————————————— 页面 ———————————————— */
 
 .tn-page-header {
