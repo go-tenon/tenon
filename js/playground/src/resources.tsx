@@ -160,6 +160,8 @@ const customerDef: ResourceDef = {
       when: { active: ["false"] },
     },
   ],
+  // 只有停用的客户能删除：启用的客户行上没有“删除”
+  deleteWhen: { active: ["false"] },
   labels: {
     "zh-CN": {
       title: "客户",

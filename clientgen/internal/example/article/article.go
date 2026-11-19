@@ -242,6 +242,8 @@ func Register(api *rest.API, s *Store, auth func(*huma.Operation)) {
 		Name: "article", List: "article-list", Get: "article-get", Create: "article-create", Update: "article-update", Delete: "article-delete",
 		Columns: []string{"title", "status", "published_at", "featured"}, Filters: []string{"title", "status"},
 		Actions: []rest.Action{{Name: "publish", Operation: "article-publish", Confirm: true, When: map[string][]string{"status": {string(StatusDraft)}}}},
+		// 只有草稿能删除：已发布的文章行上没有“删除”
+		DeleteWhen: map[string][]string{"status": {string(StatusDraft)}},
 	})
 	// 博客的设置页面：显示文字是 blog.title、blog.fields.<字段> 的消息。
 	rest.Register(api, op("blog-settings-get", http.MethodGet, "/settings", "博客设置", true), s.getSettings)

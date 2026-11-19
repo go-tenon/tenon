@@ -53,6 +53,9 @@ export interface ResourceDef {
     /** 显示的条件：字段 → 允许的取值，见 rest.Action 的 When。 */
     readonly when?: { readonly [field: string]: readonly string[] }
   }[]
+  /** 一行上显示“修改”“删除”的条件，写法与 actions 的 when 相同，见 rest.Resource 的 UpdateWhen、DeleteWhen。 */
+  readonly updateWhen?: { readonly [field: string]: readonly string[] }
+  readonly deleteWhen?: { readonly [field: string]: readonly string[] }
   readonly labels: {
     readonly [language: string]: {
       readonly title?: string
@@ -152,6 +155,10 @@ export interface ResourceModel {
   actions: ResourceAction[]
   /** 有哪些接口。 */
   has: Record<ResourceOperation, boolean>
+  /** row 上是否显示“修改”：声明了 UpdateWhen 时，row 的每个字段都取允许的值之一。不检查权限，权限见 allowed。 */
+  updatable(row: ResourceRow): boolean
+  /** row 上是否显示“删除”：声明了 DeleteWhen 时，row 的每个字段都取允许的值之一。不检查权限。 */
+  deletable(row: ResourceRow): boolean
   /** 列表路由的 validateSearch：查询条件、排序和分页保存在地址中。 */
   listSearch: ListSearch<Record<string, unknown>>
   /** 当前身份能否使用一个接口或操作：接口要求的权限都具备。 */
@@ -181,6 +188,11 @@ export interface ResourceModel {
    * 包含当前的身份（模型通常在登录之前创建）。
    */
   readonly queryKey: readonly unknown[]
+}
+
+/** row 是否满足显示条件 when：每个字段都取允许的值之一（按字符串比较）；没有条件时总是满足。 */
+function matchesWhen(when: { readonly [field: string]: readonly string[] } | undefined, row: ResourceRow): boolean {
+  return Object.entries(when ?? {}).every(([field, values]) => values.includes(String(row[field] ?? "")))
 }
 
 function browserLanguage(): string | undefined {
@@ -309,10 +321,11 @@ export function resourceModel(def: ResourceDef, kit: ResourceKit, queryClient?: 
       confirm: a.confirm,
       danger: a.danger,
       permissions: a.permissions,
-      appliesTo: (row) =>
-        Object.entries(a.when ?? {}).every(([field, values]) => values.includes(String(row[field] ?? ""))),
+      appliesTo: (row) => matchesWhen(a.when, row),
     })),
     has: { list: true, get: !!ops.get, create: !!ops.create, update: !!ops.update, delete: !!ops.delete },
+    updatable: (row) => matchesWhen(def.updateWhen, row),
+    deletable: (row) => matchesWhen(def.deleteWhen, row),
     listSearch: listSearch(schemaAt(kit.schemas, ops.list, "query"), { components: kit.components }),
     allowed(can, operation) {
       if (typeof operation === "object") {

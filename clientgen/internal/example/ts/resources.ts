@@ -47,6 +47,7 @@ export const resources = {
     actions: [
       { name: "publish", operation: ["article", "publish"], permissions: [], confirm: true, danger: false, when: { "status": ["draft"] } },
     ],
+    deleteWhen: { "status": ["draft"] },
     labels: {
       "en": {
         title: "Articles",

@@ -33,7 +33,12 @@ type Resource struct {
 	CreateForm []string `json:"create_form,omitempty"` // 新建表单的字段：新建接口请求体的字段，按显示的顺序。为空时是请求体的全部字段，按结构体中的顺序。
 	UpdateForm []string `json:"update_form,omitempty"` // 修改表单的字段：修改接口请求体的字段，按显示的顺序。为空时是请求体的全部字段，按结构体中的顺序。
 	Actions    []Action `json:"actions,omitempty"`     // 一行上的其他操作，例如发布。
-	Key        string   `json:"key,omitempty"`         // 标识一行的字段，由 Get、Update、Delete 和 Actions 的路径参数得出，不需要设置。
+	// UpdateWhen、DeleteWhen 是一行上显示“修改”“删除”的条件，写法与 Action 的 When 相同：键是列表项的字段，
+	// 值是允许的取值，例如 {"status": {"draft"}} 只有草稿能删除。为空时每一行都显示。它们只决定界面上的按钮，
+	// 不能修改、删除的行仍要由接口拒绝。
+	UpdateWhen map[string][]string `json:"update_when,omitempty"`
+	DeleteWhen map[string][]string `json:"delete_when,omitempty"`
+	Key        string              `json:"key,omitempty"` // 标识一行的字段，由 Get、Update、Delete 和 Actions 的路径参数得出，不需要设置。
 }
 
 // Action 是资源的一行上的操作。
@@ -134,23 +139,21 @@ func (a *API) checkResource(r *Resource) error {
 		if act.Operation == "" {
 			return fmt.Errorf("action %s has no Operation", act.Name)
 		}
-		for field, values := range act.When {
-			s, ok := item.Properties[field]
-			if !ok {
-				return fmt.Errorf("action %s: when field %q is not a field of the list items", act.Name, field)
-			}
-			if len(values) == 0 {
-				return fmt.Errorf("action %s: when field %q lists no values", act.Name, field)
-			}
-			if allowed := a.resolveSchema(s).Enum; len(allowed) > 0 {
-				for _, v := range values {
-					if !slices.ContainsFunc(allowed, func(e any) bool { return fmt.Sprint(e) == v }) {
-						return fmt.Errorf("action %s: when %s=%q is not one of %v", act.Name, field, v, allowed)
-					}
-				}
-			}
+		if err := a.checkWhen("action "+act.Name+": when", act.When, item); err != nil {
+			return err
 		}
 		keyed = append(keyed, struct{ id, method string }{act.Operation, ""})
+	}
+	for _, w := range []struct {
+		what, op string
+		when     map[string][]string
+	}{{"update_when", r.Update, r.UpdateWhen}, {"delete_when", r.Delete, r.DeleteWhen}} {
+		if len(w.when) > 0 && w.op == "" {
+			return fmt.Errorf("%s is set but the resource has no %s operation", w.what, strings.TrimSuffix(w.what, "_when"))
+		}
+		if err := a.checkWhen(w.what, w.when, item); err != nil {
+			return err
+		}
 	}
 	r.Key = ""
 	for _, k := range keyed {
@@ -399,6 +402,28 @@ func hasFields(what string, names []string, s *huma.Schema) error {
 	}
 	if len(missing) > 0 {
 		return fmt.Errorf("%s %s not found; fields are %s", what, strings.Join(missing, ", "), strings.Join(sortedFields(s), ", "))
+	}
+	return nil
+}
+
+// checkWhen 检查显示条件 when（Action 的 When、Resource 的 UpdateWhen 和 DeleteWhen）：每个字段都是列表项的字段，
+// 至少列出一个取值，字段是枚举时取值都在枚举之内。what 用在错误消息的开头。
+func (a *API) checkWhen(what string, when map[string][]string, item *huma.Schema) error {
+	for field, values := range when {
+		s, ok := item.Properties[field]
+		if !ok {
+			return fmt.Errorf("%s field %q is not a field of the list items", what, field)
+		}
+		if len(values) == 0 {
+			return fmt.Errorf("%s field %q lists no values", what, field)
+		}
+		if allowed := a.resolveSchema(s).Enum; len(allowed) > 0 {
+			for _, v := range values {
+				if !slices.ContainsFunc(allowed, func(e any) bool { return fmt.Sprint(e) == v }) {
+					return fmt.Errorf("%s %s=%q is not one of %v", what, field, v, allowed)
+				}
+			}
+		}
 	}
 	return nil
 }
