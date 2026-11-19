@@ -1124,16 +1124,6 @@ body {
   background: var(--tn-surface);
 }
 
-/* 没有排序时，排序图标只在悬停时出现。 */
-.tn-datatable th .mantine-datatable-header-cell-sortable-unsorted-icon {
-  opacity: 0;
-  transition: opacity 120ms ease;
-}
-
-.tn-datatable th:hover .mantine-datatable-header-cell-sortable-unsorted-icon {
-  opacity: 0.5;
-}
-
 /* ———————————————— 描述列表 ———————————————— */
 
 /* 卡片中名称在左、值靠右，行间一条淡线；标题没有底色。值太长时在右侧换行。 */
