@@ -178,12 +178,30 @@ export const theme = createUiTheme({ preset: "compact", primary: "blue-gray" })
 - `fontFamily` 是字体，不设置时用系统字体，不额外加载字体：西文字体在前，字母、数字和 `•` 这类西文符号用西文字体；汉字回落到后面的苹方、思源黑体、微软雅黑。引号 `‘’“”`、省略号 `…`、破折号 `—`、间隔号 `·` 是中英文共用的字符，中文页面（`<html lang="zh-CN">`）中它们由中文字体显示为全角，英文页面中是西文的样式；自己设置 `fontFamily` 时同样如此。
 - `datetimeFormat` 是日期时间的显示格式（dayjs 的写法），默认 `YYYY-MM-DD HH:mm`；表格多的界面可以用短一些的 `MM/DD HH:mm`。表格、操作记录、通知中的时间都用它。
 - `override` 是再合并的 Mantine 主题覆盖，用于令牌之外的调整，例如某个组件的默认属性。
-- `datetimeFormat` 是日期时间的显示格式（[dayjs 的写法](https://day.js.org/docs/en/display/format)），默认随预设：`admin` 是 `MM/DD HH:mm`（例如 11/03 10:12），其他是 `YYYY-MM-DD HH:mm`。后端返回带时区的 ISO 时间，显示为浏览器所在时区的时间。表格中的日期时间字段、操作记录、通知都用它；自己写的页面用 `useFormatDateTime()`：
+- `datetimeFormat` 是日期时间的显示格式（[dayjs 的写法](https://day.js.org/docs/en/display/format)），默认随预设：`admin` 是 `MM/DD HH:mm`（例如 11/03 10:12），其他是 `YYYY-MM-DD HH:mm`。后端返回带时区的 ISO 时间，默认显示为浏览器所在时区的时间，可以用 `TimeZoneProvider` 换成别的时区（见下）。表格中的日期时间字段、操作记录、通知都用它；自己写的页面用 `useFormatDateTime()`：
 
 ```tsx
 const formatDateTime = useFormatDateTime()
 formatDateTime(order.created_at) // 11/03 10:12
 ```
+
+<a id="time-zones"></a>
+**时区。** 用户在偏好设置中选了时区时，用 `TimeZoneProvider` 把它交给页面。`zone` 是 IANA 时区名，例如 `Asia/Kolkata`，为空时按浏览器的时区。时区通常在登录后才读到，并且会变，所以它不是主题的选项，而是包在布局外面：
+
+```tsx
+function Layout() {
+  const user = useQuery({ queryKey: ["me"], queryFn: me })
+  return (
+    <TimeZoneProvider zone={user.data?.time_zone}>
+      <RailLayout title="Acme" user={<UserMenu name={user.data?.name} logout={logout} />} />
+    </TimeZoneProvider>
+  )
+}
+```
+
+- `useFormatDateTime` 按这个时区显示，表格、操作记录、通知、队列和定时任务面板中的时间随之变化。
+- 资源表单中的日期时间输入框按这个时区显示和输入，提交时换算成 ISO 时间。只有日期的字段（`format: "date"`）是日历上的一天，不换算。
+- 自己写的页面需要别的格式时，用 `inTimeZone(value, useTimeZone()).format("HH:mm")`。
 
 <a id="route-metadata"></a>
 ## 页面的元数据
@@ -388,7 +406,8 @@ bun run playground
 | `UIProvider` | 安装主题、通知、对话框和图标：`theme`、`defaultColorScheme`、`icons`、`env` |
 | `themes`、`Preset` | 三套样式预设：`admin`、`console`、`site` |
 | `createUiTheme(options)` | 由预设和设计令牌生成主题：`preset`、`primary`、`radius`、`fontFamily`、`datetimeFormat`、`override` |
-| `useFormatDateTime()` | 按主题的 `datetimeFormat` 显示日期时间 |
+| `useFormatDateTime()` | 按主题的 `datetimeFormat` 和 `TimeZoneProvider` 的时区显示日期时间 |
+| `TimeZoneProvider`、`useTimeZone()`、`inTimeZone(value, zone)` | 页面中显示和输入时间使用的时区，见[时区](#time-zones) |
 | `palette(color)`、`primaryColors`、`PrimaryColor` | 由预设的名称或颜色值生成 10 级色板；预设的主题色 |
 | `layoutMetrics(theme)`、`LayoutMetrics` | 主题中的布局尺寸 |
 | `requireAuth` | 布局路由的 `beforeLoad`：没有登录时跳到登录页 |

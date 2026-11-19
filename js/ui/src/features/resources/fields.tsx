@@ -19,7 +19,7 @@ import { DateInput, DateTimePicker } from "@mantine/dates"
 import dayjs from "dayjs"
 import { type ReactNode, useEffect, useState } from "react"
 import { maskSecret, SecretInput } from "../../components/form/secret-input"
-import { useFormatDateTime } from "../../theme/format"
+import { inTimeZone, useFormatDateTime, useTimeZone } from "../../theme/format"
 import type { ResourceField } from "./model"
 
 /** 字段输入组件的属性：value、onChange、error 来自表单（@mantine/form 的 getInputProps）。 */
@@ -45,6 +45,7 @@ export function DefaultInput({
   disabled,
   label = field.label,
 }: FieldInputProps): ReactNode {
+  const zone = useTimeZone()
   const common = { label, error, disabled, required: field.required }
   switch (field.kind) {
     case "number":
@@ -109,8 +110,9 @@ export function DefaultInput({
           {...common}
           valueFormat="YYYY-MM-DD HH:mm"
           clearable={!field.required}
-          value={value ? dayjs(String(value)).format("YYYY-MM-DD HH:mm:ss") : null}
-          onChange={(v) => onChange?.(v ? dayjs(v).toISOString() : undefined)}
+          // 输入框中是 TimeZoneProvider 的时区（没有时是浏览器的时区）中的时间，提交时换算成 ISO 时间。
+          value={value ? inTimeZone(String(value), zone).format("YYYY-MM-DD HH:mm:ss") : null}
+          onChange={(v) => onChange?.(v ? (zone ? dayjs.tz(v, zone) : dayjs(v)).toISOString() : undefined)}
         />
       )
     case "json":
