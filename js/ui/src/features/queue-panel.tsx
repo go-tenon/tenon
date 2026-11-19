@@ -24,7 +24,6 @@ import {
 } from "@mantine/core"
 import { IconDots, IconPlayerPause, IconPlayerPlay, IconRotateClockwise, IconTrash } from "@tabler/icons-react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import dayjs from "dayjs"
 import { type ReactNode, useState } from "react"
 import { CellLink, type Column, DataTable } from "../components/data-table/data-table"
 import { useSelection } from "../components/data-table/list"
@@ -32,7 +31,7 @@ import { DescriptionList } from "../components/description-list"
 import { confirm, notifyError, notifySuccess } from "../components/feedback"
 import { Page } from "../components/page"
 import { StatusDot } from "../components/status-dot"
-import { useFormatDateTime } from "../theme/format"
+import { inTimeZone, useFormatDateTime, useTimeZone } from "../theme/format"
 
 // ———————————————————————————— 接口 ————————————————————————————
 
@@ -324,6 +323,7 @@ function SystemStatus({ status }: { status: QueueStatusData }): ReactNode {
 function Topics({ status, api }: { status: QueueStatusData; api: QueueApi }): ReactNode {
   const queryClient = useQueryClient()
   const formatDateTime = useFormatDateTime()
+  const zone = useTimeZone()
   const toggle = useMutation({
     mutationFn: async ({ topic, pause }: { topic: string; pause: boolean }) =>
       pause ? api.topicPause?.(topic) : api.topicResume?.(topic),
@@ -353,7 +353,9 @@ function Topics({ status, api }: { status: QueueStatusData; api: QueueApi }): Re
       render: (t) => {
         const st = stateText[t.state] ?? { label: t.state, color: "gray" }
         const label =
-          t.state === "paused" && t.paused_until ? `暂停到 ${dayjs(t.paused_until).format("HH:mm")}` : st.label
+          t.state === "paused" && t.paused_until
+            ? `暂停到 ${inTimeZone(t.paused_until, zone).format("HH:mm")}`
+            : st.label
         return (
           <Stack gap={2} align="flex-start">
             <Badge color={st.color} style={{ flexShrink: 0 }}>

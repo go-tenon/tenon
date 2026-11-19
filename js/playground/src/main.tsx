@@ -34,6 +34,7 @@ import {
   SettingsForm,
   SiteLayout,
   SplitAuthLayout,
+  TimeZoneProvider,
   trackOperation,
   UIProvider,
   UserMenu,
@@ -122,15 +123,51 @@ const languages = [
   { value: "en", label: "English" },
 ]
 
+// 演示时区：页面中的时间（客户列表的“最近下单”、通知、日期时间输入框）按选的时区显示。
+const timeZones = [
+  { value: "", label: "浏览器的时区" },
+  { value: "Asia/Shanghai", label: "Asia/Shanghai" },
+  { value: "Asia/Kolkata", label: "Asia/Kolkata" },
+  { value: "America/New_York", label: "America/New_York" },
+]
+
 function FrameShell(): ReactNode {
   // 演示：只记下选择，不换文案。
   const [language, setLanguage] = useState("zh-CN")
+  const [zone, setZone] = useState("")
+  return (
+    <TimeZoneProvider zone={zone}>
+      <FrameShellLayout language={language} setLanguage={setLanguage} zone={zone} setZone={setZone} />
+    </TimeZoneProvider>
+  )
+}
+
+function FrameShellLayout({
+  language,
+  setLanguage,
+  zone,
+  setZone,
+}: {
+  language: string
+  setLanguage(v: string): void
+  zone: string
+  setZone(v: string): void
+}): ReactNode {
   return (
     <FrameLayout
       title="Acme"
       tabs
       actions={
         <>
+          <Select
+            aria-label="时区"
+            size="xs"
+            w={170}
+            data={timeZones}
+            value={zone}
+            onChange={(v) => setZone(v ?? "")}
+            allowDeselect={false}
+          />
           <OperationsMenu />
           <NotificationsMenu source={notifications} />
           <LanguageMenu languages={languages} value={language} onChange={setLanguage} />
