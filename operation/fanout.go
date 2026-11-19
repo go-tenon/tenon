@@ -50,7 +50,7 @@ func Fanout[T any](ctx context.Context, tx bun.IDB, id uuid.UUID, topic queue.To
 	}
 	res, err := tx.NewUpdate().Model((*Operation)(nil)).
 		Set("total = total + ?", len(items)).Set("status = ?", StatusRunning).
-		Set("version = version + 1").Set("updated_at = ?", time.Now().UTC()).
+		Set("version = version + 1").
 		Where("id = ?", id).Where("status IN (?)", bun.List([]Status{StatusPending, StatusRunning})).Exec(ctx)
 	if err != nil {
 		return errors.Wrap(err, "operation: fanout")
@@ -166,7 +166,6 @@ func (s *Service) settle(ctx context.Context, opID, unitID uuid.UUID, failed boo
 		finished := op.Finished()
 		now := time.Now().UTC()
 		op.Version++
-		op.UpdatedAt = now
 		if !finished && op.Processed >= op.Total {
 			op.Status, op.CompletedAt = StatusCompleted, &now
 		}

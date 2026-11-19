@@ -18,6 +18,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/uptrace/bun"
 
+	"github.com/go-tenon/tenon/database"
 	"github.com/go-tenon/tenon/identity"
 )
 
@@ -51,9 +52,8 @@ type Code struct {
 type challengeRow struct {
 	bun.BaseModel `bun:"table:auth_challenges,alias:c"`
 
-	ID          uuid.UUID `bun:"id,pk,type:uuid"`
-	CreatedAt   time.Time `bun:"created_at,notnull"`
-	UpdatedAt   time.Time `bun:"updated_at,notnull"`
+	ID uuid.UUID `bun:"id,pk,type:uuid"`
+	database.Timestamps
 	Purpose     Purpose   `bun:"purpose,notnull"`
 	SubjectType string    `bun:"subject_type,notnull"`
 	Tenant      string    `bun:"tenant,notnull"`
@@ -165,7 +165,7 @@ func (r *Realm) send(ctx context.Context, purpose Purpose, id Identifier, tenant
 	row := &challengeRow{
 		ID: requestID, Purpose: purpose, SubjectType: string(r.opts.Type), Tenant: tenant,
 		Kind: id.Kind, Value: id.Value, SubjectID: owner,
-		CodeHash: r.codeHash(r.codeKeys[0], requestID, code), ExpiresAt: now.Add(r.opts.CodeTTL), CreatedAt: now, UpdatedAt: now,
+		CodeHash: r.codeHash(r.codeKeys[0], requestID, code), ExpiresAt: now.Add(r.opts.CodeTTL), Timestamps: database.Timestamps{CreatedAt: now},
 	}
 	if _, err := r.db.NewInsert().Model(row).Exec(ctx); err != nil {
 		return "", errors.Wrap(err, "login: save code")
@@ -201,7 +201,7 @@ func (r *Realm) VerifyCode(ctx context.Context, requestID, code string) (Outcome
 		return r.authenticated(ctx, r.db, c.SubjectID, c.Tenant, true, c.Kind)
 	}
 	secret := token()
-	n, err := affected(r.db.NewUpdate().Model((*challengeRow)(nil)).Set("updated_at = ?", r.now().UTC()).
+	n, err := affected(r.db.NewUpdate().Model((*challengeRow)(nil)).
 		Set("proof_hash = ?", sha(secret)).Set("expires_at = ?", r.now().UTC().Add(r.opts.ProofTTL)).
 		Where("id = ?", c.ID).Where("proof_hash IS NULL AND completed_at IS NULL").Exec(ctx))
 	if err != nil {
@@ -230,7 +230,7 @@ func (r *Realm) attempt(ctx context.Context, requestID, code string, accept func
 		return nil, errors.Wrap(err, "login: find code")
 	}
 	// 先记一次尝试再比较，并发的猜测也计入次数限制。
-	n, err := affected(r.db.NewUpdate().Model((*challengeRow)(nil)).Set("updated_at = ?", r.now().UTC()).Set("attempts = attempts + 1").
+	n, err := affected(r.db.NewUpdate().Model((*challengeRow)(nil)).Set("attempts = attempts + 1").
 		Where("id = ?", rid).Where("attempts < ?", r.opts.CodeAttempts).
 		Where("proof_hash IS NULL AND completed_at IS NULL").Exec(ctx))
 	if err != nil {
@@ -246,7 +246,7 @@ func (r *Realm) attempt(ctx context.Context, requestID, code string, accept func
 // 并发使用、或者发送之后标识已被移除或转给了别人时返回 ErrInvalidCode。
 func (r *Realm) use(ctx context.Context, c *challengeRow) error {
 	return r.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		n, err := affected(tx.NewUpdate().Model((*challengeRow)(nil)).Set("completed_at = ?", r.now().UTC()).Set("updated_at = ?", r.now().UTC()).
+		n, err := affected(tx.NewUpdate().Model((*challengeRow)(nil)).Set("completed_at = ?", r.now().UTC()).
 			Where("id = ?", c.ID).Where("proof_hash IS NULL AND completed_at IS NULL").Exec(ctx))
 		if err != nil {
 			return errors.Wrap(err, "login: complete code")
@@ -288,7 +288,7 @@ func (r *Realm) proof(ctx context.Context, db bun.IDB, proof string, purposes ..
 
 // complete 把完成凭证标为已用。并发使用同一个凭证时只有一个成功，其余返回 ErrInvalidProof。
 func (r *Realm) complete(ctx context.Context, db bun.IDB, c *challengeRow) error {
-	n, err := affected(db.NewUpdate().Model((*challengeRow)(nil)).Set("completed_at = ?", r.now().UTC()).Set("updated_at = ?", r.now().UTC()).
+	n, err := affected(db.NewUpdate().Model((*challengeRow)(nil)).Set("completed_at = ?", r.now().UTC()).
 		Where("id = ?", c.ID).Where("completed_at IS NULL").Exec(ctx))
 	if err != nil {
 		return errors.Wrap(err, "login: complete proof")

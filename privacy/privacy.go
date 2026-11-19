@@ -50,15 +50,14 @@ type Options struct {
 type Erasure struct {
 	bun.BaseModel `bun:"table:privacy_erasures,alias:pe"`
 
-	ID          uuid.UUID            `bun:"id,pk,type:uuid"`    // UUIDv7，按时间递增
-	CreatedAt   time.Time            `bun:"created_at,notnull"` // 申请注销的时间
-	UpdatedAt   time.Time            `bun:"updated_at,notnull"`
-	SubjectType identity.SubjectType `bun:"subject_type,notnull"`
-	SubjectID   string               `bun:"subject_id,notnull"`
-	DueAt       time.Time            `bun:"due_at,notnull"`     // 冷静期结束的时间；失败后是下一次重试的时间
-	ErasedAt    time.Time            `bun:"erased_at,nullzero"` // 删除完成的时间，零值表示还没有删除
-	Attempts    int                  `bun:"attempts,notnull"`   // 已经执行过的次数，包括失败的
-	LastError   string               `bun:"last_error,notnull"` // 最近一次失败的原因，成功后为空
+	ID                  uuid.UUID            `bun:"id,pk,type:uuid"` // UUIDv7，按时间递增
+	database.Timestamps                      // CreatedAt 是申请注销的时间
+	SubjectType         identity.SubjectType `bun:"subject_type,notnull"`
+	SubjectID           string               `bun:"subject_id,notnull"`
+	DueAt               time.Time            `bun:"due_at,notnull"`     // 冷静期结束的时间；失败后是下一次重试的时间
+	ErasedAt            time.Time            `bun:"erased_at,nullzero"` // 删除完成的时间，零值表示还没有删除
+	Attempts            int                  `bun:"attempts,notnull"`   // 已经执行过的次数，包括失败的
+	LastError           string               `bun:"last_error,notnull"` // 最近一次失败的原因，成功后为空
 }
 
 // Subject 返回注销的主体。
@@ -259,7 +258,7 @@ func (s *Service) EraseDue(ctx context.Context, limit int) (int, error) {
 			if failed != nil {
 				_, err := tx.NewUpdate().Model((*Erasure)(nil)).Where("id = ?", e.ID).
 					Set("attempts = attempts + 1").Set("last_error = ?", truncate(failed.Error())).
-					Set("due_at = ?", now.Add(retryDelay)).Set("updated_at = ?", now).Exec(ctx)
+					Set("due_at = ?", now.Add(retryDelay)).Exec(ctx)
 				return errors.Wrap(err, "privacy: record failure")
 			}
 			return s.finish(ctx, tx, e.ID, now)
@@ -307,7 +306,7 @@ func (s *Service) run(ctx context.Context, tx database.Tx, ref identity.Ref) err
 // finish 把注销标为已删除。
 func (s *Service) finish(ctx context.Context, tx bun.IDB, id uuid.UUID, now time.Time) error {
 	_, err := tx.NewUpdate().Model((*Erasure)(nil)).Where("id = ?", id).
-		Set("erased_at = ?", now).Set("attempts = attempts + 1").Set("last_error = ''").Set("updated_at = ?", now).Exec(ctx)
+		Set("erased_at = ?", now).Set("attempts = attempts + 1").Set("last_error = ''").Exec(ctx)
 	return errors.Wrap(err, "privacy: finish erasure")
 }
 
@@ -320,7 +319,7 @@ func newErasure(ref identity.Ref, now, due time.Time) (*Erasure, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "privacy: new id")
 	}
-	return &Erasure{ID: id, SubjectType: ref.Type, SubjectID: ref.ID, CreatedAt: now, UpdatedAt: now, DueAt: due}, nil
+	return &Erasure{ID: id, SubjectType: ref.Type, SubjectID: ref.ID, Timestamps: database.Timestamps{CreatedAt: now}, DueAt: due}, nil
 }
 
 // truncate 截短错误信息，保留前 maxError 个字符。

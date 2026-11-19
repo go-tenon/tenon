@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/uptrace/bun"
 
+	"github.com/go-tenon/tenon/database"
 	"github.com/go-tenon/tenon/identity"
 )
 
@@ -96,7 +97,7 @@ func (s *Service) Prepare(ctx context.Context, owner identity.Subject, in FileIn
 	r := File{
 		ID: id, Disk: in.Disk, Key: objectKey(id, now, name), Filename: name, ContentType: contentType, Size: in.Size,
 		OwnerType: owner.Type, OwnerID: owner.ID, Status: StatusTemporary, ExpiresAt: &expires,
-		CreatedAt: now, UpdatedAt: now,
+		Timestamps: database.Timestamps{CreatedAt: now},
 	}
 	if _, err := s.db.NewInsert().Model(&r).Exec(ctx); err != nil {
 		return File{}, errors.Wrap(err, "filesystem: prepare")
@@ -141,14 +142,11 @@ func (s *Service) Confirm(ctx context.Context, owner identity.Subject, id uuid.U
 	if r.Status == StatusReady {
 		return r, nil
 	}
-	now := time.Now().UTC()
-	res, err := s.db.NewUpdate().Model((*File)(nil)).
-		Set("status = ?", StatusReady).Set("expires_at = NULL").Set("updated_at = ?", now).
-		Where("id = ?", id).Where("status = ?", StatusTemporary).Where("expires_at > ?", now).Exec(ctx)
-	if err != nil {
-		return File{}, errors.Wrap(err, "filesystem: confirm")
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
+	err = s.db.NewUpdate().Model((*File)(nil)).
+		Set("status = ?", StatusReady).Set("expires_at = NULL").
+		Where("id = ?", id).Where("status = ?", StatusTemporary).Where("expires_at > ?", time.Now().UTC()).
+		Returning("updated_at").Scan(ctx, &r.UpdatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
 		// 并发确认已成功时返回最新记录；被删除或刚好过期则视为不存在。
 		r, err = s.owned(ctx, owner, id)
 		if err == nil && r.Status != StatusReady {
@@ -156,7 +154,10 @@ func (s *Service) Confirm(ctx context.Context, owner identity.Subject, id uuid.U
 		}
 		return r, err
 	}
-	r.Status, r.ExpiresAt, r.UpdatedAt = StatusReady, nil, now
+	if err != nil {
+		return File{}, errors.Wrap(err, "filesystem: confirm")
+	}
+	r.Status, r.ExpiresAt = StatusReady, nil
 	return r, nil
 }
 
@@ -192,7 +193,7 @@ func (s *Service) Open(ctx context.Context, id uuid.UUID) (io.ReadCloser, File, 
 func (s *Service) Delete(ctx context.Context, id uuid.UUID) error {
 	now := time.Now().UTC()
 	_, err := s.db.NewUpdate().Model((*File)(nil)).
-		Set("status = ?", StatusDeleted).Set("expires_at = ?", now).Set("updated_at = ?", now).
+		Set("status = ?", StatusDeleted).Set("expires_at = ?", now).
 		Where("id = ?", id).Where("status <> ?", StatusDeleted).Exec(ctx)
 	return errors.Wrap(err, "filesystem: delete")
 }
@@ -222,7 +223,7 @@ func (s *Service) Cleanup(ctx context.Context, limit int) (int, error) {
 		if r.Status == StatusTemporary {
 			// 只回收仍未确认且已过期的记录，与并发 Confirm 互斥。
 			res, err := s.db.NewUpdate().Model((*File)(nil)).
-				Set("status = ?", StatusDeleted).Set("updated_at = ?", now).
+				Set("status = ?", StatusDeleted).
 				Where("id = ?", r.ID).Where("status = ?", StatusTemporary).Where("expires_at <= ?", now).Exec(ctx)
 			if err != nil {
 				errs = append(errs, errors.Wrapf(err, "cleanup %s", r.ID))

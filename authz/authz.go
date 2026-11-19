@@ -101,12 +101,11 @@ func Cache(mc cache.Client, prefix string, ttl time.Duration) Option {
 type roleRow struct {
 	bun.BaseModel `bun:"table:authz_roles,alias:r"`
 
-	ID          uuid.UUID `bun:"id,pk,type:uuid"`
-	Tenant      string    `bun:"tenant,notnull"`
-	Name        string    `bun:"name,notnull"`
-	Description string    `bun:"description,notnull"`
-	CreatedAt   time.Time `bun:"created_at,notnull"`
-	UpdatedAt   time.Time `bun:"updated_at,notnull"`
+	ID uuid.UUID `bun:"id,pk,type:uuid"`
+	database.Timestamps
+	Tenant      string `bun:"tenant,notnull"`
+	Name        string `bun:"name,notnull"`
+	Description string `bun:"description,notnull"`
 }
 
 // permissionRow 是 authz_role_permissions 表中的一行：角色的一项权限。
@@ -230,7 +229,7 @@ func (s *Store) CreateRole(ctx context.Context, r Role) (Role, error) {
 		return Role{}, errors.Wrap(err, "authz: new id")
 	}
 	now := time.Now().UTC()
-	row := &roleRow{ID: id, Tenant: r.Tenant, Name: r.Name, Description: r.Description, CreatedAt: now, UpdatedAt: now}
+	row := &roleRow{ID: id, Tenant: r.Tenant, Name: r.Name, Description: r.Description, Timestamps: database.Timestamps{CreatedAt: now}}
 	err = s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 		if _, err := tx.NewInsert().Model(row).Exec(ctx); database.IsUniqueViolation(err, roleNameConstraint) {
 			return ErrRoleExists.New()
@@ -270,7 +269,7 @@ func (s *Store) UpdateRole(ctx context.Context, r Role, tenant string) (Role, er
 			return err
 		}
 		_, err := tx.NewUpdate().Model((*roleRow)(nil)).
-			Set("name = ?", r.Name).Set("description = ?", r.Description).Set("updated_at = ?", time.Now().UTC()).
+			Set("name = ?", r.Name).Set("description = ?", r.Description).
 			Where("id = ?", id).Exec(ctx)
 		if database.IsUniqueViolation(err, roleNameConstraint) {
 			return ErrRoleExists.New()
@@ -377,7 +376,7 @@ func (s *Store) EnsureRole(ctx context.Context, r Role) (Role, error) {
 	err = s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 		// 同时调用时只有一个插入成功，其余的等它提交后读到同一行。
 		now := time.Now().UTC()
-		row := &roleRow{ID: newID, Tenant: r.Tenant, Name: r.Name, Description: r.Description, CreatedAt: now, UpdatedAt: now}
+		row := &roleRow{ID: newID, Tenant: r.Tenant, Name: r.Name, Description: r.Description, Timestamps: database.Timestamps{CreatedAt: now}}
 		res, err := tx.NewInsert().Model(row).On("CONFLICT ON CONSTRAINT " + roleNameConstraint + " DO NOTHING").Exec(ctx)
 		if err != nil {
 			return errors.Wrap(err, "authz: insert role")
@@ -404,7 +403,7 @@ func (s *Store) EnsureRole(ctx context.Context, r Role) (Role, error) {
 		}
 		changed = true
 		_, err = tx.NewUpdate().Model((*roleRow)(nil)).
-			Set("description = ?", r.Description).Set("updated_at = ?", now).Where("id = ?", id).Exec(ctx)
+			Set("description = ?", r.Description).Where("id = ?", id).Exec(ctx)
 		if err != nil {
 			return errors.Wrap(err, "authz: update role")
 		}

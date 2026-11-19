@@ -147,6 +147,8 @@ import (
     "time"
 
     "github.com/google/uuid"
+
+    "github.com/go-tenon/tenon/database"
 )
 
 const (
@@ -155,22 +157,21 @@ const (
 )
 
 type Article struct {
-    ID          uuid.UUID  `bun:"id,pk"`
-    CreatedAt   time.Time  `bun:"created_at,notnull,skipupdate"`
-    UpdatedAt   time.Time  `bun:"updated_at,notnull"`
+    ID uuid.UUID `bun:"id,pk"`
+    database.Timestamps
+    DeletedAt   time.Time  `bun:"deleted_at,soft_delete,nullzero"`
     AuthorID    string     `bun:"author_id,notnull"`
     Title       string     `bun:"title,notnull"`
     Slug        string     `bun:"slug,notnull"`
     Content     string     `bun:"content,notnull"`
     Status      string     `bun:"status,notnull"`
     PublishedAt *time.Time `bun:"published_at"`
-    DeletedAt   time.Time  `bun:"deleted_at,soft_delete,nullzero"`
 }
 ```
 
 `Slug` 是文章在网址中的标识，例如 `/blog/hello-world` 中的 `hello-world`，它在所有文章中必须唯一。文章创建时是草稿（`draft`），发布后变为 `published`，并记录发布时间。
 
-模型声明字段映射和下面介绍的 Bun 行为，表结构本身由[迁移](migrations.md#migration-structure)管理。以 `id` 为主键的表在 `id` 之后紧跟 `created_at`、`updated_at`，见[时间列](migrations.md#timestamp-columns)；模型中的字段按同样的顺序写。`deleted_at` 由你按需声明。本文的 `Article` 示例同时使用时间戳和软删除。
+模型声明字段映射和下面介绍的 Bun 行为，表结构本身由[迁移](migrations.md#migration-structure)管理。以 `id` 为主键的表在 `id` 之后紧跟 `created_at`、`updated_at`，见[时间列](migrations.md#timestamp-columns)。`database.Timestamps` 就是这两列，嵌入模型后由 Bun 的钩子写入，见[自动维护时间戳](#timestamps)。`deleted_at` 由你按需声明，用于[软删除](advanced.md#soft-deletes)。模型中的字段按表中列的顺序写。
 
 <a id="primary-keys"></a>
 ### 主键
@@ -186,43 +187,49 @@ item := &Article{ID: uuid.Must(uuid.NewV7()), AuthorID: subject.ID}
 <a id="timestamps"></a>
 ### 自动维护时间戳
 
-如果你希望创建、修改记录时自动维护时间戳，可以在模型上实现 Bun 的 [`BeforeAppendModel`](https://bun.uptrace.dev/guide/hooks.html#beforeappendmodel) 钩子。Bun 会在构建插入或更新语句前自动调用它。
-
-为上面的 `Article` 实现钩子：
+`database.Timestamps` 是 `created_at`、`updated_at` 两列，嵌入模型后由 Bun 的钩子写入，你不用自己给它们赋值：
 
 ```go
-var _ bun.BeforeAppendModelHook = (*Article)(nil)
-
-func (a *Article) BeforeAppendModel(ctx context.Context, query bun.Query) error {
-    now := time.Now().UTC()
-    switch query.(type) {
-    case *bun.InsertQuery:
-        if a.CreatedAt.IsZero() {
-            a.CreatedAt = now
-        }
-        a.UpdatedAt = now
-    case *bun.UpdateQuery:
-        a.UpdatedAt = now
-    }
-    return nil
-}
+item := &Article{ID: uuid.Must(uuid.NewV7()), AuthorID: subject.ID, Title: "Hello"}
+_, err := db.NewInsert().Model(item).Exec(ctx)
+// item.CreatedAt 和 item.UpdatedAt 已经是插入时的时间
 ```
 
-这个实现会在插入时填充空的 `CreatedAt` 并设置 `UpdatedAt`，在更新时刷新 `UpdatedAt`。模型中 `CreatedAt` 的 `skipupdate` 标签会让 Bun 在根据模型生成更新字段时跳过创建时间。
+`db` 是打开的连接池，`subject` 是当前登录的主体。插入时 `CreatedAt` 为零值就填当前时间，`UpdatedAt` 取同一个值；调用方已经给出 `CreatedAt` 时保留它，例如导入旧系统的数据。批量插入切片时每个元素都会填上。
 
-钩子修改的是模型字段。使用 `Column(...)` 限定更新列时，仍需把 `updated_at` 包含进去。下面的 `item` 是已加载并修改标题的 `Article`，`db` 是打开的连接池：
+更新时，下面两种写法自动刷新 `updated_at`。`item` 是已经读出并修改了标题的文章，`id` 是文章的 ID：
 
 ```go
-_, err := db.NewUpdate().
-    Model(&item).
-    Column("title", "updated_at").
-    WherePK().
+// 传入模型，更新全部列：刷新 item.UpdatedAt，created_at 不变
+_, err := db.NewUpdate().Model(item).WherePK().Exec(ctx)
+
+// 没有模型实例，用 Set 写要改的列：在 SET 中加上 updated_at
+_, err = db.NewUpdate().Model((*Article)(nil)).
+    Set("status = ?", StatusPublished).
+    Where("id = ?", id).
     Exec(ctx)
 ```
 
-如果使用 `Set(...)` 显式指定更新表达式，需要同时设置 `Set("updated_at = ?", time.Now().UTC())`。`Model((*Article)(nil))` 和原生 SQL 绕过模型钩子，这些写入路径需要自行维护时间戳。迁移中的时间列不设默认值，时间总是由应用写入，这样测试才能用假时钟控制时间，见[控制时间](../testing/overview.md#controlling-time)。
+另外两种写法要自己带上 `updated_at`。钩子看不到语句中写了哪些列，只能改模型的字段：
 
-时间列用 `timestamptz`。`database.Open` 打开的连接把读出的时间放在 UTC 中，与运行程序的机器的时区无关，接口返回的时间因此总是 `...Z` 的形式。PostgreSQL 只保存到微秒：要让刚写入的值与之后读出的值完全相同（例如接口在创建后直接返回模型），写入前用 `time.Now().UTC().Truncate(time.Microsecond)`。
+```go
+// 用 Column 限定列时，列中写上 updated_at，钩子已经刷新了这个字段
+_, err = db.NewUpdate().Model(item).Column("title", "updated_at").WherePK().Exec(ctx)
+
+// 传入模型又用 Set 时，Bun 只更新 Set 中的列，自己加上 updated_at
+_, err = db.NewUpdate().Model(item).
+    Set("title = ?", item.Title).Set("updated_at = ?", time.Now().UTC()).
+    WherePK().Exec(ctx)
+```
+
+`created_at` 的 `skipupdate` 标签让 Bun 在根据模型生成更新语句时跳过它，所以更新不会改掉创建时间。钩子取的时间是 UTC，截到微秒，与 PostgreSQL 保存的精度相同，写入后的模型与再读出的值相等。
+
+> [!WARNING]
+> `Model((*Article)(nil)).Set(...)` 中不要再写 `Set("updated_at = ?", ...)`：钩子已经加了一个，同一列赋值两次，PostgreSQL 报错 `multiple assignments to same column "updated_at"`。
+
+原生 SQL、upsert（`INSERT … ON CONFLICT DO UPDATE`）的冲突更新不经过这些钩子：原生 SQL 自己写两列；upsert 的冲突更新写 `Set("updated_at = EXCLUDED.updated_at")`，不要覆盖 `created_at`。迁移中的时间列不设默认值，时间总是由应用写入，这样测试才能用假时钟控制时间，见[控制时间](../testing/overview.md#controlling-time)。
+
+时间列用 `timestamptz`。`database.Open` 打开的连接把读出的时间放在 UTC 中，与运行程序的机器的时区无关，接口返回的时间因此总是 `...Z` 的形式。PostgreSQL 只保存到微秒：自己写入的时间要与之后读出的值完全相同时（例如接口在创建后直接返回模型），写入前用 `time.Now().UTC().Truncate(time.Microsecond)`。
 
 <a id="running-queries"></a>
 ## 执行查询
@@ -418,6 +425,17 @@ func DefaultConfig() Config
 ```
 
 字段见[配置](#configuration)。
+
+### Timestamps
+
+```go
+type Timestamps struct {
+    CreatedAt time.Time `bun:"created_at,notnull,skipupdate" json:"created_at"`
+    UpdatedAt time.Time `bun:"updated_at,notnull" json:"updated_at"`
+}
+```
+
+嵌入模型，紧跟在 `ID` 之后。插入时填空的 `CreatedAt`、`UpdatedAt`；`Model(&x)` 更新全部列和 `Model((*T)(nil)).Set(...)` 时刷新 `updated_at`；`Column(...)` 和传入模型的 `Set(...)` 要自己带上 `updated_at`。见[自动维护时间戳](#timestamps)。
 
 ### RunInTx
 

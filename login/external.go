@@ -6,6 +6,8 @@ import (
 
 	"github.com/cockroachdb/errors"
 	"github.com/google/uuid"
+
+	"github.com/go-tenon/tenon/database"
 )
 
 // purposeExternal 是尚未绑定的第三方账号在 auth_challenges 中的用途，见 External。
@@ -95,7 +97,7 @@ func (r *Realm) External(ctx context.Context, ext External) (Outcome, error) {
 	row := &challengeRow{
 		ID: rid, Purpose: purposeExternal, SubjectType: string(r.opts.Type), Tenant: tenant,
 		Kind: id.Kind, Value: id.Value, ProofHash: sha(secret), Data: string(encoded),
-		ExpiresAt: now.Add(r.opts.ProofTTL), CreatedAt: now, UpdatedAt: now,
+		ExpiresAt: now.Add(r.opts.ProofTTL), Timestamps: database.Timestamps{CreatedAt: now},
 	}
 	if _, err := r.db.NewInsert().Model(row).Exec(ctx); err != nil {
 		return Outcome{}, errors.Wrap(err, "login: save external account")

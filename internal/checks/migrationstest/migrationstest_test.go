@@ -175,7 +175,8 @@ var timestampExempt = []string{
 }
 
 // checkTimestampColumns 检查实体表（主键只有 id 一列的表）的前三列依次是 id、created_at、updated_at，
-// 两个时间列都是 timestamptz NOT NULL。关联表、锁、计数这类以其他列为主键的表不检查。
+// 两个时间列都是 timestamptz NOT NULL；有软删除的 deleted_at 列时，它是第四列，timestamptz 允许为空。
+// 关联表、锁、计数这类以其他列为主键的表不检查。
 func checkTimestampColumns(t *testing.T, db *bun.DB) {
 	t.Helper()
 	var tables []struct {
@@ -219,6 +220,10 @@ ORDER BY c.table_name`).Scan(context.Background(), &tables)
 			if table.Types[i] != "timestamp with time zone" || table.Nulls[i] != "NO" {
 				t.Errorf("%s.%s: %s nullable=%s, want timestamptz NOT NULL", table.Name, table.Columns[i], table.Types[i], table.Nulls[i])
 			}
+		}
+		if i := slices.Index(table.Columns, "deleted_at"); i >= 0 &&
+			(i != 3 || table.Types[i] != "timestamp with time zone" || table.Nulls[i] != "YES") {
+			t.Errorf("%s.deleted_at: column %d, %s nullable=%s, want column 4, nullable timestamptz", table.Name, i+1, table.Types[i], table.Nulls[i])
 		}
 	}
 }

@@ -53,20 +53,19 @@ const (
 type Operation struct {
 	bun.BaseModel `bun:"table:operations,alias:op"`
 
-	ID          uuid.UUID            `bun:"id,pk,type:uuid"    json:"id"` // UUIDv7，按时间递增
+	ID uuid.UUID `bun:"id,pk,type:uuid"    json:"id"` // UUIDv7，按时间递增
+	database.Timestamps
 	Tenant      string               `bun:"tenant,notnull"     json:"-"`
 	OwnerType   identity.SubjectType `bun:"owner_type,notnull" json:"-"`
 	OwnerID     string               `bun:"owner_id,notnull"   json:"-"`
 	Kind        string               `bun:"kind,notnull"       json:"kind"` // 操作的类型，由应用定义，例如 articles.import
 	Status      Status               `bun:"status,notnull"     json:"status"`
-	Total       int                  `bun:"total,notnull"      json:"total"`           // 预计的单位数，0 表示还不知道
-	Processed   int                  `bun:"processed,notnull"  json:"processed"`       // 已经处理的单位数，包括失败的单位
-	Failed      int                  `bun:"failed,notnull"     json:"failed"`          // 失败的单位数
-	Version     int                  `bun:"version,notnull"    json:"-"`               // 每次保存加一
-	Error       string               `bun:"error,notnull"      json:"error,omitempty"` // failed 时的错误码
-	ErrorData   map[string]any       `bun:"error_data,notnull" json:"-"`               // 翻译 Error 的模板数据，见 ErrorMessage
-	CreatedAt   time.Time            `bun:"created_at,notnull" json:"created_at"`
-	UpdatedAt   time.Time            `bun:"updated_at,notnull" json:"updated_at"`
+	Total       int                  `bun:"total,notnull"      json:"total"`                  // 预计的单位数，0 表示还不知道
+	Processed   int                  `bun:"processed,notnull"  json:"processed"`              // 已经处理的单位数，包括失败的单位
+	Failed      int                  `bun:"failed,notnull"     json:"failed"`                 // 失败的单位数
+	Version     int                  `bun:"version,notnull"    json:"-"`                      // 每次保存加一
+	Error       string               `bun:"error,notnull"      json:"error,omitempty"`        // failed 时的错误码
+	ErrorData   map[string]any       `bun:"error_data,notnull" json:"-"`                      // 翻译 Error 的模板数据，见 ErrorMessage
 	CompletedAt *time.Time           `bun:"completed_at"       json:"completed_at,omitempty"` // 变为 completed 或 failed 的时间
 }
 
@@ -107,10 +106,9 @@ func (s *Service) Start(ctx context.Context, tx bun.IDB, owner identity.Subject,
 	if kind == "" {
 		return nil, errors.New("operation: empty kind")
 	}
-	now := time.Now().UTC()
 	op := &Operation{
 		ID: uuid.Must(uuid.NewV7()), Tenant: owner.Tenant, OwnerType: owner.Type, OwnerID: owner.ID,
-		Kind: kind, Status: StatusPending, ErrorData: map[string]any{}, CreatedAt: now, UpdatedAt: now,
+		Kind: kind, Status: StatusPending, ErrorData: map[string]any{},
 	}
 	_, err := tx.NewInsert().Model(op).Exec(ctx)
 	return op, errors.Wrap(err, "operation: start")

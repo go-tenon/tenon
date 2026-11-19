@@ -91,9 +91,8 @@ type Store struct {
 type row struct {
 	bun.BaseModel `bun:"table:api_tokens,alias:t"`
 
-	ID               uuid.UUID `bun:"id,pk,type:uuid"`
-	CreatedAt        time.Time `bun:"created_at,notnull"`
-	UpdatedAt        time.Time `bun:"updated_at,notnull"`
+	ID uuid.UUID `bun:"id,pk,type:uuid"`
+	database.Timestamps
 	TokenHash        string    `bun:"token_hash,notnull"`
 	SubjectType      string    `bun:"subject_type,notnull"`
 	SubjectID        string    `bun:"subject_id,notnull"`
@@ -256,7 +255,7 @@ func (s *Store) issue(ctx context.Context, sub identity.Subject, r *row, now tim
 	r.ID, r.TokenHash = id, hash(plain)
 	r.SubjectType, r.SubjectID = string(sub.Type), sub.ID
 	r.ImpersonatorType, r.ImpersonatorID = string(sub.Impersonator.Type), sub.Impersonator.ID
-	r.CreatedAt, r.UpdatedAt, r.LastUsedAt = now, now, now
+	r.CreatedAt, r.LastUsedAt = now, now
 	if _, err := s.db.NewInsert().Model(r).Exec(ctx); err != nil {
 		return "", errors.Wrap(err, "apitoken: insert")
 	}
@@ -371,14 +370,14 @@ func (s *Store) Confirm(ctx context.Context, sub identity.Subject, methods ...st
 	}
 	r.AuthMethods, r.AuthTime = strings.Join(merged, " "), now
 	_, err = s.db.NewUpdate().Model((*row)(nil)).
-		Set("auth_methods = ?", r.AuthMethods).Set("auth_time = ?", r.AuthTime).Set("updated_at = ?", now).
+		Set("auth_methods = ?", r.AuthMethods).Set("auth_time = ?", r.AuthTime).
 		Where("id = ?", r.ID).Exec(ctx)
 	return errors.Wrap(err, "apitoken: confirm")
 }
 
 // touch 记录 token 在 now 被使用。条件更新保证并发请求中只有一个真正写入。
 func (s *Store) touch(ctx context.Context, r *row, now time.Time) error {
-	q := s.db.NewUpdate().Model((*row)(nil)).Set("last_used_at = ?", now).Set("updated_at = ?", now).
+	q := s.db.NewUpdate().Model((*row)(nil)).Set("last_used_at = ?", now).
 		Where("id = ?", r.ID).Where("last_used_at < ?", now.Add(-touchInterval))
 	if r.IdleTimeout > 0 {
 		q = q.Set("expires_at = ?", deadline(r.EndsAt, time.Duration(r.IdleTimeout)*time.Second, now))

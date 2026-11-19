@@ -81,6 +81,7 @@ import (
     "github.com/google/uuid"
     "github.com/uptrace/bun"
 
+    "github.com/go-tenon/tenon/database"
     "github.com/go-tenon/tenon/errorx"
     "github.com/go-tenon/tenon/identity"
 )
@@ -89,9 +90,8 @@ import (
 type Article struct {
     bun.BaseModel `bun:"table:articles"`
 
-    ID          uuid.UUID  `bun:"id,pk" json:"id"`
-    CreatedAt   time.Time  `bun:"created_at,notnull" json:"created_at"`
-    UpdatedAt   time.Time  `bun:"updated_at,notnull" json:"updated_at"`
+    ID uuid.UUID `bun:"id,pk" json:"id"`
+    database.Timestamps
     AuthorID    string     `bun:"author_id,notnull" json:"author_id"`
     Title       string     `bun:"title,notnull" json:"title"`
     Slug        string     `bun:"slug,notnull" json:"slug"`
@@ -270,7 +270,6 @@ package article
 
 import (
     "context"
-    "time"
 
     "github.com/cockroachdb/errors"
     "github.com/google/uuid"
@@ -288,11 +287,7 @@ func NewCreate(db *bun.DB) *Create { return &Create{db: db} }
 
 // Handle 以 sub 为作者新建一篇草稿，slug 已被使用时返回 ErrSlugTaken。
 func (a *Create) Handle(ctx context.Context, sub identity.Subject, c Changes) (*Article, error) {
-    now := time.Now().UTC()
-    item := &Article{
-        ID: uuid.Must(uuid.NewV7()), AuthorID: sub.ID, Title: c.Title, Slug: c.Slug, Content: c.Content,
-        CreatedAt: now, UpdatedAt: now,
-    }
+    item := &Article{ID: uuid.Must(uuid.NewV7()), AuthorID: sub.ID, Title: c.Title, Slug: c.Slug, Content: c.Content}
     _, err := a.db.NewInsert().Model(item).Exec(ctx)
     if database.IsUniqueViolation(err, "articles_slug_key") {
         return nil, ErrSlugTaken.Wrap(err, errorx.Public("slug", c.Slug))
@@ -321,7 +316,6 @@ package article
 
 import (
     "context"
-    "time"
 
     "github.com/google/uuid"
     "github.com/uptrace/bun"
@@ -343,7 +337,7 @@ func (a *Update) Handle(ctx context.Context, sub identity.Subject, id uuid.UUID,
         if item, err = findOwn(ctx, tx, sub, id); err != nil {
             return err
         }
-        item.Title, item.Slug, item.Content, item.UpdatedAt = c.Title, c.Slug, c.Content, time.Now().UTC()
+        item.Title, item.Slug, item.Content = c.Title, c.Slug, c.Content
         _, err = tx.NewUpdate().Model(item).Column("title", "slug", "content", "updated_at").WherePK().Exec(ctx)
         if database.IsUniqueViolation(err, "articles_slug_key") {
             return ErrSlugTaken.Wrap(err, errorx.Public("slug", c.Slug))
@@ -440,7 +434,7 @@ func (a *Publish) Handle(ctx context.Context, sub identity.Subject, id uuid.UUID
             return ErrAlreadyPublished.New()
         }
         now := time.Now().UTC()
-        item.PublishedAt, item.UpdatedAt = &now, now
+        item.PublishedAt = &now
         _, err = tx.NewUpdate().Model(item).Column("published_at", "updated_at").WherePK().Exec(ctx)
         return err
     })

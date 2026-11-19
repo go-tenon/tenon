@@ -15,6 +15,8 @@ import (
 
 	"github.com/cockroachdb/errors"
 	"github.com/uptrace/bun"
+
+	"github.com/go-tenon/tenon/database"
 )
 
 // RegisterPath 是动态客户端注册的端点，Options.DynamicRegistration 为 true 时注册。
@@ -32,9 +34,8 @@ const (
 type registeredClient struct {
 	bun.BaseModel `bun:"table:oauth_clients,alias:ocl"`
 
-	ID           string    `bun:"id,pk"`
-	CreatedAt    time.Time `bun:"created_at,notnull"`
-	UpdatedAt    time.Time `bun:"updated_at,notnull"`
+	ID string `bun:"id,pk"`
+	database.Timestamps
 	Name         string    `bun:"name,notnull"`
 	RedirectURIs []string  `bun:"redirect_uris,type:jsonb,notnull"`
 	LastUsedAt   time.Time `bun:"last_used_at,notnull"`
@@ -68,7 +69,7 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC()
 	c := &registeredClient{
 		ID: registeredPrefix + rand.Text(), Name: strings.TrimSpace(req.ClientName), RedirectURIs: req.RedirectURIs,
-		CreatedAt: now, UpdatedAt: now, LastUsedAt: now,
+		Timestamps: database.Timestamps{CreatedAt: now}, LastUsedAt: now,
 	}
 	if c.Name == "" {
 		c.Name = host(c.RedirectURIs[0])

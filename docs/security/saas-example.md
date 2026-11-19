@@ -34,11 +34,10 @@ const Type identity.SubjectType = "staff"
 
 type Staff struct {
     bun.BaseModel `bun:"table:staff"`
-    ID        string    `bun:"id,pk"`
-    CreatedAt time.Time `bun:"created_at,notnull"`
-    UpdatedAt time.Time `bun:"updated_at,notnull"`
-    Name      string    `bun:"name,notnull"`
-    Disabled  bool      `bun:"disabled,notnull"`
+    ID string `bun:"id,pk"`
+    database.Timestamps
+    Name     string `bun:"name,notnull"`
+    Disabled bool   `bun:"disabled,notnull"`
 }
 
 func (s *Staff) Ref() identity.Ref { return identity.Ref{Type: Type, ID: s.ID} }
@@ -64,11 +63,10 @@ const Type identity.SubjectType = "member"
 
 type Member struct {
     bun.BaseModel `bun:"table:members"`
-    ID        string    `bun:"id,pk"`
-    CreatedAt time.Time `bun:"created_at,notnull"`
-    UpdatedAt time.Time `bun:"updated_at,notnull"`
-    Name      string    `bun:"name,notnull"`
-    Disabled  bool      `bun:"disabled,notnull"`
+    ID string `bun:"id,pk"`
+    database.Timestamps
+    Name     string `bun:"name,notnull"`
+    Disabled bool   `bun:"disabled,notnull"`
 }
 
 func (m *Member) Ref() identity.Ref { return identity.Ref{Type: Type, ID: m.ID} }

@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/uptrace/bun"
 
+	"github.com/go-tenon/tenon/database"
 	"github.com/go-tenon/tenon/identity"
 	"github.com/go-tenon/tenon/logging"
 )
@@ -19,9 +20,8 @@ const DefaultLimit = 50
 type Activity struct {
 	bun.BaseModel `bun:"table:activity_log,alias:al"`
 
-	ID               uuid.UUID            `bun:"id,pk,type:uuid"` // UUIDv7，按时间递增
-	CreatedAt        time.Time            `bun:"created_at,notnull"`
-	UpdatedAt        time.Time            `bun:"updated_at,notnull"`
+	ID uuid.UUID `bun:"id,pk,type:uuid"` // UUIDv7，按时间递增
+	database.Timestamps
 	Tenant           string               `bun:"tenant,notnull"` // 操作所在的租户，"" 为平台本身
 	ActorType        identity.SubjectType `bun:"actor_type,notnull"`
 	ActorID          string               `bun:"actor_id,notnull"` // 操作人，见 Actor；可以为空
@@ -52,8 +52,7 @@ func Record(ctx context.Context, db bun.IDB, actor identity.Subject, a Activity)
 	if err != nil {
 		return errors.Wrap(err, "activity: new id")
 	}
-	now := time.Now().UTC()
-	a.ID, a.CreatedAt, a.UpdatedAt = id, now, now
+	a.ID, a.Timestamps = id, database.Timestamps{}
 	a.Tenant, a.ActorType, a.ActorID = actor.Tenant, actor.Type, actor.ID
 	a.ImpersonatorType, a.ImpersonatorID = actor.Impersonator.Type, actor.Impersonator.ID
 	a.RequestID = logging.RequestID(ctx)

@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/uptrace/bun"
 
+	"github.com/go-tenon/tenon/database"
 	"github.com/go-tenon/tenon/errorx"
 	"github.com/go-tenon/tenon/identity"
 )
@@ -35,9 +36,8 @@ func RecipientOf(s identity.Subject) Recipient {
 type Notification struct {
 	bun.BaseModel `bun:"table:notifications,alias:n"`
 
-	ID            uuid.UUID            `bun:"id,pk,type:uuid"` // UUIDv7，按时间递增
-	CreatedAt     time.Time            `bun:"created_at,notnull"`
-	UpdatedAt     time.Time            `bun:"updated_at,notnull"`
+	ID uuid.UUID `bun:"id,pk,type:uuid"` // UUIDv7，按时间递增
+	database.Timestamps
 	Tenant        string               `bun:"tenant,notnull"`
 	RecipientType identity.SubjectType `bun:"recipient_type,notnull"`
 	RecipientID   string               `bun:"recipient_id,notnull"`
@@ -65,7 +65,6 @@ func Send(ctx context.Context, db bun.IDB, n Notification, to ...Recipient) ([]N
 	if n.Data == nil {
 		n.Data = map[string]any{}
 	}
-	now := time.Now().UTC()
 	seen := make(map[Recipient]bool, len(to))
 	rows := make([]Notification, 0, len(to))
 	for _, r := range to {
@@ -81,7 +80,7 @@ func Send(ctx context.Context, db bun.IDB, n Notification, to ...Recipient) ([]N
 			return nil, errors.Wrap(err, "notification: new id")
 		}
 		row := n
-		row.ID, row.CreatedAt, row.UpdatedAt, row.ReadAt = id, now, now, time.Time{}
+		row.ID, row.Timestamps, row.ReadAt = id, database.Timestamps{}, time.Time{}
 		row.Tenant, row.RecipientType, row.RecipientID = r.Tenant, r.Type, r.ID
 		rows = append(rows, row)
 	}
@@ -161,9 +160,8 @@ func MarkAllRead(ctx context.Context, db bun.IDB, r Recipient) error {
 
 // markRead 把收件人 r 的通知标为已读；ids 为 nil 时标记全部。
 func markRead(ctx context.Context, db bun.IDB, r Recipient, ids []uuid.UUID) error {
-	now := time.Now().UTC()
 	upd := of(db.NewUpdate().Model((*Notification)(nil)), r).
-		Set("read_at = ?", now).Set("updated_at = ?", now).Where("read_at IS NULL")
+		Set("read_at = ?", time.Now().UTC()).Where("read_at IS NULL")
 	if ids != nil {
 		upd = upd.Where("id IN (?)", bun.List(ids))
 	}
