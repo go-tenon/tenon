@@ -29,6 +29,7 @@ func runClient(t *testing.T, args ...string) (string, error) {
 }
 
 func TestCommandWritesClientAndRemovesStaleFiles(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	out := filepath.Join(dir, "api")
 	write := func(name, content string) {
@@ -66,6 +67,7 @@ func TestCommandWritesClientAndRemovesStaleFiles(t *testing.T) {
 }
 
 func TestCommandRequiresOut(t *testing.T) {
+	t.Parallel()
 	_, err := runClient(t, "client")
 	var exit *command.ExitError
 	if !errors.As(err, &exit) || exit.Code != command.ExitUsage {
@@ -75,6 +77,7 @@ func TestCommandRequiresOut(t *testing.T) {
 
 // --ts 把每个 API 的 TypeScript 客户端写到以 API 名称命名的子目录，删除上次生成、这次已经移除的 .ts 文件，保留手写的文件。
 func TestCommandWritesTSClient(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	out := filepath.Join(root, "api") // BasePath /api 的客户端
 	if err := os.MkdirAll(out, 0o755); err != nil {
@@ -108,6 +111,7 @@ func TestCommandWritesTSClient(t *testing.T) {
 }
 
 func TestTSDirs(t *testing.T) {
+	t.Parallel()
 	api := func(base string) *rest.API {
 		return rest.New(chi.NewRouter(), rest.Options{Title: "x", BasePath: base})
 	}

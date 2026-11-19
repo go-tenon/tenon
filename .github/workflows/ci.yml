@@ -142,6 +142,19 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+          cache: false
+
+      # setup-go 自带的缓存按 go.sum 作键，命中后不再保存，框架自己的包每次都要重新编译。
+      # 这里每次提交保存一份编译缓存，下一次从最近的一份恢复；Go 会删掉 5 天没用过的条目，缓存不会一直变大。
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-test-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            go-test-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}-
+            go-test-${{ runner.os }}-
 
       # 生成的 TypeScript 客户端用 bun 做类型检查和往返测试（clientgen）。
       - uses: oven-sh/setup-bun@v2

@@ -45,6 +45,7 @@ var catalog = []identity.Permission{
 }
 
 func TestTSMetadata(t *testing.T) {
+	t.Parallel()
 	app := fstest.MapFS{"zh-CN.yaml": {Data: []byte("validation.filled: 必须填写\nnote.missing: 没有这条笔记\n")}}
 	res, err := clientgen.GenerateTS(adminAPI(catalog, "notes:write"), clientgen.TSOptions{Name: "admin", Translations: []fs.FS{app}, Main: exampleMain})
 	if err != nil {
@@ -90,6 +91,7 @@ func TestTSMetadata(t *testing.T) {
 
 // 枚举的显示文字：一种语言只有部分取值有显示文字，或者所有语言都没有时警告。
 func TestTSEnumWarnings(t *testing.T) {
+	t.Parallel()
 	for name, c := range map[string]struct {
 		translations fstest.MapFS
 		want         string
@@ -115,6 +117,7 @@ func TestTSEnumWarnings(t *testing.T) {
 
 // 权限目录写入 OpenAPI 的 x-tenon-permissions，按名称排序。
 func TestPermissionsInOpenAPI(t *testing.T) {
+	t.Parallel()
 	data, err := adminAPI(catalog, "notes:write").OpenAPIJSON()
 	if err != nil {
 		t.Fatal(err)
@@ -134,6 +137,7 @@ type noteListOut struct{ Body page.Offset[noteDTO] }
 
 // 资源：接口要求的权限写进 permissions；缺少显示文字时返回警告。
 func TestTSResource(t *testing.T) {
+	t.Parallel()
 	api := rest.New(chi.NewRouter(), rest.Options{Title: "Admin", Accounts: identity.Accounts{"staff": nil}, Permissions: catalog})
 	validate := func(context.Context, string) (identity.Subject, error) {
 		return identity.Subject{Type: "staff", ID: "a"}, nil
@@ -180,6 +184,7 @@ type siteSettingsIn struct{ Body siteSettings }
 
 // 设置：两个接口的位置和要求的权限、表单字段、显示文字；缺少显示文字时返回警告。
 func TestTSSettings(t *testing.T) {
+	t.Parallel()
 	api := rest.New(chi.NewRouter(), rest.Options{Title: "Admin", Accounts: identity.Accounts{"staff": nil}, Permissions: catalog})
 	validate := func(context.Context, string) (identity.Subject, error) {
 		return identity.Subject{Type: "staff", ID: "a"}, nil

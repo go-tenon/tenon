@@ -42,6 +42,7 @@ func exampleAPIOn(router chi.Router, valid tokens) *rest.API {
 }
 
 func TestRoundTrip(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	base := serve(t, tokens{"secret": true})
 	anonymous := api.New(api.Options{BaseURL: base, Language: func() string { return "en" }})
@@ -161,6 +162,7 @@ func (r *rotating) Refresh(context.Context) error {
 }
 
 func TestConcurrentUnauthorizedRequestsRefreshOnce(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	base := serve(t, tokens{"fresh": true})
 	auth := &rotating{current: "stale", next: "fresh"}
@@ -193,6 +195,7 @@ func TestConcurrentUnauthorizedRequestsRefreshOnce(t *testing.T) {
 }
 
 func TestPublicEndpointsNeverSendTheToken(t *testing.T) {
+	t.Parallel()
 	var seen atomic.Value
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		seen.Store(r.Header.Get("Authorization") + "|" + r.URL.Path + "|" + r.Header.Get("X-App-Version"))
