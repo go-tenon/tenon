@@ -89,6 +89,12 @@ function Orders() {
 ```tsx
 { accessor: "error", title: "错误", ellipsis: true, render: (j) => <CellLink onClick={() => setOpen(j.id)}>{j.error}</CellLink> }
 ```
+
+- <a id="long-text"></a>说明、备注这类可能很长的文字用 `TruncatedText`：单元格中只显示一行，铺满列的宽度，超出的部分用省略号代替；被截断时，鼠标停在上面会在上方弹出全文，鼠标可以移进去选中复制。列宽按文字本身的宽度，最宽 320px（`maxWidth`），变窄时最窄 120px（`minWidth`），所以短文字不会把列撑宽，长文字也不会挤掉其他列。[`ResourcePage`](resources.md#admin) 中的文字列自动使用它：
+
+```tsx
+{ accessor: "note", title: "备注", render: (o) => <TruncatedText value={o.note} /> }
+```
 - 行高、字号随主题的预设：运营后台更紧凑。
 
 <a id="description-list"></a>
@@ -242,6 +248,7 @@ import { ButtonLink } from "@go-tenon/ui"
 | `useList(Route)` | 地址中的列表状态：`params`、`page`、`perPage`、`sort`、`filters`、`setFilters`、`setPage`、`setSort`、`reset`、`tableState` |
 | `useSelection(resetOn)` | 列表的选中项 |
 | `DataTable`、`Column`、`TableList`、`CellLink` | 表格和单元格中打开详情的链接 |
+| `TruncatedText` | 单元格中的长文本：一行显示，被截断时鼠标停在上面弹出全文 |
 | `DescriptionList`、`DescriptionItem`、`StatusDot` | 描述列表和状态圆点 |
 | `useSchemaForm({ schema, rules, initialValues })` | 用生成的规则校验的 `@mantine/form` 表单 |
 | `applyServerErrors(form, err)`、`FormError` | 服务端的字段错误设置到字段；表单上方的错误 |

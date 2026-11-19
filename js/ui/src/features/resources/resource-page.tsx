@@ -41,6 +41,7 @@ import { confirm, notifyError, notifySuccess } from "../../components/feedback"
 import { applyServerErrors, FormError, useSchemaForm } from "../../components/form/form"
 import { useUnsavedChanges } from "../../components/form/rules"
 import { Page } from "../../components/page"
+import { TruncatedText } from "../../components/truncated-text"
 import { layoutMetrics } from "../../theme/theme"
 import { DefaultInput, type FieldInput, FieldValue } from "./fields"
 import {
@@ -163,8 +164,14 @@ function ResourceList({
     sortable: f.sortable,
     fixed: i === 0,
     noWrap: f.kind === "datetime" || f.kind === "date" || f.kind === "number",
-    render: (row) =>
-      render[f.name]?.(row[f.name], row) ?? <FieldValue field={f} value={row[f.name]} display={model.display} />,
+    // 文字列用 TruncatedText：只显示一行，被截断时鼠标停在上面弹出全文。
+    render: (row) => {
+      const value = row[f.name]
+      const custom = render[f.name]?.(value, row)
+      if (custom != null) return custom
+      if (f.kind === "text" && typeof value === "string" && value !== "") return <TruncatedText value={value} />
+      return <FieldValue field={f} value={value} display={model.display} />
+    },
   }))
 
   const actions = model.actions.filter((a) => view.can.action(a.name))
