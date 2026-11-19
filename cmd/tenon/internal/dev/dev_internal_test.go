@@ -92,28 +92,41 @@ func TestGenerations(t *testing.T) {
 	}
 }
 
-// 应用的源码：.go（测试除外）、go.mod、go.sum；跳过隐藏目录、node_modules、testdata、dist。
-func TestGoSourceSnapshot(t *testing.T) {
+// 影响应用编译的文件：.go（测试除外）、go.mod、go.sum，以及与带 //go:embed 的 .go 文件在同一个目录中的文件；
+// 跳过隐藏目录、node_modules、testdata、dist。
+func TestGoInputsSnapshot(t *testing.T) {
 	dir := t.TempDir()
-	for _, f := range []string{"main.go", "go.mod", "go.sum", "a_test.go", "README.md", "internal/x.go",
-		".git/x.go", "apps/web/node_modules/y.go", "testdata/z.go", "apps/web/dist/w.go", "apps/dist/v.go", "apps/apps.go"} {
+	files := map[string]string{
+		"main.go": "x", "go.mod": "x", "go.sum": "x", "a_test.go": "x", "README.md": "x", "internal/x.go": "x",
+		"internal/notes.md": "x", ".git/x.go": "x", "apps/web/node_modules/y.go": "x", "testdata/z.go": "x",
+		"apps/web/dist/w.go": "x", "apps/dist/v.go": "x",
+		// 嵌入的翻译和迁移：与带 //go:embed 的 embed.go 在同一个目录。
+		"locales/embed.go": "package locales\n\n//go:embed *.yaml\nvar FS embed.FS\n", "locales/zh-CN.yaml": "x",
+		"migrations/embed.go": "package migrations\n\n//go:embed *\nvar FS embed.FS\n", "migrations/1_init.sql": "x",
+		// apps.go 嵌入 dist：前端的源码在子目录中，不算。
+		"apps/apps.go": "package apps\n\n//go:embed all:dist\nvar Dist embed.FS\n", "apps/web/src/page.tsx": "x",
+		// 测试文件中的 //go:embed 不算。
+		"fixtures/fixtures_test.go": "//go:embed *.json", "fixtures/a.json": "x",
+	}
+	for f, content := range files {
 		path := filepath.Join(dir, f)
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
-	snap := snapshot(dir, goSource)
-	var files []string
+	snap := snapshot(dir, goInputs())
+	var got []string
 	for _, line := range strings.Split(strings.TrimSpace(snap), "\n") {
 		rel, _ := filepath.Rel(dir, strings.Fields(line)[0])
-		files = append(files, rel)
+		got = append(got, filepath.ToSlash(rel))
 	}
-	want := []string{"apps/apps.go", "go.mod", "go.sum", "internal/x.go", "main.go"}
-	if !slices.Equal(files, want) {
-		t.Errorf("files = %q", files)
+	want := []string{"apps/apps.go", "go.mod", "go.sum", "internal/x.go", "locales/embed.go", "locales/zh-CN.yaml",
+		"main.go", "migrations/1_init.sql", "migrations/embed.go"}
+	if !slices.Equal(got, want) {
+		t.Errorf("files = %q", got)
 	}
 }
 

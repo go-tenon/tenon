@@ -53,10 +53,10 @@ func (d dev) serve(ctx context.Context) error {
 	changes := make(chan struct{}, 1)
 	watching := make(chan struct{})
 	defer func() { <-watching }()
-	last := snapshot(".", goSource)
+	last := snapshot(".", goInputs())
 	go func() {
 		defer close(watching)
-		_ = watchFrom(ctx, last, func() string { return snapshot(".", goSource) }, pollInterval, func() {
+		_ = watchFrom(ctx, last, func() string { return snapshot(".", goInputs()) }, pollInterval, func() {
 			select {
 			case changes <- struct{}{}:
 			default:

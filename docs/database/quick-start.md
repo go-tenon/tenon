@@ -293,7 +293,7 @@ func (a *Create) Handle(ctx context.Context, subject identity.Subject, c Changes
 | 函数 | 判断的约束 | SQLSTATE |
 | --- | --- | --- |
 | `IsUniqueViolation(err, names...)` | 唯一约束与主键 | 23505 |
-| `IsForeignKeyViolation(err)` | 外键约束 | 23503 |
+| `IsForeignKeyViolation(err)` | 外键约束，包括 `ON DELETE RESTRICT` 的冲突 | 23503、23001 |
 | `IsCheckViolation(err)` | 检查约束 | 23514 |
 | `IsDeadlock(err)` | 死锁 | 40P01 |
 

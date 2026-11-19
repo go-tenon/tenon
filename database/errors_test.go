@@ -19,8 +19,11 @@ func TestConstraintErrors(t *testing.T) {
 		`CREATE TABLE articles (id text PRIMARY KEY, slug text NOT NULL, n integer CHECK (n > 0),
 		    CONSTRAINT articles_slug_key UNIQUE (slug))`,
 		`CREATE TABLE comments (id text PRIMARY KEY, article_id text NOT NULL REFERENCES articles (id))`,
+		`CREATE TABLE pins (id text PRIMARY KEY, article_id text NOT NULL REFERENCES articles (id) ON DELETE RESTRICT)`,
 		`INSERT INTO articles VALUES ('1', 'hello', 1)`,
+		`INSERT INTO articles VALUES ('4', 'pinned', 1)`,
 		`INSERT INTO comments VALUES ('1', '1')`,
+		`INSERT INTO pins VALUES ('1', '4')`,
 	} {
 		if _, err := db.ExecContext(ctx, q); err != nil {
 			t.Fatal(err)
@@ -41,6 +44,10 @@ func TestConstraintErrors(t *testing.T) {
 	}
 	if err := exec(`DELETE FROM articles WHERE id = '1'`); !database.IsForeignKeyViolation(err) {
 		t.Errorf("foreign key delete: %v", err)
+	}
+	// ON DELETE RESTRICT 的冲突是 SQLSTATE 23001，同样是外键冲突。
+	if err := exec(`DELETE FROM articles WHERE id = '4'`); !database.IsForeignKeyViolation(err) {
+		t.Errorf("foreign key delete restrict: %v", err)
 	}
 	if err := exec(`INSERT INTO articles VALUES ('3', 'c', 0)`); !database.IsCheckViolation(err) || database.IsUniqueViolation(err) {
 		t.Errorf("check: %v", err)

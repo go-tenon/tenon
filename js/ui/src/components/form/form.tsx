@@ -1,11 +1,11 @@
 // 表单：基于 @mantine/form。校验规则来自生成的 schemas.ts（与服务端相同），服务端返回的字段错误显示在字段下面，
-// 其他错误显示在表单上方；有未保存的修改时，离开页面之前询问。
+// 其他错误显示在表单上方；出错的字段在表单中没有输入框时，提示同样显示在表单上方；有未保存的修改时，离开页面之前询问。
 
 import { describeError, type ErrorInfo, type Schema } from "@go-tenon/client"
 import { Alert } from "@mantine/core"
 import { type UseFormReturnType, useForm } from "@mantine/form"
 import { IconAlertCircle } from "@tabler/icons-react"
-import { type ReactNode, useMemo } from "react"
+import { type ReactNode, useMemo, useRef, useState } from "react"
 import { errorMessage } from "../feedback"
 import { type FormRulesOptions, formValidator, serverErrors } from "./rules"
 
@@ -16,6 +16,20 @@ export interface SchemaFormOptions<T> {
   /** components、messages 和 language，例如 model.ruleOptions。 */
   rules?: FormRulesOptions
   initialValues: T
+}
+
+/**
+ * useSchemaForm 返回的表单：@mantine/form 的表单，加上两项。
+ *
+ * 出错的字段在表单中没有输入框时（例如值中多了 schema 不允许的字段），错误显示不出来，提交又被拦下，看起来是按钮没有反应。
+ * 表单记下哪些字段用 getInputProps 渲染了输入框，这类错误改为显示在表单上方。
+ */
+// biome-ignore lint/suspicious/noExplicitAny: 与 @mantine/form 的 useForm 相同的约束
+export type SchemaForm<T extends Record<string, any>> = UseFormReturnType<T> & {
+  /** 上一次提交时校验失败、出错的字段在表单中没有输入框时的错误，交给 FormError 显示在表单上方；没有时为 undefined。 */
+  hiddenError?: ErrorInfo
+  /** 字段 path（用点连接，例如 items.0.name）是否用 getInputProps 渲染了输入框。 */
+  hasInput(path: string): boolean
 }
 
 /**
@@ -32,32 +46,63 @@ export function useSchemaForm<T extends Record<string, any>>({
   schema,
   rules,
   initialValues,
-}: SchemaFormOptions<T>): UseFormReturnType<T> {
+}: SchemaFormOptions<T>): SchemaForm<T> {
   const validate = useMemo(() => formValidator(schema, rules), [schema, rules])
   // 提交时校验整个表单；之后离开一个字段时校验它，修改时清除它的错误。
-  return useForm<T>({
+  const form = useForm<T>({
     mode: "controlled",
     initialValues,
     validate: (values) => validate(values),
     validateInputOnBlur: true,
   })
+  // inputs 是渲染过输入框的字段；表单渲染时 getInputProps 记下它们。
+  const inputs = useRef(new Set<string>()).current
+  const [hiddenError, setHiddenError] = useState<ErrorInfo>()
+  const getInputProps: typeof form.getInputProps = (path, options) => {
+    inputs.add(String(path))
+    return form.getInputProps(path, options)
+  }
+  const onSubmit: typeof form.onSubmit = (handleSubmit, handleValidationFailure) =>
+    form.onSubmit(
+      (values, event) => {
+        setHiddenError(undefined)
+        return handleSubmit(values, event)
+      },
+      (errors, values, event) => {
+        const hidden = Object.entries(errors).filter(([path, message]) => message && !inputs.has(path))
+        setHiddenError(
+          hidden.length === 0
+            ? undefined
+            : {
+                kind: "invalid",
+                message: hidden.map(([path, message]) => `${path}：${String(message)}`).join("；"),
+                fields: hidden.map(([path, message]) => ({ location: path, message: String(message) })),
+                params: {},
+              },
+        )
+        handleValidationFailure?.(errors, values, event)
+      },
+    )
+  return { ...form, getInputProps, onSubmit, hiddenError, hasInput: (path) => inputs.has(path) }
 }
 
 /**
  * 把接口返回的错误设置到表单：字段错误显示在字段下面，返回其他错误（没有时为 undefined），交给 FormError 显示。
- * 错误指出的字段不在这个表单中时（例如业务错误用 errorx.Field 指出了表单没有的字段），返回这个错误，提示显示在表单上方。
+ * 错误指出的字段在表单中没有输入框时（例如业务错误用 errorx.Field 指出了表单没有的字段），返回这个错误，提示显示在表单上方。
+ * form 是 useSchemaForm 的表单时按渲染过的输入框判断，其他表单按值中有没有这个字段判断。
  *
  *   catch (err) { setFormError(applyServerErrors(form, err)) }
  */
 export function applyServerErrors(
-  form: Pick<UseFormReturnType<never>, "setFieldError"> & { getValues(): unknown },
+  form: Pick<UseFormReturnType<never>, "setFieldError"> & { getValues(): unknown; hasInput?(path: string): boolean },
   err: unknown,
 ): ErrorInfo | undefined {
   const { fields, form: other } = serverErrors(err)
   const values = form.getValues()
+  const shown = (path: string) => (form.hasInput ? form.hasInput(path) : hasPath(values, path))
   let missing = false
   for (const [path, message] of Object.entries(fields)) {
-    if (hasPath(values, path)) form.setFieldError(path as never, message)
+    if (shown(path)) form.setFieldError(path as never, message)
     else missing = true
   }
   return other ?? (missing ? describeError(err) : undefined)

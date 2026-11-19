@@ -24,7 +24,6 @@ import { clearOnIdentityChange } from "@go-tenon/client"
 import { createQueries } from "@blog/client/api/queries"
 
 export const queries = createQueries(api, {
-  queryClient,
   scope: session.scope, // [账号, 租户]：切换账号或租户后，旧的缓存不再命中
 })
 clearOnIdentityChange(session, queryClient) // 登录、退出、切换身份时清空缓存
@@ -46,7 +45,7 @@ function Article({ id }: { id: string }) {
 ```
 
 - query key 是 `[...scope, API 名称, 分组, 接口, ...参数]`，例如 `[42, "acme", "api", "article", "get", "0193…"]`。分组是 operationId 的第一段，API 名称是客户端的目录名。
-- 修改成功后，同一分组的查询全部失效：`article-publish` 让文章列表和所有文章详情重新获取。需要不同的行为时，在 `useMutation` 中覆盖 `onSuccess`。
+- 修改成功后，同一分组的查询全部失效：`article-publish` 让文章列表和所有文章详情重新获取。失效用执行这次修改的 QueryClient（TanStack Query 交给 `onSuccess` 的 `context.client`），所以 `queries` 可以在模块中创建，不需要 QueryClient；服务端渲染时每个请求的 QueryClient 各自失效。`createQueries` 的 `queryClient` 选项设置时用它。需要不同的行为时，在 `useMutation` 中覆盖 `onSuccess`。
 - `mutationFn` 的参数：方法只有一个参数时就是这个参数；有多个参数时（例如路径参数加请求体）是参数组成的数组。
 - `queries.article.key()` 是分组的 key 前缀，`queries.key()` 是整个 API 的。
 - 事件流和下载接口没有生成的选项，直接调用客户端的方法。
