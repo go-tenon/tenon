@@ -625,7 +625,8 @@ export function useResourceForm<T extends Record<string, any>>(
       setError(applyServerErrors(form, err))
     }
   })
-  return { form, error, submit, saving: save.isPending }
+  // 出错的字段在表单中没有输入框时，提示同样显示在 FormError 中。
+  return { form, error: error ?? form.hiddenError, submit, saving: save.isPending }
 }
 
 /** 资源表单底部的按钮：取消和保存（新建时是“创建”），靠右。 */

@@ -63,6 +63,20 @@ describe("validate", () => {
     expect(codes(s, { a: null, b: 1, c: "x" })).toEqual(["body.c validation.integer"])
   })
 
+  it("值为 undefined 的字段等于没有这个字段，与 JSON.stringify 之后服务端收到的相同", () => {
+    const s = {
+      type: "object",
+      properties: { name: { type: "string" }, price: { type: "number", minimum: 0 } },
+      required: ["name"],
+      additionalProperties: false,
+    }
+    // 可选字段为 undefined：不检查类型；必填字段为 undefined：是缺少；多余的字段为 undefined：不算多余。
+    expect(codes(s, { name: "x", price: undefined })).toEqual([])
+    expect(codes(s, { name: undefined })).toEqual(["body.name validation.required"])
+    expect(codes(s, { name: "x", extra: undefined })).toEqual([])
+    expect(codes(s, { name: "x", extra: 1 })).toEqual(["body.extra validation.unexpected"])
+  })
+
   it("语言回退：主语言，然后是第一种语言；没有模板时提示是错误码", () => {
     expect(validate({ type: "integer", minimum: 1 }, 0, { messages, language: "zh-TW" })[0].message).toBe("不能小于 1")
     expect(validate({ type: "integer", minimum: 1 }, 0, { messages, language: "ja" })[0].message).toBe(

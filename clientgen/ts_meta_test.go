@@ -57,7 +57,7 @@ func TestTSMetadata(t *testing.T) {
 		"messages.ts": {`"validation.filled": "必须填写"`, `"validation.min_length": "至少 {{.Min}} 个字符"`},
 		// 请求体的校验规则在 components 中，说明等字段不保留。
 		"schemas.ts": {`"$ref": "#/components/schemas/NoteInputBody"`, `"maxLength": 80`, `"minLength": 1`},
-		"queries.ts": {`[...(options.scope?.() ?? []), "admin", ...parts]`, `queryKey: key("note", "list", ...args)`, `onSuccess: () => invalidate("note")`},
+		"queries.ts": {`[...(options.scope?.() ?? []), "admin", ...parts]`, `queryKey: key("note", "list", ...args)`, `invalidate(context, "note")`},
 	} {
 		got := string(res.Files[file])
 		for _, want := range wants {

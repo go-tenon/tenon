@@ -18,8 +18,9 @@ func IsUniqueViolation(err error, constraints ...string) bool {
 // IsDeadlock 报告事务是否因死锁被数据库中止（SQLSTATE 40P01）。整个事务可以重试。
 func IsDeadlock(err error) bool { return hasCode(err, "40P01") }
 
-// IsForeignKeyViolation 报告是否为外键冲突（SQLSTATE 23503）。
-func IsForeignKeyViolation(err error) bool { return hasCode(err, "23503") }
+// IsForeignKeyViolation 报告是否为外键冲突：SQLSTATE 23503，以及外键声明 ON DELETE RESTRICT 或 ON UPDATE RESTRICT 时
+// 删除、修改被引用的行得到的 23001。
+func IsForeignKeyViolation(err error) bool { return hasCode(err, "23503") || hasCode(err, "23001") }
 
 // IsCheckViolation 报告是否为检查约束冲突（SQLSTATE 23514）。
 func IsCheckViolation(err error) bool { return hasCode(err, "23514") }

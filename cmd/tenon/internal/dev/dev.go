@@ -3,6 +3,7 @@
 package dev
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -420,8 +421,34 @@ func snapshot(dir string, include func(path string) bool) string {
 	return b.String()
 }
 
-// goSource 报告 path 是否影响应用的编译：.go（测试除外）、go.mod、go.sum。
+// goSource 报告 path 是否是 Go 的源码：.go（测试除外）、go.mod、go.sum。
 func goSource(path string) bool {
 	base := filepath.Base(path)
 	return strings.HasSuffix(base, ".go") && !strings.HasSuffix(base, "_test.go") || base == "go.mod" || base == "go.sum"
+}
+
+// goInputs 返回判断文件是否影响应用编译的函数：Go 的源码（goSource），以及与带 //go:embed 的 .go 文件（测试除外）
+// 在同一个目录中的文件，例如 locales/embed.go 嵌入的翻译文件、migrations/embed.go 嵌入的 SQL，它们被编译进程序，
+// 改了也要重新编译。子目录中的文件不算：apps/apps.go 嵌入 apps/dist，前端的源码改了不重新编译 Go。
+// 返回的函数记下每个目录的结果，每次快照创建一个；读不了的目录和文件当作没有 //go:embed，与 snapshot 忽略读取错误相同。
+func goInputs() func(path string) bool {
+	embeds := map[string]bool{}
+	hasEmbed := func(dir string) bool {
+		if v, ok := embeds[dir]; ok {
+			return v
+		}
+		entries, _ := os.ReadDir(dir)
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") || strings.HasSuffix(e.Name(), "_test.go") {
+				continue
+			}
+			if data, err := os.ReadFile(filepath.Join(dir, e.Name())); err == nil && bytes.Contains(data, []byte("//go:embed")) {
+				embeds[dir] = true
+				return true
+			}
+		}
+		embeds[dir] = false
+		return false
+	}
+	return func(path string) bool { return goSource(path) || hasEmbed(filepath.Dir(path)) }
 }

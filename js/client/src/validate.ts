@@ -152,9 +152,10 @@ function checkObject(s: Schema, m: Record<string, unknown>, path: string, compon
   const props = (s.properties ?? {}) as Record<string, Schema>
   const required = new Set(Array.isArray(s.required) ? (s.required as string[]) : [])
   const names = Object.keys(props).sort()
-  const keys = Object.keys(m)
+  // 值为 undefined 的字段等于没有这个字段：JSON.stringify 不写出它，服务端收不到，例如表单中清空的可选数字。
+  const keys = Object.keys(m).filter((k) => m[k] !== undefined)
   // 字段名不区分大小写，与 Huma 的默认行为相同。
-  const find = (name: string) => (name in m ? name : keys.find((k) => k.toLowerCase() === name.toLowerCase()))
+  const find = (name: string) => (keys.includes(name) ? name : keys.find((k) => k.toLowerCase() === name.toLowerCase()))
   for (const name of names) {
     const prop = props[name]
     const key = find(name)
