@@ -91,7 +91,8 @@ type Store struct {
 type row struct {
 	bun.BaseModel `bun:"table:api_tokens,alias:t"`
 
-	ID               uuid.UUID `bun:"id,pk,type:uuid"`
+	ID uuid.UUID `bun:"id,pk,type:uuid"`
+	database.Timestamps
 	TokenHash        string    `bun:"token_hash,notnull"`
 	SubjectType      string    `bun:"subject_type,notnull"`
 	SubjectID        string    `bun:"subject_id,notnull"`
@@ -105,7 +106,6 @@ type row struct {
 	EndsAt           time.Time `bun:"ends_at,nullzero"`     // 登录 token 的最长期限，滑动延长不超过它
 	IP               string    `bun:"ip,notnull"`
 	UserAgent        string    `bun:"user_agent,notnull"`
-	CreatedAt        time.Time `bun:"created_at,notnull"`
 	LastUsedAt       time.Time `bun:"last_used_at,notnull"`
 	ExpiresAt        time.Time `bun:"expires_at,nullzero"`
 	ClientID         string    `bun:"client_id,notnull"`
@@ -370,7 +370,8 @@ func (s *Store) Confirm(ctx context.Context, sub identity.Subject, methods ...st
 	}
 	r.AuthMethods, r.AuthTime = strings.Join(merged, " "), now
 	_, err = s.db.NewUpdate().Model((*row)(nil)).
-		Set("auth_methods = ?", r.AuthMethods).Set("auth_time = ?", r.AuthTime).Where("id = ?", r.ID).Exec(ctx)
+		Set("auth_methods = ?", r.AuthMethods).Set("auth_time = ?", r.AuthTime).
+		Where("id = ?", r.ID).Exec(ctx)
 	return errors.Wrap(err, "apitoken: confirm")
 }
 

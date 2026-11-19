@@ -157,7 +157,7 @@ func TestCleanup(t *testing.T) {
 	register(t, db, alice, push.Android, "old1")
 	register(t, db, alice, push.Android, "old2")
 	register(t, db, alice, push.Android, "fresh")
-	_, err := db.NewUpdate().Model((*push.Device)(nil)).Set("updated_at = ?", time.Now().Add(-100*24*time.Hour)).
+	_, err := db.NewUpdate().Table("push_devices").Set("updated_at = ?", time.Now().Add(-100*24*time.Hour)).
 		Where("token LIKE 'old%'").Exec(ctx)
 	if err != nil {
 		t.Fatal(err)

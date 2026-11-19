@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/uptrace/bun"
 
+	"github.com/go-tenon/tenon/database"
 	"github.com/go-tenon/tenon/identity"
 	"github.com/go-tenon/tenon/logging"
 )
@@ -19,8 +20,9 @@ const DefaultLimit = 50
 type Activity struct {
 	bun.BaseModel `bun:"table:activity_log,alias:al"`
 
-	ID               uuid.UUID            `bun:"id,pk,type:uuid"` // UUIDv7，按时间递增
-	Tenant           string               `bun:"tenant,notnull"`  // 操作所在的租户，"" 为平台本身
+	ID uuid.UUID `bun:"id,pk,type:uuid"` // UUIDv7，按时间递增
+	database.Timestamps
+	Tenant           string               `bun:"tenant,notnull"` // 操作所在的租户，"" 为平台本身
 	ActorType        identity.SubjectType `bun:"actor_type,notnull"`
 	ActorID          string               `bun:"actor_id,notnull"` // 操作人，见 Actor；可以为空
 	ImpersonatorType identity.SubjectType `bun:"impersonator_type,notnull"`
@@ -30,7 +32,6 @@ type Activity struct {
 	TargetID         string               `bun:"target_id,notnull"`  // 被操作的对象，例如 article 和文章 ID；可以为空
 	Properties       map[string]any       `bun:"properties,notnull"` // 展示这条记录需要的其他数据，保存为 JSON
 	RequestID        string               `bun:"request_id,notnull"` // 产生这条记录的请求，队列任务中是发布任务的请求
-	CreatedAt        time.Time            `bun:"created_at,notnull"`
 }
 
 // Actor 返回操作人。
@@ -51,7 +52,7 @@ func Record(ctx context.Context, db bun.IDB, actor identity.Subject, a Activity)
 	if err != nil {
 		return errors.Wrap(err, "activity: new id")
 	}
-	a.ID, a.CreatedAt = id, time.Now().UTC()
+	a.ID, a.Timestamps = id, database.Timestamps{}
 	a.Tenant, a.ActorType, a.ActorID = actor.Tenant, actor.Type, actor.ID
 	a.ImpersonatorType, a.ImpersonatorID = actor.Impersonator.Type, actor.Impersonator.ID
 	a.RequestID = logging.RequestID(ctx)

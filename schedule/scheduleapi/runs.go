@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/uptrace/bun"
 
+	"github.com/go-tenon/tenon/database"
 	"github.com/go-tenon/tenon/schedule"
 )
 
@@ -26,14 +27,15 @@ const (
 type run struct {
 	bun.BaseModel `bun:"table:schedule_runs"`
 
-	ID         uuid.UUID  `bun:"id,pk"`
-	Task       string     `bun:"task,notnull"`
-	Tick       *time.Time `bun:"tick"` // 这次触发应当执行的时间；立即执行时为空。
-	StartedAt  time.Time  `bun:"started_at,notnull"`
-	DurationMS int64      `bun:"duration_ms,notnull"`
-	Status     Status     `bun:"status,notnull"`
-	Error      string     `bun:"error,notnull"`
-	Manual     bool       `bun:"manual,notnull"`
+	ID                  uuid.UUID  `bun:"id,pk"`
+	database.Timestamps            // CreatedAt 是写入记录的时间，即执行结束或被跳过的时间
+	Task                string     `bun:"task,notnull"`
+	Tick                *time.Time `bun:"tick"` // 这次触发应当执行的时间；立即执行时为空。
+	StartedAt           time.Time  `bun:"started_at,notnull"`
+	DurationMS          int64      `bun:"duration_ms,notnull"`
+	Status              Status     `bun:"status,notnull"`
+	Error               string     `bun:"error,notnull"`
+	Manual              bool       `bun:"manual,notnull"`
 }
 
 // Observer 返回调度器的 Observer：每次执行结束、被跳过时在 schedule_runs 中写一行，立即执行（RunNow）也一样。

@@ -71,15 +71,16 @@ func unlockKey(ctx context.Context, tx bun.IDB, index, key string) error {
 // insertEntries 写入 search_entries，按 entries 的顺序返回它们的 id。
 func insertEntries(ctx context.Context, tx bun.IDB, index string, version int, key string, entries []entry) ([]int64, error) {
 	rows, args := make([]string, len(entries)), []any{}
+	now := time.Now().UTC()
 	for i, e := range entries {
-		rows[i] = "(?, ?, ?, ?, ?, ?, ?::tsvector)"
-		args = append(args, index, version, key, i, e.tenant, e.doc, tsvector(e.boost, e.body))
+		rows[i] = "(?, ?, ?, ?, ?, ?, ?, ?, ?::tsvector)"
+		args = append(args, now, now, index, version, key, i, e.tenant, e.doc, tsvector(e.boost, e.body))
 	}
 	var inserted []struct {
 		ID       int64 `bun:"id"`
 		Position int   `bun:"position"`
 	}
-	err := tx.NewRaw(`INSERT INTO search_entries (index_name, version, doc_key, position, tenant, doc, tokens) VALUES `+
+	err := tx.NewRaw(`INSERT INTO search_entries (created_at, updated_at, index_name, version, doc_key, position, tenant, doc, tokens) VALUES `+
 		strings.Join(rows, ", ")+` RETURNING id, position`, args...).Scan(ctx, &inserted)
 	if err != nil {
 		return nil, err

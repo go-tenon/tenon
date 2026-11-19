@@ -21,6 +21,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/uptrace/bun"
 
+	"github.com/go-tenon/tenon/database"
 	"github.com/go-tenon/tenon/identity"
 )
 
@@ -323,7 +324,7 @@ func (r *Realm) challenge(ctx context.Context, db bun.IDB, purpose Purpose, subj
 	now := r.now().UTC()
 	row := &challengeRow{
 		ID: id, Purpose: purpose, SubjectType: string(r.opts.Type), Tenant: tenant, SubjectID: subjectID,
-		ProofHash: sha(secret), Data: string(data), ExpiresAt: now.Add(r.opts.ProofTTL), CreatedAt: now,
+		ProofHash: sha(secret), Data: string(data), ExpiresAt: now.Add(r.opts.ProofTTL), Timestamps: database.Timestamps{CreatedAt: now},
 	}
 	if _, err := db.NewInsert().Model(row).Exec(ctx); err != nil {
 		return "", errors.Wrap(err, "login: save pending login")

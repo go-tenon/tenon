@@ -10,6 +10,7 @@ import (
 	"github.com/uptrace/bun"
 
 	"github.com/go-tenon/tenon/contract"
+	"github.com/go-tenon/tenon/database"
 	"github.com/go-tenon/tenon/identity"
 	"github.com/go-tenon/tenon/queue"
 )
@@ -37,7 +38,8 @@ const (
 type Delivery struct {
 	bun.BaseModel `bun:"table:webhook_deliveries,alias:wd"`
 
-	ID             uuid.UUID `bun:"id,pk,type:uuid"` // UUIDv7，按时间递增
+	ID uuid.UUID `bun:"id,pk,type:uuid"` // UUIDv7，按时间递增
+	database.Timestamps
 	Tenant         string    `bun:"tenant,notnull"`
 	EndpointID     uuid.UUID `bun:"endpoint_id,notnull,type:uuid"`
 	EventID        uuid.UUID `bun:"event_id,notnull,type:uuid"` // 即请求头 webhook-id，同一个事件的所有投递相同
@@ -47,8 +49,6 @@ type Delivery struct {
 	Attempts       int       `bun:"attempts,notnull"`        // 已经发送的次数
 	ResponseStatus int       `bun:"response_status,notnull"` // 最后一次响应的 HTTP 状态码，0 表示没有收到响应
 	LastError      string    `bun:"last_error,notnull"`      // 最后一次失败的原因，包括响应体的开头；成功时为空
-	CreatedAt      time.Time `bun:"created_at,notnull"`
-	UpdatedAt      time.Time `bun:"updated_at,notnull"`
 }
 
 // send 把 typ 事件推送给 subject 所在租户中订阅了它的端点，见 Event.Send。
@@ -68,7 +68,7 @@ func send(ctx context.Context, db bun.IDB, subject identity.Subject, typ string,
 		if ep.subscribes(typ) {
 			deliveries = append(deliveries, Delivery{
 				Tenant: subject.Tenant, EndpointID: ep.ID, Event: typ,
-				Status: StatusPending, CreatedAt: now, UpdatedAt: now,
+				Status: StatusPending,
 			})
 		}
 	}

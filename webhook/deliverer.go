@@ -117,7 +117,6 @@ func (d *Deliverer) deliver(ctx context.Context, id uuid.UUID) error {
 func (d *Deliverer) finish(ctx context.Context, del *Delivery, status Status, code int, lastError string, attempted bool) error {
 	upd := d.db.NewUpdate().Model((*Delivery)(nil)).
 		Set("status = ?", status).Set("response_status = ?", code).Set("last_error = ?", lastError).
-		Set("updated_at = ?", time.Now().UTC()).
 		Where("id = ?", del.ID).Where("status = ?", StatusPending)
 	if attempted {
 		upd = upd.Set("attempts = attempts + 1")

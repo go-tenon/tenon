@@ -1,6 +1,8 @@
 -- +goose Up
 CREATE TABLE webhook_deliveries (
     id uuid PRIMARY KEY,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
     tenant text NOT NULL,
     endpoint_id uuid NOT NULL,
     event_id uuid NOT NULL,
@@ -9,9 +11,7 @@ CREATE TABLE webhook_deliveries (
     status text NOT NULL,
     attempts integer NOT NULL,
     response_status integer NOT NULL,
-    last_error text NOT NULL,
-    created_at timestamptz NOT NULL,
-    updated_at timestamptz NOT NULL
+    last_error text NOT NULL
 );
 CREATE INDEX webhook_deliveries_tenant ON webhook_deliveries (tenant, id);
 CREATE INDEX webhook_deliveries_endpoint ON webhook_deliveries (tenant, endpoint_id, id);

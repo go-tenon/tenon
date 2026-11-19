@@ -33,7 +33,7 @@ WARN slow query component=database duration=1.284s db.operation.name=SELECT db.c
 <a id="soft-deletes"></a>
 ## 软删除
 
-如果删除后需要保留记录，可以使用 Bun 原生的[模型软删除](https://bun.uptrace.dev/guide/soft-deletes.html#using-bun-models)。上面 `DeletedAt` 的 `soft_delete` 标签启用该功能，`nullzero` 将 Go 的零时间映射为 SQL `NULL`；迁移中对应的 `deleted_at` 列应允许为空。
+如果删除后需要保留记录，可以使用 Bun 原生的[模型软删除](https://bun.uptrace.dev/guide/soft-deletes.html#using-bun-models)。[文章模型](quick-start.md#defining-models)中 `DeletedAt` 的 `soft_delete` 标签启用该功能，`nullzero` 将 Go 的零时间映射为 SQL `NULL`。迁移中的 `deleted_at` 是第四列，紧跟 `created_at`、`updated_at`，类型 `timestamptz`，允许为空，见[时间列](migrations.md#timestamp-columns)。
 
 对于配置了该标签的模型，`NewDelete()` 会更新 `deleted_at`，普通模型查询会自动排除已软删除的记录。下面的 `id` 是目标文章的 UUID，`ctx` 是请求上下文，`db` 是打开的连接池：
 
@@ -60,7 +60,18 @@ _, err = db.NewDelete().
     Exec(ctx)
 ```
 
-软删除由 Bun 根据模型标签处理，直接执行原生 SQL 时需要自行处理 `deleted_at` 条件。上述时间戳钩子只处理插入和更新查询，`NewDelete()` 的软删除保持 `updated_at` 原值。
+软删除时，Bun 在 Go 中取当前时间写入 `deleted_at`，测试的假时钟同样有效。删除的时间记在 `deleted_at` 中，`updated_at` 保持原值：Bun 生成的语句只更新 `deleted_at` 一列。
+
+软删除的行仍然在表中，下面三种地方要按它来写：
+
+- **唯一约束**：已删除的行仍然占着唯一值，删掉一篇文章之后，同一个 slug 就建不了新文章。用只约束未删除行的部分唯一索引代替唯一约束，冲突时报告的约束名就是索引名，`database.IsUniqueViolation(err, "articles_slug_key")` 照样能识别：
+
+  ```sql
+  CREATE UNIQUE INDEX articles_slug_key ON articles (slug) WHERE deleted_at IS NULL;
+  ```
+
+- **外键**：软删除是一条 `UPDATE`，外键的 `ON DELETE CASCADE` 不会触发。评论这类子表的数据，在同一个[事务](quick-start.md#transactions)中一起软删除，或者在查询中排除父记录已删除的行。
+- **原生 SQL**：Bun 只在用模型构建的查询中自动加上 `deleted_at IS NULL`，原生 SQL 要自己写这个条件。
 
 软删除的记录仍然参与数据库唯一约束。本例的 `articles_slug_key` 会继续保留已删除文章的 slug；如果业务允许复用，可以在迁移中把它改为只约束未删除记录的部分唯一索引：
 

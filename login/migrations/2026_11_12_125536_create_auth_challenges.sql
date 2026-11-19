@@ -1,6 +1,8 @@
 -- +goose Up
 CREATE TABLE auth_challenges (
     id uuid PRIMARY KEY,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
     purpose text NOT NULL,
     subject_type text NOT NULL,
     tenant text NOT NULL,
@@ -12,8 +14,7 @@ CREATE TABLE auth_challenges (
     proof_hash text,
     data text,
     completed_at timestamptz,
-    expires_at timestamptz NOT NULL,
-    created_at timestamptz NOT NULL
+    expires_at timestamptz NOT NULL
 );
 CREATE INDEX auth_challenges_subject ON auth_challenges (subject_type, subject_id);
 CREATE INDEX auth_challenges_expires_at ON auth_challenges (expires_at);

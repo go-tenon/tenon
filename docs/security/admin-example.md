@@ -49,10 +49,10 @@ import (
     "context"
     "database/sql"
     "errors"
-    "time"
 
     "github.com/uptrace/bun"
 
+    "github.com/go-tenon/tenon/database"
     "github.com/go-tenon/tenon/errorx"
     "github.com/go-tenon/tenon/identity"
 )
@@ -64,11 +64,11 @@ var ErrDisabled = errorx.Define(errorx.Unauthenticated, "user.disabled")
 type User struct {
     bun.BaseModel `bun:"table:users"`
 
-    ID          string    `bun:"id,pk"`
-    Name        string    `bun:"name,notnull"`
-    Disabled    bool      `bun:"disabled,notnull"`
-    Permissions []string  `bun:"permissions,array,notnull"`
-    CreatedAt   time.Time `bun:"created_at,notnull"`
+    ID string `bun:"id,pk"`
+    database.Timestamps
+    Name        string   `bun:"name,notnull"`
+    Disabled    bool     `bun:"disabled,notnull"`
+    Permissions []string `bun:"permissions,array,notnull"`
 }
 
 func (u *User) Ref() identity.Ref { return identity.Ref{Type: Type, ID: u.ID} }

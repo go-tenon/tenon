@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/uptrace/bun"
 
+	"github.com/go-tenon/tenon/database"
 	"github.com/go-tenon/tenon/errorx"
 )
 
@@ -82,7 +83,7 @@ func Resend(ctx context.Context, db bun.IDB, tenant string, id uuid.UUID) (*Deli
 	now := time.Now().UTC()
 	d := Delivery{
 		ID: newID, Tenant: old.Tenant, EndpointID: old.EndpointID, EventID: old.EventID, Event: old.Event,
-		Payload: old.Payload, Status: StatusPending, CreatedAt: now, UpdatedAt: now,
+		Payload: old.Payload, Status: StatusPending, Timestamps: database.Timestamps{CreatedAt: now, UpdatedAt: now},
 	}
 	if err := enqueue(ctx, db, []Delivery{d}); err != nil {
 		return nil, err

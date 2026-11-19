@@ -94,7 +94,6 @@ func (r *Run) save(ctx context.Context, next Operation, write func(ctx context.C
 	}
 	now := time.Now().UTC()
 	next.Version++
-	next.UpdatedAt = now
 	if next.Finished() {
 		next.CompletedAt = &now
 	}

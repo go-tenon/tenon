@@ -115,7 +115,7 @@ func checkBulk(before time.Time, limit int) error {
 
 // matching 限定 topic（为空时不限）和失败时间，按失败时间从旧到新。
 func (f *FailedJobs) matching(q *bun.SelectQuery, topic string, before time.Time) *bun.SelectQuery {
-	q = q.Where("f.failed_at < ?", before.UTC()).OrderExpr("f.failed_at, f.id")
+	q = q.Where("f.created_at < ?", before.UTC()).OrderExpr("f.created_at, f.id")
 	if topic != "" {
 		q = q.Where("f.topic = ?", topic)
 	}
@@ -148,7 +148,7 @@ type FailedJob struct {
 // export 把行转换为 FailedJob。
 func (r *failedJob) export() FailedJob {
 	return FailedJob{ID: r.ID, Topic: r.Topic, Payload: r.Payload, Metadata: r.Metadata,
-		Attempts: r.Attempts, Error: r.Error, FailedAt: r.FailedAt}
+		Attempts: r.Attempts, Error: r.Error, FailedAt: r.CreatedAt}
 }
 
 // FailedQuery 是 FailedJobs.List 的条件。
@@ -164,7 +164,7 @@ func (f *FailedJobs) List(ctx context.Context, q FailedQuery) ([]FailedJob, erro
 		q.Limit = 100
 	}
 	var rows []failedJob
-	sel := f.db.NewSelect().Model(&rows).OrderExpr("f.failed_at DESC, f.id").Limit(int64(q.Limit)).Offset(int64(max(q.Offset, 0)))
+	sel := f.db.NewSelect().Model(&rows).OrderExpr("f.created_at DESC, f.id").Limit(int64(q.Limit)).Offset(int64(max(q.Offset, 0)))
 	if q.Topic != "" {
 		sel = sel.Where("f.topic = ?", q.Topic)
 	}

@@ -4,6 +4,7 @@ package migrationstest
 
 import (
 	"bytes"
+	"context"
 	"io/fs"
 	"maps"
 	"os"
@@ -12,6 +13,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/uptrace/bun"
 
 	"github.com/go-tenon/tenon/activity"
 	"github.com/go-tenon/tenon/ai/chat"
@@ -157,7 +160,70 @@ func TestPublishThroughPublicCommand(t *testing.T) {
 	}
 }
 
-// TestAllMigrationsRun 把全部迁移放在一起执行：版本不重复，引用其他包的表的迁移排在那个包之后。
+// TestAllMigrationsRun 把全部迁移放在一起执行：版本不重复，引用其他包的表的迁移排在那个包之后；
+// 执行之后检查实体表的时间列。
 func TestAllMigrationsRun(t *testing.T) {
-	dbtest.Open(t, slices.Collect(maps.Values(sources))...)
+	db := dbtest.Open(t, slices.Collect(maps.Values(sources))...)
+	checkTimestampColumns(t, db)
+}
+
+// timestampExempt 是不检查时间列的表：goose 的迁移记录表，以及 ai/chat 中 trpc-agent-go 的表，它们的结构由上游决定。
+var timestampExempt = []string{
+	"goose_db_version",
+	"agent_session_states", "agent_session_events", "agent_session_track_events", "agent_session_summaries",
+	"agent_app_states", "agent_user_states",
+}
+
+// checkTimestampColumns 检查实体表（主键只有 id 一列的表）的前三列依次是 id、created_at、updated_at，
+// 两个时间列都是 timestamptz NOT NULL；有软删除的 deleted_at 列时，它是第四列，timestamptz 允许为空。
+// 关联表、锁、计数这类以其他列为主键的表不检查。
+func checkTimestampColumns(t *testing.T, db *bun.DB) {
+	t.Helper()
+	var tables []struct {
+		Name    string   `bun:"name"`
+		Columns []string `bun:"columns,array"`
+		Types   []string `bun:"types,array"`
+		Nulls   []string `bun:"nulls,array"`
+	}
+	err := db.NewRaw(`
+SELECT c.table_name AS name,
+       array_agg(c.column_name::text ORDER BY c.ordinal_position) AS columns,
+       array_agg(c.data_type::text ORDER BY c.ordinal_position) AS types,
+       array_agg(c.is_nullable::text ORDER BY c.ordinal_position) AS nulls
+FROM information_schema.columns c
+WHERE c.table_schema = 'public'
+  AND c.table_name IN (
+    SELECT tc.table_name
+    FROM information_schema.table_constraints tc
+    JOIN information_schema.key_column_usage k
+      ON k.constraint_name = tc.constraint_name AND k.table_schema = tc.table_schema
+    WHERE tc.table_schema = 'public' AND tc.constraint_type = 'PRIMARY KEY'
+    GROUP BY tc.table_name
+    HAVING array_agg(k.column_name::text) = ARRAY['id'])
+GROUP BY c.table_name
+ORDER BY c.table_name`).Scan(context.Background(), &tables)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tables) == 0 {
+		t.Fatal("no table has id as its primary key")
+	}
+	for _, table := range tables {
+		if slices.Contains(timestampExempt, table.Name) {
+			continue
+		}
+		if len(table.Columns) < 3 || !slices.Equal(table.Columns[:3], []string{"id", "created_at", "updated_at"}) {
+			t.Errorf("%s: columns start with %v, want id, created_at, updated_at", table.Name, table.Columns[:min(3, len(table.Columns))])
+			continue
+		}
+		for i := 1; i < 3; i++ {
+			if table.Types[i] != "timestamp with time zone" || table.Nulls[i] != "NO" {
+				t.Errorf("%s.%s: %s nullable=%s, want timestamptz NOT NULL", table.Name, table.Columns[i], table.Types[i], table.Nulls[i])
+			}
+		}
+		if i := slices.Index(table.Columns, "deleted_at"); i >= 0 &&
+			(i != 3 || table.Types[i] != "timestamp with time zone" || table.Nulls[i] != "YES") {
+			t.Errorf("%s.deleted_at: column %d, %s nullable=%s, want column 4, nullable timestamptz", table.Name, i+1, table.Types[i], table.Nulls[i])
+		}
+	}
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/uptrace/bun"
 
+	"github.com/go-tenon/tenon/database"
 	"github.com/go-tenon/tenon/errorx"
 	"github.com/go-tenon/tenon/identity"
 )
@@ -39,15 +40,14 @@ func (p Platform) Valid() bool {
 type Device struct {
 	bun.BaseModel `bun:"table:push_devices,alias:pd"`
 
-	ID          uuid.UUID            `bun:"id,pk,type:uuid"` // 设备记录的 ID，UUIDv7
-	Platform    Platform             `bun:"platform,notnull"`
-	Token       string               `bun:"token,notnull"` // 推送服务给设备的标识，例如阿里云的 deviceId
-	Tenant      string               `bun:"tenant,notnull"`
-	SubjectType identity.SubjectType `bun:"subject_type,notnull"`
-	SubjectID   string               `bun:"subject_id,notnull"`
-	Credential  string               `bun:"credential,notnull"` // 注册时所用凭据的 ID
-	CreatedAt   time.Time            `bun:"created_at,notnull"`
-	UpdatedAt   time.Time            `bun:"updated_at,notnull"` // 最近一次注册的时间
+	ID                  uuid.UUID            `bun:"id,pk,type:uuid"` // 设备记录的 ID，UUIDv7
+	database.Timestamps                      // UpdatedAt 是最近一次注册的时间
+	Platform            Platform             `bun:"platform,notnull"`
+	Token               string               `bun:"token,notnull"` // 推送服务给设备的标识，例如阿里云的 deviceId
+	Tenant              string               `bun:"tenant,notnull"`
+	SubjectType         identity.SubjectType `bun:"subject_type,notnull"`
+	SubjectID           string               `bun:"subject_id,notnull"`
+	Credential          string               `bun:"credential,notnull"` // 注册时所用凭据的 ID
 }
 
 // Register 把设备登记给 sub：之后发给 sub 所在租户中这个主体的推送会发到这台设备。
@@ -65,11 +65,9 @@ func Register(ctx context.Context, db bun.IDB, sub identity.Subject, platform Pl
 	if token == "" || len(token) > maxToken {
 		return ErrInvalidDevice.Wrap(errors.Newf("push: device token must be 1 to %d bytes", maxToken))
 	}
-	now := time.Now().UTC()
 	d := &Device{
 		ID: uuid.Must(uuid.NewV7()), Platform: platform, Token: token,
 		Tenant: sub.Tenant, SubjectType: sub.Type, SubjectID: sub.ID, Credential: sub.Credential,
-		CreatedAt: now, UpdatedAt: now,
 	}
 	_, err := db.NewInsert().Model(d).
 		On("CONFLICT (platform, token) DO UPDATE").

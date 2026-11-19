@@ -1,9 +1,10 @@
 -- +goose Up
 CREATE TABLE privacy_erasures (
     id uuid PRIMARY KEY,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
     subject_type text NOT NULL,
     subject_id text NOT NULL,
-    requested_at timestamptz NOT NULL,
     due_at timestamptz NOT NULL,
     erased_at timestamptz,
     attempts integer NOT NULL DEFAULT 0,

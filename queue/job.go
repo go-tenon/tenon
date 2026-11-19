@@ -8,6 +8,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/uptrace/bun"
+
+	"github.com/go-tenon/tenon/database"
 )
 
 // Job 是一个任务，处理函数之外通过 Event 和失败任务看到它。
@@ -33,13 +35,13 @@ type envelope struct {
 type failedJob struct {
 	bun.BaseModel `bun:"table:queue_failed_jobs,alias:f"`
 
-	ID       uuid.UUID         `bun:"id,pk,type:uuid"`
-	Topic    string            `bun:"topic,notnull"`
-	Payload  []byte            `bun:"payload,notnull"`
-	Metadata map[string]string `bun:"metadata,type:jsonb,notnull"`
-	Attempts int               `bun:"attempts,notnull"`
-	Error    string            `bun:"error,notnull"`
-	FailedAt time.Time         `bun:"failed_at,notnull"`
+	ID                  uuid.UUID         `bun:"id,pk,type:uuid"`
+	database.Timestamps                   // CreatedAt 是失败的时间
+	Topic               string            `bun:"topic,notnull"`
+	Payload             []byte            `bun:"payload,notnull"`
+	Metadata            map[string]string `bun:"metadata,type:jsonb,notnull"`
+	Attempts            int               `bun:"attempts,notnull"`
+	Error               string            `bun:"error,notnull"`
 }
 
 // maxBackoff 是两次重试之间的最长等待时间。

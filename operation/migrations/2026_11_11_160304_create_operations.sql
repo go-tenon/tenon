@@ -1,6 +1,8 @@
 -- +goose Up
 CREATE TABLE operations (
     id uuid PRIMARY KEY,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
     tenant text NOT NULL,
     owner_type text NOT NULL,
     owner_id text NOT NULL,
@@ -12,8 +14,6 @@ CREATE TABLE operations (
     version integer NOT NULL,
     error text NOT NULL,
     error_data jsonb NOT NULL,
-    created_at timestamptz NOT NULL,
-    updated_at timestamptz NOT NULL,
     completed_at timestamptz
 );
 CREATE INDEX operations_owner ON operations (tenant, owner_type, owner_id, id);

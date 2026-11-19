@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/uptrace/bun"
 
+	"github.com/go-tenon/tenon/database"
 	"github.com/go-tenon/tenon/errorx"
 )
 
@@ -30,7 +31,8 @@ const PreviousSecretTTL = 24 * time.Hour
 type Endpoint struct {
 	bun.BaseModel `bun:"table:webhook_endpoints,alias:we"`
 
-	ID                      uuid.UUID `bun:"id,pk,type:uuid"`
+	ID uuid.UUID `bun:"id,pk,type:uuid"`
+	database.Timestamps
 	Tenant                  string    `bun:"tenant,notnull"`
 	URL                     string    `bun:"url,notnull"`
 	Description             string    `bun:"description,notnull"`
@@ -39,8 +41,6 @@ type Endpoint struct {
 	Disabled                bool      `bun:"disabled,notnull"`
 	PreviousSecret          string    `bun:"previous_secret,notnull"` // 轮换前的密钥，在 PreviousSecretExpiresAt 之前与 Secret 一起签名。
 	PreviousSecretExpiresAt time.Time `bun:"previous_secret_expires_at,nullzero"`
-	CreatedAt               time.Time `bun:"created_at,notnull"`
-	UpdatedAt               time.Time `bun:"updated_at,notnull"`
 }
 
 // subscribes 报告端点是否订阅了事件类型 t。
@@ -102,10 +102,9 @@ func CreateEndpoint(ctx context.Context, db bun.IDB, tenant string, in EndpointI
 	if err != nil {
 		return nil, errors.Wrap(err, "webhook: new endpoint id")
 	}
-	now := time.Now().UTC()
 	ep := &Endpoint{
 		ID: id, Tenant: tenant, URL: in.URL, Description: in.Description, Events: in.Events,
-		Secret: newSecret(), Disabled: in.Disabled, CreatedAt: now, UpdatedAt: now,
+		Secret: newSecret(), Disabled: in.Disabled,
 	}
 	if _, err := db.NewInsert().Model(ep).Exec(ctx); err != nil {
 		return nil, errors.Wrap(err, "webhook: create endpoint")
@@ -140,7 +139,7 @@ func UpdateEndpoint(ctx context.Context, db bun.IDB, tenant string, id uuid.UUID
 	if err := in.check(); err != nil {
 		return nil, err
 	}
-	ep := &Endpoint{URL: in.URL, Description: in.Description, Events: in.Events, Disabled: in.Disabled, UpdatedAt: time.Now().UTC()}
+	ep := &Endpoint{URL: in.URL, Description: in.Description, Events: in.Events, Disabled: in.Disabled}
 	return update(ctx, db, tenant, id, ep, "url", "description", "events", "disabled", "updated_at")
 }
 
@@ -151,9 +150,8 @@ func RotateSecret(ctx context.Context, db bun.IDB, tenant string, id uuid.UUID) 
 	if err != nil {
 		return nil, err
 	}
-	now := time.Now().UTC()
 	ep := &Endpoint{
-		Secret: newSecret(), PreviousSecret: old.Secret, PreviousSecretExpiresAt: now.Add(PreviousSecretTTL), UpdatedAt: now,
+		Secret: newSecret(), PreviousSecret: old.Secret, PreviousSecretExpiresAt: time.Now().UTC().Add(PreviousSecretTTL),
 	}
 	return update(ctx, db, tenant, id, ep, "secret", "previous_secret", "previous_secret_expires_at", "updated_at")
 }

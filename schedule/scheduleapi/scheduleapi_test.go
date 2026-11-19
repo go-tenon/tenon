@@ -105,8 +105,8 @@ func TestPermissions(t *testing.T) {
 // insertRun 写一行按表达式触发的执行记录。
 func insertRun(t *testing.T, db bun.IDB, task string, tick time.Time, status scheduleapi.Status) {
 	t.Helper()
-	_, err := db.ExecContext(context.Background(), `INSERT INTO schedule_runs (id, task, tick, started_at, duration_ms, status, error, manual)
-		VALUES (?, ?, ?, ?, 12, ?, '', false)`, uuid.New(), task, tick, tick, status)
+	_, err := db.ExecContext(context.Background(), `INSERT INTO schedule_runs (id, created_at, updated_at, task, tick, started_at, duration_ms, status, error, manual)
+		VALUES (?, ?, ?, ?, ?, ?, 12, ?, '', false)`, uuid.New(), tick, tick, task, tick, tick, status)
 	if err != nil {
 		t.Fatal(err)
 	}

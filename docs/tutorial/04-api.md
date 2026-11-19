@@ -32,12 +32,12 @@ package article
 import (
     "context"
     "database/sql"
-    "time"
 
     "github.com/cockroachdb/errors"
     "github.com/google/uuid"
     "github.com/uptrace/bun"
 
+    "github.com/go-tenon/tenon/database"
     "github.com/go-tenon/tenon/errorx"
 )
 
@@ -45,12 +45,11 @@ import (
 type Article struct {
     bun.BaseModel `bun:"table:articles"`
 
-    ID        uuid.UUID `bun:"id,pk" json:"id"`
-    Title     string    `bun:"title,notnull" json:"title"`
-    Slug      string    `bun:"slug,notnull" json:"slug"`
-    Content   string    `bun:"content,notnull" json:"content"`
-    CreatedAt time.Time `bun:"created_at,notnull" json:"created_at"`
-    UpdatedAt time.Time `bun:"updated_at,notnull" json:"updated_at"`
+    ID uuid.UUID `bun:"id,pk" json:"id"`
+    database.Timestamps
+    Title   string `bun:"title,notnull" json:"title"`
+    Slug    string `bun:"slug,notnull" json:"slug"`
+    Content string `bun:"content,notnull" json:"content"`
 }
 
 // 业务错误：错误码返回给客户端，前端按它显示提示。
@@ -89,7 +88,7 @@ type IDInput struct {
 
 逐个来看：
 
-- **`Article` 是模型**：一个结构体对应数据表中的一行。我们用 [Bun](https://bun.uptrace.dev) 读写数据库，它按 `bun` 标签把字段对应到表的列，例如 `bun:"id,pk"` 表示这个字段是 `id` 列，并且是主键；`bun.BaseModel` 那一行告诉 Bun 表名是 `articles`。同一个字段上的 `json` 标签是接口返回的 JSON 中的名字，所以这个结构体既用来读写数据库，也直接作为接口的返回值。
+- **`Article` 是模型**：一个结构体对应数据表中的一行。我们用 [Bun](https://bun.uptrace.dev) 读写数据库，它按 `bun` 标签把字段对应到表的列，例如 `bun:"id,pk"` 表示这个字段是 `id` 列，并且是主键；`bun.BaseModel` 那一行告诉 Bun 表名是 `articles`。同一个字段上的 `json` 标签是接口返回的 JSON 中的名字，所以这个结构体既用来读写数据库，也直接作为接口的返回值。`database.Timestamps` 是 `created_at`、`updated_at` 两列，嵌进模型之后，插入和修改时由 Bun 的钩子填上时间，见[自动维护时间戳](../database/quick-start.md#timestamps)。
 - **业务错误用 `errorx.Define` 定义。** 第一个参数是错误的分类，决定 HTTP 状态码：`NotFound` 是 404，`Conflict`（冲突）是 409。第二个参数是错误码，例如 `article.slug_taken`，客户端按它判断发生了什么，显示相应的提示。见[错误处理](../general/errors.md)。
 - **`Changes` 是新建和修改时提交的内容。** 字段上的 `minLength`、`maxLength`、`pattern` 等标签就是校验规则：标题不能为空、最长 200 个字符；slug 只能是小写字母、数字和连字符。不符合时，接口直接返回 `422`，列出每个字段的问题，你的代码不会被调用。见[验证](../http/validation.md)。
 - **`find`** 按 ID 读取一篇文章。查不到时数据库返回 `sql.ErrNoRows`，`find` 把它转换为业务错误 `ErrNotFound`，客户端就会得到 404。参数 `db` 的类型 `bun.IDB` 是一个接口：数据库连接池和事务都实现了它，所以同一个函数在事务内外都能用。
@@ -176,7 +175,6 @@ package article
 
 import (
     "context"
-    "time"
 
     "github.com/cockroachdb/errors"
     "github.com/google/uuid"
@@ -193,11 +191,7 @@ func NewCreate(db *bun.DB) *Create { return &Create{db: db} }
 
 // Handle 新建一篇文章，slug 已被使用时返回 ErrSlugTaken。
 func (a *Create) Handle(ctx context.Context, c Changes) (*Article, error) {
-    now := time.Now().UTC()
-    item := &Article{
-        ID: uuid.Must(uuid.NewV7()), Title: c.Title, Slug: c.Slug, Content: c.Content,
-        CreatedAt: now, UpdatedAt: now,
-    }
+    item := &Article{ID: uuid.Must(uuid.NewV7()), Title: c.Title, Slug: c.Slug, Content: c.Content}
     _, err := a.db.NewInsert().Model(item).Exec(ctx)
     if database.IsUniqueViolation(err, "articles_slug_key") {
         return nil, ErrSlugTaken.Wrap(err, errorx.Public("slug", c.Slug))
@@ -231,7 +225,6 @@ package article
 
 import (
     "context"
-    "time"
 
     "github.com/cockroachdb/errors"
     "github.com/google/uuid"
@@ -251,7 +244,7 @@ func (a *Update) Handle(ctx context.Context, id uuid.UUID, c Changes) (*Article,
     if err != nil {
         return nil, err
     }
-    item.Title, item.Slug, item.Content, item.UpdatedAt = c.Title, c.Slug, c.Content, time.Now().UTC()
+    item.Title, item.Slug, item.Content = c.Title, c.Slug, c.Content
     _, err = a.db.NewUpdate().Model(item).Column("title", "slug", "content", "updated_at").WherePK().Exec(ctx)
     if database.IsUniqueViolation(err, "articles_slug_key") {
         return nil, ErrSlugTaken.Wrap(err, errorx.Public("slug", c.Slug))
@@ -272,6 +265,8 @@ func (a *Update) HTTP(ctx context.Context, in *UpdateInput) (*ArticleOutput, err
     return &ArticleOutput{Body: item}, nil
 }
 ```
+
+`Column` 列出这次要更新的列，其中带上 `updated_at`：钩子把 `item.UpdatedAt` 改成了当前时间，列在这里它才会写进数据库。
 
 删除文章，文章不存在时返回 404。新建 `internal/article/delete.go`：
 

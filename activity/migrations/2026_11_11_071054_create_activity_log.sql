@@ -1,6 +1,8 @@
 -- +goose Up
 CREATE TABLE activity_log (
     id uuid PRIMARY KEY,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
     tenant text NOT NULL,
     actor_type text NOT NULL,
     actor_id text NOT NULL,
@@ -10,8 +12,7 @@ CREATE TABLE activity_log (
     target_type text NOT NULL,
     target_id text NOT NULL,
     properties jsonb NOT NULL,
-    request_id text NOT NULL,
-    created_at timestamptz NOT NULL
+    request_id text NOT NULL
 );
 CREATE INDEX activity_log_tenant ON activity_log (tenant, id);
 CREATE INDEX activity_log_target ON activity_log (tenant, target_type, target_id, id);

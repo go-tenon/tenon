@@ -18,6 +18,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/uptrace/bun"
 
+	"github.com/go-tenon/tenon/database"
 	"github.com/go-tenon/tenon/identity"
 )
 
@@ -51,7 +52,8 @@ type Code struct {
 type challengeRow struct {
 	bun.BaseModel `bun:"table:auth_challenges,alias:c"`
 
-	ID          uuid.UUID `bun:"id,pk,type:uuid"`
+	ID uuid.UUID `bun:"id,pk,type:uuid"`
+	database.Timestamps
 	Purpose     Purpose   `bun:"purpose,notnull"`
 	SubjectType string    `bun:"subject_type,notnull"`
 	Tenant      string    `bun:"tenant,notnull"`
@@ -64,7 +66,6 @@ type challengeRow struct {
 	Data        string    `bun:"data,nullzero"`
 	CompletedAt time.Time `bun:"completed_at,nullzero"`
 	ExpiresAt   time.Time `bun:"expires_at,notnull"`
-	CreatedAt   time.Time `bun:"created_at,notnull"`
 }
 
 // identifier 返回接收验证码的标识。
@@ -164,7 +165,7 @@ func (r *Realm) send(ctx context.Context, purpose Purpose, id Identifier, tenant
 	row := &challengeRow{
 		ID: requestID, Purpose: purpose, SubjectType: string(r.opts.Type), Tenant: tenant,
 		Kind: id.Kind, Value: id.Value, SubjectID: owner,
-		CodeHash: r.codeHash(r.codeKeys[0], requestID, code), ExpiresAt: now.Add(r.opts.CodeTTL), CreatedAt: now,
+		CodeHash: r.codeHash(r.codeKeys[0], requestID, code), ExpiresAt: now.Add(r.opts.CodeTTL), Timestamps: database.Timestamps{CreatedAt: now},
 	}
 	if _, err := r.db.NewInsert().Model(row).Exec(ctx); err != nil {
 		return "", errors.Wrap(err, "login: save code")

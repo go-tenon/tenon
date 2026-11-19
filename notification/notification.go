@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/uptrace/bun"
 
+	"github.com/go-tenon/tenon/database"
 	"github.com/go-tenon/tenon/errorx"
 	"github.com/go-tenon/tenon/identity"
 )
@@ -35,14 +36,14 @@ func RecipientOf(s identity.Subject) Recipient {
 type Notification struct {
 	bun.BaseModel `bun:"table:notifications,alias:n"`
 
-	ID            uuid.UUID            `bun:"id,pk,type:uuid"` // UUIDv7，按时间递增
+	ID uuid.UUID `bun:"id,pk,type:uuid"` // UUIDv7，按时间递增
+	database.Timestamps
 	Tenant        string               `bun:"tenant,notnull"`
 	RecipientType identity.SubjectType `bun:"recipient_type,notnull"`
 	RecipientID   string               `bun:"recipient_id,notnull"`
 	Event         string               `bun:"event,notnull"` // 通知的是什么，例如 article.published
 	Data          map[string]any       `bun:"data,notnull"`  // 展示这条通知需要的数据，保存为 JSON
 	ReadAt        time.Time            `bun:"read_at,nullzero"`
-	CreatedAt     time.Time            `bun:"created_at,notnull"`
 }
 
 // Recipient 返回这条通知的收件人。
@@ -64,7 +65,6 @@ func Send(ctx context.Context, db bun.IDB, n Notification, to ...Recipient) ([]N
 	if n.Data == nil {
 		n.Data = map[string]any{}
 	}
-	now := time.Now().UTC()
 	seen := make(map[Recipient]bool, len(to))
 	rows := make([]Notification, 0, len(to))
 	for _, r := range to {
@@ -80,7 +80,7 @@ func Send(ctx context.Context, db bun.IDB, n Notification, to ...Recipient) ([]N
 			return nil, errors.Wrap(err, "notification: new id")
 		}
 		row := n
-		row.ID, row.CreatedAt, row.ReadAt = id, now, time.Time{}
+		row.ID, row.Timestamps, row.ReadAt = id, database.Timestamps{}, time.Time{}
 		row.Tenant, row.RecipientType, row.RecipientID = r.Tenant, r.Type, r.ID
 		rows = append(rows, row)
 	}
