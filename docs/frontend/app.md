@@ -253,6 +253,15 @@ function Login() {
 
 - `login` 调用应用的登录接口，服务端把登录凭据写进会话 cookie。成功后表单调用 `app.session.signIn()`，由会话的 `load` 读取当前用户，再回到登录前想去的页面。
 - 接口返回的字段错误显示在对应的输入框下面，其他错误（例如密码不对、尝试次数过多）显示在表单上方。断网等没有服务端文案的错误，按种类显示提示，见 `errorMessage`。
+- `initialValues` 是邮箱和密码的初始值。开发时可以预填 `seed` 命令写入的账号，免得每次输入；用 `import.meta.env.DEV` 判断，构建出来的生产版本中没有它们：
+
+  ```tsx
+  <LoginForm
+    login={(values) => api.auth.login(values)}
+    redirect={redirect}
+    initialValues={import.meta.env.DEV ? { email: "admin@example.com", password: "password" } : undefined}
+  />
+  ```
 
 换成左右分栏时，把 `CenteredAuthLayout` 换成 `SplitAuthLayout`，表单不变。左栏是品牌色的展示区：`brand` 是顶部的标志，`aside` 是中间的内容，例如一句口号和几条产品介绍，`asideFooter` 是底部的一行小字。左栏的文字是白色，放在里面的 `Title`、`Text` 不用另设颜色。窄屏时左栏隐藏，`brand` 移到表单上方：
 

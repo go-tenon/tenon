@@ -16,13 +16,19 @@ export interface LoginFormProps {
   redirect?: string
   /** “忘记密码”链接，例如 <AnchorLink to="/forgot">忘记密码？</AnchorLink>。 */
   forgot?: ReactNode
+  /**
+   * 邮箱和密码的初始值，例如开发环境中预填 seed 写入的账号。生产环境不要传入密码：
+   *
+   *   initialValues={import.meta.env.DEV ? { email: "admin@example.com", password: "password" } : undefined}
+   */
+  initialValues?: { email?: string; password?: string }
 }
 
 /** 邮箱和密码登录：字段错误显示在输入框下面，其他错误（例如密码不对）显示在表单上方。 */
-export function LoginForm({ login, redirect, forgot }: LoginFormProps): ReactNode {
+export function LoginForm({ login, redirect, forgot, initialValues }: LoginFormProps): ReactNode {
   const app = useApp()
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
+  const [email, setEmail] = useState(initialValues?.email ?? "")
+  const [password, setPassword] = useState(initialValues?.password ?? "")
   const [errors, setErrors] = useState<ReturnType<typeof serverErrors>>({ fields: {} })
   const [pending, setPending] = useState(false)
   const submit = async (e: FormEvent) => {

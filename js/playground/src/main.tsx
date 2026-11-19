@@ -458,6 +458,7 @@ function CenteredLogin(): ReactNode {
           Promise.reject({ status: 401, code: "auth.invalid_credentials", detail: "邮箱或密码不对", fields: [] })
         }
         forgot={<AnchorLink to="/centered">忘记密码？</AnchorLink>}
+        initialValues={{ email: "demo@example.com", password: "demo-password" }}
       />
     </CenteredAuthLayout>
   )
