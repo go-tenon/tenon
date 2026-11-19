@@ -37,6 +37,10 @@ func generateTS(t *testing.T, api *rest.API) *clientgen.Result {
 }
 
 func TestGeneratedTSExampleIsUpToDate(t *testing.T) {
+	// -update 时改写示例客户端，其他测试会读这些文件，所以先串行运行完。
+	if !*update {
+		t.Parallel()
+	}
 	res := generateTS(t, exampleAPI(nil))
 	if len(res.Skipped)+len(res.Warnings) > 0 {
 		t.Fatalf("skipped %q, warnings %q", res.Skipped, res.Warnings)
@@ -57,6 +61,7 @@ func TestGeneratedTSExampleIsUpToDate(t *testing.T) {
 
 // TestTSClientCompiles 用严格模式的 tsc 检查生成的代码。需要 bun，没有时跳过。
 func TestTSClientCompiles(t *testing.T) {
+	t.Parallel()
 	bun := requireBun(t)
 	cmd := exec.Command(bun, "x", "-p", "typescript@5.9.3", "tsc", "--noEmit", "--strict", "--target", "es2022",
 		"--lib", "es2022,dom,dom.iterable", "--module", "esnext", "--moduleResolution", "bundler", "--verbatimModuleSyntax",
@@ -70,6 +75,7 @@ func TestTSClientCompiles(t *testing.T) {
 
 // TestTSRoundTrip 用 bun 运行 testdata/roundtrip.ts：生成的客户端调用真实的示例服务。
 func TestTSRoundTrip(t *testing.T) {
+	t.Parallel()
 	bun := requireBun(t)
 	base := serve(t, tokens{"secret": true})
 	client, err := filepath.Abs(filepath.Join(exampleTSOut, "api.ts"))
@@ -87,6 +93,7 @@ func TestTSRoundTrip(t *testing.T) {
 // TestTSValidationMatchesServer 用 bun 运行 testdata/validate.ts：同一批输入分别用 @go-tenon/client 的 validate
 // 和示例服务校验，位置、错误码和提示必须一致。
 func TestTSValidationMatchesServer(t *testing.T) {
+	t.Parallel()
 	bun := requireBun(t)
 	base := serve(t, tokens{"secret": true})
 	example, err := filepath.Abs(exampleTSOut)

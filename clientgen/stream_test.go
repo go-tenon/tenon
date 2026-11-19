@@ -37,6 +37,7 @@ func collect(t *testing.T, events func(func(api.ArticleEventsEvent, error) bool)
 }
 
 func TestEvents(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	base := serve(t, tokens{"secret": true})
 	c := api.New(api.Options{BaseURL: base, Auth: wire.StaticToken("secret")})
@@ -80,6 +81,7 @@ func TestEvents(t *testing.T) {
 }
 
 func TestUpload(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	base := serve(t, tokens{"secret": true})
 	c := api.New(api.Options{BaseURL: base, Auth: wire.StaticToken("secret")})

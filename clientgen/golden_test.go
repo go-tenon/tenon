@@ -59,6 +59,10 @@ func generate(t *testing.T, api *rest.API, opts clientgen.Options) *clientgen.Re
 }
 
 func TestGeneratedExampleIsUpToDate(t *testing.T) {
+	// -update 时改写示例客户端，其他测试会读这些文件，所以先串行运行完。
+	if !*update {
+		t.Parallel()
+	}
 	res := generate(t, exampleAPI(nil), clientgen.Options{})
 	if len(res.Skipped) > 0 {
 		t.Fatalf("skipped %q", res.Skipped)

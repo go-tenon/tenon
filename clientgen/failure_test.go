@@ -31,6 +31,7 @@ func generateErr(api *rest.API, opts clientgen.Options) error {
 }
 
 func TestTypesWithCustomJSONAreRejected(t *testing.T) {
+	t.Parallel()
 	err := generateErr(badAPI[bad.MoneyOutput](), clientgen.Options{})
 	if err == nil || !strings.Contains(err.Error(), "bad.Money has method MarshalJSON") {
 		t.Fatal(err)
@@ -38,6 +39,7 @@ func TestTypesWithCustomJSONAreRejected(t *testing.T) {
 }
 
 func TestThirdPartyTypesNeedAnImport(t *testing.T) {
+	t.Parallel()
 	err := generateErr(badAPI[bad.RowOutput](), clientgen.Options{})
 	if err == nil || !strings.Contains(err.Error(), "--import github.com/uptrace/bun/schema") {
 		t.Fatal(err)
@@ -52,6 +54,7 @@ func TestThirdPartyTypesNeedAnImport(t *testing.T) {
 }
 
 func TestMirrorPackageNamesMustBeUnique(t *testing.T) {
+	t.Parallel()
 	err := generateErr(badAPI[bad.ConflictOutput](), clientgen.Options{})
 	if err == nil || !strings.Contains(err.Error(), "--rename") {
 		t.Fatal(err)
@@ -67,6 +70,7 @@ func TestMirrorPackageNamesMustBeUnique(t *testing.T) {
 }
 
 func TestOperationAndGroupNamesMustNotCollide(t *testing.T) {
+	t.Parallel()
 	api := exampleAPI(nil)
 	op := huma.Operation{OperationID: "article", Method: http.MethodGet, Path: "/article"}
 	rest.Public()(&op)
