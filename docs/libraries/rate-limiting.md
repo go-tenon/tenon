@@ -116,7 +116,7 @@ router.Use(httpx.RateLimit(ratelimit.NewMemory(cfg.HTTP.RateLimit), skipHealth))
 <a id="in-handlers"></a>
 ## 在处理器中限流
 
-例如文章可以设置[访问口令](../security/hashing.md#hashing-passwords)。为了防止口令被暴力猜测，同一篇文章每分钟最多尝试 5 次。只需在校验口令的处理器开头调用限流器：
+例如文章可以设置[访问口令](../security/encryption.md#hashing-passwords)。为了防止口令被暴力猜测，同一篇文章每分钟最多尝试 5 次。只需在校验口令的处理器开头调用限流器：
 
 ```go
 func (h *Handlers) Unlock(w http.ResponseWriter, r *http.Request) error {

@@ -65,15 +65,15 @@ Tenon 是用 Go 构建后端服务的框架。业务逻辑写成[业务动作](c
 
 ## 认证与授权
 
-- [认证](security/authentication.md)、[认证进阶](security/authentication-advanced.md)：令牌校验、保护路由、多套账号
-- [登录与注册](security/login.md)、[登录的安全功能](security/login-security.md)：密码、验证码、二次验证、Passkey
-- [API 令牌](security/api-tokens.md)：会话、个人访问令牌
+- [认证](security/authentication.md)：令牌校验、保护路由、多套账号、代为登录
+- [登录与注册](security/login.md)：密码、验证码、找回密码、二次验证、Passkey、人机验证
+- [API 令牌](security/api-tokens.md)：会话 cookie、个人访问令牌、撤销
 - [授权](security/authorization.md)：角色、权限、资源所有权
-- [哈希](security/hashing.md)、[加密与签名链接](security/encryption.md)
-- [第三方登录](security/social-login.md)、[App 中的第三方登录](security/social-login-apps.md)、[企业单点登录](security/enterprise-sso.md)
+- [哈希、加密与签名链接](security/encryption.md)
+- [第三方登录](security/social-login.md)：网页、App、Sign in with Apple
+- [企业单点登录](security/enterprise-sso.md)
 - [OAuth 授权服务器](security/oauth-server.md)：第三方应用和自己的原生客户端登录
-- [多租户](security/tenancy.md)
-- 完整的例子：[单账号后台](security/admin-example.md)、[运营后台与多租户](security/saas-example.md)
+- [多租户](security/tenancy.md)：租户隔离、运营后台与租户后台
 
 ## 前端
 

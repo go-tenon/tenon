@@ -117,7 +117,7 @@ http:
 <a id="basic-auth"></a>
 ## HTTP Basic 认证：`httpx.BasicAuth`
 
-内部文档、运维页面这类不接入账号体系的页面用它保护。`cfg.Ops` 是“用户名 → [密码哈希](../security/hashing.md)”的配置项，`hasher` 是 `hashing.Hasher`，`opsLimiter` 是 `ratelimit.Limiter`：
+内部文档、运维页面这类不接入账号体系的页面用它保护。`cfg.Ops` 是“用户名 → [密码哈希](../security/encryption.md)”的配置项，`hasher` 是 `hashing.Hasher`，`opsLimiter` 是 `ratelimit.Limiter`：
 
 ```go
 verify := func(_ context.Context, user, password string) (bool, error) {

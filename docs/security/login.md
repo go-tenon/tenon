@@ -1,73 +1,35 @@
 # 登录与注册
 
-`login` 包回答“这个人是谁”：用登录标识和密码登录、用验证码登录或注册、找回密码、绑定和更换邮箱或手机号。得到 `identity.Subject` 之后，由 API 签发凭据：[`tokens.Login`](api-tokens.md#login-and-logout)，浏览器的登录把它写进[会话 cookie](api-tokens.md#browser-sessions)。单页应用、App 和后台都通过这些接口登录。
+`login` 证明“这个人是谁”：邮箱密码登录、验证码登录与注册、找回密码、绑定邮箱和手机号、二次验证、Passkey。得到 `identity.Subject` 之后，由 [API 令牌](api-tokens.md#login-and-logout)签发凭据，浏览器的登录把它写进[会话 cookie](api-tokens.md#browser-sessions)。
 
-账号表属于应用。应用的 `users` 表只保存业务字段；登录标识、密码哈希和验证码保存在框架的 `auth_*` 表中，按 [`identity.Ref`](authentication.md#key-concepts) 引用账号。一个账号可以有多个邮箱、手机号，也可以没有密码只用验证码登录。
+包：`login`、`login/passkey`、`login/logintest`、`captcha`。
 
-每套[账号体系](authentication-advanced.md#account-systems)各用一个 `login.Realm`。单账号后台见[单账号后台](admin-example.md)；运营 + 租户两套账号见[运营后台与多租户](saas-example.md)。
-
-阅读前需要了解：[入门教程第 6 章](../tutorial/06-login.md)；[哈希](hashing.md)；[限流](../libraries/rate-limiting.md)。二次验证、Passkey、人机验证等见[登录的安全功能](login-security.md)。
-
-- [示例用法](#example-usage)
-- [装配](#assembling)
-- [登录标识](#identifiers)
-- [密码登录](#password)
-- [验证码登录与注册](#codes)
-- [找回密码](#reset)
-- [管理登录方式](#managing)
-- [限流与防探测](#limits)
-- [清理](#cleanup)
-- [测试](#testing)
-- [常见问题](#troubleshooting)
-- [API 参考](#api-reference)
+- 账号表属于应用：`users` 表只保存业务字段，登录标识、密码哈希、验证码和二次验证保存在框架的 `auth_*` 表中，按 `identity.Ref` 引用账号。
+- 每套[账号体系](authentication.md#account-systems)各用一个 `login.Realm`，在入口中创建一次。
 
 <a id="example-usage"></a>
-## 示例用法
+## 示例
 
-下面为用户创建一个 `Realm`，用邮箱和密码登录，再为登录成功的用户签发令牌：
+登录接口用邮箱和密码登录，账号启用了二次验证时让客户端再提交验证器上的数字，最后签发 token。`users` 是入口创建的 `*login.Realm`，`tokens` 是 `*apitoken.Store`，`device` 是这次请求的 `apitoken.Device`：
 
 ```go
-users := login.New(db, login.Options{
-    Type:     user.Type,
-    Policy:   login.Policy{Register: true},
-    Hasher:   hashing.New(cfg.Hashing),
-    Crypt:    crypt.New(cfg.Crypt),
-    Send:     sendCode, // 发送验证码：邮件或短信
-    Attempts: pglimit.New(db, "login:attempts", every15),
-    Sends:    pglimit.New(db, "login:sends", every15),
-})
-
-out, err := users.Password(ctx, login.Email(email), password)
+out, err := users.Password(ctx, login.Email(in.Body.Email), in.Body.Password)
 if err != nil {
-    return err // login.ErrInvalidCredentials 等
+    return nil, err // login.ErrInvalidCredentials → 401；ratelimit.ErrExceeded → 429
 }
 if out.Pending != "" {
-    // 账号启用了二次验证：让客户端提交验证器上的数字，再调用 users.TwoFactor
+    resp.Body.Pending = out.Pending // 客户端提交验证器上的数字，调用 users.TwoFactor
+    return resp, nil
 }
 plain, err := tokens.Login(ctx, out.Subject, device)
 ```
 
-`Password` 校验邮箱和密码。登录成功时，`out.Subject` 就是这个用户；如果账号启用了二次验证，`out.Pending` 不为空，客户端还要提交验证器上的数字。最后，由 [API 令牌](api-tokens.md) 签发凭据。
+`login.Outcome` 的四个字段只有一个不为空：`Subject` 登录成功；`Pending` 等待[二次验证](#two-factor)；`Proof` 交给 `Register`、`ResetPassword` 或 `Link`；`Enroll` 先[启用二次验证](#requiring-two-factor)。完整的登录接口见[入门教程第 6 章](../tutorial/06-login.md)。
 
 <a id="assembling"></a>
-## 装配
+## 装配：`login.New`
 
-`login` 没有单独的配置段；它吃的是数据库、[`Hasher`](hashing.md)、[`Crypt`](encryption.md) 和限流器这些已经装配好的依赖。串起来看：
-
-1. 发布迁移，建好 `auth_*` 表
-2. 启动时 `Load` 校验哈希、加密等依赖的配置
-3. 在入口创建一次 `login.Realm`（每套账号体系各一个）
-4. 登录 / 注册接口调用 `Realm` 的方法；成功后再交给 [API 令牌](api-tokens.md) 签发凭据
-
-先发布 `login` 的迁移，见[发布框架迁移](../database/migrations.md#publishing-framework-migrations)：
-
-```go
-migrationCmd.AddCommand(migratecmd.Publish(
-    login.Migrations(),
-))
-```
-
-在[入口](../concepts/dependencies.md#assembling-the-application)中为用户创建 `Realm`，`Hasher` 哈希密码，`Crypt` 派生验证码的密钥：
+先[发布](../database/migrations.md#publishing-framework-migrations) `login.Migrations()`，再在[入口](../concepts/dependencies.md#assembling-the-application)中为每套账号创建一个 `Realm`。`a.db` 是入口的 `*bun.DB`，`a.crypt` 是[应用密钥](encryption.md)的 `*crypt.Crypt`，`sendCode` 见[发送验证码](#send-codes)：
 
 ```go
 every15 := ratelimit.Config{Rate: 5, Interval: 15 * time.Minute, Burst: 5}
@@ -78,31 +40,29 @@ users := login.New(a.db, login.Options{
     Crypt:    a.crypt,
     Send:     sendCode(mailer, emails),
     Resolve:  user.Resolve,
+    Issuer:   "Blog",
     Attempts: pglimit.New(a.db, "login:user:attempts", every15),
     Sends:    pglimit.New(a.db, "login:user:sends", every15),
 })
 ```
 
-| 选项 | 含义 |
+| 选项 | 作用 |
 | --- | --- |
-| `Type` | 这套账号体系，`Realm` 只管理这个类型的主体 |
-| `Policy` | 登录策略，见下表；各租户的策略不同时改用 `PolicyFor`，见[按租户的登录策略](login-security.md#policies) |
-| `Send` | 发送验证码，邮件和短信的内容、通道由应用决定，见[邮件](../libraries/mail.md)和[短信](../libraries/sms.md) |
-| `Resolve` | 登录成功、签发凭据之前调用一次，通常就是入口的 [Resolver](authentication.md#resolving-subjects)：账号已停用时返回错误，登录失败 |
+| `Type` | 这套账号体系，`Realm` 只管理这个类型的主体；必填 |
+| `Hasher`、`Crypt`、`Attempts`、`Sends` | 哈希密码；派生验证码的密钥；密码失败和发送验证码的[限流器](#limits)；必填 |
+| `Send` | [发送验证码](#send-codes)；调用 `SendCode` 时必须设置 |
+| `Resolve` | 签发凭据之前调用一次，通常是入口的 [Resolver](authentication.md#resolving-subjects)：账号已停用时返回错误，登录失败 |
 | `PerTenant` | 登录标识在租户内唯一，见[登录标识](#identifiers) |
-| `Attempts`、`Sends` | 密码登录失败和发送验证码的[限流器](#limits)，必填 |
+| `Issuer` | 验证器 App 中显示的应用名称 |
+| `Policy`、`PolicyFor` | 登录策略；各租户不同时用 [`PolicyFor`](#policies) |
+| `CodeLength`、`CodeTTL`、`CodeAttempts`、`ProofTTL` | 验证码 6 位、15 分钟有效、可试 3 次；完成凭证和 `Pending` 15 分钟有效 |
 
-`login.Policy` 的字段：
+`login.Policy` 的字段：`Register` 开放自助注册；`PasswordKinds` 可以配合密码登录的标识类型，默认邮箱、手机号、用户名；`PasswordPolicy` 检查新密码，默认 8 到 128 个字符、首尾没有空白，不符合返回 `login.ErrWeakPassword`；`RequireTwoFactor` [强制二次验证](#requiring-two-factor)；`Methods` 允许的登录方式，`nil` 不限制。
 
-| 字段 | 含义 |
-| --- | --- |
-| `Register` | 是否开放自助注册：为 `true` 时验证码也发给未注册的邮箱或手机号，验证后可以注册 |
-| `PasswordKinds` | 可以配合密码登录的标识类型，默认邮箱、手机号和用户名 |
-| `PasswordPolicy` | 检查新密码，默认要求 8 到 128 个字符、首尾没有空白 |
-| `RequireTwoFactor` | 强制[二次验证](login-security.md#requiring-two-factor) |
-| `Methods` | 允许的登录方式，`nil` 表示不限制，见[按租户的登录策略](login-security.md#policies) |
+<a id="send-codes"></a>
+### 发送验证码：`Options.Send`
 
-验证码默认 6 位数字、15 分钟有效、最多试 3 次，都可以在 `Options` 中修改。`Send` 收到的 `login.Code` 带有用途、接收的标识和验证码，下面用[邮件模板](../libraries/mail.md#writing-templates)发送：
+`Send` 收到 `login.Code`：用途 `Purpose`（`sign_in`、`reset`、`verify`、`confirm`）、接收的标识 `To`、`Code`、`RequestID`，以及 `Registered`（标识已注册，模板据此写“登录”还是“注册”）。下面按用途选择[邮件模板](../libraries/mail.md#writing-templates)，`mailer` 是 `mail.Mailer`，`emails` 是 `*mail.Templates`：
 
 ```go
 func sendCode(mailer mail.Mailer, emails *mail.Templates) func(context.Context, login.Code) error {
@@ -117,46 +77,40 @@ func sendCode(mailer mail.Mailer, emails *mail.Templates) func(context.Context, 
 }
 ```
 
-`c.Purpose` 是 `sign_in`、`reset`、`verify` 或 `confirm`（[确认身份](login-security.md#confirming)），对应四个模板。`c.Registered` 表示邮箱已经注册，模板可以据此写“登录”还是“注册”。用短信时按 `c.To.Kind` 区分 `email` 和 `phone`。
-
-验证码是同步发送的，用户在等着收码。邮件服务故障时用户就无法登录，所以这里的 `mailer` 最好用 [`mail.Failover`](../libraries/mail-providers.md#failover) 组合一个备用的服务。
+- 支持短信时按 `c.To.Kind` 选择通道，见[短信](../libraries/sms.md)。
+- 验证码同步发送，`Send` 的错误由 `SendCode` 原样返回：邮件服务故障时用户无法登录，`mailer` 用 [`mail.Failover`](../libraries/mail-providers.md#failover) 加一个备用服务。
+- 放进链接时同时带上 `RequestID` 和 `Code`，打开的页面把两者交给 `VerifyCode`。
 
 <a id="identifiers"></a>
-## 登录标识
-
-登录标识是“用什么找到这个账号”：
+## 登录标识：邮箱、手机号、用户名
 
 | 构造 | 规范化 |
 | --- | --- |
 | `login.Email(s)` | 去掉首尾空白，转为小写 |
-| `login.Phone(s)` | 必须是 E.164 格式，例如 `+8613800138000`，由应用把用户输入的号码转换成这个格式 |
+| `login.Phone(s)` | 必须是 E.164 格式，例如 `+8613800138000`，由应用转换用户输入的号码 |
 | `login.Username(s)` | 去掉首尾空白，转为小写，中间不允许空白 |
 
-格式不正确时返回 `login.ErrInvalidIdentifier`。[第三方登录](social-login.md)的账号也是一种标识，类型是提供方的名称。
+格式不正确时返回 `login.ErrInvalidIdentifier`。[第三方账号](social-login.md)和 passkey 也是标识，类型分别是提供方的名称和 `passkey`。
 
-同一个标识在一套账号体系中只能属于一个账号。`PerTenant` 为 `true` 时只在租户内唯一：同一个邮箱可以在两个店铺各注册一个客户账号。这时查找和写入都使用 `identity.TenantFromContext(ctx)`，即入口的 [`Options.Tenant`](tenancy.md#identifying-tenants) 取出的租户；登录得到的主体带有 `Tenant`，签发的凭据只能在这个租户使用。验证码和完成凭证也只能在发送时的租户中使用。
+同一个标识在一套账号体系中只属于一个账号。`PerTenant: true` 时只在租户内唯一，同一个邮箱可以在两个店铺各注册一个账号：查找和写入使用入口的 [`Options.Tenant`](tenancy.md#identifying-tenants) 取出的租户，登录得到的主体带有 `Tenant`，凭据、验证码和完成凭证只能在这个租户使用。
 
 <a id="password"></a>
-## 密码登录
-
-`Password` 用标识和密码登录，成功后把 `out.Subject` 交给入口签发凭据：
+## 邮箱密码登录：`Password`
 
 ```go
 out, err := users.Password(ctx, login.Email(in.Body.Email), in.Body.Password)
-if err != nil {
-    return nil, err
-}
-plain, err := tokens.Login(ctx, out.Subject, device)
 ```
 
-完整的接口见 [API 令牌的登录与登出](api-tokens.md#login-and-logout)。邮箱不存在、没有设置密码、密码错误都返回 `login.ErrInvalidCredentials`，响应 `401`。连续失败太多次时返回 `ratelimit.ErrExceeded`，响应 `429`，见[限流与防探测](#limits)。
+`users` 是这套账号的 `*login.Realm`，`out` 的处理见[示例](#example-usage)。
 
-允许用哪些标识配合密码登录由 `Policy.PasswordKinds` 决定，默认是邮箱、手机号和用户名。登录成功时，如果密码哈希是用旧的算法或参数生成的，会按当前配置[重新哈希](hashing.md#rehashing)。
+- 标识不存在、没有密码、密码错误都返回 `login.ErrInvalidCredentials`（`401`），耗时相同，不暴露哪些邮箱注册过。
+- 连续失败超过 `Attempts` 的配额返回 `ratelimit.ErrExceeded`（`429`），成功后清零。
+- 标识的类型必须在 `Policy.PasswordKinds` 中；旧参数的哈希在登录成功时[重新哈希](encryption.md#rehashing)。
 
 <a id="codes"></a>
-## 验证码登录与注册
+## 验证码登录：`SendCode`、`VerifyCode`
 
-验证码分两步：`SendCode` 发出验证码，返回请求 ID；客户端把请求 ID 和用户输入的验证码交给 `VerifyCode`。
+`SendCode` 发出验证码、返回请求 ID，客户端把请求 ID 和验证码交给 `VerifyCode`。`users` 是 `*login.Realm`，`tokens` 是 `*apitoken.Store`：
 
 ```go
 requestID, err := users.SendCode(ctx, login.SignIn, login.Email(in.Body.Email))
@@ -165,19 +119,22 @@ requestID, err := users.SendCode(ctx, login.SignIn, login.Email(in.Body.Email))
 ```go
 out, err := users.VerifyCode(ctx, in.Body.RequestID, in.Body.Code)
 if err != nil {
-    return nil, err // 验证码不正确或已失效：login.ErrInvalidCode
+    return nil, err // 不正确、已过期或尝试次数用完：login.ErrInvalidCode
 }
 if out.Proof != "" {
-    // 邮箱还没有注册：把完成凭证交给客户端，进入注册页
-    resp.Body.Proof = out.Proof
+    resp.Body.Proof = out.Proof // 邮箱还没有注册：客户端进入注册页
     return resp, nil
 }
 plain, err := tokens.Login(ctx, out.Subject, device)
 ```
 
-邮箱已注册时，`VerifyCode` 直接登录，返回 `out.Subject`。还没有注册时返回 `out.Proof`：一个一次性的完成凭证，15 分钟内有效，证明客户端确实收到了验证码。
+- 已注册时直接登录，返回 `out.Subject`（启用了二次验证时是 `out.Pending`）；未注册时返回一次性的完成凭证 `out.Proof`，交给[注册](#register)。
+- `Policy.Register` 为 `false` 时验证码不发给未注册的标识，`SendCode` 照样返回请求 ID，不暴露哪些邮箱注册过。
 
-框架不替应用创建账号。应用的注册业务动作在自己的事务中插入 `users` 行，再调用 `Register`，把已验证的邮箱挂到这个账号上：
+<a id="register"></a>
+### 注册账号：`Register`、`CompleteRegister`
+
+框架不创建账号。应用的注册业务动作在自己的事务中插入 `users` 行，再用 `Register` 把已验证的标识挂到这个账号上。`a.db` 是 `*bun.DB`，`a.users` 是 `*login.Realm`：
 
 ```go
 func (a *SignUp) Handle(ctx context.Context, in SignUpInput) (login.Outcome, error) {
@@ -194,48 +151,42 @@ func (a *SignUp) Handle(ctx context.Context, in SignUpInput) (login.Outcome, err
     if err != nil {
         return login.Outcome{}, err
     }
-    // 事务提交之后：调用 Options.Resolve，得到可以签发凭据的 out.Subject
     return a.users.CompleteRegister(ctx, reg)
 }
 ```
 
-`Register` 在事务中写入，`CompleteRegister` 在事务提交之后调用 `Options.Resolve` 并返回 `Outcome`。分成两步是因为 `Resolve` 通常从连接池读取账号，在事务中调用时读不到还没有提交的 `users` 行。`Outcome.Subject` 的 `Auth` 记下注册时验证的方式；账号体系[强制二次验证](login-security.md#requiring-two-factor)时返回的是 `Outcome.Enroll`，先启用二次验证再签发凭据。
-
-[第三方登录](social-login.md#signing-in)得到的注册凭证也交给同一个注册业务动作。注册需要什么资料、要不要同意协议都由应用决定。任何一步失败，账号行和凭证的使用一起回滚，客户端可以修正后用同一个凭证重试。两个人同时用同一个邮箱注册时，后完成的得到 `login.ErrTaken`。`WithPassword` 可以省略，只用验证码登录的账号没有密码。
-
-`Policy.Register` 为 `false` 时不开放自助注册：未注册的邮箱收不到验证码。为了不暴露哪些邮箱注册过，`SendCode` 照样返回请求 ID，只是用它验证必然失败。
-
-验证码也可以放进链接：模板中的链接同时带上 `RequestID` 和 `Code`，链接打开的页面把两者交给 `VerifyCode`。
+- `CompleteRegister` 在事务提交之后调用：它调用的 `Options.Resolve` 从连接池读账号，在事务中读不到未提交的行。
+- 任何一步失败都一起回滚，同一个凭证可以重试；标识已属于其他账号时返回 `login.ErrTaken`。`WithPassword` 可以省略。
+- [第三方登录](social-login.md#signing-in)和 [Passkey](#passkeys) 的完成凭证交给同一个注册业务动作。
 
 <a id="reset"></a>
-## 找回密码
+## 找回密码：`login.Reset`、`ResetPassword`
 
-找回密码用 `login.Reset`：
+用途为 `login.Reset` 的验证码只发给已注册的标识，未注册的同样返回请求 ID。`VerifyCode` 通过后得到 `out.Proof`，客户端连同新密码交给 `ResetPassword`。`users` 是 `*login.Realm`，`tokens` 是 `*apitoken.Store`：
 
 ```go
 requestID, err := users.SendCode(ctx, login.Reset, login.Email(in.Body.Email))
 ```
 
-验证码只发给已注册的邮箱，未注册的同样返回一个请求 ID。`VerifyCode` 通过后得到 `out.Proof`，客户端连同新密码交给 `ResetPassword`：
-
 ```go
 who, err := users.ResetPassword(ctx, in.Body.Proof, in.Body.Password)
 if err != nil {
-    return nil, err
+    return nil, err // 新密码不符合 PasswordPolicy：login.ErrWeakPassword
 }
 if _, err := tokens.RevokeSubject(ctx, who); err != nil {
     return nil, err
 }
 ```
 
-新密码按 `Policy.PasswordPolicy` 检查，默认要求 8 到 128 个字符、首尾没有空白，不符合时返回 `login.ErrWeakPassword`。接收验证码的邮箱同时标为已验证，它的登录失败计数清零。找回密码后通常撤销这个账号的全部 token，见[撤销令牌](api-tokens.md#revoking-tokens)。`ResetPassword` 只重置密码，用户接着用新密码登录，启用了[二次验证](login-security.md#two-factor)的账号仍然要通过二次验证，所以只拿到邮箱绕不过它。没有设置过密码的账号同样可以用这个流程设置密码。
+- `ResetPassword` 不登录：用户接着用新密码登录，二次验证仍然有效，只拿到邮箱绕不过它。
+- 没有密码的账号用同一个流程设置密码。找回后撤销全部 token，见[撤销令牌](api-tokens.md#revoking-tokens)。
 
 <a id="managing"></a>
-## 管理登录方式
+## 绑定和更换邮箱、手机号，修改密码
 
-账号设置页面中，`Identifiers` 列出账号的全部标识和是否已验证，`HasPassword` 决定显示“设置密码”还是“修改密码”。
+账号设置页中，`Identifiers` 列出账号的全部标识和是否已验证，`HasPassword` 决定显示“设置密码”还是“修改密码”。`a.users` 是 `*login.Realm`，`sub` 是当前登录的主体。
 
-添加或更换邮箱、手机号时，先用 `login.Verify` 向新的标识发验证码，验证后把完成凭证交给 `Link`。更换时在同一个事务中用 `Detach` 移除旧的：
+添加或更换邮箱、手机号：`SendCode(ctx, login.Verify, 新标识)` 发验证码，`VerifyCode` 得到的完成凭证交给 `Link`；更换时在同一个事务中用 `Detach` 移除旧的：
 
 ```go
 err := database.RunInTx(ctx, a.db, nil, func(ctx context.Context, tx database.Tx) error {
@@ -246,42 +197,272 @@ err := database.RunInTx(ctx, a.db, nil, func(ctx context.Context, tx database.Tx
 })
 ```
 
-`Detach` 和 `RemovePassword` 始终为账号保留至少一种登录方式，移除最后一种时返回 `login.ErrLastMethod`。能登录的方式有三种：第三方账号和 passkey；设置了 `Options.Send` 时的邮箱和手机号（用验证码登录）；有密码时的 `PasswordKinds` 标识。例如只剩用户名的账号要保留密码。
-
 | 方法 | 用途 |
 | --- | --- |
-| `SetPassword(ctx, db, ref, password)` | 设置或修改密码，按密码策略检查 |
-| `RemovePassword(ctx, db, ref)` | 删除密码，之后只能用验证码、第三方账号或 passkey 登录 |
-| `Lookup(ctx, id)` | 管理后台按邮箱或手机号查找账号 |
+| `SetPassword(ctx, db, ref, password)` | 设置或修改密码，按 `PasswordPolicy` 检查 |
+| `RemovePassword(ctx, db, ref)` | 删除密码 |
+| `Lookup(ctx, id)` | 管理后台按邮箱查找账号；登录前调用会暴露哪些标识已注册 |
 
-修改密码后，用 `RevokeOthers` 让其他设备下线，见[撤销令牌](api-tokens.md#revoking-tokens)。
+- `Detach`、`RemovePassword` 移除最后一种登录方式时返回 `login.ErrLastMethod`。能登录的方式：第三方账号、passkey；设置了 `Send` 时的邮箱和手机号；有密码时 `PasswordKinds` 中的标识。
+- 修改密码之前[确认身份](#confirming)，之后用 `apitoken.Store` 的 `RevokeOthers` 让其他设备下线。
+
+<a id="two-factor"></a>
+## 二次验证：`SetupTOTP`、`TwoFactor`
+
+账号可以启用 TOTP 二次验证：登录时除了密码，还要输入验证器 App 上的 6 位数字。`users` 是 `*login.Realm`，`sub` 是当前登录的主体，`db` 是 `*bun.DB`，`tokens` 是 `*apitoken.Store`。
+
+启用分两步。`SetupTOTP` 生成密钥，`setup.URI` 渲染成二维码，`setup.Secret` 供手动输入；用户输入验证器上的数字后，`ConfirmTOTP` 启用并返回 8 个恢复码：
+
+```go
+setup, err := users.SetupTOTP(ctx, db, sub.Ref(), email) // email 是验证器中显示的账号名
+codes, err := users.ConfirmTOTP(ctx, db, sub.Ref(), in.Code)
+```
+
+恢复码在手机丢失时代替验证器，各用一次，明文只由 `ConfirmTOTP` 和 `RegenerateRecoveryCodes` 返回。
+
+启用后，`Password`、`VerifyCode` 和第三方登录返回 `out.Pending`，客户端带着它和验证器上的数字（或恢复码）调用第二步：
+
+```go
+out, err := users.TwoFactor(ctx, in.Body.Pending, in.Body.Code)
+if err != nil {
+    return nil, err // 数字不正确：login.ErrInvalidCode；Pending 过期或错满 5 次：login.ErrInvalidProof
+}
+plain, err := tokens.Login(ctx, out.Subject, device)
+```
+
+- `Pending` 15 分钟内有效，最多输错 5 次。每个数字只能用一次，时钟允许相差 30 秒。
+- `DisableTwoFactor` 关闭二次验证，之前先[确认身份](#confirming)。
+
+<a id="requiring-two-factor"></a>
+### 强制二次验证：`RequireTwoFactor`
+
+运营后台通常要求员工都启用二次验证：
+
+```go
+staff := login.New(db, login.Options{
+    // ……
+    Policy: login.Policy{RequireTwoFactor: true},
+})
+```
+
+之后没有经过二次验证的登录都不签发凭据：已经启用的账号返回 `out.Pending`；还没有启用的返回 `out.Enroll`，客户端先引导用户启用，启用后登录成功。`tokens` 是 `*apitoken.Store`：
+
+```go
+setup, err := staff.EnrollTOTP(ctx, in.Body.Enroll, email)                // 返回二维码
+out, codes, err := staff.CompleteEnroll(ctx, in.Body.Enroll, in.Body.Code) // 启用并登录，codes 是恢复码
+plain, err := tokens.Login(ctx, out.Subject, device)
+```
+
+- `Enroll` 的有效期和次数与 `Pending` 相同。passkey 登录本身算二次验证；新注册的账号同样先启用。
+- 只有部分租户要求二次验证时，由租户的 Resolver 检查，见[按租户的登录策略](#policies)。请求得到 `403 auth.two_factor_required` 时，应用用 `CheckTwoFactor` 校验数字、`tokens.Confirm` 补上方式（见[确认身份](#confirming)），客户端重试。
+
+<a id="passkeys"></a>
+## Passkey：`login/passkey`
+
+`login/passkey` 把每个 passkey 作为一个登录标识（类型 `passkey`）加到 `Realm` 上，与邮箱一样可以绑定、解除、按租户隔离。发布 `passkey.Migrations()`，在入口中创建。`users` 是 `*login.Realm`，`a.crypt` 是应用密钥：
+
+```go
+passkeys, err := passkey.New(a.db, users, a.crypt, passkey.Config{
+    RPID:    "example.com",
+    RPName:  "Blog",
+    Origins: []string{"https://example.com"},
+})
+```
+
+> [!WARNING]
+> `RPID` 是 passkey 绑定的域名，要长期固定：改了它，已经创建的 passkey 全部失效。
+
+`Origins` 是允许的网页地址；Android App 加上 `android:apk-key-hash:<签名证书的哈希>`，iOS App 用关联域名。
+
+每个操作分两步：`Begin*` 返回 `options`（交给浏览器或 App）和 `token`，客户端把结果连同 `token` 交给 `Finish*`；`token` 5 分钟内有效，只能用一次。`sub` 是当前登录的主体：
+
+```go
+// 登录：浏览器列出这个网站的 passkey 让用户选择
+c, err := passkeys.BeginLogin(ctx)
+out, err := passkeys.FinishLogin(ctx, in.Body.Token, in.Body.Credential) // Credential 是 json.RawMessage；失败返回 passkey.ErrInvalid
+
+// 添加 passkey：FinishRegistration 返回完成凭证，已登录的用户交给 Link
+c, err := passkeys.BeginRegistration(ctx, sub.Ref(), email) // email 是设备上显示的账号名；注册新账号时 ref 传零值
+proof, err := passkeys.FinishRegistration(ctx, in.Body.Token, in.Body.Credential, in.Body.Name) // Name 例如“iPhone”
+err = users.Link(ctx, a.db, sub.Ref(), proof)
+```
+
+- 浏览器用 `navigator.credentials.get` 或 `create` 完成中间一步，参数先经 `PublicKeyCredential.parseRequestOptionsFromJSON` 或 `parseCreationOptionsFromJSON` 转换，交回 `credential.toJSON()`。
+- 注册新账号时，完成凭证交给[注册业务动作](#register)中的 `Register`。
+- 账号设置中用 `List`、`Rename`、`Remove` 管理 passkey。
+
+<a id="policies"></a>
+## 按租户的登录策略：`PolicyFor`
+
+[按租户登录](#identifiers)（`PerTenant`）时，各租户可以有不同的策略，例如开放注册、只允许企业 IdP、强制二次验证。`PolicyFor` 按 context 中的租户返回策略，通常读取租户的[设置](../features/settings.md)；`loginSettings` 是 `settings.New` 创建的设置组，字段与 `Policy` 对应：
+
+```go
+customers := login.New(a.db, login.Options{
+    Type:      customer.Type,
+    PerTenant: true,
+    PolicyFor: func(ctx context.Context) (login.Policy, error) {
+        s, err := loginSettings.Tenant(identity.TenantFromContext(ctx)).Get(ctx)
+        if err != nil {
+            return login.Policy{}, err
+        }
+        return login.Policy{Register: s.Register, RequireTwoFactor: s.RequireTwoFactor, Methods: s.Methods}, nil
+    },
+    // ……
+})
+```
+
+`Methods` 的名称与 `sub.Auth.Methods` 相同：`password`、`email`、`phone`、第三方提供方的名称、`passkey`。不允许的方式返回 `403 login.method_not_allowed`；找回密码和二次验证的第二步始终允许。
+
+不设置 `PerTenant`、一套账号进多个租户时，登录时还不知道租户，由租户的 Resolver 检查这次登录的方式：
+
+```go
+if cfg.RequireSSO && !slices.Contains(sub.Auth.Methods, cfg.Connection) {
+    return identity.Subject{}, identity.ErrMethodRequired.New(errorx.Public("methods", []string{cfg.Connection}))
+}
+```
+
+请求得到 `403 auth.method_required`，`params.methods` 列出可以用的方式，客户端让用户用其中一种重新登录，见[企业单点登录](enterprise-sso.md)。要求二次验证时检查 `sub.Auth.TwoFactor()`，不满足返回 `identity.ErrTwoFactorRequired`。
+
+<a id="confirming"></a>
+## 确认身份：`Confirm`、`rest.Confirmed`
+
+修改邮箱、关闭二次验证、删除账号之前，再次确认操作的是账号本人。按账号有的登录方式选一种，`users` 是 `*login.Realm`，`ref` 是当前主体的 `sub.Ref()`：
+
+| 方式 | 调用 |
+| --- | --- |
+| 密码 | `users.Confirm(ctx, ref, password)` |
+| 验证码 | `users.SendConfirmCode(ctx, ref, id)` 发给账号自己的标识，`users.ConfirmCode(ctx, ref, requestID, code)` 校验 |
+| 二次验证 | `users.CheckTwoFactor(ctx, ref, code)`，返回用到的方式 |
+| passkey、第三方账号 | 再登录一次，`out.Subject.Ref()` 等于 `ref` |
+
+确认一次、一段时间内放行：敏感操作的路由加上 `rest.Confirmed(15*time.Minute)`，距离上次登录或确认超过 15 分钟时返回 `403 auth.confirm_required`；客户端调用应用的确认接口（校验后用 `tokens.Confirm` 记下），再重试原请求。
+
+```go
+// POST /account/confirm；a.tokens 是 *apitoken.Store
+func (a *ConfirmAccount) Handle(ctx context.Context, sub identity.Subject, password string) error {
+    if err := a.users.Confirm(ctx, sub.Ref(), password); err != nil {
+        return err
+    }
+    return a.tokens.Confirm(ctx, sub, login.MethodPassword)
+}
+```
+
+```go
+op := huma.Operation{OperationID: "account-delete", Method: http.MethodDelete, Path: "/account"}
+rest.RequireToken(api, tokens.Validate)(&op)
+rest.Confirmed(15 * time.Minute)(&op)
+```
+
+- `tokens.Confirm` 的方式：密码为 `login.MethodPassword`，验证码为标识的类型，二次验证为 `CheckTwoFactor` 的返回值。
+- 登录本身算一次确认，见[认证](authentication.md#key-concepts)。个人访问令牌、OAuth 令牌和代为登录的 token 访问 `Confirmed` 的路由总是 `403`。
+
+<a id="admin-accounts"></a>
+## 后台创建账号：`Attach`
+
+运营后台的员工账号由管理员创建，不开放注册。管理员创建 `staff` 行后，用 `Attach` 直接写入邮箱，事务提交后发一个设置密码的验证码作为邀请。`a.staff` 是员工的 `*login.Realm`，`tx` 是创建账号的事务，`member` 是刚插入的员工行：
+
+```go
+if err := a.staff.Attach(ctx, tx, member.Ref(), login.Email(in.Email), false); err != nil {
+    return err
+}
+// 事务提交后发送
+_, err := a.staff.SendCode(ctx, login.Reset, login.Email(in.Email))
+```
+
+员工通过邀请邮件设置密码，邮箱随之标为已验证。
+
+> [!WARNING]
+> `Attach` 跳过验证码，未验证的标识同样占用唯一性：只用于管理员建号这类可信的场景，自助注册一律通过验证码。
+
+<a id="forget"></a>
+## 注销账号与导出：`Forget`、`Export`
+
+`Forget` 删除账号的全部登录数据，之后这个邮箱可以重新注册；`Export` 导出登录标识和安全设置。两者的签名与 `privacy.Source` 的 `Erase`、`Export` 相同，登记到[注销账号](../features/privacy.md)的清单中，`users` 是 `*login.Realm`：
+
+```go
+{Name: "login", Erase: users.Forget, Export: users.Export},
+```
+
+注销后留下的 passkey 公钥由 `passkeys.Cleanup` 删除，见[清理](#cleanup)。
+
+<a id="security-events"></a>
+## 操作日志与新设备登录提醒
+
+`login` 不回调应用：修改密码、启用二次验证、绑定登录方式时，在调用 `login` 的同一个事务中用 `activity.Record` 记[操作日志](../features/activity.md)，例如事件 `account.password_changed`。登录成功时用 `out.Subject` 作为操作者。
+
+“新设备登录”提醒：签发凭据之前用 `tokens.List(ctx, out.Subject)` 取已有的登录，其中有登录、但没有一个的 `UserAgent` 等于这次的 `device.UserAgent` 时，发邮件或站内通知。
 
 <a id="limits"></a>
 ## 限流与防探测
 
-| 限制 | 上面的配置 | 超出时 |
+| 限制 | 示例配置 | 超出时 |
 | --- | --- | --- |
-| 同一个标识的密码登录，`Options.Attempts` | 15 分钟内连续失败 5 次，登录成功或找回密码后清零 | `ratelimit.ErrExceeded`，`429` |
+| 同一个标识的密码登录和确认身份，`Options.Attempts` | 15 分钟内连续失败 5 次，成功或找回密码后清零 | `ratelimit.ErrExceeded`，`429` |
 | 向同一个标识发送验证码，`Options.Sends` | 15 分钟 5 次 | `ratelimit.ErrExceeded`，`429` |
 | 同一个验证码的尝试次数，`Options.CodeAttempts` | 默认 3 次 | 验证码作废，`login.ErrInvalidCode` |
 
-`Attempts` 和 `Sends` 用 [`pglimit`](../libraries/rate-limiting.md#postgres-limiter)，多个实例共享计数，记得发布它的迁移、定时清理回满的计数；每套账号用各自的名字。按 IP 的限流不在 `login` 中，需要时在登录接口上安装 [`httpx.RateLimit`](../libraries/rate-limiting.md#http-middleware)。
+- `Attempts`、`Sends` 用 [`pglimit`](../libraries/rate-limiting.md#postgres-limiter)，多个实例共享计数，每套账号用各自的名字。按 IP 限流用 [`httpx.RateLimit`](../libraries/rate-limiting.md#http-middleware)。
+- 防探测：密码登录对“标识不存在”和“密码错误”返回同一个错误；找回密码和不开放注册时，验证码不发给未注册的标识，同样返回请求 ID。
 
-为了保护“哪些邮箱注册过”这一信息：密码登录对“邮箱不存在”和“密码错误”返回同一个错误，耗时相同；找回密码和不开放注册时的验证码不发给未注册的邮箱，但同样返回请求 ID。验证码在库中只保存由应用密钥派生的 HMAC，数据库泄露时验证码仍然安全；完成凭证只保存 SHA-256。
+<a id="captcha"></a>
+## 人机验证：`captcha`
+
+`Sends` 按标识计数，机器人换一个邮箱就绕过它。开放自助注册时，在发送验证码的接口前用 `captcha` 校验 [Cloudflare Turnstile](https://developers.cloudflare.com/turnstile/) 的结果：
+
+```yaml
+captcha:
+  secret: ${TURNSTILE_SECRET} # 服务端密钥，不是前端的 site key
+  hostnames: [example.com]    # 允许的站点域名，为空时不检查
+  # endpoint: https://api.hcaptcha.com/siteverify  # 用 hCaptcha 时设置，默认 Turnstile
+```
+
+前端组件的 `data-action` 设为 `signup`，把得到的 token 和邮箱一起提交。接口先校验 token，再发送验证码。`cfg.Captcha` 是 `captcha.Config`，`users` 是 `*login.Realm`，`in.ip` 是客户端地址（可以为空）：
+
+```go
+bots, err := captcha.New(cfg.Captcha, nil) // 入口中创建一次
+
+if err := bots.Verify(ctx, in.Body.Captcha, "signup", in.ip); err != nil {
+    return nil, err
+}
+requestID, err := users.SendCode(ctx, login.SignIn, login.Email(in.Body.Email))
+```
+
+- 没有通过返回 `captcha.ErrFailed`（`422`），前端重置组件；每个 token 只能校验一次。Turnstile 连不上时返回 `captcha.ErrUnavailable`（`503`）。
+- action 保证注册页的 token 只能用于注册；hCaptcha 不返回 action，传空字符串。
+- 测试中把 [`outboundtest`](../libraries/outbound.md#testing) 的客户端传给 `captcha.New`，登记 `captcha.Turnstile` 地址的响应。
+
+<a id="sms-cost"></a>
+## 限制短信费用
+
+验证码用短信发送时，在 `Send` 中先过一个全局限流器，给每天的费用设上限。`db` 是 `*bun.DB`，`texts` 是 [`sms.Sender`](../libraries/sms.md)：
+
+```go
+smsBudget := pglimit.New(db, "sms:budget", ratelimit.Config{Rate: 5000, Interval: 24 * time.Hour, Burst: 5000})
+
+send := func(ctx context.Context, code login.Code) error { // 作为 Options.Send
+    if err := smsBudget.Allow(ctx, "all"); err != nil {
+        return err // 当天的额度用完：429，同时告警
+    }
+    return texts.Send(ctx, sms.Message{To: code.To.Value, Template: "login_code", Params: map[string]string{"code": code.Code}})
+}
+```
+
+服务商对同一号码限频时返回 `sms.ErrLimited`，同样是 `429`。只服务部分地区时，发送前检查国家码：国际短信更贵，也是刷量的重点。
 
 <a id="cleanup"></a>
-## 清理
+## 清理过期验证码：`Cleanup`
 
-过期和已用过的验证码校验失败，但行仍然留在表中。`Cleanup` 每次最多删除 `limit` 条，可以注册为[定时任务](../background/scheduling.md)：
+过期和用过的验证码、完成凭证留在表中，`users.Cleanup` 每次最多删除 `limit` 条；`passkeys.Cleanup` 删除没有绑定账号的 passkey 和过期的操作记录。`users` 是 `*login.Realm`，`passkeys` 是 `*passkey.Store`。注册为[定时任务](../background/scheduling.md)，每小时一次：
 
 ```go
 n, err := users.Cleanup(ctx, 1000)
+n, err = passkeys.Cleanup(ctx, 1000)
 ```
 
 <a id="testing"></a>
-## 测试
+## 测试：`login/logintest`
 
-`login/logintest` 提供三个工具。`Realm` 组装测试用的 `Realm`：没有设置的 `Hasher`、`Crypt`、`Attempts`、`Sends` 用适合测试的值补上，即最低成本的 bcrypt、随机的应用密钥和宽松的内存限流。`Outbox` 记录发出的验证码，测试中把 `outbox.Send` 作为 `Options.Send`：
+`logintest.Realm` 组装测试用的 `Realm`：没有设置的 `Hasher`、`Crypt`、`Attempts`、`Sends` 用最低成本的 bcrypt、随机的应用密钥和宽松的内存限流补上。`Outbox` 记录发出的验证码，`outbox.Send` 作为 `Options.Send`。`db` 是 `dbtest.Open` 建的临时库：
 
 ```go
 outbox := logintest.NewOutbox()
@@ -292,108 +473,6 @@ code, _ := outbox.Last(login.Email("alice@example.com"))
 out, err := users.VerifyCode(ctx, requestID, code.Code)
 ```
 
-`FailWith` 让之后的发送都返回错误，模拟邮件或短信服务故障。`TOTP` 计算验证器上显示的数字：
-
-```go
-setup, err := users.SetupTOTP(ctx, db, ref, "alice@example.com")
-codes, err := users.ConfirmTOTP(ctx, db, ref, logintest.TOTP(setup.Secret))
-```
-
-同一个 30 秒内的验证码只能用一次，测试接着还要输入时（例如启用后重新登录），在 [`synctest`](../testing/testing.md#controlling-time) 中 `time.Sleep(30 * time.Second)`。密码哈希按生产配置计算很慢，`logintest.Realm` 用的是成本最低的 bcrypt；自己组装 `Realm` 时用 `hashing.New(hashing.Config{Driver: "bcrypt", Bcrypt: hashing.BcryptConfig{Cost: 4}})`。
-
-<a id="troubleshooting"></a>
-## 常见问题
-
-**密码登录返回 401，`login.ErrInvalidCredentials`**
-
-邮箱不存在、没有设置密码、密码错误都返回同一个错误，避免泄露哪些邮箱注册过。检查用户输入的标识和密码。
-
-**登录返回 429**
-
-同一个标识 15 分钟内连续失败 5 次，或者 15 分钟内发送验证码超过 5 次，见[限流与防探测](#limits)。
-
-**设置密码时返回 `login.ErrWeakPassword`**
-
-默认要求 8 到 128 个字符、首尾没有空白。需要其他规则时设置 `Policy.PasswordPolicy`。
-
-**移除登录方式时返回 `login.ErrLastMethod`**
-
-账号始终保留至少一种登录方式。先添加另一种，再移除这一种，见[管理登录方式](#managing)。
-
-**找回密码时，未注册的邮箱没有收到验证码**
-
-这是有意的：找回密码不发给未注册的邮箱，但同样返回成功，避免泄露哪些邮箱注册过。
-
-<a id="api-reference"></a>
-## API 参考
-
-包 `github.com/go-tenon/tenon/login`。
-
-### New、Options
-
-```go
-func New(db bun.IDB, opts Options) *Realm
-```
-
-一套账号体系一个 `Realm`。`Options` 的 `Type`、`Hasher`、`Crypt`、`Attempts`、`Sends` 必填：
-
-| 字段 | 说明 |
-| --- | --- |
-| `Type identity.SubjectType` | 账号体系 |
-| `PerTenant bool` | 按租户登录，同一个人在两个租户中是两个账号 |
-| `Policy Policy`、`PolicyFor` | 登录策略：是否开放注册、密码规则、是否要求二次验证、允许的登录方式；`PolicyFor` 按请求（例如租户）决定 |
-| `Send func(ctx, Code) error` | 发送验证码 |
-| `Resolve identity.Resolver` | 登录成功后加载主体的其他字段 |
-| `Attempts`、`Sends ratelimit.Limiter` | 校验和发送的频率限制 |
-| `CodeLength`、`CodeTTL`、`CodeAttempts`、`ProofTTL` | 验证码的长度、有效期、可尝试次数，完成凭证的有效期 |
-
-### 登录
-
-```go
-func (r *Realm) Password(ctx context.Context, id Identifier, password string) (Outcome, error)
-func (r *Realm) SendCode(ctx context.Context, purpose Purpose, id Identifier) (string, error)
-func (r *Realm) VerifyCode(ctx context.Context, requestID, code string) (Outcome, error)
-func (r *Realm) External(ctx context.Context, ext External) (Outcome, error)
-func (r *Realm) TwoFactor(ctx context.Context, pending, code string) (Outcome, error)
-func Email(address string) Identifier
-func Phone(e164 string) Identifier
-func Username(name string) Identifier
-```
-
-`Outcome.Subject` 是登录成功的主体；`Pending` 不为空时还要二次验证；`Proof` 不为空时交给 `Register`、`ResetPassword` 或 `Link`；`Enroll` 不为空时要先启用二次验证。
-
-### 注册与找回
-
-```go
-func (r *Realm) Register(ctx context.Context, db bun.IDB, proof string, ref identity.Ref, opts ...RegisterOption) (Registration, error)
-func (r *Realm) CompleteRegister(ctx context.Context, reg Registration) (Outcome, error)
-func (r *Realm) ResetPassword(ctx context.Context, proof, password string) (identity.Ref, error)
-func (r *Realm) Attach(ctx context.Context, db bun.IDB, ref identity.Ref, id Identifier, verified bool) error
-```
-
-### 账号管理
-
-| 方法 | 说明 |
-| --- | --- |
-| `SetPassword`、`RemovePassword`、`HasPassword` | 设置、删除、检查密码 |
-| `Identifiers`、`Link`、`Detach`、`Lookup` | 登录标识的列表、绑定、解绑、查找 |
-| `Confirm`、`SendConfirmCode`、`ConfirmCode` | 用密码或验证码确认身份 |
-| `SetupTOTP`、`ConfirmTOTP`、`DisableTwoFactor`、`TwoFactorEnabled` | 二次验证 |
-| `RegenerateRecoveryCodes`、`RecoveryCodesLeft` | 恢复码 |
-| `Forget` | 删除账号的全部登录数据，登记到[注销账号](../features/privacy.md#framework-sources) |
-| `Export` | 导出账号的登录标识和安全设置，登记到[导出个人数据](../features/data-export.md#sources) |
-| `Cleanup` | 删除过期的验证码和凭证 |
-
-### passkey
-
-包 `github.com/go-tenon/tenon/login/passkey`。
-
-```go
-func New(db bun.IDB, realm *login.Realm, c *crypt.Crypt, cfg Config) (*Store, error)
-func (s *Store) BeginRegistration(ctx context.Context, ref identity.Ref, name string) (Ceremony, error)
-func (s *Store) FinishRegistration(ctx context.Context, token string, response []byte, name string) (string, error)
-func (s *Store) BeginLogin(ctx context.Context) (Ceremony, error)
-func (s *Store) FinishLogin(ctx context.Context, token string, response []byte) (login.Outcome, error)
-```
-
-见 [Passkey](login-security.md#passkeys)。
+- `logintest.TOTP(setup.Secret)` 计算验证器上显示的数字，交给 `ConfirmTOTP` 或 `TwoFactor`。
+- `outbox.FailWith(err)` 模拟邮件或短信服务故障。
+- 同一个 30 秒内的 TOTP 数字只能用一次，再次输入前在 [`synctest`](../testing/testing.md#controlling-time) 中 `time.Sleep(30 * time.Second)`。

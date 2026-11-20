@@ -1,179 +1,185 @@
-# 加密与签名链接
+# 哈希、加密与签名链接
 
-`crypt` 包用一个应用密钥做两件事：
+`hashing` 为密码和口令生成哈希并校验；`crypt` 用应用密钥加密以后还要读出明文的值（第三方 API Key、refresh token），并给链接签名。
 
-- **加密**以后还要读出明文的值，例如租户填写的模型服务商 API Key、第三方平台的 refresh token。调用第三方接口时要用到明文，所以这类值加密保存，密码则用[哈希](hashing.md)。
-- **签名链接**：给邮件里的链接加上过期时间和签名，用户点开时确认链接是本站生成的、没有被改过、没有过期。例如邮箱验证、退订通知。
+包：`hashing`、`crypt`。
 
-加密使用 AES-256-GCM，签名使用 HMAC-SHA256，两者的子密钥都从应用密钥用 HKDF 派生，互不相同。
-
-阅读前需要了解：[配置](../general/configuration.md)；[依赖装配](../concepts/dependencies.md)。密码不要加密，用[哈希](hashing.md)。
-
-- [示例用法](#example-usage)
-- [配置](#configuration)
-- [加密数据](#encrypting-data)
-- [签名链接](#signed-urls)
-    - [校验链接](#validating-signed-urls)
-    - [永不过期的链接](#permanent-urls)
-- [轮换密钥](#rotating-keys)
-- [测试](#testing)
-- [常见问题](#troubleshooting)
-- [API 参考](#api-reference)
+- 密码和口令用 `hashing`，不加密：哈希无法还原，数据库泄露时也拿不到明文。
+- `Hasher` 和 `Crypt` 都在[入口](../concepts/dependencies.md#assembling-the-application)中创建一次，可以并发使用，传给需要它的业务动作和处理器。
 
 <a id="example-usage"></a>
-## 示例用法
+## 示例
 
-下面加密一个第三方 API Key，读取时解密，再生成一个 24 小时内有效的签名链接：
+`cfg` 是应用的根配置，含 `hashing` 段和 `crypt` 段：
 
 ```go
+hasher := hashing.New(cfg.Hashing)
+hash, err := hasher.Make(passcode) // 保存 hash
+ok := hasher.Check(input, hash)    // 校验
+
 c := crypt.New(cfg.Crypt)
+secret := c.Encrypt(apiKey)       // 保存密文
+apiKey, err = c.Decrypt(secret)   // 用到时解密
 
-secret := c.Encrypt(apiKey)          // 保存到数据库
-apiKey, err := c.Decrypt(secret)      // 读取时解密
-
-link := c.SignURL("https://example.com/email/verify?user=42", 24*time.Hour)
-err = c.VerifyURL(r.URL) // 签名不对或已过期时返回 crypt.ErrInvalidSignature
+link := c.SignURL("https://example.com/email/verify/42", 24*time.Hour)
+err = c.VerifyURL(r.URL) // 签名不对返回 crypt.ErrInvalidSignature，过期返回 crypt.ErrExpired
 ```
 
-解密时依次尝试当前的密钥和 `previous_keys` 中的旧密钥，所以轮换应用密钥之后，用旧密钥加密的数据仍然能解密。签名链接被改动过或者已经过期时，`VerifyURL` 返回 `crypt.ErrInvalidSignature`，响应 `403`。
+<a id="hashing-passwords"></a>
+## 密码哈希：`Hasher.Make`、`Hasher.Check`
+
+账号的密码由[登录与注册](login.md)保存和校验，把 `Hasher` 交给 [`login.New`](login.md#assembling) 即可。应用自己保存要校验的口令时直接用 `Hasher`，例如文章的访问口令。`a.hasher` 是入口创建的 `*hashing.Hasher`，`a.db` 是 `*bun.DB`：
+
+```go
+hash, err := a.hasher.Make(in.Passcode)
+if err != nil {
+    return err
+}
+_, err = a.db.NewUpdate().Model((*Article)(nil)).Set("passcode_hash = ?", hash).Where("id = ?", id).Exec(ctx)
+```
+
+```go
+if !a.hasher.Check(in.Passcode, art.PasscodeHash) {
+    return nil, ErrWrongPasscode.New()
+}
+```
+
+- 哈希是 PHC 格式的字符串，例如 `$argon2id$v=19$m=19456,t=2,p=1$<盐>$<哈希>`，算法、参数和随机盐都在其中，存在一个文本列中。格式与 PHP 的 `password_hash` 互通。
+- `Make` 每次用新的随机盐，同一个口令两次的结果不同。`Check` 用常量时间比较。
+- 口令可以被反复猜测，校验接口要[限流](../libraries/rate-limiting.md#in-handlers)。
+- `driver` 为 bcrypt 时，超过 72 字节的密码 `Make` 返回 `hashing.ErrPasswordTooLong`，在输入上用 `maxLength:"72"` 限制。argon2id 没有这个限制。
+
+<a id="rehashing"></a>
+## 重新哈希：`NeedsRehash`
+
+`Check` 按哈希中记录的算法校验 argon2id 和 bcrypt，与当前的 `driver` 无关，所以调高参数、切换算法或导入旧系统的哈希之后，已有的哈希仍然可以校验。`NeedsRehash` 在哈希的算法或参数与当前配置不同时为真；校验通过时手上有明文，在这时换成新的哈希：
+
+```go
+if a.hasher.NeedsRehash(art.PasscodeHash) {
+    hash, err := a.hasher.Make(in.Passcode)
+    if err != nil {
+        return nil, err
+    }
+    _, err = a.db.NewUpdate().Model((*Article)(nil)).Set("passcode_hash = ?", hash).
+        Where("id = ? AND passcode_hash = ?", art.ID, art.PasscodeHash).Exec(ctx)
+    if err != nil {
+        return nil, err
+    }
+}
+```
+
+- 条件中带上旧的哈希：校验期间口令可能刚被修改，无条件写入会把旧口令写回去。
+- `login` 在密码登录成功时同样这样做，用户下次登录时迁移到新的算法和参数。从其他系统导入账号时，把旧的 bcrypt 或 argon2id 哈希原样写入 `auth_passwords` 表。
+
+<a id="hashing-configuration"></a>
+## 哈希的配置
+
+`hashing.Config` 放进根配置结构体的 `hashing` 段。[`config.Load`](../general/configuration.md#defaults-and-validation) 填充默认值并校验，`driver` 写错或参数不合法时启动失败。通常保持默认：
+
+```yaml
+hashing:
+  driver: argon2id     # argon2id 或 bcrypt
+  argon2id:
+    memory: 19456      # 每次哈希使用的内存，单位 KiB
+    time: 2            # 迭代次数
+    threads: 1         # 并行度
+  bcrypt:
+    cost: 12           # 每加 1，耗时翻倍
+```
+
+- argon2id 的默认值是 OWASP 推荐的最低配置。参数越大越难破解，登录也越慢、越占内存；在生产机器上把单次哈希控制在几十到几百毫秒。
+- `hashing.New` 给没有设置的项（零值的 `Driver`、整组 `Argon2id`、`Bcrypt.Cost`）补上默认值，补完仍然无效时 panic。测试中只写要改的项，例如 `hashing.Config{Driver: "bcrypt", Bcrypt: hashing.BcryptConfig{Cost: 4}}`。
 
 <a id="configuration"></a>
-## 配置
+## 应用密钥的配置
 
-把 `crypt.Config` 放进应用的根配置结构体，配置段为 `crypt`：
+`crypt.Config` 放进根配置结构体的 `crypt` 段：
 
 ```go
 type Config struct {
-    // ...
     Crypt crypt.Config `yaml:"crypt"`
 }
 ```
 
 ```yaml
 crypt:
-  key: ${APP_KEY}
+  key: ${APP_KEY}        # 32 字节随机数的 base64：openssl rand -base64 32
+  previous_keys: []      # 轮换前的旧密钥，只用于解密和验签，见“轮换密钥”
 ```
 
-挂进去之后，[`config.Load`](../general/configuration.md#loading-configuration) 会在启动时校验：密钥缺失或格式不对，应用起不来。配置只描述密钥；真正加解密、签链接的是下面在入口里创建的 `Crypt`。
+- `config.Load` 在启动时校验：`key` 缺失、不是 base64 或长度不是 32 字节时启动失败。
+- 加密和签名的子密钥由应用密钥用 HKDF 派生，互不相同。
 
-应用密钥是 32 字节随机数的 base64，用下面的命令生成，和数据库密码一样保存在部署环境中：
-
-```shell
-openssl rand -base64 32
-```
-
-密钥一旦用来加密了数据，就要妥善保管：没有它，已经加密的值无法解开，已经发出的链接全部失效。更换密钥见[轮换密钥](#rotating-keys)。
-
-生命周期是：启动时 `Load` 校验配置 → 在[入口](../concepts/dependencies.md#assembling-the-application)的 `Open` 中创建一次 `Crypt` → 之后加解密和签链接都复用它。把它保存在 `App` 中，传给需要它的业务动作和处理器。`Crypt` 可以并发使用，整个应用共用一个：
-
-```go
-c := crypt.New(cfg.Crypt)
-```
+> [!WARNING]
+> 应用密钥和数据库一起妥善保管。密钥丢失或换了环境，已加密的值无法解开，已发出的签名链接全部失效。
 
 <a id="encrypting-data"></a>
-## 加密数据
+## 加密数据：`Encrypt`、`Decrypt`
 
-`Encrypt` 返回 URL 安全的 base64 文本，存在普通的文本列中。每次加密使用新的随机数，同一个值两次的结果不同。下面是保存租户模型服务商的业务动作：
+`Encrypt` 返回 URL 安全的 base64 文本，存在普通的文本列中；每次加密使用新的随机数，同一个值两次的结果不同。`a.crypt` 是入口创建的 `*crypt.Crypt`：
 
 ```go
-type Provider struct {
-    ID       uuid.UUID `bun:",pk"`
-    TenantID string
-    Model    string
-    BaseURL  string
-    APIKey   string // 密文
-}
-
-func (a *CreateProvider) Handle(ctx context.Context, sub identity.Subject, in ProviderInput) (*Provider, error) {
-    p := &Provider{
-        ID: uuid.New(), TenantID: sub.Tenant, Model: in.Model, BaseURL: in.BaseURL,
-        APIKey: a.crypt.Encrypt(in.APIKey),
-    }
-    if _, err := a.db.NewInsert().Model(p).Exec(ctx); err != nil {
-        return nil, errors.Wrap(err, "create provider")
-    }
-    return p, nil
+p := &Provider{ID: id, TenantID: sub.Tenant, BaseURL: in.BaseURL, APIKey: a.crypt.Encrypt(in.APIKey)}
+if _, err := a.db.NewInsert().Model(p).Exec(ctx); err != nil {
+    return nil, errors.Wrap(err, "create provider")
 }
 ```
-
-用到时用 `Decrypt` 解开：
 
 ```go
 key, err := a.crypt.Decrypt(p.APIKey)
 if err != nil {
     return errors.Wrapf(err, "decrypt api key of provider %s", p.ID)
 }
-model := chat.NewModel(ai.ModelConfig{Model: p.Model, BaseURL: p.BaseURL, APIKey: key})
 ```
 
-密文被改过，或者加密它的密钥已经不在配置中时，`Decrypt` 返回 `crypt.ErrDecrypt`。它属于内部错误，接口返回 500 并记录日志。
+`Decrypt` 依次尝试 `key` 和 `previous_keys`。密文被改过，或者加密它的密钥已经不在配置中时返回 `crypt.ErrDecrypt`，接口返回 500 并记录日志。
 
 <a id="signed-urls"></a>
-## 签名链接
+## 签名链接：`SignURL`
 
-例如用户修改邮箱后，给新邮箱发一封验证邮件。`SignURL` 在链接后加上 `expires` 和 `signature` 两个参数：
+邮件中的链接（验证邮箱、退订）用 `SignURL` 加上 `expires` 和 `signature` 两个查询参数，`ttl` 后过期：
 
 ```go
 link := a.crypt.SignURL("https://example.com/email/verify/"+u.ID+"?email="+url.QueryEscape(u.Email), 24*time.Hour)
 // https://example.com/email/verify/42?email=a%40b.com&expires=1731400000&signature=Xy...
-
-msg, err := a.emails.Render(ctx, "verify_email", map[string]any{"URL": link})
 ```
 
-签名覆盖路径和其余全部查询参数，改了其中任何一处，签名就对不上；路径本身区分了链接的用途，验证邮箱的签名用不到别的地址上。签名**只覆盖**路径和查询参数：经过反向代理后，处理器看到的地址可能是 `http://10.0.0.5:8080/...`，校验结果照样正确。
-
-签名只防篡改，不加密：链接中的参数谁都能看到。
-
-<a id="validating-signed-urls"></a>
-### 校验链接
-
-在处理器中把 `r.URL` 交给 `VerifyURL`：
-
-```go
-func (h *Handlers) VerifyEmail(w http.ResponseWriter, r *http.Request) error {
-    if err := h.crypt.VerifyURL(r.URL); err != nil {
-        return err
-    }
-    err := h.verifyEmail.Handle(r.Context(), chi.URLParam(r, "id"), r.URL.Query().Get("email"))
-    if err != nil {
-        return err
-    }
-    return web.Render(w, r, http.StatusOK, views.EmailVerified()) // 「邮箱已验证」和回到应用的链接
-}
-```
-
-验证链接从邮件中打开，任何人都能访问，所以它指向一个公开的页面，页面调用公开的接口完成验证。
-
-`VerifyURL` 只证明这个链接是本站发出的。链接发出之后数据可能变了，业务动作仍要按当前数据判断：上面的 `verifyEmail` 要确认用户当前的邮箱仍是链接中的 `email`，用户在此期间又改过邮箱，旧链接就随之失效。
-
-签名不对时返回 `crypt.ErrInvalidSignature`，过期时返回 `crypt.ErrExpired`。两者都是 `errorx.PermissionDenied`，接口返回 403，页面提示“链接无效”或“链接已过期”。过期页可以提供重新发送的入口：
-
-```go
-if errors.Is(err, crypt.ErrExpired) {
-    return web.Render(w, r, http.StatusForbidden, views.VerifyEmailExpired())
-}
-```
-
-单页应用中，邮件里的链接指向前端页面，前端把整个地址交给 API，API 用 `url.Parse` 解析后同样交给 `VerifyURL`。
+- 签名覆盖路径和其余全部查询参数，改了任何一处签名就对不上；路径区分了链接的用途。协议和域名不在签名内，经过反向代理后处理器看到的内网地址照样能校验。
+- 签名只防篡改，链接中的参数谁都能看到。
 
 > [!WARNING]
-> 有的邮件服务商会改写链接，追加 `utm_source` 等统计参数，签名随之失效。发送这类邮件时请在服务商处关闭链接追踪。
+> 有的邮件服务商改写链接，追加 `utm_source` 等统计参数，签名随之失效。发送这类邮件时在服务商处关闭链接追踪。
+
+<a id="validating-signed-urls"></a>
+### 校验链接：`VerifyURL`
+
+链接从邮件打开，任何人都能访问，所以指向公开的页面或接口。处理器把 `r.URL` 交给 `VerifyURL`；单页应用中，前端把整个地址交给 API，API 用 `url.Parse` 解析后交给它。`h.crypt` 是 `*crypt.Crypt`，`h.verifyEmail` 是业务动作：
+
+```go
+if err := h.crypt.VerifyURL(r.URL); err != nil {
+    return err // 签名不对：crypt.ErrInvalidSignature；过期：crypt.ErrExpired
+}
+return h.verifyEmail.Handle(r.Context(), chi.URLParam(r, "id"), r.URL.Query().Get("email"))
+```
+
+- 两种错误都是 `errorx.PermissionDenied`，返回 403。过期页可以用 `errors.Is(err, crypt.ErrExpired)` 区分，提供重新发送的入口。
+- `VerifyURL` 只证明链接是本站发出的，业务动作仍按当前数据判断：`verifyEmail` 要确认用户当前的邮箱仍是链接中的 `email`，用户在此期间改过邮箱，旧链接就失效。
 
 <a id="permanent-urls"></a>
 ### 永不过期的链接
 
-`ttl` 为 0 时链接不过期，适合退订这类在旧邮件中也要能用的链接：
+`ttl` 为 0 时不加 `expires`，链接不过期，用于退订这类在旧邮件中也要能用的链接：
 
 ```go
 link := a.crypt.SignURL("https://example.com/unsubscribe/"+u.ID, 0)
 ```
 
-需要只能使用一次的链接（例如重置密码）时，签名不够，要把令牌存在数据库中，用过就删除。
+只能使用一次的链接（重置密码）不用签名：把令牌存在数据库中，用过就删除。
 
 <a id="rotating-keys"></a>
 ## 轮换密钥
 
-密钥可能泄露时要更换。把新密钥放进 `key`，旧密钥移到 `previous_keys`：
+把新密钥放进 `key`，旧密钥移到 `previous_keys`：
 
 ```yaml
 crypt:
@@ -182,24 +188,18 @@ crypt:
     - ${APP_PREVIOUS_KEY}
 ```
 
-之后新加密的数据和新发出的链接都使用新密钥；`Decrypt` 和 `VerifyURL` 依次尝试 `key` 和 `previous_keys`，旧数据和旧链接仍然有效。
-
-其他包需要自己的密钥时调用 `Derive(purpose)`：它返回从 `key` 和 `previous_keys` 派生的子密钥，第一个用于签名，全部用于校验。
-
-旧密钥要一直保留，直到用它加密的数据都换成了新密钥。框架不提供重新加密的命令：需要时写一个一次性的[命令](../general/commands.md#custom-commands)，逐行 `Decrypt` 再 `Encrypt`。密钥确实泄露时，换完数据后从 `previous_keys` 中删除旧密钥，旧链接也随之失效。
+- 新加密的数据和新发出的链接使用新密钥；`Decrypt`、`VerifyURL` 依次尝试 `key` 和 `previous_keys`，旧数据和旧链接仍然有效。
+- 旧密钥保留到用它加密的数据都换成新密钥为止：写一个一次性的[命令](../general/commands.md#custom-commands)逐行 `Decrypt` 再 `Encrypt`。密钥泄露时，换完数据后从 `previous_keys` 中删除旧密钥，旧链接随之失效。
+- 其他组件需要自己的密钥时调用 `Derive(purpose)`，例如 `login` 签名验证码。它返回从 `key` 和 `previous_keys` 派生的子密钥：第一个用于签名，全部用于校验，所以随应用密钥一起轮换。`purpose` 包含包名和版本，例如 `"tenon login code v1"`。
 
 <a id="testing"></a>
 ## 测试
 
-测试中用 `crypt.GenerateKey()` 生成密钥：
+`crypt.GenerateKey()` 生成测试用的密钥；链接过期用 [testing/synctest](../testing/testing.md#controlling-time) 推进时间：
 
 ```go
 c := crypt.New(crypt.Config{Key: crypt.GenerateKey()})
-```
 
-测试链接过期时，用 [testing/synctest](../testing/testing.md#controlling-time) 推进时间：
-
-```go
 synctest.Test(t, func(t *testing.T) {
     link, _ := url.Parse(c.SignURL("https://example.com/email/verify/42", time.Hour))
     time.Sleep(time.Hour)
@@ -207,47 +207,4 @@ synctest.Test(t, func(t *testing.T) {
 })
 ```
 
-<a id="troubleshooting"></a>
-## 常见问题
-
-**启动时报错应用密钥缺失或格式不对**
-
-密钥是 32 字节随机数的 base64。用 `openssl rand -base64 32` 生成，通过环境变量提供，见[配置](#configuration)。
-
-**`Decrypt` 返回 `crypt.ErrDecrypt`**
-
-密文被改过，或者加密它的密钥已经不在配置中。轮换密钥时，把旧密钥放进 `previous_keys`，见[轮换密钥](#rotating-keys)。
-
-**签名链接打开时返回 403**
-
-链接被改过或已经过期。经过邮件客户端时，检查链接是否被截断或者改写了查询参数。
-
-**部署到新环境后，之前加密的数据都解不开了**
-
-新环境的应用密钥与原来的不同。没有原来的密钥，已经加密的值无法解开，应用密钥要和数据库一起妥善保管。
-
-<a id="api-reference"></a>
-## API 参考
-
-包 `github.com/go-tenon/tenon/crypt`。
-
-### New
-
-```go
-func New(cfg Config) *Crypt
-func GenerateKey() string
-```
-
-`Config` 中是应用密钥和轮换时保留的旧密钥，见[配置](#configuration)。`GenerateKey` 生成一个新密钥。
-
-### Crypt
-
-```go
-func (c *Crypt) Encrypt(plaintext string) string
-func (c *Crypt) Decrypt(ciphertext string) (string, error)
-func (c *Crypt) SignURL(rawURL string, ttl time.Duration) string
-func (c *Crypt) VerifyURL(u *url.URL) error
-func (c *Crypt) Derive(purpose string) [][]byte
-```
-
-`Encrypt` 用当前密钥加密，`Decrypt` 依次尝试当前和旧的密钥，都失败时返回 `ErrDecrypt`。`SignURL` 加上 `expires` 和 `signature` 参数，`VerifyURL` 校验，失败时返回 `ErrInvalidSignature`（403）。`Derive` 为某个用途派生密钥（当前的在前），供其他组件签名使用。
+`hashing.New(hashing.Config{})` 使用默认配置；测试中用 bcrypt、`cost` 为 4 可以加快速度。

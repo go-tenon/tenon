@@ -275,7 +275,7 @@ scheduleapi.HandleRunNow(w, a.tasks)
 | [登录验证码](../security/login.md#cleanup) | 每套账号的 `login.Realm` 的 `Cleanup` | 每小时 |
 | [原子锁](../libraries/locks.md#postgres-store) | `pglock.New(db)` 的 `Cleanup` | 每小时 |
 | [限流计数](../libraries/rate-limiting.md#postgres-limiter) | 任意一个 `pglimit.New(…)` 的 `Cleanup`（删除所有限流器的） | 每小时 |
-| [未绑定的 passkey 和过期的仪式](../security/login-security.md#passkeys) | `passkey.Store` 的 `Cleanup` | 每天 |
+| [未绑定的 passkey 和过期的仪式](../security/login.md#passkeys) | `passkey.Store` 的 `Cleanup` | 每天 |
 | [文件](../libraries/filesystem.md#cleanup) | 文件服务的 `Cleanup` | 每 5 分钟 |
 | [操作日志](../features/activity.md#retention) | `activity.Cleanup(db, 保留期)` | 每天 |
 | [通知](../features/notifications.md#retention) | `notification.Cleanup(db, 保留期)` | 每天 |

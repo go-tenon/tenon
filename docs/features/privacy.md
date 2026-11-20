@@ -85,7 +85,7 @@ type Source struct {
 
 | 包 | 登记 | 删除什么 |
 | --- | --- | --- |
-| [`login`](../security/login.md) | `users.Forget`（每套账号的 `login.Realm`） | 登录标识、密码、二次验证、验证码；passkey 的公钥随后由 [`passkeys.Cleanup`](../security/login-security.md#passkeys) 删除 |
+| [`login`](../security/login.md) | `users.Forget`（每套账号的 `login.Realm`） | 登录标识、密码、二次验证、验证码；passkey 的公钥随后由 [`passkeys.Cleanup`](../security/login.md#passkeys) 删除 |
 | [`apitoken`](../security/api-tokens.md) | `apitoken.Erase` | 登录 token、个人访问令牌、OAuth 令牌 |
 | [`oauthserver`](../security/oauth-server.md) | `oauthserver.Erase` | 还没有换成令牌的授权码 |
 | [`authz`](../security/authorization.md) | `roles.Erase`（`authz.Store`） | 所有租户中的角色，提交之后使权限缓存失效 |
@@ -149,7 +149,7 @@ staffDeletions := privacy.New(db, privacy.Options{Type: staff.Type, Sources: []p
 <a id="requesting"></a>
 ## 申请注销
 
-注销是敏感操作，接口要求用户刚刚[确认过身份](../security/login-security.md#confirming)。`Request` 接收事务，申请与其他修改（例如操作日志、通知邮件）一起提交：
+注销是敏感操作，接口要求用户刚刚[确认过身份](../security/login.md#confirming)。`Request` 接收事务，申请与其他修改（例如操作日志、通知邮件）一起提交：
 
 ```go
 // DELETE /account
