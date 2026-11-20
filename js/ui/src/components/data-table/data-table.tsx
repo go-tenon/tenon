@@ -25,6 +25,7 @@ import {
   useDataTableColumns,
 } from "mantine-datatable"
 import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef, useState } from "react"
+import { useText } from "../../i18n/i18n"
 import { layoutMetrics } from "../../theme/theme"
 import type { ListState, Selection } from "./list"
 
@@ -85,7 +86,7 @@ export interface DataTableProps<T> {
   storeKey?: string
   /** 表格上方左侧的内容，例如筛选条件。 */
   toolbar?: ReactNode
-  /** 没有数据时的说明，默认“暂无数据”。 */
+  /** 没有数据时的说明，默认“暂无数据”（当前语言的）。 */
   empty?: ReactNode
   /** 表格的最小高度（像素），没有数据时撑开空状态，默认 160。 */
   minHeight?: number
@@ -121,6 +122,7 @@ function keyOf<T>(rowKey: DataTableProps<T>["rowKey"]): (row: T) => string {
  */
 export function DataTable<T>(props: DataTableProps<T>): ReactNode {
   const { records, columns, list, selection, storeKey, toolbar, bulkActions } = props
+  const t = useText()
   const m = layoutMetrics(useMantineTheme())
   const dense = m.preset === "compact"
   const key = keyOf(props.rowKey)
@@ -155,7 +157,7 @@ export function DataTable<T>(props: DataTableProps<T>): ReactNode {
             size="sm"
             variant="subtle"
             color="gray"
-            aria-label={open ? "收起" : "展开"}
+            aria-label={open ? t("tenon.common.collapse") : t("tenon.common.expand")}
             aria-expanded={open}
             onClick={() => setExpanded((cur) => (cur.includes(k) ? cur.filter((x) => x !== k) : [...cur, k]))}
           >
@@ -203,11 +205,11 @@ export function DataTable<T>(props: DataTableProps<T>): ReactNode {
           recordsPerPage: list.perPage,
           recordsPerPageOptions: props.perPageOptions ?? [10, 20, 50, 100],
           onRecordsPerPageChange: list.setPerPage,
-          recordsPerPageLabel: "每页",
+          recordsPerPageLabel: t("tenon.table.per_page"),
           paginationText: ({ from, to, totalRecords }: { from: number; to: number; totalRecords: number }) =>
-            `${from}–${to}，共 ${totalRecords} 条`,
+            t("tenon.table.range", { from, to, total: totalRecords }),
           paginationSize: m.controlSize,
-          loadingText: "加载中…",
+          loadingText: t("tenon.common.loading"),
         }
       : {}
 
@@ -237,11 +239,11 @@ export function DataTable<T>(props: DataTableProps<T>): ReactNode {
             {bulkActions && keys.length > 0 ? (
               <Group gap="sm">
                 <Text size="sm" fw={500}>
-                  已选 {keys.length} 项
+                  {t("tenon.table.selected", { count: keys.length })}
                 </Text>
                 {bulkActions(keys)}
                 <Button variant="subtle" color="gray" size={m.controlSize} onClick={() => selection?.clear()}>
-                  取消选择
+                  {t("tenon.table.clear_selection")}
                 </Button>
               </Group>
             ) : (
@@ -254,7 +256,7 @@ export function DataTable<T>(props: DataTableProps<T>): ReactNode {
               toggles={columnSettings.columnsToggle}
               onToggle={(accessor, toggled) =>
                 columnSettings.setColumnsToggle(
-                  columnSettings.columnsToggle.map((t) => (t.accessor === accessor ? { ...t, toggled } : t)),
+                  columnSettings.columnsToggle.map((c) => (c.accessor === accessor ? { ...c, toggled } : c)),
                 )
               }
               onReset={() => {
@@ -288,7 +290,7 @@ export function DataTable<T>(props: DataTableProps<T>): ReactNode {
         // 放不下时显示横向滚动条：窄屏上提示表格还可以左右滚动。
         scrollAreaProps={{ type: "auto" }}
         loaderBackgroundBlur={1}
-        noRecordsText={typeof props.empty === "string" ? props.empty : "暂无数据"}
+        noRecordsText={typeof props.empty === "string" ? props.empty : t("tenon.table.empty")}
         noRecordsIcon={
           <Box c="dimmed" mb={6}>
             <IconInbox size={28} stroke={1.4} />
@@ -327,15 +329,16 @@ interface ColumnSettingsProps<T> {
  */
 function ColumnSettings<T>({ columns, toggles, onToggle, onReset, size }: ColumnSettingsProps<T>): ReactNode {
   const [opened, setOpened] = useState(false)
+  const t = useText()
   const titles = new Map(columns.map((c) => [c.accessor, c.title ?? c.accessor]))
   return (
     <Popover opened={opened} onChange={setOpened} position="bottom-end" shadow="md" width={200}>
       <Popover.Target>
-        <Tooltip label="列设置" disabled={opened}>
+        <Tooltip label={t("tenon.table.columns")} disabled={opened}>
           <ActionIcon
             variant="default"
             size={size === "xs" ? "md" : "lg"}
-            aria-label="列设置"
+            aria-label={t("tenon.table.columns")}
             aria-expanded={opened}
             onClick={() => setOpened((o) => !o)}
           >
@@ -346,17 +349,17 @@ function ColumnSettings<T>({ columns, toggles, onToggle, onReset, size }: Column
       <Popover.Dropdown p="xs">
         <Stack gap={8} px={4} py={4}>
           <Text size="xs" c="dimmed">
-            显示的列
+            {t("tenon.table.visible_columns")}
           </Text>
           {toggles
-            .filter((t) => t.toggleable)
-            .map((t) => (
+            .filter((c) => c.toggleable)
+            .map((c) => (
               <Checkbox
-                key={t.accessor}
+                key={c.accessor}
                 size="xs"
-                label={titles.get(t.accessor)}
-                checked={t.toggled}
-                onChange={(e) => onToggle(t.accessor, e.currentTarget.checked)}
+                label={titles.get(c.accessor)}
+                checked={c.toggled}
+                onChange={(e) => onToggle(c.accessor, e.currentTarget.checked)}
               />
             ))}
         </Stack>
@@ -372,7 +375,7 @@ function ColumnSettings<T>({ columns, toggles, onToggle, onReset, size }: Column
             setOpened(false)
           }}
         >
-          恢复默认
+          {t("tenon.table.reset_columns")}
         </Button>
       </Popover.Dropdown>
     </Popover>

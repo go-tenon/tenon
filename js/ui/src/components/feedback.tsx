@@ -5,20 +5,26 @@ import { Text } from "@mantine/core"
 import { modals } from "@mantine/modals"
 import { notifications } from "@mantine/notifications"
 import type { ReactNode } from "react"
+import { text } from "../i18n/i18n"
 
 /** confirm 的选项。 */
 export interface ConfirmOptions {
   title: ReactNode
   /** 对话框中的说明。 */
   message?: ReactNode
-  /** 确认按钮的文字，默认“确定”。 */
+  /** 确认按钮的文字，默认“确定”（当前语言的）。 */
   confirmLabel?: string
   /** 危险的操作：确认按钮是红色。 */
   danger?: boolean
 }
 
 /** 弹出确认对话框，用户确认时返回 true。需要 UIProvider。 */
-export function confirm({ title, message, confirmLabel = "确定", danger }: ConfirmOptions): Promise<boolean> {
+export function confirm({
+  title,
+  message,
+  confirmLabel = text("tenon.common.confirm"),
+  danger,
+}: ConfirmOptions): Promise<boolean> {
   return new Promise((resolve) => {
     modals.openConfirmModal({
       title,
@@ -27,7 +33,7 @@ export function confirm({ title, message, confirmLabel = "确定", danger }: Con
           {message}
         </Text>
       ) : undefined,
-      labels: { confirm: confirmLabel, cancel: "取消" },
+      labels: { confirm: confirmLabel, cancel: text("tenon.common.cancel") },
       confirmProps: { color: danger ? "red" : undefined },
       onConfirm: () => resolve(true),
       onCancel: () => resolve(false),
@@ -51,16 +57,18 @@ export function errorMessage(info: ErrorInfo): string {
   if (info.message) return info.message
   switch (info.kind) {
     case "network":
-      return "网络连接失败，请检查网络后重试"
+      return text("tenon.error.network")
     case "rate_limited":
-      return info.retryAfter ? `尝试次数过多，请 ${info.retryAfter} 秒后再试` : "尝试次数过多，请稍后再试"
+      return info.retryAfter
+        ? text("tenon.error.rate_limited_after", { seconds: info.retryAfter })
+        : text("tenon.error.rate_limited")
     case "server":
-      return "服务暂时不可用，请稍后重试"
+      return text("tenon.error.server")
     case "forbidden":
-      return "没有权限执行这个操作"
+      return text("tenon.error.forbidden")
     case "not_found":
-      return "要找的内容不存在"
+      return text("tenon.error.not_found")
     default:
-      return "操作没有成功，请重试"
+      return text("tenon.error.failed")
   }
 }

@@ -20,6 +20,7 @@ import { DateInput, DateTimePicker } from "@mantine/dates"
 import dayjs from "dayjs"
 import { type ReactNode, useEffect, useState } from "react"
 import { maskSecret, SecretInput } from "../../components/form/secret-input"
+import { useText } from "../../i18n/i18n"
 import { inTimeZone, useFormatDateTime, useTimeZone } from "../../theme/format"
 import type { ResourceField } from "./model"
 
@@ -47,6 +48,7 @@ export function DefaultInput({
   label = field.label,
 }: FieldInputProps): ReactNode {
   const zone = useTimeZone()
+  const t = useText()
   const common = { label, description: field.description, error, disabled, required: field.required }
   switch (field.kind) {
     case "number":
@@ -91,7 +93,7 @@ export function DefaultInput({
       return (
         <TagsInput
           {...common}
-          placeholder="输入后按回车"
+          placeholder={t("tenon.fields.enter_to_add")}
           value={(value as string[] | undefined) ?? []}
           onChange={(v) => onChange?.(v)}
         />
@@ -164,6 +166,7 @@ function JsonField({
   disabled?: boolean
   required?: boolean
 }) {
+  const t = useText()
   const format = (v: unknown) => (v === undefined ? "" : JSON.stringify(v, null, 2))
   const [text, setText] = useState(() => format(value))
   const [invalid, setInvalid] = useState(false)
@@ -182,7 +185,7 @@ function JsonField({
       minRows={3}
       formatOnBlur
       value={text}
-      error={error ?? (invalid ? "不是合法的 JSON" : undefined)}
+      error={error ?? (invalid ? t("tenon.fields.invalid_json") : undefined)}
       onChange={(t) => {
         setText(t)
         if (t.trim() === "") {
@@ -213,6 +216,7 @@ export function FieldValue({
   display?: (field: ResourceField, value: unknown) => unknown
 }): ReactNode {
   const formatDateTime = useFormatDateTime()
+  const t = useText()
   if (value === undefined || value === null || value === "" || (Array.isArray(value) && value.length === 0))
     return (
       <Text span c="dimmed">
@@ -230,7 +234,7 @@ export function FieldValue({
             style={{ borderRadius: "50%", flex: "none" }}
             bg={value ? "green.5" : "gray.4"}
           />
-          <span>{value ? "是" : "否"}</span>
+          <span>{value ? t("tenon.common.yes") : t("tenon.common.no")}</span>
         </Group>
       )
     case "select":

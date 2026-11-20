@@ -7,6 +7,7 @@ import { IconArrowLeft } from "@tabler/icons-react"
 import { Link, useNavigate, useSearch } from "@tanstack/react-router"
 import { createContext, type ReactNode, useContext, useRef } from "react"
 import { useNavigation } from "../app/layout"
+import { useText } from "../i18n/i18n"
 
 const PageBreadcrumbsContext = createContext(true)
 
@@ -61,6 +62,7 @@ export interface PageProps {
 
 /** 页面：面包屑、标题区加内容；有 tabs 时内容分成几个页内标签。 */
 export function Page({ title, description, actions, breadcrumbs, back, crumb, tabs, children }: PageProps): ReactNode {
+  const t = useText()
   const crumbsByDefault = useContext(PageBreadcrumbsContext)
   const showCrumbs = breadcrumbs ?? crumbsByDefault
   return (
@@ -71,7 +73,7 @@ export function Page({ title, description, actions, breadcrumbs, back, crumb, ta
           <div>
             <Group gap={6} wrap="nowrap">
               {back && (
-                <ActionIcon variant="subtle" color="gray" aria-label="返回" onClick={back} ml={-6}>
+                <ActionIcon variant="subtle" color="gray" aria-label={t("tenon.common.back")} onClick={back} ml={-6}>
                   <IconArrowLeft size={20} stroke={1.6} />
                 </ActionIcon>
               )}

@@ -7,6 +7,7 @@ import { type FormEvent, type ReactNode, useState } from "react"
 import { useApp } from "../app/app"
 import { errorMessage } from "../components/feedback"
 import { serverErrors } from "../components/form/rules"
+import { useText } from "../i18n/i18n"
 
 /** LoginForm 的选项。 */
 export interface LoginFormProps {
@@ -21,6 +22,7 @@ export interface LoginFormProps {
 /** 邮箱和密码登录：字段错误显示在输入框下面，其他错误（例如密码不对）显示在表单上方。 */
 export function LoginForm({ login, redirect, forgot }: LoginFormProps): ReactNode {
   const app = useApp()
+  const t = useText()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [errors, setErrors] = useState<ReturnType<typeof serverErrors>>({ fields: {} })
@@ -48,7 +50,7 @@ export function LoginForm({ login, redirect, forgot }: LoginFormProps): ReactNod
           </Alert>
         )}
         <TextInput
-          label="邮箱"
+          label={t("tenon.login.email")}
           type="email"
           autoComplete="username"
           required
@@ -58,7 +60,7 @@ export function LoginForm({ login, redirect, forgot }: LoginFormProps): ReactNod
           error={errors.fields.email}
         />
         <PasswordInput
-          label="密码"
+          label={t("tenon.login.password")}
           autoComplete="current-password"
           required
           value={password}
@@ -71,7 +73,7 @@ export function LoginForm({ login, redirect, forgot }: LoginFormProps): ReactNod
           </Text>
         )}
         <Button type="submit" loading={pending} fullWidth mt="xs">
-          登录
+          {t("tenon.login.submit")}
         </Button>
       </Stack>
     </form>

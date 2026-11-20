@@ -239,7 +239,7 @@ func root() *cobra.Command {
 	}
 	add := &cobra.Command{Use: "add", Short: "给项目加入新的部分"}
 	add.AddCommand(addFrontendCommand(), addClientCommand())
-	root.AddCommand(initCommand(), add, devCommand(), buildCommand(), generateCommand(), agentsCommand(), mcpCommand())
+	root.AddCommand(initCommand(), add, devCommand(), buildCommand(), generateCommand(), checkTextCommand(), agentsCommand(), mcpCommand())
 	return root
 }
 
@@ -567,16 +567,24 @@ func buildCommand() *cobra.Command {
 	return cmd
 }
 
-// generateCommand 返回 tenon generate 命令：编译应用，生成 TypeScript 和 Go 客户端。
+// generateCommand 返回 tenon generate 命令：生成前端的界面文字目录（messages.gen.ts），编译应用，生成 TypeScript 和 Go 客户端。
 func generateCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "generate",
-		Short: "编译应用，为每个 API 生成 TypeScript 客户端，按 tenon.json 生成 Go 客户端",
+		Short: "生成前端的界面文字目录，编译应用，为每个 API 生成 TypeScript 客户端，按 tenon.json 生成 Go 客户端",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := project.Load(".")
 			if err != nil {
 				return err
+			}
+			// 前端的界面文字目录只读取翻译文件，不需要编译应用。
+			warnings, err := dev.WriteMessages(".", cfg)
+			if err != nil {
+				return err
+			}
+			for _, w := range warnings {
+				fmt.Fprintln(cmd.ErrOrStderr(), "warning: "+w)
 			}
 			runs := dev.Generations(cfg)
 			if len(runs) == 0 {
@@ -610,6 +618,32 @@ func generateCommand() *cobra.Command {
 				if err := run(cmd, ".", bin, args...); err != nil {
 					return err
 				}
+			}
+			return nil
+		},
+	}
+}
+
+// checkTextCommand 返回 tenon check-text 命令：找出前端代码中写死的界面文字，有时以非零状态退出，给 CI 使用。
+func checkTextCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "check-text",
+		Short: "找出前端代码中写死的界面文字（注释以外的汉字），界面文字应当写在 locales/<前端>.<语言>.yaml 中",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := project.Load(".")
+			if err != nil {
+				return err
+			}
+			found, err := dev.CheckText(".", cfg)
+			if err != nil {
+				return err
+			}
+			for _, f := range found {
+				fmt.Fprintf(cmd.OutOrStdout(), "%s:%d: %s\n", f.File, f.Line, f.Text)
+			}
+			if len(found) > 0 {
+				return fmt.Errorf("%d lines have hard-coded text: move it to %s/<frontend>.<language>.yaml, or add a // %s comment to the line", len(found), dev.LocalesDir, dev.IgnoreText)
 			}
 			return nil
 		},

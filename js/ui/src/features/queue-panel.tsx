@@ -31,6 +31,7 @@ import { DescriptionList } from "../components/description-list"
 import { confirm, notifyError, notifySuccess } from "../components/feedback"
 import { Page } from "../components/page"
 import { StatusDot } from "../components/status-dot"
+import { type UiMessageId, useText } from "../i18n/i18n"
 import { inTimeZone, useFormatDateTime, useTimeZone } from "../theme/format"
 
 // ———————————————————————————— 接口 ————————————————————————————
@@ -108,17 +109,21 @@ export interface QueueApi {
 export interface QueuePanelProps {
   /** 生成的客户端分组：api.queue。 */
   api: QueueApi
-  /** 页面的标题，默认“队列”。 */
+  /** 页面的标题，默认“队列”（当前语言的）。 */
   title?: ReactNode
 }
 
-/** topic 的状态：显示的文字、颜色，异常时的说明（显示在状态下面）。 */
-const stateText: Record<string, { label: string; color: string; hint?: string }> = {
-  ok: { label: "正常", color: "green" },
-  no_handler: { label: "没有处理程序", color: "deep-orange", hint: "没有 Worker 处理这类任务，任务会一直等待" },
-  paused: { label: "已暂停", color: "yellow" },
-  stalled: { label: "停滞", color: "red", hint: "有任务在等待，却没有 Worker 在处理" },
-  absent: { label: "—", color: "gray" },
+/** topic 的状态：显示文字的消息 ID、颜色，异常时说明的消息 ID（显示在状态下面）；没有 label 时显示“—”。 */
+const stateText: Record<string, { label?: UiMessageId; color: string; hint?: UiMessageId }> = {
+  ok: { label: "tenon.queue.state_ok", color: "green" },
+  no_handler: {
+    label: "tenon.queue.state_no_handler",
+    color: "deep-orange",
+    hint: "tenon.queue.state_no_handler_hint",
+  },
+  paused: { label: "tenon.queue.state_paused", color: "yellow" },
+  stalled: { label: "tenon.queue.state_stalled", color: "red", hint: "tenon.queue.state_stalled_hint" },
+  absent: { color: "gray" },
 }
 
 /** 字节数的显示，例如 12.4 KiB。 */
@@ -143,7 +148,8 @@ const statusKey = ["tenon", "queue", "status"]
  *	  component: () => <QueuePanel api={api.queue} />,
  *	})
  */
-export function QueuePanel({ api, title = "队列" }: QueuePanelProps): ReactNode {
+export function QueuePanel({ api, title }: QueuePanelProps): ReactNode {
+  const tr = useText()
   const status = useQuery({ queryKey: statusKey, queryFn: () => api.status() })
   const s = status.data
   // 状态还没读到时各个标签显示读取中；读取失败时显示原因。
@@ -151,7 +157,7 @@ export function QueuePanel({ api, title = "队列" }: QueuePanelProps): ReactNod
     s ? (
       render(s)
     ) : status.isError ? (
-      <Alert color="red" variant="light" title="读取队列状态失败" role="alert">
+      <Alert color="red" variant="light" title={tr("tenon.queue.status_failed")} role="alert">
         {String((status.error as { detail?: string })?.detail ?? status.error)}
       </Alert>
     ) : (
@@ -161,13 +167,17 @@ export function QueuePanel({ api, title = "队列" }: QueuePanelProps): ReactNod
     )
   return (
     <Page
-      title={title}
-      description="后台任务的处理情况。失败的任务可以查看原因、重试或删除。"
+      title={title ?? tr("tenon.queue.title")}
+      description={tr("tenon.queue.description")}
       tabs={[
-        { value: "topics", label: "任务类型", content: needStatus((s) => <Topics status={s} api={api} />) },
+        {
+          value: "topics",
+          label: tr("tenon.queue.tab_topics"),
+          content: needStatus((s) => <Topics status={s} api={api} />),
+        },
         {
           value: "failed",
-          label: "失败任务",
+          label: tr("tenon.queue.tab_failed"),
           count: s?.failed,
           alert: true,
           content: (
@@ -177,7 +187,11 @@ export function QueuePanel({ api, title = "队列" }: QueuePanelProps): ReactNod
             />
           ),
         },
-        { value: "system", label: "系统状态", content: needStatus((s) => <SystemStatus status={s} />) },
+        {
+          value: "system",
+          label: tr("tenon.queue.tab_system"),
+          content: needStatus((s) => <SystemStatus status={s} />),
+        },
       ]}
     >
       {s && <Problems status={s} />}
@@ -190,37 +204,38 @@ export function QueuePanel({ api, title = "队列" }: QueuePanelProps): ReactNod
 /** 复制槽、JetStream 出问题时的提示：平时不显示。 */
 function Problems({ status }: { status: QueueStatusData }): ReactNode {
   const { slot, jetstream: js } = status
+  const tr = useText()
   const problems: { color: string; title: string; text: string }[] = []
   if (!slot.exists)
     problems.push({
       color: "red",
-      title: "任务转发已停止",
-      text: `复制槽 ${slot.name} 不存在，Worker 不会启动。运行 queue slot recreate 重建。`,
+      title: tr("tenon.queue.problem_slot_missing"),
+      text: tr("tenon.queue.problem_slot_missing_text", { name: slot.name }),
     })
   else if (slot.wal_status === "lost")
     problems.push({
       color: "red",
-      title: "任务转发已失效",
-      text: "数据库已经丢弃了还没转发的任务记录（WAL 状态 lost）。运行 queue slot recreate 重建复制槽。",
+      title: tr("tenon.queue.problem_slot_lost"),
+      text: tr("tenon.queue.problem_slot_lost_text"),
     })
   else if (!slot.active)
     problems.push({
       color: "deep-orange",
-      title: "没有 Worker 在转发任务",
-      text: "新发布的任务会积压在数据库中，直到 Worker 启动。",
+      title: tr("tenon.queue.problem_no_worker"),
+      text: tr("tenon.queue.problem_no_worker_text"),
     })
   else if (slot.wal_status === "unreserved")
     problems.push({
       color: "deep-orange",
-      title: "任务转发积压过多",
-      text: `积压 ${formatBytes(slot.lag)}，再多数据库可能丢弃还没转发的任务记录。`,
+      title: tr("tenon.queue.problem_lag"),
+      text: tr("tenon.queue.problem_lag_text", { size: formatBytes(slot.lag) }),
     })
-  if (js?.error) problems.push({ color: "red", title: "读不到任务流", text: js.error })
+  if (js?.error) problems.push({ color: "red", title: tr("tenon.queue.problem_stream_error"), text: js.error })
   else if (js && !js.exists)
     problems.push({
       color: "deep-orange",
-      title: "任务流还没有创建",
-      text: `JetStream 中没有 ${js.stream}，Worker 启动时创建。`,
+      title: tr("tenon.queue.problem_stream_missing"),
+      text: tr("tenon.queue.problem_stream_missing_text", { name: js.stream }),
     })
   if (problems.length === 0) return null
   return (
@@ -234,53 +249,61 @@ function Problems({ status }: { status: QueueStatusData }): ReactNode {
   )
 }
 
-/** WAL 状态（pg_replication_slots.wal_status）的说明。 */
-const walText: Record<string, string> = {
-  reserved: "正常",
-  extended: "正常，积压超过了 max_wal_size",
-  unreserved: "积压即将超过保留上限",
-  lost: "已失效，积压超过了保留上限",
+/** WAL 状态（pg_replication_slots.wal_status）的说明的消息 ID。 */
+const walText: Record<string, UiMessageId> = {
+  reserved: "tenon.queue.wal_reserved",
+  extended: "tenon.queue.wal_extended",
+  unreserved: "tenon.queue.wal_unreserved",
+  lost: "tenon.queue.wal_lost",
 }
 
 /** 系统状态：复制槽和 JetStream 的底层状态，给开发人员排查问题用。 */
 function SystemStatus({ status }: { status: QueueStatusData }): ReactNode {
   const { slot, jetstream: js } = status
+  const tr = useText()
   const slotState = !slot.exists
-    ? { label: "不存在", color: "red" }
+    ? { label: tr("tenon.queue.slot_missing"), color: "red" }
     : slot.active
-      ? { label: "转发中", color: "green" }
-      : { label: "没有 Worker", color: "deep-orange" }
+      ? { label: tr("tenon.queue.slot_active"), color: "green" }
+      : { label: tr("tenon.queue.slot_no_worker"), color: "deep-orange" }
   let stream: ReactNode
   if (!js)
     stream = (
       <DescriptionList
-        title="任务流"
+        title={tr("tenon.queue.stream")}
         description="NATS JetStream"
-        items={[{ label: "状态", value: "应用没有设置 queueapi.Options.Admin，只显示数据库一侧的状态" }]}
+        items={[{ label: tr("tenon.queue.status"), value: tr("tenon.queue.stream_no_admin") }]}
       />
     )
   else if (js.error)
     stream = (
       <DescriptionList
-        title="任务流"
+        title={tr("tenon.queue.stream")}
         description="NATS JetStream"
-        extra={<StatusDot color="red">读取失败</StatusDot>}
-        items={[{ label: "错误", value: js.error, mono: true }]}
+        extra={<StatusDot color="red">{tr("tenon.queue.load_failed")}</StatusDot>}
+        items={[{ label: tr("tenon.queue.error"), value: js.error, mono: true }]}
       />
     )
   else
     stream = (
       <DescriptionList
-        title="任务流"
+        title={tr("tenon.queue.stream")}
         description="NATS JetStream"
         extra={
-          js.exists ? <StatusDot color="green">正常</StatusDot> : <StatusDot color="deep-orange">还没有创建</StatusDot>
+          js.exists ? (
+            <StatusDot color="green">{tr("tenon.queue.ok")}</StatusDot>
+          ) : (
+            <StatusDot color="deep-orange">{tr("tenon.queue.not_created")}</StatusDot>
+          )
         }
         items={[
-          { label: "名称", value: js.stream, mono: true },
-          { label: "消息", value: `${js.messages}（${formatBytes(js.bytes)}）` },
-          { label: "定时投递", value: js.deferred },
-          { label: "副本", value: js.replicas },
+          { label: tr("tenon.queue.name"), value: js.stream, mono: true },
+          {
+            label: tr("tenon.queue.messages"),
+            value: tr("tenon.queue.messages_value", { count: js.messages, size: formatBytes(js.bytes) }),
+          },
+          { label: tr("tenon.queue.deferred"), value: js.deferred },
+          { label: tr("tenon.queue.replicas"), value: js.replicas },
           { label: "Leader", value: js.leader, mono: true },
         ]}
       />
@@ -288,13 +311,13 @@ function SystemStatus({ status }: { status: QueueStatusData }): ReactNode {
   return (
     <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md" style={{ alignItems: "start" }}>
       <DescriptionList
-        title="复制槽"
-        description="PostgreSQL 逻辑复制"
+        title={tr("tenon.queue.slot")}
+        description={tr("tenon.queue.slot_description")}
         extra={<StatusDot color={slotState.color}>{slotState.label}</StatusDot>}
         items={[
-          { label: "名称", value: slot.name, mono: true },
+          { label: tr("tenon.queue.name"), value: slot.name, mono: true },
           {
-            label: "WAL 状态",
+            label: tr("tenon.queue.wal_status"),
             value: slot.wal_status && (
               <>
                 <Text span inherit ff="monospace">
@@ -303,14 +326,14 @@ function SystemStatus({ status }: { status: QueueStatusData }): ReactNode {
                 {walText[slot.wal_status] && (
                   <Text span inherit c="dimmed">
                     {" "}
-                    · {walText[slot.wal_status]}
+                    · {tr(walText[slot.wal_status])}
                   </Text>
                 )}
               </>
             ),
           },
-          { label: "积压", value: formatBytes(slot.lag) },
-          { label: "Worker 进程", value: slot.active_pid || undefined },
+          { label: tr("tenon.queue.lag"), value: formatBytes(slot.lag) },
+          { label: tr("tenon.queue.worker_pid"), value: slot.active_pid || undefined },
         ]}
       />
       {stream}
@@ -324,11 +347,16 @@ function Topics({ status, api }: { status: QueueStatusData; api: QueueApi }): Re
   const queryClient = useQueryClient()
   const formatDateTime = useFormatDateTime()
   const zone = useTimeZone()
+  const tr = useText()
   const toggle = useMutation({
     mutationFn: async ({ topic, pause }: { topic: string; pause: boolean }) =>
       pause ? api.topicPause?.(topic) : api.topicResume?.(topic),
     onSuccess: (_, v) => {
-      notifySuccess(v.pause ? `已暂停 ${v.topic} 一小时` : `已恢复 ${v.topic}`)
+      notifySuccess(
+        v.pause
+          ? tr("tenon.queue.paused_topic", { topic: v.topic })
+          : tr("tenon.queue.resumed_topic", { topic: v.topic }),
+      )
       void queryClient.invalidateQueries({ queryKey: ["tenon", "queue"] })
     },
     onError: (err) => notifyError(err),
@@ -337,7 +365,7 @@ function Topics({ status, api }: { status: QueueStatusData; api: QueueApi }): Re
   const columns: Column<QueueTopicData>[] = [
     {
       accessor: "topic",
-      title: "任务类型",
+      title: tr("tenon.queue.tab_topics"),
       noWrap: true,
       render: (t) => (
         <Text size="sm" ff="monospace">
@@ -347,36 +375,40 @@ function Topics({ status, api }: { status: QueueStatusData; api: QueueApi }): Re
     },
     {
       accessor: "state",
-      title: "状态",
+      title: tr("tenon.queue.status"),
       // 不换行：窄屏时状态和说明保持完整，表格左右滚动。
       noWrap: true,
       render: (t) => {
-        const st = stateText[t.state] ?? { label: t.state, color: "gray" }
+        const st = stateText[t.state]
         const label =
           t.state === "paused" && t.paused_until
-            ? `暂停到 ${inTimeZone(t.paused_until, zone).format("HH:mm")}`
-            : st.label
+            ? tr("tenon.queue.paused_until", { time: inTimeZone(t.paused_until, zone).format("HH:mm") })
+            : st
+              ? st.label
+                ? tr(st.label)
+                : "—"
+              : t.state
         return (
           <Stack gap={2} align="flex-start">
-            <Badge color={st.color} style={{ flexShrink: 0 }}>
+            <Badge color={st?.color ?? "gray"} style={{ flexShrink: 0 }}>
               {label}
             </Badge>
-            {st.hint && (
+            {st?.hint && (
               <Text size="xs" c="dimmed">
-                {st.hint}
+                {tr(st.hint)}
               </Text>
             )}
           </Stack>
         )
       },
     },
-    { accessor: "pending", title: "等待中", noWrap: true },
-    { accessor: "in_flight", title: "处理中", noWrap: true },
-    { accessor: "redelivered", title: "重新投递", noWrap: true },
-    { accessor: "waiting", title: "空闲 Worker", noWrap: true },
+    { accessor: "pending", title: tr("tenon.queue.pending"), noWrap: true },
+    { accessor: "in_flight", title: tr("tenon.queue.in_flight"), noWrap: true },
+    { accessor: "redelivered", title: tr("tenon.queue.redelivered"), noWrap: true },
+    { accessor: "waiting", title: tr("tenon.queue.idle_workers"), noWrap: true },
     {
       accessor: "failed",
-      title: "失败",
+      title: tr("tenon.queue.failed"),
       noWrap: true,
       render: (t) => (
         <Text span size="sm" c={t.failed > 0 ? "red" : undefined}>
@@ -386,7 +418,7 @@ function Topics({ status, api }: { status: QueueStatusData; api: QueueApi }): Re
     },
     {
       accessor: "last_delivered",
-      title: "最近处理",
+      title: tr("tenon.queue.last_delivered"),
       noWrap: true,
       render: (t) => (
         <Text span size="sm" c="dimmed">
@@ -413,7 +445,7 @@ function Topics({ status, api }: { status: QueueStatusData; api: QueueApi }): Re
               loading={busy}
               onClick={() => toggle.mutate({ topic: t.topic, pause: false })}
             >
-              恢复
+              {tr("tenon.queue.resume")}
             </Button>
           )
         if (t.state !== "ok" && t.state !== "stalled") return null
@@ -426,21 +458,29 @@ function Topics({ status, api }: { status: QueueStatusData; api: QueueApi }): Re
             onClick={async () => {
               if (
                 await confirm({
-                  title: `暂停 ${t.topic} 一小时？`,
-                  message: "任务照常发布和保存，Worker 不再领取新的任务，处理中的任务不受影响。一小时后自动恢复。",
-                  confirmLabel: "暂停",
+                  title: tr("tenon.queue.pause_confirm", { topic: t.topic }),
+                  message: tr("tenon.queue.pause_message"),
+                  confirmLabel: tr("tenon.queue.pause"),
                 })
               )
                 toggle.mutate({ topic: t.topic, pause: true })
             }}
           >
-            暂停
+            {tr("tenon.queue.pause")}
           </Button>
         )
       },
     })
   }
-  return <DataTable records={status.topics} columns={columns} rowKey="topic" empty="还没有任务" minHeight={120} />
+  return (
+    <DataTable
+      records={status.topics}
+      columns={columns}
+      rowKey="topic"
+      empty={tr("tenon.queue.no_topics")}
+      minHeight={120}
+    />
+  )
 }
 
 // ———————————————————————————— 失败任务 ————————————————————————————
@@ -459,6 +499,7 @@ function FailedJobs({
   const [open, setOpen] = useState<string>()
   const queryClient = useQueryClient()
   const formatDateTime = useFormatDateTime()
+  const tr = useText()
   const list = useQuery({
     queryKey: ["tenon", "queue", "failed", topic, page, perPage],
     queryFn: () => api.failedList({ topic, page, per_page: perPage }),
@@ -481,16 +522,16 @@ function FailedJobs({
     const retry = action === "retry"
     if (
       !(await confirm({
-        title: retry ? "重试这个任务？" : "删除这个任务？",
-        message: retry ? "任务重新发布，执行次数从 0 开始计算。" : "删除后不能恢复。",
-        confirmLabel: retry ? "重试" : "删除",
+        title: retry ? tr("tenon.queue.retry_one") : tr("tenon.queue.delete_one"),
+        message: retry ? tr("tenon.queue.retry_message") : tr("tenon.resource.delete_message"),
+        confirmLabel: retry ? tr("tenon.queue.retry") : tr("tenon.common.delete"),
         danger: !retry,
       }))
     )
       return false
     try {
       await (retry ? api.failedRetry(id) : api.failedDelete(id))
-      notifySuccess(retry ? "已重新发布" : "已删除")
+      notifySuccess(retry ? tr("tenon.queue.republished") : tr("tenon.queue.deleted"))
       await refresh()
       return true
     } catch (err) {
@@ -503,9 +544,9 @@ function FailedJobs({
     const retry = action === "retry"
     if (
       !(await confirm({
-        title: retry ? `重试选中的 ${ids.length} 个任务？` : `删除选中的 ${ids.length} 个任务？`,
-        message: retry ? "任务重新发布，执行次数从 0 开始计算。" : "删除后不能恢复。",
-        confirmLabel: retry ? "重试" : "删除",
+        title: tr(retry ? "tenon.queue.retry_selected" : "tenon.queue.delete_selected", { count: ids.length }),
+        message: retry ? tr("tenon.queue.retry_message") : tr("tenon.resource.delete_message"),
+        confirmLabel: retry ? tr("tenon.queue.retry") : tr("tenon.common.delete"),
         danger: !retry,
       }))
     )
@@ -513,27 +554,33 @@ function FailedJobs({
     const results = await Promise.allSettled(ids.map((id) => (retry ? api.failedRetry(id) : api.failedDelete(id))))
     const failed = results.filter((r) => r.status === "rejected")
     const done = ids.length - failed.length
-    if (done > 0) notifySuccess(retry ? `已重新发布 ${done} 个` : `已删除 ${done} 个`)
-    if (failed.length > 0) notifyError((failed[0] as PromiseRejectedResult).reason, `${failed.length} 个没有成功`)
+    if (done > 0)
+      notifySuccess(tr(retry ? "tenon.queue.republished_count" : "tenon.queue.deleted_count", { count: done }))
+    if (failed.length > 0)
+      notifyError(
+        (failed[0] as PromiseRejectedResult).reason,
+        tr("tenon.queue.not_done_count", { count: failed.length }),
+      )
     selection.clear()
     await refresh()
   }
   // 当前筛选的全部：接口一次处理。
   const everything = async (action: "retry" | "delete") => {
     const retry = action === "retry"
-    const scope = topic ? `${topic} 的 ${count} 个失败任务` : `全部 ${count} 个失败任务`
     if (
       !(await confirm({
-        title: retry ? `重试${scope}？` : `删除${scope}？`,
-        message: retry ? "只处理现在已经失败的任务，重试后又失败的不会再放回。" : "删除后不能恢复。",
-        confirmLabel: retry ? "重试" : "删除",
+        title: retry
+          ? tr(topic ? "tenon.queue.retry_topic_all" : "tenon.queue.retry_all", { topic, count })
+          : tr(topic ? "tenon.queue.delete_topic_all" : "tenon.queue.delete_all", { topic, count }),
+        message: retry ? tr("tenon.queue.retry_all_message") : tr("tenon.resource.delete_message"),
+        confirmLabel: retry ? tr("tenon.queue.retry") : tr("tenon.common.delete"),
         danger: !retry,
       }))
     )
       return
     try {
       const r = await (retry ? api.failedRetryAll({ topic }) : api.failedDeleteAll({ topic }))
-      notifySuccess(retry ? `已重新发布 ${r.count} 个` : `已删除 ${r.count} 个`)
+      notifySuccess(tr(retry ? "tenon.queue.republished_count" : "tenon.queue.deleted_count", { count: r.count }))
       setTopic(undefined) // 这一类（或全部）已经处理完，回到“全部”
       setPage(1)
       await refresh()
@@ -545,7 +592,7 @@ function FailedJobs({
   const columns: Column<QueueFailedJobData>[] = [
     {
       accessor: "topic",
-      title: "任务类型",
+      title: tr("tenon.queue.tab_topics"),
       noWrap: true,
       render: (j) => (
         <Text size="sm" ff="monospace">
@@ -555,14 +602,14 @@ function FailedJobs({
     },
     {
       accessor: "error",
-      title: "错误",
+      title: tr("tenon.queue.error"),
       ellipsis: true,
       render: (j) => <CellLink onClick={() => setOpen(j.id)}>{j.error}</CellLink>,
     },
-    { accessor: "attempts", title: "执行次数", noWrap: true, width: 90 },
+    { accessor: "attempts", title: tr("tenon.queue.attempts"), noWrap: true, width: 90 },
     {
       accessor: "failed_at",
-      title: "失败时间",
+      title: tr("tenon.queue.failed_at"),
       noWrap: true,
       width: 120,
       render: (j) => (
@@ -580,11 +627,11 @@ function FailedJobs({
       render: (j) => (
         <Group gap={2} justify="flex-end" wrap="nowrap" onClick={(e) => e.stopPropagation()}>
           <Button size="compact-sm" variant="subtle" onClick={() => void single("retry", j.id)}>
-            重试
+            {tr("tenon.queue.retry")}
           </Button>
           <Menu position="bottom-end" width={140}>
             <Menu.Target>
-              <ActionIcon aria-label="更多操作">
+              <ActionIcon aria-label={tr("tenon.resource.more")}>
                 <IconDots size={16} stroke={1.6} />
               </ActionIcon>
             </Menu.Target>
@@ -594,7 +641,7 @@ function FailedJobs({
                 leftSection={<IconTrash size={14} stroke={1.6} />}
                 onClick={() => void single("delete", j.id)}
               >
-                删除
+                {tr("tenon.common.delete")}
               </Menu.Item>
             </Menu.Dropdown>
           </Menu>
@@ -605,7 +652,7 @@ function FailedJobs({
 
   // 按任务类型筛选：类型不多时并排，多了改成下拉选择。
   const options = [
-    { value: "", label: `全部 ${all}` },
+    { value: "", label: tr("tenon.queue.filter_all", { count: all }) },
     ...topics.map((t) => ({ value: t.topic, label: `${t.topic} ${t.count}` })),
   ]
   const choose = (v: string | null) => {
@@ -615,7 +662,12 @@ function FailedJobs({
   const filter =
     options.length <= 5 ? (
       <ScrollArea type="never" offsetScrollbars={false}>
-        <SegmentedControl value={topic ?? ""} onChange={choose} data={options} aria-label="按任务类型筛选" />
+        <SegmentedControl
+          value={topic ?? ""}
+          onChange={choose}
+          data={options}
+          aria-label={tr("tenon.queue.filter_label")}
+        />
       </ScrollArea>
     ) : (
       <Select
@@ -624,7 +676,7 @@ function FailedJobs({
         data={options}
         allowDeselect={false}
         w={220}
-        aria-label="按任务类型筛选"
+        aria-label={tr("tenon.queue.filter_label")}
       />
     )
 
@@ -641,11 +693,16 @@ function FailedJobs({
                 disabled={count === 0}
                 onClick={() => void everything("retry")}
               >
-                {topic ? `重试这 ${count} 个` : `重试全部 ${count} 个`}
+                {tr(topic ? "tenon.queue.retry_these" : "tenon.queue.retry_every", { count })}
               </Button>
               <Menu position="bottom-end" width={180}>
                 <Menu.Target>
-                  <ActionIcon variant="default" size={32} aria-label="更多批量操作" disabled={count === 0}>
+                  <ActionIcon
+                    variant="default"
+                    size={32}
+                    aria-label={tr("tenon.queue.more_bulk")}
+                    disabled={count === 0}
+                  >
                     <IconDots size={16} stroke={1.6} />
                   </ActionIcon>
                 </Menu.Target>
@@ -655,7 +712,7 @@ function FailedJobs({
                     leftSection={<IconTrash size={14} stroke={1.6} />}
                     onClick={() => void everything("delete")}
                   >
-                    {topic ? `删除这 ${count} 个` : `删除全部 ${count} 个`}
+                    {tr(topic ? "tenon.queue.delete_these" : "tenon.queue.delete_every", { count })}
                   </Menu.Item>
                 </Menu.Dropdown>
               </Menu>
@@ -681,14 +738,14 @@ function FailedJobs({
         bulkActions={(ids) => (
           <>
             <Button size="compact-sm" variant="default" onClick={() => void selected("retry", ids)}>
-              重试
+              {tr("tenon.queue.retry")}
             </Button>
             <Button size="compact-sm" variant="default" color="red" onClick={() => void selected("delete", ids)}>
-              删除
+              {tr("tenon.common.delete")}
             </Button>
           </>
         )}
-        empty={topic ? "这类任务没有失败的" : "没有失败的任务"}
+        empty={topic ? tr("tenon.queue.no_failed_topic") : tr("tenon.queue.no_failed")}
       />
       <FailedJobDetail api={api} id={open} onClose={() => setOpen(undefined)} onAction={(a, id) => single(a, id)} />
     </>
@@ -708,6 +765,7 @@ function FailedJobDetail({
   onAction: (action: "retry" | "delete", id: string) => Promise<boolean>
 }): ReactNode {
   const formatDateTime = useFormatDateTime()
+  const tr = useText()
   const job = useQuery({
     queryKey: ["tenon", "queue", "failed-job", id],
     queryFn: () => api.failedGet(id as string),
@@ -716,7 +774,7 @@ function FailedJobDetail({
   const j = job.data
   const meta = Object.entries(j?.metadata ?? {})
   return (
-    <Modal opened={!!id} onClose={onClose} size="xl" title="失败任务">
+    <Modal opened={!!id} onClose={onClose} size="xl" title={tr("tenon.queue.failed_job")}>
       {/* 打开时把焦点放在内容上，不让关闭按钮带着焦点框。 */}
       <Box data-autofocus tabIndex={-1} style={{ outline: "none" }}>
         {job.isPending ? (
@@ -725,36 +783,36 @@ function FailedJobDetail({
           </Group>
         ) : !j ? (
           <Alert color="red" variant="light" role="alert">
-            读取失败任务失败，它可能已经被重试或删除。
+            {tr("tenon.queue.failed_job_missing")}
           </Alert>
         ) : (
           <Stack gap="lg">
             <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm">
-              <Field label="任务类型">
+              <Field label={tr("tenon.queue.tab_topics")}>
                 <Text span ff="monospace" inherit>
                   {j.topic}
                 </Text>
               </Field>
-              <Field label="执行次数">{j.attempts}</Field>
-              <Field label="失败时间">{formatDateTime(j.failed_at)}</Field>
+              <Field label={tr("tenon.queue.attempts")}>{j.attempts}</Field>
+              <Field label={tr("tenon.queue.failed_at")}>{formatDateTime(j.failed_at)}</Field>
             </SimpleGrid>
-            <Section title="错误">
+            <Section title={tr("tenon.queue.error")}>
               <ScrollArea.Autosize mah={280}>
                 <Code block style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
                   {j.error}
                 </Code>
               </ScrollArea.Autosize>
             </Section>
-            <Section title="元数据">
+            <Section title={tr("tenon.queue.metadata")}>
               {meta.length === 0 ? (
                 <Text size="sm" c="dimmed">
-                  没有元数据
+                  {tr("tenon.queue.no_metadata")}
                 </Text>
               ) : (
                 <DescriptionList items={meta.map(([k, v]) => ({ label: k, value: v, mono: true }))} monoLabels />
               )}
             </Section>
-            <Section title="任务内容">
+            <Section title={tr("tenon.queue.payload")}>
               <ScrollArea.Autosize mah={360}>
                 <Code block>{JSON.stringify(j.payload ?? null, null, 2)}</Code>
               </ScrollArea.Autosize>
@@ -766,13 +824,13 @@ function FailedJobDetail({
                 leftSection={<IconTrash size={16} />}
                 onClick={async () => (await onAction("delete", j.id)) && onClose()}
               >
-                删除
+                {tr("tenon.common.delete")}
               </Button>
               <Button
                 leftSection={<IconRotateClockwise size={16} />}
                 onClick={async () => (await onAction("retry", j.id)) && onClose()}
               >
-                重试
+                {tr("tenon.queue.retry")}
               </Button>
             </Group>
           </Stack>

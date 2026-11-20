@@ -1,5 +1,6 @@
-// @go-tenon/ui 是框架的前端应用层，基于 Mantine。代码分成五层，上层只引用下层，blocks 和 features 互相不引用：
+// @go-tenon/ui 是框架的前端应用层，基于 Mantine。代码分成六层，上层只引用下层，blocks 和 features 互相不引用：
 //   - theme：三套样式预设（compact、comfortable、spacious）、由设计令牌生成主题、UIProvider、图标、配色切换；
+//   - i18n：最下层，框架组件内置的简体中文、英文文字，组件按应用的 I18n（createApp 的 i18n）取文字；
 //   - app：应用骨架，装配 Router、QueryClient 和会话，登录与权限检查、由路由生成菜单和面包屑、插槽、多标签、租户、新版本提示；
 //   - components：页面中用的部件，表格与地址中的列表状态、按生成的规则校验的表单、页面标题区、描述列表、确认与提示；
 //   - blocks：整块的界面，只描述样子，彼此独立、任意组合：布局、登录页的布局、错误页、用户菜单、语言菜单；
@@ -90,6 +91,17 @@ export {
 } from "./features/schedule-panel"
 export * from "./features/transfer/model"
 export * from "./features/transfer/transfer-buttons"
+// ———————————————————————————— i18n ————————————————————————————
+export {
+  I18nProvider,
+  type I18nRegister,
+  type MessageId,
+  type UiMessageId,
+  uiMessages,
+  useI18n,
+  useLanguage,
+  useT,
+} from "./i18n/i18n"
 // ———————————————————————————— theme ————————————————————————————
 export * from "./theme/color-scheme"
 export * from "./theme/format"

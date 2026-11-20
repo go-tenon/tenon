@@ -36,6 +36,7 @@ import {
 import { firstPage, type MenuItem } from "../app/menu"
 import { MenuBadge } from "../components/menu-badge"
 import { PageBreadcrumbs } from "../components/page"
+import { useText } from "../i18n/i18n"
 import { Icon } from "../theme/icons"
 
 /** RailLayout 的选项。 */
@@ -97,6 +98,7 @@ export function RailLayout({
   children,
 }: RailLayoutProps): ReactNode {
   const { menu, active } = useNavigation()
+  const t = useText()
   const pageTitle = usePageTitle(false)
   useDocumentTitle(documentTitle ? formatDocumentTitle(pageTitle, title) : undefined)
   const navigate = useNavigate()
@@ -136,7 +138,12 @@ export function RailLayout({
           {current?.title}
         </Text>
         {!compact && !inSettings && (
-          <ActionIcon variant="subtle" color="gray" aria-label="收起二级导航" onClick={() => setExpanded(false)}>
+          <ActionIcon
+            variant="subtle"
+            color="gray"
+            aria-label={t("tenon.rail.collapse_nav")}
+            onClick={() => setExpanded(false)}
+          >
             <IconLayoutSidebarLeftCollapse size={18} stroke={1.6} />
           </ActionIcon>
         )}
@@ -147,8 +154,8 @@ export function RailLayout({
           {customNav && !inSettings && <Slot name="nav" />}
           {inSettings && (
             <TextInput
-              placeholder="搜索"
-              aria-label="搜索设置"
+              placeholder={t("tenon.common.search")}
+              aria-label={t("tenon.rail.search_settings")}
               leftSection={<IconSearch size={14} />}
               value={search}
               onChange={(e) => setSearch(e.currentTarget.value)}
@@ -171,9 +178,9 @@ export function RailLayout({
   return (
     <div className="tn-rail" data-open={open || undefined} style={vars}>
       <a className="tn-skip-link" href="#main-content">
-        跳转到内容
+        {t("tenon.layout.skip_to_content")}
       </a>
-      <nav className="tn-rail-rail" aria-label="模块导航">
+      <nav className="tn-rail-rail" aria-label={t("tenon.rail.modules")}>
         <div className="tn-rail-logo" title={title}>
           {logo ?? <span className="tn-brand-mark">{title.slice(0, 1)}</span>}
         </div>
@@ -183,7 +190,12 @@ export function RailLayout({
             // 当前模块的二级导航收起时，鼠标移上去图标换成“展开”。
             const expandHere = isActive && !compact && !expanded
             return (
-              <Tooltip key={m.id} label={expandHere ? "展开" : m.title} position="right" openDelay={350}>
+              <Tooltip
+                key={m.id}
+                label={expandHere ? t("tenon.common.expand") : m.title}
+                position="right"
+                openDelay={350}
+              >
                 <UnstyledButton
                   className="tn-rail-module"
                   aria-label={m.title}
@@ -221,7 +233,12 @@ export function RailLayout({
             <div className="tn-rail-secondary-drawer">{secondary}</div>
           </Drawer>
         ) : (
-          <aside className="tn-rail-secondary" aria-label="二级导航" aria-hidden={!expanded} inert={!expanded}>
+          <aside
+            className="tn-rail-secondary"
+            aria-label={t("tenon.rail.secondary")}
+            aria-hidden={!expanded}
+            inert={!expanded}
+          >
             <div className="tn-rail-secondary-inner">{secondary}</div>
           </aside>
         )}

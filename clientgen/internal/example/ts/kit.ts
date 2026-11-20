@@ -10,8 +10,11 @@ import { settings } from "./settings"
 
 /** createKit 的选项。 */
 export interface KitOptions extends QueryOptions {
-  /** 显示文字和验证提示的语言，例如 zh-CN；不设置时用浏览器的语言。 */
-  language?: string
+  /**
+   * 显示文字和验证提示的语言，例如 zh-CN，或者返回当前语言的函数（应用的 i18n.language）：每次取显示文字时调用，
+   * 切换语言后显示新的语言。不设置时用浏览器的语言。
+   */
+  language?: string | (() => string | undefined)
 }
 
 /** enums.ts 中的命名类型，例如 ArticleStatus。 */
@@ -25,7 +28,7 @@ type Labels = {
 /**
  * 一个 API 的客户端和生成的元数据：查询选项、校验规则、验证提示、枚举、资源和设置。交给 @go-tenon/ui：
  *
- *   export const kit = createKit(api, { scope: session.scope, language: "zh-CN" })
+ *   export const kit = createKit(api, { scope: session.scope, language: i18n.language })
  *   export const articles = resourceModel(kit.resources.article, kit)
  *   useSchemaForm({ schema: kit.schemas.article.create.body, rules: kit, initialValues })
  *   kit.label("ArticleStatus", article.status) // 枚举取值的显示文字
@@ -43,13 +46,14 @@ export function createKit(client: Client, options: KitOptions = {}) {
     settings,
     language,
     /**
-     * 枚举取值的显示文字，例如 label("ArticleStatus", "draft")。语言是 language，没有设置时用浏览器的语言；
+     * 枚举取值的显示文字，例如 label("ArticleStatus", "draft")。语言是 language 的当前值，没有设置时用浏览器的语言；
      * 没有这种语言时依次用它的主语言和第一种语言，与资源模型的 display 相同。没有显示文字时返回取值本身。
      */
     label(name: EnumName, value: string): string {
       const all: Labels = enums // 没有枚举时 EnumName 是 never，按名称读取前先放宽类型
       const byLanguage = all[name]?.labels
-      return (byLanguage && pickLanguage(byLanguage, language ?? browserLanguage())?.[value]) ?? value
+      const current = typeof language === "function" ? language() : language
+      return (byLanguage && pickLanguage(byLanguage, current ?? browserLanguage())?.[value]) ?? value
     },
   }
 }

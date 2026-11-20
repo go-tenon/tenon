@@ -43,6 +43,7 @@ import { TabsOutlet, type TabsOutletProps } from "../app/tabs/tabs"
 import { NewVersionNotice } from "../app/version-notice"
 import { NavLinkLink } from "../components/links"
 import { MenuBadge } from "../components/menu-badge"
+import { useText } from "../i18n/i18n"
 import { Icon } from "../theme/icons"
 import { layoutMetrics } from "../theme/theme"
 
@@ -95,6 +96,7 @@ export function FrameLayout({
   const theme = useMantineTheme()
   const m = layoutMetrics(theme)
   const [state, setState] = useLayoutState()
+  const t = useText()
   const narrow = useNarrow()
   const collapsed = state.collapsed && !narrow
   const aside = useSlotFilled("aside")
@@ -155,7 +157,7 @@ export function FrameLayout({
   }, [pathname])
 
   const vars = { "--tn-header-height": `${headerHeight}px` } as CSSProperties
-  const collapseLabel = collapsed ? "展开侧栏" : "收起侧栏"
+  const collapseLabel = collapsed ? t("tenon.frame.expand_sidebar") : t("tenon.frame.collapse_sidebar")
   return (
     <AppShell
       className="tn-shell"
@@ -182,7 +184,7 @@ export function FrameLayout({
               size="sm"
               opened={state.navOpen}
               onClick={() => setState({ navOpen: !state.navOpen })}
-              aria-label={state.navOpen ? "关闭导航" : "打开导航"}
+              aria-label={state.navOpen ? t("tenon.frame.close_nav") : t("tenon.frame.open_nav")}
             />
             <ActionIcon
               visibleFrom="sm"
@@ -264,12 +266,17 @@ export function FrameLayout({
 /** 侧栏顶部的搜索入口；收起时是一个图标。 */
 function NavSearch({ collapsed }: { collapsed: boolean }): ReactNode {
   const os = useOs()
+  const t = useText()
   const shortcut = os === "macos" || os === "ios" ? "⌘ K" : "Ctrl K"
   if (collapsed) {
     return (
       <div className="tn-nav-search-rail">
-        <Tooltip label={`搜索  ${shortcut}`} position="right">
-          <UnstyledButton className="tn-nav-rail-item" aria-label="搜索页面" onClick={spotlight.open}>
+        <Tooltip label={`${t("tenon.common.search")}  ${shortcut}`} position="right">
+          <UnstyledButton
+            className="tn-nav-rail-item"
+            aria-label={t("tenon.frame.search_pages")}
+            onClick={spotlight.open}
+          >
             <IconSearch size={18} stroke={1.5} />
           </UnstyledButton>
         </Tooltip>
@@ -281,7 +288,7 @@ function NavSearch({ collapsed }: { collapsed: boolean }): ReactNode {
     <div className="tn-nav-search-wrap">
       <UnstyledButton className="tn-nav-search" onClick={spotlight.open}>
         <IconSearch size={15} stroke={1.5} />
-        <span>搜索</span>
+        <span>{t("tenon.common.search")}</span>
         <Kbd size="xs" visibleFrom="sm">
           {shortcut}
         </Kbd>
@@ -293,6 +300,7 @@ function NavSearch({ collapsed }: { collapsed: boolean }): ReactNode {
 /** 页面搜索：菜单中可以进入的页面（已经按权限过滤），说明是所在的分组。 */
 function PageSearch(): ReactNode {
   const { menu } = useNavigation()
+  const t = useText()
   const navigate = useNavigate()
   const actions = useMemo<SpotlightActionData[]>(
     () =>
@@ -309,12 +317,15 @@ function PageSearch(): ReactNode {
     <Spotlight
       actions={actions}
       shortcut={["mod + K", "/"]}
-      nothingFound="没有找到页面"
+      nothingFound={t("tenon.frame.no_pages")}
       highlightQuery
       limit={20}
       scrollable
       maxHeight={420}
-      searchProps={{ leftSection: <IconSearch size={16} stroke={1.5} />, placeholder: "搜索页面…" }}
+      searchProps={{
+        leftSection: <IconSearch size={16} stroke={1.5} />,
+        placeholder: t("tenon.frame.search_pages_placeholder"),
+      }}
     />
   )
 }
@@ -337,9 +348,10 @@ function pages(
 /** 侧栏导航：分组可以展开，当前页面所在的分组默认展开。收起时只显示图标，分组用弹出菜单。 */
 function Nav({ collapsed }: { collapsed: boolean }): ReactNode {
   const { menu, active } = useNavigation()
+  const t = useText()
   if (collapsed) {
     return (
-      <nav className="tn-nav tn-nav-collapsed" aria-label="主导航">
+      <nav className="tn-nav tn-nav-collapsed" aria-label={t("tenon.frame.main_nav")}>
         {menu.map((item) => (
           <CollapsedItem key={item.id} item={item} active={active} />
         ))}
@@ -347,7 +359,7 @@ function Nav({ collapsed }: { collapsed: boolean }): ReactNode {
     )
   }
   return (
-    <nav className="tn-nav" aria-label="主导航">
+    <nav className="tn-nav" aria-label={t("tenon.frame.main_nav")}>
       {menu.map((item) => (
         <Item key={item.id} item={item} active={active} />
       ))}
@@ -458,6 +470,7 @@ const reducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce
 /** 多标签的开关，按账号保存。窄屏时不显示标签栏，也不显示开关。 */
 function TabsSwitch(): ReactNode {
   const [layout, setLayout] = useLayoutState()
+  const t = useText()
   return (
     <Box visibleFrom="sm" className="tn-menu-section tn-menu-toggles">
       <UnstyledButton
@@ -467,7 +480,7 @@ function TabsSwitch(): ReactNode {
         onClick={() => setLayout({ tabs: !layout.tabs })}
       >
         <IconBrowser size={18} stroke={1.5} />
-        <span>多标签</span>
+        <span>{t("tenon.frame.tabs")}</span>
         <Switch size="xs" checked={layout.tabs} readOnly tabIndex={-1} aria-hidden style={{ pointerEvents: "none" }} />
       </UnstyledButton>
     </Box>

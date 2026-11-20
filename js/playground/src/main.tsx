@@ -40,6 +40,8 @@ import {
   UserMenu,
   useApp,
   useFormatDateTime,
+  useI18n,
+  useLanguage,
   useMenuBadge,
 } from "@go-tenon/ui"
 import {
@@ -70,6 +72,7 @@ import {
 import { type ReactNode, useEffect, useMemo, useState } from "react"
 import { createRoot } from "react-dom/client"
 import { CustomerForm } from "./customer-form"
+import { i18n } from "./i18n"
 import { PrimaryPicker, savedPrimary } from "./primary-picker"
 import { InboxDemo } from "./rail-inbox"
 import {
@@ -130,7 +133,6 @@ function Root(): ReactNode {
 
 const languages = [
   { value: "zh-CN", label: "简体中文" },
-  { value: "zh-TW", label: "繁體中文" },
   { value: "en", label: "English" },
 ]
 
@@ -143,8 +145,10 @@ const timeZones = [
 ]
 
 function FrameShell(): ReactNode {
-  // 演示：只记下选择，不换文案。
-  const [language, setLanguage] = useState("zh-CN")
+  // 切换语言：菜单标题（消息 ID）和框架组件的文字一起变化。
+  const i18n = useI18n()
+  const language = useLanguage()
+  const setLanguage = (v: string) => i18n.setLanguage(v)
   const [zone, setZone] = useState("")
   return (
     <TimeZoneProvider zone={zone}>
@@ -319,12 +323,12 @@ function frameApp() {
   const trade = createRoute({
     getParentRoute: () => layout,
     path: "/trade",
-    staticData: { title: "交易", icon: "cart", order: 0.5 },
+    staticData: { title: "nav.trade", icon: "cart", order: 0.5 },
   })
   const customers = createRoute({
     getParentRoute: () => layout,
     path: "/customers",
-    staticData: { title: "客户", icon: "team", order: 0.7 },
+    staticData: { title: "nav.customers", icon: "team", order: 0.7 },
     validateSearch: customersModel.listSearch,
     component: () => (
       <ResourcePage
@@ -333,8 +337,8 @@ function frameApp() {
         description="全部渠道的客户。"
         toolbar={
           <>
-            <ImportButton source={customerImport} title="导入" />
-            <ExportButton source={customerExport} title="导出" />
+            <ImportButton source={customerImport} />
+            <ExportButton source={customerExport} />
           </>
         }
       />
@@ -385,6 +389,7 @@ function frameApp() {
     session,
     queryClient,
     permissions,
+    i18n,
     router: { basepath: "/frame", defaultErrorComponent: RouteError, defaultNotFoundComponent: NotFoundPage },
   })
   return app

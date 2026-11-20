@@ -138,8 +138,15 @@ func (d dev) waitFrontends(ctx context.Context) {
 	}
 }
 
-// generate 用编译出的程序生成客户端，失败时只打印错误。
+// generate 生成前端的界面文字目录，再用编译出的程序生成客户端，失败时只打印错误。
 func (d dev) generate(ctx context.Context, bin string) {
+	warnings, err := WriteMessages(".", d.cfg)
+	if err != nil {
+		fmt.Fprintf(d.errOut, "dev: 生成界面文字失败：%v\n", err)
+	}
+	for _, w := range warnings {
+		fmt.Fprintf(d.errOut, "dev: %s\n", w)
+	}
 	for _, args := range Generations(d.cfg) {
 		cmd := exec.CommandContext(ctx, bin, args...)
 		cmd.Stdout, cmd.Stderr = d.out, d.errOut

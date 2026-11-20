@@ -3,13 +3,15 @@
 import { ActionIcon, Tooltip, useComputedColorScheme, useMantineColorScheme } from "@mantine/core"
 import { IconMoon, IconSun } from "@tabler/icons-react"
 import type { ReactNode } from "react"
+import { useText } from "../i18n/i18n"
 
 /** 顶栏的配色切换按钮。 */
 export function ColorSchemeToggle(): ReactNode {
   const { setColorScheme } = useMantineColorScheme()
   const computed = useComputedColorScheme("light", { getInitialValueInEffect: true })
   const dark = computed === "dark"
-  const label = dark ? "切换到亮色" : "切换到暗色"
+  const t = useText()
+  const label = dark ? t("tenon.color_scheme.to_light") : t("tenon.color_scheme.to_dark")
   return (
     <Tooltip label={label}>
       <ActionIcon aria-label={label} onClick={() => setColorScheme(dark ? "light" : "dark")} size="lg">

@@ -12,11 +12,12 @@ import (
 // layers 是 js/ui/src 下每个目录的层次：上层只引用同层或更低层的目录。blocks 和 features 同在最上层，
 // 但彼此不引用：布局只描述样子，功能由应用放进布局。
 var layers = map[string]int{
-	"theme":      0,
-	"app":        1,
-	"components": 2,
-	"blocks":     3,
-	"features":   3,
+	"i18n":       0,
+	"theme":      1,
+	"app":        2,
+	"components": 3,
+	"blocks":     4,
+	"features":   4,
 }
 
 var relImport = regexp.MustCompile(`(?m)^(?:import|export)\b[^"]*?from "(\.[^"]*)"|^import "(\.[^"]*)"`)

@@ -13,6 +13,7 @@ import {
 } from "@tabler/icons-react"
 import { type DragEvent, type ReactNode, useEffect, useRef, useState } from "react"
 import { errorMessage } from "../../components/feedback"
+import { text, useText } from "../../i18n/i18n"
 import { type ExportSource, type ImportSource, type TransferPhase, useExport, useImport } from "./model"
 
 /** 结束时调用一次 onCompleted，例如刷新列表。 */
@@ -27,10 +28,11 @@ function useOnFinished(phase: TransferPhase, onCompleted?: () => void) {
 function failure(error: unknown, opError?: string): string {
   if (opError) return opError
   if (error) return errorMessage(describeError(error))
-  return "处理时出错"
+  return text("tenon.transfer.failed")
 }
 
 function Running({ label, op }: { label: string; op?: OperationLike }): ReactNode {
+  const t = useText()
   const total = op?.total ?? 0
   const processed = op?.processed ?? 0
   return (
@@ -41,7 +43,7 @@ function Running({ label, op }: { label: string; op?: OperationLike }): ReactNod
           {total > 0
             ? `${processed} / ${total} · ${Math.floor((processed / total) * 100)}%`
             : processed > 0
-              ? `已处理 ${processed} 行`
+              ? t("tenon.transfer.processed", { count: processed })
               : ""}
         </Text>
       </Group>
@@ -54,7 +56,7 @@ function Running({ label, op }: { label: string; op?: OperationLike }): ReactNod
 export interface ImportButtonProps {
   /** 导入的接口，见 model.ts 中的 useImport。 */
   source: ImportSource
-  /** 按钮和对话框的标题，默认“导入”。 */
+  /** 按钮和对话框的标题，默认“导入”（当前语言的）。 */
   title?: string
   /** 可以选择的文件类型，默认 .xlsx,.csv。 */
   accept?: string
@@ -71,11 +73,13 @@ export interface ImportButtonProps {
  */
 export function ImportButton({
   source,
-  title = "导入",
+  title: titleProp,
   accept = ".xlsx,.csv",
   template,
   onCompleted,
 }: ImportButtonProps): ReactNode {
+  const t = useText()
+  const title = titleProp ?? t("tenon.transfer.import")
   const imp = useImport({ title, ...source })
   const [open, setOpen] = useState(false)
   useOnFinished(imp.phase, onCompleted)
@@ -95,7 +99,7 @@ export function ImportButton({
             <Anchor component="button" type="button" size="sm" onClick={() => void template()}>
               <Group gap={4}>
                 <IconDownload size={14} />
-                下载导入模板
+                {t("tenon.transfer.download_template")}
               </Group>
             </Anchor>
           )}
@@ -105,14 +109,14 @@ export function ImportButton({
     case "uploading":
       body = (
         <Stack gap={8}>
-          <Text size="sm">正在上传…</Text>
+          <Text size="sm">{t("tenon.transfer.uploading")}</Text>
           <Progress value={(imp.uploaded ?? 0) * 100} size="md" />
         </Stack>
       )
       break
     case "starting":
     case "running":
-      body = <Running label="正在导入…" op={op} />
+      body = <Running label={t("tenon.transfer.importing")} op={op} />
       break
     case "completed": {
       const failed = op?.failed ?? 0
@@ -121,9 +125,11 @@ export function ImportButton({
           <ThemeIcon size={44} radius="xl" variant="light" color={failed > 0 ? "deep-orange" : "green"}>
             {failed > 0 ? <IconAlertTriangle size={22} /> : <IconCheck size={22} />}
           </ThemeIcon>
-          <Text fw={600}>导入完成</Text>
+          <Text fw={600}>{t("tenon.transfer.import_done")}</Text>
           <Text size="sm" c="dimmed">
-            成功 {(op?.processed ?? 0) - failed} 行{failed > 0 ? `，${failed} 行没有导入` : ""}
+            {failed > 0
+              ? t("tenon.transfer.import_result_failed", { ok: (op?.processed ?? 0) - failed, failed })
+              : t("tenon.transfer.import_result", { ok: op?.processed ?? 0 })}
           </Text>
           {imp.downloadFailures && (
             <Button
@@ -132,7 +138,7 @@ export function ImportButton({
               mt="xs"
               onClick={() => void imp.downloadFailures?.()}
             >
-              下载没有导入的行
+              {t("tenon.transfer.download_failures")}
             </Button>
           )}
         </Stack>
@@ -142,12 +148,12 @@ export function ImportButton({
     case "failed":
       body = (
         <Stack gap="sm">
-          <Alert color="red" variant="light" title="导入失败" role="alert">
+          <Alert color="red" variant="light" title={t("tenon.transfer.import_failed")} role="alert">
             {failure(imp.error, op?.error)}
           </Alert>
           <Group>
             <Button variant="default" onClick={imp.reset}>
-              重新选择文件
+              {t("tenon.transfer.choose_again")}
             </Button>
           </Group>
         </Stack>
@@ -163,7 +169,7 @@ export function ImportButton({
         {body}
         <Group justify="flex-end" mt="lg">
           <Button variant="default" onClick={close}>
-            关闭
+            {t("tenon.common.close")}
           </Button>
         </Group>
       </Modal>
@@ -173,6 +179,7 @@ export function ImportButton({
 
 /** 选择或拖入一个文件。 */
 function DropZone({ accept, onFile }: { accept: string; onFile: (file: File) => void }): ReactNode {
+  const t = useText()
   const input = useRef<HTMLInputElement>(null)
   const [over, setOver] = useState(false)
   const drop = (e: DragEvent) => {
@@ -204,10 +211,10 @@ function DropZone({ accept, onFile }: { accept: string; onFile: (file: File) => 
       <Stack align="center" gap={6}>
         <IconFileSpreadsheet size={28} stroke={1.4} color="var(--tn-muted)" />
         <Text size="sm" fw={500}>
-          点击选择或拖入表格
+          {t("tenon.transfer.drop")}
         </Text>
         <Text size="xs" c="dimmed">
-          支持 {accept.replaceAll(",", "、")}
+          {t("tenon.transfer.accepts", { types: accept.replaceAll(",", t("tenon.transfer.list_separator")) })}
         </Text>
       </Stack>
       <input
@@ -215,7 +222,7 @@ function DropZone({ accept, onFile }: { accept: string; onFile: (file: File) => 
         type="file"
         accept={accept}
         hidden
-        aria-label="选择表格"
+        aria-label={t("tenon.transfer.choose")}
         onChange={(e) => {
           const file = e.currentTarget.files?.[0]
           e.currentTarget.value = ""
@@ -230,7 +237,7 @@ function DropZone({ accept, onFile }: { accept: string; onFile: (file: File) => 
 export interface ExportButtonProps {
   /** 导出的接口，见 model.ts 中的 useExport。 */
   source: ExportSource
-  /** 按钮和对话框的标题，默认“导出”。 */
+  /** 按钮和对话框的标题，默认“导出”（当前语言的）。 */
   title?: string
 }
 
@@ -239,7 +246,9 @@ export interface ExportButtonProps {
  *
  *	<ExportButton source={{ start: () => api.article.exportStart({ format: "xlsx" }), progress }} />
  */
-export function ExportButton({ source, title = "导出" }: ExportButtonProps): ReactNode {
+export function ExportButton({ source, title: titleProp }: ExportButtonProps): ReactNode {
+  const t = useText()
+  const title = titleProp ?? t("tenon.transfer.export")
   const exp = useExport({ title, ...source })
   const [open, setOpen] = useState(false)
   const op = exp.operation?.operation
@@ -251,7 +260,7 @@ export function ExportButton({ source, title = "导出" }: ExportButtonProps): R
   switch (exp.phase) {
     case "starting":
     case "running":
-      body = <Running label="正在导出…" op={op} />
+      body = <Running label={t("tenon.transfer.exporting")} op={op} />
       break
     case "completed":
       body = (
@@ -259,7 +268,7 @@ export function ExportButton({ source, title = "导出" }: ExportButtonProps): R
           <ThemeIcon size={44} radius="xl" variant="light" color="green">
             <IconCheck size={22} />
           </ThemeIcon>
-          <Text fw={600}>导出完成</Text>
+          <Text fw={600}>{t("tenon.transfer.export_done")}</Text>
           {exp.file && (
             <Button
               component="a"
@@ -268,7 +277,9 @@ export function ExportButton({ source, title = "导出" }: ExportButtonProps): R
               leftSection={<IconDownload size={16} />}
               mt="xs"
             >
-              下载{exp.file.filename ? ` ${exp.file.filename}` : ""}
+              {exp.file.filename
+                ? t("tenon.transfer.download_file", { name: exp.file.filename })
+                : t("tenon.transfer.download")}
             </Button>
           )}
         </Stack>
@@ -276,7 +287,7 @@ export function ExportButton({ source, title = "导出" }: ExportButtonProps): R
       break
     case "failed":
       body = (
-        <Alert color="red" variant="light" title="导出失败" role="alert">
+        <Alert color="red" variant="light" title={t("tenon.transfer.export_failed")} role="alert">
           {failure(exp.error, op?.error)}
         </Alert>
       )
@@ -298,7 +309,7 @@ export function ExportButton({ source, title = "导出" }: ExportButtonProps): R
         {body}
         <Group justify="flex-end" mt="lg">
           <Button variant="default" onClick={close}>
-            关闭
+            {t("tenon.common.close")}
           </Button>
         </Group>
       </Modal>

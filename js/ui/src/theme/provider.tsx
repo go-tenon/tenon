@@ -9,6 +9,7 @@ import {
 import { ModalsProvider } from "@mantine/modals"
 import { Notifications } from "@mantine/notifications"
 import { type ReactNode, useMemo } from "react"
+import { useText } from "../i18n/i18n"
 import { type IconComponent, IconsProvider } from "./icons"
 import { themes } from "./theme"
 
@@ -50,6 +51,7 @@ export function UIProvider({
     () => (colorSchemeKey ? localStorageColorSchemeManager({ key: colorSchemeKey }) : undefined),
     [colorSchemeKey],
   )
+  const t = useText()
   return (
     <MantineProvider
       theme={theme}
@@ -58,7 +60,7 @@ export function UIProvider({
       env={env}
     >
       <Notifications position="top-right" limit={4} />
-      <ModalsProvider labels={{ confirm: "确定", cancel: "取消" }}>
+      <ModalsProvider labels={{ confirm: t("tenon.common.confirm"), cancel: t("tenon.common.cancel") }}>
         <IconsProvider icons={icons}>{children}</IconsProvider>
       </ModalsProvider>
     </MantineProvider>

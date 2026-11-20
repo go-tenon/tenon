@@ -9,6 +9,7 @@ import { notifySuccess } from "../../components/feedback"
 import { type AutoSaveStatus, createAutoSaver } from "../../components/form/autosave"
 import { applyServerErrors, FormError, useSchemaForm } from "../../components/form/form"
 import { formValidator, useUnsavedChanges } from "../../components/form/rules"
+import { type UiMessageId, useText } from "../../i18n/i18n"
 import { DefaultInput, type FieldInput } from "./fields"
 import { type Settings, type SettingsModel, useSettings } from "./model"
 
@@ -25,11 +26,12 @@ export interface SettingsFormProps {
   description?: ReactNode
 }
 
-const statusText: Record<Exclude<AutoSaveStatus, "idle">, string> = {
-  pending: "有未保存的修改",
-  saving: "保存中…",
-  saved: "已保存",
-  error: "保存失败，修改后会重试",
+// 自动保存的每种状态的文字的消息 ID。
+const statusText: Record<Exclude<AutoSaveStatus, "idle">, UiMessageId> = {
+  pending: "tenon.autosave.pending",
+  saving: "tenon.autosave.saving",
+  saved: "tenon.common.saved",
+  error: "tenon.autosave.error",
 }
 
 /**
@@ -45,6 +47,7 @@ export function SettingsForm({
   description,
 }: SettingsFormProps): ReactNode {
   const view = useSettings(model)
+  const t = useText()
   const heading = title === undefined ? model.title : title
   return (
     <Card>
@@ -67,9 +70,9 @@ export function SettingsForm({
       ) : view.values ? (
         <Loaded view={view} values={view.values} autoSave={autoSave} inputs={inputs} />
       ) : (
-        <Alert color="red" variant="light" title="设置读取失败" role="alert">
+        <Alert color="red" variant="light" title={t("tenon.settings.load_failed")} role="alert">
           <Button size="xs" variant="default" mt="xs" onClick={view.refetch}>
-            重试
+            {t("tenon.common.retry")}
           </Button>
         </Alert>
       )}
@@ -90,6 +93,7 @@ function Loaded({
   inputs: { [field: string]: FieldInput }
 }): ReactNode {
   const { model } = view
+  const t = useText()
   const form = useSchemaForm({ schema: model.formSchema(), rules: model.ruleOptions, initialValues: values })
   const [formError, setFormError] = useState<ErrorInfo>()
   const [saving, setSaving] = useState(false)
@@ -134,7 +138,7 @@ function Loaded({
         try {
           await save(v)
           unsaved.release()
-          notifySuccess("已保存")
+          notifySuccess(t("tenon.common.saved"))
         } catch {
           // 错误已经显示在字段和表单上方。
         } finally {
@@ -166,14 +170,14 @@ function Loaded({
             <Group gap={6} role="status">
               {status === "saved" && <IconCheck size={14} color="var(--mantine-color-green-6)" />}
               <Text size="xs" c={status === "error" ? "red" : "dimmed"}>
-                {statusText[status]}
+                {t(statusText[status])}
               </Text>
             </Group>
           )
         ) : view.canSave ? (
           <Group justify="flex-end">
             <Button type="submit" loading={saving} disabled={!form.isDirty()}>
-              保存
+              {t("tenon.common.save")}
             </Button>
           </Group>
         ) : null}

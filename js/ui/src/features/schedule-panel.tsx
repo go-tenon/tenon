@@ -26,6 +26,7 @@ import { type ReactNode, useState } from "react"
 import { CellLink, type Column, DataTable } from "../components/data-table/data-table"
 import { confirm, notifyError, notifySuccess } from "../components/feedback"
 import { Page } from "../components/page"
+import { type UiMessageId, text as uiText, useText } from "../i18n/i18n"
 import { useFormatDateTime } from "../theme/format"
 
 // ———————————————————————————— 接口 ————————————————————————————
@@ -77,43 +78,47 @@ export interface ScheduleApi {
 export interface SchedulePanelProps {
   /** 生成的客户端分组：api.schedule。 */
   api: ScheduleApi
-  /** 页面的标题，默认“定时任务”。 */
+  /** 页面的标题，默认“定时任务”（当前语言的）。 */
   title?: ReactNode
 }
 
-const statusText: Record<ScheduleStatus, { label: string; color: string }> = {
-  succeeded: { label: "成功", color: "green" },
-  failed: { label: "失败", color: "red" },
-  skipped: { label: "跳过", color: "gray" },
+// 每种执行结果的显示文字的消息 ID 和颜色。
+const statusText: Record<ScheduleStatus, { label: UiMessageId; color: string }> = {
+  succeeded: { label: "tenon.schedule.succeeded", color: "green" },
+  failed: { label: "tenon.schedule.failed", color: "red" },
+  skipped: { label: "tenon.schedule.skipped", color: "gray" },
 }
 
-/** 跳过的原因（schedule.SkipReason）的说明，其他错误原样显示。 */
-const skipText: Record<string, string> = {
-  overlap: "上一次还没结束",
-  lock_failed: "锁存储出错，无法确认由哪个实例执行",
+/** 跳过的原因（schedule.SkipReason）的说明的消息 ID，其他错误原样显示。 */
+const skipText: Record<string, UiMessageId> = {
+  overlap: "tenon.schedule.skip_overlap",
+  lock_failed: "tenon.schedule.skip_lock_failed",
 }
 
+/** 执行记录中错误的显示：跳过的原因换成说明，其他错误原样返回。 */
 function errorText(status: ScheduleStatus | undefined, error: string | undefined): string {
   if (!error) return ""
-  return status === "skipped" ? (skipText[error] ?? error) : error
+  return status === "skipped" && skipText[error] ? uiText(skipText[error]) : error
 }
 
 /** 耗时的显示，例如 320 ms、4.2 秒、3 分 12 秒。 */
 function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms} ms`
-  if (ms < 60_000) return `${(ms / 1000).toFixed(1)} 秒`
+  if (ms < 60_000) return uiText("tenon.schedule.seconds", { value: (ms / 1000).toFixed(1) })
   const s = Math.round(ms / 1000)
-  return `${Math.floor(s / 60)} 分 ${s % 60} 秒`
+  return uiText("tenon.schedule.minutes_seconds", { minutes: Math.floor(s / 60), seconds: s % 60 })
 }
 
+/** 执行结果的标签，手动执行的另加“手动”。 */
 function StatusBadge({ status, manual }: { status: ScheduleStatus; manual?: boolean }): ReactNode {
-  const st = statusText[status] ?? { label: status, color: "gray" }
+  const t = useText()
+  const st = statusText[status]
   return (
     <Group gap={4} wrap="nowrap">
-      <Badge color={st.color}>{st.label}</Badge>
+      <Badge color={st?.color ?? "gray"}>{st ? t(st.label) : status}</Badge>
       {manual && (
         <Badge color="gray" variant="outline">
-          手动
+          {t("tenon.schedule.manual")}
         </Badge>
       )}
     </Group>
@@ -130,7 +135,8 @@ const tasksKey = ["tenon", "schedule", "tasks"]
  *	  component: () => <SchedulePanel api={api.schedule} />,
  *	})
  */
-export function SchedulePanel({ api, title = "定时任务" }: SchedulePanelProps): ReactNode {
+export function SchedulePanel({ api, title }: SchedulePanelProps): ReactNode {
+  const tr = useText()
   const tasks = useQuery({ queryKey: tasksKey, queryFn: () => api.list() })
   const navigate = useNavigate()
   const [task, setTask] = useState<string>()
@@ -147,25 +153,31 @@ export function SchedulePanel({ api, title = "定时任务" }: SchedulePanelProp
   const missed = items?.filter((t) => t.missed) ?? []
   return (
     <Page
-      title={title}
-      description="按表达式在后台定时执行的任务。可以立即执行一次，执行记录保留一段时间。"
+      title={title ?? tr("tenon.schedule.title")}
+      description={tr("tenon.schedule.description")}
       tabs={[
         {
           value: "tasks",
-          label: "任务",
+          label: tr("tenon.schedule.tab_tasks"),
           content: <Tasks api={api} query={tasks} showRuns={showRuns} />,
         },
         {
           value: "runs",
-          label: "执行记录",
+          label: tr("tenon.schedule.tab_runs"),
           content: <Runs api={api} tasks={items ?? []} task={task} setTask={setTask} />,
         },
       ]}
     >
       {missed.length > 0 && (
-        <Alert color="deep-orange" variant="light" title={`${missed.length} 个任务错过了上一次执行`} role="alert">
-          {missed.map((t) => t.name).join("、")}
-          ：应当执行的时间已经过去，却没有执行记录，通常是调度器停止或正在部署。下一次会按时执行，需要补上时点“立即执行”。
+        <Alert
+          color="deep-orange"
+          variant="light"
+          title={tr("tenon.schedule.missed_title", { count: missed.length })}
+          role="alert"
+        >
+          {tr("tenon.schedule.missed_text", {
+            names: missed.map((t) => t.name).join(tr("tenon.transfer.list_separator")),
+          })}
         </Alert>
       )}
     </Page>
@@ -185,10 +197,11 @@ function Tasks({
 }): ReactNode {
   const queryClient = useQueryClient()
   const formatDateTime = useFormatDateTime()
+  const tr = useText()
   const runNow = useMutation({
     mutationFn: (name: string) => api.run(name),
     onSuccess: (_, name) => {
-      notifySuccess(`已交给后台执行 ${name}，结果见执行记录`)
+      notifySuccess(tr("tenon.schedule.queued", { name }))
       void queryClient.invalidateQueries({ queryKey: ["tenon", "schedule"] })
     },
     onError: (err) => notifyError(err),
@@ -196,7 +209,7 @@ function Tasks({
   const columns: Column<ScheduleTaskData>[] = [
     {
       accessor: "name",
-      title: "任务",
+      title: tr("tenon.schedule.tab_tasks"),
       render: (t) => (
         <Stack gap={2}>
           <Anchor
@@ -219,10 +232,10 @@ function Tasks({
         </Stack>
       ),
     },
-    { accessor: "expr", title: "表达式", noWrap: true, render: (t) => <Code>{t.expr}</Code> },
+    { accessor: "expr", title: tr("tenon.schedule.expr"), noWrap: true, render: (t) => <Code>{t.expr}</Code> },
     {
       accessor: "next_run",
-      title: "下一次",
+      title: tr("tenon.schedule.next"),
       noWrap: true,
       render: (t) => (
         <Text span size="sm">
@@ -232,12 +245,12 @@ function Tasks({
     },
     {
       accessor: "last_status",
-      title: "上一次",
+      title: tr("tenon.schedule.last"),
       noWrap: true,
       render: (t) => {
-        if (t.running) return <Badge color="bright-blue">执行中</Badge>
-        if (t.missed) return <Badge color="deep-orange">错过</Badge>
-        if (!t.last_status) return <Text c="dimmed">还没执行过</Text>
+        if (t.running) return <Badge color="bright-blue">{tr("tenon.schedule.running")}</Badge>
+        if (t.missed) return <Badge color="deep-orange">{tr("tenon.schedule.missed")}</Badge>
+        if (!t.last_status) return <Text c="dimmed">{tr("tenon.schedule.never_run")}</Text>
         return (
           <Stack gap={2} align="flex-start">
             <StatusBadge status={t.last_status} manual={t.last_manual} />
@@ -250,7 +263,7 @@ function Tasks({
     },
     {
       accessor: "last_error",
-      title: "上一次的错误",
+      title: tr("tenon.schedule.last_error"),
       ellipsis: true,
       render: (t) => (
         <Text span size="sm" c={t.last_status === "failed" ? "red" : "dimmed"}>
@@ -273,24 +286,24 @@ function Tasks({
             onClick={async () => {
               if (
                 await confirm({
-                  title: `立即执行 ${t.name}？`,
-                  message: "在后台执行一次，不影响按表达式的下一次执行。正在执行时这次不执行。",
-                  confirmLabel: "执行",
+                  title: tr("tenon.schedule.run_confirm", { name: t.name }),
+                  message: tr("tenon.schedule.run_message"),
+                  confirmLabel: tr("tenon.schedule.run"),
                 })
               )
                 runNow.mutate(t.name)
             }}
           >
-            立即执行
+            {tr("tenon.schedule.run_now")}
           </Button>
           <Menu position="bottom-end" width={140}>
             <Menu.Target>
-              <ActionIcon aria-label="更多操作">
+              <ActionIcon aria-label={tr("tenon.resource.more")}>
                 <IconDots size={16} stroke={1.6} />
               </ActionIcon>
             </Menu.Target>
             <Menu.Dropdown>
-              <Menu.Item onClick={() => showRuns(t.name)}>执行记录</Menu.Item>
+              <Menu.Item onClick={() => showRuns(t.name)}>{tr("tenon.schedule.tab_runs")}</Menu.Item>
             </Menu.Dropdown>
           </Menu>
         </Group>
@@ -299,7 +312,7 @@ function Tasks({
   ]
   if (query.isError)
     return (
-      <Alert color="red" variant="light" title="读取定时任务失败" role="alert">
+      <Alert color="red" variant="light" title={tr("tenon.schedule.load_failed")} role="alert">
         {String((query.error as { detail?: string })?.detail ?? query.error)}
       </Alert>
     )
@@ -309,7 +322,7 @@ function Tasks({
       columns={columns}
       rowKey="name"
       loading={query.isPending}
-      empty="还没有定时任务"
+      empty={tr("tenon.schedule.no_tasks")}
       minHeight={120}
     />
   )
@@ -333,6 +346,7 @@ function Runs({
   const [perPage, setPerPage] = useState(20)
   const [open, setOpen] = useState<ScheduleRunData>()
   const formatDateTime = useFormatDateTime()
+  const tr = useText()
   const list = useQuery({
     queryKey: ["tenon", "schedule", "runs", task, status, page, perPage],
     queryFn: () => api.runs({ task, status, page, per_page: perPage }),
@@ -349,7 +363,7 @@ function Runs({
   const columns: Column<ScheduleRunData>[] = [
     {
       accessor: "started_at",
-      title: "开始时间",
+      title: tr("tenon.schedule.started_at"),
       noWrap: true,
       width: 120,
       render: (r) => (
@@ -360,7 +374,7 @@ function Runs({
     },
     {
       accessor: "task",
-      title: "任务",
+      title: tr("tenon.schedule.tab_tasks"),
       noWrap: true,
       render: (r) => (
         <Text size="sm" ff="monospace">
@@ -370,19 +384,19 @@ function Runs({
     },
     {
       accessor: "status",
-      title: "结果",
+      title: tr("tenon.schedule.result"),
       noWrap: true,
       render: (r) => <StatusBadge status={r.status} manual={r.manual} />,
     },
     {
       accessor: "duration_ms",
-      title: "耗时",
+      title: tr("tenon.schedule.duration"),
       noWrap: true,
       render: (r) => (r.status === "skipped" ? "—" : formatDuration(r.duration_ms)),
     },
     {
       accessor: "error",
-      title: "错误",
+      title: tr("tenon.queue.error"),
       ellipsis: true,
       // 失败的错误可能很长、带堆栈：点它在对话框中看完整的；跳过的原因很短，直接显示。
       render: (r) =>
@@ -400,10 +414,13 @@ function Runs({
     <Select
       value={task ?? ""}
       onChange={(v) => setTask(v || undefined)}
-      data={[{ value: "", label: "全部任务" }, ...tasks.map((t) => ({ value: t.name, label: t.name }))]}
+      data={[
+        { value: "", label: tr("tenon.schedule.all_tasks") },
+        ...tasks.map((t) => ({ value: t.name, label: t.name })),
+      ]}
       allowDeselect={false}
       w={220}
-      aria-label="按任务筛选"
+      aria-label={tr("tenon.schedule.filter_task")}
     />
   )
   const statusFilter = (
@@ -415,12 +432,12 @@ function Runs({
           setPage(1)
         }}
         data={[
-          { value: "", label: "全部" },
-          { value: "failed", label: "失败" },
-          { value: "succeeded", label: "成功" },
-          { value: "skipped", label: "跳过" },
+          { value: "", label: tr("tenon.schedule.all") },
+          { value: "failed", label: tr("tenon.schedule.failed") },
+          { value: "succeeded", label: tr("tenon.schedule.succeeded") },
+          { value: "skipped", label: tr("tenon.schedule.skipped") },
         ]}
-        aria-label="按结果筛选"
+        aria-label={tr("tenon.schedule.filter_result")}
       />
     </ScrollArea>
   )
@@ -449,7 +466,7 @@ function Runs({
           setSort: () => {},
         }}
         columns={columns}
-        empty={task || status ? "没有符合条件的执行记录" : "还没有执行记录"}
+        empty={task || status ? tr("tenon.schedule.no_matching_runs") : tr("tenon.schedule.no_runs")}
       />
       <Modal opened={!!open} onClose={() => setOpen(undefined)} title={open?.task} size="lg">
         {open && (
@@ -467,7 +484,7 @@ function Runs({
               </Code>
             ) : (
               <Text size="sm" c="dimmed">
-                没有错误
+                {tr("tenon.schedule.no_error")}
               </Text>
             )}
           </Stack>
