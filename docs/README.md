@@ -6,10 +6,10 @@ Tenon 是用 Go 构建后端服务的框架。业务逻辑写成[业务动作](c
 
 ## 入门
 
-- [安装](installation/installing.md)、[脚手架](installation/scaffolding.md)：安装 Tenon，用 `tenon init` 生成项目
+- [安装与生成项目](installation/installing.md)：`tenon init`、项目里有什么、构建、CI
 - 入门教程，做一个博客：[1 创建项目](tutorial/01-project.md)、[2 基础设施](tutorial/02-infrastructure.md)、[3 数据库](tutorial/03-database.md)、[4 文章接口](tutorial/04-api.md)、[5 页面](tutorial/05-pages.md)、[6 登录](tutorial/06-login.md)、[7 草稿](tutorial/07-drafts.md)、[8 后台](tutorial/08-admin.md)
 - [开发工具](installation/tooling.md)：`tenon dev`、`generate`、`build`、`add`
-- [AI 编程助手](installation/ai-assistants.md)：技能、文档和 MCP 服务
+- [AI 编程助手](installation/ai-assistants.md)：AGENTS.md、技能、`.tenon/docs`、`tenon mcp`
 
 ## 项目结构
 
@@ -95,8 +95,9 @@ Tenon 是用 Go 构建后端服务的框架。业务逻辑写成[业务动作](c
 
 ## AI
 
-- [AI 助手](ai/chat.md)、[AI 助手进阶](ai/chat-advanced.md)
-- [MCP 服务](ai/mcp.md)、[文档转换与切分](ai/documents.md)、[向量检索](ai/vector.md)
+- [AI 对话](ai/chat.md)：模型、对话接口、审批、多实例、媒体与决策
+- [MCP 服务](ai/mcp.md)：把业务动作提供给 AI 客户端
+- [文档转换与切分](ai/documents.md)、[向量检索](ai/vector.md)
 
 ## 部署与运维
 

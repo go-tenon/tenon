@@ -53,8 +53,11 @@ func New(opts Options) (*mcp.Server, error) {
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in searchArgs) (*mcp.CallToolResult, any, error) {
 		limit := in.Limit
-		if limit <= 0 || limit > 20 {
+		if limit <= 0 {
 			limit = 8
+		}
+		if limit > 20 {
+			limit = 20
 		}
 		hits := d.search(in.Query, limit)
 		if len(hits) == 0 {
@@ -147,8 +150,11 @@ func New(opts Options) (*mcp.Server, error) {
 			return nil, nil, err
 		}
 		lines := in.Lines
-		if lines <= 0 || lines > 1000 {
+		if lines <= 0 {
 			lines = 100
+		}
+		if lines > 1000 {
+			lines = 1000
 		}
 		var kept []string
 		for line := range strings.Lines(string(data)) {

@@ -85,7 +85,7 @@
 
 ## 入门教程
 
-[入门教程](../docs/tutorial/01-project.md)给初级工程师从头做一遍：每章只有命令、代码和一两句说明，不解释通用概念。`cmd/tenon` 的 `TestTutorial` 按章节执行带 `title` 的完整文件和正文中的命令，改教程的代码时在本地用 `TENON_SCAFFOLD_TEST=1` 运行它。
+[入门教程](../docs/tutorial/01-project.md)给初级工程师从头做一遍：每章只有命令、代码和一两句说明，不解释通用概念。教程中的完整文件很长，不受每节 3000 字符的限制。`cmd/tenon` 的 `TestTutorial` 按章节执行带 `title` 的完整文件和正文中的命令，改教程的代码时在本地用 `TENON_SCAFFOLD_TEST=1` 运行它。
 
 <a id="budget"></a>
 ## 预算

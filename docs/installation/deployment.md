@@ -1,108 +1,52 @@
 # 部署
 
-这一页讲怎样把应用第一次部署到服务器上：构建出可执行文件，准备配置，执行数据库迁移，让程序在服务器上一直运行，并且在需要停止时平稳地停下。上线以后的升级、维护和备份见[运维](operations.md)。
+把应用构建成一个可执行文件，用 systemd、Docker Compose 或 Docker Swarm 运行。上线后的升级、维护和备份见[运维](operations.md)。
 
-阅读前需要了解：[脚手架](scaffolding.md)、[配置](../general/configuration.md)、[迁移](../database/migrations.md)。
+包：`command`、`command/httpcmd`、`command/migratecmd`。
 
-- [上线需要哪几步](#overview)
-- [构建](#building)
-- [第一次发布](#release-process)
-    - [检查配置](#checking-configuration)
-    - [执行迁移](#running-migrations)
-    - [启动服务](#starting-the-server)
-- [一个进程，还是每个部分一个进程](#process-forms)
-- [用 systemd 运行](#systemd)
-    - [发布新版本](#systemd-releases)
-- [用 Docker 运行](#docker)
-- [健康检查](#health-checks)
-- [平滑停止](#graceful-shutdown)
-- [反向代理](#reverse-proxies)
-- [日志](#logging)
-- [常见问题](#troubleshooting)
-
-<a id="overview"></a>
-## 上线需要哪几步
-
-不管用什么方式部署，步骤都是一样的：
-
-1. **构建**：把代码编译成一个可执行文件，前端、迁移文件、翻译文件都打包在其中。
-2. **检查配置**：生产环境的配置（数据库地址、密钥等）和开发时不同，先检查有没有缺少或写错。
-3. **执行迁移**：让数据库的表结构和新代码一致。
-4. **启动服务**：让程序一直运行，崩溃后自动重启，停止时平稳地停下。
-
-前三步每次发布只做一次；第四步交给 systemd、Docker 这类工具，下面分别介绍。
+- 每次发布按顺序执行：构建 → `config check` → `migrate up` → 启动或升级服务。迁移在新版本启动之前执行：新代码用到的表和列要先存在。
+- 发布期间新旧版本同时运行，每次的表结构变化都要让两个版本都能运行，见[零停机变更](../database/migrations.md#zero-downtime-changes)。
 
 <a id="building"></a>
 ## 构建
 
-用[脚手架](scaffolding.md)生成的项目，用一条命令构建：
-
 ```bash
-bun run build
+bun run generate   # 生成的客户端提交在仓库中，改了接口要重新生成
+bun run build      # 即 go tool tenon build，输出 bin/<入口目录名>，例如 bin/blog
 ```
 
-它先构建每个前端（有服务端渲染的前端时，把它们连同 Bun 编译成 SSR 程序），再编译 Go 程序，得到 `bin/blog`，见[开发工具](tooling.md#build)。没有前端的项目直接用 `go build`：
+`tenon build` 构建 `apps` 中的前端，再用 `go build -trimpath` 编译应用，见[开发工具](tooling.md#build)。没有前端的项目直接 `go build -trimpath -o bin/blog ./cmd/blog`。迁移、翻译和前端产物都嵌入在二进制中，服务器上只需要二进制和 `config` 目录。
 
-```bash
-go build -trimpath -o bin/blog ./cmd/blog
-```
-
-`-trimpath` 去掉二进制中你电脑上的文件路径。PostgreSQL 的驱动是纯 Go 写的，可以加上 `CGO_ENABLED=0` 构建一个不依赖系统库的静态二进制。
-
-迁移文件、翻译文件、前端的构建产物都通过 embed 打包进了二进制，所以部署时只需要两样东西：
-
-- `bin/blog` 这个文件；
-- `config` 目录。
-
-有前端在服务端渲染（`package.json` 中 `"ssr": true`）时，运行的机器要求：
-
-- **Linux**：Go 程序从内存中运行 SSR 程序（memfd），见[托管前端与服务端渲染](../frontend/hosting.md)。支持 amd64 和 arm64。为另一种架构或在 macOS 上构建时用 `bun run build --arch amd64`（或 `arm64`），Go 程序和 SSR 程序都按这个架构编译。
-- **glibc**：SSR 程序是 Bun 编译的，动态链接 glibc（`libc`、`libm`、`libpthread`、`libdl`），常见的 Debian、Ubuntu、RHEL 系统都有。Alpine 用的是 musl，不能直接运行。
-
-前端都只在浏览器中渲染时，程序中不带 Bun，没有这两条要求。
-
-构建之前确认生成的代码都是最新的：生成的客户端提交在代码仓库中，修改接口后忘了重新生成，前端用的就还是旧的类型。另外，记下每次构建对应的提交，出问题时能准确知道线上运行的是哪个版本。
+有服务端渲染的前端（前端 `package.json` 中 `"tenon": {"ssr": true}`）时，运行的机器必须是 Linux（amd64 或 arm64）并带 glibc：SSR 程序由 Bun 编译、从内存（memfd）运行，Alpine（musl）上不能运行，见[托管前端与服务端渲染](../frontend/hosting.md)。在 macOS 上或为另一种架构构建时用 `bun run build --arch amd64`（或 `arm64`）。
 
 <a id="release-process"></a>
 ## 第一次发布
 
-下面的命令在服务器的部署目录（`config` 目录所在的目录）中执行。命令默认加载 `config/app.yaml`，生产环境用这一个文件就够了，和开发环境不同的值由环境变量提供（见下文）。确实要再叠加一个文件时，用 `--config` 或环境变量 `APP_CONFIG` 指定，见[叠加多个配置文件](../general/configuration.md#overriding-configuration)。
+命令在部署目录（`config` 所在的目录）中执行，默认加载 `config/app.yaml`。
+
+- 与开发环境不同的值在 `config/app.yaml` 中写成 `${DATABASE_URL}` 这样的环境变量，由 systemd 的 `EnvironmentFile`、Docker 的 `environment` 或工作目录中的 `.env` 提供，密码和密钥不进仓库。
+- 部署目录中不放 `config/local.yaml`：它存在时叠加在 `config/app.yaml` 之后。要叠加别的文件用 `--config` 或 `APP_CONFIG`，见[叠加多个配置文件](../general/configuration.md#overriding-configuration)。
 
 <a id="checking-configuration"></a>
 ### 检查配置
 
 ```bash
-./bin/blog config check
+./bin/blog config check     # 只校验配置，不连数据库；缺环境变量、字段写错时以退出码 3 结束
+./bin/blog migrate status   # 列出将要执行的迁移；连不上数据库时以退出码 4 结束
+./bin/blog doctor           # 检查 PostgreSQL、队列、文件存储的设置和权限，见“自检”
 ```
 
-它只读取和检查配置文件，不连接数据库，可以在启动服务之前发现缺少的环境变量和写错的字段。
-
-再检查数据库能不能连上，同时看看哪些迁移将要执行：
-
-```bash
-./bin/blog migrate status
-```
-
-数据库连不上时，这条命令以退出码 4 结束。
-
-应用装配了[自检](doctor.md)时，再运行 `./bin/blog doctor`：它检查 PostgreSQL、队列和文件存储的版本、设置与权限，例如 `wal_level` 和 `REPLICATION` 属性，每个问题都附带修改方法。
-
-数据库密码、密钥这类敏感信息不要写在配置文件中。配置文件中写 `${DATABASE_URL}`，真正的值由部署平台的环境变量或密钥管理功能提供，配置文件就可以放心地提交到代码仓库。
+`doctor` 要先在应用中装配，见[自检](doctor.md)。
 
 <a id="running-migrations"></a>
 ### 执行迁移
-
-在启动新版本**之前**执行迁移：
 
 ```bash
 ./bin/blog migrate up
 ```
 
-为什么要在启动之前？新代码可能用到新的表和字段，如果先启动服务，第一批请求就会因为表不存在而出错。
-
-迁移执行时会锁住数据库，即使同时有好几台服务器在执行迁移，它们也会排队依次执行，不会把同一个迁移执行两次。
-
-以后的发布中，新旧两个版本会同时运行一小段时间，所以每次的表结构变化都要让新旧版本都能正常工作，见[零停机变更](../database/migrations.md#zero-downtime-changes)。
+- 迁移加锁，多台服务器同时执行时依次进行，同一个迁移只执行一次。
+- 迁移只在发布时执行一次，不写进 systemd 的 `ExecStartPre` 或容器的启动命令：进程每次崩溃重启都会再执行，分开运行时几个实例同时执行。
 
 <a id="starting-the-server"></a>
 ### 启动服务
@@ -111,55 +55,37 @@ go build -trimpath -o bin/blog ./cmd/blog
 ./bin/blog serve
 ```
 
-`serve` 在一个进程中运行应用的全部部分，例如 HTTP 服务、队列的 worker（在后台执行任务）和定时任务的调度器。下一节说明什么时候应该把它们分开运行。
-
-在终端中直接运行时，关闭终端程序就停了，也不会在崩溃后重启。正式的部署交给 [systemd](#systemd) 或 [Docker](#docker)。
+`serve` 在一个进程中运行全部部分（HTTP 服务、队列 worker、调度器等），见[serve 命令](../general/commands.md#serve-command)。正式部署交给 [systemd](#systemd) 或 [Docker Compose](#docker-compose)，由它们重启崩溃的进程、停止时发送 `SIGTERM`。
 
 <a id="process-forms"></a>
 ## 一个进程，还是每个部分一个进程
 
-按[命令行](../general/commands.md#serve-command)一章写好的应用，有几个一直运行的部分，例如：
+| 命令 | 适合 |
+| --- | --- |
+| `serve`（即 `serve all`） | 刚上线、规模不大：一个进程，部署和监控最简单 |
+| `serve http`、`serve worker`、`serve scheduler`、`serve rpc`…… | 任务多，或耗时的任务拖慢了接口：各部分按负载增减实例 |
 
-- **HTTP 服务**（`http`）：处理接口请求和页面；
-- **RPC 服务**（`rpc`）：处理其他服务的调用，见 [RPC](../rpc/endpoints.md)；
-- **队列的 worker**（`worker`）：在后台执行耗时的任务，例如发送邮件，见[队列](../background/queue.md)；
-- **调度器**（`scheduler`）：到点执行定时任务，见[定时任务](../background/scheduling.md)。
+部分的名字是 `bootstrap` 的 `Parts` 中登记的名字，`serve --help` 列出全部。代码和配置相同，先用 `serve`，需要时再分开。
 
-它们可以在一个进程中一起运行，也可以每个部分一个进程。代码和配置完全相同，只是启动的命令不同：
-
-| 方式 | 命令 | 适合 |
-| --- | --- | --- |
-| 一起运行 | `serve` | 刚上线、规模不大：只有一个进程，部署和监控最简单 |
-| 分开运行 | `serve http`、`serve worker`、`serve scheduler`…… | 任务很多，或者耗时的任务拖慢了接口：各自按负载增减实例 |
-
-建议从 `serve` 开始，确实需要时再分开。分开时，把运行 `serve` 的实例换成每个部分一组的实例；只有 HTTP 服务需要健康检查，见[健康检查](#health-checks)。
-
-每一部分都可以运行多个实例：
-
-- **HTTP 服务**放在负载均衡后面，请求被分摊到各个实例。
-- **worker** 从队列中领取任务，一个任务只会被一个实例领取，可以随时增减实例。
-- **调度器**用锁保证每个定时任务每次只执行一次，所以多个实例互为备份，前提是它们共用同一个数据库，见[多个实例](../background/scheduling.md#multiple-instances)。
-
-这些部分共用数据库的连接池。设置连接数上限 `max_conns` 时，要把 HTTP 请求、各队列的并发数和同时执行的定时任务都算进去；所有实例的连接数加起来，不能超过数据库允许的最大连接数，见[连接池](../database/database.md#pool-exhaustion)。
+- 每个部分都可以运行多个实例：HTTP 服务放在负载均衡后面；一个任务只被一个 worker 领取；调度器用锁保证每次触发只执行一次，见[多个实例](../background/scheduling.md#multiple-instances)。
+- 只有 HTTP 服务需要健康检查，见[健康检查](#health-checks)。
+- 所有实例的 `max_conns` 之和不超过数据库的最大连接数，见[连接池](../database/database.md#pool-exhaustion)；不够时用 [PgBouncer](operations.md#pgbouncer)。
 
 <a id="systemd"></a>
 ## 用 systemd 运行
 
-在云服务器或物理机上，用 systemd 管理程序。systemd 是大多数 Linux 发行版自带的服务管理器，它负责：开机时启动程序、程序崩溃后重启、收集程序输出的日志，以及停止时给程序发送 `SIGTERM` 信号，让它平稳地停下。
-
-**准备部署目录。** 假设部署目录是 `/opt/blog`，其中有 `bin/blog`、`config`，以及保存上传文件的 `storage`。程序用一个专门的系统用户 `blog` 运行，这个用户只能写 `storage` 目录，即使程序被攻破，也改不了其他文件：
+部署目录中有 `bin/blog`、`config` 和保存上传文件的 `storage`，下文以 `/opt/blog` 为例。程序用专门的系统用户运行：
 
 ```bash
 sudo useradd --system --no-create-home --shell /usr/sbin/nologin blog
 sudo install -d -o blog -g blog /opt/blog/storage
 ```
 
-数据库密码等密钥写在 `/etc/blog/env` 中，每行一个，例如 `DATABASE_URL=postgres://...`，权限设为 `600`，只有 root 能读。
+`/etc/blog/env`（权限 `600`，属于 root）每行一个变量，例如 `DATABASE_URL=postgres://...`。
 
-**编写服务文件。** systemd 用一个 unit 文件描述怎样运行程序。新建 `/etc/systemd/system/blog@.service`：
+`/etc/systemd/system/blog@.service`：
 
 ```ini
-# /etc/systemd/system/blog@.service
 [Unit]
 Description=blog %i
 After=network-online.target
@@ -187,34 +113,22 @@ PrivateTmp=yes
 WantedBy=multi-user.target
 ```
 
-文件名中的 `@` 表示这是一个模板：`%i` 会被替换为启用时写在 `@` 后面的名字，在这里就是要运行的部分，`all` 表示全部部分（`serve all` 与 `serve` 相同）。所以一个文件可以运行任何一种[方式](#process-forms)：
-
 ```bash
-sudo systemctl daemon-reload                                          # 让 systemd 读取新的文件
-sudo systemctl enable --now blog@all                                  # 一起运行
-sudo systemctl enable --now blog@http blog@worker blog@scheduler      # 或者分开运行
-```
-
-`enable --now` 既立即启动，也设置为开机启动。从一起运行改为分开运行时，先 `sudo systemctl disable --now blog@all`，再启用各个部分。
-
-文件中几组设置的作用：
-
-- **运行身份**：`User` 是运行程序的用户，`WorkingDirectory` 是工作目录（配置文件的相对路径从这里算起），`EnvironmentFile` 读取密钥。
-- **崩溃后重启**：`Restart=on-failure` 在程序以非 0 状态退出时重启它，每次间隔 `RestartSec`（5 秒）。数据库暂时连不上时，程序以退出码 4 结束，systemd 每 5 秒重试，直到连上为止。`RestartPreventExitStatus=2 3` 排除了用法错误（2）和配置错误（3）：这两种错误重启多少次都一样，服务直接进入失败状态，用 `systemctl status` 能看到原因。
-- **停止**：`TimeoutStopSec` 是发送 `SIGTERM` 后等待程序退出的时间，超时后强制结束。它要比程序的平滑停止时间长，见[平滑停止](#graceful-shutdown)。
-- **安全**：`ProtectSystem=strict` 让整个文件系统只读，只有 `ReadWritePaths` 中的目录可写；`PrivateTmp` 给程序一个独立的 `/tmp`；`NoNewPrivileges` 禁止程序获得更多权限。程序需要写其他目录时，把它加到 `ReadWritePaths` 中。
-- **就绪与升级**：`Type=notify-reload` 让 systemd 等程序报告“已经就绪”才认为启动完成，并且支持用 `systemctl reload` 不停机地升级；`NotifyAccess`、`RuntimeDirectory`、`PIDFile` 都是为升级准备的。升级的过程见[不停机升级](operations.md#zero-downtime-upgrades)。`serve` 命令已经支持它们，见[serve：运行常驻进程](../general/commands.md#serve-command)。
-
-程序输出到标准错误的 JSON 日志由 systemd 的 journald 收集，这样查看：
-
-```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now blog@all                               # 一起运行
+sudo systemctl enable --now blog@http blog@worker blog@scheduler   # 或者分开运行
 journalctl -u 'blog@*' -f
 ```
+
+- `%i` 是 `@` 后面的部分名，`all` 运行全部。改为分开运行时先 `systemctl disable --now blog@all`。
+- `Type=notify-reload`、`NotifyAccess`、`RuntimeDirectory`、`PIDFile` 启用就绪通知和 `systemctl reload` 的[不停机升级](operations.md#zero-downtime-upgrades)，由 `command.Daemon` 实现。
+- `RestartPreventExitStatus=2 3`：用法错误和配置错误不重启，`systemctl status` 显示原因。数据库连不上时以 4 退出，每 5 秒重试。
+- `TimeoutStopSec` 要比程序的[平滑停止](#graceful-shutdown)时间长。程序要写其他目录时加进 `ReadWritePaths`。
 
 <a id="systemd-releases"></a>
 ### 发布新版本
 
-发布新版本时，按[第一次发布](#release-process)的顺序：换上新的二进制，检查配置，执行迁移，再让服务换成新版本。下面的脚本做了这些事：
+把新的二进制 `blog` 传到服务器后执行：
 
 ```bash
 set -e
@@ -237,21 +151,16 @@ for unit in $(systemctl list-units 'blog@*' --state=active --plain --no-legend |
 done
 ```
 
-逐段解释：
-
-- **`set -e`**：任何一步失败，脚本立即停止，不会带着错误继续发布。
-- **`run`**：用 `systemd-run` 执行一次性的命令，它使用和服务相同的用户、环境变量和工作目录，所以检查的结果和服务真正运行时一致。
-- **先写到 `blog.new`**：用新的二进制检查配置，通过后再改名覆盖。直接覆盖正在运行的二进制会失败，报错 `Text file busy`。
-- **迁移只在脚本中执行一次。** 不要把迁移写进 unit 文件的 `ExecStartPre`：那样程序每次崩溃重启都会再执行一次迁移，分开运行时几个实例还会同时执行。
-- **`systemctl reload`**：让每个服务不停机地换成新版本。新版本启动失败时，旧版本会继续运行，`reload` 仍然返回成功，所以脚本再检查服务的状态文字，以 `upgrade failed` 开头就是升级失败。
+- `run` 用服务的用户、环境变量和工作目录执行一次性命令。
+- 新二进制先写到 `blog.new` 再 `mv`：直接覆盖正在运行的文件报错 `Text file busy`。
+- 新版本启动失败时旧版本继续运行，`reload` 仍返回成功，所以检查状态文字是否以 `upgrade failed` 开头。
 
 <a id="docker"></a>
-## 用 Docker 运行
+## 用 Docker 构建镜像
 
-Docker 把程序和它运行需要的文件打包成一个镜像，在任何装了 Docker 的机器上都能以同样的方式运行。镜像中只需要这个二进制和 `config` 目录：
+`Dockerfile`：
 
 ```dockerfile
-# Dockerfile
 FROM golang:1.27 AS build
 COPY --from=oven/bun:1.4.4 /usr/local/bin/bun /usr/local/bin/bun
 WORKDIR /src
@@ -269,23 +178,24 @@ ENTRYPOINT ["/app/blog"]
 CMD ["serve"]
 ```
 
-这个文件分两段：第一段在 Go 的镜像中编译程序，第二段只把编译结果复制到一个很小的运行镜像中，最终的镜像不包含 Go 工具链和源代码。需要注意的几点：
+- `ENTRYPOINT` 写成 JSON 数组，程序是 1 号进程，能收到 `docker stop` 的 `SIGTERM`。写成 shell 形式时信号发给 shell，程序到超时被强制结束。
+- `distroless/base` 带 glibc，SSR 程序需要；没有服务端渲染的前端时可以用 `distroless/static`。
+- `storage` 预先建好并交给 `nonroot`，新挂载的卷继承这个所有者，程序才能写入。文件存放在 S3 时不需要它。
+- `HEALTHCHECK` 不写进 Dockerfile：同一个镜像也运行没有 HTTP 服务的 worker 和调度器。
 
-- **`ENTRYPOINT` 要写成 JSON 数组的形式。** 这样程序就是容器中的第一个进程，能直接收到 `docker stop` 发出的 `SIGTERM`。如果写成 `ENTRYPOINT ./blog serve`，信号会发给 shell，程序收不到，等待时间一到就被强制结束，正在处理的请求被中断。
-- **构建阶段需要 Bun**：`tenon build` 用它编译前端。这里从 Bun 的官方镜像复制可执行文件，版本与本地开发用的相同。
-- **运行镜像用 `distroless/base`**，它带有 glibc，前端的 SSR 程序需要它；没有服务端渲染的前端时可以用更小的 `distroless/static`。两者都带有 CA 证书和时区数据，访问 HTTPS 接口、按时区执行定时任务都能直接用。
-- **`storage` 目录要挂载卷**，否则容器删除后上传的文件也没了。镜像中预先建好这个目录，并交给 `nonroot` 用户，否则新挂载的卷属于 root，程序无法写入。文件存放在 S3 这类对象存储中时不需要它。
+<a id="docker-compose"></a>
+## 用 Docker Compose 运行
 
-用 Docker Compose 每个部分运行一个服务，并在启动前执行迁移：
+`compose.yaml`，`APP_VERSION`、`DATABASE_URL` 写在同目录的 `.env` 中：
 
 ```yaml
-# compose.yaml
 x-app: &app
   image: blog:${APP_VERSION}
   environment:
     APP_URL: https://example.com
     DATABASE_URL: ${DATABASE_URL}
     NATS_URL: nats://nats:4222
+  volumes: [storage:/app/storage]
   restart: unless-stopped
   stop_grace_period: 45s
   depends_on:
@@ -310,16 +220,25 @@ services:
   scheduler:
     <<: *app
     command: [serve, scheduler]
+  nats:
+    image: nats:2.15-alpine
+    command: [nats-server, -js, -sd, /data]
+    volumes: [nats:/data]
+
+volumes:
+  storage:
+  nats:
 ```
 
-- `migrate` 是一个执行完就结束的服务；其他服务的 `depends_on` 要求它成功结束后才启动，所以迁移一定在服务启动之前完成。
-- `x-app` 是几个服务共用的设置，`<<: *app` 把它合并进来。
-- 只有 `http` 有健康检查，见[健康检查](#health-checks)。
-- **`stop_grace_period` 必须写上。** Docker 默认只等 10 秒就强制结束容器，比队列和调度器默认的平滑停止时间（30 秒）还短。
+- `stop_grace_period` 必须写：Docker 默认只等 10 秒，短于队列和调度器默认的 30 秒。
+- 应用用服务名访问依赖，配置文件写 `nats.url: ${NATS_URL:-nats://127.0.0.1:4222}`，见[连接 NATS](../libraries/nats.md#connecting)。用到 [Memcached](../libraries/cache.md#config-servers)、[Gotenberg](../libraries/pdf.md#deployment) 时按各自的说明加服务。
+- 一起运行时把 `http`、`worker`、`scheduler` 换成一个 `command: [serve]` 的服务，健康检查写在它上面。
+- 连 PostgreSQL 一起运行的版本见[交给客户自托管](self-hosting.md)。
 
-一起运行时，把这几个服务换成一个运行 `serve` 的服务即可，健康检查照样写在它上面。
+<a id="compose-releases"></a>
+### 发布新版本
 
-发布新版本时，先单独执行迁移，再替换容器：
+改 `.env` 中的 `APP_VERSION`，然后：
 
 ```bash
 docker compose pull
@@ -327,109 +246,65 @@ docker compose run --rm migrate
 docker compose up -d
 ```
 
-不能只执行 `up -d`：它先停止旧的容器，再等 `migrate` 完成，迁移在这一步失败时，旧的已经停了，新的不会启动，服务就中断了。单独执行的迁移失败时，旧版本照常运行，修好之后再执行一遍即可。`up -d` 中的 `migrate` 会再执行一次，这时已经没有要执行的迁移。
+迁移先单独执行：`up -d` 先停旧容器再等 `migrate`，迁移失败时没有版本在运行；单独执行失败时旧版本照常运行。替换容器的几秒内服务不可用，不停机替换用 [Docker Swarm](#docker-swarm)。
 
-应用用到的其他服务也放进同一个 compose 文件。框架会用到 PostgreSQL（业务数据、锁、限流）、[Memcached](../libraries/cache.md)（缓存）和 [NATS](../libraries/nats.md)（任务队列、广播、在线成员）：
+<a id="docker-swarm"></a>
+## 用 Docker Swarm 运行
+
+用 compose 文件部署（`docker stack deploy -c compose.yaml blog`），HTTP 服务加上 `deploy`：
 
 ```yaml
-  memcached:
-    image: memcached:1.6-alpine
-    command: [memcached, -m, "512"]
-  nats:
-    image: nats:2.15-alpine
-    command: [nats-server, -js, -sd, /data, -m, "8222"]
-    volumes: [nats:/data]
-    ports: ["127.0.0.1:8222:8222"]
-# 以及顶层的 volumes: {nats: {}}
+  http:
+    <<: *app
+    command: [serve, http]
+    ports: ["8080:8080"]
+    healthcheck:
+      test: [CMD, /app/blog, health]
+    deploy:
+      replicas: 2
+      update_config:
+        order: start-first
+        failure_action: rollback
 ```
 
-容器中的 `127.0.0.1` 是容器自己，应用要用服务名访问这些服务：上面的 `x-app` 设置了 `NATS_URL`，对应配置文件中的 `nats.url: ${NATS_URL:-nats://127.0.0.1:4222}`，见[连接 NATS](../libraries/nats.md#connecting)；[缓存](../libraries/cache.md#config-servers)的 `servers` 写成 `memcached:11211`。
-
-NATS 的 `-js` 开启 JetStream，任务保存在 `/data` 中；`8222` 是它的监控端口，只监听本机，通过 SSH 隧道或内网访问。用到[生成 PDF](../libraries/pdf.md#deployment) 等功能时，再按各自的说明加上对应的服务。
-
-容器的升级方式是换一个新容器，见[不停机升级](operations.md#zero-downtime-upgrades)。应用交给客户、部署在客户的服务器上时，完整的 compose 文件和升级、备份步骤见[交给客户自托管](self-hosting.md)。
+- `order: start-first`：新容器健康后才停止旧容器，升级不中断服务。
+- Swarm 忽略 `depends_on`，迁移在 `docker stack deploy` 之前单独执行，例如 `docker run --rm -e DATABASE_URL blog:1.4.2 migrate up`。
+- `docker stack deploy` 不读 `.env`：compose 文件中的 `${APP_VERSION}` 等变量要先在 shell 中设置，例如 `APP_VERSION=1.4.2 docker stack deploy -c compose.yaml blog`。
 
 <a id="health-checks"></a>
 ## 健康检查
 
-HTTP 服务提供两个检查的地址，写法见[健康检查](../concepts/lifecycle.md#health-checks)：
+`/livez` 只检查进程能否响应；`/readyz` 还检查必需的依赖，进程开始停止后返回 `503`。路由的写法见[健康检查](../concepts/lifecycle.md#health-checks)。
 
-- **存活检查**（`/livez`）：程序还能响应吗？它只检查程序本身，不检查数据库：数据库出了问题，重启程序也没有用。
-- **就绪检查**（`/readyz`）：程序现在能处理请求吗？它检查程序没有在停止，并且数据库等必需的依赖可用。
+- **systemd** 不用 HTTP 检查：进程非 0 退出时按 `Restart=` 重启，`Type=notify-reload` 告诉它何时就绪。
+- **Docker Compose、Swarm** 用 `health` 命令（[`httpcmd.Health`](../general/commands.md#health-command)），它请求本机的 `/livez`，镜像中不需要 curl：`test: [CMD, /app/blog, health]`。Swarm 替换检查失败的容器，滚动升级等新容器健康后再继续。
+- **反向代理**（Caddy、Traefik、HAProxy）主动请求 `/readyz`，不把请求转给未就绪或正在停止的实例。
 
-不同的部署方式这样使用它们：
+规则：
 
-| 部署方式 | 发现程序出了问题 | 健康检查的用处 |
-| --- | --- | --- |
-| systemd | 程序以非 0 状态退出时按 `Restart=` 重启；`Type=notify-reload` 让它知道程序什么时候就绪 | 不访问 HTTP 地址，用不到 |
-| Docker Compose | 程序退出时按 `restart` 重启；检查失败的容器不会被重启 | `depends_on` 的 `service_healthy`，以及 `docker ps` 中的状态 |
-| Docker Swarm | 程序退出时重新调度；检查失败的容器会被替换 | 滚动升级时，等新的容器健康之后再继续 |
-| 反向代理（Caddy、Traefik、HAProxy） | 主动访问 `/readyz` | 不再把请求转给未就绪或正在停止的实例 |
-
-Docker 的健康检查用程序自带的 [health 命令](../general/commands.md#health-command)，它请求本机的 `/livez`，镜像中不需要 curl：
-
-```yaml
-    healthcheck:
-      test: [CMD, /app/blog, health]
-```
-
-- **Docker 检查 `/livez`，不检查 `/readyz`。** Swarm 会替换检查失败的容器，而 `/readyz` 会检查数据库：数据库出故障时，全部容器都会被反复替换，重启并不能解决问题。`/livez` 在程序开始处理请求之后才成功，这时数据库已经连上，前端的 SSR 进程也已经就绪，足够让滚动升级判断新版本有没有起来。
-- **健康检查只写在运行 HTTP 服务的服务上**，不写进 Dockerfile 的 `HEALTHCHECK`。同一个镜像也用来运行 worker 和调度器，写进 Dockerfile 的话，这些容器中也会执行 `health`；它们没有 HTTP 服务，检查总是失败，Swarm 会不断替换它们。
-- **只运行 worker、调度器或 RPC 的进程不需要健康检查。** 它们出错时程序以非 0 状态退出，交给重启策略处理；数据库或 NATS 暂时断开时，程序不退出，等依赖恢复后自动继续，这时重启也没有用。程序没有退出却卡住的情况，用队列积压的监控发现，见[队列：失败任务与监控](../background/queue.md)：卡住的任务租约到期后，会由其他实例重新执行。
+- Docker 检查 `/livez`：数据库故障时 `/readyz` 失败，Swarm 会反复替换全部容器，重启解决不了数据库的问题。`/livez` 在程序开始处理请求后才成功，足够判断新版本有没有起来。
+- 健康检查只写在运行 HTTP 服务的服务上：worker、调度器、RPC 进程没有 `/livez`。它们出错时以非 0 状态退出，交给重启策略；卡住的 worker 用[队列积压的监控](operations.md#queue-monitoring)发现。
 
 <a id="graceful-shutdown"></a>
 ## 平滑停止
 
-部署平台停止程序时发送 `SIGTERM` 信号。程序收到后开始平滑停止：不再接收新请求，等正在处理的请求完成，等后台任务处理完，最后关闭数据库连接，见[应用生命周期](../concepts/lifecycle.md#graceful-shutdown)。
+收到 `SIGTERM` 后，程序停止接收新请求，等处理中的请求、队列任务和定时任务完成，最后关闭数据库，见[应用生命周期](../concepts/lifecycle.md#graceful-shutdown)。
 
-要让平滑停止生效，有两件事要做对：
+- 信号要到达程序：Docker 的 `ENTRYPOINT` 写成 JSON 数组；用 shell 脚本启动时最后一行写 `exec ./bin/blog serve`。
+- 平台的等待时间（systemd 的 `TimeoutStopSec`、Docker 的 `stop_grace_period`）要比程序的长：程序最多等 `http.shutdown_timeout`（默认 10 秒）、`queue.shutdown_timeout`（默认 30 秒）、`schedule.shutdown_timeout`（默认 30 秒）中最长的一项，使用 [AI 对话](../ai/chat.md#deployment)时再加上回答说完的时间。
 
-**信号要能到达程序。** 在 Docker 中，程序要是容器中的第一个进程，见上文的 `ENTRYPOINT`。用 shell 脚本启动程序时，脚本最后要用 `exec ./bin/blog serve`，把进程交给程序，否则信号只发给了 shell。
-
-**平台要等得够久。** 平台发出 `SIGTERM` 后只等一段时间，超时后强制结束程序。这段时间要比程序平滑停止所需的时间长：
-
-- 程序等待的时间由三项配置决定：`http.shutdown_timeout`（等待请求）、`queue.shutdown_timeout`（等待后台任务）、`schedule.shutdown_timeout`（等待定时任务）。一起运行时它们同时开始，取最长的一项。
-- 使用 [AI 助手](../ai/chat-advanced.md#deployment)时，还要等进行中的回答说完，这段时间要加上去。
-- 平台的等待时间（systemd 的 `TimeoutStopSec`、Docker 的 `stop_grace_period`）应当比上面的时间再长一些，留出关闭数据库等资源的时间。
-
-即使超时被强制结束，也不会丢失工作：没有完成的队列任务会在其他实例上重新执行，错过的定时任务等下一次触发。
+超时被强制结束时，没有完成的队列任务在其他实例上重新执行，错过的定时任务等下一次触发。
 
 <a id="reverse-proxies"></a>
 ## 反向代理
 
-线上通常不让程序直接面对用户，而是在前面放一个反向代理（例如 nginx）或负载均衡器：由它处理 HTTPS 证书、压缩响应，再把请求转发给程序。这时有几点需要配置：
-
-- **识别用户的真实地址。** 程序看到的请求都来自代理的地址。在 `http.client_ip.trusted_proxies` 中填写代理的网段，程序就会从代理转发的请求头中读出用户的真实地址，见[可信代理](../http/middleware.md#trusted-proxies)。
-- **保留原始的 `Host` 请求头**，包括端口。nginx 用 `proxy_set_header Host $http_host;`，不要用 `$host`，它会丢掉端口，程序生成的地址和[实时频道](../libraries/realtime.md)的安全检查都会出错。
-- **HTTPS 与 HSTS。** 全站使用 HTTPS 后，在代理上加上 `Strict-Transport-Security` 响应头，例如 nginx 的 `add_header Strict-Transport-Security "max-age=31536000" always;`，浏览器此后只用 HTTPS 访问这个域名。
-- **服务端推送**需要在代理上启用 HTTP/2，见[服务端推送](../http/sse.md#deployment)。
-
-程序直接对外提供服务、前面没有代理时，安装 [httpx.Compress](../http/middleware.md#compression) 压缩响应。跨域请求用内置的 [CORS](../http/middleware.md#cors)。限流可以在网关中配置，也可以用内置的[限流](../libraries/rate-limiting.md)。
+- 在 `http.client_ip.trusted_proxies` 中填写代理的网段，程序才能读出用户的真实地址，见[可信代理](../http/middleware.md#trusted-proxies)。
+- 保留原始的 `Host`（包括端口）：nginx 写 `proxy_set_header Host $http_host;`。`$host` 丢掉端口，生成的链接和[实时频道](../libraries/realtime.md)的来源检查会出错。
+- 全站 HTTPS 后在代理上加 HSTS：`add_header Strict-Transport-Security "max-age=31536000" always;`。
+- [服务端推送](../http/sse.md#deployment)需要代理启用 HTTP/2。
+- 前面没有代理时，安装 [httpx.Compress](../http/middleware.md#compression) 压缩响应。
 
 <a id="logging"></a>
 ## 日志
 
-程序把日志输出到标准错误，由 systemd 或 Docker 收集；标准错误不是终端时，日志默认是 JSON 格式（见[format](../general/logging.md#formats)）。用户反馈问题时，让他提供响应头 `X-Request-ID` 中的请求 ID，就能在日志中找到这次请求的全部记录，见[日志](../general/logging.md)。要把日志、指标和链路推送到观测平台，见[可观测性](../general/telemetry.md#setup)。
-
-<a id="troubleshooting"></a>
-## 常见问题
-
-**`config check` 报错缺少环境变量**
-
-配置文件中引用的 `${...}` 没有设置。检查 `/etc/blog/env` 或部署平台中的环境变量。
-
-**`migrate status` 以退出码 4 结束**
-
-连不上数据库。检查 `DATABASE_URL` 的地址、用户名、密码，以及服务器能否访问数据库的端口。
-
-**覆盖二进制时报错 `Text file busy`**
-
-正在运行的程序占用着这个文件。先写到另一个文件名，再用 `mv` 改名覆盖，见[发布新版本](#systemd-releases)。
-
-**容器停止时正在处理的请求被中断**
-
-信号没有到达程序，或者平台等待的时间太短。检查 `ENTRYPOINT` 是否是 JSON 数组的形式，以及 `stop_grace_period` 的设置，见[平滑停止](#graceful-shutdown)。
-
-**服务启动后反复重启**
-
-用 `systemctl status blog@all` 或 `docker logs` 查看程序退出前的日志。退出码 3 是配置错误，修正配置后再启动。
+日志写到标准错误，由 journald 或 Docker 收集；标准错误不是终端时为 JSON 格式，见[日志格式](../general/logging.md#formats)。用户反馈问题时让他提供响应头 `X-Request-ID`，按它查这次请求的全部日志，见[按请求 ID 查日志](../general/logging.md#finding-a-request)。推送到观测平台见[可观测性](../general/telemetry.md#setup)。

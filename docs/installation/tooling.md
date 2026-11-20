@@ -1,359 +1,198 @@
 # 开发工具
 
-在[脚手架](scaffolding.md)中，你用 `bun run dev` 启动了开发环境：它同时运行 Go 程序和前端的开发服务器，修改代码后自动重新编译。这背后是 Tenon 的开发工具 `tenon`。这一页按开发中用到的先后顺序介绍它的命令，最后讲怎样调整它的默认行为。
+开发工具 `tenon` 生成项目、运行开发环境、生成客户端、构建、加入前端和客户端、更新给 AI 编程助手的内容。它按目录约定找到项目中的前端和 API，改默认行为时写 `tenon.json`。
 
-阅读前需要了解：[脚手架](scaffolding.md)。
-
-- [安装](#installation)
-- [命令一览](#overview)
-- [tenon init：生成项目](#init)
-- [tenon dev：开发](#dev)
-- [tenon generate：生成客户端](#generate)
-- [tenon build：构建](#build)
-- [tenon add frontend：再加一个前端](#add-frontend)
-- [tenon add client：桌面端等客户端](#add-client)
-- [tenon agents：AI 编程助手](#agents)
-- [常见问题](#troubleshooting)
-- [进阶](#advanced)
-    - [前端与 API 怎样被发现](#conventions)
-    - [框架的前端包](#framework-packages)
-    - [tenon.json](#configuration)
-    - [应用这一侧](#app-side)
+包：`cmd/tenon`。
 
 <a id="installation"></a>
-## 安装
+## 安装：`go get -tool`
 
-用 `tenon init` 生成的项目已经装好了，可以跳过这一节。
-
-`tenon` 记录在项目的 `go.mod` 中，作为项目的一个**工具**。这样它的版本和框架的版本一起固定，团队中每个人用的都是同一个版本。给已有的项目加上它：
+`tenon init` 生成的项目已经装好。已有的项目把它加为 `go.mod` 中的工具，版本随框架固定：
 
 ```bash
 go get -tool github.com/go-tenon/tenon/cmd/tenon
+go tool tenon dev
 ```
 
-之后用 `go tool tenon <命令>` 运行它。为了少打几个字，项目根目录的 `package.json` 中写好了脚本，平时用 `bun run dev` 即可：
-
-```json
-{
-  "scripts": {
-    "dev": "go tool tenon dev",
-    "build": "go tool tenon build",
-    "generate": "go tool tenon generate"
-  }
-}
-```
-
-`go.mod` 中还应当有一行 `ignore node_modules`。前端的依赖目录 `node_modules` 中可能有成千上万个文件，这一行让 `go build ./...`、`go test ./...` 跳过它们。
+根目录 `package.json` 的脚本 `dev`、`build`、`generate`、`agents` 是 `go tool tenon <同名命令>`。`go.mod` 中加一行 `ignore node_modules`，让 `go build ./...` 跳过前端的依赖。
 
 <a id="overview"></a>
 ## 命令一览
 
 | 命令 | 什么时候用 |
 | --- | --- |
-| `tenon init` | 开始一个新项目时，用一次 |
-| `tenon dev` | 每天开发时：运行程序，修改后自动重新编译 |
-| `tenon generate` | 接口变了以后，重新生成前端的客户端。`dev` 会自动运行它 |
-| `tenon build` | 上线前：构建出一个可执行文件 |
-| `tenon add frontend` | 需要再加一个前端时，例如运营后台 |
-| `tenon add client` | 需要桌面端等网页以外的客户端时 |
-| `tenon agents` | 升级框架、加了前端或客户端以后，更新给 AI 编程助手的内容 |
-| `tenon mcp` | 不用手动运行：AI 编程助手按 MCP 配置启动它，检索框架文档、读开发环境的输出 |
+| `tenon init` | 生成新项目 |
+| `tenon dev` | 开发：运行应用和前端的开发服务器，改代码后重新编译 |
+| `tenon generate` | 接口变了以后重新生成客户端；`dev` 自动运行它 |
+| `tenon build` | 构建可执行文件，前端打包在其中 |
+| `tenon add frontend` | 再加一个前端，例如运营后台 |
+| `tenon add client` | 加桌面端等网页以外的客户端 |
+| `tenon agents` | 升级框架后更新给 AI 编程助手的文档、技能和 MCP 配置 |
+| `tenon mcp` | AI 编程助手按 MCP 配置启动它，不手动运行 |
 
-`serve`、`migrate`、`routes` 这类命令不属于 `tenon`，它们在你的应用自己的程序中，部署到服务器上以后照样可以运行，见[命令行](../general/commands.md)。
+`serve`、`migrate`、`routes` 这类命令在应用自己的程序中，见[命令行](../general/commands.md)。
 
 <a id="init"></a>
-## tenon init：生成项目
+## `tenon init`：生成项目
 
 ```bash
 go run github.com/go-tenon/tenon/cmd/tenon@latest init todo
 ```
 
-在 `todo` 目录中生成一个能直接运行的项目，生成的内容见[脚手架](scaffolding.md#creating-a-project)。这里还没有项目，所以用 `go run` 直接运行 `tenon`，不需要先安装。
+生成的内容见[安装与生成项目](installing.md#creating-a-project)。选项：
 
-选项：
-
-- `--module`：Go module 的路径，默认是目录名。
-- `--name`：应用的名称，默认是目录名。
-- `--agents`：为哪些 AI 编程助手安装技能、写 MCP 配置，默认 `claude,codex,cursor,antigravity`，还可以选 `copilot`，`none` 表示都不写，见 [AI 编程助手](ai-assistants.md#choosing-assistants)。
-- `--tenon <框架目录>`：只在开发 Tenon 框架本身时使用，让项目使用本地的框架代码（`go.mod` 中写入 `replace`）。
+- `--module`、`--name`：Go module 的路径和应用的名称，默认都是目录名。
+- `--agents`：接入哪些 AI 编程助手，默认 `claude,codex,cursor,antigravity`，还可以选 `copilot`，`none` 表示都不接入，见[选择助手](ai-assistants.md#choosing-assistants)。
+- `--tenon <框架目录>`：开发 Tenon 框架本身时使用，`go.mod` 用 `replace` 指向本地的框架代码。
 
 <a id="dev"></a>
-## tenon dev：开发
+## `tenon dev`：开发
 
 ```bash
 bun run dev   # 即 go tool tenon dev
 ```
 
-开发时你需要同时运行好几样东西，`tenon dev` 把它们合在一起：
+启动前检查需要的命令是否在 `PATH` 中，更新 `.tenon/docs` 和 `.tenon/js`。然后同时运行：
 
-1. **前端的开发服务器**（TanStack Start 的 Vite）：每个前端一个，各用一个空闲的端口。修改前端代码后，页面立刻更新（热更新）。服务端渲染时它经环境变量 `API_ORIGIN` 中的地址调用你的接口。
-2. **你的 Go 程序**：用 `serve` 命令运行。它把页面请求转发给对应的开发服务器，所以你只需要访问 Go 程序的地址（默认 <http://localhost:8080>），页面和接口都在这里，见[前端与 API 同源](scaffolding.md#frontend)。
-3. **监视 Go 代码**：`.go` 文件（测试文件除外）、`go.mod`、`go.sum`，以及与带 `//go:embed` 的 `.go` 文件在同一个目录中的文件（例如 `locales` 中的翻译、`migrations` 中的 SQL，它们被嵌入程序）变化后重新编译。编译成功时，先平滑地停止旧的程序（等它处理完正在处理的请求），再启动新的；然后运行一次 [`generate`](#generate)，前端的类型随之更新。编译失败时打印错误，旧的程序继续运行，你改好代码保存后再试。
+1. **每个前端的开发服务器**（Vite），各用一个空闲的端口，地址交给应用（见[应用这一侧](#app-side)）。服务端渲染时经环境变量 `API_ORIGIN` 调用应用的接口。
+2. **应用**：运行 `serve`，把页面请求转发给开发服务器。只访问应用的地址，默认 <http://localhost:8080>。
+3. **监视 Go 代码**：`.go`（测试文件除外）、`go.mod`、`go.sum`，以及与带 `//go:embed` 的 `.go` 文件同目录的文件（例如 `locales`、`migrations`）。变化后重新编译：成功时平滑地重启应用，再运行一次 [`generate`](#generate)；失败时打印错误，旧的程序继续运行。
+4. `tenon.json` 的 `tools`，见 [tenon.json](#configuration)。
 
-此外，`tenon.json` 的 `tools` 中的工具也一起运行，见[配置](#configuration)。
-
-启动前，`tenon dev` 会检查需要的命令（Go、Bun 等）是否已经安装，缺少时直接告诉你。
-
-按 Ctrl+C 停止。它先平滑地停止程序，再运行 `tools` 的 `build` 命令。前端不在这时构建：发布时由 `tenon build` 编译。
+输出同时写进 `.tenon/dev.log`，AI 编程助手用 `tenon_dev_logs` 读它（见 [MCP 服务](ai-assistants.md#mcp-servers)）。`--client <名称>` 同时运行 `clients` 中的客户端。Ctrl+C 停止后运行 `tools` 的 `build` 命令。
 
 <a id="generate"></a>
-## tenon generate：生成客户端
-
-前端调用接口时，需要知道接口的地址、参数和返回的字段。这些信息已经写在 Go 代码中了，没必要在前端再写一遍：`tenon generate` 编译你的程序，读出全部接口，生成 TypeScript 代码，前端直接调用。接口加了字段，重新生成后前端就能用到；字段写错了，编辑器立刻提示。
+## `tenon generate`：生成客户端
 
 ```bash
 bun run generate   # 即 go tool tenon generate
 ```
 
-生成的内容：
+编译应用，运行它的 `client` 命令，生成每个 API 的 TypeScript 客户端 `packages/client/src/<名称>`（见[客户端代码](../http/clients.md#typescript)），以及 `tenon.json` 中 `apis.<BasePath>.go` 要求的 Go 客户端（见 [Go 客户端](../http/clients.md#go-client)）。
 
-- 每个 API 的 TypeScript 客户端，在 `packages/client/src/<名称>` 中，见[客户端代码](../http/clients.md#typescript)；
-- 在 [tenon.json](#configuration) 中要求了的 Go 客户端，见 [Go 客户端](../http/clients.md)。
-
-`tenon dev` 每次重新编译成功后会自动运行它，所以平时不需要手动运行。
-
-生成的代码要提交到代码仓库，这样只看代码的人也能读懂前端调用的是什么。在 CI 中重新生成一次，再用 `git diff --exit-code` 检查有没有变化，就能发现“改了接口但忘了重新生成”的情况。
+`tenon dev` 每次重新编译成功后自动运行它。生成的代码要提交：CI 重新生成一次，有差异时失败。
 
 <a id="build"></a>
-## tenon build：构建
+## `tenon build`：构建
 
 ```bash
-bun run build   # 即 go tool tenon build
+bun run build   # 即 go tool tenon build，输出 bin/<入口包的目录名>
 ```
 
-构建出一个可以部署的可执行文件 `bin/blog`，前端打包在其中。它依次做这些事：
+有前端时先依次：
 
-1. 安装前端的依赖：`bun install --frozen-lockfile`。`--frozen-lockfile` 要求依赖的版本与 `bun.lock` 完全一致，所以 CI 中构建出的结果和你本地的相同。
-2. 清空 `apps/dist`（保留其中提交的 `.gitignore`），在每个前端目录中运行 `bun run build`（`vite build`），把浏览器的构建（`dist/client`，不含 source map）复制到 `apps/dist/<名称>`。
-3. 有前端在服务端渲染（`package.json` 中 `"ssr": true`）时，用 `tenon-start compile` 把这些前端的服务端入口连同 Bun 编译成一个可执行文件 `apps/dist/ssr`，架构与 Go 程序相同（`go env GOARCH`，或 `--arch`），见 [TanStack Start 的接入](../frontend/hosting.md#compiling)。没有时跳过这一步，程序中不带 Bun。
-4. 写入前端的清单 `apps/dist/frontends.json`。
-5. 编译 Go 程序：`go build -trimpath -o bin/blog ./cmd/blog`。`-trimpath` 去掉二进制中你电脑上的文件路径。`apps/apps.go` 用 `go:embed` 嵌入整个 `apps/dist`。
+1. `bun install --frozen-lockfile`：与 `bun.lock` 不一致时失败，改了前端的依赖要提交 `bun.lock`。
+2. 清空 `apps/dist`，在每个前端中运行 `bun run build`，把 `dist/client` 复制到 `apps/dist/<名称>`。
+3. 有服务端渲染的前端时，用 `tenon-start compile` 把它们连同 Bun 编译成 `apps/dist/ssr`，见[编译 SSR 程序](../frontend/hosting.md#compiling)。
+4. 写入清单 `apps/dist/frontends.json`。
 
-`-o` 可以指定输出的文件。`--arch amd64` 或 `--arch arm64` 为另一种架构构建（Linux），例如在 arm64 的机器或 Mac 上构建部署到 amd64 服务器的程序；不写时与本机相同。Go 托管 SSR 进程只支持 Linux；前端都只在浏览器中渲染时，程序可以在任何系统上运行。部署见[部署](deployment.md)。
+最后 `go build -trimpath`，`apps/apps.go` 嵌入整个 `apps/dist`。
 
-不要用 `GOARCH=amd64 bun run build` 交叉构建：`go tool tenon` 会按 `GOARCH` 把 tenon 本身也编译成目标架构，在本机无法运行。
+- `-o`：输出的文件。
+- `--arch amd64|arm64`：为 Linux 的另一种架构构建。不要用 `GOARCH=amd64 bun run build`：`go tool tenon` 会把 tenon 本身也编译成目标架构，在本机无法运行。
+- `--client <名称>`：只打包这个客户端，见 [Electron 桌面端](../clients/electron.md#packaging)。
+
+Go 托管的 SSR 进程只支持 Linux；前端都只在浏览器中渲染时，程序可以在任何系统上运行。部署见[部署](deployment.md)。
 
 <a id="add-frontend"></a>
-## tenon add frontend：再加一个前端
-
-一个项目可以有多个前端，例如面向用户的网站，加上给运营人员用的后台。在项目根目录运行：
+## `tenon add frontend`：再加一个前端
 
 ```bash
 go tool tenon add frontend admin --layout frame
 ```
 
-它在 `apps/admin` 中生成一个前端，挂在 `/admin/` 下，加入根目录 `package.json` 的 workspace，安装依赖。`cmd/blog/main.go` 不用改：`frontend.Host` 按 `apps/dist` 中的清单托管全部前端，`/admin/` 下的请求交给新的前端，见[托管前端与服务端渲染](../frontend/hosting.md#wiring)。
+在 `apps/admin` 中生成前端，挂在 `/admin/`（`--base` 可改，不能与已有的前端相同），加入 workspace，运行 `bun install` 和 `tenon agents`。入口不用改：`frontend.Host` 按 `apps/dist` 中的清单托管全部前端，见[托管前端](../frontend/hosting.md#wiring)。
 
-生成的前端由四个互相独立的选项组合而成：布局、登录页、样式预设和渲染方式。只写 `--layout` 时，其余三个取这种布局的默认值；任何一个都可以单独换掉，例如 `--layout rail --login split --preset compact`。
+四个选项各自独立，没有写的取这种布局的默认值：
 
-`--layout` 选择布局，见[布局与导航](../frontend/layout.md)：
-
-| 布局 | 内容 |
-| --- | --- |
-| `rail`（默认） | 双栏导航的布局（`RailLayout`），页面在布局路由 `_app` 之下 |
-| `frame` | 顶栏加侧栏菜单、带多标签的布局（`FrameLayout`），页面在布局路由 `_app` 之下 |
-| `site` | 官网和内容站（`SiteLayout`）：页头、页脚，首页是落地页的占位 |
-
-`--login` 选择登录页的样式，见[登录页](../frontend/app.md#auth)：`centered`（居中的卡片，`CenteredAuthLayout`）、`split`（左右分栏，`SplitAuthLayout`）、`none`（不生成登录页和登录接口，页面都是公开的）。不写时按布局：`rail`、`frame` 是 `centered`，`site` 是 `none`。有登录页时，`rail`、`frame` 的 `_app` 要求先登录；`site` 的页头多一个“登录”按钮。
-
-`--preset` 选择样式预设：`compact`（紧凑）、`comfortable`（舒展）、`spacious`（宽松），见[样式预设与主题](../frontend/app.md#presets)。不写时按布局：`frame` 是 `compact`，`rail` 是 `comfortable`，`site` 是 `spacious`。
-
-`--render` 选择渲染方式：`csr` 只在浏览器中渲染，程序中不需要 Bun；`ssr` 在服务端渲染，搜索引擎可以收录。不写时按布局：`rail`、`frame` 是 `csr`，`site` 是 `ssr`，`site` 的首页还在构建时预渲染。服务端渲染的前端中，需要登录的 `_app` 设置了 `ssr: false`，只在浏览器中渲染。它写在 `package.json` 的 `tenon.ssr` 中，之后可以改，见[切换渲染方式](../frontend/hosting.md#switching)。
-
-`--base` 可以指定其他的挂载路径，以 `/` 开头和结尾，不能与已有的前端相同。`apps/admin` 必须还不存在。
-
-`--api` 是这个前端调用的 API 的路径，默认 `/api`。这个前端使用另一套账号、有自己的 API 时写这个 API 的路径，例如运营后台用 `--api /ops/api`，见[运营后台与多租户](../security/tenancy.md)。生成的文件按这个 API 的客户端（`packages/client/src/<名称>`，名称见[前端与 API 怎样被发现](#conventions)）是否已经生成而不同：
-
-| 情况 | `src/api.ts` | `src/auth.ts` |
+| 选项 | 可选值 | 默认 |
 | --- | --- | --- |
-| 客户端已经生成，其中有 `POST /auth/login`、`POST /auth/logout` 和 `GET /me` | 会话 `session`、客户端 `api`、元数据 `kit` | 登录、退出、读取当前用户都调用 `api` 中生成的方法 |
-| 客户端已经生成，其中没有这三个接口 | 客户端 `api`、元数据 `kit`，会话来自 `auth.ts` | 会话，按约定的路径自己发请求 |
-| 客户端还没有生成（API 还没有注册） | 不生成 | 同上 |
+| `--layout` | `rail`（双栏导航）、`frame`（顶栏加侧栏菜单、多标签）、`site`（官网和内容站） | `rail` |
+| `--login` | `centered`、`split`、`none`（没有登录页，页面都公开） | `rail`、`frame` 是 `centered`，`site` 是 `none` |
+| `--preset` | `compact`、`comfortable`、`spacious` | `frame` 是 `compact`，`rail` 是 `comfortable`，`site` 是 `spacious` |
+| `--render` | `csr`（只在浏览器中渲染）、`ssr`（服务端渲染） | `rail`、`frame` 是 `csr`，`site` 是 `ssr` |
 
-没有登录页（`--login none`）时 `api.ts` 中没有会话，也不生成 `auth.ts`。先注册 API 和登录接口、运行一次 `tenon generate`，再加前端，生成的代码就直接调用客户端；之后再注册的，照第一行的写法修改这两个文件。
+`rail`、`frame` 的页面在布局路由 `_app` 之下，有登录页时要求先登录。见[布局与导航](../frontend/layout.md)、[登录](../frontend/app.md#auth)、[样式预设](../frontend/app.md#presets)、[切换渲染方式](../frontend/hosting.md#switching)。
+
+<a id="add-frontend-api"></a>
+### `--api`：前端调用的 API
+
+`--api` 是登录页调用的 API 的路径（它的 `POST /auth/login`、`POST /auth/logout`、`GET /me`），默认 `/api`。前端使用另一套账号时写它自己的 API，例如 `--api /ops/api`，见[运营后台与多租户](../security/tenancy.md)。
+
+这个 API 的客户端已经生成并且有这三个接口时，`src/api.ts` 导出会话 `session`、客户端 `api` 和元数据 `kit`，登录调用生成的方法；否则会话在 `src/auth.ts` 中，按约定的路径自己发请求。所以先注册 API 和登录接口、运行一次 `tenon generate`，再加前端。
 
 <a id="add-client"></a>
-## tenon add client：桌面端等客户端
-
-把一个前端做成桌面端：
+## `tenon add client`：桌面端等客户端
 
 ```bash
 go tool tenon add client admin-desktop --kind electron --frontend admin
 ```
 
-它在 `clients/admin-desktop` 中生成一个 Electron 桌面端，窗口中显示 `apps/admin`，并在 `apps/admin` 中加上授权页。`--title` 是窗口标题和安装包的名称，默认是客户端的名字。之后用 `go tool tenon dev --client admin-desktop` 同时运行它，用 `go tool tenon build --client admin-desktop` 打包。详细的用法见 [Electron 桌面端](../clients/electron.md)，有哪些种类见[客户端](../clients/overview.md)。
+在 `clients/admin-desktop` 中生成 Electron 桌面端，窗口中显示 `apps/admin`（它要有登录页），并在 `apps/admin` 中加上授权页。`--title` 是窗口标题和安装包的名称。之后用 `go tool tenon dev --client admin-desktop` 运行，`go tool tenon build --client admin-desktop` 打包，见 [Electron 桌面端](../clients/electron.md)。
 
 <a id="agents"></a>
-## tenon agents：AI 编程助手
+## `tenon agents`：AI 编程助手
 
-```bash
-bun run agents   # 即 go tool tenon agents
-```
-
-更新 AI 编程助手用到的内容：把项目所用版本的框架文档复制到 `.tenon/docs`，为 Claude Code、Codex、Cursor、Antigravity 等助手安装技能（`tenon-action`、`tenon-http-api` 等）、在 MCP 配置中写上 `tenon`。升级框架以后运行它；`tenon add frontend`、`tenon add client` 结束时会自动运行一次，`tenon dev` 每次启动时更新 `.tenon/docs`。AI 编程助手还会按 MCP 配置启动 `tenon mcp`，用它检索框架的文档、读 `tenon dev` 的输出（`.tenon/dev.log`）。Go、Mantine、TanStack 等依赖给 AI 的资源按它们的官方方案接入，见[依赖的官方方案](ai-assistants.md#dependencies)。详细的说明见 [AI 编程助手](ai-assistants.md)。
-
-<a id="troubleshooting"></a>
-## 常见问题
-
-**`tenon dev` 提示缺少某个命令**
-
-按提示安装，例如 Bun 见[准备工作](scaffolding.md#requirements)。
-
-**修改了 Go 代码，程序没有更新**
-
-看终端中有没有编译错误：编译失败时旧的程序会继续运行。改正后保存，`tenon dev` 会再编译一次。
-
-**CI 中 `tenon build` 报错 lockfile 与 package.json 不一致**
-
-修改了前端的依赖，但没有提交更新后的 `bun.lock`。在本地运行 `bun install`，提交 `bun.lock`。
-
-**启动时报 `address already in use`**
-
-应用的端口被另一个进程占用了，常见的是另一个项目或者没有停掉的上一次运行。停掉那个进程，或者让应用监听另一个端口：在 `config/local.yaml` 中改 `http.addr`，例如 `":8082"`。`tenon.json` 中没有写 `url` 时，前端的开发服务器调用的地址跟着变。
-
-**`tenon generate` 报错两个 API 的名称相同**
-
-客户端的目录名默认是 API 地址的最后一段（跳过 `api` 和路径参数），`/api/v1` 和 `/admin/v1` 都叫 `v1`。在 [tenon.json](#configuration) 中给其中一个改名，报错信息中给出了写法，例如 `"apis": {"/admin/v1": {"name": "admin"}}`。
-
-<a id="advanced"></a>
-## 进阶
+`bun run agents` 更新 `.tenon/docs`，重新安装 `tenon-*` 技能，改写 MCP 配置中的 `tenon`。升级框架后运行；`init`、`add frontend`、`add client` 结束时自动运行。见 [AI 编程助手](ai-assistants.md#updating)。
 
 <a id="conventions"></a>
-### 前端与 API 怎样被发现
+## 前端与 API 怎样被发现
 
-`tenon` 不需要你登记有哪些前端和 API，它按目录约定找到它们。
-
-**前端**是 `apps` 中带 `vite.config.ts`（或 `.mts`、`.js`、`.mjs`）的目录，目录名就是前端的名称，例如 `apps/web`、`apps/admin`。名称以小写字母开头，由小写字母、数字和连字符组成。每个前端的 `package.json` 用 `tenon` 字段声明挂载路径和是否在服务端渲染，并有三个脚本：
+**前端**是 `apps` 中带 `vite.config.ts`（或 `.mts`、`.js`、`.mjs`）的目录，目录名是前端的名称：小写字母开头，由小写字母、数字和连字符组成。`package.json` 的 `tenon` 字段写挂载路径和渲染方式，见[两种渲染方式](../frontend/hosting.md#modes)：
 
 ```json
-{
-  "tenon": { "base": "/admin/", "ssr": false },
-  "scripts": {
-    "dev": "vite dev",
-    "build": "bunx --bun vite build",
-    "typecheck": "tenon-start routes && tsc --noEmit"
-  }
-}
+{ "tenon": { "base": "/admin/", "ssr": false } }
 ```
 
-`base` 以 `/` 开头和结尾，两个前端不能相同。`tenon` 和 `@go-tenon/start` 的 Vite 插件读取同一个字段，见[托管前端与服务端渲染](../frontend/hosting.md#modes)。
+构建结果 `apps/dist` 中只提交 `.gitignore`，让 `go:embed all:dist` 在刚 clone 时有文件可嵌入。缺少它时编译报 `pattern all:dist: no matching files found`：在根目录 `.gitignore` 中加 `!apps/dist/`，运行 `go tool tenon generate`，提交 `apps/dist/.gitignore`。
 
-构建的结果在 `apps/dist` 中，由 `apps/apps.go` 打包进程序。构建的结果不提交，目录中只提交一个 `.gitignore`：它忽略目录中的其他文件，也让 `go:embed all:dist` 在刚 clone、还没有生成任何文件时有文件可嵌入，`go build`、`go vet`、`go test` 照常通过。项目根目录的 `.gitignore` 用 `!apps/dist/` 放行这个目录。`tenon dev`、`tenon generate` 写入其中的清单 `frontends.json`，`tenon build` 写入全部构建结果。
+**API** 是路由中用 `rest.New` 创建的每一个 API，TypeScript 客户端生成到 `packages/client/src/<名称>`，前端用 `@<项目名>/client/<名称>` 导入。名称是 `BasePath` 从后往前第一个不是 `api`、也不是路径参数的段：
 
-`tenon init` 较早生成的项目没有这个文件，刚 clone 时编译报 `pattern all:dist: no matching files found`。在根目录 `.gitignore` 的 `dist/` 之后加一行 `!apps/dist/`，运行一次 `go tool tenon generate`，提交生成的 `apps/dist/.gitignore`。
+| BasePath | 名称 |
+| --- | --- |
+| `/api` | `api` |
+| `/api/admin`、`/admin/api` | `admin` |
+| `/t/{tenant}/api` | `t` |
+| `/api/v1` | `v1` |
 
-**API** 是你在路由中用 `rest.New` 创建的每一个 API。每个 API 的 TypeScript 客户端生成到 `packages/client/src/<名称>`。名称默认取 `BasePath` 的最后一段，跳过 `api` 这一段和路径参数，所以后台的 API 挂在 `/api/admin` 或 `/admin/api` 都叫 `admin`：
-
-| BasePath | 客户端的目录 | 前端中导入 |
-| --- | --- | --- |
-| `/api` | `packages/client/src/api` | `@todo/client/api` |
-| `/api/admin` | `packages/client/src/admin` | `@todo/client/admin` |
-| `/admin/api` | `packages/client/src/admin` | `@todo/client/admin` |
-| `/t/{tenant}/api` | `packages/client/src/t` | `@todo/client/t` |
-| `/api/v1` | `packages/client/src/v1` | `@todo/client/v1` |
-
-`packages/client/package.json` 用子路径导出每个客户端，`@todo/client/api` 是 `api.ts`，`@todo/client/api/queries` 是同一目录中的 `queries.ts`：
-
-```json
-{
-  "name": "@todo/client",
-  "exports": {
-    "./*/enums": "./src/*/enums.ts",
-    "./*/messages": "./src/*/messages.ts",
-    "./*/permissions": "./src/*/permissions.ts",
-    "./*/queries": "./src/*/queries.ts",
-    "./*/resources": "./src/*/resources.ts",
-    "./*/settings": "./src/*/settings.ts",
-    "./*/schemas": "./src/*/schemas.ts",
-    "./*/kit": "./src/*/kit.ts",
-    "./*": "./src/*/api.ts"
-  }
-}
-```
-
-生成的每个文件的内容见[客户端代码](../http/clients.md#generating-types)。
+两个 API 名称相同时（例如 `/api/v1` 和 `/admin/v1`）`generate` 报错，在 `tenon.json` 中给其中一个改名：`"apis": {"/admin/v1": {"name": "admin"}}`。生成的文件见[客户端代码](../http/clients.md#generating-types)。
 
 <a id="framework-packages"></a>
-### 框架的前端包
+## 框架的前端包：`.tenon/js`
 
-Tenon 也提供了一些前端包，例如 `@go-tenon/client`（调用接口、管理登录）和 `@go-tenon/ui`（应用骨架和界面组件）。它们不从 npm 安装，而是随 Go module 一起分发：源码在框架的 `js` 目录中，版本就是 `go.mod` 中框架的版本，前后端的版本永远一致。
+`@go-tenon/client`、`@go-tenon/ui`、`@go-tenon/start`、`@go-tenon/host` 等前端包随 Go module 分发，版本就是 `go.mod` 中框架的版本。`init`、`add frontend`、`dev`、`build`、`generate` 把它们复制到 `.tenon/js/<包名>`，根目录 `package.json` 的 `workspaces` 列出这些目录，前端用 `"@go-tenon/ui": "workspace:*"` 依赖它们。
 
-`tenon` 在需要前端依赖之前（`init`、`add frontend`、`dev`、`build`、`generate`），把这些包复制到项目的 `.tenon/js/<包名>`。项目把它们列入 Bun 的 workspace，前端用 `workspace:*` 依赖它们：
-
-```json
-{
-  "workspaces": [".tenon/js/client", ".tenon/js/ui", "apps/web", "packages/client"]
-}
-```
-
-```json
-{
-  "dependencies": { "@go-tenon/client": "workspace:*", "@go-tenon/ui": "workspace:*" }
-}
-```
-
-`.tenon` 不提交到代码仓库。升级框架（`go get github.com/go-tenon/tenon@<版本>`）后，下一次运行 `tenon dev` 时复制新版本的包；包的 `package.json` 变了，或者依赖还没有安装（例如刚克隆下来的项目）时，自动运行 `bun install`。
+`.tenon` 不提交。升级框架后，下一次 `tenon dev` 复制新版本的包，需要时自动运行 `bun install`。
 
 <a id="configuration"></a>
-### tenon.json
+## `tenon.json`
 
-大多数项目不需要这个文件。需要改变 `tenon` 的默认行为时，在项目根目录创建 `tenon.json`：
+在项目根目录，所有字段都可以省略：
 
 ```json
 {
   "$schema": "https://raw.githubusercontent.com/go-tenon/tenon/main/cmd/tenon/schema.json",
-  "apis": {
-    "/api/v1": { "name": "public", "go": "../api" }
-  }
+  "apis": { "/api/v1": { "name": "public", "go": "../api" } }
 }
 ```
-
-`$schema` 让编辑器补全字段并显示说明。这个例子把 `/api/v1` 的 TypeScript 客户端的目录名改为 `public`，并为它生成 Go 客户端，放在 `../api`。
-
-可以设置的字段（没有写的使用默认值）：
 
 | 字段 | 默认值 | 说明 |
 | --- | --- | --- |
-| `main` | `cmd` 下唯一一个有 `main.go` 的目录，例如 `./cmd/blog` | 应用入口的包；`cmd` 下有多个程序时写明 |
-| `serve` | `["serve", "--config", "config/app.yaml,config/local.yaml"]`，`local.yaml` 不存在时去掉它 | 开发时运行应用的参数 |
-| `url` | 按应用配置中的 `http.addr` 推出：端口相同，主机是 `localhost`；没有 `http.addr` 时是 `http://localhost:8080` | 应用的地址：`tenon dev` 打印它，前端的开发服务器经它调用接口。读取的是 `serve` 中 `--config` 的文件，所以改了 `config/app.yaml` 或 `config/local.yaml` 中的端口，这里跟着变；只在应用不在本机这个端口上时才需要写 |
-| `apis.<BasePath>.name` | `BasePath` 的最后一段，跳过 `api` 和路径参数 | 这个 API 的 TypeScript 客户端的目录名 |
-| `apis.<BasePath>.go` | 不生成 | 这个 API 的 Go 客户端的目录 |
-| `tools` | 空 | 其他工具：`watch` 是开发时运行的命令，`build` 是停止后运行的命令 |
-| `agents.targets` | `["claude", "codex", "cursor", "antigravity"]` | `tenon agents` 为哪些 AI 编程助手安装技能、写 MCP 配置，见 [AI 编程助手](ai-assistants.md#choosing-assistants) |
-| `agents.skip` | 空 | 不安装的框架技能，见 [AI 编程助手](ai-assistants.md#skills) |
+| `main` | `cmd` 下唯一一个有 `main.go` 的目录 | 应用入口的包；有多个程序时写明 |
+| `serve` | `["serve", "--config", "config/app.yaml,config/local.yaml"]`，`local.yaml` 不存在时去掉 | 开发时运行应用的参数；有前端时必须有 `--config` |
+| `url` | 端口取 `--config` 文件中的 `http.addr`，主机 `localhost` | 应用的地址：`dev` 打印它，前端的开发服务器经它调用接口 |
+| `apis.<BasePath>.name` | 见[前端与 API 怎样被发现](#conventions) | TypeScript 客户端的目录名 |
+| `apis.<BasePath>.go` | 不生成 | Go 客户端的目录 |
+| `tools` | 空 | 其他工具，每项 `{"watch": [命令…], "build": [命令…]}`：`watch` 随 `dev` 运行，`build` 在 `dev` 停止后运行 |
+| `agents.targets` | `["claude", "codex", "cursor", "antigravity"]` | 接入的 AI 编程助手，见[选择助手](ai-assistants.md#choosing-assistants) |
+| `agents.skip` | 空 | 不安装的框架技能，见[技能](ai-assistants.md#skills) |
 
-例如开发时用 esbuild 打包一个嵌入到其他网站的小组件脚本：
-
-```json
-{
-  "tools": [{
-    "watch": ["esbuild", "widget/src/widget.js", "--bundle", "--outdir=widget/dist", "--watch=forever"],
-    "build": ["esbuild", "widget/src/widget.js", "--bundle", "--outdir=widget/dist", "--minify"]
-  }]
-}
-```
-
-前端不在 `tenon.json` 中配置，见[前端与 API 怎样被发现](#conventions)。
+端口被占用（`address already in use`）时，在 `config/local.yaml` 中改 `http.addr`，`url` 跟着变。
 
 <a id="app-side"></a>
-### 应用这一侧
+## 应用这一侧
 
-`tenon` 需要你的应用配合两件事。用 `tenon init` 生成的项目已经写好了，这里解释它们为什么存在。
+`tenon init` 生成的入口已经写好两件事，见[入口文件](installing.md#entrypoint)：
 
-**导出接口。** 接口是程序运行时注册的，`tenon generate` 要运行你的程序才能读到它们。应用在根命令中加入 `httpcmd.Commands`，它提供 `openapi`、`routes`、`client` 三个命令，参数是构造全部路由的函数，见[命令行](../general/commands.md#declaring-the-cli)：
-
-```go
-root.AddCommand(httpcmd.Commands(func() chi.Routes { return routes(config.Default[Config](), nil, nil) })...)
-```
-
-`routes` 就是 `serve` 也在用的那个函数。这些命令用默认配置和 `nil` 调用它，只读取构造出的路由，不连接数据库，也不启动 SSR 进程。
-
-**接收前端开发服务器的地址。** 开发时，`tenon dev` 把各前端的开发服务器地址写进 `.tenon/dev.yaml` 的 `dev_servers`，再用 `--config` 把它交给应用。应用的配置中有这个字段，创建 `frontend.Host` 时把它交给 `DevServers`，每个前端的请求转给自己的开发服务器，见[托管前端：开发](../frontend/hosting.md#development)：
-
-```go
-type Config struct {
-    HTTP       httpx.Config      `yaml:"http"`
-    DevServers map[string]string `yaml:"dev_servers"`
-}
-```
+- **导出接口**：根命令加入 `httpcmd.Commands`，参数是用默认配置和 `nil` 依赖构造全部路由的函数；`tenon generate` 运行其中的 `client` 命令，见[命令行](../general/commands.md#declaring-the-cli)。
+- **接收前端开发服务器的地址**：`tenon dev` 把地址写进 `.tenon/dev.yaml` 的 `dev_servers`，追加在 `serve` 的 `--config` 之后。应用的 `Config` 用 `DevServers map[string]string` 接收，交给 `frontend.Options.DevServers`，见[托管前端：开发](../frontend/hosting.md#development)。

@@ -1,291 +1,204 @@
-# 安装
+# 安装与生成项目
 
-这一页带你从一个空目录开始，写出第一个 Tenon 接口：访问 `/ping`，返回 `{"message":"pong"}`。我们分三步完成，每一步都是一个能运行的程序：
+用 `tenon init` 生成能直接运行的项目：Go 写的 API 加 TanStack Start 写的前端，用一个待办事项的例子连起来。这一页说明怎样运行它、项目的组成、入口的装配、构建和 CI。
 
-1. 写出最小的服务，能响应请求；
-2. 加上框架默认的中间件，每个请求都有一个 ID，方便排查问题；
-3. 让程序能平稳地停止，不会中断正在处理的请求。
+包：`cmd/tenon`、`command`、`frontend`。
 
-如果你想直接得到一个带数据库、带前端的完整项目，可以跳到[脚手架](scaffolding.md)；但建议先读完这一页，后面的项目都是在这个基础上搭起来的。
-
-阅读前需要了解：Go 的基本语法，会用 `go run`。
-
-- [准备工作](#prerequisites)
-- [创建项目](#creating)
-- [第一步：最小的服务](#first-api)
-- [第二步：加上默认的中间件](#middleware)
-- [第三步：平稳地停止](#graceful-shutdown)
-- [常见问题](#troubleshooting)
-- [下一步](#next-steps)
-
-<a id="prerequisites"></a>
+<a id="requirements"></a>
 ## 准备工作
 
-你需要 Go 1.27.4 或更高的版本。在终端中查看版本：
+- Go 1.27.4 或更高的版本；
+- [Bun](https://bun.sh)：安装前端的依赖、运行前端的开发服务器和构建；
+- Docker：项目用到 PostgreSQL、NATS 这类服务时在本机启动它们。
+
+<a id="creating-a-project"></a>
+## 用 `tenon init` 生成项目
 
 ```bash
-go version
-# go version go1.27.4 linux/amd64
+go run github.com/go-tenon/tenon/cmd/tenon@latest init todo
+cd todo
+bun run dev   # 打开 http://localhost:8080，接口文档在 http://localhost:8080/api/docs
 ```
 
-版本太低时，从 [go.dev/dl](https://go.dev/dl/) 下载新版本安装。
+`init` 写入项目的全部文件，运行 `go mod tidy`，生成 TypeScript 客户端，运行 `bun install` 并生成路由树，最后安装给 AI 编程助手的技能和配置（见 [AI 编程助手](ai-assistants.md)）。目录必须不存在或者是空的。
 
-<a id="creating"></a>
-## 创建项目
+- `--module`、`--name` 指定 Go module 的路径和应用的名称，默认都是目录名，例如 `--module github.com/acme/todo`。其他选项见 [tenon init](tooling.md#init)。
+- `go.mod` 记录生成时的 Tenon 版本：`@latest` 是最新发布的版本，`@main` 是主分支当时的提交。0.x 版本之间可能不兼容，升级前先看发布说明。
 
-Tenon 是一个普通的 Go module（模块），和其他依赖一样用 `go get` 安装。先创建一个目录，初始化 module：
+<a id="developing"></a>
+## 运行开发环境：`bun run dev`
+
+`bun run dev` 运行 `go tool tenon dev`：同时运行 Go 程序和前端的开发服务器（Vite）。只访问 Go 程序的端口 8080，页面和接口都在这里，见[页面与 API 同源](#frontend)。
+
+- 改前端（例如 `apps/web/src/routes/index.tsx`）：页面热更新。
+- 改 Go 代码（例如 `internal/todo/todo.go`）：重新编译、平滑地重启；编译失败时终端中打印错误，旧的程序继续运行。
+- 改接口的输入或输出：重新生成前端的客户端 `packages/client/src/api`，前端代码中立刻能用新的字段。
+
+细节见 [tenon dev](tooling.md#dev)。
+
+<a id="layout"></a>
+## 项目里有什么
+
+```text
+todo/
+├── go.mod                 Go module；tool 一行记录开发工具 tenon，版本与框架相同
+├── package.json           Bun workspace，dev、build、generate、agents、typecheck 脚本
+├── README.md              怎样运行；Go、Mantine、TanStack 给 AI 的资源怎样接入
+├── AGENTS.md              项目说明和代码约定，AI 编程助手读它
+├── .mcp.json              Claude Code 的 MCP 配置，其他助手的见 AI 编程助手
+├── .claude/skills/        给 AI 编程助手的技能（Codex、Antigravity 读 .agents/skills/）
+├── .github/workflows/     CI
+├── config/app.yaml        应用的配置，例如监听地址 http.addr
+├── cmd/todo/main.go       程序的入口
+├── internal/todo/todo.go  待办事项：类型、内存中的存储和四个接口
+├── apps/apps.go           用 go:embed 把前端的构建产物 apps/dist 打包进 Go 程序
+├── apps/web/              前端，挂在 / 下，在服务端渲染
+│   ├── package.json       tenon 字段：挂载路径和是否在服务端渲染
+│   └── src/               router.tsx、start.ts、server.ts、theme.ts、api.ts；routes/ 中一个文件一个页面
+├── packages/client/       生成的 TypeScript 客户端，前端用它调用接口
+└── .tenon/                开发工具复制的框架前端包和文档，不提交
+```
+
+- 业务代码按模块放在 `internal/` 中，例如 `internal/article`。入口在 `cmd/<名称>/main.go`，构建出的程序是 `bin/<名称>`。页面在 `apps/web/src/routes/` 中。
+- `packages/` 和 `.tenon/` 由工具生成，不手动修改。
+
+各目录的约定见[目录结构](../concepts/structure.md)。
+
+<a id="entrypoint"></a>
+## 入口文件：配置和命令
+
+`cmd/todo/main.go` 定义配置、登记命令：
+
+```go
+type Config struct {
+    HTTP       httpx.Config      `yaml:"http"`        // config/app.yaml 的 http 段
+    DevServers map[string]string `yaml:"dev_servers"` // 前端开发服务器的地址，只在 tenon dev 时有值
+}
+
+func main() {
+    root := command.Root("todo", "todo")
+    root.AddCommand(
+        command.Serve(open, parts),  // serve：读取并检查配置，调用 open，运行 parts
+        command.Config[Config](),    // config check、config show
+        httpcmd.Health(func(cfg Config) httpx.Config { return cfg.HTTP }), // health：Docker 的健康检查
+    )
+    // openapi、routes、client：开发工具用它们生成文档和客户端
+    root.AddCommand(httpcmd.Commands(func() chi.Routes { return routes(config.Default[Config](), nil, nil) })...)
+    command.Execute(root)
+}
+```
+
+`go run ./cmd/todo serve` 启动服务，收到 `SIGTERM` 或 Ctrl+C 时平滑地停止，见[应用生命周期](../concepts/lifecycle.md)。配置见[配置](../general/configuration.md)，命令见[命令行](../general/commands.md)。
+
+<a id="entry-parts"></a>
+### `open` 和 `parts`
+
+```go
+type App struct {
+    cfg   Config
+    store *todo.Store
+}
+
+func open(_ context.Context, cfg Config, _ *cleanup.Stack) (*App, error) {
+    slog.SetDefault(logging.New(logging.Config{}))
+    return &App{cfg: cfg, store: todo.NewStore()}, nil
+}
+
+func parts(a *App) []command.Part {
+    return []command.Part{{Name: "http", Short: "接口和页面", Start: a.serveHTTP}}
+}
+```
+
+- `App` 保存进程中各部分共用的资源。`open` 创建它们；接上数据库后也在这里打开，把关闭登记到 `cleanup.Stack`，进程退出时自动关闭。
+- `parts` 列出常驻运行的部分。加上队列的 worker、定时任务的调度器时各加一项；`serve` 运行全部部分，`serve http` 只运行其中一个，见 [serve](../general/commands.md#serve-command)。
+
+<a id="entry-routes"></a>
+### `serveHTTP` 和 `routes`
+
+```go
+func (a *App) serveHTTP(d *command.Daemon) (func(context.Context) error, error) {
+    var router chi.Router
+    api := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { router.ServeHTTP(w, r) })
+    pages, err := frontend.New(apps.Dist, frontend.Options{API: api, DevServers: a.cfg.DevServers})
+    if err != nil {
+        return nil, err
+    }
+    router = routes(a.cfg, a.store, pages.Handler())
+    ln, err := d.Listen("tcp", a.cfg.HTTP.Addr) // 端口被占用时在这里返回错误
+    if err != nil {
+        return nil, err
+    }
+    return func(ctx context.Context) error {
+        // 先启动 SSR 进程，再运行 HTTP 服务；停止时先排空请求，再停 SSR 进程
+        return pages.Run(ctx, func(ctx context.Context) error {
+            return httpx.Serve(ctx, a.cfg.HTTP, ln, router)
+        })
+    }, nil
+}
+
+func routes(cfg Config, store *todo.Store, pages http.Handler) chi.Router {
+    router := chi.NewRouter()
+    router.Use(httpx.Defaults(cfg.HTTP)...) // 请求 ID、访问日志、捕获 panic 等默认中间件
+    router.Get("/livez", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
+    router.Route("/api", func(r chi.Router) {
+        r.Use(httpx.Timeout(cfg.HTTP.Timeout)) // 超时只装在接口上，页面的连接可能保持很久
+        api := rest.New(r, rest.Options{Title: "todo", Version: "0.1.0", BasePath: "/api"})
+        todo.RegisterRoutes(api, store)
+    })
+    if pages != nil {
+        router.Handle("/*", pages) // 其余的路径都是页面
+    }
+    return router
+}
+```
+
+- `routes` 有两个调用者：`serveHTTP` 用真实的配置和依赖启动服务；`openapi`、`client` 等命令用默认配置和 `nil` 构造路由，只读出接口。所以 `RegisterRoutes` 只保存依赖，处理请求时才使用它们。
+- 新的业务模块在 `routes` 中加一行 `RegisterRoutes`，服务、接口文档和客户端都会包含它。
+- 每个接口都要声明访问策略（`rest.Public()`、`RequireToken` 等），没有声明时 `rest.Register` 在启动时 panic，需要保护的接口不会被悄悄公开，见[访问策略](../http/routing.md#access-policies)。
+- `frontend.New` 读取嵌入的 `apps.Dist`，按挂载路径托管全部前端；SSR 进程渲染页面时经内部 socket 调用同一个 `router`，见[托管前端与服务端渲染](../frontend/hosting.md)。
+
+<a id="frontend"></a>
+## 页面与 API 同源
+
+Go 程序是唯一的入口，页面和接口在同一个源上：页面调用 `/api` 不跨域，登录的 cookie 照常发送。
+
+- **开发时**：前端的开发服务器在另一个空闲端口上运行。Go 程序处理 `/api`，把其余的请求（页面、热更新）转发给开发服务器。
+- **发布时**：`tenon build` 把前端的静态文件放进 `apps/dist`，服务端渲染的前端连同 Bun 编译成 `apps/dist/ssr`，`apps/apps.go` 把整个目录嵌入 Go 程序。Go 程序直接返回静态文件，从内存中运行 SSR 程序，页面请求经 unix socket 交给它渲染。
+
+`apps/web/package.json` 中 `"tenon": {"ssr": true}` 让 `web` 在服务端渲染。后台这类不需要搜索引擎收录的前端只在浏览器中渲染，程序中不带 Bun，见[切换渲染方式](../frontend/hosting.md#switching)。
+
+<a id="building"></a>
+## 构建
 
 ```bash
-mkdir hello-api
-cd hello-api
-go mod init example.com/hello-api
+bun run build                         # 即 go tool tenon build，输出 bin/todo
+./bin/todo serve --config config/app.yaml
 ```
 
-`example.com/hello-api` 是这个 module 的路径，也就是别人导入它时写的名字。自己的项目可以随意取，通常用代码仓库的地址，例如 `github.com/你的名字/hello-api`。
+部署时只需要 `bin/todo` 和配置文件，见[部署](deployment.md)。Go 托管的 SSR 进程只支持 Linux：在 macOS 上用 `bun run dev` 开发，构建好的程序在 Linux 上运行。构建的步骤和选项见 [tenon build](tooling.md#build)。
 
-然后添加 Tenon：
+<a id="ci"></a>
+## CI
+
+`.github/workflows/ci.yml` 在推送到 `main` 和每个 PR 时运行两个并行的任务：
+
+| 任务 | 做什么 |
+| --- | --- |
+| `check` | `go tool tenon generate` 后检查工作区没有变化（改了接口没有提交重新生成的客户端时失败）；`go tool tenon agents` 后检查技能没有变化（升级框架后没有运行 `bun run agents` 时失败）；`gofmt`、`go vet`、`go test ./...` |
+| `build` | `go tool tenon generate` 复制框架的前端包，`bun install --frozen-lockfile`；`bun run typecheck` 后检查路由树 `routeTree.gen.ts` 没有变化；`bun run build` |
+
+- 生成的代码（客户端、路由树、技能）都要提交：CI 重新生成一次，有差异就失败。`tenon init` 已经生成了它们。
+- `tenon` 的版本由 `go.mod` 固定，Bun 的版本由 `package.json` 的 `packageManager` 固定，CI 与本地相同。
+- 用到数据库后，在 `check` 中启动 PostgreSQL，见[在 CI 中运行数据库测试](../testing/testing.md#database-tests-in-ci)。代码不在 GitHub 上时，删掉 `.github`，按同样的步骤写所用平台的 CI。
+
+<a id="existing-module"></a>
+## 在已有的 module 中使用 Tenon
 
 ```bash
 go get github.com/go-tenon/tenon@latest
+go get -tool github.com/go-tenon/tenon/cmd/tenon
 ```
 
-`@latest` 表示最新发布的版本，例如 `v0.0.1`，版本号记录在 `go.mod` 中，之后每次构建用到的都是这个版本。要试用还没有发布的改动时写 `@main`，表示主分支上最新的代码。
+第二行加入开发工具 `tenon`，见[安装开发工具](tooling.md#installation)。
 
-> [!NOTE]
-> Tenon 还处在 0.x 版本，版本之间可能有不兼容的修改。升级前先看这个版本的发布说明。
-
-<a id="first-api"></a>
-## 第一步：最小的服务
-
-在 `hello-api` 目录中新建 `main.go`。这是一个完整的程序，只做一件事：收到 `GET /ping` 时返回 `{"message":"pong"}`：
-
-```go
-package main
-
-import (
-	"context"
-	"log"
-	"net/http"
-
-	"github.com/danielgtaylor/huma/v2"
-	"github.com/go-chi/chi/v5"
-
-	"github.com/go-tenon/tenon/httpx/rest"
-)
-
-// PingOutput 是接口的返回值：Body 中的字段会被编码为 JSON。
-type PingOutput struct {
-	Body struct {
-		Message string `json:"message"`
-	}
-}
-
-// ping 处理 GET /ping。它不需要任何输入，所以输入的类型是空结构体。
-func ping(ctx context.Context, in *struct{}) (*PingOutput, error) {
-	out := &PingOutput{}
-	out.Body.Message = "pong"
-	return out, nil
-}
-
-func main() {
-	router := chi.NewRouter()
-	api := rest.New(router, rest.Options{Title: "Hello API", Version: "1.0.0"})
-
-	op := huma.Operation{
-		OperationID: "ping",
-		Method:      http.MethodGet,
-		Path:        "/ping",
-		Summary:     "检查服务是否在运行",
-	}
-	rest.Public()(&op)
-	rest.Register(api, op, ping)
-
-	log.Println("listening on http://127.0.0.1:8080")
-	log.Fatal(http.ListenAndServe("127.0.0.1:8080", router))
-}
-```
-
-从上往下看 `main` 做了什么：
-
-- **`chi.NewRouter()`** 创建一个路由器。路由器负责“看请求的地址，决定交给哪个函数处理”。
-- **`rest.New`** 在路由器上创建一个 API。`Title` 和 `Version` 会写进自动生成的接口文档。
-- **`huma.Operation`** 描述一个接口：用什么方法（`GET`）、在哪个路径（`/ping`）。`OperationID` 是这个接口的名字，必须唯一，生成接口文档和客户端代码时会用到它。
-- **`rest.Public()(&op)`** 声明这个接口是公开的，不需要登录。Tenon 要求每个接口都明确声明是公开的还是需要登录，忘记声明时程序在启动时就会报错，需要保护的接口不会被悄悄公开出去。
-- **`rest.Register`** 把接口和处理它的函数 `ping` 连在一起。注意这里传的是 `ping` 本身，没有加括号，见把方法当作值传递。
-- **`http.ListenAndServe`** 是 Go 标准库的函数，在 `127.0.0.1:8080` 上等待请求。
-
-再看处理函数 `ping`：
-
-- 它的签名是固定的形式：第一个参数是 `context.Context`（见 context），第二个参数是输入，返回输出和错误。
-- 输出是一个结构体，其中的 `Body` 字段就是响应体。`json:"message"` 是结构体标签，表示这个字段在 JSON 中叫 `message`，见结构体标签。
-
-整理依赖，运行它：
-
-```bash
-go mod tidy
-go run .
-# listening on http://127.0.0.1:8080
-```
-
-`go mod tidy` 根据代码中的 `import` 下载需要的依赖。保持程序运行，在另一个终端中访问这个接口：
-
-```bash
-curl -i http://127.0.0.1:8080/ping
-```
-
-你会看到：
-
-```http
-HTTP/1.1 200 OK
-Content-Type: application/json
-
-{"message":"pong"}
-```
-
-Tenon 还根据你的代码生成了接口文档。在浏览器中打开 <http://127.0.0.1:8080/docs>，可以看到 `/ping` 这个接口和它返回的字段；`/openapi.json` 是同样内容的 OpenAPI 文档，前端和其他服务可以用它生成调用代码。
-
-在运行程序的终端按 Ctrl+C 停止它。
-
-<a id="middleware"></a>
-## 第二步：加上默认的中间件
-
-线上的服务每天处理很多请求。用户反馈“刚才出错了”时，你需要从日志中找到那一次请求。为此，每个请求都应当有一个唯一的 ID，写在响应头和日志中。
-
-这类“每个请求都要做”的工作由**中间件**完成。中间件包在处理函数的外面，请求先经过中间件，再到达处理函数；响应也先经过中间件，再返回给客户端。Tenon 提供了一组默认的中间件：生成请求 ID、记录访问日志、捕获处理函数中的 panic（返回 500，程序继续运行）等，见[中间件](../http/middleware.md#default-middleware)。
-
-修改 `main` 函数，在注册接口之前安装它们：
-
-```go
-func main() {
-	cfg := httpx.DefaultConfig()
-
-	router := chi.NewRouter()
-	router.Use(httpx.Defaults(cfg)...)     // 默认的中间件
-	router.Use(httpx.Timeout(cfg.Timeout)) // 处理时间超过限制时返回 503
-	api := rest.New(router, rest.Options{Title: "Hello API", Version: "1.0.0"})
-
-	// ……注册接口和启动服务的代码不变
-}
-```
-
-- `httpx.DefaultConfig()` 返回 HTTP 服务的默认配置，包括监听地址、超时时间等。之后可以从配置文件读取，见[配置](../general/configuration.md)。
-- `router.Use` 安装中间件。它们要在注册接口之前安装，对之后注册的所有接口生效。
-- 记得在 `import` 中加上 `"github.com/go-tenon/tenon/httpx"`。
-
-再运行一次，访问 `/ping`。这次响应头中多了 `X-Request-Id`，终端中也出现了一行访问日志，带着同样的 ID：
-
-```http
-HTTP/1.1 200 OK
-Content-Type: application/json
-X-Request-Id: 3UHKWQUZP5TTP24PG3SQNGA5EO
-
-{"message":"pong"}
-```
-
-<a id="graceful-shutdown"></a>
-## 第三步：平稳地停止
-
-部署新版本时，旧的程序会收到停止信号（`SIGTERM`）。如果它立刻退出，正在处理的请求就被中断了，用户看到的是连接断开。更好的做法是：先停止接收新请求，等正在处理的请求完成，再退出。
-
-`httpx.ListenAndServe` 就是这样做的：它在 ctx 被取消时开始平稳地停止。我们用 `signal.NotifyContext` 得到一个“收到停止信号时被取消”的 ctx，见defer 与结束后台工作。这是最终的完整程序：
-
-```go
-package main
-
-import (
-	"context"
-	"log/slog"
-	"net/http"
-	"os"
-	"os/signal"
-	"syscall"
-
-	"github.com/danielgtaylor/huma/v2"
-	"github.com/go-chi/chi/v5"
-
-	"github.com/go-tenon/tenon/httpx"
-	"github.com/go-tenon/tenon/httpx/rest"
-	"github.com/go-tenon/tenon/logging"
-)
-
-type PingOutput struct {
-	Body struct {
-		Message string `json:"message"`
-	}
-}
-
-func ping(ctx context.Context, in *struct{}) (*PingOutput, error) {
-	out := &PingOutput{}
-	out.Body.Message = "pong"
-	return out, nil
-}
-
-func run() error {
-	// 收到 Ctrl+C 或 SIGTERM 时，ctx 被取消
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
-	slog.SetDefault(logging.New(logging.Config{}))
-	cfg := httpx.DefaultConfig()
-	cfg.Addr = "127.0.0.1:8080"
-
-	router := chi.NewRouter()
-	router.Use(httpx.Defaults(cfg)...)
-	router.Use(httpx.Timeout(cfg.Timeout))
-	api := rest.New(router, rest.Options{Title: "Hello API", Version: "1.0.0"})
-
-	op := huma.Operation{OperationID: "ping", Method: http.MethodGet, Path: "/ping", Summary: "检查服务是否在运行"}
-	rest.Public()(&op)
-	rest.Register(api, op, ping)
-
-	// ctx 被取消后，等正在处理的请求完成再返回
-	return httpx.ListenAndServe(ctx, cfg, router)
-}
-
-func main() {
-	if err := run(); err != nil {
-		slog.Error("application stopped", "error", err)
-		os.Exit(1)
-	}
-}
-```
-
-和第二步相比，变化有三处：
-
-- **`run` 函数**：程序的主体移到了 `run` 中，它返回错误；`main` 只负责在出错时记录日志并以非零的退出码结束。这样 `run` 中可以放心地用 `defer` 释放资源：`os.Exit` 会直接结束程序，跳过所有还没有执行的 `defer`，所以不能在 `run` 中调用它。
-- **日志**：`logging.New` 创建一个日志器，`slog.SetDefault` 把它设为全局默认。之后整个程序都用标准库的 `slog` 记录日志，见[日志](../general/logging.md)。
-- **`httpx.ListenAndServe`** 代替了标准库的 `http.ListenAndServe`，它在 ctx 被取消时平稳地停止。
-
-运行后按 Ctrl+C，日志中依次出现 `http server draining`（停止接收新请求，等待正在处理的请求）和 `http server stopped`（全部完成），然后程序退出。
-
-<a id="troubleshooting"></a>
-## 常见问题
-
-**启动时报错 `endpoint must explicitly declare Public, RequireToken or another RequireAuth scheme`**
-
-注册接口之前没有声明它是否需要登录。公开的接口加上 `rest.Public()(&op)`；需要登录的接口见[认证](../security/authentication.md)。
-
-**启动时报错 `address already in use`**
-
-8080 端口被其他程序占用了，可能是上一次运行的程序还没有停止。停止它，或者换一个端口，例如把 `cfg.Addr` 改成 `127.0.0.1:8081`。
-
-**`go run .` 报错 `no required module provides package ...`**
-
-代码中导入了新的包，但还没有下载。运行 `go mod tidy`。
-
-**`go mod tidy` 报错 Go 版本太低**
-
-Tenon 需要 Go 1.27.4 或更高的版本，见[准备工作](#prerequisites)。
-
-**访问 `/ping` 得到 404**
-
-检查地址是否写对，以及注册的 `Path` 是否是 `/ping`。路径区分大小写，`/Ping` 与 `/ping` 是两个地址。
-
-<a id="next-steps"></a>
-## 下一步
-
-你已经写出了第一个接口，并且知道了路由器、接口描述、处理函数和中间件分别是做什么的。接下来：
-
-- 跟着[入门教程](../tutorial/README.md)做一个完整的博客：数据库、登录、前端页面都会用到；
-- 或者先用[脚手架](scaffolding.md)生成一个完整的项目，看看它由哪些部分组成；
-- 想深入了解这一页用到的每一部分，读[路由](../http/routing.md)、[中间件](../http/middleware.md)和[HTTP 服务的生命周期](../concepts/lifecycle.md)。
+最小的服务只需要[入口文件](#entry-routes)中 `routes` 的写法：`chi` 路由器装上 `httpx.Defaults`，用 `rest.New` 创建 API、`rest.Register` 注册接口，再用 `httpx.ListenAndServe(ctx, cfg, router)` 运行，`ctx` 取消后平滑地停止。路由和接口见[路由](../http/routing.md)，从零做一个完整项目见[入门教程](../tutorial/01-project.md)。

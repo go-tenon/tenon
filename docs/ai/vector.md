@@ -1,91 +1,38 @@
 # 向量检索
 
-[全文搜索](../features/search.md)按关键词查找，读者问“付款要在多久内完成”，写着“验收后 30 日内结清”的那一段就搜不到。向量检索按语义查找：把每一段文字用模型转换为向量，提问时找出向量最接近的几段，交给模型回答。
+`vector` 按语义检索：用嵌入模型把文字（或图片）算成向量存进 [Qdrant](https://qdrant.tech)，提问时找出向量最接近的文档。用法与[全文搜索](../features/search.md)相同：业务动作在修改数据的事务中调用 `Sync`，队列任务重新读取数据、计算向量后写入 Qdrant。
 
-`vector` 包把向量保存在 [Qdrant](https://qdrant.tech) 中，不放进 PostgreSQL。数据仍然以数据库为准，Qdrant 中只是由它算出来的副本。用法与[全文搜索](../features/search.md)相同：业务动作在修改数据的事务中调用 `Sync`，队列任务重新读取数据、计算向量，然后写入 Qdrant。事务回滚时，同步也一起取消。
+包：`vector`、`vector/vectortest`。
 
-**向量**是一组数字，由嵌入模型（embedding model）根据文字的意思算出来，意思相近的文字，向量也相近。多模态的嵌入模型还能给图片算向量，文字和图片放在同一个空间里比较，于是可以用文字搜图片、用图片搜图片，见[图片](#images)。
-
-阅读前需要了解：[全文搜索](../features/search.md)（用法相同）；[队列](../background/queue.md)；[文档转换与切分](documents.md)。
-
-- [示例用法](#example-usage)
-- [安装](#installation)
-- [连接 Qdrant](#connecting)
-- [声明索引](#defining-indexes)
-- [同步](#syncing)
-    - [沿用向量](#reusing-vectors)
-    - [立即同步](#refreshing)
-- [重建索引](#reindexing)
-- [检索](#searching)
-    - [过滤](#filtering)
-    - [多租户](#tenancy)
-    - [混合检索](#hybrid-search)
-    - [重排](#reranking)
-- [图片](#images)
-    - [以图搜图](#image-queries)
-- [换模型](#changing-models)
-- [测试](#testing)
-- [常见问题](#troubleshooting)
-- [API 参考](#api-reference)
+- 数据以数据库为准，Qdrant 中只是由它算出来的副本，丢失后[重建索引](#reindexing)即可，只是要再付一次计算向量的费用。
 
 <a id="example-usage"></a>
-## 示例用法
-
-下面创建向量存储，声明一个索引，在修改数据时同步它，然后按语义检索：
+## 示例
 
 ```go
-store := vector.New(db, qdrantClient, vector.Model{Name: "text-embedding-3-small", Dims: 1536, Embedder: embedder})
-
-var Chunks = vector.Define[ChunkDoc]("attachment_chunks")
+var Chunks = vector.Define[ChunkDoc]("attachment-chunks")
 
 // 修改数据的事务中发起同步，提交后由 worker 计算向量并写入 Qdrant
 err := Chunks.Sync(ctx, tx, fileID.String())
 
-hits, err := Chunks.Search(ctx, store, vector.Query{Input: vector.Text("如何退款"), Limit: 5})
+hits, err := Chunks.Search(ctx, vectors, vector.Query{Input: vector.Text("如何退款"), Limit: 5})
 ```
 
-`Sync` 在业务事务中发起同步，提交之后由 worker 重新读取数据、计算向量，写入 Qdrant。检索时，`Search` 用同一个模型把问题转换为向量，找出最接近的几段。
+`tx` 是修改数据的事务，`vectors` 是入口创建的 `*vector.Store`（见[连接 Qdrant](#connecting)），`ChunkDoc` 见[声明索引](#defining-indexes)。
 
 <a id="installation"></a>
 ## 安装
 
 ```bash
-go get github.com/qdrant/go-client@v1.19.0
+go get github.com/qdrant/go-client@v1.20.1
 ```
 
-把 `vector` 的迁移加入[发布命令](../database/migrations.md#publishing-framework-migrations)，发布后执行 `migrate up`。同步任务通过[队列](../background/queue.md)执行，重建索引的进度记在[后台操作](../features/operations.md)中，所以还需要它们的迁移：
-
-```go
-migratecmd.Publish(
-    queue.Migrations(),
-    operation.Migrations(),
-    vector.Migrations(),
-)
-```
-
-数据库中只有两张小表：`vector_keys` 让同一个 key 的同步依次执行，`vector_indexes` 记录索引的版本。向量和文档都在 Qdrant 中。
+把 `vector.Migrations()` 加入[发布命令](../database/migrations.md#publishing-framework-migrations)。同步任务由[队列](../background/queue.md)执行，重建的进度记在[后台操作](../features/operations.md)中，所以同时发布 `queue.Migrations()` 和 `operation.Migrations()`，再执行 `migrate up`。
 
 <a id="connecting"></a>
-## 连接 Qdrant
+## 用 `vector.New` 连接 Qdrant
 
-Tenon 不封装 Qdrant 客户端，直接使用官方的 [go-client](https://github.com/qdrant/go-client)，它走 gRPC 端口 6334。配置由应用自己定义：
-
-```go
-type QdrantConfig struct {
-    Host   string `yaml:"host"`
-    Port   int    `yaml:"port"`
-    APIKey string `yaml:"api_key"`
-    TLS    bool   `yaml:"tls"`
-}
-
-type Config struct {
-    // ...
-    Qdrant    QdrantConfig   `yaml:"qdrant"`
-    Embedding ai.ModelConfig `yaml:"embedding"`
-}
-```
-
-在[入口](../concepts/dependencies.md#assembling-the-application)的 `Open` 中创建客户端和 `vector.Store`，并登记关闭：
+Qdrant 客户端直接用官方的 [go-client](https://github.com/qdrant/go-client)，走 gRPC 端口 6334。在[入口](../concepts/dependencies.md#assembling-the-application)的 `Open` 中创建客户端和 `vector.Store`，登记关闭：
 
 ```go
 qc, err := qdrant.NewClient(&qdrant.Config{
@@ -103,14 +50,15 @@ vectors := vector.New(db, qc, vector.Model{
 })
 ```
 
-`Store` 持有数据库，同步时用它锁住 key、读取文档。`Model` 用来计算向量：`Dims` 必须与模型输出的维度一致；`Embedder` 是 [ai.Embedder](chat-advanced.md#media)，分段多时用 `openai.WithBatchSize` 分批请求。
-
-多个应用共用一个 Qdrant 时，用 `vector.WithPrefix("blog_")` 给 collection 名称加前缀。
+- `cfg.Qdrant` 是应用自己定义的配置结构，`cfg.Embedding` 是 `ai.ModelConfig`，`db` 是 `*bun.DB`，`stack` 是入口的关闭栈。
+- `Dims` 必须与模型输出的维度一致，否则写入时报错。
+- `Embedder` 是 [ai.Embedder](chat.md#media)；分段多时用 `openai.WithBatchSize` 分批请求。
+- 多个应用共用一个 Qdrant 时，用 `vector.WithPrefix("blog_")` 给 collection 名称加前缀。
 
 <a id="defining-indexes"></a>
-## 声明索引
+## 用 `vector.Define` 声明索引
 
-[文档转换与切分](documents.md#processing-uploads)把文章的附件切分为分段，存进 `attachment_chunks` 表（模型 `AttachmentChunk`）。例如 `vector.go`，它声明分段的向量索引、读取文档和列出 key 的函数：
+[文档转换与切分](documents.md#processing-uploads)把附件的分段存进 `attachment_chunks` 表（模型 `AttachmentChunk`）。业务包的 `vector.go` 声明索引的文档类型、索引和读取文档的函数：
 
 ```go
 // ChunkDoc 是一个分段在向量索引中的文档，只放回答问题需要的字段。
@@ -125,61 +73,28 @@ type ChunkDoc struct {
 // Chunks 是附件分段的向量索引，key 是附件 ID。
 var Chunks = vector.Define[ChunkDoc]("attachment-chunks")
 
-// LoadChunks 读取附件当前的分段，附件删除后返回空，从索引中删除。
+// LoadChunks 读取附件当前的分段；附件删除后返回空，索引中的文档随之删除。
 func LoadChunks(ctx context.Context, tx bun.IDB, key string) ([]ChunkDoc, error) {
-    fileID, err := uuid.Parse(key)
-    if err != nil {
-        return nil, queue.Permanent(err)
-    }
-    var rows []AttachmentChunk
-    err = tx.NewSelect().Model(&rows).Where("file_id = ?", fileID).Order("position").Scan(ctx)
-    if err != nil {
-        return nil, errors.Wrap(err, "load chunks")
-    }
-    docs := make([]ChunkDoc, len(rows))
-    for i, r := range rows {
-        docs[i] = ChunkDoc{ArticleID: r.ArticleID, FileID: r.FileID, Text: r.Text, Pages: r.Pages, Context: r.Context}
-    }
-    return docs, nil
-}
-
-// ScanChunkKeys 按 ID 的顺序列出 after 之后有分段的附件，重建索引时使用。
-func ScanChunkKeys(ctx context.Context, db bun.IDB, after string, limit int) ([]string, error) {
-    q := db.NewSelect().Model((*AttachmentChunk)(nil)).ColumnExpr("DISTINCT file_id").
-        OrderExpr("file_id").Limit(int64(limit))
-    if after != "" {
-        id, err := uuid.Parse(after)
-        if err != nil {
-            return nil, queue.Permanent(err)
-        }
-        q = q.Where("file_id > ?", id)
-    }
-    var ids []uuid.UUID
-    if err := q.Scan(ctx, &ids); err != nil {
-        return nil, errors.Wrap(err, "scan chunk keys")
-    }
-    keys := make([]string, len(ids))
-    for i, id := range ids {
-        keys[i] = id.String()
-    }
-    return keys, nil
+    // 用 tx 按 position 读出 file_id = key 的 AttachmentChunk，逐个转换为 ChunkDoc；
+    // key 不是合法的 UUID 时返回 queue.Permanent(err)，任务不再重试
 }
 ```
 
-标签有三种：
-
 | 标签 | 用途 | 字段类型 |
 | --- | --- | --- |
-| `embed` | 计算向量的内容，有且只有一个；只用来计算时写 `json:"-"` | `string`，或者 `vector.Content`（文字和图片，见[图片](#images)） |
+| `embed` | 计算向量的内容，有且只有一个；只用来计算时写 `json:"-"` | `string`，或 `vector.Content`（见[图片](#images)） |
 | `filter` | 过滤用的值，见[过滤](#filtering) | 字符串、布尔、整数、浮点数、`time.Time`、实现 `encoding.TextMarshaler` 的类型（如 `uuid.UUID`），以及它们的切片和指针 |
 | `tenant` | 文档所在的租户，见[多租户](#tenancy) | `string` |
 
-一个 key 可以对应多个文档：这里以附件 ID 为 key，每个分段一个文档。文档整体编码为 JSON 保存在 Qdrant 中，检索结果直接解码出 `ChunkDoc`。标签写错时 `Define` 直接 panic，程序启动时就能发现。
+- 一个 key 可以对应多个文档：这里以附件 ID 为 key，每个分段一个文档。
+- 文档整体编码为 JSON 存在 Qdrant 中，检索结果直接解码出 `ChunkDoc`。
+- 标签写错时 `Define` panic，启动时就能发现。
+- 重建索引还要一个 `ScanFunc`，见[重建索引](#reindexing)。
 
 <a id="syncing"></a>
-## 同步
+## 用 `Sync` 同步、`Handle` 处理同步任务
 
-处理附件的任务在替换分段的同一个事务中调用 `Sync`，见[在后台处理上传的文档](documents.md#processing-uploads)：
+修改数据的事务中调用 `Sync`，例如处理附件的任务替换分段之后：
 
 ```go
 return database.RunInTx(ctx, a.db, nil, func(ctx context.Context, tx database.Tx) error {
@@ -188,86 +103,78 @@ return database.RunInTx(ctx, a.db, nil, func(ctx context.Context, tx database.Tx
 })
 ```
 
-worker 注册同步任务和[重建任务](#reindexing)的处理函数，加在 [worker 的装配](../background/queue.md#running-workers)中：
+worker 注册同步任务和重建任务的处理函数，加在 [worker 的装配](../background/queue.md#running-workers)中，`a.vectors` 是入口创建的 `*vector.Store`：
 
 ```go
 attachment.Chunks.Handle(w, a.vectors, attachment.LoadChunks, attachment.ScanChunkKeys)
 ```
 
-处理任务时，`LoadChunks` 在同步事务中读取附件当前的分段，计算向量后替换 Qdrant 中这个 key 原有的文档；返回空时从索引中删除。任务只带 key，每次都重新读取，重复或乱序执行的结果都一样。
-
-- 同一个 key 的同步依次执行，后执行的一定读到更新的数据。为此锁要一直持有到写完 Qdrant，计算向量期间同步事务也保持打开，所以 `LoadFunc` 只应读取数据，转换、切分文件这类耗时的处理放在之前的任务中完成。
-- 删除附件同样调用 `Sync`，`LoadChunks` 读不到分段，索引中的文档随之删除。
-- 计算向量的内容为空、引用的图片不存在、模型不接受这种内容（例如只接受文字的模型遇到图片）时，任务直接转入[失败任务表](../background/queue.md#failed-jobs)。模型服务出错时，任务按队列的规则重试。
-- 索引的每个版本是 Qdrant 中的一个 collection，第一次写入时自动创建，同时给过滤字段建立索引；之后新增过滤字段时，进程启动后第一次同步会补建索引。
+- 任务只带 key，每次在同步事务中用 `LoadFunc` 重新读取，重复或乱序执行的结果都一样；返回空时从索引中删除这个 key 的文档，所以删除附件也调用 `Sync`。
+- 同一个 key 的同步依次执行，锁一直持有到写完 Qdrant，计算向量期间同步事务也保持打开。所以 `LoadFunc` 只读取数据，转换、切分文件这类耗时的处理放在之前的任务中完成。
+- 计算向量的内容为空、引用的图片不存在、模型不接受这种内容时，任务直接转入[失败任务表](../background/queue.md#failed-jobs)；模型服务出错时按队列的规则重试。
+- Qdrant 的 collection 在第一次写入时自动创建，并给 `filter` 字段建索引；之后新增的 `filter` 字段在进程启动后第一次同步时补建。
 
 <a id="reusing-vectors"></a>
 ### 沿用向量
 
-计算向量要花钱。同步时先查出这个 key 已有的文档，计算向量的内容与已有文档相同的直接沿用原来的向量，只把新的内容交给模型；同一次同步中相同的内容只计算一次。作者改了附件中的一句话，只有那一段重新计算，即使后面的分段位置都变了。图片按文件 ID 比较，没有变化的图片连文件都不读。
+同步时计算向量的内容与这个 key 已有的文档相同的，沿用原来的向量，只把新的内容交给模型。改了附件中的一句话，只有那一段重新计算；图片按文件 ID 比较。
 
 <a id="refreshing"></a>
-### 立即同步
+### 用 `Refresh` 立即同步
 
-`Refresh` 直接同步并返回，适合测试和需要马上能查到的场合：
+`Refresh` 直接同步并返回，用于测试和需要马上能查到的场合，`vectors` 是 `*vector.Store`：
 
 ```go
 err := attachment.Chunks.Refresh(ctx, vectors, attachment.LoadChunks, fileID.String())
 ```
 
 <a id="reindexing"></a>
-## 重建索引
+## 重建索引：`search reindex`
 
-换了模型、改了计算向量的文本（例如 `Context` 的拼法），或者有数据绕过 `Sync` 被修改过，就要重建索引。重建命令与[全文搜索](../features/search.md#reindexing)共用 `search/searchcmd`，把向量索引一起传进去，在 [bootstrap.Commands](../concepts/actions.md#as-commands) 中声明：
+换了模型、改了计算向量的文本（例如 `Context` 的拼法）、加上或去掉 `Hybrid`，或者有数据绕过 `Sync` 被修改过，要重建索引。重建用 `ScanFunc` 按稳定的顺序列出 `after` 之后的最多 `limit` 个 key，返回空时结束，写法与[全文搜索的 `ScanFunc`](../features/search.md#reindexing)相同：
+
+```go
+// ScanChunkKeys 按 file_id 的顺序列出 after 之后有分段的附件，重建索引时使用。
+func ScanChunkKeys(ctx context.Context, db bun.IDB, after string, limit int) ([]string, error)
+```
+
+重建命令与[全文搜索](../features/search.md#reindexing)共用 `search/searchcmd`，把向量索引一起传入，在 [`command.Bind`](../general/commands.md#bind-commands) 中声明：
 
 ```go
 searchcmd.New(a.db, article.SearchIndex, attachment.Chunks)
 ```
 
-部署新版本之后执行：
+部署新版本之后执行 `./bin/blog search reindex attachment-chunks`，命令每秒显示进度直到完成，`--detach` 发起后立即返回。
 
-```bash
-$ ./bin/blog search reindex attachment-chunks
-已发起 attachment-chunks 的重建，操作 0193e7b1-…，由 worker 执行
-已处理 500 / 约 3200 个 key
-……
-重建完成：3200 个 key，其中 0 个无法建索引
-```
+- 重建写入索引的新版本（新的 collection），完成之前查询仍用原来的版本；期间同步同时写入两个版本，完成后切换。
+- 新版本的每个文档都要重新计算向量，重建前估算费用。
+- 同一个索引再次发起重建时，正在进行的重建被取代，它的操作变为失败，错误码 `vector.reindex_superseded`。
+- 重建是一个[后台操作](../features/operations.md)，类型是 `vector.reindex.attachment-chunks`；在管理后台发起时调用 `attachment.Chunks.Reindex(ctx, tx, ops, sub)`。
 
-重建写入索引的一个新版本，也就是一个新的 collection，完成之前查询仍然使用原来的版本：
-
-- 发起之后，同步同时写入原来的版本和新版本，重建期间修改的附件也会写进新版本。
-- 重建任务用 `ScanChunkKeys` 每次列出 500 个 key，逐个用 `LoadChunks` 读取，计算向量后写入新版本。进度保存在操作中，任务重试时从上次保存的地方继续。
-- 全部写入后，新版本成为查询使用的版本，原来版本的 collection 随后删除。
-
-新版本中的每个文档都要重新计算一次向量，重建前估算一下费用。同一个索引再次发起重建时，正在进行的重建被取代，它的操作变为失败，错误码是 `vector.reindex_superseded`。重建是一个[后台操作](../features/operations.md)，类型是 `vector.reindex.attachment-chunks`，在管理后台发起时直接调用 `attachment.Chunks.Reindex(ctx, tx, ops, sub)`。
+换模型的步骤见[换模型](#changing-models)。
 
 <a id="searching"></a>
-## 检索
+## 用 `Search` 检索
 
-`Search` 用 `Store` 的模型计算查询文本的向量，返回语义最接近的文档，按相似度从高到低排列。下面是 AI 助手查找文章附件内容的工具：
+`Search` 用建立索引的模型计算查询的向量，返回最接近的文档，按相似度从高到低排列。例如查找一篇文章的附件中与问题最相关的分段：
 
 ```go
-type Find struct{ vectors *vector.Store }
-
-func NewFind(vectors *vector.Store) *Find { return &Find{vectors: vectors} }
-
-// Find 返回文章附件中与问题最相关的分段。
-func (a *Find) Find(ctx context.Context, articleID uuid.UUID, question string) ([]vector.Hit[ChunkDoc], error) {
-    return Chunks.Search(ctx, a.vectors, vector.Query{
-        Input:  vector.Text(question),
-        Filter: vector.Eq("article_id", articleID),
-        Limit:  20,
-    })
-}
+hits, err := Chunks.Search(ctx, a.vectors, vector.Query{
+    Input:  vector.Text(question),
+    Filter: vector.Eq("article_id", articleID),
+    Limit:  20,
+})
 ```
 
-每条结果 `Hit` 带有 `Key`（附件 ID）、解码后的 `Doc` 和 `Score`。`Score` 是余弦相似度，越大越接近。`Limit` 默认为 `vector.DefaultLimit`（10）；`MinScore` 可以去掉相似度太低的结果，但合适的阈值因模型而异，先看看实际的分数再定。还没有同步过任何文档时，`Search` 返回空。
+`a.vectors` 是入口创建的 `*vector.Store`。
+
+- 每条结果 `Hit` 有 `Key`、解码后的 `Doc` 和 `Score`（余弦相似度，越大越接近）。
+- `Limit` 默认 10。`MinScore` 去掉相似度太低的结果，阈值因模型而异，先看实际的分数再定。
 
 <a id="filtering"></a>
 ### 过滤
 
-过滤条件按字段的 JSON 名称引用 `filter` 字段，与[全文搜索的过滤](../features/search.md#filtering-and-sorting)写法相同：
+过滤条件按 JSON 名称引用 `filter` 字段，写法与[全文搜索的过滤](../features/search.md#filtering-and-sorting)相同：
 
 ```go
 vector.And(
@@ -278,9 +185,8 @@ vector.And(
 
 - `Eq`、`In` 适用于所有类型；`Gt`、`Gte`、`Lt`、`Lte` 只适用于数字和时间。
 - 多值字段（切片）只要有一个值满足条件就算满足。
-- 值会转换为字段的类型，例如 `int` 字段可以传 `int64`。字段不存在、类型不对时 `Search` 返回错误。
-
-Qdrant 在检索的同时过滤，返回的是满足条件的文档中最接近的 `Limit` 条，结果数量稳定。
+- 字段不存在、值的类型不对时 `Search` 返回错误。
+- Qdrant 在检索的同时过滤，返回满足条件的文档中最接近的 `Limit` 条。
 
 <a id="tenancy"></a>
 ### 多租户
@@ -291,48 +197,39 @@ Qdrant 在检索的同时过滤，返回的是满足条件的文档中最接近�
 hits, err := Chunks.Search(ctx, a.vectors, vector.Query{Input: vector.Text(question), Tenant: sub.Tenant})
 ```
 
-`Tenant` 为空表示平台本身，只查询租户为空的文档。没有 `tenant` 字段的索引，传入租户时返回错误。
-
-有租户字段的索引，Qdrant 中的数据按租户存放，HNSW 图也按租户分别建立，所以查询一个租户的速度只取决于它自己的数据量。
+`sub` 是当前的 `identity.Subject`。`Tenant` 为空表示平台本身，只查询租户为空的文档；没有 `tenant` 字段的索引传入租户时返回错误。Qdrant 按租户分别存放数据、建 HNSW 图，查询一个租户的速度只取决于它自己的数据量。
 
 <a id="hybrid-search"></a>
-### 混合检索
+### 用 `vector.Hybrid` 混合检索
 
-语义检索不认识具体的字：读者问“X-2000 的保修期”，向量最接近的可能是另一个型号的保修说明。型号、编号、人名、专有名词这类问题，关键词检索更准。把索引声明为混合索引，检索时两路同时进行：
+型号、编号、人名这类问题，关键词检索比语义检索准。把索引声明为混合索引，语义和关键词两路同时检索，在 Qdrant 中按排名用 RRF 融合：
 
 ```go
 var Chunks = vector.Define[ChunkDoc]("attachment-chunks", vector.Hybrid(search.Bigram))
 ```
 
-- 同步时，`embed` 字段的文本除了交给模型，还用[分词器](../features/search.md#tokenizers)切分，按 BM25 的词频部分算出稀疏向量，和模型的向量存在同一个文档上。IDF 由 Qdrant 按整个索引统计，有租户字段时也是所有租户一起统计。
-- 检索时，查询文本同样切分，语义和关键词两路各取若干候选，带着相同的过滤条件和租户，再在 Qdrant 中按两路的排名用 RRF 融合。只在一路中靠前的文档也能排进结果。
-- 中文用 `search.Bigram` 就能用；需要按词语切分时换成 `search/gse`。
-
-混合索引的 `Hit.Score` 是 RRF 分数，只能比较同一次查询的结果；`MinScore` 只过滤语义那一路的候选。
-
-给已有的索引加上或去掉 `Hybrid`、换分词器之后，要[重建索引](#reindexing)。重建完成之前，原来的版本照常写入和查询，只是还没有关键词那一路。
+- 同步时 `embed` 字段的文本还用[分词器](../features/search.md#tokenizers)切分，算出 BM25 的稀疏向量；IDF 按整个索引统计，有租户字段时所有租户一起统计。
+- 中文用 `search.Bigram`；需要按词语切分时换成 `search/gse`。
+- `Hit.Score` 是 RRF 分数，只能比较同一次查询的结果；`MinScore` 只过滤语义那一路的候选。
+- 加上或去掉 `Hybrid`、换分词器之后要[重建索引](#reindexing)，完成之前原来的版本照常使用。
 
 <a id="reranking"></a>
-### 重排
+### 用 `ai.RerankBy` 重排
 
-向量检索擅长找出大致相关的分段，排序却不够精细。多取一些候选，再用[重排模型](chat-advanced.md#media)排出最相关的几段交给模型：
+多取一些候选，再用[重排模型](chat.md#media)排出最相关的几段交给模型：
 
 ```go
-hits, err := a.find.Find(ctx, articleID, question)
-if err != nil {
-    return nil, err
-}
 hits, err = ai.RerankBy(ctx, a.reranker, ai.Text(question), hits, func(h vector.Hit[ChunkDoc]) ai.Content {
     return ai.Text(h.Doc.Text)
 }, 5)
 ```
 
+`hits` 是[检索](#searching)得到的结果，`a.reranker` 是 `ai.Reranker`。
+
 <a id="images"></a>
-## 图片
+## 图片和视频
 
-用多模态的嵌入模型，商品图片、照片、视频也能建索引：用户输入“红色连衣裙”，找出图片是红色连衣裙的商品。模型见[图片和视频向量](chat-advanced.md#image-embeddings)，下面用百炼的 `qwen3-vl-embedding`。
-
-`Model.Inputs` 声明模型接受图片，`WithFiles` 让 `Store` 读取[文件存储](../libraries/filesystem.md)中的图片：
+用多模态嵌入模型给图片算向量，文字和图片在同一个空间中比较，可以用文字搜图片。模型见[图片和视频向量](chat.md#image-embeddings)。`Model.Inputs` 声明模型接受图片，`WithFiles` 让 `Store` 从[文件存储](../libraries/filesystem.md)读取图片：
 
 ```go
 vectors := vector.New(db, qc, vector.Model{
@@ -343,7 +240,7 @@ vectors := vector.New(db, qc, vector.Model{
 }, vector.WithFiles(files))
 ```
 
-文档的 `embed` 字段用 `vector.Content`，图片用 `FilePart` 引用文件 ID。商品的标题一个文档，每张图片一个文档：
+`files` 是 `*filesystem.Service`。`embed` 字段用 `vector.Content`，图片用 `FilePart` 引用文件 ID，例如商品的标题一个文档、每张图片一个文档：
 
 ```go
 type ProductDoc struct {
@@ -355,47 +252,32 @@ type ProductDoc struct {
 
 var Products = vector.Define[ProductDoc]("products")
 
-func LoadProducts(ctx context.Context, tx bun.IDB, key string) ([]ProductDoc, error) {
-    p, err := getProduct(ctx, tx, key) // 读取商品和它的图片
-    if errors.Is(err, sql.ErrNoRows) {
-        return nil, nil
-    }
-    if err != nil {
-        return nil, err
-    }
-    docs := []ProductDoc{{Title: p.Title, Kind: "title", Tenant: p.Tenant, Embed: vector.Text(p.Title)}}
-    for _, img := range p.ImageIDs {
-        docs = append(docs, ProductDoc{Title: p.Title, Kind: "image", Tenant: p.Tenant,
-            Embed: vector.Content{vector.FilePart(img)}})
-    }
-    return docs, nil
+// 在 LoadProducts 中，p 是读出的商品
+docs := []ProductDoc{{Title: p.Title, Kind: "title", Tenant: p.Tenant, Embed: vector.Text(p.Title)}}
+for _, img := range p.ImageIDs {
+    docs = append(docs, ProductDoc{Title: p.Title, Kind: "image", Tenant: p.Tenant, Embed: vector.Content{vector.FilePart(img)}})
 }
 ```
 
-- `FilePart` 只记文件 ID，`LoadFunc` 不用读图片。同步时文件 ID 没有变化的文档沿用原来的向量，既不读文件也不调用模型；只有新的图片才通过 `WithFiles` 读出内容交给模型。文件存储中替换文件会产生新的 ID，所以同一个 ID 的内容不会变。
-- 文字和图片也可以放在一个文档中，融合为一个向量：`vector.Content{vector.TextPart(p.Title), vector.FilePart(p.CoverID)}`。只有能融合的模型支持，见[图片和视频向量](chat-advanced.md#image-embeddings)。
-- 视频的写法相同，`FilePart` 引用视频文件，`Model.Inputs` 加上 `ai.ModalityVideo`。读出的文件累计到 64 MiB 就先交给模型计算一批，视频多时内存占用不会一直增长。
-- `Content` 编码为 JSON 时，图片只有文件 ID；检索结果通常不需要它，像上面一样写 `json:"-"`。
-- 文件超过 `vector.MaxFileSize`（50 MiB，模型自己的上限可能更小）、文件已删除、模型的 `Inputs` 没有这种内容时，同步任务转入失败任务表。
-- 混合索引中，只有图片的文档没有关键词，只参与语义那一路。
+- `vector.Content{vector.TextPart(p.Title), vector.FilePart(p.CoverID)}` 把文字和图片融合为一个向量，只有支持融合的模型可用。
+- 视频的写法相同，`Model.Inputs` 加上 `ai.ModalityVideo`。
+- 文件超过 `vector.MaxFileSize`（50 MiB）、已删除，或模型的 `Inputs` 没有这种内容时，同步任务转入失败任务表。
+- 混合索引中只有图片的文档没有关键词，只参与语义那一路。
 
-一个商品有好几个文档，按文档检索时同一个商品会出现多次。`GroupByKey` 让每个 key 只返回最接近的一个文档：
+一个 key 有多个文档时，`GroupByKey` 让每个 key 只返回最接近的一个：
 
 ```go
 hits, err := Products.Search(ctx, a.vectors, vector.Query{
-    Input:      vector.Text("红色连衣裙"),
-    Tenant:     sub.Tenant,
-    GroupByKey: true,
-    Limit:      20, // 20 个商品
+    Input: vector.Text("红色连衣裙"), Tenant: sub.Tenant, GroupByKey: true, Limit: 20, // 20 个商品
 })
 ```
 
-以文搜图的相似度普遍偏低，一段文字与它描述的图片可能只有 0.5 左右，比两段意思相反的文字之间还低，合适的 `MinScore` 很难定，按排名取前几个即可。
+以文搜图的相似度普遍偏低（常在 0.5 左右），不设 `MinScore`，按排名取前几个。
 
 <a id="image-queries"></a>
 ### 以图搜图
 
-查询也可以是图片：用户上传的图片用 `MediaPart`，文件存储中已有的图片用 `FilePart`，例如“找相似商品”：
+查询也可以是图片：用户上传的图片用 `MediaPart`，文件存储中已有的用 `FilePart`：
 
 ```go
 hits, err := Products.Search(ctx, a.vectors, vector.Query{
@@ -404,18 +286,14 @@ hits, err := Products.Search(ctx, a.vectors, vector.Query{
 })
 ```
 
-查询的内容同样按 `Model.Inputs` 检查，只接受文字的模型收到图片时 `Search` 直接返回错误，不调用模型。
-
-用户在 AI 助手中发来照片时，工具用 `chat.FindAttachment` 取出照片再检索，见[在工具中使用附件](chat.md#attachments-in-tools)。
+`data` 是图片的字节。查询内容同样按 `Model.Inputs` 检查，只接受文字的模型收到图片时 `Search` 直接返回错误。AI 助手中用户发来的照片，用 `chat.FindAttachment` 取出再检索，见[在工具中使用附件](chat.md#attachments-in-tools)。
 
 <a id="changing-models"></a>
-## 换模型
+## 用 `WithPrevious` 换模型
 
-向量只在同一个模型算出的结果之间比较。索引的每个版本都记录了建立它的模型名称和维度，写入和查询这个版本时总是用这个模型计算向量。`Store` 中没有这个模型时，同步和检索都返回错误，每个版本始终只有一种向量。
+索引的每个版本记录建立它的模型名称和维度，写入和查询这个版本总用这个模型；`Store` 中没有这个模型时同步和检索都返回错误。名称或维度变了都算换模型，例如用 `openai.WithDimensions` 从 3072 维改为 1024 维。换模型分三步：
 
-名称或维度变了都算换模型，例如同一个模型用 `openai.WithDimensions` 从 3072 维改为 1024 维。换模型分三步：
-
-1. 把配置改为新模型，旧模型用 `vector.WithPrevious` 传入，部署：
+1. 配置改为新模型，旧模型用 `vector.WithPrevious` 传入，部署。这时查询和同步仍用旧模型建立的版本：
 
     ```go
     vectors := vector.New(db, qc,
@@ -424,118 +302,31 @@ hits, err := Products.Search(ctx, a.vectors, vector.Query{
     )
     ```
 
-    这时查询和同步仍然使用旧模型建立的版本。
 2. 执行 `search reindex attachment-chunks`。新版本用新模型建立，重建期间的修改同时用两个模型计算。
-3. 重建完成后，去掉 `WithPrevious` 和旧模型的配置，再部署一次。
+3. 重建完成后去掉 `WithPrevious` 和旧模型的配置，再部署。
 
-Qdrant 中的数据都可以从数据库重新算出来，丢失后重建索引即可，只是要再付一次计算向量的费用。
+`vector.Doctor(store, 索引名...)` 检查每个索引的版本是否由配置的模型建立，换了模型却没有传入旧模型时失败，见[自检](../installation/doctor.md#framework-checks)。
 
 <a id="testing"></a>
-## 测试
+## 测试：`vectortest.New`
 
-`vector/vectortest` 创建连接测试 Qdrant 的 `Store`，地址来自环境变量 `QDRANT_TEST_ADDR`（例如 `127.0.0.1:6334`）。每次调用使用随机的 collection 前缀，测试结束时删除。计算向量用 [aitest.Embedder](chat-advanced.md#testing)，相同的文本总是得到相同的向量：
+`vectortest.New` 创建连接测试 Qdrant 的 `Store`，地址来自环境变量 `QDRANT_TEST_ADDR`，每次使用随机的 collection 前缀，测试结束时删除。计算向量用 [aitest.Embedder](chat.md#testing)：
 
 ```go
-func TestFind(t *testing.T) {
+func TestSearchChunks(t *testing.T) {
     ctx := context.Background()
     db := dbtest.Open(t, migrations.FS)
     vectors := vectortest.New(t, db, vector.Model{Name: "test", Dims: 64, Embedder: aitest.NewEmbedder(64)})
-    // ……写入文章、附件和分段
+    // ……写入文章、附件和分段；这里的分段没有标题，计算向量的文本就是 Text
     if err := attachment.Chunks.Refresh(ctx, vectors, attachment.LoadChunks, fileID.String()); err != nil {
         t.Fatal(err)
     }
-
-    hits, err := attachment.NewFind(vectors).Find(ctx, articleID, "验收后 30 日内结清")
-    if err != nil {
-        t.Fatal(err)
-    }
-    if len(hits) == 0 || hits[0].Doc.Text != "验收后 30 日内结清" {
-        t.Fatalf("hits = %+v", hits)
+    hits, err := attachment.Chunks.Search(ctx, vectors, vector.Query{Input: vector.Text("验收后 30 日内结清")})
+    if err != nil || len(hits) == 0 || hits[0].Doc.Text != "验收后 30 日内结清" {
+        t.Fatalf("hits = %+v, err = %v", hits, err)
     }
 }
 ```
 
-`aitest.Embedder` 给不同的文本几乎正交的向量，只有原文完全相同的查询才排在第一。它只能用来测试同步、过滤和租户是否正确，测不了语义检索的效果。
-
-测试图片检索时，`vectortest.New` 的最后一个参数传入 `vector.WithFiles`，可以是真实的文件服务，也可以是实现 `vector.Files` 的内存替身；再用 `Same` 让一段描述和它描述的图片得到相同的向量：
-
-```go
-emb := aitest.NewEmbedder(64)
-emb.Same(ai.Text("红色连衣裙"), ai.Content{ai.MediaPart(redDress)})
-vectors := vectortest.New(t, db, vector.Model{Name: "test", Dims: 64, Embedder: emb,
-    Inputs: []ai.Modality{ai.ModalityText, ai.ModalityImage}}, vector.WithFiles(files))
-```
-
-`aitest.Embedder` 按图片的 `MIME` 类型和内容计算向量，`Same` 中的图片与文件服务读出的内容相同即可。
-
-<a id="troubleshooting"></a>
-## 常见问题
-
-**写入向量时报错维度不一致**
-
-`Model.Dims` 必须与嵌入模型输出的维度一致。换了模型时同时修改它，并重建索引。`vector.Doctor(store, 索引名...)` 检查每个索引是用哪个模型建立的：换了模型却没有用 `WithPrevious` 传入旧模型时失败，见[自检](../installation/doctor.md#framework-checks)。
-
-**修改了数据，检索结果还是旧的**
-
-修改数据的事务中没有调用 `Sync`，或者 worker 没有运行，同步任务还没有执行。
-
-**换了嵌入模型后，检索结果变得很差**
-
-已有的向量还是旧模型算的，和新模型的向量不能比较。换模型后要重建索引，见[重建索引](#reindexing)。
-
-**重建操作变为失败，错误码 `vector.reindex_superseded`**
-
-同一个索引又发起了一次重建，前一次被取代了。等最新的一次完成即可。
-
-<a id="api-reference"></a>
-## API 参考
-
-包 `github.com/go-tenon/tenon/vector`。
-
-### New
-
-```go
-func New(db *bun.DB, client *qdrant.Client, model Model, opts ...Option) *Store
-func WithPrefix(prefix string) Option
-func WithPrevious(models ...Model) Option
-func WithFiles(files Files) Option
-```
-
-`Model` 的字段：`Name`、`Dims`、`Embedder`（`ai.Embedder` 的实现）、`Inputs`（接受的输入种类，为空时只接受文字）。`WithPrevious` 在更换模型期间保留旧模型，见[更换模型](#reindexing)。`WithFiles` 传入读取 `FilePart` 的文件存储，通常是 `*filesystem.Service`。
-
-### Content
-
-```go
-type Content []Part
-func Text(s string) Content
-func TextPart(s string) Part
-func FilePart(id uuid.UUID) Part
-func MediaPart(m ai.Media) Part
-```
-
-计算向量的内容，见[图片](#images)。
-
-### Define
-
-```go
-func Define[D any](name string, opts ...IndexOption) *Index[D]
-func Hybrid(tok search.Tokenizer) IndexOption
-```
-
-声明一个向量索引，`Hybrid` 同时建关键词索引，语义与关键词混合检索。
-
-### Index
-
-```go
-func (ix *Index[D]) Sync(ctx context.Context, db bun.IDB, keys ...string) error
-func (ix *Index[D]) Refresh(ctx context.Context, s *Store, load LoadFunc[D], keys ...string) error
-func (ix *Index[D]) Search(ctx context.Context, s *Store, q Query) ([]Hit[D], error)
-func (ix *Index[D]) Handle(w *queue.Worker, s *Store, load LoadFunc[D], scan ScanFunc, opts ...queue.HandleOption)
-func (ix *Index[D]) Reindex(ctx context.Context, tx bun.IDB, ops *operation.Service, owner identity.Subject) (*operation.Operation, error)
-```
-
-与[全文搜索](../features/search.md#searching)的 `Index` 用法相同。`Query` 的字段：`Input`（必填，文字查询用 `vector.Text(q)`）、`Tenant`、`Filter`、`Limit`、`MinScore`、`GroupByKey`。
-
-### 过滤
-
-`Eq`、`In`、`Gt`、`Gte`、`Lt`、`Lte`、`And`、`Or`、`Not`，与全文搜索的写法相同。
+- `aitest.Embedder` 给相同的内容相同的向量，不同的内容几乎正交：测得了同步、过滤和租户，测不了语义检索的效果。查询要与计算向量的文本完全相同：分段有标题时向量来自 `Context`（标题路径加正文），查询也用它。
+- 测试以文搜图时，`vectortest.New` 的最后一个参数传 `vector.WithFiles`（文件服务或实现 `vector.Files` 的内存替身），再用 `aitest.Embedder` 的 `Same(ai.Text("红色连衣裙"), ai.Content{ai.MediaPart(redDress)})` 让描述和图片得到相同的向量，`redDress` 是与文件服务读出的内容相同的 `ai.Media`。

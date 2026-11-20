@@ -1,38 +1,11 @@
 # 2. 基础设施与装配
 
-上一章生成的项目把数据保存在内存中，重启就没了。一个真正的应用需要数据库，通常还需要缓存和队列，这些统称为**基础设施**。
-
-**这一章要做的：**
-
-1. 用 Docker 在你的电脑上启动这些服务；
-2. 把数据库的地址写进配置文件；
-3. 把“打开数据库、创建路由、启动服务”这些准备工作（我们称为**装配**）从 `main.go` 中整理到 `internal/bootstrap` 包中。
-
-这一章没有新的功能，但之后的每一章都会在这个结构上添加内容。
-
-阅读前需要了解：[第 1 章](01-project.md)；context 和 defer 的用法。
-
-- [启动基础设施](#infrastructure)
-- [配置](#configuration)
-- [装配应用](#assembling)
-- [入口](#entrypoint)
-- [检查一下](#checking)
-- [小结](#summary)
+这一章用 Docker 启动 PostgreSQL、Memcached 和 NATS，把数据库地址写进配置，再把打开资源、创建路由、启动服务这些装配代码从 `main.go` 移到 `internal/bootstrap` 包中。之后各章都在这个结构上添加内容。
 
 <a id="infrastructure"></a>
 ## 启动基础设施
 
-一个常规项目会用到三个服务：
-
-| 服务 | 用途 | 在哪里用到 |
-| --- | --- | --- |
-| PostgreSQL | 业务数据 | 第 3 章 |
-| Memcached | 缓存 | [缓存](../libraries/cache.md) |
-| NATS | 队列 | [队列](../background/queue.md) |
-
-我们用 Docker Compose 启动它们。Docker 把一个服务和它需要的运行环境打包成**镜像**，在你的电脑上以**容器**的形式运行，不需要一个个安装和配置这些软件。Docker Compose 用一个 YAML 文件描述要启动哪些容器。
-
-在项目根目录创建 `compose.yaml`：
+PostgreSQL 存业务数据（第 3 章起），Memcached 用于[缓存](../libraries/cache.md)，NATS 用于[队列](../background/queue.md)。在项目根目录创建 `compose.yaml`：
 
 ```yaml title="compose.yaml"
 # 开发和测试用的基础设施：docker compose up -d --wait
@@ -72,13 +45,7 @@ volumes:
 docker compose up -d --wait
 ```
 
-`-d` 让服务在后台运行；`--wait` 等到服务都准备好才返回，判断的依据是每个服务的 `healthcheck`。
-
-文件中的几个要点：
-
-- `ports` 中的 `127.0.0.1:5432:5432` 把容器的端口映射到你电脑的 `5432` 端口，并且只允许本机访问。程序用 `localhost:5432` 就能连上数据库。
-- `volumes` 把数据保存在 Docker 的**卷**中。`docker compose down` 停止并删除容器时，数据仍然保留；加上 `-v` 才会连数据一起删除。
-- PostgreSQL 的 `wal_level=logical` 是[队列](../background/queue.md)需要的设置，现在不用关心。
+`--wait` 等到各服务的 `healthcheck` 通过才返回。数据保存在卷中，`docker compose down -v` 才会删除。`wal_level=logical` 是队列需要的设置。
 
 <a id="configuration"></a>
 ## 配置
@@ -94,9 +61,9 @@ database:
   dsn: ${DATABASE_URL:-postgres://blog:blog@localhost:5432/blog?sslmode=disable}
 ```
 
-`dsn` 是数据库的连接地址，包含用户名、密码、主机、端口和数据库名。`${DATABASE_URL:-…}` 读取环境变量 `DATABASE_URL`，没有设置时使用 `:-` 后面的默认值。这样开发时直接用默认值连接上面启动的 PostgreSQL；部署到生产环境时，用环境变量提供真正的地址和密码，配置文件不用改，也不会把生产环境的密码提交到代码仓库。项目根目录的 `.env` 文件中的变量也会被读取，它只留在你的电脑上，不提交。
+`${DATABASE_URL:-…}` 读取环境变量 `DATABASE_URL`，没有设置时用 `:-` 后面的默认值：开发时连接上面启动的 PostgreSQL，生产环境用环境变量提供真正的地址。项目根目录的 `.env` 中的变量也会被读取，它不提交。
 
-程序要读取这个文件，需要一个对应的 Go 结构体：YAML 中的每一段对应结构体的一个字段，字段上的 `yaml:"..."` 标签写着它在文件中的名字（见结构体标签）。新建 `internal/bootstrap/config.go`：
+新建 `internal/bootstrap/config.go`，定义与配置文件对应的结构体：
 
 ```go title="internal/bootstrap/config.go"
 // Package bootstrap 装配应用：读取配置，打开数据库等资源，把它们交给 HTTP 服务和各个业务模块。
@@ -115,18 +82,13 @@ type Config struct {
 }
 ```
 
-- `httpx.Config`、`database.Config` 是框架定义的配置段。文件中没有写的字段使用默认值，例如数据库连接池的大小。（连接池：程序预先和数据库建立几个连接，每次查询借一个、用完还回去，不必每次都重新连接。）
-- 加载时会检查配置：缺少必填的项、写错了字段名，启动时就会报错，并指出是哪一项。
-- `DevServers` 不用你填写。开发时 `tenon dev` 把各前端开发服务器的地址写进 `.tenon/dev.yaml`，叠加在 `app.yaml` 之上，程序据此把页面请求转给前端的开发服务器。
+- `httpx.Config`、`database.Config` 是框架的配置段，没有写的字段用默认值；写错字段名时启动就报错。
+- `DevServers` 由 `tenon dev` 写进 `.tenon/dev.yaml`，叠加在 `app.yaml` 之上，不用填写。
 
 <a id="assembling"></a>
 ## 装配应用
 
-模板把所有代码都放在 `main.go` 中。现在这样没问题，但应用会越来越大：要打开数据库、缓存、队列；程序退出时要按正确的顺序关闭它们；除了 HTTP 服务，以后还会有处理后台任务的 worker，它们需要同样的数据库连接。如果都写在 `main.go` 中，它很快会变得又长又难改。
-
-所以我们把装配集中到 `internal/bootstrap` 包中，分成三个文件：`config.go`（上面已经写好）、`app.go`（打开和关闭资源）、`http.go`（HTTP 服务）。
-
-新建 `internal/bootstrap/app.go`：
+`internal/bootstrap` 分三个文件：`config.go`、`app.go`（打开和关闭资源）、`http.go`（HTTP 服务）。新建 `internal/bootstrap/app.go`：
 
 ```go title="internal/bootstrap/app.go"
 package bootstrap
@@ -170,15 +132,13 @@ func Parts(a *App) []command.Part {
 }
 ```
 
-逐个看这几部分：
+- `App` 保存各部分共用的资源。以后需要新的资源时，在 `Open` 中打开、保存到 `App`。
+- `Open` 把关闭操作登记到 `stack`：退出时按打开的相反顺序关闭；打开到一半失败时，已打开的资源也会关闭。
+- `Parts` 列出进程中常驻的部分。`Start` 做好准备工作，返回一个运行到收到停止信号才返回的函数。以后加上[队列 worker](../background/queue.md#running-workers) 时在这里加一行。
 
-- **`App`** 保存各部分共用的资源，现在只有数据库连接 `db`。之后的章节需要新的资源时，就在 `Open` 中打开它，保存到 `App` 中。
-- **`Open`** 打开资源，同时把“怎样关闭它”登记到 `stack` 中。程序退出时，`stack` 按打开的相反顺序关闭资源，例如先关闭依赖数据库的部分，再关闭数据库。如果打开到一半失败了（例如数据库连不上），已经打开的资源也会被关闭，不会泄漏。
-- **`Parts`** 列出进程中一直运行的**部分**，现在只有 HTTP 服务一个。`Start` 是装配这个部分的方法（方法作为值，见把方法当作值传递）：它做好准备工作，返回一个一直运行、直到收到停止信号才返回的函数。以后加上处理后台任务的 worker 时，在这里再加一行，见[队列](../background/queue.md#running-workers)。
+`command.Serve` 调用 `Open` 和 `Parts`，运行到收到 `Ctrl-C` 或 `SIGTERM`，再关闭资源。
 
-`Open` 和 `Parts` 交给框架的 `command.Serve`（下文的入口中），由它打开资源、装配各个部分、一直运行到收到停止信号（`Ctrl-C` 或 `SIGTERM`），最后关闭资源。
-
-接着，新建 `internal/bootstrap/http.go`，装配 HTTP 服务：
+新建 `internal/bootstrap/http.go`：
 
 ```go title="internal/bootstrap/http.go"
 package bootstrap
@@ -251,16 +211,16 @@ func DocRouter() chi.Routes {
 
 ```
 
-- **`HTTP`** 就是上面 `Parts` 中的 `Start`：它监听端口，返回运行服务的函数。收到停止信号时，服务先停止接收新的连接，再等正在处理的请求完成（排空）。
-- **`/livez` 和 `/readyz`** 是健康检查。`/livez` 只要程序能响应就返回 `204`；`/readyz` 还会检查数据库，数据库连不上、或者程序正在停止时返回 `503`，反向代理据此不再把请求转给这个实例。
-- **`/api`** 下是 JSON 接口，`rest.New` 在这个子路由上创建 API。现在注册的还是模板的待办接口，第 4 章换成文章。
-- **其余的请求**是页面，交给 `pages`：`frontend.New` 读取嵌入的 `apps.Dist`，按挂载路径把请求交给 `apps` 中的前端，静态文件由 Go 直接返回，`web` 的页面由 Go 托管的 SSR 进程渲染，开发时转给前端的开发服务器。`pages.Run` 先启动 SSR 进程、等它就绪，再开始接收请求；停止时先排空请求，再停 SSR 进程。见[托管前端与服务端渲染](../frontend/hosting.md)。
-- **`DocRouter`** 在不打开任何资源的情况下构造全部路由，`tenon` 用它生成接口文档和客户端。为此，`Router` 中只能保存 `App` 的字段、不能立即使用它们。数据库的检查写成了一个闭包 `func(ctx context.Context) error { return a.db.PingContext(ctx) }`，原因也在这里：`DocRouter` 中的 `a.db` 是 `nil`，如果直接写 `a.db.PingContext`，构造路由时就会 panic；写成闭包后，要到真的执行检查时才会用到 `a.db`。
+- `HTTP` 是 `Parts` 中的 `Start`：监听端口，返回运行服务的函数。收到停止信号时先停止接收新连接，再等正在处理的请求完成。
+- `/livez` 只要程序能响应就返回 `204`；`/readyz` 还检查数据库，数据库连不上或程序正在停止时返回 `503`。
+- `/api` 下是 JSON 接口，现在注册的是模板的待办接口，第 4 章换成文章。
+- 其余请求交给 `pages`：静态文件由 Go 返回，页面由 Go 托管的 SSR 进程渲染，开发时转给前端开发服务器，见[托管前端与服务端渲染](../frontend/hosting.md)。
+- `DocRouter` 不打开任何资源就构造全部路由，`tenon` 用它生成接口文档和客户端。所以 `Router` 中只保存 `App` 的字段、不立即使用：数据库检查写成闭包，`a.db` 为 `nil` 时构造路由不会 panic。
 
 <a id="entrypoint"></a>
 ## 入口
 
-现在，把 `cmd/blog/main.go` 改成下面这样。它只声明有哪些命令，具体做什么都在 `bootstrap` 中：
+把 `cmd/blog/main.go` 改成只声明命令：
 
 ```go title="cmd/blog/main.go"
 // Command blog 是博客的入口。
@@ -287,14 +247,12 @@ func main() {
 }
 ```
 
-和第 1 章相比，`main.go` 变短了，它只回答“程序有哪些命令”：
+- `serve`：加载配置，调用 `bootstrap.Open`，运行 `bootstrap.Parts` 中的全部部分；`serve http` 只运行 HTTP 服务。
+- `config show`：打印加载后的完整配置，例如 `go run ./cmd/blog config show`。
+- `health`：请求本机的 `/livez`，用作 Docker 的健康检查，见[部署](../installation/deployment.md#health-checks)。
+- `openapi`、`routes`、`client`：导出接口文档、列出路由、生成客户端，`go tool tenon` 调用它们。
 
-- **`serve`**：加载配置，调用 `bootstrap.Open` 打开资源，再运行 `bootstrap.Parts` 中的部分。`serve` 运行全部部分，`serve http` 只运行 HTTP 服务；现在只有一个部分，两者一样。
-- **`config`**：打印加载后的完整配置。配置不符合预期时用它检查：`go run ./cmd/blog config show`。
-- **`health`**：请求本机的 `/livez`，在 Docker 中用作健康检查，见[部署](../installation/deployment.md#health-checks)。
-- **`openapi`、`routes`、`client`**：导出接口文档、列出全部路由、生成客户端，`tenon` 在开发时调用它们。
-
-代码导入了新的包，可能用到 `go.mod` 中还没有的依赖。`bun run dev` 编译时会自动补全 `go.mod`；直接用 `go run ./cmd/blog …` 运行命令之前，先运行一次 `go mod tidy`。
+`bun run dev` 编译时会补全 `go.mod`；直接用 `go run ./cmd/blog …` 之前先运行一次 `go mod tidy`。
 
 <a id="checking"></a>
 ## 检查一下
@@ -303,7 +261,7 @@ func main() {
 bun run dev
 ```
 
-页面和上一章一样。在另一个终端检查就绪状态：
+在另一个终端检查就绪状态：
 
 ```bash
 curl localhost:8080/readyz
@@ -313,18 +271,4 @@ curl localhost:8080/readyz
 {"status":"ready","checks":{"database":"ok"}}
 ```
 
-停止 PostgreSQL（`docker compose stop postgres`）再请求一次，返回 `503`，`database` 变为 `failed`。再 `docker compose start postgres`，恢复正常。
-
-<a id="summary"></a>
-## 小结
-
-这一章没有添加新的功能，但打下了以后各章的基础：
-
-- 数据库等服务由 Docker Compose 启动；
-- 配置从 `config/app.yaml` 和环境变量中加载，写错时启动就会报错；
-- 资源在 `Open` 中打开，程序退出时按相反的顺序关闭；
-- HTTP 服务能平滑地停止，反向代理能通过 `/readyz` 检查它是否就绪。
-
-下一章，我们创建第一张数据表。
-
-深入了解：[配置](../general/configuration.md)、[依赖装配](../concepts/dependencies.md)、[健康检查](../concepts/lifecycle.md#health-checks)。
+`docker compose stop postgres` 之后再请求，返回 `503`，`database` 是 `failed`；`docker compose start postgres` 恢复。
