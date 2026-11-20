@@ -45,8 +45,6 @@ Codex 和 Cursor 的用法相同：在项目目录中打开它们，它们同样
 
 `AGENTS.md` 要提交到代码仓库：别人 clone 下来不运行任何命令，打开助手就能用。
 
-Claude Code 在项目中没有 `CLAUDE.md` 时直接读 `AGENTS.md`；有了 `CLAUDE.md` 或个人的 `CLAUDE.local.md` 后就只读它们。所以你要加这两个文件时，在其中写一行 `@AGENTS.md` 把项目说明导入进来，只给 Claude Code 的说明写在这一行下面。
-
 <a id="framework-docs"></a>
 ## 框架的文档
 
