@@ -57,7 +57,15 @@ import {
   Title,
 } from "@mantine/core"
 import { IconCircleCheck, IconDownload, IconPlus, IconSearch, IconSettings } from "@tabler/icons-react"
-import { type AnyRoute, createRootRouteWithContext, createRoute, Link, Outlet, useParams } from "@tanstack/react-router"
+import {
+  type AnyRoute,
+  createRootRouteWithContext,
+  createRoute,
+  Link,
+  Outlet,
+  useNavigate,
+  useParams,
+} from "@tanstack/react-router"
 import { type ReactNode, useEffect, useMemo, useState } from "react"
 import { createRoot } from "react-dom/client"
 import { CustomerForm } from "./customer-form"
@@ -405,6 +413,17 @@ function RailShell(): ReactNode {
   )
 }
 
+/** RailLayout 中的内页：工单详情，标题左边的返回回到收件箱。 */
+function TicketDetail(): ReactNode {
+  const navigate = useNavigate()
+  const { tenant } = useParams({ strict: false }) as { tenant: string }
+  return (
+    <Page title="工单详情" back={() => void navigate({ to: "/t/$tenant/inbox", params: { tenant } } as never)}>
+      <Text c="dimmed">内页的占位。</Text>
+    </Page>
+  )
+}
+
 /** RailLayout 中页面的占位。 */
 function RailPlaceholder({ title }: { title: string }): ReactNode {
   return (
@@ -445,11 +464,12 @@ function railApp() {
   // 租户在路径中：/t/$tenant 是没有标题的布局路由，其下页面的链接填上当前地址中的租户，例如 /t/acme/inbox；
   // 详情页 /t/$tenant/tickets/$id 自己引入了 id，不出现在菜单中。打开 /rail/t/acme/inbox 查看。
   const tenant = createRoute({ getParentRoute: () => layout, path: "/t/$tenant" })
+  // 内页：标题左边的返回回到收件箱。菜单中的一级页面没有返回按钮。
   const ticket = createRoute({
     getParentRoute: () => tenant,
     path: "/tickets/$id",
     staticData: { title: "工单详情" },
-    component: () => <RailPlaceholder title="工单详情" />,
+    component: TicketDetail,
   })
   const routeTree = root.addChildren([
     layout.addChildren([
