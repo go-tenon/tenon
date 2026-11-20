@@ -52,6 +52,7 @@ let customers: Customer[] = Array.from({ length: 46 }, (_, i) => ({
 const delay = <T,>(v: T) => new Promise<T>((r) => setTimeout(() => r(v), 150))
 
 let shopValues: Record<string, unknown> = { name: "Acme 商城", currency: "CNY", invoice: true, notice: "" }
+let notifyValues: Record<string, unknown> = { order_email: true, refund_email: false, sender: "Acme 商城" }
 
 const client = {
   customer: {
@@ -97,6 +98,13 @@ const client = {
     settingsGet: () => delay(shopValues),
     settingsUpdate(body: Record<string, unknown>) {
       shopValues = body
+      return delay(body)
+    },
+  },
+  notify: {
+    settingsGet: () => delay(notifyValues),
+    settingsUpdate(body: Record<string, unknown>) {
+      notifyValues = body
       return delay(body)
     },
   },
@@ -225,6 +233,19 @@ const schemas = {
       },
     },
   },
+  notify: {
+    settingsUpdate: {
+      body: {
+        type: "object",
+        required: ["sender"],
+        properties: {
+          order_email: { type: "boolean" },
+          refund_email: { type: "boolean" },
+          sender: { type: "string", minLength: 1, maxLength: 40 },
+        },
+      },
+    },
+  },
 }
 
 const kit = {
@@ -264,6 +285,25 @@ const shopDef: SettingsDef = {
 }
 
 export const shopSettings = settingsModel(shopDef, kit, queryClient)
+
+const notifyDef: SettingsDef = {
+  name: "notify",
+  operations: { get: ["notify", "settingsGet"], update: ["notify", "settingsUpdate"] },
+  permissions: { get: [], update: [] },
+  form: [
+    { name: "order_email", type: "boolean" },
+    { name: "refund_email", type: "boolean" },
+    { name: "sender", type: "string", required: true },
+  ],
+  labels: {
+    "zh-CN": {
+      title: "通知设置",
+      fields: { order_email: "新订单发邮件", refund_email: "退款发邮件", sender: "发件人名称" },
+    },
+  },
+}
+
+export const notifySettings = settingsModel(notifyDef, kit, queryClient)
 
 /** 演示的导入：上传和处理都是假的，3 秒内完成，有 2 行没有导入。 */
 export const customerImport = {

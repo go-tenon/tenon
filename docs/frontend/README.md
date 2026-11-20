@@ -15,7 +15,7 @@
 | 应用骨架 `app` | 装配 Router、QueryClient 和会话，登录与权限检查，由路由生成菜单和面包屑，插槽，多标签，租户，新版本提示 | `createApp`、`requireAuth`、`Fill`、`TabsOutlet` |
 | 部件 `components` | 页面中用的部件，Mantine 中没有的那些 | `DataTable`、`useSchemaForm`、`Page`、`DescriptionList`、`confirm` |
 | 区块 `blocks` | 整块的界面，只描述样子：布局、登录页的布局、错误页、用户菜单 | `FrameLayout`、`RailLayout`、`SiteLayout`、`CenteredAuthLayout`、`UserMenu` |
-| 功能 `features` | 框架功能的前端，接后端的模型和它的外观放在一起 | `ResourcePage`、`SettingsForm`、`LoginForm`、`NotificationsMenu`、`QueuePanel` |
+| 功能 `features` | 框架功能的前端，接后端的模型和它的外观放在一起 | `ResourcePage`、`SettingsForm`、`SettingsPage`、`LoginForm`、`NotificationsMenu`、`QueuePanel` |
 
 按钮、输入框、弹窗这些基础组件直接用 Mantine，图表用 [`@mantine/charts`](https://mantine.dev/charts/getting-started/)，`@go-tenon/ui` 中没有对应的一层。
 
@@ -27,7 +27,7 @@
 - [布局与导航](layout.md)：`FrameLayout` 和 `RailLayout` 两个布局、侧栏菜单、顶栏、多标签、租户，以及自己写布局
 - [在 React 中调用接口](client-react.md)：TanStack Query、校验规则、权限、枚举与分页
 - [列表与表单](lists-forms.md)：地址中的列表状态、表格、按生成的规则校验的表单、未保存的修改
-- [资源与设置页面](resources.md)：在 Go 中声明增删改查和设置的页面，`ResourcePage`、`SettingsForm` 按声明渲染
+- [资源与设置页面](resources.md)：在 Go 中声明增删改查和设置的页面，`ResourcePage`、`SettingsForm`、`SettingsPage` 按声明渲染
 - [后台功能](features.md)：通知、后台操作、操作记录、导入导出、队列面板和 AI 对话
 - [官网与文档站](site.md)：服务端渲染与预渲染、官网的布局、首页的占位和文档页
 

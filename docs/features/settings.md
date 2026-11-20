@@ -290,7 +290,7 @@ func (a *SaveSettings) HTTP(ctx context.Context, in *SiteSettingsBody) (*SiteSet
 
 [运营后台](../security/tenancy.md#platform)修改设置的接口直接用同一个结构体作为请求体，验证规则只写一次。修改设置的路由用权限保护，例如只允许有 `platform:settings` 权限的运营人员访问；租户管理员只能修改 `Tenant(sub.Tenant)` 的设置。
 
-再用 `api.Settings` 把读取和保存的两个接口声明为一个设置页面，后台就不需要为它写表单：两套外观的 `SettingsForm` 按声明渲染，字段的输入方式、校验规则和显示文字都来自接口和翻译文件，可以用“保存”按钮，也可以修改后自动保存，见[设置页面](../frontend/resources.md#settings)。
+再用 `api.Settings` 把读取和保存的两个接口声明为一个设置页面，后台就不需要为它写表单：两套外观的 `SettingsForm` 按声明渲染，字段的输入方式、校验规则和显示文字都来自接口和翻译文件，可以用“保存”按钮，也可以修改后自动保存，见[设置页面](../frontend/resources.md#settings)。设置分成几组时，`SettingsPage` 把它们放在同一个页面，每组一个标签，见[多组设置](../frontend/resources.md#settings-groups)。
 
 <a id="testing"></a>
 ## 测试
