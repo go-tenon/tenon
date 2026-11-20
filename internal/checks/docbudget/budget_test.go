@@ -25,15 +25,12 @@ const (
 	sectionLimit          = 3000 // 文档中的一节，从一个锚点到下一个锚点
 )
 
-// rewritten 是已经按 contributing/docs.md 重写过的文档目录，其中每一节都要在 sectionLimit 之内。
-// 随文档的重写逐个加入，全部重写之后删掉这个列表，检查 docs 下的每一页。
-var rewritten = []string{"concepts", "general", "database", "testing", "http", "rpc", "security", "background", "libraries", "features", "frontend", "clients", "ai", "installation"}
+// exempt 是不检查每节篇幅的目录：入门教程中的完整文件由 TestTutorial 执行，不能拆开。
+var exempt = []string{"tutorial"}
 
 var (
 	anchorLine  = regexp.MustCompile(`(?m)^<a id="[^"]+"></a>\s*$`)
 	description = regexp.MustCompile(`(?m)^description: (.*)$`)
-	packageLine = regexp.MustCompile(`(?m)^包：(.+)$`)
-	codeSpan    = regexp.MustCompile("`([^`]+)`")
 )
 
 // read 返回仓库中 rel 文件的内容。
@@ -79,7 +76,7 @@ func TestAlwaysLoaded(t *testing.T) {
 	}
 }
 
-// TestSections 检查文档：rewritten 中的目录每一节不超过 sectionLimit；“包：”一行列出的 Go 包和前端包都存在。
+// TestSections 检查文档的每一节不超过 sectionLimit，exempt 中的目录除外。
 func TestSections(t *testing.T) {
 	t.Parallel()
 	err := filepath.WalkDir(filepath.Join(root, "docs"), func(path string, d fs.DirEntry, err error) error {
@@ -97,21 +94,9 @@ func TestSections(t *testing.T) {
 		}
 		text := string(b)
 
-		// “包：”一行中的每个包都存在：Go 包是模块中有 Go 代码的目录；@go-tenon/<名称> 是 js/<名称> 中的前端包。
-		for _, m := range packageLine.FindAllStringSubmatch(text, -1) {
-			for _, p := range codeSpan.FindAllStringSubmatch(m[1], -1) {
-				pattern := filepath.Join(root, filepath.FromSlash(p[1]), "*.go")
-				if name, ok := strings.CutPrefix(p[1], "@go-tenon/"); ok {
-					pattern = filepath.Join(root, "js", name, "package.json")
-				}
-				if files, _ := filepath.Glob(pattern); len(files) == 0 {
-					t.Errorf("%s: package %s does not exist", rel, p[1])
-				}
-			}
-		}
-
+		// 目录 docs/README.md 由 indexLimit 限制整页。
 		dir, _, _ := strings.Cut(rel, "/")
-		if !slices.Contains(rewritten, dir) {
+		if rel == "README.md" || slices.Contains(exempt, dir) {
 			return nil
 		}
 		// 按锚点切成小节，页面开头到第一个锚点之间也算一节。

@@ -62,7 +62,8 @@ go test ./...       # 包括下文的模块检查
 - `uilayertest`：`@go-tenon/ui` 的分层，见[前端包](contributing/frontend.md)。
 - `i18ntest`：框架用 `errorx.Define` 定义的每个错误码在内置的每种语言中都有翻译。
 - `llmstest`：根目录的 [llms.txt](llms.txt) 与 `docs/README.md` 生成的结果一致，`docs` 中的每一页都列在 `docs/README.md` 中。改了 `docs/README.md` 后在仓库根目录运行 `go run ./internal/llmstxt/gen` 重新生成。
-- `docbudget`：项目 `AGENTS.md` 的模板、技能、文档目录和文档每一节的篇幅，上限见[编写文档](contributing/docs.md#budget)。
+- `docbudget`：项目 `AGENTS.md` 的模板、技能、文档目录和文档每一节的篇幅（入门教程除外），上限见[编写文档](contributing/docs.md#budget)。
+- `docpackages`：文档开头“包：”一行列出的包都存在，框架的每个公开的包（`internal`、`cmd` 以外）都列在某一页中。新增包时在讲它的那一页的“包：”中列出。
 - `agents` 的 `TestSkillReferences`：`cmd/tenon/internal/agents/skills` 中给 AI 编程助手的技能（`tenon init` 装进生成的项目）、项目 `AGENTS.md` 的模板中写的 `.tenon/docs/<页面>#<锚点>` 都存在于 `docs` 中。技能是从文档摘出的步骤和要点，改了文档中的写法、路径或锚点时同步修改对应的技能；改了应用的约定时同步修改模板 `cmd/tenon/internal/scaffold/template/project/AGENTS.md.tmpl`。
 
 ## 代码约定
