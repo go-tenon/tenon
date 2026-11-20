@@ -155,7 +155,7 @@ function Orders() {
 }
 ```
 
-面包屑在标题上面，来自路由的标题：最后一级是当前页面，前面的是链接。不需要时设置 `breadcrumbs={false}`，例如首页。
+面包屑在标题上面，来自路由的标题：最后一级是当前页面，前面的是链接。不需要时设置 `breadcrumbs={false}`，例如首页。布局也可以用 `PageBreadcrumbs` 决定其中的页面默认是否显示面包屑，`RailLayout` 的设置中默认不显示（见下文）；页面的 `breadcrumbs` 仍可以单独打开。
 
 <a id="page-tabs"></a>
 内容多的页面用 `tabs` 分成几个页内标签，在标题区下面切换，不要把几块内容上下平铺：
@@ -305,7 +305,7 @@ function Layout() {
 导航与 `FrameLayout` 一样来自路由的 `staticData`（`title`、`icon`、`order`），按权限过滤：
 
 - 第一级是模块，显示在图标栏中，鼠标移上去显示名称。模块下的页面显示在二级导航中，模块下的分组是二级导航中的一节；只有一个页面的模块（例如首页），二级导航中就是它自己。
-- `settings`（默认 `/settings`）下的页面不进图标栏，从用户菜单进入。这时二级导航是“设置”：顶部一个搜索框，下面按分组列出设置项。分组可以是没有路径的路由，例如 `createRoute({ getParentRoute: () => settings, id: "personal", staticData: { title: "个人" } })`。
+- `settings`（默认 `/settings`）下的页面不进图标栏，从用户菜单进入。这时二级导航是“设置”：顶部一个搜索框，下面按分组列出设置项。“设置”左边有返回按钮，回到进入设置之前所在的页面（按租户记下；直接打开设置的地址时回到第一个模块的首页）。设置中的页面不显示面包屑：二级导航已经标出了位置。分组可以是没有路径的路由，例如 `createRoute({ getParentRoute: () => settings, id: "personal", staticData: { title: "个人" } })`。
 - 二级导航可以收起，是否收起记在浏览器中。收起后，鼠标移到当前模块的图标上，图标变成“展开”，点击展开。
 - 窄屏（小于 48em）时图标栏保留，二级导航是从左侧滑出的抽屉，点击模块打开。
 - 页面的标题、说明和按钮用 [`Page`](#page)；内容区最宽 `maxWidth`（默认 1152px）。
@@ -342,6 +342,7 @@ function TopLayout() {
 | --- | --- |
 | `useNavigation()` | `menu`：按权限过滤后的菜单树；`active`：当前位置在菜单中的路径，从第一级到最深一级的菜单项 id；`crumbs`：面包屑 |
 | `useMenu()`、`useBreadcrumbs()` | 只要菜单或面包屑时用 |
+| `PageBreadcrumbs` | `show`：其中的 `Page` 默认是否显示面包屑，布局用它，例如 `RailLayout` 的设置中关掉 |
 | `firstPage(menu)`、`pageUnder(menu, path)` | 第一个可以进入的页面；某个分组下第一个可以进入的页面，例如点击面包屑中的分组时跳转到它 |
 | `Slot`、`useSlotFilled(name)` | 放置插槽；插槽中是否有内容，例如没有侧边面板时不留出位置 |
 | `SessionBoundary` | 登录、退出、切换账号或租户时重新挂载其中的页面，上一个身份的页面状态不会留下。只包住页面（`Outlet` 或 `TabsOutlet`），不要包住布局或根路由的 HTML 文档：那样每次打开已登录的页面，整个文档都会在浏览器中重建 |
@@ -363,7 +364,7 @@ function TopLayout() {
 
 **页面上没有面包屑**
 
-面包屑由 `Page` 显示：页面没有用 `Page`，或者设置了 `breadcrumbs={false}`。
+面包屑由 `Page` 显示：页面没有用 `Page`，设置了 `breadcrumbs={false}`，或者页面在 `RailLayout` 的设置中（那里默认不显示）。
 
 **切换标签后，页面中填了一半的表单不见了**
 
