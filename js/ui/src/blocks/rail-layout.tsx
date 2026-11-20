@@ -22,6 +22,7 @@ import { IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand, IconSearch 
 import { Link, Outlet, useNavigate } from "@tanstack/react-router"
 import { type ReactNode, useState } from "react"
 import { SessionBoundary } from "../app/app"
+import { formatDocumentTitle, useDocumentTitle, usePageTitle } from "../app/document-title"
 import { useNavigation } from "../app/layout"
 import { firstPage, type MenuItem } from "../app/menu"
 import { PageBreadcrumbs } from "../components/page"
@@ -34,6 +35,7 @@ export interface RailLayoutProps {
   user?: ReactNode // 图标栏底部，通常是 <UserMenu position="right-end" />，其中放进入设置的菜单项
   settings?: string // 设置页面所在的路径，默认 /settings：其下的页面不进图标栏，从用户菜单进入
   maxWidth?: number // 内容区的最大宽度，默认 1152
+  documentTitle?: boolean // 浏览器标签的标题是“页面 - 应用的名称”，页面是路由的 staticData.title；默认开启，false 时不设置
   children?: ReactNode // 页面内容；默认是子路由
 }
 
@@ -78,9 +80,12 @@ export function RailLayout({
   user,
   settings = "/settings",
   maxWidth = 1152,
+  documentTitle = true,
   children,
 }: RailLayoutProps): ReactNode {
   const { menu, active } = useNavigation()
+  const pageTitle = usePageTitle(false)
+  useDocumentTitle(documentTitle ? formatDocumentTitle(pageTitle, title) : undefined)
   const navigate = useNavigate()
   const compact = useMediaQuery("(max-width: 48em)") ?? false
   // 宽屏时二级导航是否展开记在浏览器中；窄屏时二级导航是抽屉，默认关闭。

@@ -34,6 +34,7 @@ import {
 import { Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router"
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { SessionBoundary } from "../app/app"
+import { formatDocumentTitle, useDocumentTitle, usePageTitle } from "../app/document-title"
 import { Fill, Slot, useLayoutState, useNarrow, useNavigation, useSlotFilled } from "../app/layout"
 import type { MenuItem } from "../app/menu"
 import { ContentTransitionProvider, PageProgress } from "../app/tabs/progress"
@@ -65,6 +66,11 @@ export interface FrameLayoutProps {
   tabs?: boolean | TabsOutletProps
   /** 内容区的最大宽度，例如 1200；默认铺满。 */
   maxWidth?: number
+  /**
+   * 浏览器标签的标题是“页面 - 产品名称”，默认开启：页面是当前标签的标题（开启多标签时）或路由的 staticData.title。
+   * false 时不设置，标题由应用自己管理。
+   */
+  documentTitle?: boolean
 }
 
 /**
@@ -83,6 +89,7 @@ export function FrameLayout({
   search = true,
   tabs,
   maxWidth,
+  documentTitle = true,
 }: FrameLayoutProps): ReactNode {
   const theme = useMantineTheme()
   const m = layoutMetrics(theme)
@@ -92,6 +99,8 @@ export function FrameLayout({
   const aside = useSlotFilled("aside")
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const tabsOn = Boolean(tabs) && state.tabs
+  const pageTitle = usePageTitle(tabsOn)
+  useDocumentTitle(documentTitle ? formatDocumentTitle(pageTitle, title) : undefined)
   const showTabBar = tabsOn && !narrow
 
   // 窄屏时打开页面后收起导航抽屉。
