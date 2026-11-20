@@ -59,6 +59,7 @@ function pathParams(path: string): string[] {
 /**
  * 生成菜单：带 title 的路由按路由树嵌套（没有标题的布局路由被跳过），按 order 再按路径排序。
  * menu 为 false、或 can 返回 false 的路由连同下级不出现；过滤后没有下级的分组也不出现。
+ * 能进菜单的下级页面才让上级成为分组：列表路由下的详情页（/articles/$id）属于列表的菜单项，进入详情页时列表保持选中。
  *
  * 路径参数：路由自己引入的参数（例如详情页 /articles/$id 的 id）标识一条数据，这样的页面不出现；上级路由引入的参数
  * （例如租户布局路由 /t/$tenant 下的页面 /t/$tenant/inbox 的 tenant）从 params 取当前地址中的值填进链接，
@@ -85,6 +86,12 @@ export function buildMenu(
     return { path, params: used }
   }
   const titled = (r: RouteInfo | undefined) => Boolean(r?.staticData?.title)
+  // listed：路由按自己的定义能进菜单，即带 title、menu 不是 false、路径参数都来自上级。只有这样的路由是上级的子项。
+  const listed = (r: RouteInfo) => {
+    if (!titled(r) || r.staticData?.menu === false) return false
+    const inherited = pathParams((r.parent && byId.get(r.parent)?.path) || "")
+    return pathParams(r.path).every((n) => inherited.includes(n))
+  }
   const parentOf = (r: RouteInfo): string | undefined => {
     for (let p = r.parent ? byId.get(r.parent) : undefined; p; p = p.parent ? byId.get(p.parent) : undefined) {
       if (titled(p)) return p.id
@@ -93,7 +100,7 @@ export function buildMenu(
   }
   const children = new Map<string | undefined, RouteInfo[]>()
   for (const r of routes) {
-    if (!titled(r)) continue
+    if (!listed(r)) continue
     const p = parentOf(r)
     children.set(p, [...(children.get(p) ?? []), r])
   }

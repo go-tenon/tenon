@@ -1,9 +1,14 @@
 // UIProvider：安装 Mantine 的主题、通知、对话框和图标。放在 AppRoot 之外（或 Start 的根文档中）。
 
-import { type MantineColorScheme, MantineProvider, type MantineThemeOverride } from "@mantine/core"
+import {
+  localStorageColorSchemeManager,
+  type MantineColorScheme,
+  MantineProvider,
+  type MantineThemeOverride,
+} from "@mantine/core"
 import { ModalsProvider } from "@mantine/modals"
 import { Notifications } from "@mantine/notifications"
-import type { ReactNode } from "react"
+import { type ReactNode, useMemo } from "react"
 import { type IconComponent, IconsProvider } from "./icons"
 import { themes } from "./theme"
 
@@ -13,6 +18,11 @@ export interface UIProviderProps {
   theme?: MantineThemeOverride
   /** 默认的配色：auto 跟随系统。用户切换后的选择保存在浏览器中。 */
   defaultColorScheme?: MantineColorScheme
+  /**
+   * 保存配色的 localStorage 键，通常是 app.storage.key("color-scheme")，同一个域名下的每个前端各记各的配色。
+   * 根文档中的 ColorSchemeScript 用同一个键（localStorageKey）。不传时用 Mantine 的默认键，同域名的前端共用。
+   */
+  colorSchemeKey?: string
   /** 增加或替换图标名称，见 defaultIcons。 */
   icons?: Record<string, IconComponent>
   /** test 关闭过渡动画和 portal，用于应用的组件测试。 */
@@ -24,17 +34,29 @@ export interface UIProviderProps {
  * 安装主题、通知和图标：
  *
  *   import "@go-tenon/ui/styles.css"
- *   <UIProvider theme={createUiTheme({ preset: "compact" })}><AppRoot app={app} /></UIProvider>
+ *   <UIProvider theme={createUiTheme({ preset: "compact" })} colorSchemeKey={app.storage.key("color-scheme")}>
+ *     <AppRoot app={app} />
+ *   </UIProvider>
  */
 export function UIProvider({
   theme = themes.comfortable,
   defaultColorScheme = "auto",
+  colorSchemeKey,
   icons,
   env,
   children,
 }: UIProviderProps) {
+  const colorSchemeManager = useMemo(
+    () => (colorSchemeKey ? localStorageColorSchemeManager({ key: colorSchemeKey }) : undefined),
+    [colorSchemeKey],
+  )
   return (
-    <MantineProvider theme={theme} defaultColorScheme={defaultColorScheme} env={env}>
+    <MantineProvider
+      theme={theme}
+      defaultColorScheme={defaultColorScheme}
+      colorSchemeManager={colorSchemeManager}
+      env={env}
+    >
       <Notifications position="top-right" limit={4} />
       <ModalsProvider labels={{ confirm: "确定", cancel: "取消" }}>
         <IconsProvider icons={icons}>{children}</IconsProvider>

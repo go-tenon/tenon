@@ -49,7 +49,7 @@ export const Route = createFileRoute("/_app/orders")({
 ```
 
 - 带 `title` 的路由按路由树嵌套，跳过没有标题的布局路由，同级按 `order`、再按路径排序。有子页面的路由是可以展开的分组。
-- 页面不出现在菜单中的情况：没有 `title`；用户没有 `permission`；`menu: false`；路由自己引入了路径参数（例如详情页 `/articles/$id`，菜单高亮它所在的分组）。分组中没有可以进入的页面时，分组也不出现。路径参数来自上级路由时，链接填上当前地址中的值，见[租户](#entering-tenants)。
+- 页面不出现在菜单中的情况：没有 `title`；用户没有 `permission`；`menu: false`；路由自己引入了路径参数（例如详情页 `/articles/$id`）。菜单高亮当前页面最近的、在菜单中的上级；要让详情页高亮列表，把它们放在同一个布局路由下：`articles.tsx` 写 `staticData`，列表是 `articles/index.tsx`，详情页是 `articles/$id.tsx`。分组中没有可以进入的页面时，分组也不出现。路径参数来自上级路由时，链接填上当前地址中的值，见[租户](#entering-tenants)。
 - `icon` 是 `defaultIcons` 中的名称，例如 `home`、`dashboard`、`article`、`users`、`settings`、`order`；写错的名称显示为空心圆。其他 [Tabler 图标](https://tabler.io/icons)通过 `UIProvider` 的 `icons` 增加：`<UIProvider theme={theme} icons={{ delivery: IconTruckDelivery }}>`。
 - 菜单项的徽标（例如未读数）用 `useMenuBadge("/_app/notifications", unread)` 登记，第一个参数是页面或模块的路由 id；组件卸载、值为 0 或空时去掉。`RailLayout` 把模块的徽标显示在图标栏中图标的右上角。
 
