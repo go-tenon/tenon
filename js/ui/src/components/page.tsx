@@ -2,7 +2,8 @@
 // 面包屑在页面中而不在顶栏：顶栏留给标志、多标签和菜单。
 // 内容多的页面可以分成几个页内标签（tabs）：标签在标题区下面，当前的标签记在地址的 ?tab= 中。
 
-import { Anchor, Badge, Breadcrumbs, Stack, Tabs, Text, Title } from "@mantine/core"
+import { ActionIcon, Anchor, Badge, Breadcrumbs, Group, Stack, Tabs, Text, Title } from "@mantine/core"
+import { IconArrowLeft } from "@tabler/icons-react"
 import { Link, useNavigate, useSearch } from "@tanstack/react-router"
 import { createContext, type ReactNode, useContext, useRef } from "react"
 import { useNavigation } from "../app/layout"
@@ -22,6 +23,23 @@ export interface PageBreadcrumbsProps {
  */
 export function PageBreadcrumbs({ show, children }: PageBreadcrumbsProps): ReactNode {
   return <PageBreadcrumbsContext.Provider value={show}>{children}</PageBreadcrumbsContext.Provider>
+}
+
+const PageBackContext = createContext<(() => void) | undefined>(undefined)
+
+/** PageBack 的选项。 */
+export interface PageBackProps {
+  /** 其中的页面标题左边“返回”按钮的动作；为空时页面默认没有返回按钮。 */
+  onBack?: () => void
+  children?: ReactNode
+}
+
+/**
+ * 布局给其中的页面一个“返回”：Page 在标题左边显示返回按钮，例如 RailLayout 的设置中，返回进入设置之前所在的页面。
+ * 页面的 back 仍可以换成自己的动作或者关掉。
+ */
+export function PageBack({ onBack, children }: PageBackProps): ReactNode {
+  return <PageBackContext.Provider value={onBack}>{children}</PageBackContext.Provider>
 }
 
 /** 页内的一个标签。 */
@@ -45,6 +63,11 @@ export interface PageProps {
   actions?: ReactNode
   /** 标题上面的面包屑（来自路由的标题）。默认显示，所在的布局用 PageBreadcrumbs 关掉时不显示（例如 RailLayout 的设置中）。 */
   breadcrumbs?: boolean
+  /**
+   * 标题左边的返回按钮：点击时调用它，例如详情页返回列表。不设置时用所在布局给的（PageBack，例如 RailLayout 的设置中
+   * 返回进入设置之前的页面），布局也没有时不显示；false 时不显示。
+   */
+  back?: (() => void) | false
   /** 在面包屑最后再加一级表示当前页面，例如新建页面的“新建”：路由没有自己的标题时用，前面的各级都是链接。 */
   crumb?: string
   /**
@@ -57,18 +80,27 @@ export interface PageProps {
 }
 
 /** 页面：面包屑、标题区加内容；有 tabs 时内容分成几个页内标签。 */
-export function Page({ title, description, actions, breadcrumbs, crumb, tabs, children }: PageProps): ReactNode {
+export function Page({ title, description, actions, breadcrumbs, back, crumb, tabs, children }: PageProps): ReactNode {
   const crumbsByDefault = useContext(PageBreadcrumbsContext)
   const showCrumbs = breadcrumbs ?? crumbsByDefault
+  const layoutBack = useContext(PageBackContext)
+  const onBack = back === false ? undefined : (back ?? layoutBack)
   return (
     <Stack gap="md">
       <Stack gap={10}>
         {showCrumbs && <Crumbs extra={crumb} />}
         <div className="tn-page-header">
           <div>
-            <Title order={2} className="tn-page-title">
-              {title}
-            </Title>
+            <Group gap={6} wrap="nowrap">
+              {onBack && (
+                <ActionIcon variant="subtle" color="gray" aria-label="返回" onClick={onBack} ml={-6}>
+                  <IconArrowLeft size={20} stroke={1.6} />
+                </ActionIcon>
+              )}
+              <Title order={2} className="tn-page-title">
+                {title}
+              </Title>
+            </Group>
             {description && (
               <Text c="dimmed" size="sm" mt={4}>
                 {description}

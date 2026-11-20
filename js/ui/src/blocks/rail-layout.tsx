@@ -18,19 +18,14 @@ import {
   UnstyledButton,
 } from "@mantine/core"
 import { useLocalStorage, useMediaQuery } from "@mantine/hooks"
-import {
-  IconArrowLeft,
-  IconLayoutSidebarLeftCollapse,
-  IconLayoutSidebarLeftExpand,
-  IconSearch,
-} from "@tabler/icons-react"
+import { IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand, IconSearch } from "@tabler/icons-react"
 import { Link, Outlet, useLocation, useNavigate } from "@tanstack/react-router"
 import { type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from "react"
 import { SessionBoundary, useApp } from "../app/app"
 import { useNavigation } from "../app/layout"
 import { firstPage, type MenuItem } from "../app/menu"
 import { noTenant } from "../app/snapshot"
-import { PageBreadcrumbs } from "../components/page"
+import { PageBack, PageBreadcrumbs } from "../components/page"
 import { Icon } from "../theme/icons"
 
 /** RailLayout 的选项。 */
@@ -100,7 +95,7 @@ export function RailLayout({
   const settingsGroup = menu.find((m) => m.path === settings)
   const inSettings = !!settingsGroup && active[0] === settingsGroup.id
 
-  // 设置的“返回”回到进入设置之前所在的页面。按租户记下，切换租户后不会回到上一个租户的页面；
+  // 设置中页面标题左边的“返回”回到进入设置之前所在的页面。按租户记下，切换租户后不会回到上一个租户的页面；
   // 没有记下的（例如直接打开了设置的地址）回到第一个模块的首页。
   // 是否在设置下按地址判断：跳转时地址先变，菜单的选中状态（active）晚一步，用它会把设置的地址也记成“之前的页面”。
   const app = useApp()
@@ -125,11 +120,6 @@ export function RailLayout({
   const secondary = (
     <>
       <Group className="tn-rail-secondary-header" gap="xs" wrap="nowrap">
-        {inSettings && (
-          <ActionIcon variant="subtle" color="gray" aria-label="返回" onClick={back}>
-            <IconArrowLeft size={18} stroke={1.6} />
-          </ActionIcon>
-        )}
         <Text fw={600} truncate style={{ flex: 1 }}>
           {current?.title}
         </Text>
@@ -215,9 +205,11 @@ export function RailLayout({
         )}
         <main id="main-content" tabIndex={-1} className="tn-rail-main">
           <Box maw={maxWidth} mx="auto" className="tn-rail-page">
-            {/* 设置中的页面不显示面包屑：二级导航已经标出了位置，左上角有返回 */}
+            {/* 设置中的页面不显示面包屑（二级导航已经标出了位置），标题左边有返回进入设置之前所在页面的按钮 */}
             <PageBreadcrumbs show={!inSettings}>
-              <SessionBoundary>{children ?? <Outlet />}</SessionBoundary>
+              <PageBack onBack={inSettings ? back : undefined}>
+                <SessionBoundary>{children ?? <Outlet />}</SessionBoundary>
+              </PageBack>
             </PageBreadcrumbs>
           </Box>
         </main>
