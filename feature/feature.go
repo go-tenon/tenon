@@ -80,6 +80,7 @@ func (s Scope) Subject() identity.Ref { return s.ref }
 // Mode 是设置的类型。
 type Mode string
 
+// 设置的类型：全部开启、全部关闭、按比例开启。
 const (
 	ModeOn      Mode = "on"
 	ModeOff     Mode = "off"

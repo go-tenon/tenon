@@ -25,6 +25,7 @@ const (
 	configEnv = "APP_CONFIG"
 )
 
+// 配置文件的默认位置。
 const (
 	DefaultConfigFile = "config/app.yaml"   // 没有传入 --config、也没有设置 APP_CONFIG 时加载的配置文件
 	LocalConfigFile   = "config/local.yaml" // 用默认的配置文件时，它存在就叠加在后面：本机的覆盖，不提交

@@ -25,6 +25,7 @@ const maxToken = 512
 // Platform 是设备的操作系统。不同平台在推送服务中通常是不同的应用，分开推送。
 type Platform string
 
+// 支持的平台。
 const (
 	Android   Platform = "android"
 	IOS       Platform = "ios"

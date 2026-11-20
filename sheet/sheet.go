@@ -46,6 +46,7 @@ var (
 // Format 是表格文件的格式，值就是文件扩展名。
 type Format string
 
+// 支持的表格格式。
 const (
 	CSV  Format = "csv"
 	XLSX Format = "xlsx"

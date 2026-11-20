@@ -10,6 +10,7 @@ import (
 	"github.com/go-tenon/tenon/identity"
 )
 
+// 文件记录的状态，即 files 表的 status 列。
 const (
 	StatusTemporary = "temporary" // 已登记，等待上传或业务确认；过期后由 Cleanup 回收
 	StatusReady     = "ready"     // 业务已确认使用，长期保留

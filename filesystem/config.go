@@ -131,6 +131,7 @@ func httpURL(raw string) bool {
 // ByteSize 是字节数，配置中可写 1048576、512KiB、16MiB、1GiB 或 1TiB。
 type ByteSize int64
 
+// 字节数的单位。
 const (
 	KiB ByteSize = 1 << (10 * (iota + 1))
 	MiB

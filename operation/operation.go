@@ -40,6 +40,7 @@ var ErrNotFound = errorx.Define(errorx.NotFound, "operation.not_found")
 // Status 是操作的状态。
 type Status string
 
+// 操作的状态。
 const (
 	StatusPending   Status = "pending"   // 已登记，等待任务执行
 	StatusRunning   Status = "running"   // 正在执行

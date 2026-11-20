@@ -16,6 +16,7 @@ import (
 // Status 是一次执行的结果。
 type Status string
 
+// 一次执行的结果：成功、失败、跳过。
 const (
 	Succeeded Status = "succeeded"
 	Failed    Status = "failed"

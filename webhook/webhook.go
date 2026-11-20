@@ -28,6 +28,7 @@ type body struct {
 // Status 是投递记录的状态。
 type Status string
 
+// 投递记录的状态。
 const (
 	StatusPending   Status = "pending"   // 等待投递或等待重试
 	StatusSucceeded Status = "succeeded" // 端点返回了 2xx

@@ -4,15 +4,16 @@ package errorx
 // 状态码、退出码或重试策略；客户端使用 Code 区分具体的业务失败。
 type Kind int
 
+// 错误的分类，括号中是 HTTP 的状态码。
 const (
-	InvalidArgument Kind = iota + 1
-	Unauthenticated
-	PermissionDenied
-	NotFound
-	Conflict
-	ResourceExhausted
-	Unavailable
-	Internal
+	InvalidArgument   Kind = iota + 1 // 输入不合法（422）
+	Unauthenticated                   // 没有登录或凭据无效（401）
+	PermissionDenied                  // 没有权限（403）
+	NotFound                          // 资源不存在（404）
+	Conflict                          // 与现有状态冲突，例如重复（409）
+	ResourceExhausted                 // 超出限额或频率（429）
+	Unavailable                       // 依赖暂时不可用，可以重试（503）
+	Internal                          // 系统内部错误（500）
 )
 
 // String 返回稳定的 kind 名称。
