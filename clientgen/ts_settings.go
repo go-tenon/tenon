@@ -13,7 +13,8 @@ import (
 )
 
 // settingsTS 生成 settings.ts：rest.API.Settings 声明的设置页面，字段的类型、枚举和是否必填取自保存接口的请求体，
-// 显示文字取自翻译文件中 <名称>.title、<名称>.fields.<字段> 的消息。缺少显示文字时返回警告，与资源相同。
+// 显示文字取自翻译文件中 <名称>.title、<名称>.fields.<字段> 的消息，字段的说明取自 <名称>.descriptions.<字段>，
+// 可以不写。缺少显示文字时返回警告，与资源相同。
 func (t *tsGen) settingsTS(templates map[string]map[string]string) (string, []string, error) {
 	var b strings.Builder
 	var warnings []string
@@ -21,7 +22,8 @@ func (t *tsGen) settingsTS(templates map[string]map[string]string) (string, []st
  * 设置：服务端用 rest.API.Settings 声明的设置页面，@go-tenon/ui 的 settingsModel 据此渲染设置表单。
  * operations 是客户端方法的位置（client[分组][方法]），schemas.ts、queries.ts 中的位置相同；
  * 字段的 type、format、enum（enums.ts 中的命名类型）和 required 取自保存接口的请求体；
- * permissions 是两个接口要求的权限；labels 按语言列出显示文字，缺少时先用默认语言，再用字段名。
+ * permissions 是两个接口要求的权限；labels 按语言列出显示文字，缺少时先用默认语言，再用字段名；
+ * descriptions 是字段的说明，显示在输入框下面。
  */
 export const settings = {
 `)
@@ -85,6 +87,9 @@ func (t *tsGen) settingTS(s rest.Settings, templates map[string]map[string]strin
 			langs.WriteString("        title: " + strconv.Quote(title) + ",\n")
 		}
 		langs.WriteString("        fields: { " + labels(msgs, s.Name+".fields.", s.Form) + " },\n")
+		if d := labels(msgs, s.Name+".descriptions.", s.Form); d != "" {
+			langs.WriteString("        descriptions: { " + d + " },\n")
+		}
 		langs.WriteString("      },\n")
 	}
 	if langs.Len() == 0 {

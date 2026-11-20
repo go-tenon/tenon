@@ -15,7 +15,8 @@ import (
 )
 
 // resourcesTS 生成 resources.ts：rest.API.Resource 声明的资源，字段的类型、枚举和是否必填取自接口的 schema，
-// 显示文字取自翻译文件中 <资源>.title、<资源>.fields.<字段>、<资源>.actions.<操作> 的消息。
+// 显示文字取自翻译文件中 <资源>.title、<资源>.fields.<字段>、<资源>.actions.<操作> 的消息，
+// 字段的说明取自 <资源>.descriptions.<字段>，可以不写。
 // 一种语言只有部分显示文字，或者所有语言都没有时返回警告。
 func (t *tsGen) resourcesTS(templates map[string]map[string]string) (string, []string, error) {
 	var b strings.Builder
@@ -24,7 +25,8 @@ func (t *tsGen) resourcesTS(templates map[string]map[string]string) (string, []s
  * 资源：服务端用 rest.API.Resource 声明的后台页面，@go-tenon/ui 的资源模型据此渲染列表、表单和操作。
  * operations 是客户端方法的位置（client[分组][方法]），schemas.ts、queries.ts 中的位置相同；
  * 字段的 type、format、enum（enums.ts 中的命名类型）和 required 取自接口的 schema；
- * permissions 是每个接口要求的权限；labels 按语言列出显示文字，缺少时先用默认语言，再用字段名。
+ * permissions 是每个接口要求的权限；labels 按语言列出显示文字，缺少时先用默认语言，再用字段名；
+ * descriptions 是字段的说明，显示在输入框下面。
  */
 export const resources = {
 `)
@@ -179,6 +181,9 @@ func (t *tsGen) resourceTS(r rest.Resource, templates map[string]map[string]stri
 			langs.WriteString("        title: " + strconv.Quote(title) + ",\n")
 		}
 		langs.WriteString("        fields: { " + labels(msgs, r.Name+".fields.", fields) + " },\n")
+		if d := labels(msgs, r.Name+".descriptions.", fields); d != "" {
+			langs.WriteString("        descriptions: { " + d + " },\n")
+		}
 		names := make([]string, len(r.Actions))
 		for i, a := range r.Actions {
 			names[i] = a.Name

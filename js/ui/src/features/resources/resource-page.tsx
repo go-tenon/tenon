@@ -169,7 +169,8 @@ function ResourceList({
       const value = row[f.name]
       const custom = render[f.name]?.(value, row)
       if (custom != null) return custom
-      if (f.kind === "text" && typeof value === "string" && value !== "") return <TruncatedText value={value} />
+      if ((f.kind === "text" || f.kind === "multiline") && typeof value === "string" && value !== "")
+        return <TruncatedText value={value} />
       return <FieldValue field={f} value={value} display={model.display} />
     },
   }))

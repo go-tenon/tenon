@@ -4,7 +4,8 @@
  * 设置：服务端用 rest.API.Settings 声明的设置页面，@go-tenon/ui 的 settingsModel 据此渲染设置表单。
  * operations 是客户端方法的位置（client[分组][方法]），schemas.ts、queries.ts 中的位置相同；
  * 字段的 type、format、enum（enums.ts 中的命名类型）和 required 取自保存接口的请求体；
- * permissions 是两个接口要求的权限；labels 按语言列出显示文字，缺少时先用默认语言，再用字段名。
+ * permissions 是两个接口要求的权限；labels 按语言列出显示文字，缺少时先用默认语言，再用字段名；
+ * descriptions 是字段的说明，显示在输入框下面。
  */
 export const settings = {
   blog: {
@@ -20,10 +21,12 @@ export const settings = {
       "en": {
         title: "Blog settings",
         fields: { name: "Blog name", comments: "Comments", default_status: "Status of new articles" },
+        descriptions: { comments: "Existing comments stay visible when closed" },
       },
       "zh-CN": {
         title: "博客设置",
         fields: { name: "博客名称", comments: "开放评论", default_status: "新文章的状态" },
+        descriptions: { comments: "关闭后已有的评论仍然显示" },
       },
     },
   },

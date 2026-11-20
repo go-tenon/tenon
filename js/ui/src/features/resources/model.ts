@@ -60,6 +60,8 @@ export interface ResourceDef {
     readonly [language: string]: {
       readonly title?: string
       readonly fields: { readonly [field: string]: string }
+      /** 字段的说明，没有说明的字段不在其中。 */
+      readonly descriptions?: { readonly [field: string]: string }
       readonly actions: { readonly [action: string]: string }
     }
   }
@@ -94,6 +96,7 @@ export interface ResourceKit {
 /** 字段的输入和显示方式，由类型、格式和枚举得出。secret 是格式为 password 的字符串，例如密钥：显示时遮住中间部分。 */
 export type FieldKind =
   | "text"
+  | "multiline"
   | "secret"
   | "number"
   | "boolean"
@@ -108,6 +111,8 @@ export type FieldKind =
 export interface ResourceField {
   name: string
   label: string
+  /** 说明：翻译文件中 <名称>.descriptions.<字段> 的消息，显示在输入框下面；没有时为空。 */
+  description?: string
   kind: FieldKind
   required: boolean
   sortable: boolean
@@ -215,6 +220,7 @@ function kindOf(def: ResourceFieldDef, hasOptions: boolean): FieldKind {
       return "json"
   }
   if (def.format === "password") return "secret"
+  if (def.format === "multiline") return "multiline"
   if (def.format === "date-time") return "datetime"
   if (def.format === "date") return "date"
   return "text"
@@ -241,11 +247,12 @@ function schemaAt(schemas: Generated, ref: OperationRef, part: "body" | "query")
   return op?.[part] ?? {}
 }
 
-/** 由字段的定义得到模型中的字段：显示文字、输入方式和枚举的选项。 */
+/** 由字段的定义得到模型中的字段：显示文字、说明、输入方式和枚举的选项。 */
 function fieldBuilder(
   kit: Pick<ResourceKit, "enums">,
   language: string | undefined,
   labels: { readonly [field: string]: string } | undefined,
+  descriptions: { readonly [field: string]: string } | undefined,
 ): (f: ResourceFieldDef) => ResourceField {
   const options = (f: ResourceFieldDef): ResourceField["options"] => {
     if (f.enum && kit.enums?.[f.enum]) {
@@ -261,6 +268,7 @@ function fieldBuilder(
     return {
       name: f.name,
       label: labels?.[f.name] ?? f.name,
+      description: descriptions?.[f.name],
       kind: kindOf(f, !!opts),
       required: !!f.required,
       sortable: !!f.sortable,
@@ -288,7 +296,7 @@ function displayValue(f: ResourceField, value: unknown): unknown {
 export function resourceModel(def: ResourceDef, kit: ResourceKit, queryClient?: QueryClient): ResourceModel {
   const language = kit.language ?? browserLanguage()
   const labels = pickLanguage(def.labels, language)
-  const field = fieldBuilder(kit, language, labels?.fields)
+  const field = fieldBuilder(kit, language, labels?.fields, labels?.descriptions)
 
   const ops = def.operations
   const group = ops.list[0]
@@ -478,7 +486,12 @@ export interface SettingsDef {
   readonly permissions: { readonly get: readonly string[]; readonly update: readonly string[] }
   readonly form: readonly ResourceFieldDef[]
   readonly labels: {
-    readonly [language: string]: { readonly title?: string; readonly fields: { readonly [field: string]: string } }
+    readonly [language: string]: {
+      readonly title?: string
+      readonly fields: { readonly [field: string]: string }
+      /** 字段的说明，没有说明的字段不在其中。 */
+      readonly descriptions?: { readonly [field: string]: string }
+    }
   }
 }
 
@@ -509,7 +522,7 @@ export interface SettingsModel {
 export function settingsModel(def: SettingsDef, kit: ResourceKit, queryClient?: QueryClient): SettingsModel {
   const language = kit.language ?? browserLanguage()
   const labels = pickLanguage(def.labels, language)
-  const field = fieldBuilder(kit, language, labels?.fields)
+  const field = fieldBuilder(kit, language, labels?.fields, labels?.descriptions)
   const ops = def.operations
   const query = (): ReturnType<SettingsModel["query"]> => {
     const q = method(kit.queries, ops.get)

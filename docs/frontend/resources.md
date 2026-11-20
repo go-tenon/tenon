@@ -95,6 +95,14 @@ article.actions.publish: 发布
 
 某种语言只写了部分显示文字，或者所有语言都没有时，`generate` 输出警告，列出缺少的消息。界面中缺少的显示文字先用默认语言，再用字段名。枚举字段的取值显示为枚举的显示文字。
 
+字段需要解释时写 `<资源>.descriptions.<字段>`，表单中显示在字段名和输入框之间。说明可以不写，缺少时不输出警告：
+
+```yaml
+article.descriptions.slug: 文章地址中的名称，只能用小写字母、数字和连字符
+```
+
+说明写在翻译文件中，与显示文字一样按语言生成。Go 字段的 `doc` 标签写进接口文档，给调用接口的开发者看，表单不显示它。
+
 <a id="checks"></a>
 ## 检查
 
@@ -261,11 +269,12 @@ export const Route = createFileRoute("/_app/articles/$id/edit")({
 })
 ```
 
-`inputs` 中的组件收到 `FieldInputProps`：`field`、`label`、`value`、`onChange`（直接是值）、`error`、`disabled`。没有覆盖的字段按 `kind`（`FieldKind`）选择输入组件：
+`inputs` 中的组件收到 `FieldInputProps`：`field`、`label`、`value`、`onChange`（直接是值）、`error`、`disabled`；字段的说明是 `field.description`。没有覆盖的字段按 `kind`（`FieldKind`）选择输入组件：
 
 | `kind` | 输入组件 |
 | --- | --- |
 | `text` | 文本框 |
+| `multiline` | 多行文本框，随内容增高。格式为 `multiline` 的字符串字段（Go 中写 `format:"multiline"`）是这一类，适合公告、备注这类可以换行的文字；列表中与 `text` 一样只显示一行 |
 | `number` | 数字输入 |
 | `boolean` | 开关 |
 | `select` | 下拉选择，非必填时可以清除 |
@@ -338,7 +347,7 @@ api.Settings(rest.Settings{Name: "site", Get: "site-settings-get", Update: "site
 
 两个接口都没有路径参数：设置属于当前的用户、租户或者平台，由请求本身决定，见[租户的设置](../features/settings.md#tenant-settings)。声明的检查与资源相同，接口不存在、形式不对、字段不存在时 panic；名称不能与资源相同，因为显示文字在同一个命名空间中。
 
-显示文字是 `<名称>.title` 和 `<名称>.fields.<字段>` 的消息。`tenon generate` 生成 `settings.ts`，`@go-tenon/ui` 的 `settingsModel` 把它和生成的客户端接在一起：
+显示文字是 `<名称>.title` 和 `<名称>.fields.<字段>` 的消息，字段的说明是 `<名称>.descriptions.<字段>`，与[资源](#labels)相同。`tenon generate` 生成 `settings.ts`，`@go-tenon/ui` 的 `settingsModel` 把它和生成的客户端接在一起：
 
 ```ts
 import { settingsModel } from "@go-tenon/ui"
@@ -424,6 +433,6 @@ function Settings() {
 | `settingsModel(def, kit, queryClient)`、`useSettings(model)` | `@go-tenon/ui`：设置模型，读取与保存 |
 | `ResourcePage`、`ResourceFormPage`、`ResourceForm`、`RowAction`、`FieldValue`、`DefaultInput`、`FieldInputProps` | `@go-tenon/ui`：资源页面；新建和修改的页面；对话框中的表单 |
 | `useResourceForm`、`ResourceFormContext`、`ResourceFormButtons` | `@go-tenon/ui`：自己写表单的内容，页面的其余部分由 `ResourceFormPage`、`ResourceForm` 提供，见[自己写表单的内容](#custom-forms) |
-| `FieldKind`、`ResourceField` | 模型中字段的输入方式和显示文字 |
+| `FieldKind`、`ResourceField` | 模型中字段的输入方式、显示文字和说明 |
 | `SettingsForm` | `@go-tenon/ui`：设置表单 |
 | `SettingsPage`、`SettingsGroup` | `@go-tenon/ui`：多组设置的页面，每组一个页内标签，见[多组设置](#settings-groups) |
