@@ -22,7 +22,7 @@ type Named struct {
 
 // FailoverOptions 是 Failover 的选项，零值可用。
 type FailoverOptions struct {
-	Cooldown time.Duration // 一个发送器失败后被排到最后的时长：这段时间内的邮件直接从下一个发送器开始，这期间的邮件直接从下一个开始。过后重新按顺序尝试，它恢复了就继续使用。不大于 0 时为 DefaultCooldown。
+	Cooldown time.Duration // 一个发送器失败后被排到最后的时长：这段时间内的邮件直接从下一个发送器开始。过后重新按顺序尝试，它恢复了就继续使用。不大于 0 时为 DefaultCooldown。
 	Logger   *slog.Logger  // 记录换用后面的发送器和发送器恢复，nil 表示 slog.Default()。
 }
 

@@ -190,8 +190,8 @@ const errors = validate(schemas.article.create.body, values, { components, messa
 
 | 函数 | 用途 | 见 |
 | --- | --- | --- |
-| `uploadFile(file, steps)` | 直传到对象存储：单次或分片、重试、进度和取消 | [上传接口](../libraries/direct-uploads.md#rest-direct-upload) |
-| `watchOperation(open)` | 读取后台操作的进度直到结束，断线重连 | [后台操作](../features/operations.md#progress) |
+| `uploadFile(file, steps)` | 直传到对象存储：单次或分片、重试、进度和取消 | [上传接口](../libraries/filesystem.md#rest-direct-upload) |
+| `watchOperation(open)` | 读取后台操作的进度直到结束，断线重连 | [后台操作](../features/operations.md#watching-progress) |
 | `chatTransport`、`chatControls` | `useChat` 的 transport，以及停止、插话、历史 | [AI 助手](../ai/chat.md#conversation-api) |
 
 不经过生成客户端的请求失败时抛出 `HttpError`，形状与生成客户端的 `ApiError` 相同，`describeError` 照常分类。

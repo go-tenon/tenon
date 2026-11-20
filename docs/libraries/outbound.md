@@ -1,61 +1,30 @@
 # 出站请求
 
-`outbound` 包创建一个只能访问公网地址的 HTTP 客户端，用来请求由用户填写的地址。
+请求用户或租户填写的地址（webhook 端点、链接预览、AI 抓取的网页）时用 `outbound` 创建的 `*http.Client`，它只连接公网地址，防止 SSRF：有人填 `http://169.254.169.254/` 或 `http://10.0.0.5:6379/`，借服务器读取云服务器的元数据或访问内网服务。
 
-这类攻击叫 **SSRF**（服务端请求伪造）：攻击者让你的服务器替他去访问只有服务器才能访问的地址。
+包：`outbound`、`outbound/outboundtest`。
 
-阅读前需要了解：Go 标准库的 `http.Client`；[错误处理](../general/errors.md)。
-
-为什么需要它？有些请求的地址由用户填写：租户的 [webhook](../features/webhooks.md) 端点、文章中链接的预览、AI 助手要抓取的网页。如果直接用 `http.DefaultClient` 去请求，有人可以填 `http://169.254.169.254/latest/meta-data/` 读取云服务器的元数据（其中可能有临时密钥），或者填 `http://10.0.0.5:6379/` 访问内网服务。这类攻击叫服务端请求伪造（SSRF）。
-
-`outbound` 包创建只能访问公网地址的 `*http.Client`。地址在域名解析之后、建立连接之前检查，检查的是真正要连接的 IP，所以下面这些绕过方式都无效：
-
-- 域名解析到内网地址，或者先解析到公网、请求时再改成内网（DNS 重绑定）；
-- 公网地址返回重定向，跳到内网地址；
-- `100.100.100.200`（阿里云的元数据接口）、`[::ffff:10.0.0.1]`、`[64:ff9b::a00:1]` 这类不常见的写法。
-
-拒绝的地址取自 IANA 的特殊用途地址登记表，由 [code.dny.dev/ssrf](https://pkg.go.dev/code.dny.dev/ssrf) 维护，包括内网、回环、链路本地、运营商级 NAT、组播、保留地址，以及能内嵌 IPv4 地址的 IPv6 前缀。
-
-- [示例用法](#example-usage)
-- [创建客户端](#creating-clients)
-- [允许的地址与端口](#allowed-destinations)
-    - [本地开发](#local-development)
-- [处理被拒绝的请求](#handling-refusals)
-- [重试](#retrying)
-- [代理](#proxies)
-- [在其他组件中使用](#using-with-other-components)
-- [测试](#testing)
-- [常见问题](#troubleshooting)
-- [API 参考](#api-reference)
+- 检查的是解析之后真正连接的 IP，DNS 重绑定、重定向到内网都被拒绝。拒绝的范围是 IANA 的特殊用途地址（[code.dny.dev/ssrf](https://pkg.go.dev/code.dny.dev/ssrf)），包括内网、回环、链路本地、运营商级 NAT（含阿里云元数据 `100.100.100.200`）。
+- 客户端不使用 `HTTP_PROXY` 等环境变量中的代理：经过代理时检查不到真正的目标。部署要求经代理访问外网时，在代理上做同样的限制，例如 [Smokescreen](https://github.com/stripe/smokescreen)。
 
 <a id="example-usage"></a>
-## 示例用法
-
-用法和普通的 `http.Client` 一样，只是创建方式不同：
+## 示例
 
 ```go
 client := outbound.New(outbound.Options{Timeout: 5 * time.Second})
 
 resp, err := client.Get(userURL)
 if errors.Is(err, outbound.ErrForbidden) {
-    return ErrBadLink.New() // 地址指向内网、回环或元数据接口
+    return ErrBadLink.New() // 地址指向内网、回环或元数据接口，重试也没有用
 }
 ```
 
-用户填写的地址指向内网、回环或云服务器的元数据接口时，连接在建立之前就被拒绝，错误满足 `errors.Is(err, outbound.ErrForbidden)`，你可以把它转换为一个对用户友好的业务错误。
+`ErrBadLink` 是应用定义的业务错误。被拒绝的请求不会到达目标。
 
 <a id="creating-clients"></a>
-## 创建客户端
+## 用 `outbound.New` 创建客户端
 
-例如为文章中的链接显示预览卡片：取出页面的标题和图片。链接是作者填的，用 `outbound` 的客户端请求它。客户端可以复用，在入口创建一次，传给业务动作：
-
-```go
-import "github.com/go-tenon/tenon/outbound"
-
-previews := outbound.New(outbound.Options{Timeout: 5 * time.Second})
-```
-
-它就是普通的 `*http.Client`：
+客户端可以复用：在入口创建一次，交给业务动作。它就是普通的 `*http.Client`，例如取链接预览，`a.client` 是入口传入的客户端：
 
 ```go
 func (a *Preview) fetch(ctx context.Context, link string) (*LinkPreview, error) {
@@ -64,6 +33,9 @@ func (a *Preview) fetch(ctx context.Context, link string) (*LinkPreview, error) 
         return nil, ErrInvalidLink.Wrap(err)
     }
     resp, err := a.client.Do(req)
+    if errors.Is(err, outbound.ErrForbidden) {
+        return nil, ErrInvalidLink.Wrap(err) // 400：这个链接无法预览
+    }
     if err != nil {
         return nil, err
     }
@@ -72,25 +44,26 @@ func (a *Preview) fetch(ctx context.Context, link string) (*LinkPreview, error) 
 }
 ```
 
-`Timeout` 是整个请求的上限，包括连接、重定向和读取响应体，零值是 30 秒。客户端不限制响应的大小，请求用户填写的地址时，用 `io.LimitReader` 限制读取的字节数，防止有人让服务器下载一个巨大的文件。
+- `Timeout` 是整个请求的上限，包括连接、重定向和读取响应体；零值是 30 秒，负数不限制（流式响应用）。
+- 客户端不限制响应的大小，用 `io.LimitReader` 限制读取的字节数，防止有人让服务器下载巨大的文件。
 
 <a id="allowed-destinations"></a>
-## 允许的地址与端口
+## 允许的地址与端口：`Ports`、`AnyPort`、`Allow`
 
-默认只能连接公网地址的 80 和 443 端口。其他选项：
+默认只连接公网地址的 80 和 443 端口。
 
 | 选项 | 作用 |
 | --- | --- |
 | `Ports` | 允许的端口，替换默认的 80 和 443，例如 `[]uint16{443, 8443}` |
-| `AnyPort` | 允许任何端口，地址检查仍然生效 |
+| `AnyPort` | 允许任何端口，`Ports` 被忽略，地址检查仍然生效 |
 | `Allow` | 额外允许的网段，先于内置的拒绝规则检查，用于有意访问的内部服务 |
 
-客户端跟随重定向（最多 10 次），每一跳都经过同样的检查。要关闭跟随时，设置返回的客户端的 `CheckRedirect`。
+客户端跟随重定向（最多 10 次），每一跳都经过同样的检查；要关闭跟随时设置返回的客户端的 `CheckRedirect`。
 
 <a id="local-development"></a>
-### 本地开发
+### 本地开发放行回环地址
 
-开发时 webhook 的接收方往往运行在本机，用 `Allow` 放行回环地址：
+开发时 webhook 的接收方往往在本机，用 `Allow` 放行回环地址，`cfg` 是应用的配置：
 
 ```go
 opts := outbound.Options{AnyPort: true}
@@ -100,55 +73,28 @@ if cfg.Env == "local" {
 client := outbound.New(opts)
 ```
 
-<a id="handling-refusals"></a>
-## 处理被拒绝的请求
-
-被拒绝的请求返回的错误可以用 `errors.Is(err, outbound.ErrForbidden)` 识别。目标地址是固定的，应当直接告诉用户：
-
-```go
-resp, err := a.client.Do(req)
-if errors.Is(err, outbound.ErrForbidden) {
-    return nil, ErrInvalidLink.Wrap(err) // 400：这个链接无法预览
-}
-```
-
-拒绝发生在建立连接之前，目标收不到任何数据。
-
 <a id="retrying"></a>
-## 重试
+## 用 `outbound.Retry` 重试临时失败
 
-对方偶尔返回 503 或者连接被重置时，预览就失败了。用 `outbound.Retry` 包装客户端的传输层，临时失败时自动重试：
+用 `Retry` 包装客户端的传输层，对方返回 503、连接被重置时自动重试：
 
 ```go
-previews := outbound.New(outbound.Options{Timeout: 5 * time.Second})
-previews.Transport = outbound.Retry(previews.Transport, outbound.RetryOptions{})
+client := outbound.New(outbound.Options{Timeout: 5 * time.Second})
+client.Transport = outbound.Retry(client.Transport, outbound.RetryOptions{})
 ```
 
-为了不把一次失败变成两次扣款，它只重试可以安全重复的请求：
+- 只重试可以安全重复的请求，避免一次失败变成两次扣款：方法是 GET、HEAD、OPTIONS、TRACE、PUT、DELETE，或者带 `Idempotency-Key`（`X-Idempotency-Key`）请求头；并且请求体可以重新读取（用 `bytes`、`strings` 创建的可以，直接传入的流不行）。
+- 只在连接失败或响应为 429、502、503、504 时重试；`ErrForbidden`、域名不存在和证书错误直接返回。
+- `RetryOptions` 零值可用：最多 3 次（`Attempts`），首次等待 200ms 后翻倍加抖动（`Backoff`），单次最长等 5s（`MaxWait`），`Retry-After` 超过它时直接返回这个响应。
+- 客户端的 `Timeout` 和请求的 context 限制包括重试在内的总时长。
 
-- 方法是 HTTP 规范中幂等的 GET、HEAD、OPTIONS、TRACE、PUT、DELETE，或者请求带有 `Idempotency-Key`（`X-Idempotency-Key`）请求头，并且请求体可以重新读取：用 `bytes`、`strings` 创建的请求体可以，直接传入的流不行；
-- 连接失败，或者响应状态码是 429、502、503、504。`ErrForbidden`、域名不存在和证书错误直接返回。
-
-| 选项 | 作用 |
-| --- | --- |
-| `Attempts` | 包括第一次在内的最多尝试次数，默认 3 |
-| `Backoff` | 第一次重试前的等待时间，之后每次翻倍并加上随机抖动，默认 200ms |
-| `MaxWait` | 两次尝试之间最长的等待时间，默认 5s；响应的 `Retry-After` 超过它时不重试，直接返回这个响应 |
-
-客户端的 `Timeout` 和请求的 context 限制包括重试在内的总时长，剩余时间不够等到下一次时，直接返回最后一次的结果。
-
-重试让用户多等，只适合当前请求就需要结果的场景。要保证送达的请求，例如通知第三方订单已支付，放进[队列](../background/queue.md)的任务中：任务失败后由队列重试，进程重启后照样执行。[Webhook](../features/webhooks.md) 的投递就是这样做的。
-
-<a id="proxies"></a>
-## 代理
-
-客户端不使用 `HTTP_PROXY`、`HTTPS_PROXY` 环境变量中的代理：经过代理时，服务器连接的是代理，真正的目标由代理去连接，检查就失去了作用。部署要求经过代理访问外网时，请在代理上做同样的限制，例如使用 [Smokescreen](https://github.com/stripe/smokescreen)。
+要保证送达的请求（例如通知第三方订单已支付）放进[队列](../background/queue.md)的任务，由队列重试；`Retry` 只用于当前请求就要结果的场景。
 
 <a id="using-with-other-components"></a>
-## 在其他组件中使用
+## 交给其他组件和 SDK
 
-- [Webhook](../features/webhooks.md#private-addresses) 的投递默认使用 `outbound` 的客户端，端口不限。
-- [AI 助手](../ai/chat.md)的模型地址来自应用自己的配置或供应商表，默认允许任何地址：接入内网自建的模型服务是正常的需求。允许租户填写模型地址时，把客户端传给模型：
+- [Webhook](../features/webhooks.md#private-addresses) 的投递默认使用 `outbound.New(outbound.Options{AnyPort: true})`。
+- [AI 助手](../ai/chat.md)的模型地址默认允许任何地址（内网自建的模型服务是正常需求）。允许租户填写模型地址时把客户端传给模型；`openai` 是 trpc-agent-go 的 `model/openai`，`option` 是 openai-go 的 `option`，`aiopenai` 是框架的 `ai/openai`：
 
   ```go
   client := outbound.New(outbound.Options{AnyPort: true, Timeout: -1}) // 流式响应关闭总超时
@@ -156,20 +102,18 @@ previews.Transport = outbound.Retry(previews.Transport, outbound.RetryOptions{})
   media := aiopenai.New(cfg, aiopenai.WithHTTPClient(client))
   ```
 
-  `openai` 是 trpc-agent-go 的 `model/openai`，`option` 是 openai-go 的 `option` 包，`aiopenai` 是框架的 `ai/openai`。
-- 其他需要 `*http.Client` 的库，例如 SDK 的 `WithHTTPClient` 选项，同样可以传入它。
+- 其他接收 `*http.Client` 的 SDK（例如 `WithHTTPClient` 选项）同样传入它。
 
 <a id="testing"></a>
-## 测试
+## 用 `outboundtest` 测试外部请求
 
-`outbound/outboundtest` 提供离线的 `http.RoundTripper`：按方法和地址登记响应，记录发出的每个请求。把它的 `Client()` 交给业务动作，就可以离线测试链接预览：
+`outboundtest.New(t)` 是离线的 `http.RoundTripper`：按方法和地址登记响应，记录发出的每个请求。把它的 `Client()` 交给被测代码：
 
 ```go
 func TestPreview(t *testing.T) {
     fake := outboundtest.New(t)
     fake.On("GET https://example.com/post").Reply(
-        outboundtest.Text(200, `<title>Hello</title><meta property="og:image" content="/cover.png">`).
-            Header("Content-Type", "text/html"),
+        outboundtest.Text(200, `<title>Hello</title>`).Header("Content-Type", "text/html"),
     )
     preview := &Preview{client: fake.Client()}
 
@@ -180,105 +124,9 @@ func TestPreview(t *testing.T) {
 }
 ```
 
-`On` 的参数是可选的方法加地址，省略方法时匹配任何方法。地址中的 `*` 匹配任意字符，例如 `https://api.github.com/users/*`；省略协议时 http 和 https 都匹配；不写 `?` 时忽略查询参数。同一个请求匹配多个登记时，后登记的优先，测试可以覆盖公共辅助函数中登记的响应。
-
-`Reply` 接收一个或多个响应：第 n 个请求得到第 n 个响应，用完之后一直返回最后一个。
-
-| 响应 | 作用 |
-| --- | --- |
-| `JSON(status, v)` | JSON 响应 |
-| `Text(status, body)` | 纯文本响应 |
-| `Status(status)` | 没有响应体的响应，没有调用 `Reply` 时是 `Status(200)` |
-| `Fail(err)` | 请求返回 `err`，模拟连接失败、超时（`context.DeadlineExceeded`） |
-| `Handler(h)`、`HandlerFunc(f)` | 用 `http.Handler` 生成响应，可以检查请求，或者等待 `r.Context()` 结束模拟慢响应 |
-| `.Header(key, value)` | 设置响应头，例如 `Status(429).Header("Retry-After", "1")` |
-
-它替换的是传输层，`outbound` 的地址检查随之跳过。测试被拒绝的链接时，让请求返回 `ErrForbidden`：
-
-```go
-fake.On("https://internal.example.com/*").Reply(outboundtest.Fail(outbound.ErrForbidden))
-
-_, err := preview.fetch(t.Context(), "https://internal.example.com/admin")
-assert.ErrorIs(t, err, ErrInvalidLink)
-```
-
-`Sent(pattern)` 返回匹配的请求，`Requests()` 返回全部请求。记录的请求带有完整的请求体，用 `JSON(&v)` 或 `Form()` 解析。没有登记的请求返回错误，并且在测试结束时让测试失败，测试中的每个请求都有登记。
-
-第三方 SDK 通常有传入 `*http.Client` 的选项，同样可以用它测试：
-
-```go
-fake.On("POST https://api.resend.com/emails").Reply(outboundtest.JSON(200, map[string]string{"id": "em_1"}))
-client := resendsdk.NewCustomClient(fake.Client(), "re_test") // github.com/resend/resend-go/v3
-mailer, err := resend.NewWithClient(client, from)
-```
-
-<a id="troubleshooting"></a>
-## 常见问题
-
-**本地开发时请求 `localhost` 被拒绝**
-
-回环地址默认被拒绝。开发时用 `Allow` 放行，见[本地开发](#local-development)。
-
-**请求 8080 端口的地址被拒绝**
-
-默认只能连接 80 和 443 端口。需要其他端口时在选项中放行，见[允许的地址与端口](#allowed-destinations)。
-
-**请求一直没有返回**
-
-`Timeout` 的零值是 30 秒，覆盖连接、重定向和读取响应体。需要更短时显式设置。
-
-**响应很大，服务器内存上涨**
-
-客户端不限制响应的大小。用 `io.LimitReader` 限制读取的字节数。
-
-<a id="api-reference"></a>
-## API 参考
-
-包 `github.com/go-tenon/tenon/outbound`。
-
-### New
-
-```go
-func New(opts Options) *http.Client
-```
-
-- **参数**
-    - `opts`：见下表，零值可用
-- **返回**：只能访问公网地址的 `*http.Client`
-
-| `Options` 字段 | 说明 |
-| --- | --- |
-| `Timeout time.Duration` | 整个请求的超时，包括连接、重定向和读取响应体；零值为默认值，负数表示不限制 |
-| `Ports []uint16` | 允许连接的端口，`nil` 时只允许 80 和 443 |
-| `AnyPort bool` | 允许任何端口，地址检查仍然生效 |
-| `Allow []netip.Prefix` | 额外允许的网段，先于内置的拒绝规则检查 |
-
-连接被拒绝时，错误满足 `errors.Is(err, ErrForbidden)`。
-
-### Retry
-
-```go
-func Retry(next http.RoundTripper, opts RetryOptions) http.RoundTripper
-```
-
-临时失败时重试可以安全重复的请求，见[重试](#retrying)。
-
-| `RetryOptions` 字段 | 说明 |
-| --- | --- |
-| `Attempts int` | 包括第一次在内的最多尝试次数，默认 3 |
-| `Backoff time.Duration` | 第一次重试前的等待，之后翻倍并加上抖动，默认 200ms |
-| `MaxWait time.Duration` | 两次尝试之间最长的等待，默认 5s；`Retry-After` 超过它时直接返回 |
-
-### outboundtest
-
-包 `github.com/go-tenon/tenon/outbound/outboundtest`。
-
-```go
-func New(t testing.TB) *Transport
-func (f *Transport) On(pattern string) *Route
-func (f *Transport) Client() *http.Client
-func (f *Transport) Requests() []Request
-func (f *Transport) Sent(pattern string) []Request
-```
-
-`On` 按方法和地址登记响应（`JSON`、`Text`、`Status`、`Fail`、`Handler`），`Requests` 和 `Sent` 返回发出的请求，见[测试](#testing)。
+- `On` 的参数是可选的方法加地址：省略方法匹配任何方法，`*` 匹配任意字符，省略协议时 http 和 https 都匹配，不写 `?` 时忽略查询参数。多个登记都匹配时后登记的优先。
+- `Reply` 的第 n 个响应给第 n 个请求，用完后一直返回最后一个；没有调用 `Reply` 时是 `Status(200)`。响应有 `JSON`、`Text`、`Status`、`Fail(err)`（模拟连接失败、超时）、`Handler`，用 `.Header(k, v)` 加响应头。
+- 没有登记的请求返回错误，并在测试结束时让测试失败。
+- `Sent(pattern)`、`Requests()` 返回记录的请求，请求体用 `JSON(&v)` 或 `Form()` 解析。
+- 它替换了传输层，地址检查随之跳过。测试被拒绝的链接时登记 `outboundtest.Fail(outbound.ErrForbidden)`。
+- 接收 `*http.Client` 的第三方 SDK 和框架的驱动（`sms/aliyun`、`push/aliyun` 等的 `New`）也用它测试。

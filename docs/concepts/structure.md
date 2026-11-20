@@ -189,7 +189,7 @@ SQL 迁移文件，由 `embed.go` 嵌入程序，部署时用 `migrate up` 执�
 | `ratelimit` | 按键限流，`ratelimit/pglimit` 是 PostgreSQL 限流器 | [限流](../libraries/rate-limiting.md) |
 | `broadcast` | 实例之间广播消息，`broadcast/natsbroadcast` 是 NATS 后端 | [广播](../libraries/broadcasting.md) |
 | `filesystem` | `files` 表、上传、公开地址；`local`、`s3` 两种磁盘 | [文件存储](../libraries/filesystem.md) |
-| `imgproxy` | 签名的 imgproxy 地址，按需缩放图片 | [图片缩略图](../libraries/file-uploads.md#thumbnails) |
+| `imgproxy` | 签名的 imgproxy 地址，按需缩放图片 | [图片缩略图](../libraries/filesystem.md#thumbnails) |
 | `mail` | 邮件；`smtp`、`resend`、`ses` 发送，`logmail` 用于开发 | [邮件](../libraries/mail.md) |
 | `sms` | 短信；`aliyun`、`tencent` 发送，`logsms` 用于开发 | [短信](../libraries/sms.md) |
 | `pdf` | 把前端打印模板渲染的 HTML 生成为 PDF，`pdf/gotenberg` 生成 | [生成 PDF](../libraries/pdf.md) |
@@ -215,7 +215,7 @@ SQL 迁移文件，由 `embed.go` 嵌入程序，部署时用 `migrate up` 执�
 | `mcpx` | 把动作作为 MCP 工具提供给 AI 客户端 | [MCP 服务](../ai/mcp.md) |
 | `natsrpc` | 把动作作为 RPC 端点，其他服务经由 NATS 同步调用 | [提供和调用端点](../rpc/endpoints.md) |
 | `command` | 根命令、`Serve`、`Bind`、`Daemon`、退出码；`httpcmd`、`migratecmd` 等内置命令 | [命令行](../general/commands.md) |
-| `queue/queueapi` | 队列的运维接口 | [运维接口](../background/queue-monitoring.md#queue-api) |
+| `queue/queueapi` | 队列的运维接口 | [运维接口](../background/queue.md#queue-api) |
 | `cmd/tenon` | 开发工具 `go tool tenon` | [开发工具](../installation/tooling.md) |
 
 <a id="features"></a>
@@ -236,7 +236,7 @@ SQL 迁移文件，由 `embed.go` 嵌入程序，部署时用 `migrate up` 执�
 | `settings` | 运行时可修改的设置 | [设置](../features/settings.md) |
 | `operation` | 后台操作的状态与进度 | [后台操作](../features/operations.md) |
 | `privacy` | 注销账号：冷静期，在一个事务中删除各处的个人数据 | [注销账号](../features/privacy.md) |
-| `privacy/export` | 导出个人数据：后台打包成 zip，由本人下载 | [导出个人数据](../features/data-export.md) |
+| `privacy/export` | 导出个人数据：后台打包成 zip，由本人下载 | [导出个人数据](../features/privacy.md) |
 | `sheet/imports`、`sheet/exports` | 后台导入与导出表格 | [导入与导出](../features/import-export.md) |
 | `webhook` | 按 Standard Webhooks 推送事件 | [Webhook](../features/webhooks.md) |
 | `search` | PostgreSQL 全文搜索 | [全文搜索](../features/search.md) |

@@ -1,94 +1,64 @@
 # 移动推送
 
-App 在后台或者没有打开时，只能靠系统的推送通道把消息送到用户面前。iOS 走 APNs，海外的 Android 走 FCM；国内的 Android 没有统一的通道，要分别接入华为、荣耀、小米、OPPO、vivo、魅族的厂商通道，再按各家的规则给消息分类。`push` 包把这件事交给[阿里云移动推送](https://help.aliyun.com/zh/document_detail/434629.html)：各通道的接入和密钥由阿里云管理，框架负责“推给谁”和“怎么可靠地推”。
+把系统通知推送到手机上的 App（iOS、Android、HarmonyOS）：App 登录后登记设备，业务动作在事务中发送，worker 经[阿里云移动推送](https://help.aliyun.com/zh/document_detail/434629.html)送达。国内 Android 各厂商通道、APNs、FCM 的接入和密钥在阿里云控制台配置。
 
-- **设备由服务端登记**：App 登录后把推送 SDK 给出的设备标识交给你的接口，接口把设备记在当前用户名下，同时记下这次登录的凭据。设备只能登记在当前用户名下，退出登录时连同凭据一起删除，这台设备的推送随之停止。
-- **推送随事务提交**：`push.Send` 在业务事务中发布推送任务，事务提交后才推送，回滚时一起取消，与[站内通知](notifications.md)、[webhook](webhooks.md) 的写法相同。一次通知发往哪些渠道，仍由业务动作显式写出来。
+包：`push`、`push/aliyun`、`push/pushtest`。
 
-阅读前需要了解：[队列](../background/queue.md)；[API 令牌](../security/api-tokens.md)；你的 App 已经集成了阿里云的推送 SDK。
-
-- [示例用法](#example-usage)
-- [安装](#installation)
-    - [阿里云控制台](#aliyun-console)
-    - [App 端](#app-side)
-- [登记设备](#registering-devices)
-    - [退出登录](#unregistering)
-- [发送推送](#sending)
-    - [消息](#messages)
-    - [消息分类](#categories)
-- [运行推送](#delivering)
-    - [重试与去重](#retries)
-- [海外用户](#overseas)
-- [测试](#testing)
-- [清理](#cleanup)
-- [常见问题](#troubleshooting)
-- [API 参考](#api-reference)
+- 设备由服务端登记在当前主体名下，同时记下这次登录的凭据；撤销凭据时一起删除设备，推送随之停止。
+- `push.Send` 在业务事务中用 `tx` 发布推送任务：事务提交后才推送，回滚时一起取消。
 
 <a id="example-usage"></a>
-## 示例用法
-
-下面是推送的三个环节：登记设备、发送推送、投递推送：
+## 示例
 
 ```go
-// App 登录后登记设备
+// App 登录后调用的接口中登记设备
 err := push.Register(ctx, db, sub, push.Android, token)
 
-// 在业务事务中发送，提交后由 worker 推送
+// 业务事务中发送
 err = push.Send(ctx, tx, push.Message{Title: "新文章", Body: item.Title}, recipients...)
 
-// worker 进程中注册投递
+// worker 中注册投递
+provider, err := aliyun.New(cfg.Push, nil)
 push.NewDeliverer(db, provider, push.Options{}).Handle(w)
 ```
 
-App 登录之后调用你的接口登记设备；业务代码在事务中调用 `push.Send`，提交之后才真正推送；worker 中的 `Deliverer` 按平台分批调用阿里云移动推送。下面依次介绍这三个环节。
+`db` 是入口打开的 `*bun.DB`，`sub` 是当前主体，`token` 是推送 SDK 给出的 `deviceId`，`recipients` 是 `[]notification.Recipient`，`w` 是 `*queue.Worker`，`cfg.Push` 是配置中的 `push` 段。
 
 <a id="installation"></a>
-## 安装
+## 装配
 
-推送任务使用[队列](../background/queue.md)，把两者的迁移都加入[发布命令](../database/migrations.md#publishing-framework-migrations)，发布后执行 `migrate up`：
-
-```go
-migratecmd.Publish(
-    queue.Migrations(),
-    push.Migrations(),
-)
-```
+1. 把 `queue.Migrations()` 和 `push.Migrations()` 加入[发布命令](../database/migrations.md#publishing-framework-migrations)，发布后执行迁移：推送任务走[队列](../background/queue.md)。
+2. 把 `aliyun.Config` 放进根配置，字段标签为 `yaml:"push"`，见[配置](#aliyun-console)。
+3. 在 worker 中注册 `Deliverer`，见[运行推送](#delivering)。
+4. 把包级函数 `push.Erase`、`push.Export` 登记到[注销账号](privacy.md#framework-sources)和[导出个人数据](privacy.md#sources)；导出的设备不含 token。
 
 <a id="aliyun-console"></a>
-### 阿里云控制台
+### 配置
 
-1. 在 EMAS 控制台为每个平台各创建一个应用（Android、iOS、HarmonyOS），记下各自的 **AppKey**。同一条消息按平台分别调用，所以框架按平台分批。
-2. 在各应用的推送配置中填写通道的密钥：华为、荣耀、小米、OPPO、vivo、魅族的厂商通道，iOS 的 APNs 证书，海外 Android 的 FCM 服务账号 JSON。
-3. 创建一个 RAM 用户，授予 `mpush:PushV2` 权限，把它的 AccessKey 写进配置。
+在 EMAS 控制台为每个平台各建一个应用，填好各通道的密钥；RAM 用户需要 `mpush:PushV2` 权限。
 
 ```yaml
-# config/app.yaml
 push:
   access_key_id: ${ALIYUN_ACCESS_KEY_ID}
   access_key_secret: ${ALIYUN_ACCESS_KEY_SECRET}
-  app_keys: {android: 335000001, ios: 335000002}
+  app_keys: {android: 335000001, ios: 335000002} # 各平台应用的 AppKey；推送到没有 AppKey 的平台时任务失败
+  apns: PRODUCT # 默认；App Store、TestFlight、企业分发用 PRODUCT，Xcode 直接安装的包用 DEV，不匹配时 iOS 收不到
   android:
-    activity: com.example.blog.PushPopupActivity
-    channel: general
-  categories:
+    activity: com.example.blog.PushPopupActivity # 厂商通道的辅助弹窗 Activity，用厂商通道时必填
+    channel: general # NotificationChannel ID
+  categories:        # 见“消息分类”
     default: {huawei: SUBSCRIPTION, honor: 1, vivo: SUBSCRIPTION, oppo: SUBSCRIPTION, xiaomi: "135001", harmony: SUBSCRIPTION}
 ```
-
-`apns` 默认是 `PRODUCT`，用于 App Store、TestFlight 和企业分发的包；开发环境用 Xcode 直接安装的包时设为 `DEV`。`categories` 见[消息分类](#categories)。
 
 <a id="app-side"></a>
 ### App 端
 
-App 集成阿里云的推送 SDK 和各厂商通道的依赖，按[阿里云的文档](https://help.aliyun.com/zh/document_detail/434660.html)完成初始化。和服务端有关的只有三件事：
-
-- **创建通知渠道**：Android 8 及以上要先创建 NotificationChannel，ID 与配置中的 `android.channel` 一致。
-- **辅助弹窗 Activity**：经厂商通道送达的通知被点击时，系统打开 `android.activity` 指定的 Activity，在其中读出 `Data` 并跳转。
-- **账号由服务端登记**：App 从 SDK 取得 `deviceId` 交给服务端即可，账号与设备的关系保存在应用的表中。
+App 按[阿里云的文档](https://help.aliyun.com/zh/document_detail/434660.html)集成推送 SDK 和厂商通道的依赖，把 SDK 的 `deviceId` 交给[登记接口](#registering-devices)，不在 SDK 中绑定账号。Android 8 及以上先创建 ID 为 `android.channel` 的 NotificationChannel，否则通知不显示；点击经厂商通道送达的通知时，系统打开 `android.activity`，在其中读出 `Data` 并跳转。
 
 <a id="registering-devices"></a>
-## 登记设备
+## 用 `Register` 登记设备
 
-App 登录成功后、以及每次启动时，把 SDK 的 `deviceId` 交给 `PUT /devices`。处理器调用 `push.Register`，设备登记在当前读者名下：
+App 登录成功后、以及每次启动时调用 `PUT /devices`。`signedIn` 是应用中创建需要登录的操作的函数，`h.db` 是 `*bun.DB`：
 
 ```go
 type DeviceInput struct {
@@ -106,46 +76,33 @@ func (h *handlers) registerDevice(ctx context.Context, in *DeviceInput) (*struct
 }
 ```
 
-一台设备同时只属于一个用户：同一部手机换了账号登录，设备改为登记给新的读者，推送只发给新账号。读者在多台设备上登录时，每台都会收到。
-
-`Register` 同时记下主体的租户和 `sub.Credential`（这次登录的 token ID）。[多租户](../security/tenancy.md)应用中，发给一个租户的推送只到达在这个租户中登记的设备。
+- 一台设备同时只属于一个主体：同一部手机换账号登录后重新登记，旧账号不再收到。
+- 一个用户的多台设备都收到推送。
+- `Register` 记下 `sub.Tenant`：发给一个租户的推送只到达在这个租户中登记的设备。
+- 平台不合法、token 为空或超过 512 字节时返回 `push.ErrInvalidDevice`（422）。
 
 <a id="unregistering"></a>
-### 退出登录
+### 退出登录时删除设备
 
-撤销凭据时一起删除设备，三个函数与 [`apitoken` 的撤销方法](../security/api-tokens.md#revoking-tokens)一一对应：
+撤销 token 时一起删除设备，与 [`apitoken` 的撤销方法](../security/api-tokens.md#revoking-tokens)一一对应：
 
 | 撤销 token | 删除设备 | 用途 |
 | --- | --- | --- |
-| `Revoke(ctx, sub, id)` | `push.Unregister(ctx, db, sub, id)` | 退出登录（`id` 为 `sub.Credential`）、在设备列表中移除某台设备 |
+| `Revoke(ctx, sub, id)` | `push.Unregister(ctx, db, sub, id)` | 退出登录（`id` 为 `sub.Credential`）、移除某台设备 |
 | `RevokeOthers(ctx, sub)` | `push.UnregisterOthers(ctx, db, sub)` | 退出其他设备 |
 | `RevokeSubject(ctx, ref)` | `push.UnregisterSubject(ctx, db, ref)` | 封禁账号、修改密码 |
 
-注销账号时不用自己调用：把 `apitoken.Erase` 和 `push.Erase` 登记到[注销账号](privacy.md#framework-sources)，在冷静期结束后一起删除。
-
-读者 App 的退出登录变成：
-
-```go
-func (h *handlers) logout(ctx context.Context, _ *struct{}) (*struct{}, error) {
-    sub, _ := identity.FromContext(ctx)
-    if _, err := push.Unregister(ctx, h.db, sub, sub.Credential); err != nil {
-        return nil, err
-    }
-    return nil, h.acc.ReaderTokens.Revoke(ctx, sub, sub.Credential)
-}
-```
-
-忘了调用时，设备在登录过期之后仍然登记着，会继续收到推送，直到[清理](#cleanup)或者被别的账号重新登记。
+漏掉删除时，退出登录的设备继续收到推送，直到被[清理](#cleanup)或被别的账号重新登记。
 
 <a id="sending"></a>
-## 发送推送
+## 用 `Send` 发送推送
 
-在[发布文章](../concepts/actions.md#writing-actions)的事务中调用 `push.Send`，推送与文章状态一起提交：
+在[业务动作](../concepts/actions.md#writing-actions)的事务中调用。`a.db` 是 `*bun.DB`，`subscribers` 是应用的查询，返回 `[]identity.Ref`：
 
 ```go
 err := database.RunInTx(ctx, a.db, nil, func(ctx context.Context, tx database.Tx) error {
-    // ……读取、检查并更新文章，与原来相同
-    readers, err := subscribers(ctx, tx, item.Section) // 应用自己的查询，返回 []identity.Ref
+    // ……读取、检查并更新文章
+    readers, err := subscribers(ctx, tx, item.Section)
     if err != nil {
         return err
     }
@@ -161,76 +118,74 @@ err := database.RunInTx(ctx, a.db, nil, func(ctx context.Context, tx database.Tx
 })
 ```
 
-收件人与[站内通知](notifications.md#recipients)的相同：某个租户中的一个主体，同一个变量可以同时交给 `notification.Send` 和 `push.Send`。`Send` 只发布任务，设备在任务执行时才查询；收件人没有登记设备时直接结束。重复的收件人只推送一次，超过 1000 个时分成多个任务。
+- 收件人与[站内通知](notifications.md#recipients)的相同，同一组收件人可以同时交给 `notification.Send`。
+- 设备在任务执行时才查询，没有登记设备的收件人直接跳过。重复的收件人只推送一次，超过 1000 个时分成多个任务。
 
 <a id="messages"></a>
 ### 消息
 
-| 字段 | 说明 |
+| `push.Message` 的字段 | 说明 |
 | --- | --- |
-| `Title`、`Body` | 通知的标题和正文，必填。文案由应用按收件人的语言生成，见[本地化](../general/localization.md) |
-| `Data` | 随通知带给 App 的键值，用户点击后 App 据此打开对应的页面 |
+| `Title`、`Body` | 必填。文案由应用按收件人的语言生成 |
+| `Data` | 带给 App 的键值，点击后 App 据此打开页面 |
 | `Category` | [消息分类](#categories)，为空时是 `default` |
-| `Badge` | App 图标上的数字，`nil` 表示保持原值。iOS 和鸿蒙可以设为 0 清除；Android 只支持 1 到 99，并且只在华为、荣耀和 vivo 手机上生效 |
-| `TTL` | 设备离线时通知保留多久，从 `Send` 开始计算；阿里云最长 72 小时。队列积压超过 TTL 的推送直接丢弃，适合验证码、限时活动这类有时效的消息 |
+| `Badge` | 图标上的数字，`nil` 保持原值；iOS 和鸿蒙可以设为 0 清除，Android 只在华为、荣耀、vivo 上生效（1 到 99） |
+| `TTL` | 设备离线时保留多久，从 `Send` 算起，最长 72 小时；队列积压超过 TTL 的推送直接丢弃 |
 
-通知只写可以公开的内容：锁屏界面上任何人都看得到。需要展示私密内容时，`Body` 写“你有一条新消息”，App 打开后再从接口读取。
+> [!WARNING]
+> 锁屏界面上任何人都看得到通知。私密内容写成“你有一条新消息”，App 打开后从接口读取。
 
 <a id="categories"></a>
 ### 消息分类
 
-国内厂商把通知分成两类：**服务与通讯**（订单、聊天、订阅更新）条数宽松、正常提醒；**资讯营销**每台设备每天只能收到很少几条（华为一般应用每天 2 条），并且静默展示。省略分类参数的消息，厂商通常按资讯营销处理。
-
-分类参数各家不同，大多需要先在厂商后台申请。`Message.Category` 是应用自己起的名字，配置中的 `categories` 把它换成各家的参数：
+国内厂商把通知分成服务与通讯、资讯营销两类；资讯营销每台设备每天只能收到几条并静默展示，没有分类参数的消息通常按它处理。`Message.Category` 是应用起的名字，`categories` 把它换成各家的参数（大多要先在厂商后台申请）：
 
 ```yaml
-categories:
-  default: {huawei: SUBSCRIPTION, honor: 1, vivo: SUBSCRIPTION, oppo: SUBSCRIPTION, xiaomi: "135001", harmony: SUBSCRIPTION}
-  promo:   {huawei: MARKETING, honor: 0, vivo: MARKETING, oppo: MARKETING, harmony: MARKETING, xiaomi: "135002", channel: promo}
+push:
+  categories:
+    promo: {huawei: MARKETING, honor: 0, vivo: MARKETING, oppo: MARKETING, harmony: MARKETING, xiaomi: "135002", channel: promo}
 ```
 
 | 键 | 厂商参数 |
 | --- | --- |
-| `huawei`、`vivo`、`oppo`、`harmony` | 各家的 `category`，取值见各厂商的消息分类规范，营销消息为 `MARKETING` |
+| `huawei`、`vivo`、`oppo`、`harmony` | 各家的 `category`，营销消息为 `MARKETING` |
 | `honor` | 荣耀的 `importance`：1 为服务与通讯，0 为资讯营销 |
 | `xiaomi` | 小米推送后台申请的 channel ID，每个应用最多 8 个 |
-| `channel` | 覆盖 `android.channel`，例如营销消息用单独的通知渠道，用户可以只关闭它 |
+| `channel` | 覆盖 `android.channel`，让用户可以只关闭这一类通知 |
 
-推送营销消息时写 `Category: "promo"`。指定了配置中没有的分类时，推送任务直接失败，在[失败任务](../background/queue-monitoring.md#failed-jobs)中可以看到原因。
+指定了配置中没有的分类时，推送任务直接失败，原因记在[失败任务](../background/queue.md#failed-jobs)中。
 
 <a id="delivering"></a>
 ## 运行推送
 
-在 [worker](../background/queue.md#processing-jobs) 中注册推送任务的处理器。`aliyun.New` 不访问网络：
+在 [worker](../background/queue.md#processing-jobs) 中注册。`cfg.Push` 是 `aliyun.Config`，`w` 是 `*queue.Worker`：
 
 ```go
-provider, err := aliyun.New(cfg.Push, nil)
+provider, err := aliyun.New(cfg.Push, nil) // 不访问网络；客户端为 nil 时用 outbound 的客户端
 if err != nil {
     return err
 }
 push.NewDeliverer(db, provider, push.Options{}).Handle(w)
 ```
 
-处理器查出收件人的设备，按平台分批，每批最多 1000 台，调用阿里云的 [PushV2](https://help.aliyun.com/zh/document_detail/2986003.html) 接口。阿里云接受了请求就算成功，之后经厂商通道送达、用户点击这些结果，在控制台的“回执日志”中查看，每条记录的 `job_key` 是推送任务的 ID。
+处理器按平台把设备分批（每批最多 1000 台）调用阿里云的 PushV2。阿里云接受请求即算成功；送达和点击在控制台的回执日志中查看，`job_key` 是推送任务的 ID。
 
 <a id="retries"></a>
 ### 重试与去重
 
-- 限流、阿里云服务端错误和网络错误按队列的退避重试，默认最多 5 次，约 6 分钟。
-- AccessKey、AppKey、参数错误等配置类的错误，直接转入失败任务。
-- 一个任务中有一批失败时整个任务重试。已经成功的批次再次调用时带着相同的 `IdempotentToken`，阿里云在 15 分钟内只推送一次，用户只收到一条通知。
+- 限流、服务端错误和网络错误按队列的退避重试，默认最多 5 次（约 6 分钟），用 `push.Options.MaxAttempts` 修改。
+- AccessKey、AppKey、参数等 4xx 错误不重试，任务直接失败。
+- 一批失败时整个任务重试；已成功的批次带相同的 `IdempotentToken` 再调用，阿里云 15 分钟内只推送一次。
 
 <a id="overseas"></a>
 ## 海外用户
 
-海外用户使用同一个应用和同一套代码：iOS 本来就经 APNs 送达，Android 在控制台配置 FCM 通道、App 集成阿里云的 FCM 依赖后，有 Google 服务的手机经 FCM 送达。接口域名 `cloudpush.aliyuncs.com` 在海外同样可以访问。
-
-没有 Google 服务、也不是国内厂商的 Android 手机，只能在 App 运行时经阿里云自有的长连接收到。
+同一个应用和配置：iOS 经 APNs，有 Google 服务的 Android 经 FCM（控制台配置 FCM 通道，App 集成阿里云的 FCM 依赖），其他 Android 只在 App 运行时收到。
 
 <a id="testing"></a>
 ## 测试
 
-只检查发布了哪些推送时，用 `queuetest.Pending` 读出还没处理的推送任务：
+只检查发布了哪些推送时，用 `queuetest.Pending` 读出未处理的任务，`db` 是测试库：
 
 ```go
 jobs := queuetest.Pending(t, db, push.Deliver)
@@ -239,77 +194,13 @@ if len(jobs) != 1 || jobs[0].Message.Title != "新文章" {
 }
 ```
 
-端到端测试时，用 `pushtest.Provider` 代替阿里云，它记录收到的每一批推送，`Err` 可以模拟失败：
-
-```go
-fake := &pushtest.Provider{}
-w := queue.NewWorker(db, queuetest.Conn(t), queuetest.Config(t), nil)
-push.NewDeliverer(db, fake, push.Options{}).Handle(w)
-queuetest.Run(t, w)
-// ……发布文章，等待推送
-tokens := fake.Tokens()
-```
-
-测试 `push/aliyun` 的配置时，把 [`outboundtest`](../libraries/outbound.md#testing) 的客户端传给 `aliyun.New`。
+端到端测试时把 `pushtest.Provider` 交给 `push.NewDeliverer` 代替阿里云：`Batches`、`Tokens` 返回收到的推送，设置 `Err` 模拟失败。测试 `push/aliyun` 时把 [`outboundtest`](../libraries/outbound.md#testing) 的客户端传给 `aliyun.New`。
 
 <a id="cleanup"></a>
-## 清理
+## 用 `Cleanup` 删除不活跃的设备
 
-App 每次启动都会重新登记，长期没有更新的设备通常已经卸载了 App。用 `push.Cleanup` 定期删除它们：
+App 每次启动都重新登记，长期没有更新的设备通常已卸载 App。`sched` 是 `*schedule.Scheduler`，交给[定时任务](../background/scheduling.md#framework-cleanups)：
 
 ```go
 sched.Add("push:cleanup", "@daily", schedule.Cleanup(push.Cleanup(a.db, 90*24*time.Hour), 1000))
 ```
-
-<a id="troubleshooting"></a>
-## 常见问题
-
-**iOS 收不到推送**
-
-`apns` 的环境不对：App Store、TestFlight 的包用 `PRODUCT`，Xcode 直接安装的包用 `DEV`。
-
-**Android 的通知没有显示**
-
-Android 8 及以上要先创建 NotificationChannel，ID 与配置中的 `android.channel` 一致，见 [App 端](#app-side)。
-
-**用户退出登录后，这台设备仍然收到推送**
-
-退出登录时没有删除设备的登记，见[退出登录](#unregistering)。
-
-**同一部手机换了账号，旧账号的推送还在发过来**
-
-一台设备同时只属于一个用户。新账号登录后要重新调用登记接口，设备才会改为登记给新账号，见[登记设备](#registering-devices)。
-
-**事务回滚了，推送却发出去了**
-
-`push.Send` 要在业务事务中调用，用事务 `tx`，提交后才推送。
-
-<a id="api-reference"></a>
-## API 参考
-
-包 `github.com/go-tenon/tenon/push`。
-
-```go
-func Register(ctx context.Context, db bun.IDB, sub identity.Subject, platform Platform, token string) error
-func Unregister(ctx context.Context, db bun.IDB, sub identity.Subject, credential string) (int, error)
-func UnregisterOthers(ctx context.Context, db bun.IDB, sub identity.Subject) (int, error)
-func UnregisterSubject(ctx context.Context, db bun.IDB, ref identity.Ref) (int, error)
-func Erase(ctx context.Context, db bun.IDB, ref identity.Ref) error
-func Export(ctx context.Context, db bun.IDB, ref identity.Ref) (any, error)
-func Send(ctx context.Context, db bun.IDB, msg Message, to ...notification.Recipient) error
-func NewDeliverer(db bun.IDB, p Provider, opts Options) *Deliverer
-func (d *Deliverer) Handle(w *queue.Worker)
-func Cleanup(db bun.IDB, keep time.Duration) func(ctx context.Context, limit int) (int, error)
-func Migrations() fs.FS
-```
-
-| 函数 | 说明 |
-| --- | --- |
-| `Register` | 把设备登记在主体名下，同时记下这次登录的凭据 |
-| `Unregister`、`UnregisterOthers`、`UnregisterSubject` | 退出这次登录、退出其他设备、停用账号时删除设备 |
-| `Erase`、`Export` | 注销账号时删除全部设备，导出个人数据时列出设备（不含 token），见[注销账号](privacy.md#framework-sources)和[导出个人数据](data-export.md#sources) |
-| `Send` | 在事务中发布推送任务，提交后投递 |
-| `NewDeliverer` | 在 worker 中按平台分批推送，`Provider` 是 `push/aliyun` 等实现 |
-| `Cleanup` | 删除长期不活跃的设备 |
-
-`Message` 的字段：`Title`、`Body`、`Data`、`Category`（换算成各厂商的消息分类）、`Badge`、`TTL`。测试用 `push/pushtest` 记录推送。

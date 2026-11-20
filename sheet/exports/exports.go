@@ -6,7 +6,7 @@
 // Start 在事务中登记导出，同一个事务发布队列任务；任务调用 Service.Process，业务代码把行写入 Writer：
 //
 //	exp, err := s.Start(ctx, tx, subject, "articles.export", sheet.XLSX)
-//	err = ExportArticles.Publish(ctx, queue.Database(tx), exp.ID)
+//	err = ExportArticles.Publish(ctx, tx, exp.ID)
 //
 //	// 队列任务
 //	err := s.Process(ctx, id, func(ctx context.Context, exp *exports.Export, w *exports.Writer) error {
@@ -64,7 +64,7 @@ func New(db *bun.DB, ops *operation.Service, files *filesystem.Service) *Service
 
 // Start 登记 owner 发起的一次 kind 导出（例如 articles.export），返回 pending 状态的导出。
 // format 不是 CSV 或 XLSX 时返回 sheet.ErrFormat。
-// tx 通常是发布导出任务的事务，在同一个事务中用 queue.Database(tx) 发布任务，任务中调用 Process。
+// tx 通常是发布导出任务的事务，在同一个事务中用 tx 发布任务，任务中调用 Process。
 func (s *Service) Start(ctx context.Context, tx bun.IDB, owner identity.Subject, kind string, format sheet.Format) (*Export, error) {
 	if format != sheet.CSV && format != sheet.XLSX {
 		return nil, sheet.ErrFormat.New()

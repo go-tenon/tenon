@@ -41,7 +41,7 @@ slog.InfoContext(ctx, "article published", "article_id", item.ID)
 | 定时任务 | `task`（任务名）、`request_id`（每次执行一个） |
 | MCP 工具 | `request_id`：经由 HTTP 时是 HTTP 请求的，以 stdio 运行时每次调用一个 |
 
-一个请求和它发布的队列任务共用一个 `request_id`，见[队列的日志](../background/queue-monitoring.md#logging)。`ctx` 中有 span 时，日志还带上 `trace_id` 和 `span_id`，见[链路与日志](telemetry.md#trace-logs)。
+一个请求和它发布的队列任务共用一个 `request_id`，见[队列的日志](../background/queue.md#logging)。`ctx` 中有 span 时，日志还带上 `trace_id` 和 `span_id`，见[链路与日志](telemetry.md#trace-logs)。
 
 日志中没有 `request_id` 时，是记录日志时没有传入请求的 `ctx`。新增入口时，在开始处理一次调用时调用 `logging.WithRequestID(ctx, id)`。
 

@@ -304,7 +304,7 @@ React 前端可以直接用 `@go-tenon/ui/chat` 的 [`useAssistantChat`](../fron
   ```
 
   文件内容也随对话一起保存在对话存储中，页面打开时 `UIMessages` 原样返回。
-- **http(s) 链接**：文件先[上传](../libraries/direct-uploads.md)到 S3 等处，消息中只放链接。链接原样交给模型服务，由模型服务下载，所以它必须能从公网访问，例如有效期足够长的签名地址；应用的服务端不访问它。适合较大的文件，请求体和对话存储都保持精简。
+- **http(s) 链接**：文件先[上传](../libraries/filesystem.md)到 S3 等处，消息中只放链接。链接原样交给模型服务，由模型服务下载，所以它必须能从公网访问，例如有效期足够长的签名地址；应用的服务端不访问它。适合较大的文件，请求体和对话存储都保持精简。
 
 其他写法（例如 `blob:`）和缺少 `mediaType` 的文件返回 `422`。不使用 `useChat` 时，自己构造带 `ContentParts` 的 `model.Message` 交给 `Runs.Start`，例如用 `msg.AddImageData(data, "auto", "png")`。
 
@@ -509,4 +509,4 @@ func SetLogger(l *slog.Logger)
 func Migrations() fs.FS
 ```
 
-`NewModel` 用 OpenAI 兼容接口创建模型；`NewSessions` 把对话保存在应用的 PostgreSQL 中，`EraseUser`、`ExportUser` 删除、导出一个用户的全部对话，见[注销账号](../features/privacy.md#framework-sources)和[导出个人数据](../features/data-export.md#sources)。媒体、向量、重排和决策的接口在 `ai` 包中，见[媒体](chat-advanced.md#media)和[决策](chat-advanced.md#decisions)。
+`NewModel` 用 OpenAI 兼容接口创建模型；`NewSessions` 把对话保存在应用的 PostgreSQL 中，`EraseUser`、`ExportUser` 删除、导出一个用户的全部对话，见[注销账号](../features/privacy.md#framework-sources)和[导出个人数据](../features/privacy.md#sources)。媒体、向量、重排和决策的接口在 `ai` 包中，见[媒体](chat-advanced.md#media)和[决策](chat-advanced.md#decisions)。

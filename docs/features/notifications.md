@@ -1,34 +1,18 @@
-# 通知
+# 站内通知
 
-用户需要知道和自己有关的事：文章被发布了、被评论了、被邀请加入团队了。`notification` 包是站内通知的收件箱：每条通知是 `notifications` 表中的一行，属于某个租户中的某个主体，带有已读状态。
+站内通知是用户的收件箱：每条通知是 `notifications` 表中的一行，属于某个租户中的某个主体，带有已读状态。
 
-`notification` 包只提供站内的收件箱，其他渠道已经有各自的包：[邮件](../libraries/mail.md)、[移动推送](push.md)、[队列](../background/queue.md)、[广播](../libraries/broadcasting.md)。一次通知发往哪些渠道，由业务动作显式写出来，读代码就能看到会发生什么。
+包：`notification`。
 
-阅读前需要了解：[数据库事务](../database/database.md#transactions)；[发布框架迁移](../database/migrations.md#publishing-framework-migrations)。实时推送未读数一节用到了[广播](../libraries/broadcasting.md)。
-
-- [示例用法](#example-usage)
-- [安装](#installation)
-- [发送通知](#sending)
-    - [收件人](#recipients)
-    - [事件与数据](#events-and-data)
-- [查看通知](#listing)
-    - [标记已读](#marking-as-read)
-- [同时发送邮件](#mail)
-- [其他渠道：Telegram](#telegram)
-- [实时推送](#realtime)
-- [保留期限](#retention)
-- [常见问题](#troubleshooting)
-- [API 参考](#api-reference)
+- 通知在业务事务中用 `tx` 发送，与业务修改一起提交或回滚；用 `db` 发送时，事务回滚后通知仍在。
+- 邮件、[移动推送](push.md)等其他渠道由业务动作在同一个事务中显式写出来。
 
 <a id="example-usage"></a>
-## 示例用法
-
-下面在发布文章的同时通知作者，然后读取作者自己的通知：
+## 示例
 
 ```go
-// 在业务事务中发送，与业务修改一起提交
 err := database.RunInTx(ctx, db, nil, func(ctx context.Context, tx database.Tx) error {
-    // ... 发布文章
+    // ……发布文章
     _, err := notification.Send(ctx, tx, notification.Notification{
         Event: "article.published",
         Data:  map[string]any{"article_id": item.ID, "title": item.Title},
@@ -36,74 +20,65 @@ err := database.RunInTx(ctx, db, nil, func(ctx context.Context, tx database.Tx) 
     return err
 })
 
-// 收件人读取自己的通知
-list, err := notification.List(ctx, db, notification.Query{Recipient: notification.RecipientOf(sub)})
-n, err := notification.UnreadCount(ctx, db, notification.RecipientOf(sub))
+// 收件人读取自己的通知和未读数
+me := notification.RecipientOf(sub)
+list, err := notification.List(ctx, db, notification.Query{Recipient: me})
+n, err := notification.UnreadCount(ctx, db, me)
 ```
 
-通知在业务事务中写入，与文章的发布一起提交，所以通知总是对应已经发布的文章。读取时传入收件人，`List` 只返回属于这个收件人的通知。下面先发布迁移，再详细介绍发送、读取和实时推送未读数。
+`db` 是入口打开的 `*bun.DB`，`author` 是文章作者的 `identity.Subject`，`sub` 是 `identity.FromContext(ctx)` 取出的当前主体。
 
 <a id="installation"></a>
-## 安装
+## 装配
 
-把 `notification` 的迁移加入[发布命令](../database/migrations.md#publishing-framework-migrations)，发布后执行 `migrate up`：
-
-```go
-migratecmd.Publish(
-    notification.Migrations(),
-)
-```
-
-`notification` 包没有需要装配的对象，所有函数都直接接收数据库连接或事务。
+- 把 `notification.Migrations()` 加入[发布命令](../database/migrations.md#publishing-framework-migrations)，发布后执行迁移。
+- 函数直接接收 `bun.IDB`（连接池或事务），没有需要创建的对象。
+- 把包级函数 `notification.Erase`、`notification.Export` 登记到[注销账号](privacy.md#framework-sources)和[导出个人数据](privacy.md#sources)，它们处理主体在所有租户中的通知。
 
 <a id="sending"></a>
-## 发送通知
+## 用 `Send` 发送通知
 
-在[发布文章](../concepts/actions.md#writing-actions)的事务中调用 `notification.Send`，通知与文章状态一起提交或回滚：
+在[业务动作](../concepts/actions.md#writing-actions)的事务中调用。`a.db` 是 `*bun.DB`，`subject` 是执行动作的主体，`item` 是事务中查出的文章，`user.Type` 是应用的用户主体类型：
 
 ```go
 err := database.RunInTx(ctx, a.db, nil, func(ctx context.Context, tx database.Tx) error {
-    // ……读取、检查并更新文章，与原来相同
-    if item.AuthorID == subject.ID {
-        return nil // 作者自己发布的，跳过
-    }
+    // ……读取、检查并更新文章
     n := notification.Notification{
         Event: "article.published_by_admin",
-        Data:  map[string]any{"article_id": item.ID, "title": item.Title, "admin_id": subject.ID},
+        Data:  map[string]any{"article_id": item.ID, "title": item.Title},
     }
     author := notification.Recipient{Tenant: subject.Tenant, Type: user.Type, ID: item.AuthorID}
-    _, err = notification.Send(ctx, tx, n, author)
+    _, err := notification.Send(ctx, tx, n, author)
     return err
 })
 ```
 
-`Send` 为每个收件人写入一条通知，重复的收件人只写一次，没有收件人时直接返回。`ID`（UUIDv7，按时间递增）和 `CreatedAt` 由 `Send` 填写。它返回写入的通知，[实时推送](#realtime)会用到。
+- 只填 `Event` 和 `Data`，`ID`（UUIDv7）和时间由 `Send` 填写。
+- 每个收件人写入一条，重复的收件人只写一次；返回写入的通知，[实时推送](#realtime)用它。
 
 <a id="recipients"></a>
 ### 收件人
 
-`notification.Recipient` 由租户和主体（`identity.Ref`，即主体的类型和 ID）组成，与 `identity.Subject` 中的同名字段对应。同一个用户在两个租户中是两个收件人，各自有各自的通知，见[多租户](../security/tenancy.md)。
-
-读取当前登录用户的通知时，用 `notification.RecipientOf(subject)` 从主体得到收件人。
+`notification.Recipient` 由租户和主体（`identity.Ref`）组成，`Tenant` 为 `""` 时是平台本身。同一个用户在两个租户中是两个收件人，各有各的通知，见[多租户](../security/tenancy.md)。`notification.RecipientOf(sub)` 返回主体在当前租户中的收件人。[移动推送](push.md#sending)的 `push.Send` 接收同样的收件人。
 
 <a id="events-and-data"></a>
 ### 事件与数据
 
-和[操作日志](activity.md#events-and-properties)一样，通知只保存事件和数据，显示时再翻译，修改文案、增加语言时，已有的通知保持原样：
+通知只保存事件名和数据，显示时用 `i18n.T(ctx, n.Event, n.Data)` 翻译，改文案、加语言时不用改动已有的通知：
 
 ```yaml
 # locales/zh-CN.yaml
 article.published_by_admin: "你的文章《{{.title}}》已由管理员发布"
 ```
 
-`Data` 以 JSON 存储，读取时 UUID 是字符串，数字是 `float64`。文章之后可能改名或被删除，显示需要的内容应当在发送时写进来。
-
-通知和操作日志可以同时写：操作日志从对象和操作人的角度记录发生过什么，通知是给收件人看的，有已读状态，收件人还可以删除它。
+- 显示需要的内容在发送时写进 `Data`：文章之后可能改名或被删除。
+- `Data` 以 JSON 存储，读出时 UUID 是字符串，数字是 `float64`。
+- 通知可以与[操作日志](activity.md#events-and-properties)同时写：通知给收件人看，有已读状态，收件人可以删除。
 
 <a id="listing"></a>
-## 查看通知
+## 用 `List` 读取通知
 
-`notification.List` 按时间从新到旧返回一个收件人的通知，`UnreadCount` 返回未读数，用来在导航栏显示角标。下面是通知列表接口的处理器：
+`List` 按时间从新到旧返回一个收件人的通知，`UnreadCount` 返回未读数。通知列表接口的处理器，`h.db` 是 `*bun.DB`：
 
 ```go
 type IndexInput struct {
@@ -120,199 +95,89 @@ func (h *Handlers) Index(ctx context.Context, in *IndexInput) (*IndexOutput, err
 }
 ```
 
-| 条件 | 含义 |
-| --- | --- |
-| `Unread` | 只返回未读的通知 |
-| `Limit` | 返回的条数，默认 50 |
-| `Before` | 翻页：传入上一页最后一条通知的 `ID`，返回比它更早的通知 |
-
-`toDTOs` 用 `i18n.T(ctx, n.Event, n.Data)` 生成每条通知的文案，`n.Read()` 报告它是否已读。所有函数都只读写传入的收件人自己的通知，其他人的通知 ID 会被忽略或返回 `notification.ErrNotFound`，授权已经包含在内。
-
-`notification.Notification` 就是这张表的 Bun 模型，其他查询可以直接用 Bun 编写，条件请以 `tenant, recipient_type, recipient_id` 开头，与索引一致。
+- `Query` 另有 `Unread`（只返回未读）和 `Limit`（默认 50）。`toDTOs` 是应用的函数，用 `i18n.T` 生成文案，`n.Read()` 报告是否已读。
+- 每个函数只读写传入的收件人的通知：别人的通知 ID 被忽略，`Get` 返回 `notification.ErrNotFound`（404）。收件人取自 `RecipientOf(sub)` 时不用另外检查权限。
+- `notification.Notification` 是表的 Bun 模型，其他查询直接用 Bun 写，条件以 `tenant, recipient_type, recipient_id` 开头，与索引一致。
 
 <a id="marking-as-read"></a>
-### 标记已读
+### 用 `MarkRead` 标记已读
 
-点击一条通知时，前端调用标记已读的接口，再打开文章：
+`in.ID` 是路径参数中的通知 ID，`h.db` 是 `*bun.DB`：
 
 ```go
-type ReadInput struct {
-    ID uuid.UUID `path:"id"`
-}
-
 func (h *Handlers) Read(ctx context.Context, in *ReadInput) (*struct{}, error) {
     sub, _ := identity.FromContext(ctx)
     return nil, notification.MarkRead(ctx, h.db, notification.RecipientOf(sub), in.ID)
 }
 ```
 
-`MarkRead` 可以一次传入多个 ID，`MarkAllRead` 把全部通知标记为已读，已经读过的通知保持原来的已读时间。`Delete` 删除通知。
+`MarkRead` 接受多个 ID，`MarkAllRead` 标记全部，已读的通知保持原来的已读时间。`Delete` 删除通知。
 
 <a id="mail"></a>
 ## 同时发送邮件
 
-要让作者同时收到邮件，在同一个事务中把邮件交给[队列](../background/queue.md#publishing-jobs)。邮件用作者自己的语言渲染，见[在 HTTP 之外使用](../general/localization.md#outside-http)：
+在发送通知的事务中把邮件交给[队列](../background/queue.md#publishing-jobs)，用收件人的语言渲染（见[在 HTTP 之外使用](../general/localization.md#outside-http)）。`tx`、`n` 来自[发送通知](#sending)，`authorUser` 是事务中查出的作者，`a.emails` 是 `*mail.Templates`，`mailjob.Send` 是应用声明的 `queue.Topic[mail.Message]`：
 
 ```go
-_, err = notification.Send(ctx, tx, n, author)
-if err != nil {
-    return err
+if authorUser.EmailNotifications { // 偏好保存在应用自己的表中
+    mctx := i18n.WithLocale(ctx, a.languages, i18n.Match(a.languages, authorUser.Language))
+    msg, err := a.emails.Render(mctx, "article_published_by_admin", n.Data)
+    if err != nil {
+        return err
+    }
+    msg.To = []mail.Address{{Name: authorUser.Name, Address: authorUser.Email}}
+    return mailjob.Send.Publish(ctx, tx, msg)
 }
-if !authorUser.EmailNotifications {
-    return nil
-}
-mctx := i18n.WithLocale(ctx, a.languages, i18n.Match(a.languages, authorUser.Language))
-msg, err := a.emails.Render(mctx, "article_published_by_admin", n.Data)
-if err != nil {
-    return err
-}
-msg.To = []mail.Address{{Name: authorUser.Name, Address: authorUser.Email}}
-return mailjob.Send.Publish(ctx, tx, msg)
 ```
-
-`authorUser` 是事务中查出的作者。用户是否接收邮件这类偏好保存在应用自己的表中，由业务动作判断。
 
 <a id="telegram"></a>
-## 其他渠道：Telegram
+## 其他渠道：Telegram、Slack
 
-Slack、Telegram 等渠道都按邮件的方式实现：在事务中把消息交给队列，由一个任务调用第三方接口；短信由 [`sms`](../libraries/sms.md) 发送，`sms.Message` 可以完整地序列化为 JSON 交给队列。下面以 Telegram 为例，框架不提供它的客户端，[Bot API](https://core.telegram.org/bots/api) 发一条消息只是一次 HTTP 请求。
-
-**绑定。** bot 只能给启动过它的用户发消息，用户要先在 Telegram 中启动它，应用才能拿到他的 `chat_id`：
-
-1. 设置页的「绑定 Telegram」生成一个一次性 token（保存在表中，10 分钟过期），跳转到 `https://t.me/<bot 用户名>?start=<token>`。token 只能由 `A-Za-z0-9_-` 组成，最长 64 个字符。
-2. 用户点击「Start」后，Telegram 把消息 `/start <token>` 推送到应用的 webhook。
-3. webhook 校验 `X-Telegram-Bot-Api-Secret-Token` 请求头，用 token 找到用户，把 `chat_id` 和 `from.language_code` 保存到应用的 `telegram_links` 表。
+按邮件的方式接入：在事务中把消息发布到应用声明的 `queue.Topic`，由任务调用第三方接口；短信用 [`sms`](../libraries/sms.md)。任务按对方的错误决定是否重试，`m` 是任务的消息，`r` 是解析出的 Bot API 响应，`err` 是由它构造的错误，`Unlink` 是应用删除绑定的函数：
 
 ```go
-func (h *Handlers) Webhook(w http.ResponseWriter, r *http.Request) {
-    if subtle.ConstantTimeCompare([]byte(r.Header.Get("X-Telegram-Bot-Api-Secret-Token")), []byte(h.secret)) != 1 {
-        http.NotFound(w, r)
-        return
-    }
-    var u struct {
-        Message struct {
-            Text string `json:"text"`
-            Chat struct {
-                ID int64 `json:"id"`
-            } `json:"chat"`
-            From struct {
-                LanguageCode string `json:"language_code"`
-            } `json:"from"`
-        } `json:"message"`
-    }
-    if json.NewDecoder(r.Body).Decode(&u) == nil {
-        if token, ok := strings.CutPrefix(u.Message.Text, "/start "); ok {
-            if err := h.link.Handle(r.Context(), token, u.Message.Chat.ID, u.Message.From.LanguageCode); err != nil {
-                slog.WarnContext(r.Context(), "link telegram", "error", err)
-            }
-        }
-    }
-    w.WriteHeader(http.StatusOK) // 返回 200，Telegram 才停止重发
-}
-```
-
-webhook 直接注册在 chi 上，由请求头中的 `secret` 确认来源。webhook 的地址和 `secret` 用 `setWebhook` 注册一次，可以写成一个[命令](../general/commands.md)。
-
-**发送。** 发布文章时，作者绑定了 Telegram，就在同一个事务中把消息交给队列，文案用作者绑定时的语言渲染：
-
-```go
-var SendTopic = queue.Topic[Message]("telegram.send")
-
-type Message struct {
-    ChatID int64  `json:"chat_id"`
-    Text   string `json:"text"`
-}
-```
-
-```go
-if link != nil { // link 是事务中查出的作者的绑定
-    lctx := i18n.WithLocale(ctx, a.languages, i18n.Match(a.languages, link.Language))
-    err = telegram.SendTopic.Publish(ctx, tx, telegram.Message{
-        ChatID: link.ChatID,
-        Text:   i18n.T(lctx, n.Event, n.Data),
-    })
-}
-```
-
-任务调用 `sendMessage`，按 Telegram 返回的错误决定是否重试：
-
-```go
-func (a *Send) Job(ctx context.Context, m Message) error {
-    body, _ := json.Marshal(map[string]any{"chat_id": m.ChatID, "text": m.Text, "parse_mode": "HTML"})
-    req, _ := http.NewRequestWithContext(ctx, http.MethodPost, a.api+"/bot"+a.token+"/sendMessage", bytes.NewReader(body))
-    req.Header.Set("Content-Type", "application/json")
-    resp, err := a.client.Do(req)
-    if err != nil {
+switch r.ErrorCode {
+case http.StatusForbidden: // 用户屏蔽了 bot：删除绑定，不再重试
+    if err := Unlink(ctx, a.db, m.ChatID); err != nil {
         return err
     }
-    defer resp.Body.Close()
-    var r struct {
-        OK          bool   `json:"ok"`
-        ErrorCode   int    `json:"error_code"`
-        Description string `json:"description"`
-        Parameters  struct {
-            RetryAfter int `json:"retry_after"`
-        } `json:"parameters"`
-    }
-    if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
-        return err
-    }
-    if r.OK {
-        return nil
-    }
-    err = errors.Newf("telegram: %d %s", r.ErrorCode, r.Description)
-    switch r.ErrorCode {
-    case http.StatusForbidden: // 用户屏蔽了 bot 或注销了账号
-        if err := Unlink(ctx, a.db, m.ChatID); err != nil {
-            return err
-        }
-        return queue.Permanent(err)
-    case http.StatusBadRequest: // chat 不存在、文本格式错误
-        return queue.Permanent(err)
-    case http.StatusTooManyRequests:
-        return queue.RetryAfter(err, time.Duration(r.Parameters.RetryAfter)*time.Second)
-    }
-    return err // 5xx 等：按退避时间重试
+    return queue.Permanent(err)
+case http.StatusTooManyRequests:
+    return queue.RetryAfter(err, time.Duration(r.Parameters.RetryAfter)*time.Second)
 }
+return err // 其他错误按退避重试
 ```
 
-- 用户屏蔽 bot 后再发送会返回 403，这时删除绑定，推送随之停止。
-- 用 HTML 格式时，文案中的文章标题等内容要先经过 `html.EscapeString`，否则一个 `<` 就会让消息被拒绝。
-- Telegram 限制同一个聊天每秒约 1 条、全部聊天每秒约 30 条，超出时返回 429 和 `retry_after`，由 [`queue.RetryAfter`](../background/queue.md#failures-and-retries) 按它的要求等待。给大量用户群发时，再用[限流](../libraries/rate-limiting.md)控制发送速度。
-- `a.api` 平时是 `https://api.telegram.org`，测试时换成 `httptest.Server` 的地址。
-- 任务至少执行一次，极少数情况下用户会收到两条相同的消息。
+- `queue.Permanent` 让任务直接失败，`queue.RetryAfter` 按对方要求等待，见[失败与重试](../background/queue.md#failures-and-retries)。
+- 任务至少执行一次，极少数情况下用户收到两条相同的消息。
+- 绑定账号时接收对方的 webhook，见[接收 webhook](webhooks.md#receiving)。
 
 <a id="realtime"></a>
-## 实时推送
+## 实时推送未读数
 
-让导航栏的角标在收到通知时立即更新：用[广播](../libraries/broadcasting.md#publishing-events)通知收件人所在的连接。广播要等事务提交之后再发，在事务中用 [AfterCommit](../database/database.md#after-commit) 登记：
-
-```go
-err := database.RunInTx(ctx, a.db, nil, func(ctx context.Context, tx database.Tx) error {
-    // ……
-    sent, err := notification.Send(ctx, tx, n, author)
-    if err != nil {
-        return err
-    }
-    for _, n := range sent {
-        tx.AfterCommit(func(ctx context.Context) error {
-            return errors.Wrap(a.hub.PublishJSON(ctx, inboxTopic(n.Recipient()), n.ID), "broadcast notification")
-        })
-    }
-    return nil
-})
-```
+事务提交之后用[广播](../libraries/broadcasting.md#publishing-events)通知收件人的连接。`tx` 是[发送通知](#sending)的事务，`sent` 是 `Send` 的返回值，`a.hub` 是 `*broadcast.Hub`：
 
 ```go
+for _, n := range sent {
+    tx.AfterCommit(func(ctx context.Context) error {
+        return errors.Wrap(a.hub.PublishJSON(ctx, inboxTopic(n.Recipient()), n.ID), "broadcast notification")
+    })
+}
+
 // inboxTopic 是一个收件人的广播主题，例如 inbox:acme:user:u1。
 func inboxTopic(r notification.Recipient) string {
     return "inbox:" + r.Tenant + ":" + r.Ref.String()
 }
 ```
 
-主题只能由字母、数字和 `_ - : .` 组成，租户和用户 ID 中有其他字符时，先做转换。
+- 广播在 [`AfterCommit`](../database/database.md#after-commit) 中发，事务回滚时不发。
+- 主题只能由字母、数字和 `_ - : .` 组成，租户和主体 ID 含其他字符时先转换。
+- 标记已读之后同样广播，用户的其他标签页随之更新。
 
-[事件流接口](../http/sse.md#long-lived-connections)订阅当前用户的主题。角标是状态：连接（包括断线重连）时先推送一次当前的未读数，之后每收到一条广播就重新查询，因此角标总是最新的：
+<a id="realtime-badge"></a>
+### 用事件流推送角标
+
+[事件流接口](../http/sse.md#long-lived-connections)订阅当前用户的主题：连接时先推送一次未读数，之后每收到一条广播重新查询。`h.hub` 是 `*broadcast.Hub`，`inboxTopic` 见[实时推送未读数](#realtime)：
 
 ```go
 type Badge struct {
@@ -323,7 +188,7 @@ func (h *Handlers) Inbox(ctx context.Context, _ *struct{}) (*huma.StreamResponse
     sub, _ := identity.FromContext(ctx)
     me := notification.RecipientOf(sub)
     return rest.SSE(func(s *httpx.Stream) error {
-        events := h.hub.Subscribe(inboxTopic(me)) // 先订阅，再查询
+        events := h.hub.Subscribe(inboxTopic(me)) // 先订阅再查询，不漏掉之间的通知
         defer events.Close()
         for {
             n, err := notification.UnreadCount(s.Context(), h.db, me)
@@ -346,72 +211,13 @@ func (h *Handlers) Inbox(ctx context.Context, _ *struct{}) (*huma.StreamResponse
 }
 ```
 
-用 `rest.RegisterSSE(api, op, map[string]any{"badge": Badge{}}, h.Inbox)` 注册。前端收到 `badge` 事件就更新导航栏的角标，见[客户端代码的事件流](../http/clients.md#event-streams)；`@go-tenon/ui` 的 [`useNotifications`](../frontend/features.md#notifications) 读取它并在断开后重连，`@go-tenon/ui` 的 [`NotificationsMenu`](../frontend/layout.md#menus) 是现成的铃铛。标记已读之后同样发布一条广播，用户打开的其他标签页也会随之更新。
+用 `rest.RegisterSSE(api, op, map[string]any{"badge": Badge{}}, h.Inbox)` 注册。`@go-tenon/ui` 的 [`NotificationsMenu`](../frontend/layout.md#menus) 是读取 `badge` 事件的铃铛，自己画列表时用 [`useNotifications`](../frontend/features.md#notifications)。
 
 <a id="retention"></a>
-## 保留期限
+## 用 `Cleanup` 删除旧通知
 
-`notification.Cleanup` 返回删除保留期以前的通知（无论是否已读）的清理函数，交给[定时任务](../background/scheduling.md#framework-cleanups)：
+`notification.Cleanup` 返回删除保留期以前的通知（无论是否已读）的清理函数，交给[定时任务](../background/scheduling.md#framework-cleanups)。`sched` 是 `*schedule.Scheduler`：
 
 ```go
 sched.Add("notifications:cleanup", "0 4 * * *", schedule.Cleanup(notification.Cleanup(a.db, 90*24*time.Hour), 1000))
 ```
-
-<a id="troubleshooting"></a>
-## 常见问题
-
-**通知写入了，但事务回滚后通知还在**
-
-`Send` 用的是 `db`，不是事务 `tx`。在业务事务中用 `tx` 调用，见[发送通知](#sending)。
-
-**用户在另一个租户中看不到通知**
-
-收件人由租户和主体组成，同一个用户在两个租户中是两个收件人，各自有各自的通知，见[收件人](#recipients)。
-
-**通知中的文章标题变成了改名后的**
-
-显示时读取了文章现在的数据。需要显示的内容在发送时写进 `Data`，见[事件与数据](#events-and-data)。
-
-<a id="api-reference"></a>
-## API 参考
-
-包 `github.com/go-tenon/tenon/notification`。所有函数都接收 `bun.IDB`，可以传连接池或事务。
-
-### Send
-
-```go
-func Send(ctx context.Context, db bun.IDB, n Notification, to ...Recipient) ([]Notification, error)
-```
-
-- **参数**
-    - `db`：业务事务，通知与业务修改一起提交
-    - `n`：通知的内容，填写 `Event` 和 `Data`
-    - `to`：收件人，通常用 `RecipientOf(subject)` 得到
-- **返回**：为每个收件人写入的通知
-
-### 其他函数
-
-```go
-func List(ctx context.Context, db bun.IDB, q Query) ([]Notification, error)
-func Get(ctx context.Context, db bun.IDB, r Recipient, id uuid.UUID) (*Notification, error)
-func UnreadCount(ctx context.Context, db bun.IDB, r Recipient) (int, error)
-func MarkRead(ctx context.Context, db bun.IDB, r Recipient, ids ...uuid.UUID) error
-func MarkAllRead(ctx context.Context, db bun.IDB, r Recipient) error
-func Delete(ctx context.Context, db bun.IDB, r Recipient, ids ...uuid.UUID) error
-func Cleanup(db bun.IDB, keep time.Duration) func(ctx context.Context, limit int) (int, error)
-func Erase(ctx context.Context, db bun.IDB, ref identity.Ref) error
-func Export(ctx context.Context, db bun.IDB, ref identity.Ref) (any, error)
-func RecipientOf(s identity.Subject) Recipient
-func Migrations() fs.FS
-```
-
-| 函数 | 说明 |
-| --- | --- |
-| `List`、`Get` | 读取收件人自己的通知，读不到别人的 |
-| `UnreadCount` | 未读数 |
-| `MarkRead`、`MarkAllRead`、`Delete` | 只作用于收件人自己的通知 |
-| `Cleanup` | 删除早于 `keep` 的通知，交给[定时任务](../background/scheduling.md#framework-cleanups) |
-| `Erase`、`Export` | 删除、导出主体在所有租户中的通知，登记到[注销账号](privacy.md#framework-sources)和[导出个人数据](data-export.md#sources) |
-| `RecipientOf` | 主体所在的租户和主体，就是收件人 |
-
-`Notification` 是 `notifications` 表的 Bun 模型，字段 `Event`、`Data`、`ReadAt`、`CreatedAt`；不存在或不属于收件人时返回 `ErrNotFound`。

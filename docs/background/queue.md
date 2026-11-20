@@ -1,38 +1,20 @@
 # 队列
 
-有些工作可以在后台完成，例如发送邮件、生成缩略图、通知第三方。在请求中同步完成它们，接口会变慢；邮件服务器暂时不可用时，请求还会直接失败。交给队列，接口立即返回，失败的工作自动重试。
+把发送邮件、生成缩略图、通知第三方这类工作作为任务发布到队列，由 worker 在后台执行，失败时自动重试，次数用完后转入失败任务表。任务在业务事务中写进 PostgreSQL 的 WAL，由 worker 经逻辑复制转发到 NATS JetStream。
 
-队列解决了这个问题：接口只把工作作为一个**任务**发布出去就返回，由单独的 worker 进程取出执行。`queue` 包把任务交给 [NATS JetStream](https://docs.nats.io/nats-concepts/jetstream)；执行失败的任务按退避时间自动重试，次数用完后转入失败任务表，等待人工处理。
+包：`queue`、`queue/queuecmd`、`queue/queueapi`、`queue/queuetest`。
 
-任务按 topic 分类：发布方把任务发到一个 topic，worker 为每个 topic 注册一个处理函数。
-
-Tenon 的队列有两个特点，在开始之前需要了解。第一，任务和业务数据**在同一个事务中发布**：`Publish` 把任务写进 PostgreSQL 的 WAL（预写日志），事务提交后 worker 经由逻辑复制立即读到，转发到 JetStream；事务回滚时任务一起取消。这样文章和通知任务总是同时生效、同时撤销。任务只写入 WAL，发布任务的事务之间各自独立，提交的吞吐与不发布任务时相当。
-
-第二，每个任务**至少执行一次**：worker 崩溃或停止超时时，正在处理的任务会交给其他 worker 重新执行，处理函数需要能安全地重复执行。任务之间不保证执行顺序。
-
-阅读前需要了解：[数据库事务](../database/database.md#transactions)；[依赖装配](../concepts/dependencies.md)。失败任务的处理、队列的监控和运维接口见[队列：失败任务与监控](queue-monitoring.md)。
-
-- [示例用法](#example-usage)
-- [准备](#preparing)
-- [发布任务](#publishing-jobs)
-    - [延迟执行](#delayed-jobs)
-    - [多步任务](#multi-step-jobs)
-- [处理任务](#processing-jobs)
-    - [启动 worker](#running-workers)
-    - [配置](#configuration)
-- [失败与重试](#failures-and-retries)
-- [任务的租约与停止](#leases-and-shutdown)
-- [测试](#testing)
-- [常见问题](#troubleshooting)
-- [API 参考](#api-reference)
+- 任务在发布它的事务提交后才投递，事务回滚时任务一起取消。
+- 任务至少执行一次：worker 崩溃或停止超时时，任务交给其他 worker 重新执行，所以处理函数要能安全地重复执行。任务之间不保证执行顺序。
+- 至少运行一个 worker：任务由 worker 转发到 JetStream 之后才会执行。
 
 <a id="example-usage"></a>
-## 示例用法
+## 示例
 
-下面在注册用户的同时发布一个“发送欢迎邮件”的任务，并在 worker 中处理它：
+注册用户时发布“发送欢迎邮件”的任务，在 worker 中处理。`db` 是入口打开的 `*bun.DB`，`nc` 是应用的 NATS 连接，`cfg.Queue` 是配置中的 `queue` 段：
 
 ```go
-// 声明 topic：名称和任务内容的类型
+// 声明 topic：名称和 payload 的类型
 var SendWelcome = queue.Topic[uuid.UUID]("users.send_welcome")
 
 // 发布：与业务数据在同一个事务中提交
@@ -43,32 +25,20 @@ err := database.RunInTx(ctx, db, nil, func(ctx context.Context, tx database.Tx) 
     return SendWelcome.Publish(ctx, tx, user.ID)
 })
 
-// 处理：在 worker 进程中注册，nc 是应用的 NATS 连接
+// 处理：在 worker 进程中注册
 w := queue.NewWorker(db, nc, cfg.Queue, nil)
 SendWelcome.Handle(w, func(ctx context.Context, id uuid.UUID) error {
     return sendWelcomeEmail(ctx, id) // 返回错误时稍后重试
 })
-err = w.Run(ctx)
+err = w.Run(ctx) // 一直运行到 ctx 被取消
 ```
-
-注册用户的事务提交之后，任务才会被投递；事务回滚了，任务也就不存在。worker 收到任务后调用处理函数，返回错误时，任务稍后会自动重试。下面先准备 NATS 和 PostgreSQL，再逐步介绍发布、处理和失败的任务。
 
 <a id="preparing"></a>
-## 准备
+## 准备：NATS、PostgreSQL 与迁移
 
-部署 NATS 2.15 或更新的版本，见 [NATS 的安装文档](https://docs.nats.io/running-a-nats-service/introduction/installation)。任务保存在 JetStream 中，启动时加上 `-js` 开启它，`-sd` 是数据目录：
-
-```bash
-nats-server -js -sd /var/lib/nats
-```
-
-worker 启动时在 JetStream 中创建保存任务的 stream（默认名为 `jobs`），每个 topic 一个 consumer，不需要手动创建。任务、正在处理的任务和等待重试的任务都保存在磁盘上，NATS 进程崩溃或重启后，没有处理完的任务会重新投递。
-
-单台服务器上，JetStream 默认每 2 分钟把数据同步到磁盘一次：进程崩溃不会丢失任务，但机器断电或损坏时，最近写入的任务可能丢失。生产环境用三台服务器组成[集群](https://docs.nats.io/running-a-nats-service/configuration/clustering/jetstream_clustering)，并把[配置](#configuration)中的 `replicas` 设为 3，一台服务器损坏时任务不丢失。只有一台服务器时，可以在 NATS 的配置文件中设置 `jetstream { sync_interval: always }`，每次写入都同步到磁盘，代价是吞吐下降。处理函数也要能安全地重复执行，丢失时可以从业务数据中找出没有完成的工作重新发布。
-
-PostgreSQL 需要 17 以上的版本，开启逻辑复制（`wal_level = logical`，修改后需要重启），应用的数据库用户需要 `REPLICATION` 属性（`ALTER ROLE app REPLICATION`）。其他设置和它们的作用见[运维](../installation/operations.md#queue)。云数据库在参数组中开启逻辑复制，例如 RDS 的 `rds.logical_replication`。本地开发时，[入门教程第 2 章](../tutorial/02-infrastructure.md#infrastructure)的 `compose.yaml` 已经设置好了。`queue.Doctor` 逐项检查这些要求，不满足时给出修改方法，见[自检](../installation/doctor.md)。
-
-队列的迁移创建一张表和一个逻辑复制槽：`queue_failed_jobs` 保存失败的任务，复制槽记录 worker 转发到了哪里。使用前先[发布](../database/migrations.md#publishing-framework-migrations)这些迁移：
+- **NATS** 2.15 或更新的版本，开启 JetStream：`nats-server -js -sd /var/lib/nats`。worker 启动时自己创建 stream 和 consumer。生产环境用三台服务器组成[集群](https://docs.nats.io/running-a-nats-service/configuration/clustering/jetstream_clustering)并把 `replicas` 设为 3：单台服务器默认每 2 分钟同步一次磁盘，断电时最近的任务可能丢失；只有一台时在 NATS 配置中设置 `jetstream { sync_interval: always }`。
+- **PostgreSQL** 17 或更新的版本，`wal_level = logical`（修改后重启），应用的数据库用户有 `REPLICATION` 属性（`ALTER ROLE app REPLICATION`）；RDS 这类云数据库在参数组中开启逻辑复制。其他设置见[运维](../installation/operations.md#queue)，[入门教程](../tutorial/02-infrastructure.md#infrastructure)的 `compose.yaml` 已经设置好。`queue.Doctor` 逐项检查这些要求，见[自检](../installation/doctor.md)。
+- **迁移**：`queue.Migrations()` 创建失败任务表 `queue_failed_jobs` 和逻辑复制槽，加入[发布命令](../database/migrations.md#publishing-framework-migrations)：
 
 ```go
 migrationCmd.AddCommand(migratecmd.Publish(
@@ -76,15 +46,15 @@ migrationCmd.AddCommand(migratecmd.Publish(
 ))
 ```
 
-部署时先执行迁移，再启动发布任务的进程：复制槽建立之后发布的任务才会被转发。
+部署时先执行迁移，再启动发布任务的进程：复制槽建立之前发布的任务不会被转发。
 
 > [!WARNING]
-> 所有 worker 都停止时，复制槽中没有转发的任务会一直累积，超过上限后任务丢失。请监控积压并设置告警，见[运维](../installation/operations.md#queue-monitoring)。
+> 所有 worker 都停止时，复制槽中没有转发的 WAL 一直累积，超过上限后复制槽失效，任务丢失。监控积压并设置告警，见[运维](../installation/operations.md#queue-monitoring)。
 
 <a id="publishing-jobs"></a>
-## 发布任务
+## 发布队列任务：`queue.Topic` 与 `Publish`
 
-`queue.Topic` 把 topic 名称和任务内容（payload）的类型声明在一起。发布和处理通常不在一处，两边共用这个声明，名称写错或类型不一致时无法通过编译。例如发送邮件的 topic 声明在一个单独的小包 `mailjob` 中，所有要发邮件的业务包都用它：
+`queue.Topic` 把 topic 名称和 payload 的类型声明在一起，发布方和处理方共用这一个声明，名称写错或类型不一致时编译不通过。多个业务包共用的 topic 放在单独的小包中；业务模块自己的 topic 和业务动作写在一起，见[队列任务](../concepts/actions.md#as-jobs)：
 
 ```go
 package mailjob
@@ -98,41 +68,23 @@ import (
 var Send = queue.Topic[mail.Message]("mail.send")
 ```
 
-topic 名由字母、数字、`.`、`_`、`-` 组成，最长 64 个字符，`.` 分隔的每一段都不能为空。只差在 `.` 和 `_` 的两个 topic（例如 `mail.send` 和 `mail_send`）对应同一个 consumer，不能同时使用。
-
-`Publish` 把 payload 编码为 JSON，写入传入的数据库。传入事务时，任务和业务数据一起提交。例如发布文章时，通知邮件在同一个事务中渲染并发布：
+`Publish` 把 payload 编码为 JSON 写入传入的 `db`：传入事务 `tx` 时任务随事务提交，传入连接池时立即发布。`a.db` 是 `*bun.DB`，`msg` 是渲染好的 `mail.Message`：
 
 ```go
-func (a *Publish) Handle(ctx context.Context, subject identity.Subject, id uuid.UUID) (*Article, error) {
-    item := new(Article)
-    err := database.RunInTx(ctx, a.db, nil, func(ctx context.Context, tx database.Tx) error {
-        // ... 检查权限并更新文章状态
-
-        msg, err := a.emails.Render(ctx, "article_published", map[string]any{
-            "Title": item.Title,
-            "URL":   "https://example.com/" + item.Slug,
-        })
-        if err != nil {
-            return err
-        }
-        msg.To = []mail.Address{a.editors}
-        return mailjob.Send.Publish(ctx, tx, msg)
-    })
-    if err != nil {
-        return nil, err
-    }
-    return item, nil
-}
+err := database.RunInTx(ctx, a.db, nil, func(ctx context.Context, tx database.Tx) error {
+    // ... 更新文章状态
+    return mailjob.Send.Publish(ctx, tx, msg)
+})
 ```
 
-事务提交时 PostgreSQL 通知 worker，任务随即被转发到 JetStream。`PublishAll` 一次发布多个同类任务，批量写入。
-
-每个任务有一个 UUIDv7 作为 ID。`ctx` 中的 `request_id` 会随任务保存，处理任务时还原到处理函数的 `ctx` 中，见[日志](queue-monitoring.md#logging)。
+- topic 名由字母、数字、`.`、`_`、`-` 组成，最长 64 个字符，`.` 分隔的每一段不能为空。只差在 `.` 和 `_` 的两个 topic（`mail.send` 和 `mail_send`）对应同一个 consumer，不能同时使用。
+- `PublishAll` 批量发布多个同类任务。
+- `ctx` 中的 `request_id` 和链路随任务保存，处理时还原到处理函数的 `ctx` 中。
 
 <a id="delayed-jobs"></a>
-### 延迟执行
+### 延迟执行：`queue.Delay`、`queue.At`
 
-`queue.Delay` 让任务在一段时间之后才执行，`queue.At` 指定执行时间：
+`queue.Delay(d)` 让任务在一段时间之后执行，`queue.At(t)` 指定执行时间，`tx` 是业务事务：
 
 ```go
 var PublishAt = queue.Topic[uuid.UUID]("articles.publish")
@@ -140,53 +92,47 @@ var PublishAt = queue.Topic[uuid.UUID]("articles.publish")
 err := PublishAt.Publish(ctx, tx, item.ID, queue.At(item.PublishAt))
 ```
 
-还没到执行时间的任务转发为 JetStream 的定时消息，到时间由 JetStream 投递，精确到秒，延迟多久都可以。它们一直保存在 JetStream 中，几天、几个月之后才执行的任务也是，所以生产环境的 stream 要有多个副本，见[运维](../installation/operations.md#queue-jetstream)。
-
-业务包自己的 topic 和处理它的业务动作声明在同一个文件中，见[队列任务](../concepts/actions.md#as-jobs)。
+未到时间的任务保存为 JetStream 的定时消息，精确到秒，延迟多久都可以。几个月后才执行的任务也一直在 JetStream 中，所以生产环境的 stream 要有多个副本，见[运维](../installation/operations.md#queue-jetstream)。
 
 <a id="multi-step-jobs"></a>
 ### 多步任务
 
-有些工作要按顺序分几步完成，例如文章发布后先生成摘要，再推送给订阅者。上一步完成后，在保存结果的事务中发布下一步：
+按顺序分几步完成的工作，在保存这一步结果的事务中发布下一步：这一步提交时才发出下一步，下一步需要的数据放进它的 payload。在这一步的 `Job` 中，`a.db` 是 `*bun.DB`，`NotifySubscribers` 是下一步的 `queue.Topic[uuid.UUID]`：
 
 ```go
-// Job 生成摘要，和下一步“推送给订阅者”一起提交。
-func (a *Summarize) Job(ctx context.Context, id uuid.UUID) error {
-    summary, err := a.generate(ctx, id) // 调用模型，不放在事务中
+summary, err := a.generate(ctx, id) // 调用模型，不放在事务中
+if err != nil {
+    return err
+}
+return database.RunInTx(ctx, a.db, nil, func(ctx context.Context, tx database.Tx) error {
+    _, err := tx.NewUpdate().Model((*Article)(nil)).Set("summary = ?", summary).Where("id = ?", id).Exec(ctx)
     if err != nil {
         return err
     }
-    return database.RunInTx(ctx, a.db, nil, func(ctx context.Context, tx database.Tx) error {
-        _, err := tx.NewUpdate().Model((*Article)(nil)).Set("summary = ?", summary).Where("id = ?", id).Exec(ctx)
-        if err != nil {
-            return err
-        }
-        return NotifySubscribers.Publish(ctx, tx, id)
-    })
-}
+    return NotifySubscribers.Publish(ctx, tx, id)
+})
 ```
-
-每一步只依赖自己的 payload，下一步需要的数据（例如上一步的结果）直接放进下一步的 payload，类型由 `queue.Topic` 检查。下一步和这一步的结果在同一个事务中提交：这一步成功提交时才发出下一步，下一步也随之可靠送达。
 
 一组任务并行执行、全部结束后再做下一件事，用[后台操作的并行处理](../features/operations.md#fanout)。
 
 <a id="processing-jobs"></a>
-## 处理任务
+## 处理任务：`Topic.Handle`
 
-`Handle` 把一个函数注册为 topic 在 worker 上的处理函数，任务的内容按 JSON 解码为函数的参数类型。`mail.Mailer` 的 `Send` 方法正好符合要求：
+`Handle` 把函数注册为 topic 在 worker 上的处理函数，payload 按 JSON 解码为函数的参数类型。`w` 是 `queue.NewWorker` 返回的 worker，`mail.Mailer` 的 `Send` 方法正好符合签名：
 
 ```go
 mailjob.Send.Handle(w, mailer.Send)
 ```
 
-处理函数返回 `nil` 时任务完成；返回错误时任务稍后重试，见[失败与重试](#failures-and-retries)。
+- 返回 `nil` 时任务完成；返回错误时按[失败与重试](#failures-and-retries)处理。
+- 处理函数的 `ctx` 中的查询都在主库执行：任务在事务提交后立即送达，读库可能还没有这些数据。
+- 把 `ctx` 传给数据库查询和外部调用，停止 worker 时处理函数才能及时退出，见[租约与停止](#leases-and-shutdown)。
+- 个别 topic 用 `queue.Concurrency`、`queue.MaxAttempts` 覆盖配置，例如 `Summarize.Handle(w, s.Job, queue.Concurrency(2))`。
 
 <a id="running-workers"></a>
 ### 启动 worker
 
-worker 是进程的一个运行部分（见[多个运行部分](../concepts/dependencies.md#running-parts)）。它做两件事：把发布的任务转发到 JetStream，以及处理已注册 topic 的任务。
-
-一个复制槽同时只能被一个连接读取，所以部署多个 worker 实例时，只有一个在转发，其余的待命，每 5 秒尝试一次；转发的实例停止或失联后，其中一个接手，从已经确认的位置继续。任务的处理照常进行，所有实例都处理任务。在入口的 `bootstrap` 包中：
+worker 是常驻进程的一个[运行部分](../concepts/dependencies.md#running-parts)，转发发布的任务并处理已注册 topic 的任务。在入口的 `bootstrap` 包中，`a.nc` 是 `natsx.Connect` 创建的 NATS 连接（见[连接 NATS](../libraries/nats.md#connecting)），`newMailer` 见[装配发送器](../libraries/mail.md#assembling-mailer)，`article.RegisterJobs` 登记业务模块的任务，见[队列任务](../concepts/actions.md#as-jobs)：
 
 ```go
 // Worker 装配队列 worker，返回的函数转发并处理队列任务，直到 ctx 被取消。
@@ -195,7 +141,6 @@ func (a *App) Worker(*command.Daemon) (func(context.Context) error, error) {
     if err != nil {
         return nil, err
     }
-
     w := queue.NewWorker(a.db, a.nc, a.cfg.Queue, nil)
     mailjob.Send.Handle(w, mailer.Send)
     article.RegisterJobs(w, a.db)
@@ -203,73 +148,58 @@ func (a *App) Worker(*command.Daemon) (func(context.Context) error, error) {
 }
 ```
 
-`a.nc` 是入口中用 `natsx.Connect` 创建的 NATS 连接，广播等组件也用它，见[连接 NATS](../libraries/nats.md#connecting)；worker 不关闭它。`newMailer` 见[装配发送器](../libraries/mail.md#assembling-mailer)。业务模块的任务由模块的 `RegisterJobs` 登记，例如定时发布文章，见[队列任务](../concepts/actions.md#as-jobs)。最后把它登记为 `Parts` 中的一个部分，`serve` 就会运行它，`serve worker` 只运行它，见[serve：运行常驻进程](../general/commands.md#serve-command)：
+在 `Parts` 中登记为 `{Name: "worker", Short: "处理队列任务", Start: a.Worker}`，`serve` 运行全部部分，`serve worker` 只运行它，见[serve 命令](../general/commands.md#serve-command)。
 
-```go
-{Name: "worker", Short: "处理队列任务", Start: a.Worker},
-```
-
-发布的任务要等 worker 转发才会执行，所以部署时**至少运行一个 worker**。`w.Run` 建不了 stream 或 consumer（例如 NATS 不可用）时返回错误；运行后一直到进程收到停止信号，然后停止接收任务，等处理中的任务写回结果才返回；数据库在所有部分都返回之后才关闭。
-
-worker 可以和 HTTP 服务、调度器[运行在同一个进程中](../general/commands.md#serve-command)，任务量大了再单独部署（`serve worker`），按任务量增减实例数；单独部署时不需要健康检查，见[部署](../installation/deployment.md#health-checks)。多个 worker 同时运行是安全的：转发时互不重复，同一个应用的 worker 共用每个 topic 的 consumer，每个任务只交给其中一个。
+- `w.Run` 建不了 stream 或 consumer（例如 NATS 不可用）时返回错误。worker 不关闭 `a.nc`。
+- 多个实例同时运行是安全的：一个复制槽同时只能由一个连接读取，所以一个实例转发，其余的每 5 秒尝试接手；所有实例都处理任务，每个任务只交给其中一个。
+- 任务量大时单独部署 `serve worker` 并增减实例数，单独部署时不需要健康检查，见[部署](../installation/deployment.md#health-checks)。
 
 <a id="configuration"></a>
 ### 配置
 
-在应用配置中加入队列段。NATS 的地址和凭据在 `nats` 段中，见[连接 NATS](../libraries/nats.md#connecting)：
-
-```go
-type Config struct {
-    // ...
-    NATS  natsx.Config `yaml:"nats"`
-    Queue queue.Config `yaml:"queue"`
-}
-```
-
-不写的项使用下面的默认值，生产环境至少要写 `stream`：
+`queue.Config` 放进根配置，字段标签为 `yaml:"queue"`；NATS 的地址在 `nats` 段，见[连接 NATS](../libraries/nats.md#connecting)：
 
 ```yaml
 queue:
-  stream: jobs               # 保存任务的 stream，多个应用或环境共用 NATS 时区分
-  replicas: 1                # stream 的副本数，NATS 集群中设为 3
-  concurrency: 10            # 每个 topic 同时处理的任务数
-  max_attempts: 10           # 最多执行的次数
-  lease: 30s                 # JetStream 等待处理结果的时间，见下文
-  replication_dsn: ""        # 转发任务的复制连接；数据库连接经过 PgBouncer 时设为直连 PostgreSQL 的地址
-  shutdown_timeout: 30s      # 停止时等待处理中的任务的最长时间
+  stream: jobs          # 保存任务的 stream，多个应用或环境共用 NATS 时用它区分；默认 jobs
+  replicas: 1           # stream 的副本数，NATS 集群中设为 3；默认 1
+  concurrency: 10       # 每个 worker 实例中每个 topic 同时处理的任务数；默认 10
+  max_attempts: 10      # 最多执行的次数，用完后转入失败任务表；默认 10
+  lease: 30s            # JetStream 等待处理结果的时间，见“租约与停止”；默认 30s
+  replication_dsn: ""   # 转发任务的复制连接；数据库连接经过 PgBouncer 时设为直连 PostgreSQL 的地址
+  shutdown_timeout: 30s # 停止时等待处理中的任务的最长时间；默认 30s
 ```
 
-`concurrency` 是每个 worker 实例的上限，部署 3 个实例时同一个 topic 最多有 30 个任务同时执行。
-
-topic `mail.send` 的任务发布到 subject `jobs.job.mail.send`，等待投递的定时消息在 `jobs.delay.*` 中，`jobs` 是 `stream` 的值。worker 启动时创建 stream；它已经存在时，检查保留策略和 subject 是否符合要求，`replicas` 不同时更新它，运维调整过的其他设置（例如容量上限）保持不变。设置了 `max_age`，或者容量满时丢弃最早的消息（discard old）时，worker 拒绝启动：这两种设置会删掉还没执行的任务。
-
-`concurrency` 和 `max_attempts` 是所有 topic 的默认值。个别 topic 需要不同的值时，在注册时用 `queue.Concurrency`、`queue.MaxAttempts` 覆盖，例如调用模型的任务 `article.Summarize.Handle(w, summarize.Job, queue.Concurrency(2))`。
+- topic `mail.send` 的任务发布到 subject `jobs.job.mail.send`，定时消息在 `jobs.delay.*`，`jobs` 是 `stream` 的值。
+- stream 已经存在时，worker 检查它的保留策略和 subject，更新 `replicas`，其他设置保持不变。stream 设置了 `max_age` 或 discard old 时 worker 拒绝启动：这两种设置会删掉还没执行的任务。同名 stream 的设置不符时换一个 `stream` 名。
 
 <a id="failures-and-retries"></a>
 ## 失败与重试
 
-处理函数返回系统故障或 panic 时，任务在一段时间后重试，第 n 次失败后等待约 n⁴ 秒（上下浮动 10%）：
+处理函数返回错误时，是否重试由错误的[分类](../general/errors.md#error-kinds)决定：
+
+| 处理函数返回的错误 | 结果 |
+| --- | --- |
+| 系统故障：`errorx.Unavailable`、`errorx.Internal`、不是业务错误的普通错误、panic | 按退避时间重试 |
+| `errorx.ResourceExhausted`，或带有 `errorx.RetryAfter` 的错误 | 重试，有等待时间时按它 |
+| 其他业务错误，例如 `errorx.NotFound`、`errorx.Conflict` | 不重试，直接转入失败任务表 |
+| payload 无法解码为参数类型 | 不重试，直接转入失败任务表 |
+
+业务错误表示这次调用本身不成立（例如文章已被删除），重试结果不变，所以处理函数直接返回业务动作的错误。
+
+第 n 次失败后等待约 n⁴ 秒（上下浮动 10%，最长 24 小时）：
 
 | 失败次数 | 1 | 2 | 3 | 4 | 5 | 9 |
 | --- | --- | --- | --- | --- | --- | --- |
 | 等待 | 1 秒 | 16 秒 | 81 秒 | 约 4 分钟 | 约 10 分钟 | 约 1.8 小时 |
 
-默认最多执行 10 次，从第一次失败到最后一次重试约 4.3 小时，足以跨过大多数第三方服务的故障。重试之前的等待由 JetStream 的定时消息完成，同一个 topic 的其他任务照常处理。
+默认最多执行 10 次，从第一次失败到最后一次重试约 4.3 小时。等待期间同一个 topic 的其他任务照常处理。
 
-是否重试由错误的[分类](../general/errors.md#error-kinds)决定：
+<a id="marking-errors"></a>
+### 用 `queue.Permanent`、`queue.Retry`、`queue.RetryAfter` 改变重试
 
-| 处理函数返回的错误 | 结果 |
-| --- | --- |
-| 系统故障：`errorx.Unavailable`、`errorx.Internal`，不是业务错误的普通错误，以及 panic | 按上表的时间重试 |
-| `errorx.ResourceExhausted`，或者用 `errorx.RetryAfter` 给出了等待时间的错误 | 重试，有等待时间时按它重试 |
-| 其他业务错误，例如 `errorx.NotFound`、`errorx.InvalidArgument`、`errorx.Conflict` | 不重试，直接转入失败任务表 |
-
-业务错误表示这次调用本身不成立，例如文章已经被删除，重试的结果不会不同，所以处理函数直接返回业务动作的错误即可。任务内容无法解码为处理函数的参数类型时，同样直接转入失败任务表。
-
-两种情况需要自己标记：
-
-- 不是业务错误、但重试也是徒劳的错误，例如推送服务拒绝了配置不对的请求，用 `queue.Permanent` 包装，任务直接转入失败任务表；
-- 业务错误确实可能在稍后消失，例如任务要用的数据由另一个系统同步过来，还没有同步到而得到 `NotFound`，用 `queue.Retry` 包装，任务照常重试。
+- `queue.Permanent(err)`：重试也是徒劳的系统错误（例如推送服务拒绝了配置错误的请求），任务直接转入失败任务表。
+- `queue.Retry(err)`：稍后可能消失的业务错误，任务照常重试，例如数据由另一个系统同步过来、还没同步到：
 
 ```go
 if errors.Is(err, crm.ErrCustomerNotFound) {
@@ -277,7 +207,7 @@ if errors.Is(err, crm.ErrCustomerNotFound) {
 }
 ```
 
-第三方服务限流时往往会告诉你多久之后再试，例如 HTTP 429 响应的 `Retry-After`。用 `queue.RetryAfter` 包装错误，任务在指定的时间之后重试（被包装的是业务错误时同样重试）：
+- `queue.RetryAfter(err, d)`：在 `d` 之后重试，例如第三方返回 429 和 `Retry-After`（`resp` 是第三方的 `*http.Response`）：
 
 ```go
 if resp.StatusCode == http.StatusTooManyRequests {
@@ -286,9 +216,12 @@ if resp.StatusCode == http.StatusTooManyRequests {
 }
 ```
 
-这次重试同样计入执行次数，次数用完时照常转入失败任务表。
+三者同时出现时 `Permanent` 优先。每次重试都计入执行次数，次数用完时照常转入失败任务表。
 
-任务自己保存了处理状态时，需要在放弃之前记下最终结果，例如把一条投递记录从「重试中」改为「失败」。`queue.AttemptFromContext` 返回本次是第几次执行，以及这是否是最后一次；`queue.IsPermanent` 报告这个错误是否会让任务直接结束，两者之一成立时任务就不会再执行：
+<a id="final-attempt"></a>
+### 在最后一次失败时记下结果：`queue.AttemptFromContext`
+
+任务自己保存了处理状态时（例如投递记录的“重试中”），在放弃之前改为最终结果。`queue.AttemptFromContext` 返回第几次执行、是否最后一次，`queue.IsPermanent` 报告这个错误是否让任务直接结束：
 
 ```go
 if err != nil {
@@ -299,175 +232,151 @@ if err != nil {
 }
 ```
 
-从失败任务表[重新发布](queue-monitoring.md#failed-jobs)的任务从第 1 次重新计数。
+从失败任务表[重新发布](#failed-jobs)的任务从第 1 次重新计数。
 
 <a id="leases-and-shutdown"></a>
-## 任务的租约与停止
+## 租约与停止
 
-JetStream 把任务交给 worker 后，等待处理结果的时间是 `lease`（默认 30 秒），处理期间 worker 每 10 秒自动延长一次。任务执行多久都可以，长任务也保持默认配置。worker 只在有空闲的并发名额时才领取任务，任务不会在 worker 中排队等待。
+JetStream 把任务交给 worker 后等待结果的时间是 `lease`（默认 30 秒），处理期间 worker 每 `lease/3` 自动延长一次，所以任务执行多久都可以，长任务也保持默认配置。worker 只在有空闲的并发名额时领取任务。
 
-- **worker 崩溃**：延长随之停止，`lease` 到期后 JetStream 把任务交给其他 worker。
-- **停止 worker**：收到停止信号后，worker 停止接收新任务，等待处理中的任务完成，最多等待 `shutdown_timeout`。这期间处理函数的 `ctx` 保持有效。超时仍未完成的任务立即放回 JetStream，处理函数的 `ctx` 以 `queue.ErrShuttingDown` 取消；worker 等这些处理函数返回之后才停止，之后才关闭数据库。放回的任务再次执行时计入一次执行。
-
-处理函数应当把 `ctx` 传给数据库查询和外部调用，这样停止超时时能尽快退出。
+- **worker 崩溃**：`lease` 到期后任务交给其他 worker。
+- **停止 worker**：停止领取新任务，等待处理中的任务完成，最多 `shutdown_timeout`。超时的任务放回 JetStream，处理函数的 `ctx` 以 `queue.ErrShuttingDown` 取消；worker 等这些处理函数返回后才停止，之后关闭数据库。放回的任务再次执行时计入一次执行。
 
 <a id="testing"></a>
 ## 测试
 
-处理函数是普通的函数，直接调用它测试即可。发布任务的一方，用 [`dbtest.Open`](../testing/testing.md) 打开执行过 `queue.Migrations()` 的测试数据库，用 `queuetest.Pending` 读出还没转发的任务。它只能看到已经提交的任务，使用时停掉 worker：
+处理函数是普通的函数，直接调用它测试。
+
+发布任务的一方：用 [`dbtest.Open`](../testing/testing.md#creating-test-databases) 打开包含 `queue` 迁移的测试数据库，`queuetest.Pending` 读出已提交、还没转发的任务，这时不运行 worker：
 
 ```go
-db := dbtest.Open(t, migrations.FS) // 包含已发布的 queue 迁移
-publish := article.NewPublish(db, emails, editors)
-
-// ... 创建并发布一篇文章
-
+db := dbtest.Open(t, migrations.FS)
+// ... 调用发布文章的业务动作
 if jobs := queuetest.Pending(t, db, mailjob.Send); len(jobs) != 1 {
     t.Fatalf("queued %d mails", len(jobs))
 }
 ```
 
-需要端到端运行时，`queue/queuetest` 提供连接测试 NATS 的连接和配置：每次使用随机名字的 stream，并行的测试互不干扰，测试结束时删除它。测试 NATS 的地址由环境变量 `NATS_TEST_URL` 给出，例如 `nats://127.0.0.1:4222`：
+端到端运行 worker 时，`queuetest.Conn` 连接环境变量 `NATS_TEST_URL` 给出的测试 NATS，`queuetest.Config` 使用随机名字的 stream，测试结束时删除：
 
 ```go
 w := queue.NewWorker(db, queuetest.Conn(t), queuetest.Config(t), nil)
-article.PublishJob.Handle(w, publish.Job)
+article.PublishAt.Handle(w, publish.Job)
 queuetest.Run(t, w) // 测试结束时停止
 ```
 
-<a id="troubleshooting"></a>
-## 常见问题
+<a id="failed-jobs"></a>
+## 失败任务：`queue.FailedJobs`
 
-**发布了任务，但处理函数一直没有执行**
-
-检查三点：worker 是否在运行（`serve` 或 `serve worker`）；处理函数是否为这个 topic 注册了；发布任务的事务是否提交了，回滚时任务一起取消。
-
-**worker 启动时报错复制槽不存在或已失效**
-
-迁移没有执行，或者复制槽在恢复备份、主备切换后丢失了，见[重建复制槽](../installation/operations.md#queue-recovery)。
-
-**worker 启动时报错 stream 已经存在，设置不同**
-
-NATS 中已经有一个同名的 stream，保留策略或 subject 与队列需要的不同，通常是别的应用或手动创建的。把[配置](#configuration)中的 `stream` 换成另一个名字。
-
-**同一个任务执行了两次**
-
-任务至少执行一次：worker 崩溃或停止超时时，任务会在其他 worker 上重新执行。处理函数要能安全地重复执行，例如先检查工作是否已经完成。
-
-**任务失败后没有重试，直接进了失败任务表**
-
-处理函数返回了业务错误（例如 `errorx.NotFound`）、用 `queue.Permanent` 包装的错误，或者重试次数已经用完，见[失败与重试](#failures-and-retries)。业务错误确实需要重试时，用 `queue.Retry` 包装。
-
-<a id="api-reference"></a>
-## API 参考
-
-包 `github.com/go-tenon/tenon/queue`。
-
-### Topic
+不再重试的任务保存在 `queue_failed_jobs` 表中，一直保留到被重试或删除。`db` 是 `*bun.DB`：
 
 ```go
-type Topic[T any] string
+failed := queue.NewFailedJobs(db)
 
-func (t Topic[T]) Publish(ctx context.Context, db bun.IDB, payload T, opts ...PublishOption) error
-func (t Topic[T]) PublishAll(ctx context.Context, db bun.IDB, payloads []T, opts ...PublishOption) error
-func (t Topic[T]) Handle(w *Worker, fn func(ctx context.Context, payload T) error, opts ...HandleOption)
+jobs, err := failed.List(ctx, queue.FailedQuery{Topic: "mail.send", Limit: 50}) // 从新到旧
+job, err := failed.Get(ctx, id) // job.Error 是最后一次的错误，包括堆栈
+err = failed.Retry(ctx, id)     // 修复问题后重新发布；不存在时返回 queue.ErrFailedJobNotFound
+err = failed.Delete(ctx, id)
 ```
 
-`Publish` 把 payload 编码为 JSON，写入 `db` 的 WAL，`db` 是事务时随事务提交。`Handle` 在 worker 上注册处理函数。
+`RetryAll(ctx, topic, before, limit)` 和 `DeleteAll` 按 topic 批量处理（topic 为空时是全部），每次最多 `limit` 条，返回处理的条数，循环调用直到返回值小于 `limit`。`before` 取开始处理之前的时间：重试后马上又失败的任务失败时间在它之后，一轮中只放回一次。
 
-### Topic.Publish
+`Cleanup(保留期)` 返回删除早于保留期的失败任务的函数，注册为每天的[定时任务](scheduling.md#framework-cleanups)，`sched` 是入口中的 `*schedule.Scheduler`：
 
 ```go
-func (t Topic[T]) Publish(ctx context.Context, db bun.IDB, payload T, opts ...PublishOption) error
+sched.Add("queue:prune-failed", "@daily", schedule.Cleanup(failed.Cleanup(30*24*time.Hour), 1000))
 ```
 
-- **参数**
-    - `db`：业务事务；传入连接池时立即发布
-    - `payload`：任务的内容，编码为 JSON
-    - `opts`：`Delay` 或 `At`，见[延迟执行](#delayed-jobs)
-- **返回**：写入失败时的错误
+<a id="logging"></a>
+## 日志
 
-任务写入 `db` 的 WAL，`db` 是事务时随事务一起提交。
+- 队列的日志带有 `component=queue`，可以[单独设置级别](../general/logging.md#component-levels)。任务等待重试记为 `warn`，转入失败任务表记为 `error`。NATS 的断开和重连在 `component=nats` 的日志中。
+- 处理函数的 `ctx` 中带有 `message_id`（任务 ID）、`attempt`（第几次执行）和发布时的 `request_id`，`slog.InfoContext(ctx, ...)` 记录的日志自动带上它们，请求和它产生的任务由此串起来。
 
-### Topic.Handle
+<a id="job-events"></a>
+## 任务事件：`queue.WithObserver`
+
+`queue.WithObserver` 让 worker 在每次状态变化时调用一个函数。成功的任务只体现在事件中，需要执行历史时把事件写进应用自己的表，用[定时任务](scheduling.md)清理。`JobRun` 是应用的模型：
 
 ```go
-func (t Topic[T]) Handle(w *Worker, fn func(ctx context.Context, payload T) error, opts ...HandleOption)
+w := queue.NewWorker(a.db, a.nc, a.cfg.Queue, nil,
+    queue.WithObserver(func(ctx context.Context, e queue.Event) {
+        if e.Kind == queue.JobStarted {
+            return
+        }
+        _, err := a.db.NewInsert().Model(&JobRun{JobID: e.Job.ID, Topic: e.Job.Topic,
+            Status: e.Kind.String(), Duration: e.Duration}).Exec(ctx)
+        if err != nil {
+            slog.ErrorContext(ctx, "record job run failed", "error", err)
+        }
+    }))
 ```
 
-- **参数**
-    - `w`：worker
-    - `fn`：处理函数；返回 `nil` 表示完成，返回错误表示稍后重试
-    - `opts`：`Concurrency`、`MaxAttempts`
+- 事件的 `Kind`：`JobStarted`（交给处理函数）、`JobSucceeded`（成功并已确认）、`JobRetrying`（失败，`RetryAt` 是下一次执行时间）、`JobFailed`（转入失败任务表）、`JobReleased`（停止等待超时，放回 JetStream）。
+- 除 `JobStarted` 外，事件在结果写回之后报告；`Err` 是失败原因。
+- Observer 在处理任务的 goroutine 中同步调用，耗时占用并发名额；较重的工作缓冲后批量处理。
 
-### PublishOption
+<a id="stats-command"></a>
+## 队列状态：`queue status` 命令
+
+`queuecmd.New` 返回 `queue` 命令，在 [bootstrap.Commands](../concepts/actions.md#as-commands) 中声明；`queuecmd.WithJetStream` 让它同时显示 JetStream 中的状态，`a.nc` 是应用的 NATS 连接：
 
 ```go
-func Delay(d time.Duration) PublishOption
-func At(t time.Time) PublishOption
+queuecmd.New(a.db, queuecmd.WithJetStream(a.nc, a.cfg.Queue)),
 ```
 
-延迟执行，见[延迟执行](#delayed-jobs)。
+`queue status` 显示复制槽（还没转发的任务）和 JetStream（其余的任务）：
 
-### HandleOption
+```text
+slot            tenon_queue_3f2a9c1e5b7d4e60
+state           relaying (pid 48213)
+lag             12.4 KiB
+stream          jobs
+deferred        5
+
+TOPIC         PENDING  IN FLIGHT  REDELIVERED  LAST DELIVERED       STATE
+mail.send     9        3          0            2026-11-12 09:41:07  ok
+sms.send      4        0          0            -                    no handler: no worker has registered this topic
+```
+
+- `state` 为 `idle` 时没有 worker 在转发；为 `missing` 或 `lost` 时 worker 拒绝启动，用 `queue slot recreate` 重建，见[重建复制槽](../installation/operations.md#queue-recovery)。
+- `deferred` 是延迟任务和等待重试的任务。
+- `STATE` 为 `no handler` 时没有 worker 注册这个 topic，任务一直等待，通常是忘了 `Handle` 或 topic 名不一致；为 `stalled` 时有任务等待却没有 worker 领取，通常是 worker 全部停止了。
+- 连不上 NATS 时，命令输出数据库一侧的状态后以错误退出。
+- topic 的 consumer 名是把 `.` 换成 `_` 的 topic 名，例如 `nats consumer info jobs mail_send`。
+
+`queue failed --topic mail.send --limit 10` 从新到旧列出失败任务，错误只显示第一行。
+
+<a id="queue-api"></a>
+## 运维接口：`queueapi.Register`
+
+`queue/queueapi` 把队列状态和失败任务做成 JSON 接口，`@go-tenon/ui` 的 [`QueuePanel`](../frontend/features.md#queue-panel) 使用它们。`api` 是 `rest.New` 创建的 API，`a.tokens` 是 `*apitoken.Store`：
 
 ```go
-func Concurrency(n int) HandleOption
-func MaxAttempts(n int) HandleOption
+opts := queueapi.Options{}
+if a.nc != nil { // 生成文档和客户端的 DocRouter 没有 NATS 连接
+    opts.Admin = queue.NewAdmin(a.nc, a.cfg.Queue)
+}
+queueapi.Register(api, rest.RequireToken(api, a.tokens.Validate, "queue:manage"), a.db, opts)
 ```
 
-这个 topic 同时处理的任务数和最多尝试的次数，默认取自[配置](#configuration)。
+- 第二个参数保护全部接口，权限写进[权限目录](../security/authorization.md#permission-catalog)。
+- 没有 `Admin` 时概览中没有 `jetstream` 字段，暂停和恢复返回 `503 queue.no_admin`；这两个接口总是注册，生成的客户端与运行时一致。
 
-### NewWorker
+| 接口 | 作用 |
+| --- | --- |
+| `GET /queue/status`（`queue-status`） | 概览：复制槽、stream、每个 topic 一行、失败任务总数 |
+| `GET /queue/failed`（`queue-failed-list`） | 失败任务列表，按 `topic` 筛选，分页 |
+| `GET /queue/failed/{id}`（`queue-failed-get`） | 失败任务详情：payload、元数据、完整的错误 |
+| `POST /queue/failed/{id}/retry`（`queue-failed-retry`） | 重新发布一条 |
+| `DELETE /queue/failed/{id}`（`queue-failed-delete`） | 删除一条 |
+| `POST /queue/failed/retry?topic=`（`queue-failed-retry-all`） | 重新发布一个 topic（为空时全部）的失败任务 |
+| `DELETE /queue/failed?topic=`（`queue-failed-delete-all`） | 删除一个 topic（为空时全部）的失败任务 |
+| `POST /queue/topics/{topic}/pause`（`queue-topic-pause`） | 暂停 topic 一小时 |
+| `POST /queue/topics/{topic}/resume`（`queue-topic-resume`） | 恢复 topic |
 
-```go
-func NewWorker(db *bun.DB, nc *nats.Conn, cfg Config, logger *slog.Logger, opts ...WorkerOption) *Worker
-func (w *Worker) Run(ctx context.Context) error
-func WithTelemetry(mp metric.MeterProvider, tp trace.TracerProvider) WorkerOption
-func WithObserver(o Observer) WorkerOption
-```
-
-`nc` 是 `natsx.Connect` 返回的连接，worker 不关闭它。`Run` 转发发布的任务并处理已注册的 topic，直到 `ctx` 被取消。`WithTelemetry` 见[可观测性](../general/telemetry.md#queue)；`WithObserver` 接收[任务事件](queue-monitoring.md#job-events)。
-
-### 处理函数的返回值
-
-```go
-func Permanent(err error) error
-func Retry(err error) error
-func RetryAfter(err error, d time.Duration) error
-func IsPermanent(err error) bool
-func AttemptFromContext(ctx context.Context) (attempt int, final bool)
-```
-
-`Permanent` 标记为最终失败，直接转入失败任务；`Retry` 让默认不重试的业务错误按退避时间重试；`RetryAfter` 指定下次重试的时间；`IsPermanent` 报告以这个错误失败的任务是否直接结束；`AttemptFromContext` 返回这是第几次尝试、是否最后一次。三个标记同时出现时 `Permanent` 优先。见[失败与重试](#failures-and-retries)。
-
-### FailedJobs
-
-```go
-func NewFailedJobs(db bun.IDB) *FailedJobs
-func (f *FailedJobs) List(ctx context.Context, q FailedQuery) ([]FailedJob, error)
-func (f *FailedJobs) Get(ctx context.Context, id uuid.UUID) (FailedJob, error)
-func (f *FailedJobs) Retry(ctx context.Context, id uuid.UUID) error
-func (f *FailedJobs) RetryAll(ctx context.Context, topic string, before time.Time, limit int) (int, error)
-func (f *FailedJobs) Delete(ctx context.Context, id uuid.UUID) error
-func (f *FailedJobs) DeleteAll(ctx context.Context, topic string, before time.Time, limit int) (int, error)
-func (f *FailedJobs) Counts(ctx context.Context) ([]TopicCount, error)
-func (f *FailedJobs) Cleanup(keep time.Duration) func(ctx context.Context, limit int) (int, error)
-```
-
-查看、重试和删除失败任务，见[失败任务](queue-monitoring.md#failed-jobs)。
-
-### 其他
-
-```go
-func Migrations() fs.FS
-func ReadStatus(ctx context.Context, db bun.IDB) (Status, error)
-func RecreateSlot(ctx context.Context, db bun.IDB, force bool) error
-
-func NewAdmin(nc *nats.Conn, cfg Config) *Admin
-func (a *Admin) Status(ctx context.Context) (StreamStatus, error)
-func (a *Admin) Pause(ctx context.Context, topic string, until time.Time) error
-func (a *Admin) Resume(ctx context.Context, topic string) error
-```
-
-`Migrations` 是队列的迁移；`ReadStatus` 读取复制槽和延迟任务的状态，`Admin` 读取 JetStream 中的 stream 和各 topic、暂停和恢复 topic，`queue status` 命令和[运维接口](queue-monitoring.md#queue-api)用它们；`RecreateSlot` 在复制槽失效后重建，见[部署](../installation/operations.md#queue-recovery)。
+- topic 的 `state` 是 `ok`、`no_handler`、`paused`、`stalled`，或只有失败任务数的 `absent`。读不到 JetStream（3 秒超时）时概览照常返回数据库一侧，`jetstream.error` 是错误信息。
+- 全部重试、全部删除只处理请求之前失败的任务，分批处理直到完成。
+- 暂停的 topic 照常发布和保存任务，worker 不再领取，一小时后自动恢复；下游故障时先暂停，免得任务大量转入失败任务表。更长的暂停用 `Admin.Pause(ctx, topic, until)`。
+- 失败任务不存在返回 `404 queue.failed_job_not_found`；没有 worker 注册过的 topic，暂停和恢复返回 `404 queue.topic_not_found`。
+- 每次重试、删除、暂停和恢复记一条 Info 日志，带上操作者、topic 和条数。

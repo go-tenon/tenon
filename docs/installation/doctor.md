@@ -251,8 +251,8 @@ rest.Register(api, status, func(ctx context.Context, _ *struct{}) (*DoctorOutput
 | 检查 | 内容 | 不满足时 |
 | --- | --- | --- |
 | `public_url` | 写入一个探测对象，从 `public_url` 下载它，内容一致 | 失败；从本机连不上 `public_url` 时只提示 |
-| `cors` | 传入了 `uploadOrigins` 时：存储桶的 CORS 规则允许这些来源用 `PUT` [直传](../libraries/direct-uploads.md)，允许请求头 `Content-Type` 和 `If-None-Match`，暴露响应头 `ETag` | 失败；存储不提供 CORS 规则的接口、或凭据没有读取权限时跳过 |
-| `conditional_write` | 传入了 `uploadOrigins` 时：用 `If-None-Match: *` 两次写入同一个探测对象，第二次被拒绝。直传靠它保证[已确认的文件不被覆盖](../libraries/direct-uploads.md#no-overwrite) | 失败 |
+| `cors` | 传入了 `uploadOrigins` 时：存储桶的 CORS 规则允许这些来源用 `PUT` [直传](../libraries/filesystem.md)，允许请求头 `Content-Type` 和 `If-None-Match`，暴露响应头 `ETag` | 失败；存储不提供 CORS 规则的接口、或凭据没有读取权限时跳过 |
+| `conditional_write` | 传入了 `uploadOrigins` 时：用 `If-None-Match: *` 两次写入同一个探测对象，第二次被拒绝。直传靠它保证[已确认的文件不被覆盖](../libraries/filesystem.md#no-overwrite) | 失败 |
 
 `uploadOrigins` 是调用直传的前端的来源，例如 `https://example.com`、`https://admin.example.com`；不用直传时不传，也就不检查 CORS 和条件写入。`public_url` 可能是只有浏览器才能访问的地址（例如经过 CDN），所以从服务器上连不上时只提示，请在浏览器中打开确认。
 

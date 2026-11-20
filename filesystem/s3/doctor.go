@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	docDirectUploads = "docs/libraries/direct-uploads.md"
+	docDirectUploads = "docs/libraries/filesystem.md#direct-upload"
 	docFilesystem    = "docs/libraries/filesystem.md"
 )
 

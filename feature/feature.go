@@ -132,7 +132,7 @@ type Store struct {
 }
 
 // NewStore 创建存储。db 必须已执行 feature 迁移。
-// 目录中的开关名为空、重复、包含空白或超过 191 字节时 panic。
+// 目录中的开关名为空、重复或包含空白时 panic。
 func NewStore(db bun.IDB, catalog Catalog) *Store {
 	if db == nil {
 		panic("feature: nil database")
