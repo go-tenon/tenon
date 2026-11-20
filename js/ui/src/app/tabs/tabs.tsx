@@ -28,6 +28,7 @@ import {
   useSyncExternalStore,
 } from "react"
 import "../meta"
+import { text, useI18n, useLanguage } from "../../i18n/i18n"
 import { type App, useApp, useMenu } from "../app"
 import type { MenuItem } from "../menu"
 import { noAccount } from "../snapshot"
@@ -129,7 +130,7 @@ async function confirmClose(app: App, keys: readonly string[]): Promise<boolean>
   const n = keys.filter((k) => dirty.has(k)).length
   if (n === 0) return true
   return configOf(app).current.confirm(
-    n === 1 ? "这个标签有未保存的修改，确定关闭吗？" : `${n} 个标签有未保存的修改，确定关闭吗？`,
+    n === 1 ? text("tenon.tabs.close_dirty_one") : text("tenon.tabs.close_dirty_many", { count: n }),
   )
 }
 
@@ -138,7 +139,7 @@ async function confirmClose(app: App, keys: readonly string[]): Promise<boolean>
  *
  *   if (await confirmDiscard(app)) { await api.auth.logout(); await session.signOut() }
  */
-export async function confirmDiscard(app: App, message = "有未保存的修改，确定放弃吗？"): Promise<boolean> {
+export async function confirmDiscard(app: App, message = text("tenon.unsaved.discard")): Promise<boolean> {
   if (tabsOf(app).get().dirty.size === 0) return true
   return configOf(app).current.confirm(message)
 }
@@ -449,11 +450,15 @@ export function useTabs(): Tabs {
   const store = tabsOf(app)
   const model = useSyncExternalStore(store.subscribe, store.get, store.get)
   const actions = useMemo(() => tabsActions(app), [app])
+  const i18n = useI18n()
+  const language = useLanguage()
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 切换语言时重新翻译路由的标题
   return useMemo(() => {
     const { tabs, active } = model.state
     const views = tabs.map<TabView>((t) => ({
       key: t.key,
-      title: model.titles[t.key] ?? t.customTitle ?? t.title ?? t.href,
+      // 路由的标题可以是消息 ID，按当前语言翻译；页面用 useTabTitle 设置的标题已经是给人看的文字
+      title: model.titles[t.key] ?? t.customTitle ?? (t.title ? i18n.t(t.title) : t.href),
       icon: t.icon,
       href: t.href,
       pinned: t.pinned,
@@ -462,7 +467,7 @@ export function useTabs(): Tabs {
       closable: tabs.length > 1,
     }))
     return { tabs: views, active: views.find((t) => t.active), ...actions }
-  }, [model, actions])
+  }, [model, actions, i18n, language])
 }
 
 // ———————————————————————————— 页面中 ————————————————————————————

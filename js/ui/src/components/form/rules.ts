@@ -12,6 +12,7 @@ import {
 import { useBlocker } from "@tanstack/react-router"
 import { useCallback, useContext, useEffect, useMemo, useRef } from "react"
 import { TabPaneContext } from "../../app/tabs/context"
+import { text } from "../../i18n/i18n"
 
 /** 校验的选项：生成的 components、messages，以及提示的语言。 */
 export type FormRulesOptions = Pick<ValidateOptions, "components" | "messages" | "language">
@@ -76,7 +77,7 @@ export function useUnsavedChanges(dirty: boolean, options: UnsavedChangesOptions
   useEffect(() => {
     setTabDirty?.(dirty)
   }, [setTabDirty, dirty])
-  const ask = options.confirm ?? (() => window.confirm(options.message ?? "有未保存的修改，确定离开吗？"))
+  const ask = options.confirm ?? (() => window.confirm(options.message ?? text("tenon.unsaved.leave")))
   useBlocker({
     shouldBlockFn: async () => {
       if (pane || !state.current.dirty || state.current.released) return false

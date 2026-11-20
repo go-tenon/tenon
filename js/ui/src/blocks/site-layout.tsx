@@ -4,6 +4,7 @@
 import { Box, Burger, Container, Drawer, Group, SimpleGrid, Stack, Text } from "@mantine/core"
 import { Link, Outlet } from "@tanstack/react-router"
 import { type CSSProperties, type ReactNode, useState } from "react"
+import { useText } from "../i18n/i18n"
 
 // 页头的高度（像素）。
 const headerHeight = 64
@@ -62,6 +63,7 @@ export function SiteLayout({
   children,
 }: SiteLayoutProps): ReactNode {
   const [open, setOpen] = useState(false)
+  const t = useText()
   const vars = { "--tn-header-height": `${headerHeight}px` } as CSSProperties
   return (
     <div className="tn-site" style={vars}>
@@ -70,7 +72,7 @@ export function SiteLayout({
           <Link to="/" className="tn-site-brand">
             {brand}
           </Link>
-          <Group gap={2} className="tn-site-nav" visibleFrom="sm" component="nav" aria-label="网站导航">
+          <Group gap={2} className="tn-site-nav" visibleFrom="sm" component="nav" aria-label={t("tenon.site.nav")}>
             {nav.map((l, i) => (
               // biome-ignore lint/suspicious/noArrayIndexKey: 导航是固定的列表
               <SiteAnchor key={i} link={l} />
@@ -80,7 +82,13 @@ export function SiteLayout({
           <Group gap="xs" visibleFrom="sm">
             {actions}
           </Group>
-          <Burger hiddenFrom="sm" size="sm" opened={open} onClick={() => setOpen((o) => !o)} aria-label="打开导航" />
+          <Burger
+            hiddenFrom="sm"
+            size="sm"
+            opened={open}
+            onClick={() => setOpen((o) => !o)}
+            aria-label={t("tenon.frame.open_nav")}
+          />
         </Container>
       </header>
       <Drawer opened={open} onClose={() => setOpen(false)} size="xs" position="right" title={brand}>

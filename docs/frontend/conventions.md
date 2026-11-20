@@ -49,10 +49,11 @@ Tenon 应用网页前端的技术选型、目录结构和编码规范。`tenon i
 <a id="ui-layers"></a>
 ## `@go-tenon/ui` 的分层
 
-`@go-tenon/ui` 分成五层，上层只引用下层。找组件或函数时先确定它在哪一层：
+`@go-tenon/ui` 分成六层，上层只引用下层。找组件或函数时先确定它在哪一层：
 
 | 层 | 内容 | 例子 |
 | --- | --- | --- |
+| 界面文字 `i18n` | 组件内置的文字，取文字的钩子，见[界面文字](i18n.md) | `useT`、`useLanguage`、`uiMessages` |
 | 主题 `theme` | 样式预设、由品牌色生成主题、图标、配色切换 | `createUiTheme`、`UIProvider`、`ColorSchemeToggle` |
 | 应用骨架 `app` | 装配 Router、QueryClient 和会话，登录与权限检查，菜单，插槽，多标签，租户，新版本提示 | `createApp`、`requireAuth`、`Fill`、`TabsOutlet` |
 | 部件 `components` | Mantine 没有的部件 | `DataTable`、`useSchemaForm`、`Page`、`DescriptionList`、`confirm` |

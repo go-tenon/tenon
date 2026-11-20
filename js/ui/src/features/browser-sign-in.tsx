@@ -5,6 +5,7 @@ import { Alert, Button, Stack, Text } from "@mantine/core"
 import { IconAlertCircle, IconExternalLink } from "@tabler/icons-react"
 import { type ReactNode, useState } from "react"
 import { useApp } from "../app/app"
+import { useText } from "../i18n/i18n"
 
 /** BrowserSignIn 的选项。 */
 export interface BrowserSignInProps {
@@ -17,6 +18,7 @@ export interface BrowserSignInProps {
 /** 一个“在浏览器中登录”的按钮和说明；登录没有完成时显示提示，可以再试一次。 */
 export function BrowserSignIn({ signIn, redirect }: BrowserSignInProps): ReactNode {
   const app = useApp()
+  const t = useText()
   const [pending, setPending] = useState(false)
   const [failed, setFailed] = useState(false)
   const start = async () => {
@@ -36,14 +38,14 @@ export function BrowserSignIn({ signIn, redirect }: BrowserSignInProps): ReactNo
     <Stack gap="md">
       {failed && (
         <Alert color="red" variant="light" icon={<IconAlertCircle size={18} />} role="alert">
-          登录没有完成，请重试。
+          {t("tenon.browser_sign_in.failed")}
         </Alert>
       )}
       <Text size="sm" c="dimmed">
-        {pending ? "请在浏览器中完成登录，完成后会回到这里。" : "将在浏览器中打开登录页面。"}
+        {pending ? t("tenon.browser_sign_in.pending") : t("tenon.browser_sign_in.hint")}
       </Text>
       <Button loading={pending} onClick={start} rightSection={<IconExternalLink size={16} />} fullWidth autoFocus>
-        在浏览器中登录
+        {t("tenon.browser_sign_in.start")}
       </Button>
     </Stack>
   )

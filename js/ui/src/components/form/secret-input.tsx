@@ -3,6 +3,7 @@
 import { ActionIcon, TextInput, type TextInputProps } from "@mantine/core"
 import { IconEye, IconEyeOff } from "@tabler/icons-react"
 import { type ChangeEvent, type ReactNode, useState } from "react"
+import { useText } from "../../i18n/i18n"
 
 /**
  * maskSecret 遮住密钥的中间部分：保留开头 3 个和末尾 4 个字符，中间的每个字符换成一个圆点，长度与原文相同，
@@ -28,6 +29,7 @@ export type SecretInputProps = Omit<TextInputProps, "value" | "onChange"> & {
  * 资源和设置的表单中，格式为 password 的字段（Go 中写 format:"password"）自动使用它。
  */
 export function SecretInput({ value = "", onChange, rightSection, ...props }: SecretInputProps): ReactNode {
+  const t = useText()
   const [shown, setShown] = useState(false)
   const editable = shown || value === ""
   return (
@@ -53,7 +55,7 @@ export function SecretInput({ value = "", onChange, rightSection, ...props }: Se
           <ActionIcon
             variant="subtle"
             color="gray"
-            aria-label={shown ? "隐藏" : "查看和修改"}
+            aria-label={shown ? t("tenon.secret.hide") : t("tenon.secret.show")}
             onClick={() => setShown((s) => !s)}
           >
             {shown ? <IconEyeOff size={16} stroke={1.6} /> : <IconEye size={16} stroke={1.6} />}

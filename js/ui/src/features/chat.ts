@@ -12,6 +12,7 @@ import {
 } from "ai"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useApp } from "../app/app"
+import { text as uiText } from "../i18n/i18n"
 
 /** 对话的接口：api 是发送接口的地址，例如 /api/v1/assistant/chat；其他接口按约定拼接，见 chatControls。 */
 export interface AssistantOptions {
@@ -91,15 +92,18 @@ function admit(
   let error: AttachmentError | undefined
   for (const file of Array.from(incoming)) {
     if (current.length + accepted.length >= maxFiles) {
-      error ??= new AttachmentError(`一次最多发送 ${maxFiles} 个文件`, "count")
+      error ??= new AttachmentError(uiText("tenon.chat.too_many_files", { count: maxFiles }), "count")
       break
     }
     if (!file.type || !acceptsFile(accept, file)) {
-      error ??= new AttachmentError(`不支持这种文件：${file.name}`, "type")
+      error ??= new AttachmentError(uiText("tenon.chat.unsupported_file", { name: file.name }), "type")
     } else if (file.size > maxSize) {
-      error ??= new AttachmentError(`${file.name} 超过了 ${mib(maxSize)}`, "size")
+      error ??= new AttachmentError(
+        uiText("tenon.chat.file_too_large", { name: file.name, size: mib(maxSize) }),
+        "size",
+      )
     } else if (total + file.size > maxTotal) {
-      error ??= new AttachmentError(`文件总共不能超过 ${mib(maxTotal)}`, "total")
+      error ??= new AttachmentError(uiText("tenon.chat.total_too_large", { size: mib(maxTotal) }), "total")
     } else {
       total += file.size
       accepted.push(file)
@@ -294,8 +298,8 @@ export function useAssistantChat({
   const send = useCallback(
     async (text: string, files: readonly File[] = []) => {
       if (files.length > 0) {
-        if (attachments === false) throw new AttachmentError("不能发送文件", "disabled")
-        if (busy) throw new AttachmentError("回答进行中不能发送文件，请等回答结束", "busy")
+        if (attachments === false) throw new AttachmentError(uiText("tenon.chat.files_disabled"), "disabled")
+        if (busy) throw new AttachmentError(uiText("tenon.chat.files_busy"), "busy")
         const { error } = admit([], files, attachments)
         if (error) throw error
         const upload = attachments.upload ?? dataURL

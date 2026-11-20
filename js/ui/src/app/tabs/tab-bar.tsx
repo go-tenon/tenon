@@ -22,6 +22,7 @@ import {
 } from "@tabler/icons-react"
 import { useQueryClient } from "@tanstack/react-query"
 import { type ReactNode, useEffect, useRef, useState } from "react"
+import { useText } from "../../i18n/i18n"
 import { Icon } from "../../theme/icons"
 import { reloadWithProgress, useContentTransition } from "./progress"
 import { type Tabs, type TabView, useTabs } from "./tabs"
@@ -29,6 +30,7 @@ import { type Tabs, type TabView, useTabs } from "./tabs"
 /** 标签栏，FrameLayout 开启多标签时显示在顶栏中间。 */
 export function TabBar(): ReactNode {
   const tabs = useTabs()
+  const t = useText()
   const scroller = useRef<HTMLDivElement>(null)
   // 拖动 6px 以上才算拖动，点击、中键照常。
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
@@ -118,7 +120,7 @@ export function TabBar(): ReactNode {
         {overflow && (
           <UnstyledButton
             className="tn-tab-arrow"
-            aria-label="向左滚动标签"
+            aria-label={t("tenon.tabs.scroll_left")}
             disabled={!edges.left}
             onClick={() => scrollBy(-1)}
           >
@@ -129,7 +131,7 @@ export function TabBar(): ReactNode {
           className="tn-tab-scroller"
           ref={scroller}
           role="tablist"
-          aria-label="已打开的页面"
+          aria-label={t("tenon.tabs.opened")}
           data-fade-left={edges.left || undefined}
           data-fade-right={edges.right || undefined}
         >
@@ -139,7 +141,7 @@ export function TabBar(): ReactNode {
         {overflow && (
           <UnstyledButton
             className="tn-tab-arrow"
-            aria-label="向右滚动标签"
+            aria-label={t("tenon.tabs.scroll_right")}
             disabled={!edges.right}
             onClick={() => scrollBy(1)}
           >
@@ -150,7 +152,7 @@ export function TabBar(): ReactNode {
       <ActionIcon
         size={32}
         className="tn-tab-reload"
-        aria-label="重新加载当前页面"
+        aria-label={t("tenon.tabs.reload_current")}
         disabled={!activeKey}
         onClick={() => activeKey && reload(activeKey)}
       >
@@ -174,34 +176,35 @@ export function TabBar(): ReactNode {
 
 /** 标签的右键菜单。 */
 function TabMenu({ tab, tabs, reload }: { tab: TabView; tabs: Tabs; reload: (key: string) => void }): ReactNode {
+  const t = useText()
   const index = tabs.tabs.indexOf(tab)
-  const others = tabs.tabs.some((t) => t.key !== tab.key && !t.pinned)
-  const right = tabs.tabs.slice(index + 1).some((t) => !t.pinned)
+  const others = tabs.tabs.some((o) => o.key !== tab.key && !o.pinned)
+  const right = tabs.tabs.slice(index + 1).some((o) => !o.pinned)
   const icon = (C: typeof IconX) => <C size={15} stroke={1.6} />
   return (
     <Menu.Dropdown>
       <Menu.Item leftSection={icon(IconX)} disabled={!tab.closable} onClick={() => void tabs.close(tab.key)}>
-        关闭
+        {t("tenon.common.close")}
       </Menu.Item>
       <Menu.Item
         leftSection={icon(tab.pinned ? IconPinnedOff : IconPin)}
         onClick={() => (tab.pinned ? tabs.unpin(tab.key) : tabs.pin(tab.key))}
       >
-        {tab.pinned ? "取消固定" : "固定"}
+        {tab.pinned ? t("tenon.tabs.unpin") : t("tenon.tabs.pin")}
       </Menu.Item>
       <Menu.Item leftSection={icon(IconRefresh)} onClick={() => reload(tab.key)}>
-        重新加载
+        {t("tenon.tabs.reload")}
       </Menu.Item>
       <Menu.Divider />
       <Menu.Item leftSection={icon(IconSquareX)} disabled={!others} onClick={() => void tabs.closeOthers(tab.key)}>
-        关闭其他标签页
+        {t("tenon.tabs.close_others")}
       </Menu.Item>
       <Menu.Item
         leftSection={icon(IconArrowBarToRight)}
         disabled={!right}
         onClick={() => void tabs.closeRight(tab.key)}
       >
-        关闭右侧标签页
+        {t("tenon.tabs.close_right")}
       </Menu.Item>
     </Menu.Dropdown>
   )
@@ -219,6 +222,7 @@ function TabItem({
   onMenu: (x: number, y: number) => void
 }): ReactNode {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: tab.key })
+  const t = useText()
   return (
     <UnstyledButton
       ref={setNodeRef}
@@ -247,7 +251,7 @@ function TabItem({
     >
       {tab.icon && <Icon name={tab.icon} size={15} stroke={1.6} />}
       <span className="tn-tab-title">{tab.title}</span>
-      {tab.dirty && <span className="tn-tab-dot" role="img" aria-label="未保存" />}
+      {tab.dirty && <span className="tn-tab-dot" role="img" aria-label={t("tenon.tabs.unsaved")} />}
       {tab.pinned && <IconPin size={12} stroke={1.6} className="tn-tab-pin" aria-hidden />}
     </UnstyledButton>
   )

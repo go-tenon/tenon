@@ -24,6 +24,7 @@ import type { ReactNode } from "react"
 import { useApp } from "../app/app"
 import { Slot } from "../app/layout"
 import { confirmDiscard } from "../app/tabs/tabs"
+import { useText } from "../i18n/i18n"
 
 /** 用户菜单中的一项。 */
 export interface UserMenuItem {
@@ -63,6 +64,7 @@ export function UserMenu({
   position = "bottom-end",
 }: UserMenuProps): ReactNode {
   const app = useApp()
+  const t = useText()
   const navigate = useNavigate()
   const signOut = async () => {
     // 标签中有未保存的修改时先询问，用户选择留下时不退出。
@@ -76,7 +78,7 @@ export function UserMenu({
   return (
     <Menu width={220} position={position}>
       <Menu.Target>
-        <UnstyledButton className="tn-avatar" aria-label="用户菜单">
+        <UnstyledButton className="tn-avatar" aria-label={t("tenon.user_menu.label")}>
           <Avatar src={avatar} size={30} radius="xl" color="brand">
             {name?.slice(0, 1)}
           </Avatar>
@@ -118,7 +120,7 @@ export function UserMenu({
         <Slot name="user-menu" />
         <div className="tn-menu-section">
           <Menu.Item leftSection={<IconLogout size={18} stroke={1.5} />} onClick={() => void signOut()}>
-            退出登录
+            {t("tenon.user_menu.sign_out")}
           </Menu.Item>
         </div>
       </Menu.Dropdown>
@@ -126,25 +128,27 @@ export function UserMenu({
   )
 }
 
+// 三种配色：取值、显示文字的消息 ID 和图标。
 const schemes = [
-  { value: "light", label: "亮色", icon: IconSun },
-  { value: "dark", label: "暗色", icon: IconMoon },
-  { value: "auto", label: "跟随系统", icon: IconDeviceDesktop },
+  { value: "light", label: "tenon.user_menu.light", icon: IconSun },
+  { value: "dark", label: "tenon.user_menu.dark", icon: IconMoon },
+  { value: "auto", label: "tenon.user_menu.auto", icon: IconDeviceDesktop },
 ] as const
 
 /** 配色：一行“主题”，右边是亮色、暗色、跟随系统的三段切换（SegmentedControl）。切换不关闭菜单。 */
 function ColorSchemePicker(): ReactNode {
   const { colorScheme, setColorScheme } = useMantineColorScheme()
+  const t = useText()
   return (
     <Group className="tn-schemes" justify="space-between" gap="sm" wrap="nowrap">
       <Group gap={10} wrap="nowrap">
         <IconPalette size={18} stroke={1.5} />
-        <Text size="sm">主题</Text>
+        <Text size="sm">{t("tenon.user_menu.theme")}</Text>
       </Group>
       <SegmentedControl
         size="xs"
         radius="xl"
-        aria-label="配色"
+        aria-label={t("tenon.user_menu.color_scheme")}
         value={colorScheme}
         onChange={(v) => setColorScheme(v as MantineColorScheme)}
         data={schemes.map(({ value, label, icon: SchemeIcon }) => ({
@@ -152,7 +156,7 @@ function ColorSchemePicker(): ReactNode {
           label: (
             <Center>
               <SchemeIcon size={14} stroke={1.8} />
-              <VisuallyHidden>{label}</VisuallyHidden>
+              <VisuallyHidden>{t(label)}</VisuallyHidden>
             </Center>
           ),
         }))}

@@ -89,8 +89,11 @@ export interface ResourceKit {
   enums?: { readonly [name: string]: { readonly values: readonly string[]; readonly labels: Generated } }
   /** messages.ts 中的 messages：验证提示的模板。没有时表单中的提示是错误码，例如 validation.filled。 */
   messages?: { readonly [language: string]: { readonly [code: string]: string } }
-  /** 显示文字的语言，例如 zh-CN；没有这种语言时依次用主语言和第一种语言。默认是浏览器的语言。 */
-  language?: string
+  /**
+   * 显示文字的语言，例如 zh-CN，或者返回当前语言的函数（应用的 i18n.language）：模型的标题、字段名、枚举的文字在读取时
+   * 按它取值，切换语言后组件重新渲染即显示新的语言。没有这种语言时依次用主语言和第一种语言。默认是浏览器的语言。
+   */
+  language?: string | (() => string | undefined)
 }
 
 /** 字段的输入和显示方式，由类型、格式和枚举得出。secret 是格式为 password 的字符串，例如密钥：显示时遮住中间部分。 */
@@ -204,6 +207,12 @@ function browserLanguage(): string | undefined {
   return typeof navigator === "undefined" ? undefined : navigator.language
 }
 
+/** 返回读取当前显示语言的函数：kit.language 是函数时每次调用它，是文字时用它，没有时用浏览器的语言。 */
+function languageOf(kit: Pick<ResourceKit, "language">): () => string | undefined {
+  const l = kit.language
+  return typeof l === "function" ? () => l() ?? browserLanguage() : () => l ?? browserLanguage()
+}
+
 function kindOf(def: ResourceFieldDef, hasOptions: boolean): FieldKind {
   if (def.type === "array") {
     if (hasOptions) return "multiselect"
@@ -247,32 +256,40 @@ function schemaAt(schemas: Generated, ref: OperationRef, part: "body" | "query")
   return op?.[part] ?? {}
 }
 
-/** 由字段的定义得到模型中的字段：显示文字、说明、输入方式和枚举的选项。 */
+/**
+ * 由字段的定义得到模型中的字段：显示文字、说明、输入方式和枚举的选项。显示文字、说明和选项的文字在读取时按 language()
+ * 取值，labels 返回当前语言的字段名和说明。
+ */
 function fieldBuilder(
   kit: Pick<ResourceKit, "enums">,
-  language: string | undefined,
-  labels: { readonly [field: string]: string } | undefined,
-  descriptions: { readonly [field: string]: string } | undefined,
+  language: () => string | undefined,
+  labels: () => { fields?: { readonly [field: string]: string }; descriptions?: { readonly [field: string]: string } },
 ): (f: ResourceFieldDef) => ResourceField {
   const options = (f: ResourceFieldDef): ResourceField["options"] => {
     if (f.enum && kit.enums?.[f.enum]) {
       const e = kit.enums[f.enum]
-      const text = pickLanguage(e.labels as { [l: string]: { [v: string]: string } }, language) ?? {}
+      const text = pickLanguage(e.labels as { [l: string]: { [v: string]: string } }, language()) ?? {}
       return e.values.map((value) => ({ value, label: text[value] ?? value }))
     }
     if (f.values) return f.values.map((value) => ({ value, label: value }))
     return undefined
   }
   return (f) => {
-    const opts = options(f)
+    const hasOptions = !!(f.enum && kit.enums?.[f.enum]) || !!f.values
     return {
       name: f.name,
-      label: labels?.[f.name] ?? f.name,
-      description: descriptions?.[f.name],
-      kind: kindOf(f, !!opts),
+      get label() {
+        return labels().fields?.[f.name] ?? f.name
+      },
+      get description() {
+        return labels().descriptions?.[f.name]
+      },
+      kind: kindOf(f, hasOptions),
       required: !!f.required,
       sortable: !!f.sortable,
-      options: opts,
+      get options() {
+        return options(f)
+      },
       def: f,
     }
   }
@@ -294,9 +311,9 @@ function displayValue(f: ResourceField, value: unknown): unknown {
  * queryClient 用来在修改后让查询失效。
  */
 export function resourceModel(def: ResourceDef, kit: ResourceKit, queryClient?: QueryClient): ResourceModel {
-  const language = kit.language ?? browserLanguage()
-  const labels = pickLanguage(def.labels, language)
-  const field = fieldBuilder(kit, language, labels?.fields, labels?.descriptions)
+  const language = languageOf(kit)
+  const labels = () => pickLanguage(def.labels, language())
+  const field = fieldBuilder(kit, language, () => labels() ?? {})
 
   const ops = def.operations
   const group = ops.list[0]
@@ -317,7 +334,9 @@ export function resourceModel(def: ResourceDef, kit: ResourceKit, queryClient?: 
   const updateForm = def.updateForm.map(field)
   return {
     name: def.name,
-    title: labels?.title ?? def.name,
+    get title() {
+      return labels()?.title ?? def.name
+    },
     key: def.key,
     columns,
     filters,
@@ -325,7 +344,9 @@ export function resourceModel(def: ResourceDef, kit: ResourceKit, queryClient?: 
     updateForm,
     actions: def.actions.map((a) => ({
       name: a.name,
-      label: labels?.actions[a.name] ?? a.name,
+      get label() {
+        return labels()?.actions[a.name] ?? a.name
+      },
       confirm: a.confirm,
       danger: a.danger,
       permissions: a.permissions,
@@ -369,7 +390,9 @@ export function resourceModel(def: ResourceDef, kit: ResourceKit, queryClient?: 
       const ref = mode === "create" ? (ops.create ?? ops.update) : (ops.update ?? ops.create)
       return ref ? schemaAt(kit.schemas, ref, "body") : {}
     },
-    ruleOptions: { components: kit.components, messages: kit.messages, language },
+    get ruleOptions() {
+      return { components: kit.components, messages: kit.messages, language: language() }
+    },
     rowKey(row) {
       return String(row[def.key ?? "id"] ?? "")
     },
@@ -520,9 +543,9 @@ export interface SettingsModel {
  * queryClient 用来在保存后让读取的查询失效。
  */
 export function settingsModel(def: SettingsDef, kit: ResourceKit, queryClient?: QueryClient): SettingsModel {
-  const language = kit.language ?? browserLanguage()
-  const labels = pickLanguage(def.labels, language)
-  const field = fieldBuilder(kit, language, labels?.fields, labels?.descriptions)
+  const language = languageOf(kit)
+  const labels = () => pickLanguage(def.labels, language())
+  const field = fieldBuilder(kit, language, () => labels() ?? {})
   const ops = def.operations
   const query = (): ReturnType<SettingsModel["query"]> => {
     const q = method(kit.queries, ops.get)
@@ -532,7 +555,9 @@ export function settingsModel(def: SettingsDef, kit: ResourceKit, queryClient?: 
   }
   return {
     name: def.name,
-    title: labels?.title ?? def.name,
+    get title() {
+      return labels()?.title ?? def.name
+    },
     form: def.form.map(field),
     allowed: (can, operation) => def.permissions[operation].every(can),
     query,
@@ -542,7 +567,9 @@ export function settingsModel(def: SettingsDef, kit: ResourceKit, queryClient?: 
       return result
     },
     formSchema: () => schemaAt(kit.schemas, ops.update, "body"),
-    ruleOptions: { components: kit.components, messages: kit.messages, language },
+    get ruleOptions() {
+      return { components: kit.components, messages: kit.messages, language: language() }
+    },
     display: displayValue,
   }
 }

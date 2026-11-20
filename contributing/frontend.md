@@ -8,7 +8,7 @@
 - `host` 是 `@go-tenon/host`，网页宿主（Electron 等）的约定在页面一侧的类型：`host()` 取得宿主放在全局的 `tenonHost`。它只有类型，不依赖任何包和 DOM，任何语言写的宿主都按它实现。
 - `electron` 是 `@go-tenon/electron`，Electron 宿主：`main` 在主进程中实现宿主的约定（页面来自 `https://<id>.localhost`、转发 `/api/*`、登录、保存 token、安全默认值），`preload` 在页面中放好 `tenonHost`；桌面能力（`windowState`、`standardMenu`、`singleInstance`、`logs`、`notifications`、`badge`、`tray`、`autostart`、`deepLinks`，以及单独入口 `update` 的 `autoUpdate`）是彼此独立的函数，由应用的 `main.ts` 逐行组合。依赖 Electron 的代码只在 `main.ts`、`preload.ts` 中，其余模块用 Vitest 测试，CI 中不启动 Electron。`electron` 包在第一次运行时才下载 Electron 本体，安装依赖时不下载。
 - `start` 是 `@go-tenon/start`，把 TanStack Start 接到 Go 的 `frontend` 包：Vite 插件（挂载路径、服务端渲染或页面外壳）、服务端渲染时调用 Go 接口的运行时，以及编译 SSR 可执行文件的 `tenon-start`。
-- `ui` 是 `@go-tenon/ui`，基于 Mantine 的应用骨架和界面。`ui/src` 分成五层，上层只引用下层：`theme`（预设、主题、图标）→ `app`（应用骨架：装配、导航、插槽、多标签）→ `components`（页面中用的部件）→ `blocks`（布局、登录页的布局这类只描述样子的整块界面）和 `features`（框架功能的前端，逻辑和外观放在同一个目录）。`blocks` 和 `features` 互相不引用，把它们组合起来的是脚手架生成的项目。新文件按它依赖什么放进对应的层，`uilayertest` 检查引用方向。React、TanStack Router、TanStack Query 和 Mantine 是 peer 依赖。
+- `ui` 是 `@go-tenon/ui`，基于 Mantine 的应用骨架和界面。`ui/src` 分成六层，上层只引用下层：`i18n`（组件内置的文字、取文字的钩子）→ `theme`（预设、主题、图标）→ `app`（应用骨架：装配、导航、插槽、多标签）→ `components`（页面中用的部件）→ `blocks`（布局、登录页的布局这类只描述样子的整块界面）和 `features`（框架功能的前端，逻辑和外观放在同一个目录）。`blocks` 和 `features` 互相不引用，把它们组合起来的是脚手架生成的项目。新文件按它依赖什么放进对应的层，`uilayertest` 检查引用方向。React、TanStack Router、TanStack Query 和 Mantine 是 peer 依赖。
 - `playground` 是 ui 的演示，用 `bun run playground` 启动。ui 不写测试，界面的改动在 playground 中看效果。
 
 在 `js` 目录中运行：

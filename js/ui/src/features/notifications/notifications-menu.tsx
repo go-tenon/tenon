@@ -15,6 +15,7 @@ import {
 import { IconBell } from "@tabler/icons-react"
 import { useNavigate } from "@tanstack/react-router"
 import { type ReactNode, useState } from "react"
+import { useText } from "../../i18n/i18n"
 import { useFormatDateTime } from "../../theme/format"
 import { type NotificationsSource, useNotifications } from "./model"
 
@@ -24,13 +25,16 @@ export function NotificationsMenu({ source }: { source: NotificationsSource }): 
   const navigate = useNavigate()
   const [opened, setOpened] = useState(false)
   const formatDateTime = useFormatDateTime()
+  const t = useText()
   return (
     <Popover width={360} position="bottom-end" opened={opened} onChange={setOpened}>
       <Popover.Target>
         <Indicator disabled={n.unread === 0} label={n.unread > 99 ? "99+" : n.unread} size={16} offset={6} color="red">
           <ActionIcon
             size={32}
-            aria-label={n.unread > 0 ? `通知，${n.unread} 条未读` : "通知"}
+            aria-label={
+              n.unread > 0 ? t("tenon.notifications.unread", { count: n.unread }) : t("tenon.notifications.title")
+            }
             onClick={() => setOpened((o) => !o)}
           >
             <IconBell size={16} stroke={1.5} />
@@ -40,18 +44,18 @@ export function NotificationsMenu({ source }: { source: NotificationsSource }): 
       <Popover.Dropdown p={0}>
         <Group justify="space-between" px="md" py="sm" style={{ borderBottom: "1px solid var(--tn-border)" }}>
           <Text fw={600} size="sm">
-            通知
+            {t("tenon.notifications.title")}
           </Text>
           {n.unread > 0 && (
             <Button variant="subtle" size="compact-xs" onClick={() => void n.markAllRead()}>
-              全部已读
+              {t("tenon.notifications.read_all")}
             </Button>
           )}
         </Group>
         <ScrollArea.Autosize mah={420}>
           {n.items.length === 0 ? (
             <Text c="dimmed" size="sm" ta="center" py="xl">
-              {n.loading ? "加载中…" : "没有通知"}
+              {n.loading ? t("tenon.common.loading") : t("tenon.notifications.empty")}
             </Text>
           ) : (
             <Stack gap={0}>
@@ -95,7 +99,7 @@ export function NotificationsMenu({ source }: { source: NotificationsSource }): 
               ))}
               {n.hasMore && (
                 <Button variant="subtle" color="gray" radius={0} onClick={n.loadMore}>
-                  加载更多
+                  {t("tenon.common.load_more")}
                 </Button>
               )}
             </Stack>

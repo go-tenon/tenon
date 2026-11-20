@@ -2,10 +2,12 @@
 
 import {
   clearOnIdentityChange,
+  createI18n,
   createSession,
   describeError,
   type ErrorInfo,
   grants,
+  type I18n,
   type Session,
 } from "@go-tenon/client"
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query"
@@ -27,6 +29,7 @@ import {
 } from "@tanstack/react-router"
 import { createContext, Fragment, type ReactNode, useContext, useEffect, useMemo, useSyncExternalStore } from "react"
 import "./meta"
+import { I18nProvider, useLanguage, withUiMessages } from "../i18n/i18n"
 import { useBadges } from "./badges"
 import { breadcrumbs, buildMenu, type Crumb, firstPage, type MenuItem, routeInfos } from "./menu"
 import { safeRedirect } from "./redirect"
@@ -82,6 +85,11 @@ export interface AppOptions<TRouteTree extends AnyRoute> {
   router?: AppRouterOptions
   /** 多租户应用的租户切换，见 useTenant。 */
   tenancy?: TenancyOptions
+  /**
+   * 界面文字的翻译：@go-tenon/client 的 createI18n，交给它应用生成的 messages.gen.ts。createApp 在其中加入框架组件内置的文字，
+   * 组件按它的当前语言显示，<html lang> 跟随它。不传时框架组件显示内置的简体中文。
+   */
+  i18n?: I18n
   /**
    * 页面出错时调用，交给前端观测的 SDK，例如 openobserveLogs.logger.error。路由的错误组件接住的错误
    * （渲染、loader 中抛出的）不会冒泡到 window，SDK 自动捕获不到，所以框架在这里报告。缺少权限、请求被取消、
@@ -151,6 +159,8 @@ export interface App<TRouteTree extends AnyRoute = AnyRoute> {
   redirectAfterSignIn(redirect?: unknown): Promise<void>
   /** 租户切换的选项；单租户应用为空。 */
   readonly tenancy?: TenancyOptions
+  /** 界面文字的翻译：AppOptions.i18n，加入了框架组件内置的文字。 */
+  readonly i18n: I18n
   /** 报告一个错误（交给 AppOptions.onError）：同一个错误只报告一次，不需要报告的错误被忽略。 */
   reportError(error: unknown, where: { routeId: string; pathname: string }): void
 }
@@ -256,6 +266,10 @@ export function createApp<TRouteTree extends AnyRoute>(options: AppOptions<TRout
     storage: appStorage(options.id),
     loginPath,
     tenancy: options.tenancy,
+    // 没有应用的翻译时只有框架内置的文字，固定为简体中文，与组件原来的文字相同
+    i18n: withUiMessages(
+      options.i18n ?? createI18n({ messages: {}, defaultLanguage: "zh-CN", preferred: () => undefined }),
+    ),
     reportError,
     ready: () => {
       if (!restoring) restoring = session.restore().catch(() => false)
@@ -318,7 +332,9 @@ export function createApp<TRouteTree extends AnyRoute>(options: AppOptions<TRout
 function AppProviders({ app, children }: { app: App; children: ReactNode }): ReactNode {
   return (
     <QueryClientProvider client={app.queryClient}>
-      <AppContext.Provider value={app}>{children}</AppContext.Provider>
+      <AppContext.Provider value={app}>
+        <I18nProvider i18n={app.i18n}>{children}</I18nProvider>
+      </AppContext.Provider>
     </QueryClientProvider>
   )
 }
@@ -386,10 +402,14 @@ export function useSignedIn(): boolean {
   return useSyncExternalStore(session.subscribe, () => session.signedIn(), signedOut)
 }
 
-/** 按当前身份的权限过滤后的菜单。上级路由的路径参数（例如租户）取当前地址中的值，见 buildMenu。 */
+/**
+ * 按当前身份的权限过滤后的菜单。上级路由的路径参数（例如租户）取当前地址中的值，见 buildMenu。
+ * 路由的标题可以是界面文字的消息 ID，按当前语言翻译；没有这条消息时原样显示。
+ */
 export function useMenu(): MenuItem[] {
   const app = useApp()
   const can = useCan()
+  const language = useLanguage()
   const badges = useBadges(app)
   const current = useParams({ strict: false }) as Record<string, unknown>
   const key = JSON.stringify(current)
@@ -398,11 +418,30 @@ export function useMenu(): MenuItem[] {
     () => Object.fromEntries(Object.entries(current).map(([k, v]) => [k, String(v)])) as Record<string, string>,
     [key],
   )
-  return useMemo(() => buildMenu(routeInfos(app.router.routesById), can, badges, params), [app, can, badges, params])
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 切换语言时重新翻译标题
+  return useMemo(
+    () => translateMenu(buildMenu(routeInfos(app.router.routesById), can, badges, params), app.i18n.t),
+    [app, can, badges, params, language],
+  )
+}
+
+/** 把菜单中每一项的标题按 t 翻译。 */
+function translateMenu(items: MenuItem[], t: (id: string) => string): MenuItem[] {
+  return items.map((item) => ({
+    ...item,
+    title: t(item.title),
+    ...(item.children ? { children: translateMenu(item.children, t) } : {}),
+  }))
 }
 
 /** 当前位置的面包屑。 */
 export function useBreadcrumbs(): Crumb[] {
+  const app = useApp()
   const matches = useMatches()
-  return useMemo(() => breadcrumbs(matches), [matches])
+  const language = useLanguage()
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 切换语言时重新翻译标题
+  return useMemo(
+    () => breadcrumbs(matches).map((c) => ({ ...c, title: app.i18n.t(c.title) })),
+    [app, matches, language],
+  )
 }

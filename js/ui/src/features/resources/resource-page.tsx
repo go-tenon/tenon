@@ -42,6 +42,7 @@ import { applyServerErrors, FormError, useSchemaForm } from "../../components/fo
 import { useUnsavedChanges } from "../../components/form/rules"
 import { Page } from "../../components/page"
 import { TruncatedText } from "../../components/truncated-text"
+import { text as uiText, useText } from "../../i18n/i18n"
 import { layoutMetrics } from "../../theme/theme"
 import { DefaultInput, type FieldInput, FieldValue } from "./fields"
 import {
@@ -116,6 +117,7 @@ function ResourceList({
   form = "page",
 }: ResourcePageProps): ReactNode {
   const view = useResourceList(model, route)
+  const t = useText()
   const { remove, run } = useResourceMutations(model)
   const [editing, setEditing] = useState<{ row?: ResourceRow } | undefined>()
   const router = useRouter()
@@ -138,7 +140,7 @@ function ResourceList({
     const id = `${here.routeId}/${file}`
     if (!ok && view.can[op] && !warned.has(id)) {
       warned.add(id)
-      console.warn(`@go-tenon/ui: ResourcePage 找不到路由 ${id}，不显示${op === "create" ? "新建" : "修改"}按钮。`)
+      console.warn(`@go-tenon/ui: ResourcePage cannot find route ${id}; the ${op} button is hidden.`)
     }
   }
   const canCreate = view.can.create && pages.create
@@ -152,9 +154,9 @@ function ResourceList({
   const act = async (label: string, go: () => Promise<unknown>) => {
     try {
       await go()
-      notifySuccess(`${label}完成`)
+      notifySuccess(t("tenon.resource.action_done", { action: label }))
     } catch (err) {
-      notifyError(err, `${label}没有成功`)
+      notifyError(err, t("tenon.resource.action_failed", { action: label }))
     }
   }
 
@@ -202,14 +204,14 @@ function ResourceList({
         return (
           <Group gap={2} justify="flex-end" wrap="nowrap" onClick={(e) => e.stopPropagation()}>
             {rowUpdatable(row) && (
-              <ActionIcon aria-label="修改" onClick={() => openEdit(row)}>
+              <ActionIcon aria-label={t("tenon.resource.edit")} onClick={() => openEdit(row)}>
                 <IconPencil size={16} stroke={1.6} />
               </ActionIcon>
             )}
             {more && (
               <Menu position="bottom-end" width={160}>
                 <Menu.Target>
-                  <ActionIcon aria-label="更多操作">
+                  <ActionIcon aria-label={t("tenon.resource.more")}>
                     <IconDots size={16} stroke={1.6} />
                   </ActionIcon>
                 </Menu.Target>
@@ -221,7 +223,11 @@ function ResourceList({
                       onClick={async () => {
                         if (
                           a.confirm &&
-                          !(await confirm({ title: `${a.label}这一项？`, danger: a.danger, confirmLabel: a.label }))
+                          !(await confirm({
+                            title: t("tenon.resource.action_confirm", { action: a.label }),
+                            danger: a.danger,
+                            confirmLabel: a.label,
+                          }))
                         )
                           return
                         await act(a.label, () => run.mutateAsync({ action: a.name, key }))
@@ -244,16 +250,16 @@ function ResourceList({
                       onClick={async () => {
                         if (
                           await confirm({
-                            title: `删除这一项？`,
-                            message: "删除后不能恢复。",
+                            title: t("tenon.resource.delete_confirm"),
+                            message: t("tenon.resource.delete_message"),
                             danger: true,
-                            confirmLabel: "删除",
+                            confirmLabel: t("tenon.common.delete"),
                           })
                         )
-                          await act("删除", () => remove.mutateAsync(key))
+                          await act(t("tenon.common.delete"), () => remove.mutateAsync(key))
                       }}
                     >
-                      删除
+                      {t("tenon.common.delete")}
                     </Menu.Item>
                   )}
                 </Menu.Dropdown>
@@ -276,7 +282,7 @@ function ResourceList({
       storeKey={model.name}
       toolbar={<Filters model={model} list={view.list} />}
       expand={expand}
-      empty={view.error ? "读取失败" : undefined}
+      empty={view.error ? t("tenon.resource.load_failed") : undefined}
     />
   )
   const buttons = (
@@ -284,7 +290,7 @@ function ResourceList({
       {toolbar}
       {canCreate && (
         <Button leftSection={<IconPlus size={16} />} onClick={openCreate}>
-          新建
+          {t("tenon.resource.create")}
         </Button>
       )}
     </Group>
@@ -324,6 +330,7 @@ function Filters({
   list: ReturnType<typeof useResourceList>["list"]
 }): ReactNode {
   const filters = list.filters as Record<string, unknown>
+  const t = useText()
   const size = layoutMetrics(useMantineTheme()).controlSize
   if (model.filters.length === 0) return null
   // 只看声明的筛选条件：地址中可能还有其他参数。
@@ -341,7 +348,7 @@ function Filters({
       ))}
       {active && (
         <Button variant="subtle" color="gray" size={size} onClick={list.reset}>
-          清除筛选
+          {t("tenon.resource.clear_filters")}
         </Button>
       )}
     </Group>
@@ -359,6 +366,7 @@ function FilterInput({
   size: string
   onChange: (v: unknown) => void
 }): ReactNode {
+  const t = useText()
   if (field.options && field.kind === "multiselect")
     return (
       <MultiSelect
@@ -393,8 +401,8 @@ function FilterInput({
         placeholder={field.label}
         aria-label={field.label}
         data={[
-          { value: "true", label: "是" },
-          { value: "false", label: "否" },
+          { value: "true", label: t("tenon.common.yes") },
+          { value: "false", label: t("tenon.common.no") },
         ]}
         value={value === undefined ? null : String(value)}
         onChange={(v) => onChange(v === null ? undefined : v === "true")}
@@ -416,6 +424,7 @@ function FilterText({
   size: string
   onChange: (v: unknown) => void
 }) {
+  const t = useText()
   const [text, setText] = useState(value ?? "")
   useEffect(() => setText(value ?? ""), [value])
   return (
@@ -432,7 +441,7 @@ function FilterText({
         text ? (
           <CloseButton
             size="sm"
-            aria-label={`清除${field.label}`}
+            aria-label={t("tenon.resource.clear_filter", { name: field.label })}
             onClick={() => {
               setText("")
               onChange(undefined)
@@ -444,7 +453,13 @@ function FilterText({
   )
 }
 
-const discard = () => confirm({ title: "放弃未保存的修改？", danger: true, confirmLabel: "放弃" })
+// 询问是否放弃未保存的修改。
+const discard = () =>
+  confirm({
+    title: uiText("tenon.unsaved.discard_title"),
+    danger: true,
+    confirmLabel: uiText("tenon.unsaved.discard_confirm"),
+  })
 
 /** ResourceForm 的选项。 */
 export interface ResourceFormProps {
@@ -460,6 +475,7 @@ export interface ResourceFormProps {
 
 /** 新建和修改的表单（对话框）：字段、校验规则（与服务端相同）来自声明，服务端的字段错误显示在输入框下面。 */
 export function ResourceForm({ model, open, row, inputs, onClose, children }: ResourceFormProps): ReactNode {
+  const t = useText()
   const key = row ? model.rowKey(row) : undefined
   const item = useResourceItem(model, open ? key : undefined)
   const loading = !!key && model.has.get && item.isPending
@@ -475,7 +491,7 @@ export function ResourceForm({ model, open, row, inputs, onClose, children }: Re
       opened={open}
       onClose={() => void requestClose()}
       size="lg"
-      title={`${row ? "修改" : "新建"}${model.title}`}
+      title={t(row ? "tenon.resource.edit_title" : "tenon.resource.create_title", { name: model.title })}
       closeOnClickOutside={false}
     >
       {open &&
@@ -519,8 +535,10 @@ export function ResourceFormPage({ model, inputs, children }: ResourceFormPagePr
   const navigate = useNavigate()
   const tab = useTab()
   const queryClient = useQueryClient()
-  const label = id ? "修改" : "新建"
-  useTabTitle(`${label}${model.title}`)
+  const t = useText()
+  const label = id ? t("tenon.resource.edit") : t("tenon.resource.create")
+  const heading = t(id ? "tenon.resource.edit_title" : "tenon.resource.create_title", { name: model.title })
+  useTabTitle(heading)
 
   // 列表是上一级路由。在标签中时先关闭这个标签：有未保存的修改时由标签询问，选择不放弃就留在这里；
   // 先跳转的话，这个页面先被卸载、未保存的标记随之释放，关闭时就不再询问。不在标签中时，跳转由 useUnsavedChanges 询问。
@@ -546,15 +564,15 @@ export function ResourceFormPage({ model, inputs, children }: ResourceFormPagePr
   const dirty = useRef<() => boolean>(() => false)
 
   return (
-    <Page title={`${label}${model.title}`} crumb={label}>
+    <Page title={heading} crumb={label}>
       <Card>
         {loading ? (
           <Group justify="center" py="xl">
             <Loader size="sm" />
           </Group>
         ) : id && !row ? (
-          <Alert color="red" variant="light" title="读取失败" role="alert">
-            {model.has.get ? "这一项不存在，或者没有权限查看。" : "这类数据没有读取单条的接口，从列表中打开修改页面。"}
+          <Alert color="red" variant="light" title={t("tenon.resource.load_failed")} role="alert">
+            {model.has.get ? t("tenon.resource.not_found") : t("tenon.resource.no_get")}
           </Alert>
         ) : (
           <FormContent
@@ -616,6 +634,7 @@ export function useResourceForm<T extends Record<string, any>>(
   options: ResourceFormOptions<T>,
 ) {
   const { model, editKey } = ctx
+  const t = useText()
   const form = useSchemaForm<T>({
     schema: model.formSchema(editKey ? "update" : "create"),
     rules: model.ruleOptions,
@@ -633,7 +652,7 @@ export function useResourceForm<T extends Record<string, any>>(
       const body = options.toBody ? options.toBody(values) : (values as Record<string, unknown>)
       await save.mutateAsync({ key: editKey, values: body })
       unsaved.release()
-      notifySuccess(editKey ? "已保存" : "已创建")
+      notifySuccess(editKey ? t("tenon.common.saved") : t("tenon.common.created"))
       ctx.dirty.current = () => false
       ctx.onSaved()
     } catch (err) {
@@ -646,13 +665,14 @@ export function useResourceForm<T extends Record<string, any>>(
 
 /** 资源表单底部的按钮：取消和保存（新建时是“创建”），靠右。 */
 export function ResourceFormButtons({ ctx, saving }: { ctx: ResourceFormContext; saving?: boolean }): ReactNode {
+  const t = useText()
   return (
     <Group justify="flex-end" gap="xs" mt="sm">
       <Button variant="default" onClick={ctx.onCancel}>
-        取消
+        {t("tenon.common.cancel")}
       </Button>
       <Button type="submit" loading={saving}>
-        {ctx.editKey ? "保存" : "创建"}
+        {ctx.editKey ? t("tenon.common.save") : t("tenon.common.create")}
       </Button>
     </Group>
   )

@@ -6,6 +6,7 @@
 import type { OperationLike } from "@go-tenon/client"
 import { useCallback, useRef, useState } from "react"
 import { useApp } from "../../app/app"
+import { text as uiText } from "../../i18n/i18n"
 import { type OperationStream, type TrackedOperation, trackOperation, useOperation } from "../operations/model"
 
 /** 导入、导出所处的阶段。 */
@@ -118,7 +119,7 @@ function useTransfer(title: string) {
  *   await imp.start(file)
  */
 export function useImport(source: ImportSource): Import {
-  const t = useTransfer(source.title ?? "导入")
+  const t = useTransfer(source.title ?? uiText("tenon.transfer.import"))
   const [uploaded, setUploaded] = useState<number>()
   const start = (file: File) =>
     t.run(async () => {
@@ -159,7 +160,7 @@ function defaultFile(op: OperationLike): { url: string; filename?: string } | un
  *   exp.file && <a href={exp.file.url} download={exp.file.filename}>下载</a>
  */
 export function useExport(source: ExportSource): Export {
-  const t = useTransfer(source.title ?? "导出")
+  const t = useTransfer(source.title ?? uiText("tenon.transfer.export"))
   const start = () =>
     t.run(async () => {
       t.setLocal("starting")

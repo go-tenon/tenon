@@ -5,6 +5,7 @@ import { IconChevronLeft, IconChevronRight } from "@tabler/icons-react"
 import { Link, useRouterState } from "@tanstack/react-router"
 import { type ReactNode, useEffect, useRef, useState } from "react"
 import { NavLinkLink } from "../components/links"
+import { useText } from "../i18n/i18n"
 
 /** 文档目录中的一组。 */
 export interface DocsSection {
@@ -32,6 +33,7 @@ export interface TocItem {
 /** 文档页。正文中没有 id 的标题会按文字生成 id，本页目录据此跳转。 */
 export function DocsLayout({ nav, children, hideToc }: DocsLayoutProps): ReactNode {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
+  const t = useText()
   const article = useRef<HTMLElement>(null)
   const toc = useToc(article, pathname)
   const flat = nav.flatMap((s) => s.items)
@@ -40,7 +42,7 @@ export function DocsLayout({ nav, children, hideToc }: DocsLayoutProps): ReactNo
   const next = index >= 0 && index < flat.length - 1 ? flat[index + 1] : undefined
   return (
     <Container size="xl" className="tn-docs">
-      <aside className="tn-docs-sidebar" aria-label="文档目录">
+      <aside className="tn-docs-sidebar" aria-label={t("tenon.docs.sidebar")}>
         {nav.map((section, i) => (
           // biome-ignore lint/suspicious/noArrayIndexKey: 目录是固定的列表
           <div key={i}>
@@ -67,11 +69,11 @@ export function DocsLayout({ nav, children, hideToc }: DocsLayoutProps): ReactNo
         )}
       </article>
       {!hideToc && (
-        <nav className="tn-docs-toc" aria-label="本页目录">
+        <nav className="tn-docs-toc" aria-label={t("tenon.docs.toc")}>
           {toc.items.length > 0 && (
             <>
               <Text size="xs" fw={600} mb={8}>
-                本页内容
+                {t("tenon.docs.on_this_page")}
               </Text>
               {toc.items.map((t) => (
                 <a key={t.id} href={`#${t.id}`} data-depth={t.depth} data-active={t.id === toc.active || undefined}>
@@ -87,10 +89,11 @@ export function DocsLayout({ nav, children, hideToc }: DocsLayoutProps): ReactNo
 }
 
 function PageLink({ item, dir }: { item: { title: string; to: string }; dir: "prev" | "next" }): ReactNode {
+  const t = useText()
   return (
     <UnstyledButton component={Link} to={item.to} style={{ textAlign: dir === "next" ? "right" : "left" }}>
       <Text size="xs" c="dimmed">
-        {dir === "prev" ? "上一篇" : "下一篇"}
+        {dir === "prev" ? t("tenon.docs.prev") : t("tenon.docs.next")}
       </Text>
       <Group gap={4} wrap="nowrap" c="brand" justify={dir === "next" ? "flex-end" : "flex-start"}>
         {dir === "prev" && <IconChevronLeft size={16} />}

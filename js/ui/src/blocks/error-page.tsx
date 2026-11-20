@@ -5,19 +5,25 @@ import { Button, Group, Stack, Text, Title } from "@mantine/core"
 import { type ErrorComponentProps, Link, useRouter } from "@tanstack/react-router"
 import type { ReactNode } from "react"
 import { isForbidden, useReportError } from "../app/app"
+import { type UiMessageId, useText } from "../i18n/i18n"
 
 /** 错误页的种类。 */
 export type ErrorPageKind = "forbidden" | "not_found" | "server" | "network"
 
-const copy: Record<ErrorPageKind, { code: string; title: string; description: string }> = {
+// 每种错误页的状态码、标题和说明的消息 ID。
+const copy: Record<ErrorPageKind, { code: string; title: UiMessageId; description: UiMessageId }> = {
   forbidden: {
     code: "403",
-    title: "没有访问权限",
-    description: "你的账号没有打开这个页面的权限，需要时请联系管理员。",
+    title: "tenon.error_page.forbidden_title",
+    description: "tenon.error_page.forbidden_description",
   },
-  not_found: { code: "404", title: "页面不存在", description: "地址可能输错了，或者页面已经被移除。" },
-  server: { code: "500", title: "出了点问题", description: "服务暂时没有响应，请稍后重试。问题持续出现时请联系我们。" },
-  network: { code: "", title: "网络连接失败", description: "请检查网络连接，然后重试。" },
+  not_found: {
+    code: "404",
+    title: "tenon.error_page.not_found_title",
+    description: "tenon.error_page.not_found_description",
+  },
+  server: { code: "500", title: "tenon.error_page.server_title", description: "tenon.error_page.server_description" },
+  network: { code: "", title: "tenon.error_page.network_title", description: "tenon.error_page.network_description" },
 }
 
 /** ErrorPage 的选项。 */
@@ -35,25 +41,26 @@ export interface ErrorPageProps {
 
 /** 错误页。 */
 export function ErrorPage({ kind, title, description, actions, requestId }: ErrorPageProps): ReactNode {
+  const t = useText()
   const c = copy[kind]
   return (
     <div className="tn-error" role={kind === "server" || kind === "network" ? "alert" : undefined}>
       <Stack align="center" gap="sm" maw={420}>
         {c.code && <div className="tn-error-code">{c.code}</div>}
-        <Title order={3}>{title ?? c.title}</Title>
+        <Title order={3}>{title ?? t(c.title)}</Title>
         <Text c="dimmed" size="sm">
-          {description ?? c.description}
+          {description ?? t(c.description)}
         </Text>
         <Group mt="md" gap="sm">
           {actions ?? (
             <Button component={Link} to="/" variant="default">
-              回到首页
+              {t("tenon.error_page.home")}
             </Button>
           )}
         </Group>
         {requestId && (
           <Text size="xs" c="dimmed" mt="md" ff="monospace">
-            请求 ID：{requestId}
+            {t("tenon.error_page.request_id", { id: requestId })}
           </Text>
         )}
       </Stack>
@@ -69,6 +76,7 @@ export function NotFoundPage(): ReactNode {
 /** 路由的错误组件，用作 defaultErrorComponent：没有权限显示 403，不存在显示 404，其他显示可以重试的错误页。 */
 export function RouteError({ error, reset }: ErrorComponentProps): ReactNode {
   useReportError(error)
+  const t = useText()
   const router = useRouter()
   if (isForbidden(error)) return <ErrorPage kind="forbidden" />
   const info = describeError(error)
@@ -81,7 +89,7 @@ export function RouteError({ error, reset }: ErrorComponentProps): ReactNode {
         void router.invalidate()
       }}
     >
-      重试
+      {t("tenon.common.retry")}
     </Button>
   )
   return <ErrorPage kind={info.kind === "network" ? "network" : "server"} actions={retry} requestId={info.requestId} />
