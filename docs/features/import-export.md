@@ -2,7 +2,7 @@
 
 用 Excel（XLSX）或 CSV 批量导入数据，把列表导出成表格。几千行以内在一次请求中处理；更大的文件在队列中后台导入、导出，用户看到进度。
 
-包：`sheet`、`sheet/imports`、`sheet/exports`。
+包：`sheet`、`sheet/imports`、`sheet/exports`、`form`（按字段的校验标签解码一行文本）。
 
 - 导入的每一行解码为接口用的同一个结构体，按它的 Huma 标签校验，提示与[接口的校验提示](../http/requests.md#validation-messages)相同。
 - 导出在查询条件中限定发起人能看到的范围，与[列表查询](../security/authorization.md#scoping-queries)相同；后台导出同样按发起人的权限查询。

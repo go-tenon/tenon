@@ -2,7 +2,7 @@
 
 `document/convert` 把 PDF、Word、PowerPoint、Excel、CSV、HTML、纯文本和 JSON 转换为 Markdown，并记录每一页、每张幻灯片、每个工作表在 Markdown 中的字节区间；`document/split` 把 Markdown 切成长度有上限的分段，交给[向量检索](vector.md)建立索引。两步都在本地完成。
 
-包：`document/convert`、`document/convert/all`、`document/split`。
+包：`document/convert`、`document/convert/all`、`document/convert/csv`、`document/convert/docx`、`document/convert/html`、`document/convert/pdf`、`document/convert/pptx`、`document/convert/text`、`document/convert/xlsx`、`document/split`。
 
 <a id="example-usage"></a>
 ## 示例
