@@ -4,7 +4,8 @@
  * 资源：服务端用 rest.API.Resource 声明的后台页面，@go-tenon/ui 的资源模型据此渲染列表、表单和操作。
  * operations 是客户端方法的位置（client[分组][方法]），schemas.ts、queries.ts 中的位置相同；
  * 字段的 type、format、enum（enums.ts 中的命名类型）和 required 取自接口的 schema；
- * permissions 是每个接口要求的权限；labels 按语言列出显示文字，缺少时先用默认语言，再用字段名。
+ * permissions 是每个接口要求的权限；labels 按语言列出显示文字，缺少时先用默认语言，再用字段名；
+ * descriptions 是字段的说明，显示在输入框下面。
  */
 export const resources = {
   article: {
@@ -52,11 +53,13 @@ export const resources = {
       "en": {
         title: "Articles",
         fields: { title: "Title", status: "Status", published_at: "Published at", featured: "Featured", slug: "Slug", tags: "Tags" },
+        descriptions: { slug: "The name in the article's URL" },
         actions: { publish: "Publish" },
       },
       "zh-CN": {
         title: "文章",
         fields: { title: "标题", status: "状态", published_at: "发布时间", featured: "精选", slug: "链接名", tags: "标签" },
+        descriptions: { slug: "文章地址中的名称" },
         actions: { publish: "发布" },
       },
     },

@@ -13,6 +13,7 @@ import {
   Switch,
   TagsInput,
   Text,
+  Textarea,
   TextInput,
 } from "@mantine/core"
 import { DateInput, DateTimePicker } from "@mantine/dates"
@@ -46,7 +47,7 @@ export function DefaultInput({
   label = field.label,
 }: FieldInputProps): ReactNode {
   const zone = useTimeZone()
-  const common = { label, error, disabled, required: field.required }
+  const common = { label, description: field.description, error, disabled, required: field.required }
   switch (field.kind) {
     case "number":
       return (
@@ -60,6 +61,7 @@ export function DefaultInput({
       return (
         <Switch
           label={label}
+          description={field.description}
           error={error}
           disabled={disabled}
           checked={!!value}
@@ -117,6 +119,17 @@ export function DefaultInput({
       )
     case "json":
       return <JsonField {...common} value={value} onChange={onChange} />
+    case "multiline":
+      return (
+        <Textarea
+          {...common}
+          autosize
+          minRows={3}
+          maxRows={12}
+          value={(value as string | undefined) ?? ""}
+          onChange={(e) => onChange?.(e.currentTarget.value)}
+        />
+      )
     case "secret":
       return (
         <SecretInput
@@ -147,6 +160,7 @@ function JsonField({
   onChange?: (v: unknown) => void
   error?: ReactNode
   label?: ReactNode
+  description?: ReactNode
   disabled?: boolean
   required?: boolean
 }) {
@@ -244,6 +258,8 @@ export function FieldValue({
       return <Code>{JSON.stringify(value)}</Code>
     case "secret":
       return maskSecret(String(value))
+    case "multiline":
+      return <span style={{ whiteSpace: "pre-wrap" }}>{String(value)}</span>
     default:
       return String(value)
   }

@@ -228,7 +228,7 @@ const schemas = {
           name: { type: "string", minLength: 1 },
           currency: { type: "string", enum: ["CNY", "USD", "EUR"] },
           invoice: { type: "boolean" },
-          notice: { type: "string", maxLength: 200 },
+          notice: { type: "string", format: "multiline", maxLength: 200 },
         },
       },
     },
@@ -274,12 +274,13 @@ const shopDef: SettingsDef = {
     { name: "name", type: "string", required: true },
     { name: "currency", type: "string", values: ["CNY", "USD", "EUR"] },
     { name: "invoice", type: "boolean" },
-    { name: "notice", type: "string" },
+    { name: "notice", type: "string", format: "multiline" },
   ],
   labels: {
     "zh-CN": {
       title: "店铺设置",
       fields: { name: "店铺名称", currency: "结算币种", invoice: "开具发票", notice: "公告" },
+      descriptions: { invoice: "下单时可以填写发票抬头", notice: "显示在店铺首页的顶部，可以换行" },
     },
   },
 }
