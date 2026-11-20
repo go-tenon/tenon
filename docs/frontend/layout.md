@@ -51,7 +51,7 @@ export const Route = createFileRoute("/_app/orders")({
 - 带 `title` 的路由按路由树嵌套，跳过没有标题的布局路由，同级按 `order`、再按路径排序。有子页面的路由是可以展开的分组。
 - 页面不出现在菜单中的情况：没有 `title`；用户没有 `permission`；`menu: false`；路由自己引入了路径参数（例如详情页 `/articles/$id`，菜单高亮它所在的分组）。分组中没有可以进入的页面时，分组也不出现。路径参数来自上级路由时，链接填上当前地址中的值，见[租户](#entering-tenants)。
 - `icon` 是 `defaultIcons` 中的名称，例如 `home`、`dashboard`、`article`、`users`、`settings`、`order`；写错的名称显示为空心圆。其他 [Tabler 图标](https://tabler.io/icons)通过 `UIProvider` 的 `icons` 增加：`<UIProvider theme={theme} icons={{ delivery: IconTruckDelivery }}>`。
-- 菜单项的徽标（例如未读数）用 `useMenuBadge("/_app/notifications", unread)` 登记，第一个参数是页面的路由 id；组件卸载、值为 0 或空时去掉。
+- 菜单项的徽标（例如未读数）用 `useMenuBadge("/_app/notifications", unread)` 登记，第一个参数是页面或模块的路由 id；组件卸载、值为 0 或空时去掉。`RailLayout` 把模块的徽标显示在图标栏中图标的右上角。
 
 <a id="search"></a>
 ### 页面搜索
@@ -69,7 +69,7 @@ export const Route = createFileRoute("/_app/orders")({
 </Fill>
 ```
 
-插槽有 `actions`（顶栏中，`actions` 参数之前）、`aside`（右侧面板，有内容时才出现）、`footer`（内容区底部）和 `user-menu`（`UserMenu` 中配色的下面）。同一个插槽中的内容按放入的顺序排列；内容仍在页面自己的组件树中，随页面一起更新。
+插槽有 `actions`（顶栏中，`actions` 参数之前）、`aside`（右侧面板，有内容时才出现）、`footer`（内容区底部）、`user-menu`（`UserMenu` 中配色的下面）和 `nav`（`RailLayout` 的二级导航，见[铺满的模块](#full-bleed)）。同一个插槽中的内容按放入的顺序排列；内容仍在页面自己的组件树中，随页面一起更新。
 
 <a id="menus"></a>
 ### 顶栏菜单：`UserMenu`、`NotificationsMenu`、`OperationsMenu`
@@ -233,7 +233,40 @@ export const Route = createFileRoute("/t/$tenant")({
 
 - 导航与 `FrameLayout` 一样来自[路由的 `staticData`](#menu)。第一级是模块，在图标栏中；模块下的页面和分组在二级导航中。
 - `settings`（默认 `/settings`）下的页面不进图标栏，从用户菜单进入；其中的页面不显示面包屑，内页用 `Page` 的 `back` 返回。
-- 窄屏（小于 48em）时二级导航是抽屉。内容区最宽 `maxWidth`（默认 1152px）。`RailLayout` 没有多标签。
+- 窄屏（小于 48em）时二级导航是抽屉。内容区最宽 `maxWidth`（默认 1152px），二级导航宽 `navWidth`（默认 260px）。`RailLayout` 没有多标签。
+- 二级导航的收起状态按账号保存。
+
+<a id="full-bleed"></a>
+### 铺满的模块：`fullBleed`、`nav` 插槽和 `useCollapseNav`
+
+收件箱、聊天这类多栏的模块铺满内容区，二级导航是模块自己的面板，例如带数量的收件箱列表：
+
+```tsx title="src/routes/_app/inbox.tsx"
+export const Route = createFileRoute("/_app/inbox")({
+  staticData: { title: "收件箱", icon: "message", fullBleed: true },
+  component: Inbox,
+})
+
+function Inbox() {
+  const [detail, setDetail] = useState(false)
+  const wide = useMediaQuery("(min-width: 1600px)")
+  useCollapseNav(detail && !wide) // 窗口不够宽时，打开详情先收起二级导航
+  return (
+    <div style={{ display: "flex", height: "100%" }}>
+      <Fill name="nav">
+        <NavLink label="我的" rightSection={<Text size="xs" c="dimmed">8</Text>} active />
+        <NavLink label="未指派" rightSection={<Text size="xs" c="dimmed">5</Text>} />
+      </Fill>
+      <ScrollArea w={320}>{/* 会话列表 */}</ScrollArea>
+      <ScrollArea style={{ flex: 1 }}>{/* 会话 */}</ScrollArea>
+    </div>
+  )
+}
+```
+
+- `fullBleed: true` 的页面没有最大宽度、内边距和面包屑，高度占满内容区。内容区本身不滚动，页面中的各栏自己滚动。写在模块的路由上时，模块下的页面都铺满。`FrameLayout` 同样支持它。
+- `<Fill name="nav">` 有内容时，二级导航显示它，替换按路由生成的链接；顶部的模块名和收起按钮保留，窄屏时它在抽屉中。二级导航中的 `NavLink` 自动用紧凑的样式。把 `Fill` 放在模块的布局路由中，模块内切换页面时面板保持不变。
+- `useCollapseNav(when)` 在 `when` 为 `true` 时临时收起二级导航，变回 `false` 或组件卸载时恢复，保存的收起状态保持不变。临时收起期间用户点了展开，以用户为准，直到下一次要求收起。
 
 <a id="custom-layouts"></a>
 ## 自己写布局
@@ -265,3 +298,4 @@ function TopLayout() {
 - `useNavigation()` 返回 `menu`（按权限过滤后的菜单树）、`active`（当前位置从第一级到最深一级的菜单项 id）和 `crumbs`（面包屑）。
 - `SessionBoundary` 只包住页面（`Outlet` 或 `TabsOutlet`），登录、退出、切换账号或租户时重新挂载其中的页面。包住布局或根路由的 HTML 文档时，每次打开已登录的页面，整个文档都会重建。
 - `TabsOutlet` 代替 `Outlet` 开启多标签；自己画标签栏时用 `useTabs()`。`useLayoutState()` 是侧栏收起、多标签开关这些按账号保存的状态，`useNarrow()` 判断窄屏。
+- `useFullBleed()` 是当前页面是否要求铺满（`staticData.fullBleed`），`useNavCollapseRequested()` 是是否有页面用 `useCollapseNav` 要求临时收起导航，`MenuBadge` 显示菜单项的徽标。

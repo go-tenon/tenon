@@ -64,6 +64,7 @@ export type SlotName =
   | "aside" // 右侧面板，有内容时才显示
   | "footer" // 内容区底部
   | "user-menu" // 用户菜单中，配色的下面
+  | "nav" // 二级导航：模块自己的面板，例如带数量的收件箱列表；有内容时 RailLayout 用它替换按路由生成的链接
 
 // 插槽用 portal 实现：Slot 登记一个 DOM 元素，Fill 把内容 portal 进去。内容随页面自己的渲染更新，
 // 状态只在插槽或内容出现、消失时变化，不会因为渲染而反复通知。
@@ -118,6 +119,38 @@ export function Fill({ name, children }: { name: SlotName | (string & {}); child
     return () => change(-1)
   }, [store, name])
   return element ? createPortal(children, element) : null
+}
+
+// ———————————————————————————— 版面 ————————————————————————————
+
+/** 当前页面是否铺满内容区：匹配到的路由中有一个的 staticData.fullBleed 是 true。 */
+export function useFullBleed(): boolean {
+  return useMatches({ select: (matches) => matches.some((m) => m.staticData?.fullBleed === true) })
+}
+
+// 要求收起二级导航的组件数：大于 0 时布局临时收起二级导航，保存的收起状态保持原样。
+const collapseRequestsOf = perOwner(() => createStore(0))
+
+/**
+ * when 为 true 时临时收起布局的二级导航，变回 false 或组件卸载时恢复；保存的收起状态保持不变。
+ * 例如窗口不够宽时打开详情面板，先收起二级导航给内容让出位置：
+ *
+ *   useCollapseNav(detailOpen && !wide)
+ */
+export function useCollapseNav(when: boolean): void {
+  const store = collapseRequestsOf(useApp())
+  useLayoutEffect(() => {
+    if (!when) return
+    store.set(store.get() + 1)
+    return () => store.set(store.get() - 1)
+  }, [store, when])
+}
+
+/** 是否有组件用 useCollapseNav 要求临时收起二级导航：布局据此收起。 */
+export function useNavCollapseRequested(): boolean {
+  const store = collapseRequestsOf(useApp())
+  const requested = () => store.get() > 0
+  return useSyncExternalStore(store.subscribe, requested, requested)
 }
 
 // ———————————————————————————— 布局状态 ————————————————————————————

@@ -40,6 +40,7 @@ import {
   UserMenu,
   useApp,
   useFormatDateTime,
+  useMenuBadge,
 } from "@go-tenon/ui"
 import {
   Badge,
@@ -70,6 +71,7 @@ import { type ReactNode, useEffect, useMemo, useState } from "react"
 import { createRoot } from "react-dom/client"
 import { CustomerForm } from "./customer-form"
 import { PrimaryPicker, savedPrimary } from "./primary-picker"
+import { InboxDemo } from "./rail-inbox"
 import {
   customerExport,
   customerImport,
@@ -400,6 +402,9 @@ async function* progress(): AsyncIterable<{ event: string; data: OperationLike }
 // ———————————————————————————— RailLayout 和 comfortable 预设 ————————————————————————————
 
 function RailShell(): ReactNode {
+  // 徽标：收件箱的待回复数显示在图标栏，“全部”的数量显示在二级导航中
+  useMenuBadge("/_app/t/$tenant/inbox", 8)
+  useMenuBadge("/_app/content/items", 3)
   return (
     <RailLayout
       title="Acme"
@@ -466,6 +471,7 @@ function railApp() {
   const personal = createRoute({ getParentRoute: () => settings, id: "personal", staticData: { title: "个人" } })
   // 租户在路径中：/t/$tenant 是没有标题的布局路由，其下页面的链接填上当前地址中的租户，例如 /t/acme/inbox；
   // 详情页 /t/$tenant/tickets/$id 自己引入了 id，不出现在菜单中。打开 /rail/t/acme/inbox 查看。
+  // 收件箱铺满内容区（fullBleed），二级导航是它自己用 <Fill name="nav"> 放的带数量的列表。
   const tenant = createRoute({ getParentRoute: () => layout, path: "/t/$tenant" })
   // 内页：标题左边的返回回到收件箱。菜单中的一级页面没有返回按钮。
   const ticket = createRoute({
@@ -474,10 +480,16 @@ function railApp() {
     staticData: { title: "工单详情" },
     component: TicketDetail,
   })
+  const inbox = createRoute({
+    getParentRoute: () => tenant,
+    path: "/inbox",
+    staticData: { title: "收件箱", icon: "message", order: 2, fullBleed: true },
+    component: InboxDemo,
+  })
   const routeTree = root.addChildren([
     layout.addChildren([
       page(layout, "/", "首页", "home"),
-      tenant.addChildren([page(tenant, "/inbox", "收件箱", "message", 2), ticket]),
+      tenant.addChildren([inbox, ticket]),
       content.addChildren([page(content, "/items", "全部", "list"), page(content, "/archive", "归档", "file", 1)]),
       settings.addChildren([personal.addChildren([page(personal, "/profile", "个人资料", "user")])]),
     ]),
