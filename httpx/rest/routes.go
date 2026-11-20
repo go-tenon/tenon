@@ -1,8 +1,11 @@
 package rest
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"net/http"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -27,11 +30,18 @@ type adapter struct {
 	chi    huma.Adapter
 	docs   map[string]bool
 	spec30 map[string]func(huma.Context) // 3.0 文档端点的路径和它们的处理器，代替 Huma 自带的处理器。
+
+	template string         // 带参数的 BasePath，例如 /t/{slug}/api；BasePath 不带参数时为空
+	prefix   *regexp.Regexp // 匹配 template 的实际路径前缀
 }
 
 // newAdapter 创建在 chi 路由 r 上注册操作的适配器。
-func newAdapter(r chi.Router, cfg huma.Config) *adapter {
+func newAdapter(r chi.Router, cfg huma.Config, basePath string) *adapter {
 	a := &adapter{router: r, chi: humachi.NewAdapter(r), docs: docRoutes(cfg)}
+	if strings.Contains(basePath, "{") {
+		a.template = basePath
+		a.prefix = regexp.MustCompile("^" + pathParam.ReplaceAllString(regexp.QuoteMeta(basePath), "[^/]+") + "$")
+	}
 	if cfg.OpenAPIPath != "" {
 		doc := cfg.OpenAPI
 		a.spec30 = map[string]func(huma.Context){
@@ -46,6 +56,9 @@ func newAdapter(r chi.Router, cfg huma.Config) *adapter {
 func (a *adapter) Handle(op *huma.Operation, handler func(huma.Context)) {
 	if h, ok := a.spec30[op.Path]; ok && op.Method == http.MethodGet {
 		handler = h
+	}
+	if a.template != "" && a.docs[op.Path] {
+		handler = a.concrete(op.Path, handler)
 	}
 	a.router.Method(op.Method, op.Path, &route{op: op, handler: handler, docs: a.docs[op.Path], adapter: a})
 }
@@ -63,6 +76,37 @@ func spec30(contentType string, render func() ([]byte, error)) func(huma.Context
 		_, _ = ctx.BodyWriter().Write(data)
 	}
 }
+
+// pathParam 匹配路径模板中的一个参数，例如 {slug}。
+var pathParam = regexp.MustCompile(`\\\{[^/]*?\\\}`)
+
+// concrete 包装带参数的 BasePath（例如 /t/{slug}/api）下的文档端点：响应中的路径模板换成这次请求实际的前缀
+// （例如 /t/demo/api），文档页读取的文档地址和“发送请求”的地址因此都指向当前的租户。
+func (a *adapter) concrete(path string, handler func(huma.Context)) func(huma.Context) {
+	return func(ctx huma.Context) {
+		u := ctx.URL()
+		prefix := strings.TrimSuffix(u.EscapedPath(), path)
+		if !a.prefix.MatchString(prefix) {
+			handler(ctx)
+			return
+		}
+		buf := &bufferedContext{humaContext: ctx}
+		handler(buf)
+		_, _ = ctx.BodyWriter().Write(bytes.ReplaceAll(buf.body.Bytes(), []byte(a.template), []byte(prefix)))
+	}
+}
+
+// humaContext 是 huma.Context 的别名：嵌入时字段名与 huma.Context 的 Context 方法不冲突。
+type humaContext = huma.Context
+
+// bufferedContext 把处理器写出的响应体先留在内存中，其余操作交给原来的 huma.Context。
+type bufferedContext struct {
+	humaContext
+	body bytes.Buffer
+}
+
+// BodyWriter 返回内存中的响应体。
+func (c *bufferedContext) BodyWriter() io.Writer { return &c.body }
 
 // ServeHTTP 交给底层的 chi 路由处理请求。
 func (a *adapter) ServeHTTP(w http.ResponseWriter, r *http.Request) { a.router.ServeHTTP(w, r) }
