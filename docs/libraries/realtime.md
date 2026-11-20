@@ -1,38 +1,20 @@
 # 实时频道
 
-实时频道是基于 WebSocket 的双向连接，客户端订阅频道，服务端向频道发布消息。
+用 WebSocket 实时频道做聊天、在线成员、“正在输入”这类双向的场景。`realtime` 在进程内嵌入 [Centrifuge](https://github.com/centrifugal/centrifuge)，客户端用 Centrifuge 的[官方 SDK](https://centrifugal.dev/docs/transports/client_sdk)，线路上的约定见[客户端协议](../http/protocol.md#realtime)。
 
-[服务端推送](../http/sse.md)适合服务器单向推送：通知角标、进度、AI 的流式回答。聊天、在线状态、“对方正在输入”这类场景需要双向的连接、在线成员和移动端 SDK，`realtime` 包为此在进程内嵌入 [Centrifuge](https://github.com/centrifugal/centrifuge)，提供 WebSocket 实时频道。客户端使用 Centrifuge 的[官方 SDK](https://centrifugal.dev/docs/transports/client_sdk)：浏览器的 centrifuge-js，以及 Swift、Java、Dart 等。
+包：`realtime`、`realtime/natspresence`、`realtime/realtimetest`。
 
-频道就是[广播](broadcasting.md)的主题。业务代码照常通过 `hub.PublishJSON` 发布，SSE 处理器和 WebSocket 客户端都会收到；多个实例之间由 Hub 的后端传递消息。
-
-**WebSocket** 是浏览器和服务器之间的一条双向连接：连接建立后，双方都可以随时发送消息。
-
-阅读前需要了解：[广播](broadcasting.md)；[API 令牌](../security/api-tokens.md)。
-
-- [示例用法](#example-usage)
-- [创建 Realtime](#creating)
-- [频道](#channels)
-    - [私有频道](#private-channels)
-- [在浏览器中订阅](#subscribing)
-- [认证](#authentication)
-    - [撤销后断开](#revocation)
-- [在线成员](#presence)
-    - [保存在线成员](#presence-stores)
-- [客户端发布](#client-publish)
-- [断线与重连](#reconnecting)
-- [部署](#deployment)
-    - [单独部署实时连接](#separate-process)
-- [常见问题](#troubleshooting)
-- [API 参考](#api-reference)
+- 频道就是[广播](broadcasting.md) Hub 的主题：业务代码照常用 `hub.PublishJSON` 发布，SSE 和 WebSocket 客户端都收到。只需单向推送时用[服务端推送](../http/sse.md)。
+- 消息最多投递一次，没有历史：客户端重连后从应用的接口取回数据，见[断线与重连](#reconnecting)。
 
 <a id="example-usage"></a>
-## 示例用法
-
-服务端创建 `Realtime`，登记一个公开频道，挂载 WebSocket 的处理器：
+## 示例
 
 ```go
-rt, err := realtime.New(hub, realtime.Options{Authenticate: tokens.Validate})
+rt, err := realtime.New(hub, realtime.Options{
+    Authenticate: tokens.Validate,
+    Accounts:     identity.Accounts{user.Type: roles.Resolve},
+})
 if err != nil {
     return err
 }
@@ -43,51 +25,38 @@ router.Handle("/realtime", rt.Handler())
 err = hub.PublishJSON(ctx, "articles", ArticlePublished{ID: id})
 ```
 
-浏览器用 centrifuge-js 订阅这个频道：
-
-```ts
-import { Centrifuge } from "centrifuge"
-
-// 同源的连接自动带上会话 cookie，不需要传 token
-const client = new Centrifuge(`wss://${location.host}/realtime`)
-client.newSubscription("articles").on("publication", (ctx) => console.log(ctx.data)).subscribe()
-client.connect()
-```
-
-之后，业务代码发布到 Hub 的 `articles` 主题的每一条消息，都会实时出现在浏览器的控制台中。下面依次介绍频道、认证和在线成员。
+`hub` 是入口创建的 `*broadcast.Hub`，`tokens` 是 `*apitoken.Store`，`roles.Resolve` 是[加载权限](../security/authorization.md#resolving-permissions)的 Resolver，`router` 是 HTTP 服务的 chi 路由。浏览器的订阅见[在浏览器中订阅](#subscribing)。
 
 <a id="creating"></a>
-## 创建 Realtime
+## 在入口创建 `Realtime`
 
-每个进程创建一个 `realtime.Realtime`。在入口接着 Hub 创建它：
+每个进程创建一个，在入口的 `Open` 中接着 Hub 创建，`stack` 是 `Open` 的 `*cleanup.Stack`：
 
 ```go
-rt, err := realtime.New(hub, realtime.Options{})
+rt, err := realtime.New(hub, realtime.Options{ /* 见认证、在线成员 */ })
 if err != nil {
     return nil, err
 }
-stack.MustAdd("realtime", rt.Shutdown)
+stack.MustAdd("realtime", rt.Shutdown) // 登记在 Hub 之后：先断开客户端，再关闭 Hub
 ```
 
-`Shutdown` 断开全部客户端，它们会重连到其他实例。它要在 Hub 关闭之前执行，所以登记在 Hub 之后。
+选项不合法时 `New` panic。设置 `Options.MeterProvider` 后报告连接数和订阅数，见[可观测性](../general/telemetry.md#realtime)。
 
 <a id="channels"></a>
-## 频道
+## 用 `Channel` 登记公开频道
 
-客户端只能订阅登记过规则的频道。`realtime.Public` 是公开频道，任何连接都可以订阅：
+客户端只能订阅登记过规则的频道，Hub 上的其他主题只在服务端可见。`realtime.Public` 是公开频道，未登录的连接也能订阅：
 
 ```go
 rt.Channel("articles", realtime.Public())
 ```
 
-[发布文章](broadcasting.md#publishing-events)的业务动作保持原样：它发布到 `articles` 主题的事件，现在也会发给订阅了 `articles` 频道的客户端。
-
-登记规则就是把一个主题公开给客户端。客户端只能订阅有匹配规则的频道，所以 Hub 上的其他主题只在服务端可见。消息的内容必须是 JSON。
+消息内容必须是 JSON。订阅时使用第一条匹配的规则。
 
 <a id="private-channels"></a>
-### 私有频道
+### 用 `Private` 授权私有频道
 
-频道名可以带 `{name}` 占位符，匹配一段字母、数字、`_` 和 `-`。`realtime.Private` 的授权函数收到主体和占位符的值，返回能否订阅：
+频道名可以带 `{name}` 占位符，匹配一段字母、数字、`_` 和 `-`。授权函数收到主体和占位符的值，返回能否订阅。`get` 是应用的业务动作 `article.Get`，能读取文章的人可以订阅它的频道：
 
 ```go
 rt.Channel("article:{id}", realtime.Private(func(ctx context.Context, sub identity.Subject, p realtime.Params) (bool, error) {
@@ -95,7 +64,7 @@ rt.Channel("article:{id}", realtime.Private(func(ctx context.Context, sub identi
     if err != nil {
         return false, nil
     }
-    _, err = get.Handle(ctx, sub, id) // article.Get：能读取这篇文章的人可以订阅它的频道
+    _, err = get.Handle(ctx, sub, id)
     if errorx.KindOf(err) == errorx.NotFound {
         return false, nil
     }
@@ -103,11 +72,11 @@ rt.Channel("article:{id}", realtime.Private(func(ctx context.Context, sub identi
 }))
 ```
 
-私有频道只对登录的连接开放。授权函数返回[系统故障](../general/errors.md#error-kinds)（`errorx.Unavailable`、`errorx.Internal` 类错误或普通错误）时，SDK 会稍后重新订阅。
+- 只对登录的连接开放。返回 `false` 或业务错误表示拒绝；返回[系统故障](../general/errors.md#error-kinds)时 SDK 稍后重新订阅。
+- 每 30 秒复查凭据时，已订阅的私有频道按重新加载的权限再授权一遍，不再允许的被退订。所以授权函数要快。
+- 需要立即生效时（例如把用户移出会话），业务数据提交后调用 `rt.Unsubscribe(sub.Ref(), channel)`，它在所有实例上生效。
 
-连接期间每 30 秒复查一次凭据（见[认证](#authentication)），复查时按重新加载的权限把已订阅的私有频道再授权一遍，不再允许的频道被退订，客户端收到退订通知后不再重新订阅；授权函数暂时故障时订阅保持。所以授权函数在复查时也会被调用，要和订阅时一样快。主体失去访问权限需要立即生效时，调用 `rt.Unsubscribe(sub.Ref(), channel)` 取消他在所有实例上的订阅，或者用 [`Options.Credentials`](#revocation) 发出复查信号。
-
-多租户应用的频道名要带上租户，并在授权函数中与主体的租户比较，见[缓存、广播与其他资源](../security/tenancy.md#other-resources)：
+多租户应用的频道名带上租户，在授权函数中与 `sub.Tenant` 比较，见[缓存、广播与其他资源](../security/tenancy.md#other-resources)：
 
 ```go
 rt.Channel("t:{tenant}:articles", realtime.Private(func(_ context.Context, sub identity.Subject, p realtime.Params) (bool, error) {
@@ -118,47 +87,32 @@ rt.Channel("t:{tenant}:articles", realtime.Private(func(_ context.Context, sub i
 <a id="subscribing"></a>
 ## 在浏览器中订阅
 
-编辑后台的单页应用安装 [centrifuge-js](https://github.com/centrifugal/centrifuge-js)（`bun add centrifuge`），连接并订阅；同源的连接自动带上会话 cookie，认证见[下一节](#authentication)：
+页面安装 centrifuge-js（`bun add centrifuge`），连接 `Handler` 挂载的路径。同源的连接自动带上会话 cookie，不传 token：
 
 ```js
 import { Centrifuge } from 'centrifuge';
 const centrifuge = new Centrifuge(`wss://${location.host}/realtime`);
 
 const articles = centrifuge.newSubscription('articles');
-articles.on('publication', (ctx) => {
-    showNotice(ctx.data.title, ctx.data.author); // ctx.data 就是发布的 ArticlePublished
-});
+articles.on('publication', (ctx) => showNotice(ctx.data.title)); // ctx.data 是发布的 JSON
+articles.on('unsubscribed', (ctx) => console.warn(ctx.code)); // 103 没有权限，102 没有这个频道
 articles.subscribe();
-
 centrifuge.connect();
 ```
 
-订阅被拒绝时，订阅对象触发 `unsubscribed` 事件，`ctx.code` 为 103（没有权限）或 102（没有这个频道）。其他语言的 SDK 遵守同样的约定，见[客户端协议](../http/protocol.md#realtime)。
+React 页面收到消息后让查询失效，见 [React 客户端](../frontend/client-react.md)。
 
 <a id="authentication"></a>
-## 认证
-
 <a id="tokens"></a>
-连接用 API 令牌认证，由 `Options.Authenticate` 校验，它通常就是 [API 令牌](../security/api-tokens.md)的校验器。浏览器中的页面不需要传 token：连接请求带着[会话 cookie](../security/api-tokens.md#browser-sessions)，用它认证。App 等其他客户端由 SDK 在连接时传入 token，或者把 token 放在连接请求的 `Authorization: Bearer` 请求头中；依次取 SDK 传入的、请求头中的、cookie 中的。token 只标识用户，权限由 `Options.Accounts` 中这套账号的 Resolver 加载，与 API 的 [`rest.Options.Accounts`](../security/authorization.md#resolving-permissions) 相同；token 属于其他账号体系时连接被拒绝。设置了 `Authenticate` 就必须设置 `Accounts`：
+## 认证连接：`Authenticate` 与 `Accounts`
 
-```go
-rt, err := realtime.New(hub, realtime.Options{
-    Authenticate: tokens.Validate,
-    Accounts:     identity.Accounts{user.Type: roles.Resolve},
-})
-router.Handle("/realtime", rt.Handler())
-```
+连接用 [API 令牌](../security/api-tokens.md)认证，`Authenticate` 通常是 `rest.RequireToken` 用的校验器。token 依次取 SDK 传入的（`new Centrifuge(url, { token })`）、`Authorization: Bearer` 请求头、[会话 cookie](../security/api-tokens.md#browser-sessions)；都没有的连接是匿名的，只能订阅公开频道。
 
-连接独立于[请求超时](../http/middleware.md#request-timeout)。浏览器发起的连接只接受同源请求，其他网站的页面不能借用户的 cookie 建立连接；其他来源需要连接时，把它加入 `Options.TrustedOrigins`。带 `Authorization` 请求头的连接不检查来源：这个请求头只能由客户端自己设置，浏览器不会自动附加。例如桌面端的页面来自 `app://`，宿主在连接请求上加上这个请求头，不需要把 `app://` 加入 `TrustedOrigins`。
-
-```js
-// 浏览器：同源连接自动带上会话 cookie
-const centrifuge = new Centrifuge(`wss://${location.host}/realtime`);
-// App：传入登录时得到的 token
-const app = new Centrifuge('wss://api.example.com/realtime', { token: apiToken });
-```
-
-[多租户](../security/tenancy.md#identifying-tenants)应用还要告诉它连接属于哪个租户，`Options.Tenant` 与 API 的 `rest.Options.Tenant` 作用相同：Resolver 据此加载用户在这个租户中的权限，[租户频道](#private-channels)的授权函数才能与 `sub.Tenant` 比较，绑定了其他租户的 token 会被拒绝。
+- 权限由 `Accounts` 中这套账号的 Resolver 加载，与 [`rest.Options.Accounts`](../security/authorization.md#resolving-permissions) 相同。设置了 `Authenticate` 就必须设置 `Accounts`。
+- token 无效、属于其他账号体系或 Resolver 拒绝主体时，连接以 3500 关闭，SDK 停止重连。连接期间每 30 秒重新校验，撤销 token、停用用户后连接结束。
+- 会话 cookie 改了名字时，把同一个 `httpx.SessionCookie` 交给 `Options.SessionCookie`。
+- 浏览器的连接只接受同源页面，其他来源加入 `Options.TrustedOrigins`（如 `https://app.example.com`）。带 `Authorization` 请求头的连接不检查来源，例如桌面端 `app://` 页面的宿主加上这个请求头即可。
+- [多租户](../security/tenancy.md#identifying-tenants)应用设置 `Options.Tenant`，与 `rest.Options.Tenant` 相同：
 
 ```go
 rt, err := realtime.New(hub, realtime.Options{
@@ -169,59 +123,44 @@ rt, err := realtime.New(hub, realtime.Options{
 router.Handle("/t/{tenant}/realtime", rt.Handler())
 ```
 
-token 无效、属于其他账号体系，或 Resolver 拒绝主体时，连接以 3500 关闭，SDK 停止重连。连接期间两者每 30 秒重新运行一次，token 被撤销、用户被停用或移出租户后连接结束；用户失去某个私有频道的权限时，这个频道被退订，见[私有频道](#private-channels)。没有 token 的连接是匿名的，只能订阅公开频道。
-
 <a id="revocation"></a>
-### 撤销后断开
+### 撤销后立即断开：`Credentials`
 
-连接期间每 30 秒重新校验一次凭据，与 [SSE](../http/sse.md#revoked-credentials) 相同。需要撤销后立即断开时，把 [`broadcast.Credentials`](../http/sse.md#immediate-revocation) 交给 `Options.Credentials`，之后退出登录、撤销 token 时照常调用 `Recheck*`，实时连接随之生效。修改用户的角色和权限后调用 `RecheckSubject`，失去权限的私有频道随即退订。
+把 [`broadcast.Credentials`](../http/sse.md#immediate-revocation) 交给 `Options.Credentials`，退出登录、撤销 token 时照常调用 `Recheck*`，连接立即重新校验。改了用户的角色后调用 `RecheckSubject`，失去权限的私有频道随即退订。
 
 <a id="presence"></a>
-## 在线成员
+## 在线成员：`Presence` 与 `Members`
 
-`realtime.Presence` 的频道除了授权，还记录订阅者：他们是频道的在线成员，彼此可以看到。授权函数多返回一个值，是其他成员能看到的资料：
+`realtime.Presence` 的频道记录订阅者，他们彼此可见。授权函数多返回一个值，是其他成员看到的资料；`users` 是应用的用户存储：
 
 ```go
 rt.Channel("editing:{article}", realtime.Presence(func(ctx context.Context, sub identity.Subject, p realtime.Params) (any, bool, error) {
-    user, err := users.Get(ctx, sub.ID)
+    u, err := users.Get(ctx, sub.ID)
     if err != nil {
         return nil, false, err
     }
-    return map[string]string{"name": user.Name}, sub.Can("articles"), nil
+    return map[string]string{"name": u.Name}, sub.Can("articles"), nil
 }))
 ```
 
-编辑页面订阅这个频道，读取成员列表，并在成员加入、离开时更新：
+页面在 `subscribed` 中调用 `sub.presence()` 读取列表（每个连接一项，`user` 是主体的 Ref，例如 `user:42`），在 `join`、`leave` 事件中更新。
 
-```js
-const editing = centrifuge.newSubscription(`editing:${articleId}`);
-editing.on('subscribed', async () => {
-    const { clients } = await editing.presence();
-    render(Object.values(clients)); // 每个连接一项：{ client, user, chanInfo: { name } }，user 是主体的 Ref，例如 user:42
-});
-editing.on('join', (ctx) => add(ctx.info));
-editing.on('leave', (ctx) => remove(ctx.info));
-editing.subscribe();
-```
+- 必须设置 [`Options.Presence`](#presence-stores)，否则 `Channel` panic。
+- 事件按人发出：第一个连接加入时 `join`，最后一个连接离开时 `leave`；事件可能重复，按 `ctx.info.user` 处理。
+- 离开后保留 10 秒（`Options.PresenceGrace`，最长 30 秒，负数不保留），刷新页面、闪断重连不产生事件。`rt.Unsubscribe` 立即发出 `leave`。
+- 实例崩溃时没有 `leave`，记录一分钟内消失，页面要定期调用 `presence()` 刷新。
 
-加入和离开事件按人发出，不按连接：
-
-- **多个标签页只算一次。** 一个人的第一个连接加入时发出 `join`，之后的连接保持安静；最后一个连接离开后才发出 `leave`。`presence()` 返回的仍然是每个连接一项，显示时按 `user` 合并。
-- **离开有宽限期。** 连接离开后，成员在列表中保留 10 秒，期间重新加入就没有任何事件。所以网络闪断后重连、刷新页面，其他人都看不到离开又加入。宽限期由 `Options.PresenceGrace` 设置，最长 30 秒，负数表示离开后立即发出 `leave`。客户端主动取消订阅同样经过宽限期；`rt.Unsubscribe` 把人移出频道，`leave` 立即发出。
-- **事件可能重复。** 例如两个标签页同时打开时可能各发一次 `join`。按 `ctx.info.user` 处理，重复的事件就没有影响。
-- **实例停止或崩溃时没有 `leave`。** 重连到其他实例的成员保持在线；没有重连的成员在一分钟内从列表中消失。页面应当在事件之外定期调用 `presence()` 刷新。
-
-服务端用 `rt.Members` 查询在线成员，同一个主体的多个连接合并为一项。例如分配工作时只考虑在线的人：
+服务端用 `rt.Members` 查询，同一个主体的多个连接合并为一项：
 
 ```go
 members, err := rt.Members(ctx, "editing:"+id.String())
-// members[i].Subject（identity.Ref）、members[i].Info、members[i].Connections
+// members[i].Subject（identity.Ref）、members[i].Info（JSON）、members[i].Connections
 ```
 
 <a id="presence-stores"></a>
-### 保存在线成员
+### 用 `natspresence` 保存在线成员
 
-在线成员保存在所有实例共用的存储中，登记 presence 频道之前必须设置 `Options.Presence`，否则 `rt.Channel` 会 panic。只有一个实例时也一样：[不停机升级](../installation/operations.md#zero-downtime-upgrades)时新旧进程同时运行，双方要看到同一份在线成员。在线成员保存在 [NATS](nats.md) JetStream 的键值存储（KV）中，`nc` 是[入口中创建的 NATS 连接](nats.md#connecting)：
+在线成员保存在所有实例共用的 [NATS](nats.md) JetStream KV 中。单实例也要设置：[不停机升级](../installation/operations.md#zero-downtime-upgrades)时新旧进程要看到同一份成员。`nc` 是[入口中创建的 NATS 连接](nats.md#connecting)：
 
 ```go
 presence, err := natspresence.New(ctx, nc, natspresence.Options{Bucket: "app_presence"})
@@ -231,55 +170,37 @@ if err != nil {
 rt, err := realtime.New(hub, realtime.Options{Presence: presence})
 ```
 
-`natspresence.New` 创建 bucket，已经存在时按选项更新它。bucket 名区分不同的应用和环境，同一个应用的实例必须相同。bucket 保存在 NATS 服务器的内存中，每个连接一条记录，连接每 25 秒续期一次；进程崩溃时来不及删除的记录在 60 秒后不再出现在在线成员中，5 分钟内由 NATS 删除。NATS 集群中把 `Replicas` 设为 3，一台服务器故障时在线记录不丢失；单副本时，丢失的记录在连接下一次续期时恢复。
-
-没有 presence 频道的应用省略它，`rt.Members` 返回空列表。测试中用 `realtimetest.NewPresence()`，它把在线记录保存在内存中；同一个交给多个 `Realtime`，就模拟了共用存储的多个实例。
+- `Bucket` 区分应用和环境，同一个应用的实例必须相同。NATS 集群中把 `Replicas` 设为 3。
+- 测试中用 `realtimetest.NewPresence()` 的内存存储，同一个交给多个 `Realtime` 就模拟了多个实例。
 
 <a id="client-publish"></a>
-## 客户端发布
+## 客户端发布：`ClientPublish`
 
-「正在输入」这类提示可以让客户端直接发布。在规则上加 `ClientPublish()`：
+“正在输入”这类提示由客户端直接发布，`canEdit` 是应用的授权函数：
 
 ```go
 rt.Channel("typing:{article}", realtime.Private(canEdit).ClientPublish())
 ```
 
-```js
-typing.publish({ typing: true });
-typing.on('publication', (ctx) => showTyping(ctx.info.user)); // ctx.info 是发布者，由服务器填写
-```
-
-只有已经订阅频道的客户端可以发布，发布者自己也会收到。这类消息只发给 WebSocket 客户端，`hub.Subscribe` 收不到。内容由客户端决定，接收方只信任 `ctx.info`，`ctx.data` 按不可信的数据处理；需要保存或校验的内容仍然通过接口提交。
+- 只有已订阅的客户端可以发布，消息只发给 WebSocket 客户端，`hub.Subscribe` 收不到。
+- 接收方只信任 `ctx.info`（发布者，由服务器填写），`ctx.data` 按不可信的数据处理；要保存的内容通过接口提交。
 
 <a id="reconnecting"></a>
 ## 断线与重连
 
-消息只发给当前在线的订阅，最多一次，只投递实时消息。SDK 在连接断开后自动重连并重新订阅，断线期间的消息由页面重新取数据弥补。所以每次订阅成功后，都从应用自己的接口取回最新的数据：
-
-```js
-articles.on('subscribed', async () => {
-    const latest = await fetch('/admin/articles/recent').then((r) => r.json());
-    replaceNotices(latest);
-});
-```
-
-`subscribed` 在首次订阅和每次重连后都会触发，页面用同一段代码处理两种情况。与 [SSE 的断线补发](broadcasting.md#replaying-missed-events)一样，数据以应用的表为准。Hub 的后端可能丢了消息时（例如与 NATS 的连接中断过），本实例的客户端会被断开并重连，走的是同一条路径。
+SDK 自动重连并重新订阅，断线期间的消息不补发。`subscribed` 在首次订阅和每次重连后都触发，在其中从应用的接口取回最新数据，例如 `articles.on('subscribed', reload)`。Hub 的后端可能丢了消息时（例如与 NATS 断开过），本实例的客户端被断开重连，走同一条路径。
 
 <a id="deployment"></a>
 ## 部署
 
-- 所有实例使用相同的 Hub 后端和相同的 `Options.Presence`。连接可以落在任意实例上。
-- 反向代理要转发 WebSocket 的升级请求，例如 nginx 需要 `proxy_http_version 1.1`、`proxy_set_header Upgrade $http_upgrade` 和 `proxy_set_header Connection "upgrade"`。服务器每 25 秒发送一次心跳，代理的空闲超时要大于它。
-- 实例之间的控制消息由 Centrifuge 编码。升级框架时如果 Centrifuge 的版本有变化，先查看它的发布说明是否要求所有实例同时升级。
-
-Centrifuge 只链接进使用了 `realtime` 的应用。
+- 所有实例使用相同的 Hub 后端和 `Options.Presence`，连接可以落在任意实例上。
+- 反向代理要转发 WebSocket 升级请求，空闲超时大于 25 秒的心跳间隔。
+- 升级框架时 Centrifuge 的版本有变化，查看它的发布说明是否要求所有实例同时升级。
 
 <a id="separate-process"></a>
-### 单独部署实时连接
+### 用 `serve realtime` 单独部署实时连接
 
-运行全部部分的 `serve` 和单独运行的 `serve http` 都在 HTTP 服务上挂载了 `/realtime`，起步阶段直接使用即可。WebSocket 是长连接：每次升级，旧进程停止时断开它上面的全部连接，客户端在同一时刻重连。接口发布频繁、连接很多时，把实时连接交给单独的一组进程，升级接口时它们保持在线，大量空闲连接也与接口分开占用资源。
-
-给 `App` 加一个只承接实时连接的部分。连接的认证由 `realtime` 自己完成（`Options.Authenticate`），所以这个部分的路由中只需要 `/realtime` 和默认的中间件：
+`/realtime` 挂在 HTTP 服务上时，每次升级都断开全部连接。接口发布频繁、连接很多时，给 `App` 加一个只承接实时连接的部分，升级接口时它保持在线。`a.rt` 是 `Open` 中创建的 `*realtime.Realtime`，`a.cfg.RealtimeAddr` 是新增的监听地址，例如 `:8081`：
 
 ```go
 // Realtime 只承接实时频道的连接，在 RealtimeAddr 上监听。
@@ -297,114 +218,7 @@ func (a *App) Realtime(d *command.Daemon) (func(context.Context) error, error) {
 }
 ```
 
-`a.rt` 是 `Open` 中创建的 `realtime.Realtime`，HTTP 服务的路由挂载的也是它。在 `Parts` 中把它登记为只单独运行的部分，`serve` 运行全部部分时不包含它，`serve realtime` 只运行它：
+在 `Parts` 中登记 `{Name: "realtime", Start: a.Realtime, Standalone: true}`：不带参数的 `serve` 不运行它，`serve realtime` 只运行它。
 
-```go
-{Name: "realtime", Short: "只承接实时频道的连接", Start: a.Realtime, Standalone: true},
-```
-
-`RealtimeAddr` 是应用配置中新增的一项，例如 `:8081`。反向代理把 `/realtime` 转给 `serve realtime` 进程，其余请求仍然转给 HTTP 服务：
-
-```nginx
-location /realtime {
-    proxy_pass http://127.0.0.1:8081;
-    proxy_http_version 1.1;
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection "upgrade";
-}
-location / {
-    proxy_pass http://127.0.0.1:8080;
-}
-```
-
-- 只改了接口和页面时，[升级](../installation/operations.md#zero-downtime-upgrades) HTTP 服务即可，实时连接保持在线；改了频道规则、授权函数，或者升级了框架，再升级 `serve realtime` 的进程。
-- 频道挂在带租户的路径上时（例如 `/t/{tenant}/realtime`），这个部分的路由用同样的路径。
-- `serve realtime` 同样可以运行多个实例，它们与其他进程共用 Hub 后端，业务代码在哪个进程中发布都一样。
-
-<a id="troubleshooting"></a>
-## 常见问题
-
-**浏览器订阅时被拒绝，`ctx.code` 是 102**
-
-服务端没有登记这个频道的规则。客户端只能订阅有匹配规则的频道，见[频道](#channels)。
-
-**订阅私有频道时被拒绝，`ctx.code` 是 103**
-
-连接没有带 token，是匿名的；或者授权函数返回了“不能订阅”。私有频道只对登录的连接开放，见[私有频道](#private-channels)。
-
-**连接以 3500 关闭，之后不再重连**
-
-token 无效、属于其他账号体系，或者主体被拒绝了，见[认证](#authentication)。
-
-**其他域名的页面连接时被拒绝**
-
-浏览器发起的连接只接受同源请求。把那个来源加入 `Options.TrustedOrigins`。
-
-<a id="api-reference"></a>
-## API 参考
-
-包 `github.com/go-tenon/tenon/realtime`。
-
-### New
-
-```go
-func New(hub *broadcast.Hub, opts Options) (*Realtime, error)
-```
-
-- **参数**
-    - `hub`：广播的 Hub，频道就是它的主题
-    - `opts`：见下面的 `Options`
-- **返回**：`Realtime`；选项不合法时返回错误
-
-每个进程创建一个，接收 `hub` 上的全部消息。
-
-### Options
-
-| 字段 | 说明 |
-| --- | --- |
-| `Authenticate identity.TokenValidator` | 校验客户端 SDK 传入的令牌，通常与 `rest.RequireToken` 用同一个校验器，见[认证](#authentication) |
-| `Accounts identity.Accounts` | 接受的账号体系，通常与 `rest.Options.Accounts` 相同；设置了 `Authenticate` 时必须设置 |
-| `Tenant func(r *http.Request) string` | 取出连接所在的租户 |
-| `Credentials identity.CredentialWatcher` | 撤销凭据后立即断开，见[撤销后断开](#revocation) |
-| `TrustedOrigins []string` | 允许跨站建立连接的来源，默认只接受同源的浏览器连接 |
-| `Presence PresenceStore` | 在线成员的存储，presence 频道必须设置，见[保存在线成员](#presence-stores) |
-| `PresenceGrace time.Duration` | 离开后保留在线记录的时间，默认 10 秒，最长 30 秒 |
-| `MeterProvider metric.MeterProvider` | 报告连接数和订阅数，见[可观测性](../general/telemetry.md#realtime) |
-| `Logger *slog.Logger` | 日志器 |
-
-### Realtime
-
-```go
-func (rt *Realtime) Channel(pattern string, rule Rule)
-func (rt *Realtime) Handler() http.Handler
-func (rt *Realtime) Members(ctx context.Context, channel string) ([]Member, error)
-func (rt *Realtime) Unsubscribe(ref identity.Ref, channel string) error
-func (rt *Realtime) Shutdown(ctx context.Context) error
-```
-
-`Channel` 登记频道及其规则，`pattern` 可以带参数，例如 `article:{id}`。`Handler` 是 WebSocket 的处理器。`Members` 列出 presence 频道的在线成员。`Unsubscribe` 把一个主体从频道中移出。`Shutdown` 断开全部客户端。
-
-### Rule
-
-```go
-func Public() Rule
-func Private(authorize Authorizer) Rule
-func Presence(authorize PresenceAuthorizer) Rule
-```
-
-公开频道、需要授权的私有频道、带在线成员的频道。`Authorizer` 收到主体和频道参数，返回是否允许订阅。
-
-### natspresence.New
-
-```go
-func New(ctx context.Context, nc *nats.Conn, opts natspresence.Options) (*Store, error)
-```
-
-包 `github.com/go-tenon/tenon/realtime/natspresence`。在线成员的 NATS 存储。
-
-| 选项 | 说明 |
-| --- | --- |
-| `Bucket string` | KV bucket 的名字，由字母、数字、`_` 和 `-` 组成，同一个应用的实例必须相同 |
-| `Replicas int` | bucket 的副本数，不大于 0 时为 1 |
-
-创建 bucket，已经存在时按选项更新它。`nc` 为 `nil` 或 `Bucket` 不合法时 panic；服务器没有开启 JetStream 时返回错误。
+- 反向代理把 `/realtime` 转给这个进程，其余请求转给 HTTP 服务。带租户的路径（`/t/{tenant}/realtime`）在这里用同样的路径。
+- 只改了接口时只[升级](../installation/operations.md#zero-downtime-upgrades) HTTP 服务；改了频道规则、授权函数或框架时再升级 `serve realtime`。

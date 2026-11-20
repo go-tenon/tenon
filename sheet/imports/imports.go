@@ -7,7 +7,7 @@
 // 任务调用 Process，逐行解码并交给业务代码处理：
 //
 //	imp, err := s.Start(ctx, tx, subject, "articles.import", fileID)
-//	err = ImportArticles.Publish(ctx, queue.Database(tx), imp.ID)
+//	err = ImportArticles.Publish(ctx, tx, imp.ID)
 //
 //	// 队列任务
 //	err := imports.Process(ctx, s, id, func(ctx context.Context, imp *imports.Import, rec *sheet.Record[Changes]) error {
@@ -76,7 +76,7 @@ func New(db *bun.DB, ops *operation.Service, files *filesystem.Service, language
 // Start 登记 owner 发起的一次 kind 导入（例如 articles.import）：确认 owner 上传的文件 fileID，记下 ctx 中的语言，
 // 返回 pending 状态的导入。
 //
-// tx 通常是发布导入任务的事务，在同一个事务中用 queue.Database(tx) 发布任务，任务中调用 Process。
+// tx 通常是发布导入任务的事务，在同一个事务中用 tx 发布任务，任务中调用 Process。
 // 文件不是 .csv 或 .xlsx 时返回 sheet.ErrFormat，文件的其他检查见 filesystem.Service.Confirm。
 func (s *Service) Start(ctx context.Context, tx bun.IDB, owner identity.Subject, kind string, fileID uuid.UUID) (*Import, error) {
 	files := s.files.WithDB(tx)

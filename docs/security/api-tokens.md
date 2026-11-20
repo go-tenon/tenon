@@ -176,7 +176,7 @@ mcpx.HandlerOptions{Validate: tokens.ValidateFor("https://example.com/mcp") /* �
 sched.Add("apitoken:cleanup", "@hourly", schedule.Cleanup(tokens.Cleanup, 1000))
 ```
 
-注销账号和导出个人数据时，把包级函数 `apitoken.Erase`、`apitoken.Export` 登记到[注销账号](../features/privacy.md#framework-sources)和[导出个人数据](../features/data-export.md#sources)。
+注销账号和导出个人数据时，把包级函数 `apitoken.Erase`、`apitoken.Export` 登记到[注销账号](../features/privacy.md#framework-sources)和[导出个人数据](../features/privacy.md#sources)。
 
 <a id="configuration"></a>
 ## 配置

@@ -3,7 +3,7 @@
 // 操作在发起请求的事务中用 Start 登记，同一个事务发布队列任务；任务用 Run 执行，期间报告进度：
 //
 //	op, err := ops.Start(ctx, tx, subject, "articles.reindex")
-//	err = ReindexJob.Publish(ctx, queue.Database(tx), op.ID)
+//	err = ReindexJob.Publish(ctx, tx, op.ID)
 //
 //	// 队列任务
 //	err := ops.Run(ctx, id, func(ctx context.Context, r *operation.Run) error {
@@ -102,7 +102,7 @@ func New(db *bun.DB) *Service {
 }
 
 // Start 登记 owner 发起的一个 kind 操作，返回 pending 状态的操作。
-// tx 通常是发布任务的事务，在同一个事务中用 queue.Database(tx) 发布任务，事务回滚时两者一起撤销。
+// tx 通常是发布任务的事务，在同一个事务中用 tx 发布任务，事务回滚时两者一起撤销。
 func (s *Service) Start(ctx context.Context, tx bun.IDB, owner identity.Subject, kind string) (*Operation, error) {
 	if kind == "" {
 		return nil, errors.New("operation: empty kind")

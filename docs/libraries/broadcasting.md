@@ -1,32 +1,14 @@
 # 广播
 
-广播把一条消息送到每一个实例，让各个实例上订阅了它的连接都能收到。
+把一条消息经由 NATS 送到每一个实例，再交给各实例上订阅了它的连接，例如编辑 A 在实例 1 上发布文章，编辑 B 在实例 2 上的 [SSE](../http/sse.md) 连接收到通知。消息按主题（topic）分发，例如 `articles`、`room:42`；[实时频道](realtime.md)的 WebSocket 也用它。
 
-只部署一个实例时，[服务端推送](../http/sse.md)直接把消息写给连接上的客户端就行了。但部署多个实例之后，发布消息的请求和要收到消息的客户端往往在不同实例上：编辑 A 在实例 1 上发布了文章，编辑 B 的长连接在实例 2 上。`broadcast` 包负责把消息送到每个实例，再交给这个实例上订阅了它的连接。
-
-它与传输方式无关：同一个 Hub 既可以推给 SSE 连接，也可以推给[实时频道](realtime.md)的 WebSocket 客户端。消息按主题（topic）分发，例如 `articles`、`room:42`。
-
-阅读前需要了解：[服务端推送](../http/sse.md)；[NATS](nats.md)；[提交后执行](../database/database.md#after-commit)。
-
-- [示例用法](#example-usage)
-- [创建 Hub](#creating-the-hub)
-- [发布事件](#publishing-events)
-- [推送给客户端](#pushing-to-browsers)
-    - [断线补发](#replaying-missed-events)
-- [后端](#backends)
-- [投递保证](#delivery-guarantees)
-- [测试](#testing)
-- [常见问题](#troubleshooting)
-- [API 参考](#api-reference)
+包：`broadcast`、`broadcast/natsbroadcast`、`broadcast/broadcasttest`。
 
 <a id="example-usage"></a>
-## 示例用法
-
-下面在一个实例上订阅 `articles` 主题，在任意实例上发布：
+## 示例
 
 ```go
 hub := broadcast.New(natsbroadcast.New(nc, "app.broadcast"), nil)
-defer hub.Close()
 
 // 一个实例上订阅
 sub := hub.Subscribe("articles")
@@ -40,24 +22,24 @@ for m := range sub.C() {
 }
 ```
 
-发布时只管发布，Hub 经由 NATS 把消息送到每个实例，再交给本实例上订阅了这个主题的连接。
+`nc` 是[入口中创建的 NATS 连接](nats.md#connecting)。
 
 <a id="creating-the-hub"></a>
 ## 创建 Hub
 
-每个进程创建一个 `broadcast.Hub`，所有长连接共用。在入口创建它，并登记关闭：
+每个进程创建一个 `*broadcast.Hub`，所有长连接共用。在入口创建，登记关闭：
 
 ```go
-hub := broadcast.New(natsbroadcast.New(nc, "app.broadcast"), nil)
+hub := broadcast.New(natsbroadcast.New(nc, "app.broadcast"), nil) // 日志器为 nil 时用 slog.Default()
 stack.MustAdd("broadcast", func(context.Context) error { return hub.Close() })
 ```
 
-`broadcast.New` 的第一个参数是在实例之间传递消息的[后端](#backends)；第二个参数是日志器，传 `nil` 时使用 `slog.Default()`。Hub 创建后就在后台开始接收消息，`Close` 停止接收并结束全部订阅。
+Hub 创建后就在后台接收消息，`Close` 停止接收并结束全部订阅。
 
 <a id="publishing-events"></a>
-## 发布事件
+## 提交事务之后发布事件：`PublishJSON`
 
-例如文章发布成功后，“发布文章”的业务动作发布一个事件，`hub` 由它的构造函数传入。事件在发布文章的事务中用 [AfterCommit](../database/database.md#after-commit) 登记，事务提交之后才发出：
+“发布文章”的业务动作在事务中用 [`tx.AfterCommit`](../database/database.md#after-commit) 登记事件，提交之后才发出：`Publish` 不参与事务，提前发布时客户端可能收到随后被回滚的通知。`a.hub` 由构造函数传入，`item` 是事务中更新的文章，`subject` 是调用者的主体：
 
 ```go
 type ArticlePublished struct {
@@ -73,47 +55,28 @@ tx.AfterCommit(func(ctx context.Context) error {
 })
 ```
 
-几点约定：
-
-- **发布领域事件。** 每个连接收到后按自己的需要转换：同一条消息，不同的人看到的内容、语言可能不同。事件应当小，大的内容只带 ID，由收到的一方查询。
-- **在事务提交之后发布。** `Publish` 不参与数据库事务，提交之前发布，客户端可能收到一条随后被回滚的通知。
-- **发布失败时业务结果照旧。** 通知是尽力而为的，文章已经发布成功，发布事件失败时框架记录一条 Error 日志。
-
-主题由字母、数字和 `_ - : .` 组成，最长 200 字节。多租户应用中主题要带上租户，见[缓存、广播与其他资源](../security/tenancy.md#other-resources)。
+- 发布小的领域事件，大的内容只带 ID；每个连接收到后按自己的权限和语言转换。
+- 发布失败时记录 Error 日志，业务结果照旧。
+- 主题由字母、数字和 `_ - : .` 组成，`.` 两侧必须有其他字符，最长 200 字节。不合法时 `Publish` 返回错误，`Subscribe` panic。
+- 多租户应用的主题带上租户，见[缓存、广播与其他资源](../security/tenancy.md#other-resources)。
 
 <a id="pushing-to-browsers"></a>
-## 推送给客户端
+## 推送给客户端：`Subscribe`
 
-SSE 处理器订阅主题，收到事件就推送，写法见[长连接](../http/sse.md#long-lived-connections)：
+SSE 处理器订阅主题，从 `sub.C()` 读消息推送，完整写法见[长连接](../http/sse.md#long-lived-connections)。
 
-```go
-sub := hub.Subscribe("articles")
-defer sub.Close()
-for {
-    select {
-    case <-s.Done():
-        return nil
-    case m, ok := <-sub.C():
-        if !ok {
-            return nil // 订阅已结束，客户端会重连
-        }
-        // m.Data 是 PublishJSON 的 JSON，按需转换后用 s.SendJSON 推送
-    }
-}
-```
-
-`sub.C()` 被关闭表示订阅结束，`sub.Err()` 返回原因，见[投递保证](#delivery-guarantees)。这时让处理器返回，连接随之结束，客户端重连。
-
-一个订阅可以同时订阅多个主题，例如 `hub.Subscribe("articles", "comments")`。
+- 一个订阅可以订阅多个主题，例如 `hub.Subscribe("articles", "comments")`。
+- `sub.C()` 被关闭表示订阅结束，`sub.Err()` 返回原因，见[投递保证](#delivery-guarantees)。这时处理器返回，连接结束，客户端重连并[补发](#replaying-missed-events)。
+- 撤销登录后立即断开 SSE 连接用 `broadcast.NewCredentials(hub)`，见[立即断开](../http/sse.md#immediate-revocation)。
 
 <a id="replaying-missed-events"></a>
-### 断线补发
+### 断线补发：`Last-Event-ID`
 
-连接断开期间的事件由客户端重连时补发。[长连接](../http/sse.md#long-lived-connections)的处理器为每个事件带上了 ID，客户端重连时通过 `Last-Event-ID` 发回最后收到的 ID。文章的 ID 是 UUIDv7，按时间排序，所以补发就是查询这个 ID 之后发布的文章。`publishedAfter` 是查询之后发布的文章的业务动作 `article.PublishedAfter`：
+客户端重连时在 `Last-Event-ID` 中发回最后收到的事件 ID，处理器从应用自己的表中查出之后的数据补发，框架不保存事件历史。文章的 ID 是 UUIDv7，按时间排序。`hub` 是入口创建的 Hub，`publishedAfter` 是查询某篇之后发布的文章的业务动作，`eventOf` 把文章转为 `ArticlePublished`：
 
 ```go
 return rest.SSE(func(s *httpx.Stream) error {
-    sub := hub.Subscribe("articles") // 先订阅，再查询，中间发布的文章也能收到
+    sub := hub.Subscribe("articles") // 先订阅，再查询
     defer sub.Close()
     if last, err := uuid.Parse(s.LastEventID()); err == nil {
         missed, err := publishedAfter.Handle(s.Context(), last)
@@ -126,136 +89,45 @@ return rest.SSE(func(s *httpx.Stream) error {
             }
         }
     }
-    // ……接着处理 sub.C()，和上面相同
+    // ……接着处理 sub.C()，见长连接
 }), nil
 ```
 
-一定要先订阅、再查询。反过来的话，查询之后、订阅之前发布的事件两边都收不到。先订阅时，同一篇文章可能既被查到、又从订阅中收到，按 ID 去重即可。
-
-补发的数据来自应用自己的表，框架不另外保存事件历史。
+必须先订阅、再查询：反过来时，查询之后、订阅之前发布的事件两边都收不到。先订阅时同一篇文章可能既被查到、又从订阅中收到，按 ID 去重。
 
 <a id="backends"></a>
-## 后端
+## NATS 后端：`natsbroadcast`
 
-实例之间的消息经由 NATS 的发布订阅传递，只用 NATS 的核心功能，不需要 JetStream。`nc` 是[入口中创建的 NATS 连接](nats.md#connecting)：
+`natsbroadcast.New(nc, prefix)` 经由 NATS 的发布订阅在实例之间传递消息，不需要 JetStream。主题 `room:42` 的消息发布到 `<prefix>.room:42`，每个实例订阅 `<prefix>.>`。
 
-```go
-hub := broadcast.New(natsbroadcast.New(nc, "app.broadcast"), nil)
-```
-
-第二个参数是 subject 的前缀：主题 `room:42` 的消息发布到 `app.broadcast.room:42`，每个实例订阅 `app.broadcast.>`。前缀区分不同的应用和环境，同一个应用的实例必须相同。单机部署也要经由 NATS 传递：[不停机升级](../installation/operations.md#upgrade-overlap)或滚动发布时新旧进程短暂并存，旧进程中还没结束的请求和任务发布的事件，要送到已经重连到新进程的浏览器。
-
-单台服务器和 NATS 集群都可以使用，集群中连到任何一台服务器都能收到全部消息。
-
-NATS 的发布订阅只转发在线的消息：连接中断期间其他实例发布的消息就丢了；本实例处理不过来、NATS 客户端的缓冲区满了时，也会丢弃消息。后端发现这些情况（连接断开时和重新连上时各一次），会结束本实例的全部订阅，让浏览器重连补发，见下一节。用 `natsx.Connect` 创建的连接一直重连，见[连接 NATS](nats.md#connecting)。
-
-超过 NATS 服务器 `max_payload`（默认 1MB）的消息，`natsbroadcast` 分成多片依次发送，订阅方收齐后拼回整条消息，例如 [AI 助手](../ai/chat-advanced.md#multiple-instances)把带附件的消息转交给 worker。缺了一片时整条消息丢弃。分片只是兜底：推给浏览器的事件应当小，大的内容只带 ID，由前端自己去读。
+- 同一个应用的所有实例使用同一套 NATS 和同一个前缀，否则收不到其他实例的消息；前缀区分共用 NATS 的应用和环境。
+- 单机部署也经由 NATS：[不停机升级](../installation/operations.md#upgrade-overlap)时新旧进程并存，旧进程发布的事件要送到已经连到新进程的浏览器。
+- `nc` 用 [`natsx.Connect`](nats.md#connecting) 创建：它一直重连，并且回显发布者自己的消息。
+- 超过 NATS `max_payload`（默认 1MB）的消息分片发送、收齐后拼回，缺一片时整条丢弃。
 
 <a id="delivery-guarantees"></a>
 ## 投递保证
 
-消息只投递给当前在线的订阅，最多一次。消息可能送不到时，Hub 结束订阅，让客户端补发：
+消息只投递给当前在线的订阅，最多一次。消息可能送不到时，Hub 结束订阅：
 
 | 原因 | `sub.Err()` | 发生时 |
 | --- | --- | --- |
-| 订阅跟不上 | `broadcast.ErrSlow` | 订阅的缓冲区（64 条）已满，例如浏览器网络很慢 |
+| 订阅跟不上 | `broadcast.ErrSlow` | 订阅的缓冲区（64 条）已满，例如浏览器网络很慢；只结束这一个订阅 |
 | 后端可能丢了消息 | `broadcast.ErrLost` | 与 NATS 的连接中断过，或者 NATS 客户端丢弃过消息 |
 | 订阅被关闭 | `broadcast.ErrClosed` | 调用了 `sub.Close()` 或 `hub.Close()` |
 
-订阅结束后，处理器返回、连接结束，浏览器重连并按 `Last-Event-ID` [补发](#replaying-missed-events)，消息因此完整、有序。一个订阅跟不上，只结束它自己。
-
-每个实例从后端收到全部主题的消息，再在本地按主题分发。
+订阅结束后处理器返回，客户端重连并按 `Last-Event-ID` [补发](#replaying-missed-events)，消息因此完整、有序。
 
 <a id="testing"></a>
 ## 测试
 
-`broadcasttest.NewBackend()` 是测试用的内存后端。同一个后端上的多个 Hub 互相收到消息，相当于多个实例；Hub 开始接收时会先收到后端创建以来发布的全部消息，所以刚创建 Hub 就发布的消息也能收到：
+`broadcasttest.NewBackend()` 是内存后端，只用于测试。同一个后端上的多个 Hub 互相收到消息，相当于多个实例；刚创建的 Hub 也能收到紧接着发布的消息：
 
 ```go
-import "github.com/go-tenon/tenon/broadcast/broadcasttest"
-
 hub := broadcast.New(broadcasttest.NewBackend(), nil)
 sub := hub.Subscribe("articles")
-// ... 调用发布事件的 action
-msg := broadcasttest.Receive(t, sub)
+// ……调用发布事件的业务动作
+msg := broadcasttest.Receive(t, sub) // 5 秒内收不到时测试失败
 ```
 
-它保留全部消息，只用于测试。实现自己的后端时，用 `broadcasttest.TestBackend` 检查它是否符合约定。
-
-<a id="troubleshooting"></a>
-## 常见问题
-
-**订阅了，但收不到其他实例上发布的消息**
-
-各实例的 Hub 要连到同一套 NATS，并使用同一个 subject 前缀，见[后端](#backends)。连接不能使用 `nats.NoEcho()`，否则发布者所在的实例收不到自己发布的消息。
-
-**客户端收到了一条随后被回滚的通知**
-
-事件在事务提交之前发布了。在事务中用 `AfterCommit` 登记，提交之后才发出，见[发布事件](#publishing-events)。
-
-**断线重连后丢了几条消息**
-
-NATS 的发布订阅只转发在线的消息。客户端重连时按 `Last-Event-ID` 从应用的数据中补发；补发时先订阅、再查询，见[断线补发](#replaying-missed-events)。
-
-**发布时报错主题不合法**
-
-主题只能由字母、数字和 `_ - : .` 组成，最长 200 字节。
-
-<a id="api-reference"></a>
-## API 参考
-
-包 `github.com/go-tenon/tenon/broadcast`。
-
-### New
-
-```go
-func New(backend Backend, logger *slog.Logger) *Hub
-```
-
-- **参数**
-    - `backend`：在实例之间传递消息的后端，通常是 `natsbroadcast.New(nc, prefix)`
-    - `logger`：为 `nil` 时使用 `slog.Default()`
-- **返回**：Hub，创建后就在后台开始接收消息
-
-每个进程创建一个，所有长连接共用。
-
-### Hub
-
-```go
-func (h *Hub) Publish(ctx context.Context, topic string, data []byte) error
-func (h *Hub) PublishJSON(ctx context.Context, topic string, v any) error
-func (h *Hub) Subscribe(topics ...string) *Subscription
-func (h *Hub) Listen(deliver func(Message), lost func(error)) (stop func())
-func (h *Hub) Close() error
-```
-
-`Publish` 把消息交给后端，送到每个实例；`Subscribe` 订阅一个或多个主题；`Listen` 接收全部主题的消息，[实时频道](realtime.md)用它；`Close` 停止接收并结束全部订阅。
-
-### Subscription
-
-```go
-func (s *Subscription) C() <-chan Message
-func (s *Subscription) Err() error
-func (s *Subscription) Close()
-```
-
-`C` 在订阅结束时关闭，`Err` 返回结束的原因：`ErrClosed`（Hub 已关闭）、`ErrSlow`（订阅者处理太慢）或 `ErrLost`（与后端的连接中断）。
-
-### Message
-
-| 字段 | 说明 |
-| --- | --- |
-| `Topic string` | 主题 |
-| `Data []byte` | 消息内容 |
-
-### natsbroadcast.New
-
-```go
-func New(nc *nats.Conn, prefix string) *Backend
-```
-
-包 `github.com/go-tenon/tenon/broadcast/natsbroadcast`。经由 NATS 的发布订阅在实例之间传递消息，主题 `topic` 的消息发布到 `<prefix>.<topic>`。`nc` 为 `nil`，或者 `prefix` 不是不含通配符的 subject（例如 `app.broadcast`）时 panic。
-
-### NewCredentials
-
-见[服务端推送](../http/sse.md#immediate-revocation)。
+实现其他后端时，用 `broadcasttest.TestBackend` 检查它符合 `broadcast.Backend` 的约定。

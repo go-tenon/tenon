@@ -260,13 +260,13 @@ data: {"id":"0193e7a2-7c1e-7b4a-9d2f-3c5a1e8b6f10","kind":"articles.bulk_publish
 | `total` | 预计的单位数，`0` 表示还不知道 |
 | `processed` | 已经处理的单位数，包括失败的 |
 | `failed` | 失败的单位数 |
-| `error` | 操作失败时的说明 |
+| `error` | 操作失败时的错误码，与[错误响应](#errors)的 `code` 相同；给用户看的说明由应用按错误码翻译 |
 | `completed_at` | 结束的时间 |
 
 <a id="uploads"></a>
 ## 上传
 
-文件有两种上传方式，见[上传接口](../libraries/file-uploads.md)。
+文件有两种上传方式，服务端的接口见[在 REST 接口中使用](../libraries/filesystem.md#rest)。
 
 **通过应用服务器**：`multipart/form-data` 请求，返回文件。
 
@@ -274,13 +274,13 @@ data: {"id":"0193e7a2-7c1e-7b4a-9d2f-3c5a1e8b6f10","kind":"articles.bulk_publish
 
 1. 登记：请求体 `{"filename": "a.pdf", "content_type": "application/pdf", "size": 1048576}`，返回 `status` 为 `temporary` 的文件。
 2. 小文件请求一次签名，得到 `{"url": "…", "method": "PUT", "headers": {"Content-Type": ["application/pdf"], "If-None-Match": ["*"]}}`，按这个方法、地址和请求头把文件内容发给对象存储。请求头都在签名中，要原样发送。
-3. 大文件先创建分片会话，得到 `{"upload_id": "…", "part_size": 8388608, "part_count": 13}`；每一片请求一次签名后上传，除最后一片外每片正好 `part_size` 字节，记下对象存储返回的 `ETag` 响应头；最后提交 `{"parts": [{"number": 1, "etag": "\"…\""}]}` 合并。放弃时删除这个分片会话。
+3. 大文件先创建分片会话，得到 `{"upload_id": "…", "part_size": 16777216, "part_count": 7}`（`part_size` 由服务端决定）；每一片请求一次签名后上传，除最后一片外每片正好 `part_size` 字节，记下对象存储返回的 `ETag` 响应头；最后提交 `{"parts": [{"number": 1, "etag": "\"…\""}]}` 合并。放弃时删除这个分片会话。
 4. 把文件的 `id` 交给使用它的业务接口（例如创建文章时的封面），业务接口确认这个文件，它变为 `ready`。没有被确认的文件在 `expires_at` 之后删除。
 
 文件的 JSON：
 
 ```json
-{"id": "0193e7a2-…", "filename": "a.pdf", "content_type": "application/pdf", "size": 1048576, "status": "temporary", "expires_at": "2026-11-12T08:00:00Z", "url": "https://…", "created_at": "…", "updated_at": "…"}
+{"id": "0193e7a2-…", "disk": "s3", "key": "…", "filename": "a.pdf", "content_type": "application/pdf", "size": 1048576, "status": "temporary", "expires_at": "2026-11-12T08:00:00Z", "url": "https://…", "created_at": "…", "updated_at": "…"}
 ```
 
 `status` 是 `temporary`（已登记，等待上传或确认）、`ready`（已被业务使用）或 `deleted`。

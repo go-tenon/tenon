@@ -16,7 +16,7 @@ import (
 	"github.com/go-tenon/tenon/doctor"
 )
 
-const docMail = "docs/libraries/mail-providers.md"
+const docMail = "docs/libraries/mail.md"
 
 // Doctor 返回检查 SMTP 服务器的一组自检，组名为 smtp：connection 连接服务器，按配置升级到 TLS 并登录，然后断开，
 // 不发送邮件。失败时区分连不上（地址、端口、防火墙）、TLS 方式与端口不符、证书不受信任和用户名密码被拒绝。

@@ -37,7 +37,7 @@ func (c *Config) SetDefaults() {
 	*c = Config{Port: 587, TLS: TLSStartTLS, Timeout: 10 * time.Second}
 }
 
-// Validate 检查配置完整。
+// Validate 检查配置完整；设置了 Username 时 TLS 不能是 none。
 func (c Config) Validate() error {
 	var errs []error
 	if err := c.From.Validate(); err != nil {
@@ -54,6 +54,9 @@ func (c Config) Validate() error {
 	}
 	if c.Timeout <= 0 {
 		errs = append(errs, errors.New("timeout must be positive"))
+	}
+	if c.Username != "" && c.TLS == TLSNone {
+		errs = append(errs, errors.New("username requires tls starttls or tls: the password is only sent over an encrypted connection"))
 	}
 	return errors.Join(errs...)
 }

@@ -217,12 +217,11 @@ func TestSendErrors(t *testing.T) {
 	if err := strict.Send(ctx, msg); err == nil {
 		t.Error("starttls not enforced")
 	}
-	// go-mail 只在加密的连接上发送密码。
+	// 密码只在加密的连接上发送：认证配上 tls: none 在创建时就被拒绝。
 	cfg = config(srv.port())
 	cfg.Username, cfg.Password = "user", "secret"
-	plain, _ := smtp.New(cfg)
-	if err := plain.Send(ctx, msg); err == nil {
-		t.Error("plain auth over unencrypted connection")
+	if _, err := smtp.New(cfg); err == nil || !strings.Contains(err.Error(), "username requires tls") {
+		t.Errorf("plain auth over unencrypted connection: err = %v", err)
 	}
 	if len(srv.received()) != 0 {
 		t.Errorf("unexpected deliveries: %d", len(srv.received()))

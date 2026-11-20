@@ -27,5 +27,5 @@ description: Tenon 应用的后台任务：用 queue.Topic 声明队列任务、
 
 - worker 和调度器是应用的运行部分，`serve` 运行全部部分，也可以单独部署，见 `.tenon/docs/concepts/dependencies.md#running-parts`。
 - 多租户应用中 payload 要带上租户，见 `.tenon/docs/security/tenancy.md#tenant-jobs`。
-- 队列的测试工具和监控见 `.tenon/docs/background/queue.md#testing`、`.tenon/docs/background/queue-monitoring.md`。
+- 队列的测试工具和监控见 `.tenon/docs/background/queue.md#testing`、`.tenon/docs/background/queue.md#failed-jobs`。
 - 耗时、带进度、用户要看到结果的操作（导入、批量处理）用后台操作，见 `.tenon/docs/features/operations.md`。

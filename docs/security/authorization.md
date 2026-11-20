@@ -76,7 +76,7 @@ roles := authz.NewStore(db, auth.Permissions)
 `db` 是入口打开的 `*bun.DB`，也可以是 `database.Tx`。
 
 - 分配按主体的类型和 ID 保存，一个 `Store` 可以服务[多套账号体系](authentication.md#account-systems)。
-- `authz` 保存主体的数据：把 `roles.Erase` 登记到[注销账号](../features/privacy.md#framework-sources)，`roles.Export` 登记到[导出个人数据](../features/data-export.md#sources)。
+- `authz` 保存主体的数据：把 `roles.Erase` 登记到[注销账号](../features/privacy.md#framework-sources)，`roles.Export` 登记到[导出个人数据](../features/privacy.md#sources)。
 
 <a id="permission-catalog"></a>
 ### 声明权限目录：`authz.Catalog`

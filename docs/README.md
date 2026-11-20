@@ -44,14 +44,15 @@ Tenon 是用 Go 构建后端服务的框架。业务逻辑写成[业务动作](c
 
 ## 后台任务
 
-- [队列](background/queue.md)、[失败任务与监控](background/queue-monitoring.md)、[定时任务](background/scheduling.md)
+- [队列](background/queue.md)：发布与处理任务、失败重试、失败任务、运维接口
+- [定时任务](background/scheduling.md)
 
 ## 基础设施
 
 - [缓存](libraries/cache.md)、[原子锁](libraries/locks.md)、[限流](libraries/rate-limiting.md)
 - [NATS](libraries/nats.md)、[广播](libraries/broadcasting.md)、[实时频道](libraries/realtime.md)：WebSocket
-- [文件存储](libraries/filesystem.md)、[文件上传](libraries/file-uploads.md)、[客户端直传](libraries/direct-uploads.md)
-- [邮件](libraries/mail.md)、[邮件服务商](libraries/mail-providers.md)、[短信](libraries/sms.md)、[生成 PDF](libraries/pdf.md)
+- [文件存储与上传](libraries/filesystem.md)：本地磁盘、S3、上传接口、客户端直传、缩略图
+- [邮件](libraries/mail.md)、[短信](libraries/sms.md)、[生成 PDF](libraries/pdf.md)
 - [出站请求](libraries/outbound.md)：调用外部服务，防 SSRF
 
 ## 功能
@@ -59,9 +60,9 @@ Tenon 是用 Go 构建后端服务的框架。业务逻辑写成[业务动作](c
 - [通知](features/notifications.md)、[移动推送](features/push.md)、[Webhook](features/webhooks.md)
 - [设置](features/settings.md)、[功能开关](features/flags.md)、[操作日志](features/activity.md)
 - [后台操作](features/operations.md)：带进度的耗时操作
-- [导入与导出](features/import-export.md)、[后台导入](features/background-imports.md)、[后台导出](features/background-exports.md)：Excel、CSV
+- [导入与导出](features/import-export.md)：Excel、CSV，大文件在后台导入导出
 - [全文搜索](features/search.md)
-- [注销账号](features/privacy.md)、[导出个人数据](features/data-export.md)
+- [注销账号与导出个人数据](features/privacy.md)
 
 ## 认证与授权
 

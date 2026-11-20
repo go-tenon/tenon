@@ -73,7 +73,7 @@ trackOperation(app, {
 <a id="transfer"></a>
 ## 导入与导出
 
-`ImportButton` 和 `ExportButton` 是[后台导入](../features/background-imports.md)和[后台导出](../features/background-exports.md)的按钮和对话框：
+`ImportButton` 和 `ExportButton` 是[后台导入](../features/import-export.md)和[后台导出](../features/import-export.md)的按钮和对话框：
 
 ```tsx
 import { ExportButton, ImportButton } from "@go-tenon/ui"
@@ -92,7 +92,7 @@ import { ExportButton, ImportButton } from "@go-tenon/ui"
 <a id="queue-panel"></a>
 ## 队列面板
 
-`QueuePanel` 是[队列的运维接口](../background/queue-monitoring.md#queue-api)（`queue/queueapi`）的页面。它接收应用生成的客户端分组 `api.queue`，放在一个需要运维权限的路由上：
+`QueuePanel` 是[队列的运维接口](../background/queue.md#queue-api)（`queue/queueapi`）的页面。它接收应用生成的客户端分组 `api.queue`，放在一个需要运维权限的路由上：
 
 ```tsx title="src/routes/_app/queue.tsx"
 import { createFileRoute } from "@tanstack/react-router"
@@ -198,7 +198,7 @@ const chat = useAssistantChat({
 | `upload` | `(file) => Promise<string>`：上传文件，返回模型服务能下载的链接，消息中只放链接 | 不设置，以 data URL 发送 |
 
 - 不设置 `upload` 时，文件以 data URL 随消息发送。data URL 比文件大约三分之一，默认限制下请求体最多约 7 MiB，服务端的[请求体上限](../http/requests.md#body-size)要放宽到 8 MiB；调整了 `maxTotalSize` 时相应调整。
-- 设置了 `upload` 时，请求体和对话存储都只有链接，适合较大的文件，例如用 `@go-tenon/client` 的 `uploadFile` [直传到 S3](../libraries/direct-uploads.md) 后签发一个读取地址。链接由模型服务下载，必须能从公网访问。
+- 设置了 `upload` 时，请求体和对话存储都只有链接，适合较大的文件，例如用 `@go-tenon/client` 的 `uploadFile` [直传到 S3](../libraries/filesystem.md) 后签发一个读取地址。链接由模型服务下载，必须能从公网访问。
 - `attachments: false` 时不能发送附件。
 - 附件不符合限制、回答进行中带附件（插话只能是文字）或者不能发送附件时，`send` 抛出 `AttachmentError`，它的 `message` 可以直接显示，`reason` 是 `type`、`size`、`total`、`count`、`busy` 或 `disabled`。
 

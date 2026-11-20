@@ -78,7 +78,7 @@ func sendCode(mailer mail.Mailer, emails *mail.Templates) func(context.Context, 
 ```
 
 - 支持短信时按 `c.To.Kind` 选择通道，见[短信](../libraries/sms.md)。
-- 验证码同步发送，`Send` 的错误由 `SendCode` 原样返回：邮件服务故障时用户无法登录，`mailer` 用 [`mail.Failover`](../libraries/mail-providers.md#failover) 加一个备用服务。
+- 验证码同步发送，`Send` 的错误由 `SendCode` 原样返回：邮件服务故障时用户无法登录，`mailer` 用 [`mail.Failover`](../libraries/mail.md#failover) 加一个备用服务。
 - 放进链接时同时带上 `RequestID` 和 `Code`，打开的页面把两者交给 `VerifyCode`。
 
 <a id="identifiers"></a>
