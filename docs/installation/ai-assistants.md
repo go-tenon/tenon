@@ -45,6 +45,8 @@ Codex 和 Cursor 的用法相同：在项目目录中打开它们，它们同样
 
 `AGENTS.md` 要提交到代码仓库：别人 clone 下来不运行任何命令，打开助手就能用。
 
+`tenon init` 同时生成只有一行 `@AGENTS.md` 的 `CLAUDE.md`。Claude Code 读的是 `CLAUDE.md`：项目中没有它时直接读 `AGENTS.md`，有了 `CLAUDE.md` 或个人的 `CLAUDE.local.md` 时就不再读 `AGENTS.md`。这一行把 `AGENTS.md` 导入进来，所以你以后加上 `CLAUDE.local.md`，Claude Code 照样读到项目说明。只给 Claude Code 的说明写在这一行下面，各个助手共用的约定写在 `AGENTS.md` 中。
+
 <a id="framework-docs"></a>
 ## 框架的文档
 
