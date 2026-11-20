@@ -32,3 +32,26 @@ bun run test        # Vitest：client、start 和 electron 的测试
 - Mantine 自带的 `teal`、`orange`、`blue`、`cyan`、`grape`、`indigo`、`lime` 不在预设中，不使用；`red`、`green`、`yellow`、`pink`、`violet` 与预设同名，用的是预设的色板。彩色不写十六进制或 `rgb()` 的值，写死的值不随品牌色和暗色模式变化。
 - 状态的颜色固定，同一种状态在各处用同一种颜色：成功、正常用 `green`；进行中用 `bright-blue`；暂停、等待处理用 `yellow`；需要注意用 `deep-orange`；失败、危险用 `red`；没有状态、已停用用 `gray`。
 - 中性色（文字、边框、背景）不在预设中，用主题的 `gray`、`dark` 色板、`c="dimmed"` 和 `--tn-*` 变量（`--tn-text`、`--tn-muted`、`--tn-border` 等）。中性色的值只写在定义它们的地方：`theme.ts` 的色板，`styles.css` 中定义变量的规则；其他规则和组件用这些变量或 `var(--mantine-color-white)`、`var(--mantine-color-black)`，半透明用 `color-mix()`。阴影和遮罩（`mask-image`）可以直接写黑白的值。
+
+## 服务端渲染进程的约定
+
+Go 的 `frontend` 包托管 SSR 进程，`@go-tenon/start` 是这些约定在 Bun 一侧的实现。两边的常量各写一份（`frontend/frontend.go`、`frontend/render.go` 与 `js/start/src/headers.ts`、`js/start/src/print.tsx`、`js/start/src/vite.js`），改其中一边时同时改另一边。应用怎样使用见[托管前端与服务端渲染](../docs/frontend/hosting.md)。
+
+| 约定 | 说明 |
+| --- | --- |
+| 环境变量 `TENON_FRONTEND` | 这个进程渲染的前端的名称。可执行文件中有全部服务端渲染的前端，按它加载其中一个 |
+| 环境变量 `SSR_SOCKET` | 进程监听的抽象 socket，形如 `@tenon-ssr-<名称>-<随机串>`。环境变量不能含 NUL，Bun 中把开头的 `@` 换成 `\0`（`socketPath`） |
+| 环境变量 `API_SOCKET` | 调用 Go 接口的抽象 socket，形如 `@tenon-api-<随机串>`；`Options.API` 为 nil 时不传 |
+| 环境变量 `API_ORIGIN` | 开发时没有内部 socket，经这个地址调用 Go，由 `tenon dev` 设置 |
+| 请求头 `X-CSP-Nonce` | 本次请求的 nonce，写到全部内联脚本上。Go 总是覆盖它，客户端发来的值不生效 |
+| 占位 nonce `__tenon_csp_nonce__` | 构建时写在页面外壳和预渲染页面中，Go 返回页面时换成本次请求的 |
+| 请求头 `X-Request-ID`、`traceparent`、`tracestate`、`Cookie`、`Accept-Language` | 调用接口时原样带上（`forwardHeaders`） |
+| 响应头 `X-Tenon-Route` | 可选，匹配到的前端路由模板。Go 用它替换 chi 的路由模板来命名 span，随后从响应中删掉 |
+| `POST /__tenon/print/{name}` | 可选，用打印模板渲染请求体中的 JSON，返回完整的 HTML，没有这个模板时返回 404。对外的请求访问 `/__tenon/` 下的地址时 Go 返回 404；`Render` 最多读取 64 MB |
+| SIGTERM | 停止接收请求并退出。Go 发送它之前已经排空了对外的请求 |
+
+- 页面请求的路径带着前端的挂载路径，例如 `/shop/products/1`。静态文件和预渲染的页面由 Go 返回，不转给 SSR 进程。
+- 可执行文件由 `apps/dist/ssr` 流式写进 memfd 后执行，不落盘，也不在 Go 的内存中另存一份。进程设置 `Pdeathsig`，监控它的 goroutine 锁住线程，Go 被强制结束时 SSR 进程随之结束。
+- memfd 和抽象 socket 都是 Linux 特有的，所以其他系统上 `Run` 返回 `ErrUnsupported`。
+- 抽象 socket 没有文件权限，同一网络命名空间中的进程都能连接，所以内部入口按 `SO_PEERCRED` 只接受与 Go 进程同一用户的连接。
+- 重启的退避：第一次 100 毫秒，之后翻倍，最多 5 秒；进程连续运行超过 10 秒后从头计算（`frontend/process.go` 中的包级变量，测试中改小）。

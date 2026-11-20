@@ -235,7 +235,7 @@ flowchart LR
 | --- | --- |
 | `@go-tenon/client` | 客户端运行时：会话、错误分类、校验、分页、查询缓存随身份清空、上传、后台操作的进度、AI 对话。不依赖任何包和 DOM |
 | `@go-tenon/start` | 把 TanStack Start 接到 Go：Vite 插件（挂载路径、服务端渲染或页面外壳）、编译 SSR 程序、请求头转交、CSP nonce |
-| `@go-tenon/ui` | 基于 Mantine 的应用骨架和界面，分成五层：主题（`theme`）、应用骨架（`app`）、部件（`components`）、只描述样子的布局和登录页（`blocks`）、框架功能的前端（`features`），见[前端包的分层](docs/frontend/README.md#ui-layers) |
+| `@go-tenon/ui` | 基于 Mantine 的应用骨架和界面，分成五层：主题（`theme`）、应用骨架（`app`）、部件（`components`）、只描述样子的布局和登录页（`blocks`）、框架功能的前端（`features`），见[前端包的分层](docs/frontend/conventions.md#ui-layers) |
 
 `@go-tenon/ui` 的布局、登录页和样式预设按界面的样子命名，与使用者是谁无关；权限、租户、身份是应用接进来的逻辑：
 

@@ -1,38 +1,22 @@
 # 布局与导航
 
-框架有两个后台类的布局，按界面的样子选择，与使用者是谁无关：
+后台的布局、侧栏菜单、页面的标题区、多标签和租户切换。`FrameLayout` 是顶栏加侧栏菜单，可以开启多标签，适合表格和表单多的后台；`RailLayout` 是模块图标栏加二级导航，适合以模块切换为主的控制台。官网和文档站见[官网与文档站](site.md)。
 
-- `FrameLayout`：顶栏加侧栏菜单，信息密集，可以开启多标签。适合表格和表单多的后台，例如运营后台、外卖平台给商家用的商家后台、内部系统。
-- `RailLayout`：双栏导航，最左侧是模块的图标栏，旁边是当前模块的二级导航。适合以模块切换为主的应用，例如 SaaS 控制台、聊天工具。
+包：`@go-tenon/ui`。
 
-谁能看到哪些页面（权限）、当前属于哪个租户，由应用把后端的逻辑接进来，布局本身不预设这些。这一页先介绍 `FrameLayout`、顶栏、页面搜索、多标签、租户和页面的标题区，然后是 [`RailLayout`](#rail-layout)，最后是自己写布局时用到的导航模型和插槽。官网和文档站用 `SiteLayout`、`DocsLayout`，见[官网与文档站](site.md)。
-
-阅读前需要了解：[搭建前端应用](app.md)。
-
-- [FrameLayout](#frame-layout)
-    - [侧栏菜单与图标](#menu)
-    - [页面搜索](#search)
-    - [顶栏与插槽](#slots)
-    - [顶栏菜单](#menus)
-- [页面的标题区](#page)
-- [多标签](#tabs)
-- [浏览器标题](#document-title)
-- [租户](#tenants)
-- [RailLayout](#rail-layout)
-- [自己写布局](#custom-layouts)
-- [常见问题](#troubleshooting)
-- [API 参考](#api-reference)
+- 布局只描述界面的样子。菜单按路由的 `staticData` 生成、按权限过滤，租户由 `createApp` 的 `tenancy` 接入，布局本身不绑定身份、权限或租户。
+- 需要登录的页面放在布局路由 `_app` 下；登录页在 `_app` 之外，用 `CenteredAuthLayout` 或 `SplitAuthLayout`。
 
 <a id="frame-layout"></a>
-## FrameLayout
+## 用 `FrameLayout` 搭建后台的布局
 
-`FrameLayout` 放在需要登录的布局路由上，它之下的页面都在其中显示：
+`tenon add frontend --layout frame` 生成的布局路由，加上了多标签和后台任务菜单：
 
 ```tsx title="src/routes/_app.tsx"
 import { useQuery } from "@tanstack/react-query"
 import { createFileRoute } from "@tanstack/react-router"
 import { FrameLayout, OperationsMenu, requireAuth, UserMenu } from "@go-tenon/ui"
-import { api, logout, me } from "../auth"
+import { logout, me } from "../auth"
 
 export const Route = createFileRoute("/_app")({ beforeLoad: requireAuth, component: Layout })
 
@@ -40,35 +24,22 @@ function Layout() {
   const user = useQuery({ queryKey: ["me"], queryFn: me })
   return (
     <FrameLayout
-      title="博客后台"
-      tabs
-      actions={<OperationsMenu />}
+      title="博客后台" // 顶栏左侧的名称，也是浏览器标题中的应用名
+      tabs // 开启多标签，也可以是 { max: 8 }、{ home: false }
+      actions={<OperationsMenu />} // 每个页面都有的顶栏操作
       user={<UserMenu name={user.data?.name} logout={logout} />}
     />
   )
 }
 ```
 
-| 参数 | 内容 |
-| --- | --- |
-| `title`、`logo` | 顶栏左侧的名称和标志，点击回到首页；没有标志时显示名称的首字 |
-| `user` | 顶栏最右边的用户菜单，通常是 `UserMenu` |
-| `actions` | 顶栏中每个页面都有的操作，例如 `NotificationsMenu`、`OperationsMenu` |
-| `search` | 侧栏顶部的[页面搜索](#search)，默认开启；`false` 时不显示 |
-| `tabs` | 开启[多标签](#tabs)：`true` 或者 `TabsOutlet` 的选项，例如 `{ max: 8 }`、`{ home: false }` |
-| `maxWidth` | 内容区的最大宽度，例如 1200；默认铺满 |
-
-- 顶栏最左边的按钮把侧栏收起为只有图标的窄栏，状态按账号保存在浏览器中。窄屏（小于 768px）时侧栏是顶栏下面的抽屉，由顶栏的汉堡按钮打开、关闭，打开页面后自动收起。
-- 面包屑在页面的标题上面，由 [`Page`](#page) 显示。
-- 行高、字号随主题的[样式预设](app.md#presets)：`compact` 预设更紧凑。
-- 右下角的[新版本提示](app.md#new-version)已经包含在内。
-
-**区域**用布局路由区分：一组页面共用一个布局，例如 `_app` 用 `FrameLayout`，登录页不在 `_app` 之下，用 `CenteredAuthLayout`。
+- 其他参数：`logo` 是顶栏左侧的标志（默认是名称的首字），`search={false}` 去掉[页面搜索](#search)，`maxWidth` 限制内容区的宽度（默认铺满），`documentTitle={false}` 见[浏览器标题](#document-title)。
+- 侧栏可以收起为图标栏，状态按账号保存；窄屏（小于 768px）时侧栏是抽屉。新版本提示已经包含在内。
 
 <a id="menu"></a>
 ### 侧栏菜单与图标
 
-菜单由路由的 `staticData` 生成（见[页面的元数据](app.md#route-metadata)），按权限过滤：
+菜单由路由的 `staticData` 生成，字段见[页面的元数据](app.md#route-metadata)：
 
 ```tsx
 export const Route = createFileRoute("/_app/orders")({
@@ -77,95 +48,55 @@ export const Route = createFileRoute("/_app/orders")({
 })
 ```
 
-- 带 `title` 的路由按路由树嵌套，跳过没有标题的布局路由；按 `order`、再按路径排序。没有权限、`menu: false`、自己引入路径参数（例如详情页 `/articles/$id`）的页面不出现，其中没有页面的分组也不出现。路径参数来自上级路由时（例如租户布局路由 `/t/$tenant` 下的页面），链接填上当前地址中的值，见[租户](#tenants)。
-- 有子页面的路由是分组，可以展开；当前页面所在的分组自动展开，名称用主色，当前页面是主色实底；详情页这类不在菜单中的页面高亮它所在的分组。第一级菜单的图标在浅色的方块中；下级菜单向右缩进，左侧一条竖线，设置了 `icon` 时也显示图标。侧栏收起时，页面悬停显示名称，分组点击或悬停弹出子页面。
-- `icon` 是图标的名称，对应 [Tabler 图标](https://tabler.io/icons)。内置的名称见 `defaultIcons`，例如 `home`、`dashboard`、`article`、`users`、`team`、`settings`、`safety`、`order`、`product`、`report`、`wallet`。写错的名称显示为一个空心圆，不会报错。需要其他图标时，通过 `UIProvider` 的 `icons` 增加：
-
-```tsx
-import { IconTruckDelivery } from "@tabler/icons-react"
-
-<UIProvider theme={theme} icons={{ delivery: IconTruckDelivery }}>
-```
-
-菜单项的徽标（例如未读数）是运行时才知道的，由页面或功能模块登记，侧栏显示为红色的数字或小圆点：
-
-```tsx
-useMenuBadge("/_app/notifications", unread) // 组件卸载、值为 0 或空时去掉
-```
+- 带 `title` 的路由按路由树嵌套，跳过没有标题的布局路由，同级按 `order`、再按路径排序。有子页面的路由是可以展开的分组。
+- 页面不出现在菜单中的情况：没有 `title`；用户没有 `permission`；`menu: false`；路由自己引入了路径参数（例如详情页 `/articles/$id`，菜单高亮它所在的分组）。分组中没有可以进入的页面时，分组也不出现。路径参数来自上级路由时，链接填上当前地址中的值，见[租户](#entering-tenants)。
+- `icon` 是 `defaultIcons` 中的名称，例如 `home`、`dashboard`、`article`、`users`、`settings`、`order`；写错的名称显示为空心圆。其他 [Tabler 图标](https://tabler.io/icons)通过 `UIProvider` 的 `icons` 增加：`<UIProvider theme={theme} icons={{ delivery: IconTruckDelivery }}>`。
+- 菜单项的徽标（例如未读数）用 `useMenuBadge("/_app/notifications", unread)` 登记，第一个参数是页面的路由 id；组件卸载、值为 0 或空时去掉。
 
 <a id="search"></a>
 ### 页面搜索
 
-侧栏顶部是页面搜索的入口（收起时是一个放大镜），按 Ctrl+K（macOS 上是 ⌘K）或 `/` 也能打开。它列出菜单中可以进入的页面，已经按权限过滤，说明是页面所在的分组；输入时按名称和分组筛选，选择后打开页面。不需要时设置 `search={false}`。
+侧栏顶部是页面搜索，按 Ctrl+K（macOS 上是 ⌘K）或 `/` 打开，列出菜单中可以进入的页面。`FrameLayout` 设置 `search={false}` 时不显示。
 
 <a id="slots"></a>
-### 顶栏与插槽
+### 用 `Fill` 往顶栏放页面的按钮
 
-顶栏左边是收起侧栏的按钮（窄屏时是汉堡按钮）和标志，中间是[标签栏](#tabs)（开启多标签时）；右边从左到右是 `actions` 插槽、`actions` 参数和 `user`。
-
-每个页面都有的内容用参数传给 `FrameLayout`；某个页面才有的内容由页面用 `Fill` 放进插槽，离开页面时移除：
+每个页面都有的内容是 `FrameLayout` 的参数；某个页面才有的内容由页面用 `Fill` 放进插槽，离开页面时移除：
 
 ```tsx
-function ArticlesPage() {
-  return (
-    <>
-      <Fill name="actions">
-        <Button>写文章</Button>
-      </Fill>
-      …
-    </>
-  )
-}
+<Fill name="actions">
+  <Button>写文章</Button>
+</Fill>
 ```
 
-| 插槽 | 位置 |
-| --- | --- |
-| `actions` | 顶栏中，`actions` 参数之前 |
-| `aside` | 右侧面板，有内容时才出现 |
-| `footer` | 内容区的底部 |
-| `user-menu` | [用户菜单](#menus)中，配色的下面；开启多标签时 `FrameLayout` 在这里放“多标签”开关 |
-
-同一个插槽可以有多份内容，按放入的顺序排列。内容用 portal 放进插槽，仍在页面自己的组件树中：读取页面的状态和上下文，随页面一起更新。
+插槽有 `actions`（顶栏中，`actions` 参数之前）、`aside`（右侧面板，有内容时才出现）、`footer`（内容区底部）和 `user-menu`（`UserMenu` 中配色的下面）。同一个插槽中的内容按放入的顺序排列；内容仍在页面自己的组件树中，随页面一起更新。
 
 <a id="menus"></a>
-### 顶栏菜单
+### 顶栏菜单：`UserMenu`、`NotificationsMenu`、`OperationsMenu`
 
-| 组件 | 作用 |
-| --- | --- |
-| `UserMenu` | 只显示头像（`avatar`，没有时是 `name` 的首字），菜单顶部是名称和邮箱（`email`），下面是应用的菜单项（`items`）、配色（亮色、暗色、跟随系统，`colorScheme={false}` 时不显示）、`user-menu` 插槽中的内容（`FrameLayout` 开启多标签时的“多标签”开关）和退出登录。`logout` 调用应用的退出接口，之后清除会话中的身份；标签中有未保存的修改时先询问 |
-| `NotificationsMenu` | 铃铛和未读数，弹出最近的通知，点击打开并标记已读，见[通知](features.md#notifications) |
-| `OperationsMenu` | 后台任务的进度：导入、导出等耗时的操作。有进行中的任务时显示转动的图标，没有任务时不显示，见[后台操作](features.md#operations) |
-| `LanguageMenu` | 语言切换：图标按钮，菜单中列出 `languages`，当前的 `value` 打勾，选择后调用 `onChange`。换文案、记住选择由应用决定。放在 `actions` 中 |
-| `ColorSchemeToggle` | 亮色和暗色之间切换的图标按钮，自己写布局时用；`FrameLayout` 中配色在 `UserMenu` 里 |
+- `UserMenu`：头像（`avatar`，没有时是 `name` 的首字），菜单中是 `name`、`email`、应用的菜单项 `items`、配色（`colorScheme={false}` 时不显示）、`user-menu` 插槽和退出登录。退出时调用 `logout`（应用的退出接口），再清除会话中的身份；有未保存的修改时先询问。
+- `NotificationsMenu`：铃铛和未读数，见[通知](features.md#notifications)。`OperationsMenu`：导入、导出等后台任务的进度，见[后台操作](features.md#operations)。
+- `LanguageMenu`：列出 `languages`，选择后调用 `onChange`，换文案、记住选择由应用决定。`ColorSchemeToggle`：配色切换按钮，自己写布局时用。
 
 <a id="page"></a>
-## 页面的标题区
+## 页面的标题区：`Page`
 
-`Page` 是页面的标题区：面包屑、标题、一句说明和右侧的操作，所有页面保持一致的层级和间距：
-
-```tsx
-import { Button } from "@mantine/core"
-import { Page } from "@go-tenon/ui"
-
-function Orders() {
-  return (
-    <Page title="订单" description="全部渠道的订单，按下单时间倒序。" actions={<Button>新建订单</Button>}>
-      {/* 筛选、表格 */}
-    </Page>
-  )
-}
-```
-
-面包屑在标题上面，来自路由的标题：最后一级是当前页面，前面的是链接。不需要时设置 `breadcrumbs={false}`，例如首页。布局也可以用 `PageBreadcrumbs` 决定其中的页面默认是否显示面包屑，`RailLayout` 的设置中默认不显示（见下文）；页面的 `breadcrumbs` 仍可以单独打开。
-
-`back` 在标题左边放一个返回按钮，点击时调用它。只有内页需要它，例如从团队列表进入的团队成员页返回团队列表；菜单中的一级页面不设置，离开时用菜单：
+页面用 `Page` 显示面包屑、标题、一句说明和右侧的操作，所有页面的层级和间距一致：
 
 ```tsx
-<Page title={`团队：${team.name}`} back={() => navigate({ to: "/t/$slug/settings/teams", params: { slug } })}>
+<Page title="订单" description="全部渠道的订单，按下单时间倒序。" actions={<Button>新建订单</Button>}>
+  {/* 筛选、表格 */}
+</Page>
 ```
+
+- 面包屑来自路由的标题。首页这类页面设置 `breadcrumbs={false}`；路由没有自己的标题时（例如新建页面），用 `crumb="新建"` 在最后加一级。
+- `back` 在标题左边放返回按钮，给内页用，例如团队成员页返回团队列表：`back={() => navigate({ to: "/settings/teams" })}`。
+- 表格和表单见[列表与表单](lists-forms.md)。
 
 <a id="page-tabs"></a>
-内容多的页面用 `tabs` 分成几个页内标签，在标题区下面切换，不要把几块内容上下平铺：
+### 用 `Page` 的 `tabs` 分页内标签
+
+内容多的页面用 `tabs` 分成几个页内标签，在标题区下面切换，不把几块内容上下平铺：
 
 ```tsx
 <Page
@@ -173,96 +104,73 @@ function Orders() {
   tabs={[
     { value: "topics", label: "任务类型", content: <Topics /> },
     { value: "failed", label: "失败任务", count: failed, alert: true, content: <FailedJobs /> },
-    { value: "system", label: "系统状态", content: <SystemStatus /> },
   ]}
 >
-  <Problems /> {/* children 在标签的上面：整个页面都要看到的提示 */}
+  <Problems /> {/* children 在标签的上面 */}
 </Page>
 ```
 
-- 当前的标签记在地址的 `?tab=` 中（第一个标签不写），刷新、分享链接后还在这个标签；切换标签不会打开新的[多标签](#tabs)。路由设置了 `validateSearch` 时要保留 `tab` 参数。
-- 没打开过的标签不渲染，也就不发请求；打开过的保留状态，切回来时筛选、翻页都还在。
-- `count` 显示在标签右边，例如失败的条数，0 时不显示；`alert` 让它是红色。
-
-页面中的其他内容直接使用 Mantine 的组件。表格和表单见[列表与表单](lists-forms.md)。
+- 当前的标签记在地址的 `?tab=` 中（第一个标签不写）。路由设置了 `validateSearch` 时要保留 `tab` 参数，否则切换不生效。
+- 没打开过的标签不渲染、不发请求；打开过的保留状态。`count` 为 0 时不显示，`alert` 让它是红色。
 
 <a id="tabs"></a>
 ## 多标签
 
-表格和表单多的后台常用多标签：打开的页面排成一行标签，切换标签时页面保留原来的状态（填了一半的表单、翻到的页、滚动位置）。`FrameLayout` 设置 `tabs` 即可开启：标签栏在顶栏中间，从侧栏展开时的边线往右 6px 开始（收起侧栏时标签不动）；布局之下的每个页面是一个标签。
-
-- 用户可以在头像菜单中关掉多标签，按账号保存；关掉后页面不再保留状态。窄屏时不显示标签栏。
-- 第一次使用（这个账号没有保存过标签）时，菜单的第一个页面作为固定的标签放在最前面；`tabs={{ home: false }}` 时不这样做。
-- 切换页面时（点标签、点菜单、搜索跳转），新页面淡入，同时从下方上移 6px；系统开启“减少动态效果”时不播放。
-
-标签的标识是页面路由加路径参数：`/users/1` 和 `/users/2` 是两个标签，查询参数随标签保存，切回时恢复。标签的标题是页面路由的 `staticData.title`，页面可以用 `useTabTitle` 改成具体的名称；`staticData.tab` 为 `false` 的页面不进入标签，照常显示：
+`FrameLayout` 设置 `tabs` 开启多标签：布局之下的每个页面是一个标签，切换标签时页面保留状态（填了一半的表单、翻到的页）。用户可以在头像菜单中关掉多标签，窄屏时不显示标签栏。多标签用到 React 的 `<Activity>`，需要 React 19.2。
 
 ```tsx
 export const Route = createFileRoute("/_app/articles/$id")({
-  staticData: { title: "文章" },
+  staticData: { title: "文章" }, // 标签的默认标题；tab: false 时不进入标签
   component: ArticlePage,
 })
 
 function ArticlePage() {
-  const { id } = Route.useParams() // 标准的 hooks：读到的总是这个标签自己的参数
-  const article = useQuery(…)
+  const { id } = Route.useParams() // 读到的总是自己标签的值
+  const article = useQuery(kit.queries.article.get(id)) // kit 来自 src/api.ts
   useTabTitle(article.data && `文章：${article.data.title}`)
+  // ……
 }
 ```
 
-页面照常使用 Router 的标准 hooks（`Route.useParams()`、`useSearch()`、`useLocation()` 等），不需要知道自己是否在标签中：每个标签有自己的路由上下文，隐藏的标签读到的是它最后一次显示时的状态。隐藏的标签放在 React 的 `<Activity mode="hidden">` 中，组件状态保留，effect 暂停：隐藏期间不发出请求，切回时照常恢复。页面需要知道自己是否显示时（例如暂停轮询）用 `useTabActive()`。
+- 标签的标识是页面路由加路径参数：`/users/1` 和 `/users/2` 是两个标签，查询参数随标签保存。
+- 隐藏的标签中 effect 暂停、不发请求。页面需要知道自己是否显示时（例如暂停轮询）用 `useTabActive()`。
+- 第一次使用时，菜单的第一个页面作为固定的标签放在最前面，`tabs={{ home: false }}` 时不放。超过 `max`（默认 10）时关闭最久没用的标签，固定的、有未保存修改的除外。
+- 标签按账号保存在[本地存储](app.md#storage)中，刷新浏览器后恢复。
+- 布局中调用 `useTabShortcuts()` 开启快捷键：Alt+W 关闭当前标签，Alt+← / Alt+→ 切换。
 
-> [!NOTE]
-> 标签自己的路由上下文依赖 TanStack Router 内部的 `router.stores`。升级 TanStack Router 之后，在 playground 的 FrameLayout 演示中打开几个标签来回切换，确认每个标签读到的参数仍然是自己的。`<Activity>` 需要 React 19.2。
+<a id="tabs-unsaved"></a>
+### 标签中的未保存修改与 `confirmDiscard`
 
-标签栏的操作：点击切换，中键点击关闭；标签上没有关闭按钮，右键菜单中有关闭、固定、重新加载、关闭其他标签页、关闭右侧标签页；可以拖动排序；固定的标签显示图钉，有未保存修改的显示一个圆点。放不下时两端出现箭头，点击向那一侧滚动，还有被挡住的标签的一端渐隐。最后一个标签右边是刷新按钮，重新加载当前页面：页面顶部显示一条进度条（`@mantine/nprogress`），主内容区淡出，页面的请求都完成后淡入、进度条走完；右键菜单中的“重新加载”相同。这条进度条只在重新加载标签时出现；打开页面、跳转和按浏览器的刷新保持浏览器原本的行为。
+页面在标签中时，[`useUnsavedChanges`](lists-forms.md#unsaved-changes) 在切换标签时不询问，只把标签标记为有未保存的修改：关闭、刷新这个标签时询问，刷新或关闭浏览器时由浏览器提示。`UserMenu` 退出登录、`switchTenant` 切换租户之前同样询问。
 
-| 操作 | 规则 |
-| --- | --- |
-| 打开 | 打开新页面时加在最后；已经打开的页面回到它的标签 |
-| 关闭 | 关闭当前标签时显示右边的，没有时显示左边的。固定的标签也可以单独关闭；唯一的标签不能关闭 |
-| 关闭其他、右边、全部 | 固定的标签总是保留；关闭全部时没有固定的标签，保留当前标签 |
-| 固定 | 固定的标签排在最左边；拖动排序只在同一组中移动 |
-| 刷新 | 重新挂载这个标签的页面 |
-| 数量上限 | 超过 `max`（默认 10）时关闭最久没用的标签，固定的、有未保存修改的除外 |
-| 保存 | 标签按账号保存在[本地存储](app.md#storage)中：刷新浏览器后恢复标签栏，页面在打开时才加载。登录、退出、切换账号后按新的账号重新开始 |
-
-布局路由中调用 `useTabShortcuts()` 开启快捷键：Alt+W 关闭当前标签，Alt+← / Alt+→ 切换。
-
-**未保存的修改。** 在标签中，[`useUnsavedChanges`](lists-forms.md#unsaved-changes) 不在切换标签时询问（切换标签会保留页面的状态），而是把标签标记为有未保存的修改。关闭、刷新这个标签时询问，刷新或关闭浏览器时由浏览器提示。`UserMenu` 退出登录前、`switchTenant` 切换租户前都会询问；自己写的退出按钮用 `confirmDiscard`：
+自己写的退出按钮先调用 `confirmDiscard`。`app` 在组件中用 `useApp()` 取得，`logout` 是 `src/auth.ts` 中的退出函数：
 
 ```tsx
 async function signOut() {
-  if (!(await confirmDiscard(app))) return
-  await api.auth.logout()
-  await session.signOut()
+  if (!(await confirmDiscard(app))) return // 用户选择留下
+  await logout()
+  app.session.signOut()
 }
 ```
 
 <a id="document-title"></a>
 ## 浏览器标题
 
-浏览器标签上的标题由布局设置，格式是“页面 - 应用名”，例如“文章 - 博客后台”。用户开了很多标签时，靠它分清哪个是哪个：
+布局把浏览器标题设为“页面 - 应用名”，例如“文章 - 博客后台”。应用名是布局的 `title`；页面是当前标签的标题（`useTabTitle` 设置的优先），或路由的 `staticData.title`。登录页的 `CenteredAuthLayout`、`SplitAuthLayout` 设为“登录 - 应用名”。
 
-- 应用名是 `FrameLayout`、`RailLayout` 的 `title`。
-- 页面是当前页面的标题：开启多标签时是当前标签的标题，页面用 `useTabTitle` 改过的名称优先，例如“文章：你好”；否则是路由的 `staticData.title`，与面包屑的最后一项相同。
-- 登录页的 `CenteredAuthLayout`、`SplitAuthLayout` 在 `title` 是文字时设置标题，`brand` 也是文字时加上它，例如“登录 - 博客后台”。`brand` 是标志加名称这样的组件时只显示“登录”。
-
-应用名在运行时才知道时（例如管理员在后台修改的站点名称），把读到的名称传给 `title` 和 `brand`，标题随之更新。`queries` 是生成的查询选项，见[在 React 中调用接口](client-react.md#tanstack)：
+应用名在运行时才知道时（例如可以修改的站点名称），把读到的值传给 `title`，`kit` 来自 `src/api.ts`：
 
 ```tsx
-function Layout() {
-  const site = useQuery(queries.site.get()) // 站点名称，读到之前是 undefined
-  return <FrameLayout title={site.data?.name} tabs />
-}
+const site = useQuery(kit.queries.site.get()) // 读到之前是 undefined
+return <FrameLayout title={site.data?.name} tabs />
 ```
 
-根路由 `head` 中的 `title` 是页面加载完成之前的标题，保留它，打开页面时标签上不会先显示地址。应用自己管理标题时（例如在每个页面的 `head` 中写 SEO 标题），给布局设置 `documentTitle={false}`，布局不再修改 `document.title`。
+根路由 `head` 中的 `title` 是页面加载完成之前的标题，要保留。应用自己管理标题时（例如每个页面的 `head` 中写 SEO 标题），给布局设置 `documentTitle={false}`。
 
 <a id="tenants"></a>
 ## 租户
 
-多租户应用中，当前租户是会话身份中的 `tenant`。`createApp` 的 `tenancy` 提供租户列表和切换后的去处；框架的布局中没有租户菜单，需要时用 `useTenant()` 自己画（见本节最后）：
+当前租户是会话身份中的 `tenant`。`createApp` 的 `tenancy` 提供租户列表和切换后的去处：
 
 ```tsx
 createApp({
@@ -276,23 +184,31 @@ createApp({
 })
 ```
 
-切换前，标签中有未保存的修改时先询问，用户选择留下时不切换。切换时先更新会话的身份：TanStack Query 的缓存随之清空，页面重新挂载，上一个租户的数据不会出现。然后按后端[确定租户](../security/tenancy.md#identifying-tenants)的方式跳转：
+切换时先更新会话的身份，TanStack Query 的缓存随之清空、页面重新挂载，然后按后端[确定租户](../security/tenancy.md#identifying-tenants)的方式跳转：
 
 | 后端怎样确定租户 | `home` | 切换后 |
 | --- | --- | --- |
-| 路径 `/t/{tenant}/…` | 返回新租户的首页，例如 `` (id) => `/t/${id}/` `` | 去新租户的首页，不停留在原来的页面：页面中的资源属于原来的租户 |
-| 子域名 | 返回完整的地址，例如 `` (id) => `https://${id}.example.com/` `` | 整页跳转 |
+| 路径 `/t/{tenant}/…` | 新租户的首页，例如 `` (id) => `/t/${id}/` `` | 去新租户的首页：原来页面中的资源属于原来的租户 |
+| 子域名 | 完整的地址，例如 `` (id) => `https://${id}.example.com/` `` | 整页跳转 |
 | 请求头 `X-Tenant` | 不设置 | 留在当前页面，按新租户重新读取数据 |
 
-客户端按同样的方式把租户带给接口：请求头方式用 `createClient` 的 `headers`，路径方式用函数形式的 `baseURL`，见[客户端代码](../http/clients.md#creating-the-client)：
+`src/api.ts` 中的客户端按同样的方式把租户带给接口，见[创建客户端](../http/clients.md#creating-the-client)：
 
 ```ts
 const tenant = () => session.identity()?.tenant
 export const api = createClient({ baseURL: "/api", session, headers: () => ({ "X-Tenant": tenant() }) })
 // 路径方式：createClient({ baseURL: () => `/api/t/${tenant()}`, session })
+export const kit = createKit(api, { scope: session.scope })
 ```
 
-租户在路径中时，用户也可能直接打开另一个租户的地址。租户布局路由的 `beforeLoad` 调用 `enterTenant`，会话的身份随之切换：
+`kit` 必须带 `scope: session.scope`：查询的缓存按账号和租户区分，否则切换后可能显示上一个租户的数据。
+
+框架的布局中没有租户菜单。自己画时用 `useTenant()`：`current`、`tenant`、`tenants`、`switchTo(id)`；用户选择留下时 `switchTo` 返回 `false`。
+
+<a id="entering-tenants"></a>
+### 用 `enterTenant` 进入路径中的租户
+
+用户可能直接打开另一个租户的地址。租户布局路由的 `beforeLoad` 调用 `enterTenant`，会话的身份随之切换：
 
 ```tsx
 export const Route = createFileRoute("/t/$tenant")({
@@ -300,54 +216,34 @@ export const Route = createFileRoute("/t/$tenant")({
 })
 ```
 
-租户布局路由下的页面照常出现在菜单中：`/t/$tenant/inbox` 的链接填上当前地址中的租户，例如在 `/t/acme/` 下是 `/t/acme/inbox`，切换到 globex 后是 `/t/globex/inbox`。租户布局路由本身不写 `title`，它下面的页面才是菜单项；还没有进入租户的页面（例如选择租户的首页）中，这些页面不出现。
-
-自己画租户菜单时用 `useTenant()`：`{ current, tenant, tenants, switchTo }`，用户选择留下时 `switchTo` 返回 `false`。
+租户布局路由本身不写 `title`。它下面的页面照常出现在菜单中，链接填上当前的租户：在 `/t/acme/` 下是 `/t/acme/inbox`。还没有进入租户的页面中，这些页面不出现。
 
 <a id="rail-layout"></a>
-## RailLayout
+## 用 `RailLayout` 搭建双栏导航
 
-`RailLayout` 是双栏导航的布局：最左侧是模块的图标栏（标志、模块、用户菜单），旁边是当前模块的二级导航，右侧是页面。`tenon add frontend --layout rail` 生成的前端已经这样写好：
+`tenon add frontend --layout rail` 生成的布局路由用 `RailLayout`：最左侧是模块的图标栏，旁边是当前模块的二级导航。用户菜单放在图标栏底部，其中放进入设置的菜单项：
 
-```tsx title="src/routes/_app.tsx"
-function Layout() {
-  const user = useQuery({ queryKey: ["me"], queryFn: me })
-  return (
-    <RailLayout
-      title="Acme"
-      user={
-        <UserMenu
-          name={user.data?.name}
-          email={user.data?.email}
-          position="right-end"
-          items={[{ label: "设置", icon: <IconSettings size={16} />, to: "/settings/profile" }]}
-          logout={logout}
-        />
-      }
-    />
-  )
-}
+```tsx
+<RailLayout
+  title="Acme"
+  user={<UserMenu name={user.data?.name} position="right-end" logout={logout}
+    items={[{ label: "设置", icon: <IconSettings size={16} />, to: "/settings/profile" }]} />}
+/>
 ```
 
-导航与 `FrameLayout` 一样来自路由的 `staticData`（`title`、`icon`、`order`），按权限过滤：
-
-- 第一级是模块，显示在图标栏中，鼠标移上去显示名称。模块下的页面显示在二级导航中，模块下的分组是二级导航中的一节；只有一个页面的模块（例如首页），二级导航中就是它自己。
-- `settings`（默认 `/settings`）下的页面不进图标栏，从用户菜单进入。这时二级导航是“设置”：顶部一个搜索框，下面按分组列出设置项。设置中的页面不显示面包屑：二级导航已经标出了位置。离开设置点图标栏中的模块；设置中的内页（例如团队的成员页）用 `Page` 的 `back` 返回自己的列表，见上文。分组可以是没有路径的路由，例如 `createRoute({ getParentRoute: () => settings, id: "personal", staticData: { title: "个人" } })`。
-- 二级导航可以收起，是否收起记在浏览器中。收起后，鼠标移到当前模块的图标上，图标变成“展开”，点击展开。
-- 窄屏（小于 48em）时图标栏保留，二级导航是从左侧滑出的抽屉，点击模块打开。
-- 页面的标题、说明和按钮用 [`Page`](#page)；内容区最宽 `maxWidth`（默认 1152px）。
-
-框架的 `js/playground` 中打开 `/rail/` 看效果。
+- 导航与 `FrameLayout` 一样来自[路由的 `staticData`](#menu)。第一级是模块，在图标栏中；模块下的页面和分组在二级导航中。
+- `settings`（默认 `/settings`）下的页面不进图标栏，从用户菜单进入；其中的页面不显示面包屑，内页用 `Page` 的 `back` 返回。
+- 窄屏（小于 48em）时二级导航是抽屉。内容区最宽 `maxWidth`（默认 1152px）。`RailLayout` 没有多标签。
 
 <a id="custom-layouts"></a>
 ## 自己写布局
 
-`FrameLayout` 不合适时（例如顶部导航的布局），可以自己写一个。布局读取导航模型和布局状态，把插槽放到自己的位置上；页面只往插槽中放内容，不关心当前是哪一种布局，多标签和权限过滤照常工作：
+布局读取导航模型，把插槽放到自己的位置上；页面只往插槽中放内容，多标签和权限过滤照常工作：
 
 ```tsx
 function TopLayout() {
-  const { menu, active, crumbs } = useNavigation()
-  useDocumentTitle(formatDocumentTitle(usePageTitle(true), "Acme")) // 浏览器标题：“页面 - Acme”
+  const { menu, active } = useNavigation()
+  useDocumentTitle(formatDocumentTitle(usePageTitle(true), "Acme")) // “页面 - Acme”
   return (
     <>
       <header>
@@ -366,60 +262,6 @@ function TopLayout() {
 }
 ```
 
-| 名称 | 内容 |
-| --- | --- |
-| `useNavigation()` | `menu`：按权限过滤后的菜单树；`active`：当前位置在菜单中的路径，从第一级到最深一级的菜单项 id；`crumbs`：面包屑 |
-| `useMenu()`、`useBreadcrumbs()` | 只要菜单或面包屑时用 |
-| `PageBreadcrumbs` | `show`：其中的 `Page` 默认是否显示面包屑，布局用它，例如 `RailLayout` 的设置中关掉 |
-| `firstPage(menu)`、`pageUnder(menu, path)` | 第一个可以进入的页面；某个分组下第一个可以进入的页面，例如点击面包屑中的分组时跳转到它 |
-| `Slot`、`useSlotFilled(name)` | 放置插槽；插槽中是否有内容，例如没有侧边面板时不留出位置 |
-| `SessionBoundary` | 登录、退出、切换账号或租户时重新挂载其中的页面，上一个身份的页面状态不会留下。只包住页面（`Outlet` 或 `TabsOutlet`），不要包住布局或根路由的 HTML 文档：那样每次打开已登录的页面，整个文档都会在浏览器中重建 |
-| `useLayoutState()` | `[state, setState]`：`collapsed`（侧栏收起为图标）、`tabs`（用户打开了多标签），按账号保存；`navOpen`（窄屏时导航抽屉打开，不保存） |
-| `useNarrow()` | 是否是窄屏（默认宽度小于 768px） |
-| `TabBar`、`TabsOutlet` | 标签栏（32px 高，为顶栏设计）；代替 `Outlet` 渲染标签中的页面：`max` 数量上限，`confirm` 换掉询问未保存修改的浏览器确认框，`home` 第一次使用时固定菜单的第一个页面 |
-| `useTabs()` | 自己画标签栏时用：`tabs`（`[{ key, title, icon, href, pinned, dirty, active, closable }]`）和 `activate`、`close`、`closeOthers`、`closeRight`、`closeAll`、`refresh`、`pin`、`unpin`、`move` |
-
-<a id="troubleshooting"></a>
-## 常见问题
-
-**新加的页面没有出现在菜单中**
-
-见[搭建前端应用的常见问题](app.md#troubleshooting)。
-
-**页面放进 `Fill` 的按钮没有出现在顶栏**
-
-插槽的名字写错了：`FrameLayout` 中有 `actions`、`aside`、`footer` 三个插槽，用户菜单中有 `user-menu`。用户菜单这类每个页面都有的内容是 `FrameLayout` 的参数。
-
-**页面上没有面包屑**
-
-面包屑由 `Page` 显示：页面没有用 `Page`，设置了 `breadcrumbs={false}`，或者页面在 `RailLayout` 的设置中（那里默认不显示）。
-
-**切换标签后，页面中填了一半的表单不见了**
-
-页面不在标签中：检查布局是否开启了 `tabs`、用户是否在头像菜单中关掉了多标签，以及页面路由的 `staticData.tab` 是否为 `false`。
-
-**切换租户后，页面上还是上一个租户的数据**
-
-创建 `kit` 或 `queries` 时没有传 `scope: session.scope`，缓存的 key 中没有租户，见[在 React 中调用接口](client-react.md#tanstack)。
-
-<a id="api-reference"></a>
-## API 参考
-
-| 名称 | 说明 |
-| --- | --- |
-| `FrameLayout` | 顶栏加侧栏菜单的布局：`title`、`logo`、`user`、`actions`、`search`、`tabs`、`maxWidth`、`documentTitle` |
-| `RailLayout` | 双栏导航的布局：`title`、`logo`、`user`、`settings`、`maxWidth`、`documentTitle` |
-| `Fill`、`Slot`、`useSlotFilled`、`SlotName` | 插槽 |
-| `SessionBoundary` | 身份变化时重新挂载其中的页面 |
-| `UserMenu`、`NotificationsMenu`、`OperationsMenu`、`LanguageMenu`、`ColorSchemeToggle` | 顶栏菜单；`UserMenu` 的选项：`name`、`email`、`avatar`、`logout`、`items`、`colorScheme`、`position` |
-| `Icon`、`useIcon`、`defaultIcons`、`IconsProvider` | 图标名称 |
-| `useMenuBadge(routeId, value)` | 登记菜单项的徽标 |
-| `Page`、`PageTab` | 页面的标题区：`title`、`description`、`actions`、`breadcrumbs`、`back`、`crumb`；页内标签 `tabs`（`value`、`label`、`count`、`alert`、`content`） |
-| `TabBar`、`TabsOutlet` | 标签栏；标签中的页面（`max`、`confirm`、`home`） |
-| `useTabs`、`useTab`、`useTabActive`、`useTabTitle`、`useTabShortcuts` | 多标签 |
-| `confirmDiscard(app)` | 有未保存的修改时询问是否放弃，例如退出登录前 |
-| `useTenant`、`switchTenant`、`enterTenant` | 当前租户、切换租户 |
-| `useNavigation`、`useMenu`、`useBreadcrumbs` | 导航模型、菜单、面包屑 |
-| `usePageTitle(tabs)`、`formatDocumentTitle(page, app)`、`useDocumentTitle(title)` | 浏览器标题：当前页面的标题，合成“页面 - 应用名”，写进 `document.title`；自己写布局时用，见[浏览器标题](#document-title) |
-| `firstPage`、`pageUnder` | 菜单中第一个可以进入的页面 |
-| `useLayoutState`、`useNarrow` | 布局状态、窄屏 |
+- `useNavigation()` 返回 `menu`（按权限过滤后的菜单树）、`active`（当前位置从第一级到最深一级的菜单项 id）和 `crumbs`（面包屑）。
+- `SessionBoundary` 只包住页面（`Outlet` 或 `TabsOutlet`），登录、退出、切换账号或租户时重新挂载其中的页面。包住布局或根路由的 HTML 文档时，每次打开已登录的页面，整个文档都会重建。
+- `TabsOutlet` 代替 `Outlet` 开启多标签；自己画标签栏时用 `useTabs()`。`useLayoutState()` 是侧栏收起、多标签开关这些按账号保存的状态，`useNarrow()` 判断窄屏。

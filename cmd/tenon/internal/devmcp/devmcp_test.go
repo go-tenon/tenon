@@ -156,6 +156,13 @@ func TestSearchDocs(t *testing.T) {
 		"第三方登录":              "security/social-login.md",
 		"表单校验":               "frontend/lists-forms.md#forms",
 		"侧栏菜单":               "frontend/layout.md#menu",
+		"服务端渲染":              "frontend/hosting.md",
+		"预渲染":                "frontend/hosting.md#prerendering",
+		"增删改查页面":             "frontend/resources.md",
+		"多标签":                "frontend/layout.md#tabs",
+		"主题 品牌色":             "frontend/conventions.md",
+		"Electron 自动更新":      "clients/electron.md#auto-update",
+		"原生客户端登录":            "clients/native.md",
 		"MCP 工具":             "ai/mcp.md",
 		"向量检索":               "ai/vector.md",
 	} {
