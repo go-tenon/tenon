@@ -1,6 +1,12 @@
 # 开发说明
 
-本文是开发 Tenon 框架本身的说明：怎样运行测试、提交前检查什么、代码和文档按什么约定写。应用的测试方法见[测试](docs/testing/overview.md)。
+本文是开发 Tenon 框架本身的说明：怎样运行测试、提交前检查什么、代码按什么约定写。应用的测试方法见[测试](docs/testing/overview.md)。
+
+只在改某一部分时用到的约定放在 `contributing` 中，改这些部分之前先读对应的一页：
+
+- 改 `docs` 中的文档：[编写文档](contributing/docs.md)；
+- 改 `js` 中的前端包、playground，或者脚手架模板中的界面：[前端包](contributing/frontend.md)，其中有颜色的约定；
+- 新增或修改网页以外的客户端（Electron 等）：[客户端](contributing/clients.md)。
 
 ## 开发环境
 
@@ -22,7 +28,7 @@ export QDRANT_TEST_ADDR='127.0.0.1:56334'
 go test ./...
 ```
 
-每个测试使用自己的临时库、随机名字的 stream、subject 前缀和 collection 前缀，结束时删除，所以服务可以一直开着反复运行测试。只运行一部分时指定包，例如 `go test ./filesystem/...`。数据放在 tmpfs 中，执行 `docker compose -f compose.test.yml down -v` 之后全部消失。
+每个测试使用自己的临时库、随机名字的 stream、subject 前缀和 collection 前缀，结束时删除，所以服务可以一直开着反复运行测试。只运行一部分时指定包和测试名，例如 `go test ./filesystem/... -run TestUpload`。数据放在 tmpfs 中，执行 `docker compose -f compose.test.yml down -v` 之后全部消失。
 
 ### 提交前
 
@@ -35,7 +41,7 @@ golangci-lint run   # v2.15.0，配置在 .golangci.yml
 go test ./...       # 包括下文的模块检查
 ```
 
-改了 `js` 时另外运行下文“前端包”中的命令。CI 不开 `-race`，它会让整个流程慢好几倍；改动涉及并发时，在本地用 `go test -race` 运行相关的包，时序敏感的测试还要用普通模式多跑几轮。
+改了 `js` 时另外运行[前端包](contributing/frontend.md)中的命令。CI 不开 `-race`，它会让整个流程慢好几倍；改动涉及并发时，在本地用 `go test -race` 运行相关的包，时序敏感的测试还要用普通模式多跑几轮。
 
 ### 编写测试
 
@@ -46,70 +52,23 @@ go test ./...       # 包括下文的模块检查
 
 ## 模块检查
 
-`internal/checks` 下的测试检查整个模块，随 `go test ./...` 运行：
+`internal/checks` 下的测试检查整个模块，随 `go test ./...` 运行。失败时按下面的说明修改代码或登记：
 
-- `archtest`：分层和依赖方向。每个包属于[四层](docs/concepts/structure.md#framework-packages)之一：基础、基础设施、入口、功能。包只能引用同层或更低层的包，并且每一个引用都要列在测试的 `rules` 中，例如 `database` 只能引用 `errorx`。规则的键是包路径，对子包同样生效；子包需要更多依赖时单独写一条，例如 `sheet` 只引用 `errorx` 和 `form`，`sheet/imports` 另外引用 `operation` 和 `filesystem`。新增依赖时先确认它符合分层，再更新规则；不再使用的依赖也要从规则中删除。
+- `archtest`：分层和依赖方向。每个包属于[四层](docs/concepts/structure.md#framework-packages)之一：基础、基础设施、入口、功能。包只能引用同层或更低层的包，并且每一个引用都要列在测试的 `rules` 中，例如 `database` 只能引用 `errorx`。规则的键是包路径，对子包同样生效；子包需要更多依赖时单独写一条。新增依赖时先确认它符合分层，再更新规则；不再使用的依赖也要从规则中删除。
 - `migrationstest`：各个包内嵌的迁移能通过 `publish` 命令原样发布，全部执行之后，以 `id` 为主键的表前三列依次是 `id`、`created_at`、`updated_at`（[时间列](docs/database/migrations.md#timestamp-columns)），两个时间列都是 `timestamptz NOT NULL`；有 `deleted_at` 时它是第四列，允许为空。模型嵌入 `database.Timestamps`，由 Bun 的钩子写入这两列；`Column(...)`、传入模型的 `Set(...)`、upsert 和原生 SQL 自己写 `updated_at`。新增带迁移的包时在它的 `sources` 中登记；结构由上游库决定的表登记在 `timestampExempt` 中。
 - `clocktest`：SQL 和迁移中的时间都由 Go 算出后作为参数传入，不用 `NOW()`、`CURRENT_TIMESTAMP` 这类数据库的时钟函数。这样 [testing/synctest](docs/testing/overview.md#controlling-time) 的假时钟对整个框架有效。
 - `doctest`：编译文档中的代码。除入门教程外，每个以 `package` 开头的代码块都是完整文件，单独放进临时 module 编译；其余片段只用于阅读。入门教程由 `cmd/tenon` 的 `TestTutorial` 在 CI 的 scaffold 任务中按章节做一遍。
-- `doclinks`：`README.md`、`AGENTS.md` 和 `docs` 中的相对链接指向的文件存在，带锚点时目标文档中有 `<a id="锚点"></a>`。
-- `uilayertest`：`@go-tenon/ui` 的分层，见下文“前端包”。`js/ui/src` 下的每个文件都在 `theme`、`app`、`components`、`blocks`、`features` 之一中，相对导入只指向同层或更低层，`blocks` 和 `features` 互相不引用。
+- `doclinks`：`README.md`、`AGENTS.md`、`contributing` 和 `docs` 中的相对链接指向的文件存在，带锚点时目标文档中有 `<a id="锚点"></a>`。
+- `uilayertest`：`@go-tenon/ui` 的分层，见[前端包](contributing/frontend.md)。
 - `i18ntest`：框架用 `errorx.Define` 定义的每个错误码在内置的每种语言中都有翻译。
-- `llmstest`：根目录的 [llms.txt](llms.txt) 与 `docs/README.md` 生成的结果一致，`docs` 中的每一页都列在 `docs/README.md` 中。改了 `docs/README.md` 后在仓库根目录运行 `go run ./internal/llmstxt/gen` 重新生成。llms.txt 是给在线对话的 AI 读的目录（格式见 [llmstxt.org](https://llmstxt.org)），全部文档合成的 `llms-full.txt` 在发布版本时由 [release.yml](.github/workflows/release.yml) 生成，作为 Release 的附件。
-- `agents` 的 `TestSkillReferences`：`cmd/tenon/internal/agents/skills` 中给 AI 编程助手的技能（`tenon init` 装进生成的项目）、项目 `AGENTS.md` 的模板中写的 `.tenon/docs/<页面>#<锚点>` 都存在于 `docs` 中。技能是从文档摘出的步骤和要点，改了文档中的写法、路径或锚点时同步修改对应的技能。
-
-## 前端包
-
-`js` 是前端包的 Bun workspace。这些包不发布到 npm，随 Go 模块分发：应用中的 `tenon` 把框架版本中的 `js` 复制到项目的 `.tenon/js`，见[框架的前端包](docs/installation/tooling.md#framework-packages)。
-
-- `client` 是 `@go-tenon/client`，与界面无关的客户端运行时。它不依赖 DOM，也不依赖 Node：`tsconfig.json` 的 `lib` 只有 `es2022`，用到 `window`、`document`、`URL`、`node:*` 等时类型检查失败（测试文件同样检查）。所以网页、Electron 的主进程、React Native 都能用它，例如原生客户端登录用的 `createAuthorization`。
-- `host` 是 `@go-tenon/host`，网页宿主（Electron 等）的约定在页面一侧的类型：`host()` 取得宿主放在全局的 `tenonHost`。它只有类型，不依赖任何包和 DOM，任何语言写的宿主都按它实现。
-- `electron` 是 `@go-tenon/electron`，Electron 宿主：`main` 在主进程中实现宿主的约定（页面来自 `https://<id>.localhost`、转发 `/api/*`、登录、保存 token、安全默认值），`preload` 在页面中放好 `tenonHost`；桌面能力（`windowState`、`standardMenu`、`singleInstance`、`logs`、`notifications`、`badge`、`tray`、`autostart`、`deepLinks`，以及单独入口 `update` 的 `autoUpdate`）是彼此独立的函数，由应用的 `main.ts` 逐行组合。依赖 Electron 的代码只在 `main.ts`、`preload.ts` 中，其余模块用 Vitest 测试，CI 中不启动 Electron。`electron` 包在第一次运行时才下载 Electron 本体，安装依赖时不下载。
-- `start` 是 `@go-tenon/start`，把 TanStack Start 接到 Go 的 `frontend` 包：Vite 插件（挂载路径、服务端渲染或页面外壳）、服务端渲染时调用 Go 接口的运行时，以及编译 SSR 可执行文件的 `tenon-start`。
-- `ui` 是 `@go-tenon/ui`，基于 Mantine 的应用骨架和界面。`ui/src` 分成五层，上层只引用下层：`theme`（预设、主题、图标）→ `app`（应用骨架：装配、导航、插槽、多标签）→ `components`（页面中用的部件）→ `blocks`（布局、登录页的布局这类只描述样子的整块界面）和 `features`（框架功能的前端，逻辑和外观放在同一个目录）。`blocks` 和 `features` 互相不引用，把它们组合起来的是脚手架生成的项目。新文件按它依赖什么放进对应的层，`uilayertest` 检查引用方向。React、TanStack Router、TanStack Query 和 Mantine 是 peer 依赖。
-- `playground` 是 ui 的演示，用 `bun run playground` 启动。ui 不写测试，界面的改动在 playground 中看效果。
-
-在 `js` 目录中运行：
-
-```bash
-bun install --frozen-lockfile
-bun run check       # Biome
-bun run typecheck   # 每个包的 tsc --noEmit
-bun run test        # Vitest：client、start 和 electron 的测试
-```
-
-- 每个有 `package.json` 的目录都会被复制到项目中安装，所以开发和测试用到的包（React、Vite、Vitest 等）都写在 `js/package.json` 的 `devDependencies` 中。测试文件（`*.test.ts`）不复制，可以用这些包。
-- 在生成的项目中试用改动：用 `tenon init --tenon <框架目录>` 生成项目，`tenon dev` 每次启动时复制本地的 `js`。
-
-## 客户端
-
-网页以外的客户端（桌面端、App）的总览见[客户端](docs/clients/README.md)。框架为它们提供的代码按下面的位置放，目前只有 Electron 一种；以后新增种类时按这里的位置和步骤，不另起新的位置：
-
-```
-tenon/
-├── go.mod                                  # 主模块：服务端各包和 cmd/tenon，不引入任何客户端的依赖
-├── clientgen/                              # 生成器：公共部分 + 各语言（ts、go，以后 swift、kotlin、csharp、dart）
-├── cmd/tenon/internal/
-│   ├── project/                            # 发现 clients/<名>/tenon.json，Kinds 是支持的种类
-│   ├── dev/clients.go                      # 每个种类：需要的框架包、开发时怎样运行、怎样打包
-│   └── scaffold/template/client/<种类>/     # 每个种类的模板
-├── js/                                     # Bun workspace
-│   ├── client  host  electron              # 客户端运行时、宿主约定、Electron 宿主
-│   └── tauri  wails  react-native          # 以后：宿主页面一侧的 JS、React Native
-├── go/                                     # 以后：独立的 Go module（wails、mygo），不进主 go.mod
-├── rust/  swift/  kotlin/  dotnet/  dart/  # 以后：按工具链分的库
-```
-
-新增一种客户端时：
-
-1. 在[客户端](docs/clients/README.md#supported-kinds)的种类表中确认它的类别（网页宿主或原生界面）、平台和库的位置；
-2. 网页宿主按[网页宿主的约定](docs/clients/host.md)实现，原生界面按[原生客户端](docs/clients/native.md)实现；需要新语言时先加 `clientgen` 的生成器；
-3. 在 `project.Kinds`、`dev/clients.go` 和 `scaffold/template/client/<种类>` 中加上它；
-4. 工具链是新的：在仓库顶层加工具链的目录，复制到项目的 `.tenon/<工具链>`，CI 加一个任务；
-5. 写 `docs/clients/<种类>.md`，把种类表中的状态改为“已支持”；
-6. 需要服务端配合的事情先写进[客户端协议](docs/http/protocol.md)和[原生客户端](docs/clients/native.md)，不只写在这个种类的实现中。
+- `llmstest`：根目录的 [llms.txt](llms.txt) 与 `docs/README.md` 生成的结果一致，`docs` 中的每一页都列在 `docs/README.md` 中。改了 `docs/README.md` 后在仓库根目录运行 `go run ./internal/llmstxt/gen` 重新生成。
+- `agents` 的 `TestSkillReferences`：`cmd/tenon/internal/agents/skills` 中给 AI 编程助手的技能（`tenon init` 装进生成的项目）、项目 `AGENTS.md` 的模板中写的 `.tenon/docs/<页面>#<锚点>` 都存在于 `docs` 中。技能是从文档摘出的步骤和要点，改了文档中的写法、路径或锚点时同步修改对应的技能；改了应用的约定时同步修改模板 `cmd/tenon/internal/scaffold/template/project/AGENTS.md.tmpl`。
 
 ## 代码约定
+
+### 兼容
+
+v1.0 之前框架还没有使用者：迁移、配置和接口的改动不考虑兼容，直接修改原来的迁移和代码，不写兼容层，也不为改表新增迁移。
 
 ### 注释
 
@@ -131,72 +90,15 @@ tenon/
 
 尽早暴露失败和错误，让问题尽早被发现、尽早修复：出错时返回错误，调用方处理不了就继续向上返回。不为不会发生的情况加防御检查，不吞掉错误，也不用默认值掩盖错误。
 
-### 颜色
-
-`js` 中的包、playground、脚手架的模板和文档中的示例，颜色都从 Mantine 的主题中取。主题中的彩色是 Mantine [颜色生成器](https://mantine.dev/colors-generator)的 26 种预设（`js/ui/src/theme/theme.ts` 的 `primaryColors`），色板由 `@mantine/colors-generator` 生成，亮色和暗色模式下的取值由 Mantine 统一给出，应用换品牌色时整套界面一起变：
-
-- 品牌色是 `brand`，组件不写 `color` 时用的就是它。它由 `createUiTheme` 的 `primary` 设置，写预设的名称（例如 `pale-indigo`）或颜色值。
-- 其他彩色写预设的名称：组件的属性写 `color="deep-orange"`、`c="red"`、`bg="green.5"`，CSS 写 `var(--mantine-color-deep-orange-6)`。浅色底和上面的文字用 `-light`、`-light-color` 变体，它们在暗色模式下自动换成合适的值，不用另写暗色的规则。半透明用 `color-mix(in srgb, var(--mantine-color-violet-7) 50%, transparent)`。
-- Mantine 自带的 `teal`、`orange`、`blue`、`cyan`、`grape`、`indigo`、`lime` 不在预设中，不使用；`red`、`green`、`yellow`、`pink`、`violet` 与预设同名，用的是预设的色板。彩色不写十六进制或 `rgb()` 的值，写死的值不随品牌色和暗色模式变化。
-- 状态的颜色固定，同一种状态在各处用同一种颜色：成功、正常用 `green`；进行中用 `bright-blue`；暂停、等待处理用 `yellow`；需要注意用 `deep-orange`；失败、危险用 `red`；没有状态、已停用用 `gray`。
-- 中性色（文字、边框、背景）不在预设中，用主题的 `gray`、`dark` 色板、`c="dimmed"` 和 `--tn-*` 变量（`--tn-text`、`--tn-muted`、`--tn-border` 等）。中性色的值只写在定义它们的地方：`theme.ts` 的色板，`styles.css` 中定义变量的规则；其他规则和组件用这些变量或 `var(--mantine-color-white)`、`var(--mantine-color-black)`，半透明用 `color-mix()`。阴影和遮罩（`mask-image`）可以直接写黑白的值。
-
 ## 接口契约
 
 API 的客户端包括网页、App、桌面端和其他服务，用的语言可能是 TypeScript 和 Go 以外的任何语言。[客户端协议](docs/http/protocol.md)和 [RPC 协议](docs/rpc/protocol.md)是写给这些客户端的，框架的改动不能让它们只能用某一种语言、只能在浏览器中实现：
 
-- 认证只用 `Authorization: Bearer`，不依赖 Cookie 这类只有浏览器才有的机制；原生应用登录走授权码 + PKCE（[OAuth 服务端](docs/security/oauth-server.md)）；
+- 每个接口都能用 `Authorization: Bearer` 调用。浏览器中的页面用[会话 cookie](docs/http/protocol.md#sessions) 携带同一个 token，其他客户端的认证只用 Bearer；原生应用登录走授权码 + PKCE（[OAuth 服务端](docs/security/oauth-server.md)）；
 - 改动线路上的行为（请求头、状态码、错误响应、分页、事件流、实时频道等）时，同时更新客户端协议。规则以服务端和这一页为准，生成的运行时（`runtime.ts`、`wire/wire.go`）只是它的实现，不能只写在运行时里；
 - 客户端需要的元数据先放进语言无关的来源：接口的信息写进 OpenAPI，框架的扩展字段如 `x-tenon-permissions`、`x-required-permissions`、`x-tenon-enum`；OpenAPI 表达不了的，例如 `errorx.Define` 的错误码和验证提示的翻译，由 `clientgen` 中各语言共用的部分收集。各语言的生成器只负责输出，不自己从 Go 代码推导别的生成器拿不到的信息；
 - HTTP、RPC、MCP 三个入口共用的结构描述放在 `contract` 中：Go 类型的 JSON Schema 和校验（`NewSchema`）、schema 名（`SchemaName`）、枚举的命名类型（`EnumSchema`）、验证错误的规则码和译文（`Describe`）。入口用到它们时从 `contract` 取，不各写一套；登记、认证和响应格式各入口不同，留在各自的包中；
 - `@go-tenon/client` 不依赖 DOM，是其他语言实现客户端时的参考；只在网页中成立的功能放在 `@go-tenon/ui`。
-
-## 编写文档
-
-用户文档位于 `docs` 目录，按主题分成若干子目录，每个子目录有一个 `README.md` 索引页，列出本组的每一页和一句话说明。与入口无关的内容（配置、错误、日志、数据库、库、功能、安全等）和各个入口（`http`、`web`、`background`、命令行、MCP、实时频道）分开放：讲业务动作、错误、认证这类共用的部分时，不假设调用来自 HTTP；某个入口特有的写法放在这个入口的目录中。`frontend` 是调用 HTTP 接口的单页应用。以后新增入口时，新建一个与 `http` 平级的目录。[docs/README.md](docs/README.md) 是总目录，按学习顺序排列：入门 → 基础 → 组织代码 → 前端与页面 → 常用功能 → 安全 → 进阶。[入门教程](docs/tutorial/README.md)从零做出一个博客。
-
-### 读者
-
-假设读者是 Go 初级开发工程师：
-
-- **会的：** Go 的基本语法、结构体和方法、接口、错误处理、goroutine，用过 `go mod` 和 `go test`，写过简单的命令行程序。
-- **不一定会的：**
-  - Go 中稍深一些的用法：`context` 的传递、错误的包装与判断、结构体标签、泛型、`embed`。这些集中在[Go 知识准备](docs/concepts/go-primer.md)中讲，正文第一次用到时链接到对应的小节。
-  - 后端开发的常见概念：HTTP 中间件、SQL 事务与迁移、OpenAPI、JWT、OAuth、缓存失效、消息队列、OpenTelemetry。
-  - 前端：React、TanStack Router、Vite。
-
-不要假设读者用过其他框架，也不要和其他框架比较。
-
-### 每一页的结构
-
-每一页按读者的学习顺序展开，读者读到哪里都能停下，前面的部分已经可以用：
-
-1. **开头**：一段话说明这一页讲什么、解决什么问题、什么时候需要。下一行写“阅读前需要了解：”，链接前置的页面；没有前置要求时不写。
-2. **最小可运行的例子**：能直接复制运行，说明运行后会看到什么。
-3. **逐步扩展**：每一节只加一个新需求，按“需求 → 代码 → 解释”来写：先用一两句话说明为什么需要它，再给代码，最后解释代码做了什么、为什么这样做。后面的小节建立在前面的基础上。
-4. **常见问题**：容易犯的错误，按“现象 → 原因 → 解决”来写。
-5. **进阶**：少数场景才需要的用法。
-6. **API 参考**：每一项依次是签名、参数、返回值，再加一两句行为说明。
-
-篇幅短、只讲一件事的页面可以省略其中几部分，但顺序不变。
-
-### 写法
-
-- **一节只引入一个新概念。** 术语第一次出现时用一两句话解释它是什么、为什么需要，再继续；详细内容链接到专门讲它的那一页，例如“事务把几条 SQL 语句变成一个整体：要么全部生效，要么全部不生效，见[事务](docs/database/quick-start.md#transactions)。”
-- **给规则时说明理由**，写在同一段中，例如“缓存要在事务提交之后再删除：如果事务回滚了，缓存却已经删除，下一次读取会把旧数据重新写进缓存。”
-- **代码之前**用一句话说明它展示什么，以冒号结尾。一个代码块只说明一件事，运行结果写在注释中。
-- **代码之后**按顺序解释它做了什么；能运行的例子说明运行后会看到什么。
-- **片段中的变量都要交代来源**，例如“`db` 是[连接数据库](docs/database/quick-start.md#connecting)时得到的连接”。以 `package` 开头的代码块是完整文件，必须能单独编译（`doctest` 会检查）。
-- **直述。** 直接说明它是什么、做什么，不用否定或对比来描述。
-- **对读者说“你”。** 句子要短，一句只说一件事；用具体的例子代替抽象的描述。
-- **配置项**：每一项依次说明作用、默认值、什么时候需要修改。表格只用于对照多种情况，例如“情况 → 处理方式”。
-- **提示块**：`> [!NOTE]` 补充说明和背后的机制；`> [!IMPORTANT]` 必须遵守的约定；`> [!WARNING]` 安全问题和容易踩的坑，并说明后果；`> [!TIP]` 实用建议。
-- **链接**：第一次提到另一页的概念时给出链接；上游库的细节直接链接到它的文档，不在这里重复。
-
-### 篇幅与新增页面
-
-- 每页控制在 150–450 行，过长时按主题拆成同一目录下的几页，并在开头说明阅读顺序。
-- 新增一页时，把它加入本组的 `README.md` 和 [docs/README.md](docs/README.md) 中合适的学习阶段，再重新生成 `llms.txt`；新增的包同时加入[框架包一览](docs/concepts/structure.md#framework-packages)中同一分类的表格。
 
 ## 提交与 PR
 

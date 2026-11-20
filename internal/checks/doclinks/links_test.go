@@ -16,19 +16,21 @@ var (
 	anchor = regexp.MustCompile(`<a id="([^"]+)"></a>`)
 )
 
-// TestRelativeLinks 检查 README.md、AGENTS.md 和 docs 下全部文档中的相对链接：指向的文件存在，
+// TestRelativeLinks 检查 README.md、AGENTS.md、contributing 和 docs 下全部文档中的相对链接：指向的文件存在，
 // 带锚点时目标文档中有 <a id="锚点"></a>。代码块和行内代码中的内容跳过。
 func TestRelativeLinks(t *testing.T) {
 	root := "../../.."
 	files := []string{filepath.Join(root, "README.md"), filepath.Join(root, "AGENTS.md")}
-	err := filepath.WalkDir(filepath.Join(root, "docs"), func(path string, d fs.DirEntry, err error) error {
-		if err == nil && !d.IsDir() && strings.HasSuffix(path, ".md") {
-			files = append(files, path)
+	for _, dir := range []string{"contributing", "docs"} {
+		err := filepath.WalkDir(filepath.Join(root, dir), func(path string, d fs.DirEntry, err error) error {
+			if err == nil && !d.IsDir() && strings.HasSuffix(path, ".md") {
+				files = append(files, path)
+			}
+			return err
+		})
+		if err != nil {
+			t.Fatal(err)
 		}
-		return err
-	})
-	if err != nil {
-		t.Fatal(err)
 	}
 	anchors := map[string]map[string]bool{}
 	read := func(path string) string {

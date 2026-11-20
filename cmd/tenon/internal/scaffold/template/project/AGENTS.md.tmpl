@@ -25,6 +25,7 @@ bun run dev                       # 运行应用和前端的开发服务器，�
 bun run generate                  # 接口变了以后重新生成前端的客户端（dev 会自动运行）
 bun run build                     # 构建可执行文件 bin/[[.Slug]]，前端打包在其中
 bun run typecheck                 # 前端的类型检查
+go test ./internal/<模块>/ -run TestXxx   # 只运行一部分 Go 测试
 bun run agents                    # 升级框架之后，更新框架文档、技能和 AI 编程助手的配置（加前端或客户端时自动运行）
 go run ./cmd/[[.Slug]] routes     # 全部路由
 go run ./cmd/[[.Slug]] openapi    # OpenAPI 文档
