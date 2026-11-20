@@ -1,29 +1,11 @@
 # 4. 文章接口
 
-有了文章表，现在可以写接口了。
-
-**这一章要做的：** 为文章写五个接口：列表、读取、新建、修改和删除，并把首页之外的待办接口换成它们。
-
-**你会学到：**
-
-- 用一个结构体同时描述数据表的一行和接口返回的 JSON（模型）；
-- 定义业务错误，让客户端知道发生了什么；
-- 把校验规则写在结构体标签上，不合法的输入在进入你的代码之前就被拒绝；
-- 把业务逻辑写成“动作”，HTTP 接口只是调用它的一种方式。
-
-阅读前需要了解：[第 3 章](03-database.md)；结构体标签、错误的包装与判断、泛型。
-
-- [模型](#model)
-- [动作](#actions)
-- [注册路由](#routes)
-- [错误提示](#messages)
-- [试一试](#trying)
-- [小结](#summary)
+这一章为文章写五个接口：列表、读取、新建、修改、删除，并用它们替换模板的待办接口。业务逻辑写成[业务动作](../concepts/actions.md)，HTTP 接口只是调用它的一种方式。
 
 <a id="model"></a>
 ## 模型
 
-一个业务模块是 `internal` 下的一个包，文章就是 `internal/article`。先新建 `internal/article/article.go`，放各个接口共用的东西：文章的结构体、业务错误、提交的内容，以及按 ID 读取文章的函数：
+文章是 `internal` 下的一个包 `internal/article`。新建 `internal/article/article.go`，放模型、业务错误、提交的内容和按 ID 读取文章的函数：
 
 ```go title="internal/article/article.go"
 // Package article 是博客的文章：模型、业务错误和各个动作，每个动作一个文件。
@@ -86,20 +68,16 @@ type IDInput struct {
 }
 ```
 
-逐个来看：
-
-- **`Article` 是模型**：一个结构体对应数据表中的一行。我们用 [Bun](https://bun.uptrace.dev) 读写数据库，它按 `bun` 标签把字段对应到表的列，例如 `bun:"id,pk"` 表示这个字段是 `id` 列，并且是主键；`bun.BaseModel` 那一行告诉 Bun 表名是 `articles`。同一个字段上的 `json` 标签是接口返回的 JSON 中的名字，所以这个结构体既用来读写数据库，也直接作为接口的返回值。`database.Timestamps` 是 `created_at`、`updated_at` 两列，嵌进模型之后，插入和修改时由 Bun 的钩子填上时间，见[自动维护时间戳](../database/database.md#timestamps)。
-- **业务错误用 `errorx.Define` 定义。** 第一个参数是错误的分类，决定 HTTP 状态码：`NotFound` 是 404，`Conflict`（冲突）是 409。第二个参数是错误码，例如 `article.slug_taken`，客户端按它判断发生了什么，显示相应的提示。见[错误处理](../general/errors.md)。
-- **`Changes` 是新建和修改时提交的内容。** 字段上的 `minLength`、`maxLength`、`pattern` 等标签就是校验规则：标题不能为空、最长 200 个字符；slug 只能是小写字母、数字和连字符。不符合时，接口直接返回 `422`，列出每个字段的问题，你的代码不会被调用。见[验证](../http/requests.md)。
-- **`find`** 按 ID 读取一篇文章。查不到时数据库返回 `sql.ErrNoRows`，`find` 把它转换为业务错误 `ErrNotFound`，客户端就会得到 404。参数 `db` 的类型 `bun.IDB` 是一个接口：数据库连接池和事务都实现了它，所以同一个函数在事务内外都能用。
-- **`ArticleOutput` 和 `IDInput`** 是几个接口共用的输入和输出。`path:"id"` 表示 `ID` 来自路径中的 `{id}`，例如 `/articles/0193…` 中的那一段；类型是 `uuid.UUID`，不是合法的 UUID 时请求直接被拒绝。
+- `Article` 既是 [Bun](https://bun.uptrace.dev) 读写 `articles` 表的模型，也直接作为接口返回的 JSON。嵌入的 `database.Timestamps` 是 `created_at`、`updated_at` 两列，插入和修改时由 Bun 的钩子填上时间，见[自动维护时间戳](../database/database.md#timestamps)。
+- `errorx.Define` 的第一个参数决定 HTTP 状态码（`NotFound` 是 404，`Conflict` 是 409），第二个是返回给客户端的错误码，见[错误处理](../general/errors.md)。
+- `Changes` 的标签是校验规则。不符合时接口返回 `422`，列出每个字段的问题，动作不会被调用，见[请求与校验](../http/requests.md)。
+- `find` 把 `sql.ErrNoRows` 转换为 `ErrNotFound`。参数是 `bun.IDB`，连接池和事务都能传入。
+- `path:"id"` 表示 `ID` 来自路径中的 `{id}`，不是合法的 UUID 时请求直接被拒绝。
 
 <a id="actions"></a>
 ## 动作
 
-**动作**是一个用例，例如“列出文章”“新建文章”。每个动作写在一个文件中：一个结构体保存它用到的依赖（现在只有数据库 `db`），构造函数 `NewList` 创建它，`HTTP` 方法处理请求。依赖由构造函数传入，测试时就可以传入测试数据库，见[依赖装配](../concepts/dependencies.md)。
-
-先写列表。新建 `internal/article/list.go`：
+每个动作一个文件：结构体保存依赖，构造函数传入依赖，`HTTP` 方法处理请求，见[依赖装配](../concepts/dependencies.md)。新建 `internal/article/list.go`：
 
 ```go title="internal/article/list.go"
 package article
@@ -138,12 +116,11 @@ func (a *List) HTTP(ctx context.Context, in *ListInput) (*ListOutput, error) {
 }
 ```
 
-- `ListInput` 中嵌入了 `page.OffsetParams`，接口就能接受 `?page=2&per_page=20` 这样的分页参数，默认第 1 页、每页 20 条。`in.Limit()` 和 `in.Offset()` 把它们换算成 SQL 的 `LIMIT` 和 `OFFSET`。
-- `ScanAndCount` 一次读出这一页的数据和符合条件的总数，前端据此显示页码。
-- `page.Offset[Article]` 是“一页文章”：`items` 是这一页的文章，`total` 是总数（见泛型）。
-- 排序写成 `created_at DESC, id DESC`：两篇文章的创建时间可能相同，再按 `id` 排序，分页时顺序才是稳定的，不会在两页之间重复或者漏掉一篇。
+- 嵌入 `page.OffsetParams` 后接口接受 `?page=2&per_page=20`，默认第 1 页、每页 20 条。
+- `ScanAndCount` 一次读出这一页和总数，`page.Offset[Article]` 返回 `items` 和 `total`。
+- 排序加上 `id DESC`，创建时间相同时分页顺序也是稳定的。
 
-读取一篇文章，用上面写好的 `find`。新建 `internal/article/get.go`：
+新建 `internal/article/get.go`：
 
 ```go title="internal/article/get.go"
 package article
@@ -168,7 +145,7 @@ func (a *Get) HTTP(ctx context.Context, in *IDInput) (*ArticleOutput, error) {
 }
 ```
 
-新建文章。新建 `internal/article/create.go`：
+新建 `internal/article/create.go`：
 
 ```go title="internal/article/create.go"
 package article
@@ -212,13 +189,10 @@ func (a *Create) HTTP(ctx context.Context, in *CreateInput) (*ArticleOutput, err
 }
 ```
 
-这里有两点值得注意。
+- slug 重复由第 3 章的唯一约束拒绝：先查询再插入的做法在两个请求同时提交时会都插入成功。`database.IsUniqueViolation` 识别约束冲突，转换为 `ErrSlugTaken`。`errorx.Public` 附加的 `slug` 出现在给用户看的提示中。
+- 业务逻辑写在 `Handle` 中，参数和返回值与 HTTP 无关，命令行、后台任务和测试直接调用它，第 6 章的命令行建号就这样做。`HTTP` 只取出参数、调用 `Handle`、包装响应。
 
-**slug 重复怎样处理。** 新建和修改都可能遇到 slug 已经被使用。最直接的想法是先查一次“这个 slug 有没有被用过”，没有再插入。但这样有一个漏洞：两个请求同时提交同一个 slug，它们查询时都发现没有被使用，然后都插入了。所以我们直接插入，由第 3 章建表时加的唯一约束拒绝重复，数据库保证只有一个能成功；再把数据库报告的约束冲突转换为业务错误 `ErrSlugTaken`。`errorx.Public` 附加的参数 `slug` 会出现在给用户看的提示中，例如“slug“hello”已被使用”。
-
-**`Handle` 和 `HTTP` 分开。** 业务逻辑写在 `Handle` 中，它的参数和返回值都是普通的 Go 类型，与 HTTP 无关。`HTTP` 只负责从请求中取出参数、调用 `Handle`、把结果包装成响应。这样，以后的命令行、后台任务和测试都可以直接调用 `Handle`，不需要模拟一个 HTTP 请求。第 6 章的“命令行建号”就是这样做的，见[业务动作](../concepts/actions.md)。
-
-修改文章，和新建一样处理 slug 重复。新建 `internal/article/update.go`：
+新建 `internal/article/update.go`：
 
 ```go title="internal/article/update.go"
 package article
@@ -266,9 +240,9 @@ func (a *Update) HTTP(ctx context.Context, in *UpdateInput) (*ArticleOutput, err
 }
 ```
 
-`Column` 列出这次要更新的列，其中带上 `updated_at`：钩子把 `item.UpdatedAt` 改成了当前时间，列在这里它才会写进数据库。
+`Column` 列出要更新的列，其中要有 `updated_at`：钩子改了 `item.UpdatedAt`，列在这里才会写进数据库。
 
-删除文章，文章不存在时返回 404。新建 `internal/article/delete.go`：
+新建 `internal/article/delete.go`，文章不存在时返回 404：
 
 ```go title="internal/article/delete.go"
 package article
@@ -299,7 +273,7 @@ func (a *Delete) HTTP(ctx context.Context, in *IDInput) (*struct{}, error) {
 <a id="routes"></a>
 ## 注册路由
 
-五个动作都写好了，现在把它们注册为接口：哪个方法、哪个路径交给哪个动作的 `HTTP` 方法。新建 `internal/article/routes.go`：
+新建 `internal/article/routes.go`：
 
 ```go title="internal/article/routes.go"
 package article
@@ -331,17 +305,13 @@ func RegisterRoutes(api *rest.API, db *bun.DB) {
 }
 ```
 
-- **`OperationID`** 是接口的名字，生成的前端客户端按它分组：`article-list` 就是前端的 `api.article.list()`，`article-create` 是 `api.article.create()`。
-- **路径中的 `{id}`** 对应 `IDInput` 中带 `path:"id"` 标签的字段。
-- **每个接口都要声明访问策略**，现在都是公开的 `rest.Public()`，任何人都能调用；忘记声明时，程序启动就会报错。第 6 章加上登录后，写文章的接口会改为需要登录。
-- `NewList(db).HTTP` 先用 `db` 创建动作，再把它的 `HTTP` 方法交给 `rest.Register`（见把方法当作值传递）。
+- `OperationID` 决定生成的前端客户端中的名字：`article-list` 是 `api.article.list()`。
+- 每个接口都要声明访问策略，忘记声明时程序启动就报错。现在都是 `rest.Public()`，第 6 章改为需要登录。
 
 <a id="messages"></a>
 ## 错误提示
 
-业务错误返回给客户端时，响应中的 `detail` 是给用户看的提示，例如“文章不存在”。这些文字不写在 Go 代码中，而是按错误码从翻译文件中查找：这样提示可以按用户的语言显示，修改文字也不需要改代码，见[本地化](../general/localization.md)。
-
-新建 `locales/embed.go`，把翻译文件打包进程序；再新建 `locales/zh-CN.yaml`，写出每个错误码的中文提示：
+响应中的 `detail` 是给用户看的提示，按错误码从翻译文件中查找，见[本地化](../general/localization.md)。新建 `locales/embed.go` 和 `locales/zh-CN.yaml`：
 
 ```go title="locales/embed.go"
 // Package locales 嵌入应用的翻译：业务错误码对应给用户看的提示。
@@ -358,9 +328,9 @@ article.not_found: 文章不存在
 article.slug_taken: "slug“{{.slug}}”已被使用"
 ```
 
-`{{.slug}}` 会被替换为 `errorx.Public` 附加的参数。
+`{{.slug}}` 替换为 `errorx.Public` 附加的参数。
 
-最后修改 `internal/bootstrap/http.go`：把待办接口换成文章，并加载翻译文件：
+修改 `internal/bootstrap/http.go`：把待办接口换成文章，用 `httpx.Languages` 加载翻译：
 
 ```go title="internal/bootstrap/http.go"
 package bootstrap
@@ -440,7 +410,7 @@ func DocRouter() chi.Routes {
 <a id="trying"></a>
 ## 试一试
 
-`bun run dev` 运行着的话，应用已经重新编译了。打开 http://localhost:8080/api/docs，或者用 curl：
+`bun run dev` 运行着时应用已经重新编译。打开 <http://localhost:8080/api/docs>，或者用 curl：
 
 ```bash
 curl -X POST localhost:8080/api/articles -H 'Content-Type: application/json' \
@@ -465,18 +435,4 @@ curl -X POST localhost:8080/api/articles -H 'Content-Type: application/json' \
   {"message":"不能为空","location":"body.title","value":"","code":"validation.filled"}]}
 ```
 
-<a id="summary"></a>
-## 小结
-
-到这里，文章的五个接口都可以用了。这一章，你：
-
-- 用一个结构体 `Article` 同时描述了数据表的一行和接口返回的 JSON；
-- 用 `errorx.Define` 定义了业务错误，客户端会得到对应的状态码和错误码；
-- 把校验规则写在了 `Changes` 的标签上，不合法的输入在进入你的代码之前就被拒绝；
-- 把业务逻辑写在动作的 `Handle` 中，`HTTP` 只负责收发请求；
-- 用唯一约束处理同时提交同一个 slug 的情况；
-- 用翻译文件提供中文的错误提示。
-
-不过，首页还在调用已经删除的待办接口。下一章，我们把它换成文章页面。
-
-深入了解：[路由](../http/routing.md)、[验证](../http/requests.md)、[响应](../http/responses.md)、[错误处理](../general/errors.md)、[业务动作](../concepts/actions.md)、[本地化](../general/localization.md)。
+首页还在调用已删除的待办接口，第 5 章换成文章页面。

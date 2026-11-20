@@ -130,7 +130,7 @@ func initCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.Name, "name", "", "应用的名称，默认是目录名")
 	cmd.Flags().StringVar(&opts.TenonDir, "tenon", "", "本地的框架目录，go.mod 用 replace 指向它（开发框架本身时使用）")
 	cmd.Flags().StringSliceVar(&targets, "agents", project.DefaultTargets,
-		fmt.Sprintf("为哪些 AI 编程助手写 MCP 配置：%s，可以写多个；none 表示都不写（AGENTS.md 和 .tenon/docs 照样生成）", strings.Join(project.Targets, "、")))
+		fmt.Sprintf("为哪些 AI 编程助手安装技能、写 MCP 配置：%s，可以写多个；none 表示都不装（AGENTS.md 和 .tenon/docs 照样生成）", strings.Join(project.Targets, "、")))
 	return cmd
 }
 

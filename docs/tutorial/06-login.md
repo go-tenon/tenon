@@ -1,57 +1,25 @@
 # 6. 作者登录
 
-到目前为止，任何人都可以写文章。这一章，我们让作者用邮箱和密码登录，只有登录之后才能写文章。
+作者用邮箱和密码登录，登录之后才能写文章。这一章是单账号后台登录的完整例子：作者表、建号命令、登录和退出接口、登录页。
 
-**这一章要做的**（内容比较多，分成几步）：
-
-1. 了解登录是怎样工作的；
-2. 准备配置：应用密钥；
-3. 建作者表，加一个创建作者的命令；
-4. 写登录、刷新、退出三个接口，让写文章的接口要求登录；
-5. 在前端加上登录页，没有登录时跳到登录页。
-
-阅读前需要了解：[第 5 章](05-pages.md)；HTTP 的 cookie 和 `Authorization` 请求头。
-
-- [怎么登录](#how-it-works)
-- [配置](#configuration)
-- [数据表](#tables)
-- [作者账号](#users)
-- [登录接口](#auth)
-- [装配](#assembling)
-- [前端](#frontend)
-- [常见问题](#troubleshooting)
-- [小结](#summary)
+包：`login`、`apitoken`、`httpx`、`httpx/rest`、`command`、`@go-tenon/client`、`@go-tenon/ui`。
 
 <a id="how-it-works"></a>
 ## 怎么登录
 
-登录要解决两个问题：用户第一次登录时，确认他是谁；之后的每个请求，确认它来自一个已经登录的用户。框架用两个包分别处理：
-
-- `login` 回答“这个人是谁”：保存邮箱和密码哈希，校验密码，限制输错的次数。邮箱、密码保存在框架的 `auth_*` 表中，应用的 `users` 表只有名字这样的业务字段。
-- `apitoken` 签发登录凭据：密码正确后签发一个 token，写进浏览器的**会话 cookie**。之后浏览器的每个请求都自动带上它，服务端据此知道请求来自谁。
-
-几个术语：
-
-- **密码哈希**：数据库中不保存密码本身，而是保存用单向算法计算出的“指纹”。登录时对输入的密码做同样的计算，比较结果。即使数据库泄露，也得不到原始密码。
-- **token（令牌）**：登录成功后服务端签发的一段随机字符串，数据库中只保存它的哈希。之后的请求带上它，服务端就知道请求来自谁，不需要每次都发送密码。退出登录时删除它，立即失效。
-- **HttpOnly cookie**：浏览器保存、每次请求自动带上的 cookie，并且页面上的 JavaScript 读不到它。即使页面被注入了恶意脚本，也拿不走登录凭据。
-
-所以流程是：登录接口校验密码，把 token 写进会话 cookie；之后的请求自动带上它；打开页面时读一次当前的作者（`/api/me`），读到了就是已登录。页面上的代码从头到尾不接触 token。
-
-cookie 是浏览器自动附加的，其他网站的页面向博客发请求时，也可能带上它，冒充作者修改文章（跨站请求伪造）。框架为此做了两件事：会话 cookie 设为 `SameSite=Lax`，其他网站的页面发出的请求不带它；用 cookie 认证的修改请求必须来自博客自己的页面，否则返回 `403`。
+- `login` 在框架的 `auth_*` 表中保存邮箱和密码哈希，校验密码，限制输错的次数；应用的 `users` 表只有业务字段。
+- 密码正确后 `apitoken` 签发 token，登录接口把它写进 `HttpOnly` 的会话 cookie，浏览器之后的请求自动带上它，页面上的代码不接触 token。用 cookie 认证的修改请求必须来自博客自己的页面，否则返回 `403`。
 
 <a id="configuration"></a>
 ## 配置
 
-登录需要一个**应用密钥**：`login` 用它签名验证码等数据，没有密钥就无法伪造它们。
-
-生成一个随机的密钥写进 `.env`：
+`login` 用应用密钥签名验证码等数据。生成密钥写进 `.env`（不提交，生产环境用环境变量 `APP_KEY`）：
 
 ```bash
 echo "APP_KEY=$(openssl rand -base64 32)" >> .env
 ```
 
-`.env` 不提交到代码仓库，生产环境用环境变量 `APP_KEY` 设置。密钥泄露后要更换，已经签发的 token 随之失效。在 `config/app.yaml` 中加上密钥：
+在 `config/app.yaml` 中加上密钥：
 
 ```yaml title="config/app.yaml"
 # 应用的配置。${VAR:-默认值} 读取环境变量，生产环境用环境变量覆盖开发时的默认值。
@@ -65,7 +33,7 @@ crypt:
   key: ${APP_KEY}
 ```
 
-`internal/bootstrap/config.go` 中加上对应的配置段。`hashing` 是密码哈希的参数，`token` 是登录的有效期，都使用默认值：
+`internal/bootstrap/config.go` 中加上对应的配置段，`hashing` 和 `token` 用默认值：
 
 ```go title="internal/bootstrap/config.go"
 // Package bootstrap 装配应用：读取配置，打开数据库等资源，把它们交给 HTTP 服务和各个业务模块。
@@ -93,7 +61,7 @@ type Config struct {
 <a id="tables"></a>
 ## 数据表
 
-`login` 和 `apitoken` 需要自己的表（保存邮箱、密码哈希、签发过的 token），`login` 还要记录每个邮箱输错密码的次数，错太多次就暂时拒绝登录，防止有人不断猜密码，计数保存在限流的 `rate_limits` 表中。这些表的迁移由框架提供。我们先把这些迁移复制（发布）到 `migrations` 目录中。在 `cmd/blog/main.go` 中给 `migrate` 加上 `publish` 子命令；顺便加上 `bootstrap.Commands()`，下文创建作者的命令在其中：
+`login`、`apitoken` 和输错次数计数（`ratelimit/pglimit`）的迁移由框架提供，`migrate publish` 把它们复制到 `migrations` 中，和自己的迁移一样提交、执行。在 `cmd/blog/main.go` 中加上 `publish` 子命令和 `bootstrap.Commands()`：
 
 ```go title="cmd/blog/main.go"
 // Command blog 是博客的入口。
@@ -147,7 +115,7 @@ go mod tidy
 go run ./cmd/blog migrate publish
 ```
 
-命令把迁移复制到 `migrations` 中，它们和你自己写的迁移一样提交到代码仓库、一起执行。再为作者建一张自己的表：
+再为作者建一张表：
 
 ```bash
 go run ./cmd/blog migrate make create_users_table
@@ -169,7 +137,7 @@ DROP TABLE users;
 <a id="users"></a>
 ## 作者账号
 
-作者是一个新的业务模块 `internal/user`，结构和第 4 章的 `internal/article` 一样。新建 `internal/user/user.go`：
+新建 `internal/user/user.go`。`Type` 是这套账号的类型，`Ref` 是作者交给 `login`、`apitoken` 时用的引用：
 
 ```go title="internal/user/user.go"
 // Package user 是博客的作者账号。邮箱和密码保存在 login 的表中，users 表只有业务字段。
@@ -217,11 +185,7 @@ func find(ctx context.Context, db bun.IDB, id string) (*User, error) {
 }
 ```
 
-- **`Type`** 是这套账号的类型。一个应用可能有几种账号，例如作者和后台管理员，所以登录凭据中记录的是“哪种账号的哪一个”。
-- **`Ref`** 返回这个作者的引用，把作者交给 `login`、`apitoken` 时用它。
-- 作者的 ID 用 `uuid.NewV7()` 生成，这种 UUID 按时间递增，插入数据库时比完全随机的 UUID 更快。
-
-博客不开放注册，作者由管理员用命令创建。新建 `internal/user/create.go`：
+博客不开放注册，作者用命令创建。新建 `internal/user/create.go`，`Handle` 在一个事务中写入 `users` 表和 `login` 的表，失败时整体回滚：
 
 ```go title="internal/user/create.go"
 package user
@@ -279,9 +243,6 @@ func (a *Create) Command(cmd *cobra.Command, _ []string) error {
 }
 ```
 
-- `Handle` 在一个事务中写入 `users` 表和 `login` 的表：邮箱已被使用、密码太短时，整体回滚，不会留下一个没有邮箱的作者。
-- `Command` 是这个动作的命令行入口：从命令行参数中取出名字、邮箱和密码，调用 `Handle`。这就是第 4 章说的，业务逻辑写在 `Handle` 中，HTTP 和命令行都只是调用它的方式。
-
 新建 `internal/user/commands.go` 声明命令：
 
 ```go title="internal/user/commands.go"
@@ -315,7 +276,7 @@ func Commands(db *bun.DB, logins *login.Realm) *cobra.Command {
 }
 ```
 
-这里有一个先后顺序的问题：命令要用到数据库，但程序启动、声明有哪些命令时，配置还没有加载，数据库还不能打开。`command.Bind` 解决这个问题：它先用空的 `App` 声明命令，等真的执行其中一个命令时，才加载配置、调用 `Open` 打开资源，命令结束后关闭资源。新建 `internal/bootstrap/commands.go`：
+`command.Bind` 先用零值的 `App` 声明命令，执行其中一个时才加载配置、调用 `Open`，结束后关闭资源。新建 `internal/bootstrap/commands.go`：
 
 ```go title="internal/bootstrap/commands.go"
 package bootstrap
@@ -336,7 +297,7 @@ func Commands() []*cobra.Command {
 }
 ```
 
-再加一个接口，返回当前登录的作者。新建 `internal/user/me.go` 和 `internal/user/routes.go`：
+新建 `internal/user/me.go` 和 `internal/user/routes.go`，返回当前作者。`requireUser` 校验 token 后把登录者放进 ctx，`identity.FromContext` 取出它：
 
 ```go title="internal/user/me.go"
 package user
@@ -388,13 +349,10 @@ func RegisterRoutes(api *rest.API, requireUser func(*huma.Operation), db *bun.DB
 }
 ```
 
-- `identity.FromContext` 从 ctx 中取出这次请求的登录者。登录者是验证 token 时放进 ctx 的，见 context。
-- `requireUser` 是一个保护接口的函数，和 `rest.Public()` 用法一样：被它保护的接口，只有带着有效的登录凭据才能调用，所以 `Me` 中一定能取到登录者。它在下文的装配一节中创建。
-
 <a id="auth"></a>
 ## 登录接口
 
-接着，新建 `internal/auth/auth.go`，提供登录和退出两个接口：
+新建 `internal/auth/auth.go`，提供登录和退出两个接口：
 
 ```go title="internal/auth/auth.go"
 // Package auth 是登录和退出的接口。
@@ -473,14 +431,14 @@ func RegisterRoutes(api *rest.API, requireUser func(*huma.Operation), users *log
 }
 ```
 
-- 登录：`Password` 校验邮箱和密码，错误时返回 `401`；同一个邮箱 15 分钟内错 5 次后返回 `429`。成功后签发一个 token，`httpx.SessionCookie` 把它放进会话 cookie。
-- 退出：撤销这次登录的 token，清除 cookie。token 被撤销后，即使 cookie 还在别处，也不能再用了。
-- `rest.SameOrigin` 让登录接口只接受博客自己的页面发出的请求。否则其他网站可以在你不知情时，让浏览器登录攻击者的账号。
+- 密码错误返回 `401`；同一个邮箱 15 分钟内错 5 次后返回 `429`。
+- 退出撤销这次登录的 token，token 立即失效。
+- `rest.SameOrigin` 让登录接口只接受博客自己的页面发出的请求，其他网站不能让浏览器登录攻击者的账号。
 
 <a id="assembling"></a>
 ## 装配
 
-现在把这些连起来。在 `internal/bootstrap/app.go` 的 `open` 中创建 `login` 和 `apitoken`，保存到 `App` 中：
+在 `internal/bootstrap/app.go` 的 `Open` 中创建 `login` 和 `apitoken`：
 
 ```go title="internal/bootstrap/app.go"
 package bootstrap
@@ -549,7 +507,7 @@ func Parts(a *App) []command.Part {
 }
 ```
 
-在 `internal/bootstrap/http.go` 中注册新的接口：
+在 `internal/bootstrap/http.go` 中注册接口。`rest.RequireToken` 返回 `requireUser`，它接受会话 cookie 和 `Authorization: Bearer <token>`：
 
 ```go title="internal/bootstrap/http.go"
 package bootstrap
@@ -632,10 +590,7 @@ func DocRouter() chi.Routes {
 
 ```
 
-- `rest.Options.Accounts` 声明接口接受哪些账号的 token，现在只有作者。
-- `rest.RequireToken` 返回 `requireUser`：被它保护的接口要求请求带着有效的 token。浏览器用会话 cookie，以后的 App、脚本用 `Authorization: Bearer <token>`，两种方式都可以。用 cookie 认证的修改请求必须来自本站的页面。`requireUser` 被传给 `user.RegisterRoutes`、`auth.RegisterRoutes` 和 `article.RegisterRoutes`。
-
-在 `internal/article/routes.go` 中，读文章仍然公开，写文章改为需要登录：
+在 `internal/article/routes.go` 中，读文章公开，写文章需要登录：
 
 ```go title="internal/article/routes.go"
 package article
@@ -668,7 +623,7 @@ func RegisterRoutes(api *rest.API, requireUser func(*huma.Operation), db *bun.DB
 }
 ```
 
-后端完成了。执行迁移，用新命令创建一个作者：
+执行迁移，创建一个作者：
 
 ```bash
 go run ./cmd/blog migrate up
@@ -684,9 +639,7 @@ go run ./cmd/blog user create --name 小明 --email ming@example.com --password 
 <a id="frontend"></a>
 ## 前端
 
-登录凭据在浏览器自动带上的 cookie 中，前端不需要保管 token，只需要知道“现在是谁”：打开页面时读一次当前的作者，登录、退出时更新。这由 `@go-tenon/client` 的**会话**（session）完成。
-
-把 `apps/web/src/api.ts` 改成下面这样：
+`@go-tenon/client` 的会话（session）记录当前的作者：打开页面时读一次 `/api/me`，登录、退出时更新。把 `apps/web/src/api.ts` 改成下面这样：
 
 ```ts title="apps/web/src/api.ts"
 // 注意：src/client.ts 和 src/server.ts 是 TanStack Start 约定的入口文件名，API 客户端放在 src/api.ts。
@@ -706,7 +659,7 @@ export const api = createClient({ baseURL: "/api", fetch: apiFetch, session })
 export const kit = createKit(api, { scope: session.scope })
 ```
 
-再把会话交给应用。把 `apps/web/src/router.tsx` 改成下面这样：
+把 `apps/web/src/router.tsx` 改成下面这样，把会话交给应用：
 
 ```tsx title="apps/web/src/router.tsx"
 import { createApp } from "@go-tenon/ui"
@@ -732,12 +685,12 @@ declare module "@tanstack/react-router" {
 }
 ```
 
-应用在浏览器中打开第一个页面之前读一次当前的作者：cookie 还有效时，刷新页面后仍然是登录的。服务端渲染时不读取身份，页面先按未登录渲染，浏览器接管后再更新。
+服务端渲染时不读取身份，页面先按未登录渲染，浏览器接管后再更新。
 
 <a id="login-page"></a>
 ### 登录页
 
-新建登录页 `apps/web/src/routes/login.tsx`，地址是 `/login`：
+新建登录页 `apps/web/src/routes/login.tsx`：
 
 ```tsx title="apps/web/src/routes/login.tsx"
 import { createFileRoute } from "@tanstack/react-router"
@@ -762,14 +715,12 @@ function Login() {
 }
 ```
 
-- `LoginForm` 是 `@go-tenon/ui` 中的登录表单：邮箱和密码，接口返回的错误显示在表单上。
-- 登录成功时，服务端已经写好了会话 cookie；`LoginForm` 让会话读取当前的作者，再回到登录前想去的页面（地址中的 `?redirect=`），没有时回到首页。
-- 回跳地址只接受本站的相对路径。否则别人可以构造一个 `?redirect=https://evil.example` 的链接，让用户登录后跳到一个仿冒的网站。
+`LoginForm` 登录成功后回到 `?redirect=` 中的页面，没有时回到首页。回跳地址只接受本站的相对路径。
 
 <a id="requiring-login"></a>
 ### 需要登录的页面
 
-写文章和修改文章需要登录。在这两个页面的路由上加上 `beforeLoad: requireAuth`：没有登录时，先跳到登录页，并带上原来的地址。它们还要加上 `ssr: false`：这两个页面只在浏览器中渲染，服务端渲染时还不知道是谁，不能判断是否已经登录。把 `apps/web/src/routes/write.tsx` 改成下面这样：
+路由加上 `beforeLoad: requireAuth`，没有登录时跳到登录页；加上 `ssr: false`，因为服务端渲染时不知道是否已登录。把 `apps/web/src/routes/write.tsx` 改成下面这样：
 
 ```tsx title="apps/web/src/routes/write.tsx"
 import { Container, Title } from "@mantine/core"
@@ -822,12 +773,10 @@ function EditArticle() {
 }
 ```
 
-页面上的检查只是为了让没有登录的人先去登录，真正的保护仍然在服务端：接口要求登录，没有有效的 cookie 时返回 `401`。
-
 <a id="header"></a>
 ### 页头
 
-页头显示当前的作者和退出按钮，没有登录时显示登录链接。把 `apps/web/src/routes/__root.tsx` 改成下面这样：
+页头显示当前的作者和退出按钮。把 `apps/web/src/routes/__root.tsx` 改成下面这样：
 
 ```tsx title="apps/web/src/routes/__root.tsx"
 import "@go-tenon/ui/styles.css"
@@ -896,11 +845,9 @@ function Layout() {
 }
 ```
 
-- `useSignedIn` 返回是否已登录，登录、退出时页面随之更新。
-- 退出时，退出接口撤销 token、清除 cookie，`session.signOut()` 清除当前的身份。正在看的页面需要登录时，应用随即跳到登录页。
-- 登录、退出时，TanStack Query 中缓存的数据也被清空，上一个作者的数据不会出现在下一个作者的页面上。
+`session.signOut()` 清除当前的身份；登录、退出时 TanStack Query 的缓存被清空。
 
-最后，首页在没有登录时不显示编辑和删除。把 `apps/web/src/routes/index.tsx` 改成下面这样：
+首页在没有登录时不显示编辑和删除。把 `apps/web/src/routes/index.tsx` 改成下面这样：
 
 ```tsx title="apps/web/src/routes/index.tsx"
 import { Button, Container, Group, Paper, Stack, Text, Title } from "@mantine/core"
@@ -952,42 +899,11 @@ function ArticleList() {
 }
 ```
 
-打开 http://localhost:8080/write，页面先跳到登录页。用刚才创建的账号登录，回到了写文章的页面。写一篇文章，再刷新页面，仍然是登录状态：浏览器带着会话 cookie，页面读到了当前的作者。退出后，编辑按钮消失了。
+打开 <http://localhost:8080/write>，页面跳到登录页；登录后回到写文章的页面，刷新后仍是登录状态。
 
 <a id="troubleshooting"></a>
 ## 常见问题
 
-**启动时报错缺少 `APP_KEY`**
-
-还没有生成密钥，或者 `.env` 不在项目根目录。按[配置](#configuration)一节生成。
-
-**`user create` 报错密码不符合要求**
-
-默认的规则是：8 到 128 个字符，首尾不能有空格。换一个符合规则的密码。
-
-**登录后刷新页面，又变成未登录**
-
-会话 cookie 没有保存或没有带上。检查是否通过 http://localhost:8080 访问页面：cookie 只在同源的请求中发送，直接访问前端开发服务器的端口时就没有；它还带有 `Secure` 属性，浏览器只在 HTTPS 和 `localhost` 上保存它，用局域网 IP 访问时登录不上。
-
-**修改文章时返回 `403`，错误码是 `http.cross_site`**
-
-请求不是从博客自己的页面发出的，例如在其他网站的页面上，或者用工具发请求时没有带 `Origin`。浏览器中的页面不会遇到；用 curl 调试时改用 `Authorization: Bearer <token>`。
-
-**登录时返回 `429`**
-
-同一个邮箱 15 分钟内输错了 5 次密码，等一会儿再试。
-
-<a id="summary"></a>
-## 小结
-
-这一章，你：
-
-- 了解了会话 cookie：token 放在脚本读不到的 HttpOnly cookie 中，浏览器自动带上；用 cookie 认证的修改请求必须来自本站的页面；
-- 用 `login` 保存邮箱和密码，并限制输错的次数；
-- 写了一个创建作者的命令，它和接口调用同一个 `Handle`；
-- 用 `requireUser` 保护了写文章的接口；
-- 在前端加上了登录页，需要登录的页面先跳到登录页。
-
-作者现在可以登录了。不过，任何作者都能修改别人的文章，所有文章写完就立即公开。下一章，我们给文章加上作者和草稿。
-
-深入了解：[登录与注册](../security/login.md)、[API 令牌](../security/api-tokens.md)、[认证](../security/authentication.md)、[搭建前端应用](../frontend/app.md)、[命令行](../general/commands.md)。
+- **`user create` 报错密码不符合要求**：默认要求 8 到 128 个字符，首尾没有空白。
+- **登录后刷新又变成未登录**：通过 <http://localhost:8080> 访问。会话 cookie 只随同源请求发送，带有 `Secure` 属性，只在 HTTPS 和 `localhost` 上保存。
+- **修改文章返回 `403`，错误码是 `http.cross_site`**：请求不是从博客的页面发出的。用 curl 调试时改用 `Authorization: Bearer <token>`。

@@ -1,39 +1,15 @@
-# AI 助手
+# AI 对话
 
-`ai/chat` 包用于构建对话式的 AI 助手：模型边想边答，需要时调用应用提供的工具，回答以[服务端推送](../http/sse.md)实时显示给用户。
+用 `ai/chat` 构建 AI 对话（AI 助手）：回答在后台运行，以 Vercel AI SDK 的 UI 消息流推给前端，支持中途插话、断线续传和工具调用的审批。生成图片、语音、向量、重排和决策在 `ai` 包中，与 `ai/chat` 相互独立。
 
-agent 本身由 [trpc-agent-go](https://github.com/trpc-group/trpc-agent-go) 提供：模型、工具、提示词、记忆、多 agent 协作都直接使用它的 API，见[它的文档](https://trpc-group.github.io/trpc-agent-go/)。`ai/chat` 补上 Web 应用还需要的部分：
+包：`ai`、`ai/chat`、`ai/openai`、`ai/openrouter`、`ai/dashscope`、`ai/systemone`、`ai/aitest`、`ai/chat/chattest`。
 
-- **后台运行**：一次回答可能持续几分钟，在 HTTP 请求之外运行。用户刷新页面或网络断开后，生成过程照常继续，重新连接后接着收到剩余的内容。
-- **中途插话**：模型还在查资料时，用户可以随时继续发消息，模型照常完成手头的工作。
-- **审批**：退款、发布这类操作，模型调用工具后先停下，由人确认后才执行。审批可以在几小时后、在另一个进程中进行。
-- **前端协议**：实现 Vercel AI SDK 的 UI 消息流协议，前端直接使用 `useChat`。
-
-几个术语：**agent** 是能自己决定下一步做什么的模型程序，它可以调用你提供的**工具**（Go 函数）来查数据、执行操作；一次**运行**是 agent 回答一个问题的全过程，可能包含多轮思考和工具调用。
-
-阅读前需要了解：[服务端推送](../http/sse.md)；[依赖装配](../concepts/dependencies.md)；React 和 Vercel AI SDK 的 `useChat`（前端部分）。按对话选择 agent、使用应用自己的消息表、多模态、部署等见 [AI 助手进阶](chat-advanced.md)。
-- **图片、语音和向量**：生成图片、合成和识别语音、计算向量、重排，接口统一，测试时有替身。
-- **决策**：用专门的决策模型做分类、路由和打分，得到概率。
-
-后两项在 `ai` 包中，与 `ai/chat` 相互独立：只用到它们的应用保持精简。
-
-- [示例用法](#example-usage)
-- [准备数据表](#preparing-tables)
-- [装配](#assembling)
-    - [配置模型](#configuring-models)
-- [对话接口](#conversation-api)
-    - [发送图片和文件](#files)
-    - [停止回答](#stopping)
-    - [中途插话](#steering)
-    - [断线重连](#reconnecting)
-- [审批](#approval)
-- [常见问题](#troubleshooting)
-- [API 参考](#api-reference)
+agent、模型、工具、记忆直接使用 [trpc-agent-go](https://trpc-group.github.io/trpc-agent-go/) 的 API。线路约定见[客户端协议](../http/protocol.md#ai-chat)，React 前端用 [`useAssistantChat`](../frontend/features.md#ai-chat)。
 
 <a id="example-usage"></a>
-## 示例用法
+## 示例
 
-下面创建一个写作助手，在接口中开始一次回答，并把生成过程流式推给前端：
+`cfg.AI` 是 `ai.ModelConfig`，`sessions` 见[装配](#assembling)，`sub` 是 `identity.FromContext` 取得的主体：
 
 ```go
 agent := llmagent.New("writer",
@@ -43,40 +19,34 @@ agent := llmagent.New("writer",
 )
 runs := chat.NewRuns("app", agent, sessions)
 
-// 接口：开始一次回答，把事件流式推给前端
-run, err := runs.Submit(ctx, sub.ID, req)
+// 接口中：开始一次回答，把事件流式推给前端
+run, err := runs.Submit(ctx, sub.Ref().String(), req)
 if err != nil {
     return nil, err
 }
 return chat.UIStream(run), nil
 ```
 
-回答在后台运行，页面刷新或断线后用 `chat.UIResume` 接着读；需要审批的工具调用先暂停，等用户批准。
-
-`Submit` 在后台开始一次运行就返回，回答的内容通过 `UIStream` 以 Vercel AI SDK 的协议推给前端。即使用户刷新了页面，生成过程也照常继续，用 `UIResume` 就能接着读到剩余的内容。下面先准备数据表，再逐步介绍装配、对话接口和审批。
+`Submit` 在后台开始运行后立即返回。请求结束、页面刷新或断线后运行照常继续。
 
 <a id="preparing-tables"></a>
-## 准备数据表
+## 发布迁移
 
-对话的消息保存在数据库中，模型每次回答时都会读出完整的历史。先[发布](../database/migrations.md#publishing-framework-migrations)这些表的迁移：
+对话保存在 `agent_` 开头的表中，表结构与 trpc-agent-go 的 PostgreSQL 会话存储一致。[发布](../database/migrations.md#publishing-framework-migrations)迁移：
 
 ```go
-migrationCmd.AddCommand(migratecmd.Publish(
-    chat.Migrations(),
-))
+migrationCmd.AddCommand(migratecmd.Publish(chat.Migrations()))
 ```
 
-这些表的名称都以 `agent_` 开头，表结构与 trpc-agent-go 的 PostgreSQL 会话存储完全一致，框架的测试会在每次升级 trpc-agent-go 时检查这一点。
-
 <a id="assembling"></a>
-## 装配
+## 装配 `chat.Runs`
 
-助手由三部分组成：模型、带工具的 agent，以及运行它的 `chat.Runs`。在入口打开共用资源的地方创建它们：
+在入口打开共用资源的地方创建，`db` 是入口打开的 `*bun.DB`，`stack` 是清理资源的栈：
 
 ```go
-chat.SetLogger(slog.Default())
+chat.SetLogger(slog.Default()) // trpc-agent-go 的日志带 component=ai
 
-sessions, err := chat.NewSessions(db)
+sessions, err := chat.NewSessions(db) // 使用应用的连接池
 if err != nil {
     return nil, err
 }
@@ -97,12 +67,9 @@ stack.MustAdd("ai", func(ctx context.Context) error {
 })
 ```
 
-- `chat.SetLogger` 让 trpc-agent-go 的日志写进应用的日志，带 `component=ai` 字段，可以[单独设置级别](../general/logging.md#component-levels)。
-- `chat.NewSessions` 把对话保存在应用的 PostgreSQL 中，直接使用应用的连接池，连接池由应用自己关闭。
-- `chat.RequireApproval` 列出需要审批的工具，见[审批](#approval)。
-- `runs.Shutdown` 让进程停止时进行中的回答说完，见[部署](chat-advanced.md#deployment)；`runs.Close` 取消剩下的运行并关闭 runner。它们登记在数据库之后，所以会先于数据库关闭。
+登记在数据库之后，先于数据库关闭。`chat.RequireApproval` 见[审批](#approval)，`Shutdown` 见[部署](#deployment)。
 
-工具是普通的 Go 函数，用 trpc-agent-go 的 `function.NewFunctionTool` 包装，参数和返回值按 JSON 编码，字段说明会告诉模型如何使用它：
+工具是用 `function.NewFunctionTool` 包装的 Go 函数，参数和返回值按 JSON 编码，`jsonschema` 中的说明交给模型：
 
 ```go
 type SearchArgs struct {
@@ -117,41 +84,26 @@ func SearchTool(search *article.Search) tool.CallableTool {
 ```
 
 <a id="configuring-models"></a>
-### 配置模型
+### 配置模型：`ai.ModelConfig`
 
-`ai.ModelConfig` 描述 OpenAI 兼容接口上的一个模型，DeepSeek、通义千问、Kimi、OpenAI 等都提供这种接口。它只是一个普通的结构体，`chat.NewModel` 按传进来的值创建模型，不关心这些值从哪里来。
-
-模型固定时，把它加进应用配置：
-
-```go
-type Config struct {
-    // ...
-    AI ai.ModelConfig `yaml:"ai"`
-}
-```
+`ai.ModelConfig` 是 OpenAI 兼容接口（DeepSeek、通义千问、Kimi、OpenAI 等）上的一个模型，放进应用配置：
 
 ```yaml
 ai:
   model: deepseek-chat
   base_url: https://api.deepseek.com
   api_key: ${DEEPSEEK_API_KEY}
-  max_retries: 2 # 可省略，默认就是 2；-1 表示不重试
+  max_retries: 2 # 默认 2；-1 不重试
 ```
 
-模型请求和普通的 HTTP 请求一样，遇到暂时的失败会重试几次，仍然失败就直接返回错误：
+连接失败、`408`、`409`、`429` 和 `5xx` 时按 `Retry-After` 或指数退避（0.5 秒起，最长 8 秒）重试，用完后对话以 `error` 事件结束。模型开始流式返回后出错不重试。
 
-- 连接失败、`408`、`409`、`429` 和 `5xx` 时重试。服务端给出 `Retry-After`（1 分钟以内）就按它等待，否则指数退避：0.5 秒起，每次翻倍，最长 8 秒。
-- 重试用完后返回错误。对话中，这次回答以 `error` 事件结束，用户可以重新发送；在[队列](../background/queue.md)任务中调用模型时，失败由任务的重试策略接着处理。
-- 模型已经开始流式返回内容后出错时直接结束：已经推给用户的半段回答无法撤回，这次回答以错误结束。
-
-`max_retries` 同样作用于[图片、语音和向量](chat-advanced.md#media)的请求。
-
-如果模型由管理员在后台维护，或者让用户在对话中挑选，就不在启动时固定模型，改用 `llmagent.WithModelSelector`。它在每次调用模型之前执行，从应用自己的数据中查出这一次使用的模型：
+模型由管理员维护或由用户挑选时，用 `llmagent.WithModelSelector` 在每次调用模型前查出配置。`chat.NewModel` 不访问网络、共用连接池，每次创建没有额外开销：
 
 ```go
 agent := llmagent.New("writer",
     llmagent.WithModelSelector(func(ctx context.Context, inv *agent.Invocation) (model.Model, error) {
-        p, err := settings.WriterModel(ctx, inv.Session.UserID) // 应用自己的表和规则
+        p, err := settings.WriterModel(ctx, inv.Session.UserID) // 应用自己的表
         if err != nil {
             return nil, err
         }
@@ -161,38 +113,25 @@ agent := llmagent.New("writer",
 )
 ```
 
-`chat.NewModel` 不访问网络，各模型共用进程的 HTTP 连接池，每次调用时创建也没有额外开销。后台修改后，下一次调用模型就使用新的配置；审批后继续和插话后补跑的那一轮同样经过这里。
-
-Claude、Gemini 等其他接口的模型直接使用 trpc-agent-go 的对应包创建，`ai/chat` 的其余部分保持原样。
+Claude、Gemini 等其他接口的模型用 trpc-agent-go 的对应包创建。
 
 <a id="conversation-api"></a>
 ## 对话接口
 
-助手的接口使用 [Vercel AI SDK](https://ai-sdk.dev) 的 [UI 消息流协议](https://ai-sdk.dev/docs/ai-sdk-ui/stream-protocol)，前端直接使用它的 `useChat`（React、Vue、Svelte 都有），流式显示、工具调用、审批和断线续传都现成可用。
-
-每个对话用一个 ID 标识，由 `useChat` 生成。对话属于当前登录的编辑，`Runs` 的方法都以主体 ID 和对话 ID 定位它，一个编辑无法读取其他人的对话。
-
-服务端提供五个接口，各接口的请求和响应见[客户端协议](../http/protocol.md#ai-chat)：
+一个对话有五个接口，请求和响应见[客户端协议](../http/protocol.md#ai-chat)。`h.runs` 是装配好的 `*chat.Runs`，对话 ID 由前端生成：
 
 ```go
-type ChatInput struct {
-    Body chat.UIRequest
-}
-
+type ChatInput struct{ Body chat.UIRequest }
 type ConversationInput struct {
     ID string `path:"id"`
 }
-
 type SteerInput struct {
     ID   string `path:"id"`
     Body struct {
         Text string `json:"text" minLength:"1" maxLength:"4000"`
     }
 }
-
-type HistoryOutput struct {
-    Body []chat.UIMessage
-}
+type HistoryOutput struct{ Body []chat.UIMessage }
 
 // POST /assistant/chat：发送消息或审批结果，响应是这次回答的消息流。
 func (h *Handlers) Chat(ctx context.Context, in *ChatInput) (*huma.StreamResponse, error) {
@@ -204,7 +143,7 @@ func (h *Handlers) Chat(ctx context.Context, in *ChatInput) (*huma.StreamRespons
     return chat.UIStream(run), nil
 }
 
-// GET /assistant/chat/{id}/stream：断线后接上进行中的回答。
+// GET /assistant/chat/{id}/stream：断线后接上进行中的回答，没有时返回 204。
 func (h *Handlers) Resume(ctx context.Context, in *ConversationInput) (*huma.StreamResponse, error) {
     sub, _ := identity.FromContext(ctx)
     run, err := h.runs.Get(ctx, sub.Ref().String(), in.ID)
@@ -225,13 +164,13 @@ func (h *Handlers) Stop(ctx context.Context, in *ConversationInput) (*struct{}, 
     sub, _ := identity.FromContext(ctx)
     run, err := h.runs.Get(ctx, sub.Ref().String(), in.ID)
     if err != nil || run == nil {
-        return nil, err // 没有进行中的回答时直接返回
+        return nil, err
     }
     run.Cancel()
     return nil, nil
 }
 
-// GET /assistant/chat/{id}/messages：打开页面时加载对话历史。
+// GET /assistant/chat/{id}/messages：打开页面时加载历史。
 func (h *Handlers) History(ctx context.Context, in *ConversationInput) (*HistoryOutput, error) {
     sub, _ := identity.FromContext(ctx)
     messages, err := h.runs.UIMessages(ctx, sub.Ref().String(), in.ID)
@@ -239,274 +178,329 @@ func (h *Handlers) History(ctx context.Context, in *ConversationInput) (*History
 }
 ```
 
-`Runs` 的 `userID` 传 `sub.Ref().String()`，例如 `user:42`：只传 `sub.ID` 时，不同账号体系中 ID 相同的两个人会共用对话。
+- `userID` 传 `sub.Ref().String()`（例如 `user:42`）：只传 `sub.ID` 时，不同账号体系中 ID 相同的两个人会共用对话。
+- 流式接口用 `rest.RegisterSSE(api, op, chat.UIEvents, h.Chat)` 注册。
+- 运行独立于请求和 [`httpx.Timeout`](../http/middleware.md#request-timeout)，助手的路由和其他 API 用同一组中间件。
 
-两个流式接口用 `rest.RegisterSSE` 注册，`chat.UIEvents` 描述消息流，用于生成 OpenAPI 文档：
+<a id="errors"></a>
+### 错误码
 
-```go
-rest.RegisterSSE(api, op, chat.UIEvents, h.Chat)
-```
-
-前端按这些接口配置 `useChat`：
-
-```tsx
-import { chatControls, chatTransport } from "@go-tenon/client";
-import { session } from "./client"; // createSession 创建的会话，见客户端代码
-
-const authed = session.fetch(fetch); // 同源发送会话 cookie，401 时会话变为未登录
-const chat = chatControls('/api/v1/assistant/chat', authed);
-
-const { messages, sendMessage, addToolApprovalResponse } = useChat({
-  id: conversationId,
-  messages: initialMessages, // await chat.messages(conversationId)
-  resume: true,
-  // 历史保存在服务端，chatTransport 只发送最后一条消息；响应不是 2xx 时抛出 HttpError，describeError 可以描述它
-  transport: new DefaultChatTransport(chatTransport('/api/v1/assistant/chat', authed)),
-  sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
-});
-```
-
-React 前端可以直接用 `@go-tenon/ui/chat` 的 [`useAssistantChat`](../frontend/features.md#ai-chat)，它按上面的方式配置好 `useChat`，还处理了插话和停止。
-
-`Runs.Submit` 在后台开始一次运行后立即返回，运行独立于请求，请求结束后照常继续。它也独立于 [`httpx.Timeout`](../http/middleware.md#request-timeout)，助手的路由和其他 API 装在同一组中间件下即可。对话正在回答时再次提交，`Submit` 返回 `chat.ErrBusy`（`409`）。
+| 错误 | 响应 | 出现时机 |
+| --- | --- | --- |
+| `chat.ErrBusy` | `409 ai.busy` | 对话正在回答时 `Submit`、`Start`、`Append`；新消息改用[插话](#steering) |
+| `chat.ErrAwaitingApproval` | `409 ai.awaiting_approval` | 有等待[审批](#approval)的调用时发送新消息 |
+| `chat.ErrFinished` | `409 ai.finished` | 插话时回答已经结束，客户端改为发送新消息 |
+| `chat.ErrNotPending` | `404 ai.not_pending` | 审批的调用不存在或已经处理过 |
+| `chat.ErrBadRequest` | `422 ai.bad_request` | 请求体不合法，例如文件的 `url` 写法不支持 |
+| `chat.ErrShuttingDown` | `503 ai.shutting_down` | 本实例正在停止 |
+| `chat.ErrNoWorker` | `503 ai.no_worker` | 使用 `RunOnWorkers` 时没有 worker |
 
 <a id="files"></a>
 ### 发送图片和文件
 
-`useChat` 的 `sendMessage` 可以带上文件，`Submit` 把它们和文字一起交给模型，模型直接看到图片、听到音频、读到 PDF。使用 `@go-tenon/ui/chat` 时，`send(text, files)` 在发送前检查文件的类型和大小，`useAssistantComposer` 管理输入框中待发送的附件，见[附件](../frontend/features.md#chat-attachments)。直接使用 `useChat` 时：
+`Submit` 把 `useChat` 发来的文件片段按 `mediaType` 交给模型：`image/*` 是图片，`audio/*` 是音频（Chat Completions 只接受 wav 和 mp3 的内容），`video/*` 只给模型一句省略了视频的说明，其他（例如 PDF）是文件。模型不支持时模型服务通常返回错误。
 
-```tsx
-<form onSubmit={(e) => {
-  e.preventDefault();
-  sendMessage({ text, files }); // files 是 <input type="file" multiple> 的 FileList
-}}>
-```
+文件片段的 `url` 有两种写法，其他写法和缺少 `mediaType` 返回 `422`：
 
-`useChat` 把每个文件变成一个文件片段（`{"type": "file", "mediaType": "image/png", "filename": "cat.png", "url": "data:…"}`），`Submit` 按 `mediaType` 转换：
-
-| `mediaType` | 交给模型的内容 |
-| --- | --- |
-| `image/*` | 图片 |
-| `audio/*` | 音频；Chat Completions 接口只接受 wav 和 mp3 的文件内容，不接受链接 |
-| `video/*` | 视频；Chat Completions 接口不支持，模型只看到一句说明，说明省略了视频 |
-| 其他，例如 `application/pdf` | 文件 |
-
-模型能否理解这些内容取决于模型本身：给不支持图片的模型发图片，模型服务通常会返回错误。消息可以只有文件、没有文字。
-
-文件片段的 `url` 有两种写法：
-
-- **data URL**：`useChat` 发送 `FileList` 时的默认做法，文件内容在请求体中，比文件大约三分之一。默认的[请求体上限](../http/requests.md#body-size)是 1 MiB，要按允许的文件大小放宽，`@go-tenon/ui/chat` 的默认限制对应 8 MiB：
+- **data URL**：`useChat` 的默认做法，比文件大约三分之一，随对话保存。默认的[请求体上限](../http/requests.md#body-size)是 1 MiB，`useAssistantChat` 的默认限制要求放宽到 8 MiB：
 
   ```yaml
   http:
     body_limit:
-      max_bytes: 8388608 # 8 MiB
+      max_bytes: 8388608
   ```
 
-  文件内容也随对话一起保存在对话存储中，页面打开时 `UIMessages` 原样返回。
-- **http(s) 链接**：文件先[上传](../libraries/filesystem.md)到 S3 等处，消息中只放链接。链接原样交给模型服务，由模型服务下载，所以它必须能从公网访问，例如有效期足够长的签名地址；应用的服务端不访问它。适合较大的文件，请求体和对话存储都保持精简。
+- **http(s) 链接**：文件先[上传](../libraries/filesystem.md)，消息中放签名地址。链接由模型服务下载，必须能从公网访问。
 
-其他写法（例如 `blob:`）和缺少 `mediaType` 的文件返回 `422`。不使用 `useChat` 时，自己构造带 `ContentParts` 的 `model.Message` 交给 `Runs.Start`，例如用 `msg.AddImageData(data, "auto", "png")`。
+在代码中发送时，把带 `ContentParts` 的 `model.Message` 交给 `Runs.Start`，例如 `msg.AddImageData(data, "auto", "png")`。
 
 <a id="attachments-in-tools"></a>
-#### 在工具中使用附件
+#### 在工具中使用附件：`chat.FindAttachment`
 
-模型能看到图片，但调用工具时只能传 JSON 参数，传不了图片本身。用户发来一张照片问“有没有类似的商品”，工具要拿到这张照片才能[以图搜图](vector.md#image-queries)。
-
-为此，`Runs` 在用户消息的每个附件前面写上 `[attachment 3f2a9c1e7b04]`，模型调用工具时把这个 ID 作为参数传入，工具用 `chat.FindAttachment` 取出附件：
+`Runs` 在用户消息的每个附件前写上 `[attachment 3f2a9c1e7b04]`。模型调用工具时传这个 ID，工具用 `chat.FindAttachment` 取出附件，例如[以图搜图](vector.md#image-queries)：
 
 ```go
 type SimilarArgs struct {
-    AttachmentID string `json:"attachment_id" jsonschema:"description=用户发送的图片，消息中 [attachment …] 里的 ID"`
+    AttachmentID string `json:"attachment_id" jsonschema:"description=消息中 [attachment …] 里的 ID"`
 }
 
 func NewSimilarProducts(vectors *vector.Store) tool.Tool {
     return function.NewFunctionTool(func(ctx context.Context, args SimilarArgs) ([]product.Summary, error) {
         a, err := chat.FindAttachment(ctx, args.AttachmentID)
         if err != nil {
-            return nil, err // 错误交给模型
+            return nil, err // ErrAttachmentNotFound 交给模型，模型可以改正 ID
         }
-        hits, err := product.Products.Search(ctx, vectors, vector.Query{
-            Input:      vector.Content{vector.MediaPart(a.Media)},
-            GroupByKey: true,
-        })
-        // ……
+        // 用 a.Media 检索；以链接发送的附件没有内容，a.URL 是它的地址
     }, function.WithName("similar_products"), function.WithDescription("按用户发送的图片查找相似的商品"))
 }
 ```
 
-- ID 由附件的内容计算，同一个附件在对话中始终是同一个 ID，之前几轮发送的附件也能找到。`chat.Attachments(ctx)` 列出对话中所有的附件。
-- 标签只给模型看：`UIMessages` 返回的历史中没有它，调用方传入的消息也不会被修改。`Start`、`Submit`、`Send`、`Steer`、`Append` 收到的消息，以及 `UseHistory` 读出的历史，都会加上标签，应用自己保存的消息不用处理。
-- 以链接发送的附件没有内容，`Attachment.URL` 是它的地址。
-- ID 不存在时返回 `chat.ErrAttachmentNotFound`，错误作为工具的结果交给模型，模型可以据此改正 ID。工具收到的 ID 带着 `[attachment …]` 外壳时也能找到。
+ID 由附件内容计算，之前几轮的附件也能找到，`chat.Attachments(ctx)` 列出全部。标签只给模型看，`UIMessages` 的历史中没有它。
 
 <a id="stopping"></a>
 ### 停止回答
 
-用户点击「停止」时，前端调用停止接口：
-
-```tsx
-const { status } = useChat({ /* 同上 */ });
-
-async function stopAnswer() {
-  await chat.stop(conversationId);
-}
-
-{(status === 'submitted' || status === 'streaming') && <button onClick={stopAnswer}>停止</button>}
-```
-
-`stop()` 只断开浏览器的连接。回答在服务端后台运行，连接断开后照常继续：模型继续生成、继续调用工具、继续消耗 token，刷新页面后回答又接着出现。停止接口在服务端取消这次运行，消息流以 `abort` 结束，`useChat` 随之自动回到空闲状态。
-
-停止之后：
-
-- 已经生成的内容保留在对话中，用户可以接着发消息；
-- 模型的请求和正在执行的工具收到取消的 `ctx`，工具应当把它传给数据库查询和外部调用，才能尽快停下；已经完成的工具调用（例如已经发出的邮件）保持生效；
-- 部署了[多个实例](chat-advanced.md#multiple-instances)时，停止请求落在哪个实例上都可以，`Cancel` 转发给运行所在的实例，立即生效；
-- 回答已经结束时调用停止接口直接返回，前端可以随时调用。
+客户端断开连接不会停止回答，停止接口调用 `Run.Cancel`，消息流以 `abort` 结束。已生成的内容保留在对话中；模型请求和工具收到取消的 `ctx`，工具要把它传给数据库和外部调用才能尽快停下，已经完成的工具调用保持生效。
 
 <a id="steering"></a>
-### 中途插话
+### 中途插话：`Runs.Steer`
 
-回答进行中，`useChat` 的 `sendMessage` 会等这次回答结束后才发送。要让模型在回答过程中就看到新消息，前端改为调用插话接口：
-
-```ts
-import { describeError } from "@go-tenon/client";
-
-try {
-  await chat.steer(conversationId, text);
-} catch (err) {
-  // 回答已经结束：作为新消息发送
-  if (describeError(err).code === "ai.finished") sendMessage({ text });
-  else throw err;
-}
-```
-
-- 模型正在调用工具时，消息在这批工具调用结束后、模型下一次思考之前进入对话。模型会同时看到工具的结果和这条新消息。
-- 模型已经在给出最终回答时，它先答完，然后接着回答这条消息。
-
-两种情况下，消息都完整送达，模型照常完成当前的步骤。消息进入对话时，回答中出现一个数据片段 `data-steering`（`data` 是 `{"text": "…"}`），`useChat` 把它作为回答的一个 part，前端把它显示为一条用户消息，历史中也是如此。对话没有在回答时（包括请求到达时回答恰好结束），`Runs.Steer` 返回 `chat.ErrFinished`，客户端得到 `409`，错误码 `ai.finished`，前端改用 `sendMessage`。部署了多个实例时，从其他实例插话的结果相同。
+`Runs.Steer` 把消息送进进行中的回答，模型照常完成当前步骤：正在调用工具时，消息在这批调用结束后进入对话；正在给出最终回答时，先答完再回答它。消息进入对话时消息流中出现 `data-steering` 片段。回答已经结束时返回 `chat.ErrFinished`，前端改为发送新消息。
 
 <a id="reconnecting"></a>
 ### 断线重连
 
-`useChat` 设置了 `resume: true` 时，页面打开和网络恢复后会请求 `GET {api}/{id}/stream`。回答还在进行时，`chat.UIResume` 从头重放它，`useChat` 用重放的内容重建这条回答；没有进行中的回答时返回 `204`。
-
-已经完成的内容由 `Runs.UIMessages` 从对话存储中读出，作为 `useChat` 的初始消息。
+`useChat` 设置 `resume: true` 时，页面打开和网络恢复后请求恢复接口，`chat.UIResume` 从头重放进行中的回答。运行结束后保留 1 分钟供重连读取，用 `chat.KeepFinished` 修改。已完成的内容由 `Runs.UIMessages` 读出。
 
 <a id="approval"></a>
-## 审批
+## 审批工具调用：`chat.RequireApproval`
 
-`chat.RequireApproval` 列出的工具，模型调用时先等待审批。运行在其他工具执行完后停下，消息流为每个调用发出 `tool-approval-request`，`useChat` 中这个工具片段的状态变为 `approval-requested`，前端显示确认按钮：
+退款、发布这类操作，用 `chat.RequireApproval(tools...)` 要求模型调用后先由人确认；工具由 [`AgentFor`](#choosing-agents) 按对话提供时用 `chat.RequireApprovalOf(names...)` 按名称列出。
 
-```tsx
-{part.state === 'approval-requested' && (
-  <>
-    <button onClick={() => addToolApprovalResponse({ id: part.approval.id, approved: true })}>发布</button>
-    <button onClick={() => addToolApprovalResponse({ id: part.approval.id, approved: false, reason: '暂不发布' })}>取消</button>
-  </>
-)}
-```
+- 运行在其他工具执行完后停下，消息流为每个调用发出 `tool-approval-request`，前端用 [`useAssistantChat`](../frontend/features.md#ai-chat) 的 `pending` 和 `respond` 显示和提交。
+- 审批结果发给 `POST /assistant/chat`，`Submit` 执行批准的调用，把拒绝的理由告诉模型，全部有了决定后对话继续；还有调用未决定时 `Submit` 返回 `nil`，`UIStream` 推送一个空的回答。
+- 待审批的调用保存在对话中，几小时后、在任何实例上都能审批。不用 `useChat` 时用 `Runs.Pending`、`Runs.Approve`、`Runs.Reject`。
+- 等待审批期间发送新消息返回 `chat.ErrAwaitingApproval`：模型要先得到调用结果。
 
-所有调用都有了决定后，`useChat` 自动把它们提交给 `POST /assistant/chat`。`Runs.Submit` 对批准的调用执行工具，对拒绝的调用把理由告诉模型，然后对话继续运行，新的回答接在同一条消息后面。
+<a id="choosing-agents"></a>
+## 按对话选择 agent：`chat.AgentFor`
 
-待审批的调用保存在对话中，所以审批可以在任何时候、在任何一个实例上进行。页面重新打开时，`Runs.UIMessages` 返回的历史中这些调用仍然处于 `approval-requested` 状态。不使用 `useChat` 时，用 `Runs.Pending` 读出它们，用 `Runs.Approve` 和 `Runs.Reject` 逐个处理。
-
-对话等待审批期间，`Submit` 返回 `chat.ErrAwaitingApproval`（`409`），因为模型要先得到调用结果，才能回答新问题。等待审批前已经插入、还没有进入对话的消息，在审批之后的运行中送达。
-
-<a id="troubleshooting"></a>
-## 常见问题
-
-**提交消息时返回 409，`chat.ErrBusy`**
-
-这个对话正在回答中。等回答结束再提交，或者用[中途插话](#steering)把消息插进当前的回答。
-
-**插话时返回 `409 ai.finished`**
-
-对话没有在回答，包括请求到达时回答恰好结束。客户端改为普通地提交这条消息。
-
-**对话一直停着，提交新消息返回 `chat.ErrAwaitingApproval`**
-
-模型调用了需要审批的工具，在等人确认。先批准或拒绝，见[审批](#approval)。
-
-**刷新页面后，回答从头开始显示，或者没有继续**
-
-回答在后台运行，重新连接后会接着收到剩余的内容。检查前端是否按[断线重连](#reconnecting)的方式恢复对话。
-
-**模型调用失败，提示认证错误**
-
-模型服务商的 API Key 或地址配置不对，见[配置模型](#configuring-models)。
-
-<a id="api-reference"></a>
-## API 参考
-
-包 `github.com/go-tenon/tenon/ai/chat`。
-
-### NewRuns
+每个对话由不同的 agent 负责时（例如每个「AI 员工」有自己的模型、指令和工具），`NewRuns` 的 agent 传 `nil`，用 `chat.AgentFor` 选出：
 
 ```go
-func NewRuns(app string, ag agent.Agent, sessions session.Service, opts ...Option) *Runs
-func RequireApproval(tools ...tool.CallableTool) Option
-func RequireApprovalOf(names ...string) Option
-func Cluster(hub *broadcast.Hub, locker *lock.Locker) Option
-func RunOnWorkers() Option
-func AgentFor(choose func(ctx context.Context, c Conversation) (agent.Agent, error)) Option
-func UseHistory(store HistoryStore) Option
-func KeepFinished(d time.Duration) Option
-func WithLogger(l *slog.Logger) Option
-func RunnerOptions(opts ...runner.Option) Option
+runs := chat.NewRuns("app", nil, sessions,
+    chat.AgentFor(func(ctx context.Context, c chat.Conversation) (agent.Agent, error) {
+        emp, err := employees.ForConversation(ctx, c.ID) // 应用自己的表
+        if err != nil {
+            return nil, err
+        }
+        return llmagent.New(emp.AgentName,
+            llmagent.WithModel(chat.NewModel(emp.Model)),
+            llmagent.WithInstruction(emp.Instruction),
+            llmagent.WithTools(emp.Tools()),
+        ), nil
+    }),
+    chat.RequireApprovalOf("refund_order"),
+)
 ```
 
-- `RequireApproval` 列出需要审批的工具；`RequireApprovalOf` 按名称列出，用于工具由 `AgentFor` 按对话提供的情况。
-- `Cluster` 让多个实例共同承担对话，见[多个实例](chat-advanced.md#multiple-instances)；`RunOnWorkers` 把运行交给 worker 进程，见[在 worker 上运行](chat-advanced.md#running-on-workers)。
-- `AgentFor` 按对话选择 agent，见[按对话选择 agent](chat-advanced.md#choosing-agents)；`UseHistory` 使用应用自己的消息表，见[使用应用自己的消息表](chat-advanced.md#own-history)。
-- `KeepFinished` 设置运行结束后保留的时间，期间重连的客户端仍能取得剩余的事件；`WithLogger` 设置记录运行错误的日志，默认是 `slog.Default()`。
-- `RunnerOptions` 把选项原样传给 trpc-agent-go 的 `runner.NewRunner`，例如 `runner.WithMemoryService` 接入长期记忆。
+- 每一轮请求模型之前调用，修改配置后下一轮生效；返回错误时这一轮以 `error` 事件结束。
+- 同一个员工的 agent 名称保持不变：trpc-agent-go 把其他名称的 agent 的回答当作其他参与者的话。
+- 只有模型不同时用 [`llmagent.WithModelSelector`](#configuring-models)。
 
-### Runs
+<a id="appending-messages"></a>
+## 加入其他消息：`Runs.Append`
+
+人写的回复、系统通知、其他渠道的消息，用 `Runs.Append` 写进对话，模型之后能看到：
 
 ```go
-func (rs *Runs) Submit(ctx context.Context, userID string, req UIRequest, opts ...agent.RunOption) (*Run, error)
-func (rs *Runs) Start(ctx context.Context, userID, sessionID string, msg model.Message, opts ...agent.RunOption) (*Run, error)
-func (rs *Runs) Send(ctx context.Context, userID, sessionID string, msg model.Message, opts ...agent.RunOption) (*Run, error)
-func (rs *Runs) Steer(ctx context.Context, userID, sessionID string, msg model.Message) error
-func (rs *Runs) Get(ctx context.Context, userID, sessionID string) (*Run, error)
-func (rs *Runs) Pending(ctx context.Context, userID, sessionID string) ([]ToolCall, error)
-func (rs *Runs) Approve(ctx context.Context, userID, sessionID, callID string, opts ...agent.RunOption) (*Run, error)
-func (rs *Runs) Reject(ctx context.Context, userID, sessionID, callID, reason string, opts ...agent.RunOption) (*Run, error)
-func (rs *Runs) UIMessages(ctx context.Context, userID, sessionID string) ([]UIMessage, error)
-func (rs *Runs) Shutdown(ctx context.Context) error
-func (rs *Runs) Close() error
+err := runs.Append(ctx, userID, conversationID, "staff:42", model.NewAssistantMessage("已为你补发"))
 ```
 
-| 方法 | 说明 |
-| --- | --- |
-| `Submit` | 处理前端发来的 Vercel AI SDK 请求，开始一次回答 |
-| `Start`、`Send` | 在代码中开始一次回答 |
-| `Steer` | 回答进行中插话；没有进行中的回答时返回 `ErrFinished`（`409 ai.finished`） |
-| `Get` | 进行中的回答，断线后接着读 |
-| `Pending`、`Approve`、`Reject` | 审批工具调用 |
-| `UIMessages` | 对话的历史消息，供页面显示 |
-| `Shutdown`、`Close` | 停止时等进行中的回答说完；取消剩下的 |
+- agent 用 `llmagent.WithAddContextPrefix(true)` 创建时，模型看到 `[staff:42] said:` 前缀，才知道是谁说的。
+- `UIMessages` 把它作为单独一条返回，`metadata.author` 是作者。
+- 对话正在回答时返回 `chat.ErrBusy`，有待审批的调用时返回 `chat.ErrAwaitingApproval`。
+- 对话中还没有用户消息时只能加入 `user` 消息：trpc-agent-go 丢弃第一条用户消息之前的内容。
+- 已打开的页面由应用通过[广播](../libraries/broadcasting.md)通知后重新读取历史。
 
-### 流
+<a id="own-history"></a>
+## 使用应用自己的消息表：`chat.UseHistory`
+
+群聊、客服会话的消息已经在应用的表中时，用 `chat.UseHistory` 让 `Runs` 直接读写它，`sessions` 传 `nil`：
 
 ```go
-func UIStream(run *Run) *huma.StreamResponse
-func UIResume(run *Run) *huma.StreamResponse
-func WriteUIStream(w http.ResponseWriter, r *http.Request, run *Run) error
+runs := chat.NewRuns("app", agent, nil, chat.UseHistory(chatHistory{db}))
 ```
 
-按 Vercel AI SDK 的 UI 消息流协议推送事件。
+- 每一轮之前用 `Load` 读出上下文，运行中产生的消息逐条交给 `Save`。停止、插话、审批、多实例的用法不变。
+- `UIMessages` 和 `Append` 返回 `chat.ErrNeedsSessions`，页面显示应用自己的消息。
+- 多人共享的对话 `userID` 由应用约定，例如空字符串或租户 ID；权限由应用在调用前检查。
 
-### 其他
+<a id="history-store"></a>
+### 实现 `chat.HistoryStore`
+
+`Load` 返回消息和游标（例如读到的最大序号），这一轮产生的消息交给 `Save` 时 `Entry.After` 是这个游标。`Load` 按**逻辑顺序**返回：`Save` 保存的消息排在它的 `After` 之后。模型回答期间其他人的发言因此排在回答之后，下一轮接着回应；按写入顺序时它们会被漏掉。消息表多存一列 `after_seq`：
 
 ```go
-func NewModel(cfg ai.ModelConfig, opts ...openai.Option) model.Model
-func NewSessions(db *bun.DB, opts ...tpg.ServiceOpt) (session.Service, error)
-func EraseUser(ctx context.Context, db bun.IDB, userID string) error
-func ExportUser(ctx context.Context, db bun.IDB, userID string) (any, error)
-func SetLogger(l *slog.Logger)
-func Migrations() fs.FS
+func (h chatHistory) Load(ctx context.Context, c chat.Conversation) (chat.History, error) {
+    var rows []ChatMessage
+    err := h.db.NewSelect().Model(&rows).Where("conversation_id = ?", c.ID).
+        OrderExpr("COALESCE(after_seq, seq), after_seq IS NOT NULL, seq").Scan(ctx)
+    if err != nil {
+        return chat.History{}, err
+    }
+    var out chat.History
+    var last int64
+    for _, r := range rows {
+        out.Messages = append(out.Messages, r.ModelMessage()) // 群成员的发言转为 user 消息，前加名字
+        last = max(last, r.Seq)
+    }
+    out.Cursor = strconv.FormatInt(last, 10)
+    return out, nil
+}
+
+func (h chatHistory) Save(ctx context.Context, c chat.Conversation, e chat.Entry) error {
+    row := NewChatMessage(c.ID, e.Message, e.RunID)
+    if e.After != "" {
+        after, err := strconv.ParseInt(e.After, 10, 64)
+        if err != nil {
+            return err
+        }
+        row.AfterSeq = &after
+    }
+    return h.insert(ctx, row) // 在事务中锁住会话，分配下一个 seq
+}
 ```
 
-`NewModel` 用 OpenAI 兼容接口创建模型；`NewSessions` 把对话保存在应用的 PostgreSQL 中，`EraseUser`、`ExportUser` 删除、导出一个用户的全部对话，见[注销账号](../features/privacy.md#framework-sources)和[导出个人数据](../features/privacy.md#sources)。媒体、向量、重排和决策的接口在 `ai` 包中，见[媒体](chat-advanced.md#media)和[决策](chat-advanced.md#decisions)。
+- 带工具调用的 assistant 消息和工具结果原样保存、原样返回：待审批的调用由它们算出。
+- `Load` 的最后一条是模型的回答时，这一轮不请求模型。
+
+<a id="group-chat"></a>
+### 群聊中的 AI：`Runs.Notify`
+
+群成员的发言由应用写入消息表，需要 AI 回应时（例如被 @）调用 `runs.Notify(ctx, "", conversationID)`：
+
+- AI 没有在回答时开始一次运行；正在回答时（任何实例上）记下通知，结束后再运行一轮，多次通知只多运行一轮。
+- 有待审批的调用时返回 `chat.ErrAwaitingApproval`。
+- 返回的运行用 `chat.UIStream` 推送，群成员用 `runs.Get(ctx, "", conversationID)` 接上；保存后的消息由应用[广播](../libraries/broadcasting.md)。
+
+<a id="media"></a>
+## 生成图片、语音和向量
+
+`ai` 包的五个接口各有一个方法：`ai.Imager`（生成图片）、`ai.Speaker`（合成语音）、`ai.Transcriber`（识别语音）、`ai.Embedder`（计算向量）、`ai.Reranker`（重排）。实现它们的包：`ai/openai`（OpenAI 兼容接口，各家支持的能力以厂商文档为准）、`ai/openrouter`、`ai/dashscope`（阿里云百炼，见[图片和视频向量](#image-embeddings)）。`New` 接收 `ai.ModelConfig`，不访问网络。`cfg.*` 是 `ai.ModelConfig`：
+
+```go
+img, err := openai.New(cfg.Cover).Image(ctx, ai.ImageRequest{Prompt: "封面：" + post.Title, Aspect: ai.Landscape})
+audio, err := openai.New(cfg.Voice).Speak(ctx, ai.SpeechRequest{Text: post.Body, Voice: "alloy"})
+text, err := openai.New(cfg.Dictation).Transcribe(ctx, ai.TranscriptionRequest{Audio: rec, Language: "zh"})
+
+// 一次传入多项；查询用 ai.ForQuery，文档用 ai.ForDocument（默认）
+vecs, err := openai.New(cfg.Embedding, openai.WithBatchSize(10)).Embed(ctx, ai.EmbedRequest{
+    Inputs: []ai.Content{ai.Text(post.Title), ai.Text(post.Body)},
+})
+
+// 按语义对任意类型的列表排序，取前 5 项
+posts, err = ai.RerankBy(ctx, openai.New(cfg.Rerank), ai.Text(query), posts, func(p article.Summary) ai.Content {
+    return ai.Text(p.Title)
+}, 5)
+```
+
+- `ai.Media` 是内容和 MIME 类型。`ai.Content` 是文字、图片或二者组合，模型不接受时返回 `ai.ErrUnsupportedInput`。
+- 厂商自己的参数用 `openai.WithRequestOptions` 追加；`Client.OpenAI()` 返回底层的 openai-go 客户端。
+- 重排调用 `POST {BaseURL}/rerank`（Cohere、Jina 的格式），只接受文字。
+- 保存和检索向量见[向量检索](vector.md)。生成图片和语音较慢，放进[队列](../background/queue.md)执行。
+
+<a id="image-embeddings"></a>
+### 图片和视频向量：`ai/dashscope`
+
+以文搜图、以图搜图用百炼的多模态向量模型，`BaseURL` 填兼容接口的地址：
+
+```go
+emb := dashscope.New(cfg.Embedding, dashscope.WithDimensions(1024)) // Model: qwen3-vl-embedding
+
+// 标题和主图融合为一个向量
+docs, err := emb.Embed(ctx, ai.EmbedRequest{Inputs: []ai.Content{{ai.TextPart(p.Title), ai.MediaPart(cover)}}})
+query, err := emb.Embed(ctx, ai.EmbedRequest{Inputs: []ai.Content{ai.Text("红色连衣裙")}, Purpose: ai.ForQuery})
+
+// 多模态重排（qwen3-vl-rerank）
+ranked, err := dashscope.New(cfg.Rerank).Rerank(ctx, ai.Content{ai.MediaPart(photo)}, candidates, 10)
+```
+
+- 每项是文字、图片、视频，或文字加一张图片（一段视频）；没有音频向量。超过 20 项时自动分批。
+- 文字和图片融合只有 `qwen3-vl-embedding`、`qwen2.5-vl-embedding` 支持，其他模型返回 `ai.ErrUnsupportedInput`。`qwen2.5-vl-embedding` 必须用 `dashscope.WithBatchSize(1)`。
+- 跨模态的相似度偏低（文字与视频实测 0.1～0.4），按排名取结果，不用固定阈值。
+
+<a id="decisions"></a>
+## 分类和打分：`ai.Decider`
+
+工单分给哪个团队、评论是不是垃圾信息、问题有多严重，交给决策模型，它回答定义好的问题并给出概率：
+
+| 问题 | 创建 | 回答 |
+| --- | --- | --- |
+| 是非题 | `ai.YesNo(name, instructions)`，`.Criteria(成立, 不成立)` | `Probability`；`Yes(threshold)` |
+| 选择题 | `ai.Choice(name, instructions, options...)` | `Choice`；`ProbabilityOf(value)` |
+| 打分题 | `ai.Score(name, instructions, levels...)` | `Score`；`Level()`、`Label()` |
+
+```go
+res, err := decider.Decide(ctx, ai.DecisionRequest{
+    Input: ticket, // 字符串按文本发送，结构体按 JSON 发送
+    Questions: []ai.Question{
+        ai.Choice("team", "应该由哪个团队处理？",
+            ai.ChoiceOption{Value: "billing", Description: "支付、退款和账单"},
+            ai.ChoiceOption{Value: "technical", Description: "产品故障和集成"}),
+        ai.YesNo("page", "是否需要立即通知值班人员？"),
+    },
+})
+if err != nil {
+    return err
+}
+team, page := res.Answers["team"].Choice, res.Answers["page"].Yes(0.8)
+```
+
+- 概率在不同模型之间不可比，阈值用自己的样本为每个模型确定。拒答时 `Refused` 为 true。
+- 从业务数据中选一项用 `ai.DecideBy`，概率低于阈值或拒答时返回 false。
+- `decider` 用 `openai.New`（`/decisions`）或 `systemone.New`（`/systemone`，百炼、TypeSafe）创建；`dashscope.New`、`openrouter.New` 也实现 `ai.Decider`。
+
+<a id="deployment"></a>
+## 部署
+
+- **停机**：`runs.Shutdown` 拒绝新的回答（`503 ai.shutting_down`），等进行中的回答说完，超时才取消。这段时间计入停止宽限期，见[平滑停止](../installation/deployment.md#graceful-shutdown)。多实例时浏览器重连到其他实例继续接收。
+- **后台任务**：生成摘要这类工作放进[队列](../background/queue.md)，在处理函数中调用 trpc-agent-go 的 `runner.Run`。任务至少执行一次，工具要能安全重复执行。
+
+<a id="multiple-instances"></a>
+### 多个实例：`chat.Cluster`
+
+部署多个实例时加上 `chat.Cluster`，同一个对话的请求可以落在任何实例上。`hub` 是[广播](../libraries/broadcasting.md#creating-the-hub)的 Hub，`locker` 是[原子锁](../libraries/locks.md)：
+
+```go
+runs := chat.NewRuns("app", agent, sessions, chat.RequireApproval(publish), chat.Cluster(hub, locker))
+```
+
+- 运行所在的实例持有对话的锁，每个对话同一时刻只运行一次。
+- 其他实例上的 `Runs.Get` 返回运行的镜像，`Steer` 和 `Cancel` 转发给运行所在的实例。
+- 运行所在的实例意外退出时，锁在 30 秒内过期，镜像以 `error` 事件结束。
+
+<a id="running-on-workers"></a>
+### 在 worker 中运行：`chat.RunOnWorkers`
+
+再加上 `chat.RunOnWorkers()`，回答交给 worker 进程运行，HTTP 实例部署和扩缩容不影响回答。worker 在处理[队列](../background/queue.md#running-workers)的同时调用 `runs.Serve`，`a.jobs` 返回原来的队列 worker 函数：
+
+```go
+func (a *App) Worker(d *command.Daemon) (func(context.Context) error, error) {
+    jobs, err := a.jobs(d)
+    if err != nil {
+        return nil, err
+    }
+    return func(ctx context.Context) error {
+        return command.Concurrently(ctx, jobs, a.runs.Serve)
+    }, nil
+}
+```
+
+- `Submit`、`Start`、`Notify`、`Approve`、`Reject` 把请求转交给一个 worker，返回运行的镜像，其余用法不变。
+- 请求不排队：没有 worker 在 `Serve` 时返回 `chat.ErrNoWorker`，前端稍后重试。
+- 传入 `agent.RunOption` 时返回 `chat.ErrRunOptions`，设置放在 agent 上。
+
+<a id="testing"></a>
+## 测试：`chattest` 和 `aitest`
+
+`chattest.NewModel` 按脚本回复，代替 `chat.NewModel` 测试工具调用、插话和审批；会话存储用 trpc-agent-go 的 `inmemory.NewSessionService()`：
+
+```go
+m := chattest.NewModel(
+    chattest.Calls(chattest.Call{Name: "search_articles", Args: assistant.SearchArgs{Query: "Go"}}),
+    chattest.Text("找到 3 篇相关文章"),
+)
+// m.Requests() 返回模型收到的请求
+```
+
+`ai/aitest` 中是其他能力的替身：
+
+```go
+img := aitest.NewImager()           // 每次返回 aitest.PNG
+emb := aitest.NewEmbedder(1024)     // 相同的内容得到相同的向量
+tr := aitest.NewTranscriber("你好") // 依次返回预设的文字
+dc := aitest.NewDecider()           // 是非题 0.5，选择题选第一项，打分题最低一级
+```
+
+还有 `NewSpeaker`、`NewReranker`。预设结果用完后返回错误；`Requests()` 返回收到的请求，`FailWith(err)` 让之后的请求失败。`emb.Same(a, b)` 让一段描述和一张图片得到相同的向量，用于测试以文搜图。

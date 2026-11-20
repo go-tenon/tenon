@@ -148,7 +148,7 @@ go test -race -count=1 ./...
 <a id="database-tests-in-ci"></a>
 ### 在 CI 中运行数据库测试
 
-`tenon init` 生成的 [CI](../installation/scaffolding.md#ci) 中，`check` 任务运行 `go test ./...`。用到数据库后，在 `check` 的 `env` 中设置 `POSTGRES_TEST_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable`，在测试之前加一步启动 PostgreSQL。GitHub Actions 的服务容器不能传启动参数，而队列需要逻辑复制，所以用 `docker run`：
+`tenon init` 生成的 [CI](../installation/installing.md#ci) 中，`check` 任务运行 `go test ./...`。用到数据库后，在 `check` 的 `env` 中设置 `POSTGRES_TEST_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable`，在测试之前加一步启动 PostgreSQL。GitHub Actions 的服务容器不能传启动参数，而队列需要逻辑复制，所以用 `docker run`：
 
 ```yaml
       - name: Start PostgreSQL
