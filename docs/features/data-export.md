@@ -148,7 +148,7 @@ func (a *ExportAccount) Handle(ctx context.Context, sub identity.Subject) (*expo
 
 上一次导出还没有完成时，`Start` 返回 `export.ErrInProgress`（`409 privacy.export_in_progress`），防止用户反复点击，生成一堆压缩包。导出的是用户在所有租户中的数据，所以在另一个租户中发起也算同一个用户。
 
-导出的文件包含他的全部个人信息，接口应当要求刚刚[确认过身份](../security/login-security.md#confirming)，和注销一样加上 `rest.Confirmed`。
+导出的文件包含他的全部个人信息，接口应当要求刚刚[确认过身份](../security/login.md#confirming)，和注销一样加上 `rest.Confirmed`。
 
 <a id="processing"></a>
 ## 处理导出

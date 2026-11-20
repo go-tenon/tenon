@@ -1,73 +1,16 @@
 # OAuth 授权服务器
 
-[MCP 服务](../ai/mcp.md)可以用[个人访问令牌](api-tokens.md#personal-access-tokens)连接 Claude Code、Cursor，它们允许填写请求头。claude.ai（网页、桌面、手机）和 ChatGPT 的远程连接器走 MCP 规定的 OAuth 流程：用户在浏览器中登录你的应用，在同意页上点“允许”，客户端拿到令牌。`oauthserver` 是这个流程中的授权服务器。
+`oauthserver` 是 OAuth 2.1 授权服务器，用授权码 + PKCE 做两件事：claude.ai、ChatGPT 这类第三方应用在用户同意后代表用户调用 [MCP 服务](../ai/mcp.md)；应用自己的桌面端、App 在系统浏览器中登录。
 
-- 遵循 OAuth 2.1 和 [MCP 授权规范](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization)：授权码 + PKCE S256，授权服务器元数据（RFC 8414），授权响应带 `iss`（RFC 9207），令牌绑定资源（RFC 8707）。
-- 客户端即来即用：claude.ai、ChatGPT 的 client_id 是一个 https 地址，授权时从这个地址取回客户端的名称和回调地址（Client ID Metadata Document）。
-- 令牌是 [`apitoken`](api-tokens.md) 的 OAuth 令牌：只能用于授权时的 MCP 服务，权限是用户本人的权限与同意的范围的交集，按使用滑动过期，出现在用户的令牌列表中，可以随时撤销。
+包：`oauthserver`。
 
-同一个授权服务器也负责应用**自己的**桌面端和 App 的登录：用户在系统浏览器中登录，客户端拿到与密码登录相同的登录 token，见[应用自己的客户端](#first-party-clients)。
+- 遵循 OAuth 2.1 和 [MCP 授权规范](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization)：PKCE S256、授权服务器元数据（RFC 8414）、授权响应带 `iss`（RFC 9207）、令牌绑定资源（RFC 8707）。只支持公开客户端，不发刷新令牌。
+- 同意页是应用前端中的一个页面，以当前登录的身份调用 `Register` 注册的接口，所以能授权的是这些接口接受的账号体系。
 
-同意页是应用[前端](../frontend/README.md)中的一个页面：授权端点校验请求后跳到同意页，同意页以当前登录的身份调用两个接口，读取请求、提交用户的选择。所以能授权的是这两个接口接受的账号体系。例子中授权的是编辑：他们在编辑后台登录，在 Claude 中查找和发布文章。
-
-**OAuth** 是一种授权协议：第三方应用（这里是 claude.ai 这类 AI 客户端）把用户带到你的网站，用户登录并点“允许”后，第三方拿到一个只能做有限的事、可以随时撤销的令牌，而不需要知道用户的密码。
-
-阅读前需要了解：[API 令牌](api-tokens.md)；[MCP 服务](../ai/mcp.md)。
-
-- [示例用法](#example-usage)
-- [安装](#installation)
-- [装配](#assembling)
-    - [范围](#scopes)
-    - [挂到 MCP 服务](#mcp)
-- [授权流程](#flow)
-- [客户端](#clients)
-    - [动态客户端注册](#dynamic-registration)
-- [令牌](#tokens)
-- [应用自己的客户端](#first-party-clients)
-- [同意页](#consent-page)
-- [部署](#deployment)
-    - [部署在路径之下](#path-prefix)
-- [测试](#testing)
-- [常见问题](#troubleshooting)
-- [API 参考](#api-reference)
+能填写请求头的客户端（Claude Code、Cursor）也可以用[个人访问令牌](api-tokens.md#personal-access-tokens)连接 MCP 服务。
 
 <a id="example-usage"></a>
-## 示例用法
-
-下面创建授权服务器，注册它的端点和同意页需要的接口：
-
-```go
-oauth := oauthserver.New(db, tokens, oauthserver.Options{
-    Issuer:     "https://example.com",
-    Resources:  []string{"https://example.com/mcp"},
-    Scopes:     []oauthserver.Scope{{Name: "articles:read", Description: "查看文章"}},
-    ConsentURL: "/oauth/consent",
-})
-router.Handle(oauth.MetadataPath(), oauth.Metadata())
-oauth.Routes(router)                                    // 授权、令牌端点
-oauth.Register(api, rest.RequireToken(api, tokens.Validate)) // 同意页调用的接口
-```
-
-之后，在 claude.ai 中添加你的 MCP 服务时，用户会被带到你的应用登录，在同意页上点“允许”，claude.ai 就拿到了一个只能访问 MCP 服务的令牌。
-
-<a id="installation"></a>
-## 安装
-
-授权码保存在 `oauth_codes` 表中，令牌保存在 `apitoken` 的表中。把 `oauthserver` 的迁移加入[发布命令](../database/migrations.md#publishing-framework-migrations)，发布后执行 `migrate up`（`apitoken` 的 OAuth 令牌需要它的第二个迁移）：
-
-```go
-migratecmd.Publish(
-    apitoken.Migrations(),
-    oauthserver.Migrations(),
-)
-```
-
-<a id="assembling"></a>
-## 装配
-
-串起来看：发布迁移 → 启动时准备好 `apitoken.Store` → 在入口创建一次 `oauthserver.Server` 并挂路由 → 授权 / 令牌 / 同意页请求走这些端点。
-
-创建授权服务器，端点挂在应用的根上，同意页的两个接口注册在编辑后台的 API 上：
+## 示例
 
 ```go
 oauth := oauthserver.New(a.db, tokens, oauthserver.Options{
@@ -77,243 +20,166 @@ oauth := oauthserver.New(a.db, tokens, oauthserver.Options{
         {Name: "articles:read", Description: "查看文章"},
         {Name: "articles:write", Description: "撰写和发布文章"},
     },
-    ConsentURL: "/oauth/consent", // 编辑后台单页应用中的同意页
+    ConsentURL: "/oauth/consent", // 前端中的同意页
 })
-router.Handle(oauth.MetadataPath(), oauth.Metadata())
-oauth.Routes(router)
-oauth.Register(api, rest.RequireToken(api, tokens.Validate)) // 同意页的接口用编辑的会话 cookie 认证
+router.Handle(oauth.MetadataPath(), oauth.Metadata())       // /.well-known/oauth-authorization-server
+oauth.Routes(router)                                         // 授权、令牌、撤销端点
+oauth.Register(api, rest.RequireToken(api, tokens.Validate)) // 同意页调用的接口
 ```
+
+`a.db` 是入口打开的 `*bun.DB`，`tokens` 是 [`*apitoken.Store`](api-tokens.md#assembling)，`router` 是应用的 chi 路由，`api` 是 `rest.New` 创建的 API。MCP 服务一侧见[挂到 MCP 服务](#mcp)。
+
+<a id="installation"></a>
+## 安装
+
+授权码和动态注册的客户端在 `oauthserver` 的表中，令牌在 `apitoken` 的表中。把两个包的迁移加入[发布命令](../database/migrations.md#publishing-framework-migrations)，发布后执行迁移：
+
+```go
+migratecmd.Publish(apitoken.Migrations(), oauthserver.Migrations())
+```
+
+<a id="assembling"></a>
+## 装配：`Options` 与端点
 
 | 选项 | 说明 |
 | --- | --- |
-| `Issuer` | 授权服务器的地址，也是各端点的前缀。必须是 https 地址，本机开发可以用 `http://localhost:8080`；部署在路径之下时带上路径，见[部署在路径之下](#path-prefix) |
-| `Resources` | 令牌可以用于的 MCP 服务地址，与用户在客户端中填写的完全相同。只给应用自己的客户端登录时不设置，见[应用自己的客户端](#first-party-clients) |
-| `Scopes` | 客户端可以申请的范围，见下一节；与 `Resources` 同时设置 |
-| `Clients` | 预先登记的客户端，见[客户端](#clients)和[应用自己的客户端](#first-party-clients) |
-| `DynamicRegistration` | 开启动态客户端注册，默认关闭，见[动态客户端注册](#dynamic-registration) |
-| `ConsentURL` | 单页应用中同意页的地址，见[同意页](#consent-page)。通常是本站的路径；单页应用部署在别的地址时写完整的 https 地址 |
-| `TokenLifetime`、`TokenIdleTimeout` | 令牌的最长有效期和最长空闲时间，默认 1 年和 30 天 |
+| `Issuer` | 授权服务器的地址，也是各端点的前缀。https 地址，本机开发可以用 `http://localhost:8080`；部署在路径之下时带上路径，见[部署在路径之下](#path-prefix) |
+| `Resources` | 令牌可以用于的资源，与用户在客户端中填写的 MCP 服务地址完全相同 |
+| `Scopes` | 客户端可以申请的范围，见[范围](#scopes)；与 `Resources` 同时设置或同时为空 |
+| `Clients`、`DynamicRegistration` | 见[客户端](#clients)、[动态客户端注册](#dynamic-registration) |
+| `ConsentURL` | 同意页的地址，必填：本站的路径，或者完整的 https 地址 |
+| `TokenLifetime`、`TokenIdleTimeout` | OAuth 令牌的最长有效期和最长空闲时间，默认 1 年和 30 天 |
 
-`Metadata` 是授权服务器元数据（RFC 8414），挂在 `MetadataPath()` 上，即 `/.well-known/oauth-authorization-server`。`Routes` 注册客户端访问的其他端点：
+选项不合法时 `New` panic。`Routes` 注册 `GET /oauth/authorize`、`POST /oauth/token`、`POST /oauth/revoke`（RFC 7009），开启动态注册时还有 `POST /oauth/register`，路径相对于 `Issuer`。`Register(api, auth)` 注册同意页调用的 `GET /oauth/consent`（`oauth-consent-get`，读取授权请求）和 `POST /oauth/consent`（`oauth-consent-decide`，允许或拒绝），`auth` 与同一个前端的其他接口相同。
 
-| 端点 | 说明 |
-| --- | --- |
-| `GET /oauth/authorize` | 校验授权请求，跳到同意页 |
-| `POST /oauth/token` | 授权码换令牌 |
-| `POST /oauth/revoke` | 客户端交回令牌（RFC 7009） |
-
-`Register` 在 API 上注册同意页调用的两个接口，第二个参数是它们的认证方式，与编辑后台的其他接口相同：
-
-| 接口 | 操作 ID | 说明 |
-| --- | --- | --- |
-| `GET /oauth/consent?request=…` | `oauth-consent-get` | 读取授权请求：应用、范围、跳转去向 |
-| `POST /oauth/consent` | `oauth-consent-decide` | 允许或拒绝，返回浏览器要跳转去的地址 |
-
-授权码 10 分钟有效。用 `oauth.Cleanup` 定时删除过期的授权码，见[清理框架数据](../background/scheduling.md#framework-cleanups)。
+授权码 10 分钟有效，用 `oauth.Cleanup` 每小时删除过期的，见[清理框架数据](../background/scheduling.md#framework-cleanups)。包级函数 `oauthserver.Erase` 登记到[注销账号](../features/privacy.md#framework-sources)。
 
 <a id="scopes"></a>
 ### 范围
 
-范围是客户端申请的权限，同意页逐项列出 `Description`。名称通常就是[权限目录](authorization.md#permission-catalog)中的权限：令牌的 `Scopes` 是用户同意的范围，`Subject.Can` 同时检查用户本人的权限和它，与个人访问令牌相同。所以一个只有查看权限的编辑授权了 `articles:write`，令牌也发布不了文章。
+范围是客户端申请的权限，同意页逐项列出 `Description`。名称用[权限目录](authorization.md#permission-catalog)中的权限：令牌的 `Scopes` 是用户同意的范围，`sub.Can` 同时检查用户本人的权限和它，所以只有查看权限的用户授权了 `articles:write`，令牌也发布不了文章。
 
-客户端省略 `scope` 时申请全部范围。只把适合交给 AI 的权限放进来，删除文章、管理成员这类操作留在应用内。
+客户端省略 `scope` 时申请全部范围。只放适合交给 AI 的权限，删除数据、管理成员这类操作留在应用内。
 
 <a id="mcp"></a>
 ### 挂到 MCP 服务
 
-MCP 服务要告诉客户端去哪里授权，并且只接受发给自己的令牌：
+`oauth` 是授权服务器，`tools` 是 MCP 工具集，`accounts` 与 REST API 的 `rest.Options.Accounts` 相同：
 
 ```go
-res := oauth.Resource("https://example.com/mcp")
-router.Handle(res.MetadataPath(), mcpx.ResourceMetadata(res))
+res := oauth.Resource("https://example.com/mcp") // 不在 Options.Resources 中时 panic
+router.Handle(res.MetadataPath(), mcpx.ResourceMetadata(res)) // /.well-known/oauth-protected-resource/mcp
 router.Handle("/mcp", mcpx.Handler(tools, mcpx.HandlerOptions{
     Validate: tokens.ValidateFor(res.URL),
-    Accounts: identity.Accounts{editor.Type: editor.Resolve(a.db)},
+    Accounts: accounts,
     Resource: &res,
 }))
 ```
 
-- `mcpx.ResourceMetadata` 是受保护资源元数据（RFC 9728），挂在 `/.well-known/oauth-protected-resource/mcp`，指向授权服务器。
-- 设置了 `Resource` 后，未认证的请求得到 `401` 和 `WWW-Authenticate: Bearer resource_metadata="…"`，客户端由此开始授权。
-- `tokens.ValidateFor(res.URL)` 只接受发给这个地址的 OAuth 令牌，个人访问令牌照常可用。JSON API 用的 `tokens.Validate` 拒绝 OAuth 令牌：给 Claude 的令牌只能用于 MCP。
+- 设置了 `Resource` 后，未认证的请求得到 `401` 和 `WWW-Authenticate: Bearer resource_metadata="…"`，客户端由此找到授权服务器。不设置时客户端不会开始授权。
+- `tokens.ValidateFor(res.URL)` 只接受发给这个地址的 [OAuth 令牌](api-tokens.md#oauth-tokens)，登录 token 和个人访问令牌照常可用。JSON API 用的 `tokens.Validate` 拒绝 OAuth 令牌。
 
 <a id="flow"></a>
 ## 授权流程
 
-用户在 Claude 中添加连接器，填写 `https://example.com/mcp`：
+1. 客户端访问 MCP 服务得到 `401`，从两份元数据中找到各端点。
+2. 客户端在浏览器中打开 `/oauth/authorize`，授权端点校验后跳到 `ConsentURL?request=…`；用户登录后点“允许”。
+3. 浏览器带着授权码回到客户端，客户端用授权码和 PKCE 的 verifier 换取令牌，以这个用户的身份调用工具。
 
-1. Claude 访问 MCP 服务，得到 `401`，从受保护资源元数据和授权服务器元数据中找到各端点。
-2. Claude 在浏览器中打开 `/oauth/authorize`。授权端点校验请求后跳到编辑后台的同意页，地址中带着 `request` 参数。
-3. 编辑没有登录时，编辑后台先让他登录，再回到同意页。同意页显示 Claude 申请哪些范围、以哪个账号、授权后跳转到 `claude.ai`。
-4. 编辑点“允许”，浏览器带着授权码回到 Claude；Claude 用授权码和 PKCE 的 verifier 换取令牌。
-5. Claude 带着令牌调用 MCP 工具，以这个编辑的身份执行。
-
-用户点“拒绝”时，Claude 收到 `access_denied`。授权请求本身有问题时：client_id 或回调地址不对的，授权端点跳到同意页并带上 `error` 参数，值是错误码 `oauth.invalid_client` 或 `oauth.invalid_redirect_uri`；其他问题（缺少 PKCE、未知的范围）带着错误直接跳回客户端。
+用户点“拒绝”时客户端收到 `access_denied`。client_id 或回调地址不对时，授权端点跳到 `ConsentURL?error=…`，值是 `oauth.invalid_client` 或 `oauth.invalid_redirect_uri`；其他问题（缺少 PKCE、未知的范围）带着错误跳回客户端。
 
 <a id="clients"></a>
 ## 客户端
 
-- **https 地址形式的 client_id**（Client ID Metadata Document）：claude.ai、ChatGPT、Claude Code 都用这种方式。授权时用[出站请求](../libraries/outbound.md)取回这个地址上的 JSON，检查其中的 `client_id` 与地址完全相同、`redirect_uris` 包含本次的回调地址。即来即用，取回的地址拒绝内网地址。
-- **预先登记的客户端**：自研的 agent 在 `Options.Clients` 中登记 ID、名称和回调地址。应用自己的桌面端和 App 也在这里登记，设置 `FirstParty`，见[应用自己的客户端](#first-party-clients)。
+- **https 地址形式的 client_id**（Client ID Metadata Document）：claude.ai、ChatGPT、Claude Code 用这种方式，即来即用。授权时用[出站请求](../libraries/outbound.md)取回这个地址上的 JSON，检查 `client_id` 与地址相同、`redirect_uris` 包含本次的回调地址；拒绝内网地址。
+- **预先登记的客户端**：在 `Options.Clients` 中登记 `ID`（不能是 https 地址）、`Name` 和 `RedirectURIs`。应用自己的桌面端和 App 另外设置 `FirstParty`，见[应用自己的客户端](#first-party-clients)。
 
-只支持公开客户端（靠 PKCE 保证安全）。回调地址按完整地址匹配；本机地址（`localhost`、`127.0.0.1`）忽略端口，Claude Code 每次用不同的端口接收回调。
+回调地址按完整地址匹配；本机地址（`localhost`、`127.0.0.1`、`[::1]`）忽略端口。
 
 <a id="dynamic-registration"></a>
 ### 动态客户端注册
 
-有的客户端不提供 Client ID Metadata Document，只会先注册自己（RFC 7591）。MCP 规范已经把这种方式标为过时，claude.ai 和 ChatGPT 只在授权服务器不支持 Client ID Metadata Document 时才用它，所以默认关闭。需要兼容这类客户端时开启：
+只会先注册自己（RFC 7591）的客户端需要动态注册。MCP 规范已把它标为过时，所以默认关闭；开启时设置 `DynamicRegistration: true`，同时要设置 `Resources` 和 `Scopes`。客户端 `POST /oauth/register` 提交名称和 1 到 10 个回调地址（https 或本机的 http），得到 `dcr_` 开头的 client_id。
 
-```go
-oauthserver.Options{
-    // ……
-    DynamicRegistration: true,
-}
-```
+> [!WARNING]
+> 注册接口是公开的。用[限流](../libraries/rate-limiting.md)按 IP 限制它，并定时删除长期没有用于授权的注册。
 
-开启后元数据中有 `registration_endpoint`，客户端 `POST /oauth/register` 提交名称和回调地址，得到 `dcr_` 开头的 client_id，之后的授权与其他客户端相同。只登记公开客户端，回调地址必须是 https 地址或本机的 http 地址，最多 10 个。
-
-注册接口是公开的，任何人都能调用：用[限流](../libraries/rate-limiting.md)按 IP 限制它，并定时删除长期没有用于授权的注册：
+`sched` 是入口中的 `*schedule.Scheduler`。删除注册后已签发的令牌继续有效，客户端下次连接时重新注册：
 
 ```go
 sched.Add("oauth:cleanup-clients", "@daily", schedule.Cleanup(oauth.CleanupClients(90*24*time.Hour), 1000))
 ```
 
-删除注册时，已经签发的令牌继续有效，客户端下次连接时重新注册。
-
 <a id="tokens"></a>
 ## 令牌
 
-令牌是 `apitoken` 中 `Kind` 为 `oauth` 的令牌，记录客户端、名称和资源：
-
-- **不发刷新令牌**，令牌按使用滑动过期：30 天内用过就继续有效，最长 1 年。到期后客户端让用户重新授权一次。每次请求都查库校验，撤销立即生效。
-- 出现在用户的[令牌列表](api-tokens.md#listing-tokens)中，`ClientName` 是授权时的应用名，用来做“已连接的应用”页面；用 `Revoke` 断开连接。
-- “退出其他设备”（`RevokeOthers`）保留已连接的应用；封禁账号、修改密码时的 `RevokeSubject` 一并撤销它们。
+第三方客户端换到的是 [`apitoken` 的 OAuth 令牌](api-tokens.md#oauth-tokens)，权限是用户当前的权限与同意的范围的交集。它按使用滑动过期：`TokenIdleTimeout` 内用过就继续有效，最长 `TokenLifetime`，到期后客户端让用户重新授权。它出现在用户的[令牌列表](api-tokens.md#listing-tokens)中，`ClientName` 用来做“已连接的应用”页面，`Revoke` 断开连接。
 
 <a id="first-party-clients"></a>
 ## 应用自己的客户端
 
-应用自己的桌面端、App 也在系统浏览器中登录：密码、第三方登录、企业单点登录、二次验证都在网页上完成，客户端不用各做一遍，也接触不到用户的密码（RFC 8252）。这类客户端在 `Clients` 中登记，设置 `FirstParty`：
+应用自己的桌面端、App 在系统浏览器中登录（RFC 8252），密码、第三方登录、二次验证都在网页上完成。在 `Clients` 中登记并设置 `FirstParty`：
 
 ```go
-oauth := oauthserver.New(a.db, tokens, oauthserver.Options{
-    Issuer: "https://example.com",
-    Clients: []oauthserver.Client{{
-        ID:           "admin-desktop",
-        Name:         "编辑后台桌面端",
-        RedirectURIs: []string{"http://127.0.0.1/callback"}, // 桌面端：本机地址，端口每次不同
-        FirstParty:   true,
-    }},
-    ConsentURL: "/oauth/consent",
-})
+Clients: []oauthserver.Client{{
+    ID:           "admin-desktop",
+    Name:         "运营后台",
+    RedirectURIs: []string{"http://127.0.0.1/callback"}, // 桌面端：本机地址，端口每次不同
+    FirstParty:   true,
+}},
 ```
 
-它和第三方客户端有三点不同：
+- 授权请求不带 `scope` 和 `resource`，带了时以 `invalid_request` 跳回客户端。
+- 同意页只确认登录：`oauth-consent-get` 返回 `first_party: true`。仍然要用户点一下：本机上任何程序都能打开授权地址，没有这一步它就能悄悄拿到登录 token。
+- 换到的是登录 token，与密码登录得到的相同，可以访问整个 API，“退出其他设备”会撤销它。令牌端点的响应没有 `expires_in`，按 [apitoken 的配置](api-tokens.md#configuration)滑动过期。
+- 只给自己的客户端登录时 `Resources` 和 `Scopes` 都不设置，这时 https 地址形式的 client_id 和动态注册都不可用。
 
-- **不申请范围和资源**：授权请求不带 `scope` 和 `resource`，带了会带着 `invalid_request` 跳回客户端。
-- **同意页只确认登录**：`oauth-consent-get` 返回 `first_party: true`，同意页显示“在编辑后台桌面端上登录”和一个按钮，不列范围。仍然要用户点一下：否则本机上任何程序打开授权地址，就能悄悄拿到一个登录 token。
-- **换到的是登录 token**：与密码登录得到的相同，权限不受限制，可以访问整个 API；代表一台设备，出现在设备列表中，“退出其他设备”会撤销它。令牌端点的响应只有 `access_token` 和 `token_type`，没有 `expires_in`：登录 token 按 [apitoken 的配置](api-tokens.md)滑动过期。
-
-回调地址按客户端的种类登记：
-
-| 客户端 | 回调地址 |
-| --- | --- |
-| 桌面端 | `http://127.0.0.1/callback`：客户端在随机端口上临时监听，端口不用登记 |
-| App | 自定义 scheme，例如 `com.example.admin:/oauth/callback`；或者 Universal Link / App Link 的 https 地址 |
-
-只给自己的客户端登录、不对第三方开放时，`Resources` 和 `Scopes` 都不设置：这时只接受 `FirstParty` 的客户端，https 地址形式的 client_id 和动态注册都不可用。客户端退出登录时，调用应用的退出接口，或者把令牌交给 `POST /oauth/revoke`。客户端一侧的完整流程见[客户端协议：原生客户端](../http/protocol.md#native-clients)。
+回调地址的选择和客户端一侧的流程见[原生客户端：登记客户端](../clients/native.md#registering)和[客户端协议：原生客户端](../http/protocol.md#native-clients)。
 
 <a id="consent-page"></a>
 ## 同意页
 
-同意页是编辑后台单页应用中的一个路由，路径与 `ConsentURL` 相同。它从地址中取出 `request`，用[客户端](../http/clients.md#creating-the-client)读取授权请求，用户点击后提交选择，再跳转到返回的地址。下面是用 TanStack Router 写的 `src/routes/oauth/consent.tsx`：
+同意页是前端中的一个路由，路径与 `ConsentURL` 相同。`tenon add client` 会在客户端显示的前端中生成它（`src/routes/oauth/consent.tsx`）；只对第三方开放时按下面的规则写：
 
-```tsx
-import { createFileRoute } from "@tanstack/react-router"
-import { useMutation, useQuery } from "@tanstack/react-query"
-import { isApiError } from "../../api/api"
-import { api } from "../../client"
+1. 页面要求登录，登录后回到原地址（包括 `request` 参数）。地址中有 `error` 时只显示错误码。
+2. `GET /oauth/consent?request=…` 返回 `client_name`、`redirect_host`、`first_party`、`scopes`（每项有 `name`、`description`）。
+3. `first_party` 为 true 时显示“在 `client_name` 上登录”和“继续”；否则列出各范围的 `description` 和 `redirect_host`，以及“允许”“拒绝”。
+4. 点击后 `POST /oauth/consent`，请求体 `{"request": …, "approve": true}`，用返回的 `url` 整页跳转（`location.assign(url)`）。
 
-export const Route = createFileRoute("/oauth/consent")({
-  validateSearch: (s: Record<string, unknown>) => ({
-    request: String(s.request ?? ""),
-    error: String(s.error ?? ""),
-  }),
-  component: Consent,
-})
+- 两个接口只接受用户本人的登录 token：个人访问令牌、OAuth 令牌和[代为登录](authentication.md#impersonation)的 token 返回 `403 oauth.restricted_credential`。
+- 两个接口每次都重新校验 `request`，被改过的请求返回 `422`。
 
-function Consent() {
-  const { request, error } = Route.useSearch()
-  const consent = useQuery({
-    queryKey: ["oauth-consent", request],
-    enabled: request !== "",
-    queryFn: () => api.oauth.consentGet({ request }),
-  })
-  const decide = useMutation({
-    mutationFn: async (approve: boolean) => {
-      const { url } = await api.oauth.consentDecide({ request, approve })
-      location.assign(url) // 回到 Claude；整页跳转
-    },
-  })
-
-  if (error) return <p>无法授权（{error}）</p> // 错误码，例如 oauth.invalid_client
-  if (consent.error) return <p>{isApiError(consent.error) ? consent.error.detail : "出错了"}</p>
-  if (!consent.data) return null
-  const c = consent.data
-  if (c.first_party) {
-    // 应用自己的客户端：只确认登录
-    return (
-      <div>
-        <h1>在{c.client_name}上登录</h1>
-        <button disabled={decide.isPending} onClick={() => decide.mutate(true)}>继续</button>
-      </div>
-    )
-  }
-  return (
-    <div>
-      <h1>{c.client_name} 请求访问你的账号</h1>
-      <ul>{c.scopes.map((s) => <li key={s.name}>{s.description}</li>)}</ul>
-      <p>授权后将跳转到 {c.redirect_host}</p>
-      <button disabled={decide.isPending} onClick={() => decide.mutate(true)}>允许</button>
-      <button disabled={decide.isPending} onClick={() => decide.mutate(false)}>拒绝</button>
-    </div>
-  )
-}
-```
-
-- **登录**：同意页和编辑后台的其他页面一样要求登录。没有登录时，编辑后台照常跳到登录页，登录后回到原地址（包括 `request` 参数）。
-- **只接受用户本人的登录 token**：个人访问令牌和 OAuth 令牌带有权限限制，[代为登录](authentication-advanced.md#impersonation)的 token 是客服在操作，它们都不代表用户本人，调用这两个接口返回 `403 oauth.restricted_credential`。
-- **重新校验**：`request` 就是原始的授权参数，两个接口每次都重新校验，被改过的请求返回 `422`（`oauth.invalid_client`、`oauth.invalid_redirect_uri` 或 `oauth.invalid_request`）。
-- **禁止嵌入框架**：同意页要防止诱导点击。`frontend` 的默认内容安全策略带 `frame-ancestors 'none'`，见[托管前端：安全](../frontend/hosting.md#security)；用 `Options.CSP` 放开了它时，同意页所在的路由仍然保持禁止。
+> [!WARNING]
+> 同意页不能被嵌入框架，否则可以被诱导点击。`frontend` 默认的内容安全策略带 `frame-ancestors 'none'`，见[托管前端：安全](../frontend/hosting.md#security)；用 `Options.CSP` 放开它时，同意页所在的路由仍然保持禁止。
 
 <a id="deployment"></a>
 ## 部署
 
-- 授权服务器和 MCP 服务都要能从公网访问。Claude 的请求来自 `160.79.104.0/21`，前面有防火墙时放行这个网段。
-- `Issuer` 和 `Resources` 是用户看到的地址，在反向代理之后也写对外的 https 地址。
-- 取回客户端元数据要访问 claude.ai 等地址，服务器需要能访问外网。
+- 授权服务器和 MCP 服务都要能从公网访问，Claude 的请求来自 `160.79.104.0/21`；取回客户端元数据要能访问外网。
+- `Issuer` 和 `Resources` 写用户看到的对外 https 地址，在反向代理之后也一样；claude.ai 一直提示授权失败时先检查这一条。
 
 <a id="path-prefix"></a>
 ### 部署在路径之下
 
-应用和其他服务共用一个域名、只分到 `/blog` 这样的路径时，`Issuer` 和 `Resources` 都带上路径，`Routes` 挂在这个路径上：
+应用只分到 `/blog` 这样的路径时，`Issuer` 和 `Resources` 都带上路径，`Routes` 挂在这个路径上：
 
 ```go
 oauth := oauthserver.New(a.db, tokens, oauthserver.Options{
-    Issuer:     "https://example.com",
-    Resources:  []string{"https://example.com/mcp"},
+    Issuer:     "https://example.com/blog",
+    Resources:  []string{"https://example.com/blog/mcp"},
     ConsentURL: "/blog/oauth/consent",
     // ……
 })
 router.Handle(oauth.MetadataPath(), oauth.Metadata()) // /.well-known/oauth-authorization-server/blog
 router.Route("/blog", func(r chi.Router) {
-    oauth.Routes(r) // /blog/oauth/authorize、/blog/oauth/token……
+    oauth.Routes(r) // /blog/oauth/authorize……
 })
 
-res := oauth.Resource("https://example.com/mcp")
+res := oauth.Resource("https://example.com/blog/mcp")
 router.Handle(res.MetadataPath(), mcpx.ResourceMetadata(res)) // /.well-known/oauth-protected-resource/blog/mcp
 ```
 
-两份元数据仍然在域名的根上，路径插在 `.well-known` 之后（RFC 8414、RFC 9728）。MCP 客户端只按这个规则查找，所以反向代理除了 `/blog/`，还要把这两个地址转发给应用，转发时保留完整路径：
+两份元数据在域名的根上，路径插在 `.well-known` 之后（RFC 8414、RFC 9728），反向代理要把它们也转发给应用并保留完整路径：
 
 ```nginx
 location /blog/ { proxy_pass http://blog:8080; }
@@ -324,65 +190,4 @@ location = /.well-known/oauth-protected-resource/blog/mcp { proxy_pass http://bl
 <a id="testing"></a>
 ## 测试
 
-测试中代替浏览器和同意页走完整个流程：
-
-1. 请求 `GET /oauth/authorize`，从 `Location` 中取出 `request`；
-2. 用 `tokens.Login` 签发的登录 token 调用 `POST /oauth/consent`，得到带授权码的地址；
-3. 用授权码换令牌，再用令牌调用 MCP 工具。
-
-框架自己的测试还用 MCP 官方 Go SDK 的 OAuth 客户端（`auth.NewAuthorizationCodeHandler`）走过一遍：从 `401` 开始发现元数据、授权、换取令牌到调用工具。
-
-<a id="troubleshooting"></a>
-## 常见问题
-
-**claude.ai 添加连接器时，一直提示授权失败**
-
-`Issuer` 必须是 https 地址，并且外网可以访问；部署在路径之下时要带上路径，见[部署在路径之下](#path-prefix)。
-
-**MCP 客户端没有开始授权流程**
-
-MCP 服务没有设置 `Resource`，未认证的请求没有返回带 `resource_metadata` 的 `401`，客户端找不到授权服务器。
-
-**用个人访问令牌调用授权接口，得到 `403 oauth.restricted_credential`**
-
-授权接口只接受用户本人的登录 token。个人访问令牌、OAuth 令牌和代为登录的 token 都不能用。
-
-**动态注册客户端时被拒绝**
-
-回调地址必须是 https 地址或本机的 http 地址，最多 10 个。
-
-<a id="api-reference"></a>
-## API 参考
-
-包 `github.com/go-tenon/tenon/oauthserver`。
-
-### New
-
-```go
-func New(db bun.IDB, tokens *apitoken.Store, opts Options) *Server
-```
-
-| `Options` 字段 | 说明 |
-| --- | --- |
-| `Issuer` | 授权服务器的地址 |
-| `Resources` | 可以授权访问的资源，例如 MCP 服务的地址；为空时只接受应用自己的客户端 |
-| `Scopes` | 可以授权的范围及其说明，显示在同意页上；与 `Resources` 同时设置 |
-| `ConsentURL` | 单页应用中同意页的地址 |
-| `Clients` | 预先登记的客户端：`ID`、`Name`、`RedirectURIs`，应用自己的客户端设置 `FirstParty` |
-| `DynamicRegistration` | 允许客户端动态注册，默认关闭 |
-| `TokenLifetime` | 签发的令牌的有效期 |
-
-### Server
-
-```go
-func (s *Server) Routes(r chi.Router)
-func (s *Server) Register(api *rest.API, auth func(*huma.Operation))
-func (s *Server) Metadata() http.Handler
-func (s *Server) MetadataPath() string
-func (s *Server) Resource(resource string) mcpx.Resource
-func (s *Server) Cleanup(ctx context.Context, limit int) (int, error)
-func (s *Server) CleanupClients(keep time.Duration) func(ctx context.Context, limit int) (int, error)
-func Erase(ctx context.Context, db bun.IDB, ref identity.Ref) error
-```
-
-包级函数 `Erase` 删除主体还没有换成令牌的授权码，登记到[注销账号](../features/privacy.md#framework-sources)。`Routes` 注册授权和令牌端点；`Register` 注册同意页调用的两个接口；`Metadata` 是授权服务器元数据；`Resource` 返回交给 `mcpx` 的受保护资源说明。签发的令牌用 `tokens.ValidateFor(resource)` 校验。
+测试中代替浏览器：`GET /oauth/authorize` 的 `Location` 中取出 `request`；用 `tokens.Login` 签发的 token 调用 `POST /oauth/consent` 得到授权码；用授权码和 verifier 调用 `POST /oauth/token` 换令牌，再调用 MCP 工具。

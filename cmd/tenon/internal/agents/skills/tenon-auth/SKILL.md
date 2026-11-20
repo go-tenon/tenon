@@ -20,7 +20,7 @@ description: Tenon 应用中的认证与授权：用 rest.RequireToken 保护路
 
 - 令牌校验函数和令牌存储见 `.tenon/docs/security/authentication.md#token-validators`、`.tenon/docs/security/api-tokens.md`。
 - 浏览器中的网页用 HttpOnly 的会话 cookie 携带 token，App、桌面端和其他服务用 `Authorization: Bearer`，服务端校验的是同一个 token，见 `.tenon/docs/security/api-tokens.md#browser-sessions`。
-- 邮箱和密码登录、验证码、找回密码见 `.tenon/docs/security/login.md`；二次验证和 Passkey 见 `.tenon/docs/security/login-security.md`。
+- 邮箱和密码登录、验证码、找回密码、二次验证和 Passkey 见 `.tenon/docs/security/login.md`。
 - 给程序和第三方用的个人访问令牌见 `.tenon/docs/security/api-tokens.md#personal-access-tokens`。
 
 ## 要点
@@ -28,4 +28,4 @@ description: Tenon 应用中的认证与授权：用 rest.RequireToken 保护路
 - 每条路由都要声明访问策略，忘了声明时注册直接 panic；公开的路由显式写 `rest.Public()`。
 - 授权检查放在 `Handle` 中，不只放在前端：前端按权限隐藏按钮只是展示，任何客户端都能直接调用接口。
 - 在事务中检查归属时先 `For("UPDATE")` 锁住行，见 `.tenon/docs/security/authorization.md#checking-in-transactions`。
-- 多租户见 `.tenon/docs/security/tenancy.md`，完整的例子见 `.tenon/docs/security/admin-example.md`、`.tenon/docs/security/saas-example.md`。
+- 多租户、运营后台与租户后台两套账号见 `.tenon/docs/security/tenancy.md`；单账号后台的完整例子是入门教程第 6、8 章（`.tenon/docs/tutorial/06-login.md`、`.tenon/docs/tutorial/08-admin.md`）。

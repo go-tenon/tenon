@@ -13,7 +13,7 @@ import (
 // purposeExternal 是尚未绑定的第三方账号在 auth_challenges 中的用途，见 External。
 const purposeExternal Purpose = "external"
 
-// External 是第三方提供方确认过的账号，例如 login/oidc 校验 ID token 得到的结果，
+// External 是第三方提供方确认过的账号，例如 login/oauth 校验 ID token 得到的结果，
 // 或者应用用 OAuth 2.0 读取的 GitHub、微信账号。
 type External struct {
 	Provider      string         // 提供方的名称，例如 google、apple、github、wechat，作为登录标识的 Kind：小写字母开头，只含小写字母、数字和下划线，email、phone、username 为保留名称。
@@ -44,7 +44,7 @@ func (ext External) Identifier() (Identifier, error) {
 	return id, nil
 }
 
-// External 用第三方账号登录。调用前应用必须已经确认 ext 来自提供方，例如 login/oidc 校验过 ID token。
+// External 用第三方账号登录。调用前应用必须已经确认 ext 来自提供方，例如 login/oauth 校验过 ID token。
 //
 // 账号已经绑定时登录成功，返回 Outcome.Subject；第三方账号由对方负责身份验证，跳过二次验证。
 // 还没有绑定时返回 Outcome.Proof：交给 Register 注册新账号（对方确认过的邮箱同时作为登录标识），

@@ -1,50 +1,16 @@
 # 多租户
 
-运营后台、租户后台与代登录的完整接线见[运营后台与多租户](saas-example.md)。本页讲租户怎样从请求里取出、成员与角色、以及数据隔离。
+单数据库多租户：所有租户的数据在同一组表中，每行用 `tenant_id` 区分。入口从请求中取出租户，`authz` 按用户在这个租户中的角色加载权限，业务代码只读写这个租户的数据。运营后台与租户后台两套账号的装配也在这一页。
 
-**租户**是 SaaS 中的一个客户组织，例如一家公司。**单数据库多租户**指所有租户的数据放在同一个数据库的同一组表中，每行用 `tenant_id` 区分属于哪个租户。
+包：`identity`、`authz`、`httpx/rest`。
 
-阅读前需要了解：[认证进阶](authentication-advanced.md#tenants)；[授权](authorization.md)。
-
-SaaS 应用通常有三类用户：
-
-| 用户 | 例子 | 在 Tenon 中 | 通常使用 |
-| --- | --- | --- | --- |
-| 运营人员 | 平台的客服、管理员 | 在平台本身（域 `""`）中拥有角色 | 运营后台（单页应用） |
-| 租户成员 | 某个公司的员工 | 在该租户中拥有角色，同一个人可以属于多个租户 | 调用 JSON API 的网页或客户端 |
-| 租户的客户 | 公司的终端客户 | 在租户中拥有客户角色，或者是单独的一套账号，见[租户的客户](#customers) | 调用 JSON API 的网页、App 或小程序 |
-
-三类用户可以共用一张用户表，也可以各自一张表、各是一套账号体系，见[多套账号体系](authentication-advanced.md#account-systems)。
-
-所有租户的数据存在同一个数据库中，用 `tenant_id` 区分。框架不提供按租户切换数据库：队列、令牌和角色都只有一份，同一个库就是最简单、也最不容易出错的结构；需要更强的隔离时，用 PostgreSQL 的[行级安全策略](#data-isolation)兜底。实现多租户需要三件事：
-
-1. 从请求中**确定租户**；
-2. 按用户在这个租户中的**角色**加载权限；
-3. 业务代码只读写**这个租户的数据**。
-
-前两件由框架和 [`authz`](authorization.md#roles) 完成，第三件是 [业务动作](../concepts/actions.md) 必须遵守的约定。
-
-本页从请求怎样确定租户讲起，然后依次介绍成员与角色、按租户隔离数据，以及后台任务、缓存这些容易漏掉租户的地方。
-
-- [确定租户](#identifying-tenants)
-- [成员与角色](#members)
-    - [创建租户](#creating-tenants)
-    - [成员管理](#managing-members)
-    - [切换租户](#switching-tenants)
-- [租户数据隔离](#data-isolation)
-- [后台任务](#background-work)
-    - [队列任务](#tenant-jobs)
-    - [定时任务](#tenant-scheduled-tasks)
-- [缓存、广播与其他资源](#other-resources)
-- [运营后台](#platform)
-- [租户的客户](#customers)
-- [令牌与租户](#tokens)
-- [常见问题](#troubleshooting)
+- 业务代码中的租户只取自主体的 `Tenant`（`subject.Tenant`）：取自请求体时，一个租户的管理员能操作其他租户。
+- 租户 `""` 是平台本身，运营后台、个人中心都在这里。
 
 <a id="identifying-tenants"></a>
-## 确定租户
+## 确定租户：`Tenant` 选项
 
-本次请求属于哪个租户由请求本身决定。用 `Tenant` 选项告诉 API 怎样取出它，常见的三种方式（用 token 连接的[实时频道](../libraries/realtime.md#tokens)也有同样的选项）：
+`rest.Options.Tenant` 从请求中取出租户。`roles` 是应用的 `*authz.Store`：
 
 ```go
 // 路径：/t/{tenant}/articles
@@ -65,86 +31,50 @@ Tenant: func(ctx huma.Context) string {
 Tenant: func(ctx huma.Context) string { return ctx.Header("X-Tenant") },
 ```
 
-取出的租户在每个请求开始时写入 context，公开的路由也一样，业务代码用 `identity.TenantFromContext` 读取。取不到时租户是 `""`，即平台本身。租户使用自定义域名、需要查表才能确定时，在 chi 中间件中完成查找并拒绝未知的域名，`Tenant` 只读取查找结果。
-
-`roles.Resolve` 加载用户在这个租户中的权限，并写入 `sub.Tenant`。用户在这个租户中没有任何角色时返回 `404`：租户是否存在只有成员知道。
+- 租户在每个请求开始时写入 context，公开的路由也一样，用 `identity.TenantFromContext(ctx)` 读取。
+- `roles.Resolve` 加载用户在这个租户中的权限并写入 `sub.Tenant`；用户在这个租户中没有角色时返回 `404`，租户是否存在只告诉成员。
+- 自定义域名要查表才能确定租户时，在 chi 中间件中查找并拒绝未知的域名，`Tenant` 只读取结果。
+- `realtime.Options`、`natsrpc.Options`、`mcpx.HandlerOptions` 的 `Tenant` 作用相同。
 
 <a id="members"></a>
 ## 成员与角色
 
-用户在租户中的角色就是他的成员身份：有角色即是成员，撤销全部角色即移出租户。
+用户在租户中有角色就是成员，撤销全部角色就移出了租户。`authz.Role` 的 `Tenant` 为 `""` 是全局角色（`owner`、`member` 这类模板，所有租户都能分配，修改它影响所有租户），为租户 ID 是这个租户自己创建的角色。
 
-角色分两种：
-
-- **全局角色**（`Tenant` 为 `""`）：`owner`、`admin`、`member` 这类模板，所有租户都可以分配，修改它会影响所有租户；
-- **租户角色**（`Tenant` 为租户 ID）：租户管理员按需创建，只在本租户中可见、可分配。
-
-全局角色通常是应用的一部分，在代码中声明，应用启动时用 [`EnsureRole`](authorization.md#preset-roles) 确保存在：
-
-```go
-owner, err := roles.EnsureRole(ctx, authz.Role{Name: "owner", Permissions: []string{"*"}})
-member, err := roles.EnsureRole(ctx, authz.Role{Name: "member", Permissions: []string{"articles:read", "articles:write"}})
-```
+全局角色写在代码中，启动时用 [`EnsureRole`](authorization.md#preset-roles) 确保存在。
 
 <a id="creating-tenants"></a>
 ### 创建租户
 
-租户本身是应用的数据，例如一张 `tenants` 表。用户创建组织时，在同一个业务动作中把他设为所有者：
-
-```go
-func (a *Create) Handle(ctx context.Context, subject identity.Subject, name string) (*Tenant, error) {
-    t, err := insert(ctx, a.db, name)
-    if err != nil {
-        return nil, err
-    }
-    return t, a.roles.Assign(ctx, subject.Ref(), t.ID, a.ownerRoleID)
-}
-```
+租户是应用自己的表（例如 `tenants`）。创建租户的业务动作在一个 `database.RunInTx` 中插入这一行，再用 `roles.Assign(ctx, subject.Ref(), t.ID, ownerRoleID)` 把创建者设为 `owner`。`roles` 用这个事务的 `tx` 构造（`authz.NewStore(tx, catalog, ...)`），两步一起提交：租户不会没有 owner。
 
 <a id="managing-members"></a>
-### 成员管理
+### 成员管理：`Members`、`Assign`、`RemoveMember`
 
-成员管理页用 `members:manage` 保护，所有操作都限定在本次请求的租户 `sub.Tenant` 中：
+成员管理的接口用 `members:manage` 保护。`roles` 是 `*authz.Store`，`sub` 是本次请求的主体：
 
 | 操作 | 调用 |
 | --- | --- |
-| 列出成员和他们的角色 | `roles.Members(ctx, sub.Tenant)` |
+| 列出成员和角色 | `roles.Members(ctx, sub.Tenant)` |
 | 可以分配的角色 | `roles.Roles(ctx, sub.Tenant)`：全局角色加本租户的角色 |
-| 邀请成员、调整角色 | `roles.Assign`、`roles.Unassign` |
-| 移出成员 | `roles.RemoveMember(ctx, member, sub.Tenant)`，`member` 是成员的 `identity.Ref` |
+| 邀请成员、调整角色 | `roles.Assign`、`roles.Unassign`，域传 `sub.Tenant` |
+| 移出成员 | `roles.RemoveMember(ctx, member, sub.Tenant)` |
 | 自定义角色 | `roles.CreateRole(ctx, authz.Role{Tenant: sub.Tenant, ...})` |
-| 读取、修改某个角色 | 先用 `roles.Role(ctx, id, sub.Tenant)` 确认它属于本租户或是全局角色 |
+| 读取、修改角色 | 先用 `roles.Role(ctx, id, sub.Tenant)` 确认它属于本租户或是全局角色 |
 
-调整角色或移出成员之后，调用 [`RecheckSubject`](../http/sse.md#immediate-revocation) 让这个人已经打开的长连接立即按新的权限校验。
-
-**租户 ID 只能来自 `sub.Tenant`**：取自表单或请求体的话，管理员就能操作其他租户。`Assign` 会拒绝把其他租户的角色分配到本租户；调用者是否有权管理这个租户，由路由上的 `members:manage` 和 `sub.Tenant` 保证。
-
-全局角色中可能有只供运营使用的角色。要在租户的角色列表中隐藏它们时，在展示和分配前按名称过滤。即使分配了，权限也只在这个租户中生效。
+- `Assign` 拒绝把其他租户的角色分配到本租户。
+- 调整角色或移出成员后调用 [`RecheckSubject`](../http/sse.md#immediate-revocation)，这个人已经打开的长连接立即按新的权限校验。
+- 只给运营用的全局角色在展示和分配前按名称过滤。
 
 <a id="switching-tenants"></a>
-### 切换租户
+### 切换租户：`Tenants`
 
-`roles.Tenants(ctx, sub.Ref())` 返回用户所属的全部租户，用于登录后的租户选择页或顶部的切换菜单。切换只是跳转到另一个租户的地址，例如从 `/t/acme` 到 `/t/globex`，令牌保持不变。
+`roles.Tenants(ctx, sub.Ref())` 返回用户所属的全部租户。切换就是跳转到另一个租户的地址（`/t/acme` → `/t/globex`），登录令牌不变。前端见[租户切换](../frontend/layout.md#tenants)。
 
 <a id="data-isolation"></a>
-## 租户数据隔离
+## 租户数据隔离：`tenant_id`
 
-属于租户的每张表都有 `tenant_id` 列，唯一约束和常用索引都以它开头：
-
-```sql
-CREATE TABLE articles (
-    id uuid PRIMARY KEY,
-    created_at timestamptz NOT NULL,
-    updated_at timestamptz NOT NULL,
-    tenant_id text NOT NULL,
-    slug text NOT NULL,
-    -- ...
-    CONSTRAINT articles_tenant_slug_unique UNIQUE (tenant_id, slug)
-);
-CREATE INDEX articles_tenant_created ON articles (tenant_id, created_at);
-```
-
-业务动作从主体中取租户，每一个查询都加上这个条件，写入时也从主体中取。模块内共享的 `find` 接收整个主体：
+属于租户的每张表有 `tenant_id text NOT NULL` 列，唯一约束和常用索引以它开头，例如 `UNIQUE (tenant_id, slug)`、`(tenant_id, created_at)`。业务动作的每个查询都带上 `subject.Tenant`，写入时也从主体取租户：
 
 ```go
 func find(ctx context.Context, db bun.IDB, subject identity.Subject, id uuid.UUID) (*Article, error) {
@@ -152,36 +82,32 @@ func find(ctx context.Context, db bun.IDB, subject identity.Subject, id uuid.UUI
     err := db.NewSelect().Model(item).
         Where("tenant_id = ?", subject.Tenant).Where("id = ?", id).Scan(ctx)
     if errors.Is(err, sql.ErrNoRows) {
-        return nil, ErrNotFound.New() // 其他租户的文章与不存在的文章无法区分
+        return nil, ErrNotFound.New() // 其他租户的文章与不存在的一样返回 404
     }
-    // ……
+    return item, err
 }
 
-func (a *Create) Handle(ctx context.Context, subject identity.Subject, c Changes) (*Article, error) {
-    item := &Article{TenantID: subject.Tenant, AuthorID: subject.ID /* ... */}
-    // ……
-}
+item := &Article{TenantID: subject.Tenant, AuthorID: subject.ID} // 写入
 ```
 
-这是多租户应用中最重要的约定：漏掉一个条件，就会把一个租户的数据暴露给另一个租户。几个习惯可以降低风险：
+> [!WARNING]
+> 漏掉一个 `tenant_id` 条件，就会把一个租户的数据暴露给另一个租户。
 
-- `Handle` 和模块内的查询函数总是接收 `identity.Subject`，不单独接收租户 ID；
-- 按 ID 查询时也带上 `tenant_id`，在查询条件中限定；
-- 为每个业务动作写一个“其他租户访问不到”的测试，例如用租户 B 的主体读取租户 A 的文章，期望 `404`，见[测试业务动作](../testing/testing.md#testing-actions)；
-- 使用 PostgreSQL 时，可以再加上[行级安全策略](https://www.postgresql.org/docs/current/ddl-rowsecurity.html)作为兜底：在事务开始时 `SET LOCAL app.tenant_id`，由策略限制每个查询只能看到这个租户的行。
+- `Handle` 和模块内的查询函数接收整个 `identity.Subject`，不单独接收租户 ID；按 ID 查询也带上租户。
+- 每个业务动作写一个“其他租户访问不到”的测试：用租户 B 的主体读租户 A 的数据，期望 `404`，见[测试业务动作](../testing/testing.md#testing-actions)。
+- 要再加一层保护时用 PostgreSQL 的[行级安全策略](https://www.postgresql.org/docs/current/ddl-rowsecurity.html)：事务开始时 `SET LOCAL app.tenant_id`。
 
 <a id="background-work"></a>
-## 后台任务
+## 后台任务中的租户
 
-请求中的租户来自 `Tenant` 选项，队列和定时任务没有请求，租户只能由任务自己带着。worker 只依据任务参数：业务动作从参数 `subject` 中取租户，所以只要构造出带租户的主体，`Handle` 的写法与请求中完全相同。
+队列和定时任务没有请求，租户由任务自己带着，再构造带租户的主体交给 `Handle`。
 
 <a id="tenant-jobs"></a>
-### 队列任务
+### 队列任务：payload 带上租户
 
-[定时发布](../concepts/actions.md#as-jobs)的任务在单租户应用中只带文章 ID。多租户应用中，`find` 按 `subject.Tenant` 查询，只带 ID 的任务会以平台本身的身份去找文章，结果永远是 `ErrNotFound`。payload 要带上租户，系统主体按租户构造：
+只带 ID 的任务以平台本身（`""`）的身份查询，`find` 永远返回 `ErrNotFound`。payload 带上租户，系统主体按租户构造：
 
 ```go
-// PublishJob 是定时发布的任务。
 type PublishJob struct {
     Tenant string    `json:"tenant"`
     ID     uuid.UUID `json:"id"`
@@ -189,138 +115,182 @@ type PublishJob struct {
 
 var PublishAt = queue.Topic[PublishJob]("articles.publish")
 
-// system 是队列任务在 tenant 中的调用者，CanEdit 允许它发布这个租户的任何文章。
+// system 是队列任务在 tenant 中的调用者。
 func system(tenant string) identity.Subject {
     return identity.Subject{Type: identity.System, ID: "system", Tenant: tenant, Permissions: []string{"articles:admin"}}
 }
 
 func (a *Publish) Job(ctx context.Context, job PublishJob) error {
     _, err := a.Handle(ctx, system(job.Tenant), job.ID)
-    // ……与单租户相同
+    return err
 }
-```
 
-发布任务时，租户同样取自主体：
-
-```go
+// 发布：tx 是业务事务，租户取自主体
 err := PublishAt.Publish(ctx, tx, PublishJob{Tenant: subject.Tenant, ID: item.ID}, queue.At(publishAt))
 ```
 
-系统主体的权限只在 `job.Tenant` 中生效，即使 payload 中的文章 ID 属于其他租户，`find` 也找不到它。[操作日志](../features/activity.md)按主体的租户记录，队列中的操作因此也落在正确的租户里。命令行入口同理，用 `--tenant` 参数构造 `system(tenant)`。
+- 系统主体只在 `job.Tenant` 中有权限：payload 中的 ID 属于其他租户时 `find` 找不到它。
+- [操作日志](../features/activity.md)按主体的租户记录，命令行入口同样用 `--tenant` 参数构造 `system(tenant)`。
 
 <a id="tenant-scheduled-tasks"></a>
-### 定时任务
+### 定时任务：每个租户一个队列任务
 
-[发布到期文章](../background/scheduling.md#defining-tasks)的 `PublishScheduled` 用一条 `UPDATE` 处理所有租户到期的文章，多租户时保持原样。
-
-需要逐个租户执行的任务，例如每天给每个租户发一份摘要，由定时任务为每个租户发布一个队列任务，worker 并行处理，各自重试。这样一个租户出错只影响它自己，执行时间也与租户数量无关：
-
-```go
-// SendDigest 是一个租户的每日摘要，payload 是租户 ID。
-var SendDigest = queue.Topic[string]("digest.send")
-
-func (a *ScheduleDigests) Handle(ctx context.Context) error {
-    return database.RunInTx(ctx, a.db, nil, func(ctx context.Context, tx database.Tx) error {
-        var ids []string
-        if err := tx.NewSelect().Table("tenants").Column("id").Scan(ctx, &ids); err != nil {
-            return err
-        }
-        for _, id := range ids {
-            if err := SendDigest.Publish(ctx, tx, id); err != nil {
-                return err
-            }
-        }
-        return nil
-    })
-}
-```
-
-所有任务在一个事务中发布，要么全部发布，要么都不发布。
+一条 SQL 处理所有租户的定时任务（例如[发布到期文章](../background/scheduling.md#defining-tasks)）保持原样。要逐个租户执行时（例如每天的摘要），定时任务在一个事务中查出全部租户 ID，用 `queue.Topic[string]` 的 `PublishAll(ctx, tx, ids)` 为每个租户发布一个任务：一个租户出错只重试它自己，执行时间与租户数量无关。
 
 <a id="other-resources"></a>
-## 缓存、广播与其他资源
+## 缓存、广播与其他资源中的租户
 
-数据库之外，凡是按名称共享的东西都要考虑租户。原则只有一条：**名称中带上租户，租户取自 `sub.Tenant`**。
+数据库之外按名称共享的资源，名称带上租户，租户取自 `sub.Tenant`：
 
 | 资源 | 做法 |
 | --- | --- |
-| [缓存](../libraries/cache.md) | 键带上租户：`app:article:v1:<tenant>:<id>`。缓存一章的 `load` 只按 ID 读取，命中后会跳过 `find` 的租户条件，把其他租户的文章返回出去；它要和 `find` 一样接收主体，用 `subject.Tenant` 组成键 |
-| [广播](../libraries/broadcasting.md) | 主题带上租户：`t:<tenant>:articles`。SSE 处理器用 `sub.Tenant` 订阅；[实时频道](../libraries/realtime.md#private-channels)的授权函数把频道名中的租户与 `sub.Tenant` 比较 |
-| [限流](../libraries/rate-limiting.md) | 按用户或 IP 的限流保持原样；按租户限额时，key 用 `tenant:<id>` |
-| [锁](../libraries/locks.md) | 锁名中的 ID 全局唯一（如 UUID）时保持原样；按 slug 等租户内唯一的值加锁时，带上租户 |
-| [Webhook](../features/webhooks.md) | 保持原样。端点属于租户，`Event.Send` 只发给 `subject.Tenant` 的端点 |
-| [文件](../libraries/filesystem.md) | 保持原样。文件记录的是上传者，引用文件的业务行（如文章的封面）有 `tenant_id`，读写都经过业务行的租户检查 |
-
+| [缓存](../libraries/cache.md) | 键带上租户：`app:article:v1:<tenant>:<id>`。命中缓存会跳过 `find` 的租户条件，所以读缓存的函数也接收主体 |
+| [广播](../libraries/broadcasting.md) | 主题带上租户：`t:<tenant>:articles`；[实时频道](../libraries/realtime.md#private-channels)的授权函数把频道名中的租户与 `sub.Tenant` 比较 |
+| [限流](../libraries/rate-limiting.md) | 按租户限额时 key 用 `tenant:<id>` |
+| [锁](../libraries/locks.md) | 按 slug 等租户内唯一的值加锁时带上租户；UUID 不用 |
+| [Webhook](../features/webhooks.md) | 不用改：`Event.Send` 只发给 `subject.Tenant` 的端点 |
+| [文件](../libraries/filesystem.md) | 不用改：引用文件的业务行有 `tenant_id`，读写经过它的租户检查 |
 
 <a id="platform"></a>
-## 运营后台
+## 运营后台：平台角色与 `AllTenants`
 
-运营后台挂在不带租户的路径下，租户为 `""`。运营人员的角色分配在平台本身：
-
-```go
-platformAdmin, err := roles.CreateRole(ctx, authz.Role{Name: "platform-admin", Permissions: []string{"platform:*"}})
-err = roles.Assign(ctx, staff, "", platformAdmin.ID) // staff 是运营人员的 identity.Ref
-```
-
-平台和租户的权限各自独立：平台中的角色只在平台生效，租户中的角色只在该租户生效。
-
-客服需要进入租户排查问题时，在所有租户（`authz.AllTenants`）中给他分配一个只读的全局角色，他在每个租户中都拥有这个角色的权限：
+运营后台的接口不带租户，租户为 `""`。运营人员的角色分配在平台中，只在平台生效。`roles` 是 `*authz.Store`，`staff` 是运营人员的 `identity.Ref`：
 
 ```go
-support, err := roles.CreateRole(ctx, authz.Role{Name: "support", Permissions: []string{"articles:read", "articles:read-drafts"}})
+admin, err := roles.CreateRole(ctx, authz.Role{Name: "platform-admin", Permissions: []string{"platform:*"}})
+err = roles.Assign(ctx, staff, "", admin.ID)
+
+// 客服在每个租户中都有只读权限
+support, err := roles.CreateRole(ctx, authz.Role{Name: "support", Permissions: []string{"articles:read"}})
 err = roles.Assign(ctx, staff, authz.AllTenants, support.ID)
 ```
 
-`AllTenants` 中只能分配全局角色。它的权限很大，应当只授予只读权限，并记录访问日志。
+- `AllTenants` 中只能分配全局角色，否则返回 `authz.ErrInvalid`。它对所有租户生效，只给只读权限。
+- 以某个成员的身份排查问题用[代为登录](#impersonation)。
 
-需要看到某个用户眼中的页面、或者替他完成操作时，使用[代为登录](authentication-advanced.md#impersonation)：客服以这个用户的身份和权限操作，`Impersonator` 记下客服本人。
+<a id="two-account-systems"></a>
+## 运营后台与租户后台：两套账号
 
-<a id="customers"></a>
-## 租户的客户
+运营人员和租户成员是两套[账号体系](authentication.md#account-systems)，各有一个 `login.Realm` 和 `apitoken.Store`，共用一个 `authz.Store`：
 
-租户的终端客户也是主体。客户账号有两种设计：
+| | 运营后台 | 租户后台 |
+| --- | --- | --- |
+| 主体类型、表 | `staff`，`staff` 表 | `member`，`members` 表 |
+| 接口 | `/ops/api`，租户为 `""` | `/t/{tenant}/api` |
+| 会话 cookie | `__Host-ops` | 默认的 `__Host-session` |
 
-- **平台统一账号**：客户注册一次，可以成为多个租户的客户，在租户中分配一个只有客户权限的角色，例如 `customer`，和租户成员的处理完全相同；
-- **租户内账号**：每个租户的客户是独立的账号，同一个邮箱在两个租户中各注册一次。它们通常是单独的一张表、单独的一套[账号体系](authentication-advanced.md#account-systems)，例如 `customer.Type`。客户的 App 和网页调用一个只接受客户的 API。客户的 [`login.Realm`](login.md#identifiers) 设置 `PerTenant: true`，邮箱和手机号就在租户内唯一，登录得到的主体带有请求所在的租户，签发的令牌只能在这个租户中使用：
+每套账号的 Resolver 读账号表，不存在或已停用时返回 `identity.ErrUnauthenticated`，然后 `return roles.Resolve(ctx, sub)`。成员的 Resolver 还要在 `sub.Impersonator` 不为零值时检查操作者在平台中仍有 `users:impersonate`，写法见[代为登录的限制](authentication.md#impersonation-rules)。需要发布 `login`、`ratelimit`、`apitoken`、`authz` 的迁移。
+
+<a id="assembling"></a>
+### 装配：两个 `Realm`、两个会话 cookie
+
+`internal/accounts` 创建两套账号。`db` 是 `*bun.DB`，`hasher`、`c` 见[哈希与加密](encryption.md)，`perms` 是[权限目录](authorization.md#permission-catalog)，`cfg` 有两个 `apitoken.Config`：
 
 ```go
-customers := login.New(a.db, login.Options{Type: customer.Type, PerTenant: true, Policy: login.Policy{Register: true} /* 其余字段见登录与注册 */})
+// StaffCookie 是运营的会话 cookie；成员用默认的 httpx.SessionCookie{}。
+var StaffCookie = httpx.SessionCookie{Name: "__Host-ops"}
+
+func New(db *bun.DB, cfg Config, hasher *hashing.Hasher, c *crypt.Crypt) *Accounts {
+    every15 := ratelimit.Config{Rate: 5, Interval: 15 * time.Minute, Burst: 5}
+    roles := authz.NewStore(db, perms)
+    realm := func(t identity.SubjectType, resolve identity.Resolver) *login.Realm {
+        return login.New(db, login.Options{
+            Type: t, Hasher: hasher, Crypt: c, Resolve: resolve,
+            Policy:   login.Policy{PasswordKinds: []string{login.KindEmail}},
+            Attempts: pglimit.New(db, "login:"+string(t)+":attempts", every15),
+            Sends:    pglimit.New(db, "login:"+string(t)+":sends", every15),
+        })
+    }
+    return &Accounts{
+        Staff: realm(staff.Type, staff.Resolve(db, roles)), StaffTokens: apitoken.NewStore(db, cfg.StaffToken),
+        Members: realm(member.Type, member.Resolve(db, roles)), MemberTokens: apitoken.NewStore(db, cfg.MemberToken),
+        Roles: roles,
+    }
+}
+```
+
+两套账号的 cookie 名称必须不同：相同时运营登录会把租户后台的成员挤掉。浏览器同时保存两个 cookie，每个 API 只读 `rest.Options.SessionCookie` 指定的那一个。
+
+<a id="wiring"></a>
+### 接入入口：`/ops/api` 与 `/t/{tenant}/api`
+
+`acc` 是 `accounts.New` 的结果，`a.db` 是 `*bun.DB`：
+
+```go
+router.Route("/ops/api", func(r chi.Router) {
+    ops := rest.New(r, rest.Options{
+        BasePath:      "/ops/api",
+        Accounts:      identity.Accounts{staff.Type: staff.Resolve(a.db, acc.Roles)},
+        SessionCookie: accounts.StaffCookie,
+    })
+    opsapi.RegisterRoutes(ops, acc)
+})
+router.Route("/t/{tenant}/api", func(r chi.Router) {
+    console := rest.New(r, rest.Options{
+        BasePath: "/t/{tenant}/api",
+        Tenant:   func(ctx huma.Context) string { return ctx.Param("tenant") },
+        Accounts: identity.Accounts{member.Type: member.Resolve(a.db, acc.Roles)},
+    })
+    consoleapi.RegisterRoutes(console, acc)
+})
+```
+
+- 运营的令牌调用租户后台、成员的令牌调用运营后台返回 `401`。
+- 成员的登录令牌不绑定租户：同一个会话进入他所属的各个租户，权限按各租户的角色。
+- 运营后台的前端用 `go tool tenon add frontend ops --api /ops/api` 生成，见[再加一个前端](../installation/tooling.md#add-frontend)。
+
+<a id="impersonation"></a>
+### 运营代为登录租户成员
+
+“以此成员登录”的接口要求 `users:impersonate`，为成员签发带 `Impersonator` 的登录令牌，直接写入成员的会话 cookie。`h.roles` 是 `*authz.Store`，`h.memberTokens` 是成员的 `*apitoken.Store`：
+
+```go
+func (h *handlers) impersonate(ctx context.Context, in *ImpersonateInput) (*ImpersonateOutput, error) {
+    staff, _ := identity.FromContext(ctx)
+    if !staff.Impersonator.IsZero() {
+        return nil, identity.ErrForbidden.New() // 代为登录只有一层
+    }
+    target := identity.Subject{Type: member.Type, ID: in.Body.MemberID, Impersonator: staff.Ref()}
+    if _, isMember, err := h.roles.Permissions(ctx, target.Ref(), in.Body.TenantID); err != nil {
+        return nil, err
+    } else if !isMember {
+        return nil, ErrMemberNotFound.New() // 应用定义的 NotFound 错误
+    }
+    token, err := h.memberTokens.Login(ctx, target, apitoken.Device{UserAgent: in.UserAgent})
+    if err != nil {
+        return nil, err
+    }
+    out := &ImpersonateOutput{SetCookie: httpx.SessionCookie{}.Set(token, h.memberLifetime)}
+    out.Body.ConsolePath = "/t/" + in.Body.TenantID + "/app" // 运营前端随后打开它
+    return out, nil
+}
+```
+
+- 两个后台同源，租户后台才读得到写入的 `__Host-session`；`Secure` 的 cookie 只在 HTTPS 和 `localhost` 上保存。
+- 令牌不经过前端代码，运营自己的 `__Host-ops` 不受影响。
+- 租户后台在 `sub.Impersonator` 不为零值时显示“正在代某人操作”和退出按钮；退出时 `Revoke` 当前凭据、清除 cookie、回到运营后台。
+
+<a id="customers"></a>
+## 租户的客户账号：`PerTenant`
+
+租户的终端客户有两种设计：
+
+- **平台统一账号**：客户可以属于多个租户，在租户中分配只有客户权限的角色，与成员相同。
+- **租户内账号**：同一个邮箱在两个租户各注册一次。它是单独的[账号体系](authentication.md#account-systems)（例如 `customer.Type`），[`login.Realm`](login.md#identifiers) 设置 `PerTenant: true`。
+
+`PerTenant` 时邮箱和手机号在租户内唯一，登录得到的主体带有请求所在的租户，签发的令牌只能在这个租户使用，访问其他租户返回 `403`。`db` 是 `*bun.DB`，`customerTokens` 是客户的 `*apitoken.Store`，`device` 是登录设备（`apitoken.Device`）：
+
+```go
+customers := login.New(db, login.Options{Type: customer.Type, PerTenant: true /* 其余字段见登录与注册 */})
 
 out, err := customers.Password(ctx, login.Email(in.Body.Email), in.Body.Password)
-if err != nil {
-    return nil, err
-}
 plain, err := customerTokens.Login(ctx, out.Subject, device) // out.Subject.Tenant 是请求所在的租户
 ```
 
-带着这样的令牌访问其他租户时，请求返回 `403`。客户表的主键是 `(tenant_id, id)` 时，把租户编进主体的 ID，见[多套账号体系](authentication-advanced.md#account-systems)；[第三方账号](social-login.md#linking-accounts)同样按租户隔离。
+客户表的主键是 `(tenant_id, id)` 时把租户编进主体的 ID；[第三方账号](social-login.md#linking-accounts)同样按租户隔离。
 
 <a id="tokens"></a>
 ## 令牌与租户
 
-登录令牌不绑定租户，用户可以带着同一个令牌访问他所属的每个租户。个人访问令牌绑定创建它时请求所在的租户：在 acme 中创建的令牌只能访问 acme，带着它访问其他租户时请求返回 `403`：
-
-```go
-// sub.Tenant 是 "acme"
-plain, err := tokens.Create(ctx, sub, apitoken.Personal{
-    Name:   "acme 报表",
-    Scopes: []string{"articles:read"},
-})
-```
-
-脚本或集成通常只需要访问一个租户，所以在租户中创建令牌即可；在平台本身（`sub.Tenant` 为空）创建的令牌不绑定租户。令牌能做的是用户在该租户中的权限与 `Scopes` 的交集，见 [API 令牌](api-tokens.md#personal-access-tokens)。
-
-<a id="troubleshooting"></a>
-## 常见问题
-
-**一个租户看到了另一个租户的数据**
-
-查询没有带 `subject.Tenant` 条件。每个查询都要限定在当前租户中，见[数据隔离](#data-isolation)。
-
-**队列任务中永远查不到文章，返回 `ErrNotFound`**
-
-任务的 payload 中没有带租户，系统主体以平台本身的身份查询。payload 要带上租户，按租户构造系统主体。
-
-**带着令牌访问其他租户时得到 403**
-
-令牌绑定了租户，只能在这个租户中使用，见[令牌与租户](#tokens)。
+- 登录令牌不绑定租户（`PerTenant` 的账号除外）。
+- [个人访问令牌](api-tokens.md#personal-access-tokens)绑定创建时请求所在的租户：`sub.Tenant` 是 `"acme"` 时，`tokens.Create(ctx, sub, apitoken.Personal{...})` 创建的令牌只能访问 acme，访问其他租户返回 `403`；在平台（`""`）创建的不绑定。令牌能做的是用户在这个租户中的权限与 `Scopes` 的交集。

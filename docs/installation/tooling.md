@@ -162,7 +162,7 @@ go tool tenon add frontend admin --layout frame
 
 `--base` 可以指定其他的挂载路径，以 `/` 开头和结尾，不能与已有的前端相同。`apps/admin` 必须还不存在。
 
-`--api` 是这个前端调用的 API 的路径，默认 `/api`。这个前端使用另一套账号、有自己的 API 时写这个 API 的路径，例如运营后台用 `--api /ops/api`，见[运营后台与多租户](../security/saas-example.md)。生成的文件按这个 API 的客户端（`packages/client/src/<名称>`，名称见[前端与 API 怎样被发现](#conventions)）是否已经生成而不同：
+`--api` 是这个前端调用的 API 的路径，默认 `/api`。这个前端使用另一套账号、有自己的 API 时写这个 API 的路径，例如运营后台用 `--api /ops/api`，见[运营后台与多租户](../security/tenancy.md)。生成的文件按这个 API 的客户端（`packages/client/src/<名称>`，名称见[前端与 API 怎样被发现](#conventions)）是否已经生成而不同：
 
 | 情况 | `src/api.ts` | `src/auth.ts` |
 | --- | --- | --- |

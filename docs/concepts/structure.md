@@ -163,7 +163,7 @@ SQL 迁移文件，由 `embed.go` 嵌入程序，部署时用 `migrate up` 执�
 | `crypt` | 用应用密钥加密、签名链接 | [加密与签名链接](../security/encryption.md) |
 | `enum` | 带显示文字的枚举：取值、校验和按语言翻译的显示文字 | [带显示文字的枚举](../http/requests.md#enums) |
 | `errorx` | 带稳定错误码和分类的业务错误 | [错误处理](../general/errors.md) |
-| `hashing` | 密码哈希 | [哈希](../security/hashing.md) |
+| `hashing` | 密码哈希 | [哈希](../security/encryption.md) |
 | `health` | 检查依赖是否可用，供就绪检查使用 | [健康检查](lifecycle.md#health-checks) |
 | `doctor` | 检查运行环境的版本、设置和权限，给出修改方法；`doctorcmd` 是 `doctor` 命令 | [自检](../installation/doctor.md) |
 | `i18n` | 组合 go-i18n 消息目录 | [本地化](../general/localization.md) |
@@ -194,7 +194,7 @@ SQL 迁移文件，由 `embed.go` 嵌入程序，部署时用 `migrate up` 执�
 | `sms` | 短信；`aliyun`、`tencent` 发送，`logsms` 用于开发 | [短信](../libraries/sms.md) |
 | `pdf` | 把前端打印模板渲染的 HTML 生成为 PDF，`pdf/gotenberg` 生成 | [生成 PDF](../libraries/pdf.md) |
 | `outbound` | 只能访问公网地址的 HTTP 客户端 | [出站请求](../libraries/outbound.md) |
-| `captcha` | 服务端校验 Turnstile、hCaptcha | [人机验证](../security/login-security.md#captcha) |
+| `captcha` | 服务端校验 Turnstile、hCaptcha | [人机验证](../security/login.md#captcha) |
 | `sheet` | 读写 CSV 和 Excel，按结构体解码并校验每一行 | [导入与导出](../features/import-export.md) |
 | `document` | `convert` 把文件转为 Markdown，`split` 切分 Markdown | [文档转换与切分](../ai/documents.md) |
 | `contract` | 接口契约中与入口无关的部分：JSON Schema 与校验、枚举的命名类型、校验错误的规则和译文，HTTP、RPC、MCP 共用 | [校验](../http/requests.md) |
