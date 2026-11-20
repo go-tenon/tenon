@@ -4,8 +4,25 @@
 
 import { Anchor, Badge, Breadcrumbs, Stack, Tabs, Text, Title } from "@mantine/core"
 import { Link, useNavigate, useSearch } from "@tanstack/react-router"
-import { type ReactNode, useRef } from "react"
+import { createContext, type ReactNode, useContext, useRef } from "react"
 import { useNavigation } from "../app/layout"
+
+const PageBreadcrumbsContext = createContext(true)
+
+/** PageBreadcrumbs 的选项。 */
+export interface PageBreadcrumbsProps {
+  /** 其中的页面默认是否显示面包屑。 */
+  show: boolean
+  children?: ReactNode
+}
+
+/**
+ * 布局决定其中的页面默认是否显示面包屑，例如 RailLayout 的设置中二级导航已经标出了位置，面包屑是多余的。
+ * 页面的 breadcrumbs 仍可以单独打开或关掉。
+ */
+export function PageBreadcrumbs({ show, children }: PageBreadcrumbsProps): ReactNode {
+  return <PageBreadcrumbsContext.Provider value={show}>{children}</PageBreadcrumbsContext.Provider>
+}
 
 /** 页内的一个标签。 */
 export interface PageTab {
@@ -26,7 +43,7 @@ export interface PageProps {
   description?: ReactNode
   /** 右侧的操作，例如“新建”按钮。 */
   actions?: ReactNode
-  /** 标题上面的面包屑（来自路由的标题），默认显示；false 时不显示。 */
+  /** 标题上面的面包屑（来自路由的标题）。默认显示，所在的布局用 PageBreadcrumbs 关掉时不显示（例如 RailLayout 的设置中）。 */
   breadcrumbs?: boolean
   /** 在面包屑最后再加一级表示当前页面，例如新建页面的“新建”：路由没有自己的标题时用，前面的各级都是链接。 */
   crumb?: string
@@ -40,11 +57,13 @@ export interface PageProps {
 }
 
 /** 页面：面包屑、标题区加内容；有 tabs 时内容分成几个页内标签。 */
-export function Page({ title, description, actions, breadcrumbs = true, crumb, tabs, children }: PageProps): ReactNode {
+export function Page({ title, description, actions, breadcrumbs, crumb, tabs, children }: PageProps): ReactNode {
+  const crumbsByDefault = useContext(PageBreadcrumbsContext)
+  const showCrumbs = breadcrumbs ?? crumbsByDefault
   return (
     <Stack gap="md">
       <Stack gap={10}>
-        {breadcrumbs && <Crumbs extra={crumb} />}
+        {showCrumbs && <Crumbs extra={crumb} />}
         <div className="tn-page-header">
           <div>
             <Title order={2} className="tn-page-title">
