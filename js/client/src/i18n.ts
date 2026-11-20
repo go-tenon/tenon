@@ -36,7 +36,10 @@ export interface I18n<Id extends string = string> {
    * 传入的语言没有消息时，依次用同一主语言的语言（en-US → en）和默认语言。语言变化时通知订阅者。
    */
   setLanguage(language?: string | null): void
-  /** 可以选的语言：应用消息和 extend 加入的消息中出现过的语言，默认语言在前。 */
+  /**
+   * 可以选的语言：默认语言和应用消息中有的语言，默认语言在前。extend 加入的消息只补充这些语言中缺少的文字，
+   * 不增加可以选的语言：应用只有简体中文时，界面整个是简体中文。
+   */
   languages(): string[]
   /**
    * 按当前语言翻译消息 id，data 是模板数据。当前语言中没有时用默认语言的；默认语言中也没有时返回 id 本身。
@@ -44,7 +47,9 @@ export interface I18n<Id extends string = string> {
   t(id: Id, data?: MessageData): string
   /** 是否有消息 id（任何语言）。 */
   has(id: string): boolean
-  /** 加入一组优先级较低的消息，例如框架组件内置的文字：应用消息中同一个 ID 的消息覆盖它们。 */
+  /**
+   * 加入一组优先级较低的消息，例如框架组件内置的文字：应用消息中同一个 ID 的消息覆盖它们。其中的语言不在 languages 中时不使用。
+   */
   extend(catalog: Catalog): void
   /** 请求头：Accept-Language 是当前语言，交给生成客户端的 headers，服务端的提示与界面使用同一种语言。 */
   headers(): { "Accept-Language": string }
@@ -67,14 +72,10 @@ export function createI18n<C extends Catalog>(options: I18nOptions<C>): I18n<Ids
   const lower: Catalog[] = [] // extend 加入的消息，后加入的优先
   const preferred = options.preferred ?? browserLanguages
   const all = () => [options.messages, ...lower]
-  const languages = () => {
-    const seen = new Set<string>([options.defaultLanguage])
-    for (const catalog of all()) for (const l of Object.keys(catalog)) seen.add(l)
-    return [...seen]
-  }
+  const languages = () => [...new Set([options.defaultLanguage, ...Object.keys(options.messages)])]
   const resolve = (wanted: readonly (string | null | undefined)[]) =>
     matchLanguage(wanted, languages()) ?? options.defaultLanguage
-  // requested 是 setLanguage 要求的语言；没有要求时按偏好选择。加入新的消息后按同样的依据重新选择。
+  // requested 是 setLanguage 要求的语言；没有要求时按偏好选择。
   let requested: string | null = null
   const choose = () => resolve(requested ? [requested] : (preferred() ?? []))
   let current = choose()
@@ -109,8 +110,6 @@ export function createI18n<C extends Catalog>(options: I18nOptions<C>): I18n<Ids
     has: (id) => all().some((catalog) => Object.values(catalog).some((table) => table[id] !== undefined)),
     extend(catalog) {
       lower.push(catalog)
-      // 新加入的语言可能更匹配，例如应用只有 zh-CN 的消息，框架内置了 en
-      change(choose())
     },
     headers: () => ({ "Accept-Language": current }),
     subscribe(listener) {
