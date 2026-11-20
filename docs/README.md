@@ -78,18 +78,20 @@ Tenon 是用 Go 构建后端服务的框架。业务逻辑写成[业务动作](c
 
 ## 前端
 
-- [前端规范](frontend/conventions.md)、[前端包的分层](frontend/README.md)
-- [搭建前端应用](frontend/app.md)、[布局与导航](frontend/layout.md)、[列表与表单](frontend/lists-forms.md)
-- [在 React 中调用接口](frontend/client-react.md)：TanStack Query、权限、枚举
+- [前端规范](frontend/conventions.md)：技术栈、目录、`@go-tenon/ui` 的分层、颜色
+- [搭建前端应用](frontend/app.md)：装配、主题、登录、权限、错误页
+- [布局与导航](frontend/layout.md)：侧栏菜单、多标签、租户
+- [列表与表单](frontend/lists-forms.md)、[在 React 中调用接口](frontend/client-react.md)
 - [资源与设置页面](frontend/resources.md)：在 Go 中声明增删改查页面
-- [后台功能](frontend/features.md)：通知、操作记录、导入导出、AI 对话的界面
-- [官网与文档站](frontend/site.md)、[托管与服务端渲染](frontend/hosting.md)、[TanStack Start 的接入](frontend/start.md)
+- [后台功能的前端](frontend/features.md)：通知、后台操作、导入导出、队列面板、AI 对话
+- [官网与文档站](frontend/site.md)、[托管前端与服务端渲染](frontend/hosting.md)
 - [前端观测](frontend/observability.md)
 
 ## 客户端
 
-- [客户端](clients/README.md)、[原生客户端](clients/native.md)、[网页宿主的约定](clients/host.md)
-- [Electron 桌面端](clients/electron.md)、[打包、签名与更新](clients/electron-release.md)
+- [客户端](clients/overview.md)：种类、目录、命令
+- [原生客户端](clients/native.md)、[网页宿主的约定](clients/host.md)
+- [Electron 桌面端](clients/electron.md)：桌面能力、打包、签名、自动更新
 
 ## AI
 

@@ -25,4 +25,4 @@ description: 在 Tenon 应用的前端（apps/<前端>，TanStack Start + Mantin
 - 状态的颜色固定：成功 `green`，进行中 `bright-blue`，等待处理 `yellow`，需要注意 `deep-orange`，失败 `red`，没有状态 `gray`。Mantine 自带的 `teal`、`orange`、`blue`、`cyan`、`grape`、`indigo`、`lime` 不在主题的预设中，不使用。
 - 不使用的库（antd、Tailwind 等）列在 `.tenon/docs/frontend/conventions.md#not-used`。
 - 生成的代码（`packages/client`、`routeTree.gen.ts`）不手改。两个前端共用的业务组件放进 `packages/ui`。
-- 服务端渲染的前端中，页面的 loader 在服务端运行时同样经生成的客户端调用接口，见 `.tenon/docs/frontend/start.md`。
+- 服务端渲染的前端中，页面的 loader 在服务端运行时同样经生成的客户端调用接口，见 `.tenon/docs/frontend/hosting.md#calling-the-api`。

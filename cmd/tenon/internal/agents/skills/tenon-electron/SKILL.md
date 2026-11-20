@@ -5,7 +5,7 @@ description: Tenon 应用的 Electron 桌面端（clients/<名称>）：生成�
 
 # Electron 桌面端
 
-桌面端在窗口中显示 `apps/` 中的一个前端，由 `@go-tenon/electron` 实现宿主。先读 `.tenon/docs/clients/electron.md` 和 `.tenon/docs/clients/README.md`。
+桌面端在窗口中显示 `apps/` 中的一个前端，由 `@go-tenon/electron` 实现宿主。先读 `.tenon/docs/clients/electron.md` 和 `.tenon/docs/clients/overview.md`。
 
 ## 步骤
 
@@ -15,7 +15,7 @@ description: Tenon 应用的 Electron 桌面端（clients/<名称>）：生成�
 4. **桌面能力**：在 `src/main.ts` 中逐行组合 `windowState`、`standardMenu`、`singleInstance`、`tray`、`notifications`、`badge`、`autostart`、`deepLinks` 等函数，见 `.tenon/docs/clients/electron.md#capabilities`。
 5. **页面调用宿主**：页面经 `@go-tenon/host` 的 `host()` 取得 `tenonHost`，见 `.tenon/docs/clients/electron.md#from-the-page`、`.tenon/docs/clients/host.md`。
 6. **原生方法**：需要宿主没有的能力时自己加，见 `.tenon/docs/clients/electron.md#native-methods`。
-7. **打包与发布**：`go tool tenon build --client <名称>`；签名、CI 中为三个平台打包、自动更新和强制升级见 `.tenon/docs/clients/electron-release.md`。
+7. **打包与发布**：`go tool tenon build --client <名称>`；签名、CI 中为三个平台打包、自动更新和强制升级见 `.tenon/docs/clients/electron.md#packaging`。
 
 ## 要点
 

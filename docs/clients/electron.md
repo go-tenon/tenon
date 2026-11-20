@@ -1,70 +1,39 @@
 # Electron 桌面端
 
-[Electron](https://www.electronjs.org) 把一个网页装进原生的桌面程序。Tenon 用它把 `apps` 中的前端做成 Windows、macOS、Linux 上的桌面端：界面就是你的前端，一行不用改；桌面端另外有系统通知、托盘、开机自启、深度链接和自动更新。用户在系统浏览器中登录，接口调用由桌面端转发给服务器。
+用 Electron 把 `apps` 中的一个前端做成 Windows、macOS、Linux 上的桌面端：页面从安装包加载，接口由主进程转发并加上 token（[网页宿主的约定](host.md)），用户在系统浏览器中登录。这一页还包括打包、签名、自动更新和强制升级。
 
-阅读前需要了解：[客户端](README.md)；[原生客户端](native.md)。
-
-- [最小的例子](#minimal-example)
-- [生成的文件](#generated-files)
-- [它怎样工作](#how-it-works)
-- [登录](#sign-in)
-- [桌面能力](#capabilities)
-- [在页面中调用桌面能力](#from-the-page)
-- [自己加原生方法](#native-methods)
-- [常见问题](#troubleshooting)
-- [API 参考](#api-reference)
+包：`@go-tenon/electron`、`@go-tenon/host`。
 
 <a id="minimal-example"></a>
-## 最小的例子
+## 示例
 
-下面为运营后台 `apps/admin` 生成一个桌面端。`admin` 要有登录页（用 `tenon add frontend` 生成时默认就有），桌面端经它登录。在项目根目录运行：
+为前端 `apps/admin`（要有登录页，`tenon add frontend` 默认生成）生成桌面端，在项目根目录运行：
 
 ```bash
 go tool tenon add client admin-desktop --kind electron --frontend admin --title "运营后台"
-```
-
-它生成 `clients/admin-desktop`，在 `apps/admin` 中加上授权页，把新的包加入 Bun workspace 并安装依赖。
-
-然后在服务端登记这个客户端，ID 与目录名相同，见[原生客户端：登记客户端](native.md#registering)。
-
-最后运行它：
-
-```bash
 go tool tenon dev --client admin-desktop
 ```
 
-`tenon dev` 照常启动你的程序和前端的开发服务器，再打开桌面端的窗口（第一次运行时下载 Electron，约 100 MB）。窗口中是 `admin` 的登录页，上面只有一个“在浏览器中登录”按钮。点击后系统浏览器打开登录页面，登录并确认后回到桌面端，进入后台。修改前端代码后，窗口中的页面立刻更新；修改 `clients/admin-desktop/src` 中的主进程代码后，关掉窗口重新运行。
+- `add client` 生成 `clients/admin-desktop`，在 `apps/admin` 中加上授权页 `src/routes/oauth/consent.tsx`，并加入 Bun workspace。`--title` 是窗口标题和安装包的名称，默认是客户端的名字。
+- 运行前在服务端登记这个客户端，ID 与目录名相同，见[登记客户端](native.md#registering)。
+- `tenon dev` 启动程序和前端的开发服务器，再打开桌面端的窗口（第一次运行时下载 Electron）。前端代码的修改立刻生效；`src` 中主进程代码修改后重新运行。窗口最多等前端的开发服务器 60 秒。
+- Linux 上报 “The SUID sandbox helper binary … is not configured correctly” 时，给报错中的 `chrome-sandbox` 设置权限：`sudo chown root:root <路径>/chrome-sandbox && sudo chmod 4755 <路径>/chrome-sandbox`。只在开发时出现。
 
 <a id="generated-files"></a>
 ## 生成的文件
 
 | 文件 | 内容 |
 | --- | --- |
-| `tenon.json` | 种类和显示的前端：`{ "kind": "electron", "frontend": "admin" }` |
-| `src/main.ts` | 主进程：创建宿主，逐行加上桌面能力 |
-| `src/preload.ts` | 在页面中放好 `tenonHost` |
-| `electron-builder.yml` | 打包的配置：应用 ID、名称、安全开关、更新源、深度链接的协议、各平台的安装包格式 |
-| `assets/tray.png`、`tray@2x.png` | 托盘图标，换成你自己的 |
-| `build/icon.png` | 应用图标（至少 512×512），换成你自己的 |
+| `src/main.ts` | 主进程：创建宿主，每项桌面能力占一行，见[桌面能力](#capabilities) |
+| `src/preload.ts` | 导入 `@go-tenon/electron/preload`，在页面中放好 `tenonHost` |
+| `electron-builder.yml` | 打包的配置，见[打包](#packaging) |
+| `assets/tray.png`、`build/icon.png` | 托盘图标和应用图标（至少 512×512），换成应用自己的 |
 | `package.json` | 版本号，以及 `dev`、`bundle`、`package` 脚本 |
-
-`apps/admin/src/routes/oauth/consent.tsx` 是加在前端中的授权页，见[原生客户端：登记客户端](native.md#registering)。
-
-<a id="how-it-works"></a>
-## 它怎样工作
-
-一个 Electron 程序有两种进程：**主进程**运行 Node.js，能调用系统的能力；**渲染进程**是窗口中的网页，和浏览器中的一样，不能直接碰系统。桌面端的主进程由 `@go-tenon/electron` 做好了这几件事：
-
-- **页面来自本地**：前端按 SPA 模式构建后打进安装包，窗口打开 `https://admin-desktop.localhost/admin/`。这个地址不会访问网络，请求由主进程从安装包中返回。离线时也能打开界面。
-- **接口由主进程转发**：页面照常请求 `/api/...`，主进程转发给服务器，加上 token 和 `X-App-Version`。对页面来说接口和在网页上一样是同源的，前端代码不用改；token 只在主进程中，页面上的脚本拿不到。
-- **网页上的渲染方式不影响桌面端**：前端在网页上是否在服务端渲染都可以，桌面端一律在窗口中渲染。
-
-这些规则写在[网页宿主的约定](host.md)中。
 
 <a id="sign-in"></a>
 ## 登录
 
-前端的登录页（`src/routes/login.tsx`）在桌面端中显示 `BrowserSignIn`，在网页中显示原来的 `LoginForm`：
+前端的登录页 `src/routes/login.tsx` 在桌面端中显示 `BrowserSignIn`，在网页中显示 `LoginForm`：
 
 ```tsx
 const desktop = host()
@@ -75,91 +44,68 @@ return (
 )
 ```
 
-`host()` 来自 `@go-tenon/host`，在桌面端中返回 `tenonHost`，在浏览器中返回 `undefined`。`desktop.auth.signIn` 打开系统浏览器，等用户登录并确认，换到 token 后保存在系统的安全存储中（`safeStorage`）。之后 `BrowserSignIn` 读取当前用户，跳回登录前的页面。
+`host()` 来自 `@go-tenon/host`，在浏览器中返回 `undefined`；`login` 是 `src/auth.ts` 中的登录函数，`redirect` 是登录前想去的页面。`desktop.auth.signIn` 打开系统浏览器，最多等 10 分钟，换到 token 后用 `safeStorage` 加密保存。
 
-退出时，`src/auth.ts` 的 `logout` 先调用退出接口撤销这次登录，再让桌面端删除保存的 token：
-
-```ts
-export async function logout(): Promise<void> {
-  await send("POST", "/auth/logout")
-  await host()?.auth.signOut()
-}
-```
-
-接口返回 `401` 时，桌面端删除 token，页面照常回到登录页。
+- 退出：`src/auth.ts` 的 `logout` 先调用退出接口，再调用 `host()?.auth.signOut()` 删除 token。
+- 接口返回 `401` 时，桌面端删除 token，页面照常回到登录页。
+- 浏览器显示“无法授权”：见[排查授权失败](native.md#troubleshooting)。
+- Linux 上没有钥匙串服务（gnome-keyring、KWallet）时，token 用固定的密钥加密，日志中有 “no system keyring”。
 
 <a id="capabilities"></a>
 ## 桌面能力
 
-生成的 `src/main.ts` 中，每项桌面能力占一行，不需要的删掉那一行：
+生成的 `src/main.ts` 中每项桌面能力占一行，不需要的删掉那一行。`autoUpdate` 来自 `@go-tenon/electron/update`，其余来自 `@go-tenon/electron/main`：
 
 ```ts
-logs() // 主进程的日志写入文件，收集崩溃报告
+logs() // console 写入 main.log（超过 5 MB 换成 main.log.old），崩溃报告保存在本地，设置 crashReportURL 时上传
 
 const host = createHost({ id: "admin-desktop", server, base: "/admin/", renderer, preload, dev, window })
 
-windowState(host) // 记住窗口的位置和大小
-standardMenu(host) // 应用菜单和右键菜单
-autoUpdate(host) // 自动更新，服务端要求升级时立即更新
-notifications(host, { appId }) // 系统通知
-badge(host) // 未读角标
-tray(host, { title: "运营后台", icon }) // 关闭窗口时隐藏到托盘
-autostart(host, { name: "admin-desktop" }) // 开机自启
-const openLink = deepLinks(host, { scheme: "admin-desktop", base: "/admin/" }) // 深度链接
+windowState(host) // 记住窗口的位置、大小和是否最大化
+standardMenu(host) // macOS 的标准菜单（⌘C、⌘V 需要它）和右键菜单
+autoUpdate(host) // 自动更新，服务端返回 426 时立即更新
+notifications(host, { appId }) // 页面调用 notify 弹出系统通知
+badge(host) // 页面调用 badge 设置未读数（macOS 的 Dock、Linux 的启动器）
+tray(host, { title: "运营后台", icon }) // 关闭窗口时隐藏到托盘，从托盘菜单“退出”才退出
+autostart(host, { name: "admin-desktop" }) // 页面调用 autostart.set(true) 开机自启
+const openLink = deepLinks(host, { scheme: "admin-desktop", base: "/admin/" }) // admin-desktop://open/admin/orders/123
 
-if (singleInstance(host, openLink)) {
+if (singleInstance(host, openLink)) { // 再次打开（包括点击深度链接）时回到已有的窗口
   host.start()
 }
 ```
 
-| 能力 | 作用 |
-| --- | --- |
-| `logs` | 主进程的 `console` 输出同时写入日志目录中的 `main.log`，超过 5 MB 换成 `main.log.old`；崩溃报告保存在本地，设置 `crashReportURL` 时上传 |
-| `windowState` | 记住窗口的位置、大小和是否最大化；显示器拔掉后不恢复到屏幕之外 |
-| `standardMenu` | macOS 的标准菜单（没有“编辑”菜单时 ⌘C、⌘V 不起作用），Windows 和 Linux 没有菜单栏；右键菜单有剪切、复制、粘贴和拼写建议 |
-| `autoUpdate` | 后台检查和下载新版本，退出时安装，见[打包、签名与更新](electron-release.md#auto-update) |
-| `notifications` | 页面调用 `notify` 弹出系统通知，点击后回到窗口并跳到指定的页面 |
-| `badge` | 页面调用 `badge` 设置未读数：macOS 的 Dock、Linux 的启动器显示数字 |
-| `tray` | 关闭窗口时隐藏到托盘，应用继续运行，实时连接和通知不断开；从托盘菜单“退出”才真正退出 |
-| `autostart` | 页面调用 `autostart.set(true)` 开机自启 |
-| `deepLinks` | `admin-desktop://open/admin/orders/123` 打开桌面端并跳到这个页面，路径与网页上的相同 |
-| `singleInstance` | 只运行一个实例：再次打开（包括点击深度链接）时回到已有的窗口 |
-
-`appId` 与 `electron-builder.yml` 中的 `appId` 相同。Windows 按它把通知关联到应用，两处不同时通知不显示。
+- `createHost` 的 `id` 是客户端的名字，`server` 是服务器的地址（`tenon dev` 运行时取 `TENON_SERVER`），`dev` 是前端开发服务器的地址，生成的文件中都已写好。
+- `appId` 要与 `electron-builder.yml` 中的 `appId` 相同：Windows 按它把通知关联到应用，不同时通知不显示。
+- GNOME 要装 AppIndicator 扩展才显示托盘。
 
 <a id="from-the-page"></a>
 ## 在页面中调用桌面能力
 
-页面通过 `host()` 调用桌面能力。在浏览器中 `host()` 返回 `undefined`，所以每次调用都写成可选的，同一份代码在网页和桌面端中都能运行：
+页面用 `@go-tenon/host` 的 `host()` 调用桌面能力。浏览器中 `host()` 返回 `undefined`，调用都写成可选的，同一份代码在网页和桌面端中都能运行：
 
 ```ts
 import { host } from "@go-tenon/host"
 
-// 收到新通知时（例如事件流推送了未读数）
 host()?.badge?.(unread)
 host()?.notify?.({ title: "新订单", body: "订单 123 已付款", path: "/admin/orders/123" })
 
-// 设置页中的“开机自启”开关
 const enabled = (await host()?.autostart?.get()) ?? false
 await host()?.autostart?.set(!enabled)
-```
 
-`unread` 是未读数，通常来自[站内通知](../features/notifications.md)的未读数推送。`notify` 的 `path` 是用户点击通知后跳转的页面。
-
-前端的 `src/router.tsx` 已经订阅了桌面端的 `navigate` 事件：点击通知、打开深度链接时，页面跳到对应的路径。
-
-有新版本下载好时，桌面端发出 `update` 事件，页面可以提示用户重启：
-
-```ts
 host()?.on("update", (status) => {
-  if (status.state === "ready") showRestartNotice(status.version) // 你的提示，点击后调用 host()?.update?.install()
+  if (status.state === "ready") showRestartNotice(status.version) // 应用自己的提示，点击后调用 host()?.update?.install()
 })
 ```
 
-<a id="native-methods"></a>
-## 自己加原生方法
+- `unread` 是未读数，通常来自[站内通知](../features/notifications.md)的推送。
+- `notify` 的 `path` 是点击通知后跳转的页面：前端的 `src/router.tsx` 已经订阅了 `navigate` 事件，点击通知、打开深度链接时页面跳到对应的路径。
+- 全部成员见[页面看到的 tenonHost](host.md#tenon-host)。
 
-需要框架没有提供的原生能力时（例如读写本地文件、调用打印机），在主进程中用 `host.handle` 注册一个方法，页面通过 `tenonHost` 调用它。方法的参数和返回值都是 JSON。下面加一个选择文件夹的方法：
+<a id="native-methods"></a>
+## 用 `host.handle` 加原生方法
+
+需要框架没有提供的原生能力时，在主进程中用 `host.handle` 注册方法，参数和返回值都是 JSON：
 
 ```ts
 // src/main.ts，在 host.start() 之前
@@ -172,7 +118,7 @@ host.handle("files.pickFolder", async () => {
 })
 ```
 
-页面中调用它。`TenonHost` 的类型中没有应用自己的方法，用交叉类型补上：
+页面中用交叉类型补上应用自己的方法：
 
 ```ts
 import { host, type TenonHost } from "@go-tenon/host"
@@ -182,86 +128,100 @@ type AppHost = TenonHost & { files?: { pickFolder(): Promise<string | null> } }
 const folder = await (host() as AppHost | undefined)?.files?.pickFolder()
 ```
 
-方法名中的点表示层级：`files.pickFolder` 在页面中是 `tenonHost.files.pickFolder`。桌面端只接受来自自己页面的调用，其他网页调用不到这些方法。
+方法名中的点表示层级：`files.pickFolder` 在页面中是 `tenonHost.files.pickFolder`。只有桌面端自己的页面能调用。
 
-<a id="troubleshooting"></a>
-## 常见问题
-
-**Linux 上启动时报错 “The SUID sandbox helper binary was found, but is not configured correctly”**
-
-Electron 的沙箱需要 root 所有的 `chrome-sandbox`，或者系统允许普通用户创建用户命名空间；Ubuntu 24.04 之后的 AppArmor 默认不允许。开发时给 `chrome-sandbox` 设置权限即可（路径在报错中）：
+<a id="packaging"></a>
+## 打包
 
 ```bash
-sudo chown root:root <路径>/chrome-sandbox && sudo chmod 4755 <路径>/chrome-sandbox
+go tool tenon build --client admin-desktop
 ```
 
-安装包（AppImage、deb）由 electron-builder 处理，用户不会遇到。
+它安装依赖（`bun install --frozen-lockfile`），设置 `TENON_RENDER=csr` 把前端按 SPA 模式构建到 `clients/admin-desktop/dist/renderer`，再在客户端目录中运行 `bun run package`，由 [electron-builder](https://www.electron.build) 生成安装包。
 
-**Linux 上看不到托盘图标**
+- 安装包在 `clients/admin-desktop/release` 中。版本号是客户端 `package.json` 的 `version`，每次发布前改它。
+- electron-builder 只为当前的系统打包，三个平台在 CI 中分别打包。
+- `electron-builder.yml` 已经写好应用 ID、安全开关（`electronFuses`）、深度链接的协议、更新源（`publish`）和各平台的格式（dmg + zip、nsis、AppImage；zip 给 macOS 的自动更新用）。
+- 提示 “default Electron icon is used”：`build/icon.png` 不存在。
 
-托盘依赖桌面环境的 AppIndicator 支持，GNOME 默认没有，需要安装 AppIndicator 扩展。看不到托盘时，关掉窗口后再次打开应用，就会回到已有的窗口。
+<a id="ci"></a>
+## 在 CI 中为三个平台打包
 
-**Linux 上提示 “no system keyring”**
+推送 `desktop-v*` 标签时，在 macOS、Windows、Linux 上分别打包，上传安装包：
 
-系统中没有钥匙串服务（gnome-keyring、KWallet），token 改用固定的密钥加密，与没有钥匙串时的 Chromium 相同。安装钥匙串服务后重新登录即可。
-
-**点击“在浏览器中登录”后，浏览器显示“无法授权”**
-
-服务端没有登记这个客户端，或者回调地址不对，见[原生客户端：常见问题](native.md#troubleshooting)。
-
-**页面一直停在加载中，没有跳到登录页**
-
-开发时检查 `tenon dev` 的输出中前端的开发服务器是否启动了：桌面端最多等它 60 秒。打包后检查 `src/main.ts` 中服务器的地址。
-
-<a id="api-reference"></a>
-## API 参考
-
-包 `@go-tenon/electron/main`。
-
-### createHost
-
-```ts
-function createHost(options: HostOptions): Host
+```yaml
+name: desktop
+on:
+  push:
+    tags: ["desktop-v*"]
+jobs:
+  package:
+    strategy:
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5 # go tool tenon 的版本由 go.mod 固定
+        with:
+          go-version-file: go.mod
+      - uses: oven-sh/setup-bun@v2
+      - run: go tool tenon build --client admin-desktop
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }} # 签名证书
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: admin-desktop-${{ matrix.os }}
+          path: |
+            clients/admin-desktop/release/*.*
+            !clients/admin-desktop/release/builder-*.yml
 ```
 
-| `HostOptions` 字段 | 说明 |
-| --- | --- |
-| `id` | 客户端的名字：页面的主机名、OAuth 的 client ID、`X-App-Version` 的平台名 |
-| `server` | 服务器的地址：转发的目标，也是授权服务器的地址 |
-| `base` | 前端的挂载路径，例如 `/admin/` |
-| `renderer` | 前端按 SPA 模式构建的目录 |
-| `preload` | 构建好的 preload 脚本 |
-| `proxy` | 转发到服务器的路径前缀，默认 `["/api/"]` |
-| `dev` | 开发时前端开发服务器的地址 |
-| `window` | 主窗口的其他选项，例如大小 |
+<a id="signing"></a>
+## 签名
 
-| `Host` 成员 | 说明 |
-| --- | --- |
-| `start()` | 等应用就绪后打开主窗口 |
-| `window()` | 主窗口 |
-| `handle(name, fn)` | 注册页面可以调用的方法，在 `start` 之前调用 |
-| `emit(event, data)` | 向页面发出事件 |
-| `whenWindow(fn)` | 主窗口创建后、加载页面前调用 `fn` |
-| `onResponse(fn)` | 每个转发的请求得到响应后调用 `fn` |
+没有签名的安装包，macOS 拒绝打开（“已损坏，无法打开”），Windows 警告“未知发布者”。证书和密码放在 CI 的密钥中，以环境变量交给 electron-builder：
 
-### 桌面能力
+- **macOS**：Developer ID 证书，`CSC_LINK`（证书文件的 base64 或路径）、`CSC_KEY_PASSWORD`；公证用 `APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD`、`APPLE_TEAM_ID`，并在 `mac` 中设置 `notarize: true`。
+- **Windows**：代码签名证书同样用 `CSC_LINK`、`CSC_KEY_PASSWORD`；Azure Trusted Signing 写在 `win.azureSignOptions` 中。
+- **Linux**：不需要。
 
-```ts
-function logs(options?: { crashReportURL?: string; maxSize?: number }): void
-function windowState(host: Host, file?: string): void
-function standardMenu(host: Host): void
-function notifications(host: Host, options: { appId: string }): void
-function badge(host: Host, options?: { windowsOverlay?: NativeImage }): void
-function tray(host: Host, options: { title: string; icon: NativeImage; menu?: MenuItemConstructorOptions[] }): Promise<Tray>
-function autostart(host: Host, options: { name: string }): void
-function deepLinks(host: Host, options: { scheme: string; base: string }): (argv: string[]) => void
-function singleInstance(host: Host, onSecondInstance?: (argv: string[]) => void): boolean
+详细配置见 electron-builder 的[代码签名](https://www.electron.build/code-signing)。
+
+> [!IMPORTANT]
+> macOS 上没有签名的应用不能自动更新：Squirrel.Mac 只安装签名相同的新版本。
+
+<a id="auto-update"></a>
+## 自动更新
+
+`autoUpdate(host)` 用 electron-updater 在启动时和之后每 4 小时（`interval` 选项）检查一次，后台下载新版本，退出时安装，下载完成后向页面发出 `update` 事件。只有打包后的应用检查更新。
+
+更新源是 `electron-builder.yml` 中的 `publish`，换成存放安装包的地址，例如对象存储的一个目录：
+
+```yaml
+publish:
+  provider: generic
+  url: https://example.com/downloads/admin-desktop
 ```
 
-`autoUpdate` 在单独的入口 `@go-tenon/electron/update` 中，只有用它的应用需要安装 `electron-updater`：
+每次发布，把 `release` 中的安装包（`.exe`、`.dmg`、`.zip`、`.AppImage`）、`.blockmap` 和版本信息（`latest.yml`、`latest-mac.yml`、`latest-linux.yml`、`latest-linux-arm64.yml`）上传到这里。版本信息最后上传：electron-updater 先读它再下载安装包。
 
-```ts
-function autoUpdate(host: Host, options?: { interval?: number }): void
+没有更新时，在 `main.log` 中查找 `update failed`：通常是 `publish.url` 中没有版本信息文件，或者其中的版本不比当前版本新。
+
+<a id="forced-upgrade"></a>
+## 强制升级
+
+旧版本不能再用时，在服务端提高这个客户端的最低版本（要安装 [App 最低版本](../http/middleware.md#app-version)中间件，见[版本和强制升级](native.md#versions)）：
+
+```yaml
+http:
+  app_version:
+    minimum:
+      admin-desktop: 1.3.0
 ```
 
-`@go-tenon/electron/preload` 没有导出，导入它就会在页面中放好 `tenonHost`。页面一侧的 `tenonHost` 见[网页宿主的约定](host.md#tenon-host)。
+低于 1.3.0 的桌面端的请求都返回 `426`。`autoUpdate` 收到后弹出对话框，用户点“立即更新”时下载、安装并重启，点“退出”时退出应用。前端不需要为此写代码。
+
+> [!WARNING]
+> 先发布新版本，再提高最低版本。顺序反了时，旧版本找不到可以更新的版本，只能提示“更新失败”，用户无法继续使用。

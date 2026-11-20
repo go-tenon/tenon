@@ -111,7 +111,7 @@ export type FieldKind =
 export interface ResourceField {
   name: string
   label: string
-  /** 说明：翻译文件中 <名称>.descriptions.<字段> 的消息，显示在输入框下面；没有时为空。 */
+  /** 说明：翻译文件中 <名称>.descriptions.<字段> 的消息，显示在标签和输入框之间；没有时为空。 */
   description?: string
   kind: FieldKind
   required: boolean

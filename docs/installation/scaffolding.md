@@ -239,7 +239,7 @@ func routes(cfg Config, store *todo.Store, pages http.Handler) chi.Router {
 - **开发时**：前端的开发服务器（TanStack Start 的 Vite）在另一个端口上运行，但你不直接访问它。Go 程序在 8080 端口上处理 `/api` 的请求，把其余的请求（页面、热更新）转发给开发服务器。浏览器始终只访问 8080。
 - **发布时**：`tenon build` 构建前端，把静态文件放进 `apps/dist`；`web` 在服务端渲染，它的服务端入口连同 Bun 编译成 `apps/dist/ssr`。`apps/apps.go` 把 `apps/dist` 打包进 Go 程序（见 embed）。Go 程序直接返回静态文件，从内存中运行 SSR 程序，页面请求经 unix socket 交给它渲染。
 
-`apps/web/package.json` 中的 `"ssr": true` 决定 `web` 在服务端渲染。后台这类不需要搜索引擎收录的前端只在浏览器中渲染，Go 直接返回页面，程序中不带 Bun。细节见[托管前端与服务端渲染](../frontend/hosting.md)和 [TanStack Start 的接入](../frontend/start.md)。
+`apps/web/package.json` 中的 `"ssr": true` 决定 `web` 在服务端渲染。后台这类不需要搜索引擎收录的前端只在浏览器中渲染，Go 直接返回页面，程序中不带 Bun。细节见[托管前端与服务端渲染](../frontend/hosting.md)和 [TanStack Start 的接入](../frontend/hosting.md)。
 
 <a id="building"></a>
 ## 构建

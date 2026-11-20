@@ -125,7 +125,7 @@ bun run build   # 即 go tool tenon build
 
 1. 安装前端的依赖：`bun install --frozen-lockfile`。`--frozen-lockfile` 要求依赖的版本与 `bun.lock` 完全一致，所以 CI 中构建出的结果和你本地的相同。
 2. 清空 `apps/dist`（保留其中提交的 `.gitignore`），在每个前端目录中运行 `bun run build`（`vite build`），把浏览器的构建（`dist/client`，不含 source map）复制到 `apps/dist/<名称>`。
-3. 有前端在服务端渲染（`package.json` 中 `"ssr": true`）时，用 `tenon-start compile` 把这些前端的服务端入口连同 Bun 编译成一个可执行文件 `apps/dist/ssr`，架构与 Go 程序相同（`go env GOARCH`，或 `--arch`），见 [TanStack Start 的接入](../frontend/start.md#compiling)。没有时跳过这一步，程序中不带 Bun。
+3. 有前端在服务端渲染（`package.json` 中 `"ssr": true`）时，用 `tenon-start compile` 把这些前端的服务端入口连同 Bun 编译成一个可执行文件 `apps/dist/ssr`，架构与 Go 程序相同（`go env GOARCH`，或 `--arch`），见 [TanStack Start 的接入](../frontend/hosting.md#compiling)。没有时跳过这一步，程序中不带 Bun。
 4. 写入前端的清单 `apps/dist/frontends.json`。
 5. 编译 Go 程序：`go build -trimpath -o bin/blog ./cmd/blog`。`-trimpath` 去掉二进制中你电脑上的文件路径。`apps/apps.go` 用 `go:embed` 嵌入整个 `apps/dist`。
 
@@ -181,7 +181,7 @@ go tool tenon add frontend admin --layout frame
 go tool tenon add client admin-desktop --kind electron --frontend admin
 ```
 
-它在 `clients/admin-desktop` 中生成一个 Electron 桌面端，窗口中显示 `apps/admin`，并在 `apps/admin` 中加上授权页。`--title` 是窗口标题和安装包的名称，默认是客户端的名字。之后用 `go tool tenon dev --client admin-desktop` 同时运行它，用 `go tool tenon build --client admin-desktop` 打包。详细的用法见 [Electron 桌面端](../clients/electron.md)，有哪些种类见[客户端](../clients/README.md)。
+它在 `clients/admin-desktop` 中生成一个 Electron 桌面端，窗口中显示 `apps/admin`，并在 `apps/admin` 中加上授权页。`--title` 是窗口标题和安装包的名称，默认是客户端的名字。之后用 `go tool tenon dev --client admin-desktop` 同时运行它，用 `go tool tenon build --client admin-desktop` 打包。详细的用法见 [Electron 桌面端](../clients/electron.md)，有哪些种类见[客户端](../clients/overview.md)。
 
 <a id="agents"></a>
 ## tenon agents：AI 编程助手
