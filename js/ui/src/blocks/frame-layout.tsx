@@ -4,6 +4,7 @@
 // 侧栏在顶栏下面，顶部是页面搜索，下面是导航模型（按权限过滤的菜单），可以收起为只有图标的窄栏。
 // 窄屏时侧栏是顶栏下面的抽屉。顶栏和侧栏的尺寸是这个布局自己的，控件和内边距的密度随主题的预设。
 // 每个页面都有的内容是 FrameLayout 的参数；某个页面才有的内容由页面用 Fill 放进插槽（actions、aside、footer）。
+// staticData.fullBleed 的页面铺满顶栏以下的内容区，例如聊天、收件箱这类多栏的页面。
 
 import {
   ActionIcon,
@@ -16,7 +17,6 @@ import {
   NavLink,
   ScrollArea,
   Switch,
-  Text,
   ThemeIcon,
   Tooltip,
   UnstyledButton,
@@ -35,13 +35,14 @@ import { Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-route
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { SessionBoundary } from "../app/app"
 import { formatDocumentTitle, useDocumentTitle, usePageTitle } from "../app/document-title"
-import { Fill, Slot, useLayoutState, useNarrow, useNavigation, useSlotFilled } from "../app/layout"
+import { Fill, Slot, useFullBleed, useLayoutState, useNarrow, useNavigation, useSlotFilled } from "../app/layout"
 import type { MenuItem } from "../app/menu"
 import { ContentTransitionProvider, PageProgress } from "../app/tabs/progress"
 import { TabBar } from "../app/tabs/tab-bar"
 import { TabsOutlet, type TabsOutletProps } from "../app/tabs/tabs"
 import { NewVersionNotice } from "../app/version-notice"
 import { NavLinkLink } from "../components/links"
+import { MenuBadge } from "../components/menu-badge"
 import { Icon } from "../theme/icons"
 import { layoutMetrics } from "../theme/theme"
 
@@ -64,7 +65,7 @@ export interface FrameLayoutProps {
   search?: boolean
   /** 开启多标签：true 或者 TabsOutlet 的选项。用户可以在 UserMenu 中关掉，窄屏时不显示标签栏。 */
   tabs?: boolean | TabsOutletProps
-  /** 内容区的最大宽度，例如 1200；默认铺满。 */
+  /** 内容区的最大宽度，例如 1200；默认铺满。staticData.fullBleed 的页面不受它限制。 */
   maxWidth?: number
   /**
    * 浏览器标签的标题是“页面 - 产品名称”，默认开启：页面是当前标签的标题（开启多标签时）或路由的 staticData.title。
@@ -97,6 +98,7 @@ export function FrameLayout({
   const narrow = useNarrow()
   const collapsed = state.collapsed && !narrow
   const aside = useSlotFilled("aside")
+  const fullBleed = useFullBleed()
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const tabsOn = Boolean(tabs) && state.tabs
   const pageTitle = usePageTitle(tabsOn)
@@ -235,7 +237,14 @@ export function FrameLayout({
       )}
 
       <AppShell.Main>
-        <Box ref={content} className="tn-content" p={m.contentPadding} maw={maxWidth}>
+        {/* 铺满的页面（staticData.fullBleed）没有内边距和最大宽度，高度是顶栏以下的整个窗口，页面中的各栏自己滚动。 */}
+        <Box
+          ref={content}
+          className="tn-content"
+          data-full-bleed={fullBleed || undefined}
+          p={fullBleed ? 0 : m.contentPadding}
+          maw={fullBleed ? undefined : maxWidth}
+        >
           {/* 身份变化时只重新挂载页面，布局和 HTML 文档保持不变。 */}
           <SessionBoundary>
             {tabsOn ? <TabsOutlet home {...(typeof tabs === "object" ? tabs : {})} /> : <Outlet />}
@@ -346,16 +355,6 @@ function Nav({ collapsed }: { collapsed: boolean }): ReactNode {
   )
 }
 
-function Badge({ value }: { value: MenuItem["badge"] }): ReactNode {
-  if (value === undefined || value === false) return null
-  if (value === true) return <Box w={6} h={6} bg="red.6" style={{ borderRadius: "50%" }} />
-  return (
-    <Text component="span" fz={10} fw={600} c="white" bg="red.6" px={5} lh="16px" style={{ borderRadius: 8 }}>
-      {value}
-    </Text>
-  )
-}
-
 /**
  * 菜单项。第一级：浅色底的图标加名称；下级：缩进，左侧一条竖线，有图标时显示图标。
  * 当前页面是主色实底、白字；当前页面所在的分组名称是主色。
@@ -408,7 +407,7 @@ function Item({ item, active, depth = 0 }: { item: MenuItem; active: string[]; d
       to={item.path}
       label={item.title}
       leftSection={icon}
-      rightSection={<Badge value={item.badge} />}
+      rightSection={<MenuBadge value={item.badge} />}
       active={isActive}
     />
   )
@@ -435,7 +434,7 @@ function CollapsedItem({ item, active }: { item: MenuItem; active: string[] }): 
               className="tn-nav-menu-item"
               data-active={active.includes(c.id) || undefined}
               leftSection={c.icon ? <Icon name={c.icon} size={16} stroke={1.5} /> : undefined}
-              rightSection={<Badge value={c.badge} />}
+              rightSection={<MenuBadge value={c.badge} />}
               onClick={() => void navigate({ to: c.path })}
             >
               {c.title}

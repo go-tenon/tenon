@@ -170,6 +170,7 @@ export const Route = createFileRoute("/_app/articles/")({
 | `permission` | 进入页面需要的权限，见[权限](#permissions) |
 | `menu` | `false` 时不出现在菜单中 |
 | `tab` | `false` 时不进入[多标签](layout.md#tabs) |
+| `fullBleed` | `true` 时页面铺满布局的内容区，写在模块的路由上时模块下的页面都铺满，见[铺满的模块](layout.md#full-bleed) |
 
 页面不出现在菜单中的原因：没有 `title`；`menu: false`；自己引入了路径参数（例如 `/articles/$id`）；当前用户缺少 `permission`。路径参数来自上级路由时（例如 `/t/$tenant`），当前地址中有这个参数才出现，见[租户](layout.md#tenants)。
 

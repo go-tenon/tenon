@@ -367,6 +367,12 @@ body {
   margin-inline: auto;
 }
 
+/* 铺满的页面：高度是顶栏以下的整个窗口，内容区不滚动，页面中的各栏自己滚动。 */
+.tn-content[data-full-bleed] {
+  height: calc(100dvh - var(--app-shell-header-offset, 0rem));
+  overflow: hidden;
+}
+
 /* ———————————————— 标签栏 ———————————————— */
 
 /*
@@ -714,7 +720,7 @@ body {
 
 /*
  * 最左侧是 48px 的模块图标栏，底色与画布相同；右侧的工作区是一张左侧带圆角的卡片，
- * 其中是 260px 的二级导航（可以收起）和内容。窄屏时二级导航是抽屉。
+ * 其中是二级导航（默认 260px，RailLayout 的 navWidth 设置，可以收起）和内容。窄屏时二级导航是抽屉。
  */
 .tn-rail {
   --tn-rail-rail: 48px;
@@ -740,8 +746,10 @@ body {
   place-items: center;
 }
 
+/* 模块的列表占满图标栏的宽度，图标右上角的徽标不被滚动区域裁掉。 */
 .tn-rail-modules {
   flex: 1;
+  align-self: stretch;
   min-height: 0;
   padding-top: 4px;
   overflow-y: auto;
@@ -775,6 +783,14 @@ body {
 .tn-rail-module-expand {
   position: absolute;
   opacity: 0;
+}
+/* 模块的徽标在图标的右上角，例如待处理数、未读数。 */
+.tn-rail-module-badge {
+  position: absolute;
+  top: -4px;
+  left: 20px;
+  display: flex;
+  pointer-events: none;
 }
 
 .tn-rail-module[data-expand]:is(:hover, :focus-visible) {
@@ -867,6 +883,14 @@ body {
 
 .tn-rail-page {
   padding: 28px 24px 24px;
+}
+
+/* 铺满的页面（staticData.fullBleed）：内容区不滚动，页面占满它的宽度和高度，页面中的各栏自己滚动。 */
+.tn-rail-main[data-full-bleed] {
+  overflow: hidden;
+}
+.tn-rail-full {
+  height: 100%;
 }
 
 @media (max-width: 48em) {

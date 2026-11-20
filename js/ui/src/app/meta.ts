@@ -1,4 +1,4 @@
-// 路由的元数据：标题、图标、排序、权限，写在路由的 staticData 中，用来生成菜单、面包屑和检查权限。
+// 路由的元数据：标题、图标、排序、权限和版面，写在路由的 staticData 中，用来生成菜单、面包屑、检查权限和决定版面。
 
 declare module "@tanstack/react-router" {
   interface StaticDataRouteOption {
@@ -12,6 +12,11 @@ declare module "@tanstack/react-router" {
     permission?: string
     /** false 时不出现在菜单中，例如详情页；带路径参数的页面总是不出现。 */
     menu?: boolean
+    /**
+     * true 时页面铺满布局的内容区：没有最大宽度、内边距和面包屑，高度占满，内容区本身不滚动，由页面中的各栏自己滚动。
+     * 写在模块的路由上时，模块下的页面都铺满，例如收件箱、聊天。
+     */
+    fullBleed?: boolean
   }
 }
 

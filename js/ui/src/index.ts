@@ -16,9 +16,12 @@ export {
   type Navigation,
   Slot,
   type SlotName,
+  useCollapseNav,
+  useFullBleed,
   useLayoutState,
   useMenuBadge,
   useNarrow,
+  useNavCollapseRequested,
   useNavigation,
   useSlotFilled,
 } from "./app/layout"
@@ -49,6 +52,7 @@ export * from "./components/form/form"
 export * from "./components/form/rules"
 export * from "./components/form/secret-input"
 export * from "./components/links"
+export * from "./components/menu-badge"
 export * from "./components/page"
 export * from "./components/status-dot"
 export * from "./components/truncated-text"
