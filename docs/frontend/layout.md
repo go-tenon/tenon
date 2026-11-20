@@ -16,6 +16,7 @@
     - [顶栏菜单](#menus)
 - [页面的标题区](#page)
 - [多标签](#tabs)
+- [浏览器标题](#document-title)
 - [租户](#tenants)
 - [RailLayout](#rail-layout)
 - [自己写布局](#custom-layouts)
@@ -238,6 +239,26 @@ async function signOut() {
 }
 ```
 
+<a id="document-title"></a>
+## 浏览器标题
+
+浏览器标签上的标题由布局设置，格式是“页面 - 应用名”，例如“文章 - 博客后台”。用户开了很多标签时，靠它分清哪个是哪个：
+
+- 应用名是 `FrameLayout`、`RailLayout` 的 `title`。
+- 页面是当前页面的标题：开启多标签时是当前标签的标题，页面用 `useTabTitle` 改过的名称优先，例如“文章：你好”；否则是路由的 `staticData.title`，与面包屑的最后一项相同。
+- 登录页的 `CenteredAuthLayout`、`SplitAuthLayout` 在 `title` 是文字时设置标题，`brand` 也是文字时加上它，例如“登录 - 博客后台”。`brand` 是标志加名称这样的组件时只显示“登录”。
+
+应用名在运行时才知道时（例如管理员在后台修改的站点名称），把读到的名称传给 `title` 和 `brand`，标题随之更新。`queries` 是生成的查询选项，见[在 React 中调用接口](client-react.md#tanstack)：
+
+```tsx
+function Layout() {
+  const site = useQuery(queries.site.get()) // 站点名称，读到之前是 undefined
+  return <FrameLayout title={site.data?.name} tabs />
+}
+```
+
+根路由 `head` 中的 `title` 是页面加载完成之前的标题，保留它，打开页面时标签上不会先显示地址。应用自己管理标题时（例如在每个页面的 `head` 中写 SEO 标题），给布局设置 `documentTitle={false}`，布局不再修改 `document.title`。
+
 <a id="tenants"></a>
 ## 租户
 
@@ -326,6 +347,7 @@ function Layout() {
 ```tsx
 function TopLayout() {
   const { menu, active, crumbs } = useNavigation()
+  useDocumentTitle(formatDocumentTitle(usePageTitle(true), "Acme")) // 浏览器标题：“页面 - Acme”
   return (
     <>
       <header>
@@ -385,8 +407,8 @@ function TopLayout() {
 
 | 名称 | 说明 |
 | --- | --- |
-| `FrameLayout` | 顶栏加侧栏菜单的布局：`title`、`logo`、`user`、`actions`、`search`、`tabs`、`maxWidth` |
-| `RailLayout` | 双栏导航的布局：`title`、`logo`、`user`、`settings`、`maxWidth` |
+| `FrameLayout` | 顶栏加侧栏菜单的布局：`title`、`logo`、`user`、`actions`、`search`、`tabs`、`maxWidth`、`documentTitle` |
+| `RailLayout` | 双栏导航的布局：`title`、`logo`、`user`、`settings`、`maxWidth`、`documentTitle` |
 | `Fill`、`Slot`、`useSlotFilled`、`SlotName` | 插槽 |
 | `SessionBoundary` | 身份变化时重新挂载其中的页面 |
 | `UserMenu`、`NotificationsMenu`、`OperationsMenu`、`LanguageMenu`、`ColorSchemeToggle` | 顶栏菜单；`UserMenu` 的选项：`name`、`email`、`avatar`、`logout`、`items`、`colorScheme`、`position` |
@@ -398,5 +420,6 @@ function TopLayout() {
 | `confirmDiscard(app)` | 有未保存的修改时询问是否放弃，例如退出登录前 |
 | `useTenant`、`switchTenant`、`enterTenant` | 当前租户、切换租户 |
 | `useNavigation`、`useMenu`、`useBreadcrumbs` | 导航模型、菜单、面包屑 |
+| `usePageTitle(tabs)`、`formatDocumentTitle(page, app)`、`useDocumentTitle(title)` | 浏览器标题：当前页面的标题，合成“页面 - 应用名”，写进 `document.title`；自己写布局时用，见[浏览器标题](#document-title) |
 | `firstPage`、`pageUnder` | 菜单中第一个可以进入的页面 |
 | `useLayoutState`、`useNarrow` | 布局状态、窄屏 |

@@ -3,6 +3,17 @@
 
 import { Group, Stack, Text, Title } from "@mantine/core"
 import type { ReactNode } from "react"
+import { formatDocumentTitle, useDocumentTitle } from "../app/document-title"
+
+/**
+ * 登录页的浏览器标题：title 和 brand 都是文字时是“标题 - 名称”，例如“登录 - 博客后台”；
+ * 只有 title 是文字时只有标题；title 不是文字或 enabled 为 false 时不设置。
+ */
+function useAuthTitle(title: ReactNode, brand: ReactNode, enabled: boolean): void {
+  const page = typeof title === "string" ? title : undefined
+  const app = typeof brand === "string" ? brand : undefined
+  useDocumentTitle(enabled && page ? formatDocumentTitle(page, app) : undefined)
+}
 
 /** CenteredAuthLayout 的选项。 */
 export interface CenteredAuthLayoutProps {
@@ -13,6 +24,8 @@ export interface CenteredAuthLayoutProps {
   description?: ReactNode
   /** 卡片下方，例如“还没有账号？注册”。 */
   footer?: ReactNode
+  /** 浏览器标签的标题是“标题 - 名称”（title、brand 是文字时），默认开启；false 时不设置。 */
+  documentTitle?: boolean
   children: ReactNode
 }
 
@@ -22,8 +35,10 @@ export function CenteredAuthLayout({
   title,
   description,
   footer,
+  documentTitle = true,
   children,
 }: CenteredAuthLayoutProps): ReactNode {
+  useAuthTitle(title, brand, documentTitle)
   return (
     <div className="tn-auth">
       <Stack gap="lg" w="100%" maw={400} align="stretch">
@@ -62,6 +77,8 @@ export interface SplitAuthLayoutProps {
   description?: ReactNode
   /** 表单下方，例如“还没有账号？注册”。 */
   footer?: ReactNode
+  /** 浏览器标签的标题是“标题 - 名称”（title、brand 是文字时），默认开启；false 时不设置。 */
+  documentTitle?: boolean
   children: ReactNode
 }
 
@@ -76,8 +93,10 @@ export function SplitAuthLayout({
   title,
   description,
   footer,
+  documentTitle = true,
   children,
 }: SplitAuthLayoutProps): ReactNode {
+  useAuthTitle(title, brand, documentTitle)
   return (
     <div className="tn-auth-split">
       <aside className="tn-auth-split-aside">

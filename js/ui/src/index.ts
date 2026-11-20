@@ -9,6 +9,7 @@
 
 // ———————————————————————————— app ————————————————————————————
 export * from "./app/app"
+export * from "./app/document-title"
 export {
   Fill,
   type LayoutState,
