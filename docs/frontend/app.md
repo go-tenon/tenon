@@ -77,15 +77,18 @@ import { theme } from "../theme"
 export const Route = createRootRouteWithContext<RouterContext>()({ shellComponent: Document, component: Outlet })
 
 function Document({ children }: { children: ReactNode }) {
-  const nonce = useRouter().options.ssr?.nonce
+  const { ssr, context } = useRouter().options
+  const nonce = ssr?.nonce
+  // 配色保存在这个前端自己的键中，同一个域名下的其他前端（例如管理员端）各记各的。
+  const colorScheme = context.app.storage.key("color-scheme")
   return (
     <html lang="zh-CN" {...mantineHtmlProps}>
       <head>
-        <ColorSchemeScript nonce={nonce} />
+        <ColorSchemeScript nonce={nonce} localStorageKey={colorScheme} />
         <HeadContent />
       </head>
       <body>
-        <UIProvider theme={theme}>{children}</UIProvider>
+        <UIProvider theme={theme} colorSchemeKey={colorScheme}>{children}</UIProvider>
         <Scripts />
       </body>
     </html>
@@ -94,7 +97,7 @@ function Document({ children }: { children: ReactNode }) {
 ```
 
 - `ColorSchemeScript` 是内联脚本，必须带上 `createApp` 的 `router.ssr.nonce`（Go 为每个请求生成），否则被内容安全策略拦下。
-- `UIProvider` 安装主题、通知、确认对话框和图标。配色默认跟随系统。组件测试中传 `env="test"`，关闭过渡动画和 portal。
+- `UIProvider` 安装主题、通知、确认对话框和图标。配色默认跟随系统，用户的选择保存在 `colorSchemeKey` 中；它和 `ColorSchemeScript` 的 `localStorageKey` 是同一个 `app.storage.key("color-scheme")`，同一个域名下的每个前端各记各的配色。组件测试中传 `env="test"`，关闭过渡动画和 portal。
 
 <a id="presets"></a>
 ## 样式预设与主题 `createUiTheme`

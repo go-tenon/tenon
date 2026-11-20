@@ -17,15 +17,18 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 
 function Document({ children }: { children: ReactNode }) {
   // nonce 由 Go 为每个请求生成，内联脚本带上它才能通过内容安全策略。
-  const nonce = useRouter().options.ssr?.nonce
+  const { ssr, context } = useRouter().options
+  const nonce = ssr?.nonce
+  // 配色保存在这个前端自己的键中，同一个域名下的其他前端（例如管理员端）各记各的。
+  const colorScheme = context.app.storage.key("color-scheme")
   return (
     <html lang="zh-CN" {...mantineHtmlProps}>
       <head>
-        <ColorSchemeScript nonce={nonce} />
+        <ColorSchemeScript nonce={nonce} localStorageKey={colorScheme} />
         <HeadContent />
       </head>
       <body>
-        <UIProvider theme={theme}>{children}</UIProvider>
+        <UIProvider theme={theme} colorSchemeKey={colorScheme}>{children}</UIProvider>
         <Scripts />
       </body>
     </html>
