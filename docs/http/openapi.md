@@ -7,7 +7,7 @@
 <a id="viewing-docs"></a>
 ## 在线查看：`/docs` 和 `/openapi.json`
 
-每个 `rest.API` 在自己的路由下提供文档页面 `/docs`、OpenAPI 3.1 文档 `/openapi.json` 和转换后的 3.0.3 文档 `/openapi-3.0.json`。API 挂在子路由下时文档也在子路由下，例如 `BasePath` 是 `/api` 时访问 `/api/docs`。
+每个 `rest.API` 在自己的路由下提供文档页面 `/docs`、OpenAPI 3.1 文档 `/openapi.json` 和转换后的 3.0.3 文档 `/openapi-3.0.json`。API 挂在子路由下时文档也在子路由下，例如 `BasePath` 是 `/api` 时访问 `/api/docs`。`BasePath` 带路径参数时（例如每个租户一个前缀 `/t/{tenant}/api`），文档页和 OpenAPI 文档中的地址按这次访问的地址填写：打开 `/t/acme/api/docs` 时，文档页读取 `/t/acme/api/openapi.yaml`，“发送请求”也发到 `/t/acme/api` 下。
 
 <a id="describing-apis"></a>
 ## 写说明和示例：`doc`、`example` 标签

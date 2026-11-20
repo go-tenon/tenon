@@ -152,7 +152,7 @@ func TestBearerRejectsEmptySubjectAndDocumentsNoOAuthScopes(t *testing.T) {
 	api := rest.New(chi.NewRouter(), rest.Options{Accounts: identity.Accounts{"user": nil}})
 	op := huma.Operation{OperationID: "auth", Method: http.MethodGet, Path: "/auth"}
 	rest.RequireToken(api, func(context.Context, string) (identity.Subject, error) { return identity.Subject{}, nil }, "orders")(&op)
-	if len(op.Security[0]["bearer"]) != 0 {
+	if len(op.Security[1]["bearer"]) != 0 {
 		t.Fatal("HTTP bearer cannot carry OAuth scopes")
 	}
 	rest.Register(api, op, func(context.Context, *pingIn) (*pingOut, error) {

@@ -103,7 +103,7 @@ func New(r chi.Router, opts Options) *API {
 	if opts.BasePath != "" {
 		cfg.OpenAPI.Servers = []*huma.Server{{URL: opts.BasePath}}
 	}
-	adapter := newAdapter(r, cfg)
+	adapter := newAdapter(r, cfg, opts.BasePath)
 	api := &API{router: r, basePath: opts.BasePath, logger: opts.Logger, accounts: opts.Accounts, session: opts.SessionCookie, watcher: opts.Credentials, names: names}
 	// Huma 在 NewAPI 中就注册文档端点，因此先让 adapter 指向 api，文档端点也能取回它。
 	adapter.api = api

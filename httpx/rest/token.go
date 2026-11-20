@@ -24,11 +24,14 @@ const (
 	confirmMetadata = "tenon.confirmed"
 )
 
-// tokenSchemes 是 RequireToken 在 OpenAPI 中登记的两种携带方式，任选其一。
+// tokenSchemes 是 RequireToken 在 OpenAPI 中登记的两种携带方式，任选其一。会话 cookie 排在前面：
+// 文档页默认选第一种，登录后在浏览器中试用接口时，浏览器自动带上会话 cookie，不用填写。
 func tokenSchemes(cookie string) []namedScheme {
 	return []namedScheme{
-		{"bearer", &huma.SecurityScheme{Type: "http", Scheme: "bearer"}},
-		{"session", &huma.SecurityScheme{Type: "apiKey", In: "cookie", Name: cookie}},
+		{"session", &huma.SecurityScheme{Type: "apiKey", In: "cookie", Name: cookie,
+			Description: "浏览器登录后的会话 cookie，由浏览器自动携带。登录后在文档页中试用接口时选这一项，不用填写。"}},
+		{"bearer", &huma.SecurityScheme{Type: "http", Scheme: "bearer",
+			Description: "Authorization: Bearer <token>，供 App、脚本和第三方使用。请求同时带有两者时以它为准。"}},
 	}
 }
 

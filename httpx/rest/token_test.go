@@ -139,7 +139,7 @@ func TestRequireTokenNamedSession(t *testing.T) {
 	rest.New(chi.NewRouter(), rest.Options{SessionCookie: httpx.SessionCookie{Name: "ops"}})
 }
 
-// OpenAPI 中两种携带方式任选其一；路由表的访问策略是 token。
+// OpenAPI 中两种携带方式任选其一，会话 cookie 在前；路由表的访问策略是 token。
 func TestRequireTokenOpenAPI(t *testing.T) {
 	t.Parallel()
 	api := tokenAPI(t)
@@ -151,7 +151,7 @@ func TestRequireTokenOpenAPI(t *testing.T) {
 		t.Fatalf("session scheme %+v", s)
 	}
 	op := api.OpenAPI().Paths["/me"].Get
-	if len(op.Security) != 2 || op.Security[0]["bearer"] == nil || op.Security[1]["session"] == nil {
+	if len(op.Security) != 2 || op.Security[0]["session"] == nil || op.Security[1]["bearer"] == nil {
 		t.Fatalf("security %v", op.Security)
 	}
 	for _, r := range httpx.Routes(api.Router()) {
