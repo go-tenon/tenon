@@ -25,23 +25,6 @@ export function PageBreadcrumbs({ show, children }: PageBreadcrumbsProps): React
   return <PageBreadcrumbsContext.Provider value={show}>{children}</PageBreadcrumbsContext.Provider>
 }
 
-const PageBackContext = createContext<(() => void) | undefined>(undefined)
-
-/** PageBack 的选项。 */
-export interface PageBackProps {
-  /** 其中的页面标题左边“返回”按钮的动作；为空时页面默认没有返回按钮。 */
-  onBack?: () => void
-  children?: ReactNode
-}
-
-/**
- * 布局给其中的页面一个“返回”：Page 在标题左边显示返回按钮，例如 RailLayout 的设置中，返回进入设置之前所在的页面。
- * 页面的 back 仍可以换成自己的动作或者关掉。
- */
-export function PageBack({ onBack, children }: PageBackProps): ReactNode {
-  return <PageBackContext.Provider value={onBack}>{children}</PageBackContext.Provider>
-}
-
 /** 页内的一个标签。 */
 export interface PageTab {
   /** 标签的标识，也是地址中 ?tab= 的值。 */
@@ -63,11 +46,8 @@ export interface PageProps {
   actions?: ReactNode
   /** 标题上面的面包屑（来自路由的标题）。默认显示，所在的布局用 PageBreadcrumbs 关掉时不显示（例如 RailLayout 的设置中）。 */
   breadcrumbs?: boolean
-  /**
-   * 标题左边的返回按钮：点击时调用它，例如详情页返回列表。不设置时用所在布局给的（PageBack，例如 RailLayout 的设置中
-   * 返回进入设置之前的页面），布局也没有时不显示；false 时不显示。
-   */
-  back?: (() => void) | false
+  /** 标题左边的返回按钮：点击时调用它，例如内页（团队的成员页）返回列表。不设置时没有返回按钮。 */
+  back?: () => void
   /** 在面包屑最后再加一级表示当前页面，例如新建页面的“新建”：路由没有自己的标题时用，前面的各级都是链接。 */
   crumb?: string
   /**
@@ -83,8 +63,6 @@ export interface PageProps {
 export function Page({ title, description, actions, breadcrumbs, back, crumb, tabs, children }: PageProps): ReactNode {
   const crumbsByDefault = useContext(PageBreadcrumbsContext)
   const showCrumbs = breadcrumbs ?? crumbsByDefault
-  const layoutBack = useContext(PageBackContext)
-  const onBack = back === false ? undefined : (back ?? layoutBack)
   return (
     <Stack gap="md">
       <Stack gap={10}>
@@ -92,8 +70,8 @@ export function Page({ title, description, actions, breadcrumbs, back, crumb, ta
         <div className="tn-page-header">
           <div>
             <Group gap={6} wrap="nowrap">
-              {onBack && (
-                <ActionIcon variant="subtle" color="gray" aria-label="返回" onClick={onBack} ml={-6}>
+              {back && (
+                <ActionIcon variant="subtle" color="gray" aria-label="返回" onClick={back} ml={-6}>
                   <IconArrowLeft size={20} stroke={1.6} />
                 </ActionIcon>
               )}

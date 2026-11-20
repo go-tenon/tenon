@@ -19,13 +19,12 @@ import {
 } from "@mantine/core"
 import { useLocalStorage, useMediaQuery } from "@mantine/hooks"
 import { IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand, IconSearch } from "@tabler/icons-react"
-import { Link, Outlet, useLocation, useNavigate } from "@tanstack/react-router"
-import { type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from "react"
-import { SessionBoundary, useApp } from "../app/app"
+import { Link, Outlet, useNavigate } from "@tanstack/react-router"
+import { type ReactNode, useState } from "react"
+import { SessionBoundary } from "../app/app"
 import { useNavigation } from "../app/layout"
 import { firstPage, type MenuItem } from "../app/menu"
-import { noTenant } from "../app/snapshot"
-import { PageBack, PageBreadcrumbs } from "../components/page"
+import { PageBreadcrumbs } from "../components/page"
 import { Icon } from "../theme/icons"
 
 /** RailLayout 的选项。 */
@@ -95,24 +94,6 @@ export function RailLayout({
   const settingsGroup = menu.find((m) => m.path === settings)
   const inSettings = !!settingsGroup && active[0] === settingsGroup.id
 
-  // 设置中页面标题左边的“返回”回到进入设置之前所在的页面。按租户记下，切换租户后不会回到上一个租户的页面；
-  // 没有记下的（例如直接打开了设置的地址）回到第一个模块的首页。
-  // 是否在设置下按地址判断：跳转时地址先变，菜单的选中状态（active）晚一步，用它会把设置的地址也记成“之前的页面”。
-  const app = useApp()
-  const { href, pathname } = useLocation({ select: (l) => ({ href: l.href, pathname: l.pathname }) })
-  const tenant = useSyncExternalStore(app.session.subscribe, () => app.session.identity()?.tenant, noTenant) ?? ""
-  const outside = useRef<{ href: string; tenant: string }>(undefined)
-  const settingsPath = settingsGroup?.path
-  const underSettings = !!settingsPath && (pathname === settingsPath || pathname.startsWith(`${settingsPath}/`))
-  useEffect(() => {
-    if (!underSettings) outside.current = { href, tenant }
-  }, [underSettings, href, tenant])
-  const back = () => {
-    const last = outside.current
-    const to = last && last.tenant === tenant ? last.href : firstPage(modules)
-    if (to) void navigate({ href: to })
-    if (compact) setDrawer(false)
-  }
   const current = inSettings ? settingsGroup : (modules.find((m) => m.id === active[0]) ?? modules[0])
   // 只有一个页面的模块（例如首页），二级导航中就是它自己。
   const items = current ? (current.children ?? [current]) : []
@@ -205,11 +186,9 @@ export function RailLayout({
         )}
         <main id="main-content" tabIndex={-1} className="tn-rail-main">
           <Box maw={maxWidth} mx="auto" className="tn-rail-page">
-            {/* 设置中的页面不显示面包屑（二级导航已经标出了位置），标题左边有返回进入设置之前所在页面的按钮 */}
+            {/* 设置中的页面不显示面包屑：二级导航已经标出了位置 */}
             <PageBreadcrumbs show={!inSettings}>
-              <PageBack onBack={inSettings ? back : undefined}>
-                <SessionBoundary>{children ?? <Outlet />}</SessionBoundary>
-              </PageBack>
+              <SessionBoundary>{children ?? <Outlet />}</SessionBoundary>
             </PageBreadcrumbs>
           </Box>
         </main>
