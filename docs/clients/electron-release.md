@@ -127,7 +127,7 @@ http:
       admin-desktop: 1.3.0
 ```
 
-平台名就是客户端的名字，桌面端在每个请求的 `X-App-Version` 中带上它和自己的版本，见[原生客户端：版本和强制升级](native.md#versions)。服务端要安装 [App 最低版本](../http/optional-middleware.md#app-version)中间件。
+平台名就是客户端的名字，桌面端在每个请求的 `X-App-Version` 中带上它和自己的版本，见[原生客户端：版本和强制升级](native.md#versions)。服务端要安装 [App 最低版本](../http/middleware.md#app-version)中间件。
 
 低于 1.3.0 的桌面端发出的请求都返回 `426`。桌面端收到后弹出对话框：“当前版本过低，更新到新版本后才能继续使用”。用户点“立即更新”后，下载新版本、安装并重启；点“退出”则退出应用。前端不需要为这件事写任何代码。
 

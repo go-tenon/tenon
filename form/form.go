@@ -1,7 +1,7 @@
-// Package form 把文本形式的字段值按结构体的 Huma 标签转换、验证并解码。
+// Package form 把文本形式的字段值按结构体的 Huma 标签转换、校验并解码。
 //
-// 网页表单和表格的一行都是“字段名 → 文本”：web.ParseForm 和 sheet.Decode 都用它，
-// 因此 JSON 接口、页面表单和表格导入共用同一个结构体上的验证规则。
+// 表格的一行是“字段名 → 文本”，sheet.Decode 用它解码，
+// 因此 JSON 接口和表格导入共用同一个结构体上的校验规则。
 //
 //	data, errs := form.Decode[article.Changes](ctx, url.Values{"title": {"Hello"}})
 package form

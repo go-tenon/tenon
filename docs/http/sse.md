@@ -1,24 +1,15 @@
 # 服务端推送
 
-有些界面需要服务端主动推送内容：长时间任务的进度、其他人刚发布的文章、聊天消息。Tenon 使用 [Server-Sent Events](https://developer.mozilla.org/docs/Web/API/Server-sent_events)（SSE）：服务端保持一个 HTTP 响应不结束，持续写出事件，每个事件的数据是一行 JSON。
+用 Server-Sent Events（SSE）推送一次操作的进度，或者界面打开期间的通知。事件格式、心跳、重连和凭据失效时客户端看到什么，见[客户端协议的事件流](protocol.md#event-streams)；这一页讲服务端的写法。
 
-SSE 只负责服务端到客户端。客户端发给服务端的仍然是普通请求，认证、验证和限流都和其他接口一样。需要在线成员、“正在输入”或移动端 SDK 时，用基于 WebSocket 的[实时频道](../libraries/realtime.md)。
+包：`httpx`、`httpx/rest`、`broadcast`。
 
-阅读前需要了解：[路由](routing.md)；context。长连接一节用到了[广播](../libraries/broadcasting.md)。
-
-- [示例用法](#introduction)
-- [流式响应](#streaming-responses)
-- [长连接](#long-lived-connections)
-    - [断线重连](#reconnecting)
-- [路由与超时](#routes-and-timeouts)
-- [凭据失效](#revoked-credentials)
-    - [立即断开](#immediate-revocation)
-- [部署](#deployment)
-- [常见问题](#troubleshooting)
-- [API 参考](#api-reference)
+需要在线成员、“正在输入”或双向消息时用[实时频道](../libraries/realtime.md)。
 
 <a id="introduction"></a>
-## 示例用法
+## 示例：`rest.RegisterSSE` 和 `rest.SSE`
+
+`api` 是 `rest.New` 创建的 API，`op` 是这个接口的 `huma.Operation`：
 
 ```go
 type Tick struct {
@@ -38,59 +29,33 @@ rest.RegisterSSE(api, op, map[string]any{"tick": Tick{}},
     })
 ```
 
-```text
-event: tick
-data: {"n":1}
-
-event: tick
-data: {"n":2}
-...
-```
-
-事件流的报文格式、心跳和重连规则见[客户端协议](protocol.md#event-streams)。`rest.RegisterSSE` 的参数和 `rest.Register` 相同，多一个事件表：键是事件名，值是事件数据的类型，用于生成 OpenAPI 文档和[客户端代码](clients.md#event-streams)。连接由 `httpx.SSE` 管理：心跳、超时、停机和断线重连。有两种用法：
+- 事件表的键是事件名，值是事件数据的类型，写入 OpenAPI 文档，用于生成[客户端代码](clients.md#event-streams)。
+- 返回 `rest.SSE(fn)` 之前返回的错误照常是错误响应；`fn` 开始运行后响应已经开始，它返回的错误只记录日志。要告诉客户端的错误在推送之前返回，或者作为事件发送。
+- `SendJSON` 发送一行 JSON，`Send` 发送原样的文本；客户端离开后返回错误。
+- 心跳、写超时、停机和凭据复查由框架处理。
 
 | 用法 | 客户端 | 适合 |
 | --- | --- | --- |
-| 流式响应 | 普通的 POST 等请求，响应逐步到达 | 一次操作的进度 |
-| 长连接 | GET 请求，界面打开期间一直保持 | 持续的通知、消息 |
+| [流式响应](#streaming-responses) | POST 等请求，操作完成后结束 | 一次操作的进度 |
+| [长连接](#long-lived-connections) | GET 请求，界面打开期间保持，断开后重连 | 持续的通知、消息 |
 
 <a id="streaming-responses"></a>
-## 流式响应
+## 流式响应：推送一次操作的进度
 
-例如批量发布草稿，整批可能需要几十秒。用流式响应，每发布完一篇就推送一条进度。`publish` 是“发布文章”的[业务动作](../concepts/actions.md)：
+批量发布草稿，每发布一篇推送一条进度。`PublishBatchRequest` 的请求体是 `IDs []uuid.UUID`，`PublishProgress` 有 `ID` 和 `Result` 两个字段，`a.publish` 是“发布文章”的[业务动作](../concepts/actions.md)：
 
 ```go
-type PublishBatchRequest struct {
-    Body struct {
-        IDs []string `json:"ids" minItems:"1"`
-    }
-}
-
-type PublishProgress struct {
-    ID     string `json:"id"`
-    Result string `json:"result"`
-}
-
 rest.RegisterSSE(api, op, map[string]any{"progress": PublishProgress{}},
     func(ctx context.Context, in *PublishBatchRequest) (*huma.StreamResponse, error) {
-        ids := make([]uuid.UUID, len(in.Body.IDs))
-        for i, raw := range in.Body.IDs {
-            id, err := uuid.Parse(raw)
-            if err != nil {
-                // 还没有开始推送，客户端照常收到 Problem Details
-                return nil, huma.Error422UnprocessableEntity("invalid article id " + raw)
-            }
-            ids[i] = id
-        }
         sub, _ := identity.FromContext(ctx)
         return rest.SSE(func(s *httpx.Stream) error {
-            for _, id := range ids {
-                p := PublishProgress{ID: id.String(), Result: "已发布"}
-                if _, err := publish.Handle(s.Context(), sub, id); err != nil {
-                    p.Result = httpx.ErrorDetail(s.Context(), err)
+            for _, id := range in.Body.IDs {
+                p := PublishProgress{ID: id, Result: "已发布"}
+                if _, err := a.publish.Handle(s.Context(), sub, id); err != nil {
+                    p.Result = httpx.ErrorDetail(s.Context(), err) // 按请求的语言给出错误提示
                 }
                 if err := s.SendJSON(httpx.Event{Name: "progress"}, p); err != nil {
-                    return nil // 客户端已经离开
+                    return nil
                 }
             }
             return nil
@@ -98,102 +63,85 @@ rest.RegisterSSE(api, op, map[string]any{"progress": PublishProgress{}},
     })
 ```
 
-处理器先完成检查，出错时照常返回错误；返回 `rest.SSE` 之后才开始推送，之后返回的错误只会记录日志。`SendJSON` 把值编码为一行 JSON，`Send` 发送原样的文本。
-
-`s.Context()` 在客户端断开或服务器开始停机时取消，传给业务动作，让它们随之停止。
-
-浏览器的 `EventSource` 只能发 GET 请求，请求头由浏览器决定。单页应用用 `fetch` 读取响应流，见[客户端代码的事件流](clients.md#event-streams)。
+- 推送中的工作用 `s.Context()`：客户端断开或服务器开始停机时它被取消。
+- 浏览器的 `EventSource` 只能发 GET；单页应用用生成的客户端读取 POST 的响应流。
 
 <a id="long-lived-connections"></a>
-## 长连接
+## 长连接：推送广播的消息
 
-例如每个页面都显示“其他编辑刚刚发布了什么”。界面打开时连接一个事件流接口，处理器订阅[广播](../libraries/broadcasting.md)的 `articles` 主题，收到一条就推送一条，直到 `s.Done()` 关闭：
+处理器订阅[广播](../libraries/broadcasting.md)的主题，收到一条推送一条，直到 `s.Done()` 关闭。`hub` 是入口创建的 `*broadcast.Hub`，其他实例上发布的消息也会送到这里。处理器返回：
 
 ```go
-rest.RegisterSSE(api, op, map[string]any{"published": ArticlePublished{}},
-    func(ctx context.Context, in *struct{}) (*huma.StreamResponse, error) {
-        return rest.SSE(func(s *httpx.Stream) error {
-            sub := hub.Subscribe("articles")
-            defer sub.Close()
-            for {
-                select {
-                case <-s.Done():
-                    return nil
-                case m, ok := <-sub.C():
-                    if !ok {
-                        return nil // 订阅已结束，客户端会重连
-                    }
-                    var ev ArticlePublished
-                    if err := json.Unmarshal(m.Data, &ev); err != nil {
-                        return err
-                    }
-                    if err := s.SendJSON(httpx.Event{Name: "published", ID: ev.ID.String()}, ev); err != nil {
-                        return nil
-                    }
-                }
+return rest.SSE(func(s *httpx.Stream) error {
+    sub := hub.Subscribe("articles")
+    defer sub.Close()
+    for {
+        select {
+        case <-s.Done():
+            return nil
+        case m, ok := <-sub.C():
+            if !ok {
+                return nil // 订阅已结束，客户端会重连
             }
-        }), nil
-    })
+            var ev ArticlePublished
+            if err := json.Unmarshal(m.Data, &ev); err != nil {
+                return err
+            }
+            if err := s.SendJSON(httpx.Event{Name: "published", ID: ev.ID.String()}, ev); err != nil {
+                return nil
+            }
+        }
+    }
+}), nil
 ```
 
-`hub` 是 `broadcast.Hub`。发布文章的请求可能在另一个实例上，Hub 把事件送到每个实例，见[广播](../libraries/broadcasting.md)。
-
-`httpx.SSE` 每 15 秒发送一次心跳，让代理保持连接，也能尽早发现已经断开的客户端。
+`s.Done()` 在客户端断开、服务器开始停机或凭据失效时关闭，处理器必须在这时返回。
 
 <a id="reconnecting"></a>
-### 断线重连
+### 断线重连：`s.LastEventID()`
 
-连接断开后（例如网络切换、实例重启），客户端重新连接。上面的处理器为每条消息带上了 ID，客户端重连时把最后收到的 ID 放在 `Last-Event-ID` 请求头中发回，`s.LastEventID()` 返回它，处理器据此从应用的数据中补发断线期间的消息，见[断线补发](../libraries/broadcasting.md#replaying-missed-events)。
+事件带 `ID` 时，客户端重连会在 `Last-Event-ID` 中发回最后收到的 ID，`s.LastEventID()` 返回它（首次连接为空）。处理器据此补发断线期间的消息，见[断线补发](../libraries/broadcasting.md#replaying-missed-events)。`httpx.Event` 的 `Retry` 建议客户端的重连间隔。
 
 <a id="routes-and-timeouts"></a>
-## 路由与超时
+## 认证与超时
 
-SSE 接口和其他接口注册在同一个 API 上，认证方式相同，例如 `rest.RequireToken(api, tokens.Validate, "articles")`。
+SSE 接口的认证与其他接口相同，例如 `rest.RequireToken(api, tokens.Validate, "articles")`。推送开始后：
 
-开始推送之后，连接脱离请求时限：
-
-- `s.Context()` 只在客户端断开或服务器停机时取消，[`httpx.Timeout`](middleware.md#request-timeout) 的超时与它无关。
-- 服务器配置中的 `http.write_timeout` 同样会切断长连接，SSE 会为当前请求取消它，配置保持原样。
-
-停机时，`httpx.Serve` 一开始排空，`s.Done()` 就会关闭，处理器返回，连接结束，客户端随后重连到其他实例。所以打开着的长连接随排空一起结束，停机很快完成，见[平滑停止](../concepts/lifecycle.md#graceful-shutdown)。
+- [`httpx.Timeout`](middleware.md#request-timeout) 和 `http.write_timeout` 对这个连接不再生效，流式路由可以和普通路由装在同一组中间件下。
+- 服务器开始停机时 `s.Done()` 关闭，客户端重连到其他实例，停机不用等长连接，见[平滑停止](../concepts/lifecycle.md#graceful-shutdown)。
 
 <a id="revoked-credentials"></a>
-## 凭据失效
+## 凭据失效：每 30 秒复查
 
-长连接只在建立时经过认证。之后 API token 被[撤销](../security/api-tokens.md#revoking-tokens)、用户被停用或失去所需的权限，已经建立的连接也要随之结束。
+长连接只在建立时认证。`rest.RequireToken` 登记了复查函数，框架每 30 秒重新执行 token 校验器、[`Options.Accounts`](../security/authentication.md#resolving-subjects) 中的 Resolver 和权限检查：
 
-`rest.RequireToken` 在认证通过后，会在请求中登记一个重新校验函数。SSE 每 30 秒运行一次：
-
-| 校验结果 | 连接 |
+| 复查结果 | 连接 |
 | --- | --- |
 | 仍然有效 | 保持 |
-| token 校验不通过、主体变了、Resolver 返回不是系统故障的错误、缺少所需的 scope | 结束 |
-| 暂时无法判断，例如数据库故障、Resolver 返回系统故障 | 保持，30 秒后再查 |
+| token 无效、主体或代为登录者变了、缺少所需的权限、Resolver 返回不是系统故障的错误 | 结束 |
+| 暂时无法判断，例如数据库故障 | 保持，30 秒后再查 |
 
-连接结束后，客户端重连时按普通请求重新认证，得到 `401`。所以凭据失效后，最多 30 秒连接就会断开，检查由框架完成。
-
-复查会重新运行 token 校验器和 [`Options.Accounts`](../security/authentication.md#resolving-subjects) 中的 Resolver。校验器有副作用时（例如 `apitoken` 延长登录 token 的有效期），长连接期间也会每 30 秒发生一次。校验器可以用 `identity.Rechecking(ctx)` 区分复查和新的请求。自己实现认证中间件时，用 `identity.WithCredentialCheck` 登记同样的校验函数，SSE 会照样运行它。
+- 校验器有副作用时（例如 `apitoken` 延长登录 token 的有效期），长连接期间每 30 秒也发生一次；用 `identity.Rechecking(ctx)` 区分复查和新的请求。
+- 自己实现认证中间件时，用 `identity.WithCredentialCheck` 登记复查函数。
 
 <a id="immediate-revocation"></a>
-### 立即断开
+### 立即断开：`broadcast.Credentials`
 
-30 秒对大多数场景已经足够。需要撤销后立即断开时，用[广播](../libraries/broadcasting.md)提醒所有实例上的长连接马上校验。在入口中基于 Hub 创建 `broadcast.Credentials`，交给 API：
+撤销后要立即断开时，在入口中用 Hub 创建 `broadcast.Credentials` 交给 API，`accounts` 是应用的 `identity.Accounts`：
 
 ```go
-creds := broadcast.NewCredentials(hub)
-accounts := identity.Accounts{user.Type: roles.Resolve}
-api := rest.New(router, rest.Options{Accounts: accounts, Credentials: creds})
+api := rest.New(router, rest.Options{Accounts: accounts, Credentials: broadcast.NewCredentials(hub)})
 ```
 
-凭据变化之后，调用对应的方法：
+凭据变化后调用对应的方法，所有实例上相关的长连接立即复查：
 
-| 方法 | 立即校验的连接 | 常见用途 |
+| 方法 | 立即复查的连接 | 用途 |
 | --- | --- | --- |
-| `RecheckCredential(ctx, id)` | 使用这个凭据的连接，`id` 是主体的 `Credential`，即 token 的 ID | 退出某一台设备 |
-| `RecheckSubject(ctx, ref)` | 主体 `ref`（`identity.Ref`）的全部连接 | 退出其他设备、修改密码、停用账号、调整角色、移出租户 |
-| `RecheckTenant(ctx, tenant)` | 请求所在租户为 `tenant` 的全部连接 | 修改角色的权限 |
+| `RecheckCredential(ctx, id)` | 使用 token `id` 的连接（主体的 `Credential`） | 退出某一台设备 |
+| `RecheckSubject(ctx, ref)` | 主体 `ref` 的全部连接 | 退出其他设备、修改密码、停用账号、调整角色、移出租户 |
+| `RecheckTenant(ctx, tenant)` | 租户 `tenant` 中的全部连接 | 修改角色的权限 |
 
-例如设备列表中的“退出这台设备”，`a.creds` 由业务动作的构造函数传入：
+“退出这台设备”的业务动作中，`a.tokens` 是 `*apitoken.Store`，`a.creds` 是由构造函数传入的 `*broadcast.Credentials`：
 
 ```go
 if err := a.tokens.Revoke(ctx, subject, id); err != nil {
@@ -202,101 +150,18 @@ if err := a.tokens.Revoke(ctx, subject, id); err != nil {
 if err := a.creds.RecheckCredential(ctx, id); err != nil {
     slog.WarnContext(ctx, "recheck credential", "error", err) // 连接仍会在 30 秒内断开
 }
-return nil
 ```
 
-提醒只让连接立即执行一次上面的校验，是否断开仍由校验决定：凭据仍然有效的连接继续保持，多发的提醒只是多查一次。因此提醒要在修改提交之后发出，否则校验读到的还是旧数据；修改在事务中进行时，用 [AfterCommit](../database/database.md#after-commit) 登记。提醒丢失时（例如 NATS 断线、发出之前进程退出），连接仍会在 30 秒的定期校验中断开。
+- 提醒在修改提交之后发出，否则复查读到旧数据；修改在事务中时用 [AfterCommit](../database/database.md#after-commit) 登记。
+- 提醒只触发一次复查，是否断开仍由复查决定。提醒丢失时连接仍在 30 秒的定期复查中断开。
 
-Hub 经由 NATS 在实例之间传递消息，见[后端](../libraries/broadcasting.md#backends)。
+<a id="plain-handlers"></a>
+## 在普通 HTTP 处理器中使用：`httpx.SSE`
+
+`rest` 之外的 `http.Handler` 用 `httpx.SSE(w, r, fn)`，`fn` 与 `rest.SSE` 的相同，心跳、超时、停机和凭据复查也相同。
 
 <a id="deployment"></a>
-## 部署
+## 部署：代理缓冲和 HTTP/2
 
-- **代理缓冲**：nginx 默认会缓冲响应，SSE 响应带 `X-Accel-Buffering: no` 关闭它，nginx 配置保持原样。其他代理请确认它们对 `text/event-stream` 响应直接转发。
-- **HTTP/2**：使用 HTTP/1.1 时，浏览器对同一个站点最多同时打开 6 个连接。每个打开的标签页都占用一条长连接，标签页多了以后，新的请求会一直等待。生产环境请在反向代理上启用 HTTP/2。
-
-<a id="troubleshooting"></a>
-## 常见问题
-
-**浏览器很久才收到事件，或者一次收到一大批**
-
-反向代理缓冲了响应。nginx 会按 `X-Accel-Buffering: no` 关闭缓冲；其他代理要确认对 `text/event-stream` 直接转发，见[部署](#deployment)。
-
-**开了几个标签页后，新的请求一直在等待**
-
-使用 HTTP/1.1 时，浏览器对同一个站点最多同时打开 6 个连接，每条长连接占一个。在反向代理上启用 HTTP/2，见[部署](#deployment)。
-
-**断线重连后，丢了断线期间的消息**
-
-处理器没有为消息带上 ID，或者没有根据 `s.LastEventID()` 补发，见[断线重连](#reconnecting)。
-
-**撤销了 token，但已经打开的长连接没有断开**
-
-长连接每 30 秒重新校验一次凭据，最多 30 秒后断开。需要立即断开时，见[立即断开](#immediate-revocation)。
-
-**推送开始后返回的错误，客户端没有收到**
-
-返回 `rest.SSE` 之后，响应已经开始发送，之后的错误只会记录日志。需要告诉客户端的错误，在开始推送之前返回，或者作为一个事件发送。
-
-<a id="api-reference"></a>
-## API 参考
-
-### rest.RegisterSSE、rest.SSE
-
-包 `github.com/go-tenon/tenon/httpx/rest`。
-
-```go
-func RegisterSSE[I any](api *API, op huma.Operation, events map[string]any, handler func(context.Context, *I) (*huma.StreamResponse, error))
-func SSE(fn func(s *httpx.Stream) error) *huma.StreamResponse
-```
-
-- **参数**
-    - `api`、`op`：与 `rest.Register` 相同
-    - `events`：事件名到事件数据类型的映射，用于生成 OpenAPI 文档和客户端
-    - `handler`：处理器，检查完请求后返回 `rest.SSE(fn)`
-- **返回**：`SSE` 返回交给 Huma 的流式响应
-
-处理器返回 `SSE(fn)` 之后开始推送，`fn` 返回时连接结束。在此之前返回的错误照常转换为错误响应。
-
-### httpx.Stream
-
-包 `github.com/go-tenon/tenon/httpx`。
-
-```go
-func (s *Stream) SendJSON(ev Event, v any) error
-func (s *Stream) Send(ev Event, data string) error
-func (s *Stream) Context() context.Context
-func (s *Stream) Done() <-chan struct{}
-func (s *Stream) LastEventID() string
-```
-
-`SendJSON` 把 `v` 编码为一行 JSON 发送，`Send` 发送原样的文本，客户端离开时返回错误。`Context` 在客户端断开或服务器停机时取消，`Done` 同时关闭。`LastEventID` 是重连时客户端发回的最后一个事件 ID。
-
-### httpx.Event
-
-| 字段 | 说明 |
-| --- | --- |
-| `Name string` | 事件名，为空时是默认的 `message` 事件 |
-| `ID string` | 客户端重连时通过 `Last-Event-ID` 发回 |
-| `Retry time.Duration` | 覆盖客户端的重连延迟 |
-
-### httpx.SSE
-
-```go
-func SSE(w http.ResponseWriter, r *http.Request, fn func(s *Stream) error) error
-```
-
-在普通的 `http.Handler` 中使用 SSE，心跳、超时和停机的处理与上面相同。
-
-### broadcast.Credentials
-
-包 `github.com/go-tenon/tenon/broadcast`。
-
-```go
-func NewCredentials(hub *Hub) *Credentials
-func (c *Credentials) RecheckCredential(ctx context.Context, id string) error
-func (c *Credentials) RecheckSubject(ctx context.Context, ref identity.Ref) error
-func (c *Credentials) RecheckTenant(ctx context.Context, tenant string) error
-```
-
-见[立即断开](#immediate-revocation)。
+- SSE 响应带 `X-Accel-Buffering: no`，nginx 不缓冲它。其他代理要对 `text/event-stream` 直接转发，否则事件会延迟或成批到达。
+- HTTP/1.1 下浏览器对同一个站点最多同时打开 6 个连接，每个标签页的长连接占一个。生产环境在反向代理上启用 HTTP/2。

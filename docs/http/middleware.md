@@ -1,89 +1,49 @@
 # 中间件
 
-有些事情每个请求都要做：确定请求 ID、记录访问日志、限制请求体的大小、在处理器 panic 时恢复。把它们写在每个处理器里显然不现实，中间件就是为此而生的：它包在处理器的外面，在请求到达处理器之前和之后做这些通用的事。
+HTTP 中间件是 `func(http.Handler) http.Handler`，安装在 chi Router 上，再把 Router 交给 `rest.New`。这一页讲默认中间件、限流、跨域、Basic 认证、App 最低版本、响应压缩、自定义中间件和 `http` 段的配置。
 
-可以把中间件想象成套在处理器外面的一层层包装：请求从外向内穿过每一层，到达处理器；响应再从内向外穿过每一层，返回给客户端。任何一层都可以直接返回响应，请求就不会再往里走，例如请求体太大时直接返回 413。
+包：`httpx`。
 
-Tenon 的中间件都是标准的 `func(http.Handler) http.Handler`：接收里面一层的处理器，返回包了一层之后的处理器。它们安装在 chi Router 上，装哪些、按什么顺序装，都由你在代码中决定，`rest.New` 只使用你装好的 Router。
+- 中间件是否生效只取决于代码中有没有安装它，配置文件只提供参数；参数不合法时（例如超时为 `0`）构造中间件就 panic。
+- 先安装中间件再注册路由：chi 不允许在注册路由之后调用 `router.Use`。
 
-阅读前需要了解：[安装](../installation/installing.md#middleware)的第二步；[路由](routing.md)。
-
-> [!IMPORTANT]
-> 一个中间件是否生效，只取决于代码里有没有安装它。配置文件只提供参数。参数不合法时（例如超时为 0），构造时就 panic。
-
-- [示例用法](#default-middleware)
-- [自定义中间件](#custom-middleware)
-    - [全局中间件](#chi-middleware)
-    - [路由中间件](#route-middleware)
-- [请求超时](#request-timeout)
-- [配置](#http-configuration)
-    - [请求 ID](#request-id)
-    - [可信代理](#trusted-proxies)
-    - [访问日志](#access-log)
-- [可选的中间件](#optional)
-- [自行组装](#custom-stack)
-- [用于普通 HTTP 处理器](#plain-handlers)
-- [常见问题](#troubleshooting)
-- [API 参考](#api-reference)
 <a id="default-middleware"></a>
-## 示例用法
+## 示例：安装 `httpx.Defaults`
 
-大多数应用只需要这三行。`httpx.Defaults` 返回每个应用都应该安装的基础中间件，先把它们和[请求超时](#request-timeout)安装到 Router 上，再把 Router 交给 `rest.New`：
+`cfg.HTTP` 是应用根配置中的 `httpx.Config`，见[配置](#http-configuration)：
 
 ```go
 router := chi.NewRouter()
-router.Use(httpx.Defaults(cfg.HTTP)...)
+router.Use(httpx.Defaults(cfg.HTTP)...) // 有自己的翻译时加 httpx.Languages(languages)
 router.Use(httpx.Timeout(cfg.HTTP.Timeout))
 
 api := rest.New(router, rest.Options{})
 ```
 
-这里使用了 `github.com/go-chi/chi/v5`。日志写到全局日志器 `slog.Default()`，见[日志](../general/logging.md#creating-a-logger)；错误消息默认只使用框架内置的中英文，加入应用自己的翻译时传 `httpx.Languages` 选项，见[本地化](../general/localization.md#enabling-localization)：
-
-```go
-router.Use(httpx.Defaults(cfg.HTTP, httpx.Languages(languages))...)
-```
-
-`httpx.Defaults` 按以下顺序包含这些中间件。它们每一个都可以单独使用：
+`httpx.Defaults` 按执行顺序返回下面的中间件，日志写到 `slog.Default()`。`httpx.Languages` 见[本地化](../general/localization.md#enabling-localization)。
 
 | 中间件 | 行为 |
 | --- | --- |
-| `AssignRequestID(cfg.RequestID)` | 确定请求 ID，写入 context、日志字段和 `X-Request-ID` 响应头；入站请求 ID 合法时沿用，见[请求 ID](#request-id) |
-| `NoSniff()` | 设置 `X-Content-Type-Options: nosniff` |
-| `ClientIP(cfg.ClientIP)` | 只信任显式配置的代理，从 `X-Forwarded-For` 解析客户端地址 |
-| `Locale(languages)` | 根据 `Accept-Language` 选择语言，写入 context 和 `Content-Language` 响应头，见[本地化](../general/localization.md#determining-the-locale) |
-| `AccessLog(cfg.AccessLog, logger)` | 每个请求记录一条访问日志，见[访问日志](#access-log) |
-| `Recover(logger)` | 处理器 panic 时记录堆栈；若尚未写出响应则返回通用的 500 错误，若已开始写响应则中止连接 |
-| `BodyLimit(cfg.BodyLimit)` | 限制请求体大小，超出时返回 413 |
-| `AcquireTimeout(cfg.AcquireTimeout)` | 请求等待共享资源（例如空闲的数据库连接）最多 `acquire_timeout`，连接池用满时返回 503 并带 `Retry-After`，见[连接用满时](../database/database.md#pool-exhaustion) |
+| `AssignRequestID` | 确定请求 ID，见[请求 ID](#request-id) |
+| `NoSniff` | 设置 `X-Content-Type-Options: nosniff` |
+| `ClientIP` | 从可信代理的 `X-Forwarded-For` 取客户端地址，见[可信代理](#trusted-proxies) |
+| `Locale` | 按 `Accept-Language` 选择语言，见[本地化](../general/localization.md#determining-the-locale) |
+| `AccessLog` | 每个请求一条访问日志，见[访问日志](#access-log) |
+| `Recover` | panic 时记录堆栈；还没写出响应时返回 500，否则中止连接 |
+| `BodyLimit` | 请求体超过 `body_limit.max_bytes` 时返回 413 |
+| `AcquireTimeout` | 等待空闲数据库连接超过 `acquire_timeout` 时返回 503，见[连接用满时](../database/database.md#pool-exhaustion) |
 
-另外几个中间件按需使用，在 `httpx.Defaults` 之后另行安装：
-
-| 中间件 | 行为 |
-| --- | --- |
-| `Timeout(cfg.Timeout)` | 为请求 context 设置超时，见[请求超时](#request-timeout) |
-| `RateLimit(limiter, key)` | 按客户端限流，超出时返回 429，见[限流](../libraries/rate-limiting.md) |
-| `Compress()` | 按 `Accept-Encoding` 用 zstd 或 gzip 压缩文本类响应，见[响应压缩](optional-middleware.md#compression) |
-
-每个中间件都可以单独省略，框架的其他部分照常工作：没有 `AccessLog` 时，`httpx.AddAccessLogAttrs` 什么也不做；没有 `Locale` 时，`i18n.T` 原样返回消息 ID；没有 `AssignRequestID` 时，`logging.RequestID` 返回空字符串。
-
-认证不在默认中间件中，因为它是按路由启用的，见[认证](../security/authentication.md)。健康检查也由你自己注册，见[健康检查](../concepts/lifecycle.md#health-checks)。
-
+每一个都可以单独安装或省略：没有 `AccessLog` 时 `httpx.AddAccessLogAttrs` 不做任何事，没有 `Locale` 时 `i18n.T` 原样返回消息 ID。认证按路由启用，见[认证](../security/authentication.md#protecting-routes)；请求的指标和链路用 `httpx.Telemetry`，见[可观测性](../general/telemetry.md#http)。
 
 <a id="custom-middleware"></a>
 ## 自定义中间件
 
 <a id="chi-middleware"></a>
-### 全局中间件
+### 全局中间件：`router.Use`
 
-自己编写的中间件和默认中间件安装方式完全相同，`router.Use` 的先后顺序就是执行顺序。
-
-例如，数据库维护期间进入只读模式：读请求照常处理，修改文章等写请求统一返回 `503`：
+自己写的中间件装在 `httpx.Defaults` 之后，被它拒绝的请求也有请求 ID 和访问日志。例如维护期间拒绝写请求，`readOnly` 是由运维开关切换的 `atomic.Bool`：
 
 ```go
-var readOnly atomic.Bool // 由运维开关控制，例如收到某个信号时切换
-
-router := chi.NewRouter()
 router.Use(httpx.Defaults(cfg.HTTP)...)
 router.Use(func(next http.Handler) http.Handler {
     return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -94,221 +54,137 @@ router.Use(func(next http.Handler) http.Handler {
         next.ServeHTTP(w, r)
     })
 })
-
-api := rest.New(router, rest.Options{})
 ```
 
-安装在默认中间件之后，被拒绝的写请求同样带有请求 ID、出现在访问日志中，panic 也会被恢复。
-
-chi 要求所有中间件在注册路由之前安装，所以请先安装中间件，再调用 `rest.New` 并注册路由。
+`httpx.WriteProblem` 在 Huma 之外写出与 API 相同格式的错误响应。装在子路由（`router.Route`、`router.With`）上的中间件只对这个子路由生效。
 
 <a id="route-middleware"></a>
-### 路由中间件
+### 路由中间件：`Operation.Middlewares`
 
-只对某条路由生效的逻辑，可以使用 Huma 原生的 `Operation.Middlewares`。
-
-例如，早期的接口路径是 `/posts/{id}`，后来统一改为 `/articles/{id}`。旧路径暂时保留，但要在响应头中提醒客户端迁移：
+只对一条路由生效的逻辑写在 Huma 的 `Operation.Middlewares` 中，它在 Router 的中间件之后、处理器之前执行：
 
 ```go
-legacy := huma.Operation{
-    OperationID: "post-get",
-    Method:      http.MethodGet,
-    Path:        "/posts/{id}",
-    Summary:     "获取文章（已废弃，请使用 /articles/{id}）",
-    Deprecated:  true,
-}
-legacy.Middlewares = append(legacy.Middlewares, func(ctx huma.Context, next func(huma.Context)) {
+op := huma.Operation{OperationID: "post-get", Method: http.MethodGet, Path: "/posts/{id}", Deprecated: true}
+op.Middlewares = append(op.Middlewares, func(ctx huma.Context, next func(huma.Context)) {
     ctx.SetHeader("Deprecation", "true")
-    ctx.SetHeader("Link", "</articles/"+ctx.Param("id")+`>; rel="successor-version"`)
     next(ctx)
 })
-requireArticles(&legacy)
 ```
 
-之后像注册 `article-get` 一样注册它即可。`Deprecated: true` 还会在 OpenAPI 文档中把这条路由标记为已废弃。
-
-路由中间件在 Router 上的全局中间件之后、处理器之前执行。
-
-> [!TIP]
-> 认证使用 [`rest.RequireToken`](../security/authentication.md#protecting-routes)。它在检查凭据的同时，还会在 OpenAPI 文档中标记该路由需要认证，确保运行行为和文档一致。
+认证用 [`rest.RequireToken`](../security/authentication.md#protecting-routes)，它同时在 OpenAPI 文档中标记路由需要认证。
 
 <a id="request-timeout"></a>
-## 请求超时
+## 请求超时：`httpx.Timeout`
 
-`httpx.Timeout` 为请求的 context 设置超时，默认 30 秒，参数来自 `http.timeout` 段。超时后 context 被取消，传入了 `ctx` 的数据库查询和外部调用随之停止。
+`httpx.Timeout(cfg.HTTP.Timeout)` 为请求的 context 设置超时（`http.timeout.duration`，默认 30 秒）。超时后 context 被取消，传入了 `ctx` 的查询和外部调用随之停止，处理器返回的错误决定响应。
 
-它不在 `httpx.Defaults` 中，需要单独安装：有些应用只想给部分路由设置超时，例如只给 `/api/v1` 下的路由。
+它不在 `httpx.Defaults` 中，可以只装在部分路由组上；需要更长时间的接口放在超时更长的路由组中。[服务端推送](sse.md)开始推送后脱离这个超时。
 
-[服务端推送](sse.md)开始推送后脱离这个超时，连接一直保持到客户端断开，所以流式路由可以和普通路由装在同一组中间件下。
+<a id="rate-limiting"></a>
+## 限流：`httpx.RateLimit`
 
-<a id="http-configuration"></a>
-## 配置
-
-`httpx.Config` 对应配置文件的 `http` 段：顶层是服务器参数，每个有参数的中间件对应一个同名子段。
-
-```yaml
-http:
-  addr: ${HTTP_ADDR:-:8080}
-  shutdown_timeout: 10s
-  request_id:
-    header: X-Request-ID
-  client_ip:
-    trusted_proxies: [10.20.0.0/16]
-  access_log:
-    ignore_paths: [/livez, /readyz]
-  timeout:
-    duration: 15s
-  body_limit:
-    max_bytes: 2097152
-```
-
-服务器参数：
-
-| 字段 | 说明 | 默认值 |
-| --- | --- | --- |
-| `addr` | 监听地址，格式为 `host:port`，端口必须是 0–65535 的数字 | `:8080` |
-| `read_header_timeout` | 读取请求头的超时 | `5s` |
-| `read_timeout` | 读取整个请求的超时 | `30s` |
-| `write_timeout` | 写响应的超时 | `30s` |
-| `idle_timeout` | keep-alive 连接的空闲超时 | `1m` |
-| `shutdown_timeout` | 停机时排空请求的上限 | `10s` |
-| `acquire_timeout` | 请求等待共享资源（例如空闲的数据库连接）的最长时间；`0` 表示等到请求超时 | `1s` |
-
-中间件参数：
-
-| 字段 | 中间件 | 说明 | 默认值 |
-| --- | --- | --- | --- |
-| `request_id.header` | `AssignRequestID` | 读取入站请求 ID 的请求头 | `X-Request-ID` |
-| `client_ip.trusted_proxies` | `ClientIP` | 可信的反向代理网段 | 不信任任何代理 |
-| `access_log.*` | `AccessLog` | 见[访问日志](#access-log) | 只记录基本字段 |
-| `timeout.duration` | `Timeout` | 每个请求 context 的超时 | `30s` |
-| `body_limit.max_bytes` | `BodyLimit` | 请求体的最大字节数 | 1 MiB |
-| `rate_limit.*` | `RateLimit` | 见[限流](../libraries/rate-limiting.md) | 每秒 10 个，突发 20 个 |
-| `cors.*` | `CORS` | 见[跨域请求](optional-middleware.md#cors) | 允许任何来源，预检结果缓存 2 小时 |
-| `app_version.minimum` | `AppVersion` | 见[App 最低版本](optional-middleware.md#app-version) | 不限制 |
-
-没有写出的字段使用默认值。除 `acquire_timeout` 外，所有超时和数值都必须为正数，写 `0` 或负数会在加载配置时报错；要关掉某个中间件，在代码中省略它即可。
-
-把 `httpx.Config` 放进应用的根配置结构体（`config.Load` 会自动填充默认值并校验），再把它交给 `httpx.Defaults` 和 `httpx.Serve`：
+配额用完时返回 `429` 和 `Retry-After`，限流器出错时返回 `503`。装在 `httpx.Defaults` 之后，`KeyByIP` 才能读到 `ClientIP` 解析出的地址：
 
 ```go
-router.Use(httpx.Defaults(cfg.HTTP)...)
-// ...
-ln, err := d.Listen("tcp", cfg.HTTP.Addr)
-// ...
-return httpx.Serve(ctx, cfg.HTTP, ln, api.Handler())
+router.Use(httpx.RateLimit(ratelimit.NewMemory(cfg.HTTP.RateLimit), httpx.KeyByIP))
 ```
 
-不经过 `config.Load` 时（例如在测试中），请从 `httpx.DefaultConfig()` 开始修改；整个应用的配置用 `config.Default[Config]()`，它与读取空配置文件得到的值相同。`httpx.Config{}` 的零值缺少必填项，交给 `httpx.Defaults` 会 panic，交给 `httpx.Serve` 会返回错误。
+自定义 key、按用户限流、多实例共享计数见[限流](../libraries/rate-limiting.md)。
 
-<a id="request-id"></a>
-### 请求 ID
+<a id="cors"></a>
+## 跨域请求：`httpx.CORS`
 
-`AssignRequestID` 为每个请求确定一个 ID：入站请求头中带有合法的 ID 时沿用它，否则生成一个随机 ID。这个 ID 会：
+单页应用、桌面或移动端的 WebView 与 API 不同源时安装。只装在 API 的路由组上，并且在认证、限流之前：预检请求（`OPTIONS`）直接以 `204` 应答，不进入它们。
 
-- 用 `logging.WithRequestID` 写入请求的 context，作为 `request_id` 字段出现在这个请求的所有日志中，用 `logging.RequestID(ctx)` 读取，见[调用关联](../general/logging.md#request-correlation)；
-- 通过 `X-Request-ID` 响应头返回给客户端，用户反馈问题时可以直接提供它。
-
-它同时写入 chi 的 `middleware.RequestIDKey`，所以 `middleware.GetReqID(ctx)` 和读取它的社区中间件拿到的也是同一个值，它可以代替 chi 的 `middleware.RequestID`。
-
-合法的 ID 是 1–128 个可打印的 ASCII 字符，不含空格。不合法时（例如超长、包含控制字符）丢弃，重新生成。
-
-部署在反向代理之后时，沿用代理生成的 ID，就能把代理日志和应用日志关联起来。默认读取 `X-Request-ID`，代理使用其他请求头时通过 `http.request_id.header` 指定：
-
-| 代理 | 配置 |
-| --- | --- |
-| Nginx（`proxy_set_header X-Request-ID $request_id`）、Envoy、Istio、Traefik | 默认即可 |
-| AWS ALB | `header: X-Amzn-Trace-Id` |
-| Google Cloud 负载均衡 | `header: X-Cloud-Trace-Context` |
-| Cloudflare | `header: CF-Ray` |
-
-无论从哪个请求头读取，响应始终通过 `X-Request-ID` 返回。
-
-客户端自己携带的 ID 能否到达应用，取决于代理的配置：上面 Nginx 的写法总是用 Nginx 生成的值覆盖客户端的值，Envoy 默认也会在入口重新生成。需要优先沿用客户端的 ID 时，请在代理中配置透传。
-
-<a id="trusted-proxies"></a>
-### 可信代理
-
-当应用部署在 Nginx、负载均衡器等反向代理之后时，请求的直接来源是代理的地址，而真实的客户端地址在 `X-Forwarded-For` 头中。但这个头可以被客户端随意伪造，所以只有来自**可信代理**的请求，才应该使用它。
-
-你可以通过 `http.client_ip.trusted_proxies` 声明代理所在的网段：
+```go
+router.Route("/api", func(r chi.Router) {
+    r.Use(httpx.CORS(cfg.HTTP.CORS))
+    // 认证、限流和路由
+})
+```
 
 ```yaml
 http:
-  client_ip:
-    trusted_proxies: [10.20.0.0/16, fd00::/64]
+  cors:
+    allowed_origins: ["https://app.example.com", "https://*.example.com", "capacitor://localhost"] # scheme://host[:port]，最多一个 *；默认 ["*"]
+    expose_headers: [X-Total-Count] # X-Request-ID、Content-Language、Retry-After、Location、Content-Disposition 之外的响应头
+    max_age: 2h                     # 浏览器缓存预检结果的时间，Chrome 最多 2 小时
 ```
 
-每一项都必须是网络地址，即主机位全为零。只信任单台机器时写成 `/32`（IPv6 为 `/128`）：
+- 跨域请求不携带凭据：[会话 cookie](protocol.md#sessions) 只随同源请求发送，跨域的调用方用 `Authorization: Bearer`，所以允许任何来源也是安全的。
+- 请求头按预检声明的原样允许。`401`、`429` 等错误响应也带 CORS 头。
 
-| 写法 | 结果 |
-| --- | --- |
-| `10.20.0.0/16` | 合法 |
-| `10.20.0.5/32` | 合法，只信任这一台 |
-| `10.20.0.5/16` | 报错：`10.20.0.5/16 has host bits set; use 10.20.0.0/16 or 10.20.0.5/32` |
-| `10.20.0.5` | 报错：缺少前缀长度 |
-| `""`、`300.0.0.0/8`、`10.0.0.0/33` | 报错：不是有效的网段 |
+<a id="basic-auth"></a>
+## HTTP Basic 认证：`httpx.BasicAuth`
 
-对于来自可信代理的请求，`ClientIP` 会从右向左读取 `X-Forwarded-For`，跳过所有可信代理的地址，把遇到的第一个不可信地址作为客户端地址。没有配置可信代理时，始终使用直接连接的地址。
+内部文档、运维页面这类不接入账号体系的页面用它保护。`cfg.Ops` 是“用户名 → [密码哈希](../security/hashing.md)”的配置项，`hasher` 是 `hashing.Hasher`，`opsLimiter` 是 `ratelimit.Limiter`：
+
+```go
+verify := func(_ context.Context, user, password string) (bool, error) {
+    hash, ok := cfg.Ops[user]
+    return ok && hasher.Check(password, hash), nil
+}
+ops := router.With(
+    httpx.RateLimit(opsLimiter, httpx.KeyByIP), // 限制暴力尝试
+    httpx.BasicAuth("ops", verify),
+)
+```
+
+- `verify` 返回 `false` 或没有凭据时返回 `401` 和 `WWW-Authenticate: Basic`；返回错误时返回 `503` 并记录 Error 日志。
+- 认证通过后 `httpx.BasicUser(ctx)` 返回用户名。只在 HTTPS 下使用：每个请求都带明文密码。
 
 > [!WARNING]
-> 只填写你实际使用的代理网段。如果把 `0.0.0.0/0` 之类的宽泛网段设为可信，任何客户端都可以伪造自己的地址。
+> 浏览器给跨站请求也带上 Basic 凭据。页面中有修改数据的请求时，用 `http.CrossOriginProtection` 拒绝跨站请求。
 
-<a id="access-log"></a>
-### 访问日志
+<a id="app-version"></a>
+## App 最低版本：`httpx.AppVersion`
 
-`AccessLog` 基于 [slog-chi](https://github.com/samber/slog-chi)，在每个请求结束后记录一条消息为 `http request` 的日志：
+App 在每个请求中带 `X-App-Version: ios/1.4.2`，版本低于该平台的最低版本时返回 `426`，错误码 `app.upgrade_required`。线路格式见[客户端协议](protocol.md#app-version)，App 端见[客户端代码](clients.md#app-version)。
 
-```json
-{"time":"…","level":"WARN","msg":"http request","component":"http","request":{"time":"…","method":"PUT","host":"api.example.com","path":"/articles/0f8c","query":"","params":{"id":"0f8c"},"route":"/articles/{id}","referer":"","ip":"203.0.113.7:51234","length":0},"response":{"time":"…","latency":32209,"status":409,"length":0},"code":"article.slug_taken","request_id":"9F2K…"}
+```go
+router.Route("/api", func(r chi.Router) {
+    r.Use(httpx.CORS(cfg.HTTP.CORS))
+    r.Use(httpx.AppVersion(cfg.HTTP.AppVersion)) // 在 CORS 之后，WebView 才能读到 426
+})
 ```
 
-- 消息固定为 `http request`，用 `msg = "http request"` 就能筛出所有访问日志；
-- 带有 `component: http` 字段，可以用 `logs.levels.http` 单独调整级别，见[按组件设置级别](../general/logging.md#component-levels)；
-- 级别随状态码变化：`5xx` 为 `ERROR`，`4xx` 为 `WARN`，其他为 `INFO`；
-- `request.route` 是路由模板，适合按接口聚合统计；
-- `request.ip` 是 [`ClientIP`](#trusted-proxies) 解析后的客户端地址；
-- 业务错误的错误码由框架通过 `httpx.AddAccessLogAttrs` 追加为顶层的 `code` 字段；请求语言中缺少这个错误码的翻译时，还会追加 `"untranslated":true`。你也可以在处理过程中调用它追加自己的字段，同名字段后写的覆盖先写的。
+```yaml
+http:
+  app_version:
+    minimum: # 平台名小写，由 App 决定；没有列出的平台不限制
+      ios: 1.4.0
+      android: 1.3.0
+```
 
-更多字段通过 `http.access_log` 开启：
+- 没有这个请求头的请求放行（浏览器、第三方调用方），格式错误时返回 `400`。
+- 按语义化版本比较：`1.4` 等于 `1.4.0`，`1.4.0-beta.1` 低于 `1.4.0`。
+- 访问日志中有 `app` 字段，提高最低版本前用它统计旧版本的用户。
 
-| 字段 | 说明 | 默认值 |
-| --- | --- | --- |
-| `ignore_paths` | 不记录访问日志的路径（精确匹配），例如健康检查 | 无 |
-| `user_agent` | 记录 `User-Agent` | `false` |
-| `request_header`、`response_header` | 记录请求头、响应头 | `false` |
-| `request_body`、`response_body` | 记录请求体、响应体，各最多 64 KiB | `false` |
+> [!IMPORTANT]
+> App 从第一个版本起就发送这个请求头：没有带它的旧版本无法被拦截。
 
-记录请求头时，`Authorization`、`Cookie`、`X-Auth-Token`、`X-CSRF-Token`、`X-XSRF-Token` 始终隐藏，记录响应头时 `Set-Cookie` 始终隐藏。还需要隐藏其他字段时，见[敏感信息脱敏](../general/logging.md#redacting-sensitive-data)。
+<a id="compression"></a>
+## 响应压缩：`httpx.Compress`
 
-> [!NOTE]
-> 处理器没有写出任何响应时，客户端收到的是 `200`。`AccessLog` 会显式写出这个 `200`，让日志中的状态码与客户端看到的一致。
+应用前面没有负责压缩的反向代理或 CDN 时，装在 `httpx.Defaults` 之后：
 
-<a id="optional"></a>
-## 可选的中间件
+```go
+router.Use(httpx.Compress())
+```
 
-下面这些中间件不在 `httpx.Defaults` 中，需要时另行安装，用法见[可选的中间件](optional-middleware.md)：
-
-| 中间件 | 什么时候需要 |
-| --- | --- |
-| [`RateLimit`](optional-middleware.md#rate-limiting) | 限制每个客户端的请求频率 |
-| [`CORS`](optional-middleware.md#cors) | 其他域名的网页要调用你的接口 |
-| [`BasicAuth`](optional-middleware.md#basic-auth) | 给内部页面（例如文档页）加一道简单的密码 |
-| [`AppVersion`](optional-middleware.md#app-version) | 拒绝过旧版本的移动 App |
-| [`Compress`](optional-middleware.md#compression) | 程序直接面对用户、前面没有反向代理时压缩响应 |
+只压缩 1 KiB 以上的文本类响应（`text/*`、JSON、JavaScript、XML、SVG、WebAssembly），客户端接受 zstd 时用 zstd，否则用 gzip。[服务端推送](sse.md)、WebSocket 握手和条件请求的 `304` 照常工作。
 
 <a id="custom-stack"></a>
-## 自行组装
+## 自行组装中间件
 
-`httpx.Defaults` 只是一个返回切片的普通函数。当默认组合不合适时，可以直接挑选需要的中间件，自己决定顺序和参数。
-
-例如，允许在 `/uploads/` 下上传最大 20 MiB 的图片，其他接口仍然使用配置的上限。`BodyLimit` 一旦安装就无法在内层放宽，所以要在安装时按路径选择上限：
+默认组合不合适时直接挑选单个中间件。例如 `/uploads/` 允许 20 MiB 的请求体：`BodyLimit` 装上之后内层无法放宽，所以在安装时按路径选择。
 
 ```go
 router.Use(
     httpx.AssignRequestID(cfg.HTTP.RequestID),
     httpx.NoSniff(),
     httpx.ClientIP(cfg.HTTP.ClientIP),
+    httpx.Locale(nil), // nil 时只用框架内置的消息
     httpx.AccessLog(cfg.HTTP.AccessLog, nil),
     httpx.Recover(nil),
     func(next http.Handler) http.Handler {
@@ -322,104 +198,97 @@ router.Use(
             small.ServeHTTP(w, r)
         })
     },
+    httpx.AcquireTimeout(cfg.HTTP.AcquireTimeout),
 )
 ```
 
-上传路由本身还要把 Huma 的 `Operation.MaxBodyBytes` 设为相同的上限，见[请求体大小](requests.md#body-size)。
+- 上传路由还要设置相同的 `Operation.MaxBodyBytes`，见[请求体大小](requests.md#body-size)。
+- `AccessLog` 装在 `Recover` 之外，panic 产生的 500 才会出现在访问日志中。
+- 用在 `rest` 之外的 `http.Handler` 上时用 `chi.Chain(httpx.Defaults(cfg.HTTP)...).Handler(mux)`。
 
-自行组装时请保持 `AccessLog` 在 `Recover` 之外，这样 panic 产生的 500 才会出现在访问日志中。
+<a id="http-configuration"></a>
+## 配置
 
-<a id="plain-handlers"></a>
-## 用于普通 HTTP 处理器
+`httpx.Config` 对应 `http` 段：顶层是服务器参数，每个有参数的中间件对应一个同名子段。下面是默认值。
 
-这些中间件可以脱离 `rest` 包使用。如果你有一个普通的 `http.Handler`（例如标准库的 `http.ServeMux`），可以用 `chi.Chain` 为它安装：
-
-```go
-handler := chi.Chain(httpx.Defaults(cfg.HTTP)...).Handler(mux)
+```yaml
+http:
+  addr: ${HTTP_ADDR:-:8080} # host:port
+  read_header_timeout: 5s
+  read_timeout: 30s
+  write_timeout: 30s        # SSE 推送时不受它限制
+  idle_timeout: 1m
+  shutdown_timeout: 10s     # 停机时排空请求的上限
+  acquire_timeout: 1s       # 等待空闲数据库连接的上限；0 表示等到请求超时
+  request_id:
+    header: X-Request-ID    # 见请求 ID
+  client_ip:
+    trusted_proxies: []     # 见可信代理
+  access_log:
+    ignore_paths: []        # 见访问日志
+  timeout:
+    duration: 30s           # httpx.Timeout
+  body_limit:
+    max_bytes: 1048576      # 1 MiB
+  rate_limit: {rate: 10, interval: 1s, burst: 20} # httpx.RateLimit
+  # cors 见跨域请求，app_version 见 App 最低版本
 ```
 
-<a id="troubleshooting"></a>
-## 常见问题
+- 除 `acquire_timeout` 外，超时和数值都必须为正数，否则加载配置时报错。
+- `httpx.Config` 放在应用的根配置结构体中，由 `config.Load` 填充默认值并校验。测试中从 `httpx.DefaultConfig()` 开始修改：`httpx.Config{}` 交给 `httpx.Defaults` 会 panic。
 
-**日志中的客户端地址都是代理的地址**
+<a id="request-id"></a>
+### 请求 ID
 
-没有配置可信代理，程序不会相信 `X-Forwarded-For`。把代理的网段写进 `client_ip.trusted_proxies`，见[可信代理](#trusted-proxies)。
+`AssignRequestID` 沿用入站请求头中合法的 ID（1–128 个可打印 ASCII 字符，不含空格），否则生成一个。ID 写入 `X-Request-ID` 响应头，并作为这个请求所有日志的 `request_id` 字段，用 `logging.RequestID(ctx)` 读取，见[调用关联](../general/logging.md#request-correlation)；chi 的 `middleware.GetReqID(ctx)` 读到同一个值。
 
-**上传文件时返回 413**
+沿用反向代理生成的 ID，代理日志和应用日志就能关联。代理用其他请求头时设置 `http.request_id.header`：
 
-请求体超过了 `body_limit`（默认 1 MiB）。只给上传的路由放宽限制，见[请求体大小](requests.md#body-size)。
-
-**慢接口返回 503，日志中出现 `context deadline exceeded`**
-
-请求超过了 `http.timeout`。优化接口；确实需要更长时间的接口，单独放在超时更长的路由组中，见[请求超时](#request-timeout)。
-
-**自己写的中间件没有生效**
-
-检查安装的位置：`router.Use` 只对之后注册的路由生效；装在子路由上的中间件，只对这个子路由生效。
-
-<a id="api-reference"></a>
-## API 参考
-
-包 `github.com/go-tenon/tenon/httpx`。每个中间件的参数取自 `httpx.Config` 中的同名子段。
-
-### Defaults
-
-```go
-func Defaults(cfg Config, opts ...DefaultsOption) []func(http.Handler) http.Handler
-func Logger(l *slog.Logger) LoggerOption
-func Languages(bundle *goi18n.Bundle) DefaultsOption
-```
-
-- **参数**
-    - `cfg`：HTTP 配置，见[配置](#http-configuration)；不合法时 panic
-    - `opts`：`Logger(l)` 让访问日志和 panic 记录写到 `l`，不传时使用 `slog.Default()`，通常只在测试中使用；`Languages(bundle)` 加入应用的语言目录，不传时只使用框架内置的中英文消息
-- **返回**：按执行顺序排列的中间件：`AssignRequestID`、`NoSniff`、`ClientIP`、`Locale`、`AccessLog`、`Recover`、`BodyLimit`、`AcquireTimeout`
-
-```go
-router.Use(httpx.Defaults(cfg.HTTP)...)
-```
-
-### 中间件
-
-| 函数 | 说明 |
+| 代理 | `header` |
 | --- | --- |
-| `AssignRequestID(cfg RequestIDConfig)` | [请求 ID](#request-id) |
-| `NoSniff()` | `X-Content-Type-Options: nosniff` |
-| `ClientIP(cfg ClientIPConfig)` | [可信代理](#trusted-proxies) |
-| `Locale(languages *goi18n.Bundle)` | 语言协商，见[本地化](../general/localization.md#determining-the-locale) |
-| `AccessLog(cfg AccessLogConfig, logger *slog.Logger)` | [访问日志](#access-log) |
-| `Recover(logger *slog.Logger)` | 恢复 panic |
-| `BodyLimit(cfg BodyLimitConfig)` | 限制请求体大小 |
-| `AcquireTimeout(d time.Duration)` | 等待共享资源的时限 |
-| `Timeout(cfg TimeoutConfig)` | [请求超时](#request-timeout) |
-| `RateLimit(limiter ratelimit.Limiter, key KeyFunc)` | [限流](optional-middleware.md#rate-limiting) |
-| `CORS(cfg CORSConfig)` | [跨域请求](optional-middleware.md#cors) |
-| `BasicAuth(realm string, verify func(ctx context.Context, user, password string) (bool, error))` | [HTTP Basic 认证](optional-middleware.md#basic-auth) |
-| `AppVersion(cfg AppVersionConfig)` | [App 最低版本](optional-middleware.md#app-version) |
-| `Compress()` | [响应压缩](optional-middleware.md#compression) |
-| `Telemetry(mp metric.MeterProvider, tp trace.TracerProvider)` | 请求指标与链路，见[可观测性](../general/telemetry.md#http) |
+| Nginx（`proxy_set_header X-Request-ID $request_id`）、Envoy、Istio、Traefik | 默认的 `X-Request-ID` |
+| AWS ALB | `X-Amzn-Trace-Id` |
+| Google Cloud 负载均衡 | `X-Cloud-Trace-Context` |
+| Cloudflare | `CF-Ray` |
 
-### 读取请求信息
+<a id="trusted-proxies"></a>
+### 可信代理
 
-```go
-func BasicUser(ctx context.Context) string
-func KeyByIP(r *http.Request) string
+`ClientIP` 只在直连地址属于 `http.client_ip.trusted_proxies` 时读取 `X-Forwarded-For`：从右向左跳过可信代理，第一个不可信的地址写入 `r.RemoteAddr`。没有配置时日志中的客户端地址都是代理的地址。
+
+```yaml
+http:
+  client_ip:
+    trusted_proxies: [10.20.0.0/16, fd00::/64] # 主机位全为零；单台机器写 10.20.0.5/32
 ```
 
-Basic 认证通过的用户名；按客户端地址的限流键。请求 ID 用 [`logging.RequestID`](../general/logging.md#finding-a-request) 读取。
+`10.20.0.5/16` 这样主机位不为零的写法在加载配置时报错。
 
-### WriteProblem
+> [!WARNING]
+> 只填写实际使用的代理网段。把 `0.0.0.0/0` 设为可信，任何客户端都能伪造自己的地址。
 
-```go
-func WriteProblem(w http.ResponseWriter, status int, detail string)
+<a id="access-log"></a>
+### 访问日志
+
+`AccessLog` 基于 [slog-chi](https://github.com/samber/slog-chi)，每个请求结束后记录一条消息为 `http request` 的日志：
+
+```json
+{"level":"WARN","msg":"http request","component":"http","request":{"method":"PUT","route":"/articles/{id}","ip":"203.0.113.7"},"response":{"status":409,"latency":32209},"code":"article.slug_taken","request_id":"9F2K…"}
 ```
 
-在普通处理器或中间件中写出与 API 相同格式的错误响应。
+- `5xx` 记为 `ERROR`，`4xx` 记为 `WARN`，其余为 `INFO`；用 `logs.levels.http` 单独调整级别，见[按组件设置级别](../general/logging.md#component-levels)。
+- `request.route` 是路由模板，用于按接口聚合。业务错误码是顶层的 `code`，缺少翻译时另有 `"untranslated":true`。
+- 处理器用 `httpx.AddAccessLogAttrs(ctx, attrs...)` 追加字段，同名字段后写的覆盖先写的。
 
-### DefaultConfig
-
-```go
-func DefaultConfig() Config
+```yaml
+http:
+  access_log:
+    ignore_paths: [/livez, /readyz] # 精确匹配，以 / 开头
+    user_agent: false
+    request_header: false   # Authorization、Cookie 等认证头始终隐藏
+    response_header: false  # Set-Cookie 始终隐藏
+    request_body: false     # 最多 64 KiB
+    response_body: false    # 最多 64 KiB
 ```
 
-全部字段为默认值的配置。直接构造配置时（例如测试中）从它开始修改。
+其他字段的脱敏见[敏感信息脱敏](../general/logging.md#redacting-sensitive-data)。

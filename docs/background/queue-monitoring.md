@@ -151,7 +151,7 @@ ID                                    TOPIC      ATTEMPTS  FAILED AT            
 <a id="queue-api"></a>
 ## 运维接口
 
-`queue/queueapi` 把同样的内容做成 JSON 接口，注册在应用的 [REST API](../http/README.md) 上，供运维页面调用。它只读写队列已有的数据，不新增任何表；吞吐、耗时等指标看[可观测性](../general/telemetry.md#queue)，重建复制槽只能用 `queue slot recreate`。
+`queue/queueapi` 把同样的内容做成 JSON 接口，注册在应用的 [REST API](../http/routing.md) 上，供运维页面调用。它只读写队列已有的数据，不新增任何表；吞吐、耗时等指标看[可观测性](../general/telemetry.md#queue)，重建复制槽只能用 `queue slot recreate`。
 
 ```go
 // a.nc 是应用的 NATS 连接，Admin 不关闭它

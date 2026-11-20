@@ -29,13 +29,13 @@ const credentialTimeout = 10 * time.Second
 // 中间件的超时影响，所以流式路由可以和普通路由装在同一组中间件下。它设置 X-Accel-Buffering: no
 // 让 nginx 不缓冲，并在 fn 运行期间每 15 秒发送一次心跳。
 //
-// 认证中间件安装了 identity.CredentialCheck 时（rest.RequireAuth、web 的页面路由），每 30 秒重新校验一次凭据：
-// token 被撤销、用户被停用或失去所需的 scope 后，连接最多 30 秒内结束，客户端重连时按普通请求重新认证。
+// 认证中间件安装了 identity.CredentialCheck 时（例如 rest.RequireAuth），每 30 秒重新校验一次凭据：
+// token 被撤销、用户被停用或失去所需的权限后，连接最多 30 秒内结束，客户端重连时按普通请求重新认证。
 // 同时安装了 identity.CredentialWatcher 时，收到复查信号立即校验，撤销后的连接随即结束。
 //
 // fn 应当在 Stream.Done 关闭时返回：客户端断开、服务器开始排空（见 DrainStarted），或凭据失效。
 //
-// web.SSE 和 rest.SSE 分别在它之上发送 HTML 片段和 JSON。
+// rest.SSE 在它之上发送 JSON 事件。
 func SSE(w http.ResponseWriter, r *http.Request, fn func(s *Stream) error) error {
 	rc := http.NewResponseController(w)
 	if err := rc.SetWriteDeadline(time.Time{}); err != nil {

@@ -404,7 +404,7 @@ Docker 的健康检查用程序自带的 [health 命令](../general/commands.md#
 - **HTTPS 与 HSTS。** 全站使用 HTTPS 后，在代理上加上 `Strict-Transport-Security` 响应头，例如 nginx 的 `add_header Strict-Transport-Security "max-age=31536000" always;`，浏览器此后只用 HTTPS 访问这个域名。
 - **服务端推送**需要在代理上启用 HTTP/2，见[服务端推送](../http/sse.md#deployment)。
 
-程序直接对外提供服务、前面没有代理时，安装 [httpx.Compress](../http/optional-middleware.md#compression) 压缩响应。跨域请求用内置的 [CORS](../http/optional-middleware.md#cors)。限流可以在网关中配置，也可以用内置的[限流](../libraries/rate-limiting.md)。
+程序直接对外提供服务、前面没有代理时，安装 [httpx.Compress](../http/middleware.md#compression) 压缩响应。跨域请求用内置的 [CORS](../http/middleware.md#cors)。限流可以在网关中配置，也可以用内置的[限流](../libraries/rate-limiting.md)。
 
 <a id="logging"></a>
 ## 日志

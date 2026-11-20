@@ -82,7 +82,7 @@ schemas.article.create.body // { $ref: "#/components/schemas/Changes" }
 components.Changes.properties.slug // { type: "string", minLength: 1, pattern: "^[a-z0-9-]+$", patternDescription: "小写字母、数字和连字符" }
 ```
 
-`messages.ts` 中是各语言的验证提示模板，键是[验证错误](../http/validation.md#validation-messages)的 `code`，与服务端返回的提示相同：
+`messages.ts` 中是各语言的验证提示模板，键是[验证错误](../http/requests.md#validation-messages)的 `code`，与服务端返回的提示相同：
 
 ```ts
 import { messages } from "@blog/client/api/messages"
@@ -115,7 +115,7 @@ required.article.create // ["articles:write"]
 <a id="ts-enums"></a>
 ## 枚举
 
-用 [`enum` 包](../http/validation.md#enums)声明的枚举，`api.ts` 中是取值的联合类型，`enums.ts` 中是全部取值和各语言的显示文字：
+用 [`enum` 包](../http/requests.md#enums)声明的枚举，`api.ts` 中是取值的联合类型，`enums.ts` 中是全部取值和各语言的显示文字：
 
 ```ts
 import type { ArticleStatus } from "@blog/client/api"

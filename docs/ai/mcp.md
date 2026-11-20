@@ -99,7 +99,7 @@ func (a *Search) Tool(ctx context.Context, in SearchArgs) (*search.Result[Search
 <a id="arguments-and-results"></a>
 ### 参数与返回值
 
-参数类型必须是结构体，它的 JSON Schema 按 Huma 的标签生成：`doc` 是给模型看的字段说明，`minLength`、`maximum`、`enum`、`format` 是校验规则，没有 `omitempty` 的字段是必填的，`default` 是没有传时的值，规则与 [REST 的请求体](../http/validation.md)相同。参数不符合时直接返回，模型收到每个字段的错误：
+参数类型必须是结构体，它的 JSON Schema 按 Huma 的标签生成：`doc` 是给模型看的字段说明，`minLength`、`maximum`、`enum`、`format` 是校验规则，没有 `omitempty` 的字段是必填的，`default` 是没有传时的值，规则与 [REST 的请求体](../http/requests.md)相同。参数不符合时直接返回，模型收到每个字段的错误：
 
 ```text
 invalid arguments:

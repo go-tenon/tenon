@@ -19,11 +19,11 @@ import (
 )
 
 // Commands 返回 openapi、routes、client 三个命令，加入应用的根命令。router 构造应用的完整路由，
-// 通常用零值的配置和依赖调用 serve 也在用的那个函数：
+// 通常用默认配置和零值的依赖调用 serve 也在用的那个函数：
 //
-//	root.AddCommand(httpcmd.Commands(func() chi.Routes { return routes(Config{}, nil) })...)
+//	root.AddCommand(httpcmd.Commands(func() chi.Routes { return routes(config.Default[Config](), nil) })...)
 //
-// 注册路由时只保存依赖，处理请求时才使用，用零值构造才能成功；违反时命令 panic，堆栈指向使用依赖的地方。
+// 注册路由时只保存依赖，处理请求时才使用，用零值的依赖构造才能成功；违反时命令 panic，堆栈指向使用依赖的地方。
 //
 // 应用有自己的翻译文件时用 Translations 传入，client 命令生成的验证提示与服务端相同：
 //

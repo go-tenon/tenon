@@ -256,7 +256,7 @@ AI 编程助手按项目中的说明写代码。说明越具体，它生成的�
 为了让任何技术都能接入，后端现在就遵守这些约定：
 
 1. 业务规则、权限和校验都在 Go 中，所有端都只是 API 的调用方。
-2. 每个 API 的 OpenAPI 文档是各端与后端之间唯一的契约；不兼容的修改通过新的 `BasePath` 发布，见[接口文档](../http/openapi.md)。任何语言都可以从它生成客户端，`tenon generate` 已经能生成 TypeScript 和 [Go](../http/go-client.md) 的客户端。
+2. 每个 API 的 OpenAPI 文档是各端与后端之间唯一的契约；不兼容的修改通过新的 `BasePath` 发布，见[接口文档](../http/openapi.md)。任何语言都可以从它生成客户端，`tenon generate` 已经能生成 TypeScript 和 [Go](../http/clients.md) 的客户端。
 3. 框架的约定（错误格式、分页、会话、实时频道、服务端推送与 AI 对话的消息流、上传、App 版本）写在与语言无关的[客户端协议](../http/protocol.md)中，`@go-tenon/client` 只是第一个实现。
 4. 每个功能都能用 Bearer 令牌访问：浏览器用会话 cookie，其他客户端从登录接口的响应体中拿到 token，不依赖只有浏览器才有的 cookie。
 5. 实时消息用 Centrifuge，它有 JavaScript、Dart、Swift、Java、Go 等官方 SDK，见[实时频道](../libraries/realtime.md)；推送见[移动推送](../features/push.md)。

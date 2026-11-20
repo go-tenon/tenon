@@ -1,8 +1,8 @@
 # 导入与导出
 
-后台管理系统几乎都要支持用 Excel 批量导入数据，以及把列表导出成表格。`sheet` 包读写 CSV 和 Excel（XLSX）两种格式，导入时按[验证](../http/validation.md)规则检查每一行，规则与 JSON 接口用的是同一个结构体。
+后台管理系统几乎都要支持用 Excel 批量导入数据，以及把列表导出成表格。`sheet` 包读写 CSV 和 Excel（XLSX）两种格式，导入时按[验证](../http/requests.md)规则检查每一行，规则与 JSON 接口用的是同一个结构体。
 
-阅读前需要了解：[验证](../http/validation.md)；[业务动作](../concepts/actions.md)；[迭代器](https://go.dev/blog/range-functions)（`sheet.Decode` 返回 `iter.Seq2`，用 `for record, err := range ...` 遍历）。
+阅读前需要了解：[验证](../http/requests.md)；[业务动作](../concepts/actions.md)；[迭代器](https://go.dev/blog/range-functions)（`sheet.Decode` 返回 `iter.Seq2`，用 `for record, err := range ...` 遍历）。
 
 - [示例用法](#example-usage)
 - [导入](#importing)
@@ -161,7 +161,7 @@ func (a *Import) HTTP(ctx context.Context, in *ImportInput) (*ImportOutput, erro
 }
 ```
 
-`sheet.Decode` 返回一个迭代器，每次产出一行 `sheet.Record`：`Line` 是这一行在 Excel 中的行号，`Data` 是解码后的 `Changes`，`Errors` 是验证失败的提示，与[接口的验证提示](../http/validation.md#validation-messages)相同，按请求的语言翻译。验证失败的行同样会产出，用 `Valid` 判断。
+`sheet.Decode` 返回一个迭代器，每次产出一行 `sheet.Record`：`Line` 是这一行在 Excel 中的行号，`Data` 是解码后的 `Changes`，`Errors` 是验证失败的提示，与[接口的验证提示](../http/requests.md#validation-messages)相同，按请求的语言翻译。验证失败的行同样会产出，用 `Valid` 判断。
 
 `row` 把 `Create` 返回的业务错误分两种处理：slug 重复只是这一行的问题，用 `SetError` 放到 `slug` 字段上，接着处理下一行；其他错误（例如没有权限、数据库不可用）对每一行都一样，直接结束导入。[后台导入](background-imports.md#processing-imports)也用这个 `row`。前端拿到的结果类似：
 

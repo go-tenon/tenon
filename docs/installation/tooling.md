@@ -108,7 +108,7 @@ bun run generate   # 即 go tool tenon generate
 生成的内容：
 
 - 每个 API 的 TypeScript 客户端，在 `packages/client/src/<名称>` 中，见[客户端代码](../http/clients.md#typescript)；
-- 在 [tenon.json](#configuration) 中要求了的 Go 客户端，见 [Go 客户端](../http/go-client.md)。
+- 在 [tenon.json](#configuration) 中要求了的 Go 客户端，见 [Go 客户端](../http/clients.md)。
 
 `tenon dev` 每次重新编译成功后会自动运行它，所以平时不需要手动运行。
 

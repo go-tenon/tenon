@@ -91,7 +91,7 @@ const token = await exchangeCode({ issuer, clientId: "admin-desktop", auth, code
 X-App-Version: admin-desktop/1.2.0
 ```
 
-服务端安装了 [App 最低版本](../http/optional-middleware.md#app-version)中间件后，可以按客户端设置最低版本：
+服务端安装了 [App 最低版本](../http/middleware.md#app-version)中间件后，可以按客户端设置最低版本：
 
 ```yaml
 http:

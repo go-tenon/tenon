@@ -93,7 +93,13 @@ func TestSearchDocs(t *testing.T) {
 		"新建迁移":           "database/migrations.md#writing-migrations",
 		"上传文件":           "http/clients.md#uploading-files",
 		"游标分页":           "http/responses.md#cursor-pagination",
-		"生成客户端":          "http/clients.md#generating-types",
+		"生成客户端":          "installation/tooling.md#generate",
+		"Go 客户端":         "http/clients.md#go-client",
+		"注册接口":           "http/routing.md#operations",
+		"校验请求体":          "http/requests.md#json-body",
+		"RPC 端点":         "rpc/endpoints.md",
+		"跨域":             "http/middleware.md#cors",
+		"App 最低版本":       "http/middleware.md#app-version",
 		"推送进度 SSE":       "http/sse.md",
 		"errorx.Define":  "general/errors.md#defining-errors",
 		"环境变量":           "general/configuration.md#environment-variables",
@@ -104,7 +110,7 @@ func TestSearchDocs(t *testing.T) {
 		"AfterCommit":    "database/database.md#after-commit",
 		"软删除":            "database/database.md#soft-deletes",
 		"请求 ID 日志":       "general/logging.md",
-		"健康检查":           "concepts/lifecycle.md#health-checks",
+		"健康检查":           "concepts/lifecycle.md",
 		"平滑停止":           "concepts/lifecycle.md",
 		"日志脱敏":           "general/logging.md#redacting-sensitive-data",
 		"控制时间 synctest":  "testing/testing.md#controlling-time",
@@ -160,7 +166,8 @@ func TestReadDoc(t *testing.T) {
 		t.Errorf("section with subsections:\n%s", parent)
 	}
 	full, _ := call(t, s, "tenon_read_doc", map[string]any{"path": "http/routing.md", "full": true})
-	if !strings.HasPrefix(full, "# 路由") || !strings.Contains(full, "## 常见问题") {
+	// 整页从标题开始，包括第一节和最后一节。
+	if !strings.HasPrefix(full, "# 路由") || !strings.Contains(full, `<a id="basic-routing"></a>`) || !strings.Contains(full, `<a id="native-huma-register"></a>`) {
 		t.Errorf("full page starts with %q", full[:min(len(full), 40)])
 	}
 	if text, isErr := call(t, s, "tenon_read_doc", map[string]any{"path": "http/nothing.md"}); !isErr || !strings.Contains(text, "no page") {

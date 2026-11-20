@@ -30,7 +30,7 @@ import (
 //
 //	router.Use(httpx.Defaults(cfg.HTTP, httpx.Languages(languages))...)
 //
-// Timeout 单独安装：它按路由组安装，SSE 等流式路由不设请求超时。
+// Timeout 单独安装，按路由组安装；SSE 开始推送后脱离它的超时（见 SSE）。
 // RateLimit 等可选中间件同样需要时在其后另行安装；需要不同组合时，直接挑选单个中间件自行组装。
 func Defaults(cfg Config, opts ...DefaultsOption) []func(http.Handler) http.Handler {
 	var o defaultsOptions
