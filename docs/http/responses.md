@@ -1,75 +1,43 @@
 # 响应
 
-和[请求](requests.md)一样，响应也由一个 Go 结构体描述，称为**输出类型**：`Body` 字段是 JSON 响应体，带 `header` 标签的字段是响应头，`Status` 字段决定状态码。处理器成功时返回输出和 `nil` 错误；失败时返回错误，框架会把它转换为[统一的错误响应](../general/errors.md)。
+接口的输出类型是一个 Go 结构体：`Body` 字段是 JSON 响应体，带 `header` 标签的字段是响应头，`Status` 字段是状态码。列表接口用 `page` 包的分页结构。
 
-本页先介绍怎样返回一个对象，再介绍列表接口最常用的分页、筛选和排序。
-
-阅读前需要了解：[请求](requests.md)；泛型（分页的 `page.Offset[T]`）。
-
-- [示例用法](#creating-responses)
-    - [JSON 响应](#json-responses)
-    - [状态码](#status-codes)
-    - [响应头](#headers)
-- [集合与时间](#collections-and-times)
-- [分页](#pagination)
-    - [固定分页](#offset-pagination)
-    - [游标分页](#cursor-pagination)
-    - [筛选与排序](#filtering-and-sorting)
-- [返回错误](#returning-errors)
-- [常见问题](#troubleshooting)
-- [API 参考](#api-reference)
+包：`httpx/rest`、`page`。
 
 <a id="creating-responses"></a>
-## 示例用法
-
-<a id="json-responses"></a>
-### JSON 响应
-
-输出类型中名为 `Body` 的字段就是 JSON 响应体：
+## 示例
 
 ```go
 type ArticleDTO struct {
-    ID          string     `json:"id" example:"0193a5c2-7d1e-7b3a-9f61-2c4e8d0a1b2c"`
-    Title       string     `json:"title" example:"Hello World"`
-    Slug        string     `json:"slug" example:"hello-world"`
-    AuthorID    string     `json:"author_id" example:"alice"`
-    Status      string     `json:"status" enum:"draft,published" example:"published"`
-    PublishedAt *time.Time `json:"published_at,omitempty" doc:"发布时间，草稿没有这个字段" example:"2026-11-10T08:30:00Z"`
+    ID          string     `json:"id"`
+    Title       string     `json:"title"`
+    PublishedAt *time.Time `json:"published_at,omitempty" doc:"发布时间，草稿没有这个字段"`
 }
 
 type ArticleOutput struct {
     Body ArticleDTO
 }
-```
 
-处理器成功时返回输出和 `nil` 错误：
-
-```go
-return &ArticleOutput{Body: toDTO(item)}, nil
-```
-
-`Body` 中的字段会被编码为 JSON 返回给客户端：
-
-```json
-{
-  "id": "0193a5c2-7d1e-7b3a-9f61-2c4e8d0a1b2c",
-  "title": "Hello World",
-  "slug": "hello-world",
-  "author_id": "alice",
-  "status": "published",
-  "published_at": "2026-11-10T08:30:00Z"
+// HTTP 处理 GET /articles/{id}。
+func (a *Get) HTTP(ctx context.Context, in *GetInput) (*ArticleOutput, error) {
+    subject, _ := identity.FromContext(ctx)
+    item, err := a.Handle(ctx, subject, in.ID)
+    if err != nil {
+        return nil, err
+    }
+    return &ArticleOutput{Body: toDTO(item)}, nil
 }
 ```
 
-草稿还没有发布时间，`published_at` 字段会被省略。`doc`、`example` 和 `enum` 标签只写入接口文档，见[说明与示例](openapi.md#describing-apis)。
+响应体是 `{"id": "…", "title": "Hello World", "published_at": "2026-11-10T08:30:00Z"}`，草稿省略 `published_at`。
 
-> [!TIP]
-> 建议为响应定义专门的 DTO 结构。这样你可以自由地调整数据库结构，API 保持稳定，内部字段也只留在服务端。
+- 响应体用 DTO，不直接用数据库模型，模型的内部字段留在服务端。DTO、转换函数 `toDTO` 和 schema 名的规则见[共享响应结构](routing.md#shared-responses)。
+- `doc`、`example`、`enum` 标签只写入接口文档，见[说明与示例](openapi.md#describing-apis)。
 
 <a id="status-codes"></a>
-### 状态码
+## 状态码：`DefaultStatus` 和 `Status`
 
-有响应体的成功响应默认返回 `200`。如果需要返回固定的其他状态码，例如创建资源时的 `201`，可以在路由声明中设置 `DefaultStatus`：
+有响应体的成功响应默认是 `200`。固定的其他状态码写在 `huma.Operation` 的 `DefaultStatus` 中，例如创建资源返回 `201`：
 
 ```go
 op := huma.Operation{
@@ -80,7 +48,7 @@ op := huma.Operation{
 }
 ```
 
-如果状态码需要在每次请求时动态决定，可以在输出类型中声明一个 `Status int` 字段，这是 Huma 的原生能力：
+每次请求决定状态码时，在输出类型中声明 `Status int` 字段：
 
 ```go
 type UpsertArticleOutput struct {
@@ -90,20 +58,16 @@ type UpsertArticleOutput struct {
 ```
 
 <a id="headers"></a>
-### 响应头
+## 响应头
 
-在输出类型中使用 `header` 标签声明响应头：
+带 `header` 标签的字段写入响应头：
 
 ```go
 type CreatedArticleOutput struct {
     Location string `header:"Location"`
     Body     ArticleDTO
 }
-```
 
-处理器中设置字段的值即可：
-
-```go
 return &CreatedArticleOutput{
     Location: "/articles/" + item.ID.String(),
     Body:     toDTO(item),
@@ -111,20 +75,13 @@ return &CreatedArticleOutput{
 ```
 
 <a id="collections-and-times"></a>
-## 集合与时间
+## 空列表与时间
 
-列表为空时，应当返回 `[]`，这样客户端可以直接遍历。在 Go 中，`nil` slice 会被编码为 `null`，所以请初始化一个空 slice：
-
-```go
-items := make([]ArticleDTO, 0)
-```
-
-时间字段使用 `time.Time`，它会被编码为 RFC 3339 格式的字符串，例如 `"2026-11-10T08:30:00Z"`。建议在业务和数据库中统一使用 UTC 时间，只在展示时转换为用户所在的时区。
+- 响应中 nil 的切片编码为 `[]`、nil 的 map 编码为 `{}`，接口文档中的数组和对象不可为空，处理器不用把 nil 换成空切片。
+- `time.Time` 编码为 RFC 3339 字符串，例如 `"2026-11-10T08:30:00Z"`。业务和数据库统一用 UTC，只在展示时转换为用户的时区。
 
 <a id="pagination"></a>
-## 分页
-
-`page` 包为列表接口提供两种固定的分页结构：
+## 分页：`page` 包
 
 | | 固定分页 | 游标分页 |
 | --- | --- | --- |
@@ -132,10 +89,12 @@ items := make([]ArticleDTO, 0)
 | 响应体 | `items`、`page`、`per_page`、`total` | `items`、`next_cursor` |
 | 适用场景 | 需要页码和总数，例如后台表格 | 信息流、数据量大或写入频繁的列表 |
 
-两种分页的 `per_page` 都默认为 20、最大为 100，超出范围的请求会被拒绝并返回 `422`。客户端一侧的约定见[客户端协议](protocol.md#pagination)。
+- `per_page` 默认 20、最大 100，超出范围返回 `422`。
+- 没有数据时 `items` 是 `[]`。
+- 客户端一侧的约定见[客户端协议](protocol.md#pagination)。
 
 <a id="offset-pagination"></a>
-### 固定分页
+### 固定分页：`page.OffsetParams` 和 `page.Offset`
 
 把 `page.OffsetParams` 嵌入输入类型，用 `page.Offset[T]` 作为响应体：
 
@@ -150,7 +109,7 @@ type ListArticlesOutput struct {
 }
 ```
 
-`in.Limit()` 和 `in.Offset()` 直接对应 SQL 的 `LIMIT` 和 `OFFSET`。Bun 的 `ScanAndCount` 可以在同一次调用中读取当前页和总数：
+`in.Limit()`、`in.Offset()` 对应 SQL 的 `LIMIT`、`OFFSET`，Bun 的 `ScanAndCount` 一次读出当前页和总数。`db` 是 `*bun.DB`，`toDTOs` 把模型的切片转换为 DTO：
 
 ```go
 var rows []Article
@@ -161,28 +120,17 @@ total, err := db.NewSelect().Model(&rows).
     Offset(in.Offset()).
     ScanAndCount(ctx)
 if err != nil {
-    return nil, err
+    return nil, errors.Wrap(err, "list articles")
 }
 return &ListArticlesOutput{Body: page.NewOffset(toDTOs(rows), in.OffsetParams, total)}, nil
 ```
 
-`LastPage`、`Links` 用于渲染分页导航。
-
-客户端请求 `/articles?page=2&per_page=20` 时得到：
-
-```json
-{
-  "items": [{"id": "…", "title": "Hello World", "slug": "hello-world", "author_id": "alice", "status": "published"}],
-  "page": 2,
-  "per_page": 20,
-  "total": 41
-}
-```
+`/articles?page=2&per_page=20` 返回 `{"items": [...], "page": 2, "per_page": 20, "total": 41}`。`LastPage()` 返回最后一页的页码，`Links(n)` 返回分页导航中要显示的页码。
 
 <a id="cursor-pagination"></a>
-### 游标分页
+### 游标分页：`page.CursorParams` 和 `page.Cursor`
 
-游标分页从上一页的最后一条继续读取，翻页过程中有新数据写入，结果仍然连续、完整。把 `page.CursorParams` 嵌入输入类型，用 `page.Cursor[T]` 作为响应体：
+游标分页从上一页的最后一条继续读取，翻页期间有新数据写入时结果仍然连续。把 `page.CursorParams` 嵌入输入类型，用 `page.Cursor[T]` 作为响应体：
 
 ```go
 type ListPublishedInput struct {
@@ -194,7 +142,7 @@ type ListPublishedOutput struct {
 }
 ```
 
-游标里保存的是排序位置，它的结构由你定义。下面按发布时间倒序列出文章，用发布时间和 ID 作为排序位置：
+游标中保存排序位置，结构由应用定义。按发布时间倒序列出文章，`db` 是 `*bun.DB`：
 
 ```go
 type articleKey struct {
@@ -202,67 +150,49 @@ type articleKey struct {
     ID uuid.UUID `json:"id"`
 }
 
+var rows []Article
 q := db.NewSelect().Model(&rows).
     Where("status = 'published'").
     OrderExpr("published_at DESC, id DESC").
-    Limit(in.Limit())
+    Limit(in.Limit()) // 比 per_page 多一条，用来判断是否还有下一页
 
 var after articleKey
 if ok, err := in.After(&after); err != nil {
-    return nil, err
+    return nil, err // 游标无法解析：422 page.invalid_cursor
 } else if ok {
     q.Where("(published_at, id) < (?, ?)", after.At, after.ID)
 }
 if err := q.Scan(ctx); err != nil {
-    return nil, err
+    return nil, errors.Wrap(err, "list published")
 }
 
+// NewCursor 截掉多读的一条，把当前页最后一条的排序位置编码为 next_cursor。
 body := page.NewCursor(toDTOs(rows), in.CursorParams, func(a ArticleDTO) any {
     return articleKey{*a.PublishedAt, a.ID}
 })
 return &ListPublishedOutput{Body: body}, nil
 ```
 
-这段代码分三步：
-
-1. `in.After` 把请求中的游标解码到 `after`，并报告请求是否携带了游标。第一页没有游标，不添加条件；游标无法解析时返回错误码为 `page.invalid_cursor` 的 `422`。
-2. `in.Limit()` 比 `per_page` 多一条，多读的这一条用来判断是否还有下一页。
-3. `page.NewCursor` 截掉多读的一条，并把当前页最后一条的排序位置编码为 `next_cursor`。
-
-客户端把 `next_cursor` 原样作为下一次请求的 `cursor` 参数传回；到达最后一页时，响应中省略 `next_cursor`：
-
-```json
-{
-  "items": [{"id": "…", "title": "Hello World", "slug": "hello-world", "author_id": "alice", "status": "published"}],
-  "next_cursor": "eyJhdCI6IjIwMjYtMTEtMTBUMDg6MzA6MDBaIiwiaWQiOiIwZjhjMmYwZS02YzFkLTRhOGUtOWIxZi0yZDVlN2EzYzliNDAifQ"
-}
-```
+- 客户端把 `next_cursor` 原样作为下一次请求的 `cursor`；最后一页的响应省略 `next_cursor`。
+- `key` 返回的值与 `After` 解码的结构相同。
 
 > [!WARNING]
-> 排序必须**确定且唯一**，例如 `ORDER BY published_at DESC, id DESC`，并且 `WHERE` 中的比较方向要与排序一致。只按 `published_at` 排序时，同一时间发布的文章可能在翻页时重复或遗漏。
-
-两种分页的响应在没有数据时都返回 `"items": []`。
+> 排序必须确定且唯一，例如 `ORDER BY published_at DESC, id DESC`，`WHERE` 中的比较方向与排序一致。只按 `published_at` 排序时，同一时间发布的文章在翻页时会重复或遗漏。
 
 <a id="filtering-and-sorting"></a>
 ### 筛选与排序
 
-筛选和排序也是查询参数，和分页参数写在同一个结构体中。下面是文章列表的查询参数：
+筛选和排序参数与分页参数写在同一个结构体中，它直接作为输入类型：
 
 ```go
 type ListQuery struct {
-    Q      string `query:"q" json:"q,omitempty"`
-    Status string `query:"status" json:"status,omitempty" enum:"draft,published"`
-    Sort   string `query:"sort" json:"sort,omitempty" default:"-created" enum:"-created,created,title,-title"`
+    Q      string `query:"q"`
+    Status string `query:"status" enum:"draft,published"`
+    Sort   string `query:"sort" default:"-created" enum:"-created,created,title,-title"`
     page.OffsetParams
 }
-```
 
-`sort` 的值是列名，前面加 `-` 表示降序，与 `@go-tenon/ui` 的表格点击列头排序时写入地址的值一致。Huma 在调用处理器之前检查这些参数：`?sort=views`、`?status=archived` 返回 `422`；空值等同于没有这个参数，取 `default` 的值。
-
-列表的业务动作把参数转换为查询条件。每个 `sort` 值对应一个固定的 `ORDER BY`：
-
-```go
-// orders 是 ListQuery.Sort 每个取值对应的排序。
+// orders 是 Sort 每个取值对应的排序。
 var orders = map[string]string{
     "created":  "created_at, id",
     "-created": "created_at DESC, id DESC",
@@ -289,130 +219,17 @@ func (a *List) Handle(ctx context.Context, subject identity.Subject, q ListQuery
     }
     return items, total, nil
 }
-
-type ListOutput struct {
-    Body page.Offset[ArticleDTO]
-}
-
-// HTTP 处理 GET /articles。
-func (a *List) HTTP(ctx context.Context, in *ListQuery) (*ListOutput, error) {
-    subject, _ := identity.FromContext(ctx)
-    items, total, err := a.Handle(ctx, subject, *in)
-    if err != nil {
-        return nil, err
-    }
-    return &ListOutput{Body: page.NewOffset(toDTOs(items), in.OffsetParams, total)}, nil
-}
 ```
 
-`ListQuery` 可以直接作为输入类型。客户端请求 `/articles?status=draft&sort=title&page=2` 时，得到按标题排列的第二页草稿。
+`HTTP` 方法收到 `*ListQuery`，调用 `Handle`，返回 `page.NewOffset(toDTOs(items), in.OffsetParams, total)`。`/articles?status=draft&sort=title&page=2` 得到按标题排列的第二页草稿。
 
-几点说明：
-
-- `sort` 的值已经由 `enum` 检查过，`orders[q.Sort]` 一定能查到，SQL 中只出现 `orders` 里写好的表达式。增加排序方式时，`enum` 和 `orders` 一起修改。
-- 每种排序都以 `id` 结尾，原因与游标分页相同：只按 `title` 排序时，标题相同的文章在两次查询之间的顺序不固定，翻页时可能重复或遗漏。
-- 参数为空时不添加对应的条件。按调用者限定范围的条件（例如只看到自己的草稿）写在同一个查询中，见[列表查询中的授权](../security/authorization.md#scoping-queries)。
-- `LIKE` 只适合简单的标题匹配。需要分词、按相关度排序时，使用[搜索](../features/search.md)。
-- 游标分页的排序固定写在业务动作中，不提供 `sort` 参数：游标保存的是排序位置，换一种排序，原来的游标就失效了。需要让用户选择排序的列表，使用固定分页。
+- `sort` 的值是列名，加 `-` 表示降序，与 `@go-tenon/ui` 的表格点击列头时写入地址的值相同。不在 `enum` 中的值返回 `422`；空值等同于没有这个参数，取 `default`。
+- SQL 中只出现 `orders` 里写好的表达式，`enum` 已经保证能查到。增加排序方式时 `enum` 和 `orders` 一起改。
+- 每种排序以 `id` 结尾：标题相同的文章顺序不固定，翻页时会重复或遗漏。
+- 按调用者限定范围的条件写在同一个查询中，见[列表查询中的授权](../security/authorization.md#scoping-queries)。需要分词和相关度排序时用[搜索](../features/search.md)。
+- 游标分页的排序固定写在业务动作中，不提供 `sort` 参数：换一种排序，原来的游标就失效了。
 
 <a id="returning-errors"></a>
 ## 返回错误
 
-业务失败时，处理器直接返回 `error` 即可，输出类型只描述成功的结果：
-
-```go
-item, err := a.Handle(ctx, subject, in.ID)
-if err != nil {
-    return nil, err
-}
-```
-
-`rest.Register` 会把错误转换为统一格式的错误响应，并选择合适的状态码。如何定义业务错误、它们如何映射到 HTTP 状态码，请参阅[错误处理](../general/errors.md)。
-
-<a id="troubleshooting"></a>
-## 常见问题
-
-**空列表返回了 `null`，前端遍历时报错**
-
-`nil` slice 被编码为 `null`。初始化一个空 slice，或者用 `page.Offset`、`page.Cursor`，它们在没有数据时返回 `"items": []`，见[集合与时间](#collections-and-times)。
-
-**翻页时出现重复的数据，或者漏掉了一条**
-
-排序不是确定且唯一的。在排序的最后加上 `id`，例如 `ORDER BY published_at DESC, id DESC`，见[游标分页](#cursor-pagination)。
-
-**`per_page=200` 返回 422**
-
-`per_page` 最大为 100。需要更多数据时分多次请求。
-
-**游标翻页返回 422，错误码 `page.invalid_cursor`**
-
-客户端修改了游标，或者用了另一种排序的游标。游标要原样传回；需要让用户选择排序的列表用固定分页。
-
-**响应中的时间差了几个小时**
-
-业务和数据库中混用了本地时间和 UTC。统一使用 UTC，只在展示时转换为用户的时区。
-
-<a id="api-reference"></a>
-## API 参考
-
-包 `github.com/go-tenon/tenon/page`。
-
-### OffsetParams
-
-```go
-type OffsetParams struct {
-    Page    int `query:"page" default:"1" minimum:"1"`
-    PerPage int `query:"per_page" default:"20" minimum:"1" maximum:"100"`
-}
-
-func (p OffsetParams) Limit() int64
-func (p OffsetParams) Offset() int64
-```
-
-嵌入输入类型。`Limit`、`Offset` 对应 SQL 的 `LIMIT` 和 `OFFSET`。
-
-### Offset
-
-```go
-type Offset[T any] struct {
-    Items   []T   `json:"items"`
-    Page    int   `json:"page"`
-    PerPage int   `json:"per_page"`
-    Total   int64 `json:"total"`
-}
-
-func NewOffset[T any](items []T, p OffsetParams, total int64) Offset[T]
-func (o Offset[T]) LastPage() int
-func (o Offset[T]) Links(onEachSide int) []int
-```
-
-- **参数**（`NewOffset`）
-    - `items`：当前页的数据
-    - `p`：请求中的分页参数
-    - `total`：全部数据的条数，通常由 `ScanAndCount` 得到
-- **返回**：固定分页的响应体
-
-`items` 为空时编码为 `[]`。`LastPage` 和 `Links` 用于在页面中渲染页码导航。
-
-### CursorParams
-
-```go
-func (p CursorParams) After(v any) (bool, error)
-func (p CursorParams) Limit() int64
-```
-
-嵌入输入类型，查询参数为 `cursor` 和 `per_page`。`After` 把游标解码到 `v`，报告请求是否带了游标；`Limit` 比 `per_page` 多一，多读的一条用来判断是否还有下一页。
-
-### Cursor
-
-```go
-func NewCursor[T any](items []T, p CursorParams, key func(T) any) Cursor[T]
-```
-
-- **参数**
-    - `items`：按 `p.Limit()` 读出的数据，比一页多一条
-    - `p`：请求中的游标分页参数
-    - `key`：返回一条数据的排序位置，编码到 `next_cursor` 中
-- **返回**：游标分页的响应体：`items` 和可选的 `next_cursor`
-
-截掉多读的那一条，并用当前页最后一条的排序位置生成 `next_cursor`。
+输出类型只描述成功的结果。失败时处理器返回 `nil` 和错误，`rest.Register` 把它转换为错误响应并选择状态码；业务错误的定义和状态码见[错误处理](../general/errors.md#returning-errors)。

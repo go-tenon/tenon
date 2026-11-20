@@ -11,7 +11,7 @@ import (
 // Compress 按请求的 Accept-Encoding 用 zstd 或 gzip 压缩响应，两者都接受时用 zstd。
 //
 // 只压缩文本类内容：text/*、JSON、JavaScript、XML、SVG 和 WebAssembly；图片、字体、压缩包等原样发送。
-// 小于 1 KiB 的响应、已经带 Content-Encoding 的响应（例如 web/ui 预先压缩的资源）
+// 小于 1 KiB 的响应、已经带 Content-Encoding 的响应（例如预先压缩的静态资源）
 // 和 Range 请求的响应也不压缩。
 //
 // 流式响应照常工作：text/event-stream（SSE）直接写出，跳过压缩缓冲；

@@ -6,7 +6,7 @@
 
 | 失败 | 例子 | 写法 |
 | --- | --- | --- |
-| 输入格式错误 | 标题为空、slug 含有空格 | 在输入类型上写校验规则，框架在处理器之前返回 `422`，见[校验](../http/validation.md) |
+| 输入格式错误 | 标题为空、slug 含有空格 | 在输入类型上写校验规则，框架在处理器之前返回 `422`，见[校验](../http/requests.md) |
 | 可预期的业务结果 | 文章不存在、slug 已被使用 | 用 `errorx.Define` 定义业务错误，返回它的 `New` 或 `Wrap` |
 | 意料之外的故障 | 数据库连不上、代码有 bug | 用 `errors.Wrap` 补充上下文后返回，客户端只收到 `500` |
 
@@ -194,7 +194,7 @@ if errors.Is(err, article.ErrSlugTaken) {
 错误响应是 Problem Details（`application/problem+json`），字段和客户端的处理顺序见[客户端协议的错误](../http/protocol.md#errors)。对应用的影响：
 
 - 业务错误带 `code`；附加了公开参数时带 `params`；用 `errorx.Field` 指出了字段时带 `errors`。
-- 输入格式错误带 `errors`，没有 `code`，见[校验](../http/validation.md#validation-error-response)。
+- 输入格式错误带 `errors`，没有 `code`，见[校验](../http/requests.md#validation-error-response)。
 - `detail` 以错误码为消息 ID 翻译。当前语言缺少译文时用默认语言的译文，默认语言也没有时用状态码的描述（例如 `Not Found`），两种情况下访问日志都带上 `"untranslated":true`。
 - 系统故障的 `detail` 只有状态码的描述，内部信息只留在日志中。
 

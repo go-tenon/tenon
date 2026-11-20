@@ -30,15 +30,17 @@ Tenon 是用 Go 构建后端服务的框架。业务逻辑写成[业务动作](c
 ## HTTP 接口
 
 - [路由](http/routing.md)：注册接口、访问策略
-- [请求](http/requests.md)、[校验](http/validation.md)、[响应](http/responses.md)：输入、校验规则、分页、文件
-- [中间件](http/middleware.md)、[可选的中间件](http/optional-middleware.md)：限流、跨域、压缩
-- [接口文档](http/openapi.md)、[客户端代码](http/clients.md)、[Go 客户端](http/go-client.md)
+- [请求与校验](http/requests.md)：输入类型、校验规则、校验错误
+- [响应](http/responses.md)：JSON、分页、文件
+- [中间件](http/middleware.md)：默认中间件、超时、限流、跨域、Basic 认证、App 版本、压缩
+- [接口文档](http/openapi.md)：OpenAPI
+- [客户端](http/clients.md)：生成 TypeScript、Go 和其他语言的客户端
 - [服务端推送](http/sse.md)：SSE 事件流
 - [客户端协议](http/protocol.md)：任何语言的客户端遵守的线路约定
 
 ## RPC
 
-- [提供和调用端点](rpc/endpoints.md)、[RPC 协议](rpc/protocol.md)：其他服务经由 NATS 调用业务动作
+- [RPC 端点](rpc/endpoints.md)、[RPC 协议](rpc/protocol.md)：其他服务经由 NATS 调用业务动作
 
 ## 后台任务
 

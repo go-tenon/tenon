@@ -147,7 +147,7 @@ message, err := i18n.Localizer(ctx).Localize(&goi18n.LocalizeConfig{
 业务错误的响应以错误码为消息 ID 翻译 `detail`，[公开参数](errors.md#public-parameters)是模板数据。每定义一个业务错误，在每种语言的翻译文件中加一条消息。
 
 - 请求语言缺少译文时，`detail` 用默认语言的译文；默认语言也没有时，用 HTTP 状态的描述，例如 `Not Found`。两种情况下这个请求的[访问日志](../http/middleware.md#access-log)都带上 `"untranslated":true`，按它查找要补的翻译。
-- 业务错误和[校验错误](../http/validation.md#validation-messages)会被翻译。路由不存在、服务端内部错误等其他错误保持英文描述，客户端按状态码显示自己的提示。
+- 业务错误和[校验错误](../http/requests.md#validation-messages)会被翻译。路由不存在、服务端内部错误等其他错误保持英文描述，客户端按状态码显示自己的提示。
 
 <a id="outside-http"></a>
 ## 在 HTTP 之外使用：`i18n.WithLocale`、`i18n.ErrorMessage`

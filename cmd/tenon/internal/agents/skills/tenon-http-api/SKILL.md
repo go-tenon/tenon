@@ -10,7 +10,7 @@ description: 在 Tenon 应用中新增或修改 JSON 接口：routes.go 中的�
 ## 步骤
 
 1. **输入类型**：路径参数 `path:"id"`，查询参数 `query:"page"`，请求头 `header:"..."`，JSON 请求体放在 `Body` 字段中。请求体通常是模块中共用的结构体，例如 `Body Changes`。见 `.tenon/docs/http/requests.md#input-types`。
-2. **验证标签**：`minLength`、`maxLength`、`pattern`、`minimum`、`enum`、`format:"uuid"` 等，写在结构体字段上，前端的校验规则也由它生成。请求体字段默认必填，`json` 标签加 `omitempty` 变为可选；查询参数和请求头默认可选。见 `.tenon/docs/http/validation.md#available-validation-rules`、`.tenon/docs/http/validation.md#required-and-optional-fields`。
+2. **验证标签**：`minLength`、`maxLength`、`pattern`、`minimum`、`enum`、`format:"uuid"` 等，写在结构体字段上，前端的校验规则也由它生成。请求体字段默认必填，`json` 标签加 `omitempty` 变为可选；查询参数和请求头默认可选。见 `.tenon/docs/http/requests.md#available-validation-rules`、`.tenon/docs/http/requests.md#required-and-optional-fields`。
 3. **响应类型**：`type ArticleOutput struct { Body ArticleDTO }`。响应用 DTO 和转换函数，不直接返回数据库模型，见 `.tenon/docs/http/routing.md#shared-responses`。
 4. **处理器**：业务动作的 `HTTP` 方法，`identity.FromContext(ctx)` 取出调用者，调用 `Handle`，见 `.tenon/docs/http/routing.md#http-actions`。
 5. **在模块的 `routes.go` 中声明路由**：`huma.Operation{OperationID: "article-publish", Method: http.MethodPost, Path: "/articles/{id}/publish", Summary: "发布文章"}`。`OperationID` 的第一段是分组，生成的客户端按它分组（`api.article.publish`）。见 `.tenon/docs/http/routing.md#module-registration`。
@@ -23,7 +23,7 @@ description: 在 Tenon 应用中新增或修改 JSON 接口：routes.go 中的�
 
 - 创建资源的接口在 `Operation` 中写 `DefaultStatus: http.StatusCreated`，状态码见 `.tenon/docs/http/responses.md#status-codes`。
 - 列表用框架的分页：固定分页见 `.tenon/docs/http/responses.md#offset-pagination`，游标分页见 `.tenon/docs/http/responses.md#cursor-pagination`，筛选与排序见 `.tenon/docs/http/responses.md#filtering-and-sorting`。
-- 需要显示文字的枚举用 `enum` 包，见 `.tenon/docs/http/validation.md#enums`。
+- 需要显示文字的枚举用 `enum` 包，见 `.tenon/docs/http/requests.md#enums`。
 - 业务错误从 `Handle` 原样返回，不在处理器中自己写状态码，见 `.tenon/docs/general/errors.md#returning-errors`。
 - 线路上的约定（错误响应、分页、请求头）以客户端协议为准：`.tenon/docs/http/protocol.md`。
 - 不兼容的修改通过新的 `BasePath` 发布，见 `.tenon/docs/http/openapi.md`。

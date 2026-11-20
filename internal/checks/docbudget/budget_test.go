@@ -27,7 +27,7 @@ const (
 
 // rewritten 是已经按 contributing/docs.md 重写过的文档目录，其中每一节都要在 sectionLimit 之内。
 // 随文档的重写逐个加入，全部重写之后删掉这个列表，检查 docs 下的每一页。
-var rewritten = []string{"concepts", "general", "database", "testing"}
+var rewritten = []string{"concepts", "general", "database", "testing", "http", "rpc"}
 
 var (
 	anchorLine  = regexp.MustCompile(`(?m)^<a id="[^"]+"></a>\s*$`)

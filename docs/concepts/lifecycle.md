@@ -74,7 +74,7 @@
 - 标题为空：校验输入返回 `422`，到不了处理器；
 - slug 已被占用：处理器返回的业务错误转换为 `409`。
 
-没有登录、标题又为空的请求得到 `401`：认证在校验之前。中间件见[中间件](../http/middleware.md)，认证见[认证](../security/authentication.md)，输入见[请求](../http/requests.md)和[校验](../http/validation.md)，错误的转换见[错误处理](../general/errors.md)。
+没有登录、标题又为空的请求得到 `401`：认证在校验之前。中间件见[中间件](../http/middleware.md)，认证见[认证](../security/authentication.md)，输入见[请求](../http/requests.md)和[校验](../http/requests.md)，错误的转换见[错误处理](../general/errors.md)。
 
 <a id="graceful-shutdown"></a>
 ## 平滑停止

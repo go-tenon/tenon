@@ -118,7 +118,7 @@ if (observing) {
 
 `allowedTracingUrls` 中的请求带上 `traceparent` 请求头，后端的 HTTP 服务装了 `httpx.Telemetry` 时[接在浏览器的链路之后](../general/telemetry.md#http)。后端把链路推送到同一个 OpenObserve（[`telemetry.endpoint`](../general/telemetry.md#setup)），错误详情就能跳到后端的链路。前端错误跳不到后端链路时，检查这两点。
 
-API 在其他域名时，[CORS](../http/optional-middleware.md#cors) 要允许 `traceparent` 和 `tracestate` 请求头，否则浏览器在预检时去掉它们。
+API 在其他域名时，[CORS](../http/middleware.md#cors) 要允许 `traceparent` 和 `tracestate` 请求头，否则浏览器在预检时去掉它们。
 
 <a id="source-maps"></a>
 ## 上传 source map（`tenon({ sourcemaps })`）

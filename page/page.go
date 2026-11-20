@@ -11,7 +11,7 @@ import (
 var ErrInvalidCursor = errorx.Define(errorx.InvalidArgument, "page.invalid_cursor")
 
 // OffsetParams 是固定分页的查询参数，嵌入到输入类型中使用。
-// query 标签用于 JSON 接口（Huma），json 标签用于页面（web.ParseQuery、web.QueryURL）。
+// query 标签用于 HTTP 的查询参数，json 标签用于 RPC、MCP 这类以 JSON 传入参数的入口。
 type OffsetParams struct {
 	Page    int `query:"page" json:"page,omitempty" default:"1" minimum:"1" doc:"Page number, starting at 1."`
 	PerPage int `query:"per_page" json:"per_page,omitempty" default:"20" minimum:"1" maximum:"100" doc:"Items per page."`
@@ -35,9 +35,6 @@ type Offset[T any] struct {
 func NewOffset[T any](items []T, p OffsetParams, total int64) Offset[T] {
 	return Offset[T]{Items: nonNil(items), Page: p.Page, PerPage: p.PerPage, Total: total}
 }
-
-// Current 返回当前页的页码，与 Page 相同。web/ui 的 Pagination 通过它读取当前页。
-func (o Offset[T]) Current() int { return o.Page }
 
 // LastPage 返回最后一页的页码，没有数据时为 1。
 func (o Offset[T]) LastPage() int {

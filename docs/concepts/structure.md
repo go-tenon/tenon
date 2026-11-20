@@ -161,7 +161,7 @@ SQL 迁移文件，由 `embed.go` 嵌入程序，部署时用 `migrate up` 执�
 | `cleanup` | 按逆序关闭入口打开的资源 | [关闭资源](dependencies.md#closing-resources) |
 | `config` | 读取 YAML、展开环境变量、校验 | [配置](../general/configuration.md) |
 | `crypt` | 用应用密钥加密、签名链接 | [加密与签名链接](../security/encryption.md) |
-| `enum` | 带显示文字的枚举：取值、校验和按语言翻译的显示文字 | [带显示文字的枚举](../http/validation.md#enums) |
+| `enum` | 带显示文字的枚举：取值、校验和按语言翻译的显示文字 | [带显示文字的枚举](../http/requests.md#enums) |
 | `errorx` | 带稳定错误码和分类的业务错误 | [错误处理](../general/errors.md) |
 | `hashing` | 密码哈希 | [哈希](../security/hashing.md) |
 | `health` | 检查依赖是否可用，供就绪检查使用 | [健康检查](lifecycle.md#health-checks) |
@@ -197,7 +197,7 @@ SQL 迁移文件，由 `embed.go` 嵌入程序，部署时用 `migrate up` 执�
 | `captcha` | 服务端校验 Turnstile、hCaptcha | [人机验证](../security/login-security.md#captcha) |
 | `sheet` | 读写 CSV 和 Excel，按结构体解码并校验每一行 | [导入与导出](../features/import-export.md) |
 | `document` | `convert` 把文件转为 Markdown，`split` 切分 Markdown | [文档转换与切分](../ai/documents.md) |
-| `contract` | 接口契约中与入口无关的部分：JSON Schema 与校验、枚举的命名类型、校验错误的规则和译文，HTTP、RPC、MCP 共用 | [校验](../http/validation.md) |
+| `contract` | 接口契约中与入口无关的部分：JSON Schema 与校验、枚举的命名类型、校验错误的规则和译文，HTTP、RPC、MCP 共用 | [校验](../http/requests.md) |
 | `form` | 按 Huma 标签转换、校验文本字段，表格导入使用 | [导入与导出](../features/import-export.md) |
 
 <a id="entry"></a>

@@ -1,6 +1,6 @@
 # 前端
 
-网页用 React、[Mantine](https://mantine.dev) 和 [TanStack Start](https://tanstack.com/start) 编写：官网和内容站在服务端渲染或预渲染，后台类的应用在浏览器中渲染，都调用同一组 [HTTP 接口](../http/README.md)。每个前端编译成一个 SSR 程序，嵌入 Go 程序，由 Go 托管运行，部署时仍然只有一个二进制文件。
+网页用 React、[Mantine](https://mantine.dev) 和 [TanStack Start](https://tanstack.com/start) 编写：官网和内容站在服务端渲染或预渲染，后台类的应用在浏览器中渲染，都调用同一组 [HTTP 接口](../http/routing.md)。每个前端编译成一个 SSR 程序，嵌入 Go 程序，由 Go 托管运行，部署时仍然只有一个二进制文件。
 
 网页用到的框架前端包有三个：`@go-tenon/client` 是与界面无关的客户端运行时（会话、错误、校验、上传），`@go-tenon/start` 把 TanStack Start 接到 Go，`@go-tenon/ui` 是应用骨架和界面组件。同一个前端还可以在桌面端中运行，这时用到 `@go-tenon/host` 和 `@go-tenon/electron`，见[客户端](../clients/README.md)。
 

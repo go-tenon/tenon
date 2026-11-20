@@ -21,7 +21,7 @@ type CredentialCheck func(ctx context.Context) error
 type credentialKey struct{}
 
 // WithCredentialCheck 返回带有 check 的 context。入口的认证中间件在认证通过后调用它，
-// 例如 rest.RequireAuth 和 web 的页面路由；SSE 等长连接据此定期重新校验，凭据失效后结束连接。
+// 例如 rest.RequireAuth；SSE 等长连接据此定期重新校验，凭据失效后结束连接。
 func WithCredentialCheck(ctx context.Context, check CredentialCheck) context.Context {
 	checks, _ := ctx.Value(credentialKey{}).([]CredentialCheck)
 	return context.WithValue(ctx, credentialKey{}, append(checks[:len(checks):len(checks)], check))
