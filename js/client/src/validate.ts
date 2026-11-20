@@ -12,8 +12,11 @@ export interface ValidateOptions {
   components?: { readonly [name: string]: Schema }
   /** messages.ts 中的 messages：按语言的提示模板。没有时 message 是错误码。 */
   messages?: { readonly [language: string]: { readonly [code: string]: string } }
-  /** 提示的语言，例如 zh-CN；没有这种语言时依次尝试它的主语言（zh）和 messages 中的第一种语言。 */
-  language?: string
+  /**
+   * 提示的语言，例如 zh-CN，或者返回当前语言的函数（应用的 i18n.language，每次校验时调用）；没有这种语言时依次尝试
+   * 它的主语言（zh）和 messages 中的第一种语言。
+   */
+  language?: string | (() => string | undefined)
   /** 输入的位置，默认 body；校验查询参数时传 query。 */
   location?: string
 }
@@ -36,7 +39,8 @@ interface Issue {
 export function validate(schema: Schema, value: unknown, options: ValidateOptions = {}): FieldError[] {
   const issues: Issue[] = []
   check(schema, value, options.location ?? "body", options.components ?? {}, issues)
-  const templates = pickLanguage(options.messages, options.language)
+  const language = typeof options.language === "function" ? options.language() : options.language
+  const templates = pickLanguage(options.messages, language)
   return issues.map((i) => ({
     location: i.location,
     code: i.code,
