@@ -8,7 +8,7 @@
 
 **全文搜索**和 `LIKE` 不同：它先把文字切分成词，按词建立索引，搜索时按词匹配，并按相关度排序。中文没有空格分隔词语，所以需要**分词**。
 
-阅读前需要了解：[队列](../background/queue.md)；[数据库事务](../database/quick-start.md#transactions)。
+阅读前需要了解：[队列](../background/queue.md)；[数据库事务](../database/database.md#transactions)。
 
 - [示例用法](#example-usage)
 - [安装](#installation)

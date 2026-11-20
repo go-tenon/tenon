@@ -120,7 +120,7 @@ sudo touch /etc/nginx/blog.maintenance  # 开始维护
 sudo rm /etc/nginx/blog.maintenance     # 结束维护
 ```
 
-- **响应的格式和程序的[错误响应](../general/errors.md#what-clients-see)相同。** 前端看到 `code` 为 `maintenance` 时显示维护提示，按 `Retry-After` 的秒数稍后重试。
+- **响应的格式和程序的[错误响应](../general/errors.md#response-format)相同。** 前端看到 `code` 为 `maintenance` 时显示维护提示，按 `Retry-After` 的秒数稍后重试。
 - **只拦截 nginx 自己返回的 `503`。** 程序返回的 `503`（例如停机时拒绝新的 AI 回答）原样传给用户。
 - **放行按用户的地址判断。** nginx 前面还有负载均衡时，先用 [realip](https://nginx.org/en/docs/http/ngx_http_realip_module.html) 模块还原用户的地址，否则所有请求看起来都来自负载均衡。
 - **有多台 nginx 时**，每一台都要创建标记文件。使用云负载均衡时，改用它自带的固定响应规则，例如 AWS ALB 的 `fixed-response`。
@@ -180,7 +180,7 @@ max_prepared_statements = 200   ; pgx 默认使用命名的预编译语句，需
 - **迁移**：goose 在一个连接上加锁，防止多个实例同时迁移。迁移命令使用一个直连的地址，例如在配置中单独写一个 `migrate_database` 段。
 - **队列的复制连接**：设置 `queue.replication_dsn`，见[队列](#queue)。
 
-PgBouncer 只是让连接可以共用，数据库的处理能力仍然由数据库本身决定，`default_pool_size` 要按数据库的 CPU 和磁盘来设置。程序自己的连接池用满时，请求按 [`acquire_timeout`](../database/quick-start.md#pool-exhaustion) 很快失败；PgBouncer 到数据库的连接用满时，语句在 PgBouncer 中排队，最长等待时间由它的 `query_wait_timeout` 限制（例如 `5`，单位秒）。
+PgBouncer 只是让连接可以共用，数据库的处理能力仍然由数据库本身决定，`default_pool_size` 要按数据库的 CPU 和磁盘来设置。程序自己的连接池用满时，请求按 [`acquire_timeout`](../database/database.md#pool-exhaustion) 很快失败；PgBouncer 到数据库的连接用满时，语句在 PgBouncer 中排队，最长等待时间由它的 `query_wait_timeout` 限制（例如 `5`，单位秒）。
 
 <a id="queue"></a>
 ## 队列

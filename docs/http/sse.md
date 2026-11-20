@@ -4,7 +4,7 @@
 
 SSE 只负责服务端到客户端。客户端发给服务端的仍然是普通请求，认证、验证和限流都和其他接口一样。需要在线成员、“正在输入”或移动端 SDK 时，用基于 WebSocket 的[实时频道](../libraries/realtime.md)。
 
-阅读前需要了解：[路由](routing.md)；[context](../concepts/go-primer.md#context)。长连接一节用到了[广播](../libraries/broadcasting.md)。
+阅读前需要了解：[路由](routing.md)；context。长连接一节用到了[广播](../libraries/broadcasting.md)。
 
 - [示例用法](#introduction)
 - [流式响应](#streaming-responses)
@@ -155,7 +155,7 @@ SSE 接口和其他接口注册在同一个 API 上，认证方式相同，例�
 - `s.Context()` 只在客户端断开或服务器停机时取消，[`httpx.Timeout`](middleware.md#request-timeout) 的超时与它无关。
 - 服务器配置中的 `http.write_timeout` 同样会切断长连接，SSE 会为当前请求取消它，配置保持原样。
 
-停机时，`httpx.Serve` 一开始排空，`s.Done()` 就会关闭，处理器返回，连接结束，客户端随后重连到其他实例。所以打开着的长连接随排空一起结束，停机很快完成，见[平滑停止](lifecycle.md#graceful-shutdown)。
+停机时，`httpx.Serve` 一开始排空，`s.Done()` 就会关闭，处理器返回，连接结束，客户端随后重连到其他实例。所以打开着的长连接随排空一起结束，停机很快完成，见[平滑停止](../concepts/lifecycle.md#graceful-shutdown)。
 
 <a id="revoked-credentials"></a>
 ## 凭据失效
@@ -205,7 +205,7 @@ if err := a.creds.RecheckCredential(ctx, id); err != nil {
 return nil
 ```
 
-提醒只让连接立即执行一次上面的校验，是否断开仍由校验决定：凭据仍然有效的连接继续保持，多发的提醒只是多查一次。因此提醒要在修改提交之后发出，否则校验读到的还是旧数据；修改在事务中进行时，用 [AfterCommit](../database/quick-start.md#after-commit) 登记。提醒丢失时（例如 NATS 断线、发出之前进程退出），连接仍会在 30 秒的定期校验中断开。
+提醒只让连接立即执行一次上面的校验，是否断开仍由校验决定：凭据仍然有效的连接继续保持，多发的提醒只是多查一次。因此提醒要在修改提交之后发出，否则校验读到的还是旧数据；修改在事务中进行时，用 [AfterCommit](../database/database.md#after-commit) 登记。提醒丢失时（例如 NATS 断线、发出之前进程退出），连接仍会在 30 秒的定期校验中断开。
 
 Hub 经由 NATS 在实例之间传递消息，见[后端](../libraries/broadcasting.md#backends)。
 

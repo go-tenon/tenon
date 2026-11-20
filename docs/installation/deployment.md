@@ -49,7 +49,7 @@ go build -trimpath -o bin/blog ./cmd/blog
 
 `-trimpath` 去掉二进制中你电脑上的文件路径。PostgreSQL 的驱动是纯 Go 写的，可以加上 `CGO_ENABLED=0` 构建一个不依赖系统库的静态二进制。
 
-迁移文件、翻译文件、前端的构建产物都通过 [embed](../concepts/go-primer.md#embed) 打包进了二进制，所以部署时只需要两样东西：
+迁移文件、翻译文件、前端的构建产物都通过 embed 打包进了二进制，所以部署时只需要两样东西：
 
 - `bin/blog` 这个文件；
 - `config` 目录。
@@ -140,7 +140,7 @@ go build -trimpath -o bin/blog ./cmd/blog
 - **worker** 从队列中领取任务，一个任务只会被一个实例领取，可以随时增减实例。
 - **调度器**用锁保证每个定时任务每次只执行一次，所以多个实例互为备份，前提是它们共用同一个数据库，见[多个实例](../background/scheduling.md#multiple-instances)。
 
-这些部分共用数据库的连接池。设置连接数上限 `max_conns` 时，要把 HTTP 请求、各队列的并发数和同时执行的定时任务都算进去；所有实例的连接数加起来，不能超过数据库允许的最大连接数，见[连接池](../database/quick-start.md#pool-exhaustion)。
+这些部分共用数据库的连接池。设置连接数上限 `max_conns` 时，要把 HTTP 请求、各队列的并发数和同时执行的定时任务都算进去；所有实例的连接数加起来，不能超过数据库允许的最大连接数，见[连接池](../database/database.md#pool-exhaustion)。
 
 <a id="systemd"></a>
 ## 用 systemd 运行
@@ -352,7 +352,7 @@ NATS 的 `-js` 开启 JetStream，任务保存在 `/data` 中；`8222` 是它的
 <a id="health-checks"></a>
 ## 健康检查
 
-HTTP 服务提供两个检查的地址，写法见[健康检查](../http/lifecycle.md#health-checks)：
+HTTP 服务提供两个检查的地址，写法见[健康检查](../concepts/lifecycle.md#health-checks)：
 
 - **存活检查**（`/livez`）：程序还能响应吗？它只检查程序本身，不检查数据库：数据库出了问题，重启程序也没有用。
 - **就绪检查**（`/readyz`）：程序现在能处理请求吗？它检查程序没有在停止，并且数据库等必需的依赖可用。

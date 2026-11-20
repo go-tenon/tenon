@@ -10,7 +10,7 @@ Tenon 的队列有两个特点，在开始之前需要了解。第一，任务�
 
 第二，每个任务**至少执行一次**：worker 崩溃或停止超时时，正在处理的任务会交给其他 worker 重新执行，处理函数需要能安全地重复执行。任务之间不保证执行顺序。
 
-阅读前需要了解：[数据库事务](../database/quick-start.md#transactions)；[依赖装配](../concepts/dependencies.md)。失败任务的处理、队列的监控和运维接口见[队列：失败任务与监控](queue-monitoring.md)。
+阅读前需要了解：[数据库事务](../database/database.md#transactions)；[依赖装配](../concepts/dependencies.md)。失败任务的处理、队列的监控和运维接口见[队列：失败任务与监控](queue-monitoring.md)。
 
 - [示例用法](#example-usage)
 - [准备](#preparing)
@@ -314,7 +314,7 @@ JetStream 把任务交给 worker 后，等待处理结果的时间是 `lease`（
 <a id="testing"></a>
 ## 测试
 
-处理函数是普通的函数，直接调用它测试即可。发布任务的一方，用 [`dbtest.Open`](../testing/overview.md) 打开执行过 `queue.Migrations()` 的测试数据库，用 `queuetest.Pending` 读出还没转发的任务。它只能看到已经提交的任务，使用时停掉 worker：
+处理函数是普通的函数，直接调用它测试即可。发布任务的一方，用 [`dbtest.Open`](../testing/testing.md) 打开执行过 `queue.Migrations()` 的测试数据库，用 `queuetest.Pending` 读出还没转发的任务。它只能看到已经提交的任务，使用时停掉 worker：
 
 ```go
 db := dbtest.Open(t, migrations.FS) // 包含已发布的 queue 迁移

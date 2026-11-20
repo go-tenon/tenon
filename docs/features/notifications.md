@@ -4,7 +4,7 @@
 
 `notification` 包只提供站内的收件箱，其他渠道已经有各自的包：[邮件](../libraries/mail.md)、[移动推送](push.md)、[队列](../background/queue.md)、[广播](../libraries/broadcasting.md)。一次通知发往哪些渠道，由业务动作显式写出来，读代码就能看到会发生什么。
 
-阅读前需要了解：[数据库事务](../database/quick-start.md#transactions)；[发布框架迁移](../database/migrations.md#publishing-framework-migrations)。实时推送未读数一节用到了[广播](../libraries/broadcasting.md)。
+阅读前需要了解：[数据库事务](../database/database.md#transactions)；[发布框架迁移](../database/migrations.md#publishing-framework-migrations)。实时推送未读数一节用到了[广播](../libraries/broadcasting.md)。
 
 - [示例用法](#example-usage)
 - [安装](#installation)
@@ -285,7 +285,7 @@ func (a *Send) Job(ctx context.Context, m Message) error {
 <a id="realtime"></a>
 ## 实时推送
 
-让导航栏的角标在收到通知时立即更新：用[广播](../libraries/broadcasting.md#publishing-events)通知收件人所在的连接。广播要等事务提交之后再发，在事务中用 [AfterCommit](../database/quick-start.md#after-commit) 登记：
+让导航栏的角标在收到通知时立即更新：用[广播](../libraries/broadcasting.md#publishing-events)通知收件人所在的连接。广播要等事务提交之后再发，在事务中用 [AfterCommit](../database/database.md#after-commit) 登记：
 
 ```go
 err := database.RunInTx(ctx, a.db, nil, func(ctx context.Context, tx database.Tx) error {

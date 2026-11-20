@@ -4,7 +4,7 @@
 
 Tenon 的路由建立在 [Huma](https://huma.rocks) 之上。每条路由由三部分组成：一个 `huma.Operation` 描述路由本身，一个**输入类型**描述请求，一个**输出类型**描述响应。因为请求和响应的结构都写在 Go 类型中，Huma 可以替你解析参数、验证输入，并生成准确的 OpenAPI 文档（见[接口文档](openapi.md)）。
 
-阅读前需要了解：[安装](../installation/installing.md)中的第一个接口；[context](../concepts/go-primer.md#context)、[结构体标签](../concepts/go-primer.md#struct-tags)。
+阅读前需要了解：[安装](../installation/installing.md)中的第一个接口；context、结构体标签。
 
 - [示例用法](#basic-routing)
     - [路由声明](#operations)

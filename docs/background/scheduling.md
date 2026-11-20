@@ -1,32 +1,8 @@
 # 定时任务
 
-应用中总有一些需要按时执行的工作：过期的令牌、验证码和失败任务会在数据库中留下过期的行，需要定期清理；应用自己也常有定时的工作，例如每天凌晨生成报表。
+`schedule` 包在代码中声明定时任务，按 cron 表达式执行，任务是一个 `func(ctx context.Context) error`，在调度器所在的进程中执行。部署多个实例时，同一个任务的同一次触发只在一个实例上执行（用[原子锁](../libraries/locks.md)保证）。cron 表达式写 6 段时第一段是秒，写 5 段时在那一分钟的第 0 秒触发。
 
-过去，你可能会为每一项工作在服务器上写一条 crontab。但这样一来，定时任务散落在代码之外，部署多台服务器时还要小心别让它们重复执行。`schedule` 包让你在代码中声明定时任务，按 cron 表达式执行，精度到秒。
-
-调度器只负责“按时触发”：任务就是一个 `func(ctx context.Context) error`，在调度器所在的进程中执行。部署多个实例时，同一个任务的同一次触发只会在一个实例上执行。
-
-**cron 表达式**是描述“什么时候执行”的一串字段，例如 `0 0 2 * * *` 表示每天 02:00:00。写 6 段时第一段是秒；也可以写常见的 5 段（分、时、日、月、星期），在那一分钟的第 0 秒触发。
-
-阅读前需要了解：[原子锁](../libraries/locks.md)；[依赖装配](../concepts/dependencies.md#running-parts)。
-
-- [示例用法](#example-usage)
-- [定义任务](#defining-tasks)
-    - [表达式](#expressions)
-    - [时区](#timezones)
-- [运行调度器](#running-the-scheduler)
-- [多个实例](#multiple-instances)
-- [防止重叠](#preventing-overlaps)
-- [失败与停止](#failures-and-shutdown)
-- [查看任务](#listing-tasks)
-    - [列出任务的命令](#schedules-command)
-    - [执行记录](#run-history)
-    - [后台页面](#admin-pages)
-    - [立即执行](#running-manually)
-- [清理框架数据](#framework-cleanups)
-- [测试](#testing)
-- [常见问题](#troubleshooting)
-- [API 参考](#api-reference)
+包：`schedule`、`schedule/schedulecmd`、`schedule/scheduleapi`。
 
 <a id="example-usage"></a>
 ## 示例用法

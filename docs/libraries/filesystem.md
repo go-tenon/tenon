@@ -10,7 +10,7 @@
 
 为什么要分“上传”和“确认”两步？设想用户在编辑文章时上传了一张封面，然后放弃了编辑。先上传、后确认，放弃的临时文件会被自动回收，存储中只留下被引用的文件。
 
-阅读前需要了解：[数据库：快速入门](../database/quick-start.md)；[依赖装配](../concepts/dependencies.md)。大文件由客户端直接上传到 S3 的写法见[客户端直传](direct-uploads.md)。
+阅读前需要了解：[数据库：快速入门](../database/database.md)；[依赖装配](../concepts/dependencies.md)。大文件由客户端直接上传到 S3 的写法见[客户端直传](direct-uploads.md)。
 
 使用前先发布 `files` 表的迁移，见[发布框架迁移](../database/migrations.md#publishing-framework-migrations)：
 

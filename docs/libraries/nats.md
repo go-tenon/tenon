@@ -120,7 +120,7 @@ item, err := natsrpc.Call[ArticleDTO](ctx, blogNC, "blog.v1.articles.get", GetIn
 
 测试业务代码时不需要 NATS：广播用 `broadcasttest.NewBackend()`，在线成员用 `realtimetest.NewPresence()`，都是内存替身，见[广播的测试](broadcasting.md#testing)和[实时频道](realtime.md#presence-stores)。
 
-需要真实的 NATS 时，和[数据库测试](../testing/database.md#database-tests)一样，通过环境变量 `NATS_TEST_URL` 取得测试服务器的地址，`queuetest.Conn(t)` 用它建立连接，测试结束时关闭；每个测试使用随机的 subject 前缀和 bucket 名，测试之间互不干扰，可以并行运行。
+需要真实的 NATS 时，和[数据库测试](../testing/testing.md#database-tests)一样，通过环境变量 `NATS_TEST_URL` 取得测试服务器的地址，`queuetest.Conn(t)` 用它建立连接，测试结束时关闭；每个测试使用随机的 subject 前缀和 bucket 名，测试之间互不干扰，可以并行运行。
 
 <a id="troubleshooting"></a>
 ## 常见问题

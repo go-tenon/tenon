@@ -255,7 +255,7 @@ func (a *Publish) notifyEditors(ctx context.Context, item *Article) error {
 
 `Publish` 的事务部分见[授权](../security/authorization.md#checking-in-transactions)。这里有两点要注意：
 
-- **在事务提交之后发送**。在事务里发送，事务回滚时邮件已经发出去了。[AfterCommit](../database/quick-start.md#after-commit) 登记的回调在提交成功之后才执行。
+- **在事务提交之后发送**。在事务里发送，事务回滚时邮件已经发出去了。[AfterCommit](../database/database.md#after-commit) 登记的回调在提交成功之后才执行。
 - **发送失败时发布照样成功**。文章已经发布成功，回调返回的错误只记录日志，接口照常返回。
 
 > [!NOTE]

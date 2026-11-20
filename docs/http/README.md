@@ -2,7 +2,7 @@
 
 用 HTTP 提供 JSON API：定义路由，处理中间件，读取并验证输入，返回响应，再为前端、App 和其他服务生成客户端。业务规则写在[业务动作](../concepts/actions.md)中，这里只讲 HTTP 这一个入口。
 
-- [HTTP 服务的生命周期](lifecycle.md)：请求经过的环节、平滑停止与就绪检查
+- [HTTP 服务的生命周期](../concepts/lifecycle.md)：请求经过的环节、平滑停止与就绪检查
 - [路由](routing.md)：REST 路由、分组、OpenAPI 文档
 - [接口文档](openapi.md)：查看和导出 OpenAPI 文档，说明与示例，API 版本
 - [中间件](middleware.md)：默认中间件、编写中间件、超时与请求 ID

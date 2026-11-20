@@ -1,113 +1,75 @@
 # 可观测性
 
-应用上线之后，你需要知道它运行得怎么样：每秒处理多少请求、哪个接口变慢了、错误是从哪里来的。可观测性就是回答这些问题的能力，它通常由三类数据组成：
+用 OpenTelemetry 报告指标和链路，并把指标、链路和日志一起推送到一个 OTLP 接收端，例如 [OpenObserve](https://openobserve.ai/)。框架组件拿到 Provider 后才报告。
 
-- **指标**（metrics）：随时间变化的数字，例如每秒的请求数、请求耗时的分布、数据库连接池的使用量。适合画图和设置告警。
-- **链路**（traces）：一个请求经过了哪些步骤，每一步花了多长时间。一条链路由多个 **span** 组成，每个 span 是一个步骤，例如一次 HTTP 请求、其中的一条 SQL 语句。适合查找一个请求为什么慢。
-- **日志**（logs）：程序记录的一条条事件，见[日志](logging.md)。
-
-Tenon 使用 [OpenTelemetry](https://opentelemetry.io/docs/languages/go/) 报告这些数据。OpenTelemetry 是收集这三类数据的开放标准，它的推送协议叫 **OTLP**，大多数观测平台都能接收。框架的 HTTP 服务、数据库连接池、队列、调度器、限流器、MCP 服务和实时频道都可以报告指标，前五个还报告链路。`telemetry` 包把指标、链路和应用的日志一起推送到一个 OTLP 接收端，例如 [OpenObserve](https://openobserve.ai/)。
-
-指标和链路都需要显式开启。OpenTelemetry 中，创建指标和链路的对象叫 **Provider**（`MeterProvider`、`TracerProvider`）：把它们交给需要报告的组件，没有传入的组件就不报告。框架没有覆盖的依赖（例如 Memcached 客户端）由各自的生态报告，把同一个 Provider 交给它们即可。
-
-阅读前需要了解：[日志](logging.md)；[依赖装配](../concepts/dependencies.md)。
-
-- [示例用法](#example-usage)
-- [配置](#setup)
-    - [自己创建 Provider](#custom-providers)
-- [链路与日志](#trace-logs)
-- [错误追踪](#error-tracking)
-- [框架组件](#components)
-    - [HTTP 请求](#http)
-    - [数据库](#database)
-    - [队列](#queue)
-    - [定时任务](#schedule)
-    - [限流](#ratelimit)
-    - [MCP 服务](#mcp)
-    - [实时频道](#realtime)
-    - [Go 运行时](#runtime)
-- [告警示例](#alerting)
-- [常见问题](#troubleshooting)
-- [API 参考](#api-reference)
+包：`telemetry`。
 
 <a id="example-usage"></a>
-## 示例用法
+## 示例：在入口中打开 telemetry
 
-在入口中最先打开 `telemetry`，再把它的 Provider 交给其他组件：
+在入口的 `open` 函数中最先打开 `telemetry`，再把 Provider 交给日志和其他组件。`cfg` 是根配置，`stack` 是入口的 `*cleanup.Stack`，`router` 是 `chi.Router`：
 
 ```go
 tel, err := telemetry.Open(ctx, cfg.Telemetry)
 if err != nil {
-    return err
+    return nil, err
 }
 stack.MustAdd("telemetry", tel.Shutdown)
 slog.SetDefault(logging.New(cfg.Logs, logging.Export(tel.Logs)))
 
 db, err := database.Open(ctx, cfg.Database, database.WithTelemetry(tel.Meters, tel.Tracers))
-// ...
+// ……
 router.Use(httpx.Telemetry(tel.Meters, tel.Tracers))
 router.Use(httpx.Defaults(cfg.HTTP)...)
 ```
 
-这样，日志、数据库语句和 HTTP 请求的指标与链路都会推送到配置的接收端。接收端的地址为空时关闭推送，所以本地开发保持默认配置即可。
+- `tel.Shutdown` 最先登记，最后执行：退出前发出缓冲中的数据，其他资源关闭时的日志也能推送出去。数据在退出前丢失时，检查这一点。
+- `telemetry.endpoint` 为空时 `telemetry.Open` 返回空操作的 Provider，代码照常使用它们。本地开发保持为空。
 
 <a id="setup"></a>
-## 配置
+## 配置：推送到 OTLP 接收端（`telemetry` 段）
 
-在配置文件的 `telemetry` 段填写接收端：
+`telemetry.Config` 放在[根配置](configuration.md#loading-configuration)的 `telemetry` 段：
 
 ```yaml
 telemetry:
-  endpoint: ${OTLP_ENDPOINT:-}    # 例如 http://openobserve:5080/api/default
-  headers:
+  endpoint: ${OTLP_ENDPOINT:-}  # 基础地址，例如 http://openobserve:5080/api/default；为空时不推送
+  headers:                      # 附加到每个请求，通常是认证信息
     Authorization: Basic ${OTLP_TOKEN:-}
-  service: api
-  version: ${APP_VERSION:-}
+  service: api                  # service.name；为空时取可执行文件名
+  version: ${APP_VERSION:-}     # service.version；为空时取构建信息中的模块版本
+  sample_ratio: 1               # 新链路的采样比例，默认 1；带着调用方链路的请求跟随调用方
 ```
 
-- `endpoint` 是基础地址，日志、指标、链路分别发往其下的 `/v1/logs`、`/v1/metrics`、`/v1/traces`。为空时关闭推送，本地开发保持为空。
-- `headers` 附加到每个请求，通常是认证信息。
-- `service` 为空时取可执行文件名；`version` 为空时取构建信息中的模块版本。日志、指标、链路都用这里的服务名和版本，`logs` 段沿用它们。
-- `sample_ratio` 是新链路的采样比例，默认 `1`，即全部记录。请求带着调用方的链路进来时，跟随调用方的决定。
-
-把 `telemetry.Config` 放进[根配置](configuration.md#loading-configuration)，在入口中**最先**打开它，如[示例用法](#example-usage)。`tel.Shutdown` 最先登记、最后执行，发出缓冲中的数据，其他资源关闭时记录的日志也能推送出去。
-
-`logging.Export` 让日志同时推送出去，经过和标准错误上同样的级别和格式化。`ctx` 中有 span 时，日志记录带上它的链路，日志平台可以从一条日志跳到它所在的链路。标准错误上的日志照常输出，启动阶段的错误和接收端不可用时的排查都靠它。只想推送指标和链路时，不传 `logging.Export` 即可。
-
-三种数据共用一组资源属性：`service.name`、`service.version`、`service.instance.id`、主机名和进程号。`service.instance.id` 每个进程随机生成，同一服务的各个进程（例如 `serve http`、`serve worker`）和多个副本靠它区分，各自写进自己的指标序列。
-
-推送在后台批量进行，请求照常处理，缓冲满时丢弃新数据。推送失败记录为 `component=telemetry` 的错误日志。
+- 日志、指标、链路分别发往 `endpoint` 下的 `/v1/logs`、`/v1/metrics`、`/v1/traces`。
+- 三种数据带有相同的资源属性，其中 `service.instance.id` 每个进程随机生成，区分同一服务的各个进程和副本。
+- `logging.Export(tel.Logs)` 让日志同时推送出去，级别和格式化与标准错误上的相同。标准错误上的日志照常输出，接收端不可用时靠它排查。
+- 推送在后台批量进行，缓冲满时丢弃新数据。推送失败记录为 `component=telemetry` 的错误日志：平台中没有数据时，先看 `endpoint` 是否为空，再看这条日志。
 
 <a id="custom-providers"></a>
 ### 自己创建 Provider
 
-框架组件只依赖 OpenTelemetry 的接口，不一定要用 `telemetry`。需要尾部采样（只保留出错或慢的链路）、同时发往多个后端，或者让 Prometheus 来抓取时，用 OpenTelemetry 的 SDK 自己创建 Provider，或者推送到 [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/) 由它处理。日志用 `logging.Export` 接入任意 `LoggerProvider`。
+框架组件只依赖 OpenTelemetry 的接口。需要尾部采样、发往多个后端或者让 Prometheus 抓取时，用 OpenTelemetry 的 SDK 自己创建 Provider，或者推送到 [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/) 处理。日志用 `logging.Export` 接入任意 `log.LoggerProvider`。
 
 <a id="trace-logs"></a>
-## 链路与日志
+## 日志中的 `trace_id`：在日志和链路之间跳转
 
-`ctx` 中有 span 时，用它记录的日志自动带上 `trace_id` 和 `span_id`，包括访问日志、队列和调度器的日志，以及处理函数里 `slog.InfoContext(ctx, ...)` 记录的业务日志。在链路追踪系统中可以按 `trace_id` 找到一条链路的全部日志。
+`ctx` 中有 span 时，用它记录的日志自动带上 `trace_id` 和 `span_id`，包括访问日志、队列和调度器的日志和业务日志。`logging.Export` 推送的日志带着链路，日志平台据此在日志和链路之间跳转。用户报告的请求 ID 怎样找到日志见[在日志中找到一次请求](logging.md#finding-a-request)。
 
-用 [`logging.Export`](#setup) 推送的日志把链路写在记录本身，日志平台据此在日志和链路之间跳转。
+日志中没有 `trace_id` 时，是记录日志时没有传入 `ctx`，或者没有安装 `httpx.Telemetry`。
 
 <a id="error-tracking"></a>
-## 错误追踪
+## 错误追踪：`exception` 事件和 `logging.RecordError`
 
-浏览器中的错误见[前端观测](frontend-observability.md)：它们由前端的 SDK 收集，与这里的服务端链路关联。
-
-组件把出错的执行记录为 span 上的 `exception` 事件：HTTP 请求的 `5xx`（包括 panic）、失败和重试的队列任务、失败的定时任务、出错的数据库语句和 MCP 调用。事件的属性与[错误日志](logging.md#error-logging)的字段一一对应：
+框架组件把出错的执行记录为 span 上的 `exception` 事件：HTTP 请求的 `5xx`（包括 panic）、失败和重试的队列任务、失败的定时任务、出错的数据库语句和 MCP 调用。属性与[错误日志](logging.md#error-logging)的字段对应：
 
 | 属性 | 内容 |
 | --- | --- |
 | `exception.message` | `err.Error()` |
 | `exception.type` | [错误码](errors.md)；没有时是最内层错误的类型，例如 `*pgconn.PgError` |
-| `exception.stacktrace` | `%+v` 格式的完整错误链，包含错误**创建处**的堆栈；普通错误没有堆栈时省略 |
+| `exception.stacktrace` | `%+v` 格式的完整错误链，包含错误**创建处**的堆栈 |
 
-只记录 `5xx`，`4xx` 是调用方的问题。按 `exception` 事件聚合错误的链路平台（例如 [SigNoz](https://signoz.io)、[Uptrace](https://uptrace.dev)）据此列出出现过哪些错误、各自的次数和趋势，点进去就是堆栈和整条链路。[Sentry](https://sentry.io) 通过 OTLP 接收链路时，把这些事件变成 Issue 目前还不可靠，错误追踪推荐用前两者。
-
-用户看到的 `5xx` 错误页和提示上有请求编号，它就是访问日志和错误日志中的 `request_id`：按它找到这个请求的日志，日志中的 `trace_id` 再跳到链路。
-
-自己创建的 span 记录错误时用 `logging.RecordError`，属性与框架的组件一致。`span.RecordError` 记录的类型是最外层包装的类型，堆栈是调用它的位置，看不出错误从哪里来：
+自己创建的 span 用 `logging.RecordError` 记录错误，属性与框架一致；`span.RecordError` 只记录最外层包装的类型和调用它的位置。`tracer` 由 `tel.Tracers.Tracer(...)` 创建：
 
 ```go
 ctx, span := tracer.Start(ctx, "sync feed")
@@ -119,158 +81,108 @@ if err := sync(ctx); err != nil {
 }
 ```
 
+浏览器中的错误见[前端观测](../frontend/observability.md)。
+
 <a id="components"></a>
-## 框架组件
+## 框架组件的接入点
 
-每个组件在一处同时接收 `MeterProvider` 和 `TracerProvider`。只需要其中一种时，另一个传 OpenTelemetry 的 noop 实现（`go.opentelemetry.io/otel/metric/noop`、`go.opentelemetry.io/otel/trace/noop`）。
+`mp`、`tp` 是 `telemetry.Open` 返回的 `tel.Meters`、`tel.Tracers`：
 
-框架按 [W3C Trace Context](https://www.w3.org/TR/trace-context/) 读写链路，内置了 propagator。
+| 组件 | 写法 |
+| --- | --- |
+| HTTP | `httpx.Telemetry(mp, tp)`，中间件，装在 `httpx.Defaults` 之前 |
+| 数据库 | `database.Open(ctx, cfg, database.WithTelemetry(mp, tp))` |
+| 队列 | `queue.NewWorker(db, nc, cfg, nil, queue.WithTelemetry(mp, tp))` |
+| 定时任务 | `schedule.New(locker, cfg, nil, schedule.WithTelemetry(mp, tp))` |
+| 限流 | `ratelimit.Observe(mp, name, limiter)` |
+| MCP | `mcpx.New(opts, mcpx.WithTelemetry(mp, tp))` |
+| 实时频道 | `realtime.Options.MeterProvider` |
+
+- `mp`、`tp` 为 `nil` 时 panic。只要其中一种时，另一个传 noop 实现（`go.opentelemetry.io/otel/metric/noop`、`go.opentelemetry.io/otel/trace/noop`）。
+- 没有拿到 Provider 的组件不报告：看不到某个组件的指标时，检查它的接入点。
+- 链路用 `traceparent` 传递；指标遵循 OpenTelemetry 的语义约定，现成的仪表盘可以直接用。
+- 导出到 Prometheus 后，指标名中的点换成下划线，单位成为后缀，例如 `http_server_request_duration_seconds`。
 
 <a id="http"></a>
-### HTTP 请求
+### HTTP 请求的指标和链路
 
-`httpx.Telemetry` 是一个中间件，安装在 `httpx.Defaults` 之前，访问日志才能带上 `trace_id`，panic 转换成的 `500` 也会被记录：
+`httpx.Telemetry` 装在 `httpx.Defaults` 之前：访问日志才带上 `trace_id`，panic 转换成的 `500` 也被记录。
 
-```go
-router.Use(httpx.Telemetry(tel.Meters, tel.Tracers))
-router.Use(httpx.Defaults(cfg.HTTP)...)
-```
-
-| 指标 | 类型 | 属性 |
-| --- | --- | --- |
-| `http.server.request.duration` | 直方图，秒 | `http.request.method`、`http.response.status_code`、`http.route`、`url.scheme`；5xx 时还有 `error.type` |
-
-属性遵循 OpenTelemetry 的 [HTTP 语义约定](https://opentelemetry.io/docs/specs/semconv/http/http-metrics/)，现成的 HTTP 仪表盘可以直接使用。`http.route` 是路由模板，例如 `/articles/{id}`；匹配到路由的请求才带这个属性，非标准的请求方法记为 `_OTHER`，指标序列的数量因此由应用的路由决定。
-
-每个请求还是一个服务端 span，名称是方法和路由模板，例如 `GET /articles/{id}`。请求头带有 `traceparent` 时（例如来自前端或另一个服务），span 接在调用方的链路之后；`5xx` 的请求标记为错误，错误链记录为 span 上的 exception 事件，见[错误追踪](#error-tracking)。处理器从请求的 `ctx` 中拿到这个 span，自己创建的 span 都接在它下面。耗时指标也用这个 `ctx` 记录，日志平台可以从一个慢请求的数据点跳到它的链路。
+- 指标 `http.server.request.duration`（直方图，秒），属性 `http.request.method`、`http.response.status_code`、`http.route`、`url.scheme`，5xx 时还有 `error.type`。`http.route` 是路由模板，例如 `/articles/{id}`，只有匹配到路由的请求才有。
+- 每个请求是一个服务端 span，例如 `GET /articles/{id}`；请求头带有 `traceparent` 时接在调用方的链路之后。处理器中用请求的 `ctx` 创建的 span 都接在它下面。
 
 <a id="database"></a>
-### 数据库
+### 数据库的指标和链路
 
-```go
-db, err := database.Open(ctx, cfg.Database, database.WithTelemetry(tel.Meters, tel.Tracers))
-```
+| 指标 | 说明 |
+| --- | --- |
+| `db.client.operation.duration` | 每条语句的耗时；属性有 `db.operation.name`（`SELECT`、`BEGIN` 等）、`db.collection.name`（表，`NewRaw` 没有）、`server.address`，出错时 `error.type` 是 SQLSTATE（例如 `23505`）、`timeout` 或 `canceled` |
+| `db.client.connection.count` | 连接数，按 `db.client.connection.state`（`idle`、`used`） |
+| `db.client.connection.max` | 连接池上限 |
+| `db.client.connection.wait_time` | 取连接的等待时长 |
+| `db.client.connection.timeouts` | 取连接超过 [`acquire` 的时限](../database/database.md#pool-exhaustion)、返回 `ErrBusy` 的次数 |
 
-| 指标 | 类型 | 属性 |
-| --- | --- | --- |
-| `db.client.operation.duration` | 直方图，秒 | `db.system.name`（`postgresql`）、`db.namespace`（数据库名）、`db.operation.name`（`SELECT`、`INSERT`、`BEGIN` 等）、`db.collection.name`（表）、`server.address`、`server.port`；出错时还有 `error.type` 和 `db.response.status_code` |
-| `db.client.connection.count` | 仪表 | `db.client.connection.state`（`idle`、`used`） |
-| `db.client.connection.max` | 仪表 | |
-| `db.client.connection.wait_time` | 直方图，秒 | 每次取连接的等待时长 |
-| `db.client.connection.timeouts` | 计数 | 取连接超过 [`acquire` 的时限](../database/quick-start.md#pool-exhaustion)、返回 `ErrBusy` 的次数 |
-
-属性遵循 OpenTelemetry 的[数据库语义约定](https://opentelemetry.io/docs/specs/semconv/database/database-metrics/)。连接池的指标都带有 `db.client.connection.pool.name`，用 `database.Name` 设置，默认是 `primary`，区分同一个应用的主库、只读副本和其他数据库；配置中的[副本](../database/advanced.md#read-replicas)是 `primary-replica-1`、`primary-replica-2`……，语句的 `server.address` 是它实际执行的那个库。`used` 长时间等于 `max`、`wait_time` 变长时，连接池已经成为瓶颈。`db.collection.name` 是 Bun 查询的表，`NewRaw` 写的原始 SQL 没有这个属性。出错时 `error.type` 是 PostgreSQL 的 SQLSTATE，例如唯一约束冲突是 `23505`、死锁是 `40P01`；超时和取消分别是 `timeout`、`canceled`。没有查到行（`sql.ErrNoRows`）不算出错。
-
-`ctx` 中有 span 时，每条语句是它之下的一个 span，名称是操作和表，例如 `SELECT articles`：一个慢请求的链路里能看到它执行了哪些语句、各用了多久，事务的 `BEGIN`、`COMMIT` 也在其中。队列转发任务、调度器加锁这类后台查询不属于任何请求，只计入指标，不产生链路。
-
-span 的 `db.query.text` 是把字面量换成 `?` 之后的 SQL，例如 `SELECT … WHERE ("a"."id" = ?)`。Bun 把参数直接写进 SQL，换掉之后手机号、token 这类值只留在应用中。超过[慢查询](../database/advanced.md#slow-queries)阈值的语句同样以这种形式记录到日志。
+- 连接池的指标带有 `db.client.connection.pool.name`，由 `database.Name` 设置，默认 `primary`；[副本](../database/database.md#read-replicas)是 `primary-replica-1`……。语句的 `server.address` 是实际执行的库。
+- `ctx` 中有 span 时，每条语句是它之下的一个 span，例如 `SELECT articles`；不属于请求的后台查询只计入指标。
+- span 的 `db.query.text` 中字面量换成了 `?`，手机号、token 这类参数不进入链路。
 
 <a id="queue"></a>
-### 队列
+### 队列的指标和链路
 
-```go
-w := queue.NewWorker(db, nc, cfg.Queue, nil, queue.WithTelemetry(tel.Meters, tel.Tracers))
-```
+| 指标 | 说明 |
+| --- | --- |
+| `queue.job.wait` | 任务从可以执行到开始处理等了多久 |
+| `queue.job.duration` | 处理耗时，按 `queue.job.outcome`（`succeeded`、`retrying`、`failed`、`released`）计数就是吞吐和失败率 |
+| `queue.relay.jobs` | 从 WAL 转发的任务，`queue.relay.route` 是 `published` 或 `deferred` |
+| `queue.relay.active` | 这个实例正在转发时为 1 |
+| `queue.relay.lag` | 复制槽中还没确认的 WAL（字节），见[监控积压](../installation/operations.md#queue-monitoring) |
 
-| 指标 | 类型 | 属性 | 含义 |
-| --- | --- | --- | --- |
-| `queue.job.wait` | 直方图，秒 | | 任务从可以执行到开始处理等了多久 |
-| `queue.job.duration` | 直方图，秒 | `queue.job.outcome` | 处理耗时；按结果计数就是吞吐和失败率 |
-| `queue.relay.jobs` | 计数 | `queue.relay.route` | 从 WAL 读到并转发的任务：`published` 立即交给 JetStream，`deferred` 作为定时消息 |
-| `queue.relay.active` | 仪表 | | 这个实例正在转发时为 1 |
-| `queue.relay.lag` | 仪表，字节 | | 复制槽中还没确认的 WAL，见[监控积压](../installation/operations.md#queue-monitoring) |
-
-`queue.job.*` 带有 `messaging.system`（`nats`）和 `messaging.destination.name`（topic）属性，与队列的 span 相同。`queue.job.outcome` 是 `succeeded`、`retrying`、`failed`、`released`，与[任务事件](../background/queue-monitoring.md#job-events)对应。租约到期或停止时放回、由 JetStream 重新投递的任务给不出可以执行的时间，不记录等待时长。导出到 Prometheus 后，点换成下划线，单位成为后缀，例如 `queue_job_wait_seconds`。
-
-每个 worker 实例都在采集时查询一次复制槽，报告 `queue.relay.lag`；所有实例的 `queue.relay.active` 之和为 0 时没有实例在转发，WAL 会一直累积，应当告警。JetStream 中积压的任务数由 NATS 统计，见[队列状态](../background/queue-monitoring.md#stats-command)。
-
-发布任务时自动把 `ctx` 中的链路写入任务的元数据（`traceparent`）。worker 为每次执行创建一个 `process <topic>` span，接在发布任务的 span 之后：发布文章的请求和随后发送通知邮件的任务出现在同一条链路中，中间隔了多久、邮件为什么失败都能看到。每次重试是一个新的 span，失败、重试和租约丢失时标记为错误。
-
-指标和 span 都用 [消息语义约定](https://opentelemetry.io/docs/specs/semconv/messaging/) 的 `messaging.system`（驱动名）和 `messaging.destination.name`（topic）区分队列，按同一个字段就能筛出一个 topic 的指标和链路。
+- `queue.job.*` 和 span 带有 `messaging.destination.name`（topic），按它筛出一个 topic 的指标和链路。
+- 所有实例的 `queue.relay.active` 之和为 0 时没有实例在转发，WAL 会一直累积，要告警。
+- 每次执行是一个 `process <topic>` span，接在发布任务的 span 之后：请求和它发布的任务在同一条链路中。
 
 <a id="schedule"></a>
-### 定时任务
+### 定时任务的指标和链路
 
-```go
-sched := schedule.New(locker, cfg.Schedule, nil, schedule.WithTelemetry(tel.Meters, tel.Tracers))
-```
-
-| 指标 | 类型 | 属性 | 含义 |
-| --- | --- | --- | --- |
-| `schedule.task.duration` | 直方图，秒 | `schedule.task`、`schedule.task.outcome` | 执行耗时，结果为 `succeeded` 或 `failed`（返回错误或 panic） |
-| `schedule.task.skipped` | 计数器 | `schedule.task`、`schedule.task.skip_reason` | 应当执行却被跳过的次数，原因为 `overlap`（上一次还没结束）或 `lock_failed`（锁存储出错） |
-
-部署多个实例时，每次触发只在执行它的实例上记录；由其他实例执行的触发不算跳过。
-
-每次执行创建一个 `schedule <任务名>` span，是一条新链路的起点，任务中发布的队列任务接在它之后。被跳过或由其他实例执行的触发没有 span。
+- `schedule.task.duration`：执行耗时，属性 `schedule.task`（任务名）和 `schedule.task.outcome`（`succeeded`，或 `failed`：返回错误或 panic）。
+- `schedule.task.skipped`：应当执行却被跳过的次数，`schedule.task.skip_reason` 是 `overlap`（上一次还没结束）或 `lock_failed`（锁存储出错）。多个实例时，由其他实例执行的触发不算跳过。
+- 每次执行是一个 `schedule <任务名>` span，是新链路的起点，任务中发布的队列任务接在它之后。
 
 <a id="ratelimit"></a>
-### 限流
+### 限流的指标（`ratelimit.Observe`）
 
-被拒绝的请求返回 `429`，已经出现在 [HTTP 请求的指标](#http)中，按路由就能看出哪个接口被限流。还看不出来的是：被哪个限流器拒绝、拒绝占全部调用的比例、存储是否出错，以及 HTTP 之外的调用。用 `ratelimit.Observe` 包装限流器：
+被拒绝的请求返回 `429`，已经计入 [HTTP 请求的指标](#http)。要按限流器统计（包括 HTTP 之外的调用），用 `ratelimit.Observe` 包装限流器。`db` 是入口打开的 `*bun.DB`：
 
 ```go
 logins := pglimit.New(db, "login:attempts", ratelimit.Config{Rate: 5, Interval: time.Minute, Burst: 5})
-attempts := ratelimit.Observe(tel.Meters, "login", logins)
+attempts := ratelimit.Observe(tel.Meters, "login", logins) // 交给 login.Options.Attempts
 ```
 
-把 `attempts` 交给 [`login.Options.Attempts`](../security/login.md#limits)。第二个参数是指标中的名称，与存储的 `name` 分开：存储的 `name` 往往带着更多的层级，指标中只用简短的名称。任何 `Limiter` 都可以包装，包括中间件使用的内存限流器。
-
-| 指标 | 类型 | 属性 | 含义 |
-| --- | --- | --- | --- |
-| `ratelimit.requests` | 计数器 | `ratelimit.name`、`ratelimit.result` | 每次 `Allow` 的结果：`allowed`、`exceeded`（配额用完）或 `error`（存储出错） |
-
-`ctx` 被取消或超时导致的错误不计入，它们来自调用方。`key`（IP、邮箱、用户 ID）不进入指标，否则指标的数量会随客户端增长。要知道被限流的是谁，查看访问日志中状态为 `429` 的请求。
+指标 `ratelimit.requests`（计数器），属性 `ratelimit.name`（`Observe` 的第二个参数）和 `ratelimit.result`：`allowed`、`exceeded` 或 `error`（存储出错）。限流的 `key` 不进入指标；被限流的是谁，看访问日志中状态为 `429` 的请求。
 
 <a id="mcp"></a>
-### MCP 服务
+### MCP 服务的指标和链路
 
-```go
-srv := mcpx.New(mcpx.Options{Name: "app"}, mcpx.WithTelemetry(tel.Meters, tel.Tracers))
-```
-
-| 指标 | 类型 | 属性 |
-| --- | --- | --- |
-| `mcp.server.operation.duration` | 直方图，秒 | `mcp.method.name`（`tools/call`、`tools/list`、`initialize` 等）、`gen_ai.tool.name`、`gen_ai.operation.name`（工具调用为 `execute_tool`）、`mcp.protocol.version`、`network.transport`（HTTP 为 `tcp`，stdio 为 `pipe`）；出错时还有 `error.type` |
-
-属性遵循 OpenTelemetry 的 [MCP 语义约定](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/mcp.md)，规范目前还在 Development 阶段。工具报告错误时 `error.type` 是 `tool_error`，用它可以统计哪个工具常常失败；调用不存在或没有权限的工具属于调用方的问题，单独统计。`gen_ai.tool.name` 只记录登记过的工具，指标序列的数量保持固定。
-
-每个请求是一个 server span，名称是方法和工具名，例如 `tools/call article_publish`，接在 HTTP 请求的 span 之下。客户端在请求的 `params._meta` 中带了 `traceparent` 时，span 接在客户端的链路之后，并链接到 HTTP 请求的 span。
+- 指标 `mcp.server.operation.duration`（直方图，秒），属性 `mcp.method.name`（`tools/call`、`tools/list` 等）、`gen_ai.tool.name`（只记录登记过的工具）、`network.transport`（HTTP 为 `tcp`，stdio 为 `pipe`）。工具报告错误时 `error.type` 是 `tool_error`。
+- 每个请求是一个 server span，例如 `tools/call article_publish`，接在 HTTP 请求的 span 之下；客户端在 `params._meta` 中带了 `traceparent` 时接在客户端的链路之后。
 
 <a id="realtime"></a>
-### 实时频道
+### 实时频道的指标
 
-设置 `realtime.Options.MeterProvider` 后报告本实例的连接与订阅：
-
-| 指标 | 类型 | 含义 |
-| --- | --- | --- |
-| `realtime.connections` | 仪表 | 本实例当前的连接数 |
-| `realtime.subscriptions` | 仪表 | 这些连接的订阅数 |
+设置 `realtime.Options.MeterProvider` 后报告本实例的 `realtime.connections`（连接数）和 `realtime.subscriptions`（订阅数）。
 
 <a id="runtime"></a>
-### Go 运行时
+### Go 运行时的指标
 
-`telemetry.Open` 开启推送时，还报告进程自身的 Go 运行时指标，例如内存 `go.memory.used`、goroutine 数 `go.goroutine.count`、GC 的目标堆大小 `go.memory.gc.goal`，名称遵循 OpenTelemetry 的 [Go 运行时语义约定](https://opentelemetry.io/docs/specs/semconv/runtime/go-metrics/)。内存持续增长、goroutine 泄漏都能从这里看出来。
+`telemetry.Open` 开启推送时报告 Go 运行时指标，例如 `go.memory.used`、`go.goroutine.count`。
 
 <a id="alerting"></a>
-## 告警示例
-
-导出到 Prometheus 后，指标名和属性名中的点换成下划线，单位成为后缀，例如 `http_server_request_duration_seconds`：
+## 告警规则示例（PromQL）
 
 ```promql
-# 5 分钟内数据库语句的 p95 耗时超过 100 毫秒
-histogram_quantile(0.95, sum by (le) (rate(db_client_operation_duration_seconds_bucket[5m]))) > 0.1
-
 # 5 分钟内 5xx 的比例超过 1%
 sum(rate(http_server_request_duration_seconds_count{http_response_status_code=~"5.."}[5m]))
   / sum(rate(http_server_request_duration_seconds_count[5m])) > 0.01
-
-# 限流器的存储出错：使用它的请求都在返回 503
-sum by (ratelimit_name) (rate(ratelimit_requests_total{ratelimit_result="error"}[5m])) > 0
-
-# 登录被拒绝的比例超过 20%，可能有人在暴力尝试
-sum(rate(ratelimit_requests_total{ratelimit_name="login", ratelimit_result="exceeded"}[5m]))
-  / sum(rate(ratelimit_requests_total{ratelimit_name="login"}[5m])) > 0.2
 
 # 每天凌晨的报表任务 25 小时内没有成功过
 increase(schedule_task_duration_seconds_count{schedule_task="reports:daily", schedule_task_outcome="succeeded"}[25h]) == 0
@@ -278,62 +190,3 @@ increase(schedule_task_duration_seconds_count{schedule_task="reports:daily", sch
 # 没有实例在转发队列任务（WAL 会一直累积）
 sum(queue_relay_active) == 0
 ```
-
-<a id="troubleshooting"></a>
-## 常见问题
-
-**观测平台中没有任何数据**
-
-先看 `telemetry.endpoint` 是否为空：为空时不推送。再看标准错误中有没有 `component=telemetry` 的错误日志，通常是地址或认证信息写错了。
-
-**有日志和链路，但看不到数据库或队列的指标**
-
-这个组件没有拿到 Provider。检查是否把 `tel.Meters`、`tel.Tracers` 传给了它，例如 `database.WithTelemetry`，见[框架组件](#components)。
-
-**日志中没有 `trace_id`**
-
-记录日志时没有传入请求的 `ctx`，或者没有安装 `httpx.Telemetry`，ctx 中没有 span。
-
-**程序退出前最后一段时间的数据丢失**
-
-`tel.Shutdown` 没有执行，或者没有最先登记。它最先登记、最后执行，退出时才能发出缓冲中的数据，见[配置](#setup)。
-
-<a id="api-reference"></a>
-## API 参考
-
-### telemetry.Open
-
-```go
-func Open(ctx context.Context, cfg Config) (*Providers, error)
-```
-
-- **参数**
-    - `cfg`：推送的配置，见[配置](#setup)
-- **返回**：日志、指标和链路的 Provider
-
-包 `github.com/go-tenon/tenon/telemetry`。开启推送时，同时开始报告 Go 运行时指标。`cfg.Endpoint` 为空时返回空操作的 Provider，调用方按同样的方式使用它。
-
-### telemetry.Providers
-
-| 字段或方法 | 说明 |
-| --- | --- |
-| `Logs log.LoggerProvider` | 传给 `logging.Export` |
-| `Meters metric.MeterProvider` | 传给各组件的 `WithTelemetry` 或 `httpx.Telemetry` |
-| `Tracers trace.TracerProvider` | 同上 |
-| `Shutdown(ctx) error` | 发出缓冲中的数据并关闭 |
-
-### 各组件的接入点
-
-| 组件 | 写法 |
-| --- | --- |
-| HTTP | `httpx.Telemetry(mp, tp)`，中间件，安装在 `httpx.Defaults` 之前 |
-| 数据库 | `database.Open(ctx, cfg, database.WithTelemetry(mp, tp))` |
-| 队列 | `queue.NewWorker(..., queue.WithTelemetry(mp, tp))` |
-| 定时任务 | `schedule.New(..., schedule.WithTelemetry(mp, tp))` |
-| 限流 | `ratelimit.Observe(mp, name, limiter)` |
-| MCP | `mcpx.New(opts, mcpx.WithTelemetry(mp, tp))` |
-| 实时频道 | `realtime.Options.MeterProvider` |
-| 日志 | `logging.New(cfg, logging.Export(lp))` |
-| 自己的 span | `logging.RecordError(span, err)` |
-
-`mp`、`tp` 为 `nil` 时 panic；只需要其中一种时，另一个传 OpenTelemetry 的 noop 实现。

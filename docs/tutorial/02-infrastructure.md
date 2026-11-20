@@ -10,7 +10,7 @@
 
 这一章没有新的功能，但之后的每一章都会在这个结构上添加内容。
 
-阅读前需要了解：[第 1 章](01-project.md)；[context](../concepts/go-primer.md#context) 和 [defer](../concepts/go-primer.md#cleanup) 的用法。
+阅读前需要了解：[第 1 章](01-project.md)；context 和 defer 的用法。
 
 - [启动基础设施](#infrastructure)
 - [配置](#configuration)
@@ -96,7 +96,7 @@ database:
 
 `dsn` 是数据库的连接地址，包含用户名、密码、主机、端口和数据库名。`${DATABASE_URL:-…}` 读取环境变量 `DATABASE_URL`，没有设置时使用 `:-` 后面的默认值。这样开发时直接用默认值连接上面启动的 PostgreSQL；部署到生产环境时，用环境变量提供真正的地址和密码，配置文件不用改，也不会把生产环境的密码提交到代码仓库。项目根目录的 `.env` 文件中的变量也会被读取，它只留在你的电脑上，不提交。
 
-程序要读取这个文件，需要一个对应的 Go 结构体：YAML 中的每一段对应结构体的一个字段，字段上的 `yaml:"..."` 标签写着它在文件中的名字（见[结构体标签](../concepts/go-primer.md#struct-tags)）。新建 `internal/bootstrap/config.go`：
+程序要读取这个文件，需要一个对应的 Go 结构体：YAML 中的每一段对应结构体的一个字段，字段上的 `yaml:"..."` 标签写着它在文件中的名字（见结构体标签）。新建 `internal/bootstrap/config.go`：
 
 ```go title="internal/bootstrap/config.go"
 // Package bootstrap 装配应用：读取配置，打开数据库等资源，把它们交给 HTTP 服务和各个业务模块。
@@ -174,7 +174,7 @@ func Parts(a *App) []command.Part {
 
 - **`App`** 保存各部分共用的资源，现在只有数据库连接 `db`。之后的章节需要新的资源时，就在 `Open` 中打开它，保存到 `App` 中。
 - **`Open`** 打开资源，同时把“怎样关闭它”登记到 `stack` 中。程序退出时，`stack` 按打开的相反顺序关闭资源，例如先关闭依赖数据库的部分，再关闭数据库。如果打开到一半失败了（例如数据库连不上），已经打开的资源也会被关闭，不会泄漏。
-- **`Parts`** 列出进程中一直运行的**部分**，现在只有 HTTP 服务一个。`Start` 是装配这个部分的方法（方法作为值，见[把方法当作值传递](../concepts/go-primer.md#method-values)）：它做好准备工作，返回一个一直运行、直到收到停止信号才返回的函数。以后加上处理后台任务的 worker 时，在这里再加一行，见[队列](../background/queue.md#running-workers)。
+- **`Parts`** 列出进程中一直运行的**部分**，现在只有 HTTP 服务一个。`Start` 是装配这个部分的方法（方法作为值，见把方法当作值传递）：它做好准备工作，返回一个一直运行、直到收到停止信号才返回的函数。以后加上处理后台任务的 worker 时，在这里再加一行，见[队列](../background/queue.md#running-workers)。
 
 `Open` 和 `Parts` 交给框架的 `command.Serve`（下文的入口中），由它打开资源、装配各个部分、一直运行到收到停止信号（`Ctrl-C` 或 `SIGTERM`），最后关闭资源。
 
@@ -327,4 +327,4 @@ curl localhost:8080/readyz
 
 下一章，我们创建第一张数据表。
 
-深入了解：[配置](../general/configuration.md)、[依赖装配](../concepts/dependencies.md)、[健康检查](../http/lifecycle.md#health-checks)。
+深入了解：[配置](../general/configuration.md)、[依赖装配](../concepts/dependencies.md)、[健康检查](../concepts/lifecycle.md#health-checks)。

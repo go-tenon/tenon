@@ -11,7 +11,7 @@
 - 把校验规则写在结构体标签上，不合法的输入在进入你的代码之前就被拒绝；
 - 把业务逻辑写成“动作”，HTTP 接口只是调用它的一种方式。
 
-阅读前需要了解：[第 3 章](03-database.md)；[结构体标签](../concepts/go-primer.md#struct-tags)、[错误的包装与判断](../concepts/go-primer.md#errors)、[泛型](../concepts/go-primer.md#generics)。
+阅读前需要了解：[第 3 章](03-database.md)；结构体标签、错误的包装与判断、泛型。
 
 - [模型](#model)
 - [动作](#actions)
@@ -88,7 +88,7 @@ type IDInput struct {
 
 逐个来看：
 
-- **`Article` 是模型**：一个结构体对应数据表中的一行。我们用 [Bun](https://bun.uptrace.dev) 读写数据库，它按 `bun` 标签把字段对应到表的列，例如 `bun:"id,pk"` 表示这个字段是 `id` 列，并且是主键；`bun.BaseModel` 那一行告诉 Bun 表名是 `articles`。同一个字段上的 `json` 标签是接口返回的 JSON 中的名字，所以这个结构体既用来读写数据库，也直接作为接口的返回值。`database.Timestamps` 是 `created_at`、`updated_at` 两列，嵌进模型之后，插入和修改时由 Bun 的钩子填上时间，见[自动维护时间戳](../database/quick-start.md#timestamps)。
+- **`Article` 是模型**：一个结构体对应数据表中的一行。我们用 [Bun](https://bun.uptrace.dev) 读写数据库，它按 `bun` 标签把字段对应到表的列，例如 `bun:"id,pk"` 表示这个字段是 `id` 列，并且是主键；`bun.BaseModel` 那一行告诉 Bun 表名是 `articles`。同一个字段上的 `json` 标签是接口返回的 JSON 中的名字，所以这个结构体既用来读写数据库，也直接作为接口的返回值。`database.Timestamps` 是 `created_at`、`updated_at` 两列，嵌进模型之后，插入和修改时由 Bun 的钩子填上时间，见[自动维护时间戳](../database/database.md#timestamps)。
 - **业务错误用 `errorx.Define` 定义。** 第一个参数是错误的分类，决定 HTTP 状态码：`NotFound` 是 404，`Conflict`（冲突）是 409。第二个参数是错误码，例如 `article.slug_taken`，客户端按它判断发生了什么，显示相应的提示。见[错误处理](../general/errors.md)。
 - **`Changes` 是新建和修改时提交的内容。** 字段上的 `minLength`、`maxLength`、`pattern` 等标签就是校验规则：标题不能为空、最长 200 个字符；slug 只能是小写字母、数字和连字符。不符合时，接口直接返回 `422`，列出每个字段的问题，你的代码不会被调用。见[验证](../http/validation.md)。
 - **`find`** 按 ID 读取一篇文章。查不到时数据库返回 `sql.ErrNoRows`，`find` 把它转换为业务错误 `ErrNotFound`，客户端就会得到 404。参数 `db` 的类型 `bun.IDB` 是一个接口：数据库连接池和事务都实现了它，所以同一个函数在事务内外都能用。
@@ -140,7 +140,7 @@ func (a *List) HTTP(ctx context.Context, in *ListInput) (*ListOutput, error) {
 
 - `ListInput` 中嵌入了 `page.OffsetParams`，接口就能接受 `?page=2&per_page=20` 这样的分页参数，默认第 1 页、每页 20 条。`in.Limit()` 和 `in.Offset()` 把它们换算成 SQL 的 `LIMIT` 和 `OFFSET`。
 - `ScanAndCount` 一次读出这一页的数据和符合条件的总数，前端据此显示页码。
-- `page.Offset[Article]` 是“一页文章”：`items` 是这一页的文章，`total` 是总数（见[泛型](../concepts/go-primer.md#generics)）。
+- `page.Offset[Article]` 是“一页文章”：`items` 是这一页的文章，`total` 是总数（见泛型）。
 - 排序写成 `created_at DESC, id DESC`：两篇文章的创建时间可能相同，再按 `id` 排序，分页时顺序才是稳定的，不会在两页之间重复或者漏掉一篇。
 
 读取一篇文章，用上面写好的 `find`。新建 `internal/article/get.go`：
@@ -334,7 +334,7 @@ func RegisterRoutes(api *rest.API, db *bun.DB) {
 - **`OperationID`** 是接口的名字，生成的前端客户端按它分组：`article-list` 就是前端的 `api.article.list()`，`article-create` 是 `api.article.create()`。
 - **路径中的 `{id}`** 对应 `IDInput` 中带 `path:"id"` 标签的字段。
 - **每个接口都要声明访问策略**，现在都是公开的 `rest.Public()`，任何人都能调用；忘记声明时，程序启动就会报错。第 6 章加上登录后，写文章的接口会改为需要登录。
-- `NewList(db).HTTP` 先用 `db` 创建动作，再把它的 `HTTP` 方法交给 `rest.Register`（见[把方法当作值传递](../concepts/go-primer.md#method-values)）。
+- `NewList(db).HTTP` 先用 `db` 创建动作，再把它的 `HTTP` 方法交给 `rest.Register`（见把方法当作值传递）。
 
 <a id="messages"></a>
 ## 错误提示

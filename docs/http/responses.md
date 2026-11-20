@@ -4,7 +4,7 @@
 
 本页先介绍怎样返回一个对象，再介绍列表接口最常用的分页、筛选和排序。
 
-阅读前需要了解：[请求](requests.md)；[泛型](../concepts/go-primer.md#generics)（分页的 `page.Offset[T]`）。
+阅读前需要了解：[请求](requests.md)；泛型（分页的 `page.Offset[T]`）。
 
 - [示例用法](#creating-responses)
     - [JSON 响应](#json-responses)

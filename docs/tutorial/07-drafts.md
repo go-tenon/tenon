@@ -14,7 +14,7 @@
 - 区分“认证”和“授权”：前者确认你是谁，后者决定你能做什么；
 - 在事务中检查权限，避免检查和修改之间被别的请求插进来。
 
-阅读前需要了解：[第 6 章](06-login.md)；[数据库事务](../database/quick-start.md#transactions)是什么。
+阅读前需要了解：[第 6 章](06-login.md)；[数据库事务](../database/database.md#transactions)是什么。
 
 - [加列](#migration)
 - [谁能做什么](#rules)
@@ -806,4 +806,4 @@ go run ./cmd/blog user create --name 小红 --email hong@example.com --password 
 
 下一章给博客加上运营后台：用角色管理作者的权限。
 
-深入了解：[授权](../security/authorization.md)、[数据库事务](../database/quick-start.md#transactions)。
+深入了解：[授权](../security/authorization.md)、[数据库事务](../database/database.md#transactions)。

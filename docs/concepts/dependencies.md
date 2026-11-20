@@ -1,50 +1,16 @@
 # 依赖装配
 
-应用中的每一部分都依赖别的东西：业务动作需要数据库，发送通知需要邮件服务，广播需要 NATS。依赖装配说的就是这件事：这些依赖由谁创建、怎样交到需要它们的代码手里、最后由谁关闭。
+业务代码通过构造函数的参数声明它需要的依赖；应用的入口（`internal/bootstrap`）创建这些依赖、传进去，在退出时关闭它们。创建和传递都是普通的 Go 代码。
 
-Tenon 的做法很简单：业务代码通过**构造函数的参数**声明它需要什么，应用的**入口**按顺序创建这些依赖并传进去。所有的创建和传递都是你能直接读到的普通 Go 代码，没有在背后自动完成的步骤。
+包：`cleanup`、`command`。
 
-阅读前需要了解：[入门教程第 2 章](../tutorial/02-infrastructure.md)（这一页解释其中 `bootstrap` 包的写法）；[defer 与结束后台工作](go-primer.md#cleanup)。
+- 依赖都通过参数显式传递。包级变量只用于只读的值，例如错误定义和正则表达式。
+- 业务代码接收社区组件的原生类型，例如 `*bun.DB`、`*slog.Logger`、`*nats.Conn`。
 
-- [为什么这样做](#why)
-- [构造函数注入](#constructor-injection)
-- [在入口中组装应用](#assembling-the-application)
-    - [多个运行部分](#running-parts)
-    - [只在执行时装配的命令](#deferred-commands)
-- [关闭资源](#closing-resources)
-- [在测试中替换依赖](#replacing-dependencies-in-tests)
-- [常见问题](#troubleshooting)
-- [API 参考](#api-reference)
+<a id="constructor-injection"></a>
+## 构造函数注入
 
-<a id="why"></a>
-## 为什么这样做
-
-举一个例子会更清楚。假设“获取文章”需要查询数据库，最直接的写法是在用到的地方自己打开连接：
-
-```go
-func GetArticle(ctx context.Context, id uuid.UUID) (*Article, error) {
-    db, err := database.Open(ctx, loadConfig().Database)
-    if err != nil {
-        return nil, err
-    }
-    defer db.Close()
-    // 查询文章……
-}
-```
-
-这样能工作，但每个请求都会打开一个新的连接池，很快就会把数据库的连接用光。于是你把连接池放进一个全局变量，在启动时打开一次：
-
-```go
-var DB *bun.DB // 在 main 中赋值
-
-func GetArticle(ctx context.Context, id uuid.UUID) (*Article, error) {
-    // 使用 DB 查询文章……
-}
-```
-
-这也能工作，直到你开始写测试。测试想用一个独立的测试数据库，就得在测试开始前修改全局的 `DB`，而并行运行的测试会互相覆盖它。再往后，只是打印帮助的命令，也会因为某个包在初始化时用到了 `DB` 而去连接数据库；读代码的人也很难回答“这个函数到底用到了哪些资源”。
-
-构造函数注入把这些问题一次解决了。依赖写在构造函数的参数里，谁需要什么一目了然；入口在启动时创建一次连接池，传给所有需要它的代码；测试只要传入另一个连接池即可：
+[业务动作](actions.md)在构造函数中接收依赖，保存在字段中，方法执行时使用：
 
 ```go
 type Get struct {
@@ -54,16 +20,7 @@ type Get struct {
 func NewGet(db *bun.DB) *Get {
     return &Get{db: db}
 }
-```
 
-此外，缺少依赖时代码根本无法编译；资源由谁打开、由谁关闭，看入口的代码就清楚了。
-
-<a id="constructor-injection"></a>
-## 构造函数注入
-
-[业务动作](actions.md)在构造函数中接收依赖，并保存在结构体的字段中。它的方法使用这些字段：
-
-```go
 func (a *Get) Handle(ctx context.Context, id uuid.UUID) (*Article, error) {
     item := new(Article)
     err := a.db.NewSelect().Model(item).Where("id = ?", id).Scan(ctx)
@@ -71,17 +28,14 @@ func (a *Get) Handle(ctx context.Context, id uuid.UUID) (*Article, error) {
 }
 ```
 
-注意这里接收的是 Bun 原生的 `*bun.DB`。在 Tenon 中，你使用的始终是社区组件的原生对象，学到的用法在别处同样适用。
-
-方法的第一个参数是 `ctx`。它携带请求的取消信号和截止时间，应当一路传给数据库查询等下游调用，这样请求超时或客户端断开时，查询也会随之停止。
-
-> [!IMPORTANT]
-> 构造函数只**保存**依赖，执行时才**使用**它们。生成 OpenAPI 文档、列出路由和声明命令时，业务动作会被构造，但传入的依赖都是零值，见[多个运行部分](#running-parts)和[只在执行时装配的命令](#deferred-commands)。
+- 方法的第一个参数是 `ctx`，一路传给数据库查询和外部调用：请求超时、客户端断开或进程停止时，它们随之停下。
+- 构造函数只保存依赖，执行时才使用它们。生成 OpenAPI 文档、列出路由和声明命令时，动作用零值的依赖构造，构造时使用依赖会 panic（`nil pointer dereference`）。
+- 一个动作需要另一个模块的能力时，在自己的包中声明只包含所需方法的小接口，构造函数接收这个接口，见[在测试中替换依赖](#replacing-dependencies-in-tests)。
 
 <a id="assembling-the-application"></a>
 ## 在入口中组装应用
 
-入口负责创建所有的依赖。顺序很自然：先创建被依赖的对象，再创建依赖它们的对象。下面是一个只有一个接口的完整程序，你可以直接运行它：
+入口先创建被依赖的对象，再创建依赖它们的对象。下面是只有一个接口的完整程序：
 
 ```go
 package main
@@ -158,23 +112,17 @@ func main() {
 }
 ```
 
-我们按顺序看一下这段代码做了什么：
+- `command.Run` 加载配置，进程收到 `SIGINT`、`SIGTERM` 时取消 `ctx`。
+- 每打开一个资源，紧接着把关闭它的函数登记到 `stack`，见[关闭资源](#closing-resources)。
+- `httpx.ListenAndServe` 等正在处理的请求全部完成才返回，数据库在最后一个请求结束之后才关闭。
+- 每个路由都要声明访问策略，这里用 `rest.Public()` 声明为公开接口，见[认证](../security/authentication.md)。
 
-1. `command.Run` 加载配置文件，在收到停止信号时取消 `ctx`；
-2. `serve` 打开数据库，并**立即**把关闭操作登记到 `stack`，`serve` 返回时它会被执行；
-3. 创建 Router 和 API，构造业务动作 `Count`，把它的 `HTTP` 方法注册为处理器；
-4. `httpx.ListenAndServe` 开始处理请求，直到收到停止信号。
-
-`httpx.ListenAndServe` 会等正在处理的请求全部完成之后才返回，所以数据库总是在最后一个请求结束之后才关闭。
-
-这个例子把每一步都写了出来。应用变大、有了好几个一直运行的部分以后，打开资源、运行各部分、关闭资源这几步由 `command.Serve` 完成，见下一节。
-
-每个路由都要声明访问策略，这里用 `rest.Public()` 声明为公开接口。需要登录的接口见[认证](../security/authentication.md)。
+有了几个常驻的运行部分以后，打开资源、运行各部分、关闭资源由 `command.Serve` 完成，见[多个运行部分](#running-parts)。
 
 <a id="running-parts"></a>
-### 多个运行部分
+## `bootstrap` 的 `Open` 与 `Parts`：多个运行部分
 
-应用变大以后，入口通常放在 `internal/bootstrap` 包中，并分成两部分：`App` 保存各部分共用的资源，由 `Open` 打开；HTTP 服务、[RPC 服务](../rpc/endpoints.md#running)、[队列 worker](../background/queue.md#running-workers)、[定时任务调度器](../background/scheduling.md#running-the-scheduler)各是 `App` 的一个方法，在 `Parts` 中登记。[入门教程](../tutorial/02-infrastructure.md#assembling)按这个结构写出了完整的 `app.go` 和 `http.go`：
+`internal/bootstrap` 中，`App` 保存各部分共用的资源，由 `Open` 打开；HTTP 服务、[RPC 服务](../rpc/endpoints.md#running)、[队列 worker](../background/queue.md#running-workers)、[定时任务调度器](../background/scheduling.md#running-the-scheduler)各是 `App` 的一个方法，在 `Parts` 中登记。完整的 `app.go`、`http.go` 见[入门教程](../tutorial/02-infrastructure.md#assembling)：
 
 ```go
 // Open 打开各部分共用的资源，把关闭操作登记到 stack。
@@ -207,32 +155,23 @@ func (a *App) HTTP(d *command.Daemon) (func(context.Context) error, error) {
     }, nil
 }
 
-// Router 构造应用的全部路由：中间件、JSON API 和页面。它只保存 App 的字段、不使用它们。
-func (a *App) Router() chi.Router {
-    router := chi.NewRouter()
-    // ... 中间件与路由
-    return router
-}
-
 // DocRouter 用默认配置和没有打开任何资源的 App 构造路由，openapi、routes、client 命令用它。
 func DocRouter() chi.Routes {
     return (&App{cfg: config.Default[Config]()}).Router()
 }
 ```
 
-`main.go` 用 `command.Serve(bootstrap.Open, bootstrap.Parts)` 创建 `serve` 命令。它先调用 `Open` 打开资源，再调用每个部分的 `Start` 装配它，然后同时运行全部部分，直到收到停止信号，最后关闭资源，见[serve：运行常驻进程](../general/commands.md#serve-command)。
+`main.go` 用 `command.Serve(bootstrap.Open, bootstrap.Parts)` 创建 `serve` 命令：调用 `Open`，依次调用各部分的 `Start` 装配，全部装配成功后同时运行，收到停止信号后按逆序关闭资源，见[serve 命令](../general/commands.md#serve-command)。
 
-你会注意到，每个部分都分两步：先装配好它需要的一切，包括取得监听端口；再返回运行它的函数。这样做的好处是，路由冲突、端口被占用这类错误在开始运行之前就会返回，[不停机升级](../installation/operations.md#zero-downtime-upgrades)时，旧版本继续服务，直到新版本装配成功。
-
-`Router` 有两个调用者：`HTTP` 用打开了资源的 `App` 运行服务；`DocRouter` 用零值的 `App` 构造同一套路由，交给 [`httpcmd.Commands`](../general/commands.md#declaring-the-cli) 生成接口文档和客户端、列出路由。所以导出的文档总是与运行的服务一致，生成文档只需要源代码。相应地，`Router` 中只保存依赖，处理请求时才使用它们：例如健康检查的 `Ping` 要写成闭包，见[健康检查](../http/lifecycle.md#health-checks)。`Parts` 也一样：`serve --help` 用零值的 `App` 调用它，列出各部分的名字，所以其中只取方法值。
-
-> [!TIP]
-> 多个部分都用到的资源（数据库、NATS、缓存）放进 `Open`；只有一个部分用到的（例如 HTTP 中间件）在它自己的方法里创建。
+- `Start` 先装配好一切（包括取得监听端口），再返回运行的函数。路由冲突、端口被占用在开始运行前返回，[不停机升级](../installation/operations.md#zero-downtime-upgrades)时旧版本继续服务。
+- `Router` 只保存 `App` 的字段：`DocRouter` 用零值的 `App` 调用它，交给 [`httpcmd.Commands`](../general/commands.md#declaring-the-cli) 离线生成文档和客户端。健康检查的 `Ping` 写成闭包，见[健康检查](lifecycle.md#health-checks)。
+- `serve --help` 用零值的 `App` 调用 `Parts`，所以 `Parts` 中只取方法值。
+- 多个部分都用到的资源（数据库、NATS、缓存）在 `Open` 中打开；只有一个部分用到的（例如 HTTP 中间件）在它自己的方法中创建。
 
 <a id="deferred-commands"></a>
-### 只在执行时装配的命令
+## `command.Bind`：只在执行时装配的命令
 
-构造命令行时还没有加载配置，也没有打开数据库。`command.Bind` 先用零值的 `App` 声明命令，执行其中一个命令时再调用 `Open`，用装配好的 `App` 重新声明并执行，命令返回后关闭资源：
+构造命令行时还没有加载配置。`command.Bind` 先用零值的 `App` 声明命令；执行其中一个命令时调用 `Open`，用装配好的 `App` 重新声明并执行，命令返回后关闭资源。`bootstrap/commands.go`：
 
 ```go
 func Commands() []*cobra.Command {
@@ -244,14 +183,12 @@ func Commands() []*cobra.Command {
 }
 ```
 
-`--help` 和参数错误在打开数据库之前就返回。写法和注意事项见[命令行](../general/commands.md#custom-commands)。
+`--help` 和参数错误在打开数据库之前返回。写法见[自定义命令](../general/commands.md#custom-commands)。
 
 <a id="closing-resources"></a>
-## 关闭资源
+## `cleanup.Stack`：关闭资源
 
-只有一两个资源时，用 `defer` 关闭就足够了。资源多了以后，事情会变得复杂：后打开的资源应当先关闭；启动到一半失败时，已经打开的资源也要释放；关闭时出现的错误要报告出来。`cleanup.Stack` 就是为此设计的。
-
-每成功打开一个资源，就登记一个关闭它的函数：
+每成功打开一个资源，紧接着登记关闭它的函数。`cfg` 是应用的配置：
 
 ```go
 var stack cleanup.Stack
@@ -267,19 +204,15 @@ stack.MustAdd("nats", func(context.Context) error {
 })
 ```
 
-`CloseWith` 会按**登记的逆序**执行这些函数，每个只执行一次，并把运行时的错误和所有关闭时的错误合并返回，`errors.Is` 可以匹配其中任何一个。
-
-关闭时使用的 context 保留传入 context 的值和截止时间，但**不继承它的取消信号**。这一点很重要：应用正是因为收到停止信号才退出的，如果关闭操作也随之取消，资源就来不及正常关闭了。传入的 context 没有截止时间时，关闭总共最多用 10 秒。
-
-> [!NOTE]
-> `cleanup.Stack` 由入口串行使用：在构建阶段登记，在退出阶段关闭，始终在同一个 goroutine 中操作。
+- `CloseWith` 按登记的逆序执行关闭函数，每个只执行一次，启动到一半失败时已打开的资源同样关闭。
+- 返回值合并了运行时的错误和所有关闭时的错误，`errors.Is` 能匹配其中任何一个；日志中的第一个错误是失败的原因。
+- 关闭用的 context 保留传入 context 的值和截止时间，不继承取消：进程正是因为停止信号才退出，关闭操作要能完成。没有截止时间时最多用 10 秒。
+- `Stack` 由入口在同一个 goroutine 中串行使用。`command.Serve` 和 `command.Bind` 把 `stack` 传给 `Open`，`Open` 只登记、不关闭。
 
 <a id="replacing-dependencies-in-tests"></a>
 ## 在测试中替换依赖
 
-在 Tenon 中，大多数测试直接使用真实的依赖，例如用 `dbtest` 为每个测试创建一个真实的数据库，见[测试](../testing/database.md#database-tests)。这比模拟数据库更可靠，也更简单。
-
-当你确实需要替换某个依赖时（例如不想在测试中真的上传到对象存储），遵循 Go 的惯例：**由使用方定义接口**。在业务包中声明一个只包含所需方法的小接口，构造函数接收这个接口：
+测试优先使用真实的依赖，例如用 `dbtest` 为每个测试创建真实的数据库，见[测试](../testing/testing.md#database-tests)。需要替换某个依赖时（例如不真的上传到对象存储），在业务包中声明只包含所需方法的小接口，构造函数接收它：
 
 ```go
 type ImageStore interface {
@@ -291,7 +224,7 @@ func NewSetCover(db *bun.DB, images ImageStore) *SetCover {
 }
 ```
 
-测试中传入一个简单的内存实现即可：
+测试中传入内存实现，`db` 是 `dbtest.Open` 创建的测试库：
 
 ```go
 type memoryImages map[string][]byte
@@ -304,99 +237,4 @@ func (m memoryImages) Put(_ context.Context, key string, data []byte) error {
 setCover := article.NewSetCover(db, memoryImages{})
 ```
 
-接口在真正需要替换实现时再引入，代码会简单得多。
-
-<a id="troubleshooting"></a>
-## 常见问题
-
-**`openapi`、`client` 等命令 panic：`nil pointer dereference`**
-
-有代码在构造路由或声明命令时**使用**了依赖，而这时依赖是零值。检查构造函数和 `RegisterRoutes` 这类登记函数，确保它们只保存依赖；方法值（例如 `db.PingContext`）改成闭包。
-
-**新加的资源在程序退出时没有关闭**
-
-打开后没有登记到 `stack`。每成功打开一个资源，紧接着调用 `stack.MustAdd`。
-
-**启动到一半失败，日志中出现多个错误**
-
-这是 `CloseWith` 合并的结果：第一个是启动失败的原因，后面是关闭已打开资源时遇到的错误。先处理第一个。
-
-**测试之间互相影响**
-
-检查是否有依赖放在了全局变量中。改为通过构造函数传入，每个测试创建自己的实例。
-
-<a id="api-reference"></a>
-## API 参考
-
-### cleanup.Stack.MustAdd
-
-```go
-func (s *Stack) MustAdd(name string, fn func(context.Context) error)
-```
-
-- **参数**
-    - `name`：资源的名称，出现在错误信息中
-    - `fn`：关闭资源的函数
-
-包 `github.com/go-tenon/tenon/cleanup`，`Stack` 的零值可以直接使用。登记一个关闭函数；`Stack` 已经关闭时 panic。`Add` 与它相同，只是以返回错误代替 panic。
-
-### cleanup.Stack.CloseWith
-
-```go
-func (s *Stack) CloseWith(ctx context.Context, runErr error) error
-```
-
-- **参数**
-    - `ctx`：保留它的值和截止时间，不继承它的取消信号
-    - `runErr`：运行时的错误，与关闭时的错误合并
-- **返回**：合并后的错误，没有错误时为 `nil`
-
-按登记的逆序执行全部关闭函数。适合在 `defer` 中使用；只关闭资源时用 `Close(ctx)`。
-
-### command.Daemon
-
-```go
-func NewDaemon(logger *slog.Logger) (*Daemon, error)
-func (d *Daemon) Listen(network, addr string) (net.Listener, error)
-func (d *Daemon) Run(ctx context.Context, runs ...func(context.Context) error) error
-func (d *Daemon) Stop()
-```
-
-包 `github.com/go-tenon/tenon/command`。常驻进程：`Listen` 取得监听端口，`Run` 报告就绪后同时运行 `runs`，直到停止。`serve` 命令创建它，并把它传给每个部分的 `Start`，应用通常不直接调用 `NewDaemon` 和 `Run`。
-
-在 systemd 的 `Type=notify-reload` 服务中运行时，`Run` 向 systemd 报告就绪，收到 `SIGHUP` 时不停机升级，见[部署](../installation/operations.md#zero-downtime-upgrades)；不在其中时，`Run` 等同于 `command.Concurrently`。
-
-> [!IMPORTANT]
-> 一个进程只创建一个 `Daemon`。所有的 `Listen` 都要在 `Run` 之前调用，进程退出前调用 `Stop`。
-
-### command.Concurrently
-
-```go
-func Concurrently(ctx context.Context, runs ...func(context.Context) error) error
-```
-
-- **参数**
-    - `runs`：同时运行的函数，它们收到同一个派生的 `ctx`
-- **返回**：合并后的错误
-
-`ctx` 被取消或者任何一个函数返回时，派生的 `ctx` 随之取消，其余的函数据此停止。在停止之前就返回 `nil` 的函数视为异常退出，返回值包含 `command.ErrStoppedEarly`。
-
-### command.Serve、command.Part
-
-见[命令行的 API 参考](../general/commands.md#api-reference)。
-
-### command.Bind
-
-```go
-func Bind[C, D any](
-    open func(ctx context.Context, cfg C, stack *cleanup.Stack) (*D, error),
-    declare func(*D) []*cobra.Command,
-) []*cobra.Command
-```
-
-- **参数**
-    - `open`：执行命令时装配依赖的函数，与 `serve` 用的是同一个，即 `bootstrap.Open`
-    - `declare`：声明命令的函数；构造命令行时收到零值的 `*D`
-- **返回**：声明的命令
-
-依赖推迟到执行时才装配，见[只在执行时装配的命令](#deferred-commands)。
+接口在真正需要替换实现时再引入。

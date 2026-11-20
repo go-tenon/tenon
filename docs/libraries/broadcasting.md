@@ -6,7 +6,7 @@
 
 它与传输方式无关：同一个 Hub 既可以推给 SSE 连接，也可以推给[实时频道](realtime.md)的 WebSocket 客户端。消息按主题（topic）分发，例如 `articles`、`room:42`。
 
-阅读前需要了解：[服务端推送](../http/sse.md)；[NATS](nats.md)；[提交后执行](../database/quick-start.md#after-commit)。
+阅读前需要了解：[服务端推送](../http/sse.md)；[NATS](nats.md)；[提交后执行](../database/database.md#after-commit)。
 
 - [示例用法](#example-usage)
 - [创建 Hub](#creating-the-hub)
@@ -57,7 +57,7 @@ stack.MustAdd("broadcast", func(context.Context) error { return hub.Close() })
 <a id="publishing-events"></a>
 ## 发布事件
 
-例如文章发布成功后，“发布文章”的业务动作发布一个事件，`hub` 由它的构造函数传入。事件在发布文章的事务中用 [AfterCommit](../database/quick-start.md#after-commit) 登记，事务提交之后才发出：
+例如文章发布成功后，“发布文章”的业务动作发布一个事件，`hub` 由它的构造函数传入。事件在发布文章的事务中用 [AfterCommit](../database/database.md#after-commit) 登记，事务提交之后才发出：
 
 ```go
 type ArticlePublished struct {

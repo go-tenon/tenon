@@ -329,7 +329,7 @@ return can("articles:write") && <Button>写文章</Button>
 <a id="errors"></a>
 ## 错误页
 
-- `RouteError` 是路由的默认错误组件：没有权限（`ForbiddenError`、`403`）显示 403，不存在（`404`）显示 404 和服务端的说明，断网显示网络错误，其他错误显示可以重试的错误页和请求 ID。它同时把错误报告给 `createApp` 的 `onError`，见[前端观测](../general/frontend-observability.md#route-errors)。
+- `RouteError` 是路由的默认错误组件：没有权限（`ForbiddenError`、`403`）显示 403，不存在（`404`）显示 404 和服务端的说明，断网显示网络错误，其他错误显示可以重试的错误页和请求 ID。它同时把错误报告给 `createApp` 的 `onError`，见[前端观测](observability.md#route-errors)。
 - `NotFoundPage` 是没有匹配到路由时的 404 页。
 - `ErrorPage` 可以直接使用，`kind` 是 `forbidden`、`not_found`、`server` 或 `network`，标题、说明和操作都可以替换。
 
@@ -417,7 +417,7 @@ bun run playground
 | `useApp`、`useSignedIn`、`useCan` | 在应用的路由之内使用 |
 | `ForbiddenError`、`isForbidden` | 缺少权限时抛出的错误 |
 | `RouteError`、`NotFoundPage`、`ErrorPage` | 错误页 |
-| `useReportError`、`shouldReport` | 页面出错时报告给前端观测的 SDK，见[前端观测](../general/frontend-observability.md#route-errors) |
+| `useReportError`、`shouldReport` | 页面出错时报告给前端观测的 SDK，见[前端观测](observability.md#route-errors) |
 | `NewVersionNotice`、`useNewVersion`、`watchVersion` | 新版本提示 |
-| `tenon({ prerender, version, sourcemaps })` | `@go-tenon/start/vite` 的 Vite 插件：TanStack Start、React 和构建版本；`sourcemaps` 见[前端观测](../general/frontend-observability.md#source-maps) |
+| `tenon({ prerender, version, sourcemaps })` | `@go-tenon/start/vite` 的 Vite 插件：TanStack Start、React 和构建版本；`sourcemaps` 见[前端观测](observability.md#source-maps) |
 | `appStorage(id)` | 按应用隔离的本地存储 |

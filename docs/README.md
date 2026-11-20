@@ -16,15 +16,16 @@ Tenon 是用 Go 构建后端服务的框架。业务逻辑写成[业务动作](c
 - [目录结构](concepts/structure.md)：目录、命名、框架包一览
 - [业务动作](concepts/actions.md)：一个用例一个类型，各入口调用它
 - [依赖装配](concepts/dependencies.md)：在入口创建依赖，传给业务代码
-- [应用生命周期](concepts/lifecycle.md)、[HTTP 服务的生命周期](http/lifecycle.md)：启动、平滑停止、健康检查
-- [Go 知识准备](concepts/go-primer.md)
+- [生命周期](concepts/lifecycle.md)：启动、请求的处理、平滑停止、健康检查
 
 ## 基础
 
 - [配置](general/configuration.md)、[错误处理](general/errors.md)、[本地化](general/localization.md)、[命令行](general/commands.md)
-- [日志](general/logging.md)、[日志进阶](general/logging-advanced.md)、[可观测性](general/telemetry.md)
-- [数据库](database/quick-start.md)、[数据库进阶](database/advanced.md)、[迁移](database/migrations.md)
-- [测试](testing/overview.md)、[测试数据库与业务动作](testing/database.md)、[测试 HTTP 与命令](testing/http.md)
+- [日志](general/logging.md)：请求 ID、处理链、脱敏、测试日志
+- [可观测性](general/telemetry.md)：指标、链路、错误追踪
+- [数据库](database/database.md)：连接、模型、查询、事务、软删除、只读副本
+- [迁移](database/migrations.md)
+- [测试](testing/testing.md)：`dbtest`、业务动作、HTTP 接口、命令、控制时间
 
 ## HTTP 接口
 
@@ -80,7 +81,7 @@ Tenon 是用 Go 构建后端服务的框架。业务逻辑写成[业务动作](c
 - [资源与设置页面](frontend/resources.md)：在 Go 中声明增删改查页面
 - [后台功能](frontend/features.md)：通知、操作记录、导入导出、AI 对话的界面
 - [官网与文档站](frontend/site.md)、[托管与服务端渲染](frontend/hosting.md)、[TanStack Start 的接入](frontend/start.md)
-- [前端观测](general/frontend-observability.md)
+- [前端观测](frontend/observability.md)
 
 ## 客户端
 

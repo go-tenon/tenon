@@ -13,4 +13,4 @@
 7. [草稿与发布](07-drafts.md)：给表加列，授权，事务中检查
 8. [后台：作者与角色](08-admin.md)：角色与权限，在 Go 中声明资源，按声明渲染的运营后台
 
-读完后可以继续阅读：[缓存](../libraries/cache.md)、[队列](../background/queue.md)、[定时任务](../background/scheduling.md)、[文件存储](../libraries/filesystem.md)、[测试](../testing/overview.md)、[部署](../installation/deployment.md)。
+读完后可以继续阅读：[缓存](../libraries/cache.md)、[队列](../background/queue.md)、[定时任务](../background/scheduling.md)、[文件存储](../libraries/filesystem.md)、[测试](../testing/testing.md)、[部署](../installation/deployment.md)。

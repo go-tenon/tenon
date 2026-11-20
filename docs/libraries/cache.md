@@ -8,7 +8,7 @@ Tenon 不封装 Memcached 客户端，而是直接使用社区的 [gomemcache](h
 
 几个术语：**命中**是要读的数据在缓存中，**未命中**是不在、要去查数据库；**过期时间**（TTL）是数据在缓存中保留多久。
 
-阅读前需要了解：[依赖装配](../concepts/dependencies.md)；[泛型](../concepts/go-primer.md#generics)。
+阅读前需要了解：[依赖装配](../concepts/dependencies.md)；泛型。
 
 - [示例用法](#example-usage)
 - [配置缓存](#assembling-cache)
@@ -188,7 +188,7 @@ cache.Missing(article.ErrNotFound.New)
 
 文章被修改后，你需要删除它的缓存，让下一次读取重新加载。删除应当放在**事务提交成功之后**：如果事务回滚了，数据库中的数据没有变，缓存也应当保持不变。
 
-在事务中用 [AfterCommit](../database/quick-start.md#after-commit) 登记删除，它会在提交之后执行：
+在事务中用 [AfterCommit](../database/database.md#after-commit) 登记删除，它会在提交之后执行：
 
 ```go
 err := database.RunInTx(ctx, a.db, nil, func(ctx context.Context, tx database.Tx) error {
@@ -273,7 +273,7 @@ mc := memcache.NewFromSelector(ring)
 <a id="testing"></a>
 ## 测试
 
-测试缓存逻辑时，请连接真实的 Memcached。和[数据库测试](../testing/database.md#database-tests)一样，通过环境变量取得服务器的地址，并让每个测试使用随机的前缀，这样并行运行的测试相互隔离：
+测试缓存逻辑时，请连接真实的 Memcached。和[数据库测试](../testing/testing.md#database-tests)一样，通过环境变量取得服务器的地址，并让每个测试使用随机的前缀，这样并行运行的测试相互隔离：
 
 ```go
 func newTestCache(t *testing.T) *cache.Cache[*article.Article] {
