@@ -31,7 +31,7 @@ import {
   type RouterContext,
   requireAuth,
   SchedulePanel,
-  SettingsForm,
+  SettingsPage,
   SiteLayout,
   SplitAuthLayout,
   TimeZoneProvider,
@@ -74,6 +74,7 @@ import {
   customerExport,
   customerImport,
   customersModel,
+  notifySettings,
   queryClient,
   queueApi,
   scheduleApi,
@@ -367,10 +368,12 @@ function frameApp() {
       page(layout, "/queue", "队列", "list", () => <QueuePanel api={queueApi} />),
       page(layout, "/schedules", "定时任务", "clock", () => <SchedulePanel api={scheduleApi} />),
       page(layout, "/billing", "计费", "wallet", () => <FramePlaceholder title="计费" />, "billing:manage"),
+      // 两组设置各占一个页内标签，标签的文字是设置的显示文字；店铺设置带一句说明。
       page(layout, "/settings", "设置", "settings", () => (
-        <Page title="设置" description="店铺的基本信息，对所有渠道生效。">
-          <SettingsForm model={shopSettings} title={null} />
-        </Page>
+        <SettingsPage
+          title="设置"
+          groups={[{ model: shopSettings, description: "店铺的基本信息，对所有渠道生效。" }, notifySettings]}
+        />
       )),
     ]),
   ])

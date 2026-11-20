@@ -1,6 +1,6 @@
 # 资源与设置页面
 
-后台的大部分页面是增删改查：列表、详情、表单和行上的操作。资源在 Go 中声明，`tenon generate` 生成资源定义 `resources.ts`，`@go-tenon/ui` 的 `ResourcePage` 按它渲染整个页面，不用写页面代码。只有一组值的设置页面同样声明，由 `SettingsForm` 渲染。入门教程的[后台：作者与角色](../tutorial/08-admin.md)是一个完整的例子。字段的类型、枚举和校验规则都取自接口的 OpenAPI schema，后端改了字段、校验或枚举，重新生成后页面随之改变。
+后台的大部分页面是增删改查：列表、详情、表单和行上的操作。资源在 Go 中声明，`tenon generate` 生成资源定义 `resources.ts`，`@go-tenon/ui` 的 `ResourcePage` 按它渲染整个页面，不用写页面代码。只有一组值的设置页面同样声明，由 `SettingsForm` 渲染，几组设置由 `SettingsPage` 分成标签。入门教程的[后台：作者与角色](../tutorial/08-admin.md)是一个完整的例子。字段的类型、枚举和校验规则都取自接口的 OpenAPI schema，后端改了字段、校验或枚举，重新生成后页面随之改变。
 
 需要自己写列表或表单时，见[列表与表单](lists-forms.md)。
 
@@ -13,6 +13,7 @@
 - [前端的资源模型](#model)
 - [资源页面](#admin)
 - [设置页面](#settings)
+    - [多组设置](#settings-groups)
 - [常见问题](#troubleshooting)
 - [API 参考](#api-reference)
 
@@ -364,6 +365,30 @@ function Settings() {
 - `autoSave` 去掉保存按钮：修改后停下一会儿就保存，表单下方显示“有未保存的修改”“保存中…”“已保存”；校验不通过时不保存，离开页面时保存还在等待的修改。
 - `inputs` 覆盖某个字段的输入组件，与 `ResourcePage` 相同。
 
+<a id="settings-groups"></a>
+### 多组设置
+
+设置项多了以后按用途分成几组，例如站点、邮件、支付各是一组。每组在 Go 中各自用 `settings.New` 创建、各自用 `api.Settings` 声明，保存在 `settings` 表的不同行中，修改一组时不会覆盖另一组。页面用 `SettingsPage` 把它们放在一起，每组一个[页内标签](layout.md#page-tabs)：
+
+```tsx
+import { SettingsPage } from "@go-tenon/ui"
+import { mailSettings, siteSettings } from "../../resources"
+
+function Settings() {
+  return (
+    <SettingsPage
+      title="系统设置"
+      groups={[{ model: siteSettings, description: "显示在页面顶栏和邮件中。" }, mailSettings]}
+      autoSave
+    />
+  )
+}
+```
+
+- 标签的文字是这组设置的显示文字 `<名称>.title`，地址中的 `?tab=` 是它的名称；第一组的标签不写进地址。标签的其他行为与 `Page` 的 `tabs` 相同：没打开过的标签不读取设置，打开过的保留填了一半的表单。
+- 当前身份没有读取权限的组不显示，所以每组可以要求不同的权限，例如支付设置只给财务看。只剩一组时不显示标签，直接显示表单。
+- `groups` 中直接写设置模型，或者写 `{ model, description, inputs }` 给这组加上说明、覆盖输入组件。`autoSave` 对每组都生效；其他选项与 `Page` 相同，`children` 在标签的上面。
+
 <a id="troubleshooting"></a>
 ## 常见问题
 
@@ -401,3 +426,4 @@ function Settings() {
 | `useResourceForm`、`ResourceFormContext`、`ResourceFormButtons` | `@go-tenon/ui`：自己写表单的内容，页面的其余部分由 `ResourceFormPage`、`ResourceForm` 提供，见[自己写表单的内容](#custom-forms) |
 | `FieldKind`、`ResourceField` | 模型中字段的输入方式和显示文字 |
 | `SettingsForm` | `@go-tenon/ui`：设置表单 |
+| `SettingsPage`、`SettingsGroup` | `@go-tenon/ui`：多组设置的页面，每组一个页内标签，见[多组设置](#settings-groups) |
