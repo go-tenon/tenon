@@ -299,7 +299,7 @@ setup, err := users.SetupTOTP(ctx, db, ref, "alice@example.com")
 codes, err := users.ConfirmTOTP(ctx, db, ref, logintest.TOTP(setup.Secret))
 ```
 
-同一个 30 秒内的验证码只能用一次，测试接着还要输入时（例如启用后重新登录），在 [`synctest`](../testing/overview.md#controlling-time) 中 `time.Sleep(30 * time.Second)`。密码哈希按生产配置计算很慢，`logintest.Realm` 用的是成本最低的 bcrypt；自己组装 `Realm` 时用 `hashing.New(hashing.Config{Driver: "bcrypt", Bcrypt: hashing.BcryptConfig{Cost: 4}})`。
+同一个 30 秒内的验证码只能用一次，测试接着还要输入时（例如启用后重新登录），在 [`synctest`](../testing/testing.md#controlling-time) 中 `time.Sleep(30 * time.Second)`。密码哈希按生产配置计算很慢，`logintest.Realm` 用的是成本最低的 bcrypt；自己组装 `Realm` 时用 `hashing.New(hashing.Config{Driver: "bcrypt", Bcrypt: hashing.BcryptConfig{Cost: 4}})`。
 
 <a id="troubleshooting"></a>
 ## 常见问题

@@ -1,110 +1,21 @@
 # 错误处理
 
-每个接口都会遇到失败：用户提交的数据不对，要找的文章不存在，或者数据库突然连不上。Tenon 把这些失败分成三类，处理方式各不相同：
+业务代码只返回错误。入口把错误转换为 HTTP 状态码、RPC 错误或命令的退出码，生成错误响应，并记录日志。
 
-| 失败类型 | 例子 | 怎么处理 |
+包：`errorx`。
+
+| 失败 | 例子 | 写法 |
 | --- | --- | --- |
-| **输入格式错误** | 标题为空、slug 含有空格 | 在输入类型上声明规则，框架验证，在处理器之前返回 |
-| **可预期的业务结果** | 文章不存在、slug 已被使用 | 用 `errorx` 定义带错误码的业务错误并返回 |
-| **意料之外的故障** | 数据库连不上、代码有 bug | 用 `errors.Wrap` 补充上下文后返回，调用方只看到一个通用的错误，例如 HTTP 接口返回 `500` |
+| 输入格式错误 | 标题为空、slug 含有空格 | 在输入类型上写校验规则，框架在处理器之前返回 `422`，见[校验](../http/validation.md) |
+| 可预期的业务结果 | 文章不存在、slug 已被使用 | 用 `errorx.Define` 定义业务错误，返回它的 `New` 或 `Wrap` |
+| 意料之外的故障 | 数据库连不上、代码有 bug | 用 `errors.Wrap` 补充上下文后返回，客户端只收到 `500` |
 
-好消息是，无论哪一类，你的业务代码都只需要**返回错误**。把错误转换为 HTTP 状态码或命令的退出码、生成错误响应、记录日志，都由框架在入口（调用进出程序的地方）统一完成。
-
-阅读前需要了解：[错误的包装与判断](../concepts/go-primer.md#errors)；[入门教程第 4 章](../tutorial/04-api.md)中的业务错误。
-
-- [示例用法](#example-usage)
-- [一个完整的例子](#example)
-    - [声明输入格式](#declaring-input)
-    - [定义业务错误](#defining-errors)
-    - [在动作中返回错误](#returning-errors)
-    - [HTTP 入口](#calling-from-handlers)
-    - [客户端看到的响应](#what-clients-see)
-    - [服务端日志](#what-operators-see)
-- [选择错误分类](#error-kinds)
-    - [在其他入口中](#entry-mapping)
-- [处理底层错误](#wrapping-errors)
-- [在提示中带上参数](#public-parameters)
-- [判断错误](#inspecting-errors)
-- [HTTP 响应格式](#response-format)
-- [错误日志](#reporting-errors)
-- [常见问题](#troubleshooting)
-- [进阶](#advanced)
-    - [原生 Huma 错误](#huma-errors)
-    - [跨进程传递](#cross-process-errors)
-- [API 参考](#api-reference)
-
-<a id="example-usage"></a>
-## 示例用法
-
-先定义一个业务错误，然后在业务动作中返回它：
-
-```go
-var ErrNotFound = errorx.Define(errorx.NotFound, "article.not_found")
-
-func (a *Get) Handle(ctx context.Context, id uuid.UUID) (*Article, error) {
-    item := new(Article)
-    err := a.db.NewSelect().Model(item).Where("id = ?", id).Scan(ctx)
-    if errors.Is(err, sql.ErrNoRows) {
-        return nil, ErrNotFound.New()
-    }
-    if err != nil {
-        return nil, errors.Wrap(err, "load article")
-    }
-    return item, nil
-}
-```
-
-文章不存在时，客户端收到的响应是这样的：
-
-```http
-HTTP/1.1 404 Not Found
-Content-Type: application/problem+json
-
-{"title": "Not Found", "status": 404, "detail": "文章不存在", "code": "article.not_found"}
-```
-
-这里有两种错误。`ErrNotFound` 是**可预期的结果**，客户端根据 `code` 决定怎么处理；数据库的其他错误是**意料之外的故障**，用 `errors.Wrap` 说明“在做什么时失败了”，客户端只会收到一个通用的 `500`。`errors` 是 [cockroachdb/errors](https://github.com/cockroachdb/errors)，它与标准库的 `errors` 兼容，`Wrap` 还会记录堆栈。
-
-下一节用一个完整的例子，看看这三类失败分别是怎样处理的。
+代码中的 `errors` 是 [cockroachdb/errors](https://github.com/cockroachdb/errors)，与标准库的 `errors` 兼容，`errors.Wrap` 记录堆栈。
 
 <a id="example"></a>
-## 一个完整的例子
+## 示例
 
-我们来实现“修改文章”的接口 `PUT /articles/{id}`。它可能遇到这些失败：
-
-- 提交的标题为空，或者 slug 的格式不对；
-- 文章不存在；
-- 当前用户不是文章的作者；
-- 文章已经发布，却试图修改它的 slug（已发布文章的网址要保持稳定）；
-- 新的 slug 已被其他文章使用；
-- 数据库出现故障。
-
-下面一步步来处理它们。文章模型 `Article` 有 `ID`、`AuthorID`、`Title`、`Slug`、`Content`、`Status` 几个字段。
-
-<a id="declaring-input"></a>
-### 声明输入格式
-
-第一类失败最简单。格式上的要求直接写在输入类型的结构体标签上，不符合要求的请求会被框架拦截并返回 `422`，到达处理器的都是合格的输入。输入类型由路径参数和请求体组成，验证规则写在请求体 `Changes` 上：
-
-```go
-type Changes struct {
-    Title   string `json:"title" minLength:"1" maxLength:"200"`
-    Slug    string `json:"slug" maxLength:"100" pattern:"^[a-z0-9]+(-[a-z0-9]+)*$" patternDescription:"小写字母、数字和连字符"`
-    Content string `json:"content"`
-}
-
-type UpdateInput struct {
-    ID   uuid.UUID `path:"id"`
-    Body Changes
-}
-```
-
-可用的验证规则见[验证](../http/validation.md)。
-
-<a id="defining-errors"></a>
-### 定义业务错误
-
-“文章不存在”“slug 已被使用”这类失败，要查询数据或依赖业务状态才能判断，结构体标签无能为力。它们用 `errorx.Define` 定义为业务错误：
+修改文章的业务动作：只有作者能改，已发布文章的 slug 不能改，slug 不能与其他文章重复。`a.db` 是入口打开的 `*bun.DB`，`Changes` 是请求体，标题和 slug 的格式由校验规则检查。
 
 ```go
 var (
@@ -113,48 +24,30 @@ var (
     ErrSlugLocked = errorx.Define(errorx.InvalidArgument, "article.slug_locked")
     ErrSlugTaken  = errorx.Define(errorx.Conflict, "article.slug_taken")
 )
-```
-
-第一个参数是**分类**，它决定了错误的性质，以及各个入口怎样呈现它，例如 HTTP 状态码（见[选择错误分类](#error-kinds)）；第二个参数是**错误码**，客户端根据它判断发生了什么。错误码推荐使用 `资源.原因` 的形式，全部小写，单词之间用下划线连接。错误码在整个应用中必须唯一。
-
-<a id="returning-errors"></a>
-### 在动作中返回错误
-
-接着，在[业务动作](../concepts/actions.md) `Update` 的 `Handle` 方法中返回这些错误。读取、检查和更新在同一个事务中完成，原因见[授权](../security/authorization.md#checking-in-transactions)：
-
-```go
-type Update struct {
-    db *bun.DB
-}
-
-func NewUpdate(db *bun.DB) *Update {
-    return &Update{db: db}
-}
 
 func (a *Update) Handle(ctx context.Context, subject identity.Subject, id uuid.UUID, c Changes) (*Article, error) {
     item := new(Article)
     err := database.RunInTx(ctx, a.db, nil, func(ctx context.Context, tx database.Tx) error {
         err := tx.NewSelect().Model(item).Where("id = ?", id).For("UPDATE").Scan(ctx)
         if errors.Is(err, sql.ErrNoRows) {
-            return ErrNotFound.New() // ① 可预期：文章不存在
+            return ErrNotFound.New() // 可预期的结果
         }
         if err != nil {
-            return errors.Wrap(err, "load article") // ③ 意料之外：数据库故障
+            return errors.Wrap(err, "load article") // 意料之外的故障
         }
         if item.AuthorID != subject.ID {
-            return ErrForbidden.New() // ① 可预期：不是作者
+            return ErrForbidden.New()
         }
         if item.Status == StatusPublished && c.Slug != item.Slug {
-            return ErrSlugLocked.New() // ① 可预期：业务规则不允许
+            return ErrSlugLocked.New()
         }
-
-        item.Title, item.Slug, item.Content = c.Title, c.Slug, c.Content
-        _, err = tx.NewUpdate().Model(item).Column("title", "slug", "content", "updated_at").WherePK().Exec(ctx)
+        item.Title, item.Slug = c.Title, c.Slug
+        _, err = tx.NewUpdate().Model(item).Column("title", "slug", "updated_at").WherePK().Exec(ctx)
         if database.IsUniqueViolation(err, "articles_slug_key") {
-            return ErrSlugTaken.Wrap(err, errorx.Public("slug", c.Slug)) // ② 可预期，保留底层原因
+            return ErrSlugTaken.Wrap(err, errorx.Public("slug", c.Slug)) // 可预期，保留底层原因
         }
         if err != nil {
-            return errors.Wrap(err, "update article") // ③ 意料之外
+            return errors.Wrap(err, "update article")
         }
         return nil
     })
@@ -165,20 +58,30 @@ func (a *Update) Handle(ctx context.Context, subject identity.Subject, id uuid.U
 }
 ```
 
-注意代码中标出的三种写法，它们覆盖了绝大多数场景：
+<a id="defining-errors"></a>
+## 用 `errorx.Define` 定义业务错误
 
-1. **可预期的失败**：调用错误模板的 `New`；
-2. **由底层错误引起的可预期失败**：例如唯一约束冲突，调用模板的 `Wrap`，把底层错误作为原因保留下来，方便排查。`errorx.Public` 附加的参数可以出现在提示文案中，见[在提示中带上参数](#public-parameters)；
-3. **意料之外的故障**：用 `errors.Wrap` 说明“在做什么时失败了”，然后原样返回。
+要查询数据或依赖业务状态才能判断的失败（文章不存在、slug 已被使用）定义为业务错误，错误模板保存为包级变量：
 
-<a id="calling-from-handlers"></a>
-### HTTP 入口
+```go
+var ErrSlugTaken = errorx.Define(errorx.Conflict, "article.slug_taken")
+```
 
-HTTP 入口直接返回 `Handle` 的错误即可，转换由框架完成：
+- 第一个参数是分类，决定 HTTP 状态码和命令的退出码，见[选择错误分类](#error-kinds)。
+- 第二个参数是错误码，客户端按它判断发生了什么。写成 `资源.原因`，全部小写，单词用下划线连接。
+- 错误码在整个应用中唯一：`errors.Is` 和客户端都按错误码区分错误。
+- 每个错误码在 `locales` 的翻译文件中写一条提示，它就是响应中的 `detail`，见[本地化](localization.md#translation-files)。
+
+<a id="returning-errors"></a>
+## 返回错误：`New`、`Wrap` 和 `errors.Wrap`
+
+业务动作的 `Handle` 返回 `ErrNotFound.New()`；由底层错误引起的可预期失败（例如唯一约束冲突）返回 `ErrSlugTaken.Wrap(err)`，底层错误留在错误链中供排查；意料之外的故障返回 `errors.Wrap(err, "load article")`。完整的写法见[示例](#example)。
+
+入口原样返回 `Handle` 的错误，不自己写状态码。HTTP 处理器的写法（`in` 是 Huma 解码的输入，`ArticleOutput` 是响应结构）：
 
 ```go
 func (a *Update) HTTP(ctx context.Context, in *UpdateInput) (*ArticleOutput, error) {
-    subject, _ := identity.FromContext(ctx) // 未认证时主体为空，Handle 会以 article.forbidden 拒绝
+    subject, _ := identity.FromContext(ctx)
     item, err := a.Handle(ctx, subject, in.ID, in.Body)
     if err != nil {
         return nil, err
@@ -187,76 +90,17 @@ func (a *Update) HTTP(ctx context.Context, in *UpdateInput) (*ArticleOutput, err
 }
 ```
 
-`ArticleOutput` 和 `toDTO` 是几个接口共用的响应结构，见[共享响应结构](../http/routing.md#shared-responses)。注册路由时，这个接口要求请求携带有效的 token，见[认证](../security/authentication.md)。
-
-<a id="what-clients-see"></a>
-### 客户端看到的响应
-
-各种情况下，客户端收到的响应如下：
-
-| 情况 | 状态码 | `code` |
-| --- | --- | --- |
-| 没有携带有效的 token | 401 | `auth.unauthenticated` |
-| 标题为空、slug 格式不对 | 422 | 无，带有 `errors` 数组 |
-| 文章不存在 | 404 | `article.not_found` |
-| 不是文章的作者 | 403 | `article.forbidden` |
-| 修改已发布文章的 slug | 422 | `article.slug_locked` |
-| slug 已被其他文章使用 | 409 | `article.slug_taken` |
-| 数据库故障 | 500 | 无 |
-
-**输入格式错误**时，响应中的 `errors` 数组逐条指出哪个字段有什么问题，客户端可以把提示显示在对应的表单字段旁边，响应的样子见[验证](../http/validation.md#validation-error-response)。
-
-**业务错误**的响应带有 `code` 字段，客户端根据它决定如何处理；`detail` 是展示给用户的文案，启用[本地化](localization.md)后会按请求的语言翻译：
-
-```http
-HTTP/1.1 409 Conflict
-Content-Type: application/problem+json
-
-{"title": "Conflict", "status": 409, "detail": "slug“hello-world”已被使用", "code": "article.slug_taken"}
-```
-
-注意 `422` 可能来自两种情况：输入格式错误带有 `errors` 数组，业务规则不允许（`article.slug_locked`）则带有 `code`。客户端只要先看有没有 `code`，就能区分它们。
-
-**意料之外的故障**时，客户端只会收到一个通用的 `500`，内部信息只留在日志中：
-
-```http
-HTTP/1.1 500 Internal Server Error
-Content-Type: application/problem+json
-
-{"title": "Internal Server Error", "status": 500, "detail": "unexpected error occurred"}
-```
-
-<a id="what-operators-see"></a>
-### 服务端日志
-
-安装默认中间件后，每个请求都有一条访问日志。对于业务错误，访问日志中会带上错误码，这就足够了：
-
-```json
-{"time":"…","level":"WARN","msg":"http request","request":{"method":"PUT","path":"/articles/0f8c","route":"/articles/{id}","ip":"203.0.113.7:51234",…},"response":{"status":409,"latency":52417,…},"code":"article.slug_taken","request_id":"9F2K…"}
-```
-
-对于 `500`，框架还会额外记录一条 `ERROR` 级别的错误日志。它的 `error` 字段是一个分组，`message` 是错误消息，`code` 是错误码，`stack` 是完整的错误链和错误发生位置的堆栈（见[错误日志](logging.md#error-logging)）。`stack` 的内容如下：
-
-```text
-load article: dial tcp 10.0.0.5:5432: connect: connection refused
-(1) attached stack trace
-  -- stack trace:
-  | example.com/app/internal/article.(*Update).Handle.func1
-  |     /app/internal/article/update.go:42
-  | ...
-Wraps: (2) load article
-Wraps: (3) dial tcp 10.0.0.5:5432: connect: connection refused
-Error types: (1) *withstack.withStack (2) *errutil.withPrefix (3) *net.OpError
-```
-
-两条日志带有相同的 `request_id`，与响应头 `X-Request-ID` 一致。用户反馈问题时，凭这个 ID 就能找到对应的日志。
+- 查不到数据时返回业务错误：直接返回 `sql.ErrNoRows` 得到的是 `500`。
+- 再包装业务错误时用 `errors.Wrap` 或 `fmt.Errorf` 的 `%w`：`errorx` 沿错误链找到业务错误；`%v` 会丢掉它，响应变成 `500`。
+- 处理器直接返回 Huma 的错误（例如 `huma.Error404NotFound`）时原样输出，不带 `code`。需要稳定的错误码时用 `errorx`。
 
 <a id="error-kinds"></a>
 ## 选择错误分类
 
-分类描述的是失败的**性质**，与调用方式无关。业务代码只选择分类，每个入口再把它转换为自己的形式：HTTP 接口转换为状态码，命令行转换为[退出码](commands.md#exit-codes)。定义错误时，选择最贴切的一个即可：
+分类描述失败的性质，与入口无关。业务代码只选择分类，各入口再把它转换为自己的形式。
 
 <a id="status-mapping"></a>
+### 分类对应的状态码和退出码
 
 | 分类 | 什么时候使用 | 例子 | HTTP 状态码 | 退出码 |
 | --- | --- | --- | --- | --- |
@@ -269,205 +113,109 @@ Error types: (1) *withstack.withStack (2) *errutil.withPrefix (3) *net.OpError
 | `errorx.Unavailable` | 依赖暂时不可用，稍后重试可能成功 | 图片存储服务超时 | 503 | 4 |
 | `errorx.Internal` | 意料之外的内部错误 | 数据出现了不一致 | 500 | 5 |
 
-不是业务错误的其他错误，一律按 `Internal` 处理。
-
-除最后两种外都是可预期的业务结果，不记录堆栈。最后两种属于**系统故障**，`New` 和 `Wrap` 会额外记录调用处的堆栈，见下一节。入口需要区分这两类时，用 `errorx.KindOf(err).Systemic()` 判断，不要借用 HTTP 状态码。
+- 不是业务错误的错误一律按 `Internal` 处理。
+- `Unavailable` 和 `Internal` 是系统故障，`New` 和 `Wrap` 在调用处记录堆栈；其余分类是可预期的结果，不记录堆栈。
+- 入口区分这两类时用 `errorx.KindOf(err).Systemic()`，不借用 HTTP 状态码。
+- 退出码的常量见[退出码](commands.md#exit-codes)。
 
 <a id="entry-mapping"></a>
-### 在其他入口中
+### 其他入口怎样呈现业务错误
 
-其他入口同样只看分类，不需要业务代码做任何事：
+各入口只看分类，业务代码不用为入口做任何事：
 
-- **MCP 工具**：业务错误作为工具的错误结果返回给模型，内容是错误码和翻译后的消息；系统故障只返回通用的提示和请求 ID，原因记录在错误日志中，见 [MCP 服务](../ai/mcp.md)。
-- **实时频道**：订阅授权返回系统故障时，客户端稍后重新订阅；返回其他错误时拒绝订阅，见[实时频道](../libraries/realtime.md)。
-- **其他入口的提示**：需要把业务错误翻译成给人看的提示时，用 [`i18n.ErrorMessage`](localization.md#outside-http)，和 HTTP 响应的 `detail` 使用同一条译文；需要请求 ID 时用 [`logging.RequestID`](logging.md#request-correlation)。
-- **队列任务**：系统故障和 `ResourceExhausted` 稍后重试，带有 `RetryAfter` 时按给出的时间重试；其他业务错误重试的结果不会不同，任务直接转入失败任务表，见[失败与重试](../background/queue.md#failures-and-retries)。
+- [MCP 工具](../ai/mcp.md)：业务错误返回错误码和翻译后的提示；系统故障只返回通用的提示和请求 ID。
+- [实时频道](../libraries/realtime.md)：订阅授权返回系统故障时客户端稍后重新订阅，其他错误拒绝订阅。
+- [队列任务](../background/queue.md#failures-and-retries)：系统故障和 `ResourceExhausted` 稍后重试，其他业务错误直接转入失败任务表。
+- [命令](commands.md#error-messages)：显示翻译后的提示和错误码。
+- 自己写的入口：[`i18n.ErrorMessage`](localization.md#outside-http) 取得与 `detail` 相同的译文，[`logging.RequestID`](logging.md#request-correlation) 取得请求 ID。
 
 <a id="wrapping-errors"></a>
-## 处理底层错误
+## 用 `errors.Wrap` 处理底层错误
 
-处理数据库、网络、文件等底层错误时，遵循一条简单的原则：**把堆栈留给意料之外的故障，把简洁的错误码留给可预期的结果。**
-
-- 如果底层错误代表一种**可预期的结果**，用错误模板的 `Wrap` 把它转换为业务错误，就像上面例子中的唯一约束冲突。业务错误不记录堆栈，错误码已经足以说明发生了什么；
-- 如果**无法归类**，在它刚进入你的代码时用 `errors.Wrap` 包装，堆栈就记录在这里。之后每经过一层，都可以再用 `errors.Wrap(err, "import article")` 这样补充上下文。
-
-> [!WARNING]
-> 数据库驱动、标准库返回的原始错误用 `errors.Wrap` 包装后再返回。它们本身只有一行文本，`errors.Wrap` 在这里记下堆栈，错误日志中才看得到失败的位置；`fmt.Errorf` 只拼接文本。
+- 底层错误代表一种可预期的结果时，用错误模板的 `Wrap` 转换为业务错误，例如唯一约束冲突转换为 `ErrSlugTaken.Wrap(err)`。业务错误不记录堆栈，错误码已经说明了发生什么。
+- 其他底层错误在刚进入你的代码时用 `errors.Wrap(err, "load article")` 包装，之后每经过一层可以再补充上下文。数据库驱动和标准库的原始错误只有一行文本，错误日志要靠这里记下的堆栈才看得到失败的位置；`fmt.Errorf` 不记录堆栈。
 
 <a id="public-parameters"></a>
-## 在提示中带上参数
+## 用 `errorx.Public` 在提示中带上参数
 
-有时你希望提示文案更具体，例如告诉用户是哪个 slug 被占用了。用 `errorx.Public` 为错误附加参数：
+`errorx.Public` 为错误附加参数，参数是翻译模板的数据：
 
 ```go
 return ErrSlugTaken.Wrap(err, errorx.Public("slug", c.Slug))
 ```
 
-启用[本地化](localization.md)后，参数会作为翻译模板的数据。在翻译文件中这样写：
-
 ```yaml
+# locales/zh-CN.yaml
 article.slug_taken: "slug“{{.slug}}”已被使用"
 ```
 
-响应中的 `detail` 就会变成 `slug“hello-world”已被使用`。
+- 响应的 `detail` 是 `slug“hello-world”已被使用`，`params` 是 `{"slug": "hello-world"}`。
+- 参数会展示给调用者，只附加可以公开的信息；值要能序列化为 JSON，否则响应省略 `params` 并记录警告。
+- 名字区分大小写，没有同名参数时 `{{.slug}}` 原样出现在提示中。
 
-参数同时出现在 HTTP 错误响应的 `params` 中，客户端可以读取它们来处理错误，例如 `auth.method_required` 的 `methods` 列出可以用的登录方式：
+<a id="retry-after"></a>
+## 用 `errorx.RetryAfter` 建议等待时间
 
-```json
-{"title": "Conflict", "status": 409, "detail": "slug“hello-world”已被使用", "code": "article.slug_taken", "params": {"slug": "hello-world"}}
-```
-
-之所以叫“公开”参数，是因为它们会出现在给用户看的文案和响应体中，请只附加可以展示给调用者的信息。参数的值要能序列化为 JSON；不能序列化时响应省略 `params`，并记录一条警告。
-
-如果失败在等待一段时间后就会消失，例如[限流](../libraries/rate-limiting.md)，用 `errorx.RetryAfter` 附加建议的等待时间，HTTP 响应会带上 `Retry-After` 响应头（秒，向上取整）：
+等待一段时间后就会消失的失败，例如[限流](../libraries/rate-limiting.md)，用 `errorx.RetryAfter` 附加建议的等待时间。HTTP 响应带上 `Retry-After` 头（秒，向上取整），队列任务按它重试：
 
 ```go
 return ErrTooFrequent.New(errorx.RetryAfter(30 * time.Second))
 ```
 
 <a id="field-errors"></a>
-有的业务错误是某一个字段的问题，例如“选了 Anthropic 协议却没有填 Anthropic 兼容的地址”。用 `errorx.Field` 指出这个字段，表单就把提示显示在这个输入框下面，而不是表单上方。路径相对于业务动作的输入，用点连接，数组下标写在方括号中：
+## 用 `errorx.Field` 指出出错的字段
+
+业务错误属于某一个字段时，例如“选了 Anthropic 协议却没有填 Anthropic 兼容的地址”，用 `errorx.Field` 指出这个字段，表单把提示显示在这个输入框下面。路径相对于业务动作的输入，用点连接，数组下标写在方括号中：
 
 ```go
 return ErrMissingURL.New(errorx.Field("base_urls.anthropic"))
 ```
 
-各入口按自己的方式呈现它：HTTP 和 [RPC](../rpc/protocol.md#errors) 的错误响应除了 `code` 和 `detail`，在 `errors` 中给出这个字段（`location` 是 `body.base_urls.anthropic`，`message` 与 `detail` 相同，`code` 是业务错误码）；MCP 工具在提示后面写上 `(field base_urls.anthropic)`；命令行写成“提示（字段 base_urls.anthropic，错误码）”。`errorx.FieldOf(err)` 取出这个字段，RPC 的调用方同样可以取回。前端的 `applyServerErrors` 把它显示在字段下面；表单中没有这个字段时，提示显示在表单上方。
+- HTTP 和 [RPC](../rpc/protocol.md#errors) 的错误响应除了 `code` 和 `detail`，在 `errors` 中有这个字段的一项：`location` 是 `body.base_urls.anthropic`，`message` 与 `detail` 相同，`code` 是业务错误码。
+- 前端的 `applyServerErrors` 把提示显示在字段下面；表单中没有这个字段时显示在表单上方。
+- `errorx.FieldOf(err)` 取出字段。
 
 <a id="inspecting-errors"></a>
-## 判断错误
+## 判断错误：`errors.Is`、`errorx.CodeOf`、`errorx.KindOf`
 
-业务错误兼容 Go 标准的错误处理方式。即使被多层包装，也可以用 `errors.Is` 判断它是否来自某个错误模板：
+`errors.Is` 按错误码判断错误是否来自某个错误模板，经过多层包装也成立：
 
 ```go
 if errors.Is(err, article.ErrSlugTaken) {
-    // 例如：自动在 slug 后面加上序号再试一次
+    // 例如在 slug 后面加上序号再试一次
 }
 ```
 
-也可以用 `errorx.CodeOf`、`errorx.KindOf` 直接读取错误码和分类，见 [API 参考](#api-reference)。
+`errorx.CodeOf(err)` 和 `errorx.KindOf(err)` 沿错误链读取错误码和分类。不是业务错误时，`CodeOf` 返回空字符串，`KindOf` 返回 `Internal`。
 
 <a id="response-format"></a>
 ## HTTP 响应格式
 
-错误响应直接使用 [Huma](https://huma.rocks) 的错误结构，即 [Problem Details](https://www.rfc-editor.org/rfc/rfc9457) 格式，`Content-Type` 为 `application/problem+json`。Tenon 为业务错误增加了 `code` 和 `params` 字段：
+错误响应是 Problem Details（`application/problem+json`），字段和客户端的处理顺序见[客户端协议的错误](../http/protocol.md#errors)。对应用的影响：
 
-| 字段 | 说明 |
-| --- | --- |
-| `status` | HTTP 状态码 |
-| `title` | 状态码的标准描述 |
-| `detail` | 展示给用户的文案 |
-| `code` | 稳定的错误码，**只有业务错误包含** |
-| `params` | [公开参数](#public-parameters)，**只有带参数的业务错误包含** |
-| `errors` | 字段级的错误明细：输入格式错误时，每一项带有违反的规则 `code` 和翻译后的 `message`，见[验证](../http/validation.md#validation-error-response)；业务错误用 `errorx.Field` 指出了字段时，有这个字段的一项，`code` 是业务错误码，见[指出字段](#field-errors) |
-
-客户端可以这样区分错误：有 `code` 时按 `code` 处理；有 `errors` 时把提示显示在对应字段旁边；两者都没有时（路由不存在、服务端故障等）按 `status` 处理。各状态码和框架定义的错误码的处理方式见[客户端协议](../http/protocol.md#errors)。
-
-`detail` 的内容：启用本地化时，以错误码为消息 ID 翻译，找不到翻译时使用状态码描述并记录一条警告日志；未启用本地化时，使用状态码描述，例如 `Not Found`。`detail` 可能随语言和版本变化，逻辑判断请依据 `code`。
+- 业务错误带 `code`；附加了公开参数时带 `params`；用 `errorx.Field` 指出了字段时带 `errors`。
+- 输入格式错误带 `errors`，没有 `code`，见[校验](../http/validation.md#validation-error-response)。
+- `detail` 以错误码为消息 ID 翻译。当前语言缺少译文时用默认语言的译文，默认语言也没有时用状态码的描述（例如 `Not Found`），两种情况下访问日志都带上 `"untranslated":true`。
+- 系统故障的 `detail` 只有状态码的描述，内部信息只留在日志中。
 
 <a id="reporting-errors"></a>
 ## 错误日志
 
-Tenon 遵循“**只在入口记录一次**”的原则：业务代码只负责补充上下文并返回错误，错误日志由入口统一记录，同一个错误在日志中只出现一次。HTTP 接口记录下面两种日志：
+错误日志由入口记录一次，业务代码补充上下文后返回错误，不自己记录。
 
-| 日志 | 何时记录 | 内容 |
-| --- | --- | --- |
-| 访问日志 | 每个请求 | 方法、状态码、耗时；业务错误还包含 `code` |
-| 错误日志 | 仅 `5xx` | `error` 分组：消息、错误码和完整的错误链（`%+v` 格式，含堆栈） |
-
-需要为访问日志追加其他字段时，调用 [`httpx.AddAccessLogAttrs`](#api-reference)。日志的配置方式见[日志](logging.md)。
-
-<a id="troubleshooting"></a>
-## 常见问题
-
-**接口返回了 500，但我以为会是 404**
-
-返回的错误不是业务错误。例如查不到数据时直接返回了 `sql.ErrNoRows`，或者用 `fmt.Errorf` 包装后丢掉了业务错误。查不到时返回 `ErrNotFound.New()`；包装业务错误时用 `errors.Wrap` 或 `%w`，`errorx` 会沿错误链找到它。
-
-**响应的 `detail` 是 `Not Found` 这样的英文，而不是翻译好的提示**
-
-没有启用本地化，或者翻译文件中缺少这个错误码。缺少翻译时日志中有一条警告，补上翻译即可，见[本地化](localization.md)。
-
-**错误日志中看不到失败发生在哪一行**
-
-底层错误没有用 `errors.Wrap` 包装就返回了，或者用的是 `fmt.Errorf`。在底层错误刚进入你的代码时用 `errors.Wrap` 包装，堆栈就记在那里。
-
-<a id="advanced"></a>
-## 进阶
-
-<a id="huma-errors"></a>
-### 原生 Huma 错误
-
-处理器也可以直接返回 Huma 的错误，例如 `huma.Error404NotFound("article does not exist")`。它们会被原样输出，保留你写的 `detail`，不带 `code`，按原文输出。需要稳定的错误码时，请使用 `errorx`。
+- HTTP 接口的访问日志每个请求一条，业务错误带 `code`。
+- `5xx` 另有一条 `ERROR` 级别的错误日志，`error` 分组中是消息、错误码和含堆栈的错误链，见[错误日志](logging.md#error-logging)。
+- 两条日志的 `request_id` 与响应头 `X-Request-ID` 相同。
+- `httpx.AddAccessLogAttrs(ctx, attrs...)` 为访问日志追加字段。
 
 <a id="cross-process-errors"></a>
-### 跨进程传递
+## 跨进程传递错误
 
-错误在服务之间传递时，用各入口的错误响应，它们与语言无关：HTTP 接口和 RPC 返回同样的错误模型，带着错误码、状态码和公开参数，见[客户端协议的错误](../http/protocol.md#errors)和 [RPC 协议的错误](../rpc/protocol.md#errors)。
-
-Go 的客户端把错误响应还原为 `errorx` 的错误，错误码、分类、参数和 `errors.Is` 的结果都与服务端相同，例如 RPC 的 [`natsrpc.Call`](../rpc/endpoints.md#handling-errors)：
+HTTP 接口和 RPC 的错误响应带着错误码、状态码和公开参数（[客户端协议](../http/protocol.md#errors)、[RPC 协议](../rpc/protocol.md#errors)）。Go 的客户端把它还原为 `errorx` 的错误，错误码、分类、参数和 `errors.Is` 的结果与服务端相同，例如 [`natsrpc.Call`](../rpc/endpoints.md#handling-errors)（`nc` 是 NATS 连接，`in` 是请求）：
 
 ```go
 _, err := natsrpc.Call[ArticleDTO](ctx, nc, "blog.v1.articles.get", in)
 errors.Is(err, article.ErrNotFound) // 服务端返回 article.not_found 时为 true
 ```
 
-参数以 JSON 形式传输，还原后数值类型会变为 `float64`。
-
-<a id="api-reference"></a>
-## API 参考
-
-包 `github.com/go-tenon/tenon/errorx`。
-
-### Define
-
-```go
-func Define(kind Kind, code string) *Template
-```
-
-- **参数**
-    - `kind`：错误的分类，决定 HTTP 状态码和命令行的退出码
-    - `code`：错误码，推荐写成 `资源.原因`，在应用中唯一
-- **返回**：错误模板，通常保存为包级变量
-
-### Template.New、Template.Wrap
-
-```go
-func (t *Template) New(opts ...Option) error
-func (t *Template) Wrap(cause error, opts ...Option) error
-```
-
-返回一次具体的失败。`Wrap` 把引起失败的底层错误 `cause` 保留在错误链中。只有 `Unavailable` 和 `Internal` 两类会在调用处记录堆栈。`errors.Is(err, tmpl)` 按错误码匹配。
-
-### Public、Field、RetryAfter
-
-```go
-func Public(key string, value any) Option
-func Field(path string) Option
-func RetryAfter(d time.Duration) Option
-```
-
-`New` 和 `Wrap` 的选项。`Public` 附加可以出现在提示文案和响应中的参数，见[在提示中带上参数](#public-parameters)；`Field` 指出错误与输入中的哪个字段有关，见[指出字段](#field-errors)；`RetryAfter` 附加建议的等待时间，HTTP 响应带上 `Retry-After` 头。
-
-### CodeOf、KindOf、PublicOf、FieldOf、RetryAfterOf
-
-```go
-func CodeOf(err error) string
-func KindOf(err error) Kind
-func PublicOf(err error) map[string]any
-func FieldOf(err error) string
-func RetryAfterOf(err error) time.Duration
-```
-
-沿错误链找到业务错误，读取对应的值。不是业务错误时，`CodeOf` 返回空字符串，`KindOf` 返回 `Internal`。
-
-### httpx.AddAccessLogAttrs
-
-```go
-func AddAccessLogAttrs(ctx context.Context, attrs ...slog.Attr)
-```
-
-- **参数**
-    - `attrs`：追加到当前请求访问日志中的字段
-
-同名的字段，后写的覆盖先写的。只在安装了访问日志中间件时生效。
+参数以 JSON 传输，还原后数值类型变为 `float64`。

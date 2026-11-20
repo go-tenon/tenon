@@ -16,7 +16,7 @@ queue
   ...
 ```
 
-它与[健康检查](../http/lifecycle.md#health-checks)分工不同：健康检查每隔几秒运行一次，只确认依赖连得上；自检在部署、升级和排查问题时运行，检查依赖的设置对不对。应用交给别人部署（例如客户自己用 Docker Compose 运行）时，它尤其有用：出问题的人不一定熟悉 PostgreSQL 和 NATS，自检告诉他具体改哪一项。
+它与[健康检查](../concepts/lifecycle.md#health-checks)分工不同：健康检查每隔几秒运行一次，只确认依赖连得上；自检在部署、升级和排查问题时运行，检查依赖的设置对不对。应用交给别人部署（例如客户自己用 Docker Compose 运行）时，它尤其有用：出问题的人不一定熟悉 PostgreSQL 和 NATS，自检告诉他具体改哪一项。
 
 阅读前需要了解：[部署](deployment.md)；[命令行](../general/commands.md)；[依赖装配](../concepts/dependencies.md)。
 

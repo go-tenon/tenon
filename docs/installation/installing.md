@@ -111,13 +111,13 @@ func main() {
 - **`rest.New`** 在路由器上创建一个 API。`Title` 和 `Version` 会写进自动生成的接口文档。
 - **`huma.Operation`** 描述一个接口：用什么方法（`GET`）、在哪个路径（`/ping`）。`OperationID` 是这个接口的名字，必须唯一，生成接口文档和客户端代码时会用到它。
 - **`rest.Public()(&op)`** 声明这个接口是公开的，不需要登录。Tenon 要求每个接口都明确声明是公开的还是需要登录，忘记声明时程序在启动时就会报错，需要保护的接口不会被悄悄公开出去。
-- **`rest.Register`** 把接口和处理它的函数 `ping` 连在一起。注意这里传的是 `ping` 本身，没有加括号，见[把方法当作值传递](../concepts/go-primer.md#method-values)。
+- **`rest.Register`** 把接口和处理它的函数 `ping` 连在一起。注意这里传的是 `ping` 本身，没有加括号，见把方法当作值传递。
 - **`http.ListenAndServe`** 是 Go 标准库的函数，在 `127.0.0.1:8080` 上等待请求。
 
 再看处理函数 `ping`：
 
-- 它的签名是固定的形式：第一个参数是 `context.Context`（见 [context](../concepts/go-primer.md#context)），第二个参数是输入，返回输出和错误。
-- 输出是一个结构体，其中的 `Body` 字段就是响应体。`json:"message"` 是结构体标签，表示这个字段在 JSON 中叫 `message`，见[结构体标签](../concepts/go-primer.md#struct-tags)。
+- 它的签名是固定的形式：第一个参数是 `context.Context`（见 context），第二个参数是输入，返回输出和错误。
+- 输出是一个结构体，其中的 `Body` 字段就是响应体。`json:"message"` 是结构体标签，表示这个字段在 JSON 中叫 `message`，见结构体标签。
 
 整理依赖，运行它：
 
@@ -187,7 +187,7 @@ X-Request-Id: 3UHKWQUZP5TTP24PG3SQNGA5EO
 
 部署新版本时，旧的程序会收到停止信号（`SIGTERM`）。如果它立刻退出，正在处理的请求就被中断了，用户看到的是连接断开。更好的做法是：先停止接收新请求，等正在处理的请求完成，再退出。
 
-`httpx.ListenAndServe` 就是这样做的：它在 ctx 被取消时开始平稳地停止。我们用 `signal.NotifyContext` 得到一个“收到停止信号时被取消”的 ctx，见[defer 与结束后台工作](../concepts/go-primer.md#cleanup)。这是最终的完整程序：
+`httpx.ListenAndServe` 就是这样做的：它在 ctx 被取消时开始平稳地停止。我们用 `signal.NotifyContext` 得到一个“收到停止信号时被取消”的 ctx，见defer 与结束后台工作。这是最终的完整程序：
 
 ```go
 package main
@@ -288,4 +288,4 @@ Tenon 需要 Go 1.27.4 或更高的版本，见[准备工作](#prerequisites)。
 
 - 跟着[入门教程](../tutorial/README.md)做一个完整的博客：数据库、登录、前端页面都会用到；
 - 或者先用[脚手架](scaffolding.md)生成一个完整的项目，看看它由哪些部分组成；
-- 想深入了解这一页用到的每一部分，读[路由](../http/routing.md)、[中间件](../http/middleware.md)和[HTTP 服务的生命周期](../http/lifecycle.md)。
+- 想深入了解这一页用到的每一部分，读[路由](../http/routing.md)、[中间件](../http/middleware.md)和[HTTP 服务的生命周期](../concepts/lifecycle.md)。

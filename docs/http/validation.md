@@ -6,7 +6,7 @@
 
 验证分两种：格式上的要求（必填、长度、取值范围、正则）写在标签上，由框架检查；需要查询数据才能判断的规则（例如“slug 全站唯一”）写在业务代码中，见[业务规则验证](#business-validation)。
 
-阅读前需要了解：[请求](requests.md)；[结构体标签](../concepts/go-primer.md#struct-tags)。
+阅读前需要了解：[请求](requests.md)；结构体标签。
 
 - [示例用法](#validation-quickstart)
 - [可用的验证规则](#available-validation-rules)
@@ -212,7 +212,7 @@ func (a *Update) Handle(ctx context.Context, subject identity.Subject, id uuid.U
 
 **处理器中分不清“没有传”和“传了空值”**
 
-用指针类型，例如 `*string`：没有传时是 `nil`，传了空字符串时指向 `""`，见[必填与可选字段](#required-and-optional-fields)和[指针表示“没有提供”](../concepts/go-primer.md#optional-fields)。
+用指针类型，例如 `*string`：没有传时是 `nil`，传了空字符串时指向 `""`，见[必填与可选字段](#required-and-optional-fields)和指针表示“没有提供”。
 
 **验证提示是英文的**
 

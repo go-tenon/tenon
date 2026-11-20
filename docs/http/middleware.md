@@ -55,7 +55,7 @@ router.Use(httpx.Defaults(cfg.HTTP, httpx.Languages(languages))...)
 | `AccessLog(cfg.AccessLog, logger)` | 每个请求记录一条访问日志，见[访问日志](#access-log) |
 | `Recover(logger)` | 处理器 panic 时记录堆栈；若尚未写出响应则返回通用的 500 错误，若已开始写响应则中止连接 |
 | `BodyLimit(cfg.BodyLimit)` | 限制请求体大小，超出时返回 413 |
-| `AcquireTimeout(cfg.AcquireTimeout)` | 请求等待共享资源（例如空闲的数据库连接）最多 `acquire_timeout`，连接池用满时返回 503 并带 `Retry-After`，见[连接用满时](../database/quick-start.md#pool-exhaustion) |
+| `AcquireTimeout(cfg.AcquireTimeout)` | 请求等待共享资源（例如空闲的数据库连接）最多 `acquire_timeout`，连接池用满时返回 503 并带 `Retry-After`，见[连接用满时](../database/database.md#pool-exhaustion) |
 
 另外几个中间件按需使用，在 `httpx.Defaults` 之后另行安装：
 
@@ -67,7 +67,7 @@ router.Use(httpx.Defaults(cfg.HTTP, httpx.Languages(languages))...)
 
 每个中间件都可以单独省略，框架的其他部分照常工作：没有 `AccessLog` 时，`httpx.AddAccessLogAttrs` 什么也不做；没有 `Locale` 时，`i18n.T` 原样返回消息 ID；没有 `AssignRequestID` 时，`logging.RequestID` 返回空字符串。
 
-认证不在默认中间件中，因为它是按路由启用的，见[认证](../security/authentication.md)。健康检查也由你自己注册，见[健康检查](lifecycle.md#health-checks)。
+认证不在默认中间件中，因为它是按路由启用的，见[认证](../security/authentication.md)。健康检查也由你自己注册，见[健康检查](../concepts/lifecycle.md#health-checks)。
 
 
 <a id="custom-middleware"></a>
@@ -279,7 +279,7 @@ http:
 | `request_header`、`response_header` | 记录请求头、响应头 | `false` |
 | `request_body`、`response_body` | 记录请求体、响应体，各最多 64 KiB | `false` |
 
-记录请求头时，`Authorization`、`Cookie`、`X-Auth-Token`、`X-CSRF-Token`、`X-XSRF-Token` 始终隐藏，记录响应头时 `Set-Cookie` 始终隐藏。还需要隐藏其他字段时，见[敏感信息脱敏](../general/logging-advanced.md#redacting-sensitive-data)。
+记录请求头时，`Authorization`、`Cookie`、`X-Auth-Token`、`X-CSRF-Token`、`X-XSRF-Token` 始终隐藏，记录响应头时 `Set-Cookie` 始终隐藏。还需要隐藏其他字段时，见[敏感信息脱敏](../general/logging.md#redacting-sensitive-data)。
 
 > [!NOTE]
 > 处理器没有写出任何响应时，客户端收到的是 `200`。`AccessLog` 会显式写出这个 `200`，让日志中的状态码与客户端看到的一致。
@@ -406,7 +406,7 @@ func BasicUser(ctx context.Context) string
 func KeyByIP(r *http.Request) string
 ```
 
-Basic 认证通过的用户名；按客户端地址的限流键。请求 ID 用 [`logging.RequestID`](../general/logging.md#api-reference) 读取。
+Basic 认证通过的用户名；按客户端地址的限流键。请求 ID 用 [`logging.RequestID`](../general/logging.md#finding-a-request) 读取。
 
 ### WriteProblem
 

@@ -1,228 +1,92 @@
 # 日志
 
-日志记录程序运行时发生了什么：收到了哪些请求，做了什么操作，哪里出了错。线上出问题时，日志往往是你唯一的线索。
+应用和框架都用标准库的 `log/slog` 记录结构化日志，写到全局日志器 `slog.Default()`。`logging` 按配置构造日志器，让日志自动带上请求 ID 等关联字段，并提供扩展处理链、脱敏和测试日志的方法。
 
-Tenon 使用 Go 标准库的 [`log/slog`](https://pkg.go.dev/log/slog) 记录**结构化日志**：每条日志除了一句消息，还带着若干个“键=值”形式的字段，并以 JSON 输出，方便日志平台按字段搜索和统计。全局日志器就是 `slog.Default()`，框架的组件和你的业务代码都通过它记录日志。
-
-`logging` 包在 slog 之上只做了几件事：按配置构造日志器，让日志自动带上请求 ID 等关联字段，以及提供扩展处理链的方法（见[日志进阶](logging-advanced.md)）。除此之外，你使用的都是标准的 slog API。
-
-阅读前需要了解：[context](../concepts/go-primer.md#context)；[配置](configuration.md)。
-
-- [示例用法](#example-usage)
-- [写入日志](#writing-log-messages)
-- [上下文信息](#contextual-information)
-    - [调用关联](#request-correlation)
-    - [添加自定义字段](#custom-context-fields)
-- [错误日志](#error-logging)
-- [配置](#creating-a-logger)
-    - [level](#config-level)
-    - [format](#formats)
-    - [time_zone](#config-time-zone)
-    - [add_source](#config-add-source)
-    - [输出位置](#config-writer)
-    - [按组件设置级别](#component-levels)
-- [常见问题](#troubleshooting)
-- [API 参考](#api-reference)
+包：`logging`、`logging/logtest`。
 
 <a id="example-usage"></a>
-## 示例用法
+## 示例：安装日志器并记录日志
 
-在应用的入口安装一次全局日志器：
+在入口的 `open` 函数中安装一次全局日志器，`cfg.Logs` 是根配置中的 `logging.Config`（配置文件的 `logs` 段）：
 
 ```go
 slog.SetDefault(logging.New(cfg.Logs))
 ```
 
-之后，框架组件（访问日志、panic 恢复、5xx 诊断）和你的业务代码都通过它记录日志。在业务代码中，直接使用 slog 的包级函数：
+业务代码直接用 slog 的包级函数，传入当前的 `ctx`：
 
 ```go
 slog.InfoContext(ctx, "article published", "article_id", item.ID)
+// {"time":"…","level":"INFO","msg":"article published","request_id":"9F2K…","article_id":"0f8c…"}
 ```
 
-```json
-{"time":"…","level":"INFO","msg":"article published","request_id":"9F2K…","article_id":"0f8c…"}
-```
-
-注意输出中的 `request_id`：你并没有写它，是因为传入了请求的 `ctx`，日志自动带上了这个请求的 ID，见[请求关联](#request-correlation)。
+`request_id` 来自 `ctx`，见[日志中的请求 ID](#request-correlation)。标准库 `log` 包的输出（例如第三方库的 `log.Printf`）也经过这个日志器。
 
 <a id="writing-log-messages"></a>
-## 写入日志
+## 用 slog 记录日志
 
-业务代码直接使用 slog 的包级函数记录日志，以键值对的形式附加结构化字段。例如文章发布成功后：
-
-```go
-func (a *Publish) Handle(ctx context.Context, subject identity.Subject, id uuid.UUID) (*Article, error) {
-    // ……在事务中检查并更新文章状态
-    slog.InfoContext(ctx, "article published",
-        "article_id", item.ID,
-        "author_id", item.AuthorID,
-    )
-    return item, nil
-}
-```
-
-请尽量使用带 `Context` 后缀的方法（`InfoContext`、`ErrorContext` 等）并传入当前的 `ctx`，这样日志才能自动带上请求 ID，见下一节。
-
-如果某个动作需要单独的日志器（例如写入审计日志），像接收数据库一样通过构造函数接收 `*slog.Logger` 即可，见[依赖装配](../concepts/dependencies.md#constructor-injection)。
-
-字段名应当保持稳定，例如始终使用 `article_id`，这样才方便在日志系统中检索和聚合。
-
-<a id="contextual-information"></a>
-## 上下文信息
+- 用带 `Context` 的函数（`slog.InfoContext`、`slog.ErrorContext`）并传入 `ctx`：日志才带上请求 ID、任务 ID 和 `trace_id`。
+- 字段名保持稳定，例如始终用 `article_id`：日志平台按字段名检索和聚合。
+- 需要单独日志器的服务（例如审计日志）通过构造函数接收 `*slog.Logger`。框架组件的日志器参数为 `nil` 时用 `slog.Default()`；关闭某个组件的日志时传 `slog.New(slog.DiscardHandler)`。
 
 <a id="request-correlation"></a>
-### 调用关联
+## 日志中的请求 ID 和关联字段
 
-每个入口在调用业务代码之前，都会把这次调用的关联字段放进 `ctx`。业务代码只要配合传入的 `ctx` 记录日志（`slog.InfoContext(ctx, ...)`），日志就会自动带上它们，不需要知道调用来自哪个入口：
+每个入口在调用业务代码之前把关联字段放进 `ctx`，用这个 `ctx` 记录的日志自动带上它们：
 
 | 入口 | 自动带上的字段 |
 | --- | --- |
-| HTTP 接口 | `request_id` |
+| HTTP 接口 | `request_id`，由 `httpx.AssignRequestID` 写入，见[请求 ID](../http/middleware.md#request-id) |
 | 队列任务 | `message_id`（任务 ID）、`attempt`（第几次执行），以及发布任务时 `ctx` 中的 `request_id` |
 | 定时任务 | `task`（任务名）、`request_id`（每次执行一个） |
 | MCP 工具 | `request_id`：经由 HTTP 时是 HTTP 请求的，以 stdio 运行时每次调用一个 |
 
-队列任务带着发布方的 `request_id`，所以一个请求（或一次定时任务）和它产生的任务可以串起来，见[队列的日志](../background/queue-monitoring.md#logging)。下面以 HTTP 接口为例说明这些字段从哪里来。
+一个请求和它发布的队列任务共用一个 `request_id`，见[队列的日志](../background/queue-monitoring.md#logging)。`ctx` 中有 span 时，日志还带上 `trace_id` 和 `span_id`，见[链路与日志](telemetry.md#trace-logs)。
 
-安装[默认中间件](../http/middleware.md#default-middleware)后，`httpx.AccessLog` 会为每个请求记录一条[访问日志](../http/middleware.md#access-log)，`rest.New` 创建的 API 会为 5xx 错误记录诊断信息：
+日志中没有 `request_id` 时，是记录日志时没有传入请求的 `ctx`。新增入口时，在开始处理一次调用时调用 `logging.WithRequestID(ctx, id)`。
 
-```go
-router.Use(httpx.Defaults(a.cfg.HTTP)...)
-api := rest.New(router, rest.Options{})
-```
+<a id="finding-a-request"></a>
+## 在日志中找到一次请求（`logging.RequestID`）
 
-`httpx.AssignRequestID` 还会用 `logging.WithRequestID` 把[请求 ID](../http/middleware.md#request-id) 放入请求的 context。之后，只要你在业务代码中配合请求的 `ctx` 记录日志（`slog.InfoContext(ctx, ...)`），这些日志就会自动带上 `request_id` 字段：
+每个 HTTP 响应都有 `X-Request-ID` 响应头，值就是日志中的 `request_id`；`5xx` 的错误页上显示的请求编号也是它。用户反馈问题时让他提供这个 ID，在日志平台中按 `request_id` 检索，得到这次请求的访问日志、错误诊断、业务日志和它发布的队列任务的日志；日志中的 `trace_id` 再跳到链路。
 
-```json
-{"level":"INFO","msg":"article published","request_id":"9F2K…","article_id":"0f8c…","author_id":"alice"}
-```
-
-这样，同一个请求的访问日志、错误诊断、业务日志，以及它发布的队列任务的日志，都可以通过 `request_id` 关联起来。部署在反向代理之后时，还可以沿用代理生成的请求 ID，把代理日志也关联进来。
-
-需要把请求 ID 告诉调用方时（例如出错时提示用户“报告问题时附上请求编号”），用 `logging.RequestID(ctx)` 读取。它读的就是日志中的 `request_id` 字段，所以在 HTTP 请求和它发布的队列任务中读到的是同一个值；以后新增的入口只要在开始处理时调用 `logging.WithRequestID`，日志和读取就都能用上。
-
-`ctx` 中有 OpenTelemetry 的 span 时，日志还会自动带上 `trace_id` 和 `span_id`，在链路追踪系统中可以从一个 span 直接找到它的日志，见[链路与日志](telemetry.md#trace-logs)。
+代码中用 `logging.RequestID(ctx)` 读取当前的请求 ID，例如写进给用户的提示；没有安装 `httpx.AssignRequestID` 时返回空字符串。部署在反向代理之后时，`AssignRequestID` 沿用代理生成的 ID，代理的日志也能按它找到。
 
 <a id="custom-context-fields"></a>
-### 添加自定义字段
+## 用 `logging.WithAttrs` 给 context 加字段
 
-你也可以把自己的字段放入 context，之后使用这个 context 记录的所有日志都会带上它们：
+放进 `ctx` 的字段出现在之后用这个 `ctx` 记录的每一条日志中。多次调用累加字段，父 context 保持原样：
 
 ```go
-ctx = logging.WithAttrs(ctx, slog.String("component", "article"))
+ctx = logging.WithAttrs(ctx, slog.String("tenant_id", tenantID))
 ```
 
-多次调用 `WithAttrs` 会累加字段，父 context 保持原样。
-
 <a id="error-logging"></a>
-## 错误日志
+## 记录错误：`error` 字段与堆栈
 
-业务代码只需添加上下文并返回错误。Tenon 会在 HTTP 边界为每个 `5xx` 错误记录一条诊断日志。如果每一层都记录一次，同一个错误就会在日志中出现很多遍，反而难以排查。
+业务代码给错误加上上下文后返回，不在每一层记录：每层都记录，同一个错误就出现很多遍。框架在边界记录：`httpx.AccessLog` 的访问日志带业务错误的错误码，`rest.Register` 记录 `5xx` 的完整错误链，`rest.RequireToken` 记录认证后端的故障。
 
-| 日志 | 记录者 | 内容 |
-| --- | --- | --- |
-| 访问日志 | `httpx.AccessLog` | 每个请求的方法、路由、状态码、耗时、客户端地址，以及业务错误的错误码 |
-| 错误诊断 | `rest.Register` | `5xx` 错误的完整错误链 |
-| 认证后端故障 | `rest.RequireToken` | 校验器返回 `5xx` 类错误时的完整错误链 |
-
-确实需要自己记录错误时（例如后台任务失败），把错误直接作为字段值传入即可：
+自己处理掉、不再返回的错误（例如后台循环中的失败）自己记录，把错误作为 `error` 字段传入：
 
 ```go
 slog.ErrorContext(ctx, "sync feed failed", "feed_id", id, "error", err)
+// {"level":"ERROR","msg":"sync feed failed","feed_id":"…","error":{"message":"…","code":"article.slug_taken","stack":"…"}}
 ```
 
-`logging.New` 默认启用 `logging.ErrorFormatter`，它会把 `error` 类型的字段展开为一个分组：
-
-```json
-{"level":"ERROR","msg":"sync feed failed","feed_id":"…","error":{"message":"article.slug_taken: pq: duplicate key","code":"article.slug_taken","stack":"article.slug_taken: pq: duplicate key\n(1) article.slug_taken\nWraps: (2) attached stack trace\n  -- stack trace:\n  | example.com/app/internal/article.(*Update).Handle\n …"}}
-```
+`logging.New` 默认启用 `logging.ErrorFormatter`，把 `error` 类型的字段展开为分组：
 
 | 字段 | 内容 |
 | --- | --- |
 | `message` | `err.Error()` |
 | `code` | [错误码](errors.md)，没有时省略 |
-| `stack` | `%+v` 格式的完整错误链，包含错误**创建处**的堆栈；与 `message` 相同（普通错误没有堆栈）时省略 |
+| `stack` | `%+v` 格式的完整错误链，包含错误**创建处**的堆栈；与 `message` 相同时省略 |
 
-详见[错误处理](errors.md#reporting-errors)。在链路上记录同一个错误用 `logging.RecordError`，属性与这些字段对应，见[错误追踪](telemetry.md#error-tracking)。
-
-<a id="creating-a-logger"></a>
-## 配置
-
-日志的级别、格式等需要按环境调整的值来自 `logging.Config`，通常放在配置文件的 `logs` 段：
-
-```yaml
-logs:
-  level: ${LOG_LEVEL:-info}
-  time_zone: UTC
-```
-
-把 `logging.Config` 放进应用的根配置结构体，`config.Load` 会自动填充默认值并校验。`logging.Config` 的零值也可以直接使用，所以不写 `logs` 段也能得到合理的日志。下面逐个介绍这些字段。
-
-<a id="config-level"></a>
-### level
-
-记录日志的最低级别：`debug`、`info`、`warn` 或 `error`，默认是 `info`。低于这个级别的日志会被丢弃。只想调整一部分日志的级别时，见[按组件设置级别](#component-levels)。
-
-<a id="formats"></a>
-### format
-
-输出格式，`json` 或 `text`。不写时按输出自动选择：输出到终端时是 `text`，其余（文件、管道、systemd、容器）是 `json`。所以开发时在终端中运行（包括 `tenon dev`）看到的是彩色的文本，部署后由 systemd、Docker 采集的是 JSON，不用为两个环境各写一份配置。两种格式分别面向机器和人：
-
-- `json`：每行一个 JSON 对象，供日志系统采集和检索。生产环境使用它。
-- `text`：本地开发时阅读，基于 [tint](https://github.com/lmittmann/tint)。时间显示到毫秒，级别缩写为 `DBG`、`INF`、`WRN`、`ERR`，分组字段以 `.` 连接：
-
-  ```text
-  2026-11-10 17:05:12.345 INF http request component=http request.method=GET response.status=200 request_id=9F2K…
-  2026-11-10 17:05:12.401 ERR request failed error.message=boom request_id=9F2K…
-  ```
-
-  输出到终端时，时间变暗、级别按颜色区分。输出到管道、文件或 CI 时自动去掉颜色；设置 `NO_COLOR=1` 也会关闭颜色（见 [no-color.org](https://no-color.org)）。输出经管道转给终端时设置 `FORCE_COLOR=1`，日志按终端处理：格式是 `text` 并着色。`tenon dev` 就是这样运行应用的：它把应用的输出同时写进终端和 `.tenon/dev.log`，见 [AI 编程助手](../installation/ai-assistants.md#mcp-servers)。
-
-需要固定格式时显式写出，例如容器分配了终端（`docker run -t`、Compose 的 `tty: true`）时自动选择的是 `text`，而日志系统要的是 JSON：
-
-```yaml
-logs:
-  format: ${LOG_FORMAT:-json}
-```
-
-`text` 是给人看的格式，日志系统解析用 `json`。确实需要 logfmt 时，用 `logging.Fanout(slog.NewTextHandler(w, nil))` 追加一个输出，见[多个输出](logging-advanced.md#multiple-outputs)。
-
-> [!TIP]
-> 让 AI agent 读取或分析日志时，请使用 `json`：字段完整、结构明确。agent 执行命令时通常不在终端中，不写 `format` 时就是 `json`；如果 agent 工具分配了伪终端，自动选择的是 `text`，用 `LOG_FORMAT=json` 这类配置固定为 `json`。
-
-<a id="config-time-zone"></a>
-### time_zone
-
-日志时间使用的时区，例如 `UTC`、`Asia/Shanghai`，同时作用于字段中的时间值，包括分组中的，例如访问日志的 `request.time`、`response.time`。没有设置时使用进程的本地时区，它由 `TZ` 环境变量或 `/etc/localtime` 决定：开发机上通常是 `+08:00`，容器中往往是 UTC。
-
-时间始终带有时区偏移，含义明确。不过，多个环境的日志混合检索时，建议统一设为 `UTC`。
-
-<a id="config-add-source"></a>
-### add_source
-
-是否记录产生日志的源码位置，默认是 `false`。
-
-<a id="config-writer"></a>
-### 输出位置
-
-日志默认输出到标准错误。这样，当同一个程序作为命令行工具使用时（例如 `openapi` 命令），标准输出可以完整地留给命令的结果。需要改变输出位置时（例如在测试中写入缓冲区），在代码中设置 `Writer` 字段，它只能在代码中设置：
-
-```go
-var buf bytes.Buffer
-cfg.Logs.Writer = &buf
-```
-
-日志中没有服务名和版本。推送到日志平台时，它们由 [`telemetry`](telemetry.md#setup) 段配置，作为资源属性附在每条日志上；采集标准错误时，由采集端按 systemd unit 或容器区分来源。
-
-另外，`slog.SetDefault` 还会让标准库 `log` 包的输出也经过这个日志器，所以第三方库用 `log.Printf` 打印的内容同样会变成结构化日志。
-
-> [!NOTE]
-> `logging.New` 只返回日志器，是否安装为全局日志器由入口决定。框架组件的日志器参数为 `nil` 时使用 `slog.Default()`，因此你也可以只给某个组件传入单独的日志器，例如 `rest.Options{Logger: auditLogger}`；需要关闭某个组件的日志时，传入 `slog.New(slog.DiscardHandler)`。
+`stack` 中没有堆栈时，是错误没有用 `errors.Wrap` 包装，见[处理底层错误](errors.md#wrapping-errors)。在链路上记录同一个错误用 `logging.RecordError`，见[错误追踪](telemetry.md#error-tracking)。
 
 <a id="component-levels"></a>
-### 按组件设置级别
+## 按组件设置日志级别（`levels`）
 
-有时只想调整一部分日志的级别：排查业务问题时打开 `debug`，又不想被访问日志刷屏；或者全局只看 `warn`，但保留某个模块的 `info`。`levels` 按日志的 `component` 字段覆盖全局的 `level`：
+`logs.levels` 按日志的 `component` 字段覆盖全局的 `level`，可以更高也可以更低：
 
 ```yaml
 logs:
@@ -232,114 +96,192 @@ logs:
     billing: info
 ```
 
-没有 `component` 字段，或者 `component` 不在 `levels` 中的日志，使用全局的 `level`。覆盖的级别可以比全局级别更高，也可以更低。
+框架组件的日志都带有 `component` 字段，例如 `http`（访问日志、panic、`5xx` 诊断）、`queue`、`schedule`、`database`（慢查询）、`nats`、`mcp`、`rpc`、`realtime`、`ai`、`cache`、`mail`、`telemetry`。
 
-框架组件记录的日志都带有 `component` 字段：
-
-| component | 日志 |
-| --- | --- |
-| `http` | 访问日志、panic 堆栈、`5xx` 诊断、认证后端故障、平滑停止 |
-| `queue` | 任务失败与重试、转入失败任务表、领取和写回任务的数据库错误 |
-| `schedule` | 定时任务失败、因重叠跳过、调度落后 |
-
-你自己的模块通过 `With` 或 context 设置 `component`：
+自己的模块在日志器或 `ctx` 上设置 `component`：
 
 ```go
-// 服务持有的日志器
 logger := slog.Default().With(logging.AttrComponent, "billing")
-
-// 或者放进 context，之后用这个 ctx 记录的日志都属于该组件
+// 或者放进 ctx，之后用这个 ctx 记录的日志都属于该组件
 ctx = logging.WithAttrs(ctx, slog.String(logging.AttrComponent, "billing"))
 ```
 
-> [!NOTE]
-> 只写在单条日志里的 `component`（例如 `slog.Debug("…", "component", "billing")`）只能让级别**更严格**：比全局级别更低的日志在 slog 判断是否记录时就已经被丢弃了。需要放宽级别的组件，请用上面两种方式设置。
+只写在单条日志中的 `component`（`slog.Debug("…", "component", "billing")`）只能让级别更严格：低于全局级别的日志在 slog 判断是否记录时已经丢弃。
 
-<a id="troubleshooting"></a>
-## 常见问题
+<a id="pipeline"></a>
+## 扩展处理链：`Format`、`Pipe`、`Fanout`、`Export`
 
-**日志中没有 `request_id`**
+`logging.New` 的选项把自己的部分放进处理链的固定位置，由外到内是：
 
-记录日志时没有传入请求的 `ctx`。改用 `slog.InfoContext(ctx, ...)` 这类带 `Context` 的函数，见[请求关联](#request-correlation)。
-
-**`slog.Debug` 的日志没有输出**
-
-默认的级别是 `info`，低于它的日志被丢弃。开发时把 `level` 设为 `debug`，见 [level](#config-level)。
-
-**开发时 JSON 日志不好读**
-
-把 `format` 设为 `text`，见 [format](#formats)。
-
-**某个组件的日志太多**
-
-只调高这个组件的级别，不影响其他日志，见[按组件设置级别](#component-levels)。
-
-**错误日志中没有堆栈**
-
-错误没有用 `errors.Wrap` 包装，见[处理底层错误](errors.md#wrapping-errors)。
-
-<a id="api-reference"></a>
-## API 参考
-
-包 `github.com/go-tenon/tenon/logging`。
-
-### New
-
-```go
-func New(cfg Config, opts ...Option) *slog.Logger
+```text
+context 字段 → 组件级别 → Pipe 中间件 → 格式化（ErrorFormatter + Format）→ 基础输出 + Fanout 输出 + Export
 ```
 
-- **参数**
-    - `cfg`：日志的配置，见[配置](#creating-a-logger)
-    - `opts`：扩展处理链的选项，见[日志进阶](logging-advanced.md#api-reference)
-- **返回**：构造好的日志器
-
-只返回日志器，全局状态由调用者设置。默认启用 `ErrorFormatter`，输出到 `cfg.Writer`（默认是标准错误）。
+context 字段和格式化在分发之前完成，所以每个输出拿到的内容一致，脱敏规则对所有输出生效。
 
 ```go
-slog.SetDefault(logging.New(cfg.Logs))
+slog.SetDefault(logging.New(cfg.Logs,
+    logging.Format(slogformatter.PIIFormatter("user")),
+    logging.Pipe(dropHealthChecks),
+    logging.Fanout(alerts),
+    logging.Export(tel.Logs),
+))
 ```
 
-### WithAttrs
+`Format`、`Pipe`、`Fanout` 接收 [slog-formatter](https://github.com/samber/slog-formatter) 的 `Formatter`、[slog-multi](https://github.com/samber/slog-multi) 的 `Middleware` 和 `slog.Handler`，社区现成的实现可以直接传入。`logging.Export` 把日志推送到 OTLP 接收端，`tel` 是 `telemetry.Open` 的返回值，见[可观测性](telemetry.md#setup)。
+
+<a id="formatting"></a>
+### 用 `logging.Format` 格式化字段
+
+`logging.Format` 按字段名（`FormatByKey`）、类型（`FormatByType`）或种类（`FormatByKind`）改写字段值，包括嵌套分组中的字段：
 
 ```go
-func WithAttrs(ctx context.Context, attrs ...slog.Attr) context.Context
-func ContextAttrs(ctx context.Context) []slog.Attr
+logging.Format(slogformatter.FormatByType(func(u *account.User) slog.Value {
+    return slog.GroupValue(slog.String("id", u.ID)) // 无论字段名是什么，只输出 ID
+}))
 ```
 
-把字段放进 context，之后用这个 context 记录的日志都带上它们。多次调用累加，父 context 保持原样。`ContextAttrs` 读取已放入的字段。
+不加 slog-formatter 自带的 `ErrorFormatter`：它记录的是写日志那一行的堆栈，框架默认启用的 `logging.ErrorFormatter` 记录错误创建处的堆栈。
 
-### WithRequestID、RequestID
+<a id="multiple-outputs"></a>
+### 用 `logging.Fanout` 输出到多个地方
+
+`logging.Fanout` 追加的输出与基础输出并列接收日志，各自按自己的级别过滤。例如用 [slog-slack](https://github.com/samber/slog-slack) 把错误同时发到 Slack，`cfg.Alert.SlackWebhook` 是应用自己的配置项：
 
 ```go
-func WithRequestID(ctx context.Context, id string) context.Context
-func RequestID(ctx context.Context) string
+alerts := slogslack.Option{Level: slog.LevelError, WebhookURL: cfg.Alert.SlackWebhook}.NewSlackHandler()
+slog.SetDefault(logging.New(cfg.Logs, logging.Fanout(alerts)))
 ```
 
-`WithRequestID` 把 `id` 作为请求 ID 放进 context，之后用这个 context 记录的日志都带上 `request_id` 字段；`id` 为空时原样返回 `ctx`。入口在开始处理一次调用时调用它，例如 `httpx.AssignRequestID`。
+按条件分发用 slog-multi 的 `Router`。需要 logfmt 时追加 `logging.Fanout(slog.NewTextHandler(w, nil))`，`text` 格式不是严格的 logfmt。
 
-`RequestID` 读取 context 中的请求 ID，没有时返回空字符串。见[调用关联](#request-correlation)。
+> [!WARNING]
+> 发往第三方服务的输出会产生网络请求。只发送需要的级别（通常是 `error`），并确认它异步发送，或者用 slog-multi 的 `Pool` 放到后台；同步发送时第三方服务变慢，请求也跟着变慢。
 
-### AttrComponent
+<a id="handler-middleware"></a>
+### 用 `logging.Pipe` 过滤和采样日志
+
+`logging.Pipe` 接收 `slogmulti.Middleware`，在格式化和分发之前处理每条日志，多个中间件按传入顺序由外到内执行。例如丢弃健康检查的日志：
 
 ```go
-const AttrComponent = "component"
+dropHealthChecks := slogmulti.NewHandleInlineMiddleware(
+    func(ctx context.Context, r slog.Record, next func(context.Context, slog.Record) error) error {
+        if r.Message == "health check" {
+            return nil
+        }
+        return next(ctx, r)
+    },
+)
 ```
 
-组件字段名，[按组件设置级别](#component-levels)时按它匹配。
+不记录某些路径的访问日志用 [`http.access_log.ignore_paths`](../http/middleware.md#access-log)。
 
-### RecordError
+<a id="custom-handlers"></a>
+### 用自己的 slog Handler（`NewContextHandler`）
+
+已有的 Handler 用 `logging.Fanout` 接入。完全绕开 `logging.New` 时，用 `logging.NewContextHandler` 包装 Handler，日志才带上 context 中的关联字段；`ErrorFormatter` 等格式化规则要自己安装：
 
 ```go
-func RecordError(span trace.Span, err error)
+slog.SetDefault(slog.New(logging.NewContextHandler(myHandler)))
 ```
 
-在链路上记录错误，属性与 `ErrorFormatter` 的字段对应，见[错误追踪](telemetry.md#error-tracking)。
+<a id="redacting-sensitive-data"></a>
+## 日志脱敏：隐藏密码、手机号等敏感字段
 
-### Or
+框架不对字段脱敏，需要时用 `logging.Format` 加上 slog-formatter 的规则，它们对所有输出生效，框架记录的访问日志和错误诊断也经过它们。
+
+- 规则只按字段名或类型匹配，所以敏感数据始终作为字段传入，不拼进消息。
+- 访问日志中 `Authorization`、`Cookie` 等认证相关的请求头始终隐藏，见[访问日志](../http/middleware.md#access-log)。其他请求头用 `FormatByKey` 按请求头名处理，例如 `slogformatter.FormatByKey("X-Api-Key", ...)`。
+
+<a id="builtin-redaction"></a>
+### 用 `PIIFormatter` 脱敏
+
+`PIIFormatter` 对指定字段及其子字段脱敏，`IPAddressFormatter` 整体隐藏指定字段：
 
 ```go
-func Or(l *slog.Logger) *slog.Logger
+slog.SetDefault(logging.New(cfg.Logs, logging.Format(
+    slogformatter.PIIFormatter("user"),
+    slogformatter.IPAddressFormatter("client_ip"),
+)))
+
+slog.InfoContext(ctx, "user signed up",
+    slog.Group("user", "id", u.ID, "email", u.Email), "client_ip", ip)
+// {"msg":"user signed up","user":{"id":"bd57ffbd-…","email":"foob*******"},"client_ip":"*******"}
 ```
 
-`l` 为 `nil` 时返回 `slog.Default()`。组件处理可选的日志器参数时使用。
+`PIIFormatter` 保留 `id` 和以 `_id`、`-id` 结尾的字段，便于关联；长度大于 5 的字符串保留前 4 个字符，其余值整体替换为 `*******`。
+
+<a id="custom-redaction"></a>
+### 自定义脱敏规则
+
+用 `FormatByKey` 或 `FormatByType` 自己写。例如手机号只保留后 4 位：
+
+```go
+logging.Format(slogformatter.FormatByKey("phone", func(v slog.Value) slog.Value {
+    s := v.String()
+    if len(s) <= 4 {
+        return slog.StringValue("****")
+    }
+    return slog.StringValue("****" + s[len(s)-4:])
+}))
+```
+
+<a id="testing-logs"></a>
+## 在测试中断言日志（`logtest`）
+
+`logtest.Capture` 在测试期间把记录器安装为 `slog.Default`，测试结束后恢复：
+
+```go
+func TestPublishLogsEvent(t *testing.T) {
+    rec := logtest.Capture(t)
+
+    // ……调用 Publish
+
+    got, ok := rec.Find("article published")
+    if !ok || got.Attr("article_id") != id.String() {
+        t.Fatal(rec.Records())
+    }
+}
+```
+
+- `Records()` 返回全部日志，`Find(msg)` 返回第一条消息为 `msg` 的日志，`Has(level, msg)` 判断有没有这条日志，`Reset()` 清空。
+- `Record.Attr(key)` 返回字段值，分组以 `.` 连接，例如 `response.status`。整数字段的值是 `int64`，比较时写 `int64(404)`。
+- 记录器同样输出 context 字段并展开 `error`，可以断言 `request_id` 或 `error.code`。
+
+> [!IMPORTANT]
+> `Capture` 修改全局状态，使用它的测试不调用 `t.Parallel()`。并行的测试用 `logtest.New()`，把 `rec.Logger()` 显式传给被测组件，例如 `httpx.Defaults(cfg, httpx.Logger(rec.Logger()))`。
+
+<a id="creating-a-logger"></a>
+## 配置：`logs` 段
+
+`logging.Config` 放在根配置的 `logs` 段，零值可以直接使用。`logging.New(cfg, opts...)` 只返回日志器，由入口用 `slog.SetDefault` 安装。
+
+```yaml
+logs:
+  level: ${LOG_LEVEL:-info}  # debug、info、warn、error，默认 info；slog.Debug 的日志要设为 debug 才输出
+  levels:                    # 按 component 覆盖 level，见“按组件设置日志级别”
+    http: warn
+  format: ${LOG_FORMAT:-}    # json 或 text；为空时按输出自动选择，见“日志格式”
+  time_zone: UTC             # 日志时间和字段中时间值的时区；为空时用进程的本地时区
+  add_source: false          # 记录产生日志的源码位置
+```
+
+- 日志输出到标准错误，标准输出留给命令的结果（例如 `openapi` 命令）。`Writer` 字段改变输出位置，只能在代码中设置，例如测试中 `cfg.Logs.Writer = &buf`。
+- 多个环境的日志混合检索时，`time_zone` 统一设为 `UTC`。
+- 日志中没有服务名和版本。推送到日志平台时由 [`telemetry`](telemetry.md#setup) 段配置，作为资源属性附在日志上；采集标准错误时，由采集端按 systemd unit 或容器区分来源。
+
+<a id="formats"></a>
+### 日志格式：`json` 和 `text`
+
+`format` 为空时按输出选择：输出到终端时是 `text`，其余（文件、管道、systemd、容器）是 `json`。所以开发时在终端中看到彩色文本，部署后采集到 JSON，两个环境用同一份配置。
+
+- `json`：每行一个 JSON 对象，供日志系统采集，生产环境用它。让 AI 编程助手分析日志时也用 `json`。
+- `text`：本地开发时阅读，基于 [tint](https://github.com/lmittmann/tint)，级别缩写为 `DBG`、`INF`、`WRN`、`ERR`，分组字段以 `.` 连接：
+
+  ```text
+  2026-11-10 17:05:12.345 INF http request component=http request.method=GET response.status=200 request_id=9F2K…
+  ```
+
+输出到管道、文件或 CI 时去掉颜色，`NO_COLOR=1` 也关闭颜色。`FORCE_COLOR=1` 让输出按终端处理（`text` 并着色）：`tenon dev` 这样运行应用，同时把输出写进 `.tenon/dev.log`，见 [AI 编程助手](../installation/ai-assistants.md#mcp-servers)。
+
+容器分配了终端（`docker run -t`、Compose 的 `tty: true`）时自动选择的是 `text`，日志系统要 JSON 时设置 `LOG_FORMAT=json`。

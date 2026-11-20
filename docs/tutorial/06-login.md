@@ -388,7 +388,7 @@ func RegisterRoutes(api *rest.API, requireUser func(*huma.Operation), db *bun.DB
 }
 ```
 
-- `identity.FromContext` 从 ctx 中取出这次请求的登录者。登录者是验证 token 时放进 ctx 的，见 [context](../concepts/go-primer.md#context)。
+- `identity.FromContext` 从 ctx 中取出这次请求的登录者。登录者是验证 token 时放进 ctx 的，见 context。
 - `requireUser` 是一个保护接口的函数，和 `rest.Public()` 用法一样：被它保护的接口，只有带着有效的登录凭据才能调用，所以 `Me` 中一定能取到登录者。它在下文的装配一节中创建。
 
 <a id="auth"></a>

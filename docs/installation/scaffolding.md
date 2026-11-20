@@ -237,7 +237,7 @@ func routes(cfg Config, store *todo.Store, pages http.Handler) chi.Router {
 所以项目让页面和接口都在同一个端口上，Go 是唯一的入口：
 
 - **开发时**：前端的开发服务器（TanStack Start 的 Vite）在另一个端口上运行，但你不直接访问它。Go 程序在 8080 端口上处理 `/api` 的请求，把其余的请求（页面、热更新）转发给开发服务器。浏览器始终只访问 8080。
-- **发布时**：`tenon build` 构建前端，把静态文件放进 `apps/dist`；`web` 在服务端渲染，它的服务端入口连同 Bun 编译成 `apps/dist/ssr`。`apps/apps.go` 把 `apps/dist` 打包进 Go 程序（见 [embed](../concepts/go-primer.md#embed)）。Go 程序直接返回静态文件，从内存中运行 SSR 程序，页面请求经 unix socket 交给它渲染。
+- **发布时**：`tenon build` 构建前端，把静态文件放进 `apps/dist`；`web` 在服务端渲染，它的服务端入口连同 Bun 编译成 `apps/dist/ssr`。`apps/apps.go` 把 `apps/dist` 打包进 Go 程序（见 embed）。Go 程序直接返回静态文件，从内存中运行 SSR 程序，页面请求经 unix socket 交给它渲染。
 
 `apps/web/package.json` 中的 `"ssr": true` 决定 `web` 在服务端渲染。后台这类不需要搜索引擎收录的前端只在浏览器中渲染，Go 直接返回页面，程序中不带 Bun。细节见[托管前端与服务端渲染](../frontend/hosting.md)和 [TanStack Start 的接入](../frontend/start.md)。
 
@@ -267,7 +267,7 @@ bun run build
 
 生成的代码（客户端、路由树、技能）都要提交：CI 重新生成一次，有差异就说明有人忘了提交。`tenon init` 已经生成了它们，第一次提交时就是完整的。
 
-项目用到数据库以后，在 `check` 任务中加上 PostgreSQL，见[在 CI 中运行数据库测试](../testing/database.md#database-tests-in-ci)。代码不放在 GitHub 上时，删掉 `.github` 目录，按同样的步骤写你所用平台的 CI。
+项目用到数据库以后，在 `check` 任务中加上 PostgreSQL，见[在 CI 中运行数据库测试](../testing/testing.md#database-tests-in-ci)。代码不放在 GitHub 上时，删掉 `.github` 目录，按同样的步骤写你所用平台的 CI。
 
 <a id="troubleshooting"></a>
 ## 常见问题

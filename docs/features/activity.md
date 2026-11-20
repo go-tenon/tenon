@@ -6,7 +6,7 @@
 
 每条记录都由业务动作显式写入：业务真正关心的是“文章已发布”这样的事件，批量更新也同样能记录。
 
-阅读前需要了解：[数据库事务](../database/quick-start.md#transactions)；[业务动作](../concepts/actions.md)；[发布框架迁移](../database/migrations.md#publishing-framework-migrations)。
+阅读前需要了解：[数据库事务](../database/database.md#transactions)；[业务动作](../concepts/actions.md)；[发布框架迁移](../database/migrations.md#publishing-framework-migrations)。
 
 - [示例用法](#example-usage)
 - [安装](#installation)
@@ -91,7 +91,7 @@ func (a *Publish) Handle(ctx context.Context, subject identity.Subject, id uuid.
 | `RequestID` | 本次请求的[请求 ID](../http/middleware.md#request-id)，可以用它在日志中找到这次请求的全部日志 |
 | `CreatedAt` | 当前时间 |
 
-`Record` 必须使用事务 `tx`，记录才会随事务一起回滚，见[事务](../database/quick-start.md#transactions)。
+`Record` 必须使用事务 `tx`，记录才会随事务一起回滚，见[事务](../database/database.md#transactions)。
 
 <a id="events-and-properties"></a>
 ### 事件与属性

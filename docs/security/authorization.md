@@ -224,7 +224,7 @@ roles := authz.NewStore(a.db, auth.Permissions, authz.Cache(mc, "app:prod:", tim
 
 几点限制：
 
-- 修改角色和分配的每个 `Store` 都要带上同样的 `authz.Cache`。`Store` 建在 [`database.Tx`](../database/quick-start.md#after-commit) 上时，缓存在事务提交之后失效；建在其他事务上会 panic，因为无从得知何时提交。
+- 修改角色和分配的每个 `Store` 都要带上同样的 `authz.Cache`。`Store` 建在 [`database.Tx`](../database/database.md#after-commit) 上时，缓存在事务提交之后失效；建在其他事务上会 panic，因为无从得知何时提交。
 - 绕过 `Store` 直接改表，例如手写 SQL 修复数据，旧的权限最多保留一个过期时间。
 - Memcached 不可用时直接查询数据库；修改之后使缓存失效失败时，修改照常成功，记录 Error 日志，旧的权限同样最多保留一个过期时间。
 

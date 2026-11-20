@@ -4,7 +4,7 @@
 
 `privacy` 包把这些地方登记在一起。用户申请注销后先经过一段**冷静期**，期间可以撤销；冷静期结束后，定时任务在**一个事务**中删除全部登记的数据，要么全部删除，要么失败回滚、稍后重试。
 
-阅读前需要了解：[数据库事务](../database/quick-start.md#transactions)；[发布框架迁移](../database/migrations.md#publishing-framework-migrations)；[定时任务](../background/scheduling.md)；[业务错误](../general/errors.md)。
+阅读前需要了解：[数据库事务](../database/database.md#transactions)；[发布框架迁移](../database/migrations.md#publishing-framework-migrations)；[定时任务](../background/scheduling.md)；[业务错误](../general/errors.md)。
 
 - [示例用法](#example-usage)
 - [安装](#installation)

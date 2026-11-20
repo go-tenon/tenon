@@ -1,99 +1,76 @@
 # 本地化
 
-本地化让同一个 API 根据请求的语言返回不同语言的提示文案，最常见的用途是翻译错误响应中的 `detail`。
+按请求的语言翻译给人看的文案：错误响应的 `detail`、校验提示和应用自己的文案。
 
-在开始之前，有一点需要明确：本地化只影响**展示文案**。错误码、错误分类等业务语义始终不变，客户端应当根据 `code` 判断错误，把 `detail` 直接展示给用户。
+包：`i18n`。
 
-本地化基于 [go-i18n](https://github.com/nicksnyder/go-i18n)。`i18n` 包把框架内置的消息和你的翻译文件组合成一个原生的 go-i18n `Bundle`（可以理解为“全部语言的全部翻译”），并在请求的 context 中携带为这个请求选定的语言。
+错误码和分类不随语言变化：客户端按 `code` 判断错误，把 `detail` 直接展示给用户。`i18n` 基于 [go-i18n](https://github.com/nicksnyder/go-i18n)，`i18n.New` 返回原生的 `*goi18n.Bundle`（下文叫语言目录），请求选定的语言放在 context 中。
 
-几个术语：
+<a id="example"></a>
+## 示例
 
-- **消息 ID**：一条文案的名字，例如 `article.not_found`。代码中只写消息 ID，具体的文字写在翻译文件中。
-- **语言标签**：表示一种语言的标准写法，例如 `en`、`zh-CN`（简体中文）。
-- **语言协商**：根据浏览器发来的 `Accept-Language` 请求头（用户偏好的语言列表），从应用支持的语言中选出最合适的一种。
+翻译文件放在项目的 `locales` 目录中，由这个文件嵌入程序：
 
-阅读前需要了解：[错误处理](errors.md)；[embed](../concepts/go-primer.md#embed)。
+```go
+// Package locales 嵌入应用的翻译：业务错误码对应给用户看的提示。
+package locales
 
-- [示例用法](#example-usage)
-- [启用本地化](#enabling-localization)
-    - [内置消息](#built-in-messages)
-- [确定请求语言](#determining-the-locale)
-- [定义翻译](#defining-translations)
-    - [翻译文件](#translation-files)
-    - [加载翻译](#loading-translations)
-    - [覆盖内置消息](#overriding-built-in-messages)
-- [获取翻译](#retrieving-translations)
-- [翻译错误消息](#translating-errors)
-- [在 HTTP 之外使用](#outside-http)
-- [常见问题](#troubleshooting)
-- [API 参考](#api-reference)
+import "embed"
 
-<a id="example-usage"></a>
-## 示例用法
-
-首先，为你的业务错误码写一条翻译：
+//go:embed *.yaml
+var FS embed.FS
+```
 
 ```yaml
 # locales/zh-CN.yaml
 article.not_found: 文章不存在
 ```
 
-然后加载翻译文件，把得到的语言目录交给默认中间件：
+装配 HTTP 服务时把语言目录交给默认中间件，`router` 是应用的 chi 路由，`cfg.HTTP` 是 [HTTP 配置](../http/middleware.md#http-configuration)：
 
 ```go
-//go:embed *.yaml
-var files embed.FS
-
-router.Use(httpx.Defaults(cfg.HTTP, httpx.Languages(i18n.MustNew("zh-CN", files)))...)
+router.Use(httpx.Defaults(cfg.HTTP, httpx.Languages(i18n.MustNew("zh-CN", locales.FS)))...)
 ```
 
-现在，返回 `article.not_found` 业务错误的接口，响应中的 `detail` 就是“文章不存在”。如果请求带着 `Accept-Language: en`，而 `en.yaml` 中也有这条消息，返回的就是英文。
+返回 `article.not_found` 业务错误的接口，响应的 `detail` 是“文章不存在”。请求带着 `Accept-Language: en` 而 `en.yaml` 中也有这条消息时，返回英文。
 
 <a id="enabling-localization"></a>
-## 启用本地化
+## 启用本地化：`httpx.Languages`、`command.Languages`
 
-本地化默认就是开启的。不传 `httpx.Languages` 选项时，`httpx.Defaults` 使用框架内置的消息，默认语言为 `zh-CN`：
+本地化默认开启：不传 `httpx.Languages` 时，`httpx.Defaults` 使用框架内置的消息，默认语言为 `zh-CN`。应用有自己的翻译或者要换默认语言时，把同一个语言目录交给每个入口：
 
 ```go
-router := chi.NewRouter()
-router.Use(httpx.Defaults(cfg.HTTP)...)
-api := rest.New(router, rest.Options{})
+languages := i18n.MustNew("zh-CN", locales.FS)
+
+router.Use(httpx.Defaults(cfg.HTTP, httpx.Languages(languages))...)  // HTTP 接口
+command.Execute(root, command.Languages(languages))                  // 命令失败时的提示
+root.AddCommand(httpcmd.Commands(routes, httpcmd.Translations(locales.FS))...) // 生成的客户端中的校验提示
 ```
 
-这样，框架内置的错误码已经会按请求语言翻译。需要自己的翻译或其他默认语言时，用 `i18n.New` 创建语言目录，通过 `httpx.Languages` 传进去，见[加载翻译](#loading-translations)。
+- `root` 是 `command.Root` 创建的根命令，`routes` 构造应用的全部路由，见[装配命令行](commands.md#declaring-the-cli)。
+- 后台任务等其他入口自己设置语言，见[在 HTTP 之外使用](#outside-http)。
 
 <a id="built-in-messages"></a>
-### 内置消息
+### 框架内置的消息
 
-框架内置了英文（`en`）和简体中文（`zh-CN`）消息，覆盖框架自身定义的业务错误码：
-
-| 消息 ID | en | zh-CN |
-| --- | --- | --- |
-| `auth.unauthenticated` | Authentication required | 请先认证 |
-| `auth.forbidden` | Permission denied | 没有访问权限 |
-| `page.invalid_cursor` | Invalid pagination cursor | 分页游标无效 |
-
+框架内置英文（`en`）和简体中文（`zh-CN`）消息，框架用 `errorx.Define` 定义的每个错误码都有这两种语言的译文，例如 `auth.unauthenticated`（“请先认证”）、`page.invalid_cursor`（“分页游标无效”）。应用的翻译文件可以覆盖它们，见[覆盖内置消息](#overriding-built-in-messages)。
 
 <a id="determining-the-locale"></a>
-## 确定请求语言
+## 确定请求语言：`Accept-Language`
 
-`httpx.Defaults` 中的 `httpx.Locale` 中间件会根据请求的 `Accept-Language` 头，从语言目录已有的语言中选择最匹配的一种，并通过 `Content-Language` 响应头告知客户端。不支持或无法解析的语言会回退到默认语言。
+`httpx.Defaults` 中的 `httpx.Locale` 中间件按请求的 `Accept-Language` 头，从语言目录已有的语言中选出最匹配的一种，写入 context，并在 `Content-Language` 响应头中返回。不支持或无法解析的语言回退到默认语言。
 
 ```bash
 curl -i http://localhost:8080/articles -H 'Accept-Language: en'
 ```
 
-假设 `/articles` 是一个需要认证的路由，这个请求由于没有携带凭据会返回 `401`，`detail` 为英文的 `Authentication required`，而 `code` 始终是 `auth.unauthenticated`。
-
-在代码中，可以用 `i18n.Locale(ctx)` 读取当前请求选定的语言。
-
-<a id="defining-translations"></a>
-## 定义翻译
+- 发送了 `Accept-Language: zh-CN` 却得到英文时，看 `Content-Language`：应用没有这种语言的翻译文件，协商回退到了默认语言。
+- 代码中用 `i18n.Locale(ctx)` 读取当前请求选定的语言。
 
 <a id="translation-files"></a>
-### 翻译文件
+## 翻译文件
 
-为应用自己的消息创建翻译文件，文件名就是语言标签。例如 `locales/en.yaml`：
+每种语言一个 YAML 文件，文件名是语言标签，放在 `locales` 中，例如 `locales/en.yaml`：
 
 ```yaml
 article.not_found: Article not found
@@ -101,7 +78,7 @@ article.slug_locked: The slug of a published article cannot be changed
 article.slug_taken: "The slug \"{{.slug}}\" is already taken"
 ```
 
-以及 `locales/zh-CN.yaml`：
+`locales/zh-CN.yaml`：
 
 ```yaml
 article.not_found: 文章不存在
@@ -109,64 +86,51 @@ article.slug_locked: 已发布文章的 slug 不能修改
 article.slug_taken: "slug“{{.slug}}”已被使用"
 ```
 
-消息 ID 与[业务错误码](errors.md#defining-errors)使用相同的写法，这样错误响应就能直接找到对应的翻译。
+- 消息 ID 就是[业务错误码](errors.md#defining-errors)，错误响应按错误码找到译文。
+- `{{.slug}}` 取自错误的[公开参数](errors.md#public-parameters)。
+- 值中有冒号、引号或以 `{` 开头时，用双引号把整个值包起来，否则加载时报 YAML 格式错误。
 
 <a id="loading-translations"></a>
-### 加载翻译
+## 用 `i18n.New` 加载翻译
 
-用 `embed` 把翻译文件嵌入二进制，传给 `i18n.New`，再把得到的语言目录交给 `httpx.Defaults`：
+`i18n.New` 的第一个参数是默认语言，之后是任意多个存放翻译文件的文件系统，通常是嵌入的 `locales.FS`：
 
 ```go
-//go:embed locales/*.yaml
-var localeFiles embed.FS
-
-func NewAPI(cfg httpx.Config) (*rest.API, error) {
-    languages, err := i18n.New("en", localeFiles)
-    if err != nil {
-        return nil, err
-    }
-    router := chi.NewRouter()
-    router.Use(httpx.Defaults(cfg, httpx.Languages(languages))...)
-    return rest.New(router, rest.Options{}), nil
+languages, err := i18n.New("en", locales.FS)
+if err != nil {
+    return nil, err
 }
 ```
 
-`i18n.New` 的第一个参数是默认语言，之后可以传入任意多个文件系统，框架会读取其中所有的 YAML 翻译文件。内置消息总是最先自动加载。
-
-翻译文件嵌入在二进制中时，加载失败只可能是文件本身写错了，属于构建的问题。这时可以用 `i18n.MustNew`，它出错时 panic，构造路由的函数就可以直接返回路由：
-
-```go
-router.Use(httpx.Defaults(cfg, httpx.Languages(i18n.MustNew("en", localeFiles)))...)
-```
-
-> [!NOTE]
-> `i18n.New` 返回原生的 go-i18n `Bundle`，它可以修改。在启动阶段完成所有修改，开始处理请求后只读取它。
+- 框架内置的消息最先加载，再按顺序加载各个文件系统中的全部 YAML 文件。
+- 翻译文件嵌入在程序中时，加载失败只可能是文件写错了，用 `i18n.MustNew`，出错时 panic。
+- 返回的 `*goi18n.Bundle` 可以修改。在启动时完成所有修改，开始处理请求后只读取它。
 
 <a id="overriding-built-in-messages"></a>
 ### 覆盖内置消息
 
-后加载的同名消息会覆盖先加载的。由于内置消息最先加载，如果你不喜欢内置的“请先认证”，只需在应用的 `zh-CN.yaml` 中重新定义 `auth.unauthenticated`：
+后加载的同名消息覆盖先加载的。内置消息最先加载，所以在应用的 `zh-CN.yaml` 中重新定义同一个消息 ID 就覆盖了内置的译文：
 
 ```yaml
 auth.unauthenticated: 请先登录
 ```
 
-传入多个文件系统时，规则相同：排在后面的覆盖排在前面的。
+传入多个文件系统时，排在后面的覆盖排在前面的。
 
 <a id="retrieving-translations"></a>
-## 获取翻译
+## 用 `i18n.T` 翻译文案
 
-在业务代码中需要翻译其他文案时，使用 `i18n.T`，它按请求 context 中的语言翻译：
+`i18n.T` 按 context 中的语言翻译，第三个参数是模板数据，没有时传 `nil`：
 
 ```go
 message := i18n.T(ctx, "article.slug_locked", nil)
-
 message = i18n.T(ctx, "article.slug_taken", map[string]any{"slug": slug})
 ```
 
-第三个参数是模板数据，没有时传 `nil`。请求语言中缺少这条消息时，`i18n.T` 返回默认语言的译文；默认语言也没有，或者 context 中没有语言（例如队列中的后台任务）时，返回消息 ID 本身。
+- 请求语言中缺少这条消息时，返回默认语言的译文。
+- 默认语言也没有，或者 context 中没有语言（例如没有设置语言的后台任务）时，返回消息 ID 本身。
 
-复数形式等高级功能，通过 `i18n.Localizer(ctx)` 取得当前请求的 go-i18n `Localizer` 直接使用，请参阅 [go-i18n 文档](https://github.com/nicksnyder/go-i18n)：
+复数等功能用 `i18n.Localizer(ctx)` 取得 go-i18n 的 `*goi18n.Localizer` 直接调用，用法见 [go-i18n 的文档](https://github.com/nicksnyder/go-i18n)。context 中没有语言时它返回 `nil`：
 
 ```go
 import goi18n "github.com/nicksnyder/go-i18n/v2/i18n"
@@ -177,32 +141,18 @@ message, err := i18n.Localizer(ctx).Localize(&goi18n.LocalizeConfig{
 })
 ```
 
-`goi18n` 是 go-i18n 包的别名，用来与框架的 `i18n` 包区分。context 中没有语言时，`i18n.Localizer` 返回 `nil`。
-
 <a id="translating-errors"></a>
 ## 翻译错误消息
 
-业务错误的响应会把错误码作为消息 ID，自动翻译 `detail` 字段。你只需在翻译文件中为每个业务错误码添加一条消息即可。
+业务错误的响应以错误码为消息 ID 翻译 `detail`，[公开参数](errors.md#public-parameters)是模板数据。每定义一个业务错误，在每种语言的翻译文件中加一条消息。
 
-如果错误通过 [`errorx.Public`](errors.md#public-parameters) 携带了公开参数，它们会作为模板数据传入翻译。例如上面的 `article.slug_taken` 翻译中使用了 `{{.slug}}`，返回错误时附加同名参数：
-
-```go
-return ErrSlugTaken.Wrap(err, errorx.Public("slug", c.Slug))
-```
-
-请求语言为中文时，得到的 `detail` 为 `slug“hello-world”已被使用`。
-
-如果请求语言中缺少某个错误码的翻译，`detail` 会使用默认语言的译文；默认语言也没有时，使用 HTTP 状态的通用描述。这两种情况下，这个请求的[访问日志](../http/middleware.md#access-log)都会带上 `"untranslated":true`，方便你查找需要补充的翻译。
-
-> [!NOTE]
-> 业务错误和[验证错误](../http/validation.md#validation-messages)会被翻译。路由不存在、服务端内部错误等其他错误保持 Huma 的英文描述，客户端应根据状态码自行展示提示。
+- 请求语言缺少译文时，`detail` 用默认语言的译文；默认语言也没有时，用 HTTP 状态的描述，例如 `Not Found`。两种情况下这个请求的[访问日志](../http/middleware.md#access-log)都带上 `"untranslated":true`，按它查找要补的翻译。
+- 业务错误和[校验错误](../http/validation.md#validation-messages)会被翻译。路由不存在、服务端内部错误等其他错误保持英文描述，客户端按状态码显示自己的提示。
 
 <a id="outside-http"></a>
-## 在 HTTP 之外使用
+## 在 HTTP 之外使用：`i18n.WithLocale`、`i18n.ErrorMessage`
 
-`i18n.T` 只读取 context 中的语言，`httpx.Locale` 只是替 HTTP 请求调用了 `i18n.WithLocale`。后台任务等其他入口要自己写入语言，否则 `i18n.T` 会原样返回消息 ID。
-
-例如文章发布后，后台任务给作者发送通知，语言取自作者的偏好设置：
+`i18n.T` 只读取 context 中的语言，HTTP 请求的语言由 `httpx.Locale` 写入。后台任务等其他入口用 `i18n.WithLocale` 自己写入，否则 `i18n.T` 原样返回消息 ID。`n.languages` 是 `i18n.New` 返回的语言目录：
 
 ```go
 func (n *Notifier) ArticlePublished(ctx context.Context, a *Article, author *User) error {
@@ -212,107 +162,16 @@ func (n *Notifier) ArticlePublished(ctx context.Context, a *Article, author *Use
 }
 ```
 
-业务错误也一样。HTTP 响应的 `detail` 由框架翻译；其他入口要把业务错误变成给人看的提示时，用 `i18n.ErrorMessage`，它和 HTTP 响应使用同一条译文：
+- `i18n.Match` 接受 `Accept-Language` 格式的偏好，可以传多个值，匹配不到时返回默认语言。
+- 命令的 context 已经带有 `command.Languages` 的默认语言，见[错误提示](commands.md#error-messages)。
+
+把业务错误变成给人看的提示时用 `i18n.ErrorMessage`，它与 HTTP 响应的 `detail` 使用同一条译文：
 
 ```go
 msg, _ := i18n.ErrorMessage(ctx, err)
 if msg == "" {
-    msg = "操作失败" // 没有错误码或没有译文时，换成这个入口自己的通用提示
+    msg = "操作失败" // 没有错误码或没有译文时，用这个入口自己的通用提示
 }
 ```
 
-`i18n.Match` 接受 `Accept-Language` 格式的偏好，在语言目录中协商，匹配失败时返回默认语言。它可以接收多个值，gRPC 拦截器可以直接传入 `metadata.ValueFromIncomingContext(ctx, "accept-language")...`。
-
-<a id="troubleshooting"></a>
-## 常见问题
-
-**响应的 `detail` 仍然是 `Not Found` 这样的英文**
-
-找不到这个错误码的翻译，日志中有一条警告。检查翻译文件中的消息 ID 是否与错误码完全一致，以及翻译文件是否已经加载。
-
-**明明发送了 `Accept-Language: zh-CN`，得到的却是英文**
-
-应用没有 `zh-CN` 的翻译文件，语言协商回退到了默认语言。看响应头 `Content-Language` 就知道最终选定的语言。
-
-**`{{.slug}}` 原样出现在提示中**
-
-错误没有附加名为 `slug` 的参数。用 `errorx.Public("slug", value)` 附加，名字区分大小写，见[在提示中带上参数](errors.md#public-parameters)。
-
-**加载翻译时报错 YAML 格式不对**
-
-值中有冒号、引号或以 `{` 开头时，用双引号把整个值包起来，例如 `article.slug_taken: "slug“{{.slug}}”已被使用"`。
-
-<a id="api-reference"></a>
-## API 参考
-
-包 `github.com/go-tenon/tenon/i18n`。
-
-### New
-
-```go
-func New(defaultLocale string, sources ...fs.FS) (*goi18n.Bundle, error)
-```
-
-- **参数**
-    - `defaultLocale`：默认语言，例如 `zh-CN`；请求的语言没有对应译文时使用它
-    - `sources`：存放翻译文件的文件系统，通常是 `embed.FS`
-- **返回**：语言目录；翻译文件格式错误时返回错误
-
-先加载框架内置的消息，再按顺序加载 `sources` 中的全部 YAML 翻译文件，后加载的同名消息覆盖先加载的。
-
-### MustNew
-
-```go
-func MustNew(defaultLocale string, sources ...fs.FS) *goi18n.Bundle
-```
-
-与 `New` 相同，出错时 panic。用于嵌入二进制的翻译文件，见[加载翻译](#loading-translations)。
-
-### T
-
-```go
-func T(ctx context.Context, id string, data any) string
-```
-
-- **参数**
-    - `id`：消息 ID，例如业务错误码
-    - `data`：模板数据，没有时传 `nil`
-- **返回**：翻译后的文案
-
-按 context 中的语言翻译。缺少译文时使用默认语言；context 中没有语言，或者默认语言也没有这条消息时，返回 `id` 本身。
-
-```go
-message := i18n.T(ctx, "article.slug_taken", map[string]any{"slug": slug})
-```
-
-### ErrorMessage
-
-```go
-func ErrorMessage(ctx context.Context, err error) (msg string, missing bool)
-```
-
-- **参数**
-    - `err`：要翻译的错误，通常是[业务错误](errors.md)
-- **返回**
-    - `msg`：译文；没有错误码、context 中没有语言，或者默认语言也没有译文时为空
-    - `missing`：当前语言缺少这条译文（使用了默认语言的译文，或者没有译文）；context 中没有语言时为 `false`
-
-以 `errorx.CodeOf(err)` 为消息 ID、[公开参数](errors.md#public-parameters)为模板数据，按 context 中的语言翻译，与 HTTP 响应的 `detail` 使用同一条译文。`msg` 为空时由入口换成自己的通用提示，例如 HTTP 响应使用状态的通用描述，见[翻译错误消息](#translating-errors)和[在 HTTP 之外使用](#outside-http)。
-
-### Locale、Localizer
-
-```go
-func Locale(ctx context.Context) string
-func Localizer(ctx context.Context) *goi18n.Localizer
-```
-
-读取 context 中的语言和 go-i18n `Localizer`，没有时分别返回空字符串和 `nil`。
-
-### WithLocale、Match
-
-```go
-func WithLocale(ctx context.Context, b *goi18n.Bundle, locale string) context.Context
-func Match(b *goi18n.Bundle, prefs ...string) string
-```
-
-`Match` 按 `Accept-Language` 格式的偏好在语言目录中协商，匹配不到时返回默认语言；`WithLocale` 把选定的语言写入 context。HTTP 请求由 `httpx.Locale` 中间件替你调用它们，其他入口（例如后台任务）需要自己调用，见[在 HTTP 之外使用](#outside-http)。
+第二个返回值表示当前语言缺少这条译文，用来记录需要补的翻译。

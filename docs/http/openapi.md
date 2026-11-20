@@ -4,7 +4,7 @@
 
 在 Tenon 中你不需要手写 OpenAPI 文档：[路由](routing.md)的输入、输出类型和 `huma.Operation` 已经描述了接口，框架据此生成文档。这一页介绍怎样查看和导出文档、怎样让文档写得更清楚，以及怎样给 API 加上版本号。
 
-阅读前需要了解：[路由](routing.md)；[结构体标签](../concepts/go-primer.md#struct-tags)。
+阅读前需要了解：[路由](routing.md)；结构体标签。
 
 - [在线查看](#viewing-docs)
 - [说明与示例](#describing-apis)

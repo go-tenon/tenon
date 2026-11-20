@@ -58,7 +58,7 @@ func (tx Tx) AfterCommit(fn func(ctx context.Context) error) {
 }
 
 // RunInTx 在事务中执行 fn：fn 返回错误时回滚，返回 nil 时提交，然后执行 AfterCommit 登记的回调。
-// 参数与 Bun 的 RunInTx 相同，只是数据库作为第一个参数传入，fn 收到的是 Tx。
+// 参数与 Bun 的 RunInTx 相同，只是数据库作为参数传入（紧跟在 ctx 之后），fn 收到的是 Tx。
 //
 // db 是 *bun.DB 或 bun.Conn 时开启一个新事务。db 是外层 RunInTx 的 Tx 时以保存点执行：
 // 保存点内登记的回调等外层事务提交后才执行，保存点回滚时丢弃；此时 opts 必须为 nil。

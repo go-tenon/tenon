@@ -15,7 +15,7 @@
 
 这一页以 HTTP 接口为例：客户端带上 token（浏览器放在会话 cookie 中，其他客户端放在 `Authorization: Bearer <token>` 中），框架拿你写的校验函数认出这个人，再把身份交给后面的处理器。
 
-阅读前需要了解：[路由](../http/routing.md)；[context](../concepts/go-primer.md#context)；[入门教程第 6 章](../tutorial/06-login.md#how-it-works)解释了 token。多套账号、多租户和代为登录见[认证进阶](authentication-advanced.md)。
+阅读前需要了解：[路由](../http/routing.md)；context；[入门教程第 6 章](../tutorial/06-login.md#how-it-works)解释了 token。多套账号、多租户和代为登录见[认证进阶](authentication-advanced.md)。
 
 整条链路可以想成：
 

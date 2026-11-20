@@ -4,7 +4,7 @@
 
 **这一章要做的：** 给程序加上 `migrate` 命令，写第一个迁移文件，用它创建文章表。
 
-阅读前需要了解：[第 2 章](02-infrastructure.md)；SQL 的 `CREATE TABLE` 语句；[embed](../concepts/go-primer.md#embed)。
+阅读前需要了解：[第 2 章](02-infrastructure.md)；SQL 的 `CREATE TABLE` 语句；embed。
 
 - [为什么用迁移](#why)
 - [迁移命令](#commands)
@@ -163,4 +163,4 @@ PostgreSQL 没有运行。在项目根目录运行 `docker compose up -d --wait`
 
 文章表已经建好了。下一章，我们为它写接口：创建、查询、修改、删除文章。
 
-深入了解：[迁移](../database/migrations.md)、[数据库](../database/quick-start.md)。
+深入了解：[迁移](../database/migrations.md)、[数据库](../database/database.md)。

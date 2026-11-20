@@ -197,7 +197,7 @@ crypt:
 c := crypt.New(crypt.Config{Key: crypt.GenerateKey()})
 ```
 
-测试链接过期时，用 [testing/synctest](../testing/overview.md#controlling-time) 推进时间：
+测试链接过期时，用 [testing/synctest](../testing/testing.md#controlling-time) 推进时间：
 
 ```go
 synctest.Test(t, func(t *testing.T) {

@@ -33,7 +33,7 @@ oauth.Routes(router)
 oauth.Register(api, rest.RequireToken(api, tokens.Validate))
 ```
 
-`a.db` 是[连接数据库](../database/quick-start.md#connecting)时得到的连接，`tokens` 是 [API 令牌](../security/api-tokens.md)的存储，`router` 和 `api` 是应用的路由和 [REST API](../http/routing.md)。只给自己的客户端登录、不对第三方开放时，`Resources` 和 `Scopes` 都不设置。
+`a.db` 是[连接数据库](../database/database.md#connecting)时得到的连接，`tokens` 是 [API 令牌](../security/api-tokens.md)的存储，`router` 和 `api` 是应用的路由和 [REST API](../http/routing.md)。只给自己的客户端登录、不对第三方开放时，`Resources` 和 `Scopes` 都不设置。
 
 `ConsentURL` 指向前端中的授权页。用户在浏览器中登录后，在这一页上点“继续”，确认在这个客户端上登录。`tenon add client` 生成网页宿主时，会在它显示的前端中加上这一页（`src/routes/oauth/consent.tsx`）。
 

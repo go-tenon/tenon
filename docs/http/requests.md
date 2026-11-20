@@ -9,7 +9,7 @@
 - **请求头**：例如 `Authorization`、`Accept-Language`；
 - **请求体**：`POST`、`PUT` 请求发送的内容，通常是 JSON。
 
-阅读前需要了解：[路由](routing.md)；[结构体标签](../concepts/go-primer.md#struct-tags)。
+阅读前需要了解：[路由](routing.md)；结构体标签。
 
 - [示例用法](#introduction)
 - [定义输入类型](#input-types)
