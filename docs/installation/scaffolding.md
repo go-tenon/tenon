@@ -83,7 +83,6 @@ todo/
 ├── README.md              怎样运行，以及 AI 编程助手怎样接入 Go、Mantine、TanStack 的官方资源
 ├── .github/workflows/     CI：检查、测试和构建，见下文的 CI
 ├── AGENTS.md              项目说明：怎样运行、提交前检查什么、代码约定；AI 编程助手读它
-├── CLAUDE.md              一行 @AGENTS.md，Claude Code 经它读 AGENTS.md
 ├── .mcp.json              Claude Code 的 MCP 配置（Codex 在 .codex/，Cursor 在 .cursor/，Antigravity 在 .agents/）
 ├── .claude/skills/        给 AI 编程助手的技能（Codex 读 .agents/skills/）
 ├── config/app.yaml        应用的配置，例如监听地址

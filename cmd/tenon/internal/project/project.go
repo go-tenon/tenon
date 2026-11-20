@@ -90,7 +90,7 @@ type Tool struct {
 	Build []string `json:"build,omitempty"` // tenon dev 停止后运行一次的命令，可以没有
 }
 
-// Targets 是 tenon agents 支持的 AI 编程助手：它们都读项目根目录的 AGENTS.md（Claude Code 经 CLAUDE.md 导入），区别在技能目录和 MCP 配置的位置、格式。
+// Targets 是 tenon agents 支持的 AI 编程助手：它们都读项目根目录的 AGENTS.md，区别在技能目录和 MCP 配置的位置、格式。
 // antigravity 是 Google 的 Antigravity（取代了 Gemini CLI）。
 var Targets = []string{"claude", "codex", "cursor", "antigravity", "copilot"}
 
