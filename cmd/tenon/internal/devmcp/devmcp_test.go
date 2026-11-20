@@ -80,20 +80,54 @@ func TestTools(t *testing.T) {
 	}
 }
 
-// tenon_search_docs 按小节检索：中文的词和代码中的名字都能找到对应的小节，排在前三。
+// tenon_search_docs 按小节检索：AI 编程助手常查的任务、中文的词和代码中的名字都能找到对应的页面或小节，排在前三。
+// 这是文档检索的回归用例：改了文档的标题、措辞或拆合页面后，这些查询仍要命中。
 func TestSearchDocs(t *testing.T) {
 	t.Parallel()
 	_, s := connect(t)
+	const docs = ".tenon/docs/"
 	for query, want := range map[string]string{
-		"访问策略":    ".tenon/docs/http/routing.md#access-policies",
-		"RunInTx": ".tenon/docs/database/quick-start.md#transactions",
-		"新建迁移":    ".tenon/docs/database/migrations.md#writing-migrations",
-		"上传文件":    ".tenon/docs/http/clients.md#uploading-files",
-		"游标分页":    ".tenon/docs/http/responses.md#cursor-pagination",
+		"访问策略":           "http/routing.md#access-policies",
+		"RequireToken":   "http/routing.md#access-policies",
+		"RunInTx":        "database/quick-start.md#transactions",
+		"新建迁移":           "database/migrations.md#writing-migrations",
+		"上传文件":           "http/clients.md#uploading-files",
+		"游标分页":           "http/responses.md#cursor-pagination",
+		"生成客户端":          "http/clients.md#generating-types",
+		"推送进度 SSE":       "http/sse.md",
+		"errorx.Define":  "general/errors.md#defining-errors",
+		"环境变量":           "general/configuration.md#environment-variables",
+		"配置文件":           "general/configuration.md",
+		"自定义命令":          "general/commands.md#custom-commands",
+		"业务动作":           "concepts/actions.md",
+		"依赖装配":           "concepts/dependencies.md",
+		"dbtest":         "testing/database.md#creating-test-databases",
+		"测试接口":           "testing/http.md",
+		"定时任务":           "background/scheduling.md",
+		"Remember 缓存":    "libraries/cache.md#cache-aside",
+		"发送邮件":           "libraries/mail.md",
+		"WebSocket 实时频道": "libraries/realtime.md",
+		"限流":             "libraries/rate-limiting.md",
+		"原子锁":            "libraries/locks.md",
+		"文件存储 S3":        "libraries/filesystem.md",
+		"站内通知":           "features/notifications.md",
+		"导出 Excel":       "features/import-export.md",
+		"功能开关":           "features/flags.md",
+		"Webhook":        "features/webhooks.md",
+		"全文搜索":           "features/search.md",
+		"邮箱密码登录":         "security/login.md",
+		"API 令牌":         "security/api-tokens.md",
+		"角色与权限":          "security/authorization.md",
+		"OAuth":          "security/oauth-server.md",
+		"第三方登录":          "security/social-login.md",
+		"表单校验":           "frontend/lists-forms.md#forms",
+		"侧栏菜单":           "frontend/layout.md#menu",
+		"MCP 工具":         "ai/mcp.md",
+		"向量检索":           "ai/vector.md",
 	} {
 		text, isErr := call(t, s, "tenon_search_docs", map[string]any{"query": query, "limit": 3})
-		if isErr || !strings.Contains(text, want) {
-			t.Errorf("%s: want %s in the top 3:\n%s", query, want, text)
+		if isErr || !strings.Contains(text, docs+want) {
+			t.Errorf("%s: want %s in the top 3:\n%s", query, docs+want, text)
 		}
 	}
 	if text, _ := call(t, s, "tenon_search_docs", map[string]any{"query": "!!!"}); !strings.Contains(text, "没有找到") {

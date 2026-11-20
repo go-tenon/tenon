@@ -29,6 +29,9 @@ type section struct {
 // titleWeight 是标题中的词项相对正文的权重：标题命中的小节排在只有正文命中的前面。
 const titleWeight = 3
 
+// pageTitleWeight 是页面标题中的词项计入每个小节时的权重。
+const pageTitleWeight = 2
+
 // docs 是文档目录中全部页面的小节和检索用的统计。
 type docs struct {
 	dir      string // 文档目录在磁盘上的位置
@@ -95,6 +98,13 @@ func (d *docs) add(page, text string) {
 		for _, t := range tokens(cur.title) {
 			cur.terms[t] += titleWeight
 			cur.length += titleWeight
+		}
+		// 小节属于页面的主题：页面的标题也计入每一个小节，“定时任务”能找到定时任务一页中的小节。
+		if cur.anchor != "" {
+			for _, t := range tokens(pageTitle) {
+				cur.terms[t] += pageTitleWeight
+				cur.length += pageTitleWeight
+			}
 		}
 		d.sections = append(d.sections, cur)
 		d.pages[page] = append(d.pages[page], cur)

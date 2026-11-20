@@ -226,7 +226,7 @@ Go 的其他依赖（Huma、chi、Bun ORM、goose 等）大多没有 `llms.txt`�
 https://raw.githubusercontent.com/go-tenon/tenon/main/llms.txt
 ```
 
-它是文档的目录，每一项链接到一页文档的 Markdown 原文。全部文档合成的一个文件是每个发布版本的附件：<https://github.com/go-tenon/tenon/releases/latest/download/llms-full.txt>。
+它是文档的目录，每一项链接到一页文档的 Markdown 原文，AI 按需读其中几页。
 
 <a id="reference"></a>
 ## 参考

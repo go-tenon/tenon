@@ -356,8 +356,6 @@ Tenon 自己的 [llms.txt](llms.txt) 是给大模型读的文档目录（格式�
 https://raw.githubusercontent.com/go-tenon/tenon/main/llms.txt
 ```
 
-全部文档合成的一个文件是每个发布版本的附件 [llms-full.txt](https://github.com/go-tenon/tenon/releases/latest/download/llms-full.txt)。
-
 ## 许可证
 
 Tenon 按 [MIT 许可证](LICENSE) 发布。

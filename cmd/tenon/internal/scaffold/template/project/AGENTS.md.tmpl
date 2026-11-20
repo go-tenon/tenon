@@ -9,7 +9,7 @@
 - 框架的版本以 `go.mod` 中的 `github.com/go-tenon/tenon` 为准。这个版本的文档在 `.tenon/docs` 中，`bun run dev` 和 `bun run agents` 会更新它。先读目录 `.tenon/docs/README.md`，写某一部分的代码前读对应的页面，写法以这个版本的文档为准。
 - 查框架的文档用 MCP 工具 `tenon_search_docs`、`tenon_read_doc`；用 rg 搜索时指定目录，例如 `rg 迁移 .tenon/docs`：`.tenon` 被 .gitignore 忽略，在项目根目录搜索时不包含它。
 - 项目的前端、客户端和安装的技能用 MCP 工具 `tenon_app_info` 查看，也可以直接看 `tenon.json` 和 `apps/`。
-- 依赖的版本以 `go.mod` 和各前端的 `package.json` 为准。Go 的依赖用 `go doc` 读与 `go.mod` 一致的版本，例如 `go doc github.com/danielgtaylor/huma/v2.Register`。
+- 依赖的版本以 `go.mod` 和各前端的 `package.json` 为准。框架和 Go 依赖的函数签名、说明用 `go doc` 读与 `go.mod` 一致的版本，例如 `go doc github.com/go-tenon/tenon/cache.Cache.Remember`、`go doc github.com/danielgtaylor/huma/v2.Register`；框架的文档不列函数签名。
 - Mantine、TanStack 等依赖给 AI 的文档、MCP 服务和技能按它们的官方方案接入，见 `README.md` 的“AI 编程助手”一节；它们的写法与 Tenon 的约定冲突时，以本文和 `.tenon/docs` 为准。
 
 ## 开发环境

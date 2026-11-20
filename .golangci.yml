@@ -1,7 +1,14 @@
 version: "2"
 
 linters:
+  enable:
+    - revive
   settings:
+    # 导出的标识符都要有注释：文档不写 API 参考，签名和说明以 go doc 为准。
+    revive:
+      rules:
+        - name: exported
+          arguments: ["disableStutteringCheck"]
     errcheck:
       # 关闭资源和向命令的输出写入时的错误没有可行的处理方式。
       exclude-functions:
