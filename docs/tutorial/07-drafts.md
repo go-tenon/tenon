@@ -469,26 +469,56 @@ func RegisterRoutes(api *rest.API, requireUser func(*huma.Operation), db *bun.DB
 <a id="frontend"></a>
 ## 前端
 
+这一章加上“我的文章”页面，首页只列出已发布的文章。`locales/web.zh-CN.yaml` 改成：
+
+```yaml title="locales/web.zh-CN.yaml"
+app.web: 博客
+nav.write: 写文章
+nav.mine: 我的文章
+nav.login: 登录
+nav.logout: 退出
+common.loading: 加载中…
+common.edit: 编辑
+common.delete: 删除
+common.delete_confirm: "删除“{{.title}}”？"
+list.empty: 还没有发布的文章。
+mine.title: 我的文章
+mine.empty: 你还没有写过文章。
+mine.published: 已发布
+mine.draft: 草稿
+mine.publish: 发布
+editor.title: 标题
+editor.slug: Slug
+editor.content: 正文
+editor.save: 保存
+editor.cancel: 取消
+write.title: 写文章
+edit.title: 修改文章
+edit.not_found: 没有找到这篇文章。
+signin.title: 登录
+```
+
 首页 `apps/web/src/routes/index.tsx` 只列出已发布的文章，点标题阅读全文：
 
 ```tsx title="apps/web/src/routes/index.tsx"
 import { Container, Paper, Stack, Text, Title } from "@mantine/core"
 import { useQuery } from "@tanstack/react-query"
 import { createFileRoute } from "@tanstack/react-router"
-import { AnchorLink } from "@go-tenon/ui"
+import { AnchorLink, useT } from "@go-tenon/ui"
 import { api } from "../api"
 
 export const Route = createFileRoute("/")({ component: ArticleList })
 
 // ArticleList 是首页：已发布的文章，所有人都能看到。
 function ArticleList() {
+  const t = useT()
   const articles = useQuery({ queryKey: ["article", "list"], queryFn: () => api.article.list() })
 
   return (
     <Container size="sm" py="xl">
-      {articles.isPending && <Text c="dimmed">加载中…</Text>}
+      {articles.isPending && <Text c="dimmed">{t("common.loading")}</Text>}
       {articles.error && <Text c="red">{articles.error.message}</Text>}
-      {articles.data?.items.length === 0 && <Text c="dimmed">还没有发布的文章。</Text>}
+      {articles.data?.items.length === 0 && <Text c="dimmed">{t("list.empty")}</Text>}
       <Stack>
         {articles.data?.items.map((a) => (
           <Paper key={a.id} p="lg">
@@ -550,8 +580,7 @@ function ArticleView() {
 import { Badge, Button, Container, Group, Paper, Stack, Text, Title } from "@mantine/core"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { createFileRoute } from "@tanstack/react-router"
-import { requireAuth } from "@go-tenon/ui"
-import { ButtonLink } from "@go-tenon/ui"
+import { ButtonLink, requireAuth, useT } from "@go-tenon/ui"
 import type { Article } from "@blog/client/api"
 import { api } from "../api"
 
@@ -559,6 +588,7 @@ export const Route = createFileRoute("/mine")({ ssr: false, beforeLoad: requireA
 
 // MyArticles 是当前作者的全部文章，包括草稿：编辑、发布、删除。
 function MyArticles() {
+  const t = useT()
   const queryClient = useQueryClient()
   const articles = useQuery({ queryKey: ["article", "mine"], queryFn: () => api.article.mine() })
   // 修改后让所有 ["article", …] 查询失效：我的文章和首页都会重新获取
@@ -569,29 +599,29 @@ function MyArticles() {
   return (
     <Container size="sm" py="xl">
       <Title order={2} mb="lg">
-        我的文章
+        {t("mine.title")}
       </Title>
-      {articles.isPending && <Text c="dimmed">加载中…</Text>}
+      {articles.isPending && <Text c="dimmed">{t("common.loading")}</Text>}
       {articles.error && <Text c="red">{articles.error.message}</Text>}
-      {articles.data?.items.length === 0 && <Text c="dimmed">你还没有写过文章。</Text>}
+      {articles.data?.items.length === 0 && <Text c="dimmed">{t("mine.empty")}</Text>}
       <Stack>
         {articles.data?.items.map((a) => (
           <Paper key={a.id} p="lg">
             <Group justify="space-between">
               <Title order={4}>{a.title}</Title>
-              {a.published_at ? <Badge color="green">已发布</Badge> : <Badge color="gray">草稿</Badge>}
+              {a.published_at ? <Badge color="green">{t("mine.published")}</Badge> : <Badge color="gray">{t("mine.draft")}</Badge>}
             </Group>
             <Group mt="md" gap="xs">
               <ButtonLink to="/articles/$id/edit" params={{ id: a.id }} variant="default" size="xs">
-                编辑
+                {t("common.edit")}
               </ButtonLink>
               {!a.published_at && (
                 <Button size="xs" onClick={() => publish.mutate(a)}>
-                  发布
+                  {t("mine.publish")}
                 </Button>
               )}
-              <Button variant="subtle" color="red" size="xs" onClick={() => confirm(`删除“${a.title}”？`) && remove.mutate(a)}>
-                删除
+              <Button variant="subtle" color="red" size="xs" onClick={() => confirm(t("common.delete_confirm", { title: a.title })) && remove.mutate(a)}>
+                {t("common.delete")}
               </Button>
             </Group>
           </Paper>
@@ -607,17 +637,18 @@ function MyArticles() {
 ```tsx title="apps/web/src/routes/write.tsx"
 import { Container, Title } from "@mantine/core"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
-import { requireAuth } from "@go-tenon/ui"
+import { requireAuth, useT } from "@go-tenon/ui"
 import { ArticleEditor } from "../ArticleEditor"
 
 export const Route = createFileRoute("/write")({ ssr: false, beforeLoad: requireAuth, component: Write })
 
 function Write() {
   const navigate = useNavigate()
+  const t = useT()
   return (
     <Container size="sm" py="xl">
       <Title order={2} mb="lg">
-        写文章
+        {t("write.title")}
       </Title>
       <ArticleEditor onDone={() => navigate({ to: "/mine" })} />
     </Container>
@@ -631,7 +662,7 @@ function Write() {
 import { Container, Text, Title } from "@mantine/core"
 import { useQuery } from "@tanstack/react-query"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
-import { requireAuth } from "@go-tenon/ui"
+import { requireAuth, useT } from "@go-tenon/ui"
 import { ArticleEditor } from "../../ArticleEditor"
 import { api } from "../../api"
 
@@ -640,17 +671,18 @@ export const Route = createFileRoute("/articles/$id/edit")({ ssr: false, beforeL
 function EditArticle() {
   const { id } = Route.useParams()
   const navigate = useNavigate()
+  const t = useT()
   const mine = useQuery({ queryKey: ["article", "mine"], queryFn: () => api.article.mine() })
   const article = mine.data?.items.find((a) => a.id === id)
 
   return (
     <Container size="sm" py="xl">
       <Title order={2} mb="lg">
-        修改文章
+        {t("edit.title")}
       </Title>
-      {mine.isPending && <Text c="dimmed">加载中…</Text>}
+      {mine.isPending && <Text c="dimmed">{t("common.loading")}</Text>}
       {mine.error && <Text c="red">{mine.error.message}</Text>}
-      {mine.data && !article && <Text c="red">没有找到这篇文章。</Text>}
+      {mine.data && !article && <Text c="red">{t("edit.not_found")}</Text>}
       {article && <ArticleEditor article={article} onDone={() => navigate({ to: "/mine" })} />}
     </Container>
   )
@@ -666,13 +698,14 @@ import { Button, ColorSchemeScript, Group, Text, mantineHtmlProps } from "@manti
 import { useMutation, useQuery } from "@tanstack/react-query"
 import { createRootRouteWithContext, HeadContent, Scripts, useRouter } from "@tanstack/react-router"
 import { type RouterContext, useSignedIn } from "@go-tenon/ui"
-import { AnchorLink, ButtonLink, SiteLayout, UIProvider } from "@go-tenon/ui"
+import { AnchorLink, ButtonLink, SiteLayout, UIProvider, useT } from "@go-tenon/ui"
 import { api, session } from "../api"
+import { i18n } from "../i18n"
 import { theme } from "../theme"
 
 export const Route = createRootRouteWithContext<RouterContext>()({
   head: () => ({
-    meta: [{ charSet: "utf-8" }, { name: "viewport", content: "width=device-width, initial-scale=1" }, { title: "博客" }],
+    meta: [{ charSet: "utf-8" }, { name: "viewport", content: "width=device-width, initial-scale=1" }, { title: i18n.t("app.web") }],
   }),
   shellComponent: Document,
   component: Layout,
@@ -699,6 +732,7 @@ function Document({ children }: { children: ReactNode }) {
 }
 
 function Layout() {
+  const t = useT()
   const signedIn = useSignedIn()
   const me = useQuery({ queryKey: ["me"], queryFn: () => api.user.me(), enabled: signedIn })
   const logout = useMutation({ mutationFn: () => api.auth.logout(), onSettled: () => session.signOut() })
@@ -706,7 +740,7 @@ function Layout() {
     <SiteLayout
       brand={
         <AnchorLink to="/" c="inherit" underline="never" fw={700}>
-          博客
+          {t("app.web")}
         </AnchorLink>
       }
       actions={
@@ -714,16 +748,16 @@ function Layout() {
           <Group gap="sm">
             <Text size="sm">{me.data?.name}</Text>
             <ButtonLink to="/mine" variant="subtle">
-              我的文章
+              {t("nav.mine")}
             </ButtonLink>
-            <ButtonLink to="/write">写文章</ButtonLink>
+            <ButtonLink to="/write">{t("nav.write")}</ButtonLink>
             <Button variant="default" onClick={() => logout.mutate()}>
-              退出
+              {t("nav.logout")}
             </Button>
           </Group>
         ) : (
           <ButtonLink to="/login" variant="default">
-            登录
+            {t("nav.login")}
           </ButtonLink>
         )
       }
