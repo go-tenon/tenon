@@ -74,9 +74,13 @@ func TestInitEndToEnd(t *testing.T) {
 	// add frontend、add client 之后装上了前端和 Electron 的技能；框架文档复制到了 .tenon/docs，
 	// 助手的 MCP 配置中有 tenon；README 中写着 gopls、Mantine、TanStack 的官方接入方法。
 	for f, wants := range map[string][]string{
-		"AGENTS.md":                              {"# Todo\n", "`README.md` 的“AI 编程助手”一节", "## 代码约定"},
-		"README.md":                              {"# Todo\n", "gopls mcp", "@mantine/mcp-server", "@tanstack/intent"},
-		".github/workflows/ci.yml":               {"go tool tenon generate", "bun run typecheck", "bun run build"},
+		"AGENTS.md":                {"# Todo\n", "`README.md` 的“AI 编程助手”一节", "## 代码约定"},
+		"README.md":                {"# Todo\n", "gopls mcp", "@mantine/mcp-server", "@tanstack/intent"},
+		".github/workflows/ci.yml": {"go tool tenon generate", "go tool tenon check-text", "bun run typecheck", "bun run build"},
+		// 每个前端的界面文字生成为 messages.gen.ts；授权页的文字追加在 admin 的翻译文件中。
+		"apps/web/src/messages.gen.ts":           {`"todo.add": "添加"`},
+		"apps/admin/src/messages.gen.ts":         {`"home.title": "首页"`, `"consent.allow": "允许"`},
+		"apps/promo/src/messages.gen.ts":         {`"home.login": "登录"`, `"signin.title": "登录"`},
 		"apps/web/src/routeTree.gen.ts":          {"declare module '@tanstack/react-start'"},
 		".tenon/docs/README.md":                  {"# Tenon 文档"},
 		".mcp.json":                              {`"tenon"`},
@@ -96,6 +100,9 @@ func TestInitEndToEnd(t *testing.T) {
 			}
 		}
 	}
+
+	// 模板页面的文字都在翻译文件中：生成的项目通过 CI 的 check-text。
+	sh("go", "tool", "tenon", "check-text")
 
 	// 助手按 .mcp.json 在项目的子目录中运行 go tool tenon mcp：它找到项目的根目录，检索文档，列出项目的前端。
 	mcpCmd := exec.Command("go", "tool", "tenon", "mcp")
@@ -133,7 +140,9 @@ func TestInitEndToEnd(t *testing.T) {
 	// 生成的查询选项、校验规则、验证提示和权限从客户端包的子路径导入。
 	imports := "import { chatTransport, createSession, describeError, uploadFile, validate } from \"@go-tenon/client\"\nimport { createQueries } from \"@todo/client/api/queries\"\nimport { schemas } from \"@todo/client/api/schemas\"\n" +
 		"import { messages } from \"@todo/client/api/messages\"\nimport { permissions } from \"@todo/client/api/permissions\"\nimport { enums } from \"@todo/client/api/enums\"\n" +
-		"import { api } from \"../../web/src/api\"\n" +
+		// 每个前端的 messages.gen.ts 登记自己的消息 ID，所以 admin 不导入 web 的文件，自己创建 /api 的客户端。
+		"import { createClient } from \"@todo/client/api\"\n" +
+		"const api = createClient({ baseURL: \"/api\", fetch })\n" +
 		"const session = createSession({ load: async () => ({ account: \"a\" }) })\n" +
 		// 浏览器的 fetch 和 File 可以直接交给按形状声明的参数；session.fetch(fetch) 仍是 typeof fetch，可以交给 AI SDK。
 		"const authed: typeof fetch = session.fetch(fetch)\n" +
@@ -203,9 +212,9 @@ func TestInitEndToEnd(t *testing.T) {
 	base := "http://127.0.0.1:" + port
 	waitUp(t, base+"/api/todos")
 
-	// 首页预渲染，带着本次请求的 nonce 和品牌色；不存在的页面由前端路由返回 404。
+	// 首页预渲染，带着本次请求的 nonce 和品牌色，文字取自翻译文件；不存在的页面由前端路由返回 404。
 	page := getHTML(t, base+"/")
-	if !strings.Contains(page, "<title>Todo</title>") || !strings.Contains(page, "/assets/") || strings.Contains(page, "__tenon_csp_nonce__") ||
+	if !strings.Contains(page, "<title>Todo</title>") || !strings.Contains(page, "添加") || strings.Contains(page, "todo.add") || !strings.Contains(page, "/assets/") || strings.Contains(page, "__tenon_csp_nonce__") ||
 		!strings.Contains(strings.ToLower(page), "--mantine-color-brand-6: #777c91;") {
 		t.Fatalf("page:\n%s", page)
 	}

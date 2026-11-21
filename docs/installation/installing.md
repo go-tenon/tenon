@@ -51,10 +51,11 @@ todo/
 ├── config/app.yaml        应用的配置，例如监听地址 http.addr
 ├── cmd/todo/main.go       程序的入口
 ├── internal/todo/todo.go  待办事项：类型、内存中的存储和四个接口
+├── locales/web.zh-CN.yaml 前端 web 的界面文字
 ├── apps/apps.go           用 go:embed 把前端的构建产物 apps/dist 打包进 Go 程序
 ├── apps/web/              前端，挂在 / 下，在服务端渲染
 │   ├── package.json       tenon 字段：挂载路径和是否在服务端渲染
-│   └── src/               router.tsx、start.ts、server.ts、theme.ts、api.ts；routes/ 中一个文件一个页面
+│   └── src/               router.tsx、start.ts、server.ts、theme.ts、i18n.ts、api.ts；routes/ 中一个文件一个页面
 ├── packages/client/       生成的 TypeScript 客户端，前端用它调用接口
 └── .tenon/                开发工具复制的框架前端包和文档，不提交
 ```

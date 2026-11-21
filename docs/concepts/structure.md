@@ -25,13 +25,13 @@ blog/
 │   ├── article/           业务包，每个业务动作一个文件
 │   └── user/
 ├── migrations/            SQL 迁移和 embed.go
-├── locales/               翻译文件和 embed.go
+├── locales/               翻译文件：服务端的错误提示、前端的界面文字
 ├── apps/                  前端，每个一个目录，例如 web、admin
 ├── packages/client/       生成的 TypeScript 客户端
 └── .tenon/                tenon 生成的内容，不提交
 ```
 
-新项目只有 `config`、`cmd`、一个业务包、`apps/web` 和 `packages/client`。其余目录在用到时创建：接上数据库时加 `compose.yaml`、`migrations/`，装配代码从 `main.go` 移到 `internal/bootstrap/`；写错误提示时加 `locales/`；加后台时加 `apps/admin/`。
+新项目只有 `config`、`cmd`、一个业务包、`locales/web.zh-CN.yaml`、`apps/web` 和 `packages/client`。其余目录在用到时创建：接上数据库时加 `compose.yaml`、`migrations/`，装配代码从 `main.go` 移到 `internal/bootstrap/`；写错误提示时在 `locales/` 中加 `zh-CN.yaml` 和 `embed.go`；加后台时加 `apps/admin/`。
 
 <a id="the-cmd-directory"></a>
 ### cmd
@@ -81,7 +81,7 @@ SQL 迁移文件，由 `embed.go` 嵌入程序，部署时用 `migrate up` 执�
 <a id="the-locales-directory"></a>
 ### locales
 
-`en.yaml`、`zh-CN.yaml` 等翻译文件，由 `embed.go` 嵌入程序，见[本地化](../general/localization.md)。
+`en.yaml`、`zh-CN.yaml` 等是服务端的翻译文件，由 `embed.go` 嵌入程序，见[本地化](../general/localization.md)。`<前端>.<语言>.yaml`（例如 `web.zh-CN.yaml`）是前端的界面文字，`tenon generate` 把它生成为前端的 `src/messages.gen.ts`，见[界面文字](../frontend/i18n.md)。
 
 <a id="the-frontend-directory"></a>
 ### apps 和 packages

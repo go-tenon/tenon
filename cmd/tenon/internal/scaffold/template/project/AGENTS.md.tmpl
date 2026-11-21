@@ -39,6 +39,7 @@ go run ./cmd/[[.Slug]] --help     # 应用的其他命令
 ```
 cmd/[[.Slug]]/main.go    入口：配置、装配依赖、登记命令和路由
 internal/<模块>/         业务代码，一个业务动作一个文件
+locales/                 翻译文件：前端的界面文字、服务端的错误提示
 config/app.yaml          配置；本机的覆盖写在 config/local.yaml，不提交，命令和 tenon dev 自动叠加它
 apps/<前端>/             TanStack Start 前端，挂载路径写在 package.json 的 tenon 字段
 packages/client/         bun run generate 生成的客户端，不手改
@@ -52,10 +53,11 @@ test -z "$(gofmt -l .)"
 go vet ./...
 go test ./...
 bun run typecheck
-bun run generate && git diff --exit-code   # 改了接口要提交重新生成的客户端
+go tool tenon check-text                   # 前端代码中写死的文字
+bun run generate && git diff --exit-code   # 改了接口或界面文字要提交生成的代码
 ```
 
-CI（`.github/workflows/ci.yml`）在每次推送和 PR 中运行同样的检查，并构建一次；生成的代码（客户端、路由树、技能）没有提交时失败。
+CI（`.github/workflows/ci.yml`）在每次推送和 PR 中运行同样的检查，并构建一次；生成的代码（客户端、路由树、界面文字、技能）没有提交时失败。
 
 ## 编写测试
 
@@ -101,7 +103,8 @@ CI（`.github/workflows/ci.yml`）在每次推送和 PR 中运行同样的检查
 - 界面用 Mantine 和 `@go-tenon/ui` 的组件，调用接口用生成的客户端和 TanStack Query，路由用 TanStack Router 的文件路由。
 - 颜色从 Mantine 的主题中取：品牌色是 `brand`，组件不写 `color` 时用的就是它；其他彩色写主题中预设的名称，例如 `color="deep-orange"`、`var(--mantine-color-deep-orange-6)`；中性色用 `gray`、`dark` 色板、`c="dimmed"` 和 `--tn-*` 变量。不写十六进制或 `rgb()` 的值，写死的值不随品牌色和暗色模式变化。
 - 状态的颜色固定：成功用 `green`，进行中用 `bright-blue`，等待处理用 `yellow`，需要注意用 `deep-orange`，失败用 `red`，没有状态用 `gray`。
-- 生成的代码（`packages/client`、`routeTree.gen.ts`）不手改，下次生成时会被覆盖。
+- 界面文字写在 `locales/<前端>.zh-CN.yaml` 中，页面用 `useT` 取出，菜单标题写消息 ID，消息 ID 按模块起名（例如 `todo.add`），见 `.tenon/docs/frontend/i18n.md`。
+- 生成的代码（`packages/client`、`routeTree.gen.ts`、`messages.gen.ts`）不手改，下次生成时会被覆盖。
 
 ### 接口
 

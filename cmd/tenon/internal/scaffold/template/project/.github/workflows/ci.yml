@@ -38,6 +38,10 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      # 前端代码中写死的文字：界面文字写在 locales 的翻译文件中。
+      - name: Check text
+        run: go tool tenon check-text
+
       - name: Test
         run: go test ./...
 

@@ -2,10 +2,12 @@
 // api 是 tenon generate 生成的 /api 客户端（packages/client/src/api），接口改了以后 tenon dev 会自动重新生成。
 // apiFetch 在浏览器中是同源的 fetch；服务端渲染时经 Go 的内部 socket 调用同一组接口。
 // kit 是同一个 API 生成的元数据（查询选项、校验规则、资源、设置），交给 @go-tenon/ui 的资源页面和表单。
+// 请求带上当前语言（Accept-Language），kit 的字段名、枚举和验证提示也按当前语言显示。
 import { apiFetch } from "@go-tenon/start"
 import { createClient } from "@[[.Slug]]/client/api"
 import { createKit } from "@[[.Slug]]/client/api/kit"
+import { i18n } from "./i18n"
 
-export const api = createClient({ baseURL: "/api", fetch: apiFetch })
+export const api = createClient({ baseURL: "/api", fetch: apiFetch, headers: i18n.headers })
 
-export const kit = createKit(api)
+export const kit = createKit(api, { language: i18n.language })

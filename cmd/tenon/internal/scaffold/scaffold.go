@@ -1,7 +1,9 @@
 // Package scaffold 生成新项目、新前端和新客户端：template/project 是项目，template/frontend 是 apps 中的一个前端
 // （TanStack Start 和 @go-tenon/ui）。前端按几个互相独立的维度组合：template/app 和 template/site 是按布局加上的页面，
-// template/login 是登录页和登录接口，template/api 是调用 API 的客户端（API 的客户端已经生成时加上）。template/client/<种类> 是 clients 中的一个客户端，网页宿主（electron）
-// 另外在它显示的前端中加上 template/consent 的授权页。
+// template/login 是登录页和登录接口，template/api 是调用 API 的客户端（API 的客户端已经生成时加上）。前端的界面文字写在项目的
+// locales/<前端>.zh-CN.yaml 中，模板是 template/locales，tenon generate 把它生成为前端的 src/messages.gen.ts。
+// template/client/<种类> 是 clients 中的一个客户端，网页宿主（electron）另外在它显示的前端中加上 template/consent 的授权页，
+// 授权页的文字（template/consent-locales）追加到这个前端的翻译文件中。
 // 每个 .tmpl 文件按参数渲染后写入目标目录，其他文件（例如图标）原样复制；所有文件路径中的模板标记都展开
 // （cmd/[[.Slug]] 写成 cmd/todo）。模板的分隔符是 [[ ]]，与 JSX 的 {{ }} 区分开；gitignore.tmpl 写成 .gitignore。
 package scaffold
@@ -158,15 +160,15 @@ func Write(dir string, opts Options) error {
 	} else if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
-	// 先写前端，项目模板中的示例页面再覆盖它的首页。
+	// 先写前端，项目模板中的示例页面和它的界面文字再覆盖前端的首页和翻译文件。
 	web := Frontend{Scope: opts.Slug, Name: "web", Base: "/", Title: opts.Name, Layout: "site"}
-	if err := writeFrontend(filepath.Join(dir, "apps", web.Name), web); err != nil {
+	if err := writeFrontend(dir, web); err != nil {
 		return err
 	}
 	return render("template/project", dir, opts)
 }
 
-// WriteFrontend 在项目 root 的 apps/<名称> 中生成一个前端。这个目录必须尚未创建。
+// WriteFrontend 在项目 root 的 apps/<名称> 中生成一个前端，界面文字写在 locales/<名称>.zh-CN.yaml 中。这个目录必须尚未创建。
 func WriteFrontend(root string, f Frontend) error {
 	dir := filepath.Join(root, "apps", f.Name)
 	if _, err := os.Stat(dir); err == nil {
@@ -174,12 +176,12 @@ func WriteFrontend(root string, f Frontend) error {
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
-	return writeFrontend(dir, f)
+	return writeFrontend(root, f)
 }
 
 // WriteClient 在项目 root 的 clients/<名称> 中生成客户端 c，这个目录必须尚未创建。网页宿主在它显示的前端中加上授权页
 // src/routes/oauth/consent.tsx（用户在浏览器中登录时确认的页面），这个文件已经存在时不覆盖；consent 报告是否加上了。
-// 授权页用前端的登录（src/auth.ts），前端没有登录时返回错误。
+// 授权页用前端的登录（src/auth.ts），前端没有登录时返回错误。授权页的文字追加到 locales/<前端>.zh-CN.yaml 的末尾。
 func WriteClient(root string, c Client) (consent bool, err error) {
 	dir := filepath.Join(root, "clients", c.Name)
 	if _, err := os.Stat(dir); err == nil {
@@ -198,7 +200,32 @@ func WriteClient(root string, c Client) (consent bool, err error) {
 	if _, err := os.Stat(page); err == nil {
 		return false, nil
 	}
-	return true, render("template/consent", fdir, c)
+	if err := render("template/consent", fdir, c); err != nil {
+		return false, err
+	}
+	return true, appendMessages(root, "template/consent-locales/messages.yaml.tmpl", c.Frontend, c)
+}
+
+// appendMessages 把模板 name 渲染后追加到项目 root 中前端 frontend 的翻译文件 locales/<frontend>.zh-CN.yaml 的末尾，
+// 文件不存在时新建它。
+func appendMessages(root, name, frontend string, data any) error {
+	text, err := files.ReadFile(name)
+	if err != nil {
+		return err
+	}
+	content, err := expand(name, string(text), data)
+	if err != nil {
+		return fmt.Errorf("scaffold: %w", err)
+	}
+	p := filepath.Join(root, "locales", frontend+".zh-CN.yaml")
+	old, err := os.ReadFile(p)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	if len(old) > 0 && !bytes.HasSuffix(old, []byte("\n")) {
+		old = append(old, '\n')
+	}
+	return writeFile(p, append(old, content...))
 }
 
 // Resolve 返回补上默认值的 f：没有写的维度按布局取默认值，见 defaults。某个维度的值不在可选的范围内时返回错误。
@@ -236,12 +263,17 @@ func (f Frontend) Resolve() (Frontend, error) {
 	return f, nil
 }
 
-// writeFrontend 渲染共用的前端模板，再按布局加上 site 或 app（frame、rail）的页面，有登录页时加上 login。
-func writeFrontend(dir string, f Frontend) error {
+// writeFrontend 在项目 root 的 apps/<名称> 中渲染共用的前端模板，再按布局加上 site 或 app（frame、rail）的页面，
+// 有登录页时加上 login；界面文字写进 root 的 locales/<名称>.zh-CN.yaml。
+func writeFrontend(root string, f Frontend) error {
 	f, err := f.Resolve()
 	if err != nil {
 		return err
 	}
+	if err := render("template/locales", filepath.Join(root, "locales"), f); err != nil {
+		return err
+	}
+	dir := filepath.Join(root, "apps", f.Name)
 	if err := render("template/frontend", dir, f); err != nil {
 		return err
 	}
@@ -322,17 +354,19 @@ func Slug(name string) string {
 	return "app"
 }
 
+// expand 按 data 渲染名为 name 的模板 text，分隔符是 [[ ]]。
+func expand(name, text string, data any) ([]byte, error) {
+	tmpl, err := template.New(name).Delims("[[", "]]").Option("missingkey=error").Parse(text)
+	if err != nil {
+		return nil, err
+	}
+	var out bytes.Buffer
+	err = tmpl.Execute(&out, data)
+	return out.Bytes(), err
+}
+
 // render 把 files 中 root 下的模板渲染到 dir（.tmpl 以外的文件原样复制），已有的文件被覆盖。
 func render(root, dir string, data any) error {
-	expand := func(name, text string) ([]byte, error) {
-		tmpl, err := template.New(name).Delims("[[", "]]").Option("missingkey=error").Parse(text)
-		if err != nil {
-			return nil, err
-		}
-		var out bytes.Buffer
-		err = tmpl.Execute(&out, data)
-		return out.Bytes(), err
-	}
 	err := fs.WalkDir(files, root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return err
@@ -342,12 +376,12 @@ func render(root, dir string, data any) error {
 			return err
 		}
 		if strings.HasSuffix(p, ".tmpl") {
-			if content, err = expand(p, string(content)); err != nil {
+			if content, err = expand(p, string(content), data); err != nil {
 				return err
 			}
 		}
 		// 路径中也可以有模板标记，例如 cmd/[[.Slug]]/main.go 写成 cmd/todo/main.go。
-		name, err := expand(p, strings.TrimSuffix(strings.TrimPrefix(p, root+"/"), ".tmpl"))
+		name, err := expand(p, strings.TrimSuffix(strings.TrimPrefix(p, root+"/"), ".tmpl"), data)
 		if err != nil {
 			return err
 		}

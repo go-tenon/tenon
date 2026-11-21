@@ -101,7 +101,7 @@ Go 托管的 SSR 进程只支持 Linux；前端都只在浏览器中渲染时，
 go tool tenon add frontend admin --layout frame
 ```
 
-在 `apps/admin` 中生成前端，挂在 `/admin/`（`--base` 可改，不能与已有的前端相同），加入 workspace，运行 `bun install` 和 `tenon agents`。入口不用改：`frontend.Host` 按 `apps/dist` 中的清单托管全部前端，见[托管前端](../frontend/hosting.md#wiring)。
+在 `apps/admin` 中生成前端，挂在 `/admin/`（`--base` 可改，不能与已有的前端相同），界面文字写在 `locales/admin.zh-CN.yaml` 中并生成 `apps/admin/src/messages.gen.ts`，见[界面文字](../frontend/i18n.md)。然后加入 workspace，运行 `bun install` 和 `tenon agents`。入口不用改：`frontend.Host` 按 `apps/dist` 中的清单托管全部前端，见[托管前端](../frontend/hosting.md#wiring)。
 
 四个选项各自独立，没有写的取这种布局的默认值：
 
@@ -128,7 +128,7 @@ go tool tenon add frontend admin --layout frame
 go tool tenon add client admin-desktop --kind electron --frontend admin
 ```
 
-在 `clients/admin-desktop` 中生成 Electron 桌面端，窗口中显示 `apps/admin`（它要有登录页），并在 `apps/admin` 中加上授权页。`--title` 是窗口标题和安装包的名称。之后用 `go tool tenon dev --client admin-desktop` 运行，`go tool tenon build --client admin-desktop` 打包，见 [Electron 桌面端](../clients/electron.md)。
+在 `clients/admin-desktop` 中生成 Electron 桌面端，窗口中显示 `apps/admin`（它要有登录页），并在 `apps/admin` 中加上授权页，授权页的文字追加到 `locales/admin.zh-CN.yaml` 的末尾。`--title` 是窗口标题和安装包的名称。之后用 `go tool tenon dev --client admin-desktop` 运行，`go tool tenon build --client admin-desktop` 打包，见 [Electron 桌面端](../clients/electron.md)。
 
 <a id="agents"></a>
 ## `tenon agents`：AI 编程助手

@@ -1,5 +1,5 @@
 import { ensureOK } from "@go-tenon/client"
-import { CenteredAuthLayout, requireAuth } from "@go-tenon/ui"
+import { CenteredAuthLayout, requireAuth, useT } from "@go-tenon/ui"
 import { Alert, Button, Group, List, Stack, Text } from "@mantine/core"
 import { useMutation, useQuery } from "@tanstack/react-query"
 import { createFileRoute } from "@tanstack/react-router"
@@ -7,7 +7,7 @@ import { session } from "../../auth"
 
 // 授权页：授权服务器（oauthserver）的 ConsentURL 指向这里，即 [[.Base]]oauth/consent。
 // 桌面端、App 在浏览器中登录时（应用自己的客户端），用户在这里确认登录；第三方应用申请访问时，这里列出申请的范围。
-// 接口由 oauthserver 的 Register 注册在 /api 下。
+// 接口由 oauthserver 的 Register 注册在 /api 下。页面的文字在 locales/[[.Frontend]].zh-CN.yaml 中，消息 ID 以 consent. 开头。
 
 /** 授权请求，来自 GET /api/oauth/consent。 */
 interface Consent {
@@ -37,6 +37,7 @@ export const Route = createFileRoute("/oauth/consent")({
 })
 
 function ConsentPage() {
+  const t = useT()
   const { request, error } = Route.useSearch()
   const consent = useQuery({
     queryKey: ["oauth-consent", request],
@@ -51,37 +52,37 @@ function ConsentPage() {
   })
   const c = consent.data
   return (
-    <CenteredAuthLayout brand="[[.Title]]" title={c?.first_party ? `在${c.client_name}上登录` : "授权"}>
+    <CenteredAuthLayout brand={t("app.[[.Frontend]]")} title={c?.first_party ? t("consent.sign_in", { client: c.client_name }) : t("consent.title")}>
       {error || consent.error ? (
         <Alert color="red" variant="light">
-          无法授权（{error || "请求无效或已过期"}）。
+          {t("consent.failed", { reason: error || t("consent.invalid") })}
         </Alert>
       ) : !c ? null : c.first_party ? (
         <Stack gap="md">
           <Text size="sm" c="dimmed">
-            确认后回到{c.client_name}。
+            {t("consent.return", { client: c.client_name })}
           </Text>
           <Button loading={decide.isPending} onClick={() => decide.mutate(true)} fullWidth>
-            继续
+            {t("consent.continue")}
           </Button>
         </Stack>
       ) : (
         <Stack gap="md">
-          <Text size="sm">{c.client_name} 请求访问你的账号：</Text>
+          <Text size="sm">{t("consent.requests", { client: c.client_name })}</Text>
           <List size="sm">
             {c.scopes.map((s) => (
               <List.Item key={s.name}>{s.description}</List.Item>
             ))}
           </List>
           <Text size="xs" c="dimmed">
-            授权后将跳转到 {c.redirect_host}
+            {t("consent.redirect", { host: c.redirect_host })}
           </Text>
           <Group grow>
             <Button variant="default" disabled={decide.isPending} onClick={() => decide.mutate(false)}>
-              拒绝
+              {t("consent.deny")}
             </Button>
             <Button loading={decide.isPending} onClick={() => decide.mutate(true)}>
-              允许
+              {t("consent.allow")}
             </Button>
           </Group>
         </Stack>
