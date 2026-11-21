@@ -38,9 +38,9 @@ jobs:
       - name: Vet
         run: go vet ./...
 
-      # 前端代码中写死的文字：界面文字写在 locales 的翻译文件中。
-      - name: Check text
-        run: go tool tenon check-text
+      # 静态检查项目约定：前端写死的文字和颜色、SQL 数据库时钟、服务端错误码翻译、前端依赖版本。
+      - name: Check
+        run: go tool tenon check
 
       - name: Test
         run: go test ./...

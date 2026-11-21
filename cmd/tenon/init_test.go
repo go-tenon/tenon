@@ -76,7 +76,7 @@ func TestInitEndToEnd(t *testing.T) {
 	for f, wants := range map[string][]string{
 		"AGENTS.md":                {"# Todo\n", "`README.md` 的“AI 编程助手”一节", "## 代码约定"},
 		"README.md":                {"# Todo\n", "gopls mcp", "@mantine/mcp-server", "@tanstack/intent"},
-		".github/workflows/ci.yml": {"go tool tenon generate", "go tool tenon check-text", "bun run typecheck", "bun run build"},
+		".github/workflows/ci.yml": {"go tool tenon generate", "go tool tenon check", "bun run typecheck", "bun run build"},
 		// 每个前端的界面文字生成为 messages.gen.ts；授权页的文字追加在 admin 的翻译文件中。
 		"apps/web/src/messages.gen.ts":           {`"todo.add": "添加"`},
 		"apps/admin/src/messages.gen.ts":         {`"home.title": "首页"`, `"consent.allow": "允许"`},
@@ -101,8 +101,8 @@ func TestInitEndToEnd(t *testing.T) {
 		}
 	}
 
-	// 模板页面的文字都在翻译文件中：生成的项目通过 CI 的 check-text。
-	sh("go", "tool", "tenon", "check-text")
+	// 生成的项目通过 CI 的 tenon check（文字、时钟、错误码、颜色、依赖版本）。
+	sh("go", "tool", "tenon", "check")
 
 	// 助手按 .mcp.json 在项目的子目录中运行 go tool tenon mcp：它找到项目的根目录，检索文档，列出项目的前端。
 	mcpCmd := exec.Command("go", "tool", "tenon", "mcp")

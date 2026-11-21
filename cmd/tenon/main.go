@@ -1,5 +1,5 @@
 // Command tenon 是 Tenon 应用的开发工具：init 生成新项目，add frontend 加入新的前端，dev 运行应用和前端工具，
-// build 构建前端和二进制，generate 生成客户端，agents 更新 AI 编程助手用到的文档和配置，mcp 运行给助手用的 MCP 服务。
+// build 构建前端和二进制，generate 生成客户端，check 检查项目约定，agents 更新 AI 编程助手用到的文档和配置，mcp 运行给助手用的 MCP 服务。
 // 它读取项目根目录的 tenon.json（可选，缺省时全部用约定的默认值）。应用把它加入 go.mod 的工具，版本随框架固定：
 //
 //	go get -tool github.com/go-tenon/tenon/cmd/tenon
@@ -26,6 +26,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/go-tenon/tenon/cmd/tenon/internal/agents"
+	"github.com/go-tenon/tenon/cmd/tenon/internal/check"
 	"github.com/go-tenon/tenon/cmd/tenon/internal/dev"
 	"github.com/go-tenon/tenon/cmd/tenon/internal/devmcp"
 	"github.com/go-tenon/tenon/cmd/tenon/internal/project"
@@ -242,7 +243,7 @@ func root() *cobra.Command {
 	}
 	add := &cobra.Command{Use: "add", Short: "给项目加入新的部分"}
 	add.AddCommand(addFrontendCommand(), addClientCommand())
-	root.AddCommand(initCommand(), add, devCommand(), buildCommand(), generateCommand(), checkTextCommand(), agentsCommand(), mcpCommand())
+	root.AddCommand(initCommand(), add, devCommand(), buildCommand(), generateCommand(), checkCommand(), agentsCommand(), mcpCommand())
 	return root
 }
 
@@ -634,30 +635,33 @@ func generateCommand() *cobra.Command {
 	}
 }
 
-// checkTextCommand 返回 tenon check-text 命令：找出前端代码中写死的界面文字，有时以非零状态退出，给 CI 使用。
-func checkTextCommand() *cobra.Command {
-	return &cobra.Command{
-		Use:   "check-text",
-		Short: "找出前端代码中写死的界面文字（注释以外的汉字），界面文字应当写在 locales/<前端>.<语言>.yaml 中",
+// checkCommand 返回 tenon check 命令：静态检查项目是否遵守框架约定，有问题时以非零状态退出，给本地和 CI 使用。
+func checkCommand() *cobra.Command {
+	var only []string
+	cmd := &cobra.Command{
+		Use:   "check",
+		Short: "静态检查项目约定：前端写死的文字和颜色、SQL 数据库时钟、服务端错误码翻译、前端依赖版本",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := project.Load(".")
 			if err != nil {
 				return err
 			}
-			found, err := dev.CheckText(".", cfg)
+			found, err := check.Run(".", cfg, only)
 			if err != nil {
 				return err
 			}
 			for _, f := range found {
-				fmt.Fprintf(cmd.OutOrStdout(), "%s:%d: %s\n", f.File, f.Line, f.Text)
+				fmt.Fprintln(cmd.OutOrStdout(), f.String())
 			}
 			if len(found) > 0 {
-				return fmt.Errorf("%d lines have hard-coded text: move it to %s/<frontend>.<language>.yaml, or add a // %s comment to the line", len(found), dev.LocalesDir, dev.IgnoreText)
+				return fmt.Errorf("%d check violations found", len(found))
 			}
 			return nil
 		},
 	}
+	cmd.Flags().StringSliceVar(&only, "only", nil, fmt.Sprintf("只运行指定的检查项：%s，可以写多个", strings.Join(check.Names, "、")))
+	return cmd
 }
 
 // run 在目录 dir 中执行命令 name，输出写到 cmd 的输出，随 cmd 的 context 取消。

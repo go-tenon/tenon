@@ -743,6 +743,7 @@ article.not_found: 文章不存在
 article.slug_taken: "slug“{{.slug}}”已被使用"
 article.forbidden: 只有作者能修改这篇文章
 article.already_published: 文章已经发布了
+user.not_found: 作者不存在
 user.title: 作者
 user.fields.name: 名字
 user.fields.roles: 角色

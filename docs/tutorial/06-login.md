@@ -185,6 +185,14 @@ func find(ctx context.Context, db bun.IDB, id string) (*User, error) {
 }
 ```
 
+在 `locales/zh-CN.yaml` 中加上 `user.not_found` 的提示：
+
+```yaml title="locales/zh-CN.yaml"
+article.not_found: 文章不存在
+article.slug_taken: "slug“{{.slug}}”已被使用"
+user.not_found: 作者不存在
+```
+
 博客不开放注册，作者用命令创建。新建 `internal/user/create.go`，`Handle` 在一个事务中写入 `users` 表和 `login` 的表，失败时整体回滚：
 
 ```go title="internal/user/create.go"

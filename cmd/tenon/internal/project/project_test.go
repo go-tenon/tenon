@@ -80,13 +80,15 @@ func TestConfigFile(t *testing.T) {
 	dir := t.TempDir()
 	write(t, dir, "tenon.json", `{"$schema": "x", "main": "./cmd/web", "url": "http://localhost:3000",
 		"apis": {"/api/v1": {"name": "public", "go": "../api"}},
-		"tools": [{"watch": ["esbuild", "--watch"]}], "agents": {"targets": ["codex"]}}`)
+		"tools": [{"watch": ["esbuild", "--watch"]}], "agents": {"targets": ["codex"]},
+		"check": {"skip": ["text"], "exempt": ["migrations/legacy"]}}`)
 	cfg, err := project.Load(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if cfg.Main != "./cmd/web" || cfg.APIs["/api/v1"].Name != "public" || cfg.APIs["/api/v1"].Go != "../api" ||
-		len(cfg.Tools) != 1 || !slices.Equal(cfg.AgentTargets(), []string{"codex"}) {
+		len(cfg.Tools) != 1 || !slices.Equal(cfg.AgentTargets(), []string{"codex"}) ||
+		!slices.Equal(cfg.CheckSkip(), []string{"text"}) || !slices.Equal(cfg.CheckExempt(), []string{"migrations/legacy"}) {
 		t.Fatalf("%+v", cfg)
 	}
 	// agents.targets 省略时是默认的助手，空数组时不接入任何助手。
@@ -115,6 +117,7 @@ func TestConfigFile(t *testing.T) {
 		"api name":      `{"apis": {"/api/v1": {"name": "V1"}}}`,
 		"empty api":     `{"apis": {"/api/v1": null}}`,
 		"agent":         `{"agents": {"targets": ["copilot"]}}`,
+		"check skip":    `{"check": {"skip": ["unknown"]}}`,
 	} {
 		write(t, dir, "tenon.json", content)
 		if _, err := project.Load(dir); err == nil {

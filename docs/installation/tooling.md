@@ -24,6 +24,7 @@ go tool tenon dev
 | `tenon init` | 生成新项目 |
 | `tenon dev` | 开发：运行应用和前端的开发服务器，改代码后重新编译 |
 | `tenon generate` | 接口变了以后重新生成客户端；`dev` 自动运行它 |
+| `tenon check` | 静态检查项目约定：前端文字与颜色、SQL 时钟、错误码翻译、前端依赖版本 |
 | `tenon build` | 构建可执行文件，前端打包在其中 |
 | `tenon add frontend` | 再加一个前端，例如运营后台 |
 | `tenon add client` | 加桌面端等网页以外的客户端 |
@@ -71,6 +72,25 @@ bun run generate   # 即 go tool tenon generate
 编译应用，运行它的 `client` 命令，生成每个 API 的 TypeScript 客户端 `packages/client/src/<名称>`（见[客户端代码](../http/clients.md#typescript)），以及 `tenon.json` 中 `apis.<BasePath>.go` 要求的 Go 客户端（见 [Go 客户端](../http/clients.md#go-client)）。
 
 `tenon dev` 每次重新编译成功后自动运行它。生成的代码要提交：CI 重新生成一次，有差异时失败。
+
+<a id="check"></a>
+## `tenon check`：静态检查约定
+
+```bash
+bun run check   # 即 go tool tenon check
+```
+
+检查项目是否遵守框架约定，有问题时以非零状态退出，适合本地提交前和 CI 使用。用 `--only text,clock` 只运行指定项：
+
+| 检查项 | 检查什么 | 行级豁免 |
+| --- | --- | --- |
+| `text` | 前端 `src` 中注释以外的汉字（界面文字写在 `locales/<前端>.<语言>.yaml`） | `// i18n-ignore` |
+| `clock` | `.sql` 和非测试 `.go` 字符串中的 `NOW()`、`CURRENT_TIMESTAMP` 等数据库时钟 | `// clock-ignore`、`-- clock-ignore` |
+| `errors` | 启用服务端翻译（`locales/<语言>.yaml`）后，`errorx.Define` 的错误码是否都有译文 | — |
+| `colors` | 前端 `src` 中写死的十六进制色值和 `rgb()`、`hsl()` 等颜色函数 | `// color-ignore`、`/* color-ignore */` |
+| `deps` | 前端与客户端 `package.json` 的依赖版本是否满足框架包的 `peerDependencies` | — |
+
+跳过某项检查或豁免特定目录时，在 `tenon.json` 的 `check.skip`、`check.exempt` 中配置。
 
 <a id="build"></a>
 ## `tenon build`：构建
@@ -186,6 +206,8 @@ go tool tenon add client admin-desktop --kind electron --frontend admin
 | `tools` | 空 | 其他工具，每项 `{"watch": [命令…], "build": [命令…]}`：`watch` 随 `dev` 运行，`build` 在 `dev` 停止后运行 |
 | `agents.targets` | `["claude", "codex", "cursor", "antigravity"]` | 接入的 AI 编程助手，见[选择助手](ai-assistants.md#choosing-assistants) |
 | `agents.skip` | 空 | 不安装的框架技能，见[技能](ai-assistants.md#skills) |
+| `check.skip` | 空 | `tenon check` 默认跳过的检查项，例如 `["text"]` |
+| `check.exempt` | 空 | `tenon check` 豁免的文件或目录路径，例如 `["migrations/legacy"]` |
 
 端口被占用（`address already in use`）时，在 `config/local.yaml` 中改 `http.addr`，`url` 跟着变。
 
