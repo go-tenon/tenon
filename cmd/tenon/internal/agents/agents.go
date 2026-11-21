@@ -1,11 +1,12 @@
 // Package agents 实现 tenon agents：让 AI 编程助手（Claude Code、Codex、Cursor、Antigravity、GitHub Copilot）
 // 按项目所用的框架版本写代码。
-// 它把框架的文档复制到 DocsDir，为 tenon.json 中的每个助手安装技能、写 MCP 服务的配置。
-// 项目根目录的 AGENTS.md 由 tenon init 生成初稿，之后归项目自己维护。
+// 它把框架的文档复制到 DocsDir，同步项目根目录 AGENTS.md 中由框架维护的约定区块，为 tenon.json 中的每个助手
+// 安装技能、写 MCP 服务的配置。
 package agents
 
 import (
 	"bytes"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,6 +18,18 @@ import (
 	"strings"
 
 	"github.com/go-tenon/tenon/cmd/tenon/internal/project"
+)
+
+//go:embed conventions.md
+var conventions string
+
+// AgentsFile 是项目根目录中给人和 AI 编程助手阅读的说明文件。
+const AgentsFile = "AGENTS.md"
+
+// AGENTS.md 中，agentsBegin 到 agentsEnd 之间是由 tenon agents 按框架版本维护的约定区块。
+const (
+	agentsBegin = "<!-- tenon:begin -->"
+	agentsEnd   = "<!-- tenon:end -->"
 )
 
 // DocsDir 是项目中框架文档的目录：SyncDocs 把项目所用版本的框架 docs 复制到这里。
@@ -53,7 +66,14 @@ func Sync(dir string, cfg *project.Config, out io.Writer) error {
 	if err != nil {
 		return err
 	}
+	syncedAgents, err := SyncAgentsMD(dir)
+	if err != nil {
+		return err
+	}
 	fmt.Fprintf(out, "agents: 框架文档在 %s", DocsDir)
+	if syncedAgents {
+		fmt.Fprintf(out, "，约定已同步到 %s", AgentsFile)
+	}
 	if len(dirs) > 0 {
 		fmt.Fprintf(out, "，技能在 %s", strings.Join(dirs, "、"))
 	}
@@ -62,6 +82,29 @@ func Sync(dir string, cfg *project.Config, out io.Writer) error {
 	}
 	fmt.Fprintln(out)
 	return nil
+}
+
+// SyncAgentsMD 把当前框架版本的通用约定写入项目 dir 根目录 AGENTS.md 的托管区块（agentsBegin 到 agentsEnd 之间），
+// 区块之外的项目说明保持原样。文件中还没有标记时把托管区块追加到末尾；文件不存在时什么也不做，返回 false。
+func SyncAgentsMD(dir string) (bool, error) {
+	p := filepath.Join(dir, AgentsFile)
+	data, err := os.ReadFile(p)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("agents: read %s: %w", AgentsFile, err)
+	}
+	block := agentsBegin + "\n<!-- 这一段由 go tool tenon agents 按框架版本维护，不要手改。 -->\n\n" +
+		strings.TrimSpace(conventions) + "\n" + agentsEnd + "\n"
+	updated := replaceLines(string(data), agentsBegin, agentsEnd, block)
+	if updated == string(data) {
+		return true, nil
+	}
+	if err := os.WriteFile(p, []byte(updated), 0o644); err != nil {
+		return false, fmt.Errorf("agents: write %s: %w", AgentsFile, err)
+	}
+	return true, nil
 }
 
 // SyncDocs 把框架目录 fw 中的 docs 复制到项目 dir 的 DocsDir，替换已有的内容。
