@@ -252,3 +252,21 @@ func TestAddFrontend(t *testing.T) {
 		}
 	}
 }
+
+func TestCheck(t *testing.T) {
+	newProject(t, map[string]string{
+		"apps/web/vite.config.ts":    "",
+		"apps/web/package.json":      `{"tenon": {"base": "/"}}`,
+		"apps/web/src/page.tsx":      `export const title = "写死的中文"; export const color = "#ff0000"`,
+		"migrations/0001_create.sql": `CREATE TABLE items (id uuid PRIMARY KEY, created_at timestamptz DEFAULT NOW());`,
+	})
+	if err := execute(t, "check"); err == nil || !strings.Contains(err.Error(), "3 check violations") {
+		t.Fatalf("check = %v", err)
+	}
+	if err := execute(t, "check", "--only", "clock"); err == nil || !strings.Contains(err.Error(), "1 check violations") {
+		t.Fatalf("check --only clock = %v", err)
+	}
+	if err := execute(t, "check", "--only", "errors"); err != nil {
+		t.Fatalf("check --only errors = %v", err)
+	}
+}

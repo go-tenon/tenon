@@ -53,7 +53,7 @@ test -z "$(gofmt -l .)"
 go vet ./...
 go test ./...
 bun run typecheck
-go tool tenon check-text                   # 前端代码中写死的文字
+bun run check                              # 静态检查项目约定
 bun run generate && git diff --exit-code   # 改了接口或界面文字要提交生成的代码
 ```
 

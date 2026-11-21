@@ -29,7 +29,7 @@ var migrationFile = regexp.MustCompile(`^migrations/\d{4}_\d{2}_\d{2}_\d{6}_(\w+
 
 // TestTutorial 按 docs/tutorial 的章节做一遍教程：用 init 生成项目，按顺序把每章的完整文件写进去，
 // 执行正文中的命令（迁移用 migrate make 生成文件名，与读者的做法相同），每章结束时编译、生成客户端、
-// 类型检查和 check-text；最后构建、运行，用 HTTP 走一遍登录、写草稿、发布和授权。
+// 类型检查和 tenon check；最后构建、运行，用 HTTP 走一遍登录、写草稿、发布和授权。
 //
 // 它需要 Docker（启动教程的 compose.yaml）、bun 和网络，只在设置了 TENON_SCAFFOLD_TEST=1 时运行。
 func TestTutorial(t *testing.T) {
@@ -163,8 +163,8 @@ func (p *tutorial) chapter(name string, migrations [][2]string) {
 	if !strings.HasPrefix(name, "04-") {
 		p.sh("bun", "run", "typecheck")
 	}
-	// 每一章的页面文字都在翻译文件中，照着教程写的项目通过 CI 的 check-text。
-	p.sh("go", "tool", "tenon", "check-text")
+	// 照着教程写的项目通过 CI 的 tenon check（前端文字与颜色、SQL 时钟、错误码翻译、依赖版本）。
+	p.sh("go", "tool", "tenon", "check")
 }
 
 // database 为这次测试新建一个数据库，教程中的命令通过 DATABASE_URL 使用它，测试结束时删除。

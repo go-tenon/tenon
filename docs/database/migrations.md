@@ -64,6 +64,7 @@ DROP TABLE articles;
 - 软删除的表，`deleted_at` 是第四列，允许为空。
 - 以其他列为主键的表（关联表等）按需要声明时间列。
 - 时间列不设数据库默认值，由应用写入：测试的假时钟只对 Go 有效，见[控制时间](../testing/testing.md#controlling-time)。
+- 迁移测试中调用 `dbtest.CheckSchema(t, db)`，自动检查上述时间列约定。
 
 <a id="embedding-migrations"></a>
 ## 嵌入迁移文件

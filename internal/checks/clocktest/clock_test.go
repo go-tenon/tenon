@@ -19,10 +19,11 @@ import (
 const root = "../../.."
 
 // exempt 是允许使用数据库时钟的目录和文件：ai/chat 的迁移是 trpc-agent-go 的表结构，由上游代码写入；
-// database 的自检读取数据库时钟，与本机时钟比较。
+// database 的自检读取数据库时钟，与本机时钟比较；cmd/tenon/internal/check/clock.go 保存时钟检查的正则和提示。
 var exempt = map[string]bool{
-	"ai/chat/migrations": true,
-	"database/doctor.go": true,
+	"ai/chat/migrations":                true,
+	"database/doctor.go":                true,
+	"cmd/tenon/internal/check/clock.go": true,
 }
 
 // dbClock 匹配 SQL 中读取当前时间的写法。

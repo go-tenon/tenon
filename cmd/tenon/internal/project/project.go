@@ -56,6 +56,7 @@ type Config struct {
 	APIs   map[string]*API `json:"apis,omitempty"`    // 按 BasePath 覆盖 API 客户端的约定，例如改名或生成 Go 客户端。没有写的 API 按约定生成。
 	Tools  []Tool          `json:"tools,omitempty"`   // 与应用一起运行的其他工具，可空。
 	Agents *Agents         `json:"agents,omitempty"`  // 接入哪些 AI 编程助手，见 tenon agents；省略时接入 DefaultTargets。
+	Check  *Check          `json:"check,omitempty"`   // tenon check 的跳过项和豁免路径。
 
 	Frontends []Frontend `json:"-"` // apps 中的前端，按名称排序。由 Load 从目录中发现，不在 tenon.json 中。
 	Clients   []Client   `json:"-"` // clients 中的客户端，按名称排序。由 Load 从目录中发现。
@@ -110,6 +111,31 @@ func (c *Config) AgentTargets() []string {
 		return DefaultTargets
 	}
 	return c.Agents.Targets
+}
+
+// CheckNames 是 tenon check 支持的全部检查项名称，按执行顺序排列。
+var CheckNames = []string{"text", "clock", "errors", "colors", "deps"}
+
+// Check 是 tenon.json 的 check：配置 tenon check 跳过哪些检查项、豁免哪些路径。
+type Check struct {
+	Skip   []string `json:"skip,omitempty"`   // 跳过的检查项，见 CheckNames，例如 ["text"]。
+	Exempt []string `json:"exempt,omitempty"` // 豁免检查的文件或目录路径（相对于项目根目录，正斜杠），例如 ["migrations/legacy"]。
+}
+
+// CheckSkip 返回 tenon.json 中配置的跳过检查项。
+func (c *Config) CheckSkip() []string {
+	if c.Check == nil {
+		return nil
+	}
+	return c.Check.Skip
+}
+
+// CheckExempt 返回 tenon.json 中配置的豁免路径。
+func (c *Config) CheckExempt() []string {
+	if c.Check == nil {
+		return nil
+	}
+	return c.Check.Exempt
 }
 
 // Framework 是框架的模块路径。
@@ -348,6 +374,13 @@ func (c *Config) check() error {
 		for _, t := range c.Agents.Targets {
 			if !slices.Contains(Targets, t) {
 				return fmt.Errorf("%s: agents.targets: %q is not one of %v", File, t, Targets)
+			}
+		}
+	}
+	if c.Check != nil {
+		for _, name := range c.Check.Skip {
+			if !slices.Contains(CheckNames, name) {
+				return fmt.Errorf("%s: check.skip: %q is not one of %v", File, name, CheckNames)
 			}
 		}
 	}
