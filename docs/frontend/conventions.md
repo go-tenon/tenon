@@ -105,13 +105,14 @@ helpdesk/
 <a id="inside-a-frontend"></a>
 ## 一个前端的目录结构
 
-生成的前端有 `router.tsx`、`start.ts`、`server.ts`、`theme.ts` 和 `routes/`，有 API 时加上 `api.ts`，有登录页时加上 `auth.ts`。页面多了以后：
+生成的前端有 `router.tsx`、`start.ts`、`server.ts`、`theme.ts`、`i18n.ts`、`messages.gen.ts` 和 `routes/`，有 API 时加上 `api.ts`，有登录页时加上 `auth.ts`。页面多了以后：
 
 ```text
 apps/admin/src/
 ├── router.tsx         getRouter：createApp 创建应用
 ├── start.ts、server.ts  TanStack Start 的设置和服务端渲染的入口
 ├── theme.ts           样式预设和品牌色
+├── i18n.ts            界面文字的翻译 i18n，见界面文字
 ├── api.ts             生成的客户端 api 和元数据 kit
 ├── auth.ts            会话、登录、退出
 ├── routes/            文件路由，只写路由的事
@@ -122,6 +123,7 @@ apps/admin/src/
 │       └── user-form.tsx
 ├── components/        本前端内跨领域共用的组件
 ├── lib/               与界面无关的工具函数
+├── messages.gen.ts    生成的界面文字目录
 └── routeTree.gen.ts   生成的路由树
 ```
 

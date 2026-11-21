@@ -85,12 +85,15 @@ func initCommand() *cobra.Command {
 					return err
 				}
 			}
-			// 生成客户端要编译应用，嵌入的 apps/dist 中要先有前端的清单。
+			// 生成客户端要编译应用，嵌入的 apps/dist 中要先有前端的清单。前端的界面文字生成为 messages.gen.ts。
 			cfg, err := project.Load(dir)
 			if err != nil {
 				return err
 			}
 			if err := dev.WriteManifest(dir, cfg); err != nil {
+				return err
+			}
+			if _, err := dev.WriteMessages(dir, cfg); err != nil {
 				return err
 			}
 			for _, s := range [][]string{{"go", "mod", "tidy"}, {"go", "run", cfg.Main, "client", "--ts", project.ClientSrc}} {
@@ -298,6 +301,9 @@ func addFrontendCommand() *cobra.Command {
 			if err := dev.WriteManifest(".", cfg); err != nil {
 				return err
 			}
+			if _, err := dev.WriteMessages(".", cfg); err != nil {
+				return err
+			}
 			if _, err := dev.SyncJS("."); err != nil {
 				return err
 			}
@@ -385,6 +391,10 @@ func addClientCommand() *cobra.Command {
 				Scope: scope, Name: name, Kind: kind, Frontend: f.Name, Base: f.Base, SSR: f.SSR, Title: title,
 			})
 			if err != nil {
+				return err
+			}
+			// 授权页的文字追加到了前端的翻译文件中，重新生成它的 messages.gen.ts。
+			if _, err := dev.WriteMessages(".", cfg); err != nil {
 				return err
 			}
 			for _, member := range append(dev.ClientWorkspaces(kind), path.Join(project.ClientsDir, name)) {

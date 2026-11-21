@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router"
 import { host } from "@go-tenon/host"
-import { BrowserSignIn, [[if eq .Login "split"]]LoginForm, SplitAuthLayout[[else]]CenteredAuthLayout, LoginForm[[end]] } from "@go-tenon/ui"
+import { BrowserSignIn, [[if eq .Login "split"]]LoginForm, SplitAuthLayout[[else]]CenteredAuthLayout, LoginForm[[end]], useT } from "@go-tenon/ui"
 import { login } from "../auth"
 
 export const Route = createFileRoute("/login")({
@@ -13,10 +13,11 @@ export const Route = createFileRoute("/login")({
 
 function Login() {
   const { redirect } = Route.useSearch()
+  const t = useT()
   // 在桌面端（Electron 等宿主）中，用户在系统浏览器中登录；在网页中用邮箱和密码登录。
   const desktop = host()
   return (
-    <[[if eq .Login "split"]]SplitAuthLayout[[else]]CenteredAuthLayout[[end]] brand="[[.Title]]" title="登录">
+    <[[if eq .Login "split"]]SplitAuthLayout[[else]]CenteredAuthLayout[[end]] brand={t("app.[[.Name]]")} title={t("signin.title")}>
       {desktop ? <BrowserSignIn signIn={desktop.auth.signIn} redirect={redirect} /> : <LoginForm login={login} redirect={redirect} />}
     </[[if eq .Login "split"]]SplitAuthLayout[[else]]CenteredAuthLayout[[end]]>
   )

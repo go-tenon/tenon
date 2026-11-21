@@ -1,6 +1,6 @@
 import { [[if not .HasLogin]]Button, [[end]]Container, Stack, Text, Title } from "@mantine/core"
 import { createFileRoute } from "@tanstack/react-router"
-import { [[if .HasLogin]]ButtonLink, [[end]]SiteLayout } from "@go-tenon/ui"
+import { [[if .HasLogin]]ButtonLink, [[end]]SiteLayout, useT } from "@go-tenon/ui"
 
 [[if .SSR]]// 首页在构建时预渲染（vite.config.ts 的 prerender），其余页面在请求时服务端渲染。
 [[end -]]
@@ -8,12 +8,13 @@ import { [[if .HasLogin]]ButtonLink, [[end]]SiteLayout } from "@go-tenon/ui"
 export const Route = createFileRoute("/")({ component: Home })
 
 function Home() {
+  const t = useT()
   return (
-    <SiteLayout brand="[[.Title]]" actions={[[if .HasLogin]]<ButtonLink to="/login" size="sm">登录</ButtonLink>[[else]]<Button size="sm">开始使用</Button>[[end]]}>
+    <SiteLayout brand={t("app.[[.Name]]")} actions={[[if .HasLogin]]<ButtonLink to="/login" size="sm">{t("home.login")}</ButtonLink>[[else]]<Button size="sm">{t("home.get_started")}</Button>[[end]]}>
       <Container size="sm" py={96}>
         <Stack gap="md" align="flex-start">
-          <Title order={1}>[[.Title]]</Title>
-          <Text c="dimmed">这里是首页的占位，换成自己的落地页。</Text>
+          <Title order={1}>{t("app.[[.Name]]")}</Title>
+          <Text c="dimmed">{t("home.placeholder")}</Text>
         </Stack>
       </Container>
     </SiteLayout>

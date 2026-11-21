@@ -61,7 +61,7 @@ export interface I18n<Id extends string = string> {
 type IdsOf<C extends Catalog> = Extract<{ [L in keyof C]: keyof C[L] }[keyof C], string>
 
 /**
- * 创建界面文字的翻译。在应用的 api.ts 中创建一次，交给 createApp、生成客户端的 headers 和 createKit：
+ * 创建界面文字的翻译。在前端的 src/i18n.ts 中创建一次，交给 createApp、生成客户端的 headers 和 createKit：
  *
  *   import { messages } from "./messages.gen"
  *   export const i18n = createI18n({ messages, defaultLanguage: "zh-CN" })
