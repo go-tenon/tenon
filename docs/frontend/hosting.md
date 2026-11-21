@@ -174,13 +174,28 @@ export default defineConfig({ plugins: [tenon({ prerender: ["/", "/docs"] })] })
 <a id="security"></a>
 ## 内容安全策略：`Options.CSP`
 
-Go 为每个页面请求生成 nonce，换掉页面外壳和预渲染页面中的占位符，服务端渲染时交给 Bun（需要 [`cspNonce`](#setup)）。HTML 响应带 `Content-Security-Policy`，默认 `frontend.DefaultCSP`：脚本只来自本站或带 nonce，`connect-src 'self'`，`frame-ancestors 'none'`。`Options.CSP` 接收 nonce、返回策略，例如允许浏览器向 [OpenObserve](observability.md) 上报：
+Go 为每个页面请求生成 nonce，换掉页面外壳和预渲染页面中的占位符，服务端渲染时交给 Bun（需要 [`cspNonce`](#setup)）。HTML 响应带 `Content-Security-Policy`，默认 `frontend.DefaultCSP`：脚本只来自本站或带 nonce，`connect-src 'self'`，`frame-ancestors 'none'`。`Options.CSP` 接收页面请求和它的 nonce、返回策略，例如允许浏览器向 [OpenObserve](observability.md) 上报：
 
 ```go
-CSP: func(nonce string) string {
+CSP: func(r *http.Request, nonce string) string {
     return strings.Replace(frontend.DefaultCSP(nonce), "connect-src 'self'", "connect-src 'self' https://o2.example.com", 1)
 },
 ```
+
+按请求的路径可以给不同的页面不同的策略，例如只让 `/widget/` 下的页面嵌入其他网站，其余页面保持 `frame-ancestors 'none'`。`allowed` 是应用按请求查出的允许嵌入的来源，例如 `https://shop.example.com`：
+
+```go
+CSP: func(r *http.Request, nonce string) string {
+    csp := frontend.DefaultCSP(nonce)
+    if !strings.HasPrefix(r.URL.Path, "/widget/") {
+        return csp
+    }
+    return strings.Replace(csp, "frame-ancestors 'none'", "frame-ancestors "+allowed(r), 1)
+},
+```
+
+- `r` 是浏览器发来的页面请求，服务端渲染时也是它；它的 context 带着中间件放进去的值，例如租户。
+- 页面外壳、预渲染的页面和服务端渲染的页面的响应都带它返回的策略。
 
 开发模式不设置 CSP：开发服务器注入的内联脚本没有 nonce。
 

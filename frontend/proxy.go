@@ -23,8 +23,22 @@ func DefaultCSP(nonce string) string {
 		"img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'"
 }
 
-// nonceKey 是 CSP nonce 在 context 中的键。
-type nonceKey struct{}
+// pageKey 是页面请求在 context 中的键。
+type pageKey struct{}
+
+// page 是 serveHTTP 为一次页面请求记下的内容：生成的 CSP nonce，以及交给 Options.CSP 的页面请求。
+// 请求经 SSR 代理转发后，响应上的请求是转发出去的那一个，所以原来的请求记在这里。
+type page struct {
+	nonce string
+	req   *http.Request
+}
+
+// withPage 返回带上新 nonce 的请求 r，并把它记为这次的页面请求。
+func withPage(r *http.Request) *http.Request {
+	p := &page{nonce: newNonce()}
+	p.req = r.WithContext(context.WithValue(r.Context(), pageKey{}, p))
+	return p.req
+}
 
 // newNonce 生成一个 CSP nonce：16 个随机字节的 base64。
 func newNonce() string {
@@ -33,10 +47,16 @@ func newNonce() string {
 	return base64.RawStdEncoding.EncodeToString(b)
 }
 
+// pageOf 返回 serveHTTP 为请求 r 记下的页面请求；经 SSR 代理转发的请求共用同一个 context，也能取到。
+func pageOf(r *http.Request) *page { return r.Context().Value(pageKey{}).(*page) }
+
 // requestNonce 返回 serveHTTP 为这次请求生成的 nonce。
-func requestNonce(r *http.Request) string {
-	nonce, _ := r.Context().Value(nonceKey{}).(string)
-	return nonce
+func requestNonce(r *http.Request) string { return pageOf(r).nonce }
+
+// csp 返回请求 r 所属的页面请求的 Content-Security-Policy，由 Options.CSP 按页面请求和它的 nonce 给出。
+func (h *Host) csp(r *http.Request) string {
+	p := pageOf(r)
+	return h.opts.CSP(p.req, p.nonce)
 }
 
 // pageProxy 把前端 a 的页面请求经 unix socket 转给它的 SSR 进程，流式转发，不缓冲。
@@ -57,7 +77,7 @@ func (h *Host) pageProxy(a *app) http.Handler {
 		ModifyResponse: func(res *http.Response) error {
 			route(res)
 			if strings.HasPrefix(strings.ToLower(res.Header.Get("Content-Type")), "text/html") {
-				res.Header.Set("Content-Security-Policy", h.opts.CSP(requestNonce(res.Request)))
+				res.Header.Set("Content-Security-Policy", h.csp(res.Request))
 			}
 			return nil
 		},

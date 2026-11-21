@@ -58,6 +58,36 @@ func nonceOf(csp string) string {
 	return nonce
 }
 
+// Options.CSP 按页面请求给出策略：页面外壳和预渲染的页面都把这次请求和它的 nonce 交给它，不同路径的页面得到不同的策略。
+func TestCSPPerRequest(t *testing.T) {
+	t.Parallel()
+	h, err := New(spaDist(), Options{CSP: func(r *http.Request, nonce string) string {
+		if strings.HasPrefix(r.URL.Path, "/admin/") {
+			return "script-src 'nonce-" + nonce + "'; frame-ancestors 'none'"
+		}
+		return "script-src 'nonce-" + nonce + "'; frame-ancestors *"
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := h.Handler()
+	for _, c := range []struct {
+		target, ancestors string
+		nonceInBody       bool // 页面中有占位 nonce，换成了策略中的那一个
+	}{
+		{"/todos/42", "frame-ancestors *", true},          // web 的页面外壳
+		{"/", "frame-ancestors *", true},                  // web 预渲染的页面
+		{"/admin/users", "frame-ancestors 'none'", false}, // admin 的页面外壳
+	} {
+		r := do(t, handler, http.MethodGet, c.target)
+		csp := r.header.Get("Content-Security-Policy")
+		nonce := nonceOf(csp)
+		if nonce == "" || !strings.HasSuffix(csp, c.ancestors) || c.nonceInBody && !strings.Contains(r.body, nonce) {
+			t.Errorf("%s: csp %q, body %q", c.target, csp, r.body)
+		}
+	}
+}
+
 // 只在浏览器中渲染的前端：静态文件、预渲染的页面和页面外壳都由 Go 返回，HTML 中的占位 nonce 换成本次请求的。
 func TestStatic(t *testing.T) {
 	t.Parallel()

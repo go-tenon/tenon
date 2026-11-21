@@ -201,8 +201,15 @@ func TestHost(t *testing.T) {
 		io.WriteString(w, "pong "+logging.RequestID(r.Context()))
 	})
 	h, err := New(ssrDist(Entry{Name: "web", Base: "/", SSR: true}, Entry{Name: "admin", Base: "/admin/"}), Options{
-		API:    httpx.AssignRequestID(httpx.DefaultRequestIDConfig())(api),
-		Env:    []string{"FAKE_SSR=1", "FAKE_LOG=" + journal, "FAKE_EXTRA=extra"},
+		API: httpx.AssignRequestID(httpx.DefaultRequestIDConfig())(api),
+		Env: []string{"FAKE_SSR=1", "FAKE_LOG=" + journal, "FAKE_EXTRA=extra"},
+		// 服务端渲染的页面同样按页面请求给出策略：交给它的是浏览器发来的请求，带着原来的 Host 和路径
+		CSP: func(r *http.Request, nonce string) string {
+			if r.URL.Host != "" {
+				return "forwarded request" // 转发给 SSR 进程的请求的 URL 中有 ssr 主机
+			}
+			return DefaultCSP(nonce) + "; report-uri //" + r.Host + r.URL.Path
+		},
 		Logger: slog.New(slog.NewTextHandler(logs, nil)), MeterProvider: mp,
 	})
 	if err != nil {
@@ -257,7 +264,7 @@ func TestHost(t *testing.T) {
 		if got["nonce"] == "" || got["nonce"] == "forged" {
 			t.Fatalf("nonce %q", got["nonce"])
 		}
-		if csp := res.Header.Get("Content-Security-Policy"); csp != DefaultCSP(got["nonce"]) {
+		if csp := res.Header.Get("Content-Security-Policy"); csp != DefaultCSP(got["nonce"])+"; report-uri //"+got["host"]+"/echo/7" {
 			t.Fatalf("csp %q", csp)
 		}
 		if got["request_id"] != "REQ-1" || got["env"] != "extra" || !strings.HasPrefix(got["host"], "127.0.0.1:") ||

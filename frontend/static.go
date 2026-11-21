@@ -80,7 +80,7 @@ func (h *Host) serveHTML(w http.ResponseWriter, r *http.Request, page []byte) {
 	page = bytes.ReplaceAll(page, []byte(PrerenderNonce), []byte(nonce))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Content-Security-Policy", h.opts.CSP(nonce))
+	w.Header().Set("Content-Security-Policy", h.csp(r))
 	http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(page))
 }
 
