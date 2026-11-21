@@ -91,22 +91,22 @@ var FS embed.FS
 文件上传、队列等功能包自带迁移。用它们时把迁移发布到应用的迁移目录，审查后提交，由 `migrate up` 执行。注册 `publish` 子命令，传入各功能包的 `Migrations()`；`root` 是根命令，`dbConfig` 从配置取出 `database.Config`：
 
 ```go
+sources := []fs.FS{filesystem.Migrations()}
 migrationCmd := migratecmd.New(migrations.FS, dbConfig)
-migrationCmd.AddCommand(migratecmd.Publish(
-    filesystem.Migrations(),
-))
+migrationCmd.AddCommand(migratecmd.Publish(sources...), migratecmd.Verify(sources...))
 root.AddCommand(migrationCmd)
 ```
 
 ```bash
 go run ./cmd/blog migrate publish --dir migrations   # 输出本次新复制的文件名
+go run ./cmd/blog migrate verify --dir migrations    # 检查是否漏发新迁移或内容偏离框架
 ```
 
 - 文件名和内容原样复制。目录中已有的迁移跳过，所以首次执行前可以修改发布出来的 SQL；不给它改名，否则会再复制一份。
-- 升级框架后再次运行，只复制新增的迁移。
+- 升级框架后运行 `migrate publish` 复制新增的迁移；在 CI 中运行 `migrate verify` 检查是否有漏发布的框架迁移或与框架内容不一致的文件。
 - 发布出来的迁移时间通常早于应用最近的迁移，`migrate up` 照样执行它们。发布后重新构建，再运行 `migrate up`。
 
-自定义工具可以直接调用 `migrate.Publish("migrations", sources...)`。
+自定义工具可以直接调用 `migrate.Publish("migrations", sources...)` 和 `migrate.Verify("migrations", sources...)`。
 
 <a id="migration-commands"></a>
 ## 迁移命令：`migratecmd.New`

@@ -20,46 +20,17 @@ func Publish(dir string, sources ...fs.FS) ([]string, error) {
 	if strings.TrimSpace(dir) == "" {
 		return nil, errors.New("migrate: publish directory is required")
 	}
-	if len(sources) == 0 {
-		return nil, errors.New("migrate: at least one migration source is required")
+	files, versions, err := collectSources(sources)
+	if err != nil {
+		return nil, err
 	}
 	existing, err := migrationFiles(dir)
 	if err != nil {
 		return nil, err
 	}
-	files := make(map[string][]byte)
-	versions := make(map[int64]string)
-	for i, source := range sources {
-		if source == nil {
-			return nil, errors.Newf("migrate: source %d is nil", i)
-		}
-		names, err := fs.Glob(source, "*.sql")
-		if err != nil {
-			return nil, errors.Wrapf(err, "migrate: read source %d", i)
-		}
-		if len(names) == 0 {
-			return nil, errors.Newf("migrate: source %d has no migrations", i)
-		}
-		for _, name := range names {
-			version, _, err := parseFileName(name)
-			if err != nil {
-				return nil, err
-			}
-			if other, ok := versions[version]; ok {
-				return nil, errors.Newf("migrate: %s and %s have the same version", other, name)
-			}
-			versions[version] = name
-			data, err := fs.ReadFile(source, name)
-			if err != nil {
-				return nil, errors.Wrapf(err, "migrate: read %s", name)
-			}
-			if !bytes.Contains(data, []byte("-- +goose Up")) {
-				return nil, errors.Newf("migrate: %s is missing goose Up annotation", name)
-			}
-			if published, ok := existing[version]; ok && published != name {
-				return nil, errors.Newf("migrate: %s has the same version as %s in %s", name, published, dir)
-			}
-			files[name] = data
+	for version, name := range versions {
+		if published, ok := existing[version]; ok && published != name {
+			return nil, errors.Newf("migrate: %s has the same version as %s in %s", name, published, dir)
 		}
 	}
 	if err := os.MkdirAll(dir, 0o750); err != nil {
@@ -76,6 +47,47 @@ func Publish(dir string, sources ...fs.FS) ([]string, error) {
 		written = append(written, name)
 	}
 	return written, nil
+}
+
+// collectSources 读取并校验 sources 中的全部框架迁移：检查文件名格式、版本号不重复和 goose Up 注解，
+// 返回文件名到字节内容以及版本号到文件名的映射。
+func collectSources(sources []fs.FS) (map[string][]byte, map[int64]string, error) {
+	if len(sources) == 0 {
+		return nil, nil, errors.New("migrate: at least one migration source is required")
+	}
+	files := make(map[string][]byte)
+	versions := make(map[int64]string)
+	for i, source := range sources {
+		if source == nil {
+			return nil, nil, errors.Newf("migrate: source %d is nil", i)
+		}
+		names, err := fs.Glob(source, "*.sql")
+		if err != nil {
+			return nil, nil, errors.Wrapf(err, "migrate: read source %d", i)
+		}
+		if len(names) == 0 {
+			return nil, nil, errors.Newf("migrate: source %d has no migrations", i)
+		}
+		for _, name := range names {
+			version, _, err := parseFileName(name)
+			if err != nil {
+				return nil, nil, err
+			}
+			if other, ok := versions[version]; ok {
+				return nil, nil, errors.Newf("migrate: %s and %s have the same version", other, name)
+			}
+			versions[version] = name
+			data, err := fs.ReadFile(source, name)
+			if err != nil {
+				return nil, nil, errors.Wrapf(err, "migrate: read %s", name)
+			}
+			if !bytes.Contains(data, []byte("-- +goose Up")) {
+				return nil, nil, errors.Newf("migrate: %s is missing goose Up annotation", name)
+			}
+			files[name] = data
+		}
+	}
+	return files, versions, nil
 }
 
 // migrationFiles 返回 dir 中迁移的版本和文件名；dir 不存在时为空。文件名不符合格式时返回错误。

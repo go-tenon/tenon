@@ -39,5 +39,5 @@ description: Tenon 应用中与 PostgreSQL 有关的工作：第一次接入数�
 
 - SQL 中的时间由 Go 算出后作为参数传入（`time.Now().UTC()`），不用 `NOW()`、`CURRENT_TIMESTAMP`：测试中的假时钟只对 Go 有效。
 - 测试用 `dbtest.Open(t, migrations.FS)` 为每个测试建一个已执行迁移的临时库，需要环境变量 `POSTGRES_TEST_URL`，见 `.tenon/docs/testing/testing.md#creating-test-databases`。
-- 框架的功能包（队列、令牌等）自带迁移，用 `migratecmd.Publish` 发布到项目的迁移目录，见 `.tenon/docs/database/migrations.md#publishing-framework-migrations`。
+- 框架的功能包（队列、令牌等）自带迁移，用 `migratecmd.Publish` 发布到项目的迁移目录、用 `migratecmd.Verify` 在升级框架后和 CI 中校验无漏发与漂移，见 `.tenon/docs/database/migrations.md#publishing-framework-migrations`。
 - 慢查询、软删除、只读副本、多个数据库也在 `.tenon/docs/database/database.md` 中。

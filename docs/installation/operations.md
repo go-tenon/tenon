@@ -233,9 +233,20 @@ FROM pg_replication_slots WHERE slot_name LIKE 'tenon_queue_%';
 确认迁移的版本符合预期，抽查几张业务表中最新的数据，记下恢复用的时间。
 
 <a id="upgrading"></a>
-## 升级依赖
+## 升级框架与依赖
 
-升级 Tenon 或其他依赖后运行 `go test ./...` 和 `go test -race ./...`。
+业务项目升级 Tenon 版本按以下顺序执行：
 
+```bash
+go get github.com/go-tenon/tenon@vX.Y.Z && go mod tidy
+go run ./cmd/blog migrate publish   # 复制框架新增的迁移
+go run ./cmd/blog migrate verify    # 确认框架迁移无漏发、无漂移
+bun run agents                      # 同步 .tenon/docs、AGENTS.md 托管区块、技能和 MCP 配置
+bun run generate                    # 同步 .tenon/js，重新生成客户端和界面文字目录
+bun run check                       # 含 deps 依赖版本检查；有前端 peerDependencies 提示时先升级并 bun install
+bun run typecheck && go test ./...
+```
+
+- 改动涉及并发时再运行 `go test -race ./...`。
 - 框架需要的 Go 版本以它的 [go.mod](../../go.mod) 为准，框架的集成测试使用 PostgreSQL 18。
-- CI 中启用了[已发布迁移检查](../database/migrations.md#checking-in-ci)时，它确认升级没有改动已经发布的迁移。
+- CI 中启用了[已发布迁移检查](../database/migrations.md#checking-in-ci)和 `migrate verify` 时，分别确认未改写历史迁移且未漏发框架新增迁移。
