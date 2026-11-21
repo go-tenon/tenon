@@ -311,7 +311,7 @@ func RegisterRoutes(api *rest.API, db *bun.DB) {
 <a id="messages"></a>
 ## 错误提示
 
-响应中的 `detail` 是给用户看的提示，按错误码从翻译文件中查找，见[本地化](../general/localization.md)。新建 `locales/embed.go` 和 `locales/zh-CN.yaml`：
+响应中的 `detail` 是给用户看的提示，按错误码从翻译文件中查找，见[本地化](../general/localization.md)。新建 `locales/embed.go` 和 `locales/zh-CN.yaml`。`embed.go` 嵌入目录中的全部翻译文件，也包括前端的界面文字 `web.zh-CN.yaml`：
 
 ```go title="locales/embed.go"
 // Package locales 嵌入应用的翻译：业务错误码对应给用户看的提示。

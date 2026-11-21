@@ -772,7 +772,7 @@ go run ./cmd/blog user admin --email ming@example.com
 go tool tenon add frontend admin --layout frame
 ```
 
-它在 `apps/admin` 中生成登录页、`FrameLayout` 布局和首页，只在浏览器中渲染（`apps/admin/package.json` 中 `"ssr": false`）。`internal/bootstrap/http.go` 不用改。重新生成客户端：
+它在 `apps/admin` 中生成登录页、`FrameLayout` 布局和首页，只在浏览器中渲染（`apps/admin/package.json` 中 `"ssr": false`）；后台的界面文字在 `locales/admin.zh-CN.yaml` 中。`internal/bootstrap/http.go` 不用改。重新生成客户端：
 
 ```bash
 go tool tenon generate
@@ -786,15 +786,27 @@ import { createClient } from "@blog/client/api"
 import { createKit } from "@blog/client/api/kit"
 import { apiFetch } from "@go-tenon/start"
 import { session } from "./auth"
+import { i18n } from "./i18n"
 
 // api 是生成的客户端。登录凭据是浏览器自动带上的会话 cookie；受保护的接口返回 401 时，会话随之变为未登录。
-export const api = createClient({ baseURL: "/api", fetch: apiFetch, session })
+export const api = createClient({ baseURL: "/api", fetch: apiFetch, session, headers: i18n.headers })
 
 // kit 是生成的客户端和元数据：查询选项、校验规则、验证提示、枚举的显示文字和资源。
-// scope 让查询的缓存按登录的账号区分。
-const kit = createKit(api, { scope: session.scope, language: "zh-CN" })
+// scope 让查询的缓存按登录的账号区分；字段名、枚举和验证提示按当前语言显示。
+const kit = createKit(api, { scope: session.scope, language: i18n.language })
 export const users = resourceModel(kit.resources.user, kit)
 export const roles = resourceModel(kit.resources.role, kit)
+```
+
+菜单的标题写在后台的翻译文件中。把 `locales/admin.zh-CN.yaml` 中后台的名称改为“博客后台”，加上两个菜单：
+
+```yaml title="locales/admin.zh-CN.yaml"
+app.admin: 博客后台
+home.title: 首页
+home.start: 从这里开始。
+signin.title: 登录
+nav.users: 作者
+nav.roles: 角色
 ```
 
 角色的页面只有声明。新建 `apps/admin/src/routes/_app/roles.tsx`：
@@ -805,12 +817,13 @@ import { ResourcePage } from "@go-tenon/ui"
 import { roles } from "../../resources"
 
 export const Route = createFileRoute("/_app/roles")({
-  staticData: { title: "角色", icon: "safety", permission: "roles:manage" },
+  staticData: { title: "nav.roles", icon: "safety", permission: "roles:manage" },
   validateSearch: roles.listSearch,
   component: () => <ResourcePage model={roles} route={Route} form="modal" />,
 })
 ```
 
+- `staticData.title` 写消息 ID，菜单显示翻译文件中的文字。
 - `ResourcePage` 按资源渲染列表、表单和删除确认。
 - `form="modal"` 在对话框中填写表单；默认是单独的页面，要另加两个路由，见[资源页面](../frontend/resources.md#admin)。
 - 没有 `roles:manage` 的作者看不到这个菜单。
@@ -825,7 +838,7 @@ import { type FieldInput, ResourcePage } from "@go-tenon/ui"
 import { api, users } from "../../resources"
 
 export const Route = createFileRoute("/_app/users")({
-  staticData: { title: "作者", icon: "team", permission: "users:manage" },
+  staticData: { title: "nav.users", icon: "team", permission: "users:manage" },
   validateSearch: users.listSearch,
   component: Users,
 })
