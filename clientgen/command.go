@@ -52,7 +52,10 @@ func Command(router func() chi.Routes, translations ...fs.FS) *cobra.Command {
 			if gen.Main == "" {
 				return command.AsExitError(command.ExitUsage, errors.New("cannot tell the main package; pass --main"))
 			}
-			routes := router()
+			routes, err := buildRouter(router)
+			if err != nil {
+				return err
+			}
 			if ts != "" {
 				apis := rest.APIs(routes)
 				if basePath != "" {
@@ -156,4 +159,23 @@ func DefaultTSDir(base string) string {
 // renameHint 返回在 tenon.json 中给 BasePath 为 base 的 API 指定客户端目录名的写法。
 func renameHint(base string) string {
 	return fmt.Sprintf(`"apis": {%q: {"name": "<name>"}}`, base)
+}
+
+// buildRouter 调用 router 构造离线路由并捕获 panic：rest.Register 等路由校验失败直接返回原信息，
+// 其他 panic（常见于构造函数使用了零值依赖）附上明确排查提示和堆栈。
+func buildRouter(router func() chi.Routes) (routes chi.Routes, err error) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			return
+		}
+		msg := fmt.Sprint(r)
+		if strings.HasPrefix(msg, "rest:") {
+			err = errors.Newf("build routes: %s", msg)
+			return
+		}
+		err = errors.Newf("build routes panicked (%s): offline commands (openapi, routes, client) construct routes with zero-value dependencies; ensure RegisterRoutes and New* constructors only store dependencies without dereferencing or checking them:\n%s",
+			msg, debug.Stack())
+	}()
+	return router(), nil
 }

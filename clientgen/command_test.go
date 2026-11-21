@@ -140,3 +140,21 @@ func TestTSDirs(t *testing.T) {
 		}
 	}
 }
+
+// TestCommandBuildRouterPanicDiagnosis 验证 client 命令离线构造路由时遇到零值依赖 panic 会返回清晰归因。
+func TestCommandBuildRouterPanicDiagnosis(t *testing.T) {
+	t.Parallel()
+	root := command.Root("api", "test")
+	root.AddCommand(clientgen.Command(func() chi.Routes {
+		var p *int
+		_ = *p
+		return chi.NewRouter()
+	}))
+	root.SetOut(&bytes.Buffer{})
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"client", "--ts", t.TempDir(), "--main", exampleMain})
+	err := root.ExecuteContext(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "zero-value dependencies") {
+		t.Fatalf("err = %v", err)
+	}
+}

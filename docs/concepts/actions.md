@@ -248,18 +248,16 @@ func ArticlePublished(ctx context.Context, tx database.Tx, item *article.Article
 <a id="wiring-hooks"></a>
 ### 在 bootstrap 中连接钩子
 
-`Publish` 在路由、worker 和命令中都会被构造，每一处都要传入同样的钩子，否则定时发布的文章不加积分。在 `bootstrap` 中给钩子列表起一个名字，`api`、`validate`、`db`、`w` 分别是 HTTP 部分的 API、令牌校验函数、连接池和 worker：
+`Publish` 在路由、worker 和命令中都会用到，每处都要带上同样的钩子，否则定时发布的文章不加积分。在 `bootstrap` 的 `App` 上写一个工厂方法统一构造它，所有入口共享这一个装配点：
 
 ```go
-// onPublished 是发布文章时在同一个事务中执行的钩子，构造 article.Publish 的地方都传入它。
-var onPublished = []article.PublishedHook{points.ArticlePublished}
-
-article.RegisterRoutes(api, rest.RequireToken(api, validate, "articles"), db, onPublished)
-article.PublishAt.Handle(w, article.NewPublish(db, onPublished...).Job)
-article.Commands(db, onPublished)
+// publishArticle 构造文章发布动作并接好同步钩子，HTTP、worker 和命令共用它。
+func (a *App) publishArticle() *article.Publish {
+    return article.NewPublish(a.db, points.ArticlePublished)
+}
 ```
 
-钩子需要依赖时，在 `Open` 中构造这个列表，保存在 `App` 中。测试 `points.ArticlePublished` 时在测试事务中直接调用它，见[测试](../testing/testing.md#testing-actions)。
+各入口统一调用 `a.publishArticle()`（例如 `article.RegisterRoutes(api, auth, a.db, a.publishArticle())`、`article.PublishAt.Handle(w, a.publishArticle().Job)`、`article.Commands(a.publishArticle())`）：新增钩子时只改这一处，而且 `DocRouter` 用零值 `&App{}` 调用时同样安全。测试 `points.ArticlePublished` 时在测试事务中直接调用它，见[测试](../testing/testing.md#testing-actions)。
 
 <a id="what-hooks-do"></a>
 ### 钩子里做什么
