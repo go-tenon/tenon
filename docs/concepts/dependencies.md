@@ -165,6 +165,7 @@ func DocRouter() chi.Routes {
 
 - `Start` 先装配好一切（包括取得监听端口），再返回运行的函数。路由冲突、端口被占用在开始运行前返回，[不停机升级](../installation/operations.md#zero-downtime-upgrades)时旧版本继续服务。
 - `Router` 只保存 `App` 的字段：`DocRouter` 用零值的 `App` 调用它，交给 [`httpcmd.Commands`](../general/commands.md#declaring-the-cli) 离线生成文档和客户端。健康检查的 `Ping` 写成闭包，见[健康检查](lifecycle.md#health-checks)。
+- 带钩子或同时挂在多个入口（HTTP、worker、命令、MCP、RPC）的业务动作，在 `App` 上用工厂方法统一构造（例如 `a.publishArticle()`），各入口共享同一个装配点，避免漏传钩子，见[在 bootstrap 中连接钩子](actions.md#wiring-hooks)。
 - `serve --help` 用零值的 `App` 调用 `Parts`，所以 `Parts` 中只取方法值。
 - 多个部分都用到的资源（数据库、NATS、缓存）在 `Open` 中打开；只有一个部分用到的（例如 HTTP 中间件）在它自己的方法中创建。
 

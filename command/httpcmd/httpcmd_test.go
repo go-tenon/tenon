@@ -209,3 +209,31 @@ func TestCommands(t *testing.T) {
 		t.Fatalf("commands %v", names)
 	}
 }
+
+// TestBuildRouterPanicDiagnosis 验证离线构造路由时发生零值依赖解引用或 rest 校验 panic 会返回带清晰归因的错误。
+func TestBuildRouterPanicDiagnosis(t *testing.T) {
+	t.Parallel()
+	nilDeref := func() chi.Routes {
+		var p *int
+		_ = *p
+		return chi.NewRouter()
+	}
+	for _, args := range [][]string{{"openapi"}, {"routes"}} {
+		_, _, err := execute(newRoot(httpcmd.Commands(nilDeref)...), args...)
+		if err == nil || !strings.Contains(err.Error(), "zero-value dependencies") || !strings.Contains(err.Error(), "nil pointer") {
+			t.Errorf("%v: err = %v", args, err)
+		}
+	}
+	badRoute := func() chi.Routes {
+		router := chi.NewRouter()
+		api := rest.New(router, rest.Options{Title: "API"})
+		// 未声明访问策略，rest.Register 触发 rest: panic。
+		rest.Register(api, huma.Operation{OperationID: "ping", Method: http.MethodGet, Path: "/ping"},
+			func(context.Context, *input) (*output, error) { return nil, nil })
+		return router
+	}
+	_, _, err := execute(newRoot(httpcmd.OpenAPI(badRoute)), "openapi")
+	if err == nil || !strings.Contains(err.Error(), "rest: endpoint must explicitly declare") || strings.Contains(err.Error(), "zero-value dependencies") {
+		t.Errorf("bad route: err = %v", err)
+	}
+}

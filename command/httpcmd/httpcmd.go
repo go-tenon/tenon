@@ -6,6 +6,7 @@ package httpcmd
 import (
 	"fmt"
 	"io/fs"
+	"runtime/debug"
 	"strings"
 	"text/tabwriter"
 
@@ -23,7 +24,7 @@ import (
 //
 //	root.AddCommand(httpcmd.Commands(func() chi.Routes { return routes(config.Default[Config](), nil) })...)
 //
-// 注册路由时只保存依赖，处理请求时才使用，用零值的依赖构造才能成功；违反时命令 panic，堆栈指向使用依赖的地方。
+// 注册路由时只保存依赖，处理请求时才使用，用零值的依赖构造才能成功；违反时命令捕获 panic 并给出排查说明与堆栈。
 //
 // 应用有自己的翻译文件时用 Translations 传入，client 命令生成的验证提示与服务端相同：
 //
@@ -60,7 +61,11 @@ func OpenAPI(router func() chi.Routes) *cobra.Command {
 		if spec != "3.1" && spec != "3.0" {
 			return command.AsExitError(command.ExitUsage, fmt.Errorf("--spec must be 3.1 or 3.0, got %q", spec))
 		}
-		api, err := rest.Lookup(router(), basePath)
+		routes, err := buildRouter(router)
+		if err != nil {
+			return err
+		}
+		api, err := rest.Lookup(routes, basePath)
 		if err != nil {
 			return command.AsExitError(command.ExitUsage, err)
 		}
@@ -85,9 +90,13 @@ func Routes(router func() chi.Routes) *cobra.Command {
 	var method, path string
 	var all bool
 	cmd := leaf("routes", "查看应用的全部路由", func(cmd *cobra.Command) error {
+		routes, err := buildRouter(router)
+		if err != nil {
+			return err
+		}
 		out := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
 		fmt.Fprintln(out, "METHOD\tPATH\tOPERATION ID\tACCESS\tSUMMARY")
-		for _, route := range httpx.Routes(router()) {
+		for _, route := range httpx.Routes(routes) {
 			if method != "" && route.Method != httpx.AnyMethod && !strings.EqualFold(route.Method, method) ||
 				!strings.Contains(route.Path, path) ||
 				route.Access == httpx.AccessDocs && !all {
@@ -131,4 +140,23 @@ func leaf(use, short string, run func(cmd *cobra.Command) error) *cobra.Command 
 		Args:  command.NoArgs,
 		RunE:  func(cmd *cobra.Command, _ []string) error { return run(cmd) },
 	}
+}
+
+// buildRouter 调用 router 构造离线路由并捕获 panic：rest.Register 等路由校验失败直接返回原信息，
+// 其他 panic（常见于构造函数使用了零值依赖）附上明确排查提示和堆栈。
+func buildRouter(router func() chi.Routes) (routes chi.Routes, err error) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			return
+		}
+		msg := fmt.Sprint(r)
+		if strings.HasPrefix(msg, "rest:") {
+			err = fmt.Errorf("build routes: %s", msg)
+			return
+		}
+		err = fmt.Errorf("build routes panicked (%s): offline commands (openapi, routes, client) construct routes with zero-value dependencies; ensure RegisterRoutes and New* constructors only store dependencies without dereferencing or checking them:\n%s",
+			msg, debug.Stack())
+	}()
+	return router(), nil
 }
