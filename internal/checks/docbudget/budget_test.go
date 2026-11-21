@@ -43,16 +43,16 @@ func read(t *testing.T, rel string) string {
 	return string(b)
 }
 
-// TestAlwaysLoaded 检查 AGENTS.md 的模板、文档目录和技能的篇幅。
+// TestAlwaysLoaded 检查 AGENTS.md（项目模板加框架托管约定）、文档目录和技能的篇幅。
 func TestAlwaysLoaded(t *testing.T) {
 	t.Parallel()
-	for rel, limit := range map[string]int{
-		"cmd/tenon/internal/scaffold/template/project/AGENTS.md.tmpl": agentsTemplateLimit,
-		"docs/README.md": indexLimit,
-	} {
-		if n := utf8.RuneCountInString(read(t, rel)); n > limit {
-			t.Errorf("%s has %d characters, limit %d", rel, n, limit)
-		}
+	agentsCombined := read(t, "cmd/tenon/internal/scaffold/template/project/AGENTS.md.tmpl") + "\n" +
+		read(t, "cmd/tenon/internal/agents/conventions.md")
+	if n := utf8.RuneCountInString(agentsCombined); n > agentsTemplateLimit {
+		t.Errorf("AGENTS.md (template + conventions.md) has %d characters, limit %d", n, agentsTemplateLimit)
+	}
+	if n := utf8.RuneCountInString(read(t, "docs/README.md")); n > indexLimit {
+		t.Errorf("docs/README.md has %d characters, limit %d", n, indexLimit)
 	}
 	skills, err := filepath.Glob(filepath.Join(root, "cmd/tenon/internal/agents/skills/*/SKILL.md"))
 	if err != nil || len(skills) == 0 {

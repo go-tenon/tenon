@@ -236,6 +236,11 @@ func TestSkillReferences(t *testing.T) {
 		}
 		sources[name] = string(tmpl)
 	}
+	conv, err := os.ReadFile("conventions.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sources["conventions.md"] = string(conv)
 	for source, text := range sources {
 		for _, m := range ref.FindAllStringSubmatch(text, -1) {
 			page, err := os.ReadFile(filepath.Join(docs, filepath.FromSlash(m[1])))
@@ -255,5 +260,63 @@ func TestSkillReferences(t *testing.T) {
 	}
 	if len(all) < 9 {
 		t.Errorf("only %d skills", len(all))
+	}
+}
+
+// SyncAgentsMD 只改写 AGENTS.md 中 tenon:begin 到 tenon:end 之间的托管区块，保留项目自定义的内容；
+// 文件不存在时不创建；还没有标记时把托管区块追加到末尾；再次执行结果不变。
+func TestSyncAgentsMD(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	ok, err := agents.SyncAgentsMD(dir)
+	if err != nil || ok {
+		t.Fatalf("missing AGENTS.md: ok=%v err=%v", ok, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, agents.AgentsFile)); err == nil {
+		t.Fatal("created AGENTS.md when absent")
+	}
+
+	p := filepath.Join(dir, agents.AgentsFile)
+	initial := "# Shop\n\n项目自己的业务规则。\n\n<!-- tenon:begin -->\n旧约定\n<!-- tenon:end -->\n\n## 项目补充\n"
+	if err := os.WriteFile(p, []byte(initial), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ok, err = agents.SyncAgentsMD(dir)
+	if err != nil || !ok {
+		t.Fatalf("sync managed block: ok=%v err=%v", ok, err)
+	}
+	got, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(got)
+	for _, want := range []string{"# Shop\n\n项目自己的业务规则。", "## 框架与文档", "## 代码约定", "## 项目补充"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("AGENTS.md missing %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "旧约定") {
+		t.Errorf("stale content remained:\n%s", text)
+	}
+	// 再次执行结果不变。
+	if _, err := agents.SyncAgentsMD(dir); err != nil {
+		t.Fatal(err)
+	}
+	again, _ := os.ReadFile(p)
+	if string(again) != text {
+		t.Errorf("second sync changed AGENTS.md")
+	}
+
+	// 旧项目还没有标记时追加托管区块，原内容保留。
+	legacy := "# Legacy\n\n已有内容\n"
+	if err := os.WriteFile(p, []byte(legacy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := agents.SyncAgentsMD(dir); err != nil || !ok {
+		t.Fatalf("legacy sync: ok=%v err=%v", ok, err)
+	}
+	gotLegacy, _ := os.ReadFile(p)
+	if !strings.HasPrefix(string(gotLegacy), "# Legacy\n\n已有内容\n\n<!-- tenon:begin -->\n") || !strings.Contains(string(gotLegacy), "## 代码约定") {
+		t.Errorf("legacy AGENTS.md:\n%s", gotLegacy)
 	}
 }

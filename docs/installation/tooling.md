@@ -153,7 +153,7 @@ go tool tenon add client admin-desktop --kind electron --frontend admin
 <a id="agents"></a>
 ## `tenon agents`：AI 编程助手
 
-`bun run agents` 更新 `.tenon/docs`，重新安装 `tenon-*` 技能，改写 MCP 配置中的 `tenon`。升级框架后运行；`init`、`add frontend`、`add client` 结束时自动运行。见 [AI 编程助手](ai-assistants.md#updating)。
+`bun run agents` 更新 `.tenon/docs`，同步 `AGENTS.md` 的框架约定区块，为 `tenon.json` 中的每个助手重新安装 `tenon-*` 技能，改写 MCP 配置中的 `tenon`。升级框架后运行；`init`、`add frontend`、`add client` 结束时自动运行。见 [AI 编程助手](ai-assistants.md#updating)。
 
 <a id="conventions"></a>
 ## 前端与 API 怎样被发现

@@ -9,7 +9,10 @@ Tenon 只接入它自己的这些内容。Go、Mantine、TanStack 等依赖给 A
 <a id="agents-md"></a>
 ## `AGENTS.md`
 
-项目根目录的 `AGENTS.md` 是给助手的项目说明，五个助手都读它：框架文档怎样查、常用命令、目录、提交前的检查和代码约定。`tenon init` 写出初稿，之后归项目所有，`tenon` 不再改它。它只写不随项目变化的内容：框架版本看 `go.mod`，前端和客户端看 `apps/`、`clients/` 或 `tenon_app_info`。要提交到代码仓库。
+项目根目录的 `AGENTS.md` 是给助手的项目说明，五个助手都读它，要提交到代码仓库。它分成两部分：
+
+- **项目部分**：`tenon init` 写出初稿（项目名称、常用命令、目录），之后归项目自己维护，用来补充业务背景和项目特有的规则；
+- **框架托管区块**（`<!-- tenon:begin -->` 到 `<!-- tenon:end -->`）：框架文档查询、提交前检查、测试和代码约定，由 `bun run agents` 按 `go.mod` 中的框架版本自动同步，不要手改。已有项目首次升级运行 `bun run agents` 时会在文件末尾追加托管区块，删掉上方重复的旧约定后提交即可。
 
 <a id="framework-docs"></a>
 ## 框架的文档：`.tenon/docs`
@@ -83,7 +86,7 @@ tenon_read_doc     {"path": "database/database.md#after-commit"}
 bun run agents   # 即 go tool tenon agents
 ```
 
-更新 `.tenon/docs`，为 `tenon.json` 中的每个助手重新安装 `tenon-*` 技能，改写 MCP 配置中的 `tenon`；没有变化时文件保持不变。升级框架后运行它，一起提交变化，否则 CI 的 `Agents` 一步失败。`tenon add frontend`、`tenon add client` 结束时自动运行。
+更新 `.tenon/docs`，同步 `AGENTS.md` 中的框架约定区块，为 `tenon.json` 中的每个助手重新安装 `tenon-*` 技能，改写 MCP 配置中的 `tenon`；没有变化时文件保持不变。升级框架后运行它，一起提交变化，否则 CI 的 `Agents` 一步失败。`tenon add frontend`、`tenon add client` 结束时自动运行。
 
 <a id="choosing-assistants"></a>
 ## 选择助手

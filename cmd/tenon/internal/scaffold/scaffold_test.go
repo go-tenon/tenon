@@ -59,7 +59,7 @@ func TestWrite(t *testing.T) {
 		t.Errorf("site frontend without login has a session:\n%s", b)
 	}
 	agentsMD, _ := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
-	for _, want := range []string{"# Todo\n", "`.tenon/docs/README.md`", "go run ./cmd/todo routes", "bin/todo", "## 代码约定"} {
+	for _, want := range []string{"# Todo\n", "go run ./cmd/todo routes", "bin/todo", "<!-- tenon:begin -->", "<!-- tenon:end -->"} {
 		if !strings.Contains(string(agentsMD), want) {
 			t.Errorf("AGENTS.md missing %q:\n%s", want, agentsMD)
 		}
