@@ -150,7 +150,7 @@ Clients: []oauthserver.Client{{
 - 两个接口每次都重新校验 `request`，被改过的请求返回 `422`。
 
 > [!WARNING]
-> 同意页不能被嵌入框架，否则可以被诱导点击。`frontend` 默认的内容安全策略带 `frame-ancestors 'none'`，见[托管前端：安全](../frontend/hosting.md#security)；用 `Options.CSP` 放开它时，同意页所在的路由仍然保持禁止。
+> 同意页不能被嵌入框架，否则可以被诱导点击。`frontend` 默认的内容安全策略带 `frame-ancestors 'none'`，见[托管前端：安全](../frontend/hosting.md#security)；用 `Options.CSP` 给某些页面放开它时，按请求的路径只放开那些页面，同意页所在的路由保持 `frame-ancestors 'none'`。
 
 <a id="deployment"></a>
 ## 部署

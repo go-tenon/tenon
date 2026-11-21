@@ -66,14 +66,14 @@ type Entry struct {
 
 // Options 配置 Host。
 type Options struct {
-	API           http.Handler              // SSR 进程渲染页面时调用的接口，通常就是对外的那一组接口路由。它在内部 socket 上提供，只接受与本进程同一用户的连接。nil 时不提供，例如只用 Render 生成 PDF 的队列 worker。
-	DevServers    map[string]string         // 各前端开发服务器的地址，按前端的名称，只在 tenon dev 时有值：不启动 SSR 进程，页面请求（包括热更新的 WebSocket）转给它们，不设置 CSP。
-	CSP           func(nonce string) string // 返回 nonce 对应的 Content-Security-Policy，写在 HTML 响应上；nil 时使用 DefaultCSP。
-	Env           []string                  // SSR 进程额外的环境变量，形如 KEY=value；进程继承 Go 程序的环境。
-	Logger        *slog.Logger              // 记录 SSR 进程的输出和启停，默认 slog.Default()；每一行带 component=ssr 和 frontend=<名称>。
-	MeterProvider metric.MeterProvider      // 记录 ssr.restarts（SSR 进程意外退出后重启的次数，属性 frontend 是前端的名称），nil 时不记录。
-	ReadyTimeout  time.Duration             // Run 等待 SSR 进程就绪的时间，默认 30 秒；超过时 Run 返回错误。
-	StopTimeout   time.Duration             // 停止时等待 SSR 进程退出的时间，默认 10 秒；超过时强制结束。
+	API           http.Handler                               // SSR 进程渲染页面时调用的接口，通常就是对外的那一组接口路由。它在内部 socket 上提供，只接受与本进程同一用户的连接。nil 时不提供，例如只用 Render 生成 PDF 的队列 worker。
+	DevServers    map[string]string                          // 各前端开发服务器的地址，按前端的名称，只在 tenon dev 时有值：不启动 SSR 进程，页面请求（包括热更新的 WebSocket）转给它们，不设置 CSP。
+	CSP           func(r *http.Request, nonce string) string // 返回页面请求 r 的 Content-Security-Policy，nonce 是这次请求的，写在 HTML 响应上；按 r 的路径可以给不同的页面不同的策略。nil 时使用 DefaultCSP。
+	Env           []string                                   // SSR 进程额外的环境变量，形如 KEY=value；进程继承 Go 程序的环境。
+	Logger        *slog.Logger                               // 记录 SSR 进程的输出和启停，默认 slog.Default()；每一行带 component=ssr 和 frontend=<名称>。
+	MeterProvider metric.MeterProvider                       // 记录 ssr.restarts（SSR 进程意外退出后重启的次数，属性 frontend 是前端的名称），nil 时不记录。
+	ReadyTimeout  time.Duration                              // Run 等待 SSR 进程就绪的时间，默认 30 秒；超过时 Run 返回错误。
+	StopTimeout   time.Duration                              // 停止时等待 SSR 进程退出的时间，默认 10 秒；超过时强制结束。
 }
 
 // Host 托管应用的全部前端：按挂载路径分发页面请求，提供静态文件，管理 SSR 前端的进程。
@@ -111,7 +111,7 @@ func New(apps fs.FS, opts Options) (*Host, error) {
 		h.logger = slog.Default()
 	}
 	if h.opts.CSP == nil {
-		h.opts.CSP = DefaultCSP
+		h.opts.CSP = func(_ *http.Request, nonce string) string { return DefaultCSP(nonce) }
 	}
 	if h.opts.ReadyTimeout <= 0 {
 		h.opts.ReadyTimeout = 30 * time.Second
@@ -199,7 +199,7 @@ func (h *Host) serveHTTP(w http.ResponseWriter, r *http.Request) {
 			a.handler.ServeHTTP(w, r)
 			return
 		}
-		r = r.WithContext(context.WithValue(r.Context(), nonceKey{}, newNonce()))
+		r = withPage(r)
 		if h.static(w, r, a, rel) {
 			return
 		}
