@@ -85,6 +85,14 @@ describe("validate", () => {
     expect(validate({ type: "integer", minimum: 1 }, 0)[0].message).toBe("validation.minimum")
   })
 
+  it("语言可以是函数：每次校验时取当前语言", () => {
+    let current = "zh-CN"
+    const options = { messages, language: () => current }
+    expect(validate({ type: "integer", minimum: 1 }, 0, options)[0].message).toBe("不能小于 1")
+    current = "en"
+    expect(validate({ type: "integer", minimum: 1 }, 0, options)[0].message).toBe("Must be at least 1")
+  })
+
   it("位置的前缀", () => {
     expect(
       validate(

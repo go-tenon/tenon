@@ -49,7 +49,7 @@ describe("createI18n", () => {
     expect(i18n.headers()).toEqual({ "Accept-Language": "zh-CN" })
   })
 
-  it("extend 加入的消息优先级较低，也提供新的语言", () => {
+  it("extend 加入的消息优先级较低，只补充应用已有的语言", () => {
     const i18n = createI18n({
       messages: { "zh-CN": { "tenon.search": "搜索（应用）" } },
       defaultLanguage: "zh-CN",
@@ -57,10 +57,11 @@ describe("createI18n", () => {
     })
     expect(i18n.language()).toBe("zh-CN")
     i18n.extend({ "zh-CN": { "tenon.search": "搜索", "tenon.cancel": "取消" }, en: { "tenon.search": "Search" } })
-    expect(i18n.language()).toBe("en")
-    expect(i18n.languages()).toEqual(["zh-CN", "en"])
-    expect(i18n.t("tenon.search" as never)).toBe("Search")
-    i18n.setLanguage("zh-CN")
+    // 应用没有英文：偏好英文、要求英文都仍是简体中文，界面不会一半中文一半英文
+    expect(i18n.language()).toBe("zh-CN")
+    expect(i18n.languages()).toEqual(["zh-CN"])
+    i18n.setLanguage("en")
+    expect(i18n.language()).toBe("zh-CN")
     expect(i18n.t("tenon.search" as never)).toBe("搜索（应用）")
     expect(i18n.t("tenon.cancel" as never)).toBe("取消")
     expect(i18n.has("tenon.cancel")).toBe(true)
