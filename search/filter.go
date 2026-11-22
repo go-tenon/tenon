@@ -5,7 +5,7 @@ import (
 	"github.com/uptrace/bun"
 )
 
-// Filter 是过滤条件，用 Eq、In、Gt、Gte、Lt、Lte、And、Or、Not 组合。
+// Filter 是过滤条件，用 Eq、In、InQuery、KeyInQuery、Gt、Gte、Lt、Lte、And、Or、Not 组合。
 // 条件按字段的 JSON 名称引用过滤字段，值转换为字段的类型后比较，例如 int 字段可以传 int64。
 // 多值字段（切片）只要有一个值满足条件就算满足。
 type Filter interface {
@@ -35,6 +35,14 @@ func In[T any](field string, values ...T) Filter {
 	}
 	return in{field, anys}
 }
+
+// InQuery 要求字符串过滤字段 field 的值出现在子查询 subq 返回的列中。
+// subq 应只返回一列文本（例如 SELECT id::text FROM ...），用于把同库业务表的动态权限或筛选条件直接并入搜索。
+func InQuery(field string, subq *bun.SelectQuery) Filter { return inQuery{field, subq} }
+
+// KeyInQuery 要求文档的 key 出现在子查询 subq 返回的列中。
+// subq 应只返回一列文本（例如 SELECT id::text FROM ...）。
+func KeyInQuery(subq *bun.SelectQuery) Filter { return keyInQuery{subq} }
 
 // And 要求满足所有条件，没有条件时总是满足。
 func And(filters ...Filter) Filter { return logic{"AND", "1 = 1", filters} }
@@ -100,6 +108,42 @@ func (c in) build(s *schema, e *sqlExpr) error {
 		}
 	}
 	e.add(valueExists+"IN (?))", c.field, bun.List(encoded))
+	return nil
+}
+
+// inQuery 是字段取值出现在 SQL 子查询中的条件。
+type inQuery struct {
+	field string
+	subq  *bun.SelectQuery
+}
+
+// build 把子查询过滤条件写成 SQL。
+func (c inQuery) build(s *schema, e *sqlExpr) error {
+	if c.subq == nil {
+		return errors.New("search: nil subquery")
+	}
+	f, err := lookup(s, c.field)
+	if err != nil {
+		return err
+	}
+	if f.kind != kindString {
+		return errors.Newf("search: InQuery only supports string filter field %q", c.field)
+	}
+	e.add(valueExists+"IN (?))", c.field, c.subq)
+	return nil
+}
+
+// keyInQuery 是文档 key 出现在 SQL 子查询中的条件。
+type keyInQuery struct {
+	subq *bun.SelectQuery
+}
+
+// build 把按 key 的子查询过滤条件写成 SQL。
+func (c keyInQuery) build(_ *schema, e *sqlExpr) error {
+	if c.subq == nil {
+		return errors.New("search: nil subquery")
+	}
+	e.add("e.doc_key IN (?)", c.subq)
 	return nil
 }
 

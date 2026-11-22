@@ -31,6 +31,16 @@ func (s Snippet) String() string {
 	return b.String()
 }
 
+// Highlight 在 text 中标出命中查询文本 query 的词，返回不超过 SnippetLength 个字符的摘要。
+// query 没有切分出词或者 text 中没有命中时 ok 为 false。
+func (ix *Index[D]) Highlight(query, text string) (Snippet, bool) {
+	terms := parseQuery(ix.tok, query)
+	if len(terms.terms) == 0 {
+		return nil, false
+	}
+	return highlight(ix.tok, terms, text)
+}
+
 // highlight 在 text 中标出命中 q 的词，没有命中时 ok 为 false。
 func highlight(tok Tokenizer, q queryTerms, text string) (s Snippet, ok bool) {
 	type span struct{ start, end int }

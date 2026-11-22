@@ -281,6 +281,215 @@ func TestFiltersSortAndFacets(t *testing.T) {
 	})
 }
 
+func TestInQueryAndKeyInQuery(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	db, _ := fixture(t,
+		articleDoc{ID: "1", Status: "conv-a", Title: "订单物流查询"},
+		articleDoc{ID: "2", Status: "conv-a", Title: "订单退款进度"},
+		articleDoc{ID: "3", Status: "conv-b", Title: "订单物流异常"},
+		articleDoc{ID: "4", Status: "conv-c", Title: "订单取消申请"},
+	)
+	// 建立一张业务表模拟同库权限过滤
+	_, err := db.NewRaw(`CREATE TABLE test_groups (id text PRIMARY KEY, owner text NOT NULL)`).Exec(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.NewRaw(`INSERT INTO test_groups (id, owner) VALUES ('conv-a', 'alice'), ('conv-b', 'bob'), ('conv-c', 'alice')`).Exec(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	aliceGroups := db.NewSelect().Table("test_groups").Column("id").Where("owner = ?", "alice")
+	expectKeys(t, find(t, db, search.Query{
+		Text:   "订单",
+		Filter: search.InQuery("status", aliceGroups),
+	}), "1", "2", "4")
+
+	// 与普通条件、Not 组合使用
+	bobGroups := db.NewSelect().Table("test_groups").Column("id").Where("owner = ?", "bob")
+	expectKeys(t, find(t, db, search.Query{
+		Text:   "物流",
+		Filter: search.Not(search.InQuery("status", bobGroups)),
+	}), "1")
+
+	// 空子查询结果返回空
+	nobodyGroups := db.NewSelect().Table("test_groups").Column("id").Where("owner = ?", "charlie")
+	expectKeys(t, find(t, db, search.Query{
+		Text:   "订单",
+		Filter: search.InQuery("status", nobodyGroups),
+	}))
+
+	// 按 doc_key 子查询过滤
+	keySubq := db.NewSelect().TableExpr("(VALUES ('1'), ('3')) AS k(id)").Column("id")
+	expectKeys(t, find(t, db, search.Query{
+		Text:   "订单",
+		Filter: search.KeyInQuery(keySubq),
+	}), "1", "3")
+
+	t.Run("errors", func(t *testing.T) {
+		validSubq := db.NewSelect().Table("test_groups").Column("id")
+		for name, filter := range map[string]search.Filter{
+			"nil inQuery":       search.InQuery("status", nil),
+			"nil keyInQuery":    search.KeyInQuery(nil),
+			"unknown field":     search.InQuery("missing", validSubq),
+			"non-string filter": search.InQuery("views", validSubq),
+		} {
+			if _, err := articles.Search(ctx, db, search.Query{Filter: filter}); err == nil {
+				t.Errorf("%s: no error", name)
+			}
+		}
+	})
+}
+
+func TestRelevanceSort(t *testing.T) {
+	t.Parallel()
+	db, _ := fixture(t,
+		articleDoc{ID: "a", Title: "其他标题", Body: "包含搜索关键词", Views: 500},
+		articleDoc{ID: "b", Title: "搜索关键词", Body: "正文", Views: 10},
+		articleDoc{ID: "c", Title: "搜索关键词", Body: "另一篇正文", Views: 80},
+	)
+	// 相关度优先，同分按 views 倒序：b、c 标题命中（分数相同），c 的 views 更高排第一，a 正文命中排最后
+	res := find(t, db, search.Query{
+		Text: "搜索",
+		Sort: []search.Sort{search.Relevance(), search.Desc("views")},
+	})
+	if got := keys(res); !slices.Equal(got, []string{"c", "b", "a"}) {
+		t.Fatalf("relevance+views order = %v, want [c b a]", got)
+	}
+	// 无查询文本时忽略 Relevance，退化为按 views 倒序
+	resEmpty := find(t, db, search.Query{
+		Sort: []search.Sort{search.Relevance(), search.Desc("views")},
+	})
+	if got := keys(resEmpty); !slices.Equal(got, []string{"a", "c", "b"}) {
+		t.Fatalf("empty text order = %v, want [a c b]", got)
+	}
+}
+
+func TestCollapse(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	day := func(d int) *time.Time {
+		t := time.Date(2026, 11, d, 8, 0, 0, 0, time.UTC)
+		return &t
+	}
+	type msgDoc struct {
+		ID             string     `json:"id"`
+		Tenant         string     `json:"tenant" search:"tenant"`
+		ConversationID *string    `json:"conversation_id,omitempty" search:"filter"`
+		Seq            int        `json:"seq" search:"filter"`
+		Tag            string     `json:"tag" search:"filter"`
+		Tags           []string   `json:"tags" search:"filter"`
+		Title          string     `json:"title" search:"text,boost"`
+		Body           string     `json:"body" search:"text"`
+		CreatedAt      *time.Time `json:"created_at" search:"filter"`
+	}
+	msgs := search.Define[msgDoc]("messages")
+	db := dbtest.Open(t, migrations()...)
+	c1, c2, c3 := "conv-1", "conv-2", "conv-3"
+	all := map[string][]msgDoc{
+		"m1": {{ID: "m1", Tenant: "t1", ConversationID: &c1, Seq: 1, Tag: "refund", Body: "申请退款", CreatedAt: day(1)}},
+		"m2": {{ID: "m2", Tenant: "t1", ConversationID: &c1, Seq: 2, Tag: "refund", Title: "退款进度", Body: "请帮我查一下", CreatedAt: day(2)}},
+		"m3": {{ID: "m3", Tenant: "t1", ConversationID: &c2, Seq: 1, Tag: "order", Body: "退款什么时候到账", CreatedAt: day(3)}},
+		"m4": {{ID: "m4", Tenant: "t1", ConversationID: &c3, Seq: 1, Tag: "order", Body: "退款说明", CreatedAt: day(4)}},
+		// 没有 conversation_id 的两条文档各自独立，不能合并为同一组
+		"m5": {{ID: "m5", Tenant: "t1", Seq: 1, Tag: "orphan", Body: "孤立消息一退款", CreatedAt: day(5)}},
+		"m6": {{ID: "m6", Tenant: "t1", Seq: 2, Tag: "orphan", Body: "孤立消息二退款", CreatedAt: day(6)}},
+	}
+	load := func(_ context.Context, _ bun.IDB, key string) ([]msgDoc, error) { return all[key], nil }
+	for k := range all {
+		if err := msgs.Refresh(ctx, db, load, k); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// 按 conversation_id 折叠：m2 标题命中分数最高排第一且 GroupCount=2；m5、m6 各自独立；分页与分面与折叠结果一致
+	res, err := msgs.Search(ctx, db, search.Query{
+		Text:     "退款",
+		Tenant:   "t1",
+		Collapse: "conversation_id",
+		Sort:     []search.Sort{search.Relevance(), search.Desc("created_at")},
+		Facets:   []string{"tag"},
+		Page:     page.OffsetParams{Page: 1, PerPage: 3},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Total != 5 || len(res.Items) != 3 {
+		t.Fatalf("total=%d, len=%d", res.Total, len(res.Items))
+	}
+	// conv-1 的代表是标题命中的 m2（group_count=2），随后按 created_at 倒序是 m6、m5
+	if res.Items[0].Key != "m2" || res.Items[0].GroupCount != 2 || res.Items[0].Doc.Seq != 2 {
+		t.Fatalf("first hit = %+v", res.Items[0])
+	}
+	if res.Items[1].Key != "m6" || res.Items[1].GroupCount != 1 || res.Items[2].Key != "m5" || res.Items[2].GroupCount != 1 {
+		t.Fatalf("orphan hits = %+v, %+v", res.Items[1], res.Items[2])
+	}
+	// 分面按折叠后的 5 条代表文档统计：order=2, orphan=2, refund=1
+	wantFacets := []search.FacetValue{{Value: "order", Count: 2}, {Value: "orphan", Count: 2}, {Value: "refund", Count: 1}}
+	if got := res.Facets["tag"]; !slices.Equal(got, wantFacets) {
+		t.Fatalf("collapsed facets = %v, want %v", got, wantFacets)
+	}
+
+	// 第 2 页：剩余 conv-3 (m4)、conv-2 (m3)
+	page2, err := msgs.Search(ctx, db, search.Query{
+		Text:     "退款",
+		Tenant:   "t1",
+		Collapse: "conversation_id",
+		Sort:     []search.Sort{search.Relevance(), search.Desc("created_at")},
+		Page:     page.OffsetParams{Page: 2, PerPage: 3},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page2.Total != 5 || len(page2.Items) != 2 || page2.Items[0].Key != "m4" || page2.Items[1].Key != "m3" {
+		t.Fatalf("page2 = %+v", page2)
+	}
+
+	// 按 ByKey 折叠一个 key 多个文档（如附件分段）
+	all["doc-1"] = []msgDoc{
+		{ID: "doc-1", Tenant: "t1", Body: "第一段提到部署"},
+		{ID: "doc-1", Tenant: "t1", Title: "部署指南", Body: "第二段详细说明"},
+		{ID: "doc-1", Tenant: "t1", Body: "第三段提到部署检查"},
+	}
+	if err := msgs.Refresh(ctx, db, load, "doc-1"); err != nil {
+		t.Fatal(err)
+	}
+	byKeyRes, err := msgs.Search(ctx, db, search.Query{
+		Text:     "部署",
+		Tenant:   "t1",
+		Collapse: search.ByKey,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if byKeyRes.Total != 1 || len(byKeyRes.Items) != 1 || byKeyRes.Items[0].GroupCount != 3 || byKeyRes.Items[0].Doc.Title != "部署指南" {
+		t.Fatalf("by key collapse = %+v", byKeyRes)
+	}
+
+	// 非法 Collapse 字段报错
+	for _, field := range []string{"tags", "body", "missing"} {
+		if _, err := msgs.Search(ctx, db, search.Query{Tenant: "t1", Collapse: field}); err == nil {
+			t.Errorf("collapse by %q: no error", field)
+		}
+	}
+}
+
+func TestIndexHighlight(t *testing.T) {
+	t.Parallel()
+	s, ok := articles.Highlight("搜索", "这是全文搜索的摘要")
+	want := search.Snippet{{Text: "这是全文"}, {Text: "搜索", Mark: true}, {Text: "的摘要"}}
+	if !ok || !slices.Equal(s, want) {
+		t.Fatalf("highlight = %#v, ok=%v", s, ok)
+	}
+	if _, ok := articles.Highlight("", "这是全文搜索"); ok {
+		t.Fatal("empty query highlighted")
+	}
+	if _, ok := articles.Highlight("不存在", "这是全文搜索"); ok {
+		t.Fatal("unmatched text highlighted")
+	}
+}
+
 func TestTenants(t *testing.T) {
 	t.Parallel()
 	db, _ := fixture(t,

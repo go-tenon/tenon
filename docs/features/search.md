@@ -212,19 +212,36 @@ func (a *Search) HTTP(ctx context.Context, in *SearchInput) (*SearchOutput, erro
 <a id="filtering-and-sorting"></a>
 ### 过滤与排序：`Filter`、`Sort`
 
-`Filter` 用 `Eq`、`In`、`Gt`、`Gte`、`Lt`、`Lte` 比较 `filter` 字段，用 `And`、`Or`、`Not` 组合。`q` 是 `search.Query`，`authors` 是 `[]string`：
+`Filter` 用 `Eq`、`In`、`InQuery`、`KeyInQuery`、`Gt`、`Gte`、`Lt`、`Lte` 比较过滤条件，用 `And`、`Or`、`Not` 组合。`q` 是 `search.Query`，`authors` 是 `[]string`，`visible` 是返回一列文本的 `*bun.SelectQuery`：
 
 ```go
 q.Filter = search.And(
     search.In("author_id", authors...),
+    search.InQuery("conversation_id", visible),
     search.Gte("published_at", time.Now().AddDate(0, -1, 0)),
 )
-q.Sort = []search.Sort{search.Desc("published_at")}
+q.Sort = []search.Sort{search.Relevance(), search.Desc("published_at")}
 ```
 
 - 值按字段的类型比较，数字和时间按大小比较。
+- `InQuery` 和 `KeyInQuery` 把同库业务表的动态权限或筛选子查询直接并入搜索；`InQuery` 仅用于字符串过滤字段。
 - 切片字段只要有一个值满足条件就算满足，`Not(Eq("tags", "go"))` 表示没有一个标签是 `go`。
-- `Sort` 只用于单值的 `filter` 字段，可以有多个，没有值的文档排在最后；有查询文本时先按 `Sort` 排序，再按相关度。
+- `Sort` 只用于单值的 `filter` 字段，可以有多个，没有值的文档排在最后；用 `search.Relevance()` 指定相关度在排序中的位置，未指定时有查询文本的排在 `Sort` 之后，无查询文本时自动忽略。
+
+<a id="collapsing"></a>
+### 折叠结果：`Collapse`
+
+一个父对象有多个索引文档（例如会话的多条消息、附件的多个分段）时，设置 `Query.Collapse` 按每组保留排在最前的一条文档，组内命中的总文档数记在 `Hit.GroupCount` 中，`Total` 和分面按折叠后的分组统计。`db` 是 `*bun.DB`：
+
+```go
+res, err := MessageIndex.Search(ctx, db, search.Query{
+    Text:     "退款",
+    Collapse: "conversation_id", // 或传 search.ByKey 按文档 key 折叠
+    Sort:     []search.Sort{search.Relevance(), search.Desc("created_at")},
+})
+```
+
+- `Collapse` 接受 `search.ByKey`（按 `doc_key` 折叠）或任意单值 `filter` 字段名；该字段为空的文档各自独立成组。
 
 <a id="facets"></a>
 ### 分面：`Facets`
@@ -239,9 +256,15 @@ res, err := SearchIndex.Search(ctx, db, search.Query{Text: in.Q, Facets: []strin
 统计范围是满足全部查询条件的结果，按文档数从多到少，每个字段最多返回 `Query.FacetLimit` 个值（默认 20）。
 
 <a id="highlighting"></a>
-### 高亮：`Hit.Highlights`
+### 高亮：`Hit.Highlights`、`Index.Highlight`
 
 有查询文本时，`Hit.Highlights` 按字段的 JSON 名称给出命中的文本字段的摘要，摘要按命中与否分成若干段（`[{"text": "…", "mark": true}, …]`），页面中把 `mark` 的部分放进 `<mark>`。字段不超过 `search.SnippetLength`（160）个字符时摘要是全文，否则从第一个命中的词前面不远处截取，首尾加省略号。
+
+要在界面中用同一个分词器高亮其他文本（例如详情页中的原文或联系人字段），直接调用 `Index.Highlight`：
+
+```go
+snippet, ok := SearchIndex.Highlight(in.Q, text)
+```
 
 <a id="tenancy"></a>
 ### 多租户：`search:"tenant"`
