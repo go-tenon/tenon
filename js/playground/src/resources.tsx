@@ -15,9 +15,23 @@ import { QueryClient } from "@tanstack/react-query"
 
 export const queryClient = new QueryClient()
 
+type CustomerGroup = {
+  id: string
+  name: string
+}
+
+const customerGroups: CustomerGroup[] = [
+  { id: "g1", name: "华东大区" },
+  { id: "g2", name: "华北大区" },
+  { id: "g3", name: "华南大区" },
+  { id: "g4", name: "海外渠道" },
+]
+
 type Customer = {
   id: string
   name: string
+  group_id: string
+  group_name: string
   level: string
   tags: string[]
   active: boolean
@@ -29,25 +43,30 @@ type Customer = {
 }
 
 const levels = ["普通", "银卡", "金卡", "钻石"]
-let customers: Customer[] = Array.from({ length: 46 }, (_, i) => ({
-  id: `c${i + 1}`,
-  name:
-    ["华东分公司", "北辰贸易", "青木设计", "远山物流", "星河零售", "海岸咨询", "南风餐饮", "北极星教育"][i % 8] +
-    (i >= 8 ? ` ${Math.floor(i / 8) + 1} 号` : ""),
-  level: levels[i % 4],
-  tags: [["批发"], ["零售", "线上"], [], ["VIP"]][i % 4],
-  active: i % 5 !== 3,
-  credit: 5000 + ((i * 1733) % 50000),
-  joined: `2025-${String((i % 12) + 1).padStart(2, "0")}-${String((i % 27) + 1).padStart(2, "0")}`,
-  last_order_at: i % 3 === 0 ? undefined : `2026-11-${String((i % 16) + 1).padStart(2, "0")}T0${i % 9}:30:00Z`,
-  api_key: i % 4 === 2 ? "" : `sk-live-${(i * 7919).toString(36).padStart(6, "0")}${i}abcd`,
-  note: [
-    "",
-    "月结客户",
-    "每月 5 日前对账，发票抬头与合同一致；大宗订单需提前三个工作日通知仓库备货，节假日前后的订单按华东仓的发货时间表执行。",
-    "联系人：王经理，电话见合同附件",
-  ][i % 4],
-}))
+let customers: Customer[] = Array.from({ length: 46 }, (_, i) => {
+  const group = customerGroups[i % customerGroups.length]
+  return {
+    id: `c${i + 1}`,
+    name:
+      ["华东分公司", "北辰贸易", "青木设计", "远山物流", "星河零售", "海岸咨询", "南风餐饮", "北极星教育"][i % 8] +
+      (i >= 8 ? ` ${Math.floor(i / 8) + 1} 号` : ""),
+    group_id: group.id,
+    group_name: group.name,
+    level: levels[i % 4],
+    tags: [["批发"], ["零售", "线上"], [], ["VIP"]][i % 4],
+    active: i % 5 !== 3,
+    credit: 5000 + ((i * 1733) % 50000),
+    joined: `2025-${String((i % 12) + 1).padStart(2, "0")}-${String((i % 27) + 1).padStart(2, "0")}`,
+    last_order_at: i % 3 === 0 ? undefined : `2026-11-${String((i % 16) + 1).padStart(2, "0")}T0${i % 9}:30:00Z`,
+    api_key: i % 4 === 2 ? "" : `sk-live-${(i * 7919).toString(36).padStart(6, "0")}${i}abcd`,
+    note: [
+      "",
+      "月结客户",
+      "每月 5 日前对账，发票抬头与合同一致；大宗订单需提前三个工作日通知仓库备货，节假日前后的订单按华东仓的发货时间表执行。",
+      "联系人：王经理，电话见合同附件",
+    ][i % 4],
+  }
+})
 
 const delay = <T,>(v: T) => new Promise<T>((r) => setTimeout(() => r(v), 150))
 
@@ -55,10 +74,14 @@ let shopValues: Record<string, unknown> = { name: "Acme 商城", currency: "CNY"
 let notifyValues: Record<string, unknown> = { order_email: true, refund_email: false, sender: "Acme 商城" }
 
 const client = {
+  group: {
+    list: () => delay({ items: customerGroups, total: customerGroups.length, page: 1, per_page: 20 }),
+  },
   customer: {
     async list(params: Record<string, unknown>) {
       let rows = customers
       if (params.name) rows = rows.filter((c) => c.name.includes(String(params.name)))
+      if (params.group_id) rows = rows.filter((c) => c.group_id === params.group_id)
       if (params.level) rows = rows.filter((c) => c.level === params.level)
       if (params.active !== undefined) rows = rows.filter((c) => c.active === params.active)
       const sort = params.sort as string | undefined
@@ -73,12 +96,22 @@ const client = {
     },
     get: (id: string) => delay(customers.find((c) => c.id === id)),
     async create(body: Customer) {
-      const c = { ...body, id: `c${customers.length + 1}`, joined: "2026-11-17" }
+      const group = customerGroups.find((g) => g.id === body.group_id) ?? customerGroups[0]
+      const c = {
+        ...body,
+        id: `c${customers.length + 1}`,
+        group_id: group.id,
+        group_name: group.name,
+        joined: "2026-11-17",
+      }
       customers = [c, ...customers]
       return delay(c)
     },
     async update(id: string, body: Partial<Customer>) {
-      customers = customers.map((c) => (c.id === id ? { ...c, ...body } : c))
+      const group = body.group_id ? customerGroups.find((g) => g.id === body.group_id) : undefined
+      customers = customers.map((c) =>
+        c.id === id ? { ...c, ...body, ...(group ? { group_name: group.name } : {}) } : c,
+      )
       return delay(customers.find((c) => c.id === id))
     },
     async delete(id: string) {
@@ -110,9 +143,23 @@ const client = {
   },
 }
 
+const groupDef: ResourceDef = {
+  name: "group",
+  key: "id",
+  operations: { list: ["group", "list"] },
+  permissions: { list: [] },
+  columns: [{ name: "name", type: "string", required: true }],
+  filters: [],
+  createForm: [],
+  updateForm: [],
+  actions: [],
+  labels: { "zh-CN": { title: "分组", fields: { name: "名称" }, actions: {} } },
+}
+
 // 客户的新建和修改填写同样的字段。
 const customerForm = [
   { name: "name", type: "string", required: true },
+  { name: "group_id", type: "string", ref: "group", required: true },
   { name: "level", type: "string", enum: "Level", required: true },
   { name: "tags", type: "array", items: "string" },
   { name: "credit", type: "integer" },
@@ -134,6 +181,7 @@ const customerDef: ResourceDef = {
   permissions: { list: [], get: [], create: [], update: [], delete: [] },
   columns: [
     { name: "name", type: "string", required: true },
+    { name: "group_name", type: "string" },
     { name: "note", type: "string" },
     { name: "level", type: "string", enum: "Level", required: true, sortable: true },
     { name: "tags", type: "array", items: "string" },
@@ -144,6 +192,7 @@ const customerDef: ResourceDef = {
   ],
   filters: [
     { name: "name", type: "string" },
+    { name: "group_id", type: "string", ref: "group" },
     { name: "level", type: "string", enum: "Level" },
     { name: "active", type: "boolean" },
   ],
@@ -175,6 +224,8 @@ const customerDef: ResourceDef = {
       title: "客户",
       fields: {
         name: "名称",
+        group_id: "分组",
+        group_name: "分组",
         note: "备注",
         level: "等级",
         tags: "标签",
@@ -196,6 +247,7 @@ const schemas = {
         type: "object",
         properties: {
           name: { type: "string" },
+          group_id: { type: "string" },
           level: { type: "string", enum: levels },
           active: { type: "boolean" },
           sort: { type: "string" },
@@ -207,9 +259,10 @@ const schemas = {
     create: {
       body: {
         type: "object",
-        required: ["name", "level"],
+        required: ["name", "group_id", "level"],
         properties: {
           name: { type: "string", minLength: 1, maxLength: 40 },
+          group_id: { type: "string", minLength: 1 },
           level: { type: "string", enum: levels },
           tags: { type: "array", items: { type: "string" } },
           credit: { type: "integer", minimum: 0 },
@@ -253,6 +306,7 @@ const kit = {
   queries: {},
   schemas,
   enums: { Level: { values: levels, labels: { "zh-CN": {} } } },
+  resources: { group: groupDef, customer: customerDef },
   messages: {
     "zh-CN": {
       "validation.required": "必填",

@@ -64,6 +64,7 @@ export const Route = createFileRoute("/_app/articles")({
 | `CreateForm`、`UpdateForm` | 新建、修改表单的字段：各自接口请求体的字段，按显示的顺序。为空时是全部字段 |
 | `Actions` | 行上的其他操作，例如 `{Name: "publish", Operation: "article-publish", Confirm: true}`；`Danger` 用醒目的颜色 |
 | `UpdateWhen`、`DeleteWhen` | 一行上显示“修改”“删除”的条件，见[按行显示操作](#when) |
+| `Refs` | 引用另一个资源的字段映射，例如 `map[string]string{"role_id": "role"}`；表单和筛选自动渲染关联资源下拉框，见[关联资源选择器](#resource-select) |
 
 - 详情、修改、删除和操作的接口有且只有一个路径参数，它是标识一行的列表项字段，例如 `/articles/{id}` 对应 `id`。
 - 名称是 kebab-case，不能与资源或[设置](#settings)重名：它们的显示文字在同一个命名空间中。
@@ -107,6 +108,7 @@ article.descriptions.slug: 文章地址中的名称，只能用小写字母、�
 
 - 引用的接口已经登记，方法和路径参数符合[声明资源](#declaring)中的要求；
 - 列、排序的列、`When` 的键是列表项的字段，筛选条件是列表接口的查询参数，表单字段是对应接口请求体的字段；
+- `Refs` 的键是筛选或表单中的字符串或字符串数组字段，值是 kebab-case 资源名；`tenon generate` 时进一步校验目标资源已声明；
 - `sort` 参数用 `enum` 限定了取值时，每个排序的列的升序或降序至少有一个在其中，否则界面排序时得到 `422`。
 
 <a id="generated"></a>
@@ -260,7 +262,7 @@ function ProviderForm({ ctx }: { ctx: ResourceFormContext }) {
 
 - 选项的显示文字默认依次取 `labelField`、资源第一列（枚举自动转换为显示文字）、`name`、`title`、`label` 和行标识。
 - 传入 `renderRow={(row, { checked }) => ...}` 可基于原始行数据自定义下拉选项渲染；其余属性与 Mantine 的 `Select`、`MultiSelect` 相同。
-- 在 `ResourcePage` 或 `ResourceFormPage` 的 `inputs` 中同样可以直接返回 `ResourceSelect` 或 `ResourceMultiSelect`。
+- 在 Go 的 `rest.Resource` 或 `rest.Settings` 中通过 `Refs` 声明引用关系（例如 `Refs: map[string]string{"role_id": "role"}`）后，`ResourcePage`、`ResourceFormPage` 和 `SettingsForm` 会自动为表单与筛选条件渲染 `ResourceSelect`（字符串）或 `ResourceMultiSelect`（字符串数组）；需要自定义选项文案或过滤时，仍可在 `inputs` 中显式返回组件覆盖。
 
 <a id="settings"></a>
 ## 设置页面：`api.Settings`、`SettingsForm`

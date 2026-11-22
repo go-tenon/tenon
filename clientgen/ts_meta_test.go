@@ -220,3 +220,100 @@ func TestTSSettings(t *testing.T) {
 		t.Errorf("warnings %q", res.Warnings)
 	}
 }
+
+type roleDTO struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type roleListOut struct{ Body page.Offset[roleDTO] }
+
+type memberListIn struct {
+	page.OffsetParams
+	RoleID string `query:"role_id"`
+}
+
+type memberDTO struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	RoleID   string `json:"role_id"`
+	RoleName string `json:"role_name"`
+}
+
+type memberListOut struct{ Body page.Offset[memberDTO] }
+
+type memberCreateIn struct {
+	Body struct {
+		Name    string   `json:"name" minLength:"1"`
+		RoleID  string   `json:"role_id"`
+		RoleIDs []string `json:"role_ids,omitempty"`
+	}
+}
+
+type defaultRoleSettings struct {
+	DefaultRoleID string `json:"default_role_id"`
+}
+
+type defaultRoleSettingsOut struct{ Body defaultRoleSettings }
+type defaultRoleSettingsIn struct{ Body defaultRoleSettings }
+
+// 引用字段：生成的 resources.ts 和 settings.ts 中带上 ref，columns 不带 ref；目标资源不存在时报错。
+func TestTSResourceRefs(t *testing.T) {
+	t.Parallel()
+	build := func(target string) *rest.API {
+		api := rest.New(chi.NewRouter(), rest.Options{Title: "Admin"})
+		reg := func(id, method, path string) huma.Operation {
+			op := huma.Operation{OperationID: id, Method: method, Path: path}
+			rest.Public()(&op)
+			return op
+		}
+		rest.Register(api, reg("member-list", http.MethodGet, "/members"), func(context.Context, *memberListIn) (*memberListOut, error) { return nil, nil })
+		rest.Register(api, reg("member-create", http.MethodPost, "/members"), func(context.Context, *memberCreateIn) (*struct{}, error) { return nil, nil })
+		rest.Register(api, reg("role-list", http.MethodGet, "/roles"), func(context.Context, *struct{}) (*roleListOut, error) { return nil, nil })
+		rest.Register(api, reg("workspace-settings-get", http.MethodGet, "/settings/workspace"), func(context.Context, *struct{}) (*defaultRoleSettingsOut, error) { return nil, nil })
+		rest.Register(api, reg("workspace-settings-update", http.MethodPut, "/settings/workspace"), func(context.Context, *defaultRoleSettingsIn) (*defaultRoleSettingsOut, error) { return nil, nil })
+		// member 先于 role 声明，验证声明顺序不影响引用解析。
+		api.Resource(rest.Resource{
+			Name:    "member",
+			List:    "member-list",
+			Create:  "member-create",
+			Columns: []string{"name", "role_id", "role_name"},
+			Filters: []string{"role_id"},
+			Refs:    map[string]string{"role_id": target, "role_ids": target},
+		})
+		api.Resource(rest.Resource{Name: "role", List: "role-list"})
+		api.Settings(rest.Settings{
+			Name:   "workspace",
+			Get:    "workspace-settings-get",
+			Update: "workspace-settings-update",
+			Refs:   map[string]string{"default_role_id": target},
+		})
+		return api
+	}
+
+	res, err := clientgen.GenerateTS(build("role"), clientgen.TSOptions{Main: exampleMain})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resSrc := string(res.Files["resources.ts"])
+	for _, want := range []string{
+		`{ name: "role_id", type: "string", required: true }`,
+		`{ name: "role_id", type: "string", ref: "role" }`,
+		`{ name: "role_id", type: "string", ref: "role", required: true }`,
+		`{ name: "role_ids", type: "array", items: "string", ref: "role" }`,
+	} {
+		if !strings.Contains(resSrc, want) {
+			t.Errorf("resources.ts missing %s:\n%s", want, resSrc)
+		}
+	}
+	setSrc := string(res.Files["settings.ts"])
+	if want := `{ name: "default_role_id", type: "string", ref: "role", required: true }`; !strings.Contains(setSrc, want) {
+		t.Errorf("settings.ts missing %s:\n%s", want, setSrc)
+	}
+
+	// 目标资源未声明时返回错误。
+	if _, err := clientgen.GenerateTS(build("missing-role"), clientgen.TSOptions{Main: exampleMain}); err == nil ||
+		!strings.Contains(err.Error(), `targets unknown resource "missing-role"`) {
+		t.Fatalf("unknown target resource: err=%v", err)
+	}
+}

@@ -23,6 +23,7 @@ import { maskSecret, SecretInput } from "../../components/form/secret-input"
 import { useText } from "../../i18n/i18n"
 import { inTimeZone, useFormatDateTime, useTimeZone } from "../../theme/format"
 import type { ResourceField } from "./model"
+import { ResourceMultiSelect, ResourceSelect } from "./resource-select"
 
 /** 字段输入组件的属性：value、onChange、error 来自表单（@mantine/form 的 getInputProps）。 */
 export interface FieldInputProps {
@@ -71,6 +72,16 @@ export function DefaultInput({
         />
       )
     case "select":
+      if (field.reference)
+        return (
+          <ResourceSelect
+            model={field.reference}
+            {...common}
+            clearable={!field.required}
+            value={(value as string | undefined) ?? null}
+            onChange={(v) => onChange?.(v ?? undefined)}
+          />
+        )
       return (
         <Select
           {...common}
@@ -81,6 +92,15 @@ export function DefaultInput({
         />
       )
     case "multiselect":
+      if (field.reference)
+        return (
+          <ResourceMultiSelect
+            model={field.reference}
+            {...common}
+            value={(value as string[] | undefined) ?? []}
+            onChange={(v) => onChange?.(v)}
+          />
+        )
       return (
         <MultiSelect
           {...common}

@@ -25,16 +25,20 @@ type resArticle struct {
 }
 
 type resChanges struct {
-	Title   string        `json:"title" minLength:"1"`
-	Content string        `json:"content"`
-	Status  articleStatus `json:"status"`
+	Title      string        `json:"title" minLength:"1"`
+	Content    string        `json:"content"`
+	Status     articleStatus `json:"status"`
+	CategoryID string        `json:"category_id,omitempty"`
+	TagIDs     []string      `json:"tag_ids,omitempty"`
+	Priority   int           `json:"priority,omitempty"`
 }
 
 type resListIn struct {
 	page.OffsetParams
-	Q      string        `query:"q"`
-	Status articleStatus `query:"status"`
-	Sort   string        `query:"sort" enum:"title,-title,-updated_at,updated_at"`
+	Q          string        `query:"q"`
+	Status     articleStatus `query:"status"`
+	CategoryID string        `query:"category_id"`
+	Sort       string        `query:"sort" enum:"title,-title,-updated_at,updated_at"`
 }
 
 type resListOut struct{ Body page.Offset[resArticle] }
@@ -91,10 +95,11 @@ func TestResource(t *testing.T) {
 	api := resourceAPI()
 	api.Resource(rest.Resource{
 		Name: "article", List: "article-list", Get: "article-get", Create: "article-create", Update: "article-update", Delete: "article-delete",
-		Filters: []string{"status"}, Sort: []string{"updated_at"},
+		Filters: []string{"status", "category_id"}, Sort: []string{"updated_at"},
 		Actions:    []rest.Action{{Name: "publish", Operation: "article-publish", Confirm: true, When: map[string][]string{"status": {"draft"}}}},
 		UpdateWhen: map[string][]string{"status": {"draft"}},
 		DeleteWhen: map[string][]string{"status": {"draft"}},
+		Refs:       map[string]string{"category_id": "category", "tag_ids": "tag"},
 	})
 	got := api.Resources()
 	if len(got) != 1 {
@@ -105,7 +110,8 @@ func TestResource(t *testing.T) {
 	if !slices.Equal(r.Columns, []string{"id", "title", "status", "updated_at"}) {
 		t.Errorf("columns %q", r.Columns)
 	}
-	if !slices.Equal(r.CreateForm, []string{"title", "content", "status"}) || !slices.Equal(r.UpdateForm, []string{"title", "content", "status"}) {
+	if !slices.Equal(r.CreateForm, []string{"title", "content", "status", "category_id", "tag_ids", "priority"}) ||
+		!slices.Equal(r.UpdateForm, []string{"title", "content", "status", "category_id", "tag_ids", "priority"}) {
 		t.Errorf("forms %q %q", r.CreateForm, r.UpdateForm)
 	}
 	if r.Key != "id" {
@@ -122,7 +128,8 @@ func TestResource(t *testing.T) {
 	}
 	if err := json.Unmarshal(doc, &parsed); err != nil || len(parsed.Resources) != 1 || parsed.Resources[0].Key != "id" ||
 		!parsed.Resources[0].Actions[0].Confirm || !slices.Equal(parsed.Resources[0].Actions[0].When["status"], []string{"draft"}) ||
-		!slices.Equal(parsed.Resources[0].UpdateWhen["status"], []string{"draft"}) || !slices.Equal(parsed.Resources[0].DeleteWhen["status"], []string{"draft"}) {
+		!slices.Equal(parsed.Resources[0].UpdateWhen["status"], []string{"draft"}) || !slices.Equal(parsed.Resources[0].DeleteWhen["status"], []string{"draft"}) ||
+		parsed.Resources[0].Refs["category_id"] != "category" || parsed.Resources[0].Refs["tag_ids"] != "tag" {
 		t.Fatalf("x-tenon-resources %+v %v", parsed.Resources, err)
 	}
 }
@@ -133,7 +140,7 @@ func TestResourceForms(t *testing.T) {
 	// 新建和修改的请求体不同时，两个表单各取自己的字段。
 	api.Resource(rest.Resource{Name: "article", List: "article-list", Create: "article-create", Update: "article-rename"})
 	r := api.Resources()[0]
-	if !slices.Equal(r.CreateForm, []string{"title", "content", "status"}) || !slices.Equal(r.UpdateForm, []string{"title"}) {
+	if !slices.Equal(r.CreateForm, []string{"title", "content", "status", "category_id", "tag_ids", "priority"}) || !slices.Equal(r.UpdateForm, []string{"title"}) {
 		t.Errorf("forms %q %q", r.CreateForm, r.UpdateForm)
 	}
 }
@@ -181,6 +188,17 @@ func TestResourceRejects(t *testing.T) {
 			r.Update = "article-update"
 			r.UpdateWhen = map[string][]string{"status": {"archived"}}
 		}, `update_when status="archived" is not one of`},
+		"ref target name": {func(r *rest.Resource) {
+			r.Create = "article-create"
+			r.Refs = map[string]string{"category_id": "Category"}
+		}, `target resource "Category" must be kebab-case`},
+		"ref unknown field": {func(r *rest.Resource) {
+			r.Refs = map[string]string{"category_id": "category"}
+		}, `ref field "category_id" is not in filters, create_form, or update_form`},
+		"ref non-string": {func(r *rest.Resource) {
+			r.Create = "article-create"
+			r.Refs = map[string]string{"priority": "category"}
+		}, `ref field "priority" must be string or array of strings`},
 	} {
 		t.Run(name, func(t *testing.T) {
 			r := base

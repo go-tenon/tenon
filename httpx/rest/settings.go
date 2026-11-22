@@ -16,10 +16,11 @@ import (
 //
 // 设置属于当前的用户、租户或者平台，由请求本身决定，所以两个接口都没有路径参数，见 settings 包。
 type Settings struct {
-	Name   string   `json:"name"`   // 名称，kebab-case，例如 site。不能与资源同名：两者的显示文字在同一个命名空间中。
-	Get    string   `json:"get"`    // 读取设置的接口的操作 ID：GET，没有路径参数，响应体是包含全部表单字段的 JSON 对象。必须设置。
-	Update string   `json:"update"` // 保存设置的接口的操作 ID：没有路径参数，请求体是 JSON 对象。必须设置。
-	Form   []string `json:"form"`   // 表单的字段：保存接口请求体的字段。为空时是请求体的全部字段，按结构体中的顺序。
+	Name   string            `json:"name"`           // 名称，kebab-case，例如 site。不能与资源同名：两者的显示文字在同一个命名空间中。
+	Get    string            `json:"get"`            // 读取设置的接口的操作 ID：GET，没有路径参数，响应体是包含全部表单字段的 JSON 对象。必须设置。
+	Update string            `json:"update"`         // 保存设置的接口的操作 ID：没有路径参数，请求体是 JSON 对象。必须设置。
+	Form   []string          `json:"form"`           // 表单的字段：保存接口请求体的字段。为空时是请求体的全部字段，按结构体中的顺序。
+	Refs   map[string]string `json:"refs,omitempty"` // 引用另一个资源的表单字段：键是 Form 中的字段名，值是被引用资源的名称。
 }
 
 // Settings 声明一组设置的页面，写入 OpenAPI 文档的 x-tenon-settings。引用的接口必须已经用 Register 登记；
@@ -87,7 +88,11 @@ func (a *API) checkSettings(s *Settings) error {
 	if err := hasFields("form field", s.Form, current); err != nil {
 		return fmt.Errorf("%w (in the response of %s)", err, s.Get)
 	}
-	return nil
+	refSchemas := make(map[string][]*huma.Schema, len(s.Form))
+	for _, f := range s.Form {
+		refSchemas[f] = []*huma.Schema{body.Properties[f]}
+	}
+	return a.checkRefs(s.Refs, refSchemas, "form")
 }
 
 // responseBody 返回 op 成功时的 JSON 响应体的 schema；没有或不是对象时返回 nil。

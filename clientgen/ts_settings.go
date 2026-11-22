@@ -27,8 +27,9 @@ func (t *tsGen) settingsTS(templates map[string]map[string]string) (string, []st
  */
 export const settings = {
 `)
+	known := t.knownResources()
 	for _, s := range t.api.SettingsPages() {
-		src, warn, err := t.settingTS(s, templates)
+		src, warn, err := t.settingTS(s, templates, known)
 		if err != nil {
 			return "", nil, errors.Wrapf(err, "clientgen: settings %s", s.Name)
 		}
@@ -40,7 +41,10 @@ export const settings = {
 }
 
 // settingTS 返回设置页 s 的 TypeScript 描述，以及它用到的类型。
-func (t *tsGen) settingTS(s rest.Settings, templates map[string]map[string]string) (string, []string, error) {
+func (t *tsGen) settingTS(s rest.Settings, templates map[string]map[string]string, known map[string]bool) (string, []string, error) {
+	if err := checkRefs(s.Refs, known); err != nil {
+		return "", nil, err
+	}
 	var b strings.Builder
 	b.WriteString("  " + tsKey(s.Name) + ": {\n")
 	b.WriteString("    name: " + strconv.Quote(s.Name) + ",\n")
@@ -57,7 +61,7 @@ func (t *tsGen) settingTS(s rest.Settings, templates map[string]map[string]strin
 	body := t.requestBody(update.op)
 	b.WriteString("    form: [\n")
 	for _, f := range s.Form {
-		b.WriteString("      " + t.fieldTS(f, body.Properties[f], slices.Contains(body.Required, f), false) + ",\n")
+		b.WriteString("      " + t.fieldTS(f, body.Properties[f], slices.Contains(body.Required, f), false, s.Refs[f]) + ",\n")
 	}
 	b.WriteString("    ],\n")
 

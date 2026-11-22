@@ -131,7 +131,7 @@ err = roles.Assign(ctx, identity.Ref{Type: user.Type, ID: userID}, "", editor.ID
 | `authz.AllTenants`（`"*"`） | 所有租户，例如运营人员在每个租户中的只读权限；只能分配全局角色 |
 
 - `Role.Tenant` 为空的是全局角色，可以在任何域中分配；不为空的是租户自定义的角色，只能在这个租户中分配。
-- 修改角色立即影响拥有它的全部主体，删除角色同时撤销它的分配。
+- 修改角色立即影响拥有它的全部主体。`DeleteRole` 默认同时撤销它的分配；传入 `authz.RestrictInUse()` 时，还有主体使用该角色则拒绝删除并返回 `authz.ErrRoleInUse`（公开参数 `count` 是使用它的分配数）。`Assign` 与 `DeleteRole` 在数据库事务中对角色行加锁互斥，并发分配和删除不会留下孤儿分配。
 - `UpdateRole`、`DeleteRole`、`Role` 的最后一个参数是租户：租户管理员的界面传当前租户，其他租户的角色和全局角色返回 `authz.role_not_found`，所以可以直接传入请求中的角色 ID；平台管理员传 `""`。
 
 <a id="preset-roles"></a>

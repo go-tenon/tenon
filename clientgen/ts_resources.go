@@ -30,8 +30,9 @@ func (t *tsGen) resourcesTS(templates map[string]map[string]string) (string, []s
  */
 export const resources = {
 `)
+	known := t.knownResources()
 	for _, r := range t.api.Resources() {
-		src, warn, err := t.resourceTS(r, templates)
+		src, warn, err := t.resourceTS(r, templates, known)
 		if err != nil {
 			return "", nil, errors.Wrapf(err, "clientgen: resource %s", r.Name)
 		}
@@ -40,6 +41,27 @@ export const resources = {
 	}
 	b.WriteString("} as const\n")
 	return b.String(), warnings, nil
+}
+
+// knownResources 返回当前 API 中已声明的全部资源名称，用于校验引用字段的目标资源是否存在。
+func (t *tsGen) knownResources() map[string]bool {
+	res := t.api.Resources()
+	known := make(map[string]bool, len(res))
+	for _, r := range res {
+		known[r.Name] = true
+	}
+	return known
+}
+
+// checkRefs 检查 refs 中每个引用字段指向的资源都已声明。
+func checkRefs(refs map[string]string, known map[string]bool) error {
+	for _, field := range slices.Sorted(maps.Keys(refs)) {
+		target := refs[field]
+		if !known[target] {
+			return errors.Newf("ref %q targets unknown resource %q", field, target)
+		}
+	}
+	return nil
 }
 
 // findOp 返回操作 ID 为 id 的客户端方法。
@@ -55,7 +77,10 @@ func (t *tsGen) findOp(id string) (*tsOp, error) {
 }
 
 // resourceTS 返回资源 r 的 TypeScript 描述，以及它用到的类型。
-func (t *tsGen) resourceTS(r rest.Resource, templates map[string]map[string]string) (string, []string, error) {
+func (t *tsGen) resourceTS(r rest.Resource, templates map[string]map[string]string, known map[string]bool) (string, []string, error) {
+	if err := checkRefs(r.Refs, known); err != nil {
+		return "", nil, err
+	}
 	var b strings.Builder
 	b.WriteString("  " + tsKey(r.Name) + ": {\n")
 	b.WriteString("    name: " + strconv.Quote(r.Name) + ",\n")
@@ -92,13 +117,13 @@ func (t *tsGen) resourceTS(r rest.Resource, templates map[string]map[string]stri
 	}
 	b.WriteString("    columns: [\n")
 	for _, c := range r.Columns {
-		b.WriteString("      " + t.fieldTS(c, item.Properties[c], slices.Contains(item.Required, c), slices.Contains(r.Sort, c)) + ",\n")
+		b.WriteString("      " + t.fieldTS(c, item.Properties[c], slices.Contains(item.Required, c), slices.Contains(r.Sort, c), "") + ",\n")
 	}
 	b.WriteString("    ],\n")
 	b.WriteString("    filters: [\n")
 	for _, f := range r.Filters {
 		i := slices.IndexFunc(list.op.Parameters, func(p *huma.Param) bool { return p.In == "query" && p.Name == f })
-		b.WriteString("      " + t.fieldTS(f, list.op.Parameters[i].Schema, false, false) + ",\n")
+		b.WriteString("      " + t.fieldTS(f, list.op.Parameters[i].Schema, false, false, r.Refs[f]) + ",\n")
 	}
 	b.WriteString("    ],\n")
 
@@ -117,7 +142,7 @@ func (t *tsGen) resourceTS(r rest.Resource, templates map[string]map[string]stri
 			}
 			body := t.requestBody(o.op)
 			for _, name := range f.fields {
-				b.WriteString("      " + t.fieldTS(name, body.Properties[name], slices.Contains(body.Required, name), false) + ",\n")
+				b.WriteString("      " + t.fieldTS(name, body.Properties[name], slices.Contains(body.Required, name), false, r.Refs[name]) + ",\n")
 			}
 		}
 		b.WriteString("    ],\n")
@@ -261,8 +286,8 @@ func (t *tsGen) requestBody(op *huma.Operation) *huma.Schema {
 	return t.resolve(op.RequestBody.Content["application/json"].Schema)
 }
 
-// fieldTS 写出一个字段：名称、类型、格式、枚举，以及是否必填、能否排序。
-func (t *tsGen) fieldTS(name string, s *huma.Schema, req, sortable bool) string {
+// fieldTS 写出一个字段：名称、类型、格式、枚举、引用的资源，以及是否必填、能否排序。
+func (t *tsGen) fieldTS(name string, s *huma.Schema, req, sortable bool, ref string) string {
 	parts := []string{"name: " + strconv.Quote(name)}
 	enum := ""
 	if s != nil && s.Ref != "" {
@@ -303,6 +328,9 @@ func (t *tsGen) fieldTS(name string, s *huma.Schema, req, sortable bool) string 
 			values = append(values, strconv.Quote(fmt.Sprint(v)))
 		}
 		parts = append(parts, "values: ["+strings.Join(values, ", ")+"]")
+	}
+	if ref != "" {
+		parts = append(parts, "ref: "+strconv.Quote(ref))
 	}
 	if rs.Nullable {
 		parts = append(parts, "nullable: true")

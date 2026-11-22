@@ -36,6 +36,8 @@ var (
 	ErrRoleNotFound = errorx.Define(errorx.NotFound, "authz.role_not_found")
 	// ErrRoleExists 表示同一租户中已有同名角色。
 	ErrRoleExists = errorx.Define(errorx.Conflict, "authz.role_exists")
+	// ErrRoleInUse 表示角色还有分配，使用 RestrictInUse 删除时拒绝。公开参数 count 是使用它的分配数。
+	ErrRoleInUse = errorx.Define(errorx.Conflict, "authz.role_in_use")
 	// ErrInvalid 表示输入不合法，例如权限不在目录中、把租户自定义的角色分配到其他租户。
 	ErrInvalid = errorx.Define(errorx.InvalidArgument, "authz.invalid")
 )
@@ -289,31 +291,61 @@ func (s *Store) UpdateRole(ctx context.Context, r Role, tenant string) (Role, er
 	return r, nil
 }
 
+// DeleteOption 是 DeleteRole 的选项。
+type DeleteOption func(*deleteOptions)
+
+// deleteOptions 保存 DeleteRole 的配置项。
+type deleteOptions struct {
+	restrictInUse bool // 为 true 时，角色还有分配就拒绝删除
+}
+
+// RestrictInUse 让 DeleteRole 在角色还有分配时拒绝删除，返回 ErrRoleInUse（公开参数 count 是使用它的分配数）。
+func RestrictInUse() DeleteOption {
+	return func(o *deleteOptions) { o.restrictInUse = true }
+}
+
 // DeleteRole 删除角色及其全部分配。tenant 的含义与 UpdateRole 相同：不为空时只能删除该租户自定义的角色。
+// 删除前在事务中以 FOR UPDATE 锁住角色行，与并发的 Assign 互斥；传入 RestrictInUse 时，还有分配就返回 ErrRoleInUse。
 // 角色不存在时返回 ErrRoleNotFound。
-func (s *Store) DeleteRole(ctx context.Context, id, tenant string) error {
+func (s *Store) DeleteRole(ctx context.Context, id, tenant string, opts ...DeleteOption) error {
 	rid, err := uuid.Parse(id)
 	if err != nil {
 		return ErrRoleNotFound.New()
 	}
+	var cfg deleteOptions
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&cfg)
+		}
+	}
 	err = s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		q := tx.NewDelete().Model((*roleRow)(nil)).Where("id = ?", rid)
+		// 先锁住角色行，阻塞并发的 Assign，确保统计分配数和删除角色之间不会新增分配。
+		var existing uuid.UUID
+		q := tx.NewSelect().Model((*roleRow)(nil)).Column("id").Where("id = ?", rid)
 		if tenant != "" {
 			q = q.Where("tenant = ?", tenant)
 		}
-		res, err := q.Exec(ctx)
-		if err != nil {
-			return errors.Wrap(err, "authz: delete role")
-		}
-		if n, err := res.RowsAffected(); err != nil {
-			return errors.Wrap(err, "authz: delete role")
-		} else if n == 0 {
+		if err := q.For("UPDATE").Scan(ctx, &existing); errors.Is(err, sql.ErrNoRows) {
 			return ErrRoleNotFound.New()
+		} else if err != nil {
+			return errors.Wrap(err, "authz: load role")
+		}
+		if cfg.restrictInUse {
+			n, err := tx.NewSelect().Model((*assignmentRow)(nil)).Where("role_id = ?", rid).Count(ctx)
+			if err != nil {
+				return errors.Wrap(err, "authz: count assignments")
+			}
+			if n > 0 {
+				return ErrRoleInUse.New(errorx.Public("count", int(n)))
+			}
 		}
 		for _, model := range []any{(*permissionRow)(nil), (*assignmentRow)(nil)} {
 			if _, err := tx.NewDelete().Model(model).Where("role_id = ?", rid).Exec(ctx); err != nil {
 				return errors.Wrap(err, "authz: delete role")
 			}
+		}
+		if _, err := tx.NewDelete().Model((*roleRow)(nil)).Where("id = ?", rid).Exec(ctx); err != nil {
+			return errors.Wrap(err, "authz: delete role")
 		}
 		return nil
 	})
@@ -470,8 +502,9 @@ func (s *Store) Assign(ctx context.Context, ref identity.Ref, tenant, roleID str
 		return ErrRoleNotFound.New()
 	}
 	err = s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		// 用 FOR SHARE 锁住角色行：多个并发 Assign 互不阻塞，且与 DeleteRole 的 FOR UPDATE 互斥。
 		var role roleRow
-		if err := tx.NewSelect().Model(&role).Column("tenant").Where("id = ?", rid).Scan(ctx); errors.Is(err, sql.ErrNoRows) {
+		if err := tx.NewSelect().Model(&role).Column("tenant").Where("id = ?", rid).For("SHARE").Scan(ctx); errors.Is(err, sql.ErrNoRows) {
 			return ErrRoleNotFound.New()
 		} else if err != nil {
 			return errors.Wrap(err, "authz: load role")

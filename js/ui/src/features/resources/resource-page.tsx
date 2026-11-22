@@ -54,6 +54,7 @@ import {
   useResourceList,
   useResourceMutations,
 } from "./model"
+import { ResourceMultiSelect, ResourceSelect } from "./resource-select"
 
 /** 行上的一个额外操作。 */
 export interface RowAction {
@@ -367,6 +368,32 @@ function FilterInput({
   onChange: (v: unknown) => void
 }): ReactNode {
   const t = useText()
+  if (field.reference && field.kind === "multiselect")
+    return (
+      <ResourceMultiSelect
+        model={field.reference}
+        size={size}
+        miw={160}
+        placeholder={field.label}
+        aria-label={field.label}
+        value={(value as string[] | undefined) ?? []}
+        onChange={(v) => onChange(v.length ? v : undefined)}
+        clearable
+      />
+    )
+  if (field.reference)
+    return (
+      <ResourceSelect
+        model={field.reference}
+        size={size}
+        w={180}
+        placeholder={field.label}
+        aria-label={field.label}
+        value={(value as string | undefined) ?? null}
+        onChange={(v) => onChange(v ?? undefined)}
+        clearable
+      />
+    )
   if (field.options && field.kind === "multiselect")
     return (
       <MultiSelect

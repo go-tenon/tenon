@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type { ReactNode } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { DefaultInput } from "./fields"
 import { type ResourceDef, type ResourceKit, resourceModel } from "./model"
 import { buildResourceOptions, ResourceMultiSelect, ResourceSelect } from "./resource-select"
 
@@ -216,5 +217,72 @@ describe("ResourceSelect 与 ResourceMultiSelect", () => {
       { id: "p1", name: "OpenAI", vendor: "openai" },
       expect.objectContaining({ option: { value: "p1", label: "OpenAI" } }),
     )
+  })
+
+  it("DefaultInput 对声明了 ref 的单选和多选字段自动渲染关联资源选择器", () => {
+    const providerDef: ResourceDef = {
+      name: "provider",
+      key: "id",
+      operations: { list: ["provider", "list"] },
+      permissions: { list: ["provider:read"] },
+      columns: [{ name: "name", type: "string" }],
+      filters: [],
+      createForm: [],
+      updateForm: [],
+      actions: [],
+      labels: { "zh-CN": { title: "供应商", fields: { name: "名称" }, actions: {} } },
+    }
+    const routeDef: ResourceDef = {
+      name: "route",
+      key: "id",
+      operations: { list: ["route", "list"], create: ["route", "create"] },
+      permissions: { list: [], create: [] },
+      columns: [{ name: "name", type: "string" }],
+      filters: [{ name: "provider_id", type: "string", ref: "provider" }],
+      createForm: [
+        { name: "provider_id", type: "string", ref: "provider", required: true },
+        { name: "fallback_ids", type: "array", items: "string", ref: "provider" },
+      ],
+      updateForm: [],
+      actions: [],
+      labels: {
+        "zh-CN": {
+          title: "路由",
+          fields: { name: "名称", provider_id: "主供应商", fallback_ids: "备用供应商" },
+          actions: {},
+        },
+      },
+    }
+    const kit: ResourceKit = {
+      client: { provider: { list: vi.fn(async () => ({ items: [], total: 0 })) } },
+      queries: {},
+      schemas: {},
+      resources: { provider: providerDef, route: routeDef },
+      language: "zh-CN",
+    }
+    const routes = resourceModel(routeDef, kit)
+    const providers = routes.createForm[0].reference
+    expect(providers).toBeDefined()
+    const queryClient = new QueryClient()
+    queryClient.setQueryData(providers?.listAllQuery().queryKey ?? [], [
+      { id: "p1", name: "OpenAI" },
+      { id: "p2", name: "Anthropic" },
+    ])
+
+    const singleHtml = renderWithProviders(
+      <DefaultInput field={routes.createForm[0]} value="p1" onChange={() => {}} />,
+      queryClient,
+    )
+    expect(singleHtml).toContain("主供应商")
+    expect(singleHtml).toContain('value="OpenAI"')
+    expect(singleHtml).not.toContain("readonly")
+
+    const multiHtml = renderWithProviders(
+      <DefaultInput field={routes.createForm[1]} value={["p1", "p2"]} onChange={() => {}} />,
+      queryClient,
+    )
+    expect(multiHtml).toContain("备用供应商")
+    expect(multiHtml).toContain("OpenAI")
+    expect(multiHtml).toContain("Anthropic")
   })
 })

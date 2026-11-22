@@ -2,6 +2,7 @@ package rest
 
 import (
 	"fmt"
+	"maps"
 	"net/http"
 	"reflect"
 	"regexp"
@@ -38,7 +39,10 @@ type Resource struct {
 	// 不能修改、删除的行仍要由接口拒绝。
 	UpdateWhen map[string][]string `json:"update_when,omitempty"`
 	DeleteWhen map[string][]string `json:"delete_when,omitempty"`
-	Key        string              `json:"key,omitempty"` // 标识一行的字段，由 Get、Update、Delete 和 Actions 的路径参数得出，不需要设置。
+	// Refs 声明引用另一个资源的字段：键是出现在 Filters、CreateForm 或 UpdateForm 中的字段名，
+	// 值是被引用资源的名称（例如 {"role_id": "role"}）。表单和筛选自动生成下拉框，选项来自被引用资源的列表。
+	Refs map[string]string `json:"refs,omitempty"`
+	Key  string            `json:"key,omitempty"` // 标识一行的字段，由 Get、Update、Delete 和 Actions 的路径参数得出，不需要设置。
 }
 
 // Action 是资源的一行上的操作。
@@ -180,6 +184,11 @@ func (a *API) checkResource(r *Resource) error {
 	}
 
 	// 新建和修改的表单各取自己接口的请求体：两个接口的字段常常不同，例如新建时还要填写管理员的账号。
+	refSchemas := map[string][]*huma.Schema{}
+	for _, f := range r.Filters {
+		i := slices.IndexFunc(list.Parameters, func(p *huma.Param) bool { return p.In == "query" && p.Name == f })
+		refSchemas[f] = append(refSchemas[f], list.Parameters[i].Schema)
+	}
 	for _, f := range []struct {
 		what, id string
 		fields   *[]string
@@ -206,6 +215,32 @@ func (a *API) checkResource(r *Resource) error {
 		}
 		if err := hasFields(f.what+" field", *f.fields, body); err != nil {
 			return err
+		}
+		for _, name := range *f.fields {
+			refSchemas[name] = append(refSchemas[name], body.Properties[name])
+		}
+	}
+	return a.checkRefs(r.Refs, refSchemas, "filters, create_form, or update_form")
+}
+
+// checkRefs 检查引用字段声明 refs：目标资源名是 kebab-case，每个字段都在 schemas 中且类型是字符串或字符串数组。
+func (a *API) checkRefs(refs map[string]string, schemas map[string][]*huma.Schema, where string) error {
+	for _, field := range slices.Sorted(maps.Keys(refs)) {
+		target := refs[field]
+		if !resourceName.MatchString(target) {
+			return fmt.Errorf("ref %q: target resource %q must be kebab-case", field, target)
+		}
+		list, ok := schemas[field]
+		if !ok {
+			return fmt.Errorf("ref field %q is not in %s", field, where)
+		}
+		for _, s := range list {
+			rs := a.resolveSchema(s)
+			isString := rs.Type == huma.TypeString
+			isStringArray := rs.Type == huma.TypeArray && a.resolveSchema(rs.Items).Type == huma.TypeString
+			if !isString && !isStringArray {
+				return fmt.Errorf("ref field %q must be string or array of strings", field)
+			}
 		}
 	}
 	return nil

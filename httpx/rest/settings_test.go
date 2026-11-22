@@ -13,9 +13,10 @@ import (
 )
 
 type siteSettings struct {
-	Name       string        `json:"name" minLength:"1"`
-	SignupOpen bool          `json:"signup_open"`
-	Theme      articleStatus `json:"theme"`
+	Name          string        `json:"name" minLength:"1"`
+	SignupOpen    bool          `json:"signup_open"`
+	Theme         articleStatus `json:"theme"`
+	DefaultRoleID string        `json:"default_role_id,omitempty"`
 }
 
 type siteOut struct{ Body siteSettings }
@@ -44,17 +45,23 @@ func settingsAPI() *rest.API {
 
 func TestSettings(t *testing.T) {
 	api := settingsAPI()
-	api.Settings(rest.Settings{Name: "site", Get: "site-settings-get", Update: "site-settings-update"})
+	api.Settings(rest.Settings{
+		Name: "site", Get: "site-settings-get", Update: "site-settings-update",
+		Refs: map[string]string{"default_role_id": "role"},
+	})
 	got := api.SettingsPages()
 	if len(got) != 1 {
 		t.Fatalf("settings = %+v", got)
 	}
 	// 表单字段默认是保存接口请求体的全部字段，按结构体中的顺序。
-	if f := strings.Join(got[0].Form, ","); f != "name,signup_open,theme" {
+	if f := strings.Join(got[0].Form, ","); f != "name,signup_open,theme,default_role_id" {
 		t.Errorf("form = %s", f)
 	}
+	if got[0].Refs["default_role_id"] != "role" {
+		t.Errorf("refs = %+v", got[0].Refs)
+	}
 	ext, _ := api.OpenAPI().Extensions["x-tenon-settings"].([]rest.Settings)
-	if len(ext) != 1 || ext[0].Name != "site" {
+	if len(ext) != 1 || ext[0].Name != "site" || ext[0].Refs["default_role_id"] != "role" {
 		t.Errorf("x-tenon-settings = %+v", api.OpenAPI().Extensions["x-tenon-settings"])
 	}
 }
@@ -71,6 +78,9 @@ func TestSettingsRejects(t *testing.T) {
 		{rest.Settings{Name: "site", Get: "site-settings-get", Update: "site-settings-get"}, "must not be GET"},
 		{rest.Settings{Name: "site", Get: "tenant-settings-get", Update: "site-settings-update"}, "must not have path parameters"},
 		{rest.Settings{Name: "site", Get: "site-settings-get", Update: "site-settings-update", Form: []string{"title"}}, "form field"},
+		{rest.Settings{Name: "site", Get: "site-settings-get", Update: "site-settings-update", Refs: map[string]string{"default_role_id": "Role"}}, "kebab-case"},
+		{rest.Settings{Name: "site", Get: "site-settings-get", Update: "site-settings-update", Refs: map[string]string{"missing": "role"}}, `ref field "missing" is not in form`},
+		{rest.Settings{Name: "site", Get: "site-settings-get", Update: "site-settings-update", Refs: map[string]string{"signup_open": "role"}}, `ref field "signup_open" must be string or array of strings`},
 	} {
 		func() {
 			defer func() {
