@@ -267,7 +267,7 @@ function Inbox() {
 ```
 
 - `fullBleed: true` 的页面没有最大宽度、内边距和面包屑，高度占满内容区。内容区本身不滚动，页面中的各栏自己滚动。写在模块的路由上时，模块下的页面都铺满。`FrameLayout` 同样支持它。
-- `<Fill name="nav">` 有内容时，二级导航显示它，替换按路由生成的链接；顶部的模块名和收起按钮保留，窄屏时它在抽屉中。二级导航中的 `NavLink` 自动用紧凑的样式，需要分组时用 `<RailSection title="…" collapsible>`。把 `Fill` 放在模块的布局路由中，模块内切换页面时面板保持不变。
+- `<Fill name="nav">` 有内容时，二级导航显示它，替换按路由生成的链接；顶部的模块名和收起按钮保留，窄屏时它在抽屉中。二级导航中的 `NavLink` 自动用紧凑的样式，需要分组时用 `<RailSection title="…" collapsible storeKey="…" action={…}>`：`action` 在标题行右侧放置独立操作按钮，`storeKey` 按账号记住展开和收起状态。把 `Fill` 放在模块的布局路由中，模块内切换页面时面板保持不变。
 - `useCollapseNav(when)` 在 `when` 为 `true` 时临时收起二级导航，变回 `false` 或组件卸载时恢复，保存的收起状态保持不变。临时收起期间用户点了展开，以用户为准，直到下一次要求收起。
 
 <a id="custom-layouts"></a>

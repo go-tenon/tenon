@@ -33,6 +33,7 @@ function Orders() {
 - `listSearch` 按生成的查询参数规则解析地址：值转换为规则中的类型，不合法的值、不认识的参数、空值和等于默认值的值都去掉。
 - 修改查询条件、排序或每页条数时回到第一页。筛选条件不放在 `useState` 中：刷新页面后会丢失。
 - 游标分页的游标不放进地址，“加载更多”用 TanStack Query 的 `useInfiniteQuery`，`getNextPageParam` 取响应的 `next_cursor`。
+- 列表接入[已保存视图](../features/saved-views.md)时，用 `useSavedView(savedConfig, currentConfig)` 对比当前筛选条件与已保存配置是否偏离（`dirty`），驱动“保存更改 / 另存为 / 重置”；`sameViewConfig` 可用于直接比较两份配置（忽略对象键顺序与 `undefined` 字段）。
 
 <a id="data-table"></a>
 ## 用 `DataTable` 显示表格

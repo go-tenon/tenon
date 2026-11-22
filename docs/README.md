@@ -58,7 +58,7 @@ Tenon 是用 Go 构建后端服务的框架。业务逻辑写成[业务动作](c
 ## 功能
 
 - [通知](features/notifications.md)、[移动推送](features/push.md)、[Webhook](features/webhooks.md)
-- [设置](features/settings.md)、[功能开关](features/flags.md)、[操作日志](features/activity.md)
+- [设置](features/settings.md)、[功能开关](features/flags.md)、[已保存视图](features/saved-views.md)、[操作日志](features/activity.md)
 - [后台操作](features/operations.md)：带进度的耗时操作
 - [导入与导出](features/import-export.md)：Excel、CSV，大文件在后台导入导出
 - [全文搜索](features/search.md)

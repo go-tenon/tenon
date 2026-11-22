@@ -140,6 +140,8 @@ func TestSearchDocs(t *testing.T) {
 		"站内通知":               "features/notifications.md",
 		"导出 Excel":           "features/import-export.md",
 		"功能开关":               "features/flags.md",
+		"已保存视图":              "features/saved-views.md",
+		"savedview":          "features/saved-views.md",
 		"Webhook":            "features/webhooks.md",
 		"全文搜索":               "features/search.md",
 		"邮箱密码登录":             "security/login.md",

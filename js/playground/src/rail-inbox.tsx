@@ -8,6 +8,7 @@ import {
   textTriggerRule,
   useCollapseNav,
   useNavControl,
+  useSavedView,
   useTextTrigger,
 } from "@go-tenon/ui"
 import {
@@ -17,9 +18,11 @@ import {
   Group,
   NavLink,
   ScrollArea,
+  SegmentedControl,
   Stack,
   Text,
   Textarea,
+  Tooltip,
   UnstyledButton,
 } from "@mantine/core"
 import { useMediaQuery } from "@mantine/hooks"
@@ -27,9 +30,11 @@ import {
   IconAt,
   IconBolt,
   IconBraces,
+  IconFilter,
   IconInbox,
   IconLayoutSidebarLeftExpand,
   IconListDetails,
+  IconPlus,
   IconUserQuestion,
   IconX,
 } from "@tabler/icons-react"
@@ -54,6 +59,15 @@ const teams: Box[] = [
   { id: "merchants", title: "商家支持", count: 2 },
 ]
 
+interface DemoView extends Box {
+  priority: "all" | "high"
+}
+
+const initialViews: DemoView[] = [
+  { id: "view-high", title: "高优待回复", count: 4, priority: "high" },
+  { id: "view-all-open", title: "全部进行中", count: 12, priority: "all" },
+]
+
 const names = ["Rahul", "Priya", "Anil", "Sneha", "Meera", "Vikram", "Kavya", "Arjun", "Divya", "Rohan"]
 
 const boxIcons: Record<string, ReactNode> = {
@@ -66,20 +80,35 @@ const boxIcons: Record<string, ReactNode> = {
 /** InboxDemo 是收件箱的演示：二级导航、会话列表、会话，以及按需打开的详情，各栏自己滚动。 */
 export function InboxDemo(): ReactNode {
   const [box, setBox] = useState("mine")
+  const [views, setViews] = useState<DemoView[]>(initialViews)
+  const [priority, setPriority] = useState<"all" | "high">("all")
   const [current, setCurrent] = useState(0)
   const [detail, setDetail] = useState(false)
   const wide = useMediaQuery("(min-width: 1600px)") ?? false
   const nav = useNavControl()
   useCollapseNav(detail && !wide)
-  const all = [...boxes, ...teams]
+  const all = [...boxes, ...teams, ...views]
+  const activeView = views.find((v) => v.id === box)
+  const savedState = useSavedView(activeView ? { priority: activeView.priority } : undefined, { priority })
   const selected = all.find((b) => b.id === box) ?? boxes[0]
+  const selectBox = (b: Box) => {
+    setBox(b.id)
+    const v = views.find((x) => x.id === b.id)
+    if (v) setPriority(v.priority)
+  }
+  const addView = () => {
+    const id = `view-${views.length + 1}`
+    const next: DemoView = { id, title: `自定义视图 ${views.length + 1}`, count: 3, priority }
+    setViews((cur) => [...cur, next])
+    setBox(id)
+  }
   const item = (b: Box, leftSection?: ReactNode) => (
     <NavLink
       key={b.id}
       label={b.title}
       leftSection={leftSection}
       active={b.id === box}
-      onClick={() => setBox(b.id)}
+      onClick={() => selectBox(b)}
       rightSection={
         <Text size="xs" c="dimmed">
           {b.count}
@@ -91,7 +120,7 @@ export function InboxDemo(): ReactNode {
     <div style={{ display: "flex", height: "100%" }}>
       <Fill name="nav">
         {boxes.map((b) => item(b, boxIcons[b.id]))}
-        <RailSection title="团队收件箱" collapsible>
+        <RailSection title="团队收件箱" collapsible storeKey="demo-inbox-teams">
           {teams.map((b) =>
             item(
               b,
@@ -112,6 +141,20 @@ export function InboxDemo(): ReactNode {
               </span>,
             ),
           )}
+        </RailSection>
+        <RailSection
+          title="视图"
+          collapsible
+          storeKey="demo-inbox-views"
+          action={
+            <Tooltip label="新建视图" openDelay={300}>
+              <ActionIcon size="xs" variant="subtle" color="gray" aria-label="新建视图" onClick={addView}>
+                <IconPlus size={14} stroke={1.8} />
+              </ActionIcon>
+            </Tooltip>
+          }
+        >
+          {views.map((v) => item(v, <IconFilter size={15} stroke={1.6} />))}
         </RailSection>
       </Fill>
       <div
@@ -143,6 +186,43 @@ export function InboxDemo(): ReactNode {
             </Text>
           </Stack>
         </Group>
+        {activeView && (
+          <Stack gap={6} px="sm" py={8} style={{ borderBottom: "1px solid var(--tn-border)" }}>
+            <SegmentedControl
+              size="xs"
+              fullWidth
+              value={priority}
+              onChange={(v) => setPriority(v as "all" | "high")}
+              data={[
+                { value: "all", label: "全部优先级" },
+                { value: "high", label: "高优先级" },
+              ]}
+            />
+            {savedState.dirty && (
+              <Group gap="xs" justify="space-between">
+                <Text size="xs" c="deep-orange">
+                  筛选已修改
+                </Text>
+                <Group gap={4}>
+                  <Button
+                    size="compact-xs"
+                    variant="subtle"
+                    color="gray"
+                    onClick={() => setPriority(activeView.priority)}
+                  >
+                    重置
+                  </Button>
+                  <Button
+                    size="compact-xs"
+                    onClick={() => setViews((cur) => cur.map((v) => (v.id === activeView.id ? { ...v, priority } : v)))}
+                  >
+                    保存
+                  </Button>
+                </Group>
+              </Group>
+            )}
+          </Stack>
+        )}
         <ScrollArea style={{ flex: 1 }}>
           {Array.from({ length: 40 }, (_, i) => (
             <UnstyledButton

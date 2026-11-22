@@ -49,6 +49,7 @@ export * from "./blocks/user-menu"
 // ———————————————————————————— components ————————————————————————————
 export * from "./components/data-table/data-table"
 export * from "./components/data-table/list"
+export * from "./components/data-table/saved-view"
 export * from "./components/description-list"
 export * from "./components/feedback"
 export * from "./components/form/autosave"

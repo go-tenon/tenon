@@ -113,6 +113,14 @@ filesystem.not_accepted: This kind of file is not accepted
 filesystem.not_found: The file does not exist or has expired
 push.invalid_device: Invalid device
 settings.invalid: Invalid settings
+savedview.not_found: Saved view not found
+savedview.forbidden: You do not have permission to manage this view
+savedview.name_taken: "A view named “{{.name}}” already exists"
+savedview.invalid_name: "View name must not be empty and may be at most {{.max}} characters"
+savedview.invalid_scope: Invalid view scope
+savedview.limit_exceeded: "View limit reached (at most {{.limit}})"
+savedview.scope.shared: Shared
+savedview.scope.personal: Personal
 webhook.endpoint_not_found: Webhook endpoint not found
 webhook.delivery_not_found: Delivery not found
 webhook.invalid_url: The webhook URL must be an absolute http or https URL

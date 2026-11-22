@@ -113,6 +113,14 @@ filesystem.not_accepted: 不支持这种文件
 filesystem.not_found: 文件不存在或已过期
 push.invalid_device: 设备信息不正确
 settings.invalid: 设置不合法
+savedview.not_found: 视图不存在
+savedview.forbidden: 没有权限管理这个视图
+savedview.name_taken: "视图名称“{{.name}}”已存在"
+savedview.invalid_name: "视图名称不能为空且最多 {{.max}} 个字符"
+savedview.invalid_scope: 视图作用域不合法
+savedview.limit_exceeded: "视图数量已达到上限（最多 {{.limit}} 个）"
+savedview.scope.shared: 共享
+savedview.scope.personal: 个人
 webhook.endpoint_not_found: Webhook 地址不存在
 webhook.delivery_not_found: 投递记录不存在
 webhook.invalid_url: Webhook 地址必须是 http 或 https 的完整地址
