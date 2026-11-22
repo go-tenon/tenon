@@ -14,6 +14,8 @@ export * from "./app/document-title"
 export {
   Fill,
   type LayoutState,
+  type NavControl,
+  NavControlProvider,
   type Navigation,
   Slot,
   type SlotName,
@@ -23,6 +25,7 @@ export {
   useMenuBadge,
   useNarrow,
   useNavCollapseRequested,
+  useNavControl,
   useNavigation,
   useSlotFilled,
 } from "./app/layout"

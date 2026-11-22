@@ -51,6 +51,8 @@ export interface PageProps {
   back?: () => void
   /** 在面包屑最后再加一级表示当前页面，例如新建页面的“新建”：路由没有自己的标题时用，前面的各级都是链接。 */
   crumb?: string
+  /** 页面内容的最大宽度：narrow（720px，适合设置与短表单页）、default（占满布局允许的宽度）或具体像素值。 */
+  width?: "narrow" | "default" | number
   /**
    * 页内的标签：内容多的页面分成几个标签，在标题区下面切换。当前的标签记在地址的 ?tab= 中（第一个标签不写），
    * 刷新、分享链接后还在这个标签；路由设置了 validateSearch 时要保留 tab 参数。
@@ -61,12 +63,23 @@ export interface PageProps {
 }
 
 /** 页面：面包屑、标题区加内容；有 tabs 时内容分成几个页内标签。 */
-export function Page({ title, description, actions, breadcrumbs, back, crumb, tabs, children }: PageProps): ReactNode {
+export function Page({
+  title,
+  description,
+  actions,
+  breadcrumbs,
+  back,
+  crumb,
+  width,
+  tabs,
+  children,
+}: PageProps): ReactNode {
   const t = useText()
   const crumbsByDefault = useContext(PageBreadcrumbsContext)
   const showCrumbs = breadcrumbs ?? crumbsByDefault
+  const maw = width === "narrow" ? 720 : typeof width === "number" ? width : undefined
   return (
-    <Stack gap="md">
+    <Stack gap="md" maw={maw}>
       <Stack gap={10}>
         {showCrumbs && <Crumbs extra={crumb} />}
         <div className="tn-page-header">

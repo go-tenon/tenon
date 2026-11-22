@@ -418,6 +418,7 @@ function RailShell(): ReactNode {
           name="韩梅梅"
           email="hanmeimei@acme.cn"
           position="right-end"
+          statusColor="green"
           items={[{ label: "设置", icon: <IconSettings size={16} />, to: "/settings/profile" }]}
           logout={async () => {}}
         />

@@ -2,7 +2,15 @@
 // FrameLayout、RailLayout 等具体的布局（blocks/）按这个约定实现。
 
 import { useMatches } from "@tanstack/react-router"
-import { type ReactNode, useCallback, useLayoutEffect, useMemo, useSyncExternalStore } from "react"
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useLayoutEffect,
+  useMemo,
+  useSyncExternalStore,
+} from "react"
 import { createPortal } from "react-dom"
 import { useApp, useBreadcrumbs, useMenu } from "./app"
 import { type Badge, useBadgeOf } from "./badges"
@@ -204,4 +212,30 @@ export function useNarrow(query = "(max-width: 767px)"): boolean {
     () => window.matchMedia?.(query).matches ?? false,
     () => false,
   )
+}
+
+/** 导航栏的展开状态与切换操作，由 RailLayout 等布局提供给页面使用。 */
+export interface NavControl {
+  /** 导航栏当前是否展开（窄屏时表示抽屉是否打开）。 */
+  open: boolean
+  /** 当前是否处于窄屏抽屉模式。 */
+  compact: boolean
+  /** 展开导航栏（窄屏时打开抽屉）。 */
+  openNav(): void
+  /** 收起导航栏（窄屏时关闭抽屉）。 */
+  closeNav(): void
+  /** 切换导航栏展开或收起。 */
+  toggleNav(): void
+}
+
+const NavControlContext = createContext<NavControl | undefined>(undefined)
+
+/** 向子页面提供当前布局的导航栏控制能力。 */
+export function NavControlProvider({ value, children }: { value: NavControl; children: ReactNode }): ReactNode {
+  return <NavControlContext.Provider value={value}>{children}</NavControlContext.Provider>
+}
+
+/** 读取当前布局的导航栏展开状态与切换操作；不在支持的布局内时返回 undefined。 */
+export function useNavControl(): NavControl | undefined {
+  return useContext(NavControlContext)
 }

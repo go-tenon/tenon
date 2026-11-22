@@ -726,12 +726,13 @@ body {
 /* ———————————————— Rail 布局（RailLayout） ———————————————— */
 
 /*
- * 最左侧是 48px 的模块图标栏，底色与画布相同；右侧的工作区是一张左侧带圆角的卡片，
- * 其中是二级导航（默认 260px，RailLayout 的 navWidth 设置，可以收起）和内容。窄屏时二级导航是抽屉。
+ * 最左侧是 48px 的模块图标栏，底色与画布相同；右侧的工作区是一张四周微留白的圆角浮岛卡片，
+ * 其中是二级导航（默认 260px，RailLayout 的 navWidth 设置，可以收起）和内容。窄屏时卡片贴边无圆角，二级导航是抽屉。
  */
 .tn-rail {
   --tn-rail-rail: 48px;
   --tn-rail-secondary: 260px;
+  --tn-rail-header: 52px;
   display: flex;
   height: 100dvh;
   overflow: hidden;
@@ -744,13 +745,23 @@ body {
   flex-shrink: 0;
   flex-direction: column;
   align-items: center;
+  padding-block: 6px;
 }
 
 .tn-rail-logo {
   display: grid;
-  height: 44px;
+  height: var(--tn-rail-header);
   flex-shrink: 0;
   place-items: center;
+}
+
+.tn-rail-top {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 6px;
 }
 
 /* 模块的列表占满图标栏的宽度，图标右上角的徽标不被滚动区域裁掉。 */
@@ -811,7 +822,13 @@ body {
 }
 
 .tn-rail-footer {
-  padding-bottom: 10px;
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding-top: 6px;
+  padding-bottom: 4px;
 }
 
 .tn-rail-workspace {
@@ -819,9 +836,9 @@ body {
   flex: 1;
   min-width: 0;
   overflow: hidden;
+  margin: 6px 6px 6px 0;
   border: 1px solid var(--tn-border);
-  border-top-width: 0;
-  border-radius: 12px 0 0 12px;
+  border-radius: 10px;
   background: var(--tn-surface);
 }
 
@@ -854,9 +871,10 @@ body {
 }
 
 .tn-rail-secondary-header {
-  height: 44px;
+  height: var(--tn-rail-header);
   flex-shrink: 0;
-  padding: 6px 12px 2px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--tn-border);
 }
 
 .tn-rail-secondary-content {
@@ -898,6 +916,17 @@ body {
 }
 .tn-rail-full {
   height: 100%;
+}
+
+.tn-rail[data-compact] .tn-rail-rail {
+  padding-block: 0;
+}
+
+.tn-rail[data-compact] .tn-rail-workspace {
+  margin: 0;
+  border: 0;
+  border-left: 1px solid var(--tn-border);
+  border-radius: 0;
 }
 
 @media (max-width: 48em) {
