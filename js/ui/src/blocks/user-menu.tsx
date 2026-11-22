@@ -141,7 +141,7 @@ function ColorSchemePicker(): ReactNode {
   const t = useText()
   return (
     <Group className="tn-schemes" justify="space-between" gap="sm" wrap="nowrap">
-      <Group gap={10} wrap="nowrap">
+      <Group gap="xs" wrap="nowrap">
         <IconPalette size={18} stroke={1.5} />
         <Text size="sm">{t("tenon.user_menu.theme")}</Text>
       </Group>
