@@ -27,8 +27,9 @@ import { type ReactNode, useState } from "react"
 import { CellLink, type Column, DataTable } from "../components/data-table/data-table"
 import { confirm, notifyError, notifySuccess } from "../components/feedback"
 import { Page } from "../components/page"
-import { type UiMessageId, text as uiText, useText } from "../i18n/i18n"
+import { type UiMessageId, text as uiText, useLanguage, useText } from "../i18n/i18n"
 import { useFormatDateTime } from "../theme/format"
+import { describeScheduleExpr } from "./schedule-expr"
 
 // ———————————————————————————— 接口 ————————————————————————————
 
@@ -205,6 +206,7 @@ function Tasks({
 }): ReactNode {
   const queryClient = useQueryClient()
   const formatDateTime = useFormatDateTime()
+  const language = useLanguage()
   const tr = useText()
   const runNow = useMutation({
     mutationFn: ({ name }: { name: string; label: string }) => api.run(name),
@@ -254,7 +256,22 @@ function Tasks({
         )
       },
     },
-    { accessor: "expr", title: tr("tenon.schedule.expr"), noWrap: true, render: (t) => <Code>{t.expr}</Code> },
+    {
+      accessor: "expr",
+      title: tr("tenon.schedule.expr"),
+      noWrap: true,
+      render: (t) => {
+        const described = describeScheduleExpr(t.expr, language, tr)
+        if (!described) return <Code>{t.expr}</Code>
+        return (
+          <Tooltip label={t.expr} openDelay={200} withArrow>
+            <Text span size="sm">
+              {described}
+            </Text>
+          </Tooltip>
+        )
+      },
+    },
     {
       accessor: "next_run",
       title: tr("tenon.schedule.next"),
