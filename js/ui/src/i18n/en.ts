@@ -208,6 +208,7 @@ export const en = {
   "tenon.resource.load_failed": "Couldn't load",
   "tenon.resource.more": "More actions",
   "tenon.resource.no_get": "This kind of data can't be read one at a time. Open the edit page from the list.",
+  "tenon.resource.no_options": "No options",
   "tenon.resource.not_found": "This item doesn't exist, or you don't have permission to view it.",
   "tenon.schedule.all": "All",
   "tenon.schedule.all_tasks": "All tasks",

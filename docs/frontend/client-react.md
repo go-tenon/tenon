@@ -44,6 +44,7 @@ const { data } = useQuery({
 ```
 
 - `parsePageParams` 从地址读取分页，不合法的值取默认值，`per_page` 不超过 100；`parseSort`、`formatSort` 处理 `-created` 这样的排序参数。
+- 表单下拉框等场景需要拉取全量列表时，用 `fetchAllPages((p) => api.article.list(p))`：默认按每页 100 条先取第 1 页，再在 `maxPages`（默认 50）上限内并发拉取剩余页并按页序合并返回。
 - 分页条件放在路由的 search 参数中时，用生成的 `ArticleListInput` 作为 `validateSearch` 的类型。`@go-tenon/ui` 的列表见[列表](lists-forms.md#lists)。
 
 <a id="validation-rules"></a>

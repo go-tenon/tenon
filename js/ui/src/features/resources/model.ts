@@ -3,7 +3,14 @@
 // 输入方式和选项）、权限、读取和修改。ResourcePage（resource-page.tsx）按这个模型渲染。
 // 设置（rest.API.Settings、settings.ts）是只有一组值的表单，用同样的字段模型，见 settingsModel。
 
-import { pickLanguage, type Schema } from "@go-tenon/client"
+import {
+  type FetchAllPagesOptions,
+  fetchAllPages,
+  type OffsetPage,
+  type PageParams,
+  pickLanguage,
+  type Schema,
+} from "@go-tenon/client"
 import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useCallback, useMemo } from "react"
 import { useCan } from "../../app/app"
@@ -173,6 +180,11 @@ export interface ResourceModel {
   allowed(can: (permission: string) => boolean, operation: ResourceOperation | { action: string }): boolean
   /** 列表的查询选项，交给 useQuery。 */
   listQuery(params: Record<string, unknown>): { queryKey: readonly unknown[]; queryFn: () => Promise<unknown> }
+  /** 翻页拉取全部列表项的查询选项，交给 useQuery；与列表共用查询前缀，修改资源后自动失效。 */
+  listAllQuery(
+    params?: Record<string, unknown>,
+    options?: FetchAllPagesOptions,
+  ): { queryKey: readonly unknown[]; queryFn: () => Promise<ResourceRow[]> }
   /** 详情的查询选项。 */
   getQuery(key: string): { queryKey: readonly unknown[]; queryFn: () => Promise<unknown> }
   /** 创建、修改、删除和其他操作；完成后让这个资源所在分组的查询失效。 */
@@ -372,6 +384,22 @@ export function resourceModel(def: ResourceDef, kit: ResourceKit, queryClient?: 
             queryKey: [...queryKey(), "list", params],
             queryFn: () => call(kit.client, ops.list, [params]) as Promise<unknown>,
           }
+    },
+    listAllQuery(params = {}, options) {
+      const { page: _page, per_page: _perPage, ...filters } = params
+      return {
+        queryKey: options
+          ? [...queryKey(), ops.list[1], "all", filters, options]
+          : [...queryKey(), ops.list[1], "all", filters],
+        queryFn: () =>
+          fetchAllPages((p: PageParams) => {
+            const merged = { ...filters, ...p }
+            const q = method(queries, ops.list)
+            return q
+              ? (q(merged) as { queryFn: () => Promise<OffsetPage<ResourceRow>> }).queryFn()
+              : (call(kit.client, ops.list, [merged]) as Promise<OffsetPage<ResourceRow>>)
+          }, options),
+      }
     },
     getQuery(key) {
       const q = ops.get && method(queries, ops.get)
