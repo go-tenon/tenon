@@ -1,0 +1,15 @@
+FROM golang:[[.GoImageTag]] AS build
+[[if .HasFrontends]]COPY --from=oven/bun:[[.BunVersion]] /usr/local/bin/bun /usr/local/bin/bun
+[[end]]WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+[[if .HasFrontends]]RUN CGO_ENABLED=0 go tool tenon build -o /out/[[.Slug]]
+[[else]]RUN CGO_ENABLED=0 go build -trimpath -o /out/[[.Slug]] [[.Main]]
+[[end]]
+FROM [[if .HasSSR]]gcr.io/distroless/base-debian13:nonroot[[else]]gcr.io/distroless/static-debian13:nonroot[[end]]
+WORKDIR /app
+COPY --from=build /out/[[.Slug]] /app/[[.Slug]]
+COPY config /app/config
+ENTRYPOINT ["/app/[[.Slug]]"]
+CMD ["serve"]

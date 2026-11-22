@@ -24,6 +24,7 @@ import (
 // Config 是应用的配置：config/app.yaml。
 type Config struct {
 	HTTP       httpx.Config      `yaml:"http"`
+	Logs       logging.Config    `yaml:"logs"`
 	DevServers map[string]string `yaml:"dev_servers"` // 各前端开发服务器的地址，按前端的名称（apps 中的目录名）；只在 tenon dev 时有值，它把地址写入 .tenon/dev.yaml，页面请求转给对应的开发服务器
 }
 
@@ -47,7 +48,7 @@ type App struct {
 
 // open 安装日志器，创建待办事项的存储。serve 命令执行时调用它，登记到 stack 的资源在进程退出时关闭。
 func open(_ context.Context, cfg Config, _ *cleanup.Stack) (*App, error) {
-	slog.SetDefault(logging.New(logging.Config{}))
+	slog.SetDefault(logging.New(cfg.Logs))
 	return &App{cfg: cfg, store: todo.NewStore()}, nil
 }
 

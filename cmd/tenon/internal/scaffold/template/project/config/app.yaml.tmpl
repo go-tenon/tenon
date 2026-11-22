@@ -1,3 +1,10 @@
 # 应用的配置，见 Tenon 文档的 configuration.md。开发时 tenon dev 再叠加 .tenon/dev.yaml：其中是前端开发服务器的地址。
 http:
   addr: ":8080"
+  # 经反向代理部署时填写可信代理网段，例如 ["10.0.0.0/8", "172.16.0.0/12"]，访问日志才能记录真实客户端 IP。
+  # client_ip:
+  #   trusted_proxies: []
+
+# 日志级别默认 info；输出到终端时为文本格式，写入容器或文件时为 JSON。
+logs:
+  level: ${LOG_LEVEL:-info}

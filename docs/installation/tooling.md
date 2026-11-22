@@ -28,6 +28,7 @@ go tool tenon dev
 | `tenon build` | 构建可执行文件，前端打包在其中 |
 | `tenon add frontend` | 再加一个前端，例如运营后台 |
 | `tenon add client` | 加桌面端等网页以外的客户端 |
+| `tenon add deploy` | 生成容器构建与生产自托管部署文件 |
 | `tenon agents` | 升级框架后更新给 AI 编程助手的文档、技能和 MCP 配置 |
 | `tenon mcp` | AI 编程助手按 MCP 配置启动它，不手动运行 |
 
@@ -149,6 +150,18 @@ go tool tenon add client admin-desktop --kind electron --frontend admin
 ```
 
 在 `clients/admin-desktop` 中生成 Electron 桌面端，窗口中显示 `apps/admin`（它要有登录页），并在 `apps/admin` 中加上授权页，授权页的文字追加到 `locales/admin.zh-CN.yaml` 的末尾。`--title` 是窗口标题和安装包的名称。之后用 `go tool tenon dev --client admin-desktop` 运行，`go tool tenon build --client admin-desktop` 打包，见 [Electron 桌面端](../clients/electron.md)。
+
+<a id="add-deploy"></a>
+## `tenon add deploy`：部署文件
+
+```bash
+go tool tenon add deploy --image ghcr.io/acme/blog
+```
+
+在项目根目录生成 `Dockerfile`、`.dockerignore`、`compose.prod.yaml` 和 `.env.example`：
+
+- 自动读取 `go.mod` 的 Go 版本、`package.json` 的 Bun 版本和 `apps/` 中的前端渲染方式：存在 SSR 前端时使用 `gcr.io/distroless/base-debian13:nonroot`（含 glibc），否则使用 `gcr.io/distroless/static-debian13:nonroot`；没有前端时不安装 Bun，直接 `go build`。
+- `--image` 指定生产编排中的镜像名（不含标签），默认是入口包名；目标文件已存在时报错，传入 `--force` 覆盖。部署步骤见[部署](deployment.md)和[交给客户自托管](self-hosting.md)。
 
 <a id="agents"></a>
 ## `tenon agents`：AI 编程助手

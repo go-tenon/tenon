@@ -143,7 +143,7 @@ func TestSkills(t *testing.T) {
 		}
 		return strings.Join(out, " ")
 	}
-	all := "tenon-action tenon-auth tenon-background tenon-database tenon-electron tenon-frontend tenon-http-api tenon-mcp-tools tenon-testing"
+	all := "tenon-action tenon-auth tenon-background tenon-database tenon-electron tenon-frontend tenon-http-api tenon-mcp-tools tenon-ops tenon-testing"
 	if got := names(sample()); got != all {
 		t.Errorf("full project: %s", got)
 	}

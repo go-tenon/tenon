@@ -36,3 +36,4 @@ Tenon 的业务逻辑按业务动作组织：一个用例是一个类型，单�
 - 其他模块要在动作完成后跟着做事（例如发布文章后加积分）时，动作声明一个钩子类型，由入口传入，不用事件分发器，见 `.tenon/docs/concepts/actions.md#follow-ups`。钩子中的写入都用传入的 `tx`。带钩子或同时挂在多个入口的动作，在 `bootstrap` 的 `App` 上用工厂方法统一构造（例如 `a.publishArticle()`），各入口共用，避免漏传钩子。
 - 两个动作的规则真正相同时才提取公共函数，只是几行代码相似时各写各的。
 - 依赖都通过构造函数显式传递，不用包级变量保存可变的状态，见 `.tenon/docs/concepts/dependencies.md#constructor-injection`。
+- 请求外部或用户输入/租户填写的 URL 时使用 `outbound.New` 创建 `*http.Client` 防 SSRF，不裸用 `http.Client` 或 `http.DefaultClient`，见 `.tenon/docs/libraries/outbound.md#creating-clients`。

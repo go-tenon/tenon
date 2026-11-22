@@ -52,6 +52,7 @@ func New(opts Options) *http.Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.Proxy = nil
 	transport.DialContext = dialer.DialContext
+	transport.MaxIdleConnsPerHost = 32 // 避免对同一外部主机并发请求时频繁重建连接
 	timeout := opts.Timeout
 	switch {
 	case timeout == 0:
