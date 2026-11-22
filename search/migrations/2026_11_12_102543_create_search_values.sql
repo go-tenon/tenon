@@ -7,6 +7,8 @@ CREATE TABLE search_values (
 );
 CREATE INDEX search_values_value ON search_values (field, value, entry_id);
 COMMENT ON TABLE search_values IS '文档的过滤字段的值，用于过滤、排序和分面';
+COMMENT ON COLUMN search_values.entry_id IS '所属搜索文档 ID，关联 search_entries.id';
+COMMENT ON COLUMN search_values.field IS '过滤字段名';
 COMMENT ON COLUMN search_values.value IS '编码后的值，按字节比较的顺序就是值的大小顺序';
 
 -- +goose Down

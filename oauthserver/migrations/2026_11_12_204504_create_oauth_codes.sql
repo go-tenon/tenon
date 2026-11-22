@@ -18,10 +18,19 @@ CREATE TABLE oauth_codes (
 CREATE INDEX oauth_codes_expires_at ON oauth_codes (expires_at);
 COMMENT ON TABLE oauth_codes IS 'OAuth 授权码：用户同意后签发，换取令牌时删除，只能使用一次；过期的由 oauthserver.Server.Cleanup 删除';
 COMMENT ON COLUMN oauth_codes.code_hash IS '授权码的 SHA-256，授权码本身不保存';
+COMMENT ON COLUMN oauth_codes.client_id IS '发起授权的 OAuth 客户端 ID';
+COMMENT ON COLUMN oauth_codes.client_name IS '发起授权的 OAuth 客户端名称';
+COMMENT ON COLUMN oauth_codes.redirect_uri IS '授权回调地址';
 COMMENT ON COLUMN oauth_codes.code_challenge IS 'PKCE 的 code_challenge（S256）';
 COMMENT ON COLUMN oauth_codes.scopes IS '用户同意的范围，空格分隔';
 COMMENT ON COLUMN oauth_codes.resource IS '令牌将要用于的资源（RFC 8707）';
+COMMENT ON COLUMN oauth_codes.subject_type IS '授权主体的类型';
+COMMENT ON COLUMN oauth_codes.subject_id IS '授权主体的 ID';
 COMMENT ON COLUMN oauth_codes.tenant IS '授权时主体所在的租户，空字符串为平台本身';
+COMMENT ON COLUMN oauth_codes.impersonator_type IS '代为登录时实际操作者的主体类型；空字符串表示用户本人';
+COMMENT ON COLUMN oauth_codes.impersonator_id IS '代为登录时实际操作者的主体 ID；空字符串表示用户本人';
+COMMENT ON COLUMN oauth_codes.created_at IS '创建时间';
+COMMENT ON COLUMN oauth_codes.expires_at IS '过期时间';
 
 -- +goose Down
 DROP TABLE oauth_codes;

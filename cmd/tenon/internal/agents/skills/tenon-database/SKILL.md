@@ -20,7 +20,7 @@ description: Tenon 应用中与 PostgreSQL 有关的工作：第一次接入数�
 ## 加表或改表
 
 1. `go run ./cmd/<应用> migrate make create_articles_table` 生成迁移文件，补全 `-- +goose Up` 和 `-- +goose Down` 两部分。名称以动作开头、表名结尾，见 `.tenon/docs/database/migrations.md#writing-migrations`。
-2. 表结构只由迁移修改。以 `id` 为主键的表前三列依次是 `id`、`created_at`、`updated_at`（`timestamptz NOT NULL`），软删除的 `deleted_at` 是第四列，见 `.tenon/docs/database/migrations.md#timestamp-columns`。时间列不设数据库默认值。
+2. 表结构只由迁移修改。以 `id` 为主键的表前三列依次是 `id`、`created_at`、`updated_at`（`timestamptz NOT NULL`），软删除的 `deleted_at` 是第四列，时间列不设数据库默认值；每张表和每个字段都要写 `COMMENT ON TABLE`、`COMMENT ON COLUMN`，并在迁移测试中调用 `dbtest.CheckSchema(t, db)` 自动检查，见 `.tenon/docs/database/migrations.md#timestamp-columns`。
 3. `go run ./cmd/<应用> migrate up` 执行，`migrate status` 查看。
 4. 在模块的 `<模块>.go` 中定义模型（`bun:"table:articles"` 等标签），字段按列的顺序写，`ID` 之后嵌入 `database.Timestamps`，见 `.tenon/docs/database/database.md#defining-models`。它在插入、`Model(&x)` 更新全部列和 `Model((*T)(nil)).Set(...)` 时写入时间；`Column(...)` 的列中带上 `updated_at`，传入模型的 `Set(...)`、upsert 和原生 SQL 自己写，见 `.tenon/docs/database/database.md#timestamps`。
 5. 已经发布（在别处执行过）的迁移不再修改，新建一个迁移，见 `.tenon/docs/database/migrations.md#published-migrations`。

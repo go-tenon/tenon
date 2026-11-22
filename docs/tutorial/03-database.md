@@ -74,6 +74,13 @@ CREATE TABLE articles (
     content    text NOT NULL,
     CONSTRAINT articles_slug_key UNIQUE (slug)
 );
+COMMENT ON TABLE articles IS '博客文章';
+COMMENT ON COLUMN articles.id IS '主键';
+COMMENT ON COLUMN articles.created_at IS '创建时间';
+COMMENT ON COLUMN articles.updated_at IS '更新时间';
+COMMENT ON COLUMN articles.title IS '文章标题';
+COMMENT ON COLUMN articles.slug IS 'URL 别名，全局唯一';
+COMMENT ON COLUMN articles.content IS '文章正文';
 
 -- +goose Down
 DROP TABLE articles;

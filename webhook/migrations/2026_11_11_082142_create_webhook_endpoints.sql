@@ -14,9 +14,17 @@ CREATE TABLE webhook_endpoints (
 );
 CREATE INDEX webhook_endpoints_tenant ON webhook_endpoints (tenant, id);
 COMMENT ON TABLE webhook_endpoints IS 'webhook 端点：租户配置的接收地址';
+COMMENT ON COLUMN webhook_endpoints.id IS '主键';
+COMMENT ON COLUMN webhook_endpoints.created_at IS '创建时间';
+COMMENT ON COLUMN webhook_endpoints.updated_at IS '更新时间';
 COMMENT ON COLUMN webhook_endpoints.tenant IS '空字符串为平台本身';
+COMMENT ON COLUMN webhook_endpoints.url IS '接收 webhook 推送的目标 URL';
+COMMENT ON COLUMN webhook_endpoints.description IS '端点说明';
 COMMENT ON COLUMN webhook_endpoints.events IS '订阅的事件类型：完整类型、以 .* 结尾的前缀或 *';
+COMMENT ON COLUMN webhook_endpoints.secret IS '当前用于请求签名的密钥';
+COMMENT ON COLUMN webhook_endpoints.disabled IS '是否已停用';
 COMMENT ON COLUMN webhook_endpoints.previous_secret IS '轮换前的密钥，在 previous_secret_expires_at 之前仍参与签名；没有时为空字符串';
+COMMENT ON COLUMN webhook_endpoints.previous_secret_expires_at IS '轮换前密钥的失效时间；无轮换前密钥时为空';
 
 -- +goose Down
 DROP TABLE webhook_endpoints;

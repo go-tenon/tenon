@@ -24,7 +24,7 @@ go run ./cmd/blog migrate status                        # 列出每个迁移的�
 
 | 名称 | 生成的骨架 |
 | --- | --- |
-| `create_articles_table` | `CREATE TABLE articles`，带 `id`、`created_at`、`updated_at`；`Down` 中 `DROP TABLE` |
+| `create_articles_table` | `CREATE TABLE articles`，带 `id`、`created_at`、`updated_at` 与 `COMMENT ON`；`Down` 中 `DROP TABLE` |
 | `add_published_at_to_articles_table`、`drop_summary_from_articles_table` | `ALTER TABLE articles`，补全后才能执行 |
 | 其他名称 | 只有 goose 注解 |
 
@@ -48,6 +48,17 @@ CREATE TABLE articles (
     published_at timestamptz
 );
 CREATE UNIQUE INDEX articles_slug_key ON articles (slug) WHERE deleted_at IS NULL;
+COMMENT ON TABLE articles IS '文章';
+COMMENT ON COLUMN articles.id IS '主键';
+COMMENT ON COLUMN articles.created_at IS '创建时间';
+COMMENT ON COLUMN articles.updated_at IS '更新时间';
+COMMENT ON COLUMN articles.deleted_at IS '软删除时间；为空表示未删除';
+COMMENT ON COLUMN articles.author_id IS '作者 ID';
+COMMENT ON COLUMN articles.title IS '文章标题';
+COMMENT ON COLUMN articles.slug IS 'URL 别名，未删除文章中唯一';
+COMMENT ON COLUMN articles.content IS '文章正文';
+COMMENT ON COLUMN articles.status IS '发布状态：draft 或 published';
+COMMENT ON COLUMN articles.published_at IS '发布时间；草稿为空';
 
 -- +goose Down
 DROP TABLE articles;
@@ -58,13 +69,14 @@ DROP TABLE articles;
 - `deleted_at` 用于[软删除](database.md#soft-deletes)，所以 slug 的唯一索引只约束未删除的行。
 
 <a id="timestamp-columns"></a>
-### 时间列：`created_at`、`updated_at`、`deleted_at`
+### 时间列与注释：`created_at`、`updated_at`、`deleted_at`、`COMMENT`
 
 - 以 `id` 为主键的表，前三列依次是 `id`、`created_at`、`updated_at`，两个时间列都是 `timestamptz NOT NULL`，模型中嵌入 [`database.Timestamps`](database.md#timestamps) 对应它们。只追加的表（例如日志）同样声明 `updated_at`。
 - 软删除的表，`deleted_at` 是第四列，允许为空。
 - 以其他列为主键的表（关联表等）按需要声明时间列。
 - 时间列不设数据库默认值，由应用写入：测试的假时钟只对 Go 有效，见[控制时间](../testing/testing.md#controlling-time)。
-- 迁移测试中调用 `dbtest.CheckSchema(t, db)`，自动检查上述时间列约定。
+- 每张表和每个字段都要写非空的 `COMMENT ON TABLE` 与 `COMMENT ON COLUMN`（加列迁移同样为新列写 `COMMENT ON COLUMN`）。
+- 迁移测试中调用 `dbtest.CheckSchema(t, db)`，自动检查时间列以及所有表和字段的 `COMMENT`；只需单独检查注释时调用 `dbtest.CheckComments(t, db)`。
 
 <a id="embedding-migrations"></a>
 ## 嵌入迁移文件

@@ -33,6 +33,7 @@ CI（`.github/workflows/ci.yml`）运行同样的检查并构建一次；生成�
 
 ### 数据与事务
 
+- 迁移中的每张表和每个字段都要写 `COMMENT ON TABLE` / `COMMENT ON COLUMN`，迁移测试调用 `dbtest.CheckSchema(t, db)` 检查时间列和表/字段注释。
 - 多条写入需原子成功时放进 `database.RunInTx`；队列任务在同一个事务中发布。
 - 回滚撤销不了的副作用（删缓存、广播）用 `tx.AfterCommit` 登记，提交后再执行。
 - 缓存数据不带权限：命中缓存后仍须检查访问权限。
