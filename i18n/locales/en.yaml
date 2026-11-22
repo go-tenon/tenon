@@ -118,3 +118,9 @@ webhook.delivery_not_found: Delivery not found
 webhook.invalid_url: The webhook URL must be an absolute http or https URL
 webhook.invalid_events: Subscribe to at least one event with a valid name
 webhook.invalid_signature: Invalid webhook signature
+queue.topic.schedules.run.label: Run scheduled task
+queue.topic.schedules.run.description: Runs a scheduled task triggered manually from the admin panel
+queue.topic.webhook.deliver.label: Webhook delivery
+queue.topic.webhook.deliver.description: Delivers event notifications to subscribed webhook endpoints
+queue.topic.push.deliver.label: Push notification
+queue.topic.push.deliver.description: Sends push notifications to registered mobile devices

@@ -17,7 +17,9 @@ import (
 	"github.com/uptrace/bun"
 
 	"github.com/go-tenon/tenon/database/dbtest"
+	"github.com/go-tenon/tenon/httpx"
 	"github.com/go-tenon/tenon/httpx/rest"
+	"github.com/go-tenon/tenon/i18n"
 	"github.com/go-tenon/tenon/identity"
 	"github.com/go-tenon/tenon/queue"
 	"github.com/go-tenon/tenon/queue/queueapi"
@@ -385,5 +387,70 @@ func TestStatusWithoutJetStream(t *testing.T) {
 	if st.JetStream == nil || st.JetStream.Error == "" || st.JetStream.Exists || st.Slot.Name != queue.SlotName(dbName(t, e.db)) ||
 		len(st.Topics) != 1 || st.Topics[0].State != queueapi.StateAbsent || st.Topics[0].Failed != 1 {
 		t.Fatalf("status: %+v", st)
+	}
+}
+
+// 显式传入 Topics 和内置 i18n 键都能为概览、失败列表和失败详情补充显示名称与说明。
+func TestTopicLabels(t *testing.T) {
+	t.Parallel()
+	db := dbtest.Open(t, queue.Migrations())
+	mailTopic := queue.Topic[map[string]string]("mail.send")
+	router := chi.NewRouter()
+	router.Use(httpx.Locale(i18n.MustNew("zh-CN")))
+	api := rest.New(router, rest.Options{Accounts: identity.Accounts{"user": nil}, Logger: slog.New(slog.DiscardHandler)})
+	validate := func(_ context.Context, _ string) (identity.Subject, error) {
+		return identity.Subject{Type: "user", ID: "ops", Permissions: []string{"queue:manage"}}, nil
+	}
+	queueapi.Register(api, rest.RequireToken(api, validate, "queue:manage"), db, queueapi.Options{
+		Logger: slog.New(slog.DiscardHandler),
+		Topics: []queue.TopicMeta{
+			mailTopic.Meta("发送邮件", "发送系统通知和验证邮件"),
+		},
+	})
+
+	mailID := insertFailed(t, db, "mail.send", time.Minute)
+	insertFailed(t, db, "schedules.run", time.Minute)
+
+	call := func(path, lang string, out any) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("Authorization", "Bearer ops")
+		if lang != "" {
+			req.Header.Set("Accept-Language", lang)
+		}
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("GET %s (%s): %d %s", path, lang, rr.Code, rr.Body.String())
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), out); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var st queueapi.QueueStatus
+	call("/queue/status", "zh-CN", &st)
+	if len(st.Topics) != 2 ||
+		st.Topics[0].Topic != "mail.send" || st.Topics[0].Label != "发送邮件" || st.Topics[0].Description != "发送系统通知和验证邮件" ||
+		st.Topics[1].Topic != "schedules.run" || st.Topics[1].Label != "定时任务手动执行" || st.Topics[1].Description == "" {
+		t.Fatalf("zh-CN topics: %+v", st.Topics)
+	}
+
+	st = queueapi.QueueStatus{}
+	call("/queue/status", "en", &st)
+	if st.Topics[1].Label != "Run scheduled task" || st.Topics[1].Description == "" {
+		t.Fatalf("en schedules.run: %+v", st.Topics[1])
+	}
+
+	var list queueapi.QueueFailedList
+	call("/queue/failed?topic=mail.send", "zh-CN", &list)
+	if len(list.Items) != 1 || list.Items[0].TopicLabel != "发送邮件" {
+		t.Fatalf("failed list: %+v", list.Items)
+	}
+
+	var detail queueapi.QueueFailedJobDetail
+	call("/queue/failed/"+mailID.String(), "zh-CN", &detail)
+	if detail.TopicLabel != "发送邮件" {
+		t.Fatalf("failed detail: %+v", detail)
 	}
 }

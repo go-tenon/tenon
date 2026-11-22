@@ -118,3 +118,9 @@ webhook.delivery_not_found: 投递记录不存在
 webhook.invalid_url: Webhook 地址必须是 http 或 https 的完整地址
 webhook.invalid_events: 至少订阅一个事件，事件名的格式要正确
 webhook.invalid_signature: Webhook 签名不正确
+queue.topic.schedules.run.label: 定时任务手动执行
+queue.topic.schedules.run.description: 执行后台定时任务页面发起的“立即执行”请求
+queue.topic.webhook.deliver.label: Webhook 投递
+queue.topic.webhook.deliver.description: 向订阅方回调地址投递事件通知
+queue.topic.push.deliver.label: 移动端推送
+queue.topic.push.deliver.description: 向已登记的移动设备发送系统推送通知

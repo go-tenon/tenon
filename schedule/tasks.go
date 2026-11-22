@@ -7,12 +7,16 @@ import (
 	"github.com/adhocore/gronx"
 )
 
+// Label 为任务设置显示名称，供 Tasks 列出，例如在后台页面中作为主标题展示。
+func Label(label string) TaskOption { return func(t *task) { t.label = label } }
+
 // Describe 为任务添加一句说明，供 Tasks 列出，例如在后台页面和命令中展示。
 func Describe(description string) TaskOption { return func(t *task) { t.description = description } }
 
 // Task 描述一个注册的任务，由 Tasks 返回。
 type Task struct {
 	Name          string
+	Label         string
 	Description   string
 	Expr          string         // Add 时传入的表达式。
 	Location      *time.Location // 计算 cron 表达式使用的时区。
@@ -39,7 +43,7 @@ func (s *Scheduler) Tasks() []Task {
 	out := make([]Task, len(s.tasks))
 	for i, t := range s.tasks {
 		out[i] = Task{
-			Name: t.name, Description: t.description, Expr: t.expr, Location: t.loc,
+			Name: t.name, Label: t.label, Description: t.description, Expr: t.expr, Location: t.loc,
 			EveryInstance: t.everyInstance, AllowOverlap: t.allowOverlap, Timeout: t.timeout, when: t.when,
 		}
 	}

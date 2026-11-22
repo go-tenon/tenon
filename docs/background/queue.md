@@ -353,7 +353,11 @@ sms.send      4        0          0            -                    no handler: 
 `queue/queueapi` 把队列状态和失败任务做成 JSON 接口，`@go-tenon/ui` 的 [`QueuePanel`](../frontend/features.md#queue-panel) 使用它们。`api` 是 `rest.New` 创建的 API，`a.tokens` 是 `*apitoken.Store`：
 
 ```go
-opts := queueapi.Options{}
+opts := queueapi.Options{
+    Topics: []queue.TopicMeta{
+        mailjob.Send.Meta("发送邮件", "向用户发送系统通知和验证邮件"),
+    },
+}
 if a.nc != nil { // 生成文档和客户端的 DocRouter 没有 NATS 连接
     opts.Admin = queue.NewAdmin(a.nc, a.cfg.Queue)
 }
@@ -361,6 +365,7 @@ queueapi.Register(api, rest.RequireToken(api, a.tokens.Validate, "queue:manage")
 ```
 
 - 第二个参数保护全部接口，权限写进[权限目录](../security/authorization.md#permission-catalog)。
+- `Topics` 为各 topic 提供显示名称和说明（也可写 i18n 消息 ID 或在翻译文件中定义 `queue.topic.<topic>.label` / `description`）；面板优先展示显示名称，悬停时提示内部 topic 名。
 - 没有 `Admin` 时概览中没有 `jetstream` 字段，暂停和恢复返回 `503 queue.no_admin`；这两个接口总是注册，生成的客户端与运行时一致。
 
 | 接口 | 作用 |

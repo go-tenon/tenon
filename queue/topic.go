@@ -20,6 +20,19 @@ import (
 // 它是任务的 NATS subject 的一部分，不同应用的 topic 由 Config.Stream 区分。
 type Topic[T any] string
 
+// TopicMeta 描述一个队列 topic 的显示名称和说明，传给 queueapi.Options.Topics 在后台队列面板中展示。
+// Label 和 Description 可以直接写文字，也可以写 i18n 消息 ID。
+type TopicMeta struct {
+	Topic       string // topic 的技术名称，例如 mail.send
+	Label       string // 显示名称，例如 发送邮件
+	Description string // 一句说明
+}
+
+// Meta 返回这个 topic 的显示元信息，传给 queueapi.Options.Topics 使用。
+func (t Topic[T]) Meta(label, description string) TopicMeta {
+	return TopicMeta{Topic: string(t), Label: label, Description: description}
+}
+
 // Publish 发布一个任务：把 payload 编码为 JSON，写入 db 所在数据库的 WAL，由 Worker 经由逻辑复制转发到 JetStream。
 // db 通常是修改业务数据的事务：事务提交后任务才会被转发，回滚时一起取消。
 // ctx 中的 request_id 日志字段和 OpenTelemetry 链路（W3C traceparent）随任务带到处理函数的 context 中。

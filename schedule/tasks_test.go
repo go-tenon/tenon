@@ -19,7 +19,7 @@ func TestTasks(t *testing.T) {
 	s := newScheduler()
 	shanghai := time.FixedZone("CST", 8*3600)
 	s.Add("reports:daily", "0 3 * * *", func(context.Context) error { return nil },
-		schedule.Describe("生成前一天的报表"), schedule.In(shanghai))
+		schedule.Label("每日报表"), schedule.Describe("生成前一天的报表"), schedule.In(shanghai))
 	s.Add("tmp:cleanup", "@every 15s", func(context.Context) error { return nil }, schedule.EveryInstance(), schedule.AllowOverlap())
 
 	tasks := s.Tasks()
@@ -27,11 +27,11 @@ func TestTasks(t *testing.T) {
 		t.Fatalf("%d tasks", len(tasks))
 	}
 	daily, tmp := tasks[0], tasks[1]
-	if daily.Name != "reports:daily" || daily.Description != "生成前一天的报表" || daily.Expr != "0 3 * * *" ||
+	if daily.Name != "reports:daily" || daily.Label != "每日报表" || daily.Description != "生成前一天的报表" || daily.Expr != "0 3 * * *" ||
 		daily.Location != shanghai || daily.EveryInstance || daily.AllowOverlap {
 		t.Fatalf("daily %+v", daily)
 	}
-	if tmp.Description != "" || !tmp.EveryInstance || !tmp.AllowOverlap || tmp.Location != time.Local {
+	if tmp.Label != "" || tmp.Description != "" || !tmp.EveryInstance || !tmp.AllowOverlap || tmp.Location != time.Local {
 		t.Fatalf("tmp %+v", tmp)
 	}
 

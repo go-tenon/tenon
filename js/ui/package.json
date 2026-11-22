@@ -14,7 +14,8 @@
   "dependencies": {
     "@go-tenon/client": "workspace:*",
     "@mantine/colors-generator": "^9.8.1",
-    "chroma-js": "^3.3.0"
+    "chroma-js": "^3.3.0",
+    "cronstrue": "^3.43.0"
   },
   "peerDependencies": {
     "@dnd-kit/core": "^6.3.1",

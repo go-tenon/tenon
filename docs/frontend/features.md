@@ -81,7 +81,7 @@ export const Route = createFileRoute("/_app/queue")({
 ```
 
 - 页内标签是任务类型（可以暂停一小时、恢复）、失败任务（查看、重试、删除）和系统状态（复制槽和 JetStream）。服务端没有设置 `queueapi.Options.Admin` 时不显示暂停和恢复。
-- 数据在打开页面、切换标签、操作之后读取，不定时刷新。复制槽失效、没有 Worker、积压过多时显示提示。
+- 任务类型优先展示显示名称和说明，悬停时提示内部 topic 名。数据在打开页面、切换标签、操作之后读取，不定时刷新。复制槽失效、没有 Worker、积压过多时显示提示。
 
 <a id="schedule-panel"></a>
 ## 定时任务面板：`SchedulePanel`
@@ -95,7 +95,7 @@ export const Route = createFileRoute("/_app/schedules")({
 })
 ```
 
-页内标签是任务（可以立即执行）和执行记录（按任务、结果筛选）。数据按需读取，不定时刷新。
+页内标签是任务（可以立即执行）和执行记录（按任务、结果筛选）。任务优先展示显示名称、说明和可读执行频率，悬停时提示内部任务名和原始 Cron 表达式。数据按需读取，不定时刷新。
 
 <a id="ai-chat"></a>
 ## AI 对话：`useAssistantChat`

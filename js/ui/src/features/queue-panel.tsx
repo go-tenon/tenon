@@ -21,6 +21,7 @@ import {
   SimpleGrid,
   Stack,
   Text,
+  Tooltip,
 } from "@mantine/core"
 import { IconDots, IconPlayerPause, IconPlayerPlay, IconRotateClockwise, IconTrash } from "@tabler/icons-react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -56,6 +57,8 @@ export interface QueueStatusData {
 /** 概览中的一个 topic：queueapi.QueueTopic。 */
 export interface QueueTopicData {
   topic: string
+  label?: string
+  description?: string
   state: string
   pending: number
   in_flight: number
@@ -70,6 +73,7 @@ export interface QueueTopicData {
 export interface QueueFailedJobData {
   id: string
   topic: string
+  topic_label?: string
   attempts: number
   error: string
   failed_at: string
@@ -183,7 +187,9 @@ export function QueuePanel({ api, title }: QueuePanelProps): ReactNode {
           content: (
             <FailedJobs
               api={api}
-              counts={s?.topics.filter((t) => t.failed > 0).map((t) => ({ topic: t.topic, count: t.failed }))}
+              counts={s?.topics
+                .filter((t) => t.failed > 0)
+                .map((t) => ({ topic: t.topic, label: t.label, count: t.failed }))}
             />
           ),
         },
@@ -349,13 +355,14 @@ function Topics({ status, api }: { status: QueueStatusData; api: QueueApi }): Re
   const zone = useTimeZone()
   const tr = useText()
   const toggle = useMutation({
-    mutationFn: async ({ topic, pause }: { topic: string; pause: boolean }) =>
+    mutationFn: async ({ topic, pause }: { topic: string; label?: string; pause: boolean }) =>
       pause ? api.topicPause?.(topic) : api.topicResume?.(topic),
     onSuccess: (_, v) => {
+      const display = v.label || v.topic
       notifySuccess(
         v.pause
-          ? tr("tenon.queue.paused_topic", { topic: v.topic })
-          : tr("tenon.queue.resumed_topic", { topic: v.topic }),
+          ? tr("tenon.queue.paused_topic", { topic: display })
+          : tr("tenon.queue.resumed_topic", { topic: display }),
       )
       void queryClient.invalidateQueries({ queryKey: ["tenon", "queue"] })
     },
@@ -366,11 +373,15 @@ function Topics({ status, api }: { status: QueueStatusData; api: QueueApi }): Re
     {
       accessor: "topic",
       title: tr("tenon.queue.tab_topics"),
-      noWrap: true,
       render: (t) => (
-        <Text size="sm" ff="monospace">
-          {t.topic}
-        </Text>
+        <Stack gap={2} align="flex-start">
+          <TopicLabel topic={t.topic} label={t.label} fw={500} />
+          {t.description && (
+            <Text size="xs" c="dimmed">
+              {t.description}
+            </Text>
+          )}
+        </Stack>
       ),
     },
     {
@@ -443,7 +454,7 @@ function Topics({ status, api }: { status: QueueStatusData; api: QueueApi }): Re
               variant="subtle"
               leftSection={<IconPlayerPlay size={14} />}
               loading={busy}
-              onClick={() => toggle.mutate({ topic: t.topic, pause: false })}
+              onClick={() => toggle.mutate({ topic: t.topic, label: t.label, pause: false })}
             >
               {tr("tenon.queue.resume")}
             </Button>
@@ -458,12 +469,12 @@ function Topics({ status, api }: { status: QueueStatusData; api: QueueApi }): Re
             onClick={async () => {
               if (
                 await confirm({
-                  title: tr("tenon.queue.pause_confirm", { topic: t.topic }),
+                  title: tr("tenon.queue.pause_confirm", { topic: t.label || t.topic }),
                   message: tr("tenon.queue.pause_message"),
                   confirmLabel: tr("tenon.queue.pause"),
                 })
               )
-                toggle.mutate({ topic: t.topic, pause: true })
+                toggle.mutate({ topic: t.topic, label: t.label, pause: true })
             }}
           >
             {tr("tenon.queue.pause")}
@@ -491,7 +502,7 @@ function FailedJobs({
 }: {
   api: QueueApi
   /** 各任务类型的失败条数，来自定时刷新的概览：筛选项按它显示。 */
-  counts?: { topic: string; count: number }[]
+  counts?: { topic: string; label?: string; count: number }[]
 }): ReactNode {
   const [topic, setTopic] = useState<string>()
   const [page, setPage] = useState(1)
@@ -517,6 +528,7 @@ function FailedJobs({
   }
   const all = topics.reduce((n, t) => n + t.count, 0)
   const count = topic ? (topics.find((t) => t.topic === topic)?.count ?? 0) : all
+  const labelOf = (name: string, explicit?: string) => explicit || topics.find((t) => t.topic === name)?.label || name
 
   const single = async (action: "retry" | "delete", id: string) => {
     const retry = action === "retry"
@@ -567,11 +579,12 @@ function FailedJobs({
   // 当前筛选的全部：接口一次处理。
   const everything = async (action: "retry" | "delete") => {
     const retry = action === "retry"
+    const topicLabel = topic ? labelOf(topic) : undefined
     if (
       !(await confirm({
         title: retry
-          ? tr(topic ? "tenon.queue.retry_topic_all" : "tenon.queue.retry_all", { topic, count })
-          : tr(topic ? "tenon.queue.delete_topic_all" : "tenon.queue.delete_all", { topic, count }),
+          ? tr(topic ? "tenon.queue.retry_topic_all" : "tenon.queue.retry_all", { topic: topicLabel, count })
+          : tr(topic ? "tenon.queue.delete_topic_all" : "tenon.queue.delete_all", { topic: topicLabel, count }),
         message: retry ? tr("tenon.queue.retry_all_message") : tr("tenon.resource.delete_message"),
         confirmLabel: retry ? tr("tenon.queue.retry") : tr("tenon.common.delete"),
         danger: !retry,
@@ -594,11 +607,7 @@ function FailedJobs({
       accessor: "topic",
       title: tr("tenon.queue.tab_topics"),
       noWrap: true,
-      render: (j) => (
-        <Text size="sm" ff="monospace">
-          {j.topic}
-        </Text>
-      ),
+      render: (j) => <TopicLabel topic={j.topic} label={j.topic_label || labelOf(j.topic)} />,
     },
     {
       accessor: "error",
@@ -653,7 +662,7 @@ function FailedJobs({
   // 按任务类型筛选：类型不多时并排，多了改成下拉选择。
   const options = [
     { value: "", label: tr("tenon.queue.filter_all", { count: all }) },
-    ...topics.map((t) => ({ value: t.topic, label: `${t.topic} ${t.count}` })),
+    ...topics.map((t) => ({ value: t.topic, label: `${t.label || t.topic} ${t.count}` })),
   ]
   const choose = (v: string | null) => {
     setTopic(v || undefined)
@@ -747,7 +756,13 @@ function FailedJobs({
         )}
         empty={topic ? tr("tenon.queue.no_failed_topic") : tr("tenon.queue.no_failed")}
       />
-      <FailedJobDetail api={api} id={open} onClose={() => setOpen(undefined)} onAction={(a, id) => single(a, id)} />
+      <FailedJobDetail
+        api={api}
+        id={open}
+        labelOf={labelOf}
+        onClose={() => setOpen(undefined)}
+        onAction={(a, id) => single(a, id)}
+      />
     </>
   )
 }
@@ -756,11 +771,13 @@ function FailedJobs({
 function FailedJobDetail({
   api,
   id,
+  labelOf,
   onClose,
   onAction,
 }: {
   api: QueueApi
   id?: string
+  labelOf: (name: string, explicit?: string) => string
   onClose: () => void
   onAction: (action: "retry" | "delete", id: string) => Promise<boolean>
 }): ReactNode {
@@ -789,9 +806,7 @@ function FailedJobDetail({
           <Stack gap="lg">
             <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm">
               <Field label={tr("tenon.queue.tab_topics")}>
-                <Text span ff="monospace" inherit>
-                  {j.topic}
-                </Text>
+                <TopicLabel topic={j.topic} label={labelOf(j.topic, j.topic_label)} inherit />
               </Field>
               <Field label={tr("tenon.queue.attempts")}>{j.attempts}</Field>
               <Field label={tr("tenon.queue.failed_at")}>{formatDateTime(j.failed_at)}</Field>
@@ -837,6 +852,34 @@ function FailedJobDetail({
         )}
       </Box>
     </Modal>
+  )
+}
+
+/** 优先展示显示名称，悬停时提示内部 topic 技术名；未配置显示名称时用等宽字体展示 topic。 */
+function TopicLabel({
+  topic,
+  label,
+  fw,
+  inherit,
+}: {
+  topic: string
+  label?: string
+  fw?: number
+  inherit?: boolean
+}): ReactNode {
+  if (!label || label === topic) {
+    return (
+      <Text span size={inherit ? undefined : "sm"} ff="monospace" fw={fw} inherit={inherit}>
+        {topic}
+      </Text>
+    )
+  }
+  return (
+    <Tooltip label={topic} openDelay={200} withArrow>
+      <Text span size={inherit ? undefined : "sm"} fw={fw} inherit={inherit}>
+        {label}
+      </Text>
+    </Tooltip>
   )
 }
 
