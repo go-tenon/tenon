@@ -40,7 +40,7 @@ flowchart LR
   subgraph Infra[基础设施]
     PG[(PostgreSQL)]
     NATS[(NATS JetStream)]
-    MC[(Memcached)]
+    REDIS[(Redis)]
     S3[(对象存储)]
   end
   B --> PAGES
@@ -59,7 +59,7 @@ flowchart LR
   SCHED --> ACT
   ACT --> PG
   ACT --> NATS
-  ACT --> MC
+  ACT --> REDIS
   ACT --> S3
   NATS --> WORK
   NATS --> RT
@@ -71,7 +71,7 @@ flowchart LR
 | --- | --- |
 | PostgreSQL | 业务数据；队列任务的发件箱（经逻辑复制转发）；原子锁、限流计数、全文搜索 |
 | NATS JetStream | 任务队列、实例之间的广播、在线成员、服务之间的 RPC |
-| Memcached | 先读缓存再加载的缓存 |
+| Redis | 先读缓存再加载的缓存 |
 | 对象存储（S3 或本地磁盘） | 上传的文件，浏览器直传 |
 | Gotenberg（可选） | 把前端打印模板渲染的 HTML 转成 PDF |
 | Qdrant（可选） | 向量检索 |

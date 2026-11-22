@@ -13,11 +13,12 @@ import (
 
 // Invalidate 一个 tag 后，带有它的值重新加载；其他 tag 保持有效，tag 在 Cache 之间共享。
 func TestTags(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
-	mc := openMemcached(t)
+	rdb := openRedis(t)
 	ns := "test:" + rand.Text() + ":"
-	articles := cache.New[*article](mc, ns+"article:", time.Minute)
-	lists := cache.New[[]int](mc, ns+"list:", time.Minute)
+	articles := cache.New[*article](rdb, ns+"article:", time.Minute)
+	lists := cache.New[[]int](rdb, ns+"list:", time.Minute)
 	author, all := ns+"author:7", ns+"articles"
 
 	var loads, listLoads atomic.Int64
@@ -47,7 +48,7 @@ func TestTags(t *testing.T) {
 		t.Fatalf("after invalidating author: loaded %d/%d times", loads.Load(), listLoads.Load())
 	}
 
-	// 另一个 Cache 提升的 tag 同样生效。
+	// 另一个 Cache 更新的 tag 同样生效。
 	if err := lists.Invalidate(ctx, all); err != nil {
 		t.Fatal(err)
 	}
@@ -63,6 +64,7 @@ func TestTags(t *testing.T) {
 
 // tag 的版本被淘汰后，之后的读取创建新的随机版本，带有它的旧值全部失效。
 func TestTagEvicted(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFake()
 	c := cache.New[*article](f, "article:", time.Minute)
@@ -71,12 +73,15 @@ func TestTagEvicted(t *testing.T) {
 	if _, err := c.Remember(ctx, "1", load, "t"); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.Delete("cache:tag:t"); err != nil {
+	if err := f.Del(ctx, "cache:tag:t").Err(); err != nil {
 		t.Fatal(err)
 	}
-	// 版本不存在时 Invalidate 直接返回。
+	// 版本不存在时 Invalidate 直接返回，不写入新键。
 	if err := c.Invalidate(ctx, "t"); err != nil {
 		t.Fatal(err)
+	}
+	if _, ok := f.values["cache:tag:t"]; ok {
+		t.Fatal("invalidate created a missing tag key")
 	}
 	for range 2 {
 		if _, err := c.Remember(ctx, "1", load, "t"); err != nil {
@@ -90,6 +95,7 @@ func TestTagEvicted(t *testing.T) {
 
 // 加载期间 Invalidate：之后的 Remember 发起新的加载，这次加载写入的旧值随即作废。
 func TestInvalidateDuringLoad(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	c := cache.New[*article](newFake(), "article:", time.Minute)
 	started, release := make(chan struct{}), make(chan struct{})
@@ -129,6 +135,7 @@ func TestInvalidateDuringLoad(t *testing.T) {
 
 // Forget 之后的 Remember 不等待 Forget 之前开始的加载。
 func TestForgetDuringLoad(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	c := cache.New[*article](newFake(), "article:", time.Minute)
 	started, release := make(chan struct{}), make(chan struct{})
@@ -152,6 +159,7 @@ func TestForgetDuringLoad(t *testing.T) {
 
 // 「不存在」同样带有 tag 的版本。
 func TestTagsMissing(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	c := cache.New[*article](newFake(), "article:", time.Minute, cache.Missing(errNotFound))
 	var loads atomic.Int64
@@ -171,13 +179,14 @@ func TestTagsMissing(t *testing.T) {
 	}
 }
 
-// 无法确定 tag 的版本时直接加载，结果不写入缓存；提升版本失败时 Invalidate 返回错误。
+// 无法确定 tag 的版本时直接加载，结果不写入缓存；更新版本失败时 Invalidate 返回错误。
 func TestTagFailures(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	down := errors.New("connection refused")
 	for name, fail := range map[string]func(f *fake){
 		"read":   func(f *fake) { f.getErr = down },
-		"create": func(f *fake) { f.addErr = down },
+		"create": func(f *fake) { f.setNXErr = down },
 	} {
 		t.Run(name, func(t *testing.T) {
 			f := newFake()
@@ -200,7 +209,7 @@ func TestTagFailures(t *testing.T) {
 	if _, err := c.Remember(ctx, "1", counter(new(atomic.Int64), &article{ID: 1}, nil), "a", "b"); err != nil {
 		t.Fatal(err)
 	}
-	f.incrErr = down
+	f.setXXErr = down
 	if err := c.Invalidate(ctx, "a", "b"); !errors.Is(err, down) {
 		t.Fatalf("invalidate: %v", err)
 	}

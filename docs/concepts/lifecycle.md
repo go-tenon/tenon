@@ -113,7 +113,7 @@ err := httpx.Serve(ctx, cfg.HTTP, ln, router)
 - **存活检查** `/livez`：进程能响应就返回 `204`，不检查依赖：数据库故障时重启应用无济于事。Docker Swarm 替换检查失败的容器，[health 命令](../general/commands.md#health-command)请求它。
 - **就绪检查** `/readyz`：必需的依赖都可用、进程没有在排空时返回 `200`，否则返回 `503`，反向代理据此不再把请求转给这个实例。
 
-两个路由由应用在 `bootstrap` 的 `Router` 中注册。`a.db` 是 `Open` 打开的连接池，`a.mc` 是 Memcached 客户端：
+两个路由由应用在 `bootstrap` 的 `Router` 中注册。`a.db` 是 `Open` 打开的连接池，`a.rdb` 是 Redis 客户端：
 
 ```go
 router.Get("/livez", func(w http.ResponseWriter, _ *http.Request) {
@@ -122,7 +122,7 @@ router.Get("/livez", func(w http.ResponseWriter, _ *http.Request) {
 router.Handle("/readyz", httpx.Ready(httpx.ReadyOptions{
     Checks: []health.Check{
         {Name: "database", Ping: func(ctx context.Context) error { return a.db.PingContext(ctx) }},
-        {Name: "cache", Ping: func(context.Context) error { return a.mc.Ping() }, Optional: true},
+        {Name: "cache", Ping: func(ctx context.Context) error { return a.rdb.Ping(ctx).Err() }, Optional: true},
     },
 }))
 ```

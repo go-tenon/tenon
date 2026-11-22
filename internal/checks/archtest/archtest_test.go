@@ -136,7 +136,7 @@ var components = []string{
 	"net/http", "database/sql", "github.com/danielgtaylor/huma",
 	"github.com/go-chi/chi", "github.com/uptrace/bun", "github.com/jackc/pgx",
 	"github.com/pressly/goose", "github.com/spf13/cobra",
-	"github.com/nats-io/nats.go",
+	"github.com/nats-io/nats.go", "github.com/redis/go-redis",
 }
 
 func under(pkg, prefix string) bool {
@@ -427,11 +427,14 @@ func TestMailCoreDoesNotLinkDrivers(t *testing.T) {
 	}
 }
 
-// TestNoRedisClient 确保框架的包不直接引用 Redis 客户端：锁和限流保存在 PostgreSQL 中，
-// 广播和在线成员在 NATS 中，框架不再依赖 Redis。realtime 依赖的 Centrifuge 自带 Redis broker，
+// TestOnlyCacheImportsRedis 确保只有 cache 直接引用 Redis 客户端：锁和限流保存在 PostgreSQL 中，
+// 广播和在线成员在 NATS 中，其余包都不直接依赖 Redis。realtime 依赖的 Centrifuge 自带 Redis broker，
 // 间接链接 rueidis，但运行时不连接 Redis。
-func TestNoRedisClient(t *testing.T) {
+func TestOnlyCacheImportsRedis(t *testing.T) {
 	for pkg, imps := range imports(t) {
+		if pkg == module+"/cache" {
+			continue
+		}
 		for _, imp := range imps {
 			if under(imp, "github.com/redis") {
 				t.Errorf("%s imports %s", pkg, imp)

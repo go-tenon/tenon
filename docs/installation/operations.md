@@ -196,7 +196,7 @@ FROM pg_replication_slots WHERE slot_name LIKE 'tenon_queue_%';
 <a id="backups"></a>
 ## 备份与恢复
 
-备份数据库和[文件存储](../libraries/filesystem.md)。JetStream 中的任务靠[多副本](#queue-jetstream)保护；Memcached 的缓存、NATS 中的在线成员会重新生成，Qdrant 中的[向量](../ai/vector.md)可以从数据库重建。Tenon 不提供备份命令，用数据库自己的备份机制。
+备份数据库和[文件存储](../libraries/filesystem.md)。JetStream 中的任务靠[多副本](#queue-jetstream)保护；Redis 的缓存、NATS 中的在线成员会重新生成，Qdrant 中的[向量](../ai/vector.md)可以从数据库重建。Tenon 不提供备份命令，用数据库自己的备份机制。
 
 <a id="database-backups"></a>
 ### 数据库

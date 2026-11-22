@@ -1,17 +1,17 @@
 # 缓存
 
-用 Memcached 缓存查询结果：`Remember` 先读缓存，没有时查库并写回；数据修改后用 `Forget` 或 tag 删除。
+用 Redis 缓存查询结果：`Remember` 先读缓存，没有时查库并写回；数据修改后用 `Forget` 或 tag 删除。
 
 包：`cache`。
 
-- Memcached 只放随时可以从数据库重建的查询缓存：内存满时它淘汰数据，节点重启时数据全部丢失。锁和限流计数放在 PostgreSQL 中，见[原子锁](locks.md)和[限流](rate-limiting.md)。
-- 客户端直接用 [gomemcache](https://github.com/bradfitz/gomemcache) 的 `*memcache.Client`，整个应用共用一个。
+- Redis 只放随时可以从数据库重建的查询缓存：内存满时按淘汰策略回收，不需要持久化或备份。锁和限流计数放在 PostgreSQL 中，见[原子锁](locks.md)和[限流](rate-limiting.md)。
+- 客户端直接用 [go-redis](https://github.com/redis/go-redis) 的 `*redis.Client`、`*redis.ClusterClient` 或 `redis.UniversalClient`，整个应用共用一个。
 
 <a id="example-usage"></a>
 ## 示例
 
 ```go
-articles := cache.New[*article.Article](mc, "app:article:v1:", 10*time.Minute) // 入口中，每种值一个
+articles := cache.New[*article.Article](rdb, "app:article:v1:", 10*time.Minute) // 入口中，每种值一个
 
 item, err := articles.Remember(ctx, id.String(), func(ctx context.Context) (*article.Article, error) {
     return find(ctx, db, id) // 缓存中没有时才调用
@@ -20,13 +20,13 @@ item, err := articles.Remember(ctx, id.String(), func(ctx context.Context) (*art
 err = articles.Forget(ctx, id.String()) // 修改后，在事务的 AfterCommit 中删除
 ```
 
-`mc` 是[入口中创建的客户端](#creating-the-client)，`db` 是入口打开的 `*bun.DB`，`find` 是直接查询数据库的函数。
+`rdb` 是[入口中创建的客户端](#creating-the-client)，`db` 是入口打开的 `*bun.DB`，`find` 是直接查询数据库的函数。
 
 <a id="assembling-cache"></a>
 ## 配置与装配
 
-<a id="config-servers"></a>
-### 配置：`servers`、`default_ttl`
+<a id="config-redis"></a>
+### 配置：`url`、`default_ttl`
 
 缓存段由应用自己定义：
 
@@ -34,7 +34,7 @@ err = articles.Forget(ctx, id.String()) // 修改后，在事务的 AfterCommit 
 type Config struct {
     // ...
     Cache struct {
-        Servers    []string      `yaml:"servers"`
+        URL        string        `yaml:"url"`
         DefaultTTL time.Duration `yaml:"default_ttl"`
     } `yaml:"cache"`
 }
@@ -42,8 +42,8 @@ type Config struct {
 
 ```yaml
 cache:
-  servers: ["10.0.0.5:11211"] # host:port；多个地址时键分散到各节点，节点之间不复制，见部署
-  default_ttl: 10m            # 默认过期时间，查询缓存通常几分钟到十几分钟
+  url: ${REDIS_URL:-redis://127.0.0.1:6379/0} # redis://[:password@]host:port[/db]，TLS 用 rediss://
+  default_ttl: 10m                            # 默认过期时间，查询缓存通常几分钟到十几分钟
 ```
 
 <a id="creating-the-client"></a>
@@ -52,17 +52,23 @@ cache:
 在入口打开共用资源的地方（见[依赖装配](../concepts/dependencies.md#running-parts)）创建客户端，登记关闭：
 
 ```go
-mc := memcache.New(cfg.Cache.Servers...)
-mc.Timeout = 200 * time.Millisecond // 默认 500ms；缓存在请求路径上，Memcached 变慢时尽快改查数据库
-stack.MustAdd("memcached", func(context.Context) error { return mc.Close() })
+opts, err := redis.ParseURL(cfg.Cache.URL)
+if err != nil {
+    return nil, err
+}
+opts.DialTimeout = 200 * time.Millisecond
+opts.ReadTimeout = 200 * time.Millisecond // 默认 3s；缓存在请求路径上，Redis 变慢时尽快改查数据库
+opts.WriteTimeout = 200 * time.Millisecond
+rdb := redis.NewClient(opts)
+stack.MustAdd("redis", func(context.Context) error { return rdb.Close() })
 
-articles := cache.New[*article.Article](mc, "app:article:v1:", cfg.Cache.DefaultTTL,
+articles := cache.New[*article.Article](rdb, "app:article:v1:", cfg.Cache.DefaultTTL,
     cache.Missing(article.ErrNotFound.New))
 ```
 
 - 同一种值只创建一个 `Cache`，像 `db` 一样传给业务动作，读取和删除都用它。
-- `mc` 为 `nil` 或 `ttl` 不为正时 `cache.New` panic，所以在入口中创建再传给模块的 `RegisterRoutes`：[生成 OpenAPI 文档](../http/openapi.md#exporting-openapi)时它收到的依赖都是 `nil`。
-- `cache.Doctor(mc)` 检查每台服务器都连得上，见[自检](../installation/doctor.md#framework-checks)。
+- `rdb` 为 `nil` 或 `ttl` 不为正时 `cache.New` panic，所以在入口中创建再传给模块的 `RegisterRoutes`：[生成 OpenAPI 文档](../http/openapi.md#exporting-openapi)时它收到的依赖都是 `nil`。
+- `cache.Doctor(rdb)` 检查服务器连得上，见[自检](../installation/doctor.md#framework-checks)。
 
 <a id="cache-aside"></a>
 ## 用 `Remember` 缓存查询结果
@@ -98,11 +104,11 @@ func (a *Get) Handle(ctx context.Context, subject identity.Subject, id uuid.UUID
 | --- | --- |
 | 命中 | 解码后返回 |
 | 没有命中 | 调用加载函数，结果写回缓存 |
-| 读取失败（例如 Memcached 不可用），或内容无法解码 | 记录 `warn` 日志，调用加载函数 |
+| 读取失败（例如 Redis 不可用），或内容无法解码 | 记录 `warn` 日志，调用加载函数 |
 | 加载函数返回错误 | 原样返回，不写缓存（`Missing` 声明的错误除外） |
-| 写回失败（例如值超过 1 MB） | 记录 `warn` 日志，照常返回加载的结果 |
+| 写回失败（例如内存已满且禁止写入） | 记录 `warn` 日志，照常返回加载的结果 |
 
-每个 `Cache` 每分钟最多记一条 `warn`，带上这期间省略的条数。Memcached 停掉后接口变慢时，调短客户端的 `Timeout`，见[创建客户端](#creating-the-client)。
+每个 `Cache` 每分钟最多记一条 `warn`，带上这期间省略的条数。Redis 停掉后接口变慢时，调短客户端的 `DialTimeout`、`ReadTimeout` 和 `WriteTimeout`，见[创建客户端](#creating-the-client)。
 
 <a id="hot-keys"></a>
 ### 击穿、雪崩与穿透：`cache.Missing`
@@ -143,46 +149,50 @@ page, err := a.lists.Remember(ctx, strconv.Itoa(n), func(ctx context.Context) ([
 
 发布文章的事务用 `tx.AfterCommit` 登记 `a.lists.Invalidate(ctx, "app:articles")`，提交后带这个 tag 的值一起失效。
 
-- tag 是即时一致的：`Invalidate` 返回之后，`Remember` 只返回在它之后开始加载的值。代价是每次读取多读一次 tag 的版本。
-- tag 在共用同一个 Memcached 的所有 `Cache` 之间共享，名字带上应用的命名空间。同一个键每次传入相同的 tag。
+- tag 是即时一致的：`Invalidate` 返回之后，`Remember` 只返回在它之后开始加载的值。值和 tag 的版本经由 pipeline 一次往返读取，单机和 Redis Cluster 均可用。
+- tag 在共用同一个 Redis 的所有 `Cache` 之间共享，名字带上应用的命名空间。同一个键每次传入相同的 tag。
 
 <a id="keys-and-serialization"></a>
 ## 缓存键
 
 传给 `cache.New` 的前缀由命名空间、值的种类和格式版本组成，例如 `app:article:v1:`；读取和删除只传 ID。
 
-- 命名空间区分共用一个 Memcached 的应用和环境。
+- 命名空间区分共用一个 Redis 的应用和环境。
 - 修改缓存值的结构时把 `v1` 改为 `v2`，新代码只读新格式，旧键过期后消失。
 - 多租户应用的键带上租户，例如传入 `<tenant>:<id>`，见[缓存、广播与其他资源](../security/tenancy.md#other-resources)。
 
-值以 JSON 保存。超过 250 字节或含有空白、控制字符的键以 SHA-256 摘要保存，长键可以直接用。
+值以 JSON 保存。
 
 <a id="deployment"></a>
 ## 部署
 
-- Memcached 默认单个值最大 1 MB，更大的值写入失败，相当于没有缓存。大列表只缓存 ID，或者调大 Memcached 的 `-I`。
-- 过期时间按秒向上取整。
-- **多个节点**：`memcache.New` 按哈希取模分配键，增减一个节点时大部分键换节点，相当于大面积失效。需要扩缩容时用 `cache.NewRing` 的一致性哈希，增加一个节点只有约 1/(N+1) 的键换节点：
+- 只作查询缓存时，配置 `maxmemory` 和淘汰策略（例如 `allkeys-lru` 或 `allkeys-lfu`），关闭持久化（`--save "" --appendonly no`）以减少磁盘开销。
+- 高可用或分片部署使用 Redis Sentinel 或 Redis Cluster，用 `redis.NewUniversalClient`（按地址数量和 `MasterName` 自动选择单机、哨兵或集群）：
 
 ```go
-ring, err := cache.NewRing(cfg.Cache.Servers...)
-if err != nil {
-    return nil, err
-}
-mc := memcache.NewFromSelector(ring)
+rdb := redis.NewUniversalClient(&redis.UniversalOptions{
+    Addrs:        cfg.Cache.Addrs,
+    MasterName:   cfg.Cache.MasterName, // 哨兵模式设置主节点名，单机和集群留空
+    Password:     cfg.Cache.Password,
+    DialTimeout:  200 * time.Millisecond,
+    ReadTimeout:  200 * time.Millisecond,
+    WriteTimeout: 200 * time.Millisecond,
+})
 ```
-
-节点在环上的位置只由地址字符串决定，所有实例的地址写法必须一致，顺序无关。某个节点不可用时，它负责的键读写超时，`cache` 照常从数据库加载。
 
 <a id="testing"></a>
 ## 测试
 
-连接真实的 Memcached。和[数据库测试](../testing/testing.md#database-tests)一样从环境变量取地址，每个测试用随机前缀，并行的测试互不影响：
+连接真实的 Redis。和[数据库测试](../testing/testing.md#database-tests)一样从环境变量取地址，每个测试用随机前缀，并行的测试互不影响：
 
 ```go
-mc := memcache.New(os.Getenv("MEMCACHED_TEST_ADDR"))
-t.Cleanup(func() { mc.Close() })
-articles := cache.New[*article.Article](mc, "test:"+rand.Text()+":article:", time.Minute)
+opts, err := redis.ParseURL(os.Getenv("REDIS_TEST_URL"))
+if err != nil {
+    t.Fatal(err)
+}
+rdb := redis.NewClient(opts)
+t.Cleanup(func() { rdb.Close() })
+articles := cache.New[*article.Article](rdb, "test:"+rand.Text()+":article:", time.Minute)
 ```
 
 应用的测试覆盖自己的规则，例如修改之后读到新状态、缓存中有别人的草稿时仍返回 `404`。

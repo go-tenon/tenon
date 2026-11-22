@@ -1,4 +1,4 @@
-// Package cache 在 Memcached 之上提供 cache-aside 读取。Remember 先读缓存，没有时加载并写回，并处理三个常见问题：
+// Package cache 在 Redis 之上提供 cache-aside 读取。Remember 先读缓存，没有时加载并写回，并处理三个常见问题：
 //
 //   - 击穿：热点键过期的瞬间，同一个进程中同一个键的并发加载合并为一次；
 //   - 雪崩：写入时过期时间加上随机抖动，同一批写入的键在不同时刻过期；
@@ -6,10 +6,10 @@
 //
 // 一次修改影响很多键时，例如修改角色影响所有拥有它的用户，读取时给值加上 tag，修改后用 Invalidate 让带有这个 tag 的值一起失效。
 //
-// 值编码为 JSON 存进 Memcached，客户端是应用共用的 *memcache.Client（github.com/bradfitz/gomemcache）。
+// 值编码为 JSON 存进 Redis，客户端是应用共用的 *redis.Client、*redis.ClusterClient 或 redis.UniversalClient（github.com/redis/go-redis/v9）。
 // 缓存读写失败或缓存中的内容无法解码时直接加载，结果照常返回：查询缓存随时可以从数据库重建，请求照常成功。
 //
-//	articles := cache.New[*article.Article](mc, "blog:article:v1:", 10*time.Minute, cache.Missing(article.ErrNotFound.New))
+//	articles := cache.New[*article.Article](rdb, "blog:article:v1:", 10*time.Minute, cache.Missing(article.ErrNotFound.New))
 //	item, err := articles.Remember(ctx, id.String(), func(ctx context.Context) (*article.Article, error) {
 //		return find(ctx, db, id)
 //	})
@@ -17,8 +17,6 @@ package cache
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"log/slog"
 	"math/rand/v2"
@@ -29,8 +27,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/cockroachdb/errors"
+	"github.com/redis/go-redis/v9"
 	"golang.org/x/sync/singleflight"
 
 	"github.com/go-tenon/tenon/logging"
@@ -45,25 +43,29 @@ const (
 	missingMarker = "!missing"
 	// logInterval 是每个 Cache 记录缓存故障日志的最小间隔。
 	logInterval = time.Minute
-	// maxRelative 是 Memcached 按相对秒数理解的最长过期时间，更长的要写成 Unix 时间。
-	maxRelative = 30 * 24 * time.Hour
-	// tagPrefix 是 tag 版本在 Memcached 中的键的前缀。tag 不属于某个 Cache，不加 Cache 的前缀。
+	// tagPrefix 是 tag 版本在 Redis 中的键的前缀。tag 不属于某个 Cache，不加 Cache 的前缀。
 	tagPrefix = "cache:tag:"
 )
 
-// Client 是 Cache 用到的 Memcached 操作，*memcache.Client 实现了它。
+// Client 是 Cache 用到的 Redis 操作，*redis.Client、*redis.ClusterClient 和 redis.UniversalClient 都实现了它。
 type Client interface {
-	Get(key string) (*memcache.Item, error)
-	GetMulti(keys []string) (map[string]*memcache.Item, error)
-	Set(item *memcache.Item) error
-	Add(item *memcache.Item) error
-	Increment(key string, delta uint64) (uint64, error)
-	Delete(key string) error
+	Get(ctx context.Context, key string) *redis.StringCmd
+	Set(ctx context.Context, key string, value any, expiration time.Duration) *redis.StatusCmd
+	SetNX(ctx context.Context, key string, value any, expiration time.Duration) *redis.BoolCmd
+	SetXX(ctx context.Context, key string, value any, expiration time.Duration) *redis.BoolCmd
+	Del(ctx context.Context, keys ...string) *redis.IntCmd
+	Pipelined(ctx context.Context, fn func(redis.Pipeliner) error) ([]redis.Cmder, error)
 }
+
+var (
+	_ Client = (*redis.Client)(nil)
+	_ Client = (*redis.ClusterClient)(nil)
+	_ Client = (redis.UniversalClient)(nil)
+)
 
 // Cache 缓存一种值，例如文章详情。它是并发安全的，每种值创建一个，在应用中共用。
 type Cache[T any] struct {
-	mc      Client
+	rdb     Client
 	prefix  string
 	ttl     time.Duration
 	missing func() error
@@ -91,13 +93,13 @@ func Missing(newErr func() error) Option {
 	return func(o *options) { o.missing = newErr }
 }
 
-// New 创建 Cache。mc 通常是应用共用的 *memcache.Client；prefix 加在每个 key 前面，由命名空间、值的种类和格式版本组成，
-// 例如 "blog:article:v1:"，修改值的结构时升级版本；ttl 是值的过期时间，实际写入时随机增加至多 10%，按秒向上取整。
-// 加上前缀后超过 Memcached 的 250 字节或含有空白、控制字符的 key 以 SHA-256 摘要保存。
-// mc 为 nil 或 ttl 不为正时 panic。
-func New[T any](mc Client, prefix string, ttl time.Duration, opts ...Option) *Cache[T] {
+// New 创建 Cache。rdb 通常是应用共用的 *redis.Client 或 redis.UniversalClient；prefix 加在每个 key 前面，
+// 由命名空间、值的种类和格式版本组成，例如 "blog:article:v1:"，修改值的结构时升级版本；
+// ttl 是值的过期时间，实际写入时随机增加至多 10%。
+// rdb 为 nil 或 ttl 不为正时 panic。
+func New[T any](rdb Client, prefix string, ttl time.Duration, opts ...Option) *Cache[T] {
 	switch {
-	case mc == nil:
+	case rdb == nil:
 		panic("cache: nil client")
 	case ttl <= 0:
 		panic("cache: ttl must be positive")
@@ -106,7 +108,7 @@ func New[T any](mc Client, prefix string, ttl time.Duration, opts ...Option) *Ca
 	for _, opt := range opts {
 		opt(&o)
 	}
-	return &Cache[T]{mc: mc, prefix: prefix, ttl: ttl, missing: o.missing}
+	return &Cache[T]{rdb: rdb, prefix: prefix, ttl: ttl, missing: o.missing}
 }
 
 // Remember 返回 key 的值：缓存中有时直接返回，没有时调用 load 加载并写入缓存。
@@ -116,7 +118,7 @@ func New[T any](mc Client, prefix string, ttl time.Duration, opts ...Option) *Ca
 // 加载继续，其他调用者照常得到结果。load 的错误原样返回给所有等待的调用者，
 // 除了 Missing 声明的错误都不缓存；load 中的 panic 转为错误。
 //
-// tags 给值加上标签，Invalidate 其中任何一个之后，缓存的值随之失效。tag 的版本和值在同一次请求中读取；
+// tags 给值加上标签，Invalidate 其中任何一个之后，缓存的值随之失效。tag 的版本和值经由 pipeline 一次往返读取；
 // 版本在加载之前读取，所以 Invalidate 返回之后，Remember 只返回在 Invalidate 之后开始加载的值。
 // 读取 tag 的版本失败时直接加载，结果不写入缓存。同一个 key 每次应传入相同的 tags。
 func (c *Cache[T]) Remember(ctx context.Context, key string, load func(ctx context.Context) (T, error), tags ...string) (T, error) {
@@ -153,59 +155,42 @@ func (c *Cache[T]) Remember(ctx context.Context, key string, load func(ctx conte
 func (c *Cache[T]) Forget(ctx context.Context, key string) error {
 	key = c.storedKey(key)
 	c.forgets.Add(1)
-	if err := c.mc.Delete(key); err != nil && !errors.Is(err, memcache.ErrCacheMiss) {
+	if err := c.rdb.Del(ctx, key).Err(); err != nil {
 		return errors.Wrapf(err, "cache: forget %q", key)
 	}
 	return nil
 }
 
-// Invalidate 让带有 tags 中任何一个的值失效：提升这些 tag 的版本，之后的 Remember 发现版本不一致时重新加载。
-// tag 在共用同一个 Memcached 的所有 Cache 之间共享，Invalidate 一个 tag 影响所有 Cache 中带有它的值。
-// 和 Forget 一样，数据修改之后、事务提交之后调用。提升版本失败时返回错误，其余的 tag 照常处理。
+// Invalidate 让带有 tags 中任何一个的值失效：替换这些 tag 的版本，之后的 Remember 发现版本不一致时重新加载。
+// tag 在共用同一个 Redis 的所有 Cache 之间共享，Invalidate 一个 tag 影响所有 Cache 中带有它的值。
+// 和 Forget 一样，数据修改之后、事务提交之后调用。更新版本失败时返回错误，其余的 tag 照常处理。
 func (c *Cache[T]) Invalidate(ctx context.Context, tags ...string) error {
 	var errs []error
 	for _, tag := range tags {
-		// 版本不存在（从未读取或已被淘汰）时直接返回：之后的 Remember 会创建一个随机的新版本，与缓存中的值都不一致。
-		if _, err := c.mc.Increment(tagKey(tag), 1); err != nil && !errors.Is(err, memcache.ErrCacheMiss) {
+		// 版本不存在（从未读取或已被淘汰）时 SetXX 不写入新键：之后的 Remember 会创建一个随机的新版本，与缓存中的值都不一致。
+		if err := c.rdb.SetXX(ctx, tagKey(tag), randomVersion(), 0).Err(); err != nil {
 			errs = append(errs, errors.Wrapf(err, "cache: invalidate %q", tag))
 		}
 	}
 	return errors.Join(errs...)
 }
 
-// storedKey 返回 key 在 Memcached 中的键：加上前缀，不合法时换成摘要。
+// storedKey 返回 key 在 Redis 中的键。
 func (c *Cache[T]) storedKey(key string) string {
-	return legalized(c.prefix + key)
+	return c.prefix + key
 }
 
-// tagKey 返回 tag 的版本在 Memcached 中的键。
+// tagKey 返回 tag 的版本在 Redis 中的键。
 func tagKey(tag string) string {
-	return legalized(tagPrefix + tag)
+	return tagPrefix + tag
 }
 
-// legalized 返回 key 本身，超出 Memcached 键的规则时换成摘要。
-func legalized(key string) string {
-	if legalKey(key) {
-		return key
-	}
-	sum := sha256.Sum256([]byte(key))
-	return "sha256:" + hex.EncodeToString(sum[:])
+// randomVersion 返回一个随机的 tag 版本。
+func randomVersion() string {
+	return strconv.FormatUint(rand.Uint64(), 36)
 }
 
-// legalKey 报告 key 是否能直接作为 Memcached 的键：最长 250 字节，不含空白和控制字符。
-func legalKey(key string) bool {
-	if len(key) > 250 {
-		return false
-	}
-	for i := range len(key) {
-		if key[i] <= ' ' || key[i] == 0x7f {
-			return false
-		}
-	}
-	return true
-}
-
-// lookup 读取 key 在缓存中的内容和 tags 的当前版本，二者在同一次请求中读取。
+// lookup 读取 key 在缓存中的内容和 tags 的当前版本，二者经由 pipeline 在同一次往返中读取。
 // hit 表示缓存中有内容，并且它的版本与 tags 当前的版本一致；header 是写回时放在内容之前的版本，没有 tags 时为空；
 // store 为 false 表示无法确定版本，加载的结果不写回。
 func (c *Cache[T]) lookup(ctx context.Context, key string, tags []string) (raw, header string, hit, store bool) {
@@ -218,25 +203,41 @@ func (c *Cache[T]) lookup(ctx context.Context, key string, tags []string) (raw, 
 	for _, tag := range tags {
 		keys = append(keys, tagKey(tag))
 	}
-	items, err := c.mc.GetMulti(keys)
-	if err != nil {
+	cmds := make([]*redis.StringCmd, len(keys))
+	_, err := c.rdb.Pipelined(ctx, func(pipe redis.Pipeliner) error {
+		for i, k := range keys {
+			cmds[i] = pipe.Get(ctx, k)
+		}
+		return nil
+	})
+	if err != nil && !errors.Is(err, redis.Nil) {
 		c.logs.warn(ctx, "read cache failed", "key", key, "error", err)
 		return "", "", false, false
 	}
+	val, valErr := cmds[0].Result()
+	if valErr != nil && !errors.Is(valErr, redis.Nil) {
+		c.logs.warn(ctx, "read cache failed", "key", key, "error", valErr)
+		return "", "", false, false
+	}
 	versions := make([]string, len(tags))
-	for i, k := range keys[1:] {
-		if item, ok := items[k]; ok {
-			versions[i] = strings.TrimSpace(string(item.Value))
+	for i, cmd := range cmds[1:] {
+		v, cmdErr := cmd.Result()
+		if cmdErr == nil {
+			versions[i] = v
 			continue
 		}
-		if versions[i], err = c.newVersion(k); err != nil {
-			c.logs.warn(ctx, "create cache tag failed", "tag", tags[i], "error", err)
+		if !errors.Is(cmdErr, redis.Nil) {
+			c.logs.warn(ctx, "read cache failed", "key", key, "error", cmdErr)
+			return "", "", false, false
+		}
+		if versions[i], cmdErr = c.newVersion(ctx, keys[i+1]); cmdErr != nil {
+			c.logs.warn(ctx, "create cache tag failed", "tag", tags[i], "error", cmdErr)
 			return "", "", false, false
 		}
 	}
 	header = "#" + strings.Join(versions, ",") + "\n"
-	if item, ok := items[key]; ok {
-		if raw, ok := strings.CutPrefix(string(item.Value), header); ok {
+	if valErr == nil {
+		if raw, ok := strings.CutPrefix(val, header); ok {
 			return raw, header, true, true
 		}
 	}
@@ -245,33 +246,29 @@ func (c *Cache[T]) lookup(ctx context.Context, key string, tags []string) (raw, 
 
 // newVersion 为不存在的 tag 创建版本并返回。版本是随机数，与被淘汰之前的版本几乎不可能相同，
 // 所以 tag 被淘汰后，带有它的旧值都会失效。另一个调用者先创建时，返回它创建的版本。
-func (c *Cache[T]) newVersion(key string) (string, error) {
-	v := strconv.FormatUint(rand.Uint64(), 10)
-	err := c.mc.Add(&memcache.Item{Key: key, Value: []byte(v)})
-	if err == nil {
-		return v, nil
-	}
-	if !errors.Is(err, memcache.ErrNotStored) {
-		return "", err
-	}
-	item, err := c.mc.Get(key)
+func (c *Cache[T]) newVersion(ctx context.Context, key string) (string, error) {
+	v := randomVersion()
+	created, err := c.rdb.SetNX(ctx, key, v, 0).Result()
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(string(item.Value)), nil
+	if created {
+		return v, nil
+	}
+	return c.rdb.Get(ctx, key).Result()
 }
 
 // cached 读取 key 在缓存中的内容。没有缓存或读取失败时 ok 为 false，失败时记录日志。
 func (c *Cache[T]) cached(ctx context.Context, key string) (raw string, ok bool) {
-	item, err := c.mc.Get(key)
+	val, err := c.rdb.Get(ctx, key).Result()
 	switch {
-	case errors.Is(err, memcache.ErrCacheMiss):
+	case errors.Is(err, redis.Nil):
 		return "", false
 	case err != nil:
 		c.logs.warn(ctx, "read cache failed", "key", key, "error", err)
 		return "", false
 	}
-	return string(item.Value), true
+	return val, true
 }
 
 // fill 加载 key 的值，编码后写入缓存，返回编码后的内容。Missing 声明的错误写入「不存在」的标记后原样返回。
@@ -304,7 +301,7 @@ func (c *Cache[T]) fill(ctx context.Context, key, header string, store bool, loa
 
 // write 以加上抖动的 ttl 写入缓存，失败只记录日志。
 func (c *Cache[T]) write(ctx context.Context, key, raw string, ttl time.Duration) {
-	if err := c.mc.Set(&memcache.Item{Key: key, Value: []byte(raw), Expiration: expiration(withJitter(ttl))}); err != nil {
+	if err := c.rdb.Set(ctx, key, raw, withJitter(ttl)).Err(); err != nil {
 		c.logs.warn(ctx, "write cache failed", "key", key, "error", err)
 	}
 }
@@ -358,13 +355,4 @@ func (t *throttle) warn(ctx context.Context, msg string, args ...any) {
 		args = append(args, "suppressed", suppressed)
 	}
 	slog.WarnContext(ctx, msg, args...)
-}
-
-// expiration 把 ttl 转换为 Memcached 的过期时间：按秒向上取整；超过 30 天时 Memcached 把数值当作 Unix 时间，
-// 所以写成到期的 Unix 秒。
-func expiration(ttl time.Duration) int32 {
-	if ttl > maxRelative {
-		return int32(time.Now().Add(ttl).Unix())
-	}
-	return int32((ttl + time.Second - 1) / time.Second)
 }

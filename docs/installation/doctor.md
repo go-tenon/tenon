@@ -184,7 +184,7 @@ rest.Register(api, status, func(ctx context.Context, _ *struct{}) (*DoctorOutput
 | `filesystem.Doctor(disk)` | `storage` | `read_write`：写入、读回、删除一个键以 `tenon-doctor/` 开头的探测对象。本地磁盘检查目录可写，S3 检查 bucket、地址和凭据 |
 | `s3.Doctor(disk, uploadOrigins...)` | `s3` | 见 [S3 的检查](#s3-checks) |
 | `smtp.Doctor(mailer)` | `smtp` | `connection`：连接、按 `tls` 升级、登录后断开，不发邮件；区分连不上（很多云服务器禁止外连 25 端口）、TLS 方式与端口不符、证书不受信任、用户名或密码被拒绝 |
-| `cache.Doctor(mc)` | `memcached` | `connection`：每台服务器都连得上，否则提示：缓存不可用时直接读数据库 |
+| `cache.Doctor(rdb)` | `redis` | `connection`：服务器连得上，否则提示：缓存不可用时直接读数据库 |
 | `gotenberg.Doctor(renderer)` | `gotenberg` | `health`：Gotenberg 和 Chromium 在运行；`render`：生成一页 PDF，确认地址和凭据 |
 | `vector.Doctor(store, indexes...)` | `vector` | `qdrant`：连得上；每个索引一项（名称是 `Index.Name()`）：换了模型却没有用 `WithPrevious` 传入旧模型时失败；仍在用旧模型、没有在[重建](../ai/vector.md#reindexing)时提示 |
 

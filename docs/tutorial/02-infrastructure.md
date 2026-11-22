@@ -1,11 +1,11 @@
 # 2. 基础设施与装配
 
-这一章用 Docker 启动 PostgreSQL、Memcached 和 NATS，把数据库地址写进配置，再把打开资源、创建路由、启动服务这些装配代码从 `main.go` 移到 `internal/bootstrap` 包中。之后各章都在这个结构上添加内容。
+这一章用 Docker 启动 PostgreSQL、Redis 和 NATS，把数据库地址写进配置，再把打开资源、创建路由、启动服务这些装配代码从 `main.go` 移到 `internal/bootstrap` 包中。之后各章都在这个结构上添加内容。
 
 <a id="infrastructure"></a>
 ## 启动基础设施
 
-PostgreSQL 存业务数据（第 3 章起），Memcached 用于[缓存](../libraries/cache.md)，NATS 用于[队列](../background/queue.md)。在项目根目录创建 `compose.yaml`：
+PostgreSQL 存业务数据（第 3 章起），Redis 用于[缓存](../libraries/cache.md)，NATS 用于[队列](../background/queue.md)。在项目根目录创建 `compose.yaml`：
 
 ```yaml title="compose.yaml"
 # 开发和测试用的基础设施：docker compose up -d --wait
@@ -26,9 +26,10 @@ services:
       interval: 1s
       retries: 60
 
-  memcached:
-    image: memcached:1.6-alpine
-    ports: ["127.0.0.1:11211:11211"]
+  redis:
+    image: redis:8-alpine
+    command: [redis-server, --save, "", --appendonly, "no"]
+    ports: ["127.0.0.1:6379:6379"]
 
   nats:
     image: nats:2.15-alpine
