@@ -32,8 +32,8 @@ const (
 	agentsEnd   = "<!-- tenon:end -->"
 )
 
-// DocsDir 是项目中框架文档的目录：SyncDocs 把项目所用版本的框架 docs 复制到这里。
-const DocsDir = ".tenon/docs"
+// DocsDir 是项目中框架文档的目录：SyncDocs 把项目所用版本的框架 docs 同步到这里，随仓库提交。
+const DocsDir = "tenon/docs"
 
 // Project 是项目的信息：选择安装哪些技能、tenon_app_info 列出的内容，由 Inspect 读出。
 type Project struct {
@@ -112,30 +112,71 @@ func SyncAgentsMD(dir string, cfg *project.Config) (bool, error) {
 // renderConventions 按项目是否启用多语言展开 conventions.md 中的占位符。
 func renderConventions(cfg *project.Config) string {
 	errRule := "业务错误用 `errorx.Define(kind, code, \"默认提示\")` 定义稳定错误码与源语言提示；无需为源语言另建翻译文件。"
-	uiRule := "界面文字与菜单标题直接写在页面代码中，无需抽到 `locales/`；需要多语言时运行 `go tool tenon add language <语言>`，见 `.tenon/docs/frontend/i18n.md`。"
+	uiRule := "界面文字与菜单标题直接写在页面代码中，无需抽到 `locales/`；需要多语言时运行 `go tool tenon add language <语言>`，见 `tenon/docs/frontend/i18n.md`。"
 	if cfg != nil && cfg.MultiLanguage() {
 		errRule = "业务错误用 `errorx.Define(kind, code, \"源语言提示\")` 定义稳定错误码与源语言提示，其余语言的译文写在 `locales/<语言>.yaml` 中。"
-		uiRule = "界面文字写在 `locales/<前端>.<语言>.yaml`，页面用 `useT`，菜单标题写消息 ID，见 `.tenon/docs/frontend/i18n.md`。"
+		uiRule = "界面文字写在 `locales/<前端>.<语言>.yaml`，页面用 `useT`，菜单标题写消息 ID，见 `tenon/docs/frontend/i18n.md`。"
 	}
 	r := strings.NewReplacer("{{error_i18n_rule}}", errRule, "{{frontend_i18n_rule}}", uiRule)
 	return r.Replace(conventions)
 }
 
-// SyncDocs 把框架目录 fw 中的 docs 复制到项目 dir 的 DocsDir，替换已有的内容。
-// .tenon 被 .gitignore 忽略，ripgrep 这类搜索工具在项目根目录搜索时跳过它；DocsDir 中的 .ignore 让指定这个目录
-// 搜索时（例如 rg 迁移 .tenon/docs）能搜到文档。
+// SyncDocs 把框架目录 fw 中的 docs 增量同步到项目 dir 的 DocsDir：内容变化或缺少的文件才写入，框架中已删除的文件清理。
 func SyncDocs(dir, fw string) error {
+	src := filepath.Join(fw, "docs")
 	dst := filepath.Join(dir, filepath.FromSlash(DocsDir))
-	if err := os.RemoveAll(dst); err != nil {
+	want := map[string]bool{}
+	err := filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, p)
+		if err != nil {
+			return err
+		}
+		want[rel] = true
+		target := filepath.Join(dst, rel)
+		if d.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		if old, err := os.ReadFile(target); err == nil && bytes.Equal(old, b) {
+			return nil
+		}
+		return os.WriteFile(target, b, 0o644)
+	})
+	if err != nil {
 		return fmt.Errorf("agents: sync docs: %w", err)
 	}
-	if err := os.CopyFS(dst, os.DirFS(filepath.Join(fw, "docs"))); err != nil {
+	err = filepath.WalkDir(dst, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if p == dst {
+			return nil
+		}
+		rel, err := filepath.Rel(dst, p)
+		if err != nil {
+			return err
+		}
+		if want[rel] {
+			return nil
+		}
+		if err := os.RemoveAll(p); err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return filepath.SkipDir
+		}
+		return nil
+	})
+	if err != nil {
 		return fmt.Errorf("agents: sync docs: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(dst, ".ignore"), []byte("!*\n"), 0o644); err != nil {
-		return fmt.Errorf("agents: sync docs: %w", err)
-	}
-	return os.WriteFile(filepath.Join(filepath.Dir(dst), ".gitignore"), []byte("*\n"), 0o644)
+	return nil
 }
 
 // Inspect 读出项目 dir 的框架版本。

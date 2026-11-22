@@ -4,12 +4,12 @@
   "type": "module",
   "packageManager": "bun@[[.BunVersion]]",
   "workspaces": [
-    ".tenon/js/client",
-    ".tenon/js/host",
-    ".tenon/js/start",
-    ".tenon/js/ui",
     "apps/web",
-    "packages/client"
+    "packages/client",
+    "tenon/js/client",
+    "tenon/js/host",
+    "tenon/js/start",
+    "tenon/js/ui"
   ],
   "scripts": {
     "dev": "go tool tenon dev",

@@ -14,9 +14,9 @@ import (
 	"github.com/go-tenon/tenon/cmd/tenon/internal/project"
 )
 
-// JSDir 是项目中框架前端包的目录：SyncJS 把框架 js 中的每个包复制到这里，例如 .tenon/js/client 是
-// @go-tenon/client。项目把它们列入 Bun workspace，前端用 workspace:* 依赖。
-const JSDir = ".tenon/js"
+// JSDir 是项目中框架前端包的目录：SyncJS 把框架 js 中的每个包同步到这里，例如 tenon/js/client 是
+// @go-tenon/client。项目把它们列入 Bun workspace 并提交进仓库，前端用 workspace:* 依赖。
+const JSDir = "tenon/js"
 
 // SyncJS 把项目 dir 使用的框架版本中 js 下的前端包同步到 dir/JSDir：内容有变化或缺少的文件才写入，框架中已经没有的
 // 文件和包删除，没有变化的文件不碰。所以开发服务器运行时执行 tenon generate，Vite 不会因为文件被重写而重新加载、
@@ -65,9 +65,6 @@ func SyncJS(dir string) (changed bool, err error) {
 		if err := markBins(filepath.Join(dst, name)); err != nil {
 			return false, errors.Wrap(err, "dev: sync front-end packages")
 		}
-	}
-	if err := os.WriteFile(filepath.Join(filepath.Dir(dst), ".gitignore"), []byte("*\n"), 0o644); err != nil {
-		return false, errors.Wrap(err, "dev: sync front-end packages")
 	}
 	after := manifests(dst)
 	return !slices.EqualFunc(before, after, func(a, b []byte) bool { return bytes.Equal(a, b) }), nil
@@ -118,7 +115,7 @@ func markBins(dir string) error {
 }
 
 // NeedsInstall 报告项目 dir 是否需要 bun install：没有 node_modules，或者根 package.json 的 workspaces 中的某个框架
-// 前端包声明了依赖（例如 @go-tenon/ui 的 react），但它自己的 node_modules 不存在（例如刚 clone 的项目，.tenon 被
+// 前端包声明了依赖（例如 @go-tenon/ui 的 react），但它自己的 node_modules 不存在（例如刚 clone 的项目，node_modules 被
 // .gitignore 忽略）。不在 workspaces 中的框架包（例如没有 Electron 客户端的项目中的 @go-tenon/electron）不会被安装，不检查。
 func NeedsInstall(dir string) bool {
 	if _, err := os.Stat(filepath.Join(dir, "node_modules")); err != nil {

@@ -13,7 +13,7 @@ import (
 	"github.com/go-tenon/tenon/frontend"
 )
 
-// ClientWorkspaces 返回种类 kind 的客户端要加入 Bun workspace 的框架前端包，例如 .tenon/js/electron。
+// ClientWorkspaces 返回种类 kind 的客户端要加入 Bun workspace 的框架前端包，例如 tenon/js/electron。
 func ClientWorkspaces(kind string) []string {
 	switch kind {
 	case "electron":

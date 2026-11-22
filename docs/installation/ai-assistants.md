@@ -1,6 +1,6 @@
 # AI 编程助手
 
-`tenon init` 为 Claude Code、Codex、Cursor、Antigravity、GitHub Copilot 准备好项目说明 `AGENTS.md`、与 `go.mod` 版本一致的框架文档 `.tenon/docs`、`tenon-*` 技能和 MCP 服务 `tenon`，`tenon agents` 保持它们更新。
+`tenon init` 为 Claude Code、Codex、Cursor、Antigravity、GitHub Copilot 准备好项目说明 `AGENTS.md`、与 `go.mod` 版本一致的框架文档 `tenon/docs`、`tenon-*` 技能和 MCP 服务 `tenon`，`tenon agents` 保持它们更新。
 
 包：`cmd/tenon`。
 
@@ -15,17 +15,17 @@ Tenon 只接入它自己的这些内容。Go、Mantine、TanStack 等依赖给 A
 - **框架托管区块**（`<!-- tenon:begin -->` 到 `<!-- tenon:end -->`）：框架文档查询、提交前检查、测试和代码约定，由 `bun run agents` 按 `go.mod` 中的框架版本自动同步，不要手改。已有项目首次升级运行 `bun run agents` 时会在文件末尾追加托管区块，删掉上方重复的旧约定后提交即可。
 
 <a id="framework-docs"></a>
-## 框架的文档：`.tenon/docs`
+## 框架的文档：`tenon/docs`
 
-`.tenon/docs` 是项目所用框架版本的文档，从模块缓存中的框架源码复制过来，`bun run dev`、`bun run agents` 和 `tenon mcp` 启动时更新，不提交。
+`tenon/docs` 是项目所用框架版本的文档，从模块缓存中的框架源码同步过来，随仓库提交（`.gitattributes` 将 `tenon/**` 标记为 `linguist-generated=true`，PR 中自动折叠），`bun run agents`、`bun run dev` 和 `tenon mcp` 启动时增量更新。
 
 写 Tenon 的代码之前先查这里的文档，写法以它为准：记忆中的用法可能来自别的版本。
 
 1. 有 MCP 时用 `tenon_search_docs` 检索小节，再用 `tenon_read_doc` 读它，见[查文档](#searching-docs)。
-2. 没有 MCP 时读目录 `.tenon/docs/README.md`，再读对应的页面；或者用 `rg` 搜索并指定目录，`.tenon` 被 `.gitignore` 忽略，在项目根目录搜索时不包含它：
+2. 没有 MCP 时直接读目录 `tenon/docs/README.md`，或用搜索工具直接检索 `tenon/docs` 与 `tenon/js`：
 
 ```bash
-rg 迁移 .tenon/docs
+rg 迁移 tenon/docs
 go doc github.com/go-tenon/tenon/cache.Cache.Remember   # 函数签名和说明以 go doc 为准
 ```
 
@@ -36,7 +36,7 @@ MCP 配置中的 `tenon` 一项用 `go tool tenon mcp` 以 stdio 运行，版本
 
 | 工具 | 作用 |
 | --- | --- |
-| `tenon_search_docs` | 在 `.tenon/docs` 中按小节检索，返回标题、路径和锚点、片段 |
+| `tenon_search_docs` | 在 `tenon/docs` 中按小节检索，返回标题、路径和锚点、片段 |
 | `tenon_read_doc` | 读一页的目录、一个小节连同子小节，或者整页 |
 | `tenon_app_info` | 框架版本、应用入口和地址、前端（目录、挂载路径、是否服务端渲染）、客户端、安装的技能 |
 | `tenon_dev_logs` | `bun run dev` 的输出：Go 的编译错误、应用的日志、前端开发服务器的输出 |
@@ -53,8 +53,8 @@ MCP 配置中的 `tenon` 一项用 `go tool tenon mcp` 以 stdio 运行，版本
 <a id="searching-docs"></a>
 ### 查文档：`tenon_search_docs` 和 `tenon_read_doc`
 
-- `tenon_search_docs` 的 `query` 写要找的内容，中文、英文和代码中的名字都可以，空格分开多个词，越具体越好，例如 `访问策略`、`迁移 回滚`、`RunInTx`；`limit` 默认 8，最多 20。每个结果给出“页面标题 › 小节标题”、`.tenon/docs/<页面>#<锚点>` 和一段片段。
-- `tenon_read_doc` 的 `path` 写 `http/routing.md`、`.tenon/docs/http/routing.md` 或带锚点的 `http/routing.md#access-policies`。只给页面时返回介绍和全部小节的锚点；带锚点或给 `anchor` 时返回这个小节连同子小节；`full: true` 返回整页。
+- `tenon_search_docs` 的 `query` 写要找的内容，中文、英文和代码中的名字都可以，空格分开多个词，越具体越好，例如 `访问策略`、`迁移 回滚`、`RunInTx`；`limit` 默认 8，最多 20。每个结果给出“页面标题 › 小节标题”、`tenon/docs/<页面>#<锚点>` 和一段片段。
+- `tenon_read_doc` 的 `path` 写 `http/routing.md`、`tenon/docs/http/routing.md` 或带锚点的 `http/routing.md#access-policies`。只给页面时返回介绍和全部小节的锚点；带锚点或给 `anchor` 时返回这个小节连同子小节；`full: true` 返回整页。
 
 ```text
 tenon_search_docs  {"query": "提交事务之后 删除缓存"}
@@ -66,7 +66,7 @@ tenon_read_doc     {"path": "database/database.md#after-commit"}
 <a id="skills"></a>
 ## 技能
 
-技能是一个目录，`SKILL.md` 开头写名称和什么时候用它，助手在任务相符时才读全文。技能只写步骤和要点，细节链接到 `.tenon/docs`。
+技能是一个目录，`SKILL.md` 开头写名称和什么时候用它，助手在任务相符时才读全文。技能只写步骤和要点，细节链接到 `tenon/docs`。
 
 | 技能 | 什么时候用 |
 | --- | --- |
@@ -91,7 +91,7 @@ tenon_read_doc     {"path": "database/database.md#after-commit"}
 bun run agents   # 即 go tool tenon agents
 ```
 
-更新 `.tenon/docs`，同步 `AGENTS.md` 中的框架约定区块，为 `tenon.json` 中的每个助手重新安装 `tenon-*` 技能，改写 MCP 配置中的 `tenon`；没有变化时文件保持不变。升级框架后运行它，一起提交变化，否则 CI 的 `Agents` 一步失败。`tenon add frontend`、`tenon add client` 结束时自动运行。
+更新 `tenon/docs`，同步 `AGENTS.md` 中的框架约定区块，为 `tenon.json` 中的每个助手重新安装 `tenon-*` 技能，改写 MCP 配置中的 `tenon`；没有变化时文件保持不变。升级框架后运行它，一起提交变化，否则 CI 的 `Agents` 一步失败。`tenon add frontend`、`tenon add client` 结束时自动运行。
 
 <a id="choosing-assistants"></a>
 ## 选择助手
@@ -104,7 +104,7 @@ bun run agents   # 即 go tool tenon agents
 | Antigravity（取代 Gemini CLI） | `antigravity` | `.agents/skills` | `.agents/mcp_config.json` | 是 |
 | GitHub Copilot（VS Code） | `copilot` | `.github/skills` | `.vscode/mcp.json` | 否 |
 
-生成项目时用 `--agents` 选择，例如 `init todo --agents claude,copilot`；`none` 表示都不接入，`AGENTS.md` 和 `.tenon/docs` 照样生成。与默认不同时选择写进 `tenon.json` 的 `agents.targets`（空数组表示都不接入）。已有的项目改这个字段，再运行 `bun run agents`；去掉的助手的配置和技能目录留在原处，不再更新。
+生成项目时用 `--agents` 选择，例如 `init todo --agents claude,copilot`；`none` 表示都不接入，`AGENTS.md` 和 `tenon/docs` 照样生成。与默认不同时选择写进 `tenon.json` 的 `agents.targets`（空数组表示都不接入）。已有的项目改这个字段，再运行 `bun run agents`；去掉的助手的配置和技能目录留在原处，不再更新。
 
 <a id="dependencies"></a>
 ## 依赖的官方方案
@@ -124,7 +124,7 @@ claude mcp add mantine -s project -- npx -y @mantine/mcp-server
 ```
 
 > [!IMPORTANT]
-> 依赖的文档和技能与 Tenon 的约定冲突时，以 `AGENTS.md`、`.tenon/docs` 和 `tenon-*` 技能为准。Tenon 的前端不写服务端逻辑，业务逻辑都在 Go 的接口中：不启用 TanStack Start 中讲服务端函数、服务端路由和部署的技能。
+> 依赖的文档和技能与 Tenon 的约定冲突时，以 `AGENTS.md`、`tenon/docs` 和 `tenon-*` 技能为准。Tenon 的前端不写服务端逻辑，业务逻辑都在 Go 的接口中：不启用 TanStack Start 中讲服务端函数、服务端路由和部署的技能。
 
 Go 的其他依赖（Huma、chi、Bun ORM、goose 等）用 `go doc` 读与 `go.mod` 一致的版本，例如 `go doc github.com/danielgtaylor/huma/v2.Register`。
 

@@ -22,7 +22,7 @@ tenon/
 1. 在[客户端](../docs/clients/overview.md#supported-kinds)的种类表中确认它的类别（网页宿主或原生界面）、平台和库的位置；
 2. 网页宿主按[实现一个新的宿主](#new-host)实现，原生界面按[原生客户端](../docs/clients/native.md)实现；需要新语言时先加 `clientgen` 的生成器；
 3. 在 `project.Kinds`、`dev/clients.go` 和 `scaffold/template/client/<种类>` 中加上它；
-4. 工具链是新的：在仓库顶层加工具链的目录，复制到项目的 `.tenon/<工具链>`，CI 加一个任务；
+4. 工具链是新的：在仓库顶层加工具链的目录，同步到项目的 `tenon/<工具链>`，CI 加一个任务；
 5. 写 `docs/clients/<种类>.md`，把种类表中的状态改为“已支持”；
 6. 需要服务端配合的事情先写进[客户端协议](../docs/http/protocol.md)和[原生客户端](../docs/clients/native.md)，不只写在这个种类的实现中。
 

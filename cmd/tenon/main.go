@@ -149,7 +149,7 @@ func initCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.TenonDir, "tenon", "", "本地的框架目录，go.mod 用 replace 指向它（开发框架本身时使用）")
 	cmd.Flags().StringSliceVar(&languages, "languages", nil, "应用支持的语言，第一项是源语言（默认 zh-CN）；写多种时启用多语言，例如 zh-CN,en")
 	cmd.Flags().StringSliceVar(&targets, "agents", project.DefaultTargets,
-		fmt.Sprintf("为哪些 AI 编程助手安装技能、写 MCP 配置：%s，可以写多个；none 表示都不装（AGENTS.md 和 .tenon/docs 照样生成）", strings.Join(project.Targets, "、")))
+		fmt.Sprintf("为哪些 AI 编程助手安装技能、写 MCP 配置：%s，可以写多个；none 表示都不装（AGENTS.md 和 tenon/docs 照样生成）", strings.Join(project.Targets, "、")))
 	return cmd
 }
 
@@ -194,7 +194,7 @@ func writeInitConfig(dir string, customTargets bool, targets []string, customLan
 func agentsCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "agents",
-		Short: "更新 AI 编程助手用到的内容：.tenon/docs 中的框架文档、技能、MCP 配置",
+		Short: "更新 AI 编程助手用到的内容：tenon/docs 中的框架文档、技能、MCP 配置",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := project.Load(".")

@@ -28,7 +28,8 @@ blog/
 ├── locales/               翻译文件：服务端的错误提示、前端的界面文字
 ├── apps/                  前端，每个一个目录，例如 web、admin
 ├── packages/client/       生成的 TypeScript 客户端
-└── .tenon/                tenon 生成的内容，不提交
+├── tenon/                 框架同步的文档（tenon/docs）和前端包（tenon/js），不手改
+└── .tenon/                tenon dev 运行期生成的临时文件，不提交
 ```
 
 新项目只有 `config`、`cmd`、一个业务包、`locales/web.zh-CN.yaml`、`apps/web` 和 `packages/client`。其余目录在用到时创建：接上数据库时加 `compose.yaml`、`migrations/`，装配代码从 `main.go` 移到 `internal/bootstrap/`；写错误提示时在 `locales/` 中加 `zh-CN.yaml` 和 `embed.go`；加后台时加 `apps/admin/`。

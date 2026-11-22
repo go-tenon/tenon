@@ -670,6 +670,8 @@ func render(root, dir string, data any) error {
 		switch path.Base(rel) {
 		case "gitignore":
 			rel = path.Join(path.Dir(rel), ".gitignore")
+		case "gitattributes":
+			rel = path.Join(path.Dir(rel), ".gitattributes")
 		case "env.example":
 			rel = path.Join(path.Dir(rel), ".env.example")
 		}

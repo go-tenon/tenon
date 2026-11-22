@@ -1,13 +1,13 @@
 ## 框架与文档
 
-- 框架版本以 `go.mod` 中的 `github.com/go-tenon/tenon` 为准，对应文档在 `.tenon/docs`，由 `bun run dev` / `bun run agents` 更新。先读目录 `.tenon/docs/README.md`，写代码前读对应页面。
-- 查文档用 MCP 工具 `tenon_search_docs`、`tenon_read_doc`；用 rg 时指定目录（例如 `rg 迁移 .tenon/docs`）。项目结构用 `tenon_app_info` 查看。
-- Go 依赖的签名和说明用 `go doc` 读与 `go.mod` 一致的版本；Mantine、TanStack 等依赖的 AI 资源按 `README.md` 的“AI 编程助手”一节接入，与 Tenon 冲突时以本文和 `.tenon/docs` 为准。
+- 框架版本以 `go.mod` 中的 `github.com/go-tenon/tenon` 为准，对应文档在 `tenon/docs`、前端包源码在 `tenon/js`，由 `bun run agents` / `bun run generate` 同步并提交。先读目录 `tenon/docs/README.md`，写代码前读对应页面。
+- 查文档可用 MCP 工具 `tenon_search_docs`、`tenon_read_doc`，也可直接搜索阅读 `tenon/docs` 与 `tenon/js`。项目结构用 `tenon_app_info` 查看。
+- Go 依赖的签名和说明用 `go doc` 读与 `go.mod` 一致的版本；Mantine、TanStack 等依赖的 AI 资源按 `README.md` 的“AI 编程助手”一节接入，与 Tenon 冲突时以本文和 `tenon/docs` 为准。
 
 ## 开发与部署约定
 
 - Docker 仅用于开发和测试期：在主工作区启动 PostgreSQL、NATS、Redis 等依赖服务并常驻；业务服务与测试在独立的 `git worktree` 中运行（`bun run dev`、`go test ./...`），复用主工作区的依赖容器，通过各 worktree 的 `config/local.yaml` 错开 `http.addr` 端口（需要时指定独立数据库名）。
-- 生产部署采用原生单二进制加 systemd 零停机升级：用 `go tool tenon add deploy` 生成 `deploy.yaml` 和 `.env.example`，用 `go tool tenon deploy` 初始化主机、发布与回滚，见 `.tenon/docs/installation/deployment.md`。
+- 生产部署采用原生单二进制加 systemd 零停机升级：用 `go tool tenon add deploy` 生成 `deploy.yaml` 和 `.env.example`，用 `go tool tenon deploy` 初始化主机、发布与回滚，见 `tenon/docs/installation/deployment.md`。
 
 ## 提交前
 
@@ -20,7 +20,7 @@ bun run check
 bun run generate && git diff --exit-code
 ```
 
-CI（`.github/workflows/ci.yml`）运行同样的检查并构建一次；生成的代码（客户端、路由树、界面文字、技能、本节约定）未提交时失败。
+CI（`.github/workflows/ci.yml`）运行同样的检查并构建一次；生成或同步的文件（`tenon/`、客户端、路由树、界面文字、技能、本节约定）未提交时失败。
 
 ## 编写测试
 
@@ -63,7 +63,7 @@ CI（`.github/workflows/ci.yml`）运行同样的检查并构建一次；生成�
 - 颜色从 Mantine 主题取：默认品牌色 `brand`，彩色写预设名（`deep-orange`、`var(--mantine-color-deep-orange-6)`），中性色用 `gray`/`dark`/`c="dimmed"`/`--tn-*`，不写十六进制或 `rgb()`。
 - 状态色固定：成功 `green`，进行中 `bright-blue`，等待 `yellow`，注意 `deep-orange`，失败 `red`，无状态 `gray`。
 - {{frontend_i18n_rule}}
-- 生成的代码（`packages/client`、`routeTree.gen.ts`、`messages.gen.ts`）不手改。
+- 生成或同步的代码（`tenon/`、`packages/client`、`routeTree.gen.ts`、`messages.gen.ts`）不手改。
 
 ### 接口
 

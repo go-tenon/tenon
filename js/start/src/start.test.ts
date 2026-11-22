@@ -43,9 +43,9 @@ describe("compile", () => {
     const src = entrySource(
       { web: "/app/apps/web/dist/server/server.js", admin: "/app/apps/admin/dist/server/server.js" },
       "/app/apps/web/node_modules/.tenon-start",
-      "/app/.tenon/js/start/src",
+      "/app/tenon/js/start/src",
     )
-    expect(src).toContain('import { type Handler, serve } from "../../../../.tenon/js/start/src/serve.ts"')
+    expect(src).toContain('import { type Handler, serve } from "../../../../tenon/js/start/src/serve.ts"')
     expect(src).toContain(
       '  "admin": () => import("../../../admin/dist/server/server.js"),\n  "web": () => import("../../dist/server/server.js"),',
     )

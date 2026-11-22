@@ -1,7 +1,7 @@
 // Package devmcp 实现 tenon mcp：开发与运维期间给 AI 编程助手用的 MCP 服务，以 stdio 运行。工具名都以 tenon_ 开头，
 // 与 Mantine 等其他 MCP 服务的同名工具区分：
 //
-//	tenon_search_docs    按小节检索 .tenon/docs 中的框架文档
+//	tenon_search_docs    按小节检索 tenon/docs 中的框架文档
 //	tenon_read_doc       读一页文档的目录、一个小节或整页
 //	tenon_app_info       项目的框架版本、入口、前端与客户端和技能
 //	tenon_dev_logs       tenon dev 运行期间各进程的输出（dev.LogFile）
@@ -45,7 +45,7 @@ type Options struct {
 	DeployRunner func(t deploy.Target) (deploy.Runner, func() error, error) // 创建远端部署 Runner；为空时默认使用 deploy.NewSSHRunner
 }
 
-// New 读取 Root 中 .tenon/docs 的文档，返回登记了开发与只读部署观测工具的 MCP 服务。
+// New 读取 Root 中 tenon/docs 的文档，返回登记了开发与只读部署观测工具的 MCP 服务。
 func New(opts Options) (*mcp.Server, error) {
 	docsDir := filepath.Join(opts.Root, filepath.FromSlash(agents.DocsDir))
 	d, err := loadDocs(docsDir)
@@ -112,7 +112,7 @@ func New(opts Options) (*mcp.Server, error) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "tenon_read_doc",
 		Title:       "阅读 Tenon 文档",
-		Description: "读 Tenon 框架文档中的一页。只给 path 时返回这一页的介绍和全部小节的锚点；给 anchor 时返回这个小节及其子小节；full 为 true 时返回整页。path 可以写 http/routing.md、.tenon/docs/http/routing.md 或带锚点的 http/routing.md#access-policies。",
+		Description: "读 Tenon 框架文档中的一页。只给 path 时返回这一页的介绍和全部小节的锚点；给 anchor 时返回这个小节及其子小节；full 为 true 时返回整页。path 可以写 http/routing.md、tenon/docs/http/routing.md 或带锚点的 http/routing.md#access-policies。",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in readArgs) (*mcp.CallToolResult, any, error) {
 		page, anchor, _ := strings.Cut(strings.TrimPrefix(strings.TrimPrefix(in.Path, "./"), agents.DocsDir+"/"), "#")

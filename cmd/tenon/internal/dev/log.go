@@ -26,9 +26,12 @@ type devLog struct {
 	size int64
 }
 
-// openLog 清空并打开 LogFile。
+// openLog 清空并打开 LogFile，同时在 .tenon 目录写入 .gitignore 忽略运行期临时文件。
 func openLog() (*devLog, error) {
 	if err := os.MkdirAll(".tenon", 0o755); err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(".tenon/.gitignore", []byte("*\n"), 0o644); err != nil {
 		return nil, err
 	}
 	f, err := os.OpenFile(LogFile, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
