@@ -1,18 +1,20 @@
 import { Text } from "@mantine/core"
 import { createFileRoute } from "@tanstack/react-router"
-import { Page, useT } from "@go-tenon/ui"
+import { Page[[if .MultiLanguage]], useT[[end]] } from "@go-tenon/ui"
 
-// 首页。页面放在 src/routes/_app/ 中，staticData 的 title、icon、order 决定菜单；title 写界面文字的消息 ID。
+// 首页。页面放在 src/routes/_app/ 中，staticData 的 title、icon、order 决定菜单[[if .MultiLanguage]]；title 写界面文字的消息 ID[[end]]。
 export const Route = createFileRoute("/_app/")({
-  staticData: { title: "home.title", icon: "home", order: 0 },
+  staticData: { title: [[if .MultiLanguage]]"home.title"[[else]]"首页"[[end]], icon: "home", order: 0 },
   component: Home,
 })
 
 function Home() {
+[[- if .MultiLanguage]]
   const t = useT()
+[[- end]]
   return (
-    <Page title={t("home.title")}>
-      <Text c="dimmed">{t("home.start")}</Text>
+    <Page title={[[if .MultiLanguage]]t("home.title")[[else]]"首页"[[end]]}>
+      <Text c="dimmed">{[[if .MultiLanguage]]t("home.start")[[else]]"从这里开始。"[[end]]}</Text>
     </Page>
   )
 }

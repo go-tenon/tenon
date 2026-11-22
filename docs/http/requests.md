@@ -217,25 +217,28 @@ const (
     Published Status = "published"
 )
 
-// Statuses 是文章的全部状态，显示文字是 article.status.<状态> 的消息。
-var Statuses = enum.New("article.status", Draft, Published)
+// Statuses 是文章的全部状态，源语言默认显示文字写在定义处；多语言在翻译文件中用 article.status.<状态> 覆盖。
+var Statuses = enum.New("article.status",
+    enum.Item(Draft, "草稿"),
+    enum.Item(Published, "已发布"),
+)
 
 // Schema 让 OpenAPI 中的 Status 引用命名类型 ArticleStatus。
 func (Status) Schema(r huma.Registry) *huma.Schema { return contract.EnumSchema(r, Statuses) }
 ```
 
-显示文字写在[翻译文件](../general/localization.md#translation-files)中，消息 ID 是前缀加取值：
+多语言应用在附加语言的[翻译文件](../general/localization.md#translation-files)中按 `<前缀>.<取值>` 补充译文（单语言项目无需另建翻译文件）：
 
 ```yaml
-# locales/zh-CN.yaml
-article.status.draft: 草稿
-article.status.published: 已发布
+# locales/en.yaml
+article.status.draft: Draft
+article.status.published: Published
 ```
 
 - 字段类型是 `Status` 时，请求体和查询参数只接受声明的取值，其他值返回 `422` `validation.one_of`，不用再写 `enum` 标签。[MCP 工具](../ai/mcp.md)和 [RPC](../rpc/endpoints.md) 的参数同样只接受这些取值。
-- `contract.EnumSchema` 把它登记为 OpenAPI 的命名类型（`article.status` 是 `ArticleStatus`），带全部取值和 `x-tenon-enum`。生成的客户端得到取值的联合类型和各语言的显示文字，见[客户端的枚举](../frontend/client-react.md#ts-enums)。
+- `contract.EnumSchema` 把它登记为 OpenAPI 的命名类型（`article.status` 是 `ArticleStatus`），带全部取值、`x-tenon-enum` 和默认显示文字 `x-tenon-enum-labels`。生成的客户端得到取值的联合类型和各语言的显示文字，见[客户端的枚举](../frontend/client-react.md#ts-enums)。
 - 类型名只由前缀决定。前缀相同、取值不同的两个枚举在注册路由时 panic，例如“全部角色”和“可以分配的角色”分别用前缀 `role` 和 `assignable_role`，显示文字各写一份。
-- `Statuses.Label(ctx, v)` 按请求的语言返回显示文字，没有翻译时返回取值本身；`Statuses.Values()` 按声明的顺序返回全部取值；`Statuses.Valid(v)` 判断取值是否合法。
+- `Statuses.Label(ctx, v)` 按请求的语言返回显示文字，翻译文件中没有时回退到定义处的默认显示文字，都没有时返回取值本身；`Statuses.Values()` 按声明的顺序返回全部取值；`Statuses.Valid(v)` 判断取值是否合法。
 
 <a id="business-validation"></a>
 ## 业务规则校验：在 `Handle` 中返回业务错误

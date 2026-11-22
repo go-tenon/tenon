@@ -8,10 +8,12 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/go-tenon/tenon/httpx"
+	"github.com/go-tenon/tenon/i18n"
 )
 
 func appVersionConfig() httpx.AppVersionConfig {
@@ -65,7 +67,8 @@ func TestAppVersionRejectionIsLocalizedLoggedAndReadableCrossOrigin(t *testing.T
 	cfg := httpx.DefaultConfig()
 	cfg.AppVersion = appVersionConfig()
 	router := chi.NewRouter()
-	router.Use(httpx.Defaults(cfg, httpx.Logger(slog.New(slog.NewJSONHandler(&logs, nil))))...)
+	bundle := i18n.MustNew(i18n.LocaleZhCN, fstest.MapFS{"en.yaml": {Data: []byte("app.ok: ok\n")}})
+	router.Use(httpx.Defaults(cfg, httpx.Logger(slog.New(slog.NewJSONHandler(&logs, nil))), httpx.Languages(bundle))...)
 	router.Route("/api", func(r chi.Router) {
 		r.Use(httpx.CORS(cfg.CORS), httpx.AppVersion(cfg.AppVersion))
 		r.Get("/articles", func(http.ResponseWriter, *http.Request) {})

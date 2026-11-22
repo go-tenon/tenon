@@ -34,7 +34,7 @@ var clientDirName = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 // --rename example.com/blog/internal/session=usersession。没有生成的端点及原因输出到标准错误。
 func Command(router func() chi.Routes, translations ...fs.FS) *cobra.Command {
 	var gen Options
-	var ts, basePath string
+	var ts, basePath, defaultLang string
 	var names map[string]string
 	cmd := &cobra.Command{
 		Use:   "client",
@@ -70,7 +70,7 @@ func Command(router func() chi.Routes, translations ...fs.FS) *cobra.Command {
 					return command.AsExitError(command.ExitUsage, err)
 				}
 				for i, api := range apis {
-					res, err := GenerateTS(api, TSOptions{Name: dirs[i], Translations: translations, Main: gen.Main, Dir: gen.Dir, Rename: gen.Rename})
+					res, err := GenerateTS(api, TSOptions{Name: dirs[i], DefaultLanguage: defaultLang, Translations: translations, Main: gen.Main, Dir: gen.Dir, Rename: gen.Rename})
 					if err != nil {
 						return err
 					}
@@ -104,6 +104,7 @@ func Command(router func() chi.Routes, translations ...fs.FS) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&gen.Out, "out", "", "Go 客户端的输出目录，目录名是根包的包名，例如 ../api")
 	cmd.Flags().StringVar(&ts, "ts", "", "TypeScript 客户端的输出目录，每个 API 一个子目录，例如 packages/client/src")
+	cmd.Flags().StringVar(&defaultLang, "default-language", "", "源语言标签（默认 zh-CN），Go 定义中内联的默认显示文字归入这一语言")
 	cmd.Flags().StringToStringVar(&names, "name", nil, "BasePath=TypeScript 客户端的目录名，默认是 BasePath 中最后一个不是 api、也不是路径参数的段，可重复")
 	cmd.Flags().StringVar(&gen.Main, "main", "", "应用的主包，在它的依赖中查找错误码；默认是当前程序")
 	cmd.Flags().StringSliceVar(&gen.Imports, "import", nil, "客户端可以直接导入的包（含子包），可重复")

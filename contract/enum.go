@@ -15,11 +15,15 @@ var refPrefixes = []string{"#/components/schemas/", defsPrefix}
 
 // EnumSchema 把 e 登记为 r 中的命名类型并返回对它的引用，在枚举类型的 Schema 方法（huma.SchemaProvider）中调用：
 //
-//	var Statuses = enum.New("article.status", Draft, Published)
+//	var Statuses = enum.New("article.status",
+//		enum.Item(Draft, "草稿"),
+//		enum.Item(Published, "已发布"),
+//	)
 //
 //	func (Status) Schema(r huma.Registry) *huma.Schema { return contract.EnumSchema(r, Statuses) }
 //
-// 命名类型的名称是 e.Name()（例如 ArticleStatus），带有 enum（全部取值）和 x-tenon-enum（显示文字的消息前缀）。
+// 命名类型的名称是 e.Name()（例如 ArticleStatus），带有 enum（全部取值）、x-tenon-enum（显示文字的消息前缀）
+// 以及可选的 x-tenon-enum-labels（源语言的默认显示文字）。
 // 它出现在 OpenAPI 和 AsyncAPI 文档的 components.schemas 中，MCP 工具和 RPC 端点的参数 schema 则把它放在 $defs 中；
 // 取值照常由 Huma 校验，生成的客户端据此得到取值和各语言的显示文字。
 //
@@ -39,7 +43,11 @@ func EnumSchema(r huma.Registry, e enum.Definition) *huma.Schema {
 		}
 		return &huma.Schema{Ref: ref(r, name)}
 	}
-	s := &huma.Schema{Type: huma.TypeString, Enum: make([]any, len(values)), Extensions: map[string]any{"x-tenon-enum": prefix}}
+	ext := map[string]any{"x-tenon-enum": prefix}
+	if labels := e.DefaultLabels(); len(labels) > 0 {
+		ext["x-tenon-enum-labels"] = labels
+	}
+	s := &huma.Schema{Type: huma.TypeString, Enum: make([]any, len(values)), Extensions: ext}
 	for i, v := range slices.Clone(values) {
 		s.Enum[i] = v
 	}

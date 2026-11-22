@@ -29,6 +29,7 @@ go tool tenon dev
 | `tenon add frontend` | 再加一个前端，例如运营后台 |
 | `tenon add client` | 加桌面端等网页以外的客户端 |
 | `tenon add deploy` | 生成容器构建与生产自托管部署文件 |
+| `tenon add language` | 为项目加入一种语言，启用多语言翻译文件和检查 |
 | `tenon agents` | 升级框架后更新给 AI 编程助手的文档、技能和 MCP 配置 |
 | `tenon mcp` | AI 编程助手按 MCP 配置启动它，不手动运行 |
 
@@ -44,6 +45,7 @@ go run github.com/go-tenon/tenon/cmd/tenon@latest init todo
 生成的内容见[安装与生成项目](installing.md#creating-a-project)。选项：
 
 - `--module`、`--name`：Go module 的路径和应用的名称，默认都是目录名。
+- `--languages`：应用支持的语言列表（第一项是源语言，默认 `zh-CN`）。只写一种时生成单语言项目（前端直写文字，无 `locales/`）；写多种（例如 `zh-CN,en`）时启用多语言。
 - `--agents`：接入哪些 AI 编程助手，默认 `claude,codex,cursor,antigravity`，还可以选 `copilot`，`none` 表示都不接入，见[选择助手](ai-assistants.md#choosing-assistants)。
 - `--tenon <框架目录>`：开发 Tenon 框架本身时使用，`go.mod` 用 `replace` 指向本地的框架代码。
 
@@ -85,9 +87,9 @@ bun run check   # 即 go tool tenon check
 
 | 检查项 | 检查什么 | 行级豁免 |
 | --- | --- | --- |
-| `text` | 前端 `src` 中注释以外的汉字（界面文字写在 `locales/<前端>.<语言>.yaml`） | `// i18n-ignore` |
+| `text` | 多语言项目（`languages` 多于一种）中前端 `src` 注释以外的汉字（单语言项目默认跳过，`--only text` 可显式运行） | `// i18n-ignore` |
 | `clock` | `.sql` 和非测试 `.go` 字符串中的 `NOW()`、`CURRENT_TIMESTAMP` 等数据库时钟 | `// clock-ignore`、`-- clock-ignore` |
-| `errors` | 启用服务端翻译（`locales/<语言>.yaml`）后，`errorx.Define` 的错误码是否都有译文 | — |
+| `errors` | 附加语言及已创建的服务端翻译文件中，`errorx.Define` 的错误码是否补齐译文（源语言内联提示无需重复写） | — |
 | `colors` | 前端 `src` 中写死的十六进制色值和 `rgb()`、`hsl()` 等颜色函数 | `// color-ignore`、`/* color-ignore */` |
 | `deps` | 前端与客户端 `package.json` 的依赖版本是否满足框架包的 `peerDependencies` | — |
 
@@ -163,6 +165,15 @@ go tool tenon add deploy --image ghcr.io/acme/blog
 - 自动读取 `go.mod` 的 Go 版本、`package.json` 的 Bun 版本和 `apps/` 中的前端渲染方式：存在 SSR 前端时使用 `gcr.io/distroless/base-debian13:nonroot`（含 glibc），否则使用 `gcr.io/distroless/static-debian13:nonroot`；没有前端时不安装 Bun，直接 `go build`。
 - `--image` 指定生产编排中的镜像名（不含标签），默认是入口包名；目标文件已存在时报错，传入 `--force` 覆盖。部署步骤见[部署](deployment.md)和[交给客户自托管](self-hosting.md)。
 
+<a id="add-language"></a>
+## `tenon add language`：加入一种语言
+
+```bash
+go tool tenon add language en
+```
+
+把语言加入 `tenon.json` 的 `languages`，创建 `locales/embed.go`、服务端 `locales/<语言>.yaml` 及各前端的翻译文件与 `src/i18n.ts`，重新生成 `messages.gen.ts` 并同步 AI 助手的多语言约定。之后运行 `go tool tenon check --only text,errors` 查看待抽离的前端文字与待补译的业务错误码，见[界面文字](../frontend/i18n.md)。
+
 <a id="agents"></a>
 ## `tenon agents`：AI 编程助手
 
@@ -216,6 +227,7 @@ go tool tenon add deploy --image ghcr.io/acme/blog
 | `url` | 端口取 `--config` 文件中的 `http.addr`，主机 `localhost` | 应用的地址：`dev` 打印它，前端的开发服务器经它调用接口 |
 | `apis.<BasePath>.name` | 见[前端与 API 怎样被发现](#conventions) | TypeScript 客户端的目录名 |
 | `apis.<BasePath>.go` | 不生成 | Go 客户端的目录 |
+| `languages` | `["zh-CN"]` | 支持的语言列表（第一项为源语言）；两种及以上时启用多语言模式和 `text` 检查 |
 | `tools` | 空 | 其他工具，每项 `{"watch": [命令…], "build": [命令…]}`：`watch` 随 `dev` 运行，`build` 在 `dev` 停止后运行 |
 | `agents.targets` | `["claude", "codex", "cursor", "antigravity"]` | 接入的 AI 编程助手，见[选择助手](ai-assistants.md#choosing-assistants) |
 | `agents.skip` | 空 | 不安装的框架技能，见[技能](ai-assistants.md#skills) |

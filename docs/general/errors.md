@@ -19,10 +19,10 @@
 
 ```go
 var (
-    ErrNotFound   = errorx.Define(errorx.NotFound, "article.not_found")
-    ErrForbidden  = errorx.Define(errorx.PermissionDenied, "article.forbidden")
-    ErrSlugLocked = errorx.Define(errorx.InvalidArgument, "article.slug_locked")
-    ErrSlugTaken  = errorx.Define(errorx.Conflict, "article.slug_taken")
+    ErrNotFound   = errorx.Define(errorx.NotFound, "article.not_found", "文章不存在")
+    ErrForbidden  = errorx.Define(errorx.PermissionDenied, "article.forbidden", "不能修改别人的文章")
+    ErrSlugLocked = errorx.Define(errorx.InvalidArgument, "article.slug_locked", "已发布文章的 slug 不能修改")
+    ErrSlugTaken  = errorx.Define(errorx.Conflict, "article.slug_taken", "slug“{{.slug}}”已被使用")
 )
 
 func (a *Update) Handle(ctx context.Context, subject identity.Subject, id uuid.UUID, c Changes) (*Article, error) {
@@ -64,13 +64,13 @@ func (a *Update) Handle(ctx context.Context, subject identity.Subject, id uuid.U
 要查询数据或依赖业务状态才能判断的失败（文章不存在、slug 已被使用）定义为业务错误，错误模板保存为包级变量：
 
 ```go
-var ErrSlugTaken = errorx.Define(errorx.Conflict, "article.slug_taken")
+var ErrSlugTaken = errorx.Define(errorx.Conflict, "article.slug_taken", "slug“{{.slug}}”已被使用")
 ```
 
 - 第一个参数是分类，决定 HTTP 状态码和命令的退出码，见[选择错误分类](#error-kinds)。
 - 第二个参数是错误码，客户端按它判断发生了什么。写成 `资源.原因`，全部小写，单词用下划线连接。
+- 第三个参数（可选）是源语言的默认提示模板，支持 `{{.slug}}` 占位符。单语言项目直接写在这里即可，无需另建翻译文件；多语言项目在对应语言的翻译文件中用同一个错误码覆盖它，见[本地化](localization.md#translation-files)。
 - 错误码在整个应用中唯一：`errors.Is` 和客户端都按错误码区分错误。
-- 每个错误码在 `locales` 的翻译文件中写一条提示，它就是响应中的 `detail`，见[本地化](localization.md#translation-files)。
 
 <a id="returning-errors"></a>
 ## 返回错误：`New`、`Wrap` 和 `errors.Wrap`

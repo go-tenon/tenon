@@ -43,5 +43,5 @@ type languagesOption struct{ bundle *goi18n.Bundle }
 func (o languagesOption) applyDefaults(d *defaultsOptions) { d.languages = o.bundle }
 
 // Languages 让 Defaults 中的 Locale 按 bundle 协商请求语言、翻译错误消息，见 i18n 包。
-// 不传时只使用框架内置的中英文消息，默认语言为 zh-CN。
+// 不传时只启用框架内置的简体中文消息（zh-CN）。
 func Languages(bundle *goi18n.Bundle) DefaultsOption { return languagesOption{bundle: bundle} }

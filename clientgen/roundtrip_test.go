@@ -8,6 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/fstest"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -19,13 +20,14 @@ import (
 	"github.com/go-tenon/tenon/clientgen/internal/example/api/wire"
 	"github.com/go-tenon/tenon/httpx"
 	"github.com/go-tenon/tenon/httpx/rest"
+	"github.com/go-tenon/tenon/i18n"
 )
 
 // serve 用示例接口启动服务端，返回它的地址。
 func serve(t *testing.T, valid tokens) string {
 	t.Helper()
 	router := chi.NewRouter()
-	router.Use(httpx.Locale(nil))
+	router.Use(httpx.Locale(i18n.MustNew(i18n.LocaleZhCN, fstest.MapFS{"en.yaml": {Data: []byte("app.ok: ok\n")}})))
 	router.Use(httpx.AppVersion(httpx.AppVersionConfig{Minimum: map[string]string{"ios": "2.0.0"}}))
 	outer := chi.NewRouter()
 	outer.Mount("/api", router)

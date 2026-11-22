@@ -10,13 +10,23 @@ import (
 
 // Template 是不可变的业务错误模板，通常定义为包级变量。
 type Template struct {
-	kind Kind
-	code string
+	kind    Kind
+	code    string
+	message string
 }
 
 // Define 创建模板，code 使用 article.not_found 形式的业务错误码。
-func Define(kind Kind, code string) *Template {
-	return &Template{kind: kind, code: code}
+// 可选传入一条源语言的默认提示模板（支持 {{.参数名}}，取自 Public）：单语言应用不需要另建翻译文件，
+// 多语言应用在翻译文件中用同一个错误码覆盖它。传入多条提示时 panic。
+func Define(kind Kind, code string, message ...string) *Template {
+	if len(message) > 1 {
+		panic(fmt.Sprintf("errorx: Define(%q) accepts at most one default message, got %d", code, len(message)))
+	}
+	var msg string
+	if len(message) == 1 {
+		msg = message[0]
+	}
+	return &Template{kind: kind, code: code, message: msg}
 }
 
 // Code 返回稳定错误码。
@@ -24,6 +34,9 @@ func (t *Template) Code() string { return t.code }
 
 // Kind 返回错误分类。
 func (t *Template) Kind() Kind { return t.kind }
+
+// Message 返回定义时附带的源语言默认提示模板，未设置时为空。
+func (t *Template) Message() string { return t.message }
 
 // Error 实现 error，便于 errors.Is(err, ErrXxx)。
 func (t *Template) Error() string { return t.code }
@@ -58,6 +71,7 @@ func Field(path string) Option {
 type Error struct {
 	code       string
 	kind       Kind
+	message    string
 	public     map[string]any
 	field      string
 	retryAfter time.Duration
@@ -85,7 +99,7 @@ func (t *Template) Wrap(cause error, opts ...Option) error {
 
 // instance 用模板 t 和选项 opts 创建一个错误实例，cause 是它包装的原因。
 func (t *Template) instance(cause error, opts []Option) *Error {
-	e := &Error{code: t.code, kind: t.kind, cause: cause}
+	e := &Error{code: t.code, kind: t.kind, message: t.message, cause: cause}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -116,6 +130,9 @@ func (e *Error) Code() string { return e.code }
 
 // Kind 返回分类。
 func (e *Error) Kind() Kind { return e.kind }
+
+// Message 返回模板附带的源语言默认提示模板，未设置时为空。
+func (e *Error) Message() string { return e.message }
 
 // Public 返回公开参数的浅拷贝。
 func (e *Error) Public() map[string]any { return maps.Clone(e.public) }
@@ -190,4 +207,17 @@ func RetryAfterOf(err error) time.Duration {
 		return e.retryAfter
 	}
 	return 0
+}
+
+// MessageOf 从错误链提取模板附带的源语言默认提示模板；没有则返回空。
+func MessageOf(err error) string {
+	var e *Error
+	if errors.As(err, &e) {
+		return e.message
+	}
+	var t *Template
+	if errors.As(err, &t) {
+		return t.message
+	}
+	return ""
 }

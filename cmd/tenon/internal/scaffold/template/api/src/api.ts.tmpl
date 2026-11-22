@@ -2,7 +2,9 @@
 // api 是 tenon generate 生成的 [[.API]] 客户端（packages/client/src/[[.Client]]），接口改了以后 tenon dev 会自动重新生成。
 // apiFetch 在浏览器中是同源的 fetch；服务端渲染时经 Go 的内部 socket 调用同一组接口。
 // kit 是同一个 API 生成的元数据（查询选项、校验规则、资源、设置），交给 @go-tenon/ui 的资源页面和表单。
+[[- if .MultiLanguage]]
 // 请求带上当前语言（Accept-Language），kit 的字段名、枚举和验证提示也按当前语言显示。
+[[- end]]
 [[- if .GeneratedAuth]]
 import { createSession } from "@go-tenon/client"
 [[- end]]
@@ -12,7 +14,9 @@ import { createKit } from "@[[.Scope]]/client/[[.Client]]/kit"
 [[- if and .HasLogin (not .GeneratedAuth)]]
 import { session } from "./auth"
 [[- end]]
+[[- if .MultiLanguage]]
 import { i18n } from "./i18n"
+[[- end]]
 [[- if .GeneratedAuth]]
 
 // session 记录当前的身份：打开页面、登录后读取 [[.API]]/me，没有登录时它返回 401。
@@ -20,6 +24,6 @@ import { i18n } from "./i18n"
 export const session = createSession({ load: async () => ({ account: (await api.[[.Auth.Me]]()).id }) })
 [[- end]]
 
-export const api = createClient({ baseURL: "[[.API]]", fetch: apiFetch[[if .HasLogin]], session[[end]], headers: i18n.headers })
+export const api = createClient({ baseURL: "[[.API]]", fetch: apiFetch[[if .HasLogin]], session[[end]][[if .MultiLanguage]], headers: i18n.headers[[end]] })
 
-export const kit = createKit(api, { [[if .HasLogin]]scope: session.scope, [[end]]language: i18n.language })
+export const kit = createKit(api, { [[if .HasLogin]]scope: session.scope, [[end]]language: [[if .MultiLanguage]]i18n.language[[else]][[printf "%q" .SourceLanguage]][[end]] })

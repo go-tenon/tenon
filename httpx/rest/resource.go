@@ -13,27 +13,32 @@ import (
 )
 
 // Resource 声明一个资源的后台页面：列表、详情、表单和操作。它只描述呈现上的选择，引用已经登记的接口；
-// 字段的类型、枚举和校验规则来自这些接口的 OpenAPI schema，显示文字来自翻译文件：
+// 字段的类型、枚举和校验规则来自这些接口的 OpenAPI schema，源语言的显示文字可以直接写在 Title、Labels、
+// Descriptions 和 Action.Label 中，多语言应用在翻译文件中按以下消息 ID 覆盖：
 //
-//   - <Name>.title：资源的名称，例如 article.title: 文章；
-//   - <Name>.fields.<字段>：字段的名称，例如 article.fields.title: 标题；
-//   - <Name>.actions.<操作>：操作的名称，例如 article.actions.publish: 发布。
+//   - <Name>.title：资源的名称，例如 article.title: Article；
+//   - <Name>.fields.<字段>：字段的名称，例如 article.fields.title: Title；
+//   - <Name>.descriptions.<字段>：字段的说明；
+//   - <Name>.actions.<操作>：操作的名称，例如 article.actions.publish: Publish。
 //
 // 资源写入 OpenAPI 文档的 x-tenon-resources，tenon generate 据此生成前端的 resources.ts，
 // @go-tenon/ui 的 ResourcePage 按这份定义渲染。
 type Resource struct {
-	Name       string   `json:"name"`                  // 资源的名称，kebab-case，例如 article。
-	List       string   `json:"list"`                  // 列表接口的操作 ID：GET、没有路径参数，响应体有 items 数组（page.Offset 或 page.Cursor）。必须设置。
-	Get        string   `json:"get,omitempty"`         // 详情接口的操作 ID，没有时留空；它有且只有一个路径参数，名称是列表项中标识一行的字段，例如 /articles/{id} 对应 id
-	Create     string   `json:"create,omitempty"`      // 创建接口的操作 ID，没有时留空
-	Update     string   `json:"update,omitempty"`      // 修改接口的操作 ID，没有时留空；路径参数与 Get 相同
-	Delete     string   `json:"delete,omitempty"`      // 删除接口的操作 ID，没有时留空；路径参数与 Get 相同
-	Columns    []string `json:"columns"`               // 列表显示的列：列表项的字段。为空时是列表项中除对象和数组外的全部字段。
-	Filters    []string `json:"filters,omitempty"`     // 列表上方的筛选条件：列表接口的查询参数，按业务命名，例如 name、status、min_age；文字是输入框，枚举是下拉选择，布尔是“是 / 否”。
-	Sort       []string `json:"sort,omitempty"`        // 可以排序的列。列表接口要有 sort 查询参数，取值是列名，前面加 - 表示降序；sort 限定了取值时，每一列的升序或降序至少有一个在其中。
-	CreateForm []string `json:"create_form,omitempty"` // 新建表单的字段：新建接口请求体的字段，按显示的顺序。为空时是请求体的全部字段，按结构体中的顺序。
-	UpdateForm []string `json:"update_form,omitempty"` // 修改表单的字段：修改接口请求体的字段，按显示的顺序。为空时是请求体的全部字段，按结构体中的顺序。
-	Actions    []Action `json:"actions,omitempty"`     // 一行上的其他操作，例如发布。
+	Name         string            `json:"name"`                   // 资源的名称，kebab-case，例如 article。
+	Title        string            `json:"title,omitempty"`        // 源语言的默认标题，例如“文章”；翻译文件中 <Name>.title 优先。
+	List         string            `json:"list"`                   // 列表接口的操作 ID：GET、没有路径参数，响应体有 items 数组（page.Offset 或 page.Cursor）。必须设置。
+	Get          string            `json:"get,omitempty"`          // 详情接口的操作 ID，没有时留空；它有且只有一个路径参数，名称是列表项中标识一行的字段，例如 /articles/{id} 对应 id
+	Create       string            `json:"create,omitempty"`       // 创建接口的操作 ID，没有时留空
+	Update       string            `json:"update,omitempty"`       // 修改接口的操作 ID，没有时留空；路径参数与 Get 相同
+	Delete       string            `json:"delete,omitempty"`       // 删除接口的操作 ID，没有时留空；路径参数与 Get 相同
+	Columns      []string          `json:"columns"`                // 列表显示的列：列表项的字段。为空时是列表项中除对象和数组外的全部字段。
+	Filters      []string          `json:"filters,omitempty"`      // 列表上方的筛选条件：列表接口的查询参数，按业务命名，例如 name、status、min_age；文字是输入框，枚举是下拉选择，布尔是“是 / 否”。
+	Sort         []string          `json:"sort,omitempty"`         // 可以排序的列。列表接口要有 sort 查询参数，取值是列名，前面加 - 表示降序；sort 限定了取值时，每一列的升序或降序至少有一个在其中。
+	CreateForm   []string          `json:"create_form,omitempty"`  // 新建表单的字段：新建接口请求体的字段，按显示的顺序。为空时是请求体的全部字段，按结构体中的顺序。
+	UpdateForm   []string          `json:"update_form,omitempty"`  // 修改表单的字段：修改接口请求体的字段，按显示的顺序。为空时是请求体的全部字段，按结构体中的顺序。
+	Labels       map[string]string `json:"labels,omitempty"`       // 源语言的默认字段显示名，例如 {"title": "标题"}；翻译文件中 <Name>.fields.<字段> 优先。
+	Descriptions map[string]string `json:"descriptions,omitempty"` // 源语言的默认字段说明，显示在输入框下面；翻译文件中 <Name>.descriptions.<字段> 优先。
+	Actions      []Action          `json:"actions,omitempty"`      // 一行上的其他操作，例如发布。
 	// UpdateWhen、DeleteWhen 是一行上显示“修改”“删除”的条件，写法与 Action 的 When 相同：键是列表项的字段，
 	// 值是允许的取值，例如 {"status": {"draft"}} 只有草稿能删除。为空时每一行都显示。它们只决定界面上的按钮，
 	// 不能修改、删除的行仍要由接口拒绝。
@@ -48,6 +53,7 @@ type Resource struct {
 // Action 是资源的一行上的操作。
 type Action struct {
 	Name      string `json:"name"`              // 操作的名称，kebab-case，例如 publish；显示文字是 <资源>.actions.<Name> 的消息。
+	Label     string `json:"label,omitempty"`   // 源语言的默认显示名，例如“发布”；翻译文件中 <资源>.actions.<Name> 优先。
 	Operation string `json:"operation"`         // 接口的操作 ID，有且只有一个路径参数（行的标识），例如 article-publish。
 	Confirm   bool   `json:"confirm,omitempty"` // 执行前先询问。
 	Danger    bool   `json:"danger,omitempty"`  // 这是危险的操作，界面用醒目的颜色显示。
@@ -220,7 +226,24 @@ func (a *API) checkResource(r *Resource) error {
 			refSchemas[name] = append(refSchemas[name], body.Properties[name])
 		}
 	}
-	return a.checkRefs(r.Refs, refSchemas, "filters, create_form, or update_form")
+	if err := a.checkRefs(r.Refs, refSchemas, "filters, create_form, or update_form"); err != nil {
+		return err
+	}
+	allFields := slices.Concat(r.Columns, r.Filters, r.CreateForm, r.UpdateForm)
+	if err := checkFieldMap("label", r.Labels, allFields); err != nil {
+		return err
+	}
+	return checkFieldMap("description", r.Descriptions, allFields)
+}
+
+// checkFieldMap 检查 labels 或 descriptions 中的每个字段名都在 known 字段集合中。
+func checkFieldMap(what string, m map[string]string, known []string) error {
+	for _, field := range slices.Sorted(maps.Keys(m)) {
+		if !slices.Contains(known, field) {
+			return fmt.Errorf("%s field %q is not a field of this page", what, field)
+		}
+	}
+	return nil
 }
 
 // checkRefs 检查引用字段声明 refs：目标资源名是 kebab-case，每个字段都在 schemas 中且类型是字符串或字符串数组。

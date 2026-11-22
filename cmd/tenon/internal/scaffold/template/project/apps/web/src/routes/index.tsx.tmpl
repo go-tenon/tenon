@@ -3,17 +3,19 @@ import { ActionIcon, Alert, Button, Checkbox, Container, Group, Paper, Stack, Te
 import { IconX } from "@tabler/icons-react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { createFileRoute } from "@tanstack/react-router"
-import { SiteLayout, useT } from "@go-tenon/ui"
+import { SiteLayout[[if .MultiLanguage]], useT[[end]] } from "@go-tenon/ui"
 import { isApiError, type Todo } from "@[[.Slug]]/client/api"
 import { api } from "../api"
 
 export const Route = createFileRoute("/")({
-  staticData: { title: "todo.title" },
+  staticData: { title: [[if .MultiLanguage]]"todo.title"[[else]]"待办"[[end]] },
   component: Todos,
 })
 
 function Todos() {
+[[- if .MultiLanguage]]
   const t = useT()
+[[- end]]
   const queryClient = useQueryClient()
   const todos = useQuery({ queryKey: ["todo"], queryFn: () => api.todo.list() })
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["todo"] })
@@ -39,14 +41,14 @@ function Todos() {
 
   const error = todos.error ?? create.error ?? toggle.error ?? remove.error
   return (
-    <SiteLayout brand={t("app.web")}>
+    <SiteLayout brand={[[if .MultiLanguage]]t("app.web")[[else]][[printf "%q" .Name]][[end]]}>
       <Container size="xs" py="xl">
-        <Title order={2}>{t("app.web")}</Title>
+        <Title order={2}>{[[if .MultiLanguage]]t("app.web")[[else]][[printf "%q" .Name]][[end]]}</Title>
         <form onSubmit={submit}>
           <Group mt="md" gap="xs">
-            <TextInput flex={1} value={title} onChange={(e) => setTitle(e.currentTarget.value)} placeholder={t("todo.placeholder")} autoFocus />
+            <TextInput flex={1} value={title} onChange={(e) => setTitle(e.currentTarget.value)} placeholder={[[if .MultiLanguage]]t("todo.placeholder")[[else]]"要做什么？"[[end]]} autoFocus />
             <Button type="submit" loading={create.isPending}>
-              {t("todo.add")}
+              {[[if .MultiLanguage]]t("todo.add")[[else]]"添加"[[end]]}
             </Button>
           </Group>
         </form>
@@ -64,7 +66,7 @@ function Todos() {
                   onChange={() => toggle.mutate(todo)}
                   label={<Text td={todo.done ? "line-through" : undefined}>{todo.title}</Text>}
                 />
-                <ActionIcon variant="subtle" color="gray" onClick={() => remove.mutate(todo)} aria-label={t("todo.delete")}>
+                <ActionIcon variant="subtle" color="gray" onClick={() => remove.mutate(todo)} aria-label={[[if .MultiLanguage]]t("todo.delete")[[else]]"删除"[[end]]}>
                   <IconX size={16} />
                 </ActionIcon>
               </Group>

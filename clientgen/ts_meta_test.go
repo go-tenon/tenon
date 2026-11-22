@@ -12,6 +12,8 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/go-tenon/tenon/clientgen"
+	"github.com/go-tenon/tenon/contract"
+	"github.com/go-tenon/tenon/enum"
 	"github.com/go-tenon/tenon/httpx/rest"
 	"github.com/go-tenon/tenon/identity"
 	"github.com/go-tenon/tenon/page"
@@ -315,5 +317,115 @@ func TestTSResourceRefs(t *testing.T) {
 	if _, err := clientgen.GenerateTS(build("missing-role"), clientgen.TSOptions{Main: exampleMain}); err == nil ||
 		!strings.Contains(err.Error(), `targets unknown resource "missing-role"`) {
 		t.Fatalf("unknown target resource: err=%v", err)
+	}
+}
+
+type inlineStatus string
+
+const (
+	inlineDraft     inlineStatus = "draft"
+	inlinePublished inlineStatus = "published"
+)
+
+var inlineStatuses = enum.New("inline.status", enum.Item(inlineDraft, "草稿"), enum.Item(inlinePublished, "已发布"))
+
+func (inlineStatus) Schema(r huma.Registry) *huma.Schema {
+	return contract.EnumSchema(r, inlineStatuses)
+}
+
+type inlineItem struct {
+	ID     string       `json:"id"`
+	Title  string       `json:"title"`
+	Status inlineStatus `json:"status"`
+}
+
+type inlineListOut struct{ Body page.Offset[inlineItem] }
+
+type inlineSettings struct {
+	SiteName string `json:"site_name"`
+}
+
+type inlineSettingsOut struct{ Body inlineSettings }
+type inlineSettingsIn struct{ Body inlineSettings }
+
+// 内联默认显示文字：无需翻译文件即可为源语言生成完整的枚举、资源和设置标签，不报警告；翻译文件中的同名键覆盖它。
+func TestTSInlineLabels(t *testing.T) {
+	t.Parallel()
+	api := rest.New(chi.NewRouter(), rest.Options{Title: "Inline"})
+	reg := func(id, method, path string) huma.Operation {
+		op := huma.Operation{OperationID: id, Method: method, Path: path}
+		rest.Public()(&op)
+		return op
+	}
+	rest.Register(api, reg("post-list", http.MethodGet, "/posts"), func(context.Context, *struct{}) (*inlineListOut, error) { return nil, nil })
+	rest.Register(api, reg("post-publish", http.MethodPost, "/posts/{id}/publish"), func(context.Context, *struct {
+		ID string `path:"id"`
+	}) (*struct{}, error) {
+		return nil, nil
+	})
+	rest.Register(api, reg("site-get", http.MethodGet, "/settings/site"), func(context.Context, *struct{}) (*inlineSettingsOut, error) { return nil, nil })
+	rest.Register(api, reg("site-update", http.MethodPut, "/settings/site"), func(context.Context, *inlineSettingsIn) (*inlineSettingsOut, error) { return nil, nil })
+
+	api.Resource(rest.Resource{
+		Name:         "post",
+		Title:        "文章",
+		List:         "post-list",
+		Labels:       map[string]string{"id": "编号", "title": "标题", "status": "状态"},
+		Descriptions: map[string]string{"title": "展示在列表页"},
+		Actions:      []rest.Action{{Name: "publish", Label: "发布", Operation: "post-publish"}},
+	})
+	api.Settings(rest.Settings{
+		Name:         "site",
+		Title:        "站点设置",
+		Get:          "site-get",
+		Update:       "site-update",
+		Labels:       map[string]string{"site_name": "站点名称"},
+		Descriptions: map[string]string{"site_name": "显示在浏览器标题栏"},
+	})
+
+	// 零翻译文件：仅凭 Go 中的默认显示文字就能生成完整的 zh-CN 标签，且无警告。
+	res, err := clientgen.GenerateTS(api, clientgen.TSOptions{Main: exampleMain})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Warnings) > 0 {
+		t.Fatalf("unexpected warnings with inline labels: %q", res.Warnings)
+	}
+	for file, wants := range map[string][]string{
+		"enums.ts":     {`"zh-CN": { draft: "草稿", published: "已发布" }`},
+		"resources.ts": {`title: "文章"`, `fields: { id: "编号", title: "标题", status: "状态" }`, `descriptions: { title: "展示在列表页" }`, `actions: { publish: "发布" }`},
+		"settings.ts":  {`title: "站点设置"`, `fields: { site_name: "站点名称" }`, `descriptions: { site_name: "显示在浏览器标题栏" }`},
+	} {
+		src := string(res.Files[file])
+		for _, want := range wants {
+			if !strings.Contains(src, want) {
+				t.Errorf("%s missing %s:\n%s", file, want, src)
+			}
+		}
+	}
+
+	// 多语言：en.yaml 补充英文译文，zh-CN.yaml 覆盖单个词条，其余仍取内联默认文字。
+	multi, err := clientgen.GenerateTS(api, clientgen.TSOptions{
+		Main: exampleMain,
+		Translations: []fs.FS{fstest.MapFS{
+			"zh-CN.yaml": {Data: []byte("inline.status.draft: 草稿箱\n")},
+			"en.yaml": {Data: []byte(
+				"inline.status.draft: Draft\ninline.status.published: Published\n" +
+					"post.title: Posts\npost.fields.id: ID\npost.fields.title: Title\npost.fields.status: Status\npost.actions.publish: Publish\n" +
+					"site.title: Site Settings\nsite.fields.site_name: Site Name\n",
+			)},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(multi.Warnings) > 0 {
+		t.Fatalf("unexpected multi warnings: %q", multi.Warnings)
+	}
+	if src := string(multi.Files["enums.ts"]); !strings.Contains(src, `"zh-CN": { draft: "草稿箱", published: "已发布" }`) || !strings.Contains(src, `"en": { draft: "Draft", published: "Published" }`) {
+		t.Errorf("multi enums.ts:\n%s", src)
+	}
+	if src := string(multi.Files["resources.ts"]); !strings.Contains(src, `title: "Posts"`) || !strings.Contains(src, `title: "文章"`) {
+		t.Errorf("multi resources.ts:\n%s", src)
 	}
 }

@@ -28,8 +28,11 @@ const (
     RolesManage Permission = "roles:manage"
 )
 
-// Permissions 是全部权限，显示文字是翻译文件中 permission.<权限> 的消息。
-var Permissions = enum.New("permission", UsersManage, RolesManage)
+// Permissions 是全部权限，源语言默认显示文字写在定义处。
+var Permissions = enum.New("permission",
+    enum.Item(UsersManage, "管理作者"),
+    enum.Item(RolesManage, "管理角色"),
+)
 
 // Schema 让 OpenAPI 中的 Permission 只接受上面的取值：角色表单中是带显示文字的多选。
 func (Permission) Schema(r huma.Registry) *huma.Schema { return contract.EnumSchema(r, Permissions) }
@@ -44,7 +47,7 @@ var Catalog = authz.Catalog{
 - `Catalog` 是[权限目录](../security/authorization.md#permission-catalog)：角色包含目录以外的权限时返回 422。
 - `Permission` 是[枚举](../http/requests.md#enums)，角色表单中显示为多选。
 
-角色和分配保存在 [`authz`](../security/authorization.md#roles) 的表中。在 `cmd/blog/main.go` 的 `migrate publish` 中加上 `authz.Migrations()`，并把翻译文件交给 `httpcmd.Commands`：生成客户端时，枚举和资源的显示文字从中读取：
+角色和分配保存在 [`authz`](../security/authorization.md#roles) 的表中。在 `cmd/blog/main.go` 的 `migrate publish` 中加上 `authz.Migrations()`：
 
 ```go title="cmd/blog/main.go"
 // Command blog 是博客的入口。
@@ -64,7 +67,6 @@ import (
     "github.com/go-tenon/tenon/ratelimit/pglimit"
 
     "example.com/blog/internal/bootstrap"
-    "example.com/blog/locales"
     "example.com/blog/migrations"
 )
 
@@ -79,8 +81,7 @@ func main() {
     // 需要数据库的命令，例如 user create
     root.AddCommand(bootstrap.Commands()...)
     // openapi、routes、client：导出接口文档、列出路由、生成客户端，go tool tenon 调用它们。
-    // 翻译文件交给 client 命令：枚举和资源的显示文字来自其中。
-    root.AddCommand(httpcmd.Commands(bootstrap.DocRouter, httpcmd.Translations(locales.FS))...)
+    root.AddCommand(httpcmd.Commands(bootstrap.DocRouter)...)
     command.Execute(root)
 }
 
@@ -236,10 +237,11 @@ func RegisterRoutes(api *rest.API, require func(*huma.Operation), roles *authz.S
     rest.Register(api, op("role-update", http.MethodPut, "/roles/{id}", "修改角色"), h.update)
     rest.Register(api, op("role-delete", http.MethodDelete, "/roles/{id}", "删除角色"), h.delete)
 
-    // 角色的后台页面：列、表单字段的类型和校验规则都来自上面的接口，显示文字来自翻译文件。
+    // 角色的后台页面：列、表单字段的类型和校验规则都来自上面的接口，标题与字段显示名直接写在声明中。
     api.Resource(rest.Resource{
-        Name: "role", List: "role-list", Create: "role-create", Update: "role-update", Delete: "role-delete",
+        Name: "role", Title: "角色", List: "role-list", Create: "role-create", Update: "role-update", Delete: "role-delete",
         Columns: []string{"name", "description", "permissions"},
+        Labels:  map[string]string{"name": "名称", "description": "说明", "permissions": "权限"},
     })
 }
 ```
@@ -444,8 +446,9 @@ func RegisterRoutes(api *rest.API, requireUser, requireManage func(*huma.Operati
 
     // 作者的后台页面：作者用命令创建，后台只列出和修改。
     api.Resource(rest.Resource{
-        Name: "user", List: "user-list", Update: "user-update",
+        Name: "user", Title: "作者", List: "user-list", Update: "user-update",
         Columns: []string{"name", "roles", "created_at"}, Filters: []string{"name"},
+        Labels:  map[string]string{"name": "名字", "roles": "角色", "created_at": "注册时间"},
     })
 }
 ```
@@ -663,7 +666,6 @@ import (
     "github.com/go-tenon/tenon/health"
     "github.com/go-tenon/tenon/httpx"
     "github.com/go-tenon/tenon/httpx/rest"
-    "github.com/go-tenon/tenon/i18n"
     "github.com/go-tenon/tenon/identity"
 
     "example.com/blog/apps"
@@ -671,7 +673,6 @@ import (
     "example.com/blog/internal/auth"
     "example.com/blog/internal/role"
     "example.com/blog/internal/user"
-    "example.com/blog/locales"
 )
 
 // HTTP 装配 HTTP 服务。apps 中的前端由 frontend.Host 按挂载路径提供：服务端渲染的前端由
@@ -700,7 +701,7 @@ func (a *App) HTTP(d *command.Daemon) (func(context.Context) error, error) {
 // 它只保存 App 的字段、不使用它们，所以 DocRouter 可以用一个没有打开任何资源的 App 调用它。
 func (a *App) Router(pages http.Handler) chi.Router {
     router := chi.NewRouter()
-    router.Use(httpx.Defaults(a.cfg.HTTP, httpx.Languages(i18n.MustNew("zh-CN", locales.FS)))...)
+    router.Use(httpx.Defaults(a.cfg.HTTP)...)
     router.Get("/livez", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
     router.Handle("/readyz", httpx.Ready(httpx.ReadyOptions{
         Checks: []health.Check{
@@ -736,26 +737,6 @@ func DocRouter() chi.Routes {
 
 ```
 
-后台中资源、字段和权限的显示文字写在 `locales/zh-CN.yaml` 中，消息键是 `<资源>.title`、`<资源>.fields.<字段>` 和 `permission.<权限>`：
-
-```yaml title="locales/zh-CN.yaml"
-article.not_found: 文章不存在
-article.slug_taken: "slug“{{.slug}}”已被使用"
-article.forbidden: 只有作者能修改这篇文章
-article.already_published: 文章已经发布了
-user.not_found: 作者不存在
-user.title: 作者
-user.fields.name: 名字
-user.fields.roles: 角色
-user.fields.created_at: 注册时间
-role.title: 角色
-role.fields.name: 名称
-role.fields.description: 说明
-role.fields.permissions: 权限
-"permission.users:manage": 管理作者
-"permission.roles:manage": 管理角色
-```
-
 把小明设为管理员：
 
 ```bash
@@ -773,7 +754,7 @@ go run ./cmd/blog user admin --email ming@example.com
 go tool tenon add frontend admin --layout frame
 ```
 
-它在 `apps/admin` 中生成登录页、`FrameLayout` 布局和首页，只在浏览器中渲染（`apps/admin/package.json` 中 `"ssr": false`）；后台的界面文字在 `locales/admin.zh-CN.yaml` 中。`internal/bootstrap/http.go` 不用改。重新生成客户端：
+它在 `apps/admin` 中生成登录页、`FrameLayout` 布局和首页，只在浏览器中渲染（`apps/admin/package.json` 中 `"ssr": false`）。`internal/bootstrap/http.go` 不用改。重新生成客户端：
 
 ```bash
 go tool tenon generate
@@ -787,27 +768,15 @@ import { createClient } from "@blog/client/api"
 import { createKit } from "@blog/client/api/kit"
 import { apiFetch } from "@go-tenon/start"
 import { session } from "./auth"
-import { i18n } from "./i18n"
 
 // api 是生成的客户端。登录凭据是浏览器自动带上的会话 cookie；受保护的接口返回 401 时，会话随之变为未登录。
-export const api = createClient({ baseURL: "/api", fetch: apiFetch, session, headers: i18n.headers })
+export const api = createClient({ baseURL: "/api", fetch: apiFetch, session })
 
 // kit 是生成的客户端和元数据：查询选项、校验规则、验证提示、枚举的显示文字和资源。
-// scope 让查询的缓存按登录的账号区分；字段名、枚举和验证提示按当前语言显示。
-const kit = createKit(api, { scope: session.scope, language: i18n.language })
+// scope 让查询的缓存按登录的账号区分；字段名、枚举和验证提示按简体中文显示。
+const kit = createKit(api, { scope: session.scope, language: "zh-CN" })
 export const users = resourceModel(kit.resources.user, kit)
 export const roles = resourceModel(kit.resources.role, kit)
-```
-
-菜单的标题写在后台的翻译文件中。把 `locales/admin.zh-CN.yaml` 中后台的名称改为“博客后台”，加上两个菜单：
-
-```yaml title="locales/admin.zh-CN.yaml"
-app.admin: 博客后台
-home.title: 首页
-home.start: 从这里开始。
-signin.title: 登录
-nav.users: 作者
-nav.roles: 角色
 ```
 
 角色的页面只有声明。新建 `apps/admin/src/routes/_app/roles.tsx`：
@@ -818,13 +787,13 @@ import { ResourcePage } from "@go-tenon/ui"
 import { roles } from "../../resources"
 
 export const Route = createFileRoute("/_app/roles")({
-  staticData: { title: "nav.roles", icon: "safety", permission: "roles:manage" },
+  staticData: { title: "角色", icon: "safety", permission: "roles:manage" },
   validateSearch: roles.listSearch,
   component: () => <ResourcePage model={roles} route={Route} form="modal" />,
 })
 ```
 
-- `staticData.title` 写消息 ID，菜单显示翻译文件中的文字。
+- `staticData.title` 直接写菜单标题。
 - `ResourcePage` 按资源渲染列表、表单和删除确认。
 - `form="modal"` 在对话框中填写表单；默认是单独的页面，要另加两个路由，见[资源页面](../frontend/resources.md#admin)。
 - 没有 `roles:manage` 的作者看不到这个菜单。
@@ -839,7 +808,7 @@ import { type FieldInput, ResourcePage } from "@go-tenon/ui"
 import { api, users } from "../../resources"
 
 export const Route = createFileRoute("/_app/users")({
-  staticData: { title: "nav.users", icon: "team", permission: "users:manage" },
+  staticData: { title: "作者", icon: "team", permission: "users:manage" },
   validateSearch: users.listSearch,
   component: Users,
 })

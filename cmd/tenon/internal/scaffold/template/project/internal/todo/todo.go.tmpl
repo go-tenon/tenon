@@ -14,7 +14,7 @@ import (
 )
 
 // ErrNotFound 表示待办事项不存在。
-var ErrNotFound = errorx.Define(errorx.NotFound, "todo.not_found")
+var ErrNotFound = errorx.Define(errorx.NotFound, "todo.not_found", "待办事项不存在")
 
 // Todo 是一条待办事项。
 type Todo struct {

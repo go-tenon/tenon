@@ -118,11 +118,23 @@ func TestConfigFile(t *testing.T) {
 		"empty api":     `{"apis": {"/api/v1": null}}`,
 		"agent":         `{"agents": {"targets": ["copilot"]}}`,
 		"check skip":    `{"check": {"skip": ["unknown"]}}`,
+		"empty langs":   `{"languages": []}`,
+		"bad lang":      `{"languages": ["not a lang!"]}`,
+		"dup lang":      `{"languages": ["zh-CN", "zh-cn"]}`,
 	} {
 		write(t, dir, "tenon.json", content)
 		if _, err := project.Load(dir); err == nil {
 			t.Errorf("%s: no error", name)
 		}
+	}
+
+	write(t, dir, "tenon.json", `{"main": "./cmd/web", "languages": ["zh-CN", "en"]}`)
+	cfg, err = project.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SourceLanguage() != "zh-CN" || !cfg.MultiLanguage() || !slices.Equal(cfg.AllLanguages(), []string{"zh-CN", "en"}) {
+		t.Fatalf("multi languages: %+v", cfg.Languages)
 	}
 }
 

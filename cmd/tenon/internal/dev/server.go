@@ -163,6 +163,9 @@ func Generations(cfg *project.Config) [][]string {
 	var runs [][]string
 	if cfg.Client {
 		args := []string{"client", "--ts", project.ClientSrc}
+		if lang := cfg.SourceLanguage(); lang != project.DefaultLanguage {
+			args = append(args, "--default-language", lang)
+		}
 		for _, base := range bases {
 			if name := cfg.APIs[base].Name; name != "" {
 				args = append(args, "--name", base+"="+name)

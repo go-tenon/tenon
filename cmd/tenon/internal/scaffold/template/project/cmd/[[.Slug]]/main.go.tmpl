@@ -15,10 +15,16 @@ import (
 	"github.com/go-tenon/tenon/frontend"
 	"github.com/go-tenon/tenon/httpx"
 	"github.com/go-tenon/tenon/httpx/rest"
+[[- if or .MultiLanguage (ne .SourceLanguage "zh-CN")]]
+	"github.com/go-tenon/tenon/i18n"
+[[- end]]
 	"github.com/go-tenon/tenon/logging"
 
 	"[[.Module]]/apps"
 	"[[.Module]]/internal/todo"
+[[- if .MultiLanguage]]
+	"[[.Module]]/locales"
+[[- end]]
 )
 
 // Config 是应用的配置：config/app.yaml。
@@ -36,8 +42,16 @@ func main() {
 		httpcmd.Health(func(cfg Config) httpx.Config { return cfg.HTTP }),
 	)
 	// openapi、routes、client 用默认配置和 nil 依赖构造同一套路由，从中读取路由表和接口定义。
+[[- if .MultiLanguage]]
+	root.AddCommand(httpcmd.Commands(func() chi.Routes { return routes(config.Default[Config](), nil, nil) }, httpcmd.Translations(locales.FS))...)
+	command.Execute(root, command.Languages(i18n.MustNew([[printf "%q" .SourceLanguage]], locales.FS)))
+[[- else if ne .SourceLanguage "zh-CN"]]
+	root.AddCommand(httpcmd.Commands(func() chi.Routes { return routes(config.Default[Config](), nil, nil) })...)
+	command.Execute(root, command.Languages(i18n.MustNew([[printf "%q" .SourceLanguage]])))
+[[- else]]
 	root.AddCommand(httpcmd.Commands(func() chi.Routes { return routes(config.Default[Config](), nil, nil) })...)
 	command.Execute(root)
+[[- end]]
 }
 
 // App 是进程中各部分共用的资源。
@@ -82,7 +96,13 @@ func (a *App) serveHTTP(d *command.Daemon) (func(context.Context) error, error) 
 // 它只保存依赖，处理请求时才使用，所以 openapi 等命令可以传 nil。
 func routes(cfg Config, store *todo.Store, pages http.Handler) chi.Router {
 	router := chi.NewRouter()
+[[- if .MultiLanguage]]
+	router.Use(httpx.Defaults(cfg.HTTP, httpx.Languages(i18n.MustNew([[printf "%q" .SourceLanguage]], locales.FS)))...)
+[[- else if ne .SourceLanguage "zh-CN"]]
+	router.Use(httpx.Defaults(cfg.HTTP, httpx.Languages(i18n.MustNew([[printf "%q" .SourceLanguage]])))...)
+[[- else]]
 	router.Use(httpx.Defaults(cfg.HTTP)...)
+[[- end]]
 	router.Get("/livez", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
 	router.Route("/api", func(r chi.Router) {
 		r.Use(httpx.Timeout(cfg.HTTP.Timeout))

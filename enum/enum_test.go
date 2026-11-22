@@ -17,37 +17,49 @@ const (
 )
 
 func TestEnum(t *testing.T) {
-	e := enum.New("article.status", draft, published)
+	t.Parallel()
+	e := enum.New("article.status", enum.Item(draft, "草稿"), enum.Item(published))
 	if e.Name() != "ArticleStatus" || e.Prefix() != "article.status" || e.MessageID(draft) != "article.status.draft" {
 		t.Fatalf("name %q prefix %q", e.Name(), e.Prefix())
 	}
 	if !e.Valid(published) || e.Valid("archived") || len(e.Values()) != 2 || e.Strings()[1] != "published" {
 		t.Fatalf("values %q", e.Values())
 	}
-	if got := enum.New("order.payment_state", status("paid")).Name(); got != "OrderPaymentState" {
+	if got := enum.New("order.payment_state", enum.Item(status("paid"), "已支付")).Name(); got != "OrderPaymentState" {
 		t.Errorf("name %q", got)
 	}
+	if got := e.DefaultLabels(); len(got) != 1 || got["draft"] != "草稿" {
+		t.Errorf("default labels %v", got)
+	}
 
-	bundle := i18n.MustNew("zh-CN", fstest.MapFS{"zh-CN.yaml": {Data: []byte("article.status.draft: 草稿\n")}})
-	ctx := i18n.WithLocale(context.Background(), bundle, "zh-CN")
-	if got := e.Label(ctx, draft); got != "草稿" {
-		t.Errorf("label %q", got)
+	// 翻译文件中的译文覆盖默认显示文字。
+	bundle := i18n.MustNew("zh-CN", fstest.MapFS{"en.yaml": {Data: []byte("article.status.draft: Draft\n")}})
+	enCtx := i18n.WithLocale(context.Background(), bundle, "en")
+	if got := e.Label(enCtx, draft); got != "Draft" {
+		t.Errorf("translated label %q", got)
 	}
-	// 没有翻译、或 context 中没有语言时返回取值本身。
-	if got := e.Label(ctx, published); got != "published" {
+	// 没有翻译但有默认显示文字时使用默认显示文字（包括 context 未设置语言时）。
+	zhCtx := i18n.WithLocale(context.Background(), bundle, "zh-CN")
+	if got := e.Label(zhCtx, draft); got != "草稿" {
+		t.Errorf("default label %q", got)
+	}
+	if got := e.Label(context.Background(), draft); got != "草稿" {
+		t.Errorf("default label without locale %q", got)
+	}
+	// 既没有翻译也没有默认显示文字时返回取值本身。
+	if got := e.Label(zhCtx, published); got != "published" {
 		t.Errorf("untranslated label %q", got)
-	}
-	if got := e.Label(context.Background(), draft); got != "draft" {
-		t.Errorf("label without locale %q", got)
 	}
 }
 
 func TestNewPanics(t *testing.T) {
+	t.Parallel()
 	for name, f := range map[string]func(){
-		"bad prefix": func() { enum.New("Article.Status", draft) },
-		"no values":  func() { enum.New[status]("article.status") },
-		"empty":      func() { enum.New("article.status", draft, "") },
-		"duplicate":  func() { enum.New("article.status", draft, draft) },
+		"bad prefix":      func() { enum.New("Article.Status", enum.Item(draft)) },
+		"no values":       func() { enum.New[status]("article.status") },
+		"empty":           func() { enum.New("article.status", enum.Item(draft), enum.Item(status(""))) },
+		"duplicate":       func() { enum.New("article.status", enum.Item(draft), enum.Item(draft)) },
+		"multiple labels": func() { enum.Item(draft, "a", "b") },
 	} {
 		func() {
 			defer func() {

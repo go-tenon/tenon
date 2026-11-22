@@ -260,14 +260,59 @@ func TestCheck(t *testing.T) {
 		"apps/web/src/page.tsx":      `export const title = "写死的中文"; export const color = "#ff0000"`,
 		"migrations/0001_create.sql": `CREATE TABLE items (id uuid PRIMARY KEY, created_at timestamptz DEFAULT NOW());`,
 	})
+	// 默认单语言项目跳过 text，报告 colors 与 clock（2 项）。
+	if err := execute(t, "check"); err == nil || !strings.Contains(err.Error(), "2 check violations") {
+		t.Fatalf("single-language check = %v", err)
+	}
+	// 配置多种语言后自动启用 text 检查（3 项）。
+	if err := os.WriteFile("tenon.json", []byte(`{"languages": ["zh-CN", "en"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if err := execute(t, "check"); err == nil || !strings.Contains(err.Error(), "3 check violations") {
-		t.Fatalf("check = %v", err)
+		t.Fatalf("multi-language check = %v", err)
 	}
 	if err := execute(t, "check", "--only", "clock"); err == nil || !strings.Contains(err.Error(), "1 check violations") {
 		t.Fatalf("check --only clock = %v", err)
 	}
 	if err := execute(t, "check", "--only", "errors"); err != nil {
 		t.Fatalf("check --only errors = %v", err)
+	}
+}
+
+func TestAddLanguage(t *testing.T) {
+	newProject(t, map[string]string{
+		"AGENTS.md":               "# Blog\n\n<!-- tenon:begin -->\n<!-- tenon:end -->\n",
+		"apps/web/vite.config.ts": "",
+		"apps/web/package.json":   `{"tenon": {"base": "/"}}`,
+	}, "go")
+	cmd := root()
+	var out bytes.Buffer
+	cmd.SetArgs([]string{"add", "language", "en"})
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err, out.String())
+	}
+	for name, want := range map[string]string{
+		"tenon.json":                   `"languages": [`,
+		"locales/embed.go":             `//go:embed *.yaml`,
+		"locales/en.yaml":              `服务端 en 翻译文件`,
+		"locales/web.zh-CN.yaml":       `app.web: "web"`,
+		"locales/web.en.yaml":          `app.web: "web"`,
+		"apps/web/src/i18n.ts":         `defaultLanguage: "zh-CN"`,
+		"apps/web/src/messages.gen.ts": `"en":`,
+		"AGENTS.md":                    "页面用 `useT`",
+	} {
+		b, err := os.ReadFile(name)
+		if err != nil || !strings.Contains(string(b), want) {
+			t.Errorf("%s: err=%v want %q\n%s", name, err, want, b)
+		}
+	}
+	if err := execute(t, "add", "language", "en"); err == nil || !strings.Contains(err.Error(), "already configured") {
+		t.Fatalf("duplicate language = %v", err)
+	}
+	if err := execute(t, "add", "language", "not a lang!"); err == nil || !strings.Contains(err.Error(), "not a valid language tag") {
+		t.Fatalf("invalid language = %v", err)
 	}
 }
 

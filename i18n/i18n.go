@@ -22,20 +22,50 @@ const (
 //go:embed locales/*.yaml
 var builtin embed.FS
 
-// New 创建以 defaultLocale 为默认语言的消息目录。先加载框架内置的中英文消息，
-// 再按顺序加载 sources 中的 YAML 翻译文件（文件名即语言标签，如 en.yaml）；
-// 后加载的同名消息覆盖先加载的。返回的 Bundle 应在处理请求前完成全部修改。
+// New 创建以 defaultLocale 为默认语言的消息目录。只启用 defaultLocale 和 sources 中实际出现的语言：
+// 框架内置消息只加载这些语言中匹配的部分，不会扩大可协商的语言集合；随后按顺序加载 sources 中的
+// YAML 翻译文件（文件名即语言标签，如 en.yaml），后加载的同名消息覆盖先加载的。
+// 返回的 Bundle 应在处理请求前完成全部修改。
 func New(defaultLocale string, sources ...fs.FS) (*goi18n.Bundle, error) {
 	tag, err := language.Parse(defaultLocale)
 	if err != nil {
 		return nil, errors.Wrapf(err, "i18n: default locale %q", defaultLocale)
 	}
-	b := goi18n.NewBundle(tag)
-	b.RegisterUnmarshalFunc("yaml", yaml.Unmarshal)
-	b.RegisterUnmarshalFunc("yml", yaml.Unmarshal)
-	for _, src := range append([]fs.FS{builtin}, sources...) {
-		if err := load(b, src); err != nil {
+	// 先解析应用翻译文件，收集应用实际启用的语言集合。
+	allowed := []language.Tag{tag}
+	seen := map[language.Tag]bool{tag: true}
+	var appFiles []*goi18n.MessageFile
+	for _, src := range sources {
+		files, err := parseFS(src)
+		if err != nil {
 			return nil, err
+		}
+		for _, mf := range files {
+			if !seen[mf.Tag] {
+				seen[mf.Tag] = true
+				allowed = append(allowed, mf.Tag)
+			}
+			appFiles = append(appFiles, mf)
+		}
+	}
+	b := goi18n.NewBundle(tag)
+	// 框架内置消息只为 allowed 中匹配的语言加载，避免单语言项目被协商到其他内置语言。
+	builtinFiles, err := parseFS(builtin)
+	if err != nil {
+		return nil, err
+	}
+	for _, mf := range builtinFiles {
+		for _, target := range allowed {
+			if builtinMatches(mf.Tag, target) {
+				if err := b.AddMessages(target, mf.Messages...); err != nil {
+					return nil, errors.Wrapf(err, "i18n: load builtin %s", mf.Path)
+				}
+			}
+		}
+	}
+	for _, mf := range appFiles {
+		if err := b.AddMessages(mf.Tag, mf.Messages...); err != nil {
+			return nil, errors.Wrapf(err, "i18n: load %s", mf.Path)
 		}
 	}
 	return b, nil
@@ -53,9 +83,13 @@ func MustNew(defaultLocale string, sources ...fs.FS) *goi18n.Bundle {
 	return b
 }
 
-// load 把 src 中全部消息文件加载到 b。
-func load(b *goi18n.Bundle, src fs.FS) error {
-	return fs.WalkDir(src, ".", func(p string, d fs.DirEntry, err error) error {
+// yamlUnmarshalers 是解析 YAML 翻译文件所用的反序列化映射。
+var yamlUnmarshalers = map[string]goi18n.UnmarshalFunc{"yaml": yaml.Unmarshal, "yml": yaml.Unmarshal}
+
+// parseFS 读取并解析 src 中的全部 YAML 翻译文件。
+func parseFS(src fs.FS) ([]*goi18n.MessageFile, error) {
+	var files []*goi18n.MessageFile
+	err := fs.WalkDir(src, ".", func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return err
 		}
@@ -66,11 +100,28 @@ func load(b *goi18n.Bundle, src fs.FS) error {
 		if err != nil {
 			return err
 		}
-		if _, err := b.ParseMessageFileBytes(data, path.Base(p)); err != nil {
+		mf, err := goi18n.ParseMessageFileBytes(data, path.Base(p), yamlUnmarshalers)
+		if err != nil {
 			return errors.Wrapf(err, "i18n: load %s", p)
 		}
+		mf.Path = p
+		files = append(files, mf)
 		return nil
 	})
+	return files, err
+}
+
+// builtinMatches 报告框架内置语言 bt 是否应作为目标语言 target 的基础消息加载：
+// 完全相同，或者主语言与文字系统相同（例如内置 en 匹配 en-US，内置 zh-CN 匹配 zh-Hans，不匹配 zh-TW）。
+func builtinMatches(bt, target language.Tag) bool {
+	if bt == target {
+		return true
+	}
+	bBase, _ := bt.Base()
+	tBase, _ := target.Base()
+	bScript, _ := bt.Script()
+	tScript, _ := target.Script()
+	return bBase == tBase && bScript == tScript
 }
 
 // Templates 按与 New 相同的顺序读取框架内置消息和 sources 中的翻译文件，返回每种语言（文件名中的语言标签，
@@ -134,11 +185,20 @@ type localeKey struct{}
 type localeValue struct {
 	locale    string
 	localizer *goi18n.Localizer
+	isDefault bool
 }
 
 // WithLocale 返回携带 locale 及其 Localizer 的 context。
 func WithLocale(ctx context.Context, b *goi18n.Bundle, locale string) context.Context {
-	return context.WithValue(ctx, localeKey{}, localeValue{locale, goi18n.NewLocalizer(b, locale)})
+	tags := b.LanguageTags()
+	isDefault := len(tags) > 0 && (locale == "" || strings.EqualFold(locale, tags[0].String()))
+	return context.WithValue(ctx, localeKey{}, localeValue{locale, goi18n.NewLocalizer(b, locale), isDefault})
+}
+
+// isDefaultLocale 报告 ctx 中设置的语言是否是语言目录的默认语言。
+func isDefaultLocale(ctx context.Context) bool {
+	v, _ := ctx.Value(localeKey{}).(localeValue)
+	return v.isDefault
 }
 
 // Locale 返回 context 中的语言；未设置时返回空字符串。

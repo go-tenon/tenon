@@ -53,7 +53,6 @@ blog/
 ├── config/app.yaml              应用的配置
 ├── cmd/blog/main.go             程序的入口：serve 命令启动 HTTP 服务
 ├── internal/todo/todo.go        示例的接口
-├── locales/web.zh-CN.yaml       前端的界面文字
 ├── apps/apps.go                 把前端的构建产物打包进 Go 程序
 ├── apps/web/                    前端
 │   ├── package.json             React、TanStack Start、TanStack Query、Mantine；挂载路径和是否在服务端渲染
@@ -61,14 +60,13 @@ blog/
 │   └── src/
 │       ├── router.tsx           装配路由和数据请求
 │       ├── theme.ts             主题：样式预设和品牌色
-│       ├── i18n.ts              界面文字的翻译
 │       ├── api.ts               创建调用接口的客户端
 │       └── routes/              页面，一个文件一个页面
 └── packages/client/src/api/     生成的客户端
 ```
 
 - Go 代码在 `cmd` 和 `internal` 中，`internal` 下一个业务一个包，例如 `internal/todo`、以后的 `internal/article`。
-- 前端在 `apps/web` 中，页面在 `src/routes` 中，界面用 [Mantine](https://mantine.dev) 的组件和 `@go-tenon/ui` 的布局。页面上的文字写在 `locales/web.zh-CN.yaml` 中，见[界面文字](../frontend/i18n.md)。
+- 前端在 `apps/web` 中，页面在 `src/routes` 中，界面用 [Mantine](https://mantine.dev) 的组件和 `@go-tenon/ui` 的布局。默认生成单语言项目，文字直接写在页面代码中；需要多语言时见[界面文字](../frontend/i18n.md)。
 - 生成的客户端在 `packages/client` 中，前端用 `@blog/client/api` 导入，不要手动修改。
 
 `apps/web` 在服务端渲染（`package.json` 中 `"ssr": true`），构建时连同 Bun 打包进 Go 程序，见[托管前端与服务端渲染](../frontend/hosting.md)。各目录的说明见[安装](../installation/installing.md#layout)。

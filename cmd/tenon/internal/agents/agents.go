@@ -66,7 +66,7 @@ func Sync(dir string, cfg *project.Config, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	syncedAgents, err := SyncAgentsMD(dir)
+	syncedAgents, err := SyncAgentsMD(dir, cfg)
 	if err != nil {
 		return err
 	}
@@ -85,8 +85,9 @@ func Sync(dir string, cfg *project.Config, out io.Writer) error {
 }
 
 // SyncAgentsMD 把当前框架版本的通用约定写入项目 dir 根目录 AGENTS.md 的托管区块（agentsBegin 到 agentsEnd 之间），
-// 区块之外的项目说明保持原样。文件中还没有标记时把托管区块追加到末尾；文件不存在时什么也不做，返回 false。
-func SyncAgentsMD(dir string) (bool, error) {
+// 按 cfg.MultiLanguage 写入单语言或多语言的界面文字与错误提示约定，区块之外的项目说明保持原样。
+// 文件中还没有标记时把托管区块追加到末尾；文件不存在时什么也不做，返回 false。
+func SyncAgentsMD(dir string, cfg *project.Config) (bool, error) {
 	p := filepath.Join(dir, AgentsFile)
 	data, err := os.ReadFile(p)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -95,8 +96,9 @@ func SyncAgentsMD(dir string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("agents: read %s: %w", AgentsFile, err)
 	}
+	body := renderConventions(cfg)
 	block := agentsBegin + "\n<!-- 这一段由 go tool tenon agents 按框架版本维护，不要手改。 -->\n\n" +
-		strings.TrimSpace(conventions) + "\n" + agentsEnd + "\n"
+		strings.TrimSpace(body) + "\n" + agentsEnd + "\n"
 	updated := replaceLines(string(data), agentsBegin, agentsEnd, block)
 	if updated == string(data) {
 		return true, nil
@@ -105,6 +107,18 @@ func SyncAgentsMD(dir string) (bool, error) {
 		return false, fmt.Errorf("agents: write %s: %w", AgentsFile, err)
 	}
 	return true, nil
+}
+
+// renderConventions 按项目是否启用多语言展开 conventions.md 中的占位符。
+func renderConventions(cfg *project.Config) string {
+	errRule := "业务错误用 `errorx.Define(kind, code, \"默认提示\")` 定义稳定错误码与源语言提示；无需为源语言另建翻译文件。"
+	uiRule := "界面文字与菜单标题直接写在页面代码中，无需抽到 `locales/`；需要多语言时运行 `go tool tenon add language <语言>`，见 `.tenon/docs/frontend/i18n.md`。"
+	if cfg != nil && cfg.MultiLanguage() {
+		errRule = "业务错误用 `errorx.Define(kind, code, \"源语言提示\")` 定义稳定错误码与源语言提示，其余语言的译文写在 `locales/<语言>.yaml` 中。"
+		uiRule = "界面文字写在 `locales/<前端>.<语言>.yaml`，页面用 `useT`，菜单标题写消息 ID，见 `.tenon/docs/frontend/i18n.md`。"
+	}
+	r := strings.NewReplacer("{{error_i18n_rule}}", errRule, "{{frontend_i18n_rule}}", uiRule)
+	return r.Replace(conventions)
 }
 
 // SyncDocs 把框架目录 fw 中的 docs 复制到项目 dir 的 DocsDir，替换已有的内容。

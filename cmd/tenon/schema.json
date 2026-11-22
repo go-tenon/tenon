@@ -27,6 +27,13 @@
         }
       }
     },
+    "languages": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "minItems": 1,
+      "uniqueItems": true,
+      "description": "应用支持的语言列表（BCP-47 标签），第一项是源语言，默认 [\"zh-CN\"]。只有一种语言时为单语言项目（前端直写文字，不检查写死汉字）；配置两种及以上时启用多语言模式（前端使用 locales/<前端>.<语言>.yaml 和 useT，并自动开启写死文字检查和附加语言错误码检查）。"
+    },
     "agents": {
       "type": "object",
       "description": "tenon agents 为哪些 AI 编程助手安装技能、写 MCP 配置。.tenon/docs 中的框架文档不论选择都会更新。",

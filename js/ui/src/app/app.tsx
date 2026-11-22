@@ -8,6 +8,7 @@ import {
   type ErrorInfo,
   grants,
   type I18n,
+  type MessageTable,
   type Session,
 } from "@go-tenon/client"
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query"
@@ -29,7 +30,7 @@ import {
 } from "@tanstack/react-router"
 import { createContext, Fragment, type ReactNode, useContext, useEffect, useMemo, useSyncExternalStore } from "react"
 import "./meta"
-import { I18nProvider, useLanguage, withUiMessages } from "../i18n/i18n"
+import { I18nProvider, type UiMessageId, useLanguage, withUiMessages } from "../i18n/i18n"
 import { useBadges } from "./badges"
 import { breadcrumbs, buildMenu, type Crumb, firstPage, type MenuItem, routeInfos } from "./menu"
 import { safeRedirect } from "./redirect"
@@ -87,9 +88,19 @@ export interface AppOptions<TRouteTree extends AnyRoute> {
   tenancy?: TenancyOptions
   /**
    * 界面文字的翻译：@go-tenon/client 的 createI18n，交给它应用生成的 messages.gen.ts。createApp 在其中加入框架组件内置的文字，
-   * 组件按它的当前语言显示，<html lang> 跟随它。不传时框架组件显示内置的简体中文。
+   * 组件按它的当前语言显示，<html lang> 跟随它。不传时按 language（默认 zh-CN）显示框架内置文字。
    */
   i18n?: I18n
+  /**
+   * 单语言应用的界面语言（例如 "zh-CN"、"en"），决定 @go-tenon/ui 内置组件的文字和 <html lang>。
+   * 传了 i18n 时忽略它；两者都不传时默认是 "zh-CN"。
+   */
+  language?: string
+  /**
+   * 覆盖 @go-tenon/ui 内置组件的文字（例如 { "tenon.table.empty": "还没有内容" }），只在不传 i18n 时生效。
+   * 多语言应用直接写在各自的翻译文件中。
+   */
+  uiMessages?: Partial<Record<UiMessageId, string>>
   /**
    * 页面出错时调用，交给前端观测的 SDK，例如 openobserveLogs.logger.error。路由的错误组件接住的错误
    * （渲染、loader 中抛出的）不会冒泡到 window，SDK 自动捕获不到，所以框架在这里报告。缺少权限、请求被取消、
@@ -258,6 +269,13 @@ export function createApp<TRouteTree extends AnyRoute>(options: AppOptions<TRout
     }
   }
 
+  const defaultLanguage = options.language ?? "zh-CN"
+  const defaultI18n = createI18n({
+    messages: options.uiMessages ? { [defaultLanguage]: options.uiMessages as MessageTable } : {},
+    defaultLanguage,
+    preferred: () => undefined,
+  })
+
   Object.assign(app, {
     id: options.id,
     session,
@@ -266,10 +284,8 @@ export function createApp<TRouteTree extends AnyRoute>(options: AppOptions<TRout
     storage: appStorage(options.id),
     loginPath,
     tenancy: options.tenancy,
-    // 没有应用的翻译时只有框架内置的文字，固定为简体中文，与组件原来的文字相同
-    i18n: withUiMessages(
-      options.i18n ?? createI18n({ messages: {}, defaultLanguage: "zh-CN", preferred: () => undefined }),
-    ),
+    // 没有应用的 i18n 时使用单语言配置（默认简体中文），叠加框架内置文字和可选的 uiMessages 覆盖
+    i18n: withUiMessages(options.i18n ?? defaultI18n),
     reportError,
     ready: () => {
       if (!restoring) restoring = session.restore().catch(() => false)

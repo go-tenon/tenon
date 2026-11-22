@@ -4,16 +4,22 @@ import { createApp, NotFoundPage, RouteError } from "@go-tenon/ui"
 [[- if .HasLogin]]
 import { me, session } from "./auth"
 [[- end]]
+[[- if .MultiLanguage]]
 import { i18n } from "./i18n"
+[[- end]]
 import { routeTree } from "./routeTree.gen"
 
-// getRouter 创建应用：路由、TanStack Query[[if .HasLogin]]、会话和权限[[end]]、界面文字，见框架文档的“应用骨架”。
+// getRouter 创建应用：路由、TanStack Query[[if .HasLogin]]、会话和权限[[end]][[if .MultiLanguage]]、界面文字[[end]]，见框架文档的“应用骨架”。
 // 服务端渲染时每个请求调用一次，所以每次都创建新的应用。
 export function getRouter() {
   const app = createApp({
     id: "[[.Name]]",
     routeTree,
+[[- if .MultiLanguage]]
     i18n,
+[[- else if ne .SourceLanguage "zh-CN"]]
+    language: "[[.SourceLanguage]]",
+[[- end]]
 [[- if .HasLogin]]
     session,
     permissions: async () => (await me()).permissions ?? [],

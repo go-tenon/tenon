@@ -26,7 +26,7 @@ import (
 // Defaults 返回每个应用都应安装的基础中间件，按执行顺序排列：
 // AssignRequestID、NoSniff、ClientIP、Locale、AccessLog、Recover、BodyLimit、AcquireTimeout。
 // 参数取自 cfg 的对应子段，cfg 不合法时 panic。日志写到 slog.Default()，用 Logger 选项改变；
-// 默认只使用框架内置的中英文消息，默认语言为 zh-CN，用 Languages 选项加入应用的语言目录：
+// 默认只启用框架内置的简体中文消息（zh-CN），用 Languages 选项切换默认语言或加入多语言目录：
 //
 //	router.Use(httpx.Defaults(cfg.HTTP, httpx.Languages(languages))...)
 //

@@ -21,17 +21,37 @@ import (
 
 // errorCode 是代码中用 errorx.Define 定义的一条业务错误码。
 type errorCode struct {
-	code string
-	file string
-	line int
+	code       string
+	hasMessage bool // 是否在 errorx.Define 中内联了源语言默认提示
+	file       string
+	line       int
 }
 
-// CheckErrors 检查项目中用 errorx.Define 定义的每个业务错误码是否在服务端的每种语言翻译文件（locales/<语言>.yaml）
-// 中都有译文。项目尚未创建服务端翻译文件时（例如只有前端的 locales/<前端>.<语言>.yaml），返回空。
+// CheckErrors 检查项目中用 errorx.Define 定义的每个业务错误码是否在服务端翻译文件中齐全：
+//   - 多语言项目（tenon.json 的 languages 多于一种）检查每种附加语言的 locales/<语言>.yaml，即使错误带有源语言默认提示也须补齐译文；
+//   - 源语言的 locales/<源语言>.yaml 存在时，检查没有内联默认提示的错误码是否都有译文；
+//   - 单语言项目尚未创建服务端翻译文件时返回空。
 func CheckErrors(root string, cfg *project.Config, exempt []string) ([]Finding, error) {
 	locales, err := loadServerLocales(root, cfg)
-	if err != nil || len(locales) == 0 {
+	if err != nil {
 		return nil, err
+	}
+	if cfg != nil && cfg.MultiLanguage() {
+		if locales == nil {
+			locales = map[string]map[string]bool{}
+		}
+		for _, lang := range cfg.AllLanguages()[1:] {
+			yamlPath := dev.LocalesDir + "/" + lang + ".yaml"
+			ymlPath := dev.LocalesDir + "/" + lang + ".yml"
+			if _, ok := locales[yamlPath]; !ok {
+				if _, ok := locales[ymlPath]; !ok {
+					locales[yamlPath] = map[string]bool{}
+				}
+			}
+		}
+	}
+	if len(locales) == 0 {
+		return nil, nil
 	}
 	codes, err := scanErrorCodes(root, exempt)
 	if err != nil {
@@ -43,15 +63,21 @@ func CheckErrors(root string, cfg *project.Config, exempt []string) ([]Finding, 
 	}
 	slices.Sort(files)
 
+	sourceLang := cfg.SourceLanguage()
 	var out []Finding
 	for _, file := range files {
 		msgs := locales[file]
+		stem := strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))
+		isSource := strings.EqualFold(stem, sourceLang)
 		seen := map[string]bool{}
 		for _, ec := range codes {
 			if seen[ec.code] {
 				continue
 			}
 			seen[ec.code] = true
+			if isSource && ec.hasMessage {
+				continue
+			}
 			if !msgs[ec.code] {
 				out = append(out, Finding{
 					Check:   "errors",
@@ -162,7 +188,7 @@ func scanErrorCodes(root string, exempt []string) ([]errorCode, error) {
 		}
 		ast.Inspect(f, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
-			if !ok || len(call.Args) != 2 {
+			if !ok || (len(call.Args) != 2 && len(call.Args) != 3) {
 				return true
 			}
 			sel, ok := call.Fun.(*ast.SelectorExpr)
@@ -181,7 +207,17 @@ func scanErrorCodes(root string, exempt []string) ([]errorCode, error) {
 			if err != nil || code == "" {
 				return true
 			}
-			out = append(out, errorCode{code: code, file: rel, line: fset.Position(call.Pos()).Line})
+			hasMessage := false
+			if len(call.Args) == 3 {
+				if msgLit, ok := call.Args[2].(*ast.BasicLit); ok && msgLit.Kind == token.STRING {
+					if msg, err := strconv.Unquote(msgLit.Value); err == nil && strings.TrimSpace(msg) != "" {
+						hasMessage = true
+					}
+				} else {
+					hasMessage = true
+				}
+			}
+			out = append(out, errorCode{code: code, hasMessage: hasMessage, file: rel, line: fset.Position(call.Pos()).Line})
 			return true
 		})
 		return nil

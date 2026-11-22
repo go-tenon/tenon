@@ -15,30 +15,6 @@ bun run typecheck
 
 页面中的 `api` 来自模板中的 `apps/web/src/api.ts`。
 
-<a id="messages"></a>
-## 界面文字
-
-页面上的文字写在翻译文件 `locales/web.zh-CN.yaml` 中，`tenon dev` 把它生成为 `apps/web/src/messages.gen.ts`。页面用 `useT` 按消息 ID 取出文字，写错 ID 时类型检查报错；`{{.title}}` 这样的占位符取自 `t` 的第二个参数，见[界面文字](../frontend/i18n.md)。把 `locales/web.zh-CN.yaml` 换成这一章的页面用到的文字：
-
-```yaml title="locales/web.zh-CN.yaml"
-app.web: 博客
-nav.write: 写文章
-common.loading: 加载中…
-common.edit: 编辑
-common.delete: 删除
-common.delete_confirm: "删除“{{.title}}”？"
-list.empty: 还没有文章。
-editor.title: 标题
-editor.slug: Slug
-editor.content: 正文
-editor.save: 保存
-editor.cancel: 取消
-write.title: 写文章
-edit.title: 修改文章
-```
-
-`app.web` 是博客的名称，页面标题和页头都用它。加一种语言就加一个文件，例如 `web.en.yaml`。
-
 <a id="routes"></a>
 ## 页面与路由
 
@@ -60,13 +36,12 @@ import type { ReactNode } from "react"
 import { ColorSchemeScript, mantineHtmlProps } from "@mantine/core"
 import { createRootRouteWithContext, HeadContent, Scripts, useRouter } from "@tanstack/react-router"
 import type { RouterContext } from "@go-tenon/ui"
-import { AnchorLink, ButtonLink, SiteLayout, UIProvider, useT } from "@go-tenon/ui"
-import { i18n } from "../i18n"
+import { AnchorLink, ButtonLink, SiteLayout, UIProvider } from "@go-tenon/ui"
 import { theme } from "../theme"
 
 export const Route = createRootRouteWithContext<RouterContext>()({
   head: () => ({
-    meta: [{ charSet: "utf-8" }, { name: "viewport", content: "width=device-width, initial-scale=1" }, { title: i18n.t("app.web") }],
+    meta: [{ charSet: "utf-8" }, { name: "viewport", content: "width=device-width, initial-scale=1" }, { title: "博客" }],
   }),
   shellComponent: Document,
   component: Layout,
@@ -93,15 +68,14 @@ function Document({ children }: { children: ReactNode }) {
 }
 
 function Layout() {
-  const t = useT()
   return (
     <SiteLayout
       brand={
         <AnchorLink to="/" c="inherit" underline="never" fw={700}>
-          {t("app.web")}
+          博客
         </AnchorLink>
       }
-      actions={<ButtonLink to="/write">{t("nav.write")}</ButtonLink>}
+      actions={<ButtonLink to="/write">写文章</ButtonLink>}
     />
   )
 }
@@ -118,14 +92,13 @@ function Layout() {
 import { Button, Container, Group, Paper, Stack, Text, Title } from "@mantine/core"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { createFileRoute } from "@tanstack/react-router"
-import { ButtonLink, useT } from "@go-tenon/ui"
+import { ButtonLink } from "@go-tenon/ui"
 import type { Article } from "@blog/client/api"
 import { api } from "../api"
 
 export const Route = createFileRoute("/")({ component: ArticleList })
 
 function ArticleList() {
-  const t = useT()
   const queryClient = useQueryClient()
   const articles = useQuery({ queryKey: ["article", "list"], queryFn: () => api.article.list() })
   const remove = useMutation({
@@ -135,9 +108,9 @@ function ArticleList() {
 
   return (
     <Container size="sm" py="xl">
-      {articles.isPending && <Text c="dimmed">{t("common.loading")}</Text>}
+      {articles.isPending && <Text c="dimmed">加载中…</Text>}
       {articles.error && <Text c="red">{articles.error.message}</Text>}
-      {articles.data?.items.length === 0 && <Text c="dimmed">{t("list.empty")}</Text>}
+      {articles.data?.items.length === 0 && <Text c="dimmed">还没有文章。</Text>}
       <Stack>
         {articles.data?.items.map((a) => (
           <Paper key={a.id} p="lg">
@@ -147,10 +120,10 @@ function ArticleList() {
             </Text>
             <Group mt="md" gap="xs">
               <ButtonLink to="/articles/$id/edit" params={{ id: a.id }} variant="default" size="xs">
-                {t("common.edit")}
+                编辑
               </ButtonLink>
-              <Button variant="subtle" color="red" size="xs" onClick={() => confirm(t("common.delete_confirm", { title: a.title })) && remove.mutate(a)}>
-                {t("common.delete")}
+              <Button variant="subtle" color="red" size="xs" onClick={() => confirm(`删除“${a.title}”？`) && remove.mutate(a)}>
+                删除
               </Button>
             </Group>
           </Paper>
@@ -172,13 +145,11 @@ function ArticleList() {
 import { useState, type FormEvent } from "react"
 import { Alert, Button, Group, Stack, Textarea, TextInput } from "@mantine/core"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { useT } from "@go-tenon/ui"
 import { isApiError, type Article, type ArticleChanges } from "@blog/client/api"
 import { api } from "./api"
 
 // ArticleEditor 编辑 article；没有 article 时写一篇新文章。保存或取消后调用 onDone。
 export function ArticleEditor({ article, onDone }: { article?: Article; onDone: () => void }) {
-  const t = useT()
   const queryClient = useQueryClient()
   const [changes, setChanges] = useState<ArticleChanges>({
     title: article?.title ?? "",
@@ -212,15 +183,15 @@ export function ArticleEditor({ article, onDone }: { article?: Article; onDone: 
     <form onSubmit={submit}>
       <Stack>
         {formError && <Alert color="red">{formError}</Alert>}
-        <TextInput label={t("editor.title")} {...field("title")} />
-        <TextInput label={t("editor.slug")} placeholder="hello-world" {...field("slug")} />
-        <Textarea label={t("editor.content")} autosize minRows={12} {...field("content")} />
+        <TextInput label="标题" {...field("title")} />
+        <TextInput label="Slug" placeholder="hello-world" {...field("slug")} />
+        <Textarea label="正文" autosize minRows={12} {...field("content")} />
         <Group>
           <Button type="submit" loading={save.isPending}>
-            {t("editor.save")}
+            保存
           </Button>
           <Button variant="default" onClick={onDone}>
-            {t("editor.cancel")}
+            取消
           </Button>
         </Group>
       </Stack>
@@ -239,18 +210,16 @@ export function ArticleEditor({ article, onDone }: { article?: Article; onDone: 
 ```tsx title="apps/web/src/routes/write.tsx"
 import { Container, Title } from "@mantine/core"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
-import { useT } from "@go-tenon/ui"
 import { ArticleEditor } from "../ArticleEditor"
 
 export const Route = createFileRoute("/write")({ component: Write })
 
 function Write() {
   const navigate = useNavigate()
-  const t = useT()
   return (
     <Container size="sm" py="xl">
       <Title order={2} mb="lg">
-        {t("write.title")}
+        写文章
       </Title>
       <ArticleEditor onDone={() => navigate({ to: "/" })} />
     </Container>
@@ -264,7 +233,6 @@ function Write() {
 import { Container, Text, Title } from "@mantine/core"
 import { useQuery } from "@tanstack/react-query"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
-import { useT } from "@go-tenon/ui"
 import { ArticleEditor } from "../../ArticleEditor"
 import { api } from "../../api"
 
@@ -273,15 +241,14 @@ export const Route = createFileRoute("/articles/$id/edit")({ component: EditArti
 function EditArticle() {
   const { id } = Route.useParams()
   const navigate = useNavigate()
-  const t = useT()
   const article = useQuery({ queryKey: ["article", id], queryFn: () => api.article.get(id) })
 
   return (
     <Container size="sm" py="xl">
       <Title order={2} mb="lg">
-        {t("edit.title")}
+        修改文章
       </Title>
-      {article.isPending && <Text c="dimmed">{t("common.loading")}</Text>}
+      {article.isPending && <Text c="dimmed">加载中…</Text>}
       {article.error && <Text c="red">{article.error.message}</Text>}
       {article.data && <ArticleEditor article={article.data} onDone={() => navigate({ to: "/" })} />}
     </Container>

@@ -2,7 +2,7 @@
 import { useQuery } from "@tanstack/react-query"
 [[end -]]
 import { createFileRoute } from "@tanstack/react-router"
-import { [[if eq .Layout "frame"]]FrameLayout[[else]]RailLayout[[end]][[if .HasLogin]], requireAuth, UserMenu[[end]], useT } from "@go-tenon/ui"
+import { [[if eq .Layout "frame"]]FrameLayout[[else]]RailLayout[[end]][[if .HasLogin]], requireAuth, UserMenu[[end]][[if .MultiLanguage]], useT[[end]] } from "@go-tenon/ui"
 [[- if .HasLogin]]
 import { logout, me } from "../auth"
 [[- end]]
@@ -18,16 +18,18 @@ export const Route = createFileRoute("/_app")({ component: Layout })
 [[- end]]
 
 function Layout() {
+[[- if .MultiLanguage]]
   const t = useT()
+[[- end]]
 [[- if .HasLogin]]
   const user = useQuery({ queryKey: ["me"], queryFn: me })
 [[- end]]
 [[- if eq .Layout "frame"]]
   // 每个页面都有的部分是 FrameLayout 的参数；某个页面才有的按钮，由页面用 <Fill name="actions"> 放进顶栏。
   // tabs 开启多标签。
-  return <FrameLayout title={t("app.[[.Name]]")} tabs[[if .HasLogin]] user={<UserMenu name={user.data?.name} logout={logout} />}[[end]] />
+  return <FrameLayout title={[[if .MultiLanguage]]t("app.[[.Name]]")[[else]][[printf "%q" .Title]][[end]]} tabs[[if .HasLogin]] user={<UserMenu name={user.data?.name} logout={logout} />}[[end]] />
 [[- else]]
   // RailLayout：双栏导航（模块的图标栏和二级导航）[[if .HasLogin]]，设置从用户菜单进入[[end]]。
-  return <RailLayout title={t("app.[[.Name]]")}[[if .HasLogin]] user={<UserMenu name={user.data?.name} position="right-end" logout={logout} />}[[end]] />
+  return <RailLayout title={[[if .MultiLanguage]]t("app.[[.Name]]")[[else]][[printf "%q" .Title]][[end]]}[[if .HasLogin]] user={<UserMenu name={user.data?.name} position="right-end" logout={logout} />}[[end]] />
 [[- end]]
 }

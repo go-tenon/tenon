@@ -149,6 +149,30 @@ var (
 	if len(found) != 1 || found[0].File != "locales/zh-CN.yaml" || !strings.Contains(found[0].Message, `"article.locked"`) {
 		t.Fatalf("got %+v", found)
 	}
+
+	// 带内联源语言默认提示的错误码：源语言 YAML 无需重复写，但多语言项目的附加语言仍须补译文。
+	inlineRoot := t.TempDir()
+	writeFiles(t, inlineRoot, map[string]string{
+		"internal/article/article.go": `package article
+
+import "github.com/go-tenon/tenon/errorx"
+
+var (
+	ErrNotFound = errorx.Define(errorx.NotFound, "article.not_found", "文章不存在")
+	ErrLocked   = errorx.Define(errorx.Conflict, "article.locked", "文章已锁定")
+)
+`,
+		"locales/zh-CN.yaml": "auth.unauthenticated: 请先登录\n",
+		"locales/en.yaml":    "article.not_found: Article not found\n",
+	})
+	multiCfg := &project.Config{Languages: []string{"zh-CN", "en"}}
+	found, err = check.CheckErrors(inlineRoot, multiCfg, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(found) != 1 || found[0].File != "locales/en.yaml" || !strings.Contains(found[0].Message, `"article.locked"`) {
+		t.Fatalf("inline multi errors: got %+v", found)
+	}
 }
 
 // TestCheckColors 检查前端代码中的十六进制和 rgb()/hsl() 硬编码颜色，忽略注释、生成文件、测试、类私有字段和 color-ignore。
@@ -269,33 +293,58 @@ func TestCheckDeps(t *testing.T) {
 	}
 }
 
-// TestRunOptions 验证 tenon.json 的 check.skip 与 --only 参数。
+// TestRunOptions 验证单语言默认跳过 text、多语言自动启用 text、tenon.json 的 check.skip 与 --only 参数。
 func TestRunOptions(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	writeFiles(t, root, map[string]string{
 		"apps/web/src/page.tsx": `export const s = "中文"; export const c = "#ff0000"`,
 	})
-	cfg := &project.Config{
+	// 单语言项目（默认）：text 自动跳过，只报告 colors。
+	singleCfg := &project.Config{
 		Frontends: []project.Frontend{{Name: "web", Dir: "apps/web"}},
+	}
+	found, err := check.Run(root, singleCfg, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(found) != 1 || found[0].Check != "colors" {
+		t.Fatalf("single language should skip text: %+v", found)
+	}
+	// 多语言项目：自动启用 text 检查。
+	multiCfg := &project.Config{
+		Frontends: []project.Frontend{{Name: "web", Dir: "apps/web"}},
+		Languages: []string{"zh-CN", "en"},
+	}
+	found, err = check.Run(root, multiCfg, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(found) != 2 || found[0].Check != "text" || found[1].Check != "colors" {
+		t.Fatalf("multi language should run text: %+v", found)
+	}
+	// check.skip 可以跳过多语言项目的 text 检查。
+	multiSkip := &project.Config{
+		Frontends: []project.Frontend{{Name: "web", Dir: "apps/web"}},
+		Languages: []string{"zh-CN", "en"},
 		Check:     &project.Check{Skip: []string{"text"}},
 	}
-	found, err := check.Run(root, cfg, nil)
+	found, err = check.Run(root, multiSkip, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(found) != 1 || found[0].Check != "colors" {
 		t.Fatalf("skip text: %+v", found)
 	}
-	// --only 优先于 check.skip。
-	found, err = check.Run(root, cfg, []string{"text"})
+	// --only 优先于单语言默认规则和 check.skip。
+	found, err = check.Run(root, singleCfg, []string{"text"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(found) != 1 || found[0].Check != "text" {
 		t.Fatalf("only text: %+v", found)
 	}
-	if _, err := check.Run(root, cfg, []string{"bogus"}); err == nil {
+	if _, err := check.Run(root, singleCfg, []string{"bogus"}); err == nil {
 		t.Fatal("expected error for unknown check")
 	}
 }

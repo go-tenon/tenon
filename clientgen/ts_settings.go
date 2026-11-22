@@ -2,7 +2,6 @@ package clientgen
 
 import (
 	"fmt"
-	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -13,9 +12,9 @@ import (
 )
 
 // settingsTS 生成 settings.ts：rest.API.Settings 声明的设置页面，字段的类型、枚举和是否必填取自保存接口的请求体，
-// 显示文字取自翻译文件中 <名称>.title、<名称>.fields.<字段> 的消息，字段的说明取自 <名称>.descriptions.<字段>，
-// 可以不写。缺少显示文字时返回警告，与资源相同。
-func (t *tsGen) settingsTS(templates map[string]map[string]string) (string, []string, error) {
+// 源语言（defaultLang）的显示文字取自 Settings.Title、Labels、Descriptions，翻译文件中 <名称>.title、
+// <名称>.fields.<字段>、<名称>.descriptions.<字段> 优先覆盖；其他语言取自翻译文件。缺少显示文字时返回警告。
+func (t *tsGen) settingsTS(templates map[string]map[string]string, defaultLang string) (string, []string, error) {
 	var b strings.Builder
 	var warnings []string
 	b.WriteString(`/**
@@ -29,7 +28,7 @@ export const settings = {
 `)
 	known := t.knownResources()
 	for _, s := range t.api.SettingsPages() {
-		src, warn, err := t.settingTS(s, templates, known)
+		src, warn, err := t.settingTS(s, templates, defaultLang, known)
 		if err != nil {
 			return "", nil, errors.Wrapf(err, "clientgen: settings %s", s.Name)
 		}
@@ -41,7 +40,7 @@ export const settings = {
 }
 
 // settingTS 返回设置页 s 的 TypeScript 描述，以及它用到的类型。
-func (t *tsGen) settingTS(s rest.Settings, templates map[string]map[string]string, known map[string]bool) (string, []string, error) {
+func (t *tsGen) settingTS(s rest.Settings, templates map[string]map[string]string, defaultLang string, known map[string]bool) (string, []string, error) {
 	if err := checkRefs(s.Refs, known); err != nil {
 		return "", nil, err
 	}
@@ -72,8 +71,12 @@ func (t *tsGen) settingTS(s rest.Settings, templates map[string]map[string]strin
 	}
 	var warnings []string
 	var langs strings.Builder
-	for _, lang := range slices.Sorted(maps.Keys(templates)) {
+	inline := settingsInlineMessages(s)
+	for _, lang := range candidateLanguages(templates, defaultLang) {
 		msgs := templates[lang]
+		if lang == defaultLang && len(inline) > 0 {
+			msgs = mergeMessages(inline, msgs)
+		}
 		var missing []string
 		for _, k := range keys {
 			if _, ok := msgs[k]; !ok {
@@ -97,9 +100,28 @@ func (t *tsGen) settingTS(s rest.Settings, templates map[string]map[string]strin
 		langs.WriteString("      },\n")
 	}
 	if langs.Len() == 0 {
-		warnings = append(warnings, fmt.Sprintf("settings %s has no labels; add messages %s.title and %s.fields.<field> to the translations", s.Name, s.Name, s.Name))
+		warnings = append(warnings, fmt.Sprintf("settings %s has no labels; set Title/Labels on rest.Settings or add messages %s.title and %s.fields.<field> to the translations", s.Name, s.Name, s.Name))
 	}
 	b.WriteString("    labels: {\n" + langs.String() + "    },\n")
 	b.WriteString("  },\n")
 	return b.String(), warnings, nil
+}
+
+// settingsInlineMessages 把 rest.Settings 上内联的默认标题、字段名和字段说明转为同键名的消息映射。
+func settingsInlineMessages(s rest.Settings) map[string]string {
+	out := map[string]string{}
+	if s.Title != "" {
+		out[s.Name+".title"] = s.Title
+	}
+	for f, l := range s.Labels {
+		if l != "" {
+			out[s.Name+".fields."+f] = l
+		}
+	}
+	for f, d := range s.Descriptions {
+		if d != "" {
+			out[s.Name+".descriptions."+f] = d
+		}
+	}
+	return out
 }
