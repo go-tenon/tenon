@@ -1,8 +1,8 @@
 // RailLayout：双栏导航的布局，适合以模块切换为主的应用，例如 SaaS 控制台、聊天工具。
-// 最左侧是模块的图标栏（标志、顶部快捷项、模块、底部设置与用户菜单），旁边是当前模块的二级导航，二级导航可以收起；
-// 设置位于图标栏底部（也可从用户菜单进入），进入后二级导航换成按分组列出的设置项和搜索。窄屏时二级导航是抽屉。
+// 最左侧是模块的图标栏（标志、顶部快捷项、模块、用户菜单），旁边是当前模块的二级导航，二级导航可以收起；
+// 设置从用户菜单进入，二级导航换成按分组列出的设置项和搜索。窄屏时二级导航是抽屉。
 // 导航来自路由的 staticData（title、icon、order），与 FrameLayout 相同：第一级是模块，模块下的页面在二级导航中，
-// 模块下的分组是二级导航中的一节；settings 路径下的页面作为独立设置入口放在图标栏底部。身份变化时只重新挂载页面（SessionBoundary）。
+// 模块下的分组是二级导航中的一节；settings 路径下的页面不进图标栏。身份变化时只重新挂载页面（SessionBoundary）。
 // 模块可以用 <Fill name="nav"> 放自己的二级导航（例如带数量的收件箱列表），staticData.fullBleed 的页面铺满内容区；
 // 二级导航的收起状态按账号保存，useCollapseNav 可以临时收起它，useNavControl 供页面感知与切换二级导航状态。
 
@@ -44,10 +44,10 @@ import { Icon } from "../theme/icons"
 export interface RailLayoutProps {
   title: string // 应用的名称：图标栏顶部标志的说明
   logo?: ReactNode // 图标栏顶部的标志，默认是名称的首字
-  user?: ReactNode // 图标栏底部，通常是 <UserMenu position="right-end" />
+  user?: ReactNode // 图标栏底部，通常是 <UserMenu position="right-end" />，其中放进入设置的菜单项
   railTop?: ReactNode // 图标栏顶部（标志下方、模块列表上方）的快捷入口，例如全局搜索按钮
-  railBottom?: ReactNode // 图标栏底部（设置和用户菜单上方）的附加操作
-  settings?: string // 设置页面所在的路径，默认 /settings：其下的页面放在图标栏底部独立入口
+  railBottom?: ReactNode // 图标栏底部（用户菜单上方）的附加操作
+  settings?: string // 设置页面所在的路径，默认 /settings：其下的页面不进图标栏，从用户菜单进入
   maxWidth?: number // 内容区的最大宽度，默认 1152；staticData.fullBleed 的页面铺满，不受它限制
   navWidth?: number // 二级导航的宽度，默认 260
   headerHeight?: number // 顶栏基准高度（像素），默认 52，写入 --tn-rail-header 供各栏齐平
@@ -281,28 +281,6 @@ export function RailLayout({
           </Stack>
           <div className="tn-rail-footer">
             {railBottom}
-            {settingsGroup && (
-              <Tooltip label={settingsGroup.title} position="right" openDelay={350}>
-                <UnstyledButton
-                  className="tn-rail-module"
-                  aria-label={settingsGroup.title}
-                  aria-current={inSettings ? "page" : undefined}
-                  onClick={() => {
-                    if (!inSettings) {
-                      const to = settingsGroup.children ? firstPage(settingsGroup.children) : settingsGroup.path
-                      if (to) void navigate({ to })
-                      setOpen(true)
-                    } else if (compact) {
-                      setDrawer((d) => !d)
-                    }
-                  }}
-                >
-                  <span className="tn-rail-module-icon">
-                    <Icon name={settingsGroup.icon ?? "settings"} size={18} />
-                  </span>
-                </UnstyledButton>
-              </Tooltip>
-            )}
             {user}
           </div>
         </nav>

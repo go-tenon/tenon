@@ -233,7 +233,7 @@ export const Route = createFileRoute("/t/$tenant")({
 ```
 
 - 导航与 `FrameLayout` 一样来自[路由的 `staticData`](#menu)。第一级是模块，在图标栏中；模块下的页面和分组在二级导航中。
-- `settings`（默认 `/settings`）下的页面作为独立设置入口放在图标栏底部，进入后高亮；其中的页面不显示面包屑，内页用 `Page` 的 `back` 返回。
+- `settings`（默认 `/settings`）下的页面不进图标栏，从用户菜单进入；其中的页面不显示面包屑，内页用 `Page` 的 `back` 返回。
 - 图标栏的标志下方、底部支持 `railTop`、`railBottom` 扩展（例如全局搜索按钮）；`headerHeight`（默认 52px）写入 `--tn-rail-header`，供各栏顶栏齐平。
 - 窄屏（`compactQuery`，默认 `max-width: 48em`）时二级导航是抽屉，点击导航项后自动关闭。内容区最宽 `maxWidth`（默认 1152px），二级导航宽 `navWidth`（默认 260px）。`RailLayout` 没有多标签。
 - 二级导航的收起状态按账号保存，页面可用 `useNavControl()` 读取展开状态并触发切换。
