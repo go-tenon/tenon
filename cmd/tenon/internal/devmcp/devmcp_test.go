@@ -88,7 +88,7 @@ func TestTools(t *testing.T) {
 func TestSearchDocs(t *testing.T) {
 	t.Parallel()
 	_, s := connect(t)
-	const docs = ".tenon/docs/"
+	const docs = "tenon/docs/"
 	for query, want := range map[string]string{
 		"访问策略":               "http/routing.md#access-policies",
 		"RequireToken":       "http/routing.md#access-policies",
@@ -190,7 +190,7 @@ func TestSearchDocs(t *testing.T) {
 	}
 }
 
-// tenon_read_doc 读一页的目录、一个小节（连同子小节）或整页；路径可以带 .tenon/docs 前缀和锚点。
+// tenon_read_doc 读一页的目录、一个小节（连同子小节）或整页；路径可以带 tenon/docs 前缀和锚点。
 func TestReadDoc(t *testing.T) {
 	t.Parallel()
 	_, s := connect(t)
@@ -198,7 +198,7 @@ func TestReadDoc(t *testing.T) {
 	if !strings.Contains(outline, "# 路由") || !strings.Contains(outline, "- #access-policies 访问策略") {
 		t.Errorf("outline:\n%s", outline)
 	}
-	section, _ := call(t, s, "tenon_read_doc", map[string]any{"path": ".tenon/docs/http/routing.md#access-policies"})
+	section, _ := call(t, s, "tenon_read_doc", map[string]any{"path": "tenon/docs/http/routing.md#access-policies"})
 	if !strings.Contains(section, "rest.Public()") || strings.Contains(section, "## 组织路由") {
 		t.Errorf("section:\n%s", section)
 	}
@@ -254,7 +254,11 @@ func TestDevLogs(t *testing.T) {
 		t.Errorf("no log:\n%s", text)
 	}
 	log := "dev: 打开 http://localhost:8080\n2026-11-19 10:00:00.000 INF started\n2026-11-19 10:00:01.000 ERR boom\ndev: 编译失败：exit status 1\n"
-	if err := os.WriteFile(filepath.Join(root, dev.LogFile), []byte(log), 0o644); err != nil {
+	logPath := filepath.Join(root, dev.LogFile)
+	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(logPath, []byte(log), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if text, _ := call(t, s, "tenon_dev_logs", map[string]any{"lines": 2}); !strings.HasSuffix(text, "ERR boom\ndev: 编译失败：exit status 1") || strings.Contains(text, "INF") {

@@ -232,7 +232,7 @@ func TestDevFrontends(t *testing.T) {
 			t.Errorf("log missing %q:\n%s", want, l)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(dir, ".tenon", "js", "client", "package.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, "tenon", "js", "client", "package.json")); err != nil {
 		t.Errorf("front-end packages not synced: %v", err)
 	}
 	devYAML := read(filepath.Join(dir, ".tenon", "dev.yaml"))
@@ -290,35 +290,38 @@ func TestDevFrontends(t *testing.T) {
 	}
 }
 
-// SyncJS 把框架 js 中的包复制到 .tenon/js，跳过 node_modules；package.json 有变化时报告 changed。
+// SyncJS 把框架 js 中的包同步到 tenon/js，跳过 node_modules；package.json 有变化时报告 changed。
 func TestSyncJS(t *testing.T) {
 	dir, _ := setup(t, "go")
 	changed, err := dev.SyncJS(".")
 	if err != nil || !changed {
 		t.Fatalf("first sync: changed %v, %v", changed, err)
 	}
-	pkg := filepath.Join(dir, ".tenon", "js", "client", "package.json")
+	pkg := filepath.Join(dir, "tenon", "js", "client", "package.json")
 	if b, _ := os.ReadFile(pkg); !strings.Contains(string(b), `"name": "@go-tenon/client"`) {
 		t.Fatalf("package.json:\n%s", b)
 	}
-	for _, p := range []string{".tenon/js/client/src/index.ts", ".tenon/js/ui/src/components/form/rules.ts", ".tenon/.gitignore"} {
+	for _, p := range []string{"tenon/js/client/src/index.ts", "tenon/js/ui/src/components/form/rules.ts"} {
 		if _, err := os.Stat(filepath.Join(dir, p)); err != nil {
 			t.Error(err)
 		}
 	}
+	if _, err := os.Stat(filepath.Join(dir, "tenon", ".gitignore")); !os.IsNotExist(err) {
+		t.Errorf("tenon/.gitignore should not exist")
+	}
 	// package.json 的 bin 指向的文件可以执行（框架中的文件没有执行权限）：前端的 typecheck 直接运行 tenon-start。
-	if info, err := os.Stat(filepath.Join(dir, ".tenon", "js", "start", "src", "cli.ts")); err != nil || info.Mode().Perm()&0o111 == 0 {
+	if info, err := os.Stat(filepath.Join(dir, "tenon", "js", "start", "src", "cli.ts")); err != nil || info.Mode().Perm()&0o111 == 0 {
 		t.Errorf("tenon-start is not executable: %v %v", info.Mode(), err)
 	}
 	// 测试文件只在框架中运行，不复制：它们可能依赖项目中没有的包（例如 happy-dom）。
-	for _, p := range []string{".tenon/js/node_modules", ".tenon/js/client/node_modules", ".tenon/js/package.json",
-		".tenon/js/client/src/errors.test.ts", ".tenon/js/start/src/start.test.ts"} {
+	for _, p := range []string{"tenon/js/node_modules", "tenon/js/client/node_modules", "tenon/js/package.json",
+		"tenon/js/client/src/errors.test.ts", "tenon/js/start/src/start.test.ts"} {
 		if _, err := os.Stat(filepath.Join(dir, p)); !os.IsNotExist(err) {
 			t.Errorf("%s copied", p)
 		}
 	}
 	// 再次同步时没有变化的文件不重写：开发服务器（Vite）运行时执行 tenon generate，不会看到文件变化而重新加载。
-	index := filepath.Join(dir, ".tenon", "js", "client", "src", "index.ts")
+	index := filepath.Join(dir, "tenon", "js", "client", "src", "index.ts")
 	old := time.Now().Add(-time.Hour).Truncate(time.Second)
 	if err := os.Chtimes(index, old, old); err != nil {
 		t.Fatal(err)
@@ -339,9 +342,9 @@ func TestSyncJS(t *testing.T) {
 
 	// 包自己的 node_modules（Bun 的依赖链接）保留；包中多出的文件、框架中已经没有的包被删除。
 	for p, content := range map[string]string{
-		".tenon/js/ui/node_modules/react/package.json": "{}",
-		".tenon/js/ui/src/stale.ts":                    "",
-		".tenon/js/old/package.json":                   "{}",
+		"tenon/js/ui/node_modules/react/package.json": "{}",
+		"tenon/js/ui/src/stale.ts":                    "",
+		"tenon/js/old/package.json":                   "{}",
 	} {
 		full := filepath.Join(dir, p)
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
@@ -354,10 +357,10 @@ func TestSyncJS(t *testing.T) {
 	if _, err := dev.SyncJS("."); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, ".tenon/js/ui/node_modules/react/package.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, "tenon/js/ui/node_modules/react/package.json")); err != nil {
 		t.Errorf("dependency links removed: %v", err)
 	}
-	for _, p := range []string{".tenon/js/ui/src/stale.ts", ".tenon/js/old"} {
+	for _, p := range []string{"tenon/js/ui/src/stale.ts", "tenon/js/old"} {
 		if _, err := os.Stat(filepath.Join(dir, p)); !os.IsNotExist(err) {
 			t.Errorf("%s not removed", p)
 		}
@@ -398,15 +401,15 @@ func TestNeedsInstall(t *testing.T) {
 		t.Error("no node_modules: want install")
 	}
 	write("node_modules/.keep", "")
-	write("package.json", `{"workspaces":[".tenon/js/client",".tenon/js/ui","apps/web"]}`)
+	write("package.json", `{"workspaces":["tenon/js/client","tenon/js/ui","apps/web"]}`)
 	// 不在 workspaces 中的框架包不会被安装，有依赖也不检查。
-	write(".tenon/js/electron/package.json", `{"name":"@go-tenon/electron","peerDependencies":{"electron":"^39"}}`)
-	write(".tenon/js/client/package.json", `{"name":"@go-tenon/client"}`)
-	write(".tenon/js/ui/package.json", `{"name":"@go-tenon/ui","peerDependencies":{"react":"^19"}}`)
+	write("tenon/js/electron/package.json", `{"name":"@go-tenon/electron","peerDependencies":{"electron":"^39"}}`)
+	write("tenon/js/client/package.json", `{"name":"@go-tenon/client"}`)
+	write("tenon/js/ui/package.json", `{"name":"@go-tenon/ui","peerDependencies":{"react":"^19"}}`)
 	if !dev.NeedsInstall(dir) {
 		t.Error("ui has dependencies but no node_modules: want install")
 	}
-	write(".tenon/js/ui/node_modules/react/package.json", "{}")
+	write("tenon/js/ui/node_modules/react/package.json", "{}")
 	if dev.NeedsInstall(dir) {
 		t.Error("everything installed: want no install")
 	}

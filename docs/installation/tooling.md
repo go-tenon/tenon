@@ -57,7 +57,7 @@ go run github.com/go-tenon/tenon/cmd/tenon@latest init todo
 bun run dev   # 即 go tool tenon dev
 ```
 
-启动前检查需要的命令是否在 `PATH` 中，更新 `.tenon/docs` 和 `.tenon/js`。然后同时运行：
+启动前检查需要的命令是否在 `PATH` 中，更新 `tenon/docs` 和 `tenon/js`。然后同时运行：
 
 1. **每个前端的开发服务器**（Vite），各用一个空闲的端口，地址交给应用（见[应用这一侧](#app-side)）。服务端渲染时经环境变量 `API_ORIGIN` 调用应用的接口。
 2. **应用**：运行 `serve`，把页面请求转发给开发服务器。只访问应用的地址，默认 <http://localhost:8080>。
@@ -192,7 +192,7 @@ go tool tenon add language en
 <a id="agents"></a>
 ## `tenon agents`：AI 编程助手
 
-`bun run agents` 更新 `.tenon/docs`，同步 `AGENTS.md` 的框架约定区块，为 `tenon.json` 中的每个助手重新安装 `tenon-*` 技能，改写 MCP 配置中的 `tenon`。升级框架后运行；`init`、`add frontend`、`add client` 结束时自动运行。见 [AI 编程助手](ai-assistants.md#updating)。
+`bun run agents` 更新 `tenon/docs`，同步 `AGENTS.md` 的框架约定区块，为 `tenon.json` 中的每个助手重新安装 `tenon-*` 技能，改写 MCP 配置中的 `tenon`。升级框架后运行；`init`、`add frontend`、`add client` 结束时自动运行。见 [AI 编程助手](ai-assistants.md#updating)。
 
 <a id="conventions"></a>
 ## 前端与 API 怎样被发现
@@ -217,11 +217,11 @@ go tool tenon add language en
 两个 API 名称相同时（例如 `/api/v1` 和 `/admin/v1`）`generate` 报错，在 `tenon.json` 中给其中一个改名：`"apis": {"/admin/v1": {"name": "admin"}}`。生成的文件见[客户端代码](../http/clients.md#generating-types)。
 
 <a id="framework-packages"></a>
-## 框架的前端包：`.tenon/js`
+## 框架的前端包：`tenon/js`
 
-`@go-tenon/client`、`@go-tenon/ui`、`@go-tenon/start`、`@go-tenon/host` 等前端包随 Go module 分发，版本就是 `go.mod` 中框架的版本。`init`、`add frontend`、`dev`、`build`、`generate` 把它们复制到 `.tenon/js/<包名>`，根目录 `package.json` 的 `workspaces` 列出这些目录，前端用 `"@go-tenon/ui": "workspace:*"` 依赖它们。
+`@go-tenon/client`、`@go-tenon/ui`、`@go-tenon/start`、`@go-tenon/host` 等前端包随 Go module 分发，版本就是 `go.mod` 中框架的版本。`init`、`add frontend`、`dev`、`build`、`generate` 把它们同步到 `tenon/js/<包名>`，根目录 `package.json` 的 `workspaces` 列出这些目录，前端用 `"@go-tenon/ui": "workspace:*"` 依赖它们。
 
-`.tenon` 不提交。升级框架后，下一次 `tenon dev` 复制新版本的包，需要时自动运行 `bun install`。
+`tenon/js` 随仓库提交（`.gitattributes` 将 `tenon/**` 标记为 `linguist-generated=true`，PR 中自动折叠），clone 或新建 worktree 后可直接运行 `bun install`。升级框架后运行 `bun run generate` 同步新版本的包并一起提交，需要时自动运行 `bun install`。运行期的临时文件（`dev.yaml`、`dev.log`）放在被 `.gitignore` 忽略的 `.tenon/` 中。
 
 <a id="configuration"></a>
 ## `tenon.json`

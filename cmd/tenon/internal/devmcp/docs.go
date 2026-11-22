@@ -248,7 +248,7 @@ func snippet(s *section, query string) string {
 }
 
 // read 返回页面 page 的内容：anchor 不为空时是这个小节，连同级别更低的子小节；full 时是整页；
-// 都没有时是页面的目录：标题、开头的介绍和每个小节的锚点。dir 是显示给助手的文档目录，例如 .tenon/docs。
+// 都没有时是页面的目录：标题、开头的介绍和每个小节的锚点。dir 是显示给助手的文档目录，例如 tenon/docs。
 func (d *docs) read(dir, page, anchor string, full bool) (string, error) {
 	sections, ok := d.pages[page]
 	if !ok {

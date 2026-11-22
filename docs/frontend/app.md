@@ -12,7 +12,7 @@
 <a id="installing"></a>
 ### 依赖与 `vite.config.ts`
 
-`@go-tenon/*` 随框架复制到项目的 `.tenon/js`（见[框架的前端包](../installation/tooling.md#framework-packages)），前端用 `workspace:*` 依赖它们。`package.json` 的 `tenon` 字段写挂载路径和渲染方式（见[两种渲染方式](hosting.md#modes)），`typecheck` 先生成路由树：
+`@go-tenon/*` 随框架同步到项目的 `tenon/js`（见[框架的前端包](../installation/tooling.md#framework-packages)），前端用 `workspace:*` 依赖它们。`package.json` 的 `tenon` 字段写挂载路径和渲染方式（见[两种渲染方式](hosting.md#modes)），`typecheck` 先生成路由树：
 
 ```json
 {

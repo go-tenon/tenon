@@ -4,7 +4,7 @@
 
 ## 读者
 
-- **AI 编程助手是主要的读者。** 在 Tenon 项目中，它用 MCP 工具 `tenon_search_docs` 按小节检索 `.tenon/docs`，用 `tenon_read_doc` 读一页的目录或其中一节，或者用 `rg` 搜索。它一次只读一两节，读进来的每一个字都占它的上下文。
+- **AI 编程助手是主要的读者。** 在 Tenon 项目中，它用 MCP 工具 `tenon_search_docs` 按小节检索 `tenon/docs`，用 `tenon_read_doc` 读一页的目录或其中一节，或者直接搜索和阅读 `tenon/docs`。它一次只读一两节，读进来的每一个字都占它的上下文。
 - **其次是 Go 初级工程师。** 他手边有 AI，通用的概念和 Go 的写法会去问 AI；他从文档中要的是 Tenon 怎么用。
 
 所以文档只写 Tenon 自己的东西，写得短，每一节单独读也能用。

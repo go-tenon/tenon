@@ -186,7 +186,7 @@ func TestGenerate(t *testing.T) {
 			t.Fatalf("log missing %q:\n%s", want, l)
 		}
 	}
-	for _, f := range []string{"apps/dist/frontends.json", "apps/dist/.gitignore", ".tenon/js/client/package.json"} {
+	for _, f := range []string{"apps/dist/frontends.json", "apps/dist/.gitignore", "tenon/js/client/package.json"} {
 		if _, err := os.Stat(f); err != nil {
 			t.Errorf("%s: %v", f, err)
 		}
@@ -218,8 +218,8 @@ func TestAddFrontend(t *testing.T) {
 		"apps/admin/src/routes/login.tsx":        "LoginForm",
 		"apps/admin/src/auth.ts":                 "session.fetch(fetch)(`/admin/api${path}`",
 		"package.json":                           `"apps/admin",`,
-		".tenon/js/client/package.json":          `"name": "@go-tenon/client"`,
-		".tenon/docs/README.md":                  "# Tenon 文档",
+		"tenon/js/client/package.json":           `"name": "@go-tenon/client"`,
+		"tenon/docs/README.md":                   "# Tenon 文档",
 		".mcp.json":                              `"tenon"`,
 		".claude/skills/tenon-frontend/SKILL.md": "name: tenon-frontend",
 		".agents/skills/tenon-action/SKILL.md":   "name: tenon-action",

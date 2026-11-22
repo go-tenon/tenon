@@ -16,7 +16,7 @@ import (
 )
 
 // skillFiles 是框架的技能：skills/<名称>/SKILL.md，开放的 Agent Skills 格式（YAML 头的 name、description 加 Markdown）。
-// 技能写“做某件事的步骤和要点”，细节链接到 .tenon/docs 中的文档页，助手按 description 决定什么时候加载它。
+// 技能写“做某件事的步骤和要点”，细节链接到 tenon/docs 中的文档页，助手按 description 决定什么时候加载它。
 //
 //go:embed skills
 var skillFiles embed.FS

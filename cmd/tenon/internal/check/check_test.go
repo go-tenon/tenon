@@ -232,7 +232,7 @@ func TestCheckDeps(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	writeFiles(t, root, map[string]string{
-		".tenon/js/ui/package.json": `{
+		"tenon/js/ui/package.json": `{
   "name": "@go-tenon/ui",
   "peerDependencies": {
     "@mantine/core": "^9.8.1",
@@ -243,7 +243,7 @@ func TestCheckDeps(t *testing.T) {
     "ai": { "optional": true }
   }
 }`,
-		".tenon/js/electron/package.json": `{
+		"tenon/js/electron/package.json": `{
   "name": "@go-tenon/electron",
   "peerDependencies": {
     "electron": ">=45.0.0"

@@ -44,7 +44,7 @@ myapp/
 ├── clients/
 │   └── admin-desktop/
 │       └── tenon.json       # { "kind": "electron", "frontend": "admin" }
-└── .tenon/js/               # 框架的前端包，由 tenon 复制，不提交
+└── tenon/js/                # 框架的前端包，由 tenon 同步，随仓库提交
 ```
 
 客户端的名字以小写字母开头，只含小写字母、数字和 `-`。它同时是授权服务器中的 client ID（见[登记客户端](native.md#registering)）、`X-App-Version` 中的平台名、网页宿主的页面地址 `https://<名字>.localhost` 和深度链接的协议 `<名字>://`，发布之后不要再改。

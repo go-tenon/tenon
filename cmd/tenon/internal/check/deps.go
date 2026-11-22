@@ -26,7 +26,7 @@ type pkgManifest struct {
 }
 
 // CheckDeps 检查项目中每个前端和客户端的 package.json 声明的依赖版本是否满足所引用框架包（@go-tenon/*）的
-// peerDependencies 要求：优先读取 .tenon/js，不存在时从当前 go.mod 对应的框架目录读取。
+// peerDependencies 要求：优先读取 tenon/js，不存在时从当前 go.mod 对应的框架目录读取。
 func CheckDeps(root string, cfg *project.Config, exempt []string) ([]Finding, error) {
 	if len(cfg.Frontends) == 0 && len(cfg.Clients) == 0 {
 		return nil, nil
@@ -93,7 +93,7 @@ func CheckDeps(root string, cfg *project.Config, exempt []string) ([]Finding, er
 	return out, nil
 }
 
-// loadFrameworkPackages 加载框架前端包的 package.json（按包名索引）：优先从 .tenon/js 读取，没有时回退到框架源码目录的 js。
+// loadFrameworkPackages 加载框架前端包的 package.json（按包名索引）：优先从 tenon/js 读取，没有时回退到框架源码目录的 js。
 func loadFrameworkPackages(root string) (map[string]pkgManifest, error) {
 	jsDir := filepath.Join(root, filepath.FromSlash(dev.JSDir))
 	if entries, err := os.ReadDir(jsDir); err != nil || len(entries) == 0 {

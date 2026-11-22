@@ -113,8 +113,8 @@ func (d dev) check() error {
 	return nil
 }
 
-// prepare 在启动监听进程之前运行一次：把框架的文档复制到 .tenon/docs（见 agents.SyncDocs），把框架的前端包复制到
-// .tenon/js（见 SyncJS），前端包的 package.json 变了或者缺少依赖（见 NeedsInstall）时在根目录 bun install，
+// prepare 在启动监听进程之前运行一次：把框架的文档同步到 tenon/docs（见 agents.SyncDocs），把框架的前端包同步到
+// tenon/js（见 SyncJS），前端包的 package.json 变了或者缺少依赖（见 NeedsInstall）时在根目录 bun install，
 // 写入前端的清单（见 WriteManifest）和前端开发服务器的地址（见 DevConfig）。
 func (d dev) prepare() error {
 	fw, err := project.FrameworkDir(".")

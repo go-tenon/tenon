@@ -12,7 +12,7 @@ bun run dev      # 打开 http://localhost:8080，接口文档在 /api/docs
 bun run build    # 构建 bin/[[.Slug]]
 ```
 
-目录、常用命令、提交前的检查和代码约定见 [AGENTS.md](AGENTS.md)，框架的文档在 `.tenon/docs` 中（`bun run dev` 时生成），也可以在线阅读 [Tenon 文档](https://github.com/go-tenon/tenon/tree/main/docs)。
+目录、常用命令、提交前的检查和代码约定见 [AGENTS.md](AGENTS.md)，框架的文档在 `tenon/docs`、前端包源码在 `tenon/js`，也可以在线阅读 [Tenon 文档](https://github.com/go-tenon/tenon/tree/main/docs)。
 
 ## AI 编程助手
 
@@ -21,15 +21,15 @@ bun run build    # 构建 bin/[[.Slug]]
 `tenon init` 和 `bun run agents`（`go tool tenon agents`）为 Claude Code、Codex、Cursor、Antigravity 准备好了这些，升级框架、加前端或客户端后运行 `bun run agents` 更新：
 
 - `AGENTS.md`：项目说明，`tenon init` 生成初稿，之后由项目自己维护；
-- `.tenon/docs`：与 `go.mod` 中的框架版本一致的文档；
+- `tenon/docs`：与 `go.mod` 中的框架版本一致的文档；
 - `tenon-*` 技能：新增业务动作、写接口、加表、写页面等常做的事的步骤；
 - MCP 服务 `tenon`（`go tool tenon mcp`）：检索框架的文档、查看项目信息、读 `bun run dev` 的输出。
 
-选择接入哪些助手见 `.tenon/docs/installation/ai-assistants.md#choosing-assistants`。
+选择接入哪些助手见 `tenon/docs/installation/ai-assistants.md#choosing-assistants`。
 
 ### 依赖的官方方案
 
-项目用到的 Go、Mantine、TanStack 等也为 AI 编程助手提供了文档、MCP 服务和技能，按它们的官方方法接入。它们的写法与 Tenon 的约定冲突时，以 `AGENTS.md` 和 `.tenon/docs` 为准。
+项目用到的 Go、Mantine、TanStack 等也为 AI 编程助手提供了文档、MCP 服务和技能，按它们的官方方法接入。它们的写法与 Tenon 的约定冲突时，以 `AGENTS.md` 和 `tenon/docs` 为准。
 
 下面以 Claude Code 和 Codex 的命令为例。Claude Code 的命令加上 `-s project` 时写进项目的 `.mcp.json`，提交后团队共用。Cursor（`.cursor/mcp.json`）、Antigravity（`.agents/mcp_config.json`）在 `mcpServers` 中加上同样的 `command` 和 `args`，VS Code（`.vscode/mcp.json`）写在 `servers` 中。`bun run agents` 只改写其中的 `tenon` 一项，你加上的服务保持原样。
 

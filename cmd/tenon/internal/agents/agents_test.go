@@ -94,7 +94,7 @@ func TestWriteMCP(t *testing.T) {
 	}
 }
 
-// SyncDocs 用框架的 docs 替换 .tenon/docs，指定这个目录搜索时 .ignore 让 ripgrep 不跳过它。
+// SyncDocs 把框架的 docs 增量同步到 tenon/docs：清理已删除的文件，未变化的文件不重写，也不写入 .ignore 或 .gitignore。
 func TestSyncDocs(t *testing.T) {
 	t.Parallel()
 	fw, dir := t.TempDir(), t.TempDir()
@@ -104,7 +104,7 @@ func TestSyncDocs(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(fw, "docs", "http", "routing.md"), []byte("# 路由\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	stale := filepath.Join(dir, ".tenon", "docs", "removed.md")
+	stale := filepath.Join(dir, "tenon", "docs", "removed.md")
 	if err := os.MkdirAll(filepath.Dir(stale), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -114,17 +114,14 @@ func TestSyncDocs(t *testing.T) {
 	if err := agents.SyncDocs(dir, fw); err != nil {
 		t.Fatal(err)
 	}
-	for name, want := range map[string]string{
-		".tenon/docs/http/routing.md": "# 路由\n",
-		".tenon/docs/.ignore":         "!*\n",
-		".tenon/.gitignore":           "*\n",
-	} {
-		if b, err := os.ReadFile(filepath.Join(dir, name)); err != nil || string(b) != want {
-			t.Errorf("%s = %q, %v", name, b, err)
-		}
+	got, err := os.ReadFile(filepath.Join(dir, "tenon", "docs", "http", "routing.md"))
+	if err != nil || string(got) != "# 路由\n" {
+		t.Errorf("tenon/docs/http/routing.md = %q, %v", got, err)
 	}
-	if _, err := os.Stat(stale); err == nil {
-		t.Error("a page removed from the framework is still in .tenon/docs")
+	for _, absent := range []string{stale, filepath.Join(dir, "tenon", "docs", ".ignore"), filepath.Join(dir, "tenon", ".gitignore")} {
+		if _, err := os.Stat(absent); err == nil {
+			t.Errorf("%s should not exist", absent)
+		}
 	}
 }
 
@@ -212,12 +209,12 @@ func TestWriteSkills(t *testing.T) {
 	}
 }
 
-// 技能、AGENTS.md 和 README.md 的模板中写的 .tenon/docs/<页面>#<锚点> 都存在于框架的 docs 中，
+// 技能、AGENTS.md 和 README.md 的模板中写的 tenon/docs/<页面>#<锚点> 都存在于框架的 docs 中，
 // 提到的其他技能（技能 `tenon-x`）也存在。改了文档的路径或锚点时，这个测试指出要同步修改的技能。
 func TestSkillReferences(t *testing.T) {
 	t.Parallel()
 	docs := "../../../../docs"
-	ref := regexp.MustCompile(`\.tenon/docs/([A-Za-z0-9_/.-]+\.md)(?:#([a-z0-9-]+))?`)
+	ref := regexp.MustCompile(`tenon/docs/([A-Za-z0-9_/.-]+\.md)(?:#([a-z0-9-]+))?`)
 	mention := regexp.MustCompile("技能 `(tenon-[a-z-]+)`")
 	all, err := agents.AllSkills()
 	if err != nil {

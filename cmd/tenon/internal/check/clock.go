@@ -75,9 +75,9 @@ func CheckClock(root string, exempt []string) ([]Finding, error) {
 	return out, errors.Wrap(err, "check clock")
 }
 
-// isFrontendTree 报告目录 rel 是否属于前端或客户端源码目录（不含 Go 业务代码和迁移）。
+// isFrontendTree 报告目录 rel 是否属于前端、客户端或框架同步目录（不含 Go 业务代码和迁移）。
 func isFrontendTree(rel string) bool {
-	return rel == project.AppsDir || rel == project.ClientsDir || rel == "packages"
+	return rel == project.AppsDir || rel == project.ClientsDir || rel == "packages" || rel == "tenon"
 }
 
 // scanSQLClock 检查 SQL 文件中读取数据库时钟的行；包含 IgnoreClock 注释的行跳过。

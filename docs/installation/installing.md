@@ -59,11 +59,11 @@ todo/
 │   ├── package.json       tenon 字段：挂载路径和是否在服务端渲染
 │   └── src/               router.tsx、start.ts、server.ts、theme.ts、i18n.ts、api.ts；routes/ 中一个文件一个页面
 ├── packages/client/       生成的 TypeScript 客户端，前端用它调用接口
-└── .tenon/                开发工具复制的框架前端包和文档，不提交
+└── tenon/                 框架同步的文档（tenon/docs）和前端包（tenon/js），不手改
 ```
 
 - 业务代码按模块放在 `internal/` 中，例如 `internal/article`。入口在 `cmd/<名称>/main.go`，构建出的程序是 `bin/<名称>`。页面在 `apps/web/src/routes/` 中。
-- `packages/` 和 `.tenon/` 由工具生成，不手动修改。
+- `packages/` 和 `tenon/` 由工具生成或同步，不手动修改。
 
 各目录的约定见[目录结构](../concepts/structure.md)。
 

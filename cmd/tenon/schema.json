@@ -36,7 +36,7 @@
     },
     "agents": {
       "type": "object",
-      "description": "tenon agents 为哪些 AI 编程助手安装技能、写 MCP 配置。.tenon/docs 中的框架文档不论选择都会更新。",
+      "description": "tenon agents 为哪些 AI 编程助手安装技能、写 MCP 配置。tenon/docs 中的框架文档不论选择都会更新。",
       "additionalProperties": false,
       "properties": {
         "targets": {

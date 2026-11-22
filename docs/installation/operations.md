@@ -238,8 +238,8 @@ FROM pg_replication_slots WHERE slot_name LIKE 'tenon_queue_%';
 go get github.com/go-tenon/tenon@vX.Y.Z && go mod tidy
 go run ./cmd/blog migrate publish   # 复制框架新增的迁移
 go run ./cmd/blog migrate verify    # 确认框架迁移无漏发、无漂移
-bun run agents                      # 同步 .tenon/docs、AGENTS.md 托管区块、技能和 MCP 配置
-bun run generate                    # 同步 .tenon/js，重新生成客户端和界面文字目录
+bun run agents                      # 同步 tenon/docs、AGENTS.md 托管区块、技能和 MCP 配置
+bun run generate                    # 同步 tenon/js，重新生成客户端和界面文字目录
 bun run check                       # 含 deps 依赖版本检查；有前端 peerDependencies 提示时先升级并 bun install
 bun run typecheck && go test ./...
 ```

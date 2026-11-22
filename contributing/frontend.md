@@ -2,7 +2,7 @@
 
 改 `js` 中的前端包、playground 和脚手架模板中的界面时读这一页：各个包的职责和边界、检查的命令，以及颜色的约定。
 
-`js` 是前端包的 Bun workspace。这些包不发布到 npm，随 Go 模块分发：应用中的 `tenon` 把框架版本中的 `js` 复制到项目的 `.tenon/js`，见[框架的前端包](../docs/installation/tooling.md#framework-packages)。
+`js` 是前端包的 Bun workspace。这些包不发布到 npm，随 Go 模块分发：应用中的 `tenon` 把框架版本中的 `js` 同步到项目的 `tenon/js`，见[框架的前端包](../docs/installation/tooling.md#framework-packages)。
 
 - `client` 是 `@go-tenon/client`，与界面无关的客户端运行时。它不依赖 DOM，也不依赖 Node：`tsconfig.json` 的 `lib` 只有 `es2022`，用到 `window`、`document`、`URL`、`node:*` 等时类型检查失败（测试文件同样检查）。所以网页、Electron 的主进程、React Native 都能用它，例如原生客户端登录用的 `createAuthorization`。
 - `host` 是 `@go-tenon/host`，网页宿主（Electron 等）的约定在页面一侧的类型：`host()` 取得宿主放在全局的 `tenonHost`。它只有类型，不依赖任何包和 DOM，任何语言写的宿主都按它实现。

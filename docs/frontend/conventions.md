@@ -204,7 +204,7 @@ apps/admin/src/
 <a id="agents"></a>
 ## 给 AI 编程助手的约束
 
-项目的 `AGENTS.md`、`tenon-frontend` 技能和 `.tenon/docs/frontend/conventions.md`（这一页，与项目的框架版本一致）都由 `tenon init`、`tenon agents` 写好。Mantine、TanStack 的官方文档和技能按[依赖的文档](../installation/ai-assistants.md#dependencies)接入。
+项目的 `AGENTS.md`、`tenon-frontend` 技能和 `tenon/docs/frontend/conventions.md`（这一页，与项目的框架版本一致）都由 `tenon init`、`tenon agents` 写好。Mantine、TanStack 的官方文档和技能按[依赖的文档](../installation/ai-assistants.md#dependencies)接入。
 
 <a id="other-platforms"></a>
 ## 桌面端和 App

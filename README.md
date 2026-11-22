@@ -229,7 +229,7 @@ flowchart LR
 
 ## 前端
 
-网页用 React、Mantine 和 TanStack Start 编写，放在应用的 `apps/` 中，每个前端一个目录，例如官网 `apps/web`、后台 `apps/admin`。框架提供三个前端包，随 Go 模块分发，`tenon` 把它们复制到项目的 `.tenon/js`：
+网页用 React、Mantine 和 TanStack Start 编写，放在应用的 `apps/` 中，每个前端一个目录，例如官网 `apps/web`、后台 `apps/admin`。框架提供三个前端包，随 Go 模块分发，`tenon` 把它们同步到项目的 `tenon/js`：
 
 | 包 | 作用 |
 | --- | --- |
@@ -335,7 +335,7 @@ go get github.com/go-tenon/tenon@latest
 `tenon init` 生成的项目已经为 Claude Code、Codex、Cursor、Antigravity 准备好了 Tenon 自己的部分，`bun run agents` 保持更新：
 
 - `AGENTS.md`：怎样运行、提交前检查什么、代码按什么约定写；
-- `.tenon/docs`：与 `go.mod` 中的框架版本一致的文档；
+- `tenon/docs`：与 `go.mod` 中的框架版本一致的文档（随仓库提交）；
 - `tenon-*` 技能：新增业务动作、写接口、加表、写页面等常做的事的步骤；
 - MCP 服务 `tenon`：检索框架的文档、查看项目信息、读开发环境的输出。
 
