@@ -59,6 +59,7 @@ export * from "./components/links"
 export * from "./components/menu-badge"
 export * from "./components/page"
 export * from "./components/status-dot"
+export * from "./components/text-trigger/text-trigger"
 export * from "./components/truncated-text"
 // ———————————————————————————— features ————————————————————————————
 export * from "./features/activity/activity-log"

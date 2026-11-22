@@ -525,18 +525,34 @@ function railApp() {
     staticData: { title: "收件箱", icon: "message", order: 2, fullBleed: true },
     component: InboxDemo,
   })
+  const drawerCustomers = createRoute({
+    getParentRoute: () => settings,
+    path: "/drawer-customers",
+    staticData: { title: "抽屉表单资源", icon: "team", order: 1 },
+    validateSearch: customersModel.listSearch,
+    component: () => (
+      <ResourcePage
+        model={customersModel}
+        route={drawerCustomers as never}
+        description="演示 ResourcePage 的 form='drawer' 与 renderForm 自定义表单。"
+        form="drawer"
+        renderForm={(ctx) => <CustomerForm ctx={ctx} />}
+      />
+    ),
+  })
   const routeTree = root.addChildren([
     layout.addChildren([
       page(layout, "/", "首页", "home"),
       tenant.addChildren([inbox, ticket]),
       content.addChildren([page(content, "/items", "全部", "list"), page(content, "/archive", "归档", "file", 1)]),
-      settings.addChildren([personal.addChildren([page(personal, "/profile", "个人资料", "user")])]),
+      settings.addChildren([personal.addChildren([page(personal, "/profile", "个人资料", "user")]), drawerCustomers]),
     ]),
   ])
   return createApp({
     id: "playground-rail",
     routeTree,
     session,
+    queryClient,
     permissions,
     router: { basepath: "/rail", defaultErrorComponent: RouteError, defaultNotFoundComponent: NotFoundPage },
   })

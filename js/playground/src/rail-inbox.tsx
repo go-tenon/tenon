@@ -1,18 +1,39 @@
 // RailLayout 中铺满内容区的模块：收件箱。路由的 staticData.fullBleed 让页面占满内容区，
 // <Fill name="nav"> 放模块自己的二级导航（带数量的收件箱列表），打开详情且窗口不够宽时 useCollapseNav 临时收起二级导航。
 
-import { Fill, RailSection, useCollapseNav, useNavControl } from "@go-tenon/ui"
-import { ActionIcon, Button, Group, NavLink, ScrollArea, Stack, Text, UnstyledButton } from "@mantine/core"
+import {
+  Fill,
+  RailSection,
+  TriggerMenu,
+  textTriggerRule,
+  useCollapseNav,
+  useNavControl,
+  useTextTrigger,
+} from "@go-tenon/ui"
+import {
+  ActionIcon,
+  Badge,
+  Button,
+  Group,
+  NavLink,
+  ScrollArea,
+  Stack,
+  Text,
+  Textarea,
+  UnstyledButton,
+} from "@mantine/core"
 import { useMediaQuery } from "@mantine/hooks"
 import {
   IconAt,
+  IconBolt,
+  IconBraces,
   IconInbox,
   IconLayoutSidebarLeftExpand,
   IconListDetails,
   IconUserQuestion,
   IconX,
 } from "@tabler/icons-react"
-import { type ReactNode, useState } from "react"
+import { type ReactNode, useMemo, useRef, useState } from "react"
 
 /** 二级导航中的一项：名称和数量。 */
 interface Box {
@@ -173,9 +194,7 @@ export function InboxDemo(): ReactNode {
             </Group>
           ))}
         </ScrollArea>
-        <Text size="sm" c="dimmed" p="sm" style={{ borderTop: "1px solid var(--tn-border)" }}>
-          回复框
-        </Text>
+        <InboxComposer contactName={names[current % names.length]} />
       </div>
       {detail && (
         <div style={{ width: 300, flexShrink: 0, borderLeft: "1px solid var(--tn-border)" }}>
@@ -194,6 +213,132 @@ export function InboxDemo(): ReactNode {
           </Text>
         </div>
       )}
+    </div>
+  )
+}
+
+const demoMacros = [
+  { id: "m1", shortcut: "greeting", title: "欢迎语", body: "您好 {{contact.name}}，请问有什么可以帮您？" },
+  { id: "m2", shortcut: "shipping", title: "查询物流", body: "正在为您核实物流进度，请稍候片刻。" },
+  { id: "m3", shortcut: "refund", title: "退款说明", body: "退款已原路退回，预计 1-3 个工作日到账。" },
+]
+
+const demoMembers = [
+  { id: "u1", name: "韩梅梅", role: "管理员" },
+  { id: "u2", name: "李雷", role: "一线坐席" },
+  { id: "u3", name: "林涛", role: "技术支持" },
+]
+
+const demoVars = [
+  { key: "contact.name", label: "联系人名字" },
+  { key: "contact.email", label: "联系人邮箱" },
+  { key: "member.name", label: "当前坐席名字" },
+]
+
+/** InboxComposer 演示 useTextTrigger + TriggerMenu：同一输入框内同时支持 / 快捷回复、@ 提及同事和 {{ 插入变量。 */
+function InboxComposer({ contactName }: { contactName: string }): ReactNode {
+  const ref = useRef<HTMLTextAreaElement>(null)
+  const [text, setText] = useState("")
+  const rules = useMemo(
+    () => [
+      textTriggerRule({
+        id: "macro",
+        trigger: "/",
+        items: (q) => {
+          const s = q.toLowerCase()
+          return demoMacros.filter(
+            (m) => m.shortcut.includes(s) || m.title.toLowerCase().includes(s) || m.body.toLowerCase().includes(s),
+          )
+        },
+        getKey: (m) => m.id,
+        renderItem: (m) => (
+          <Stack gap={2}>
+            <Group gap="xs" wrap="nowrap">
+              <Text size="sm" fw={500} truncate>
+                {m.title}
+              </Text>
+              <Badge size="xs" variant="light">
+                /{m.shortcut}
+              </Badge>
+            </Group>
+            <Text size="xs" c="dimmed" truncate>
+              {m.body}
+            </Text>
+          </Stack>
+        ),
+        onSelect: (m, { replace }) => replace(m.body.replace("{{contact.name}}", contactName)),
+      }),
+      textTriggerRule({
+        id: "mention",
+        trigger: "@",
+        items: (q) => demoMembers.filter((m) => m.name.toLowerCase().includes(q.toLowerCase())),
+        getKey: (m) => m.id,
+        renderItem: (m) => (
+          <Group justify="space-between" wrap="nowrap">
+            <Text size="sm">{m.name}</Text>
+            <Text size="xs" c="dimmed">
+              {m.role}
+            </Text>
+          </Group>
+        ),
+        onSelect: (m, { replace }) => replace(`@${m.name} `),
+      }),
+      textTriggerRule({
+        id: "var",
+        trigger: "{{",
+        boundary: "any",
+        stop: "}}",
+        items: (q) =>
+          demoVars.filter((v) => v.key.includes(q.toLowerCase()) || v.label.toLowerCase().includes(q.toLowerCase())),
+        getKey: (v) => v.key,
+        renderItem: (v) => (
+          <Group justify="space-between" wrap="nowrap">
+            <Text size="sm" ff="monospace">
+              {`{{${v.key}}}`}
+            </Text>
+            <Text size="xs" c="dimmed">
+              {v.label}
+            </Text>
+          </Group>
+        ),
+        onSelect: (v, { replace }) => replace(`{{${v.key}}}`),
+      }),
+    ],
+    [contactName],
+  )
+  const trigger = useTextTrigger({ ref, value: text, onChange: setText, rules })
+  return (
+    <div style={{ padding: 12, borderTop: "1px solid var(--tn-border)" }}>
+      <div style={{ position: "relative" }}>
+        <TriggerMenu trigger={trigger} position="top" width={320} empty="没有匹配项" />
+        <Textarea
+          ref={ref}
+          value={text}
+          onChange={(e) => trigger.handleChange(e.currentTarget.value, e.currentTarget.selectionStart)}
+          onKeyDown={(e) => {
+            if (trigger.handleKeyDown(e)) return
+            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+              e.preventDefault()
+              setText("")
+            }
+          }}
+          placeholder="输入 / 选快捷回复，@ 提及同事，{{ 插入变量…"
+          autosize
+          minRows={2}
+          maxRows={5}
+        />
+      </div>
+      <Group gap="xs" mt="xs">
+        <Button size="xs" variant="subtle" leftSection={<IconBolt size={14} />} onClick={() => trigger.open("macro")}>
+          快捷回复
+        </Button>
+        <Button size="xs" variant="subtle" leftSection={<IconBraces size={14} />} onClick={() => trigger.open("var")}>
+          插入变量
+        </Button>
+        <Text size="xs" c="dimmed" ml="auto">
+          ↑↓ 选择 · Enter 确认 · Esc 关闭
+        </Text>
+      </Group>
     </div>
   )
 }

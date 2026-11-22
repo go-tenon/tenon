@@ -12,8 +12,10 @@ import {
   Button,
   Card,
   CloseButton,
+  Drawer,
   Group,
   Loader,
+  type MantineSize,
   Menu,
   Modal,
   MultiSelect,
@@ -85,9 +87,13 @@ export interface ResourcePageProps {
   expand?: (row: ResourceRow) => ReactNode
   /**
    * 新建和修改的表单：page（默认）是单独的页面，需要列表路由下的 new 和 $id/edit 两个子路由（渲染 ResourceFormPage）；
-   * modal 是列表上方的对话框，适合字段少的资源。
+   * modal 是列表上方的对话框，适合字段少的资源；drawer 是右侧滑出的抽屉，适合字段较多或含嵌套结构的资源。
    */
-  form?: "page" | "modal"
+  form?: "page" | "modal" | "drawer"
+  /** modal 或 drawer 表单容器的宽度，默认 "lg"。 */
+  formSize?: MantineSize | (string & {}) | number
+  /** form 为 modal 或 drawer 时自己写的表单内容，代替按声明渲染的字段，见 useResourceForm。 */
+  renderForm?: (ctx: ResourceFormContext) => ReactNode
 }
 
 /**
@@ -116,6 +122,8 @@ function ResourceList({
   toolbar,
   expand,
   form = "page",
+  formSize,
+  renderForm,
 }: ResourcePageProps): ReactNode {
   const view = useResourceList(model, route)
   const t = useText()
@@ -125,6 +133,7 @@ function ResourceList({
   const navigate = useNavigate()
   const here = useMatch({ strict: false })
   const base = here.pathname.replace(/\/$/, "")
+  const inline = form === "modal" || form === "drawer"
 
   // 单独的页面：列表路由下的 new 和 $id/edit 子路由。没有对应的路由时不显示按钮，并提示一次。
   const pages =
@@ -146,9 +155,9 @@ function ResourceList({
   }
   const canCreate = view.can.create && pages.create
   const canUpdate = view.can.update && pages.update
-  const openCreate = () => (form === "modal" ? setEditing({}) : void navigate({ to: `${base}/new` as never }))
+  const openCreate = () => (inline ? setEditing({}) : void navigate({ to: `${base}/new` as never }))
   const openEdit = (row: ResourceRow) =>
-    form === "modal"
+    inline
       ? setEditing({ row })
       : void navigate({ to: `${base}/${encodeURIComponent(model.rowKey(row))}/edit` as never })
 
@@ -309,14 +318,18 @@ function ResourceList({
           {table}
         </Page>
       )}
-      {form === "modal" && (
+      {inline && (
         <ResourceForm
           model={model}
           open={!!editing}
           row={editing?.row}
+          variant={form}
+          size={formSize}
           inputs={inputs}
           onClose={() => setEditing(undefined)}
-        />
+        >
+          {renderForm}
+        </ResourceForm>
       )}
     </>
   )
@@ -494,14 +507,27 @@ export interface ResourceFormProps {
   open: boolean
   /** 修改的行；新建时为空。有详情接口时打开后读取完整的一行。 */
   row?: ResourceRow
+  /** 表单容器：modal 是居中对话框（默认），drawer 是右侧抽屉。 */
+  variant?: "modal" | "drawer"
+  /** 容器宽度，默认 "lg"。 */
+  size?: MantineSize | (string & {}) | number
   inputs?: { [field: string]: FieldInput }
   onClose(): void
   /** 自己写的表单内容，代替按声明渲染的字段，见 useResourceForm。 */
   children?: (ctx: ResourceFormContext) => ReactNode
 }
 
-/** 新建和修改的表单（对话框）：字段、校验规则（与服务端相同）来自声明，服务端的字段错误显示在输入框下面。 */
-export function ResourceForm({ model, open, row, inputs, onClose, children }: ResourceFormProps): ReactNode {
+/** 新建和修改的表单（对话框或抽屉）：字段、校验规则（与服务端相同）来自声明，服务端的字段错误显示在输入框下面。 */
+export function ResourceForm({
+  model,
+  open,
+  row,
+  variant = "modal",
+  size = "lg",
+  inputs,
+  onClose,
+  children,
+}: ResourceFormProps): ReactNode {
   const t = useText()
   const key = row ? model.rowKey(row) : undefined
   const item = useResourceItem(model, open ? key : undefined)
@@ -513,27 +539,38 @@ export function ResourceForm({ model, open, row, inputs, onClose, children }: Re
     if (dirty.current() && !(await discard())) return
     onClose()
   }
+  const heading = t(row ? "tenon.resource.edit_title" : "tenon.resource.create_title", { name: model.title })
+  const body =
+    open &&
+    (loading ? (
+      <Group justify="center" py="xl">
+        <Loader size="sm" />
+      </Group>
+    ) : (
+      <FormContent
+        key={key ?? "new"}
+        ctx={{ model, row: initial, editKey: key, dirty, onSaved: onClose, onCancel: () => void requestClose() }}
+        inputs={inputs}
+        render={children}
+      />
+    ))
+  if (variant === "drawer") {
+    return (
+      <Drawer
+        opened={open}
+        onClose={() => void requestClose()}
+        position="right"
+        size={size}
+        title={heading}
+        closeOnClickOutside={false}
+      >
+        {body}
+      </Drawer>
+    )
+  }
   return (
-    <Modal
-      opened={open}
-      onClose={() => void requestClose()}
-      size="lg"
-      title={t(row ? "tenon.resource.edit_title" : "tenon.resource.create_title", { name: model.title })}
-      closeOnClickOutside={false}
-    >
-      {open &&
-        (loading ? (
-          <Group justify="center" py="xl">
-            <Loader size="sm" />
-          </Group>
-        ) : (
-          <FormContent
-            key={key ?? "new"}
-            ctx={{ model, row: initial, editKey: key, dirty, onSaved: onClose, onCancel: () => void requestClose() }}
-            inputs={inputs}
-            render={children}
-          />
-        ))}
+    <Modal opened={open} onClose={() => void requestClose()} size={size} title={heading} closeOnClickOutside={false}>
+      {body}
     </Modal>
   )
 }

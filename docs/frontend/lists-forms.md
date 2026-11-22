@@ -172,6 +172,54 @@ void navigate({ to: "/articles" })
 - effect 激活时调用 `resume`，清理时调用 `stop`（立即保存等待中的变化）：`StrictMode` 和隐藏的标签都会先清理再激活。
 - `status()` 和 `subscribe` 给出 `pending`、`saving`、`saved`、`error`，界面据此显示“已保存”。
 
+<a id="text-trigger"></a>
+## 用 `useTextTrigger` 和 `TriggerMenu` 做输入框触发补全
+
+在 `Textarea` 或 `TextInput` 中输入特定前缀（如 `@` 提及同事、`/` 快捷回复、`{{` 模板变量）时弹出候选菜单，支持键盘上下选择、`Enter` 或 `Tab` 确认、`Esc` 关闭、自动避开输入法组词，并在选中后精准替换触发区间与恢复光标：
+
+```tsx
+import { TriggerMenu, textTriggerRule, useTextTrigger } from "@go-tenon/ui"
+import { Box, Text, Textarea } from "@mantine/core"
+import { useRef, useState } from "react"
+
+function ReplyInput({ members }: { members: { id: string; name: string }[] }) {
+  const ref = useRef<HTMLTextAreaElement>(null)
+  const [text, setText] = useState("")
+  const trigger = useTextTrigger({
+    ref,
+    value: text,
+    onChange: setText,
+    rules: [
+      textTriggerRule({
+        id: "mention",
+        trigger: "@", // boundary 默认 "word"，行首或空白后触发，避免误触邮箱与网址
+        items: (q) => members.filter((m) => m.name.includes(q)),
+        getKey: (m) => m.id,
+        renderItem: (m) => <Text size="sm">{m.name}</Text>,
+        onSelect: (m, { replace }) => replace(`@${m.name} `),
+      }),
+    ],
+  })
+  return (
+    <Box pos="relative">
+      <TriggerMenu trigger={trigger} position="top" />
+      <Textarea
+        ref={ref}
+        value={text}
+        onChange={(e) => trigger.handleChange(e.currentTarget.value, e.currentTarget.selectionStart)}
+        onKeyDown={(e) => {
+          if (trigger.handleKeyDown(e)) return
+          // 其余快捷键处理
+        }}
+      />
+    </Box>
+  )
+}
+```
+
+- 一套 `rules` 可以同时注册多个触发前缀，匹配最靠近光标的一条；`boundary: "any"` 允许在文字中间触发（例如 `{{` 配 `stop: "}}"`）。
+- `trigger.open(ruleId)` 从工具栏按钮等外部入口打开候选菜单，选中后在当前光标位置插入内容。
+
 <a id="feedback"></a>
 ## 确认与提示：`confirm`、`notifySuccess`、`notifyError`
 

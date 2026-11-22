@@ -171,7 +171,9 @@ export const Route = createFileRoute("/_app/articles/$id/edit")({
 | `rowActions` | 行上的额外操作，排在声明的操作之后、删除之前 |
 | `toolbar` | 标题区的额外按钮，例如[导入、导出](features.md#transfer) |
 | `expand` | 行的展开内容 |
-| `form` | `page`（默认）是单独的页面，`modal` 是对话框 |
+| `form` | `page`（默认）是单独的页面，`modal` 是对话框，`drawer` 是右侧抽屉 |
+| `formSize` | `modal` 或 `drawer` 的宽度，默认 `lg` |
+| `renderForm` | `modal` 或 `drawer` 中自己写的表单内容，见[`useResourceForm`](#custom-forms) |
 
 `inputs` 的组件收到 `field`、`label`、`value`、`onChange`（直接传值）、`error`、`disabled`，列表页和表单页共用时放在一个模块中。`RichEditor` 是应用自己的组件：
 
@@ -210,7 +212,7 @@ export const articleInputs: Record<string, FieldInput> = {
 <a id="custom-forms"></a>
 ### 自己写表单的内容：`useResourceForm`
 
-字段是嵌套的对象或者互相联动时，只自己写表单的内容，读取要修改的行、保存后返回、离开前询问仍由框架提供。`ResourceFormPage` 或 `ResourceForm` 的 `children` 收到 `ctx`，交给 `useResourceForm`。`providers` 是资源模型，`defaultURLs` 是应用自己的数据：
+字段是嵌套的对象或者互相联动时，只自己写表单的内容，读取要修改的行、保存后返回、离开前询问仍由框架提供。`ResourceFormPage`、`ResourceForm` 的 `children` 或 `ResourcePage` 的 `renderForm` 收到 `ctx`，交给 `useResourceForm`。`providers` 是资源模型，`defaultURLs` 是应用自己的数据：
 
 ```tsx
 <ResourceFormPage model={providers}>{(ctx) => <ProviderForm ctx={ctx} />}</ResourceFormPage>
