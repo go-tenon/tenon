@@ -106,7 +106,7 @@ var rules = map[string]rule{
 	"notification":      {layerFeature, []string{"database", "errorx", "identity"}},
 	"feature":           {layerFeature, []string{"errorx", "identity"}},
 	"settings":          {layerFeature, []string{"database", "errorx"}},
-	"activity":          {layerFeature, []string{"database", "identity", "logging"}},
+	"activity":          {layerFeature, []string{"database", "identity", "logging", "page"}},
 	"operation":         {layerFeature, []string{"database", "errorx", "i18n", "identity", "queue"}},
 	"privacy":           {layerFeature, []string{"database", "errorx", "identity"}},
 	"privacy/export":    {layerFeature, []string{"database", "errorx", "filesystem", "identity", "operation", "privacy"}},

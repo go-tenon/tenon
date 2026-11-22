@@ -61,7 +61,7 @@ export * from "./components/page"
 export * from "./components/status-dot"
 export * from "./components/truncated-text"
 // ———————————————————————————— features ————————————————————————————
-export * from "./features/activity/activity-timeline"
+export * from "./features/activity/activity-log"
 export * from "./features/activity/model"
 export * from "./features/browser-sign-in"
 export * from "./features/login-form"

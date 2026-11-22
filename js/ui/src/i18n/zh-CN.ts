@@ -1,10 +1,13 @@
 // 框架组件内置的简体中文文字。消息 ID 以 tenon. 开头，应用的翻译文件中同一个 ID 的消息覆盖它们。
 
 export const zhCN = {
+  "tenon.activity.action": "操作",
+  "tenon.activity.actor": "操作人",
   "tenon.activity.empty": "还没有操作记录",
   "tenon.activity.load_failed": "操作记录读取失败",
   "tenon.activity.on_behalf": "（{{.name}} 代为操作）",
   "tenon.activity.system": "系统",
+  "tenon.activity.time": "时间",
   "tenon.autosave.error": "保存失败，修改后会重试",
   "tenon.autosave.pending": "有未保存的修改",
   "tenon.autosave.saving": "保存中…",
