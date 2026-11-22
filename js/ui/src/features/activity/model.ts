@@ -1,5 +1,5 @@
-// 操作日志：一个对象的历史（例如文章的修改记录），或者一个人的操作记录。接口由应用定义（见操作日志一章），
-// 这里通过 ActivitySource 读取。外观（时间线）只负责渲染。
+// 操作日志：一个对象的历史（例如文章的修改记录）、一个人的操作记录，或整个租户的操作日志。接口由应用定义（见操作日志一章），
+// 这里通过 ActivitySource 读取。表格外观（ActivityLog）只负责渲染。
 
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query"
 import { useMemo } from "react"
@@ -33,6 +33,7 @@ export interface ActivitySource {
 export interface Activity {
   items: ActivityItem[]
   loading: boolean
+  loadingMore: boolean
   error?: unknown
   hasMore: boolean
   loadMore(): void
@@ -58,6 +59,7 @@ export function useActivity(source: ActivitySource): Activity {
   return {
     items,
     loading: list.isPending,
+    loadingMore: list.isFetchingNextPage,
     error: list.error ?? undefined,
     hasMore: list.hasNextPage,
     loadMore: () => void list.fetchNextPage(),

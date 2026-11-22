@@ -133,9 +133,9 @@ text := i18n.T(ctx, a.Event, a.Properties) // a 是一条 activity.Activity
 操作人的名字同样在显示时按 `a.Actor()` 查询，用户改名后历史中显示新名字。
 
 <a id="history-page"></a>
-### 在页面中用 `ActivityTimeline` 显示
+### 在页面中用 `ActivityLog` 显示
 
-`@go-tenon/ui` 的 `ActivityTimeline` 从新到旧显示记录，满一页才显示“加载更多”，读取失败时显示“重试”。它读取应用自己的接口，每一条的字段：
+`@go-tenon/ui` 的 `ActivityLog` 从新到旧以表格显示记录，满一页才显示“加载更多”，读取失败时显示“重试”。它读取应用自己的接口，每一条的字段：
 
 | 字段 | 内容 |
 | --- | --- |
@@ -169,10 +169,10 @@ for _, a := range list {
 }
 ```
 
-前端把生成的客户端方法交给时间线，`key` 区分同一页面上的几份历史：
+前端把生成的客户端方法交给 `ActivityLog`，`key` 区分同一页面上的几份记录或不同的筛选条件，`toolbar` 放筛选控件：
 
 ```tsx
-<ActivityTimeline
+<ActivityLog
   source={{ key: ["article", id], list: (before) => api.article.history(id, { before }).then((r) => r.items) }}
 />
 ```

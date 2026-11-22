@@ -45,16 +45,16 @@ trackOperation(app, {
 - [导入与导出](#transfer)的按钮自动登记。
 
 <a id="activity"></a>
-## 操作记录：`ActivityTimeline`
+## 操作记录：`ActivityLog`
 
-`ActivityTimeline` 从新到旧显示一个对象的历史或一个人的[操作记录](../features/activity.md)，接口和每一条的字段见[在页面中显示](../features/activity.md#history-page)：
+`ActivityLog` 从新到旧以表格显示一个对象的历史、一个人的操作记录或整个租户的[操作记录](../features/activity.md)，接口和每一条的字段见[在页面中显示](../features/activity.md#history-page)：
 
 ```tsx
-<ActivityTimeline source={{ key: ["article", id], list: (before) => api.article.history(id, { before }).then((r) => r.items) }} />
+<ActivityLog source={{ key: ["article", id], list: (before) => api.article.history(id, { before }).then((r) => r.items) }} />
 ```
 
-- `key` 区分同一页面上的几份历史；`onOpen` 替换点击带 `href` 的记录时的处理。
-- 自己写时用 `useActivity(source)`：`{ items, hasMore, loadMore, refresh }`。
+- `key` 区分同一页面上的几份记录或不同的筛选条件；`toolbar` 放在表格上方左侧（例如筛选控件）；`onOpen` 替换点击带 `href` 的记录时的处理。
+- 自己写时用 `useActivity(source)`：`{ items, loading, loadingMore, hasMore, loadMore, refresh }`。
 
 <a id="transfer"></a>
 ## 导入与导出：`ImportButton`、`ExportButton`
