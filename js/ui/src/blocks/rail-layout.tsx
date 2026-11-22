@@ -38,6 +38,7 @@ import {
   useNarrow,
   useNavCollapseRequested,
   useNavigation,
+  useRailSectionState,
   useSlotFilled,
 } from "../app/layout"
 import { firstPage, type MenuItem } from "../app/menu"
@@ -66,37 +67,48 @@ export interface RailLayoutProps {
 export interface RailSectionProps {
   /** 分组标题。 */
   title: ReactNode
+  /** 标题行右侧的附加操作（例如新建按钮），与折叠按钮分离以避免嵌套交互元素。 */
+  action?: ReactNode
   /** 是否允许点击标题折叠分组，默认 false。 */
   collapsible?: boolean
   /** 允许折叠时是否默认展开，默认 true。 */
   defaultOpened?: boolean
+  /** 可选持久化键：传入时按账号记住分组的展开/收起状态。 */
+  storeKey?: string
   children: ReactNode
 }
 
-/** RailSection 是二级导航中的一个分组：上方细分隔线、小号分组标题（可选折叠）和组内导航项。 */
+/** RailSection 是二级导航中的一个分组：上方细分隔线、小号分组标题（可选折叠与右侧操作）和组内导航项。 */
 export function RailSection({
   title,
+  action,
   collapsible = false,
   defaultOpened = true,
+  storeKey,
   children,
 }: RailSectionProps): ReactNode {
-  const [opened, setOpened] = useState(defaultOpened)
+  const [opened, setOpened] = useRailSectionState(collapsible ? storeKey : undefined, defaultOpened)
   return (
     <Stack gap={2} className="tn-rail-section">
-      {collapsible ? (
-        <UnstyledButton
-          className="tn-rail-section-title"
-          data-collapsible=""
-          data-opened={opened || undefined}
-          aria-expanded={opened}
-          onClick={() => setOpened((v) => !v)}
-        >
-          <IconChevronRight size={12} stroke={2} className="tn-rail-section-chevron" />
-          <span>{title}</span>
-        </UnstyledButton>
-      ) : (
-        <div className="tn-rail-section-title">{title}</div>
-      )}
+      <div className="tn-rail-section-header">
+        {collapsible ? (
+          <UnstyledButton
+            className="tn-rail-section-title"
+            data-collapsible=""
+            data-opened={opened || undefined}
+            aria-expanded={opened}
+            onClick={() => setOpened(!opened)}
+          >
+            <IconChevronRight size={12} stroke={2} className="tn-rail-section-chevron" />
+            <span className="tn-rail-section-label">{title}</span>
+          </UnstyledButton>
+        ) : (
+          <div className="tn-rail-section-title">
+            <span className="tn-rail-section-label">{title}</span>
+          </div>
+        )}
+        {action && <div className="tn-rail-section-action">{action}</div>}
+      </div>
       {collapsible ? (
         <Collapse expanded={opened}>
           <Stack gap={2}>{children}</Stack>

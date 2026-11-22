@@ -82,6 +82,7 @@ body, _, err := personal.Open(ctx, sub, id)
 | [`notification`](notifications.md) | `notification.Erase`、`notification.Export` | 所有租户中收到的通知 | 同左 |
 | [`push`](push.md) | `push.Erase`、`push.Export` | 登记的设备 | 设备的平台、租户、时间 |
 | [`feature`](flags.md) | `feature.Erase` | 为这个用户单独做的开关设置 | — |
+| [`savedview`](saved-views.md) | `savedview.Erase`、`savedview.Export` | 全部租户与业务对象下的个人视图 | 同左 |
 | [`operation`](operations.md) | `operation.Erase` | 发起的后台操作，包括导入和导出的记录 | — |
 | [`activity`](activity.md) | `activity.Export` | 不删除，见[保留的数据](#retained-data) | 作为操作人的操作日志 |
 | [`ai/chat`](../ai/chat.md) | 包一层 `chat.EraseUser`、`chat.ExportUser` | 全部 AI 对话、摘要和用户状态 | 同左 |

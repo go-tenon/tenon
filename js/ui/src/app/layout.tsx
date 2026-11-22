@@ -9,10 +9,11 @@ import {
   useContext,
   useLayoutEffect,
   useMemo,
+  useState,
   useSyncExternalStore,
 } from "react"
 import { createPortal } from "react-dom"
-import { useApp, useBreadcrumbs, useMenu } from "./app"
+import { useApp, useBreadcrumbs, useMenu, useOptionalApp } from "./app"
 import { type Badge, useBadgeOf } from "./badges"
 import type { Crumb, MenuItem } from "./menu"
 import { noAccount } from "./snapshot"
@@ -176,6 +177,9 @@ export interface LayoutState {
 const defaultLayout: LayoutState = { collapsed: false, tabs: true, navOpen: false }
 
 const layoutOf = perOwner(() => createStore<{ key: string; state: LayoutState }>({ key: "", state: defaultLayout }))
+const sectionsOf = perOwner(() => createStore<Record<string, boolean>>({}))
+const emptySectionStore = createStore<Record<string, boolean>>({})
+const noopSubscribe = () => () => {}
 
 /** 布局状态和修改它的函数。保存在 app.storage 中，按账号区分：换个账号登录各是各的。 */
 export function useLayoutState(): [LayoutState, (changes: Partial<LayoutState>) => void] {
@@ -199,6 +203,46 @@ export function useLayoutState(): [LayoutState, (changes: Partial<LayoutState>) 
     [state, key, app.storage, store],
   )
   return [state, set]
+}
+
+/**
+ * 二级导航分组的展开/收起状态。传入 storeKey 时按账号保存在 app.storage 中，换账号或跨页面各自独立；
+ * 不传 storeKey 或不在 AppRoot 内时使用组件内临时状态。
+ */
+export function useRailSectionState(
+  storeKey: string | undefined,
+  defaultOpened: boolean,
+): [boolean, (opened: boolean) => void] {
+  const app = useOptionalApp()
+  const [local, setLocal] = useState(defaultOpened)
+  const account = useSyncExternalStore(
+    app ? app.session.subscribe : noopSubscribe,
+    () => app?.session.identity()?.account ?? "",
+    noAccount,
+  )
+  const store = app ? sectionsOf(app) : emptySectionStore
+  const map = useSyncExternalStore(store.subscribe, store.get, store.get)
+  const fullKey = app && storeKey ? `rail-section:${account}:${storeKey}` : undefined
+
+  const opened = useMemo(() => {
+    if (!fullKey || !app) return local
+    if (fullKey in map) return map[fullKey]
+    const saved = app.storage.get<boolean>(fullKey)
+    return typeof saved === "boolean" ? saved : defaultOpened
+  }, [fullKey, app, local, map, defaultOpened])
+
+  const setOpened = useCallback(
+    (next: boolean) => {
+      if (!fullKey || !app) {
+        setLocal(next)
+        return
+      }
+      app.storage.set(fullKey, next)
+      store.set({ ...store.get(), [fullKey]: next })
+    },
+    [fullKey, app, store],
+  )
+  return [opened, setOpened]
 }
 
 /** 是否是窄屏（默认宽度小于 768px）：布局据此把主导航收进抽屉。 */

@@ -405,6 +405,11 @@ export function useApp(): App {
   return app
 }
 
+/** 读取当前的应用上下文；不在 AppRoot 内时返回 undefined。 */
+export function useOptionalApp(): App | undefined {
+  return useContext(AppContext) ?? undefined
+}
+
 /** 当前身份的权限：返回 can(permission)，按 grants 匹配，权限中的 *、articles:* 这类通配符有效。权限读取完成之前都返回 false。 */
 export function useCan(): (permission: string) => boolean {
   const app = useApp()

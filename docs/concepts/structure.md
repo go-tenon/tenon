@@ -142,7 +142,7 @@ SQL 迁移文件，由 `embed.go` 嵌入程序，部署时用 `migrate up` 执�
 每个包可以单独使用。顶层的包分为四层，每个包只能导入同层或更低层的包，由架构测试 `internal/checks/archtest` 检查：
 
 ```text
-功能        apitoken  login  oauthserver  authz  notification  push  activity  feature  settings  operation  privacy  privacy/export  webhook  search  vector  sheet/imports  sheet/exports  ai
+功能        apitoken  login  oauthserver  authz  notification  push  activity  feature  settings  savedview  operation  privacy  privacy/export  webhook  search  vector  sheet/imports  sheet/exports  ai
 入口        httpx  frontend  realtime  mcpx  natsrpc  command  clientgen
 基础设施    database  natsx  queue  schedule  cache  lock  ratelimit  captcha  broadcast  filesystem  imgproxy  mail  sms  pdf  outbound  sheet  document  contract  form
 基础        errorx  identity  config  cleanup  logging  telemetry  health  doctor  i18n  enum  page  hashing  crypt  acquire
@@ -234,6 +234,7 @@ SQL 迁移文件，由 `embed.go` 嵌入程序，部署时用 `migrate up` 执�
 | `activity` | 操作日志 | [操作日志](../features/activity.md) |
 | `feature` | 功能开关 | [功能开关](../features/flags.md) |
 | `settings` | 运行时可修改的设置 | [设置](../features/settings.md) |
+| `savedview` | 已保存的视图与筛选条件（共享与个人） | [已保存视图](../features/saved-views.md) |
 | `operation` | 后台操作的状态与进度 | [后台操作](../features/operations.md) |
 | `privacy` | 注销账号：冷静期，在一个事务中删除各处的个人数据 | [注销账号](../features/privacy.md) |
 | `privacy/export` | 导出个人数据：后台打包成 zip，由本人下载 | [导出个人数据](../features/privacy.md) |
