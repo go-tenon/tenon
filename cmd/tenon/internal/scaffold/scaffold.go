@@ -1,9 +1,9 @@
-// Package scaffold 生成新项目、新前端和新客户端：template/project 是项目，template/frontend 是 apps 中的一个前端
+// Package scaffold 生成新项目、新前端、新客户端和多语言骨架：template/project 是项目，template/frontend 是 apps 中的一个前端
 // （TanStack Start 和 @go-tenon/ui）。前端按几个互相独立的维度组合：template/app 和 template/site 是按布局加上的页面，
-// template/login 是登录页和登录接口，template/api 是调用 API 的客户端（API 的客户端已经生成时加上）。前端的界面文字写在项目的
-// locales/<前端>.zh-CN.yaml 中，模板是 template/locales，tenon generate 把它生成为前端的 src/messages.gen.ts。
-// template/client/<种类> 是 clients 中的一个客户端，网页宿主（electron）另外在它显示的前端中加上 template/consent 的授权页，
-// 授权页的文字（template/consent-locales）追加到这个前端的翻译文件中。
+// template/login 是登录页和登录接口，template/api 是调用 API 的客户端（API 的客户端已经生成时加上）。
+// 单语言项目（默认，只有一种语言）界面文字直接写在页面代码中；配置多种语言时生成 template/i18n 与 locales/<前端>.<语言>.yaml，
+// tenon generate 把它们生成为前端的 src/messages.gen.ts。
+// template/client/<种类> 是 clients 中的一个客户端，网页宿主（electron）另外在它显示的前端中加上 template/consent 的授权页。
 // 每个 .tmpl 文件按参数渲染后写入目标目录，其他文件（例如图标）原样复制；所有文件路径中的模板标记都展开
 // （cmd/[[.Slug]] 写成 cmd/todo）。模板的分隔符是 [[ ]]，与 JSX 的 {{ }} 区分开；gitignore.tmpl 写成 .gitignore。
 package scaffold
@@ -33,31 +33,74 @@ const GoVersion = "1.27.4"
 // BunVersion 是生成的 package.json 中 packageManager 的 Bun 版本，与框架的 CI 相同；项目的 CI（setup-bun）读取它。
 const BunVersion = "1.4.4"
 
+// defaultLanguage 是未指定语言时的默认源语言。
+const defaultLanguage = "zh-CN"
+
 // Options 是项目模板的参数。
 type Options struct {
-	Module       string // Go 模块路径
-	Name         string // 应用的名称（页面标题、命令的说明）
-	Slug         string // npm 包名的作用域，例如 todo 时包名是 @todo/web、@todo/client；默认由 Name 得出。
-	TenonVersion string // go.mod 中要求的框架版本。
-	TenonDir     string // 本地的框架目录，设置时 go.mod 用 replace 指向它（开发框架本身时使用）
+	Module       string   // Go 模块路径
+	Name         string   // 应用的名称（页面标题、命令的说明）
+	Slug         string   // npm 包名的作用域，例如 todo 时包名是 @todo/web、@todo/client；默认由 Name 得出。
+	Languages    []string // 支持的语言，第一项是源语言；为空时默认 ["zh-CN"]
+	TenonVersion string   // go.mod 中要求的框架版本。
+	TenonDir     string   // 本地的框架目录，设置时 go.mod 用 replace 指向它（开发框架本身时使用）
 	GoVersion    string
 	BunVersion   string // package.json 中 packageManager 的 Bun 版本，为空时是 BunVersion
 }
 
+// SourceLanguage 返回项目的源语言（第一项）；为空时返回默认语言 zh-CN。
+func (o Options) SourceLanguage() string {
+	if len(o.Languages) == 0 {
+		return defaultLanguage
+	}
+	return o.Languages[0]
+}
+
+// AllLanguages 返回项目支持的全部语言；为空时返回 ["zh-CN"]。
+func (o Options) AllLanguages() []string {
+	if len(o.Languages) == 0 {
+		return []string{defaultLanguage}
+	}
+	return slices.Clone(o.Languages)
+}
+
+// MultiLanguage 报告项目是否启用多语言（两种及以上语言）。
+func (o Options) MultiLanguage() bool { return len(o.Languages) > 1 }
+
 // Frontend 是前端模板的参数。
 type Frontend struct {
-	Scope  string    // npm 包名的作用域，与项目根目录 package.json 的 name 相同。
-	Name   string    // 前端的名称，即 apps 中的目录名。
-	Base   string    // 前端挂载的路径，以 / 开头和结尾，写入 package.json 的 tenon.base。
-	Title  string    // 页面标题。
-	Layout string    // 布局，见 Layouts；为空时是 rail。
-	Login  string    // 登录页的样式，见 Logins；为空时按布局：frame、rail 是 centered，site 是 none。
-	Preset string    // 样式预设（@go-tenon/ui 的 Preset），见 Presets；为空时按布局：frame 是 compact，rail 是 comfortable，site 是 spacious。
-	Render string    // 渲染方式，见 Renders；为空时按布局：site 是 ssr，frame、rail 是 csr。
-	API    string    // 登录页调用的 API 的路径，例如 /admin/api，以 / 开头、不以 / 结尾；为空时是 /api。
-	Client string    // API 生成的 TypeScript 客户端的目录名（packages/client/src/<名称>）；为空时客户端还没有生成，不写 src/api.ts。
-	Auth   AuthCalls // 生成的客户端中登录相关接口的方法，见 FindClient。
+	Scope     string    // npm 包名的作用域，与项目根目录 package.json 的 name 相同。
+	Name      string    // 前端的名称，即 apps 中的目录名。
+	Base      string    // 前端挂载的路径，以 / 开头和结尾，写入 package.json 的 tenon.base。
+	Title     string    // 页面标题。
+	Layout    string    // 布局，见 Layouts；为空时是 rail。
+	Login     string    // 登录页的样式，见 Logins；为空时按布局：frame、rail 是 centered，site 是 none。
+	Preset    string    // 样式预设（@go-tenon/ui 的 Preset），见 Presets；为空时按布局：frame 是 compact，rail 是 comfortable，site 是 spacious。
+	Render    string    // 渲染方式，见 Renders；为空时按布局：site 是 ssr，frame、rail 是 csr。
+	API       string    // 登录页调用的 API 的路径，例如 /admin/api，以 / 开头、不以 / 结尾；为空时是 /api。
+	Client    string    // API 生成的 TypeScript 客户端的目录名（packages/client/src/<名称>）；为空时客户端还没有生成，不写 src/api.ts。
+	Auth      AuthCalls // 生成的客户端中登录相关接口的方法，见 FindClient。
+	Languages []string  // 项目支持的语言，第一项是源语言；为空时默认 ["zh-CN"]。
 }
+
+// SourceLanguage 返回前端使用的源语言。
+func (f Frontend) SourceLanguage() string {
+	if len(f.Languages) == 0 {
+		return defaultLanguage
+	}
+	return f.Languages[0]
+}
+
+// AllLanguages 返回项目支持的全部语言。
+func (f Frontend) AllLanguages() []string {
+	if len(f.Languages) == 0 {
+		return []string{defaultLanguage}
+	}
+	return slices.Clone(f.Languages)
+}
+
+// MultiLanguage 报告前端是否启用多语言（生成 src/i18n.ts 与 locales/<前端>.<语言>.yaml）。
+func (f Frontend) MultiLanguage() bool { return len(f.Languages) > 1 }
 
 // AuthCalls 是生成的客户端中登录相关接口的方法，写成“分组.方法”，例如 auth.login；客户端中没有这个接口时为空。
 type AuthCalls struct {
@@ -68,14 +111,26 @@ type AuthCalls struct {
 
 // Client 是客户端模板的参数。
 type Client struct {
-	Scope    string // npm 包名的作用域，与项目根目录 package.json 的 name 相同。
-	Name     string // 客户端的名称，即 clients 中的目录名。
-	Kind     string // 种类，见 project.Kinds。
-	Frontend string // 网页宿主显示的前端的名称。
-	Base     string // 这个前端挂载的路径。
-	SSR      bool   // 这个前端是否在服务端渲染：授权页在服务端渲染的前端中只在浏览器中渲染。
-	Title    string // 应用的名称：窗口标题、安装包的名称。
+	Scope     string   // npm 包名的作用域，与项目根目录 package.json 的 name 相同。
+	Name      string   // 客户端的名称，即 clients 中的目录名。
+	Kind      string   // 种类，见 project.Kinds。
+	Frontend  string   // 网页宿主显示的前端的名称。
+	Base      string   // 这个前端挂载的路径。
+	SSR       bool     // 这个前端是否在服务端渲染：授权页在服务端渲染的前端中只在浏览器中渲染。
+	Title     string   // 应用的名称：窗口标题、安装包的名称。
+	Languages []string // 项目支持的语言；多于一种时授权页使用 useT 并向翻译文件追加文字。
 }
+
+// AllLanguages 返回项目支持的全部语言。
+func (c Client) AllLanguages() []string {
+	if len(c.Languages) == 0 {
+		return []string{defaultLanguage}
+	}
+	return slices.Clone(c.Languages)
+}
+
+// MultiLanguage 报告授权页是否按多语言方式生成。
+func (c Client) MultiLanguage() bool { return len(c.Languages) > 1 }
 
 // Deploy 是原生二进制部署文件模板的参数：deploy.yaml 和 .env.example。
 type Deploy struct {
@@ -168,15 +223,21 @@ func Write(dir string, opts Options) error {
 	} else if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
-	// 先写前端，项目模板中的示例页面和它的界面文字再覆盖前端的首页和翻译文件。
-	web := Frontend{Scope: opts.Slug, Name: "web", Base: "/", Title: opts.Name, Layout: "site"}
+	// 先写前端，项目模板中的示例页面再覆盖前端的首页；多语言项目另外写入示例翻译文件与 locales/embed.go。
+	web := Frontend{Scope: opts.Slug, Name: "web", Base: "/", Title: opts.Name, Layout: "site", Languages: opts.Languages}
 	if err := writeFrontend(dir, web); err != nil {
 		return err
 	}
-	return render("template/project", dir, opts)
+	if err := render("template/project", dir, opts); err != nil {
+		return err
+	}
+	if opts.MultiLanguage() {
+		return writeProjectLocales(dir, opts)
+	}
+	return nil
 }
 
-// WriteFrontend 在项目 root 的 apps/<名称> 中生成一个前端，界面文字写在 locales/<名称>.zh-CN.yaml 中。这个目录必须尚未创建。
+// WriteFrontend 在项目 root 的 apps/<名称> 中生成一个前端；多语言项目同时写入 locales/<名称>.<语言>.yaml。这个目录必须尚未创建。
 func WriteFrontend(root string, f Frontend) error {
 	dir := filepath.Join(root, "apps", f.Name)
 	if _, err := os.Stat(dir); err == nil {
@@ -189,7 +250,7 @@ func WriteFrontend(root string, f Frontend) error {
 
 // WriteClient 在项目 root 的 clients/<名称> 中生成客户端 c，这个目录必须尚未创建。网页宿主在它显示的前端中加上授权页
 // src/routes/oauth/consent.tsx（用户在浏览器中登录时确认的页面），这个文件已经存在时不覆盖；consent 报告是否加上了。
-// 授权页用前端的登录（src/auth.ts），前端没有登录时返回错误。授权页的文字追加到 locales/<前端>.zh-CN.yaml 的末尾。
+// 授权页用前端的登录（src/auth.ts），前端没有登录时返回错误。多语言项目将授权页的文字追加到 locales/<前端>.<语言>.yaml 的末尾。
 func WriteClient(root string, c Client) (consent bool, err error) {
 	dir := filepath.Join(root, "clients", c.Name)
 	if _, err := os.Stat(dir); err == nil {
@@ -211,7 +272,10 @@ func WriteClient(root string, c Client) (consent bool, err error) {
 	if err := render("template/consent", fdir, c); err != nil {
 		return false, err
 	}
-	return true, appendMessages(root, "template/consent-locales/messages.yaml.tmpl", c.Frontend, c)
+	if c.MultiLanguage() {
+		return true, appendConsentMessages(root, c)
+	}
+	return true, nil
 }
 
 // WriteDeploy 在项目 root 中生成原生二进制部署文件：deploy.yaml 和 .env.example。
@@ -246,26 +310,198 @@ func WriteDeploy(root string, d Deploy) ([]string, error) {
 	return targets, nil
 }
 
-// appendMessages 把模板 name 渲染后追加到项目 root 中前端 frontend 的翻译文件 locales/<frontend>.zh-CN.yaml 的末尾，
-// 文件不存在时新建它。
-func appendMessages(root, name, frontend string, data any) error {
-	text, err := files.ReadFile(name)
-	if err != nil {
+// AddLanguage 为已有项目启用或追加语言 lang（langs 为更新后的完整语言列表，第一项是源语言；frontends 为 apps 中的前端名称）：
+// 确保 locales/embed.go、locales/<lang>.yaml、每个前端的翻译文件与 src/i18n.ts 存在，已有的文件不覆盖，返回新创建的文件路径。
+func AddLanguage(root, lang string, langs, frontends []string) ([]string, error) {
+	source := defaultLanguage
+	if len(langs) > 0 {
+		source = langs[0]
+	}
+	var created []string
+	writeIfMissing := func(rel string, data []byte) error {
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		if _, err := os.Stat(p); err == nil {
+			return nil
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		if err := writeFile(p, data); err != nil {
+			return err
+		}
+		created = append(created, rel)
+		return nil
+	}
+	if err := writeIfMissing("locales/embed.go", []byte(localesEmbedGo)); err != nil {
+		return nil, err
+	}
+	serverHeader := fmt.Sprintf("# 服务端 %s 翻译文件：为 errorx.Define、enum、Resource、Settings 补充该语言的译文。\n", lang)
+	if err := writeIfMissing("locales/"+lang+".yaml", []byte(serverHeader)); err != nil {
+		return nil, err
+	}
+	for _, name := range frontends {
+		// 从单语言升级到多语言时，先补上源语言的前端翻译文件，再创建新增语言的文件。
+		for _, l := range []string{source, lang} {
+			rel := fmt.Sprintf("locales/%s.%s.yaml", name, l)
+			content := fmt.Sprintf("# 前端 %s 的界面文字（%s）。tenon generate 把它生成为 apps/%s/src/messages.gen.ts。\napp.%s: %q\n", name, l, name, name, name)
+			if err := writeIfMissing(rel, []byte(content)); err != nil {
+				return nil, err
+			}
+		}
+		i18nRel := fmt.Sprintf("apps/%s/src/i18n.ts", name)
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(i18nRel))); errors.Is(err, fs.ErrNotExist) {
+			if err := render("template/i18n", filepath.Join(root, "apps", name), Frontend{Name: name, Languages: langs}); err != nil {
+				return nil, err
+			}
+			created = append(created, i18nRel)
+		} else if err != nil {
+			return nil, err
+		}
+	}
+	return created, nil
+}
+
+// localesEmbedGo 是 locales/embed.go 的内容。
+const localesEmbedGo = `// Package locales 嵌入应用的翻译文件：业务错误码、枚举、资源、设置与界面文字。
+package locales
+
+import "embed"
+
+//go:embed *.yaml
+var FS embed.FS
+`
+
+// isChinese 报告语言标签是否是中文。
+func isChinese(lang string) bool {
+	return strings.HasPrefix(strings.ToLower(lang), "zh")
+}
+
+// writeProjectLocales 为多语言新项目写入 locales/embed.go、附加语言的服务端翻译文件和各语言的 web 示例翻译文件。
+func writeProjectLocales(root string, opts Options) error {
+	if err := writeFile(filepath.Join(root, "locales", "embed.go"), []byte(localesEmbedGo)); err != nil {
 		return err
 	}
-	content, err := expand(name, string(text), data)
-	if err != nil {
-		return fmt.Errorf("scaffold: %w", err)
+	for _, lang := range opts.AllLanguages()[1:] {
+		msg := "Todo not found"
+		if isChinese(lang) {
+			msg = "待办事项不存在"
+		}
+		content := fmt.Sprintf("# 服务端 %s 翻译文件：源语言默认提示已写在 Go 定义中，这里补充 %s 译文。\ntodo.not_found: %s\n", lang, lang, msg)
+		if err := writeFile(filepath.Join(root, "locales", lang+".yaml"), []byte(content)); err != nil {
+			return err
+		}
 	}
-	p := filepath.Join(root, "locales", frontend+".zh-CN.yaml")
-	old, err := os.ReadFile(p)
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
+	for _, lang := range opts.AllLanguages() {
+		var content string
+		if isChinese(lang) {
+			content = fmt.Sprintf(
+				"# 前端 web 的界面文字（%s）。tenon generate 把它生成为 apps/web/src/messages.gen.ts，页面用 useT 取出。\n"+
+					"app.web: %q\ntodo.title: 待办\ntodo.placeholder: 要做什么？\ntodo.add: 添加\ntodo.delete: 删除\n",
+				lang, opts.Name,
+			)
+		} else {
+			content = fmt.Sprintf(
+				"# Frontend web UI messages (%s). tenon generate outputs apps/web/src/messages.gen.ts.\n"+
+					"app.web: %q\ntodo.title: Todos\ntodo.placeholder: What needs to be done?\ntodo.add: Add\ntodo.delete: Delete\n",
+				lang, opts.Name,
+			)
+		}
+		if err := writeFile(filepath.Join(root, "locales", "web."+lang+".yaml"), []byte(content)); err != nil {
+			return err
+		}
 	}
-	if len(old) > 0 && !bytes.HasSuffix(old, []byte("\n")) {
-		old = append(old, '\n')
+	return nil
+}
+
+// writeFrontendLocales 为多语言前端 f 写入各语言的初始翻译文件 locales/<名称>.<语言>.yaml。
+func writeFrontendLocales(root string, f Frontend) error {
+	for _, lang := range f.AllLanguages() {
+		var b strings.Builder
+		if isChinese(lang) {
+			fmt.Fprintf(&b, "# 前端 %s 的界面文字（%s）。tenon generate 把它生成为 apps/%s/src/messages.gen.ts，页面用 useT 取出。\n", f.Name, lang, f.Name)
+			fmt.Fprintf(&b, "app.%s: %q\n", f.Name, f.Title)
+			if f.Layout == "site" {
+				if f.HasLogin() {
+					b.WriteString("home.login: 登录\n")
+				} else {
+					b.WriteString("home.get_started: 开始使用\n")
+				}
+				b.WriteString("home.placeholder: 这里是首页的占位，换成自己的落地页。\n")
+			} else {
+				b.WriteString("home.title: 首页\nhome.start: 从这里开始。\n")
+			}
+			if f.HasLogin() {
+				b.WriteString("signin.title: 登录\n")
+			}
+		} else {
+			fmt.Fprintf(&b, "# Frontend %s UI messages (%s). tenon generate outputs apps/%s/src/messages.gen.ts.\n", f.Name, lang, f.Name)
+			fmt.Fprintf(&b, "app.%s: %q\n", f.Name, f.Title)
+			if f.Layout == "site" {
+				if f.HasLogin() {
+					b.WriteString("home.login: Sign in\n")
+				} else {
+					b.WriteString("home.get_started: Get started\n")
+				}
+				b.WriteString("home.placeholder: This is a placeholder home page. Replace it with your own landing page.\n")
+			} else {
+				b.WriteString("home.title: Home\nhome.start: Start here.\n")
+			}
+			if f.HasLogin() {
+				b.WriteString("signin.title: Sign in\n")
+			}
+		}
+		if err := writeFile(filepath.Join(root, "locales", f.Name+"."+lang+".yaml"), []byte(b.String())); err != nil {
+			return err
+		}
 	}
-	return writeFile(p, append(old, content...))
+	return nil
+}
+
+// appendConsentMessages 把授权页的文字追加到多语言前端各语言的 locales/<frontend>.<lang>.yaml 末尾。
+func appendConsentMessages(root string, c Client) error {
+	const zhConsent = `
+# 授权页（src/routes/oauth/consent.tsx）
+consent.title: 授权
+consent.sign_in: "在{{.client}}上登录"
+consent.failed: "无法授权（{{.reason}}）。"
+consent.invalid: 请求无效或已过期
+consent.return: "确认后回到{{.client}}。"
+consent.continue: 继续
+consent.requests: "{{.client}} 请求访问你的账号："
+consent.redirect: "授权后将跳转到 {{.host}}"
+consent.deny: 拒绝
+consent.allow: 允许
+`
+	const enConsent = `
+# OAuth consent page (src/routes/oauth/consent.tsx)
+consent.title: Authorize
+consent.sign_in: "Sign in to {{.client}}"
+consent.failed: "Unable to authorize ({{.reason}})."
+consent.invalid: Request is invalid or expired
+consent.return: "You will be returned to {{.client}} after confirming."
+consent.continue: Continue
+consent.requests: "{{.client}} requests access to your account:"
+consent.redirect: "After authorizing, you will be redirected to {{.host}}"
+consent.deny: Deny
+consent.allow: Allow
+`
+	for _, lang := range c.AllLanguages() {
+		p := filepath.Join(root, "locales", c.Frontend+"."+lang+".yaml")
+		old, err := os.ReadFile(p)
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		if len(old) > 0 && !bytes.HasSuffix(old, []byte("\n")) {
+			old = append(old, '\n')
+		}
+		chunk := enConsent
+		if isChinese(lang) {
+			chunk = zhConsent
+		}
+		if err := writeFile(p, append(old, chunk...)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Resolve 返回补上默认值的 f：没有写的维度按布局取默认值，见 defaults。某个维度的值不在可选的范围内时返回错误。
@@ -304,18 +540,23 @@ func (f Frontend) Resolve() (Frontend, error) {
 }
 
 // writeFrontend 在项目 root 的 apps/<名称> 中渲染共用的前端模板，再按布局加上 site 或 app（frame、rail）的页面，
-// 有登录页时加上 login；界面文字写进 root 的 locales/<名称>.zh-CN.yaml。
+// 有登录页时加上 login；多语言项目同时写入 src/i18n.ts 和 locales/<名称>.<语言>.yaml。
 func writeFrontend(root string, f Frontend) error {
 	f, err := f.Resolve()
 	if err != nil {
 		return err
 	}
-	if err := render("template/locales", filepath.Join(root, "locales"), f); err != nil {
-		return err
-	}
 	dir := filepath.Join(root, "apps", f.Name)
 	if err := render("template/frontend", dir, f); err != nil {
 		return err
+	}
+	if f.MultiLanguage() {
+		if err := writeFrontendLocales(root, f); err != nil {
+			return err
+		}
+		if err := render("template/i18n", dir, f); err != nil {
+			return err
+		}
 	}
 	pages := "template/app"
 	if f.Layout == "site" {

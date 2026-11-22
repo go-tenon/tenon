@@ -20,7 +20,7 @@ description: 在 Tenon 应用的前端（apps/<前端>，TanStack Start + Mantin
 ## 要点
 
 - 业务规则、权限判断和校验写在 Go 中，前端只负责展示和交互。
-- 界面文字写在 `locales/<前端>.<语言>.yaml`，页面用 `useT` 取出，菜单标题写消息 ID，见 `.tenon/docs/frontend/i18n.md`；`bun run check`（`go tool tenon check`）检查前端写死的文字和颜色。
+- 单语言项目（默认）界面文字和菜单标题直接写在页面代码中；`tenon.json` 配置多种 `languages` 时，界面文字写在 `locales/<前端>.<语言>.yaml`，页面用 `useT` 取出，菜单标题写消息 ID，见 `.tenon/docs/frontend/i18n.md`；`bun run check`（`go tool tenon check`）检查项目约定的文字和颜色。
 - 增删改查和设置的后台页面可以在 Go 中声明，界面按声明渲染，见 `.tenon/docs/frontend/resources.md`。只对部分行有意义的操作（停用、启用）用 `rest.Action` 的 `When` 按行显示；密钥这类字段在 Go 中写 `format:"password"`，界面遮住中间部分；自己调用接口修改资源后用 `useResourceMutations` 的 `invalidate()` 刷新列表。声明表达不了的表单（嵌套字段、字段联动）只自己写表单的内容：`ResourceFormPage` 的 `children` 加上 `useResourceForm`，见 `.tenon/docs/frontend/resources.md#custom-forms`。
 - 颜色从 Mantine 的主题中取：品牌色 `brand` 是默认色；其他彩色写预设的名称（`color="deep-orange"`、`var(--mantine-color-deep-orange-6)`），浅色底用 `-light` 变体；中性色用 `gray`、`dark` 色板、`c="dimmed"` 和 `--tn-*` 变量。不写十六进制或 `rgb()`，写死的值不随品牌色和暗色模式变化。
 - 状态的颜色固定：成功 `green`，进行中 `bright-blue`，等待处理 `yellow`，需要注意 `deep-orange`，失败 `red`，没有状态 `gray`。Mantine 自带的 `teal`、`orange`、`blue`、`cyan`、`grape`、`indigo`、`lime` 不在主题的预设中，不使用。

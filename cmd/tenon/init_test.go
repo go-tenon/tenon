@@ -77,18 +77,18 @@ func TestInitEndToEnd(t *testing.T) {
 		"AGENTS.md":                {"# Todo\n", "`README.md` 的“AI 编程助手”一节", "## 代码约定"},
 		"README.md":                {"# Todo\n", "gopls mcp", "@mantine/mcp-server", "@tanstack/intent"},
 		".github/workflows/ci.yml": {"go tool tenon generate", "go tool tenon check", "bun run typecheck", "bun run build"},
-		// 每个前端的界面文字生成为 messages.gen.ts；授权页的文字追加在 admin 的翻译文件中。
-		"apps/web/src/messages.gen.ts":           {`"todo.add": "添加"`},
-		"apps/admin/src/messages.gen.ts":         {`"home.title": "首页"`, `"consent.allow": "允许"`},
-		"apps/promo/src/messages.gen.ts":         {`"home.login": "登录"`, `"signin.title": "登录"`},
-		"apps/web/src/routeTree.gen.ts":          {"declare module '@tanstack/react-start'"},
-		".tenon/docs/README.md":                  {"# Tenon 文档"},
-		".mcp.json":                              {`"tenon"`},
-		".codex/config.toml":                     {"[mcp_servers.tenon]"},
-		".cursor/mcp.json":                       {`"tenon"`},
-		".agents/mcp_config.json":                {`"tenon"`},
-		".claude/skills/tenon-electron/SKILL.md": {"name: tenon-electron"},
-		".agents/skills/tenon-frontend/SKILL.md": {"name: tenon-frontend"},
+		// 单语言项目默认直写界面文字，不生成 messages.gen.ts；授权页直接写在 admin 中。
+		"apps/web/src/routes/index.tsx":           {`"添加"`},
+		"apps/admin/src/routes/oauth/consent.tsx": {`"允许"`},
+		"apps/promo/src/routes/login.tsx":         {`"登录"`},
+		"apps/web/src/routeTree.gen.ts":           {"declare module '@tanstack/react-start'"},
+		".tenon/docs/README.md":                   {"# Tenon 文档"},
+		".mcp.json":                               {`"tenon"`},
+		".codex/config.toml":                      {"[mcp_servers.tenon]"},
+		".cursor/mcp.json":                        {`"tenon"`},
+		".agents/mcp_config.json":                 {`"tenon"`},
+		".claude/skills/tenon-electron/SKILL.md":  {"name: tenon-electron"},
+		".agents/skills/tenon-frontend/SKILL.md":  {"name: tenon-frontend"},
 	} {
 		b, err := os.ReadFile(filepath.Join(dir, f))
 		if err != nil {

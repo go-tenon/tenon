@@ -86,19 +86,32 @@ UpdateWhen: map[string][]string{"self": {"false"}}, // self 是列表接口为�
 <a id="labels"></a>
 ## 显示文字
 
-资源、字段和操作的显示文字写在[翻译文件](../general/localization.md#translation-files)中，`tenon generate` 按语言生成：
+源语言的显示文字可以直接写在 `rest.Resource` / `rest.Settings` 中，单语言项目无需另建翻译文件：
 
-```yaml
-# zh-CN.yaml
-article.title: 文章
-article.fields.title: 标题
-article.fields.status: 状态
-article.actions.publish: 发布
-article.descriptions.slug: 文章地址中的名称，只能用小写字母、数字和连字符
+```go
+api.Resource(rest.Resource{
+    Name:         "article",
+    Title:        "文章",
+    List:         "article-list",
+    Labels:       map[string]string{"title": "标题", "status": "状态"},
+    Descriptions: map[string]string{"slug": "文章地址中的名称，只能用小写字母、数字和连字符"},
+    Actions:      []rest.Action{{Name: "publish", Label: "发布", Operation: "article-publish"}},
+})
 ```
 
-- 缺少显示文字时 `generate` 输出警告并列出缺少的消息；界面中先用默认语言，再用字段名。
-- `<资源>.descriptions.<字段>` 是表单中字段的说明，可以不写。Go 字段的 `doc` 标签只进接口文档。
+多语言应用在附加语言的[翻译文件](../general/localization.md#translation-files)中按以下键补充或覆盖，`tenon generate` 按语言合并生成：
+
+```yaml
+# locales/en.yaml
+article.title: Articles
+article.fields.title: Title
+article.fields.status: Status
+article.actions.publish: Publish
+article.descriptions.slug: Lowercase letters, digits, and hyphens only
+```
+
+- 翻译文件中的同名键覆盖定义处的默认文字；缺少显示文字时 `generate` 输出警告，界面中先用默认语言，再用字段名。
+- `Descriptions` / `<资源>.descriptions.<字段>` 是表单中字段的说明，可以不写。Go 字段的 `doc` 标签只进接口文档。
 - 枚举字段显示[枚举](client-react.md#ts-enums)的显示文字。
 
 <a id="checks"></a>

@@ -39,11 +39,10 @@ func TestWrite(t *testing.T) {
 		"apps/web/src/theme.ts":          `preset: "spacious"`,
 		"apps/web/src/start.ts":          "requestMiddleware: [requestMiddleware] }",
 		"apps/web/src/router.tsx":        `id: "web"`,
-		"apps/web/src/routes/__root.tsx": `{ title: i18n.t("app.web") }`,
+		"apps/web/src/routes/__root.tsx": `{ title: "Todo" }`,
 		"apps/web/src/routes/index.tsx":  `from "@todo/client/api"`, // 示例页面覆盖前端模板的首页
-		"apps/web/src/api.ts":            "fetch: apiFetch, headers: i18n.headers",
-		"apps/web/src/i18n.ts":           `from "./messages.gen"`,
-		"locales/web.zh-CN.yaml":         "app.web: \"Todo\"\ntodo.title: 待办\n", // 示例的界面文字覆盖前端模板的翻译文件
+		"apps/web/src/api.ts":            `createClient({ baseURL: "/api", fetch: apiFetch })`,
+		"internal/todo/todo.go":          `errorx.Define(errorx.NotFound, "todo.not_found", "待办事项不存在")`,
 		"go.mod":                         "\nignore node_modules\n",
 		".gitignore":                     "\ndist/\n# apps/dist 中提交了一个 .gitignore，见其中的说明\n!apps/dist/\n",
 		"apps/dist/.gitignore":           "*\n!.gitignore\n",
@@ -53,6 +52,12 @@ func TestWrite(t *testing.T) {
 	} {
 		if b, _ := os.ReadFile(filepath.Join(dir, f)); !strings.Contains(string(b), want) {
 			t.Errorf("%s missing %q:\n%s", f, want, b)
+		}
+	}
+	// 默认单语言项目不生成 locales 目录和 src/i18n.ts。
+	for _, absent := range []string{"locales", "apps/web/src/i18n.ts"} {
+		if _, err := os.Stat(filepath.Join(dir, absent)); err == nil {
+			t.Errorf("single-language project should not create %s", absent)
 		}
 	}
 	if b, _ := os.ReadFile(filepath.Join(dir, "apps/web/src/router.tsx")); strings.Contains(string(b), "session") {
@@ -91,6 +96,34 @@ func TestWrite(t *testing.T) {
 	})
 	if err := scaffold.Write(dir, scaffold.Options{Module: "x", Name: "x", TenonVersion: "v1"}); err == nil {
 		t.Error("wrote into a non-empty directory")
+	}
+}
+
+// 多语言新项目生成 locales/embed.go、各语言翻译文件、src/i18n.ts，并在入口和前端接入 i18n。
+func TestWriteMultiLanguage(t *testing.T) {
+	t.Parallel()
+	dir := filepath.Join(t.TempDir(), "todo")
+	err := scaffold.Write(dir, scaffold.Options{
+		Module: "example.com/todo", Name: "Todo", TenonVersion: "v0.0.0", Languages: []string{"zh-CN", "en"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for f, want := range map[string]string{
+		"locales/embed.go":               `//go:embed *.yaml`,
+		"locales/en.yaml":                `todo.not_found: Todo not found`,
+		"locales/web.zh-CN.yaml":         "app.web: \"Todo\"\ntodo.title: 待办\n",
+		"locales/web.en.yaml":            "app.web: \"Todo\"\ntodo.title: Todos\n",
+		"apps/web/src/i18n.ts":           `defaultLanguage: "zh-CN"`,
+		"apps/web/src/router.tsx":        "i18n,",
+		"apps/web/src/routes/__root.tsx": `{ title: i18n.t("app.web") }`,
+		"apps/web/src/routes/index.tsx":  `t("todo.add")`,
+		"apps/web/src/api.ts":            "fetch: apiFetch, headers: i18n.headers",
+		"cmd/todo/main.go":               `httpx.Languages(i18n.MustNew("zh-CN", locales.FS))`,
+	} {
+		if b, _ := os.ReadFile(filepath.Join(dir, f)); !strings.Contains(string(b), want) {
+			t.Errorf("%s missing %q:\n%s", f, want, b)
+		}
 	}
 }
 
@@ -159,43 +192,45 @@ func TestWriteFrontend(t *testing.T) {
 			"src/theme.ts":              `preset: "comfortable", primary: "blue-gray" })`,
 			"vite.config.ts":            "plugins: [tenon()],",
 			"src/router.tsx":            "permissions: async () => (await me()).permissions ?? []",
-			"src/routes/_app.tsx":       `<RailLayout title={t("app.admin-console")} user=`,
+			"src/routes/_app.tsx":       `<RailLayout title={"后台"} user=`,
 			"src/routes/_app/index.tsx": `createFileRoute("/_app/")`,
-			"src/routes/login.tsx":      `<CenteredAuthLayout brand={t("app.admin-console")} title={t("signin.title")}>`,
+			"src/routes/login.tsx":      `<CenteredAuthLayout brand={"后台"} title={"登录"}>`,
 			"src/auth.ts":               "createSession",
-			"src/i18n.ts":               `createI18n({ messages, defaultLanguage: "zh-CN" })`,
-			// 界面文字在项目的 locales 中，每个前端一个文件
-			"../../locales/admin-console.zh-CN.yaml": "app.admin-console: \"后台\"\nhome.title: 首页\nhome.start: 从这里开始。\nsignin.title: 登录\n",
-		}, []string{"src/routes/index.tsx", "src/api.ts"}}, // API 的客户端还没有生成：没有 api.ts
+		}, []string{"src/routes/index.tsx", "src/api.ts", "src/i18n.ts", "../../locales/admin-console.zh-CN.yaml"}},
 		{"frame", scaffold.Frontend{Layout: "frame"}, false, map[string]string{
 			"src/theme.ts":        `preset: "compact", primary: "blue-gray", datetimeFormat: "MM/DD HH:mm"`,
-			"src/routes/_app.tsx": `<FrameLayout title={t("app.admin-console")} tabs user=`,
+			"src/routes/_app.tsx": `<FrameLayout title={"后台"} tabs user=`,
 		}, nil},
 		{"site", scaffold.Frontend{Layout: "site"}, true, map[string]string{
-			"src/theme.ts":                           `createUiTheme({ preset: "spacious", primary: "blue-gray"`,
-			"src/routes/index.tsx":                   `actions={<Button size="sm">{t("home.get_started")}</Button>}`,
-			"../../locales/admin-console.zh-CN.yaml": "home.get_started: 开始使用\nhome.placeholder: 这里是首页的占位，换成自己的落地页。\n",
-			"src/routes/__root.tsx":                  `import "@fontsource-variable/inter/index.css"`,
-			"package.json":                           `"@fontsource-variable/inter"`,
-			"vite.config.ts":                         `tenon({ prerender: ["/"] })`,
+			"src/theme.ts":          `createUiTheme({ preset: "spacious", primary: "blue-gray"`,
+			"src/routes/index.tsx":  `actions={<Button size="sm">{"开始使用"}</Button>}`,
+			"src/routes/__root.tsx": `import "@fontsource-variable/inter/index.css"`,
+			"package.json":          `"@fontsource-variable/inter"`,
+			"vite.config.ts":        `tenon({ prerender: ["/"] })`,
 		}, []string{"src/auth.ts", "src/routes/login.tsx"}},
 		// 各个维度互相独立：后台的布局可以换登录页、去掉登录、改为服务端渲染，官网可以加上登录。
 		{"rail split", scaffold.Frontend{Layout: "rail", Login: "split"}, false, map[string]string{
-			"src/routes/login.tsx": `<SplitAuthLayout brand={t("app.admin-console")} title={t("signin.title")}>`,
+			"src/routes/login.tsx": `<SplitAuthLayout brand={"后台"} title={"登录"}>`,
 		}, nil},
 		{"frame no login", scaffold.Frontend{Layout: "frame", Login: "none"}, false, map[string]string{
-			"src/routes/_app.tsx":                    `createFileRoute("/_app")({ component: Layout })`,
-			"../../locales/admin-console.zh-CN.yaml": "home.start: 从这里开始。\n",
+			"src/routes/_app.tsx": `createFileRoute("/_app")({ component: Layout })`,
 		}, []string{"src/auth.ts", "src/routes/login.tsx"}},
 		{"frame ssr", scaffold.Frontend{Layout: "frame", Render: "ssr"}, true, map[string]string{
 			"src/routes/_app.tsx": `({ ssr: false, beforeLoad: requireAuth, component: Layout })`,
 			"vite.config.ts":      "plugins: [tenon()],",
 		}, nil},
 		{"site login", scaffold.Frontend{Layout: "site", Login: "centered"}, true, map[string]string{
-			"src/routes/index.tsx":                   `<ButtonLink to="/login" size="sm">{t("home.login")}</ButtonLink>`,
-			"../../locales/admin-console.zh-CN.yaml": "home.login: 登录\nhome.placeholder: 这里是首页的占位，换成自己的落地页。\nsignin.title: 登录\n",
-			"src/router.tsx":                         "session,",
-			"src/auth.ts":                            "createSession",
+			"src/routes/index.tsx": `<ButtonLink to="/login" size="sm">{"登录"}</ButtonLink>`,
+			"src/router.tsx":       "session,",
+			"src/auth.ts":          "createSession",
+		}, nil},
+		{"multi-language rail", scaffold.Frontend{Layout: "rail", Languages: []string{"zh-CN", "en"}}, false, map[string]string{
+			"src/router.tsx":                         "id: \"admin-console\",\n    routeTree,\n    i18n,",
+			"src/routes/_app.tsx":                    `<RailLayout title={t("app.admin-console")} user=`,
+			"src/routes/login.tsx":                   `<CenteredAuthLayout brand={t("app.admin-console")} title={t("signin.title")}>`,
+			"src/i18n.ts":                            `createI18n({ messages, defaultLanguage: "zh-CN" })`,
+			"../../locales/admin-console.zh-CN.yaml": "app.admin-console: \"后台\"\nhome.title: 首页\nhome.start: 从这里开始。\nsignin.title: 登录\n",
+			"../../locales/admin-console.en.yaml":    "app.admin-console: \"后台\"\nhome.title: Home\nhome.start: Start here.\nsignin.title: Sign in\n",
 		}, nil},
 	} {
 		root := t.TempDir()
@@ -208,7 +243,7 @@ func TestWriteFrontend(t *testing.T) {
 		files := map[string]string{
 			"package.json":   `"build": "bunx --bun vite build"`,
 			"src/start.ts":   "createStart(() => ({ requestMiddleware: [requestMiddleware] }))",
-			"src/router.tsx": "id: \"admin-console\",\n    routeTree,\n    i18n,",
+			"src/router.tsx": "id: \"admin-console\",\n    routeTree,",
 		}
 		for k, v := range c.files {
 			files[k] = v
@@ -312,12 +347,29 @@ func TestWriteClient(t *testing.T) {
 		"apps/admin/src/routes/oauth/consent.tsx":    `createFileRoute("/oauth/consent")`,
 		"apps/admin/src/routes/login.tsx":            "<BrowserSignIn signIn={desktop.auth.signIn}",
 		"apps/admin/src/auth.ts":                     "await host()?.auth.signOut()",
-		// 授权页的文字追加在前端原有的界面文字之后
-		"locales/admin.zh-CN.yaml": "signin.title: 登录\n\n# 授权页（src/routes/oauth/consent.tsx）\nconsent.title: 授权\n",
 	} {
 		b, err := os.ReadFile(filepath.Join(root, f))
 		if err != nil || !strings.Contains(string(b), want) {
 			t.Errorf("%s: want %q, err %v\n%s", f, want, err, b)
+		}
+	}
+
+	// 多语言前端加桌面端时，授权页文字追加到各语言的翻译文件末尾。
+	multiRoot := t.TempDir()
+	langs := []string{"zh-CN", "en"}
+	if err := scaffold.WriteFrontend(multiRoot, scaffold.Frontend{Scope: "todo", Name: "admin", Base: "/admin/", Title: "Admin", Layout: "frame", Languages: langs}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := scaffold.WriteClient(multiRoot, scaffold.Client{Scope: "todo", Name: "admin-desktop", Kind: "electron", Frontend: "admin", Base: "/admin/", Title: "管理后台", Languages: langs}); err != nil {
+		t.Fatal(err)
+	}
+	for f, want := range map[string]string{
+		"locales/admin.zh-CN.yaml": "signin.title: 登录\n\n# 授权页（src/routes/oauth/consent.tsx）\nconsent.title: 授权\n",
+		"locales/admin.en.yaml":    "signin.title: Sign in\n\n# OAuth consent page (src/routes/oauth/consent.tsx)\nconsent.title: Authorize\n",
+	} {
+		b, err := os.ReadFile(filepath.Join(multiRoot, f))
+		if err != nil || !strings.Contains(string(b), want) {
+			t.Errorf("multi %s: want %q, err %v\n%s", f, want, err, b)
 		}
 	}
 
@@ -468,8 +520,8 @@ func TestWriteFrontendWithClient(t *testing.T) {
 		`import { createClient } from "@helpdesk/client/admin"`,
 		`import { createKit } from "@helpdesk/client/admin/kit"`,
 		"export const session = createSession({ load: async () => ({ account: (await api.user.me()).id }) })",
-		`export const api = createClient({ baseURL: "/admin/api", fetch: apiFetch, session, headers: i18n.headers })`,
-		"export const kit = createKit(api, { scope: session.scope, language: i18n.language })",
+		`export const api = createClient({ baseURL: "/admin/api", fetch: apiFetch, session })`,
+		`export const kit = createKit(api, { scope: session.scope, language: "zh-CN" })`,
 	} {
 		if !strings.Contains(api, want) {
 			t.Errorf("api.ts missing %q:\n%s", want, api)
@@ -506,8 +558,21 @@ func TestWriteFrontendWithClient(t *testing.T) {
 		t.Fatal(err)
 	}
 	api = read(filepath.Join(root, "apps", "admin"), "src/api.ts")
-	if strings.Contains(api, "session") || !strings.Contains(api, `createClient({ baseURL: "/admin/api", fetch: apiFetch, headers: i18n.headers })`) || !strings.Contains(api, "createKit(api, { language: i18n.language })") {
+	if strings.Contains(api, "session") || !strings.Contains(api, `createClient({ baseURL: "/admin/api", fetch: apiFetch })`) || !strings.Contains(api, `createKit(api, { language: "zh-CN" })`) {
 		t.Errorf("api.ts without login:\n%s", api)
+	}
+
+	// 多语言前端：api.ts 接入 i18n.headers 和 i18n.language。
+	root = t.TempDir()
+	f = base
+	f.Login = "none"
+	f.Languages = []string{"zh-CN", "en"}
+	if err := scaffold.WriteFrontend(root, f); err != nil {
+		t.Fatal(err)
+	}
+	api = read(filepath.Join(root, "apps", "admin"), "src/api.ts")
+	if !strings.Contains(api, `createClient({ baseURL: "/admin/api", fetch: apiFetch, headers: i18n.headers })`) || !strings.Contains(api, `createKit(api, { language: i18n.language })`) {
+		t.Errorf("multi-language api.ts:\n%s", api)
 	}
 }
 

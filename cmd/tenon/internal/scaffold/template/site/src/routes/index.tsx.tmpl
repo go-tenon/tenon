@@ -1,6 +1,6 @@
 import { [[if not .HasLogin]]Button, [[end]]Container, Stack, Text, Title } from "@mantine/core"
 import { createFileRoute } from "@tanstack/react-router"
-import { [[if .HasLogin]]ButtonLink, [[end]]SiteLayout, useT } from "@go-tenon/ui"
+import { [[if .HasLogin]]ButtonLink, [[end]]SiteLayout[[if .MultiLanguage]], useT[[end]] } from "@go-tenon/ui"
 
 [[if .SSR]]// 首页在构建时预渲染（vite.config.ts 的 prerender），其余页面在请求时服务端渲染。
 [[end -]]
@@ -8,13 +8,15 @@ import { [[if .HasLogin]]ButtonLink, [[end]]SiteLayout, useT } from "@go-tenon/u
 export const Route = createFileRoute("/")({ component: Home })
 
 function Home() {
+[[- if .MultiLanguage]]
   const t = useT()
+[[- end]]
   return (
-    <SiteLayout brand={t("app.[[.Name]]")} actions={[[if .HasLogin]]<ButtonLink to="/login" size="sm">{t("home.login")}</ButtonLink>[[else]]<Button size="sm">{t("home.get_started")}</Button>[[end]]}>
+    <SiteLayout brand={[[if .MultiLanguage]]t("app.[[.Name]]")[[else]][[printf "%q" .Title]][[end]]} actions={[[if .HasLogin]]<ButtonLink to="/login" size="sm">{[[if .MultiLanguage]]t("home.login")[[else]]"登录"[[end]]}</ButtonLink>[[else]]<Button size="sm">{[[if .MultiLanguage]]t("home.get_started")[[else]]"开始使用"[[end]]}</Button>[[end]]}>
       <Container size="sm" py={96}>
         <Stack gap="md" align="flex-start">
-          <Title order={1}>{t("app.[[.Name]]")}</Title>
-          <Text c="dimmed">{t("home.placeholder")}</Text>
+          <Title order={1}>{[[if .MultiLanguage]]t("app.[[.Name]]")[[else]][[printf "%q" .Title]][[end]]}</Title>
+          <Text c="dimmed">{[[if .MultiLanguage]]t("home.placeholder")[[else]]"这里是首页的占位，换成自己的落地页。"[[end]]}</Text>
         </Stack>
       </Container>
     </SiteLayout>

@@ -268,7 +268,7 @@ func TestSkillReferences(t *testing.T) {
 func TestSyncAgentsMD(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	ok, err := agents.SyncAgentsMD(dir)
+	ok, err := agents.SyncAgentsMD(dir, nil)
 	if err != nil || ok {
 		t.Fatalf("missing AGENTS.md: ok=%v err=%v", ok, err)
 	}
@@ -281,7 +281,7 @@ func TestSyncAgentsMD(t *testing.T) {
 	if err := os.WriteFile(p, []byte(initial), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	ok, err = agents.SyncAgentsMD(dir)
+	ok, err = agents.SyncAgentsMD(dir, &project.Config{})
 	if err != nil || !ok {
 		t.Fatalf("sync managed block: ok=%v err=%v", ok, err)
 	}
@@ -290,7 +290,7 @@ func TestSyncAgentsMD(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(got)
-	for _, want := range []string{"# Shop\n\n项目自己的业务规则。", "## 框架与文档", "## 代码约定", "## 项目补充"} {
+	for _, want := range []string{"# Shop\n\n项目自己的业务规则。", "## 框架与文档", "## 代码约定", "## 项目补充", "直接写在页面代码中"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("AGENTS.md missing %q:\n%s", want, text)
 		}
@@ -299,7 +299,7 @@ func TestSyncAgentsMD(t *testing.T) {
 		t.Errorf("stale content remained:\n%s", text)
 	}
 	// 再次执行结果不变。
-	if _, err := agents.SyncAgentsMD(dir); err != nil {
+	if _, err := agents.SyncAgentsMD(dir, &project.Config{}); err != nil {
 		t.Fatal(err)
 	}
 	again, _ := os.ReadFile(p)
@@ -307,12 +307,21 @@ func TestSyncAgentsMD(t *testing.T) {
 		t.Errorf("second sync changed AGENTS.md")
 	}
 
+	// 多语言配置同步为多语言前端和服务端约定。
+	if _, err := agents.SyncAgentsMD(dir, &project.Config{Languages: []string{"zh-CN", "en"}}); err != nil {
+		t.Fatal(err)
+	}
+	multi, _ := os.ReadFile(p)
+	if !strings.Contains(string(multi), "页面用 `useT`") {
+		t.Errorf("multi-language AGENTS.md:\n%s", multi)
+	}
+
 	// 旧项目还没有标记时追加托管区块，原内容保留。
 	legacy := "# Legacy\n\n已有内容\n"
 	if err := os.WriteFile(p, []byte(legacy), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if ok, err := agents.SyncAgentsMD(dir); err != nil || !ok {
+	if ok, err := agents.SyncAgentsMD(dir, nil); err != nil || !ok {
 		t.Fatalf("legacy sync: ok=%v err=%v", ok, err)
 	}
 	gotLegacy, _ := os.ReadFile(p)

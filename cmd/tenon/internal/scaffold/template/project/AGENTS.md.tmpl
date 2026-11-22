@@ -30,7 +30,9 @@ go tool tenon deploy              # 构建 Linux 二进制并通过 systemd 零�
 ```
 cmd/[[.Slug]]/main.go    入口：配置、装配依赖、登记命令和路由
 internal/<模块>/         业务代码，一个业务动作一个文件
-locales/                 翻译文件：前端界面文字、服务端错误提示
+[[- if .MultiLanguage]]
+locales/                 翻译文件：前端界面文字、服务端多语言提示
+[[- end]]
 config/app.yaml          配置；本机覆盖写在 config/local.yaml（不提交）
 apps/<前端>/             TanStack Start 前端，挂载路径在 package.json 的 tenon 字段
 packages/client/         bun run generate 生成的客户端，不手改

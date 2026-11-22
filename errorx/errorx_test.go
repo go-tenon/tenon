@@ -147,3 +147,27 @@ func TestField(t *testing.T) {
 		t.Fatal("field must default to empty")
 	}
 }
+
+func TestDefaultMessage(t *testing.T) {
+	t.Parallel()
+	taken := errorx.Define(errorx.Conflict, "article.slug_taken", "slug“{{.slug}}”已被使用")
+	if taken.Message() != "slug“{{.slug}}”已被使用" {
+		t.Fatalf("template message=%q", taken.Message())
+	}
+	err := crdb.Wrap(taken.New(errorx.Public("slug", "hi")), "create")
+	if errorx.MessageOf(err) != "slug“{{.slug}}”已被使用" {
+		t.Fatalf("error message=%q", errorx.MessageOf(err))
+	}
+	if errorx.MessageOf(taken) != "slug“{{.slug}}”已被使用" {
+		t.Fatalf("template MessageOf=%q", errorx.MessageOf(taken))
+	}
+	if errorx.MessageOf(errNotFound.New()) != "" || errorx.MessageOf(errors.New("plain")) != "" {
+		t.Fatal("message must default to empty")
+	}
+	defer func() {
+		if recover() == nil {
+			t.Fatal("multiple default messages should panic")
+		}
+	}()
+	errorx.Define(errorx.Conflict, "article.bad", "a", "b")
+}

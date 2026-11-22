@@ -15,10 +15,10 @@ import (
 )
 
 // resourcesTS 生成 resources.ts：rest.API.Resource 声明的资源，字段的类型、枚举和是否必填取自接口的 schema，
-// 显示文字取自翻译文件中 <资源>.title、<资源>.fields.<字段>、<资源>.actions.<操作> 的消息，
-// 字段的说明取自 <资源>.descriptions.<字段>，可以不写。
-// 一种语言只有部分显示文字，或者所有语言都没有时返回警告。
-func (t *tsGen) resourcesTS(templates map[string]map[string]string) (string, []string, error) {
+// 源语言（defaultLang）的显示文字取自 Resource.Title、Labels、Descriptions 和 Action.Label，翻译文件中
+// <资源>.title、<资源>.fields.<字段>、<资源>.descriptions.<字段>、<资源>.actions.<操作> 优先覆盖；
+// 其他语言取自翻译文件。一种语言只有部分显示文字，或者所有语言都没有时返回警告。
+func (t *tsGen) resourcesTS(templates map[string]map[string]string, defaultLang string) (string, []string, error) {
 	var b strings.Builder
 	var warnings []string
 	b.WriteString(`/**
@@ -32,7 +32,7 @@ export const resources = {
 `)
 	known := t.knownResources()
 	for _, r := range t.api.Resources() {
-		src, warn, err := t.resourceTS(r, templates, known)
+		src, warn, err := t.resourceTS(r, templates, defaultLang, known)
 		if err != nil {
 			return "", nil, errors.Wrapf(err, "clientgen: resource %s", r.Name)
 		}
@@ -77,7 +77,7 @@ func (t *tsGen) findOp(id string) (*tsOp, error) {
 }
 
 // resourceTS 返回资源 r 的 TypeScript 描述，以及它用到的类型。
-func (t *tsGen) resourceTS(r rest.Resource, templates map[string]map[string]string, known map[string]bool) (string, []string, error) {
+func (t *tsGen) resourceTS(r rest.Resource, templates map[string]map[string]string, defaultLang string, known map[string]bool) (string, []string, error) {
 	if err := checkRefs(r.Refs, known); err != nil {
 		return "", nil, err
 	}
@@ -187,8 +187,12 @@ func (t *tsGen) resourceTS(r rest.Resource, templates map[string]map[string]stri
 	}
 	var warnings []string
 	var langs strings.Builder
-	for _, lang := range slices.Sorted(maps.Keys(templates)) {
+	inline := resourceInlineMessages(r)
+	for _, lang := range candidateLanguages(templates, defaultLang) {
 		msgs := templates[lang]
+		if lang == defaultLang && len(inline) > 0 {
+			msgs = mergeMessages(inline, msgs)
+		}
 		var missing []string
 		for _, k := range keys {
 			if _, ok := msgs[k]; !ok {
@@ -217,11 +221,43 @@ func (t *tsGen) resourceTS(r rest.Resource, templates map[string]map[string]stri
 		langs.WriteString("      },\n")
 	}
 	if langs.Len() == 0 {
-		warnings = append(warnings, fmt.Sprintf("resource %s has no labels; add messages %s.title, %s.fields.<field> and %s.actions.<action> to the translations", r.Name, r.Name, r.Name, r.Name))
+		warnings = append(warnings, fmt.Sprintf("resource %s has no labels; set Title/Labels on rest.Resource or add messages %s.title, %s.fields.<field> and %s.actions.<action> to the translations", r.Name, r.Name, r.Name, r.Name))
 	}
 	b.WriteString("    labels: {\n" + langs.String() + "    },\n")
 	b.WriteString("  },\n")
 	return b.String(), warnings, nil
+}
+
+// resourceInlineMessages 把 rest.Resource 上内联的默认标题、字段名、字段说明和操作名转为同键名的消息映射。
+func resourceInlineMessages(r rest.Resource) map[string]string {
+	out := map[string]string{}
+	if r.Title != "" {
+		out[r.Name+".title"] = r.Title
+	}
+	for f, l := range r.Labels {
+		if l != "" {
+			out[r.Name+".fields."+f] = l
+		}
+	}
+	for f, d := range r.Descriptions {
+		if d != "" {
+			out[r.Name+".descriptions."+f] = d
+		}
+	}
+	for _, a := range r.Actions {
+		if a.Label != "" {
+			out[r.Name+".actions."+a.Name] = a.Label
+		}
+	}
+	return out
+}
+
+// mergeMessages 把 base 与 overlay 合并，overlay 中的同名键覆盖 base。
+func mergeMessages(base, overlay map[string]string) map[string]string {
+	out := make(map[string]string, len(base)+len(overlay))
+	maps.Copy(out, base)
+	maps.Copy(out, overlay)
+	return out
 }
 
 // labels 写出 names 中有消息 prefix+name 的显示文字。

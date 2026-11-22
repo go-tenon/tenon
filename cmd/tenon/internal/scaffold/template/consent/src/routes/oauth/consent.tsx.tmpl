@@ -1,5 +1,5 @@
 import { ensureOK } from "@go-tenon/client"
-import { CenteredAuthLayout, requireAuth, useT } from "@go-tenon/ui"
+import { CenteredAuthLayout, requireAuth[[if .MultiLanguage]], useT[[end]] } from "@go-tenon/ui"
 import { Alert, Button, Group, List, Stack, Text } from "@mantine/core"
 import { useMutation, useQuery } from "@tanstack/react-query"
 import { createFileRoute } from "@tanstack/react-router"
@@ -7,7 +7,7 @@ import { session } from "../../auth"
 
 // 授权页：授权服务器（oauthserver）的 ConsentURL 指向这里，即 [[.Base]]oauth/consent。
 // 桌面端、App 在浏览器中登录时（应用自己的客户端），用户在这里确认登录；第三方应用申请访问时，这里列出申请的范围。
-// 接口由 oauthserver 的 Register 注册在 /api 下。页面的文字在 locales/[[.Frontend]].zh-CN.yaml 中，消息 ID 以 consent. 开头。
+// 接口由 oauthserver 的 Register 注册在 /api 下。[[if .MultiLanguage]]页面的文字在 locales/[[.Frontend]].<语言>.yaml 中，消息 ID 以 consent. 开头。[[end]]
 
 /** 授权请求，来自 GET /api/oauth/consent。 */
 interface Consent {
@@ -37,7 +37,9 @@ export const Route = createFileRoute("/oauth/consent")({
 })
 
 function ConsentPage() {
+[[- if .MultiLanguage]]
   const t = useT()
+[[- end]]
   const { request, error } = Route.useSearch()
   const consent = useQuery({
     queryKey: ["oauth-consent", request],
@@ -52,37 +54,37 @@ function ConsentPage() {
   })
   const c = consent.data
   return (
-    <CenteredAuthLayout brand={t("app.[[.Frontend]]")} title={c?.first_party ? t("consent.sign_in", { client: c.client_name }) : t("consent.title")}>
+    <CenteredAuthLayout brand={[[if .MultiLanguage]]t("app.[[.Frontend]]")[[else]][[printf "%q" .Frontend]][[end]]} title={[[if .MultiLanguage]]c?.first_party ? t("consent.sign_in", { client: c.client_name }) : t("consent.title")[[else]]c?.first_party ? `在${c.client_name}上登录` : "授权"[[end]]}>
       {error || consent.error ? (
         <Alert color="red" variant="light">
-          {t("consent.failed", { reason: error || t("consent.invalid") })}
+          {[[if .MultiLanguage]]t("consent.failed", { reason: error || t("consent.invalid") })[[else]]`无法授权（${error || "请求无效或已过期"}）。`[[end]]}
         </Alert>
       ) : !c ? null : c.first_party ? (
         <Stack gap="md">
           <Text size="sm" c="dimmed">
-            {t("consent.return", { client: c.client_name })}
+            {[[if .MultiLanguage]]t("consent.return", { client: c.client_name })[[else]]`确认后回到${c.client_name}。`[[end]]}
           </Text>
           <Button loading={decide.isPending} onClick={() => decide.mutate(true)} fullWidth>
-            {t("consent.continue")}
+            {[[if .MultiLanguage]]t("consent.continue")[[else]]"继续"[[end]]}
           </Button>
         </Stack>
       ) : (
         <Stack gap="md">
-          <Text size="sm">{t("consent.requests", { client: c.client_name })}</Text>
+          <Text size="sm">{[[if .MultiLanguage]]t("consent.requests", { client: c.client_name })[[else]]`${c.client_name} 请求访问你的账号：`[[end]]}</Text>
           <List size="sm">
             {c.scopes.map((s) => (
               <List.Item key={s.name}>{s.description}</List.Item>
             ))}
           </List>
           <Text size="xs" c="dimmed">
-            {t("consent.redirect", { host: c.redirect_host })}
+            {[[if .MultiLanguage]]t("consent.redirect", { host: c.redirect_host })[[else]]`授权后将跳转到 ${c.redirect_host}`[[end]]}
           </Text>
           <Group grow>
             <Button variant="default" disabled={decide.isPending} onClick={() => decide.mutate(false)}>
-              {t("consent.deny")}
+              {[[if .MultiLanguage]]t("consent.deny")[[else]]"拒绝"[[end]]}
             </Button>
             <Button loading={decide.isPending} onClick={() => decide.mutate(true)}>
-              {t("consent.allow")}
+              {[[if .MultiLanguage]]t("consent.allow")[[else]]"允许"[[end]]}
             </Button>
           </Group>
         </Stack>

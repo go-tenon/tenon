@@ -11,16 +11,19 @@ import (
 
 // Settings 声明一组设置的页面，例如站点设置：读取和保存设置的两个接口，以及表单中有哪些字段。
 // 写入 OpenAPI 文档的 x-tenon-settings，tenon generate 据此生成 settings.ts，运营后台和控制台按它渲染设置表单。
-// 字段的类型、枚举、是否必填和校验规则取自接口的 schema；显示文字取自翻译文件中 <名称>.title 和
-// <名称>.fields.<字段> 的消息，与资源相同。
+// 字段的类型、枚举、是否必填和校验规则取自接口的 schema；源语言的显示文字可以直接写在 Title、Labels、
+// Descriptions 中，多语言应用在翻译文件中用 <名称>.title、<名称>.fields.<字段>、<名称>.descriptions.<字段> 覆盖。
 //
 // 设置属于当前的用户、租户或者平台，由请求本身决定，所以两个接口都没有路径参数，见 settings 包。
 type Settings struct {
-	Name   string            `json:"name"`           // 名称，kebab-case，例如 site。不能与资源同名：两者的显示文字在同一个命名空间中。
-	Get    string            `json:"get"`            // 读取设置的接口的操作 ID：GET，没有路径参数，响应体是包含全部表单字段的 JSON 对象。必须设置。
-	Update string            `json:"update"`         // 保存设置的接口的操作 ID：没有路径参数，请求体是 JSON 对象。必须设置。
-	Form   []string          `json:"form"`           // 表单的字段：保存接口请求体的字段。为空时是请求体的全部字段，按结构体中的顺序。
-	Refs   map[string]string `json:"refs,omitempty"` // 引用另一个资源的表单字段：键是 Form 中的字段名，值是被引用资源的名称。
+	Name         string            `json:"name"`                   // 名称，kebab-case，例如 site。不能与资源同名：两者的显示文字在同一个命名空间中。
+	Title        string            `json:"title,omitempty"`        // 源语言的默认标题，例如“站点设置”；翻译文件中 <名称>.title 优先。
+	Get          string            `json:"get"`                    // 读取设置的接口的操作 ID：GET，没有路径参数，响应体是包含全部表单字段的 JSON 对象。必须设置。
+	Update       string            `json:"update"`                 // 保存设置的接口的操作 ID：没有路径参数，请求体是 JSON 对象。必须设置。
+	Form         []string          `json:"form"`                   // 表单的字段：保存接口请求体的字段。为空时是请求体的全部字段，按结构体中的顺序。
+	Labels       map[string]string `json:"labels,omitempty"`       // 源语言的默认字段显示名；翻译文件中 <名称>.fields.<字段> 优先。
+	Descriptions map[string]string `json:"descriptions,omitempty"` // 源语言的默认字段说明，显示在输入框下面；翻译文件中 <名称>.descriptions.<字段> 优先。
+	Refs         map[string]string `json:"refs,omitempty"`         // 引用另一个资源的表单字段：键是 Form 中的字段名，值是被引用资源的名称。
 }
 
 // Settings 声明一组设置的页面，写入 OpenAPI 文档的 x-tenon-settings。引用的接口必须已经用 Register 登记；
@@ -92,7 +95,13 @@ func (a *API) checkSettings(s *Settings) error {
 	for _, f := range s.Form {
 		refSchemas[f] = []*huma.Schema{body.Properties[f]}
 	}
-	return a.checkRefs(s.Refs, refSchemas, "form")
+	if err := a.checkRefs(s.Refs, refSchemas, "form"); err != nil {
+		return err
+	}
+	if err := checkFieldMap("label", s.Labels, s.Form); err != nil {
+		return err
+	}
+	return checkFieldMap("description", s.Descriptions, s.Form)
 }
 
 // responseBody 返回 op 成功时的 JSON 响应体的 schema；没有或不是对象时返回 nil。

@@ -15,7 +15,7 @@ import (
 
 type articleStatus string
 
-var articleStatuses = enum.New("article.status", articleStatus("draft"), articleStatus("published"))
+var articleStatuses = enum.New("article.status", enum.Item(articleStatus("draft"), "草稿"), enum.Item(articleStatus("published"), "已发布"))
 
 func (articleStatus) Schema(r huma.Registry) *huma.Schema {
 	return contract.EnumSchema(r, articleStatuses)
@@ -27,7 +27,7 @@ func TestEnumSchemaConflict(t *testing.T) {
 	contract.EnumSchema(r, articleStatuses)
 	contract.EnumSchema(r, articleStatuses) // 同一个枚举可以重复登记
 	// 前缀和取值都相同的另一份声明（例如两个 Go 类型共用一份枚举）是同一个类型
-	contract.EnumSchema(r, enum.New("article.status", articleStatus("draft"), articleStatus("published")))
+	contract.EnumSchema(r, enum.New("article.status", enum.Item(articleStatus("draft")), enum.Item(articleStatus("published"))))
 	// 前缀相同、取值不同：后登记的会悄悄用先登记的取值校验，所以 panic
 	func() {
 		defer func() {
@@ -35,7 +35,7 @@ func TestEnumSchemaConflict(t *testing.T) {
 				t.Errorf("same prefix with different values: %v", msg)
 			}
 		}()
-		contract.EnumSchema(r, enum.New("article.status", articleStatus("draft")))
+		contract.EnumSchema(r, enum.New("article.status", enum.Item(articleStatus("draft"))))
 	}()
 	r.Map()["OrderState"] = &huma.Schema{Type: huma.TypeObject}
 	defer func() {
@@ -43,7 +43,7 @@ func TestEnumSchemaConflict(t *testing.T) {
 			t.Error("conflicting schema did not panic")
 		}
 	}()
-	contract.EnumSchema(r, enum.New("order.state", articleStatus("paid")))
+	contract.EnumSchema(r, enum.New("order.state", enum.Item(articleStatus("paid"))))
 }
 
 type statusArgs struct {
@@ -60,7 +60,7 @@ func TestEnumSchemaInStandaloneSchema(t *testing.T) {
 	}
 	for _, want := range []string{
 		`"status":{"$ref":"#/$defs/ArticleStatus"}`,
-		`"ArticleStatus":{"enum":["draft","published"],"type":"string","x-tenon-enum":"article.status"}`,
+		`"ArticleStatus":{"enum":["draft","published"],"type":"string","x-tenon-enum":"article.status","x-tenon-enum-labels":{"draft":"草稿","published":"已发布"}}`,
 	} {
 		if !strings.Contains(string(data), want) {
 			t.Errorf("schema missing %s:\n%s", want, data)

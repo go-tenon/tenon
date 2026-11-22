@@ -37,7 +37,9 @@ router.Use(httpx.Defaults(cfg.HTTP, httpx.Languages(i18n.MustNew("zh-CN", locale
 <a id="enabling-localization"></a>
 ## 启用本地化：`httpx.Languages`、`command.Languages`
 
-本地化默认开启：不传 `httpx.Languages` 时，`httpx.Defaults` 使用框架内置的消息，默认语言为 `zh-CN`。应用有自己的翻译或者要换默认语言时，把同一个语言目录交给每个入口：
+单语言项目默认使用简体中文：不传 `httpx.Languages` 时，`httpx.Defaults` 只启用框架内置的简体中文消息（`zh-CN`），即使客户端发送 `Accept-Language: en` 也保持简体中文；业务错误在 `errorx.Define` 中附带的默认提示直接生效，无需创建 `locales` 目录。
+
+切换源语言或支持多语言时，把语言目录交给每个入口：
 
 ```go
 languages := i18n.MustNew("zh-CN", locales.FS)
@@ -47,13 +49,14 @@ command.Execute(root, command.Languages(languages))                  // 命令�
 root.AddCommand(httpcmd.Commands(routes, httpcmd.Translations(locales.FS))...) // 生成的客户端中的校验提示
 ```
 
+- `i18n.New` 只启用默认语言和 `sources` 中实际出现的语言：只有 `zh-CN` 时保持单语言；`locales.FS` 中加入 `en.yaml` 后自动同时启用英文及框架内置英文消息。
 - `root` 是 `command.Root` 创建的根命令，`routes` 构造应用的全部路由，见[装配命令行](commands.md#declaring-the-cli)。
 - 后台任务等其他入口自己设置语言，见[在 HTTP 之外使用](#outside-http)。
 
 <a id="built-in-messages"></a>
 ### 框架内置的消息
 
-框架内置英文（`en`）和简体中文（`zh-CN`）消息，框架用 `errorx.Define` 定义的每个错误码都有这两种语言的译文，例如 `auth.unauthenticated`（“请先认证”）、`page.invalid_cursor`（“分页游标无效”）。应用的翻译文件可以覆盖它们，见[覆盖内置消息](#overriding-built-in-messages)。
+框架内置简体中文（`zh-CN`）和英文（`en`）消息，框架用 `errorx.Define` 定义的每个错误码都有这两种语言的译文，例如 `auth.unauthenticated`（“请先认证”）、`page.invalid_cursor`（“分页游标无效”）。只有应用启用了对应语言时才会加载该语言的内置消息；应用的翻译文件可以覆盖它们，见[覆盖内置消息](#overriding-built-in-messages)。
 
 <a id="determining-the-locale"></a>
 ## 确定请求语言：`Accept-Language`
@@ -144,9 +147,10 @@ message, err := i18n.Localizer(ctx).Localize(&goi18n.LocalizeConfig{
 <a id="translating-errors"></a>
 ## 翻译错误消息
 
-业务错误的响应以错误码为消息 ID 翻译 `detail`，[公开参数](errors.md#public-parameters)是模板数据。每定义一个业务错误，在每种语言的翻译文件中加一条消息。
+业务错误的响应以错误码为消息 ID 翻译 `detail`，[公开参数](errors.md#public-parameters)是模板数据。查找顺序为：当前语言的译文 → 默认语言的译文 → `errorx.Define` 定义时附带的默认提示模板 → HTTP 状态描述。
 
-- 请求语言缺少译文时，`detail` 用默认语言的译文；默认语言也没有时，用 HTTP 状态的描述，例如 `Not Found`。两种情况下这个请求的[访问日志](../http/middleware.md#access-log)都带上 `"untranslated":true`，按它查找要补的翻译。
+- 单语言项目直接在 `errorx.Define` 中写默认提示，请求语言与默认语言一致时不记为漏翻。
+- 多语言项目中，附加语言缺少译文时回退到默认语言译文或内联提示，并在[访问日志](../http/middleware.md#access-log)中带上 `"untranslated":true`；`go tool tenon check --only errors` 在提交前检查所有附加语言是否补齐译文。
 - 业务错误和[校验错误](../http/requests.md#validation-messages)会被翻译。路由不存在、服务端内部错误等其他错误保持英文描述，客户端按状态码显示自己的提示。
 
 <a id="outside-http"></a>

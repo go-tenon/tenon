@@ -28,10 +28,15 @@ func withLocale(t *testing.T, locale, defaultLocale string, sources ...fs.FS) co
 
 func TestBuiltinMessages(t *testing.T) {
 	for locale, want := range map[string]string{"en": "Authentication required", "zh-CN": "请先认证"} {
-		ctx := withLocale(t, locale, i18n.LocaleZhCN)
+		ctx := withLocale(t, locale, locale)
 		if got := i18n.T(ctx, "auth.unauthenticated", nil); got != want {
 			t.Fatalf("%s: got %q want %q", locale, got, want)
 		}
+	}
+	// 同主语言与文字系统的区域变体（如 en-US）加载匹配的内置消息，且不引入其他语言。
+	enUS := withLocale(t, "en-US", "en-US")
+	if got := i18n.T(enUS, "auth.unauthenticated", nil); got != "Authentication required" {
+		t.Fatalf("en-US: got %q", got)
 	}
 }
 
@@ -101,7 +106,19 @@ func TestInvalidInput(t *testing.T) {
 }
 
 func TestMatch(t *testing.T) {
-	bundle, err := i18n.New(i18n.LocaleZhCN)
+	// 单语言目录只启用默认语言，即使客户端偏好英文也固定返回默认语言。
+	single, err := i18n.New(i18n.LocaleZhCN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, header := range []string{"en-US", "en-US,en;q=0.9", "zh-Hans", "fr", "", "???"} {
+		if got := i18n.Match(single, header); got != "zh-CN" {
+			t.Fatalf("single %q: got %q want zh-CN", header, got)
+		}
+	}
+
+	// sources 引入 en.yaml 后同时支持 zh-CN 与 en，内置英文消息自动启用。
+	bundle, err := i18n.New(i18n.LocaleZhCN, yamlFS(map[string]string{"en.yaml": "app.ok: ok\n"}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,6 +133,9 @@ func TestMatch(t *testing.T) {
 	en, err := i18n.New(i18n.LocaleEn)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if got := i18n.Match(en, "zh-CN"); got != "en" {
+		t.Fatalf("single en should ignore zh-CN, got %q", got)
 	}
 	if got := i18n.Match(en, "fr"); got != "en" {
 		t.Fatal(got)

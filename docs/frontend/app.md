@@ -56,7 +56,7 @@ declare module "@tanstack/react-router" {
 ```
 
 - `session` 和 `me` 在 `src/auth.ts` 中，`session` 由 `@go-tenon/client` 的 `createSession` 创建，见[客户端代码](../http/clients.md#creating-the-client)。没有登录功能的应用不传 `session`，一直是未登录。
-- `i18n` 在 `src/i18n.ts` 中，是界面文字的翻译：页面、菜单和组件的文字按它的当前语言显示，见[界面文字](i18n.md)。
+- `i18n` 在多语言项目的 `src/i18n.ts` 中，控制页面、菜单和组件的语言；单语言项目不传 `i18n`，改用可选的 `language`（默认 `"zh-CN"`）和 `uiMessages` 覆盖内置组件文字，见[界面文字](i18n.md)。
 - `id` 区分同一个域名下的前端（例如 `web` 和 `admin`），是[本地存储](#storage)的命名空间。
 - 登录、退出、切换账号或租户、接口返回 `401` 时，清空 QueryClient 的缓存，重新运行路由的守卫，并重新挂载布局中的页面。自己写布局时把页面放在 `SessionBoundary` 中，见[自己写布局](layout.md#custom-layouts)。
 - 默认的 QueryClient 对 `4xx` 不重试，其他错误重试 2 次；可以传入自己的 `queryClient`。

@@ -33,7 +33,7 @@ const (
 )
 
 // Statuses 是文章的全部状态，显示文字是 article.status.<状态> 的消息。
-var Statuses = enum.New("article.status", StatusDraft, StatusPublished)
+var Statuses = enum.New("article.status", enum.Item(StatusDraft), enum.Item(StatusPublished))
 
 // Schema 让 OpenAPI 中的 Status 引用命名类型 ArticleStatus。
 func (Status) Schema(r huma.Registry) *huma.Schema { return contract.EnumSchema(r, Statuses) }

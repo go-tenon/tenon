@@ -11,6 +11,7 @@ import (
 	"net/netip"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -153,19 +154,37 @@ func TestNilLoggerFallsBackToSlogDefault(t *testing.T) {
 
 func TestDefaultsNegotiateBuiltinLocale(t *testing.T) {
 	t.Parallel()
+	// 默认不传 Languages 时只启用 zh-CN，即使客户端发送 Accept-Language: en-US 也保持简体中文。
 	var got string
-	router := chi.NewRouter()
-	router.Use(httpx.Defaults(httpx.DefaultConfig(), httpx.Logger(slog.New(slog.DiscardHandler)))...)
-	router.Get("/", func(w http.ResponseWriter, r *http.Request) {
+	single := chi.NewRouter()
+	single.Use(httpx.Defaults(httpx.DefaultConfig(), httpx.Logger(slog.New(slog.DiscardHandler)))...)
+	single.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		got = i18n.T(r.Context(), "auth.forbidden", nil)
+	})
+	for _, header := range []string{"en-US", "fr"} {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.Header.Set("Accept-Language", header)
+		rr := httptest.NewRecorder()
+		single.ServeHTTP(rr, req)
+		if got != "没有访问权限" || rr.Header().Get("Content-Language") != "zh-CN" {
+			t.Fatalf("single %s: got %q, Content-Language=%q", header, got, rr.Header().Get("Content-Language"))
+		}
+	}
+
+	// 传入包含 en.yaml 的语言目录后，按 Accept-Language 在 zh-CN 和 en 之间协商。
+	multi := chi.NewRouter()
+	bundle := i18n.MustNew(i18n.LocaleZhCN, fstest.MapFS{"en.yaml": {Data: []byte("app.ok: ok\n")}})
+	multi.Use(httpx.Defaults(httpx.DefaultConfig(), httpx.Logger(slog.New(slog.DiscardHandler)), httpx.Languages(bundle))...)
+	multi.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		got = i18n.T(r.Context(), "auth.forbidden", nil)
 	})
 	for header, want := range map[string]string{"en-US": "Permission denied", "fr": "没有访问权限"} {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		req.Header.Set("Accept-Language", header)
 		rr := httptest.NewRecorder()
-		router.ServeHTTP(rr, req)
+		multi.ServeHTTP(rr, req)
 		if got != want || rr.Header().Get("Content-Language") == "" {
-			t.Fatalf("%s: got %q, Content-Language=%q", header, got, rr.Header().Get("Content-Language"))
+			t.Fatalf("multi %s: got %q, Content-Language=%q", header, got, rr.Header().Get("Content-Language"))
 		}
 	}
 }

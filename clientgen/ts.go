@@ -26,11 +26,12 @@ var tsRuntime string
 
 // TSOptions 配置 TypeScript 客户端的生成。
 type TSOptions struct {
-	Name         string            // 这个 API 的客户端名称（目录名），写在 query key 中；空表示 api。
-	Translations []fs.FS           // 应用的翻译文件，与 i18n.New 的 sources 相同；messages.ts 中它们覆盖框架内置的验证提示。
-	Main         string            // Main 与 Options.Main 相同：在主包依赖的、属于应用模块和 Tenon 的包中查找 errorx.Define 定义的错误码。
-	Dir          string            // 加载源码的工作目录，空表示当前目录。
-	Rename       map[string]string // 把服务端包的导入路径映射为错误码分组的名字，用于两个包同名的情况。
+	Name            string            // 这个 API 的客户端名称（目录名），写在 query key 中；空表示 api。
+	DefaultLanguage string            // 源语言标签，例如 zh-CN（为空时默认 zh-CN）；Go 中内联的默认显示文字归入这一语言。
+	Translations    []fs.FS           // 应用的翻译文件，与 i18n.New 的 sources 相同；messages.ts 中它们覆盖框架内置的验证提示。
+	Main            string            // Main 与 Options.Main 相同：在主包依赖的、属于应用模块和 Tenon 的包中查找 errorx.Define 定义的错误码。
+	Dir             string            // 加载源码的工作目录，空表示当前目录。
+	Rename          map[string]string // 把服务端包的导入路径映射为错误码分组的名字，用于两个包同名的情况。
 }
 
 // GenerateTS 从 api 登记的端点生成独立的 TypeScript 客户端：
@@ -92,14 +93,18 @@ func GenerateTS(api *rest.API, opts TSOptions) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	enumsTS, warnings := t.enumsTS(templates)
+	defaultLang := opts.DefaultLanguage
+	if defaultLang == "" {
+		defaultLang = i18n.LocaleZhCN
+	}
+	enumsTS, warnings := t.enumsTS(templates, defaultLang)
 	res.Warnings = append(res.Warnings, warnings...)
-	resourcesTS, warnings, err := t.resourcesTS(templates)
+	resourcesTS, warnings, err := t.resourcesTS(templates, defaultLang)
 	if err != nil {
 		return nil, err
 	}
 	res.Warnings = append(res.Warnings, warnings...)
-	settingsTS, warnings, err := t.settingsTS(templates)
+	settingsTS, warnings, err := t.settingsTS(templates, defaultLang)
 	if err != nil {
 		return nil, err
 	}

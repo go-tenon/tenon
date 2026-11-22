@@ -164,7 +164,7 @@ import (
 // Type 是作者这套账号体系，登录凭据中的主体都是这个类型。
 const Type identity.SubjectType = "user"
 
-var ErrNotFound = errorx.Define(errorx.NotFound, "user.not_found")
+var ErrNotFound = errorx.Define(errorx.NotFound, "user.not_found", "作者不存在")
 
 // User 是一个作者。
 type User struct {
@@ -188,14 +188,6 @@ func find(ctx context.Context, db bun.IDB, id string) (*User, error) {
     }
     return u, errors.Wrap(err, "load user")
 }
-```
-
-在 `locales/zh-CN.yaml` 中加上 `user.not_found` 的提示：
-
-```yaml title="locales/zh-CN.yaml"
-article.not_found: 文章不存在
-article.slug_taken: "slug“{{.slug}}”已被使用"
-user.not_found: 作者不存在
 ```
 
 博客不开放注册，作者用命令创建。新建 `internal/user/create.go`，`Handle` 在一个事务中写入 `users` 表和 `login` 的表，失败时整体回滚：
@@ -537,14 +529,12 @@ import (
     "github.com/go-tenon/tenon/health"
     "github.com/go-tenon/tenon/httpx"
     "github.com/go-tenon/tenon/httpx/rest"
-    "github.com/go-tenon/tenon/i18n"
     "github.com/go-tenon/tenon/identity"
 
     "example.com/blog/apps"
     "example.com/blog/internal/article"
     "example.com/blog/internal/auth"
     "example.com/blog/internal/user"
-    "example.com/blog/locales"
 )
 
 // HTTP 装配 HTTP 服务。apps 中的前端由 frontend.Host 按挂载路径提供：服务端渲染的前端由
@@ -573,7 +563,7 @@ func (a *App) HTTP(d *command.Daemon) (func(context.Context) error, error) {
 // 它只保存 App 的字段、不使用它们，所以 DocRouter 可以用一个没有打开任何资源的 App 调用它。
 func (a *App) Router(pages http.Handler) chi.Router {
     router := chi.NewRouter()
-    router.Use(httpx.Defaults(a.cfg.HTTP, httpx.Languages(i18n.MustNew("zh-CN", locales.FS)))...)
+    router.Use(httpx.Defaults(a.cfg.HTTP)...)
     router.Get("/livez", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
     router.Handle("/readyz", httpx.Ready(httpx.ReadyOptions{
         Checks: []health.Check{
@@ -652,28 +642,6 @@ go run ./cmd/blog user create --name 小明 --email ming@example.com --password 
 <a id="frontend"></a>
 ## 前端
 
-这一章的页面多了登录、退出。`locales/web.zh-CN.yaml` 加上它们的文字：
-
-```yaml title="locales/web.zh-CN.yaml"
-app.web: 博客
-nav.write: 写文章
-nav.login: 登录
-nav.logout: 退出
-common.loading: 加载中…
-common.edit: 编辑
-common.delete: 删除
-common.delete_confirm: "删除“{{.title}}”？"
-list.empty: 还没有文章。
-editor.title: 标题
-editor.slug: Slug
-editor.content: 正文
-editor.save: 保存
-editor.cancel: 取消
-write.title: 写文章
-edit.title: 修改文章
-signin.title: 登录
-```
-
 `@go-tenon/client` 的会话（session）记录当前的作者：打开页面时读一次 `/api/me`，登录、退出时更新。把 `apps/web/src/api.ts` 改成下面这样：
 
 ```ts title="apps/web/src/api.ts"
@@ -682,36 +650,33 @@ import { createSession } from "@go-tenon/client"
 import { apiFetch } from "@go-tenon/start"
 import { createClient } from "@blog/client/api"
 import { createKit } from "@blog/client/api/kit"
-import { i18n } from "./i18n"
 
 // session 记录当前的作者：打开页面、登录后读取 /api/me，没有登录时它返回 401。
 export const session = createSession({ load: async () => ({ account: (await api.user.me()).id }) })
 
 // api 是 tenon generate 生成的客户端（src/api），接口改了以后 tenon dev 会自动重新生成。
-// 受保护的接口返回 401 时（登录过期，或者在别处退出了），会话随之变为未登录。请求带上当前语言，服务端的提示与页面是同一种语言。
-export const api = createClient({ baseURL: "/api", fetch: apiFetch, session, headers: i18n.headers })
+// 受保护的接口返回 401 时（登录过期，或者在别处退出了），会话随之变为未登录。
+export const api = createClient({ baseURL: "/api", fetch: apiFetch, session })
 
-// kit 中按身份缓存的查询随会话切换，字段名、枚举和验证提示按当前语言显示。
-export const kit = createKit(api, { scope: session.scope, language: i18n.language })
+// kit 中按身份缓存的查询随会话切换，字段名、枚举和验证提示按简体中文显示。
+export const kit = createKit(api, { scope: session.scope, language: "zh-CN" })
 ```
 
-把 `apps/web/src/router.tsx` 改成下面这样，把会话交给应用（`i18n` 来自模板中的 `apps/web/src/i18n.ts`）：
+把 `apps/web/src/router.tsx` 改成下面这样，把会话交给应用：
 
 ```tsx title="apps/web/src/router.tsx"
 import { createApp } from "@go-tenon/ui"
 import { cspNonce } from "@go-tenon/start"
 import { NotFoundPage, RouteError } from "@go-tenon/ui"
 import { session } from "./api"
-import { i18n } from "./i18n"
 import { routeTree } from "./routeTree.gen"
 
-// getRouter 创建应用：路由、TanStack Query、会话和界面文字。服务端渲染时每个请求调用一次，所以每次都创建新的应用。
+// getRouter 创建应用：路由、TanStack Query 和会话。服务端渲染时每个请求调用一次，所以每次都创建新的应用。
 export function getRouter() {
   return createApp({
     id: "web",
     routeTree,
     session,
-    i18n,
     router: { ssr: { nonce: cspNonce() }, defaultErrorComponent: RouteError, defaultNotFoundComponent: NotFoundPage },
   }).router
 }
@@ -732,7 +697,7 @@ declare module "@tanstack/react-router" {
 
 ```tsx title="apps/web/src/routes/login.tsx"
 import { createFileRoute } from "@tanstack/react-router"
-import { CenteredAuthLayout, LoginForm, useT } from "@go-tenon/ui"
+import { CenteredAuthLayout, LoginForm } from "@go-tenon/ui"
 import { api } from "../api"
 
 export const Route = createFileRoute("/login")({
@@ -745,9 +710,8 @@ export const Route = createFileRoute("/login")({
 
 function Login() {
   const { redirect } = Route.useSearch()
-  const t = useT()
   return (
-    <CenteredAuthLayout brand={t("app.web")} title={t("signin.title")}>
+    <CenteredAuthLayout brand="博客" title="登录">
       <LoginForm login={(values) => api.auth.login(values)} redirect={redirect} />
     </CenteredAuthLayout>
   )
@@ -764,18 +728,17 @@ function Login() {
 ```tsx title="apps/web/src/routes/write.tsx"
 import { Container, Title } from "@mantine/core"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
-import { requireAuth, useT } from "@go-tenon/ui"
+import { requireAuth } from "@go-tenon/ui"
 import { ArticleEditor } from "../ArticleEditor"
 
 export const Route = createFileRoute("/write")({ ssr: false, beforeLoad: requireAuth, component: Write })
 
 function Write() {
   const navigate = useNavigate()
-  const t = useT()
   return (
     <Container size="sm" py="xl">
       <Title order={2} mb="lg">
-        {t("write.title")}
+        写文章
       </Title>
       <ArticleEditor onDone={() => navigate({ to: "/" })} />
     </Container>
@@ -789,7 +752,7 @@ function Write() {
 import { Container, Text, Title } from "@mantine/core"
 import { useQuery } from "@tanstack/react-query"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
-import { requireAuth, useT } from "@go-tenon/ui"
+import { requireAuth } from "@go-tenon/ui"
 import { ArticleEditor } from "../../ArticleEditor"
 import { api } from "../../api"
 
@@ -798,15 +761,14 @@ export const Route = createFileRoute("/articles/$id/edit")({ ssr: false, beforeL
 function EditArticle() {
   const { id } = Route.useParams()
   const navigate = useNavigate()
-  const t = useT()
   const article = useQuery({ queryKey: ["article", id], queryFn: () => api.article.get(id) })
 
   return (
     <Container size="sm" py="xl">
       <Title order={2} mb="lg">
-        {t("edit.title")}
+        修改文章
       </Title>
-      {article.isPending && <Text c="dimmed">{t("common.loading")}</Text>}
+      {article.isPending && <Text c="dimmed">加载中…</Text>}
       {article.error && <Text c="red">{article.error.message}</Text>}
       {article.data && <ArticleEditor article={article.data} onDone={() => navigate({ to: "/" })} />}
     </Container>
@@ -826,14 +788,13 @@ import { Button, ColorSchemeScript, Group, Text, mantineHtmlProps } from "@manti
 import { useMutation, useQuery } from "@tanstack/react-query"
 import { createRootRouteWithContext, HeadContent, Scripts, useRouter } from "@tanstack/react-router"
 import { type RouterContext, useSignedIn } from "@go-tenon/ui"
-import { AnchorLink, ButtonLink, SiteLayout, UIProvider, useT } from "@go-tenon/ui"
+import { AnchorLink, ButtonLink, SiteLayout, UIProvider } from "@go-tenon/ui"
 import { api, session } from "../api"
-import { i18n } from "../i18n"
 import { theme } from "../theme"
 
 export const Route = createRootRouteWithContext<RouterContext>()({
   head: () => ({
-    meta: [{ charSet: "utf-8" }, { name: "viewport", content: "width=device-width, initial-scale=1" }, { title: i18n.t("app.web") }],
+    meta: [{ charSet: "utf-8" }, { name: "viewport", content: "width=device-width, initial-scale=1" }, { title: "博客" }],
   }),
   shellComponent: Document,
   component: Layout,
@@ -860,7 +821,6 @@ function Document({ children }: { children: ReactNode }) {
 }
 
 function Layout() {
-  const t = useT()
   const signedIn = useSignedIn()
   const me = useQuery({ queryKey: ["me"], queryFn: () => api.user.me(), enabled: signedIn })
   const logout = useMutation({ mutationFn: () => api.auth.logout(), onSettled: () => session.signOut() })
@@ -868,21 +828,21 @@ function Layout() {
     <SiteLayout
       brand={
         <AnchorLink to="/" c="inherit" underline="never" fw={700}>
-          {t("app.web")}
+          博客
         </AnchorLink>
       }
       actions={
         signedIn ? (
           <Group gap="sm">
             <Text size="sm">{me.data?.name}</Text>
-            <ButtonLink to="/write">{t("nav.write")}</ButtonLink>
+            <ButtonLink to="/write">写文章</ButtonLink>
             <Button variant="default" onClick={() => logout.mutate()}>
-              {t("nav.logout")}
+              退出
             </Button>
           </Group>
         ) : (
           <ButtonLink to="/login" variant="default">
-            {t("nav.login")}
+            登录
           </ButtonLink>
         )
       }
@@ -899,14 +859,13 @@ function Layout() {
 import { Button, Container, Group, Paper, Stack, Text, Title } from "@mantine/core"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { createFileRoute } from "@tanstack/react-router"
-import { ButtonLink, useSignedIn, useT } from "@go-tenon/ui"
+import { ButtonLink, useSignedIn } from "@go-tenon/ui"
 import type { Article } from "@blog/client/api"
 import { api } from "../api"
 
 export const Route = createFileRoute("/")({ component: ArticleList })
 
 function ArticleList() {
-  const t = useT()
   const signedIn = useSignedIn()
   const queryClient = useQueryClient()
   const articles = useQuery({ queryKey: ["article", "list"], queryFn: () => api.article.list() })
@@ -917,9 +876,9 @@ function ArticleList() {
 
   return (
     <Container size="sm" py="xl">
-      {articles.isPending && <Text c="dimmed">{t("common.loading")}</Text>}
+      {articles.isPending && <Text c="dimmed">加载中…</Text>}
       {articles.error && <Text c="red">{articles.error.message}</Text>}
-      {articles.data?.items.length === 0 && <Text c="dimmed">{t("list.empty")}</Text>}
+      {articles.data?.items.length === 0 && <Text c="dimmed">还没有文章。</Text>}
       <Stack>
         {articles.data?.items.map((a) => (
           <Paper key={a.id} p="lg">
@@ -930,10 +889,10 @@ function ArticleList() {
             {signedIn && (
               <Group mt="md" gap="xs">
                 <ButtonLink to="/articles/$id/edit" params={{ id: a.id }} variant="default" size="xs">
-                  {t("common.edit")}
+                  编辑
                 </ButtonLink>
-                <Button variant="subtle" color="red" size="xs" onClick={() => confirm(t("common.delete_confirm", { title: a.title })) && remove.mutate(a)}>
-                  {t("common.delete")}
+                <Button variant="subtle" color="red" size="xs" onClick={() => confirm(`删除“${a.title}”？`) && remove.mutate(a)}>
+                  删除
                 </Button>
               </Group>
             )}

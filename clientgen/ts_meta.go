@@ -368,24 +368,38 @@ func queryEntry(o *tsOp, indent string) string {
 		indent + "    invalidate(context, " + strconv.Quote(group) + "),\n" + indent + "}),\n"
 }
 
+// candidateLanguages 返回需要生成显示文字的语言列表：templates 中的全部语言加上 defaultLang，按字典序排列。
+func candidateLanguages(templates map[string]map[string]string, defaultLang string) []string {
+	langs := slices.Sorted(maps.Keys(templates))
+	if defaultLang != "" && !slices.Contains(langs, defaultLang) {
+		langs = append(langs, defaultLang)
+		slices.Sort(langs)
+	}
+	return langs
+}
+
 // enumsTS 生成 enums.ts：带 x-tenon-enum 的命名类型（contract.EnumSchema 登记的枚举）的取值和各语言的显示文字。
-// 显示文字是 templates 中 <前缀>.<取值> 的消息。一种语言只有部分取值有显示文字，或者所有语言都没有时返回警告。
-func (t *tsGen) enumsTS(templates map[string]map[string]string) (string, []string) {
+// 源语言（defaultLang）的显示文字取自定义处附带的 x-tenon-enum-labels，翻译文件中 <前缀>.<取值> 的消息优先覆盖；
+// 其他语言取自翻译文件。一种语言只有部分取值有显示文字，或者所有语言都没有时返回警告。
+func (t *tsGen) enumsTS(templates map[string]map[string]string, defaultLang string) (string, []string) {
 	var b strings.Builder
 	var warnings []string
 	b.WriteString(`/**
  * 带显示文字的枚举，键是 OpenAPI 中的命名类型（api.ts 中同名的类型是取值的联合类型）。
- * labels 按语言列出显示文字，取自翻译文件中 <前缀>.<取值> 的消息；缺少时先用默认语言，再用取值本身。
+ * labels 按语言列出显示文字，源语言来自定义处的默认文字（翻译文件覆盖），其他语言来自翻译文件中 <前缀>.<取值>；
+ * 缺少时先用默认语言，再用取值本身。
  */
 export const enums = {
 `)
 	all := t.registry.Map()
+	langList := candidateLanguages(templates, defaultLang)
 	for _, name := range slices.Sorted(maps.Keys(all)) {
 		s := all[name]
 		prefix, ok := s.Extensions["x-tenon-enum"].(string)
 		if !ok {
 			continue
 		}
+		inlineLabels, _ := s.Extensions["x-tenon-enum-labels"].(map[string]string)
 		values := make([]string, 0, len(s.Enum))
 		quoted := make([]string, 0, len(s.Enum))
 		for _, v := range s.Enum {
@@ -394,11 +408,13 @@ export const enums = {
 			quoted = append(quoted, strconv.Quote(str))
 		}
 		var langs strings.Builder
-		for _, lang := range slices.Sorted(maps.Keys(templates)) {
+		for _, lang := range langList {
 			var labels, missing []string
 			for _, v := range values {
 				if label, ok := templates[lang][prefix+"."+v]; ok {
 					labels = append(labels, tsKey(v)+": "+strconv.Quote(label))
+				} else if lang == defaultLang && inlineLabels[v] != "" {
+					labels = append(labels, tsKey(v)+": "+strconv.Quote(inlineLabels[v]))
 				} else {
 					missing = append(missing, v)
 				}
@@ -412,7 +428,7 @@ export const enums = {
 			langs.WriteString("      " + strconv.Quote(lang) + ": { " + strings.Join(labels, ", ") + " },\n")
 		}
 		if langs.Len() == 0 {
-			warnings = append(warnings, fmt.Sprintf("enum %s has no labels; add messages %s.<value> to the translations", name, prefix))
+			warnings = append(warnings, fmt.Sprintf("enum %s has no labels; add default labels in enum.Item or messages %s.<value> to the translations", name, prefix))
 		}
 		b.WriteString("  " + tsKey(name) + ": {\n    prefix: " + strconv.Quote(prefix) + ",\n    values: [" + strings.Join(quoted, ", ") + "],\n    labels: {\n" + langs.String() + "    },\n  },\n")
 	}

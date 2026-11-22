@@ -25,6 +25,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
+	"golang.org/x/text/language"
 
 	"github.com/go-tenon/tenon/cmd/tenon/internal/agents"
 	"github.com/go-tenon/tenon/cmd/tenon/internal/check"
@@ -40,7 +41,7 @@ const framework = "github.com/go-tenon/tenon"
 // initCommand 返回 tenon init 命令：生成新项目。
 func initCommand() *cobra.Command {
 	var opts scaffold.Options
-	var targets []string
+	var targets, languages []string
 	cmd := &cobra.Command{
 		Use:   "init <dir>",
 		Short: "生成新项目：Go 应用加 TanStack Start 的前端，生成后即可运行",
@@ -73,6 +74,12 @@ func initCommand() *cobra.Command {
 					return fmt.Errorf("--agents %q is not one of %v (or none)", t, project.Targets)
 				}
 			}
+			if len(languages) > 0 {
+				if err := validateLanguages(languages); err != nil {
+					return err
+				}
+				opts.Languages = languages
+			}
 			if version == "" || version == "(devel)" {
 				return fmt.Errorf("cannot tell which version of %s to use; run go run %s/cmd/tenon@latest init, or pass --tenon <checkout>", framework, framework)
 			}
@@ -81,13 +88,15 @@ func initCommand() *cobra.Command {
 			if err := scaffold.Write(dir, opts); err != nil {
 				return err
 			}
-			// 与默认不同时把选择的 AI 编程助手写进 tenon.json，tenon agents 以后按它更新配置。
-			if !slices.Equal(targets, project.DefaultTargets) {
-				if err := writeTargets(dir, targets); err != nil {
+			// 与默认不同时把 AI 编程助手和语言配置写进 tenon.json。
+			customTargets := !slices.Equal(targets, project.DefaultTargets)
+			customLangs := len(languages) > 0 && !slices.Equal(languages, []string{project.DefaultLanguage})
+			if customTargets || customLangs {
+				if err := writeInitConfig(dir, customTargets, targets, customLangs, languages); err != nil {
 					return err
 				}
 			}
-			// 生成客户端要编译应用，嵌入的 apps/dist 中要先有前端的清单。前端的界面文字生成为 messages.gen.ts。
+			// 生成客户端要编译应用，嵌入的 apps/dist 中要先有前端的清单。多语言前端生成 messages.gen.ts。
 			cfg, err := project.Load(dir)
 			if err != nil {
 				return err
@@ -98,7 +107,11 @@ func initCommand() *cobra.Command {
 			if _, err := dev.WriteMessages(dir, cfg); err != nil {
 				return err
 			}
-			for _, s := range [][]string{{"go", "mod", "tidy"}, {"go", "run", cfg.Main, "client", "--ts", project.ClientSrc}} {
+			clientArgs := []string{"run", cfg.Main, "client", "--ts", project.ClientSrc}
+			if lang := cfg.SourceLanguage(); lang != project.DefaultLanguage {
+				clientArgs = append(clientArgs, "--default-language", lang)
+			}
+			for _, s := range [][]string{{"go", "mod", "tidy"}, append([]string{"go"}, clientArgs...)} {
 				if err := run(cmd, dir, s[0], s[1:]...); err != nil {
 					return err
 				}
@@ -134,16 +147,41 @@ func initCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.Module, "module", "", "Go 模块路径，默认是目录名")
 	cmd.Flags().StringVar(&opts.Name, "name", "", "应用的名称，默认是目录名")
 	cmd.Flags().StringVar(&opts.TenonDir, "tenon", "", "本地的框架目录，go.mod 用 replace 指向它（开发框架本身时使用）")
+	cmd.Flags().StringSliceVar(&languages, "languages", nil, "应用支持的语言，第一项是源语言（默认 zh-CN）；写多种时启用多语言，例如 zh-CN,en")
 	cmd.Flags().StringSliceVar(&targets, "agents", project.DefaultTargets,
 		fmt.Sprintf("为哪些 AI 编程助手安装技能、写 MCP 配置：%s，可以写多个；none 表示都不装（AGENTS.md 和 .tenon/docs 照样生成）", strings.Join(project.Targets, "、")))
 	return cmd
 }
 
-// writeTargets 把 AI 编程助手的选择写进项目 dir 的 tenon.json。
-func writeTargets(dir string, targets []string) error {
+// validateLanguages 检查语言列表中的每一项都是合法且不重复的 BCP-47 标签。
+func validateLanguages(langs []string) error {
+	seen := map[string]bool{}
+	for _, lang := range langs {
+		if lang == "" {
+			return fmt.Errorf("--languages contains an empty entry")
+		}
+		if _, err := language.Parse(lang); err != nil {
+			return fmt.Errorf("--languages %q is not a valid language tag: %w", lang, err)
+		}
+		low := strings.ToLower(lang)
+		if seen[low] {
+			return fmt.Errorf("--languages contains duplicate %q", lang)
+		}
+		seen[low] = true
+	}
+	return nil
+}
+
+// writeInitConfig 把非默认的初始化配置（AI 编程助手、语言列表）写进项目 dir 的 tenon.json。
+func writeInitConfig(dir string, customTargets bool, targets []string, customLangs bool, langs []string) error {
 	cfg := project.Config{
 		Schema: "https://raw.githubusercontent.com/go-tenon/tenon/main/cmd/tenon/schema.json",
-		Agents: &project.Agents{Targets: targets},
+	}
+	if customTargets {
+		cfg.Agents = &project.Agents{Targets: targets}
+	}
+	if customLangs {
+		cfg.Languages = langs
 	}
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
@@ -243,7 +281,7 @@ func root() *cobra.Command {
 		SilenceErrors: true,
 	}
 	add := &cobra.Command{Use: "add", Short: "给项目加入新的部分"}
-	add.AddCommand(addFrontendCommand(), addClientCommand(), addDeployCommand())
+	add.AddCommand(addFrontendCommand(), addClientCommand(), addDeployCommand(), addLanguageCommand())
 	root.AddCommand(initCommand(), add, devCommand(), buildCommand(), deployCommand(), generateCommand(), checkCommand(), agentsCommand(), mcpCommand())
 	return root
 }
@@ -277,7 +315,7 @@ func addFrontendCommand() *cobra.Command {
 			if i := slices.IndexFunc(existing.Frontends, func(f project.Frontend) bool { return f.Base == base && f.Name != name }); i >= 0 {
 				return fmt.Errorf("%s is already mounted at %s; choose another --base", existing.Frontends[i].Dir, base)
 			}
-			f, err := scaffold.Frontend{Scope: scope, Name: name, Base: base, Title: name, Layout: layout, Login: login, Preset: preset, Render: render, API: api}.Resolve()
+			f, err := scaffold.Frontend{Scope: scope, Name: name, Base: base, Title: name, Layout: layout, Login: login, Preset: preset, Render: render, API: api, Languages: existing.AllLanguages()}.Resolve()
 			if err != nil {
 				return err
 			}
@@ -390,7 +428,7 @@ func addClientCommand() *cobra.Command {
 				title = name
 			}
 			consent, err := scaffold.WriteClient(".", scaffold.Client{
-				Scope: scope, Name: name, Kind: kind, Frontend: f.Name, Base: f.Base, SSR: f.SSR, Title: title,
+				Scope: scope, Name: name, Kind: kind, Frontend: f.Name, Base: f.Base, SSR: f.SSR, Title: title, Languages: cfg.AllLanguages(),
 			})
 			if err != nil {
 				return err
@@ -471,6 +509,89 @@ func addDeployCommand() *cobra.Command {
 	cmd.Flags().StringVar(&host, "host", "", "默认目标主机地址或 ~/.ssh/config 别名")
 	cmd.Flags().BoolVar(&force, "force", false, "覆盖已存在的部署文件")
 	return cmd
+}
+
+// addLanguageCommand 返回 tenon add language <lang> 命令：把一种语言加入 tenon.json 的 languages，
+// 创建服务端和各前端的翻译文件骨架，启用多语言检查并同步 AI 助手约定。
+func addLanguageCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "language <lang>",
+		Short: "为项目加入一种语言（例如 en），启用多语言翻译文件和检查",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			lang := strings.TrimSpace(args[0])
+			if lang == "" {
+				return fmt.Errorf("language tag is required, e.g. en")
+			}
+			if _, err := language.Parse(lang); err != nil {
+				return fmt.Errorf("language %q is not a valid language tag: %w", lang, err)
+			}
+			cfg, err := project.Load(".")
+			if err != nil {
+				return err
+			}
+			langs := cfg.AllLanguages()
+			for _, existing := range langs {
+				if strings.EqualFold(existing, lang) {
+					return fmt.Errorf("language %q is already configured in %s", lang, project.File)
+				}
+			}
+			langs = append(langs, lang)
+			if err := setProjectLanguages(".", langs); err != nil {
+				return err
+			}
+			frontends := make([]string, len(cfg.Frontends))
+			for i, f := range cfg.Frontends {
+				frontends[i] = f.Name
+			}
+			created, err := scaffold.AddLanguage(".", lang, langs, frontends)
+			if err != nil {
+				return err
+			}
+			cfg, err = project.Load(".")
+			if err != nil {
+				return err
+			}
+			if _, err := dev.WriteMessages(".", cfg); err != nil {
+				return err
+			}
+			if err := agents.Sync(".", cfg, cmd.OutOrStdout()); err != nil {
+				return err
+			}
+			w := cmd.OutOrStdout()
+			fmt.Fprintf(w, "\n已加入语言 %s（当前语言列表：%s）。\n", lang, strings.Join(langs, "、"))
+			if len(created) > 0 {
+				fmt.Fprintf(w, "已创建：%s。\n", strings.Join(created, "、"))
+			}
+			fmt.Fprintf(w, "接下来：\n"+
+				"  1. 在入口中把 locales.FS 交给 httpx.Languages、command.Languages 和 httpcmd.Translations；\n"+
+				"  2. 在各前端的 src/router.tsx 和 src/api.ts 中接入 src/i18n.ts；\n"+
+				"  3. 运行 go tool tenon check --only text,errors 查看待抽离的前端文字和待翻译的业务错误码。\n")
+			return nil
+		},
+	}
+}
+
+// setProjectLanguages 把 languages 写入项目 dir 的 tenon.json，保留文件中已有的其他配置字段。
+func setProjectLanguages(dir string, langs []string) error {
+	p := filepath.Join(dir, project.File)
+	doc := map[string]any{}
+	data, err := os.ReadFile(p)
+	if err == nil {
+		if err := json.Unmarshal(data, &doc); err != nil {
+			return fmt.Errorf("%s: %w", project.File, err)
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	} else {
+		doc["$schema"] = "https://raw.githubusercontent.com/go-tenon/tenon/main/cmd/tenon/schema.json"
+	}
+	doc["languages"] = langs
+	out, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(p, append(out, '\n'), 0o644)
 }
 
 // devCommand 返回 tenon dev 命令：运行应用和前端工具，修改代码后重新编译、重启并生成客户端。

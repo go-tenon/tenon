@@ -18,7 +18,11 @@ func TestErrorMessage(t *testing.T) {
 	locked := errorx.Define(errorx.Conflict, "article.locked")
 	enOnly := errorx.Define(errorx.Conflict, "article.en_only")
 	missing := errorx.Define(errorx.Conflict, "article.missing")
+	inline := errorx.Define(errorx.Conflict, "article.slug_taken", "slug“{{.slug}}”已被使用")
+	inlineOverridden := errorx.Define(errorx.Conflict, "article.locked", "默认锁定文案")
 	zh := withLocale(t, "zh-CN", "en", app)
+	zhDefault := withLocale(t, "zh-CN", "zh-CN")
+	enInZhApp := withLocale(t, "en", "zh-CN", app)
 
 	for name, tc := range map[string]struct {
 		ctx         context.Context
@@ -26,12 +30,16 @@ func TestErrorMessage(t *testing.T) {
 		msg         string
 		missingWant bool
 	}{
-		"translated":        {zh, errors.Wrap(locked.New(errorx.Public("title", "Go")), "publish"), "文章《Go》已锁定", false},
-		"default language":  {zh, enOnly.New(), "English only", true},
-		"no translation":    {zh, missing.New(), "", true},
-		"no code":           {zh, errors.New("boom"), "", false},
-		"no locale":         {context.Background(), locked.New(), "", false},
-		"builtin framework": {zh, errorx.Define(errorx.Unauthenticated, "auth.unauthenticated").New(), "请先认证", false},
+		"translated":               {zh, errors.Wrap(locked.New(errorx.Public("title", "Go")), "publish"), "文章《Go》已锁定", false},
+		"default language":         {zh, enOnly.New(), "English only", true},
+		"no translation":           {zh, missing.New(), "", true},
+		"no code":                  {zh, errors.New("boom"), "", false},
+		"no locale":                {context.Background(), locked.New(), "", false},
+		"no locale inline":         {context.Background(), inline.New(errorx.Public("slug", "hi")), "slug“hi”已被使用", false},
+		"builtin framework":        {zh, errorx.Define(errorx.Unauthenticated, "auth.unauthenticated").New(), "请先认证", false},
+		"inline default locale":    {zhDefault, inline.New(errorx.Public("slug", "go")), "slug“go”已被使用", false},
+		"inline other locale miss": {enInZhApp, inline.New(errorx.Public("slug", "go")), "slug“go”已被使用", true},
+		"inline overridden by fs":  {zh, inlineOverridden.New(errorx.Public("title", "Go")), "文章《Go》已锁定", false},
 	} {
 		msg, miss := i18n.ErrorMessage(tc.ctx, tc.err)
 		if msg != tc.msg || miss != tc.missingWant {

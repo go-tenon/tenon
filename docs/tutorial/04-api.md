@@ -34,10 +34,10 @@ type Article struct {
     Content string `bun:"content,notnull" json:"content"`
 }
 
-// 业务错误：错误码返回给客户端，前端按它显示提示。
+// 业务错误：错误码返回给客户端，第三个参数是给用户看的默认提示模板。
 var (
-    ErrNotFound  = errorx.Define(errorx.NotFound, "article.not_found")
-    ErrSlugTaken = errorx.Define(errorx.Conflict, "article.slug_taken")
+    ErrNotFound  = errorx.Define(errorx.NotFound, "article.not_found", "文章不存在")
+    ErrSlugTaken = errorx.Define(errorx.Conflict, "article.slug_taken", "slug“{{.slug}}”已被使用")
 )
 
 // Changes 是新建和修改文章时提交的内容，标签就是校验规则。
@@ -309,28 +309,11 @@ func RegisterRoutes(api *rest.API, db *bun.DB) {
 - 每个接口都要声明访问策略，忘记声明时程序启动就报错。现在都是 `rest.Public()`，第 6 章改为需要登录。
 
 <a id="messages"></a>
-## 错误提示
+## 接入文章路由
 
-响应中的 `detail` 是给用户看的提示，按错误码从翻译文件中查找，见[本地化](../general/localization.md)。新建 `locales/embed.go` 和 `locales/zh-CN.yaml`。`embed.go` 嵌入目录中的全部翻译文件，也包括前端的界面文字 `web.zh-CN.yaml`：
+响应中的 `detail` 自动使用 `errorx.Define` 中写的默认提示，`{{.slug}}` 替换为 `errorx.Public` 附加的参数，见[本地化](../general/localization.md)。
 
-```go title="locales/embed.go"
-// Package locales 嵌入应用的翻译：业务错误码对应给用户看的提示。
-package locales
-
-import "embed"
-
-//go:embed *.yaml
-var FS embed.FS
-```
-
-```yaml title="locales/zh-CN.yaml"
-article.not_found: 文章不存在
-article.slug_taken: "slug“{{.slug}}”已被使用"
-```
-
-`{{.slug}}` 替换为 `errorx.Public` 附加的参数。
-
-修改 `internal/bootstrap/http.go`：把待办接口换成文章，用 `httpx.Languages` 加载翻译：
+修改 `internal/bootstrap/http.go`，把待办接口换成文章：
 
 ```go title="internal/bootstrap/http.go"
 package bootstrap
@@ -347,11 +330,9 @@ import (
     "github.com/go-tenon/tenon/health"
     "github.com/go-tenon/tenon/httpx"
     "github.com/go-tenon/tenon/httpx/rest"
-    "github.com/go-tenon/tenon/i18n"
 
     "example.com/blog/apps"
     "example.com/blog/internal/article"
-    "example.com/blog/locales"
 )
 
 // HTTP 装配 HTTP 服务。apps 中的前端由 frontend.Host 按挂载路径提供：服务端渲染的前端由
@@ -380,7 +361,7 @@ func (a *App) HTTP(d *command.Daemon) (func(context.Context) error, error) {
 // 它只保存 App 的字段、不使用它们，所以 DocRouter 可以用一个没有打开任何资源的 App 调用它。
 func (a *App) Router(pages http.Handler) chi.Router {
     router := chi.NewRouter()
-    router.Use(httpx.Defaults(a.cfg.HTTP, httpx.Languages(i18n.MustNew("zh-CN", locales.FS)))...)
+    router.Use(httpx.Defaults(a.cfg.HTTP)...)
     router.Get("/livez", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
     router.Handle("/readyz", httpx.Ready(httpx.ReadyOptions{
         Checks: []health.Check{

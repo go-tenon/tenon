@@ -16,7 +16,7 @@ import (
 
 type articleStatus string
 
-var articleStatuses = enum.New("article.status", articleStatus("draft"), articleStatus("published"))
+var articleStatuses = enum.New("article.status", enum.Item(articleStatus("draft")), enum.Item(articleStatus("published")))
 
 func (articleStatus) Schema(r huma.Registry) *huma.Schema {
 	return contract.EnumSchema(r, articleStatuses)

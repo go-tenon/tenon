@@ -78,6 +78,9 @@ func selectChecks(cfg *project.Config, only []string) ([]string, error) {
 	skip := cfg.CheckSkip()
 	var out []string
 	for _, name := range Names {
+		if name == "text" && !cfg.MultiLanguage() {
+			continue
+		}
 		if !slices.Contains(skip, name) {
 			out = append(out, name)
 		}

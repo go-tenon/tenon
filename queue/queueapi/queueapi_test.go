@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -396,7 +397,7 @@ func TestTopicLabels(t *testing.T) {
 	db := dbtest.Open(t, queue.Migrations())
 	mailTopic := queue.Topic[map[string]string]("mail.send")
 	router := chi.NewRouter()
-	router.Use(httpx.Locale(i18n.MustNew("zh-CN")))
+	router.Use(httpx.Locale(i18n.MustNew("zh-CN", fstest.MapFS{"en.yaml": {Data: []byte("app.ok: ok\n")}})))
 	api := rest.New(router, rest.Options{Accounts: identity.Accounts{"user": nil}, Logger: slog.New(slog.DiscardHandler)})
 	validate := func(_ context.Context, _ string) (identity.Subject, error) {
 		return identity.Subject{Type: "user", ID: "ops", Permissions: []string{"queue:manage"}}, nil

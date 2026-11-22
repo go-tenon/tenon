@@ -16,6 +16,8 @@ import (
 	"slices"
 	"strings"
 
+	"golang.org/x/text/language"
+
 	"github.com/go-tenon/tenon/config"
 )
 
@@ -49,14 +51,15 @@ var Name = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 
 // Config 是 tenon.json。所有字段都可以省略，Load 按约定补上默认值。
 type Config struct {
-	Schema string          `json:"$schema,omitempty"` // 编辑器补全用的 JSON Schema 地址，只供编辑器使用。
-	Main   string          `json:"main,omitempty"`    // 应用入口的包，默认是 cmd 下唯一一个有 main.go 的目录，例如 ./cmd/blog。
-	Serve  []string        `json:"serve,omitempty"`   // 开发时运行应用的参数，默认 serve --config config/app.yaml,config/local.yaml（local.yaml 存在时才加上它）。
-	URL    string          `json:"url,omitempty"`     // 应用的地址，dev 打印它，前端的开发服务器经它调用接口。默认按应用配置中的 http.addr 推出，见 appURL。
-	APIs   map[string]*API `json:"apis,omitempty"`    // 按 BasePath 覆盖 API 客户端的约定，例如改名或生成 Go 客户端。没有写的 API 按约定生成。
-	Tools  []Tool          `json:"tools,omitempty"`   // 与应用一起运行的其他工具，可空。
-	Agents *Agents         `json:"agents,omitempty"`  // 接入哪些 AI 编程助手，见 tenon agents；省略时接入 DefaultTargets。
-	Check  *Check          `json:"check,omitempty"`   // tenon check 的跳过项和豁免路径。
+	Schema    string          `json:"$schema,omitempty"`   // 编辑器补全用的 JSON Schema 地址，只供编辑器使用。
+	Main      string          `json:"main,omitempty"`      // 应用入口的包，默认是 cmd 下唯一一个有 main.go 的目录，例如 ./cmd/blog。
+	Serve     []string        `json:"serve,omitempty"`     // 开发时运行应用的参数，默认 serve --config config/app.yaml,config/local.yaml（local.yaml 存在时才加上它）。
+	URL       string          `json:"url,omitempty"`       // 应用的地址，dev 打印它，前端的开发服务器经它调用接口。默认按应用配置中的 http.addr 推出，见 appURL。
+	APIs      map[string]*API `json:"apis,omitempty"`      // 按 BasePath 覆盖 API 客户端的约定，例如改名或生成 Go 客户端。没有写的 API 按约定生成。
+	Languages []string        `json:"languages,omitempty"` // 应用支持的语言，第一项是源语言（默认 ["zh-CN"]）。只有一种语言时为单语言项目；多于一种时启用前端翻译文件和写死文字检查。
+	Tools     []Tool          `json:"tools,omitempty"`     // 与应用一起运行的其他工具，可空。
+	Agents    *Agents         `json:"agents,omitempty"`    // 接入哪些 AI 编程助手，见 tenon agents；省略时接入 DefaultTargets。
+	Check     *Check          `json:"check,omitempty"`     // tenon check 的跳过项和豁免路径。
 
 	Frontends []Frontend `json:"-"` // apps 中的前端，按名称排序。由 Load 从目录中发现，不在 tenon.json 中。
 	Clients   []Client   `json:"-"` // clients 中的客户端，按名称排序。由 Load 从目录中发现。
@@ -111,6 +114,30 @@ func (c *Config) AgentTargets() []string {
 		return DefaultTargets
 	}
 	return c.Agents.Targets
+}
+
+// DefaultLanguage 是 tenon.json 未配置 languages 时的默认源语言。
+const DefaultLanguage = "zh-CN"
+
+// SourceLanguage 返回项目的源语言（languages 的第一项）；未配置时返回 DefaultLanguage。
+func (c *Config) SourceLanguage() string {
+	if c == nil || len(c.Languages) == 0 {
+		return DefaultLanguage
+	}
+	return c.Languages[0]
+}
+
+// AllLanguages 返回项目支持的全部语言（第一项是源语言）；未配置时返回只含 DefaultLanguage 的切片。
+func (c *Config) AllLanguages() []string {
+	if c == nil || len(c.Languages) == 0 {
+		return []string{DefaultLanguage}
+	}
+	return slices.Clone(c.Languages)
+}
+
+// MultiLanguage 报告项目是否启用了多语言（配置了两种及以上语言）。
+func (c *Config) MultiLanguage() bool {
+	return c != nil && len(c.Languages) > 1
 }
 
 // CheckNames 是 tenon check 支持的全部检查项名称，按执行顺序排列。
@@ -375,6 +402,25 @@ func (c *Config) check() error {
 			if !slices.Contains(Targets, t) {
 				return fmt.Errorf("%s: agents.targets: %q is not one of %v", File, t, Targets)
 			}
+		}
+	}
+	if c.Languages != nil {
+		if len(c.Languages) == 0 {
+			return fmt.Errorf("%s: languages must not be empty", File)
+		}
+		seen := map[string]bool{}
+		for _, lang := range c.Languages {
+			if lang == "" {
+				return fmt.Errorf("%s: languages contains empty entry", File)
+			}
+			if _, err := language.Parse(lang); err != nil {
+				return fmt.Errorf("%s: languages %q is not a valid language tag: %w", File, lang, err)
+			}
+			low := strings.ToLower(lang)
+			if seen[low] {
+				return fmt.Errorf("%s: languages contains duplicate %q", File, lang)
+			}
+			seen[low] = true
 		}
 	}
 	if c.Check != nil {

@@ -446,7 +446,7 @@ func (g *generator) collectCodes() ([]codeGroup, error) {
 // defined 报告表达式是否是以字符串常量为错误码的 errorx.Define 调用。
 func (g *generator) defined(info *types.Info, e ast.Expr) (string, bool) {
 	call, ok := e.(*ast.CallExpr)
-	if !ok || len(call.Args) != 2 || info == nil {
+	if !ok || (len(call.Args) != 2 && len(call.Args) != 3) || info == nil {
 		return "", false
 	}
 	var id *ast.Ident
