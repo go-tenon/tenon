@@ -19,12 +19,13 @@ services:
       interval: 1s
       retries: 60
 
-  memcached:
-    image: memcached:1.6-alpine
+  redis:
+    image: redis:8-alpine
+    command: [redis-server, --save, "", --appendonly, "no"]
     ports:
-      - 127.0.0.1:51211:11211
+      - 127.0.0.1:56379:6379
     healthcheck:
-      test: nc -z 127.0.0.1 11211
+      test: redis-cli ping
       interval: 1s
       retries: 30
 

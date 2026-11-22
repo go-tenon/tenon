@@ -15,9 +15,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.10
 	github.com/aws/aws-sdk-go-v2/service/sesv2 v1.79.9
 	github.com/aws/smithy-go v1.28.9
-	github.com/bradfitz/gomemcache v0.0.0-20260422231931-4d751bb6e37c
 	github.com/centrifugal/centrifuge v0.40.1
-	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/cloudflare/tableflip v1.2.4-0.20240920015315-64983fb2d863
 	github.com/cockroachdb/errors v1.14.0
 	github.com/coder/websocket v1.8.15
@@ -45,6 +43,7 @@ require (
 	github.com/pressly/goose/v3 v3.30.1
 	github.com/prometheus/client_golang v1.25.0
 	github.com/qdrant/go-client v1.20.1
+	github.com/redis/go-redis/v9 v9.23.0
 	github.com/resend/resend-go/v3 v3.17.0
 	github.com/rs/cors v1.11.1
 	github.com/samber/slog-chi v1.19.1
@@ -109,6 +108,7 @@ require (
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/centrifugal/fdelta v0.0.3 // indirect
 	github.com/centrifugal/protocol v0.23.1 // indirect
+	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cockroachdb/logtags v0.0.0-20241215232642-bb51bb14a506 // indirect
 	github.com/cockroachdb/redact v1.1.8 // indirect
 	github.com/creack/pty v1.1.24 // indirect
@@ -173,6 +173,7 @@ require (
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.47.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.47.0 // indirect
 	go.shabbyrobe.org/gocovmerge v0.0.0-20230507111327-fa4f82cfbf4d // indirect
+	go.uber.org/atomic v1.12.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.28.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.6 // indirect

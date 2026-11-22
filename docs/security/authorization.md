@@ -170,18 +170,18 @@ api := rest.New(router, rest.Options{Accounts: identity.Accounts{user.Type: role
 <a id="caching-permissions"></a>
 ### 缓存权限：`authz.Cache`
 
-请求量大时，用 `authz.Cache` 把每个主体的权限缓存在 [Memcached](../libraries/cache.md) 中：
+请求量大时，用 `authz.Cache` 把每个主体的权限缓存在 [Redis](../libraries/cache.md) 中：
 
 ```go
-roles := authz.NewStore(db, auth.Permissions, authz.Cache(mc, "blog:prod:", time.Minute))
+roles := authz.NewStore(db, auth.Permissions, authz.Cache(rdb, "blog:prod:", time.Minute))
 ```
 
-`mc` 是应用共用的 Memcached 客户端。第二个参数是命名空间，共用一个 Memcached 的应用和环境各不相同，否则会读到别的数据库中的权限；第三个参数是过期时间。`Resolve` 和 `Permissions` 先读缓存。
+`rdb` 是应用共用的 Redis 客户端。第二个参数是命名空间，共用一个 Redis 的应用和环境各不相同，否则会读到别的数据库中的权限；第三个参数是过期时间。`Resolve` 和 `Permissions` 先读缓存。
 
 - 缓存不改变立即生效：`Assign`、`Unassign`、`RemoveMember` 使这个主体的缓存失效，`UpdateRole`、`DeleteRole` 使全部缓存失效，方法返回之后所有实例读到新的权限。修改后照常调用 `RecheckSubject`、`RecheckTenant`。
 - 修改角色和分配的每个 `Store` 都要带上同样的 `authz.Cache`，否则缓存不会随修改失效。
 - `Store` 建在 [`database.Tx`](../database/database.md#after-commit) 上时，缓存在事务提交之后失效；建在 `bun.Tx` 上时 `NewStore` panic，因为无从得知何时提交。
-- 绕过 `Store` 直接改表、或者失效失败（记录 Error 日志）时，旧的权限最多保留一个过期时间。Memcached 不可用时直接查询数据库。
+- 绕过 `Store` 直接改表、或者失效失败（记录 Error 日志）时，旧的权限最多保留一个过期时间。Redis 不可用时直接查询数据库。
 
 <a id="super-admins"></a>
 ### 超级管理员：`*`

@@ -116,7 +116,7 @@ db := dbtest.Open(t, migrations.FS)
 <a id="running-database-tests-locally"></a>
 ### 在本地运行数据库测试：`compose.test.yml`
 
-在项目根目录放一个测试用的 `compose.test.yml`，启动应用用到的服务。用到 [Memcached](../libraries/cache.md#testing)、NATS 时照样加上它们：
+在项目根目录放一个测试用的 `compose.test.yml`，启动应用用到的服务。用到 [Redis](../libraries/cache.md#testing)、NATS 时照样加上它们：
 
 ```yaml
 name: blog-test
@@ -161,7 +161,7 @@ go test -race -count=1 ./...
           exit 1
 ```
 
-用到 Memcached、NATS 时同样启动它们，并设置对应的环境变量。
+用到 Redis、NATS 时同样启动它们，并设置对应的环境变量。
 
 <a id="testing-actions"></a>
 ## 测试业务动作的 `Handle`

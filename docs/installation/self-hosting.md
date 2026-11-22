@@ -85,7 +85,7 @@ volumes:
 
 - `postgres` 的三个参数是[队列](operations.md#queue)需要的设置。不设 `max_slot_wal_keep_size` 时，应用停止几天后积压的 WAL 可能写满磁盘。
 - `migrate` 在迁移之前运行自检，环境不对时不执行迁移，直接给出修改方法。
-- `8080` 前面放反向代理负责 HTTPS，见[反向代理](deployment.md#reverse-proxies)。用到 Memcached、[Gotenberg](../libraries/pdf.md#deployment)、Qdrant 时加服务，并加入[自检](doctor.md#framework-checks)。
+- `8080` 前面放反向代理负责 HTTPS，见[反向代理](deployment.md#reverse-proxies)。用到 Redis、[Gotenberg](../libraries/pdf.md#deployment)、Qdrant 时加服务，并加入[自检](doctor.md#framework-checks)。
 
 <a id="env-file"></a>
 ## .env
@@ -135,7 +135,7 @@ docker compose up -d
 <a id="backups"></a>
 ## 备份与恢复
 
-备份 PostgreSQL、`storage` 卷和 `.env`；NATS 和 Memcached 不需要备份。
+备份 PostgreSQL、`storage` 卷和 `.env`；NATS 和 Redis 不需要备份。
 
 ```bash
 docker compose exec -T postgres pg_dump -U acme -Fc acme > acme-$(date +%F).dump

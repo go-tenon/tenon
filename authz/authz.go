@@ -84,8 +84,8 @@ type grant struct {
 // Option 是 NewStore 的选项。
 type Option func(*Store)
 
-// Cache 把主体在每个域中的权限缓存在 Memcached 中，Resolve 和 Permissions 优先读取缓存。
-// mc 是应用共用的 Memcached 客户端；prefix 是命名空间，例如 "blog:prod:"，共用一个 Memcached 的应用和环境各不相同，
+// Cache 把主体在每个域中的权限缓存在 Redis 中，Resolve 和 Permissions 优先读取缓存。
+// rdb 是应用共用的 Redis 客户端；prefix 是命名空间，例如 "blog:prod:"，共用一个 Redis 的应用和环境各不相同，
 // 否则会读到别的数据库中的权限；ttl 是缓存的过期时间，必须为正。
 //
 // 缓存不改变“权限变化立即生效”：Assign、Unassign、RemoveMember 使主体的缓存失效，UpdateRole、DeleteRole 使全部缓存失效，
@@ -93,9 +93,9 @@ type Option func(*Store)
 // Store 建在 database.Tx 上时，改为在外层事务提交之后执行（Tx.AfterCommit），建在其他事务上时 NewStore panic。
 // 失效失败时修改照常成功，记录 Error 日志，旧的权限最多保留 ttl。绕过 Store 直接修改表时同样最多保留 ttl。
 //
-// 修改角色和分配的每个 Store 都要使用同一个 mc 和 prefix 的 Cache，缓存才会随修改失效。
-func Cache(mc cache.Client, prefix string, ttl time.Duration) Option {
-	c := cache.New[grant](mc, prefix+"authz:v1:permissions:", ttl)
+// 修改角色和分配的每个 Store 都要使用同一个 rdb 和 prefix 的 Cache，缓存才会随修改失效。
+func Cache(rdb cache.Client, prefix string, ttl time.Duration) Option {
+	c := cache.New[grant](rdb, prefix+"authz:v1:permissions:", ttl)
 	return func(s *Store) { s.cache, s.prefix = c, prefix }
 }
 

@@ -16,12 +16,12 @@
 
 ## 运行测试
 
-一部分测试需要真实的 PostgreSQL、Memcached、NATS、Gotenberg 和 Qdrant，没有设置下面的环境变量时这些测试直接失败。`compose.test.yml` 启动这些服务，版本与 CI 相同，`--wait` 等到它们全部就绪才返回：
+一部分测试需要真实的 PostgreSQL、Redis、NATS、Gotenberg 和 Qdrant，没有设置下面的环境变量时这些测试直接失败。`compose.test.yml` 启动这些服务，版本与 CI 相同，`--wait` 等到它们全部就绪才返回：
 
 ```bash
 docker compose -f compose.test.yml up -d --wait
 export POSTGRES_TEST_URL='postgres://postgres:postgres@127.0.0.1:55432/postgres?sslmode=disable'
-export MEMCACHED_TEST_ADDR='127.0.0.1:51211'
+export REDIS_TEST_URL='redis://127.0.0.1:56379/0'
 export NATS_TEST_URL='nats://127.0.0.1:54222'
 export GOTENBERG_TEST_URL='http://127.0.0.1:53000'
 export QDRANT_TEST_ADDR='127.0.0.1:56334'

@@ -3,10 +3,10 @@ package cache_test
 import (
 	"context"
 	"net"
-	"os"
 	"testing"
+	"time"
 
-	"github.com/bradfitz/gomemcache/memcache"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/go-tenon/tenon/cache"
 	"github.com/go-tenon/tenon/doctor"
@@ -14,7 +14,7 @@ import (
 
 func TestDoctor(t *testing.T) {
 	t.Parallel()
-	if res := doctor.Run(context.Background(), cache.Doctor(openMemcached(t))).Results[0]; res.Status != doctor.Passed {
+	if res := doctor.Run(context.Background(), cache.Doctor(openRedis(t))).Results[0]; res.Status != doctor.Passed {
 		t.Errorf("reachable server: %+v", res)
 	}
 
@@ -24,9 +24,9 @@ func TestDoctor(t *testing.T) {
 	}
 	closed := ln.Addr().String()
 	ln.Close()
-	mc := memcache.New(os.Getenv("MEMCACHED_TEST_ADDR"), closed)
-	t.Cleanup(func() { _ = mc.Close() })
-	if res := doctor.Run(context.Background(), cache.Doctor(mc)).Results[0]; res.Status != doctor.Warning {
-		t.Errorf("one server down: %+v", res)
+	rdb := redis.NewClient(&redis.Options{Addr: closed, DialTimeout: 50 * time.Millisecond, MaxRetries: -1})
+	t.Cleanup(func() { _ = rdb.Close() })
+	if res := doctor.Run(context.Background(), cache.Doctor(rdb)).Results[0]; res.Status != doctor.Warning {
+		t.Errorf("server down: %+v", res)
 	}
 }

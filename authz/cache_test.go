@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bradfitz/gomemcache/memcache"
+	"github.com/redis/go-redis/v9"
 	"github.com/uptrace/bun"
 
 	"github.com/go-tenon/tenon/authz"
@@ -18,26 +18,30 @@ import (
 	"github.com/go-tenon/tenon/identity"
 )
 
-// openMemcached 连接 MEMCACHED_TEST_ADDR 指向的 Memcached。
-func openMemcached(t *testing.T) *memcache.Client {
+// openRedis 连接 REDIS_TEST_URL 指向的 Redis。
+func openRedis(t *testing.T) *redis.Client {
 	t.Helper()
-	addr := os.Getenv("MEMCACHED_TEST_ADDR")
-	if addr == "" {
-		t.Fatal("MEMCACHED_TEST_ADDR is required for this test")
+	raw := os.Getenv("REDIS_TEST_URL")
+	if raw == "" {
+		t.Fatal("REDIS_TEST_URL is required for this test")
 	}
-	mc := memcache.New(addr)
-	t.Cleanup(func() { _ = mc.Close() })
-	return mc
+	opts, err := redis.ParseURL(raw)
+	if err != nil {
+		t.Fatalf("REDIS_TEST_URL: %v", err)
+	}
+	rdb := redis.NewClient(opts)
+	t.Cleanup(func() { _ = rdb.Close() })
+	return rdb
 }
 
-// cached 返回使用 mc 和随机命名空间缓存的选项。
-func cached(t *testing.T, mc *memcache.Client) authz.Option {
-	return authz.Cache(mc, "test:"+rand.Text()+":", time.Minute)
+// cached 返回使用 rdb 和随机命名空间缓存的选项。
+func cached(t *testing.T, rdb *redis.Client) authz.Option {
+	return authz.Cache(rdb, "test:"+rand.Text()+":", time.Minute)
 }
 
 func newCachedStore(t *testing.T) *authz.Store {
 	t.Helper()
-	return authz.NewStore(dbtest.Open(t, authz.Migrations()), catalog, cached(t, openMemcached(t)))
+	return authz.NewStore(dbtest.Open(t, authz.Migrations()), catalog, cached(t, openRedis(t)))
 }
 
 func perms(t *testing.T, s *authz.Store, ref identity.Ref, tenant string) string {
@@ -56,8 +60,8 @@ func perms(t *testing.T, s *authz.Store, ref identity.Ref, tenant string) string
 func TestCacheSharedAcrossInstances(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	db, mc := dbtest.Open(t, authz.Migrations()), openMemcached(t)
-	opt := cached(t, mc)
+	db, rdb := dbtest.Open(t, authz.Migrations()), openRedis(t)
+	opt := cached(t, rdb)
 	a, b := authz.NewStore(db, catalog, opt), authz.NewStore(db, catalog, opt)
 	reader := mustRole(t, a, authz.Role{Name: "reader", Permissions: []string{"articles:read"}})
 	bob := user("bob")
@@ -84,7 +88,7 @@ func TestCacheSharedAcrossInstances(t *testing.T) {
 	}
 
 	// 不同命名空间的缓存相互独立。
-	other := authz.NewStore(db, catalog, cached(t, mc))
+	other := authz.NewStore(db, catalog, cached(t, rdb))
 	if got := perms(t, other, bob, "acme"); got != "articles:read,articles:write" {
 		t.Fatalf("other namespace: perms=%s", got)
 	}
@@ -95,7 +99,7 @@ func TestCacheInTransaction(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	db := dbtest.Open(t, authz.Migrations())
-	opt := cached(t, openMemcached(t))
+	opt := cached(t, openRedis(t))
 	s := authz.NewStore(db, catalog, opt)
 	reader := mustRole(t, s, authz.Role{Name: "reader", Permissions: []string{"articles:read"}})
 	bob := user("bob")
@@ -144,7 +148,7 @@ func TestCacheRejectsPlainTx(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	opt := cached(t, openMemcached(t))
+	opt := cached(t, openRedis(t))
 	for name, conn := range map[string]bun.IDB{"tx": tx, "*tx": &tx} {
 		func() {
 			defer func() {
@@ -158,12 +162,12 @@ func TestCacheRejectsPlainTx(t *testing.T) {
 	authz.NewStore(tx, catalog) // 不缓存时可以
 }
 
-// Memcached 不可用时直接查询数据库，修改照常成功。
+// Redis 不可用时直接查询数据库，修改照常成功。
 func TestCacheDown(t *testing.T) {
 	t.Parallel()
-	mc := memcache.New("127.0.0.1:1")
-	mc.Timeout = 50 * time.Millisecond
-	s := authz.NewStore(dbtest.Open(t, authz.Migrations()), catalog, cached(t, mc))
+	rdb := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1", DialTimeout: 50 * time.Millisecond, MaxRetries: -1})
+	t.Cleanup(func() { _ = rdb.Close() })
+	s := authz.NewStore(dbtest.Open(t, authz.Migrations()), catalog, cached(t, rdb))
 	reader := mustRole(t, s, authz.Role{Name: "reader", Permissions: []string{"articles:read"}})
 	mustAssign(t, s, user("bob"), "acme", reader.ID)
 	if got := perms(t, s, user("bob"), "acme"); got != "articles:read" {
@@ -182,7 +186,7 @@ func TestEraseInvalidatesAfterCommit(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	db := dbtest.Open(t, authz.Migrations())
-	s := authz.NewStore(db, catalog, cached(t, openMemcached(t)))
+	s := authz.NewStore(db, catalog, cached(t, openRedis(t)))
 	reader := mustRole(t, s, authz.Role{Name: "reader", Permissions: []string{"articles:read"}})
 	bob, alice := user("bob"), user("alice")
 	mustAssign(t, s, bob, "acme", reader.ID)

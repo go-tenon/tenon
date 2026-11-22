@@ -231,7 +231,7 @@ volumes:
 ```
 
 - `stop_grace_period` 必须写：Docker 默认只等 10 秒，短于队列和调度器默认的 30 秒。
-- 应用用服务名访问依赖，配置文件写 `nats.url: ${NATS_URL:-nats://127.0.0.1:4222}`，见[连接 NATS](../libraries/nats.md#connecting)。用到 [Memcached](../libraries/cache.md#config-servers)、[Gotenberg](../libraries/pdf.md#deployment) 时按各自的说明加服务。
+- 应用用服务名访问依赖，配置文件写 `nats.url: ${NATS_URL:-nats://127.0.0.1:4222}`，见[连接 NATS](../libraries/nats.md#connecting)。用到 [Redis](../libraries/cache.md#config-redis)、[Gotenberg](../libraries/pdf.md#deployment) 时按各自的说明加服务。
 - 一起运行时把 `http`、`worker`、`scheduler` 换成一个 `command: [serve]` 的服务，健康检查写在它上面。
 - 连 PostgreSQL 一起运行的版本见[交给客户自托管](self-hosting.md)。
 

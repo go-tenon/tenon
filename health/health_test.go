@@ -90,7 +90,7 @@ func TestRunTimeoutAndPanic(t *testing.T) {
 	defer close(block)
 	c := health.New(health.Options{
 		Checks: []health.Check{
-			// 不理会 ctx 的检查，例如 gomemcache 的 Ping。
+			// 不理会 ctx 的检查。
 			{Name: "stuck", Ping: func(context.Context) error { <-block; return nil }},
 			{Name: "slow", Ping: func(ctx context.Context) error { <-ctx.Done(); return ctx.Err() }},
 			{Name: "broken", Ping: func(context.Context) error { panic("nil client") }, Optional: true},

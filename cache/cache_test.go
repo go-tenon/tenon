@@ -4,9 +4,9 @@ import (
 	"context"
 	"crypto/rand"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -14,7 +14,7 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/bradfitz/gomemcache/memcache"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/go-tenon/tenon/cache"
 )
@@ -24,120 +24,134 @@ type article struct {
 	Title string `json:"title"`
 }
 
-// fake 是记录写入的过期时间、可以让读写出错的 Memcached。
+// fake 是记录写入的过期时间、可以让读写出错的 Redis。
 type fake struct {
-	mu      sync.Mutex
-	values  map[string]string
-	ttls    map[string]int32
-	getErr  error
-	setErr  error
-	addErr  error
-	incrErr error
-	deleted []string
+	mu       sync.Mutex
+	values   map[string]string
+	ttls     map[string]time.Duration
+	getErr   error
+	setErr   error
+	setNXErr error
+	setXXErr error
+	deleted  []string
 }
 
-func (f *fake) GetMulti(keys []string) (map[string]*memcache.Item, error) {
+func newFake() *fake {
+	return &fake{values: map[string]string{}, ttls: map[string]time.Duration{}}
+}
+
+func (f *fake) Get(ctx context.Context, key string) *redis.StringCmd {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.getErr != nil {
-		return nil, f.getErr
-	}
-	items := map[string]*memcache.Item{}
-	for _, k := range keys {
-		if v, ok := f.values[k]; ok {
-			items[k] = &memcache.Item{Key: k, Value: []byte(v)}
-		}
-	}
-	return items, nil
-}
-
-func (f *fake) Add(item *memcache.Item) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if f.addErr != nil {
-		return f.addErr
-	}
-	if _, ok := f.values[item.Key]; ok {
-		return memcache.ErrNotStored
-	}
-	f.values[item.Key] = string(item.Value)
-	f.ttls[item.Key] = item.Expiration
-	return nil
-}
-
-func (f *fake) Increment(key string, delta uint64) (uint64, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if f.incrErr != nil {
-		return 0, f.incrErr
+		return redis.NewStringResult("", f.getErr)
 	}
 	v, ok := f.values[key]
 	if !ok {
-		return 0, memcache.ErrCacheMiss
+		return redis.NewStringResult("", redis.Nil)
 	}
-	n, err := strconv.ParseUint(v, 10, 64)
-	if err != nil {
-		return 0, err
-	}
-	n += delta
-	f.values[key] = strconv.FormatUint(n, 10)
-	return n, nil
+	return redis.NewStringResult(v, nil)
 }
 
-func newFake() *fake { return &fake{values: map[string]string{}, ttls: map[string]int32{}} }
-
-func (f *fake) Get(key string) (*memcache.Item, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if f.getErr != nil {
-		return nil, f.getErr
-	}
-	v, ok := f.values[key]
-	if !ok {
-		return nil, memcache.ErrCacheMiss
-	}
-	return &memcache.Item{Key: key, Value: []byte(v)}, nil
-}
-
-func (f *fake) Set(item *memcache.Item) error {
+func (f *fake) Set(ctx context.Context, key string, value any, expiration time.Duration) *redis.StatusCmd {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.setErr != nil {
-		return f.setErr
+		return redis.NewStatusResult("", f.setErr)
 	}
-	f.values[item.Key] = string(item.Value)
-	f.ttls[item.Key] = item.Expiration
-	return nil
+	f.values[key] = fmt.Sprint(value)
+	f.ttls[key] = expiration
+	return redis.NewStatusResult("OK", nil)
 }
 
-func (f *fake) Delete(key string) error {
+func (f *fake) SetNX(ctx context.Context, key string, value any, expiration time.Duration) *redis.BoolCmd {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if _, ok := f.values[key]; !ok {
-		return memcache.ErrCacheMiss
+	if f.setNXErr != nil {
+		return redis.NewBoolResult(false, f.setNXErr)
 	}
-	delete(f.values, key)
-	f.deleted = append(f.deleted, key)
-	return nil
+	if _, ok := f.values[key]; ok {
+		return redis.NewBoolResult(false, nil)
+	}
+	f.values[key] = fmt.Sprint(value)
+	f.ttls[key] = expiration
+	return redis.NewBoolResult(true, nil)
+}
+
+func (f *fake) SetXX(ctx context.Context, key string, value any, expiration time.Duration) *redis.BoolCmd {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.setXXErr != nil {
+		return redis.NewBoolResult(false, f.setXXErr)
+	}
+	if _, ok := f.values[key]; !ok {
+		return redis.NewBoolResult(false, nil)
+	}
+	f.values[key] = fmt.Sprint(value)
+	f.ttls[key] = expiration
+	return redis.NewBoolResult(true, nil)
+}
+
+func (f *fake) Del(ctx context.Context, keys ...string) *redis.IntCmd {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var n int64
+	for _, key := range keys {
+		if _, ok := f.values[key]; ok {
+			delete(f.values, key)
+			f.deleted = append(f.deleted, key)
+			n++
+		}
+	}
+	return redis.NewIntResult(n, nil)
+}
+
+type fakePipe struct {
+	redis.Pipeliner
+	f    *fake
+	cmds []redis.Cmder
+}
+
+func (p *fakePipe) Get(ctx context.Context, key string) *redis.StringCmd {
+	cmd := p.f.Get(ctx, key)
+	p.cmds = append(p.cmds, cmd)
+	return cmd
+}
+
+func (f *fake) Pipelined(ctx context.Context, fn func(redis.Pipeliner) error) ([]redis.Cmder, error) {
+	p := &fakePipe{f: f}
+	if err := fn(p); err != nil {
+		return p.cmds, err
+	}
+	for _, cmd := range p.cmds {
+		if err := cmd.Err(); err != nil {
+			return p.cmds, err
+		}
+	}
+	return p.cmds, nil
 }
 
 // ttl 返回 key 写入时的过期时间。
 func (f *fake) ttl(key string) time.Duration {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return time.Duration(f.ttls[key]) * time.Second
+	return f.ttls[key]
 }
 
-// openMemcached 连接 MEMCACHED_TEST_ADDR 指向的 Memcached。
-func openMemcached(t *testing.T) *memcache.Client {
+// openRedis 连接 REDIS_TEST_URL 指向的 Redis。
+func openRedis(t *testing.T) *redis.Client {
 	t.Helper()
-	addr := os.Getenv("MEMCACHED_TEST_ADDR")
-	if addr == "" {
-		t.Fatal("MEMCACHED_TEST_ADDR is required for this test")
+	raw := os.Getenv("REDIS_TEST_URL")
+	if raw == "" {
+		t.Fatal("REDIS_TEST_URL is required for this test")
 	}
-	mc := memcache.New(addr)
-	t.Cleanup(func() { _ = mc.Close() })
-	return mc
+	opts, err := redis.ParseURL(raw)
+	if err != nil {
+		t.Fatalf("REDIS_TEST_URL: %v", err)
+	}
+	rdb := redis.NewClient(opts)
+	t.Cleanup(func() { _ = rdb.Close() })
+	return rdb
 }
 
 // counter 返回计数的加载函数。
@@ -149,8 +163,9 @@ func counter(n *atomic.Int64, v *article, err error) func(context.Context) (*art
 }
 
 func TestRemember(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
-	c := cache.New[*article](openMemcached(t), "test:"+rand.Text()+":article:", 10*time.Minute)
+	c := cache.New[*article](openRedis(t), "test:"+rand.Text()+":article:", 10*time.Minute)
 	var loads atomic.Int64
 	load := counter(&loads, &article{ID: 1, Title: "hello"}, nil)
 	for range 3 {
@@ -173,10 +188,11 @@ func TestRemember(t *testing.T) {
 	}
 }
 
-// 超过 250 字节或含有空白的 key 以摘要保存，仍然按 key 区分。
-func TestIllegalKeys(t *testing.T) {
+// 长键和含有空白、换行的键在 Redis 中都可以直接使用并相互区分。
+func TestSpecialKeys(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
-	c := cache.New[*article](openMemcached(t), "test:"+rand.Text()+":", time.Minute)
+	c := cache.New[*article](openRedis(t), "test:"+rand.Text()+":", time.Minute)
 	var loads atomic.Int64
 	for i, key := range []string{strings.Repeat("k", 300), strings.Repeat("k", 299) + "x", "with space", "with\nnewline"} {
 		for range 2 {
@@ -190,8 +206,9 @@ func TestIllegalKeys(t *testing.T) {
 	}
 }
 
-// 超过 30 天的过期时间写成 Unix 时间。
+// 超过 30 天的过期时间按原时长加抖动写入 Redis。
 func TestLongTTL(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFake()
 	c := cache.New[*article](f, "", 60*24*time.Hour)
@@ -199,14 +216,14 @@ func TestLongTTL(t *testing.T) {
 	if _, err := c.Remember(ctx, "1", counter(&loads, &article{ID: 1}, nil)); err != nil {
 		t.Fatal(err)
 	}
-	at := time.Unix(int64(f.ttls["1"]), 0)
-	if until := time.Until(at); until < 59*24*time.Hour || until > 67*24*time.Hour {
-		t.Fatalf("expires at %v", at)
+	if ttl := f.ttl("1"); ttl < 60*24*time.Hour || ttl > 66*24*time.Hour {
+		t.Fatalf("ttl %v", ttl)
 	}
 }
 
 // 热点键过期时，并发的读取只加载一次，每个调用者得到独立的一份。
 func TestConcurrentLoadsMerge(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	c := cache.New[*article](newFake(), "", time.Minute)
 	var loads atomic.Int64
@@ -248,6 +265,7 @@ func TestConcurrentLoadsMerge(t *testing.T) {
 
 // 一个调用者取消只影响它自己，加载继续，其他调用者得到结果。
 func TestCallerCancellation(t *testing.T) {
+	t.Parallel()
 	c := cache.New[*article](newFake(), "", time.Minute)
 	started, release := make(chan struct{}), make(chan struct{})
 	var once sync.Once
@@ -286,6 +304,7 @@ func TestCallerCancellation(t *testing.T) {
 
 // 加载带着第一个调用者的截止时间。
 func TestLoadDeadline(t *testing.T) {
+	t.Parallel()
 	c := cache.New[*article](newFake(), "", time.Minute)
 	want := time.Now().Add(time.Hour)
 	ctx, cancel := context.WithDeadline(context.Background(), want)
@@ -304,6 +323,7 @@ func TestLoadDeadline(t *testing.T) {
 }
 
 func TestLoadErrorsAndPanics(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	c := cache.New[*article](newFake(), "", time.Minute)
 	var loads atomic.Int64
@@ -324,6 +344,7 @@ func TestLoadErrorsAndPanics(t *testing.T) {
 
 // 过期时间加上至多 10% 的抖动。
 func TestTTL(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFake()
 	c := cache.New[*article](f, "", 10*time.Minute)
@@ -335,7 +356,7 @@ func TestTTL(t *testing.T) {
 			t.Fatal(err)
 		}
 		ttl := f.ttl(key)
-		if ttl < 10*time.Minute || ttl > 11*time.Minute { // 抖动至多 10%，再向上取整到秒
+		if ttl < 10*time.Minute || ttl > 11*time.Minute { // 抖动至多 10%
 			t.Fatalf("ttl %v", ttl)
 		}
 		seen[ttl] = true
@@ -359,6 +380,7 @@ func errNotFound() error { return &codeError{"article.not_found"} }
 
 // Missing 声明的错误缓存约一分钟，期间返回新的同类错误；其他错误和 nil 值照常处理。
 func TestMissing(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFake()
 	c := cache.New[*article](f, "article:", 10*time.Minute, cache.Missing(errNotFound))
@@ -406,6 +428,7 @@ func TestMissing(t *testing.T) {
 
 // 缓存出错或内容无法解码时直接加载，结果照常返回。
 func TestDegradation(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	f := newFake()
 	c := cache.New[*article](f, "", time.Minute)
@@ -429,6 +452,7 @@ func TestDegradation(t *testing.T) {
 }
 
 func TestInvalidArguments(t *testing.T) {
+	t.Parallel()
 	for name, f := range map[string]func(){
 		"nil client":  func() { cache.New[int](nil, "", time.Minute) },
 		"ttl":         func() { cache.New[int](newFake(), "", 0) },
