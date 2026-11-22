@@ -174,11 +174,13 @@ export default defineConfig({ plugins: [tenon({ prerender: ["/", "/docs"] })] })
 <a id="security"></a>
 ## 内容安全策略：`Options.CSP`
 
-Go 为每个页面请求生成 nonce，换掉页面外壳和预渲染页面中的占位符，服务端渲染时交给 Bun（需要 [`cspNonce`](#setup)）。HTML 响应带 `Content-Security-Policy`，默认 `frontend.DefaultCSP`：脚本只来自本站或带 nonce，`connect-src 'self'`，`frame-ancestors 'none'`。`Options.CSP` 接收页面请求和它的 nonce、返回策略，例如允许浏览器向 [OpenObserve](observability.md) 上报：
+Go 为每个页面请求生成 nonce，换掉页面外壳和预渲染页面中的占位符，服务端渲染时交给 Bun（需要 [`cspNonce`](#setup)）。HTML 响应带 `Content-Security-Policy`，默认 `frontend.DefaultCSP`：脚本只来自本站或带 nonce，`connect-src 'self'`，`frame-ancestors 'none'`。需要按请求调整策略时，从 `frontend.DefaultPolicy(nonce)` 出发调用 `AddImgSrc`、`AddConnectSrc`（配合 `frontend.Origin` 从配置地址提取 origin）或修改 `FrameAncestors` 后调用 `String()`，例如允许浏览器向 [OpenObserve](observability.md) 上报：
 
 ```go
 CSP: func(r *http.Request, nonce string) string {
-    return strings.Replace(frontend.DefaultCSP(nonce), "connect-src 'self'", "connect-src 'self' https://o2.example.com", 1)
+    p := frontend.DefaultPolicy(nonce)
+    p.AddConnectSrc(frontend.Origin("https://o2.example.com"))
+    return p.String()
 },
 ```
 
@@ -186,11 +188,11 @@ CSP: func(r *http.Request, nonce string) string {
 
 ```go
 CSP: func(r *http.Request, nonce string) string {
-    csp := frontend.DefaultCSP(nonce)
-    if !strings.HasPrefix(r.URL.Path, "/widget/") {
-        return csp
+    p := frontend.DefaultPolicy(nonce)
+    if strings.HasPrefix(r.URL.Path, "/widget/") {
+        p.FrameAncestors = strings.Fields(allowed(r))
     }
-    return strings.Replace(csp, "frame-ancestors 'none'", "frame-ancestors "+allowed(r), 1)
+    return p.String()
 },
 ```
 

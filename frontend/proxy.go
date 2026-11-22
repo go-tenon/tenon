@@ -18,10 +18,7 @@ import (
 
 // DefaultCSP 是 HTML 响应默认的 Content-Security-Policy：脚本只能来自本站，内联脚本必须带这次请求的 nonce；
 // 样式允许内联（组件库用 style 属性）；不允许被其他网站嵌入。
-func DefaultCSP(nonce string) string {
-	return "default-src 'self'; script-src 'self' 'nonce-" + nonce + "'; style-src 'self' 'unsafe-inline'; " +
-		"img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'"
-}
+func DefaultCSP(nonce string) string { return DefaultPolicy(nonce).String() }
 
 // pageKey 是页面请求在 context 中的键。
 type pageKey struct{}

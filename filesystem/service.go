@@ -5,8 +5,6 @@ import (
 	"database/sql"
 	"io"
 	"io/fs"
-	"mime"
-	"net/http"
 	"path"
 	"slices"
 	"strings"
@@ -136,15 +134,21 @@ func (s *Service) Confirm(ctx context.Context, owner identity.Subject, id uuid.U
 			return File{}, err
 		}
 	}
-	if err := s.checkAccept(ctx, r, accept); err != nil {
+	detected, err := s.checkAccept(ctx, r, accept)
+	if err != nil {
 		return File{}, err
 	}
 	if r.Status == StatusReady {
 		return r, nil
 	}
-	err = s.db.NewUpdate().Model((*File)(nil)).
-		Set("status = ?", StatusReady).Set("expires_at = NULL").
-		Where("id = ?", id).Where("status = ?", StatusTemporary).Where("expires_at > ?", time.Now().UTC()).
+	q := s.db.NewUpdate().Model((*File)(nil)).
+		Set("status = ?", StatusReady).Set("expires_at = NULL")
+	// 客户端上传时只给了兜底类型（application/octet-stream）且探测出了规范类型时，写回规范类型供业务使用。
+	if detected != "" && mediaType(r.ContentType) == "application/octet-stream" && detected != "application/octet-stream" {
+		q = q.Set("content_type = ?", detected)
+		r.ContentType = detected
+	}
+	err = q.Where("id = ?", id).Where("status = ?", StatusTemporary).Where("expires_at > ?", time.Now().UTC()).
 		Returning("updated_at").Scan(ctx, &r.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		// 并发确认已成功时返回最新记录；被删除或刚好过期则视为不存在。
@@ -172,6 +176,25 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (File, error) {
 		return File{}, errors.Wrap(err, "filesystem: get")
 	}
 	return s.withURL(r), nil
+}
+
+// GetMany 批量返回未删除的文件记录，按文件 ID 索引；不存在或已删除的 ID 不在结果中。
+// 每条记录按其所在磁盘填好公开地址 URL。业务授权由应用在调用前检查。
+func (s *Service) GetMany(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]File, error) {
+	out := make(map[uuid.UUID]File, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	var rows []File
+	err := s.db.NewSelect().Model(&rows).
+		Where("f.id IN (?)", bun.List(ids)).Where("f.status <> ?", StatusDeleted).Scan(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "filesystem: get many")
+	}
+	for _, r := range rows {
+		out[r.ID] = s.withURL(r)
+	}
+	return out, nil
 }
 
 // Open 打开文件正文，供服务端二次处理；对外访问请使用 File.URL。调用方负责关闭。
@@ -293,35 +316,28 @@ func (s *Service) checkUploaded(ctx context.Context, r File) error {
 	return nil
 }
 
-// checkAccept 检查大小，并在限定类型时按文件内容识别真实类型。
-func (s *Service) checkAccept(ctx context.Context, r File, accept Accept) error {
+// checkAccept 检查大小，并在限定类型时按文件内容识别真实类型，返回探测出的规范 MIME 类型。
+func (s *Service) checkAccept(ctx context.Context, r File, accept Accept) (string, error) {
 	if accept.MaxSize > 0 && r.Size > int64(accept.MaxSize) {
-		return errors.Wrapf(ErrNotAccepted, "size %d exceeds %s", r.Size, accept.MaxSize)
+		return "", errors.Wrapf(ErrNotAccepted, "size %d exceeds %s", r.Size, accept.MaxSize)
 	}
 	if len(accept.Types) == 0 {
-		return nil
+		return "", nil
 	}
-	body, err := s.disk(r).Open(ctx, r.Key)
+	actual, err := s.detectContentType(ctx, r)
 	if err != nil {
-		return errors.Wrap(err, "filesystem: open")
+		return "", err
 	}
-	head := make([]byte, 512)
-	n, err := io.ReadFull(body, head)
-	_ = body.Close()
-	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, io.EOF) {
-		return errors.Wrap(err, "filesystem: read")
-	}
-	actual := mediaType(http.DetectContentType(head[:n]))
 	if !slices.ContainsFunc(accept.Types, func(t string) bool { return typeMatches(t, actual) }) {
-		return errors.Wrapf(ErrNotAccepted, "content type %s", actual)
+		return "", errors.Wrapf(ErrNotAccepted, "content type %s", actual)
 	}
-	if declared := mediaType(r.ContentType); declared != actual {
-		return errors.Wrapf(ErrNotAccepted, "declared %s but content is %s", declared, actual)
+	if declared := mediaType(r.ContentType); !declaredCompatible(declared, actual) {
+		return "", errors.Wrapf(ErrNotAccepted, "declared %s but content is %s", declared, actual)
 	}
-	if ext := path.Ext(r.Key); ext != "" && mediaType(mime.TypeByExtension(ext)) != actual {
-		return errors.Wrapf(ErrNotAccepted, "extension %s does not match %s", ext, actual)
+	if ext := path.Ext(r.Key); ext != "" && extMIME(ext) != actual {
+		return "", errors.Wrapf(ErrNotAccepted, "extension %s does not match %s", ext, actual)
 	}
-	return nil
+	return actual, nil
 }
 
 // mediaType 返回去掉参数、转为小写的 MIME 类型，例如 "text/html; charset=utf-8" 返回 "text/html"。

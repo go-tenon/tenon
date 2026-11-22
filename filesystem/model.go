@@ -45,7 +45,7 @@ type FileInput struct {
 
 // Accept 描述一种用途接受的文件，由 Confirm 检查。零值只要求文件已完整上传。
 type Accept struct {
-	Types   []string // 允许的 MIME 类型，例如 "image/png"，或用 "image/*" 匹配一类。非空时从文件开头的内容识别真实类型（http.DetectContentType），它必须在 Types 中，并且与上传时声明的类型、文件扩展名对应的类型一致，浏览器才会按同一种类型处理这个文件。内容识别适用于图片、PDF、音视频、压缩包等二进制格式，不适用于 CSV、JSON 等文本格式。
+	Types   []string // 允许的 MIME 类型，例如 "image/png"，或用 "image/*" 匹配一类。非空时按文件内容识别真实类型（图片、PDF、压缩包、Office 文档及纯文本等），它必须在 Types 中，且与文件扩展名和上传时声明的 MIME 类型兼容。
 	MaxSize ByteSize // 允许的最大字节数，0 表示只受 max_upload_size 限制。
 }
 
