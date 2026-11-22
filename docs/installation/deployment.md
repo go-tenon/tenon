@@ -32,7 +32,15 @@ go tool tenon deploy env push .env.production
 go tool tenon deploy
 ```
 
-`deploy.yaml` 声明目标环境、主机、服务部分（`parts`）、部署目录（默认 `/opt/<应用>`）和环境变量路径（默认 `/etc/<应用>/env`），进仓库保存，不含密钥：
+- `tenon deploy setup` 检查目标机为带 systemd 的 Linux（含 SSR 时检查 glibc），建系统用户和目录，写入 `<应用>@.service` 与角色级 drop-in 覆盖文件并 `daemon-reload`。
+- `tenon deploy` 自动探测目标架构并本地交叉编译（在 CI 中可传 `--binary` 跳过构建），在主节点加发布锁，全集群并行上传二进制与剔除了 `local.yaml` 的 `config/` 并校验 SHA-256，在主迁移节点执行 `config check`、`doctor` 和一次 `migrate up`，随后按波次切换并清理旧版本。
+- 常用运维命令：`rollback [version]`（回退二进制与配置）、`status [--role http]`（集群表格状态）、`logs [--role http] [-F] [--since 15m] [--contains ERR]`（多机实时日志汇流）、`run -- doctor`（以服务用户和环境变量执行一次性命令）、`maintenance on|off`（默认仅开关入口主机维护页）。
+- **AI 助手与人类同等优先**：所有 `tenon deploy` 子命令均支持 `--format json` 结构化输出且全程非交互；只读观测与发布预演同步作为 MCP 工具暴露（`tenon_deploy_info`、`tenon_deploy_status`、`tenon_deploy_logs`、`tenon_deploy_plan`），见 [MCP 服务](ai-assistants.md#mcp-servers)。
+
+<a id="multi-host-roles"></a>
+### 多服务与多机拓扑：`roles`
+
+单机环境在 `deploy.yaml` 中直接写 `hosts: [203.0.113.10]`（运行 `all`）；多服务多台服务器改用 `roles` 按角色声明拓扑：
 
 ```yaml
 app: blog
@@ -41,19 +49,23 @@ keep_releases: 5
 environments:
   production:
     user: deploy
-    service_user: blog
-    dir: /opt/blog
-    env_file: /etc/blog/env
-    config_dir: config
-    hosts:
-      - addr: 203.0.113.10
-        parts: [all]
-        migrate: true
+    migrate_host: 10.0.1.21           # 可选；未写时默认选首个非入口节点
+    roles:
+      http:
+        hosts: [10.0.1.11, 10.0.1.12, 10.0.1.13]
+        max_parallel: 2               # 金丝雀通过后其余节点每批最多同时切 2 台
+        stop_timeout: 30s
+      worker:
+        hosts: [10.0.1.21, 10.0.1.22]
+        stop_timeout: 120s            # 自动生成 blog@worker.service.d/override.conf
+        env:
+          GOMAXPROCS: "4"
+      scheduler:
+        hosts: [10.0.1.21]            # 同机兼多角色自动归并，只上传和切换一次
 ```
 
-- `tenon deploy setup` 检查目标机为带 systemd 的 Linux（含 SSR 时检查 glibc），建系统用户和目录，写入 `<应用>@.service` 并 `daemon-reload`。
-- `tenon deploy` 自动探测目标架构并本地交叉编译（在 CI 中可传入 `--binary` 跳过构建），在主节点加发布锁，并行上传二进制与剔除了 `local.yaml` 的 `config/` 并校验 SHA-256，在主节点执行 `config check`、`doctor` 和一次 `migrate up`，随后逐台用硬链接加原子 `mv` 切换 `bin/<应用>` 并 `systemctl reload`（触发 `command.Daemon` 零停机热升级），任一节点升级失败立即中止并输出最近日志。
-- 常用运维命令：`tenon deploy rollback [version]` 回退二进制与配置，`tenon deploy status` 查看版本与服务状态，`tenon deploy logs -F` 跟踪日志，`tenon deploy run -- doctor` 以服务用户和环境变量执行一次性命令，`tenon deploy maintenance on|off` 开关维护页。
+- **分波次金丝雀滚动**：先升级后端节点（`rpc`、`worker`、`scheduler`），再升级入口节点（`http`、`all`）；每组超过 1 台时先单独切换首台金丝雀并校验 `StatusText` 与本机 `health`，通过后再按 `max_parallel` 滚动其余节点，任一台失败立即熔断并输出最近日志。
+- **声明式 unit 对账**：切换每台主机时自动停用并禁用已不在期望列表中的旧 `<应用>@*.service`（例如从 `all` 拆分为 `http` 与 `worker` 时先停 `blog@all.service`），避免端口冲突和孤儿进程。
 
 <a id="release-process"></a>
 ## 第一次发布与手动步骤

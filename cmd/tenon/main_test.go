@@ -290,7 +290,7 @@ func TestAddDeployAndDryRun(t *testing.T) {
 		t.Errorf("output:\n%s", out.String())
 	}
 	for name, want := range map[string]string{
-		"deploy.yaml":  "addr: prod.example.com",
+		"deploy.yaml":  "- prod.example.com",
 		".env.example": "DATABASE_URL=",
 	} {
 		b, err := os.ReadFile(name)
@@ -305,7 +305,7 @@ func TestAddDeployAndDryRun(t *testing.T) {
 		t.Fatalf("add deploy --force = %v", err)
 	}
 
-	// 验证生成的 deploy.yaml 可直接驱动 tenon deploy --dry-run 与 setup --dry-run。
+	// 验证生成的 deploy.yaml 可直接驱动 tenon deploy --dry-run（text 与 json 双模）与 setup --dry-run。
 	out.Reset()
 	dry := root()
 	dry.SetArgs([]string{"deploy", "--dry-run"})
@@ -319,14 +319,26 @@ func TestAddDeployAndDryRun(t *testing.T) {
 	}
 
 	out.Reset()
+	dryJSON := root()
+	dryJSON.SetArgs([]string{"deploy", "--dry-run", "--format", "json"})
+	dryJSON.SetOut(&out)
+	dryJSON.SetErr(&out)
+	if err := dryJSON.Execute(); err != nil {
+		t.Fatalf("deploy --dry-run --format json: %v\n%s", err, out.String())
+	}
+	if !strings.Contains(out.String(), `"dry_run": true`) || !strings.Contains(out.String(), `"waves"`) {
+		t.Errorf("dry-run json output:\n%s", out.String())
+	}
+
+	out.Reset()
 	setupDry := root()
-	setupDry.SetArgs([]string{"deploy", "setup", "--dry-run"})
+	setupDry.SetArgs([]string{"deploy", "setup", "--dry-run", "--format", "json"})
 	setupDry.SetOut(&out)
 	setupDry.SetErr(&out)
 	if err := setupDry.Execute(); err != nil {
 		t.Fatalf("deploy setup --dry-run: %v\n%s", err, out.String())
 	}
-	if !strings.Contains(out.String(), "dry-run") {
+	if !strings.Contains(out.String(), `"unit_path"`) {
 		t.Errorf("setup dry-run output:\n%s", out.String())
 	}
 }

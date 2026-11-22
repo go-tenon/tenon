@@ -174,8 +174,8 @@ go tool tenon deploy env push .env.production        # 安全上传环境变量�
 go tool tenon deploy                                 # 交叉编译、自检、迁移并零停机滚动升级
 ```
 
-- 常用标志：`--env`（默认 `production`）、`--file`（默认 `deploy.yaml`）、`--binary`（跳过本地构建，适合 CI 构建与发布分离）、`--version`、`--skip-doctor`、`--dry-run`。
-- 远端运维子命令：`rollback [version]`（回退二进制与配置）、`status`（查看版本与 unit 状态）、`logs [-F] [--part http]`（查看 `journalctl`）、`run -- <命令>`（以服务用户和环境变量执行 `doctor`、`queue status` 等）、`env pull`、`maintenance on|off`、`unlock`。
+- 常用标志：`--env`（默认 `production`）、`--file`（默认 `deploy.yaml`）、`--format text|json`（结构化 JSON 输出供 AI 编程助手与脚本解析）、`--binary`（跳过本地构建）、`--version`、`--skip-doctor`、`--dry-run`。
+- 远端运维子命令：`rollback [version]`、`status [--role ...]`（表格化集群视图）、`logs [--role ...] [-F] [--since 15m] [--contains ERR]`（多机实时日志汇流）、`run -- <命令>`、`env pull`、`maintenance on|off`、`unlock`。
 - 通过本机系统 `ssh`/`scp` 连接目标机并启用 `ControlMaster` 复用，直接兼容 `~/.ssh/config`、跳板机与 SSH Agent。细节见[使用 `tenon deploy` 自动发布](deployment.md#tenon-deploy)。
 
 <a id="agents"></a>

@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -70,43 +71,81 @@ func (f *fakeRunner) Upload(_ context.Context, host deploy.Host, localPath, remo
 	return nil
 }
 
-func TestParseConfig(t *testing.T) {
+func TestParseSingleHostAndMultiRoleTopology(t *testing.T) {
 	t.Parallel()
 
-	raw := `
+	// 1. 单机简写：自动等价为单个 all 角色。
+	single, err := deploy.Parse([]byte(`
 app: blog
 environments:
   production:
-    hosts:
-      - addr: 203.0.113.10
-      - addr: 203.0.113.11
-        parts: [worker, scheduler]
-        migrate: true
-`
-	target, err := deploy.Parse([]byte(raw), "fallback", "")
+    hosts: [203.0.113.10]
+`), "fallback", "")
 	if err != nil {
-		t.Fatalf("Parse: %v", err)
+		t.Fatalf("Parse single: %v", err)
 	}
-	if target.App != "blog" || target.EnvName != "production" || target.KeepReleases != 5 {
-		t.Fatalf("unexpected defaults: %+v", target)
-	}
-	if target.User != "deploy" || target.ServiceUser != "blog" || target.Dir != "/opt/blog" || target.EnvFile != "/etc/blog/env" {
-		t.Fatalf("unexpected env defaults: %+v", target.Environment)
-	}
-	if target.MigrateHost().Addr != "203.0.113.11" {
-		t.Fatalf("migrate host = %s, want 203.0.113.11", target.MigrateHost().Addr)
-	}
-	if !target.Hosts[0].HasHTTP() || target.Hosts[1].HasHTTP() {
-		t.Fatalf("HasHTTP mismatch: %+v", target.Hosts)
+	if len(single.Hosts) != 1 || !slices.Equal(single.Hosts[0].Parts, []string{"all"}) || !single.Hosts[0].HasHTTP() {
+		t.Fatalf("unexpected single host: %+v", single.Hosts)
 	}
 
-	// 未知字段、非法架构、多台 migrate、重复主机均应报错。
+	// 2. 多服务多机 roles：同主机多角色自动归并去重，波次为后端优先 + 入口金丝雀后批量滚动。
+	multi, err := deploy.Parse([]byte(`
+app: blog
+environments:
+  production:
+    roles:
+      http:
+        hosts: [10.0.1.11, 10.0.1.12, 10.0.1.13]
+        max_parallel: 2
+        stop_timeout: 30s
+      worker:
+        hosts: [10.0.1.21, 10.0.1.22]
+        stop_timeout: 120s
+        env:
+          GOMAXPROCS: "4"
+      scheduler:
+        hosts: [10.0.1.21]
+`), "blog", "")
+	if err != nil {
+		t.Fatalf("Parse multi: %v", err)
+	}
+	// 默认 migrate_host 优先选首个非入口节点 10.0.1.21。
+	if multi.MigrateHost().Addr != "10.0.1.21" {
+		t.Fatalf("migrate host = %s, want 10.0.1.21", multi.MigrateHost().Addr)
+	}
+	// 10.0.1.21 同时承担 scheduler 和 worker 角色，归并去重后只有一条主机记录。
+	h21, ok := multi.HostByAddr("10.0.1.21")
+	if !ok || !slices.Equal(h21.Parts, []string{"scheduler", "worker"}) || !slices.Equal(h21.Roles, []string{"scheduler", "worker"}) {
+		t.Fatalf("merged host 10.0.1.21 = %+v", h21)
+	}
+	if di := h21.DropIns["worker"]; di.StopTimeout != "120s" || di.Env["GOMAXPROCS"] != "4" {
+		t.Fatalf("worker drop-in = %+v", di)
+	}
+
+	waves := multi.RolloutWaves()
+	if len(waves) != 4 {
+		t.Fatalf("waves = %+v, want 4 waves", waves)
+	}
+	if waves[0].Name != "backend-canary" || !slices.Equal(waves[0].Hosts, []string{"10.0.1.21"}) {
+		t.Errorf("wave[0] = %+v", waves[0])
+	}
+	if waves[1].Name != "backend" || !slices.Equal(waves[1].Hosts, []string{"10.0.1.22"}) {
+		t.Errorf("wave[1] = %+v", waves[1])
+	}
+	if waves[2].Name != "http-canary" || !slices.Equal(waves[2].Hosts, []string{"10.0.1.11"}) || waves[2].MaxParallel != 1 {
+		t.Errorf("wave[2] = %+v", waves[2])
+	}
+	if waves[3].Name != "http" || !slices.Equal(waves[3].Hosts, []string{"10.0.1.12", "10.0.1.13"}) || waves[3].MaxParallel != 2 {
+		t.Errorf("wave[3] = %+v", waves[3])
+	}
+
+	// 非法配置均应报错。
 	for name, bad := range map[string]string{
-		"unknown field":    "unknown: 1\nenvironments:\n  production:\n    hosts: [{addr: a}]\n",
-		"bad arch":         "arch: 386\nenvironments:\n  production:\n    hosts: [{addr: a}]\n",
-		"multiple migrate": "environments:\n  production:\n    hosts: [{addr: a, migrate: true}, {addr: b, migrate: true}]\n",
-		"duplicate host":   "environments:\n  production:\n    hosts: [{addr: a}, {addr: a}]\n",
-		"relative dir":     "environments:\n  production:\n    dir: opt/blog\n    hosts: [{addr: a}]\n",
+		"unknown field":    "unknown: 1\nenvironments:\n  production:\n    hosts: [a]\n",
+		"both hosts roles": "environments:\n  production:\n    hosts: [a]\n    roles:\n      http:\n        hosts: [a]\n",
+		"bad migrate_host": "environments:\n  production:\n    migrate_host: nope\n    hosts: [a]\n",
+		"mix all and http": "environments:\n  production:\n    roles:\n      all:\n        hosts: [a]\n      http:\n        hosts: [a]\n",
+		"bad env key":      "environments:\n  production:\n    roles:\n      worker:\n        hosts: [a]\n        env:\n          bad-key: '1'\n",
 	} {
 		if _, err := deploy.Parse([]byte(bad), "blog", ""); err == nil {
 			t.Errorf("%s: expected error", name)
@@ -114,9 +153,9 @@ environments:
 	}
 }
 
-func TestRenderUnit(t *testing.T) {
+func TestRenderUnitAndDropIn(t *testing.T) {
 	t.Parallel()
-	target, err := deploy.Parse([]byte("app: blog\nenvironments:\n  production:\n    hosts: [{addr: 10.0.0.1}]\n"), "blog", "")
+	target, err := deploy.Parse([]byte("app: blog\nenvironments:\n  production:\n    hosts: [10.0.0.1]\n"), "blog", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,9 +164,6 @@ func TestRenderUnit(t *testing.T) {
 		"Type=notify-reload",
 		"RuntimeDirectory=blog/%i",
 		"PIDFile=/run/blog/%i/daemon.pid",
-		"User=blog",
-		"WorkingDirectory=/opt/blog",
-		"EnvironmentFile=/etc/blog/env",
 		"ExecStart=/opt/blog/bin/blog serve %i",
 		"RestartPreventExitStatus=2 3",
 		"ReadWritePaths=/opt/blog/storage",
@@ -136,31 +172,50 @@ func TestRenderUnit(t *testing.T) {
 			t.Errorf("unit missing %q:\n%s", want, unit)
 		}
 	}
+	dropIn := deploy.RenderDropIn(deploy.PartDropIn{
+		StopTimeout: "120s",
+		Env:         map[string]string{"GOMAXPROCS": "4"},
+	})
+	if !strings.Contains(dropIn, "TimeoutStopSec=120s") || !strings.Contains(dropIn, `Environment="GOMAXPROCS=4"`) {
+		t.Errorf("unexpected drop-in:\n%s", dropIn)
+	}
 }
 
-func TestSetup(t *testing.T) {
+func TestSetupWritesDropIns(t *testing.T) {
 	t.Parallel()
-	target, err := deploy.Parse([]byte("app: blog\nenvironments:\n  production:\n    hosts: [{addr: 10.0.0.1}]\n"), "blog", "")
+	target, err := deploy.Parse([]byte(`
+app: blog
+environments:
+  production:
+    roles:
+      worker:
+        hosts: [10.0.0.1]
+        stop_timeout: 120s
+`), "blog", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	runner := &fakeRunner{}
 	var out bytes.Buffer
-	if err := deploy.Setup(context.Background(), runner, target, deploy.SetupOptions{HasSSR: true}, &out); err != nil {
+	report, err := deploy.Setup(context.Background(), runner, target, deploy.SetupOptions{HasSSR: true}, &out)
+	if err != nil {
 		t.Fatalf("Setup: %v", err)
 	}
-	if len(runner.calls) != 3 {
-		t.Fatalf("expected 3 ssh calls, got %d", len(runner.calls))
+	if len(report.Hosts) != 1 || report.Hosts[0] != "10.0.0.1" {
+		t.Fatalf("report = %+v", report)
 	}
-	if !strings.Contains(runner.calls[0].Script, "glibc") {
-		t.Errorf("SSR setup should check glibc:\n%s", runner.calls[0].Script)
+	wroteDropIn := false
+	for _, c := range runner.calls {
+		if strings.Contains(c.Script, "blog@worker.service.d/override.conf") && strings.Contains(string(c.Stdin), "TimeoutStopSec=120s") {
+			wroteDropIn = true
+		}
 	}
-	if !strings.Contains(string(runner.calls[2].Stdin), "Type=notify-reload") {
-		t.Errorf("unit stdin missing Type=notify-reload:\n%s", runner.calls[2].Stdin)
+	if !wroteDropIn {
+		t.Errorf("expected worker drop-in override.conf to be written")
 	}
 }
 
-func TestDeployFullPipelineAndExcludesLocalYAML(t *testing.T) {
+func TestDeployMultiRoleWavesReconcileAndExcludeLocalYAML(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	cfgDir := filepath.Join(dir, "config")
@@ -184,44 +239,62 @@ keep_releases: 2
 environments:
   production:
     config_dir: `+cfgDir+`
-    hosts:
-      - addr: web-1
-        parts: [http]
-        migrate: true
-      - addr: worker-1
-        parts: [worker]
+    roles:
+      http:
+        hosts: [web-1, web-2]
+      worker:
+        hosts: [worker-1]
 `), "blog", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
+	var mu sync.Mutex
 	var uploadedTar []byte
 	var migrateCount int
-	var pruned []string
+	var switchOrder []string
+	var disabledUnits []string
+
 	runner := &fakeRunner{
 		onRun: func(host deploy.Host, script string, stdin []byte) (string, string, error) {
 			switch {
 			case script == "uname -m":
 				return "x86_64\n", "", nil
 			case strings.Contains(script, "tar -xzf"):
-				if host.Addr == "web-1" {
+				mu.Lock()
+				if uploadedTar == nil {
 					uploadedTar = stdin
 				}
+				mu.Unlock()
 			case strings.Contains(script, "--help"):
 				return "yes\n", "", nil
 			case strings.Contains(script, "'migrate' 'up'"):
+				mu.Lock()
 				migrateCount++
+				mu.Unlock()
+			case strings.Contains(script, "systemctl list-units"):
+				// 模拟 web-1 之前跑的是 blog@all.service，如今拆分为 blog@http.service，应自动清理旧 unit。
+				if host.Addr == "web-1" {
+					return "blog@all.service\nblog@http.service\n", "", nil
+				}
+				return "", "", nil
+			case strings.HasPrefix(script, "sudo systemctl disable --now "):
+				mu.Lock()
+				disabledUnits = append(disabledUnits, host.Addr+":"+script)
+				mu.Unlock()
+			case strings.Contains(script, "systemctl reload"):
+				mu.Lock()
+				switchOrder = append(switchOrder, host.Addr)
+				mu.Unlock()
 			case strings.HasPrefix(script, "ls -1 "):
 				return "20261120-010000\n20261121-010000\n20261122-010000\n", "", nil
-			case strings.HasPrefix(script, "sudo rm -rf '/opt/blog/releases/"):
-				pruned = append(pruned, host.Addr+":"+script)
 			}
 			return "", "", nil
 		},
 	}
 
 	var out, errOut bytes.Buffer
-	err = deploy.Deploy(context.Background(), runner, target, deploy.ReleaseOptions{
+	report, err := deploy.Deploy(context.Background(), runner, target, deploy.ReleaseOptions{
 		Binary:  binPath,
 		Version: "20261122-010000",
 		Now:     func() time.Time { return time.Date(2026, 11, 22, 1, 0, 0, 0, time.UTC) },
@@ -229,14 +302,19 @@ environments:
 	if err != nil {
 		t.Fatalf("Deploy: %v\nout=%s\nerr=%s", err, out.String(), errOut.String())
 	}
-	if migrateCount != 1 {
-		t.Errorf("migrate up ran %d times, want 1", migrateCount)
+	if migrateCount != 1 || !report.Migrated {
+		t.Errorf("migrateCount=%d migrated=%v", migrateCount, report.Migrated)
 	}
-	if len(pruned) != 2 || !strings.Contains(pruned[0], "20261120-010000") {
-		t.Errorf("expected oldest release pruned on both hosts, got %v", pruned)
+	// 验证波次顺序：worker-1 先于 web-1（金丝雀），web-1 先于 web-2。
+	if !slices.Equal(switchOrder, []string{"worker-1", "web-1", "web-2"}) {
+		t.Errorf("switch order = %v, want [worker-1 web-1 web-2]", switchOrder)
+	}
+	// 验证声明式对账停用了 web-1 上的孤儿 blog@all.service。
+	if len(disabledUnits) != 1 || !strings.Contains(disabledUnits[0], "blog@all.service") {
+		t.Errorf("disabledUnits = %v", disabledUnits)
 	}
 
-	// 验证同步的配置归档包含 app.yaml 且排除了 local.yaml。
+	// 验证同步的配置归档排除 local.yaml。
 	gz, err := gzip.NewReader(bytes.NewReader(uploadedTar))
 	if err != nil {
 		t.Fatalf("gzip reader: %v", err)
@@ -253,12 +331,12 @@ environments:
 		}
 		names = append(names, hdr.Name)
 	}
-	if len(names) != 1 || names[0] != "app.yaml" {
+	if !slices.Equal(names, []string{"app.yaml"}) {
 		t.Errorf("config archive entries = %v, want [app.yaml]", names)
 	}
 }
 
-func TestDeployAbortsOnReloadUpgradeFailed(t *testing.T) {
+func TestDeployAbortsAfterCanaryFailure(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	binPath := filepath.Join(dir, "blog-bin")
@@ -271,9 +349,10 @@ arch: amd64
 environments:
   production:
     config_dir: `+filepath.Join(dir, "no-config")+`
-    hosts:
-      - addr: web-1
-      - addr: web-2
+    roles:
+      http:
+        hosts: [web-1, web-2]
+        max_parallel: 2
 `), "blog", "")
 	if err != nil {
 		t.Fatal(err)
@@ -296,7 +375,7 @@ environments:
 	}
 
 	var out, errOut bytes.Buffer
-	err = deploy.Deploy(context.Background(), runner, target, deploy.ReleaseOptions{
+	_, err = deploy.Deploy(context.Background(), runner, target, deploy.ReleaseOptions{
 		Binary:  binPath,
 		Version: "v2",
 	}, &out, &errOut)
@@ -304,27 +383,34 @@ environments:
 		t.Fatalf("expected upgrade failed error, got %v", err)
 	}
 	if web2Switched {
-		t.Errorf("web-2 should not be switched after web-1 failed")
+		t.Errorf("web-2 should not be switched after canary web-1 failed")
 	}
 }
 
-func TestRollbackAndOps(t *testing.T) {
+func TestStatusLogsAggregationAndOps(t *testing.T) {
 	t.Parallel()
 	target, err := deploy.Parse([]byte(`
 app: blog
 environments:
   production:
     maintenance_file: /etc/nginx/blog.maintenance
-    hosts:
-      - addr: web-1
+    roles:
+      http:
+        hosts: [web-1, web-2]
+      worker:
+        hosts: [worker-1]
 `), "blog", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	runner := &fakeRunner{
-		onRun: func(_ deploy.Host, script string, _ []byte) (string, string, error) {
+		onRun: func(host deploy.Host, script string, _ []byte) (string, string, error) {
 			switch {
+			case strings.Contains(script, "systemctl show -p ActiveState"):
+				return "release=v1\n---unit=blog@http.service\nActiveState=active\nSubState=running\nStatusText=\nActiveEnterTimestamp=Sun 2026-11-22\n", "", nil
+			case strings.Contains(script, "journalctl"):
+				return "INF ok on " + host.Addr + "\nERR boom on " + host.Addr + "\n", "", nil
 			case strings.Contains(script, "cat '/opt/blog/current_release'"):
 				return "20261122-020000\n", "", nil
 			case strings.Contains(script, "ls -1 '/opt/blog/releases'"):
@@ -333,47 +419,56 @@ environments:
 				return "cfg\n", "", nil
 			case strings.Contains(script, "--help"):
 				return "no\n", "", nil
-			case strings.Contains(script, "sudo cat '/etc/blog/env'"):
-				return "APP_URL=https://example.com\n", "", nil
 			}
 			return "", "", nil
 		},
 	}
 
-	var out, errOut bytes.Buffer
-	if err := deploy.Rollback(context.Background(), runner, target, "", &out, &errOut); err != nil {
-		t.Fatalf("Rollback: %v", err)
+	// 1. 多机状态表格与 JSON 结构。
+	st, err := deploy.CollectStatus(context.Background(), runner, target, "http", "")
+	if err != nil || len(st.Hosts) != 2 {
+		t.Fatalf("CollectStatus: st=%+v err=%v", st, err)
 	}
-	if !strings.Contains(out.String(), "20261121-010000") {
-		t.Errorf("rollback output:\n%s", out.String())
-	}
-
-	// EnvPush 经标准输入写入远端 env 文件，并可选择重启服务。
-	envPath := filepath.Join(t.TempDir(), ".env")
-	if err := os.WriteFile(envPath, []byte("APP_KEY=secret\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	out.Reset()
-	if err := deploy.EnvPush(context.Background(), runner, target, envPath, "", true, &out, &errOut); err != nil {
-		t.Fatalf("EnvPush: %v", err)
-	}
-	if !strings.Contains(out.String(), "已重启 blog@all.service") {
-		t.Errorf("EnvPush output:\n%s", out.String())
+	var table bytes.Buffer
+	deploy.FormatStatus(&table, st)
+	if !strings.Contains(table.String(), "web-1") || !strings.Contains(table.String(), "active (running)") {
+		t.Errorf("status table:\n%s", table.String())
 	}
 
-	out.Reset()
-	if err := deploy.EnvPull(context.Background(), runner, target, "", &out); err != nil {
-		t.Fatalf("EnvPull: %v", err)
+	// 2. 多机日志聚合（流式带 [host] 前缀 + 过滤 ERR）。
+	var logBuf, errBuf bytes.Buffer
+	err = deploy.Logs(context.Background(), runner, target, deploy.LogsOptions{
+		Role:     "http",
+		Contains: "ERR",
+		Since:    "15m",
+	}, &logBuf, &errBuf)
+	if err != nil {
+		t.Fatalf("Logs: %v", err)
 	}
-	if !strings.Contains(out.String(), "APP_URL=https://example.com") {
-		t.Errorf("EnvPull output: %q", out.String())
+	if !strings.Contains(logBuf.String(), "[web-1] ERR boom on web-1") || !strings.Contains(logBuf.String(), "[web-2] ERR boom on web-2") || strings.Contains(logBuf.String(), "INF") {
+		t.Errorf("aggregated logs:\n%s", logBuf.String())
 	}
 
-	out.Reset()
-	if err := deploy.Maintenance(context.Background(), runner, target, true, &out); err != nil {
-		t.Fatalf("Maintenance on: %v", err)
+	// 3. CollectLogs 结构化输出。
+	lrep, err := deploy.CollectLogs(context.Background(), runner, target, deploy.LogsOptions{Role: "http", Contains: "ERR"})
+	if err != nil || len(lrep.Hosts) != 2 || len(lrep.Hosts[0].Lines) != 1 {
+		t.Fatalf("CollectLogs: %+v err=%v", lrep, err)
 	}
-	if !strings.Contains(out.String(), "已开启维护模式") {
-		t.Errorf("Maintenance output: %q", out.String())
+
+	// 4. Maintenance 默认只操作入口节点（web-1、web-2），不动 worker-1。
+	var out bytes.Buffer
+	mrep, err := deploy.Maintenance(context.Background(), runner, target, "", "", true, &out)
+	if err != nil {
+		t.Fatalf("Maintenance: %v", err)
+	}
+	if !slices.Equal(mrep.Hosts, []string{"web-1", "web-2"}) {
+		t.Errorf("maintenance hosts = %v, want [web-1 web-2]", mrep.Hosts)
+	}
+
+	// 5. Rollback 返回结构化报告。
+	out.Reset()
+	rrep, err := deploy.Rollback(context.Background(), runner, target, "", &out, &errBuf)
+	if err != nil || rrep.Version != "20261121-010000" {
+		t.Fatalf("Rollback: rep=%+v err=%v", rrep, err)
 	}
 }

@@ -538,8 +538,8 @@ func TestWriteDeploy(t *testing.T) {
 		"service_user: omirouter",
 		"dir: /opt/omirouter",
 		"env_file: /etc/omirouter/env",
-		"addr: prod.example.com",
-		"parts: [all]",
+		"- prod.example.com",
+		"roles:",
 	} {
 		if !strings.Contains(cfg, want) {
 			t.Errorf("deploy.yaml missing %q:\n%s", want, cfg)

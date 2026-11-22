@@ -10,17 +10,27 @@ import (
 
 // SetupOptions 控制 tenon deploy setup 的行为。
 type SetupOptions struct {
-	Host   string // 仅初始化指定主机，留空表示初始化当前环境全部主机
+	Role   string // 仅初始化指定角色的主机，留空表示全部角色
+	Host   string // 仅初始化指定主机，留空表示全部主机
 	HasSSR bool   // 项目是否包含服务端渲染前端；为真时校验目标机带有 glibc
 	DryRun bool   // 为真时只打印计划，不修改远端主机
 }
 
+// SetupReport 是 tenon deploy setup 的结构化执行结果。
+type SetupReport struct {
+	App      string   `json:"app"`       // 应用名
+	Env      string   `json:"env"`       // 环境名
+	DryRun   bool     `json:"dry_run"`   // 是否为预演模式
+	UnitPath string   `json:"unit_path"` // systemd 模板 unit 路径
+	Hosts    []string `json:"hosts"`     // 已初始化的主机地址列表
+}
+
 // Setup 幂等初始化目标主机：检查 Linux/systemd/glibc，创建系统用户、部署目录和环境变量文件骨架，
-// 写入并重载 systemd 模板 unit。
-func Setup(ctx context.Context, r Runner, t Target, opts SetupOptions, out io.Writer) error {
-	hosts, err := t.FilterHosts(opts.Host)
+// 写入 systemd 模板 unit 及角色级 drop-in 覆盖文件并执行 daemon-reload。
+func Setup(ctx context.Context, r Runner, t Target, opts SetupOptions, out io.Writer) (*SetupReport, error) {
+	hosts, err := t.FilterHosts(opts.Role, opts.Host)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	unitPath := TemplateUnitPath(t.App)
 	unitContent := RenderUnit(t)
@@ -28,9 +38,18 @@ func Setup(ctx context.Context, r Runner, t Target, opts SetupOptions, out io.Wr
 	binDir := path.Join(t.Dir, "bin")
 	releasesDir := path.Join(t.Dir, "releases")
 	storageDir := path.Join(t.Dir, "storage")
+	report := &SetupReport{
+		App:      t.App,
+		Env:      t.EnvName,
+		DryRun:   opts.DryRun,
+		UnitPath: unitPath,
+		Hosts:    make([]string, 0, len(hosts)),
+	}
 
 	for _, h := range hosts {
-		fmt.Fprintf(out, "[%s] 初始化 %s（用户 %s，目录 %s）\n", h.Addr, t.App, t.ServiceUser, t.Dir)
+		report.Hosts = append(report.Hosts, h.Addr)
+		fmt.Fprintf(out, "[%s] 初始化 %s（角色 %s，用户 %s，目录 %s）\n",
+			h.Addr, t.App, strings.Join(h.Roles, ","), t.ServiceUser, t.Dir)
 		if opts.DryRun {
 			fmt.Fprintf(out, "[%s] (dry-run) 写入 %s 并创建目录 %s、%s、%s\n", h.Addr, unitPath, binDir, releasesDir, storageDir)
 			continue
@@ -43,7 +62,7 @@ func Setup(ctx context.Context, r Runner, t Target, opts SetupOptions, out io.Wr
 			checkScript += "ldd --version 2>&1 | grep -qiE 'glibc|gnu libc' || { echo 'SSR frontend requires glibc (musl/Alpine is unsupported)' >&2; exit 1; }\n"
 		}
 		if _, err := RunCapture(ctx, r, h, checkScript); err != nil {
-			return fmt.Errorf("[%s] 环境检查失败: %w", h.Addr, err)
+			return nil, fmt.Errorf("[%s] 环境检查失败: %w", h.Addr, err)
 		}
 
 		// 2. 创建系统用户、部署目录和环境变量文件骨架（已有 env 文件不覆盖）。
@@ -65,16 +84,19 @@ fi
 			shellQuote(t.EnvFile), shellQuote(t.EnvFile),
 		)
 		if _, err := RunCapture(ctx, r, h, prepScript); err != nil {
-			return fmt.Errorf("[%s] 创建用户和目录失败: %w", h.Addr, err)
+			return nil, fmt.Errorf("[%s] 创建用户和目录失败: %w", h.Addr, err)
 		}
 
-		// 3. 写入 systemd 模板 unit 并 daemon-reload。
+		// 3. 写入 systemd 模板 unit 并同步角色级 drop-in，随后 daemon-reload。
 		writeUnit := fmt.Sprintf("sudo install -m 644 -o root -g root /dev/stdin %s && sudo systemctl daemon-reload", shellQuote(unitPath))
 		if err := r.Run(ctx, h, writeUnit, strings.NewReader(unitContent), io.Discard, out); err != nil {
-			return fmt.Errorf("[%s] 写入 %s 失败: %w", h.Addr, unitPath, err)
+			return nil, fmt.Errorf("[%s] 写入 %s 失败: %w", h.Addr, unitPath, err)
+		}
+		if err := syncDropIns(ctx, r, t, h); err != nil {
+			return nil, err
 		}
 		fmt.Fprintf(out, "[%s] 已就绪：%s\n", h.Addr, unitPath)
 	}
 	fmt.Fprintf(out, "\n初始化完成。下一步：\n  1. 填写 .env 并执行 go tool tenon deploy env push .env --env %s\n  2. 执行 go tool tenon deploy --env %s\n", t.EnvName, t.EnvName)
-	return nil
+	return report, nil
 }

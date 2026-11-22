@@ -11,9 +11,20 @@ environments:
     dir: /opt/[[.Slug]]          # 远端部署目录
     env_file: /etc/[[.Slug]]/env # 远端环境变量文件（600 权限，不进仓库）
     config_dir: config           # 同步到远端的配置目录（自动排除 local.yaml）
+    # 单机最简写法（在一个进程中运行全部部分 all）：
     hosts:
-      - addr: [[.Host]]          # 目标主机地址或 ~/.ssh/config 中的别名
-        parts: [all]             # 默认 all；拆分进程时写 [http]、[worker, scheduler]
-        migrate: true            # 仅在此节点执行数据库迁移
+      - [[.Host]]
+    # 多服务多机写法（把上面的 hosts 换成 roles，同一台主机可同时出现在多个角色下）：
+    # migrate_host: 10.0.1.21
+    # roles:
+    #   http:
+    #     hosts: [10.0.1.11, 10.0.1.12]
+    #     max_parallel: 1
+    #     stop_timeout: 30s
+    #   worker:
+    #     hosts: [10.0.1.21]
+    #     stop_timeout: 120s
+    #   scheduler:
+    #     hosts: [10.0.1.21]
     # 可选：维护页标记文件路径，配合反向代理返回 503
     # maintenance_file: /etc/nginx/[[.Slug]].maintenance
