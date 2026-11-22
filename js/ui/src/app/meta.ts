@@ -17,6 +17,11 @@ declare module "@tanstack/react-router" {
      * 写在模块的路由上时，模块下的页面都铺满，例如收件箱、聊天。
      */
     fullBleed?: boolean
+    /**
+     * 在模块二级导航中切换页面时自动保留的 URL 查询参数名，例如 ["preset", "from", "to", "team_id"]。
+     * 写在模块的父路由上时，对其下全部子页面生效。
+     */
+    preserveSearch?: readonly string[]
   }
 }
 

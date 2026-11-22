@@ -120,6 +120,24 @@ export function RailSection({
   )
 }
 
+/** 从当前路由的查询参数中挑出 keys 指定的非空参数，供同模块二级导航切换时保留共享筛选条件。 */
+function pickSearch(
+  current: Record<string, unknown>,
+  keys: readonly string[] | undefined,
+): Record<string, unknown> | undefined {
+  if (!keys?.length) return undefined
+  const out: Record<string, unknown> = {}
+  let any = false
+  for (const k of keys) {
+    const v = current[k]
+    if (v !== undefined && v !== null && v !== "") {
+      out[k] = v
+      any = true
+    }
+  }
+  return any ? out : undefined
+}
+
 /** NavItems 渲染二级导航中的链接，分组展开成一节（分组标题和其中的页面）。 */
 function NavItems({ items, active, onNavigate }: { items: MenuItem[]; active: string[]; onNavigate(): void }) {
   return items.map((item) =>
@@ -132,6 +150,11 @@ function NavItems({ items, active, onNavigate }: { items: MenuItem[]; active: st
         key={item.id}
         component={Link}
         to={item.path}
+        search={
+          item.preserveSearch?.length
+            ? (((prev: Record<string, unknown>) => pickSearch(prev, item.preserveSearch) ?? {}) as never)
+            : undefined
+        }
         label={item.title}
         leftSection={item.icon ? <Icon name={item.icon} size={16} /> : undefined}
         rightSection={<MenuBadge value={item.badge} />}

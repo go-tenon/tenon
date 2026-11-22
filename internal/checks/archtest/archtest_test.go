@@ -45,6 +45,7 @@ var rules = map[string]rule{
 	"identity":  {layerFoundation, []string{"errorx"}},
 	"logging":   {layerFoundation, []string{"errorx"}},
 	"page":      {layerFoundation, []string{"errorx"}},
+	"period":    {layerFoundation, []string{"errorx"}},
 	"crypt":     {layerFoundation, []string{"errorx"}},
 	"telemetry": {layerFoundation, nil},
 	// 设计令牌：解析 theme/tokens.json，生成三套界面的主题。

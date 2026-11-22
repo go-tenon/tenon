@@ -103,6 +103,39 @@ return (
 - 放进对话框或已有的卡片中时用 `withBorder={false}`。几组属性用 `SimpleGrid` 并排。
 - `StatusDot` 的颜色按状态取：正常 `green`，需要注意 `deep-orange`，出错 `red`。
 
+<a id="analytics-components"></a>
+### 报表组件：`PeriodPicker`、`StatCard` 与 `useFormatDuration`
+
+报表和仪表盘页面用 `periodSearch` + `usePeriod` 把时间窗口（预设区间、自定义日期与粒度）同步到地址，与后端 [`period.Params`](../http/responses.md#period) 对接；用 `StatCard` 展示 KPI 与环比，用 `useFormatDuration` 按当前语言格式化秒或毫秒时长：
+
+```tsx
+import { PeriodPicker, periodSearch, StatCard, useFormatDuration, usePeriod } from "@go-tenon/ui"
+
+export const Route = createFileRoute("/_app/reports/overview")({
+  validateSearch: periodSearch(),
+  component: Overview,
+})
+
+function Overview() {
+  const period = usePeriod(Route)
+  const formatDuration = useFormatDuration()
+  // period.params 直接传给生成客户端接口：{ from, to, tz, granularity }
+  return (
+    <>
+      <PeriodPicker period={period} />
+      <StatCard
+        label="首次回复中位数"
+        value={formatDuration(142)}
+        delta={{ value: -18, label: "-18%", invert: true }}
+      />
+    </>
+  )
+}
+```
+
+- `delta.invert` 设为 `true` 时表示指标越低越好（如响应时长、失败数），下降显示 `green`，上升显示 `deep-orange`。
+- 模块内有多张报表时，在父路由设置 `staticData.preserveSearch`，切换二级导航时保留时间与筛选条件，见[双栏导航](layout.md#rail-layout)。
+
 <a id="forms"></a>
 ## 用 `useSchemaForm` 做按生成的规则校验的表单
 

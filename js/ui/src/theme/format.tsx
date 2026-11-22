@@ -5,6 +5,7 @@ import dayjs from "dayjs"
 import timezone from "dayjs/plugin/timezone"
 import utc from "dayjs/plugin/utc"
 import { createContext, type ReactNode, useCallback, useContext } from "react"
+import { useText } from "../i18n/i18n"
 import { layoutMetrics } from "./theme"
 
 dayjs.extend(utc)
@@ -55,6 +56,82 @@ export function formatFileSize(bytes: number): string {
     i++
   }
   return i === 0 ? `${Math.round(value)} B` : `${Math.round(value * 10) / 10} ${units[i]}`
+}
+
+/** 时长格式化的选项。 */
+export interface FormatDurationOptions {
+  /** 输入值的单位：默认 "s"（秒），模型耗时等场景可传 "ms"（毫秒）。 */
+  unit?: "s" | "ms"
+}
+
+/** 按给定单位文案把时长格式化为易读文字，例如 "2 分 30 秒"、"1.2 s"；空值返回 "—"。 */
+export function formatDuration(
+  value: number | null | undefined,
+  options: FormatDurationOptions & {
+    labels?: {
+      ms: (n: number) => string
+      second: (n: number | string) => string
+      minute: (n: number) => string
+      hour: (n: number) => string
+      day: (n: number) => string
+      separator: string
+    }
+  } = {},
+): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "—"
+  const unit = options.unit ?? "s"
+  const labels = options.labels ?? {
+    ms: (n) => `${n} ms`,
+    second: (n) => `${n}s`,
+    minute: (n) => `${n}m`,
+    hour: (n) => `${n}h`,
+    day: (n) => `${n}d`,
+    separator: " ",
+  }
+  const v = Math.max(0, value)
+  if (unit === "ms") {
+    if (v < 1000) return labels.ms(Math.round(v))
+    if (v < 60_000) return labels.second(Math.round((v / 1000) * 10) / 10)
+    return formatDuration(v / 1000, { unit: "s", labels })
+  }
+  const total = Math.round(v)
+  if (total < 60) return labels.second(total)
+  const days = Math.floor(total / 86_400)
+  const hours = Math.floor((total % 86_400) / 3600)
+  const minutes = Math.floor((total % 3600) / 60)
+  const seconds = total % 60
+  const parts: string[] = []
+  if (days > 0) {
+    parts.push(labels.day(days))
+    if (hours > 0) parts.push(labels.hour(hours))
+  } else if (hours > 0) {
+    parts.push(labels.hour(hours))
+    if (minutes > 0) parts.push(labels.minute(minutes))
+  } else {
+    parts.push(labels.minute(minutes))
+    if (seconds > 0) parts.push(labels.second(seconds))
+  }
+  return parts.join(labels.separator)
+}
+
+/** 按当前界面语言格式化时长（秒或毫秒），空值显示“—”。 */
+export function useFormatDuration(): (value: number | null | undefined, options?: FormatDurationOptions) => string {
+  const t = useText()
+  return useCallback(
+    (value: number | null | undefined, options?: FormatDurationOptions) =>
+      formatDuration(value, {
+        ...options,
+        labels: {
+          ms: (n) => t("tenon.duration.ms", { n }),
+          second: (n) => t("tenon.duration.second", { n }),
+          minute: (n) => t("tenon.duration.minute", { n }),
+          hour: (n) => t("tenon.duration.hour", { n }),
+          day: (n) => t("tenon.duration.day", { n }),
+          separator: t("tenon.duration.separator"),
+        },
+      }),
+    [t],
+  )
 }
 
 /**

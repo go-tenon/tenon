@@ -9,6 +9,10 @@ url.expired: 链接已过期
 pdf.unavailable: PDF 生成服务暂时不可用，请稍后再试
 feature.invalid: 开关设置不合法
 page.invalid_cursor: 分页游标无效
+period.invalid_range: 日期范围不正确
+period.range_too_large: 日期范围不能超过 {{.max_days}} 天
+period.invalid_time_zone: "不认识的时区“{{.time_zone}}”"
+period.invalid_granularity: 不支持这个时间粒度
 rate_limit.exceeded: 请求过于频繁，请稍后再试
 rpc.no_responders: 服务暂时不可用，请稍后再试
 app.upgrade_required: 当前版本过低，请升级到 {{.minimum}} 或更高版本
