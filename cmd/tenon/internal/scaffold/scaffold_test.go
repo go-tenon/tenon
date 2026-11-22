@@ -24,7 +24,7 @@ func TestWrite(t *testing.T) {
 	}
 	for _, f := range []string{".gitignore", "AGENTS.md", "README.md", "go.mod", "package.json", "config/app.yaml", "cmd/todo/main.go", "internal/todo/todo.go",
 		"packages/client/package.json", "apps/web/package.json", "apps/web/vite.config.ts", "apps/web/tsconfig.json",
-		"apps/apps.go", "apps/web/src/start.ts", "apps/web/src/server.ts", "apps/web/src/router.tsx", "apps/web/src/theme.ts",
+		"apps/apps.go", "apps/web/public/favicon.svg", "apps/web/src/start.ts", "apps/web/src/server.ts", "apps/web/src/router.tsx", "apps/web/src/theme.ts",
 		"apps/web/src/api.ts", "apps/web/src/routes/__root.tsx", "apps/web/src/routes/index.tsx"} {
 		if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
 			t.Errorf("%s: %v", f, err)
@@ -73,6 +73,7 @@ func TestWrite(t *testing.T) {
 	}
 	main, _ := os.ReadFile(filepath.Join(dir, "cmd/todo/main.go"))
 	for _, want := range []string{`"example.com/todo/internal/todo"`, `"example.com/todo/apps"`,
+		"Logs       logging.Config", "logging.New(cfg.Logs)",
 		"frontend.New(apps.Dist, frontend.Options{API: api, DevServers: a.cfg.DevServers})", "pages.Run(", "command.Serve(open, parts)"} {
 		if !strings.Contains(string(main), want) {
 			t.Errorf("main.go missing %q:\n%s", want, main)
@@ -507,5 +508,77 @@ func TestWriteFrontendWithClient(t *testing.T) {
 	api = read(filepath.Join(root, "apps", "admin"), "src/api.ts")
 	if strings.Contains(api, "session") || !strings.Contains(api, `createClient({ baseURL: "/admin/api", fetch: apiFetch, headers: i18n.headers })`) || !strings.Contains(api, "createKit(api, { language: i18n.language })") {
 		t.Errorf("api.ts without login:\n%s", api)
+	}
+}
+
+func TestWriteDeploy(t *testing.T) {
+	t.Parallel()
+	read := func(dir, name string) string {
+		t.Helper()
+		b, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		return string(b)
+	}
+
+	// 纯 CSR 前端使用 distroless/static 并安装 Bun。
+	csrDir := t.TempDir()
+	files, err := scaffold.WriteDeploy(csrDir, scaffold.Deploy{
+		Slug: "omirouter", Main: "./cmd/omirouter", Image: "ghcr.io/omirouter/omirouter",
+		GoVersion: "1.27.4", BunVersion: "1.4.4", HasFrontends: true, HasSSR: false,
+	})
+	if err != nil || len(files) != 4 {
+		t.Fatalf("WriteDeploy csr: files=%v err=%v", files, err)
+	}
+	df := read(csrDir, "Dockerfile")
+	for _, want := range []string{
+		"FROM golang:1.27 AS build",
+		"COPY --from=oven/bun:1.4.4 /usr/local/bin/bun /usr/local/bin/bun",
+		"RUN CGO_ENABLED=0 go tool tenon build -o /out/omirouter",
+		"FROM gcr.io/distroless/static-debian13:nonroot",
+		`ENTRYPOINT ["/app/omirouter"]`,
+	} {
+		if !strings.Contains(df, want) {
+			t.Errorf("csr Dockerfile missing %q:\n%s", want, df)
+		}
+	}
+	compose := read(csrDir, "compose.prod.yaml")
+	for _, want := range []string{
+		"image: ghcr.io/omirouter/omirouter:${APP_VERSION:-latest}",
+		"test: [CMD, /app/omirouter, health]",
+		"wal_level=logical",
+		"max_slot_wal_keep_size=10GB",
+	} {
+		if !strings.Contains(compose, want) {
+			t.Errorf("compose.prod.yaml missing %q:\n%s", want, compose)
+		}
+	}
+	if ignore := read(csrDir, ".dockerignore"); !strings.Contains(ignore, "config/local.yaml") {
+		t.Errorf(".dockerignore:\n%s", ignore)
+	}
+	if env := read(csrDir, ".env.example"); !strings.Contains(env, "APP_KEY=") || !strings.Contains(env, "OTLP_ENDPOINT=") {
+		t.Errorf(".env.example:\n%s", env)
+	}
+
+	// 重复写入默认拒绝，传入 Force 允许覆盖。
+	if _, err := scaffold.WriteDeploy(csrDir, scaffold.Deploy{Slug: "omirouter"}); err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Errorf("second write without force: %v", err)
+	}
+	if _, err := scaffold.WriteDeploy(csrDir, scaffold.Deploy{Slug: "omirouter", Force: true, HasFrontends: true, HasSSR: true}); err != nil {
+		t.Fatalf("overwrite with force: %v", err)
+	}
+	if ssrDF := read(csrDir, "Dockerfile"); !strings.Contains(ssrDF, "FROM gcr.io/distroless/base-debian13:nonroot") {
+		t.Errorf("ssr Dockerfile:\n%s", ssrDF)
+	}
+
+	// 无前端项目不引入 Bun，直接 go build。
+	apiOnlyDir := t.TempDir()
+	if _, err := scaffold.WriteDeploy(apiOnlyDir, scaffold.Deploy{Slug: "worker", Main: "./cmd/worker"}); err != nil {
+		t.Fatalf("api-only WriteDeploy: %v", err)
+	}
+	apiDF := read(apiOnlyDir, "Dockerfile")
+	if strings.Contains(apiDF, "oven/bun") || !strings.Contains(apiDF, "go build -trimpath -o /out/worker ./cmd/worker") {
+		t.Errorf("api-only Dockerfile:\n%s", apiDF)
 	}
 }

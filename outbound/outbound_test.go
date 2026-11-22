@@ -85,3 +85,15 @@ func TestTimeout(t *testing.T) {
 		t.Errorf("timeout %v", c.Timeout)
 	}
 }
+
+func TestTransportPool(t *testing.T) {
+	t.Parallel()
+	c := outbound.New(outbound.Options{})
+	tr, ok := c.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("transport = %T, want *http.Transport", c.Transport)
+	}
+	if tr.MaxIdleConnsPerHost != 32 {
+		t.Errorf("MaxIdleConnsPerHost = %d, want 32", tr.MaxIdleConnsPerHost)
+	}
+}

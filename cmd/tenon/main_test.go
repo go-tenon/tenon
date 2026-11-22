@@ -270,3 +270,40 @@ func TestCheck(t *testing.T) {
 		t.Fatalf("check --only errors = %v", err)
 	}
 }
+
+func TestAddDeploy(t *testing.T) {
+	newProject(t, map[string]string{
+		"go.mod":                  "module example.com/blog\n\ngo 1.27.4\n",
+		"package.json":            `{"name": "blog", "packageManager": "bun@1.4.4"}`,
+		"apps/web/vite.config.ts": "",
+		"apps/web/package.json":   `{"tenon": {"base": "/", "ssr": false}}`,
+	})
+	cmd := root()
+	var out bytes.Buffer
+	cmd.SetArgs([]string{"add", "deploy", "--image", "ghcr.io/acme/blog"})
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err, out.String())
+	}
+	if !strings.Contains(out.String(), "distroless/static") {
+		t.Errorf("output:\n%s", out.String())
+	}
+	for name, want := range map[string]string{
+		"Dockerfile":        "FROM gcr.io/distroless/static-debian13:nonroot",
+		"compose.prod.yaml": "image: ghcr.io/acme/blog:${APP_VERSION:-latest}",
+		".dockerignore":     "apps/dist/",
+		".env.example":      "POSTGRES_PASSWORD=",
+	} {
+		b, err := os.ReadFile(name)
+		if err != nil || !strings.Contains(string(b), want) {
+			t.Errorf("%s: err=%v want %q\n%s", name, err, want, b)
+		}
+	}
+	if err := execute(t, "add", "deploy"); err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("second add deploy without --force = %v", err)
+	}
+	if err := execute(t, "add", "deploy", "--force"); err != nil {
+		t.Fatalf("add deploy --force = %v", err)
+	}
+}
