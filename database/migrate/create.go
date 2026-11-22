@@ -49,13 +49,17 @@ func Create(dir, name string) (string, error) {
 	return path, nil
 }
 
-// createStub 是建表骨架。时间都由应用经 Bun 写入，不设数据库默认值。
+// createStub 是建表骨架。时间都由应用经 Bun 写入，不设数据库默认值；每张表和每个字段都要写 COMMENT。
 const createStub = `-- +goose Up
 CREATE TABLE %[1]s (
     id         uuid PRIMARY KEY,
     created_at timestamptz NOT NULL,
     updated_at timestamptz NOT NULL
 );
+COMMENT ON TABLE %[1]s IS '';
+COMMENT ON COLUMN %[1]s.id IS '主键';
+COMMENT ON COLUMN %[1]s.created_at IS '创建时间';
+COMMENT ON COLUMN %[1]s.updated_at IS '更新时间';
 
 -- +goose Down
 DROP TABLE %[1]s;

@@ -15,7 +15,13 @@ CREATE TABLE search_entries (
 CREATE INDEX search_entries_tenant ON search_entries (index_name, version, tenant);
 CREATE INDEX search_entries_tokens ON search_entries USING gin (tokens);
 COMMENT ON TABLE search_entries IS '搜索索引中的文档，一个 key 可以有多个，按 position 排列';
+COMMENT ON COLUMN search_entries.id IS '自增主键';
+COMMENT ON COLUMN search_entries.created_at IS '创建时间';
+COMMENT ON COLUMN search_entries.updated_at IS '更新时间';
+COMMENT ON COLUMN search_entries.index_name IS '搜索索引名称';
 COMMENT ON COLUMN search_entries.version IS '索引的版本，见 search_indexes';
+COMMENT ON COLUMN search_entries.doc_key IS '文档的业务主键';
+COMMENT ON COLUMN search_entries.position IS '同一 doc_key 下文档的序号';
 COMMENT ON COLUMN search_entries.tenant IS '空字符串为平台本身，或者索引没有租户';
 COMMENT ON COLUMN search_entries.doc IS '同步时保存的文档，搜索结果从这里解码';
 COMMENT ON COLUMN search_entries.tokens IS '在应用中分词后写入的词，A 权重来自 text,boost 字段，B 来自其他文本字段';

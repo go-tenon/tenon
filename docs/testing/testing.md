@@ -111,6 +111,7 @@ db := dbtest.Open(t, migrations.FS)
 - 可以传几个迁移，例如 `dbtest.Open(t, queue.Migrations(), operation.Migrations())`，合在一起按版本顺序执行；不传时是空数据库。
 - `dbtest.Replica(t, db)` 返回同一个库的只读连接池，代替[单独的副本连接池](../database/database.md#explicit-replica)。
 - `dbtest.DSN(t, db)` 返回这个库的连接串。
+- `dbtest.CheckSchema(t, db)` 检查时间列以及所有表和字段的 `COMMENT`（见[时间列与注释](../database/migrations.md#timestamp-columns)）；`dbtest.CheckComments(t, db)` 单独检查表和字段的 `COMMENT`。
 
 <a id="running-database-tests-locally"></a>
 ### 在本地运行数据库测试：`compose.test.yml`

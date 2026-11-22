@@ -18,6 +18,8 @@ go run ./cmd/blog migrate make add_author_and_published_at_to_articles_table
 ALTER TABLE articles
     ADD COLUMN author_id    uuid REFERENCES users (id),
     ADD COLUMN published_at timestamptz;
+COMMENT ON COLUMN articles.author_id IS '作者 ID，关联 users.id';
+COMMENT ON COLUMN articles.published_at IS '发布时间；为空时为草稿';
 -- 之前写的文章还没有作者，归给最早创建的作者，然后才能要求每篇文章都有作者
 UPDATE articles SET author_id = (SELECT id FROM users ORDER BY created_at LIMIT 1);
 ALTER TABLE articles ALTER COLUMN author_id SET NOT NULL;

@@ -129,6 +129,11 @@ CREATE TABLE users (
     updated_at timestamptz NOT NULL,
     name       text NOT NULL
 );
+COMMENT ON TABLE users IS '博客作者账号';
+COMMENT ON COLUMN users.id IS '主键';
+COMMENT ON COLUMN users.created_at IS '创建时间';
+COMMENT ON COLUMN users.updated_at IS '更新时间';
+COMMENT ON COLUMN users.name IS '作者姓名';
 
 -- +goose Down
 DROP TABLE users;

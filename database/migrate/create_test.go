@@ -31,8 +31,16 @@ func TestCreateGuessesTableFromName(t *testing.T) {
 		})
 	}
 	data, _ := os.ReadFile(must(Create(t.TempDir(), "create_articles_table")))
-	if !strings.Contains(string(data), "DROP TABLE articles;") {
-		t.Fatalf("data=%s", data)
+	for _, want := range []string{
+		"DROP TABLE articles;",
+		"COMMENT ON TABLE articles IS '';",
+		"COMMENT ON COLUMN articles.id IS '主键';",
+		"COMMENT ON COLUMN articles.created_at IS '创建时间';",
+		"COMMENT ON COLUMN articles.updated_at IS '更新时间';",
+	} {
+		if !strings.Contains(string(data), want) {
+			t.Fatalf("data=%s\nmissing %q", data, want)
+		}
 	}
 }
 

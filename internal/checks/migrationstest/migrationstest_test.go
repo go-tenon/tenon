@@ -158,10 +158,11 @@ func TestPublishThroughPublicCommand(t *testing.T) {
 }
 
 // TestAllMigrationsRun 把全部迁移放在一起执行：版本不重复，引用其他包的表的迁移排在那个包之后；
-// 执行之后检查实体表的时间列。
+// 执行之后检查实体表的时间列以及全部表和字段的 COMMENT。
 func TestAllMigrationsRun(t *testing.T) {
 	db := dbtest.Open(t, slices.Collect(maps.Values(sources))...)
 	dbtest.CheckSchema(t, db, timestampExempt...)
+	dbtest.CheckComments(t, db)
 }
 
 // timestampExempt 是不检查时间列的表：ai/chat 中 trpc-agent-go 的表，它们的结构由上游决定。
