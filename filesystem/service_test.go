@@ -1,6 +1,7 @@
 package filesystem_test
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"errors"
@@ -502,5 +503,199 @@ func TestConfirmAccept(t *testing.T) {
 	}
 	if _, err := e.svc.Confirm(ctx, alice, ready.ID, images); !errors.Is(err, filesystem.ErrNotAccepted) {
 		t.Fatalf("reconfirm ready file with images: %v", err)
+	}
+}
+
+// zipBytes 构造只包含给定文件名和内容的内存 ZIP 压缩包，用于测试 OOXML 与 ZIP 识别。
+func zipBytes(t *testing.T, entries map[string]string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for name, content := range entries {
+		w, err := zw.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write([]byte(content)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+// TestConfirmAcceptDocuments 验证办公文档（OOXML/OLE2）、纯文本和 JSON 的真实内容识别与伪装拦截，
+// 以及客户端只给兜底类型 application/octet-stream 时确认后写回规范 MIME 类型。
+func TestConfirmAcceptDocuments(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	e := newEnv(t)
+	putBytes := func(filename, contentType string, body []byte) filesystem.File {
+		t.Helper()
+		r, err := e.svc.Upload(ctx, alice, filesystem.FileInput{
+			Filename: filename, ContentType: contentType, Size: int64(len(body)),
+		}, bytes.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+
+	docx := zipBytes(t, map[string]string{"[Content_Types].xml": "<Types/>", "word/document.xml": "<w:document/>"})
+	xlsx := zipBytes(t, map[string]string{"[Content_Types].xml": "<Types/>", "xl/workbook.xml": "<workbook/>"})
+	pptx := zipBytes(t, map[string]string{"[Content_Types].xml": "<Types/>", "ppt/presentation.xml": "<presentation/>"})
+	plainZip := zipBytes(t, map[string]string{"readme.txt": "hello"})
+	ole2 := append([]byte{0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1}, make([]byte, 64)...)
+
+	docs := filesystem.Accept{
+		Types: []string{
+			"application/pdf",
+			"application/zip",
+			"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+			"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+			"application/vnd.openxmlformats-officedocument.presentationml.presentation",
+			"application/msword",
+			"application/vnd.ms-excel",
+			"application/vnd.ms-powerpoint",
+			"text/plain",
+			"text/csv",
+			"text/markdown",
+			"application/json",
+		},
+	}
+
+	for name, tc := range map[string]struct {
+		file     filesystem.File
+		ok       bool
+		wantMIME string
+	}{
+		"docx": {
+			file:     putBytes("spec.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", docx),
+			ok:       true,
+			wantMIME: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+		},
+		"docx with octet-stream": {
+			file:     putBytes("spec.docx", "application/octet-stream", docx),
+			ok:       true,
+			wantMIME: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+		},
+		"xlsx": {
+			file:     putBytes("sheet.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", xlsx),
+			ok:       true,
+			wantMIME: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+		},
+		"pptx": {
+			file:     putBytes("deck.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation", pptx),
+			ok:       true,
+			wantMIME: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+		},
+		"zip disguised as docx": {
+			file: putBytes("fake.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", plainZip),
+			ok:   false,
+		},
+		"xlsx disguised as docx": {
+			file: putBytes("wrong.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", xlsx),
+			ok:   false,
+		},
+		"doc ole2": {
+			file:     putBytes("legacy.doc", "application/msword", ole2),
+			ok:       true,
+			wantMIME: "application/msword",
+		},
+		"fake doc": {
+			file: putBytes("fake.doc", "application/msword", []byte("not ole2")),
+			ok:   false,
+		},
+		"csv windows excel mime": {
+			file:     putBytes("orders.csv", "application/vnd.ms-excel", []byte("id,amount\n1,100\n")),
+			ok:       true,
+			wantMIME: "application/vnd.ms-excel",
+		},
+		"markdown octet-stream": {
+			file:     putBytes("notes.md", "application/octet-stream", []byte("# 标题\n内容\n")),
+			ok:       true,
+			wantMIME: "text/markdown",
+		},
+		"log empty mime": {
+			file:     putBytes("app.log", "", []byte("2026-11-22 INFO ok\n")),
+			ok:       true,
+			wantMIME: "text/plain",
+		},
+		"json valid": {
+			file:     putBytes("data.json", "application/json", []byte(`{"ok":true}`)),
+			ok:       true,
+			wantMIME: "application/json",
+		},
+		"json invalid": {
+			file: putBytes("bad.json", "application/json", []byte(`{not json`)),
+			ok:   false,
+		},
+		"html disguised as txt": {
+			file: putBytes("xss.txt", "text/plain", []byte("<html><script>alert(1)</script></html>")),
+			ok:   false,
+		},
+		"svg disguised as md": {
+			file: putBytes("xss.md", "text/markdown", []byte("<svg onload=alert(1)>")),
+			ok:   false,
+		},
+		"binary disguised as txt": {
+			file: putBytes("bin.txt", "text/plain", []byte{'a', 'b', 0x00, 'c'}),
+			ok:   false,
+		},
+		"zip valid": {
+			file:     putBytes("archive.zip", "application/zip", plainZip),
+			ok:       true,
+			wantMIME: "application/zip",
+		},
+	} {
+		got, err := e.svc.Confirm(ctx, alice, tc.file.ID, docs)
+		if tc.ok != (err == nil) || (!tc.ok && !errors.Is(err, filesystem.ErrNotAccepted)) {
+			t.Errorf("%s: err=%v, want ok=%v", name, err, tc.ok)
+			continue
+		}
+		if tc.ok && got.ContentType != tc.wantMIME {
+			t.Errorf("%s: content_type=%q, want %q", name, got.ContentType, tc.wantMIME)
+		}
+	}
+}
+
+// TestGetMany 验证批量按 ID 查询未删除文件，跨磁盘（local 与 s3）正确生成公开地址，已删除与不存在的 ID 不在结果中。
+func TestGetMany(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	e := newEnv(t)
+
+	empty, err := e.svc.GetMany(ctx, nil)
+	if err != nil || len(empty) != 0 {
+		t.Fatalf("empty GetMany = %v %v", empty, err)
+	}
+
+	localFile := upload(t, e.svc, alice, "local-data")
+	deletedFile := upload(t, e.svc, alice, "gone")
+	if err := e.svc.Delete(ctx, deletedFile.ID); err != nil {
+		t.Fatal(err)
+	}
+	s3File, err := e.svc.Upload(ctx, alice, filesystem.FileInput{
+		Disk: "s3", Filename: "doc.pdf", ContentType: "application/pdf", Size: 4,
+	}, strings.NewReader("%PDF"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	missing := uuid.Must(uuid.NewV7())
+
+	got, err := e.svc.GetMany(ctx, []uuid.UUID{localFile.ID, s3File.ID, deletedFile.ID, missing})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("len(got) = %d, want 2", len(got))
+	}
+	if got[localFile.ID].URL != "/storage/"+localFile.Key {
+		t.Errorf("local URL = %q", got[localFile.ID].URL)
+	}
+	if got[s3File.ID].URL != "https://cdn.example.com/"+s3File.Key {
+		t.Errorf("s3 URL = %q", got[s3File.ID].URL)
 	}
 }

@@ -44,6 +44,19 @@ export function inTimeZone(value: string | Date, zone?: string): dayjs.Dayjs {
   return zone && d.isValid() ? d.tz(zone) : d
 }
 
+/** 把字节数格式化为易读的文件大小，例如 512 B、1.2 KB、3.4 MB。 */
+export function formatFileSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B"
+  const units = ["B", "KB", "MB", "GB", "TB"]
+  let value = bytes
+  let i = 0
+  while (value >= 1024 && i < units.length - 1) {
+    value /= 1024
+    i++
+  }
+  return i === 0 ? `${Math.round(value)} B` : `${Math.round(value * 10) / 10} ${units[i]}`
+}
+
 /**
  * 按主题的 datetimeFormat（createUiTheme 的选项，默认 YYYY-MM-DD HH:mm）显示日期时间。后端返回的是带时区的 ISO 时间，
  * 显示为 TimeZoneProvider 的时区（没有时是浏览器的时区）中的时间；解析不了时原样返回。

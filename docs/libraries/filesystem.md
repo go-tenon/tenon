@@ -131,7 +131,7 @@ article.CoverID = cover.ID
 ```
 
 - 对象没有完整上传时返回 `filesystem.ErrNotUploaded`。
-- `Types` 非空时按文件开头的内容识别真实类型，它要在 `Types` 中，并且与声明的类型、扩展名对应的类型一致：扩展名为 `.html` 的“图片”会被浏览器当作网页打开。内容识别只适用于图片、PDF、音视频、压缩包这类二进制格式，CSV、JSON 不写进 `Types`。`Accept{}` 只要求文件已经完整上传。
+- `Types` 非空时按文件内容识别真实类型（图片、PDF、压缩包、Office 文档 `docx/xlsx/pptx/doc/xls/ppt` 及 `txt/log/csv/md/json`），它要在 `Types` 中，且与扩展名和声明的类型兼容；客户端上传时只给了兜底类型 `application/octet-stream` 时，确认后写回探测出的规范类型。`Accept{}` 只要求文件已经完整上传。
 - 不符合时返回 `filesystem.ErrNotAccepted`，文件保持 `temporary`，到期后被回收。
 - 只有上传者本人能确认，其他主体和已过期的文件得到 `filesystem.ErrNotFound`：用户不能引用别人上传的文件。重复确认返回同一条记录。
 - 要和业务数据一起提交时在事务中确认，见[在业务接口中确认](#rest-confirm)。
@@ -186,7 +186,7 @@ for i := range images {
 record, err := fileService.Get(ctx, article.CoverID)
 ```
 
-- `Get` 只按 ID 查询，不检查权限。已删除的文件返回 `filesystem.ErrNotFound`。
+- `Get` 只按 ID 查询，不检查权限。已删除的文件返回 `filesystem.ErrNotFound`。批量读取多个文件时用 `GetMany(ctx, ids)`，返回按 ID 索引的 map，每条记录按所在磁盘填好 `URL`。
 - 只需要拼地址时，业务表保存 `key`，用磁盘的 `URL(key)` 生成。
 
 在服务端处理文件内容时用 `Open` 读取正文，调用方关闭它：

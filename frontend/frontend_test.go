@@ -239,3 +239,29 @@ func TestDevServers(t *testing.T) {
 		t.Fatal("Run twice")
 	}
 }
+
+// TestCSPPolicy 验证结构化 CSP 与 DefaultCSP 一致，并支持去重追加来源与提取 origin。
+func TestCSPPolicy(t *testing.T) {
+	t.Parallel()
+	const nonce = "abc123"
+	p := DefaultPolicy(nonce)
+	if got, want := p.String(), DefaultCSP(nonce); got != want {
+		t.Fatalf("DefaultPolicy = %q, want %q", got, want)
+	}
+	p.AddImgSrc("blob:", Origin("https://cdn.example.com/files"), Origin("/storage"), "blob:", "")
+	p.AddConnectSrc(Origin("https://o2.example.com/ingest"), "https://o2.example.com")
+	p.FrameAncestors = []string{"https://shop.example.com"}
+	got := p.String()
+	for _, want := range []string{
+		"img-src 'self' data: blob: https://cdn.example.com",
+		"connect-src 'self' https://o2.example.com",
+		"frame-ancestors https://shop.example.com",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("csp %q missing %q", got, want)
+		}
+	}
+	if Origin("http://img.local:8080/path?x=1") != "http://img.local:8080" || Origin("ftp://x.com") != "" || Origin("/storage") != "" {
+		t.Fatalf("unexpected Origin results")
+	}
+}
