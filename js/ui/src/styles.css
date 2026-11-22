@@ -1329,3 +1329,36 @@ body {
   background: var(--mantine-primary-color-light);
   color: var(--mantine-primary-color-light-color);
 }
+
+/* ———————————————— 指标卡片（StatCard）与时间窗口选择器（PeriodPicker） ———————————————— */
+
+.tn-stat-card {
+  background: var(--tn-surface);
+  border-color: var(--tn-border);
+}
+
+.tn-stat-card-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--tn-muted);
+}
+
+.tn-stat-card-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--tn-text);
+}
+
+.tn-stat-card-secondary {
+  font-variant-numeric: tabular-nums;
+}
+
+.tn-period-picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}

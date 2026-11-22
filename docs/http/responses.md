@@ -2,7 +2,7 @@
 
 接口的输出类型是一个 Go 结构体：`Body` 字段是 JSON 响应体，带 `header` 标签的字段是响应头，`Status` 字段是状态码。列表接口用 `page` 包的分页结构。
 
-包：`httpx/rest`、`page`。
+包：`httpx/rest`、`page`、`period`。
 
 <a id="creating-responses"></a>
 ## 示例
@@ -228,6 +228,28 @@ func (a *List) Handle(ctx context.Context, subject identity.Subject, q ListQuery
 - 每种排序以 `id` 结尾：标题相同的文章顺序不固定，翻页时会重复或遗漏。
 - 按调用者限定范围的条件写在同一个查询中，见[列表查询中的授权](../security/authorization.md#scoping-queries)。需要分词和相关度排序时用[搜索](../features/search.md)。
 - 游标分页的排序固定写在业务动作中，不提供 `sort` 参数：换一种排序，原来的游标就失效了。
+
+<a id="period"></a>
+## 时间窗口与分桶：`period` 包
+
+报表和统计接口嵌入 `period.Params`（`from`、`to`、`tz`、`granularity`），用 `period.Resolve` 按时区换算 UTC 半开区间 `[Start, End)` 和等长上一对比期 `[PrevStart, PrevEnd)`，用 `period.FillSeries` 按连续时间桶补零：
+
+```go
+type ReportInput struct {
+    period.Params
+    TeamID string `query:"team_id"`
+}
+
+w, err := period.Resolve(in.Params, period.Options{DefaultZone: "Asia/Shanghai"})
+if err != nil {
+    return nil, err // 非法时区、日期倒挂、超过跨度上限时返回 422
+}
+// SQL 使用 WHERE created_at >= w.Start AND created_at < w.End（不用 NOW()）
+series := period.FillSeries(w, rows, func(p Point) string { return p.Date }, func(d string) Point { return Point{Date: d} })
+```
+
+- 跨度不超过 62 天且未指定粒度时默认 `day`，超过时自动切换 `week`（按周一起始，与 PostgreSQL `date_trunc('week', ...)` 对齐）。
+- 响应体嵌入 `w.Meta()`（`period.Meta`）向前端回显实际生效的日期范围、时区、粒度与对比期。
 
 <a id="returning-errors"></a>
 ## 返回错误

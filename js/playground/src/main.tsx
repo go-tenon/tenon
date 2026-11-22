@@ -24,6 +24,8 @@ import {
   type NotificationsSource,
   OperationsMenu,
   Page,
+  PeriodPicker,
+  periodSearch,
   QueuePanel,
   RailLayout,
   ResourceFormPage,
@@ -35,15 +37,18 @@ import {
   SettingsPage,
   SiteLayout,
   SplitAuthLayout,
+  StatCard,
   TimeZoneProvider,
   trackOperation,
   UIProvider,
   UserMenu,
   useApp,
   useFormatDateTime,
+  useFormatDuration,
   useI18n,
   useLanguage,
   useMenuBadge,
+  usePeriod,
 } from "@go-tenon/ui"
 import {
   Badge,
@@ -540,11 +545,100 @@ function railApp() {
       />
     ),
   })
+  const reports = createRoute({
+    getParentRoute: () => layout,
+    path: "/reports",
+    staticData: {
+      title: "报表",
+      icon: "chart",
+      order: 3,
+      preserveSearch: ["preset", "from", "to", "granularity"],
+    },
+  })
+  const reportValidate = periodSearch()
+  const reportOverview = createRoute({
+    getParentRoute: () => reports,
+    path: "/overview",
+    staticData: { title: "会话概览", icon: "chart", order: 0 },
+    validateSearch: reportValidate,
+    component: function ReportOverview() {
+      const period = usePeriod(reportOverview)
+      const formatDuration = useFormatDuration()
+      return (
+        <Page title="会话概览" description="演示 PeriodPicker、StatCard、useFormatDuration 与跨页保留筛选条件。">
+          <Stack gap="md">
+            <PeriodPicker period={period} showGranularity />
+            <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }}>
+              <StatCard
+                label="新建会话"
+                description="统计周期内新创建的全部服务型会话"
+                value="1,284"
+                secondary={`范围 ${period.from} ~ ${period.to}`}
+                delta={{ value: 14.2, label: "+14.2%" }}
+              />
+              <StatCard
+                label="首次回复中位数"
+                description="从会话打开到首次人工回复的中位耗时"
+                value={formatDuration(142)}
+                secondary={`均值 ${formatDuration(215)} · P90 ${formatDuration(640)}`}
+                delta={{ value: -18, label: "-18%", invert: true }}
+              />
+              <StatCard
+                label="满意度（CSAT）"
+                value="94.6%"
+                secondary="4–5 星占比 · 共 312 条评价"
+                delta={{ value: 0, label: "持平" }}
+              />
+              <StatCard
+                label="翻译平均耗时"
+                value={formatDuration(680, { unit: "ms" })}
+                secondary="调用成功率 99.4%"
+                delta={{ value: 8.5, label: "+8.5%", invert: true }}
+              />
+            </SimpleGrid>
+          </Stack>
+        </Page>
+      )
+    },
+  })
+  const reportLatency = createRoute({
+    getParentRoute: () => reports,
+    path: "/latency",
+    staticData: { title: "响应时间", icon: "clock", order: 1 },
+    validateSearch: reportValidate,
+    component: function ReportLatency() {
+      const period = usePeriod(reportLatency)
+      const formatDuration = useFormatDuration()
+      return (
+        <Page title="响应时间" description="从二级导航切换页面时自动保留上一步选择的日期与粒度参数。">
+          <Stack gap="md">
+            <PeriodPicker period={period} showGranularity />
+            <SimpleGrid cols={{ base: 1, sm: 3 }}>
+              <StatCard
+                label="首次回复中位数"
+                value={formatDuration(142)}
+                secondary={`参数 tz=${period.tz ?? "默认"} · granularity=${period.granularity ?? "自动"}`}
+                delta={{ value: -12, label: "-12%", invert: true }}
+              />
+              <StatCard
+                label="解决时长中位数"
+                value={formatDuration(5480)}
+                secondary={`P90 ${formatDuration(18900)}`}
+                delta={{ value: -6.4, label: "-6.4%", invert: true }}
+              />
+              <StatCard label="加载中示例" value="—" loading />
+            </SimpleGrid>
+          </Stack>
+        </Page>
+      )
+    },
+  })
   const routeTree = root.addChildren([
     layout.addChildren([
       page(layout, "/", "首页", "home"),
       tenant.addChildren([inbox, ticket]),
       content.addChildren([page(content, "/items", "全部", "list"), page(content, "/archive", "归档", "file", 1)]),
+      reports.addChildren([reportOverview, reportLatency]),
       settings.addChildren([personal.addChildren([page(personal, "/profile", "个人资料", "user")]), drawerCustomers]),
     ]),
   ])

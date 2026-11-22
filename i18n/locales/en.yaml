@@ -9,6 +9,10 @@ url.expired: This link has expired
 pdf.unavailable: PDF service is temporarily unavailable, please try again later
 feature.invalid: Invalid feature flag setting
 page.invalid_cursor: Invalid pagination cursor
+period.invalid_range: Invalid date range
+period.range_too_large: Date range cannot exceed {{.max_days}} days
+period.invalid_time_zone: "Unknown time zone \"{{.time_zone}}\""
+period.invalid_granularity: Unsupported time granularity
 rate_limit.exceeded: Too many requests, please try again later
 rpc.no_responders: The service is temporarily unavailable, please try again later
 app.upgrade_required: This version is no longer supported, please update to {{.minimum}} or later

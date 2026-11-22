@@ -145,7 +145,7 @@ SQL 迁移文件，由 `embed.go` 嵌入程序，部署时用 `migrate up` 执�
 功能        apitoken  login  oauthserver  authz  notification  push  activity  feature  settings  operation  privacy  privacy/export  webhook  search  vector  sheet/imports  sheet/exports  ai
 入口        httpx  frontend  realtime  mcpx  natsrpc  command  clientgen
 基础设施    database  natsx  queue  schedule  cache  lock  ratelimit  captcha  broadcast  filesystem  imgproxy  mail  sms  pdf  outbound  sheet  document  contract  form
-基础        errorx  identity  config  cleanup  logging  telemetry  health  doctor  i18n  enum  page  hashing  crypt  acquire
+基础        errorx  identity  config  cleanup  logging  telemetry  health  doctor  i18n  enum  page  period  hashing  crypt  acquire
 ```
 
 名字以 `test` 结尾的子包（`dbtest`、`queuetest`、`mailtest` 等）是测试用的替身和工具。函数的签名和说明用 `go doc github.com/go-tenon/tenon/<包>` 查。
@@ -170,6 +170,7 @@ SQL 迁移文件，由 `embed.go` 嵌入程序，部署时用 `migrate up` 执�
 | `identity` | 已认证的主体，在 context 中传递 | [认证](../security/authentication.md) |
 | `logging` | 构造 slog 日志器，传递请求关联字段 | [日志](../general/logging.md) |
 | `page` | 分页参数与响应结构 | [分页](../http/responses.md#pagination) |
+| `period` | 报表时间窗口参数、时区边界、环比期与时间桶补零 | [时间窗口](../http/responses.md#period) |
 | `telemetry` | 用 OTLP 推送日志、指标和链路 | [可观测性](../general/telemetry.md) |
 
 <a id="infrastructure"></a>

@@ -24,6 +24,8 @@ export interface MenuItem {
   params?: Record<string, string>
   /** 徽标：数字、文字，或者 true 表示小红点，见 useMenuBadge。 */
   badge?: number | string | boolean
+  /** 点击菜单项跳转时从当前地址保留的查询参数名（继承自模块父路由）。 */
+  preserveSearch?: readonly string[]
   children?: MenuItem[]
 }
 
@@ -111,17 +113,19 @@ export function buildMenu(
   const order = (a: RouteInfo, b: RouteInfo) =>
     (a.staticData?.order ?? 0) - (b.staticData?.order ?? 0) ||
     normalizePath(a.path).localeCompare(normalizePath(b.path))
-  const build = (parent: string | undefined): MenuItem[] => {
+  const build = (parent: string | undefined, inheritedSearch?: readonly string[]): MenuItem[] => {
     const items: MenuItem[] = []
     for (const r of (children.get(parent) ?? []).filter(visible).sort(order)) {
       const filled = fill(r) ?? { path: r.path }
+      const preserveSearch = r.staticData?.preserveSearch ?? inheritedSearch
       const item: MenuItem = { id: r.id, title: r.staticData?.title ?? "", path: normalizePath(filled.path) }
       if (filled.params) item.params = filled.params
       if (r.staticData?.icon) item.icon = r.staticData.icon
+      if (preserveSearch?.length) item.preserveSearch = preserveSearch
       const badge = badges.get(r.id)
       if (badge !== undefined) item.badge = badge
       if (children.has(r.id)) {
-        const sub = build(r.id)
+        const sub = build(r.id, preserveSearch)
         if (sub.length === 0) continue // 分组中没有可以进入的页面
         item.children = sub
       }
