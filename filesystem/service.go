@@ -138,6 +138,29 @@ func (s *Service) Confirm(ctx context.Context, owner identity.Subject, id uuid.U
 	if err != nil {
 		return File{}, err
 	}
+	effective := detected
+	if effective == "" {
+		effective = mediaType(r.ContentType)
+	}
+	// 图片文件自动提取宽高元数据，并按 Accept.MaxDimension 拦截损坏图片或超限像素尺寸。
+	var meta Meta
+	if strings.HasPrefix(effective, "image/") {
+		w, h, ok := r.Meta.Width, r.Meta.Height, r.Meta.Width > 0 && r.Meta.Height > 0
+		if !ok {
+			w, h, ok, err = s.readImageDimensions(ctx, r, effective)
+			if err != nil {
+				return File{}, err
+			}
+		}
+		if accept.MaxDimension > 0 {
+			if !ok || w <= 0 || h <= 0 || w > accept.MaxDimension || h > accept.MaxDimension {
+				return File{}, errors.Wrapf(ErrNotAccepted, "image dimensions %dx%d exceed %d", w, h, accept.MaxDimension)
+			}
+		}
+		if ok && w > 0 && h > 0 {
+			meta = Meta{Width: w, Height: h}
+		}
+	}
 	if r.Status == StatusReady {
 		return r, nil
 	}
@@ -147,6 +170,10 @@ func (s *Service) Confirm(ctx context.Context, owner identity.Subject, id uuid.U
 	if detected != "" && mediaType(r.ContentType) == "application/octet-stream" && detected != "application/octet-stream" {
 		q = q.Set("content_type = ?", detected)
 		r.ContentType = detected
+	}
+	if meta != (Meta{}) {
+		q = q.Set("meta = ?", meta)
+		r.Meta = meta
 	}
 	err = q.Where("id = ?", id).Where("status = ?", StatusTemporary).Where("expires_at > ?", time.Now().UTC()).
 		Returning("updated_at").Scan(ctx, &r.UpdatedAt)

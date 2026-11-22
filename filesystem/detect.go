@@ -4,7 +4,12 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
+	"image"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
 	"io"
 	"mime"
 	"net/http"
@@ -242,4 +247,63 @@ func declaredCompatible(declared, actual string) bool {
 		return declared == "text/plain"
 	}
 	return false
+}
+
+// readImageDimensions 读取图片文件的像素宽高：支持 PNG、JPEG、GIF（标准库）以及 WebP（VP8/VP8L/VP8X）。
+// 无法解码或格式不支持时返回 ok=false 且 err=nil。
+func (s *Service) readImageDimensions(ctx context.Context, r File, contentType string) (w, h int, ok bool, err error) {
+	body, err := s.disk(r).Open(ctx, r.Key)
+	if err != nil {
+		return 0, 0, false, errors.Wrap(err, "filesystem: open")
+	}
+	defer func() { _ = body.Close() }()
+	if contentType == "image/webp" {
+		head := make([]byte, 64)
+		n, rerr := io.ReadFull(body, head)
+		if rerr != nil && !errors.Is(rerr, io.ErrUnexpectedEOF) && !errors.Is(rerr, io.EOF) {
+			return 0, 0, false, errors.Wrap(rerr, "filesystem: read webp header")
+		}
+		w, h, ok = parseWebPDimensions(head[:n])
+		return w, h, ok, nil
+	}
+	cfg, _, err := image.DecodeConfig(body)
+	if err != nil {
+		return 0, 0, false, nil
+	}
+	return cfg.Width, cfg.Height, true, nil
+}
+
+// parseWebPDimensions 解析 WebP 文件头中的宽高（VP8、VP8L、VP8X 三种编码块）。
+func parseWebPDimensions(b []byte) (int, int, bool) {
+	if len(b) < 30 || !bytes.Equal(b[0:4], []byte("RIFF")) || !bytes.Equal(b[8:12], []byte("WEBP")) {
+		return 0, 0, false
+	}
+	switch string(b[12:16]) {
+	case "VP8 ":
+		// 有损帧头：3 字节帧标签 + 3 字节起始码 0x9d 0x01 0x2a + 2 字节宽 + 2 字节高
+		if b[23] != 0x9d || b[24] != 0x01 || b[25] != 0x2a {
+			return 0, 0, false
+		}
+		w := int(binary.LittleEndian.Uint16(b[26:28]) & 0x3fff)
+		h := int(binary.LittleEndian.Uint16(b[28:30]) & 0x3fff)
+		return w, h, true
+	case "VP8L":
+		// 无损编码：1 字节签名 0x2f + 4 字节打包的 (width-1, height-1) 各占 14 位
+		if len(b) < 25 || b[20] != 0x2f {
+			return 0, 0, false
+		}
+		bits := binary.LittleEndian.Uint32(b[21:25])
+		w := int(bits&0x3fff) + 1
+		h := int((bits>>14)&0x3fff) + 1
+		return w, h, true
+	case "VP8X":
+		// 扩展格式：4 字节标志 + 3 字节 (width-1) + 3 字节 (height-1)
+		if len(b) < 30 {
+			return 0, 0, false
+		}
+		w := int(uint32(b[24])|uint32(b[25])<<8|uint32(b[26])<<16) + 1
+		h := int(uint32(b[27])|uint32(b[28])<<8|uint32(b[29])<<16) + 1
+		return w, h, true
+	}
+	return 0, 0, false
 }

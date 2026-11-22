@@ -8,6 +8,7 @@ CREATE TABLE files (
     filename text NOT NULL,
     content_type text NOT NULL,
     size bigint NOT NULL CHECK (size >= 0),
+    meta jsonb NOT NULL DEFAULT '{}',
     owner_type text NOT NULL,
     owner_id text NOT NULL,
     status text NOT NULL CHECK (status IN ('temporary', 'ready', 'deleted')),
@@ -25,6 +26,7 @@ COMMENT ON COLUMN files.key IS '文件在存储磁盘中的对象路径';
 COMMENT ON COLUMN files.filename IS '上传时的原始文件名';
 COMMENT ON COLUMN files.content_type IS '文件的 MIME 类型';
 COMMENT ON COLUMN files.size IS '文件大小（字节）';
+COMMENT ON COLUMN files.meta IS '文件内容的固有元数据，例如图片的像素宽高（width、height）';
 COMMENT ON COLUMN files.owner_type IS '文件所属的主体类型';
 COMMENT ON COLUMN files.owner_id IS '文件所属的主体 ID';
 COMMENT ON COLUMN files.status IS '文件状态：temporary、ready 或 deleted';

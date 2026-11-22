@@ -4,7 +4,13 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
+	"image"
+	"image/color"
+	"image/gif"
+	"image/jpeg"
+	"image/png"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -697,5 +703,140 @@ func TestGetMany(t *testing.T) {
 	}
 	if got[s3File.ID].URL != "https://cdn.example.com/"+s3File.Key {
 		t.Errorf("s3 URL = %q", got[s3File.ID].URL)
+	}
+}
+
+// TestConfirmImageMeta 验证 Confirm 自动解析 PNG/JPEG/GIF/WebP 宽高并持久化到 files.meta，
+// Get/GetMany 原样读出，MaxDimension 正确拦截超限尺寸和损坏图片。
+func TestConfirmImageMeta(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	e := newEnv(t)
+
+	encodePNG := func(w, h int) []byte {
+		var buf bytes.Buffer
+		img := image.NewRGBA(image.Rect(0, 0, w, h))
+		img.Set(0, 0, color.RGBA{R: 10, G: 20, B: 30, A: 255})
+		if err := png.Encode(&buf, img); err != nil {
+			t.Fatal(err)
+		}
+		return buf.Bytes()
+	}
+	encodeJPEG := func(w, h int) []byte {
+		var buf bytes.Buffer
+		img := image.NewRGBA(image.Rect(0, 0, w, h))
+		if err := jpeg.Encode(&buf, img, nil); err != nil {
+			t.Fatal(err)
+		}
+		return buf.Bytes()
+	}
+	encodeGIF := func(w, h int) []byte {
+		var buf bytes.Buffer
+		img := image.NewPaletted(image.Rect(0, 0, w, h), color.Palette{color.Black, color.White})
+		if err := gif.Encode(&buf, img, nil); err != nil {
+			t.Fatal(err)
+		}
+		return buf.Bytes()
+	}
+	makeWebPVP8 := func(w, h int) []byte {
+		b := make([]byte, 34)
+		copy(b[0:4], "RIFF")
+		binary.LittleEndian.PutUint32(b[4:8], uint32(len(b)-8))
+		copy(b[8:12], "WEBP")
+		copy(b[12:16], "VP8 ")
+		binary.LittleEndian.PutUint32(b[16:20], 14)
+		b[23], b[24], b[25] = 0x9d, 0x01, 0x2a
+		binary.LittleEndian.PutUint16(b[26:28], uint16(w))
+		binary.LittleEndian.PutUint16(b[28:30], uint16(h))
+		return b
+	}
+	makeWebPVP8L := func(w, h int) []byte {
+		b := make([]byte, 32)
+		copy(b[0:4], "RIFF")
+		binary.LittleEndian.PutUint32(b[4:8], uint32(len(b)-8))
+		copy(b[8:12], "WEBP")
+		copy(b[12:16], "VP8L")
+		binary.LittleEndian.PutUint32(b[16:20], 12)
+		b[20] = 0x2f
+		binary.LittleEndian.PutUint32(b[21:25], uint32(w-1)|(uint32(h-1)<<14))
+		return b
+	}
+	makeWebPVP8X := func(w, h int) []byte {
+		b := make([]byte, 32)
+		copy(b[0:4], "RIFF")
+		binary.LittleEndian.PutUint32(b[4:8], uint32(len(b)-8))
+		copy(b[8:12], "WEBP")
+		copy(b[12:16], "VP8X")
+		binary.LittleEndian.PutUint32(b[16:20], 10)
+		wm, hm := uint32(w-1), uint32(h-1)
+		b[24], b[25], b[26] = byte(wm), byte(wm>>8), byte(wm>>16)
+		b[27], b[28], b[29] = byte(hm), byte(hm>>8), byte(hm>>16)
+		return b
+	}
+	put := func(name, ct string, data []byte) filesystem.File {
+		t.Helper()
+		f, err := e.svc.Upload(ctx, alice, filesystem.FileInput{Filename: name, ContentType: ct, Size: int64(len(data))}, bytes.NewReader(data))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return f
+	}
+
+	accept := filesystem.Accept{Types: []string{"image/*"}, MaxDimension: 500}
+	cases := []struct {
+		name  string
+		ct    string
+		data  []byte
+		wantW int
+		wantH int
+	}{
+		{"a.png", "image/png", encodePNG(120, 80), 120, 80},
+		{"b.jpg", "image/jpeg", encodeJPEG(64, 48), 64, 48},
+		{"c.gif", "image/gif", encodeGIF(32, 24), 32, 24},
+		{"d.webp", "image/webp", makeWebPVP8(200, 150), 200, 150},
+		{"e.webp", "image/webp", makeWebPVP8L(320, 240), 320, 240},
+		{"f.webp", "image/webp", makeWebPVP8X(400, 300), 400, 300},
+	}
+	var ids []uuid.UUID
+	for _, tc := range cases {
+		f := put(tc.name, tc.ct, tc.data)
+		confirmed, err := e.svc.Confirm(ctx, alice, f.ID, accept)
+		if err != nil {
+			t.Fatalf("%s: confirm err=%v", tc.name, err)
+		}
+		if confirmed.Meta.Width != tc.wantW || confirmed.Meta.Height != tc.wantH {
+			t.Fatalf("%s: meta=%+v, want %dx%d", tc.name, confirmed.Meta, tc.wantW, tc.wantH)
+		}
+		got, err := e.svc.Get(ctx, f.ID)
+		if err != nil || got.Meta != confirmed.Meta {
+			t.Fatalf("%s: Get meta=%+v err=%v", tc.name, got.Meta, err)
+		}
+		ids = append(ids, f.ID)
+	}
+	many, err := e.svc.GetMany(ctx, ids)
+	if err != nil || len(many) != len(ids) || many[ids[0]].Meta.Width != 120 || many[ids[4]].Meta.Height != 240 {
+		t.Fatalf("GetMany meta = %+v %v", many, err)
+	}
+
+	// 超过 MaxDimension 的图片被拒绝，文件保持 temporary
+	tooBig := put("big.png", "image/png", encodePNG(600, 100))
+	if _, err := e.svc.Confirm(ctx, alice, tooBig.ID, accept); !errors.Is(err, filesystem.ErrNotAccepted) {
+		t.Fatalf("too big image: err=%v, want ErrNotAccepted", err)
+	}
+	if rec, _ := e.svc.Get(ctx, tooBig.ID); rec.Status != filesystem.StatusTemporary {
+		t.Fatalf("too big image status=%s, want temporary", rec.Status)
+	}
+
+	// 截断/损坏的图片在设置了 MaxDimension 时被拒绝
+	broken := put("broken.png", "image/png", []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"))
+	if _, err := e.svc.Confirm(ctx, alice, broken.ID, accept); !errors.Is(err, filesystem.ErrNotAccepted) {
+		t.Fatalf("broken png with MaxDimension: err=%v, want ErrNotAccepted", err)
+	}
+
+	// 非图片文件的 Meta 保持零值
+	txt := put("note.txt", "text/plain", []byte("hello"))
+	confirmedTxt, err := e.svc.Confirm(ctx, alice, txt.ID, filesystem.Accept{Types: []string{"text/plain"}, MaxDimension: 500})
+	if err != nil || confirmedTxt.Meta != (filesystem.Meta{}) {
+		t.Fatalf("text meta=%+v err=%v", confirmedTxt.Meta, err)
 	}
 }

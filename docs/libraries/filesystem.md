@@ -119,8 +119,9 @@ record, err := fileService.Upload(ctx, owner, filesystem.FileInput{
 
 ```go
 var coverImage = filesystem.Accept{
-    Types:   []string{"image/png", "image/jpeg", "image/webp"}, // "image/*" 匹配一类
-    MaxSize: 5 * filesystem.MiB,                                // 0 时只受 max_upload_size 限制
+    Types:        []string{"image/png", "image/jpeg", "image/webp"}, // "image/*" 匹配一类
+    MaxSize:      5 * filesystem.MiB,                                // 0 时只受 max_upload_size 限制
+    MaxDimension: 4096,                                              // 图片单边最大像素，0 表示不限
 }
 
 cover, err := fileService.Confirm(ctx, owner, input.CoverID, coverImage)
@@ -128,10 +129,12 @@ if err != nil {
     return err // 客户端提交了不合格的文件时原样返回
 }
 article.CoverID = cover.ID
+// cover.Meta.Width / cover.Meta.Height 已自动提取并保存在 files.meta
 ```
 
 - 对象没有完整上传时返回 `filesystem.ErrNotUploaded`。
 - `Types` 非空时按文件内容识别真实类型（图片、PDF、压缩包、Office 文档 `docx/xlsx/pptx/doc/xls/ppt` 及 `txt/log/csv/md/json`），它要在 `Types` 中，且与扩展名和声明的类型兼容；客户端上传时只给了兜底类型 `application/octet-stream` 时，确认后写回探测出的规范类型。`Accept{}` 只要求文件已经完整上传。
+- 图片（PNG、JPEG、GIF、WebP）在确认时会自动解析像素宽高写入 `files.meta`（`File.Meta.Width` / `File.Meta.Height`）；设置 `MaxDimension` 后，无法解析出合法尺寸或任一边超过上限的图片会被拒绝。
 - 不符合时返回 `filesystem.ErrNotAccepted`，文件保持 `temporary`，到期后被回收。
 - 只有上传者本人能确认，其他主体和已过期的文件得到 `filesystem.ErrNotFound`：用户不能引用别人上传的文件。重复确认返回同一条记录。
 - 要和业务数据一起提交时在事务中确认，见[在业务接口中确认](#rest-confirm)。
