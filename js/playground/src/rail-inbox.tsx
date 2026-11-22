@@ -1,10 +1,17 @@
 // RailLayout 中铺满内容区的模块：收件箱。路由的 staticData.fullBleed 让页面占满内容区，
 // <Fill name="nav"> 放模块自己的二级导航（带数量的收件箱列表），打开详情且窗口不够宽时 useCollapseNav 临时收起二级导航。
 
-import { Fill, useCollapseNav, useNavControl } from "@go-tenon/ui"
+import { Fill, RailSection, useCollapseNav, useNavControl } from "@go-tenon/ui"
 import { ActionIcon, Button, Group, NavLink, ScrollArea, Stack, Text, UnstyledButton } from "@mantine/core"
 import { useMediaQuery } from "@mantine/hooks"
-import { IconLayoutSidebarLeftExpand, IconX } from "@tabler/icons-react"
+import {
+  IconAt,
+  IconInbox,
+  IconLayoutSidebarLeftExpand,
+  IconListDetails,
+  IconUserQuestion,
+  IconX,
+} from "@tabler/icons-react"
 import { type ReactNode, useState } from "react"
 
 /** 二级导航中的一项：名称和数量。 */
@@ -28,6 +35,13 @@ const teams: Box[] = [
 
 const names = ["Rahul", "Priya", "Anil", "Sneha", "Meera", "Vikram", "Kavya", "Arjun", "Divya", "Rohan"]
 
+const boxIcons: Record<string, ReactNode> = {
+  mine: <IconInbox size={16} stroke={1.6} />,
+  mentions: <IconAt size={16} stroke={1.6} />,
+  unassigned: <IconUserQuestion size={16} stroke={1.6} />,
+  all: <IconListDetails size={16} stroke={1.6} />,
+}
+
 /** InboxDemo 是收件箱的演示：二级导航、会话列表、会话，以及按需打开的详情，各栏自己滚动。 */
 export function InboxDemo(): ReactNode {
   const [box, setBox] = useState("mine")
@@ -38,10 +52,11 @@ export function InboxDemo(): ReactNode {
   useCollapseNav(detail && !wide)
   const all = [...boxes, ...teams]
   const selected = all.find((b) => b.id === box) ?? boxes[0]
-  const item = (b: Box) => (
+  const item = (b: Box, leftSection?: ReactNode) => (
     <NavLink
       key={b.id}
       label={b.title}
+      leftSection={leftSection}
       active={b.id === box}
       onClick={() => setBox(b.id)}
       rightSection={
@@ -54,11 +69,29 @@ export function InboxDemo(): ReactNode {
   return (
     <div style={{ display: "flex", height: "100%" }}>
       <Fill name="nav">
-        {boxes.map(item)}
-        <Text size="xs" c="dimmed" fw={600} px={10} pt={10}>
-          团队收件箱
-        </Text>
-        {teams.map(item)}
+        {boxes.map((b) => item(b, boxIcons[b.id]))}
+        <RailSection title="团队收件箱" collapsible>
+          {teams.map((b) =>
+            item(
+              b,
+              <span
+                style={{
+                  display: "grid",
+                  placeItems: "center",
+                  width: 18,
+                  height: 18,
+                  borderRadius: "var(--mantine-radius-xs)",
+                  background: "var(--tn-hover)",
+                  color: "var(--tn-muted)",
+                  fontSize: 11,
+                  fontWeight: 600,
+                }}
+              >
+                {b.title.slice(0, 1)}
+              </span>,
+            ),
+          )}
+        </RailSection>
       </Fill>
       <div
         style={{

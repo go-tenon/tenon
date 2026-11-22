@@ -9,6 +9,7 @@
 import {
   ActionIcon,
   Box,
+  Collapse,
   Drawer,
   Group,
   NavLink,
@@ -19,7 +20,12 @@ import {
   Tooltip,
   UnstyledButton,
 } from "@mantine/core"
-import { IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand, IconSearch } from "@tabler/icons-react"
+import {
+  IconChevronRight,
+  IconLayoutSidebarLeftCollapse,
+  IconLayoutSidebarLeftExpand,
+  IconSearch,
+} from "@tabler/icons-react"
 import { Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router"
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useState } from "react"
 import { SessionBoundary } from "../app/app"
@@ -56,16 +62,59 @@ export interface RailLayoutProps {
   children?: ReactNode // 页面内容；默认是子路由
 }
 
+/** RailSection 的选项。 */
+export interface RailSectionProps {
+  /** 分组标题。 */
+  title: ReactNode
+  /** 是否允许点击标题折叠分组，默认 false。 */
+  collapsible?: boolean
+  /** 允许折叠时是否默认展开，默认 true。 */
+  defaultOpened?: boolean
+  children: ReactNode
+}
+
+/** RailSection 是二级导航中的一个分组：上方细分隔线、小号分组标题（可选折叠）和组内导航项。 */
+export function RailSection({
+  title,
+  collapsible = false,
+  defaultOpened = true,
+  children,
+}: RailSectionProps): ReactNode {
+  const [opened, setOpened] = useState(defaultOpened)
+  return (
+    <Stack gap={2} className="tn-rail-section">
+      {collapsible ? (
+        <UnstyledButton
+          className="tn-rail-section-title"
+          data-collapsible=""
+          data-opened={opened || undefined}
+          aria-expanded={opened}
+          onClick={() => setOpened((v) => !v)}
+        >
+          <IconChevronRight size={12} stroke={2} className="tn-rail-section-chevron" />
+          <span>{title}</span>
+        </UnstyledButton>
+      ) : (
+        <div className="tn-rail-section-title">{title}</div>
+      )}
+      {collapsible ? (
+        <Collapse expanded={opened}>
+          <Stack gap={2}>{children}</Stack>
+        </Collapse>
+      ) : (
+        children
+      )}
+    </Stack>
+  )
+}
+
 /** NavItems 渲染二级导航中的链接，分组展开成一节（分组标题和其中的页面）。 */
 function NavItems({ items, active, onNavigate }: { items: MenuItem[]; active: string[]; onNavigate(): void }) {
   return items.map((item) =>
     item.children ? (
-      <Stack key={item.id} gap={2} className="tn-rail-section">
-        <Text size="xs" c="dimmed" fw={600} px={10} pt={4}>
-          {item.title}
-        </Text>
+      <RailSection key={item.id} title={item.title}>
         <NavItems items={item.children} active={active} onNavigate={onNavigate} />
-      </Stack>
+      </RailSection>
     ) : (
       <NavLink
         key={item.id}
