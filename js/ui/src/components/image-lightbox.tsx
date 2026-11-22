@@ -3,7 +3,7 @@
 import { ActionIcon, Group, Modal, Stack, Text, Tooltip } from "@mantine/core"
 import { IconDownload, IconExternalLink, IconX } from "@tabler/icons-react"
 import type { ReactNode } from "react"
-import { useT } from "../i18n/i18n"
+import { useText } from "../i18n/i18n"
 
 /** ImageLightbox 的属性。 */
 export interface ImageLightboxProps {
@@ -17,7 +17,7 @@ export interface ImageLightboxProps {
 
 /** 点击缩略图后弹出大图预览，点击背景或按 Esc 关闭。 */
 export function ImageLightbox({ src, filename, onClose }: ImageLightboxProps): ReactNode {
-  const t = useT()
+  const t = useText()
   return (
     <Modal
       opened={!!src}
