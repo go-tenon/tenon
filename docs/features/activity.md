@@ -18,8 +18,8 @@ err := database.RunInTx(ctx, db, nil, func(ctx context.Context, tx database.Tx) 
     })
 })
 
-// 一篇文章的历史，从新到旧
-list, err := activity.List(ctx, db, activity.Query{Tenant: sub.Tenant, TargetType: "article", TargetID: id.String()})
+// 一篇文章的历史，从新到旧（默认第 1 页、每页 20 条）
+res, err := activity.List(ctx, db, activity.Query{Tenant: sub.Tenant, TargetType: "article", TargetID: id.String()})
 ```
 
 `db` 是入口打开的 `*bun.DB`，`sub` 是执行操作的主体（`identity.Subject`），`item` 是刚发布的文章。
@@ -87,13 +87,14 @@ Properties: map[string]any{
 <a id="listing"></a>
 ## 用 `List` 查看操作日志
 
-`activity.List` 按时间从新到旧返回记录。`Tenant` 总是作为条件，其余条件为空时不限制。`a.db` 是入口打开的 `*bun.DB`，`sub` 是当前请求的主体：
+`activity.List` 按时间从新到旧返回一页记录（`page.Offset[activity.Activity]`）。`Tenant` 总是作为条件，其余条件为空时不限制。`a.db` 是入口打开的 `*bun.DB`，`sub` 是当前请求的主体，`in.OffsetParams` 是[固定分页](../http/responses.md#offset-pagination)参数：
 
 ```go
-list, err := activity.List(ctx, a.db, activity.Query{
+res, err := activity.List(ctx, a.db, activity.Query{
     Tenant:     sub.Tenant,
     TargetType: "article",
     TargetID:   id.String(),
+    Page:       in.OffsetParams,
 })
 ```
 
@@ -102,8 +103,7 @@ list, err := activity.List(ctx, a.db, activity.Query{
 | `TargetType`、`TargetID` | 某类对象或某个对象的历史；`TargetID` 需要同时设置 `TargetType` |
 | `Actor` | 某个主体（`identity.Ref`）做过的操作 |
 | `Event` | 某种事件 |
-| `Limit` | 返回的条数，默认 50 |
-| `Before` | 翻页：上一页最后一条的 `ID`，返回比它更早的记录 |
+| `Page` | `page.OffsetParams`，零值为第 1 页、每页 20 条（`activity.DefaultPerPage`） |
 
 查看历史也要授权，通常能查看文章的人才能查看它的历史，见[授权](../security/authorization.md)。其他查询（例如按时间范围导出）直接用 Bun，`activity.Activity` 就是这张表的模型。表上有 `(tenant, id)`、`(tenant, target_type, target_id, id)` 和 `(tenant, actor_id, id)` 三个索引，条件以 `tenant` 开头：
 
@@ -135,18 +135,18 @@ text := i18n.T(ctx, a.Event, a.Properties) // a 是一条 activity.Activity
 <a id="history-page"></a>
 ### 在页面中用 `ActivityLog` 显示
 
-`@go-tenon/ui` 的 `ActivityLog` 从新到旧以表格显示记录，满一页才显示“加载更多”，读取失败时显示“重试”。它读取应用自己的接口，每一条的字段：
+`@go-tenon/ui` 的 `ActivityLog` 从新到旧以固定分页表格显示记录，读取失败时显示“重试”。它读取应用自己的固定分页接口（返回 `page.Offset[T]`），每一条的字段：
 
 | 字段 | 内容 |
 | --- | --- |
-| `id` | 记录的 ID，翻页时作为 `before` 传回 |
+| `id` | 记录的 ID |
 | `text` | 事件的译文，即 `i18n.T(ctx, a.Event, a.Properties)` |
 | `actor` | 操作人的名字；为空时显示“系统” |
 | `impersonator` | 代为登录时实际操作的人的名字，可以为空 |
 | `created_at` | 时间 |
 | `href` | 点击后打开的应用内地址，可以为空 |
 
-接口用 `List` 查询，`before` 是查询参数，`list` 是 `List` 的结果，`names` 是应用按 `identity.Ref` 查出的操作人名字：
+接口把 `page.OffsetParams` 嵌入输入类型，用 `List` 查询，再用 `page.NewOffset` 组装响应；`res` 是 `List` 的结果，`names` 是应用按 `identity.Ref` 查出的操作人名字：
 
 ```go
 type HistoryItem struct {
@@ -157,8 +157,8 @@ type HistoryItem struct {
     CreatedAt    time.Time `json:"created_at"`
 }
 
-items := make([]HistoryItem, 0, len(list))
-for _, a := range list {
+items := make([]HistoryItem, 0, len(res.Items))
+for _, a := range res.Items {
     items = append(items, HistoryItem{
         ID:           a.ID.String(),
         Text:         i18n.T(ctx, a.Event, a.Properties),
@@ -167,13 +167,14 @@ for _, a := range list {
         CreatedAt:    a.CreatedAt,
     })
 }
+body := page.NewOffset(items, in.OffsetParams, res.Total)
 ```
 
-前端把生成的客户端方法交给 `ActivityLog`，`key` 区分同一页面上的几份记录或不同的筛选条件，`toolbar` 放筛选控件：
+前端把生成的客户端方法交给 `ActivityLog`，`key` 区分同一页面上的几份记录或不同的筛选条件（变化时自动回到第一页），`toolbar` 放筛选控件：
 
 ```tsx
 <ActivityLog
-  source={{ key: ["article", id], list: (before) => api.article.history(id, { before }).then((r) => r.items) }}
+  source={{ key: ["article", id], list: (p) => api.article.history(id, p) }}
 />
 ```
 

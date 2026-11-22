@@ -1,9 +1,9 @@
 // 操作日志表格：一个对象的历史（例如文章的修改记录）、一个人的操作记录，或整个租户的操作日志。
 // 逻辑来自 model.ts 中的 useActivity，接口由应用定义，见文档“操作日志”。
 //
-//   <ActivityLog source={{ key: ["article", id], list: (before) => api.article.history(id, { before }).then((r) => r.items) }} />
+//   <ActivityLog source={{ key: ["article", id], list: (p) => api.article.history(id, p) }} />
 
-import { Alert, Anchor, Button, Center, Group, Stack, Text } from "@mantine/core"
+import { Alert, Anchor, Button, Group, Stack, Text } from "@mantine/core"
 import { useRouter } from "@tanstack/react-router"
 import type { ReactNode } from "react"
 import { type Column, DataTable } from "../../components/data-table/data-table"
@@ -18,18 +18,20 @@ export interface ActivityLogProps {
   onOpen?: (item: ActivityItem) => void
   /** 表格上方左侧的内容，例如筛选条件。 */
   toolbar?: ReactNode
+  /** 每页条数的选项，默认 10、20、50、100。 */
+  perPageOptions?: number[]
   /** 没有记录时显示的文字，默认“还没有操作记录”（当前语言的）。 */
   empty?: ReactNode
 }
 
-/** 按时间从新到旧以表格显示操作记录，到底时“加载更多”。 */
-export function ActivityLog({ source, onOpen, toolbar, empty }: ActivityLogProps): ReactNode {
+/** 按时间从新到旧以固定分页表格显示操作记录。 */
+export function ActivityLog({ source, onOpen, toolbar, perPageOptions, empty }: ActivityLogProps): ReactNode {
   const formatDateTime = useFormatDateTime()
   const t = useText()
   const a = useActivity(source)
   const router = useRouter()
 
-  if (a.error && a.items.length === 0) {
+  if (a.error) {
     return (
       <Stack gap="sm">
         {toolbar}
@@ -93,28 +95,22 @@ export function ActivityLog({ source, onOpen, toolbar, empty }: ActivityLogProps
   ]
 
   return (
-    <Stack gap="sm">
-      <DataTable
-        records={a.items}
-        columns={columns}
-        loading={a.loading}
-        toolbar={toolbar}
-        empty={empty ?? t("tenon.activity.empty")}
-      />
-      {Boolean(a.error) && (
-        <Alert color="red" variant="light" title={t("tenon.activity.load_failed")}>
-          <Button size="xs" variant="default" mt="xs" onClick={a.loadMore}>
-            {t("tenon.common.retry")}
-          </Button>
-        </Alert>
-      )}
-      {a.hasMore && !a.error && (
-        <Center>
-          <Button variant="default" size="xs" loading={a.loadingMore} onClick={a.loadMore}>
-            {t("tenon.common.load_more")}
-          </Button>
-        </Center>
-      )}
-    </Stack>
+    <DataTable
+      records={a.items}
+      total={a.total}
+      loading={a.loading}
+      list={{
+        page: a.page,
+        perPage: a.perPage,
+        setPage: a.setPage,
+        setPerPage: a.setPerPage,
+        sort: undefined,
+        setSort: () => {},
+      }}
+      perPageOptions={perPageOptions}
+      columns={columns}
+      toolbar={toolbar}
+      empty={empty ?? t("tenon.activity.empty")}
+    />
   )
 }

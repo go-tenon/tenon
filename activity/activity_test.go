@@ -8,13 +8,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/uptrace/bun"
 
 	"github.com/go-tenon/tenon/activity"
 	"github.com/go-tenon/tenon/database/dbtest"
 	"github.com/go-tenon/tenon/identity"
 	"github.com/go-tenon/tenon/logging"
+	"github.com/go-tenon/tenon/page"
 )
 
 var alice = identity.Subject{ID: "u1", Type: "user", Tenant: "acme", Permissions: []string{"*"}}
@@ -48,14 +48,14 @@ func TestRecordFillsActorTenantAndRequestID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	list, err := activity.List(context.Background(), db, activity.Query{Tenant: "acme"})
+	res, err := activity.List(context.Background(), db, activity.Query{Tenant: "acme"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(list) != 1 {
-		t.Fatalf("list=%+v", list)
+	if len(res.Items) != 1 || res.Total != 1 || res.Page != 1 || res.PerPage != activity.DefaultPerPage {
+		t.Fatalf("res=%+v", res)
 	}
-	a := list[0]
+	a := res.Items[0]
 	if a.ID.Version() != 7 || a.Tenant != "acme" || a.ActorType != "user" || a.ActorID != "u1" || a.ImpersonatorID != "" ||
 		a.Event != "article.published" || a.TargetType != "article" || a.TargetID != "a1" || a.RequestID != "req-1" {
 		t.Fatalf("activity=%+v", a)
@@ -76,12 +76,12 @@ func TestRecordImpersonation(t *testing.T) {
 	staff := identity.Ref{Type: "staff", ID: "s1"}
 	asAlice.Impersonator = staff
 	record(t, db, asAlice, activity.Activity{Event: "article.published"})
-	list, err := activity.List(context.Background(), db, activity.Query{Tenant: "acme"})
+	res, err := activity.List(context.Background(), db, activity.Query{Tenant: "acme"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(list) != 1 || list[0].Actor() != alice.Ref() || list[0].Impersonator() != staff {
-		t.Fatalf("list=%+v", list)
+	if len(res.Items) != 1 || res.Items[0].Actor() != alice.Ref() || res.Items[0].Impersonator() != staff {
+		t.Fatalf("res=%+v", res)
 	}
 }
 
@@ -89,12 +89,12 @@ func TestRecordWithoutActorAndProperties(t *testing.T) {
 	t.Parallel()
 	db := dbtest.Open(t, activity.Migrations())
 	record(t, db, identity.Subject{Tenant: "acme"}, activity.Activity{Event: "articles.scheduled_published"})
-	list, err := activity.List(context.Background(), db, activity.Query{Tenant: "acme"})
+	res, err := activity.List(context.Background(), db, activity.Query{Tenant: "acme"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(list) != 1 || list[0].ActorID != "" || list[0].Properties == nil || len(list[0].Properties) != 0 {
-		t.Fatalf("list=%+v", list)
+	if len(res.Items) != 1 || res.Items[0].ActorID != "" || res.Items[0].Properties == nil || len(res.Items[0].Properties) != 0 {
+		t.Fatalf("res=%+v", res)
 	}
 }
 
@@ -111,9 +111,9 @@ func TestRecordRollsBackWithTransaction(t *testing.T) {
 	if err != context.Canceled {
 		t.Fatal(err)
 	}
-	list, err := activity.List(ctx, db, activity.Query{Tenant: "acme"})
-	if err != nil || len(list) != 0 {
-		t.Fatalf("list=%+v err=%v", list, err)
+	res, err := activity.List(ctx, db, activity.Query{Tenant: "acme"})
+	if err != nil || len(res.Items) != 0 || res.Total != 0 {
+		t.Fatalf("res=%+v err=%v", res, err)
 	}
 }
 
@@ -147,38 +147,39 @@ func TestListFiltersAndPages(t *testing.T) {
 
 	ctx := context.Background()
 	for name, c := range map[string]struct {
-		q    activity.Query
-		want string
+		q     activity.Query
+		want  string
+		total int64
 	}{
-		"tenant":   {activity.Query{Tenant: "acme"}, "member.invited,article.created,article.updated,article.created"},
-		"platform": {activity.Query{}, "tenant.suspended"},
-		"target":   {activity.Query{Tenant: "acme", TargetType: "article", TargetID: "a1"}, "article.updated,article.created"},
-		"type":     {activity.Query{Tenant: "acme", TargetType: "article"}, "article.created,article.updated,article.created"},
-		"actor":    {activity.Query{Tenant: "acme", Actor: alice.Ref()}, "member.invited,article.created,article.created"},
-		"event":    {activity.Query{Tenant: "acme", Event: "article.created"}, "article.created,article.created"},
-		"limit":    {activity.Query{Tenant: "acme", Limit: 2}, "member.invited,article.created"},
+		"tenant":   {activity.Query{Tenant: "acme"}, "member.invited,article.created,article.updated,article.created", 4},
+		"platform": {activity.Query{}, "tenant.suspended", 1},
+		"target":   {activity.Query{Tenant: "acme", TargetType: "article", TargetID: "a1"}, "article.updated,article.created", 2},
+		"type":     {activity.Query{Tenant: "acme", TargetType: "article"}, "article.created,article.updated,article.created", 3},
+		"actor":    {activity.Query{Tenant: "acme", Actor: alice.Ref()}, "member.invited,article.created,article.created", 3},
+		"event":    {activity.Query{Tenant: "acme", Event: "article.created"}, "article.created,article.created", 2},
+		"per_page": {activity.Query{Tenant: "acme", Page: page.OffsetParams{Page: 1, PerPage: 2}}, "member.invited,article.created", 4},
 	} {
-		list, err := activity.List(ctx, db, c.q)
+		res, err := activity.List(ctx, db, c.q)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := events(list); got != c.want {
-			t.Errorf("%s: got %s want %s", name, got, c.want)
+		if got := events(res.Items); got != c.want || res.Total != c.total {
+			t.Errorf("%s: got %s (total=%d) want %s (total=%d)", name, got, res.Total, c.want, c.total)
 		}
 	}
 
 	var pages []string
-	var before uuid.UUID
-	for {
-		page, err := activity.List(ctx, db, activity.Query{Tenant: "acme", Limit: 3, Before: before})
+	for p := 1; p <= 3; p++ {
+		res, err := activity.List(ctx, db, activity.Query{Tenant: "acme", Page: page.OffsetParams{Page: p, PerPage: 3}})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(page) == 0 {
-			break
+		if res.Total != 4 || res.Page != p || res.PerPage != 3 {
+			t.Fatalf("page %d: res=%+v", p, res)
 		}
-		pages = append(pages, events(page))
-		before = page[len(page)-1].ID
+		if len(res.Items) > 0 {
+			pages = append(pages, events(res.Items))
+		}
 	}
 	if got := strings.Join(pages, "|"); got != "member.invited,article.created,article.updated|article.created" {
 		t.Fatalf("pages=%s", got)
@@ -191,9 +192,9 @@ func TestListFiltersAndPages(t *testing.T) {
 	// 操作人按类型和 ID 一起区分：另一套账号体系中的 u1 是另一个人。
 	record(t, db, identity.Subject{ID: "u1", Type: "user", Tenant: "initech"}, activity.Activity{Event: "by.user"})
 	record(t, db, identity.Subject{ID: "u1", Type: "staff", Tenant: "initech"}, activity.Activity{Event: "by.staff"})
-	list, err := activity.List(ctx, db, activity.Query{Tenant: "initech", Actor: identity.Ref{Type: "staff", ID: "u1"}})
-	if err != nil || events(list) != "by.staff" {
-		t.Fatalf("staff actor: %s err=%v", events(list), err)
+	res, err := activity.List(ctx, db, activity.Query{Tenant: "initech", Actor: identity.Ref{Type: "staff", ID: "u1"}})
+	if err != nil || events(res.Items) != "by.staff" || res.Total != 1 {
+		t.Fatalf("staff actor: %s total=%d err=%v", events(res.Items), res.Total, err)
 	}
 }
 
@@ -217,9 +218,9 @@ func TestCleanupDeletesOldRecords(t *testing.T) {
 			t.Fatalf("n=%d want=%d err=%v", n, want, err)
 		}
 	}
-	list, err := activity.List(ctx, db, activity.Query{Tenant: "acme"})
-	if err != nil || events(list) != "new" {
-		t.Fatalf("list=%s err=%v", events(list), err)
+	res, err := activity.List(ctx, db, activity.Query{Tenant: "acme"})
+	if err != nil || events(res.Items) != "new" || res.Total != 1 {
+		t.Fatalf("res=%+v err=%v", res, err)
 	}
 	if _, err := cleanup(ctx, 0); err == nil {
 		t.Fatal("expected error for non-positive limit")

@@ -311,8 +311,7 @@ function FrameActivity(): ReactNode {
       <ActivityLog
         source={{
           key: ["activity", actor],
-          pageSize: 20,
-          list: (before) => activityApi.list({ actor: actor || undefined, before, limit: 20 }),
+          list: (params) => activityApi.list({ actor: actor || undefined, ...params }),
         }}
         toolbar={
           <Group gap="xs">
