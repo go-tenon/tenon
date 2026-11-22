@@ -4,6 +4,11 @@
 - 查文档用 MCP 工具 `tenon_search_docs`、`tenon_read_doc`；用 rg 时指定目录（例如 `rg 迁移 .tenon/docs`）。项目结构用 `tenon_app_info` 查看。
 - Go 依赖的签名和说明用 `go doc` 读与 `go.mod` 一致的版本；Mantine、TanStack 等依赖的 AI 资源按 `README.md` 的“AI 编程助手”一节接入，与 Tenon 冲突时以本文和 `.tenon/docs` 为准。
 
+## 开发与部署约定
+
+- Docker 仅用于开发和测试期：在主工作区启动 PostgreSQL、NATS、Redis 等依赖服务并常驻；业务服务与测试在独立的 `git worktree` 中运行（`bun run dev`、`go test ./...`），复用主工作区的依赖容器，通过各 worktree 的 `config/local.yaml` 错开 `http.addr` 端口（需要时指定独立数据库名）。
+- 生产部署采用原生单二进制加 systemd 零停机升级：用 `go tool tenon add deploy` 生成 `deploy.yaml` 和 `.env.example`，用 `go tool tenon deploy` 初始化主机、发布与回滚，见 `.tenon/docs/installation/deployment.md`。
+
 ## 提交前
 
 ```bash

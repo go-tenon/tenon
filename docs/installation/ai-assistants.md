@@ -32,7 +32,7 @@ go doc github.com/go-tenon/tenon/cache.Cache.Remember   # 函数签名和说明�
 <a id="mcp-servers"></a>
 ## MCP 服务：`tenon mcp`
 
-MCP 配置中的 `tenon` 一项用 `go tool tenon mcp` 以 stdio 运行，版本与项目的框架相同，可以在项目的任何子目录中启动。四个工具：
+MCP 配置中的 `tenon` 一项用 `go tool tenon mcp` 以 stdio 运行，版本与项目的框架相同，可以在项目的任何子目录中启动。八个只读工具涵盖开发文档、本地日志和线上部署观测：
 
 | 工具 | 作用 |
 | --- | --- |
@@ -40,8 +40,13 @@ MCP 配置中的 `tenon` 一项用 `go tool tenon mcp` 以 stdio 运行，版本
 | `tenon_read_doc` | 读一页的目录、一个小节连同子小节，或者整页 |
 | `tenon_app_info` | 框架版本、应用入口和地址、前端（目录、挂载路径、是否服务端渲染）、客户端、安装的技能 |
 | `tenon_dev_logs` | `bun run dev` 的输出：Go 的编译错误、应用的日志、前端开发服务器的输出 |
+| `tenon_deploy_info` | 读取 `deploy.yaml`，返回环境、角色、主机、主迁移节点和滚动波次拓扑（不含密钥） |
+| `tenon_deploy_status` | 并发查询线上集群各主机当前的发布版本与每个 systemd unit 的运行状态 |
+| `tenon_deploy_logs` | 按环境、角色、主机、服务部分、`since` 和 `contains` 聚合拉取多台线上主机的 `journalctl` 日志 |
+| `tenon_deploy_plan` | 预演某环境的发布计划（波次、主机与服务部分），供执行变更前确认 |
 
 - 改完代码后调用 `tenon_dev_logs` 确认编译成功、没有报错：`lines` 是返回最后几行（默认 100，最多 1000），`contains` 只保留包含这段文字的行，例如 `ERR`。它读 `.tenon/dev.log`，`tenon dev` 每次启动时清空它。
+- 协助线上排障和发布时，先用 `tenon_deploy_info`、`tenon_deploy_status`、`tenon_deploy_logs` 和 `tenon_deploy_plan` 只读查看与预演，需要变更线上时在终端运行 `go tool tenon deploy --format json`（全子命令均支持 `--format json` 结构化输出，见[部署](deployment.md#tenon-deploy)）。
 - `tenon` 只改写 MCP 配置中名为 `tenon` 的一项，其他服务保持原样；`.codex/config.toml` 中这一项在 `# tenon:begin` 和 `# tenon:end` 之间。配置文件要提交。
 - 确认已连上：Claude Code、Antigravity 中 `/mcp`；`codex mcp list`；Cursor 设置的 MCP 页面；VS Code 的“MCP: List Servers”。Codex 只读受信任的项目中的 `.codex/config.toml`。`go tool tenon` 第一次运行要编译，可能超时：先运行一次 `bun run agents`，再重启助手。
 

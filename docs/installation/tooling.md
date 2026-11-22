@@ -26,9 +26,10 @@ go tool tenon dev
 | `tenon generate` | 接口变了以后重新生成客户端；`dev` 自动运行它 |
 | `tenon check` | 静态检查项目约定：前端文字与颜色、SQL 时钟、错误码翻译、前端依赖版本 |
 | `tenon build` | 构建可执行文件，前端打包在其中 |
+| `tenon deploy` | 通过 SSH 和 systemd 执行原生二进制零停机部署与远端运维 |
 | `tenon add frontend` | 再加一个前端，例如运营后台 |
 | `tenon add client` | 加桌面端等网页以外的客户端 |
-| `tenon add deploy` | 生成容器构建与生产自托管部署文件 |
+| `tenon add deploy` | 生成原生二进制与 systemd 部署配置（`deploy.yaml`、`.env.example`） |
 | `tenon agents` | 升级框架后更新给 AI 编程助手的文档、技能和 MCP 配置 |
 | `tenon mcp` | AI 编程助手按 MCP 配置启动它，不手动运行 |
 
@@ -152,16 +153,30 @@ go tool tenon add client admin-desktop --kind electron --frontend admin
 在 `clients/admin-desktop` 中生成 Electron 桌面端，窗口中显示 `apps/admin`（它要有登录页），并在 `apps/admin` 中加上授权页，授权页的文字追加到 `locales/admin.zh-CN.yaml` 的末尾。`--title` 是窗口标题和安装包的名称。之后用 `go tool tenon dev --client admin-desktop` 运行，`go tool tenon build --client admin-desktop` 打包，见 [Electron 桌面端](../clients/electron.md)。
 
 <a id="add-deploy"></a>
-## `tenon add deploy`：部署文件
+## `tenon add deploy`：部署配置
 
 ```bash
-go tool tenon add deploy --image ghcr.io/acme/blog
+go tool tenon add deploy --user deploy --host 203.0.113.10
 ```
 
-在项目根目录生成 `Dockerfile`、`.dockerignore`、`compose.prod.yaml` 和 `.env.example`：
+在项目根目录生成 `deploy.yaml` 和 `.env.example`：
 
-- 自动读取 `go.mod` 的 Go 版本、`package.json` 的 Bun 版本和 `apps/` 中的前端渲染方式：存在 SSR 前端时使用 `gcr.io/distroless/base-debian13:nonroot`（含 glibc），否则使用 `gcr.io/distroless/static-debian13:nonroot`；没有前端时不安装 Bun，直接 `go build`。
-- `--image` 指定生产编排中的镜像名（不含标签），默认是入口包名；目标文件已存在时报错，传入 `--force` 覆盖。部署步骤见[部署](deployment.md)和[交给客户自托管](self-hosting.md)。
+- `deploy.yaml` 声明目标环境、主机、服务部分（`all` 或 `http`、`worker`、`scheduler`）、部署目录与环境变量路径，进仓库保存，不含密钥。
+- `.env.example` 是生产环境变量模板，复制填写后通过 `tenon deploy env push` 写入远端。
+- 目标文件已存在时报错，传入 `--force` 覆盖。完整部署流程见[部署](deployment.md)。
+
+<a id="deploy"></a>
+## `tenon deploy`：原生二进制零停机部署
+
+```bash
+go tool tenon deploy setup                           # 首次初始化目标主机和 systemd unit
+go tool tenon deploy env push .env.production        # 安全上传环境变量到 /etc/<应用>/env（权限 600）
+go tool tenon deploy                                 # 交叉编译、自检、迁移并零停机滚动升级
+```
+
+- 常用标志：`--env`（默认 `production`）、`--file`（默认 `deploy.yaml`）、`--format text|json`（结构化 JSON 输出供 AI 编程助手与脚本解析）、`--binary`（跳过本地构建）、`--version`、`--skip-doctor`、`--dry-run`。
+- 远端运维子命令：`rollback [version]`、`status [--role ...]`（表格化集群视图）、`logs [--role ...] [-F] [--since 15m] [--contains ERR]`（多机实时日志汇流）、`run -- <命令>`、`env pull`、`maintenance on|off`、`unlock`。
+- 通过本机系统 `ssh`/`scp` 连接目标机并启用 `ControlMaster` 复用，直接兼容 `~/.ssh/config`、跳板机与 SSH Agent。细节见[使用 `tenon deploy` 自动发布](deployment.md#tenon-deploy)。
 
 <a id="agents"></a>
 ## `tenon agents`：AI 编程助手

@@ -1,5 +1,6 @@
-// Command tenon 是 Tenon 应用的开发工具：init 生成新项目，add frontend 加入新的前端，dev 运行应用和前端工具，
-// build 构建前端和二进制，generate 生成客户端，check 检查项目约定，agents 更新 AI 编程助手用到的文档和配置，mcp 运行给助手用的 MCP 服务。
+// Command tenon 是 Tenon 应用的开发与部署工具：init 生成新项目，add 加入前端、客户端和原生部署配置，
+// dev 运行应用和前端工具，build 构建前端和二进制，deploy 通过 SSH 和 systemd 执行零停机发布，
+// generate 生成客户端，check 检查项目约定，agents 更新 AI 编程助手用到的文档和配置，mcp 运行给助手用的 MCP 服务。
 // 它读取项目根目录的 tenon.json（可选，缺省时全部用约定的默认值）。应用把它加入 go.mod 的工具，版本随框架固定：
 //
 //	go get -tool github.com/go-tenon/tenon/cmd/tenon
@@ -243,7 +244,7 @@ func root() *cobra.Command {
 	}
 	add := &cobra.Command{Use: "add", Short: "给项目加入新的部分"}
 	add.AddCommand(addFrontendCommand(), addClientCommand(), addDeployCommand())
-	root.AddCommand(initCommand(), add, devCommand(), buildCommand(), generateCommand(), checkCommand(), agentsCommand(), mcpCommand())
+	root.AddCommand(initCommand(), add, devCommand(), buildCommand(), deployCommand(), generateCommand(), checkCommand(), agentsCommand(), mcpCommand())
 	return root
 }
 
@@ -436,78 +437,40 @@ func addClientCommand() *cobra.Command {
 	return cmd
 }
 
-// addDeployCommand 返回 tenon add deploy 命令：按项目当前配置生成 Dockerfile、.dockerignore、compose.prod.yaml 和 .env.example。
+// addDeployCommand 返回 tenon add deploy 命令：生成原生二进制 + systemd 部署配置（deploy.yaml 和 .env.example）。
 func addDeployCommand() *cobra.Command {
-	var image string
+	var user, host string
 	var force bool
 	cmd := &cobra.Command{
 		Use:   "deploy",
-		Short: "生成容器构建与生产自托管部署文件（Dockerfile、.dockerignore、compose.prod.yaml、.env.example）",
+		Short: "生成原生二进制 + systemd 部署配置文件（deploy.yaml、.env.example）",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := project.Load(".")
 			if err != nil {
 				return err
 			}
-			slug := path.Base(cfg.Main)
-			hasSSR := slices.ContainsFunc(cfg.Frontends, func(f project.Frontend) bool { return f.SSR })
 			files, err := scaffold.WriteDeploy(".", scaffold.Deploy{
-				Slug:         slug,
-				Main:         cfg.Main,
-				Image:        image,
-				GoVersion:    readGoVersion("go.mod"),
-				BunVersion:   readBunVersion("package.json"),
-				HasFrontends: len(cfg.Frontends) > 0,
-				HasSSR:       hasSSR,
-				Force:        force,
+				Slug:  path.Base(cfg.Main),
+				User:  user,
+				Host:  host,
+				Force: force,
 			})
 			if err != nil {
 				return err
 			}
-			baseImg := "distroless/static"
-			if hasSSR {
-				baseImg = "distroless/base（含 glibc，供 SSR 运行）"
-			}
-			fmt.Fprintf(cmd.OutOrStdout(), "已生成 %s（运行镜像：%s）。\n复制 .env.example 为 .env 并填写后，运行 docker compose -f compose.prod.yaml up -d。\n",
-				strings.Join(files, "、"), baseImg)
+			fmt.Fprintf(cmd.OutOrStdout(), "已生成 %s。\n按目标服务器修改 deploy.yaml 后，运行：\n"+
+				"  1. go tool tenon deploy setup\n"+
+				"  2. cp .env.example .env.production && 填写后执行 go tool tenon deploy env push .env.production\n"+
+				"  3. go tool tenon deploy\n",
+				strings.Join(files, "、"))
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&image, "image", "", "生产编排中的镜像名（不含标签），默认是入口包名")
+	cmd.Flags().StringVar(&user, "user", "", "SSH 登录用户，默认 deploy")
+	cmd.Flags().StringVar(&host, "host", "", "默认目标主机地址或 ~/.ssh/config 别名")
 	cmd.Flags().BoolVar(&force, "force", false, "覆盖已存在的部署文件")
 	return cmd
-}
-
-// readGoVersion 从 go.mod 读取 go 指令后的版本号，读取失败时返回空。
-func readGoVersion(name string) string {
-	data, err := os.ReadFile(name)
-	if err != nil {
-		return ""
-	}
-	for line := range strings.Lines(string(data)) {
-		if rest, ok := strings.CutPrefix(strings.TrimSpace(line), "go "); ok {
-			return strings.TrimSpace(rest)
-		}
-	}
-	return ""
-}
-
-// readBunVersion 从 package.json 的 packageManager 字段读取 Bun 版本（例如 bun@1.4.4 返回 1.4.4），读取失败时返回空。
-func readBunVersion(name string) string {
-	data, err := os.ReadFile(name)
-	if err != nil {
-		return ""
-	}
-	var pkg struct {
-		PackageManager string `json:"packageManager"`
-	}
-	if err := json.Unmarshal(data, &pkg); err != nil {
-		return ""
-	}
-	if v, ok := strings.CutPrefix(strings.TrimSpace(pkg.PackageManager), "bun@"); ok {
-		return strings.TrimSpace(v)
-	}
-	return ""
 }
 
 // devCommand 返回 tenon dev 命令：运行应用和前端工具，修改代码后重新编译、重启并生成客户端。
@@ -564,85 +527,7 @@ func buildCommand() *cobra.Command {
 				}
 				return dev.BuildClient(cmd.Context(), c, f, cmd.OutOrStdout(), cmd.ErrOrStderr())
 			}
-			env := os.Environ()
-			switch arch {
-			case "":
-			case "amd64", "arm64":
-				env = append(env, "GOOS=linux", "GOARCH="+arch)
-			default:
-				return fmt.Errorf("--arch %q: must be amd64 or arm64", arch)
-			}
-			if len(cfg.Frontends) > 0 {
-				if _, err := dev.SyncJS("."); err != nil {
-					return err
-				}
-				if err := run(cmd, ".", "bun", "install", "--frozen-lockfile"); err != nil {
-					return err
-				}
-				// apps/dist 每次从头生成：改成只在浏览器中渲染的前端不留下上次的 SSR 可执行文件。提交在其中的 .gitignore 写回去。
-				if err := os.RemoveAll(filepath.FromSlash(dev.DistDir)); err != nil {
-					return err
-				}
-				if err := dev.WriteDistIgnore("."); err != nil {
-					return err
-				}
-				var ssr []project.Frontend
-				for _, f := range cfg.Frontends {
-					if err := run(cmd, f.Dir, "bun", "run", "build"); err != nil {
-						return err
-					}
-					if err := dev.CopyClient(f); err != nil {
-						return err
-					}
-					if f.SSR {
-						ssr = append(ssr, f)
-					}
-				}
-				if len(ssr) > 0 {
-					// 可执行文件的架构与 Go 程序相同：tenon-start compile 读取 GOARCH。
-					goarch := arch
-					if goarch == "" {
-						out, err := exec.CommandContext(cmd.Context(), "go", "env", "GOARCH").Output()
-						if err != nil {
-							return fmt.Errorf("go env GOARCH: %w", err)
-						}
-						goarch = strings.TrimSpace(string(out))
-					}
-					exe, err := filepath.Abs(filepath.Join(filepath.FromSlash(dev.DistDir), frontend.ExecutableFile))
-					if err != nil {
-						return err
-					}
-					args := []string{"x", "tenon-start", "compile", "--out", exe}
-					for _, f := range ssr {
-						entry, err := filepath.Abs(filepath.Join(f.Dir, "dist", "server", "server.js"))
-						if err != nil {
-							return err
-						}
-						args = append(args, f.Name+"="+entry)
-					}
-					// tenon-start 是前端的依赖，在第一个 SSR 前端的目录中运行它。
-					c := exec.CommandContext(cmd.Context(), "bun", args...)
-					c.Dir = ssr[0].Dir
-					c.Env = append(slices.Clone(env), "GOARCH="+goarch)
-					c.Stdout, c.Stderr = cmd.OutOrStdout(), cmd.ErrOrStderr()
-					if err := c.Run(); err != nil {
-						return fmt.Errorf("tenon-start compile: %w", err)
-					}
-				}
-				if err := dev.WriteManifest(".", cfg); err != nil {
-					return err
-				}
-			}
-			if out == "" {
-				out = filepath.Join("bin", path.Base(cfg.Main))
-			}
-			c := exec.CommandContext(cmd.Context(), "go", "build", "-trimpath", "-o", out, cfg.Main)
-			c.Env = env
-			c.Stdout, c.Stderr = cmd.OutOrStdout(), cmd.ErrOrStderr()
-			if err := c.Run(); err != nil {
-				return fmt.Errorf("go build: %w", err)
-			}
-			return nil
+			return buildBinary(cmd, cfg, out, arch)
 		},
 	}
 	cmd.Flags().StringVarP(&out, "output", "o", "", "输出的二进制，默认 bin/<入口包的目录名>")
@@ -650,6 +535,89 @@ func buildCommand() *cobra.Command {
 	cmd.Flags().StringVar(&arch, "arch", "", "目标架构 amd64 或 arm64（Linux），默认与本机相同。"+
 		"不要用 GOARCH 环境变量：go tool tenon 会按它把 tenon 本身编译成目标架构，在本机无法运行")
 	return cmd
+}
+
+// buildBinary 构建前端（有 SSR 前端时编译 apps/dist/ssr）并编译嵌入前端产物的应用二进制到 out。
+func buildBinary(cmd *cobra.Command, cfg *project.Config, out, arch string) error {
+	env := os.Environ()
+	switch arch {
+	case "":
+	case "amd64", "arm64":
+		env = append(env, "GOOS=linux", "GOARCH="+arch)
+	default:
+		return fmt.Errorf("--arch %q: must be amd64 or arm64", arch)
+	}
+	if len(cfg.Frontends) > 0 {
+		if _, err := dev.SyncJS("."); err != nil {
+			return err
+		}
+		if err := run(cmd, ".", "bun", "install", "--frozen-lockfile"); err != nil {
+			return err
+		}
+		// apps/dist 每次从头生成：改成只在浏览器中渲染的前端不留下上次的 SSR 可执行文件。提交在其中的 .gitignore 写回去。
+		if err := os.RemoveAll(filepath.FromSlash(dev.DistDir)); err != nil {
+			return err
+		}
+		if err := dev.WriteDistIgnore("."); err != nil {
+			return err
+		}
+		var ssr []project.Frontend
+		for _, f := range cfg.Frontends {
+			if err := run(cmd, f.Dir, "bun", "run", "build"); err != nil {
+				return err
+			}
+			if err := dev.CopyClient(f); err != nil {
+				return err
+			}
+			if f.SSR {
+				ssr = append(ssr, f)
+			}
+		}
+		if len(ssr) > 0 {
+			// 可执行文件的架构与 Go 程序相同：tenon-start compile 读取 GOARCH。
+			goarch := arch
+			if goarch == "" {
+				out, err := exec.CommandContext(cmd.Context(), "go", "env", "GOARCH").Output()
+				if err != nil {
+					return fmt.Errorf("go env GOARCH: %w", err)
+				}
+				goarch = strings.TrimSpace(string(out))
+			}
+			exe, err := filepath.Abs(filepath.Join(filepath.FromSlash(dev.DistDir), frontend.ExecutableFile))
+			if err != nil {
+				return err
+			}
+			args := []string{"x", "tenon-start", "compile", "--out", exe}
+			for _, f := range ssr {
+				entry, err := filepath.Abs(filepath.Join(f.Dir, "dist", "server", "server.js"))
+				if err != nil {
+					return err
+				}
+				args = append(args, f.Name+"="+entry)
+			}
+			// tenon-start 是前端的依赖，在第一个 SSR 前端的目录中运行它。
+			c := exec.CommandContext(cmd.Context(), "bun", args...)
+			c.Dir = ssr[0].Dir
+			c.Env = append(slices.Clone(env), "GOARCH="+goarch)
+			c.Stdout, c.Stderr = cmd.OutOrStdout(), cmd.ErrOrStderr()
+			if err := c.Run(); err != nil {
+				return fmt.Errorf("tenon-start compile: %w", err)
+			}
+		}
+		if err := dev.WriteManifest(".", cfg); err != nil {
+			return err
+		}
+	}
+	if out == "" {
+		out = filepath.Join("bin", path.Base(cfg.Main))
+	}
+	c := exec.CommandContext(cmd.Context(), "go", "build", "-trimpath", "-o", out, cfg.Main)
+	c.Env = env
+	c.Stdout, c.Stderr = cmd.OutOrStdout(), cmd.ErrOrStderr()
+	if err := c.Run(); err != nil {
+		return fmt.Errorf("go build: %w", err)
+	}
+	return nil
 }
 
 // generateCommand 返回 tenon generate 命令：生成前端的界面文字目录（messages.gen.ts），编译应用，生成 TypeScript 和 Go 客户端。

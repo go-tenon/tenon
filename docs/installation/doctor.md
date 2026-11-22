@@ -95,17 +95,24 @@ func OpenChecked(ctx context.Context, cfg Config, stack *cleanup.Stack) (*App, e
 - `Require` 的第二个参数是记录提示的日志器，`nil` 表示 `slog.Default()`。
 - 升级后忘了执行迁移时 `migrations` 组失败，进程退出并提示先运行 `migrate up`。数据库比程序新（滚动升级时旧版本在新表结构上重启）时只给提示，见[新旧进程同时运行](operations.md#upgrade-overlap)。
 
-<a id="with-compose"></a>
-## 在 Docker Compose 中使用
+<a id="with-systemd"></a>
+## 在生产环境中排查
 
-[Docker 镜像](deployment.md#docker)没有 shell，不能写 `doctor && migrate up`：`migrate up` 由 `migratecmd.Check` 检查，`serve` 由 `doctor.Require` 检查。排查问题时在同一个镜像中单独运行：
+使用 `tenon deploy` 部署时，直接以真实服务用户、环境变量和工作目录在远端运行自检：
 
 ```bash
-docker compose run --rm --no-deps http doctor
+go tool tenon deploy run -- doctor
 ```
 
-- 它用 `http` 服务的环境变量和网络；`--no-deps` 不启动依赖的服务，迁移失败时也能运行。
-- `storage` 组报 `permission denied`：挂载的卷属于 root，程序以 `nonroot` 运行。在镜像中预先建好目录并交给 `nonroot`，见[用 Docker 构建镜像](deployment.md#docker)。
+手动登录服务器排查时用 `systemd-run` 保持与服务完全一致的运行上下文：
+
+```bash
+sudo systemd-run --wait --pipe --quiet --uid=blog \
+    -p EnvironmentFile=/etc/blog/env -p WorkingDirectory=/opt/blog \
+    /opt/blog/bin/blog doctor
+```
+
+- `storage` 组报 `permission denied`：检查 `/opt/blog/storage` 是否归服务用户所有，且 unit 的 `ReadWritePaths` 包含该目录，见[用 systemd 运行](deployment.md#systemd)。
 
 交给客户的完整部署见[交给客户自托管](self-hosting.md)。
 

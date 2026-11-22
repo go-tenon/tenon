@@ -3,6 +3,7 @@ package devmcp_test
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/go-tenon/tenon/cmd/tenon/internal/agents"
+	"github.com/go-tenon/tenon/cmd/tenon/internal/deploy"
 	"github.com/go-tenon/tenon/cmd/tenon/internal/dev"
 	"github.com/go-tenon/tenon/cmd/tenon/internal/devmcp"
 	"github.com/go-tenon/tenon/cmd/tenon/internal/project"
@@ -63,7 +65,7 @@ func call(t *testing.T, s *mcp.ClientSession, name string, args map[string]any) 
 	return text, res.IsError
 }
 
-// 四个工具都以 tenon_ 开头。
+// 全部工具都以 tenon_ 开头。
 func TestTools(t *testing.T) {
 	t.Parallel()
 	_, s := connect(t)
@@ -75,8 +77,9 @@ func TestTools(t *testing.T) {
 	for _, tool := range res.Tools {
 		names = append(names, tool.Name)
 	}
-	if got := strings.Join(names, " "); got != "tenon_app_info tenon_dev_logs tenon_read_doc tenon_search_docs" {
-		t.Errorf("tools: %s", got)
+	want := "tenon_app_info tenon_deploy_info tenon_deploy_logs tenon_deploy_plan tenon_deploy_status tenon_dev_logs tenon_read_doc tenon_search_docs"
+	if got := strings.Join(names, " "); got != want {
+		t.Errorf("tools:\n got: %s\nwant: %s", got, want)
 	}
 }
 
@@ -167,6 +170,7 @@ func TestSearchDocs(t *testing.T) {
 		"审批工具调用":             "ai/chat.md#approval",
 		"文档切分":               "ai/documents.md",
 		"部署":                 "installation/deployment.md",
+		"tenon deploy":       "installation/deployment.md",
 		"systemd":            "installation/deployment.md",
 		"不停机升级":              "installation/operations.md",
 		"自托管":                "installation/self-hosting.md",
@@ -256,5 +260,108 @@ func TestDevLogs(t *testing.T) {
 	}
 	if text, _ := call(t, s, "tenon_dev_logs", map[string]any{"contains": "ERR"}); !strings.Contains(text, "1 行") || !strings.Contains(text, "ERR boom") {
 		t.Errorf("filtered:\n%s", text)
+	}
+}
+
+// stubDeployRunner 供 TestDeployTools 模拟远端状态和日志输出。
+type stubDeployRunner struct{}
+
+// Run 返回模拟的状态与日志响应。
+func (stubDeployRunner) Run(_ context.Context, host deploy.Host, script string, _ io.Reader, stdout, _ io.Writer) error {
+	switch {
+	case strings.Contains(script, "systemctl show -p ActiveState"):
+		_, _ = io.WriteString(stdout, "release=v1.2.0\n---unit=blog@http.service\nActiveState=active\nSubState=running\nStatusText=\nActiveEnterTimestamp=Sun\n")
+	case strings.Contains(script, "journalctl"):
+		_, _ = io.WriteString(stdout, "INF ok "+host.Addr+"\nERR fail "+host.Addr+"\n")
+	}
+	return nil
+}
+
+// Upload 在只读 MCP 工具测试中不执行实际上传。
+func (stubDeployRunner) Upload(_ context.Context, _ deploy.Host, _, _ string) error { return nil }
+
+// tenon_deploy_* 四个只读部署观测工具：拓扑、预演计划、状态和多机聚合日志。
+func TestDeployTools(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	if err := agents.SyncDocs(root, "../../../.."); err != nil {
+		t.Fatal(err)
+	}
+	srv, err := devmcp.New(devmcp.Options{
+		Root:    root,
+		Version: "v0.0.2",
+		Inspect: func() (*agents.Project, error) {
+			return &agents.Project{Config: &project.Config{Main: "./cmd/blog"}, Tenon: "v0.0.2"}, nil
+		},
+		DeployRunner: func(deploy.Target) (deploy.Runner, func() error, error) {
+			return stubDeployRunner{}, nil, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	serverSide, clientSide := mcp.NewInMemoryTransports()
+	if _, err := srv.Connect(ctx, serverSide, nil); err != nil {
+		t.Fatal(err)
+	}
+	s, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1"}, nil).Connect(ctx, clientSide, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	// 尚未创建 deploy.yaml 时返回明确引导提示。
+	if msg, isErr := call(t, s, "tenon_deploy_info", nil); isErr || !strings.Contains(msg, "tenon add deploy") {
+		t.Fatalf("without deploy.yaml: isErr=%v msg=%q", isErr, msg)
+	}
+
+	cfg := `app: blog
+environments:
+  production:
+    roles:
+      http:
+        hosts: [web-1, web-2]
+      worker:
+        hosts: [worker-1]
+`
+	if err := os.WriteFile(filepath.Join(root, "deploy.yaml"), []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	resInfo, err := s.CallTool(ctx, &mcp.CallToolParams{Name: "tenon_deploy_info", Arguments: map[string]any{}})
+	if err != nil || resInfo.IsError {
+		t.Fatalf("tenon_deploy_info: err=%v res=%+v", err, resInfo)
+	}
+	infoJSON, _ := json.Marshal(resInfo.StructuredContent)
+	if !strings.Contains(string(infoJSON), `"migrate_host":"worker-1"`) {
+		t.Errorf("tenon_deploy_info:\n%s", infoJSON)
+	}
+
+	resPlan, err := s.CallTool(ctx, &mcp.CallToolParams{Name: "tenon_deploy_plan", Arguments: map[string]any{"version": "v2"}})
+	if err != nil || resPlan.IsError {
+		t.Fatalf("tenon_deploy_plan: err=%v res=%+v", err, resPlan)
+	}
+	planJSON, _ := json.Marshal(resPlan.StructuredContent)
+	if !strings.Contains(string(planJSON), `"http-canary"`) {
+		t.Errorf("tenon_deploy_plan:\n%s", planJSON)
+	}
+
+	resStatus, err := s.CallTool(ctx, &mcp.CallToolParams{Name: "tenon_deploy_status", Arguments: map[string]any{"role": "http"}})
+	if err != nil || resStatus.IsError {
+		t.Fatalf("tenon_deploy_status: err=%v res=%+v", err, resStatus)
+	}
+	statusJSON, _ := json.Marshal(resStatus.StructuredContent)
+	if !strings.Contains(string(statusJSON), `"release":"v1.2.0"`) {
+		t.Errorf("tenon_deploy_status:\n%s", statusJSON)
+	}
+
+	resLogs, err := s.CallTool(ctx, &mcp.CallToolParams{Name: "tenon_deploy_logs", Arguments: map[string]any{"role": "http", "contains": "ERR"}})
+	if err != nil || resLogs.IsError {
+		t.Fatalf("tenon_deploy_logs: err=%v res=%+v", err, resLogs)
+	}
+	logsJSON, _ := json.Marshal(resLogs.StructuredContent)
+	if !strings.Contains(string(logsJSON), "ERR fail web-1") || !strings.Contains(string(logsJSON), "ERR fail web-2") || strings.Contains(string(logsJSON), "INF ok") {
+		t.Errorf("tenon_deploy_logs:\n%s", logsJSON)
 	}
 }

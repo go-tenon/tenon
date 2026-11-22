@@ -522,63 +522,50 @@ func TestWriteDeploy(t *testing.T) {
 		return string(b)
 	}
 
-	// 纯 CSR 前端使用 distroless/static 并安装 Bun。
-	csrDir := t.TempDir()
-	files, err := scaffold.WriteDeploy(csrDir, scaffold.Deploy{
-		Slug: "omirouter", Main: "./cmd/omirouter", Image: "ghcr.io/omirouter/omirouter",
-		GoVersion: "1.27.4", BunVersion: "1.4.4", HasFrontends: true, HasSSR: false,
+	dir := t.TempDir()
+	files, err := scaffold.WriteDeploy(dir, scaffold.Deploy{
+		Slug: "omirouter",
+		User: "ops",
+		Host: "prod.example.com",
 	})
-	if err != nil || len(files) != 4 {
-		t.Fatalf("WriteDeploy csr: files=%v err=%v", files, err)
+	if err != nil || len(files) != 2 {
+		t.Fatalf("WriteDeploy: files=%v err=%v", files, err)
 	}
-	df := read(csrDir, "Dockerfile")
+	cfg := read(dir, "deploy.yaml")
 	for _, want := range []string{
-		"FROM golang:1.27 AS build",
-		"COPY --from=oven/bun:1.4.4 /usr/local/bin/bun /usr/local/bin/bun",
-		"RUN CGO_ENABLED=0 go tool tenon build -o /out/omirouter",
-		"FROM gcr.io/distroless/static-debian13:nonroot",
-		`ENTRYPOINT ["/app/omirouter"]`,
+		"app: omirouter",
+		"user: ops",
+		"service_user: omirouter",
+		"dir: /opt/omirouter",
+		"env_file: /etc/omirouter/env",
+		"- prod.example.com",
+		"roles:",
 	} {
-		if !strings.Contains(df, want) {
-			t.Errorf("csr Dockerfile missing %q:\n%s", want, df)
+		if !strings.Contains(cfg, want) {
+			t.Errorf("deploy.yaml missing %q:\n%s", want, cfg)
 		}
 	}
-	compose := read(csrDir, "compose.prod.yaml")
+	env := read(dir, ".env.example")
 	for _, want := range []string{
-		"image: ghcr.io/omirouter/omirouter:${APP_VERSION:-latest}",
-		"test: [CMD, /app/omirouter, health]",
-		"wal_level=logical",
-		"max_slot_wal_keep_size=10GB",
+		"APP_URL=https://example.com",
+		"APP_KEY=",
+		"DATABASE_URL=postgres://omirouter:change-me@127.0.0.1:5432/omirouter?sslmode=disable",
+		"NATS_URL=nats://127.0.0.1:4222",
+		"OTLP_ENDPOINT=",
 	} {
-		if !strings.Contains(compose, want) {
-			t.Errorf("compose.prod.yaml missing %q:\n%s", want, compose)
+		if !strings.Contains(env, want) {
+			t.Errorf(".env.example missing %q:\n%s", want, env)
 		}
-	}
-	if ignore := read(csrDir, ".dockerignore"); !strings.Contains(ignore, "config/local.yaml") {
-		t.Errorf(".dockerignore:\n%s", ignore)
-	}
-	if env := read(csrDir, ".env.example"); !strings.Contains(env, "APP_KEY=") || !strings.Contains(env, "OTLP_ENDPOINT=") {
-		t.Errorf(".env.example:\n%s", env)
 	}
 
 	// 重复写入默认拒绝，传入 Force 允许覆盖。
-	if _, err := scaffold.WriteDeploy(csrDir, scaffold.Deploy{Slug: "omirouter"}); err == nil || !strings.Contains(err.Error(), "already exists") {
+	if _, err := scaffold.WriteDeploy(dir, scaffold.Deploy{Slug: "omirouter"}); err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Errorf("second write without force: %v", err)
 	}
-	if _, err := scaffold.WriteDeploy(csrDir, scaffold.Deploy{Slug: "omirouter", Force: true, HasFrontends: true, HasSSR: true}); err != nil {
+	if _, err := scaffold.WriteDeploy(dir, scaffold.Deploy{Slug: "omirouter", Force: true}); err != nil {
 		t.Fatalf("overwrite with force: %v", err)
 	}
-	if ssrDF := read(csrDir, "Dockerfile"); !strings.Contains(ssrDF, "FROM gcr.io/distroless/base-debian13:nonroot") {
-		t.Errorf("ssr Dockerfile:\n%s", ssrDF)
-	}
-
-	// 无前端项目不引入 Bun，直接 go build。
-	apiOnlyDir := t.TempDir()
-	if _, err := scaffold.WriteDeploy(apiOnlyDir, scaffold.Deploy{Slug: "worker", Main: "./cmd/worker"}); err != nil {
-		t.Fatalf("api-only WriteDeploy: %v", err)
-	}
-	apiDF := read(apiOnlyDir, "Dockerfile")
-	if strings.Contains(apiDF, "oven/bun") || !strings.Contains(apiDF, "go build -trimpath -o /out/worker ./cmd/worker") {
-		t.Errorf("api-only Dockerfile:\n%s", apiDF)
+	if overwritten := read(dir, "deploy.yaml"); !strings.Contains(overwritten, "user: deploy") {
+		t.Errorf("default user after overwrite:\n%s", overwritten)
 	}
 }

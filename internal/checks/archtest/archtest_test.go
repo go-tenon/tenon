@@ -86,10 +86,11 @@ var rules = map[string]rule{
 	"mcpx/mcpcmd":     {layerEntry, []string{"command", "identity", "mcpx"}},
 	"command":         {layerEntry, []string{"cleanup", "config", "errorx", "i18n", "logging"}},
 	"command/httpcmd": {layerEntry, []string{"clientgen", "command", "httpx"}},
-	// tenon 命令行（go tool tenon）：开发工具，不被框架的其他包引用。
-	"cmd/tenon":                   {layerEntry, []string{"cmd/tenon/internal/agents", "cmd/tenon/internal/check", "cmd/tenon/internal/dev", "cmd/tenon/internal/devmcp", "cmd/tenon/internal/project", "cmd/tenon/internal/scaffold", "frontend"}},
+	// tenon 命令行（go tool tenon）：开发与部署工具，不被框架的其他包引用。
+	"cmd/tenon":                   {layerEntry, []string{"cmd/tenon/internal/agents", "cmd/tenon/internal/check", "cmd/tenon/internal/deploy", "cmd/tenon/internal/dev", "cmd/tenon/internal/devmcp", "cmd/tenon/internal/project", "cmd/tenon/internal/scaffold", "frontend"}},
 	"cmd/tenon/internal/check":    {layerEntry, []string{"cmd/tenon/internal/dev", "cmd/tenon/internal/project"}},
-	"cmd/tenon/internal/devmcp":   {layerEntry, []string{"cmd/tenon/internal/agents", "cmd/tenon/internal/dev", "cmd/tenon/internal/project"}},
+	"cmd/tenon/internal/deploy":   {layerEntry, nil},
+	"cmd/tenon/internal/devmcp":   {layerEntry, []string{"cmd/tenon/internal/agents", "cmd/tenon/internal/deploy", "cmd/tenon/internal/dev", "cmd/tenon/internal/project"}},
 	"cmd/tenon/internal/agents":   {layerEntry, []string{"cmd/tenon/internal/project"}},
 	"cmd/tenon/internal/dev":      {layerEntry, []string{"cmd/tenon/internal/agents", "cmd/tenon/internal/project", "frontend"}},
 	"cmd/tenon/internal/project":  {layerEntry, []string{"config"}},
