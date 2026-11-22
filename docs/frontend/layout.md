@@ -74,7 +74,7 @@ export const Route = createFileRoute("/_app/orders")({
 <a id="menus"></a>
 ### 顶栏菜单：`UserMenu`、`NotificationsMenu`、`OperationsMenu`
 
-- `UserMenu`：头像（`avatar`，没有时是 `name` 的首字），菜单中是 `name`、`email`、应用的菜单项 `items`、配色（`colorScheme={false}` 时不显示）、`user-menu` 插槽和退出登录。退出时调用 `logout`（应用的退出接口），再清除会话中的身份；有未保存的修改时先询问。
+- `UserMenu`：头像（`avatar`，没有时是 `name` 的首字），`statusColor` 在头像右下角显示状态点；菜单中是 `name`、`email`、应用的菜单项 `items`、配色（`colorScheme={false}` 时不显示）、`user-menu` 插槽和退出登录。退出时调用 `logout`（应用的退出接口），再清除会话中的身份；有未保存的修改时先询问。
 - `NotificationsMenu`：铃铛和未读数，见[通知](features.md#notifications)。`OperationsMenu`：导入、导出等后台任务的进度，见[后台操作](features.md#operations)。
 - `LanguageMenu`：列出 `languages`，选择后调用 `onChange`，换文案、记住选择由应用决定。`ColorSchemeToggle`：配色切换按钮，自己写布局时用。
 
@@ -91,6 +91,7 @@ export const Route = createFileRoute("/_app/orders")({
 
 - 面包屑来自路由的标题。首页这类页面设置 `breadcrumbs={false}`；路由没有自己的标题时（例如新建页面），用 `crumb="新建"` 在最后加一级。
 - `back` 在标题左边放返回按钮，给内页用，例如团队成员页返回团队列表：`back={() => navigate({ to: "/settings/teams" })}`。
+- `width="narrow"` 将页面内容约束在 720px（适合设置表单页），也可以直接传像素值。
 - 表格和表单见[列表与表单](lists-forms.md)。
 
 <a id="page-tabs"></a>
@@ -233,8 +234,9 @@ export const Route = createFileRoute("/t/$tenant")({
 
 - 导航与 `FrameLayout` 一样来自[路由的 `staticData`](#menu)。第一级是模块，在图标栏中；模块下的页面和分组在二级导航中。
 - `settings`（默认 `/settings`）下的页面不进图标栏，从用户菜单进入；其中的页面不显示面包屑，内页用 `Page` 的 `back` 返回。
-- 窄屏（小于 48em）时二级导航是抽屉。内容区最宽 `maxWidth`（默认 1152px），二级导航宽 `navWidth`（默认 260px）。`RailLayout` 没有多标签。
-- 二级导航的收起状态按账号保存。
+- 图标栏的标志下方、底部支持 `railTop`、`railBottom` 扩展（例如全局搜索按钮）；`headerHeight`（默认 52px）写入 `--tn-rail-header`，供各栏顶栏齐平。
+- 窄屏（`compactQuery`，默认 `max-width: 48em`）时二级导航是抽屉，点击导航项后自动关闭。内容区最宽 `maxWidth`（默认 1152px），二级导航宽 `navWidth`（默认 260px）。`RailLayout` 没有多标签。
+- 二级导航的收起状态按账号保存，页面可用 `useNavControl()` 读取展开状态并触发切换。
 
 <a id="full-bleed"></a>
 ### 铺满的模块：`fullBleed`、`nav` 插槽和 `useCollapseNav`
@@ -265,7 +267,7 @@ function Inbox() {
 ```
 
 - `fullBleed: true` 的页面没有最大宽度、内边距和面包屑，高度占满内容区。内容区本身不滚动，页面中的各栏自己滚动。写在模块的路由上时，模块下的页面都铺满。`FrameLayout` 同样支持它。
-- `<Fill name="nav">` 有内容时，二级导航显示它，替换按路由生成的链接；顶部的模块名和收起按钮保留，窄屏时它在抽屉中。二级导航中的 `NavLink` 自动用紧凑的样式。把 `Fill` 放在模块的布局路由中，模块内切换页面时面板保持不变。
+- `<Fill name="nav">` 有内容时，二级导航显示它，替换按路由生成的链接；顶部的模块名和收起按钮保留，窄屏时它在抽屉中。二级导航中的 `NavLink` 自动用紧凑的样式，需要分组时用 `<RailSection title="…" collapsible>`。把 `Fill` 放在模块的布局路由中，模块内切换页面时面板保持不变。
 - `useCollapseNav(when)` 在 `when` 为 `true` 时临时收起二级导航，变回 `false` 或组件卸载时恢复，保存的收起状态保持不变。临时收起期间用户点了展开，以用户为准，直到下一次要求收起。
 
 <a id="custom-layouts"></a>

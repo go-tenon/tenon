@@ -9,6 +9,8 @@ import {
   Box,
   Center,
   Group,
+  Indicator,
+  type MantineColor,
   type MantineColorScheme,
   Menu,
   type MenuProps,
@@ -51,6 +53,8 @@ export interface UserMenuProps {
   colorScheme?: boolean
   /** 菜单弹出的方向，默认 bottom-end（顶栏右侧）；放在侧栏底部时用 right-end。 */
   position?: MenuProps["position"]
+  /** 头像右下角的状态点颜色（例如在线用 green、离开用 gray）；不设置时不显示。 */
+  statusColor?: MantineColor
 }
 
 /** 用户菜单：只显示头像；菜单顶部是用户的名称和邮箱，下面是应用的菜单项、配色、user-menu 插槽中的内容（例如 FrameLayout 的“多标签”开关）和退出登录。 */
@@ -62,6 +66,7 @@ export function UserMenu({
   items = [],
   colorScheme = true,
   position = "bottom-end",
+  statusColor,
 }: UserMenuProps): ReactNode {
   const app = useApp()
   const t = useText()
@@ -79,9 +84,19 @@ export function UserMenu({
     <Menu width={220} position={position}>
       <Menu.Target>
         <UnstyledButton className="tn-avatar" aria-label={t("tenon.user_menu.label")}>
-          <Avatar src={avatar} size={30} radius="xl" color="brand">
-            {name?.slice(0, 1)}
-          </Avatar>
+          <Indicator
+            inline
+            color={statusColor}
+            size={9}
+            offset={3}
+            position="bottom-end"
+            withBorder
+            disabled={!statusColor}
+          >
+            <Avatar src={avatar} size={30} radius="xl" color="brand">
+              {name?.slice(0, 1)}
+            </Avatar>
+          </Indicator>
         </UnstyledButton>
       </Menu.Target>
       <Menu.Dropdown p={0}>
