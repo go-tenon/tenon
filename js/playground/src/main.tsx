@@ -59,7 +59,7 @@ import {
   TextInput,
   Title,
 } from "@mantine/core"
-import { IconCircleCheck, IconDownload, IconPlus, IconSearch, IconSettings } from "@tabler/icons-react"
+import { IconCircleCheck, IconDownload, IconPlus, IconSearch, IconSettings, IconUser } from "@tabler/icons-react"
 import {
   type AnyRoute,
   createRootRouteWithContext,
@@ -193,7 +193,7 @@ function FrameShellLayout({
           name="韩梅梅"
           email="hanmeimei@acme.cn"
           logout={async () => {}}
-          items={[{ label: "账号设置", to: "/settings" }]}
+          items={[{ label: "账号设置", icon: <IconUser size={18} stroke={1.5} />, to: "/settings" }]}
         />
       }
     />

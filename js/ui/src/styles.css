@@ -312,15 +312,22 @@ body {
 
 .tn-menu-section {
   padding: 4px;
+
+  /* 统一左侧图标槽宽为 18px，与主题、多标签、退出登录的图标对齐 */
+  & .mantine-Menu-itemSection[data-position="left"] {
+    width: 18px;
+    flex-shrink: 0;
+  }
 }
 
-/* 用户菜单顶部的名称和邮箱。 */
+/* 用户菜单顶部的名称和邮箱。左右内边距与 Menu.Item 一致（4px + spacing-sm）。 */
 .tn-menu-user {
-  padding: 10px;
+  padding: 10px calc(4px + var(--mantine-spacing-sm));
 }
 
+/* 配色行不在 tn-menu-section 内，左右内边距补齐 4px 以与各菜单项左右对齐。 */
 .tn-schemes {
-  padding: 6px 10px 6px 12px;
+  padding: 6px calc(4px + var(--mantine-spacing-sm));
 }
 
 .tn-menu-toggles {
@@ -330,19 +337,19 @@ body {
 .tn-menu-toggle {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--mantine-spacing-xs);
   width: 100%;
-  padding: 8px 12px;
-  border-radius: var(--mantine-radius-sm);
+  padding: calc(var(--mantine-spacing-xs) / 1.5) var(--mantine-spacing-sm);
+  border-radius: var(--mantine-radius-default);
   font-size: var(--mantine-font-size-sm);
 
-  & span {
+  & > span {
     flex: 1;
   }
 
   @media (hover: hover) {
     &:hover {
-      background-color: light-dark(var(--mantine-color-gray-0), var(--mantine-color-dark-6));
+      background-color: light-dark(var(--mantine-color-gray-1), var(--mantine-color-dark-4));
     }
   }
 }
