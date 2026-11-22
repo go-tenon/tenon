@@ -1,10 +1,14 @@
-// Package devmcp 实现 tenon mcp：开发时给 AI 编程助手用的 MCP 服务，以 stdio 运行。工具名都以 tenon_ 开头，
+// Package devmcp 实现 tenon mcp：开发与运维期间给 AI 编程助手用的 MCP 服务，以 stdio 运行。工具名都以 tenon_ 开头，
 // 与 Mantine 等其他 MCP 服务的同名工具区分：
 //
-//	tenon_search_docs  按小节检索 .tenon/docs 中的框架文档
-//	tenon_read_doc     读一页文档的目录、一个小节或整页
-//	tenon_app_info     项目的框架版本、入口、前端与客户端和技能
-//	tenon_dev_logs     tenon dev 运行期间各进程的输出（dev.LogFile）
+//	tenon_search_docs    按小节检索 .tenon/docs 中的框架文档
+//	tenon_read_doc       读一页文档的目录、一个小节或整页
+//	tenon_app_info       项目的框架版本、入口、前端与客户端和技能
+//	tenon_dev_logs       tenon dev 运行期间各进程的输出（dev.LogFile）
+//	tenon_deploy_info    deploy.yaml 中的环境、角色、主机和发布波次拓扑（不含密钥）
+//	tenon_deploy_status  远端集群各主机的当前发布版本与 systemd 服务状态
+//	tenon_deploy_logs    按环境/角色/主机/关键字聚合拉取远端 journald 日志
+//	tenon_deploy_plan    预演某环境的发布计划（波次、主机、服务部分、迁移主节点）
 package devmcp
 
 import (
@@ -21,29 +25,57 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/go-tenon/tenon/cmd/tenon/internal/agents"
+	"github.com/go-tenon/tenon/cmd/tenon/internal/deploy"
 	"github.com/go-tenon/tenon/cmd/tenon/internal/dev"
 	"github.com/go-tenon/tenon/cmd/tenon/internal/project"
 )
 
 // instructions 在连接时交给模型，说明工具之间怎样配合。
-const instructions = "Tenon 框架的开发工具，文档的版本与项目 go.mod 中的框架版本一致。写 Tenon 的代码之前，" +
+const instructions = "Tenon 框架的开发与部署工具，文档的版本与项目 go.mod 中的框架版本一致。写 Tenon 的代码之前，" +
 	"用 tenon_search_docs 查找相关的文档小节，再用 tenon_read_doc 读它；不确定项目有哪些前端、依赖是什么版本时用 tenon_app_info；" +
-	"改完代码后用 tenon_dev_logs 看 bun run dev 中的编译错误和应用日志。"
+	"改完代码后用 tenon_dev_logs 看 bun run dev 中的编译错误和应用日志；" +
+	"排查或准备线上发布时，用 tenon_deploy_info、tenon_deploy_status、tenon_deploy_logs 和 tenon_deploy_plan 查看集群拓扑、状态、多机日志与发布计划，" +
+	"真正执行发布或回滚时运行 go tool tenon deploy --format json。"
 
 // Options 是 New 的参数。
 type Options struct {
-	Root    string                          // 项目的根目录
-	Version string                          // 框架的版本，写进服务的信息
-	Inspect func() (*agents.Project, error) // 读出项目的信息，tenon_app_info 每次调用时运行，项目的变化随即可见
+	Root         string                                                     // 项目的根目录
+	Version      string                                                     // 框架的版本，写进服务的信息
+	Inspect      func() (*agents.Project, error)                            // 读出项目的信息，tenon_app_info 每次调用时运行，项目的变化随即可见
+	DeployRunner func(t deploy.Target) (deploy.Runner, func() error, error) // 创建远端部署 Runner；为空时默认使用 deploy.NewSSHRunner
 }
 
-// New 读取 Root 中 .tenon/docs 的文档，返回登记了四个工具的 MCP 服务。
+// New 读取 Root 中 .tenon/docs 的文档，返回登记了开发与只读部署观测工具的 MCP 服务。
 func New(opts Options) (*mcp.Server, error) {
 	docsDir := filepath.Join(opts.Root, filepath.FromSlash(agents.DocsDir))
 	d, err := loadDocs(docsDir)
 	if err != nil {
 		return nil, err
 	}
+	newRunner := opts.DeployRunner
+	if newRunner == nil {
+		newRunner = func(t deploy.Target) (deploy.Runner, func() error, error) {
+			r, err := deploy.NewSSHRunner(t)
+			if err != nil {
+				return nil, nil, err
+			}
+			return r, r.Close, nil
+		}
+	}
+	resolveDeployFile := func(file string) (string, string, error) {
+		p, err := opts.Inspect()
+		if err != nil {
+			return "", "", err
+		}
+		if file == "" {
+			file = deploy.DefaultFile
+		}
+		if !filepath.IsAbs(file) {
+			file = filepath.Join(opts.Root, file)
+		}
+		return file, path.Base(p.Config.Main), nil
+	}
+
 	srv := mcp.NewServer(&mcp.Implementation{Name: "tenon", Version: opts.Version}, &mcp.ServerOptions{Instructions: instructions})
 
 	mcp.AddTool(srv, &mcp.Tool{
@@ -166,6 +198,117 @@ func New(opts Options) (*mcp.Server, error) {
 		header := fmt.Sprintf("%s，最后写入于 %s，%d 行：\n\n", dev.LogFile, info.ModTime().Format(time.DateTime), len(kept))
 		return text(header + strings.Join(kept, "\n")), nil, nil
 	})
+
+	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "tenon_deploy_info",
+		Title:       "部署拓扑信息",
+		Description: "读取项目的 deploy.yaml，返回所有环境的部署拓扑：角色、主机列表、各主机运行的服务部分、主迁移节点和滚动发布波次（不含密钥）。排查或准备发布之前先调用它。",
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
+	}, func(_ context.Context, _ *mcp.CallToolRequest, in deployFileArgs) (*mcp.CallToolResult, any, error) {
+		filePath, defaultApp, err := resolveDeployFile(in.File)
+		if err != nil {
+			return nil, nil, err
+		}
+		if _, err := os.Stat(filePath); errors.Is(err, fs.ErrNotExist) {
+			return text("当前项目还没有 deploy.yaml：运行 go tool tenon add deploy 生成原生二进制部署配置。"), nil, nil
+		}
+		topo, err := deploy.LoadTopology(filePath, defaultApp)
+		if err != nil {
+			return nil, nil, err
+		}
+		return nil, topo, nil
+	})
+
+	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "tenon_deploy_status",
+		Title:       "线上部署状态",
+		Description: "通过 SSH 并发查询远端集群各主机当前的发布版本与每个 systemd unit 的运行状态（ActiveState、SubState、StatusText）。可按 env、role、host 过滤。",
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in deployStatusArgs) (*mcp.CallToolResult, any, error) {
+		filePath, defaultApp, err := resolveDeployFile(in.File)
+		if err != nil {
+			return nil, nil, err
+		}
+		target, err := deploy.Load(filePath, defaultApp, in.Env)
+		if err != nil {
+			return nil, nil, err
+		}
+		r, closeFn, err := newRunner(target)
+		if err != nil {
+			return nil, nil, err
+		}
+		if closeFn != nil {
+			defer func() { _ = closeFn() }()
+		}
+		report, err := deploy.CollectStatus(ctx, r, target, in.Role, in.Host)
+		if err != nil {
+			return nil, nil, err
+		}
+		return nil, report, nil
+	})
+
+	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "tenon_deploy_logs",
+		Title:       "聚合拉取线上日志",
+		Description: "通过 SSH 并发拉取单台或多台线上主机的 journald 日志。支持按 env、role、host、part、since（如 15m、1h）、contains（如 ERR 或 X-Request-ID）过滤，每台默认返回 100 行（最多 1000 行）。",
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in deployLogsArgs) (*mcp.CallToolResult, any, error) {
+		filePath, defaultApp, err := resolveDeployFile(in.File)
+		if err != nil {
+			return nil, nil, err
+		}
+		target, err := deploy.Load(filePath, defaultApp, in.Env)
+		if err != nil {
+			return nil, nil, err
+		}
+		r, closeFn, err := newRunner(target)
+		if err != nil {
+			return nil, nil, err
+		}
+		if closeFn != nil {
+			defer func() { _ = closeFn() }()
+		}
+		lines := in.Lines
+		if lines <= 0 {
+			lines = 100
+		}
+		if lines > 1000 {
+			lines = 1000
+		}
+		report, err := deploy.CollectLogs(ctx, r, target, deploy.LogsOptions{
+			Role:     in.Role,
+			Host:     in.Host,
+			Part:     in.Part,
+			Lines:    lines,
+			Since:    in.Since,
+			Contains: in.Contains,
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+		return nil, report, nil
+	})
+
+	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "tenon_deploy_plan",
+		Title:       "预演发布计划",
+		Description: "生成某环境的只读发布计划（不构建也不修改远端）：列出目标架构、主迁移节点、各波次（后端优先、入口金丝雀后批量滚动）及各主机将运行的服务部分。执行真实发布前先调用它向用户确认。",
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in deployPlanArgs) (*mcp.CallToolResult, any, error) {
+		filePath, defaultApp, err := resolveDeployFile(in.File)
+		if err != nil {
+			return nil, nil, err
+		}
+		target, err := deploy.Load(filePath, defaultApp, in.Env)
+		if err != nil {
+			return nil, nil, err
+		}
+		plan, err := deploy.Plan(ctx, target, deploy.ReleaseOptions{Version: in.Version})
+		if err != nil {
+			return nil, nil, err
+		}
+		return nil, plan, nil
+	})
 	return srv, nil
 }
 
@@ -186,6 +329,38 @@ type readArgs struct {
 type logArgs struct {
 	Lines    int    `json:"lines,omitempty" jsonschema:"返回最后几行，默认 100，最多 1000"`
 	Contains string `json:"contains,omitempty" jsonschema:"只保留包含这段文字的行，例如 ERR"`
+}
+
+// deployFileArgs 是 tenon_deploy_info 的参数。
+type deployFileArgs struct {
+	File string `json:"file,omitempty" jsonschema:"部署配置文件路径，默认 deploy.yaml"`
+}
+
+// deployStatusArgs 是 tenon_deploy_status 的参数。
+type deployStatusArgs struct {
+	File string `json:"file,omitempty" jsonschema:"部署配置文件路径，默认 deploy.yaml"`
+	Env  string `json:"env,omitempty" jsonschema:"环境名，默认 production"`
+	Role string `json:"role,omitempty" jsonschema:"按角色过滤，例如 http、worker"`
+	Host string `json:"host,omitempty" jsonschema:"按主机地址过滤"`
+}
+
+// deployLogsArgs 是 tenon_deploy_logs 的参数。
+type deployLogsArgs struct {
+	File     string `json:"file,omitempty" jsonschema:"部署配置文件路径，默认 deploy.yaml"`
+	Env      string `json:"env,omitempty" jsonschema:"环境名，默认 production"`
+	Role     string `json:"role,omitempty" jsonschema:"按角色过滤主机，留空聚合全部主机"`
+	Host     string `json:"host,omitempty" jsonschema:"只查看指定主机"`
+	Part     string `json:"part,omitempty" jsonschema:"只查看指定服务部分（如 http），留空查看全部部分"`
+	Lines    int    `json:"lines,omitempty" jsonschema:"每台主机返回最后几行，默认 100，最多 1000"`
+	Since    string `json:"since,omitempty" jsonschema:"时间范围，例如 15m、1h"`
+	Contains string `json:"contains,omitempty" jsonschema:"只保留包含该文字的行，例如 ERR 或 X-Request-ID"`
+}
+
+// deployPlanArgs 是 tenon_deploy_plan 的参数。
+type deployPlanArgs struct {
+	File    string `json:"file,omitempty" jsonschema:"部署配置文件路径，默认 deploy.yaml"`
+	Env     string `json:"env,omitempty" jsonschema:"环境名，默认 production"`
+	Version string `json:"version,omitempty" jsonschema:"可选的发布版本号"`
 }
 
 // appInfo 是 tenon_app_info 的结果。

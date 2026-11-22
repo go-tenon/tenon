@@ -196,19 +196,15 @@ assert.Contains(t, html, "<h1>Hello World</h1>")
 <a id="deployment"></a>
 ## 部署 Gotenberg
 
-Gotenberg 和应用一起部署，只让应用访问它。在[部署](../installation/deployment.md#docker)的 compose 文件中加一个服务；用 systemd 部署时同样用 Docker 在同一台机器上运行它：
+Gotenberg 和应用部署在同一台机器上，仅监听本机回环地址供应用访问（开发测试与单机部署都可直接用容器运行 Gotenberg）：
 
-```yaml
-x-app: &app
-  environment:
-    GOTENBERG_URL: http://gotenberg:3000
-
-services:
-  gotenberg:
-    image: gotenberg/gotenberg:9-chromium
-    restart: unless-stopped
-    command: [gotenberg, --chromium-deny-private-ips] # 禁止访问内网地址
+```bash
+docker run -d --name gotenberg --restart unless-stopped \
+  -p 127.0.0.1:3000:3000 gotenberg/gotenberg:9-chromium \
+  gotenberg --chromium-deny-private-ips # 禁止访问内网地址
 ```
+
+应用中将 `GOTENBERG_URL` 指向 `http://127.0.0.1:3000`。
 
 - `gotenberg.Doctor(renderer)` 检查 Gotenberg 在运行、能生成 PDF、用户名和密码正确，见[自检](../installation/doctor.md#framework-checks)。
 - 默认最多同时生成 6 份，其余排队；单次请求的时限是 30 秒。用 `--chromium-max-concurrency`、`--api-timeout` 调整，见 [Gotenberg 文档](https://gotenberg.dev)。

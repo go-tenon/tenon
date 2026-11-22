@@ -11,10 +11,11 @@ import (
 	"github.com/go-tenon/tenon/database"
 	"github.com/go-tenon/tenon/identity"
 	"github.com/go-tenon/tenon/logging"
+	"github.com/go-tenon/tenon/page"
 )
 
-// DefaultLimit 是 List 在 Query.Limit 不大于 0 时返回的条数。
-const DefaultLimit = 50
+// DefaultPerPage 是 List 在 Query.Page.PerPage 不大于 0 时每页返回的条数。
+const DefaultPerPage = 20
 
 // Activity 是一条操作记录，也是 activity_log 表的 Bun 模型，List 之外的查询可以直接用 Bun 编写。
 type Activity struct {
@@ -84,20 +85,23 @@ type Query struct {
 	TargetID   string       // 需要同时设置 TargetType
 	Actor      identity.Ref // 操作人，零值不限制
 	Event      string
-	Before     uuid.UUID // 只返回 ID 小于它的记录：翻页时传入上一页最后一条的 ID，零值从最新的开始
-	Limit      int       // 不大于 0 时为 DefaultLimit
+	Page       page.OffsetParams // 分页参数，零值为第 1 页、每页 DefaultPerPage 条
 }
 
-// List 按时间从新到旧返回符合 q 的记录。
-func List(ctx context.Context, db bun.IDB, q Query) ([]Activity, error) {
+// List 按时间从新到旧返回符合 q 的一页记录。
+func List(ctx context.Context, db bun.IDB, q Query) (page.Offset[Activity], error) {
 	if q.TargetID != "" && q.TargetType == "" {
-		return nil, errors.New("activity: query target id without target type")
+		return page.Offset[Activity]{}, errors.New("activity: query target id without target type")
 	}
-	limit := q.Limit
-	if limit <= 0 {
-		limit = DefaultLimit
+	p := q.Page
+	if p.Page <= 0 {
+		p.Page = 1
 	}
-	sel := db.NewSelect().Model((*Activity)(nil)).Where("tenant = ?", q.Tenant)
+	if p.PerPage <= 0 {
+		p.PerPage = DefaultPerPage
+	}
+	activities := []Activity{}
+	sel := db.NewSelect().Model(&activities).Where("tenant = ?", q.Tenant)
 	for _, f := range [...]struct{ column, value string }{
 		{"target_type", q.TargetType}, {"target_id", q.TargetID}, {"event", q.Event},
 	} {
@@ -108,14 +112,11 @@ func List(ctx context.Context, db bun.IDB, q Query) ([]Activity, error) {
 	if !q.Actor.IsZero() {
 		sel = sel.Where("actor_type = ? AND actor_id = ?", q.Actor.Type, q.Actor.ID)
 	}
-	if q.Before != uuid.Nil {
-		sel = sel.Where("id < ?", q.Before)
+	total, err := sel.OrderExpr("id DESC").Limit(p.Limit()).Offset(p.Offset()).ScanAndCount(ctx)
+	if err != nil {
+		return page.Offset[Activity]{}, errors.Wrap(err, "activity: list")
 	}
-	activities := []Activity{}
-	if err := sel.OrderExpr("id DESC").Limit(int64(limit)).Scan(ctx, &activities); err != nil {
-		return nil, errors.Wrap(err, "activity: list")
-	}
-	return activities, nil
+	return page.NewOffset(activities, p, int64(total)), nil
 }
 
 // Export 返回主体 ref 在所有租户中作为操作人的记录，按时间从旧到新，用于导出个人数据；签名与 privacy.Source 的 Export 相同。

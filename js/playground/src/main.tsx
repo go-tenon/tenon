@@ -5,6 +5,7 @@ import "@fontsource/noto-sans-sc/700.css"
 import "@go-tenon/ui/styles.css"
 import { createSession, type OperationLike } from "@go-tenon/client"
 import {
+  ActivityLog,
   AnchorLink,
   type App,
   AppRoot,
@@ -76,6 +77,7 @@ import { i18n } from "./i18n"
 import { PrimaryPicker, savedPrimary } from "./primary-picker"
 import { InboxDemo } from "./rail-inbox"
 import {
+  activityApi,
   customerExport,
   customerImport,
   customersModel,
@@ -302,6 +304,36 @@ function FramePlaceholder({ title }: { title: string }): ReactNode {
   )
 }
 
+function FrameActivity(): ReactNode {
+  const [actor, setActor] = useState<string>("")
+  return (
+    <Page title="操作日志" description="记录租户内所有成员与系统的关键业务操作，按时间倒序排列。">
+      <ActivityLog
+        source={{
+          key: ["activity", actor],
+          list: (params) => activityApi.list({ actor: actor || undefined, ...params }),
+        }}
+        toolbar={
+          <Group gap="xs">
+            <Select
+              aria-label="按操作人筛选"
+              w={160}
+              allowDeselect={false}
+              value={actor}
+              onChange={(v) => setActor(v ?? "")}
+              data={[
+                { value: "", label: "全部操作人" },
+                ...activityApi.actors.map((name) => ({ value: name, label: name })),
+                { value: "__system__", label: "系统" },
+              ]}
+            />
+          </Group>
+        }
+      />
+    </Page>
+  )
+}
+
 function frameApp() {
   const root = createRootRouteWithContext<RouterContext>()({ component: Root })
   const layout = createRoute({ getParentRoute: () => root, id: "_app", beforeLoad: requireAuth, component: FrameShell })
@@ -371,6 +403,7 @@ function frameApp() {
       ]),
       page(layout, "/users", "用户", "users", () => <FramePlaceholder title="用户" />, "users:manage"),
       page(layout, "/reports", "报表", "report", () => <FramePlaceholder title="报表" />),
+      page(layout, "/activity", "操作日志", "form", FrameActivity),
       page(layout, "/queue", "队列", "list", () => <QueuePanel api={queueApi} />),
       page(layout, "/schedules", "定时任务", "clock", () => <SchedulePanel api={scheduleApi} />),
       page(layout, "/billing", "计费", "wallet", () => <FramePlaceholder title="计费" />, "billing:manage"),

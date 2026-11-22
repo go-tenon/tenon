@@ -3,10 +3,13 @@
 import type { zhCN } from "./zh-CN"
 
 export const en = {
+  "tenon.activity.action": "Activity",
+  "tenon.activity.actor": "Actor",
   "tenon.activity.empty": "No activity yet",
   "tenon.activity.load_failed": "Couldn't load the activity",
   "tenon.activity.on_behalf": "(by {{.name}} on their behalf)",
   "tenon.activity.system": "System",
+  "tenon.activity.time": "Time",
   "tenon.autosave.error": "Couldn't save. It will retry after your next change.",
   "tenon.autosave.pending": "Unsaved changes",
   "tenon.autosave.saving": "Saving…",

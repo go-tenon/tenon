@@ -3,6 +3,7 @@
 
 import type { OperationLike } from "@go-tenon/client"
 import {
+  type ActivityItem,
   type ResourceDef,
   resourceModel,
   type ScheduleApi,
@@ -608,4 +609,47 @@ export const scheduleApi = (() => {
     },
   }
   return api
+})()
+
+/** 演示的操作日志：包含人工操作、系统操作、代为操作与可跳转对象，支持按操作人筛选和固定分页。 */
+export const activityApi = (() => {
+  const now = Date.now()
+  const at = (minutes: number) => new Date(now - minutes * 60_000).toISOString()
+  const actors = ["韩梅梅", "李雷", "王明", undefined] as const
+  const templates: ((i: number) => { text: string; href?: string })[] = [
+    (i) => ({ text: `发布了订单 #${10482 - i} 的发货通知`, href: "/frame/trade/orders" }),
+    (i) => ({ text: `修改了客户「${customers[i % customers.length].name}」的信用额度`, href: "/frame/customers" }),
+    () => ({ text: "更新了店铺设置中的结算币种与公告", href: "/frame/settings" }),
+    (i) => ({ text: `导出了 11 月订单明细（共 ${120 + (i % 5) * 30} 条）` }),
+    (i) => ({ text: `停用了客户「${customers[(i + 3) % customers.length].name}」`, href: "/frame/customers" }),
+    () => ({ text: "定时清理了 180 天前的过期会话" }),
+  ]
+  const items: ActivityItem[] = Array.from({ length: 56 }, (_, i) => {
+    const actor = i % 6 === 5 ? undefined : actors[i % 3]
+    const tpl = templates[i % templates.length](i)
+    return {
+      id: `act-${String(56 - i).padStart(3, "0")}`,
+      text: tpl.text,
+      actor,
+      impersonator: actor && actor !== "韩梅梅" && i % 9 === 2 ? "韩梅梅" : undefined,
+      created_at: at(i * 43 + 5),
+      href: tpl.href,
+    }
+  })
+  return {
+    actors: ["韩梅梅", "李雷", "王明"],
+    async list(
+      input: { actor?: string; page?: number; per_page?: number } = {},
+    ): Promise<{ items: ActivityItem[]; total: number }> {
+      let rows = items
+      if (input.actor === "__system__") rows = rows.filter((a) => !a.actor)
+      else if (input.actor) rows = rows.filter((a) => a.actor === input.actor)
+      const page = input.page ?? 1
+      const perPage = input.per_page ?? 20
+      return delay({
+        items: rows.slice((page - 1) * perPage, page * perPage),
+        total: rows.length,
+      })
+    },
+  }
 })()

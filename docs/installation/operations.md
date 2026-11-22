@@ -7,7 +7,7 @@
 <a id="zero-downtime-upgrades"></a>
 ## 不停机升级
 
-**systemd**：执行 `systemctl reload`（[发布新版本](deployment.md#systemd-releases)的脚本就是这样做的）：
+使用 `tenon deploy` 或手动执行 `systemctl reload`（见[部署](deployment.md#tenon-deploy)）：
 
 1. 旧进程用磁盘上的新二进制启动新进程，把监听的端口交给它；
 2. 新进程打开数据库、装配好全部部分，报告就绪；
@@ -16,8 +16,6 @@
 - 新进程在就绪之前退出或一分钟内没有就绪时被结束，旧进程继续服务，状态文字以 `upgrade failed` 开头。配置写错、数据库连不上、路由冲突都属于这种情况。
 - 由 `serve` 中的 `command.Daemon` 实现，只在 unit 设置了 `Type=notify-reload` 和 `RuntimeDirectory=` 时启用，见[用 systemd 运行](deployment.md#systemd)。
 - 上一次升级的旧进程还没退出时，`reload` 先等它退出；systemd 等待 `reload` 最多 `TimeoutStartSec`（默认 90 秒）。
-
-**Docker**：Swarm 用 `update_config.order: start-first`，新容器的[健康检查](deployment.md#health-checks)通过后才停止旧容器，见[用 Docker Swarm 运行](deployment.md#docker-swarm)。Compose 的 `up -d` 先停旧容器，有几秒不可用。
 
 <a id="upgrade-overlap"></a>
 ### 新旧进程同时运行
@@ -99,10 +97,9 @@ curl -fsS https://example.com/readyz  # 在办公网络中检查
 sudo rm /etc/nginx/blog.maintenance
 ```
 
-- 先挡住请求再停止程序：顺序反过来时中间的请求得到 `502`。
+- 先挡住请求再停止程序：顺序反过来时中间的请求得到 `502`。配置了 `maintenance_file` 时可用 `go tool tenon deploy maintenance on` / `off` 开关维护页。
 - worker 和调度器也停止：维护期间它们不断出错，还可能用旧代码处理新数据。没执行的任务留在队列中。
 - 错过的定时任务等下一次触发；每天只执行一次的任务恢复后[手动执行](../background/scheduling.md#running-manually)。
-- Docker Compose 用 `docker compose stop` 和 `docker compose up -d`。
 
 <a id="without-downtime"></a>
 ### 只停部分功能
