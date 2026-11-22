@@ -8,9 +8,12 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/go-tenon/tenon/authz"
+	"github.com/go-tenon/tenon/database"
 	"github.com/go-tenon/tenon/database/dbtest"
+	"github.com/go-tenon/tenon/errorx"
 	"github.com/go-tenon/tenon/httpx/rest"
 	"github.com/go-tenon/tenon/identity"
 )
@@ -462,5 +465,123 @@ func TestEnsureRoleConcurrently(t *testing.T) {
 	}
 	if all, err := s.Roles(ctx, ""); err != nil || len(all) != 1 {
 		t.Fatalf("roles %v, %v", all, err)
+	}
+}
+
+// DeleteRole 传入 RestrictInUse 时，角色还有分配就拒绝删除并返回 ErrRoleInUse（带公开参数 count）；
+// 撤销全部分配后可以删除。不传 RestrictInUse 时照常级联删除。
+func TestDeleteRoleRestrictInUse(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s := newStore(t)
+
+	editor := mustRole(t, s, authz.Role{Tenant: "acme", Name: "editor", Permissions: []string{"articles:read"}})
+	mustAssign(t, s, user("alice"), "acme", editor.ID)
+	mustAssign(t, s, user("bob"), "acme", editor.ID)
+
+	err := s.DeleteRole(ctx, editor.ID, "acme", authz.RestrictInUse())
+	if !errors.Is(err, authz.ErrRoleInUse) {
+		t.Fatalf("delete in-use role: err=%v, want ErrRoleInUse", err)
+	}
+	var ex *errorx.Error
+	if !errors.As(err, &ex) || ex.Public()["count"] != 2 {
+		t.Fatalf("err public=%v, want count=2", ex.Public())
+	}
+	// 角色和分配保持原样。
+	if got, err := s.Role(ctx, editor.ID, "acme"); err != nil || got.ID != editor.ID {
+		t.Fatalf("role after rejected delete: %+v, %v", got, err)
+	}
+	if members, err := s.Members(ctx, "acme"); err != nil || len(members) != 2 {
+		t.Fatalf("members after rejected delete: %+v, %v", members, err)
+	}
+
+	// 撤销全部分配后可以删除。
+	if err := s.Unassign(ctx, user("alice"), "acme", editor.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Unassign(ctx, user("bob"), "acme", editor.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteRole(ctx, editor.ID, "acme", authz.RestrictInUse()); err != nil {
+		t.Fatalf("delete unused role: %v", err)
+	}
+	if _, err := s.Role(ctx, editor.ID, "acme"); !errors.Is(err, authz.ErrRoleNotFound) {
+		t.Fatalf("role after delete: %v", err)
+	}
+}
+
+// 事务内 Assign 持锁未提交时，并发的 DeleteRole(RestrictInUse) 会等待该事务提交后再统计分配数并返回 ErrRoleInUse；
+// 不会在 Assign 提交前误删角色。
+func TestAssignAndDeleteRoleConcurrentSafety(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	db := dbtest.Open(t, authz.Migrations())
+	s := authz.NewStore(db, catalog)
+
+	role := mustRole(t, s, authz.Role{Tenant: "acme", Name: "agent", Permissions: []string{"articles:read"}})
+	assigned := make(chan struct{})
+	release := make(chan struct{})
+	assignDone := make(chan error, 1)
+	go func() {
+		assignDone <- database.RunInTx(ctx, db, nil, func(ctx context.Context, tx database.Tx) error {
+			if err := authz.NewStore(tx, catalog).Assign(ctx, user("alice"), "acme", role.ID); err != nil {
+				return err
+			}
+			close(assigned)
+			<-release
+			return nil
+		})
+	}()
+
+	<-assigned
+	deleteDone := make(chan error, 1)
+	go func() {
+		deleteDone <- s.DeleteRole(ctx, role.ID, "acme", authz.RestrictInUse())
+	}()
+
+	// DeleteRole 必须被 Assign 的行锁阻塞，在 Assign 提交前不能提前返回。
+	select {
+	case err := <-deleteDone:
+		t.Fatalf("DeleteRole returned before Assign tx committed: err=%v", err)
+	case <-time.After(80 * time.Millisecond):
+	}
+
+	close(release)
+	if err := <-assignDone; err != nil {
+		t.Fatalf("assign tx: %v", err)
+	}
+	if err := <-deleteDone; !errors.Is(err, authz.ErrRoleInUse) {
+		t.Fatalf("delete after concurrent assign: err=%v, want ErrRoleInUse", err)
+	}
+	if roles, err := s.RolesOf(ctx, user("alice"), "acme"); err != nil || len(roles) != 1 || roles[0].ID != role.ID {
+		t.Fatalf("alice roles=%+v err=%v", roles, err)
+	}
+
+	// 反向竞态：多个 goroutine 同时删除空角色与分配该角色，每轮要么删除成功且分配返回 ErrRoleNotFound，
+	// 要么分配成功且删除返回 ErrRoleInUse，不会留下孤儿分配。
+	for i := range 10 {
+		r := mustRole(t, s, authz.Role{Tenant: "acme", Name: "race-" + string(rune('a'+i)), Permissions: []string{"articles:read"}})
+		start := make(chan struct{})
+		var assignErr, delErr error
+		var wg sync.WaitGroup
+		wg.Go(func() {
+			<-start
+			assignErr = s.Assign(ctx, user("bob"), "acme", r.ID)
+		})
+		wg.Go(func() {
+			<-start
+			delErr = s.DeleteRole(ctx, r.ID, "acme", authz.RestrictInUse())
+		})
+		close(start)
+		wg.Wait()
+
+		switch {
+		case delErr == nil && errors.Is(assignErr, authz.ErrRoleNotFound):
+			// 删除先提交，分配看到角色已不存在。
+		case assignErr == nil && errors.Is(delErr, authz.ErrRoleInUse):
+			// 分配先提交，删除看到使用中并拒绝。
+		default:
+			t.Fatalf("round %d: assignErr=%v delErr=%v", i, assignErr, delErr)
+		}
 	}
 }

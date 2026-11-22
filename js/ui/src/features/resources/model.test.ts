@@ -136,3 +136,59 @@ describe("resourceModel.listAllQuery", () => {
     expect(roles.listAllQuery().queryKey).toEqual(["api", "admin", "listRoles", "all", {}])
   })
 })
+
+describe("引用字段（ref）", () => {
+  it("从 kit.resources 解析引用资源模型、设置 select/multiselect 并保持引用稳定", () => {
+    const roleDef = makeDef({
+      name: "role",
+      operations: { list: ["role", "list"] },
+      permissions: { list: ["roles:read"] },
+    })
+    const memberDef = makeDef({
+      name: "member",
+      operations: { list: ["member", "list"], create: ["member", "create"] },
+      filters: [{ name: "role_id", type: "string", ref: "role" }],
+      createForm: [
+        { name: "role_id", type: "string", ref: "role", required: true },
+        { name: "extra_role_ids", type: "array", items: "string", ref: "role" },
+      ],
+    })
+    const kit: ResourceKit = {
+      client: {},
+      queries: {},
+      schemas: {},
+      resources: { role: roleDef, member: memberDef },
+    }
+    const members = resourceModel(memberDef, kit)
+    expect(members.filters[0].kind).toBe("select")
+    expect(members.createForm[0].kind).toBe("select")
+    expect(members.createForm[1].kind).toBe("multiselect")
+    const refA = members.filters[0].reference
+    const refB = members.createForm[0].reference
+    const refC = members.createForm[1].reference
+    expect(refA?.name).toBe("role")
+    expect(refA).toBe(refB)
+    expect(refB).toBe(refC)
+  })
+
+  it("支持自引用资源且不发生递归溢出，缺少 kit.resources 时安全降级", () => {
+    const categoryDef = makeDef({
+      name: "category",
+      operations: { list: ["category", "list"], create: ["category", "create"] },
+      createForm: [{ name: "parent_id", type: "string", ref: "category" }],
+    })
+    const kit: ResourceKit = {
+      client: {},
+      queries: {},
+      schemas: {},
+      resources: { category: categoryDef },
+    }
+    const categories = resourceModel(categoryDef, kit)
+    expect(categories.createForm[0].kind).toBe("select")
+    expect(categories.createForm[0].reference).toBe(categories)
+
+    const fallback = resourceModel(categoryDef, { client: {}, queries: {}, schemas: {} })
+    expect(fallback.createForm[0].kind).toBe("text")
+    expect(fallback.createForm[0].reference).toBeUndefined()
+  })
+})

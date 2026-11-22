@@ -44,6 +44,7 @@ passkey.not_found: 通行密钥不存在
 authz.not_member: 不存在或没有访问权限
 authz.role_not_found: 角色不存在
 authz.role_exists: 已有同名角色
+authz.role_in_use: 角色正在使用中，不能删除
 authz.invalid: 输入不合法
 notification.not_found: 通知不存在
 operation.not_found: 操作不存在

@@ -44,6 +44,7 @@ passkey.not_found: Passkey not found
 authz.not_member: Not found or no access
 authz.role_not_found: Role not found
 authz.role_exists: A role with this name already exists
+authz.role_in_use: This role is still in use and cannot be deleted
 authz.invalid: Invalid input
 notification.not_found: Notification not found
 operation.not_found: Operation not found

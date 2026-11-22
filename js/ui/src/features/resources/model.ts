@@ -30,6 +30,8 @@ export interface ResourceFieldDef {
   readonly values?: readonly string[]
   /** 数组元素的类型。 */
   readonly items?: string
+  /** 引用的资源名（resources.ts 中的键），由 Go 中 rest.Resource.Refs 或 rest.Settings.Refs 声明。 */
+  readonly ref?: string
   readonly nullable?: boolean
   readonly required?: boolean
   readonly sortable?: boolean
@@ -94,6 +96,8 @@ export interface ResourceKit {
   components?: { readonly [name: string]: Schema }
   /** enums.ts 中的 enums。 */
   enums?: { readonly [name: string]: { readonly values: readonly string[]; readonly labels: Generated } }
+  /** resources.ts 中的全部资源定义，供引用字段按名称解析关联的资源模型。 */
+  resources?: { readonly [name: string]: ResourceDef }
   /** messages.ts 中的 messages：验证提示的模板。没有时表单中的提示是错误码，例如 validation.filled。 */
   messages?: { readonly [language: string]: { readonly [code: string]: string } }
   /**
@@ -128,6 +132,8 @@ export interface ResourceField {
   sortable: boolean
   /** 枚举的选项。 */
   options?: { value: string; label: string }[]
+  /** 引用的资源模型：字段声明了 ref 且 kit.resources 中存在目标资源时给出。 */
+  reference?: ResourceModel
   def: ResourceFieldDef
 }
 
@@ -268,12 +274,31 @@ function schemaAt(schemas: Generated, ref: OperationRef, part: "body" | "query")
   return op?.[part] ?? {}
 }
 
+// 按 kit 缓存引用字段解析出的关联资源模型：保持引用稳定（避免 useMemo 重算），并防止自引用或互相引用无限递归。
+const refModels = new WeakMap<ResourceKit, Map<string, ResourceModel>>()
+
+function resolveReference(kit: ResourceKit, name: string): ResourceModel | undefined {
+  const target = kit.resources?.[name]
+  if (!target) return undefined
+  let cache = refModels.get(kit)
+  if (!cache) {
+    cache = new Map()
+    refModels.set(kit, cache)
+  }
+  let model = cache.get(name)
+  if (!model) {
+    model = resourceModel(target, kit)
+    cache.set(name, model)
+  }
+  return model
+}
+
 /**
- * 由字段的定义得到模型中的字段：显示文字、说明、输入方式和枚举的选项。显示文字、说明和选项的文字在读取时按 language()
- * 取值，labels 返回当前语言的字段名和说明。
+ * 由字段的定义得到模型中的字段：显示文字、说明、输入方式、枚举选项和引用资源。显示文字、说明和选项的文字在读取时
+ * 按 language() 取值，labels 返回当前语言的字段名和说明。
  */
 function fieldBuilder(
-  kit: Pick<ResourceKit, "enums">,
+  kit: ResourceKit,
   language: () => string | undefined,
   labels: () => { fields?: { readonly [field: string]: string }; descriptions?: { readonly [field: string]: string } },
 ): (f: ResourceFieldDef) => ResourceField {
@@ -288,6 +313,7 @@ function fieldBuilder(
   }
   return (f) => {
     const hasOptions = !!(f.enum && kit.enums?.[f.enum]) || !!f.values
+    const hasRef = !!(f.ref && kit.resources?.[f.ref])
     return {
       name: f.name,
       get label() {
@@ -296,11 +322,14 @@ function fieldBuilder(
       get description() {
         return labels().descriptions?.[f.name]
       },
-      kind: kindOf(f, hasOptions),
+      kind: kindOf(f, hasOptions || hasRef),
       required: !!f.required,
       sortable: !!f.sortable,
       get options() {
         return options(f)
+      },
+      get reference() {
+        return f.ref ? resolveReference(kit, f.ref) : undefined
       },
       def: f,
     }
@@ -344,7 +373,7 @@ export function resourceModel(def: ResourceDef, kit: ResourceKit, queryClient?: 
   const filters = def.filters.map(field)
   const createForm = def.createForm.map(field)
   const updateForm = def.updateForm.map(field)
-  return {
+  const model: ResourceModel = {
     name: def.name,
     get title() {
       return labels()?.title ?? def.name
@@ -433,6 +462,15 @@ export function resourceModel(def: ResourceDef, kit: ResourceKit, queryClient?: 
       return queryKey()
     },
   }
+  if (kit.resources?.[def.name] === def) {
+    let cache = refModels.get(kit)
+    if (!cache) {
+      cache = new Map()
+      refModels.set(kit, cache)
+    }
+    if (!cache.has(def.name)) cache.set(def.name, model)
+  }
+  return model
 }
 
 /** 列表的数据：page.Offset（items、total）或 page.Cursor（items、next_cursor）。 */
