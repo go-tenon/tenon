@@ -15,6 +15,78 @@ export interface TableState {
 /** 分页的默认值和范围，与服务端的 page.OffsetParams 相同。 */
 export const pageDefaults = { perPage: 20, maxPerPage: 100 } as const
 
+/** 固定分页的响应：与服务端的 page.Offset 一致，可选包含 total_pages。 */
+export interface OffsetPage<T> {
+  items: readonly T[]
+  total?: number
+  page?: number
+  per_page?: number
+  total_pages?: number
+}
+
+/** fetchAllPages 的选项。 */
+export interface FetchAllPagesOptions {
+  /** 每页拉取的条数，默认 pageDefaults.maxPerPage（100），超过上限时按上限取值。 */
+  perPage?: number
+  /** 最多拉取的页数上限，防止数据量过大时发起过多请求；默认 50。 */
+  maxPages?: number
+  /** 剩余页的并发请求数上限，默认 4。 */
+  concurrency?: number
+}
+
+/**
+ * 翻页拉取固定分页接口的全部数据：先以 perPage（默认 100）拉取第 1 页，再在 maxPages（默认 50）上限内
+ * 按 concurrency（默认 4）并发拉取剩余页，按页序合并所有 items 返回。总页数优先取响应中的 total_pages，
+ * 缺省时由 total 和每页条数计算。
+ */
+export async function fetchAllPages<T>(
+  fetchPage: (params: PageParams) => Promise<OffsetPage<T>>,
+  options: FetchAllPagesOptions = {},
+): Promise<T[]> {
+  const rawPerPage = options.perPage ?? pageDefaults.maxPerPage
+  const perPage =
+    Number.isFinite(rawPerPage) && rawPerPage >= 1
+      ? Math.min(Math.floor(rawPerPage), pageDefaults.maxPerPage)
+      : pageDefaults.maxPerPage
+  const maxPages = Math.max(1, Math.floor(options.maxPages ?? 50))
+  const concurrency = Math.max(1, Math.floor(options.concurrency ?? 4))
+
+  const first = await fetchPage({ page: 1, per_page: perPage })
+  const firstItems = [...first.items]
+  if (firstItems.length === 0) return []
+
+  const pageSize = typeof first.per_page === "number" && first.per_page > 0 ? first.per_page : perPage
+  let totalPages = 1
+  if (typeof first.total_pages === "number" && Number.isFinite(first.total_pages)) {
+    totalPages = Math.max(1, Math.floor(first.total_pages))
+  } else if (typeof first.total === "number" && Number.isFinite(first.total)) {
+    totalPages = Math.max(1, Math.ceil(first.total / pageSize))
+  }
+
+  const lastPage = Math.min(totalPages, maxPages)
+  if (lastPage <= 1) return firstItems
+
+  const pages: (readonly T[])[] = new Array(lastPage)
+  pages[0] = firstItems
+  let next = 2
+  const workers = Math.min(concurrency, lastPage - 1)
+  await Promise.all(
+    Array.from({ length: workers }, async () => {
+      while (next <= lastPage) {
+        const p = next++
+        const res = await fetchPage({ page: p, per_page: pageSize })
+        pages[p - 1] = res.items
+      }
+    }),
+  )
+
+  const result: T[] = []
+  for (const items of pages) {
+    if (items) result.push(...items)
+  }
+  return result
+}
+
 /** 表格状态转为查询参数。 */
 export function toPageParams(state: TableState): PageParams {
   return { page: state.pageIndex + 1, per_page: state.pageSize }

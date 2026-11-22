@@ -134,6 +134,7 @@ function Articles() {
 
 - `articles.columns`、`createForm` 等是带显示文字和[输入方式](#field-kinds)的字段；`articles.display("status", row.status)` 是枚举的显示文字。
 - `useResourceItem(model, key)` 读取一行，`formValues(model.updateForm, row)` 是表单的初始值。
+- `model.listAllQuery(params?, options?)` 经 `fetchAllPages` 翻页拉取全部列表项，与列表共用查询前缀，修改资源后缓存自动失效。
 - 自己调用接口改了数据后 `await invalidate()`，列表和详情重新读取。
 - 自己写的表单用同样的校验规则：`useSchemaForm({ schema: kit.schemas.article.create.body, rules: kit, initialValues })`。
 
@@ -237,6 +238,29 @@ function ProviderForm({ ctx }: { ctx: ResourceFormContext }) {
 
 - 校验和提交用新建接口，`ctx.editKey` 不为空时用修改接口。服务端的字段错误（包括 [`errorx.Field`](../general/errors.md) 指出的嵌套字段）显示在对应的输入框下面，其他错误由 `FormError` 显示。
 - 修改时初始值由 `ctx.row` 得出，例如 `formValues(ctx.model.updateForm, ctx.row)` 再补上嵌套的字段；`toBody` 在提交前把表单的值转换为请求体。
+
+<a id="resource-select"></a>
+### 关联资源选择器：`ResourceSelect`、`ResourceMultiSelect`
+
+表单字段关联另一个资源时，用 `ResourceSelect`（单选）和 `ResourceMultiSelect`（多选）。组件通过 `model.listAllQuery()` 翻页拉取全部选项并默认开启本地搜索，具备资源的 `list` 权限时才发请求。`providers`、`models` 是资源模型，`form` 是 `useResourceForm` 或 `useSchemaForm` 返回的表单：
+
+```tsx
+<ResourceSelect model={providers} label="供应商" {...form.getInputProps("provider_id")} />
+
+<ResourceMultiSelect
+  model={models}
+  label="允许的模型"
+  params={{ active: true }}
+  labelField="display_name"
+  filterRow={(row) => Boolean(row.enabled)}
+  getOption={(row) => ({ value: String(row.id), label: `${row.name} (${row.slug})` })}
+  {...form.getInputProps("model_ids")}
+/>
+```
+
+- 选项的显示文字默认依次取 `labelField`、资源第一列（枚举自动转换为显示文字）、`name`、`title`、`label` 和行标识。
+- 传入 `renderRow={(row, { checked }) => ...}` 可基于原始行数据自定义下拉选项渲染；其余属性与 Mantine 的 `Select`、`MultiSelect` 相同。
+- 在 `ResourcePage` 或 `ResourceFormPage` 的 `inputs` 中同样可以直接返回 `ResourceSelect` 或 `ResourceMultiSelect`。
 
 <a id="settings"></a>
 ## 设置页面：`api.Settings`、`SettingsForm`

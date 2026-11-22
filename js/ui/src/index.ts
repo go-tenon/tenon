@@ -79,6 +79,7 @@ export {
 export * from "./features/resources/fields"
 export * from "./features/resources/model"
 export * from "./features/resources/resource-page"
+export * from "./features/resources/resource-select"
 export * from "./features/resources/settings-form"
 export * from "./features/resources/settings-page"
 export {

@@ -198,6 +198,7 @@ export const zhCN = {
   "tenon.resource.load_failed": "读取失败",
   "tenon.resource.more": "更多操作",
   "tenon.resource.no_get": "这类数据没有读取单条的接口，从列表中打开修改页面。",
+  "tenon.resource.no_options": "没有可选项",
   "tenon.resource.not_found": "这一项不存在，或者没有权限查看。",
   "tenon.schedule.all": "全部",
   "tenon.schedule.all_tasks": "全部任务",
