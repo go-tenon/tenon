@@ -43,6 +43,7 @@ type Scheduler struct {
 // task 是登记的一个定时任务。
 type task struct {
 	name          string
+	label         string
 	description   string
 	expr          string
 	when          when

@@ -97,9 +97,9 @@ var rules = map[string]rule{
 	"command/migratecmd":          {layerEntry, []string{"command", "database", "doctor"}},
 	"doctor/doctorcmd":            {layerEntry, []string{"command", "doctor"}},
 	"queue/queuecmd":              {layerEntry, []string{"command", "queue"}},
-	"queue/queueapi":              {layerEntry, []string{"errorx", "httpx", "identity", "logging", "page", "queue"}},
+	"queue/queueapi":              {layerEntry, []string{"errorx", "httpx", "i18n", "identity", "logging", "page", "queue"}},
 	"schedule/schedulecmd":        {layerEntry, []string{"command", "schedule"}},
-	"schedule/scheduleapi":        {layerEntry, []string{"database", "errorx", "httpx", "identity", "logging", "page", "queue", "schedule"}},
+	"schedule/scheduleapi":        {layerEntry, []string{"database", "errorx", "httpx", "i18n", "identity", "logging", "page", "queue", "schedule"}},
 
 	"apitoken":          {layerFeature, []string{"database", "errorx", "identity"}},
 	"authz":             {layerFeature, []string{"cache", "database", "errorx", "identity", "logging"}},

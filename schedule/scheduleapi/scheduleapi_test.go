@@ -36,7 +36,8 @@ func setup(t *testing.T) *env {
 	e := &env{db: dbtest.Open(t, queue.Migrations(), scheduleapi.Migrations())}
 	e.sched = schedule.New(lock.New(locktest.NewStore()), schedule.DefaultConfig(), nil,
 		schedule.WithObserver(scheduleapi.Observer(e.db)))
-	e.sched.Add("report", "@hourly", func(context.Context) error { return nil }, schedule.Describe("生成报表"))
+	e.sched.Add("report", "@hourly", func(context.Context) error { return nil },
+		schedule.Label("每日报表"), schedule.Describe("生成报表"))
 	e.sched.Add("broken", "@daily", func(context.Context) error { return errors.New("boom") })
 	router := chi.NewRouter()
 	api := rest.New(router, rest.Options{Accounts: identity.Accounts{"user": nil}, Logger: slog.New(slog.DiscardHandler)})
@@ -119,7 +120,7 @@ func TestList(t *testing.T) {
 	if code, _ := e.call(t, http.MethodGet, "/schedules", "ops", &body); code != http.StatusOK {
 		t.Fatal(code)
 	}
-	if len(body.Items) != 2 || body.Items[0].Name != "report" || body.Items[0].Description != "生成报表" {
+	if len(body.Items) != 2 || body.Items[0].Name != "report" || body.Items[0].Label != "每日报表" || body.Items[0].Description != "生成报表" {
 		t.Fatalf("items: %+v", body.Items)
 	}
 	// 从来没有执行过：没有上一次的结果，也不算错过。
@@ -193,7 +194,7 @@ func TestRunsFilterAndCleanup(t *testing.T) {
 		t.Fatalf("all: %+v", runs)
 	}
 	e.call(t, http.MethodGet, "/schedules/runs?task=report&status=failed", "ops", &runs)
-	if runs.Total != 1 || runs.Items[0].Task != "report" || runs.Items[0].Status != scheduleapi.Failed {
+	if runs.Total != 1 || runs.Items[0].Task != "report" || runs.Items[0].TaskLabel != "每日报表" || runs.Items[0].Status != scheduleapi.Failed {
 		t.Fatalf("filtered: %+v", runs)
 	}
 

@@ -25,6 +25,7 @@ err := sched.Run(ctx) // 一直运行到 ctx 被取消
 
 ```go
 sched.Add("articles:publish-scheduled", "* * * * *", article.NewPublishScheduled(db).Handle,
+    schedule.Label("定时发布文章"),         // 显示名称，悬停时展示内部任务名
     schedule.Describe("发布到了预定时间的文章")) // 说明显示在任务列表中
 ```
 

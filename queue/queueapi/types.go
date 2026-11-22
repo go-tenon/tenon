@@ -58,6 +58,8 @@ const (
 // QueueTopic 是概览中的一个 topic。State 为 absent 时 JetStream 的各项计数为 0，只有 Failed 有意义。
 type QueueTopic struct {
 	Topic         string     `json:"topic"`
+	Label         string     `json:"label,omitempty" doc:"任务类型的显示名称"`
+	Description   string     `json:"description,omitempty" doc:"任务类型的说明"`
 	State         string     `json:"state" enum:"ok,no_handler,paused,stalled,absent" doc:"ok 正常；no_handler 没有 Worker 注册处理函数；paused 暂停中；stalled 有任务在等待却没有 Worker 在处理；absent 没有 JetStream 中的状态，只有失败任务数。ok、stalled 可以暂停，paused 可以恢复"`
 	Pending       uint64     `json:"pending" doc:"等待处理的任务数"`
 	InFlight      int        `json:"in_flight" doc:"已经交给 Worker、还没有确认的任务数"`
@@ -75,22 +77,24 @@ type QueueFailedList struct {
 
 // QueueFailedJob 是列表中的一条失败任务，完整的错误、元数据和 payload 见 QueueFailedJobDetail。
 type QueueFailedJob struct {
-	ID       uuid.UUID `json:"id"`
-	Topic    string    `json:"topic"`
-	Attempts int       `json:"attempts" doc:"失败前执行的次数"`
-	Error    string    `json:"error" doc:"最后一次错误的第一行，超过 160 字节时截断并以 … 结尾"`
-	FailedAt time.Time `json:"failed_at"`
+	ID         uuid.UUID `json:"id"`
+	Topic      string    `json:"topic"`
+	TopicLabel string    `json:"topic_label,omitempty" doc:"任务类型的显示名称"`
+	Attempts   int       `json:"attempts" doc:"失败前执行的次数"`
+	Error      string    `json:"error" doc:"最后一次错误的第一行，超过 160 字节时截断并以 … 结尾"`
+	FailedAt   time.Time `json:"failed_at"`
 }
 
 // QueueFailedJobDetail 是一条失败任务的详情（queue-failed-get）。
 type QueueFailedJobDetail struct {
-	ID       uuid.UUID         `json:"id"`
-	Topic    string            `json:"topic"`
-	Attempts int               `json:"attempts" doc:"失败前执行的次数"`
-	Error    string            `json:"error" doc:"最后一次的完整错误，包括堆栈"`
-	FailedAt time.Time         `json:"failed_at"`
-	Metadata map[string]string `json:"metadata" nullable:"false" doc:"发布时记录的元数据，例如 request_id"`
-	Payload  json.RawMessage   `json:"payload" doc:"任务的 payload，原样返回的 JSON"`
+	ID         uuid.UUID         `json:"id"`
+	Topic      string            `json:"topic"`
+	TopicLabel string            `json:"topic_label,omitempty" doc:"任务类型的显示名称"`
+	Attempts   int               `json:"attempts" doc:"失败前执行的次数"`
+	Error      string            `json:"error" doc:"最后一次的完整错误，包括堆栈"`
+	FailedAt   time.Time         `json:"failed_at"`
+	Metadata   map[string]string `json:"metadata" nullable:"false" doc:"发布时记录的元数据，例如 request_id"`
+	Payload    json.RawMessage   `json:"payload" doc:"任务的 payload，原样返回的 JSON"`
 }
 
 // QueueBulkResult 是全部重试、全部删除的结果。

@@ -28,6 +28,7 @@ import (
 
 	"github.com/go-tenon/tenon/errorx"
 	"github.com/go-tenon/tenon/httpx/rest"
+	"github.com/go-tenon/tenon/i18n"
 	"github.com/go-tenon/tenon/identity"
 	"github.com/go-tenon/tenon/logging"
 	"github.com/go-tenon/tenon/page"
@@ -56,8 +57,9 @@ const (
 
 // Options 是 Register 的选项，都可以为零值。
 type Options struct {
-	Admin  *queue.Admin // 读取 JetStream 中的状态：设置后概览带上 stream、定时消息和各 topic 等待处理、处理中的任务，暂停和恢复 topic 才能使用。为 nil 时只有数据库一侧的状态，暂停和恢复返回 ErrNoAdmin。NATS 不可用时概览照常返回数据库一侧的状态。
-	Logger *slog.Logger // 记录重试、删除、暂停和恢复，以及读不到 JetStream 的警告；nil 表示 slog.Default()。
+	Admin  *queue.Admin      // 读取 JetStream 中的状态：设置后概览带上 stream、定时消息和各 topic 等待处理、处理中的任务，暂停和恢复 topic 才能使用。为 nil 时只有数据库一侧的状态，暂停和恢复返回 ErrNoAdmin。NATS 不可用时概览照常返回数据库一侧的状态。
+	Logger *slog.Logger      // 记录重试、删除、暂停和恢复，以及读不到 JetStream 的警告；nil 表示 slog.Default()。
+	Topics []queue.TopicMeta // 各 topic 的显示名称和说明，供后台队列面板展示；未在此列出的 topic 也会按 i18n 键 queue.topic.<topic>.label / description 自动查找译文。
 }
 
 // handlers 实现队列管理接口。
@@ -65,6 +67,7 @@ type handlers struct {
 	db     *bun.DB
 	admin  *queue.Admin
 	logger *slog.Logger
+	topics map[string]queue.TopicMeta
 }
 
 // Register 在 api 上注册队列运维的接口，protect 保护全部接口，通常是 rest.RequireToken(api, validate, 权限)。
@@ -88,9 +91,16 @@ func Register(api *rest.API, protect func(*huma.Operation), db *bun.DB, opts Opt
 	if api == nil || protect == nil {
 		panic("queueapi: nil API or protect")
 	}
+	topicMap := make(map[string]queue.TopicMeta, len(opts.Topics))
+	for _, t := range opts.Topics {
+		if t.Topic != "" {
+			topicMap[t.Topic] = t
+		}
+	}
 	h := &handlers{
 		db: db, admin: opts.Admin,
 		logger: logging.Or(opts.Logger).With(logging.AttrComponent, "queueapi"),
+		topics: topicMap,
 	}
 
 	op := func(id, method, path, summary string) huma.Operation {
@@ -142,15 +152,15 @@ func (h *handlers) status(ctx context.Context, _ *struct{}) (*statusOutput, erro
 		}
 		out.JetStream = js
 	}
-	out.Topics = topics(stream.Topics, counts)
+	out.Topics = h.topicsList(ctx, stream.Topics, counts)
 	for _, c := range counts {
 		out.Failed += c.Count
 	}
 	return &statusOutput{Body: out}, nil
 }
 
-// topics 合并 JetStream 中的 topic 和有失败任务的 topic，按名字排序。
-func topics(inStream []queue.TopicStatus, counts []queue.TopicCount) []QueueTopic {
+// topicsList 合并 JetStream 中的 topic 和有失败任务的 topic，按名字排序并补充显示名称和说明。
+func (h *handlers) topicsList(ctx context.Context, inStream []queue.TopicStatus, counts []queue.TopicCount) []QueueTopic {
 	byName := map[string]*QueueTopic{}
 	for _, t := range inStream {
 		row := &QueueTopic{Topic: t.Topic, State: state(t), Pending: t.Pending, InFlight: t.InFlight,
@@ -167,10 +177,30 @@ func topics(inStream []queue.TopicStatus, counts []queue.TopicCount) []QueueTopi
 	}
 	rows := make([]QueueTopic, 0, len(byName))
 	for _, row := range byName {
+		row.Label, row.Description = h.topicMeta(ctx, row.Topic)
 		rows = append(rows, *row)
 	}
 	slices.SortFunc(rows, func(a, b QueueTopic) int { return strings.Compare(a.Topic, b.Topic) })
 	return rows
+}
+
+// topicMeta 返回 topic 在当前请求语言下的显示名称和说明。
+func (h *handlers) topicMeta(ctx context.Context, topic string) (label, description string) {
+	meta := h.topics[topic]
+	label = resolveText(ctx, meta.Label, "queue.topic."+topic+".label")
+	description = resolveText(ctx, meta.Description, "queue.topic."+topic+".description")
+	return label, description
+}
+
+// resolveText 返回显示文字：显式值非空时按 i18n 翻译（没有对应消息时原样返回）；为空时按约定消息 ID 查找，未配置时返回空字符串。
+func resolveText(ctx context.Context, explicit, fallbackID string) string {
+	if explicit != "" {
+		return i18n.T(ctx, explicit, nil)
+	}
+	if msg := i18n.T(ctx, fallbackID, nil); msg != fallbackID {
+		return msg
+	}
+	return ""
 }
 
 // state 返回 JetStream 中一个 topic 的状态，与 queue status 命令的 STATE 一致。
@@ -224,7 +254,8 @@ func (h *handlers) failedList(ctx context.Context, in *failedListInput) (*failed
 	}
 	items := make([]QueueFailedJob, len(jobs))
 	for i, j := range jobs {
-		items[i] = QueueFailedJob{ID: j.ID, Topic: j.Topic, Attempts: j.Attempts, Error: firstLine(j.Error), FailedAt: j.FailedAt.UTC()}
+		label, _ := h.topicMeta(ctx, j.Topic)
+		items[i] = QueueFailedJob{ID: j.ID, Topic: j.Topic, TopicLabel: label, Attempts: j.Attempts, Error: firstLine(j.Error), FailedAt: j.FailedAt.UTC()}
 	}
 	return &failedListOutput{Body: QueueFailedList{Offset: page.NewOffset(items, in.OffsetParams, total)}}, nil
 }
@@ -243,7 +274,8 @@ func (h *handlers) failedGet(ctx context.Context, in *idInput) (*failedGetOutput
 	if err != nil {
 		return nil, notFound(err)
 	}
-	d := QueueFailedJobDetail{ID: j.ID, Topic: j.Topic, Attempts: j.Attempts, Error: j.Error, FailedAt: j.FailedAt.UTC(),
+	label, _ := h.topicMeta(ctx, j.Topic)
+	d := QueueFailedJobDetail{ID: j.ID, Topic: j.Topic, TopicLabel: label, Attempts: j.Attempts, Error: j.Error, FailedAt: j.FailedAt.UTC(),
 		Metadata: j.Metadata, Payload: payload(j.Payload)}
 	if d.Metadata == nil {
 		d.Metadata = map[string]string{}

@@ -18,6 +18,7 @@ import {
   Select,
   Stack,
   Text,
+  Tooltip,
 } from "@mantine/core"
 import { IconDots } from "@tabler/icons-react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
@@ -37,6 +38,7 @@ export type ScheduleStatus = "succeeded" | "failed" | "skipped"
 /** 任务列表中的一个任务：scheduleapi.ScheduleTask。 */
 export interface ScheduleTaskData {
   name: string
+  label?: string
   description: string
   expr: string
   next_run: string
@@ -53,6 +55,7 @@ export interface ScheduleTaskData {
 export interface ScheduleRunData {
   id: string
   task: string
+  task_label?: string
   status: ScheduleStatus
   manual: boolean
   started_at: string
@@ -125,6 +128,11 @@ function StatusBadge({ status, manual }: { status: ScheduleStatus; manual?: bool
   )
 }
 
+/** 优先返回任务的显示名称，未配置时回退到内部技术名。 */
+function taskLabel(t: { name: string; label?: string }): string {
+  return t.label || t.name
+}
+
 const tasksKey = ["tenon", "schedule", "tasks"]
 
 /**
@@ -176,7 +184,7 @@ export function SchedulePanel({ api, title }: SchedulePanelProps): ReactNode {
           role="alert"
         >
           {tr("tenon.schedule.missed_text", {
-            names: missed.map((t) => t.name).join(tr("tenon.transfer.list_separator")),
+            names: missed.map(taskLabel).join(tr("tenon.transfer.list_separator")),
           })}
         </Alert>
       )}
@@ -199,9 +207,9 @@ function Tasks({
   const formatDateTime = useFormatDateTime()
   const tr = useText()
   const runNow = useMutation({
-    mutationFn: (name: string) => api.run(name),
-    onSuccess: (_, name) => {
-      notifySuccess(tr("tenon.schedule.queued", { name }))
+    mutationFn: ({ name }: { name: string; label: string }) => api.run(name),
+    onSuccess: (_, v) => {
+      notifySuccess(tr("tenon.schedule.queued", { name: v.label }))
       void queryClient.invalidateQueries({ queryKey: ["tenon", "schedule"] })
     },
     onError: (err) => notifyError(err),
@@ -210,27 +218,41 @@ function Tasks({
     {
       accessor: "name",
       title: tr("tenon.schedule.tab_tasks"),
-      render: (t) => (
-        <Stack gap={2}>
+      render: (t) => {
+        const display = taskLabel(t)
+        const hasLabel = Boolean(t.label && t.label !== t.name)
+        const link = (
           <Anchor
             component="button"
             size="sm"
-            ff="monospace"
+            fw={hasLabel ? 500 : undefined}
+            ff={hasLabel ? undefined : "monospace"}
             ta="left"
             onClick={(e) => {
               e.stopPropagation()
               showRuns(t.name)
             }}
           >
-            {t.name}
+            {display}
           </Anchor>
-          {t.description && (
-            <Text size="xs" c="dimmed">
-              {t.description}
-            </Text>
-          )}
-        </Stack>
-      ),
+        )
+        return (
+          <Stack gap={2} align="flex-start">
+            {hasLabel ? (
+              <Tooltip label={t.name} openDelay={200} withArrow>
+                {link}
+              </Tooltip>
+            ) : (
+              link
+            )}
+            {t.description && (
+              <Text size="xs" c="dimmed">
+                {t.description}
+              </Text>
+            )}
+          </Stack>
+        )
+      },
     },
     { accessor: "expr", title: tr("tenon.schedule.expr"), noWrap: true, render: (t) => <Code>{t.expr}</Code> },
     {
@@ -281,17 +303,18 @@ function Tasks({
           <Button
             size="compact-sm"
             variant="subtle"
-            loading={runNow.isPending && runNow.variables === t.name}
+            loading={runNow.isPending && runNow.variables?.name === t.name}
             disabled={t.running}
             onClick={async () => {
+              const label = taskLabel(t)
               if (
                 await confirm({
-                  title: tr("tenon.schedule.run_confirm", { name: t.name }),
+                  title: tr("tenon.schedule.run_confirm", { name: label }),
                   message: tr("tenon.schedule.run_message"),
                   confirmLabel: tr("tenon.schedule.run"),
                 })
               )
-                runNow.mutate(t.name)
+                runNow.mutate({ name: t.name, label })
             }}
           >
             {tr("tenon.schedule.run_now")}
@@ -360,6 +383,8 @@ function Runs({
     setPage(1)
   }
 
+  const labelOf = (name: string, explicit?: string) => explicit || tasks.find((t) => t.name === name)?.label || name
+
   const columns: Column<ScheduleRunData>[] = [
     {
       accessor: "started_at",
@@ -376,11 +401,23 @@ function Runs({
       accessor: "task",
       title: tr("tenon.schedule.tab_tasks"),
       noWrap: true,
-      render: (r) => (
-        <Text size="sm" ff="monospace">
-          {r.task}
-        </Text>
-      ),
+      render: (r) => {
+        const label = labelOf(r.task, r.task_label)
+        if (label === r.task) {
+          return (
+            <Text size="sm" ff="monospace">
+              {r.task}
+            </Text>
+          )
+        }
+        return (
+          <Tooltip label={r.task} openDelay={200} withArrow>
+            <Text span size="sm">
+              {label}
+            </Text>
+          </Tooltip>
+        )
+      },
     },
     {
       accessor: "status",
@@ -416,7 +453,7 @@ function Runs({
       onChange={(v) => setTask(v || undefined)}
       data={[
         { value: "", label: tr("tenon.schedule.all_tasks") },
-        ...tasks.map((t) => ({ value: t.name, label: t.name })),
+        ...tasks.map((t) => ({ value: t.name, label: taskLabel(t) })),
       ]}
       allowDeselect={false}
       w={220}
@@ -468,7 +505,27 @@ function Runs({
         columns={columns}
         empty={task || status ? tr("tenon.schedule.no_matching_runs") : tr("tenon.schedule.no_runs")}
       />
-      <Modal opened={!!open} onClose={() => setOpen(undefined)} title={open?.task} size="lg">
+      <Modal
+        opened={!!open}
+        onClose={() => setOpen(undefined)}
+        title={
+          open
+            ? (() => {
+                const label = labelOf(open.task, open.task_label)
+                return label !== open.task ? (
+                  <Tooltip label={open.task} openDelay={200} withArrow>
+                    <Text span inherit>
+                      {label}
+                    </Text>
+                  </Tooltip>
+                ) : (
+                  open.task
+                )
+              })()
+            : undefined
+        }
+        size="lg"
+      >
         {open && (
           <Stack gap="sm">
             <Group gap="md">

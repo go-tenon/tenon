@@ -26,6 +26,7 @@ import (
 
 	"github.com/go-tenon/tenon/errorx"
 	"github.com/go-tenon/tenon/httpx/rest"
+	"github.com/go-tenon/tenon/i18n"
 	"github.com/go-tenon/tenon/identity"
 	"github.com/go-tenon/tenon/logging"
 	"github.com/go-tenon/tenon/page"
@@ -42,6 +43,7 @@ var RunNow = queue.Topic[string]("schedules.run")
 // ScheduleTask 是任务列表（schedule-list）中的一个任务。类型名带前缀，避免与应用的类型在 OpenAPI 中重名。
 type ScheduleTask struct {
 	Name           string     `json:"name"`
+	Label          string     `json:"label,omitempty" doc:"任务的显示名称"`
 	Description    string     `json:"description"`
 	Expr           string     `json:"expr" doc:"表达式，例如 @daily、0 3 * * *"`
 	NextRun        time.Time  `json:"next_run" doc:"下一次执行的时间"`
@@ -58,6 +60,7 @@ type ScheduleTask struct {
 type ScheduleRun struct {
 	ID         string    `json:"id"`
 	Task       string    `json:"task"`
+	TaskLabel  string    `json:"task_label,omitempty" doc:"任务的显示名称"`
 	Status     Status    `json:"status" enum:"succeeded,failed,skipped"`
 	Manual     bool      `json:"manual" doc:"立即执行的，不是按表达式触发"`
 	StartedAt  time.Time `json:"started_at"`
@@ -174,7 +177,14 @@ func (h *handlers) list(ctx context.Context, _ *struct{}) (*listOutput, error) {
 	out := &listOutput{}
 	out.Body.Items = []ScheduleTask{}
 	for _, t := range sched.Tasks() {
-		it := ScheduleTask{Name: t.Name, Description: t.Description, Expr: t.Expr, NextRun: t.Next(now), Running: running[t.Name]}
+		it := ScheduleTask{
+			Name:        t.Name,
+			Label:       resolveText(ctx, t.Label, "schedule.task."+t.Name+".label"),
+			Description: resolveText(ctx, t.Description, "schedule.task."+t.Name+".description"),
+			Expr:        t.Expr,
+			NextRun:     t.Next(now),
+			Running:     running[t.Name],
+		}
 		if r, ok := last[t.Name]; ok {
 			at := r.StartedAt
 			it.LastStatus, it.LastRunAt, it.LastDurationMS, it.LastError, it.LastManual = r.Status, &at, r.DurationMS, r.Error, r.Manual
@@ -217,14 +227,35 @@ func (h *handlers) runs(ctx context.Context, in *runsInput) (*runsOutput, error)
 	if err != nil {
 		return nil, err
 	}
+	labels := make(map[string]string)
+	for _, t := range h.tasks().Tasks() {
+		if label := resolveText(ctx, t.Label, "schedule.task."+t.Name+".label"); label != "" {
+			labels[t.Name] = label
+		}
+	}
 	items := make([]ScheduleRun, len(rows))
 	for i, r := range rows {
+		label := labels[r.Task]
+		if label == "" {
+			label = resolveText(ctx, "", "schedule.task."+r.Task+".label")
+		}
 		items[i] = ScheduleRun{
-			ID: r.ID.String(), Task: r.Task, Status: r.Status, Manual: r.Manual,
+			ID: r.ID.String(), Task: r.Task, TaskLabel: label, Status: r.Status, Manual: r.Manual,
 			StartedAt: r.StartedAt.UTC(), DurationMS: r.DurationMS, Error: r.Error,
 		}
 	}
 	return &runsOutput{Body: page.NewOffset(items, in.OffsetParams, int64(total))}, nil
+}
+
+// resolveText 返回任务的显示文字：显式值非空时按 i18n 翻译（没有对应消息时原样返回）；为空时按约定消息 ID 查找，未配置时返回空字符串。
+func resolveText(ctx context.Context, explicit, fallbackID string) string {
+	if explicit != "" {
+		return i18n.T(ctx, explicit, nil)
+	}
+	if msg := i18n.T(ctx, fallbackID, nil); msg != fallbackID {
+		return msg
+	}
+	return ""
 }
 
 // HandleRunNow 在 worker 上注册“立即执行”：调用 tasks().RunNow，执行记录由 Observer 写入。

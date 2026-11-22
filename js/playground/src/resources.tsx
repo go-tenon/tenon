@@ -415,18 +415,28 @@ export const customerExport = {
 
 /** 演示的队列运维接口：api.queue 的形状。 */
 export const queueApi = (() => {
-  let failed = Array.from({ length: 23 }, (_, i) => ({
-    id: `job-${i + 1}`,
-    topic: ["mail.send", "mail.send", "report.daily", "webhook.deliver"][i % 4],
-    attempts: [10, 10, 3, 8][i % 4],
-    error: [
-      "smtp: dial tcp 10.0.3.12:587: connect: connection refused",
-      "smtp: 421 4.7.0 Try again later, closing connection",
-      "pdf: render report: gotenberg returned 503",
-      "webhook: POST https://hooks.example.com/orders: context deadline exceeded",
-    ][i % 4],
-    failed_at: new Date(Date.now() - i * 37 * 60_000).toISOString(),
-  }))
+  const topicMeta: Record<string, { label: string; description: string }> = {
+    "mail.send": { label: "发送邮件", description: "向客户发送订单通知与验证邮件" },
+    "report.daily": { label: "每日报表", description: "汇总前一天各渠道的订单与成交数据" },
+    "sms.send": { label: "发送短信", description: "发送登录验证码和物流提醒短信" },
+    "webhook.deliver": { label: "Webhook 投递", description: "向订阅方回调地址推送订单状态变更事件" },
+  }
+  let failed = Array.from({ length: 23 }, (_, i) => {
+    const topic = ["mail.send", "mail.send", "report.daily", "webhook.deliver"][i % 4]
+    return {
+      id: `job-${i + 1}`,
+      topic,
+      topic_label: topicMeta[topic]?.label,
+      attempts: [10, 10, 3, 8][i % 4],
+      error: [
+        "smtp: dial tcp 10.0.3.12:587: connect: connection refused",
+        "smtp: 421 4.7.0 Try again later, closing connection",
+        "pdf: render report: gotenberg returned 503",
+        "webhook: POST https://hooks.example.com/orders: context deadline exceeded",
+      ][i % 4],
+      failed_at: new Date(Date.now() - i * 37 * 60_000).toISOString(),
+    }
+  })
   const paused = new Set(["report.daily"])
   return {
     status: async () =>
@@ -442,6 +452,8 @@ export const queueApi = (() => {
         jetstream: { stream: "jobs", exists: true, messages: 28, bytes: 7_577, replicas: 1, deferred: 5 },
         topics: ["mail.send", "report.daily", "sms.send", "webhook.deliver"].map((topic, i) => ({
           topic,
+          label: topicMeta[topic]?.label,
+          description: topicMeta[topic]?.description,
           state: paused.has(topic)
             ? "paused"
             : topic === "sms.send"
@@ -510,6 +522,7 @@ export const scheduleApi = (() => {
   const tasks: ScheduleTaskData[] = [
     {
       name: "articles:publish-scheduled",
+      label: "定时发布文章",
       description: "发布到了预定时间的文章",
       expr: "* * * * *",
       next_run: at(1),
@@ -521,6 +534,7 @@ export const scheduleApi = (() => {
     },
     {
       name: "reports:daily",
+      label: "生成每日报表",
       description: "生成前一天的报表",
       expr: "0 2 * * *",
       next_run: at(60 * 9),
@@ -533,6 +547,7 @@ export const scheduleApi = (() => {
     },
     {
       name: "locks:cleanup",
+      label: "清理过期锁",
       description: "删除过期的锁",
       expr: "@hourly",
       next_run: at(23),
@@ -544,6 +559,7 @@ export const scheduleApi = (() => {
     },
     {
       name: "queue:prune-failed",
+      label: "清理队列失败任务",
       description: "删除 30 天前的失败任务",
       expr: "@daily",
       next_run: at(60 * 7),
@@ -561,6 +577,7 @@ export const scheduleApi = (() => {
     return {
       id: `run-${i + 1}`,
       task: t.name,
+      task_label: t.label,
       status: failed ? "failed" : skipped ? "skipped" : "succeeded",
       manual: i % 11 === 3,
       started_at: at(-i * 37),
