@@ -167,6 +167,7 @@ func TestSearchDocs(t *testing.T) {
 		"审批工具调用":             "ai/chat.md#approval",
 		"文档切分":               "ai/documents.md",
 		"部署":                 "installation/deployment.md",
+		"tenon deploy":       "installation/deployment.md",
 		"systemd":            "installation/deployment.md",
 		"不停机升级":              "installation/operations.md",
 		"自托管":                "installation/self-hosting.md",

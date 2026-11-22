@@ -77,29 +77,12 @@ type Client struct {
 	Title    string // 应用的名称：窗口标题、安装包的名称。
 }
 
-// Deploy 是部署文件模板的参数：Dockerfile、.dockerignore、compose.prod.yaml 和 .env.example。
+// Deploy 是原生二进制部署文件模板的参数：deploy.yaml 和 .env.example。
 type Deploy struct {
-	Slug         string // 二进制文件名与默认数据库用户名，例如 omirouter。
-	Main         string // 应用入口包，例如 ./cmd/omirouter。
-	Image        string // 生产编排中的镜像名（不含标签），默认与 Slug 相同。
-	GoVersion    string // go.mod 中的 Go 版本，为空时取 GoVersion 常量。
-	BunVersion   string // package.json 中的 Bun 版本，为空时取 BunVersion 常量。
-	HasFrontends bool   // 项目是否包含前端；包含时 Dockerfile 安装 Bun 并调用 tenon build。
-	HasSSR       bool   // 项目是否包含服务端渲染的前端；有 SSR 时运行镜像使用 distroless/base（含 glibc），否则使用 distroless/static。
-	Force        bool   // 为真时覆盖已存在的部署文件；为假时已有文件存在则报错。
-}
-
-// GoImageTag 返回用于 Docker golang 基础镜像的标签（主.次版本号，例如 1.27）。
-func (d Deploy) GoImageTag() string {
-	v := d.GoVersion
-	if v == "" {
-		v = GoVersion
-	}
-	parts := strings.Split(v, ".")
-	if len(parts) >= 2 {
-		return parts[0] + "." + parts[1]
-	}
-	return v
+	Slug  string // 应用名、二进制名与默认 Linux 服务用户名，例如 blog。
+	User  string // SSH 登录用户，为空时默认 deploy。
+	Host  string // 默认目标主机地址或 ~/.ssh/config 别名，为空时写占位地址。
+	Force bool   // 为真时覆盖已存在的部署文件；为假时已有文件存在则报错。
 }
 
 // Layouts 是前端可选的布局：
@@ -231,25 +214,19 @@ func WriteClient(root string, c Client) (consent bool, err error) {
 	return true, appendMessages(root, "template/consent-locales/messages.yaml.tmpl", c.Frontend, c)
 }
 
-// WriteDeploy 在项目 root 中生成部署文件：Dockerfile、.dockerignore、compose.prod.yaml 和 .env.example。
+// WriteDeploy 在项目 root 中生成原生二进制部署文件：deploy.yaml 和 .env.example。
 // Force 为假且任一目标文件已存在时返回错误；返回写入的文件相对路径列表。
 func WriteDeploy(root string, d Deploy) ([]string, error) {
 	if d.Slug == "" {
 		return nil, fmt.Errorf("deploy: slug is required")
 	}
-	if d.Main == "" {
-		d.Main = "./cmd/" + d.Slug
+	if d.User == "" {
+		d.User = "deploy"
 	}
-	if d.Image == "" {
-		d.Image = d.Slug
+	if d.Host == "" {
+		d.Host = "203.0.113.10"
 	}
-	if d.GoVersion == "" {
-		d.GoVersion = GoVersion
-	}
-	if d.BunVersion == "" {
-		d.BunVersion = BunVersion
-	}
-	targets := []string{"Dockerfile", ".dockerignore", "compose.prod.yaml", ".env.example"}
+	targets := []string{"deploy.yaml", ".env.example"}
 	if !d.Force {
 		var existing []string
 		for _, f := range targets {
@@ -452,8 +429,6 @@ func render(root, dir string, data any) error {
 		switch path.Base(rel) {
 		case "gitignore":
 			rel = path.Join(path.Dir(rel), ".gitignore")
-		case "dockerignore":
-			rel = path.Join(path.Dir(rel), ".dockerignore")
 		case "env.example":
 			rel = path.Join(path.Dir(rel), ".env.example")
 		}

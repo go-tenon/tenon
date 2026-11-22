@@ -1,10 +1,10 @@
 # 部署
 
-把应用构建成一个可执行文件，用 systemd、Docker Compose 或 Docker Swarm 运行。上线后的升级、维护和备份见[运维](operations.md)。
+把应用构建成一个可执行文件，通过 `tenon deploy` 与 systemd 在 Linux 上以原生二进制方式部署。Docker 仅用于开发和测试期启动基础设施依赖。上线后的升级、维护和备份见[运维](operations.md)。
 
 包：`command`、`command/httpcmd`、`command/migratecmd`。
 
-- 每次发布按顺序执行：构建 → `config check` → `migrate up` → 启动或升级服务。迁移在新版本启动之前执行：新代码用到的表和列要先存在。
+- 每次发布按顺序执行：构建 → `config check` → `doctor` → `migrate up` → 启动或热重载服务。迁移在新版本启动之前执行：新代码用到的表和列要先存在。
 - 发布期间新旧版本同时运行，每次的表结构变化都要让两个版本都能运行，见[零停机变更](../database/migrations.md#zero-downtime-changes)。
 
 <a id="building"></a>
@@ -15,16 +15,52 @@ bun run generate   # 生成的客户端提交在仓库中，改了接口要重�
 bun run build      # 即 go tool tenon build，输出 bin/<入口目录名>，例如 bin/blog
 ```
 
-`tenon build` 构建 `apps` 中的前端，再用 `go build -trimpath` 编译应用，见[开发工具](tooling.md#build)。没有前端的项目直接 `go build -trimpath -o bin/blog ./cmd/blog`。迁移、翻译和前端产物都嵌入在二进制中，服务器上只需要二进制和 `config` 目录。
+`tenon build` 构建 `apps` 中的前端，再用 `go build -trimpath` 编译应用，见[开发工具](tooling.md#build)。没有前端的项目直接 `go build -trimpath -o bin/blog ./cmd/blog`。迁移、翻译和前端产物都嵌入在二进制中，服务器上只需要二进制、`config` 目录和环境变量文件。
 
 有服务端渲染的前端（前端 `package.json` 中 `"tenon": {"ssr": true}`）时，运行的机器必须是 Linux（amd64 或 arm64）并带 glibc：SSR 程序由 Bun 编译、从内存（memfd）运行，Alpine（musl）上不能运行，见[托管前端与服务端渲染](../frontend/hosting.md)。在 macOS 上或为另一种架构构建时用 `bun run build --arch amd64`（或 `arm64`）。
 
+<a id="tenon-deploy"></a>
+## 使用 `tenon deploy` 自动发布
+
+在项目根目录生成部署配置并初始化目标服务器：
+
+```bash
+go tool tenon add deploy --user deploy --host 203.0.113.10
+go tool tenon deploy setup
+cp .env.example .env.production                      # 填写数据库、NATS、APP_KEY 等密钥
+go tool tenon deploy env push .env.production
+go tool tenon deploy
+```
+
+`deploy.yaml` 声明目标环境、主机、服务部分（`parts`）、部署目录（默认 `/opt/<应用>`）和环境变量路径（默认 `/etc/<应用>/env`），进仓库保存，不含密钥：
+
+```yaml
+app: blog
+keep_releases: 5
+
+environments:
+  production:
+    user: deploy
+    service_user: blog
+    dir: /opt/blog
+    env_file: /etc/blog/env
+    config_dir: config
+    hosts:
+      - addr: 203.0.113.10
+        parts: [all]
+        migrate: true
+```
+
+- `tenon deploy setup` 检查目标机为带 systemd 的 Linux（含 SSR 时检查 glibc），建系统用户和目录，写入 `<应用>@.service` 并 `daemon-reload`。
+- `tenon deploy` 自动探测目标架构并本地交叉编译（在 CI 中可传入 `--binary` 跳过构建），在主节点加发布锁，并行上传二进制与剔除了 `local.yaml` 的 `config/` 并校验 SHA-256，在主节点执行 `config check`、`doctor` 和一次 `migrate up`，随后逐台用硬链接加原子 `mv` 切换 `bin/<应用>` 并 `systemctl reload`（触发 `command.Daemon` 零停机热升级），任一节点升级失败立即中止并输出最近日志。
+- 常用运维命令：`tenon deploy rollback [version]` 回退二进制与配置，`tenon deploy status` 查看版本与服务状态，`tenon deploy logs -F` 跟踪日志，`tenon deploy run -- doctor` 以服务用户和环境变量执行一次性命令，`tenon deploy maintenance on|off` 开关维护页。
+
 <a id="release-process"></a>
-## 第一次发布
+## 第一次发布与手动步骤
 
-命令在部署目录（`config` 所在的目录）中执行，默认加载 `config/app.yaml`。
+不使用 `tenon deploy` 时，按下面的顺序在部署目录（`config` 所在的目录）手动执行，默认加载 `config/app.yaml`。
 
-- 与开发环境不同的值在 `config/app.yaml` 中写成 `${DATABASE_URL}` 这样的环境变量，由 systemd 的 `EnvironmentFile`、Docker 的 `environment` 或工作目录中的 `.env` 提供，密码和密钥不进仓库。
+- 与开发环境不同的值在 `config/app.yaml` 中写成 `${DATABASE_URL}` 这样的环境变量，由 systemd 的 `EnvironmentFile` 提供，密码和密钥不进仓库。
 - 部署目录中不放 `config/local.yaml`：它存在时叠加在 `config/app.yaml` 之后。要叠加别的文件用 `--config` 或 `APP_CONFIG`，见[叠加多个配置文件](../general/configuration.md#overriding-configuration)。
 
 <a id="checking-configuration"></a>
@@ -46,7 +82,7 @@ bun run build      # 即 go tool tenon build，输出 bin/<入口目录名>，�
 ```
 
 - 迁移加锁，多台服务器同时执行时依次进行，同一个迁移只执行一次。
-- 迁移只在发布时执行一次，不写进 systemd 的 `ExecStartPre` 或容器的启动命令：进程每次崩溃重启都会再执行，分开运行时几个实例同时执行。
+- 迁移只在发布时执行一次，不写进 systemd 的 `ExecStartPre`：进程每次崩溃重启都会再执行，分开运行时几个实例同时执行。
 
 <a id="starting-the-server"></a>
 ### 启动服务
@@ -55,7 +91,7 @@ bun run build      # 即 go tool tenon build，输出 bin/<入口目录名>，�
 ./bin/blog serve
 ```
 
-`serve` 在一个进程中运行全部部分（HTTP 服务、队列 worker、调度器等），见[serve 命令](../general/commands.md#serve-command)。正式部署交给 [systemd](#systemd) 或 [Docker Compose](#docker-compose)，由它们重启崩溃的进程、停止时发送 `SIGTERM`。
+`serve` 在一个进程中运行全部部分（HTTP 服务、队列 worker、调度器等），见[serve 命令](../general/commands.md#serve-command)。正式部署交给 [systemd](#systemd)，由它重启崩溃的进程、停止时发送 `SIGTERM`。
 
 <a id="process-forms"></a>
 ## 一个进程，还是每个部分一个进程
@@ -74,7 +110,7 @@ bun run build      # 即 go tool tenon build，输出 bin/<入口目录名>，�
 <a id="systemd"></a>
 ## 用 systemd 运行
 
-部署目录中有 `bin/blog`、`config` 和保存上传文件的 `storage`，下文以 `/opt/blog` 为例。程序用专门的系统用户运行：
+`tenon deploy setup` 会自动生成下面的目录和 unit；手动配置时以 `/opt/blog` 为例，程序用专门的系统用户运行：
 
 ```bash
 sudo useradd --system --no-create-home --shell /usr/sbin/nologin blog
@@ -126,9 +162,9 @@ journalctl -u 'blog@*' -f
 - `TimeoutStopSec` 要比程序的[平滑停止](#graceful-shutdown)时间长。程序要写其他目录时加进 `ReadWritePaths`。
 
 <a id="systemd-releases"></a>
-### 发布新版本
+### 手动发布新版本
 
-把新的二进制 `blog` 传到服务器后执行：
+不使用 `tenon deploy` 时，把新的二进制 `blog` 传到服务器后执行：
 
 ```bash
 set -e
@@ -155,143 +191,24 @@ done
 - 新二进制先写到 `blog.new` 再 `mv`：直接覆盖正在运行的文件报错 `Text file busy`。
 - 新版本启动失败时旧版本继续运行，`reload` 仍返回成功，所以检查状态文字是否以 `upgrade failed` 开头。
 
-<a id="docker"></a>
-## 用 Docker 构建镜像
-
-`Dockerfile`：
-
-```dockerfile
-FROM golang:1.27 AS build
-COPY --from=oven/bun:1.4.4 /usr/local/bin/bun /usr/local/bin/bun
-WORKDIR /src
-COPY go.mod go.sum ./
-RUN go mod download
-COPY . .
-RUN CGO_ENABLED=0 go tool tenon build -o /out/blog && mkdir /out/storage
-
-FROM gcr.io/distroless/base-debian13:nonroot
-WORKDIR /app
-COPY --from=build /out/blog /app/blog
-COPY config /app/config
-COPY --from=build --chown=nonroot:nonroot /out/storage /app/storage
-ENTRYPOINT ["/app/blog"]
-CMD ["serve"]
-```
-
-- `ENTRYPOINT` 写成 JSON 数组，程序是 1 号进程，能收到 `docker stop` 的 `SIGTERM`。写成 shell 形式时信号发给 shell，程序到超时被强制结束。
-- `distroless/base` 带 glibc，SSR 程序需要；没有服务端渲染的前端时可以用 `distroless/static`。
-- `storage` 预先建好并交给 `nonroot`，新挂载的卷继承这个所有者，程序才能写入。文件存放在 S3 时不需要它。
-- `HEALTHCHECK` 不写进 Dockerfile：同一个镜像也运行没有 HTTP 服务的 worker 和调度器。
-
-<a id="docker-compose"></a>
-## 用 Docker Compose 运行
-
-`compose.yaml`，`APP_VERSION`、`DATABASE_URL` 写在同目录的 `.env` 中：
-
-```yaml
-x-app: &app
-  image: blog:${APP_VERSION}
-  environment:
-    APP_URL: https://example.com
-    DATABASE_URL: ${DATABASE_URL}
-    NATS_URL: nats://nats:4222
-  volumes: [storage:/app/storage]
-  restart: unless-stopped
-  stop_grace_period: 45s
-  depends_on:
-    migrate:
-      condition: service_completed_successfully
-
-services:
-  migrate:
-    image: blog:${APP_VERSION}
-    environment:
-      DATABASE_URL: ${DATABASE_URL}
-    command: [migrate, up]
-  http:
-    <<: *app
-    command: [serve, http]
-    ports: ["8080:8080"]
-    healthcheck:
-      test: [CMD, /app/blog, health]
-  worker:
-    <<: *app
-    command: [serve, worker]
-  scheduler:
-    <<: *app
-    command: [serve, scheduler]
-  nats:
-    image: nats:2.15-alpine
-    command: [nats-server, -js, -sd, /data]
-    volumes: [nats:/data]
-
-volumes:
-  storage:
-  nats:
-```
-
-- `stop_grace_period` 必须写：Docker 默认只等 10 秒，短于队列和调度器默认的 30 秒。
-- 应用用服务名访问依赖，配置文件写 `nats.url: ${NATS_URL:-nats://127.0.0.1:4222}`，见[连接 NATS](../libraries/nats.md#connecting)。用到 [Redis](../libraries/cache.md#config-redis)、[Gotenberg](../libraries/pdf.md#deployment) 时按各自的说明加服务。
-- 一起运行时把 `http`、`worker`、`scheduler` 换成一个 `command: [serve]` 的服务，健康检查写在它上面。
-- 连 PostgreSQL 一起运行的版本见[交给客户自托管](self-hosting.md)。
-
-<a id="compose-releases"></a>
-### 发布新版本
-
-改 `.env` 中的 `APP_VERSION`，然后：
-
-```bash
-docker compose pull
-docker compose run --rm migrate
-docker compose up -d
-```
-
-迁移先单独执行：`up -d` 先停旧容器再等 `migrate`，迁移失败时没有版本在运行；单独执行失败时旧版本照常运行。替换容器的几秒内服务不可用，不停机替换用 [Docker Swarm](#docker-swarm)。
-
-<a id="docker-swarm"></a>
-## 用 Docker Swarm 运行
-
-用 compose 文件部署（`docker stack deploy -c compose.yaml blog`），HTTP 服务加上 `deploy`：
-
-```yaml
-  http:
-    <<: *app
-    command: [serve, http]
-    ports: ["8080:8080"]
-    healthcheck:
-      test: [CMD, /app/blog, health]
-    deploy:
-      replicas: 2
-      update_config:
-        order: start-first
-        failure_action: rollback
-```
-
-- `order: start-first`：新容器健康后才停止旧容器，升级不中断服务。
-- Swarm 忽略 `depends_on`，迁移在 `docker stack deploy` 之前单独执行，例如 `docker run --rm -e DATABASE_URL blog:1.4.2 migrate up`。
-- `docker stack deploy` 不读 `.env`：compose 文件中的 `${APP_VERSION}` 等变量要先在 shell 中设置，例如 `APP_VERSION=1.4.2 docker stack deploy -c compose.yaml blog`。
+若目标平台强制要求容器运行，把 `tenon build` 生成的二进制和 `config` 放进带 glibc（有 SSR 前端时）或静态基础镜像，以 JSON 数组形式的 `ENTRYPOINT` 启动并预留不短于平滑停止时间的终止宽限期，再用 `health` 命令作存活检查即可。
 
 <a id="health-checks"></a>
 ## 健康检查
 
 `/livez` 只检查进程能否响应；`/readyz` 还检查必需的依赖，进程开始停止后返回 `503`。路由的写法见[健康检查](../concepts/lifecycle.md#health-checks)。
 
-- **systemd** 不用 HTTP 检查：进程非 0 退出时按 `Restart=` 重启，`Type=notify-reload` 告诉它何时就绪。
-- **Docker Compose、Swarm** 用 `health` 命令（[`httpcmd.Health`](../general/commands.md#health-command)），它请求本机的 `/livez`，镜像中不需要 curl：`test: [CMD, /app/blog, health]`。Swarm 替换检查失败的容器，滚动升级等新容器健康后再继续。
-- **反向代理**（Caddy、Traefik、HAProxy）主动请求 `/readyz`，不把请求转给未就绪或正在停止的实例。
-
-规则：
-
-- Docker 检查 `/livez`：数据库故障时 `/readyz` 失败，Swarm 会反复替换全部容器，重启解决不了数据库的问题。`/livez` 在程序开始处理请求后才成功，足够判断新版本有没有起来。
-- 健康检查只写在运行 HTTP 服务的服务上：worker、调度器、RPC 进程没有 `/livez`。它们出错时以非 0 状态退出，交给重启策略；卡住的 worker 用[队列积压的监控](operations.md#queue-monitoring)发现。
+- **systemd**：进程非 0 退出时按 `Restart=` 重启，`Type=notify-reload` 告诉它何时就绪；发布脚本和 `tenon deploy` 可运行 `health` 命令（[`httpcmd.Health`](../general/commands.md#health-command)）请求本机 `/livez` 确认新进程响应正常。
+- **反向代理**（Caddy、Traefik、HAProxy、Nginx）主动请求 `/readyz`，不把请求转给未就绪或正在停止的实例。
+- 健康检查只针对运行 HTTP 服务的实例：worker、调度器、RPC 进程没有 `/livez`。它们出错时以非 0 状态退出，交给重启策略；卡住的 worker 用[队列积压的监控](operations.md#queue-monitoring)发现。
 
 <a id="graceful-shutdown"></a>
 ## 平滑停止
 
 收到 `SIGTERM` 后，程序停止接收新请求，等处理中的请求、队列任务和定时任务完成，最后关闭数据库，见[应用生命周期](../concepts/lifecycle.md#graceful-shutdown)。
 
-- 信号要到达程序：Docker 的 `ENTRYPOINT` 写成 JSON 数组；用 shell 脚本启动时最后一行写 `exec ./bin/blog serve`。
-- 平台的等待时间（systemd 的 `TimeoutStopSec`、Docker 的 `stop_grace_period`）要比程序的长：程序最多等 `http.shutdown_timeout`（默认 10 秒）、`queue.shutdown_timeout`（默认 30 秒）、`schedule.shutdown_timeout`（默认 30 秒）中最长的一项，使用 [AI 对话](../ai/chat.md#deployment)时再加上回答说完的时间。
+- 信号要到达程序：用包装脚本启动时最后一行写 `exec ./bin/blog serve`。
+- systemd 的 `TimeoutStopSec` 要比程序的最长等待时间长：程序最多等 `http.shutdown_timeout`（默认 10 秒）、`queue.shutdown_timeout`（默认 30 秒）、`schedule.shutdown_timeout`（默认 30 秒）中最长的一项，使用 [AI 对话](../ai/chat.md#deployment)时再加上回答说完的时间。
 
 超时被强制结束时，没有完成的队列任务在其他实例上重新执行，错过的定时任务等下一次触发。
 
@@ -307,4 +224,4 @@ docker compose up -d
 <a id="logging"></a>
 ## 日志
 
-日志写到标准错误，由 journald 或 Docker 收集；标准错误不是终端时为 JSON 格式，见[日志格式](../general/logging.md#formats)。用户反馈问题时让他提供响应头 `X-Request-ID`，按它查这次请求的全部日志，见[按请求 ID 查日志](../general/logging.md#finding-a-request)。推送到观测平台见[可观测性](../general/telemetry.md#setup)。
+日志写到标准错误，由 journald 收集（可用 `tenon deploy logs` 或 `journalctl -u 'blog@*' -f` 查看）；标准错误不是终端时为 JSON 格式，见[日志格式](../general/logging.md#formats)。用户反馈问题时让他提供响应头 `X-Request-ID`，按它查这次请求的全部日志，见[按请求 ID 查日志](../general/logging.md#finding-a-request)。推送到观测平台见[可观测性](../general/telemetry.md#setup)。

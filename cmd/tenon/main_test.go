@@ -271,7 +271,7 @@ func TestCheck(t *testing.T) {
 	}
 }
 
-func TestAddDeploy(t *testing.T) {
+func TestAddDeployAndDryRun(t *testing.T) {
 	newProject(t, map[string]string{
 		"go.mod":                  "module example.com/blog\n\ngo 1.27.4\n",
 		"package.json":            `{"name": "blog", "packageManager": "bun@1.4.4"}`,
@@ -280,20 +280,18 @@ func TestAddDeploy(t *testing.T) {
 	})
 	cmd := root()
 	var out bytes.Buffer
-	cmd.SetArgs([]string{"add", "deploy", "--image", "ghcr.io/acme/blog"})
+	cmd.SetArgs([]string{"add", "deploy", "--user", "ops", "--host", "prod.example.com"})
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
 	if err := cmd.Execute(); err != nil {
 		t.Fatal(err, out.String())
 	}
-	if !strings.Contains(out.String(), "distroless/static") {
+	if !strings.Contains(out.String(), "deploy.yaml") {
 		t.Errorf("output:\n%s", out.String())
 	}
 	for name, want := range map[string]string{
-		"Dockerfile":        "FROM gcr.io/distroless/static-debian13:nonroot",
-		"compose.prod.yaml": "image: ghcr.io/acme/blog:${APP_VERSION:-latest}",
-		".dockerignore":     "apps/dist/",
-		".env.example":      "POSTGRES_PASSWORD=",
+		"deploy.yaml":  "addr: prod.example.com",
+		".env.example": "DATABASE_URL=",
 	} {
 		b, err := os.ReadFile(name)
 		if err != nil || !strings.Contains(string(b), want) {
@@ -305,5 +303,30 @@ func TestAddDeploy(t *testing.T) {
 	}
 	if err := execute(t, "add", "deploy", "--force"); err != nil {
 		t.Fatalf("add deploy --force = %v", err)
+	}
+
+	// 验证生成的 deploy.yaml 可直接驱动 tenon deploy --dry-run 与 setup --dry-run。
+	out.Reset()
+	dry := root()
+	dry.SetArgs([]string{"deploy", "--dry-run"})
+	dry.SetOut(&out)
+	dry.SetErr(&out)
+	if err := dry.Execute(); err != nil {
+		t.Fatalf("deploy --dry-run: %v\n%s", err, out.String())
+	}
+	if !strings.Contains(out.String(), "[dry-run] 环境 production") {
+		t.Errorf("dry-run output:\n%s", out.String())
+	}
+
+	out.Reset()
+	setupDry := root()
+	setupDry.SetArgs([]string{"deploy", "setup", "--dry-run"})
+	setupDry.SetOut(&out)
+	setupDry.SetErr(&out)
+	if err := setupDry.Execute(); err != nil {
+		t.Fatalf("deploy setup --dry-run: %v\n%s", err, out.String())
+	}
+	if !strings.Contains(out.String(), "dry-run") {
+		t.Errorf("setup dry-run output:\n%s", out.String())
 	}
 }

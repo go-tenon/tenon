@@ -9,7 +9,7 @@
 
 - Go 1.27.4 或更高的版本；
 - [Bun](https://bun.sh)：安装前端的依赖、运行前端的开发服务器和构建；
-- Docker：项目用到 PostgreSQL、NATS 这类服务时在本机启动它们。
+- Docker：仅用于开发和测试期，在主工作区启动 PostgreSQL、NATS、Redis 等依赖服务。
 
 <a id="creating-a-project"></a>
 ## 用 `tenon init` 生成项目
@@ -33,6 +33,8 @@ bun run dev   # 打开 http://localhost:8080，接口文档在 http://localhost:
 - 改前端（例如 `apps/web/src/routes/index.tsx`）：页面热更新。
 - 改 Go 代码（例如 `internal/todo/todo.go`）：重新编译、平滑地重启；编译失败时终端中打印错误，旧的程序继续运行。
 - 改接口的输入或输出：重新生成前端的客户端 `packages/client/src/api`，前端代码中立刻能用新的字段。
+
+**主工作区依赖 + `git worktree` 并行开发**：在主工作区运行 `docker compose up -d --wait` 常驻 PostgreSQL、NATS、Redis 等依赖，业务开发和调试在独立的 `git worktree` 中执行 `bun run dev` 和 `go test ./...`，复用主工作区的依赖容器。多个 worktree 同时运行业务服务时，在各自的 `config/local.yaml`（不提交）中改写 `http.addr`（例如 `:8081`）错开端口，需要时为每个 worktree 指定独立的开发库名；`tenon dev` 自动为各前端开发服务器分配空闲端口。
 
 细节见 [tenon dev](tooling.md#dev)。
 

@@ -6,12 +6,13 @@
 
 - Go，版本以 [go.mod](go.mod) 为准；
 - [Bun](https://bun.sh)，安装前端依赖、运行前端开发服务器；
-- Docker，本机启动 PostgreSQL、NATS 等依赖服务。
+- Docker，仅用于开发和测试期：在主工作区启动 PostgreSQL、NATS、Redis 等依赖服务并常驻；
+- 在独立的 `git worktree` 中启动业务服务（`bun run dev`）和运行测试，复用主工作区的依赖容器，通过各自的 `config/local.yaml` 错开 `http.addr` 端口（需要时指定独立数据库名）。
 
 ## 常用命令
 
 ```bash
-bun run dev                       # 运行应用和前端开发服务器，改代码后自动重编；http://localhost:8080
+bun run dev                       # 在当前 worktree 运行应用和前端开发服务器，改代码后自动重编；http://localhost:8080
 bun run generate                  # 接口或界面文字变了以后重新生成客户端（dev 自动运行）
 bun run build                     # 构建可执行文件 bin/[[.Slug]]，前端打包在其中
 bun run typecheck                 # 前端类型检查
@@ -19,9 +20,10 @@ bun run check                     # 静态检查项目约定
 go test ./internal/<模块>/ -run TestXxx   # 只运行一部分 Go 测试
 bun run agents                    # 升级框架后同步文档、约定、技能和 MCP 配置
 go run ./cmd/[[.Slug]] routes     # 全部路由（openapi、--help 同理）
+go tool tenon deploy              # 构建 Linux 二进制并通过 systemd 零停机部署
 ```
 
-加前端用 `go tool tenon add frontend <名称>`（另有一套账号时加 `--api`），加桌面端用 `go tool tenon add client <名称>`，见 `installation/tooling.md`。
+加前端用 `go tool tenon add frontend <名称>`（另有一套账号时加 `--api`），加桌面端用 `go tool tenon add client <名称>`，加部署配置用 `go tool tenon add deploy`，见 `installation/tooling.md`。
 
 ## 目录
 

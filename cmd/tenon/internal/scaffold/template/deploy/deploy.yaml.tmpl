@@ -1,0 +1,19 @@
+# 原生二进制 + systemd 部署配置：运行 go tool tenon deploy setup 初始化目标机，再运行 go tool tenon deploy 发布
+app: [[.Slug]]
+# 目标 Linux 架构（amd64、arm64）；留空时通过 SSH 自动探测
+# arch: amd64
+keep_releases: 5
+
+environments:
+  production:
+    user: [[.User]]              # SSH 登录用户（需具备 sudo 权限）
+    service_user: [[.Slug]]      # 运行应用的 Linux 系统用户
+    dir: /opt/[[.Slug]]          # 远端部署目录
+    env_file: /etc/[[.Slug]]/env # 远端环境变量文件（600 权限，不进仓库）
+    config_dir: config           # 同步到远端的配置目录（自动排除 local.yaml）
+    hosts:
+      - addr: [[.Host]]          # 目标主机地址或 ~/.ssh/config 中的别名
+        parts: [all]             # 默认 all；拆分进程时写 [http]、[worker, scheduler]
+        migrate: true            # 仅在此节点执行数据库迁移
+    # 可选：维护页标记文件路径，配合反向代理返回 503
+    # maintenance_file: /etc/nginx/[[.Slug]].maintenance
