@@ -1,4 +1,4 @@
-// Package aitest 提供 ai 包各项能力的替身：生成图片、合成与识别语音、计算向量、重排和决策，
+// Package aitest 提供 ai 包各项能力的替身：单次补全、生成图片、合成与识别语音、计算向量、重排和决策，
 // 用于测试，不访问真实的模型服务。
 package aitest
 
@@ -352,3 +352,37 @@ func (f *Decider) FailWith(err error) { f.s.failWith(err) }
 
 // Requests 返回目前收到的请求。
 func (f *Decider) Requests() []ai.DecisionRequest { return f.s.recorded() }
+
+// Completer 实现 ai.Completer，按顺序返回预设的回答文本，并记录收到的请求。
+// 没有预设回答时返回最后一条消息的内容；有预设时用完后返回错误。
+type Completer struct {
+	s script[ai.CompleteRequest, string]
+}
+
+var _ ai.Completer = (*Completer)(nil)
+
+// NewCompleter 创建依次返回 replies 的 Completer。
+func NewCompleter(replies ...string) *Completer {
+	return &Completer{script[ai.CompleteRequest, string]{
+		name:    "complete",
+		results: replies,
+		fallback: func(req ai.CompleteRequest) string {
+			if len(req.Messages) == 0 {
+				return ""
+			}
+			return req.Messages[len(req.Messages)-1].Content
+		},
+	}}
+}
+
+// Complete 实现 ai.Completer。
+func (f *Completer) Complete(_ context.Context, req ai.CompleteRequest) (string, error) {
+	req.Messages = append([]ai.Message(nil), req.Messages...)
+	return f.s.call(req)
+}
+
+// FailWith 让之后的请求都返回 err，传 nil 恢复。
+func (f *Completer) FailWith(err error) { f.s.failWith(err) }
+
+// Requests 返回目前收到的请求。
+func (f *Completer) Requests() []ai.CompleteRequest { return f.s.recorded() }

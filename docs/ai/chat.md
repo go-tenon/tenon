@@ -1,6 +1,6 @@
 # AI 对话
 
-用 `ai/chat` 构建 AI 对话（AI 助手）：回答在后台运行，以 Vercel AI SDK 的 UI 消息流推给前端，支持中途插话、断线续传和工具调用的审批。生成图片、语音、向量、重排和决策在 `ai` 包中，与 `ai/chat` 相互独立。
+用 `ai/chat` 构建 AI 对话（AI 助手）：回答在后台运行，以 Vercel AI SDK 的 UI 消息流推给前端，支持中途插话、断线续传和工具调用的审批。单次补全、生成图片、语音、向量、重排和决策在 `ai` 包中，与 `ai/chat` 相互独立。
 
 包：`ai`、`ai/chat`、`ai/openai`、`ai/openrouter`、`ai/dashscope`、`ai/systemone`、`ai/router`、`ai/aitest`、`ai/chat/chattest`。
 
@@ -113,7 +113,7 @@ agent := llmagent.New("writer",
 )
 ```
 
-Claude、Gemini 等其他接口的模型用 trpc-agent-go 的对应包创建。
+Claude、Gemini 等其他接口的模型用 trpc-agent-go 的对应包创建。`Runs` 在请求模型时把当前对话写入 `ctx`，通过 `openai.WithOpenAIOptions(option.WithHTTPClient(hc))` 注入的 `http.RoundTripper` 可用 `chat.ConversationFromContext(ctx)` 取出对话 ID 写入网关会话头；`EventDone` 的 `Done.Usage` 汇总本次运行累计的 token 用量。
 
 <a id="conversation-api"></a>
 ## 对话接口
@@ -364,6 +364,35 @@ func (h chatHistory) Save(ctx context.Context, c chat.Conversation, e chat.Entry
 - 有待审批的调用时返回 `chat.ErrAwaitingApproval`。
 - 返回的运行用 `chat.UIStream` 推送，群成员用 `runs.Get(ctx, "", conversationID)` 接上；保存后的消息由应用[广播](../libraries/broadcasting.md)。
 
+<a id="complete"></a>
+## 单次补全和结构化输出：`ai.Completer`
+
+翻译、摘要、提取这类无状态单次调用使用 `ai.Completer`，与 `ai/chat` 独立、不引入对话运行时：
+
+```go
+type Translation struct {
+    Language string `json:"language"`
+    Text     string `json:"text"`
+}
+
+c := openai.New(cfg.Translation, openai.WithHTTPClient(hc))
+res, err := ai.CompleteJSON[Translation](ctx, c, ai.CompleteRequest{
+    Messages: []ai.Message{
+        {Role: ai.RoleSystem, Content: "识别语言并翻译为中文。"},
+        {Role: ai.RoleUser, Content: text},
+    },
+    ReasoningEffort: "none",
+    JSONSchema: &ai.JSONSchema{
+        Name:   "translation",
+        Strict: true,
+        Schema: translationSchema,
+    },
+})
+```
+
+- `openai.New` 发出标准 OpenAI `/chat/completions` 请求；`ai.CompleteJSON` 自动剥离模型偶尔附带的 Markdown 代码块围栏再解码。
+- 计量、费用采集、会话头透传等横切关注点通过 `openai.WithHTTPClient` 注入自定义 `http.RoundTripper` 统一处理。
+
 <a id="media"></a>
 ## 生成图片、语音和向量
 
@@ -533,4 +562,4 @@ tr := aitest.NewTranscriber("你好") // 依次返回预设的文字
 dc := aitest.NewDecider()           // 是非题 0.5，选择题选第一项，打分题最低一级
 ```
 
-还有 `NewSpeaker`、`NewReranker`。预设结果用完后返回错误；`Requests()` 返回收到的请求，`FailWith(err)` 让之后的请求失败。`emb.Same(a, b)` 让一段描述和一张图片得到相同的向量，用于测试以文搜图。
+还有 `NewCompleter`、`NewSpeaker`、`NewReranker`。预设结果用完后返回错误；`Requests()` 返回收到的请求，`FailWith(err)` 让之后的请求失败。`emb.Same(a, b)` 让一段描述和一张图片得到相同的向量，用于测试以文搜图。
