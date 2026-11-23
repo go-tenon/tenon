@@ -472,3 +472,222 @@ environments:
 		t.Fatalf("Rollback: rep=%+v err=%v", rrep, err)
 	}
 }
+
+func TestParseConfigFilesAndRenderUnit(t *testing.T) {
+	t.Parallel()
+
+	target, err := deploy.Parse([]byte(`
+app: blog
+environments:
+  production:
+    config_files:
+      - config/app.yaml
+      - config/prod.yaml
+      - deploy/extra.yaml
+    hosts: [203.0.113.10]
+`), "blog", "")
+	if err != nil {
+		t.Fatalf("Parse config_files: %v", err)
+	}
+	wantRemote := []string{"config/app.yaml", "config/prod.yaml", "config/deploy/extra.yaml"}
+	if !slices.Equal(target.RemoteConfigFiles(), wantRemote) {
+		t.Fatalf("RemoteConfigFiles = %v, want %v", target.RemoteConfigFiles(), wantRemote)
+	}
+	if target.ConfigDir != "" {
+		t.Fatalf("ConfigDir = %q, want empty when config_files is set", target.ConfigDir)
+	}
+	if got, want := target.ConfigFlagValue(), "config/app.yaml,config/prod.yaml,config/deploy/extra.yaml"; got != want {
+		t.Fatalf("ConfigFlagValue = %q, want %q", got, want)
+	}
+
+	unit := deploy.RenderUnit(target)
+	wantExec := "ExecStart=/opt/blog/bin/blog --config config/app.yaml,config/prod.yaml,config/deploy/extra.yaml serve %i"
+	if !strings.Contains(unit, wantExec) {
+		t.Errorf("unit missing %q:\n%s", wantExec, unit)
+	}
+
+	for name, bad := range map[string]string{
+		"both config_dir and config_files": "environments:\n  production:\n    config_dir: config\n    config_files: [config/app.yaml]\n    hosts: [a]\n",
+		"absolute path":                    "environments:\n  production:\n    config_files: [/etc/app.yaml]\n    hosts: [a]\n",
+		"path escape":                      "environments:\n  production:\n    config_files: [../secret.yaml]\n    hosts: [a]\n",
+		"comma in path":                    "environments:\n  production:\n    config_files: ['config/a,b.yaml']\n    hosts: [a]\n",
+		"space in path":                    "environments:\n  production:\n    config_files: ['config/a b.yaml']\n    hosts: [a]\n",
+		"duplicate remote path":            "environments:\n  production:\n    config_files: [config/prod.yaml, prod.yaml]\n    hosts: [a]\n",
+		"bare config dir":                  "environments:\n  production:\n    config_files: [config]\n    hosts: [a]\n",
+	} {
+		if _, err := deploy.Parse([]byte(bad), "blog", ""); err == nil {
+			t.Errorf("%s: expected error", name)
+		}
+	}
+}
+
+func TestDeployConfigFilesOverlayPermissionsAndRunRemote(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	cfgDir := filepath.Join(dir, "config")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, content := range map[string]string{
+		"app.yaml":     "http:\n  addr: ':8080'\n",
+		"prod.yaml":    "crypt:\n  key: 'prod-secret'\n",
+		"staging.yaml": "crypt:\n  key: 'staging-secret'\n",
+		"local.yaml":   "http:\n  addr: ':9999'\n",
+	} {
+		if err := os.WriteFile(filepath.Join(cfgDir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	binPath := filepath.Join(dir, "blog-bin")
+	if err := os.WriteFile(binPath, []byte("fake-elf-binary"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	target, err := deploy.Parse([]byte(`
+app: blog
+arch: amd64
+environments:
+  production:
+    config_files:
+      - config/app.yaml
+      - config/prod.yaml
+    hosts: [web-1]
+`), "blog", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Plan 与 LoadTopology 均包含 config_files。
+	plan, err := deploy.Plan(context.Background(), target, deploy.ReleaseOptions{Version: "v1"})
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	if !slices.Equal(plan.ConfigFiles, []string{"config/app.yaml", "config/prod.yaml"}) {
+		t.Fatalf("plan.ConfigFiles = %v", plan.ConfigFiles)
+	}
+
+	// 2. 执行完整发布：验证仅打包清单文件、权限 0640/0750、systemd-run 自动注入 --config。
+	var mu sync.Mutex
+	var uploadedTar []byte
+	var unpackScript string
+	var systemdRuns []string
+	runner := &fakeRunner{
+		onRun: func(_ deploy.Host, script string, stdin []byte) (string, string, error) {
+			switch {
+			case strings.Contains(script, "tar -xzf"):
+				mu.Lock()
+				uploadedTar = stdin
+				unpackScript = script
+				mu.Unlock()
+			case strings.Contains(script, "--help"):
+				return "yes\n", "", nil
+			case strings.HasPrefix(script, "sudo systemd-run "):
+				mu.Lock()
+				systemdRuns = append(systemdRuns, script)
+				mu.Unlock()
+			}
+			return "", "", nil
+		},
+	}
+
+	var out, errOut bytes.Buffer
+	report, err := deploy.Deploy(context.Background(), runner, target, deploy.ReleaseOptions{
+		Binary:  binPath,
+		Version: "20261123-010000",
+		WorkDir: dir,
+	}, &out, &errOut)
+	if err != nil {
+		t.Fatalf("Deploy: %v\nout=%s\nerr=%s", err, out.String(), errOut.String())
+	}
+	if !slices.Equal(report.ConfigFiles, []string{"config/app.yaml", "config/prod.yaml"}) {
+		t.Errorf("report.ConfigFiles = %v", report.ConfigFiles)
+	}
+
+	// 验证归档仅含 app.yaml 与 prod.yaml，排除 staging.yaml 与 local.yaml，且权限为 0640。
+	gz, err := gzip.NewReader(bytes.NewReader(uploadedTar))
+	if err != nil {
+		t.Fatalf("gzip reader: %v", err)
+	}
+	tr := tar.NewReader(gz)
+	var names []string
+	for {
+		hdr, err := tr.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if hdr.Mode != 0o640 {
+			t.Errorf("tar entry %s mode = %o, want 640", hdr.Name, hdr.Mode)
+		}
+		names = append(names, hdr.Name)
+	}
+	if !slices.Equal(names, []string{"app.yaml", "prod.yaml"}) {
+		t.Errorf("config archive entries = %v, want [app.yaml prod.yaml]", names)
+	}
+	for _, want := range []string{"-m 750 -o root -g 'blog'", "chown -R 'root:blog'", "chmod 750", "chmod 640"} {
+		if !strings.Contains(unpackScript, want) {
+			t.Errorf("unpackScript missing %q:\n%s", want, unpackScript)
+		}
+	}
+
+	// 验证 config check、doctor、migrate up、health 均自动传入 --config。
+	wantFlag := "'--config' 'config/app.yaml,config/prod.yaml'"
+	if len(systemdRuns) < 4 {
+		t.Fatalf("expected at least 4 systemd-run calls, got %d: %v", len(systemdRuns), systemdRuns)
+	}
+	for _, cmd := range systemdRuns {
+		if !strings.Contains(cmd, wantFlag) {
+			t.Errorf("systemd-run missing %s: %s", wantFlag, cmd)
+		}
+	}
+
+	// 3. RunRemote 自动注入 --config；调用方显式传 --config 时不重复注入。
+	systemdRuns = nil
+	if err := deploy.RunRemote(context.Background(), runner, target, "", "", []string{"doctor"}, &out, &errOut); err != nil {
+		t.Fatalf("RunRemote doctor: %v", err)
+	}
+	if err := deploy.RunRemote(context.Background(), runner, target, "", "", []string{"config", "check", "--config", "config/custom.yaml"}, &out, &errOut); err != nil {
+		t.Fatalf("RunRemote custom config: %v", err)
+	}
+	if len(systemdRuns) != 2 {
+		t.Fatalf("expected 2 RunRemote calls, got %d", len(systemdRuns))
+	}
+	if !strings.Contains(systemdRuns[0], wantFlag) {
+		t.Errorf("RunRemote doctor missing %s: %s", wantFlag, systemdRuns[0])
+	}
+	if strings.Contains(systemdRuns[1], wantFlag) {
+		t.Errorf("RunRemote with explicit --config should not duplicate flag: %s", systemdRuns[1])
+	}
+
+	// 4. 本地缺少声明的配置文件时，在触发 Build 之前立即失败。
+	missingTarget, err := deploy.Parse([]byte(`
+app: blog
+arch: amd64
+environments:
+  production:
+    config_files:
+      - config/app.yaml
+      - config/missing.yaml
+    hosts: [web-1]
+`), "blog", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	buildCalled := false
+	_, err = deploy.Deploy(context.Background(), runner, missingTarget, deploy.ReleaseOptions{
+		WorkDir: dir,
+		Build: func(context.Context, string, string) error {
+			buildCalled = true
+			return nil
+		},
+	}, &out, &errOut)
+	if err == nil || !strings.Contains(err.Error(), "config/missing.yaml") {
+		t.Fatalf("expected missing config file error, got %v", err)
+	}
+	if buildCalled {
+		t.Errorf("Build should not be called when a config_files entry is missing")
+	}
+}

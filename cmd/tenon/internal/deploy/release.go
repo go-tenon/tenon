@@ -26,6 +26,7 @@ import (
 type ReleaseOptions struct {
 	Binary     string                                                // 现成的 Linux 二进制路径；留空时调用 Build 构建
 	Version    string                                                // 发布版本名；留空时生成时间戳加短提交号
+	WorkDir    string                                                // 本地项目根目录；留空时使用当前工作目录
 	SkipDoctor bool                                                  // 为真时跳过上线前 doctor 自检
 	DryRun     bool                                                  // 为真时只输出发布计划，不修改远端
 	Now        func() time.Time                                      // 当前时间函数，测试可注入；为空时取 time.Now
@@ -34,15 +35,16 @@ type ReleaseOptions struct {
 
 // DeployReport 是 tenon deploy 与 tenon_deploy_plan 的结构化结果。
 type DeployReport struct {
-	App         string           `json:"app"`                // 应用名
-	Env         string           `json:"env"`                // 环境名
-	Version     string           `json:"version"`            // 发布版本号
-	Arch        string           `json:"arch"`               // 目标架构
-	DryRun      bool             `json:"dry_run"`            // 是否为预演模式
-	MigrateHost string           `json:"migrate_host"`       // 执行预检与迁移的主节点
-	Migrated    bool             `json:"migrated,omitempty"` // 是否执行了 migrate up
-	Waves       []Wave           `json:"waves"`              // 滚动发布波次
-	Hosts       []HostSwitchInfo `json:"hosts"`              // 各主机期望角色、parts 与切换结果
+	App         string           `json:"app"`                    // 应用名
+	Env         string           `json:"env"`                    // 环境名
+	Version     string           `json:"version"`                // 发布版本号
+	Arch        string           `json:"arch"`                   // 目标架构
+	DryRun      bool             `json:"dry_run"`                // 是否为预演模式
+	ConfigFiles []string         `json:"config_files,omitempty"` // 按清单叠加加载的配置文件列表
+	MigrateHost string           `json:"migrate_host"`           // 执行预检与迁移的主节点
+	Migrated    bool             `json:"migrated,omitempty"`     // 是否执行了 migrate up
+	Waves       []Wave           `json:"waves"`                  // 滚动发布波次
+	Hosts       []HostSwitchInfo `json:"hosts"`                  // 各主机期望角色、parts 与切换结果
 }
 
 // HostSwitchInfo 记录单台主机的切换详情（含声明式清理掉的孤儿 unit）。
@@ -86,6 +88,7 @@ func Plan(ctx context.Context, t Target, opts ReleaseOptions) (*DeployReport, er
 		Version:     version,
 		Arch:        arch,
 		DryRun:      true,
+		ConfigFiles: t.RemoteConfigFiles(),
 		MigrateHost: t.MigrateHost().Addr,
 		Waves:       t.RolloutWaves(),
 		Hosts:       hosts,
@@ -120,7 +123,11 @@ func Deploy(ctx context.Context, r Runner, t Target, opts ReleaseOptions, out, e
 		return nil, fmt.Errorf("deploy: version %q contains invalid characters", version)
 	}
 
-	// 1. 准备待发布的二进制文件与配置归档。
+	// 1. 先打包配置文件，再准备待发布的二进制文件，本地缺少配置时在构建之前立即报错。
+	cfgArchive, hasConfig, err := packConfig(opts.WorkDir, t)
+	if err != nil {
+		return nil, err
+	}
 	binPath := opts.Binary
 	if binPath == "" {
 		if opts.Build == nil {
@@ -140,10 +147,6 @@ func Deploy(ctx context.Context, r Runner, t Target, opts ReleaseOptions, out, e
 	sum, err := fileSHA256(binPath)
 	if err != nil {
 		return nil, fmt.Errorf("deploy: hash binary: %w", err)
-	}
-	cfgArchive, hasConfig, err := archiveConfigDir(t.ConfigDir)
-	if err != nil {
-		return nil, err
 	}
 
 	// 2. 在主节点获取原子发布锁，防止并发发布互相覆盖。
@@ -223,6 +226,7 @@ func Deploy(ctx context.Context, r Runner, t Target, opts ReleaseOptions, out, e
 		Version:     version,
 		Arch:        arch,
 		DryRun:      false,
+		ConfigFiles: t.RemoteConfigFiles(),
 		MigrateHost: primary.Addr,
 		Migrated:    migrated,
 		Waves:       waves,
@@ -233,6 +237,9 @@ func Deploy(ctx context.Context, r Runner, t Target, opts ReleaseOptions, out, e
 // printPlan 以人类可读文本打印发布预演计划。
 func printPlan(out io.Writer, plan *DeployReport) {
 	fmt.Fprintf(out, "[dry-run] 环境 %s，应用 %s，版本 %s，架构 linux/%s\n", plan.Env, plan.App, plan.Version, plan.Arch)
+	if len(plan.ConfigFiles) > 0 {
+		fmt.Fprintf(out, "[dry-run] 配置文件：%s\n", strings.Join(plan.ConfigFiles, ", "))
+	}
 	fmt.Fprintf(out, "[dry-run] 主迁移节点：%s；主机总数：%d\n", plan.MigrateHost, len(plan.Hosts))
 	for i, w := range plan.Waves {
 		fmt.Fprintf(out, "[dry-run] 波次 %d (%s, max_parallel=%d): %s\n", i+1, w.Name, w.MaxParallel, strings.Join(w.Hosts, ", "))
@@ -365,6 +372,66 @@ func fileSHA256(p string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
+// packConfig 根据目标环境配置打包待同步的配置文件：配置了 config_files 时按清单精确打包，
+// 否则打包 config_dir 目录并自动跳过 local.yaml 与隐藏文件。
+func packConfig(workDir string, t Target) ([]byte, bool, error) {
+	if len(t.ConfigFiles) > 0 {
+		archive, err := archiveConfigFiles(workDir, t.ConfigFiles)
+		if err != nil {
+			return nil, false, err
+		}
+		return archive, true, nil
+	}
+	return archiveConfigDir(resolveLocalPath(workDir, t.ConfigDir))
+}
+
+// resolveLocalPath 将相对路径 p 锚定到 workDir；workDir 为空或 p 为绝对路径时直接返回 p。
+func resolveLocalPath(workDir, p string) string {
+	if workDir == "" || filepath.IsAbs(p) {
+		return p
+	}
+	return filepath.Join(workDir, filepath.FromSlash(p))
+}
+
+// archiveConfigFiles 按 config_files 清单打包本地配置文件为 tar.gz，权限设为 0640；任一文件缺失或为目录时返回错误。
+func archiveConfigFiles(workDir string, files []ConfigFile) ([]byte, error) {
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	for _, f := range files {
+		localPath := resolveLocalPath(workDir, f.LocalPath)
+		info, err := os.Stat(localPath)
+		if err != nil {
+			return nil, fmt.Errorf("deploy: config file %s: %w", f.LocalPath, err)
+		}
+		if info.IsDir() {
+			return nil, fmt.Errorf("deploy: config file %s is a directory", f.LocalPath)
+		}
+		data, err := os.ReadFile(localPath)
+		if err != nil {
+			return nil, fmt.Errorf("deploy: read config file %s: %w", f.LocalPath, err)
+		}
+		hdr := &tar.Header{
+			Name: f.ArchiveRel,
+			Mode: 0o640,
+			Size: int64(len(data)),
+		}
+		if err := tw.WriteHeader(hdr); err != nil {
+			return nil, err
+		}
+		if _, err := tw.Write(data); err != nil {
+			return nil, err
+		}
+	}
+	if err := tw.Close(); err != nil {
+		return nil, err
+	}
+	if err := gz.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
 // archiveConfigDir 把本地配置目录打包为 tar.gz 字节流，自动跳过 local.yaml 与隐藏文件；
 // 目录不存在时返回 has=false。
 func archiveConfigDir(dir string) (archive []byte, has bool, err error) {
@@ -406,7 +473,7 @@ func archiveConfigDir(dir string) (archive []byte, has bool, err error) {
 		}
 		hdr := &tar.Header{
 			Name: filepath.ToSlash(rel),
-			Mode: 0o644,
+			Mode: 0o640,
 			Size: int64(len(data)),
 		}
 		if err := tw.WriteHeader(hdr); err != nil {
@@ -488,8 +555,16 @@ sudo install -m 755 -o root -g root %s %s`,
 			}
 			if hasConfig {
 				cfgDir := path.Join(releaseDir, "config")
-				unpack := fmt.Sprintf("set -e; sudo rm -rf %s; sudo install -d -m 755 %s; sudo tar -xzf - -C %s",
-					shellQuote(cfgDir), shellQuote(cfgDir), shellQuote(cfgDir))
+				owner := "root:" + t.ServiceUser
+				unpack := fmt.Sprintf(
+					"set -e; sudo rm -rf %s; sudo install -d -m 750 -o root -g %s %s; sudo tar -xzf - --no-same-owner -C %s; sudo chown -R %s %s; sudo find %s -type d -exec chmod 750 {} +; sudo find %s -type f -exec chmod 640 {} +",
+					shellQuote(cfgDir),
+					shellQuote(t.ServiceUser), shellQuote(cfgDir),
+					shellQuote(cfgDir),
+					shellQuote(owner), shellQuote(cfgDir),
+					shellQuote(cfgDir),
+					shellQuote(cfgDir),
+				)
 				if err := r.Run(gctx, h, unpack, bytes.NewReader(cfgArchive), io.Discard, io.Discard); err != nil {
 					return fmt.Errorf("[%s] 同步配置目录失败: %w", h.Addr, err)
 				}
@@ -519,7 +594,11 @@ func switchHost(ctx context.Context, r Runner, t Target, h Host, version string,
 	liveBin := path.Join(t.Dir, "bin", t.App)
 	liveBinNew := liveBin + ".new"
 
-	// 1. 同步该主机各 part 的 systemd drop-in 覆盖配置。
+	// 1. 按需同步模板 unit 与各 part 的 systemd drop-in 覆盖配置。
+	unitUpdated, err := syncUnit(ctx, r, t, h)
+	if err != nil {
+		return nil, err
+	}
 	if err := syncDropIns(ctx, r, t, h); err != nil {
 		return nil, err
 	}
@@ -569,6 +648,9 @@ fi`, shellQuote(unit), shellQuote(unit), shellQuote(unit), shellQuote(unit))
 			return removed, fmt.Errorf("[%s] %s 启动或热重载失败: %w", h.Addr, unit, err)
 		}
 		fmt.Fprintf(out, "[%s] %s 已就绪\n", h.Addr, unit)
+		if unitUpdated {
+			fmt.Fprintf(out, "[%s] 提示：模板 unit 已更新，如修改了 config_files 列表需执行 sudo systemctl restart %s 使新启动参数生效\n", h.Addr, unit)
+		}
 	}
 
 	// 5. 含入口服务的节点执行本机 health 检查确认 /livez 通过。

@@ -48,7 +48,8 @@ type Environment struct {
 	ServiceUser     string          `yaml:"service_user"`     // 运行应用的 Linux 系统用户，默认与 app 相同
 	Dir             string          `yaml:"dir"`              // 远端部署目录，默认 /opt/<app>
 	EnvFile         string          `yaml:"env_file"`         // 远端环境变量文件路径，默认 /etc/<app>/env
-	ConfigDir       string          `yaml:"config_dir"`       // 要同步的本地配置目录，默认 config（自动排除 local.yaml）
+	ConfigDir       string          `yaml:"config_dir"`       // 要同步的本地配置目录，默认 config（自动排除 local.yaml），与 config_files 互斥
+	ConfigFiles     []string        `yaml:"config_files"`     // 该环境按顺序叠加加载的本地配置文件列表（例如 [config/app.yaml, config/prod.yaml]）；精确同步并自动传入 --config
 	MaintenanceFile string          `yaml:"maintenance_file"` // 反向代理维护页标记文件路径，可选
 	MigrateHost     string          `yaml:"migrate_host"`     // 执行预检与数据库迁移的主机地址，可选
 	Hosts           []string        `yaml:"hosts"`            // 单机或同构简写：所有主机运行 all
@@ -97,23 +98,48 @@ type Wave struct {
 	MaxParallel int      `json:"max_parallel"` // 本波次最大并发切换数
 }
 
+// ConfigFile 描述一个按清单同步的本地配置文件及其在远端发布目录中的映射路径。
+type ConfigFile struct {
+	LocalPath  string `json:"local_path"`  // 本地相对路径，例如 config/prod.yaml
+	ArchiveRel string `json:"archive_rel"` // 远端 releases/<version>/config 内的相对路径，例如 prod.yaml
+	RemotePath string `json:"remote_path"` // 远端工作目录下的相对路径，例如 config/prod.yaml
+}
+
 // Target 是补齐默认值、按主机归并角色并通过校验的单个部署环境。
 type Target struct {
-	App              string          `json:"app"`              // 应用与二进制名称
-	Arch             string          `json:"arch,omitempty"`   // 目标架构，为空表示由远端 uname -m 探测
-	KeepReleases     int             `json:"keep_releases"`    // 保留的历史发布目录数量
-	EnvName          string          `json:"env"`              // 当前选中的环境名
-	User             string          `json:"user"`             // SSH 登录用户
-	Port             int             `json:"port,omitempty"`   // SSH 端口
-	IdentityFile     string          `json:"-"`                // SSH 私钥路径（不输出到结构化拓扑）
-	ServiceUser      string          `json:"service_user"`     // 运行应用的系统用户
-	Dir              string          `json:"dir"`              // 远端部署目录
-	EnvFile          string          `json:"env_file"`         // 远端环境变量文件路径
-	ConfigDir        string          `json:"config_dir"`       // 本地配置目录
-	MaintenanceFile  string          `json:"maintenance_file"` // 维护页标记文件路径
-	Roles            map[string]Role `json:"roles"`            // 标准化后的角色拓扑
-	Hosts            []Host          `json:"hosts"`            // 按主机去重归并后的主机列表
-	MigrateHostIndex int             `json:"-"`                // 主迁移节点在 Hosts 中的下标
+	App              string          `json:"app"`                    // 应用与二进制名称
+	Arch             string          `json:"arch,omitempty"`         // 目标架构，为空表示由远端 uname -m 探测
+	KeepReleases     int             `json:"keep_releases"`          // 保留的历史发布目录数量
+	EnvName          string          `json:"env"`                    // 当前选中的环境名
+	User             string          `json:"user"`                   // SSH 登录用户
+	Port             int             `json:"port,omitempty"`         // SSH 端口
+	IdentityFile     string          `json:"-"`                      // SSH 私钥路径（不输出到结构化拓扑）
+	ServiceUser      string          `json:"service_user"`           // 运行应用的系统用户
+	Dir              string          `json:"dir"`                    // 远端部署目录
+	EnvFile          string          `json:"env_file"`               // 远端环境变量文件路径
+	ConfigDir        string          `json:"config_dir,omitempty"`   // 本地配置目录（未配置 config_files 时生效）
+	ConfigFiles      []ConfigFile    `json:"config_files,omitempty"` // 按顺序叠加加载的配置文件清单
+	MaintenanceFile  string          `json:"maintenance_file"`       // 维护页标记文件路径
+	Roles            map[string]Role `json:"roles"`                  // 标准化后的角色拓扑
+	Hosts            []Host          `json:"hosts"`                  // 按主机去重归并后的主机列表
+	MigrateHostIndex int             `json:"-"`                      // 主迁移节点在 Hosts 中的下标
+}
+
+// RemoteConfigFiles 返回远端工作目录下按顺序加载的配置文件路径列表。
+func (t Target) RemoteConfigFiles() []string {
+	if len(t.ConfigFiles) == 0 {
+		return nil
+	}
+	out := make([]string, len(t.ConfigFiles))
+	for i, f := range t.ConfigFiles {
+		out[i] = f.RemotePath
+	}
+	return out
+}
+
+// ConfigFlagValue 返回传给应用 --config 选项的逗号分隔路径列表；未配置 config_files 时返回空字符串。
+func (t Target) ConfigFlagValue() string {
+	return strings.Join(t.RemoteConfigFiles(), ",")
 }
 
 // MigrateHost 返回执行预检与数据库迁移的主节点。
@@ -231,6 +257,7 @@ type EnvTopology struct {
 	ServiceUser     string          `json:"service_user"`               // 服务用户
 	Dir             string          `json:"dir"`                        // 部署目录
 	EnvFile         string          `json:"env_file"`                   // 远端环境变量路径
+	ConfigFiles     []string        `json:"config_files,omitempty"`     // 按顺序叠加加载的配置文件列表
 	MigrateHost     string          `json:"migrate_host"`               // 主迁移节点
 	MaintenanceFile string          `json:"maintenance_file,omitempty"` // 维护页标记文件路径
 	Roles           map[string]Role `json:"roles"`                      // 角色定义
@@ -272,6 +299,7 @@ func LoadTopology(filePath, defaultApp string) (Topology, error) {
 			ServiceUser:     t.ServiceUser,
 			Dir:             t.Dir,
 			EnvFile:         t.EnvFile,
+			ConfigFiles:     t.RemoteConfigFiles(),
 			MigrateHost:     t.MigrateHost().Addr,
 			MaintenanceFile: t.MaintenanceFile,
 			Roles:           t.Roles,
@@ -342,7 +370,14 @@ func Parse(data []byte, defaultApp, envName string) (Target, error) {
 	if env.EnvFile == "" {
 		env.EnvFile = path.Join("/etc", app, "env")
 	}
-	if env.ConfigDir == "" {
+	if len(env.ConfigFiles) > 0 && strings.TrimSpace(env.ConfigDir) != "" {
+		return Target{}, fmt.Errorf("deploy: environment %q cannot set both config_dir and config_files", selected)
+	}
+	configFiles, err := parseConfigFiles(selected, env.ConfigFiles)
+	if err != nil {
+		return Target{}, err
+	}
+	if len(configFiles) == 0 && env.ConfigDir == "" {
 		env.ConfigDir = "config"
 	}
 	for name, val := range map[string]string{
@@ -420,6 +455,7 @@ func Parse(data []byte, defaultApp, envName string) (Target, error) {
 		Dir:              env.Dir,
 		EnvFile:          env.EnvFile,
 		ConfigDir:        env.ConfigDir,
+		ConfigFiles:      configFiles,
 		MaintenanceFile:  env.MaintenanceFile,
 		Roles:            roles,
 		Hosts:            hosts,
@@ -561,6 +597,44 @@ func sortedKeys(m map[string]Environment) []string {
 	}
 	slices.Sort(keys)
 	return keys
+}
+
+// parseConfigFiles 校验并规范化 config_files 清单，计算每个文件在远端发布目录与工作目录中的映射路径。
+func parseConfigFiles(envName string, raw []string) ([]ConfigFile, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	out := make([]ConfigFile, 0, len(raw))
+	seen := make(map[string]bool, len(raw))
+	for _, item := range raw {
+		s := strings.TrimSpace(item)
+		if s == "" || strings.ContainsAny(s, " \t\r\n\x00,") {
+			return nil, fmt.Errorf("deploy: environment %q config_files entry %q is invalid", envName, item)
+		}
+		slashed := strings.ReplaceAll(s, `\`, "/")
+		if strings.HasPrefix(slashed, "/") || strings.HasSuffix(slashed, "/") {
+			return nil, fmt.Errorf("deploy: environment %q config_files entry %q must be a relative file path", envName, item)
+		}
+		cleaned := path.Clean(slashed)
+		if cleaned == "." || cleaned == ".." || strings.HasPrefix(cleaned, "../") || cleaned == "config" {
+			return nil, fmt.Errorf("deploy: environment %q config_files entry %q escapes project directory", envName, item)
+		}
+		archiveRel := cleaned
+		if after, ok := strings.CutPrefix(cleaned, "config/"); ok {
+			archiveRel = after
+		}
+		remotePath := path.Join("config", archiveRel)
+		if seen[remotePath] {
+			return nil, fmt.Errorf("deploy: environment %q has duplicate remote config path %q", envName, remotePath)
+		}
+		seen[remotePath] = true
+		out = append(out, ConfigFile{
+			LocalPath:  cleaned,
+			ArchiveRel: archiveRel,
+			RemotePath: remotePath,
+		})
+	}
+	return out, nil
 }
 
 // sortedRoleNames 返回角色名排序后的列表。

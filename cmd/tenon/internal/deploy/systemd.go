@@ -25,10 +25,14 @@ func DropInPath(app, part string) string {
 }
 
 // RenderUnit 生成与 Tenon 文档一致的 systemd 模板 unit 内容，启用 Type=notify-reload 与 RuntimeDirectory
-// 以支持 command.Daemon 的零停机热升级。
+// 以支持 command.Daemon 的零停机热升级；配置了 config_files 时自动附加 --config 参数。
 func RenderUnit(t Target) string {
 	bin := path.Join(t.Dir, "bin", t.App)
 	storage := path.Join(t.Dir, "storage")
+	execStart := bin + " serve %i"
+	if cfgFlag := t.ConfigFlagValue(); cfgFlag != "" {
+		execStart = fmt.Sprintf("%s --config %s serve %%i", bin, cfgFlag)
+	}
 	return fmt.Sprintf(`[Unit]
 Description=%s %%i
 After=network-online.target
@@ -42,7 +46,7 @@ PIDFile=/run/%s/%%i/daemon.pid
 User=%s
 WorkingDirectory=%s
 EnvironmentFile=%s
-ExecStart=%s serve %%i
+ExecStart=%s
 Restart=on-failure
 RestartSec=5s
 RestartPreventExitStatus=2 3
@@ -54,7 +58,7 @@ PrivateTmp=yes
 
 [Install]
 WantedBy=multi-user.target
-`, t.App, t.App, t.App, t.ServiceUser, t.Dir, t.EnvFile, bin, storage)
+`, t.App, t.App, t.App, t.ServiceUser, t.Dir, t.EnvFile, execStart, storage)
 }
 
 // RenderDropIn 渲染单个服务部分的 systemd drop-in（override.conf），仅包含非空覆盖项。
@@ -115,7 +119,32 @@ func syncDropIns(ctx context.Context, r Runner, t Target, h Host) error {
 	return nil
 }
 
-// systemdRunCommand 构造以服务用户、环境变量文件和工作目录运行一次性命令的 shell 语句。
+// syncUnit 在目标主机按需同步 systemd 模板 unit 文件，内容变化时写入并执行 daemon-reload，返回是否发生了更新。
+func syncUnit(ctx context.Context, r Runner, t Target, h Host) (bool, error) {
+	unitPath := TemplateUnitPath(t.App)
+	content := RenderUnit(t)
+	script := fmt.Sprintf(`set -e
+tmp=$(mktemp)
+trap 'rm -f "$tmp"' EXIT
+cat > "$tmp"
+if ! sudo cmp -s "$tmp" %s; then
+  sudo install -m 644 -o root -g root "$tmp" %s
+  sudo systemctl daemon-reload
+  echo updated
+fi`, shellQuote(unitPath), shellQuote(unitPath))
+	var out, errBuf strings.Builder
+	if err := r.Run(ctx, h, script, strings.NewReader(content), &out, &errBuf); err != nil {
+		msg := strings.TrimSpace(errBuf.String())
+		if msg != "" {
+			return false, fmt.Errorf("[%s] 同步 %s 失败: %w: %s", h.Addr, unitPath, err, msg)
+		}
+		return false, fmt.Errorf("[%s] 同步 %s 失败: %w", h.Addr, unitPath, err)
+	}
+	return strings.TrimSpace(out.String()) == "updated", nil
+}
+
+// systemdRunCommand 构造以服务用户、环境变量文件和工作目录运行一次性命令的 shell 语句；
+// 配置了 config_files 且调用方未显式传入 --config 时自动附加 --config 参数。
 func systemdRunCommand(t Target, workDir string, argv ...string) string {
 	parts := []string{
 		"sudo", "systemd-run", "--wait", "--pipe", "--quiet",
@@ -123,8 +152,27 @@ func systemdRunCommand(t Target, workDir string, argv ...string) string {
 		"-p", "EnvironmentFile=" + shellQuote(t.EnvFile),
 		"-p", "WorkingDirectory=" + shellQuote(workDir),
 	}
-	for _, a := range argv {
-		parts = append(parts, shellQuote(a))
+	if len(argv) > 0 {
+		parts = append(parts, shellQuote(argv[0]))
+		if cfgFlag := t.ConfigFlagValue(); cfgFlag != "" && !hasConfigFlag(argv[1:]) {
+			parts = append(parts, shellQuote("--config"), shellQuote(cfgFlag))
+		}
+		for _, a := range argv[1:] {
+			parts = append(parts, shellQuote(a))
+		}
 	}
 	return strings.Join(parts, " ")
+}
+
+// hasConfigFlag 报告参数列表中是否已显式传入 --config 选项。
+func hasConfigFlag(args []string) bool {
+	for _, a := range args {
+		if a == "--" {
+			return false
+		}
+		if a == "--config" || strings.HasPrefix(a, "--config=") {
+			return true
+		}
+	}
+	return false
 }
