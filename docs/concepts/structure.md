@@ -244,4 +244,4 @@ SQL 迁移文件，由 `embed.go` 嵌入程序，部署时用 `migrate up` 执�
 | `webhook` | 按 Standard Webhooks 推送事件 | [Webhook](../features/webhooks.md) |
 | `search` | PostgreSQL 全文搜索 | [全文搜索](../features/search.md) |
 | `vector` | Qdrant 向量检索 | [向量检索](../ai/vector.md) |
-| `ai`、`ai/chat` | 模型能力接口；对话式 agent | [AI 助手](../ai/chat.md) |
+| `ai`、`ai/chat`、`ai/router` | 模型能力接口；对话式 agent；智能模型路由 | [AI 助手](../ai/chat.md) |
