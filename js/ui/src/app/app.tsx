@@ -240,6 +240,8 @@ export function createApp<TRouteTree extends AnyRoute>(options: AppOptions<TRout
   }
   const Outer = options.router?.Wrap
   const router = createRouter({
+    // 默认悬停预加载目标路由模块，应用可通过 options.router.defaultPreload 覆盖。
+    defaultPreload: "intent",
     ...options.router,
     // 默认的错误组件先报告错误，再显示外观层的组件（没有时是 TanStack Router 的默认组件）。
     defaultErrorComponent: reporting(options.router?.defaultErrorComponent ?? ErrorComponent),

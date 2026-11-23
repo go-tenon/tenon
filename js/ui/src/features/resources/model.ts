@@ -11,10 +11,11 @@ import {
   pickLanguage,
   type Schema,
 } from "@go-tenon/client"
-import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { keepPreviousData, type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useCallback, useMemo } from "react"
 import { useCan } from "../../app/app"
 import { type ListRoute, type ListSearch, type ListState, listSearch, useList } from "../../components/data-table/list"
+import { useSmoothTransition } from "../../components/loading"
 
 /** 客户端方法的位置：[分组, 方法]，没有分组时分组为 null。 */
 export type OperationRef = readonly [string | null, string]
@@ -509,15 +510,20 @@ export interface ResourceList {
 export function useResourceList(model: ResourceModel, route: ListRoute<Record<string, unknown>>): ResourceList {
   const list = useList(route)
   const can = useCan()
-  // 换筛选、翻页、排序时总是向服务器读最新的，读取中显示加载状态；不用各自缓存的旧数据（例如刚删掉的一行不会又出现）。
-  const query = useQuery({ ...model.listQuery(list.params), gcTime: 0 })
-  const page = query.data as ListResponse | undefined
+  // 换筛选、翻页、排序时总是向服务器读最新的，读取中暂留旧行并展示统一最短时长的加载态，慢请求自动延长。
+  const query = useQuery({ ...model.listQuery(list.params), gcTime: 0, placeholderData: keepPreviousData })
+  const transition = useSmoothTransition(
+    query.data as ListResponse | undefined,
+    JSON.stringify(list.params),
+    query.isFetching,
+  )
+  const page = transition.data
   return {
     model,
     list,
     rows: page?.items ?? [],
     total: page?.total,
-    loading: query.isPending,
+    loading: (query.isPending && !page) || transition.busy,
     error: query.error,
     can: {
       create: model.allowed(can, "create"),

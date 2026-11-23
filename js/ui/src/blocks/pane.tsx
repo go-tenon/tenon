@@ -18,6 +18,7 @@ import {
 import { useOptionalApp } from "../app/app"
 import { useNavControl } from "../app/layout"
 import { noAccount } from "../app/snapshot"
+import { LoadingOverlay } from "../components/loading"
 import { useText } from "../i18n/i18n"
 
 const noopSubscribe = () => () => {}
@@ -339,16 +340,25 @@ export function PaneToolbar({ gap = 8, className, style, children }: PaneToolbar
 
 /** PaneBody 的选项。 */
 export interface PaneBodyProps {
+  /** 是否在当前可见视口内叠加轻磨砂加载覆层与居中转圈。 */
+  loading?: boolean
   className?: string
   style?: CSSProperties
   children: ReactNode
 }
 
-/** 面板主滚动区：占据顶栏与工具条之外的剩余高度并独立纵向滚动。 */
-export function PaneBody({ className, style, children }: PaneBodyProps): ReactNode {
-  return (
+/** 面板主滚动区：占据顶栏与工具条之外的剩余高度并独立纵向滚动；传入 loading 时在可见视口中央显示加载覆层。 */
+export function PaneBody({ loading, className, style, children }: PaneBodyProps): ReactNode {
+  const body = (
     <Box className={className ? `tn-pane-body ${className}` : "tn-pane-body"} style={style}>
       {children}
     </Box>
+  )
+  if (loading === undefined) return body
+  return (
+    <div className="tn-pane-body-shell" aria-busy={loading || undefined}>
+      {body}
+      <LoadingOverlay visible={loading} />
+    </div>
   )
 }

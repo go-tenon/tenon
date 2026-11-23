@@ -298,6 +298,7 @@ import { Pane, PaneBody, PaneHeader, PaneToolbar } from "@go-tenon/ui"
 - `Pane` 不传 `width` 和 `resizable` 时自动占满剩余宽度；传入 `resizable` 时内建鼠标拖拽、方向键微调（Shift 加速）和双击 / Home 恢复默认，并通过 `app.storage` 按账号持久化栏宽。需要直接读取宽度状态时使用 `useResizableWidth`。
 - `PaneHeader` 的 `showNavToggle` 在布局二级导航收起时自动显示展开按钮，`back` 显示返回按钮；窄屏允许内容折行时传 `fixed={false}`。
 - `PaneToolbar` 自动开启 `data-tn-density="dense"`，内部的输入框、按钮与分段切换保持 30px 高度和 13px 字号。
+- `PaneBody` 传入 `loading` 时，在当前可见视口中央叠加轻磨砂加载覆层与转圈，适合配合 [`useSmoothTransition`](lists-forms.md#loading-transition) 处理全栏筛选刷新。
 
 <a id="custom-layouts"></a>
 ## 自己写布局

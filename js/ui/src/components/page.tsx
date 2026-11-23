@@ -8,6 +8,7 @@ import { Link, useNavigate, useSearch } from "@tanstack/react-router"
 import { createContext, type ReactNode, useContext, useRef } from "react"
 import { useNavigation } from "../app/layout"
 import { useText } from "../i18n/i18n"
+import { LoadingStage, useSmoothTransition } from "./loading"
 
 const PageBreadcrumbsContext = createContext(true)
 
@@ -109,14 +110,15 @@ export function Page({
   )
 }
 
-/** 页内标签：当前的标签记在地址中；打开过的标签才渲染，之后保留状态。 */
+/** 页内标签：当前的标签记在地址中；切换时展示统一短时轻磨砂过渡，打开过的标签保留状态。 */
 function PageTabs({ tabs }: { tabs: PageTab[] }): ReactNode {
   const search = useSearch({ strict: false }) as Record<string, unknown>
   const navigate = useNavigate()
   const first = tabs[0].value
   const current = tabs.some((t) => t.value === search.tab) ? (search.tab as string) : first
+  const { data: shown, busy } = useSmoothTransition(current, current, false)
   const visited = useRef(new Set<string>())
-  visited.current.add(current)
+  visited.current.add(shown)
   const select = (value: string | null) => {
     if (!value || value === current) return
     void navigate({
@@ -144,11 +146,18 @@ function PageTabs({ tabs }: { tabs: PageTab[] }): ReactNode {
           </Tabs.Tab>
         ))}
       </Tabs.List>
-      {tabs.map((t) => (
-        <Tabs.Panel key={t.value} value={t.value} pt="md">
-          {visited.current.has(t.value) ? t.content : null}
-        </Tabs.Panel>
-      ))}
+      <LoadingStage loading={busy}>
+        {tabs.map((t) => (
+          <div
+            key={t.value}
+            role="tabpanel"
+            hidden={t.value !== shown}
+            style={{ paddingTop: "var(--mantine-spacing-md)" }}
+          >
+            {visited.current.has(t.value) ? t.content : null}
+          </div>
+        ))}
+      </LoadingStage>
     </Tabs>
   )
 }
