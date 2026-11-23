@@ -3,9 +3,11 @@ package dev
 import (
 	"github.com/go-tenon/tenon/cmd/tenon/internal/project"
 
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -194,5 +196,58 @@ func TestDevLog(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(LogFile); string(b) != "after\n" {
 		t.Fatalf("log after the limit = %q", b)
+	}
+}
+
+// SetupWorktree 在设置了 EnvWorktreeSetup 且缺少 config/local.yaml 时执行初始化脚本；
+// 环境变量为空或 config/local.yaml 已存在时跳过，脚本失败时返回错误。
+func TestSetupWorktree(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses POSIX shell script")
+	}
+	dir := t.TempDir()
+	var out, errOut bytes.Buffer
+
+	// 未设置环境变量时直接跳过。
+	t.Setenv(EnvWorktreeSetup, "")
+	if err := SetupWorktree(t.Context(), dir, &out, &errOut); err != nil {
+		t.Fatalf("unset env: %v", err)
+	}
+
+	// 设置初始化脚本且缺少 config/local.yaml 时执行脚本。
+	marker := filepath.Join(dir, "runs")
+	script := filepath.Join(t.TempDir(), "wt-setup.sh")
+	body := "#!/bin/sh\nset -e\necho run >> " + marker + "\nmkdir -p config\nprintf 'http:\\n  addr: \":18080\"\\n' > config/local.yaml\necho ok\n"
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(EnvWorktreeSetup, script)
+	if err := SetupWorktree(t.Context(), dir, &out, &errOut); err != nil {
+		t.Fatalf("first run: %v", err)
+	}
+	if !strings.Contains(out.String(), "ok") {
+		t.Errorf("stdout = %q, want ok", out.String())
+	}
+	if got, _ := os.ReadFile(marker); strings.TrimSpace(string(got)) != "run" {
+		t.Fatalf("marker = %q, want single run", got)
+	}
+
+	// config/local.yaml 已存在时直接跳过。
+	if err := SetupWorktree(t.Context(), dir, &out, &errOut); err != nil {
+		t.Fatalf("second run: %v", err)
+	}
+	if got, _ := os.ReadFile(marker); strings.TrimSpace(string(got)) != "run" {
+		t.Fatalf("marker after second run = %q, want unchanged", got)
+	}
+
+	// 脚本退出非零时向上返回错误。
+	failDir := t.TempDir()
+	failScript := filepath.Join(t.TempDir(), "fail.sh")
+	if err := os.WriteFile(failScript, []byte("#!/bin/sh\necho boom >&2\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(EnvWorktreeSetup, failScript)
+	if err := SetupWorktree(t.Context(), failDir, &out, &errOut); err == nil {
+		t.Fatal("expected error from failing setup script")
 	}
 }

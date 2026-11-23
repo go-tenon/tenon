@@ -16,7 +16,7 @@
 
 ## 运行测试
 
-一部分测试需要真实的 PostgreSQL、Redis、NATS、Gotenberg 和 Qdrant，没有设置下面的环境变量时这些测试直接失败。`compose.test.yml` 启动这些服务，版本与 CI 相同，`--wait` 等到它们全部就绪才返回：
+一部分测试需要真实的 PostgreSQL、Redis、NATS、Gotenberg 和 Qdrant，没有设置下面的环境变量时这些测试直接失败。本机已通过环境变量接入常驻共享测试服务时，直接运行 `go test ./...`；需要临时拉起测试服务时用 `compose.test.yml`（版本与 CI 相同，`--wait` 等到它们全部就绪才返回）：
 
 ```bash
 docker compose -f compose.test.yml up -d --wait

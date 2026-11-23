@@ -13,7 +13,7 @@ description: 为 Tenon 应用写 Go 测试：业务动作的规则直接测 Hand
 2. **业务规则**：`db := dbtest.Open(t, migrations.FS)` 建一个已执行迁移的临时库，构造业务动作，用不同的 `identity.Subject` 调用 `Handle`，用 `errors.Is(err, article.ErrForbidden)` 检查业务错误。见 `tenon/docs/testing/testing.md#testing-actions`。
 3. **HTTP 入口**：用 `rest.New(chi.NewRouter(), ...)` 建一个测试用的 API，传入固定的令牌校验函数，调用模块的 `RegisterRoutes`；用 `httptest` 发请求，检查状态码和错误码（`auth.unauthenticated`、`auth.forbidden`、字段的验证错误）。在 `Handle` 之前就会被拒绝的请求，`db` 可以传 `nil`。见 `tenon/docs/testing/testing.md#http-tests`。
 4. **命令**：见 `tenon/docs/testing/testing.md#command-tests` 和 `tenon/docs/testing/testing.md#testing-action-commands`。
-5. **运行**：`go test ./...`。数据库测试需要 `POSTGRES_TEST_URL`，没有设置时直接失败，本机用 `compose.test.yml` 启动，见 `tenon/docs/testing/testing.md#running-database-tests-locally`。
+5. **运行**：`go test ./...`。数据库测试直接读取环境中的 `POSTGRES_TEST_URL`（指向本机常驻共享测试服务），缺失时立即失败；需要新建临时测试服务时，在用户明确要求后按 `tenon/docs/testing/testing.md#running-database-tests-locally` 用 `compose.test.yml` 启动。
 
 ## 要点
 

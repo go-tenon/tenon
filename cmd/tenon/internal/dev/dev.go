@@ -29,6 +29,33 @@ import (
 // DevConfig 是 tenon dev 写给应用的配置：各前端开发服务器的地址（dev_servers），追加在 serve 的 --config 之后。
 const DevConfig = ".tenon/dev.yaml"
 
+// EnvWorktreeSetup 指定工作区初始化脚本的路径。设置了该环境变量且目录缺少 config/local.yaml 时，
+// SetupWorktree 在 tenon dev 加载项目配置前执行该脚本，用于自动建库、建桶并生成本地覆盖配置。
+const EnvWorktreeSetup = "TENON_WT_SETUP"
+
+// localConfig 是各工作区用于隔离端口与本地覆盖的配置文件路径。
+const localConfig = "config/local.yaml"
+
+// SetupWorktree 在配置了 EnvWorktreeSetup 且 dir 中缺少 localConfig 时执行初始化脚本。
+// 环境变量未设置或 localConfig 已存在时直接返回 nil；脚本执行失败时返回错误。
+func SetupWorktree(ctx context.Context, dir string, out, errOut io.Writer) error {
+	script := strings.TrimSpace(os.Getenv(EnvWorktreeSetup))
+	if script == "" {
+		return nil
+	}
+	_, err := os.Stat(filepath.Join(dir, filepath.FromSlash(localConfig)))
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, fs.ErrNotExist) {
+		return errors.Wrap(err, "dev: stat "+localConfig)
+	}
+	cmd := exec.CommandContext(ctx, script)
+	cmd.Dir = dir
+	cmd.Stdout, cmd.Stderr = out, errOut
+	return errors.Wrapf(cmd.Run(), "dev: %s (%s)", EnvWorktreeSetup, script)
+}
+
 // Run 在当前目录运行开发模式，直到 ctx 取消；停止后运行工具的构建命令。clients 是同时运行的客户端，
 // 例如 Electron 桌面端，它们的页面来自前端的开发服务器。
 //
