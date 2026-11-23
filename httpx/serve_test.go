@@ -198,3 +198,130 @@ func TestServeOptions(t *testing.T) {
 		t.Fatalf("logs=%s", logs.String())
 	}
 }
+
+// TestServeOnReady 验证 OnReady 在服务器开始接收连接后被调用。
+func TestServeOnReady(t *testing.T) {
+	t.Parallel()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ready := make(chan struct{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- httpx.Serve(ctx, httpx.DefaultConfig(), ln, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = io.WriteString(w, "ready")
+		}), httpx.OnReady(func() { close(ready) }))
+	}()
+	select {
+	case <-ready:
+	case <-time.After(2 * time.Second):
+		t.Fatal("OnReady not called")
+	}
+	resp, err := http.Get("http://" + ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if string(body) != "ready" {
+		t.Fatalf("body = %q, want ready", body)
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestServeDrainDelayAndConnectionClose 验证 DrainDelay 期间就绪检查返回 503、业务请求照常返回且带 Connection: close，
+// 以及 SkipDrainDelay 为真时立即跳过摘流等待。
+func TestServeDrainDelayAndConnectionClose(t *testing.T) {
+	t.Parallel()
+	t.Run("waits drain delay and sets connection close", func(t *testing.T) {
+		t.Parallel()
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		mux := http.NewServeMux()
+		mux.Handle("/readyz", httpx.Ready(httpx.ReadyOptions{}))
+		mux.HandleFunc("/ping", func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = io.WriteString(w, "pong")
+		})
+		cfg := httpx.DefaultConfig()
+		cfg.DrainDelay = 200 * time.Millisecond
+		ready := make(chan struct{})
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() {
+			done <- httpx.Serve(ctx, cfg, ln, mux, httpx.OnReady(func() { close(ready) }))
+		}()
+		<-ready
+
+		began := time.Now()
+		cancel()
+		time.Sleep(30 * time.Millisecond)
+
+		// 摘流期间 /readyz 返回 503，普通请求照常返回 200 且响应头带 Connection: close。
+		r1, err := http.Get("http://" + ln.Addr().String() + "/readyz")
+		if err != nil {
+			t.Fatal(err)
+		}
+		r1.Body.Close()
+		if r1.StatusCode != http.StatusServiceUnavailable {
+			t.Fatalf("/readyz status = %d, want 503", r1.StatusCode)
+		}
+		conn, err := net.Dial("tcp", ln.Addr().String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer conn.Close()
+		if _, err := io.WriteString(conn, "GET /ping HTTP/1.1\r\nHost: test\r\n\r\n"); err != nil {
+			t.Fatal(err)
+		}
+		_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		raw, err := io.ReadAll(conn)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(raw), "Connection: close") || !strings.HasSuffix(string(raw), "pong") {
+			t.Fatalf("draining response = %q, want Connection: close and pong", raw)
+		}
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+		if took := time.Since(began); took < 180*time.Millisecond {
+			t.Fatalf("Serve returned after %v, want >= DrainDelay", took)
+		}
+	})
+
+	t.Run("skips drain delay on handover", func(t *testing.T) {
+		t.Parallel()
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		cfg := httpx.DefaultConfig()
+		cfg.DrainDelay = 2 * time.Second
+		ready := make(chan struct{})
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() {
+			done <- httpx.Serve(ctx, cfg, ln, http.NotFoundHandler(),
+				httpx.OnReady(func() { close(ready) }),
+				httpx.SkipDrainDelay(func() bool { return true }),
+			)
+		}()
+		<-ready
+		began := time.Now()
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+		if took := time.Since(began); took > 500*time.Millisecond {
+			t.Fatalf("Serve took %v, expected SkipDrainDelay to skip 2s wait", took)
+		}
+	})
+}

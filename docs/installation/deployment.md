@@ -239,7 +239,7 @@ done
 收到 `SIGTERM` 后，程序停止接收新请求，等处理中的请求、队列任务和定时任务完成，最后关闭数据库，见[应用生命周期](../concepts/lifecycle.md#graceful-shutdown)。
 
 - 信号要到达程序：用包装脚本启动时最后一行写 `exec ./bin/blog serve`。
-- systemd 的 `TimeoutStopSec` 要比程序的最长等待时间长：程序最多等 `http.shutdown_timeout`（默认 10 秒）、`queue.shutdown_timeout`（默认 30 秒）、`schedule.shutdown_timeout`（默认 30 秒）中最长的一项，使用 [AI 对话](../ai/chat.md#deployment)时再加上回答说完的时间。
+- systemd 的 `TimeoutStopSec` 要比程序的最长等待时间长：程序最多等 `http.drain_delay + http.shutdown_timeout`（默认 `0s + 10s`）、`queue.shutdown_timeout`（默认 30 秒）、`schedule.shutdown_timeout`（默认 30 秒）中最长的一项，使用 [AI 对话](../ai/chat.md#deployment)时再加上回答说完的时间。
 
 超时被强制结束时，没有完成的队列任务在其他实例上重新执行，错过的定时任务等下一次触发。
 
@@ -249,8 +249,80 @@ done
 - 在 `http.client_ip.trusted_proxies` 中填写代理的网段，程序才能读出用户的真实地址，见[可信代理](../http/middleware.md#trusted-proxies)。
 - 保留原始的 `Host`（包括端口）：nginx 写 `proxy_set_header Host $http_host;`。`$host` 丢掉端口，生成的链接和[实时频道](../libraries/realtime.md)的来源检查会出错。
 - 全站 HTTPS 后在代理上加 HSTS：`add_header Strict-Transport-Security "max-age=31536000" always;`。
-- [服务端推送](../http/sse.md#deployment)需要代理启用 HTTP/2。
+- 代理到后端的 `keepalive_timeout` 设为短于后端的 `http.idle_timeout`（默认 `1m`，例如代理设 `30s`），降低高并发热重载时复用已关闭空闲连接触发 502 的概率。
+- [服务端推送](../http/sse.md#deployment)和流式输出需要代理启用 HTTP/2 并关闭响应缓冲。
 - 前面没有代理时，安装 [httpx.Compress](../http/middleware.md#compression) 压缩响应。
+
+<a id="nginx-config"></a>
+### Nginx 配置示例
+
+```nginx
+upstream blog_backend {
+    server 127.0.0.1:8080 max_fails=3 fail_timeout=10s;
+    # 多机部署时追加其余节点；配合 http.drain_delay 与 /readyz 摘流
+    keepalive 64;
+    keepalive_timeout 30s; # 短于后端 http.idle_timeout（默认 1m）
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/example.com/privkey.pem;
+    add_header Strict-Transport-Security "max-age=31536000" always;
+
+    client_max_body_size 32m; # 与 http.body_limit 或上传上限一致
+
+    location / {
+        proxy_pass http://blog_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-ID $request_id;
+
+        proxy_buffering off;       # 流式输出与 SSE 实时透传
+        proxy_read_timeout 300s;
+        proxy_next_upstream error timeout invalid_header http_502 http_503 http_504;
+    }
+}
+```
+
+- 代理与后端在同一台机器时，应用配置 `http.client_ip.trusted_proxies: ["127.0.0.1/32"]`。
+- 启用 WebSocket（[实时频道](../libraries/realtime.md)）时，在对应 `location` 设置 `proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection "upgrade";`。
+- 需要维护窗口时叠加 [503 维护页规则](operations.md#maintenance-at-the-proxy)。
+
+<a id="caddy-config"></a>
+### Caddy 配置示例
+
+```caddyfile
+example.com {
+    header Strict-Transport-Security "max-age=31536000"
+    encode zstd gzip
+
+    reverse_proxy 127.0.0.1:8080 {
+        # 多机部署时列出多个后端地址：reverse_proxy 10.0.1.11:8080 10.0.1.12:8080
+        health_uri /readyz
+        health_interval 5s
+        health_timeout 2s
+        flush_interval -1 # 流式输出与 SSE 实时刷新
+
+        header_up Host {http.request.hostport}
+        header_up X-Forwarded-Proto {scheme}
+
+        transport http {
+            keepalive 30s # 短于后端 http.idle_timeout（默认 1m）
+            keepalive_idle_conns 64
+        }
+    }
+}
+```
+
+- Caddy 自动申请并续期 HTTPS 证书、默认开启 HTTP/2 与 HTTP/3，并自动透传 `X-Forwarded-For` 与 WebSocket 升级头。
+- 多机部署时结合应用配置 `http.drain_delay: 8s`（大于 `health_interval`），节点停机前先通过 `/readyz` 返回 `503` 让 Caddy 摘流，再关闭监听。
 
 <a id="logging"></a>
 ## 日志

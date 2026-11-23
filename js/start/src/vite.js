@@ -44,23 +44,29 @@ export function frontendConfig(dir = process.cwd()) {
 /**
  * 返回 TanStack Start 的选项：ssr 为 false 时打开 SPA 模式，构建时生成页面外壳 _shell.html；
  * pages 是构建时渲染成 HTML 的页面。页面中的内联脚本带占位 nonce，Go 返回页面时换成本次请求的。
- * SPA 模式的页面外壳由首页 / 渲染而来，所以这时不能再预渲染 /。
+ * SPA 模式下同时预渲染首页 / 时，页面外壳改由 /_shell 渲染，避免与首页 / 冲突。
  *
  * @param {boolean} ssr
  * @param {string[]} pages
  * @returns {NonNullable<Parameters<typeof tanstackStart>[0]>}
  */
 export function startOptions(ssr, pages) {
-  if (!ssr && pages.includes("/")) {
-    throw new Error(
-      '@go-tenon/start: prerender "/" needs "ssr": true: without server rendering, / renders the page shell',
-    )
-  }
   const headers = { [HeaderNonce]: PrerenderNonce }
+  // SPA 外壳默认用 / 渲染；当同时预渲染首页 / 时，给外壳请求加上独立查询参数，
+  // 既命中存在的 / 路由返回 200，又避免与首页 / 在预渲染队列中去重冲突。
+  const shellPath = !ssr && pages.includes("/") ? "/?__tenon_shell=1" : "/"
   /** @param {string} path */
   const within = (path) => pages.some((p) => (p === "/" ? path === "/" : path === p || path.startsWith(`${p}/`)))
   return {
-    ...(ssr ? {} : { spa: { enabled: true, prerender: { headers } } }),
+    ...(ssr
+      ? {}
+      : {
+          spa: {
+            enabled: true,
+            ...(shellPath === "/" ? {} : { maskPath: shellPath }),
+            prerender: { headers },
+          },
+        }),
     ...(pages.length === 0
       ? {}
       : {
@@ -69,8 +75,8 @@ export function startOptions(ssr, pages) {
             enabled: true,
             crawlLinks: true,
             failOnError: true,
-            // SPA 模式下页面外壳的地址是 /，它同样要经过这个过滤。
-            filter: (/** @type {{ path: string }} */ page) => within(page.path) || (!ssr && page.path === "/"),
+            // SPA 模式下页面外壳的地址是 shellPath，它同样要经过这个过滤。
+            filter: (/** @type {{ path: string }} */ page) => within(page.path) || (!ssr && page.path === shellPath),
             headers,
           },
         }),

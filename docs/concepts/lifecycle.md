@@ -96,16 +96,18 @@
 `httpx.Serve` 在 `ln` 上运行 `router`，直到 `ctx` 被取消。`ln` 由 `command.Daemon` 的 `Listen` 取得，见[多个运行部分](dependencies.md#running-parts)；简单的程序用 `httpx.ListenAndServe` 自己监听 `cfg.Addr`：
 
 ```go
-err := httpx.Serve(ctx, cfg.HTTP, ln, router)
+ready := d.DeferReady()
+err := httpx.Serve(ctx, cfg.HTTP, ln, router, httpx.OnReady(ready), httpx.SkipDrainDelay(d.HandedOver))
 ```
 
 `ctx` 被取消时（收到停止信号，或[不停机升级](../installation/operations.md#zero-downtime-upgrades)时交给了新进程），`httpx.Serve` 按以下顺序停止：
 
-1. 开始排空：关闭 `httpx.DrainStarted(ctx)` 返回的通道，[就绪检查](#health-checks)从这一刻起返回 `503`，SSE 等长连接监听这个通道主动结束；
-2. 停止接收新连接，等待正在处理的请求完成；
-3. 超过 `http.shutdown_timeout`（默认 10 秒）仍未完成的请求，取消它们的 context 并强制关闭连接，日志中出现 `context canceled`。
+1. 开始排空：关闭 `httpx.DrainStarted(ctx)` 返回的通道，[就绪检查](#health-checks)从这一刻起返回 `503`，HTTP/1.x 响应自动附带 `Connection: close` 促使反向代理释放旧连接，SSE 等长连接监听这个通道主动结束；
+2. 若配置了 `http.drain_delay` 且不是热重载交接（`SkipDrainDelay` 为假），继续接收请求并等待该时长，让负载均衡通过 `/readyz` 把本实例摘除；
+3. 停止接收新连接，等已接收的连接读完请求头后排空在途请求；
+4. 超过 `http.shutdown_timeout`（默认 10 秒）仍未完成的请求，取消它们的 context 并强制关闭连接，日志中出现 `context canceled`。
 
-`httpx.Serve` 返回之后，入口才关闭数据库等资源。部署平台等待进程退出的时间要比 `http.shutdown_timeout` 长，见[部署](../installation/deployment.md#graceful-shutdown)。
+`httpx.Serve` 返回之后，入口才关闭数据库等资源。部署平台等待进程退出的时间要比 `http.drain_delay + http.shutdown_timeout` 长，见[部署](../installation/deployment.md#graceful-shutdown)。
 
 <a id="health-checks"></a>
 ## 健康检查：`/livez` 与 `/readyz`

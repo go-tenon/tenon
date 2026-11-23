@@ -9,7 +9,7 @@ import (
 // DefaultsOption 是 Defaults 的选项：Logger、Languages。
 type DefaultsOption interface{ applyDefaults(*defaultsOptions) }
 
-// ServeOption 是 Serve 和 ListenAndServe 的选项：Logger。
+// ServeOption 是 Serve 和 ListenAndServe 的选项：Logger、OnReady、SkipDrainDelay。
 type ServeOption interface{ applyServe(*serveOptions) }
 
 // defaultsOptions 是 Defaults 的选项。
@@ -20,7 +20,27 @@ type defaultsOptions struct {
 
 // serveOptions 是 Serve 的选项。
 type serveOptions struct {
-	logger *slog.Logger
+	logger         *slog.Logger
+	onReady        func()
+	skipDrainDelay func() bool
+}
+
+// serveOptionFunc 把函数适配为 ServeOption。
+type serveOptionFunc func(*serveOptions)
+
+// applyServe 应用选项函数。
+func (f serveOptionFunc) applyServe(s *serveOptions) { f(s) }
+
+// OnReady 登记服务器开始接收连接后的回调 fn（常传入 command.Daemon.DeferReady 返回的函数），
+// 让不停机升级在 SSR 等前置启动完成且 HTTP 开始接收连接后再向 systemd 报告就绪。
+func OnReady(fn func()) ServeOption {
+	return serveOptionFunc(func(s *serveOptions) { s.onReady = fn })
+}
+
+// SkipDrainDelay 登记在停机时判断是否跳过 cfg.DrainDelay 的函数 fn（常传入 command.Daemon.HandedOver）：
+// 返回 true 时立即关闭监听并排空，避免热重载交接等待负载均衡摘流。
+func SkipDrainDelay(fn func() bool) ServeOption {
+	return serveOptionFunc(func(s *serveOptions) { s.skipDrainDelay = fn })
 }
 
 // LoggerOption 指定日志记录器，既是 DefaultsOption 也是 ServeOption，见 Logger。

@@ -246,7 +246,7 @@ func TestHost(t *testing.T) {
 	case <-time.After(30 * time.Second):
 		t.Fatal("ssr not ready")
 	}
-	if !h.Ready() {
+	if !h.Ready() || h.Ping(context.Background()) != nil {
 		t.Fatal("serve started before the process was ready")
 	}
 
@@ -525,7 +525,7 @@ func TestTwoSSRFrontends(t *testing.T) {
 		}
 		return nil
 	})
-	if err != nil || h.Ready() {
+	if err != nil || h.Ready() || h.Ping(context.Background()) == nil {
 		t.Fatalf("run: %v, ready after Run %v", err, h.Ready())
 	}
 }

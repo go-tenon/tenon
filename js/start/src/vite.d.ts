@@ -7,7 +7,7 @@ export interface TenonOptions extends VersionPluginOptions {
   /**
    * 构建时预渲染的页面，例如官网首页 "/" 和文档 "/docs"：内容在代码仓库中、不随请求变化的页面。
    * 从这些页面出发跟随链接，同一前缀下的页面一起预渲染（"/" 只表示首页本身）。Go 直接返回预渲染的 HTML，
-   * 其余页面在请求时渲染。只在浏览器中渲染的前端（tenon.ssr 为 false）不能预渲染 "/"：页面外壳由它渲染而来。
+   * 其余页面在 SSR 模式下由服务端渲染，在 CSR 模式下返回页面外壳 _shell.html。
    */
   prerender?: string[]
 }

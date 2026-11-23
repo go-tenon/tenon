@@ -21,6 +21,7 @@ type Config struct {
 	ReadTimeout       time.Duration `yaml:"read_timeout"`        // 对应 http.Server 的 ReadTimeout
 	WriteTimeout      time.Duration `yaml:"write_timeout"`       // 对应 http.Server 的 WriteTimeout
 	IdleTimeout       time.Duration `yaml:"idle_timeout"`        // 对应 http.Server 的 IdleTimeout
+	DrainDelay        time.Duration `yaml:"drain_delay"`         // 停机时先让就绪检查返回 503、等负载均衡摘流再关闭监听的时间；0 表示立即关闭监听，热重载交接时由 SkipDrainDelay 跳过。
 	ShutdownTimeout   time.Duration `yaml:"shutdown_timeout"`    // 停机时排空请求的上限。
 	AcquireTimeout    time.Duration `yaml:"acquire_timeout"`     // 请求等待共享资源（例如空闲的数据库连接）的最长时间，超过时请求以 503 快速失败，见 acquire 包。0 表示不限制，等到请求超时为止。由 Defaults 中的 AcquireTimeout 中间件使用。
 
@@ -81,6 +82,9 @@ func (c Config) Validate() error {
 		if f.d <= 0 {
 			return errors.Newf("%s must be positive", f.name)
 		}
+	}
+	if c.DrainDelay < 0 {
+		return errors.New("drain_delay must not be negative")
 	}
 	if c.AcquireTimeout < 0 {
 		return errors.New("acquire_timeout must not be negative")

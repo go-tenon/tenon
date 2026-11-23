@@ -218,6 +218,7 @@ http:
   read_timeout: 30s
   write_timeout: 30s        # SSE 推送时不受它限制
   idle_timeout: 1m
+  drain_delay: 0s           # 停机时先让 /readyz 返回 503、等负载均衡摘流再关监听的时间（热重载交接时跳过）
   shutdown_timeout: 10s     # 停机时排空请求的上限
   acquire_timeout: 1s       # 等待空闲数据库连接的上限；0 表示等到请求超时
   request_id:
@@ -234,7 +235,7 @@ http:
   # cors 见跨域请求，app_version 见 App 最低版本
 ```
 
-- 除 `acquire_timeout` 外，超时和数值都必须为正数，否则加载配置时报错。
+- 除 `drain_delay` 和 `acquire_timeout`（允许为 `0`）外，超时和数值都必须为正数，否则加载配置时报错。
 - `httpx.Config` 放在应用的根配置结构体中，由 `config.Load` 填充默认值并校验。测试中从 `httpx.DefaultConfig()` 开始修改：`httpx.Config{}` 交给 `httpx.Defaults` 会 panic。
 
 <a id="request-id"></a>

@@ -16,8 +16,8 @@
 
 | 情况 | `ssr` | 页面怎样渲染 |
 | --- | --- | --- |
-| 后台、控制台：要登录，不需要搜索引擎收录 | `false` | Go 返回页面外壳 `_shell.html`（只含根布局），浏览器中的路由渲染页面。程序中不带 Bun，任何系统都能运行 |
-| 官网、文档、商品页：要被收录，首屏要快 | `true` | Bun 渲染好再返回，浏览器接着接管。只支持 Linux，见[限制](#limitations) |
+| 后台、控制台，或纯静态官网、文档站 | `false` | 预渲染的页面由 Go 直接返回静态 HTML，其余路径返回页面外壳 `_shell.html`。程序中不带 Bun，任何系统都能运行 |
+| 需按请求动态服务端渲染的官网、商品页或打印模板 | `true` | Bun 渲染好再返回，浏览器接着接管。只支持 Linux，见[限制](#limitations) |
 
 <a id="architecture"></a>
 ## 结构与构建产物 `apps/dist`
@@ -50,9 +50,10 @@ ln, err := d.Listen("tcp", a.cfg.HTTP.Addr)
 if err != nil {
     return nil, err
 }
+ready := d.DeferReady()
 return func(ctx context.Context) error {
     return pages.Run(ctx, func(ctx context.Context) error {
-        return httpx.Serve(ctx, a.cfg.HTTP, ln, router)
+        return httpx.Serve(ctx, a.cfg.HTTP, ln, router, httpx.OnReady(ready), httpx.SkipDrainDelay(d.HandedOver))
     })
 }, nil
 ```
@@ -143,7 +144,7 @@ export const Route = createFileRoute("/articles/$id")({
 改 `package.json` 中的 `ssr`，运行 `go tool tenon build`，Go 代码不用改。改了没有重新构建时，启动报 `server rendering needs dist/ssr` 或 `missing dist/<名称>/_shell.html`。
 
 - 没有前端在服务端渲染时，程序中不带 Bun，体积小约 100 MB。
-- 改为只在浏览器中渲染时，`prerender` 不能含 `"/"`：页面外壳由首页渲染而来，构建报错 `prerender "/" needs "ssr": true`。
+- 内容固定的官网与文档站可将 `ssr` 设为 `false` 并配合 `prerender: ["/", "/docs"]`，在构建时预渲染成静态 HTML，运行期由 Go 直接返回，不启动 Bun 进程。
 - 打印模板只能放在服务端渲染的前端中，见[渲染打印模板](#rendering)。
 - 服务端渲染的前端中，要登录的页面在路由上设置 `ssr: false`：读取当前用户、检查权限只在浏览器中进行。
 
@@ -157,8 +158,8 @@ export default defineConfig({ plugins: [tenon({ prerender: ["/", "/docs"] })] })
 ```
 
 - 从列出的页面跟随链接，同一前缀下的页面一起预渲染；`"/"` 只表示首页本身。
-- Go 直接返回预渲染的 HTML，其余页面在请求时渲染。
-- 只在浏览器中渲染的前端也能预渲染，`"/"` 除外。
+- Go 直接返回预渲染的 HTML，其余页面在 SSR 模式下由 Bun 渲染，在 CSR 模式下返回页面外壳 `_shell.html`。
+- `ssr: false` 同样支持预渲染 `"/"`：页面外壳改由独立路径渲染，不与首页冲突，适合零运行时的纯静态官网与文档站。
 
 <a id="lifecycle"></a>
 ## 启动与停止：`Run`、`Ready`
@@ -169,7 +170,8 @@ export default defineConfig({ plugins: [tenon({ prerender: ["/", "/docs"] })] })
 
 - 没有服务端渲染的前端或在开发模式下，`Run` 只调用传入的函数。
 - Bun 进程继承 Go 程序的环境变量，`Options.Env` 追加更多。
-- `Ready` 报告全部 Bun 进程是否就绪，可以放进就绪检查。设置 `Options.MeterProvider` 时，指标 `ssr.restarts` 按 `frontend` 记录重启次数。
+- `Ready` 与 `Ping` 报告全部 Bun 进程是否就绪，可将 `{Name: "frontend", Ping: pages.Ping}` 放进 `/readyz` 就绪检查。设置 `Options.MeterProvider` 时，指标 `ssr.restarts` 按 `frontend` 记录重启次数。
+- 配合 `d.DeferReady()` 与 `httpx.OnReady` 使用时，不停机升级会等 Bun 进程就绪且 HTTP 开始接收连接后再向旧进程交接，SSR 启动失败时旧进程继续服务。
 
 <a id="security"></a>
 ## 内容安全策略：`Options.CSP`

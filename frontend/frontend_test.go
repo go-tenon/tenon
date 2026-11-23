@@ -143,9 +143,9 @@ func TestStatic(t *testing.T) {
 		t.Fatalf("POST: %+v", r)
 	}
 
-	// 没有 SSR 前端：Run 只运行 serve，Render 报错。
+	// 没有 SSR 前端：Run 只运行 serve，Ready 为 true、Ping 返回 nil，Render 报错。
 	ran := false
-	if err := h.Run(context.Background(), func(context.Context) error { ran = true; return nil }); err != nil || !ran || !h.Ready() {
+	if err := h.Run(context.Background(), func(context.Context) error { ran = true; return nil }); err != nil || !ran || !h.Ready() || h.Ping(context.Background()) != nil {
 		t.Fatalf("run: %v %v", err, ran)
 	}
 	if _, err := h.Render(context.Background(), "web", "invoice", nil); err == nil || !strings.Contains(err.Error(), "server rendering") {
