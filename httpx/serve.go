@@ -1,6 +1,7 @@
 package httpx
 
 import (
+	"bufio"
 	"context"
 	"net"
 	"net/http"
@@ -44,8 +45,8 @@ func Serve(ctx context.Context, cfg Config, ln net.Listener, handler http.Handle
 	// draining 在排空开始时关闭，供 SSE 等长连接主动结束，见 DrainStarted。
 	draining := make(chan struct{})
 	srv := cfg.server(drainClose(draining, handler))
-	var fresh freshConns
-	srv.ConnState = fresh.track
+	var conns connTracker
+	srv.ConnState = conns.track
 
 	requestRoot, cancelRequests := context.WithCancel(context.WithValue(context.Background(), drainKey{}, draining))
 	defer cancelRequests()
@@ -76,15 +77,15 @@ func Serve(ctx context.Context, cfg Config, ln net.Listener, handler http.Handle
 	}
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 	// Shutdown 开始之后才读到的请求，net/http 直接关闭连接。所以先停止接收新连接，
-	// 等已经接收的连接读到第一个请求，再开始 Shutdown。升级时监听 socket 交给了新进程，
-	// 旧进程直到这一刻都在接收连接。
+	// 等已经接收的连接读到第一个请求，并给反向代理短暂宽限期消费 Connection: close 主动关闭旧的 keep-alive 连接，再开始 Shutdown。
 	if !returned {
 		_ = ln.Close()
 		serveErr = <-errc
 		if errors.Is(serveErr, net.ErrClosed) {
 			serveErr = nil
 		}
-		fresh.wait(shutdownCtx, cfg.ReadHeaderTimeout)
+		conns.waitFresh(shutdownCtx, cfg.ReadHeaderTimeout)
+		conns.waitIdleDrain(shutdownCtx, min(keepaliveDrainGrace, cfg.ShutdownTimeout/2))
 	}
 	shutdownErr := srv.Shutdown(shutdownCtx)
 	cancel()
@@ -97,6 +98,9 @@ func Serve(ctx context.Context, cfg Config, ln net.Listener, handler http.Handle
 	return errors.Join(errors.Wrap(serveErr, "httpx: serve"), errors.Wrap(shutdownErr, "httpx: shutdown"))
 }
 
+// keepaliveDrainGrace 是关闭监听之后、调用 Shutdown 之前，等待反向代理按 Connection: close 主动回收旧 keep-alive 连接的宽限上限。
+const keepaliveDrainGrace = 500 * time.Millisecond
+
 // drainKey 是排空通道在 context 中的键。
 type drainKey struct{}
 
@@ -108,54 +112,139 @@ func DrainStarted(ctx context.Context) <-chan struct{} {
 	return ch
 }
 
-// drainClose 包装 next：排空开始后为 HTTP/1.x 响应写入 Connection: close，促使反向代理及时释放旧进程的空闲连接。
+// drainClose 包装 next：排空开始后在写出 HTTP/1.x 响应头时自动写入 Connection: close，
+// 包括排空前已进入处理器、排空后才写响应头的在途请求，促使反向代理及时关闭旧进程的 keep-alive 连接。
+// 带 Upgrade 请求头的连接升级请求（例如 WebSocket）原样交给下一个处理器。
 func drainClose(draining <-chan struct{}, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.ProtoMajor == 1 {
-			select {
-			case <-draining:
-				w.Header().Set("Connection", "close")
-			default:
-			}
+		if r.ProtoMajor != 1 || r.Header.Get("Upgrade") != "" {
+			next.ServeHTTP(w, r)
+			return
 		}
-		next.ServeHTTP(w, r)
+		dw := &drainCloseWriter{ResponseWriter: w, draining: draining}
+		next.ServeHTTP(dw, r)
 	})
 }
 
-// freshConns 记录已经接收、还没读到第一个请求的连接。
-type freshConns struct {
-	mu    sync.Mutex
-	conns map[net.Conn]struct{}
+// drainCloseWriter 拦截 HTTP/1.x 响应头写出时机：若此时已进入排空，在写响应头前补上 Connection: close。
+type drainCloseWriter struct {
+	http.ResponseWriter
+	draining <-chan struct{}
+	wrote    bool
 }
 
-// track 随连接状态的变化记录还没读到第一个请求的连接。
-func (f *freshConns) track(c net.Conn, state http.ConnState) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if state != http.StateNew {
-		delete(f.conns, c)
+// markClose 在首次写出最终响应前检查是否已开始排空，是则写入 Connection: close。
+func (w *drainCloseWriter) markClose() {
+	if w.wrote {
 		return
 	}
-	if f.conns == nil {
-		f.conns = make(map[net.Conn]struct{})
+	w.wrote = true
+	select {
+	case <-w.draining:
+		w.Header().Set("Connection", "close")
+	default:
 	}
-	f.conns[c] = struct{}{}
 }
 
-// len 返回还没读到第一个请求的连接数。
-func (f *freshConns) len() int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return len(f.conns)
+// WriteHeader 写出状态码；1xx 信息响应直接透传，最终响应写出前按需附带 Connection: close。
+func (w *drainCloseWriter) WriteHeader(code int) {
+	if code >= 100 && code < 200 {
+		w.ResponseWriter.WriteHeader(code)
+		return
+	}
+	w.markClose()
+	w.ResponseWriter.WriteHeader(code)
 }
 
-// wait 等待全部连接读到第一个请求，最多等 limit：超过请求头读取时限的连接会被服务器关闭。
-func (f *freshConns) wait(ctx context.Context, limit time.Duration) {
+// Write 写出响应体前按需附带 Connection: close。
+func (w *drainCloseWriter) Write(p []byte) (int, error) {
+	w.markClose()
+	return w.ResponseWriter.Write(p)
+}
+
+// FlushError 供 http.ResponseController.Flush 使用，刷新前按需附带 Connection: close。
+func (w *drainCloseWriter) FlushError() error {
+	w.markClose()
+	return http.NewResponseController(w.ResponseWriter).Flush()
+}
+
+// Flush 实现 http.Flusher。
+func (w *drainCloseWriter) Flush() { _ = w.FlushError() }
+
+// Hijack 实现 http.Hijacker，将连接接管转发给底层 ResponseWriter。
+func (w *drainCloseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	return http.NewResponseController(w.ResponseWriter).Hijack()
+}
+
+// Unwrap 返回底层 ResponseWriter，透传 http.ResponseController 的扩展能力。
+func (w *drainCloseWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+// connTracker 追踪尚未读到第一个请求的连接（fresh）与尚未关闭的连接（open）。
+type connTracker struct {
+	mu    sync.Mutex
+	fresh map[net.Conn]struct{}
+	open  map[net.Conn]struct{}
+}
+
+// track 随连接状态的变化更新 fresh 与 open 集合。
+func (t *connTracker) track(c net.Conn, state http.ConnState) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	switch state {
+	case http.StateNew:
+		if t.fresh == nil {
+			t.fresh = make(map[net.Conn]struct{})
+		}
+		if t.open == nil {
+			t.open = make(map[net.Conn]struct{})
+		}
+		t.fresh[c] = struct{}{}
+		t.open[c] = struct{}{}
+	case http.StateClosed, http.StateHijacked:
+		delete(t.fresh, c)
+		delete(t.open, c)
+	default:
+		delete(t.fresh, c)
+	}
+}
+
+// freshLen 返回还没读到第一个请求的连接数。
+func (t *connTracker) freshLen() int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return len(t.fresh)
+}
+
+// openLen 返回尚未关闭的连接数。
+func (t *connTracker) openLen() int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return len(t.open)
+}
+
+// waitFresh 等待全部新连接读到第一个请求，最多等 limit：超过请求头读取时限的连接会被服务器关闭。
+func (t *connTracker) waitFresh(ctx context.Context, limit time.Duration) {
+	t.waitZero(ctx, limit, t.freshLen)
+}
+
+// waitIdleDrain 等待已打开的旧连接按 Connection: close 自行关闭，最多等 limit；全部关闭时立即返回。
+func (t *connTracker) waitIdleDrain(ctx context.Context, limit time.Duration) {
+	if limit <= 0 {
+		return
+	}
+	t.waitZero(ctx, limit, t.openLen)
+}
+
+// waitZero 轮询 count 归零或超时退出。
+func (t *connTracker) waitZero(ctx context.Context, limit time.Duration, count func() int) {
+	if count() == 0 {
+		return
+	}
 	ctx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
 	tick := time.NewTicker(5 * time.Millisecond)
 	defer tick.Stop()
-	for f.len() > 0 {
+	for count() > 0 {
 		select {
 		case <-ctx.Done():
 			return
