@@ -159,7 +159,15 @@ function base(m: LayoutMetrics): MantineThemeOverride {
       MultiSelect: { defaultProps: { size } },
       Checkbox: { defaultProps: { size: size === "md" ? "sm" : "xs" } },
       Switch: { defaultProps: { size: size === "md" ? "sm" : "xs" } },
-      SegmentedControl: { defaultProps: { size } },
+      SegmentedControl: {
+        defaultProps: {
+          size,
+          radius: "md",
+          withItemsBorders: false,
+          transitionDuration: 180,
+          transitionTimingFunction: "cubic-bezier(0.2, 0.8, 0.2, 1)",
+        },
+      },
       Card: { defaultProps: { withBorder: true, shadow: "none", padding: m.contentPadding } },
       Paper: { defaultProps: { withBorder: true, shadow: "none" } },
       Menu: { defaultProps: { shadow: "md", position: "bottom-end", offset: 6, transitionProps: { duration: 120 } } },
@@ -194,8 +202,11 @@ const compactDark: MantineColorsTuple = [
   "#0f1115",
 ]
 
-// compact 预设默认尺寸（sm）的按钮和输入框：32px 高、13px 字（Mantine 默认 36px、14px）。
-const compactControl = { height: "32px", fz: "13px" }
+// compact 预设默认尺寸（sm）的按钮和输入框：32px 高、13px 字；在 dense/inspector 密度作用域中由 --tn-control-height 接管高度。
+const compactControl = { height: "var(--tn-control-height, 32px)", fz: "13px" }
+
+// 工作台与后台通用行高标尺：兼顾中文与西文混排的可读性（md 正文 14px × 1.55 ≈ 22px）。
+const uiLineHeights = { xs: "1.4", sm: "1.45", md: "1.55", lg: "1.6", xl: "1.65" }
 
 /** compact 预设：紧凑，信息密度高，适合表格和表单多的界面。正文 14px，控件 32px 高。 */
 const compact: MantineThemeOverride = mergeThemeOverrides(
@@ -205,6 +216,7 @@ const compact: MantineThemeOverride = mergeThemeOverrides(
     defaultRadius: "sm",
     radius: { xs: "2px", sm: "4px", md: "8px", lg: "12px", xl: "16px" },
     fontSizes: { xs: "12px", sm: "13px", md: "14px", lg: "16px", xl: "18px" },
+    lineHeights: uiLineHeights,
     spacing: { xs: "8px", sm: "10px", md: "14px", lg: "18px", xl: "24px" },
     headings: {
       sizes: {
@@ -237,13 +249,14 @@ const compact: MantineThemeOverride = mergeThemeOverrides(
   }),
 )
 
-/** comfortable 预设：舒展的留白、柔和的圆角，适合页面不密集的应用。正文 14px，控件 36px 高。 */
+/** comfortable 预设：舒展的留白、柔和的圆角，适合控制台与多栏工作台。正文 14px，控件 36px 高。 */
 const comfortable: MantineThemeOverride = mergeThemeOverrides(
   base({ preset: "comfortable", contentPadding: "lg", controlSize: "sm" }),
   createTheme({
     defaultRadius: "md",
     radius: { xs: "4px", sm: "6px", md: "8px", lg: "12px", xl: "16px" },
     fontSizes: { xs: "12px", sm: "13px", md: "14px", lg: "16px", xl: "18px" },
+    lineHeights: uiLineHeights,
     headings: {
       sizes: {
         h1: { fontSize: "26px", lineHeight: "1.25" },

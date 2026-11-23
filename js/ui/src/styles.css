@@ -54,6 +54,8 @@
   --tn-active-bg: var(--mantine-color-brand-0);
   --tn-active-text: var(--mantine-color-brand-7);
   --tn-header-blur: rgba(255, 255, 255, 0.78);
+  --tn-pane-px: var(--mantine-spacing-md);
+  --tn-inspector-label-width: 84px;
 }
 
 [data-mantine-color-scheme="dark"] {
@@ -1381,4 +1383,299 @@ body {
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+}
+
+/* ———————————————— 分段切换（SegmentedControl）与标签页（Tabs） ———————————————— */
+
+.mantine-SegmentedControl-root {
+  --sc-padding-xs: 4px 8px;
+  --sc-padding-sm: 5px 12px;
+  padding: 3px;
+  background-color: color-mix(in srgb, var(--tn-text) 5%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tn-border) 85%, transparent);
+}
+
+[data-mantine-color-scheme="dark"] .mantine-SegmentedControl-root {
+  background-color: color-mix(in srgb, var(--tn-text) 7%, transparent);
+}
+
+.mantine-SegmentedControl-indicator {
+  border-radius: calc(var(--sc-radius, var(--mantine-radius-md)) - 2px);
+  background-color: var(--sc-color, var(--tn-surface));
+  border: 1px solid color-mix(in srgb, var(--tn-border-strong) 45%, transparent);
+  box-shadow:
+    0 1px 2px color-mix(in srgb, var(--mantine-color-black) 6%, transparent),
+    0 1px 1px color-mix(in srgb, var(--mantine-color-black) 4%, transparent);
+}
+
+[data-mantine-color-scheme="dark"] .mantine-SegmentedControl-indicator {
+  background-color: var(--sc-color, var(--mantine-color-dark-5));
+  border-color: color-mix(in srgb, var(--mantine-color-dark-3) 40%, transparent);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--mantine-color-black) 28%, transparent);
+}
+
+.mantine-SegmentedControl-label {
+  border-radius: calc(var(--sc-radius, var(--mantine-radius-md)) - 2px);
+  color: var(--tn-muted);
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.mantine-SegmentedControl-label[data-active] {
+  color: var(--sc-label-color, var(--tn-text));
+  font-weight: 600;
+}
+
+.mantine-SegmentedControl-label[data-active]::before {
+  border-radius: calc(var(--sc-radius, var(--mantine-radius-md)) - 2px);
+  background-color: var(--sc-color, var(--tn-surface));
+}
+
+[data-mantine-color-scheme="dark"] .mantine-SegmentedControl-label[data-active]::before {
+  background-color: var(--sc-color, var(--mantine-color-dark-5));
+}
+
+@media (hover: hover) {
+  .mantine-SegmentedControl-label:not([data-disabled], [data-active], [data-read-only]):hover {
+    color: var(--tn-text);
+  }
+}
+
+.mantine-Tabs-root[data-variant="default"] {
+  --tab-border-color: var(--tn-border);
+  --tabs-list-gap: 4px;
+}
+
+.mantine-Tabs-root[data-variant="default"] .mantine-Tabs-list::before {
+  border-width: 0 0 1px 0;
+}
+
+.mantine-Tabs-root[data-variant="default"] .mantine-Tabs-tab {
+  padding: 9px 12px;
+  color: var(--tn-muted);
+  font-weight: 500;
+  border-radius: var(--mantine-radius-sm) var(--mantine-radius-sm) 0 0;
+  transition:
+    color 150ms ease,
+    border-color 150ms ease;
+}
+
+@media (hover: hover) {
+  .mantine-Tabs-root[data-variant="default"] .mantine-Tabs-tab:not([data-disabled]):hover {
+    background-color: transparent;
+    color: var(--tn-text);
+  }
+
+  .mantine-Tabs-root[data-variant="default"] .mantine-Tabs-tab:not([data-disabled], [data-active]):hover {
+    border-color: var(--tn-border-strong);
+  }
+}
+
+.mantine-Tabs-root[data-variant="default"] .mantine-Tabs-tab[data-active] {
+  color: var(--mantine-primary-color-light-color);
+  font-weight: 600;
+  border-color: var(--mantine-primary-color-filled);
+}
+
+/* ———————————————— 工作台密度作用域（dense / inspector） ———————————————— */
+
+/*
+ * 将控件高度与字号解耦：工具条（dense）使用 30px 控件，检查器（inspector）使用 28px 控件，
+ * 内部字号始终保持 sm（13px），与相邻纯文本值一致。
+ */
+[data-tn-density="dense"] {
+  --tn-control-height: 30px;
+
+  & .mantine-Input-wrapper {
+    --input-height-sm: 30px;
+    --input-padding-y-sm: 4px;
+  }
+
+  & .mantine-Button-root {
+    --button-height-sm: 30px;
+    --button-padding-x-sm: 10px;
+  }
+
+  & .mantine-ActionIcon-root {
+    --ai-size-input-sm: 30px;
+  }
+
+  & .mantine-SegmentedControl-root {
+    --sc-padding-sm: 4px 10px;
+  }
+}
+
+[data-tn-density="inspector"] {
+  --tn-control-height: 28px;
+
+  & .mantine-Input-wrapper {
+    --input-height-sm: 28px;
+    --input-padding-y-sm: 3px;
+  }
+
+  & .mantine-Button-root {
+    --button-height-sm: 28px;
+    --button-padding-x-sm: 10px;
+  }
+
+  & .mantine-ActionIcon-root {
+    --ai-size-input-sm: 28px;
+  }
+
+  & .mantine-SegmentedControl-root {
+    --sc-padding-sm: 3px 8px;
+  }
+}
+
+/* ———————————————— 多栏面板（Pane） ———————————————— */
+
+.tn-pane {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.tn-pane[data-border="left"],
+.tn-pane[data-border="both"] {
+  border-left: 1px solid var(--tn-border);
+}
+
+.tn-pane[data-border="right"],
+.tn-pane[data-border="both"] {
+  border-right: 1px solid var(--tn-border);
+}
+
+.tn-pane-header {
+  flex: none;
+  min-height: var(--tn-rail-header, 52px);
+  padding-inline: var(--tn-pane-px);
+  border-bottom: 1px solid var(--tn-border);
+}
+
+.tn-pane-header[data-fixed] {
+  height: var(--tn-rail-header, 52px);
+}
+
+.tn-pane-toolbar {
+  flex: none;
+  padding: 8px var(--tn-pane-px);
+  border-bottom: 1px solid var(--tn-border);
+  background: color-mix(in srgb, var(--tn-surface) 70%, var(--tn-canvas));
+}
+
+.tn-pane-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.tn-pane-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  z-index: 5;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.tn-pane-resize-handle::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  background: transparent;
+  transition: background-color 140ms ease;
+}
+
+.tn-pane-resize-handle:hover::after,
+.tn-pane-resize-handle:focus-visible::after,
+.tn-pane-resize-handle[data-dragging]::after {
+  background: var(--mantine-primary-color-filled);
+}
+
+.tn-pane-resize-handle:focus-visible {
+  outline: none;
+}
+
+/* ———————————————— 侧栏属性检查器（Inspector） ———————————————— */
+
+.tn-inspector {
+  display: flex;
+  flex-direction: column;
+}
+
+.tn-inspector-section {
+  padding: 12px var(--tn-pane-px);
+  border-top: 1px solid var(--tn-border);
+}
+
+.tn-inspector-section:first-child,
+.tn-inspector-section[data-no-divider] {
+  border-top: 0;
+}
+
+.tn-inspector-section-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.tn-inspector-section-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1;
+  min-width: 0;
+  color: var(--tn-text);
+  border-radius: var(--mantine-radius-sm);
+}
+
+.tn-inspector-section-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.tn-inspector-section-extra {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+}
+
+.tn-inspector-chevron {
+  flex-shrink: 0;
+  color: var(--tn-muted);
+  transition: transform 150ms ease;
+}
+
+.tn-inspector-section-toggle[data-opened] .tn-inspector-chevron {
+  transform: rotate(90deg);
+}
+
+.tn-inspector-field {
+  min-height: 28px;
+}
+
+.tn-inspector-field-label {
+  flex: none;
+  width: var(--tn-inspector-label-width, 84px);
+}
+
+.tn-inspector-field-value {
+  flex: 1;
+  min-width: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tn-inspector-chevron,
+  .tn-pane-resize-handle::after {
+    transition: none;
+  }
 }

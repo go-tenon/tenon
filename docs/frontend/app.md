@@ -123,6 +123,8 @@ export const theme = createUiTheme({ preset: "compact", primary: "blue-gray" })
 
 - 一个前端只用一套预设；同一个项目的几个前端可以各用各的预设。
 - `tenon add frontend --preset` 选择预设，不写时 `frame` 布局是 `compact`，`rail` 是 `comfortable`，`site` 是 `spacious`。
+- `compact` 与 `comfortable` 共用三级字号标尺：`md`（14px，行高 1.55）用于阅读与输入正文，`sm`（13px，行高 1.45）用于界面主文字与表单控件，`xs`（12px，行高 1.4）用于次级信息与元数据。
+- 工具条和侧栏检查器等密集区域通过 `data-tn-density="dense"`（控件 30px 高）或 `data-tn-density="inspector"`（控件 28px 高）压低控件高度，同时保持 `sm`（13px）字号，与相邻文本值齐平。
 - 控件尺寸和内容内边距在主题的 `other.tenon` 中，用 `layoutMetrics(theme)` 读取。顶栏高度、侧栏宽度由布局决定。
 
 <a id="tokens"></a>
