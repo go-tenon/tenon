@@ -41,13 +41,16 @@ const DaemonPIDFile = "daemon.pid"
 //
 // 一个进程只创建一个 Daemon。所有 Listen 都要在 Run 之前调用，进程退出前调用 Stop。
 type Daemon struct {
-	logger  *slog.Logger
-	notify  bool                // 在 systemd 的 notify 类服务中
-	upg     *tableflip.Upgrader // nil 表示不支持升级
-	pidFile string
-	hup     chan os.Signal
-	stop    chan struct{}
-	stopped sync.Once
+	logger   *slog.Logger
+	notify   bool                // 在 systemd 的 notify 类服务中
+	upg      *tableflip.Upgrader // nil 表示不支持升级
+	pidFile  string
+	hup      chan os.Signal
+	stop     chan struct{}
+	stopped  sync.Once
+	readyMu  sync.Mutex    // 保护 pending 与 allReady
+	pending  int           // DeferReady 登记的尚未就绪的部分数量
+	allReady chan struct{} // 全部 DeferReady 回调触发后关闭；未调用 DeferReady 时为 nil
 }
 
 // NewDaemon 创建 Daemon。logger 记录升级过程；为 nil 时在记录时使用 slog.Default()。
@@ -97,15 +100,74 @@ func (d *Daemon) Listen(network, addr string) (net.Listener, error) {
 	return ln, errors.Wrapf(err, "command: listen %s %s", network, addr)
 }
 
-// Run 报告就绪，然后用 Concurrently 运行 runs，直到 ctx 取消或者交接给了升级启动的新进程。
+// DeferReady 登记一个延后就绪信号，返回报告该部分已经就绪的函数 ready。
+// 调用了 DeferReady 时，Run 先启动全部运行部分，等所有登记的 ready 都被调用后，再向 systemd 报告就绪并触发不停机升级交接；
+// 若任一部分在就绪前失败退出，则不会报告就绪，旧进程继续对外服务。ready 可以多次调用，只有第一次生效。须在 Run 之前调用。
+func (d *Daemon) DeferReady() (ready func()) {
+	d.readyMu.Lock()
+	if d.allReady == nil {
+		d.allReady = make(chan struct{})
+	}
+	d.pending++
+	d.readyMu.Unlock()
+
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			d.readyMu.Lock()
+			d.pending--
+			if d.pending == 0 {
+				close(d.allReady)
+			}
+			d.readyMu.Unlock()
+		})
+	}
+}
+
+// Run 用 Concurrently 运行 runs，直到 ctx 取消或者交接给了升级启动的新进程。
+// 未调用 DeferReady 时立即报告就绪；调用了 DeferReady 时，等全部登记的部分调用 ready 后再报告就绪。
 // 交接之后 runs 收到的 ctx 被取消，各部分像收到停止信号一样平滑停止，Run 返回 nil。
 func (d *Daemon) Run(ctx context.Context, runs ...func(context.Context) error) error {
 	if !d.notify {
 		return Concurrently(ctx, runs...)
 	}
-	ctx, cancel := context.WithCancel(ctx)
+	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	d.readyMu.Lock()
+	wait := d.allReady
+	pending := d.pending
+	d.readyMu.Unlock()
+
+	if wait == nil || pending == 0 {
+		if err := d.signalReady(runCtx, cancel); err != nil {
+			return err
+		}
+		return Concurrently(runCtx, runs...)
+	}
+
+	// 有部分登记了延后就绪：先启动全部部分，等它们全部报告就绪后再通知 systemd 与 tableflip 切流。
+	done := make(chan error, 1)
+	go func() { done <- Concurrently(runCtx, runs...) }()
+
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		cancel()
+		return <-done
+	case <-wait:
+	}
+
+	if err := d.signalReady(runCtx, cancel); err != nil {
+		cancel()
+		return errors.Join(err, <-done)
+	}
+	return <-done
+}
+
+// signalReady 向 systemd 报告就绪、触发 tableflip 交接，并开始监听 SIGHUP 与旧进程退出信号。
+func (d *Daemon) signalReady(ctx context.Context, cancel context.CancelFunc) error {
 	// 升级时 systemd 收到新进程的 READY=1 就结束 reload；STATUS 清除上一次升级失败的记录。
 	d.sdNotify("READY=1\nSTATUS=")
 	if d.upg != nil {
@@ -122,7 +184,7 @@ func (d *Daemon) Run(ctx context.Context, runs ...func(context.Context) error) e
 		}()
 	}
 	go d.reloads()
-	return Concurrently(ctx, runs...)
+	return nil
 }
 
 // reloads 处理 SIGHUP，直到 Stop：交接之前升级本进程，交接之后转发给新进程。
@@ -139,7 +201,7 @@ func (d *Daemon) reloads() {
 			return
 		case <-d.hup:
 		}
-		if d.handedOver() {
+		if d.HandedOver() {
 			if err := d.forward(); err != nil {
 				d.sdNotify("READY=1\nSTATUS=upgrade failed: " + err.Error())
 			}
@@ -155,8 +217,8 @@ func (d *Daemon) reloads() {
 	}
 }
 
-// handedOver 报告是否已经把服务交给升级后的新进程。
-func (d *Daemon) handedOver() bool {
+// HandedOver 报告是否已经把监听交接给升级启动的新进程；用于停机时区分热重载交接与进程关闭。
+func (d *Daemon) HandedOver() bool {
 	if d.upg == nil {
 		return false
 	}

@@ -85,7 +85,17 @@ describe("vite", () => {
     expect(spa.prerender?.headers).toEqual(headers)
     const ssr = vite.startOptions(true, ["/"]).prerender?.filter as (page: { path: string }) => boolean
     expect(["/", "/docs"].map((path) => ssr({ path }))).toEqual([true, false])
-    expect(() => vite.startOptions(false, ["/"])).toThrow('prerender "/" needs "ssr": true')
+    // 只在浏览器中渲染的前端同样可以预渲染首页 /：外壳改用独立查询参数，避免与首页在预渲染队列中冲突。
+    const staticSite = vite.startOptions(false, ["/", "/docs"])
+    expect(staticSite.spa).toEqual({ enabled: true, maskPath: "/?__tenon_shell=1", prerender: { headers } })
+    const staticFilter = staticSite.prerender?.filter as (page: { path: string }) => boolean
+    expect(["/", "/?__tenon_shell=1", "/docs", "/docs/intro", "/blog"].map((path) => staticFilter({ path }))).toEqual([
+      true,
+      true,
+      true,
+      true,
+      false,
+    ])
   })
 
   // vite dev 在 Node 中运行，由 Node 直接导入 @go-tenon/start/vite：它不能是 TypeScript。

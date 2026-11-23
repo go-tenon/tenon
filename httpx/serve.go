@@ -40,18 +40,21 @@ func Serve(ctx context.Context, cfg Config, ln net.Listener, handler http.Handle
 		opt.applyServe(&o)
 	}
 	logger := componentLogger(o.logger)
-	srv := cfg.server(handler)
-	var fresh freshConns
-	srv.ConnState = fresh.track
-
 	// 所有请求 context 派生自 requestRoot，排空超时或结束后统一取消；
 	// draining 在排空开始时关闭，供 SSE 等长连接主动结束，见 DrainStarted。
 	draining := make(chan struct{})
+	srv := cfg.server(drainClose(draining, handler))
+	var fresh freshConns
+	srv.ConnState = fresh.track
+
 	requestRoot, cancelRequests := context.WithCancel(context.WithValue(context.Background(), drainKey{}, draining))
 	defer cancelRequests()
 	srv.BaseContext = func(net.Listener) context.Context { return requestRoot }
 	errc := make(chan error, 1)
 	go func() { errc <- srv.Serve(ln) }()
+	if o.onReady != nil {
+		o.onReady()
+	}
 	var serveErr error
 	returned := false
 	select {
@@ -61,6 +64,16 @@ func Serve(ctx context.Context, cfg Config, ln net.Listener, handler http.Handle
 	}
 	close(draining)
 	logger.Info("http server draining")
+	if !returned && cfg.DrainDelay > 0 && (o.skipDrainDelay == nil || !o.skipDrainDelay()) {
+		logger.Info("http server waiting for load balancer drain", "delay", cfg.DrainDelay)
+		timer := time.NewTimer(cfg.DrainDelay)
+		select {
+		case serveErr = <-errc:
+			returned = true
+		case <-timer.C:
+		}
+		timer.Stop()
+	}
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 	// Shutdown 开始之后才读到的请求，net/http 直接关闭连接。所以先停止接收新连接，
 	// 等已经接收的连接读到第一个请求，再开始 Shutdown。升级时监听 socket 交给了新进程，
@@ -93,6 +106,20 @@ type drainKey struct{}
 func DrainStarted(ctx context.Context) <-chan struct{} {
 	ch, _ := ctx.Value(drainKey{}).(chan struct{})
 	return ch
+}
+
+// drainClose 包装 next：排空开始后为 HTTP/1.x 响应写入 Connection: close，促使反向代理及时释放旧进程的空闲连接。
+func drainClose(draining <-chan struct{}, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.ProtoMajor == 1 {
+			select {
+			case <-draining:
+				w.Header().Set("Connection", "close")
+			default:
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // freshConns 记录已经接收、还没读到第一个请求的连接。

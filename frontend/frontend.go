@@ -230,6 +230,16 @@ func (h *Host) Ready() bool {
 	return true
 }
 
+// Ping 检查全部 SSR 进程是否就绪，可供 health.Check 放进 /readyz；开发模式和没有 SSR 前端时返回 nil。
+func (h *Host) Ping(_ context.Context) error {
+	for _, a := range h.apps {
+		if a.socket != "" && !a.ready.Load() {
+			return errors.Newf("frontend %s: ssr process is not ready", a.Name)
+		}
+	}
+	return nil
+}
+
 // Run 运行 serve（对外的 HTTP 服务，例如 httpx.ListenAndServe），并在它前后管理 SSR 进程：
 //
 //  1. 在内部 socket 上提供 Options.API（不为 nil 时），为每个 SSR 前端启动一个进程，等它们全部就绪

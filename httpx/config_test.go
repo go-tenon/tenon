@@ -24,6 +24,7 @@ func TestDefaultConfigIsValid(t *testing.T) {
 		func(c *httpx.Config) { c.Addr = ":99999" },
 		func(c *httpx.Config) { c.Addr = ":http" },
 		func(c *httpx.Config) { c.ReadTimeout = 0 },
+		func(c *httpx.Config) { c.DrainDelay = -time.Second },
 		func(c *httpx.Config) { c.ShutdownTimeout = -time.Second },
 	} {
 		cfg := httpx.DefaultConfig()

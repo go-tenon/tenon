@@ -10,8 +10,8 @@
 使用 `tenon deploy` 或手动执行 `systemctl reload`（见[部署](deployment.md#tenon-deploy)）：
 
 1. 旧进程用磁盘上的新二进制启动新进程，把监听的端口交给它；
-2. 新进程打开数据库、装配好全部部分，报告就绪；
-3. 旧进程平滑停止，处理完手上的请求、任务后退出。
+2. 新进程打开数据库、装配好全部部分，等 SSR 子进程等延后就绪项启动完成且 HTTP 开始接收连接后报告就绪（`d.DeferReady` + `httpx.OnReady`）；
+3. 旧进程平滑停止（`httpx.SkipDrainDelay(d.HandedOver)` 跳过负载均衡摘流等待），处理完手上的请求、任务后退出。
 
 - 新进程在就绪之前退出或一分钟内没有就绪时被结束，旧进程继续服务，状态文字以 `upgrade failed` 开头。配置写错、数据库连不上、路由冲突都属于这种情况。
 - 由 `serve` 中的 `command.Daemon` 实现，只在 unit 设置了 `Type=notify-reload` 和 `RuntimeDirectory=` 时启用，见[用 systemd 运行](deployment.md#systemd)。

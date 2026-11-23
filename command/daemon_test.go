@@ -35,7 +35,8 @@ func TestMain(m *testing.M) {
 
 const daemonHelperEnv = "COMMAND_DAEMON_HELPER"
 
-// daemonHelper 是测试用的常驻进程：版本号取自 VERSION_FILE，内容为 fail 时在装配阶段失败。
+// daemonHelper 是测试用的常驻进程：版本号取自 VERSION_FILE，内容为 fail 时在装配阶段失败，
+// 内容为 defer-ok / defer-fail 时测试 DeferReady 的延后就绪与启动期失败保护。
 func daemonHelper() {
 	version, err := os.ReadFile(os.Getenv("VERSION_FILE"))
 	if err != nil {
@@ -62,11 +63,23 @@ func daemonHelper() {
 	})
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM)
 	defer stop()
-	err = d.Run(ctx, func(ctx context.Context) error {
-		err := httpx.Serve(ctx, httpx.DefaultConfig(), ln, handler)
-		time.Sleep(500 * time.Millisecond) // 模拟等待处理中的任务
-		return err
-	})
+	if string(version) == "defer-ok" || string(version) == "defer-fail" {
+		ready := d.DeferReady()
+		err = d.Run(ctx, func(ctx context.Context) error {
+			time.Sleep(150 * time.Millisecond) // 模拟 SSR 等前置子进程启动
+			if string(version) == "defer-fail" {
+				return errors.New("ssr failed before ready")
+			}
+			return httpx.Serve(ctx, httpx.DefaultConfig(), ln, handler,
+				httpx.OnReady(ready), httpx.SkipDrainDelay(d.HandedOver))
+		})
+	} else {
+		err = d.Run(ctx, func(ctx context.Context) error {
+			err := httpx.Serve(ctx, httpx.DefaultConfig(), ln, handler)
+			time.Sleep(500 * time.Millisecond) // 模拟等待处理中的任务
+			return err
+		})
+	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -164,6 +177,42 @@ func TestDaemonUpgrade(t *testing.T) {
 		t.Fatalf("versions served = %v, want v1, v2 and v3", versions)
 	}
 	h.stop(t, pid3)
+}
+
+// TestDaemonDeferReady 验证 DeferReady 在前置任务完成后再报告就绪并交接，前置失败时不报告就绪且保留旧进程。
+func TestDaemonDeferReady(t *testing.T) {
+	t.Parallel()
+	h := startHelper(t, true)
+	load := startLoad(h.addr)
+
+	// 前置阶段在调用 ready 之前失败：旧进程收到升级失败，继续服务。
+	h.setVersion("defer-fail")
+	h.cmd.Process.Signal(syscall.SIGHUP)
+	h.notify.expectPrefix(t, "RELOADING=1\nMONOTONIC_USEC=")
+	h.notify.expectPrefix(t, "READY=1\nSTATUS=upgrade failed: ")
+	if body, err := get(http.DefaultClient, "http://"+h.addr+"/"); err != nil || body != "v1" {
+		t.Fatalf("after defer-fail: GET = %q, %v; want v1", body, err)
+	}
+
+	// 前置阶段成功并触发 OnReady：新进程报告就绪并接管流量。
+	h.setVersion("defer-ok")
+	h.cmd.Process.Signal(syscall.SIGHUP)
+	h.notify.expectPrefix(t, "RELOADING=1\nMONOTONIC_USEC=")
+	h.notify.expect(t, "READY=1\nSTATUS=")
+	pid2 := h.pid(t, h.cmd.Process.Pid)
+	if err := h.cmd.Wait(); err != nil {
+		t.Fatalf("v1 exited with %v", err)
+	}
+
+	time.Sleep(200 * time.Millisecond)
+	ok, versions, failed := load.stop()
+	if failed != nil {
+		t.Fatalf("%d requests ok, then failed: %v", ok, failed)
+	}
+	if versions["v1"] == 0 || versions["defer-ok"] == 0 {
+		t.Fatalf("versions served = %v, want v1 and defer-ok", versions)
+	}
+	h.stop(t, pid2)
 }
 
 // TestDaemonWithoutRuntimeDirectory：只报告就绪，reload 时在状态中说明需要 RuntimeDirectory=。

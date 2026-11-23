@@ -239,7 +239,7 @@ done
 收到 `SIGTERM` 后，程序停止接收新请求，等处理中的请求、队列任务和定时任务完成，最后关闭数据库，见[应用生命周期](../concepts/lifecycle.md#graceful-shutdown)。
 
 - 信号要到达程序：用包装脚本启动时最后一行写 `exec ./bin/blog serve`。
-- systemd 的 `TimeoutStopSec` 要比程序的最长等待时间长：程序最多等 `http.shutdown_timeout`（默认 10 秒）、`queue.shutdown_timeout`（默认 30 秒）、`schedule.shutdown_timeout`（默认 30 秒）中最长的一项，使用 [AI 对话](../ai/chat.md#deployment)时再加上回答说完的时间。
+- systemd 的 `TimeoutStopSec` 要比程序的最长等待时间长：程序最多等 `http.drain_delay + http.shutdown_timeout`（默认 `0s + 10s`）、`queue.shutdown_timeout`（默认 30 秒）、`schedule.shutdown_timeout`（默认 30 秒）中最长的一项，使用 [AI 对话](../ai/chat.md#deployment)时再加上回答说完的时间。
 
 超时被强制结束时，没有完成的队列任务在其他实例上重新执行，错过的定时任务等下一次触发。
 

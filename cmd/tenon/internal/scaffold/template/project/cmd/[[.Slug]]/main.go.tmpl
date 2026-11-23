@@ -85,9 +85,10 @@ func (a *App) serveHTTP(d *command.Daemon) (func(context.Context) error, error) 
 	if err != nil {
 		return nil, err
 	}
+	ready := d.DeferReady()
 	return func(ctx context.Context) error {
 		return pages.Run(ctx, func(ctx context.Context) error {
-			return httpx.Serve(ctx, a.cfg.HTTP, ln, router)
+			return httpx.Serve(ctx, a.cfg.HTTP, ln, router, httpx.OnReady(ready), httpx.SkipDrainDelay(d.HandedOver))
 		})
 	}, nil
 }
