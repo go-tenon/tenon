@@ -13,6 +13,7 @@
 | `login` | `Login`，用户登录时 | 按[配置](#configuration)滑动过期 | 代表一台设备 |
 | `personal` | `Create`，用户手动创建 | 创建者指定，可以不过期 | 脚本、CI、第三方集成 |
 | `oauth` | `Authorize`，[OAuth 授权服务器](oauth-server.md)签发 | 按使用滑动过期 | MCP 客户端 |
+| `impersonation` | `Impersonate` 或消费交换票据 | 短时滑动过期（默认 1 小时，最长 4 小时） | 管理员代为登录排查问题 |
 
 <a id="example-usage"></a>
 ## 示例
@@ -144,6 +145,7 @@ for _, t := range list {
 | `Revoke(ctx, sub, id)` | `sub` 的一个 token；`id` 为 `sub.Credential` 时即登出 | 登出、移除某台设备或某个令牌、断开已连接的应用 |
 | `RevokeOthers(ctx, sub)` | 除本次请求所用 token 以外的全部登录 token；保留个人访问令牌和 OAuth 令牌 | “退出其他设备”、修改密码后 |
 | `RevokeSubject(ctx, ref)` | 主体 `ref`（`identity.Ref`）的全部 token | 封禁账号、找回密码后 |
+| `RevokeByImpersonator(ctx, actor)` | 操作者 `actor` 签发的全部代为登录令牌与未消费票据 | 停用操作者、收回代为登录权限后 |
 
 被撤销的 token 在下一次请求时返回 `401`。用它建立的 SSE 长连接最多 30 秒内结束，见[凭据失效](../http/sse.md#revoked-credentials)；要立即断开时撤销后调用 `RecheckCredential` 或 `RecheckSubject`，见[立即断开](../http/sse.md#immediate-revocation)。
 

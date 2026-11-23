@@ -40,6 +40,12 @@ func register[I, O any](api *API, op huma.Operation, events map[string]reflect.T
 	if _, ok := op.Metadata[confirmMetadata]; ok && len(op.Security) == 0 {
 		panic("rest: Confirmed requires RequireToken or another RequireAuth scheme")
 	}
+	if _, ok := op.Metadata[directOnlyMetadata]; ok && len(op.Security) == 0 {
+		panic("rest: DirectOnly requires RequireToken or another RequireAuth scheme")
+	}
+	if _, ok := op.Metadata[accountScopeMetadata]; ok && len(op.Security) == 0 {
+		panic("rest: AccountScoped requires RequireToken or another RequireAuth scheme")
+	}
 	// 从 OpenAPI 路径表检查操作 ID 和路由冲突。
 	for path, item := range api.OpenAPI().Paths {
 		for _, existing := range []*huma.Operation{item.Get, item.Post, item.Put, item.Patch, item.Delete, item.Head, item.Options, item.Trace} {

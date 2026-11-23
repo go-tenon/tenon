@@ -1,5 +1,6 @@
 auth.unauthenticated: Authentication required
 auth.forbidden: Permission denied
+auth.impersonation_forbidden: This action cannot be performed while impersonating
 auth.confirm_required: Please confirm your identity first
 auth.two_factor_required: Two-factor authentication is required
 auth.method_required: Sign in again with a required method
@@ -26,6 +27,7 @@ ai.finished: The answer has already finished
 ai.not_pending: No such pending action
 command.secret_mismatch: The two entries do not match
 apitoken.not_found: Token not found
+apitoken.ticket_invalid: Impersonation ticket is invalid or expired
 login.invalid_credentials: Incorrect account or password
 login.invalid_code: The code is incorrect or has expired
 login.invalid_proof: The verification has expired, please request a new code

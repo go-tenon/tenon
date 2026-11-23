@@ -3,12 +3,14 @@ package realtime
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"sync"
 	"time"
 
 	"github.com/centrifugal/centrifuge"
 
 	"github.com/go-tenon/tenon/identity"
+	"github.com/go-tenon/tenon/logging"
 )
 
 // connection 是一个连接的身份。主体在复查凭据时更新，订阅的处理器在另一个 goroutine 中读取它。
@@ -45,7 +47,7 @@ func (rt *Realtime) connecting(ctx context.Context, e centrifuge.ConnectEvent) (
 		token, _ = ctx.Value(requestTokenKey{}).(string)
 	}
 	if token != "" {
-		sub, err := identity.Establish(ctx, rt.authenticator(token), rt.opts.Accounts.Resolve)
+		sub, err := identity.Establish(ctx, rt.authenticator(token), rt.authPolicy())
 		switch {
 		case identity.Failed(err):
 			rt.logger.ErrorContext(ctx, "authentication backend failed", "error", err)
@@ -55,11 +57,19 @@ func (rt *Realtime) connecting(ctx context.Context, e centrifuge.ConnectEvent) (
 		}
 		conn.sub, conn.token = sub, token
 		ctx = identity.WithSubject(ctx, sub)
+		if sub.Impersonated() {
+			ctx = logging.WithAttrs(ctx, slog.String(logging.AttrImpersonator, sub.Impersonator.String()))
+		}
 	}
 	return centrifuge.ConnectReply{
 		Context:     context.WithValue(ctx, connectionKey{}, conn),
 		Credentials: &centrifuge.Credentials{UserID: conn.sub.Ref().String()},
 	}, nil
+}
+
+// authPolicy 返回实时连接使用的身份与代为登录校验策略。
+func (rt *Realtime) authPolicy() identity.Policy {
+	return identity.Policy{Accounts: rt.opts.Accounts, Impersonation: rt.opts.Impersonation}
 }
 
 // authenticator 用 Options.Authenticate 校验 token；没有设置时带 token 的连接一律无效。
@@ -76,7 +86,7 @@ func (rt *Realtime) authenticator(token string) identity.Authenticator {
 // 校验通过时换上重新加载的主体（权限可能已经变化），按它重新授权已经订阅的频道，见 reauthorize；暂时无法判断时连接保持原样。
 func (rt *Realtime) check(ctx context.Context, client *centrifuge.Client, conn *connection) *centrifuge.Disconnect {
 	cctx, cancel := context.WithTimeout(ctx, credentialTimeout)
-	sub, err := identity.Reestablish(cctx, conn.subject(), rt.authenticator(conn.token), rt.opts.Accounts.Resolve)
+	sub, err := identity.Reestablish(cctx, conn.subject(), rt.authenticator(conn.token), rt.authPolicy())
 	cancel()
 	switch {
 	case identity.Failed(err):

@@ -13,6 +13,8 @@ const (
 	ErrUnauthenticated wire.Code = "auth.unauthenticated"
 	// ErrForbidden 表示凭据有效但无权执行操作：凭据绑定了其他租户，或主体缺少所需的权限。
 	ErrForbidden wire.Code = "auth.forbidden"
+	// ErrImpersonationForbidden 表示该操作只能由账号本人执行，拒绝代为登录的凭据。
+	ErrImpersonationForbidden wire.Code = "auth.impersonation_forbidden"
 	// ErrConfirmRequired 表示操作要求最近确认过身份（rest.Confirmed）：客户端让用户再次输入密码或验证码，
 	// 确认后（apitoken 的 Confirm）重试。
 	ErrConfirmRequired wire.Code = "auth.confirm_required"

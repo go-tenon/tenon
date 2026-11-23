@@ -28,13 +28,31 @@ var ErrCrossSite = errorx.Define(errorx.PermissionDenied, "http.cross_site")
 //
 // 同一个源下有多套账号体系时（例如运营后台和租户控制台），各用一个名称，例如 SessionCookie{Name: "__Host-ops"}，
 // 两个 cookie 同时存在、互不覆盖，各自的 API 只读自己的那一个（rest.Options.SessionCookie）。
+// 需要将代为登录会话与普通登录会话隔离时，设置 Impersonation（例如 "__Host-impersonation"）：
+// Token 优先读取 Impersonation cookie，没有时再读取 Name；退出代为登录只需清除 ImpersonationCookie()，保留原登录态。
 type SessionCookie struct {
-	Name string // 以 __Host- 开头；空字符串表示 DefaultSessionCookieName。
+	Name          string // 以 __Host- 开头；空字符串表示 DefaultSessionCookieName。
+	Impersonation string // 可选的独立代为登录 cookie 名称，以 __Host- 开头且与 Name 不同；为空表示不单独拆分。
 }
 
-// Validate 检查名称以 __Host- 开头，并且是合法的 cookie 名称。
+// Validate 检查名称以 __Host- 开头，并且是合法的 cookie 名称；设置了 Impersonation 时一并校验且不能与 Name 相同。
 func (c SessionCookie) Validate() error {
-	name := c.CookieName()
+	if err := validateCookieName(c.CookieName()); err != nil {
+		return err
+	}
+	if c.Impersonation != "" {
+		if err := validateCookieName(c.Impersonation); err != nil {
+			return err
+		}
+		if c.Impersonation == c.CookieName() {
+			return errors.Newf("httpx: impersonation cookie name %q must differ from session cookie name", c.Impersonation)
+		}
+	}
+	return nil
+}
+
+// validateCookieName 检查 cookie 名称以 __Host- 开头且只含合法 token 字符。
+func validateCookieName(name string) error {
 	if !strings.HasPrefix(name, "__Host-") || len(name) == len("__Host-") ||
 		strings.IndexFunc(name, func(r rune) bool { return r > 127 || !isTokenChar(byte(r)) }) >= 0 {
 		return errors.Newf("httpx: session cookie name %q must start with __Host- and be a valid cookie name", name)
@@ -48,6 +66,14 @@ func (c SessionCookie) CookieName() string {
 		return DefaultSessionCookieName
 	}
 	return c.Name
+}
+
+// ImpersonationCookie 返回代为登录使用的 SessionCookie：配置了 Impersonation 时使用它，否则回退到当前 CookieName。
+func (c SessionCookie) ImpersonationCookie() SessionCookie {
+	if c.Impersonation != "" {
+		return SessionCookie{Name: c.Impersonation}
+	}
+	return SessionCookie{Name: c.CookieName()}
 }
 
 // Set 返回保存 token 的 Set-Cookie。maxAge 是浏览器保存它的时长，通常是 apitoken.Config 的 Lifetime；
@@ -75,7 +101,8 @@ func (c SessionCookie) cookie(value string) *http.Cookie {
 	return &http.Cookie{Name: c.CookieName(), Value: value, Path: "/", HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode}
 }
 
-// Token 返回 Cookie 请求头中这个 cookie 的值，没有时返回空字符串。
+// Token 返回 Cookie 请求头中这个会话 cookie 的值，没有时返回空字符串。
+// 配置了 Impersonation 时优先读取代为登录 cookie，非空直接返回，否则读取普通会话 cookie。
 func (c SessionCookie) Token(cookieHeader string) string {
 	if cookieHeader == "" {
 		return ""
@@ -83,6 +110,13 @@ func (c SessionCookie) Token(cookieHeader string) string {
 	cookies, err := http.ParseCookie(cookieHeader)
 	if err != nil {
 		return ""
+	}
+	if c.Impersonation != "" {
+		for _, ck := range cookies {
+			if ck.Name == c.Impersonation && ck.Value != "" {
+				return ck.Value
+			}
+		}
 	}
 	name := c.CookieName()
 	for _, ck := range cookies {

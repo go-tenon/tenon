@@ -38,6 +38,26 @@ func TestSessionCookie(t *testing.T) {
 			t.Errorf("%q accepted", name)
 		}
 	}
+	// 独立代为登录 cookie 优先于普通会话 cookie，退出代为登录不影响原会话。
+	withImp := httpx.SessionCookie{Impersonation: "__Host-impersonation"}
+	if err := withImp.Validate(); err != nil {
+		t.Fatalf("withImp validate: %v", err)
+	}
+	if got := withImp.Token("__Host-session=user; __Host-impersonation=imp"); got != "imp" {
+		t.Fatalf("impersonation priority got %q", got)
+	}
+	if got := withImp.Token("__Host-session=user"); got != "user" {
+		t.Fatalf("fallback session got %q", got)
+	}
+	if ck := withImp.ImpersonationCookie().Set("imp", time.Hour); ck.Name != "__Host-impersonation" {
+		t.Fatalf("impersonation cookie %+v", ck)
+	}
+	if (httpx.SessionCookie{Name: "__Host-session", Impersonation: "__Host-session"}).Validate() == nil {
+		t.Error("duplicate impersonation cookie name accepted")
+	}
+	if (httpx.SessionCookie{Impersonation: "imp"}).Validate() == nil {
+		t.Error("invalid impersonation cookie name accepted")
+	}
 }
 
 func TestSameOrigin(t *testing.T) {

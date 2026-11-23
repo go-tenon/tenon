@@ -43,6 +43,7 @@ type Options struct {
 	Permissions     []identity.Permission      // 应用的权限目录，例如 authz.Catalog，与 rest.Options.Permissions 相同。它写入 AsyncAPI 文档的 x-tenon-permissions（按名称排序），客户端据此生成权限常量和说明；nil 时不写。
 	Validate        identity.TokenValidator    // 校验请求头 Authorization: Bearer 中的 token，与 REST 用同一个校验器，例如 apitoken.Store 的 Validate；有需要登录的端点时必填
 	Accounts        identity.Accounts          // 接受的账号体系和各自的 Resolver，与 rest.Options.Accounts 相同；有需要登录的端点时必填
+	Impersonation   *identity.Impersonation    // 允许代为登录时对操作者的校验规则；nil 时默认拒绝所有代为登录凭据
 	Tenant          func(h nats.Header) string // 从请求头中取出本次调用所在的租户，例如 X-Tenant；nil 表示平台本身（""）。凭据绑定了租户时，两者必须相同。
 	Languages       *goi18n.Bundle             // 消息目录，设置后按请求头 Accept-Language 协商错误提示的语言，与 httpx.Languages 相同。
 	Timeout         time.Duration              // 每次调用的处理上限，调用方的 X-Timeout 更短时以它为准；不大于 0 时为 DefaultTimeout。
@@ -101,6 +102,9 @@ func New(opts Options) *Server {
 		if err := opts.Accounts.Validate(); err != nil {
 			panic(err)
 		}
+	}
+	if err := opts.Impersonation.Validate(); err != nil {
+		panic(err)
 	}
 	if opts.Timeout <= 0 {
 		opts.Timeout = DefaultTimeout

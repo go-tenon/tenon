@@ -25,6 +25,8 @@ var (
 	ErrInvalid = errorx.Define(errorx.Unauthenticated, "apitoken.invalid")
 	// ErrNotFound 表示要撤销的 token 不存在或不属于该主体。
 	ErrNotFound = errorx.Define(errorx.NotFound, "apitoken.not_found")
+	// ErrTicketInvalid 表示代为登录交换票据不存在、已被消费或已过期。
+	ErrTicketInvalid = errorx.Define(errorx.Unauthenticated, "apitoken.ticket_invalid")
 )
 
 // Kind 是 token 的类别。
@@ -38,6 +40,17 @@ const (
 	// KindOAuth 是用户授权 OAuth 客户端（例如 claude.ai 的连接器）后签发的令牌，见 Authorize。
 	// 它只能用于授权时指定的资源，由 ValidateFor 校验；Validate 不接受它。
 	KindOAuth Kind = "oauth"
+	// KindImpersonation 是管理员或客服代为登录目标用户时签发的短时受限令牌，见 Impersonate。
+	KindImpersonation Kind = "impersonation"
+)
+
+// 代为登录令牌与一次性交换票据的默认时长和上限。
+const (
+	DefaultImpersonationLifetime    = time.Hour
+	MaxImpersonationLifetime        = 4 * time.Hour
+	DefaultImpersonationIdleTimeout = 30 * time.Minute
+	DefaultTicketTTL                = 30 * time.Second
+	MaxTicketTTL                    = 5 * time.Minute
 )
 
 // Device 描述登录 token 所在的设备，用于设备列表。
@@ -47,17 +60,38 @@ type Device struct {
 	UserAgent string // 登录请求的 User-Agent，超过 255 个字符时截断。
 }
 
+// Impersonation 描述一次代为登录会话的参数。
+type Impersonation struct {
+	Tenant      string        // 绑定的租户边界；非空时令牌只能用于该租户及账号自省接口
+	Scopes      []string      // 可选的权限限制，支持通配符（例如只读排查传 []string{"*:read"}）；为空表示不额外限制
+	Reason      string        // 代为登录原因或工单号，超过 255 个字符时截断
+	Lifetime    time.Duration // 最长有效期；0 时使用 DefaultImpersonationLifetime，超过 MaxImpersonationLifetime 返回错误
+	IdleTimeout time.Duration // 空闲超时时长；0 时使用 DefaultImpersonationIdleTimeout，负数返回错误
+	Device      Device        // 发起或建立代为登录时的设备信息（IP 和 UserAgent）
+}
+
+// ExchangedImpersonation 是消费一次性代为登录交换票据后得到的结果。
+type ExchangedImpersonation struct {
+	Token    string        // 新签发的代为登录令牌明文，只返回一次
+	Subject  identity.Ref  // 被代为登录的目标主体
+	Actor    identity.Ref  // 实际操作者
+	Tenant   string        // 令牌绑定的租户边界
+	Reason   string        // 代为登录原因
+	Lifetime time.Duration // 本次代为登录令牌的最长有效期，供设置会话 cookie 的 MaxAge
+}
+
 // Token 是已签发 token 的信息，token 明文只在签发时返回。
 type Token struct {
 	ID           string
 	Kind         Kind
 	Name         string       // 个人访问令牌的名称；登录 token 为空
-	Scopes       []string     // 个人访问令牌和 OAuth 令牌的权限限制；登录 token 为空
+	Scopes       []string     // 个人访问令牌、OAuth 令牌和受限代为登录令牌的权限限制；不限制时为空
 	ClientID     string       // OAuth 令牌授权的客户端；其余为空
 	ClientName   string       // OAuth 令牌授权时客户端的名称，例如 Claude；其余为空
 	Resource     string       // OAuth 令牌只能用于的资源，例如 https://blog.example.com/mcp；其余为空
 	Tenant       string       // token 绑定的租户；"" 表示不绑定
 	Impersonator identity.Ref // 代为登录时签发 token 的实际操作者，见 identity.Subject.Impersonator；零值表示用户本人
+	Reason       string       // 代为登录时的原因或工单号；其余为空
 	IP           string
 	UserAgent    string
 	CreatedAt    time.Time
@@ -73,6 +107,7 @@ const touchInterval = time.Minute
 const (
 	maxName      = 255
 	maxUserAgent = 255
+	maxReason    = 255
 )
 
 // Store 是基于 Bun 的 token 存储，Migrations 提供表结构。可以并发使用。
@@ -102,8 +137,9 @@ type row struct {
 	Kind             Kind      `bun:"kind,notnull"`
 	Name             string    `bun:"name,notnull"`
 	Scopes           string    `bun:"scopes,notnull"`
+	Reason           string    `bun:"reason,notnull"`
 	IdleTimeout      int64     `bun:"idle_timeout,notnull"` // 秒；0 表示不按空闲延长
-	EndsAt           time.Time `bun:"ends_at,nullzero"`     // 登录 token 的最长期限，滑动延长不超过它
+	EndsAt           time.Time `bun:"ends_at,nullzero"`     // 登录、OAuth、代为登录 token 的最长期限，滑动延长不超过它
 	IP               string    `bun:"ip,notnull"`
 	UserAgent        string    `bun:"user_agent,notnull"`
 	LastUsedAt       time.Time `bun:"last_used_at,notnull"`
@@ -113,6 +149,25 @@ type row struct {
 	Resource         string    `bun:"resource,notnull"`
 	AuthMethods      string    `bun:"auth_methods,notnull"` // 登录的验证方式，空格分隔；其他种类为空
 	AuthTime         time.Time `bun:"auth_time,nullzero"`   // 登录最近一次验证身份的时间
+}
+
+// ticketRow 是 impersonation_tickets 表中的一行。
+type ticketRow struct {
+	bun.BaseModel `bun:"table:impersonation_tickets,alias:it"`
+
+	ID uuid.UUID `bun:"id,pk,type:uuid"`
+	database.Timestamps
+	TicketHash       string    `bun:"ticket_hash,notnull"`
+	SubjectType      string    `bun:"subject_type,notnull"`
+	SubjectID        string    `bun:"subject_id,notnull"`
+	Tenant           string    `bun:"tenant,notnull"`
+	ImpersonatorType string    `bun:"impersonator_type,notnull"`
+	ImpersonatorID   string    `bun:"impersonator_id,notnull"`
+	Scopes           string    `bun:"scopes,notnull"`
+	Reason           string    `bun:"reason,notnull"`
+	Lifetime         int64     `bun:"lifetime,notnull"`
+	IdleTimeout      int64     `bun:"idle_timeout,notnull"`
+	ExpiresAt        time.Time `bun:"expires_at,notnull"`
 }
 
 // NewStore 创建 token 存储。db 必须已执行 api_tokens 迁移。cfg 不合法或 db 为 nil 时 panic。
@@ -130,10 +185,13 @@ func NewStore(db bun.IDB, cfg Config) *Store {
 // 有效期按此刻的 Config 确定并写入 token：最长 Lifetime，空闲时长为 IdleTimeout（Device.Remember 时为 RememberIdleTimeout）。
 //
 // 登录 token 代表用户本人，不限制权限：校验得到的主体 Scopes 为 nil，权限由 Resolve 按用户当前的角色加载。
-// sub.Tenant 不为空时，token 只能在这个租户中使用，例如只属于某个租户的终端客户账号。
-// sub.Impersonator 不为零值时签发的是代为登录的 token，校验得到的主体带有同样的 Impersonator。
+// sub.BoundTenant（为空时取 sub.Tenant）不为空时，token 只能在这个租户中使用，例如只属于某个租户的终端客户账号。
 // sub.Auth 记录这次登录怎样验证了身份（login.Realm 填写），校验得到的主体带有它，见 Confirm。
+// 代为登录必须使用 Impersonate，传入带 Impersonator 的主体直接返回错误。
 func (s *Store) Login(ctx context.Context, sub identity.Subject, d Device) (string, error) {
+	if sub.Impersonated() {
+		return "", errors.New("apitoken: use Impersonate to issue an impersonation token")
+	}
 	plain, _, err := s.login(ctx, sub, d, KindLogin)
 	return plain, err
 }
@@ -146,11 +204,12 @@ func (s *Store) login(ctx context.Context, sub identity.Subject, d Device, kind 
 		return "", nil, err
 	}
 	idle, end := s.cfg.idle(d.Remember), now.Add(s.cfg.Lifetime)
+	tenant := boundTenantOf(sub)
 	r := &row{
 		AuthMethods: methods,
 		AuthTime:    sub.Auth.Time.UTC(),
 		Kind:        kind,
-		Tenant:      sub.Tenant,
+		Tenant:      tenant,
 		IdleTimeout: int64(idle / time.Second),
 		EndsAt:      end,
 		IP:          d.IP,
@@ -159,6 +218,166 @@ func (s *Store) login(ctx context.Context, sub identity.Subject, d Device, kind 
 	}
 	plain, err := s.issue(ctx, sub, r, now)
 	return plain, r, err
+}
+
+// Impersonate 由操作者 actor 为目标主体 target 签发代为登录令牌（KindImpersonation），返回令牌明文。
+// 操作者本身处于代为登录状态时返回 identity.ErrImpersonationForbidden（禁止嵌套代登）。
+// 令牌的 Auth 始终为零值，默认有效期为 DefaultImpersonationLifetime（最长 MaxImpersonationLifetime），
+// 支持按 opt.Tenant 锁定租户边界并按 opt.Scopes 限制权限（例如只读排查）。
+func (s *Store) Impersonate(ctx context.Context, actor identity.Subject, target identity.Ref, opt Impersonation) (string, error) {
+	lifetime, idle, joinedScopes, reason, err := validateImpersonation(actor, target, opt)
+	if err != nil {
+		return "", err
+	}
+	now := time.Now().UTC()
+	end := now.Add(lifetime)
+	sub := identity.Subject{Type: target.Type, ID: target.ID, Impersonator: actor.Ref()}
+	r := &row{
+		Kind:        KindImpersonation,
+		Tenant:      opt.Tenant,
+		Scopes:      joinedScopes,
+		Reason:      reason,
+		IdleTimeout: int64(idle / time.Second),
+		EndsAt:      end,
+		IP:          opt.Device.IP,
+		UserAgent:   truncate(opt.Device.UserAgent, maxUserAgent),
+		ExpiresAt:   deadline(end, idle, now),
+	}
+	return s.issue(ctx, sub, r, now)
+}
+
+// CreateImpersonationTicket 由操作者 actor 为目标主体 target 签发一次性代为登录交换票据，返回票据明文。
+// 票据默认有效期为 DefaultTicketTTL（ttl 为 0 时），最长 MaxTicketTTL。目标域调用 ExchangeImpersonationTicket
+// 原子消费票据后换取真正的代为登录令牌并写入目标域的会话 cookie，同源和跨子域/自定义域名均适用。
+func (s *Store) CreateImpersonationTicket(ctx context.Context, actor identity.Subject, target identity.Ref, opt Impersonation, ttl time.Duration) (string, error) {
+	lifetime, idle, joinedScopes, reason, err := validateImpersonation(actor, target, opt)
+	if err != nil {
+		return "", err
+	}
+	if ttl == 0 {
+		ttl = DefaultTicketTTL
+	}
+	if ttl < 0 || ttl > MaxTicketTTL {
+		return "", errors.Newf("apitoken: ticket ttl must be between 0 and %s", MaxTicketTTL)
+	}
+	id, err := uuid.NewV7()
+	if err != nil {
+		return "", errors.Wrap(err, "apitoken: new ticket id")
+	}
+	now := time.Now().UTC()
+	plain := rand.Text()
+	r := &ticketRow{
+		ID:               id,
+		TicketHash:       hash(plain),
+		SubjectType:      string(target.Type),
+		SubjectID:        target.ID,
+		Tenant:           opt.Tenant,
+		ImpersonatorType: string(actor.Type),
+		ImpersonatorID:   actor.ID,
+		Scopes:           joinedScopes,
+		Reason:           reason,
+		Lifetime:         int64(lifetime / time.Second),
+		IdleTimeout:      int64(idle / time.Second),
+		ExpiresAt:        now.Add(ttl),
+	}
+	r.CreatedAt = now
+	if _, err := s.db.NewInsert().Model(r).Exec(ctx); err != nil {
+		return "", errors.Wrap(err, "apitoken: insert ticket")
+	}
+	return plain, nil
+}
+
+// ExchangeImpersonationTicket 原子消费一次性代为登录交换票据并签发真正的 KindImpersonation 令牌。
+// 票据不存在、已被消费或已过期时返回 ErrTicketInvalid。
+func (s *Store) ExchangeImpersonationTicket(ctx context.Context, ticket string, d Device) (ExchangedImpersonation, error) {
+	if ticket == "" {
+		return ExchangedImpersonation{}, ErrTicketInvalid.New()
+	}
+	now := time.Now().UTC()
+	var tr ticketRow
+	err := s.db.NewDelete().Model(&tr).
+		Where("ticket_hash = ?", hash(ticket)).
+		Where("expires_at > ?", now).
+		Returning("*").
+		Scan(database.Primary(ctx))
+	if errors.Is(err, sql.ErrNoRows) {
+		return ExchangedImpersonation{}, ErrTicketInvalid.New()
+	}
+	if err != nil {
+		return ExchangedImpersonation{}, errors.Wrap(err, "apitoken: exchange ticket")
+	}
+	lifetime := time.Duration(tr.Lifetime) * time.Second
+	idle := time.Duration(tr.IdleTimeout) * time.Second
+	end := now.Add(lifetime)
+	target := identity.Ref{Type: identity.SubjectType(tr.SubjectType), ID: tr.SubjectID}
+	actor := identity.Ref{Type: identity.SubjectType(tr.ImpersonatorType), ID: tr.ImpersonatorID}
+	sub := identity.Subject{Type: target.Type, ID: target.ID, Impersonator: actor}
+	r := &row{
+		Kind:        KindImpersonation,
+		Tenant:      tr.Tenant,
+		Scopes:      tr.Scopes,
+		Reason:      tr.Reason,
+		IdleTimeout: tr.IdleTimeout,
+		EndsAt:      end,
+		IP:          d.IP,
+		UserAgent:   truncate(d.UserAgent, maxUserAgent),
+		ExpiresAt:   deadline(end, idle, now),
+	}
+	plain, err := s.issue(ctx, sub, r, now)
+	if err != nil {
+		return ExchangedImpersonation{}, err
+	}
+	return ExchangedImpersonation{
+		Token:    plain,
+		Subject:  target,
+		Actor:    actor,
+		Tenant:   tr.Tenant,
+		Reason:   tr.Reason,
+		Lifetime: lifetime,
+	}, nil
+}
+
+// validateImpersonation 校验代为登录的操作者、目标和时长限制，返回规范化后的参数。
+func validateImpersonation(actor identity.Subject, target identity.Ref, opt Impersonation) (lifetime, idle time.Duration, scopes, reason string, err error) {
+	if err := actor.Ref().Validate(); err != nil {
+		return 0, 0, "", "", errors.Wrap(err, "apitoken: actor")
+	}
+	if actor.Impersonated() {
+		return 0, 0, "", "", identity.ErrImpersonationForbidden.New()
+	}
+	if err := target.Validate(); err != nil {
+		return 0, 0, "", "", errors.Wrap(err, "apitoken: target")
+	}
+	lifetime = opt.Lifetime
+	if lifetime == 0 {
+		lifetime = DefaultImpersonationLifetime
+	}
+	if lifetime < 0 || lifetime > MaxImpersonationLifetime {
+		return 0, 0, "", "", errors.Newf("apitoken: impersonation lifetime must be between 0 and %s", MaxImpersonationLifetime)
+	}
+	idle = opt.IdleTimeout
+	if idle == 0 {
+		idle = DefaultImpersonationIdleTimeout
+	}
+	if idle < 0 {
+		return 0, 0, "", "", errors.New("apitoken: impersonation idle timeout must not be negative")
+	}
+	if len(opt.Scopes) > 0 {
+		scopes, err = joinScopes(opt.Scopes)
+		if err != nil {
+			return 0, 0, "", "", err
+		}
+	}
+	reason = truncate(strings.TrimSpace(opt.Reason), maxReason)
+	return lifetime, idle, scopes, reason, nil
+}
+
+// boundTenantOf 返回主体的租户边界：优先使用 BoundTenant，为空时使用 Tenant。
+func boundTenantOf(sub identity.Subject) string {
+	if sub.BoundTenant != "" {
+		return sub.BoundTenant
+	}
+	return sub.Tenant
 }
 
 // Personal 描述一个个人访问令牌。
@@ -170,7 +389,7 @@ type Personal struct {
 
 // Create 为 sub 创建个人访问令牌，返回 token 明文，明文只在这里返回一次。
 // 新令牌不比 sub 所用的凭据更宽：sub.Scopes 不为 nil 时，p.Scopes 的每一项都要在 sub.Scopes 之内，否则返回 identity.ErrForbidden；
-// sub.Tenant 不为空时令牌只能在这个租户中使用。
+// sub.BoundTenant 或 sub.Tenant 不为空时令牌只能在这个租户中使用。
 // 代为登录期间（sub.Impersonator 不为零值）创建的令牌记录 Impersonator，之后每次使用都归于这个操作者。
 func (s *Store) Create(ctx context.Context, sub identity.Subject, p Personal) (string, error) {
 	now := time.Now().UTC()
@@ -195,7 +414,7 @@ func (s *Store) Create(ctx context.Context, sub identity.Subject, p Personal) (s
 			}
 		}
 	}
-	r := &row{Kind: KindPersonal, Name: name, Scopes: joined, Tenant: sub.Tenant, ExpiresAt: p.ExpiresAt.UTC()}
+	r := &row{Kind: KindPersonal, Name: name, Scopes: joined, Tenant: boundTenantOf(sub), ExpiresAt: p.ExpiresAt.UTC()}
 	return s.issue(ctx, sub, r, now)
 }
 
@@ -209,7 +428,7 @@ type Grant struct {
 	IdleTimeout time.Duration // 最长空闲时间，0 表示不限制；与登录 token 相同按使用滑动延长
 }
 
-// Authorize 为 sub 签发 OAuth 令牌，返回 token 明文，明文只在这里返回一次。sub.Tenant 不为空时令牌只能在这个租户中使用。
+// Authorize 为 sub 签发 OAuth 令牌，返回 token 明文，明文只在这里返回一次。sub.BoundTenant 或 sub.Tenant 不为空时令牌只能在这个租户中使用。
 // 令牌只由 ValidateFor(g.Resource) 接受；它出现在 List 中，可以用 Revoke 撤销，RevokeOthers 保留它。
 func (s *Store) Authorize(ctx context.Context, sub identity.Subject, g Grant) (string, error) {
 	if g.ClientID == "" || g.Resource == "" {
@@ -231,7 +450,7 @@ func (s *Store) Authorize(ctx context.Context, sub identity.Subject, g Grant) (s
 		Kind:        KindOAuth,
 		Name:        truncate(g.ClientName, maxName),
 		Scopes:      joined,
-		Tenant:      sub.Tenant,
+		Tenant:      boundTenantOf(sub),
 		IdleTimeout: int64(g.IdleTimeout / time.Second),
 		EndsAt:      end,
 		ExpiresAt:   deadline(end, g.IdleTimeout, now),
@@ -262,17 +481,18 @@ func (s *Store) issue(ctx context.Context, sub identity.Subject, r *row, now tim
 	return plain, nil
 }
 
-// Validate 实现 identity.TokenValidator，校验登录 token 和个人访问令牌：返回 token 代表的主体，Method 为 bearer，Credential 为 token 的 ID，
-// Tenant 为 token 绑定的租户，Impersonator 为签发时的代为登录者。登录 token 的 Scopes 为 nil，个人访问令牌的 Scopes 是创建时的限制；
-// 两者的 Permissions 都为空，由 Resolve 加载。token 不存在、已撤销或已过期时返回 ErrInvalid。
+// Validate 实现 identity.TokenValidator，校验登录 token、个人访问令牌和代为登录令牌：返回 token 代表的主体，
+// Method 为 bearer，Credential 为 token 的 ID，BoundTenant 和 Tenant 为 token 绑定的租户，Impersonator 为签发时的代为登录者。
+// 登录 token 的 Scopes 为 nil，个人访问令牌和带权限限制的代为登录令牌的 Scopes 是创建时的限制；两者的 Permissions 都为空，由 Resolve 加载。
+// token 不存在、已撤销或已过期时返回 ErrInvalid。
 //
-// 距上次记录使用超过一分钟时，更新最近使用时间，并延长登录 token 的有效期。
+// 距上次记录使用超过一分钟时，更新最近使用时间，并延长滑动过期的 token 有效期。
 // OAuth 令牌只能用于它的资源（见 ValidateFor），在这里校验返回 ErrInvalid。
 func (s *Store) Validate(ctx context.Context, token string) (identity.Subject, error) {
 	return s.validate(ctx, token, "")
 }
 
-// ValidateFor 返回只接受发给 resource 的令牌的校验器：登录 token、个人访问令牌，以及 Resource 为 resource 的 OAuth 令牌。
+// ValidateFor 返回只接受发给 resource 的令牌的校验器：登录 token、个人访问令牌、代为登录令牌，以及 Resource 为 resource 的 OAuth 令牌。
 // 发给其他资源的 OAuth 令牌按无效处理。用于 OAuth 客户端访问的资源，例如 mcpx.HandlerOptions.Validate：
 //
 //	Validate: tokens.ValidateFor("https://blog.example.com/mcp")
@@ -319,12 +539,17 @@ func (s *Store) validate(ctx context.Context, token, resource string) (identity.
 		Method:       "bearer",
 		Credential:   r.ID.String(),
 		Tenant:       r.Tenant,
+		BoundTenant:  r.Tenant,
 		Impersonator: r.impersonator(),
 	}
-	if r.Kind == KindPersonal || r.Kind == KindOAuth {
+	switch r.Kind {
+	case KindPersonal, KindOAuth:
 		sub.Scopes = strings.Fields(r.Scopes)
-	}
-	if r.Kind == KindLogin {
+	case KindImpersonation:
+		if r.Scopes != "" {
+			sub.Scopes = strings.Fields(r.Scopes)
+		}
+	case KindLogin:
 		sub.Auth = r.auth()
 	}
 	return sub, nil
@@ -403,7 +628,7 @@ func (s *Store) List(ctx context.Context, sub identity.Subject) ([]Token, error)
 	return out, nil
 }
 
-// Revoke 撤销 sub 的 token id；传入 sub.Credential 即登出当前设备。
+// Revoke 撤销 sub 的 token id；传入 sub.Credential 即登出当前设备或退出代为登录。
 // token 不存在或不属于 sub 时返回 ErrNotFound。
 func (s *Store) Revoke(ctx context.Context, sub identity.Subject, id string) error {
 	tid, err := uuid.Parse(id)
@@ -433,7 +658,7 @@ func (s *Store) RevokeToken(ctx context.Context, token string) error {
 }
 
 // RevokeOthers 撤销 sub 除本次请求所用 token（sub.Credential）以外的全部登录 token，返回撤销的个数，
-// 例如“退出其他设备”。个人访问令牌保持有效。sub.Credential 不是 sub 的 token 时，撤销它的全部登录 token。
+// 例如“退出其他设备”。个人访问令牌、OAuth 令牌和代为登录令牌保持有效。sub.Credential 不是 sub 的 token 时，撤销它的全部登录 token。
 func (s *Store) RevokeOthers(ctx context.Context, sub identity.Subject) (int, error) {
 	if sub.ID == "" {
 		return 0, errors.New("apitoken: subject ID is required")
@@ -446,7 +671,7 @@ func (s *Store) RevokeOthers(ctx context.Context, sub identity.Subject) (int, er
 	return affected(q.Exec(ctx))
 }
 
-// RevokeSubject 撤销主体 ref 的全部 token，包括个人访问令牌，返回撤销的个数。用于封禁账号、修改密码等。
+// RevokeSubject 撤销主体 ref 的全部 token（包括个人访问令牌、OAuth 令牌和代为登录令牌），返回撤销的个数。用于封禁账号、修改密码等。
 func (s *Store) RevokeSubject(ctx context.Context, ref identity.Ref) (int, error) {
 	if err := ref.Validate(); err != nil {
 		return 0, errors.Wrap(err, "apitoken")
@@ -455,19 +680,39 @@ func (s *Store) RevokeSubject(ctx context.Context, ref identity.Ref) (int, error
 		Where("subject_type = ? AND subject_id = ?", ref.Type, ref.ID).Exec(ctx))
 }
 
-// Erase 在 db 中删除主体 ref 的全部 token，包括个人访问令牌和 OAuth 令牌，用于注销账号。
-// db 通常是注销所在的事务，签名与 privacy.Source 的 Erase 相同。
+// RevokeByImpersonator 撤销操作者 actor 签发的全部代为登录令牌与未消费的交换票据，返回撤销的令牌个数。
+// 用于操作者停用、离职或收回代为登录权限时立即回收全部代登会话。
+func (s *Store) RevokeByImpersonator(ctx context.Context, actor identity.Ref) (int, error) {
+	if err := actor.Validate(); err != nil {
+		return 0, errors.Wrap(err, "apitoken")
+	}
+	if _, err := s.db.NewDelete().Model((*ticketRow)(nil)).
+		Where("impersonator_type = ? AND impersonator_id = ?", actor.Type, actor.ID).Exec(ctx); err != nil {
+		return 0, errors.Wrap(err, "apitoken: delete impersonator tickets")
+	}
+	return affected(s.db.NewDelete().Model((*row)(nil)).
+		Where("impersonator_type = ? AND impersonator_id = ?", actor.Type, actor.ID).Exec(ctx))
+}
+
+// Erase 在 db 中删除主体 ref 的全部 token 和未消费的代为登录交换票据（包括作为主体和作为代为登录操作者的记录），
+// 用于停用或注销账号。db 通常是业务所在的事务，签名与 privacy.Source 的 Erase 相同。
 func Erase(ctx context.Context, db bun.IDB, ref identity.Ref) error {
 	if err := ref.Validate(); err != nil {
 		return errors.Wrap(err, "apitoken")
 	}
+	if _, err := db.NewDelete().Model((*ticketRow)(nil)).
+		Where("(subject_type = ? AND subject_id = ?) OR (impersonator_type = ? AND impersonator_id = ?)", ref.Type, ref.ID, ref.Type, ref.ID).
+		Exec(ctx); err != nil {
+		return errors.Wrap(err, "apitoken: erase tickets")
+	}
 	_, err := affected(db.NewDelete().Model((*row)(nil)).
-		Where("subject_type = ? AND subject_id = ?", ref.Type, ref.ID).Exec(ctx))
+		Where("(subject_type = ? AND subject_id = ?) OR (impersonator_type = ? AND impersonator_id = ?)", ref.Type, ref.ID, ref.Type, ref.ID).
+		Exec(ctx))
 	return err
 }
 
 // Export 返回主体 ref 的全部 token（不含 token 本身和它的哈希），用于导出个人数据；签名与 privacy.Source 的 Export 相同。
-// 每个 token 是一个对象：kind、name、scopes、tenant、client、impersonated（是否由别人代为登录签发）、
+// 每个 token 是一个对象：kind、name、scopes、tenant、client、impersonated（是否由别人代为登录签发）、reason、
 // ip、user_agent、created_at、last_used_at、expires_at，空的字段省略。
 func Export(ctx context.Context, db bun.IDB, ref identity.Ref) (any, error) {
 	if err := ref.Validate(); err != nil {
@@ -486,6 +731,7 @@ func Export(ctx context.Context, db bun.IDB, ref identity.Ref) (any, error) {
 		Tenant       string    `json:"tenant,omitempty"`
 		Client       string    `json:"client,omitempty"`
 		Impersonated bool      `json:"impersonated,omitempty"`
+		Reason       string    `json:"reason,omitempty"`
 		IP           string    `json:"ip,omitempty"`
 		UserAgent    string    `json:"user_agent,omitempty"`
 		CreatedAt    time.Time `json:"created_at"`
@@ -496,22 +742,34 @@ func Export(ctx context.Context, db bun.IDB, ref identity.Ref) (any, error) {
 	for i, r := range rows {
 		out[i] = exported{
 			Kind: r.Kind, Name: r.Name, Scopes: strings.Fields(r.Scopes), Tenant: r.Tenant, Client: r.ClientName,
-			Impersonated: r.ImpersonatorID != "", IP: r.IP, UserAgent: r.UserAgent,
+			Impersonated: r.ImpersonatorID != "", Reason: r.Reason, IP: r.IP, UserAgent: r.UserAgent,
 			CreatedAt: r.CreatedAt, LastUsedAt: r.LastUsedAt, ExpiresAt: r.ExpiresAt,
 		}
 	}
 	return out, nil
 }
 
-// Cleanup 删除最多 limit 个已过期的 token，返回删除的个数。由应用定时调用。
+// Cleanup 删除最多 limit 个已过期的 token，同时清理最多 limit 个已过期的代为登录交换票据，返回删除的记录总数。由应用定时调用。
 func (s *Store) Cleanup(ctx context.Context, limit int) (int, error) {
 	if limit <= 0 {
 		return 0, errors.New("apitoken: cleanup limit must be positive")
 	}
+	now := time.Now().UTC()
 	expired := s.db.NewSelect().Model((*row)(nil)).Column("id").
-		Where("expires_at <= ?", time.Now().UTC()).OrderExpr("expires_at").Limit(int64(limit))
-	return affected(s.db.NewDelete().Model((*row)(nil)).
+		Where("expires_at <= ?", now).OrderExpr("expires_at").Limit(int64(limit))
+	tokens, err := affected(s.db.NewDelete().Model((*row)(nil)).
 		Where("id IN (?)", expired).Exec(ctx))
+	if err != nil {
+		return 0, err
+	}
+	expiredTickets := s.db.NewSelect().Model((*ticketRow)(nil)).Column("id").
+		Where("expires_at <= ?", now).OrderExpr("expires_at").Limit(int64(limit))
+	tickets, err := affected(s.db.NewDelete().Model((*ticketRow)(nil)).
+		Where("id IN (?)", expiredTickets).Exec(ctx))
+	if err != nil {
+		return tokens, err
+	}
+	return tokens + tickets, nil
 }
 
 // token 把行转换为 Token。
@@ -523,6 +781,7 @@ func (r *row) token() Token {
 		Scopes:       strings.Fields(r.Scopes),
 		Tenant:       r.Tenant,
 		Impersonator: r.impersonator(),
+		Reason:       r.Reason,
 		IP:           r.IP,
 		UserAgent:    r.UserAgent,
 		CreatedAt:    r.CreatedAt,

@@ -68,7 +68,7 @@ func (c *Credentials) RecheckTenant(ctx context.Context, tenant string) error {
 	return c.hub.Publish(ctx, credTopic(tenantTopic, tenant), nil)
 }
 
-// Watch 实现 identity.CredentialWatcher：关注 sub.Credential、sub.Ref() 和 identity.TenantFromContext(ctx)，
+// Watch 实现 identity.CredentialWatcher：关注 sub.Credential、sub.Ref()、sub.Impersonator 和 identity.TenantFromContext(ctx)，
 // 收到对应的 Recheck 时向返回的通道发送信号，多个信号在读取前合并为一个。
 // 订阅因为跟不上或 Backend 可能丢了消息而结束时，先发一个信号（期间的提醒可能丢了），再重新订阅。
 // ctx 结束或 Hub 关闭后停止关注。
@@ -76,6 +76,9 @@ func (c *Credentials) Watch(ctx context.Context, sub identity.Subject) <-chan st
 	topics := []string{credTopic(tenantTopic, identity.TenantFromContext(ctx))}
 	if sub.ID != "" {
 		topics = append(topics, credTopic(subjectTopic, sub.Ref().String()))
+	}
+	if !sub.Impersonator.IsZero() {
+		topics = append(topics, credTopic(subjectTopic, sub.Impersonator.String()))
 	}
 	if sub.Credential != "" {
 		topics = append(topics, credTopic(credentialTopic, sub.Credential))

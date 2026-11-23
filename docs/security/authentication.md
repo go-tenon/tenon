@@ -43,6 +43,7 @@ rest.Register(api, op, NewCreate(db).HTTP)
 | `Method` | 认证方式，例如 `bearer` |
 | `Credential` | 本次请求所用凭据的 ID，例如 API 令牌的 ID，用于在设备列表中标出当前设备；可以为空 |
 | `Tenant` | 本次请求所在的租户，`""` 是平台本身，见[多租户](#tenants) |
+| `BoundTenant` | 凭据绑定的租户边界，`""` 表示不限制；由凭据决定，Resolver 保持不变 |
 | `Permissions` | 主体在 `Tenant` 中拥有的权限 |
 | `Scopes` | 凭据的权限限制，例如只读令牌的 `articles:read`；`nil` 表示不限制 |
 | `Auth` | 这次登录通过的验证方式（`Methods`）和最近一次验证身份的时间（`Time`）；`Auth.TwoFactor()` 报告是否经过二次验证。个人访问令牌、代为登录的令牌为零值 |
@@ -129,6 +130,7 @@ requireKey := rest.RequireAuth(api, "apiKey",
 | 凭据绑定的租户与本次请求的租户不同 | 403 | `auth.forbidden` |
 | 缺少所需的权限 | 403 | `auth.forbidden` |
 | 路由用了 `rest.Confirmed`，凭据太久没有确认身份 | 403 | `auth.confirm_required` |
+| 路由用了 `rest.DirectOnly`，凭据是代为登录签发的 | 403 | `auth.impersonation_forbidden` |
 | Resolver 返回 `identity.ErrTwoFactorRequired`（要求二次验证） | 403 | `auth.two_factor_required` |
 | Resolver 返回 `identity.ErrMethodRequired`（要求特定的登录方式） | 403 | `auth.method_required` |
 | 校验器或 Resolver 返回系统故障 | 对应的 `5xx`，例如 503 | 无，`detail` 是 `authentication unavailable` |
@@ -236,47 +238,45 @@ api := rest.New(router, rest.Options{
 <a id="impersonation"></a>
 ## 代为登录：`Impersonator`
 
-客服以用户的身份排查问题时，签发一个带 `Impersonator` 的[登录令牌](api-tokens.md#login-and-logout)。主体是那个用户，权限也是他的；实际操作的人记在 `Impersonator` 中，令牌保存它，之后每个请求都带着它。运营人员和用户可以属于不同的账号体系。
+客服或平台管理员以目标用户身份排查问题时，使用 `apitoken.Store.Impersonate` 签发独立的代为登录令牌（`KindImpersonation`）。主体是目标用户，权限也是他的；实际操作的人记在 `Impersonator` 中，之后每个请求都带着它。运营人员和用户可以属于不同的账号体系。
 
 运营后台的“以此用户登录”是一个要求 `users:impersonate` 的接口：
 
 ```go
 staff, _ := identity.FromContext(ctx)
-if !staff.Impersonator.IsZero() {
-    return nil, identity.ErrForbidden.New() // 代为登录只有一层
-}
-target := identity.Subject{Type: customer.Type, ID: in.CustomerID, Impersonator: staff.Ref()}
-plain, err := tokens.Login(ctx, target, device)
+plain, err := tokens.Impersonate(ctx, staff, customerRef, apitoken.Impersonation{
+    Tenant: in.TenantID,
+    Scopes: []string{"*:read"}, // 可选：限制为只读排查
+    Reason: in.Reason,
+    Device: device,
+})
 ```
 
-`tokens` 是用户这套账号的 `apitoken.Store`，`in.CustomerID` 来自请求，`device` 是 `apitoken.Device`（IP 和 User-Agent）。
+`tokens` 是目标账号的 `apitoken.Store`，`customerRef` 是目标主体的 `identity.Ref`，`device` 是 `apitoken.Device`（IP 和 User-Agent）。
 
-- 令牌放在响应体中交给用户端前端。不要放进跳转地址的查询参数：它会留在浏览器历史和访问日志中。
-- 用户端前端在 `Impersonator` 不为零值时显示“正在代某人操作”和退出按钮；退出时[撤销](api-tokens.md#revoking-tokens)这个令牌。
-- [操作日志](../features/activity.md)自动记下 `Impersonator`。自己写日志时同时写下两者，例如 `"subject", sub.Ref().String(), "impersonator", sub.Impersonator.String()`。
+- `Impersonate` 强制单层代登（操作者本身处于代为登录状态时返回 `identity.ErrImpersonationForbidden`），默认有效期 1 小时（最长 4 小时），`Auth` 为零值。
+- 跨域或子域名场景用 `CreateImpersonationTicket` 签发 30 秒一次性交换票据，在目标域用 `ExchangeImpersonationTicket` 消费换取令牌写入目标域 cookie，见[运营代为登录租户成员](tenancy.md#impersonation)。
+- 认证中间件自动将 `impersonator` 写入 `logging` 的 context 字段和链路属性；[操作日志](../features/activity.md)自动记下 `Impersonator`。
+- 用户端前端用 `@go-tenon/ui` 的 `ImpersonationBanner` 显示当前代登状态和退出按钮；退出时[撤销](api-tokens.md#revoking-tokens)该令牌并清除代登 cookie。
 
 <a id="impersonation-rules"></a>
 ### 代为登录的限制
 
-这些规则由应用决定：
+入口默认拒绝所有代为登录凭据（fail-closed）。接受代为登录的入口在 `rest.Options.Impersonation`（以及 `realtime.Options`、`mcpx.HandlerOptions`、`natsrpc.Options`）中显式声明允许的操作者体系和权限：
 
-- **操作者仍然有效**：在 Resolver 中检查 `Impersonator` 是否仍有代为登录的权限，客服离职或权限被收回后，他签发的令牌在下一个请求失效：
+```go
+api := rest.New(router, rest.Options{
+    Accounts: identity.Accounts{member.Type: member.Resolve(db, roles)},
+    Impersonation: &identity.Impersonation{
+        Actors:      identity.Accounts{staff.Type: staff.Resolve(db, roles)},
+        Permissions: []string{"users:impersonate"},
+    },
+})
+```
 
-  ```go
-  if !sub.Impersonator.IsZero() {
-      perms, _, err := roles.Permissions(ctx, sub.Impersonator, "")
-      if err != nil {
-          return identity.Subject{}, err
-      }
-      if !identity.Grants(perms, "users:impersonate") {
-          return identity.Subject{}, identity.ErrUnauthenticated.New()
-      }
-  }
-  return roles.Resolve(ctx, sub)
-  ```
+`db` 是 `*bun.DB`，`roles` 是 [`authz.Store`](authorization.md#roles)。
 
-  `roles` 是 [`authz.Store`](authorization.md#roles)。
-
-- **谁可以被代为登录**：通常不允许代登其他运营人员，签发前用 `roles.Permissions(ctx, target.Ref(), "")` 确认目标在平台中没有角色。
-- **哪些操作不允许代为执行**：改密码和邮箱、管理设备和令牌、付款等，在对应的业务动作中拒绝 `!subject.Impersonator.IsZero()` 的主体。代为登录的令牌没有身份验证记录，[`rest.Confirmed`](login.md#confirming) 保护的接口总是返回 `403`。
-- 代为登录期间创建的[个人访问令牌](api-tokens.md#personal-access-tokens)记下 `Impersonator`，之后每次使用都归于这个操作者。[OAuth 授权](oauth-server.md)的同意接口拒绝代为登录的主体。
+- **操作者实时校验**：每个请求都在平台域（`""`）执行操作者的 Resolver 并检查 `Permissions`；操作者被停用或失去权限后，下一个请求返回 `401`。停用操作者时调用 `tokens.RevokeByImpersonator` 和 `creds.RecheckSubject` 立即回收会话并断开实时连接。
+- **单租户边界与账号自省**：签发时设置 `Tenant` 会写入 `Subject.BoundTenant`，凭据只能访问该租户和标记了 `rest.Options.AccountScope` 或 `rest.AccountScoped()` 的账号自省接口（如 `/api/me`、`/api/auth/logout`）。
+- **禁止代为执行的敏感操作**：改密码、改个人资料、管理令牌、付款等路由加上 `rest.DirectOnly()`，代为登录请求直接返回 `403 auth.impersonation_forbidden`；[`rest.Confirmed`](login.md#confirming) 保护的接口同样拒绝代为登录。
+- [OAuth 授权](oauth-server.md)的同意接口拒绝代为登录的主体；代为登录期间创建的个人访问令牌继承 `Impersonator`。
