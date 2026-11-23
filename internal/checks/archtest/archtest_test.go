@@ -400,7 +400,7 @@ func TestSearchCoreIsLight(t *testing.T) {
 // trpc-agent-go 及其带来的 gRPC、Huma 和数据库组件都只由 ai/chat 引入。
 func TestAICoreIsLight(t *testing.T) {
 	heavy := []string{module + "/ai/chat", "trpc.group/trpc-go", "google.golang.org/grpc", "github.com/danielgtaylor/huma", "github.com/uptrace/bun", module + "/httpx", module + "/broadcast", module + "/lock"}
-	for _, pkg := range []string{"/ai", "/ai/openai", "/ai/openrouter", "/ai/systemone", "/ai/aitest"} {
+	for _, pkg := range []string{"/ai", "/ai/openai", "/ai/openrouter", "/ai/systemone", "/ai/router", "/ai/aitest"} {
 		out, err := exec.Command("go", "list", "-deps", module+pkg).CombinedOutput()
 		if err != nil {
 			t.Fatalf("go list: %v\n%s", err, out)
