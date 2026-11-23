@@ -325,3 +325,92 @@ func TestServeDrainDelayAndConnectionClose(t *testing.T) {
 		}
 	})
 }
+
+// TestServeGracefulKeepAliveDrain 验证停机交接时：
+//  1. 排空开始前已进入处理器的在途请求，写出响应时自动附带 Connection: close；
+//  2. 排空开始瞬间处于空闲的 keep-alive 连接，在短暂宽限期内发来的下一个请求仍正常返回 200 并附带 Connection: close，避免反代报 502。
+func TestServeGracefulKeepAliveDrain(t *testing.T) {
+	t.Parallel()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	mux := http.NewServeMux()
+	mux.HandleFunc("/slow", func(w http.ResponseWriter, _ *http.Request) {
+		close(entered)
+		<-release
+		_, _ = io.WriteString(w, "slow")
+	})
+	mux.HandleFunc("/fast", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, "fast")
+	})
+
+	ready := make(chan struct{})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- httpx.Serve(ctx, httpx.DefaultConfig(), ln, mux, httpx.OnReady(func() { close(ready) }))
+	}()
+	<-ready
+
+	// 连接 1：先发一次请求后保持空闲，模拟反向代理的 keep-alive 空闲连接池。
+	idleConn, err := net.Dial("tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer idleConn.Close()
+	if _, err := io.WriteString(idleConn, "GET /fast HTTP/1.1\r\nHost: test\r\n\r\n"); err != nil {
+		t.Fatal(err)
+	}
+	buf := make([]byte, 512)
+	_ = idleConn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	n, err := idleConn.Read(buf)
+	if err != nil || !strings.Contains(string(buf[:n]), "fast") {
+		t.Fatalf("warmup idle conn = %q, %v", string(buf[:n]), err)
+	}
+
+	// 连接 2：排空前进入处理器，排空后才写响应。
+	slowConn, err := net.Dial("tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer slowConn.Close()
+	if _, err := io.WriteString(slowConn, "GET /slow HTTP/1.1\r\nHost: test\r\n\r\n"); err != nil {
+		t.Fatal(err)
+	}
+	<-entered
+
+	// 开始排空（模拟热重载交接：无 DrainDelay）。
+	cancel()
+	time.Sleep(50 * time.Millisecond)
+
+	// 放行在途慢请求：响应应附带 Connection: close。
+	close(release)
+	_ = slowConn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	slowResp, err := io.ReadAll(slowConn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(slowResp), "Connection: close") || !strings.HasSuffix(string(slowResp), "slow") {
+		t.Fatalf("in-flight response = %q, want Connection: close and slow", slowResp)
+	}
+
+	// 在短暂宽限期内复用空闲 keep-alive 连接发送 POST 请求：仍应成功返回 200 并附带 Connection: close。
+	if _, err := io.WriteString(idleConn, "POST /fast HTTP/1.1\r\nHost: test\r\nContent-Length: 0\r\n\r\n"); err != nil {
+		t.Fatal(err)
+	}
+	_ = idleConn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	idleResp, err := io.ReadAll(idleConn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(string(idleResp), "HTTP/1.1 200 OK") || !strings.Contains(string(idleResp), "Connection: close") || !strings.HasSuffix(string(idleResp), "fast") {
+		t.Fatalf("reused idle conn response = %q, want 200 + Connection: close + fast", idleResp)
+	}
+
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}

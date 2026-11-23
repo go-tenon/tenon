@@ -259,9 +259,9 @@ done
 ```nginx
 upstream blog_backend {
     server 127.0.0.1:8080 max_fails=3 fail_timeout=10s;
-    # 多机部署时追加其余节点；配合 http.drain_delay 与 /readyz 摘流
-    keepalive 64;
-    keepalive_timeout 30s; # 短于后端 http.idle_timeout（默认 1m）
+    # 同机反代（127.0.0.1）使用短连接；跨机内网反代按需开启连接池：
+    # keepalive 64;
+    # keepalive_timeout 30s; # 短于后端 http.idle_timeout（默认 1m）
 }
 
 server {
@@ -278,7 +278,7 @@ server {
     location / {
         proxy_pass http://blog_backend;
         proxy_http_version 1.1;
-        proxy_set_header Connection "";
+        proxy_set_header Connection "close"; # 跨机开启 keepalive 时改为 ""
         proxy_set_header Host $http_host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
@@ -291,7 +291,7 @@ server {
 }
 ```
 
-- 代理与后端在同一台机器时，应用配置 `http.client_ip.trusted_proxies: ["127.0.0.1/32"]`。
+- 代理与后端在同一台机器时，应用配置 `http.client_ip.trusted_proxies: ["127.0.0.1/32"]`；本机回环直连省去空闲连接池，热重载对非幂等 `POST` 请求也零 502。
 - 启用 WebSocket（[实时频道](../libraries/realtime.md)）时，在对应 `location` 设置 `proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection "upgrade";`。
 - 需要维护窗口时叠加 [503 维护页规则](operations.md#maintenance-at-the-proxy)。
 
