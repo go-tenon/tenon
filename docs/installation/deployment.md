@@ -4,7 +4,7 @@
 
 包：`command`、`command/httpcmd`、`command/migratecmd`。
 
-- 每次发布按顺序执行：构建 → `config check` → `doctor` → `migrate up` → 启动或热重载服务。迁移在新版本启动之前执行：新代码用到的表和列要先存在。
+- 每次发布按顺序执行：构建 → `config check` → `migrate up` → `doctor` → 启动或热重载服务。迁移在新版本启动与全量自检之前执行：新代码用到的表、列和队列复制槽要先就绪。
 - 发布期间新旧版本同时运行，每次的表结构变化都要让两个版本都能运行，见[零停机变更](../database/migrations.md#zero-downtime-changes)。
 
 <a id="building"></a>
@@ -33,7 +33,7 @@ go tool tenon deploy
 ```
 
 - `tenon deploy setup` 检查目标机为带 systemd 的 Linux（含 SSR 时检查 glibc），建系统用户和目录，写入 `<应用>@.service` 与角色级 drop-in 覆盖文件并 `daemon-reload`。
-- `tenon deploy` 自动探测目标架构并本地交叉编译（在 CI 中可传 `--binary` 跳过构建），在主节点加发布锁，全集群并行上传二进制与剔除了 `local.yaml` 的 `config/` 并校验 SHA-256，在主迁移节点执行 `config check`、`doctor` 和一次 `migrate up`，随后按波次切换并清理旧版本。
+- `tenon deploy` 自动探测目标架构并本地交叉编译（在 CI 中可传 `--binary` 跳过构建），在主节点加发布锁，全集群并行上传二进制与配置文件并校验 SHA-256，在主迁移节点依次执行 `config check`、`migrate up` 与 `doctor`，随后按波次切换并清理旧版本。
 - 常用运维命令：`rollback [version]`（回退二进制与配置）、`status [--role http]`（集群表格状态）、`logs [--role http] [-F] [--since 15m] [--contains ERR]`（多机实时日志汇流）、`run -- doctor`（以服务用户和环境变量执行一次性命令）、`maintenance on|off`（默认仅开关入口主机维护页）。
 - **AI 助手与人类同等优先**：所有 `tenon deploy` 子命令均支持 `--format json` 结构化输出且全程非交互；只读观测与发布预演同步作为 MCP 工具暴露（`tenon_deploy_info`、`tenon_deploy_status`、`tenon_deploy_logs`、`tenon_deploy_plan`），见 [MCP 服务](ai-assistants.md#mcp-servers)。
 

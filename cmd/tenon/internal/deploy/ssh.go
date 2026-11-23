@@ -30,8 +30,12 @@ type SSHRunner struct {
 }
 
 // NewSSHRunner 为目标环境 t 创建 SSHRunner，使用结束后应调用 Close 清理控制套接字目录。
+// 优先在 /tmp 下使用短目录名，保证拼接 %C 后的 ControlPath 在 macOS 上也低于 Unix socket 104 字节路径上限。
 func NewSSHRunner(t Target) (*SSHRunner, error) {
-	dir, err := os.MkdirTemp("", "tenon-ssh-*")
+	dir, err := os.MkdirTemp("/tmp", "tn-*")
+	if err != nil {
+		dir, err = os.MkdirTemp("", "tn-*")
+	}
 	if err != nil {
 		return nil, fmt.Errorf("deploy: create ssh control dir: %w", err)
 	}
@@ -41,6 +45,11 @@ func NewSSHRunner(t Target) (*SSHRunner, error) {
 		identityFile: t.IdentityFile,
 		controlDir:   dir,
 	}, nil
+}
+
+// ControlPath 返回传给 ssh/scp 的 ControlPath 模板路径。
+func (r *SSHRunner) ControlPath() string {
+	return filepath.Join(r.controlDir, "%C")
 }
 
 // Close 清理 ControlMaster 的控制套接字目录。
@@ -96,7 +105,7 @@ func (r *SSHRunner) commonArgs(forSCP bool) []string {
 		"-o", "BatchMode=yes",
 		"-o", "ControlMaster=auto",
 		"-o", "ControlPersist=60s",
-		"-o", "ControlPath=" + filepath.Join(r.controlDir, "%C"),
+		"-o", "ControlPath=" + r.ControlPath(),
 	}
 	if r.port > 0 {
 		flag := "-p"
