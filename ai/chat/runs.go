@@ -745,7 +745,9 @@ func (r *Run) emit(name string, data any, raw *event.Event) {
 // loop 运行 agent，直到没有剩余的插话消息和通知。msg 为 nil 时，输入全部由 UseHistory 的 Load 读出。
 func (r *Run) loop(ctx context.Context, msg *model.Message, opts []agent.RunOption) {
 	defer close(r.done)
+	ctx = withConversation(ctx, r.rs.conversation(r.key))
 	var failed bool
+	var totalUsage Usage
 	calls := map[string]ToolCall{}
 	answered := map[string]bool{}
 	for first := true; ; first = false {
@@ -768,7 +770,7 @@ func (r *Run) loop(ctx context.Context, msg *model.Message, opts []agent.RunOpti
 				// 失败时消息仍在 steered 中，由下一轮发出。
 				_ = runner.EnqueueUserMessage(r.rs.runner, reqID, m)
 			}
-			failed = r.consume(ctx, ch, cursor, calls, answered)
+			failed = r.consume(ctx, ch, cursor, calls, answered, &totalUsage)
 		}
 		cleanup()
 
@@ -791,6 +793,10 @@ func (r *Run) loop(ctx context.Context, msg *model.Message, opts []agent.RunOpti
 		done := Done{Pending: r.pendingCalls(calls, answered), Canceled: ctx.Err() != nil}
 		if done.Pending == nil {
 			done.Pending = []ToolCall{}
+		}
+		if totalUsage.PromptTokens > 0 || totalUsage.CompletionTokens > 0 || totalUsage.CachedTokens > 0 || totalUsage.ReasoningTokens > 0 {
+			u := totalUsage
+			done.Usage = &u
 		}
 		r.events = append(r.events, Event{ID: fmt.Sprintf("%s.%d", r.ID, len(r.events)), Name: EventDone, Data: done})
 		r.finished = true
@@ -860,9 +866,9 @@ func (r *Run) fail(ctx context.Context, err error) {
 	r.emit(EventError, Error{err.Error()}, nil)
 }
 
-// consume 把 trpc-agent-go 的事件转换为 Event，返回运行是否出错。
+// consume 把 trpc-agent-go 的事件转换为 Event，返回运行是否出错，并把非增量响应中的 token 用量累加到 totalUsage。
 // cursor 是这一轮读取历史的游标，使用 UseHistory 时随产生的消息交给 Save。
-func (r *Run) consume(ctx context.Context, ch <-chan *event.Event, cursor string, calls map[string]ToolCall, answered map[string]bool) (failed bool) {
+func (r *Run) consume(ctx context.Context, ch <-chan *event.Event, cursor string, calls map[string]ToolCall, answered map[string]bool, totalUsage *Usage) (failed bool) {
 	// 当前这条回答的思考过程和正文是否已经以增量发出；完整消息中只发送还没发出的部分。
 	var streamedReasoning, streamedText bool
 	// save 在使用 UseHistory 时保存进入对话的完整消息；保存失败时停止运行，对话停在最后一次成功保存的位置。
@@ -889,6 +895,12 @@ func (r *Run) consume(ctx context.Context, ch <-chan *event.Event, cursor string
 				r.emit(EventError, Error{ev.Error.Message}, ev)
 			}
 			continue
+		}
+		if !ev.IsPartial && ev.Usage != nil && totalUsage != nil {
+			totalUsage.PromptTokens += ev.Usage.PromptTokens
+			totalUsage.CachedTokens += ev.Usage.PromptTokensDetails.CachedTokens
+			totalUsage.CompletionTokens += ev.Usage.CompletionTokens
+			totalUsage.ReasoningTokens += ev.Usage.CompletionTokensDetails.ReasoningTokens
 		}
 		for _, c := range ev.Choices {
 			if ev.IsPartial {

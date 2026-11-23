@@ -1,4 +1,4 @@
-// Package openai 通过 OpenAI 兼容接口生成图片、合成语音、识别语音、计算向量、重排和决策。
+// Package openai 通过 OpenAI 兼容接口执行单次补全、生成图片、合成语音、识别语音、计算向量、重排和决策。
 //
 // 重排使用 Cohere、Jina 定义、被广泛沿用的 POST {BaseURL}/rerank，
 // 硅基流动、OpenRouter、vLLM 等都提供；Cohere 自己的地址是 https://api.cohere.com/v2。
@@ -24,8 +24,8 @@ import (
 
 const defaultBaseURL = "https://api.openai.com/v1/"
 
-// Client 是 OpenAI 兼容接口上的一个模型。它实现 ai.Imager、ai.Speaker、ai.Transcriber、ai.Embedder、ai.Reranker 和 ai.Decider，
-// 能用哪一种取决于模型本身。创建 Client 不访问网络，可以每次请求时按当时的配置创建。
+// Client 是 OpenAI 兼容接口上的一个模型。它实现 ai.Completer、ai.Imager、ai.Speaker、ai.Transcriber、ai.Embedder、
+// ai.Reranker 和 ai.Decider，能用哪一种取决于模型本身。创建 Client 不访问网络，可以每次请求时按当时的配置创建。
 type Client struct {
 	model     string
 	client    oa.Client

@@ -131,3 +131,25 @@ func TestDecider(t *testing.T) {
 	_, err = d.Decide(t.Context(), ai.DecisionRequest{})
 	assert.ErrorContains(t, err, "input is required")
 }
+
+// TestCompleter 检查 Completer 替身的默认回复、预设脚本、错误注入和请求记录。
+func TestCompleter(t *testing.T) {
+	t.Parallel()
+	req := ai.CompleteRequest{Messages: []ai.Message{{Role: ai.RoleUser, Content: "hello"}}}
+
+	c := aitest.NewCompleter()
+	got, err := c.Complete(t.Context(), req)
+	require.NoError(t, err)
+	assert.Equal(t, "hello", got)
+
+	c = aitest.NewCompleter("one", "two")
+	got, err = c.Complete(t.Context(), req)
+	require.NoError(t, err)
+	assert.Equal(t, "one", got)
+	got, err = c.Complete(t.Context(), req)
+	require.NoError(t, err)
+	assert.Equal(t, "two", got)
+	_, err = c.Complete(t.Context(), req)
+	assert.ErrorContains(t, err, "unexpected complete request 3")
+	assert.Len(t, c.Requests(), 3)
+}

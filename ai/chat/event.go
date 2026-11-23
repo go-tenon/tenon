@@ -48,8 +48,17 @@ type Error struct {
 	Message string `json:"message"`
 }
 
+// Usage 是一次运行累计的模型 token 用量。
+type Usage struct {
+	PromptTokens     int `json:"prompt_tokens"`              // 输入 token 总数（含缓存命中）
+	CachedTokens     int `json:"cached_tokens,omitempty"`    // 缓存命中的输入 token 数
+	CompletionTokens int `json:"completion_tokens"`          // 输出 token 总数（含思考 token）
+	ReasoningTokens  int `json:"reasoning_tokens,omitempty"` // 思考推理 token 数
+}
+
 // Done 是运行的结果。
 type Done struct {
 	Pending  []ToolCall `json:"pending"`            // 等待审批的工具调用，用 Runs.Approve 或 Runs.Reject 处理后对话继续。
 	Canceled bool       `json:"canceled,omitempty"` // 运行被 Run.Cancel 或停机取消。
+	Usage    *Usage     `json:"usage,omitempty"`    // 本次运行累计的 token 用量；模型未报告用量时为 nil。
 }

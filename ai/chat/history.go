@@ -47,6 +47,21 @@ type Conversation struct {
 	ID     string
 }
 
+// conversationCtxKey 是用于在 context 中传递当前运行所属 Conversation 的私有键类型。
+type conversationCtxKey struct{}
+
+// withConversation 返回携带对话 c 的子上下文。
+func withConversation(ctx context.Context, c Conversation) context.Context {
+	return context.WithValue(ctx, conversationCtxKey{}, c)
+}
+
+// ConversationFromContext 从 Runs 发起的模型或工具调用上下文中取出当前对话。
+// 供自定义 http.RoundTripper（例如向网关写入会话粘性头）或工具函数读取对话标识。
+func ConversationFromContext(ctx context.Context) (Conversation, bool) {
+	c, ok := ctx.Value(conversationCtxKey{}).(Conversation)
+	return c, ok
+}
+
 // UseHistory 让 Runs 从应用的 store 读写对话历史，不使用 trpc-agent-go 的会话存储，NewRuns 的 sessions 传 nil。
 //
 // 每一轮请求模型之前，用 store.Load 组装上下文，放进一个只在这一轮使用的内存会话；运行中产生的完整消息
