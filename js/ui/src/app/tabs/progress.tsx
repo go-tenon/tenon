@@ -1,6 +1,6 @@
 // 页面顶部的进度条（@mantine/nprogress）：只在重新加载标签（刷新按钮、右键菜单）时显示，页面的请求都完成后走完。
 // 页面加载（包括按浏览器的刷新）和跳转不显示，保持浏览器原本的行为。
-// 重新加载标签时主内容区先淡出，读取完成后淡入；淡出、淡入由 FrameLayout 提供。
+// 重新加载标签时主内容区叠加统一轻磨砂加载覆层，读取完成后收起；覆层由 FrameLayout 提供。
 
 import { createNprogress, NavigationProgress } from "@mantine/nprogress"
 import type { QueryClient } from "@tanstack/react-query"
@@ -30,7 +30,7 @@ async function settled(queryClient: QueryClient): Promise<void> {
   })
 }
 
-/** 主内容区的过渡：淡出（等动画完成）、淡入。 */
+/** 主内容区的加载过渡：进入加载态与结束加载态。 */
 export interface ContentTransition {
   out(): Promise<void>
   in(): void
@@ -38,7 +38,7 @@ export interface ContentTransition {
 
 /**
  * 带进度条地重新加载：进度条开始，执行 reload（返回 false 表示用户取消，例如有未保存的修改时选择留下），
- * 主内容区淡出，等页面的请求都完成后淡入，进度条走完。
+ * 主内容区进入轻磨砂加载态，等页面的请求都完成后结束加载态、进度条走完。
  */
 export async function reloadWithProgress(
   reload: () => Promise<boolean>,
@@ -59,10 +59,10 @@ export async function reloadWithProgress(
 const none: ContentTransition = { out: async () => {}, in: () => {} }
 const TransitionContext = createContext<ContentTransition>(none)
 
-/** FrameLayout 提供：主内容区的淡出、淡入。 */
+/** FrameLayout 提供：主内容区的加载过渡。 */
 export const ContentTransitionProvider = TransitionContext.Provider
 
-/** 主内容区的过渡（不在 FrameLayout 中时什么也不做）。 */
+/** 主内容区的加载过渡（不在 FrameLayout 中时什么也不做）。 */
 export function useContentTransition(): ContentTransition {
   return useContext(TransitionContext)
 }

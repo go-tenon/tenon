@@ -2,7 +2,28 @@
 // 慢网络请求随实际请求时长自动延长，本地切换与缓存命中保持统一视觉节奏。
 
 import { Loader } from "@mantine/core"
-import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react"
+import { QueryClientContext } from "@tanstack/react-query"
+import {
+  type CSSProperties,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react"
+
+/** 返回当前是否存在进行中的 TanStack Query 请求；未处于 QueryClientProvider 中时返回 false。 */
+export function useAnyFetching(): boolean {
+  const client = useContext(QueryClientContext)
+  const subscribe = useCallback(
+    (onStoreChange: () => void) => (client ? client.getQueryCache().subscribe(onStoreChange) : () => {}),
+    [client],
+  )
+  const getSnapshot = useCallback(() => (client ? client.isFetching() > 0 : false), [client])
+  return useSyncExternalStore(subscribe, getSnapshot, () => false)
+}
 
 /** useSmoothTransition 的选项。 */
 export interface SmoothTransitionOptions {
@@ -22,15 +43,18 @@ export function useSmoothTransition<T>(
 ): { data: T; busy: boolean } {
   const minMs = options?.minMs ?? 220
   const [displayed, setDisplayed] = useState<T>(value)
+  const [prevKey, setPrevKey] = useState(changeKey)
   const [busy, setBusy] = useState(false)
   const [minReady, setMinReady] = useState(true)
-  const lastKeyRef = useRef(changeKey)
   const timerRef = useRef<number | undefined>(undefined)
+
+  const keyChanged = prevKey !== changeKey
+  const pendingBusy = keyChanged && displayed !== undefined && (minMs > 0 || fetching)
 
   // 当切换键变化时进入加载态，并按 minMs 启动最短展示计时器
   useEffect(() => {
-    if (changeKey === lastKeyRef.current) return
-    lastKeyRef.current = changeKey
+    if (changeKey === prevKey) return
+    setPrevKey(changeKey)
     if (displayed === undefined) return
 
     if (timerRef.current !== undefined) window.clearTimeout(timerRef.current)
@@ -45,7 +69,7 @@ export function useSmoothTransition<T>(
       timerRef.current = undefined
       setMinReady(true)
     }, minMs)
-  }, [changeKey, displayed, fetching, minMs])
+  }, [changeKey, displayed, fetching, minMs, prevKey])
 
   useEffect(
     () => () => {
@@ -56,6 +80,7 @@ export function useSmoothTransition<T>(
 
   // 计时到达且网络请求完成后提交新数据并结束加载态；首次加载和静默后台刷新直接同步最新数据
   useEffect(() => {
+    if (keyChanged) return
     if (!busy) {
       if (!Object.is(displayed, value)) setDisplayed(value)
       return
@@ -64,9 +89,9 @@ export function useSmoothTransition<T>(
       setDisplayed(value)
       setBusy(false)
     }
-  }, [busy, displayed, fetching, minReady, value])
+  }, [busy, displayed, fetching, keyChanged, minReady, value])
 
-  return { data: displayed, busy }
+  return { data: displayed, busy: busy || pendingBusy }
 }
 
 /** LoadingOverlay 的选项。 */
@@ -75,20 +100,24 @@ export interface LoadingOverlayProps {
   visible: boolean
   /** 居中转圈尺寸（像素），默认 22。 */
   loaderSize?: number
+  /** 为 true 时在长文档滚动容器中将转圈固定居中于当前可视视口内。 */
+  sticky?: boolean
   className?: string
   style?: CSSProperties
 }
 
 /** 轻磨砂居中转圈覆层：覆盖在相对定位的父容器上，明暗主题自动跟随 --tn-surface。 */
-export function LoadingOverlay({ visible, loaderSize = 22, className, style }: LoadingOverlayProps): ReactNode {
+export function LoadingOverlay({ visible, loaderSize = 22, sticky, className, style }: LoadingOverlayProps): ReactNode {
+  const loader = visible ? <Loader size={loaderSize} /> : null
   return (
     <div
       className={className ? `tn-loading-overlay ${className}` : "tn-loading-overlay"}
       data-active={visible || undefined}
+      data-sticky={sticky || undefined}
       aria-hidden={!visible || undefined}
       style={style}
     >
-      {visible && <Loader size={loaderSize} />}
+      {sticky ? <div className="tn-loading-overlay-pin">{loader}</div> : loader}
     </div>
   )
 }
@@ -109,6 +138,7 @@ export function LoadingStage({ loading, loaderSize = 22, className, style, child
   return (
     <div
       className={className ? `tn-loading-stage ${className}` : "tn-loading-stage"}
+      data-loading-active={loading || undefined}
       aria-busy={loading || undefined}
       style={style}
     >

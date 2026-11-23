@@ -371,6 +371,17 @@ body {
   font-size: var(--mantine-font-size-xs);
 }
 
+.tn-frame-stage {
+  position: relative;
+  min-height: calc(100dvh - var(--app-shell-header-offset, 0rem));
+}
+
+.tn-frame-stage[data-full-bleed] {
+  height: calc(100dvh - var(--app-shell-header-offset, 0rem));
+  min-height: 0;
+  overflow: hidden;
+}
+
 .tn-content {
   width: 100%;
   margin-inline: auto;
@@ -378,7 +389,7 @@ body {
 
 /* 铺满的页面：高度是顶栏以下的整个窗口，内容区不滚动，页面中的各栏自己滚动。 */
 .tn-content[data-full-bleed] {
-  height: calc(100dvh - var(--app-shell-header-offset, 0rem));
+  height: 100%;
   overflow: hidden;
 }
 
@@ -586,6 +597,16 @@ body {
    表头保持干净，标题和下面的内容左对齐。 */
 .tn-datatable .mantine-datatable-header-cell-toggleable-icon {
   display: none;
+}
+
+/* 表格加载遮罩与 LoadingOverlay 对齐：覆盖整张表格、62% 轻磨砂背景与 150ms 淡入淡出。 */
+.tn-datatable .mantine-datatable-loader {
+  padding-top: 0;
+  padding-bottom: 0;
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--tn-surface) 62%, transparent);
+  backdrop-filter: blur(1.5px);
+  transition: opacity 150ms ease;
 }
 
 /* ———————————————— 页面 ———————————————— */
@@ -994,9 +1015,20 @@ body {
   transform: rotate(90deg);
 }
 
+.tn-rail-main-shell {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .tn-rail-main {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   overflow: auto;
   outline: none;
 }
@@ -1637,6 +1669,28 @@ body {
   pointer-events: auto;
 }
 
+/* 长文档滚动容器中将转圈固定在可视视口中央。 */
+.tn-loading-overlay[data-sticky] {
+  display: block;
+}
+
+.tn-loading-overlay-pin {
+  position: sticky;
+  top: var(--app-shell-header-offset, 0px);
+  height: calc(100dvh - var(--app-shell-header-offset, 0px));
+  max-height: 100%;
+  display: grid;
+  place-items: center;
+}
+
+/* 外层整页或整区展示加载覆层时隐藏内层嵌套的遮罩与转圈，避免双重叠加。 */
+[data-loading-active] :is(.tn-loading-stage, .tn-pane-body-shell, .tn-datatable) .tn-loading-overlay,
+[data-loading-active] .tn-datatable .mantine-datatable-loader {
+  opacity: 0;
+  backdrop-filter: none;
+  pointer-events: none;
+}
+
 .tn-pane-resize-handle {
   position: absolute;
   top: 0;
@@ -1741,7 +1795,8 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .tn-inspector-chevron,
   .tn-pane-resize-handle::after,
-  .tn-loading-overlay {
+  .tn-loading-overlay,
+  .tn-datatable .mantine-datatable-loader {
     transition: none;
   }
 }

@@ -181,7 +181,7 @@ return (
 ```
 
 - 首次加载无数据时 `busy` 为 `false`，页面照常展示骨架屏；切换 `changeKey` 后才进入轻磨砂过渡态。
-- 全栏筛选刷新时把 `busy` 直接交给 [`PaneBody`](layout.md#panes) 的 `loading` 属性；[`ResourcePage`](resources.md#admin) 的 `useResourceList` 与 `Page` 的 `tabs`（页内标签切换）默认已内置此过渡。
+- 全栏筛选刷新时把 `busy` 直接交给 [`PaneBody`](layout.md#panes) 的 `loading` 属性；[`ResourcePage`](resources.md#admin) 的 `useResourceList`、`ActivityLog`、`QueuePanel`、`SchedulePanel`、`Page` 的 `tabs`（页内标签）、`FrameLayout` 多标签/切页与 `RailLayout` 常规页切页均已默认内置同一套轻磨砂过渡，且 `DataTable` 遮罩样式与 `LoadingOverlay` 保持一致，外层展示加载覆层时自动抑制内层嵌套遮罩。
 - 需要关闭最短停留时传入 `{ minMs: 0 }`；用户开启系统减少动态效果时覆层过渡动画自动关闭。
 
 <a id="forms"></a>

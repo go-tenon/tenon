@@ -25,6 +25,7 @@ import {
   useLayoutEffect,
   useMemo,
   useRef,
+  useState,
   useSyncExternalStore,
 } from "react"
 import "../meta"
@@ -205,13 +206,15 @@ export interface TabsOutletProps {
   confirm?: (message: string) => boolean | Promise<boolean>
   /** 第一次使用（这个账号没有保存过标签）时，把菜单的第一个页面固定在最前面。FrameLayout 中默认开启。 */
   home?: boolean
+  /** 外层布局正在展示切换过渡时为 true：暂留旧标签画面可见，新标签在后台提前挂载并请求数据，过渡完成后切出。 */
+  transitioning?: boolean
 }
 
 /**
  * 开启多标签：布局路由中代替 <Outlet />。布局之下的每个页面（路由 + 路径参数）是一个标签，隐藏的标签保留状态。
  * staticData.tab 为 false 的页面不进入标签，照常显示。
  */
-export function TabsOutlet({ max = 10, confirm, home = false }: TabsOutletProps): ReactNode {
+export function TabsOutlet({ max = 10, confirm, home = false, transitioning = false }: TabsOutletProps): ReactNode {
   const app = useApp()
   const router = useRouter()
   configOf(app).current = { max, confirm: confirm ?? ((message) => window.confirm(message)) }
@@ -338,13 +341,22 @@ export function TabsOutlet({ max = 10, confirm, home = false }: TabsOutletProps)
     return c
   }
 
+  const [shownKey, setShownKey] = useState(key)
+  // 过渡期间若旧标签仍在打开集合中则保持其可见，同时让目标标签在后台提前激活并加载数据
+  const visibleKey =
+    transitioning && key && shownKey && shownKey !== key && panes.current.has(shownKey) ? shownKey : key
+  useEffect(() => {
+    if (!transitioning && shownKey !== key) setShownKey(key)
+  }, [transitioning, shownKey, key])
+
   return (
     <>
       {[...panes.current.values()].map((pane) => {
+        const visible = pane.key === visibleKey
         const active = pane.key === key
         return (
-          <div key={pane.key} data-tab={pane.key} hidden={!active} style={{ display: active ? "contents" : "none" }}>
-            <Activity mode={active ? "visible" : "hidden"}>
+          <div key={pane.key} data-tab={pane.key} hidden={!visible} style={{ display: visible ? "contents" : "none" }}>
+            <Activity mode={visible || active ? "visible" : "hidden"}>
               <TabPaneContext.Provider value={context(pane, active)}>
                 <RouterContextProvider router={pane.router}>
                   <Match key={model.refresh[pane.key] ?? 0} routeId={pane.childRouteId} />

@@ -37,7 +37,7 @@ export function TabBar(): ReactNode {
   const [menu, setMenu] = useState<{ key: string; x: number; y: number } | null>(null)
   const queryClient = useQueryClient()
   const transition = useContentTransition()
-  // 重新加载（刷新按钮、右键菜单）：页面顶部的进度条走起来，主内容区淡出，页面的请求都完成后淡入、进度条走完。
+  // 重新加载（刷新按钮、右键菜单）：页面顶部的进度条走起来，主内容区进入轻磨砂加载态，请求完成后收起。
   const reload = (key: string) => void reloadWithProgress(() => tabs.refresh(key), queryClient, transition)
   const activeKey = tabs.active?.key
 
