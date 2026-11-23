@@ -602,6 +602,9 @@ func devCommand() *cobra.Command {
 		Short: "运行应用和前端工具，修改代码后重新编译、重启并生成客户端",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if err := dev.SetupWorktree(cmd.Context(), ".", cmd.OutOrStdout(), cmd.ErrOrStderr()); err != nil {
+				return err
+			}
 			cfg, err := project.Load(".")
 			if err != nil {
 				return err

@@ -6,8 +6,7 @@
 
 - Go，版本以 [go.mod](go.mod) 为准；
 - [Bun](https://bun.sh)，安装前端依赖、运行前端开发服务器；
-- Docker，仅用于开发和测试期：在主工作区启动 PostgreSQL、NATS、Redis 等依赖服务并常驻；
-- 在独立的 `git worktree` 中启动业务服务（`bun run dev`）和运行测试，复用主工作区的依赖容器，通过各自的 `config/local.yaml` 错开 `http.addr` 端口（需要时指定独立数据库名）。
+- Docker，仅用于开发和测试期：全机共享常驻依赖容器，各 `git worktree` 通过 `.env` 和 `config/local.yaml` 隔离（见下文“开发与部署约定”）。
 
 ## 常用命令
 

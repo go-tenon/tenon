@@ -15,7 +15,7 @@ description: Tenon 应用中与 PostgreSQL 有关的工作：第一次接入数�
 2. 在入口的 `open` 中用 `database.Open(ctx, cfg.Database)` 打开连接池，登记到 `cleanup.Stack` 中在退出时关闭，再传给需要它的业务动作，见 `tenon/docs/concepts/dependencies.md#assembling-the-application`。
 3. 新建 `migrations/embed.go`，用 `//go:embed *` 嵌入迁移文件，见 `tenon/docs/database/migrations.md#embedding-migrations`。
 4. 在根命令中加入 `migratecmd.New(migrations.FS, func(cfg Config) database.Config { return cfg.Database })`，应用就有了 `migrate up/down/status/make`，见 `tenon/docs/database/migrations.md#migration-commands`。
-5. 本机用 Docker 启动 PostgreSQL，例如入门教程第 2 章的 `compose.yaml`：`tenon/docs/tutorial/02-infrastructure.md`。
+5. 本机开发直接复用共享常驻 PostgreSQL，按项目或 worktree 创建独立数据库并写入 `.env` 的 `DATABASE_URL`；需要新建本地实例时，在用户明确要求后按入门教程第 2 章的 `compose.yaml` 启动：`tenon/docs/tutorial/02-infrastructure.md`。
 
 ## 加表或改表
 
