@@ -633,14 +633,18 @@ environments:
 		}
 	}
 
-	// 验证 config check、doctor、migrate up、health 均自动传入 --config。
+	// 验证 config check、migrate up、doctor、health 的执行顺序且均自动传入 --config。
 	wantFlag := "'--config' 'config/app.yaml,config/prod.yaml'"
-	if len(systemdRuns) < 4 {
-		t.Fatalf("expected at least 4 systemd-run calls, got %d: %v", len(systemdRuns), systemdRuns)
+	if len(systemdRuns) != 4 {
+		t.Fatalf("expected 4 systemd-run calls, got %d: %v", len(systemdRuns), systemdRuns)
 	}
-	for _, cmd := range systemdRuns {
+	wantStages := []string{"'config' 'check'", "'migrate' 'up'", "'doctor'", "'health'"}
+	for i, cmd := range systemdRuns {
 		if !strings.Contains(cmd, wantFlag) {
-			t.Errorf("systemd-run missing %s: %s", wantFlag, cmd)
+			t.Errorf("systemd-run[%d] missing %s: %s", i, wantFlag, cmd)
+		}
+		if !strings.Contains(cmd, wantStages[i]) {
+			t.Errorf("systemd-run[%d] = %s, want stage %s", i, cmd, wantStages[i])
 		}
 	}
 
@@ -689,5 +693,25 @@ environments:
 	}
 	if buildCalled {
 		t.Errorf("Build should not be called when a config_files entry is missing")
+	}
+}
+
+func TestNewSSHRunnerShortControlPath(t *testing.T) {
+	t.Parallel()
+
+	target, err := deploy.Parse([]byte("app: blog\nenvironments:\n  production:\n    hosts: [203.0.113.10]\n"), "blog", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := deploy.NewSSHRunner(target)
+	if err != nil {
+		t.Fatalf("NewSSHRunner: %v", err)
+	}
+	defer func() { _ = r.Close() }()
+
+	// %C 展开为 40 位十六进制 SHA-1，总长度须低于 macOS Unix socket 的 104 字节上限。
+	expanded := strings.ReplaceAll(r.ControlPath(), "%C", strings.Repeat("a", 40))
+	if len(expanded) >= 104 {
+		t.Errorf("expanded ControlPath %q has length %d, must be < 104", expanded, len(expanded))
 	}
 }

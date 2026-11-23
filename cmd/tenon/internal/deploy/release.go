@@ -96,7 +96,7 @@ func Plan(ctx context.Context, t Target, opts ReleaseOptions) (*DeployReport, er
 }
 
 // Deploy 执行完整的零停机发布流水线：
-// 探测架构与构建 → 主节点加锁 → 全集群并行上传校验 → config check 与 doctor → 单节点 migrate up →
+// 探测架构与构建 → 主节点加锁 → 全集群并行上传校验 → config check → 单节点 migrate up → doctor →
 // 按波次（后端优先、入口金丝雀后批量滚动）原子切换、声明式清理孤儿 unit 与 reload → 并行清理旧版本。
 func Deploy(ctx context.Context, r Runner, t Target, opts ReleaseOptions, out, errOut io.Writer) (*DeployReport, error) {
 	if opts.DryRun {
@@ -168,25 +168,13 @@ func Deploy(ctx context.Context, r Runner, t Target, opts ReleaseOptions, out, e
 		return nil, err
 	}
 
-	// 4. 上线前预检（在主节点使用新版本运行，不影响正在服务的旧进程）。
+	// 4. 配置检查（在主节点使用新版本运行，不影响正在服务的旧进程）。
 	fmt.Fprintf(out, "[%s] 检查配置...\n", primary.Addr)
 	if _, err := RunCapture(ctx, r, primary, systemdRunCommand(t, releaseDir, remoteBin, "config", "check")); err != nil {
 		return nil, fmt.Errorf("[%s] config check 失败: %w", primary.Addr, err)
 	}
-	if !opts.SkipDoctor {
-		hasDoc, err := remoteHasSubcommand(ctx, r, primary, remoteBin, "doctor")
-		if err != nil {
-			return nil, fmt.Errorf("[%s] 检查 doctor 命令失败: %w", primary.Addr, err)
-		}
-		if hasDoc {
-			fmt.Fprintf(out, "[%s] 运行自检 doctor...\n", primary.Addr)
-			if err := r.Run(ctx, primary, systemdRunCommand(t, releaseDir, remoteBin, "doctor"), nil, out, errOut); err != nil {
-				return nil, fmt.Errorf("[%s] doctor 自检未通过: %w", primary.Addr, err)
-			}
-		}
-	}
 
-	// 5. 数据库迁移（仅在主节点执行一次）。
+	// 5. 数据库迁移（仅在主节点执行一次，先于 doctor 以使 migrate.Doctor 与队列复制槽检查就绪）。
 	migrated := false
 	hasMigrate, err := remoteHasSubcommand(ctx, r, primary, remoteBin, "migrate")
 	if err != nil {
@@ -200,14 +188,28 @@ func Deploy(ctx context.Context, r Runner, t Target, opts ReleaseOptions, out, e
 		migrated = true
 	}
 
-	// 6. 按波次（先后端，后入口金丝雀再批量滚动）切换主机，任一波次失败立即熔断。
+	// 6. 上线前全量自检 doctor（确认迁移、复制槽与全部依赖均就绪后再切换服务）。
+	if !opts.SkipDoctor {
+		hasDoc, err := remoteHasSubcommand(ctx, r, primary, remoteBin, "doctor")
+		if err != nil {
+			return nil, fmt.Errorf("[%s] 检查 doctor 命令失败: %w", primary.Addr, err)
+		}
+		if hasDoc {
+			fmt.Fprintf(out, "[%s] 运行自检 doctor...\n", primary.Addr)
+			if err := r.Run(ctx, primary, systemdRunCommand(t, releaseDir, remoteBin, "doctor"), nil, out, errOut); err != nil {
+				return nil, fmt.Errorf("[%s] doctor 自检未通过: %w", primary.Addr, err)
+			}
+		}
+	}
+
+	// 7. 按波次（先后端，后入口金丝雀再批量滚动）切换主机，任一波次失败立即熔断。
 	waves := t.RolloutWaves()
 	switchResults, err := rolloutWaves(ctx, r, t, waves, version, hasConfig, out, errOut)
 	if err != nil {
 		return nil, err
 	}
 
-	// 7. 并行清理超出 keep_releases 的旧版本目录。
+	// 8. 并行清理超出 keep_releases 的旧版本目录。
 	var pruneGroup errgroup.Group
 	for _, h := range t.Hosts {
 		pruneGroup.Go(func() error {
