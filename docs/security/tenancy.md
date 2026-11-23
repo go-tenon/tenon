@@ -179,7 +179,7 @@ err = roles.Assign(ctx, staff, authz.AllTenants, support.ID)
 | 接口 | `/ops/api`，租户为 `""` | `/t/{tenant}/api` |
 | 会话 cookie | `__Host-ops` | 默认的 `__Host-session` |
 
-每套账号的 Resolver 读账号表，不存在或已停用时返回 `identity.ErrUnauthenticated`，然后 `return roles.Resolve(ctx, sub)`。成员的 Resolver 还要在 `sub.Impersonator` 不为零值时检查操作者在平台中仍有 `users:impersonate`，写法见[代为登录的限制](authentication.md#impersonation-rules)。需要发布 `login`、`ratelimit`、`apitoken`、`authz` 的迁移。
+每套账号的 Resolver 读账号表，不存在或已停用时返回 `identity.ErrUnauthenticated`，然后 `return roles.Resolve(ctx, sub)`。租户后台和成员账号接口需要接受代为登录时，在 `rest.Options.Impersonation`（以及 `realtime.Options.Impersonation`）中配置操作者体系和权限，见[代为登录的限制](authentication.md#impersonation-rules)。需要发布 `login`、`ratelimit`、`apitoken`、`authz` 的迁移。
 
 <a id="assembling"></a>
 ### 装配：两个 `Realm`、两个会话 cookie
@@ -242,33 +242,37 @@ router.Route("/t/{tenant}/api", func(r chi.Router) {
 <a id="impersonation"></a>
 ### 运营代为登录租户成员
 
-“以此成员登录”的接口要求 `users:impersonate`，为成员签发带 `Impersonator` 的登录令牌，直接写入成员的会话 cookie。`h.roles` 是 `*authz.Store`，`h.memberTokens` 是成员的 `*apitoken.Store`：
+“以此成员登录”的接口要求 `users:impersonate`，调用 `memberTokens.Impersonate` 签发锁定在目标租户的短时代为登录令牌，写入成员的独立代登 cookie（`MemberCookie.ImpersonationCookie()`）。`h.roles` 是 `*authz.Store`，`h.memberTokens` 是成员的 `*apitoken.Store`：
 
 ```go
+var MemberCookie = httpx.SessionCookie{Impersonation: "__Host-impersonation"}
+
 func (h *handlers) impersonate(ctx context.Context, in *ImpersonateInput) (*ImpersonateOutput, error) {
     staff, _ := identity.FromContext(ctx)
-    if !staff.Impersonator.IsZero() {
-        return nil, identity.ErrForbidden.New() // 代为登录只有一层
-    }
-    target := identity.Subject{Type: member.Type, ID: in.Body.MemberID, Impersonator: staff.Ref()}
-    if _, isMember, err := h.roles.Permissions(ctx, target.Ref(), in.Body.TenantID); err != nil {
+    target := identity.Ref{Type: member.Type, ID: in.Body.MemberID}
+    if _, isMember, err := h.roles.Permissions(ctx, target, in.Body.TenantID); err != nil {
         return nil, err
     } else if !isMember {
         return nil, ErrMemberNotFound.New() // 应用定义的 NotFound 错误
     }
-    token, err := h.memberTokens.Login(ctx, target, apitoken.Device{UserAgent: in.UserAgent})
+    token, err := h.memberTokens.Impersonate(ctx, staff, target, apitoken.Impersonation{
+        Tenant: in.Body.TenantID,
+        Reason: in.Body.Reason,
+        Device: apitoken.Device{UserAgent: in.UserAgent},
+    })
     if err != nil {
         return nil, err
     }
-    out := &ImpersonateOutput{SetCookie: httpx.SessionCookie{}.Set(token, h.memberLifetime)}
+    out := &ImpersonateOutput{SetCookie: MemberCookie.ImpersonationCookie().Set(token, apitoken.DefaultImpersonationLifetime)}
     out.Body.ConsolePath = "/t/" + in.Body.TenantID + "/app" // 运营前端随后打开它
     return out, nil
 }
 ```
 
-- 两个后台同源，租户后台才读得到写入的 `__Host-session`；`Secure` 的 cookie 只在 HTTPS 和 `localhost` 上保存。
-- 令牌不经过前端代码，运营自己的 `__Host-ops` 不受影响。
-- 租户后台在 `sub.Impersonator` 不为零值时显示“正在代某人操作”和退出按钮；退出时 `Revoke` 当前凭据、清除 cookie、回到运营后台。
+- 独立代登 cookie（`__Host-impersonation`）优先于 `__Host-session` 读取：运营自己的 `__Host-ops` 和原本登录的普通 `__Host-session` 互不覆盖。
+- 令牌绑定 `Tenant` 后，只能访问该租户的接口和标记为 `AccountScope` 的账号自省接口（如 `/api/me`、`/api/auth/logout`），访问其他租户返回 `403`。
+- 跨子域名或自定义域名部署时，改用 `CreateImpersonationTicket` 签发 30 秒一次性票据，在目标域的公开交换接口调用 `ExchangeImpersonationTicket` 写入目标域 cookie。
+- 租户后台用 `@go-tenon/ui` 的 `ImpersonationBanner` 提示代登状态；退出时 `Revoke` 当前凭据、清除 `MemberCookie.ImpersonationCookie()` 并回到运营后台。
 
 <a id="customers"></a>
 ## 租户的客户账号：`PerTenant`

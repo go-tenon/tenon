@@ -12,6 +12,9 @@ import (
 // Permissions 是主体在 Tenant 中拥有的权限，Scopes 是本次请求所用凭据被限制在内的权限，
 // 两者共同决定 Can：例如用户拥有 articles:*，他创建的只读令牌的 Scopes 为 articles:read。
 //
+// Tenant 是本次请求所在的租户（"" 表示平台本身）；BoundTenant 是凭据绑定的租户边界（"" 表示不限制），
+// 凭据只能用于 BoundTenant 指定的租户以及标记为账号自省的接口。
+//
 // Impersonator 不为零值表示代为登录：实际操作的人是 Impersonator，他以这个主体的身份和权限操作，例如客服代用户登录排查问题。
 // Impersonator 由凭据记录，审计日志应同时记录主体（Ref）和 Impersonator。
 type Subject struct {
@@ -20,10 +23,11 @@ type Subject struct {
 	Impersonator Ref      // 代为登录时实际操作的人，可以属于另一套账号体系；零值表示主体本人
 	Method       string   // 认证方式，如 bearer
 	Credential   string   // 本次请求所用凭据的 ID，如 API token 的 ID；用于登出当前设备、在设备列表中标出当前设备，可为空
-	Tenant       string   // 本次请求所在的租户，"" 表示平台本身；由凭据设置时，凭据只能在这个租户中使用
+	Tenant       string   // 本次请求所在的租户，"" 表示平台本身
+	BoundTenant  string   // 凭据绑定的租户边界，"" 表示不限制；由凭据设置，Resolver 不能改写
 	Permissions  []string // 主体在 Tenant 中拥有的权限，支持通配符，见 Can
 	Scopes       []string // 凭据的权限限制，支持通配符；nil 表示不限制，空切片表示什么都不允许
-	Auth         Auth     // 凭据是怎么得到的：登录时通过的验证方式和最近一次验证身份的时间；个人访问令牌等凭据为零值
+	Auth         Auth     // 凭据是怎么得到的：登录时通过的验证方式和最近一次验证身份的时间；个人访问令牌、代为登录等凭据为零值
 }
 
 // Auth 记录一次登录怎样验证了主体的身份，由凭据保存（见 apitoken），对应 OIDC 的 amr 和 auth_time。
@@ -48,6 +52,9 @@ func (a Auth) ConfirmedWithin(d time.Duration) bool {
 
 // Ref 返回主体的引用。
 func (s Subject) Ref() Ref { return Ref{Type: s.Type, ID: s.ID} }
+
+// Impersonated 报告这次调用是否处于代为登录状态。
+func (s Subject) Impersonated() bool { return !s.Impersonator.IsZero() }
 
 // Can 报告主体能否执行 perm：Permissions 授予了它，并且 Scopes 为 nil 或也允许它。
 //

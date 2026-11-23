@@ -727,6 +727,31 @@ body {
 
 /* ———————————————— Rail 布局（RailLayout） ———————————————— */
 
+/* 代为登录提示条：使用 deep-orange 注意色，亮色和暗色模式自适应。 */
+.tn-impersonation-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--mantine-spacing-sm);
+  min-height: 36px;
+  padding: 5px var(--mantine-spacing-md);
+  background: var(--mantine-color-deep-orange-light);
+  color: var(--mantine-color-deep-orange-light-color);
+  border-bottom: 1px solid color-mix(in srgb, var(--mantine-color-deep-orange-6) 30%, transparent);
+}
+
+.tn-rail-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--tn-canvas);
+}
+
+.tn-rail-banner {
+  flex-shrink: 0;
+}
+
 /*
  * 最左侧是 48px 的模块图标栏，底色与画布相同；右侧的工作区是一张四周微留白的圆角浮岛卡片，
  * 其中是二级导航（默认 260px，RailLayout 的 navWidth 设置，可以收起）和内容。窄屏时卡片贴边无圆角，二级导航是抽屉。
@@ -739,6 +764,12 @@ body {
   height: 100dvh;
   overflow: hidden;
   background: var(--tn-canvas);
+}
+
+.tn-rail-shell > .tn-rail {
+  flex: 1;
+  min-height: 0;
+  height: auto;
 }
 
 .tn-rail-rail {

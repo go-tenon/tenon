@@ -101,7 +101,12 @@ func setupWith(t *testing.T, edit func(*oauthserver.Options)) *env {
 	router.Handle(srv.MetadataPath(), srv.Metadata())
 
 	apiRouter := chi.NewRouter()
-	api := rest.New(apiRouter, rest.Options{BasePath: base + "/api", Accounts: identity.Accounts{"editor": editors}, Logger: slog.New(slog.DiscardHandler)})
+	api := rest.New(apiRouter, rest.Options{
+		BasePath:      base + "/api",
+		Accounts:      identity.Accounts{"editor": editors},
+		Impersonation: &identity.Impersonation{Actors: identity.Accounts{"staff": nil}},
+		Logger:        slog.New(slog.DiscardHandler),
+	})
 	srv.Register(api, rest.RequireToken(api, tokens.Validate))
 	router.Route(base+"/", func(r chi.Router) {
 		srv.Routes(r)
@@ -303,8 +308,7 @@ func TestFlow(t *testing.T) {
 	}
 
 	// 代为登录的 token 代表的是客服，替用户授权其他应用时被拒绝。
-	impersonated := identity.Subject{Type: editor.Type, ID: "e2", Impersonator: identity.Ref{Type: "staff", ID: "s1"}}
-	support, err := e.tokens.Login(context.Background(), impersonated, apitoken.Device{})
+	support, err := e.tokens.Impersonate(context.Background(), identity.Subject{Type: "staff", ID: "s1"}, identity.Ref{Type: editor.Type, ID: "e2"}, apitoken.Impersonation{})
 	if err != nil {
 		t.Fatal(err)
 	}

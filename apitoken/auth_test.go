@@ -56,9 +56,12 @@ func TestConfirm(t *testing.T) {
 		if err := s.Confirm(ctx, psub, "password"); !errors.Is(err, apitoken.ErrNotFound) {
 			t.Fatalf("confirm personal token: %v", err)
 		}
-		impersonated := alice
-		impersonated.Impersonator = identity.Ref{Type: "staff", ID: "s1"}
-		isub, _ := valid(t, s, login(t, s, impersonated, apitoken.Device{}))
+		staff := identity.Subject{Type: "staff", ID: "s1"}
+		impToken, err := s.Impersonate(ctx, staff, alice.Ref(), apitoken.Impersonation{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		isub, _ := valid(t, s, impToken)
 		if err := s.Confirm(ctx, isub, "password"); !errors.Is(err, identity.ErrForbidden) {
 			t.Fatalf("confirm impersonated: %v", err)
 		}

@@ -1,5 +1,6 @@
 auth.unauthenticated: 请先认证
 auth.forbidden: 没有访问权限
+auth.impersonation_forbidden: 代为登录状态下不能执行这个操作
 auth.confirm_required: 请先确认身份
 auth.two_factor_required: 请先完成二次验证
 auth.method_required: 请使用指定的方式重新登录
@@ -26,6 +27,7 @@ ai.finished: 回答已经结束
 ai.not_pending: 没有这个待审批的操作
 command.secret_mismatch: 两次输入的不一致
 apitoken.not_found: 令牌不存在
+apitoken.ticket_invalid: 代为登录票据无效或已过期
 login.invalid_credentials: 账号或密码不正确
 login.invalid_code: 验证码不正确或已失效
 login.invalid_proof: 验证已失效，请重新获取验证码

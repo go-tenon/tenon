@@ -60,6 +60,7 @@ export interface RailLayoutProps {
   headerHeight?: number // 顶栏基准高度（像素），默认 52，写入 --tn-rail-header 供各栏齐平
   compactQuery?: string // 窄屏抽屉模式的媒体查询，默认 "(max-width: 48em)"
   documentTitle?: boolean // 浏览器标签的标题是“页面 - 应用的名称”，页面是路由的 staticData.title；默认开启，false 时不设置
+  banner?: ReactNode // 布局最顶部的通栏提示，例如 ImpersonationBanner
   children?: ReactNode // 页面内容；默认是子路由
 }
 
@@ -188,6 +189,7 @@ export function RailLayout({
   headerHeight = 52,
   compactQuery = "(max-width: 48em)",
   documentTitle = true,
+  banner,
   children,
 }: RailLayoutProps): ReactNode {
   const { menu, active } = useNavigation()
@@ -307,99 +309,109 @@ export function RailLayout({
     "--tn-rail-secondary": `${navWidth}px`,
     "--tn-rail-header": `${headerHeight}px`,
   } as CSSProperties
+  const rail = (
+    <div className="tn-rail" data-open={open || undefined} data-compact={compact || undefined} style={vars}>
+      <a className="tn-skip-link" href="#main-content">
+        {t("tenon.layout.skip_to_content")}
+      </a>
+      <nav className="tn-rail-rail" aria-label={t("tenon.rail.modules")}>
+        <div className="tn-rail-logo" title={title}>
+          {logo ?? <span className="tn-brand-mark">{title.slice(0, 1)}</span>}
+        </div>
+        {railTop && <div className="tn-rail-top">{railTop}</div>}
+        <Stack gap={6} align="center" className="tn-rail-modules">
+          {modules.map((m) => {
+            const isActive = !inSettings && current?.id === m.id
+            // 当前模块的二级导航收起时，鼠标移上去图标换成“展开”。
+            const expandHere = isActive && !compact && !expanded
+            return (
+              <Tooltip
+                key={m.id}
+                label={expandHere ? t("tenon.common.expand") : m.title}
+                position="right"
+                openDelay={350}
+              >
+                <UnstyledButton
+                  className="tn-rail-module"
+                  aria-label={m.title}
+                  aria-current={isActive ? "page" : undefined}
+                  data-expand={expandHere || undefined}
+                  onClick={() => {
+                    if (!isActive) {
+                      const to = m.children ? firstPage(m.children) : m.path
+                      if (to) void navigate({ to })
+                      setOpen(true)
+                    } else if (compact) {
+                      setDrawer((d) => !d)
+                    } else {
+                      setOpen(true)
+                    }
+                  }}
+                >
+                  <span className="tn-rail-module-icon">
+                    <Icon name={m.icon} size={18} />
+                  </span>
+                  {m.badge !== undefined && (
+                    <span className="tn-rail-module-badge">
+                      <MenuBadge value={m.badge} />
+                    </span>
+                  )}
+                  {expandHere && (
+                    <IconLayoutSidebarLeftExpand className="tn-rail-module-expand" size={18} stroke={1.6} />
+                  )}
+                </UnstyledButton>
+              </Tooltip>
+            )
+          })}
+        </Stack>
+        <div className="tn-rail-footer">
+          {railBottom}
+          {user}
+        </div>
+      </nav>
+      <div className="tn-rail-workspace">
+        {compact ? (
+          <Drawer opened={drawer} onClose={() => setDrawer(false)} size={288} padding={0} withCloseButton={false}>
+            <div className="tn-rail-secondary-drawer">{secondary}</div>
+          </Drawer>
+        ) : (
+          <aside
+            className="tn-rail-secondary"
+            aria-label={t("tenon.rail.secondary")}
+            aria-hidden={!expanded}
+            inert={!expanded}
+          >
+            <div className="tn-rail-secondary-inner">{secondary}</div>
+          </aside>
+        )}
+        <main id="main-content" tabIndex={-1} className="tn-rail-main" data-full-bleed={fullBleed || undefined}>
+          {fullBleed ? (
+            // 铺满的页面占满内容区的宽度和高度，没有面包屑，页面中的各栏自己滚动
+            <div className="tn-rail-full">
+              <SessionBoundary>{children ?? <Outlet />}</SessionBoundary>
+            </div>
+          ) : (
+            <Box maw={maxWidth} mx="auto" className="tn-rail-page">
+              {/* 设置中的页面不显示面包屑：二级导航已经标出了位置 */}
+              <PageBreadcrumbs show={!inSettings}>
+                <SessionBoundary>{children ?? <Outlet />}</SessionBoundary>
+              </PageBreadcrumbs>
+            </Box>
+          )}
+        </main>
+      </div>
+    </div>
+  )
   return (
     <NavControlProvider value={navControl}>
-      <div className="tn-rail" data-open={open || undefined} data-compact={compact || undefined} style={vars}>
-        <a className="tn-skip-link" href="#main-content">
-          {t("tenon.layout.skip_to_content")}
-        </a>
-        <nav className="tn-rail-rail" aria-label={t("tenon.rail.modules")}>
-          <div className="tn-rail-logo" title={title}>
-            {logo ?? <span className="tn-brand-mark">{title.slice(0, 1)}</span>}
-          </div>
-          {railTop && <div className="tn-rail-top">{railTop}</div>}
-          <Stack gap={6} align="center" className="tn-rail-modules">
-            {modules.map((m) => {
-              const isActive = !inSettings && current?.id === m.id
-              // 当前模块的二级导航收起时，鼠标移上去图标换成“展开”。
-              const expandHere = isActive && !compact && !expanded
-              return (
-                <Tooltip
-                  key={m.id}
-                  label={expandHere ? t("tenon.common.expand") : m.title}
-                  position="right"
-                  openDelay={350}
-                >
-                  <UnstyledButton
-                    className="tn-rail-module"
-                    aria-label={m.title}
-                    aria-current={isActive ? "page" : undefined}
-                    data-expand={expandHere || undefined}
-                    onClick={() => {
-                      if (!isActive) {
-                        const to = m.children ? firstPage(m.children) : m.path
-                        if (to) void navigate({ to })
-                        setOpen(true)
-                      } else if (compact) {
-                        setDrawer((d) => !d)
-                      } else {
-                        setOpen(true)
-                      }
-                    }}
-                  >
-                    <span className="tn-rail-module-icon">
-                      <Icon name={m.icon} size={18} />
-                    </span>
-                    {m.badge !== undefined && (
-                      <span className="tn-rail-module-badge">
-                        <MenuBadge value={m.badge} />
-                      </span>
-                    )}
-                    {expandHere && (
-                      <IconLayoutSidebarLeftExpand className="tn-rail-module-expand" size={18} stroke={1.6} />
-                    )}
-                  </UnstyledButton>
-                </Tooltip>
-              )
-            })}
-          </Stack>
-          <div className="tn-rail-footer">
-            {railBottom}
-            {user}
-          </div>
-        </nav>
-        <div className="tn-rail-workspace">
-          {compact ? (
-            <Drawer opened={drawer} onClose={() => setDrawer(false)} size={288} padding={0} withCloseButton={false}>
-              <div className="tn-rail-secondary-drawer">{secondary}</div>
-            </Drawer>
-          ) : (
-            <aside
-              className="tn-rail-secondary"
-              aria-label={t("tenon.rail.secondary")}
-              aria-hidden={!expanded}
-              inert={!expanded}
-            >
-              <div className="tn-rail-secondary-inner">{secondary}</div>
-            </aside>
-          )}
-          <main id="main-content" tabIndex={-1} className="tn-rail-main" data-full-bleed={fullBleed || undefined}>
-            {fullBleed ? (
-              // 铺满的页面占满内容区的宽度和高度，没有面包屑，页面中的各栏自己滚动
-              <div className="tn-rail-full">
-                <SessionBoundary>{children ?? <Outlet />}</SessionBoundary>
-              </div>
-            ) : (
-              <Box maw={maxWidth} mx="auto" className="tn-rail-page">
-                {/* 设置中的页面不显示面包屑：二级导航已经标出了位置 */}
-                <PageBreadcrumbs show={!inSettings}>
-                  <SessionBoundary>{children ?? <Outlet />}</SessionBoundary>
-                </PageBreadcrumbs>
-              </Box>
-            )}
-          </main>
+      {banner ? (
+        <div className="tn-rail-shell">
+          <div className="tn-rail-banner">{banner}</div>
+          {rail}
         </div>
-      </div>
+      ) : (
+        rail
+      )}
     </NavControlProvider>
   )
 }

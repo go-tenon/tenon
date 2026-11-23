@@ -22,12 +22,13 @@ const (
 
 // 标准关联字段名。
 const (
-	AttrComponent = "component"
-	AttrRequestID = "request_id"
-	AttrTraceID   = "trace_id"
-	AttrSpanID    = "span_id"
-	AttrMessageID = "message_id"
-	AttrAttempt   = "attempt"
+	AttrComponent    = "component"
+	AttrRequestID    = "request_id"
+	AttrTraceID      = "trace_id"
+	AttrSpanID       = "span_id"
+	AttrMessageID    = "message_id"
+	AttrAttempt      = "attempt"
+	AttrImpersonator = "impersonator"
 )
 
 // Config 是日志配置，对应配置文件的 logs 段；零值即输出到 stderr 的 Info 级别 JSON 日志。

@@ -37,7 +37,7 @@ func TestCredentialsWatch(t *testing.T) {
 	creds := broadcast.NewCredentials(hub)
 	ctx, cancel := context.WithCancel(identity.WithTenant(context.Background(), "acme"))
 	defer cancel()
-	ch := creds.Watch(ctx, identity.Subject{Type: "user", ID: "alice", Credential: "token:1"})
+	ch := creds.Watch(ctx, identity.Subject{Type: "user", ID: "alice", Credential: "token:1", Impersonator: identity.Ref{Type: "staff", ID: "s1"}})
 	// Watch 在后台订阅；等订阅生效再发提醒。
 	time.Sleep(20 * time.Millisecond)
 
@@ -50,6 +50,8 @@ func TestCredentialsWatch(t *testing.T) {
 		{"same credential", func() error { return creds.RecheckCredential(bg, "token:1") }, true},
 		{"other credential", func() error { return creds.RecheckCredential(bg, "token:2") }, false},
 		{"same subject", func() error { return creds.RecheckSubject(bg, identity.Ref{Type: "user", ID: "alice"}) }, true},
+		{"same impersonator", func() error { return creds.RecheckSubject(bg, identity.Ref{Type: "staff", ID: "s1"}) }, true},
+		{"other impersonator", func() error { return creds.RecheckSubject(bg, identity.Ref{Type: "staff", ID: "s2"}) }, false},
 		{"other subject", func() error { return creds.RecheckSubject(bg, identity.Ref{Type: "user", ID: "bob"}) }, false},
 		{"same ID in another account system", func() error { return creds.RecheckSubject(bg, identity.Ref{Type: "staff", ID: "alice"}) }, false},
 		{"request tenant", func() error { return creds.RecheckTenant(bg, "acme") }, true},

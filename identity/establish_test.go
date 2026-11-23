@@ -19,51 +19,88 @@ var (
 	errNotMember = errorx.Define(errorx.NotFound, "test.not_member")
 )
 
+func allowSupport(perms ...string) *identity.Impersonation {
+	return &identity.Impersonation{
+		Actors: identity.Accounts{
+			"staff": func(ctx context.Context, sub identity.Subject) (identity.Subject, error) {
+				if identity.TenantFromContext(ctx) != "" {
+					return identity.Subject{}, errors.New("actor resolved outside platform tenant")
+				}
+				sub.Permissions = perms
+				return sub, nil
+			},
+		},
+		Permissions: []string{"users:impersonate"},
+	}
+}
+
 func TestEstablish(t *testing.T) {
-	cred := identity.Subject{ID: "alice", Method: "bearer", Credential: "tok1", Scopes: []string{"articles:*"}, Impersonator: support}
+	t.Parallel()
+	cred := identity.Subject{Type: "user", ID: "alice", Method: "bearer", Credential: "tok1", Scopes: []string{"articles:*"}}
+	impCred := identity.Subject{Type: "user", ID: "alice", Method: "bearer", Credential: "tok2", Scopes: []string{"articles:*"}, Impersonator: support}
 	as := func(sub identity.Subject, err error) identity.Authenticator {
 		return func(context.Context) (identity.Subject, error) { return sub, err }
 	}
-	grant := func(perms ...string) identity.Resolver {
-		return func(ctx context.Context, sub identity.Subject) (identity.Subject, error) {
+	grant := func(perms ...string) identity.Accounts {
+		return identity.Accounts{"user": func(ctx context.Context, sub identity.Subject) (identity.Subject, error) {
 			sub.Tenant, sub.Permissions = identity.TenantFromContext(ctx), perms
 			return sub, nil
-		}
+		}}
 	}
-	fail := func(err error) identity.Resolver {
-		return func(context.Context, identity.Subject) (identity.Subject, error) { return identity.Subject{}, err }
+	fail := func(err error) identity.Accounts {
+		return identity.Accounts{"user": func(context.Context, identity.Subject) (identity.Subject, error) {
+			return identity.Subject{}, err
+		}}
 	}
 	plain := errors.New("connection refused")
 	for name, tc := range map[string]struct {
-		tenant  string
-		auth    identity.Authenticator
-		resolve identity.Resolver
-		perms   []string
-		want    error // nil 表示通过
-		failed  bool
-		public  map[string]any
+		tenant string
+		auth   identity.Authenticator
+		policy identity.Policy
+		perms  []string
+		want   error // nil 表示通过
+		failed bool
+		public map[string]any
 	}{
-		"credential only":            {auth: as(cred, nil)},
-		"no credential":              {auth: as(identity.Subject{}, nil), want: identity.ErrUnauthenticated},
-		"invalid credential":         {auth: as(identity.Subject{}, errDisabled.New()), want: identity.ErrUnauthenticated},
-		"invalid with other kind":    {auth: as(identity.Subject{}, errNotMember.New()), want: identity.ErrUnauthenticated},
-		"backend down":               {auth: as(identity.Subject{}, errDown.New()), want: errDown, failed: true},
-		"backend plain error":        {auth: as(identity.Subject{}, plain), want: plain, failed: true},
-		"bound to another tenant":    {tenant: "globex", auth: as(identity.Subject{ID: "alice", Tenant: "acme"}, nil), resolve: grant("*"), want: identity.ErrForbidden},
-		"bound to this tenant":       {tenant: "acme", auth: as(identity.Subject{ID: "alice", Tenant: "acme"}, nil)},
-		"resolver down":              {auth: as(cred, nil), resolve: fail(errDown.New()), want: errDown, failed: true},
-		"resolver plain error":       {auth: as(cred, nil), resolve: fail(plain), want: plain, failed: true},
-		"resolver disables":          {auth: as(cred, nil), resolve: fail(errDisabled.New()), want: identity.ErrUnauthenticated},
-		"resolver returns nobody":    {auth: as(cred, nil), resolve: fail(nil), want: identity.ErrUnauthenticated},
-		"resolver rejects":           {auth: as(cred, nil), resolve: fail(errNotMember.New()), want: errNotMember},
-		"permission granted":         {auth: as(cred, nil), resolve: grant("articles:write"), perms: []string{"articles:write"}},
-		"permission missing":         {auth: as(cred, nil), resolve: grant("articles:read"), perms: []string{"articles:read", "articles:write"}, want: identity.ErrForbidden, public: map[string]any{"permission": "articles:write"}},
-		"permission outside scopes":  {auth: as(cred, nil), resolve: grant("*"), perms: []string{"users:read"}, want: identity.ErrForbidden, public: map[string]any{"permission": "users:read"}},
+		"credential only":             {auth: as(cred, nil)},
+		"no credential":               {auth: as(identity.Subject{}, nil), want: identity.ErrUnauthenticated},
+		"invalid credential":          {auth: as(identity.Subject{}, errDisabled.New()), want: identity.ErrUnauthenticated},
+		"invalid with other kind":     {auth: as(identity.Subject{}, errNotMember.New()), want: identity.ErrUnauthenticated},
+		"backend down":                {auth: as(identity.Subject{}, errDown.New()), want: errDown, failed: true},
+		"backend plain error":         {auth: as(identity.Subject{}, plain), want: plain, failed: true},
+		"bound to another tenant":     {tenant: "globex", auth: as(identity.Subject{Type: "user", ID: "alice", BoundTenant: "acme"}, nil), policy: identity.Policy{Accounts: grant("*")}, want: identity.ErrForbidden},
+		"bound to this tenant":        {tenant: "acme", auth: as(identity.Subject{Type: "user", ID: "alice", BoundTenant: "acme"}, nil), policy: identity.Policy{Accounts: grant("*")}},
+		"bound allowed in self scope": {tenant: "", auth: as(identity.Subject{Type: "user", ID: "alice", BoundTenant: "acme"}, nil), policy: identity.Policy{Accounts: grant("*"), AccountScope: true}},
+		"bound blocked in platform":   {tenant: "", auth: as(identity.Subject{Type: "user", ID: "alice", BoundTenant: "acme"}, nil), policy: identity.Policy{Accounts: grant("*")}, want: identity.ErrForbidden},
+		"impersonation fail closed":   {auth: as(impCred, nil), policy: identity.Policy{Accounts: grant("*")}, want: identity.ErrUnauthenticated},
+		"impersonation allowed":       {auth: as(impCred, nil), policy: identity.Policy{Accounts: grant("articles:read"), Impersonation: allowSupport("users:impersonate")}, perms: []string{"articles:read"}},
+		"impersonation actor missing": {auth: as(impCred, nil), policy: identity.Policy{Accounts: grant("*"), Impersonation: allowSupport("users:read")}, want: identity.ErrUnauthenticated},
+		"impersonation direct only":   {auth: as(impCred, nil), policy: identity.Policy{Accounts: grant("*"), Impersonation: allowSupport("users:impersonate"), DirectOnly: true}, want: identity.ErrImpersonationForbidden},
+		"impersonation actor down": {
+			auth: as(impCred, nil),
+			policy: identity.Policy{
+				Accounts: grant("*"),
+				Impersonation: &identity.Impersonation{
+					Actors: identity.Accounts{"staff": func(context.Context, identity.Subject) (identity.Subject, error) {
+						return identity.Subject{}, errDown.New()
+					}},
+				},
+			},
+			want: errDown, failed: true,
+		},
+		"resolver down":              {auth: as(cred, nil), policy: identity.Policy{Accounts: fail(errDown.New())}, want: errDown, failed: true},
+		"resolver plain error":       {auth: as(cred, nil), policy: identity.Policy{Accounts: fail(plain)}, want: plain, failed: true},
+		"resolver disables":          {auth: as(cred, nil), policy: identity.Policy{Accounts: fail(errDisabled.New())}, want: identity.ErrUnauthenticated},
+		"resolver returns nobody":    {auth: as(cred, nil), policy: identity.Policy{Accounts: fail(nil)}, want: identity.ErrUnauthenticated},
+		"resolver rejects":           {auth: as(cred, nil), policy: identity.Policy{Accounts: fail(errNotMember.New())}, want: errNotMember},
+		"permission granted":         {auth: as(cred, nil), policy: identity.Policy{Accounts: grant("articles:write")}, perms: []string{"articles:write"}},
+		"permission missing":         {auth: as(cred, nil), policy: identity.Policy{Accounts: grant("articles:read")}, perms: []string{"articles:read", "articles:write"}, want: identity.ErrForbidden, public: map[string]any{"permission": "articles:write"}},
+		"permission outside scopes":  {auth: as(cred, nil), policy: identity.Policy{Accounts: grant("*")}, perms: []string{"users:read"}, want: identity.ErrForbidden, public: map[string]any{"permission": "users:read"}},
 		"permission without resolve": {auth: as(cred, nil), perms: []string{"articles:read"}, want: identity.ErrForbidden},
 	} {
 		t.Run(name, func(t *testing.T) {
 			ctx := identity.WithTenant(context.Background(), tc.tenant)
-			sub, err := identity.Establish(ctx, tc.auth, tc.resolve, tc.perms...)
+			sub, err := identity.Establish(ctx, tc.auth, tc.policy, tc.perms...)
 			if identity.Failed(err) != tc.failed {
 				t.Fatalf("Failed(%v) = %v", err, !tc.failed)
 			}
@@ -83,51 +120,73 @@ func TestEstablish(t *testing.T) {
 	}
 }
 
-// Resolver 加载权限和租户；主体本身、认证方式、凭据、凭据的限制、代为登录者和验证情况总是取自凭据。
+// Resolver 加载权限和租户；主体本身、认证方式、凭据、租户边界、凭据的限制、代为登录者和验证情况总是取自凭据。
 func TestEstablishKeepsCredentialFields(t *testing.T) {
+	t.Parallel()
 	signedIn := identity.Auth{Methods: []string{"password"}, Time: time.Date(2026, 11, 13, 8, 0, 0, 0, time.UTC)}
-	cred := identity.Subject{ID: "alice", Type: "user", Method: "bearer", Credential: "tok1", Scopes: []string{"articles:read"}, Impersonator: support, Auth: signedIn}
-	rebuilt := func(context.Context, identity.Subject) (identity.Subject, error) {
+	cred := identity.Subject{
+		ID: "alice", Type: "user", Method: "bearer", Credential: "tok1", BoundTenant: "acme",
+		Scopes: []string{"articles:read"}, Impersonator: support, Auth: signedIn,
+	}
+	rebuilt := identity.Accounts{"user": func(context.Context, identity.Subject) (identity.Subject, error) {
 		return identity.Subject{
-			Type: "staff", ID: "mallory", Tenant: "acme", Permissions: []string{"*"}, Method: "forged", Credential: "other",
+			Type: "staff", ID: "mallory", Tenant: "acme", BoundTenant: "forged", Permissions: []string{"*"}, Method: "forged", Credential: "other",
 			Impersonator: identity.Ref{Type: "staff", ID: "nobody"}, Auth: identity.Auth{Methods: []string{"password", "totp"}, Time: time.Now()},
 		}, nil
-	}
+	}}
 	auth := func(context.Context) (identity.Subject, error) { return cred, nil }
-	sub, err := identity.Establish(context.Background(), auth, rebuilt, "articles:read")
+	policy := identity.Policy{Accounts: rebuilt, Impersonation: allowSupport("users:impersonate")}
+	ctx := identity.WithTenant(context.Background(), "acme")
+	sub, err := identity.Establish(ctx, auth, policy, "articles:read")
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := identity.Subject{Type: "user", ID: "alice", Tenant: "acme", Permissions: []string{"*"}, Method: "bearer", Credential: "tok1", Scopes: []string{"articles:read"}, Impersonator: support, Auth: signedIn}
+	want := identity.Subject{
+		Type: "user", ID: "alice", Tenant: "acme", BoundTenant: "acme", Permissions: []string{"*"},
+		Method: "bearer", Credential: "tok1", Scopes: []string{"articles:read"}, Impersonator: support, Auth: signedIn,
+	}
 	if !reflect.DeepEqual(sub, want) {
 		t.Fatalf("%+v", sub)
 	}
 	// 凭据的限制仍然生效：Resolver 丢掉 Scopes，权限照样受它约束。
-	if _, err := identity.Establish(context.Background(), auth, rebuilt, "articles:write"); !errors.Is(err, identity.ErrForbidden) {
+	if _, err := identity.Establish(ctx, auth, policy, "articles:write"); !errors.Is(err, identity.ErrForbidden) {
 		t.Fatalf("scopes ignored: %v", err)
 	}
 }
 
 func TestReestablish(t *testing.T) {
+	t.Parallel()
 	was := identity.Subject{Type: "user", ID: "alice", Impersonator: support}
 	now := was
 	var authErr, resolveErr error
 	perms := []string{"events"}
+	actorPerms := []string{"users:impersonate"}
 	auth := func(ctx context.Context) (identity.Subject, error) {
 		if !identity.Rechecking(ctx) {
 			t.Error("authenticator: not rechecking")
 		}
 		return now, authErr
 	}
-	resolve := func(ctx context.Context, sub identity.Subject) (identity.Subject, error) {
+	resolve := identity.Accounts{"user": func(ctx context.Context, sub identity.Subject) (identity.Subject, error) {
 		if !identity.Rechecking(ctx) {
 			t.Error("resolver: not rechecking")
 		}
 		sub.Permissions = perms
 		return sub, resolveErr
+	}}
+	imp := &identity.Impersonation{
+		Actors: identity.Accounts{"staff": func(ctx context.Context, sub identity.Subject) (identity.Subject, error) {
+			if !identity.Rechecking(ctx) {
+				t.Error("actor resolver: not rechecking")
+			}
+			sub.Permissions = actorPerms
+			return sub, nil
+		}},
+		Permissions: []string{"users:impersonate"},
 	}
+	policy := identity.Policy{Accounts: resolve, Impersonation: imp}
 	check := func() error {
-		_, err := identity.Reestablish(context.Background(), was, auth, resolve, "events")
+		_, err := identity.Reestablish(context.Background(), was, auth, policy, "events")
 		return err
 	}
 	if identity.Rechecking(context.Background()) {
@@ -137,6 +196,13 @@ func TestReestablish(t *testing.T) {
 	if err := check(); err != nil {
 		t.Fatalf("unchanged: %v", err)
 	}
+	// 操作者失去代为登录权限后立即失效。
+	actorPerms = nil
+	if err := check(); !errors.Is(err, identity.ErrUnauthenticated) {
+		t.Fatalf("actor revoked: %v", err)
+	}
+	actorPerms = []string{"users:impersonate"}
+
 	// 暂时无法判断时不是失效。
 	authErr = errDown.New()
 	if err := check(); !identity.Failed(err) {

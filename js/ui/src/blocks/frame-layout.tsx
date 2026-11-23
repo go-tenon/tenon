@@ -68,11 +68,12 @@ export interface FrameLayoutProps {
   tabs?: boolean | TabsOutletProps
   /** 内容区的最大宽度，例如 1200；默认铺满。staticData.fullBleed 的页面不受它限制。 */
   maxWidth?: number
-  /**
-   * 浏览器标签的标题是“页面 - 产品名称”，默认开启：页面是当前标签的标题（开启多标签时）或路由的 staticData.title。
+  /** 浏览器标签的标题是“页面 - 产品名称”，默认开启：页面是当前标签的标题（开启多标签时）或路由的 staticData.title。
    * false 时不设置，标题由应用自己管理。
    */
   documentTitle?: boolean
+  /** 内容区顶部的通栏提示，例如 ImpersonationBanner。 */
+  banner?: ReactNode
 }
 
 /**
@@ -92,6 +93,7 @@ export function FrameLayout({
   tabs,
   maxWidth,
   documentTitle = true,
+  banner,
 }: FrameLayoutProps): ReactNode {
   const theme = useMantineTheme()
   const m = layoutMetrics(theme)
@@ -239,6 +241,7 @@ export function FrameLayout({
       )}
 
       <AppShell.Main>
+        {banner}
         {/* 铺满的页面（staticData.fullBleed）没有内边距和最大宽度，高度是顶栏以下的整个窗口，页面中的各栏自己滚动。 */}
         <Box
           ref={content}

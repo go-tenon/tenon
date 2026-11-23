@@ -194,6 +194,9 @@ func (r *runner) handle(root context.Context, ep *endpoint, m *nats.Msg) (resp *
 			return fail(r.problem(ctx, ep, err), err)
 		}
 		ctx = identity.WithSubject(ctx, sub)
+		if sub.Impersonated() {
+			ctx = logging.WithAttrs(ctx, slog.String(logging.AttrImpersonator, sub.Impersonator.String()))
+		}
 	}
 
 	data, fields, err := ep.handle(ctx, m.Data)
@@ -228,7 +231,8 @@ func (r *runner) authenticate(ctx context.Context, ep *endpoint, h nats.Header) 
 		}
 		return r.opts.Validate(ctx, token)
 	}
-	return identity.Establish(ctx, authenticate, r.opts.Accounts.Resolve, ep.spec.Permissions...)
+	policy := identity.Policy{Accounts: r.opts.Accounts, Impersonation: r.opts.Impersonation}
+	return identity.Establish(ctx, authenticate, policy, ep.spec.Permissions...)
 }
 
 // problem 把 err 转换为错误响应：业务错误带错误码、公开参数和按请求语言翻译的文案；

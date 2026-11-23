@@ -3,21 +3,24 @@ package mcpx
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/go-tenon/tenon/httpx"
 	"github.com/go-tenon/tenon/identity"
+	"github.com/go-tenon/tenon/logging"
 )
 
 // HandlerOptions 是 Handler 的选项。
 type HandlerOptions struct {
-	Validate    identity.TokenValidator      // 校验请求头 Authorization: Bearer 中的 token，必填。与 REST 用同一个校验器，例如 apitoken.Store 的 Validate。
-	Accounts    identity.Accounts            // 接受的账号体系和各自的 Resolver，与 rest.Options.Accounts 相同，必填。
-	Tenant      func(r *http.Request) string // 从请求中取出本次请求所在的租户，例如子域名或请求头；nil 表示平台本身（""）。凭据绑定了租户时，两者必须相同。
-	Resource    *Resource                    // 不为 nil 时端点是 OAuth 受保护资源：401 响应的 WWW-Authenticate 带上 resource_metadata，Resource.MetadataPath() 上提供元数据，只接受发给 Resource.URL 的令牌
-	Permissions []string                     // 使用这个端点需要的权限，例如 mcp:use；为空时不额外要求。个人访问令牌的 Scopes 中也要有它，令牌才能用于 MCP。
+	Validate      identity.TokenValidator      // 校验请求头 Authorization: Bearer 中的 token，必填。与 REST 用同一个校验器，例如 apitoken.Store 的 Validate。
+	Accounts      identity.Accounts            // 接受的账号体系和各自的 Resolver，与 rest.Options.Accounts 相同，必填。
+	Impersonation *identity.Impersonation      // 允许代为登录时对操作者的校验规则；nil 时默认拒绝所有代为登录凭据。
+	Tenant        func(r *http.Request) string // 从请求中取出本次请求所在的租户，例如子域名或请求头；nil 表示平台本身（""）。凭据绑定了租户时，两者必须相同。
+	Resource      *Resource                    // 不为 nil 时端点是 OAuth 受保护资源：401 响应的 WWW-Authenticate 带上 resource_metadata，Resource.MetadataPath() 上提供元数据，只接受发给 Resource.URL 的令牌
+	Permissions   []string                     // 使用这个端点需要的权限，例如 mcp:use；为空时不额外要求。个人访问令牌的 Scopes 中也要有它，令牌才能用于 MCP。
 }
 
 // Handler 返回以 Streamable HTTP 提供 s 的处理器，挂在一个路由上，例如 router.Handle("/mcp", h)。
@@ -40,6 +43,9 @@ func Handler(s *Server, opts HandlerOptions) http.Handler {
 		panic("mcpx: HandlerOptions.Accounts is required")
 	}
 	if err := opts.Accounts.Validate(); err != nil {
+		panic(err)
+	}
+	if err := opts.Impersonation.Validate(); err != nil {
 		panic(err)
 	}
 	challenge := "Bearer"
@@ -71,7 +77,8 @@ func Handler(s *Server, opts HandlerOptions) http.Handler {
 			}
 			return opts.Validate(ctx, token)
 		}
-		sub, err := identity.Establish(ctx, authenticate, opts.Accounts.Resolve, permissions...)
+		policy := identity.Policy{Accounts: opts.Accounts, Impersonation: opts.Impersonation}
+		sub, err := identity.Establish(ctx, authenticate, policy, permissions...)
 		switch {
 		case err == nil:
 		case identity.Failed(err):
@@ -86,6 +93,10 @@ func Handler(s *Server, opts HandlerOptions) http.Handler {
 			httpx.WriteProblem(w, httpx.StatusOf(err), httpx.ErrorDetail(ctx, err))
 			return
 		}
-		sdk.ServeHTTP(w, r.WithContext(identity.WithSubject(ctx, sub)))
+		reqCtx := identity.WithSubject(ctx, sub)
+		if sub.Impersonated() {
+			reqCtx = logging.WithAttrs(reqCtx, slog.String(logging.AttrImpersonator, sub.Impersonator.String()))
+		}
+		sdk.ServeHTTP(w, r.WithContext(reqCtx))
 	})
 }

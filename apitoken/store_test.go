@@ -7,6 +7,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"testing/synctest"
@@ -461,29 +462,92 @@ func TestImpersonation(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	s := newStore(t)
-	staff := identity.Ref{Type: "staff", ID: "s1"}
-	asAlice := identity.Subject{ID: "alice", Type: "user", Impersonator: staff}
+	staff := identity.Subject{Type: "staff", ID: "s1"}
+	asAlice := identity.Subject{ID: "alice", Type: "user", Impersonator: staff.Ref()}
 	own := login(t, s, alice, apitoken.Device{})
-	impersonating := login(t, s, asAlice, apitoken.Device{})
+	// Login 拒绝带 Impersonator 的主体，强制通过 Impersonate 签发。
+	if _, err := s.Login(ctx, asAlice, apitoken.Device{}); err == nil {
+		t.Fatal("Login accepted impersonated subject")
+	}
+	// 禁止套娃代登。
+	if _, err := s.Impersonate(ctx, asAlice, bob.Ref(), apitoken.Impersonation{}); !errors.Is(err, identity.ErrImpersonationForbidden) {
+		t.Fatalf("nested impersonation err=%v", err)
+	}
+	// 超过最长期限被拒绝。
+	if _, err := s.Impersonate(ctx, staff, alice.Ref(), apitoken.Impersonation{Lifetime: apitoken.MaxImpersonationLifetime + time.Minute}); err == nil {
+		t.Fatal("exceeded max impersonation lifetime accepted")
+	}
+	impersonating, err := s.Impersonate(ctx, staff, alice.Ref(), apitoken.Impersonation{
+		Tenant: "acme",
+		Scopes: read,
+		Reason: "工单 #42",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	personal := create(t, s, asAlice, apitoken.Personal{Name: "排查", Scopes: read})
 	if sub, ok := valid(t, s, own); !ok || !sub.Impersonator.IsZero() {
 		t.Fatalf("own token impersonator=%v ok=%v", sub.Impersonator, ok)
 	}
-	for _, token := range []string{impersonating, personal} {
-		if sub, ok := valid(t, s, token); !ok || sub.ID != "alice" || sub.Impersonator != staff {
-			t.Fatalf("impersonation token sub=%+v ok=%v", sub, ok)
-		}
+	if sub, ok := valid(t, s, impersonating); !ok || sub.ID != "alice" || sub.Impersonator != staff.Ref() || sub.BoundTenant != "acme" || !slices.Equal(sub.Scopes, read) || !sub.Auth.Time.IsZero() {
+		t.Fatalf("impersonation token sub=%+v ok=%v", sub, ok)
+	}
+	if sub, ok := valid(t, s, personal); !ok || sub.ID != "alice" || sub.Impersonator != staff.Ref() {
+		t.Fatalf("personal impersonation token sub=%+v ok=%v", sub, ok)
 	}
 	list, err := s.List(ctx, alice)
 	if err != nil || len(list) != 3 {
 		t.Fatalf("list=%+v err=%v", list, err)
 	}
+	var sawImp bool
 	impersonators := map[identity.Ref]int{}
 	for _, tok := range list {
 		impersonators[tok.Impersonator]++
+		if tok.Kind == apitoken.KindImpersonation {
+			sawImp = true
+			if tok.Tenant != "acme" || tok.Reason != "工单 #42" {
+				t.Fatalf("impersonation list item=%+v", tok)
+			}
+		}
 	}
-	if impersonators[identity.Ref{}] != 1 || impersonators[staff] != 2 {
-		t.Fatalf("impersonators=%v", impersonators)
+	if !sawImp || impersonators[identity.Ref{}] != 1 || impersonators[staff.Ref()] != 2 {
+		t.Fatalf("impersonators=%v sawImp=%v", impersonators, sawImp)
+	}
+
+	// 一次性交换票据：只能消费一次，消费后得到 KindImpersonation 令牌；按操作者撤销会同时清理票据和令牌。
+	ticket, err := s.CreateImpersonationTicket(ctx, staff, alice.Ref(), apitoken.Impersonation{Tenant: "acme", Reason: "工单 #43"}, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ex, err := s.ExchangeImpersonationTicket(ctx, ticket, apitoken.Device{UserAgent: "Browser"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ex.Subject != alice.Ref() || ex.Actor != staff.Ref() || ex.Tenant != "acme" || ex.Reason != "工单 #43" || ex.Lifetime != apitoken.DefaultImpersonationLifetime {
+		t.Fatalf("exchanged=%+v", ex)
+	}
+	if _, err := s.ExchangeImpersonationTicket(ctx, ticket, apitoken.Device{}); !errors.Is(err, apitoken.ErrTicketInvalid) {
+		t.Fatalf("reused ticket err=%v", err)
+	}
+	if sub, ok := valid(t, s, ex.Token); !ok || sub.Impersonator != staff.Ref() || sub.BoundTenant != "acme" {
+		t.Fatalf("exchanged token sub=%+v ok=%v", sub, ok)
+	}
+	pendingTicket, err := s.CreateImpersonationTicket(ctx, staff, alice.Ref(), apitoken.Impersonation{Tenant: "acme"}, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	revoked, err := s.RevokeByImpersonator(ctx, staff.Ref())
+	if err != nil || revoked != 3 {
+		t.Fatalf("RevokeByImpersonator revoked=%d err=%v", revoked, err)
+	}
+	if _, ok := valid(t, s, impersonating); ok {
+		t.Fatal("impersonation token still valid after RevokeByImpersonator")
+	}
+	if _, ok := valid(t, s, own); !ok {
+		t.Fatal("user own login token revoked by RevokeByImpersonator")
+	}
+	if _, err := s.ExchangeImpersonationTicket(ctx, pendingTicket, apitoken.Device{}); !errors.Is(err, apitoken.ErrTicketInvalid) {
+		t.Fatalf("pending ticket still valid after RevokeByImpersonator: %v", err)
 	}
 }
 
@@ -575,10 +639,12 @@ func TestExport(t *testing.T) {
 	s := apitoken.NewStore(db, testConfig)
 	laptop := login(t, s, alice, apitoken.Device{IP: "203.0.113.7", UserAgent: "Firefox"})
 	ci := create(t, s, alice, apitoken.Personal{Name: "CI", Scopes: read})
-	login(t, s, identity.Subject{ID: "alice", Type: "user", Impersonator: identity.Ref{Type: "staff", ID: "s1"}}, apitoken.Device{})
+	if _, err := s.Impersonate(ctx, identity.Subject{Type: "staff", ID: "s1"}, alice.Ref(), apitoken.Impersonation{Reason: "支持排查"}); err != nil {
+		t.Fatal(err)
+	}
 	login(t, s, bob, apitoken.Device{IP: "198.51.100.1"})
 	got := exported(t)(apitoken.Export(ctx, db, alice.Ref()))
-	contains(t, got, `"kind":"login"`, `"ip":"203.0.113.7","user_agent":"Firefox"`, `"name":"CI","scopes":["articles:read"]`, `"impersonated":true`)
+	contains(t, got, `"kind":"login"`, `"ip":"203.0.113.7","user_agent":"Firefox"`, `"name":"CI","scopes":["articles:read"]`, `"kind":"impersonation"`, `"impersonated":true`, `"reason":"支持排查"`)
 	excludes(t, got, laptop, ci, "198.51.100.1", "s1", "hash")
 	if _, err := apitoken.Export(ctx, db, identity.Ref{}); err == nil {
 		t.Fatal("expected error for empty subject")

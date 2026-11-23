@@ -3,10 +3,12 @@ package rest
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/go-tenon/tenon/httpx"
@@ -19,9 +21,11 @@ import (
 type Authenticator func(ctx huma.Context) (identity.Subject, error)
 
 const (
-	authMetadata    = "tenon.auth"
-	schemesMetadata = "tenon.auth.schemes"
-	confirmMetadata = "tenon.confirmed"
+	authMetadata         = "tenon.auth"
+	schemesMetadata      = "tenon.auth.schemes"
+	confirmMetadata      = "tenon.confirmed"
+	directOnlyMetadata   = "tenon.direct_only"
+	accountScopeMetadata = "tenon.account_scope"
 )
 
 // tokenSchemes 是 RequireToken 在 OpenAPI 中登记的两种携带方式，任选其一。会话 cookie 排在前面：
@@ -136,7 +140,6 @@ func requireAuth(api *API, name string, schemes []namedScheme, challenge string,
 		security[i] = map[string][]string{s.name: {}}
 	}
 	required := append([]string(nil), permissions...)
-	resolve := api.accounts.Resolve
 	return func(op *huma.Operation) {
 		if op.Metadata == nil {
 			op.Metadata = map[string]any{}
@@ -165,7 +168,19 @@ func requireAuth(api *API, name string, schemes []namedScheme, challenge string,
 			auth := func(c context.Context) (identity.Subject, error) {
 				return authenticate(huma.WithContext(ctx, c))
 			}
-			sub, err := identity.Establish(ctx.Context(), auth, resolve, required...)
+			meta := ctx.Operation().Metadata
+			directOnly, _ := meta[directOnlyMetadata].(bool)
+			accountScope := api.accountScope
+			if v, ok := meta[accountScopeMetadata].(bool); ok {
+				accountScope = v
+			}
+			policy := identity.Policy{
+				Accounts:      api.accounts,
+				Impersonation: api.impersonation,
+				DirectOnly:    directOnly,
+				AccountScope:  accountScope,
+			}
+			sub, err := identity.Establish(ctx.Context(), auth, policy, required...)
 			switch {
 			case err == nil:
 			case identity.Failed(err):
@@ -183,21 +198,54 @@ func requireAuth(api *API, name string, schemes []namedScheme, challenge string,
 				writeError(api, ctx, problem(api, ctx, err))
 				return
 			}
-			if maxAge, ok := ctx.Operation().Metadata[confirmMetadata].(time.Duration); ok && !sub.Auth.ConfirmedWithin(maxAge) {
+			if maxAge, ok := meta[confirmMetadata].(time.Duration); ok && !sub.Auth.ConfirmedWithin(maxAge) {
 				writeError(api, ctx, problem(api, ctx, identity.ErrConfirmRequired.New()))
 				return
 			}
-			// 长连接期间（例如 SSE）重新执行全部检查：凭据被撤销、主体变化、退出租户或失去权限时结束连接。
+			// 长连接期间（例如 SSE）重新执行全部检查：凭据被撤销、主体或代为登录者变化、操作者失效、退出租户或失去权限时结束连接。
 			recheck := func(c context.Context) error {
-				_, err := identity.Reestablish(c, sub, auth, resolve, required...)
+				_, err := identity.Reestablish(c, sub, auth, policy, required...)
 				return err
 			}
 			reqCtx := identity.WithCredentialCheck(identity.WithSubject(ctx.Context(), sub), recheck)
+			if sub.Impersonated() {
+				reqCtx = logging.WithAttrs(reqCtx, slog.String(logging.AttrImpersonator, sub.Impersonator.String()))
+				trace.SpanFromContext(reqCtx).SetAttributes(attribute.String("enduser.impersonator", sub.Impersonator.String()))
+			}
 			if api.watcher != nil {
 				reqCtx = identity.WithCredentialWatcher(reqCtx, api.watcher)
 			}
 			next(huma.WithContext(ctx, reqCtx))
 		})
+	}
+}
+
+// DirectOnly 要求调用者为本人直接登录，拒绝所有代为登录的凭据（返回 403 auth.impersonation_forbidden）。
+// 用于修改密码、修改个人资料、管理设备与个人令牌、付款、删除账号等不宜代为执行的操作。
+// 与 RequireToken 等认证方案一起使用，先后不限；只有它而没有认证方案时 Register panic。
+// OpenAPI 中记录为扩展字段 x-direct-only。
+func DirectOnly() func(op *huma.Operation) {
+	return func(op *huma.Operation) {
+		if op.Metadata == nil {
+			op.Metadata = map[string]any{}
+		}
+		op.Metadata[directOnlyMetadata] = true
+		if op.Extensions == nil {
+			op.Extensions = map[string]any{}
+		}
+		op.Extensions["x-direct-only"] = true
+	}
+}
+
+// AccountScoped 将单条路由标记为账号自省接口（例如 /me、/auth/logout、/tenants）：放行绑定了租户的凭据
+// 并保留 Subject.BoundTenant。整组 API 都是账号自省接口时，可以直接设置 rest.Options.AccountScope。
+// 与 RequireToken 等认证方案一起使用，先后不限；只有它而没有认证方案时 Register panic。
+func AccountScoped() func(op *huma.Operation) {
+	return func(op *huma.Operation) {
+		if op.Metadata == nil {
+			op.Metadata = map[string]any{}
+		}
+		op.Metadata[accountScopeMetadata] = true
 	}
 }
 
