@@ -271,6 +271,34 @@ function Inbox() {
 - `<Fill name="nav">` 有内容时，二级导航显示它，替换按路由生成的链接；顶部的模块名和收起按钮保留，窄屏时它在抽屉中。二级导航中的 `NavLink` 自动用紧凑的样式，需要分组时用 `<RailSection title="…" collapsible storeKey="…" action={…}>`：`action` 在标题行右侧放置独立操作按钮，`storeKey` 按账号记住展开和收起状态。把 `Fill` 放在模块的布局路由中，模块内切换页面时面板保持不变。
 - `useCollapseNav(when)` 在 `when` 为 `true` 时临时收起二级导航，变回 `false` 或组件卸载时恢复，保存的收起状态保持不变。临时收起期间用户点了展开，以用户为准，直到下一次要求收起。
 
+<a id="panes"></a>
+### 多栏面板：`Pane`、`PaneHeader`、`PaneToolbar` 与 `PaneBody`
+
+`fullBleed` 页面用 `Pane` 组织多栏工作台，每栏的顶栏高度自动对齐 `--tn-rail-header`（52px），水平边距对齐 `--tn-pane-px`：
+
+```tsx
+import { Pane, PaneBody, PaneHeader, PaneToolbar } from "@go-tenon/ui"
+
+<div style={{ display: "flex", height: "100%" }}>
+  <Pane
+    border="right"
+    resizable={{ storageKey: "inbox-list", defaultWidth: 320, min: 260, max: 420, side: "right" }}
+  >
+    <PaneHeader title="我的" subtitle="3 个待回复" showNavToggle />
+    <PaneToolbar>{/* 搜索与筛选控件自动应用 30px 高 / 13px 字号的 dense 密度 */}</PaneToolbar>
+    <PaneBody>{/* 列表内容独立滚动 */}</PaneBody>
+  </Pane>
+  <Pane>
+    <PaneHeader title="对话" actions={actions} />
+    <PaneBody>{/* 主内容 */}</PaneBody>
+  </Pane>
+</div>
+```
+
+- `Pane` 不传 `width` 和 `resizable` 时自动占满剩余宽度；传入 `resizable` 时内建鼠标拖拽、方向键微调（Shift 加速）和双击 / Home 恢复默认，并通过 `app.storage` 按账号持久化栏宽。需要直接读取宽度状态时使用 `useResizableWidth`。
+- `PaneHeader` 的 `showNavToggle` 在布局二级导航收起时自动显示展开按钮，`back` 显示返回按钮；窄屏允许内容折行时传 `fixed={false}`。
+- `PaneToolbar` 自动开启 `data-tn-density="dense"`，内部的输入框、按钮与分段切换保持 30px 高度和 13px 字号。
+
 <a id="custom-layouts"></a>
 ## 自己写布局
 

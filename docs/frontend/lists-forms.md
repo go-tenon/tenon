@@ -103,6 +103,31 @@ return (
 - 放进对话框或已有的卡片中时用 `withBorder={false}`。几组属性用 `SimpleGrid` 并排。
 - `StatusDot` 的颜色按状态取：正常 `green`，需要注意 `deep-orange`，出错 `red`。
 
+<a id="inspector"></a>
+### 侧栏属性检查器：`Inspector`
+
+多栏工作台的右侧详情面板用 `Inspector`、`InspectorSection` 和 `InspectorField` 展示与就地编辑属性：
+
+```tsx
+import { Inspector, InspectorField, InspectorSection } from "@go-tenon/ui"
+import { Select, Text } from "@mantine/core"
+
+<Inspector>
+  <InspectorSection title="会话" collapsible storeKey="inbox-details-conv">
+    <InspectorField label="负责人">
+      <Select data={members} value={assignee} onChange={setAssignee} />
+    </InspectorField>
+    <InspectorField label="状态">
+      <Text size="sm">进行中</Text>
+    </InspectorField>
+  </InspectorSection>
+</Inspector>
+```
+
+- `Inspector` 自动应用 `data-tn-density="inspector"`，内部输入控件高度为 28px，字号保持 `sm`（13px），与纯文本值上下对齐，阅读态与编辑态字号一致。
+- `InspectorField` 左侧标签宽度默认 84px（可通过 `Inspector` 的 `labelWidth` 调整），多行内容传 `align="start"` 顶对齐。
+- `InspectorSection` 标题为 `sm`（13px 加粗），与字段标签（`xs` 12px）区分层级；传入 `collapsible` 与 `storeKey` 时按账号记住折叠状态。
+
 <a id="analytics-components"></a>
 ### 报表组件：`PeriodPicker`、`StatCard` 与 `useFormatDuration`
 
