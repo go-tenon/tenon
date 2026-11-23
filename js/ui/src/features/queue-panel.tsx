@@ -24,12 +24,13 @@ import {
   Tooltip,
 } from "@mantine/core"
 import { IconDots, IconPlayerPause, IconPlayerPlay, IconRotateClockwise, IconTrash } from "@tabler/icons-react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { type ReactNode, useState } from "react"
 import { CellLink, type Column, DataTable } from "../components/data-table/data-table"
 import { useSelection } from "../components/data-table/list"
 import { DescriptionList } from "../components/description-list"
 import { confirm, notifyError, notifySuccess } from "../components/feedback"
+import { useSmoothTransition } from "../components/loading"
 import { Page } from "../components/page"
 import { StatusDot } from "../components/status-dot"
 import { type UiMessageId, useText } from "../i18n/i18n"
@@ -514,12 +515,14 @@ function FailedJobs({
   const list = useQuery({
     queryKey: ["tenon", "queue", "failed", topic, page, perPage],
     queryFn: () => api.failedList({ topic, page, per_page: perPage }),
-    // 换筛选、翻页时总是向服务器读最新的，读取中显示加载状态；不用缓存的旧数据。
+    // 换筛选、翻页时总是向服务器读最新的，读取中暂留旧行并展示统一最短时长的加载态。
     gcTime: 0,
+    placeholderData: keepPreviousData,
   })
+  const transition = useSmoothTransition(list.data, `${topic ?? ""}|${page}|${perPage}`, list.isFetching)
   const selection = useSelection<string>([topic, page, perPage])
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["tenon", "queue"] })
-  const data = list.data
+  const data = transition.data
   // 筛选项和条数只看概览：只列出有失败任务的类型。选中的类型没有失败的任务了（例如刚重试完），回到“全部”。
   const topics = counts ?? []
   if (topic && counts && !counts.some((t) => t.topic === topic)) {
@@ -730,7 +733,7 @@ function FailedJobs({
         }
         records={data?.items ?? []}
         total={data?.total}
-        loading={list.isPending}
+        loading={(list.isPending && !data) || transition.busy}
         list={{
           page,
           perPage,

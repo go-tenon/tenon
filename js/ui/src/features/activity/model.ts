@@ -4,6 +4,7 @@
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useCallback, useMemo, useState } from "react"
 import { useApp } from "../../app/app"
+import { useSmoothTransition } from "../../components/loading"
 
 /** 一条操作记录。文字由服务端按语言翻译好，例如“发布了文章《你好》”。 */
 export interface ActivityItem {
@@ -74,14 +75,16 @@ export function useActivity(source: ActivitySource): Activity {
     queryFn: () => source.list({ page, per_page: perPage }),
     placeholderData: keepPreviousData,
   })
+  const transition = useSmoothTransition(query.data, `${keySig}|${page}|${perPage}`, query.isFetching)
+  const data = transition.data
   return {
-    items: query.data?.items ?? [],
-    total: query.data?.total,
+    items: data?.items ?? [],
+    total: data?.total,
     page,
     perPage,
     setPage,
     setPerPage,
-    loading: query.isPending || query.isPlaceholderData,
+    loading: (query.isPending && !data) || transition.busy,
     error: query.error ?? undefined,
     refresh: () => queryClient.resetQueries({ queryKey: baseKey }),
   }
