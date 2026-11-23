@@ -10,7 +10,11 @@ environments:
     service_user: [[.Slug]]      # 运行应用的 Linux 系统用户
     dir: /opt/[[.Slug]]          # 远端部署目录
     env_file: /etc/[[.Slug]]/env # 远端环境变量文件（600 权限，不进仓库）
-    config_dir: config           # 同步到远端的配置目录（自动排除 local.yaml）
+    config_dir: config           # 同步到远端的配置目录（自动排除 local.yaml），与 config_files 互斥
+    # 按环境叠加多个本地配置文件时，删除上面的 config_dir 并改用 config_files（精确打包为 0640 权限并自动传入 --config）：
+    # config_files:
+    #   - config/app.yaml
+    #   - config/prod.yaml
     # 单机最简写法（在一个进程中运行全部部分 all）：
     hosts:
       - [[.Host]]

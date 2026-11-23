@@ -67,6 +67,25 @@ environments:
 - **分波次金丝雀滚动**：先升级后端节点（`rpc`、`worker`、`scheduler`），再升级入口节点（`http`、`all`）；每组超过 1 台时先单独切换首台金丝雀并校验 `StatusText` 与本机 `health`，通过后再按 `max_parallel` 滚动其余节点，任一台失败立即熔断并输出最近日志。
 - **声明式 unit 对账**：切换每台主机时自动停用并禁用已不在期望列表中的旧 `<应用>@*.service`（例如从 `all` 拆分为 `http` 与 `worker` 时先停 `blog@all.service`），避免端口冲突和孤儿进程。
 
+<a id="deploy-config-files"></a>
+### 按环境叠加配置文件：`config_files`
+
+在 `deploy.yaml` 的环境中用 `config_files` 声明该环境按顺序叠加加载的本地配置文件列表（与 `config_dir` 互斥），将生产覆盖文件（例如加入 `.gitignore` 的 `config/prod.yaml`）随发布一起同步：
+
+```yaml
+environments:
+  production:
+    user: deploy
+    config_files:
+      - config/app.yaml
+      - config/prod.yaml
+    hosts: [203.0.113.10]
+```
+
+- **精确同步与权限隔离**：`tenon deploy` 在构建前校验清单中的每个文件存在，仅打包清单内文件上传到远端 `releases/<version>/config/`，目录与文件权限分别设为 `0750` / `0640`（属主 `root:<service_user>`），避免把其他环境的配置传到目标机。
+- **自动注入 `--config`**：systemd 模板 unit 的 `ExecStart` 以及 `config check`、`doctor`、`migrate up`、`health`、`tenon deploy run` 自动携带 `--config config/app.yaml,config/prod.yaml`，无需在 `/etc/<应用>/env` 中设置 `APP_CONFIG`。
+- **零停机生效与随版本回滚**：修改配置文件内容后执行 `tenon deploy` 即可经热重载零停机生效，执行 `tenon deploy rollback` 时配置与二进制一起回退；变更 `config_files` 文件列表本身后需重启对应 unit 使新的 `ExecStart` 生效。
+
 <a id="release-process"></a>
 ## 第一次发布与手动步骤
 
