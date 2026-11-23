@@ -16,6 +16,7 @@ describe("PaneBody", () => {
 
     const busy = render(<PaneBody loading>正文</PaneBody>)
     expect(busy).toContain("tn-pane-body-shell")
+    expect(busy).toContain('data-loading-active="true"')
     expect(busy).toContain('aria-busy="true"')
     expect(busy).toContain("mantine-Loader-root")
   })

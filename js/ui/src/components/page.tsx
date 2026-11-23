@@ -8,7 +8,7 @@ import { Link, useNavigate, useSearch } from "@tanstack/react-router"
 import { createContext, type ReactNode, useContext, useRef } from "react"
 import { useNavigation } from "../app/layout"
 import { useText } from "../i18n/i18n"
-import { LoadingStage, useSmoothTransition } from "./loading"
+import { LoadingStage, useAnyFetching, useSmoothTransition } from "./loading"
 
 const PageBreadcrumbsContext = createContext(true)
 
@@ -110,15 +110,17 @@ export function Page({
   )
 }
 
-/** 页内标签：当前的标签记在地址中；切换时展示统一短时轻磨砂过渡，打开过的标签保留状态。 */
+/** 页内标签：当前的标签记在地址中；切换时新标签在后台提前挂载拉数，旧画面上叠加统一轻磨砂过渡，请求完成后一次切出。 */
 function PageTabs({ tabs }: { tabs: PageTab[] }): ReactNode {
   const search = useSearch({ strict: false }) as Record<string, unknown>
   const navigate = useNavigate()
   const first = tabs[0].value
   const current = tabs.some((t) => t.value === search.tab) ? (search.tab as string) : first
-  const { data: shown, busy } = useSmoothTransition(current, current, false)
+  const fetching = useAnyFetching()
+  const { data: shown, busy } = useSmoothTransition(current, current, fetching)
   const visited = useRef(new Set<string>())
   visited.current.add(shown)
+  visited.current.add(current)
   const select = (value: string | null) => {
     if (!value || value === current) return
     void navigate({

@@ -356,7 +356,7 @@ export function PaneBody({ loading, className, style, children }: PaneBodyProps)
   )
   if (loading === undefined) return body
   return (
-    <div className="tn-pane-body-shell" aria-busy={loading || undefined}>
+    <div className="tn-pane-body-shell" data-loading-active={loading || undefined} aria-busy={loading || undefined}>
       {body}
       <LoadingOverlay visible={loading} />
     </div>

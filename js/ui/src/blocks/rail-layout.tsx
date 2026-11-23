@@ -42,6 +42,7 @@ import {
   useSlotFilled,
 } from "../app/layout"
 import { firstPage, type MenuItem } from "../app/menu"
+import { LoadingOverlay, useAnyFetching, useSmoothTransition } from "../components/loading"
 import { MenuBadge } from "../components/menu-badge"
 import { PageBreadcrumbs } from "../components/page"
 import { useText } from "../i18n/i18n"
@@ -198,8 +199,15 @@ export function RailLayout({
   useDocumentTitle(documentTitle ? formatDocumentTitle(pageTitle, title) : undefined)
   const navigate = useNavigate()
   const href = useRouterState({ select: (s) => s.location.href })
+  const pathname = useRouterState({ select: (s) => s.location.pathname })
+  const routerPending = useRouterState({ select: (s) => s.status === "pending" })
+  const fetching = useAnyFetching()
   const compact = useNarrow(compactQuery)
   const fullBleed = useFullBleed()
+  // 常规页面切页叠加统一轻磨砂过渡；fullBleed 多栏页由各栏自行管理局部加载态
+  const transitionKey = fullBleed ? "" : pathname
+  const routeState = useSmoothTransition(transitionKey, transitionKey, fetching || routerPending)
+  const busy = !fullBleed && routeState.busy
   const customNav = useSlotFilled("nav")
   // 宽屏时二级导航是否收起按账号保存；有组件用 useCollapseNav 要求时临时收起，用户这时点展开则以用户为准，
   // 直到下一次要求。设置页不提供收起按钮，进入设置时始终展开。窄屏时二级导航是抽屉，默认关闭。
@@ -384,21 +392,24 @@ export function RailLayout({
             <div className="tn-rail-secondary-inner">{secondary}</div>
           </aside>
         )}
-        <main id="main-content" tabIndex={-1} className="tn-rail-main" data-full-bleed={fullBleed || undefined}>
-          {fullBleed ? (
-            // 铺满的页面占满内容区的宽度和高度，没有面包屑，页面中的各栏自己滚动
-            <div className="tn-rail-full">
-              <SessionBoundary>{children ?? <Outlet />}</SessionBoundary>
-            </div>
-          ) : (
-            <Box maw={maxWidth} mx="auto" className="tn-rail-page">
-              {/* 设置中的页面不显示面包屑：二级导航已经标出了位置 */}
-              <PageBreadcrumbs show={!inSettings}>
+        <div className="tn-rail-main-shell" data-loading-active={busy || undefined} aria-busy={busy || undefined}>
+          <main id="main-content" tabIndex={-1} className="tn-rail-main" data-full-bleed={fullBleed || undefined}>
+            {fullBleed ? (
+              // 铺满的页面占满内容区的宽度和高度，没有面包屑，页面中的各栏自己滚动
+              <div className="tn-rail-full">
                 <SessionBoundary>{children ?? <Outlet />}</SessionBoundary>
-              </PageBreadcrumbs>
-            </Box>
-          )}
-        </main>
+              </div>
+            ) : (
+              <Box maw={maxWidth} mx="auto" className="tn-rail-page">
+                {/* 设置中的页面不显示面包屑：二级导航已经标出了位置 */}
+                <PageBreadcrumbs show={!inSettings}>
+                  <SessionBoundary>{children ?? <Outlet />}</SessionBoundary>
+                </PageBreadcrumbs>
+              </Box>
+            )}
+          </main>
+          <LoadingOverlay visible={busy} />
+        </div>
       </div>
     </div>
   )

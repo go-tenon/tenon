@@ -32,7 +32,7 @@ import {
   IconSearch,
 } from "@tabler/icons-react"
 import { Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router"
-import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from "react"
 import { SessionBoundary } from "../app/app"
 import { formatDocumentTitle, useDocumentTitle, usePageTitle } from "../app/document-title"
 import { Fill, Slot, useFullBleed, useLayoutState, useNarrow, useNavigation, useSlotFilled } from "../app/layout"
@@ -42,6 +42,7 @@ import { TabBar } from "../app/tabs/tab-bar"
 import { TabsOutlet, type TabsOutletProps } from "../app/tabs/tabs"
 import { NewVersionNotice } from "../app/version-notice"
 import { NavLinkLink } from "../components/links"
+import { LoadingOverlay, useAnyFetching, useSmoothTransition } from "../components/loading"
 import { MenuBadge } from "../components/menu-badge"
 import { useText } from "../i18n/i18n"
 import { Icon } from "../theme/icons"
@@ -104,6 +105,8 @@ export function FrameLayout({
   const aside = useSlotFilled("aside")
   const fullBleed = useFullBleed()
   const pathname = useRouterState({ select: (s) => s.location.pathname })
+  const routerPending = useRouterState({ select: (s) => s.status === "pending" })
+  const fetching = useAnyFetching()
   const tabsOn = Boolean(tabs) && state.tabs
   const pageTitle = usePageTitle(tabsOn)
   useDocumentTitle(documentTitle ? formatDocumentTitle(pageTitle, title) : undefined)
@@ -115,48 +118,43 @@ export function FrameLayout({
     if (state.navOpen) setState({ navOpen: false })
   }, [pathname])
 
-  // 切换页面（点标签、点菜单、搜索跳转）时，内容区淡入，同时从下方上移 6px。只看路径：翻页、筛选不算。
-  // 重新加载标签时先淡出，读取完成后再淡入（见 app/tabs/progress.tsx）。
-  const content = useRef<HTMLDivElement>(null)
-  const held = useRef<Animation | null>(null)
-  const flash = useCallback(() => {
-    const el = content.current
-    held.current?.cancel()
-    held.current = null
-    if (!el?.animate || reducedMotion()) return
-    el.animate(
-      [
-        { opacity: 0, transform: "translateY(6px)" },
-        { opacity: 1, transform: "none" },
-      ],
-      { duration: 180, easing: "ease-out" },
-    )
-  }, [])
+  // 切换页面（点顶栏标签、点侧栏菜单、搜索跳转）与刷新标签统一使用轻磨砂居中转圈覆层：
+  // 缓存或保活页面保底展示 220ms，首次打开或慢请求随页面查询与路由状态自动延长直到返回。
+  const routeState = useSmoothTransition(pathname, pathname, fetching || routerPending)
+  const [reloading, setReloading] = useState(false)
+  const reloadStartRef = useRef(0)
+  const reloadTimerRef = useRef<number | undefined>(undefined)
+  useEffect(
+    () => () => {
+      if (reloadTimerRef.current !== undefined) window.clearTimeout(reloadTimerRef.current)
+    },
+    [],
+  )
   const transition = useMemo(
     () => ({
       async out() {
-        const el = content.current
-        if (!el?.animate || reducedMotion()) return
-        held.current = el.animate([{ opacity: 1 }, { opacity: 0 }], {
-          duration: 150,
-          easing: "ease-in",
-          fill: "forwards",
-        })
-        await held.current.finished.catch(() => {})
+        if (reloadTimerRef.current !== undefined) {
+          window.clearTimeout(reloadTimerRef.current)
+          reloadTimerRef.current = undefined
+        }
+        reloadStartRef.current = Date.now()
+        setReloading(true)
       },
-      in: flash,
+      in() {
+        const remain = 220 - (Date.now() - reloadStartRef.current)
+        if (remain <= 0) {
+          setReloading(false)
+          return
+        }
+        reloadTimerRef.current = window.setTimeout(() => {
+          reloadTimerRef.current = undefined
+          setReloading(false)
+        }, remain)
+      },
     }),
-    [flash],
+    [],
   )
-  const first = useRef(true)
-  // biome-ignore lint/correctness/useExhaustiveDependencies: 只在路径变化时播放
-  useEffect(() => {
-    if (first.current) {
-      first.current = false
-      return
-    }
-    flash()
-  }, [pathname])
+  const busy = routeState.busy || reloading
 
   const vars = { "--tn-header-height": `${headerHeight}px` } as CSSProperties
   const collapseLabel = collapsed ? t("tenon.frame.expand_sidebar") : t("tenon.frame.collapse_sidebar")
@@ -243,18 +241,29 @@ export function FrameLayout({
       <AppShell.Main>
         {banner}
         {/* 铺满的页面（staticData.fullBleed）没有内边距和最大宽度，高度是顶栏以下的整个窗口，页面中的各栏自己滚动。 */}
-        <Box
-          ref={content}
-          className="tn-content"
+        <div
+          className="tn-frame-stage"
           data-full-bleed={fullBleed || undefined}
-          p={fullBleed ? 0 : m.contentPadding}
-          maw={fullBleed ? undefined : maxWidth}
+          data-loading-active={busy || undefined}
+          aria-busy={busy || undefined}
         >
-          {/* 身份变化时只重新挂载页面，布局和 HTML 文档保持不变。 */}
-          <SessionBoundary>
-            {tabsOn ? <TabsOutlet home {...(typeof tabs === "object" ? tabs : {})} /> : <Outlet />}
-          </SessionBoundary>
-        </Box>
+          <Box
+            className="tn-content"
+            data-full-bleed={fullBleed || undefined}
+            p={fullBleed ? 0 : m.contentPadding}
+            maw={fullBleed ? undefined : maxWidth}
+          >
+            {/* 身份变化时只重新挂载页面，布局和 HTML 文档保持不变。 */}
+            <SessionBoundary>
+              {tabsOn ? (
+                <TabsOutlet home transitioning={busy} {...(typeof tabs === "object" ? tabs : {})} />
+              ) : (
+                <Outlet />
+              )}
+            </SessionBoundary>
+          </Box>
+          <LoadingOverlay visible={busy} sticky />
+        </div>
         <Slot name="footer" />
       </AppShell.Main>
       {search && <PageSearch />}
@@ -467,8 +476,6 @@ function CollapsedItem({ item, active }: { item: MenuItem; active: string[] }): 
     </Tooltip>
   )
 }
-
-const reducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false
 
 /** 多标签的开关，按账号保存。窄屏时不显示标签栏，也不显示开关。 */
 function TabsSwitch(): ReactNode {
