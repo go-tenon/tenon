@@ -1566,10 +1566,44 @@ body {
   background: color-mix(in srgb, var(--tn-surface) 70%, var(--tn-canvas));
 }
 
+.tn-pane-body-shell {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .tn-pane-body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+}
+
+/* ———————————————— 切换加载过渡（LoadingStage / LoadingOverlay） ———————————————— */
+
+.tn-loading-stage {
+  position: relative;
+  border-radius: var(--mantine-radius-md);
+}
+
+.tn-loading-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--tn-surface) 62%, transparent);
+  backdrop-filter: blur(1.5px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 150ms ease;
+}
+
+.tn-loading-overlay[data-active] {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .tn-pane-resize-handle {
@@ -1675,7 +1709,8 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .tn-inspector-chevron,
-  .tn-pane-resize-handle::after {
+  .tn-pane-resize-handle::after,
+  .tn-loading-overlay {
     transition: none;
   }
 }

@@ -289,7 +289,8 @@ export function DataTable<T>(props: DataTableProps<T>): ReactNode {
         fetching={props.loading}
         // 放不下时显示横向滚动条：窄屏上提示表格还可以左右滚动。
         scrollAreaProps={{ type: "auto" }}
-        loaderBackgroundBlur={1}
+        loaderSize={22}
+        loaderBackgroundBlur={1.5}
         noRecordsText={typeof props.empty === "string" ? props.empty : t("tenon.table.empty")}
         noRecordsIcon={
           <Box c="dimmed" mb={6}>
