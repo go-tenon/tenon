@@ -9,11 +9,10 @@ import (
 
 	"github.com/cockroachdb/errors"
 
-	"github.com/go-tenon/tenon/lock"
-	"github.com/go-tenon/tenon/lock/locktest"
 	"github.com/go-tenon/tenon/logging"
 	"github.com/go-tenon/tenon/logging/logtest"
 	"github.com/go-tenon/tenon/schedule"
+	"github.com/go-tenon/tenon/schedule/scheduletest"
 )
 
 // 每次执行有自己的请求 ID，任务中读得到；ctx 中已有请求 ID 时沿用它。
@@ -46,7 +45,7 @@ func TestEachRunHasRequestID(t *testing.T) {
 func TestFailureLogSharesRequestID(t *testing.T) {
 	t.Parallel()
 	rec := logtest.New()
-	s := schedule.New(lock.New(locktest.NewStore()), schedule.DefaultConfig(), rec.Logger())
+	s := schedule.New(scheduletest.NewStore(), schedule.DefaultConfig(), rec.Logger())
 	seen := make(chan string, 1)
 	s.Add("fails", "@everysecond", func(ctx context.Context) error {
 		select {

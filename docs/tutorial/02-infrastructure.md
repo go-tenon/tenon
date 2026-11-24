@@ -14,8 +14,6 @@ name: blog
 services:
   postgres:
     image: postgres:18
-    # 队列经由逻辑复制转发任务
-    command: [postgres, -c, wal_level=logical]
     environment:
       POSTGRES_USER: blog
       POSTGRES_PASSWORD: blog
@@ -46,7 +44,7 @@ volumes:
 docker compose up -d --wait
 ```
 
-`--wait` 等到各服务的 `healthcheck` 通过才返回。数据保存在卷中，`docker compose down -v` 才会删除。`wal_level=logical` 是队列需要的设置。
+`--wait` 等到各服务的 `healthcheck` 通过才返回。数据保存在卷中，`docker compose down -v` 才会删除。
 
 <a id="configuration"></a>
 ## 配置

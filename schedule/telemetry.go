@@ -32,7 +32,7 @@ var secondBuckets = []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 
 //   - schedule.task.duration（直方图，秒）：执行耗时，属性 schedule.task.outcome 是 succeeded 或 failed
 //     （返回错误或 panic）。按结果计数就能发现一段时间内没有成功执行过的任务。
 //   - schedule.task.skipped（计数器）：本该在这个实例上执行却被跳过的次数，属性 schedule.task.skip_reason
-//     是 overlap（上一次还没结束）或 lock_failed（锁存储出错）。由其他实例执行的触发不计入。
+//     是 overlap（上一次还没结束）或 store_failed（状态存储出错）。由其他实例执行的触发不计入。
 //
 // 每次执行是一个 span，名称是 "schedule <任务名>"，是一条新链路的起点：任务中发布的队列任务、发出的请求都出现在这条链路中。
 // 返回错误或 panic 时 span 标记为错误。被跳过或由其他实例执行的触发不创建 span。

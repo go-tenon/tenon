@@ -112,15 +112,6 @@ func (e *env) call(t *testing.T, method, path, token string, out any) (int, stri
 	return rr.Code, ""
 }
 
-func dbName(t *testing.T, db *bun.DB) string {
-	t.Helper()
-	var name string
-	if err := db.NewRaw("SELECT current_database()").Scan(context.Background(), &name); err != nil {
-		t.Fatal(err)
-	}
-	return name
-}
-
 func TestAuthentication(t *testing.T) {
 	t.Parallel()
 	e := setup(t)
@@ -152,12 +143,18 @@ func TestStatus(t *testing.T) {
 	insertFailed(t, e.db, "mail", time.Minute)
 	insertFailed(t, e.db, "mail", 2*time.Minute)
 	insertFailed(t, e.db, "report", time.Minute)
+	if err := queue.Topic[int]("mail").Publish(context.Background(), e.db, 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := queue.Topic[int]("mail").Publish(context.Background(), e.db, 2, queue.Delay(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
 
 	var st queueapi.QueueStatus
 	if code, _ := e.call(t, http.MethodGet, "/queue/status", "ops", &st); code != http.StatusOK {
 		t.Fatalf("status: %d", code)
 	}
-	if st.Slot.Name != queue.SlotName(dbName(t, e.db)) || !st.Slot.Exists || st.Failed != 3 || st.JetStream != nil {
+	if st.Outbox.Pending != 1 || st.Outbox.Deferred != 1 || st.Outbox.OldestPending == nil || st.Failed != 3 || st.JetStream != nil {
 		t.Fatalf("status: %+v", st)
 	}
 	if len(st.Topics) != 2 || st.Topics[0].Topic != "mail" || st.Topics[0].Failed != 2 || st.Topics[0].State != queueapi.StateAbsent ||
@@ -385,7 +382,7 @@ func TestStatusWithoutJetStream(t *testing.T) {
 	if code, _ := e.call(t, http.MethodGet, "/queue/status", "ops", &st); code != http.StatusOK {
 		t.Fatalf("status: %d", code)
 	}
-	if st.JetStream == nil || st.JetStream.Error == "" || st.JetStream.Exists || st.Slot.Name != queue.SlotName(dbName(t, e.db)) ||
+	if st.JetStream == nil || st.JetStream.Error == "" || st.JetStream.Exists || st.Outbox.Pending != 0 || st.Outbox.Deferred != 0 ||
 		len(st.Topics) != 1 || st.Topics[0].State != queueapi.StateAbsent || st.Topics[0].Failed != 1 {
 		t.Fatalf("status: %+v", st)
 	}

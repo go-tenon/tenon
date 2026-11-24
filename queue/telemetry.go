@@ -14,7 +14,6 @@ const (
 	attrSystem      = attribute.Key("messaging.system")
 	attrDestination = attribute.Key("messaging.destination.name")
 	attrOutcome     = attribute.Key("queue.job.outcome")
-	attrRoute       = attribute.Key("queue.relay.route")
 )
 
 // system 是 messaging.system 属性的值。
@@ -24,16 +23,15 @@ const system = "nats"
 //
 // 指标的属性 messaging.system 是 nats，messaging.destination.name 是 topic：
 //
-//   - queue.job.wait（直方图，秒）：任务从可以执行到开始处理等了多久。租约到期或停止时放回、由 JetStream 重新投递的任务给不出可以执行的时间，不记录。
+//   - queue.job.wait（直方图，秒）：任务从可以执行到开始处理等了多久。重试、租约到期或停止时放回、由 JetStream 重新投递的任务不记录。
 //   - queue.job.duration（直方图，秒）：处理耗时，属性 queue.job.outcome 是结果：
 //     succeeded、retrying、failed、released。按结果计数就是吞吐和失败率。
 //
-// 转发的指标没有 messaging 属性：
+// 转发和 outbox 的指标没有 messaging 属性：
 //
-//   - queue.relay.jobs（计数）：从 WAL 读到并转发的任务数，属性 queue.relay.route 是去向：
-//     published（立即交给 JetStream）或 deferred（JetStream 定时消息）。
-//   - queue.relay.active（仪表）：这个实例正在转发时为 1，否则为 0。所有实例之和为 0 时没有实例在转发，WAL 会一直累积。
-//   - queue.relay.lag（仪表，字节）：复制槽中还没确认的 WAL，每个实例采集时查询一次。
+//   - queue.relay.jobs（计数）：从 queue_outbox 转发到 JetStream 的任务数。
+//   - queue.outbox.pending（仪表）：queue_outbox 中已到期、等待转发的任务数。
+//   - queue.outbox.deferred（仪表）：queue_outbox 中尚未到期的延迟任务数。
 //
 // 每次执行是一个 consumer span，名称是 "process <topic>"，接在发布任务时的链路之后：
 // HTTP 请求中发布的任务，执行时出现在同一条链路中。处理失败或重试时 span 标记为错误。

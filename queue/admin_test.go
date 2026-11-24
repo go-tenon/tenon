@@ -10,7 +10,8 @@ import (
 	"github.com/go-tenon/tenon/queue/queuetest"
 )
 
-// Admin 报告各 topic 的任务、定时消息和没有处理函数的 topic；暂停的 topic 在 Worker 重启后仍然暂停，恢复后照常处理。
+// Admin 报告各 topic 的任务和没有处理函数的 topic；延迟任务留在 queue_outbox 中；
+// 暂停的 topic 在 Worker 重启后仍然暂停，恢复后照常处理。
 func TestAdmin(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
@@ -36,7 +37,7 @@ func TestAdmin(t *testing.T) {
 	}
 	stop := start(t, db, cfg, register)
 	publish(t, db, 1)                                                                  // 处理中
-	publish(t, db, 2, queue.Delay(time.Minute))                                        // JetStream 中的定时消息
+	publish(t, db, 2, queue.Delay(time.Minute))                                        // queue_outbox 中的延迟任务
 	if err := queue.Topic[payload]("orphan").Publish(ctx, db, payload{}); err != nil { // 没有处理函数
 		t.Fatal(err)
 	}
@@ -55,13 +56,17 @@ func TestAdmin(t *testing.T) {
 				orphan = s
 			}
 		}
-		return jobsStatus.InFlight == 1 && orphan.Pending == 1 && st.Deferred == 1
+		return jobsStatus.InFlight == 1 && orphan.Pending == 1
 	})
-	if !st.Exists || st.Replicas != 1 || st.Messages != 3 || st.Bytes == 0 {
+	if !st.Exists || st.Replicas != 1 || st.Messages != 2 || st.Bytes == 0 {
 		t.Fatalf("stream %+v", st)
 	}
 	if !jobsStatus.Handled || jobsStatus.LastDelivered.IsZero() || jobsStatus.Stalled() || orphan.Handled {
 		t.Fatalf("topics %+v %+v", jobsStatus, orphan)
+	}
+	outbox, err := queue.ReadStatus(ctx, db)
+	if err != nil || outbox.Pending != 0 || outbox.Deferred != 1 {
+		t.Fatalf("outbox %+v %v", outbox, err)
 	}
 	close(release)
 	<-handled

@@ -175,7 +175,7 @@ func TestPublishInTransaction(t *testing.T) {
 		t.Fatalf("rolled back job handled: %+v", v)
 	case <-time.After(300 * time.Millisecond):
 	}
-	// 转发之后确认了复制槽的位置：停止 Worker 后，槽中没有待转发的任务。
+	// 转发之后已删除 queue_outbox 中的记录：停止 Worker 后，待转发任务为空。
 	stop()
 	if p := queuetest.Pending(t, db, jobs); len(p) != 0 {
 		t.Fatalf("pending after relay: %v", p)
@@ -319,9 +319,9 @@ func TestRetry(t *testing.T) {
 	if !slices.Equal(kinds, want) {
 		t.Fatalf("events %v", kinds)
 	}
-	// 首次执行和重试都知道任务可以执行的时间，重试的是安排重试时算出的时间。
-	if events[0].Job.AvailableAt.IsZero() || !events[2].Job.AvailableAt.Equal(events[1].RetryAt) || events[4].Job.AvailableAt.IsZero() {
-		t.Fatalf("available at %v %v %v", events[0].Job.AvailableAt, events[2].Job.AvailableAt, events[4].Job.AvailableAt)
+	// 首次执行知道任务可以执行的时间；经由 JetStream 原生 NakWithDelay 重投时 AvailableAt 为零值。
+	if events[0].Job.AvailableAt.IsZero() || !events[2].Job.AvailableAt.IsZero() || events[1].RetryAt.IsZero() {
+		t.Fatalf("available at %v %v retry at %v", events[0].Job.AvailableAt, events[2].Job.AvailableAt, events[1].RetryAt)
 	}
 	if events[0].Job.ID != events[4].Job.ID {
 		t.Fatal("job id changed across retries")
@@ -694,54 +694,7 @@ func TestConsumerRecreated(t *testing.T) {
 	}
 }
 
-// consumer 在两次拉取之间被删除时（没有等待中的拉取，之后的拉取得到 no responders），Worker 同样重建它。
-func TestConsumerDeletedBetweenFetches(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	cfg := queuetest.Config(t)
-	js, err := jetstream.New(queuetest.Conn(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	got := make(chan int, 2)
-	var armed atomic.Bool
-	deleted := make(chan error, 1)
-	start(t, db, cfg, func(w *queue.Worker) {
-		jobs.Handle(w, func(_ context.Context, p payload) error {
-			got <- p.N
-			return nil
-		})
-		queue.SetBeforeFetch(w, func() {
-			if armed.CompareAndSwap(true, false) {
-				deleted <- js.DeleteConsumer(context.Background(), cfg.Stream, "jobs")
-			}
-		})
-	})
-	publish(t, db, 1)
-	if n := <-got; n != 1 {
-		t.Fatalf("handled %d", n)
-	}
-	armed.Store(true) // 正在等待的拉取结束后、下一次拉取之前删除
-	select {
-	case err := <-deleted:
-		if err != nil {
-			t.Fatal(err)
-		}
-	case <-time.After(15 * time.Second):
-		t.Fatal("consumer not deleted")
-	}
-	publish(t, db, 2)
-	select {
-	case n := <-got:
-		if n != 2 {
-			t.Fatalf("handled %d", n)
-		}
-	case <-time.After(15 * time.Second):
-		t.Fatal("job not handled after the consumer was deleted between fetches")
-	}
-}
-
-// 任务连续到达时，relay 按攒批的最长等待发出，不等攒满一批：第一个任务在发布还没结束时就已处理。
+// 任务连续到达时，relay 持续转发，不等攒满一批：第一个任务在发布还没结束时就已处理。
 func TestRelayDoesNotWaitForFullBatch(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)

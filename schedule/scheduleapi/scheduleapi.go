@@ -4,7 +4,7 @@
 //
 // 装配（表由 Migrations 发布）：
 //
-//	sched := schedule.New(locker, cfg.Schedule, logger, schedule.WithObserver(scheduleapi.Observer(db)))
+//	sched := schedule.New(pgschedule.New(db), cfg.Schedule, logger, schedule.WithObserver(scheduleapi.Observer(db)))
 //	sched.Add("schedule-runs-cleanup", "@daily", schedule.Cleanup(scheduleapi.Cleanup(db, 7*24*time.Hour), 1000))
 //	tasks := func() *schedule.Scheduler { return sched }
 //	scheduleapi.Register(api, rest.RequireToken(api, tokens.Validate, "jobs:manage"), db, tasks) // HTTP 进程
@@ -161,7 +161,7 @@ func (h *handlers) lastTicks(ctx context.Context) (map[string]time.Time, error) 
 // list 列出全部任务，附带下一次执行的时间和最近一次执行。
 func (h *handlers) list(ctx context.Context, _ *struct{}) (*listOutput, error) {
 	sched := h.tasks()
-	running, err := sched.Running(ctx)
+	states, err := sched.States(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -177,21 +177,25 @@ func (h *handlers) list(ctx context.Context, _ *struct{}) (*listOutput, error) {
 	out := &listOutput{}
 	out.Body.Items = []ScheduleTask{}
 	for _, t := range sched.Tasks() {
+		st := states[t.Name]
 		it := ScheduleTask{
 			Name:        t.Name,
 			Label:       resolveText(ctx, t.Label, "schedule.task."+t.Name+".label"),
 			Description: resolveText(ctx, t.Description, "schedule.task."+t.Name+".description"),
 			Expr:        t.Expr,
 			NextRun:     t.Next(now),
-			Running:     running[t.Name],
+			Running:     st.Running,
 		}
 		if r, ok := last[t.Name]; ok {
 			at := r.StartedAt
 			it.LastStatus, it.LastRunAt, it.LastDurationMS, it.LastError, it.LastManual = r.Status, &at, r.DurationMS, r.Error, r.Manual
 		}
-		// 应当执行的时间过去了一分钟，这次触发却没有执行记录，也没有正在执行：这次触发丢了，例如调度器停止或部署期间。
-		// 从来没有按表达式执行过的任务不算（刚部署时每小时、每天的任务都还没到第一次），立即执行的记录也不算。
+		// 应当执行的时间过去了一分钟，这次触发却没有被领取也没有执行记录，且没有正在执行：这次触发丢了。
+		// 结合持久的触发水位 st.LastTick 和执行记录表中的最大 tick：即使 schedule_runs 已按保留期清理，低频任务也能准确发现错过。
 		tick := lastTick[t.Name]
+		if st.LastTick.After(tick) {
+			tick = st.LastTick
+		}
 		prev := t.Prev(now)
 		it.Missed = !tick.IsZero() && prev.After(tick) && now.Sub(prev) > time.Minute && !it.Running &&
 			!t.EveryInstance && !t.AllowOverlap

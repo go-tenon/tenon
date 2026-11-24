@@ -1,4 +1,4 @@
-// Package queuecmd 提供 queue 命令：查看队列在数据库和 JetStream 两侧的状态、列出失败任务、重建转发任务的复制槽。
+// Package queuecmd 提供 queue 命令：查看队列在数据库和 JetStream 两侧的状态、列出失败任务。
 package queuecmd
 
 import (
@@ -35,7 +35,7 @@ type jetStream struct {
 	cfg queue.Config
 }
 
-// WithJetStream 让 queue status 同时显示 JetStream 中的状态：stream 的消息和存储、定时消息、
+// WithJetStream 让 queue status 同时显示 JetStream 中的状态：stream 的消息和存储、
 // 各 topic 等待处理和处理中的任务。nc 是应用的 NATS 连接，cfg 与 Worker 的相同；和 db 一样，命令执行时才使用。
 func WithJetStream(nc *nats.Conn, cfg queue.Config) Option {
 	return func(o *options) { o.jetStream = &jetStream{nc: nc, cfg: cfg} }
@@ -43,10 +43,9 @@ func WithJetStream(nc *nats.Conn, cfg queue.Config) Option {
 
 // New 返回 queue 命令。db 是发布任务的数据库：
 //
-//	queue status                         复制槽是否有 worker 在转发、积压多少；
+//	queue status                         outbox 待转发与延迟任务数；
 //	                                     设置了 WithJetStream 时还有 JetStream 中的任务
 //	queue failed [--topic t] [--limit n] 从新到旧列出失败任务
-//	queue slot recreate [--force]        复制槽丢失或失效后重建它
 //
 // 和其他需要数据库的命令一样，在 command.Bind 中声明：New 只保存参数，命令执行时才使用它。
 //
@@ -58,7 +57,7 @@ func New(db bun.IDB, opts ...Option) *cobra.Command {
 	}
 	status := &cobra.Command{
 		Use:   "status",
-		Short: "显示转发任务的复制槽、延迟任务和 JetStream 中各 topic 的状态",
+		Short: "显示 outbox 待转发、延迟任务和 JetStream 中各 topic 的状态",
 		Args:  command.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			s, err := queue.ReadStatus(cmd.Context(), db)
@@ -66,20 +65,10 @@ func New(db bun.IDB, opts ...Option) *cobra.Command {
 				return err
 			}
 			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
-			fmt.Fprintf(w, "slot\t%s\n", s.Slot)
-			switch {
-			case !s.Exists:
-				fmt.Fprintln(w, "state\tmissing: run the migrations, or `queue slot recreate` after a restore or failover")
-			case s.WALStatus == "lost":
-				fmt.Fprintln(w, "state\tlost: jobs in it are gone, run `queue slot recreate`")
-			case s.Active:
-				fmt.Fprintf(w, "state\trelaying (pid %d)\n", s.ActivePID)
-			default:
-				fmt.Fprintln(w, "state\tidle: no worker is relaying, the WAL keeps growing")
-			}
-			if s.Exists {
-				fmt.Fprintf(w, "wal status\t%s\n", s.WALStatus)
-				fmt.Fprintf(w, "lag\t%s\n", bytes(s.Lag))
+			fmt.Fprintf(w, "outbox pending\t%d\n", s.Pending)
+			fmt.Fprintf(w, "outbox deferred\t%d\n", s.Deferred)
+			if !s.OldestPending.IsZero() {
+				fmt.Fprintf(w, "oldest pending\t%s\n", s.OldestPending.Local().Format(time.DateTime))
 			}
 			if o.jetStream == nil {
 				return w.Flush()
@@ -87,26 +76,6 @@ func New(db bun.IDB, opts ...Option) *cobra.Command {
 			return printJetStream(cmd, w, queue.NewAdmin(o.jetStream.nc, o.jetStream.cfg))
 		},
 	}
-
-	recreate := &cobra.Command{
-		Use:   "recreate",
-		Short: "重建丢失或失效的复制槽",
-		Long: "复制槽丢失（恢复备份、没有同步的主备切换）或失效后，worker 拒绝启动，用这个命令重建。\n" +
-			"从丢失到重建期间发布的任务不会被转发，需要从业务数据中找出没有完成的工作重新发布。\n" +
-			"复制槽可用时不重建，除非指定 --force：那会丢弃其中还没转发的任务。",
-		Args: command.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			force, _ := cmd.Flags().GetBool("force")
-			if err := queue.RecreateSlot(cmd.Context(), db, force); err != nil {
-				return err
-			}
-			_, err := fmt.Fprintln(cmd.OutOrStdout(), "replication slot recreated")
-			return err
-		},
-	}
-	recreate.Flags().Bool("force", false, "复制槽可用时也重建，丢弃其中还没转发的任务")
-	slot := &cobra.Command{Use: "slot", Short: "转发任务的复制槽"}
-	slot.AddCommand(recreate)
 
 	list := &cobra.Command{
 		Use:   "failed",
@@ -133,7 +102,7 @@ func New(db bun.IDB, opts ...Option) *cobra.Command {
 	list.Flags().Int("limit", 20, "最多列出的条数")
 
 	root := &cobra.Command{Use: "queue", Short: "队列"}
-	root.AddCommand(status, list, slot)
+	root.AddCommand(status, list)
 	return command.InGroup(root, command.GroupOps)
 }
 
@@ -177,7 +146,6 @@ func printJetStream(cmd *cobra.Command, w *tabwriter.Writer, admin *queue.Admin)
 		replicas += " (leader " + st.Leader + ")"
 	}
 	fmt.Fprintf(w, "replicas\t%s\n", replicas)
-	fmt.Fprintf(w, "deferred\t%d\n", st.Deferred)
 	if err := w.Flush(); err != nil || len(st.Topics) == 0 {
 		return err
 	}

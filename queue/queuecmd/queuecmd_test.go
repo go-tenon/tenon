@@ -3,7 +3,6 @@ package queuecmd_test
 import (
 	"bytes"
 	"context"
-	"errors"
 	"log/slog"
 	"strings"
 	"testing"
@@ -93,31 +92,31 @@ func status(t *testing.T, db bun.IDB, key string) string {
 	return ""
 }
 
-// 复制槽可用时 recreate 拒绝重建；丢失后重建，状态恢复。
-func TestStatusAndRecreate(t *testing.T) {
+// status 显示 outbox 中的待转发任务数和延迟任务数。
+func TestStatusOutbox(t *testing.T) {
 	db := dbtest.Open(t, queue.Migrations())
 	ctx := context.Background()
-	if s := status(t, db, "state"); !strings.HasPrefix(s, "idle") {
-		t.Fatalf("state %q", s)
+	if s := status(t, db, "outbox pending"); s != "0" {
+		t.Fatalf("pending %q", s)
 	}
-	if s := status(t, db, "wal status"); s != "reserved" {
-		t.Fatalf("wal status %q", s)
+	if s := status(t, db, "outbox deferred"); s != "0" {
+		t.Fatalf("deferred %q", s)
 	}
-
-	if _, err := execute(db, "slot", "recreate"); !errors.Is(err, queue.ErrSlotHealthy) {
-		t.Fatalf("recreate a healthy slot: %v", err)
-	}
-	if _, err := db.ExecContext(ctx, "SELECT pg_drop_replication_slot(slot_name) FROM pg_replication_slots WHERE database = current_database()"); err != nil {
+	if err := queue.Topic[int]("mail").Publish(ctx, db, 1); err != nil {
 		t.Fatal(err)
 	}
-	if s := status(t, db, "state"); !strings.HasPrefix(s, "missing") {
-		t.Fatalf("state %q", s)
+	if err := queue.Topic[int]("mail").Publish(ctx, db, 2, queue.Delay(time.Hour)); err != nil {
+		t.Fatal(err)
 	}
-	run(t, db, "slot", "recreate")
-	if s := status(t, db, "state"); !strings.HasPrefix(s, "idle") {
-		t.Fatalf("state after recreate %q", s)
+	if s := status(t, db, "outbox pending"); s != "1" {
+		t.Fatalf("pending %q", s)
 	}
-	run(t, db, "slot", "recreate", "--force")
+	if s := status(t, db, "outbox deferred"); s != "1" {
+		t.Fatalf("deferred %q", s)
+	}
+	if s := status(t, db, "oldest pending"); s == "" {
+		t.Fatal("oldest pending not shown")
+	}
 }
 
 // WithJetStream 时 status 还输出 stream 和各 topic 的状态。

@@ -34,6 +34,7 @@ import (
 	"github.com/go-tenon/tenon/queue"
 	"github.com/go-tenon/tenon/ratelimit/pglimit"
 	"github.com/go-tenon/tenon/savedview"
+	"github.com/go-tenon/tenon/schedule/pgschedule"
 	"github.com/go-tenon/tenon/schedule/scheduleapi"
 	"github.com/go-tenon/tenon/search"
 	"github.com/go-tenon/tenon/settings"
@@ -66,6 +67,7 @@ var sources = map[string]fs.FS{
 	"queue":                queue.Migrations(),
 	"ratelimit/pglimit":    pglimit.Migrations(),
 	"savedview":            savedview.Migrations(),
+	"schedule/pgschedule":  pgschedule.Migrations(),
 	"schedule/scheduleapi": scheduleapi.Migrations(),
 	"search":               search.Migrations(),
 	"vector":               vector.Migrations(),

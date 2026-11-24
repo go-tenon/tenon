@@ -79,25 +79,14 @@ func TestNames(t *testing.T) {
 	}
 }
 
-func TestCeilSecond(t *testing.T) {
-	t.Parallel()
-	base := time.Date(2026, 1, 1, 0, 0, 1, 0, time.UTC)
-	if got := ceilSecond(base); !got.Equal(base) {
-		t.Errorf("whole second moved to %v", got)
-	}
-	if got := ceilSecond(base.Add(time.Millisecond)); !got.Equal(base.Add(time.Second)) {
-		t.Errorf("rounded to %v", got)
-	}
-}
-
 func TestMsgID(t *testing.T) {
 	t.Parallel()
 	id := uuid.Must(uuid.NewV7())
 	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	// 同一次执行重新发布时 ID 相同，被去重；执行次数或可以执行的时间不同时 ID 不同。
-	if msgID(id, 1, at) != msgID(id, 1, at.Add(time.Microsecond)) ||
-		msgID(id, 1, at) == msgID(id, 2, at) || msgID(id, 1, at) == msgID(id, 1, at.Add(time.Second)) {
-		t.Error("msgID must identify one execution of a job")
+	cst := at.In(time.FixedZone("CST", 8*3600))
+	// 同一条 outbox 记录重新转发时 ID 相同，被去重；失败后重新入库时 CreatedAt 不同，ID 不同。
+	if msgID(id, at) != msgID(id, cst) || msgID(id, at) == msgID(id, at.Add(time.Nanosecond)) {
+		t.Error("msgID must identify one outbox insertion of a job")
 	}
 }
 

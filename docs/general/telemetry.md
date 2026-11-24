@@ -93,7 +93,7 @@ if err := sync(ctx); err != nil {
 | HTTP | `httpx.Telemetry(mp, tp)`，中间件，装在 `httpx.Defaults` 之前 |
 | 数据库 | `database.Open(ctx, cfg, database.WithTelemetry(mp, tp))` |
 | 队列 | `queue.NewWorker(db, nc, cfg, nil, queue.WithTelemetry(mp, tp))` |
-| 定时任务 | `schedule.New(locker, cfg, nil, schedule.WithTelemetry(mp, tp))` |
+| 定时任务 | `schedule.New(pgschedule.New(db), cfg, nil, schedule.WithTelemetry(mp, tp))` |
 | 限流 | `ratelimit.Observe(mp, name, limiter)` |
 | MCP | `mcpx.New(opts, mcpx.WithTelemetry(mp, tp))` |
 | 实时频道 | `realtime.Options.MeterProvider` |
@@ -133,19 +133,19 @@ if err := sync(ctx); err != nil {
 | --- | --- |
 | `queue.job.wait` | 任务从可以执行到开始处理等了多久 |
 | `queue.job.duration` | 处理耗时，按 `queue.job.outcome`（`succeeded`、`retrying`、`failed`、`released`）计数就是吞吐和失败率 |
-| `queue.relay.jobs` | 从 WAL 转发的任务，`queue.relay.route` 是 `published` 或 `deferred` |
-| `queue.relay.active` | 这个实例正在转发时为 1 |
-| `queue.relay.lag` | 复制槽中还没确认的 WAL（字节），见[监控积压](../installation/operations.md#queue-monitoring) |
+| `queue.relay.jobs` | 从 `queue_outbox` 转发到 JetStream 的任务数 |
+| `queue.outbox.pending` | `queue_outbox` 中已到期、等待转发的任务数，见[监控积压](../installation/operations.md#queue-monitoring) |
+| `queue.outbox.deferred` | `queue_outbox` 中尚未到期的延迟任务数 |
 
 - `queue.job.*` 和 span 带有 `messaging.destination.name`（topic），按它筛出一个 topic 的指标和链路。
-- 所有实例的 `queue.relay.active` 之和为 0 时没有实例在转发，WAL 会一直累积，要告警。
+- `queue.outbox.pending` 持续不为 0 且不断增长时，说明没有 worker 在转发或 NATS 不可用，要告警。
 - 每次执行是一个 `process <topic>` span，接在发布任务的 span 之后：请求和它发布的任务在同一条链路中。
 
 <a id="schedule"></a>
 ### 定时任务的指标和链路
 
 - `schedule.task.duration`：执行耗时，属性 `schedule.task`（任务名）和 `schedule.task.outcome`（`succeeded`，或 `failed`：返回错误或 panic）。
-- `schedule.task.skipped`：应当执行却被跳过的次数，`schedule.task.skip_reason` 是 `overlap`（上一次还没结束）或 `lock_failed`（锁存储出错）。多个实例时，由其他实例执行的触发不算跳过。
+- `schedule.task.skipped`：应当执行却被跳过的次数，`schedule.task.skip_reason` 是 `overlap`（上一次还没结束）或 `store_failed`（状态存储出错）。多个实例时，由其他实例执行的触发不算跳过。
 - 每次执行是一个 `schedule <任务名>` span，是新链路的起点，任务中发布的队列任务接在它之后。
 
 <a id="ratelimit"></a>
@@ -187,6 +187,6 @@ sum(rate(http_server_request_duration_seconds_count{http_response_status_code=~"
 # 每天凌晨的报表任务 25 小时内没有成功过
 increase(schedule_task_duration_seconds_count{schedule_task="reports:daily", schedule_task_outcome="succeeded"}[25h]) == 0
 
-# 没有实例在转发队列任务（WAL 会一直累积）
-sum(queue_relay_active) == 0
+# outbox 中有到期任务持续超过 5 分钟未被转发
+min_over_time(queue_outbox_pending[5m]) > 0
 ```

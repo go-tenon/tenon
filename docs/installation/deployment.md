@@ -4,7 +4,7 @@
 
 包：`command`、`command/httpcmd`、`command/migratecmd`。
 
-- 每次发布按顺序执行：构建 → `config check` → `migrate up` → `doctor` → 启动或热重载服务。迁移在新版本启动与全量自检之前执行：新代码用到的表、列和队列复制槽要先就绪。
+- 每次发布按顺序执行：构建 → `config check` → `migrate up` → `doctor` → 启动或热重载服务。迁移在新版本启动与全量自检之前执行：新代码用到的表和列要先就绪。
 - 发布期间新旧版本同时运行，每次的表结构变化都要让两个版本都能运行，见[零停机变更](../database/migrations.md#zero-downtime-changes)。
 
 <a id="building"></a>

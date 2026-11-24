@@ -35,61 +35,48 @@ func newJobMetrics(mp metric.MeterProvider) jobMetrics {
 	return jobMetrics{wait: wait, duration: duration}
 }
 
-// relayRoute 是 queue.relay.jobs 的属性 queue.relay.route 的值：任务被转发的方式。
-const (
-	routePublished = "published" // 已经到时间，立即交给 JetStream
-	routeDeferred  = "deferred"  // 作为 JetStream 的定时消息
-)
-
 // statusTimeout 是采集指标时读取队列状态的超时。
 const statusTimeout = 5 * time.Second
 
-// observeRelay 创建转发的指标：转发的任务数，以及采集时读取的复制槽积压、是否在转发。
-// 每个 Worker 实例都报告积压，只要还有一个实例活着就能看到；所有实例的 queue.relay.active 之和为 0 说明没有实例在转发。
+// observeRelay 创建转发和 outbox 的指标：转发的任务数，以及采集时读取的待转发和延迟任务数。
 func observeRelay(mp metric.MeterProvider, w *Worker) {
 	meter := mp.Meter(scopeName)
 	jobs, err := meter.Int64Counter("queue.relay.jobs", metric.WithUnit("{job}"),
-		metric.WithDescription("Jobs relayed from the WAL, by route: published or deferred."))
+		metric.WithDescription("Jobs relayed from queue_outbox to JetStream."))
 	if err != nil {
 		panic(errors.Wrap(err, "queue: create queue.relay.jobs"))
 	}
-	active, err := meter.Int64ObservableGauge("queue.relay.active",
-		metric.WithDescription("1 when this worker holds the replication slot and relays jobs, 0 otherwise."))
+	pending, err := meter.Int64ObservableGauge("queue.outbox.pending", metric.WithUnit("{job}"),
+		metric.WithDescription("Due jobs waiting in queue_outbox to be relayed to JetStream."))
 	if err != nil {
-		panic(errors.Wrap(err, "queue: create queue.relay.active"))
+		panic(errors.Wrap(err, "queue: create queue.outbox.pending"))
 	}
-	lag, err := meter.Int64ObservableGauge("queue.relay.lag", metric.WithUnit("By"),
-		metric.WithDescription("WAL retained by the replication slot that workers have not confirmed."))
+	deferred, err := meter.Int64ObservableGauge("queue.outbox.deferred", metric.WithUnit("{job}"),
+		metric.WithDescription("Scheduled jobs waiting in queue_outbox until available_at."))
 	if err != nil {
-		panic(errors.Wrap(err, "queue: create queue.relay.lag"))
+		panic(errors.Wrap(err, "queue: create queue.outbox.deferred"))
 	}
 	_, err = meter.RegisterCallback(func(ctx context.Context, o metric.Observer) error {
-		var a int64
-		if w.relaying.Load() {
-			a = 1
-		}
-		o.ObserveInt64(active, a)
 		ctx, cancel := context.WithTimeout(ctx, statusTimeout)
 		defer cancel()
 		s, err := ReadStatus(ctx, w.db)
 		if err != nil {
-			return nil // 数据库不可用时不报告，告警看 queue.relay.active
+			return nil
 		}
-		if s.Exists {
-			o.ObserveInt64(lag, s.Lag)
-		}
+		o.ObserveInt64(pending, s.Pending)
+		o.ObserveInt64(deferred, s.Deferred)
 		return nil
-	}, active, lag)
+	}, pending, deferred)
 	if err != nil {
 		panic(errors.Wrap(err, "queue: register relay metrics"))
 	}
 	w.relayJobs = jobs
 }
 
-// countRelayed 记录按 route 转发的任务数。
-func (w *Worker) countRelayed(ctx context.Context, route string, n int) {
+// countRelayed 记录转发到 JetStream 的任务数。
+func (w *Worker) countRelayed(ctx context.Context, n int) {
 	if w.relayJobs != nil && n > 0 {
-		w.relayJobs.Add(ctx, int64(n), metric.WithAttributes(attrRoute.String(route)))
+		w.relayJobs.Add(ctx, int64(n))
 	}
 }
 

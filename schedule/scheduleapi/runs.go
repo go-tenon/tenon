@@ -42,7 +42,7 @@ type run struct {
 // Observer 返回调度器的 Observer：每次执行结束、被跳过时在 schedule_runs 中写一行，立即执行（RunNow）也一样。
 // 由其他实例执行的触发不报告，所以每次执行只记一行。写入失败只记日志，不影响任务。
 //
-//	sched := schedule.New(locker, cfg, logger, schedule.WithObserver(scheduleapi.Observer(db)))
+//	sched := schedule.New(pgschedule.New(db), cfg, logger, schedule.WithObserver(scheduleapi.Observer(db)))
 func Observer(db bun.IDB) schedule.Observer {
 	return func(ctx context.Context, e schedule.Event) {
 		r := &run{Task: e.Task, StartedAt: e.Started, DurationMS: e.Duration.Milliseconds(), Manual: e.Manual}

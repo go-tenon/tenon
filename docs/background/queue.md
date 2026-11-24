@@ -1,12 +1,12 @@
 # 队列
 
-把发送邮件、生成缩略图、通知第三方这类工作作为任务发布到队列，由 worker 在后台执行，失败时自动重试，次数用完后转入失败任务表。任务在业务事务中写进 PostgreSQL 的 WAL，由 worker 经逻辑复制转发到 NATS JetStream。
+把发送邮件、生成缩略图、通知第三方这类工作作为任务发布到队列，由 worker 在后台执行，失败时自动重试，次数用完后转入失败任务表。任务在业务事务中写入 PostgreSQL 的 `queue_outbox` 表，由 worker 批量转发到 NATS JetStream。
 
 包：`queue`、`queue/queuecmd`、`queue/queueapi`、`queue/queuetest`。
 
 - 任务在发布它的事务提交后才投递，事务回滚时任务一起取消。
 - 任务至少执行一次：worker 崩溃或停止超时时，任务交给其他 worker 重新执行，所以处理函数要能安全地重复执行。任务之间不保证执行顺序。
-- 至少运行一个 worker：任务由 worker 转发到 JetStream 之后才会执行。
+- 至少运行一个 worker：任务由 worker 从 `queue_outbox` 转发到 JetStream 之后才会执行。
 
 <a id="example-usage"></a>
 ## 示例
@@ -36,9 +36,9 @@ err = w.Run(ctx) // 一直运行到 ctx 被取消
 <a id="preparing"></a>
 ## 准备：NATS、PostgreSQL 与迁移
 
-- **NATS** 2.15 或更新的版本，开启 JetStream：`nats-server -js -sd /var/lib/nats`。worker 启动时自己创建 stream 和 consumer。生产环境用三台服务器组成[集群](https://docs.nats.io/running-a-nats-service/configuration/clustering/jetstream_clustering)并把 `replicas` 设为 3：单台服务器默认每 2 分钟同步一次磁盘，断电时最近的任务可能丢失；只有一台时在 NATS 配置中设置 `jetstream { sync_interval: always }`。
-- **PostgreSQL** 17 或更新的版本，`wal_level = logical`（修改后重启），应用的数据库用户有 `REPLICATION` 属性（`ALTER ROLE app REPLICATION`）；RDS 这类云数据库在参数组中开启逻辑复制。其他设置见[运维](../installation/operations.md#queue)，[入门教程](../tutorial/02-infrastructure.md#infrastructure)的 `compose.yaml` 已经设置好。`queue.Doctor` 逐项检查这些要求，见[自检](../installation/doctor.md)。
-- **迁移**：`queue.Migrations()` 创建失败任务表 `queue_failed_jobs` 和逻辑复制槽，加入[发布命令](../database/migrations.md#publishing-framework-migrations)：
+- **NATS** 2.10 或更新的版本，开启 JetStream：`nats-server -js -sd /var/lib/nats`。worker 启动时自己创建 stream 和 consumer。生产环境用三台服务器组成[集群](https://docs.nats.io/running-a-nats-service/configuration/clustering/jetstream_clustering)并把 `replicas` 设为 3：单台服务器默认每 2 分钟同步一次磁盘，断电时最近的任务可能丢失；只有一台时在 NATS 配置中设置 `jetstream { sync_interval: always }`。
+- **PostgreSQL**：普通权限和普通连接即可，完全兼容 PgBouncer 的 transaction 模式，不需要开启逻辑复制。`queue.Doctor` 检查队列数据表和 NATS 设置，见[自检](../installation/doctor.md)。
+- **迁移**：`queue.Migrations()` 创建待转发队列 `queue_outbox` 和失败任务表 `queue_failed_jobs`，加入[发布命令](../database/migrations.md#publishing-framework-migrations)：
 
 ```go
 migrationCmd.AddCommand(migratecmd.Publish(
@@ -46,10 +46,7 @@ migrationCmd.AddCommand(migratecmd.Publish(
 ))
 ```
 
-部署时先执行迁移，再启动发布任务的进程：复制槽建立之前发布的任务不会被转发。
-
-> [!WARNING]
-> 所有 worker 都停止时，复制槽中没有转发的 WAL 一直累积，超过上限后复制槽失效，任务丢失。监控积压并设置告警，见[运维](../installation/operations.md#queue-monitoring)。
+部署时先执行迁移，再启动服务。
 
 <a id="publishing-jobs"></a>
 ## 发布队列任务：`queue.Topic` 与 `Publish`
@@ -68,7 +65,7 @@ import (
 var Send = queue.Topic[mail.Message]("mail.send")
 ```
 
-`Publish` 把 payload 编码为 JSON 写入传入的 `db`：传入事务 `tx` 时任务随事务提交，传入连接池时立即发布。`a.db` 是 `*bun.DB`，`msg` 是渲染好的 `mail.Message`：
+`Publish` 把 payload 编码为 JSON 写入传入的 `db` 的 `queue_outbox` 表：传入事务 `tx` 时任务随事务提交，传入连接池时立即发布。`a.db` 是 `*bun.DB`，`msg` 是渲染好的 `mail.Message`：
 
 ```go
 err := database.RunInTx(ctx, a.db, nil, func(ctx context.Context, tx database.Tx) error {
@@ -92,7 +89,7 @@ var PublishAt = queue.Topic[uuid.UUID]("articles.publish")
 err := PublishAt.Publish(ctx, tx, item.ID, queue.At(item.PublishAt))
 ```
 
-未到时间的任务保存为 JetStream 的定时消息，精确到秒，延迟多久都可以。几个月后才执行的任务也一直在 JetStream 中，所以生产环境的 stream 要有多个副本，见[运维](../installation/operations.md#queue-jetstream)。
+未到时间的任务保留在 PostgreSQL 的 `queue_outbox` 表中（随数据库备份保护，不占用 NATS 内存），到执行时间后由 worker 批量转发到 JetStream 立即执行。
 
 <a id="multi-step-jobs"></a>
 ### 多步任务
@@ -132,7 +129,7 @@ mailjob.Send.Handle(w, mailer.Send)
 <a id="running-workers"></a>
 ### 启动 worker
 
-worker 是常驻进程的一个[运行部分](../concepts/dependencies.md#running-parts)，转发发布的任务并处理已注册 topic 的任务。在入口的 `bootstrap` 包中，`a.nc` 是 `natsx.Connect` 创建的 NATS 连接（见[连接 NATS](../libraries/nats.md#connecting)），`newMailer` 见[装配发送器](../libraries/mail.md#assembling-mailer)，`article.RegisterJobs` 登记业务模块的任务，见[队列任务](../concepts/actions.md#as-jobs)：
+worker 是常驻进程的一个[运行部分](../concepts/dependencies.md#running-parts)，从 `queue_outbox` 转发到期任务并处理已注册 topic 的任务。在入口的 `bootstrap` 包中，`a.nc` 是 `natsx.Connect` 创建的 NATS 连接（见[连接 NATS](../libraries/nats.md#connecting)），`newMailer` 见[装配发送器](../libraries/mail.md#assembling-mailer)，`article.RegisterJobs` 登记业务模块的任务，见[队列任务](../concepts/actions.md#as-jobs)：
 
 ```go
 // Worker 装配队列 worker，返回的函数转发并处理队列任务，直到 ctx 被取消。
@@ -151,7 +148,8 @@ func (a *App) Worker(*command.Daemon) (func(context.Context) error, error) {
 在 `Parts` 中登记为 `{Name: "worker", Short: "处理队列任务", Start: a.Worker}`，`serve` 运行全部部分，`serve worker` 只运行它，见[serve 命令](../general/commands.md#serve-command)。
 
 - `w.Run` 建不了 stream 或 consumer（例如 NATS 不可用）时返回错误。worker 不关闭 `a.nc`。
-- 多个实例同时运行是安全的：一个复制槽同时只能由一个连接读取，所以一个实例转发，其余的每 5 秒尝试接手；所有实例都处理任务，每个任务只交给其中一个。
+- 多个实例同时运行是安全的：转发通过 `FOR UPDATE SKIP LOCKED` 并行领取互不重叠的批次；所有实例共用每个 topic 的 consumer，每个任务只交给其中一个。
+- 转发遇到超过 NATS `max_payload` 等单条消息永久错误时，将该条直接转入失败任务表并删除 outbox 记录，不阻塞其余任务。
 - 任务量大时单独部署 `serve worker` 并增减实例数，单独部署时不需要健康检查，见[部署](../installation/deployment.md#health-checks)。
 
 <a id="configuration"></a>
@@ -166,11 +164,10 @@ queue:
   concurrency: 10       # 每个 worker 实例中每个 topic 同时处理的任务数；默认 10
   max_attempts: 10      # 最多执行的次数，用完后转入失败任务表；默认 10
   lease: 30s            # JetStream 等待处理结果的时间，见“租约与停止”；默认 30s
-  replication_dsn: ""   # 转发任务的复制连接；数据库连接经过 PgBouncer 时设为直连 PostgreSQL 的地址
   shutdown_timeout: 30s # 停止时等待处理中的任务的最长时间；默认 30s
 ```
 
-- topic `mail.send` 的任务发布到 subject `jobs.job.mail.send`，定时消息在 `jobs.delay.*`，`jobs` 是 `stream` 的值。
+- topic `mail.send` 的任务发布到 subject `jobs.job.mail.send`，`jobs` 是 `stream` 的值。
 - stream 已经存在时，worker 检查它的保留策略和 subject，更新 `replicas`，其他设置保持不变。stream 设置了 `max_age` 或 discard old 时 worker 拒绝启动：这两种设置会删掉还没执行的任务。同名 stream 的设置不符时换一个 `stream` 名。
 
 <a id="failures-and-retries"></a>
@@ -185,7 +182,7 @@ queue:
 | 其他业务错误，例如 `errorx.NotFound`、`errorx.Conflict` | 不重试，直接转入失败任务表 |
 | payload 无法解码为参数类型 | 不重试，直接转入失败任务表 |
 
-业务错误表示这次调用本身不成立（例如文章已被删除），重试结果不变，所以处理函数直接返回业务动作的错误。
+业务错误表示这次调用本身不成立（例如文章已被删除），重试结果不变，所以处理函数直接返回业务动作的错误。重试通过 JetStream 原生延迟重投（`NakWithDelay`）完成，不需要写回数据库。
 
 第 n 次失败后等待约 n⁴ 秒（上下浮动 10%，最长 24 小时）：
 
@@ -237,7 +234,7 @@ if err != nil {
 <a id="leases-and-shutdown"></a>
 ## 租约与停止
 
-JetStream 把任务交给 worker 后等待结果的时间是 `lease`（默认 30 秒），处理期间 worker 每 `lease/3` 自动延长一次，所以任务执行多久都可以，长任务也保持默认配置。worker 只在有空闲的并发名额时领取任务。
+JetStream 把任务交给 worker 后等待结果的时间是 `lease`（默认 30 秒），处理期间 worker 每 `lease/3` 自动延长一次，所以任务执行多久都可以，长任务也保持默认配置。worker 通过持久拉取（`Messages`）按并发上限领取任务。
 
 - **worker 崩溃**：`lease` 到期后任务交给其他 worker。
 - **停止 worker**：停止领取新任务，等待处理中的任务完成，最多 `shutdown_timeout`。超时的任务放回 JetStream，处理函数的 `ctx` 以 `queue.ErrShuttingDown` 取消；worker 等这些处理函数返回后才停止，之后关闭数据库。放回的任务再次执行时计入一次执行。
@@ -247,7 +244,7 @@ JetStream 把任务交给 worker 后等待结果的时间是 `lease`（默认 30
 
 处理函数是普通的函数，直接调用它测试。
 
-发布任务的一方：用 [`dbtest.Open`](../testing/testing.md#creating-test-databases) 打开包含 `queue` 迁移的测试数据库，`queuetest.Pending` 读出已提交、还没转发的任务，这时不运行 worker：
+发布任务的一方：用 [`dbtest.Open`](../testing/testing.md#creating-test-databases) 打开包含 `queue` 迁移的测试数据库，`queuetest.Pending` 读出 `queue_outbox` 中已提交、还没转发的任务，这时不运行 worker：
 
 ```go
 db := dbtest.Open(t, migrations.FS)
@@ -325,22 +322,22 @@ w := queue.NewWorker(a.db, a.nc, a.cfg.Queue, nil,
 queuecmd.New(a.db, queuecmd.WithJetStream(a.nc, a.cfg.Queue)),
 ```
 
-`queue status` 显示复制槽（还没转发的任务）和 JetStream（其余的任务）：
+`queue status` 显示数据库一侧（`queue_outbox` 中的待转发与延迟任务）和 JetStream 一侧的状态：
 
 ```text
-slot            tenon_queue_3f2a9c1e5b7d4e60
-state           relaying (pid 48213)
-lag             12.4 KiB
-stream          jobs
-deferred        5
+outbox pending   0
+outbox deferred  5
+stream           jobs
+messages         16 (4.2 KiB)
+replicas         1
 
 TOPIC         PENDING  IN FLIGHT  REDELIVERED  LAST DELIVERED       STATE
 mail.send     9        3          0            2026-11-12 09:41:07  ok
 sms.send      4        0          0            -                    no handler: no worker has registered this topic
 ```
 
-- `state` 为 `idle` 时没有 worker 在转发；为 `missing` 或 `lost` 时 worker 拒绝启动，用 `queue slot recreate` 重建，见[重建复制槽](../installation/operations.md#queue-recovery)。
-- `deferred` 是延迟任务和等待重试的任务。
+- `outbox pending` 持续不为 0 且 `oldest pending` 变旧时，检查 worker 是否运行以及 NATS 是否可用。
+- `outbox deferred` 是尚未到执行时间的延迟任务数。
 - `STATE` 为 `no handler` 时没有 worker 注册这个 topic，任务一直等待，通常是忘了 `Handle` 或 topic 名不一致；为 `stalled` 时有任务等待却没有 worker 领取，通常是 worker 全部停止了。
 - 连不上 NATS 时，命令输出数据库一侧的状态后以错误退出。
 - topic 的 consumer 名是把 `.` 换成 `_` 的 topic 名，例如 `nats consumer info jobs mail_send`。
@@ -370,7 +367,7 @@ queueapi.Register(api, rest.RequireToken(api, a.tokens.Validate, "queue:manage")
 
 | 接口 | 作用 |
 | --- | --- |
-| `GET /queue/status`（`queue-status`） | 概览：复制槽、stream、每个 topic 一行、失败任务总数 |
+| `GET /queue/status`（`queue-status`） | 概览：outbox、stream、每个 topic 一行、失败任务总数 |
 | `GET /queue/failed`（`queue-failed-list`） | 失败任务列表，按 `topic` 筛选，分页 |
 | `GET /queue/failed/{id}`（`queue-failed-get`） | 失败任务详情：payload、元数据、完整的错误 |
 | `POST /queue/failed/{id}/retry`（`queue-failed-retry`） | 重新发布一条 |

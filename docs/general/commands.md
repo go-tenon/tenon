@@ -76,7 +76,7 @@ func main() {
 | `httpcmd.Commands(router, opts...)` | [`openapi`](#openapi-command)、[`routes`](#routes-command)、`client`（[生成客户端](../http/clients.md)）；`httpcmd.Translations(locales.FS)` 让生成的校验提示与服务端相同 |
 | `rpccmd.New(server)` | `rpc asyncapi`、`rpc endpoints`，见[导出接口描述](../rpc/endpoints.md#exporting) |
 | `command.Bind(open, declare)` | 应用声明的需要资源的命令，例如 `article publish` |
-| `queuecmd.New(db, opts...)` | `queue status`、`queue failed`、`queue slot recreate`，在 `command.Bind` 中声明，见[队列状态](../background/queue.md#stats-command) |
+| `queuecmd.New(db, opts...)` | `queue status`、`queue failed`，在 `command.Bind` 中声明，见[队列状态](../background/queue.md#stats-command) |
 | `schedulecmd.New(tasks, m)` | `schedules`，在 `command.Bind` 中声明，见[列出任务的命令](../background/scheduling.md#schedules-command) |
 | `doctorcmd.New(groups...)` | `doctor`，在 `command.Bind` 中声明，见[自检](../installation/doctor.md) |
 

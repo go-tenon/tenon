@@ -17,11 +17,10 @@ import (
 	"github.com/go-tenon/tenon/database/dbtest"
 	"github.com/go-tenon/tenon/httpx/rest"
 	"github.com/go-tenon/tenon/identity"
-	"github.com/go-tenon/tenon/lock"
-	"github.com/go-tenon/tenon/lock/locktest"
 	"github.com/go-tenon/tenon/queue"
 	"github.com/go-tenon/tenon/queue/queuetest"
 	"github.com/go-tenon/tenon/schedule"
+	"github.com/go-tenon/tenon/schedule/pgschedule"
 	"github.com/go-tenon/tenon/schedule/scheduleapi"
 )
 
@@ -33,8 +32,8 @@ type env struct {
 
 func setup(t *testing.T) *env {
 	t.Helper()
-	e := &env{db: dbtest.Open(t, queue.Migrations(), scheduleapi.Migrations())}
-	e.sched = schedule.New(lock.New(locktest.NewStore()), schedule.DefaultConfig(), nil,
+	e := &env{db: dbtest.Open(t, queue.Migrations(), pgschedule.Migrations(), scheduleapi.Migrations())}
+	e.sched = schedule.New(pgschedule.New(e.db), schedule.DefaultConfig(), nil,
 		schedule.WithObserver(scheduleapi.Observer(e.db)))
 	e.sched.Add("report", "@hourly", func(context.Context) error { return nil },
 		schedule.Label("每日报表"), schedule.Describe("生成报表"))
@@ -145,6 +144,17 @@ func TestList(t *testing.T) {
 	insertRun(t, e.db, "report", prev, scheduleapi.Succeeded)
 	if _, _ = e.call(t, http.MethodGet, "/schedules", "ops", &body); body.Items[0].Missed {
 		t.Fatalf("latest tick has a record: %+v", body.Items[0])
+	}
+
+	// 即使 schedule_runs 被清理，schedule_tasks 的持久水位仍能准确检测错过。
+	if err := e.sched.RunDue(context.Background(), prev.Add(-2*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.db.ExecContext(context.Background(), "DELETE FROM schedule_runs"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _ = e.call(t, http.MethodGet, "/schedules", "ops", &body); time.Since(prev) > time.Minute && !body.Items[0].Missed {
+		t.Fatalf("missed after runs cleanup not reported: %+v", body.Items[0])
 	}
 }
 

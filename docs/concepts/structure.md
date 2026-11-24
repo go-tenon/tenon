@@ -185,7 +185,7 @@ SQL 迁移文件，由 `embed.go` 嵌入程序，部署时用 `migrate up` 执�
 | `database/migrate` | goose 迁移器，新建、发布迁移 | [迁移](../database/migrations.md) |
 | `natsx` | 按框架的约定连接 NATS，队列、广播和在线成员共用这条连接 | [NATS](../libraries/nats.md) |
 | `queue` | NATS JetStream 任务队列，数据库发件箱，重试与失败任务 | [队列](../background/queue.md) |
-| `schedule` | 按 cron 表达式定时执行，多实例去重 | [定时任务](../background/scheduling.md) |
+| `schedule` | 按 cron 表达式定时执行，`schedule/pgschedule` 按单调水位多实例去重 | [定时任务](../background/scheduling.md) |
 | `cache` | Redis 上的先读缓存再加载 | [缓存](../libraries/cache.md) |
 | `lock` | 带过期时间的原子锁，`lock/pglock` 是 PostgreSQL 存储 | [原子锁](../libraries/locks.md) |
 | `ratelimit` | 按键限流，`ratelimit/pglimit` 是 PostgreSQL 限流器 | [限流](../libraries/rate-limiting.md) |

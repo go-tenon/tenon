@@ -1,4 +1,4 @@
-// Package queueapi 是队列运维的 JSON 接口：复制槽和 JetStream 的状态，各 topic 等待处理、处理中和失败的任务，
+// Package queueapi 是队列运维的 JSON 接口：outbox 和 JetStream 的状态，各 topic 等待处理、处理中和失败的任务，
 // 重试和删除失败任务，暂停和恢复 topic 的处理。它只读写 queue 已有的数据，不新增存储；吞吐、耗时这类指标看
 // OpenTelemetry。面板页面由前端用这些接口实现。
 //
@@ -136,7 +136,7 @@ func (h *handlers) status(ctx context.Context, _ *struct{}) (*statusOutput, erro
 		return nil, err
 	}
 	out := QueueStatus{
-		Slot: QueueSlot{Name: st.Slot, Exists: st.Exists, Active: st.Active, ActivePID: st.ActivePID, WALStatus: st.WALStatus, Lag: st.Lag},
+		Outbox: QueueOutbox{Pending: st.Pending, Deferred: st.Deferred, OldestPending: timePtr(st.OldestPending)},
 	}
 	var stream queue.StreamStatus
 	if h.admin != nil {
@@ -144,7 +144,7 @@ func (h *handlers) status(ctx context.Context, _ *struct{}) (*statusOutput, erro
 		stream, err = h.admin.Status(actx)
 		cancel()
 		js := &QueueJetStream{Stream: stream.Stream, Exists: stream.Exists, Messages: stream.Messages, Bytes: stream.Bytes,
-			Replicas: stream.Replicas, Leader: stream.Leader, Deferred: stream.Deferred}
+			Replicas: stream.Replicas, Leader: stream.Leader}
 		if err != nil {
 			h.logger.WarnContext(ctx, "read jetstream status failed", "error", err)
 			js = &QueueJetStream{Error: err.Error()}

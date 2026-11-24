@@ -40,8 +40,8 @@ type SkipReason string
 const (
 	// SkipOverlap 表示上一次还没结束，在任何一个实例上都算。
 	SkipOverlap SkipReason = "overlap"
-	// SkipLockFailed 表示锁存储出错，无法确认由谁执行，Event.Err 是错误。
-	SkipLockFailed SkipReason = "lock_failed"
+	// SkipStoreFailed 表示状态存储出错，无法确认由谁执行，Event.Err 是错误。
+	SkipStoreFailed SkipReason = "store_failed"
 )
 
 // Event 是一次执行的状态变化。
@@ -51,7 +51,7 @@ type Event struct {
 	Tick       time.Time     // 这次触发的时刻，即任务应当执行的时间，与 Task.Prev 的结果对应。
 	Started    time.Time     // 实际开始执行的时间，TaskSkipped 为零值。Started 减去 Tick 是调度延迟。
 	Duration   time.Duration // 执行耗时，只用于 TaskSucceeded 和 TaskFailed。
-	Err        error         // TaskFailed 和 SkipLockFailed 的原因。
+	Err        error         // TaskFailed 和 SkipStoreFailed 的原因。
 	SkipReason SkipReason
 	Manual     bool // 这次执行来自 RunNow（例如后台的“立即执行”），不是按表达式触发；这时 Tick 为零值。
 }

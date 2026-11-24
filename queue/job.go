@@ -18,7 +18,7 @@ type Job struct {
 	Topic       string
 	Payload     []byte
 	Metadata    map[string]string
-	AvailableAt time.Time // 任务这次可以开始执行的时间：首次执行是发布时指定的时间，经由 outbox 的重试是退避后的时间；租约到期或停止时放回、由 JetStream 重新投递的任务给不出，为零值。
+	AvailableAt time.Time // 任务首次可以开始执行的时间；重试、租约到期或停止时放回后由 JetStream 重新投递的任务为零值。
 	Attempt     int       // 本次是第几次执行，从 1 开始。
 }
 
@@ -28,7 +28,18 @@ type envelope struct {
 	Payload     json.RawMessage   `json:"payload"`
 	Metadata    map[string]string `json:"metadata,omitempty"`
 	AvailableAt time.Time         `json:"available_at"`
-	Attempts    int               `json:"attempts,omitempty"` // 这条消息之前已经执行的次数：经由 outbox 重试的任务从这里接着计数。
+}
+
+// outboxJob 是 queue_outbox 表中的一行：待转发到 JetStream 的任务或尚未到期的延迟任务。
+type outboxJob struct {
+	bun.BaseModel `bun:"table:queue_outbox,alias:o"`
+
+	ID                  uuid.UUID         `bun:"id,pk,type:uuid"`
+	database.Timestamps                   // CreatedAt 是任务发布时间
+	Topic               string            `bun:"topic,notnull"`
+	Payload             []byte            `bun:"payload,notnull"`
+	Metadata            map[string]string `bun:"metadata,type:jsonb,notnull"`
+	AvailableAt         time.Time         `bun:"available_at,notnull"`
 }
 
 // failedJob 是 queue_failed_jobs 表中的一行：一个失败的任务。

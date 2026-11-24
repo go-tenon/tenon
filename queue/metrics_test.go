@@ -13,7 +13,7 @@ import (
 	"github.com/go-tenon/tenon/queue/queuetest"
 )
 
-// gauges 采集一次，返回 int64 仪表和计数（计数按 queue.relay.route 分开）的值。
+// gauges 采集一次，返回 int64 仪表和计数的值。
 func gauges(t *testing.T, reader *sdkmetric.ManualReader) map[string]int64 {
 	t.Helper()
 	var rm metricdata.ResourceMetrics
@@ -30,8 +30,7 @@ func gauges(t *testing.T, reader *sdkmetric.ManualReader) map[string]int64 {
 				}
 			case metricdata.Sum[int64]:
 				for _, p := range data.DataPoints {
-					route, _ := p.Attributes.Value("queue.relay.route")
-					got[m.Name+"/"+route.AsString()] = p.Value
+					got[m.Name] = p.Value
 				}
 			}
 		}
@@ -46,13 +45,12 @@ func TestRelayMetrics(t *testing.T) {
 	reader := sdkmetric.NewManualReader()
 	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
 	done := make(chan struct{}, 2)
-	stop := start(t, db, cfg, func(w *queue.Worker) {
+	start(t, db, cfg, func(w *queue.Worker) {
 		jobs.Handle(w, func(context.Context, payload) error {
 			done <- struct{}{}
 			return nil
 		})
 	}, queue.WithTelemetry(mp, tracenoop.NewTracerProvider()))
-	eventually(t, 5*time.Second, func() bool { return gauges(t, reader)["queue.relay.active"] == 1 })
 
 	publish(t, db, 1)
 	publish(t, db, 2, queue.Delay(200*time.Millisecond))
@@ -65,15 +63,10 @@ func TestRelayMetrics(t *testing.T) {
 		}
 	}
 	got := gauges(t, reader)
-	if got["queue.relay.jobs/published"] != 1 || got["queue.relay.jobs/deferred"] != 2 {
-		t.Fatalf("metrics %v", got)
+	if got["queue.relay.jobs"] != 2 {
+		t.Fatalf("relay jobs = %v", got)
 	}
-	if _, ok := got["queue.relay.lag"]; !ok {
-		t.Fatalf("no lag reported: %v", got)
-	}
-
-	stop()
-	if got := gauges(t, reader); got["queue.relay.active"] != 0 {
-		t.Fatalf("active after stop: %v", got)
+	if got["queue.outbox.pending"] != 0 || got["queue.outbox.deferred"] != 1 {
+		t.Fatalf("outbox metrics = %v", got)
 	}
 }
