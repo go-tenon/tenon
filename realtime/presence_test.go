@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -108,23 +109,32 @@ func TestPresenceChannel(t *testing.T) {
 // 取消订阅的控制消息在 Hub 的投递中到达，离开事件又要发布到 Hub，这里确认两者都能完成。
 func TestPresenceAcrossInstancesOnNATS(t *testing.T) {
 	t.Parallel()
-	nc := natstest.Connect(t)
+	ncA := natstest.Connect(t)
+	ncB := natstest.Connect(t)
 	name := rand.Text()
 	bucket := "test_presence_" + name
-	presence, err := natspresence.New(context.Background(), nc, natspresence.Options{Bucket: bucket})
+	presenceA, err := natspresence.New(context.Background(), ncA, natspresence.Options{Bucket: bucket})
 	if err != nil {
 		t.Fatal(err)
 	}
+	presenceB, err := natspresence.New(context.Background(), ncB, natspresence.Options{Bucket: bucket})
+	if err != nil {
+		_ = presenceA.Close()
+		t.Fatal(err)
+	}
 	t.Cleanup(func() {
-		if js, err := jetstream.New(nc); err == nil {
+		_ = presenceA.Close()
+		_ = presenceB.Close()
+		if js, err := jetstream.New(ncA); err == nil {
 			_ = js.DeleteKeyValue(context.Background(), bucket)
 		}
 	})
 	prefix := "test.realtime." + strings.ToLower(name)
 	store := &tokens{}
-	opts := realtime.Options{Authenticate: store.validate, Presence: presence, PresenceGrace: 300 * time.Millisecond}
-	a := start(t, natsbroadcast.New(natstest.Connect(t), prefix), opts, nil)
-	b := start(t, natsbroadcast.New(natstest.Connect(t), prefix), opts, nil)
+	optsA := realtime.Options{Authenticate: store.validate, Presence: presenceA, PresenceGrace: 300 * time.Millisecond}
+	optsB := realtime.Options{Authenticate: store.validate, Presence: presenceB, PresenceGrace: 300 * time.Millisecond}
+	a := start(t, natsbroadcast.New(natstest.Connect(t), prefix), optsA, nil)
+	b := start(t, natsbroadcast.New(natstest.Connect(t), prefix), optsB, nil)
 	broadcasttest.Ready(t, a.hub, b.hub)
 	for _, n := range []*node{a, b} {
 		n.rt.Channel("editing:{article}", realtime.Presence(editors))
@@ -140,7 +150,18 @@ func TestPresenceAcrossInstancesOnNATS(t *testing.T) {
 		t.Fatalf("join from the other instance = %s %+v", kind, m)
 	}
 	if users, err := alice.presence("editing:7"); err != nil || len(users) != 2 {
-		t.Fatalf("presence = %v, %+v", users, err)
+		// 两个实例各自维护 KV 本地镜像，给另一实例同步留出极短传播窗口。
+		deadline := time.Now().Add(2 * time.Second)
+		for time.Now().Before(deadline) {
+			users, err = alice.presence("editing:7")
+			if err == nil && len(users) == 2 {
+				break
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		if err != nil || len(users) != 2 {
+			t.Fatalf("presence = %v, %+v", users, err)
+		}
 	}
 	if members, err := a.rt.Members(context.Background(), "editing:7"); err != nil || len(members) != 2 {
 		t.Fatalf("members = %+v, %v", members, err)
@@ -155,6 +176,15 @@ func TestPresenceAcrossInstancesOnNATS(t *testing.T) {
 	old := alice
 	alice = mustConnect(t, b.url, "alice", nil)
 	alice.mustSubscribe("editing:7") // 回复订阅之前在线记录已经写入
+	// 等 a 的 KV 镜像看到 b 上 alice 的新连接再关闭旧连接，避免本地镜像同步竞态。
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		m, err := a.rt.Members(context.Background(), "editing:7")
+		if err == nil && len(m) == 2 && m[0].Connections == 2 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 	old.close()
 	bob.noMembership(600 * time.Millisecond)
 
@@ -169,9 +199,16 @@ func TestPresenceAcrossInstancesOnNATS(t *testing.T) {
 	}
 	// 连接所在的实例宽限期满时，leave 只发一次。
 	alice.noMembership(700 * time.Millisecond)
-	if members, err := b.rt.Members(context.Background(), "editing:7"); err != nil || len(members) != 1 || members[0].Subject.ID != "alice" {
-		t.Fatalf("members after unsubscribe = %+v, %v", members, err)
+	deadline = time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		members, err := b.rt.Members(context.Background(), "editing:7")
+		if err == nil && len(members) == 1 && members[0].Subject.ID == "alice" {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
+	members, err := b.rt.Members(context.Background(), "editing:7")
+	t.Fatalf("members after unsubscribe = %+v, %v", members, err)
 }
 
 // 连接离开后在线记录保留一个宽限期：期间主体重新加入时没有事件，期满仍然没有连接才发出 leave。
@@ -348,4 +385,83 @@ func TestPresenceChannelNeedsStore(t *testing.T) {
 		}
 	}()
 	n.rt.Channel("editing:{article}", realtime.Presence(editors))
+}
+
+// 复查凭据后单个连接失去 presence 频道权限：仅该连接被退订，主体仍有其他连接时不发 leave，
+// 最后一个连接也失去权限时立即发出 leave。
+func TestPresenceRecheckExpelsOnlyAffectedConnection(t *testing.T) {
+	t.Parallel()
+	const grace = 1500 * time.Millisecond
+	revoked := map[string]bool{}
+	var mu sync.Mutex
+	signals := broadcast.New(broadcasttest.NewBackend(), nil)
+	defer signals.Close()
+	creds := broadcast.NewCredentials(signals)
+	n := start(t, broadcasttest.NewBackend(), realtime.Options{
+		Authenticate: func(_ context.Context, token string) (identity.Subject, error) {
+			mu.Lock()
+			denied := revoked[token]
+			mu.Unlock()
+			id := "bob"
+			if strings.HasPrefix(token, "alice") {
+				id = "alice"
+			}
+			perms := []string{"edit"}
+			if denied {
+				perms = nil
+			}
+			return identity.Subject{Type: "user", ID: id, Credential: token, Permissions: perms}, nil
+		},
+		Credentials:   creds,
+		Presence:      realtimetest.NewPresence(),
+		PresenceGrace: grace,
+	}, nil)
+	n.rt.Channel("editing:{article}", realtime.Presence(func(_ context.Context, sub identity.Subject, _ realtime.Params) (any, bool, error) {
+		return map[string]string{"name": sub.ID}, sub.Can("edit"), nil
+	}))
+
+	bob := mustConnect(t, n.url, "bob", nil)
+	bob.mustSubscribe("editing:7")
+	bob.membership()
+
+	a1 := mustConnect(t, n.url, "alice-1", nil)
+	a2 := mustConnect(t, n.url, "alice-2", nil)
+	a1.mustSubscribe("editing:7")
+	if kind, m := bob.membership(); kind != "join" || m.User != "user:alice" {
+		t.Fatalf("join = %s %+v", kind, m)
+	}
+	a2.mustSubscribe("editing:7")
+
+	// 仅撤销 alice-1 的权限：a1 被退订，a2 保持在线，bob 看不到 leave。
+	mu.Lock()
+	revoked["alice-1"] = true
+	mu.Unlock()
+	if err := creds.RecheckCredential(context.Background(), "alice-1"); err != nil {
+		t.Fatal(err)
+	}
+	if ch := a1.unsubscribed(); ch != "editing:7" {
+		t.Fatalf("a1 unsubscribed from %q", ch)
+	}
+	bob.noMembership(200 * time.Millisecond)
+	if m, err := n.rt.Members(context.Background(), "editing:7"); err != nil || len(m) != 2 || m[0].Connections != 1 {
+		t.Fatalf("members after first revoke = %+v, %v", m, err)
+	}
+
+	// 再撤销 alice-2 的权限：最后一个连接失去权限，立即发出 leave，不等宽限期。
+	removed := time.Now()
+	mu.Lock()
+	revoked["alice-2"] = true
+	mu.Unlock()
+	if err := creds.RecheckCredential(context.Background(), "alice-2"); err != nil {
+		t.Fatal(err)
+	}
+	if ch := a2.unsubscribed(); ch != "editing:7" {
+		t.Fatalf("a2 unsubscribed from %q", ch)
+	}
+	if kind, m := bob.membership(); kind != "leave" || m.User != "user:alice" {
+		t.Fatalf("leave = %s %+v", kind, m)
+	}
+	if waited := time.Since(removed); waited > grace/2 {
+		t.Fatalf("leave arrived after %v, grace is %v", waited, grace)
+	}
 }

@@ -61,8 +61,12 @@ var placeholder = regexp.MustCompile(`\{([A-Za-z_][A-Za-z0-9_]*)\}`)
 // compile 把 chat:{conversation} 这样的模式编译为规则。占位符匹配一段字母、数字、_ 和 -。
 func compile(pattern string, rule Rule) (channelRule, error) {
 	c := channelRule{pattern: pattern, rule: rule}
-	if err := broadcast.ValidateTopic(placeholder.ReplaceAllString(pattern, "x")); err != nil {
+	sample := placeholder.ReplaceAllString(pattern, "x")
+	if err := broadcast.ValidateTopic(sample); err != nil {
 		return c, errors.Wrapf(err, "realtime: channel pattern %q", pattern)
+	}
+	if isReservedTopic(sample) {
+		return c, errors.Newf("realtime: channel pattern %q uses reserved prefix", pattern)
 	}
 	var expr strings.Builder
 	expr.WriteString("^")

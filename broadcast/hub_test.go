@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 )
 
 func TestHubDeliversAcrossInstances(t *testing.T) {
+	t.Parallel()
 	backend := broadcasttest.NewBackend()
 	h := broadcast.New(backend, nil)
 	defer h.Close()
@@ -35,6 +37,7 @@ func TestHubDeliversAcrossInstances(t *testing.T) {
 }
 
 func TestBackendContract(t *testing.T) {
+	t.Parallel()
 	broadcasttest.TestBackend(t, func(*testing.T) (broadcast.Backend, broadcast.Backend) {
 		b := broadcasttest.NewBackend()
 		return b, b
@@ -42,9 +45,9 @@ func TestBackendContract(t *testing.T) {
 }
 
 func TestSlowSubscriberEnds(t *testing.T) {
+	t.Parallel()
 	h := broadcast.New(broadcasttest.NewBackend(), nil)
 	defer h.Close()
-	broadcasttest.Ready(t, h) // 之后 Publish 在返回之前投递
 	slow, fast := h.Subscribe("room:1"), h.Subscribe("room:1")
 	ctx := context.Background()
 	for range 100 {
@@ -67,29 +70,40 @@ func TestSlowSubscriberEnds(t *testing.T) {
 
 // lossy 是一个可以手动报告丢失的 Backend。
 type lossy struct {
-	lose chan error
+	mu   sync.Mutex
+	lost func(error)
 }
 
-func (lossy) Publish(context.Context, broadcast.Message) error { return nil }
+func (l *lossy) Publish(context.Context, broadcast.Message) error { return nil }
 
-func (l lossy) Listen(ctx context.Context, _ func(broadcast.Message), lost func(error)) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case err := <-l.lose:
-			lost(err)
-		}
-	}
+func (l *lossy) Open(_ func(broadcast.Message), lost func(error)) broadcast.Session {
+	l.mu.Lock()
+	l.lost = lost
+	l.mu.Unlock()
+	return noopSession{}
 }
+
+func (l *lossy) Lose(err error) {
+	l.mu.Lock()
+	fn := l.lost
+	l.mu.Unlock()
+	fn(err)
+}
+
+type noopSession struct{}
+
+func (noopSession) Subscribe(...string) error   { return nil }
+func (noopSession) Unsubscribe(...string) error { return nil }
+func (noopSession) Close() error                { return nil }
 
 func TestLostEndsAllSubscriptions(t *testing.T) {
-	backend := lossy{lose: make(chan error)}
+	t.Parallel()
+	backend := &lossy{}
 	h := broadcast.New(backend, nil)
 	defer h.Close()
 	a, b := h.Subscribe("room:1"), h.Subscribe("room:2", "room:3")
 	cause := errors.New("connection reset")
-	backend.lose <- cause
+	backend.Lose(cause)
 	for _, sub := range []*broadcast.Subscription{a, b} {
 		if _, ok := <-sub.C(); ok || !errors.Is(sub.Err(), broadcast.ErrLost) {
 			t.Fatalf("err=%v", sub.Err())
@@ -102,6 +116,7 @@ func TestLostEndsAllSubscriptions(t *testing.T) {
 }
 
 func TestTopics(t *testing.T) {
+	t.Parallel()
 	for _, topic := range []string{"room:42", "room.42", "a_b-c", "x"} {
 		if err := broadcast.ValidateTopic(topic); err != nil {
 			t.Errorf("%q: %v", topic, err)
@@ -134,6 +149,7 @@ func TestTopics(t *testing.T) {
 }
 
 func TestSubscribeAfterClose(t *testing.T) {
+	t.Parallel()
 	h := broadcast.New(broadcasttest.NewBackend(), nil)
 	_ = h.Close()
 	sub := h.Subscribe("room:1")
@@ -143,39 +159,53 @@ func TestSubscribeAfterClose(t *testing.T) {
 	sub.Close() // 重复关闭无害
 }
 
-func TestListenReceivesEveryTopic(t *testing.T) {
+func TestReceiverSubscribesOnDemand(t *testing.T) {
+	t.Parallel()
 	h := broadcast.New(broadcasttest.NewBackend(), nil)
 	defer h.Close()
-	broadcasttest.Ready(t, h) // 之后的 Publish 在返回之前投递
 	var got []string
-	stop := h.Listen(func(m broadcast.Message) { got = append(got, m.Topic+"="+string(m.Data)) }, nil)
+	r := h.Receiver(func(m broadcast.Message) { got = append(got, m.Topic+"="+string(m.Data)) }, nil)
+	defer r.Close()
+	if err := r.Subscribe("room:1"); err != nil {
+		t.Fatal(err)
+	}
 	sub := h.Subscribe("room:1")
 	for _, topic := range []string{"room:1", "room:2"} {
 		if err := h.Publish(context.Background(), topic, []byte("x")); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if want := []string{"room:1=x", "room:2=x"}; !slices.Equal(got, want) {
-		t.Fatalf("listener received %v, want %v", got, want)
+	// 只收到自己订阅的 room:1，不收到未订阅的 room:2。
+	if want := []string{"room:1=x"}; !slices.Equal(got, want) {
+		t.Fatalf("receiver got %v, want %v", got, want)
 	}
-	broadcasttest.Receive(t, sub) // 订阅照常收到
+	broadcasttest.Receive(t, sub)
 
-	stop()
-	stop()
+	if err := r.Unsubscribe("room:1"); err != nil {
+		t.Fatal(err)
+	}
 	_ = h.Publish(context.Background(), "room:1", []byte("y"))
-	if len(got) != 2 {
-		t.Fatalf("listener received %v after stop", got)
+	if len(got) != 1 {
+		t.Fatalf("receiver got %v after unsubscribe", got)
+	}
+
+	r.Close()
+	r.Close()
+	if err := r.Subscribe("room:1"); !errors.Is(err, broadcast.ErrClosed) {
+		t.Fatalf("subscribe after close: %v", err)
 	}
 }
 
-func TestListenIsToldAboutLostMessages(t *testing.T) {
-	backend := lossy{lose: make(chan error)}
+func TestReceiverIsToldAboutLostMessages(t *testing.T) {
+	t.Parallel()
+	backend := &lossy{}
 	h := broadcast.New(backend, nil)
 	defer h.Close()
 	lost := make(chan error, 1)
-	h.Listen(func(broadcast.Message) {}, func(err error) { lost <- err })
+	r := h.Receiver(func(broadcast.Message) {}, func(err error) { lost <- err })
+	defer r.Close()
 	cause := errors.New("connection reset")
-	backend.lose <- cause
+	backend.Lose(cause)
 	select {
 	case err := <-lost:
 		if !errors.Is(err, cause) {

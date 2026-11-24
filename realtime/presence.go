@@ -13,7 +13,10 @@ import (
 	"github.com/go-tenon/tenon/identity"
 )
 
-// presenceTTL 是一条在线记录的有效期。连接每 25 秒续期一次，
+// presenceUpdateInterval 是 Centrifuge 客户端续期在线记录的间隔，显式传给 centrifuge.Config。
+const presenceUpdateInterval = 25 * time.Second
+
+// presenceTTL 是一条在线记录的有效期。连接每 presenceUpdateInterval（25 秒）续期一次，
 // 实例崩溃后它上面的成员最多在这段时间之后从在线列表中消失。
 const presenceTTL = 60 * time.Second
 

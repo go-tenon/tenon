@@ -3,6 +3,7 @@ package httpx_test
 import (
 	"context"
 	"net/http"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -56,15 +57,27 @@ func TestSSEEndsWhenCredentialRevoked(t *testing.T) {
 	}
 }
 
-// fakeWatcher 记录 Watch 收到的主体，Signal 发出复查信号。
+// fakeWatcher 记录 Watch 收到的主体，signal 触发复查回调。
 type fakeWatcher struct {
-	ch      chan struct{}
-	watched chan identity.Subject
+	mu       sync.Mutex
+	onChange func()
+	watched  chan identity.Subject
 }
 
-func (w *fakeWatcher) Watch(_ context.Context, sub identity.Subject) <-chan struct{} {
+func (w *fakeWatcher) Watch(_ context.Context, sub identity.Subject, onChange func()) {
+	w.mu.Lock()
+	w.onChange = onChange
+	w.mu.Unlock()
 	w.watched <- sub
-	return w.ch
+}
+
+func (w *fakeWatcher) signal() {
+	w.mu.Lock()
+	fn := w.onChange
+	w.mu.Unlock()
+	if fn != nil {
+		fn()
+	}
 }
 
 // 安装了 identity.CredentialWatcher 时，收到信号立即复查，不等定期校验。
@@ -72,7 +85,7 @@ func TestSSERechecksOnSignal(t *testing.T) {
 	t.Parallel()
 	var revoked atomic.Bool
 	var checks atomic.Int32
-	w := &fakeWatcher{ch: make(chan struct{}, 1), watched: make(chan identity.Subject, 1)}
+	w := &fakeWatcher{watched: make(chan identity.Subject, 1)}
 	ended := make(chan struct{})
 	handler := http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		ctx := identity.WithSubject(r.Context(), identity.Subject{ID: "alice", Credential: "t1"})
@@ -97,7 +110,7 @@ func TestSSERechecksOnSignal(t *testing.T) {
 	}
 
 	// 凭据仍然有效：复查通过，连接保持。
-	w.ch <- struct{}{}
+	w.signal()
 	deadline := time.Now().Add(2 * time.Second)
 	for checks.Load() == 0 && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
@@ -113,40 +126,10 @@ func TestSSERechecksOnSignal(t *testing.T) {
 
 	// 撤销后发出信号，连接随即结束；定期校验间隔仍是 30 秒。
 	revoked.Store(true)
-	w.ch <- struct{}{}
+	w.signal()
 	select {
 	case <-ended:
 	case <-time.After(2 * time.Second):
 		t.Fatal("stream not ended after the recheck signal")
-	}
-}
-
-// Watch 返回的通道被关闭时安静地等待，连接照常保持。
-func TestSSEIgnoresClosedWatchChannel(t *testing.T) {
-	t.Parallel()
-	var checks atomic.Int32
-	w := &fakeWatcher{ch: make(chan struct{}), watched: make(chan identity.Subject, 1)}
-	close(w.ch)
-	ended := make(chan struct{})
-	handler := http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
-		ctx := identity.WithSubject(r.Context(), identity.Subject{ID: "alice"})
-		ctx = identity.WithCredentialCheck(ctx, func(context.Context) error { checks.Add(1); return nil })
-		ctx = identity.WithCredentialWatcher(ctx, w)
-		_ = httpx.SSE(rw, r.WithContext(ctx), func(s *httpx.Stream) error {
-			<-s.Done()
-			close(ended)
-			return nil
-		})
-	})
-	url, _ := startServer(t, httpx.DefaultConfig(), handler)
-	readLines(t, url, nil)
-	time.Sleep(200 * time.Millisecond)
-	if n := checks.Load(); n > 1 {
-		t.Fatalf("%d rechecks from a closed channel", n)
-	}
-	select {
-	case <-ended:
-		t.Fatal("stream ended")
-	default:
 	}
 }

@@ -160,17 +160,19 @@ members, err := rt.Members(ctx, "editing:"+id.String())
 <a id="presence-stores"></a>
 ### 用 `natspresence` 保存在线成员
 
-在线成员保存在所有实例共用的 [NATS](nats.md) JetStream KV 中。单实例也要设置：[不停机升级](../installation/operations.md#zero-downtime-upgrades)时新旧进程要看到同一份成员。`nc` 是[入口中创建的 NATS 连接](nats.md#connecting)：
+在线成员保存在所有实例共用的 [NATS](nats.md) JetStream KV 中，每个进程通过常驻 watcher 在本地维护内存镜像。单实例也要设置：[不停机升级](../installation/operations.md#zero-downtime-upgrades)时新旧进程要看到同一份成员。`nc` 是[入口中创建的 NATS 连接](nats.md#connecting)，`stack` 是入口的 `*cleanup.Stack`：
 
 ```go
 presence, err := natspresence.New(ctx, nc, natspresence.Options{Bucket: "app_presence"})
 if err != nil {
     return nil, err
 }
+stack.MustAdd("presence", func(context.Context) error { return presence.Close() })
 rt, err := realtime.New(hub, realtime.Options{Presence: presence})
 ```
 
 - `Bucket` 区分应用和环境，同一个应用的实例必须相同。NATS 集群中把 `Replicas` 设为 3。
+- `presence.Close` 登记在 `realtime` 之前：先断开客户端，再停止 KV 镜像同步。
 - 测试中用 `realtimetest.NewPresence()` 的内存存储，同一个交给多个 `Realtime` 就模拟了多个实例。
 
 <a id="client-publish"></a>

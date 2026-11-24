@@ -29,21 +29,31 @@ var (
 	errUnavailable = errorx.Define(errorx.Unavailable, "test.unavailable")
 )
 
-// bus 是连接多个 Hub 的 Backend，模拟多实例共用的后端。
+// bus 是连接多个 Hub 的按需路由 Backend，模拟多实例共用的后端。
 type bus struct {
 	mu        sync.Mutex
 	instances []*instance
 }
 
 type instance struct {
-	bus     *bus
+	bus      *bus
+	mu       sync.Mutex
+	sessions []*busSession
+}
+
+type busSession struct {
+	inst    *instance
+	deliver func(broadcast.Message)
+	lost    func(error)
+	topics  map[string]struct{}
 	ch      chan broadcast.Message
 	lostCh  chan error
-	started chan struct{}
+	done    chan struct{}
+	wg      sync.WaitGroup
 }
 
 func (b *bus) backend() *instance {
-	i := &instance{bus: b, ch: make(chan broadcast.Message, 256), lostCh: make(chan error, 1), started: make(chan struct{})}
+	i := &instance{bus: b}
 	b.mu.Lock()
 	b.instances = append(b.instances, i)
 	b.mu.Unlock()
@@ -52,25 +62,81 @@ func (b *bus) backend() *instance {
 
 func (i *instance) Publish(_ context.Context, msg broadcast.Message) error {
 	i.bus.mu.Lock()
-	defer i.bus.mu.Unlock()
-	for _, other := range i.bus.instances {
-		other.ch <- msg
+	insts := append([]*instance(nil), i.bus.instances...)
+	i.bus.mu.Unlock()
+	for _, other := range insts {
+		other.mu.Lock()
+		for _, s := range other.sessions {
+			if _, ok := s.topics[msg.Topic]; ok {
+				s.ch <- msg
+			}
+		}
+		other.mu.Unlock()
 	}
 	return nil
 }
 
-func (i *instance) Listen(ctx context.Context, deliver func(broadcast.Message), lost func(error)) {
-	close(i.started)
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case msg := <-i.ch:
-			deliver(msg)
-		case err := <-i.lostCh:
-			lost(err)
-		}
+func (i *instance) Open(deliver func(broadcast.Message), lost func(error)) broadcast.Session {
+	s := &busSession{
+		inst:    i,
+		deliver: deliver,
+		lost:    lost,
+		topics:  map[string]struct{}{},
+		ch:      make(chan broadcast.Message, 256),
+		lostCh:  make(chan error, 1),
+		done:    make(chan struct{}),
 	}
+	i.mu.Lock()
+	i.sessions = append(i.sessions, s)
+	i.mu.Unlock()
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		for {
+			select {
+			case <-s.done:
+				return
+			case msg := <-s.ch:
+				s.deliver(msg)
+			case err := <-s.lostCh:
+				s.lost(err)
+			}
+		}
+	}()
+	return s
+}
+
+func (i *instance) lose(err error) {
+	i.mu.Lock()
+	sessions := append([]*busSession(nil), i.sessions...)
+	i.mu.Unlock()
+	for _, s := range sessions {
+		s.lostCh <- err
+	}
+}
+
+func (s *busSession) Subscribe(topics ...string) error {
+	s.inst.mu.Lock()
+	for _, topic := range topics {
+		s.topics[topic] = struct{}{}
+	}
+	s.inst.mu.Unlock()
+	return nil
+}
+
+func (s *busSession) Unsubscribe(topics ...string) error {
+	s.inst.mu.Lock()
+	for _, topic := range topics {
+		delete(s.topics, topic)
+	}
+	s.inst.mu.Unlock()
+	return nil
+}
+
+func (s *busSession) Close() error {
+	close(s.done)
+	s.wg.Wait()
+	return nil
 }
 
 // node 是一个实例：Hub、Realtime 和它的 HTTP 服务器。
@@ -676,8 +742,7 @@ func TestLostMessagesDisconnectClients(t *testing.T) {
 	n.rt.Channel("articles", realtime.Public())
 	c := mustConnect(t, n.url, "", nil)
 	c.mustSubscribe("articles")
-	<-backend.started
-	backend.lostCh <- context.DeadlineExceeded
+	backend.lose(context.DeadlineExceeded)
 	// 3010 让 SDK 重连并重新订阅，应用随后取回期间的数据。
 	if code := c.closed(); code != 3010 {
 		t.Fatalf("closed with %d", code)
@@ -729,7 +794,7 @@ func TestChannelPatterns(t *testing.T) {
 	if match, _ := realtime.Compile("articles"); func() bool { _, ok := match("articles"); return !ok }() {
 		t.Error("literal pattern did not match itself")
 	}
-	for _, pattern := range []string{"", "has space", "a..b", "{a}:{a}", "chat:{", "chat:{1x}"} {
+	for _, pattern := range []string{"", "has space", "a..b", "{a}:{a}", "chat:{", "chat:{1x}", "rt.ctl.all", "rt.e.abc"} {
 		if _, err := realtime.Compile(pattern); err == nil {
 			t.Errorf("pattern %q compiled", pattern)
 		}
@@ -789,5 +854,105 @@ func TestMetrics(t *testing.T) {
 	}
 	if got["realtime.connections"] != 2 || got["realtime.subscriptions"] != 3 {
 		t.Fatalf("metrics = %v", got)
+	}
+}
+
+// 同一主体以不同作用域 token 建立两个连接，其中一个连接失去频道权限并触发复查时，
+// 只退订该连接，不误伤另一条仍然有权的连接。
+func TestRecheckOnlyUnsubscribesAffectedConnection(t *testing.T) {
+	t.Parallel()
+	var (
+		mu      sync.Mutex
+		revoked = map[string]bool{}
+	)
+	signals := broadcast.New(broadcasttest.NewBackend(), nil)
+	defer signals.Close()
+	creds := broadcast.NewCredentials(signals)
+	n := start(t, broadcasttest.NewBackend(), realtime.Options{
+		Authenticate: func(_ context.Context, token string) (identity.Subject, error) {
+			mu.Lock()
+			denied := revoked[token]
+			mu.Unlock()
+			perms := []string{"articles:read"}
+			if denied {
+				perms = nil
+			}
+			return identity.Subject{Type: "user", ID: "alice", Credential: token, Permissions: perms}, nil
+		},
+		Credentials: creds,
+	}, nil)
+	n.rt.Channel("articles", realtime.Private(func(_ context.Context, sub identity.Subject, _ realtime.Params) (bool, error) {
+		return sub.Can("articles:read"), nil
+	}))
+
+	c1 := mustConnect(t, n.url, "tok-1", nil)
+	c2 := mustConnect(t, n.url, "tok-2", nil)
+	c1.mustSubscribe("articles")
+	c2.mustSubscribe("articles")
+
+	mu.Lock()
+	revoked["tok-1"] = true
+	mu.Unlock()
+	if err := creds.RecheckCredential(context.Background(), "tok-1"); err != nil {
+		t.Fatal(err)
+	}
+	if ch := c1.unsubscribed(); ch != "articles" {
+		t.Fatalf("c1 unsubscribed from %q", ch)
+	}
+	publish(t, n.hub, "articles", map[string]int{"n": 1})
+	if p := c2.push(); p.Channel != "articles" {
+		t.Fatalf("c2 did not receive push: %+v", p)
+	}
+	c1.noPush(100 * time.Millisecond)
+}
+
+// 同一租户大量连接同时收到 RecheckTenant 信号时，由节点级有界复查池平滑处理并断开失效连接。
+func TestRecheckTenantBoundedConcurrency(t *testing.T) {
+	t.Parallel()
+	var (
+		active  atomic.Int32
+		maxSeen atomic.Int32
+		revoked atomic.Bool
+	)
+	signals := broadcast.New(broadcasttest.NewBackend(), nil)
+	defer signals.Close()
+	creds := broadcast.NewCredentials(signals)
+	n := start(t, broadcasttest.NewBackend(), realtime.Options{
+		Authenticate: func(_ context.Context, token string) (identity.Subject, error) {
+			cur := active.Add(1)
+			for {
+				prev := maxSeen.Load()
+				if cur <= prev || maxSeen.CompareAndSwap(prev, cur) {
+					break
+				}
+			}
+			defer active.Add(-1)
+			if revoked.Load() {
+				time.Sleep(5 * time.Millisecond)
+				return identity.Subject{}, errRevoked.New()
+			}
+			return identity.Subject{Type: "user", ID: token, Credential: "c-" + token}, nil
+		},
+		Credentials: creds,
+		Tenant:      func(r *http.Request) string { return r.Header.Get("X-Tenant") },
+	}, nil)
+
+	const total = 96
+	clients := make([]*client, total)
+	header := http.Header{"X-Tenant": {"acme"}}
+	for i := range total {
+		clients[i] = mustConnect(t, n.url, "u-"+strings.Repeat("x", i%5+1)+"-"+rand.Text(), header)
+	}
+	revoked.Store(true)
+	if err := creds.RecheckTenant(context.Background(), "acme"); err != nil {
+		t.Fatal(err)
+	}
+	for i, c := range clients {
+		if code := c.closed(); code != 3500 {
+			t.Fatalf("client %d closed with %d", i, code)
+		}
+	}
+	if peak := maxSeen.Load(); peak > 64 {
+		t.Fatalf("peak concurrent rechecks = %d, want <= 64", peak)
 	}
 }

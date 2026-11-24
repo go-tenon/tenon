@@ -46,22 +46,23 @@ type Options struct {
 
 // Realtime 是嵌入的 Centrifuge 节点。每个进程创建一个，可以并发使用。
 type Realtime struct {
-	opts     Options
-	hub      *broadcast.Hub
-	node     *centrifuge.Node
-	logger   *slog.Logger
-	origins  map[string]struct{}
-	presence PresenceStore
-	members  *membership
-	recheck  time.Duration // 凭据复查的间隔，创建时取自 credentialInterval
-	stop     func()
-	metrics  metric.Registration
+	opts      Options
+	hub       *broadcast.Hub
+	node      *centrifuge.Node
+	logger    *slog.Logger
+	origins   map[string]struct{}
+	presence  PresenceStore
+	members   *membership
+	rechecker *rechecker
+	recheck   time.Duration // 凭据复查的间隔，创建时取自 credentialInterval
+	stop      func()
+	metrics   metric.Registration
 
 	mu    sync.RWMutex
 	rules []channelRule
 }
 
-// New 创建 Realtime 并开始把 hub 收到的消息转给客户端，直到 Shutdown。hub 由应用创建和关闭，
+// New 创建 Realtime 并按需订阅有客户端的频道，直到 Shutdown。hub 由应用创建和关闭，
 // 所有实例必须使用相同的后端。hub 为 nil、TrustedOrigins 格式不正确、PresenceGrace 超过上限，
 // 或设置了 Authenticate 而 Accounts 为空、Accounts 的名称不合法时 panic。
 func New(hub *broadcast.Hub, opts Options) (*Realtime, error) {
@@ -101,8 +102,10 @@ func New(hub *broadcast.Hub, opts Options) (*Realtime, error) {
 		rt.origins[strings.ToLower(origin)] = struct{}{}
 	}
 	node, err := centrifuge.New(centrifuge.Config{
-		LogLevel:   centrifuge.LogLevelInfo,
-		LogHandler: rt.log,
+		LogLevel:                     centrifuge.LogLevelInfo,
+		LogHandler:                   rt.log,
+		ClientPresenceUpdateInterval: presenceUpdateInterval,
+		UseSingleFlight:              true,
 		// Centrifuge 默认把指标注册到 Prometheus 的全局 registry，这里给它一个独立的。
 		Metrics: centrifuge.MetricsConfig{RegistererGatherer: prometheus.NewRegistry()},
 	})
@@ -110,10 +113,18 @@ func New(hub *broadcast.Hub, opts Options) (*Realtime, error) {
 		return nil, errors.Wrap(err, "realtime: create node")
 	}
 	rt.node = node
-	b := &bridge{hub: hub, node: node, logger: rt.logger, wake: make(chan struct{}, 1), done: make(chan struct{})}
+	rt.rechecker = newRechecker(rt)
+	b := &bridge{
+		hub:       hub,
+		node:      node,
+		nodeTopic: controlNodePrefix + node.ID(),
+		logger:    rt.logger,
+		wake:      make(chan struct{}, 1),
+		done:      make(chan struct{}),
+	}
 	node.SetBroker(b)
 	node.SetController(b)
-	b.members = newMembership(opts.PresenceGrace, rt.presence, b.sendNow, rt.logger)
+	b.members = newMembership(opts.PresenceGrace, rt.presence, b.sendEventNow, rt.logger)
 	rt.members = b.members
 	node.SetPresenceManager(presenceManager{store: rt.presence, members: b.members})
 	node.OnConnecting(rt.connecting)
@@ -121,13 +132,11 @@ func New(hub *broadcast.Hub, opts Options) (*Realtime, error) {
 	if err := node.Run(); err != nil {
 		return nil, errors.Wrap(err, "realtime: run node")
 	}
-	go b.run()
-	unlisten := hub.Listen(b.deliver, b.lost)
-	rt.stop = func() {
-		b.members.close()
-		unlisten()
-		b.stop()
+	if err := b.start(); err != nil {
+		_ = node.Shutdown(context.Background())
+		return nil, errors.Wrap(err, "realtime: start bridge")
 	}
+	rt.stop = b.stop
 	if opts.MeterProvider != nil {
 		if rt.metrics, err = rt.observe(opts.MeterProvider); err != nil {
 			_ = rt.Shutdown(context.Background())
@@ -191,7 +200,11 @@ func (rt *Realtime) Unsubscribe(ref identity.Ref, channel string) error {
 // 在 app:// 页面的连接请求上加上它。
 // 连接脱离 Timeout 中间件的超时和 http.Server.WriteTimeout。
 func (rt *Realtime) Handler() http.Handler {
-	ws := centrifuge.NewWebsocketHandler(rt.node, centrifuge.WebsocketConfig{CheckOrigin: rt.checkOrigin})
+	ws := centrifuge.NewWebsocketHandler(rt.node, centrifuge.WebsocketConfig{
+		CheckOrigin:                rt.checkOrigin,
+		UseWriteBufferPool:         true,
+		ProcessCommandsOffReadLoop: true,
+	})
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if tenant := rt.opts.Tenant; tenant != nil {
 			r = r.WithContext(identity.WithTenant(r.Context(), tenant(r)))
@@ -244,6 +257,8 @@ func (rt *Realtime) Shutdown(ctx context.Context) error {
 	if rt.metrics != nil {
 		_ = rt.metrics.Unregister()
 	}
+	rt.rechecker.close()
+	rt.members.close()
 	err := rt.node.Shutdown(ctx)
 	rt.stop()
 	return errors.Wrap(err, "realtime: shutdown")

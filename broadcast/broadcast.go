@@ -13,14 +13,25 @@ type Message struct {
 	Data  []byte
 }
 
-// Backend 在实例之间传递消息。实现必须可以并发使用。
+// Backend 在实例之间传递消息，按主题只把消息送给订阅了该主题的实例。实现必须可以并发使用。
 type Backend interface {
-	// Publish 把消息发给所有实例，包括发布者所在的实例。
+	// Publish 把消息发给订阅了 msg.Topic 的所有实例，包括发布者所在的实例。
 	Publish(ctx context.Context, msg Message) error
-	// Listen 把所有实例发布的消息按发布顺序交给 deliver，直到 ctx 结束后返回。
-	// 实现自行处理重连；可能丢失了消息时（例如与服务器的连接中断）调用 lost，然后继续接收。
-	// deliver 和 lost 立即返回，可以在任意 goroutine 中调用。
-	Listen(ctx context.Context, deliver func(Message), lost func(error))
+	// Open 为一个 Hub 打开接收会话：把本会话已订阅主题的消息按发布顺序交给 deliver；
+	// 可能丢失了消息时（例如与服务器的连接中断或客户端缓冲区溢出）调用 lost，然后继续接收。
+	// deliver 和 lost 必须立即返回，可以在任意 goroutine 中调用。
+	Open(deliver func(Message), lost func(error)) Session
+}
+
+// Session 是一个 Hub 在 Backend 上的接收会话，按需管理本实例在后端的主题订阅。
+// 实现必须可以并发使用。
+type Session interface {
+	// Subscribe 让本会话开始接收 topics 中主题的消息，返回时订阅已在后端生效。
+	Subscribe(topics ...string) error
+	// Unsubscribe 让本会话停止接收 topics 中主题的消息。
+	Unsubscribe(topics ...string) error
+	// Close 结束会话并停止接收，返回后不再调用 deliver 和 lost。
+	Close() error
 }
 
 var (

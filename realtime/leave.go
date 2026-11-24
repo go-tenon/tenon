@@ -14,7 +14,7 @@ import (
 // DefaultPresenceGrace 是 Options.PresenceGrace 为零时的宽限期。
 const DefaultPresenceGrace = 10 * time.Second
 
-// MaxPresenceGrace 是宽限期的上限。在线记录的有效期是 60 秒、每 25 秒续期一次，
+// MaxPresenceGrace 是宽限期的上限。在线记录的有效期是 presenceTTL（60 秒）、每 presenceUpdateInterval（25 秒）续期一次，
 // 连接离开时它的记录至少还有 35 秒有效；宽限期更长的话，记录会先于宽限期过期。
 const MaxPresenceGrace = 30 * time.Second
 
@@ -28,7 +28,7 @@ const MaxPresenceGrace = 30 * time.Second
 type membership struct {
 	grace  time.Duration // <= 0 表示没有宽限期
 	store  PresenceStore
-	send   func(envelope) error
+	send   func(channelEvent) error
 	logger *slog.Logger
 
 	mu      sync.Mutex
@@ -47,7 +47,7 @@ type pendingLeave struct {
 }
 
 // newMembership 创建成员管理：离开在宽限期 grace 之后才广播，grace 为 0 时用 DefaultPresenceGrace。
-func newMembership(grace time.Duration, store PresenceStore, send func(envelope) error, logger *slog.Logger) *membership {
+func newMembership(grace time.Duration, store PresenceStore, send func(channelEvent) error, logger *slog.Logger) *membership {
 	if grace == 0 {
 		grace = DefaultPresenceGrace
 	}
@@ -55,7 +55,11 @@ func newMembership(grace time.Duration, store PresenceStore, send func(envelope)
 }
 
 // remove 在连接 client 离开 channel 时调用：有宽限期时在线记录保留到期满，否则立即删除。
+// 实例正在停止时不删除记录，让它自然过期。
 func (m *membership) remove(channel, client string) error {
+	if m.isClosed() {
+		return nil
+	}
 	if m.grace <= 0 {
 		return m.delete(channel, client)
 	}
@@ -64,12 +68,23 @@ func (m *membership) remove(channel, client string) error {
 }
 
 // leave 在 Centrifuge 要求发出离开事件时调用，紧接在 remove 之后。
+// 实例正在停止时不发离开事件，客户端重连到其他实例时其他成员看不到抖动。
 func (m *membership) leave(channel string, info *centrifuge.ClientInfo) error {
+	if m.isClosed() {
+		return nil
+	}
 	if m.grace <= 0 {
 		return m.announce(channel, info)
 	}
 	m.wait(leaveKey{channel, info.ClientID}, info)
 	return nil
+}
+
+// isClosed 报告成员管理是否已经停止。
+func (m *membership) isClosed() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.closed
 }
 
 // wait 登记或更新 key 的宽限期。Realtime 已经停止时直接返回，在线记录自行过期。
@@ -94,7 +109,7 @@ func (m *membership) wait(key leaveKey, info *centrifuge.ClientInfo) {
 }
 
 // expire 在宽限期满时删除在线记录，主体没有其他连接时发出离开事件。
-// 记录已经不在时不发事件：它被 expel 删除了，离开事件当时已经发出。
+// 记录已经不在时不发事件：它被 expel 或 expelClient 删除了，离开事件当时已经发出。
 func (m *membership) expire(key leaveKey, p *pendingLeave) {
 	m.mu.Lock()
 	if m.closed || m.pending[key] != p || p.rejoined {
@@ -127,7 +142,7 @@ func (m *membership) expire(key leaveKey, p *pendingLeave) {
 	if info == nil || others {
 		return
 	}
-	if err := m.send(envelope{Kind: kindLeave, Channel: key.channel, Info: info}); err != nil {
+	if err := m.send(channelEvent{Kind: kindLeave, Channel: key.channel, Info: info}); err != nil {
 		m.logger.Error("publish leave", "channel", key.channel, "error", err)
 	}
 }
@@ -145,6 +160,7 @@ func (m *membership) expel(channel string, subject identity.Ref) error {
 		if e.Subject != subject {
 			continue
 		}
+		m.cancelPending(leaveKey{channel, e.Client})
 		if err := m.delete(channel, e.Client); err != nil {
 			return err
 		}
@@ -155,7 +171,47 @@ func (m *membership) expel(channel string, subject identity.Ref) error {
 	if info == nil {
 		return nil
 	}
-	return m.send(envelope{Kind: kindLeave, Channel: channel, Info: info})
+	return m.send(channelEvent{Kind: kindLeave, Channel: channel, Info: info})
+}
+
+// expelClient 立即删除单个连接 clientID 在 channel 中的在线记录，并在主体已无其他连接时立即发出离开事件。
+// 用于单个连接在复查凭据后失去频道权限，不误伤同一主体的其他连接。
+func (m *membership) expelClient(channel, clientID string, subject identity.Ref) error {
+	m.cancelPending(leaveKey{channel, clientID})
+	entries, err := m.list(channel)
+	if err != nil {
+		return err
+	}
+	var info *centrifuge.ClientInfo
+	others := false
+	for _, e := range entries {
+		switch {
+		case e.Client == clientID:
+			info = &centrifuge.ClientInfo{ClientID: e.Client, UserID: e.Subject.String(), ChanInfo: e.Info}
+		case e.Subject == subject:
+			others = true
+		}
+	}
+	if info == nil {
+		return nil
+	}
+	if err := m.delete(channel, clientID); err != nil {
+		return err
+	}
+	if others {
+		return nil
+	}
+	return m.send(channelEvent{Kind: kindLeave, Channel: channel, Info: info})
+}
+
+// cancelPending 取消 key 的待发宽限期定时器。
+func (m *membership) cancelPending(key leaveKey) {
+	m.mu.Lock()
+	if p := m.pending[key]; p != nil {
+		p.timer.Stop()
+		delete(m.pending, key)
+	}
+	m.mu.Unlock()
 }
 
 // refreshed 在连接 client 写入或续期在线记录时调用：同一个连接在宽限期内重新订阅了，取消待发的离开。
@@ -182,7 +238,7 @@ func (m *membership) join(channel string, info *centrifuge.ClientInfo) error {
 	if p != nil || m.present(channel, info) {
 		return nil
 	}
-	return m.send(envelope{Kind: kindJoin, Channel: channel, Info: info})
+	return m.send(channelEvent{Kind: kindJoin, Channel: channel, Info: info})
 }
 
 // announce 发出离开事件，主体还有其他连接在频道中时不发。
@@ -190,7 +246,7 @@ func (m *membership) announce(channel string, info *centrifuge.ClientInfo) error
 	if m.present(channel, info) {
 		return nil
 	}
-	return m.send(envelope{Kind: kindLeave, Channel: channel, Info: info})
+	return m.send(channelEvent{Kind: kindLeave, Channel: channel, Info: info})
 }
 
 // present 报告主体在 channel 中是否有 info.ClientID 之外的在线记录。读取失败时按没有处理：
