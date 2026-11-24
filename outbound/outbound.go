@@ -63,6 +63,21 @@ func New(opts Options) *http.Client {
 	return &http.Client{Transport: transport, Timeout: timeout}
 }
 
+// Trusted 返回调用受信任固定上游（例如云厂商短信、验证码 API）的 HTTP 客户端。
+// 它尊重环境变量代理（HTTP_PROXY/HTTPS_PROXY）并允许访问云上 VPC 内网地址，只提供连接池与超时控制；
+// 请求用户或租户提供的任意 URL 时使用 New 防止 SSRF。
+func Trusted(timeout time.Duration) *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.MaxIdleConnsPerHost = 32
+	switch {
+	case timeout == 0:
+		timeout = DefaultTimeout
+	case timeout < 0:
+		timeout = 0
+	}
+	return &http.Client{Transport: transport, Timeout: timeout}
+}
+
 // control 返回检查连接地址的 net.Dialer.Control。
 func control(opts Options) func(network, address string, c syscall.RawConn) error {
 	var guard []ssrf.Option

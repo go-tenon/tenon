@@ -240,13 +240,13 @@ func (s *Service) export(ctx context.Context, r *operation.Run, exp *Export) err
 				m.Files = append(m.Files, name)
 			}
 			r.Add(1, 0)
-			if err := r.Save(ctx, nil); err != nil {
-				return err
-			}
 		}
 		return nil
 	})
 	if err != nil {
+		return err
+	}
+	if err := r.Save(ctx, nil); err != nil {
 		return err
 	}
 	if err := writeJSON(zw, "export.json", m.ExportedAt, m); err != nil {

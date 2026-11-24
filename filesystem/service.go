@@ -257,10 +257,18 @@ func (s *Service) Cleanup(ctx context.Context, limit int) (int, error) {
 	if limit <= 0 {
 		return 0, ErrInvalid
 	}
-	var rows []File
 	now := time.Now().UTC()
-	if err := s.db.NewSelect().Model(&rows).Where("f.expires_at <= ?", now).
-		OrderExpr("f.expires_at").Limit(int64(limit)).Scan(ctx); err != nil {
+	leaseUntil := now.Add(retryDelay)
+	var rows []File
+	// 原子认领一批到期记录并推进租约时间，多实例并发执行时互不重复删除对象存储。
+	err := s.db.NewRaw(`
+UPDATE files SET status = ?, expires_at = ?, updated_at = ?
+WHERE id IN (
+    SELECT id FROM files WHERE expires_at <= ? ORDER BY expires_at LIMIT ? FOR UPDATE SKIP LOCKED
+)
+RETURNING id, created_at, updated_at, disk, key, filename, content_type, size, meta, owner_type, owner_id, status, expires_at`,
+		StatusDeleted, leaseUntil, now, now, limit).Scan(ctx, &rows)
+	if err != nil {
 		return 0, errors.Wrap(err, "filesystem: cleanup")
 	}
 	done := 0
@@ -270,23 +278,8 @@ func (s *Service) Cleanup(ctx context.Context, limit int) (int, error) {
 			errs = append(errs, ctx.Err())
 			break
 		}
-		if r.Status == StatusTemporary {
-			// 只回收仍未确认且已过期的记录，与并发 Confirm 互斥。
-			res, err := s.db.NewUpdate().Model((*File)(nil)).
-				Set("status = ?", StatusDeleted).
-				Where("id = ?", r.ID).Where("status = ?", StatusTemporary).Where("expires_at <= ?", now).Exec(ctx)
-			if err != nil {
-				errs = append(errs, errors.Wrapf(err, "cleanup %s", r.ID))
-				continue
-			}
-			if n, _ := res.RowsAffected(); n == 0 {
-				continue
-			}
-		}
 		if err := s.purge(ctx, r); err != nil {
 			errs = append(errs, errors.Wrapf(err, "cleanup %s", r.ID))
-			_, _ = s.db.NewUpdate().Model((*File)(nil)).Set("expires_at = ?", now.Add(retryDelay)).
-				Where("id = ?", r.ID).Where("status = ?", StatusDeleted).Exec(context.WithoutCancel(ctx))
 			continue
 		}
 		done++

@@ -86,13 +86,14 @@ const defaultInstructions = "根据请求的复杂度、所需推理深度、代
 
 // Policy 是一套完整的智能路由策略定义。
 type Policy struct {
-	Tiers         []Tier        // 档位列表，至少 1 个
-	Rules         []Rule        // 前置确定性短路规则，按声明顺序匹配
-	FallbackModel string        // 兜底模型 ID，分类器失败或档位不可用时回退
-	Instructions  string        // 发给分类器的总体指令；为空时使用默认指令
-	MinConfidence float64       // 分类器最低置信度（0~1），低于此值保守向更高 Rank 升档；0 表示不强制升档
-	Timeout       time.Duration // 单次分类器调用超时上限；<= 0 时使用默认 2 秒
-	SessionMode   SessionMode   // 会话粘性策略，为空时按 SessionStateless 处理
+	Tiers            []Tier        // 档位列表，至少 1 个
+	Rules            []Rule        // 前置确定性短路规则，按声明顺序匹配
+	FallbackModel    string        // 兜底模型 ID，分类器失败或档位不可用时回退
+	Instructions     string        // 发给分类器的总体指令；为空时使用默认指令
+	MinConfidence    float64       // 分类器最低置信度（0~1），低于此值或未返回置信度时向更高 Rank 升档；0 表示不强制升档
+	Timeout          time.Duration // 单次分类器调用超时上限；<= 0 时使用默认 2 秒
+	SessionMode      SessionMode   // 会话粘性策略，为空时按 SessionStateless 处理
+	StrictCandidates bool          // 为 true 且提供了候选模型画像时，拒绝未在候选池中声明的模型
 }
 
 // Validate 检查路由策略的档位、规则和阈值是否合法。
@@ -189,6 +190,7 @@ type Decision struct {
 	InputTokens     int                // 分类器消耗的输入 token
 	OutputTokens    int                // 分类器消耗的输出 token
 	ClassifierModel string             // 分类器实际使用的模型名
+	ClassifierErr   error              // 分类器调用失败时的原始错误，便于结构化监控和错误分类
 	Escalated       bool               // 是否触发了升档
 }
 
@@ -262,7 +264,8 @@ func New(p Policy, candidates []Candidate, decider ai.Decider) (*Router, error) 
 }
 
 // Decide 为请求 req 执行路由决策，返回最终选中的档位、有序候选模型列表及决策元数据。
-// 分类器超时、出错或拒答时不返回 error，而是自动降级回退到兜底模型并记录在 Decision.Reason 中。
+// 决策顺序：硬能力过滤 -> 显式 TierHint -> 前置确定性规则 -> 会话粘性/顶档短路 -> 分类器 -> 兜底。
+// 分类器超时、出错或拒答时不返回 error，而是自动降级回退到兜底模型并记录在 Decision.Reason 与 Decision.ClassifierErr 中。
 func (r *Router) Decide(ctx context.Context, req Request) Decision {
 	start := time.Now()
 	finish := func(d Decision) Decision {
@@ -270,24 +273,7 @@ func (r *Router) Decide(ctx context.Context, req Request) Decision {
 		return d
 	}
 
-	// 1. 会话粘性（sticky）：若锁定模型满足本轮请求的硬约束，直接复用以命中上下文缓存。
-	if r.policy.SessionMode == SessionSticky && req.SessionModel != "" && r.eligible(req.SessionModel, req) {
-		tierKey := req.SessionTier
-		if _, ok := r.tierByKey[tierKey]; !ok {
-			tierKey = r.tierOfModel(req.SessionModel)
-		}
-		models := r.buildChain(tierKey, req, req.SessionModel)
-		if len(models) > 0 {
-			return finish(Decision{
-				Tier:       tierKey,
-				Models:     models,
-				ReasonKind: ReasonSticky,
-				Reason:     "sticky:" + tierKey,
-			})
-		}
-	}
-
-	// 2. 收集满足硬约束的可用档位。
+	// 1. 收集满足硬约束的可用档位。
 	viable := r.viableTierIndexes(req)
 	if len(viable) == 0 {
 		// 所有模型都未能通过硬过滤时，按原始策略兜底，避免直接无模型可用。
@@ -306,7 +292,7 @@ func (r *Router) Decide(ctx context.Context, req Request) Decision {
 		escalated  bool
 	)
 
-	// 3. 调用方显式档位提示（请求头覆盖）。
+	// 2. 调用方显式档位提示（请求头覆盖），优先级高于规则与会话粘性。
 	if req.TierHint != "" {
 		if idx, ok := r.tierByKey[req.TierHint]; ok {
 			chosenIdx, escalated = r.resolveViableIndex(idx, viable)
@@ -319,7 +305,7 @@ func (r *Router) Decide(ctx context.Context, req Request) Decision {
 		}
 	}
 
-	// 4. 前置确定性短路规则。
+	// 3. 前置确定性短路规则，优先级高于会话粘性。
 	if chosenIdx < 0 {
 		if matched, ok := r.matchRule(req); ok {
 			idx := r.tierByKey[matched.Tier]
@@ -337,24 +323,61 @@ func (r *Router) Decide(ctx context.Context, req Request) Decision {
 		}
 	}
 
-	// 5. 仅剩一个可行档位或未配置分类器时，跳过分类器直接确定档位。
+	// 4. 会话粘性（sticky）：未命中显式提示或规则，且锁定模型满足硬约束时直接复用。
+	if chosenIdx < 0 && r.policy.SessionMode == SessionSticky && req.SessionModel != "" && r.eligible(req.SessionModel, req) {
+		tierKey := req.SessionTier
+		if _, ok := r.tierByKey[tierKey]; !ok {
+			tierKey = r.tierOfModel(req.SessionModel)
+		}
+		models := r.buildChain(tierKey, req, req.SessionModel)
+		if len(models) > 0 {
+			return finish(Decision{
+				Tier:       tierKey,
+				Models:     models,
+				ReasonKind: ReasonSticky,
+				Reason:     "sticky:" + tierKey,
+			})
+		}
+	}
+
+	// 5. 只升不降（escalate_only）顶档短路：当前会话档位已是最高可用 Rank 时跳过分类器直接沿用。
+	if chosenIdx < 0 && r.policy.SessionMode == SessionEscalateOnly && req.SessionTier != "" {
+		if prevIdx, ok := r.tierByKey[req.SessionTier]; ok && slices.Contains(viable, prevIdx) {
+			if _, hasHigher := r.nextHigher(prevIdx, viable); !hasHigher {
+				preferModel := ""
+				if req.SessionModel != "" && r.eligible(req.SessionModel, req) {
+					preferModel = req.SessionModel
+				}
+				tierKey := r.tiers[prevIdx].Key
+				return finish(Decision{
+					Tier:       tierKey,
+					Models:     r.buildChain(tierKey, req, preferModel),
+					ReasonKind: ReasonSticky,
+					Reason:     "sticky_floor:" + tierKey,
+				})
+			}
+		}
+	}
+
+	// 6. 仅剩一个可行档位或未配置分类器时，跳过分类器直接确定档位。
 	if chosenIdx < 0 && (len(viable) == 1 || r.decider == nil) {
 		chosenIdx = viable[0]
 		if len(viable) == 1 && len(r.tiers) > 1 {
 			reasonKind = ReasonEscalated
 			reason = "capability:" + r.tiers[chosenIdx].Key
-			escalated = chosenIdx > 0
+			escalated = r.tiers[chosenIdx].Rank > r.tiers[0].Rank
 		} else {
 			reasonKind = ReasonRule
 			reason = "default:" + r.tiers[chosenIdx].Key
 		}
 	}
 
-	// 6. 调用 ai.Decider 分类器对可行档位进行语义分类。
+	// 7. 调用 ai.Decider 分类器对可行档位进行语义分类。
 	if chosenIdx < 0 {
 		res, err := r.classify(ctx, req, viable)
 		if err != nil {
 			d := r.fallbackDecision(req, "classifier_error:"+err.Error())
+			d.ClassifierErr = err
 			return finish(d)
 		}
 		inTokens, outTokens, clfModel = res.InputTokens, res.OutputTokens, res.Model
@@ -380,9 +403,9 @@ func (r *Router) Decide(ctx context.Context, req Request) Decision {
 		reasonKind = ReasonClassifier
 		reason = fmt.Sprintf("classifier:%s(%.2f)", r.tiers[chosenIdx].Key, conf)
 
-		// 置信度低于阈值时保守向高一档升档。
-		if r.policy.MinConfidence > 0 && conf < r.policy.MinConfidence {
-			if higher, ok := nextHigher(chosenIdx, viable); ok {
+		// 置信度低于阈值或分类器未给出置信度时，保守向更高 Rank 升档。
+		if r.policy.MinConfidence > 0 && (!ans.HasConfidence || conf < r.policy.MinConfidence) {
+			if higher, ok := r.nextHigher(chosenIdx, viable); ok {
 				origKey := r.tiers[chosenIdx].Key
 				chosenIdx = higher
 				escalated = true
@@ -392,11 +415,12 @@ func (r *Router) Decide(ctx context.Context, req Request) Decision {
 		}
 	}
 
-	// 7. 会话只升不降（escalate_only）：若本轮判定低于会话已有档位且原档位仍满足硬约束，则保持原档位。
+	// 8. 会话只升不降（escalate_only）：按 Rank 比较，本轮判定低于会话已有档位且原档位仍满足硬约束时保持原档位。
 	preferModel := ""
-	if r.policy.SessionMode == SessionEscalateOnly && req.SessionTier != "" {
+	if r.policy.SessionMode == SessionEscalateOnly && req.SessionTier != "" && reasonKind != ReasonHint {
 		if prevIdx, ok := r.tierByKey[req.SessionTier]; ok && slices.Contains(viable, prevIdx) {
-			if chosenIdx < prevIdx {
+			chosenRank, prevRank := r.tiers[chosenIdx].Rank, r.tiers[prevIdx].Rank
+			if chosenRank < prevRank {
 				chosenIdx = prevIdx
 				reasonKind = ReasonSticky
 				reason = "sticky_floor:" + r.tiers[chosenIdx].Key
@@ -404,11 +428,11 @@ func (r *Router) Decide(ctx context.Context, req Request) Decision {
 				if req.SessionModel != "" && r.eligible(req.SessionModel, req) {
 					preferModel = req.SessionModel
 				}
-			} else if chosenIdx > prevIdx {
+			} else if chosenRank > prevRank {
 				escalated = true
 				reasonKind = ReasonEscalated
 				reason = fmt.Sprintf("escalate:%s->%s", req.SessionTier, r.tiers[chosenIdx].Key)
-			} else if req.SessionModel != "" && r.eligible(req.SessionModel, req) {
+			} else if chosenIdx == prevIdx && req.SessionModel != "" && r.eligible(req.SessionModel, req) {
 				preferModel = req.SessionModel
 			}
 		}
@@ -431,10 +455,11 @@ func (r *Router) Decide(ctx context.Context, req Request) Decision {
 
 // eligible 检查模型 modelID 是否满足请求 req 的能力与上下文窗口硬约束。
 // 若候选池中没有任何模型声明某项能力，则忽略该能力维度的硬过滤，避免未配置标签时误杀全部模型。
+// Policy.StrictCandidates 为 true 且候选池非空时，未声明的模型视为不可用。
 func (r *Router) eligible(modelID string, req Request) bool {
 	c, ok := r.candidates[modelID]
 	if !ok {
-		return true
+		return !r.policy.StrictCandidates || len(r.candidates) == 0
 	}
 	if req.EstInputTokens > 0 && c.ContextWindow > 0 && req.EstInputTokens > c.ContextWindow {
 		return false
@@ -468,23 +493,25 @@ func (r *Router) viableTierIndexes(req Request) []int {
 	return out
 }
 
-// resolveViableIndex 在 viable 中找到不低于 target 的最小可用档位索引；若更高档位均不可用，回退到最高可用档位。
+// resolveViableIndex 在 viable 中找到 Rank 不低于 target 的最小可用档位索引；若更高档位均不可用，回退到最高可用档位。
 func (r *Router) resolveViableIndex(target int, viable []int) (idx int, escalated bool) {
 	if slices.Contains(viable, target) {
 		return target, false
 	}
+	targetRank := r.tiers[target].Rank
 	for _, vi := range viable {
-		if vi > target {
-			return vi, true
+		if r.tiers[vi].Rank >= targetRank {
+			return vi, r.tiers[vi].Rank > targetRank
 		}
 	}
 	return viable[len(viable)-1], false
 }
 
-// nextHigher 返回 viable 中严格大于 current 的最小档位索引。
-func nextHigher(current int, viable []int) (int, bool) {
+// nextHigher 返回 viable 中 Rank 严格大于 current 的最小档位索引。
+func (r *Router) nextHigher(current int, viable []int) (int, bool) {
+	curRank := r.tiers[current].Rank
 	for _, vi := range viable {
-		if vi > current {
+		if r.tiers[vi].Rank > curRank {
 			return vi, true
 		}
 	}

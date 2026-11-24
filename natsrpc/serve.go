@@ -17,7 +17,11 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/micro"
 	"github.com/nats-io/nuid"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/go-tenon/tenon/contract"
 	"github.com/go-tenon/tenon/errorx"
@@ -25,6 +29,9 @@ import (
 	"github.com/go-tenon/tenon/identity"
 	"github.com/go-tenon/tenon/logging"
 )
+
+// tracerScope 是 natsrpc 链路的 instrumentation scope。
+const tracerScope = "github.com/go-tenon/tenon/natsrpc"
 
 // Serve 在 nc 上提供 s 的全部端点，直到 ctx 被取消，然后平滑停止并返回 nil；订阅失败时返回错误。
 // nc 通常是 natsx.Connect 返回的连接，Serve 不关闭它。它是进程的一个运行部分，见 command.Daemon。
@@ -85,19 +92,13 @@ func (s *Server) Serve(ctx context.Context, nc *nats.Conn) error {
 	}
 
 	<-ctx.Done()
-	// 先不再接收新的请求：Drain 让已经到达客户端的请求照常处理。
-	for _, sub := range subs {
-		_ = sub.Drain()
-	}
+	// 立即退订端点和控制主题，让队列组中的其他存活实例马上接管新请求，当前实例只等待已受理的调用完成。
+	unsubscribe()
 	for _, sub := range control {
 		_ = sub.Unsubscribe()
 	}
+	_ = nc.FlushTimeout(min(s.opts.ShutdownTimeout, time.Second))
 	deadline := time.Now().Add(s.opts.ShutdownTimeout)
-	for _, sub := range subs {
-		for sub.IsValid() && time.Now().Before(deadline) {
-			time.Sleep(10 * time.Millisecond)
-		}
-	}
 	done := make(chan struct{})
 	go func() {
 		r.inflight.Wait()
@@ -121,14 +122,30 @@ type runner struct {
 	inflight sync.WaitGroup
 }
 
-// dispatch 在 NATS 的订阅回调中执行：取得一个并发名额，在新的 goroutine 中处理请求。
-// 名额用完时回调在这里等待，后续的请求在 NATS 客户端中排队。
+// dispatch 在 NATS 的订阅回调中执行：非阻塞申请并发名额，避免阻塞订阅分发器导致队头阻塞；
+// 名额已满时立即返回 503 Service Unavailable 并携带 Retry-After。
 func (r *runner) dispatch(root context.Context, ep *endpoint, m *nats.Msg) {
 	if m.Reply == "" {
 		r.logger.Warn("rpc request without a reply subject dropped", "rpc.endpoint", ep.spec.Name)
 		return
 	}
-	r.slots <- struct{}{}
+	select {
+	case r.slots <- struct{}{}:
+	default:
+		r.logger.Warn("rpc concurrency limit reached", "rpc.endpoint", ep.spec.Name)
+		resp := &nats.Msg{Header: nats.Header{}}
+		resp.Header.Set(HeaderRetryAfter, "1")
+		resp.Header.Set(HeaderErrorCode, strconv.Itoa(http.StatusServiceUnavailable))
+		resp.Header.Set(HeaderError, http.StatusText(http.StatusServiceUnavailable))
+		resp.Data, _ = json.Marshal(&Problem{
+			Status: http.StatusServiceUnavailable,
+			Title:  http.StatusText(http.StatusServiceUnavailable),
+			Detail: http.StatusText(http.StatusServiceUnavailable),
+		})
+		_ = m.RespondMsg(resp)
+		ep.stats.record(0, "503 Service Unavailable")
+		return
+	}
 	r.inflight.Add(1)
 	go func() {
 		defer func() {
@@ -156,6 +173,15 @@ func (r *runner) handle(root context.Context, ep *endpoint, m *nats.Msg) (resp *
 	ctx = logging.WithAttrs(ctx, slog.String("rpc.endpoint", ep.spec.Name))
 	resp.Header.Set(HeaderRequestID, id)
 	ctx = propagation.TraceContext{}.Extract(ctx, propagation.HeaderCarrier(m.Header))
+	ctx, span := otel.Tracer(tracerScope).Start(ctx, ep.subject,
+		trace.WithSpanKind(trace.SpanKindServer),
+		trace.WithAttributes(
+			attribute.String("rpc.system", "nats"),
+			attribute.String("rpc.service", r.service),
+			attribute.String("rpc.method", ep.spec.Name),
+		),
+	)
+	defer span.End()
 
 	timeout := r.opts.Timeout
 	if ms, err := strconv.ParseInt(m.Header.Get(HeaderTimeout), 10, 64); err == nil && ms > 0 && time.Duration(ms)*time.Millisecond < timeout {
@@ -174,6 +200,12 @@ func (r *runner) handle(root context.Context, ep *endpoint, m *nats.Msg) (resp *
 	}
 
 	fail := func(p *Problem, err error) (*nats.Msg, string) {
+		if p.Status >= http.StatusInternalServerError {
+			if err != nil {
+				logging.RecordError(span, err)
+			}
+			span.SetStatus(codes.Error, p.Title)
+		}
 		if err != nil {
 			if d := errorx.RetryAfterOf(err); d > 0 {
 				resp.Header.Set(HeaderRetryAfter, strconv.Itoa(int(math.Ceil(d.Seconds()))))

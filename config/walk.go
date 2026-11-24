@@ -78,7 +78,13 @@ func walkValue[I any](v reflect.Value, path string, visit func(I, string), skipS
 	case reflect.Map:
 		iter := v.MapRange()
 		for iter.Next() {
-			walkValue(iter.Value(), joinPath(path, fmt.Sprint(iter.Key())), visit, false)
+			elem := iter.Value()
+			if elem.Kind() == reflect.Struct && !elem.CanAddr() {
+				cp := reflect.New(elem.Type()).Elem()
+				cp.Set(elem)
+				elem = cp
+			}
+			walkValue(elem, joinPath(path, fmt.Sprint(iter.Key())), visit, false)
 		}
 	}
 	if skipSelf {

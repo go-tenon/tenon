@@ -84,6 +84,9 @@ func (s *Service) Start(ctx context.Context, tx bun.IDB, owner identity.Subject,
 	if err != nil {
 		return nil, err
 	}
+	if file.OwnerID != owner.ID || file.OwnerType != owner.Type {
+		return nil, filesystem.ErrNotFound
+	}
 	if _, err := sheet.FormatOf(file.Filename); err != nil {
 		return nil, err
 	}

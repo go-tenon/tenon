@@ -202,3 +202,28 @@ func TestCheckGrant(t *testing.T) {
 		t.Fatalf("system actor should bypass CheckGrant, got %v", err)
 	}
 }
+
+func TestTenantRoleCannotGrantPlatformPermissions(t *testing.T) {
+	t.Parallel()
+	db := dbtest.Open(t, authz.Migrations())
+	catalog := authz.Catalog{
+		{Name: "articles:read", Domain: identity.DomainTenant},
+		{Name: "platform:billing", Domain: identity.DomainPlatform},
+	}
+	store := authz.NewStore(db, catalog)
+	ctx := t.Context()
+
+	// 全局角色可以授予平台域权限或 *。
+	if _, err := store.CreateRole(ctx, authz.Role{Name: "superadmin", Permissions: []string{"*"}}); err != nil {
+		t.Fatalf("global role rejected: %v", err)
+	}
+	// 租户自定义角色不能授予平台域权限或覆盖平台域的通配符。
+	for _, perms := range [][]string{{"platform:billing"}, {"platform:*"}, {"*"}} {
+		if _, err := store.CreateRole(ctx, authz.Role{Tenant: "acme", Name: "bad", Permissions: perms}); !errors.Is(err, authz.ErrInvalid) {
+			t.Fatalf("tenant role with %v: got %v, want ErrInvalid", perms, err)
+		}
+	}
+	if _, err := store.CreateRole(ctx, authz.Role{Tenant: "acme", Name: "reader", Permissions: []string{"articles:read"}}); err != nil {
+		t.Fatalf("valid tenant role rejected: %v", err)
+	}
+}

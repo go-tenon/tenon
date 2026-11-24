@@ -86,10 +86,11 @@ func (s *Stack) close(ctx context.Context) error {
 	return errors.Join(errs...)
 }
 
-// detachedContext 返回不随 ctx 取消、但保留 ctx 截止时间的 context。
+// detachedContext 返回不随 ctx 取消的清理上下文：若 ctx 带有尚未过期的截止时间则保留它，
+// 否则（无截止时间或调用方已超时）分配独立的 defaultTimeout 清理预算。
 func detachedContext(ctx context.Context) (context.Context, context.CancelFunc) {
 	base := context.WithoutCancel(ctx)
-	if deadline, ok := ctx.Deadline(); ok {
+	if deadline, ok := ctx.Deadline(); ok && deadline.After(time.Now()) {
 		return context.WithDeadline(base, deadline)
 	}
 	return context.WithTimeout(base, defaultTimeout)

@@ -104,12 +104,12 @@ out.Body.Features = map[string]bool{
 store.Set(ctx, article.NewEditor, feature.Tenant("acme"), feature.On)  // 给试用的租户开启
 store.Set(ctx, article.NewEditor, feature.Subject(identity.Ref{Type: user.Type, ID: "u_42"}), feature.Off) // 单独给某个用户关闭
 store.Set(ctx, article.NewEditor, feature.Everyone, feature.Percent(10)) // 按比例放量
-store.Set(ctx, article.NewEditor, feature.Everyone, feature.On)          // 全量上线
-store.Set(ctx, article.NewEditor, feature.Everyone, feature.Off)         // 紧急关闭
+store.Set(ctx, article.NewEditor, feature.Everyone, feature.On)          // 全员默认开启（租户/用户单独设置优先）
+store.Set(ctx, article.NewEditor, feature.Everyone, feature.ForceOff)    // 紧急强制关闭（覆盖所有单独设置）
 store.Clear(ctx, article.NewEditor, feature.Everyone)                    // 删除全员的设置，单独设置和 Default 重新生效
 ```
 
-开关不在目录中、租户 ID 为空、用户不合法、比例设给了租户或用户、比例不在 0 到 100 之间时，`Set` 返回 `feature.ErrInvalid`（`errorx.InvalidArgument`）。
+开关不在目录中、租户 ID 为空、用户不合法、比例或强制模式设给了租户或用户、比例不在 0 到 100 之间时，`Set` 返回 `feature.ErrInvalid`（`errorx.InvalidArgument`）。
 
 `WithDB` 让设置和[操作日志](activity.md)在同一个事务中提交，`a.db` 是 `*bun.DB`：
 
@@ -131,13 +131,13 @@ return database.RunInTx(ctx, a.db, nil, func(ctx context.Context, tx database.Tx
 
 | 顺序 | 规则 | 结果 |
 | --- | --- | --- |
-| 1 | 全员设为 `On` 或 `Off` | 开启或关闭，**忽略**租户和用户的单独设置 |
+| 1 | 全员设为 `ForceOn` 或 `ForceOff` | 强制开启或关闭，**覆盖**租户和用户的单独设置 |
 | 2 | 用户的单独设置 | 开启或关闭 |
 | 3 | 租户的单独设置 | 开启或关闭 |
-| 4 | 全员设为 `Percent(n)` | 哈希落在 n% 内时开启 |
+| 4 | 全员设为 `On`、`Off` 或 `Percent(n)` | 默认开启、默认关闭，或哈希落在 n% 内时开启 |
 | 5 | 都没有 | `Default` 的结果 |
 
-- 全员的 `Off` 是紧急关闭：单独开启过的租户也会关闭。
+- 全员的 `ForceOff` 是紧急关闭：单独开启过的租户也会关闭；`On` / `Off` 则作为全员默认状态，允许为个别租户或用户例外关闭或开启。
 - `Percent(0)` 时单独开启的租户仍然开启，`Default` 被忽略。
 - 没有用户 ID 的主体（例如未登录的访客）只在 `Percent(100)` 中开启；`ByTenant` 的开关同理看租户 ID。
 - 用户的设置在他所属的每个租户中都生效。

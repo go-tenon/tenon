@@ -9,20 +9,21 @@ import { forwardHeaders, HeaderNonce, PrerenderNonce, socketPath } from "./heade
 import * as vite from "./vite.js"
 
 describe("headers", () => {
-  it("只转交登录凭据、请求 ID、链路和语言", () => {
+  it("只转交登录凭据、请求 ID、链路、语言和代理主机", () => {
     const h = new Headers({
       Cookie: "__Host-session=t",
       "X-Request-ID": "r1",
       traceparent: "00-a-b-01",
       "Accept-Language": "zh-CN",
       "X-CSP-Nonce": "n",
-      Host: "example.com",
+      Host: "acme.example.com",
     })
     expect(forwardHeaders(h)).toEqual({
       cookie: "__Host-session=t",
       "x-request-id": "r1",
       traceparent: "00-a-b-01",
       "accept-language": "zh-CN",
+      "x-forwarded-host": "acme.example.com",
     })
   })
 

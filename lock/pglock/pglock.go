@@ -32,8 +32,7 @@ func Migrations() fs.FS {
 }
 
 // Store 把每个锁保存为 locks 表的一行：锁名、持有者和过期时间。每个操作是一条语句，原子地完成。
-// 时间按应用服务器的时钟计算（与框架的其他 SQL 一样，测试中的假时钟对它生效），各实例的时钟需要同步，
-// 偏差要远小于锁的有效期。
+// 锁的过期时间与判断统一使用 PostgreSQL 的权威时钟 clock_timestamp()，避免多实例时钟漂移引发并发脑裂。
 //
 // 过期的行等同于不存在：下一次 Acquire 直接接管它。剩下的过期行由 Cleanup 删除，
 // 例如定时任务的锁名带有触发时刻，每次触发留下一行，需要定时清理。
@@ -52,47 +51,54 @@ func New(db bun.IDB) *Store {
 
 // Acquire 实现 lock.Store：插入锁；已有同名的锁时，只接管已经过期的。
 func (s *Store) Acquire(ctx context.Context, name, owner string, ttl time.Duration) (bool, error) {
-	now := time.Now()
 	return s.exec(ctx, "acquire", `
-INSERT INTO locks AS l (name, owner, expires_at) VALUES (?, ?, ?)
+INSERT INTO locks AS l (name, owner, expires_at) VALUES (?, ?, clock_timestamp() + ? * interval '1 microsecond')
 ON CONFLICT (name) DO UPDATE SET owner = excluded.owner, expires_at = excluded.expires_at
-WHERE l.expires_at <= ?`, name, owner, now.Add(ttl), now)
+WHERE l.expires_at <= clock_timestamp()`, name, owner, ttl.Microseconds())
 }
 
 // Refresh 实现 lock.Store：持有者仍持有、锁没有过期时，把过期时间改为 ttl 之后。
 func (s *Store) Refresh(ctx context.Context, name, owner string, ttl time.Duration) (bool, error) {
-	now := time.Now()
 	return s.exec(ctx, "refresh", `
-UPDATE locks SET expires_at = ? WHERE name = ? AND owner = ? AND expires_at > ?`, now.Add(ttl), name, owner, now)
+UPDATE locks SET expires_at = clock_timestamp() + ? * interval '1 microsecond'
+WHERE name = ? AND owner = ? AND expires_at > clock_timestamp()`, ttl.Microseconds(), name, owner)
 }
 
 // Release 实现 lock.Store：删除持有者仍持有、没有过期的锁。已经过期的行留给 Cleanup。
 func (s *Store) Release(ctx context.Context, name, owner string) (bool, error) {
 	return s.exec(ctx, "release", `
-DELETE FROM locks WHERE name = ? AND owner = ? AND expires_at > ?`, name, owner, time.Now())
+DELETE FROM locks WHERE name = ? AND owner = ? AND expires_at > clock_timestamp()`, name, owner)
 }
 
 // Held 实现 lock.Store。
 func (s *Store) Held(ctx context.Context, name string) (bool, error) {
 	var held bool
-	err := s.db.NewRaw(`SELECT EXISTS (SELECT 1 FROM locks WHERE name = ? AND expires_at > ?)`, name, time.Now()).Scan(ctx, &held)
+	err := s.db.NewRaw(`SELECT EXISTS (SELECT 1 FROM locks WHERE name = ? AND expires_at > clock_timestamp())`, name).Scan(ctx, &held)
 	return held, errors.Wrap(err, "pglock: held")
 }
 
-// Cleanup 删除最多 limit 个已经过期的锁，返回删除的个数，可以直接交给 schedule.Cleanup 定时执行。
-func (s *Store) Cleanup(ctx context.Context, limit int) (int, error) {
+// Cleanup 删除 db 中最多 limit 个已经过期的锁，返回删除的个数。
+func Cleanup(ctx context.Context, db bun.IDB, limit int) (int, error) {
+	if db == nil {
+		return 0, errors.New("pglock: nil database")
+	}
 	if limit <= 0 {
 		return 0, errors.New("pglock: cleanup limit must be positive")
 	}
-	res, err := s.db.NewRaw(`
+	res, err := db.NewRaw(`
 DELETE FROM locks WHERE name IN (
-    SELECT name FROM locks WHERE expires_at <= ? ORDER BY expires_at LIMIT ? FOR UPDATE SKIP LOCKED
-)`, time.Now(), limit).Exec(ctx)
+    SELECT name FROM locks WHERE expires_at <= clock_timestamp() ORDER BY expires_at LIMIT ? FOR UPDATE SKIP LOCKED
+)`, limit).Exec(ctx)
 	if err != nil {
 		return 0, errors.Wrap(err, "pglock: cleanup")
 	}
 	n, err := res.RowsAffected()
 	return int(n), errors.Wrap(err, "pglock: cleanup")
+}
+
+// Cleanup 删除最多 limit 个已经过期的锁，返回删除的个数，可以直接交给 schedule.Cleanup 定时执行。
+func (s *Store) Cleanup(ctx context.Context, limit int) (int, error) {
+	return Cleanup(ctx, s.db, limit)
 }
 
 // exec 执行 query，返回是否有行受影响。

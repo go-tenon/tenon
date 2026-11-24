@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/cockroachdb/errors"
 	"github.com/danielgtaylor/huma/v2"
@@ -39,6 +40,7 @@ type Options struct {
 type Server struct {
 	sdk    *mcp.Server
 	logger *slog.Logger
+	mu     sync.RWMutex
 	tools  map[string]*registered
 }
 
@@ -131,9 +133,12 @@ func Register[I, O any](s *Server, t Tool, fn func(context.Context, I) (O, error
 	case strings.TrimSpace(t.Description) == "":
 		panic("mcpx: tool " + strconv.Quote(t.Name) + " needs a description")
 	}
+	s.mu.Lock()
 	if _, ok := s.tools[t.Name]; ok {
+		s.mu.Unlock()
 		panic("mcpx: duplicate tool " + strconv.Quote(t.Name))
 	}
+	s.mu.Unlock()
 	in := contract.NewSchema(reflect.TypeFor[I](), huma.ModeWriteToServer)
 	if in.Type != "object" {
 		panic("mcpx: tool " + strconv.Quote(t.Name) + " input must be a struct")
@@ -159,7 +164,7 @@ func Register[I, O any](s *Server, t Tool, fn func(context.Context, I) (O, error
 		}
 		httpx.AddAccessLogAttrs(ctx, slog.String("mcp.tool", name))
 		var input I
-		if problems := validate(in, req.Params.Arguments, &input); len(problems) > 0 {
+		if problems := validate(ctx, in, req.Params.Arguments, &input); len(problems) > 0 {
 			return invalid(problems), nil
 		}
 		output, err := call(ctx, fn, input)
@@ -176,11 +181,15 @@ func Register[I, O any](s *Server, t Tool, fn func(context.Context, I) (O, error
 		}
 		return res, nil
 	})
+	s.mu.Lock()
 	s.tools[t.Name] = &registered{spec: t, sdk: tool}
+	s.mu.Unlock()
 }
 
 // Tools 返回登记的全部工具，按名称排序，用于检查暴露了哪些工具和它们需要的权限。
 func (s *Server) Tools() []Tool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	tools := make([]Tool, 0, len(s.tools))
 	for _, r := range s.tools {
 		t := r.spec
@@ -234,8 +243,8 @@ func (s *Server) failure(ctx context.Context, tool string, err error) *mcp.CallT
 	return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: text}}}
 }
 
-// validate 校验工具的参数并解码到 dst，返回每个问题的描述，例如 "id: expected string to be RFC 4122 uuid"。
-func validate(s *contract.Schema, raw json.RawMessage, dst any) []string {
+// validate 校验工具的参数并解码到 dst，经 contract.Describe 补全必填字段位置并按 ctx 语言翻译。
+func validate(ctx context.Context, s *contract.Schema, raw json.RawMessage, dst any) []string {
 	details, err := s.Validate(raw, dst, "")
 	switch {
 	case errors.Is(err, contract.ErrInvalidJSON):
@@ -245,9 +254,10 @@ func validate(s *contract.Schema, raw json.RawMessage, dst any) []string {
 	}
 	problems := make([]string, len(details))
 	for i, d := range details {
-		problems[i] = d.Message
-		if d.Location != "" {
-			problems[i] = d.Location + ": " + d.Message
+		fe := contract.Describe(ctx, d)
+		problems[i] = fe.Message
+		if fe.Location != "" {
+			problems[i] = fe.Location + ": " + fe.Message
 		}
 	}
 	return problems
@@ -267,17 +277,22 @@ func (s *Server) authorize(next mcp.MethodHandler) mcp.MethodHandler {
 		switch method {
 		case "tools/call":
 			if p, ok := req.GetParams().(*mcp.CallToolParamsRaw); ok {
-				if r, ok := s.tools[p.Name]; ok && !allowed(sub, r.spec.Permissions) {
+				s.mu.RLock()
+				r, exists := s.tools[p.Name]
+				s.mu.RUnlock()
+				if exists && !allowed(sub, r.spec.Permissions) {
 					return nil, &jsonrpc.Error{Code: jsonrpc.CodeInvalidParams, Message: "unknown tool " + strconv.Quote(p.Name)}
 				}
 			}
 		case "tools/list":
 			res, err := next(ctx, method, req)
 			if list, ok := res.(*mcp.ListToolsResult); ok && err == nil {
+				s.mu.RLock()
 				list.Tools = slices.DeleteFunc(slices.Clone(list.Tools), func(t *mcp.Tool) bool {
-					r, ok := s.tools[t.Name]
-					return ok && !allowed(sub, r.spec.Permissions)
+					r, exists := s.tools[t.Name]
+					return exists && !allowed(sub, r.spec.Permissions)
 				})
+				s.mu.RUnlock()
 			}
 			return res, err
 		}

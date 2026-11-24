@@ -138,7 +138,7 @@ func answerOf(q ai.Question, a answer) (ai.Answer, error) {
 	if a.Type != want {
 		return ai.Answer{}, errors.Newf("ai/systemone: question %q answered as %q, want %q", q.Name, a.Type, want)
 	}
-	out := ai.Answer{Probability: a.Noul, Choice: a.Choice, Score: a.Score, Confidence: a.Confidence}
+	out := ai.Answer{Probability: a.Noul, Choice: a.Choice, Score: a.Score, Confidence: a.Confidence, HasConfidence: true}
 	switch q.Kind {
 	case ai.ChoiceQuestion:
 		out.Probabilities = make([]float64, len(q.Options))

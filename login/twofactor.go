@@ -213,39 +213,44 @@ func (r *Realm) CheckTwoFactor(ctx context.Context, ref identity.Ref, code strin
 	if err := r.check(ref); err != nil {
 		return "", err
 	}
-	return r.checkTwoFactor(ctx, ref.ID, code)
+	method, reset, err := r.checkTwoFactor(ctx, r.db, ref.ID, code)
+	if err != nil {
+		return "", err
+	}
+	return method, reset()
 }
 
-// checkTwoFactor 校验 TOTP 验证码或恢复码，返回用到的方式（MethodTOTP 或 MethodRecovery）。
-func (r *Realm) checkTwoFactor(ctx context.Context, subjectID, code string) (string, error) {
+// checkTwoFactor 在 db 上校验 TOTP 验证码或恢复码，返回用到的方式（MethodTOTP 或 MethodRecovery）和成功后用于清零限流的函数。
+func (r *Realm) checkTwoFactor(ctx context.Context, db bun.IDB, subjectID, code string) (string, func() error, error) {
 	key := string(r.opts.Type) + "|two_factor|" + subjectID
 	if err := r.opts.Attempts.Allow(ctx, key); err != nil {
-		return "", err
+		return "", nil, err
 	}
-	row, err := r.twoFactor(ctx, r.db, subjectID)
+	row, err := r.twoFactor(ctx, db, subjectID)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if row == nil || row.ConfirmedAt.IsZero() {
-		return "", ErrTwoFactorDisabled.New()
+		return "", nil, ErrTwoFactorDisabled.New()
 	}
 	method := MethodTOTP
-	ok, err := r.useTOTP(ctx, r.db, row, code)
+	ok, err := r.useTOTP(ctx, db, row, code)
 	if err == nil && !ok {
 		method = MethodRecovery
-		ok, err = r.useRecoveryCode(ctx, subjectID, code)
+		ok, err = r.useRecoveryCode(ctx, db, subjectID, code)
 	}
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if !ok {
-		return "", ErrInvalidCode.New()
+		return "", nil, ErrInvalidCode.New()
 	}
-	return method, r.opts.Attempts.Reset(ctx, key)
+	return method, func() error { return r.opts.Attempts.Reset(ctx, key) }, nil
 }
 
 // TwoFactor 用 TOTP 验证码或恢复码完成等待二次验证的登录（Outcome.Pending），返回登录成功的主体。
 // 一次待完成的登录最多可以输错 5 次，之后需要重新登录；pending 无效、已过期或已用过时返回 ErrInvalidProof。
+// 校验二次验证码和完成待验证登录在同一个事务中执行，失败时不会提前消耗恢复码。
 func (r *Realm) TwoFactor(ctx context.Context, pending, code string) (Outcome, error) {
 	c, err := r.proof(ctx, r.db, pending, purposeTwoFactor)
 	if err != nil {
@@ -254,15 +259,24 @@ func (r *Realm) TwoFactor(ctx context.Context, pending, code string) (Outcome, e
 	if err := r.attemptPending(ctx, c); err != nil {
 		return Outcome{}, err
 	}
-	method, err := r.checkTwoFactor(ctx, c.SubjectID, code)
-	if err != nil {
-		return Outcome{}, err
-	}
-	if err := r.complete(ctx, r.db, c); err != nil {
-		return Outcome{}, err
-	}
 	methods, err := c.methods()
 	if err != nil {
+		return Outcome{}, err
+	}
+	var method string
+	var reset func() error
+	err = r.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		var checkErr error
+		method, reset, checkErr = r.checkTwoFactor(ctx, tx, c.SubjectID, code)
+		if checkErr != nil {
+			return checkErr
+		}
+		return r.complete(ctx, tx, c)
+	})
+	if err != nil {
+		return Outcome{}, err
+	}
+	if err := reset(); err != nil {
 		return Outcome{}, err
 	}
 	return r.signedIn(ctx, c.SubjectID, c.Tenant, append(methods, method)...)
@@ -414,14 +428,14 @@ func totp(key []byte, step int64) string {
 	return fmt.Sprintf("%0*d", totpDigits, v%1_000_000)
 }
 
-// useRecoveryCode 校验并作废一个恢复码，输入中的空白和连字符被忽略，不区分大小写。
-func (r *Realm) useRecoveryCode(ctx context.Context, subjectID, code string) (bool, error) {
+// useRecoveryCode 在 db 上校验并作废一个恢复码，输入中的空白和连字符被忽略，不区分大小写。
+func (r *Realm) useRecoveryCode(ctx context.Context, db bun.IDB, subjectID, code string) (bool, error) {
 	raw := strings.ToLower(strings.NewReplacer("-", "", " ", "").Replace(strings.TrimSpace(code)))
 	if len(raw) != 10 {
 		return false, nil
 	}
 	for _, key := range r.recoveryKeys {
-		n, err := affected(r.db.NewDelete().Model((*recoveryRow)(nil)).
+		n, err := affected(db.NewDelete().Model((*recoveryRow)(nil)).
 			Where("subject_type = ? AND subject_id = ?", r.opts.Type, subjectID).
 			Where("code_hash = ?", r.recoveryHash(key, subjectID, raw)).Exec(ctx))
 		if err != nil {

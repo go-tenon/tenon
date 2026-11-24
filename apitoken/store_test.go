@@ -485,18 +485,18 @@ func TestImpersonation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	personal := create(t, s, asAlice, apitoken.Personal{Name: "排查", Scopes: read})
+	// 代为登录期间禁止创建个人访问令牌，防止绕过代登有效期。
+	if _, err := s.Create(ctx, asAlice, apitoken.Personal{Name: "排查", Scopes: read}); !errors.Is(err, identity.ErrImpersonationForbidden) {
+		t.Fatalf("impersonated Create err=%v", err)
+	}
 	if sub, ok := valid(t, s, own); !ok || !sub.Impersonator.IsZero() {
 		t.Fatalf("own token impersonator=%v ok=%v", sub.Impersonator, ok)
 	}
 	if sub, ok := valid(t, s, impersonating); !ok || sub.ID != "alice" || sub.Impersonator != staff.Ref() || sub.BoundTenant != "acme" || !slices.Equal(sub.Scopes, read) || !sub.Auth.Time.IsZero() {
 		t.Fatalf("impersonation token sub=%+v ok=%v", sub, ok)
 	}
-	if sub, ok := valid(t, s, personal); !ok || sub.ID != "alice" || sub.Impersonator != staff.Ref() {
-		t.Fatalf("personal impersonation token sub=%+v ok=%v", sub, ok)
-	}
 	list, err := s.List(ctx, alice)
-	if err != nil || len(list) != 3 {
+	if err != nil || len(list) != 2 {
 		t.Fatalf("list=%+v err=%v", list, err)
 	}
 	var sawImp bool
@@ -510,7 +510,7 @@ func TestImpersonation(t *testing.T) {
 			}
 		}
 	}
-	if !sawImp || impersonators[identity.Ref{}] != 1 || impersonators[staff.Ref()] != 2 {
+	if !sawImp || impersonators[identity.Ref{}] != 1 || impersonators[staff.Ref()] != 1 {
 		t.Fatalf("impersonators=%v sawImp=%v", impersonators, sawImp)
 	}
 
@@ -537,7 +537,7 @@ func TestImpersonation(t *testing.T) {
 		t.Fatal(err)
 	}
 	revoked, err := s.RevokeByImpersonator(ctx, staff.Ref())
-	if err != nil || revoked != 3 {
+	if err != nil || revoked != 2 {
 		t.Fatalf("RevokeByImpersonator revoked=%d err=%v", revoked, err)
 	}
 	if _, ok := valid(t, s, impersonating); ok {

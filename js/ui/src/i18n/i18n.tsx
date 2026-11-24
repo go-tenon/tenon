@@ -25,11 +25,12 @@ let active: I18n = builtin
  * 把应用的 I18n 交给其中的组件，加入框架内置的文字，并让 <html lang> 跟随当前语言。createApp 已经用它包住了应用。
  */
 export function I18nProvider({ i18n, children }: { i18n: I18n; children: ReactNode }): ReactNode {
-  active = i18n
+  if (typeof window !== "undefined") active = i18n
   const language = useSyncExternalStore(i18n.subscribe, i18n.language, i18n.language)
   useEffect(() => {
+    active = i18n
     if (typeof document !== "undefined") document.documentElement.lang = language
-  }, [language])
+  }, [i18n, language])
   return <I18nContext.Provider value={i18n}>{children}</I18nContext.Provider>
 }
 

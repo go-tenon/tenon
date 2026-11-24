@@ -5,8 +5,11 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"slices"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/go-tenon/tenon/httpx"
 	"github.com/go-tenon/tenon/identity"
@@ -18,9 +21,24 @@ type HandlerOptions struct {
 	Validate      identity.TokenValidator      // 校验请求头 Authorization: Bearer 中的 token，必填。与 REST 用同一个校验器，例如 apitoken.Store 的 Validate。
 	Accounts      identity.Accounts            // 接受的账号体系和各自的 Resolver，与 rest.Options.Accounts 相同，必填。
 	Impersonation *identity.Impersonation      // 允许代为登录时对操作者的校验规则；nil 时默认拒绝所有代为登录凭据。
+	DirectOnly    bool                         // true 时只接受本人直接登录凭据，拒绝代为登录。
 	Tenant        func(r *http.Request) string // 从请求中取出本次请求所在的租户，例如子域名或请求头；nil 表示平台本身（""）。凭据绑定了租户时，两者必须相同。
 	Resource      *Resource                    // 不为 nil 时端点是 OAuth 受保护资源：401 响应的 WWW-Authenticate 带上 resource_metadata，Resource.MetadataPath() 上提供元数据，只接受发给 Resource.URL 的令牌
 	Permissions   []string                     // 使用这个端点需要的权限，例如 mcp:use；为空时不额外要求。个人访问令牌的 Scopes 中也要有它，令牌才能用于 MCP。
+}
+
+// mcpHandler 包装 MCP HTTP 处理器并实现 httpx.RouteDescriber，让路由表能够审计访问策略与所需权限。
+type mcpHandler struct {
+	handler     http.Handler
+	permissions []string
+}
+
+// ServeHTTP 实现 http.Handler。
+func (h mcpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) { h.handler.ServeHTTP(w, r) }
+
+// DescribeRoute 实现 httpx.RouteDescriber。
+func (h mcpHandler) DescribeRoute() httpx.Route {
+	return httpx.Route{Access: "token", Permissions: slices.Clone(h.permissions), Summary: "MCP"}
 }
 
 // Handler 返回以 Streamable HTTP 提供 s 的处理器，挂在一个路由上，例如 router.Handle("/mcp", h)。
@@ -64,39 +82,43 @@ func Handler(s *Server, opts HandlerOptions) http.Handler {
 		DisableLocalhostProtection: true,
 	})
 	permissions := append([]string(nil), opts.Permissions...)
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", "no-store")
-		ctx := r.Context()
-		if opts.Tenant != nil {
-			ctx = identity.WithTenant(ctx, opts.Tenant(r))
-		}
-		token := httpx.BearerToken(r.Header.Get("Authorization"))
-		authenticate := func(ctx context.Context) (identity.Subject, error) {
-			if token == "" {
-				return identity.Subject{}, nil
+	return mcpHandler{
+		permissions: permissions,
+		handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Cache-Control", "no-store")
+			ctx := r.Context()
+			if opts.Tenant != nil {
+				ctx = identity.WithTenant(ctx, opts.Tenant(r))
 			}
-			return opts.Validate(ctx, token)
-		}
-		policy := identity.Policy{Accounts: opts.Accounts, Impersonation: opts.Impersonation}
-		sub, err := identity.Establish(ctx, authenticate, policy, permissions...)
-		switch {
-		case err == nil:
-		case identity.Failed(err):
-			s.logger.ErrorContext(ctx, "authentication backend failed", "error", err)
-			httpx.WriteProblem(w, httpx.StatusOf(err), "authentication unavailable")
-			return
-		case errors.Is(err, identity.ErrUnauthenticated):
-			w.Header().Set("WWW-Authenticate", challenge)
-			httpx.WriteProblem(w, http.StatusUnauthorized, httpx.ErrorDetail(ctx, err))
-			return
-		default:
-			httpx.WriteProblem(w, httpx.StatusOf(err), httpx.ErrorDetail(ctx, err))
-			return
-		}
-		reqCtx := identity.WithSubject(ctx, sub)
-		if sub.Impersonated() {
-			reqCtx = logging.WithAttrs(reqCtx, slog.String(logging.AttrImpersonator, sub.Impersonator.String()))
-		}
-		sdk.ServeHTTP(w, r.WithContext(reqCtx))
-	})
+			token := httpx.BearerToken(r.Header.Get("Authorization"))
+			authenticate := func(ctx context.Context) (identity.Subject, error) {
+				if token == "" {
+					return identity.Subject{}, nil
+				}
+				return opts.Validate(ctx, token)
+			}
+			policy := identity.Policy{Accounts: opts.Accounts, Impersonation: opts.Impersonation, DirectOnly: opts.DirectOnly}
+			sub, err := identity.Establish(ctx, authenticate, policy, permissions...)
+			switch {
+			case err == nil:
+			case identity.Failed(err):
+				s.logger.ErrorContext(ctx, "authentication backend failed", "error", err)
+				httpx.WriteProblem(w, httpx.StatusOf(err), "authentication unavailable")
+				return
+			case errors.Is(err, identity.ErrUnauthenticated):
+				w.Header().Set("WWW-Authenticate", challenge)
+				httpx.WriteProblem(w, http.StatusUnauthorized, httpx.ErrorDetail(ctx, err))
+				return
+			default:
+				httpx.WriteProblem(w, httpx.StatusOf(err), httpx.ErrorDetail(ctx, err))
+				return
+			}
+			reqCtx := identity.WithSubject(ctx, sub)
+			if sub.Impersonated() {
+				reqCtx = logging.WithAttrs(reqCtx, slog.String(logging.AttrImpersonator, sub.Impersonator.String()))
+				trace.SpanFromContext(reqCtx).SetAttributes(attribute.String("enduser.impersonator", sub.Impersonator.String()))
+			}
+			sdk.ServeHTTP(w, r.WithContext(reqCtx))
+		}),
+	}
 }

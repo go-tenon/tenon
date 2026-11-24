@@ -18,6 +18,7 @@ package cache
 import (
 	"context"
 	"encoding/json"
+	"hash/fnv"
 	"log/slog"
 	"math/rand/v2"
 	"runtime/debug"
@@ -45,6 +46,10 @@ const (
 	logInterval = time.Minute
 	// tagPrefix 是 tag 版本在 Redis 中的键的前缀。tag 不属于某个 Cache，不加 Cache 的前缀。
 	tagPrefix = "cache:tag:"
+	// defaultTagTTL 是 tag 版本键的最短保留时长，避免动态实体 tag 在 Redis 中永不过期导致内存泄漏。
+	defaultTagTTL = 24 * time.Hour
+	// forgetShards 是按 key 隔离 Forget 代际的计数分片数，避免删除冷门 key 打断热点 key 的 singleflight。
+	forgetShards = 1024
 )
 
 // Client 是 Cache 用到的 Redis 操作，*redis.Client、*redis.ClusterClient 和 redis.UniversalClient 都实现了它。
@@ -70,7 +75,7 @@ type Cache[T any] struct {
 	ttl     time.Duration
 	missing func() error
 	group   singleflight.Group
-	forgets atomic.Uint64 // Forget 的次数，计入合并加载的键：Forget 之前开始的加载不与之后的 Remember 共用。
+	forgets [forgetShards]atomic.Uint64 // 按 key 分片的 Forget 代际：单个 key 失效不影响其他分片热点 key 的合并加载。
 	logs    throttle
 }
 
@@ -135,8 +140,8 @@ func (c *Cache[T]) Remember(ctx context.Context, key string, load func(ctx conte
 		}
 		c.logs.warn(ctx, "decode cached value failed", "key", key, "error", err)
 	}
-	// 加载只在版本相同时共用：版本变化之后的 Remember 发起新的加载。
-	flight := strconv.FormatUint(c.forgets.Load(), 10) + "\x00" + header + key
+	// 加载只在版本相同时共用：版本变化或同分片 key 被 Forget 之后的 Remember 发起新的加载。
+	flight := strconv.FormatUint(c.forgets[forgetShard(key)].Load(), 10) + "\x00" + header + key
 	select {
 	case r := <-c.group.DoChan(flight, func() (any, error) { return c.fill(ctx, key, header, store, load) }):
 		if r.Err != nil {
@@ -154,25 +159,48 @@ func (c *Cache[T]) Remember(ctx context.Context, key string, load func(ctx conte
 // 把读到的旧值写回，保留到过期；要求即时一致时用 tag，见 Invalidate。
 func (c *Cache[T]) Forget(ctx context.Context, key string) error {
 	key = c.storedKey(key)
-	c.forgets.Add(1)
+	c.forgets[forgetShard(key)].Add(1)
 	if err := c.rdb.Del(ctx, key).Err(); err != nil {
 		return errors.Wrapf(err, "cache: forget %q", key)
 	}
 	return nil
 }
 
-// Invalidate 让带有 tags 中任何一个的值失效：替换这些 tag 的版本，之后的 Remember 发现版本不一致时重新加载。
-// tag 在共用同一个 Redis 的所有 Cache 之间共享，Invalidate 一个 tag 影响所有 Cache 中带有它的值。
-// 和 Forget 一样，数据修改之后、事务提交之后调用。更新版本失败时返回错误，其余的 tag 照常处理。
-func (c *Cache[T]) Invalidate(ctx context.Context, tags ...string) error {
+// Invalidate 让 Redis 上带有 tags 中任何一个的缓存值失效，跨 Cache 类型共享。
+func Invalidate(ctx context.Context, rdb Client, tags ...string) error {
+	if rdb == nil {
+		panic("cache: nil client")
+	}
 	var errs []error
 	for _, tag := range tags {
 		// 版本不存在（从未读取或已被淘汰）时 SetXX 不写入新键：之后的 Remember 会创建一个随机的新版本，与缓存中的值都不一致。
-		if err := c.rdb.SetXX(ctx, tagKey(tag), randomVersion(), 0).Err(); err != nil {
+		if err := rdb.SetXX(ctx, tagKey(tag), randomVersion(), defaultTagTTL).Err(); err != nil {
 			errs = append(errs, errors.Wrapf(err, "cache: invalidate %q", tag))
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// Invalidate 让带有 tags 中任何一个的值失效：替换这些 tag 的版本，之后的 Remember 发现版本不一致时重新加载。
+// tag 在共用同一个 Redis 的所有 Cache 之间共享，Invalidate 一个 tag 影响所有 Cache 中带有它的值。
+// 和 Forget 一样，数据修改之后、事务提交之后调用。更新版本失败时返回错误，其余的 tag 照常处理。
+func (c *Cache[T]) Invalidate(ctx context.Context, tags ...string) error {
+	ttl := max(c.ttl*2, defaultTagTTL)
+	var errs []error
+	for _, tag := range tags {
+		// 版本不存在（从未读取或已被淘汰）时 SetXX 不写入新键：之后的 Remember 会创建一个随机的新版本，与缓存中的值都不一致。
+		if err := c.rdb.SetXX(ctx, tagKey(tag), randomVersion(), ttl).Err(); err != nil {
+			errs = append(errs, errors.Wrapf(err, "cache: invalidate %q", tag))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// forgetShard 返回 key 对应的分片下标。
+func forgetShard(key string) uint32 {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(key))
+	return h.Sum32() % forgetShards
 }
 
 // storedKey 返回 key 在 Redis 中的键。
@@ -244,11 +272,11 @@ func (c *Cache[T]) lookup(ctx context.Context, key string, tags []string) (raw, 
 	return "", header, false, true
 }
 
-// newVersion 为不存在的 tag 创建版本并返回。版本是随机数，与被淘汰之前的版本几乎不可能相同，
-// 所以 tag 被淘汰后，带有它的旧值都会失效。另一个调用者先创建时，返回它创建的版本。
+// newVersion 为不存在的 tag 创建版本并返回。版本是随机数并带有过期时间，避免动态实体 tag 在 Redis 中无限积累；
+// tag 被淘汰或过期后，带有它的旧值都会失效。另一个调用者先创建时，返回它创建的版本。
 func (c *Cache[T]) newVersion(ctx context.Context, key string) (string, error) {
 	v := randomVersion()
-	created, err := c.rdb.SetNX(ctx, key, v, 0).Result()
+	created, err := c.rdb.SetNX(ctx, key, v, max(c.ttl*2, defaultTagTTL)).Result()
 	if err != nil {
 		return "", err
 	}

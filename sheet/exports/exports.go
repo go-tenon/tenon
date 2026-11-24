@@ -95,6 +95,26 @@ func (s *Service) Get(ctx context.Context, owner identity.Subject, id uuid.UUID)
 	return exp, nil
 }
 
+// Open 打开 owner 的导出文件，供服务端鉴权后流式下载。调用方负责关闭。
+// 不存在或不是 owner 发起时返回 operation.ErrNotFound；尚未完成或已过期回收时返回 filesystem.ErrNotFound。
+func (s *Service) Open(ctx context.Context, owner identity.Subject, id uuid.UUID) (io.ReadCloser, *Export, error) {
+	exp, err := s.Get(ctx, owner, id)
+	if err != nil {
+		return nil, nil, err
+	}
+	if exp.Status != operation.StatusCompleted || exp.FileID == uuid.Nil {
+		return nil, nil, filesystem.ErrNotFound
+	}
+	if exp.ExpiresAt != nil && !time.Now().Before(*exp.ExpiresAt) {
+		return nil, nil, filesystem.ErrNotFound
+	}
+	body, _, err := s.files.Open(ctx, exp.FileID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return body, exp, nil
+}
+
 // load 读取导出的格式和文件，不存在时返回 nil。
 func (s *Service) load(ctx context.Context, id uuid.UUID) (*Export, error) {
 	exp := new(Export)

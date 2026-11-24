@@ -143,17 +143,31 @@ func UpdateEndpoint(ctx context.Context, db bun.IDB, tenant string, id uuid.UUID
 	return update(ctx, db, tenant, id, ep, "url", "description", "events", "disabled", "updated_at")
 }
 
-// RotateSecret 为租户 tenant 的端点生成新的签名密钥。旧密钥在 PreviousSecretTTL 内继续签名，
+// RotateSecret 在事务中锁住端点行并生成新的签名密钥。旧密钥在 PreviousSecretTTL 内继续签名，
 // 请求头中同时带有新旧两个签名，接收方可以先换上新密钥再等旧密钥过期。
 func RotateSecret(ctx context.Context, db bun.IDB, tenant string, id uuid.UUID) (*Endpoint, error) {
-	old, err := GetEndpoint(ctx, db, tenant, id)
+	var updated *Endpoint
+	err := db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		old := new(Endpoint)
+		err := tx.NewSelect().Model(old).Where("tenant = ?", tenant).Where("id = ?", id).For("UPDATE").Scan(ctx)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrEndpointNotFound.New()
+		}
+		if err != nil {
+			return errors.Wrap(err, "webhook: load endpoint")
+		}
+		ep := &Endpoint{
+			Secret:                  newSecret(),
+			PreviousSecret:          old.Secret,
+			PreviousSecretExpiresAt: time.Now().UTC().Add(PreviousSecretTTL),
+		}
+		updated, err = update(ctx, tx, tenant, id, ep, "secret", "previous_secret", "previous_secret_expires_at", "updated_at")
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}
-	ep := &Endpoint{
-		Secret: newSecret(), PreviousSecret: old.Secret, PreviousSecretExpiresAt: time.Now().UTC().Add(PreviousSecretTTL),
-	}
-	return update(ctx, db, tenant, id, ep, "secret", "previous_secret", "previous_secret_expires_at", "updated_at")
+	return updated, nil
 }
 
 // update 修改租户 tenant 的端点 id 的 columns 列；端点不存在时返回 ErrEndpointNotFound。
@@ -171,17 +185,19 @@ func update(ctx context.Context, db bun.IDB, tenant string, id uuid.UUID, ep *En
 	return GetEndpoint(ctx, db, tenant, id)
 }
 
-// DeleteEndpoint 删除租户 tenant 的端点和它的投递记录。尚未完成的投递任务在执行时发现记录不存在，直接结束。
+// DeleteEndpoint 在事务中原子删除租户 tenant 的端点和它的投递记录。尚未完成的投递任务在执行时发现记录不存在，直接结束。
 func DeleteEndpoint(ctx context.Context, db bun.IDB, tenant string, id uuid.UUID) error {
-	res, err := db.NewDelete().Model((*Endpoint)(nil)).Where("tenant = ?", tenant).Where("id = ?", id).Exec(ctx)
-	if err != nil {
-		return errors.Wrap(err, "webhook: delete endpoint")
-	}
-	if n, err := res.RowsAffected(); err != nil {
-		return errors.Wrap(err, "webhook: delete endpoint")
-	} else if n == 0 {
-		return ErrEndpointNotFound.New()
-	}
-	_, err = db.NewDelete().Model((*Delivery)(nil)).Where("endpoint_id = ?", id).Exec(ctx)
-	return errors.Wrap(err, "webhook: delete deliveries")
+	return db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		res, err := tx.NewDelete().Model((*Endpoint)(nil)).Where("tenant = ?", tenant).Where("id = ?", id).Exec(ctx)
+		if err != nil {
+			return errors.Wrap(err, "webhook: delete endpoint")
+		}
+		if n, err := res.RowsAffected(); err != nil {
+			return errors.Wrap(err, "webhook: delete endpoint")
+		} else if n == 0 {
+			return ErrEndpointNotFound.New()
+		}
+		_, err = tx.NewDelete().Model((*Delivery)(nil)).Where("endpoint_id = ?", id).Exec(ctx)
+		return errors.Wrap(err, "webhook: delete deliveries")
+	})
 }

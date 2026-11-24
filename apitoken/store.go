@@ -432,8 +432,11 @@ type Personal struct {
 // Create 为 sub 创建个人访问令牌，返回 token 明文，明文只在这里返回一次。
 // 新令牌不比 sub 所用的凭据更宽：sub.Scopes 不为 nil 时，p.Scopes 的每一项都要在 sub.Scopes 之内，否则返回 identity.ErrForbidden；
 // sub.BoundTenant 或 sub.Tenant 不为空时令牌只能在这个租户中使用。
-// 代为登录期间（sub.Impersonator 不为零值）创建的令牌记录 Impersonator，之后每次使用都归于这个操作者。
+// 代为登录期间（sub.Impersonator 不为零值）拒绝创建个人访问令牌，返回 identity.ErrImpersonationForbidden，防止操作者绕过代登有效期。
 func (s *Store) Create(ctx context.Context, sub identity.Subject, p Personal) (string, error) {
+	if !sub.Impersonator.IsZero() {
+		return "", identity.ErrImpersonationForbidden.New()
+	}
 	now := time.Now().UTC()
 	name := strings.TrimSpace(p.Name)
 	if name == "" || len([]rune(name)) > maxName {
@@ -689,15 +692,15 @@ func (s *Store) Revoke(ctx context.Context, sub identity.Subject, id string) err
 	return nil
 }
 
-// RevokeToken 按明文撤销一个 OAuth 令牌，用于 OAuth 的撤销端点（RFC 7009）：客户端断开连接时交回令牌。
-// 令牌不存在、已过期或不是 OAuth 令牌时直接返回 nil。
+// RevokeToken 按明文撤销一个 OAuth 令牌或应用自有客户端的登录令牌，用于 OAuth 的撤销端点（RFC 7009）：客户端断开连接时交回令牌。
+// 令牌不存在、已过期，或者是个人访问令牌、代为登录令牌时直接返回 nil。
 func (s *Store) RevokeToken(ctx context.Context, token string) error {
 	if token == "" {
 		return nil
 	}
 	var revoked uuid.UUID
 	err := s.db.NewDelete().Model((*row)(nil)).
-		Where("token_hash = ?", hash(token)).Where("kind = ?", KindOAuth).
+		Where("token_hash = ?", hash(token)).Where("kind IN (?)", bun.List([]Kind{KindOAuth, KindLogin})).
 		Returning("id").Scan(ctx, &revoked)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil

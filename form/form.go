@@ -31,14 +31,15 @@ import (
 // 验证失败时 T 只包含能转换的字段。
 func Decode[T any](ctx context.Context, values map[string][]string) (T, map[string]string) {
 	var data T
-	s := Schema(reflect.TypeOf(data))
+	c := compiledOf(reflect.TypeOf(data))
+	s := c.root
 	input := map[string]any{}
 	for name, prop := range s.Properties {
-		prop = resolve(prop)
+		prop = c.resolve(prop)
 		raw, present := values[name]
 		switch {
 		case prop.Type == huma.TypeArray:
-			items := resolve(prop.Items)
+			items := c.resolve(prop.Items)
 			list := make([]any, 0, len(raw))
 			for _, v := range raw {
 				list = append(list, convert(items.Type, v))
@@ -62,7 +63,7 @@ func Decode[T any](ctx context.Context, values map[string][]string) (T, map[stri
 		}
 	}
 	res := &huma.ValidateResult{}
-	huma.Validate(registry, s, huma.NewPathBuffer(nil, 0), huma.ModeWriteToServer, input, res)
+	huma.Validate(c.registry, s, huma.NewPathBuffer(nil, 0), huma.ModeWriteToServer, input, res)
 	for _, e := range res.Errors {
 		if d, ok := e.(*huma.ErrorDetail); ok {
 			fe := contract.Describe(ctx, d)
@@ -71,7 +72,7 @@ func Decode[T any](ctx context.Context, values map[string][]string) (T, map[stri
 	}
 	// 没能转换成目标类型的值不参与解码，其余字段照常写入 data。
 	for field := range errs {
-		if _, isText := input[field].(string); isText && resolve(s.Properties[field]).Type != huma.TypeString {
+		if _, isText := input[field].(string); isText && c.resolve(s.Properties[field]).Type != huma.TypeString {
 			delete(input, field)
 		}
 	}
@@ -90,23 +91,38 @@ func Decode[T any](ctx context.Context, values map[string][]string) (T, map[stri
 	return data, errs
 }
 
-var (
-	registry = huma.NewMapRegistry("#/components/schemas/", qualifiedName)
-	regMu    sync.Mutex
-	schemas  sync.Map // reflect.Type -> *huma.Schema
-)
+// compiled 保存单个类型编译完成的只读 schema 与其专属 registry，构建完成后不再修改，供并发无锁读取。
+type compiled struct {
+	registry huma.Registry
+	root     *huma.Schema
+}
+
+// resolve 解开 schema 的 $ref，返回它指向的 schema。
+func (c *compiled) resolve(s *huma.Schema) *huma.Schema {
+	if s != nil && s.Ref != "" {
+		return c.registry.SchemaFromRef(s.Ref)
+	}
+	return s
+}
+
+var schemas sync.Map // reflect.Type -> *compiled
+
+// compiledOf 返回 t 对应的只读 compiled，首次调用时用独立的局部 registry 构建并缓存。
+func compiledOf(t reflect.Type) *compiled {
+	if c, ok := schemas.Load(t); ok {
+		return c.(*compiled)
+	}
+	reg := huma.NewMapRegistry("#/components/schemas/", qualifiedName)
+	c := &compiled{registry: reg}
+	c.root = c.resolve(reg.Schema(t, false, ""))
+	actual, _ := schemas.LoadOrStore(t, c)
+	return actual.(*compiled)
+}
 
 // Schema 返回 Decode 验证 t 时使用的 schema，例如用于查看哪些字段是必填的（Required）。
 // 返回值被缓存并共享，只读。
 func Schema(t reflect.Type) *huma.Schema {
-	if s, ok := schemas.Load(t); ok {
-		return s.(*huma.Schema)
-	}
-	regMu.Lock()
-	defer regMu.Unlock()
-	s := resolve(registry.Schema(t, false, ""))
-	schemas.Store(t, s)
-	return s
+	return compiledOf(t).root
 }
 
 // qualifiedName 用完整导入路径命名 schema，不同包的同名类型（例如 article.Changes 和 comment.Changes）各有自己的名字。
@@ -119,14 +135,6 @@ func qualifiedName(t reflect.Type, hint string) string {
 		return hint
 	}
 	return t.PkgPath() + "." + t.Name()
-}
-
-// resolve 解开 schema 的 $ref，返回它指向的 schema。
-func resolve(s *huma.Schema) *huma.Schema {
-	if s != nil && s.Ref != "" {
-		return registry.SchemaFromRef(s.Ref)
-	}
-	return s
 }
 
 // isNumber 报告 schema 类型 typ 是否是数字。

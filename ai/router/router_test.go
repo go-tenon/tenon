@@ -195,6 +195,70 @@ func TestDecideSessionStickyAndEscalateOnly(t *testing.T) {
 	assert.Equal(t, router.ReasonEscalated, d.ReasonKind)
 	assert.True(t, d.Escalated)
 	assert.Equal(t, "claude-opus", d.Models[0])
+
+	// 已处于最高可用 Rank 时跳过分类器直接沿用会话档位，不消耗分类器调用。
+	d = r2.Decide(t.Context(), router.Request{SessionTier: "strong", SessionModel: "claude-opus"})
+	assert.Equal(t, "strong", d.Tier)
+	assert.Equal(t, router.ReasonSticky, d.ReasonKind)
+	assert.Equal(t, "claude-opus", d.Models[0])
+	assert.Len(t, decider2.Requests(), 2)
+
+	// 显式 TierHint 和确定性规则优先级高于 SessionSticky。
+	pRule := samplePolicy()
+	pRule.SessionMode = router.SessionSticky
+	pRule.Rules = []router.Rule{{Name: "sql-debug", Tier: "strong", Keywords: []string{"deadlock"}}}
+	r3, err := router.New(pRule, sampleCandidates(), aitest.NewDecider())
+	require.NoError(t, err)
+	d = r3.Decide(t.Context(), router.Request{SessionTier: "fast", SessionModel: "deepseek-chat", TierHint: "strong"})
+	assert.Equal(t, "strong", d.Tier)
+	assert.Equal(t, router.ReasonHint, d.ReasonKind)
+	d = r3.Decide(t.Context(), router.Request{
+		SessionTier: "fast", SessionModel: "deepseek-chat",
+		Messages: []router.Message{{Role: "user", Content: "遇到 deadlock 怎么排查"}},
+	})
+	assert.Equal(t, "strong", d.Tier)
+	assert.Equal(t, router.ReasonRule, d.ReasonKind)
+}
+
+func TestDecideEqualRankAndStrictCandidates(t *testing.T) {
+	t.Parallel()
+	// 同 Rank 档位在低置信度时向更高 Rank 升档，而非横向跳到同 Rank 兄弟档位。
+	p := router.Policy{
+		Tiers: []router.Tier{
+			{Key: "fast_a", Rank: 1, Models: []string{"m-a"}},
+			{Key: "fast_b", Rank: 1, Models: []string{"m-b"}},
+			{Key: "strong", Rank: 2, Models: []string{"m-strong"}},
+		},
+		MinConfidence:    0.8,
+		StrictCandidates: true,
+	}
+	cands := []router.Candidate{
+		{ID: "m-a"},
+		{ID: "m-b"},
+		{ID: "m-strong"},
+	}
+	decider := aitest.NewDecider(map[string]ai.Answer{
+		"tier": {Choice: "fast_a", Confidence: 0.4, Probabilities: []float64{0.4, 0.3, 0.3}},
+	})
+	r, err := router.New(p, cands, decider)
+	require.NoError(t, err)
+	d := r.Decide(t.Context(), router.Request{})
+	assert.Equal(t, "strong", d.Tier)
+	assert.True(t, d.Escalated)
+
+	// StrictCandidates 拒绝未在候选池中声明的模型。
+	pStrict := router.Policy{
+		Tiers: []router.Tier{
+			{Key: "undeclared", Rank: 1, Models: []string{"ghost-model"}},
+			{Key: "known", Rank: 2, Models: []string{"m-strong"}},
+		},
+		StrictCandidates: true,
+	}
+	rStrict, err := router.New(pStrict, cands, nil)
+	require.NoError(t, err)
+	d = rStrict.Decide(t.Context(), router.Request{})
+	assert.Equal(t, "known", d.Tier)
+	assert.Equal(t, []string{"m-strong"}, d.Models)
 }
 
 type slowDecider struct{ delay time.Duration }
@@ -220,6 +284,7 @@ func TestDecideFallbackOnErrorTimeoutAndRefusal(t *testing.T) {
 	assert.Equal(t, router.ReasonFallback, d.ReasonKind)
 	assert.Equal(t, "claude-sonnet", d.Models[0])
 	assert.Contains(t, d.Reason, "upstream 503")
+	assert.ErrorContains(t, d.ClassifierErr, "upstream 503")
 
 	// 分类器超时时在 Timeout 内快速回退。
 	p := samplePolicy()

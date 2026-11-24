@@ -128,6 +128,7 @@ type Answer struct {
 	Score         float64   // 打分题各级别序号（从 0 开始）按概率加权的平均值，可能落在两个级别之间。
 	Probabilities []float64 // 选择题每个选项值的概率，或打分题每个级别的概率（按级别顺序）。
 	Confidence    float64   // 模型给出的置信度，没有给出时为 0。
+	HasConfidence bool      // 模型是否实际返回了置信度或概率分布，供路由区分“未提供置信度”与高置信度。
 
 	question Question
 }
@@ -135,6 +136,9 @@ type Answer struct {
 // NewAnswer 创建 q 的回答，供 Decider 的实现和测试替身使用；probabilities 按 q 的选项或级别顺序排列。
 func NewAnswer(q Question, a Answer) Answer {
 	a.Kind, a.question = q.Kind, q
+	if !a.HasConfidence && (a.Confidence > 0 || len(a.Probabilities) > 0) {
+		a.HasConfidence = true
+	}
 	return a
 }
 

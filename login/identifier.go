@@ -252,24 +252,28 @@ func (r *Realm) lockIdentifiers(ctx context.Context, db bun.IDB, subjectID strin
 	return ids, nil
 }
 
-// canSignIn 报告拥有登录标识 ids 的主体是否还能登录：第三方账号和 passkey 可以；
-// 设置了 Options.Send 时，邮箱和手机号可以用验证码登录；有密码时，PasswordKinds 中的标识可以用密码登录。
-// 只有用户名而没有密码的主体无法登录。
+// canSignIn 报告拥有登录标识 ids 的主体在当前策略下是否还能登录：
+// 按 Policy.Methods 检查密码、验证码、第三方账号和 passkey 是否被策略允许，避免移除后被锁定在策略之外。
 func (r *Realm) canSignIn(ctx context.Context, ids []Identifier, hasPassword bool) (bool, error) {
 	p, err := r.policy(ctx)
 	if err != nil {
 		return false, err
 	}
+	allowed := func(method string) bool {
+		return p.Methods == nil || slices.Contains(p.Methods, method)
+	}
 	for _, id := range ids {
 		switch {
-		case hasPassword && slices.Contains(p.PasswordKinds, id.Kind):
+		case hasPassword && allowed(MethodPassword) && slices.Contains(p.PasswordKinds, id.Kind):
 			return true, nil
 		case id.Kind == KindEmail || id.Kind == KindPhone:
-			if r.opts.Send != nil {
+			if r.opts.Send != nil && allowed(id.Kind) {
 				return true, nil
 			}
 		case id.Kind != KindUsername:
-			return true, nil
+			if allowed(id.Kind) {
+				return true, nil
+			}
 		}
 	}
 	return false, nil

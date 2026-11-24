@@ -197,7 +197,7 @@ func TestProcess(t *testing.T) {
 		!strings.HasPrefix(got.Filename, "personal-data-") || !strings.HasSuffix(got.Filename, ".zip") || got.ExpiresAt == nil {
 		t.Fatalf("completed: %+v", got)
 	}
-	want := []string{"running:0/0", "running:0/6", "running:1/6", "running:2/6", "running:3/6", "running:4/6", "running:5/6", "running:6/6", "completed:6/6"}
+	want := []string{"running:0/0", "running:0/6", "running:6/6", "completed:6/6"}
 	if !slices.Equal(rec.saves, want) {
 		t.Fatalf("saves: %v", rec.saves)
 	}

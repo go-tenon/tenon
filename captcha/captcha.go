@@ -78,8 +78,8 @@ type Verifier struct {
 	client   *http.Client
 }
 
-// New 创建 Verifier，不访问网络。client 为 nil 时使用 outbound.New 创建的客户端，超时为 Timeout；
-// 测试时传入 outboundtest 的客户端。
+// New 创建 Verifier，不访问网络。client 为 nil 时使用 outbound.Trusted(Timeout) 创建支持代理的客户端；
+// 测试时传入 httptest 的客户端。
 func New(cfg Config, client *http.Client) (*Verifier, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, errors.Wrap(err, "captcha")
@@ -89,7 +89,7 @@ func New(cfg Config, client *http.Client) (*Verifier, error) {
 		endpoint = Turnstile
 	}
 	if client == nil {
-		client = outbound.New(outbound.Options{Timeout: Timeout})
+		client = outbound.Trusted(Timeout)
 	}
 	return &Verifier{cfg: cfg, endpoint: endpoint, client: client}, nil
 }

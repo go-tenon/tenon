@@ -126,9 +126,10 @@ func (d *Disk) putMultipart(ctx context.Context, key, contentType string, first 
 			err = errors.Join(err, d.AbortMultipart(context.WithoutCancel(ctx), key, uploadID))
 		}
 	}()
-	// first 比一片多读了一个字节，把它接回剩余正文。
+	// first 比一片多读了一个字节，把它接回剩余正文；循环复用同一块 16MiB 缓冲区读取后续分片。
 	body := io.MultiReader(bytes.NewReader(first[uploadPartSize:]), rest)
 	part := first[:uploadPartSize]
+	next := make([]byte, uploadPartSize)
 	var parts []filesystem.Part
 	for number := int32(1); ; number++ {
 		out, err := d.client.UploadPart(ctx, &awss3.UploadPartInput{
@@ -139,7 +140,6 @@ func (d *Disk) putMultipart(ctx context.Context, key, contentType string, first 
 			return wrap("upload part", err)
 		}
 		parts = append(parts, filesystem.Part{Number: number, ETag: aws.ToString(out.ETag)})
-		next := make([]byte, uploadPartSize)
 		n, err := io.ReadFull(body, next)
 		if n == 0 && errors.Is(err, io.EOF) {
 			break
@@ -177,6 +177,17 @@ func (d *Disk) Delete(ctx context.Context, key string) error {
 		return nil
 	}
 	return wrap("delete object", err)
+}
+
+// SignGet 签发限时读取地址，供私有对象按需授权下载。
+func (d *Disk) SignGet(ctx context.Context, key string, ttl time.Duration) (filesystem.SignedRequest, error) {
+	out, err := d.presigner.PresignGetObject(ctx, &awss3.GetObjectInput{
+		Bucket: aws.String(d.bucket), Key: aws.String(key),
+	}, awss3.WithPresignExpires(ttl))
+	if err != nil {
+		return filesystem.SignedRequest{}, wrap("presign get", err)
+	}
+	return signed(out.URL, out.Method, out.SignedHeader), nil
 }
 
 // SignPut 签发单次上传地址，绑定长度和类型。地址只能创建对象，不能覆盖（If-None-Match: *）：

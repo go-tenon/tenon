@@ -109,7 +109,7 @@ export function createI18n<C extends Catalog>(options: I18nOptions<C>): I18n<Ids
     },
     has: (id) => all().some((catalog) => Object.values(catalog).some((table) => table[id] !== undefined)),
     extend(catalog) {
-      lower.push(catalog)
+      if (!lower.includes(catalog)) lower.push(catalog)
     },
     headers: () => ({ "Accept-Language": current }),
     subscribe(listener) {

@@ -188,8 +188,27 @@ func New(apps fs.FS, opts Options) (*Host, error) {
 // 请求交给挂载路径最长匹配的前端；不在任何前端之下的路径返回 404。
 func (h *Host) Handler() http.Handler { return h.handler }
 
+// internalAPIKey 标记经内部 API socket 进入 Go 路由的 SSR 回调请求，防止误落入 pages.Handler() 触发自循环代理。
+type internalAPIKey struct{}
+
+// wrapInternalAPI 为内部 API 入口打上请求标记，并在 Host 为内部占位名时从 X-Forwarded-Host 还原原始 Host，保留子域名多租户信息。
+func wrapInternalAPI(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r = r.WithContext(context.WithValue(r.Context(), internalAPIKey{}, true))
+		if fwdHost := strings.TrimSpace(r.Header.Get("X-Forwarded-Host")); fwdHost != "" && (r.Host == "" || r.Host == "go") {
+			r.Host = fwdHost
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // serveHTTP 把请求交给挂载路径匹配的前端：生产模式下先找静态文件，找不到时交给前端的处理器。
 func (h *Host) serveHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Context().Value(internalAPIKey{}) != nil {
+		h.logger.WarnContext(r.Context(), "blocked recursive SSR callback to frontend handler", "path", r.URL.Path)
+		http.Error(w, http.StatusText(http.StatusLoopDetected), http.StatusLoopDetected)
+		return
+	}
 	for _, a := range h.apps {
 		rel, ok := within(r.URL.Path, a.Base)
 		if !ok {
@@ -267,8 +286,12 @@ func (h *Host) Run(ctx context.Context, serve func(context.Context) error) error
 		if err != nil {
 			return errors.Wrap(err, "frontend: listen internal API")
 		}
-		internal := &http.Server{Handler: h.opts.API, ReadHeaderTimeout: 10 * time.Second}
-		go func() { _ = internal.Serve(ln) }()
+		internal := &http.Server{Handler: wrapInternalAPI(h.opts.API), ReadHeaderTimeout: 10 * time.Second}
+		go func() {
+			if err := internal.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				h.logger.Error("internal API server stopped unexpectedly", "error", err)
+			}
+		}()
 		closeInternal = func() error {
 			sctx, cancel := context.WithTimeout(context.Background(), h.opts.StopTimeout)
 			defer cancel()

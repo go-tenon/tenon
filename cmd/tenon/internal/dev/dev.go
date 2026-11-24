@@ -457,25 +457,42 @@ func goSource(path string) bool {
 // goInputs 返回判断文件是否影响应用编译的函数：Go 的源码（goSource），以及与带 //go:embed 的 .go 文件（测试除外）
 // 在同一个目录中的文件，例如 locales/embed.go 嵌入的翻译文件、migrations/embed.go 嵌入的 SQL，它们被编译进程序，
 // 改了也要重新编译。子目录中的文件不算：apps/apps.go 嵌入 apps/dist，前端的源码改了不重新编译 Go。
-// 返回的函数记下每个目录的结果，每次快照创建一个；读不了的目录和文件当作没有 //go:embed，与 snapshot 忽略读取错误相同。
+// 返回的函数按目录内非测试 .go 文件的元数据缓存扫描结果，目录中 Go 源码未变化时不重复读取文件内容。
 func goInputs() func(path string) bool {
-	embeds := map[string]bool{}
+	type dirCache struct {
+		sig   string
+		embed bool
+	}
+	embeds := map[string]dirCache{}
 	hasEmbed := func(dir string) bool {
-		if v, ok := embeds[dir]; ok {
-			return v
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return false
 		}
-		entries, _ := os.ReadDir(dir)
+		var sig strings.Builder
+		var goFiles []string
 		for _, e := range entries {
 			if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") || strings.HasSuffix(e.Name(), "_test.go") {
 				continue
 			}
-			if data, err := os.ReadFile(filepath.Join(dir, e.Name())); err == nil && bytes.Contains(data, []byte("//go:embed")) {
-				embeds[dir] = true
-				return true
+			goFiles = append(goFiles, e.Name())
+			if info, err := e.Info(); err == nil {
+				fmt.Fprintf(&sig, "%s:%d:%d;", e.Name(), info.Size(), info.ModTime().UnixNano())
 			}
 		}
-		embeds[dir] = false
-		return false
+		s := sig.String()
+		if c, ok := embeds[dir]; ok && c.sig == s {
+			return c.embed
+		}
+		found := false
+		for _, name := range goFiles {
+			if data, err := os.ReadFile(filepath.Join(dir, name)); err == nil && bytes.Contains(data, []byte("//go:embed")) {
+				found = true
+				break
+			}
+		}
+		embeds[dir] = dirCache{sig: s, embed: found}
+		return found
 	}
 	return func(path string) bool { return goSource(path) || hasEmbed(filepath.Dir(path)) }
 }

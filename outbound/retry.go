@@ -60,7 +60,7 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return t.next.RoundTrip(req)
 	}
 	ctx := req.Context()
-	attempt := req
+	attempt := req.Clone(ctx)
 	for n := 1; ; n++ {
 		resp, err := t.next.RoundTrip(attempt)
 		if n >= t.opts.Attempts || ctx.Err() != nil {

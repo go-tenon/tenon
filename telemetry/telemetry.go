@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	"go.opentelemetry.io/contrib/instrumentation/runtime"
@@ -139,9 +141,8 @@ func Open(ctx context.Context, cfg Config) (*Providers, error) {
 		sdklog.WithResource(res),
 		sdklog.WithProcessor(sdklog.NewBatchProcessor(logs)),
 	)
-	otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
-		slog.Default().Error("telemetry export failed", "component", "telemetry", "error", err)
-	}))
+	// 导出失败直接写到本地 stderr 且限频，避免经 slog.Default() 再次进入 OTLP 日志导出器形成自激循环。
+	otel.SetErrorHandler(newStderrErrorHandler())
 
 	// 日志最后关闭，前两者关闭时的错误还能推送出去。
 	return &Providers{
@@ -187,6 +188,36 @@ func executableName() string {
 		return filepath.Base(exe)
 	}
 	return filepath.Base(os.Args[0])
+}
+
+// errorLogInterval 是 OpenTelemetry 导出失败写 stderr 的最小间隔，防止后端不可用时刷屏。
+const errorLogInterval = time.Minute
+
+// newStderrErrorHandler 返回直接写 stderr 且按 errorLogInterval 节流的 OpenTelemetry 错误处理器。
+func newStderrErrorHandler() otel.ErrorHandler {
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	var (
+		mu         sync.Mutex
+		next       time.Time
+		suppressed int
+	)
+	return otel.ErrorHandlerFunc(func(err error) {
+		mu.Lock()
+		now := time.Now()
+		if now.Before(next) {
+			suppressed++
+			mu.Unlock()
+			return
+		}
+		dropped := suppressed
+		next, suppressed = now.Add(errorLogInterval), 0
+		mu.Unlock()
+		if dropped > 0 {
+			logger.Error("telemetry export failed", "component", "telemetry", "error", err, "suppressed", dropped)
+			return
+		}
+		logger.Error("telemetry export failed", "component", "telemetry", "error", err)
+	})
 }
 
 // buildVersion 返回主模块版本；本地构建的 (devel) 视为无版本。
