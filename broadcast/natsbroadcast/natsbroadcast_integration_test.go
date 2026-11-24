@@ -161,3 +161,32 @@ func TestLargeMessages(t *testing.T) {
 		t.Fatalf("got %v", got)
 	}
 }
+
+// 未订阅大消息主题的实例不会收到分片流量，只收到自己订阅的主题。
+func TestUnsubscribedInstanceIsolatedFromLargeMessages(t *testing.T) {
+	t.Parallel()
+	p := prefix()
+	pubNC := natstest.Connect(t)
+	subNC := natstest.Connect(t)
+	pub := broadcast.New(natsbroadcast.New(pubNC, p), nil)
+	defer pub.Close()
+	subHub := broadcast.New(natsbroadcast.New(subNC, p), nil)
+	defer subHub.Close()
+
+	sub := subHub.Subscribe("room:small")
+	before := subNC.Statistics.InBytes
+	ctx := context.Background()
+	big := bytes.Repeat([]byte("x"), int(pubNC.MaxPayload())*3)
+	if err := pub.Publish(ctx, "room:big", big); err != nil {
+		t.Fatal(err)
+	}
+	if err := pub.Publish(ctx, "room:small", []byte("ok")); err != nil {
+		t.Fatal(err)
+	}
+	if m := broadcasttest.Receive(t, sub); string(m.Data) != "ok" {
+		t.Fatalf("got %+v", m)
+	}
+	if delta := subNC.Statistics.InBytes - before; delta > uint64(pubNC.MaxPayload()) {
+		t.Fatalf("unsubscribed instance received %d bytes from room:big", delta)
+	}
+}

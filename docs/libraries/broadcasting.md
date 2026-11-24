@@ -98,7 +98,7 @@ return rest.SSE(func(s *httpx.Stream) error {
 <a id="backends"></a>
 ## NATS 后端：`natsbroadcast`
 
-`natsbroadcast.New(nc, prefix)` 经由 NATS 的发布订阅在实例之间传递消息，不需要 JetStream。主题 `room:42` 的消息发布到 `<prefix>.room:42`，每个实例订阅 `<prefix>.>`。
+`natsbroadcast.New(nc, prefix)` 经由 NATS 的发布订阅在实例之间传递消息，不需要 JetStream。主题 `room:42` 的消息发布到 `<prefix>.room:42`，每个实例只向 NATS 订阅当前有本地订阅者的精确 subject，最后一个订阅者离开时自动退订。
 
 - 同一个应用的所有实例使用同一套 NATS 和同一个前缀，否则收不到其他实例的消息；前缀区分共用 NATS 的应用和环境。
 - 单机部署也经由 NATS：[不停机升级](../installation/operations.md#upgrade-overlap)时新旧进程并存，旧进程发布的事件要送到已经连到新进程的浏览器。
@@ -121,7 +121,7 @@ return rest.SSE(func(s *httpx.Stream) error {
 <a id="testing"></a>
 ## 测试
 
-`broadcasttest.NewBackend()` 是内存后端，只用于测试。同一个后端上的多个 Hub 互相收到消息，相当于多个实例；刚创建的 Hub 也能收到紧接着发布的消息：
+`broadcasttest.NewBackend()` 是内存后端，只用于测试。同一个后端上的多个 Hub 各自维护独立的主题订阅，互相只投递已订阅主题的消息，相当于多个实例：
 
 ```go
 hub := broadcast.New(broadcasttest.NewBackend(), nil)

@@ -42,9 +42,10 @@ func CheckCredential(ctx context.Context) error {
 // CredentialWatcher 在凭据可能已经变化时通知长连接立即重新校验。
 // broadcast.Credentials 是基于广播的实现，多个实例之间也能互相通知。
 type CredentialWatcher interface {
-	// Watch 返回一个通道：sub 所用的凭据（sub.Credential）、sub 本身（sub.Ref()），
-	// 或调用所在的租户（TenantFromContext）被要求复查时，通道收到信号。ctx 结束时停止关注。
-	Watch(ctx context.Context, sub Subject) <-chan struct{}
+	// Watch 关注 sub 所用的凭据（sub.Credential）、sub 本身（sub.Ref()）、
+	// 代为登录的操作者（sub.Impersonator）以及调用所在的租户（TenantFromContext），
+	// 收到复查信号时调用 onChange。onChange 必须立即返回；ctx 结束时停止关注。
+	Watch(ctx context.Context, sub Subject, onChange func())
 }
 
 // watcherKey 是 CredentialWatcher 在 context 中的键。
@@ -57,6 +58,7 @@ func WithCredentialWatcher(ctx context.Context, w CredentialWatcher) context.Con
 }
 
 // WatchCredential 用 ctx 中的 CredentialWatcher 关注 ctx 中主体的凭据，
+// 返回接收复查信号的通道，多个信号在读取前合并为一个。
 // 没有 CredentialWatcher 或主体时返回 nil（从 nil 通道接收会一直阻塞，select 中可以直接使用）。
 func WatchCredential(ctx context.Context) <-chan struct{} {
 	w, _ := ctx.Value(watcherKey{}).(CredentialWatcher)
@@ -64,5 +66,12 @@ func WatchCredential(ctx context.Context) <-chan struct{} {
 	if w == nil || !ok {
 		return nil
 	}
-	return w.Watch(ctx, sub)
+	ch := make(chan struct{}, 1)
+	w.Watch(ctx, sub, func() {
+		select {
+		case ch <- struct{}{}:
+		default:
+		}
+	})
+	return ch
 }

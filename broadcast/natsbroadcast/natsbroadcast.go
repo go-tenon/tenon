@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cockroachdb/errors"
@@ -18,12 +19,13 @@ import (
 
 var _ broadcast.Backend = (*Backend)(nil)
 
-// Backend 把主题 topic 的消息发布到 subject <prefix>.<topic>，每个实例订阅 <prefix>.> 后在本地按主题分发。
+// Backend 把主题 topic 的消息发布到 subject <prefix>.<topic>，每个实例只向 NATS 订阅本实例当前有订阅者的精确 subject。
 // 主题的 '.' 是 subject 的分隔符，broadcast.ValidateTopic 保证主题可以直接作为 subject 的一部分。
 //
+// 同一会话下的全部 subject 共用一条有序接收通道，跨主题保持同一连接上的发布顺序。
 // NATS 发布订阅只转发在线的消息：连接中断期间其他实例发布的消息会丢失；订阅跟不上时，NATS 客户端丢弃消息。
-// 这些情况 Backend 都报告丢失（连接断开时和重新连上时各报告一次），Hub 随之以 broadcast.ErrLost
-// 结束全部订阅，客户端重连后由应用补发。
+// 这些情况会话都报告丢失（连接断开时、重新连上时和检测到丢包时），Hub 随之以 broadcast.ErrLost
+// 结束全部订阅并通知接收器，客户端重连后由应用补发。
 type Backend struct {
 	nc     *nats.Conn
 	prefix string
@@ -59,11 +61,16 @@ func validPrefix(s string) bool {
 	return true
 }
 
-// chunkHeader 标记分片发送的消息的一片："<消息 ID> <序号> <总片数>"，序号从 0 开始。
-const chunkHeader = "Tenon-Chunk"
-
-// chunkHeadroom 是每一片给 subject 和消息头留出的字节数。
-const chunkHeadroom = 4 << 10
+const (
+	// chunkHeader 标记分片发送的消息的一片："<消息 ID> <序号> <总片数>"，序号从 0 开始。
+	chunkHeader = "Tenon-Chunk"
+	// chunkHeadroom 是每一片给 subject 和消息头留出的字节数。
+	chunkHeadroom = 4 << 10
+	// flushTimeout 是 Subscribe 等待 NATS 服务器确认订阅生效的时限。
+	flushTimeout = 5 * time.Second
+	// recvBufferSize 是共享接收通道的容量，所有按需订阅的 subject 按到达顺序汇入同一通道。
+	recvBufferSize = 4096
+)
 
 // Publish 实现 broadcast.Backend。消息由连接在后台发送；连接中断期间先缓存在客户端，重新连上后发出。
 //
@@ -88,69 +95,195 @@ func (b *Backend) Publish(_ context.Context, msg broadcast.Message) error {
 	return nil
 }
 
-// Listen 实现 broadcast.Backend：订阅 <prefix>.>，连接断开、重新连上和订阅跟不上时报告丢失。
-// 断开期间 NATS 客户端自己重连并恢复订阅；订阅本身出错（例如连接已经关闭）时报告丢失，稍后重新订阅。
-func (b *Backend) Listen(ctx context.Context, deliver func(broadcast.Message), lost func(error)) {
+// Open 实现 broadcast.Backend：创建按需订阅的 NATS 接收会话。
+func (b *Backend) Open(deliver func(broadcast.Message), lost func(error)) broadcast.Session {
+	s := &session{
+		nc:      b.nc,
+		prefix:  b.prefix,
+		deliver: deliver,
+		lost:    lost,
+		ch:      make(chan *nats.Msg, recvBufferSize),
+		done:    make(chan struct{}),
+		subs:    map[string]*nats.Subscription{},
+		dropped: map[*nats.Subscription]int{},
+	}
 	status := b.nc.StatusChanged(nats.RECONNECTING, nats.DISCONNECTED, nats.CONNECTED, nats.CLOSED)
-	defer b.nc.RemoveStatusListener(status)
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case s, ok := <-status:
-				if !ok {
-					return
-				}
-				if s == nats.CONNECTED {
-					lost(errors.New("natsbroadcast: reconnected; messages published while disconnected were lost"))
-				} else {
-					lost(errors.Newf("natsbroadcast: connection %s", s))
+	s.wg.Add(2)
+	go s.readLoop()
+	go s.statusLoop(status)
+	return s
+}
+
+// session 是 NATS Backend 的按需接收会话。
+type session struct {
+	nc      *nats.Conn
+	prefix  string
+	deliver func(broadcast.Message)
+	lost    func(error)
+
+	ch   chan *nats.Msg
+	done chan struct{}
+	wg   sync.WaitGroup
+
+	mu      sync.Mutex
+	subs    map[string]*nats.Subscription
+	dropped map[*nats.Subscription]int // 上次记录的丢包计数，用于检测慢消费者
+	closed  bool
+}
+
+// Subscribe 为本会话登记 topics 对应的精确 subject 订阅，并在连接正常时等待 NATS 服务器确认。
+func (s *session) Subscribe(topics ...string) error {
+	var added []string
+	var addedSubs []*nats.Subscription
+
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return broadcast.ErrClosed
+	}
+	for _, topic := range topics {
+		if _, ok := s.subs[topic]; ok {
+			continue
+		}
+		sub, err := s.nc.ChanSubscribe(s.prefix+"."+topic, s.ch)
+		if err != nil {
+			for i, t := range added {
+				_ = addedSubs[i].Unsubscribe()
+				delete(s.subs, t)
+				delete(s.dropped, addedSubs[i])
+			}
+			s.mu.Unlock()
+			return errors.Wrap(err, "natsbroadcast: subscribe")
+		}
+		s.subs[topic] = sub
+		s.dropped[sub] = 0
+		added = append(added, topic)
+		addedSubs = append(addedSubs, sub)
+	}
+	s.mu.Unlock()
+
+	if len(added) > 0 && s.nc.Status() == nats.CONNECTED {
+		if err := s.nc.FlushTimeout(flushTimeout); err != nil {
+			s.mu.Lock()
+			for i, t := range added {
+				if s.subs[t] == addedSubs[i] {
+					_ = addedSubs[i].Unsubscribe()
+					delete(s.subs, t)
+					delete(s.dropped, addedSubs[i])
 				}
 			}
+			s.mu.Unlock()
+			return errors.Wrap(err, "natsbroadcast: flush subscribe")
 		}
-	}()
+	}
+	return nil
+}
 
-	backoff := 100 * time.Millisecond
+// Unsubscribe 取消本会话对 topics 对应 subject 的订阅。
+func (s *session) Unsubscribe(topics ...string) error {
+	var removed []*nats.Subscription
+	s.mu.Lock()
+	for _, topic := range topics {
+		if sub, ok := s.subs[topic]; ok {
+			delete(s.subs, topic)
+			delete(s.dropped, sub)
+			removed = append(removed, sub)
+		}
+	}
+	s.mu.Unlock()
+
+	var firstErr error
+	for _, sub := range removed {
+		if err := sub.Unsubscribe(); err != nil && !errors.Is(err, nats.ErrConnectionClosed) && firstErr == nil {
+			firstErr = errors.Wrap(err, "natsbroadcast: unsubscribe")
+		}
+	}
+	return firstErr
+}
+
+// Close 取消全部订阅并停止接收，返回后不再调用 deliver 和 lost。
+func (s *session) Close() error {
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return nil
+	}
+	s.closed = true
+	subs := make([]*nats.Subscription, 0, len(s.subs))
+	for _, sub := range s.subs {
+		subs = append(subs, sub)
+	}
+	clear(s.subs)
+	clear(s.dropped)
+	s.mu.Unlock()
+
+	close(s.done)
+	for _, sub := range subs {
+		_ = sub.Unsubscribe()
+	}
+	s.wg.Wait()
+	return nil
+}
+
+// readLoop 按到达顺序消费共享通道中的消息，拼合分片后交给 deliver。
+func (s *session) readLoop() {
+	defer s.wg.Done()
+	chunks := assembler{}
+	prefixLen := len(s.prefix) + 1
 	for {
-		subscribed, err := b.listen(ctx, deliver, lost)
-		if ctx.Err() != nil {
-			return
-		}
-		lost(err)
-		if subscribed {
-			backoff = 100 * time.Millisecond
-		}
 		select {
-		case <-ctx.Done():
+		case <-s.done:
 			return
-		case <-time.After(backoff):
+		case msg := <-s.ch:
+			if s.checkDropped(msg.Sub) {
+				s.lost(errors.Wrap(nats.ErrSlowConsumer, "natsbroadcast"))
+			}
+			if len(msg.Subject) <= prefixLen {
+				continue
+			}
+			if data, ok := chunks.add(msg, time.Now()); ok {
+				s.deliver(broadcast.Message{Topic: msg.Subject[prefixLen:], Data: data})
+			}
 		}
-		backoff = min(backoff*2, 5*time.Second)
 	}
 }
 
-// listen 订阅并接收消息，直到订阅出错或 ctx 结束。subscribed 报告是否曾订阅成功。
-func (b *Backend) listen(ctx context.Context, deliver func(broadcast.Message), lost func(error)) (subscribed bool, err error) {
-	sub, err := b.nc.SubscribeSync(b.prefix + ".>")
-	if err != nil {
-		return false, errors.Wrap(err, "natsbroadcast: subscribe")
+// checkDropped 报告 sub 的丢包数是否自上次检查以来增加了。
+func (s *session) checkDropped(sub *nats.Subscription) bool {
+	if sub == nil {
+		return false
 	}
-	defer func() { _ = sub.Unsubscribe() }()
-	chunks := assembler{}
+	n, err := sub.Dropped()
+	if err != nil || n == 0 {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	prev, ok := s.dropped[sub]
+	if !ok || n <= prev {
+		return false
+	}
+	s.dropped[sub] = n
+	return true
+}
+
+// statusLoop 监听 NATS 连接状态变化，断开或重连时报告可能丢消息。
+func (s *session) statusLoop(status chan nats.Status) {
+	defer s.wg.Done()
+	defer s.nc.RemoveStatusListener(status)
 	for {
-		msg, err := sub.NextMsgWithContext(ctx)
-		switch {
-		case err == nil:
-			data, ok := chunks.add(msg, time.Now())
-			if ok {
-				deliver(broadcast.Message{Topic: msg.Subject[len(b.prefix)+1:], Data: data})
+		select {
+		case <-s.done:
+			return
+		case st, ok := <-status:
+			if !ok {
+				return
 			}
-		case errors.Is(err, nats.ErrSlowConsumer):
-			// 客户端的缓冲区满了，丢弃过消息；订阅仍然有效。
-			lost(errors.Wrap(err, "natsbroadcast"))
-		default:
-			return true, errors.Wrap(err, "natsbroadcast: receive")
+			if st == nats.CONNECTED {
+				s.lost(errors.New("natsbroadcast: reconnected; messages published while disconnected were lost"))
+			} else {
+				s.lost(errors.Newf("natsbroadcast: connection %s", st))
+			}
 		}
 	}
 }

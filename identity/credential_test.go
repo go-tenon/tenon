@@ -39,13 +39,15 @@ func TestCheckCredential(t *testing.T) {
 	}
 }
 
-type watcher struct{ ch chan struct{} }
+type watcher struct{ trigger func() }
 
-func (w watcher) Watch(context.Context, identity.Subject) <-chan struct{} { return w.ch }
+func (w *watcher) Watch(_ context.Context, _ identity.Subject, onChange func()) {
+	w.trigger = onChange
+}
 
 func TestWatchCredential(t *testing.T) {
 	t.Parallel()
-	w := watcher{ch: make(chan struct{})}
+	w := &watcher{}
 	ctx := context.Background()
 	if identity.WatchCredential(identity.WithCredentialWatcher(ctx, w)) != nil {
 		t.Fatal("watched without a subject")
@@ -54,7 +56,21 @@ func TestWatchCredential(t *testing.T) {
 		t.Fatal("watched without a watcher")
 	}
 	both := identity.WithCredentialWatcher(identity.WithSubject(ctx, identity.Subject{ID: "alice"}), w)
-	if got := identity.WatchCredential(both); got != (<-chan struct{})(w.ch) {
-		t.Fatal("watcher channel not returned")
+	ch := identity.WatchCredential(both)
+	if ch == nil || w.trigger == nil {
+		t.Fatal("watcher was not registered")
+	}
+	// 多次回调合并为一个通道信号。
+	w.trigger()
+	w.trigger()
+	select {
+	case <-ch:
+	default:
+		t.Fatal("expected signal on channel")
+	}
+	select {
+	case <-ch:
+		t.Fatal("signals were not coalesced")
+	default:
 	}
 }

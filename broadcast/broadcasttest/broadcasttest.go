@@ -11,7 +11,7 @@ import (
 	"github.com/go-tenon/tenon/broadcast"
 )
 
-// TestBackend 检查 Backend 的共同行为。newBackends 返回连到同一个后端（同一张表、同一个频道）的
+// TestBackend 检查 Backend 的共同行为。newBackends 返回连到同一个后端（同一张表、同一个命名空间）的
 // 两个新 Backend，模拟两个实例；每次调用都应当使用独立的命名空间，测试之间互不干扰。
 func TestBackend(t *testing.T, newBackends func(t *testing.T) (a, b broadcast.Backend)) {
 	t.Run("delivers to every instance", func(t *testing.T) {
@@ -29,6 +29,45 @@ func TestBackend(t *testing.T, newBackends func(t *testing.T) (a, b broadcast.Ba
 		case m := <-other.C():
 			t.Fatalf("other topic received %+v", m)
 		case <-time.After(200 * time.Millisecond):
+		}
+	})
+
+	t.Run("delivers only subscribed topics", func(t *testing.T) {
+		ba, bb := newBackends(t)
+		got := make(chan broadcast.Message, 8)
+		sa := ba.Open(func(broadcast.Message) {}, func(error) {})
+		sb := bb.Open(func(m broadcast.Message) { got <- m }, func(error) {})
+		t.Cleanup(func() { _, _ = sa.Close(), sb.Close() })
+
+		if err := sb.Subscribe("room:1"); err != nil {
+			t.Fatal(err)
+		}
+		if err := ba.Publish(context.Background(), broadcast.Message{Topic: "room:2", Data: []byte("ignored")}); err != nil {
+			t.Fatal(err)
+		}
+		if err := ba.Publish(context.Background(), broadcast.Message{Topic: "room:1", Data: []byte("wanted")}); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case m := <-got:
+			if m.Topic != "room:1" || string(m.Data) != "wanted" {
+				t.Fatalf("received %+v, want room:1/wanted", m)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("subscribed topic message did not arrive")
+		}
+
+		// 退订之后不再接收该主题。
+		if err := sb.Unsubscribe("room:1"); err != nil {
+			t.Fatal(err)
+		}
+		if err := ba.Publish(context.Background(), broadcast.Message{Topic: "room:1", Data: []byte("after unsub")}); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case m := <-got:
+			t.Fatalf("received message after unsubscribe: %+v", m)
+		case <-time.After(150 * time.Millisecond):
 		}
 	})
 
@@ -99,8 +138,7 @@ func Receive(t *testing.T, sub *broadcast.Subscription) broadcast.Message {
 	return broadcast.Message{}
 }
 
-// Ready 等到 hubs 都已经开始接收：反复从第一个 Hub 发布探测消息，直到每个 Hub 都收到一条。
-// Backend 在后台开始监听，刚创建的 Hub 可能还收不到消息；重新订阅之前 Backend 报告的丢失会结束探测订阅，这时换一个新的。
+// Ready 等到 hubs 都已经能够收发消息：反复从第一个 Hub 发布探测消息，直到每个 Hub 都收到一条。
 func Ready(t *testing.T, hubs ...*broadcast.Hub) {
 	t.Helper()
 	for _, h := range hubs {

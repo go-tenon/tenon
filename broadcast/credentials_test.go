@@ -31,15 +31,26 @@ func signaled(t *testing.T, ch <-chan struct{}, want bool, what string) {
 	}
 }
 
+// watchChan 把 Credentials.Watch 的回调转为单缓冲通道，便于测试断言。
+func watchChan(ctx context.Context, creds *broadcast.Credentials, sub identity.Subject) <-chan struct{} {
+	ch := make(chan struct{}, 1)
+	creds.Watch(ctx, sub, func() {
+		select {
+		case ch <- struct{}{}:
+		default:
+		}
+	})
+	return ch
+}
+
 func TestCredentialsWatch(t *testing.T) {
+	t.Parallel()
 	hub := broadcast.New(broadcasttest.NewBackend(), nil)
 	defer hub.Close()
 	creds := broadcast.NewCredentials(hub)
 	ctx, cancel := context.WithCancel(identity.WithTenant(context.Background(), "acme"))
 	defer cancel()
-	ch := creds.Watch(ctx, identity.Subject{Type: "user", ID: "alice", Credential: "token:1", Impersonator: identity.Ref{Type: "staff", ID: "s1"}})
-	// Watch 在后台订阅；等订阅生效再发提醒。
-	time.Sleep(20 * time.Millisecond)
+	ch := watchChan(ctx, creds, identity.Subject{Type: "user", ID: "alice", Credential: "token:1", Impersonator: identity.Ref{Type: "staff", ID: "s1"}})
 
 	bg := context.Background()
 	for _, tc := range []struct {
@@ -70,7 +81,6 @@ func TestCredentialsWatch(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	time.Sleep(50 * time.Millisecond) // 等后台把三条提醒都转成信号
 	signaled(t, ch, true, "first of merged")
 	signaled(t, ch, false, "merged")
 
@@ -88,62 +98,87 @@ func TestCredentialsWatch(t *testing.T) {
 	signaled(t, ch, false, "after ctx ended")
 }
 
-// lossyBackend 在进程内投递消息，Lose 让 Hub 以为丢了消息。
+// lossyBackend 在进程内投递已订阅主题的消息，Lose 让 Hub 以为丢了消息。
 type lossyBackend struct {
 	mu      sync.Mutex
 	deliver func(broadcast.Message)
 	lost    func(error)
-	ready   chan struct{}
+	topics  map[string]struct{}
 }
 
 func (b *lossyBackend) Publish(_ context.Context, msg broadcast.Message) error {
 	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.deliver(msg)
+	_, ok := b.topics[msg.Topic]
+	deliver := b.deliver
+	b.mu.Unlock()
+	if ok && deliver != nil {
+		deliver(msg)
+	}
 	return nil
 }
 
-func (b *lossyBackend) Listen(ctx context.Context, deliver func(broadcast.Message), lost func(error)) {
+func (b *lossyBackend) Open(deliver func(broadcast.Message), lost func(error)) broadcast.Session {
 	b.mu.Lock()
 	b.deliver, b.lost = deliver, lost
+	b.topics = map[string]struct{}{}
 	b.mu.Unlock()
-	close(b.ready)
-	<-ctx.Done()
+	return &lossySession{b: b}
 }
 
 func (b *lossyBackend) Lose() {
 	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.lost(errors.New("connection reset"))
+	lost := b.lost
+	b.mu.Unlock()
+	lost(errors.New("connection reset"))
 }
 
-// Backend 可能丢了消息时，Watch 先发一个信号让连接复查，再重新订阅，之后的提醒照常送达。
-func TestCredentialsWatchResubscribesAfterLoss(t *testing.T) {
-	backend := &lossyBackend{ready: make(chan struct{})}
+type lossySession struct{ b *lossyBackend }
+
+func (s *lossySession) Subscribe(topics ...string) error {
+	s.b.mu.Lock()
+	for _, topic := range topics {
+		s.b.topics[topic] = struct{}{}
+	}
+	s.b.mu.Unlock()
+	return nil
+}
+
+func (s *lossySession) Unsubscribe(topics ...string) error {
+	s.b.mu.Lock()
+	for _, topic := range topics {
+		delete(s.b.topics, topic)
+	}
+	s.b.mu.Unlock()
+	return nil
+}
+
+func (s *lossySession) Close() error { return nil }
+
+// Backend 可能丢了消息时，Watch 发出一次提醒，之后的提醒照常送达。
+func TestCredentialsWatchSignalsAfterLoss(t *testing.T) {
+	t.Parallel()
+	backend := &lossyBackend{}
 	hub := broadcast.New(backend, nil)
 	defer hub.Close()
-	<-backend.ready
 	creds := broadcast.NewCredentials(hub)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	ch := creds.Watch(ctx, identity.Subject{Type: "user", ID: "alice"})
-	time.Sleep(20 * time.Millisecond)
+	ch := watchChan(ctx, creds, identity.Subject{Type: "user", ID: "alice"})
 
 	backend.Lose()
 	signaled(t, ch, true, "after loss")
-	time.Sleep(20 * time.Millisecond)
 	if err := creds.RecheckSubject(context.Background(), identity.Ref{Type: "user", ID: "alice"}); err != nil {
 		t.Fatal(err)
 	}
-	signaled(t, ch, true, "after resubscribe")
+	signaled(t, ch, true, "after loss recovery")
 }
 
-// Hub 关闭后 Watch 停止重新订阅。
+// Hub 关闭后 Watch 不再收到提醒。
 func TestCredentialsWatchStopsWhenHubCloses(t *testing.T) {
+	t.Parallel()
 	hub := broadcast.New(broadcasttest.NewBackend(), nil)
 	creds := broadcast.NewCredentials(hub)
-	ch := creds.Watch(context.Background(), identity.Subject{Type: "user", ID: "alice"})
-	time.Sleep(20 * time.Millisecond)
+	ch := watchChan(context.Background(), creds, identity.Subject{Type: "user", ID: "alice"})
 	if err := hub.Close(); err != nil {
 		t.Fatal(err)
 	}
