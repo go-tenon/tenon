@@ -3,6 +3,7 @@ package queue_test
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -25,6 +26,9 @@ func TestAdmin(t *testing.T) {
 	}
 
 	release := make(chan struct{})
+	var releaseOnce sync.Once
+	unblock := func() { releaseOnce.Do(func() { close(release) }) }
+	t.Cleanup(unblock)
 	handled := make(chan int, 10)
 	register := func(w *queue.Worker) {
 		jobs.Handle(w, func(_ context.Context, p payload) error {
@@ -64,11 +68,15 @@ func TestAdmin(t *testing.T) {
 	if !jobsStatus.Handled || jobsStatus.LastDelivered.IsZero() || jobsStatus.Stalled() || orphan.Handled {
 		t.Fatalf("topics %+v %+v", jobsStatus, orphan)
 	}
-	outbox, err := queue.ReadStatus(ctx, db)
-	if err != nil || outbox.Pending != 0 || outbox.Deferred != 1 {
-		t.Fatalf("outbox %+v %v", outbox, err)
-	}
-	close(release)
+	// 任务进入 JetStream 时，relayOnce 删除 outbox 行的事务可能仍在提交途中，等待其可见。
+	eventually(t, 5*time.Second, func() bool {
+		outbox, err := queue.ReadStatus(ctx, db)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return outbox.Pending == 0 && outbox.Deferred == 1
+	})
+	unblock()
 	<-handled
 
 	until := time.Now().Add(time.Hour)

@@ -30,6 +30,9 @@ type envelope struct {
 	AvailableAt time.Time         `json:"available_at"`
 }
 
+// dedupMetaKey 是 queue_outbox.metadata 中存放自定义去重键的内部键名。
+const dedupMetaKey = "tenon.dedup_key"
+
 // outboxJob 是 queue_outbox 表中的一行：待转发到 JetStream 的任务或尚未到期的延迟任务。
 type outboxJob struct {
 	bun.BaseModel `bun:"table:queue_outbox,alias:o"`

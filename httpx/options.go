@@ -2,11 +2,12 @@ package httpx
 
 import (
 	"log/slog"
+	"net/http"
 
 	goi18n "github.com/nicksnyder/go-i18n/v2/i18n"
 )
 
-// DefaultsOption 是 Defaults 的选项：Logger、Languages。
+// DefaultsOption 是 Defaults 的选项：Logger、Languages、BodyLimitFor。
 type DefaultsOption interface{ applyDefaults(*defaultsOptions) }
 
 // ServeOption 是 Serve 和 ListenAndServe 的选项：Logger、OnReady、SkipDrainDelay。
@@ -14,8 +15,9 @@ type ServeOption interface{ applyServe(*serveOptions) }
 
 // defaultsOptions 是 Defaults 的选项。
 type defaultsOptions struct {
-	logger    *slog.Logger
-	languages *goi18n.Bundle
+	logger       *slog.Logger
+	languages    *goi18n.Bundle
+	bodyLimitFor func(*http.Request) int64
 }
 
 // serveOptions 是 Serve 的选项。
@@ -65,3 +67,15 @@ func (o languagesOption) applyDefaults(d *defaultsOptions) { d.languages = o.bun
 // Languages 让 Defaults 中的 Locale 按 bundle 协商请求语言、翻译错误消息，见 i18n 包。
 // 不传时只启用框架内置的简体中文消息（zh-CN）。
 func Languages(bundle *goi18n.Bundle) DefaultsOption { return languagesOption{bundle: bundle} }
+
+// bodyLimitForOption 是 BodyLimitFor 返回的选项。
+type bodyLimitForOption struct{ fn func(*http.Request) int64 }
+
+// applyDefaults 设置 Defaults 中按请求覆盖请求体上限的函数。
+func (o bodyLimitForOption) applyDefaults(d *defaultsOptions) { d.bodyLimitFor = o.fn }
+
+// BodyLimitFor 按请求动态决定请求体字节上限（例如只为文件上传路径放宽上限，其余路径保持默认的 1 MiB）。
+// fn 返回大于 0 的值时替代 cfg.BodyLimit.MaxBytes，返回不大于 0 的值时沿用默认上限。
+func BodyLimitFor(fn func(*http.Request) int64) DefaultsOption {
+	return bodyLimitForOption{fn: fn}
+}

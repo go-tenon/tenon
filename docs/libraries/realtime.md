@@ -124,9 +124,9 @@ router.Handle("/t/{tenant}/realtime", rt.Handler())
 ```
 
 <a id="revocation"></a>
-### 撤销后立即断开：`Credentials`
+### 撤销后立即断开：`Credentials` 与 `CheckTenant`
 
-把 [`broadcast.Credentials`](../http/sse.md#immediate-revocation) 交给 `Options.Credentials`，退出登录、撤销 token 时照常调用 `Recheck*`，连接立即重新校验。改了用户的角色后调用 `RecheckSubject`，失去权限的私有频道随即退订。
+把 [`broadcast.Credentials`](../http/sse.md#immediate-revocation) 交给 `Options.Credentials`，同时传给 `apitoken.Credentials` 和 `authz.Credentials`，撤销令牌、调整角色或移出成员提交后会自动通知受影响的长连接立即复查。多租户应用通过 `Options.CheckTenant` 校验租户是否仍可用；复查时使用不含握手期中间件快照的干净上下文。
 
 <a id="presence"></a>
 ## 在线成员：`Presence` 与 `Members`

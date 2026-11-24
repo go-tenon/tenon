@@ -79,6 +79,7 @@ type Worker struct {
 type handler struct {
 	topic       string
 	fn          func(ctx context.Context, payload []byte) error
+	onDead      func(ctx context.Context, payload []byte, err error) error
 	concurrency int
 	maxAttempts int
 }
@@ -331,7 +332,7 @@ func (w *Worker) process(h *handler, m jetstream.Msg) {
 				w.observe(ctx, Event{Kind: JobSucceeded, Job: j, Started: started, Duration: time.Since(started)})
 				return
 			}
-			w.nack(ctx, m, j, err, h.maxAttempts, started)
+			w.nack(ctx, h, m, j, err, started)
 			return
 		case <-ticker.C:
 			_ = m.InProgress()
@@ -346,9 +347,9 @@ func (w *Worker) process(h *handler, m jetstream.Msg) {
 	}
 }
 
-// nack 通过 JetStream 原生延迟重投安排重试，或者把任务转入失败任务表并同步确认。
-func (w *Worker) nack(ctx context.Context, m jetstream.Msg, j Job, cause error, maxAttempts int, started time.Time) {
-	if !IsPermanent(cause) && j.Attempt < maxAttempts {
+// nack 通过 JetStream 原生延迟重投安排重试，或者在执行 OnDead 后把任务转入失败任务表并同步确认。
+func (w *Worker) nack(ctx context.Context, h *handler, m jetstream.Msg, j Job, cause error, started time.Time) {
+	if !IsPermanent(cause) && j.Attempt < h.maxAttempts {
 		delay := retryDelay(cause, j.Attempt)
 		retryAt := time.Now().Add(delay).UTC()
 		if err := nakAfter(m, delay); err != nil {
@@ -357,6 +358,13 @@ func (w *Worker) nack(ctx context.Context, m jetstream.Msg, j Job, cause error, 
 		w.logger.WarnContext(ctx, "job failed, will retry", "topic", j.Topic, "retry_in", delay, "error", cause)
 		w.observe(ctx, Event{Kind: JobRetrying, Job: j, Started: started, Duration: time.Since(started), Err: cause, RetryAt: retryAt})
 		return
+	}
+	if h.onDead != nil {
+		if err := withTimeout(func(deadCtx context.Context) error { return callDead(deadCtx, h.onDead, j.Payload, cause) }); err != nil {
+			w.logger.ErrorContext(ctx, "on dead callback failed", "topic", j.Topic, "error", err)
+			_ = nakAfter(m, time.Minute)
+			return
+		}
 	}
 	record := failedJob{ID: j.ID, Topic: j.Topic, Payload: j.Payload, Metadata: j.Metadata,
 		Attempts: j.Attempt, Error: fmt.Sprintf("%+v", cause)}
@@ -376,6 +384,16 @@ func (w *Worker) ackSync(ctx context.Context, m jetstream.Msg, topic string) {
 	if err := withTimeout(func(ackCtx context.Context) error { return m.DoubleAck(ackCtx) }); err != nil {
 		w.logger.WarnContext(ctx, "sync ack failed", "topic", topic, "error", err)
 	}
+}
+
+// callDead 执行 OnDead 回调并把 panic 转为错误。
+func callDead(ctx context.Context, fn func(context.Context, []byte, error) error, payload []byte, cause error) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = errors.Newf("queue: on dead panic: %v\n%s", r, debug.Stack())
+		}
+	}()
+	return fn(ctx, payload, cause)
 }
 
 // nakAfter 让 JetStream 在 d 之后重新投递 m。

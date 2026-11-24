@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"log/slog"
 	"slices"
 	"strings"
 	"time"
@@ -118,8 +119,18 @@ const (
 //
 // Store 不在后台清理过期 token：过期 token 校验不通过，由应用定时调用 Cleanup 删除。
 type Store struct {
-	db  bun.IDB
-	cfg Config
+	db          bun.IDB
+	cfg         Config
+	credentials identity.CredentialRechecker // 非 nil 时在撤销令牌提交后自动通知长连接复查
+}
+
+// Option 是 NewStore 的选项。
+type Option func(*Store)
+
+// Credentials 让 Store 在撤销令牌提交后自动通知所有实例上的长连接立即复查凭据，
+// 通常是 broadcast.NewCredentials 的返回值。Store 建在 database.Tx 上时通过 Tx.AfterCommit 延迟到提交后发送。
+func Credentials(c identity.CredentialRechecker) Option {
+	return func(s *Store) { s.credentials = c }
 }
 
 // row 是 api_tokens 表中的一行。
@@ -171,14 +182,45 @@ type ticketRow struct {
 }
 
 // NewStore 创建 token 存储。db 必须已执行 api_tokens 迁移。cfg 不合法或 db 为 nil 时 panic。
-func NewStore(db bun.IDB, cfg Config) *Store {
+func NewStore(db bun.IDB, cfg Config, opts ...Option) *Store {
 	if db == nil {
 		panic("apitoken: nil database")
 	}
 	if err := cfg.Validate(); err != nil {
 		panic(errors.Wrap(err, "apitoken"))
 	}
-	return &Store{db: db, cfg: cfg}
+	s := &Store{db: db, cfg: cfg}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(s)
+		}
+	}
+	s.checkDB(db)
+	return s
+}
+
+// WithDB 返回使用 db（通常是 database.RunInTx 的事务）的副本，继承配置与凭据复查器，
+// 让令牌操作与长连接复查随外层事务一起提交。db 为 nil，或启用了 Credentials 却传入裸 bun.Tx 时 panic。
+func (s *Store) WithDB(db bun.IDB) *Store {
+	if db == nil {
+		panic("apitoken: nil database")
+	}
+	cp := *s
+	cp.db = db
+	cp.checkDB(db)
+	return &cp
+}
+
+// checkDB 确认启用了 Credentials 时不使用裸 bun.Tx。
+func (s *Store) checkDB(db bun.IDB) {
+	if s.credentials == nil {
+		return
+	}
+	switch db.(type) {
+	case database.Tx, *database.Tx:
+	case bun.Tx, *bun.Tx:
+		panic("apitoken: Credentials needs a database or a database.Tx so recheck runs after commit")
+	}
 }
 
 // Login 为 sub 签发登录 token，返回 token 明文，明文只在这里返回一次。
@@ -643,6 +685,7 @@ func (s *Store) Revoke(ctx context.Context, sub identity.Subject, id string) err
 	if n == 0 {
 		return ErrNotFound.New()
 	}
+	s.recheckCredential(ctx, tid.String())
 	return nil
 }
 
@@ -652,9 +695,18 @@ func (s *Store) RevokeToken(ctx context.Context, token string) error {
 	if token == "" {
 		return nil
 	}
-	_, err := affected(s.db.NewDelete().Model((*row)(nil)).
-		Where("token_hash = ?", hash(token)).Where("kind = ?", KindOAuth).Exec(ctx))
-	return err
+	var revoked uuid.UUID
+	err := s.db.NewDelete().Model((*row)(nil)).
+		Where("token_hash = ?", hash(token)).Where("kind = ?", KindOAuth).
+		Returning("id").Scan(ctx, &revoked)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return errors.Wrap(err, "apitoken: delete")
+	}
+	s.recheckCredential(ctx, revoked.String())
+	return nil
 }
 
 // RevokeOthers 撤销 sub 除本次请求所用 token（sub.Credential）以外的全部登录 token，返回撤销的个数，
@@ -668,7 +720,11 @@ func (s *Store) RevokeOthers(ctx context.Context, sub identity.Subject) (int, er
 	if current, err := uuid.Parse(sub.Credential); err == nil {
 		q = q.Where("id <> ?", current)
 	}
-	return affected(q.Exec(ctx))
+	n, err := affected(q.Exec(ctx))
+	if err == nil && n > 0 {
+		s.recheckSubject(ctx, sub.Ref())
+	}
+	return n, err
 }
 
 // RevokeSubject 撤销主体 ref 的全部 token（包括个人访问令牌、OAuth 令牌和代为登录令牌），返回撤销的个数。用于封禁账号、修改密码等。
@@ -676,8 +732,12 @@ func (s *Store) RevokeSubject(ctx context.Context, ref identity.Ref) (int, error
 	if err := ref.Validate(); err != nil {
 		return 0, errors.Wrap(err, "apitoken")
 	}
-	return affected(s.db.NewDelete().Model((*row)(nil)).
+	n, err := affected(s.db.NewDelete().Model((*row)(nil)).
 		Where("subject_type = ? AND subject_id = ?", ref.Type, ref.ID).Exec(ctx))
+	if err == nil && n > 0 {
+		s.recheckSubject(ctx, ref)
+	}
+	return n, err
 }
 
 // RevokeByImpersonator 撤销操作者 actor 签发的全部代为登录令牌与未消费的交换票据，返回撤销的令牌个数。
@@ -690,8 +750,40 @@ func (s *Store) RevokeByImpersonator(ctx context.Context, actor identity.Ref) (i
 		Where("impersonator_type = ? AND impersonator_id = ?", actor.Type, actor.ID).Exec(ctx); err != nil {
 		return 0, errors.Wrap(err, "apitoken: delete impersonator tickets")
 	}
-	return affected(s.db.NewDelete().Model((*row)(nil)).
+	n, err := affected(s.db.NewDelete().Model((*row)(nil)).
 		Where("impersonator_type = ? AND impersonator_id = ?", actor.Type, actor.ID).Exec(ctx))
+	if err == nil && n > 0 {
+		s.recheckSubject(ctx, actor)
+	}
+	return n, err
+}
+
+// recheckCredential 在提交之后通知所有实例立即复查凭据 id。
+func (s *Store) recheckCredential(ctx context.Context, id string) {
+	if s.credentials == nil {
+		return
+	}
+	if tx, ok := s.db.(database.Tx); ok {
+		tx.AfterCommit(func(ctx context.Context) error { return s.credentials.RecheckCredential(ctx, id) })
+		return
+	}
+	if err := s.credentials.RecheckCredential(ctx, id); err != nil {
+		slog.ErrorContext(ctx, "recheck credential failed", "error", err, "component", "apitoken")
+	}
+}
+
+// recheckSubject 在提交之后通知所有实例立即复查主体 ref 的全部长连接。
+func (s *Store) recheckSubject(ctx context.Context, ref identity.Ref) {
+	if s.credentials == nil {
+		return
+	}
+	if tx, ok := s.db.(database.Tx); ok {
+		tx.AfterCommit(func(ctx context.Context) error { return s.credentials.RecheckSubject(ctx, ref) })
+		return
+	}
+	if err := s.credentials.RecheckSubject(ctx, ref); err != nil {
+		slog.ErrorContext(ctx, "recheck subject credentials failed", "error", err, "component", "apitoken")
+	}
 }
 
 // Erase 在 db 中删除主体 ref 的全部 token 和未消费的代为登录交换票据（包括作为主体和作为代为登录操作者的记录），

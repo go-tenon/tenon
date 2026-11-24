@@ -38,6 +38,8 @@ var (
 	ErrRoleExists = errorx.Define(errorx.Conflict, "authz.role_exists")
 	// ErrRoleInUse 表示角色还有分配，使用 RestrictInUse 删除时拒绝。公开参数 count 是使用它的分配数。
 	ErrRoleInUse = errorx.Define(errorx.Conflict, "authz.role_in_use")
+	// ErrExceedsPermissions 表示授予的权限超出了操作者自身的权限范围。
+	ErrExceedsPermissions = errorx.Define(errorx.PermissionDenied, "authz.exceeds_permissions")
 	// ErrInvalid 表示输入不合法，例如权限不在目录中、把租户自定义的角色分配到其他租户。
 	ErrInvalid = errorx.Define(errorx.InvalidArgument, "authz.invalid")
 )
@@ -68,11 +70,13 @@ type Member struct {
 //
 // 权限属于角色，角色在某个域中分配给主体。域是租户 ID、平台本身（""）或所有租户（AllTenants）。
 // 主体在租户 t 中的权限，是它在 t 和 AllTenants 中全部角色的权限之和；在平台中的权限只来自 "" 中的角色。
+// WithDB 返回绑定到指定数据库或事务的副本，继承权限目录、缓存与凭据复查器。
 type Store struct {
-	db      bun.IDB
-	catalog Catalog
-	cache   *cache.Cache[grant] // nil 表示不缓存
-	prefix  string              // 缓存的命名空间，见 Cache
+	db          bun.IDB
+	catalog     Catalog
+	cache       *cache.Cache[grant]          // nil 表示不缓存
+	prefix      string                       // 缓存的命名空间，见 Cache
+	credentials identity.CredentialRechecker // 非 nil 时在权限或分配变更提交后自动通知长连接复查
 }
 
 // grant 是缓存的权限，即 Permissions 的结果。
@@ -97,6 +101,12 @@ type Option func(*Store)
 func Cache(rdb cache.Client, prefix string, ttl time.Duration) Option {
 	c := cache.New[grant](rdb, prefix+"authz:v1:permissions:", ttl)
 	return func(s *Store) { s.cache, s.prefix = c, prefix }
+}
+
+// Credentials 让 Store 在角色权限或成员分配变更提交后自动通知所有实例上的长连接立即复查凭据，
+// 通常是 broadcast.NewCredentials 的返回值。Store 建在 database.Tx 上时通过 Tx.AfterCommit 延迟到提交后发送。
+func Credentials(c identity.CredentialRechecker) Option {
+	return func(s *Store) { s.credentials = c }
 }
 
 // roleRow 是 authz_roles 表中的一行。
@@ -144,16 +154,56 @@ func NewStore(db bun.IDB, catalog Catalog, opts ...Option) *Store {
 	}
 	s := &Store{db: db, catalog: slices.Clone(catalog)}
 	for _, opt := range opts {
-		opt(s)
-	}
-	if s.cache != nil {
-		switch db.(type) {
-		case database.Tx:
-		case bun.Tx, *bun.Tx:
-			panic("authz: Cache needs a Store on a database or a database.Tx: invalidation must run after commit")
+		if opt != nil {
+			opt(s)
 		}
 	}
+	s.checkDB(db)
 	return s
+}
+
+// WithDB 返回使用 db（通常是 database.RunInTx 的事务）的副本，继承权限目录、缓存与凭据复查器，
+// 让角色分配、缓存失效和长连接复查随外层事务一起提交。db 为 nil，或启用了 Cache/Credentials 却传入裸 bun.Tx 时 panic。
+func (s *Store) WithDB(db bun.IDB) *Store {
+	if db == nil {
+		panic("authz: nil database")
+	}
+	cp := *s
+	cp.db = db
+	cp.checkDB(db)
+	return &cp
+}
+
+// checkDB 确认启用了提交后副作用（Cache 或 Credentials）时不使用裸 bun.Tx。
+func (s *Store) checkDB(db bun.IDB) {
+	if s.cache == nil && s.credentials == nil {
+		return
+	}
+	switch db.(type) {
+	case database.Tx, *database.Tx:
+	case bun.Tx, *bun.Tx:
+		panic("authz: Cache and Credentials need a database or a database.Tx so post-commit hooks run after commit")
+	}
+}
+
+// CheckGrant 校验 actor 是否拥有授予 permissions 的权限：把 permissions 展开为目录中的具体权限，
+// 只要存在任一 actor 不具备的权限就返回 ErrExceedsPermissions，防止管理员通过编辑角色自我提权。
+// actor 为系统主体（identity.System）时直接放行；权限不在目录中时返回 ErrInvalid。
+func (s *Store) CheckGrant(actor identity.Subject, permissions []string) error {
+	if actor.Type == identity.System {
+		return nil
+	}
+	for _, perm := range permissions {
+		if !s.known(perm) {
+			return ErrInvalid.New(errorx.Public("field", "permissions"), errorx.Public("permission", perm))
+		}
+		for _, p := range s.catalog {
+			if identity.Grants([]string{perm}, p.Name) && !actor.Can(p.Name) {
+				return ErrExceedsPermissions.New(errorx.Public("permission", p.Name))
+			}
+		}
+	}
+	return nil
 }
 
 // Catalog 返回权限目录，供角色编辑界面列出可选的权限。
@@ -287,6 +337,7 @@ func (s *Store) UpdateRole(ctx context.Context, r Role, tenant string) (Role, er
 		return Role{}, err
 	}
 	s.invalidate(ctx, s.rolesTag())
+	s.recheckTenant(ctx, r.Tenant)
 	r.Permissions = normalize(r.Permissions)
 	return r, nil
 }
@@ -318,18 +369,20 @@ func (s *Store) DeleteRole(ctx context.Context, id, tenant string, opts ...Delet
 			opt(&cfg)
 		}
 	}
+	var roleTenant string
 	err = s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 		// 先锁住角色行，阻塞并发的 Assign，确保统计分配数和删除角色之间不会新增分配。
-		var existing uuid.UUID
-		q := tx.NewSelect().Model((*roleRow)(nil)).Column("id").Where("id = ?", rid)
+		var existing roleRow
+		q := tx.NewSelect().Model(&existing).Column("id", "tenant").Where("id = ?", rid)
 		if tenant != "" {
 			q = q.Where("tenant = ?", tenant)
 		}
-		if err := q.For("UPDATE").Scan(ctx, &existing); errors.Is(err, sql.ErrNoRows) {
+		if err := q.For("UPDATE").Scan(ctx); errors.Is(err, sql.ErrNoRows) {
 			return ErrRoleNotFound.New()
 		} else if err != nil {
 			return errors.Wrap(err, "authz: load role")
 		}
+		roleTenant = existing.Tenant
 		if cfg.restrictInUse {
 			n, err := tx.NewSelect().Model((*assignmentRow)(nil)).Where("role_id = ?", rid).Count(ctx)
 			if err != nil {
@@ -353,6 +406,7 @@ func (s *Store) DeleteRole(ctx context.Context, id, tenant string, opts ...Delet
 		return err
 	}
 	s.invalidate(ctx, s.rolesTag())
+	s.recheckTenant(ctx, roleTenant)
 	return nil
 }
 
@@ -449,6 +503,7 @@ func (s *Store) EnsureRole(ctx context.Context, r Role) (Role, error) {
 	}
 	if changed {
 		s.invalidate(ctx, s.rolesTag())
+		s.recheckTenant(ctx, r.Tenant)
 	}
 	r.ID, r.Permissions = id.String(), perms
 	return r, nil
@@ -502,6 +557,9 @@ func (s *Store) Assign(ctx context.Context, ref identity.Ref, tenant, roleID str
 		return ErrRoleNotFound.New()
 	}
 	err = s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		if err := lockSubject(ctx, tx, tenant, ref); err != nil {
+			return err
+		}
 		// 用 FOR SHARE 锁住角色行：多个并发 Assign 互不阻塞，且与 DeleteRole 的 FOR UPDATE 互斥。
 		var role roleRow
 		if err := tx.NewSelect().Model(&role).Column("tenant").Where("id = ?", rid).For("SHARE").Scan(ctx); errors.Is(err, sql.ErrNoRows) {
@@ -520,7 +578,78 @@ func (s *Store) Assign(ctx context.Context, ref identity.Ref, tenant, roleID str
 		return err
 	}
 	s.invalidate(ctx, s.subjectTag(ref))
+	s.recheckSubject(ctx, ref)
 	return nil
+}
+
+// SetRoles 在事务中原子替换主体 ref 在 tenant 中的全部角色为 roleIDs：roleIDs 为空时等同于清空该域角色。
+// 通过对主体与租户加事务级咨询锁，避免并发改角色或分配角色时产生重复或幽灵角色；
+// 对角色行按 ID 升序加 FOR SHARE 锁，与并发的 DeleteRole 互斥。
+func (s *Store) SetRoles(ctx context.Context, ref identity.Ref, tenant string, roleIDs ...string) error {
+	if ref.Validate() != nil {
+		return ErrInvalid.New(errorx.Public("field", "subject"))
+	}
+	rids := make([]uuid.UUID, 0, len(roleIDs))
+	seen := make(map[uuid.UUID]struct{}, len(roleIDs))
+	for _, raw := range roleIDs {
+		rid, err := uuid.Parse(raw)
+		if err != nil {
+			return ErrRoleNotFound.New()
+		}
+		if _, dup := seen[rid]; dup {
+			continue
+		}
+		seen[rid] = struct{}{}
+		rids = append(rids, rid)
+	}
+	slices.SortFunc(rids, func(a, b uuid.UUID) int { return strings.Compare(a.String(), b.String()) })
+	err := s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		if err := lockSubject(ctx, tx, tenant, ref); err != nil {
+			return err
+		}
+		if len(rids) > 0 {
+			var roles []roleRow
+			if err := tx.NewSelect().Model(&roles).Column("id", "tenant").
+				Where("id IN (?)", bun.List(rids)).OrderExpr("id").For("SHARE").Scan(ctx); err != nil {
+				return errors.Wrap(err, "authz: load roles")
+			}
+			if len(roles) != len(rids) {
+				return ErrRoleNotFound.New()
+			}
+			for _, role := range roles {
+				if role.Tenant != "" && role.Tenant != tenant {
+					return ErrInvalid.New(errorx.Public("field", "tenant"))
+				}
+			}
+		}
+		if _, err := tx.NewDelete().Model((*assignmentRow)(nil)).
+			Where("subject_type = ? AND subject_id = ?", ref.Type, ref.ID).Where("tenant = ?", tenant).Exec(ctx); err != nil {
+			return errors.Wrap(err, "authz: clear assignments")
+		}
+		if len(rids) == 0 {
+			return nil
+		}
+		now := time.Now().UTC()
+		rows := make([]assignmentRow, len(rids))
+		for i, rid := range rids {
+			rows[i] = assignmentRow{SubjectType: string(ref.Type), SubjectID: ref.ID, Tenant: tenant, RoleID: rid, CreatedAt: now}
+		}
+		_, err := tx.NewInsert().Model(&rows).Exec(ctx)
+		return errors.Wrap(err, "authz: set roles")
+	})
+	if err != nil {
+		return err
+	}
+	s.invalidate(ctx, s.subjectTag(ref))
+	s.recheckSubject(ctx, ref)
+	return nil
+}
+
+// lockSubject 在事务 tx 中按租户与主体加事务级咨询锁，串行化同一主体在同一域下的并发角色变更。
+func lockSubject(ctx context.Context, tx bun.Tx, tenant string, ref identity.Ref) error {
+	key := "authz:" + lengthPrefixed(tenant, string(ref.Type), ref.ID)
+	_, err := tx.NewRaw("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", key).Exec(ctx)
+	return errors.Wrap(err, "authz: lock subject")
 }
 
 // Unassign 撤销主体 ref 在 tenant 中的角色；没有分配时直接返回，roleID 不是合法的角色 ID 时返回 ErrRoleNotFound。
@@ -535,6 +664,7 @@ func (s *Store) Unassign(ctx context.Context, ref identity.Ref, tenant, roleID s
 		return errors.Wrap(err, "authz: unassign")
 	}
 	s.invalidate(ctx, s.subjectTag(ref))
+	s.recheckSubject(ctx, ref)
 	return nil
 }
 
@@ -546,6 +676,7 @@ func (s *Store) RemoveMember(ctx context.Context, ref identity.Ref, tenant strin
 		return 0, errors.Wrap(err, "authz: remove member")
 	}
 	s.invalidate(ctx, s.subjectTag(ref))
+	s.recheckSubject(ctx, ref)
 	n, err := res.RowsAffected()
 	return int(n), errors.Wrap(err, "authz: remove member")
 }
@@ -560,10 +691,10 @@ func (s *Store) Erase(ctx context.Context, db bun.IDB, ref identity.Ref) error {
 		return errors.Wrap(err, "authz")
 	}
 	tx, isTx := db.(database.Tx)
-	if s.cache != nil && !isTx {
+	if (s.cache != nil || s.credentials != nil) && !isTx {
 		switch db.(type) {
 		case bun.Tx, *bun.Tx:
-			return errors.New("authz: erase with Cache needs a database.Tx: invalidation must run after commit")
+			return errors.New("authz: erase with Cache or Credentials needs a database.Tx: post-commit hooks must run after commit")
 		}
 	}
 	_, err := db.NewDelete().Model((*assignmentRow)(nil)).
@@ -571,16 +702,20 @@ func (s *Store) Erase(ctx context.Context, db bun.IDB, ref identity.Ref) error {
 	if err != nil {
 		return errors.Wrap(err, "authz: erase")
 	}
-	if s.cache == nil {
-		return nil
+	if s.cache != nil {
+		tag := s.subjectTag(ref)
+		if isTx {
+			tx.AfterCommit(func(ctx context.Context) error { return s.cache.Invalidate(ctx, tag) })
+		} else if err := s.cache.Invalidate(ctx, tag); err != nil {
+			slog.ErrorContext(ctx, "invalidate cached permissions failed", "error", err, logging.AttrComponent, "authz")
+		}
 	}
-	tag := s.subjectTag(ref)
-	if isTx {
-		tx.AfterCommit(func(ctx context.Context) error { return s.cache.Invalidate(ctx, tag) })
-		return nil
-	}
-	if err := s.cache.Invalidate(ctx, tag); err != nil {
-		slog.ErrorContext(ctx, "invalidate cached permissions failed", "error", err, logging.AttrComponent, "authz")
+	if s.credentials != nil {
+		if isTx {
+			tx.AfterCommit(func(ctx context.Context) error { return s.credentials.RecheckSubject(ctx, ref) })
+		} else if err := s.credentials.RecheckSubject(ctx, ref); err != nil {
+			slog.ErrorContext(ctx, "recheck subject credentials failed", "error", err, logging.AttrComponent, "authz")
+		}
 	}
 	return nil
 }
@@ -630,6 +765,34 @@ func (s *Store) invalidate(ctx context.Context, tags ...string) {
 	}
 	if err := s.cache.Invalidate(ctx, tags...); err != nil {
 		slog.ErrorContext(ctx, "invalidate cached permissions failed", "error", err, logging.AttrComponent, "authz")
+	}
+}
+
+// recheckSubject 在提交之后通知所有实例立即复查主体 ref 的长连接凭据。
+func (s *Store) recheckSubject(ctx context.Context, ref identity.Ref) {
+	if s.credentials == nil {
+		return
+	}
+	if tx, ok := s.db.(database.Tx); ok {
+		tx.AfterCommit(func(ctx context.Context) error { return s.credentials.RecheckSubject(ctx, ref) })
+		return
+	}
+	if err := s.credentials.RecheckSubject(ctx, ref); err != nil {
+		slog.ErrorContext(ctx, "recheck subject credentials failed", "error", err, logging.AttrComponent, "authz")
+	}
+}
+
+// recheckTenant 在提交之后通知所有实例立即复查租户 tenant 中的长连接凭据。
+func (s *Store) recheckTenant(ctx context.Context, tenant string) {
+	if s.credentials == nil {
+		return
+	}
+	if tx, ok := s.db.(database.Tx); ok {
+		tx.AfterCommit(func(ctx context.Context) error { return s.credentials.RecheckTenant(ctx, tenant) })
+		return
+	}
+	if err := s.credentials.RecheckTenant(ctx, tenant); err != nil {
+		slog.ErrorContext(ctx, "recheck tenant credentials failed", "error", err, logging.AttrComponent, "authz")
 	}
 }
 

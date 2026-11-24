@@ -21,7 +21,8 @@ type PublishOption func(*publishOptions)
 
 // publishOptions 是 Publish 的选项。
 type publishOptions struct {
-	at time.Time
+	at       time.Time
+	dedupKey string
 }
 
 // Delay 让任务在 d 之后才被处理。
@@ -33,6 +34,12 @@ func Delay(d time.Duration) PublishOption {
 // At 让任务在 t 之后才被处理，t 早于当前时间时立即处理。
 func At(t time.Time) PublishOption {
 	return func(o *publishOptions) { o.at = t }
+}
+
+// DedupKey 指定任务的去重键：在 JetStream stream 的去重窗口内，同一个 topic 下相同 key 的重复发布会被合并为一条任务。
+// key 为空时不启用自定义去重键，仍按任务 UUID 去重。
+func DedupKey(key string) PublishOption {
+	return func(o *publishOptions) { o.dedupKey = key }
 }
 
 // propagated 是从发布方 context 带到处理函数 context 的日志字段。
@@ -69,6 +76,9 @@ func publish[T any](ctx context.Context, db bun.IDB, topic string, payloads []T,
 		}
 	}
 	traceContext.Inject(ctx, propagation.MapCarrier(metadata))
+	if o.dedupKey != "" {
+		metadata[dedupMetaKey] = o.dedupKey
+	}
 
 	rows := make([]outboxJob, len(payloads))
 	for i, p := range payloads {

@@ -348,3 +348,21 @@ func TestRunOptions(t *testing.T) {
 		t.Fatal("expected error for unknown check")
 	}
 }
+
+// TestCheckLanguagesMismatch 检查 locales 中存在多种语言文件但 tenon.json 未声明 languages 时报错提醒。
+func TestCheckLanguagesMismatch(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writeFiles(t, root, map[string]string{
+		"locales/zh-CN.yaml": "a.b: 你好\n",
+		"locales/en.yaml":    "a.b: Hello\n",
+	})
+	cfg := &project.Config{}
+	found, err := check.Run(root, cfg, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(found) != 1 || found[0].File != project.File || found[0].Check != "text" {
+		t.Fatalf("expected languages mismatch finding, got %+v", found)
+	}
+}

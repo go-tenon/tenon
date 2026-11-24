@@ -2,6 +2,7 @@ package queue
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/cockroachdb/errors"
@@ -26,6 +27,24 @@ func Concurrency(n int) HandleOption {
 		panic("queue: concurrency must be positive")
 	}
 	return func(h *handler) { h.concurrency = n }
+}
+
+// OnDead 注册任务最终放弃时的回调：无论因重试次数耗尽，还是因返回 Permanent 或业务错误而不再重试，
+// 在任务转入失败任务表之前都会调用一次 fn，适合将业务记录标记为最终失败（例如消息送达失败）。
+// payload 无法解码为 T 时跳过 fn；fn 返回错误时任务稍后重试调用。fn 为 nil 时 panic。
+func OnDead[T any](fn func(ctx context.Context, payload T, err error) error) HandleOption {
+	if fn == nil {
+		panic("queue: nil OnDead callback")
+	}
+	return func(h *handler) {
+		h.onDead = func(ctx context.Context, raw []byte, cause error) error {
+			var payload T
+			if err := json.Unmarshal(raw, &payload); err != nil {
+				return nil
+			}
+			return fn(ctx, payload, cause)
+		}
+	}
 }
 
 // attemptKey 是执行次数在 context 中的键。

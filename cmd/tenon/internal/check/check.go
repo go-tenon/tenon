@@ -3,10 +3,13 @@ package check
 
 import (
 	"fmt"
+	"os"
 	"path"
+	"path/filepath"
 	"slices"
 	"strings"
 
+	"github.com/go-tenon/tenon/cmd/tenon/internal/dev"
 	"github.com/go-tenon/tenon/cmd/tenon/internal/project"
 )
 
@@ -37,6 +40,13 @@ func Run(root string, cfg *project.Config, only []string) ([]Finding, error) {
 	}
 	exempts := cfg.CheckExempt()
 	var out []Finding
+	if len(only) == 0 && !cfg.MultiLanguage() && !slices.Contains(cfg.CheckSkip(), "text") {
+		if found, err := checkLanguagesConfig(root, exempts); err != nil {
+			return nil, err
+		} else {
+			out = append(out, found...)
+		}
+	}
 	for _, name := range selected {
 		var found []Finding
 		switch name {
@@ -57,6 +67,45 @@ func Run(root string, cfg *project.Config, only []string) ([]Finding, error) {
 		out = append(out, found...)
 	}
 	return out, nil
+}
+
+// checkLanguagesConfig 检查 locales 目录中是否已存在多种服务端语言文件，而 tenon.json 未声明 languages。
+func checkLanguagesConfig(root string, exempt []string) ([]Finding, error) {
+	if isExempt(project.File, exempt) {
+		return nil, nil
+	}
+	entries, err := os.ReadDir(filepath.Join(root, dev.LocalesDir))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var langs []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		ext := filepath.Ext(name)
+		if ext != ".yaml" && ext != ".yml" {
+			continue
+		}
+		stem := strings.TrimSuffix(name, ext)
+		if strings.Contains(stem, ".") {
+			continue
+		}
+		langs = append(langs, stem)
+	}
+	if len(langs) < 2 {
+		return nil, nil
+	}
+	slices.Sort(langs)
+	return []Finding{{
+		Check:   "text",
+		File:    project.File,
+		Message: fmt.Sprintf("locales/ contains multiple languages (%s); declare \"languages\" in tenon.json to enable multi-language checks", strings.Join(langs, ", ")),
+	}}, nil
 }
 
 // selectChecks 返回本次要运行的检查项，保持 Names 的顺序；only 中有未知名称时返回错误。

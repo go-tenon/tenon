@@ -80,6 +80,7 @@ func RunInTx(ctx context.Context, db bun.IDB, opts *sql.TxOptions, fn func(ctx c
 	if err != nil {
 		return err
 	}
+	markPrimary(ctx)
 	ctx = context.WithoutCancel(ctx)
 	for _, fn := range fns {
 		runHook(ctx, fn)

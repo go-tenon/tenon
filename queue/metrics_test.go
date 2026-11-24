@@ -62,11 +62,10 @@ func TestRelayMetrics(t *testing.T) {
 			t.Fatal("jobs not handled")
 		}
 	}
-	got := gauges(t, reader)
-	if got["queue.relay.jobs"] != 2 {
-		t.Fatalf("relay jobs = %v", got)
-	}
-	if got["queue.outbox.pending"] != 0 || got["queue.outbox.deferred"] != 1 {
-		t.Fatalf("outbox metrics = %v", got)
-	}
+	// 任务进入 JetStream 并被处理完时，relayOnce 删除 outbox 行的事务可能仍在提交途中，等待其可见。
+	var got map[string]int64
+	eventually(t, 5*time.Second, func() bool {
+		got = gauges(t, reader)
+		return got["queue.relay.jobs"] == 2 && got["queue.outbox.pending"] == 0 && got["queue.outbox.deferred"] == 1
+	})
 }
