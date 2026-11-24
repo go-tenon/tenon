@@ -1,0 +1,88 @@
+/*
+ * @go-tenon/ui 的基础样式：Mantine 核心样式、CJK 标点字形修正与语义变量。
+ * 适合只需要主题和基础控件的轻量页面（例如嵌入第三方网站的聊天插件），不含表格、日期、弹窗通知和后台外壳样式。
+ */
+@import "@mantine/core/styles.css";
+
+/*
+ * 中英文共用码位的标点：引号 ‘’“”、省略号 …、破折号 —、间隔号 ·。西文字体排在字体栈前面，这几个字符在中文里
+ * 也会显示成窄的西文样式；"Tenon CJK Punctuation" 只包含它们（unicode-range），取自系统的中文字体，显示为全角。
+ * 主题的字体栈在中文页面中以它开头（--tn-cjk-punctuation），其他字符继续使用字体栈中后面的字体。
+ * local() 按字体的全名或 PostScript 名匹配，各系统的名称不同，所以都列出；粗体单独一组，标题中的标点不用模拟的粗体。
+ */
+@font-face {
+  font-family: "Tenon CJK Punctuation";
+  font-weight: 100 500;
+  src:
+    local("PingFang SC Regular"), local("PingFangSC-Regular"), local("Hiragino Sans GB W3"), local("HiraginoSansGB-W3"),
+    local("Noto Sans CJK SC"), local("Noto Sans CJK SC Regular"), local("NotoSansCJKsc-Regular"),
+    local("Noto Sans SC Regular"), local("NotoSansSC-Regular"), local("Source Han Sans SC Regular"),
+    local("SourceHanSansSC-Regular"), local("Microsoft YaHei"), local("MicrosoftYaHei");
+  unicode-range: U+00B7, U+2014, U+2018-2019, U+201C-201D, U+2026;
+}
+
+@font-face {
+  font-family: "Tenon CJK Punctuation";
+  font-weight: 600 900;
+  src:
+    local("PingFang SC Semibold"), local("PingFangSC-Semibold"), local("Hiragino Sans GB W6"),
+    local("HiraginoSansGB-W6"), local("Noto Sans CJK SC Bold"), local("NotoSansCJKsc-Bold"), local("Noto Sans SC Bold"),
+    local("NotoSansSC-Bold"), local("Source Han Sans SC Bold"), local("SourceHanSansSC-Bold"),
+    local("Microsoft YaHei Bold"), local("MicrosoftYaHei-Bold");
+  unicode-range: U+00B7, U+2014, U+2018-2019, U+201C-201D, U+2026;
+}
+
+/* 中文页面的字体栈以 "Tenon CJK Punctuation" 开头，见 theme.ts 的 cjkPunctuation。 */
+:root:lang(zh) {
+  --tn-cjk-punctuation: "Tenon CJK Punctuation",;
+}
+
+:root {
+  --tn-canvas: var(--mantine-color-gray-0);
+  --tn-surface: var(--mantine-color-white);
+  --tn-border: var(--mantine-color-gray-2);
+  --tn-border-strong: var(--mantine-color-gray-3);
+  --tn-hover: var(--mantine-color-gray-1);
+  --tn-text: var(--mantine-color-gray-9);
+  --tn-muted: var(--mantine-color-gray-6);
+  --tn-subtle: var(--mantine-color-gray-5);
+  --tn-active-bg: var(--mantine-color-brand-0);
+  --tn-active-text: var(--mantine-color-brand-7);
+  --tn-header-blur: rgba(255, 255, 255, 0.78);
+  --tn-pane-px: var(--mantine-spacing-md);
+  --tn-inspector-label-width: 84px;
+}
+
+[data-mantine-color-scheme="dark"] {
+  --tn-canvas: var(--mantine-color-dark-8);
+  --tn-surface: var(--mantine-color-dark-7);
+  --tn-border: var(--mantine-color-dark-5);
+  --tn-border-strong: var(--mantine-color-dark-4);
+  --tn-hover: var(--mantine-color-dark-6);
+  --tn-text: var(--mantine-color-dark-0);
+  --tn-muted: var(--mantine-color-dark-2);
+  --tn-subtle: var(--mantine-color-dark-3);
+  --tn-active-bg: color-mix(in srgb, var(--mantine-color-brand-5) 16%, transparent);
+  --tn-active-text: var(--mantine-color-brand-2);
+  --tn-header-blur: rgba(20, 22, 27, 0.72);
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "cv11", "ss01";
+}
+
+/* 按钮类的元素用手型指针（Mantine 默认跟随浏览器，按钮是箭头）；禁用时是 not-allowed。 */
+.mantine-Button-root,
+.mantine-ActionIcon-root,
+.mantine-UnstyledButton-root,
+.mantine-Pagination-control,
+.mantine-SegmentedControl-label {
+  cursor: pointer;
+}
+
+:is(.mantine-Button-root, .mantine-ActionIcon-root, .mantine-Pagination-control):is(:disabled, [data-disabled]) {
+  cursor: not-allowed;
+}

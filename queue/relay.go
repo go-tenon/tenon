@@ -79,10 +79,20 @@ func (w *Worker) relayOnce(ctx context.Context) (int, error) {
 		doneIDs := make([]uuid.UUID, 0, len(rows))
 
 		for _, row := range rows {
+			dedup := row.Metadata[dedupMetaKey]
+			meta := row.Metadata
+			if dedup != "" {
+				meta = make(map[string]string, len(row.Metadata)-1)
+				for k, v := range row.Metadata {
+					if k != dedupMetaKey {
+						meta[k] = v
+					}
+				}
+			}
 			body, err := json.Marshal(envelope{
 				ID:          row.ID,
 				Payload:     row.Payload,
-				Metadata:    row.Metadata,
+				Metadata:    meta,
 				AvailableAt: row.AvailableAt,
 			})
 			if err != nil {
@@ -92,7 +102,11 @@ func (w *Worker) relayOnce(ctx context.Context) (int, error) {
 				doneIDs = append(doneIDs, row.ID)
 				continue
 			}
-			f, err := w.publishAsync(row.Topic, body, msgID(row.ID, row.CreatedAt))
+			id := msgID(row.ID, row.CreatedAt)
+			if dedup != "" {
+				id = "dedup:" + row.Topic + ":" + dedup
+			}
+			f, err := w.publishAsync(row.Topic, body, id)
 			if err != nil {
 				if isPermanentPublishError(err) {
 					if recErr := w.recordPoison(ctx, tx, row, errors.Wrapf(err, "queue: publish %q job", row.Topic)); recErr != nil {

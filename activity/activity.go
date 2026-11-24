@@ -82,8 +82,9 @@ func check(a Activity) error {
 type Query struct {
 	Tenant     string // 只查询这个租户中的记录，"" 为平台本身
 	TargetType string
-	TargetID   string       // 需要同时设置 TargetType
-	Actor      identity.Ref // 操作人，零值不限制
+	TargetID   string                 // 需要同时设置 TargetType
+	Actor      identity.Ref           // 操作人，零值不限制
+	ActorTypes []identity.SubjectType // 限制操作人的主体类型，为空时不限制；例如只查平台管理员和系统的操作
 	Event      string
 	Page       page.OffsetParams // 分页参数，零值为第 1 页、每页 DefaultPerPage 条
 }
@@ -111,6 +112,9 @@ func List(ctx context.Context, db bun.IDB, q Query) (page.Offset[Activity], erro
 	}
 	if !q.Actor.IsZero() {
 		sel = sel.Where("actor_type = ? AND actor_id = ?", q.Actor.Type, q.Actor.ID)
+	}
+	if len(q.ActorTypes) > 0 {
+		sel = sel.Where("actor_type IN (?)", bun.List(q.ActorTypes))
 	}
 	total, err := sel.OrderExpr("id DESC").Limit(p.Limit()).Offset(p.Offset()).ScanAndCount(ctx)
 	if err != nil {

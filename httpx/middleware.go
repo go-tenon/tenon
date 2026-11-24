@@ -44,7 +44,7 @@ func Defaults(cfg Config, opts ...DefaultsOption) []func(http.Handler) http.Hand
 		Locale(o.languages),
 		AccessLog(cfg.AccessLog, o.logger),
 		Recover(o.logger),
-		BodyLimit(cfg.BodyLimit),
+		bodyLimit(cfg.BodyLimit, o.bodyLimitFor),
 		AcquireTimeout(cfg.AcquireTimeout),
 	}
 }
@@ -159,10 +159,21 @@ func Recover(logger *slog.Logger) func(http.Handler) http.Handler {
 
 // BodyLimit 限制请求体最多 cfg.MaxBytes 字节，声明长度超限时直接返回 413。cfg 不合法时 panic。
 func BodyLimit(cfg BodyLimitConfig) func(http.Handler) http.Handler {
+	return bodyLimit(cfg, nil)
+}
+
+// bodyLimit 按 cfg.MaxBytes 限制请求体大小；forReq 非 nil 且返回正数时覆盖本次请求的上限。
+func bodyLimit(cfg BodyLimitConfig, forReq func(*http.Request) int64) func(http.Handler) http.Handler {
 	mustValid("BodyLimit", cfg.Validate())
-	n := cfg.MaxBytes
+	base := cfg.MaxBytes
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			n := base
+			if forReq != nil {
+				if custom := forReq(r); custom > 0 {
+					n = custom
+				}
+			}
 			if r.ContentLength > n {
 				WriteProblem(w, http.StatusRequestEntityTooLarge, "request body too large")
 				return

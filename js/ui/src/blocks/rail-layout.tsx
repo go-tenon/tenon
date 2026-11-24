@@ -42,6 +42,7 @@ import {
   useSlotFilled,
 } from "../app/layout"
 import { firstPage, type MenuItem } from "../app/menu"
+import { NewVersionNotice } from "../app/version-notice"
 import { LoadingOverlay, useAnyFetching, useSmoothTransition } from "../components/loading"
 import { MenuBadge } from "../components/menu-badge"
 import { PageBreadcrumbs } from "../components/page"
@@ -423,6 +424,7 @@ export function RailLayout({
       ) : (
         rail
       )}
+      <NewVersionNotice />
     </NavControlProvider>
   )
 }

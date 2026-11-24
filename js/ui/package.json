@@ -6,6 +6,9 @@
   "exports": {
     ".": "./src/index.ts",
     "./chat": "./src/features/chat.ts",
+    "./theme": "./src/theme/theme.ts",
+    "./i18n": "./src/i18n/i18n.ts",
+    "./base.css": "./src/base.css",
     "./styles.css": "./src/styles.css"
   },
   "scripts": {

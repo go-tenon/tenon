@@ -216,20 +216,17 @@ if resp.StatusCode == http.StatusTooManyRequests {
 三者同时出现时 `Permanent` 优先。每次重试都计入执行次数，次数用完时照常转入失败任务表。
 
 <a id="final-attempt"></a>
-### 在最后一次失败时记下结果：`queue.AttemptFromContext`
+### 在最后一次失败时记下结果：`queue.OnDead`
 
-任务自己保存了处理状态时（例如投递记录的“重试中”），在放弃之前改为最终结果。`queue.AttemptFromContext` 返回第几次执行、是否最后一次，`queue.IsPermanent` 报告这个错误是否让任务直接结束：
+任务自己保存了处理状态时（例如投递记录的“发送中”），在 `Handle` 时传入 `queue.OnDead`：无论次数用完还是返回 `Permanent` 或业务错误，在转入失败任务表之前框架都会调用一次该回调。需要手动判断时也可用 `queue.AttemptFromContext` 与 `queue.IsPermanent`：
 
 ```go
-if err != nil {
-    if _, final := queue.AttemptFromContext(ctx); final || queue.IsPermanent(err) {
-        markFailed(ctx, a.db, id, err) // 任务不会再执行
-    }
-    return err
-}
+DeliverTopic.Handle(w, deliver.Job, queue.OnDead(func(ctx context.Context, p DeliverJob, err error) error {
+    return markFailed(ctx, a.db, p.ID, err)
+}))
 ```
 
-从失败任务表[重新发布](#failed-jobs)的任务从第 1 次重新计数。
+发布任务时传入 `queue.DedupKey(key)` 可在 JetStream 去重窗口内合并重复任务。从失败任务表[重新发布](#failed-jobs)的任务从第 1 次重新计数。
 
 <a id="leases-and-shutdown"></a>
 ## 租约与停止

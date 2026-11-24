@@ -20,6 +20,7 @@ const recheckConcurrency = 64
 // connection 是一个连接的身份与复查状态。
 type connection struct {
 	token  string // 由 Options.Authenticate 认证时的 token：SDK 传入的、Authorization 请求头中的，或浏览器的会话 cookie
+	tenant string // 握手时确定的租户 ID，复查凭据时写入干净的上下文，避免沿用握手中间件的过期快照
 	client *centrifuge.Client
 
 	mu     sync.Mutex
@@ -197,10 +198,19 @@ func (rt *Realtime) nextRecheck() time.Duration {
 // connecting 识别连接的主体：SDK 传入的 token 优先，其次是连接请求带来的 token（Authorization: Bearer 请求头，
 // 没有时是浏览器的会话 cookie），都由 Options.Authenticate 校验；都没有时是匿名连接。
 func (rt *Realtime) connecting(ctx context.Context, e centrifuge.ConnectEvent) (centrifuge.ConnectReply, error) {
-	conn := &connection{}
+	conn := &connection{tenant: identity.TenantFromContext(ctx)}
 	token := e.Token
 	if token == "" {
 		token, _ = ctx.Value(requestTokenKey{}).(string)
+	}
+	if rt.opts.CheckTenant != nil {
+		if err := rt.opts.CheckTenant(ctx, conn.tenant); err != nil {
+			if identity.Failed(err) {
+				rt.logger.ErrorContext(ctx, "tenant check failed", "tenant", conn.tenant, "error", err)
+				return centrifuge.ConnectReply{}, centrifuge.ErrorInternal
+			}
+			return centrifuge.ConnectReply{}, centrifuge.DisconnectInvalidToken
+		}
 	}
 	if token != "" {
 		sub, err := identity.Establish(ctx, rt.authenticator(token), rt.authPolicy())
@@ -238,16 +248,30 @@ func (rt *Realtime) authenticator(token string) identity.Authenticator {
 	}
 }
 
-// check 重新校验连接的凭据。确定已经失效时返回 DisconnectInvalidToken，SDK 收到后停止重连；
-// 校验通过时换上重新加载的主体（权限可能已经变化），按它重新授权已经订阅的频道，见 reauthorize；暂时无法判断时连接保持原样。
+// check 重新校验连接的凭据与租户状态。复查使用仅携带租户与连接取消信号的干净上下文，不沿用握手期中间件放入的请求快照。
+// 确定已经失效时返回 DisconnectInvalidToken，SDK 收到后停止重连；校验通过时换上重新加载的主体（权限可能已经变化），
+// 按它重新授权已经订阅的频道，见 reauthorize；暂时无法判断时连接保持原样。
 func (rt *Realtime) check(conn *connection) *centrifuge.Disconnect {
 	ctx := conn.client.Context()
 	if ctx.Err() != nil {
 		return nil
 	}
-	cctx, cancel := context.WithTimeout(ctx, credentialTimeout)
+	base := identity.WithTenant(context.Background(), conn.tenant)
+	cctx, cancel := context.WithTimeout(base, credentialTimeout)
+	stop := context.AfterFunc(ctx, cancel)
+	defer func() {
+		stop()
+		cancel()
+	}()
+	if rt.opts.CheckTenant != nil {
+		if err := rt.opts.CheckTenant(cctx, conn.tenant); err != nil {
+			if identity.Failed(err) {
+				return nil
+			}
+			return &centrifuge.DisconnectInvalidToken
+		}
+	}
 	sub, err := identity.Reestablish(cctx, conn.subject(), rt.authenticator(conn.token), rt.authPolicy())
-	cancel()
 	switch {
 	case identity.Failed(err):
 		return nil
@@ -255,7 +279,7 @@ func (rt *Realtime) check(conn *connection) *centrifuge.Disconnect {
 		return &centrifuge.DisconnectInvalidToken
 	}
 	conn.setSubject(sub)
-	rt.reauthorize(ctx, conn)
+	rt.reauthorize(base, conn)
 	return nil
 }
 

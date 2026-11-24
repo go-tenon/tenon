@@ -63,6 +63,8 @@ siteSettings := settings.New(a.db, "site", site.Defaults)
 > [!IMPORTANT]
 > 字段（包括嵌套结构体的字段）不能带 `omitempty` 或 `omitzero`，否则 `New` panic：零值会从 JSON 中省略，读取时又被默认值覆盖，例如默认为 `true` 的 `SignupOpen` 关闭之后再读又变回 `true`。
 
+需要加密保存第三方密钥时，给 `string` 字段加上 `settings:"secret"` 并在 `New` 传入 `settings.WithCrypt(keys)`：保存时自动由 `crypt.Crypt` 加密存库，读取时自动解密。
+
 <a id="reading-settings"></a>
 ## 用 `Get` 读取设置
 

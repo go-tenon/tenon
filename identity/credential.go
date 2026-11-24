@@ -48,6 +48,17 @@ type CredentialWatcher interface {
 	Watch(ctx context.Context, sub Subject, onChange func())
 }
 
+// CredentialRechecker 向所有实例上的长连接发出凭据复查提醒，broadcast.Credentials 实现该接口。
+// 传给 apitoken.Credentials、authz.Credentials 后，撤销令牌或变更权限时自动通知受影响的长连接立即复查。
+type CredentialRechecker interface {
+	// RecheckCredential 让使用凭据 id 的长连接立即复查。
+	RecheckCredential(ctx context.Context, id string) error
+	// RecheckSubject 让主体 ref 的全部长连接立即复查。
+	RecheckSubject(ctx context.Context, ref Ref) error
+	// RecheckTenant 让请求所在租户为 tenant 的全部长连接立即复查，"" 是平台本身。
+	RecheckTenant(ctx context.Context, tenant string) error
+}
+
 // watcherKey 是 CredentialWatcher 在 context 中的键。
 type watcherKey struct{}
 

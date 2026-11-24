@@ -5,6 +5,16 @@ import "strings"
 // maxQueryText 是链路和慢查询日志中 SQL 的最大字节数，超出的部分截断。
 const maxQueryText = 2048
 
+// likeReplacer 转义 PostgreSQL LIKE/ILIKE 模式中的反斜杠与通配符（%、_）。
+var likeReplacer = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+
+// EscapeLike 转义字符串 s 中的反斜杠、% 和 _，供 PostgreSQL 的 LIKE / ILIKE 模式安全匹配字面量。
+//
+//	Where("name ILIKE ? ESCAPE '\\'", "%"+database.EscapeLike(q)+"%")
+func EscapeLike(s string) string {
+	return likeReplacer.Replace(s)
+}
+
 // sanitize 把 SQL 中的字面量换成 ?，用于链路和慢查询日志。
 //
 // Bun 把参数直接写进 SQL，事件中的语句带着密码哈希、token、手机号这类值；换掉之后只剩语句的结构，
