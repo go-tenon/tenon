@@ -1,6 +1,7 @@
 package database
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -8,6 +9,25 @@ import (
 
 	"github.com/go-tenon/tenon/doctor"
 )
+
+func TestCheckPGVersion(t *testing.T) {
+	t.Parallel()
+	for _, raw := range []string{"180000", "180003", "190001"} {
+		if err := checkPGVersion(raw); err != nil {
+			t.Errorf("checkPGVersion(%q) = %v, want nil", raw, err)
+		}
+	}
+	for _, raw := range []string{"170005", "160000", "", "not-a-number"} {
+		var p *doctor.Problem
+		if err := checkPGVersion(raw); !errors.As(err, &p) || p.Warning || !strings.Contains(p.Fix, "18") || p.Doc == "" {
+			t.Errorf("checkPGVersion(%q) = %v, want failure with fix and doc", raw, err)
+		}
+	}
+	var p *doctor.Problem
+	if errors.As(checkPGVersion("170005"), &p) && !strings.Contains(p.Summary, "17.5") {
+		t.Errorf("summary = %q, want 17.5", p.Summary)
+	}
+}
 
 func TestCheckClock(t *testing.T) {
 	t.Parallel()

@@ -65,7 +65,7 @@ type SearchArticlesInput struct {
 
 `?limit=50` 时 `in.Limit` 是 50，省略时是默认值 20，`?limit=500` 返回 `422`。名字区分大小写，写错时总是得到默认值。
 
-- 要把超出范围的值截断而不是拒绝时，去掉 `maximum`，在业务动作中截断，并在接口说明中写明。
+- 需要对超出范围的值做截断处理时，去掉 `maximum`，在业务动作中截断，并在接口说明中写明。
 - 列表的分页参数嵌入 `page.OffsetParams` 或 `page.CursorParams`，见[分页](responses.md#pagination)。
 
 <a id="headers"></a>

@@ -1,8 +1,8 @@
 // @go-tenon/electron/main 在 Electron 的主进程中实现网页宿主的约定（@go-tenon/host）：
 //
 //   - 页面来自 https://<id>.localhost：用 protocol.handle 接管这个主机（其他 https 请求原样放行），前端按 SPA 模式
-//     构建的文件从安装包返回，前端路由中的页面返回页面外壳（带 CSP 和 nonce）。用 https 而不是自定义协议：前端路由
-//     只把 http(s) 的同源地址当作站内跳转，例如登录检查跳到登录页；.localhost 是保留的域名，不会解析到外部；
+//     构建的文件从安装包返回，前端路由中的页面返回页面外壳（带 CSP 和 nonce）。页面使用 https 协议，使前端路由
+//     把同源地址当作站内跳转（例如登录检查跳到登录页）；.localhost 是保留域名，只在本地解析；
 //   - 同源的 /api/* 转发到服务器，加上 Authorization: Bearer 和 X-App-Version，响应流式返回；收到 401 时删除 token；
 //   - 实时频道的 WebSocket 握手加上 Authorization；
 //   - 登录：在系统浏览器中走 OAuth 授权码 + PKCE，回调到 127.0.0.1，token 用 safeStorage 加密保存；

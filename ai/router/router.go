@@ -265,7 +265,7 @@ func New(p Policy, candidates []Candidate, decider ai.Decider) (*Router, error) 
 
 // Decide 为请求 req 执行路由决策，返回最终选中的档位、有序候选模型列表及决策元数据。
 // 决策顺序：硬能力过滤 -> 显式 TierHint -> 前置确定性规则 -> 会话粘性/顶档短路 -> 分类器 -> 兜底。
-// 分类器超时、出错或拒答时不返回 error，而是自动降级回退到兜底模型并记录在 Decision.Reason 与 Decision.ClassifierErr 中。
+// 分类器超时、出错或拒答时自动降级到兜底模型，并将原因与错误记录在 Decision.Reason 与 Decision.ClassifierErr 中。
 func (r *Router) Decide(ctx context.Context, req Request) Decision {
 	start := time.Now()
 	finish := func(d Decision) Decision {

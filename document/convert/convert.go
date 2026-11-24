@@ -237,7 +237,7 @@ var (
 	ErrCorrupt = errorx.Define(errorx.InvalidArgument, "document.corrupt")
 	// ErrTooLarge 表示超出了 Limits 中的某个上限，具体是哪一个见 LimitError。
 	ErrTooLarge = errorx.Define(errorx.InvalidArgument, "document.too_large")
-	// ErrClosed 表示转换器已经关闭。这是程序的错误，不是文档的问题。
+	// ErrClosed 表示转换器已经关闭，属于调用方的程序错误。
 	ErrClosed = errors.New("convert: converter closed")
 )
 

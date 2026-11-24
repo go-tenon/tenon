@@ -16,8 +16,8 @@ import (
 )
 
 const (
-	// minNATSMajor、minNATSMinor 是队列需要的 NATS 版本：支持 JetStream Pull 与 consumer 暂停。
-	minNATSMajor, minNATSMinor = 2, 10
+	// minNATSMajor、minNATSMinor 是框架要求的最低 NATS 版本：支持 JetStream Pull、consumer 暂停与 KV 过期标记。
+	minNATSMajor, minNATSMinor = 2, 15
 
 	docPreparing = "docs/background/queue.md#preparing"
 )
@@ -26,7 +26,7 @@ const (
 //
 //   - tables：queue_outbox 和 queue_failed_jobs 表是否存在；迁移还没执行时跳过；
 //   - nats（nc 不为 nil）：NATS 连接可用；
-//   - nats_version（nc 不为 nil）：NATS 服务器版本为 2.10 以上；
+//   - nats_version（nc 不为 nil）：NATS 服务器版本为 2.15 以上；
 //   - jetstream（nc 不为 nil）：NATS 已开启 JetStream。
 //
 // db 和 nc 在检查时才使用，可以在打开连接之前构造。

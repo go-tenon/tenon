@@ -456,7 +456,7 @@ export function useMenu(): MenuItem[] {
   const badges = useBadges(app)
   const current = useParams({ strict: false }) as Record<string, unknown>
   const key = JSON.stringify(current)
-  // biome-ignore lint/correctness/useExhaustiveDependencies: 按参数的内容而不是对象的标识重新计算
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 按参数的字段内容重新计算
   const params = useMemo(
     () => Object.fromEntries(Object.entries(current).map(([k, v]) => [k, String(v)])) as Record<string, string>,
     [key],

@@ -7,7 +7,7 @@
 <a id="deploying"></a>
 ## 部署
 
-NATS 2.10 或更新的版本，启动时加 `-js` 开启 JetStream，见[队列的准备](../background/queue.md#preparing)。没有 `-js` 时队列和在线成员存储报错 JetStream 不可用。
+NATS 2.15 或更新的版本，启动时加 `-js` 开启 JetStream，见[队列的准备](../background/queue.md#preparing)。没有 `-js` 时队列和在线成员存储报错 JetStream 不可用。
 
 <a id="connecting"></a>
 ## 连接 NATS：`natsx.Connect`

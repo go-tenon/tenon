@@ -211,5 +211,5 @@ bun run typecheck && go test ./...
 ```
 
 - 改动涉及并发时再运行 `go test -race ./...`。
-- 框架需要的 Go 版本以它的 [go.mod](../../go.mod) 为准，框架的集成测试使用 PostgreSQL 18。
+- 框架需要的 Go 版本以它的 [go.mod](../../go.mod) 为准，最低要求 PostgreSQL 18 与 NATS 2.15。
 - CI 中启用了[已发布迁移检查](../database/migrations.md#checking-in-ci)和 `migrate verify` 时，分别确认未改写历史迁移且未漏发框架新增迁移。

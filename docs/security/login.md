@@ -411,7 +411,7 @@ _, err := a.staff.SendCode(ctx, login.Reset, login.Email(in.Email))
 
 ```yaml
 captcha:
-  secret: ${TURNSTILE_SECRET} # 服务端密钥，不是前端的 site key
+  secret: ${TURNSTILE_SECRET} # Turnstile 服务端密钥（secret key）
   hostnames: [example.com]    # 允许的站点域名，为空时不检查
   # endpoint: https://api.hcaptcha.com/siteverify  # 用 hCaptcha 时设置，默认 Turnstile
 ```

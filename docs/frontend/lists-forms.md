@@ -86,7 +86,7 @@ return (
 <a id="description-list"></a>
 ### 用 `DescriptionList` 显示一个对象的属性
 
-详情页的基本信息、系统状态这类“名称 — 值”的列表用 `DescriptionList`，不用表格：
+详情页的基本信息、系统状态这类“名称 — 值”的列表用 `DescriptionList`：
 
 ```tsx
 <DescriptionList

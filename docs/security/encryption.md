@@ -174,7 +174,7 @@ return h.verifyEmail.Handle(r.Context(), chi.URLParam(r, "id"), r.URL.Query().Ge
 link := a.crypt.SignURL("https://example.com/unsubscribe/"+u.ID, 0)
 ```
 
-只能使用一次的链接（重置密码）不用签名：把令牌存在数据库中，用过就删除。
+一次性链接（例如重置密码）将令牌保存在数据库中，使用后删除。
 
 <a id="rotating-keys"></a>
 ## 轮换密钥

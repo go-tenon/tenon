@@ -17,7 +17,7 @@ const (
 )
 
 // 展开表格产生的副本按估计的工作量计数：每个复制的节点计 nodeBytes，复制的文字或属性每个字节计
-// textWeight，无论是否会被渲染。它近似转换这些副本的代价，不是严格的内存上限。
+// textWeight，无论是否会被渲染。它表示转换这些副本的近似代价。
 const (
 	nodeBytes  = 64
 	textWeight = 16

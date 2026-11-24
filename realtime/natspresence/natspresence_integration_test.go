@@ -108,6 +108,48 @@ func TestCrossInstanceMirrorSync(t *testing.T) {
 	waitEntries(t, c, "editing:1", 0)
 }
 
+// 服务端 TTL 到期时，NATS 发出清除标记同步给全部实例，新启动的实例初始快照也不含已过期记录。
+func TestServerSideTTLExpirySync(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ncA, ncB, ncC := natstest.Connect(t), natstest.Connect(t), natstest.Connect(t)
+	bucket := "test_presence_" + rand.Text()
+	a, err := natspresence.New(ctx, ncA, natspresence.Options{Bucket: bucket})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := natspresence.New(ctx, ncB, natspresence.Options{Bucket: bucket})
+	if err != nil {
+		_ = a.Close()
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = a.Close()
+		_ = b.Close()
+		if js, err := jetstream.New(ncA); err == nil {
+			_ = js.DeleteKeyValue(context.Background(), bucket)
+		}
+	})
+
+	alice := identity.Ref{Type: "user", ID: "alice"}
+	if err := a.Add(ctx, realtime.PresenceEntry{Channel: "editing:2", Client: "c1", Subject: alice}, time.Second); err != nil {
+		t.Fatal(err)
+	}
+	waitEntries(t, b, "editing:2", 1)
+
+	waitEntries(t, a, "editing:2", 0)
+	waitEntries(t, b, "editing:2", 0)
+
+	c, err := natspresence.New(ctx, ncC, natspresence.Options{Bucket: bucket})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if got, err := c.List(ctx, "editing:2"); err != nil || len(got) != 0 {
+		t.Fatalf("new instance after expiry = %+v, %v", got, err)
+	}
+}
+
 func waitEntries(t *testing.T, s *natspresence.Store, channel string, want int) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
@@ -126,7 +168,7 @@ func TestAddRejectsTTLOutOfRange(t *testing.T) {
 	t.Parallel()
 	s := newStore(t)
 	e := realtime.PresenceEntry{Channel: "room:1", Client: "c1", Subject: identity.Ref{Type: "user", ID: "alice"}}
-	for _, ttl := range []time.Duration{0, -time.Second, natspresence.MaxTTL + time.Second} {
+	for _, ttl := range []time.Duration{0, -time.Second, natspresence.MinTTL - time.Millisecond, natspresence.MaxTTL + time.Second} {
 		if err := s.Add(context.Background(), e, ttl); err == nil {
 			t.Errorf("ttl %s accepted", ttl)
 		}

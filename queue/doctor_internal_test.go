@@ -31,11 +31,12 @@ func TestDoctorJudgements(t *testing.T) {
 		err  error
 		want string
 	}{
-		{"nats 2.10", checkNATSVersion("2.10.0"), "passed"},
-		{"nats 2.15", checkNATSVersion("2.15.1"), "passed"},
+		{"nats 2.15", checkNATSVersion("2.15.0"), "passed"},
+		{"nats 2.15 patch", checkNATSVersion("2.15.1"), "passed"},
 		{"nats 3.0", checkNATSVersion("3.0.0"), "passed"},
 		{"nats v2.16 beta", checkNATSVersion("v2.16.0-beta.1"), "passed"},
-		{"nats 2.9", checkNATSVersion("2.9.25"), "failed"},
+		{"nats 2.14", checkNATSVersion("2.14.9"), "failed"},
+		{"nats 2.10", checkNATSVersion("2.10.0"), "failed"},
 		{"nats 1.99", checkNATSVersion("1.99.0"), "failed"},
 		{"nats unknown", checkNATSVersion(""), "failed"},
 		{"jetstream on", checkJetStream(nil), "passed"},
@@ -53,7 +54,7 @@ func TestDoctorJudgements(t *testing.T) {
 func TestDoctorFixes(t *testing.T) {
 	t.Parallel()
 	var p *doctor.Problem
-	if !errors.As(checkNATSVersion("2.9.0"), &p) || !strings.Contains(p.Fix, "2.10") || p.Doc == "" {
+	if !errors.As(checkNATSVersion("2.14.0"), &p) || !strings.Contains(p.Fix, "2.15") || p.Doc == "" {
 		t.Errorf("nats_version problem = %+v", p)
 	}
 	if !errors.As(checkJetStream(jetstream.ErrJetStreamNotEnabled), &p) || !strings.Contains(p.Fix, "-js") {

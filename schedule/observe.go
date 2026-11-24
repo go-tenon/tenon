@@ -53,7 +53,7 @@ type Event struct {
 	Duration   time.Duration // 执行耗时，只用于 TaskSucceeded 和 TaskFailed。
 	Err        error         // TaskFailed 和 SkipStoreFailed 的原因。
 	SkipReason SkipReason
-	Manual     bool // 这次执行来自 RunNow（例如后台的“立即执行”），不是按表达式触发；这时 Tick 为零值。
+	Manual     bool // 这次执行来自 RunNow（例如后台的“立即执行”），此时 Tick 为零值。
 }
 
 // Observer 接收执行事件，例如把执行记录写入数据库，供后台页面查看。它在执行任务的 goroutine 中同步调用，

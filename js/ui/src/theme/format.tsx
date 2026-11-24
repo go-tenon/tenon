@@ -22,7 +22,7 @@ export interface TimeZoneProviderProps {
 
 /**
  * 页面中显示和输入时间使用的时区，例如用户在偏好设置中选的时区：useFormatDateTime（表格、操作记录、通知等）、
- * 资源表单的日期时间输入框都按它换算。时区通常在登录后才读到，所以放在布局外面，而不是主题中：
+ * 资源表单的日期时间输入框都按它换算。时区在登录后读取，放在布局外层：
  *
  *	<TimeZoneProvider zone={me.data?.time_zone}>
  *	  <RailLayout … />

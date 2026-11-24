@@ -9,7 +9,7 @@
 
 - **Linux 可执行文件**：按[构建](deployment.md#building)编译对应架构（`amd64` 或 `arm64`）的二进制，内嵌前端静态资源、SSR、迁移和翻译。应用装配好 [`doctor` 命令](doctor.md#doctor-command)、[迁移之前](doctor.md#before-migrating)和[启动之前](doctor.md#before-starting)的检查，以及恢复备份时要用的 [queue 命令](../background/queue.md#stats-command)。
 - **`config/` 目录**（不含 `local.yaml`）、**`.env.example`** 与 **`<应用>@.service`**（见[用 systemd 运行](deployment.md#systemd)）。
-- 依赖服务：PostgreSQL 与 NATS JetStream（2.10 以上）由客户侧提供或按下方要求在同一台机器上部署。若客户侧环境强制要求容器运行时，也可将同一二进制与 `config` 打包进基础镜像运行。
+- 依赖服务：PostgreSQL 18 以上与 NATS JetStream（2.15 以上）由客户侧提供或按下方要求在同一台机器上部署。若客户侧环境强制要求容器运行时，也可将同一二进制与 `config` 打包进基础镜像运行。
 
 <a id="env-file"></a>
 ## 环境变量文件
@@ -34,8 +34,8 @@ NATS_URL=nats://127.0.0.1:4222
 
 交给客户的数据库管理员或运维人员：
 
-- PostgreSQL，一个空的数据库与普通读写用户（支持经过 [PgBouncer](operations.md#pgbouncer)）；
-- NATS 2.10 以上，开启 JetStream 并持久化存储目录（`nats-server -js -sd /var/lib/nats`）。
+- PostgreSQL 18 以上，一个空的数据库与普通读写用户（支持经过 [PgBouncer](operations.md#pgbouncer)）；
+- NATS 2.15 以上，开启 JetStream 并持久化存储目录（`nats-server -js -sd /var/lib/nats`）。
 
 <a id="first-start"></a>
 ## 第一次启动

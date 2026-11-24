@@ -18,7 +18,7 @@ func TestDoctor(t *testing.T) {
 			t.Errorf("%s = %+v, want passed on the test database", res.Check, res)
 		}
 	}
-	if len(report.Results) != 2 {
+	if len(report.Results) != 3 {
 		t.Errorf("results = %+v", report.Results)
 	}
 
@@ -27,7 +27,7 @@ func TestDoctor(t *testing.T) {
 		t.Fatal(err)
 	}
 	report = doctor.Run(context.Background(), database.Doctor(closed))
-	if report.Results[0].Status != doctor.Failed || report.Results[1].Status != doctor.Skipped {
+	if report.Results[0].Status != doctor.Failed || report.Results[1].Status != doctor.Skipped || report.Results[2].Status != doctor.Skipped {
 		t.Errorf("closed database: %+v", report.Results)
 	}
 }
