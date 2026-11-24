@@ -96,11 +96,19 @@ func TestPresenceStore(t *testing.T, newStore func(t *testing.T) realtime.Presen
 
 	t.Run("entries expire unless renewed", func(t *testing.T) {
 		s := newStore(t)
-		add(t, s, realtime.PresenceEntry{Channel: "room:1", Client: "gone", Subject: alice}, 150*time.Millisecond)
-		add(t, s, realtime.PresenceEntry{Channel: "room:1", Client: "kept", Subject: bob}, 150*time.Millisecond)
+		add(t, s, realtime.PresenceEntry{Channel: "room:1", Client: "gone", Subject: alice}, time.Second)
+		add(t, s, realtime.PresenceEntry{Channel: "room:1", Client: "kept", Subject: bob}, time.Second)
 		add(t, s, realtime.PresenceEntry{Channel: "room:1", Client: "kept", Subject: bob}, time.Minute) // 续期
-		time.Sleep(300 * time.Millisecond)
-		if got := list(t, s, "room:1"); len(got) != 1 || got[0].Client != "kept" {
+		deadline := time.Now().Add(3 * time.Second)
+		var got []realtime.PresenceEntry
+		for time.Now().Before(deadline) {
+			got = list(t, s, "room:1")
+			if len(got) == 1 && got[0].Client == "kept" {
+				break
+			}
+			time.Sleep(25 * time.Millisecond)
+		}
+		if len(got) != 1 || got[0].Client != "kept" {
 			t.Fatalf("entries after expiry = %+v", got)
 		}
 		// 过期之后可以重新加入。

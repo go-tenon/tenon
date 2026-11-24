@@ -9,7 +9,7 @@ description: Tenon 应用的后台任务：用 queue.Topic 声明队列任务、
 
 ## 队列任务
 
-1. **准备**：NATS 2.10+ 开启 JetStream；发布框架的队列迁移 `queue.Migrations()`（创建 `queue_outbox` 和 `queue_failed_jobs` 表）。见 `tenon/docs/background/queue.md#preparing`。
+1. **准备**：NATS 2.15+ 开启 JetStream；发布框架的队列迁移 `queue.Migrations()`（创建 `queue_outbox` 和 `queue_failed_jobs` 表）。见 `tenon/docs/background/queue.md#preparing`。
 2. **声明 topic**：`var PublishAt = queue.Topic[uuid.UUID]("articles.publish")`，名称和 payload 类型绑在一起，发布方和处理方共用这一个声明，放在业务动作的文件中。见 `tenon/docs/background/queue.md#publishing-jobs`。
 3. **在事务中发布**：`PublishAt.Publish(ctx, tx, item.ID)`，与业务数据一起提交；事务回滚时任务不存在。延迟执行用 `queue.At(t)`，见 `tenon/docs/background/queue.md#delayed-jobs`。
 4. **处理**：业务动作的 `Job(ctx, payload) error` 方法，以系统身份调用 `Handle`，见 `tenon/docs/concepts/actions.md#as-jobs`。

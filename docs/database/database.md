@@ -1,6 +1,6 @@
 # 数据库
 
-Tenon 只支持 PostgreSQL。`database.Open` 打开 pgx 连接池，返回 [Bun](https://bun.uptrace.dev/guide/) 的 `*bun.DB`，查询和事务直接用 Bun 的 API。`database` 另外提供事务提交后的回调、约束错误的判断、慢查询日志和只读副本。
+Tenon 使用 PostgreSQL 18 或更新的版本。`database.Open` 打开 pgx 连接池，返回 [Bun](https://bun.uptrace.dev/guide/) 的 `*bun.DB`，查询和事务直接用 Bun 的 API。`database` 另外提供事务提交后的回调、约束错误的判断、慢查询日志和只读副本。
 
 包：`database`、`acquire`。
 

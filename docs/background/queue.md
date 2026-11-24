@@ -36,8 +36,8 @@ err = w.Run(ctx) // 一直运行到 ctx 被取消
 <a id="preparing"></a>
 ## 准备：NATS、PostgreSQL 与迁移
 
-- **NATS** 2.10 或更新的版本，开启 JetStream：`nats-server -js -sd /var/lib/nats`。worker 启动时自己创建 stream 和 consumer。生产环境用三台服务器组成[集群](https://docs.nats.io/running-a-nats-service/configuration/clustering/jetstream_clustering)并把 `replicas` 设为 3：单台服务器默认每 2 分钟同步一次磁盘，断电时最近的任务可能丢失；只有一台时在 NATS 配置中设置 `jetstream { sync_interval: always }`。
-- **PostgreSQL**：普通权限和普通连接即可，完全兼容 PgBouncer 的 transaction 模式，不需要开启逻辑复制。`queue.Doctor` 检查队列数据表和 NATS 设置，见[自检](../installation/doctor.md)。
+- **NATS** 2.15 或更新的版本，开启 JetStream：`nats-server -js -sd /var/lib/nats`。worker 启动时自己创建 stream 和 consumer。生产环境用三台服务器组成[集群](https://docs.nats.io/running-a-nats-service/configuration/clustering/jetstream_clustering)并把 `replicas` 设为 3：单台服务器默认每 2 分钟同步一次磁盘，断电时最近的任务可能丢失；只有一台时在 NATS 配置中设置 `jetstream { sync_interval: always }`。
+- **PostgreSQL** 18 或更新的版本：普通权限和普通连接即可，完全兼容 PgBouncer 的 transaction 模式，不需要开启逻辑复制。`queue.Doctor` 检查队列数据表和 NATS 设置，见[自检](../installation/doctor.md)。
 - **迁移**：`queue.Migrations()` 创建待转发队列 `queue_outbox` 和失败任务表 `queue_failed_jobs`，加入[发布命令](../database/migrations.md#publishing-framework-migrations)：
 
 ```go

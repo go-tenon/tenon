@@ -184,7 +184,7 @@ rest.Register(api, status, func(ctx context.Context, _ *struct{}) (*DoctorOutput
 
 | 函数 | 组名 | 检查 |
 | --- | --- | --- |
-| `database.Doctor(db)` | `postgres` | `connection`；`clock`：本机与数据库的时钟相差超过 1 秒时提示（锁、限流、任务时间都按实例的时钟计算） |
+| `database.Doctor(db)` | `postgres` | `connection`；`version`：PostgreSQL 18 以上；`clock`：本机与数据库的时钟相差超过 1 秒时提示（定时任务触发等按实例的时钟计算） |
 | `migrate.Doctor(db, fsys)` | `migrations` | `up_to_date`：`fsys` 中的迁移都已执行，否则失败；数据库比程序新时提示。不持有迁移锁 |
 | `queue.Doctor(db, nc, cfg)` | `queue` | 见[队列的检查](#queue-checks) |
 | `filesystem.Doctor(disk)` | `storage` | `read_write`：写入、读回、删除一个键以 `tenon-doctor/` 开头的探测对象。本地磁盘检查目录可写，S3 检查 bucket、地址和凭据 |
@@ -204,7 +204,7 @@ rest.Register(api, status, func(ctx context.Context, _ *struct{}) (*DoctorOutput
 | 检查 | 内容 | 不满足时 |
 | --- | --- | --- |
 | `tables` | `queue_outbox` 和 `queue_failed_jobs` 表存在；迁移还没执行时跳过 | 失败 |
-| `nats`、`nats_version`、`jetstream` | `nc` 不为 `nil` 时：连接可用，NATS 2.10 以上，开启了 JetStream | 失败 |
+| `nats`、`nats_version`、`jetstream` | `nc` 不为 `nil` 时：连接可用，NATS 2.15 以上，开启了 JetStream | 失败 |
 
 <a id="s3-checks"></a>
 ### S3 的检查：`s3.Doctor`

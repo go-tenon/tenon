@@ -64,40 +64,33 @@ func New(db bun.IDB, name string, cfg ratelimit.Config) *Limiter {
 
 // Allow 实现 ratelimit.Limiter。
 //
-// 新的 key 插入 clock_timestamp() + step；已有的 key 在 greatest(tat, now) 不晚于 now + ahead 时把 tat 推后 step，
-// 否则不修改，再读出 tat 和数据库时钟计算需要等待的时间。
+// 通过 PostgreSQL 18 的 RETURNING old/new 单条原子语句完成判定：新的 key 插入 now + step；
+// 已有的 key 在 tat 不晚于 now + ahead 时把 tat 推后 step，否则保持原值并直接用 old.tat 与 now 计算等待时间。
 func (l *Limiter) Allow(ctx context.Context, key string) error {
 	stepUS := l.step.Microseconds()
 	aheadUS := l.ahead.Microseconds()
-	for range 3 {
-		res, err := l.db.NewRaw(`
-INSERT INTO rate_limits AS r (name, key, tat) VALUES (?, ?, clock_timestamp() + ? * interval '1 microsecond')
-ON CONFLICT (name, key) DO UPDATE SET tat = greatest(r.tat, clock_timestamp()) + ? * interval '1 microsecond'
-WHERE greatest(r.tat, clock_timestamp()) <= clock_timestamp() + ? * interval '1 microsecond'`,
-			l.name, key, stepUS, stepUS, aheadUS).Exec(ctx)
-		if err != nil {
-			return errors.Wrap(err, "ratelimit: allow")
-		}
-		if n, err := res.RowsAffected(); err != nil || n == 1 {
-			return errors.Wrap(err, "ratelimit: allow")
-		}
-		var tat, now time.Time
-		err = l.db.NewRaw(`SELECT tat, clock_timestamp() FROM rate_limits WHERE name = ? AND key = ?`, l.name, key).Scan(ctx, &tat, &now)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return errors.Wrap(err, "ratelimit: allow")
-		}
-		if errors.Is(err, sql.ErrNoRows) {
-			continue
-		}
-		if tat.Before(now) {
-			tat = now
-		}
-		if wait := tat.Sub(now) - l.ahead; wait > 0 {
-			return ratelimit.ErrExceeded.New(errorx.RetryAfter(wait))
-		}
-		// 两条语句之间配额回满了，或者 key 被 Reset：再试一次。
+	var oldTat sql.NullTime
+	var newTat, now time.Time
+	err := l.db.NewRaw(`
+WITH now_ts(t) AS MATERIALIZED (SELECT clock_timestamp())
+INSERT INTO rate_limits AS r (name, key, tat)
+SELECT ?, ?, t + ? * interval '1 microsecond' FROM now_ts
+ON CONFLICT (name, key) DO UPDATE SET
+    tat = CASE
+        WHEN r.tat <= (SELECT t FROM now_ts) + ? * interval '1 microsecond'
+        THEN greatest(r.tat, (SELECT t FROM now_ts)) + ? * interval '1 microsecond'
+        ELSE r.tat
+    END
+RETURNING old.tat, new.tat, (SELECT t FROM now_ts) AS now`,
+		l.name, key, stepUS, aheadUS, stepUS).Scan(ctx, &oldTat, &newTat, &now)
+	if err != nil {
+		return errors.Wrap(err, "ratelimit: allow")
 	}
-	return ratelimit.ErrExceeded.New(errorx.RetryAfter(l.step))
+	if !oldTat.Valid || !newTat.Equal(oldTat.Time) {
+		return nil
+	}
+	wait := oldTat.Time.Sub(now) - time.Duration(aheadUS)*time.Microsecond
+	return ratelimit.ErrExceeded.New(errorx.RetryAfter(wait))
 }
 
 // Reset 实现 ratelimit.Limiter：删除 key 的行，与从未出现过的 key 等价。

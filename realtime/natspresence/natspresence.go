@@ -25,12 +25,14 @@ import (
 
 var _ realtime.PresenceStore = (*Store)(nil)
 
-// MaxTTL 是 Add 接受的最长有效期，也是 bucket 中记录的保存期限：连接所在的进程崩溃时来不及删除的记录，
-// 最晚在 MaxTTL 之后由 NATS 删除。有效期到了但还在保存期限内的记录，List 不返回。
+// MinTTL 是 Add 接受的最短有效期，受 NATS JetStream 单消息 TTL 最小 1 秒的限制。
+const MinTTL = time.Second
+
+// MaxTTL 是 Add 接受的最长有效期，也是 bucket 中记录的保存期限上限。
 const MaxTTL = 5 * time.Minute
 
-// sweepInterval 是后台清理本地内存镜像中已过期条目的周期。
-const sweepInterval = time.Minute
+// markerTTL 是键因 TTL 到期后 NATS 保留删除标记的时长，确保所有实例的 watcher 及时收到过期事件。
+const markerTTL = time.Minute
 
 // Options 是 New 的选项。
 type Options struct {
@@ -42,15 +44,17 @@ type Options struct {
 var validBucket = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 // Store 在一个 KV bucket 中为每个频道的每个连接保存一个键：<频道>.<连接 ID>，两段都用 base64url 编码，
-// 频道名中的 ':' 和 '.' 因此不影响键的格式。值中记录主体、资料和到期时间。
+// 频道名中的 ':' 和 '.' 因此不影响键的格式。值中记录主体和资料，有效期由 NATS JetStream 按消息 TTL 维护。
 //
 // 每个 Store 通过单个常驻 KV Watcher 在进程内存中维护 bucket 的实时镜像：
 // List 直接读取内存镜像，不向 NATS 发起查询；Add 和 Remove 写入 NATS 后立即同步本地镜像。
-// bucket 保存在服务器内存中，只保留每个键的最新值，记录的保存期限是 MaxTTL。
-// 到期时间按应用服务器的时钟计算，各实例的时钟需要同步。使用完毕后调用 Close 停止后台同步。
+// bucket 开启 LimitMarkerTTL，键到期时 NATS 服务端自动发出清除标记并推送给全部 watcher，
+// 过期判断以 NATS 服务端时钟为准。bucket 保存在服务器内存中，只保留每个键的最新值。使用完毕后调用 Close 停止后台同步。
 type Store struct {
-	kv     jetstream.KeyValue
-	logger *slog.Logger
+	js        jetstream.JetStream
+	kv        jetstream.KeyValue
+	keyPrefix string
+	logger    *slog.Logger
 
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -63,12 +67,11 @@ type Store struct {
 // cachedEntry 是本地内存镜像中的一条在线记录。
 type cachedEntry struct {
 	entry    realtime.PresenceEntry
-	expires  int64 // Unix 毫秒
 	revision uint64
 }
 
 // New 创建 bucket（已经存在时按 opts 更新它），完成初始镜像同步并返回存储。
-// nc 通常是 natsx.Connect 返回的连接，与队列等组件共用，服务器需要开启 JetStream。
+// nc 通常是 natsx.Connect 返回的连接，与队列等组件共用，服务器需要为 NATS 2.15 以上并开启 JetStream。
 // nc 为 nil 或 Bucket 不合法时 panic。
 func New(ctx context.Context, nc *nats.Conn, opts Options) (*Store, error) {
 	if nc == nil {
@@ -82,12 +85,13 @@ func New(ctx context.Context, nc *nats.Conn, opts Options) (*Store, error) {
 		return nil, errors.Wrap(err, "natspresence: jetstream")
 	}
 	kv, err := js.CreateOrUpdateKeyValue(ctx, jetstream.KeyValueConfig{
-		Bucket:      opts.Bucket,
-		Description: "tenon realtime presence",
-		History:     1,
-		TTL:         MaxTTL,
-		Storage:     jetstream.MemoryStorage,
-		Replicas:    max(opts.Replicas, 1),
+		Bucket:         opts.Bucket,
+		Description:    "tenon realtime presence",
+		History:        1,
+		TTL:            MaxTTL,
+		LimitMarkerTTL: markerTTL,
+		Storage:        jetstream.MemoryStorage,
+		Replicas:       max(opts.Replicas, 1),
 	})
 	if err != nil {
 		return nil, errors.Wrapf(err, "natspresence: bucket %s", opts.Bucket)
@@ -107,11 +111,13 @@ func New(ctx context.Context, nc *nats.Conn, opts Options) (*Store, error) {
 	}
 
 	s := &Store{
-		kv:       kv,
-		logger:   logging.Or(opts.Logger).With(logging.AttrComponent, "natspresence"),
-		cancel:   cancel,
-		done:     make(chan struct{}),
-		channels: initial,
+		js:        js,
+		kv:        kv,
+		keyPrefix: "$KV." + opts.Bucket + ".",
+		logger:    logging.Or(opts.Logger).With(logging.AttrComponent, "natspresence"),
+		cancel:    cancel,
+		done:      make(chan struct{}),
+		channels:  initial,
 	}
 	go s.watchLoop(bgCtx, w)
 	return s, nil
@@ -134,7 +140,6 @@ func (s *Store) Close() error {
 // readSnapshot 从新建立的 watcher 读取初始全量快照，直到收到 nil 哨兵。
 func readSnapshot(ctx context.Context, w jetstream.KeyWatcher) (map[string]map[string]cachedEntry, error) {
 	snapshot := map[string]map[string]cachedEntry{}
-	now := time.Now().UnixMilli()
 	for {
 		select {
 		case <-ctx.Done():
@@ -149,7 +154,7 @@ func readSnapshot(ctx context.Context, w jetstream.KeyWatcher) (map[string]map[s
 			if e.Operation() != jetstream.KeyValuePut {
 				continue
 			}
-			ce, ok := decode(e, now)
+			ce, ok := decode(e)
 			if !ok {
 				continue
 			}
@@ -161,13 +166,11 @@ func readSnapshot(ctx context.Context, w jetstream.KeyWatcher) (map[string]map[s
 // watchLoop 持续把 KV 变更同步到本地内存镜像；watcher 中断时退避重建并用新快照原子替换镜像。
 func (s *Store) watchLoop(ctx context.Context, w jetstream.KeyWatcher) {
 	defer close(s.done)
-	sweep := time.NewTicker(sweepInterval)
-	defer sweep.Stop()
 
 	backoff := 100 * time.Millisecond
 	for {
 		if w != nil {
-			s.consume(ctx, w, sweep.C)
+			s.consume(ctx, w)
 			_ = w.Stop()
 			w = nil
 			if ctx.Err() != nil {
@@ -208,14 +211,12 @@ func (s *Store) watchLoop(ctx context.Context, w jetstream.KeyWatcher) {
 	}
 }
 
-// consume 消费单个 watcher 的实时更新并定期清理已过期条目，直到 watcher 关闭或 ctx 取消。
-func (s *Store) consume(ctx context.Context, w jetstream.KeyWatcher, sweep <-chan time.Time) {
+// consume 消费单个 watcher 的实时更新，直到 watcher 关闭或 ctx 取消。
+func (s *Store) consume(ctx context.Context, w jetstream.KeyWatcher) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-sweep:
-			s.sweepExpired(time.Now().UnixMilli())
 		case e, ok := <-w.Updates():
 			if !ok {
 				return
@@ -229,6 +230,7 @@ func (s *Store) consume(ctx context.Context, w jetstream.KeyWatcher, sweep <-cha
 }
 
 // applyUpdate 把来自 KV watcher 的单条变更应用到本地内存镜像。
+// NATS 键过期产生的 KeyValuePurge 与显式删除的 KeyValueDelete 都移除对应条目。
 func (s *Store) applyUpdate(e jetstream.KeyValueEntry) {
 	channel, client, ok := decodeKey(e.Key())
 	if !ok {
@@ -243,7 +245,7 @@ func (s *Store) applyUpdate(e jetstream.KeyValueEntry) {
 		s.mu.Unlock()
 		return
 	}
-	ce, ok := decode(e, time.Now().UnixMilli())
+	ce, ok := decode(e)
 	if !ok {
 		s.mu.Lock()
 		if cur, exists := s.channels[channel][client]; exists && cur.revision <= rev {
@@ -259,27 +261,10 @@ func (s *Store) applyUpdate(e jetstream.KeyValueEntry) {
 	s.mu.Unlock()
 }
 
-// sweepExpired 删除本地镜像中所有已经到期的记录。
-func (s *Store) sweepExpired(now int64) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for ch, clients := range s.channels {
-		for client, ce := range clients {
-			if ce.expires <= now {
-				delete(clients, client)
-			}
-		}
-		if len(clients) == 0 {
-			delete(s.channels, ch)
-		}
-	}
-}
-
 // stored 是保存在 KV 中的一个在线成员。
 type stored struct {
 	Subject string `json:"s"`
 	Info    []byte `json:"i,omitempty"`
-	Expires int64  `json:"e"` // Unix 毫秒
 }
 
 var encoding = base64.RawURLEncoding
@@ -292,23 +277,23 @@ func key(channel, client string) string {
 	return channelToken(channel) + "." + encoding.EncodeToString([]byte(client))
 }
 
-// Add 实现 realtime.PresenceStore：写入 NATS 并立即同步本地内存镜像。ttl 不在 (0, MaxTTL] 之内时返回错误。
+// Add 实现 realtime.PresenceStore：携带单消息 TTL 写入 NATS 并立即同步本地内存镜像。
+// ttl 不在 [MinTTL, MaxTTL] 之内时返回错误。
 func (s *Store) Add(ctx context.Context, e realtime.PresenceEntry, ttl time.Duration) error {
-	if ttl <= 0 || ttl > MaxTTL {
-		return errors.Newf("natspresence: ttl %s must be positive and at most %s", ttl, MaxTTL)
+	if ttl < MinTTL || ttl > MaxTTL {
+		return errors.Newf("natspresence: ttl %s must be between %s and %s", ttl, MinTTL, MaxTTL)
 	}
-	expires := time.Now().Add(ttl).UnixMilli()
-	value, err := json.Marshal(stored{Subject: e.Subject.String(), Info: e.Info, Expires: expires})
+	value, err := json.Marshal(stored{Subject: e.Subject.String(), Info: e.Info})
 	if err != nil {
 		return errors.Wrap(err, "natspresence: encode")
 	}
-	rev, err := s.kv.Put(ctx, key(e.Channel, e.Client), value)
+	pa, err := s.js.Publish(ctx, s.keyPrefix+key(e.Channel, e.Client), value, jetstream.WithMsgTTL(ttl))
 	if err != nil {
 		return errors.Wrap(err, "natspresence: add")
 	}
-	ce := cachedEntry{entry: e, expires: expires, revision: rev}
+	ce := cachedEntry{entry: e, revision: pa.Sequence}
 	s.mu.Lock()
-	if cur, exists := s.channels[e.Channel][e.Client]; !exists || cur.revision <= rev {
+	if cur, exists := s.channels[e.Channel][e.Client]; !exists || cur.revision <= pa.Sequence {
 		putEntry(s.channels, ce)
 	}
 	s.mu.Unlock()
@@ -326,12 +311,11 @@ func (s *Store) Remove(ctx context.Context, channel, client string) error {
 	return nil
 }
 
-// List 实现 realtime.PresenceStore：从本地内存镜像读取频道中未过期的在线记录。
+// List 实现 realtime.PresenceStore：从本地内存镜像读取频道中的在线记录。
 func (s *Store) List(ctx context.Context, channel string) ([]realtime.PresenceEntry, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, errors.Wrap(err, "natspresence: list")
 	}
-	now := time.Now().UnixMilli()
 	s.mu.RLock()
 	clients := s.channels[channel]
 	if len(clients) == 0 {
@@ -340,9 +324,7 @@ func (s *Store) List(ctx context.Context, channel string) ([]realtime.PresenceEn
 	}
 	out := make([]realtime.PresenceEntry, 0, len(clients))
 	for _, ce := range clients {
-		if ce.expires > now {
-			out = append(out, ce.entry)
-		}
+		out = append(out, ce.entry)
 	}
 	s.mu.RUnlock()
 	return out, nil
@@ -387,14 +369,14 @@ func decodeKey(k string) (channel, client string, ok bool) {
 	return string(chBytes), string(clientBytes), true
 }
 
-// decode 把 KV 中的一条记录还原为缓存条目，记录无效或已到期时 ok 为 false。
-func decode(e jetstream.KeyValueEntry, now int64) (ce cachedEntry, ok bool) {
+// decode 把 KV 中的一条记录还原为缓存条目，记录无效时 ok 为 false。
+func decode(e jetstream.KeyValueEntry) (ce cachedEntry, ok bool) {
 	channel, client, ok := decodeKey(e.Key())
 	if !ok {
 		return ce, false
 	}
 	var st stored
-	if json.Unmarshal(e.Value(), &st) != nil || st.Expires <= now {
+	if json.Unmarshal(e.Value(), &st) != nil {
 		return ce, false
 	}
 	ref, err := identity.ParseRef(st.Subject)
@@ -403,7 +385,6 @@ func decode(e jetstream.KeyValueEntry, now int64) (ce cachedEntry, ok bool) {
 	}
 	return cachedEntry{
 		entry:    realtime.PresenceEntry{Channel: channel, Client: client, Subject: ref, Info: st.Info},
-		expires:  st.Expires,
 		revision: e.Revision(),
 	}, true
 }
