@@ -92,8 +92,8 @@ if err := sync(ctx); err != nil {
 | --- | --- |
 | HTTP | `httpx.Telemetry(mp, tp)`，中间件，装在 `httpx.Defaults` 之前 |
 | 数据库 | `database.Open(ctx, cfg, database.WithTelemetry(mp, tp))` |
-| 队列 | `queue.NewWorker(db, nc, cfg, nil, queue.WithTelemetry(mp, tp))` |
-| 定时任务 | `schedule.New(pgschedule.New(db), cfg, nil, schedule.WithTelemetry(mp, tp))` |
+| 队列 | `queue.NewWorker(db, nc, cfg, queue.WithTelemetry(mp, tp))` |
+| 定时任务 | `schedule.New(pgschedule.New(db), cfg, schedule.WithTelemetry(mp, tp))` |
 | 限流 | `ratelimit.Observe(mp, name, limiter)` |
 | MCP | `mcpx.New(opts, mcpx.WithTelemetry(mp, tp))` |
 | 实时频道 | `realtime.Options.MeterProvider` |

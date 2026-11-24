@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -31,8 +32,8 @@ const credentialTimeout = 10 * time.Second
 
 // Options 配置 Realtime，零值可用。
 type Options struct {
-	Authenticate   identity.TokenValidator                        // 校验连接的 token（依次取 SDK 传入的 token、连接请求的 Authorization: Bearer 请求头、浏览器的会话 cookie），返回主体，通常与 rest.RequireToken 使用同一个校验器；token 无效时 SDK 停止重连，系统故障时客户端稍后重连。连接期间定期重新调用，token 被撤销后连接结束。nil 时拒绝带 token 的连接
-	Accounts       identity.Accounts                              // 用 token 连接时接受的账号体系和各自的 Resolver，通常与 rest.Options.Accounts 相同：按主体的 Type 调用 Resolver 得到连接的主体；Type 不在其中、或 Resolver 返回系统故障以外的错误时拒绝连接。连接期间与 Authenticate 一起定期重新调用，用户被停用或移出租户后连接结束。设置了 Authenticate 时必须设置
+	Validate       identity.TokenValidator                        // 校验连接的 token（依次取 SDK 传入的 token、连接请求的 Authorization: Bearer 请求头、浏览器的会话 cookie），返回主体，与 rest.Options.Validate、mcpx.HandlerOptions.Validate、natsrpc.Options.Validate 相同；token 无效时 SDK 停止重连，系统故障时客户端稍后重连。连接期间定期重新调用，token 被撤销后连接结束。nil 时拒绝带 token 的连接
+	Accounts       identity.Accounts                              // 用 token 连接时接受的账号体系和各自的 Resolver，通常与 rest.Options.Accounts 相同：按主体的 Type 调用 Resolver 得到连接的主体；Type 不在其中、或 Resolver 返回系统故障以外的错误时拒绝连接。连接期间与 Validate 一起定期重新调用，用户被停用或移出租户后连接结束。设置了 Validate 时必须设置
 	Impersonation  *identity.Impersonation                        // 允许代为登录时对操作者的校验规则，与 rest.Options.Impersonation 相同；nil 时默认拒绝所有代为登录连接
 	SessionCookie  httpx.SessionCookie                            // 浏览器的会话 cookie，与 rest.Options.SessionCookie 相同；零值是 httpx.DefaultSessionCookieName。
 	Tenant         func(r *http.Request) string                   // 从连接请求中取出它所在的租户，例如路径参数 chi.URLParam(r, "tenant")、子域名或请求头，结果写入 identity.WithTenant：Resolver 据此加载权限，绑定了其他租户的 token 被拒绝。与 rest.Options.Tenant 的作用相同。nil 时使用外层中间件已经写入的租户，没有时是平台本身（""）。
@@ -65,10 +66,13 @@ type Realtime struct {
 
 // New 创建 Realtime 并按需订阅有客户端的频道，直到 Shutdown。hub 由应用创建和关闭，
 // 所有实例必须使用相同的后端。hub 为 nil、TrustedOrigins 格式不正确、PresenceGrace 超过上限，
-// 或设置了 Authenticate 而 Accounts 为空、Accounts 的名称不合法时 panic。
+// 或设置了 Validate 而 Accounts 为空、Accounts 的名称不合法时 panic。
 func New(hub *broadcast.Hub, opts Options) (*Realtime, error) {
 	if hub == nil {
 		panic("realtime: nil hub")
+	}
+	if isNilInterface(opts.Credentials) {
+		opts.Credentials = nil
 	}
 	rt := &Realtime{
 		opts:    opts,
@@ -77,8 +81,8 @@ func New(hub *broadcast.Hub, opts Options) (*Realtime, error) {
 		origins: map[string]struct{}{},
 		recheck: credentialInterval,
 	}
-	if opts.Authenticate != nil && len(opts.Accounts) == 0 {
-		panic("realtime: Accounts is required with Authenticate")
+	if opts.Validate != nil && len(opts.Accounts) == 0 {
+		panic("realtime: Accounts is required with Validate")
 	}
 	if err := opts.Accounts.Validate(); err != nil {
 		panic(errors.Wrap(err, "realtime"))
@@ -194,7 +198,7 @@ func (rt *Realtime) Unsubscribe(ref identity.Ref, channel string) error {
 
 // Handler 返回接受 WebSocket 连接的处理器，客户端 SDK 连接到它所在的地址。
 //
-// Options.Authenticate 校验连接的 token，依次取 SDK 传入的 token、连接请求的 Authorization: Bearer 请求头、
+// Options.Validate 校验连接的 token，依次取 SDK 传入的 token、连接请求的 Authorization: Bearer 请求头、
 // 浏览器的会话 cookie；都没有的连接是匿名的，只能订阅 Public 频道。
 // 浏览器的连接只接受同源的页面（以及 TrustedOrigins），其他网站的页面不能借用户的 cookie 建立连接。
 // 带 Authorization 请求头的连接不检查来源：请求头由客户端自己设置，浏览器不会自动附加，例如桌面端的宿主
@@ -280,4 +284,17 @@ func (rt *Realtime) log(e centrifuge.LogEntry) {
 		attrs = append(attrs, k, v)
 	}
 	rt.logger.Log(context.Background(), level, e.Message, attrs...)
+}
+
+// isNilInterface 报告接口值 v 是否为 nil 或持有 nil 指针。
+func isNilInterface(v any) bool {
+	if v == nil {
+		return true
+	}
+	rv := reflect.ValueOf(v)
+	switch rv.Kind() {
+	case reflect.Pointer, reflect.Interface, reflect.Map, reflect.Slice, reflect.Func, reflect.Chan:
+		return rv.IsNil()
+	}
+	return false
 }

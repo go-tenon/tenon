@@ -33,7 +33,7 @@ type env struct {
 func setup(t *testing.T) *env {
 	t.Helper()
 	e := &env{db: dbtest.Open(t, queue.Migrations(), pgschedule.Migrations(), scheduleapi.Migrations())}
-	e.sched = schedule.New(pgschedule.New(e.db), schedule.DefaultConfig(), nil,
+	e.sched = schedule.New(pgschedule.New(e.db), schedule.DefaultConfig(),
 		schedule.WithObserver(scheduleapi.Observer(e.db)))
 	e.sched.Add("report", "@hourly", func(context.Context) error { return nil },
 		schedule.Label("每日报表"), schedule.Describe("生成报表"))
@@ -172,7 +172,7 @@ func TestRunNow(t *testing.T) {
 	}
 
 	// worker 执行：失败写进执行记录，不重试；找不到的任务转入失败任务。
-	w := queue.NewWorker(e.db, queuetest.Conn(t), queuetest.Config(t), nil)
+	w := queue.NewWorker(e.db, queuetest.Conn(t), queuetest.Config(t))
 	scheduleapi.HandleRunNow(w, func() *schedule.Scheduler { return e.sched })
 	queuetest.Run(t, w)
 	var runs runsBody

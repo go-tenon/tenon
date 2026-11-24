@@ -53,8 +53,8 @@ func Serve(ctx context.Context, cfg Config, ln net.Listener, handler http.Handle
 	srv.BaseContext = func(net.Listener) context.Context { return requestRoot }
 	errc := make(chan error, 1)
 	go func() { errc <- srv.Serve(ln) }()
-	if o.onReady != nil {
-		o.onReady()
+	for _, fn := range o.onReady {
+		fn()
 	}
 	var serveErr error
 	returned := false

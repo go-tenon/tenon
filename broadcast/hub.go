@@ -37,15 +37,27 @@ type Hub struct {
 	cleanDone  chan struct{}
 }
 
-// New 创建 Hub 并打开 Backend 会话，直到 Close。logger 记录 Backend 丢失消息和退订失败的情况，
-// nil 时使用 slog.Default()。backend 为 nil 时 panic。
-func New(backend Backend, logger *slog.Logger) *Hub {
+// Option 是 New 的选项。
+type Option func(*Hub)
+
+// WithLogger 指定记录 Backend 丢失消息和退订失败的日志器，默认使用 slog.Default()。
+func WithLogger(logger *slog.Logger) Option {
+	return func(h *Hub) {
+		if logger != nil {
+			h.logger = logger.With(logging.AttrComponent, "broadcast")
+		}
+	}
+}
+
+// New 创建 Hub 并打开 Backend 会话，直到 Close。默认使用 slog.Default() 记录日志，可用 WithLogger 替换。
+// backend 为 nil 时 panic。
+func New(backend Backend, opts ...Option) *Hub {
 	if backend == nil {
 		panic("broadcast: nil backend")
 	}
 	h := &Hub{
 		backend:    backend,
-		logger:     logging.Or(logger).With(logging.AttrComponent, "broadcast"),
+		logger:     logging.Or(nil).With(logging.AttrComponent, "broadcast"),
 		topics:     map[string]map[*Subscription]struct{}{},
 		recvTopics: map[string]map[*Receiver]struct{}{},
 		receivers:  map[*Receiver]struct{}{},
@@ -53,6 +65,11 @@ func New(backend Backend, logger *slog.Logger) *Hub {
 		cleanWake:  make(chan struct{}, 1),
 		cleanStop:  make(chan struct{}),
 		cleanDone:  make(chan struct{}),
+	}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(h)
+		}
 	}
 	h.session = backend.Open(h.deliver, h.lost)
 	go h.cleanLoop()

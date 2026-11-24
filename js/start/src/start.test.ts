@@ -5,6 +5,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it, vi } from "vitest"
 import { defaultTarget, entrySource } from "./compile"
+import { incoming, withIncoming } from "./context"
 import { forwardHeaders, HeaderNonce, PrerenderNonce, socketPath } from "./headers"
 import * as vite from "./vite.js"
 
@@ -30,6 +31,29 @@ describe("headers", () => {
   it("抽象 socket 的 @ 换成 \\0，路径原样", () => {
     expect(socketPath("@tenon-ssr")).toBe("\0tenon-ssr")
     expect(socketPath("/run/ssr.sock")).toBe("/run/ssr.sock")
+  })
+})
+
+describe("context", () => {
+  it("withIncoming 在并发异步请求间隔离请求头与客户端请求状态", async () => {
+    const sym = Symbol.for("tenon.client.requestStateStore")
+    const getStore = (globalThis as Record<symbol, () => Map<object, unknown> | undefined>)[sym]
+    expect(typeof getStore).toBe("function")
+    const key = {}
+
+    const run = (cookie: string, user: string, delayMs: number) =>
+      withIncoming(new Headers({ Cookie: cookie }), async () => {
+        const state = getStore()
+        expect(state).toBeInstanceOf(Map)
+        state?.set(key, user)
+        await new Promise((r) => setTimeout(r, delayMs))
+        return { cookie: incoming()?.get("cookie"), user: getStore()?.get(key) }
+      })
+
+    const [a, b] = await Promise.all([run("sid=a", "alice", 20), run("sid=b", "bob", 5)])
+    expect(a).toEqual({ cookie: "sid=a", user: "alice" })
+    expect(b).toEqual({ cookie: "sid=b", user: "bob" })
+    expect(getStore()).toBeUndefined()
   })
 })
 

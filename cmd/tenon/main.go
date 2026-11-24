@@ -806,7 +806,7 @@ func checkCommand() *cobra.Command {
 	var only []string
 	cmd := &cobra.Command{
 		Use:   "check",
-		Short: "静态检查项目约定：前端写死的文字和颜色、SQL 数据库时钟、服务端错误码翻译、前端依赖版本",
+		Short: "静态检查项目约定：前端写死的文字和颜色、SQL 数据库时钟、服务端错误码翻译、前端依赖版本、框架装配检查",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := project.Load(".")

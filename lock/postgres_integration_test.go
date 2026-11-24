@@ -75,7 +75,7 @@ func TestPostgresStoreRefreshAndCleanup(t *testing.T) {
 	}
 	time.Sleep(10 * time.Millisecond)
 
-	if n, err := store.Cleanup(ctx, 2); err != nil || n != 2 {
+	if n, err := pglock.Cleanup(db)(ctx, 2); err != nil || n != 2 {
 		t.Fatalf("first cleanup = %d, %v", n, err)
 	}
 	if n, err := store.Cleanup(ctx, 10); err != nil || n != 1 {

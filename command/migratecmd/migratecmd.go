@@ -48,7 +48,7 @@ func Name(name string) Option {
 // logical decoding requires "wal_level" >= "logical"。在这里检查数据库一侧的要求，迁移之前就能给出修改方法：
 //
 //	migratecmd.New(migrations.FS, dbConfig, migratecmd.Check(func(cfg Config, db *bun.DB) []doctor.Group {
-//	    return []doctor.Group{database.Doctor(db), queue.Doctor(db, nil, cfg.Queue)}
+//	    return []doctor.Group{database.Doctor(db), queue.Doctor(db, nil)}
 //	}))
 func Check[C any](groups func(cfg C, db *bun.DB) []doctor.Group) Option {
 	return func(o *options) {
@@ -57,7 +57,7 @@ func Check[C any](groups func(cfg C, db *bun.DB) []doctor.Group) Option {
 			if err != nil {
 				return err
 			}
-			return doctor.Require(cmd.Context(), nil, groups(cfg, db)...)
+			return doctor.Require(cmd.Context(), groups(cfg, db)...)
 		}
 	}
 }

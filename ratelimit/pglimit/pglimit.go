@@ -99,26 +99,29 @@ func (l *Limiter) Reset(ctx context.Context, key string) error {
 	return errors.Wrap(err, "ratelimit: reset")
 }
 
-// Cleanup 删除 db 中最多 limit 个配额已经回满的 key（涵盖所有限流器），返回删除的个数。
-func Cleanup(ctx context.Context, db bun.IDB, limit int) (int, error) {
+// Cleanup 返回删除 db 中配额已经回满的 key（涵盖所有限流器）的清理函数，每次最多删除 limit 个，返回删除的个数，
+// 可以直接交给 schedule.Cleanup 定时执行。db 为 nil 时 panic。
+func Cleanup(db bun.IDB) func(ctx context.Context, limit int) (int, error) {
 	if db == nil {
-		return 0, errors.New("pglimit: nil database")
+		panic("pglimit: nil database")
 	}
-	if limit <= 0 {
-		return 0, errors.New("pglimit: cleanup limit must be positive")
-	}
-	res, err := db.NewRaw(`
+	return func(ctx context.Context, limit int) (int, error) {
+		if limit <= 0 {
+			return 0, errors.New("pglimit: cleanup limit must be positive")
+		}
+		res, err := db.NewRaw(`
 DELETE FROM rate_limits WHERE (name, key) IN (
     SELECT name, key FROM rate_limits WHERE tat <= clock_timestamp() ORDER BY tat LIMIT ? FOR UPDATE SKIP LOCKED
 )`, limit).Exec(ctx)
-	if err != nil {
-		return 0, errors.Wrap(err, "pglimit: cleanup")
+		if err != nil {
+			return 0, errors.Wrap(err, "pglimit: cleanup")
+		}
+		n, err := res.RowsAffected()
+		return int(n), errors.Wrap(err, "pglimit: cleanup")
 	}
-	n, err := res.RowsAffected()
-	return int(n), errors.Wrap(err, "pglimit: cleanup")
 }
 
 // Cleanup 删除最多 limit 个配额已经回满的 key（所有限流器的），返回删除的个数，可以直接交给 schedule.Cleanup 定时执行。
 func (l *Limiter) Cleanup(ctx context.Context, limit int) (int, error) {
-	return Cleanup(ctx, l.db, limit)
+	return Cleanup(l.db)(ctx, limit)
 }

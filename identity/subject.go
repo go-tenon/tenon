@@ -58,9 +58,12 @@ func (s Subject) Impersonated() bool { return !s.Impersonator.IsZero() }
 
 // Can 报告主体能否执行 perm：Permissions 授予了它，并且 Scopes 为 nil 或也允许它。
 //
-// 权限是以冒号分隔的名称，例如 articles:write。授予时可以用 * 作为最后一段，
-// 匹配以前面各段开头的全部权限：articles:* 匹配 articles:write 和 articles:comments:delete，
-// 单独的 * 匹配全部权限。perm 本身是具体的权限名。
+// 权限是以冒号分隔的名称，例如 articles:write。授予时支持三种通配符：
+//   - *：匹配全部权限；
+//   - <前缀>:*：匹配以前面各段开头的全部权限，例如 articles:* 匹配 articles:write 和 articles:comments:delete；
+//   - *:<后缀>：匹配以该动作结尾的全部权限，例如 *:read 匹配 articles:read 和 articles:comments:read。
+//
+// perm 本身是具体的权限名。
 func (s Subject) Can(perm string) bool {
 	return Grants(s.Permissions, perm) && (s.Scopes == nil || Grants(s.Scopes, perm))
 }
@@ -74,7 +77,10 @@ func Grants(granted []string, perm string) bool {
 		if g == perm || g == "*" {
 			return true
 		}
-		if prefix, ok := strings.CutSuffix(g, ":*"); ok && strings.HasPrefix(perm, prefix+":") {
+		if prefix, ok := strings.CutSuffix(g, ":*"); ok && prefix != "" && strings.HasPrefix(perm, prefix+":") {
+			return true
+		}
+		if suffix, ok := strings.CutPrefix(g, "*:"); ok && suffix != "" && len(perm) > len(suffix)+1 && strings.HasSuffix(perm, ":"+suffix) {
 			return true
 		}
 	}

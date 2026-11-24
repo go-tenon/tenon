@@ -113,8 +113,11 @@ func New[T any](db bun.IDB, name string, defaults T, opts ...Option) *Group[T] {
 // Name 返回这组设置的名称。
 func (g *Group[T]) Name() string { return g.name }
 
-// WithDB 返回使用 db（通常是 database.RunInTx 的事务）的副本，让 Save、Update 与其他写入（例如操作日志）一起提交。
+// WithDB 返回使用 db（通常是 database.RunInTx 的事务）的副本，让 Save、Update 与其他写入（例如操作日志）一起提交。db 为 nil 时 panic。
 func (g *Group[T]) WithDB(db bun.IDB) *Group[T] {
+	if db == nil {
+		panic("settings: nil database")
+	}
 	cp := *g
 	cp.db = db
 	return &cp

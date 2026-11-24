@@ -39,28 +39,27 @@ apps/dist/
 `tenon init` 生成的 `cmd/<名称>/main.go` 已经装配好：
 
 ```go
-var router chi.Router
-api := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { router.ServeHTTP(w, r) })
-pages, err := frontend.New(apps.Dist, frontend.Options{API: api, DevServers: a.cfg.DevServers})
+pages, err := frontend.New(apps.Dist, frontend.Options{DevServers: a.cfg.DevServers})
 if err != nil {
     return nil, err
 }
-router = routes(a.cfg, a.store, pages.Handler()) // /api 下是接口，其余路径 router.Handle("/*", pages)
+router := routes(a.cfg, a.store, pages.Handler()) // /api 下是接口，其余路径 router.Handle("/*", pages)
+pages.SetAPI(router)
 ln, err := d.Listen("tcp", a.cfg.HTTP.Addr)
 if err != nil {
     return nil, err
 }
-ready := d.DeferReady()
+opts := httpcmd.ServeOptions(d)
 return func(ctx context.Context) error {
     return pages.Run(ctx, func(ctx context.Context) error {
-        return httpx.Serve(ctx, a.cfg.HTTP, ln, router, httpx.OnReady(ready), httpx.SkipDrainDelay(d.HandedOver))
+        return httpx.Serve(ctx, a.cfg.HTTP, ln, router, opts...)
     })
 }, nil
 ```
 
 `apps.Dist` 是嵌入的目录，`a.cfg.DevServers` 来自 `tenon dev`（见[开发](#development)），`d` 是 `serve` 命令的 `*command.Daemon`。
 
-- `Options.API` 是 Bun 渲染时调用的接口。传整个路由，路径与浏览器相同（`/api/...`）。
+- `pages.SetAPI(router)`（或 `Options.API`）指定 Bun 渲染时调用的接口，传整个路由即可，路径与浏览器相同（`/api/...`）。
 - `Handler` 把请求交给挂载路径最长匹配的前端；不在任何前端之下的路径返回 404。新增前端时这段代码不用改。
 - `Run` 包住对外的 HTTP 服务，在它前后启停 Bun 进程，见[启动与停止](#lifecycle)。
 
@@ -85,7 +84,7 @@ import { tenon } from "@go-tenon/start/vite"
 export default defineConfig({ plugins: [tenon()] })
 ```
 
-`requestMiddleware` 记住页面请求的请求头，服务端渲染调用接口时转交给 Go。漏装时服务端渲染的页面是未登录状态：
+`requestMiddleware` 记住页面请求的请求头（供 `apiFetch` 转交给 Go），同时为 `@go-tenon/client` 的 `session` 与 `i18n` 单例开启按请求隔离的状态存储，防止并发 SSR 串号：
 
 ```ts title="src/start.ts"
 import { createStart } from "@tanstack/react-start"

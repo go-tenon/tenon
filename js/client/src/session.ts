@@ -3,6 +3,7 @@
 
 import { isApiErrorLike } from "./errors"
 import { type FetchLike, globalFetch } from "./fetch"
+import { getRequestState } from "./request-store"
 
 /** 当前的身份：账号，以及多租户应用中当前的租户。 */
 export interface Identity {
@@ -53,36 +54,53 @@ export interface Session {
   subscribe(listener: () => void): () => void
 }
 
-/** 创建会话。 */
+interface SessionState {
+  listeners: Set<() => void>
+  current: Identity | null
+  gen: number
+  restoring: Promise<boolean> | null
+}
+
+function createState(): SessionState {
+  return {
+    listeners: new Set<() => void>(),
+    current: null,
+    gen: 0,
+    restoring: null,
+  }
+}
+
+/** 创建会话。在 SSR 请求上下文中自动按请求隔离身份状态，并发请求互不干扰。 */
 export function createSession(options: SessionOptions): Session {
-  const listeners = new Set<() => void>()
-  let current: Identity | null = null
-  let gen = 0
-  let restoring: Promise<boolean> | null = null
+  const key = {}
+  const defaultState = createState()
+  const state = () => getRequestState(key, createState) ?? defaultState
 
   const set = (identity: Identity | null) => {
+    const s = state()
     const same =
-      (current === null) === (identity === null) &&
-      current?.account === identity?.account &&
-      current?.tenant === identity?.tenant
+      (s.current === null) === (identity === null) &&
+      s.current?.account === identity?.account &&
+      s.current?.tenant === identity?.tenant
     if (same) return
-    current = identity ? { ...identity } : null
-    gen++
-    for (const l of [...listeners]) l()
+    s.current = identity ? { ...identity } : null
+    s.gen++
+    for (const l of [...s.listeners]) l()
   }
 
   const session: Session = {
     restore() {
-      if (current !== null) return Promise.resolve(true) // 已经知道身份，例如刚登录
-      const started = gen
-      restoring ??= options.load().then(
+      const s = state()
+      if (s.current !== null) return Promise.resolve(true) // 已经知道身份，例如刚登录
+      const started = s.gen
+      s.restoring ??= options.load().then(
         (identity) => {
           // 读取期间登录、退出或切换了身份：以那次变化为准，丢弃读到的结果。
-          if (gen === started) set(identity)
-          return current !== null
+          if (s.gen === started) set(identity)
+          return s.current !== null
         },
         (err) => {
-          restoring = null // 网络错误等：下次再试
+          s.restoring = null // 网络错误等：下次再试
           if (isApiErrorLike(err) && err.status === 401) {
             set(null)
             return false
@@ -90,7 +108,7 @@ export function createSession(options: SessionOptions): Session {
           throw err
         },
       )
-      return restoring
+      return s.restoring
     },
     async signIn(identity) {
       set(identity ?? (await options.load()))
@@ -99,26 +117,32 @@ export function createSession(options: SessionOptions): Session {
       set(null)
     },
     expired() {
-      if (current === null) return
+      const s = state()
+      if (s.current === null) return
       set(null)
       options.onSignedOut?.()
     },
-    signedIn: () => current !== null,
-    identity: () => current,
+    signedIn: () => state().current !== null,
+    identity: () => state().current,
     setIdentity: set,
-    generation: () => gen,
-    scope: () => (current ? [current.account, current.tenant ?? ""] : []),
+    generation: () => state().gen,
+    scope: () => {
+      const cur = state().current
+      return cur ? [cur.account, cur.tenant ?? ""] : []
+    },
     fetch<F extends FetchLike = FetchLike>(base?: F): F {
       const send: FetchLike = base ?? globalFetch()
       const wrapped: FetchLike = async (url, init = {}) => {
-        const issued = gen
+        const s = state()
+        const issued = s.gen
         const res = await send(url, { ...init, credentials: init.credentials ?? "same-origin" })
-        if (res.status === 401 && gen === issued) session.expired()
+        if (res.status === 401 && s.gen === issued) session.expired()
         return res
       }
       return wrapped as F
     },
     subscribe(listener) {
+      const listeners = state().listeners
       listeners.add(listener)
       return () => listeners.delete(listener)
     },

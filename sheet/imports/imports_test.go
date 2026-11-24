@@ -324,7 +324,7 @@ func TestFinalAttemptFailsImport(t *testing.T) {
 
 	cfg := queuetest.Config(t)
 	cfg.MaxAttempts = 1
-	w := queue.NewWorker(e.db, queuetest.Conn(t), cfg, slog.New(slog.DiscardHandler))
+	w := queue.NewWorker(e.db, queuetest.Conn(t), cfg, queue.WithLogger(slog.New(slog.DiscardHandler)))
 	topic.Handle(w, func(ctx context.Context, id uuid.UUID) error {
 		return imports.Process(ctx, e.imports, id, rec.row, rec.saved)
 	})

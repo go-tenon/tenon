@@ -8,7 +8,7 @@
 ## 示例
 
 ```go
-hub := broadcast.New(natsbroadcast.New(nc, "app.broadcast"), nil)
+hub := broadcast.New(natsbroadcast.New(nc, "app.broadcast"))
 
 // 一个实例上订阅
 sub := hub.Subscribe("articles")
@@ -30,7 +30,7 @@ for m := range sub.C() {
 每个进程创建一个 `*broadcast.Hub`，所有长连接共用。在入口创建，登记关闭：
 
 ```go
-hub := broadcast.New(natsbroadcast.New(nc, "app.broadcast"), nil) // 日志器为 nil 时用 slog.Default()
+hub := broadcast.New(natsbroadcast.New(nc, "app.broadcast")) // 日志默认写到 slog.Default()，用 broadcast.WithLogger 覆盖
 stack.MustAdd("broadcast", func(context.Context) error { return hub.Close() })
 ```
 
@@ -124,7 +124,7 @@ return rest.SSE(func(s *httpx.Stream) error {
 `broadcasttest.NewBackend()` 是内存后端，只用于测试。同一个后端上的多个 Hub 各自维护独立的主题订阅，互相只投递已订阅主题的消息，相当于多个实例：
 
 ```go
-hub := broadcast.New(broadcasttest.NewBackend(), nil)
+hub := broadcast.New(broadcasttest.NewBackend())
 sub := hub.Subscribe("articles")
 // ……调用发布事件的业务动作
 msg := broadcasttest.Receive(t, sub) // 5 秒内收不到时测试失败

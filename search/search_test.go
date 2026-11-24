@@ -570,7 +570,7 @@ func TestInvalidDocuments(t *testing.T) {
 func runWorker(t *testing.T, db *bun.DB, register func(w *queue.Worker)) {
 	t.Helper()
 	cfg := queuetest.Config(t)
-	w := queue.NewWorker(db, queuetest.Conn(t), cfg, slog.New(slog.DiscardHandler))
+	w := queue.NewWorker(db, queuetest.Conn(t), cfg, queue.WithLogger(slog.New(slog.DiscardHandler)))
 	register(w)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)

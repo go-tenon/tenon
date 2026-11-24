@@ -2,6 +2,8 @@
 // tenon generate 把它们生成为前端的 messages.gen.ts，交给 createI18n。写法与服务端一致：占位符是 {{.name}}，
 // 复数按 count 在 zero、one、two、few、many、other 中选择，规则来自 Intl.PluralRules。
 
+import { getRequestState } from "./request-store"
+
 /** 一条消息：文字，或者按复数形式给出的几种文字。 */
 export type Message = string | { readonly [form in PluralForm]?: string }
 
@@ -60,29 +62,43 @@ export interface I18n<Id extends string = string> {
 /** 应用消息的 ID：默认语言中有的消息 ID。 */
 type IdsOf<C extends Catalog> = Extract<{ [L in keyof C]: keyof C[L] }[keyof C], string>
 
+interface I18nState {
+  listeners: Set<() => void>
+  requested: string | null
+  current: string
+}
+
 /**
  * 创建界面文字的翻译。在前端的 src/i18n.ts 中创建一次，交给 createApp、生成客户端的 headers 和 createKit：
  *
  *   import { messages } from "./messages.gen"
  *   export const i18n = createI18n({ messages, defaultLanguage: "zh-CN" })
  *   i18n.t("inbox.empty")
+ *
+ * 在 SSR 请求上下文中自动按请求隔离当前语言，并发请求互不干扰。
  */
 export function createI18n<C extends Catalog>(options: I18nOptions<C>): I18n<IdsOf<C>> {
-  const listeners = new Set<() => void>()
+  const key = {}
   const lower: Catalog[] = [] // extend 加入的消息，后加入的优先
   const preferred = options.preferred ?? browserLanguages
   const all = () => [options.messages, ...lower]
   const languages = () => [...new Set([options.defaultLanguage, ...Object.keys(options.messages)])]
   const resolve = (wanted: readonly (string | null | undefined)[]) =>
     matchLanguage(wanted, languages()) ?? options.defaultLanguage
-  // requested 是 setLanguage 要求的语言；没有要求时按偏好选择。
-  let requested: string | null = null
-  const choose = () => resolve(requested ? [requested] : (preferred() ?? []))
-  let current = choose()
-  const change = (next: string) => {
-    if (next === current) return
-    current = next
-    for (const l of [...listeners]) l()
+  const choose = (requested: string | null) => resolve(requested ? [requested] : (preferred() ?? []))
+
+  const createState = (): I18nState => ({
+    listeners: new Set<() => void>(),
+    requested: null,
+    current: choose(null),
+  })
+  const defaultState = createState()
+  const state = () => getRequestState(key, createState) ?? defaultState
+
+  const change = (s: I18nState, next: string) => {
+    if (next === s.current) return
+    s.current = next
+    for (const l of [...s.listeners]) l()
   }
 
   const lookup = (language: string, id: string): Message | undefined => {
@@ -95,24 +111,27 @@ export function createI18n<C extends Catalog>(options: I18nOptions<C>): I18n<Ids
   }
 
   return {
-    language: () => current,
+    language: () => state().current,
     setLanguage(language) {
-      requested = language || null
-      change(choose())
+      const s = state()
+      s.requested = language || null
+      change(s, choose(s.requested))
     },
     languages,
     t(id, data) {
-      const message = lookup(current, id) ?? lookup(options.defaultLanguage, id)
+      const cur = state().current
+      const message = lookup(cur, id) ?? lookup(options.defaultLanguage, id)
       if (message === undefined) return id
-      const used = lookup(current, id) !== undefined ? current : options.defaultLanguage
+      const used = lookup(cur, id) !== undefined ? cur : options.defaultLanguage
       return formatMessage(message, used, data)
     },
     has: (id) => all().some((catalog) => Object.values(catalog).some((table) => table[id] !== undefined)),
     extend(catalog) {
       if (!lower.includes(catalog)) lower.push(catalog)
     },
-    headers: () => ({ "Accept-Language": current }),
+    headers: () => ({ "Accept-Language": state().current }),
     subscribe(listener) {
+      const listeners = state().listeners
       listeners.add(listener)
       return () => listeners.delete(listener)
     },
@@ -161,9 +180,16 @@ export function formatMessage(message: Message, language: string, data?: Message
   })
 }
 
-/** 浏览器的语言偏好；不在浏览器中（Node、服务端渲染）时没有。 */
+/** 浏览器的语言偏好；仅在浏览器环境（存在 window）读取 navigator.languages，避免 Node/Bun 服务端误读宿主机语言。 */
 function browserLanguages(): readonly string[] | undefined {
-  const nav = (globalThis as { navigator?: { languages?: readonly string[]; language?: string } }).navigator
-  if (!nav) return undefined
-  return nav.languages?.length ? nav.languages : nav.language ? [nav.language] : undefined
+  const g = globalThis as {
+    window?: unknown
+    navigator?: { languages?: readonly string[]; language?: string }
+  }
+  if (typeof g.window === "undefined" || !g.navigator) return undefined
+  return g.navigator.languages?.length
+    ? g.navigator.languages
+    : g.navigator.language
+      ? [g.navigator.language]
+      : undefined
 }

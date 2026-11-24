@@ -102,10 +102,10 @@ func TestRunning(t *testing.T) {
 		})
 		s.Add("local", "@everysecond", func(context.Context) error { return nil }, schedule.EveryInstance())
 	}
-	viewer := schedule.New(store, schedule.DefaultConfig(), quiet) // 例如 HTTP 进程中只用来查看的调度器
+	viewer := schedule.New(store, schedule.DefaultConfig(), schedule.WithLogger(quiet)) // 例如 HTTP 进程中只用来查看的调度器
 	// 收到结束事件时，执行租约已经释放。
 	runningAtFinish := make(chan bool, 1)
-	runner := schedule.New(store, schedule.DefaultConfig(), quiet, schedule.WithObserver(func(ctx context.Context, e schedule.Event) {
+	runner := schedule.New(store, schedule.DefaultConfig(), schedule.WithLogger(quiet), schedule.WithObserver(func(ctx context.Context, e schedule.Event) {
 		if e.Task == "slow" && e.Kind == schedule.TaskSucceeded {
 			running, _ := viewer.Running(ctx)
 			runningAtFinish <- running["slow"]
@@ -145,7 +145,7 @@ func TestObserver(t *testing.T) {
 		defer mu.Unlock()
 		events = append(events, e)
 	}
-	s := schedule.New(scheduletest.NewStore(), schedule.DefaultConfig(), slog.New(slog.DiscardHandler),
+	s := schedule.New(scheduletest.NewStore(), schedule.DefaultConfig(), schedule.WithLogger(slog.New(slog.DiscardHandler)),
 		schedule.WithObserver(record), schedule.WithObserver(func(context.Context, schedule.Event) { panic("ignored") }))
 	boom := errors.New("boom")
 	release, started := make(chan struct{}), make(chan struct{})

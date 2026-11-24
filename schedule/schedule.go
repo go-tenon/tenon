@@ -89,10 +89,19 @@ func Timeout(d time.Duration) TaskOption {
 // SchedulerOption 调整 New 创建的调度器。
 type SchedulerOption func(*Scheduler)
 
+// WithLogger 指定记录任务调度与失败的日志器，默认使用 slog.Default()。
+func WithLogger(logger *slog.Logger) SchedulerOption {
+	return func(s *Scheduler) {
+		if logger != nil {
+			s.logger = logger.With(logging.AttrComponent, "schedule")
+		}
+	}
+}
+
 // New 创建调度器。store 保存各任务的触发水位和运行租约，所有实例共用同一个状态存储，例如 schedule/pgschedule；
-// 测试中可以使用 scheduletest.NewStore。logger 为 nil 时使用 slog.Default()。
+// 测试中可以使用 scheduletest.NewStore。默认使用 slog.Default() 记录日志，可用 WithLogger 替换。
 // store 为 nil 或 cfg 不合法时 panic。
-func New(store Store, cfg Config, logger *slog.Logger, opts ...SchedulerOption) *Scheduler {
+func New(store Store, cfg Config, opts ...SchedulerOption) *Scheduler {
 	if store == nil {
 		panic("schedule: nil store")
 	}
@@ -101,11 +110,13 @@ func New(store Store, cfg Config, logger *slog.Logger, opts ...SchedulerOption) 
 	}
 	s := &Scheduler{
 		store:           store,
-		logger:          logging.Or(logger).With(logging.AttrComponent, "schedule"),
+		logger:          logging.Or(nil).With(logging.AttrComponent, "schedule"),
 		shutdownTimeout: cfg.ShutdownTimeout,
 	}
 	for _, opt := range opts {
-		opt(s)
+		if opt != nil {
+			opt(s)
+		}
 	}
 	return s
 }

@@ -217,6 +217,7 @@ SQL 迁移文件，由 `embed.go` 嵌入程序，部署时用 `migrate up` 执�
 | `mcpx` | 把动作作为 MCP 工具提供给 AI 客户端 | [MCP 服务](../ai/mcp.md) |
 | `natsrpc` | 把动作作为 RPC 端点，其他服务经由 NATS 同步调用 | [提供和调用端点](../rpc/endpoints.md) |
 | `command` | 根命令、`Serve`、`Bind`、`Daemon`、退出码；`httpcmd`、`migratecmd` 等内置命令 | [命令行](../general/commands.md) |
+| `doctor/doctorapi` | 运行环境自检的运维接口 | [在后台页面中显示](../installation/doctor.md#admin-page) |
 | `queue/queueapi` | 队列的运维接口 | [运维接口](../background/queue.md#queue-api) |
 | `cmd/tenon` | 开发工具 `go tool tenon` | [开发工具](../installation/tooling.md) |
 

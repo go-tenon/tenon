@@ -4,7 +4,7 @@
 //
 // 装配（表由 Migrations 发布）：
 //
-//	sched := schedule.New(pgschedule.New(db), cfg.Schedule, logger, schedule.WithObserver(scheduleapi.Observer(db)))
+//	sched := schedule.New(pgschedule.New(db), cfg.Schedule, schedule.WithObserver(scheduleapi.Observer(db)))
 //	sched.Add("schedule-runs-cleanup", "@daily", schedule.Cleanup(scheduleapi.Cleanup(db, 7*24*time.Hour), 1000))
 //	tasks := func() *schedule.Scheduler { return sched }
 //	scheduleapi.Register(api, rest.RequireToken(api, tokens.Validate, "jobs:manage"), db, tasks) // HTTP 进程

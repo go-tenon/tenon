@@ -22,7 +22,7 @@ import (
 
 // 设置了 Options.Credentials 时，撤销 token 并发出提醒后 SSE 立即结束，不等 30 秒的定期校验。
 func TestRequireTokenRechecksOnSignal(t *testing.T) {
-	hub := broadcast.New(broadcasttest.NewBackend(), nil)
+	hub := broadcast.New(broadcasttest.NewBackend())
 	defer hub.Close()
 	creds := broadcast.NewCredentials(hub)
 	var revoked atomic.Bool

@@ -60,6 +60,8 @@ func Run(root string, cfg *project.Config, only []string) ([]Finding, error) {
 			found, err = CheckColors(root, cfg, exempts)
 		case "deps":
 			found, err = CheckDeps(root, cfg, exempts)
+		case "wiring":
+			found, err = CheckWiring(root, cfg, exempts)
 		}
 		if err != nil {
 			return nil, err

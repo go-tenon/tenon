@@ -188,6 +188,15 @@ func New(apps fs.FS, opts Options) (*Host, error) {
 // 请求交给挂载路径最长匹配的前端；不在任何前端之下的路径返回 404。
 func (h *Host) Handler() http.Handler { return h.handler }
 
+// SetAPI 设置 SSR 进程渲染页面时经内部 socket 回调的接口处理器，须在 Run 之前调用。
+// 先调用 frontend.New 再把 pages.Handler() 挂进路由后，通过 SetAPI 回填路由器即可避免循环依赖闭包。
+func (h *Host) SetAPI(api http.Handler) {
+	if h.started.Load() {
+		panic("frontend: Host.SetAPI called after Run")
+	}
+	h.opts.API = api
+}
+
 // internalAPIKey 标记经内部 API socket 进入 Go 路由的 SSR 回调请求，防止误落入 pages.Handler() 触发自循环代理。
 type internalAPIKey struct{}
 

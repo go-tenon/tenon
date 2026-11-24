@@ -26,7 +26,7 @@ err := database.RunInTx(ctx, db, nil, func(ctx context.Context, tx database.Tx) 
 })
 
 // 处理：在 worker 进程中注册
-w := queue.NewWorker(db, nc, cfg.Queue, nil)
+w := queue.NewWorker(db, nc, cfg.Queue)
 SendWelcome.Handle(w, func(ctx context.Context, id uuid.UUID) error {
     return sendWelcomeEmail(ctx, id) // 返回错误时稍后重试
 })
@@ -138,7 +138,7 @@ func (a *App) Worker(*command.Daemon) (func(context.Context) error, error) {
     if err != nil {
         return nil, err
     }
-    w := queue.NewWorker(a.db, a.nc, a.cfg.Queue, nil)
+    w := queue.NewWorker(a.db, a.nc, a.cfg.Queue)
     mailjob.Send.Handle(w, mailer.Send)
     article.RegisterJobs(w, a.db)
     return w.Run, nil
@@ -254,7 +254,7 @@ if jobs := queuetest.Pending(t, db, mailjob.Send); len(jobs) != 1 {
 端到端运行 worker 时，`queuetest.Conn` 连接环境变量 `NATS_TEST_URL` 给出的测试 NATS，`queuetest.Config` 使用随机名字的 stream，测试结束时删除：
 
 ```go
-w := queue.NewWorker(db, queuetest.Conn(t), queuetest.Config(t), nil)
+w := queue.NewWorker(db, queuetest.Conn(t), queuetest.Config(t))
 article.PublishAt.Handle(w, publish.Job)
 queuetest.Run(t, w) // 测试结束时停止
 ```
@@ -278,7 +278,7 @@ err = failed.Delete(ctx, id)
 `Cleanup(保留期)` 返回删除早于保留期的失败任务的函数，注册为每天的[定时任务](scheduling.md#framework-cleanups)，`sched` 是入口中的 `*schedule.Scheduler`：
 
 ```go
-sched.Add("queue:prune-failed", "@daily", schedule.Cleanup(failed.Cleanup(30*24*time.Hour), 1000))
+sched.Add("queue:prune-failed", "@daily", schedule.Cleanup(queue.CleanupFailed(db, 30*24*time.Hour), 1000))
 ```
 
 <a id="logging"></a>
@@ -293,7 +293,7 @@ sched.Add("queue:prune-failed", "@daily", schedule.Cleanup(failed.Cleanup(30*24*
 `queue.WithObserver` 让 worker 在每次状态变化时调用一个函数。成功的任务只体现在事件中，需要执行历史时把事件写进应用自己的表，用[定时任务](scheduling.md)清理。`JobRun` 是应用的模型：
 
 ```go
-w := queue.NewWorker(a.db, a.nc, a.cfg.Queue, nil,
+w := queue.NewWorker(a.db, a.nc, a.cfg.Queue,
     queue.WithObserver(func(ctx context.Context, e queue.Event) {
         if e.Kind == queue.JobStarted {
             return

@@ -45,7 +45,7 @@ func watchChan(ctx context.Context, creds *broadcast.Credentials, sub identity.S
 
 func TestCredentialsWatch(t *testing.T) {
 	t.Parallel()
-	hub := broadcast.New(broadcasttest.NewBackend(), nil)
+	hub := broadcast.New(broadcasttest.NewBackend())
 	defer hub.Close()
 	creds := broadcast.NewCredentials(hub)
 	ctx, cancel := context.WithCancel(identity.WithTenant(context.Background(), "acme"))
@@ -158,7 +158,7 @@ func (s *lossySession) Close() error { return nil }
 func TestCredentialsWatchSignalsAfterLoss(t *testing.T) {
 	t.Parallel()
 	backend := &lossyBackend{}
-	hub := broadcast.New(backend, nil)
+	hub := broadcast.New(backend)
 	defer hub.Close()
 	creds := broadcast.NewCredentials(hub)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -176,7 +176,7 @@ func TestCredentialsWatchSignalsAfterLoss(t *testing.T) {
 // Hub 关闭后 Watch 不再收到提醒。
 func TestCredentialsWatchStopsWhenHubCloses(t *testing.T) {
 	t.Parallel()
-	hub := broadcast.New(broadcasttest.NewBackend(), nil)
+	hub := broadcast.New(broadcasttest.NewBackend())
 	creds := broadcast.NewCredentials(hub)
 	ch := watchChan(context.Background(), creds, identity.Subject{Type: "user", ID: "alice"})
 	if err := hub.Close(); err != nil {

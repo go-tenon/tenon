@@ -74,21 +74,20 @@ func parts(a *App) []command.Part {
 // serveHTTP 装配 HTTP 服务，返回运行它的函数。apps 中的前端由 frontend.Host 按挂载路径提供：只在浏览器中渲染的前端
 // 由 Go 直接返回页面；服务端渲染的前端由 Go 托管的 SSR 进程渲染，它们渲染时经内部 socket 调用同一组路由。
 func (a *App) serveHTTP(d *command.Daemon) (func(context.Context) error, error) {
-	var router chi.Router
-	api := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { router.ServeHTTP(w, r) })
-	pages, err := frontend.New(apps.Dist, frontend.Options{API: api, DevServers: a.cfg.DevServers})
+	pages, err := frontend.New(apps.Dist, frontend.Options{DevServers: a.cfg.DevServers})
 	if err != nil {
 		return nil, err
 	}
-	router = routes(a.cfg, a.store, pages.Handler())
+	router := routes(a.cfg, a.store, pages.Handler())
+	pages.SetAPI(router)
 	ln, err := d.Listen("tcp", a.cfg.HTTP.Addr)
 	if err != nil {
 		return nil, err
 	}
-	ready := d.DeferReady()
+	opts := httpcmd.ServeOptions(d)
 	return func(ctx context.Context) error {
 		return pages.Run(ctx, func(ctx context.Context) error {
-			return httpx.Serve(ctx, a.cfg.HTTP, ln, router, httpx.OnReady(ready), httpx.SkipDrainDelay(d.HandedOver))
+			return httpx.Serve(ctx, a.cfg.HTTP, ln, router, opts...)
 		})
 	}, nil
 }

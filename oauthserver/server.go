@@ -254,19 +254,30 @@ func (s *Server) Metadata() http.Handler {
 	}))
 }
 
+// Cleanup 返回删除 db 中过期授权码的清理函数，每次最多删除 limit 个，返回删除个数，
+// 可以直接交给 schedule.Cleanup。db 为 nil 时 panic。
+func Cleanup(db bun.IDB) func(ctx context.Context, limit int) (int, error) {
+	if db == nil {
+		panic("oauthserver: nil database")
+	}
+	return func(ctx context.Context, limit int) (int, error) {
+		if limit <= 0 {
+			return 0, errors.New("oauthserver: cleanup limit must be positive")
+		}
+		expired := db.NewSelect().Model((*code)(nil)).Column("code_hash").
+			Where("expires_at <= ?", time.Now().UTC()).OrderExpr("expires_at").Limit(int64(limit))
+		res, err := db.NewDelete().Model((*code)(nil)).Where("code_hash IN (?)", expired).Exec(ctx)
+		if err != nil {
+			return 0, errors.Wrap(err, "oauthserver: cleanup")
+		}
+		n, err := res.RowsAffected()
+		return int(n), errors.Wrap(err, "oauthserver: cleanup")
+	}
+}
+
 // Cleanup 删除最多 limit 个过期的授权码，返回删除的个数。由应用定时调用。
 func (s *Server) Cleanup(ctx context.Context, limit int) (int, error) {
-	if limit <= 0 {
-		return 0, errors.New("oauthserver: cleanup limit must be positive")
-	}
-	expired := s.db.NewSelect().Model((*code)(nil)).Column("code_hash").
-		Where("expires_at <= ?", time.Now().UTC()).OrderExpr("expires_at").Limit(int64(limit))
-	res, err := s.db.NewDelete().Model((*code)(nil)).Where("code_hash IN (?)", expired).Exec(ctx)
-	if err != nil {
-		return 0, errors.Wrap(err, "oauthserver: cleanup")
-	}
-	n, err := res.RowsAffected()
-	return int(n), errors.Wrap(err, "oauthserver: cleanup")
+	return Cleanup(s.db)(ctx, limit)
 }
 
 // Erase 在 db 中删除主体 ref 尚未换取令牌的授权码，用于注销账号；它的令牌由 apitoken.Erase 删除。

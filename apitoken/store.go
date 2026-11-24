@@ -844,27 +844,38 @@ func Export(ctx context.Context, db bun.IDB, ref identity.Ref) (any, error) {
 	return out, nil
 }
 
+// Cleanup 返回删除 db 中已过期令牌和代为登录交换票据的清理函数，每次各最多删除 limit 条，返回删除总数，
+// 可以直接交给 schedule.Cleanup 定时执行。多套账号体系共用 api_tokens 表，只需注册一次。db 为 nil 时 panic。
+func Cleanup(db bun.IDB) func(ctx context.Context, limit int) (int, error) {
+	if db == nil {
+		panic("apitoken: nil database")
+	}
+	return func(ctx context.Context, limit int) (int, error) {
+		if limit <= 0 {
+			return 0, errors.New("apitoken: cleanup limit must be positive")
+		}
+		now := time.Now().UTC()
+		expired := db.NewSelect().Model((*row)(nil)).Column("id").
+			Where("expires_at <= ?", now).OrderExpr("expires_at").Limit(int64(limit))
+		tokens, err := affected(db.NewDelete().Model((*row)(nil)).
+			Where("id IN (?)", expired).Exec(ctx))
+		if err != nil {
+			return 0, err
+		}
+		expiredTickets := db.NewSelect().Model((*ticketRow)(nil)).Column("id").
+			Where("expires_at <= ?", now).OrderExpr("expires_at").Limit(int64(limit))
+		tickets, err := affected(db.NewDelete().Model((*ticketRow)(nil)).
+			Where("id IN (?)", expiredTickets).Exec(ctx))
+		if err != nil {
+			return tokens, err
+		}
+		return tokens + tickets, nil
+	}
+}
+
 // Cleanup 删除最多 limit 个已过期的 token，同时清理最多 limit 个已过期的代为登录交换票据，返回删除的记录总数。由应用定时调用。
 func (s *Store) Cleanup(ctx context.Context, limit int) (int, error) {
-	if limit <= 0 {
-		return 0, errors.New("apitoken: cleanup limit must be positive")
-	}
-	now := time.Now().UTC()
-	expired := s.db.NewSelect().Model((*row)(nil)).Column("id").
-		Where("expires_at <= ?", now).OrderExpr("expires_at").Limit(int64(limit))
-	tokens, err := affected(s.db.NewDelete().Model((*row)(nil)).
-		Where("id IN (?)", expired).Exec(ctx))
-	if err != nil {
-		return 0, err
-	}
-	expiredTickets := s.db.NewSelect().Model((*ticketRow)(nil)).Column("id").
-		Where("expires_at <= ?", now).OrderExpr("expires_at").Limit(int64(limit))
-	tickets, err := affected(s.db.NewDelete().Model((*ticketRow)(nil)).
-		Where("id IN (?)", expiredTickets).Exec(ctx))
-	if err != nil {
-		return tokens, err
-	}
-	return tokens + tickets, nil
+	return Cleanup(s.db)(ctx, limit)
 }
 
 // token 把行转换为 Token。

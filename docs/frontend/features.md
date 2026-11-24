@@ -97,6 +97,20 @@ export const Route = createFileRoute("/_app/schedules")({
 
 页内标签是任务（可以立即执行）和执行记录（按任务、结果筛选）。任务优先展示显示名称、说明和可读执行频率，悬停时提示内部任务名和原始 Cron 表达式。数据按需读取，不定时刷新。
 
+<a id="doctor-panel"></a>
+## 环境自检面板：`DoctorPanel`
+
+`DoctorPanel` 是[运行环境自检接口](../installation/doctor.md#admin-page)（`doctor/doctorapi`）的页面，接收生成的客户端分组 `api.system`：
+
+```tsx
+export const Route = createFileRoute("/_app/doctor")({
+  staticData: { title: "环境自检", icon: "stethoscope", permission: "system:read" },
+  component: () => <DoctorPanel api={api.system} />,
+})
+```
+
+面板汇总通过、警告、失败和跳过数量，按依赖分组展示每项检查的摘要、修改方法与文档链接，支持点击重新检查。
+
 <a id="ai-chat"></a>
 ## AI 对话：`useAssistantChat`
 

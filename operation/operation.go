@@ -171,9 +171,12 @@ func Erase(ctx context.Context, db bun.IDB, ref identity.Ref) error {
 	return errors.Wrap(err, "operation: erase")
 }
 
-// Cleanup 返回删除创建时间早于 keep 之前的操作的函数，每次最多删除 limit 个，返回删除的个数。
-// 引用操作的表（例如导入的失败行）通过外键级联删除。可以直接交给 schedule.Cleanup。
-func (s *Service) Cleanup(keep time.Duration) func(ctx context.Context, limit int) (int, error) {
+// Cleanup 返回删除 db 中创建时间早于 keep 之前的操作的清理函数，每次最多删除 limit 个，返回删除的个数，
+// 可以直接交给 schedule.Cleanup。db 为 nil 或 keep 不为正时 panic。
+func Cleanup(db bun.IDB, keep time.Duration) func(ctx context.Context, limit int) (int, error) {
+	if db == nil {
+		panic("operation: nil database")
+	}
 	if keep <= 0 {
 		panic("operation: keep must be positive")
 	}
@@ -181,13 +184,19 @@ func (s *Service) Cleanup(keep time.Duration) func(ctx context.Context, limit in
 		if limit <= 0 {
 			return 0, errors.New("operation: cleanup limit must be positive")
 		}
-		old := s.db.NewSelect().Model((*Operation)(nil)).Column("id").
+		old := db.NewSelect().Model((*Operation)(nil)).Column("id").
 			Where("created_at < ?", time.Now().Add(-keep).UTC()).OrderExpr("created_at").Limit(int64(limit))
-		res, err := s.db.NewDelete().Model((*Operation)(nil)).Where("id IN (?)", old).Exec(ctx)
+		res, err := db.NewDelete().Model((*Operation)(nil)).Where("id IN (?)", old).Exec(ctx)
 		if err != nil {
 			return 0, errors.Wrap(err, "operation: cleanup")
 		}
 		n, err := res.RowsAffected()
 		return int(n), errors.Wrap(err, "operation: cleanup")
 	}
+}
+
+// Cleanup 返回删除创建时间早于 keep 之前的操作的函数，每次最多删除 limit 个，返回删除的个数。
+// 引用操作的表（例如导入的失败行）通过外键级联删除。可以直接交给 schedule.Cleanup。
+func (s *Service) Cleanup(keep time.Duration) func(ctx context.Context, limit int) (int, error) {
+	return Cleanup(s.db, keep)
 }

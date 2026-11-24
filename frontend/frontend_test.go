@@ -265,3 +265,34 @@ func TestCSPPolicy(t *testing.T) {
 		t.Fatalf("unexpected Origin results")
 	}
 }
+
+// TestSetAPI 验证延迟绑定 API 处理器在 Run 之前生效，Run 之后调用触发 panic。
+func TestSetAPI(t *testing.T) {
+	t.Parallel()
+	h, err := New(spaDist(), Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	called := false
+	h.SetAPI(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	if err := h.Run(context.Background(), func(context.Context) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if h.opts.API == nil {
+		t.Fatal("api was not set")
+	}
+	rec := httptest.NewRecorder()
+	h.opts.API.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/ping", nil))
+	if !called || rec.Code != http.StatusAccepted {
+		t.Fatalf("api handler not invoked: called=%v code=%d", called, rec.Code)
+	}
+	defer func() {
+		if recover() == nil {
+			t.Fatal("SetAPI after Run should panic")
+		}
+	}()
+	h.SetAPI(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+}

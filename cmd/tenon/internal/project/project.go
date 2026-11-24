@@ -141,7 +141,7 @@ func (c *Config) MultiLanguage() bool {
 }
 
 // CheckNames 是 tenon check 支持的全部检查项名称，按执行顺序排列。
-var CheckNames = []string{"text", "clock", "errors", "colors", "deps"}
+var CheckNames = []string{"text", "clock", "errors", "colors", "deps", "wiring"}
 
 // Check 是 tenon.json 的 check：配置 tenon check 跳过哪些检查项、豁免哪些路径。
 type Check struct {

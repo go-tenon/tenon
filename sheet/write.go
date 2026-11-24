@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"reflect"
 	"strconv"
 	"strings"
@@ -57,6 +58,30 @@ func NewWriter(w io.Writer, f Format) *Writer {
 		return xlsxWriter(w)
 	}
 	return &Writer{err: ErrFormat.New()}
+}
+
+// Write 用 f 格式创建 Writer 并交给 fn 写入行数据，最后自动关闭并合并写入与关闭错误。
+func Write(w io.Writer, f Format, fn func(RowWriter) error) error {
+	sw := NewWriter(w, f)
+	return errors.Join(fn(sw), sw.Close())
+}
+
+// WriteColumns 按列定义 cols 向 w 写出表头与全部记录 items。
+func WriteColumns[T any](w RowWriter, cols Columns[T], items []T) error {
+	if err := w.Write(cols.Header()...); err != nil {
+		return err
+	}
+	for _, it := range items {
+		if err := w.Write(cols.Row(it)...); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ContentDisposition 返回下载表格附件的 Content-Disposition 响应头值。
+func ContentDisposition(filename string) string {
+	return mime.FormatMediaType("attachment", map[string]string{"filename": filename})
 }
 
 // xlsxWriter 返回写出 Excel 的 Writer。

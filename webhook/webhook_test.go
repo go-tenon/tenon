@@ -294,7 +294,7 @@ func startWorker(t *testing.T, db *bun.DB, maxAttempts int) {
 func runWorker(t *testing.T, db *bun.DB, opts webhook.Options) {
 	t.Helper()
 	cfg := queuetest.Config(t)
-	w := queue.NewWorker(db, queuetest.Conn(t), cfg, slog.New(slog.DiscardHandler))
+	w := queue.NewWorker(db, queuetest.Conn(t), cfg, queue.WithLogger(slog.New(slog.DiscardHandler)))
 	webhook.NewDeliverer(db, opts).Handle(w)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)

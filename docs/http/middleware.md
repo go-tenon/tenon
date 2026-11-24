@@ -20,7 +20,7 @@ router.Use(httpx.Timeout(cfg.HTTP.Timeout))
 api := rest.New(router, rest.Options{})
 ```
 
-`httpx.Defaults` 按执行顺序返回下面的中间件，日志写到 `slog.Default()`。`httpx.Languages` 见[本地化](../general/localization.md#enabling-localization)。
+`httpx.Defaults` 按执行顺序返回下面的中间件，日志写到 `slog.Default()`。常用选项包括 `httpx.Languages`（见[本地化](../general/localization.md#enabling-localization)）、`httpx.BodyLimitFor`（按路径覆盖请求体上限）、`httpx.BeforeAccessLog`（在访问日志前插入脱敏中间件）、`httpx.WithCompress`（启用响应压缩）与 `httpx.WithContext`（为请求包装上下文，例如 `database.TrackPrimary`）。
 
 | 中间件 | 行为 |
 | --- | --- |

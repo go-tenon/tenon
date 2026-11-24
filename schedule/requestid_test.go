@@ -45,7 +45,7 @@ func TestEachRunHasRequestID(t *testing.T) {
 func TestFailureLogSharesRequestID(t *testing.T) {
 	t.Parallel()
 	rec := logtest.New()
-	s := schedule.New(scheduletest.NewStore(), schedule.DefaultConfig(), rec.Logger())
+	s := schedule.New(scheduletest.NewStore(), schedule.DefaultConfig(), schedule.WithLogger(rec.Logger()))
 	seen := make(chan string, 1)
 	s.Add("fails", "@everysecond", func(ctx context.Context) error {
 		select {

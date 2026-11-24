@@ -5,11 +5,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 // CallEvent 是一次模型 HTTP 调用（非流式 JSON 或流式 SSE）的观测记录。
@@ -107,6 +109,9 @@ func (t *observeTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 
 	ev.StatusCode = resp.StatusCode
 	ev.Headers = resp.Header.Clone()
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		ev.Err = fmt.Errorf("ai: unexpected status %d", resp.StatusCode)
+	}
 
 	if isEventStream(resp.Header.Get("Content-Type")) {
 		ev.Stream = true
@@ -316,11 +321,7 @@ func (s *sseObserveBody) handleLine(line string) {
 	for _, ch := range chunk.Choices {
 		if ch.Delta.Content != "" && s.content.Len() < s.maxBody {
 			remain := s.maxBody - s.content.Len()
-			if len(ch.Delta.Content) > remain {
-				s.content.WriteString(ch.Delta.Content[:remain])
-			} else {
-				s.content.WriteString(ch.Delta.Content)
-			}
+			s.content.WriteString(truncateUTF8(ch.Delta.Content, remain))
 		}
 	}
 	if chunk.Usage != nil {
@@ -410,6 +411,20 @@ func applyUsage(u *usageEnvelope, ev *CallEvent) {
 // isEventStream 报告 Content-Type 是否为 SSE 事件流。
 func isEventStream(ct string) bool {
 	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(ct)), "text/event-stream")
+}
+
+// truncateUTF8 按最多 maxBytes 字节截断 s，停在完整的 UTF-8 字符边界上。
+func truncateUTF8(s string, maxBytes int) string {
+	if maxBytes <= 0 {
+		return ""
+	}
+	if len(s) <= maxBytes {
+		return s
+	}
+	for maxBytes > 0 && !utf8.RuneStart(s[maxBytes]) {
+		maxBytes--
+	}
+	return s[:maxBytes]
 }
 
 // cleanEndpoint 返回不含查询参数和用户凭据的请求地址。

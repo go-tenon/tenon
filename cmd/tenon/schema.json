@@ -60,7 +60,7 @@
       "properties": {
         "skip": {
           "type": "array",
-          "items": { "enum": ["text", "clock", "errors", "colors", "deps"] },
+          "items": { "enum": ["text", "clock", "errors", "colors", "deps", "wiring"] },
           "uniqueItems": true,
           "description": "默认跳过的检查项，例如 [\"text\"]。通过 tenon check --only 显式指定时仍会运行。"
         },

@@ -83,6 +83,22 @@ type Meta struct {
 	PrevTo      string      `json:"prev_to"`
 }
 
+// LoadLocation 解析并校验 IANA 时区名：为空时返回 time.UTC，拒绝 "Local" 以避免依赖运行宿主时区，
+// 无法识别时返回带 errorx.Field("tz") 的 ErrInvalidTimeZone。
+func LoadLocation(tz string) (*time.Location, error) {
+	if tz == "" {
+		return time.UTC, nil
+	}
+	if tz == "Local" {
+		return nil, ErrInvalidTimeZone.New(errorx.Field("tz"), errorx.Public("time_zone", tz))
+	}
+	loc, err := time.LoadLocation(tz)
+	if err != nil {
+		return nil, ErrInvalidTimeZone.New(errorx.Field("tz"), errorx.Public("time_zone", tz))
+	}
+	return loc, nil
+}
+
 // Resolve 校验并解析时间窗口参数 p，按 opts 补全默认时区、默认日期范围与分桶粒度，返回可供 SQL 查询和序列补零使用的 Window。
 func Resolve(p Params, opts Options) (Window, error) {
 	// 1. 解析时区：拒绝 "Local" 防止受运行宿主时区影响。
@@ -93,12 +109,9 @@ func Resolve(p Params, opts Options) (Window, error) {
 	if tz == "" {
 		tz = "UTC"
 	}
-	if tz == "Local" {
-		return Window{}, ErrInvalidTimeZone.New(errorx.Field("tz"), errorx.Public("time_zone", tz))
-	}
-	loc, err := time.LoadLocation(tz)
+	loc, err := LoadLocation(tz)
 	if err != nil {
-		return Window{}, ErrInvalidTimeZone.New(errorx.Field("tz"), errorx.Public("time_zone", tz))
+		return Window{}, err
 	}
 
 	// 2. 计算默认起止日期并校验格式与顺序。

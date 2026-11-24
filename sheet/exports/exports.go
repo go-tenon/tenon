@@ -50,6 +50,17 @@ type Export struct {
 	ExpiresAt   *time.Time   `bun:"expires_at"                 json:"expires_at,omitempty"` // 文件被回收的时间，completed 时写入
 }
 
+// Progress 是适合直接返回给前端（HTTP 响应体或 SSE 进度事件）的导出进度结构，附带按请求语言翻译后的失败原因。
+type Progress struct {
+	*Export
+	ErrorMessage string `json:"error_message,omitempty"`
+}
+
+// Progress 返回附带按 ctx 语言翻译后错误消息的 Progress。
+func (e *Export) Progress(ctx context.Context) Progress {
+	return Progress{Export: e, ErrorMessage: e.ErrorMessage(ctx)}
+}
+
 // Service 登记、处理和查询导出。
 type Service struct {
 	db    *bun.DB

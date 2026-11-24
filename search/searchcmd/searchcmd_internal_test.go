@@ -74,7 +74,7 @@ func TestReindexWaits(t *testing.T) {
 	pollInterval = 10 * time.Millisecond
 	db := open(t)
 	cfg := queuetest.Config(t)
-	w := queue.NewWorker(db, queuetest.Conn(t), cfg, slog.New(slog.DiscardHandler))
+	w := queue.NewWorker(db, queuetest.Conn(t), cfg, queue.WithLogger(slog.New(slog.DiscardHandler)))
 	articles.Handle(w, db, load, scan)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)

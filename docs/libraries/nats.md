@@ -30,7 +30,7 @@ nats:
 在入口打开共用资源的地方（见[依赖装配](../concepts/dependencies.md#running-parts)）创建连接，登记到 [`cleanup.Stack`](../concepts/dependencies.md#closing-resources)：
 
 ```go
-nc, err := natsx.Connect(cfg.NATS, "blog", nil) // 连接名出现在 NATS 的监控中；日志器为 nil 时用 slog.Default()
+nc, err := natsx.Connect(cfg.NATS, "blog") // 连接名出现在 NATS 的监控中；日志默认写到 slog.Default()
 if err != nil {
     return nil, err
 }
@@ -56,7 +56,7 @@ stack.MustAdd("nats", func(context.Context) error {
 
 把同一个 `nc` 传给组件：
 
-- 队列：`queue.NewWorker(db, nc, cfg.Queue, logger)`、`queue.NewAdmin(nc, cfg.Queue)`，见[队列](../background/queue.md#running-workers)；
+- 队列：`queue.NewWorker(db, nc, cfg.Queue)`、`queue.NewAdmin(nc, cfg.Queue)`，见[队列](../background/queue.md#running-workers)；
 - 广播：`natsbroadcast.New(nc, prefix)`，见[广播](broadcasting.md#backends)；
 - 在线成员：`natspresence.New(ctx, nc, opts)`，见[实时频道](realtime.md#presence-stores)。
 
@@ -76,7 +76,7 @@ type Config struct {
 ```
 
 ```go
-blogNC, err := natsx.Connect(cfg.BlogNATS, "shop", nil)
+blogNC, err := natsx.Connect(cfg.BlogNATS, "shop")
 if err != nil {
     return nil, err
 }

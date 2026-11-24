@@ -395,7 +395,7 @@ func TestClusterHistoryNotifyForwarded(t *testing.T) {
 	t.Parallel()
 	m := chattest.NewModel(chattest.Reply{Text: "第一轮", Delay: 300 * time.Millisecond}, chattest.Text("第二轮"))
 	table := newMessageTable()
-	hub := broadcast.New(broadcasttest.NewBackend(), nil)
+	hub := broadcast.New(broadcasttest.NewBackend())
 	locker := lock.New(locktest.NewStore())
 	newInstance := func() *chat.Runs {
 		ag := llmagent.New("support", llmagent.WithModel(m), llmagent.WithGenerationConfig(model.GenerationConfig{Stream: true}))

@@ -8,7 +8,7 @@
 //	groups := []doctor.Group{
 //	    database.Doctor(db),
 //	    migrate.Doctor(db, migrations.FS),
-//	    queue.Doctor(db, nc, cfg.Queue),
+//	    queue.Doctor(db, nc),
 //	}
 //	report := doctor.Run(ctx, groups...)
 //
@@ -208,8 +208,13 @@ func runCheck(ctx context.Context, fn func(context.Context) error) error {
 }
 
 // Require 执行全部检查，把提示写入日志，有检查失败时返回 ErrFailed 分类的错误。在启动服务或执行迁移之前调用，
-// 环境不满足要求时拒绝继续，并说明怎样修改。logger 为 nil 时使用带 component=doctor 的 slog.Default()。
-func Require(ctx context.Context, logger *slog.Logger, groups ...Group) error {
+// 环境不满足要求时拒绝继续，并说明怎样修改。使用带 component=doctor 的 slog.Default() 记录日志。
+func Require(ctx context.Context, groups ...Group) error {
+	return RequireWithLogger(ctx, nil, groups...)
+}
+
+// RequireWithLogger 执行全部检查并使用指定 logger 记录提示日志；logger 为 nil 时使用带 component=doctor 的 slog.Default()。
+func RequireWithLogger(ctx context.Context, logger *slog.Logger, groups ...Group) error {
 	if logger == nil {
 		logger = logging.Or(nil).With(logging.AttrComponent, "doctor")
 	}

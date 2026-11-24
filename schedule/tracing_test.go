@@ -19,7 +19,7 @@ import (
 func TestTracing(t *testing.T) {
 	spans := tracetest.NewSpanRecorder()
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spans))
-	s := schedule.New(scheduletest.NewStore(), schedule.DefaultConfig(), slog.New(slog.DiscardHandler),
+	s := schedule.New(scheduletest.NewStore(), schedule.DefaultConfig(), schedule.WithLogger(slog.New(slog.DiscardHandler)),
 		schedule.WithTelemetry(metricnoop.NewMeterProvider(), tp))
 	var inTask trace.SpanContext
 	s.Add("ok", "@everysecond", func(ctx context.Context) error {

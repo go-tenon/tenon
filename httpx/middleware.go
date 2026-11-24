@@ -37,15 +37,39 @@ func Defaults(cfg Config, opts ...DefaultsOption) []func(http.Handler) http.Hand
 	for _, opt := range opts {
 		opt.applyDefaults(&o)
 	}
-	return []func(http.Handler) http.Handler{
+	mws := []func(http.Handler) http.Handler{
 		AssignRequestID(cfg.RequestID),
 		NoSniff(),
 		ClientIP(cfg.ClientIP),
 		Locale(o.languages),
+	}
+	mws = append(mws, o.beforeAccessLog...)
+	mws = append(mws,
 		AccessLog(cfg.AccessLog, o.logger),
 		Recover(o.logger),
+	)
+	if o.compress {
+		mws = append(mws, Compress())
+	}
+	mws = append(mws,
 		bodyLimit(cfg.BodyLimit, o.bodyLimitFor),
 		AcquireTimeout(cfg.AcquireTimeout),
+	)
+	for _, wrap := range o.ctxWraps {
+		mws = append(mws, Context(wrap))
+	}
+	return mws
+}
+
+// Context 为每个请求用 fn 包装 r.Context()，例如 httpx.Context(database.TrackPrimary)。fn 为 nil 时直接放行。
+func Context(fn func(context.Context) context.Context) func(http.Handler) http.Handler {
+	if fn == nil {
+		return passthrough
+	}
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			next.ServeHTTP(w, r.WithContext(fn(r.Context())))
+		})
 	}
 }
 

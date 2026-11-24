@@ -77,7 +77,7 @@ func TestTools(t *testing.T) {
 	for _, tool := range res.Tools {
 		names = append(names, tool.Name)
 	}
-	want := "tenon_app_info tenon_deploy_info tenon_deploy_logs tenon_deploy_plan tenon_deploy_status tenon_dev_logs tenon_read_doc tenon_search_docs"
+	want := "tenon_app_info tenon_check tenon_deploy_info tenon_deploy_logs tenon_deploy_plan tenon_deploy_status tenon_dev_logs tenon_read_doc tenon_search_docs"
 	if got := strings.Join(names, " "); got != want {
 		t.Errorf("tools:\n got: %s\nwant: %s", got, want)
 	}
@@ -369,5 +369,43 @@ environments:
 	logsJSON, _ := json.Marshal(resLogs.StructuredContent)
 	if !strings.Contains(string(logsJSON), "ERR fail web-1") || !strings.Contains(string(logsJSON), "ERR fail web-2") || strings.Contains(string(logsJSON), "INF ok") {
 		t.Errorf("tenon_deploy_logs:\n%s", logsJSON)
+	}
+}
+
+// TestCheckTool 验证 tenon_check 工具能够运行静态检查并返回结构化违规结果。
+func TestCheckTool(t *testing.T) {
+	t.Parallel()
+	root, s := connect(t)
+	badFile := filepath.Join(root, "cmd", "blog", "main.go")
+	if err := os.MkdirAll(filepath.Dir(badFile), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	src := `package main
+
+import (
+	"context"
+	"net"
+	"net/http"
+
+	"github.com/go-tenon/tenon/httpx"
+)
+
+func run(ctx context.Context, cfg httpx.Config, ln net.Listener, h http.Handler) {
+	_ = httpx.Serve(ctx, cfg, ln, h)
+}
+`
+	if err := os.WriteFile(badFile, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res, err := s.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "tenon_check",
+		Arguments: map[string]any{"checks": []string{"wiring"}},
+	})
+	if err != nil || res.IsError {
+		t.Fatalf("tenon_check: err=%v res=%+v", err, res)
+	}
+	raw, _ := json.Marshal(res.StructuredContent)
+	if !strings.Contains(string(raw), `"passed":false`) || !strings.Contains(string(raw), "httpx.Serve is missing") {
+		t.Errorf("tenon_check result:\n%s", raw)
 	}
 }

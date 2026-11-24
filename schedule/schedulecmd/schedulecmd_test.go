@@ -19,7 +19,7 @@ func TestSchedules(t *testing.T) {
 	calls := 0
 	tasks := func() *schedule.Scheduler {
 		calls++
-		s := schedule.New(store, schedule.DefaultConfig(), nil)
+		s := schedule.New(store, schedule.DefaultConfig())
 		s.Add("reports:daily", "@daily", noop, schedule.Describe("生成前一天的报表"))
 		s.Add("cache:warm", "@every 30s", noop, schedule.EveryInstance())
 		return s

@@ -42,7 +42,7 @@ func newDeployment(t *testing.T, workerModel *chattest.Model, tools []tool.Tool,
 func newDeploymentOn(t *testing.T, backend broadcast.Backend, workerModel *chattest.Model, tools []tool.Tool, workers int, opts ...chat.Option) *deployment {
 	t.Helper()
 	sessions := inmemory.NewSessionService()
-	hub := broadcast.New(backend, nil)
+	hub := broadcast.New(backend)
 	locker := lock.New(locktest.NewStore())
 	newRuns := func(m *chattest.Model, extra ...chat.Option) *chat.Runs {
 		ag := llmagent.New("support", llmagent.WithModel(m), llmagent.WithTools(tools),
@@ -222,7 +222,7 @@ func TestWorkersNotifyWithHistory(t *testing.T) {
 	t.Parallel()
 	m := chattest.NewModel(chattest.Text("十点"))
 	table := newMessageTable()
-	hub := broadcast.New(broadcasttest.NewBackend(), nil)
+	hub := broadcast.New(broadcasttest.NewBackend())
 	locker := lock.New(locktest.NewStore())
 	newRuns := func(m *chattest.Model, extra ...chat.Option) *chat.Runs {
 		ag := llmagent.New("support", llmagent.WithModel(m), llmagent.WithGenerationConfig(model.GenerationConfig{Stream: true}))

@@ -261,3 +261,34 @@ func must(t *testing.T, err error) {
 		t.Fatal(err)
 	}
 }
+
+func TestWriteAndWriteColumns(t *testing.T) {
+	t.Parallel()
+	type item struct {
+		Name  string
+		Count int
+	}
+	cols := sheet.Columns[item]{
+		{Key: "name", Header: "名称", Value: func(i item) any { return i.Name }},
+		{Key: "count", Header: "数量", Value: func(i item) any { return i.Count }},
+	}
+	var buf bytes.Buffer
+	err := sheet.Write(&buf, sheet.CSV, func(w sheet.RowWriter) error {
+		return sheet.WriteColumns(w, cols, []item{{Name: "示例", Count: 3}})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := read(t, buf.Bytes(), sheet.CSV)
+	if !reflect.DeepEqual(r.Header(), []string{"名称", "数量"}) {
+		t.Fatalf("header = %v", r.Header())
+	}
+	got := rows(t, r)
+	if len(got) != 1 || !reflect.DeepEqual(got[0].Values, []string{"示例", "3"}) {
+		t.Fatalf("rows = %+v", got)
+	}
+	cd := sheet.ContentDisposition("账单 2026.csv")
+	if !strings.Contains(cd, "attachment;") || !strings.Contains(cd, "filename*=") {
+		t.Fatalf("ContentDisposition = %q", cd)
+	}
+}

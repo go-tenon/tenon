@@ -110,7 +110,7 @@ func TestBackend(t *testing.T, newBackends func(t *testing.T) (a, b broadcast.Ba
 func hubs(t *testing.T, newBackends func(t *testing.T) (a, b broadcast.Backend)) (*broadcast.Hub, *broadcast.Hub) {
 	t.Helper()
 	ba, bb := newBackends(t)
-	a, b := broadcast.New(ba, nil), broadcast.New(bb, nil)
+	a, b := broadcast.New(ba), broadcast.New(bb)
 	t.Cleanup(func() { _, _ = a.Close(), b.Close() })
 	return a, b
 }

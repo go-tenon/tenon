@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"net/http"
 	"strconv"
 
 	"github.com/cockroachdb/errors"
@@ -25,8 +26,34 @@ type Client struct {
 
 var _ ai.Decider = (*Client)(nil)
 
-// New 按 cfg 创建 Client，opts 与 ai/openai 相同。
-func New(cfg ai.ModelConfig, opts ...openai.Option) *Client { return &Client{openai.New(cfg, opts...)} }
+// Option 是 New 的选项。
+type Option func(*options)
+
+// options 保存构造 Client 时的选项。
+type options struct {
+	openaiOpts []openai.Option
+}
+
+// WithHTTPClient 设置发送请求使用的 HTTP 客户端。
+func WithHTTPClient(hc *http.Client) Option {
+	return func(o *options) { o.openaiOpts = append(o.openaiOpts, openai.WithHTTPClient(hc)) }
+}
+
+// WithOpenAI 传入嵌入的 openai.Client 的选项。
+func WithOpenAI(opts ...openai.Option) Option {
+	return func(o *options) { o.openaiOpts = append(o.openaiOpts, opts...) }
+}
+
+// New 按 cfg 创建 Client。
+func New(cfg ai.ModelConfig, opts ...Option) *Client {
+	var o options
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&o)
+		}
+	}
+	return &Client{openai.New(cfg, o.openaiOpts...)}
+}
 
 // Wrap 让 c 的 Decide 改用 System One 格式。
 func Wrap(c *openai.Client) *Client { return &Client{c} }

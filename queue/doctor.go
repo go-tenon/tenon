@@ -30,7 +30,7 @@ const (
 //   - jetstream（nc 不为 nil）：NATS 已开启 JetStream。
 //
 // db 和 nc 在检查时才使用，可以在打开连接之前构造。
-func Doctor(db *bun.DB, nc *nats.Conn, _ Config) doctor.Group {
+func Doctor(db *bun.DB, nc *nats.Conn) doctor.Group {
 	checks := []doctor.Check{
 		{Name: "tables", Run: func(ctx context.Context) error {
 			var outbox, failed bool

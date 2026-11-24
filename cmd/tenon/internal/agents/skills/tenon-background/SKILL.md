@@ -19,7 +19,7 @@ description: Tenon 应用的后台任务：用 queue.Topic 声明队列任务、
 ## 定时任务
 
 1. 任务是 `func(ctx context.Context) error`，业务动作的 `Handle` 正好是这个签名时直接登记。
-2. 发布 `pgschedule.Migrations()`，用 `schedule.New(pgschedule.New(db), cfg.Schedule, nil)` 创建调度器；在模块的 `tasks.go` 中：`s.Add("articles:publish-scheduled", "* * * * *", NewPublishScheduled(db).Handle, schedule.Describe("发布到了预定时间的文章"))`，见 `tenon/docs/background/scheduling.md#defining-tasks`。
+2. 发布 `pgschedule.Migrations()`，用 `schedule.New(pgschedule.New(db), cfg.Schedule)` 创建调度器；在模块的 `tasks.go` 中：`s.Add("articles:publish-scheduled", "* * * * *", NewPublishScheduled(db).Handle, schedule.Describe("发布到了预定时间的文章"))`，见 `tenon/docs/background/scheduling.md#defining-tasks`。
 3. 多个实例时同一个任务只执行一次，避免重叠见 `tenon/docs/background/scheduling.md#multiple-instances`、`tenon/docs/background/scheduling.md#preventing-overlaps`。
 4. 运行调度器见 `tenon/docs/background/scheduling.md#running-the-scheduler`。
 

@@ -32,7 +32,7 @@ func TestLayers(t *testing.T) {
 			return err
 		}
 		rel, _ := filepath.Rel(root, path)
-		if rel == "index.ts" {
+		if rel == "index.ts" || rel == "core.ts" {
 			return nil
 		}
 		from := strings.Split(filepath.ToSlash(rel), "/")[0]

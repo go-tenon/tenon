@@ -1,8 +1,8 @@
 // Package natsx 按框架的约定连接 NATS。队列、广播和实时频道的在线成员共用一个进程中的同一条连接：
 //
-//	nc, err := natsx.Connect(cfg.NATS, "blog", logger)
-//	w := queue.NewWorker(db, nc, cfg.Queue, logger)
-//	hub := broadcast.New(natsbroadcast.New(nc, "blog.broadcast"), logger)
+//	nc, err := natsx.Connect(cfg.NATS, "blog")
+//	w := queue.NewWorker(db, nc, cfg.Queue)
+//	hub := broadcast.New(natsbroadcast.New(nc, "blog.broadcast"))
 //
 // 连接的选项由框架决定：断开后一直重连，每 10 秒探测一次连接，断开和重连记录在日志中。
 package natsx
@@ -43,17 +43,35 @@ func (c Config) Validate() error {
 	return nil
 }
 
+// Option 是 Connect 的选项。
+type Option func(*connectOptions)
+
+// connectOptions 保存 Connect 的可选参数。
+type connectOptions struct {
+	logger *slog.Logger
+}
+
+// WithLogger 指定记录连接断开、重连和异步错误的日志器，默认使用 slog.Default()。
+func WithLogger(logger *slog.Logger) Option {
+	return func(o *connectOptions) { o.logger = logger }
+}
+
 // Connect 连接 NATS。name 是连接的名字，出现在 NATS 的监控中，例如应用名。
-// logger 记录连接的断开、重连和异步错误（例如订阅跟不上），nil 时使用 slog.Default()。
 //
 // 连接断开后一直重连，所以连接只在 Close 时关闭；进程退出前调用 Close。
 // NATS 不可达时立即返回错误，与 database.Open 一样让进程在启动时失败。
-func Connect(cfg Config, name string, logger *slog.Logger) (*nats.Conn, error) {
+func Connect(cfg Config, name string, opts ...Option) (*nats.Conn, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, errors.Wrap(err, "natsx")
 	}
-	logger = logging.Or(logger).With(logging.AttrComponent, "nats")
-	opts := []nats.Option{
+	var o connectOptions
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&o)
+		}
+	}
+	logger := logging.Or(o.logger).With(logging.AttrComponent, "nats")
+	natsOpts := []nats.Option{
 		nats.Name(name),
 		nats.MaxReconnects(-1),
 		nats.ReconnectWait(time.Second),
@@ -73,9 +91,9 @@ func Connect(cfg Config, name string, logger *slog.Logger) (*nats.Conn, error) {
 		}),
 	}
 	if cfg.Credentials != "" {
-		opts = append(opts, nats.UserCredentials(cfg.Credentials))
+		natsOpts = append(natsOpts, nats.UserCredentials(cfg.Credentials))
 	}
-	nc, err := nats.Connect(cfg.URL, opts...)
+	nc, err := nats.Connect(cfg.URL, natsOpts...)
 	if err != nil {
 		return nil, errors.Wrapf(err, "natsx: connect to %s", redactURL(cfg.URL))
 	}

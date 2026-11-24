@@ -1,6 +1,6 @@
 // Package natsbroadcast 是基于 NATS 发布订阅的 broadcast.Backend，只用 NATS 的核心功能，不需要 JetStream。
 //
-//	hub := broadcast.New(natsbroadcast.New(nc, "blog.broadcast"), nil)
+//	hub := broadcast.New(natsbroadcast.New(nc, "blog.broadcast"))
 package natsbroadcast
 
 import (

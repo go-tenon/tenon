@@ -32,13 +32,14 @@ go doc github.com/go-tenon/tenon/cache.Cache.Remember   # 函数签名和说明�
 <a id="mcp-servers"></a>
 ## MCP 服务：`tenon mcp`
 
-MCP 配置中的 `tenon` 一项用 `go tool tenon mcp` 以 stdio 运行，版本与项目的框架相同，可以在项目的任何子目录中启动。八个只读工具涵盖开发文档、本地日志和线上部署观测：
+MCP 配置中的 `tenon` 一项用 `go tool tenon mcp` 以 stdio 运行，版本与项目的框架相同，可以在项目的任何子目录中启动。九个只读工具涵盖开发文档、静态检查、本地日志和线上部署观测：
 
 | 工具 | 作用 |
 | --- | --- |
 | `tenon_search_docs` | 在 `tenon/docs` 中按小节检索，返回标题、路径和锚点、片段 |
 | `tenon_read_doc` | 读一页的目录、一个小节连同子小节，或者整页 |
 | `tenon_app_info` | 框架版本、应用入口和地址、前端（目录、挂载路径、是否服务端渲染）、客户端、安装的技能 |
+| `tenon_check` | 运行 `tenon check` 静态检查（文字、时钟、错误码译文、颜色、依赖、框架装配），返回结构化违规列表 |
 | `tenon_dev_logs` | `bun run dev` 的输出：Go 的编译错误、应用的日志、前端开发服务器的输出 |
 | `tenon_deploy_info` | 读取 `deploy.yaml`，返回环境、角色、主机、主迁移节点和滚动波次拓扑（不含密钥） |
 | `tenon_deploy_status` | 并发查询线上集群各主机当前的发布版本与每个 systemd unit 的运行状态 |

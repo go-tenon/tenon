@@ -158,7 +158,7 @@ func TestRunWithoutTables(t *testing.T) {
 	if _, err := db.ExecContext(ctx, "DROP TABLE queue_outbox"); err != nil {
 		t.Fatal(err)
 	}
-	w := queue.NewWorker(db, queuetest.Conn(t), queuetest.Config(t), slog.New(slog.DiscardHandler))
+	w := queue.NewWorker(db, queuetest.Conn(t), queuetest.Config(t), queue.WithLogger(slog.New(slog.DiscardHandler)))
 	err := w.Run(ctx)
 	if err == nil || !strings.Contains(err.Error(), "run the queue migrations") {
 		t.Fatalf("err %v", err)

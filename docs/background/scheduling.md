@@ -10,7 +10,7 @@
 `db` 是入口打开的 `*bun.DB`，`cfg.Schedule` 是配置中的 `schedule` 段；使用前发布 `pgschedule.Migrations()`：
 
 ```go
-sched := schedule.New(pgschedule.New(db), cfg.Schedule, nil)
+sched := schedule.New(pgschedule.New(db), cfg.Schedule)
 sched.Add("reports:daily", "0 0 2 * * *", buildDailyReport, // 6 段，第一段是秒：每天 02:00:00
     schedule.Describe("生成前一天的报表"))
 sched.Add("articles:publish-scheduled", "@every 1m", publishScheduled.Handle)
@@ -21,7 +21,7 @@ err := sched.Run(ctx) // 一直运行到 ctx 被取消
 <a id="defining-tasks"></a>
 ## 用 `Scheduler.Add` 定义定时任务
 
-`schedule.New(store, cfg, logger)` 创建调度器（`logger` 为 `nil` 时用 `slog.Default()`），`Add` 注册任务。任务通常是[业务动作](../concepts/actions.md#as-scheduled-tasks)的 `Handle` 方法，由业务模块的 `RegisterTasks` 登记。`db` 是 `*bun.DB`：
+`schedule.New(store, cfg, opts...)` 创建调度器（默认写入 `slog.Default()`，用 `schedule.WithLogger` 替换日志器），`Add` 注册任务。任务通常是[业务动作](../concepts/actions.md#as-scheduled-tasks)的 `Handle` 方法，由业务模块的 `RegisterTasks` 登记。`db` 是 `*bun.DB`：
 
 ```go
 sched.Add("articles:publish-scheduled", "* * * * *", article.NewPublishScheduled(db).Handle,
@@ -63,7 +63,7 @@ sched.Add("reports:daily", "0 3 * * *", reports.Generate, schedule.In(loc))
 ```go
 // tasks 创建调度器并注册全部定时任务。
 func (a *App) tasks() *schedule.Scheduler {
-    sched := schedule.New(pgschedule.New(a.db), a.cfg.Schedule, nil)
+    sched := schedule.New(pgschedule.New(a.db), a.cfg.Schedule)
     article.RegisterTasks(sched, a.db) // 业务模块的任务
     // 框架数据的清理等不属于某个模块的任务直接写在这里，见“清理框架数据”
     return sched
@@ -156,7 +156,7 @@ schedulecmd.New(a.tasks),
 
 ```go
 func (a *App) tasks() *schedule.Scheduler {
-    sched := schedule.New(pgschedule.New(a.db), a.cfg.Schedule, nil, schedule.WithObserver(scheduleapi.Observer(a.db)))
+    sched := schedule.New(pgschedule.New(a.db), a.cfg.Schedule, schedule.WithObserver(scheduleapi.Observer(a.db)))
     // ……
     sched.Add("schedule:prune-runs", "@daily", schedule.Cleanup(scheduleapi.Cleanup(a.db, 7*24*time.Hour), 1000),
         schedule.Describe("删除 7 天前的执行记录"))
@@ -209,20 +209,20 @@ sched.Add("apitoken:cleanup", "@hourly", schedule.Cleanup(a.tokens.Cleanup, 1000
 
 | 数据 | 清理函数 | 建议频率 |
 | --- | --- | --- |
-| [API 令牌](../security/api-tokens.md#cleanup) | `apitoken.Store` 的 `Cleanup` | 每小时 |
-| [登录验证码](../security/login.md#cleanup) | 每套账号的 `login.Realm` 的 `Cleanup` | 每小时 |
-| [原子锁](../libraries/locks.md#postgres-store) | `pglock.New(db)` 的 `Cleanup` | 每小时 |
-| [限流计数](../libraries/rate-limiting.md#postgres-limiter) | 任意一个 `pglimit.New(…)` 的 `Cleanup`（删除所有限流器的） | 每小时 |
+| [API 令牌](../security/api-tokens.md#cleanup) | `apitoken.Cleanup(db)` | 每小时 |
+| [登录验证码](../security/login.md#cleanup) | `login.Cleanup(db)` | 每小时 |
+| [原子锁](../libraries/locks.md#postgres-store) | `pglock.Cleanup(db)` | 每小时 |
+| [限流计数](../libraries/rate-limiting.md#postgres-limiter) | `pglimit.Cleanup(db)`（删除所有限流器的） | 每小时 |
 | [未绑定的 passkey 和过期的仪式](../security/login.md#passkeys) | `passkey.Store` 的 `Cleanup` | 每天 |
 | [文件](../libraries/filesystem.md#cleanup) | 文件服务的 `Cleanup` | 每 5 分钟 |
 | [操作日志](../features/activity.md#retention) | `activity.Cleanup(db, 保留期)` | 每天 |
 | [通知](../features/notifications.md#retention) | `notification.Cleanup(db, 保留期)` | 每天 |
 | [推送设备](../features/push.md#cleanup) | `push.Cleanup(db, 保留期)` | 每天 |
-| [后台操作](../features/operations.md#cleanup)（包括导入和导出） | `operation.New(db)` 的 `Cleanup(保留期)` | 每天 |
-| [OAuth 授权码](../security/oauth-server.md#assembling) | `oauthserver.New(…)` 的 `Cleanup` | 每小时 |
+| [后台操作](../features/operations.md#cleanup)（包括导入和导出） | `operation.Cleanup(db, 保留期)` | 每天 |
+| [OAuth 授权码](../security/oauth-server.md#assembling) | `oauthserver.Cleanup(db)` | 每小时 |
 | [OAuth 动态注册的客户端](../security/oauth-server.md#dynamic-registration) | `oauthserver.New(…)` 的 `CleanupClients(保留期)` | 每天 |
 | [Webhook 投递记录](../features/webhooks.md#retention) | `webhook.Cleanup(db, 保留期)` | 每天 |
-| [失败任务](queue.md#failed-jobs) | `queue.NewFailedJobs(db).Cleanup(保留期)` | 每天 |
+| [失败任务](queue.md#failed-jobs) | `queue.CleanupFailed(db, 保留期)` | 每天 |
 | [定时任务的执行记录](#run-history) | `scheduleapi.Cleanup(db, 保留期)` | 每天 |
 | [冷静期已过的注销账号](../features/privacy.md#erasing) | 每套账号体系的 `privacy.New(…)` 的 `EraseDue` | 每 10 分钟 |
 
@@ -234,7 +234,7 @@ sched.Add("apitoken:cleanup", "@hourly", schedule.Cleanup(a.tokens.Cleanup, 1000
 `RunDue(ctx, at)` 执行在时刻 `at` 到期的任务，等它们结束后返回合并的错误，规则与 `Run` 相同。`scheduletest.NewStore()` 是内存状态存储，`ctx` 是 `t.Context()`：
 
 ```go
-sched := schedule.New(scheduletest.NewStore(), schedule.DefaultConfig(), nil)
+sched := schedule.New(scheduletest.NewStore(), schedule.DefaultConfig())
 var ran bool
 sched.Add("reports:daily", "0 3 * * *", func(context.Context) error {
     ran = true

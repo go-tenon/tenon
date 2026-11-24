@@ -23,7 +23,7 @@ func results(r doctor.DoctorReport) map[string]doctor.DoctorResult {
 func TestDoctor(t *testing.T) {
 	t.Parallel()
 	db := dbtest.Open(t, queue.Migrations())
-	report := doctor.Run(context.Background(), queue.Doctor(db, natstest.Connect(t), queue.DefaultConfig()))
+	report := doctor.Run(context.Background(), queue.Doctor(db, natstest.Connect(t)))
 	got := results(report)
 	for _, name := range []string{"tables", "nats", "nats_version", "jetstream"} {
 		if res := got[name]; res.Status != doctor.Passed {
@@ -35,7 +35,7 @@ func TestDoctor(t *testing.T) {
 func TestDoctorBeforeMigrations(t *testing.T) {
 	t.Parallel()
 	db := dbtest.Open(t, nil)
-	got := results(doctor.Run(context.Background(), queue.Doctor(db, nil, queue.DefaultConfig())))
+	got := results(doctor.Run(context.Background(), queue.Doctor(db, nil)))
 	if res := got["tables"]; res.Status != doctor.Skipped || !strings.Contains(res.Summary, "migrations") {
 		t.Errorf("tables before migrations = %+v, want skipped", res)
 	}

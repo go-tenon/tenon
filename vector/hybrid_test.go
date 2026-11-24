@@ -106,7 +106,7 @@ func TestHybridReindex(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w := queue.NewWorker(f.db, queuetest.Conn(t), queuetest.Config(t), nil)
+	w := queue.NewWorker(f.db, queuetest.Conn(t), queuetest.Config(t))
 	hybrid.Handle(w, f.store, f.src.load, f.src.scan)
 	queuetest.Run(t, w)
 	if op := waitOperation(t, f.db, op.ID); op.Status != operation.StatusCompleted || op.Processed != 3 {

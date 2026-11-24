@@ -153,8 +153,11 @@ func NewStore(db bun.IDB, catalog Catalog) *Store {
 	return &Store{db: db, catalog: slices.Clone(catalog), names: names}
 }
 
-// WithDB 返回使用 db（通常是业务事务）的副本，用于让 Set、Clear 与其他写入（例如操作日志）一起提交。
+// WithDB 返回使用 db（通常是业务事务）的副本，用于让 Set、Clear 与其他写入（例如操作日志）一起提交。db 为 nil 时 panic。
 func (s *Store) WithDB(db bun.IDB) *Store {
+	if db == nil {
+		panic("feature: nil database")
+	}
 	cp := *s
 	cp.db = db
 	return &cp

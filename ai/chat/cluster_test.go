@@ -36,7 +36,7 @@ func twoInstances(t *testing.T, m *chattest.Model, tools []tool.Tool) (*chat.Run
 func twoInstancesOn(t *testing.T, m *chattest.Model, tools []tool.Tool, backend broadcast.Backend, store lock.Store) (*chat.Runs, *chat.Runs) {
 	t.Helper()
 	sessions := inmemory.NewSessionService()
-	hub := broadcast.New(backend, nil)
+	hub := broadcast.New(backend)
 	locker := lock.New(store)
 	newInstance := func() *chat.Runs {
 		ag := llmagent.New("support", llmagent.WithModel(m), llmagent.WithTools(tools),

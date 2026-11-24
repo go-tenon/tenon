@@ -4,6 +4,7 @@
 //	tenon_search_docs    按小节检索 tenon/docs 中的框架文档
 //	tenon_read_doc       读一页文档的目录、一个小节或整页
 //	tenon_app_info       项目的框架版本、入口、前端与客户端和技能
+//	tenon_check          静态检查项目是否遵守框架约定（文字、时钟、错误码、颜色、依赖、装配）
 //	tenon_dev_logs       tenon dev 运行期间各进程的输出（dev.LogFile）
 //	tenon_deploy_info    deploy.yaml 中的环境、角色、主机和发布波次拓扑（不含密钥）
 //	tenon_deploy_status  远端集群各主机的当前发布版本与 systemd 服务状态
@@ -25,6 +26,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/go-tenon/tenon/cmd/tenon/internal/agents"
+	"github.com/go-tenon/tenon/cmd/tenon/internal/check"
 	"github.com/go-tenon/tenon/cmd/tenon/internal/deploy"
 	"github.com/go-tenon/tenon/cmd/tenon/internal/dev"
 	"github.com/go-tenon/tenon/cmd/tenon/internal/project"
@@ -33,7 +35,7 @@ import (
 // instructions 在连接时交给模型，说明工具之间怎样配合。
 const instructions = "Tenon 框架的开发与部署工具，文档的版本与项目 go.mod 中的框架版本一致。写 Tenon 的代码之前，" +
 	"用 tenon_search_docs 查找相关的文档小节，再用 tenon_read_doc 读它；不确定项目有哪些前端、依赖是什么版本时用 tenon_app_info；" +
-	"改完代码后用 tenon_dev_logs 看 bun run dev 中的编译错误和应用日志；" +
+	"改完代码后用 tenon_check 检查项目约定和框架装配（时钟、错误码译文、硬编码颜色、依赖版本、热重载与事务装配），用 tenon_dev_logs 看 bun run dev 中的编译错误和应用日志；" +
 	"排查或准备线上发布时，用 tenon_deploy_info、tenon_deploy_status、tenon_deploy_logs 和 tenon_deploy_plan 查看集群拓扑、状态、多机日志与发布计划，" +
 	"真正执行发布或回滚时运行 go tool tenon deploy --format json。"
 
@@ -161,6 +163,36 @@ func New(opts Options) (*mcp.Server, error) {
 			}
 		}
 		return nil, info, nil
+	})
+
+	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "tenon_check",
+		Title:       "静态检查项目约定",
+		Description: "运行 tenon check 静态检查（text、clock、errors、colors、deps、wiring）：检查前端写死文字和颜色、SQL 数据库时钟、errorx.Define 译文、前端 peerDependencies 版本以及框架装配遗漏（热重载选项、事务内 WithDB、搜索主题、限流/锁清理、请求体上限、SSR requestMiddleware）。改完代码和提交前调用。",
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
+	}, func(_ context.Context, _ *mcp.CallToolRequest, in checkArgs) (*mcp.CallToolResult, checkResult, error) {
+		p, err := opts.Inspect()
+		if err != nil {
+			return nil, checkResult{}, err
+		}
+		found, err := check.Run(opts.Root, p.Config, in.Checks)
+		if err != nil {
+			return nil, checkResult{}, err
+		}
+		res := checkResult{
+			Passed:   len(found) == 0,
+			Count:    len(found),
+			Findings: make([]checkFinding, 0, len(found)),
+		}
+		for _, f := range found {
+			res.Findings = append(res.Findings, checkFinding{
+				Check:   f.Check,
+				File:    f.File,
+				Line:    f.Line,
+				Message: f.Message,
+			})
+		}
+		return nil, res, nil
 	})
 
 	mcp.AddTool(srv, &mcp.Tool{
@@ -329,6 +361,26 @@ type readArgs struct {
 type logArgs struct {
 	Lines    int    `json:"lines,omitempty" jsonschema:"返回最后几行，默认 100，最多 1000"`
 	Contains string `json:"contains,omitempty" jsonschema:"只保留包含这段文字的行，例如 ERR"`
+}
+
+// checkArgs 是 tenon_check 的参数。
+type checkArgs struct {
+	Checks []string `json:"checks,omitempty" jsonschema:"只运行指定的检查项（text、clock、errors、colors、deps、wiring），留空运行全部启用的检查项"`
+}
+
+// checkResult 是 tenon_check 的结构化结果。
+type checkResult struct {
+	Passed   bool           `json:"passed"`   // 全部检查通过时为 true
+	Count    int            `json:"count"`    // 发现的问题总数
+	Findings []checkFinding `json:"findings"` // 每条问题的文件、行号和说明
+}
+
+// checkFinding 是 tenon_check 的单条检查问题。
+type checkFinding struct {
+	Check   string `json:"check"`
+	File    string `json:"file"`
+	Line    int    `json:"line,omitempty"`
+	Message string `json:"message"`
 }
 
 // deployFileArgs 是 tenon_deploy_info 的参数。

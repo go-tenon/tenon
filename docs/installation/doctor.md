@@ -2,7 +2,7 @@
 
 自检在部署、升级和排查问题时检查运行环境：依赖的版本和设置、迁移是否执行、文件存储的权限，每个问题附带修改方法和文档。它与[健康检查](../concepts/lifecycle.md#health-checks)分工不同：健康检查每隔几秒确认依赖连得上，自检检查依赖的设置对不对。
 
-包：`doctor`、`doctor/doctorcmd`、`command/migratecmd`。
+包：`doctor`、`doctor/doctorcmd`、`doctor/doctorapi`、`command/migratecmd`。
 
 ```text
 $ ./bin/blog doctor
@@ -25,7 +25,7 @@ func (a *App) doctor() []doctor.Group {
     return []doctor.Group{
         database.Doctor(a.db),
         migrate.Doctor(a.db, migrations.FS),
-        queue.Doctor(a.db, a.nc, a.cfg.Queue),
+        queue.Doctor(a.db, a.nc),
         filesystem.Doctor(a.disk),
     }
 }
@@ -66,7 +66,7 @@ func Commands() []*cobra.Command {
 
 ```go
 migratecmd.New(migrations.FS, dbConfig, migratecmd.Check(func(cfg bootstrap.Config, db *bun.DB) []doctor.Group {
-    return []doctor.Group{database.Doctor(db), queue.Doctor(db, nil, cfg.Queue)}
+    return []doctor.Group{database.Doctor(db), queue.Doctor(db, nil)}
 }))
 ```
 
@@ -86,12 +86,12 @@ func OpenChecked(ctx context.Context, cfg Config, stack *cleanup.Stack) (*App, e
     if err != nil {
         return nil, err
     }
-    return app, doctor.Require(ctx, nil, app.doctor()...) // 失败时以退出码 4 结束
+    return app, doctor.Require(ctx, app.doctor()...) // 失败时以退出码 4 结束
 }
 ```
 
 - `main.go` 中改为 `command.Serve(bootstrap.OpenChecked, bootstrap.Parts)`；一次性命令仍用 `Open`，环境不对时 `doctor` 命令也能运行。
-- `Require` 的第二个参数是记录提示的日志器，`nil` 表示 `slog.Default()`。
+- `Require` 把提示写入 `slog.Default()`，测试中需要自定义日志器时用 `doctor.RequireWithLogger(ctx, logger, groups...)`。
 - 升级后忘了执行迁移时 `migrations` 组失败，进程退出并提示先运行 `migrate up`。数据库比程序新（滚动升级时旧版本在新表结构上重启）时只给提示，见[新旧进程同时运行](operations.md#upgrade-overlap)。
 
 <a id="with-systemd"></a>
@@ -152,29 +152,16 @@ func (a *App) doctor() []doctor.Group {
 `summary` 和 `fix` 原样显示给运维人员，也进入日志和工单，不写密码和密钥。
 
 <a id="admin-page"></a>
-## 在后台页面中显示：`doctor.Run`
+## 在后台页面中显示：`doctorapi.Register`
 
-`doctor.Run` 返回 `doctor.DoctorReport`，它带 JSON 标签，可以直接作为接口的响应体，在 OpenAPI 中名为 `DoctorReport`：
+`doctorapi.Register` 注册 `GET /system/doctor`（`system-doctor`），响应体为 `doctor.DoctorReport`，前端直接配合 `@go-tenon/ui` 的 [`DoctorPanel`](../frontend/features.md#doctor-panel) 展示：
 
 ```go
-type DoctorOutput struct {
-    Body doctor.DoctorReport
-}
-
-status := huma.Operation{
-    OperationID: "system-doctor",
-    Method:      http.MethodGet,
-    Path:        "/system/doctor",
-    Summary:     "运行环境自检",
-}
-requireOps(&status)
-rest.Register(api, status, func(ctx context.Context, _ *struct{}) (*DoctorOutput, error) {
-    return &DoctorOutput{Body: doctor.Run(ctx, a.doctor()...)}, nil
-})
+doctorapi.Register(api, api.RequireToken("system:read"), a.doctor)
 ```
 
-- `requireOps` 是只允许运维人员访问的[访问策略](../security/authorization.md)，例如要求 `system:read` 权限；`a.doctor()` 见[装配 doctor 命令](#doctor-command)。
-- 有检查失败时接口仍返回 `200`，页面按每一项的 `status` 显示。
+- 第二个参数保护该接口，要求运维权限（例如 `system:read`）；`a.doctor` 每次请求时调用，离线导出 OpenAPI 时不执行检查。
+- 有检查失败时接口仍返回 `200`，页面按每一项的 `status` 展示问题摘要和修改方法。
 
 > [!WARNING]
 > 结果中有数据库、存储和邮件服务器的地址和报错。这个接口只给运维人员访问。
@@ -186,7 +173,7 @@ rest.Register(api, status, func(ctx context.Context, _ *struct{}) (*DoctorOutput
 | --- | --- | --- |
 | `database.Doctor(db)` | `postgres` | `connection`；`version`：PostgreSQL 18 以上；`clock`：本机与数据库的时钟相差超过 1 秒时提示（定时任务触发等按实例的时钟计算） |
 | `migrate.Doctor(db, fsys)` | `migrations` | `up_to_date`：`fsys` 中的迁移都已执行，否则失败；数据库比程序新时提示。不持有迁移锁 |
-| `queue.Doctor(db, nc, cfg)` | `queue` | 见[队列的检查](#queue-checks) |
+| `queue.Doctor(db, nc)` | `queue` | 见[队列的检查](#queue-checks) |
 | `filesystem.Doctor(disk)` | `storage` | `read_write`：写入、读回、删除一个键以 `tenon-doctor/` 开头的探测对象。本地磁盘检查目录可写，S3 检查 bucket、地址和凭据 |
 | `s3.Doctor(disk, uploadOrigins...)` | `s3` | 见 [S3 的检查](#s3-checks) |
 | `smtp.Doctor(mailer)` | `smtp` | `connection`：连接、按 `tls` 升级、登录后断开，不发邮件；区分连不上（很多云服务器禁止外连 25 端口）、TLS 方式与端口不符、证书不受信任、用户名或密码被拒绝 |

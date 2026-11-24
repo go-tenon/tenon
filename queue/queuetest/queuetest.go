@@ -1,7 +1,7 @@
 // Package queuetest 在测试中运行连接测试 NATS 的 queue.Worker。
 //
 //	db := dbtest.Open(t, migrations.FS) // 包含已发布的 queue 迁移
-//	w := queue.NewWorker(db, queuetest.Conn(t), queuetest.Config(t), nil)
+//	w := queue.NewWorker(db, queuetest.Conn(t), queuetest.Config(t))
 //	article.PublishJob.Handle(w, publish)
 //	queuetest.Run(t, w)
 package queuetest
@@ -39,7 +39,7 @@ func url(t testing.TB) string {
 // 交给 queue.NewWorker 和 queue.NewAdmin；先于 Run 调用，连接就在 Worker 停止之后才关闭。
 func Conn(t testing.TB) *nats.Conn {
 	t.Helper()
-	nc, err := natsx.Connect(natsx.Config{URL: url(t)}, "queuetest", nil)
+	nc, err := natsx.Connect(natsx.Config{URL: url(t)}, "queuetest")
 	if err != nil {
 		t.Fatalf("queuetest: %v", err)
 	}

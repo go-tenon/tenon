@@ -95,10 +95,10 @@ attempts := pglimit.New(db, "passcode", ratelimit.Config{Rate: 5, Interval: time
 
 - 每次 `Allow` 写一次数据库，只用于低频操作；每个请求都经过的限流用内存限流器。
 - 同一个 key 的并发调用由行锁排队，放行的次数准确。时间按应用服务器的时钟计算，各实例的时钟需要同步。
-- 配额回满的 key 等同于不存在，用 `Cleanup` 定时删除。任意一个 `pglimit` 限流器的 `Cleanup` 删除表中所有限流器的行，只需登记一次：
+- 配额回满的 key 等同于不存在，用 `pglimit.Cleanup(db)` 定时删除（覆盖表中全部限流器，只需登记一次）：
 
 ```go
-sched.Add("rate-limits:cleanup", "@hourly", schedule.Cleanup(attempts.Cleanup, 1000),
+sched.Add("rate-limits:cleanup", "@hourly", schedule.Cleanup(pglimit.Cleanup(db), 1000),
     schedule.Describe("删除配额已回满的限流计数"))
 ```
 

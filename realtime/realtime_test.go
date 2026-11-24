@@ -149,8 +149,8 @@ type node struct {
 // start 启动一个实例。wrap 包装 Handler，模拟认证等中间件；可以为 nil。
 func start(t *testing.T, backend broadcast.Backend, opts realtime.Options, wrap func(http.Handler) http.Handler) *node {
 	t.Helper()
-	hub := broadcast.New(backend, nil)
-	if opts.Authenticate != nil && opts.Accounts == nil {
+	hub := broadcast.New(backend)
+	if opts.Validate != nil && opts.Accounts == nil {
 		opts.Accounts = identity.Accounts{"user": nil}
 	}
 	rt, err := realtime.New(hub, opts)
@@ -286,8 +286,8 @@ func TestUnsubscribeAcrossInstances(t *testing.T) {
 	t.Parallel()
 	b := &bus{}
 	store := &tokens{}
-	a := start(t, b.backend(), realtime.Options{Authenticate: store.validate}, nil)
-	other := start(t, b.backend(), realtime.Options{Authenticate: store.validate}, nil)
+	a := start(t, b.backend(), realtime.Options{Validate: store.validate}, nil)
+	other := start(t, b.backend(), realtime.Options{Validate: store.validate}, nil)
 	other.rt.Channel("chat:{id}", realtime.Private(func(context.Context, identity.Subject, realtime.Params) (bool, error) {
 		return true, nil
 	}))
@@ -321,7 +321,7 @@ func TestChannelRules(t *testing.T) {
 	t.Parallel()
 	store := &tokens{}
 	var down atomic.Bool
-	n := start(t, broadcasttest.NewBackend(), realtime.Options{Authenticate: store.validate}, nil)
+	n := start(t, broadcasttest.NewBackend(), realtime.Options{Validate: store.validate}, nil)
 	n.rt.Channel("articles", realtime.Public())
 	n.rt.Channel("chat:{conversation}", realtime.Private(func(ctx context.Context, sub identity.Subject, p realtime.Params) (bool, error) {
 		if got, ok := identity.FromContext(ctx); !ok || got.ID != sub.ID {
@@ -388,8 +388,8 @@ func TestClientPublishNeedsRuleAndSubscription(t *testing.T) {
 func TestTokenAccounts(t *testing.T) {
 	t.Parallel()
 	n := start(t, broadcasttest.NewBackend(), realtime.Options{
-		Authenticate: (&tokens{}).validate, // 给出 user 类型的主体
-		Accounts:     identity.Accounts{"customer": nil},
+		Validate: (&tokens{}).validate, // 给出 user 类型的主体
+		Accounts: identity.Accounts{"customer": nil},
 	}, nil)
 	if rejected(t, n.url, "alice", nil) != 3500 {
 		t.Fatal("token of another account type was accepted")
@@ -398,21 +398,21 @@ func TestTokenAccounts(t *testing.T) {
 
 func TestAccountsRequired(t *testing.T) {
 	t.Parallel()
-	hub := broadcast.New(broadcasttest.NewBackend(), nil)
+	hub := broadcast.New(broadcasttest.NewBackend())
 	t.Cleanup(func() { _ = hub.Close() })
 	defer func() {
 		if recover() == nil {
 			t.Fatal("Authenticate without Accounts: expected panic")
 		}
 	}()
-	_, _ = realtime.New(hub, realtime.Options{Authenticate: (&tokens{}).validate})
+	_, _ = realtime.New(hub, realtime.Options{Validate: (&tokens{}).validate})
 }
 
 func TestTokenAuthentication(t *testing.T) {
 	t.Parallel()
 	store := &tokens{}
 	store.revoke("revoked")
-	n := start(t, broadcasttest.NewBackend(), realtime.Options{Authenticate: store.validate}, nil)
+	n := start(t, broadcasttest.NewBackend(), realtime.Options{Validate: store.validate}, nil)
 
 	if rejected(t, n.url, "revoked", nil) != 3500 {
 		t.Fatal("revoked token was not rejected as invalid")
@@ -467,7 +467,7 @@ func TestTokenAuthentication(t *testing.T) {
 func TestTokenBoundToAnotherTenantIsRejected(t *testing.T) {
 	t.Parallel()
 	n := start(t, broadcasttest.NewBackend(), realtime.Options{
-		Authenticate: func(context.Context, string) (identity.Subject, error) {
+		Validate: func(context.Context, string) (identity.Subject, error) {
 			return identity.Subject{Type: "user", ID: "alice", Tenant: "acme"}, nil
 		},
 	}, func(next http.Handler) http.Handler {
@@ -491,7 +491,7 @@ func TestResolveTokenSubject(t *testing.T) {
 	)
 	set := func(v string) { mu.Lock(); state = v; mu.Unlock() }
 	n := start(t, broadcasttest.NewBackend(), realtime.Options{
-		Authenticate: (&tokens{}).validate,
+		Validate: (&tokens{}).validate,
 		Accounts: identity.Accounts{"user": func(_ context.Context, sub identity.Subject) (identity.Subject, error) {
 			mu.Lock()
 			defer mu.Unlock()
@@ -534,7 +534,7 @@ func TestResolveRecheckDisconnects(t *testing.T) {
 	)
 	set := func(v string) { mu.Lock(); state = v; mu.Unlock() }
 	n := start(t, broadcasttest.NewBackend(), realtime.Options{
-		Authenticate: (&tokens{}).validate,
+		Validate: (&tokens{}).validate,
 		Accounts: identity.Accounts{"user": func(_ context.Context, sub identity.Subject) (identity.Subject, error) {
 			mu.Lock()
 			defer mu.Unlock()
@@ -563,7 +563,7 @@ func TestResolveRecheckDisconnects(t *testing.T) {
 func TestTenantOption(t *testing.T) {
 	t.Parallel()
 	n := start(t, broadcasttest.NewBackend(), realtime.Options{
-		Authenticate: func(_ context.Context, token string) (identity.Subject, error) {
+		Validate: func(_ context.Context, token string) (identity.Subject, error) {
 			bound, _ := strings.CutPrefix(token, "bound-to-")
 			if bound == token {
 				bound = "" // 没有绑定租户的 token
@@ -595,10 +595,10 @@ func TestRevokedTokenDisconnects(t *testing.T) {
 	t.Parallel()
 	store := &tokens{}
 	// 复查信号经由另一个 Hub 传递也可以：Credentials 只负责提醒。
-	signals := broadcast.New(broadcasttest.NewBackend(), nil)
+	signals := broadcast.New(broadcasttest.NewBackend())
 	defer signals.Close()
 	creds := broadcast.NewCredentials(signals)
-	n := start(t, broadcasttest.NewBackend(), realtime.Options{Authenticate: store.validate, Credentials: creds}, nil)
+	n := start(t, broadcasttest.NewBackend(), realtime.Options{Validate: store.validate, Credentials: creds}, nil)
 	alice, bob := mustConnect(t, n.url, "alice", nil), mustConnect(t, n.url, "bob", nil)
 
 	// 后端故障时的复查保持连接。
@@ -624,7 +624,7 @@ func TestRevokedTokenDisconnects(t *testing.T) {
 func TestPeriodicRecheckDisconnects(t *testing.T) {
 	defer realtime.SetCredentialInterval(50 * time.Millisecond)()
 	store := &tokens{}
-	n := start(t, broadcasttest.NewBackend(), realtime.Options{Authenticate: store.validate}, nil)
+	n := start(t, broadcasttest.NewBackend(), realtime.Options{Validate: store.validate}, nil)
 	c := mustConnect(t, n.url, "alice", nil)
 	time.Sleep(150 * time.Millisecond) // 有效的凭据经过几次复查仍然保持连接
 	n.rt.Channel("articles", realtime.Public())
@@ -642,12 +642,12 @@ func TestRecheckReauthorizesChannels(t *testing.T) {
 		mu    sync.Mutex
 		perms = []string{"articles:read", "comments:read"}
 	)
-	signals := broadcast.New(broadcasttest.NewBackend(), nil)
+	signals := broadcast.New(broadcasttest.NewBackend())
 	defer signals.Close()
 	creds := broadcast.NewCredentials(signals)
 	n := start(t, broadcasttest.NewBackend(), realtime.Options{
-		Authenticate: (&tokens{}).validate,
-		Credentials:  creds,
+		Validate:    (&tokens{}).validate,
+		Credentials: creds,
 		Accounts: identity.Accounts{"user": func(_ context.Context, sub identity.Subject) (identity.Subject, error) {
 			mu.Lock()
 			defer mu.Unlock()
@@ -698,7 +698,7 @@ func TestBehindMiddleware(t *testing.T) {
 	}
 	timeout := httpx.Timeout(httpx.TimeoutConfig{Duration: 100 * time.Millisecond})
 	n := start(t, broadcasttest.NewBackend(), realtime.Options{
-		Authenticate: func(context.Context, string) (identity.Subject, error) {
+		Validate: func(context.Context, string) (identity.Subject, error) {
 			return identity.Subject{Type: "user", ID: "alice"}, nil
 		},
 		Accounts: identity.Accounts{"user": nil},
@@ -755,7 +755,7 @@ func TestLostMessagesDisconnectClients(t *testing.T) {
 
 func TestShutdownDisconnectsClients(t *testing.T) {
 	t.Parallel()
-	hub := broadcast.New(broadcasttest.NewBackend(), nil)
+	hub := broadcast.New(broadcasttest.NewBackend())
 	defer hub.Close()
 	rt, err := realtime.New(hub, realtime.Options{})
 	if err != nil {
@@ -865,11 +865,11 @@ func TestRecheckOnlyUnsubscribesAffectedConnection(t *testing.T) {
 		mu      sync.Mutex
 		revoked = map[string]bool{}
 	)
-	signals := broadcast.New(broadcasttest.NewBackend(), nil)
+	signals := broadcast.New(broadcasttest.NewBackend())
 	defer signals.Close()
 	creds := broadcast.NewCredentials(signals)
 	n := start(t, broadcasttest.NewBackend(), realtime.Options{
-		Authenticate: func(_ context.Context, token string) (identity.Subject, error) {
+		Validate: func(_ context.Context, token string) (identity.Subject, error) {
 			mu.Lock()
 			denied := revoked[token]
 			mu.Unlock()
@@ -914,11 +914,11 @@ func TestRecheckTenantBoundedConcurrency(t *testing.T) {
 		maxSeen atomic.Int32
 		revoked atomic.Bool
 	)
-	signals := broadcast.New(broadcasttest.NewBackend(), nil)
+	signals := broadcast.New(broadcasttest.NewBackend())
 	defer signals.Close()
 	creds := broadcast.NewCredentials(signals)
 	n := start(t, broadcasttest.NewBackend(), realtime.Options{
-		Authenticate: func(_ context.Context, token string) (identity.Subject, error) {
+		Validate: func(_ context.Context, token string) (identity.Subject, error) {
 			cur := active.Add(1)
 			for {
 				prev := maxSeen.Load()

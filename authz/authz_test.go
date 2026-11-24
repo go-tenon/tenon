@@ -585,3 +585,34 @@ func TestAssignAndDeleteRoleConcurrentSafety(t *testing.T) {
 		}
 	}
 }
+
+func TestActionWildcardRoles(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	cat := authz.Catalog{
+		{Name: "articles:read", Domain: identity.DomainTenant, Description: "查看文章"},
+		{Name: "articles:write", Domain: identity.DomainTenant, Description: "编辑文章"},
+		{Name: "billing:read", Domain: identity.DomainTenant, Description: "查看账单"},
+		{Name: "platform:read", Domain: identity.DomainPlatform, Description: "查看平台概览"},
+	}
+	s := authz.NewStore(dbtest.Open(t, authz.Migrations()), cat)
+
+	// 全局角色允许使用 *:read 覆盖全部 :read 权限。
+	auditor := mustRole(t, s, authz.Role{Name: "auditor", Permissions: []string{"*:read"}})
+	mustAssign(t, s, user("alice"), "", auditor.ID)
+	sub, err := s.Resolve(ctx, identity.Subject{Type: "user", ID: "alice"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sub.Can("articles:read") || !sub.Can("billing:read") || !sub.Can("platform:read") || sub.Can("articles:write") {
+		t.Fatalf("unexpected permissions for *:read: %+v", sub.Permissions)
+	}
+	// 租户自定义角色使用 *:read 会命中平台域的 platform:read，必须被拒绝。
+	if _, err := s.CreateRole(ctx, authz.Role{Tenant: "acme", Name: "tenant-auditor", Permissions: []string{"*:read"}}); !errors.Is(err, authz.ErrInvalid) {
+		t.Fatalf("tenant role with *:read hitting platform domain = %v, want ErrInvalid", err)
+	}
+	// 无匹配权限的动作通配符被拒绝。
+	if _, err := s.CreateRole(ctx, authz.Role{Name: "none", Permissions: []string{"*:delete"}}); !errors.Is(err, authz.ErrInvalid) {
+		t.Fatalf("unmatched *:delete = %v, want ErrInvalid", err)
+	}
+}

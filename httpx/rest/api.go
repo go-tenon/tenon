@@ -1,6 +1,7 @@
 package rest
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"maps"
@@ -25,8 +26,10 @@ type API struct {
 	router        chi.Router
 	basePath      string
 	logger        *slog.Logger
+	validate      identity.TokenValidator
 	accounts      identity.Accounts
 	impersonation *identity.Impersonation
+	checkTenant   func(ctx context.Context, tenant string) error
 	accountScope  bool
 	session       httpx.SessionCookie
 	watcher       identity.CredentialWatcher
@@ -41,16 +44,18 @@ type API struct {
 type Options struct {
 	Title         string
 	Version       string
-	Logger        *slog.Logger                  // 记录 5xx 错误；nil 表示 slog.Default()。
-	Transformers  []huma.Transformer            // 追加在 Huma 默认 Transformer 之后。
-	BasePath      string                        // API 挂载的路径前缀，例如挂在 router.Route("/api", ...) 中时为 /api。它写入 OpenAPI 的 servers，文档页和客户端据此拼出完整地址；路由本身仍按传给 New 的路由注册。一个应用有多个 API 时，openapi、client 命令用 --base-path 按它选择。
-	Tenant        func(ctx huma.Context) string // 从请求中取出本次请求所在的租户，例如路径参数 ctx.Param("tenant")、子域名或请求头；结果在每个操作（包括公开的操作）开始时写入 identity.WithTenant。nil 表示始终是平台本身（""）。
-	Accounts      identity.Accounts             // 接受的账号体系和各自的 Resolver：认证通过后按主体的 Type 调用 Resolver，得到本次请求的主体，例如加载用户在租户中的权限；Type 不在其中时响应 401，Resolver 为 nil 时直接使用凭据的主体，Resolver 的错误按分类响应（Unauthenticated 类或 ID 为空时 401）。Type、ID、Method、Credential、BoundTenant、Scopes、Impersonator 总是取自凭据。有需要认证的操作时必须设置
-	Impersonation *identity.Impersonation       // 允许代为登录时对操作者的校验规则；nil 时默认拒绝所有代为登录凭据。
-	AccountScope  bool                          // 为 true 时表示该 API 属于账号自省接口（例如 /api/me、/api/auth/logout、/api/tenants），放行绑定了租户的凭据并保留 Subject.BoundTenant。
-	SessionCookie httpx.SessionCookie           // RequireToken 读取的浏览器会话 cookie，零值是 httpx.DefaultSessionCookieName。同一个源下的几个 API 属于不同的账号体系时，各用一个名称，见 httpx.SessionCookie。名称不合法时 New panic。
-	Credentials   identity.CredentialWatcher    // 让 RequireAuth 保护的长连接（例如 SSE）在收到复查信号时立即重新校验凭据，撤销 token、停用用户后连接随即结束；nil 时只按 30 秒的间隔定期校验。通常是 broadcast.NewCredentials 的返回值。
-	Permissions   []identity.Permission         // 应用的权限目录，例如 authz.Catalog。它写入 OpenAPI 文档的 x-tenon-permissions（按名称排序），客户端据此生成权限常量和说明；路由需要的权限另外写在每个操作的 x-required-permissions 中。nil 时不写。
+	Logger        *slog.Logger                                   // 记录 5xx 错误；nil 表示 slog.Default()。
+	Transformers  []huma.Transformer                             // 追加在 Huma 默认 Transformer 之后。
+	BasePath      string                                         // API 挂载的路径前缀，例如挂在 router.Route("/api", ...) 中时为 /api。它写入 OpenAPI 的 servers，文档页和客户端据此拼出完整地址；路由本身仍按传给 New 的路由注册。一个应用有多个 API 时，openapi、client 命令用 --base-path 按它选择。
+	Tenant        func(ctx huma.Context) string                  // 从请求中取出本次请求所在的租户，例如路径参数 ctx.Param("tenant")、子域名或请求头；结果在每个操作（包括公开的操作）开始时写入 identity.WithTenant。nil 表示始终是平台本身（""）。
+	CheckTenant   func(ctx context.Context, tenant string) error // 认证请求与长连接复查时校验本次请求所在租户仍然可用（例如未被停用）；AccountScope 路由不调用。
+	Validate      identity.TokenValidator                        // API 默认的 token 校验器，例如 apitoken.Store 的 Validate；设置后可直接调用 api.RequireToken(permissions...)，与 mcpx、natsrpc、realtime 一致。
+	Accounts      identity.Accounts                              // 接受的账号体系和各自的 Resolver：认证通过后按主体的 Type 调用 Resolver，得到本次请求的主体，例如加载用户在租户中的权限；Type 不在其中时响应 401，Resolver 为 nil 时直接使用凭据的主体，Resolver 的错误按分类响应（Unauthenticated 类或 ID 为空时 401）。Type、ID、Method、Credential、BoundTenant、Scopes、Impersonator 总是取自凭据。有需要认证的操作时必须设置
+	Impersonation *identity.Impersonation                        // 允许代为登录时对操作者的校验规则；nil 时默认拒绝所有代为登录凭据。
+	AccountScope  bool                                           // 为 true 时表示该 API 属于账号自省接口（例如 /api/me、/api/auth/logout、/api/tenants），放行绑定了租户的凭据并保留 Subject.BoundTenant。
+	SessionCookie httpx.SessionCookie                            // RequireToken 读取的浏览器会话 cookie，零值是 httpx.DefaultSessionCookieName。同一个源下的几个 API 属于不同的账号体系时，各用一个名称，见 httpx.SessionCookie。名称不合法时 New panic。
+	Credentials   identity.CredentialWatcher                     // 让 RequireAuth 保护的长连接（例如 SSE）在收到复查信号时立即重新校验凭据，撤销 token、停用用户后连接随即结束；nil 时只按 30 秒的间隔定期校验。通常是 broadcast.NewCredentials 的返回值。
+	Permissions   []identity.Permission                          // 应用的权限目录，例如 authz.Catalog。它写入 OpenAPI 文档的 x-tenon-permissions（按名称排序），客户端据此生成权限常量和说明；路由需要的权限另外写在每个操作的 x-required-permissions 中。nil 时不写。
 }
 
 // New 在 r 上创建 chi + Huma API，并让 r 上未匹配的路由与方法返回 Problem Details。
@@ -110,11 +115,16 @@ func New(r chi.Router, opts Options) *API {
 	if opts.BasePath != "" {
 		cfg.OpenAPI.Servers = []*huma.Server{{URL: opts.BasePath}}
 	}
+	watcher := opts.Credentials
+	if isNilInterface(watcher) {
+		watcher = nil
+	}
 	adapter := newAdapter(r, cfg, opts.BasePath)
 	api := &API{
 		router: r, basePath: opts.BasePath, logger: opts.Logger,
-		accounts: opts.Accounts, impersonation: opts.Impersonation, accountScope: opts.AccountScope,
-		session: opts.SessionCookie, watcher: opts.Credentials, names: names,
+		validate: opts.Validate, accounts: opts.Accounts, impersonation: opts.Impersonation,
+		checkTenant: opts.CheckTenant, accountScope: opts.AccountScope,
+		session: opts.SessionCookie, watcher: watcher, names: names,
 	}
 	// Huma 在 NewAPI 中就注册文档端点，因此先让 adapter 指向 api，文档端点也能取回它。
 	adapter.api = api
@@ -152,4 +162,17 @@ func without30(doc *huma.OpenAPI) *huma.OpenAPI {
 	d := *doc
 	d.Webhooks = nil
 	return &d
+}
+
+// isNilInterface 报告接口值 v 是否为 nil 或持有 nil 指针（例如离线构造路由时传入的零值 *broadcast.Credentials）。
+func isNilInterface(v any) bool {
+	if v == nil {
+		return true
+	}
+	rv := reflect.ValueOf(v)
+	switch rv.Kind() {
+	case reflect.Pointer, reflect.Interface, reflect.Map, reflect.Slice, reflect.Func, reflect.Chan:
+		return rv.IsNil()
+	}
+	return false
 }

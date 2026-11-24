@@ -77,28 +77,31 @@ func (s *Store) Held(ctx context.Context, name string) (bool, error) {
 	return held, errors.Wrap(err, "pglock: held")
 }
 
-// Cleanup 删除 db 中最多 limit 个已经过期的锁，返回删除的个数。
-func Cleanup(ctx context.Context, db bun.IDB, limit int) (int, error) {
+// Cleanup 返回删除 db 中已过期锁的清理函数，每次最多删除 limit 个，返回删除的个数，
+// 可以直接交给 schedule.Cleanup 定时执行。db 为 nil 时 panic。
+func Cleanup(db bun.IDB) func(ctx context.Context, limit int) (int, error) {
 	if db == nil {
-		return 0, errors.New("pglock: nil database")
+		panic("pglock: nil database")
 	}
-	if limit <= 0 {
-		return 0, errors.New("pglock: cleanup limit must be positive")
-	}
-	res, err := db.NewRaw(`
+	return func(ctx context.Context, limit int) (int, error) {
+		if limit <= 0 {
+			return 0, errors.New("pglock: cleanup limit must be positive")
+		}
+		res, err := db.NewRaw(`
 DELETE FROM locks WHERE name IN (
     SELECT name FROM locks WHERE expires_at <= clock_timestamp() ORDER BY expires_at LIMIT ? FOR UPDATE SKIP LOCKED
 )`, limit).Exec(ctx)
-	if err != nil {
-		return 0, errors.Wrap(err, "pglock: cleanup")
+		if err != nil {
+			return 0, errors.Wrap(err, "pglock: cleanup")
+		}
+		n, err := res.RowsAffected()
+		return int(n), errors.Wrap(err, "pglock: cleanup")
 	}
-	n, err := res.RowsAffected()
-	return int(n), errors.Wrap(err, "pglock: cleanup")
 }
 
 // Cleanup 删除最多 limit 个已经过期的锁，返回删除的个数，可以直接交给 schedule.Cleanup 定时执行。
 func (s *Store) Cleanup(ctx context.Context, limit int) (int, error) {
-	return Cleanup(ctx, s.db, limit)
+	return Cleanup(s.db)(ctx, limit)
 }
 
 // exec 执行 query，返回是否有行受影响。

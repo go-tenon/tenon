@@ -74,6 +74,14 @@ export * from "./components/upload-queue"
 export * from "./features/activity/activity-log"
 export * from "./features/activity/model"
 export * from "./features/browser-sign-in"
+export {
+  type DoctorApi,
+  DoctorPanel,
+  type DoctorPanelProps,
+  type DoctorReportData,
+  type DoctorResultData,
+  type DoctorStatus,
+} from "./features/doctor-panel"
 export * from "./features/login-form"
 export * from "./features/notifications/model"
 export * from "./features/notifications/notifications-menu"
@@ -118,6 +126,7 @@ export {
 } from "./i18n/i18n"
 // ———————————————————————————— theme ————————————————————————————
 export * from "./theme/color-scheme"
+export * from "./theme/core-provider"
 export * from "./theme/format"
 export * from "./theme/icons"
 export * from "./theme/provider"

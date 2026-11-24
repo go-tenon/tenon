@@ -202,6 +202,12 @@ func (f *FailedJobs) Delete(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
+// CleanupFailed 返回删除 db 中 keep 以前失败的队列任务的清理函数，每次最多删除 limit 条，返回删除条数，
+// 可以直接交给 schedule.Cleanup。db 为 nil 或 keep 不为正时 panic。
+func CleanupFailed(db *bun.DB, keep time.Duration) func(ctx context.Context, limit int) (int, error) {
+	return NewFailedJobs(db).Cleanup(keep)
+}
+
 // Cleanup 返回删除 keep 以前失败的任务的清理函数，每次调用最多删除 limit 条，返回删除的条数，交给 schedule.Cleanup：
 //
 //	sched.Add("queue:prune-failed", "@daily", schedule.Cleanup(failed.Cleanup(30*24*time.Hour), 1000))

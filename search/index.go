@@ -91,6 +91,12 @@ func Define[D any](name string, opts ...Option) *Index[D] {
 // Name 返回索引的名称。
 func (ix *Index[D]) Name() string { return ix.name }
 
+// SyncTopic 返回索引文档同步的队列主题，可供 queueapi.Options.Topics 声明显示名称和说明。
+func (ix *Index[D]) SyncTopic() queue.Topic[string] { return ix.sync }
+
+// ReindexTopic 返回索引重建的队列主题，可供 queueapi.Options.Topics 声明显示名称和说明。
+func (ix *Index[D]) ReindexTopic() queue.Topic[uuid.UUID] { return ix.reindex }
+
 // LoadFunc 返回 key 当前要被搜索的文档，没有时（已删除、未发布）返回空，索引中这个 key 原有的文档随之删除。
 // 一个 key 可以对应多个文档，例如一个附件切分出的多个分段。
 //

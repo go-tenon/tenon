@@ -16,7 +16,7 @@ import (
 )
 
 func newScheduler() *schedule.Scheduler {
-	return schedule.New(scheduletest.NewStore(), schedule.DefaultConfig(), nil)
+	return schedule.New(scheduletest.NewStore(), schedule.DefaultConfig())
 }
 
 // counter 返回一个记录执行次数的任务。
@@ -103,7 +103,7 @@ func TestLocation(t *testing.T) {
 func TestRunsOncePerTickAcrossInstances(t *testing.T) {
 	store := scheduletest.NewStore()
 	var once, every atomic.Int64
-	a, b := schedule.New(store, schedule.DefaultConfig(), nil), schedule.New(store, schedule.DefaultConfig(), nil)
+	a, b := schedule.New(store, schedule.DefaultConfig()), schedule.New(store, schedule.DefaultConfig())
 	for _, s := range []*schedule.Scheduler{a, b} {
 		s.Add("once", "@everysecond", counter(&once))
 		s.Add("every", "@everysecond", counter(&every), schedule.EveryInstance())
@@ -148,7 +148,7 @@ func TestOverlap(t *testing.T) {
 			release := make(chan struct{})
 			scheds := make([]*schedule.Scheduler, tc.instances)
 			for i := range scheds {
-				scheds[i] = schedule.New(store, schedule.DefaultConfig(), nil)
+				scheds[i] = schedule.New(store, schedule.DefaultConfig())
 				scheds[i].Add("report", "@everysecond", blockingTask(&runs, started, release), tc.opts...)
 			}
 			var wg sync.WaitGroup
@@ -263,7 +263,7 @@ func TestConfig(t *testing.T) {
 			t.Fatal("New with invalid config did not panic")
 		}
 	}()
-	schedule.New(scheduletest.NewStore(), bad, nil)
+	schedule.New(scheduletest.NewStore(), bad)
 }
 
 func TestRunWithoutTasks(t *testing.T) {
@@ -276,7 +276,7 @@ func TestRunWithoutTasks(t *testing.T) {
 func TestTimeout(t *testing.T) {
 	var events []schedule.Event
 	var mu sync.Mutex
-	s := schedule.New(scheduletest.NewStore(), schedule.DefaultConfig(), nil,
+	s := schedule.New(scheduletest.NewStore(), schedule.DefaultConfig(),
 		schedule.WithObserver(func(_ context.Context, e schedule.Event) {
 			mu.Lock()
 			events = append(events, e)
@@ -341,8 +341,8 @@ func TestRunNow(t *testing.T) {
 	var runs atomic.Int64
 	started := make(chan struct{}, 2)
 	release := make(chan struct{})
-	a := schedule.New(store, schedule.DefaultConfig(), nil, observe)
-	b := schedule.New(store, schedule.DefaultConfig(), nil, observe)
+	a := schedule.New(store, schedule.DefaultConfig(), observe)
+	b := schedule.New(store, schedule.DefaultConfig(), observe)
 	for _, s := range []*schedule.Scheduler{a, b} {
 		s.Add("report", "@daily", blockingTask(&runs, started, release))
 		s.Add("broken", "@daily", func(context.Context) error { return errors.New("boom") })

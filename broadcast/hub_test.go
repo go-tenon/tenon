@@ -16,7 +16,7 @@ import (
 func TestHubDeliversAcrossInstances(t *testing.T) {
 	t.Parallel()
 	backend := broadcasttest.NewBackend()
-	h := broadcast.New(backend, nil)
+	h := broadcast.New(backend)
 	defer h.Close()
 	sub := h.Subscribe("room:1")
 	if err := h.PublishJSON(context.Background(), "room:1", map[string]string{"type": "message"}); err != nil {
@@ -27,7 +27,7 @@ func TestHubDeliversAcrossInstances(t *testing.T) {
 		t.Fatalf("event=%v err=%v", ev, err)
 	}
 	// 同一个 Backend 上的另一个 Hub 相当于另一个实例。
-	other := broadcast.New(backend, nil)
+	other := broadcast.New(backend)
 	defer other.Close()
 	otherSub := other.Subscribe("room:2")
 	_ = h.Publish(context.Background(), "room:2", []byte("x"))
@@ -46,7 +46,7 @@ func TestBackendContract(t *testing.T) {
 
 func TestSlowSubscriberEnds(t *testing.T) {
 	t.Parallel()
-	h := broadcast.New(broadcasttest.NewBackend(), nil)
+	h := broadcast.New(broadcasttest.NewBackend())
 	defer h.Close()
 	slow, fast := h.Subscribe("room:1"), h.Subscribe("room:1")
 	ctx := context.Background()
@@ -99,7 +99,7 @@ func (noopSession) Close() error                { return nil }
 func TestLostEndsAllSubscriptions(t *testing.T) {
 	t.Parallel()
 	backend := &lossy{}
-	h := broadcast.New(backend, nil)
+	h := broadcast.New(backend)
 	defer h.Close()
 	a, b := h.Subscribe("room:1"), h.Subscribe("room:2", "room:3")
 	cause := errors.New("connection reset")
@@ -127,7 +127,7 @@ func TestTopics(t *testing.T) {
 			t.Errorf("%q accepted", topic)
 		}
 	}
-	h := broadcast.New(broadcasttest.NewBackend(), nil)
+	h := broadcast.New(broadcasttest.NewBackend())
 	defer h.Close()
 	if h.Publish(context.Background(), "bad topic", nil) == nil {
 		t.Error("Publish accepted an invalid topic")
@@ -135,7 +135,7 @@ func TestTopics(t *testing.T) {
 	for name, f := range map[string]func(){
 		"no topics":     func() { h.Subscribe() },
 		"invalid topic": func() { h.Subscribe("bad topic") },
-		"nil backend":   func() { broadcast.New(nil, nil) },
+		"nil backend":   func() { broadcast.New(nil) },
 	} {
 		t.Run(name, func(t *testing.T) {
 			defer func() {
@@ -150,7 +150,7 @@ func TestTopics(t *testing.T) {
 
 func TestSubscribeAfterClose(t *testing.T) {
 	t.Parallel()
-	h := broadcast.New(broadcasttest.NewBackend(), nil)
+	h := broadcast.New(broadcasttest.NewBackend())
 	_ = h.Close()
 	sub := h.Subscribe("room:1")
 	if _, ok := <-sub.C(); ok || !errors.Is(sub.Err(), broadcast.ErrClosed) {
@@ -161,7 +161,7 @@ func TestSubscribeAfterClose(t *testing.T) {
 
 func TestReceiverSubscribesOnDemand(t *testing.T) {
 	t.Parallel()
-	h := broadcast.New(broadcasttest.NewBackend(), nil)
+	h := broadcast.New(broadcasttest.NewBackend())
 	defer h.Close()
 	var got []string
 	r := h.Receiver(func(m broadcast.Message) { got = append(got, m.Topic+"="+string(m.Data)) }, nil)
@@ -199,7 +199,7 @@ func TestReceiverSubscribesOnDemand(t *testing.T) {
 func TestReceiverIsToldAboutLostMessages(t *testing.T) {
 	t.Parallel()
 	backend := &lossy{}
-	h := broadcast.New(backend, nil)
+	h := broadcast.New(backend)
 	defer h.Close()
 	lost := make(chan error, 1)
 	r := h.Receiver(func(broadcast.Message) {}, func(err error) { lost <- err })

@@ -33,13 +33,36 @@ var (
 	_ ai.Decider     = (*Client)(nil)
 )
 
-// New 按 cfg 创建 Client，BaseURL 为空时使用 OpenRouter 的地址。opts 与 ai/openai 相同，
-// 其中 WithImageSizes 对图片不起作用。
-func New(cfg ai.ModelConfig, opts ...openai.Option) *Client {
+// Option 是 New 的选项。
+type Option func(*options)
+
+// options 保存构造 Client 时的选项。
+type options struct {
+	openaiOpts []openai.Option
+}
+
+// WithHTTPClient 设置发送请求使用的 HTTP 客户端。
+func WithHTTPClient(hc *http.Client) Option {
+	return func(o *options) { o.openaiOpts = append(o.openaiOpts, openai.WithHTTPClient(hc)) }
+}
+
+// WithOpenAI 传入嵌入的 openai.Client 的选项，其中 WithImageSizes 对 OpenRouter 的图片接口不起作用。
+func WithOpenAI(opts ...openai.Option) Option {
+	return func(o *options) { o.openaiOpts = append(o.openaiOpts, opts...) }
+}
+
+// New 按 cfg 创建 Client，BaseURL 为空时使用 OpenRouter 的地址。
+func New(cfg ai.ModelConfig, opts ...Option) *Client {
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = defaultBaseURL
 	}
-	return &Client{openai.New(cfg, opts...)}
+	var o options
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&o)
+		}
+	}
+	return &Client{openai.New(cfg, o.openaiOpts...)}
 }
 
 var aspectRatios = map[ai.Aspect]string{ai.Square: "1:1", ai.Portrait: "2:3", ai.Landscape: "3:2"}

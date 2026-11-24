@@ -12,7 +12,7 @@
 
 ```go
 rt, err := realtime.New(hub, realtime.Options{
-    Authenticate: tokens.Validate,
+    Validate: tokens.Validate,
     Accounts:     identity.Accounts{user.Type: roles.Resolve},
 })
 if err != nil {
@@ -104,11 +104,11 @@ React 页面收到消息后让查询失效，见 [React 客户端](../frontend/c
 
 <a id="authentication"></a>
 <a id="tokens"></a>
-## 认证连接：`Authenticate` 与 `Accounts`
+## 认证连接：`Validate` 与 `Accounts`
 
-连接用 [API 令牌](../security/api-tokens.md)认证，`Authenticate` 通常是 `rest.RequireToken` 用的校验器。token 依次取 SDK 传入的（`new Centrifuge(url, { token })`）、`Authorization: Bearer` 请求头、[会话 cookie](../security/api-tokens.md#browser-sessions)；都没有的连接是匿名的，只能订阅公开频道。
+连接用 [API 令牌](../security/api-tokens.md)认证，`Validate` 通常是 `rest.RequireToken` 用的校验器。token 依次取 SDK 传入的（`new Centrifuge(url, { token })`）、`Authorization: Bearer` 请求头、[会话 cookie](../security/api-tokens.md#browser-sessions)；都没有的连接是匿名的，只能订阅公开频道。
 
-- 权限由 `Accounts` 中这套账号的 Resolver 加载，与 [`rest.Options.Accounts`](../security/authorization.md#resolving-permissions) 相同。设置了 `Authenticate` 就必须设置 `Accounts`。
+- 权限由 `Accounts` 中这套账号的 Resolver 加载，与 [`rest.Options.Accounts`](../security/authorization.md#resolving-permissions) 相同。设置了 `Validate` 就必须设置 `Accounts`。
 - token 无效、属于其他账号体系或 Resolver 拒绝主体时，连接以 3500 关闭，SDK 停止重连。连接期间每 30 秒重新校验，撤销 token、停用用户后连接结束。
 - 会话 cookie 改了名字时，把同一个 `httpx.SessionCookie` 交给 `Options.SessionCookie`。
 - 浏览器的连接只接受同源页面，其他来源加入 `Options.TrustedOrigins`（如 `https://app.example.com`）。带 `Authorization` 请求头的连接不检查来源，例如桌面端 `app://` 页面的宿主加上这个请求头即可。
@@ -116,7 +116,7 @@ React 页面收到消息后让查询失效，见 [React 客户端](../frontend/c
 
 ```go
 rt, err := realtime.New(hub, realtime.Options{
-    Authenticate: tokens.Validate,
+    Validate: tokens.Validate,
     Accounts:     identity.Accounts{user.Type: roles.Resolve},
     Tenant:       func(r *http.Request) string { return chi.URLParam(r, "tenant") },
 })

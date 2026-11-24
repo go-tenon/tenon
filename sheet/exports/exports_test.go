@@ -230,7 +230,7 @@ func TestFinalAttemptFailsExport(t *testing.T) {
 	topic := queue.Topic[uuid.UUID]("exports.test")
 	cfg := queuetest.Config(t)
 	cfg.MaxAttempts = 1
-	w := queue.NewWorker(e.db, queuetest.Conn(t), cfg, slog.New(slog.DiscardHandler))
+	w := queue.NewWorker(e.db, queuetest.Conn(t), cfg, queue.WithLogger(slog.New(slog.DiscardHandler)))
 	topic.Handle(w, func(ctx context.Context, id uuid.UUID) error {
 		return e.exports.Process(ctx, id, func(context.Context, *exports.Export, *exports.Writer) error {
 			return errors.New("always down")

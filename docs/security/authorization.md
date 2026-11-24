@@ -38,7 +38,7 @@ api := rest.New(router, rest.Options{Accounts: identity.Accounts{user.Type: role
 权限是以冒号分隔的字符串，写成“资源:操作”，例如 `articles:read`、`articles:write`、`members:manage`。
 
 - `sub.Can(perm)` 在主体的 `Permissions` 授予了 `perm`、并且凭据的 `Scopes` 为 `nil` 或也允许它时返回 `true`。只读的个人访问令牌用 `Scopes` 限制，见[主体](authentication.md#key-concepts)。
-- 授予时最后一段可以是 `*`：`articles:*` 包含 `articles:read` 和 `articles:comments:delete`，单独的 `*` 包含全部权限。检查时传入具体的权限名。
+- 授予时支持三类通配符：`*` 包含全部权限，`<资源>:*` 包含该资源下全部操作（如 `articles:*`），`*:<操作>` 包含全部资源的同类操作（如 `*:read`）。检查时传入具体的权限名。
 - `identity.Grants(perms, perm)` 用同样的规则检查一组权限。
 - 简单的应用由令牌校验器或 Resolver 直接给出权限；需要角色时用 [`authz`](#roles)。
 

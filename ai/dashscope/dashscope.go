@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net/http"
 	"strings"
 
 	"github.com/cockroachdb/errors"
@@ -73,7 +74,12 @@ func WithBatchSize(n int) Option { return func(c *Client) { c.batchSize = n } }
 // 指令只对支持它的模型（例如 qwen3-vl-embedding）起作用，其他模型忽略它。
 func WithQueryInstruct(s string) Option { return func(c *Client) { c.instruct = s } }
 
-// WithOpenAI 传入嵌入的 openai.Client 的选项，例如 openai.WithHTTPClient。
+// WithHTTPClient 设置发送请求使用的 HTTP 客户端。
+func WithHTTPClient(hc *http.Client) Option {
+	return func(c *Client) { c.openaiOpts = append(c.openaiOpts, openai.WithHTTPClient(hc)) }
+}
+
+// WithOpenAI 传入嵌入的 openai.Client 的选项。
 func WithOpenAI(opts ...openai.Option) Option {
 	return func(c *Client) { c.openaiOpts = append(c.openaiOpts, opts...) }
 }

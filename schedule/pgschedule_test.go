@@ -23,7 +23,7 @@ func TestPostgresStoreRunsOnceAndSkipsOnce(t *testing.T) {
 	var n atomic.Int64
 	scheds := make([]*schedule.Scheduler, 3)
 	for i := range scheds {
-		scheds[i] = schedule.New(pgschedule.New(db), schedule.DefaultConfig(), nil)
+		scheds[i] = schedule.New(pgschedule.New(db), schedule.DefaultConfig())
 		scheds[i].Add(name, "@everysecond", counter(&n))
 	}
 	for tick := range 3 {
@@ -56,7 +56,7 @@ func TestPostgresStoreRunsOnceAndSkipsOnce(t *testing.T) {
 	release := make(chan struct{})
 	var runs atomic.Int64
 	for i := range scheds {
-		scheds[i] = schedule.New(pgschedule.New(db), schedule.DefaultConfig(), nil,
+		scheds[i] = schedule.New(pgschedule.New(db), schedule.DefaultConfig(),
 			schedule.WithObserver(func(_ context.Context, e schedule.Event) {
 				if e.Kind == schedule.TaskSkipped && e.SkipReason == schedule.SkipOverlap {
 					skips.Add(1)

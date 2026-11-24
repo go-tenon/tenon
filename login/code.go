@@ -454,14 +454,30 @@ func (r *Realm) Link(ctx context.Context, db bun.IDB, ref identity.Ref, proof st
 	return r.attach(ctx, db, c.Tenant, c.identifier(), ref.ID, true)
 }
 
+// Cleanup 返回删除 db 中已过期或已完成验证记录的清理函数，每次最多删除 limit 条，返回删除条数，
+// 可以直接交给 schedule.Cleanup 定时执行。多套账号体系共用验证记录表，只需注册一次。db 为 nil 时 panic。
+func Cleanup(db bun.IDB) func(ctx context.Context, limit int) (int, error) {
+	if db == nil {
+		panic("login: nil database")
+	}
+	return func(ctx context.Context, limit int) (int, error) {
+		return cleanupChallenges(ctx, db, time.Now(), limit)
+	}
+}
+
 // Cleanup 删除最多 limit 条已过期或已完成的验证记录，返回删除的条数。由应用定时调用。
 func (r *Realm) Cleanup(ctx context.Context, limit int) (int, error) {
+	return cleanupChallenges(ctx, r.db, r.now(), limit)
+}
+
+// cleanupChallenges 删除 db 中在 now 之前过期或已完成的验证记录。
+func cleanupChallenges(ctx context.Context, db bun.IDB, now time.Time, limit int) (int, error) {
 	if limit <= 0 {
 		return 0, errors.New("login: cleanup limit must be positive")
 	}
-	done := r.db.NewSelect().Model((*challengeRow)(nil)).Column("id").
-		Where("expires_at <= ? OR completed_at IS NOT NULL", r.now().UTC()).OrderExpr("expires_at").Limit(int64(limit))
-	n, err := affected(r.db.NewDelete().Model((*challengeRow)(nil)).
+	done := db.NewSelect().Model((*challengeRow)(nil)).Column("id").
+		Where("expires_at <= ? OR completed_at IS NOT NULL", now.UTC()).OrderExpr("expires_at").Limit(int64(limit))
+	n, err := affected(db.NewDelete().Model((*challengeRow)(nil)).
 		Where("id IN (?)", done).Exec(ctx))
 	return int(n), errors.Wrap(err, "login: cleanup")
 }

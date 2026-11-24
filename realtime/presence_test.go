@@ -32,7 +32,7 @@ func TestPresenceChannel(t *testing.T) {
 	t.Parallel()
 	store := &tokens{}
 	// 不保留在线记录，离开事件立即发出；宽限期见 TestPresenceGrace。
-	n := start(t, broadcasttest.NewBackend(), realtime.Options{Authenticate: store.validate, Presence: realtimetest.NewPresence(), PresenceGrace: -1}, nil)
+	n := start(t, broadcasttest.NewBackend(), realtime.Options{Validate: store.validate, Presence: realtimetest.NewPresence(), PresenceGrace: -1}, nil)
 	n.rt.Channel("editing:{article}", realtime.Presence(editors))
 	n.rt.Channel("articles", realtime.Public())
 	ctx := context.Background()
@@ -131,8 +131,8 @@ func TestPresenceAcrossInstancesOnNATS(t *testing.T) {
 	})
 	prefix := "test.realtime." + strings.ToLower(name)
 	store := &tokens{}
-	optsA := realtime.Options{Authenticate: store.validate, Presence: presenceA, PresenceGrace: 300 * time.Millisecond}
-	optsB := realtime.Options{Authenticate: store.validate, Presence: presenceB, PresenceGrace: 300 * time.Millisecond}
+	optsA := realtime.Options{Validate: store.validate, Presence: presenceA, PresenceGrace: 300 * time.Millisecond}
+	optsB := realtime.Options{Validate: store.validate, Presence: presenceB, PresenceGrace: 300 * time.Millisecond}
 	a := start(t, natsbroadcast.New(natstest.Connect(t), prefix), optsA, nil)
 	b := start(t, natsbroadcast.New(natstest.Connect(t), prefix), optsB, nil)
 	broadcasttest.Ready(t, a.hub, b.hub)
@@ -216,7 +216,7 @@ func TestPresenceGrace(t *testing.T) {
 	t.Parallel()
 	const grace = 300 * time.Millisecond
 	store := &tokens{}
-	n := start(t, broadcasttest.NewBackend(), realtime.Options{Authenticate: store.validate, Presence: realtimetest.NewPresence(), PresenceGrace: grace}, nil)
+	n := start(t, broadcasttest.NewBackend(), realtime.Options{Validate: store.validate, Presence: realtimetest.NewPresence(), PresenceGrace: grace}, nil)
 	n.rt.Channel("editing:{article}", realtime.Presence(editors))
 	ctx := context.Background()
 	members := func() []realtime.Member {
@@ -286,7 +286,7 @@ func TestShutdownDoesNotAnnounceLeaves(t *testing.T) {
 	b := &bus{}
 	presence := realtimetest.NewPresence()
 	store := &tokens{}
-	opts := realtime.Options{Authenticate: store.validate, Presence: presence, PresenceGrace: 100 * time.Millisecond}
+	opts := realtime.Options{Validate: store.validate, Presence: presence, PresenceGrace: 100 * time.Millisecond}
 	stopping := start(t, b.backend(), opts, nil)
 	other := start(t, b.backend(), opts, nil)
 	for _, n := range []*node{stopping, other} {
@@ -322,7 +322,7 @@ func TestUnsubscribeAnnouncesLeaveImmediately(t *testing.T) {
 	t.Parallel()
 	const grace = 1500 * time.Millisecond
 	store := &tokens{}
-	n := start(t, broadcasttest.NewBackend(), realtime.Options{Authenticate: store.validate, Presence: realtimetest.NewPresence(), PresenceGrace: grace}, nil)
+	n := start(t, broadcasttest.NewBackend(), realtime.Options{Validate: store.validate, Presence: realtimetest.NewPresence(), PresenceGrace: grace}, nil)
 	n.rt.Channel("editing:{article}", realtime.Presence(editors))
 	bob := mustConnect(t, n.url, "bob", nil)
 	bob.mustSubscribe("editing:7")
@@ -359,7 +359,7 @@ func TestUnsubscribeAnnouncesLeaveImmediately(t *testing.T) {
 
 func TestPresenceGraceIsCapped(t *testing.T) {
 	t.Parallel()
-	hub := broadcast.New(broadcasttest.NewBackend(), nil)
+	hub := broadcast.New(broadcasttest.NewBackend())
 	defer hub.Close()
 	defer func() {
 		if recover() == nil {
@@ -394,11 +394,11 @@ func TestPresenceRecheckExpelsOnlyAffectedConnection(t *testing.T) {
 	const grace = 1500 * time.Millisecond
 	revoked := map[string]bool{}
 	var mu sync.Mutex
-	signals := broadcast.New(broadcasttest.NewBackend(), nil)
+	signals := broadcast.New(broadcasttest.NewBackend())
 	defer signals.Close()
 	creds := broadcast.NewCredentials(signals)
 	n := start(t, broadcasttest.NewBackend(), realtime.Options{
-		Authenticate: func(_ context.Context, token string) (identity.Subject, error) {
+		Validate: func(_ context.Context, token string) (identity.Subject, error) {
 			mu.Lock()
 			denied := revoked[token]
 			mu.Unlock()

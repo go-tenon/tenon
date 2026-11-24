@@ -45,8 +45,15 @@ type namedScheme struct {
 	scheme *huma.SecurityScheme
 }
 
+// RequireToken 使用 Options.Validate 要求请求携带有效的 token，并且主体能执行 permissions 中的全部权限。
+// 与 rest.RequireToken(api, validate, permissions...) 相同，免去在每条路由重复传入校验器。
+// 未设置 Options.Validate 时 panic。
+func (a *API) RequireToken(permissions ...string) func(op *huma.Operation) {
+	return RequireToken(a, a.validate, permissions...)
+}
+
 // RequireToken 要求请求携带有效的 token，校验器 validate 返回有效主体，并且主体能执行 permissions 中的全部权限
-// （identity.Subject.Can）。token 有两种携带方式，是同一种 token：
+// （identity.Subject.Can）。validate 为 nil 时使用 Options.Validate；两者皆为空时 panic。token 有两种携带方式，是同一种 token：
 //
 //   - 浏览器：会话 cookie（Options.SessionCookie），由浏览器自动附加，页面上的脚本读不到它；
 //   - App、脚本和第三方：Authorization: Bearer。两者都有时以它为准。
@@ -55,6 +62,9 @@ type namedScheme struct {
 // 否则返回 403 http.cross_site：cookie 是浏览器自动附加的，这一步防止跨站请求伪造。Bearer 不受影响。
 // 路由表中的访问策略为 AccessToken。
 func RequireToken(api *API, validate identity.TokenValidator, permissions ...string) func(op *huma.Operation) {
+	if validate == nil && api != nil {
+		validate = api.validate
+	}
 	if validate == nil {
 		panic("rest: nil token validator")
 	}
@@ -177,6 +187,7 @@ func requireAuth(api *API, name string, schemes []namedScheme, challenge string,
 			policy := identity.Policy{
 				Accounts:      api.accounts,
 				Impersonation: api.impersonation,
+				CheckTenant:   api.checkTenant,
 				DirectOnly:    directOnly,
 				AccountScope:  accountScope,
 			}

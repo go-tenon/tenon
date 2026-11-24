@@ -154,14 +154,14 @@ type GetInput struct {
 rest.Public()(&op)
 ```
 
-需要登录的接口用 `rest.RequireToken`，参数是 API、令牌校验器和调用者必须具备的全部权限：
+需要登录的接口用 `api.RequireToken`（在 `rest.Options.Validate` 设置了默认令牌校验器时）或 `rest.RequireToken`，列出调用者必须具备的全部权限：
 
 ```go
-requireArticles := rest.RequireToken(api, tokens.Validate, "articles")
+requireArticles := api.RequireToken("articles") // 或 rest.RequireToken(api, tokens.Validate, "articles")
 requireArticles(&op)
 ```
 
-`op` 是要注册的 `huma.Operation`，`api` 是 `rest.New` 创建的 API，`tokens.Validate` 是令牌校验器，见[API 令牌](../security/api-tokens.md)。
+`op` 是要注册的 `huma.Operation`，`api` 是 `rest.New` 创建的 API，`tokens.Validate` 是令牌校验器，见[API 令牌](../security/api-tokens.md)。多租户应用通过 `rest.Options.CheckTenant` 在认证后校验租户状态。
 
 - 令牌来自 `Authorization: Bearer` 或浏览器的会话 cookie。没有令牌或令牌无效返回 `401`，缺少权限返回 `403`；用 cookie 认证的写请求必须来自同源页面，否则返回 `403`。
 - 它同时在 OpenAPI 中把接口标记为需要认证，所需权限写在 `x-required-permissions` 中。

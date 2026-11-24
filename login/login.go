@@ -112,6 +112,16 @@ func New(db bun.IDB, opts Options) *Realm {
 	}
 }
 
+// WithDB 返回使用 db（通常是业务事务）的副本，继承账号体系、哈希器、密钥与策略配置。db 为 nil 时 panic。
+func (r *Realm) WithDB(db bun.IDB) *Realm {
+	if db == nil {
+		panic("login: nil database")
+	}
+	cp := *r
+	cp.db = db
+	return &cp
+}
+
 // defaultPolicy 要求 8 到 128 个字符，首尾没有空白。
 func defaultPolicy(password string) error {
 	n := len([]rune(password))

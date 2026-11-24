@@ -38,7 +38,7 @@ func TestMetrics(t *testing.T) {
 	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
 	quiet := slog.New(slog.DiscardHandler)
 	newScheduler := func(store schedule.Store) *schedule.Scheduler {
-		return schedule.New(store, schedule.DefaultConfig(), quiet, schedule.WithTelemetry(mp, tracenoop.NewTracerProvider()))
+		return schedule.New(store, schedule.DefaultConfig(), schedule.WithLogger(quiet), schedule.WithTelemetry(mp, tracenoop.NewTracerProvider()))
 	}
 
 	s := newScheduler(scheduletest.NewStore())

@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./core": "./src/core.ts",
     "./chat": "./src/features/chat.ts",
     "./theme": "./src/theme/theme.ts",
     "./i18n": "./src/i18n/i18n.ts",
@@ -46,6 +47,36 @@
     "@ai-sdk/react": "^4.0.163"
   },
   "peerDependenciesMeta": {
+    "@dnd-kit/core": {
+      "optional": true
+    },
+    "@dnd-kit/modifiers": {
+      "optional": true
+    },
+    "@dnd-kit/sortable": {
+      "optional": true
+    },
+    "@dnd-kit/utilities": {
+      "optional": true
+    },
+    "@mantine/dates": {
+      "optional": true
+    },
+    "@mantine/form": {
+      "optional": true
+    },
+    "@mantine/modals": {
+      "optional": true
+    },
+    "@mantine/notifications": {
+      "optional": true
+    },
+    "@mantine/nprogress": {
+      "optional": true
+    },
+    "@mantine/spotlight": {
+      "optional": true
+    },
     "@types/react": {
       "optional": true
     },
@@ -56,6 +87,12 @@
       "optional": true
     },
     "@ai-sdk/react": {
+      "optional": true
+    },
+    "dayjs": {
+      "optional": true
+    },
+    "mantine-datatable": {
       "optional": true
     }
   }

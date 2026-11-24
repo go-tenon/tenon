@@ -159,3 +159,20 @@ func TestResolveValidationErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadLocation(t *testing.T) {
+	t.Parallel()
+	loc, err := period.LoadLocation("")
+	if err != nil || loc != time.UTC {
+		t.Fatalf("empty tz = %v, %v; want UTC", loc, err)
+	}
+	loc, err = period.LoadLocation("Asia/Shanghai")
+	if err != nil || loc.String() != "Asia/Shanghai" {
+		t.Fatalf("Asia/Shanghai = %v, %v", loc, err)
+	}
+	for _, bad := range []string{"Local", "Mars/Olympus"} {
+		if _, err := period.LoadLocation(bad); !errors.Is(err, period.ErrInvalidTimeZone) {
+			t.Errorf("LoadLocation(%q) = %v, want ErrInvalidTimeZone", bad, err)
+		}
+	}
+}

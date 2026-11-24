@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"math"
 	"net/http"
+	"reflect"
 	"strconv"
+	"strings"
 
 	"github.com/cockroachdb/errors"
 	"github.com/danielgtaylor/huma/v2"
@@ -103,18 +105,82 @@ func FromError(err error) huma.StatusError {
 // httpError 转换处理器错误：业务错误的 detail 换成 httpx.ErrorDetail 的译文，
 // 错误码写入访问日志，缺少译文时标记 untranslated。
 func (a *API) httpError(ctx context.Context, err error) huma.StatusError {
+	return a.httpErrorFor(ctx, err, nil)
+}
+
+// httpErrorFor 转换处理器错误并按输入结构体的参数位置映射 errorx.Field（如 query.tz、path.id），未匹配时默认为 body.<field>。
+func (a *API) httpErrorFor(ctx context.Context, err error, locations map[string]string) huma.StatusError {
 	se := FromError(err)
 	if m, ok := se.(*ErrorModel); ok && m.Code != "" {
 		m.Detail = httpx.ErrorDetail(ctx, err)
 		// 业务错误指出了字段（errorx.Field）：同一句提示也作为这个字段的错误，表单把它显示在字段下面。
 		if f := errorx.FieldOf(err); f != "" {
-			m.Errors = []*ErrorDetail{{ErrorDetail: huma.ErrorDetail{Message: m.Detail, Location: "body." + f}, Code: m.Code}}
+			loc := fieldLocation(f, locations)
+			m.Errors = []*ErrorDetail{{ErrorDetail: huma.ErrorDetail{Message: m.Detail, Location: loc}, Code: m.Code}}
 		}
 		if m.Params == nil && len(errorx.PublicOf(err)) > 0 {
 			a.logger.WarnContext(ctx, "public error params are not JSON-serializable; omitted from response", "code", m.Code)
 		}
 	}
 	return se
+}
+
+// fieldLocation 返回业务错误字段 f 在 HTTP 请求中的完整位置：匹配已登记的 query/path/header/cookie 参数名时加上对应前缀，否则前缀为 body.。
+func fieldLocation(f string, locations map[string]string) string {
+	if prefix, ok := locations[f]; ok {
+		return prefix + "." + f
+	}
+	if root, _, found := strings.Cut(f, "."); found {
+		if prefix, ok := locations[root]; ok {
+			return prefix + "." + f
+		}
+	}
+	return "body." + f
+}
+
+// inputFieldLocations 扫描请求输入结构体类型 t（含匿名嵌入结构体），收集 query、path、header、cookie 参数名到位置前缀的映射。
+func inputFieldLocations(t reflect.Type) map[string]string {
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	if t.Kind() != reflect.Struct {
+		return nil
+	}
+	locs := map[string]string{}
+	collectInputLocations(t, locs)
+	if len(locs) == 0 {
+		return nil
+	}
+	return locs
+}
+
+// collectInputLocations 递归展开结构体字段，记录非请求体参数的 tag 位置。
+func collectInputLocations(t reflect.Type, locs map[string]string) {
+	for i := range t.NumField() {
+		f := t.Field(i)
+		if f.Anonymous {
+			ft := f.Type
+			for ft.Kind() == reflect.Pointer {
+				ft = ft.Elem()
+			}
+			if ft.Kind() == reflect.Struct {
+				collectInputLocations(ft, locs)
+				continue
+			}
+		}
+		if !f.IsExported() || f.Name == "Body" || f.Name == "RawBody" {
+			continue
+		}
+		for _, kind := range []string{"query", "path", "header", "cookie"} {
+			if tag := f.Tag.Get(kind); tag != "" && tag != "-" {
+				name, _, _ := strings.Cut(tag, ",")
+				if name != "" {
+					locs[name] = kind
+				}
+				break
+			}
+		}
+	}
 }
 
 // writeError 按 Huma 的方式在中间件中写出错误：协商内容类型、执行 Transformer 后序列化。

@@ -1,7 +1,7 @@
 // Package pgschedule 是基于 PostgreSQL 的 schedule.Store 实现：每个定时任务在 schedule_tasks 表中占一行，
 // 用单条原子语句推进单调触发水位并协调运行租约。
 //
-//	sched := schedule.New(pgschedule.New(db), cfg.Schedule, logger)
+//	sched := schedule.New(pgschedule.New(db), cfg.Schedule)
 //
 // 使用前先发布 Migrations 中的迁移。
 package pgschedule

@@ -93,6 +93,7 @@ bun run check   # 即 go tool tenon check
 | `errors` | 附加语言及已创建的服务端翻译文件中，`errorx.Define` 的错误码是否补齐译文（源语言内联提示无需重复写） | — |
 | `colors` | 前端 `src` 中写死的十六进制色值和 `rgb()`、`hsl()` 等颜色函数 | `// color-ignore`、`/* color-ignore */` |
 | `deps` | 前端与客户端 `package.json` 的依赖版本是否满足框架包的 `peerDependencies` | — |
+| `wiring` | 框架装配检查：热重载选项、事务内 `.WithDB(tx)`、搜索队列主题、限流/锁清理、上传体上限与 SSR `requestMiddleware` | `// wiring-ignore` |
 
 跳过某项检查或豁免特定目录时，在 `tenon.json` 的 `check.skip`、`check.exempt` 中配置。
 

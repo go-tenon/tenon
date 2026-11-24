@@ -49,7 +49,7 @@ const dbTimeout = 30 * time.Second
 // 超时仍未完成的任务立即放回 JetStream，处理函数的 context 以 ErrShuttingDown 取消。Run 等全部处理函数返回之后才返回，
 // 之后可以关闭数据库；不理会 ctx 的处理函数会让停止一直等下去。
 //
-//	w := queue.NewWorker(db, nc, cfg, logger)
+//	w := queue.NewWorker(db, nc, cfg)
 //	SendMail.Handle(w, mailer.Send)
 //	err := w.Run(ctx)
 type Worker struct {
@@ -87,10 +87,19 @@ type handler struct {
 // WorkerOption 调整 NewWorker 创建的 Worker。
 type WorkerOption func(*Worker)
 
+// WithLogger 指定记录队列转发和任务失败的日志器，默认使用 slog.Default()。
+func WithLogger(logger *slog.Logger) WorkerOption {
+	return func(w *Worker) {
+		if logger != nil {
+			w.logger = logger.With(logging.AttrComponent, "queue")
+		}
+	}
+}
+
 // NewWorker 创建 Worker。db 是发布任务的数据库，必须已执行 Migrations 中的迁移；nc 是 natsx.Connect 返回的连接，
 // 可以与广播等组件共用，Worker 不关闭它；cfg 是 stream 和各 topic 的默认设置；
-// logger 记录任务失败，nil 时使用 slog.Default()。db 或 nc 为 nil、cfg 不合法时 panic。
-func NewWorker(db *bun.DB, nc *nats.Conn, cfg Config, logger *slog.Logger, opts ...WorkerOption) *Worker {
+// 默认使用 slog.Default() 记录日志，可用 WithLogger 替换。db 或 nc 为 nil、cfg 不合法时 panic。
+func NewWorker(db *bun.DB, nc *nats.Conn, cfg Config, opts ...WorkerOption) *Worker {
 	if db == nil {
 		panic("queue: nil database")
 	}
@@ -105,11 +114,13 @@ func NewWorker(db *bun.DB, nc *nats.Conn, cfg Config, logger *slog.Logger, opts 
 		nc:      nc,
 		failed:  NewFailedJobs(db),
 		cfg:     cfg,
-		logger:  logging.Or(logger).With(logging.AttrComponent, "queue"),
+		logger:  logging.Or(nil).With(logging.AttrComponent, "queue"),
 		abandon: make(chan struct{}),
 	}
 	for _, opt := range opts {
-		opt(w)
+		if opt != nil {
+			opt(w)
+		}
 	}
 	return w
 }

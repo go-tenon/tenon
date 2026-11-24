@@ -1,7 +1,7 @@
 ## 框架与文档
 
 - 框架版本以 `go.mod` 中的 `github.com/go-tenon/tenon` 为准，对应文档在 `tenon/docs`、前端包源码在 `tenon/js`，由 `bun run agents` / `bun run generate` 同步并提交。先读目录 `tenon/docs/README.md`，写代码前读对应页面。
-- 查文档可用 MCP 工具 `tenon_search_docs`、`tenon_read_doc`，也可直接搜索阅读 `tenon/docs` 与 `tenon/js`。项目结构用 `tenon_app_info` 查看。
+- 查文档可用 MCP 工具 `tenon_search_docs`、`tenon_read_doc`，也可直接搜索阅读 `tenon/docs` 与 `tenon/js`。项目结构用 `tenon_app_info` 查看，改完代码用 `tenon_check` 检查约定与框架装配。
 - Go 依赖的签名和说明用 `go doc` 读与 `go.mod` 一致的版本；Mantine、TanStack 等依赖的 AI 资源按 `README.md` 的“AI 编程助手”一节接入，与 Tenon 冲突时以本文和 `tenon/docs` 为准。
 
 ## 开发与部署约定
@@ -39,7 +39,7 @@ CI（`.github/workflows/ci.yml`）运行同样的检查并构建一次；生成�
 ### 数据与事务
 
 - 迁移中的每张表和每个字段都要写 `COMMENT ON TABLE` / `COMMENT ON COLUMN`，迁移测试调用 `dbtest.CheckSchema(t, db)` 检查时间列和表/字段注释。
-- 多条写入需原子成功时放进 `database.RunInTx`；队列任务在同一个事务中发布。
+- 多条写入需原子成功时放进 `database.RunInTx`；队列任务在同一个事务中发布；事务内复用框架存储用 `.WithDB(tx)`，避免重造实例丢弃缓存与凭据复查选项。
 - 回滚撤销不了的副作用（删缓存、广播）用 `tx.AfterCommit` 登记，提交后再执行。
 - 缓存数据不带权限：命中缓存后仍须检查访问权限。
 

@@ -302,7 +302,7 @@ func TestStatusJetStream(t *testing.T) {
 	}
 
 	release := make(chan struct{})
-	w := queue.NewWorker(e.db, queuetest.Conn(t), cfg, slog.New(slog.DiscardHandler))
+	w := queue.NewWorker(e.db, queuetest.Conn(t), cfg, queue.WithLogger(slog.New(slog.DiscardHandler)))
 	queue.Topic[int]("mail").Handle(w, func(context.Context, int) error {
 		<-release
 		return nil

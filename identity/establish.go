@@ -58,10 +58,11 @@ func (i *Impersonation) Validate() error {
 
 // Policy 是 Establish 校验主体、代为登录者与租户边界的规则。
 type Policy struct {
-	Accounts      Accounts       // 接受的账号体系和各自的 Resolver；为空时直接使用凭据给出的主体
-	Impersonation *Impersonation // 非 nil 时允许代为登录并按它校验操作者；nil 时拒绝所有代为登录凭据
-	DirectOnly    bool           // true 时只接受本人直登凭据，拒绝代为登录（返回 ErrImpersonationForbidden）
-	AccountScope  bool           // true 时为账号自省接口（如 /api/me、/api/auth/logout），放行绑定了租户的凭据并保留 BoundTenant
+	Accounts      Accounts                                       // 接受的账号体系和各自的 Resolver；为空时直接使用凭据给出的主体
+	Impersonation *Impersonation                                 // 非 nil 时允许代为登录并按它校验操作者；nil 时拒绝所有代为登录凭据
+	CheckTenant   func(ctx context.Context, tenant string) error // 可选：在确立主体前校验本次请求所在租户仍然可用（例如未被停用）；AccountScope 为 true 时不调用
+	DirectOnly    bool                                           // true 时只接受本人直登凭据，拒绝代为登录（返回 ErrImpersonationForbidden）
+	AccountScope  bool                                           // true 时为账号自省接口（如 /api/me、/api/auth/logout），放行绑定了租户的凭据并保留 BoundTenant
 }
 
 // Establish 得到本次调用的主体，JSON API、页面、MCP、RPC 和实时频道的入口都用它。依次：
@@ -100,6 +101,11 @@ func Establish(ctx context.Context, authenticate Authenticator, policy Policy, p
 	}
 	if bound != "" && !policy.AccountScope && bound != TenantFromContext(ctx) {
 		return Subject{}, ErrForbidden.New()
+	}
+	if policy.CheckTenant != nil && !policy.AccountScope {
+		if err := policy.CheckTenant(ctx, TenantFromContext(ctx)); err != nil {
+			return Subject{}, err
+		}
 	}
 	sub := cred
 	sub.BoundTenant = bound

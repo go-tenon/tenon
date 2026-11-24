@@ -60,13 +60,14 @@ func register[I, O any](api *API, op huma.Operation, events map[string]reflect.T
 	if handler == nil {
 		panic("rest: nil handler")
 	}
+	locs := inputFieldLocations(reflect.TypeFor[I]())
 	h := handler
 	handler = func(ctx context.Context, in *I) (*O, error) {
 		out, err := h(ctx, in)
 		if err == nil {
 			return out, nil
 		}
-		se := api.httpError(ctx, err)
+		se := api.httpErrorFor(ctx, err, locs)
 		if se.GetStatus() >= 500 {
 			api.logger.ErrorContext(ctx, "request failed", "error", err)
 			logging.RecordError(trace.SpanFromContext(ctx), err)

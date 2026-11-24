@@ -1,13 +1,14 @@
 package httpx
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 
 	goi18n "github.com/nicksnyder/go-i18n/v2/i18n"
 )
 
-// DefaultsOption 是 Defaults 的选项：Logger、Languages、BodyLimitFor。
+// DefaultsOption 是 Defaults 的选项：Logger、Languages、BodyLimitFor、BeforeAccessLog、WithCompress、WithContext。
 type DefaultsOption interface{ applyDefaults(*defaultsOptions) }
 
 // ServeOption 是 Serve 和 ListenAndServe 的选项：Logger、OnReady、SkipDrainDelay。
@@ -15,15 +16,18 @@ type ServeOption interface{ applyServe(*serveOptions) }
 
 // defaultsOptions 是 Defaults 的选项。
 type defaultsOptions struct {
-	logger       *slog.Logger
-	languages    *goi18n.Bundle
-	bodyLimitFor func(*http.Request) int64
+	logger          *slog.Logger
+	languages       *goi18n.Bundle
+	bodyLimitFor    func(*http.Request) int64
+	beforeAccessLog []func(http.Handler) http.Handler
+	compress        bool
+	ctxWraps        []func(context.Context) context.Context
 }
 
 // serveOptions 是 Serve 的选项。
 type serveOptions struct {
 	logger         *slog.Logger
-	onReady        func()
+	onReady        []func()
 	skipDrainDelay func() bool
 }
 
@@ -34,9 +38,13 @@ type serveOptionFunc func(*serveOptions)
 func (f serveOptionFunc) applyServe(s *serveOptions) { f(s) }
 
 // OnReady 登记服务器开始接收连接后的回调 fn（常传入 command.Daemon.DeferReady 返回的函数），
-// 让不停机升级在 SSR 等前置启动完成且 HTTP 开始接收连接后再向 systemd 报告就绪。
+// 让不停机升级在 SSR 等前置启动完成且 HTTP 开始接收连接后再向 systemd 报告就绪。多次传入按顺序依次执行。
 func OnReady(fn func()) ServeOption {
-	return serveOptionFunc(func(s *serveOptions) { s.onReady = fn })
+	return serveOptionFunc(func(s *serveOptions) {
+		if fn != nil {
+			s.onReady = append(s.onReady, fn)
+		}
+	})
 }
 
 // SkipDrainDelay 登记在停机时判断是否跳过 cfg.DrainDelay 的函数 fn（常传入 command.Daemon.HandedOver）：
@@ -78,4 +86,37 @@ func (o bodyLimitForOption) applyDefaults(d *defaultsOptions) { d.bodyLimitFor =
 // fn 返回大于 0 的值时替代 cfg.BodyLimit.MaxBytes，返回不大于 0 的值时沿用默认上限。
 func BodyLimitFor(fn func(*http.Request) int64) DefaultsOption {
 	return bodyLimitForOption{fn: fn}
+}
+
+// defaultsOptionFunc 把函数适配为 DefaultsOption。
+type defaultsOptionFunc func(*defaultsOptions)
+
+// applyDefaults 应用默认中间件选项函数。
+func (f defaultsOptionFunc) applyDefaults(d *defaultsOptions) { f(d) }
+
+// BeforeAccessLog 在 Defaults 中的 Locale 之后、AccessLog 之前插入中间件，
+// 适合在访问日志记录前清洗查询参数中的密钥（例如把 ?key= 移入请求头），无需拆开重写整套默认中间件。
+func BeforeAccessLog(mws ...func(http.Handler) http.Handler) DefaultsOption {
+	return defaultsOptionFunc(func(d *defaultsOptions) {
+		for _, mw := range mws {
+			if mw != nil {
+				d.beforeAccessLog = append(d.beforeAccessLog, mw)
+			}
+		}
+	})
+}
+
+// WithCompress 在 Defaults 的 Recover 之后自动安装响应压缩中间件（Compress）。
+func WithCompress() DefaultsOption {
+	return defaultsOptionFunc(func(d *defaultsOptions) { d.compress = true })
+}
+
+// WithContext 在 Defaults 末尾安装请求上下文包装中间件（Context），例如传入 database.TrackPrimary
+// 为每个请求开启读写分离写后读主库跟踪。
+func WithContext(fn func(context.Context) context.Context) DefaultsOption {
+	return defaultsOptionFunc(func(d *defaultsOptions) {
+		if fn != nil {
+			d.ctxWraps = append(d.ctxWraps, fn)
+		}
+	})
 }

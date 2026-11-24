@@ -19,7 +19,7 @@ var errTenantDisabled = errorx.Define(errorx.PermissionDenied, "test.tenant_disa
 func TestCheckIsolatesHandshakeContextAndCheckTenant(t *testing.T) {
 	t.Parallel()
 	b := &bus{}
-	hub := broadcast.New(b.backend(), nil)
+	hub := broadcast.New(b.backend())
 	t.Cleanup(func() { _ = hub.Close() })
 	creds := broadcast.NewCredentials(hub)
 
@@ -27,7 +27,7 @@ func TestCheckIsolatesHandshakeContextAndCheckTenant(t *testing.T) {
 	var sawStaleOnRecheck atomic.Bool
 
 	opts := realtime.Options{
-		Authenticate: func(_ context.Context, token string) (identity.Subject, error) {
+		Validate: func(_ context.Context, token string) (identity.Subject, error) {
 			if token == "u1" {
 				return identity.Subject{Type: "user", ID: "u1"}, nil
 			}

@@ -263,7 +263,7 @@ func (r *runner) authenticate(ctx context.Context, ep *endpoint, h nats.Header) 
 		}
 		return r.opts.Validate(ctx, token)
 	}
-	policy := identity.Policy{Accounts: r.opts.Accounts, Impersonation: r.opts.Impersonation}
+	policy := identity.Policy{Accounts: r.opts.Accounts, Impersonation: r.opts.Impersonation, CheckTenant: r.opts.CheckTenant}
 	return identity.Establish(ctx, authenticate, policy, ep.spec.Permissions...)
 }
 

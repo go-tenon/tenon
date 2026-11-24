@@ -10,7 +10,7 @@
 //
 // Backend：子包 natsbroadcast 使用 NATS 按主题精确发布订阅；broadcasttest 提供测试用的内存 Backend。
 //
-//	hub := broadcast.New(natsbroadcast.New(nc, "blog.broadcast"), nil)
+//	hub := broadcast.New(natsbroadcast.New(nc, "blog.broadcast"))
 //	defer hub.Close()
 //	err := hub.PublishJSON(ctx, "room:42", event)
 //

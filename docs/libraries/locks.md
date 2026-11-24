@@ -105,8 +105,7 @@ if err := lk.Refresh(ctx, time.Minute); err != nil {
 - 过期的行等同于不存在，下一次取得时直接接管。锁名不重复使用时（例如按对象或日期动态生成的锁名），过期的行留在表中，用 `Cleanup` 定时删除：
 
 ```go
-locks := pglock.New(db)
-sched.Add("locks:cleanup", "@hourly", schedule.Cleanup(locks.Cleanup, 1000),
+sched.Add("locks:cleanup", "@hourly", schedule.Cleanup(pglock.Cleanup(db), 1000),
     schedule.Describe("删除过期的锁"))
 ```
 

@@ -45,7 +45,7 @@ func startReindex(t *testing.T, db *bun.DB) uuid.UUID {
 // runWorker 在后台运行处理 chunks 任务的 worker，任务用 s 同步。
 func runWorker(t *testing.T, db *bun.DB, s *vector.Store, src *source) {
 	t.Helper()
-	w := queue.NewWorker(db, queuetest.Conn(t), queuetest.Config(t), nil)
+	w := queue.NewWorker(db, queuetest.Conn(t), queuetest.Config(t))
 	chunks.Handle(w, s, src.load, src.scan)
 	queuetest.Run(t, w)
 }

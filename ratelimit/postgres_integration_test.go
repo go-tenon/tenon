@@ -64,7 +64,7 @@ func TestPostgres(t *testing.T) {
 			t.Fatal(err)
 		}
 		time.Sleep(10 * time.Millisecond)
-		if n, err := refilled.Cleanup(ctx, 2); err != nil || n != 2 {
+		if n, err := pglimit.Cleanup(db)(ctx, 2); err != nil || n != 2 {
 			t.Fatalf("first cleanup = %d, %v", n, err)
 		}
 		if n, err := refilled.Cleanup(ctx, 10); err != nil || n != 1 {

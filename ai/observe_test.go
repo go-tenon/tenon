@@ -154,3 +154,56 @@ func TestObserveTransportBoundedLargeBody(t *testing.T) {
 		t.Fatalf("unexpected bounded event: calls=%d reqLen=%d respLen=%d model=%q", calls.Load(), len(got.RequestBody), len(got.ResponseBody), got.Model)
 	}
 }
+
+func TestObserveTransportNon2xxAndUTF8Truncation(t *testing.T) {
+	t.Parallel()
+	var non2xx ai.CallEvent
+	trErr := ai.ObserveTransport(roundTripFunc(func(_ *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusTooManyRequests,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"rate limited"}}`)),
+		}, nil
+	}), func(_ context.Context, ev ai.CallEvent) {
+		non2xx = ev
+	})
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, "https://api.example.com/v1/chat/completions", strings.NewReader(`{"model":"gpt-4o"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := trErr.RoundTrip(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if non2xx.StatusCode != http.StatusTooManyRequests || non2xx.Err == nil {
+		t.Fatalf("non-2xx event should carry Err, got %+v", non2xx)
+	}
+
+	// 中文每字占 3 字节，MaxBodyBytes=5 时按完整 UTF-8 字符边界截断为 1 个汉字（3 字节）。
+	var trunc ai.CallEvent
+	sse := "data: {\"model\":\"gpt-4o\",\"choices\":[{\"delta\":{\"content\":\"你好世界\"}}]}\n\ndata: [DONE]\n\n"
+	trStream := ai.ObserveTransport(roundTripFunc(func(_ *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+			Body:       io.NopCloser(strings.NewReader(sse)),
+		}, nil
+	}), func(_ context.Context, ev ai.CallEvent) {
+		trunc = ev
+	}, ai.ObserveOptions{MaxBodyBytes: 5})
+	req2, err := http.NewRequestWithContext(t.Context(), http.MethodPost, "https://api.example.com/v1/chat/completions", strings.NewReader(`{"model":"gpt-4o","stream":true}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp2, err := trStream.RoundTrip(req2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.ReadAll(resp2.Body)
+	_ = resp2.Body.Close()
+	if trunc.Content != "你" {
+		t.Fatalf("utf8 truncated content = %q, want %q", trunc.Content, "你")
+	}
+}

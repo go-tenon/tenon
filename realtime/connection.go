@@ -238,13 +238,13 @@ func (rt *Realtime) authPolicy() identity.Policy {
 	return identity.Policy{Accounts: rt.opts.Accounts, Impersonation: rt.opts.Impersonation}
 }
 
-// authenticator 用 Options.Authenticate 校验 token；没有设置时带 token 的连接一律无效。
+// authenticator 用 Options.Validate 校验 token；没有设置时带 token 的连接一律无效。
 func (rt *Realtime) authenticator(token string) identity.Authenticator {
 	return func(ctx context.Context) (identity.Subject, error) {
-		if rt.opts.Authenticate == nil {
+		if rt.opts.Validate == nil {
 			return identity.Subject{}, nil
 		}
-		return rt.opts.Authenticate(ctx, token)
+		return rt.opts.Validate(ctx, token)
 	}
 }
 

@@ -15,7 +15,7 @@ import (
 func TestConnect(t *testing.T) {
 	t.Parallel()
 	rec := logtest.New()
-	nc, err := natsx.Connect(natsx.Config{URL: natstest.URL(t)}, "natsx-test", rec.Logger())
+	nc, err := natsx.Connect(natsx.Config{URL: natstest.URL(t)}, "natsx-test", natsx.WithLogger(rec.Logger()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,10 +50,10 @@ func TestConnect(t *testing.T) {
 
 func TestConnectFails(t *testing.T) {
 	t.Parallel()
-	if _, err := natsx.Connect(natsx.Config{}, "x", nil); err == nil {
+	if _, err := natsx.Connect(natsx.Config{}, "x"); err == nil {
 		t.Fatal("empty url accepted")
 	}
-	_, err := natsx.Connect(natsx.Config{URL: "nats://user:secret@127.0.0.1:1"}, "x", nil)
+	_, err := natsx.Connect(natsx.Config{URL: "nats://user:secret@127.0.0.1:1"}, "x")
 	if err == nil || strings.Contains(err.Error(), "secret") {
 		t.Fatalf("unreachable server: %v", err)
 	}

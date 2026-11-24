@@ -16,7 +16,7 @@
 //	err := SendMail.Publish(ctx, tx, msg)
 //
 //	// 处理：nc 是 natsx.Connect 返回的连接，与广播等组件共用
-//	w := queue.NewWorker(db, nc, cfg, logger)
+//	w := queue.NewWorker(db, nc, cfg)
 //	SendMail.Handle(w, mailer.Send)
 //	err := w.Run(ctx)
 //

@@ -161,7 +161,7 @@ storage
 func TestRequire(t *testing.T) {
 	t.Parallel()
 	rec := logtest.New()
-	err := doctor.Require(context.Background(), rec.Logger(), doctor.Group{Name: "postgres", Checks: []doctor.Check{
+	err := doctor.RequireWithLogger(context.Background(), rec.Logger(), doctor.Group{Name: "postgres", Checks: []doctor.Check{
 		{Name: "keep", Run: returns(doctor.Warn("no WAL limit", "set max_slot_wal_keep_size"))},
 	}})
 	if err != nil {
@@ -171,7 +171,7 @@ func TestRequire(t *testing.T) {
 	if !ok || r.Level != slog.LevelWarn || r.Attr("check") != "keep" || r.Attr("fix") != "set max_slot_wal_keep_size" {
 		t.Errorf("warning log = %+v, found %v", r, ok)
 	}
-	err = doctor.Require(context.Background(), rec.Logger(), doctor.Group{Name: "postgres", Checks: []doctor.Check{
+	err = doctor.Require(context.Background(), doctor.Group{Name: "postgres", Checks: []doctor.Check{
 		{Name: "connection", Run: returns(errors.New("refused"))},
 	}})
 	if !errors.Is(err, doctor.ErrFailed) {
