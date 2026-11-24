@@ -16,7 +16,6 @@ type Config struct {
 	Concurrency     int           `yaml:"concurrency"`      // 每个 topic 同时处理的任务数上限。
 	MaxAttempts     int           `yaml:"max_attempts"`     // 任务最多处理的次数，用完后转入失败任务表。
 	Lease           time.Duration `yaml:"lease"`            // JetStream 等待处理结果的时间（AckWait）。处理期间每 Lease/3 自动延长；进程崩溃时任务在 Lease 之后被重新投递。
-	ReplicationDSN  string        `yaml:"replication_dsn"`  // 转发任务的逻辑复制连接，为空时使用 Worker 的数据库连接的配置。数据库连接经过 PgBouncer 等连接池时需要设置：复制连接必须直连 PostgreSQL。用户需要 REPLICATION 属性。
 	ShutdownTimeout time.Duration `yaml:"shutdown_timeout"` // 停止时等待处理中的任务完成的最长时间，超时的任务立即放回 JetStream。
 }
 

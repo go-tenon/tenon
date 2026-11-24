@@ -1,239 +1,164 @@
 package queue
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"strings"
+	"fmt"
 	"time"
 
 	"github.com/cockroachdb/errors"
 	"github.com/google/uuid"
-	"github.com/jackc/pglogrepl"
-	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgproto3"
+	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+	"github.com/uptrace/bun"
 )
 
 const (
-	// relayBatch 是一次发给 JetStream 的最多任务数。
+	// relayBatch 是单次事务从 queue_outbox 转发到 JetStream 的最多任务数。
 	relayBatch = 500
-	// relayDelay 是攒批的最长等待：一批中的第一个任务到达之后最多等这么久，就把已经收到的发出去。
-	// 任务连续到达时同样按时发出，不等攒满 relayBatch。
-	relayDelay = 2 * time.Millisecond
-	// standbyInterval 是向 PostgreSQL 报告确认位置的间隔。它必须小于 wal_sender_timeout，否则连接被断开。
-	standbyInterval = 3 * time.Second
+	// relayMaxInterval 是队列空闲时退避后的最长轮询间隔。
+	relayMaxInterval = 500 * time.Millisecond
+	// relayErrorWait 是转发失败后重试的等待时间。
+	relayErrorWait = time.Second
 )
 
-// relayRetry 是复制槽被其他 Worker 占用、或连接出错之后重试的间隔，也是转发的 Worker 停止后备用的接手所需的最长时间。
-var relayRetry = 5 * time.Second
+// relayMinInterval 是发现任务后重置的轮询间隔，测试中可以缩短。
+var relayMinInterval = 50 * time.Millisecond
 
-// sqlstateObjectInUse 是复制槽正被另一个连接使用时 START_REPLICATION 返回的错误码。
-const sqlstateObjectInUse = "55006"
-
-// relayed 是从 WAL 中读到的一个任务。
-type relayed struct {
-	topic string
-	body  []byte
-}
-
-// relay 经由逻辑复制读取已提交事务中的任务，转发到 JetStream，直到 ctx 结束。
+// relay 持续从 queue_outbox 读取已到时间的任务并转发到 JetStream，直到 ctx 结束。
 //
-// 一个复制槽同时只能被一个连接使用：多个 Worker 中只有一个在转发，其余的每 relayRetry 尝试一次，
-// 转发的 Worker 停止或断开后由其中一个接手，从槽中已确认的位置继续。
+// 多个 Worker 通过 FOR UPDATE SKIP LOCKED 并行领取互不重叠的批次；
+// 有满批任务时立即拉取下一批，空闲时按指数退避到 relayMaxInterval。
 func (w *Worker) relay(ctx context.Context) {
-	standby := false
+	interval := relayMinInterval
 	for ctx.Err() == nil {
-		err := w.stream(ctx)
+		n, err := w.relayOnce(ctx)
 		if ctx.Err() != nil {
 			return
 		}
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == sqlstateObjectInUse {
-			if !standby {
-				w.logger.Info("another worker is relaying jobs, standing by", "slot", w.slot)
-			}
-			standby = true
-		} else {
-			standby = false
-			w.logger.Error("relay jobs failed", "slot", w.slot, "error", err)
+		if err != nil {
+			w.logger.Error("relay jobs failed", "error", err)
+			wait(ctx, relayErrorWait)
+			continue
 		}
-		wait(ctx, relayRetry)
+		if n >= relayBatch {
+			interval = relayMinInterval
+			continue
+		}
+		if n > 0 {
+			interval = relayMinInterval
+		} else {
+			interval = min(interval*2, relayMaxInterval)
+		}
+		wait(ctx, interval)
 	}
 }
 
-// stream 建立复制连接，持续转发，直到 ctx 结束或出错。
-//
-// 任务按事务提交的顺序到达。一个事务的任务全部收到（Commit）之后才会发出；JetStream 确认之后，才向 PostgreSQL 确认
-// 这个事务的位置。连接中断时，没有确认的事务会被再次读到，重新发布的任务在去重窗口内被 JetStream 丢弃；
-// 窗口之外的重复投递与处理函数需要能重复执行的约定一致。
-//
-// 不含任务的事务不会发到这里（publication 是空的），所以确认位置还要随 PostgreSQL 的心跳前进：心跳带着 walsender
-// 已经处理到的位置，在它之前提交的事务都已经发来。不在事务中途时，把这个位置记为已提交，下一次 flush 发出已收到的任务后
-// 一起确认。否则任务少、业务写入多的库，复制槽会一直保留 WAL，直到超过 max_slot_wal_keep_size 而失效。
-func (w *Worker) stream(ctx context.Context) error {
-	cfg, err := replicationConfig(ctx, w.db, w.cfg.ReplicationDSN)
-	if err != nil {
-		return err
-	}
-	conn, err := pgconn.ConnectConfig(ctx, cfg)
-	if err != nil {
-		return errors.Wrap(err, "queue: replication connection")
-	}
-	defer func() { _ = conn.Close(context.Background()) }()
-	err = pglogrepl.StartReplication(ctx, conn, w.slot, 0, pglogrepl.StartReplicationOptions{
-		PluginArgs: []string{"proto_version '1'", "publication_names '" + Publication + "'", "messages 'true'"},
-	})
-	if err != nil {
-		return errors.Wrap(err, "queue: start replication")
-	}
-	w.logger.Info("relaying jobs", "slot", w.slot)
-	w.relaying.Store(true)
-	defer w.relaying.Store(false)
+// relayOnce 在一个事务中锁住最多 relayBatch 条已到期的 outbox 任务，转发到 JetStream 并删除它们。
+// 遇到体积超限或非法编码等永久错误时，单条转入 queue_failed_jobs 并删除 outbox 行，避免阻塞其余任务。
+func (w *Worker) relayOnce(ctx context.Context) (int, error) {
+	var processed int
+	var published int
+	err := w.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		var rows []outboxJob
+		err := tx.NewSelect().Model(&rows).
+			Where("o.available_at <= ?", time.Now().UTC()).
+			OrderExpr("o.available_at, o.id").
+			Limit(relayBatch).
+			For("UPDATE SKIP LOCKED").
+			Scan(ctx)
+		if err != nil || len(rows) == 0 {
+			return err
+		}
 
-	var (
-		open, ready          []relayed // 当前事务中的任务；已提交、还没发出的任务
-		inTx                 bool      // 收到了 Begin，还没收到 Commit
-		readySince           time.Time // ready 中第一个任务到达的时间
-		committed, confirmed pglogrepl.LSN
-		nextReport           = time.Now().Add(standbyInterval)
-	)
-	report := func(ctx context.Context) error {
-		nextReport = time.Now().Add(standbyInterval)
-		err := pglogrepl.SendStandbyStatusUpdate(ctx, conn, pglogrepl.StandbyStatusUpdate{WALWritePosition: confirmed})
-		return errors.Wrap(err, "queue: report replication position")
-	}
-	flush := func(ctx context.Context) error {
-		if len(ready) > 0 {
-			if err := w.forward(ctx, ready); err != nil {
-				return err
-			}
-			ready = ready[:0]
+		type inFlight struct {
+			row    outboxJob
+			future jetstream.PubAckFuture
 		}
-		if committed > confirmed {
-			confirmed = committed
-			return report(ctx)
-		}
-		return nil
-	}
-	for {
-		deadline := nextReport
-		if due := readySince.Add(relayDelay); len(ready) > 0 && due.Before(deadline) {
-			deadline = due
-		}
-		rctx, cancel := context.WithDeadline(ctx, deadline)
-		raw, err := conn.ReceiveMessage(rctx)
-		cancel()
-		if ctx.Err() != nil {
-			// 停止时发出已经收到的任务，尽量不让接手的 Worker 重复投递。
-			stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
-			defer cancel()
-			_ = flush(stopCtx)
-			return nil
-		}
-		if err != nil {
-			if !pgconn.Timeout(err) {
-				return errors.Wrap(err, "queue: receive replication message")
-			}
-			if err := flush(ctx); err != nil {
-				return err
-			}
-			if !time.Now().Before(nextReport) {
-				if err := report(ctx); err != nil {
-					return err
+		pending := make([]inFlight, 0, len(rows))
+		doneIDs := make([]uuid.UUID, 0, len(rows))
+
+		for _, row := range rows {
+			body, err := json.Marshal(envelope{
+				ID:          row.ID,
+				Payload:     row.Payload,
+				Metadata:    row.Metadata,
+				AvailableAt: row.AvailableAt,
+			})
+			if err != nil {
+				if recErr := w.recordPoison(ctx, tx, row, errors.Wrapf(err, "queue: encode %q job", row.Topic)); recErr != nil {
+					return recErr
 				}
-			}
-			continue
-		}
-		switch m := raw.(type) {
-		case *pgproto3.ErrorResponse:
-			return errors.Wrap(pgconn.ErrorResponseToPgError(m), "queue: replication")
-		case *pgproto3.CopyData:
-			if len(m.Data) == 0 {
+				doneIDs = append(doneIDs, row.ID)
 				continue
 			}
-			switch m.Data[0] {
-			case pglogrepl.PrimaryKeepaliveMessageByteID:
-				pkm, err := pglogrepl.ParsePrimaryKeepaliveMessage(m.Data[1:])
-				if err != nil {
-					return errors.Wrap(err, "queue: parse keepalive")
-				}
-				if !inTx && pkm.ServerWALEnd > committed {
-					committed = pkm.ServerWALEnd
-				}
-				if pkm.ReplyRequested {
-					if err := report(ctx); err != nil {
-						return err
+			f, err := w.publishAsync(row.Topic, body, msgID(row.ID, row.CreatedAt))
+			if err != nil {
+				if isPermanentPublishError(err) {
+					if recErr := w.recordPoison(ctx, tx, row, errors.Wrapf(err, "queue: publish %q job", row.Topic)); recErr != nil {
+						return recErr
 					}
+					doneIDs = append(doneIDs, row.ID)
+					continue
 				}
-			case pglogrepl.XLogDataByteID:
-				xld, err := pglogrepl.ParseXLogData(m.Data[1:])
-				if err != nil {
-					return errors.Wrap(err, "queue: parse WAL data")
-				}
-				msg, err := pglogrepl.Parse(xld.WALData)
-				if err != nil {
-					return errors.Wrap(err, "queue: decode WAL data")
-				}
-				switch msg := msg.(type) {
-				case *pglogrepl.BeginMessage:
-					open = open[:0]
-					inTx = true
-				case *pglogrepl.LogicalDecodingMessage:
-					if topic, ok := strings.CutPrefix(msg.Prefix, MessagePrefix); ok {
-						// Content 引用接收缓冲区，下一次接收时会被覆盖。
-						open = append(open, relayed{topic: topic, body: bytes.Clone(msg.Content)})
-					}
-				case *pglogrepl.CommitMessage:
-					if len(ready) == 0 && len(open) > 0 {
-						readySince = time.Now()
-					}
-					ready = append(ready, open...)
-					open = open[:0]
-					inTx = false
-					committed = max(committed, msg.TransactionEndLSN)
-					if len(ready) >= relayBatch || len(ready) > 0 && !time.Now().Before(readySince.Add(relayDelay)) {
-						if err := flush(ctx); err != nil {
-							return err
+				return errors.Wrapf(err, "queue: publish to %q", row.Topic)
+			}
+			pending = append(pending, inFlight{row: row, future: f})
+		}
+
+		if len(pending) > 0 {
+			ackCtx, cancel := context.WithTimeout(ctx, publishTimeout)
+			defer cancel()
+			for _, item := range pending {
+				select {
+				case <-item.future.Ok():
+					doneIDs = append(doneIDs, item.row.ID)
+					published++
+				case err := <-item.future.Err():
+					if isPermanentPublishError(err) {
+						if recErr := w.recordPoison(ctx, tx, item.row, errors.Wrapf(err, "queue: publish %q job", item.row.Topic)); recErr != nil {
+							return recErr
 						}
+						doneIDs = append(doneIDs, item.row.ID)
+						continue
 					}
+					return errors.Wrap(err, "queue: publish jobs")
+				case <-ackCtx.Done():
+					return errors.Wrap(ackCtx.Err(), "queue: wait for publish acks")
 				}
 			}
 		}
+
+		if len(doneIDs) > 0 {
+			if _, err := tx.NewDelete().Model((*outboxJob)(nil)).Where("id IN (?)", bun.List(doneIDs)).Exec(ctx); err != nil {
+				return errors.Wrap(err, "queue: delete relayed outbox jobs")
+			}
+		}
+		processed = len(doneIDs)
+		return nil
+	})
+	if err != nil {
+		return 0, err
 	}
+	w.countRelayed(ctx, published)
+	return processed, nil
 }
 
-// forward 把任务交给 JetStream：已经到时间的直接发布，没到时间的作为定时消息，到时间由 JetStream 发布。
-// 全部被 JetStream 确认后才返回。
-func (w *Worker) forward(ctx context.Context, jobs []relayed) error {
-	now := time.Now()
-	var futures []jetstream.PubAckFuture
-	published, deferred := 0, 0
-	for _, j := range jobs {
-		var head struct {
-			ID          uuid.UUID `json:"id"`
-			AvailableAt time.Time `json:"available_at"`
-			Attempts    int       `json:"attempts"`
-		}
-		if err := json.Unmarshal(j.body, &head); err != nil {
-			w.logger.Error("drop malformed job", "topic", j.topic, "error", err)
-			continue
-		}
-		f, err := w.publishAsync(j.topic, j.body, msgID(head.ID, head.Attempts, head.AvailableAt), head.AvailableAt)
-		if err != nil {
-			return errors.Wrapf(err, "queue: publish to %q", j.topic)
-		}
-		futures = append(futures, f)
-		if head.AvailableAt.After(now) {
-			deferred++
-		} else {
-			published++
-		}
-	}
-	if err := waitAcks(ctx, futures); err != nil {
-		return errors.Wrap(err, "queue: publish jobs")
-	}
-	w.countRelayed(ctx, routePublished, published)
-	w.countRelayed(ctx, routeDeferred, deferred)
-	return nil
+// recordPoison 在转发事务中把无法发送到 JetStream 的永久坏消息转入失败任务表。
+func (w *Worker) recordPoison(ctx context.Context, tx bun.Tx, row outboxJob, cause error) error {
+	w.logger.Error("move unpublishable job to failed jobs", "topic", row.Topic, "id", row.ID, "error", cause)
+	return recordFailed(ctx, tx, failedJob{
+		ID:       row.ID,
+		Topic:    row.Topic,
+		Payload:  row.Payload,
+		Metadata: row.Metadata,
+		Attempts: 0,
+		Error:    fmt.Sprintf("%+v", cause),
+	})
+}
+
+// isPermanentPublishError 报告发布到 JetStream 时的错误是否属于单条消息自身的永久错误，
+// 例如消息体超过服务器 max_payload 或 subject 不合法。
+func isPermanentPublishError(err error) bool {
+	return errors.Is(err, nats.ErrMaxPayload) || errors.Is(err, nats.ErrBadSubject)
 }

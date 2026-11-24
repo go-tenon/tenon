@@ -174,7 +174,7 @@ func Deploy(ctx context.Context, r Runner, t Target, opts ReleaseOptions, out, e
 		return nil, fmt.Errorf("[%s] config check 失败: %w", primary.Addr, err)
 	}
 
-	// 5. 数据库迁移（仅在主节点执行一次，先于 doctor 以使 migrate.Doctor 与队列复制槽检查就绪）。
+	// 5. 数据库迁移（仅在主节点执行一次，先于 doctor 以使 migrate.Doctor 与队列数据表检查就绪）。
 	migrated := false
 	hasMigrate, err := remoteHasSubcommand(ctx, r, primary, remoteBin, "migrate")
 	if err != nil {
@@ -188,7 +188,7 @@ func Deploy(ctx context.Context, r Runner, t Target, opts ReleaseOptions, out, e
 		migrated = true
 	}
 
-	// 6. 上线前全量自检 doctor（确认迁移、复制槽与全部依赖均就绪后再切换服务）。
+	// 6. 上线前全量自检 doctor（确认迁移与全部依赖均就绪后再切换服务）。
 	if !opts.SkipDoctor {
 		hasDoc, err := remoteHasSubcommand(ctx, r, primary, remoteBin, "doctor")
 		if err != nil {

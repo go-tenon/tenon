@@ -11,13 +11,12 @@ import (
 
 	"github.com/cockroachdb/errors"
 
-	"github.com/go-tenon/tenon/lock"
-	"github.com/go-tenon/tenon/lock/locktest"
 	"github.com/go-tenon/tenon/schedule"
+	"github.com/go-tenon/tenon/schedule/scheduletest"
 )
 
 func newScheduler() *schedule.Scheduler {
-	return schedule.New(lock.New(locktest.NewStore()), schedule.DefaultConfig(), nil)
+	return schedule.New(scheduletest.NewStore(), schedule.DefaultConfig(), nil)
 }
 
 // counter 返回一个记录执行次数的任务。
@@ -102,9 +101,9 @@ func TestLocation(t *testing.T) {
 }
 
 func TestRunsOncePerTickAcrossInstances(t *testing.T) {
-	locker := lock.New(locktest.NewStore())
+	store := scheduletest.NewStore()
 	var once, every atomic.Int64
-	a, b := schedule.New(locker, schedule.DefaultConfig(), nil), schedule.New(locker, schedule.DefaultConfig(), nil)
+	a, b := schedule.New(store, schedule.DefaultConfig(), nil), schedule.New(store, schedule.DefaultConfig(), nil)
 	for _, s := range []*schedule.Scheduler{a, b} {
 		s.Add("once", "@everysecond", counter(&once))
 		s.Add("every", "@everysecond", counter(&every), schedule.EveryInstance())
@@ -114,7 +113,9 @@ func TestRunsOncePerTickAcrossInstances(t *testing.T) {
 		_ = a.RunDue(context.Background(), at)
 		_ = b.RunDue(context.Background(), at.Add(400*time.Millisecond)) // 时钟慢一些的实例
 	}
-	if once.Load() != 3 || every.Load() != 6 {
+	// 即使时钟慢了远超 1 分钟，也不会重复执行早于单调水位的旧 tick。
+	_ = b.RunDue(context.Background(), base)
+	if once.Load() != 3 || every.Load() != 7 {
 		t.Fatalf("once=%d every=%d", once.Load(), every.Load())
 	}
 }
@@ -141,13 +142,13 @@ func TestOverlap(t *testing.T) {
 		{"allowed", []schedule.TaskOption{schedule.AllowOverlap()}, 1, 2},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			locker := lock.New(locktest.NewStore())
+			store := scheduletest.NewStore()
 			var runs atomic.Int64
 			started := make(chan struct{}, 2)
 			release := make(chan struct{})
 			scheds := make([]*schedule.Scheduler, tc.instances)
 			for i := range scheds {
-				scheds[i] = schedule.New(locker, schedule.DefaultConfig(), nil)
+				scheds[i] = schedule.New(store, schedule.DefaultConfig(), nil)
 				scheds[i].Add("report", "@everysecond", blockingTask(&runs, started, release), tc.opts...)
 			}
 			var wg sync.WaitGroup
@@ -262,7 +263,7 @@ func TestConfig(t *testing.T) {
 			t.Fatal("New with invalid config did not panic")
 		}
 	}()
-	schedule.New(lock.New(locktest.NewStore()), bad, nil)
+	schedule.New(scheduletest.NewStore(), bad, nil)
 }
 
 func TestRunWithoutTasks(t *testing.T) {
@@ -275,7 +276,7 @@ func TestRunWithoutTasks(t *testing.T) {
 func TestTimeout(t *testing.T) {
 	var events []schedule.Event
 	var mu sync.Mutex
-	s := schedule.New(lock.New(locktest.NewStore()), schedule.DefaultConfig(), nil,
+	s := schedule.New(scheduletest.NewStore(), schedule.DefaultConfig(), nil,
 		schedule.WithObserver(func(_ context.Context, e schedule.Event) {
 			mu.Lock()
 			events = append(events, e)
@@ -329,7 +330,7 @@ func TestTimeout(t *testing.T) {
 }
 
 func TestRunNow(t *testing.T) {
-	locker := lock.New(locktest.NewStore())
+	store := scheduletest.NewStore()
 	var events []schedule.Event
 	var mu sync.Mutex
 	observe := schedule.WithObserver(func(_ context.Context, e schedule.Event) {
@@ -340,8 +341,8 @@ func TestRunNow(t *testing.T) {
 	var runs atomic.Int64
 	started := make(chan struct{}, 2)
 	release := make(chan struct{})
-	a := schedule.New(locker, schedule.DefaultConfig(), nil, observe)
-	b := schedule.New(locker, schedule.DefaultConfig(), nil, observe)
+	a := schedule.New(store, schedule.DefaultConfig(), nil, observe)
+	b := schedule.New(store, schedule.DefaultConfig(), nil, observe)
 	for _, s := range []*schedule.Scheduler{a, b} {
 		s.Add("report", "@daily", blockingTask(&runs, started, release))
 		s.Add("broken", "@daily", func(context.Context) error { return errors.New("boom") })

@@ -123,77 +123,43 @@ max_client_conn = 2000          ; 不小于各实例的 max_conns 之和
 max_prepared_statements = 200   ; pgx 默认使用命名的预编译语句，需要 PgBouncer 1.21 以上
 ```
 
-`database.dsn` 改为 PgBouncer 的地址。两处必须直连 PostgreSQL：
-
-- **迁移**：在一个连接上持有会话级的锁。`migratecmd.New` 的 `dbConfig` 返回直连的数据库配置，例如配置中单独的 `migrate_database` 段。
-- **队列的复制连接**：设置 `queue.replication_dsn`，见[队列](#queue)。
+`database.dsn` 改为 PgBouncer 的地址。只有**迁移**需要直连 PostgreSQL：它在一个连接上持有会话级的锁，`migratecmd.New` 的 `dbConfig` 返回直连的数据库配置（例如配置中单独的 `migrate_database` 段）。队列的 `queue_outbox` 完全兼容 PgBouncer 的 transaction 模式，不需要额外的直连配置。
 
 PgBouncer 的连接用满时语句排队，最长等 `query_wait_timeout`（例如 `5` 秒）。
 
 <a id="queue"></a>
-## 队列：数据库设置
+## 队列：监控与运维
 
-[队列](../background/queue.md)的 worker 通过逻辑复制槽读出事务中写入的任务，转发给 NATS JetStream；复制槽保留还没读走的 WAL。
-
-| 设置 | 值 | 说明 |
-| --- | --- | --- |
-| 版本 | 17 以上 | 复制槽可以随主备切换同步 |
-| `wal_level` | `logical` | 修改后重启数据库 |
-| 用户属性 | `REPLICATION` | 迁移和 worker 的复制连接都需要 |
-| `max_slot_wal_keep_size` | 例如 `10GB` | 复制槽最多保留的 WAL，超过后槽失效；不设置时可能写满磁盘 |
-| `wal_sender_timeout` | `10s` | 转发的 worker 失联后多久释放复制槽，由待命的 worker 接手 |
-| `max_replication_slots`、`max_wal_senders` | 默认的 10 足够 | 每个数据库一个槽、一个复制连接 |
-
-- 连接经过 [PgBouncer](#pgbouncer) 时，`queue.replication_dsn` 写直连的地址：复制协议不能经过 PgBouncer。
-- `queue.Doctor` 逐项检查这些设置，见[自检](doctor.md#queue-checks)。
+[队列](../background/queue.md)的 worker 从 PostgreSQL 的 `queue_outbox` 表批量领取到期任务并转发到 NATS JetStream，延迟任务保留在 `queue_outbox` 中直到执行时间。
 
 <a id="queue-monitoring"></a>
 ### 监控积压
 
-worker 全部停止或 NATS 不可用时，复制槽积压的 WAL 一直增长，超过 `max_slot_wal_keep_size` 后槽失效。
+worker 全部停止或 NATS 不可用时，待转发任务留在 `queue_outbox` 表中（不影响数据库 WAL 回收，也不会写爆磁盘）。
 
-- `queue status`（[queue 命令](../background/queue.md#stats-command)）显示积压的大小。
-- 用[指标](../general/telemetry.md#queue)告警：所有实例的 `queue.relay.active` 之和为 0，或 `queue.relay.lag` 超过 `max_slot_wal_keep_size` 的一半。
-- worker 全部停止时没有指标，在数据库一侧也要监控。复制槽的名字是 `queue.SlotName(数据库名)`：
+- `queue status`（[queue 命令](../background/queue.md#stats-command)）显示 `outbox pending`、`outbox deferred` 和 `oldest pending`。
+- 用[指标](../general/telemetry.md#queue)告警：`queue.outbox.pending` 持续增长，或 `queue.job.wait` 异常升高。
+- worker 全部停止时也可以直接查库：
 
 ```sql
-SELECT slot_name, active, wal_status,
-       pg_wal_lsn_diff(pg_current_wal_lsn(), confirmed_flush_lsn) AS lag_bytes
-FROM pg_replication_slots WHERE slot_name LIKE 'tenon_queue_%';
+SELECT count(*) FILTER (WHERE available_at <= now()) AS pending,
+       count(*) FILTER (WHERE available_at > now())  AS deferred,
+       min(available_at) FILTER (WHERE available_at <= now()) AS oldest_pending
+FROM queue_outbox;
 ```
-
-`active` 为 `false`：没有 worker 在转发；`wal_status` 为 `unreserved`：槽即将失效。长时间运行的事务也让 WAL 无法释放。
-
-<a id="queue-failover"></a>
-### 主备切换
-
-复制槽默认只在主库上，切换后 worker 找不到它，拒绝启动。要让它随切换保留，备库设置 `sync_replication_slots = on`、`hot_standby_feedback = on`（`primary_conninfo` 包含 `dbname`），主库的 `synchronized_standby_slots` 列出备库的物理复制槽，见 [PostgreSQL 文档](https://www.postgresql.org/docs/current/logicaldecoding-explanation.html)。没有配置时按[重建复制槽](#queue-recovery)处理。
-
-<a id="queue-recovery"></a>
-### 重建复制槽：`queue slot recreate`
-
-复制槽丢失（恢复了备份、主备切换时没有同步）或失效（`wal_status` 为 `lost`）时，worker 拒绝启动。用同样的名字重建：
-
-```bash
-./bin/blog queue slot recreate
-```
-
-- 复制槽可用时命令拒绝执行：重建会丢弃其中还没转发的任务。确实需要时加 `--force`。
-- 丢失到重建期间发出的任务随之丢失，从业务数据中找出没完成的工作重新发出，例如状态停在“发送中”的记录。
 
 <a id="queue-jetstream"></a>
 ### JetStream 中的任务
 
-转发之后任务保存在 JetStream 的 stream 中直到处理完成；延迟任务和等待重试的任务以定时消息的形式等到执行时间。
+转发之后任务保存在 JetStream 的 stream 中直到处理完成；失败任务由 JetStream 原生延迟重投（`NakWithDelay`）。
 
-- `queue.replicas`：NATS 集群中设为 3，一台服务器损坏时任务不丢。单机（`1`）的磁盘损坏时未处理、延迟和重试的任务全部丢失，开启云盘的自动快照。
-- 定时消息占 NATS 的内存，每条约 0.75KB，100 万条约 750MB。大量远期任务按条数预留内存，或改用[定时任务](../background/scheduling.md)到时间再发布。
-- stream 不设 `max_age`，容量上限配合 `discard: new`：`max_age` 和 `discard: old` 都会删除任务，worker 启动时发现就拒绝启动。`discard: new` 时容量满后任务留在复制槽中，有空间再转发。
+- `queue.replicas`：NATS 集群中设为 3，一台服务器损坏时任务不丢。单机（`1`）的磁盘损坏时未处理的在途任务会丢失，开启云盘的自动快照。
+- stream 不设 `max_age`，容量上限配合 `discard: new`：`max_age` 和 `discard: old` 都会删除任务，worker 启动时发现就拒绝启动。`discard: new` 时容量满后任务留在 `queue_outbox` 中，有空间后再转发。
 
 <a id="backups"></a>
 ## 备份与恢复
 
-备份数据库和[文件存储](../libraries/filesystem.md)。JetStream 中的任务靠[多副本](#queue-jetstream)保护；Redis 的缓存、NATS 中的在线成员会重新生成，Qdrant 中的[向量](../ai/vector.md)可以从数据库重建。Tenon 不提供备份命令，用数据库自己的备份机制。
+备份数据库和[文件存储](../libraries/filesystem.md)。`queue_outbox` 中的待转发任务和延迟任务随数据库自动备份；JetStream 中的在途任务靠[多副本](#queue-jetstream)保护；Redis 的缓存、NATS 中的在线成员会重新生成，Qdrant 中的[向量](../ai/vector.md)可以从数据库重建。Tenon 不提供备份命令，用数据库自己的备份机制。
 
 <a id="database-backups"></a>
 ### 数据库
@@ -213,7 +179,7 @@ FROM pg_replication_slots WHERE slot_name LIKE 'tenon_queue_%';
 <a id="after-restoring"></a>
 ### 恢复之后
 
-- **重建队列的复制槽**：复制槽不在备份中，按[重建复制槽](#queue-recovery)处理。备份时还没转发的任务丢失；备份之后执行过的任务可能再执行一次。
+- **检查队列任务**：备份时留在 `queue_outbox` 中的待转发和延迟任务随库恢复并继续转发；备份之后执行过的任务可能再执行一次。
 - **重建向量索引**：Qdrant 中有备份之后写入的文档，逐个[重建向量索引](../ai/vector.md#reindexing)。
 - **再撤销一次凭据**：备份之后撤销的 [API 令牌](../security/api-tokens.md#revoking-tokens)恢复后又能用。对这段时间封禁或改过密码的用户再调用 `RevokeSubject`；无法逐个确认时删除 `api_tokens` 中 `kind = 'login'` 的行，让所有人重新登录。
 - 已经发出的邮件、调用过的外部接口不会撤回。

@@ -3,69 +3,54 @@ package queue
 import (
 	"context"
 	"database/sql"
+	"time"
 
 	"github.com/cockroachdb/errors"
 	"github.com/uptrace/bun"
 )
 
-// Status 是队列在数据库一侧的状态：转发任务的复制槽。JetStream 中积压的任务由 NATS 统计，见 Admin.Status。
+// Status 是队列在数据库一侧的状态：queue_outbox 中的待转发任务和延迟任务。
+// JetStream 中等待处理和处理中的任务由 NATS 统计，见 Admin.Status。
 type Status struct {
-	Slot      string // 复制槽的名字，见 SlotName
-	Exists    bool   // 报告复制槽是否存在。不存在时没有执行迁移，或者槽在恢复备份、主备切换后丢失，见 RecreateSlot。
-	Active    bool   // 有 Worker 正在转发
-	ActivePID int    // 转发的 Worker 的复制连接在 PostgreSQL 中的进程号
-	WALStatus string // pg_replication_slots.wal_status：reserved、extended 正常；unreserved 表示积压即将超过 max_slot_wal_keep_size；lost 表示槽已失效，其中的任务已经丢失。
-	Lag       int64  // Worker 还没确认的 WAL 字节数，即复制槽保留的积压。它包含整个数据库的写入，不只是任务。
+	Pending       int64     // 已到时间、等待 Worker 转发到 JetStream 的任务数
+	Deferred      int64     // 还没到执行时间的延迟任务数
+	OldestPending time.Time // 最早一条待转发任务的可用时间；Pending 为 0 时为零值
 }
 
-// ReadStatus 读取 db 所在数据库的队列状态。
+// ReadStatus 读取 db 所在数据库的队列 outbox 状态。
 func ReadStatus(ctx context.Context, db bun.IDB) (Status, error) {
-	slot, err := slotOf(ctx, db)
-	if err != nil {
-		return Status{}, err
-	}
-	s := Status{Slot: slot}
+	now := time.Now().UTC()
 	var row struct {
-		Active    bool           `bun:"active"`
-		ActivePID sql.NullInt64  `bun:"active_pid"`
-		WALStatus sql.NullString `bun:"wal_status"`
-		Lag       sql.NullInt64  `bun:"lag"`
+		Pending       int64        `bun:"pending"`
+		Deferred      int64        `bun:"deferred"`
+		OldestPending sql.NullTime `bun:"oldest_pending"`
 	}
-	err = db.NewRaw(`SELECT active, active_pid, wal_status,
-		pg_wal_lsn_diff(pg_current_wal_lsn(), confirmed_flush_lsn)::bigint AS lag
-		FROM pg_replication_slots WHERE slot_name = ?`, slot).Scan(ctx, &row)
-	switch {
-	case errors.Is(err, sql.ErrNoRows):
-	case err != nil:
-		return Status{}, errors.Wrap(err, "queue: read replication slot")
-	default:
-		s.Exists, s.Active, s.ActivePID = true, row.Active, int(row.ActivePID.Int64)
-		s.WALStatus, s.Lag = row.WALStatus.String, row.Lag.Int64
+	err := db.NewRaw(`
+SELECT
+    count(*) FILTER (WHERE available_at <= ?) AS pending,
+    count(*) FILTER (WHERE available_at > ?)  AS deferred,
+    min(available_at) FILTER (WHERE available_at <= ?) AS oldest_pending
+FROM queue_outbox`, now, now, now).Scan(ctx, &row)
+	if err != nil {
+		return Status{}, errors.Wrap(err, "queue: read outbox status")
+	}
+	s := Status{Pending: row.Pending, Deferred: row.Deferred}
+	if row.OldestPending.Valid {
+		s.OldestPending = row.OldestPending.Time.UTC()
 	}
 	return s, nil
 }
 
-// ErrSlotHealthy 表示复制槽存在并且可用，RecreateSlot 没有重建它：重建会丢弃其中还没转发的任务。
-var ErrSlotHealthy = errors.New("queue: replication slot is healthy; recreating it would drop pending jobs")
-
-// RecreateSlot 重建 db 所在数据库转发任务的复制槽：槽丢失（恢复备份、没有同步的主备切换）或失效（wal_status 为 lost）之后，
-// Worker 拒绝启动，用它恢复。槽存在且可用时返回 ErrSlotHealthy，force 为 true 时仍然重建，丢弃其中还没转发的任务。
-// 有 Worker 正在使用槽时失败。
-//
-// 从丢失到重建期间发布的任务随之丢失，需要从业务数据中找出没有完成的工作重新发布。
-func RecreateSlot(ctx context.Context, db bun.IDB, force bool) error {
-	s, err := ReadStatus(ctx, db)
+// checkTables 确认队列所需的 queue_outbox 和 queue_failed_jobs 表已通过迁移创建。
+func checkTables(ctx context.Context, db bun.IDB) error {
+	var outbox, failed bool
+	err := db.NewRaw("SELECT to_regclass('queue_outbox') IS NOT NULL, to_regclass('queue_failed_jobs') IS NOT NULL").
+		Scan(ctx, &outbox, &failed)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "queue: check tables")
 	}
-	if s.Exists && s.WALStatus != "lost" && !force {
-		return ErrSlotHealthy
+	if !outbox || !failed {
+		return errors.New("queue: queue tables do not exist: run the queue migrations")
 	}
-	if s.Exists {
-		if _, err := db.ExecContext(ctx, "SELECT pg_drop_replication_slot(?)", s.Slot); err != nil {
-			return errors.Wrap(err, "queue: drop replication slot")
-		}
-	}
-	_, err = db.ExecContext(ctx, "SELECT pg_create_logical_replication_slot(?, 'pgoutput', false, false, true)", s.Slot)
-	return errors.Wrap(err, "queue: create replication slot")
+	return nil
 }

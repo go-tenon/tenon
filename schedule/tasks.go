@@ -50,31 +50,48 @@ func (s *Scheduler) Tasks() []Task {
 	return out
 }
 
-// Running 报告各任务此刻是否正在执行，在任何一个实例上都算。它查询锁存储中任务执行期间持有的锁，
-// 所以可以在没有运行调度器的进程中调用，结果的范围取决于锁存储：多实例部署需要共用同一个锁存储。
-// 使用 EveryInstance 或 AllowOverlap 的任务不在锁存储中登记执行状态，不出现在结果中。
-func (s *Scheduler) Running(ctx context.Context) (map[string]bool, error) {
-	s.mu.Lock()
-	var names []string
-	for _, t := range s.tasks {
-		if !t.everyInstance && !t.allowOverlap {
-			names = append(names, t.name)
-		}
+// States 批量返回已注册集群任务的持久状态（最近触发水位与是否正在执行）。
+// 单次查询存储即可获取全部任务状态，避免 N+1 查询。使用 EveryInstance 的任务不在存储中登记，不出现在结果中。
+func (s *Scheduler) States(ctx context.Context) (map[string]TaskState, error) {
+	all, err := s.store.States(ctx)
+	if err != nil {
+		return nil, err
 	}
-	s.mu.Unlock()
-	running := make(map[string]bool, len(names))
-	for _, name := range names {
-		held, err := s.locker.Held(ctx, runningKey(name))
-		if err != nil {
-			return nil, err
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make(map[string]TaskState, len(s.tasks))
+	for _, t := range s.tasks {
+		if t.everyInstance {
+			continue
 		}
-		running[name] = held
+		st := all[t.name]
+		if t.allowOverlap {
+			st.Running = false
+		}
+		out[t.name] = st
+	}
+	return out, nil
+}
+
+// Running 报告各任务此刻是否正在执行，在任何一个实例上都算。它通过一次批量查询读取状态存储中的运行租约，
+// 所以可以在没有运行调度器的进程中调用，结果的范围取决于状态存储：多实例部署需要共用同一个存储。
+// 使用 EveryInstance 或 AllowOverlap 的任务不在存储中登记运行状态，不出现在结果中。
+func (s *Scheduler) Running(ctx context.Context) (map[string]bool, error) {
+	states, err := s.store.States(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	running := make(map[string]bool, len(s.tasks))
+	for _, t := range s.tasks {
+		if t.everyInstance || t.allowOverlap {
+			continue
+		}
+		running[t.name] = states[t.name].Running
 	}
 	return running, nil
 }
-
-// runningKey 是任务执行期间持有的锁。
-func runningKey(name string) string { return "schedule:" + name + ":running" }
 
 // next 返回 after 所在的秒之后第一个到期的时刻。
 func (w when) next(after time.Time, loc *time.Location) time.Time {

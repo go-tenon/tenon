@@ -1,16 +1,16 @@
 # 定时任务
 
-`schedule` 包在代码中声明定时任务，按 cron 表达式在调度器所在的进程中执行。任务是一个 `func(ctx context.Context) error`。部署多个实例时，同一个任务的同一次触发只在一个实例上执行，由[原子锁](../libraries/locks.md)保证。
+`schedule` 包在代码中声明定时任务，按 cron 表达式在调度器所在的进程中执行。任务是一个 `func(ctx context.Context) error`。部署多个实例时，同一个任务的同一次触发只在一个实例上执行，由状态存储（`schedule/pgschedule`）按单调递增的触发水位和运行租约协调。
 
-包：`schedule`、`schedule/schedulecmd`、`schedule/scheduleapi`。
+包：`schedule`、`schedule/pgschedule`、`schedule/scheduletest`、`schedule/schedulecmd`、`schedule/scheduleapi`。
 
 <a id="example-usage"></a>
 ## 示例
 
-`locker` 是入口创建的 `*lock.Locker`，`cfg.Schedule` 是配置中的 `schedule` 段：
+`db` 是入口打开的 `*bun.DB`，`cfg.Schedule` 是配置中的 `schedule` 段；使用前发布 `pgschedule.Migrations()`：
 
 ```go
-sched := schedule.New(locker, cfg.Schedule, nil)
+sched := schedule.New(pgschedule.New(db), cfg.Schedule, nil)
 sched.Add("reports:daily", "0 0 2 * * *", buildDailyReport, // 6 段，第一段是秒：每天 02:00:00
     schedule.Describe("生成前一天的报表"))
 sched.Add("articles:publish-scheduled", "@every 1m", publishScheduled.Handle)
@@ -21,7 +21,7 @@ err := sched.Run(ctx) // 一直运行到 ctx 被取消
 <a id="defining-tasks"></a>
 ## 用 `Scheduler.Add` 定义定时任务
 
-`schedule.New(locker, cfg, logger)` 创建调度器（`logger` 为 `nil` 时用 `slog.Default()`），`Add` 注册任务。任务通常是[业务动作](../concepts/actions.md#as-scheduled-tasks)的 `Handle` 方法，由业务模块的 `RegisterTasks` 登记。`db` 是 `*bun.DB`：
+`schedule.New(store, cfg, logger)` 创建调度器（`logger` 为 `nil` 时用 `slog.Default()`），`Add` 注册任务。任务通常是[业务动作](../concepts/actions.md#as-scheduled-tasks)的 `Handle` 方法，由业务模块的 `RegisterTasks` 登记。`db` 是 `*bun.DB`：
 
 ```go
 sched.Add("articles:publish-scheduled", "* * * * *", article.NewPublishScheduled(db).Handle,
@@ -29,7 +29,7 @@ sched.Add("articles:publish-scheduled", "* * * * *", article.NewPublishScheduled
     schedule.Describe("发布到了预定时间的文章")) // 说明显示在任务列表中
 ```
 
-- 名称在调度器中唯一，也是锁名的一部分，写成 `模块:动作`。
+- 名称在调度器中唯一，也是 `schedule_tasks` 表的主键，写成 `模块:动作`。
 - 名称为空或重复、表达式不合法、在 `Run` 之后调用时，`Add` panic，应用启动时就会发现。
 - 其他选项：`schedule.In(loc)` 换时区（见[时区](#timezones)），`schedule.Timeout(d)`、`schedule.AllowOverlap()` 见[防止重叠](#preventing-overlaps)，`schedule.EveryInstance()` 见[多个实例](#multiple-instances)。
 
@@ -58,12 +58,12 @@ sched.Add("reports:daily", "0 3 * * *", reports.Generate, schedule.In(loc))
 <a id="running-the-scheduler"></a>
 ## 运行调度器
 
-调度器是常驻进程的一个[运行部分](../concepts/dependencies.md#running-parts)。在入口的 `bootstrap` 包中把创建调度器和注册任务写在 `tasks` 方法中：调度器、[`schedules` 命令](#schedules-command)和[后台页面](#admin-pages)都用它，任务只定义一次。`a.locker` 是用 [PostgreSQL 存储](../libraries/locks.md#postgres-store)创建的原子锁：
+调度器是常驻进程的一个[运行部分](../concepts/dependencies.md#running-parts)。把 `pgschedule.Migrations()` 加入[发布命令](../database/migrations.md#publishing-framework-migrations)，在入口的 `bootstrap` 包中把创建调度器和注册任务写在 `tasks` 方法中：调度器、[`schedules` 命令](#schedules-command)和[后台页面](#admin-pages)都用它，任务只定义一次：
 
 ```go
 // tasks 创建调度器并注册全部定时任务。
 func (a *App) tasks() *schedule.Scheduler {
-    sched := schedule.New(a.locker, a.cfg.Schedule, nil)
+    sched := schedule.New(pgschedule.New(a.db), a.cfg.Schedule, nil)
     article.RegisterTasks(sched, a.db) // 业务模块的任务
     // 框架数据的清理等不属于某个模块的任务直接写在这里，见“清理框架数据”
     return sched
@@ -83,11 +83,10 @@ func (a *App) Scheduler(*command.Daemon) (func(context.Context) error, error) {
 <a id="multiple-instances"></a>
 ## 多个实例
 
-每个实例的调度器在同一时刻触发同一个任务，执行前取得锁名包含任务名和触发时刻的锁（例如 `schedule:queue:prune-failed:1794366000`），只有取得锁的实例执行这一次触发。
+每个任务在 `schedule_tasks` 表中永久占一行，保存单调递增的触发水位 `last_tick` 和运行租约。多个实例同时到达同一触发时刻时，只有原子把 `last_tick` 推进到该时刻的那个实例执行（或报告一次重叠跳过）：
 
-- 所有进程共用同一个[锁存储](../libraries/locks.md#postgres-store)，去重才覆盖全部实例。单机部署也一样：[不停机升级](../installation/operations.md#upgrade-overlap)时新旧两个调度器同时运行。
-- 锁一分钟后过期，所以各实例的时钟偏差要小于一分钟，否则同一次触发会执行多次。
-- 每次触发留下一行过期的锁，用 `pglock` 的 `Cleanup` 定时删除，见[清理框架数据](#framework-cleanups)。
+- 所有进程共用同一个状态存储（`pgschedule.New(db)`），去重覆盖全部实例，也覆盖[不停机升级](../installation/operations.md#upgrade-overlap)时新旧进程的重叠期。
+- 因为水位单调递增，时钟落后的实例不会重复执行已经执行过的旧触发；每个任务永久一行，不产生过期垃圾行，也不需要额外清理。
 
 每个实例各执行一次的任务（例如清理本机的临时目录）用 `schedule.EveryInstance()`：
 
@@ -98,15 +97,15 @@ sched.Add("tmp:cleanup", "@hourly", cleanTmpDir, schedule.EveryInstance())
 <a id="preventing-overlaps"></a>
 ## 防止重叠与超时：`schedule.Timeout`
 
-任务上一次还没结束时，下一次触发被跳过并记一条 `info` 日志，不论上一次在哪个实例上执行。执行期间调度器持有锁 `schedule:<任务名>:running` 并定时续期，持有它的实例崩溃时锁在一分钟内过期。确实需要并行执行的任务用 `schedule.AllowOverlap()`。
+任务上一次还没结束时，下一次触发被跳过并记一条 `info` 日志，全集群只记一次跳过。执行期间调度器在 `schedule_tasks` 中持有运行租约并每 20 秒续期；若租约丢失（`Refresh` 返回 false），调度器立即以 `schedule.ErrLockLost` 取消任务的 `ctx`。持有租约的实例崩溃时租约在一分钟内过期。确实需要并行执行的任务用 `schedule.AllowOverlap()`。
 
-卡住的任务（例如一直等待外部请求）一直持有这把锁，之后的触发都被跳过。用 `schedule.Timeout` 限制每次执行的时长：
+卡住的任务（例如一直等待外部请求）一直持有租约，之后的触发都被跳过。用 `schedule.Timeout` 限制每次执行的时长：
 
 ```go
 sched.Add("reports:daily", "0 3 * * *", reports.Generate, schedule.Timeout(30*time.Minute))
 ```
 
-超时后任务的 `ctx` 以 `schedule.ErrTimeout` 取消，这次执行记为失败，锁随之释放。任务要把 `ctx` 传给数据库查询和 HTTP 请求才能及时结束；不理会 `ctx` 的任务一直运行到自己返回。
+超时后任务的 `ctx` 以 `schedule.ErrTimeout` 取消，这次执行记为失败，租约随之释放。任务要把 `ctx` 传给数据库查询和 HTTP 请求才能及时结束；不理会 `ctx` 的任务一直运行到自己返回。
 
 <a id="failures-and-shutdown"></a>
 ## 失败、错过的触发与停止
@@ -125,7 +124,7 @@ sched.Add("reports:daily", "0 3 * * *", func(ctx context.Context) error {
 ```
 
 <a id="listing-tasks"></a>
-## 查看任务：`Tasks` 与 `Running`
+## 查看任务：`Tasks`、`Running` 与 `States`
 
 `a.tasks` 是[注册全部任务的方法](#running-the-scheduler)，下面两个调用在任何进程中都可以用：
 
@@ -134,10 +133,10 @@ for _, t := range a.tasks().Tasks() { // 只读取定义
     t.Name, t.Description, t.Expr     // "reports:daily"、"生成前一天的报表"、"0 3 * * *"
     t.Next(time.Now())                // 下一次执行的时间；t.Prev 是上一次应当执行的时间
 }
-running, err := a.tasks().Running(ctx) // 任务名 → 此刻是否在任何一个实例上执行
+running, err := a.tasks().Running(ctx) // 单次查询返回各任务此刻是否在任何一个实例上执行
 ```
 
-`Running` 查询执行锁，要与调度器共用锁存储。使用 `EveryInstance` 或 `AllowOverlap` 的任务不登记执行状态，不在结果中。
+`Running` 和 `States` 一次批量查询状态存储，要与调度器共用存储。使用 `EveryInstance` 或 `AllowOverlap` 的任务不登记执行状态，不在 `Running` 结果中。
 
 <a id="schedules-command"></a>
 ### `schedules` 命令
@@ -157,7 +156,7 @@ schedulecmd.New(a.tasks),
 
 ```go
 func (a *App) tasks() *schedule.Scheduler {
-    sched := schedule.New(a.locker, a.cfg.Schedule, nil, schedule.WithObserver(scheduleapi.Observer(a.db)))
+    sched := schedule.New(pgschedule.New(a.db), a.cfg.Schedule, nil, schedule.WithObserver(scheduleapi.Observer(a.db)))
     // ……
     sched.Add("schedule:prune-runs", "@daily", schedule.Cleanup(scheduleapi.Cleanup(a.db, 7*24*time.Hour), 1000),
         schedule.Describe("删除 7 天前的执行记录"))
@@ -167,9 +166,9 @@ func (a *App) tasks() *schedule.Scheduler {
 
 把事件送到别处（指标、告警）时自己写一个 `schedule.Observer`，`WithObserver` 可以用多次：
 
-- 事件的 `Kind`：`TaskStarted`、`TaskSucceeded`、`TaskFailed`（`Err` 是原因）、`TaskSkipped`（`SkipReason` 是 `overlap` 或 `lock_failed`）。只有执行或跳过这次触发的实例报告。
+- 事件的 `Kind`：`TaskStarted`、`TaskSucceeded`、`TaskFailed`（`Err` 是原因）、`TaskSkipped`（`SkipReason` 是 `overlap` 或 `store_failed`）。只有执行或跳过这次触发的实例报告。
 - `Tick` 是这次触发应当执行的时刻，`Started` 是实际开始的时间。[立即执行](#running-manually)的事件 `Manual` 为 `true`，`Tick` 为零值。
-- 结束事件在释放执行锁之后发出；Observer 在执行任务的 goroutine 中同步调用，较重的工作缓冲后批量处理。
+- 结束事件在释放运行租约之后发出；Observer 在执行任务的 goroutine 中同步调用，较重的工作缓冲后批量处理。
 
 <a id="admin-pages"></a>
 ### 后台页面：`scheduleapi.Register`
@@ -183,8 +182,8 @@ scheduleapi.Register(api, rest.RequireToken(api, tokens.Validate, "jobs:manage")
 - `GET /schedules`（`schedule-list`）：全部任务，带下一次执行、是否正在执行、上一次的结果和耗时、是否错过了触发。
 - `POST /schedules/{name}/run`（`schedule-run`）：[立即执行](#running-manually)，返回 202。
 - `GET /schedules/runs`（`schedule-runs`）：执行记录，按 `task`、`status` 筛选，分页。
-- `a.tasks` 只用来读取任务的定义和执行状态，HTTP 进程不运行调度器。
-- 应当执行的时间过去一分钟后，这次触发既没有执行记录也没有正在执行时，任务标为错过（`missed`），例如调度器停止或部署期间。
+- `a.tasks` 只用来读取任务的定义和状态，HTTP 进程不运行调度器。
+- 应当执行的时间过去一分钟后，这次触发既没有被领取（依据 `schedule_tasks.last_tick` 和执行记录）也没有正在执行时，任务标为错过（`missed`），即使 `schedule_runs` 已按保留期清理也准确。
 
 <a id="running-manually"></a>
 ### 立即执行：`scheduleapi.HandleRunNow`
@@ -195,7 +194,7 @@ scheduleapi.Register(api, rest.RequireToken(api, tokens.Validate, "jobs:manage")
 scheduleapi.HandleRunNow(w, a.tasks)
 ```
 
-- 处理函数调用 `Scheduler.RunNow`：不按表达式，也不参与同一次触发的去重；事件照常交给 Observer，执行记录中标为手动。
+- 处理函数调用 `Scheduler.RunNow`：不按表达式，也不推进触发水位；事件照常交给 Observer，执行记录中标为手动。
 - 没有 `AllowOverlap` 的任务照样防止重叠：正在任何一个实例上执行时这次不执行，记一行跳过。
 - 失败不重试，和按表达式触发一样等下一次。
 
@@ -232,10 +231,10 @@ sched.Add("apitoken:cleanup", "@hourly", schedule.Cleanup(a.tokens.Cleanup, 1000
 <a id="testing"></a>
 ## 测试：`RunDue`
 
-`RunDue(ctx, at)` 执行在时刻 `at` 到期的任务，等它们结束后返回合并的错误，规则与 `Run` 相同。[`locktest.NewStore()`](../libraries/locks.md#testing) 是内存锁存储，`ctx` 是 `t.Context()`：
+`RunDue(ctx, at)` 执行在时刻 `at` 到期的任务，等它们结束后返回合并的错误，规则与 `Run` 相同。`scheduletest.NewStore()` 是内存状态存储，`ctx` 是 `t.Context()`：
 
 ```go
-sched := schedule.New(lock.New(locktest.NewStore()), schedule.DefaultConfig(), nil)
+sched := schedule.New(scheduletest.NewStore(), schedule.DefaultConfig(), nil)
 var ran bool
 sched.Add("reports:daily", "0 3 * * *", func(context.Context) error {
     ran = true

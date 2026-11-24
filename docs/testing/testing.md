@@ -124,8 +124,6 @@ name: blog-test
 services:
   postgres:
     image: postgres:18
-    # 用队列时需要：任务经由逻辑复制转发，每个测试数据库一个复制槽
-    command: [postgres, -c, wal_level=logical, -c, max_replication_slots=256, -c, max_wal_senders=64]
     environment:
       POSTGRES_PASSWORD: postgres
     ports:
@@ -149,13 +147,12 @@ go test -race -count=1 ./...
 <a id="database-tests-in-ci"></a>
 ### 在 CI 中运行数据库测试
 
-`tenon init` 生成的 [CI](../installation/installing.md#ci) 中，`check` 任务运行 `go test ./...`。用到数据库后，在 `check` 的 `env` 中设置 `POSTGRES_TEST_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable`，在测试之前加一步启动 PostgreSQL。GitHub Actions 的服务容器不能传启动参数，而队列需要逻辑复制，所以用 `docker run`：
+`tenon init` 生成的 [CI](../installation/installing.md#ci) 中，`check` 任务运行 `go test ./...`。用到数据库后，在 `check` 的 `env` 中设置 `POSTGRES_TEST_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable`，在测试之前启动 PostgreSQL：
 
 ```yaml
       - name: Start PostgreSQL
         run: |
-          docker run -d --name postgres -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres:18 \
-            -c wal_level=logical -c max_replication_slots=256 -c max_wal_senders=64
+          docker run -d --name postgres -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres:18
           for i in $(seq 1 60); do docker exec postgres pg_isready -U postgres -h 127.0.0.1 && exit 0; sleep 1; done
           docker logs postgres
           exit 1

@@ -1,8 +1,8 @@
 // 队列面板：queue/queueapi 的运维页面，分成三个页内标签（地址中的 ?tab=）：
 //   - 任务类型：每个 topic 的状态和任务数，可以暂停、恢复。
 //   - 失败任务：按任务类型筛选、分页，点错误查看完整的原因（对话框），单条或勾选多条重试、删除，也可以一次处理当前筛选的全部。
-//   - 系统状态：复制槽和 JetStream 的底层状态，给开发人员排查问题用。
-// 复制槽、JetStream 出问题时，标签上面显示醒目的提示。数据来自应用生成的客户端分组 api.queue。
+//   - 系统状态：数据库待转发队列（outbox）和 JetStream 的底层状态，给开发人员排查问题用。
+// 待转发队列滞留或 JetStream 出问题时，标签上面显示醒目的提示。数据来自应用生成的客户端分组 api.queue。
 // 和其他列表一样按需读取：打开页面、切换标签和筛选、做完操作、切回浏览器窗口时读取，没有定时刷新。
 import {
   ActionIcon,
@@ -40,7 +40,7 @@ import { inTimeZone, useFormatDateTime, useTimeZone } from "../theme/format"
 
 /** 概览：queueapi.QueueStatus。 */
 export interface QueueStatusData {
-  slot: { name: string; exists: boolean; active: boolean; active_pid: number; wal_status: string; lag: number }
+  outbox: { pending: number; deferred: number; oldest_pending?: string }
   jetstream?: {
     error?: string
     stream: string
@@ -49,7 +49,6 @@ export interface QueueStatusData {
     bytes: number
     replicas: number
     leader?: string
-    deferred: number
   }
   topics: QueueTopicData[]
   failed: number
@@ -208,34 +207,26 @@ export function QueuePanel({ api, title }: QueuePanelProps): ReactNode {
 
 // ———————————————————————————— 概览 ————————————————————————————
 
-/** 复制槽、JetStream 出问题时的提示：平时不显示。 */
+/** 待转发任务滞留超过该时长时，提示可能没有 Worker 在运行或 NATS 不可用。 */
+const outboxStaleMs = 30_000
+
+/** 报告 outbox 中最早一条待转发任务是否已经滞留。 */
+function isOutboxStale(outbox: QueueStatusData["outbox"]): boolean {
+  if (outbox.pending <= 0 || !outbox.oldest_pending) return false
+  const ts = Date.parse(outbox.oldest_pending)
+  return !Number.isNaN(ts) && Date.now() - ts > outboxStaleMs
+}
+
+/** Outbox 滞留或 JetStream 出问题时的提示：平时不显示。 */
 function Problems({ status }: { status: QueueStatusData }): ReactNode {
-  const { slot, jetstream: js } = status
+  const { outbox, jetstream: js } = status
   const tr = useText()
   const problems: { color: string; title: string; text: string }[] = []
-  if (!slot.exists)
-    problems.push({
-      color: "red",
-      title: tr("tenon.queue.problem_slot_missing"),
-      text: tr("tenon.queue.problem_slot_missing_text", { name: slot.name }),
-    })
-  else if (slot.wal_status === "lost")
-    problems.push({
-      color: "red",
-      title: tr("tenon.queue.problem_slot_lost"),
-      text: tr("tenon.queue.problem_slot_lost_text"),
-    })
-  else if (!slot.active)
+  if (isOutboxStale(outbox))
     problems.push({
       color: "deep-orange",
-      title: tr("tenon.queue.problem_no_worker"),
-      text: tr("tenon.queue.problem_no_worker_text"),
-    })
-  else if (slot.wal_status === "unreserved")
-    problems.push({
-      color: "deep-orange",
-      title: tr("tenon.queue.problem_lag"),
-      text: tr("tenon.queue.problem_lag_text", { size: formatBytes(slot.lag) }),
+      title: tr("tenon.queue.problem_outbox_stale"),
+      text: tr("tenon.queue.problem_outbox_stale_text", { count: outbox.pending }),
     })
   if (js?.error) problems.push({ color: "red", title: tr("tenon.queue.problem_stream_error"), text: js.error })
   else if (js && !js.exists)
@@ -256,23 +247,15 @@ function Problems({ status }: { status: QueueStatusData }): ReactNode {
   )
 }
 
-/** WAL 状态（pg_replication_slots.wal_status）的说明的消息 ID。 */
-const walText: Record<string, UiMessageId> = {
-  reserved: "tenon.queue.wal_reserved",
-  extended: "tenon.queue.wal_extended",
-  unreserved: "tenon.queue.wal_unreserved",
-  lost: "tenon.queue.wal_lost",
-}
-
-/** 系统状态：复制槽和 JetStream 的底层状态，给开发人员排查问题用。 */
+/** 系统状态：数据库待转发队列（outbox）和 JetStream 的底层状态，给开发人员排查问题用。 */
 function SystemStatus({ status }: { status: QueueStatusData }): ReactNode {
-  const { slot, jetstream: js } = status
+  const { outbox, jetstream: js } = status
+  const formatDateTime = useFormatDateTime()
   const tr = useText()
-  const slotState = !slot.exists
-    ? { label: tr("tenon.queue.slot_missing"), color: "red" }
-    : slot.active
-      ? { label: tr("tenon.queue.slot_active"), color: "green" }
-      : { label: tr("tenon.queue.slot_no_worker"), color: "deep-orange" }
+  const stale = isOutboxStale(outbox)
+  const outboxState = stale
+    ? { label: tr("tenon.queue.outbox_stale"), color: "deep-orange" }
+    : { label: tr("tenon.queue.ok"), color: "green" }
   let stream: ReactNode
   if (!js)
     stream = (
@@ -309,7 +292,6 @@ function SystemStatus({ status }: { status: QueueStatusData }): ReactNode {
             label: tr("tenon.queue.messages"),
             value: tr("tenon.queue.messages_value", { count: js.messages, size: formatBytes(js.bytes) }),
           },
-          { label: tr("tenon.queue.deferred"), value: js.deferred },
           { label: tr("tenon.queue.replicas"), value: js.replicas },
           { label: "Leader", value: js.leader, mono: true },
         ]}
@@ -318,29 +300,16 @@ function SystemStatus({ status }: { status: QueueStatusData }): ReactNode {
   return (
     <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md" style={{ alignItems: "start" }}>
       <DescriptionList
-        title={tr("tenon.queue.slot")}
-        description={tr("tenon.queue.slot_description")}
-        extra={<StatusDot color={slotState.color}>{slotState.label}</StatusDot>}
+        title={tr("tenon.queue.outbox")}
+        description={tr("tenon.queue.outbox_description")}
+        extra={<StatusDot color={outboxState.color}>{outboxState.label}</StatusDot>}
         items={[
-          { label: tr("tenon.queue.name"), value: slot.name, mono: true },
+          { label: tr("tenon.queue.outbox_pending"), value: outbox.pending },
+          { label: tr("tenon.queue.deferred"), value: outbox.deferred },
           {
-            label: tr("tenon.queue.wal_status"),
-            value: slot.wal_status && (
-              <>
-                <Text span inherit ff="monospace">
-                  {slot.wal_status}
-                </Text>
-                {walText[slot.wal_status] && (
-                  <Text span inherit c="dimmed">
-                    {" "}
-                    · {tr(walText[slot.wal_status])}
-                  </Text>
-                )}
-              </>
-            ),
+            label: tr("tenon.queue.oldest_pending"),
+            value: outbox.oldest_pending ? formatDateTime(outbox.oldest_pending) : undefined,
           },
-          { label: tr("tenon.queue.lag"), value: formatBytes(slot.lag) },
-          { label: tr("tenon.queue.worker_pid"), value: slot.active_pid || undefined },
         ]}
       />
       {stream}

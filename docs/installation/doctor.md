@@ -7,10 +7,10 @@
 ```text
 $ ./bin/blog doctor
 queue
-  ok    postgres_version
-  FAIL  wal_level: wal_level is replica; the queue needs logical
-        fix: set wal_level = logical and restart PostgreSQL:
-             ...
+  ok    tables
+  ok    nats
+  FAIL  jetstream: JetStream is not enabled on the NATS server; the queue keeps its jobs there
+        fix: start nats-server with -js and a storage directory, for example: nats-server -js -sd /data
         see: docs/background/queue.md#preparing
 ```
 
@@ -51,7 +51,7 @@ func Commands() []*cobra.Command {
 | `ok` | 通过 |
 | `warn` | 程序可以运行，但有隐患，例如可能写满磁盘的设置 |
 | `FAIL` | 程序在这个环境中不能正常工作，或者检查本身没能完成（例如连接中断） |
-| `skip` | 不适用（例如迁移还没执行时不检查复制槽），或者同组前面的检查没能完成 |
+| `skip` | 不适用（例如迁移还没执行时不检查队列数据表），或者同组前面的检查没能完成 |
 
 - `fix:` 是修改方法，`see:` 是相关的文档。
 - 同一组按顺序执行，一项没能完成时同组后面的都跳过；各组并行，每项最多 10 秒。
@@ -62,7 +62,7 @@ func Commands() []*cobra.Command {
 <a id="before-migrating"></a>
 ## 迁移之前检查：`migratecmd.Check`
 
-`wal_level` 不对时，队列的迁移报 `logical decoding requires "wal_level" >= "logical"`。`migratecmd.Check` 让 `migrate up` 在执行迁移之前运行自检，给出修改方法：
+`migratecmd.Check` 让 `migrate up` 在执行迁移之前运行自检，给出修改方法：
 
 ```go
 migratecmd.New(migrations.FS, dbConfig, migratecmd.Check(func(cfg bootstrap.Config, db *bun.DB) []doctor.Group {
@@ -72,8 +72,7 @@ migratecmd.New(migrations.FS, dbConfig, migratecmd.Check(func(cfg bootstrap.Conf
 
 - `dbConfig` 是 `migratecmd.New` 原有的参数；函数收到加载好的配置和迁移用的连接。
 - 有检查失败时 `migrate up` 不执行任何迁移，以退出码 4 结束，错误 `doctor.failed` 列出每一项问题和修改方法。`migrate status`、`migrate down` 不检查。
-- 只放数据库一侧的检查：`queue.Doctor` 的 NATS 连接传 `nil`；不放 `migrate.Doctor`，迁移之前它一定失败。迁移之前 `slot` 自动跳过。
-- 两处的 `cfg.Queue`（特别是 `replication_dsn`）要与 `doctor` 命令的相同，否则结果不一致。
+- 只放数据库一侧的检查：`queue.Doctor` 的 NATS 连接传 `nil`；不放 `migrate.Doctor`，迁移之前它一定失败。迁移之前 `tables` 自动跳过。
 
 <a id="before-starting"></a>
 ## 启动之前检查：`doctor.Require`
@@ -200,19 +199,12 @@ rest.Register(api, status, func(ctx context.Context, _ *struct{}) (*DoctorOutput
 <a id="queue-checks"></a>
 ### 队列的检查：`queue.Doctor`
 
-要求的设置和原因见[队列：数据库设置](operations.md#queue)。
+要求的设置见[队列的准备](../background/queue.md#preparing)。
 
 | 检查 | 内容 | 不满足时 |
 | --- | --- | --- |
-| `postgres_version` | PostgreSQL 17 以上 | 失败 |
-| `wal_level` | `logical` | 失败 |
-| `replication_limits` | `max_replication_slots`、`max_wal_senders` 大于 0 | 失败 |
-| `replication_connection` | 用 worker 的方式建立一条复制连接：用户有 `REPLICATION` 属性，`replication_dsn` 可用 | 失败 |
-| `wal_keep_size` | 设置了 `max_slot_wal_keep_size` | 提示 |
-| `slot` | 复制槽存在、没有失效；快到上限时提示。队列的迁移还没执行时跳过 | 失败 |
-| `nats`、`nats_version`、`jetstream` | `nc` 不为 `nil` 时：连接可用，NATS 2.15 以上，开启了 JetStream | 失败 |
-
-每次启动都提示 `max_slot_wal_keep_size is unlimited` 时，给 PostgreSQL 设置上限，例如 `-c max_slot_wal_keep_size=10GB`。
+| `tables` | `queue_outbox` 和 `queue_failed_jobs` 表存在；迁移还没执行时跳过 | 失败 |
+| `nats`、`nats_version`、`jetstream` | `nc` 不为 `nil` 时：连接可用，NATS 2.10 以上，开启了 JetStream | 失败 |
 
 <a id="s3-checks"></a>
 ### S3 的检查：`s3.Doctor`

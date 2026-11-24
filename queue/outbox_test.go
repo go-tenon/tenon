@@ -61,11 +61,18 @@ func TestPendingCommittedOnly(t *testing.T) {
 	if other := queuetest.Pending(t, db, queue.Topic[payload]("other")); len(other) != 0 {
 		t.Fatalf("other topic %v", other)
 	}
+	st, err := queue.ReadStatus(ctx, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Pending != 2 || st.Deferred != 1 || st.OldestPending.IsZero() {
+		t.Fatalf("outbox status %+v", st)
+	}
 }
 
-// 多个 Worker 中只有一个在转发；它停止后，待命的 Worker 接手，从确认的位置继续，任务不丢失。
-func TestRelayFailover(t *testing.T) {
-	queue.SetRelayRetry(t, 200*time.Millisecond)
+// 多个 Worker 通过 FOR UPDATE SKIP LOCKED 并行转发，任一 Worker 停止后其余照常转发，任务不重复也不丢失。
+func TestParallelRelayAndFailover(t *testing.T) {
+	t.Parallel()
 	db := openDB(t)
 	cfg := queuetest.Config(t)
 	var mu sync.Mutex
@@ -84,7 +91,6 @@ func TestRelayFailover(t *testing.T) {
 		return len(seen)
 	}
 	first := start(t, db, cfg, handle)
-	eventually(t, 5*time.Second, func() bool { return slotActive(t, db) })
 	start(t, db, cfg, handle)
 	publish(t, db, 1)
 	eventually(t, 5*time.Second, func() bool { return count() == 1 })
@@ -103,42 +109,53 @@ func TestRelayFailover(t *testing.T) {
 	}
 }
 
-// 没有任务时，复制槽的确认位置也随业务写入前进：否则任务少的库会一直保留 WAL，直到槽失效。
-func TestRelayAdvancesWithoutJobs(t *testing.T) {
+// 超过 NATS max_payload 的毒丸消息转入 queue_failed_jobs 并从 outbox 删除，不阻塞同批和后续正常任务。
+func TestPoisonJobIsolated(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
-	ctx := context.Background()
-	start(t, db, queuetest.Config(t), func(*queue.Worker) {})
-	eventually(t, 5*time.Second, func() bool { return slotActive(t, db) })
-
-	// 只写业务表，不发任务。
-	if _, err := db.ExecContext(ctx, "CREATE TABLE notes (id bigserial PRIMARY KEY, body text)"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.ExecContext(ctx, "INSERT INTO notes (body) SELECT repeat('x', 100) FROM generate_series(1, 1000)"); err != nil {
-		t.Fatal(err)
-	}
-	var written string
-	if err := db.NewRaw("SELECT pg_current_wal_lsn()::text").Scan(ctx, &written); err != nil {
-		t.Fatal(err)
-	}
-	eventually(t, 15*time.Second, func() bool {
-		var caughtUp bool
-		err := db.NewRaw("SELECT confirmed_flush_lsn >= ?::pg_lsn FROM pg_replication_slots WHERE database = current_database()", written).
-			Scan(ctx, &caughtUp)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return caughtUp
+	cfg := queuetest.Config(t)
+	big := queue.Topic[string]("big")
+	got := make(chan int, 2)
+	start(t, db, cfg, func(w *queue.Worker) {
+		jobs.Handle(w, func(_ context.Context, p payload) error {
+			got <- p.N
+			return nil
+		})
+		big.Handle(w, func(context.Context, string) error { return nil })
 	})
+
+	ctx := context.Background()
+	nc := queuetest.Conn(t)
+	oversize := strings.Repeat("x", int(nc.MaxPayload())+1024)
+	if err := big.Publish(ctx, db, oversize); err != nil {
+		t.Fatal(err)
+	}
+	publish(t, db, 42)
+
+	select {
+	case n := <-got:
+		if n != 42 {
+			t.Fatalf("handled %d", n)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("normal job blocked by poison job")
+	}
+	eventually(t, 5*time.Second, func() bool { return len(failedRows(t, db)) == 1 })
+	rows := failedRows(t, db)
+	if rows[0].Topic != "big" || rows[0].Attempts != 0 {
+		t.Fatalf("poison failed row %+v", rows[0])
+	}
+	if pending := queuetest.Pending(t, db, big); len(pending) != 0 {
+		t.Fatalf("poison job left in outbox: %d", len(pending))
+	}
 }
 
-// 复制槽不存在（没有执行迁移或被删除）时 Run 返回错误，问题在启动时就暴露出来。
-func TestRunWithoutSlot(t *testing.T) {
+// 队列迁移未执行时 Run 返回错误，问题在启动时就暴露出来。
+func TestRunWithoutTables(t *testing.T) {
 	t.Parallel()
 	db := openDB(t)
 	ctx := context.Background()
-	if _, err := db.ExecContext(ctx, "SELECT pg_drop_replication_slot(slot_name) FROM pg_replication_slots WHERE database = current_database()"); err != nil {
+	if _, err := db.ExecContext(ctx, "DROP TABLE queue_outbox"); err != nil {
 		t.Fatal(err)
 	}
 	w := queue.NewWorker(db, queuetest.Conn(t), queuetest.Config(t), slog.New(slog.DiscardHandler))
@@ -146,29 +163,4 @@ func TestRunWithoutSlot(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "run the queue migrations") {
 		t.Fatalf("err %v", err)
 	}
-}
-
-func TestSlotName(t *testing.T) {
-	t.Parallel()
-	db := openDB(t)
-	var database string
-	if err := db.NewRaw("SELECT current_database()").Scan(context.Background(), &database); err != nil {
-		t.Fatal(err)
-	}
-	var n int
-	err := db.NewRaw("SELECT count(*) FROM pg_replication_slots WHERE slot_name = ? AND plugin = 'pgoutput' AND failover",
-		queue.SlotName(database)).Scan(context.Background(), &n)
-	if err != nil || n != 1 {
-		t.Fatalf("slot %s: n=%d err=%v", queue.SlotName(database), n, err)
-	}
-}
-
-// slotActive 报告 db 的复制槽是否正被某个 Worker 使用。
-func slotActive(t *testing.T, db bun.IDB) bool {
-	t.Helper()
-	var active bool
-	if err := db.NewRaw("SELECT active FROM pg_replication_slots WHERE database = current_database()").Scan(context.Background(), &active); err != nil {
-		t.Fatal(err)
-	}
-	return active
 }

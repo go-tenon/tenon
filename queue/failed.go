@@ -3,7 +3,6 @@ package queue
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"time"
 
 	"github.com/cockroachdb/errors"
@@ -241,27 +240,24 @@ func recordFailed(ctx context.Context, tx bun.Tx, row failedJob) error {
 	return err
 }
 
-// republish 在 tx 中重新发布失败任务，任务 ID、payload 和元数据不变，执行次数从 0 开始。
+// republish 在 tx 中把失败任务重新写入 queue_outbox，任务 ID、payload 和元数据不变，执行次数从 0 重新计算。
 func republish(ctx context.Context, tx bun.IDB, rows []failedJob) error {
 	now := time.Now().UTC()
-	byTopic := map[string][][]byte{}
-	var topics []string
-	for _, r := range rows {
-		body, err := json.Marshal(envelope{ID: r.ID, Payload: r.Payload, Metadata: r.Metadata, AvailableAt: now})
-		if err != nil {
-			return err
+	outbox := make([]outboxJob, len(rows))
+	for i, r := range rows {
+		meta := r.Metadata
+		if meta == nil {
+			meta = map[string]string{}
 		}
-		if _, ok := byTopic[r.Topic]; !ok {
-			topics = append(topics, r.Topic)
-		}
-		byTopic[r.Topic] = append(byTopic[r.Topic], body)
-	}
-	for _, topic := range topics {
-		if err := emit(ctx, tx, topic, byTopic[topic]); err != nil {
-			return err
+		outbox[i] = outboxJob{
+			ID:          r.ID,
+			Topic:       r.Topic,
+			Payload:     r.Payload,
+			Metadata:    meta,
+			AvailableAt: now,
 		}
 	}
-	return nil
+	return insertOutbox(ctx, tx, outbox)
 }
 
 // TopicCount 是一个 topic 中失败任务的条数。

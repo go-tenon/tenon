@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"runtime/debug"
-	"strconv"
 	"sync"
 	"time"
 
@@ -14,14 +13,11 @@ import (
 	"github.com/cockroachdb/errors"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/go-tenon/tenon/lock"
 	"github.com/go-tenon/tenon/logging"
 )
 
 const (
-	// tickTTL 是“这一次触发由谁执行”的锁的有效期。各实例的时钟偏差小于它时每次触发只执行一次。
-	tickTTL = time.Minute
-	// runningTTL 是“任务正在执行”的锁的有效期，执行期间每 runningTTL/3 续期。
+	// runningTTL 是“任务正在执行”的租约有效期，执行期间每 runningTTL/3 续期。
 	runningTTL = time.Minute
 	// maxLag 是调度循环落后时补算的最长时间，超过后跳过错过的触发。
 	maxLag = time.Minute
@@ -29,7 +25,7 @@ const (
 
 // Scheduler 按表达式定时执行任务。用 Add 注册任务，再调用 Run。
 type Scheduler struct {
-	locker          *lock.Locker
+	store           Store
 	logger          *slog.Logger
 	shutdownTimeout time.Duration
 	observers       []Observer
@@ -54,7 +50,7 @@ type task struct {
 	timeout       time.Duration
 
 	mu      sync.Mutex
-	running bool // 本进程中是否正在执行
+	running bool // 本进程中是否正在执行（用于 EveryInstance 任务）
 }
 
 // TaskOption 调整 Add 注册的任务。
@@ -72,6 +68,9 @@ func In(loc *time.Location) TaskOption { return func(t *task) { t.loc = loc } }
 // ErrTimeout 是超过 Timeout 的执行的错误，也是任务 ctx 的取消原因。
 var ErrTimeout = errors.New("schedule: task timed out")
 
+// ErrLockLost 是任务执行期间运行租约丢失时的错误，也是任务 ctx 的取消原因。
+var ErrLockLost = errors.New("schedule: task lock lost")
+
 // ErrUnknownTask 是 RunNow 找不到任务时的错误。
 var ErrUnknownTask = errors.New("schedule: unknown task")
 
@@ -79,7 +78,7 @@ var ErrUnknownTask = errors.New("schedule: unknown task")
 var ErrRunning = errors.New("schedule: task is still running")
 
 // Timeout 限制每次执行的时长：超过 d 时以 ErrTimeout 取消任务的 ctx，这次执行记为失败，错误满足 errors.Is(err, ErrTimeout)。
-// 卡住的任务因此按时释放执行锁，之后的触发照常进行。任务需要遵守 ctx 才能及时结束。d 不大于 0 时 panic。
+// 卡住的任务因此按时释放执行租约，之后的触发照常进行。任务需要遵守 ctx 才能及时结束。d 不大于 0 时 panic。
 func Timeout(d time.Duration) TaskOption {
 	if d <= 0 {
 		panic(fmt.Sprintf("schedule: timeout must be positive, got %v", d))
@@ -90,18 +89,18 @@ func Timeout(d time.Duration) TaskOption {
 // SchedulerOption 调整 New 创建的调度器。
 type SchedulerOption func(*Scheduler)
 
-// New 创建调度器。locker 用于多实例去重和防止重叠，所有实例共用同一个锁存储，例如 lock/pglock；
-// 测试中可以使用 locktest.NewStore。logger 为 nil 时使用 slog.Default()。
-// locker 为 nil 或 cfg 不合法时 panic。
-func New(locker *lock.Locker, cfg Config, logger *slog.Logger, opts ...SchedulerOption) *Scheduler {
-	if locker == nil {
-		panic("schedule: nil locker")
+// New 创建调度器。store 保存各任务的触发水位和运行租约，所有实例共用同一个状态存储，例如 schedule/pgschedule；
+// 测试中可以使用 scheduletest.NewStore。logger 为 nil 时使用 slog.Default()。
+// store 为 nil 或 cfg 不合法时 panic。
+func New(store Store, cfg Config, logger *slog.Logger, opts ...SchedulerOption) *Scheduler {
+	if store == nil {
+		panic("schedule: nil store")
 	}
 	if err := cfg.Validate(); err != nil {
 		panic(errors.Wrap(err, "schedule"))
 	}
 	s := &Scheduler{
-		locker:          locker,
+		store:           store,
 		logger:          logging.Or(logger).With(logging.AttrComponent, "schedule"),
 		shutdownTimeout: cfg.ShutdownTimeout,
 	}
@@ -111,7 +110,7 @@ func New(locker *lock.Locker, cfg Config, logger *slog.Logger, opts ...Scheduler
 	return s
 }
 
-// Add 注册任务。name 在调度器中唯一，也用作锁名的一部分；expr 支持
+// Add 注册任务。name 在调度器中唯一，也用作状态表的主键；expr 支持
 // 5 段 cron 表达式（分钟精度，在第 0 秒触发）、6 段（第一段是秒）、@hourly、@daily 这类预定义写法，
 // 以及按 Unix 时间对齐的 "@every 15s"（至少 1 秒，必须是整秒）。
 // 名称为空或重复，表达式非法，或者在 Run 之后调用时 panic。
@@ -256,7 +255,7 @@ func (s *Scheduler) RunDue(ctx context.Context, t time.Time) error {
 }
 
 // RunNow 立即在本实例上执行一次任务，例如后台的“立即执行”（通常经由队列交给 worker，见 schedule/scheduleapi）。
-// 它不按表达式，也不参与同一次触发的去重；没有 AllowOverlap 的任务照样防止重叠：正在任何一个实例上执行时
+// 它不按表达式，也不推进触发水位；没有 AllowOverlap 的任务照样防止重叠：正在任何一个实例上执行时
 // 不执行，返回 ErrRunning。执行的事件照常交给 Observer，Event.Manual 为 true、Tick 为零值。
 // 返回任务的错误；找不到任务时返回 ErrUnknownTask。
 func (s *Scheduler) RunNow(ctx context.Context, name string) error {
@@ -274,12 +273,12 @@ func (s *Scheduler) RunNow(ctx context.Context, name string) error {
 	return s.execute(taskContext(ctx, t), t, time.Time{}, true)
 }
 
-// execute 取得这一次触发和防止重叠所需的锁，然后执行任务。ctx 是 taskContext 返回的这一次执行的 context。
-// 其他实例已经执行这一次触发、或者任务仍在执行时直接返回 nil。
+// execute 取得这一次触发和防止重叠所需的租约，然后执行任务。ctx 是 taskContext 返回的这一次执行的 context。
+// 其他实例已经领取这一次触发、或者任务仍在执行时直接返回 nil。
 func (s *Scheduler) execute(ctx context.Context, t *task, tick time.Time, manual bool) error {
 	finished, err := s.runLocked(ctx, t, tick, manual)
 	if finished != nil {
-		// 结束事件在释放执行锁之后发出：Observer 收到它时，Running 已经返回 false。
+		// 结束事件在释放执行租约之后发出：Observer 收到它时，Running 已经返回 false。
 		s.observe(finished.ctx, finished.Event)
 	}
 	return err
@@ -291,8 +290,8 @@ type finishedRun struct {
 	ctx context.Context
 }
 
-// runLocked 按去重和防重叠的规则取得锁并执行任务，返回时锁已释放；没有执行时 finished 为 nil。
-// manual 是 RunNow 的执行：没有这一次触发，不做触发的去重，防止重叠照旧；因为重叠没有执行时返回 ErrRunning。
+// runLocked 按单调水位和防重叠的规则协调并执行任务，返回时租约已释放；没有执行时 finished 为 nil。
+// manual 是 RunNow 的执行：不推进触发水位，防止重叠照旧；因为重叠没有执行时返回 ErrRunning。
 func (s *Scheduler) runLocked(ctx context.Context, t *task, tick time.Time, manual bool) (finished *finishedRun, _ error) {
 	skipped := func(reason SkipReason, err error) {
 		s.observe(ctx, Event{Kind: TaskSkipped, Task: t.name, Tick: tick, SkipReason: reason, Err: err, Manual: manual})
@@ -303,50 +302,81 @@ func (s *Scheduler) runLocked(ctx context.Context, t *task, tick time.Time, manu
 		}
 		return nil
 	}
-	if !t.allowOverlap {
-		if !t.begin() {
-			s.logger.InfoContext(ctx, "scheduled task skipped, still running")
-			skipped(SkipOverlap, nil)
-			return nil, overlap()
-		}
-		defer t.end()
-	}
-	if !t.everyInstance && !manual {
-		key := "schedule:" + t.name + ":" + strconv.FormatInt(tick.Unix(), 10)
-		if _, err := s.locker.Acquire(ctx, key, tickTTL); err != nil {
-			if errors.Is(err, lock.ErrNotAcquired) {
-				return nil, nil // 其他实例执行这一次触发
+
+	var runCtx context.Context
+	var cancelRun context.CancelCauseFunc
+	if t.everyInstance {
+		if !t.allowOverlap {
+			if !t.begin() {
+				s.logger.InfoContext(ctx, "scheduled task skipped, still running")
+				skipped(SkipOverlap, nil)
+				return nil, overlap()
 			}
-			skipped(SkipLockFailed, err)
-			return nil, err
+			defer t.end()
+		}
+		runCtx = ctx
+	} else {
+		owner := rand.Text()
+		heldLease := false
+		if !manual {
+			res, err := s.store.Claim(ctx, t.name, tick, owner, runningTTL, t.allowOverlap)
+			if err != nil {
+				skipped(SkipStoreFailed, err)
+				return nil, err
+			}
+			switch res {
+			case AlreadyClaimed:
+				return nil, nil
+			case Overlap:
+				s.logger.InfoContext(ctx, "scheduled task skipped, still running")
+				skipped(SkipOverlap, nil)
+				return nil, nil
+			case Claimed:
+				heldLease = !t.allowOverlap
+			}
+		} else if !t.allowOverlap {
+			ok, err := s.store.AcquireRunning(ctx, t.name, owner, runningTTL)
+			if err != nil {
+				skipped(SkipStoreFailed, err)
+				return nil, err
+			}
+			if !ok {
+				s.logger.InfoContext(ctx, "scheduled task skipped, still running")
+				skipped(SkipOverlap, nil)
+				return nil, overlap()
+			}
+			heldLease = true
+		}
+
+		if heldLease {
+			runCtx, cancelRun = context.WithCancelCause(ctx)
+			defer cancelRun(nil)
+			stop := s.keep(runCtx, cancelRun, t.name, owner)
+			defer stop()
+		} else {
+			runCtx = ctx
 		}
 	}
-	if !t.everyInstance && !t.allowOverlap {
-		running, err := s.locker.Acquire(ctx, runningKey(t.name), runningTTL)
-		if errors.Is(err, lock.ErrNotAcquired) {
-			s.logger.InfoContext(ctx, "scheduled task skipped, still running on another instance")
-			skipped(SkipOverlap, nil)
-			return nil, overlap()
-		}
-		if err != nil {
-			skipped(SkipLockFailed, err)
-			return nil, err
-		}
-		stop := s.keep(ctx, running)
-		defer stop()
-	}
-	ctx, end := s.startSpan(ctx, t.name, tick)
+
+	runCtx, end := s.startSpan(runCtx, t.name, tick)
 	start := time.Now()
-	s.observe(ctx, Event{Kind: TaskStarted, Task: t.name, Tick: tick, Started: start, Manual: manual})
-	err := t.call(ctx)
+	s.observe(runCtx, Event{Kind: TaskStarted, Task: t.name, Tick: tick, Started: start, Manual: manual})
+	err := t.call(runCtx)
+	if errors.Is(context.Cause(runCtx), ErrLockLost) && !errors.Is(err, ErrLockLost) {
+		if err == nil {
+			err = ErrLockLost
+		} else {
+			err = errors.Mark(err, ErrLockLost)
+		}
+	}
 	elapsed := time.Since(start)
 	end(err)
-	s.logger.DebugContext(ctx, "scheduled task finished", "duration", elapsed, "error", err)
+	s.logger.DebugContext(runCtx, "scheduled task finished", "duration", elapsed, "error", err)
 	e := Event{Kind: TaskSucceeded, Task: t.name, Tick: tick, Started: start, Duration: elapsed, Err: err, Manual: manual}
 	if err != nil {
 		e.Kind = TaskFailed
 	}
-	return &finishedRun{Event: e, ctx: ctx}, err
+	return &finishedRun{Event: e, ctx: runCtx}, err
 }
 
 // begin 标记任务开始执行；上一次还在执行时返回 false。
@@ -367,8 +397,8 @@ func (t *task) end() {
 	t.mu.Unlock()
 }
 
-// keep 在任务执行期间续期 running 锁，返回的函数停止续期并释放锁。
-func (s *Scheduler) keep(ctx context.Context, running *lock.Lock) func() {
+// keep 在任务执行期间续期运行租约，租约丢失时以 ErrLockLost 取消任务 ctx；返回的函数停止续期并释放租约。
+func (s *Scheduler) keep(ctx context.Context, cancel context.CancelCauseFunc, name, owner string) func() {
 	stopped := make(chan struct{})
 	done := make(chan struct{})
 	go func() {
@@ -380,8 +410,15 @@ func (s *Scheduler) keep(ctx context.Context, running *lock.Lock) func() {
 			case <-stopped:
 				return
 			case <-ticker.C:
-				if err := running.Refresh(ctx, runningTTL); err != nil {
-					s.logger.WarnContext(ctx, "refresh scheduled task lock failed", "error", err)
+				ok, err := s.store.Refresh(ctx, name, owner, runningTTL)
+				if err != nil {
+					s.logger.WarnContext(ctx, "refresh scheduled task lease failed", "error", err)
+					continue
+				}
+				if !ok {
+					s.logger.ErrorContext(ctx, "scheduled task lease lost, cancelling task")
+					cancel(ErrLockLost)
+					return
 				}
 			}
 		}
@@ -389,8 +426,8 @@ func (s *Scheduler) keep(ctx context.Context, running *lock.Lock) func() {
 	return func() {
 		close(stopped)
 		<-done
-		if err := running.Release(context.WithoutCancel(ctx)); err != nil {
-			s.logger.WarnContext(ctx, "release scheduled task lock failed", "error", err)
+		if err := s.store.Release(context.WithoutCancel(ctx), name, owner); err != nil {
+			s.logger.WarnContext(ctx, "release scheduled task lease failed", "error", err)
 		}
 	}
 }

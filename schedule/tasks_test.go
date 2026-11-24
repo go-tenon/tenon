@@ -10,9 +10,8 @@ import (
 
 	"github.com/cockroachdb/errors"
 
-	"github.com/go-tenon/tenon/lock"
-	"github.com/go-tenon/tenon/lock/locktest"
 	"github.com/go-tenon/tenon/schedule"
+	"github.com/go-tenon/tenon/schedule/scheduletest"
 )
 
 func TestTasks(t *testing.T) {
@@ -92,7 +91,7 @@ func TestNextPrevMatchDue(t *testing.T) {
 
 func TestRunning(t *testing.T) {
 	ctx := context.Background()
-	locker := lock.New(locktest.NewStore())
+	store := scheduletest.NewStore()
 	quiet := slog.New(slog.DiscardHandler)
 	release, started := make(chan struct{}), make(chan struct{})
 	register := func(s *schedule.Scheduler) {
@@ -103,10 +102,10 @@ func TestRunning(t *testing.T) {
 		})
 		s.Add("local", "@everysecond", func(context.Context) error { return nil }, schedule.EveryInstance())
 	}
-	viewer := schedule.New(locker, schedule.DefaultConfig(), quiet) // 例如 HTTP 进程中只用来查看的调度器
-	// 收到结束事件时，执行锁已经释放。
+	viewer := schedule.New(store, schedule.DefaultConfig(), quiet) // 例如 HTTP 进程中只用来查看的调度器
+	// 收到结束事件时，执行租约已经释放。
 	runningAtFinish := make(chan bool, 1)
-	runner := schedule.New(locker, schedule.DefaultConfig(), quiet, schedule.WithObserver(func(ctx context.Context, e schedule.Event) {
+	runner := schedule.New(store, schedule.DefaultConfig(), quiet, schedule.WithObserver(func(ctx context.Context, e schedule.Event) {
 		if e.Task == "slow" && e.Kind == schedule.TaskSucceeded {
 			running, _ := viewer.Running(ctx)
 			runningAtFinish <- running["slow"]
@@ -146,7 +145,7 @@ func TestObserver(t *testing.T) {
 		defer mu.Unlock()
 		events = append(events, e)
 	}
-	s := schedule.New(lock.New(locktest.NewStore()), schedule.DefaultConfig(), slog.New(slog.DiscardHandler),
+	s := schedule.New(scheduletest.NewStore(), schedule.DefaultConfig(), slog.New(slog.DiscardHandler),
 		schedule.WithObserver(record), schedule.WithObserver(func(context.Context, schedule.Event) { panic("ignored") }))
 	boom := errors.New("boom")
 	release, started := make(chan struct{}), make(chan struct{})

@@ -94,7 +94,7 @@ if err := lk.Refresh(ctx, time.Minute); err != nil {
 ```
 
 - 锁过期并被他人取得后，原持有者的 `Refresh`、`Release` 返回 `lock.ErrNotHeld`。`Do` 的函数超过 `ttl` 时返回值同样包含 `ErrNotHeld`，这时调大 `ttl` 或在函数中续期。
-- `locker.Held(ctx, name)` 只读取锁此刻是否被持有，用于后台页面展示状态，例如[定时任务是否正在执行](../background/scheduling.md#listing-tasks)。判断能否执行用 `Acquire`。
+- `locker.Held(ctx, name)` 只读取锁此刻是否被持有，用于后台页面展示状态。判断能否执行用 `Acquire`。
 
 <a id="postgres-store"></a>
 ## PostgreSQL 存储：`pglock`
@@ -102,7 +102,7 @@ if err := lk.Refresh(ctx, time.Minute); err != nil {
 `pglock` 把每把锁保存为 `locks` 表的一行。每个操作是一条语句，并发取得同一把锁时只有一方成功。
 
 - 过期按应用服务器的时钟计算，各实例的时钟偏差要远小于锁的有效期，否则两个实例可能同时持有。
-- 过期的行等同于不存在，下一次取得时直接接管。锁名不重复使用时（例如[定时任务](../background/scheduling.md#multiple-instances)的锁名带有触发时刻），过期的行留在表中，用 `Cleanup` 定时删除：
+- 过期的行等同于不存在，下一次取得时直接接管。锁名不重复使用时（例如按对象或日期动态生成的锁名），过期的行留在表中，用 `Cleanup` 定时删除：
 
 ```go
 locks := pglock.New(db)

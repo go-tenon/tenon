@@ -80,8 +80,8 @@ export const Route = createFileRoute("/_app/queue")({
 })
 ```
 
-- 页内标签是任务类型（可以暂停一小时、恢复）、失败任务（查看、重试、删除）和系统状态（复制槽和 JetStream）。服务端没有设置 `queueapi.Options.Admin` 时不显示暂停和恢复。
-- 任务类型优先展示显示名称和说明，悬停时提示内部 topic 名。数据在打开页面、切换标签、操作之后读取，不定时刷新。复制槽失效、没有 Worker、积压过多时显示提示。
+- 页内标签是任务类型（可以暂停一小时、恢复）、失败任务（查看、重试、删除）和系统状态（待转发队列 outbox 和 JetStream）。服务端没有设置 `queueapi.Options.Admin` 时不显示暂停和恢复。
+- 任务类型优先展示显示名称和说明，悬停时提示内部 topic 名。数据在打开页面、切换标签、操作之后读取，不定时刷新。待转发任务滞留或 JetStream 异常时显示提示。
 
 <a id="schedule-panel"></a>
 ## 定时任务面板：`SchedulePanel`

@@ -14,8 +14,8 @@ import (
 // ErrTopicNotFound 表示 JetStream 中没有这个 topic 的 consumer：没有 Worker 为它注册过处理函数。
 var ErrTopicNotFound = errors.New("queue: topic not found")
 
-// Admin 查看和调整 JetStream 中的队列：各 topic 等待处理和处理中的任务、定时消息，暂停和恢复 topic 的处理。
-// 队列的运维接口（queueapi）和 queue 命令（queuecmd）用它；数据库一侧的状态见 ReadStatus。
+// Admin 查看和调整 JetStream 中的队列：各 topic 等待处理和处理中的任务，暂停和恢复 topic 的处理。
+// 队列的运维接口（queueapi）和 queue 命令（queuecmd）用它；数据库一侧的 outbox 状态见 ReadStatus。
 //
 // 它使用应用的 NATS 连接，不关闭它。可以被多个 goroutine 同时使用。
 type Admin struct {
@@ -42,11 +42,10 @@ func NewAdmin(nc *nats.Conn, cfg Config) *Admin {
 type StreamStatus struct {
 	Stream   string        // stream 的名字，见 Config.Stream
 	Exists   bool          // 报告 stream 是否存在。Worker 第一次启动时创建它，之前为 false，其余字段为零值。
-	Messages uint64        // stream 中的消息数：等待处理、处理中的任务和定时消息，确认后删除
+	Messages uint64        // stream 中的消息数：等待处理、处理中和等待退避重试的任务，确认后删除
 	Bytes    uint64        // 这些消息占用的存储
 	Replicas int           // 副本数
 	Leader   string        // 集群中负责这个 stream 的服务器，单个服务器时为空
-	Deferred int           // 等待 JetStream 到时间投递的定时消息：延迟任务和重试。
 	Topics   []TopicStatus // 有 consumer 或者有任务的 topic，按名字排序。
 }
 
@@ -55,8 +54,8 @@ type TopicStatus struct {
 	Topic         string
 	Handled       bool      // 报告是否有 consumer：有 Worker 为这个 topic 注册过处理函数。为 false 时任务一直等待，直到有 Worker 注册它，通常是忘了注册，或者 topic 名写错了。
 	Pending       uint64    // 等待处理的任务数。
-	InFlight      int       // 已经交给 Worker、还没有确认的任务数。
-	Redelivered   int       // 租约到期或停止时放回、再次投递还没有确认的任务数。
+	InFlight      int       // 已经交给 Worker、还没有确认的任务数（含处理中和等待退避重试的任务）。
+	Redelivered   int       // 失败退避、租约到期或停止时放回、再次投递还没有确认的任务数。
 	Waiting       int       // Worker 等待任务的拉取请求数：Worker 有空闲的并发名额时一直有拉取请求。
 	LastDelivered time.Time // 最近一次把任务交给 Worker 的时间，没有交过时为零值。
 	PausedUntil   time.Time // 暂停处理的截止时间，没有暂停时为零值，见 Admin.Pause。
@@ -91,8 +90,6 @@ func (a *Admin) Status(ctx context.Context) (StreamStatus, error) {
 	if info.Cluster != nil && len(info.Cluster.Replicas) > 0 {
 		st.Leader = info.Cluster.Leader
 	}
-	// 每个定时消息一个 subject（见 publishAsync），其余的 subject 是各个 topic。
-	st.Deferred = max(int(info.State.NumSubjects)-len(info.State.Subjects), 0)
 
 	topics := map[string]*TopicStatus{}
 	for subject := range info.State.Subjects {

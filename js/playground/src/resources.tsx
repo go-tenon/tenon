@@ -442,15 +442,12 @@ export const queueApi = (() => {
   return {
     status: async () =>
       delay({
-        slot: {
-          name: "tenon_queue_3f2a9c1e5b7d4e60",
-          exists: true,
-          active: true,
-          active_pid: 48213,
-          wal_status: "reserved",
-          lag: 12_700,
+        outbox: {
+          pending: 2,
+          deferred: 5,
+          oldest_pending: new Date(Date.now() - 3_000).toISOString(),
         },
-        jetstream: { stream: "jobs", exists: true, messages: 28, bytes: 7_577, replicas: 1, deferred: 5 },
+        jetstream: { stream: "jobs", exists: true, messages: 28, bytes: 7_577, replicas: 1 },
         topics: ["mail.send", "report.daily", "sms.send", "webhook.deliver"].map((topic, i) => ({
           topic,
           label: topicMeta[topic]?.label,

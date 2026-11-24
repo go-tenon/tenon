@@ -97,7 +97,7 @@ const statusText: Record<ScheduleStatus, { label: UiMessageId; color: string }> 
 /** 跳过的原因（schedule.SkipReason）的说明的消息 ID，其他错误原样显示。 */
 const skipText: Record<string, UiMessageId> = {
   overlap: "tenon.schedule.skip_overlap",
-  lock_failed: "tenon.schedule.skip_lock_failed",
+  store_failed: "tenon.schedule.skip_store_failed",
 }
 
 /** 执行记录中错误的显示：跳过的原因换成说明，其他错误原样返回。 */

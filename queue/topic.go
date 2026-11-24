@@ -33,7 +33,7 @@ func (t Topic[T]) Meta(label, description string) TopicMeta {
 	return TopicMeta{Topic: string(t), Label: label, Description: description}
 }
 
-// Publish 发布一个任务：把 payload 编码为 JSON，写入 db 所在数据库的 WAL，由 Worker 经由逻辑复制转发到 JetStream。
+// Publish 发布一个任务：把 payload 编码为 JSON，写入 db 的 queue_outbox 表，由 Worker 批量转发到 JetStream。
 // db 通常是修改业务数据的事务：事务提交后任务才会被转发，回滚时一起取消。
 // ctx 中的 request_id 日志字段和 OpenTelemetry 链路（W3C traceparent）随任务带到处理函数的 context 中。
 func (t Topic[T]) Publish(ctx context.Context, db bun.IDB, payload T, opts ...PublishOption) error {

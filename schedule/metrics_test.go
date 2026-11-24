@@ -11,33 +11,37 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
-	"github.com/go-tenon/tenon/lock"
-	"github.com/go-tenon/tenon/lock/locktest"
 	"github.com/go-tenon/tenon/schedule"
+	"github.com/go-tenon/tenon/schedule/scheduletest"
 )
 
-// brokenStore 是总是出错的锁存储。
+// brokenStore 是总是出错的状态存储。
 type brokenStore struct{}
 
-func (brokenStore) Acquire(context.Context, string, string, time.Duration) (bool, error) {
+func (brokenStore) Claim(context.Context, string, time.Time, string, time.Duration, bool) (schedule.ClaimResult, error) {
+	return 0, errors.New("store down")
+}
+func (brokenStore) AcquireRunning(context.Context, string, string, time.Duration) (bool, error) {
 	return false, errors.New("store down")
 }
 func (brokenStore) Refresh(context.Context, string, string, time.Duration) (bool, error) {
 	return false, nil
 }
-func (brokenStore) Release(context.Context, string, string) (bool, error) { return false, nil }
-func (brokenStore) Held(context.Context, string) (bool, error)            { return false, nil }
+func (brokenStore) Release(context.Context, string, string) error { return nil }
+func (brokenStore) States(context.Context) (map[string]schedule.TaskState, error) {
+	return nil, errors.New("store down")
+}
 
 func TestMetrics(t *testing.T) {
 	ctx := context.Background()
 	reader := sdkmetric.NewManualReader()
 	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
 	quiet := slog.New(slog.DiscardHandler)
-	newScheduler := func(store lock.Store) *schedule.Scheduler {
-		return schedule.New(lock.New(store), schedule.DefaultConfig(), quiet, schedule.WithTelemetry(mp, tracenoop.NewTracerProvider()))
+	newScheduler := func(store schedule.Store) *schedule.Scheduler {
+		return schedule.New(store, schedule.DefaultConfig(), quiet, schedule.WithTelemetry(mp, tracenoop.NewTracerProvider()))
 	}
 
-	s := newScheduler(locktest.NewStore())
+	s := newScheduler(scheduletest.NewStore())
 	s.Add("ok", "@everysecond", func(context.Context) error { return nil })
 	s.Add("fails", "@everysecond", func(context.Context) error { return errors.New("bad") })
 	for i := range 2 {
@@ -47,7 +51,7 @@ func TestMetrics(t *testing.T) {
 	}
 
 	// 上一次还没结束时被跳过。
-	overlapping := newScheduler(locktest.NewStore())
+	overlapping := newScheduler(scheduletest.NewStore())
 	release, started := make(chan struct{}), make(chan struct{})
 	overlapping.Add("slow", "@everysecond", func(context.Context) error {
 		close(started)
@@ -68,7 +72,7 @@ func TestMetrics(t *testing.T) {
 	broken := newScheduler(brokenStore{})
 	broken.Add("ok", "@everysecond", func(context.Context) error { return nil })
 	if err := broken.RunDue(ctx, base); err == nil {
-		t.Fatal("expected the lock error")
+		t.Fatal("expected the store error")
 	}
 
 	var rm metricdata.ResourceMetrics
@@ -97,7 +101,7 @@ func TestMetrics(t *testing.T) {
 		"schedule.task.duration fails failed":   2,
 		"schedule.task.duration slow succeeded": 1,
 		"schedule.task.skipped slow overlap":    1,
-		"schedule.task.skipped ok lock_failed":  1,
+		"schedule.task.skipped ok store_failed": 1,
 	}
 	if len(got) != len(want) {
 		t.Errorf("got %v", got)

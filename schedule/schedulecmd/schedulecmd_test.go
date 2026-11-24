@@ -7,20 +7,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-tenon/tenon/lock"
-	"github.com/go-tenon/tenon/lock/locktest"
 	"github.com/go-tenon/tenon/schedule"
 	"github.com/go-tenon/tenon/schedule/schedulecmd"
+	"github.com/go-tenon/tenon/schedule/scheduletest"
 )
 
 func TestSchedules(t *testing.T) {
 	ctx := context.Background()
-	locker := lock.New(locktest.NewStore())
+	store := scheduletest.NewStore()
 	noop := func(context.Context) error { return nil }
 	calls := 0
 	tasks := func() *schedule.Scheduler {
 		calls++
-		s := schedule.New(locker, schedule.DefaultConfig(), nil)
+		s := schedule.New(store, schedule.DefaultConfig(), nil)
 		s.Add("reports:daily", "@daily", noop, schedule.Describe("生成前一天的报表"))
 		s.Add("cache:warm", "@every 30s", noop, schedule.EveryInstance())
 		return s
@@ -30,8 +29,8 @@ func TestSchedules(t *testing.T) {
 		t.Fatal("tasks called while declaring the command")
 	}
 	// 另一个实例正在执行 reports:daily。
-	if _, err := locker.Acquire(ctx, "schedule:reports:daily:running", time.Minute); err != nil {
-		t.Fatal(err)
+	if ok, err := store.AcquireRunning(ctx, "reports:daily", "other", time.Minute); err != nil || !ok {
+		t.Fatalf("acquire running: ok=%v err=%v", ok, err)
 	}
 
 	var out bytes.Buffer

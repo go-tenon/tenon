@@ -68,7 +68,7 @@ var rules = map[string]rule{
 	"natsx":                 {layerInfrastructure, []string{"logging"}},
 	"queue":                 {layerInfrastructure, []string{"database", "doctor", "errorx", "logging", "natsx"}},
 	"cache":                 {layerInfrastructure, []string{"doctor", "logging"}},
-	"schedule":              {layerInfrastructure, []string{"lock", "logging"}},
+	"schedule":              {layerInfrastructure, []string{"logging"}},
 	"broadcast":             {layerInfrastructure, []string{"identity", "logging"}},
 	"filesystem":            {layerInfrastructure, []string{"database", "doctor", "errorx", "identity"}},
 	"sheet":                 {layerInfrastructure, []string{"errorx", "form"}},
