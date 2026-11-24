@@ -88,7 +88,7 @@ CREATE TABLE articles (
     updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP -- clock-ignore
 );
 `,
-		"migrations/2026_11_10_193936_create_agent_sessions.sql": `CREATE TABLE agent_session_states (created_at timestamp DEFAULT CURRENT_TIMESTAMP);`,
+		"migrations/2026_11_10_193936_create_agent_session_states.sql": `CREATE TABLE agent_session_states (created_at timestamp DEFAULT CURRENT_TIMESTAMP);`,
 		"internal/article/publish.go": `package article
 
 const q1 = "UPDATE articles SET updated_at = NOW()"

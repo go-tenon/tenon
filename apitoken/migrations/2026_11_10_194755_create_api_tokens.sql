@@ -9,9 +9,10 @@ CREATE TABLE api_tokens (
     tenant text NOT NULL,
     impersonator_type text NOT NULL,
     impersonator_id text NOT NULL,
-    kind text NOT NULL CHECK (kind IN ('login', 'personal', 'oauth')),
+    kind text NOT NULL CHECK (kind IN ('login', 'personal', 'oauth', 'impersonation')),
     name text NOT NULL,
     scopes text NOT NULL,
+    reason text NOT NULL DEFAULT '',
     idle_timeout bigint NOT NULL,
     ends_at timestamptz,
     ip text NOT NULL,
@@ -27,6 +28,7 @@ CREATE TABLE api_tokens (
 );
 CREATE INDEX api_tokens_subject ON api_tokens (subject_type, subject_id);
 CREATE INDEX api_tokens_expires_at ON api_tokens (expires_at) WHERE expires_at IS NOT NULL;
+CREATE INDEX api_tokens_impersonator ON api_tokens (impersonator_type, impersonator_id) WHERE impersonator_id <> '';
 COMMENT ON TABLE api_tokens IS 'API token；只存 token 的 SHA-256；过期行由 apitoken.Store.Cleanup 删除';
 COMMENT ON COLUMN api_tokens.id IS '主键';
 COMMENT ON COLUMN api_tokens.created_at IS '创建时间';
@@ -37,9 +39,10 @@ COMMENT ON COLUMN api_tokens.subject_id IS '持有 token 的主体 ID';
 COMMENT ON COLUMN api_tokens.tenant IS 'token 绑定的租户；空字符串表示不绑定';
 COMMENT ON COLUMN api_tokens.impersonator_type IS '代为登录时签发 token 的实际操作者，与 impersonator_id 一起引用；空字符串表示用户本人';
 COMMENT ON COLUMN api_tokens.impersonator_id IS '代为登录时签发 token 的实际操作者 ID；空字符串表示用户本人';
-COMMENT ON COLUMN api_tokens.kind IS 'login：登录时签发，按签发时的配置滑动过期；personal：个人访问令牌，过期时间由创建者指定；oauth：用户授权 OAuth 客户端后签发，只能用于 resource';
+COMMENT ON COLUMN api_tokens.kind IS 'login：登录时签发，按签发时的配置滑动过期；personal：个人访问令牌，过期时间由创建者指定；oauth：用户授权 OAuth 客户端后签发，只能用于 resource；impersonation：代为登录签发的短时受限令牌';
 COMMENT ON COLUMN api_tokens.name IS '令牌名称，例如设备名或个人访问令牌的备注';
 COMMENT ON COLUMN api_tokens.scopes IS '个人访问令牌和 OAuth 令牌的权限限制，空格分隔；登录 token 为空字符串，表示不限制';
+COMMENT ON COLUMN api_tokens.reason IS '代为登录时的原因或工单号；其他种类为空字符串';
 COMMENT ON COLUMN api_tokens.idle_timeout IS '登录 token 和 OAuth 令牌签发时确定的空闲时长（秒），使用时据此滑动延长；0 表示不延长，个人访问令牌为 0';
 COMMENT ON COLUMN api_tokens.ends_at IS '登录 token 和 OAuth 令牌签发时确定的最长期限（签发时间加 lifetime）；个人访问令牌为空';
 COMMENT ON COLUMN api_tokens.ip IS '签发或最近使用时的客户端 IP 地址';

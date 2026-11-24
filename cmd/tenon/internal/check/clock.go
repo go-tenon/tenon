@@ -25,7 +25,12 @@ var dbClock = regexp.MustCompile(`(?i)\b(now|clock_timestamp|statement_timestamp
 
 // builtinClockExempt 是框架内嵌的第三方迁移文件（表结构由上游库决定，例如 trpc-agent-go），默认豁免时钟检查。
 var builtinClockExempt = map[string]bool{
-	"2026_11_10_193936_create_agent_sessions.sql": true,
+	"2026_11_10_193936_create_agent_session_states.sql":       true,
+	"2026_11_10_193937_create_agent_session_events.sql":       true,
+	"2026_11_10_193938_create_agent_session_track_events.sql": true,
+	"2026_11_10_193939_create_agent_session_summaries.sql":    true,
+	"2026_11_10_193940_create_agent_app_states.sql":           true,
+	"2026_11_10_193941_create_agent_user_states.sql":          true,
 }
 
 // CheckClock 检查项目中的 .sql 文件和非测试 .go 文件的字符串字面量，防止 SQL 直接读取数据库时钟：
