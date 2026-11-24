@@ -140,7 +140,7 @@ func decisionAnswerOf(q ai.Question, a decisionAnswer) (ai.Answer, error) {
 	if a.Type != want {
 		return ai.Answer{}, errors.Newf("ai/openai: question %q answered as %q, want %q", q.Name, a.Type, want)
 	}
-	out := ai.Answer{Probability: a.Probability, Choice: a.Choice, Score: a.Score, Confidence: a.Confidence}
+	out := ai.Answer{Probability: a.Probability, Choice: a.Choice, Score: a.Score, Confidence: a.Confidence, HasConfidence: true}
 	switch q.Kind {
 	case ai.ChoiceQuestion:
 		byValue := map[string]float64{}

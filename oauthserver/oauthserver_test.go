@@ -675,6 +675,18 @@ func TestFirstPartyClient(t *testing.T) {
 		t.Fatalf("tokens %+v %v", list, err)
 	}
 
+	// 应用自己的客户端也可以通过 /oauth/revoke（RFC 7009）撤销登录令牌。
+	req := httptest.NewRequest(http.MethodPost, issuer+oauthserver.RevokePath, strings.NewReader(url.Values{"token": {access}}.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	e.router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("revoke first-party token: %d", w.Code)
+	}
+	if _, err := e.tokens.Validate(ctx, access); err == nil {
+		t.Fatal("first-party token still valid after revoke")
+	}
+
 	// 应用自己的客户端不申请范围和资源，带着时跳回客户端。
 	for _, param := range []string{"scope", "resource"} {
 		u := e.authorize(t, desktopQuery(func(q url.Values) { q.Set(param, "x") }))

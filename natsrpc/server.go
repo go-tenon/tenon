@@ -17,6 +17,7 @@ import (
 	goi18n "github.com/nicksnyder/go-i18n/v2/i18n"
 
 	"github.com/go-tenon/tenon/contract"
+	"github.com/go-tenon/tenon/i18n"
 	"github.com/go-tenon/tenon/identity"
 	"github.com/go-tenon/tenon/logging"
 )
@@ -114,6 +115,9 @@ func New(opts Options) *Server {
 	}
 	if opts.ShutdownTimeout <= 0 {
 		opts.ShutdownTimeout = DefaultShutdownTimeout
+	}
+	if opts.Languages == nil {
+		opts.Languages = i18n.MustNew(i18n.LocaleZhCN)
 	}
 	return &Server{
 		opts:    opts,

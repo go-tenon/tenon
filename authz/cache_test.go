@@ -245,3 +245,36 @@ func TestEraseInvalidatesAfterCommit(t *testing.T) {
 		t.Fatal("expected error for empty subject")
 	}
 }
+
+// 修改租户自定义角色只使该租户的权限缓存失效，不影响其他租户的缓存。
+func TestTenantRoleInvalidationIsolated(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	db := dbtest.Open(t, authz.Migrations())
+	s := authz.NewStore(db, catalog, cached(t, openRedis(t)))
+	acmeRole := mustRole(t, s, authz.Role{Tenant: "acme", Name: "custom", Permissions: []string{"articles:read"}})
+	globexRole := mustRole(t, s, authz.Role{Tenant: "globex", Name: "custom", Permissions: []string{"articles:read"}})
+	alice, bob := user("alice"), user("bob")
+	mustAssign(t, s, alice, "acme", acmeRole.ID)
+	mustAssign(t, s, bob, "globex", globexRole.ID)
+
+	if got := perms(t, s, alice, "acme"); got != "articles:read" {
+		t.Fatalf("alice acme=%s", got)
+	}
+	if got := perms(t, s, bob, "globex"); got != "articles:read" {
+		t.Fatalf("bob globex=%s", got)
+	}
+	// 绕过 Store 清空 globex 分配以验证缓存命中；更新 acme 角色不应把 globex 的缓存冲掉。
+	if _, err := db.NewDelete().TableExpr("authz_assignments").Where("tenant = ?", "globex").Exec(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.UpdateRole(ctx, authz.Role{ID: acmeRole.ID, Name: "custom", Permissions: []string{"articles:read", "articles:write"}}, "acme"); err != nil {
+		t.Fatal(err)
+	}
+	if got := perms(t, s, alice, "acme"); got != "articles:read,articles:write" {
+		t.Fatalf("alice after acme update=%s", got)
+	}
+	if got := perms(t, s, bob, "globex"); got != "articles:read" {
+		t.Fatalf("globex cache should remain warm after acme role update, got %s", got)
+	}
+}

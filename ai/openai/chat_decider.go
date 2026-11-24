@@ -49,7 +49,7 @@ type chatDecisionAnswer struct {
 	Choice        string          `json:"choice"`
 	Level         *int            `json:"level"`
 	Score         *float64        `json:"score"`
-	Confidence    float64         `json:"confidence"`
+	Confidence    *float64        `json:"confidence"`
 	Probabilities json.RawMessage `json:"probabilities"`
 }
 
@@ -198,14 +198,23 @@ func clamp01(v float64) float64 {
 }
 
 // chatDecisionAnswerOf 将对话模型返回的单个答案结构校验并转换为 ai.Answer。
+// 模型未给出 confidence 或 probabilities 时保留 HasConfidence=false，不伪造 1.0 置信度。
 func chatDecisionAnswerOf(q ai.Question, a chatDecisionAnswer) (ai.Answer, error) {
 	if a.Refused {
 		return ai.NewAnswer(q, ai.Answer{Refused: true}), nil
 	}
-	conf := clamp01(a.Confidence)
+	hasConf := a.Confidence != nil
+	var conf float64
+	if hasConf {
+		conf = clamp01(*a.Confidence)
+	}
 	switch q.Kind {
 	case ai.YesNoQuestion:
-		return ai.NewAnswer(q, ai.Answer{Probability: clamp01(a.Probability), Confidence: conf}), nil
+		return ai.NewAnswer(q, ai.Answer{
+			Probability:   clamp01(a.Probability),
+			Confidence:    conf,
+			HasConfidence: hasConf,
+		}), nil
 
 	case ai.ChoiceQuestion:
 		chosen := -1
@@ -218,20 +227,22 @@ func chatDecisionAnswerOf(q ai.Question, a chatDecisionAnswer) (ai.Answer, error
 		if chosen < 0 {
 			return ai.Answer{}, errors.Newf("ai/openai: chat decide chose unknown option %q for question %q", a.Choice, q.Name)
 		}
-		probs := make([]float64, len(q.Options))
+		var probs []float64
 		var byKey map[string]float64
 		if len(a.Probabilities) > 0 && json.Unmarshal(a.Probabilities, &byKey) == nil && len(byKey) > 0 {
+			probs = make([]float64, len(q.Options))
 			for i, o := range q.Options {
 				probs[i] = clamp01(byKey[o.Value])
 			}
-		} else {
-			p := conf
-			if p == 0 {
-				p = 1
+			hasConf = true
+			if a.Confidence == nil {
+				conf = probs[chosen]
 			}
-			probs[chosen] = p
+		} else if hasConf {
+			probs = make([]float64, len(q.Options))
+			probs[chosen] = conf
 			if len(q.Options) > 1 {
-				rest := (1 - p) / float64(len(q.Options)-1)
+				rest := (1 - conf) / float64(len(q.Options)-1)
 				for i := range probs {
 					if i != chosen {
 						probs[i] = rest
@@ -239,34 +250,37 @@ func chatDecisionAnswerOf(q ai.Question, a chatDecisionAnswer) (ai.Answer, error
 				}
 			}
 		}
-		if conf == 0 {
-			conf = probs[chosen]
-		}
-		return ai.NewAnswer(q, ai.Answer{Choice: a.Choice, Probabilities: probs, Confidence: conf}), nil
+		return ai.NewAnswer(q, ai.Answer{
+			Choice:        a.Choice,
+			Probabilities: probs,
+			Confidence:    conf,
+			HasConfidence: hasConf,
+		}), nil
 
 	case ai.ScoreQuestion:
 		n := len(q.Levels)
-		probs := make([]float64, n)
+		var probs []float64
 		var arr []float64
 		hasProbs := len(a.Probabilities) > 0 && json.Unmarshal(a.Probabilities, &arr) == nil && len(arr) == n
 		if hasProbs {
+			probs = make([]float64, n)
 			for i, v := range arr {
 				probs[i] = clamp01(v)
 			}
+			hasConf = true
 		} else if a.Level != nil {
 			if *a.Level < 0 || *a.Level >= n {
 				return ai.Answer{}, errors.Newf("ai/openai: chat decide returned level %d out of range for question %q", *a.Level, q.Name)
 			}
-			p := conf
-			if p == 0 {
-				p = 1
-			}
-			probs[*a.Level] = p
-			if n > 1 {
-				rest := (1 - p) / float64(n-1)
-				for i := range probs {
-					if i != *a.Level {
-						probs[i] = rest
+			if hasConf {
+				probs = make([]float64, n)
+				probs[*a.Level] = conf
+				if n > 1 {
+					rest := (1 - conf) / float64(n-1)
+					for i := range probs {
+						if i != *a.Level {
+							probs[i] = rest
+						}
 					}
 				}
 			}
@@ -274,9 +288,10 @@ func chatDecisionAnswerOf(q ai.Question, a chatDecisionAnswer) (ai.Answer, error
 			return ai.Answer{}, errors.Newf("ai/openai: chat decide missing level or probabilities for score question %q", q.Name)
 		}
 		var score float64
-		if a.Score != nil {
+		switch {
+		case a.Score != nil:
 			score = *a.Score
-		} else {
+		case len(probs) > 0:
 			var sum, weighted float64
 			for i, p := range probs {
 				sum += p
@@ -285,8 +300,15 @@ func chatDecisionAnswerOf(q ai.Question, a chatDecisionAnswer) (ai.Answer, error
 			if sum > 0 {
 				score = weighted / sum
 			}
+		case a.Level != nil:
+			score = float64(*a.Level)
 		}
-		return ai.NewAnswer(q, ai.Answer{Score: score, Probabilities: probs, Confidence: conf}), nil
+		return ai.NewAnswer(q, ai.Answer{
+			Score:         score,
+			Probabilities: probs,
+			Confidence:    conf,
+			HasConfidence: hasConf,
+		}), nil
 
 	default:
 		return ai.Answer{}, errors.Newf("ai/openai: unsupported decision question kind %q", q.Kind)

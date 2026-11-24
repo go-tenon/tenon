@@ -2,10 +2,12 @@ package vector
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"reflect"
 	"regexp"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/cockroachdb/errors"
@@ -157,8 +159,8 @@ func (ix *Index[D]) Handle(w *queue.Worker, s *Store, load LoadFunc[D], scan Sca
 // Refresh 立即同步 keys，与同步任务的处理相同。用于测试，或者需要马上能查到的场合。
 // 重建期间同时写入查询使用的版本和正在重建的版本。
 //
-// 每个 key 在一个事务中同步：锁住 key，读取文档，计算文本有变化的文档的向量，写入 Qdrant，删除多出的文档。
-// 计算向量期间事务保持打开，同一个 key 的同步依次执行，最终保存的总是最新的数据。
+// 每个 key 在短事务中登记版本号并读取文档，向量计算与 Qdrant 写入在事务外执行，
+// 写完后校验版本号未变，避免长事务占满数据库连接池，同时确保并发更新收敛到最新数据。
 func (ix *Index[D]) Refresh(ctx context.Context, s *Store, load LoadFunc[D], keys ...string) error {
 	for _, key := range keys {
 		if err := checkKey(key); err != nil {
@@ -181,42 +183,104 @@ func checkKey(key string) error {
 	return nil
 }
 
-// refresh 在一个事务中同步 key：build 为 0 时写入 indexes.Versions 返回的版本，否则只写入重建的版本 build。
-func (ix *Index[D]) refresh(ctx context.Context, s *Store, load LoadFunc[D], key string, build int) error {
-	err := s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		// 先锁住这个 key：同一个 key 的同步依次执行，后执行的读到的数据更新，最终保存的总是最新的数据
-		_, err := tx.NewRaw(`INSERT INTO vector_keys (index_name, doc_key, synced_at) VALUES (?, ?, ?) `+
-			`ON CONFLICT (index_name, doc_key) DO UPDATE SET synced_at = excluded.synced_at`,
-			ix.name, key, time.Now().UTC()).Exec(ctx)
-		if err != nil {
-			return errors.Wrap(err, "vector: lock key")
+// lockKey 在进程内按 index 和 key 串行化同步，减少重复读取与模型调用。
+func (s *Store) lockKey(index, key string) func() {
+	type entry struct {
+		mu   sync.Mutex
+		refs int
+	}
+	k := index + "\x00" + key
+	s.mu.Lock()
+	var e *entry
+	if v, ok := s.locks.Load(k); ok {
+		e = v.(*entry)
+	} else {
+		e = &entry{}
+		s.locks.Store(k, e)
+	}
+	e.refs++
+	s.mu.Unlock()
+	e.mu.Lock()
+	return func() {
+		e.mu.Unlock()
+		s.mu.Lock()
+		e.refs--
+		if e.refs == 0 {
+			s.locks.Delete(k)
 		}
-		versions := []int{build}
-		if build == 0 {
-			if versions, err = indexes.Versions(ctx, tx, ix.name); err != nil {
+		s.mu.Unlock()
+	}
+}
+
+// refresh 同步 key：短事务中写入单调递增的 synced_at 并读取文档，在事务外执行模型计算和 Qdrant 写入，
+// 完成后核对 synced_at 未被更新的并发同步推进；若发生并发更新则自动重读最新快照收敛。
+func (ix *Index[D]) refresh(ctx context.Context, s *Store, load LoadFunc[D], key string, build int) error {
+	unlock := s.lockKey(ix.name, key)
+	defer unlock()
+
+	const maxAttempts = 4
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		var (
+			stamp    time.Time
+			versions []int
+			entries  []entry
+		)
+		err := s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+			// 短事务登记本次同步的单调时间戳并读取一致的文档快照，外部 I/O 放在事务提交后执行。
+			err := tx.NewRaw(`INSERT INTO vector_keys (index_name, doc_key, synced_at) VALUES (?, ?, ?) `+
+				`ON CONFLICT (index_name, doc_key) DO UPDATE SET synced_at = GREATEST(vector_keys.synced_at + interval '1 microsecond', excluded.synced_at) `+
+				`RETURNING synced_at`,
+				ix.name, key, time.Now().UTC()).Scan(ctx, &stamp)
+			if err != nil {
+				return errors.Wrap(err, "vector: stamp key")
+			}
+			versions = []int{build}
+			if build == 0 {
+				if versions, err = indexes.Versions(ctx, tx, ix.name); err != nil {
+					return err
+				}
+			}
+			docs, err := load(ctx, tx, key)
+			if err != nil {
 				return err
 			}
-		}
-		docs, err := load(ctx, tx, key)
-		if err != nil {
+			entries, err = ix.entries(key, docs)
 			return err
-		}
-		entries, err := ix.entries(key, docs)
+		})
 		if err != nil {
-			return err
+			return errors.Wrapf(err, "vector: sync %s %q", ix.name, key)
 		}
+
 		for _, v := range versions {
 			if err := ix.write(ctx, s, v, key, entries); err != nil {
-				return err
+				return errors.Wrapf(err, "vector: sync %s %q", ix.name, key)
 			}
 		}
+
 		if len(entries) == 0 {
-			_, err := tx.NewRaw(`DELETE FROM vector_keys WHERE index_name = ? AND doc_key = ?`, ix.name, key).Exec(ctx)
-			return errors.Wrap(err, "vector: delete key")
+			res, err := s.db.NewRaw(`DELETE FROM vector_keys WHERE index_name = ? AND doc_key = ? AND synced_at = ?`,
+				ix.name, key, stamp).Exec(ctx)
+			if err != nil {
+				return errors.Wrapf(err, "vector: sync %s %q", ix.name, key)
+			}
+			if n, err := res.RowsAffected(); err == nil && n > 0 {
+				return nil
+			}
+			// 并发写入推进了 synced_at 或记录已不存在：核对是否仍有更新需要收敛。
 		}
-		return nil
-	})
-	return errors.Wrapf(err, "vector: sync %s %q", ix.name, key)
+		var current time.Time
+		err = s.db.NewRaw(`SELECT synced_at FROM vector_keys WHERE index_name = ? AND doc_key = ?`, ix.name, key).Scan(ctx, &current)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return errors.Wrapf(err, "vector: sync %s %q", ix.name, key)
+		}
+		if current.Equal(stamp) {
+			return nil
+		}
+	}
+	return errors.Wrapf(errors.New("vector: concurrent sync did not converge"), "vector: sync %s %q", ix.name, key)
 }
 
 // write 把 key 在版本 version 中原有的文档替换为 entries，用建立这个版本的模型计算向量。

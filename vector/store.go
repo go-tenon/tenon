@@ -60,7 +60,8 @@ type Store struct {
 
 	opening singleflight.Group
 	mu      sync.Mutex
-	ready   map[string]collectionInfo // 已经确认模型、建好 payload 索引的 collection
+	ready   map[string]collectionInfo // 已经确认模型的 collection
+	locks   sync.Map                  // 进程内按 index\x00key 串行化同步，避免重复调用向量模型
 }
 
 // Option 是 New 的选项。
@@ -137,16 +138,18 @@ const (
 // collectionInfo 是 collection 的结构，写入和查询它都按这个结构：索引的每个版本保持建立时的模型和结构，
 // 给索引加上或去掉 Hybrid、换模型之后，重建完成之前原来的版本照常使用。
 type collectionInfo struct {
-	model  Model // 建立它的模型
-	hybrid bool  // 有没有稀疏向量
+	model   Model // 建立它的模型
+	hybrid  bool  // 有没有稀疏向量
+	indexed bool  // 是否已确认建好全部 payload 索引
 }
 
 // open 确认 collection 存在，返回它的结构。不存在时，create 为 true 则按 s.model 和 sc 创建，否则 ok 为 false。
+// 读路径（create 为 false）只读取元信息，不执行同步 DDL；写路径（create 为 true）确保全部 payload 索引就绪。
 func (s *Store) open(ctx context.Context, collection string, sc *schema, create bool) (c collectionInfo, ok bool, err error) {
 	s.mu.Lock()
 	c, ok = s.ready[collection]
 	s.mu.Unlock()
-	if ok {
+	if ok && (!create || c.indexed) {
 		return c, true, nil
 	}
 	// 同一个进程中同时打开同一个 collection 的只有一个去读取、创建，其余的等它的结果
@@ -165,7 +168,7 @@ func (s *Store) open(ctx context.Context, collection string, sc *schema, create 
 	return r.c, r.ok, nil
 }
 
-// load 读取 collection 的结构，建立 payload 索引，缓存在 s.ready 中。不存在时，create 为 true 则创建，否则 ok 为 false。
+// load 读取 collection 的结构；create 为 true 时创建缺失的 collection 并建立全部 payload 索引，缓存在 s.ready 中。
 func (s *Store) load(ctx context.Context, collection string, sc *schema, create bool) (c collectionInfo, ok bool, err error) {
 	info, err := s.info(ctx, collection, false)
 	if notFound(err) {
@@ -184,11 +187,17 @@ func (s *Store) load(ctx context.Context, collection string, sc *schema, create 
 		return c, false, err
 	}
 	c.hybrid = info.GetConfig().GetParams().GetSparseVectorsConfig().GetMap()[vectorSparse] != nil
-	// 文档类型新增的过滤字段也在这里建立索引；已经存在的索引保持原样
-	if err := s.createFieldIndexes(ctx, collection, sc); err != nil {
-		return c, false, err
+	if create {
+		// 写路径确保 _key、_hash、_pos、租户和新增过滤字段的 payload 索引就绪。
+		if err := s.createFieldIndexes(ctx, collection, sc); err != nil {
+			return c, false, err
+		}
+		c.indexed = true
 	}
 	s.mu.Lock()
+	if cur, exists := s.ready[collection]; exists && cur.indexed {
+		c.indexed = true
+	}
 	s.ready[collection] = c
 	s.mu.Unlock()
 	return c, true, nil
@@ -268,14 +277,18 @@ const (
 // notFound 报告 err 是不是 Qdrant 返回的 collection 不存在。
 func notFound(err error) bool { return status.Code(err) == codes.NotFound }
 
-// createFieldIndexes 给框架使用的 _key、租户和过滤字段建立 payload 索引，已经存在的不变。
+// createFieldIndexes 给框架使用的 _key、_hash、_pos、租户和过滤字段建立 payload 索引，已经存在的不变。
 func (s *Store) createFieldIndexes(ctx context.Context, name string, sc *schema) error {
 	type index struct {
 		field  string
 		typ    qdrant.FieldType
 		params *qdrant.PayloadIndexParams
 	}
-	indexes := []index{{field: payloadKey, typ: qdrant.FieldType_FieldTypeKeyword}}
+	indexes := []index{
+		{field: payloadKey, typ: qdrant.FieldType_FieldTypeKeyword},
+		{field: payloadHash, typ: qdrant.FieldType_FieldTypeKeyword},
+		{field: payloadPos, typ: qdrant.FieldType_FieldTypeInteger},
+	}
 	if sc.tenant != nil {
 		indexes = append(indexes, index{payloadTenant, qdrant.FieldType_FieldTypeKeyword,
 			qdrant.NewPayloadIndexParamsKeyword(&qdrant.KeywordIndexParams{IsTenant: qdrant.PtrOf(true)})})

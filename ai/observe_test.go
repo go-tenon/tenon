@@ -109,3 +109,48 @@ func TestObserveTransportStream(t *testing.T) {
 		t.Fatalf("unexpected stream event: %+v", got)
 	}
 }
+
+func TestObserveTransportBoundedLargeBody(t *testing.T) {
+	t.Parallel()
+	var calls atomic.Int32
+	var got ai.CallEvent
+	largeReq := `{"model":"gpt-4o","payload":"` + strings.Repeat("a", 512) + `"}`
+	largeResp := `{"model":"gpt-4o","payload":"` + strings.Repeat("b", 512) + `"}`
+	tr := ai.ObserveTransport(roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			return nil, err
+		}
+		if string(raw) != largeReq {
+			t.Errorf("request body truncated: got %d want %d", len(raw), len(largeReq))
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(largeResp)),
+		}, nil
+	}), func(_ context.Context, ev ai.CallEvent) {
+		calls.Add(1)
+		got = ev
+	}, ai.ObserveOptions{MaxBodyBytes: 64})
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, "https://api.example.com/v1/chat/completions", strings.NewReader(largeReq))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := tr.RoundTrip(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if string(raw) != largeResp {
+		t.Fatalf("response passthrough corrupted: got %d want %d", len(raw), len(largeResp))
+	}
+	if calls.Load() != 1 || len(got.RequestBody) != 64 || len(got.ResponseBody) != 64 || got.Model != "gpt-4o" {
+		t.Fatalf("unexpected bounded event: calls=%d reqLen=%d respLen=%d model=%q", calls.Load(), len(got.RequestBody), len(got.ResponseBody), got.Model)
+	}
+}

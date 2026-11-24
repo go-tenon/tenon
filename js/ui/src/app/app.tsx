@@ -174,7 +174,13 @@ export interface App<TRouteTree extends AnyRoute = AnyRoute> {
   readonly i18n: I18n
   /** 报告一个错误（交给 AppOptions.onError）：同一个错误只报告一次，不需要报告的错误被忽略。 */
   reportError(error: unknown, where: { routeId: string; pathname: string }): void
+  /** 释放本次应用注册的会话订阅，避免重复创建或测试结束后保留引用。 */
+  dispose(): void
 }
+
+// 路由树节点在 SSR 进程中跨请求共享：每个节点的 beforeLoad 只包装一次，执行时从当次请求的 context.app 读取状态。
+const wrappedPermissionRoutes = new WeakSet<AnyRoute>()
+const wrappedRootRoutes = new WeakSet<AnyRoute>()
 
 function defaultQueryClient(): QueryClient {
   return new QueryClient({
@@ -278,6 +284,8 @@ export function createApp<TRouteTree extends AnyRoute>(options: AppOptions<TRout
     preferred: () => undefined,
   })
 
+  const unsubscribes: (() => void)[] = []
+
   Object.assign(app, {
     id: options.id,
     session,
@@ -289,6 +297,9 @@ export function createApp<TRouteTree extends AnyRoute>(options: AppOptions<TRout
     // 没有应用的 i18n 时使用单语言配置（默认简体中文），叠加框架内置文字和可选的 uiMessages 覆盖
     i18n: withUiMessages(options.i18n ?? defaultI18n),
     reportError,
+    dispose() {
+      for (const unsub of unsubscribes.splice(0)) unsub()
+    },
     ready: () => {
       if (!restoring) restoring = session.restore().catch(() => false)
       return restoring
@@ -310,33 +321,42 @@ export function createApp<TRouteTree extends AnyRoute>(options: AppOptions<TRout
 
   // 带 permission 的路由在自己的 beforeLoad 之前检查登录和权限：缺少权限时抛出 ForbiddenError，
   // 由这个路由的 errorComponent（或 defaultErrorComponent）在上级布局之中显示，页面自己不用写检查。
+  // 包装是幂等的：每个路由节点只包装一次，运行时通过 ctx.context.app 访问当前请求的应用实例。
   for (const route of Object.values(router.routesById) as AnyRoute[]) {
     const permission = (route.options.staticData as StaticDataRouteOption | undefined)?.permission
-    if (!permission) continue
+    if (!permission || wrappedPermissionRoutes.has(route)) continue
+    wrappedPermissionRoutes.add(route)
     const before = route.options.beforeLoad
     route.update({
-      beforeLoad: async (ctx: { location: ParsedLocation }) => {
-        await guard(ctx.location)
-        if (!grants(await loadPermissions(), permission)) throw new ForbiddenError(permission)
+      beforeLoad: async (ctx: { context: RouterContext; location: ParsedLocation }) => {
+        const current = ctx.context.app
+        await current.guard(ctx.location)
+        if (!grants(await current.permissions(), permission)) throw new ForbiddenError(permission)
         return before?.(ctx as never)
       },
     } as never)
   }
 
   // 首次加载任何页面之前恢复登录状态：公开页面的页头也能知道是否已经登录。
-  // 只在浏览器中进行：服务端渲染时不读取身份，页面按未登录渲染，浏览器接管后再更新。
+  // 同样幂等包装一次，执行时从当次请求的 context.app 调用 ready。
   const root = router.routeTree as AnyRoute
-  const rootBefore = root.options.beforeLoad
-  root.update({
-    beforeLoad: async (ctx: unknown) => {
-      if (typeof window !== "undefined") await app.ready()
-      return rootBefore?.(ctx as never)
-    },
-  } as never)
+  if (!wrappedRootRoutes.has(root)) {
+    wrappedRootRoutes.add(root)
+    const rootBefore = root.options.beforeLoad
+    root.update({
+      beforeLoad: async (ctx: { context: RouterContext }) => {
+        if (typeof window !== "undefined") await ctx.context.app.ready()
+        return rootBefore?.(ctx as never)
+      },
+    } as never)
+  }
 
   // 登录、退出、切换身份：清空缓存，重新运行守卫（例如退出后离开受保护的页面）。
-  clearOnIdentityChange(session, queryClient)
-  session.subscribe(() => void router.invalidate())
+  // 仅在浏览器中订阅共享 session，SSR 每次请求是无状态的短生命周期渲染。
+  if (typeof window !== "undefined") {
+    unsubscribes.push(clearOnIdentityChange(session, queryClient))
+    unsubscribes.push(session.subscribe(() => void router.invalidate()))
+  }
   return app
 }
 

@@ -36,11 +36,7 @@ func Migrations() fs.FS {
 
 // Limiter 把每个 key 的理论到达时间（tat）保存为 rate_limits 表的一行，主键是 (name, key)。
 // 算法与 ratelimit.Memory 相同（GCRA）；一次 Allow 是一条语句，同一个 key 的并发调用由行锁排队，
-// 放行的次数准确。
-//
-// 时间按应用服务器的时钟计算（与框架的其他 SQL 一样，测试中的假时钟对它生效），各实例的时钟需要同步。
-// 当前时间在语句开始前取得，排队等行锁的调用用的是稍早的时间：结果只会更严，不会多放行，
-// 误差是排队的时间，相对登录这类以分钟计的配额可以忽略。
+// 放行的次数准确。时间统一使用 PostgreSQL 的权威时钟 clock_timestamp()，避免多实例时钟漂移导致配额失真。
 //
 // tat 早于当前时间的行与不存在的行等价，由 Cleanup 删除。
 type Limiter struct {
@@ -68,28 +64,31 @@ func New(db bun.IDB, name string, cfg ratelimit.Config) *Limiter {
 
 // Allow 实现 ratelimit.Limiter。
 //
-// 新的 key 插入 now + step；已有的 key 在 max(tat, now) 不晚于 now + ahead 时把 tat 推后 step，
-// 否则不修改，再读出 tat 计算需要等待的时间。
+// 新的 key 插入 clock_timestamp() + step；已有的 key 在 greatest(tat, now) 不晚于 now + ahead 时把 tat 推后 step，
+// 否则不修改，再读出 tat 和数据库时钟计算需要等待的时间。
 func (l *Limiter) Allow(ctx context.Context, key string) error {
+	stepUS := l.step.Microseconds()
+	aheadUS := l.ahead.Microseconds()
 	for range 3 {
-		now := time.Now()
 		res, err := l.db.NewRaw(`
-INSERT INTO rate_limits AS r (name, key, tat) VALUES (?, ?, ?)
-ON CONFLICT (name, key) DO UPDATE SET tat = greatest(r.tat, ?) + ? * interval '1 microsecond'
-WHERE greatest(r.tat, ?) <= ?`,
-			l.name, key, now.Add(l.step), now, l.step.Microseconds(), now, now.Add(l.ahead)).Exec(ctx)
+INSERT INTO rate_limits AS r (name, key, tat) VALUES (?, ?, clock_timestamp() + ? * interval '1 microsecond')
+ON CONFLICT (name, key) DO UPDATE SET tat = greatest(r.tat, clock_timestamp()) + ? * interval '1 microsecond'
+WHERE greatest(r.tat, clock_timestamp()) <= clock_timestamp() + ? * interval '1 microsecond'`,
+			l.name, key, stepUS, stepUS, aheadUS).Exec(ctx)
 		if err != nil {
 			return errors.Wrap(err, "ratelimit: allow")
 		}
 		if n, err := res.RowsAffected(); err != nil || n == 1 {
 			return errors.Wrap(err, "ratelimit: allow")
 		}
-		var tat time.Time
-		err = l.db.NewRaw(`SELECT tat FROM rate_limits WHERE name = ? AND key = ?`, l.name, key).Scan(ctx, &tat)
+		var tat, now time.Time
+		err = l.db.NewRaw(`SELECT tat, clock_timestamp() FROM rate_limits WHERE name = ? AND key = ?`, l.name, key).Scan(ctx, &tat, &now)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return errors.Wrap(err, "ratelimit: allow")
 		}
-		now = time.Now()
+		if errors.Is(err, sql.ErrNoRows) {
+			continue
+		}
 		if tat.Before(now) {
 			tat = now
 		}
@@ -107,18 +106,26 @@ func (l *Limiter) Reset(ctx context.Context, key string) error {
 	return errors.Wrap(err, "ratelimit: reset")
 }
 
-// Cleanup 删除最多 limit 个配额已经回满的 key（所有限流器的），返回删除的个数，可以直接交给 schedule.Cleanup 定时执行。
-func (l *Limiter) Cleanup(ctx context.Context, limit int) (int, error) {
+// Cleanup 删除 db 中最多 limit 个配额已经回满的 key（涵盖所有限流器），返回删除的个数。
+func Cleanup(ctx context.Context, db bun.IDB, limit int) (int, error) {
+	if db == nil {
+		return 0, errors.New("pglimit: nil database")
+	}
 	if limit <= 0 {
 		return 0, errors.New("pglimit: cleanup limit must be positive")
 	}
-	res, err := l.db.NewRaw(`
+	res, err := db.NewRaw(`
 DELETE FROM rate_limits WHERE (name, key) IN (
-    SELECT name, key FROM rate_limits WHERE tat <= ? ORDER BY tat LIMIT ? FOR UPDATE SKIP LOCKED
-)`, time.Now(), limit).Exec(ctx)
+    SELECT name, key FROM rate_limits WHERE tat <= clock_timestamp() ORDER BY tat LIMIT ? FOR UPDATE SKIP LOCKED
+)`, limit).Exec(ctx)
 	if err != nil {
 		return 0, errors.Wrap(err, "pglimit: cleanup")
 	}
 	n, err := res.RowsAffected()
 	return int(n), errors.Wrap(err, "pglimit: cleanup")
+}
+
+// Cleanup 删除最多 limit 个配额已经回满的 key（所有限流器的），返回删除的个数，可以直接交给 schedule.Cleanup 定时执行。
+func (l *Limiter) Cleanup(ctx context.Context, limit int) (int, error) {
+	return Cleanup(ctx, l.db, limit)
 }

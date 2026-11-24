@@ -226,16 +226,20 @@ func (s *Store) Resolve(ctx context.Context, sub identity.Subject) (identity.Sub
 }
 
 // Permissions 返回主体 ref 在 tenant 中的全部权限（去重、排序），以及它在其中是否有任何角色。
-// 使用 Cache 时先读缓存。
+// 使用 Cache 时先读缓存；缓存按主体、全局角色和当前租户角色分别打标。
 func (s *Store) Permissions(ctx context.Context, ref identity.Ref, tenant string) ([]string, bool, error) {
 	if s.cache == nil {
 		return s.permissions(ctx, ref, tenant)
+	}
+	tags := []string{s.subjectTag(ref), s.rolesTag("")}
+	if tenant != "" {
+		tags = append(tags, s.rolesTag(tenant))
 	}
 	g, err := s.cache.Remember(ctx, lengthPrefixed(string(ref.Type), ref.ID, tenant), func(ctx context.Context) (grant, error) {
 		// 缓存在修改提交后失效，接着的读取要在主库：读库上的旧数据写进缓存后，要等它过期才会更正。
 		perms, member, err := s.permissions(database.Primary(ctx), ref, tenant)
 		return grant{Permissions: perms, Member: member}, err
-	}, s.subjectTag(ref), s.rolesTag())
+	}, tags...)
 	return g.Permissions, g.Member, err
 }
 
@@ -336,7 +340,7 @@ func (s *Store) UpdateRole(ctx context.Context, r Role, tenant string) (Role, er
 	if err != nil {
 		return Role{}, err
 	}
-	s.invalidate(ctx, s.rolesTag())
+	s.invalidate(ctx, s.rolesTag(r.Tenant))
 	s.recheckTenant(ctx, r.Tenant)
 	r.Permissions = normalize(r.Permissions)
 	return r, nil
@@ -405,7 +409,7 @@ func (s *Store) DeleteRole(ctx context.Context, id, tenant string, opts ...Delet
 	if err != nil {
 		return err
 	}
-	s.invalidate(ctx, s.rolesTag())
+	s.invalidate(ctx, s.rolesTag(roleTenant))
 	s.recheckTenant(ctx, roleTenant)
 	return nil
 }
@@ -502,7 +506,7 @@ func (s *Store) EnsureRole(ctx context.Context, r Role) (Role, error) {
 		return Role{}, err
 	}
 	if changed {
-		s.invalidate(ctx, s.rolesTag())
+		s.invalidate(ctx, s.rolesTag(r.Tenant))
 		s.recheckTenant(ctx, r.Tenant)
 	}
 	r.ID, r.Permissions = id.String(), perms
@@ -748,9 +752,12 @@ func (s *Store) subjectTag(ref identity.Ref) string {
 	return s.prefix + "authz:subject:" + lengthPrefixed(string(ref.Type), ref.ID)
 }
 
-// rolesTag 是全部权限缓存的 tag，角色的权限变化时失效。
-func (s *Store) rolesTag() string {
-	return s.prefix + "authz:roles"
+// rolesTag 是角色权限缓存的 tag：tenant 为空表示全局角色，影响全部缓存；否则只影响该租户的缓存。
+func (s *Store) rolesTag(tenant string) string {
+	if tenant == "" {
+		return s.prefix + "authz:roles"
+	}
+	return s.prefix + "authz:roles:" + tenant
 }
 
 // invalidate 在修改提交之后使 tags 的缓存失效。Store 建在 database.Tx 上时登记到外层事务提交之后。
@@ -874,7 +881,7 @@ func (s *Store) Tenants(ctx context.Context, ref identity.Ref) ([]string, error)
 	return tenants, errors.Wrap(err, "authz: tenants")
 }
 
-// checkRole 检查角色的租户、名称和权限。
+// checkRole 检查角色的租户、名称和权限。租户自定义角色不能授予平台域（identity.DomainPlatform）权限。
 func (s *Store) checkRole(r Role) error {
 	if r.Tenant == AllTenants {
 		return ErrInvalid.New(errorx.Public("field", "tenant"))
@@ -886,8 +893,21 @@ func (s *Store) checkRole(r Role) error {
 		if !s.known(p) {
 			return ErrInvalid.New(errorx.Public("field", "permissions"), errorx.Public("permission", p))
 		}
+		if r.Tenant != "" && s.matchesDomain(p, identity.DomainPlatform) {
+			return ErrInvalid.New(errorx.Public("field", "permissions"), errorx.Public("permission", p))
+		}
 	}
 	return nil
+}
+
+// matchesDomain 报告权限或通配符 perm 是否命中目录中属于 domain 域的权限。
+func (s *Store) matchesDomain(perm, domain string) bool {
+	for _, p := range s.catalog {
+		if p.Domain == domain && identity.Grants([]string{perm}, p.Name) {
+			return true
+		}
+	}
+	return false
 }
 
 // known 报告 perm 是目录中的权限，或是能匹配目录中权限的通配符。

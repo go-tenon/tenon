@@ -80,11 +80,13 @@ func (s Scope) Subject() identity.Ref { return s.ref }
 // Mode 是设置的类型。
 type Mode string
 
-// 设置的类型：全部开启、全部关闭、按比例开启。
+// 设置的类型：开启、关闭、强制开启、强制关闭、按比例开启。
 const (
-	ModeOn      Mode = "on"
-	ModeOff     Mode = "off"
-	ModePercent Mode = "percent" // 只用于全员
+	ModeOn       Mode = "on"
+	ModeOff      Mode = "off"
+	ModeForceOn  Mode = "force_on"  // 只用于全员，覆盖租户和主体的单独设置
+	ModeForceOff Mode = "force_off" // 只用于全员，覆盖租户和主体的单独设置（紧急关闭）
+	ModePercent  Mode = "percent"   // 只用于全员
 )
 
 // State 是一条设置的值。
@@ -94,10 +96,14 @@ type State struct {
 }
 
 var (
-	// On 开启。设给全员时忽略租户和主体的单独设置。
+	// On 开启。设给全员时作为默认状态，租户和主体的单独设置优先于它。
 	On = State{Mode: ModeOn}
-	// Off 关闭。设给全员时忽略租户和主体的单独设置，用作紧急关闭。
+	// Off 关闭。设给全员时作为默认状态，租户和主体的单独设置优先于它。
 	Off = State{Mode: ModeOff}
+	// ForceOn 强制全员开启，覆盖租户和主体的单独设置，只能设给全员。
+	ForceOn = State{Mode: ModeForceOn}
+	// ForceOff 强制全员关闭，覆盖租户和主体的单独设置，用作紧急关闭，只能设给全员。
+	ForceOff = State{Mode: ModeForceOff}
 )
 
 // Percent 让 n% 的主体或租户开启，只能设给全员。租户和主体的单独设置优先于它。
@@ -218,7 +224,7 @@ func subjectOf(sub identity.Subject) identity.Ref {
 	return sub.Ref()
 }
 
-// evaluate 按主体、租户、所有人的顺序取第一个有设置的范围，判断开关 f 对 sub 是否开启；都没有设置时使用 f.Default。
+// evaluate 按全员强制覆盖、主体、租户、全员默认/比例的顺序判断开关 f 对 sub 是否开启；都没有设置时使用 f.Default。
 func evaluate(ctx context.Context, sub identity.Subject, f Flag, rows []row) bool {
 	var everyone, tenant, subject *row
 	for i := range rows {
@@ -233,18 +239,25 @@ func evaluate(ctx context.Context, sub identity.Subject, f Flag, rows []row) boo
 		}
 	}
 	switch {
-	case everyone != nil && everyone.Mode != ModePercent:
-		return everyone.Mode == ModeOn
+	case everyone != nil && (everyone.Mode == ModeForceOn || everyone.Mode == ModeForceOff):
+		return everyone.Mode == ModeForceOn
 	case subject != nil:
 		return subject.Mode == ModeOn
 	case tenant != nil:
 		return tenant.Mode == ModeOn
 	case everyone != nil:
-		unit := subjectOf(sub).String()
-		if f.ByTenant {
-			unit = sub.Tenant
+		switch everyone.Mode {
+		case ModeOn:
+			return true
+		case ModeOff:
+			return false
+		default:
+			unit := subjectOf(sub).String()
+			if f.ByTenant {
+				unit = sub.Tenant
+			}
+			return inRollout(f.Name, unit, everyone.Percent)
 		}
-		return inRollout(f.Name, unit, everyone.Percent)
 	case f.Default != nil:
 		return f.Default(ctx, sub)
 	}
@@ -275,7 +288,10 @@ func (s *Store) Set(ctx context.Context, f Flag, scope Scope, state State) error
 	switch {
 	case state.Mode == ModeOn || state.Mode == ModeOff:
 		state.Percent = 0
-	case state.Mode != ModePercent || state.Percent < 0 || state.Percent > 100 || scope != Everyone:
+	case (state.Mode == ModeForceOn || state.Mode == ModeForceOff) && scope == Everyone:
+		state.Percent = 0
+	case state.Mode == ModePercent && state.Percent >= 0 && state.Percent <= 100 && scope == Everyone:
+	default:
 		return ErrInvalid.New(errorx.Public("field", "state"))
 	}
 	r := &row{

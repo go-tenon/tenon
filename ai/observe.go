@@ -64,6 +64,7 @@ type observeTransport struct {
 }
 
 // RoundTrip 发送模型请求并采集非流式或流式 SSE 响应的用量与内容。
+// 请求体与非流式响应体按 MaxBodyBytes 设限采集：超过上限时仅保留前缀并流式透传剩余字节，避免大载荷引发内存暴涨。
 func (t *observeTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	ctx := req.Context()
 	cloned := req.Clone(ctx)
@@ -71,20 +72,22 @@ func (t *observeTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	var reqBody []byte
 	var reqModel string
 	if cloned.Body != nil {
-		raw, err := io.ReadAll(cloned.Body)
-		_ = cloned.Body.Close()
+		origBody := cloned.Body
+		prefix, err := io.ReadAll(io.LimitReader(origBody, int64(t.maxBody)+1))
 		if err != nil {
+			_ = origBody.Close()
 			return nil, err
 		}
-		cloned.Body = io.NopCloser(bytes.NewReader(raw))
-		cloned.ContentLength = int64(len(raw))
-		reqBody = truncateBytes(raw, t.maxBody)
-		var head struct {
-			Model string `json:"model"`
+		if len(prefix) <= t.maxBody {
+			_ = origBody.Close()
+			cloned.Body = io.NopCloser(bytes.NewReader(prefix))
+			cloned.ContentLength = int64(len(prefix))
+			reqBody = prefix
+		} else {
+			cloned.Body = &joinedReadCloser{r: io.MultiReader(bytes.NewReader(prefix), origBody), closer: origBody}
+			reqBody = prefix[:t.maxBody]
 		}
-		if json.Unmarshal(raw, &head) == nil {
-			reqModel = head.Model
-		}
+		reqModel = extractJSONModel(reqBody)
 	}
 
 	ev := CallEvent{
@@ -118,19 +121,122 @@ func (t *observeTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 		return resp, nil
 	}
 
-	data, readErr := io.ReadAll(resp.Body)
-	_ = resp.Body.Close()
-	ev.Duration = time.Since(start)
+	origRespBody := resp.Body
+	prefix, readErr := io.ReadAll(io.LimitReader(origRespBody, int64(t.maxBody)+1))
 	if readErr != nil {
+		_ = origRespBody.Close()
+		ev.Duration = time.Since(start)
 		ev.Err = readErr
 		t.fn(context.WithoutCancel(ctx), ev)
 		return nil, readErr
 	}
-	resp.Body = io.NopCloser(bytes.NewReader(data))
-	ev.ResponseBody = truncateBytes(data, t.maxBody)
-	parseCompletionEnvelope(data, &ev)
-	t.fn(context.WithoutCancel(ctx), ev)
+	if len(prefix) <= t.maxBody {
+		_ = origRespBody.Close()
+		ev.Duration = time.Since(start)
+		resp.Body = io.NopCloser(bytes.NewReader(prefix))
+		ev.ResponseBody = prefix
+		parseCompletionEnvelope(prefix, &ev)
+		t.fn(context.WithoutCancel(ctx), ev)
+		return resp, nil
+	}
+	// 非流式响应体超出采集上限时流式透传剩余内容，读完或关闭时回调一次，不将整块响应缓存在内存中。
+	ev.ResponseBody = prefix[:t.maxBody]
+	resp.Body = &passthroughObserveBody{
+		r:      io.MultiReader(bytes.NewReader(prefix), origRespBody),
+		closer: origRespBody,
+		ctx:    context.WithoutCancel(ctx),
+		start:  start,
+		ev:     ev,
+		fn:     t.fn,
+	}
 	return resp, nil
+}
+
+// joinedReadCloser 把前缀缓冲区和底层流拼为一个 ReadCloser。
+type joinedReadCloser struct {
+	r      io.Reader
+	closer io.Closer
+}
+
+// Read 从拼接流中读取字节。
+func (j *joinedReadCloser) Read(p []byte) (int, error) { return j.r.Read(p) }
+
+// Close 关闭底层流。
+func (j *joinedReadCloser) Close() error { return j.closer.Close() }
+
+// passthroughObserveBody 透传超过 MaxBodyBytes 的非流式响应体，在 EOF 或 Close 时回调一次观测函数。
+type passthroughObserveBody struct {
+	r      io.Reader
+	closer io.Closer
+	ctx    context.Context
+	start  time.Time
+	ev     CallEvent
+	fn     func(context.Context, CallEvent)
+	once   sync.Once
+}
+
+// Read 透传响应字节并在结束时上报观测事件。
+func (b *passthroughObserveBody) Read(p []byte) (int, error) {
+	n, err := b.r.Read(p)
+	if err != nil {
+		if err != io.EOF {
+			b.ev.Err = err
+		}
+		b.finish()
+	}
+	return n, err
+}
+
+// Close 关闭底层响应体并确保触发一次观测回调。
+func (b *passthroughObserveBody) Close() error {
+	err := b.closer.Close()
+	b.finish()
+	return err
+}
+
+// finish 记录完整耗时并触发一次观测回调。
+func (b *passthroughObserveBody) finish() {
+	b.once.Do(func() {
+		b.ev.Duration = time.Since(b.start)
+		b.fn(b.ctx, b.ev)
+	})
+}
+
+// extractJSONModel 从完整或截断的 JSON 请求体中尽力提取顶层 model 字段。
+func extractJSONModel(raw []byte) string {
+	var head struct {
+		Model string `json:"model"`
+	}
+	if json.Unmarshal(raw, &head) == nil && head.Model != "" {
+		return head.Model
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	tok, err := dec.Token()
+	if err != nil || tok != json.Delim('{') {
+		return ""
+	}
+	for dec.More() {
+		k, err := dec.Token()
+		if err != nil {
+			return ""
+		}
+		key, ok := k.(string)
+		if !ok {
+			return ""
+		}
+		if key == "model" {
+			var m string
+			if dec.Decode(&m) == nil {
+				return m
+			}
+			return ""
+		}
+		var skip json.RawMessage
+		if dec.Decode(&skip) != nil {
+			return ""
+		}
+	}
+	return ""
 }
 
 // sseObserveBody 包装 SSE 响应体，边透传字节流边解析文本增量与 usage，在 EOF 或 Close 时触发一次回调。
@@ -170,7 +276,13 @@ func (s *sseObserveBody) Close() error {
 }
 
 // consume 解析新增的 SSE 字节片段，按行提取 data: JSON 载荷中的文本与用量。
+// 对缺少换行的超长单行设限丢弃，防止畸形上游流占满内存。
 func (s *sseObserveBody) consume(chunk []byte) {
+	maxPending := max(s.maxBody, 1<<20)
+	if s.pending.Len()+len(chunk) > maxPending {
+		s.pending.Reset()
+		return
+	}
 	s.pending.Write(chunk)
 	for {
 		line, err := s.pending.ReadString('\n')
@@ -310,12 +422,4 @@ func cleanEndpoint(req *http.Request) string {
 	u.Fragment = ""
 	u.User = nil
 	return u.String()
-}
-
-// truncateBytes 将切片截断至不超过 limit 字节。
-func truncateBytes(b []byte, limit int) []byte {
-	if len(b) <= limit {
-		return b
-	}
-	return b[:limit]
 }

@@ -6,10 +6,14 @@ import (
 	"log/slog"
 	"runtime/debug"
 	"sync"
+	"time"
 
 	"github.com/cockroachdb/errors"
 	"github.com/uptrace/bun"
 )
+
+// afterCommitTimeout 是单次提交后回调集合的最长执行时间，避免缓存失效或广播阻塞拖死请求。
+const afterCommitTimeout = 5 * time.Second
 
 // Tx 是 RunInTx 开启的事务。它嵌入 bun.Tx，可以直接传给接收 bun.IDB 的函数，
 // 例如 activity.Record、notification.Send 和 queue.Topic 的 Publish；
@@ -81,9 +85,12 @@ func RunInTx(ctx context.Context, db bun.IDB, opts *sql.TxOptions, fn func(ctx c
 		return err
 	}
 	markPrimary(ctx)
-	ctx = context.WithoutCancel(ctx)
-	for _, fn := range fns {
-		runHook(ctx, fn)
+	if len(fns) > 0 {
+		hookCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), afterCommitTimeout)
+		defer cancel()
+		for _, fn := range fns {
+			runHook(hookCtx, fn)
+		}
 	}
 	return nil
 }

@@ -14,9 +14,9 @@ import (
 	"time"
 
 	"github.com/cockroachdb/errors"
-	"github.com/uptrace/bun"
 
 	"github.com/go-tenon/tenon/apitoken"
+	"github.com/go-tenon/tenon/database"
 	"github.com/go-tenon/tenon/identity"
 )
 
@@ -26,8 +26,8 @@ type tokenError struct {
 	Description string `json:"error_description,omitempty"`
 }
 
-// token 处理授权码换令牌。授权码在校验全部通过后才删除：客户端换一种认证方式重试（例如 golang.org/x/oauth2
-// 先用 Basic 认证、失败后改放表单）时，同一个授权码仍然可以使用；兑换成功后随即作废。
+// token 处理授权码换令牌。授权码在校验全部通过后与签发令牌在同一个事务中完成：
+// 客户端换一种认证方式重试时授权码仍然有效，签发失败时授权码也不会提前作废。
 func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Pragma", "no-cache")
@@ -54,8 +54,15 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var c code
+	var sub identity.Subject
+	var access string
+	var firstParty bool
 	var reject *tokenError
-	err := s.db.RunInTx(r.Context(), nil, func(ctx context.Context, tx bun.Tx) error {
+	ip := r.RemoteAddr
+	if host, _, err := net.SplitHostPort(ip); err == nil {
+		ip = host
+	}
+	err := database.RunInTx(r.Context(), s.db, nil, func(ctx context.Context, tx database.Tx) error {
 		err := tx.NewSelect().Model(&c).Where("code_hash = ?", hashCode(plain)).For("UPDATE").Scan(ctx)
 		if errors.Is(err, sql.ErrNoRows) {
 			reject = &tokenError{"invalid_grant", "the code is invalid, expired or already used"}
@@ -79,8 +86,25 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 		if reject != nil {
 			return nil
 		}
-		_, err = tx.NewDelete().Model(&c).WherePK().Exec(ctx)
-		return errors.Wrap(err, "consume code")
+		if _, err := tx.NewDelete().Model(&c).WherePK().Exec(ctx); err != nil {
+			return errors.Wrap(err, "consume code")
+		}
+		sub = identity.Subject{
+			Type: identity.SubjectType(c.SubjectType), ID: c.SubjectID, Tenant: c.Tenant,
+			Impersonator: identity.Ref{Type: identity.SubjectType(c.ImpersonatorType), ID: c.ImpersonatorID},
+		}
+		tokens := s.tokens.WithDB(tx)
+		if cl, ok := s.clients[c.ClientID]; ok && cl.FirstParty {
+			firstParty = true
+			access, err = tokens.Login(ctx, sub, apitoken.Device{Remember: true, IP: ip, UserAgent: r.UserAgent()})
+			return errors.Wrap(err, "issue login token")
+		}
+		access, err = tokens.Authorize(ctx, sub, apitoken.Grant{
+			ClientID: c.ClientID, ClientName: c.ClientName, Resource: c.Resource,
+			Scopes:   strings.Fields(c.Scopes),
+			Lifetime: s.opts.TokenLifetime, IdleTimeout: s.opts.TokenIdleTimeout,
+		})
+		return errors.Wrap(err, "issue oauth token")
 	})
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), "oauth token failed", "error", err)
@@ -91,23 +115,9 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 		writeTokenError(w, http.StatusBadRequest, reject.Error, reject.Description)
 		return
 	}
-
-	sub := identity.Subject{
-		Type: identity.SubjectType(c.SubjectType), ID: c.SubjectID, Tenant: c.Tenant,
-		Impersonator: identity.Ref{Type: identity.SubjectType(c.ImpersonatorType), ID: c.ImpersonatorID},
-	}
-	if cl, ok := s.clients[c.ClientID]; ok && cl.FirstParty {
-		s.signIn(w, r, sub, c.ClientID)
-		return
-	}
-	access, err := s.tokens.Authorize(r.Context(), sub, apitoken.Grant{
-		ClientID: c.ClientID, ClientName: c.ClientName, Resource: c.Resource,
-		Scopes:   strings.Fields(c.Scopes),
-		Lifetime: s.opts.TokenLifetime, IdleTimeout: s.opts.TokenIdleTimeout,
-	})
-	if err != nil {
-		s.logger.ErrorContext(r.Context(), "oauth token failed", "error", err)
-		writeTokenError(w, http.StatusInternalServerError, "server_error", "")
+	if firstParty {
+		s.logger.InfoContext(r.Context(), "oauth sign-in", "client_id", c.ClientID, "subject", sub.Ref().String())
+		writeJSON(w, http.StatusOK, map[string]any{"access_token": access, "token_type": "Bearer"})
 		return
 	}
 	s.logger.InfoContext(r.Context(), "oauth token issued", "client_id", c.ClientID, "subject", sub.Ref().String(), "resource", c.Resource)
@@ -121,23 +131,6 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 		"expires_in":   int64(expiresIn / time.Second),
 		"scope":        c.Scopes,
 	})
-}
-
-// signIn 为应用自己的客户端签发登录 token：与密码登录得到的相同，代表一台设备，记下令牌请求的地址和 User-Agent。
-// 登录 token 按 apitoken.Config 滑动过期，响应中没有 expires_in。
-func (s *Server) signIn(w http.ResponseWriter, r *http.Request, sub identity.Subject, clientID string) {
-	ip := r.RemoteAddr
-	if host, _, err := net.SplitHostPort(ip); err == nil {
-		ip = host
-	}
-	access, err := s.tokens.Login(r.Context(), sub, apitoken.Device{Remember: true, IP: ip, UserAgent: r.UserAgent()})
-	if err != nil {
-		s.logger.ErrorContext(r.Context(), "oauth sign-in failed", "error", err)
-		writeTokenError(w, http.StatusInternalServerError, "server_error", "")
-		return
-	}
-	s.logger.InfoContext(r.Context(), "oauth sign-in", "client_id", clientID, "subject", sub.Ref().String())
-	writeJSON(w, http.StatusOK, map[string]any{"access_token": access, "token_type": "Bearer"})
 }
 
 // revoke 撤销客户端交回的令牌（RFC 7009）。令牌无效时同样返回 200。

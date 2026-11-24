@@ -44,3 +44,26 @@ func TestNewSchemaSameNameDifferentPackages(t *testing.T) {
 		t.Fatalf("validate: %v %v", details, err)
 	}
 }
+
+// 超过 float64 精确整数范围（2^53）的 int64 在无默认值和补填默认值时都保持精度不丢失。
+func TestValidatePreservesInt64Precision(t *testing.T) {
+	t.Parallel()
+	type payload struct {
+		ID   int64  `json:"id"`
+		Mode string `json:"mode,omitempty" default:"fast"`
+	}
+	s := contract.NewSchema(reflect.TypeFor[payload](), huma.ModeWriteToServer)
+	const want int64 = 9007199254740993 // 2^53 + 1
+
+	var a payload
+	details, err := s.Validate([]byte(`{"id":9007199254740993,"mode":"strong"}`), &a, "")
+	if err != nil || len(details) > 0 || a.ID != want || a.Mode != "strong" {
+		t.Fatalf("without default: a=%+v details=%v err=%v", a, details, err)
+	}
+
+	var b payload
+	details, err = s.Validate([]byte(`{"id":9007199254740993}`), &b, "")
+	if err != nil || len(details) > 0 || b.ID != want || b.Mode != "fast" {
+		t.Fatalf("with default: b=%+v details=%v err=%v", b, details, err)
+	}
+}

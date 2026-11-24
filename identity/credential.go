@@ -1,6 +1,9 @@
 package identity
 
-import "context"
+import (
+	"context"
+	"log/slog"
+)
 
 // TokenValidator 校验调用者出示的 token（例如 Authorization: Bearer 中的值）并返回凭据给出的主体。
 // ctx 是本次调用的 context。token 无效时返回 ID 为空的主体或不是系统故障的错误；
@@ -28,13 +31,19 @@ func WithCredentialCheck(ctx context.Context, check CredentialCheck) context.Con
 }
 
 // CheckCredential 运行 ctx 中的全部 CredentialCheck，返回第一个表示凭据失效的错误；
-// 没有校验、全部通过，或只是暂时无法判断（Failed）时返回 nil。
+// 没有校验、全部通过，或只是暂时无法判断（Failed）时返回 nil；遇到暂时无法判断的系统故障时记录 Warn 日志。
 func CheckCredential(ctx context.Context) error {
 	checks, _ := ctx.Value(credentialKey{}).([]CredentialCheck)
 	for _, check := range checks {
-		if err := check(ctx); err != nil && !Failed(err) {
-			return err
+		err := check(ctx)
+		if err == nil {
+			continue
 		}
+		if Failed(err) {
+			slog.WarnContext(ctx, "credential check transiently failed", "error", err)
+			continue
+		}
+		return err
 	}
 	return nil
 }

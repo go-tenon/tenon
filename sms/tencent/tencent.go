@@ -112,8 +112,8 @@ type Sender struct {
 
 var _ sms.Sender = (*Sender)(nil)
 
-// New 创建 Sender，不访问网络。client 为 nil 时使用 outbound.New 创建的客户端，超时为 Timeout；
-// 测试时传入 outboundtest 的客户端。
+// New 创建 Sender，不访问网络。client 为 nil 时使用 outbound.Trusted(Timeout) 创建支持代理与内网接入点的客户端；
+// 测试时传入 httptest 的客户端。
 func New(cfg Config, client *http.Client) (*Sender, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, errors.Wrap(err, "tencent sms")
@@ -126,7 +126,7 @@ func New(cfg Config, client *http.Client) (*Sender, error) {
 		s.region = DefaultRegion
 	}
 	if s.client == nil {
-		s.client = outbound.New(outbound.Options{Timeout: Timeout})
+		s.client = outbound.Trusted(Timeout)
 	}
 	return s, nil
 }

@@ -18,15 +18,27 @@ export const EnvAPISocket = "API_SOCKET"
 /** 开发时没有内部 socket，Vite 的 SSR 经 TCP 调用 Go 对外的地址。 */
 export const EnvAPIOrigin = "API_ORIGIN"
 
-/** SSR 调用 Go 接口时原样带回的页面请求头：登录凭据、请求 ID、链路和语言。 */
-const forwarded = ["cookie", "x-request-id", "traceparent", "tracestate", "accept-language"]
+/** SSR 调用 Go 接口时原样带回的页面请求头：登录凭据、请求 ID、链路、语言与代理来源。 */
+const forwarded = [
+  "cookie",
+  "x-request-id",
+  "traceparent",
+  "tracestate",
+  "accept-language",
+  "x-forwarded-host",
+  "x-forwarded-proto",
+]
 
-/** 从页面请求中取出要转交给 Go 的请求头。 */
+/** 从页面请求中取出要转交给 Go 的请求头。页面请求带 Host 且未带 X-Forwarded-Host 时补上 X-Forwarded-Host，保留子域名多租户上下文。 */
 export function forwardHeaders(incoming: Headers): Record<string, string> {
   const out: Record<string, string> = {}
   for (const name of forwarded) {
     const v = incoming.get(name)
     if (v) out[name] = v
+  }
+  if (!out["x-forwarded-host"]) {
+    const host = incoming.get("host")
+    if (host) out["x-forwarded-host"] = host
   }
   return out
 }

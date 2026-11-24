@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/cockroachdb/errors"
+
+	"github.com/go-tenon/tenon/httpx"
 )
 
 // Resource 描述 MCP 服务作为 OAuth 受保护资源的信息（RFC 9728）。claude.ai、ChatGPT 的远程连接器据此找到授权服务器，
@@ -67,11 +69,33 @@ func ResourceMetadata(r Resource) http.Handler {
 	if err != nil {
 		panic(errors.Wrap(err, "mcpx: encode resource metadata"))
 	}
-	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		_, _ = w.Write(body)
-	})
+	return resourceMetadataHandler{body: body}
+}
+
+// resourceMetadataHandler 输出 OAuth 受保护资源元数据并实现 httpx.RouteDescriber。
+type resourceMetadataHandler struct {
+	body []byte
+}
+
+// ServeHTTP 只响应 GET/HEAD 请求，返回受保护资源元数据文档。
+func (h resourceMetadataHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.Header().Set("Allow", "GET, HEAD")
+		httpx.WriteProblem(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	if r.Method == http.MethodHead {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	_, _ = w.Write(h.body)
+}
+
+// DescribeRoute 实现 httpx.RouteDescriber，在路由表中标记为公开端点。
+func (resourceMetadataHandler) DescribeRoute() httpx.Route {
+	return httpx.Route{Access: httpx.AccessPublic, Summary: "OAuth protected resource metadata"}
 }
 
 // loopback 报告 host 是否是本机地址。

@@ -327,6 +327,25 @@ func TestEraseDue(t *testing.T) {
 	}
 }
 
+// 冷静期内如果主体不再满足 Check（例如成为团队唯一所有者），EraseDue 再次检查并推迟，不破坏业务不变量。
+func TestEraseDueRechecksAfterGrace(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	a := newApp(t)
+	s := a.service(0)
+	token := a.signUp(t, "alice")
+	request(t, s, a.db, "alice")
+
+	a.owner.Store("alice", true)
+	n, err := s.EraseDue(ctx, 10)
+	if n != 0 || !errors.Is(err, errSoleOwner) {
+		t.Fatalf("erase due when check fails: n=%d err=%v", n, err)
+	}
+	if !a.exists(t, "alice", token) {
+		t.Fatal("alice erased despite failing re-check")
+	}
+}
+
 // 一项失败时，这个主体的修改全部回滚，记下原因，推迟重试；其他主体照常删除。
 func TestEraseDueRetriesFailure(t *testing.T) {
 	t.Parallel()

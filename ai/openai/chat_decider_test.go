@@ -76,6 +76,7 @@ func TestChatDeciderFallbackProbabilitiesAndImages(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "strong", res.Answers["tier"].Choice)
+	assert.True(t, res.Answers["tier"].HasConfidence)
 	assert.InDelta(t, 0.85, res.Answers["tier"].ProbabilityOf("strong"), 1e-6)
 	assert.InDelta(t, 0.15, res.Answers["tier"].ProbabilityOf("fast"), 1e-6)
 	assert.True(t, res.Answers["damaged"].Refused)
@@ -110,4 +111,30 @@ func TestChatDeciderErrors(t *testing.T) {
 	reply = `not-json`
 	_, err = d.Decide(t.Context(), ai.DecisionRequest{Input: "x", Questions: ticketQuestions[:1]})
 	assert.ErrorContains(t, err, "parse chat decision json")
+}
+
+func TestChatDeciderMissingConfidenceNotFabricated(t *testing.T) {
+	t.Parallel()
+	s := newServer(t, func(w http.ResponseWriter, _ request) {
+		writeJSON(w, map[string]any{
+			"model": "qwen-turbo",
+			"choices": []map[string]any{{
+				"message": map[string]any{
+					"content": `{"answers": {"tier": {"choice": "fast"}}}`,
+				},
+			}},
+		})
+	})
+	res, err := s.client("qwen-turbo").ChatDecider().Decide(t.Context(), ai.DecisionRequest{
+		Input: "hello",
+		Questions: []ai.Question{
+			ai.Choice("tier", "选择档位", ai.ChoiceOption{Value: "fast"}, ai.ChoiceOption{Value: "strong"}),
+		},
+	})
+	require.NoError(t, err)
+	ans := res.Answers["tier"]
+	assert.Equal(t, "fast", ans.Choice)
+	assert.False(t, ans.HasConfidence)
+	assert.Zero(t, ans.Confidence)
+	assert.Empty(t, ans.Probabilities)
 }

@@ -11,7 +11,11 @@ import (
 
 	"github.com/cockroachdb/errors"
 	"github.com/nats-io/nats.go"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/go-tenon/tenon/errorx"
 	"github.com/go-tenon/tenon/i18n"
@@ -82,6 +86,15 @@ func Call[Out any](ctx context.Context, nc *nats.Conn, subject string, in any, o
 		ctx, cancel = context.WithTimeout(ctx, DefaultCallTimeout)
 		defer cancel()
 	}
+	ctx, span := otel.Tracer(tracerScope).Start(ctx, subject,
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(
+			attribute.String("rpc.system", "nats"),
+			attribute.String("rpc.method", subject),
+		),
+	)
+	defer span.End()
+
 	req := nats.NewMsg(subject)
 	req.Data = body
 	if id := logging.RequestID(ctx); id != "" {
@@ -101,12 +114,23 @@ func Call[Out any](ctx context.Context, nc *nats.Conn, subject string, in any, o
 	resp, err := nc.RequestMsgWithContext(ctx, req)
 	switch {
 	case errors.Is(err, nats.ErrNoResponders):
-		return out, ErrNoResponders.Wrap(errors.Wrapf(err, "natsrpc: %s", subject))
+		err = ErrNoResponders.Wrap(errors.Wrapf(err, "natsrpc: %s", subject))
+		logging.RecordError(span, err)
+		span.SetStatus(codes.Error, "no responders")
+		return out, err
 	case err != nil:
-		return out, errors.Wrapf(err, "natsrpc: call %s", subject)
+		err = errors.Wrapf(err, "natsrpc: call %s", subject)
+		logging.RecordError(span, err)
+		span.SetStatus(codes.Error, err.Error())
+		return out, err
 	}
 	if code := resp.Header.Get(HeaderErrorCode); code != "" {
-		return out, remoteError(subject, code, resp)
+		err := remoteError(subject, code, resp)
+		if errorx.KindOf(err).Systemic() {
+			logging.RecordError(span, err)
+			span.SetStatus(codes.Error, code)
+		}
+		return out, err
 	}
 	if _, empty := any(out).(struct{}); empty || len(resp.Data) == 0 {
 		return out, nil
@@ -138,7 +162,11 @@ func remoteError(subject, code string, resp *nats.Msg) error {
 			break
 		}
 	}
-	err := errorx.Define(kindOf(remote.Problem.Status), remote.Problem.Code).Wrap(remote, opts...)
+	errCode := remote.Problem.Code
+	if errCode == "" && remote.Problem.Status == http.StatusUnprocessableEntity && len(remote.Problem.Errors) > 0 {
+		errCode = "validation.failed"
+	}
+	err := errorx.Define(kindOf(remote.Problem.Status), errCode).Wrap(remote, opts...)
 	if remote.Problem.Status == http.StatusGatewayTimeout {
 		err = errors.Mark(err, context.DeadlineExceeded) // 与调用方自己的超时一样处理
 	}

@@ -123,3 +123,25 @@ func TestNoAddAfterClose(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+func TestCleanupIgnoresExpiredDeadline(t *testing.T) {
+	t.Parallel()
+	var s cleanup.Stack
+	var ran bool
+	_ = s.Add("db", func(ctx context.Context) error {
+		ran = true
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		deadline, ok := ctx.Deadline()
+		if !ok || time.Until(deadline) <= time.Second {
+			return errors.New("expected fresh default timeout")
+		}
+		return nil
+	})
+	expired, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+	if err := s.Close(expired); err != nil || !ran {
+		t.Fatalf("close with expired deadline: ran=%v err=%v", ran, err)
+	}
+}

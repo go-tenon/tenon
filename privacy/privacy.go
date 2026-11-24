@@ -34,7 +34,7 @@ const maxError = 1000
 // Source 是保存了主体数据的一个地方，例如框架的 login、push，或者应用自己的用户表。
 type Source struct {
 	Name   string                                                               // 区分各项，出现在错误和日志中，例如 login、notifications。
-	Check  func(ctx context.Context, ref identity.Ref) error                    // 报告 ref 现在能否注销，不能时返回业务错误（errorx），例如“你是团队唯一的所有者”。Request 和 Erase 在开始时依次调用全部 Check；冷静期结束、EraseDue 执行时不再检查。可以为 nil。
+	Check  func(ctx context.Context, ref identity.Ref) error                    // 报告 ref 现在能否注销，不能时返回业务错误（errorx），例如“你是团队唯一的所有者”。Request、Erase 和冷静期结束后的 EraseDue 都会依次调用全部 Check。可以为 nil。
 	Erase  func(ctx context.Context, db bun.IDB, ref identity.Ref) error        // 在 db 中删除 ref 的数据。全部 Source 的 Erase 按登记的顺序在同一个事务中执行，db 是这个 database.Tx：任何一项返回错误，整个事务回滚，稍后重试。要删除外部系统中的数据（对象存储、向量库、支付平台）时，在这个事务中用 queue 发布任务，与删除一起提交。可以为 nil。Erase 可能执行多次（失败后重试），必须是幂等的：数据已经不存在时直接返回 nil。
 	Export func(ctx context.Context, db bun.IDB, ref identity.Ref) (any, error) // 返回 ref 在这里的数据，导出个人数据时编码为 JSON，写成压缩包中的 <Name>.json，见 privacy/export。全部 Export 在同一个只读事务中执行，db 是这个事务，读到的是同一时刻的数据。返回 nil 时不写这个文件。可以为 nil。
 }
@@ -251,10 +251,15 @@ func (s *Service) EraseDue(ctx context.Context, limit int) (int, error) {
 				return errors.Wrap(err, "privacy: select due erasure")
 			}
 			picked = true
-			// 保存点：删除失败时只回滚各项的修改，失败原因仍然写进这一行。
-			failed = database.RunInTx(ctx, tx, nil, func(ctx context.Context, sp database.Tx) error {
-				return s.run(ctx, sp, e.Subject())
-			})
+			// 冷静期结束后再次校验前置条件，防止期间状态变化破坏业务不变量。
+			if err := s.Check(ctx, e.Subject()); err != nil {
+				failed = err
+			} else {
+				// 保存点：删除失败时只回滚各项的修改，失败原因仍然写进这一行。
+				failed = database.RunInTx(ctx, tx, nil, func(ctx context.Context, sp database.Tx) error {
+					return s.run(ctx, sp, e.Subject())
+				})
+			}
 			if failed != nil {
 				_, err := tx.NewUpdate().Model((*Erasure)(nil)).Where("id = ?", e.ID).
 					Set("attempts = attempts + 1").Set("last_error = ?", truncate(failed.Error())).

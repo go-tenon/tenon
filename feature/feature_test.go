@@ -77,12 +77,20 @@ func TestPrecedence(t *testing.T) {
 	check(t, s, user("carol", "globex"), editor, false, "percent 0 ignores default")
 
 	set(t, s, editor, feature.Everyone, feature.Off)
-	check(t, s, user("dave", "acme"), editor, false, "everyone off is a kill switch")
-	check(t, s, staff, editor, false, "kill switch beats default")
+	check(t, s, user("dave", "acme"), editor, true, "tenant on beats everyone off default")
+	check(t, s, user("carol", "globex"), editor, false, "everyone off beats default")
 
 	set(t, s, editor, feature.Everyone, feature.On)
-	check(t, s, alice, editor, true, "everyone on beats user off")
+	check(t, s, alice, editor, false, "user off beats everyone on default")
 	check(t, s, identity.Subject{}, editor, true, "everyone on includes anonymous")
+
+	set(t, s, editor, feature.Everyone, feature.ForceOff)
+	check(t, s, user("dave", "acme"), editor, false, "everyone force_off is a kill switch")
+	check(t, s, staff, editor, false, "kill switch beats default")
+
+	set(t, s, editor, feature.Everyone, feature.ForceOn)
+	check(t, s, alice, editor, true, "everyone force_on beats user off")
+	check(t, s, identity.Subject{}, editor, true, "everyone force_on includes anonymous")
 
 	require.NoError(t, s.Clear(context.Background(), editor, feature.Everyone))
 	check(t, s, alice, editor, false, "cleared everyone, user off again")
@@ -215,6 +223,8 @@ func TestSetValidation(t *testing.T) {
 		"subject no type":   {search, feature.Subject(identity.Ref{ID: "alice"}), feature.On},
 		"tenant percent":    {search, feature.Tenant("acme"), feature.Percent(10)},
 		"user percent":      {search, feature.Subject(userRef("alice")), feature.Percent(10)},
+		"tenant force_on":   {search, feature.Tenant("acme"), feature.ForceOn},
+		"user force_off":    {search, feature.Subject(userRef("alice")), feature.ForceOff},
 		"negative percent":  {search, feature.Everyone, feature.Percent(-1)},
 		"percent above 100": {search, feature.Everyone, feature.Percent(101)},
 		"zero state":        {search, feature.Everyone, feature.State{}},
