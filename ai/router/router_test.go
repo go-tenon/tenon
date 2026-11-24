@@ -222,7 +222,7 @@ func TestDecideSessionStickyAndEscalateOnly(t *testing.T) {
 
 func TestDecideEqualRankAndStrictCandidates(t *testing.T) {
 	t.Parallel()
-	// 同 Rank 档位在低置信度时向更高 Rank 升档，而非横向跳到同 Rank 兄弟档位。
+	// 同 Rank 档位在低置信度时只向更高 Rank 升档。
 	p := router.Policy{
 		Tiers: []router.Tier{
 			{Key: "fast_a", Rank: 1, Models: []string{"m-a"}},

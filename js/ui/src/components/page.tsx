@@ -164,7 +164,7 @@ function PageTabs({ tabs }: { tabs: PageTab[] }): ReactNode {
   )
 }
 
-/** 面包屑：最后一级是当前页面，不是链接。 */
+/** 面包屑：前序层级为链接，最后一级以纯文本显示当前页面。 */
 function Crumbs({ extra }: { extra?: string }): ReactNode {
   const { crumbs: matched } = useNavigation()
   const crumbs = extra ? [...matched, { title: extra, path: "" }] : matched

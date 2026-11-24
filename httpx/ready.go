@@ -38,7 +38,7 @@ type readyResult struct {
 //
 // Serve 开始排空之后（进程开始停止时）直接返回 503，排空的状态取自请求的 context，见 DrainStarted；否则用 health.Checker 执行全部检查，必需的检查都通过时返回 200，
 // 有一项失败时返回 503。响应体列出每项的结果，例如 {"status":"ready","checks":{"database":"ok","cache":"failed"}}；
-// 失败的原因不出现在响应中，而是记录在日志里，日志只记录变化，见 health.Checker.Run。
+// 失败原因记录在日志中（仅记录状态变化，见 health.Checker.Run），响应体只返回检查状态。
 // 名称为空、重复或 Ping 为 nil 时 panic。
 func Ready(opts ReadyOptions) http.Handler {
 	return &ready{

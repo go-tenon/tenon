@@ -62,7 +62,7 @@ type ScheduleRun struct {
 	Task       string    `json:"task"`
 	TaskLabel  string    `json:"task_label,omitempty" doc:"任务的显示名称"`
 	Status     Status    `json:"status" enum:"succeeded,failed,skipped"`
-	Manual     bool      `json:"manual" doc:"立即执行的，不是按表达式触发"`
+	Manual     bool      `json:"manual" doc:"来自手动立即执行"`
 	StartedAt  time.Time `json:"started_at"`
 	DurationMS int64     `json:"duration_ms"`
 	Error      string    `json:"error" doc:"失败的原因；跳过时是跳过的原因，例如 overlap"`

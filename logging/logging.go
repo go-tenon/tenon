@@ -35,7 +35,7 @@ const (
 type Config struct {
 	Level     slog.Level            `yaml:"level"`      // 支持 debug、info、warn、error，以及 info+2 这类偏移写法。
 	Levels    map[string]slog.Level `yaml:"levels"`     // 按 component 字段覆盖 Level，例如 {http: warn, billing: debug}；框架组件的 component 见 docs/general/logging.md。
-	Format    string                `yaml:"format"`     // Format 为 json 或 text；空值按输出自动选择：输出到终端（或设置了 FORCE_COLOR）时是 text，其余（文件、管道、systemd、容器）是 json。json 供日志系统采集；text 供本地开发阅读，输出到终端时着色（遵守 NO_COLOR），不是严格的 logfmt。
+	Format    string                `yaml:"format"`     // Format 为 json 或 text；空值按输出自动选择：输出到终端（或设置了 FORCE_COLOR）时是 text，其余（文件、管道、systemd、容器）是 json。json 供日志系统采集；text 供本地开发阅读，输出到终端时着色（遵守 NO_COLOR），采用面向可读性的紧凑文本格式。
 	AddSource bool                  `yaml:"add_source"` // 在日志中附加源码位置。
 	TimeZone  string                `yaml:"time_zone"`  // 日志时间使用的时区，例如 UTC、Asia/Shanghai；空值表示本地时区。
 	Writer    io.Writer             `yaml:"-"`          // 基础输出的目标，nil 表示 os.Stderr；只能在代码中设置。

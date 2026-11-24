@@ -100,7 +100,7 @@ func (d *docs) add(page, text string) {
 			cur.length += titleWeight
 		}
 		// 小节属于页面的主题：页面的标题也计入每一个小节，“定时任务”能找到定时任务一页中的小节。
-		// 页面开头一节的标题就是页面的标题，再加一次，泛泛的查询（“部署”）先找到整页，而不是其他页中同名的小节。
+		// 页面开头一节的标题重复记入一次，使泛泛的查询（“部署”）优先命中整页。
 		for _, t := range tokens(pageTitle) {
 			cur.terms[t] += pageTitleWeight
 			cur.length += pageTitleWeight

@@ -417,7 +417,7 @@ func TestTokenAuthentication(t *testing.T) {
 	if rejected(t, n.url, "revoked", nil) != 3500 {
 		t.Fatal("revoked token was not rejected as invalid")
 	}
-	// 后端故障时返回内部错误，不是无效 token：客户端 SDK 会稍后重连。
+	// 后端故障时返回内部错误，客户端 SDK 会稍后重连。
 	store.setDown(true)
 	if _, reply := connect(t, n.url, "alice", nil); reply.Error == nil || reply.Error.Code != 100 {
 		t.Fatalf("connect while backend is down: %+v", reply)

@@ -437,7 +437,7 @@ ranked, err := dashscope.New(cfg.Rerank).Rerank(ctx, ai.Content{ai.MediaPart(pho
 
 - 每项是文字、图片、视频，或文字加一张图片（一段视频）；没有音频向量。超过 20 项时自动分批。
 - 文字和图片融合只有 `qwen3-vl-embedding`、`qwen2.5-vl-embedding` 支持，其他模型返回 `ai.ErrUnsupportedInput`。`qwen2.5-vl-embedding` 必须用 `dashscope.WithBatchSize(1)`。
-- 跨模态的相似度偏低（文字与视频实测 0.1～0.4），按排名取结果，不用固定阈值。
+- 跨模态的相似度偏低（文字与视频实测 0.1～0.4），按排名取结果。
 
 <a id="decisions"></a>
 ## 分类和打分：`ai.Decider`
