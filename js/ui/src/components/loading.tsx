@@ -1,5 +1,5 @@
-// 切换加载过渡组件与钩子：在切换 tab、筛选、排序或翻页时提供最短展示时长的轻磨砂加载反馈，
-// 慢网络请求随实际请求时长自动延长，本地切换与缓存命中保持统一视觉节奏。
+// 切换加载过渡组件与钩子：采用“延迟出现 + 最短停留”策略，快速切页、本地切换与缓存命中零延迟直出，
+// 仅在真实请求或路由加载超过 delayMs 时叠加轻磨砂加载覆层，避免短请求闪烁。
 
 import { Loader } from "@mantine/core"
 import { QueryClientContext } from "@tanstack/react-query"
@@ -25,15 +25,98 @@ export function useAnyFetching(): boolean {
   return useSyncExternalStore(subscribe, getSnapshot, () => false)
 }
 
-/** useSmoothTransition 的选项。 */
-export interface SmoothTransitionOptions {
-  /** 切换后加载态的最短展示时长（毫秒），默认 220；设为 0 时仅跟随 fetching 状态。 */
+/** useDelayedLoading 的选项。 */
+export interface DelayedLoadingOptions {
+  /** 进入加载态前等待的毫秒数（默认 150）；在此之前完成的快请求不展示加载覆层。 */
+  delayMs?: number
+  /** 加载覆层一旦展示后的最短停留毫秒数（默认 200），避免一闪而过。 */
   minMs?: number
 }
 
 /**
- * 统一切换加载状态机：当 changeKey 变化（切换 tab、筛选、排序或翻页）时立即进入 busy 状态并暂留旧数据；
- * 本地切换或命中缓存时保底展示 minMs 毫秒，网络请求耗时更长时随 fetching 自动延长直到请求完成。
+ * 延迟加载状态钩子：active 持续超过 delayMs 才返回 true；一旦返回 true，在 active 结束后至少保持 minMs 再收回。
+ * 快请求与缓存命中不触发加载态，慢请求平滑展示并避免闪烁。
+ */
+export function useDelayedLoading(active: boolean, options?: DelayedLoadingOptions): boolean {
+  const delayMs = options?.delayMs ?? 150
+  const minMs = options?.minMs ?? 200
+  const [visible, setVisible] = useState(false)
+  const visibleRef = useRef(false)
+  const shownAtRef = useRef(0)
+  const delayTimerRef = useRef<number | undefined>(undefined)
+  const hideTimerRef = useRef<number | undefined>(undefined)
+
+  useEffect(() => {
+    const clearDelay = () => {
+      if (delayTimerRef.current !== undefined) {
+        window.clearTimeout(delayTimerRef.current)
+        delayTimerRef.current = undefined
+      }
+    }
+    const clearHide = () => {
+      if (hideTimerRef.current !== undefined) {
+        window.clearTimeout(hideTimerRef.current)
+        hideTimerRef.current = undefined
+      }
+    }
+
+    if (active) {
+      clearHide()
+      if (visibleRef.current) return
+      if (delayMs <= 0) {
+        visibleRef.current = true
+        shownAtRef.current = Date.now()
+        setVisible(true)
+        return
+      }
+      clearDelay()
+      delayTimerRef.current = window.setTimeout(() => {
+        delayTimerRef.current = undefined
+        visibleRef.current = true
+        shownAtRef.current = Date.now()
+        setVisible(true)
+      }, delayMs)
+      return
+    }
+
+    clearDelay()
+    if (!visibleRef.current) return
+    const remain = minMs - (Date.now() - shownAtRef.current)
+    if (remain <= 0) {
+      visibleRef.current = false
+      setVisible(false)
+      return
+    }
+    clearHide()
+    hideTimerRef.current = window.setTimeout(() => {
+      hideTimerRef.current = undefined
+      visibleRef.current = false
+      setVisible(false)
+    }, remain)
+  }, [active, delayMs, minMs])
+
+  useEffect(
+    () => () => {
+      if (delayTimerRef.current !== undefined) window.clearTimeout(delayTimerRef.current)
+      if (hideTimerRef.current !== undefined) window.clearTimeout(hideTimerRef.current)
+    },
+    [],
+  )
+
+  return visible
+}
+
+/** useSmoothTransition 的选项。 */
+export interface SmoothTransitionOptions {
+  /** 请求耗时超过该毫秒数才展示加载覆层，默认 150；设为 0 时有请求即立即展示。 */
+  delayMs?: number
+  /** 加载覆层展示后的最短停留时长（毫秒），默认 200。 */
+  minMs?: number
+}
+
+/**
+ * 局部数据切换过渡钩子：当 changeKey 变化（筛选、排序、翻页）且 fetching 为真时暂留旧数据；
+ * 本地切换、命中缓存或快于 delayMs 的请求直接更新且不弹加载覆层，慢请求超过 delayMs 后展示覆层并保底停留 minMs。
  */
 export function useSmoothTransition<T>(
   value: T,
@@ -41,57 +124,39 @@ export function useSmoothTransition<T>(
   fetching: boolean,
   options?: SmoothTransitionOptions,
 ): { data: T; busy: boolean } {
-  const minMs = options?.minMs ?? 220
   const [displayed, setDisplayed] = useState<T>(value)
   const [prevKey, setPrevKey] = useState(changeKey)
-  const [busy, setBusy] = useState(false)
-  const [minReady, setMinReady] = useState(true)
-  const timerRef = useRef<number | undefined>(undefined)
+  const [pending, setPending] = useState(false)
 
   const keyChanged = prevKey !== changeKey
-  const pendingBusy = keyChanged && displayed !== undefined && (minMs > 0 || fetching)
+  const active = pending || (keyChanged && fetching && displayed !== undefined)
+  const busy = useDelayedLoading(active, options)
 
-  // 当切换键变化时进入加载态，并按 minMs 启动最短展示计时器
+  // changeKey 变化时：仍在拉数则暂留旧画面，已有数据或本地切换直接切出。
   useEffect(() => {
     if (changeKey === prevKey) return
     setPrevKey(changeKey)
-    if (displayed === undefined) return
-
-    if (timerRef.current !== undefined) window.clearTimeout(timerRef.current)
-    if (minMs <= 0) {
-      setBusy(fetching)
-      setMinReady(true)
-      return
+    if (fetching && displayed !== undefined) {
+      setPending(true)
+    } else {
+      setPending(false)
+      setDisplayed(value)
     }
-    setBusy(true)
-    setMinReady(false)
-    timerRef.current = window.setTimeout(() => {
-      timerRef.current = undefined
-      setMinReady(true)
-    }, minMs)
-  }, [changeKey, displayed, fetching, minMs, prevKey])
+  }, [changeKey, displayed, fetching, prevKey, value])
 
-  useEffect(
-    () => () => {
-      if (timerRef.current !== undefined) window.clearTimeout(timerRef.current)
-    },
-    [],
-  )
-
-  // 计时到达且网络请求完成后提交新数据并结束加载态；首次加载和静默后台刷新直接同步最新数据
+  // 请求结束且覆层收回后提交新数据；首次加载和静默后台刷新直接同步最新数据。
   useEffect(() => {
     if (keyChanged) return
-    if (!busy) {
-      if (!Object.is(displayed, value)) setDisplayed(value)
+    if (pending) {
+      if (!fetching) setPending(false)
       return
     }
-    if (minReady && !fetching) {
+    if (!busy && !Object.is(displayed, value)) {
       setDisplayed(value)
-      setBusy(false)
     }
-  }, [busy, displayed, fetching, keyChanged, minReady, value])
+  }, [busy, displayed, fetching, keyChanged, pending, value])
 
-  return { data: displayed, busy: busy || pendingBusy }
+  return { data: displayed, busy }
 }
 
 /** LoadingOverlay 的选项。 */

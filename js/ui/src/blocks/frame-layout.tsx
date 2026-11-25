@@ -42,7 +42,7 @@ import { TabBar } from "../app/tabs/tab-bar"
 import { TabsOutlet, type TabsOutletProps } from "../app/tabs/tabs"
 import { NewVersionNotice } from "../app/version-notice"
 import { NavLinkLink } from "../components/links"
-import { LoadingOverlay, useAnyFetching, useSmoothTransition } from "../components/loading"
+import { LoadingOverlay, useDelayedLoading } from "../components/loading"
 import { MenuBadge } from "../components/menu-badge"
 import { useText } from "../i18n/i18n"
 import { Icon } from "../theme/icons"
@@ -106,7 +106,6 @@ export function FrameLayout({
   const fullBleed = useFullBleed()
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const routerPending = useRouterState({ select: (s) => s.status === "pending" })
-  const fetching = useAnyFetching()
   const tabsOn = Boolean(tabs) && state.tabs
   const pageTitle = usePageTitle(tabsOn)
   useDocumentTitle(documentTitle ? formatDocumentTitle(pageTitle, title) : undefined)
@@ -118,9 +117,8 @@ export function FrameLayout({
     if (state.navOpen) setState({ navOpen: false })
   }, [pathname])
 
-  // 切换页面（点顶栏标签、点侧栏菜单、搜索跳转）与刷新标签统一使用轻磨砂居中转圈覆层：
-  // 缓存或保活页面保底展示 220ms，首次打开或慢请求随页面查询与路由状态自动延长直到返回。
-  const routeState = useSmoothTransition(pathname, pathname, fetching || routerPending)
+  // 路由切页默认瞬切；仅当路由 loader 耗时超过延迟阈值，或用户主动刷新标签时才显示轻磨砂加载覆层。
+  const routeBusy = useDelayedLoading(routerPending)
   const [reloading, setReloading] = useState(false)
   const reloadStartRef = useRef(0)
   const reloadTimerRef = useRef<number | undefined>(undefined)
@@ -141,7 +139,7 @@ export function FrameLayout({
         setReloading(true)
       },
       in() {
-        const remain = 220 - (Date.now() - reloadStartRef.current)
+        const remain = 200 - (Date.now() - reloadStartRef.current)
         if (remain <= 0) {
           setReloading(false)
           return
@@ -154,7 +152,7 @@ export function FrameLayout({
     }),
     [],
   )
-  const busy = routeState.busy || reloading
+  const busy = routeBusy || reloading
 
   const vars = { "--tn-header-height": `${headerHeight}px` } as CSSProperties
   const collapseLabel = collapsed ? t("tenon.frame.expand_sidebar") : t("tenon.frame.collapse_sidebar")

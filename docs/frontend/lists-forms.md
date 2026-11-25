@@ -162,9 +162,9 @@ function Overview() {
 - 模块内有多张报表时，在父路由设置 `staticData.preserveSearch`，切换二级导航时保留时间与筛选条件，见[双栏导航](layout.md#rail-layout)。
 
 <a id="loading-transition"></a>
-### 切换加载过渡：`useSmoothTransition`、`LoadingStage` 与 `LoadingOverlay`
+### 切换加载过渡：`useDelayedLoading`、`useSmoothTransition`、`LoadingStage` 与 `LoadingOverlay`
 
-切换 tab、筛选、排序或翻页导致数据变化时，配合 TanStack Query 的 `keepPreviousData` 使用 `useSmoothTransition` 与 `LoadingStage`：暂留旧画面、叠加轻磨砂居中转圈；本地或命中缓存时展示最短 `minMs`（默认 `220ms`），慢请求随 `fetching` 自动延长直到返回：
+筛选、排序或翻页导致数据变化时，配合 TanStack Query 的 `keepPreviousData` 使用 `useSmoothTransition` 与 `LoadingStage`：采用“延迟出现（默认 `delayMs: 150`）+ 最短停留（默认 `minMs: 200`）”策略，本地切换、命中缓存或快于 `delayMs` 的请求直接瞬切且不弹覆层；慢请求超过 `delayMs` 后才在旧画面上叠加轻磨砂居中转圈，直到返回：
 
 ```tsx
 import { keepPreviousData, useQuery } from "@tanstack/react-query"
@@ -180,9 +180,9 @@ return (
 )
 ```
 
-- 首次加载无数据时 `busy` 为 `false`，页面照常展示骨架屏；切换 `changeKey` 后才进入轻磨砂过渡态。
-- 全栏筛选刷新时把 `busy` 直接交给 [`PaneBody`](layout.md#panes) 的 `loading` 属性；[`ResourcePage`](resources.md#admin) 的 `useResourceList`、`ActivityLog`、`QueuePanel`、`SchedulePanel`、`Page` 的 `tabs`（页内标签）、`FrameLayout` 多标签/切页与 `RailLayout` 常规页切页均已默认内置同一套轻磨砂过渡，且 `DataTable` 遮罩样式与 `LoadingOverlay` 保持一致，外层展示加载覆层时自动抑制内层嵌套遮罩。
-- 需要关闭最短停留时传入 `{ minMs: 0 }`；用户开启系统减少动态效果时覆层过渡动画自动关闭。
+- 首次加载无数据时 `busy` 为 `false`，页面照常展示骨架屏；切换 `changeKey` 且仍在拉数时暂留旧画面。
+- 全栏筛选刷新时把 `busy` 直接交给 [`PaneBody`](layout.md#panes) 的 `loading` 属性；[`ResourcePage`](resources.md#admin) 的 `useResourceList`、`ActivityLog`、`QueuePanel`、`SchedulePanel` 均内置该局部过渡；`FrameLayout` 与 `RailLayout` 切页默认瞬切，仅当路由 `loader` 持续超过 `delayMs`（或用户主动刷新多标签）时才显示整页轻磨砂覆层。
+- 可按需通过 `{ delayMs, minMs }` 调整延迟与最短停留时长；用户开启系统减少动态效果时覆层过渡动画自动关闭。
 
 <a id="forms"></a>
 ## 用 `useSchemaForm` 做按生成的规则校验的表单

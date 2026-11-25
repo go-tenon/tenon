@@ -2,7 +2,7 @@ import { MantineProvider } from "@mantine/core"
 import type { ReactNode } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
-import { LoadingOverlay, LoadingStage, useAnyFetching } from "./loading"
+import { LoadingOverlay, LoadingStage, useAnyFetching, useDelayedLoading } from "./loading"
 
 function render(node: ReactNode): string {
   return renderToStaticMarkup(<MantineProvider>{node}</MantineProvider>)
@@ -11,6 +11,11 @@ function render(node: ReactNode): string {
 function FetchingProbe(): ReactNode {
   const fetching = useAnyFetching()
   return <span>{fetching ? "fetching" : "idle"}</span>
+}
+
+function DelayedProbe({ active }: { active: boolean }): ReactNode {
+  const visible = useDelayedLoading(active)
+  return <span>{visible ? "visible" : "hidden"}</span>
 }
 
 describe("LoadingOverlay / LoadingStage", () => {
@@ -48,5 +53,10 @@ describe("LoadingOverlay / LoadingStage", () => {
   it("useAnyFetching 在未包在 QueryClientProvider 中时安全返回 false", () => {
     const html = render(<FetchingProbe />)
     expect(html).toContain("idle")
+  })
+
+  it("useDelayedLoading 初始渲染保持隐藏，避免快速切换时闪烁", () => {
+    expect(render(<DelayedProbe active={false} />)).toContain("hidden")
+    expect(render(<DelayedProbe active />)).toContain("hidden")
   })
 })

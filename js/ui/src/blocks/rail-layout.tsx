@@ -43,7 +43,7 @@ import {
 } from "../app/layout"
 import { firstPage, type MenuItem } from "../app/menu"
 import { NewVersionNotice } from "../app/version-notice"
-import { LoadingOverlay, useAnyFetching, useSmoothTransition } from "../components/loading"
+import { LoadingOverlay, useDelayedLoading } from "../components/loading"
 import { MenuBadge } from "../components/menu-badge"
 import { PageBreadcrumbs } from "../components/page"
 import { useText } from "../i18n/i18n"
@@ -200,15 +200,11 @@ export function RailLayout({
   useDocumentTitle(documentTitle ? formatDocumentTitle(pageTitle, title) : undefined)
   const navigate = useNavigate()
   const href = useRouterState({ select: (s) => s.location.href })
-  const pathname = useRouterState({ select: (s) => s.location.pathname })
   const routerPending = useRouterState({ select: (s) => s.status === "pending" })
-  const fetching = useAnyFetching()
   const compact = useNarrow(compactQuery)
   const fullBleed = useFullBleed()
-  // 常规页面切页叠加统一轻磨砂过渡；fullBleed 多栏页由各栏自行管理局部加载态
-  const transitionKey = fullBleed ? "" : pathname
-  const routeState = useSmoothTransition(transitionKey, transitionKey, fetching || routerPending)
-  const busy = !fullBleed && routeState.busy
+  // 路由切页默认瞬切，仅当路由 loader 耗时超过延迟阈值时显示轻磨砂加载覆层。
+  const busy = useDelayedLoading(routerPending)
   const customNav = useSlotFilled("nav")
   // 宽屏时二级导航是否收起按账号保存；有组件用 useCollapseNav 要求时临时收起，用户这时点展开则以用户为准，
   // 直到下一次要求。设置页不提供收起按钮，进入设置时始终展开。窄屏时二级导航是抽屉，默认关闭。
