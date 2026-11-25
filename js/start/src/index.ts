@@ -9,7 +9,15 @@
 
 import { createIsomorphicFn, createMiddleware } from "@tanstack/react-start"
 import { getRequestHeader } from "@tanstack/react-start/server"
-import { EnvAPIOrigin, EnvAPISocket, forwardHeaders, HeaderNonce, socketPath } from "./headers"
+import {
+  EnvAPIOrigin,
+  EnvAPISocket,
+  forwardHeaders,
+  HeaderNonce,
+  HeaderTelemetry,
+  MetaTelemetry,
+  socketPath,
+} from "./headers"
 
 export * from "./headers"
 
@@ -54,3 +62,47 @@ export const apiFetch: typeof fetch = createIsomorphicFn()
 export const cspNonce = createIsomorphicFn()
   .client(() => undefined)
   .server(() => getRequestHeader(HeaderNonce) ?? undefined)
+
+/** Go 配置文件下发到浏览器的 OpenObserve 公开观测配置。 */
+export interface BrowserTelemetryConfig {
+  site: string
+  clientToken: string
+  organization: string
+  service: string
+  environment: string
+  insecureHTTP?: boolean
+}
+
+let cachedTelemetryMeta: string | null | undefined
+
+/**
+ * 读取 Go 下发的浏览器观测配置原始 JSON 字符串，供根路由写入 <meta name="tenon-telemetry">。
+ * 服务端读取 X-Tenon-Telemetry 请求头，浏览器读取并缓存首屏 meta 内容以保持水合一致。
+ */
+export const telemetryMeta = createIsomorphicFn()
+  .client((): string | undefined => {
+    if (cachedTelemetryMeta === undefined) {
+      cachedTelemetryMeta =
+        typeof document === "undefined"
+          ? null
+          : (document.querySelector(`meta[name="${MetaTelemetry}"]`)?.getAttribute("content") ?? null)
+    }
+    return cachedTelemetryMeta ?? undefined
+  })
+  .server(() => getRequestHeader(HeaderTelemetry) ?? undefined)
+
+/** 读取并解析 Go 下发的浏览器端 OpenObserve 观测配置；未配置时返回 undefined。 */
+export function browserTelemetry(): BrowserTelemetryConfig | undefined {
+  const raw = telemetryMeta()
+  if (!raw) return undefined
+  const parsed = JSON.parse(raw) as Partial<BrowserTelemetryConfig>
+  if (!parsed.site || !parsed.clientToken || !parsed.service) return undefined
+  return {
+    site: parsed.site,
+    clientToken: parsed.clientToken,
+    organization: parsed.organization || "default",
+    service: parsed.service,
+    environment: parsed.environment || "production",
+    ...(parsed.insecureHTTP ? { insecureHTTP: true } : {}),
+  }
+}

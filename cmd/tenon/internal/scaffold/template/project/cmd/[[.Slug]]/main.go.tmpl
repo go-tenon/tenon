@@ -19,6 +19,7 @@ import (
 	"github.com/go-tenon/tenon/i18n"
 [[- end]]
 	"github.com/go-tenon/tenon/logging"
+	"github.com/go-tenon/tenon/telemetry"
 
 	"[[.Module]]/apps"
 	"[[.Module]]/internal/todo"
@@ -31,6 +32,7 @@ import (
 type Config struct {
 	HTTP       httpx.Config      `yaml:"http"`
 	Logs       logging.Config    `yaml:"logs"`
+	Telemetry  telemetry.Config  `yaml:"telemetry"`
 	DevServers map[string]string `yaml:"dev_servers"` // 各前端开发服务器的地址，按前端的名称（apps 中的目录名）；只在 tenon dev 时有值，它把地址写入 .tenon/dev.yaml，页面请求转给对应的开发服务器
 }
 
@@ -43,13 +45,13 @@ func main() {
 	)
 	// openapi、routes、client 用默认配置和 nil 依赖构造同一套路由，从中读取路由表和接口定义。
 [[- if .MultiLanguage]]
-	root.AddCommand(httpcmd.Commands(func() chi.Routes { return routes(config.Default[Config](), nil, nil) }, httpcmd.Translations(locales.FS))...)
+	root.AddCommand(httpcmd.Commands(func() chi.Routes { return routes(config.Default[Config](), nil, nil, nil) }, httpcmd.Translations(locales.FS))...)
 	command.Execute(root, command.Languages(i18n.MustNew([[printf "%q" .SourceLanguage]], locales.FS)))
 [[- else if ne .SourceLanguage "zh-CN"]]
-	root.AddCommand(httpcmd.Commands(func() chi.Routes { return routes(config.Default[Config](), nil, nil) })...)
+	root.AddCommand(httpcmd.Commands(func() chi.Routes { return routes(config.Default[Config](), nil, nil, nil) })...)
 	command.Execute(root, command.Languages(i18n.MustNew([[printf "%q" .SourceLanguage]])))
 [[- else]]
-	root.AddCommand(httpcmd.Commands(func() chi.Routes { return routes(config.Default[Config](), nil, nil) })...)
+	root.AddCommand(httpcmd.Commands(func() chi.Routes { return routes(config.Default[Config](), nil, nil, nil) })...)
 	command.Execute(root)
 [[- end]]
 }
@@ -58,12 +60,18 @@ func main() {
 type App struct {
 	cfg   Config
 	store *todo.Store
+	tel   *telemetry.Providers
 }
 
-// open 安装日志器，创建待办事项的存储。serve 命令执行时调用它，登记到 stack 的资源在进程退出时关闭。
-func open(_ context.Context, cfg Config, _ *cleanup.Stack) (*App, error) {
-	slog.SetDefault(logging.New(cfg.Logs))
-	return &App{cfg: cfg, store: todo.NewStore()}, nil
+// open 安装可观测性与日志器，创建待办事项的存储。serve 命令执行时调用它，登记到 stack 的资源在进程退出时关闭。
+func open(ctx context.Context, cfg Config, stack *cleanup.Stack) (*App, error) {
+	tel, err := telemetry.Open(ctx, cfg.Telemetry)
+	if err != nil {
+		return nil, err
+	}
+	stack.MustAdd("telemetry", tel.Shutdown)
+	slog.SetDefault(logging.New(cfg.Logs, logging.Export(tel.Logs)))
+	return &App{cfg: cfg, store: todo.NewStore(), tel: tel}, nil
 }
 
 // parts 是常驻进程的运行部分，现在只有 HTTP 服务：serve 运行全部部分，serve http 只运行它。
@@ -74,11 +82,15 @@ func parts(a *App) []command.Part {
 // serveHTTP 装配 HTTP 服务，返回运行它的函数。apps 中的前端由 frontend.Host 按挂载路径提供：只在浏览器中渲染的前端
 // 由 Go 直接返回页面；服务端渲染的前端由 Go 托管的 SSR 进程渲染，它们渲染时经内部 socket 调用同一组路由。
 func (a *App) serveHTTP(d *command.Daemon) (func(context.Context) error, error) {
-	pages, err := frontend.New(apps.Dist, frontend.Options{DevServers: a.cfg.DevServers})
+	pages, err := frontend.New(apps.Dist, frontend.Options{
+		DevServers:    a.cfg.DevServers,
+		MeterProvider: a.tel.Meters,
+		Telemetry:     a.cfg.Telemetry,
+	})
 	if err != nil {
 		return nil, err
 	}
-	router := routes(a.cfg, a.store, pages.Handler())
+	router := routes(a.cfg, a.store, a.tel, pages.Handler())
 	pages.SetAPI(router)
 	ln, err := d.Listen("tcp", a.cfg.HTTP.Addr)
 	if err != nil {
@@ -94,8 +106,11 @@ func (a *App) serveHTTP(d *command.Daemon) (func(context.Context) error, error) 
 
 // routes 是应用的全部路由：存活检查 /livez，/api 下的接口，其余路径是页面（pages）。
 // 它只保存依赖，处理请求时才使用，所以 openapi 等命令可以传 nil。
-func routes(cfg Config, store *todo.Store, pages http.Handler) chi.Router {
+func routes(cfg Config, store *todo.Store, tel *telemetry.Providers, pages http.Handler) chi.Router {
 	router := chi.NewRouter()
+	if tel != nil {
+		router.Use(httpx.Telemetry(tel.Meters, tel.Tracers))
+	}
 [[- if .MultiLanguage]]
 	router.Use(httpx.Defaults(cfg.HTTP, httpx.Languages(i18n.MustNew([[printf "%q" .SourceLanguage]], locales.FS)))...)
 [[- else if ne .SourceLanguage "zh-CN"]]

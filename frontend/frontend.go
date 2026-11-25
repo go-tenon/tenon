@@ -18,6 +18,8 @@ import (
 	"github.com/cockroachdb/errors"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/metric/noop"
+
+	"github.com/go-tenon/tenon/telemetry"
 )
 
 // 构建产物（项目的 apps/dist，go tool tenon build 生成）中的路径。
@@ -46,13 +48,17 @@ const (
 	EnvAPISocket = "API_SOCKET"
 )
 
-// 请求和响应中与 SSR 进程约定的头，以及页面中的占位 nonce。
+// 请求和响应中与 SSR 进程约定的头，以及页面中的占位 nonce 与观测元信息标签。
 const (
 	// HeaderNonce 是 Go 为这次页面请求生成的 CSP nonce，SSR 进程把它写到内联脚本上。
 	HeaderNonce = "X-CSP-Nonce"
 	// HeaderRoute 是 SSR 进程在响应中报告的前端路由模板，例如 /articles/$id。
 	// Go 用它命名这次请求的 span 和访问日志中的路由，然后从响应中删除。
 	HeaderRoute = "X-Tenon-Route"
+	// HeaderTelemetry 是 Go 向 SSR 进程或开发服务器传递的浏览器端观测配置 JSON。
+	HeaderTelemetry = "X-Tenon-Telemetry"
+	// MetaTelemetry 是页面中承载浏览器端公开观测配置的 meta 标签名称。
+	MetaTelemetry = "tenon-telemetry"
 	// PrerenderNonce 是构建时写在页面外壳和预渲染页面中的占位 nonce，Go 返回页面时换成本次请求的。
 	PrerenderNonce = "__tenon_csp_nonce__"
 )
@@ -72,6 +78,7 @@ type Options struct {
 	Env           []string                                   // SSR 进程额外的环境变量，形如 KEY=value；进程继承 Go 程序的环境。
 	Logger        *slog.Logger                               // 记录 SSR 进程的输出和启停，默认 slog.Default()；每一行带 component=ssr 和 frontend=<名称>。
 	MeterProvider metric.MeterProvider                       // 记录 ssr.restarts（SSR 进程意外退出后重启的次数，属性 frontend 是前端的名称），nil 时不记录。
+	Telemetry     telemetry.Config                           // 可观测性配置：Browser 启用时向页面注入公开的浏览器观测配置并在默认 CSP 中放行上报域名与 Web Worker。
 	ReadyTimeout  time.Duration                              // Run 等待 SSR 进程就绪的时间，默认 30 秒；超过时 Run 返回错误。
 	StopTimeout   time.Duration                              // 停止时等待 SSR 进程退出的时间，默认 10 秒；超过时强制结束。
 }
@@ -93,25 +100,37 @@ type Host struct {
 // app 是一个前端。
 type app struct {
 	Entry
-	logger  *slog.Logger
-	files   fs.FS        // 静态文件：DistDir/<名称>；开发模式下为 nil
-	dev     *url.URL     // 开发服务器，只在开发模式下有值
-	socket  string       // SSR 进程监听的抽象 socket，@ 开头；只在生产模式的 SSR 前端有值
-	handler http.Handler // 静态文件之外的请求：SSR 进程、开发服务器，或者页面外壳
-	client  *http.Client // Render 用，只在 SSR 前端和开发模式下有值
-	ready   atomic.Bool
-	pid     atomic.Int64
+	logger    *slog.Logger
+	files     fs.FS        // 静态文件：DistDir/<名称>；开发模式下为 nil
+	dev       *url.URL     // 开发服务器，只在开发模式下有值
+	socket    string       // SSR 进程监听的抽象 socket，@ 开头；只在生产模式的 SSR 前端有值
+	telemetry string       // 序列化后的浏览器端公开观测配置 JSON；未启用时为空
+	handler   http.Handler // 静态文件之外的请求：SSR 进程、开发服务器，或者页面外壳
+	client    *http.Client // Render 用，只在 SSR 前端和开发模式下有值
+	ready     atomic.Bool
+	pid       atomic.Int64
 }
 
 // New 读取 apps 中 DistDir 下的清单，为每个前端准备处理器。apps 通常是项目 apps 包中 go:embed 嵌入的 dist 目录。
 // 不是开发模式时检查构建产物：有 SSR 前端时需要 ExecutableFile，其余前端需要自己的 ShellFile。
 func New(apps fs.FS, opts Options) (*Host, error) {
+	if err := opts.Telemetry.Browser.Validate(); err != nil {
+		return nil, errors.Wrap(err, "frontend: telemetry")
+	}
 	h := &Host{opts: opts, logger: opts.Logger, dev: len(opts.DevServers) > 0}
 	if h.logger == nil {
 		h.logger = slog.Default()
 	}
 	if h.opts.CSP == nil {
-		h.opts.CSP = func(_ *http.Request, nonce string) string { return DefaultCSP(nonce) }
+		origin := opts.Telemetry.Browser.Origin()
+		h.opts.CSP = func(_ *http.Request, nonce string) string {
+			p := DefaultPolicy(nonce)
+			if origin != "" {
+				p.AddConnectSrc(origin)
+				p.AddWorkerSrc("blob:")
+			}
+			return p.String()
+		}
 	}
 	if h.opts.ReadyTimeout <= 0 {
 		h.opts.ReadyTimeout = 30 * time.Second
@@ -147,6 +166,13 @@ func New(apps fs.FS, opts Options) (*Host, error) {
 			return nil, errors.Newf("frontend %s: base %q must start and end with /", e.Name, e.Base)
 		}
 		a := &app{Entry: e, logger: h.logger.With("component", "ssr", "frontend", e.Name)}
+		if rt, ok := opts.Telemetry.BrowserRuntime(e.Name); ok {
+			raw, err := json.Marshal(rt)
+			if err != nil {
+				return nil, errors.Wrapf(err, "frontend %s: marshal browser telemetry", e.Name)
+			}
+			a.telemetry = string(raw)
+		}
 		if h.dev {
 			addr := opts.DevServers[e.Name]
 			u, err := url.Parse(addr)

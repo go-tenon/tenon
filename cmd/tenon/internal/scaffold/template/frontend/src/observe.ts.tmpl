@@ -1,0 +1,71 @@
+import type { ErrorReport } from "@go-tenon/ui"
+
+/** 浏览器端观测桥接接口，由 src/client.tsx 在读取到 Go 下发的配置后注册。 */
+export interface ObserveSink {
+  reportError: (error: unknown, report: ErrorReport) => void
+  setViewName: (name: string) => void
+  setUser: (id: string, tenant: string) => void
+  clearUser: () => void
+}
+
+/** 可绑定观测钩子的最小应用结构。 */
+export interface ObservableApp {
+  router: {
+    state: { matches: ReadonlyArray<{ routeId: string }> }
+    subscribe: (event: "onResolved", listener: () => void) => unknown
+  }
+[[- if .HasLogin]]
+  session: {
+    identity: () => { account: string; tenant?: string } | null
+    subscribe: (listener: () => void) => unknown
+  }
+[[- end]]
+}
+
+let sink: ObserveSink | null = null
+let pendingApp: ObservableApp | null = null
+
+/** 启用浏览器端观测并绑定已创建的应用实例。 */
+export function enableObserve(next: ObserveSink): void {
+  sink = next
+  if (pendingApp) {
+    attach(pendingApp, next)
+    pendingApp = null
+  }
+}
+
+/** 上报路由错误组件接住的页面错误；未启用观测时为空操作。 */
+export function reportRouteError(error: unknown, report: ErrorReport): void {
+  sink?.reportError(error, report)
+}
+
+/** 绑定路由页面名[[if .HasLogin]]与登录身份[[end]]同步；仅在浏览器端启用观测时生效。 */
+export function bindObserve(app: ObservableApp): void {
+  if (typeof window === "undefined") return
+  if (!sink) {
+    pendingApp = app
+    return
+  }
+  attach(app, sink)
+}
+
+function attach(app: ObservableApp, current: ObserveSink): void {
+  const syncRoute = () => {
+    const match = app.router.state.matches.at(-1)
+    if (match) current.setViewName(match.routeId)
+  }
+  app.router.subscribe("onResolved", syncRoute)
+  syncRoute()
+[[- if .HasLogin]]
+  const syncUser = () => {
+    const id = app.session.identity()
+    if (id) {
+      current.setUser(id.account, id.tenant ?? "")
+    } else {
+      current.clearUser()
+    }
+  }
+  app.session.subscribe(syncUser)
+  syncUser()
+[[- end]]
+}

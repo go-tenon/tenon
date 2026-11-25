@@ -145,11 +145,16 @@ func TestOpenDisabled(t *testing.T) {
 }
 
 func TestValidate(t *testing.T) {
+	t.Parallel()
 	for name, cfg := range map[string]telemetry.Config{
-		"relative endpoint": {Endpoint: "openobserve:5080", SampleRatio: 1},
-		"other scheme":      {Endpoint: "grpc://openobserve:4317", SampleRatio: 1},
-		"ratio above 1":     {SampleRatio: 1.5},
-		"negative ratio":    {SampleRatio: -0.1},
+		"relative endpoint":      {Endpoint: "openobserve:5080", SampleRatio: 1},
+		"other scheme":           {Endpoint: "grpc://openobserve:4317", SampleRatio: 1},
+		"ratio above 1":          {SampleRatio: 1.5},
+		"negative ratio":         {SampleRatio: -0.1},
+		"browser missing token":  {SampleRatio: 1, Browser: telemetry.BrowserConfig{Site: "https://o2.example.com"}},
+		"browser missing site":   {SampleRatio: 1, Browser: telemetry.BrowserConfig{ClientToken: "rum-token"}},
+		"browser invalid scheme": {SampleRatio: 1, Browser: telemetry.BrowserConfig{Site: "ftp://o2.example.com", ClientToken: "rum-token"}},
+		"browser site with path": {SampleRatio: 1, Browser: telemetry.BrowserConfig{Site: "https://o2.example.com/api", ClientToken: "rum-token"}},
 	} {
 		if err := cfg.Validate(); err == nil {
 			t.Errorf("%s: no error", name)
@@ -160,5 +165,50 @@ func TestValidate(t *testing.T) {
 	}
 	if err := (telemetry.Config{Endpoint: "https://api.example.com/otlp", SampleRatio: 0.1}).Validate(); err != nil {
 		t.Error(err)
+	}
+	validBrowser := telemetry.Config{
+		Service:     "shop",
+		SampleRatio: 1,
+		Browser: telemetry.BrowserConfig{
+			Site:        "https://o2.example.com",
+			ClientToken: "rum-token",
+		},
+	}
+	if err := validBrowser.Validate(); err != nil {
+		t.Fatalf("valid browser config: %v", err)
+	}
+	if got := validBrowser.Browser.Origin(); got != "https://o2.example.com" {
+		t.Errorf("origin = %q, want https://o2.example.com", got)
+	}
+	rt, ok := validBrowser.BrowserRuntime("admin")
+	if !ok {
+		t.Fatal("BrowserRuntime returned false")
+	}
+	if rt.Site != "o2.example.com" || rt.ClientToken != "rum-token" || rt.Organization != "default" || rt.Service != "shop-admin" || rt.Environment != "production" || rt.InsecureHTTP {
+		t.Errorf("unexpected runtime: %+v", rt)
+	}
+
+	httpBrowser := telemetry.Config{
+		Service:     "shop",
+		SampleRatio: 1,
+		Browser: telemetry.BrowserConfig{
+			Site:         "http://127.0.0.1:5080/",
+			ClientToken:  "rum-token",
+			Organization: "acme",
+			Environment:  "staging",
+		},
+	}
+	if err := httpBrowser.Validate(); err != nil {
+		t.Fatalf("http browser config: %v", err)
+	}
+	if got := httpBrowser.Browser.Origin(); got != "http://127.0.0.1:5080" {
+		t.Errorf("http origin = %q, want http://127.0.0.1:5080", got)
+	}
+	httpRT, ok := httpBrowser.BrowserRuntime("web")
+	if !ok || httpRT.Site != "127.0.0.1:5080" || !httpRT.InsecureHTTP || httpRT.Organization != "acme" || httpRT.Environment != "staging" || httpRT.Service != "shop-web" {
+		t.Errorf("unexpected http runtime: ok=%v %+v", ok, httpRT)
+	}
+	if _, ok := (telemetry.Config{}).BrowserRuntime("web"); ok {
+		t.Error("empty browser config should not be enabled")
 	}
 }

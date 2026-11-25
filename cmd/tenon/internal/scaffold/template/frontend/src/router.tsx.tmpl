@@ -7,6 +7,7 @@ import { me, session } from "./auth"
 [[- if .MultiLanguage]]
 import { i18n } from "./i18n"
 [[- end]]
+import { bindObserve, reportRouteError } from "./observe"
 import { routeTree } from "./routeTree.gen"
 
 // getRouter 创建应用：路由、TanStack Query[[if .HasLogin]]、会话和权限[[end]][[if .MultiLanguage]]、界面文字[[end]]，见框架文档的“应用骨架”。
@@ -24,8 +25,10 @@ export function getRouter() {
     session,
     permissions: async () => (await me()).permissions ?? [],
 [[- end]]
+    onError: reportRouteError,
     router: { ssr: { nonce: cspNonce() }, defaultErrorComponent: RouteError, defaultNotFoundComponent: NotFoundPage },
   })
+  bindObserve(app)
   // 在桌面端中，点击通知、打开深度链接时跳到对应的页面（路径与网页上的相同）。
   host()?.on("navigate", (path) => app.router.history.push(path))
   return app.router

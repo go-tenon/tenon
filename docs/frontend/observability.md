@@ -1,63 +1,69 @@
 # 前端观测
 
-浏览器中的错误、请求和性能由观测平台的浏览器 SDK 收集，下面以 [OpenObserve](https://openobserve.ai/) 为例。框架补上 SDK 做不到的三件事：`@go-tenon/ui` 的 `createApp({ onError })` 交出路由错误组件接住的错误；请求带上 `traceparent`，后端链路接在浏览器之后；`@go-tenon/start/vite` 的 `tenon({ sourcemaps })` 生成 source map 但不放进构建结果。
+浏览器中的错误、请求和性能由观测平台的浏览器 SDK 收集，默认集成 [OpenObserve](https://openobserve.ai/)。`tenon init` 与 `tenon add frontend` 生成的前端已默认安装 `@openobserve/browser-rum` 与 `@openobserve/browser-logs`，并在 `src/client.tsx`、`src/observe.ts`、`src/router.tsx` 和 `src/routes/__root.tsx` 中完成接线。
+
+运行时配置由后端配置文件的 `telemetry.browser` 段经 Go 注入页面（`<meta name="tenon-telemetry">`）：未填写时（例如本地开发）不初始化、不发任何请求；生产配置填好 `site` 和 `client_token` 后自动生效，Go 默认 CSP 也会自动放行上报域名与 `worker-src blob:`。框架同时补上 SDK 做不到的三件事：`@go-tenon/ui` 的 `createApp({ onError })` 交出路由错误组件接住的错误；请求带上 `traceparent`，后端链路接在浏览器之后；`@go-tenon/start/vite` 的 `tenon({ sourcemaps })` 生成 source map 但不放进构建结果。
 
 <a id="installing"></a>
-## 安装浏览器 SDK（OpenObserve）
+## 运行时配置与浏览器 SDK（OpenObserve）
 
-在前端目录（`apps/<名称>`）中安装：
+在配置文件（如 `config/prod.yaml`）中填写 `telemetry.browser`，并将 `cfg.Telemetry` 交给 `frontend.Options.Telemetry`：
+
+```yaml
+telemetry:
+  service: admin
+  browser:
+    site: https://o2.example.com      # 支持带协议 URL 或纯域名；留空时不启用
+    client_token: <rum-client-token>  # 公开的 RUM 写入令牌
+    organization: default             # 默认 default
+    environment: production           # 默认 production
+```
+
+已有项目手动接入时，先在前端目录（`apps/<名称>`）中安装 SDK：
 
 ```bash
 bun add @openobserve/browser-rum@0.4.3 @openobserve/browser-logs@0.4.3
 ```
 
-`src/observe.ts` 启动 SDK，环境变量没有设置时（本地开发）不启动：
+在 `src/routes/__root.tsx` 的 `head()` 中写入 `telemetryMeta()`（来自 `@go-tenon/start`），并在浏览器入口 `src/client.tsx` 中通过 `browserTelemetry()` 读取配置并初始化：
 
-```ts
+```tsx title="src/client.tsx"
+import { browserTelemetry } from "@go-tenon/start"
 import { openobserveLogs } from "@openobserve/browser-logs"
 import { openobserveRum } from "@openobserve/browser-rum"
+import { StartClient } from "@tanstack/react-start/client"
+import { StrictMode, startTransition } from "react"
+import { hydrateRoot } from "react-dom/client"
 
-const clientToken = import.meta.env.VITE_O2_CLIENT_TOKEN
-const site = import.meta.env.VITE_O2_SITE // 例如 o2.example.com，不带协议
-
-export const observing = Boolean(clientToken && site)
-
-if (clientToken && site) {
+const telemetry = browserTelemetry()
+if (telemetry) {
   const common = {
-    clientToken,
-    site,
-    organizationIdentifier: "default",
-    service: "admin", // 与上传 source map 时相同
-    env: import.meta.env.MODE, // 与上传 source map 时相同
-    version: import.meta.env.TENON_BUILD_VERSION ?? "dev", // tenon() 插件注入的构建版本
+    clientToken: telemetry.clientToken,
+    site: telemetry.site,
+    insecureHTTP: telemetry.insecureHTTP ?? false,
+    organizationIdentifier: telemetry.organization,
+    service: telemetry.service,
+    env: telemetry.environment,
+    version: import.meta.env.TENON_BUILD_VERSION ?? "dev",
   }
   openobserveRum.init({
     ...common,
-    applicationId: "admin",
+    applicationId: telemetry.service,
     trackResources: true,
     trackLongTasks: true,
-    trackUserInteractions: false, // 点击记录元素的文字，可能含业务数据
+    trackUserInteractions: false,
     defaultPrivacyLevel: "mask-user-input",
     allowedTracingUrls: [(url: string) => url.startsWith(`${location.origin}/api/`)],
   })
   openobserveLogs.init({ ...common, forwardErrorsToLogs: true })
 }
-```
-
-自己写 TanStack Start 的浏览器入口 `src/client.tsx`，第一行导入 `observe.ts`，SDK 在其他代码之前启动；服务端渲染不经过这个入口：
-
-```tsx title="src/client.tsx"
-import "./observe"
-import { StartClient } from "@tanstack/react-start/client"
-import { StrictMode, startTransition } from "react"
-import { hydrateRoot } from "react-dom/client"
 
 startTransition(() => {
   hydrateRoot(document, <StrictMode><StartClient /></StrictMode>)
 })
 ```
 
-- 环境变量写在前端目录的 `.env.production` 中，在 `src/env.d.ts` 的 `ImportMetaEnv` 中声明类型。`clientToken` 只能写入 RUM 数据，可以放在页面中。
+- `client_token` 只能写入 RUM 与前端日志数据，属于公开客户端令牌，经页面 `<meta>` 下发后随配置即时生效，无需重新编译前端。
 - SDK 自动捕获未捕获的异常、未处理的 Promise 拒绝、`console.error` 和失败的请求。不再自己监听 `window` 的 `error`，否则同一个错误报告两次。
 
 <a id="route-errors"></a>

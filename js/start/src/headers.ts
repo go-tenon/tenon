@@ -9,6 +9,10 @@ export const HeaderNonce = "X-CSP-Nonce"
 export const PrerenderNonce = "__tenon_csp_nonce__"
 /** Bun 在响应中报告匹配到的路由模板（例如 /articles/$id），Go 用它命名链路的 span，随后从响应中删掉。 */
 export const HeaderRoute = "X-Tenon-Route"
+/** Go 向 SSR 或开发服务器传递的浏览器端公开观测配置 JSON，由根路由写入 HTML meta 标签。 */
+export const HeaderTelemetry = "X-Tenon-Telemetry"
+/** HTML 中承载浏览器端公开观测配置的 meta 标签名称。 */
+export const MetaTelemetry = "tenon-telemetry"
 /** SSR 进程渲染的前端的名称：可执行文件中有全部 SSR 前端，按它加载其中一个。 */
 export const EnvFrontend = "TENON_FRONTEND"
 /** Bun 监听的页面 socket。 */

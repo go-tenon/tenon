@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url"
 import { describe, expect, it, vi } from "vitest"
 import { defaultTarget, entrySource } from "./compile"
 import { incoming, withIncoming } from "./context"
-import { forwardHeaders, HeaderNonce, PrerenderNonce, socketPath } from "./headers"
+import { forwardHeaders, HeaderNonce, HeaderTelemetry, MetaTelemetry, PrerenderNonce, socketPath } from "./headers"
 import * as vite from "./vite.js"
 
 describe("headers", () => {
@@ -31,6 +31,13 @@ describe("headers", () => {
   it("抽象 socket 的 @ 换成 \\0，路径原样", () => {
     expect(socketPath("@tenon-ssr")).toBe("\0tenon-ssr")
     expect(socketPath("/run/ssr.sock")).toBe("/run/ssr.sock")
+  })
+
+  it("浏览器观测请求头与 meta 标签名保持稳定且不转交给 Go 接口", () => {
+    expect(HeaderTelemetry).toBe("X-Tenon-Telemetry")
+    expect(MetaTelemetry).toBe("tenon-telemetry")
+    const h = new Headers({ [HeaderTelemetry]: '{"site":"o2.example.com"}' })
+    expect(forwardHeaders(h)).toEqual({})
   })
 })
 

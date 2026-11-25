@@ -29,6 +29,16 @@ http:
 # 按项目实际配置结构填写依赖项（仅保留项目 Config 中声明的字段；密码含 @ 等特殊字符需 URL 编码，例如 @ 写为 %40）
 # logs:
 #   level: info
+# telemetry:
+#   service: {{app}}
+#   endpoint: https://o2.example.com/api/default
+#   headers:
+#     Authorization: Basic <base64(user:password)>
+#   browser:
+#     site: https://o2.example.com
+#     client_token: <openobserve-rum-client-token>
+#     organization: default
+#     environment: production
 # database:
 #   dsn: postgres://<db_user>:<db_pass>@<db_host>:5432/<db_name>?sslmode=disable
 # crypt:

@@ -11,6 +11,7 @@ import (
 	"testing/fstest"
 
 	"github.com/go-tenon/tenon/httpx"
+	"github.com/go-tenon/tenon/telemetry"
 )
 
 // testDist 返回构建产物：清单是 entries，files 的路径相对 dist。
@@ -295,4 +296,93 @@ func TestSetAPI(t *testing.T) {
 		}
 	}()
 	h.SetAPI(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+}
+
+// TestBrowserTelemetryInjection 验证启用 telemetry.browser 时自动向 HTML 注入 meta 并放行 CSP，未启用时不注入也不放宽 CSP；
+// 代理模式下清除客户端伪造的 X-Tenon-Telemetry 头并写入服务端配置。
+func TestBrowserTelemetryInjection(t *testing.T) {
+	t.Parallel()
+	dist := testDist([]Entry{{Name: "web", Base: "/"}, {Name: "admin", Base: "/admin/"}}, map[string]string{
+		"web/_shell.html":   `<!doctype html><html><head><title>web</title></head><body></body></html>`,
+		"admin/_shell.html": `<!doctype html><html><head><title>admin</title></head><body></body></html>`,
+	})
+	// 仅配置 site 缺少 client_token 时在 New 阶段暴露错误。
+	if _, err := New(dist, Options{
+		Telemetry: telemetry.Config{Browser: telemetry.BrowserConfig{Site: "https://o2.example.com"}},
+	}); err == nil {
+		t.Fatal("expected error for incomplete browser telemetry config")
+	}
+
+	// 未配置浏览器观测时，页面不含 meta 且 CSP 不含 worker-src。
+	disabled, err := New(dist, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := do(t, disabled.Handler(), http.MethodGet, "/dashboard")
+	if strings.Contains(res.body, MetaTelemetry) {
+		t.Fatalf("unexpected telemetry meta when disabled: %s", res.body)
+	}
+	if strings.Contains(res.header.Get("Content-Security-Policy"), "worker-src") {
+		t.Fatalf("unexpected worker-src when disabled: %s", res.header.Get("Content-Security-Policy"))
+	}
+
+	// 配置浏览器观测后，自动注入按前端区分 service 的 meta，并在默认 CSP 放行 origin 和 blob worker。
+	telCfg := telemetry.Config{
+		Service: "omirouter",
+		Browser: telemetry.BrowserConfig{
+			Site:        "https://o2.example.com",
+			ClientToken: "rum-token",
+		},
+	}
+	enabled, err := New(dist, Options{Telemetry: telCfg})
+	if err != nil {
+		t.Fatal(err)
+	}
+	webRes := do(t, enabled.Handler(), http.MethodGet, "/dashboard")
+	if !strings.Contains(webRes.body, `<meta name="tenon-telemetry" content="`) || !strings.Contains(webRes.body, `omirouter-web`) {
+		t.Fatalf("web html missing telemetry meta: %s", webRes.body)
+	}
+	if !strings.Contains(webRes.body, `</head>`) || strings.Index(webRes.body, MetaTelemetry) > strings.Index(webRes.body, `</head>`) {
+		t.Fatalf("telemetry meta must be injected before </head>: %s", webRes.body)
+	}
+	csp := webRes.header.Get("Content-Security-Policy")
+	for _, want := range []string{"connect-src 'self' https://o2.example.com", "worker-src blob:"} {
+		if !strings.Contains(csp, want) {
+			t.Errorf("csp %q missing %q", csp, want)
+		}
+	}
+	adminRes := do(t, enabled.Handler(), http.MethodGet, "/admin/users")
+	if !strings.Contains(adminRes.body, `omirouter-admin`) {
+		t.Fatalf("admin html missing service name: %s", adminRes.body)
+	}
+
+	// 开发代理模式下，客户端伪造的 X-Tenon-Telemetry 总是被服务端覆写或清除。
+	var gotHeader string
+	devSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotHeader = r.Header.Get(HeaderTelemetry)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer devSrv.Close()
+
+	devEnabled, err := New(dist, Options{DevServers: map[string]string{"web": devSrv.URL, "admin": devSrv.URL}, Telemetry: telCfg})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/admin/home", nil)
+	req.Header.Set(HeaderTelemetry, `{"site":"evil.example.com"}`)
+	devEnabled.Handler().ServeHTTP(httptest.NewRecorder(), req)
+	if !strings.Contains(gotHeader, `"service":"omirouter-admin"`) || strings.Contains(gotHeader, "evil.example.com") {
+		t.Fatalf("unexpected forwarded telemetry header: %q", gotHeader)
+	}
+
+	devDisabled, err := New(dist, Options{DevServers: map[string]string{"web": devSrv.URL, "admin": devSrv.URL}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req2 := httptest.NewRequest(http.MethodGet, "/admin/home", nil)
+	req2.Header.Set(HeaderTelemetry, `{"site":"evil.example.com"}`)
+	devDisabled.Handler().ServeHTTP(httptest.NewRecorder(), req2)
+	if gotHeader != "" {
+		t.Fatalf("forged telemetry header not stripped when disabled: %q", gotHeader)
+	}
 }

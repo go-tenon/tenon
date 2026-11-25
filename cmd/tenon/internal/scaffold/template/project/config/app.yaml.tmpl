@@ -10,3 +10,18 @@ http:
 # 日志级别默认 info；输出到终端时为文本格式，写入容器或文件时为 JSON。
 logs:
   level: ${LOG_LEVEL:-info}
+
+# 可观测性（OpenObserve / OpenTelemetry）：endpoint 与 browser 留空时不推送；填写后前后端自动生效。
+telemetry:
+  service: [[.Slug]]
+  endpoint: ""
+  version: ""
+  # 推送到 OpenObserve 时按需取消注释并填写（生产配置写在 config/prod.yaml）：
+  # endpoint: https://o2.example.com/api/default
+  # headers:
+  #   Authorization: Basic <base64(user:password)>
+  # browser:
+  #   site: https://o2.example.com
+  #   client_token: <openobserve-rum-client-token>
+  #   organization: default
+  #   environment: production

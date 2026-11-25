@@ -70,6 +70,7 @@ func (h *Host) pageProxy(a *app) http.Handler {
 			r.SetXForwarded()
 			forward(r.In.Context(), r.Out.Header)
 			r.Out.Header.Set(HeaderNonce, requestNonce(r.In))
+			setTelemetryHeader(r.Out.Header, a.telemetry)
 		},
 		ModifyResponse: func(res *http.Response) error {
 			route(res)
@@ -92,12 +93,21 @@ func (h *Host) devProxy(a *app) http.Handler {
 			r.Out.Host = r.In.Host
 			r.SetXForwarded()
 			forward(r.In.Context(), r.Out.Header)
+			setTelemetryHeader(r.Out.Header, a.telemetry)
 		},
 		ModifyResponse: func(res *http.Response) error {
 			route(res)
 			return nil
 		},
 		ErrorHandler: a.unavailable,
+	}
+}
+
+// setTelemetryHeader 覆写传给 SSR 或开发服务器的浏览器观测配置头，清除客户端伪造值。
+func setTelemetryHeader(header http.Header, telemetryJSON string) {
+	header.Del(HeaderTelemetry)
+	if telemetryJSON != "" {
+		header.Set(HeaderTelemetry, telemetryJSON)
 	}
 }
 

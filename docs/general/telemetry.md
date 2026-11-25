@@ -33,15 +33,22 @@ router.Use(httpx.Defaults(cfg.HTTP)...)
 
 ```yaml
 telemetry:
-  endpoint: ${OTLP_ENDPOINT:-}  # 基础地址，例如 http://openobserve:5080/api/default；为空时不推送
+  endpoint: ${OTLP_ENDPOINT:-}  # 基础地址，例如 https://o2.example.com/api/default；为空时不推送
   headers:                      # 附加到每个请求，通常是认证信息
     Authorization: Basic ${OTLP_TOKEN:-}
   service: api                  # service.name；为空时取可执行文件名
   version: ${APP_VERSION:-}     # service.version；为空时取构建信息中的模块版本
   sample_ratio: 1               # 新链路的采样比例，默认 1；带着调用方链路的请求跟随调用方
+  browser:                      # 浏览器端 OpenObserve（RUM 与日志）；site 与 client_token 留空时不启用
+    site: https://o2.example.com
+    client_token: <rum-client-token>
+    organization: default
+    environment: production
 ```
 
+- `tenon init` 生成的项目默认已在入口与配置模板（`config/app.yaml`、`config/prod.yaml.example`）中接好后端 OTLP 与前端 OpenObserve 配置，默认留空不推送，在生产配置中填写后自动生效。
 - 日志、指标、链路分别发往 `endpoint` 下的 `/v1/logs`、`/v1/metrics`、`/v1/traces`。
+- 把 `cfg.Telemetry` 传入 `frontend.Options.Telemetry` 后，若 `telemetry.browser` 已填写，Go 会自动向页面注入公开配置并在默认 CSP 中放行 OpenObserve 域名和 `worker-src blob:`，见[前端观测](../frontend/observability.md)。
 - 三种数据带有相同的资源属性，其中 `service.instance.id` 每个进程随机生成，区分同一服务的各个进程和副本。
 - `logging.Export(tel.Logs)` 让日志同时推送出去，级别和格式化与标准错误上的相同。标准错误上的日志照常输出，接收端不可用时靠它排查。
 - 推送在后台批量进行，缓冲满时丢弃新数据。推送失败记录为 `component=telemetry` 的错误日志：平台中没有数据时，先看 `endpoint` 是否为空，再看这条日志。

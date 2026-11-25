@@ -13,6 +13,7 @@ type CSP struct {
 	StyleSrc       []string // style-src，默认 'self' 'unsafe-inline'
 	ImgSrc         []string // img-src，默认 'self' data:
 	ConnectSrc     []string // connect-src，默认 'self'
+	WorkerSrc      []string // worker-src，默认空（不输出）
 	BaseURI        []string // base-uri，默认 'none'
 	FormAction     []string // form-action，默认 'self'
 	FrameAncestors []string // frame-ancestors，默认 'none'
@@ -53,6 +54,11 @@ func (c *CSP) AddConnectSrc(sources ...string) {
 	c.ConnectSrc = appendUniqueSources(c.ConnectSrc, sources...)
 }
 
+// AddWorkerSrc 向 worker-src 追加非空且尚未存在的来源。
+func (c *CSP) AddWorkerSrc(sources ...string) {
+	c.WorkerSrc = appendUniqueSources(c.WorkerSrc, sources...)
+}
+
 // String 返回序列化后的 Content-Security-Policy 头的值。空指令会跳过。
 func (c CSP) String() string {
 	directives := []struct {
@@ -64,6 +70,7 @@ func (c CSP) String() string {
 		{"style-src", c.StyleSrc},
 		{"img-src", c.ImgSrc},
 		{"connect-src", c.ConnectSrc},
+		{"worker-src", c.WorkerSrc},
 		{"base-uri", c.BaseURI},
 		{"form-action", c.FormAction},
 		{"frame-ancestors", c.FrameAncestors},

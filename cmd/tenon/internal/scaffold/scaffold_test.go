@@ -22,9 +22,9 @@ func TestWrite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, f := range []string{".gitignore", ".gitattributes", "AGENTS.md", "README.md", "go.mod", "package.json", "config/app.yaml", "cmd/todo/main.go", "internal/todo/todo.go",
+	for _, f := range []string{".gitignore", ".gitattributes", "AGENTS.md", "README.md", "go.mod", "package.json", "config/app.yaml", "config/prod.yaml.example", "cmd/todo/main.go", "internal/todo/todo.go",
 		"packages/client/package.json", "apps/web/package.json", "apps/web/vite.config.ts", "apps/web/tsconfig.json",
-		"apps/apps.go", "apps/web/public/favicon.svg", "apps/web/src/start.ts", "apps/web/src/server.ts", "apps/web/src/router.tsx", "apps/web/src/theme.ts",
+		"apps/apps.go", "apps/web/public/favicon.svg", "apps/web/src/start.ts", "apps/web/src/server.ts", "apps/web/src/client.tsx", "apps/web/src/observe.ts", "apps/web/src/router.tsx", "apps/web/src/theme.ts",
 		"apps/web/src/api.ts", "apps/web/src/routes/__root.tsx", "apps/web/src/routes/index.tsx"} {
 		if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
 			t.Errorf("%s: %v", f, err)
@@ -39,8 +39,13 @@ func TestWrite(t *testing.T) {
 		"apps/web/vite.config.ts":        `plugins: [tenon({ prerender: ["/"] })]`,
 		"apps/web/src/theme.ts":          `preset: "spacious"`,
 		"apps/web/src/start.ts":          "requestMiddleware: [requestMiddleware] }",
-		"apps/web/src/router.tsx":        `id: "web"`,
-		"apps/web/src/routes/__root.tsx": `{ title: "Todo" }`,
+		"apps/web/src/router.tsx":        `onError: reportRouteError`,
+		"apps/web/src/routes/__root.tsx": `telemetryMeta()`,
+		"apps/web/src/client.tsx":        `openobserveRum.init`,
+		"apps/web/src/observe.ts":        `export function enableObserve`,
+		"./apps/web/package.json":        `"@openobserve/browser-rum"`,
+		"config/app.yaml":                "telemetry:\n  service: todo\n  endpoint: \"\"",
+		"config/prod.yaml.example":       "# endpoint: https://o2.example.com/api/default",
 		"apps/web/src/routes/index.tsx":  `from "@todo/client/api"`, // 示例页面覆盖前端模板的首页
 		"apps/web/src/api.ts":            `createClient({ baseURL: "/api", fetch: apiFetch })`,
 		"internal/todo/todo.go":          `errorx.Define(errorx.NotFound, "todo.not_found", "待办事项不存在")`,
@@ -79,8 +84,8 @@ func TestWrite(t *testing.T) {
 	}
 	main, _ := os.ReadFile(filepath.Join(dir, "cmd/todo/main.go"))
 	for _, want := range []string{`"example.com/todo/internal/todo"`, `"example.com/todo/apps"`,
-		"Logs       logging.Config", "logging.New(cfg.Logs)",
-		"frontend.New(apps.Dist, frontend.Options{DevServers: a.cfg.DevServers})", "pages.SetAPI(router)", "httpcmd.ServeOptions(d)", "pages.Run(", "command.Serve(open, parts)"} {
+		"Logs       logging.Config", "Telemetry  telemetry.Config", "telemetry.Open(ctx, cfg.Telemetry)", "logging.New(cfg.Logs, logging.Export(tel.Logs))", "httpx.Telemetry(tel.Meters, tel.Tracers)",
+		"MeterProvider: a.tel.Meters", "Telemetry:     a.cfg.Telemetry", "pages.SetAPI(router)", "httpcmd.ServeOptions(d)", "pages.Run(", "command.Serve(open, parts)"} {
 		if !strings.Contains(string(main), want) {
 			t.Errorf("main.go missing %q:\n%s", want, main)
 		}

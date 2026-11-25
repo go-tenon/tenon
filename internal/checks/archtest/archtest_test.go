@@ -79,7 +79,7 @@ var rules = map[string]rule{
 	"httpx":           {layerEntry, []string{"acquire", "contract", "errorx", "health", "i18n", "identity", "logging", "ratelimit"}},
 	"clientgen":       {layerEntry, []string{"command", "contract", "enum", "errorx", "httpx", "i18n", "identity", "page"}},
 	"realtime":        {layerEntry, []string{"broadcast", "httpx", "identity", "logging"}},
-	"frontend":        {layerEntry, []string{"logging"}},
+	"frontend":        {layerEntry, []string{"logging", "telemetry"}},
 	"mcpx":            {layerEntry, []string{"contract", "errorx", "httpx", "identity", "logging"}},
 	"natsrpc":         {layerEntry, []string{"contract", "errorx", "i18n", "identity", "logging"}},
 	"natsrpc/rpccmd":  {layerEntry, []string{"command", "natsrpc"}},

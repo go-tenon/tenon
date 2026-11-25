@@ -44,6 +44,7 @@ Go 的 `frontend` 包托管 SSR 进程，`@go-tenon/start` 是这些约定在 Bu
 | 环境变量 `API_SOCKET` | 调用 Go 接口的抽象 socket，形如 `@tenon-api-<随机串>`；`Options.API` 为 nil 时不传 |
 | 环境变量 `API_ORIGIN` | 开发时没有内部 socket，经这个地址调用 Go，由 `tenon dev` 设置 |
 | 请求头 `X-CSP-Nonce` | 本次请求的 nonce，写到全部内联脚本上。Go 总是覆盖它，客户端发来的值不生效 |
+| 请求头 `X-Tenon-Telemetry` | 可选，浏览器端公开观测配置 JSON，Go 总是覆盖它，由根路由写入 `<meta name="tenon-telemetry">` |
 | 占位 nonce `__tenon_csp_nonce__` | 构建时写在页面外壳和预渲染页面中，Go 返回页面时换成本次请求的 |
 | 请求头 `X-Request-ID`、`traceparent`、`tracestate`、`Cookie`、`Accept-Language` | 调用接口时原样带上（`forwardHeaders`） |
 | 响应头 `X-Tenon-Route` | 可选，匹配到的前端路由模板。Go 用它替换 chi 的路由模板来命名 span，随后从响应中删掉 |
