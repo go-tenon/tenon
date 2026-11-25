@@ -109,3 +109,52 @@ func TestHTTPComponentLevel(t *testing.T) {
 		t.Fatal(buf.String())
 	}
 }
+
+func TestAccessLogDefaultIgnoresHealthPaths(t *testing.T) {
+	t.Parallel()
+	rec := logtest.New()
+	router := chi.NewRouter()
+	router.Use(httpx.Defaults(httpx.DefaultConfig(), httpx.Logger(rec.Logger()))...)
+	router.Get("/livez", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	router.Get("/readyz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	router.Get("/ok", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+
+	serve(router, "GET", "/livez")
+	serve(router, "GET", "/readyz")
+	serve(router, "GET", "/ok")
+
+	records := rec.Records()
+	if len(records) != 1 || records[0].Attr("request.path") != "/ok" {
+		t.Fatalf("default ignore_paths failed: %v", records)
+	}
+}
+
+func TestAccessLogDisabled(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, nil))
+	cfg := httpx.DefaultConfig()
+	cfg.AccessLog.Disabled = true
+
+	router := chi.NewRouter()
+	router.Use(httpx.Defaults(cfg, httpx.Logger(logger))...)
+	router.Get("/ok", func(w http.ResponseWriter, r *http.Request) {
+		httpx.AddAccessLogAttrs(r.Context(), slog.String("code", "ignored"))
+		w.WriteHeader(http.StatusOK)
+	})
+	router.Get("/panic", func(http.ResponseWriter, *http.Request) { panic("boom") })
+
+	if rr := serve(router, "GET", "/ok"); rr.Code != http.StatusOK {
+		t.Fatalf("status=%d", rr.Code)
+	}
+	if buf.Len() != 0 {
+		t.Fatalf("disabled access log wrote output: %s", buf.String())
+	}
+
+	if rr := serve(router, "GET", "/panic"); rr.Code != http.StatusInternalServerError {
+		t.Fatalf("panic status=%d", rr.Code)
+	}
+	if !strings.Contains(buf.String(), `"msg":"request panic"`) || strings.Contains(buf.String(), `"msg":"http request"`) {
+		t.Fatalf("expected only panic log, got: %s", buf.String())
+	}
+}

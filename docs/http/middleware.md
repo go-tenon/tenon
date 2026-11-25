@@ -227,7 +227,8 @@ http:
   client_ip:
     trusted_proxies: []     # 见可信代理
   access_log:
-    ignore_paths: []        # 见访问日志
+    disabled: false         # 设为 true 时关闭应用访问日志，由反向代理统一记录
+    ignore_paths: [/livez, /readyz] # 见访问日志
   timeout:
     duration: 30s           # httpx.Timeout
   body_limit:
@@ -301,14 +302,15 @@ http:
 {"level":"WARN","msg":"http request","component":"http","request":{"method":"PUT","route":"/articles/{id}","ip":"203.0.113.7"},"response":{"status":409,"latency":32209},"code":"article.slug_taken","request_id":"9F2K…"}
 ```
 
-- `5xx` 记为 `ERROR`，`4xx` 记为 `WARN`，其余为 `INFO`；用 `logs.levels.http` 单独调整级别，见[按组件设置级别](../general/logging.md#component-levels)。
+- `5xx` 记为 `ERROR`，`4xx` 记为 `WARN`，其余为 `INFO`；用 `logs.levels.http` 单独调整级别，见[按组件设置级别](../general/logging.md#component-levels)。由 Nginx/Caddy 记录访问日志、应用侧只保留业务日志和崩溃堆栈时，设 `http.access_log.disabled: true` 关闭访问日志中间件。
 - `request.route` 是路由模板，用于按接口聚合。业务错误码是顶层的 `code`，缺少翻译时另有 `"untranslated":true`。
 - 处理器用 `httpx.AddAccessLogAttrs(ctx, attrs...)` 追加字段，同名字段后写的覆盖先写的。
 
 ```yaml
 http:
   access_log:
-    ignore_paths: [/livez, /readyz] # 精确匹配，以 / 开头
+    disabled: false         # true 时跳过访问日志中间件
+    ignore_paths: [/livez, /readyz] # 默认忽略健康检查，精确匹配，以 / 开头；设 [] 记录全部路径
     user_agent: false
     request_header: false   # Authorization、Cookie 等认证头始终隐藏
     response_header: false  # Set-Cookie 始终隐藏

@@ -17,9 +17,12 @@ import (
 // 以及 AddAccessLogAttrs 追加的字段。5xx 记为 Error，4xx 记为 Warn，其余为 Info。
 //
 // 安装在 Recover 之外，才能记录 panic 产生的 500；request_id 由 AssignRequestID 写入的
-// context 字段提供。cfg 不合法时 panic；logger 为 nil 时使用 slog.Default()。
+// context 字段提供。cfg.Disabled 为 true 时直接放行，不记录访问日志；cfg 不合法时 panic；logger 为 nil 时使用 slog.Default()。
 func AccessLog(cfg AccessLogConfig, logger *slog.Logger) func(http.Handler) http.Handler {
 	mustValid("AccessLog", cfg.Validate())
+	if cfg.Disabled {
+		return passthrough
+	}
 	logged := slogchi.NewWithConfig(componentLogger(logger), slogchi.Config{
 		DefaultLevel:       slog.LevelInfo,
 		ClientErrorLevel:   slog.LevelWarn,

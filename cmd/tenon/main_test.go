@@ -323,6 +323,9 @@ func TestAddDeployAndDryRun(t *testing.T) {
 		"apps/web/vite.config.ts": "",
 		"apps/web/package.json":   `{"tenon": {"base": "/", "ssr": false}}`,
 	})
+	if err := os.WriteFile("README.md", []byte("# App\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	cmd := root()
 	var out bytes.Buffer
 	cmd.SetArgs([]string{"add", "deploy", "--user", "ops", "--host", "prod.example.com"})
@@ -337,6 +340,7 @@ func TestAddDeployAndDryRun(t *testing.T) {
 	for name, want := range map[string]string{
 		"deploy.yaml":  "- prod.example.com",
 		".env.example": "DATABASE_URL=",
+		"README.md":    "<!-- tenon:deploy:begin -->",
 	} {
 		b, err := os.ReadFile(name)
 		if err != nil || !strings.Contains(string(b), want) {

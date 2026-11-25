@@ -497,10 +497,16 @@ func addDeployCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "已生成 %s。\n按目标服务器修改 deploy.yaml 后，运行：\n"+
+			syncedReadme, err := agents.SyncReadmeDeploy(".", cfg, true)
+			if err != nil {
+				return err
+			}
+			if syncedReadme {
+				files = append(files, agents.ReadmeFile)
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "已生成 %s。\n按目标服务器修改 deploy.yaml 与 config/prod.yaml 后，运行：\n"+
 				"  1. go tool tenon deploy setup\n"+
-				"  2. cp .env.example .env.production && 填写后执行 go tool tenon deploy env push .env.production\n"+
-				"  3. go tool tenon deploy\n",
+				"  2. go tool tenon deploy\n",
 				strings.Join(files, "、"))
 			return nil
 		},

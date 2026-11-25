@@ -21,7 +21,7 @@ description: Tenon 应用上线准备、原生二进制与 systemd 多机部署�
    - 登记 `doctorcmd.New(a.doctor()...)` 组合 `database.Doctor`、`migrate.Doctor`、`queue.Doctor` 等，见 `tenon/docs/installation/doctor.md#doctor-command`。
    - 在 `migratecmd.New` 中传入 `migratecmd.Check`，在 `serve` 的入口用 `doctor.Require`，环境不满足要求时拒绝启动，见 `tenon/docs/installation/doctor.md#before-migrating` 和 `tenon/docs/installation/doctor.md#before-starting`。
 5. **只连数据库的运维命令**：创建首个管理员等只读/写数据库的命令行，用只打开数据库的 `openDB` 绑定，避免初始化时强依赖 NATS。
-6. **生成部署配置并发布**：运行 `go tool tenon add deploy` 生成 `deploy.yaml` 和 `.env.example`，单机用 `hosts:`，多服务多机用 `roles:`，按环境叠加本地 YAML 配置用 `config_files:`。首次执行 `tenon deploy setup` 与 `tenon deploy env push`，日常发布运行 `tenon deploy`，见 `tenon/docs/installation/deployment.md#tenon-deploy` 和 `tenon/docs/installation/deployment.md#deploy-config-files`。
+6. **生成部署配置并发布**：运行 `go tool tenon add deploy` 生成 `deploy.yaml` 和 `.env.example`，单机用 `hosts:`，多服务多机用 `roles:`，独立生产配置或多文件叠加用 `config_files:`。首次执行 `tenon deploy setup` 与 `tenon deploy env push`，日常发布运行 `tenon deploy`，见 `tenon/docs/installation/deployment.md#tenon-deploy` 和 `tenon/docs/installation/deployment.md#deploy-config-files`。
 
 ## AI 助手协助部署与排障
 

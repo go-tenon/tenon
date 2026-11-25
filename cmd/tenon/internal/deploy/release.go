@@ -160,10 +160,19 @@ func Deploy(ctx context.Context, r Runner, t Target, opts ReleaseOptions, out, e
 		_ = releaseLock(releaseCtx, r, t, primary)
 	}()
 
-	// 3. 并行上传二进制与配置文件到全部主机并校验 SHA-256。
+	// 3. 并行上传二进制与配置文件到全部主机并校验 SHA-256；进入波次切换前任一步失败时清理当次上传目录，避免污染回滚列表。
 	fmt.Fprintf(out, "上传版本 %s 到 %d 台主机...\n", version, len(t.Hosts))
 	releaseDir := path.Join(t.Dir, "releases", version)
 	remoteBin := path.Join(releaseDir, t.App)
+	switched := false
+	defer func() {
+		if switched {
+			return
+		}
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		removeReleaseAll(cleanupCtx, r, t, releaseDir, errOut)
+	}()
 	if err := uploadAll(ctx, r, t, releaseDir, remoteBin, binPath, sum, cfgArchive, hasConfig); err != nil {
 		return nil, err
 	}
@@ -203,6 +212,7 @@ func Deploy(ctx context.Context, r Runner, t Target, opts ReleaseOptions, out, e
 	}
 
 	// 7. 按波次（先后端，后入口金丝雀再批量滚动）切换主机，任一波次失败立即熔断。
+	switched = true
 	waves := t.RolloutWaves()
 	switchResults, err := rolloutWaves(ctx, r, t, waves, version, hasConfig, out, errOut)
 	if err != nil {
@@ -733,4 +743,19 @@ func pruneReleases(ctx context.Context, r Runner, t Target, h Host, current stri
 	}
 	_, err = RunCapture(ctx, r, h, "sudo rm -rf "+strings.Join(toDelete, " "))
 	return err
+}
+
+// removeReleaseAll 并行清理全部主机上本次未切换成功的发布目录，单机清理失败时输出警告。
+func removeReleaseAll(ctx context.Context, r Runner, t Target, releaseDir string, errOut io.Writer) {
+	var g errgroup.Group
+	cmd := "sudo rm -rf " + shellQuote(releaseDir)
+	for _, h := range t.Hosts {
+		g.Go(func() error {
+			if _, err := RunCapture(ctx, r, h, cmd); err != nil {
+				fmt.Fprintf(errOut, "[%s] 警告：清理失败发布目录 %s 失败: %v\n", h.Addr, releaseDir, err)
+			}
+			return nil
+		})
+	}
+	_ = g.Wait()
 }

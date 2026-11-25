@@ -18,15 +18,16 @@ type SetupOptions struct {
 
 // SetupReport 是 tenon deploy setup 的结构化执行结果。
 type SetupReport struct {
-	App      string   `json:"app"`       // 应用名
-	Env      string   `json:"env"`       // 环境名
-	DryRun   bool     `json:"dry_run"`   // 是否为预演模式
-	UnitPath string   `json:"unit_path"` // systemd 模板 unit 路径
-	Hosts    []string `json:"hosts"`     // 已初始化的主机地址列表
+	App         string   `json:"app"`          // 应用名
+	Env         string   `json:"env"`          // 环境名
+	DryRun      bool     `json:"dry_run"`      // 是否为预演模式
+	UnitPath    string   `json:"unit_path"`    // systemd 模板 unit 路径
+	WrapperPath string   `json:"wrapper_path"` // 安装在 PATH 中的运维包装脚本路径
+	Hosts       []string `json:"hosts"`        // 已初始化的主机地址列表
 }
 
 // Setup 幂等初始化目标主机：检查 Linux/systemd/glibc，创建系统用户、部署目录和环境变量文件骨架，
-// 写入 systemd 模板 unit 及角色级 drop-in 覆盖文件并执行 daemon-reload。
+// 写入 systemd 模板 unit、角色级 drop-in 覆盖文件与 /usr/local/bin/<app> 包装脚本并执行 daemon-reload。
 func Setup(ctx context.Context, r Runner, t Target, opts SetupOptions, out io.Writer) (*SetupReport, error) {
 	hosts, err := t.FilterHosts(opts.Role, opts.Host)
 	if err != nil {
@@ -34,16 +35,19 @@ func Setup(ctx context.Context, r Runner, t Target, opts SetupOptions, out io.Wr
 	}
 	unitPath := TemplateUnitPath(t.App)
 	unitContent := RenderUnit(t)
+	wrapperPath := WrapperPath(t.App)
+	wrapperContent := RenderWrapper(t)
 	envDir := path.Dir(t.EnvFile)
 	binDir := path.Join(t.Dir, "bin")
 	releasesDir := path.Join(t.Dir, "releases")
 	storageDir := path.Join(t.Dir, "storage")
 	report := &SetupReport{
-		App:      t.App,
-		Env:      t.EnvName,
-		DryRun:   opts.DryRun,
-		UnitPath: unitPath,
-		Hosts:    make([]string, 0, len(hosts)),
+		App:         t.App,
+		Env:         t.EnvName,
+		DryRun:      opts.DryRun,
+		UnitPath:    unitPath,
+		WrapperPath: wrapperPath,
+		Hosts:       make([]string, 0, len(hosts)),
 	}
 
 	for _, h := range hosts {
@@ -51,7 +55,7 @@ func Setup(ctx context.Context, r Runner, t Target, opts SetupOptions, out io.Wr
 		fmt.Fprintf(out, "[%s] 初始化 %s（角色 %s，用户 %s，目录 %s）\n",
 			h.Addr, t.App, strings.Join(h.Roles, ","), t.ServiceUser, t.Dir)
 		if opts.DryRun {
-			fmt.Fprintf(out, "[%s] (dry-run) 写入 %s 并创建目录 %s、%s、%s\n", h.Addr, unitPath, binDir, releasesDir, storageDir)
+			fmt.Fprintf(out, "[%s] (dry-run) 写入 %s 与 %s，并创建目录 %s、%s、%s\n", h.Addr, unitPath, wrapperPath, binDir, releasesDir, storageDir)
 			continue
 		}
 		// 1. 检查运行环境：必须为带 systemd 的 Linux；包含 SSR 前端时检查 glibc。
@@ -95,7 +99,12 @@ fi
 		if err := syncDropIns(ctx, r, t, h); err != nil {
 			return nil, err
 		}
-		fmt.Fprintf(out, "[%s] 已就绪：%s\n", h.Addr, unitPath)
+		// 4. 在 /usr/local/bin/<app> 安装运维包装脚本，登录服务器后可在任意目录直接运行应用子命令。
+		writeWrapper := fmt.Sprintf("sudo install -d -m 755 -o root -g root /usr/local/bin && sudo install -m 755 -o root -g root /dev/stdin %s", shellQuote(wrapperPath))
+		if err := r.Run(ctx, h, writeWrapper, strings.NewReader(wrapperContent), io.Discard, out); err != nil {
+			return nil, fmt.Errorf("[%s] 写入 %s 失败: %w", h.Addr, wrapperPath, err)
+		}
+		fmt.Fprintf(out, "[%s] 已就绪：%s（命令入口 %s）\n", h.Addr, unitPath, wrapperPath)
 	}
 	fmt.Fprintf(out, "\n初始化完成。下一步：\n  1. 填写 .env 并执行 go tool tenon deploy env push .env --env %s\n  2. 执行 go tool tenon deploy --env %s\n", t.EnvName, t.EnvName)
 	return report, nil

@@ -133,7 +133,7 @@ router.Handle("/readyz", httpx.Ready(httpx.ReadyOptions{
 - 只放处理请求必需的依赖。缓存这类坏了也能降级运行的依赖标为 `Optional`，失败只出现在结果中，实例继续接收流量。只有部分接口用到的服务（PDF、向量检索等）由各自的接口返回错误。
 - 全部检查并行执行，每项最多 1 秒（`ReadyOptions.Timeout`），超时按失败处理。
 - 响应体列出每项的结果，例如 `{"status":"ready","checks":{"cache":"failed","database":"ok"}}`。失败的原因只在状态变化时记录在日志中：变为失败记 `Warn`，恢复记 `Info`。
-- 探测很频繁，在[访问日志](../http/middleware.md#http-configuration)的 `ignore_paths` 中排除这两个路径。
+- 访问日志默认在 `http.access_log.ignore_paths` 中忽略 `/livez` 和 `/readyz`，见[访问日志](../http/middleware.md#access-log)。
 
 只运行 worker、调度器或 RPC 的进程没有健康检查：它们出错时进程以非 0 状态退出，由 systemd 或 Docker 的重启策略处理，见[部署](../installation/deployment.md#health-checks)。
 

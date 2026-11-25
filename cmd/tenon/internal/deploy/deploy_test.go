@@ -181,6 +181,41 @@ func TestRenderUnitAndDropIn(t *testing.T) {
 	}
 }
 
+func TestRenderWrapper(t *testing.T) {
+	t.Parallel()
+	// 未配置 config_files 时不写入 APP_CONFIG，默认加载工作目录下的 config/app.yaml。
+	base, err := deploy.Parse([]byte("app: blog\nenvironments:\n  production:\n    hosts: [10.0.0.1]\n"), "blog", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wBase := deploy.RenderWrapper(base)
+	for _, want := range []string{
+		"#!/usr/bin/env bash",
+		"--uid='blog'",
+		"'EnvironmentFile=/etc/blog/env'",
+		"'WorkingDirectory=/opt/blog'",
+		"'/opt/blog/bin/blog' \"$@\"",
+		"[[ -t 0 && -t 1 ]] && mode=(--pty)",
+	} {
+		if !strings.Contains(wBase, want) {
+			t.Errorf("wrapper missing %q:\n%s", want, wBase)
+		}
+	}
+	if strings.Contains(wBase, "APP_CONFIG=") {
+		t.Errorf("unexpected APP_CONFIG without config_files:\n%s", wBase)
+	}
+
+	// 配置了 config_files 时通过 APP_CONFIG 注入默认配置清单（仍允许命令行 --config 覆盖）。
+	withCfg, err := deploy.Parse([]byte("app: blog\nenvironments:\n  production:\n    config_files: [config/prod.yaml]\n    hosts: [10.0.0.1]\n"), "blog", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wCfg := deploy.RenderWrapper(withCfg)
+	if !strings.Contains(wCfg, "'Environment=APP_CONFIG=config/prod.yaml'") {
+		t.Errorf("wrapper missing APP_CONFIG:\n%s", wCfg)
+	}
+}
+
 func TestSetupWritesDropIns(t *testing.T) {
 	t.Parallel()
 	target, err := deploy.Parse([]byte(`
@@ -201,17 +236,24 @@ environments:
 	if err != nil {
 		t.Fatalf("Setup: %v", err)
 	}
-	if len(report.Hosts) != 1 || report.Hosts[0] != "10.0.0.1" {
+	if len(report.Hosts) != 1 || report.Hosts[0] != "10.0.0.1" || report.WrapperPath != "/usr/local/bin/blog" {
 		t.Fatalf("report = %+v", report)
 	}
 	wroteDropIn := false
+	wroteWrapper := false
 	for _, c := range runner.calls {
 		if strings.Contains(c.Script, "blog@worker.service.d/override.conf") && strings.Contains(string(c.Stdin), "TimeoutStopSec=120s") {
 			wroteDropIn = true
 		}
+		if strings.Contains(c.Script, "/usr/local/bin/blog") && strings.Contains(string(c.Stdin), "'/opt/blog/bin/blog' \"$@\"") {
+			wroteWrapper = true
+		}
 	}
 	if !wroteDropIn {
 		t.Errorf("expected worker drop-in override.conf to be written")
+	}
+	if !wroteWrapper {
+		t.Errorf("expected /usr/local/bin/blog wrapper to be written")
 	}
 }
 
@@ -359,10 +401,14 @@ environments:
 	}
 
 	web2Switched := false
+	removedRelease := false
 	runner := &fakeRunner{
 		onRun: func(host deploy.Host, script string, _ []byte) (string, string, error) {
 			if strings.Contains(script, "--help") {
 				return "no\n", "", nil
+			}
+			if strings.Contains(script, "rm -rf '/opt/blog/releases/v2'") {
+				removedRelease = true
 			}
 			if host.Addr == "web-1" && strings.Contains(script, "systemctl reload") {
 				return "", "upgrade failed: listen error", errors.New("exit status 1")
@@ -384,6 +430,64 @@ environments:
 	}
 	if web2Switched {
 		t.Errorf("web-2 should not be switched after canary web-1 failed")
+	}
+	if removedRelease {
+		t.Errorf("release directory should not be removed after entering rollout waves")
+	}
+}
+
+func TestDeployCleansFailedReleaseBeforeSwitch(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	binPath := filepath.Join(dir, "blog-bin")
+	if err := os.WriteFile(binPath, []byte("bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	target, err := deploy.Parse([]byte(`
+app: blog
+arch: amd64
+environments:
+  production:
+    config_dir: `+filepath.Join(dir, "no-config")+`
+    roles:
+      worker:
+        hosts: [worker-1]
+      http:
+        hosts: [web-1, web-2]
+`), "blog", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var mu sync.Mutex
+	var cleaned []string
+	runner := &fakeRunner{
+		onRun: func(host deploy.Host, script string, _ []byte) (string, string, error) {
+			switch {
+			case strings.Contains(script, "--help"):
+				return "yes\n", "", nil
+			case strings.Contains(script, "'migrate' 'up'"):
+				return "", "database unavailable", errors.New("exit status 4")
+			case script == "sudo rm -rf '/opt/blog/releases/v-failed'":
+				mu.Lock()
+				cleaned = append(cleaned, host.Addr)
+				mu.Unlock()
+			}
+			return "", "", nil
+		},
+	}
+
+	var out, errOut bytes.Buffer
+	_, err = deploy.Deploy(context.Background(), runner, target, deploy.ReleaseOptions{
+		Binary:  binPath,
+		Version: "v-failed",
+	}, &out, &errOut)
+	if err == nil || !strings.Contains(err.Error(), "migrate up 失败") {
+		t.Fatalf("expected migrate failure, got %v", err)
+	}
+	slices.Sort(cleaned)
+	if !slices.Equal(cleaned, []string{"web-1", "web-2", "worker-1"}) {
+		t.Fatalf("cleaned hosts = %v, want [web-1 web-2 worker-1]", cleaned)
 	}
 }
 

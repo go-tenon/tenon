@@ -24,6 +24,35 @@ func DropInPath(app, part string) string {
 	return fmt.Sprintf("/etc/systemd/system/%s@%s.service.d/override.conf", app, part)
 }
 
+// WrapperPath 返回安装在目标主机 PATH 中的运维包装脚本路径，例如 /usr/local/bin/blog。
+func WrapperPath(app string) string {
+	return path.Join("/usr/local/bin", app)
+}
+
+// RenderWrapper 生成安装在 /usr/local/bin/<app> 的包装脚本：
+// 以服务用户、工作目录、环境变量文件和当前部署配置（APP_CONFIG）运行二进制；
+// 终端交互时自动启用 --pty，管道或非交互场景使用 --pipe；命令行显式传入 --config 时优先级高于 APP_CONFIG。
+func RenderWrapper(t Target) string {
+	bin := path.Join(t.Dir, "bin", t.App)
+	var b strings.Builder
+	b.WriteString("#!/usr/bin/env bash\n")
+	b.WriteString("set -euo pipefail\n")
+	fmt.Fprintf(&b, "# 由 tenon deploy setup 生成，以服务用户、工作目录和部署配置运行 %s。\n", t.App)
+	b.WriteString("run=()\n")
+	b.WriteString("[[ $(id -u) -eq 0 ]] || run=(sudo)\n")
+	b.WriteString("mode=(--pipe)\n")
+	b.WriteString("[[ -t 0 && -t 1 ]] && mode=(--pty)\n")
+	b.WriteString("exec \"${run[@]}\" systemd-run --wait --quiet \"${mode[@]}\" \\\n")
+	fmt.Fprintf(&b, "  --uid=%s \\\n", shellQuote(t.ServiceUser))
+	fmt.Fprintf(&b, "  -p %s \\\n", shellQuote("EnvironmentFile="+t.EnvFile))
+	fmt.Fprintf(&b, "  -p %s \\\n", shellQuote("WorkingDirectory="+t.Dir))
+	if cfgFlag := t.ConfigFlagValue(); cfgFlag != "" {
+		fmt.Fprintf(&b, "  -p %s \\\n", shellQuote("Environment=APP_CONFIG="+cfgFlag))
+	}
+	fmt.Fprintf(&b, "  %s \"$@\"\n", shellQuote(bin))
+	return b.String()
+}
+
 // RenderUnit 生成与 Tenon 文档一致的 systemd 模板 unit 内容，启用 Type=notify-reload 与 RuntimeDirectory
 // 以支持 command.Daemon 的零停机热升级；配置了 config_files 时自动附加 --config 参数。
 func RenderUnit(t Target) string {

@@ -183,7 +183,8 @@ func isTokenChar(c byte) bool {
 // AccessLogConfig 是 AccessLog 的参数，对应 http.access_log 段。
 // 请求头记录中 Authorization、Cookie 等敏感头始终隐藏。
 type AccessLogConfig struct {
-	IgnorePaths    []string `yaml:"ignore_paths"`    // IgnorePaths 中的路径（精确匹配）不记录访问日志，例如健康检查。
+	Disabled       bool     `yaml:"disabled"`        // 为 true 时关闭访问日志中间件，适用于由反向代理统一记录访问日志的场景。
+	IgnorePaths    []string `yaml:"ignore_paths"`    // IgnorePaths 中的路径（精确匹配）不记录访问日志，默认忽略 /livez 和 /readyz。
 	UserAgent      bool     `yaml:"user_agent"`      // 记录 User-Agent。
 	RequestHeader  bool     `yaml:"request_header"`  // 记录请求头
 	ResponseHeader bool     `yaml:"response_header"` // 记录响应头
@@ -191,8 +192,10 @@ type AccessLogConfig struct {
 	ResponseBody   bool     `yaml:"response_body"`   // 记录响应体，最多 64 KiB
 }
 
-// DefaultAccessLogConfig 返回只记录基本字段的配置。
-func DefaultAccessLogConfig() AccessLogConfig { return AccessLogConfig{IgnorePaths: []string{}} }
+// DefaultAccessLogConfig 返回默认访问日志配置：只记录基本字段，并忽略 /livez 与 /readyz 健康检查路径。
+func DefaultAccessLogConfig() AccessLogConfig {
+	return AccessLogConfig{IgnorePaths: []string{"/livez", "/readyz"}}
+}
 
 // SetDefaults 实现 config.Defaulter。
 func (c *AccessLogConfig) SetDefaults() { *c = DefaultAccessLogConfig() }

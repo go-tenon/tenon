@@ -233,11 +233,13 @@ func TestSkillReferences(t *testing.T) {
 		}
 		sources[name] = string(tmpl)
 	}
-	conv, err := os.ReadFile("conventions.md")
-	if err != nil {
-		t.Fatal(err)
+	for _, name := range []string{"conventions.md", "deploy_guide.md"} {
+		body, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sources[name] = string(body)
 	}
-	sources["conventions.md"] = string(conv)
 	for source, text := range sources {
 		for _, m := range ref.FindAllStringSubmatch(text, -1) {
 			page, err := os.ReadFile(filepath.Join(docs, filepath.FromSlash(m[1])))
@@ -324,5 +326,78 @@ func TestSyncAgentsMD(t *testing.T) {
 	gotLegacy, _ := os.ReadFile(p)
 	if !strings.HasPrefix(string(gotLegacy), "# Legacy\n\n已有内容\n\n<!-- tenon:begin -->\n") || !strings.Contains(string(gotLegacy), "## 代码约定") {
 		t.Errorf("legacy AGENTS.md:\n%s", gotLegacy)
+	}
+}
+
+// SyncReadmeDeploy 按标记维护 README.md 中的部署最佳实践区块：文件不存在时不创建；
+// insert 为 false 时只更新已有标记的项目，不改动无标记的自定义 README；insert 为 true 时追加区块；再次执行结果不变。
+func TestSyncReadmeDeploy(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cfg := &project.Config{Main: "./cmd/shop"}
+
+	// 文件不存在时不创建。
+	ok, err := agents.SyncReadmeDeploy(dir, cfg, true)
+	if err != nil || ok {
+		t.Fatalf("missing README.md: ok=%v err=%v", ok, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, agents.ReadmeFile)); err == nil {
+		t.Fatal("created README.md when absent")
+	}
+
+	p := filepath.Join(dir, agents.ReadmeFile)
+	custom := "# Shop\n\n项目自己的说明。\n"
+	if err := os.WriteFile(p, []byte(custom), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// 无标记且 insert=false 时不修改 README.md。
+	ok, err = agents.SyncReadmeDeploy(dir, cfg, false)
+	if err != nil || ok {
+		t.Fatalf("unmarked without insert: ok=%v err=%v", ok, err)
+	}
+	if got, _ := os.ReadFile(p); string(got) != custom {
+		t.Fatalf("unmarked README.md modified:\n%s", got)
+	}
+
+	// 无标记且 insert=true 时追加部署区块，按入口名展开占位符。
+	ok, err = agents.SyncReadmeDeploy(dir, cfg, true)
+	if err != nil || !ok {
+		t.Fatalf("insert deploy block: ok=%v err=%v", ok, err)
+	}
+	got, _ := os.ReadFile(p)
+	text := string(got)
+	for _, want := range []string{
+		"# Shop\n\n项目自己的说明。",
+		"<!-- tenon:deploy:begin -->",
+		"<!-- tenon:deploy:end -->",
+		"go run ./cmd/shop config check --config config/prod.yaml",
+		"upstream shop_backend",
+		"/usr/local/bin/shop",
+		"ssh -t <ssh用户>@<服务器IP> shop <子命令>",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("README.md missing %q:\n%s", want, text)
+		}
+	}
+
+	// 再次同步幂等。
+	if ok, err := agents.SyncReadmeDeploy(dir, cfg, false); err != nil || !ok {
+		t.Fatalf("second sync: ok=%v err=%v", ok, err)
+	}
+	if again, _ := os.ReadFile(p); string(again) != text {
+		t.Errorf("second sync changed README.md")
+	}
+
+	// 已有标记且区块前后有自定义内容时，仅替换标记之间内容。
+	marked := "# Shop\n\n<!-- tenon:deploy:begin -->\n旧部署说明\n<!-- tenon:deploy:end -->\n\n## AI 编程助手\n"
+	if err := os.WriteFile(p, []byte(marked), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := agents.SyncReadmeDeploy(dir, cfg, false); err != nil || !ok {
+		t.Fatalf("replace managed block: ok=%v err=%v", ok, err)
+	}
+	replaced, _ := os.ReadFile(p)
+	if strings.Contains(string(replaced), "旧部署说明") || !strings.Contains(string(replaced), "## AI 编程助手") {
+		t.Errorf("unexpected README.md after replace:\n%s", replaced)
 	}
 }

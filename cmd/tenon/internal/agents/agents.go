@@ -13,6 +13,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -23,13 +24,25 @@ import (
 //go:embed conventions.md
 var conventions string
 
+//go:embed deploy_guide.md
+var deployGuide string
+
 // AgentsFile 是项目根目录中给人和 AI 编程助手阅读的说明文件。
 const AgentsFile = "AGENTS.md"
+
+// ReadmeFile 是项目根目录的说明文件。
+const ReadmeFile = "README.md"
 
 // AGENTS.md 中，agentsBegin 到 agentsEnd 之间是由 tenon agents 按框架版本维护的约定区块。
 const (
 	agentsBegin = "<!-- tenon:begin -->"
 	agentsEnd   = "<!-- tenon:end -->"
+)
+
+// README.md 中，deployBegin 到 deployEnd 之间是由 tenon agents 按框架版本维护的部署指南区块。
+const (
+	deployBegin = "<!-- tenon:deploy:begin -->"
+	deployEnd   = "<!-- tenon:deploy:end -->"
 )
 
 // DocsDir 是项目中框架文档的目录：SyncDocs 把项目所用版本的框架 docs 同步到这里，随仓库提交。
@@ -70,9 +83,16 @@ func Sync(dir string, cfg *project.Config, out io.Writer) error {
 	if err != nil {
 		return err
 	}
+	syncedReadme, err := SyncReadmeDeploy(dir, cfg, false)
+	if err != nil {
+		return err
+	}
 	fmt.Fprintf(out, "agents: 框架文档在 %s", DocsDir)
 	if syncedAgents {
 		fmt.Fprintf(out, "，约定已同步到 %s", AgentsFile)
+	}
+	if syncedReadme {
+		fmt.Fprintf(out, "，部署指南已同步到 %s", ReadmeFile)
 	}
 	if len(dirs) > 0 {
 		fmt.Fprintf(out, "，技能在 %s", strings.Join(dirs, "、"))
@@ -119,6 +139,56 @@ func renderConventions(cfg *project.Config) string {
 	}
 	r := strings.NewReplacer("{{error_i18n_rule}}", errRule, "{{frontend_i18n_rule}}", uiRule)
 	return r.Replace(conventions)
+}
+
+// SyncReadmeDeploy 把当前框架版本的部署最佳实践写入项目 dir 根目录 README.md 的托管区块（deployBegin 到 deployEnd 之间），
+// 区块之外的内容保持原样。文件不存在时返回 false。
+// insert 为 false 时仅在文件中已存在配对标记时更新，适用于 tenon agents 升级同步；
+// insert 为 true 时在缺少标记的情况下将托管区块追加到末尾，适用于 tenon add deploy。
+func SyncReadmeDeploy(dir string, cfg *project.Config, insert bool) (bool, error) {
+	p := filepath.Join(dir, ReadmeFile)
+	data, err := os.ReadFile(p)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("agents: read %s: %w", ReadmeFile, err)
+	}
+	text := string(data)
+	if !insert && !hasManagedBlock(text, deployBegin, deployEnd) {
+		return false, nil
+	}
+	block := deployBegin + "\n<!-- 这一段由 go tool tenon agents 按框架版本维护；如需按项目自定义，删掉首尾标记即可。 -->\n\n" +
+		strings.TrimSpace(renderDeployGuide(cfg)) + "\n" + deployEnd + "\n"
+	updated := replaceLines(text, deployBegin, deployEnd, block)
+	if updated == text {
+		return true, nil
+	}
+	if err := os.WriteFile(p, []byte(updated), 0o644); err != nil {
+		return false, fmt.Errorf("agents: write %s: %w", ReadmeFile, err)
+	}
+	return true, nil
+}
+
+// renderDeployGuide 按项目的入口命令名展开 deploy_guide.md 中的占位符。
+func renderDeployGuide(cfg *project.Config) string {
+	app := "app"
+	if cfg != nil && cfg.Main != "" {
+		if base := path.Base(cfg.Main); base != "" && base != "." && base != "/" {
+			app = base
+		}
+	}
+	return strings.ReplaceAll(deployGuide, "{{app}}", app)
+}
+
+// hasManagedBlock 报告 text 中是否存在按行匹配的 begin 与 end 托管标记对。
+func hasManagedBlock(text, begin, end string) bool {
+	lines := strings.SplitAfter(text, "\n")
+	i := slices.IndexFunc(lines, func(l string) bool { return strings.TrimSpace(l) == begin })
+	if i < 0 {
+		return false
+	}
+	return slices.IndexFunc(lines[i:], func(l string) bool { return strings.TrimSpace(l) == end }) >= 0
 }
 
 // SyncDocs 把框架目录 fw 中的 docs 增量同步到项目 dir 的 DocsDir：内容变化或缺少的文件才写入，框架中已删除的文件清理。

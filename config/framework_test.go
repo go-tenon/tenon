@@ -29,6 +29,7 @@ http:
   client_ip:
     trusted_proxies: [10.0.0.0/8]
   access_log:
+    disabled: true
     ignore_paths: [/healthz]
     user_agent: true
   timeout:
@@ -53,7 +54,7 @@ database:
 		cfg.HTTP.RateLimit != (ratelimit.Config{Rate: 5, Interval: time.Second, Burst: 20}) {
 		t.Fatalf("http=%+v", cfg.HTTP)
 	}
-	if cfg.HTTP.RequestID.Header != "X-Amzn-Trace-Id" || !cfg.HTTP.AccessLog.UserAgent ||
+	if cfg.HTTP.RequestID.Header != "X-Amzn-Trace-Id" || !cfg.HTTP.AccessLog.Disabled || !cfg.HTTP.AccessLog.UserAgent ||
 		!reflect.DeepEqual(cfg.HTTP.AccessLog.IgnorePaths, []string{"/healthz"}) {
 		t.Fatalf("http=%+v", cfg.HTTP)
 	}
