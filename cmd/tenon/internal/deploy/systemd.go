@@ -133,8 +133,8 @@ func syncDropIns(ctx context.Context, r Runner, t Target, h Host) error {
 		}
 		dir := path.Dir(dp)
 		content := RenderDropIn(di)
-		cmd := fmt.Sprintf("sudo install -d -m 755 -o root -g root %s && sudo install -m 644 -o root -g root /dev/stdin %s",
-			shellQuote(dir), shellQuote(dp))
+		cmd := fmt.Sprintf("sudo install -d -m 755 -o root -g root %s && %s",
+			shellQuote(dir), installFromStdinCommand("644", dp))
 		if err := r.Run(ctx, h, cmd, strings.NewReader(content), io.Discard, io.Discard); err != nil {
 			return fmt.Errorf("[%s] 写入 %s 失败: %w", h.Addr, dp, err)
 		}
@@ -170,6 +170,13 @@ fi`, shellQuote(unitPath), shellQuote(unitPath))
 		return false, fmt.Errorf("[%s] 同步 %s 失败: %w", h.Addr, unitPath, err)
 	}
 	return strings.TrimSpace(out.String()) == "updated", nil
+}
+
+// installFromStdinCommand 构造把标准输入写入远端目标文件的命令：经 0600 临时文件中转并自动清理，
+// 兼容 GNU coreutils 与 Ubuntu 26.04 uutils coreutils 重复覆盖已存在文件。
+func installFromStdinCommand(mode, target string) string {
+	return fmt.Sprintf(`umask 077 && tmp=$(mktemp) && trap 'rm -f "$tmp"' EXIT && cat > "$tmp" && sudo install -m %s -o root -g root "$tmp" %s`,
+		mode, shellQuote(target))
 }
 
 // systemdRunCommand 构造以服务用户、环境变量文件和工作目录运行一次性命令的 shell 语句；

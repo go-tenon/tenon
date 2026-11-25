@@ -92,7 +92,7 @@ fi
 		}
 
 		// 3. 写入 systemd 模板 unit 并同步角色级 drop-in，随后 daemon-reload。
-		writeUnit := fmt.Sprintf("sudo install -m 644 -o root -g root /dev/stdin %s && sudo systemctl daemon-reload", shellQuote(unitPath))
+		writeUnit := installFromStdinCommand("644", unitPath) + " && sudo systemctl daemon-reload"
 		if err := r.Run(ctx, h, writeUnit, strings.NewReader(unitContent), io.Discard, out); err != nil {
 			return nil, fmt.Errorf("[%s] 写入 %s 失败: %w", h.Addr, unitPath, err)
 		}
@@ -100,7 +100,7 @@ fi
 			return nil, err
 		}
 		// 4. 在 /usr/local/bin/<app> 安装运维包装脚本，登录服务器后可在任意目录直接运行应用子命令。
-		writeWrapper := fmt.Sprintf("sudo install -d -m 755 -o root -g root /usr/local/bin && sudo install -m 755 -o root -g root /dev/stdin %s", shellQuote(wrapperPath))
+		writeWrapper := "sudo install -d -m 755 -o root -g root /usr/local/bin && " + installFromStdinCommand("755", wrapperPath)
 		if err := r.Run(ctx, h, writeWrapper, strings.NewReader(wrapperContent), io.Discard, out); err != nil {
 			return nil, fmt.Errorf("[%s] 写入 %s 失败: %w", h.Addr, wrapperPath, err)
 		}

@@ -418,8 +418,8 @@ func EnvPush(ctx context.Context, r Runner, t Target, localFile, roleFilter, hos
 		return nil, err
 	}
 	envDir := path.Dir(t.EnvFile)
-	writeCmd := fmt.Sprintf("sudo install -d -m 750 -o root -g root %s && sudo install -m 600 -o root -g root /dev/stdin %s",
-		shellQuote(envDir), shellQuote(t.EnvFile))
+	writeCmd := fmt.Sprintf("sudo install -d -m 750 -o root -g root %s && %s",
+		shellQuote(envDir), installFromStdinCommand("600", t.EnvFile))
 	report := &EnvPushReport{
 		App:       t.App,
 		Env:       t.EnvName,
