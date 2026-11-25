@@ -149,6 +149,7 @@ import (
     "github.com/go-chi/chi/v5"
 
     "github.com/go-tenon/tenon/command"
+    "github.com/go-tenon/tenon/command/httpcmd"
     "github.com/go-tenon/tenon/config"
     "github.com/go-tenon/tenon/frontend"
     "github.com/go-tenon/tenon/health"
@@ -176,7 +177,7 @@ func (a *App) HTTP(d *command.Daemon) (func(context.Context) error, error) {
     }
     return func(ctx context.Context) error {
         return pages.Run(ctx, func(ctx context.Context) error {
-            return httpx.Serve(ctx, a.cfg.HTTP, ln, router)
+            return httpx.Serve(ctx, a.cfg.HTTP, ln, router, httpcmd.ServeOptions(d)...)
         })
     }, nil
 }

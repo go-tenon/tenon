@@ -147,7 +147,12 @@ func TestList(t *testing.T) {
 	}
 
 	// 即使 schedule_runs 被清理，schedule_tasks 的持久水位仍能准确检测错过。
-	if err := e.sched.RunDue(context.Background(), prev.Add(-2*time.Hour)); err != nil {
+	// 避开本地 00:00，避免同调度器中的 @daily 任务 "broken" 一起触发。
+	due := prev.Add(-2 * time.Hour)
+	if due.In(time.Local).Hour() == 0 {
+		due = prev.Add(-3 * time.Hour)
+	}
+	if err := e.sched.RunDue(context.Background(), due); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := e.db.ExecContext(context.Background(), "DELETE FROM schedule_runs"); err != nil {
