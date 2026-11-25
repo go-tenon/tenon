@@ -1,6 +1,8 @@
 # 应用的配置，见 Tenon 文档的 configuration.md。开发时 tenon dev 再叠加 .tenon/dev.yaml：其中是前端开发服务器的地址。
 http:
   addr: ":8080"
+  # 应用对外的访问地址，用于拼接邮件链接、回调地址等；生产环境由 APP_URL 提供。
+  public_url: ${APP_URL:-http://localhost:8080}
   # 经反向代理部署时填写可信代理网段，例如 ["10.0.0.0/8", "172.16.0.0/12"]，访问日志才能记录真实客户端 IP。
   # client_ip:
   #   trusted_proxies: []

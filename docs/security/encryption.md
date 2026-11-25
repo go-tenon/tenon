@@ -137,10 +137,10 @@ if err != nil {
 <a id="signed-urls"></a>
 ## 签名链接：`SignURL`
 
-邮件中的链接（验证邮箱、退订）用 `SignURL` 加上 `expires` 和 `signature` 两个查询参数，`ttl` 后过期：
+邮件中的链接（验证邮箱、退订）用 `SignURL` 加上 `expires` 和 `signature` 两个查询参数，`ttl` 后过期。基址从 [`http.public_url`](../http/middleware.md#public-url)（`cfg.HTTP.BaseURL()`）传入业务动作 `a.publicURL`：
 
 ```go
-link := a.crypt.SignURL("https://example.com/email/verify/"+u.ID+"?email="+url.QueryEscape(u.Email), 24*time.Hour)
+link := a.crypt.SignURL(a.publicURL+"/email/verify/"+u.ID+"?email="+url.QueryEscape(u.Email), 24*time.Hour)
 // https://example.com/email/verify/42?email=a%40b.com&expires=1731400000&signature=Xy...
 ```
 

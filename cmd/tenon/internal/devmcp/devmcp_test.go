@@ -103,6 +103,8 @@ func TestSearchDocs(t *testing.T) {
 		"RPC 端点":             "rpc/endpoints.md",
 		"跨域":                 "http/middleware.md#cors",
 		"App 最低版本":           "http/middleware.md#app-version",
+		"public_url":         "http/middleware.md#public-url",
+		"对外地址 邮件链接":          "http/middleware.md#public-url",
 		"推送进度 SSE":           "http/sse.md",
 		"errorx.Define":      "general/errors.md#defining-errors",
 		"环境变量":               "general/configuration.md#environment-variables",

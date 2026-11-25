@@ -26,11 +26,82 @@ func TestDefaultConfigIsValid(t *testing.T) {
 		func(c *httpx.Config) { c.ReadTimeout = 0 },
 		func(c *httpx.Config) { c.DrainDelay = -time.Second },
 		func(c *httpx.Config) { c.ShutdownTimeout = -time.Second },
+		func(c *httpx.Config) { c.PublicURL = "example.com" },
+		func(c *httpx.Config) { c.PublicURL = "ftp://example.com" },
+		func(c *httpx.Config) { c.PublicURL = "https://" },
+		func(c *httpx.Config) { c.PublicURL = "https://:8080" },
+		func(c *httpx.Config) { c.PublicURL = "https://user:pass@example.com" },
+		func(c *httpx.Config) { c.PublicURL = "https://example.com?a=1" },
+		func(c *httpx.Config) { c.PublicURL = "https://example.com#top" },
+		func(c *httpx.Config) { c.PublicURL = " https://example.com" },
 	} {
 		cfg := httpx.DefaultConfig()
 		mutate(&cfg)
 		if cfg.Validate() == nil {
 			t.Fatalf("accepted %+v", cfg)
+		}
+	}
+}
+
+func TestConfigPublicURL(t *testing.T) {
+	t.Parallel()
+	empty := httpx.DefaultConfig()
+	if _, err := empty.BaseURL(); err == nil || !strings.Contains(err.Error(), "not configured") {
+		t.Fatalf("empty BaseURL: got %v", err)
+	}
+	if _, err := empty.URL("reset"); err == nil || !strings.Contains(err.Error(), "not configured") {
+		t.Fatalf("empty URL: got %v", err)
+	}
+
+	invalid := httpx.DefaultConfig()
+	invalid.PublicURL = "ftp://example.com"
+	if _, err := invalid.BaseURL(); err == nil {
+		t.Fatal("invalid PublicURL accepted by BaseURL")
+	}
+
+	for _, tc := range []struct {
+		publicURL string
+		wantBase  string
+		elem      []string
+		wantURL   string
+	}{
+		{
+			publicURL: "http://localhost:8080",
+			wantBase:  "http://localhost:8080",
+			elem:      []string{"/reset-password"},
+			wantURL:   "http://localhost:8080/reset-password",
+		},
+		{
+			publicURL: "https://example.com/",
+			wantBase:  "https://example.com",
+			elem:      []string{"email", "verify", "42"},
+			wantURL:   "https://example.com/email/verify/42",
+		},
+		{
+			publicURL: "https://example.com/app///",
+			wantBase:  "https://example.com/app",
+			elem:      []string{"/t", "acme/"},
+			wantURL:   "https://example.com/app/t/acme/",
+		},
+		{
+			publicURL: "http://[::1]:8080/",
+			wantBase:  "http://[::1]:8080",
+			elem:      nil,
+			wantURL:   "http://[::1]:8080",
+		},
+	} {
+		cfg := httpx.DefaultConfig()
+		cfg.PublicURL = tc.publicURL
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("%q Validate: %v", tc.publicURL, err)
+		}
+		gotBase, err := cfg.BaseURL()
+		if err != nil || gotBase != tc.wantBase {
+			t.Fatalf("%q BaseURL: got (%q, %v), want %q", tc.publicURL, gotBase, err, tc.wantBase)
+		}
+		gotURL, err := cfg.URL(tc.elem...)
+		if err != nil || gotURL != tc.wantURL {
+			t.Fatalf("%q URL(%v): got (%q, %v), want %q", tc.publicURL, tc.elem, gotURL, err, tc.wantURL)
 		}
 	}
 }

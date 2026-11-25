@@ -22,7 +22,7 @@ msg.To = []mail.Address{{Name: "编辑部", Email: "editors@example.com"}}
 err = mailer.Send(ctx, msg)
 ```
 
-`emails.Files` 是嵌入模板的 `embed.FS`，见[编写邮件模板](#writing-templates)；`mailer` 是入口创建的 `mail.Mailer`，见[装配发送器](#assembling-mailer)。
+`emails.Files` 是嵌入模板的 `embed.FS`，见[编写邮件模板](#writing-templates)；`mailer` 是入口创建的 `mail.Mailer`，见[装配发送器](#assembling-mailer)。邮件中的绝对链接使用 [`http.public_url`](../http/middleware.md#public-url)（`cfg.HTTP.BaseURL()` / `cfg.HTTP.URL`）拼接。
 
 <a id="assembling-mailer"></a>
 ## 装配发送器

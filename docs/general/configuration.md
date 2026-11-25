@@ -13,6 +13,7 @@
 # config/app.yaml
 http:
   addr: ${HTTP_ADDR:-:8080}
+  public_url: ${APP_URL:-http://localhost:8080}
 
 database:
   dsn: ${DATABASE_URL}

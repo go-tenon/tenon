@@ -214,6 +214,7 @@ router.Use(
 ```yaml
 http:
   addr: ${HTTP_ADDR:-:8080} # host:port
+  public_url: ${APP_URL:-http://localhost:8080} # 应用对外的访问地址，用于拼接邮件链接和回调地址；可留空
   read_header_timeout: 5s
   read_timeout: 30s
   write_timeout: 30s        # SSE 推送时不受它限制
@@ -237,6 +238,29 @@ http:
 
 - 除 `drain_delay` 和 `acquire_timeout`（允许为 `0`）外，超时和数值都必须为正数，否则加载配置时报错。
 - `httpx.Config` 放在应用的根配置结构体中，由 `config.Load` 填充默认值并校验。测试中从 `httpx.DefaultConfig()` 开始修改：`httpx.Config{}` 交给 `httpx.Defaults` 会 panic。
+
+<a id="public-url"></a>
+### 公开地址：`public_url`
+
+`http.public_url` 是应用对外的访问地址（`http://` 或 `https://`，不含用户信息、查询参数和片段），生产环境通过 `APP_URL` 环境变量提供。在启动阶段调用 `BaseURL` 取出去掉末尾斜杠的基址，显式传给需要生成链接的业务动作、后台任务或 OAuth 服务端；`URL` 按路径段拼接完整地址：
+
+```go
+baseURL, err := cfg.HTTP.BaseURL() // 未配置时返回错误，启动即暴露
+if err != nil {
+    return err
+}
+resetURL, err := cfg.HTTP.URL("reset-password") // https://example.com/reset-password
+if err != nil {
+    return err
+}
+```
+
+- `public_url` 为空时 `Validate` 放行，调用 `BaseURL` 和 `URL` 时返回错误。
+- `URL` 通过 `url.JoinPath` 拼接路径段；查询参数由调用方通过 `url.Values` 追加，签名链接交给 [`crypt.SignURL`](../security/encryption.md#signed-urls)。
+- 本机通过 `config/local.yaml` 修改 `http.addr` 时，同步覆盖 `http.public_url`。
+
+> [!WARNING]
+> 生成重置密码、邮箱验证、邀请和回调链接时只使用 `http.public_url`，不要从请求头的 `Host` 或 `X-Forwarded-Host` 拼接：请求头可能被伪造导致链接指向恶意域名，且队列 Worker 和定时任务中没有 HTTP 请求。
 
 <a id="request-id"></a>
 ### 请求 ID

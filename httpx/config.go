@@ -4,6 +4,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -17,6 +18,7 @@ import (
 // 各子段是同名中间件的参数。配置只提供参数，中间件是否启用取决于代码是否安装它。
 type Config struct {
 	Addr              string        `yaml:"addr"`                // 监听地址，格式为 host:port，端口为 0–65535 的数字。
+	PublicURL         string        `yaml:"public_url"`          // 应用对外的访问地址，例如 https://example.com，用于拼接邮件链接、回调地址等；留空表示未配置。
 	ReadHeaderTimeout time.Duration `yaml:"read_header_timeout"` // 对应 http.Server 的 ReadHeaderTimeout
 	ReadTimeout       time.Duration `yaml:"read_timeout"`        // 对应 http.Server 的 ReadTimeout
 	WriteTimeout      time.Duration `yaml:"write_timeout"`       // 对应 http.Server 的 WriteTimeout
@@ -59,7 +61,7 @@ func DefaultConfig() Config {
 // SetDefaults 实现 config.Defaulter，使 config.Load 自动填充默认值。
 func (c *Config) SetDefaults() { *c = DefaultConfig() }
 
-// Validate 检查服务器参数：地址格式合法、各超时为正数。
+// Validate 检查服务器参数：地址与公开地址格式合法、各超时为正数。
 // 子段由各自的 Validate 检查；config.Load 会逐个调用，中间件构造时也会调用。
 func (c Config) Validate() error {
 	_, port, err := net.SplitHostPort(c.Addr)
@@ -68,6 +70,11 @@ func (c Config) Validate() error {
 	}
 	if _, err := strconv.ParseUint(port, 10, 16); err != nil {
 		return errors.Newf("addr %q: port must be a number in 0-65535", c.Addr)
+	}
+	if c.PublicURL != "" {
+		if err := validatePublicURL(c.PublicURL); err != nil {
+			return err
+		}
 	}
 	for _, f := range []struct {
 		name string
@@ -88,6 +95,43 @@ func (c Config) Validate() error {
 	}
 	if c.AcquireTimeout < 0 {
 		return errors.New("acquire_timeout must not be negative")
+	}
+	return nil
+}
+
+// BaseURL 返回去掉末尾斜杠的公开访问基址，例如 https://example.com 或 https://example.com/app。
+// 未配置 public_url 或格式不合法时返回错误。
+func (c Config) BaseURL() (string, error) {
+	if c.PublicURL == "" {
+		return "", errors.New("httpx: public_url is not configured")
+	}
+	if err := validatePublicURL(c.PublicURL); err != nil {
+		return "", errors.Wrap(err, "httpx")
+	}
+	return strings.TrimRight(c.PublicURL, "/"), nil
+}
+
+// URL 在公开访问基址后按路径段拼接地址，例如 cfg.HTTP.URL("reset-password")。
+// 未配置 public_url 或格式不合法时返回错误；查询参数由调用方通过 url.Values 追加。
+func (c Config) URL(elem ...string) (string, error) {
+	base, err := c.BaseURL()
+	if err != nil {
+		return "", err
+	}
+	if len(elem) == 0 {
+		return base, nil
+	}
+	return url.JoinPath(base, elem...)
+}
+
+// validatePublicURL 检查公开地址是合法的 http(s) 绝对地址，不含首尾空白、用户信息、查询参数和片段。
+func validatePublicURL(raw string) error {
+	if strings.TrimSpace(raw) != raw {
+		return errors.Newf("public_url %q must not have leading or trailing whitespace", raw)
+	}
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return errors.Newf("public_url %q must be an http(s) URL without credentials, query, or fragment", raw)
 	}
 	return nil
 }
