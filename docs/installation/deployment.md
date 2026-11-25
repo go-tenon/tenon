@@ -256,6 +256,11 @@ done
 ### Nginx 配置示例
 
 ```nginx
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close; # 普通 HTTP 走同机回环短连接（跨机开启 keepalive 时改为 ""），WebSocket 自动升级
+}
+
 upstream blog_backend {
     server 127.0.0.1:8080 max_fails=3 fail_timeout=10s;
     # 同机反代（127.0.0.1）使用短连接；跨机内网反代按需开启连接池：
@@ -277,21 +282,23 @@ server {
     location / {
         proxy_pass http://blog_backend;
         proxy_http_version 1.1;
-        proxy_set_header Connection "close"; # 跨机开启 keepalive 时改为 ""
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
         proxy_set_header Host $http_host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Request-ID $request_id;
 
-        proxy_buffering off;       # 流式输出与 SSE 实时透传
+        proxy_buffering off;       # 流式输出、SSE 与 WebSocket 实时透传
         proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
         proxy_next_upstream error timeout invalid_header http_502 http_503 http_504;
     }
 }
 ```
 
 - 代理与后端在同一台机器时，应用配置 `http.client_ip.trusted_proxies: ["127.0.0.1/32"]`；本机回环直连省去空闲连接池，热重载对非幂等 `POST` 请求也零 502。
-- 启用 WebSocket（[实时频道](../libraries/realtime.md)）时，在对应 `location` 设置 `proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection "upgrade";`。
+- 上述 `map $http_upgrade $connection_upgrade` 已原生兼容 WebSocket（[实时频道](../libraries/realtime.md)）升级与普通 HTTP 短连接，无需单独拆 `location`。
 - 需要维护窗口时叠加 [503 维护页规则](operations.md#maintenance-at-the-proxy)。
 
 <a id="caddy-config"></a>

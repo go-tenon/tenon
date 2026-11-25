@@ -26,16 +26,19 @@ http:
   access_log:
     disabled: true                      # 反向代理已记录访问日志时可关闭应用访问日志；也可改为 logs.levels.http: warn 只记 4xx/5xx
 
-logs:
-  level: info
-
-# 按项目实际依赖填写数据库、密钥与 NATS（密码含 @ 等特殊字符需做 URL 编码，例如 @ 写为 %40）
+# 按项目实际配置结构填写依赖项（仅保留项目 Config 中声明的字段；密码含 @ 等特殊字符需 URL 编码，例如 @ 写为 %40）
+# logs:
+#   level: info
 # database:
 #   dsn: postgres://<db_user>:<db_pass>@<db_host>:5432/<db_name>?sslmode=disable
 # crypt:
 #   key: "<openssl rand -base64 32 生成的密钥>"
 # nats:
 #   url: nats://<nats_user>:<nats_pass>@<nats_host>:4222
+# filesystem:
+#   disks:
+#     local:
+#       root: /opt/{{app}}/storage/files   # 生产本地磁盘使用绝对路径，目录归属 {{app}} 服务用户
 ```
 
 本地校验配置与预演发布计划：
@@ -78,6 +81,11 @@ go tool tenon deploy run -- doctor
 在服务器上创建或更新站点配置（例如 `/etc/nginx/conf.d/{{app}}.conf`），将 80 端口请求转发到本机 `127.0.0.1:8080`：
 
 ```nginx
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close; # 普通 HTTP 走同机回环短连接（配合热重载避免 502），WebSocket 自动升级
+}
+
 upstream {{app}}_backend {
     server 127.0.0.1:8080 max_fails=3 fail_timeout=10s;
 }
@@ -91,14 +99,16 @@ server {
     location / {
         proxy_pass http://{{app}}_backend;
         proxy_http_version 1.1;
-        proxy_set_header Connection "close"; # 同机回环短连接，配合热重载避免 502
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
         proxy_set_header Host $http_host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Request-ID $request_id;
 
-        proxy_buffering off;       # 流式输出与 SSE 实时透传
+        proxy_buffering off;       # 流式输出、SSE 与 WebSocket 实时透传
         proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
         proxy_next_upstream error timeout invalid_header http_502 http_503 http_504;
     }
 }
