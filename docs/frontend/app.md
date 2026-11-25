@@ -226,7 +226,7 @@ function Login() {
 
 - `login` 调用应用的登录接口，服务端把凭据写进会话 cookie。成功后表单调用 `session.signIn()` 读取当前用户，再回到 `redirect`。
 - 字段错误显示在输入框下，其他错误显示在表单上方。
-- 浏览器标题是“登录 - Acme”（`title`、`brand` 是文字时）。
+- 浏览器标题是“登录 - Acme”（`title`、`brand` 是文字时）；显示图片标志时传 `logo` 属性，`brand` 保持文字即可保留完整标题。
 - 桌面端中用 `BrowserSignIn` 代替 `LoginForm`，在系统浏览器中登录，见[客户端](../clients/overview.md)。
 
 <a id="redirect-after-sign-in"></a>

@@ -17,7 +17,9 @@ function useAuthTitle(title: ReactNode, brand: ReactNode, enabled: boolean): voi
 
 /** CenteredAuthLayout 的选项。 */
 export interface CenteredAuthLayoutProps {
-  /** 卡片上方的标志和名称。 */
+  /** 卡片上方的标志图标，显示在 brand 左侧；传入独立 logo 时 brand 保持纯文字即可自动拼入浏览器标签标题。 */
+  logo?: ReactNode
+  /** 卡片上方的名称或标志。 */
   brand?: ReactNode
   title: ReactNode
   /** 标题下面的一句说明。 */
@@ -31,6 +33,7 @@ export interface CenteredAuthLayoutProps {
 
 /** 登录、注册、找回密码等页面的样式之一：页面中央一张卡片。 */
 export function CenteredAuthLayout({
+  logo,
   brand,
   title,
   description,
@@ -42,7 +45,12 @@ export function CenteredAuthLayout({
   return (
     <div className="tn-auth">
       <Stack gap="lg" w="100%" maw={400} align="stretch">
-        {brand && <Group justify="center">{brand}</Group>}
+        {(logo || brand) && (
+          <Group justify="center" gap="xs">
+            {logo}
+            {brand}
+          </Group>
+        )}
         <div className="tn-auth-card">
           <Stack gap={4} mb="xl">
             <Title order={3}>{title}</Title>
@@ -66,7 +74,9 @@ export function CenteredAuthLayout({
 
 /** SplitAuthLayout 的选项。 */
 export interface SplitAuthLayoutProps {
-  /** 标志和名称：宽屏时在左栏顶部，窄屏时在表单上方。 */
+  /** 标志图标，显示在 brand 左侧；传入独立 logo 时 brand 保持纯文字即可自动拼入浏览器标签标题。 */
+  logo?: ReactNode
+  /** 名称或标志：宽屏时在左栏顶部，窄屏时在表单上方。 */
   brand?: ReactNode
   /** 左栏中间的内容，例如一句口号和几条产品介绍。 */
   aside?: ReactNode
@@ -87,6 +97,7 @@ export interface SplitAuthLayoutProps {
  * 窄屏时只显示表单，标志移到表单上方。
  */
 export function SplitAuthLayout({
+  logo,
   brand,
   aside,
   asideFooter,
@@ -100,7 +111,12 @@ export function SplitAuthLayout({
   return (
     <div className="tn-auth-split">
       <aside className="tn-auth-split-aside">
-        {brand && <div className="tn-auth-split-brand">{brand}</div>}
+        {(logo || brand) && (
+          <Group gap="xs" className="tn-auth-split-brand">
+            {logo}
+            {brand}
+          </Group>
+        )}
         <div className="tn-auth-split-aside-body">{aside}</div>
         {asideFooter && (
           <Text size="xs" className="tn-auth-split-aside-footer">
@@ -110,7 +126,12 @@ export function SplitAuthLayout({
       </aside>
       <main className="tn-auth-split-main">
         <Stack gap="xl" w="100%" maw={380}>
-          {brand && <Group hiddenFrom="md">{brand}</Group>}
+          {(logo || brand) && (
+            <Group hiddenFrom="md" gap="xs">
+              {logo}
+              {brand}
+            </Group>
+          )}
           <Stack gap={4}>
             <Title order={2}>{title}</Title>
             {description && (

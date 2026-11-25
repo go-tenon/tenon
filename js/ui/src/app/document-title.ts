@@ -20,6 +20,36 @@ export function useDocumentTitle(title: string | undefined): void {
   }, [title])
 }
 
+/** 把 href 写进页面的 <link rel="icon">，href 变化时更新；清空或卸载时恢复原有图标。 */
+export function useFavicon(href: string | undefined): void {
+  useEffect(() => {
+    if (typeof document === "undefined") return
+    const clean = href?.trim()
+    if (!clean) return
+    let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]')
+    const created = !link
+    const prevHref = link?.getAttribute("href") ?? null
+    const prevType = link?.getAttribute("type") ?? null
+    if (!link) {
+      link = document.createElement("link")
+      link.rel = "icon"
+      document.head.appendChild(link)
+    }
+    link.href = clean
+    link.removeAttribute("type")
+    return () => {
+      if (!link) return
+      if (created) {
+        link.remove()
+      } else {
+        if (prevHref !== null) link.setAttribute("href", prevHref)
+        else link.removeAttribute("href")
+        if (prevType !== null) link.setAttribute("type", prevType)
+      }
+    }
+  }, [href])
+}
+
 /**
  * 当前页面的标题。tabs 为 true（布局开启了多标签）时是当前标签的标题，页面用 useTabTitle 设置的标题优先，
  * 例如“文章：你好”；否则是路由 staticData.title 中最里面的一个，与面包屑的最后一项相同。

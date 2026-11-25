@@ -166,7 +166,7 @@ const site = useQuery(kit.queries.site.get()) // 读到之前是 undefined
 return <FrameLayout title={site.data?.name} tabs />
 ```
 
-根路由 `head` 中的 `title` 是页面加载完成之前的标题，要保留。应用自己管理标题时（例如每个页面的 `head` 中写 SEO 标题），给布局设置 `documentTitle={false}`。
+根路由 `head` 中的 `title` 是页面加载完成之前的标题，要保留。应用自己管理标题时（例如每个页面的 `head` 中写 SEO 标题），给布局设置 `documentTitle={false}`。运行时动态替换浏览器标签图标用 `useFavicon(url)`。
 
 <a id="tenants"></a>
 ## 租户
