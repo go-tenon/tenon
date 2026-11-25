@@ -153,3 +153,34 @@ func TestServeHTTPSecurityHeaders(t *testing.T) {
 		}
 	}
 }
+
+// TestServeHTTPMediaContentTypes 验证音视频与 WebP 文件在本地磁盘伺服时始终返回规范 MIME，支持 Range 且带 nosniff。
+func TestServeHTTPMediaContentTypes(t *testing.T) {
+	ctx := context.Background()
+	disk, _ := openDisk(t, "/storage")
+	cases := map[string]string{
+		"a.opus": "audio/ogg",
+		"b.m4a":  "audio/mp4",
+		"c.mov":  "video/quicktime",
+		"d.wav":  "audio/wav",
+		"e.webp": "image/webp",
+	}
+	for key, wantCT := range cases {
+		if err := disk.Put(ctx, key, "", strings.NewReader("0123456789"), 10); err != nil {
+			t.Fatal(err)
+		}
+		req := httptest.NewRequest(http.MethodGet, "/storage/"+key, nil)
+		req.Header.Set("Range", "bytes=0-3")
+		rec := httptest.NewRecorder()
+		disk.ServeHTTP(rec, req)
+		if rec.Code != http.StatusPartialContent {
+			t.Errorf("%s: code=%d, want 206", key, rec.Code)
+		}
+		if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, wantCT) {
+			t.Errorf("%s: Content-Type=%q, want prefix %q", key, got, wantCT)
+		}
+		if rec.Header().Get("X-Content-Type-Options") != "nosniff" {
+			t.Errorf("%s: missing nosniff", key)
+		}
+	}
+}

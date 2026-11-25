@@ -97,10 +97,14 @@ func (d *Disk) URL(key string) string {
 	return d.baseURL + "/" + strings.Join(parts, "/")
 }
 
-// Put 流式上传：不超过一片时单次 PUT，否则逐片缓冲上传，内存占用不超过一片。
+// Put 流式上传：不超过一片时单次 PUT，否则逐片缓冲上传，内存占用不超过一片；size 小于 0 表示未知长度。
 // 读取正文失败时中止分片会话，不发布部分对象。
 func (d *Disk) Put(ctx context.Context, key, contentType string, body io.Reader, size int64) error {
-	buf := make([]byte, min(size, uploadPartSize)+1)
+	bufSize := int64(uploadPartSize)
+	if size >= 0 && size < bufSize {
+		bufSize = size
+	}
+	buf := make([]byte, bufSize+1)
 	n, err := io.ReadFull(body, buf)
 	if !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, io.EOF) {
 		if err != nil {

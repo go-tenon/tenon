@@ -65,7 +65,7 @@ func (d *Disk) URL(key string) string { return d.baseURL + "/" + escapeKey(key) 
 // 所有响应都带 X-Content-Type-Options: nosniff；HTML、SVG、XML 这类浏览器会执行脚本的类型，
 // 还会加上 Content-Security-Policy: sandbox 并作为附件下载。<img> 中引用的 SVG 照常显示。
 func (d *Disk) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	d.handler.ServeHTTP(&safeWriter{ResponseWriter: w}, r)
+	d.handler.ServeHTTP(&safeWriter{ResponseWriter: w, ext: path.Ext(r.URL.Path)}, r)
 }
 
 // activeTypes 是浏览器直接打开时可能执行脚本的类型。
@@ -74,14 +74,16 @@ var activeTypes = map[string]bool{
 	"text/xml": true, "application/xml": true,
 }
 
-// safeWriter 在写出响应头之前，按文件服务器确定的 Content-Type 补上安全响应头。
+// safeWriter 在写出响应头之前，按内置扩展名表修正音视频等二进制 MIME 并补上安全响应头。
 type safeWriter struct {
 	http.ResponseWriter
+	ext  string
 	done bool
 }
 
-// secure 第一次调用时补上安全响应头：总是禁止嗅探类型，能在浏览器中执行的类型改为下载并加上沙箱。
-func (s *safeWriter) secure() {
+// secure 第一次调用时补上安全响应头：总是禁止嗅探类型，能在浏览器中执行的类型改为下载并加上沙箱；
+// 成功响应时为缺少系统 mime.types 的音视频和图片扩展名兜底规范的 Content-Type。
+func (s *safeWriter) secure(code int) {
 	if s.done {
 		return
 	}
@@ -89,7 +91,15 @@ func (s *safeWriter) secure() {
 	h := s.Header()
 	h.Set("X-Content-Type-Options", "nosniff")
 	t, _, _ := strings.Cut(h.Get("Content-Type"), ";")
-	if activeTypes[strings.ToLower(strings.TrimSpace(t))] {
+	cur := strings.ToLower(strings.TrimSpace(t))
+	if code < http.StatusBadRequest && s.ext != "" {
+		if builtin := filesystem.ContentTypeByExt(s.ext); builtin != "" && !strings.HasPrefix(builtin, "text/") &&
+			(cur == "" || cur == "application/octet-stream" || cur == "application/ogg" || cur == "audio/wave" || cur == "audio/x-wav") {
+			h.Set("Content-Type", builtin)
+			cur = builtin
+		}
+	}
+	if activeTypes[cur] {
 		h.Set("Content-Security-Policy", "sandbox")
 		h.Set("Content-Disposition", "attachment")
 	}
@@ -97,13 +107,13 @@ func (s *safeWriter) secure() {
 
 // WriteHeader 补上安全响应头后写出状态码。
 func (s *safeWriter) WriteHeader(code int) {
-	s.secure()
+	s.secure(code)
 	s.ResponseWriter.WriteHeader(code)
 }
 
 // Write 补上安全响应头后写出响应体。
 func (s *safeWriter) Write(b []byte) (int, error) {
-	s.secure()
+	s.secure(http.StatusOK)
 	return s.ResponseWriter.Write(b)
 }
 

@@ -840,3 +840,188 @@ func TestConfirmImageMeta(t *testing.T) {
 		t.Fatalf("text meta=%+v err=%v", confirmedTxt.Meta, err)
 	}
 }
+
+// TestConfirmAcceptMedia 验证常见音视频容器的真实内容识别、多语义扩展名兼容与伪装拦截。
+func TestConfirmAcceptMedia(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	e := newEnv(t)
+	putBytes := func(filename, contentType string, body []byte) filesystem.File {
+		t.Helper()
+		r, err := e.svc.Upload(ctx, alice, filesystem.FileInput{
+			Filename: filename, ContentType: contentType, Size: int64(len(body)),
+		}, bytes.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+
+	makeFtyp := func(major string, compat ...string) []byte {
+		size := 16 + 4*len(compat)
+		b := make([]byte, size+8)
+		binary.BigEndian.PutUint32(b[0:4], uint32(size))
+		copy(b[4:8], "ftyp")
+		copy(b[8:12], major)
+		for i, c := range compat {
+			copy(b[16+4*i:20+4*i], c)
+		}
+		return b
+	}
+	mp4 := makeFtyp("isom", "iso2", "mp41")
+	mov := makeFtyp("qt  ", "qt  ")
+	m4a := makeFtyp("M4A ", "isom", "mp42")
+	webmVideo := append([]byte{0x1A, 0x45, 0xDF, 0xA3, 0x01, 0x42, 0x82}, []byte("webm...V_VP9...A_OPUS")...)
+	webmAudio := append([]byte{0x1A, 0x45, 0xDF, 0xA3, 0x01, 0x42, 0x82}, []byte("webm...A_OPUS")...)
+	oggOpus := append(append([]byte("OggS"), make([]byte, 24)...), []byte("OpusHead\x01\x01")...)
+	wav := append([]byte("RIFF\x24\x00\x00\x00WAVEfmt "), make([]byte, 20)...)
+	mp3ID3 := append([]byte("ID3\x03\x00\x00\x00\x00\x00\x00"), make([]byte, 16)...)
+	mp3Raw := append([]byte{0xFF, 0xFB, 0x90, 0x64}, make([]byte, 16)...)
+	aac := append([]byte{0xFF, 0xF1, 0x50, 0x80, 0x02, 0x1F, 0xFC}, make([]byte, 16)...)
+	flac := append([]byte("fLaC"), make([]byte, 24)...)
+
+	media := filesystem.Accept{
+		Types: []string{
+			"video/mp4",
+			"video/quicktime",
+			"video/webm",
+			"audio/ogg",
+			"audio/mpeg",
+			"audio/mp4",
+			"audio/webm",
+			"audio/wav",
+			"audio/aac",
+			"audio/flac",
+		},
+	}
+
+	for name, tc := range map[string]struct {
+		file     filesystem.File
+		ok       bool
+		wantMIME string
+	}{
+		"mp4": {
+			file:     putBytes("clip.mp4", "video/mp4", mp4),
+			ok:       true,
+			wantMIME: "video/mp4",
+		},
+		"mp4 octet-stream": {
+			file:     putBytes("clip.mp4", "application/octet-stream", mp4),
+			ok:       true,
+			wantMIME: "video/mp4",
+		},
+		"mov": {
+			file:     putBytes("iphone.mov", "video/quicktime", mov),
+			ok:       true,
+			wantMIME: "video/quicktime",
+		},
+		"m4a": {
+			file:     putBytes("memo.m4a", "audio/x-m4a", m4a),
+			ok:       true,
+			wantMIME: "audio/x-m4a",
+		},
+		"webm video": {
+			file:     putBytes("screen.webm", "video/webm", webmVideo),
+			ok:       true,
+			wantMIME: "video/webm",
+		},
+		"webm audio": {
+			file:     putBytes("voice.webm", "audio/webm", webmAudio),
+			ok:       true,
+			wantMIME: "audio/webm",
+		},
+		"ogg opus telegram voice": {
+			file:     putBytes("voice.ogg", "audio/ogg", oggOpus),
+			ok:       true,
+			wantMIME: "audio/ogg",
+		},
+		"opus ext octet-stream": {
+			file:     putBytes("voice.opus", "application/octet-stream", oggOpus),
+			ok:       true,
+			wantMIME: "audio/ogg",
+		},
+		"wav wave alias": {
+			file:     putBytes("note.wav", "audio/wave", wav),
+			ok:       true,
+			wantMIME: "audio/wave",
+		},
+		"mp3 id3": {
+			file:     putBytes("song.mp3", "audio/mpeg", mp3ID3),
+			ok:       true,
+			wantMIME: "audio/mpeg",
+		},
+		"mp3 raw frame": {
+			file:     putBytes("raw.mp3", "audio/mp3", mp3Raw),
+			ok:       true,
+			wantMIME: "audio/mp3",
+		},
+		"aac adts": {
+			file:     putBytes("clip.aac", "audio/aac", aac),
+			ok:       true,
+			wantMIME: "audio/aac",
+		},
+		"flac": {
+			file:     putBytes("lossless.flac", "audio/flac", flac),
+			ok:       true,
+			wantMIME: "audio/flac",
+		},
+		"html disguised as mp4": {
+			file: putBytes("fake.mp4", "video/mp4", []byte("<!DOCTYPE html><script>alert(1)</script>")),
+			ok:   false,
+		},
+		"ogg named mp4": {
+			file: putBytes("wrong.mp4", "audio/ogg", oggOpus),
+			ok:   false,
+		},
+	} {
+		got, err := e.svc.Confirm(ctx, alice, tc.file.ID, media)
+		if tc.ok != (err == nil) || (!tc.ok && !errors.Is(err, filesystem.ErrNotAccepted)) {
+			t.Errorf("%s: err=%v, want ok=%v", name, err, tc.ok)
+			continue
+		}
+		if tc.ok && got.ContentType != tc.wantMIME {
+			t.Errorf("%s: content_type=%q, want %q", name, got.ContentType, tc.wantMIME)
+		}
+	}
+}
+
+// TestUploadUnknownSize 验证流式上传未知长度正文（UnknownSize）：写入后回填真实字节数并可正常确认，
+// 超出 max_upload_size 时返回 ErrTooLarge 且不留下孤儿记录或对象。
+func TestUploadUnknownSize(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	e := newEnv(t)
+
+	for _, disk := range []string{"local", "s3"} {
+		body := "streamed-media-payload-" + disk
+		r, err := e.svc.Upload(ctx, alice, filesystem.FileInput{
+			Disk: disk, Filename: "clip.txt", ContentType: "text/plain", Size: filesystem.UnknownSize,
+		}, strings.NewReader(body))
+		if err != nil {
+			t.Fatalf("%s unknown size upload: %v", disk, err)
+		}
+		if r.Size != int64(len(body)) {
+			t.Fatalf("%s size=%d, want %d", disk, r.Size, len(body))
+		}
+		confirmed, err := e.svc.Confirm(ctx, alice, r.ID, filesystem.Accept{Types: []string{"text/plain"}})
+		if err != nil || confirmed.Size != int64(len(body)) {
+			t.Fatalf("%s confirm: %+v %v", disk, confirmed, err)
+		}
+	}
+
+	// 限制 max_upload_size 为 10 字节，验证未知长度流超限时立即失败且不残留记录。
+	cfg := filesystem.Config{DefaultDisk: "local", MaxUploadSize: 10, TempTTL: time.Hour}
+	smallSvc, err := filesystem.New(e.db, cfg, map[string]filesystem.Disk{"local": e.local})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := e.rows(t)
+	if _, err := smallSvc.Upload(ctx, alice, filesystem.FileInput{
+		Filename: "big.txt", ContentType: "text/plain", Size: filesystem.UnknownSize,
+	}, strings.NewReader("0123456789EXTRA")); !errors.Is(err, filesystem.ErrTooLarge) {
+		t.Fatalf("over limit err=%v, want ErrTooLarge", err)
+	}
+	if after := e.rows(t); after != before {
+		t.Fatalf("over limit left %d rows", after-before)
+	}
+}

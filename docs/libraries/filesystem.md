@@ -108,6 +108,7 @@ record, err := fileService.Upload(ctx, owner, filesystem.FileInput{
 ```
 
 - 正文长度必须正好等于 `Size`，否则返回 `filesystem.ErrInvalid`，写入的内容随之删除。超过 `max_upload_size` 返回 `filesystem.ErrTooLarge`。
+- 服务端拉取未知长度流（如外部渠道下载或后台流式生成）时，`Size` 传 `filesystem.UnknownSize`（`-1`），流式写入磁盘后自动回填真实大小，同样受 `max_upload_size` 限制。
 - `Disk` 为空时用 `default_disk`，也可以指定 `Disk: "s3"`。
 - 对象键是上传日期、文件 ID 加小写扩展名，例如 `2026/11/10/0193a3c2-….jpg`；原始文件名只保存在 `filename` 列，公开地址中不出现。
 - 后台任务生成的文件（导出的表格、PDF）同样用 `Upload` 保存。REST 接口见[服务端上传接口](#rest-upload)。
@@ -133,7 +134,7 @@ article.CoverID = cover.ID
 ```
 
 - 对象没有完整上传时返回 `filesystem.ErrNotUploaded`。
-- `Types` 非空时按文件内容识别真实类型（图片、PDF、压缩包、Office 文档 `docx/xlsx/pptx/doc/xls/ppt` 及 `txt/log/csv/md/json`），它要在 `Types` 中，且与扩展名和声明的类型兼容；客户端上传时只给了兜底类型 `application/octet-stream` 时，确认后写回探测出的规范类型。`Accept{}` 只要求文件已经完整上传。
+- `Types` 非空时按文件内容识别真实类型（图片、常见音视频 `mp4/mov/webm/ogg/mp3/m4a/wav/aac/flac`、PDF、压缩包、Office 文档 `docx/xlsx/pptx/doc/xls/ppt` 及 `txt/log/csv/md/json`），它要在 `Types` 中，且与扩展名和声明的类型兼容；客户端上传时只给了兜底类型 `application/octet-stream` 时，确认后写回探测出的规范类型。`Accept{}` 只要求文件已经完整上传。
 - 图片（PNG、JPEG、GIF、WebP）在确认时会自动解析像素宽高写入 `files.meta`（`File.Meta.Width` / `File.Meta.Height`）；设置 `MaxDimension` 后，无法解析出合法尺寸或任一边超过上限的图片会被拒绝。
 - 不符合时返回 `filesystem.ErrNotAccepted`，文件保持 `temporary`，到期后被回收。
 - 只有上传者本人能确认，其他主体和已过期的文件得到 `filesystem.ErrNotFound`：用户不能引用别人上传的文件。重复确认返回同一条记录。

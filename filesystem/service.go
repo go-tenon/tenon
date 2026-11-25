@@ -104,19 +104,47 @@ func (s *Service) Prepare(ctx context.Context, owner identity.Subject, in FileIn
 }
 
 // Upload 由应用服务器接收正文并写入磁盘，返回 temporary 记录；业务使用时再 Confirm。
-// body 长度必须正好等于 in.Size。
+// in.Size 为非负数时严格核对正文长度，不符时返回 ErrInvalid；in.Size 小于 0（如 UnknownSize）时
+// 流式写入未知长度的正文并限制不超过 max_upload_size，写完后把真实字节数回填到记录中。
 func (s *Service) Upload(ctx context.Context, owner identity.Subject, in FileInput, body io.Reader) (File, error) {
 	if body == nil {
 		return File{}, ErrInvalid
 	}
-	r, err := s.Prepare(ctx, owner, in)
+	if in.Size >= 0 {
+		r, err := s.Prepare(ctx, owner, in)
+		if err != nil {
+			return File{}, err
+		}
+		if err := s.disks[r.Disk].Put(ctx, r.Key, r.ContentType, &exactReader{r: body, left: r.Size}, r.Size); err != nil {
+			// 磁盘保证失败时不发布对象，记录直接删除；删除失败也会在过期后被回收。
+			_, _ = s.db.NewDelete().Model((*File)(nil)).Where("id = ?", r.ID).Exec(context.WithoutCancel(ctx))
+			return File{}, errors.Wrap(err, "filesystem: upload")
+		}
+		return r, nil
+	}
+	prep := in
+	prep.Size = 0
+	r, err := s.Prepare(ctx, owner, prep)
 	if err != nil {
 		return File{}, err
 	}
-	if err := s.disks[r.Disk].Put(ctx, r.Key, r.ContentType, &exactReader{r: body, left: r.Size}, r.Size); err != nil {
-		// 磁盘保证失败时不发布对象，记录直接删除；删除失败也会在过期后被回收。
+	lr := &limitCounter{r: body, max: int64(s.cfg.MaxUploadSize)}
+	if err := s.disks[r.Disk].Put(ctx, r.Key, r.ContentType, lr, UnknownSize); err != nil {
 		_, _ = s.db.NewDelete().Model((*File)(nil)).Where("id = ?", r.ID).Exec(context.WithoutCancel(ctx))
+		if errors.Is(err, ErrTooLarge) {
+			return File{}, ErrTooLarge
+		}
 		return File{}, errors.Wrap(err, "filesystem: upload")
+	}
+	if lr.n > 0 {
+		if _, err := s.db.NewUpdate().Model((*File)(nil)).
+			Set("size = ?", lr.n).
+			Where("id = ?", r.ID).Exec(ctx); err != nil {
+			_ = s.disks[r.Disk].Delete(context.WithoutCancel(ctx), r.Key)
+			_, _ = s.db.NewDelete().Model((*File)(nil)).Where("id = ?", r.ID).Exec(context.WithoutCancel(ctx))
+			return File{}, errors.Wrap(err, "filesystem: update size")
+		}
+		r.Size = lr.n
 	}
 	return r, nil
 }
@@ -354,7 +382,7 @@ func (s *Service) checkAccept(ctx context.Context, r File, accept Accept) (strin
 	if declared := mediaType(r.ContentType); !declaredCompatible(declared, actual) {
 		return "", errors.Wrapf(ErrNotAccepted, "declared %s but content is %s", declared, actual)
 	}
-	if ext := path.Ext(r.Key); ext != "" && extMIME(ext) != actual {
+	if ext := path.Ext(r.Key); ext != "" && !extCompatible(ext, actual) {
 		return "", errors.Wrapf(ErrNotAccepted, "extension %s does not match %s", ext, actual)
 	}
 	return actual, nil
@@ -440,6 +468,35 @@ func (e *exactReader) Read(p []byte) (int, error) {
 	if errors.Is(err, io.EOF) {
 		err = nil
 	}
+	return n, err
+}
+
+// limitCounter 统计流式上传读取到的真实字节数，超过 max 字节时返回 ErrTooLarge 使磁盘中止写入。
+type limitCounter struct {
+	r   io.Reader
+	max int64
+	n   int64
+}
+
+// Read 从 r 读取并累加已读字节数；超出上限 max 时返回 ErrTooLarge。
+func (l *limitCounter) Read(p []byte) (int, error) {
+	if l.n >= l.max {
+		var one [1]byte
+		n, err := l.r.Read(one[:])
+		if n > 0 {
+			return 0, ErrTooLarge
+		}
+		if err != nil {
+			return 0, err
+		}
+		return 0, nil
+	}
+	remain := l.max - l.n
+	if int64(len(p)) > remain {
+		p = p[:remain]
+	}
+	n, err := l.r.Read(p)
+	l.n += int64(n)
 	return n, err
 }
 

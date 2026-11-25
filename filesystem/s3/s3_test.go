@@ -84,6 +84,19 @@ func TestPutSmallAndLarge(t *testing.T) {
 	if _, err := disk.Stat(ctx, "a/broken.bin"); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("broken object published: %v", err)
 	}
+	// 未知长度流式上传：小文件走单次 PUT，超一片走分片上传。
+	if err := disk.Put(ctx, "a/unknown-small.txt", "text/plain", strings.NewReader("stream"), filesystem.UnknownSize); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(t, disk, "a/unknown-small.txt"); string(got) != "stream" {
+		t.Fatalf("unknown-small = %q", got)
+	}
+	if err := disk.Put(ctx, "a/unknown-large.bin", "application/octet-stream", iotest.HalfReader(bytes.NewReader(large)), filesystem.UnknownSize); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(t, disk, "a/unknown-large.bin"); !bytes.Equal(got, large) {
+		t.Fatalf("unknown-large mismatch: %d bytes", len(got))
+	}
 }
 
 func TestStatDeleteURL(t *testing.T) {

@@ -42,7 +42,11 @@ type File struct {
 	URL         string               `bun:"-"                    json:"url"`
 }
 
-// FileInput 描述一个待上传文件。Disk 为空时使用默认磁盘；Size 是声明大小，上传时严格核对。
+// UnknownSize 表示服务端流式上传时正文长度未知，由 Upload 在写入磁盘后记录真实字节数。
+const UnknownSize int64 = -1
+
+// FileInput 描述一个待上传文件。Disk 为空时使用默认磁盘；Size 为非负数时严格核对正文长度，
+// Upload 允许传 UnknownSize（或任意负数）以流式写入未知长度的正文并受 max_upload_size 限制。
 type FileInput struct {
 	Disk        string
 	Filename    string
