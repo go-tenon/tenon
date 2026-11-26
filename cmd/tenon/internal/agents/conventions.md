@@ -7,7 +7,7 @@
 ## 开发与部署约定
 
 - Docker 仅用于开发和测试期：全机共享常驻 PostgreSQL、NATS、Redis、S3 等依赖；多项目与 `git worktree` 按库名、S3 桶、Redis DB、队列 stream/前缀和 `config/local.yaml` 的 `http.addr` 隔离（设置 `TENON_WT_SETUP` 时 `bun run dev` 自动初始化）。测试直接使用环境中的 `POSTGRES_TEST_URL` 等变量；容器启停与 `compose*.yml` 仅在用户明确要求时执行，依赖不可达时停止并报告。
-- 生产部署采用原生单二进制加 systemd 零停机升级：用 `go tool tenon add deploy` 生成 `deploy.yaml` 和 `.env.example`，用 `go tool tenon deploy` 初始化主机、发布与回滚，见 `tenon/docs/installation/deployment.md`。
+- 生产部署采用原生单二进制加 systemd 零停机升级：用 `go tool tenon add deploy` 生成 `deploy/app.yaml`、`deploy/example/` 与 `deploy/targets/` 骨架，用 `go tool tenon deploy` 初始化主机、按实例发布与回滚，见 `tenon/docs/installation/deployment.md`。
 
 ## 提交前
 

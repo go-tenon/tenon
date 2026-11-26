@@ -370,9 +370,9 @@ func TestSyncReadmeDeploy(t *testing.T) {
 		"# Shop\n\n项目自己的说明。",
 		"<!-- tenon:deploy:begin -->",
 		"<!-- tenon:deploy:end -->",
-		"go run ./cmd/shop config check --config config/prod.yaml",
+		"go run ./cmd/shop config check --config deploy/targets/prod/config.yaml",
 		"upstream shop_backend",
-		"/usr/local/bin/shop",
+		"/usr/local/bin/<instance>",
 		"ssh -t <ssh用户>@<服务器IP> shop <子命令>",
 	} {
 		if !strings.Contains(text, want) {

@@ -18,6 +18,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -83,44 +84,118 @@ func (f *fakeRunner) Run(ctx context.Context, host deploy.Host, script string, s
 	return err
 }
 
-func TestParseSingleHostAndMultiRoleTopology(t *testing.T) {
+// writeFiles 在根目录 root 下批量写入测试文件。
+func writeFiles(t *testing.T, root string, files map[string]string) {
+	t.Helper()
+	for rel, content := range files {
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestLoadTargetsMultiInstanceDefaultsAndGuardrails(t *testing.T) {
 	t.Parallel()
+	root := t.TempDir()
+	deployDir := filepath.Join(root, "deploy")
+	writeFiles(t, root, map[string]string{
+		"config/app.yaml": "http:\n  addr: ':8080'\n",
+		"deploy/app.yaml": `app: omirouter
+repo: acme/omirouter
+keep_releases: 7
+defaults:
+  user: ecs-user
+  port: 2222
+`,
+		"deploy/targets/prod/target.yaml": `hosts: [10.0.0.1]
+`,
+		"deploy/targets/prod/config.yaml": "logs:\n  level: info\n",
+		"deploy/targets/partner-acme/target.yaml": `instance: acme-router
+user: acme-ops
+config_files:
+  - ../../../config/app.yaml
+  - ./config.yaml
+hosts: [203.0.113.20]
+`,
+		"deploy/targets/partner-acme/config.yaml": "logs:\n  level: warn\n",
+	})
 
-	// 1. 单机简写：自动等价为单个 all 角色，同时解析 repo 字段。
-	single, err := deploy.Parse([]byte(`
-app: blog
-repo: acme/blog
-environments:
-  production:
-    hosts: [203.0.113.10]
-`), "fallback", "")
-	if err != nil {
-		t.Fatalf("Parse single: %v", err)
-	}
-	if single.Repo != "acme/blog" || len(single.Hosts) != 1 || !slices.Equal(single.Hosts[0].Parts, []string{"all"}) || !single.Hosts[0].HasHTTP() {
-		t.Fatalf("unexpected single target: %+v", single)
+	opts := deploy.LoadOptions{Dir: deployDir}
+
+	// 1. 存在多个目标时，未显式指定 target 必须报错并列出全部可用目标。
+	if _, err := deploy.Load(opts, ""); err == nil || !strings.Contains(err.Error(), "partner-acme") || !strings.Contains(err.Error(), "prod") {
+		t.Fatalf("expected guardrail error for multiple targets, got %v", err)
 	}
 
-	// 2. 多服务多机 roles：同主机多角色自动归并去重，波次为后端优先 + 入口金丝雀后批量滚动。
-	multi, err := deploy.Parse([]byte(`
-app: blog
-environments:
-  production:
-    roles:
-      http:
-        hosts: [10.0.1.11, 10.0.1.12, 10.0.1.13]
-        max_parallel: 2
-        stop_timeout: 30s
-      worker:
-        hosts: [10.0.1.21, 10.0.1.22]
-        stop_timeout: 120s
-        env:
-          GOMAXPROCS: "4"
-      scheduler:
-        hosts: [10.0.1.21]
-`), "blog", "")
+	// 2. 加载默认实例名的 prod：继承 defaults.user/port，自动发现同目录 config.yaml，env_file 默认非严格模式。
+	prod, err := deploy.Load(opts, "prod")
 	if err != nil {
-		t.Fatalf("Parse multi: %v", err)
+		t.Fatalf("Load prod: %v", err)
+	}
+	if prod.App != "omirouter" || prod.Instance != "omirouter" || prod.User != "ecs-user" || prod.Port != 2222 || prod.KeepReleases != 7 {
+		t.Fatalf("unexpected prod target: %+v", prod)
+	}
+	if prod.Dir != "/opt/omirouter" || prod.ServiceUser != "omirouter" || prod.EnvFileSpec() != "-/etc/omirouter/env" {
+		t.Fatalf("unexpected prod paths: dir=%s user=%s env=%s", prod.Dir, prod.ServiceUser, prod.EnvFileSpec())
+	}
+	if !slices.Equal(prod.RemoteConfigFiles(), []string{"config/config.yaml"}) {
+		t.Fatalf("prod auto config_files = %v, want [config/config.yaml]", prod.RemoteConfigFiles())
+	}
+
+	// 3. 加载自定义实例名的 partner-acme：app 仍为 omirouter，远端全部资源按 acme-router 隔离，支持跨目录相对 config_files。
+	partner, err := deploy.Load(opts, "partner-acme")
+	if err != nil {
+		t.Fatalf("Load partner-acme: %v", err)
+	}
+	if partner.App != "omirouter" || partner.Name != "partner-acme" || partner.Instance != "acme-router" || partner.User != "acme-ops" {
+		t.Fatalf("unexpected partner target: %+v", partner)
+	}
+	if partner.Dir != "/opt/acme-router" || partner.ServiceUser != "acme-router" || partner.EnvFile != "/etc/acme-router/env" {
+		t.Fatalf("partner isolation paths = dir:%s user:%s env:%s", partner.Dir, partner.ServiceUser, partner.EnvFile)
+	}
+	if !slices.Equal(partner.RemoteConfigFiles(), []string{"config/app.yaml", "config/config.yaml"}) {
+		t.Fatalf("partner config_files = %v", partner.RemoteConfigFiles())
+	}
+
+	// 4. LoadTopology 汇总所有目标。
+	topo, err := deploy.LoadTopology(opts)
+	if err != nil || len(topo.Targets) != 2 || topo.Targets["partner-acme"].Instance != "acme-router" {
+		t.Fatalf("LoadTopology: topo=%+v err=%v", topo, err)
+	}
+
+	// 5. LoadMany(--all) 按名称排序返回全部目标。
+	all, err := deploy.LoadMany(opts, nil, true)
+	if err != nil || len(all) != 2 || all[0].Name != "partner-acme" || all[1].Name != "prod" {
+		t.Fatalf("LoadMany all: %+v err=%v", all, err)
+	}
+}
+
+func TestBuildTargetMultiRoleAndValidationErrors(t *testing.T) {
+	t.Parallel()
+	af := deploy.AppFile{App: "blog"}
+	multi, err := deploy.BuildTarget(af, "", "blog", "prod", deploy.TargetFile{
+		Roles: map[string]deploy.Role{
+			"http": {
+				Hosts:       []string{"10.0.1.11", "10.0.1.12", "10.0.1.13"},
+				MaxParallel: 2,
+				StopTimeout: "30s",
+			},
+			"worker": {
+				Hosts:       []string{"10.0.1.21", "10.0.1.22"},
+				StopTimeout: "120s",
+				Env:         map[string]string{"GOMAXPROCS": "4"},
+			},
+			"scheduler": {
+				Hosts: []string{"10.0.1.21"},
+			},
+		},
+	}, "")
+	if err != nil {
+		t.Fatalf("BuildTarget multi: %v", err)
 	}
 	if multi.MigrateHost().Addr != "10.0.1.21" {
 		t.Fatalf("migrate host = %s, want 10.0.1.21", multi.MigrateHost().Addr)
@@ -132,22 +207,25 @@ environments:
 	if di := h21.DropIns["worker"]; di.StopTimeout != "120s" || di.Env["GOMAXPROCS"] != "4" {
 		t.Fatalf("worker drop-in = %+v", di)
 	}
-
 	waves := multi.RolloutWaves()
 	if len(waves) != 4 || waves[0].Name != "backend-canary" || waves[2].Name != "http-canary" || waves[3].MaxParallel != 2 {
 		t.Fatalf("waves = %+v", waves)
 	}
 
 	// 非法配置均应报错。
-	for name, bad := range map[string]string{
-		"unknown field":    "unknown: 1\nenvironments:\n  production:\n    hosts: [a]\n",
-		"bad repo":         "repo: invalid\nenvironments:\n  production:\n    hosts: [a]\n",
-		"both hosts roles": "environments:\n  production:\n    hosts: [a]\n    roles:\n      http:\n        hosts: [a]\n",
-		"bad migrate_host": "environments:\n  production:\n    migrate_host: nope\n    hosts: [a]\n",
-		"mix all and http": "environments:\n  production:\n    roles:\n      all:\n        hosts: [a]\n      http:\n        hosts: [a]\n",
-		"bad env key":      "environments:\n  production:\n    roles:\n      worker:\n        hosts: [a]\n        env:\n          bad-key: '1'\n",
+	for name, tc := range map[string]struct {
+		af deploy.AppFile
+		tf deploy.TargetFile
+	}{
+		"bad repo":         {deploy.AppFile{App: "blog", Repo: "invalid"}, deploy.TargetFile{Hosts: []string{"a"}}},
+		"bad instance":     {af, deploy.TargetFile{Instance: "Bad_Name", Hosts: []string{"a"}}},
+		"both hosts roles": {af, deploy.TargetFile{Hosts: []string{"a"}, Roles: map[string]deploy.Role{"http": {Hosts: []string{"a"}}}}},
+		"bad migrate_host": {af, deploy.TargetFile{MigrateHost: "nope", Hosts: []string{"a"}}},
+		"mix all and http": {af, deploy.TargetFile{Roles: map[string]deploy.Role{"all": {Hosts: []string{"a"}}, "http": {Hosts: []string{"a"}}}}},
+		"bad env key":      {af, deploy.TargetFile{Roles: map[string]deploy.Role{"worker": {Hosts: []string{"a"}, Env: map[string]string{"bad-key": "1"}}}}},
+		"dup remote cfg":   {af, deploy.TargetFile{Hosts: []string{"a"}, ConfigFiles: []string{"../a/config.yaml", "./config.yaml"}}},
 	} {
-		if _, err := deploy.Parse([]byte(bad), "blog", ""); err == nil {
+		if _, err := deploy.BuildTarget(tc.af, "", "blog", "prod", tc.tf, ""); err == nil {
 			t.Errorf("%s: expected error", name)
 		}
 	}
@@ -178,43 +256,72 @@ func TestParseGitHubRepoAndReleaseID(t *testing.T) {
 	}
 }
 
-func TestRenderUnitDropInAndWrapper(t *testing.T) {
+func TestRenderUnitDropInAndWrapperWithCustomInstance(t *testing.T) {
 	t.Parallel()
-	target, err := deploy.Parse([]byte("app: blog\nenvironments:\n  production:\n    config_files: [config/prod.yaml]\n    hosts: [10.0.0.1]\n"), "blog", "")
+	target, err := deploy.BuildTarget(deploy.AppFile{App: "omirouter"}, "", "omirouter", "partner-acme", deploy.TargetFile{
+		Instance:    "acme-router",
+		ConfigFiles: []string{"config.yaml"},
+		Hosts:       []string{"10.0.0.1"},
+	}, "/tmp/acme")
 	if err != nil {
 		t.Fatal(err)
 	}
 	unit := deploy.RenderUnit(target)
 	for _, want := range []string{
+		"Description=acme-router %i",
 		"Type=notify-reload",
-		"RuntimeDirectory=blog/%i",
-		"ExecStart=/opt/blog/bin/blog --config config/prod.yaml serve %i",
+		"RuntimeDirectory=acme-router/%i",
+		"PIDFile=/run/acme-router/%i/daemon.pid",
+		"User=acme-router",
+		"WorkingDirectory=/opt/acme-router",
+		"EnvironmentFile=-/etc/acme-router/env",
+		"ExecStart=/opt/acme-router/bin/acme-router --config config/config.yaml serve %i",
 	} {
 		if !strings.Contains(unit, want) {
 			t.Errorf("unit missing %q:\n%s", want, unit)
 		}
 	}
-	wrapper := deploy.RenderWrapper(target)
-	if !strings.Contains(wrapper, "'Environment=APP_CONFIG=config/prod.yaml'") {
-		t.Errorf("wrapper missing APP_CONFIG:\n%s", wrapper)
+	if strings.Contains(unit, "omirouter") {
+		t.Errorf("custom instance unit leaked product app name:\n%s", unit)
 	}
+	wrapper := deploy.RenderWrapper(target)
+	for _, want := range []string{
+		"'Environment=APP_CONFIG=config/config.yaml'",
+		"'EnvironmentFile=-/etc/acme-router/env'",
+		"'/opt/acme-router/bin/acme-router'",
+	} {
+		if !strings.Contains(wrapper, want) {
+			t.Errorf("wrapper missing %q:\n%s", want, wrapper)
+		}
+	}
+
+	// 显式指定 env_file 时使用严格模式（不带前导 -）。
+	strict, err := deploy.BuildTarget(deploy.AppFile{App: "blog"}, "", "blog", "prod", deploy.TargetFile{
+		EnvFile: "/etc/blog/env",
+		Hosts:   []string{"10.0.0.1"},
+	}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := deploy.RenderUnit(strict); !strings.Contains(got, "EnvironmentFile=/etc/blog/env\n") {
+		t.Errorf("strict env_file unit:\n%s", got)
+	}
+
 	dropIn := deploy.RenderDropIn(deploy.PartDropIn{StopTimeout: "120s", Env: map[string]string{"GOMAXPROCS": "4"}})
 	if !strings.Contains(dropIn, "TimeoutStopSec=120s") || !strings.Contains(dropIn, `Environment="GOMAXPROCS=4"`) {
 		t.Errorf("unexpected drop-in:\n%s", dropIn)
 	}
 }
 
-func TestSetupCreatesArtifactsAndDropIns(t *testing.T) {
+func TestSetupCreatesArtifactsAndDropInsByInstance(t *testing.T) {
 	t.Parallel()
-	target, err := deploy.Parse([]byte(`
-app: blog
-environments:
-  production:
-    roles:
-      worker:
-        hosts: [10.0.0.1]
-        stop_timeout: 120s
-`), "blog", "")
+	target, err := deploy.BuildTarget(deploy.AppFile{App: "omirouter"}, "", "omirouter", "partner-acme", deploy.TargetFile{
+		Instance: "acme-router",
+		EnvFile:  "/etc/acme-router/env",
+		Roles: map[string]deploy.Role{
+			"worker": {Hosts: []string{"10.0.0.1"}, StopTimeout: "120s"},
+		},
+	}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,23 +331,119 @@ environments:
 	if err != nil {
 		t.Fatalf("Setup: %v", err)
 	}
-	if len(report.Hosts) != 1 || report.WrapperPath != "/usr/local/bin/blog" {
+	if report.Instance != "acme-router" || report.UnitPath != "/etc/systemd/system/acme-router@.service" || report.WrapperPath != "/usr/local/bin/acme-router" {
 		t.Fatalf("report = %+v", report)
 	}
-	var hasArtifactsDir, wroteDropIn, wroteWrapper bool
+	var hasArtifactsDir, wroteDropIn, wroteWrapper, createdEnv bool
 	for _, c := range runner.calls {
-		if strings.Contains(c.Script, "'/opt/blog/artifacts'") {
+		if strings.Contains(c.Script, "'/opt/acme-router/artifacts'") {
 			hasArtifactsDir = true
 		}
-		if strings.Contains(c.Script, "blog@worker.service.d/override.conf") && strings.Contains(string(c.Stdin), "TimeoutStopSec=120s") {
+		if strings.Contains(c.Script, "acme-router@worker.service.d/override.conf") && strings.Contains(string(c.Stdin), "TimeoutStopSec=120s") {
 			wroteDropIn = true
 		}
-		if strings.Contains(c.Script, "/usr/local/bin/blog") {
+		if strings.Contains(c.Script, "/usr/local/bin/acme-router") {
 			wroteWrapper = true
 		}
+		if strings.Contains(c.Script, "'/etc/acme-router/env'") {
+			createdEnv = true
+		}
 	}
-	if !hasArtifactsDir || !wroteDropIn || !wroteWrapper {
-		t.Errorf("artifacts=%v dropIn=%v wrapper=%v", hasArtifactsDir, wroteDropIn, wroteWrapper)
+	if !hasArtifactsDir || !wroteDropIn || !wroteWrapper || !createdEnv {
+		t.Errorf("artifacts=%v dropIn=%v wrapper=%v env=%v", hasArtifactsDir, wroteDropIn, wroteWrapper, createdEnv)
+	}
+}
+
+func TestDeployManyBuildsOnceAndFailsFast(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writeFiles(t, root, map[string]string{
+		"deploy/app.yaml":                         "app: omirouter\narch: amd64\n",
+		"deploy/targets/prod/target.yaml":         "hosts: [prod-1]\n",
+		"deploy/targets/prod/config.yaml":         "logs:\n  level: info\n",
+		"deploy/targets/partner-acme/target.yaml": "instance: acme-router\nhosts: [acme-1]\n",
+		"deploy/targets/partner-acme/config.yaml": "logs:\n  level: warn\n",
+	})
+	targets, err := deploy.LoadMany(deploy.LoadOptions{Dir: filepath.Join(root, "deploy")}, []string{"prod", "partner-acme"}, false)
+	if err != nil {
+		t.Fatalf("LoadMany: %v", err)
+	}
+
+	buildCalls := 0
+	var seenHosts []string
+	var sawAcmeUnit bool
+	factory := func(tgt deploy.Target) (deploy.Runner, func() error, error) {
+		r := &fakeRunner{
+			onRun: func(host deploy.Host, script string, _ []byte) (string, string, error) {
+				if strings.Contains(script, "systemctl reload") {
+					seenHosts = append(seenHosts, host.Addr)
+				}
+				if strings.Contains(script, "acme-router@all.service") {
+					sawAcmeUnit = true
+				}
+				if strings.Contains(script, "--help") {
+					return "no\n", "", nil
+				}
+				return "", "", nil
+			},
+		}
+		return r, nil, nil
+	}
+
+	var out, errOut bytes.Buffer
+	batch, err := deploy.DeployMany(context.Background(), targets, factory, deploy.ReleaseOptions{
+		Version: "v1.5.0",
+		WorkDir: root,
+		Build: func(_ context.Context, arch, outPath string, _ deploy.GitBuildInfo) error {
+			buildCalls++
+			return os.WriteFile(outPath, []byte("built-"+arch), 0o755)
+		},
+	}, &out, &errOut)
+	if err != nil {
+		t.Fatalf("DeployMany: %v\nout=%s\nerr=%s", err, out.String(), errOut.String())
+	}
+	if buildCalls != 1 {
+		t.Fatalf("buildCalls = %d, want 1 (build once, deploy many)", buildCalls)
+	}
+	if len(batch.Targets) != 2 || batch.Targets[0].BinSHA256 != batch.Targets[1].BinSHA256 || batch.Targets[1].Instance != "acme-router" {
+		t.Fatalf("batch = %+v", batch)
+	}
+	if !slices.Equal(seenHosts, []string{"prod-1", "acme-1"}) || !sawAcmeUnit {
+		t.Errorf("seenHosts=%v sawAcmeUnit=%v", seenHosts, sawAcmeUnit)
+	}
+
+	// 验证失败熔断：第一个目标失败时，绝不触碰第二个目标。
+	touchedSecond := false
+	failFactory := func(tgt deploy.Target) (deploy.Runner, func() error, error) {
+		r := &fakeRunner{
+			onRun: func(host deploy.Host, script string, _ []byte) (string, string, error) {
+				if tgt.Name == "partner-acme" && strings.Contains(script, "systemctl reload") {
+					touchedSecond = true
+				}
+				if tgt.Name == "prod" && strings.Contains(script, "systemctl reload") {
+					return "", "boom", errors.New("exit status 1")
+				}
+				if strings.Contains(script, "--help") {
+					return "no\n", "", nil
+				}
+				return "", "", nil
+			},
+		}
+		return r, nil, nil
+	}
+	out.Reset()
+	errOut.Reset()
+	if _, err := deploy.DeployMany(context.Background(), targets, failFactory, deploy.ReleaseOptions{
+		Version: "v1.5.0",
+		WorkDir: root,
+		Build: func(_ context.Context, _ string, outPath string, _ deploy.GitBuildInfo) error {
+			return os.WriteFile(outPath, []byte("built"), 0o755)
+		},
+	}, &out, &errOut); err == nil {
+		t.Fatalf("expected DeployMany failure on first target")
+	}
+	if touchedSecond {
+		t.Errorf("second target should not be switched after first target failed")
 	}
 }
 
@@ -263,18 +466,13 @@ func TestDeployMultiRoleContentDedupConfigCheckAllAndPruneNumeric(t *testing.T) 
 		t.Fatal(err)
 	}
 
-	target, err := deploy.Parse([]byte(`
-app: blog
-keep_releases: 2
-environments:
-  production:
-    config_dir: `+cfgDir+`
-    roles:
-      http:
-        hosts: [web-1, web-2]
-      worker:
-        hosts: [worker-1]
-`), "blog", "")
+	target, err := deploy.BuildTarget(deploy.AppFile{App: "blog", KeepReleases: 2}, dir, "blog", "prod", deploy.TargetFile{
+		ConfigDir: cfgDir,
+		Roles: map[string]deploy.Role{
+			"http":   {Hosts: []string{"web-1", "web-2"}},
+			"worker": {Hosts: []string{"worker-1"}},
+		},
+	}, dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -286,7 +484,6 @@ environments:
 	var migrateCount int
 	var switchOrder []string
 	var disabledUnits []string
-	var prunedCmds []string
 	var wroteManifests int
 
 	runner := &fakeRunner{
@@ -295,13 +492,11 @@ environments:
 			case script == "uname -m":
 				return "x86_64\n", "", nil
 			case strings.Contains(script, "if test -x '/opt/blog/artifacts/"):
-				// 模拟 worker-1 命中远端二进制缓存，web-1/web-2 未命中。
 				if host.Addr == "worker-1" {
 					return "hit\n", "", nil
 				}
 				return "miss\n", "", nil
 			case strings.Contains(script, "gzip -dc >"):
-				// 验证上传流是合法的 gzip 压缩二进制且还原后逐字节一致。
 				gz, err := gzip.NewReader(bytes.NewReader(stdin))
 				if err != nil {
 					return "", err.Error(), err
@@ -348,12 +543,7 @@ environments:
 				switchOrder = append(switchOrder, host.Addr)
 				mu.Unlock()
 			case strings.HasPrefix(script, "ls -1 "):
-				// 故意返回 0009 与 0010 验证按数值排序而非字典序，新分配应为 11，清理应删 0009。
 				return "0009\n0010\n", "", nil
-			case strings.HasPrefix(script, "sudo rm -rf '/opt/blog/releases/"):
-				mu.Lock()
-				prunedCmds = append(prunedCmds, script)
-				mu.Unlock()
 			}
 			return "", "", nil
 		},
@@ -388,7 +578,6 @@ environments:
 	if len(disabledUnits) != 1 || !strings.Contains(disabledUnits[0], "blog@all.service") {
 		t.Errorf("disabledUnits = %v", disabledUnits)
 	}
-	// 验证归档排除了 local.yaml。
 	gz, err := gzip.NewReader(bytes.NewReader(uploadedTar))
 	if err != nil {
 		t.Fatal(err)
@@ -408,19 +597,16 @@ environments:
 	if !slices.Equal(names, []string{"app.yaml"}) {
 		t.Errorf("config archive = %v, want [app.yaml]", names)
 	}
-	_ = prunedCmds
 }
 
 func TestDeployNoOpAndUnitRestart(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	cfgPath := filepath.Join(dir, "config", "prod.yaml")
-	if err := os.MkdirAll(filepath.Dir(cfgPath), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(cfgPath, []byte("http:\n  addr: ':8080'\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeFiles(t, dir, map[string]string{
+		"deploy/app.yaml":                 "app: blog\narch: amd64\n",
+		"deploy/targets/prod/target.yaml": "hosts: [web-1]\n",
+		"deploy/targets/prod/config.yaml": "http:\n  addr: ':8080'\n",
+	})
 	binPath := filepath.Join(dir, "blog-bin")
 	binBytes := []byte("same-binary")
 	if err := os.WriteFile(binPath, binBytes, 0o755); err != nil {
@@ -429,19 +615,11 @@ func TestDeployNoOpAndUnitRestart(t *testing.T) {
 	binSumArr := sha256.Sum256(binBytes)
 	binSum := hex.EncodeToString(binSumArr[:])
 
-	target, err := deploy.Parse([]byte(`
-app: blog
-arch: amd64
-environments:
-  production:
-    config_files: [config/prod.yaml]
-    hosts: [web-1]
-`), "blog", "")
+	target, err := deploy.Load(deploy.LoadOptions{Dir: filepath.Join(dir, "deploy")}, "prod")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// 先运行一次记录确定性 config_sha256。
 	var capturedManifest deploy.Manifest
 	runner1 := &fakeRunner{
 		onRun: func(_ deploy.Host, script string, stdin []byte) (string, string, error) {
@@ -464,7 +642,6 @@ environments:
 		t.Fatalf("first deploy: rep=%+v err=%v", rep1, err)
 	}
 
-	// 第二次二进制、配置与 unit 全部一致，应短路跳过（Skipped=true）。
 	manifestJSON, _ := json.Marshal(deploy.Manifest{
 		ReleaseID:    1,
 		Version:      "v1.0.0",
@@ -490,7 +667,6 @@ environments:
 		t.Fatalf("expected skipped no-op deploy, got rep=%+v err=%v", rep2, err)
 	}
 
-	// 当 unit 文件有变化时，不跳过且自动执行 systemctl restart。
 	var restarted bool
 	runner3 := &fakeRunner{
 		onRun: func(_ deploy.Host, script string, _ []byte) (string, string, error) {
@@ -525,20 +701,12 @@ environments:
 func TestDeployConfigOnlySkipsBuildUploadAndMigrate(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	cfgPath := filepath.Join(dir, "config", "prod.yaml")
-	if err := os.MkdirAll(filepath.Dir(cfgPath), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(cfgPath, []byte("logs:\n  level: debug\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	target, err := deploy.Parse([]byte(`
-app: blog
-environments:
-  production:
-    config_files: [config/prod.yaml]
-    hosts: [web-1]
-`), "blog", "")
+	writeFiles(t, dir, map[string]string{
+		"deploy/app.yaml":                 "app: blog\n",
+		"deploy/targets/prod/target.yaml": "hosts: [web-1]\n",
+		"deploy/targets/prod/config.yaml": "logs:\n  level: debug\n",
+	})
+	target, err := deploy.Load(deploy.LoadOptions{Dir: filepath.Join(dir, "deploy")}, "prod")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -595,18 +763,19 @@ environments:
 	}
 }
 
-func TestDeployFromGitHubTagWithChecksum(t *testing.T) {
+func TestDeployFromGitHubTagWithCustomInstance(t *testing.T) {
 	t.Parallel()
 	payload := []byte("compiled-linux-amd64-binary")
 	sumArr := sha256.Sum256(payload)
 	sumHex := hex.EncodeToString(sumArr[:])
 
+	// Release 资产名始终使用 app（omirouter），即使目标实例名为 acme-router。
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/acme/blog/releases/download/v2.0.0/blog-linux-amd64":
+		case "/acme/omirouter/releases/download/v2.0.0/omirouter-linux-amd64":
 			_, _ = w.Write(payload)
-		case "/acme/blog/releases/download/v2.0.0/checksums.txt":
-			_, _ = fmt.Fprintf(w, "%s  blog-linux-amd64\n", sumHex)
+		case "/acme/omirouter/releases/download/v2.0.0/checksums.txt":
+			_, _ = fmt.Fprintf(w, "%s  omirouter-linux-amd64\n", sumHex)
 		default:
 			http.NotFound(w, r)
 		}
@@ -614,20 +783,23 @@ func TestDeployFromGitHubTagWithChecksum(t *testing.T) {
 	defer srv.Close()
 
 	dir := t.TempDir()
-	target, err := deploy.Parse([]byte(`
-app: blog
-repo: acme/blog
-arch: amd64
-environments:
-  production:
-    config_dir: `+filepath.Join(dir, "no-config")+`
-    hosts: [web-1]
-`), "blog", "")
+	target, err := deploy.BuildTarget(deploy.AppFile{
+		App:  "omirouter",
+		Repo: "acme/omirouter",
+		Arch: "amd64",
+	}, dir, "omirouter", "partner-acme", deploy.TargetFile{
+		Instance: "acme-router",
+		Hosts:    []string{"web-1"},
+	}, dir)
 	if err != nil {
 		t.Fatal(err)
 	}
+	var linkedInstanceBin bool
 	runner := &fakeRunner{
 		onRun: func(_ deploy.Host, script string, _ []byte) (string, string, error) {
+			if strings.Contains(script, "/opt/acme-router/bin/acme-router") {
+				linkedInstanceBin = true
+			}
 			if strings.Contains(script, "--help") {
 				return "no\n", "", nil
 			}
@@ -644,8 +816,8 @@ environments:
 	if err != nil {
 		t.Fatalf("Deploy --tag: %v", err)
 	}
-	if rep.Version != "v2.0.0" || rep.BinSHA256 != sumHex {
-		t.Fatalf("report = %+v", rep)
+	if rep.Version != "v2.0.0" || rep.BinSHA256 != sumHex || rep.Instance != "acme-router" || !linkedInstanceBin {
+		t.Fatalf("report = %+v linkedInstanceBin=%v", rep, linkedInstanceBin)
 	}
 }
 
@@ -656,30 +828,22 @@ func TestDeployAutoRollbackAndLockBusy(t *testing.T) {
 	if err := os.WriteFile(binPath, []byte("bin"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	target, err := deploy.Parse([]byte(`
-app: blog
-arch: amd64
-environments:
-  production:
-    config_dir: `+filepath.Join(dir, "no-config")+`
-    roles:
-      worker:
-        hosts: [worker-1]
-      http:
-        hosts: [web-1]
-`), "blog", "")
+	target, err := deploy.BuildTarget(deploy.AppFile{App: "blog", Arch: "amd64"}, dir, "blog", "prod", deploy.TargetFile{
+		Roles: map[string]deploy.Role{
+			"worker": {Hosts: []string{"worker-1"}},
+			"http":   {Hosts: []string{"web-1"}},
+		},
+	}, dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// 1. 锁已被占用时立即返回明确错误。
 	busyRunner := &fakeRunner{lockBusy: true}
 	var out, errOut bytes.Buffer
 	if _, err := deploy.Deploy(context.Background(), busyRunner, target, deploy.ReleaseOptions{Binary: binPath, Version: "v2"}, &out, &errOut); err == nil || !strings.Contains(err.Error(), "another deploy is in progress") {
 		t.Fatalf("expected lock busy error, got %v", err)
 	}
 
-	// 2. worker-1 切换成功后 web-1 失败，开启 AutoRollback 应自动将 worker-1 切回 #1。
 	cur1, _ := json.Marshal(deploy.Manifest{ReleaseID: 1, Version: "v1", BinSHA256: "old"})
 	var rolledBackWorker bool
 	runner := &fakeRunner{
@@ -716,12 +880,9 @@ environments:
 
 func TestRollbackByHistoryAndByTagAndListReleases(t *testing.T) {
 	t.Parallel()
-	target, err := deploy.Parse([]byte(`
-app: blog
-environments:
-  production:
-    hosts: [web-1]
-`), "blog", "")
+	target, err := deploy.BuildTarget(deploy.AppFile{App: "blog"}, "", "blog", "prod", deploy.TargetFile{
+		Hosts: []string{"web-1"},
+	}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -729,8 +890,6 @@ environments:
 	m1, _ := json.Marshal(deploy.Manifest{ReleaseID: 1, Version: "v1.0.0", BinSHA256: "aaa", Kind: deploy.ReleaseKindFull})
 	m2, _ := json.Marshal(deploy.Manifest{ReleaseID: 2, Version: "v1.1.0", BinSHA256: "bbb", Kind: deploy.ReleaseKindFull})
 	m3, _ := json.Marshal(deploy.Manifest{ReleaseID: 3, Version: "v1.1.0", BinSHA256: "bbb", ConfigSHA256: "ccc", Kind: deploy.ReleaseKindConfig})
-	// 历史记录：先发 #1 -> 发 #2 -> 发 #3 -> 回滚到 #2，此时再不带参 rollback 应跳过连续的 #2 回到 #3 或按栈回到之前激活版本；
-	// 这里测试：当前是 #3，历史顺序是 #1 -> #3（跳过了 #2），不带参应回到 #1 而不是字典序的 #2！
 	history := `{"release_id":1,"version":"v1.0.0","kind":"full"}
 {"release_id":3,"version":"v1.1.0","kind":"config"}
 `
@@ -753,7 +912,6 @@ environments:
 		},
 	}
 
-	// 1. ListReleases 按 release_id 倒序返回。
 	listRep, err := deploy.ListReleases(context.Background(), runner, target)
 	if err != nil || listRep.CurrentRelease != 3 || len(listRep.Releases) != 3 || listRep.Releases[0].ReleaseID != 3 || listRep.Releases[2].ReleaseID != 1 {
 		t.Fatalf("ListReleases: rep=%+v err=%v", listRep, err)
@@ -764,48 +922,46 @@ environments:
 		t.Errorf("FormatReleases:\n%s", table.String())
 	}
 
-	// 2. 无参回滚遵循 history.jsonl 回到 #1，并执行 config check。
 	var out, errOut bytes.Buffer
 	rb1, err := deploy.Rollback(context.Background(), runner, target, "", &out, &errOut)
 	if err != nil || rb1.ReleaseID != 1 || rb1.Version != "v1.0.0" || !configChecked {
 		t.Fatalf("Rollback history: rep=%+v configChecked=%v err=%v", rb1, configChecked, err)
 	}
 
-	// 3. 按 Git Tag 回滚到最新的 v1.1.0（即 #3）。
 	rbTag, err := deploy.Rollback(context.Background(), runner, target, "v1.1.0", &out, &errOut)
 	if err != nil || rbTag.ReleaseID != 3 || rbTag.Version != "v1.1.0" {
 		t.Fatalf("Rollback by tag: rep=%+v err=%v", rbTag, err)
 	}
 
-	// 4. 按序号回滚到 #2。
 	rbNum, err := deploy.Rollback(context.Background(), runner, target, "#2", &out, &errOut)
 	if err != nil || rbNum.ReleaseID != 2 || rbNum.Version != "v1.1.0" {
 		t.Fatalf("Rollback by num: rep=%+v err=%v", rbNum, err)
 	}
 }
 
-func TestStatusLogsAndMaintenance(t *testing.T) {
+func TestStatusLogsAndMaintenanceWithCustomInstance(t *testing.T) {
 	t.Parallel()
-	target, err := deploy.Parse([]byte(`
-app: blog
-environments:
-  production:
-    maintenance_file: /etc/nginx/blog.maintenance
-    roles:
-      http:
-        hosts: [web-1, web-2]
-      worker:
-        hosts: [worker-1]
-`), "blog", "")
+	target, err := deploy.BuildTarget(deploy.AppFile{App: "omirouter"}, "", "omirouter", "partner-acme", deploy.TargetFile{
+		Instance:        "acme-router",
+		MaintenanceFile: "/etc/nginx/acme-router.maintenance",
+		Roles: map[string]deploy.Role{
+			"http":   {Hosts: []string{"web-1", "web-2"}},
+			"worker": {Hosts: []string{"worker-1"}},
+		},
+	}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
+	var sawInstanceJournal atomic.Bool
 	runner := &fakeRunner{
 		onRun: func(host deploy.Host, script string, _ []byte) (string, string, error) {
 			switch {
 			case strings.Contains(script, "systemctl show -p ActiveState"):
-				return "---manifest\n{\"release_id\":12,\"version\":\"v1.2.0\",\"config_sha256\":\"abcdef012345\"}\n---unit=blog@http.service\nActiveState=active\nSubState=running\nStatusText=\nActiveEnterTimestamp=Sun 2026-11-22\n", "", nil
+				return "---manifest\n{\"release_id\":12,\"version\":\"v1.2.0\",\"config_sha256\":\"abcdef012345\"}\n---unit=acme-router@http.service\nActiveState=active\nSubState=running\nStatusText=\nActiveEnterTimestamp=Sun 2026-11-22\n", "", nil
 			case strings.Contains(script, "journalctl"):
+				if strings.Contains(script, "'acme-router@*'") {
+					sawInstanceJournal.Store(true)
+				}
 				return "INF ok on " + host.Addr + "\nERR boom on " + host.Addr + "\n", "", nil
 			}
 			return "", "", nil
@@ -813,12 +969,12 @@ environments:
 	}
 
 	st, err := deploy.CollectStatus(context.Background(), runner, target, "http", "")
-	if err != nil || len(st.Hosts) != 2 || st.Hosts[0].ReleaseID != 12 || st.Hosts[0].Version != "v1.2.0" {
+	if err != nil || len(st.Hosts) != 2 || st.Instance != "acme-router" || st.Hosts[0].ReleaseID != 12 {
 		t.Fatalf("CollectStatus: st=%+v err=%v", st, err)
 	}
 	var table bytes.Buffer
 	deploy.FormatStatus(&table, st)
-	if !strings.Contains(table.String(), "#12") || !strings.Contains(table.String(), "v1.2.0") || !strings.Contains(table.String(), "abcdef01") {
+	if !strings.Contains(table.String(), "实例: acme-router, 产物: omirouter") || !strings.Contains(table.String(), "#12") {
 		t.Errorf("status table:\n%s", table.String())
 	}
 
@@ -826,13 +982,13 @@ environments:
 	if err := deploy.Logs(context.Background(), runner, target, deploy.LogsOptions{Role: "http", Contains: "ERR", Since: "15m"}, &logBuf, &errBuf); err != nil {
 		t.Fatalf("Logs: %v", err)
 	}
-	if !strings.Contains(logBuf.String(), "[web-1] ERR boom on web-1") || strings.Contains(logBuf.String(), "INF") {
-		t.Errorf("logs:\n%s", logBuf.String())
+	if !sawInstanceJournal.Load() || !strings.Contains(logBuf.String(), "[web-1] ERR boom on web-1") || strings.Contains(logBuf.String(), "INF") {
+		t.Errorf("logs (sawInstanceJournal=%v):\n%s", sawInstanceJournal.Load(), logBuf.String())
 	}
 
 	var out bytes.Buffer
 	mrep, err := deploy.Maintenance(context.Background(), runner, target, "", "", true, &out)
-	if err != nil || !slices.Equal(mrep.Hosts, []string{"web-1", "web-2"}) {
+	if err != nil || !slices.Equal(mrep.Hosts, []string{"web-1", "web-2"}) || mrep.Instance != "acme-router" {
 		t.Fatalf("Maintenance: rep=%+v err=%v", mrep, err)
 	}
 }

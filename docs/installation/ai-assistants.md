@@ -41,10 +41,10 @@ MCP 配置中的 `tenon` 一项用 `go tool tenon mcp` 以 stdio 运行，版本
 | `tenon_app_info` | 框架版本、应用入口和地址、前端（目录、挂载路径、是否服务端渲染）、客户端、安装的技能 |
 | `tenon_check` | 运行 `tenon check` 静态检查（文字、时钟、错误码译文、颜色、依赖、框架装配），返回结构化违规列表 |
 | `tenon_dev_logs` | `bun run dev` 的输出：Go 的编译错误、应用的日志、前端开发服务器的输出 |
-| `tenon_deploy_info` | 读取 `deploy.yaml`，返回环境、角色、主机、主迁移节点和滚动波次拓扑（不含密钥） |
-| `tenon_deploy_status` | 并发查询线上集群各主机当前的发布版本与每个 systemd unit 的运行状态 |
-| `tenon_deploy_logs` | 按环境、角色、主机、服务部分、`since` 和 `contains` 聚合拉取多台线上主机的 `journalctl` 日志 |
-| `tenon_deploy_plan` | 预演某环境的发布计划（波次、主机与服务部分），供执行变更前确认 |
+| `tenon_deploy_info` | 读取 `deploy/app.yaml` 与 `deploy/targets/*`，返回所有目标实例的实例名、角色、主机、主迁移节点和滚动波次拓扑（不含密钥） |
+| `tenon_deploy_status` | 并发查询目标实例各主机当前的发布版本与每个 systemd unit 的运行状态 |
+| `tenon_deploy_logs` | 按目标、角色、主机、服务部分、`since` 和 `contains` 聚合拉取多台线上主机的 `journalctl` 日志 |
+| `tenon_deploy_plan` | 预演目标实例的发布计划（实例名、波次、主机与服务部分），供执行变更前确认 |
 
 - 改完代码后调用 `tenon_dev_logs` 确认编译成功、没有报错：`lines` 是返回最后几行（默认 100，最多 1000），`contains` 只保留包含这段文字的行，例如 `ERR`。它读 `.tenon/dev.log`，`tenon dev` 每次启动时清空它。
 - 协助线上排障和发布时，先用 `tenon_deploy_info`、`tenon_deploy_status`、`tenon_deploy_logs` 和 `tenon_deploy_plan` 只读查看与预演，需要变更线上时在终端运行 `go tool tenon deploy --format json`（全子命令均支持 `--format json` 结构化输出，见[部署](deployment.md#tenon-deploy)）。

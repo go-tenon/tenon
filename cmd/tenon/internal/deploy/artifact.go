@@ -19,7 +19,7 @@ const defaultGitHubBaseURL = "https://github.com"
 // 若 Release 附带 checksums.txt，则强制校验 SHA-256 摘要，返回二进制的十六进制摘要。
 func DownloadReleaseBinary(ctx context.Context, client *http.Client, baseURL, repo, tag, app, arch, destPath string) (string, error) {
 	if repo == "" {
-		return "", fmt.Errorf("deploy: --tag requires 'repo: owner/repo' in deploy.yaml or a GitHub git origin remote")
+		return "", fmt.Errorf("deploy: --tag requires 'repo: owner/repo' in deploy/app.yaml or a GitHub git origin remote")
 	}
 	if !isSafeVersion(tag) {
 		return "", fmt.Errorf("deploy: invalid tag %q", tag)

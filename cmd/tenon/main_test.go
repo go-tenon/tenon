@@ -379,13 +379,14 @@ func TestAddDeployAndDryRun(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatal(err, out.String())
 	}
-	if !strings.Contains(out.String(), "deploy.yaml") {
+	if !strings.Contains(out.String(), "deploy/app.yaml") {
 		t.Errorf("output:\n%s", out.String())
 	}
 	for name, want := range map[string]string{
-		"deploy.yaml":  "- prod.example.com",
-		".env.example": "DATABASE_URL=",
-		"README.md":    "<!-- tenon:deploy:begin -->",
+		"deploy/app.yaml":                 "app: blog",
+		"deploy/targets/prod/target.yaml": "- prod.example.com",
+		"deploy/targets/prod/config.yaml": "service: blog",
+		"README.md":                       "<!-- tenon:deploy:begin -->",
 	} {
 		b, err := os.ReadFile(name)
 		if err != nil || !strings.Contains(string(b), want) {
@@ -399,7 +400,7 @@ func TestAddDeployAndDryRun(t *testing.T) {
 		t.Fatalf("add deploy --force = %v", err)
 	}
 
-	// 验证生成的 deploy.yaml 可直接驱动 tenon deploy --dry-run（text 与 json 双模）与 setup --dry-run。
+	// 验证生成的 deploy/ 可直接驱动 tenon deploy --dry-run（text 与 json 双模）与 setup --dry-run。
 	out.Reset()
 	dry := root()
 	dry.SetArgs([]string{"deploy", "--dry-run"})
@@ -408,7 +409,7 @@ func TestAddDeployAndDryRun(t *testing.T) {
 	if err := dry.Execute(); err != nil {
 		t.Fatalf("deploy --dry-run: %v\n%s", err, out.String())
 	}
-	if !strings.Contains(out.String(), "[dry-run] 环境 production") {
+	if !strings.Contains(out.String(), "[dry-run] 目标 prod，实例 blog") {
 		t.Errorf("dry-run output:\n%s", out.String())
 	}
 
@@ -434,5 +435,58 @@ func TestAddDeployAndDryRun(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), `"unit_path"`) {
 		t.Errorf("setup dry-run output:\n%s", out.String())
+	}
+}
+
+// TestDeployStandaloneOpsDirAndMultiTargetDryRun 验证脱离源码仓库（无 go.mod）时，
+// 可通过 deploy/app.yaml 与外部 TENON_DEPLOY_TARGETS 目录驱动多目标 dry-run 与 setup 预演，且多目标不传 -t 时报错。
+func TestDeployStandaloneOpsDirAndMultiTargetDryRun(t *testing.T) {
+	opsRoot := t.TempDir()
+	extTargets := filepath.Join(t.TempDir(), "ops-targets")
+	write := func(p, content string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(filepath.Join(opsRoot, "deploy/app.yaml"), "app: omirouter\nrepo: OmiRouter/OmiRouter\n")
+	write(filepath.Join(extTargets, "prod/target.yaml"), "hosts: [10.0.0.1]\n")
+	write(filepath.Join(extTargets, "partner-acme/target.yaml"), "instance: acme-router\nhosts: [10.0.0.2]\n")
+
+	t.Chdir(opsRoot)
+	t.Setenv("TENON_DEPLOY_TARGETS", extTargets)
+
+	// 1. 存在多个目标时省略 -t 必须报错。
+	if err := execute(t, "deploy", "--dry-run"); err == nil || !strings.Contains(err.Error(), "specify --target") {
+		t.Fatalf("expected multi-target guardrail error, got %v", err)
+	}
+
+	// 2. 一次传多个 -t 输出包含两个目标与各自 instance 的批量预演 JSON。
+	var out bytes.Buffer
+	cmd := root()
+	cmd.SetArgs([]string{"deploy", "-t", "prod", "-t", "partner-acme", "--tag", "v1.2.0", "--dry-run", "--format", "json"})
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("multi-target dry-run: %v\n%s", err, out.String())
+	}
+	if !strings.Contains(out.String(), `"instance": "acme-router"`) || !strings.Contains(out.String(), `"target": "prod"`) {
+		t.Errorf("multi-target json:\n%s", out.String())
+	}
+
+	// 3. 自定义实例名在 setup dry-run 中生成隔离的 unit 与 wrapper 路径。
+	out.Reset()
+	setupCmd := root()
+	setupCmd.SetArgs([]string{"deploy", "setup", "-t", "partner-acme", "--dry-run", "--format", "json"})
+	setupCmd.SetOut(&out)
+	setupCmd.SetErr(&out)
+	if err := setupCmd.Execute(); err != nil {
+		t.Fatalf("setup dry-run: %v\n%s", err, out.String())
+	}
+	if !strings.Contains(out.String(), `/etc/systemd/system/acme-router@.service`) || !strings.Contains(out.String(), `/usr/local/bin/acme-router`) {
+		t.Errorf("setup json:\n%s", out.String())
 	}
 }

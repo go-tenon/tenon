@@ -19,8 +19,9 @@ import (
 
 // RollbackReport 是 tenon deploy rollback 的结构化结果。
 type RollbackReport struct {
-	App       string           `json:"app"`        // 应用名
-	Env       string           `json:"env"`        // 环境名
+	App       string           `json:"app"`        // 构建产物名
+	Target    string           `json:"target"`     // 目标名
+	Instance  string           `json:"instance"`   // 远端实例名
 	ReleaseID int              `json:"release_id"` // 回退后的发布序号
 	Version   string           `json:"version"`    // 回退后的构建版本号
 	Waves     []Wave           `json:"waves"`      // 执行回退的波次
@@ -29,8 +30,9 @@ type RollbackReport struct {
 
 // ReleasesReport 是 tenon deploy releases 的结构化结果。
 type ReleasesReport struct {
-	App            string     `json:"app"`             // 应用名
-	Env            string     `json:"env"`             // 环境名
+	App            string     `json:"app"`             // 构建产物名
+	Target         string     `json:"target"`          // 目标名
+	Instance       string     `json:"instance"`        // 远端实例名
 	CurrentRelease int        `json:"current_release"` // 当前激活的发布序号
 	Releases       []Manifest `json:"releases"`        // 按发布序号倒序排列的留存发布列表
 }
@@ -44,7 +46,8 @@ func ListReleases(ctx context.Context, r Runner, t Target) (*ReleasesReport, err
 	}
 	return &ReleasesReport{
 		App:            t.App,
-		Env:            t.EnvName,
+		Target:         t.Name,
+		Instance:       t.Instance,
 		CurrentRelease: curID,
 		Releases:       manifests,
 	}, nil
@@ -52,7 +55,11 @@ func ListReleases(ctx context.Context, r Runner, t Target) (*ReleasesReport, err
 
 // FormatReleases 将发布历史列表格式化为对齐的表格输出到 out。
 func FormatReleases(out io.Writer, report *ReleasesReport) {
-	fmt.Fprintf(out, "环境: %s (应用: %s)\n", report.Env, report.App)
+	if report.Instance != "" && report.Instance != report.App {
+		fmt.Fprintf(out, "目标: %s (实例: %s, 产物: %s)\n", report.Target, report.Instance, report.App)
+	} else {
+		fmt.Fprintf(out, "目标: %s (实例: %s)\n", report.Target, report.App)
+	}
 	tw := tabwriter.NewWriter(out, 0, 2, 2, ' ', 0)
 	fmt.Fprintln(tw, "CUR\tRELEASE\tVERSION\tKIND\tBIN\tCONFIG\tDEPLOYED AT\tBY")
 	for _, m := range report.Releases {
@@ -130,7 +137,7 @@ done`, shellQuote(curPath), shellQuote(curPath), shellQuote(releasesDir))
 	return manifests, currentID, nil
 }
 
-// Rollback 将环境内所有主机回退到指定目标（targetRef 可为发布序号如 41/#41、构建版本/Tag 如 v1.1.0，
+// Rollback 将目标实例内所有主机回退到指定目标（targetRef 可为发布序号如 41/#41、构建版本/Tag 如 v1.1.0，
 // 留空时按 history.jsonl 追溯当前版本之前最近一次激活的不同发布）；切换前在所有主机执行 config check。
 // 数据库迁移不会自动撤销。
 func Rollback(ctx context.Context, r Runner, t Target, targetRef string, out, errOut io.Writer) (*RollbackReport, error) {
@@ -148,7 +155,7 @@ func Rollback(ctx context.Context, r Runner, t Target, targetRef string, out, er
 	}
 	relName := FormatReleaseID(targetManifest.ReleaseID)
 	releaseDir := path.Join(t.Dir, "releases", relName)
-	releaseBin := path.Join(releaseDir, t.App)
+	releaseBin := path.Join(releaseDir, t.Instance)
 	releaseCfg := path.Join(releaseDir, "config")
 
 	// 1. 确认全部主机均保留目标发布目录，避免滚动到一半缺文件。
@@ -166,7 +173,7 @@ func Rollback(ctx context.Context, r Runner, t Target, targetRef string, out, er
 	}
 
 	// 2. 全机并行运行目标发布的 config check，确保历史配置与当前环境变量兼容。
-	fmt.Fprintf(out, "回退前校验 %d 台主机配置（#%d %s）...\n", len(t.Hosts), targetManifest.ReleaseID, targetManifest.Version)
+	fmt.Fprintf(out, "回退前校验 %s 的 %d 台主机配置（#%d %s）...\n", t.DisplayLabel(), len(t.Hosts), targetManifest.ReleaseID, targetManifest.Version)
 	if err := configCheckAll(ctx, r, t, releaseDir, releaseBin); err != nil {
 		return nil, err
 	}
@@ -184,10 +191,11 @@ func Rollback(ctx context.Context, r Runner, t Target, targetRef string, out, er
 	if err != nil {
 		return nil, err
 	}
-	fmt.Fprintf(out, "已回退到 #%d (%s)。注意：数据库迁移不会自动撤销。\n", targetManifest.ReleaseID, targetManifest.Version)
+	fmt.Fprintf(out, "已回退 %s 到 #%d (%s)。注意：数据库迁移不会自动撤销。\n", t.DisplayLabel(), targetManifest.ReleaseID, targetManifest.Version)
 	return &RollbackReport{
 		App:       t.App,
-		Env:       t.EnvName,
+		Target:    t.Name,
+		Instance:  t.Instance,
 		ReleaseID: targetManifest.ReleaseID,
 		Version:   targetManifest.Version,
 		Waves:     waves,
@@ -260,9 +268,10 @@ func resolveRollbackTarget(ctx context.Context, r Runner, t Target, primary Host
 
 // StatusReport 是集群状态查询的结构化结果，供 CLI 表格输出、--format json 和 MCP tenon_deploy_status 共用。
 type StatusReport struct {
-	App   string       `json:"app"`   // 应用名
-	Env   string       `json:"env"`   // 环境名
-	Hosts []HostStatus `json:"hosts"` // 各主机状态
+	App      string       `json:"app"`      // 构建产物名
+	Target   string       `json:"target"`   // 目标名
+	Instance string       `json:"instance"` // 远端实例名
+	Hosts    []HostStatus `json:"hosts"`    // 各主机状态
 }
 
 // HostStatus 是单台主机的发布版本与服务状态。
@@ -280,7 +289,7 @@ type HostStatus struct {
 
 // UnitStatus 是单个 systemd unit 的状态摘要。
 type UnitStatus struct {
-	Unit        string `json:"unit"`                  // unit 名，例如 blog@http.service
+	Unit        string `json:"unit"`                  // unit 名，例如 acme-router@http.service
 	ActiveState string `json:"active_state"`          // active / inactive / failed
 	SubState    string `json:"sub_state"`             // running / dead / failed
 	StatusText  string `json:"status_text,omitempty"` // systemd StatusText（升级失败时包含原因）
@@ -302,7 +311,7 @@ func CollectStatus(ctx context.Context, r Runner, t Target, roleFilter, hostFilt
 			fmt.Fprintf(&script, "echo \"---manifest\"\nif test -f %s; then cat %s; echo \"\"; fi\n",
 				shellQuote(manifestPath), shellQuote(manifestPath))
 			for _, part := range h.Parts {
-				unit := UnitName(t.App, part)
+				unit := UnitName(t.Instance, part)
 				fmt.Fprintf(&script, "echo \"---unit=%s\"\nsystemctl show -p ActiveState -p SubState -p StatusText -p ActiveEnterTimestamp %s\n",
 					unit, shellQuote(unit))
 			}
@@ -317,7 +326,7 @@ func CollectStatus(ctx context.Context, r Runner, t Target, roleFilter, hostFilt
 	if err := g.Wait(); err != nil {
 		return nil, err
 	}
-	return &StatusReport{App: t.App, Env: t.EnvName, Hosts: results}, nil
+	return &StatusReport{App: t.App, Target: t.Name, Instance: t.Instance, Hosts: results}, nil
 }
 
 // parseHostStatus 解析单台主机状态查询脚本的输出。
@@ -385,7 +394,11 @@ func parseHostStatus(h Host, raw string) HostStatus {
 
 // FormatStatus 将集群状态格式化为对齐的表格输出到 out。
 func FormatStatus(out io.Writer, report *StatusReport) {
-	fmt.Fprintf(out, "环境: %s (应用: %s)\n", report.Env, report.App)
+	if report.Instance != "" && report.Instance != report.App {
+		fmt.Fprintf(out, "目标: %s (实例: %s, 产物: %s)\n", report.Target, report.Instance, report.App)
+	} else {
+		fmt.Fprintf(out, "目标: %s (实例: %s)\n", report.Target, report.App)
+	}
 	tw := tabwriter.NewWriter(out, 0, 2, 2, ' ', 0)
 	fmt.Fprintln(tw, "HOST\tROLES\tRELEASE\tVERSION\tCONFIG\tUNIT\tSTATE\tSTATUS")
 	for _, h := range report.Hosts {
@@ -429,7 +442,7 @@ func FormatStatus(out io.Writer, report *StatusReport) {
 type LogsOptions struct {
 	Role     string // 按角色筛选主机，留空表示全部角色
 	Host     string // 指定主机，留空时并发聚合全部匹配主机的日志
-	Part     string // 指定服务部分（如 http）；留空时匹配全部 <app>@*
+	Part     string // 指定服务部分（如 http）；留空时匹配全部 <instance>@*
 	Lines    int    // 每台主机返回最近多少行，默认 100
 	Since    string // journalctl --since 参数（例如 10m、1h、"2026-11-22 10:00:00"）
 	Contains string // 仅保留包含该子串的日志行（例如 ERR 或 X-Request-ID）
@@ -438,8 +451,9 @@ type LogsOptions struct {
 
 // LogsReport 是结构化日志查询结果，供 --format json 和 MCP tenon_deploy_logs 使用。
 type LogsReport struct {
-	App      string     `json:"app"`                // 应用名
-	Env      string     `json:"env"`                // 环境名
+	App      string     `json:"app"`                // 构建产物名
+	Target   string     `json:"target"`             // 目标名
+	Instance string     `json:"instance"`           // 远端实例名
 	Role     string     `json:"role,omitempty"`     // 筛选的角色
 	Contains string     `json:"contains,omitempty"` // 关键字过滤条件
 	Hosts    []HostLogs `json:"hosts"`              // 各主机的日志行
@@ -457,9 +471,9 @@ func buildJournalCmd(t Target, opts LogsOptions, follow bool) string {
 	if lines <= 0 {
 		lines = 100
 	}
-	unit := t.App + "@*"
+	unit := t.Instance + "@*"
 	if opts.Part != "" {
-		unit = UnitName(t.App, opts.Part)
+		unit = UnitName(t.Instance, opts.Part)
 	}
 	cmd := fmt.Sprintf("sudo journalctl -u %s -n %d --no-pager", shellQuote(unit), lines)
 	if strings.TrimSpace(opts.Since) != "" {
@@ -502,7 +516,8 @@ func CollectLogs(ctx context.Context, r Runner, t Target, opts LogsOptions) (*Lo
 	}
 	return &LogsReport{
 		App:      t.App,
-		Env:      t.EnvName,
+		Target:   t.Name,
+		Instance: t.Instance,
 		Role:     opts.Role,
 		Contains: opts.Contains,
 		Hosts:    items,
@@ -594,15 +609,16 @@ func RunRemote(ctx context.Context, r Runner, t Target, roleFilter, hostFilter s
 	if roleFilter == "" && hostFilter == "" {
 		h = t.MigrateHost()
 	}
-	liveBin := path.Join(t.Dir, "bin", t.App)
+	liveBin := path.Join(t.Dir, "bin", t.Instance)
 	argv := append([]string{liveBin}, args...)
 	return r.Run(ctx, h, systemdRunCommand(t, t.Dir, argv...), nil, out, errOut)
 }
 
 // EnvPushReport 是 tenon deploy env push 的结构化结果。
 type EnvPushReport struct {
-	App       string   `json:"app"`       // 应用名
-	Env       string   `json:"env"`       // 环境名
+	App       string   `json:"app"`       // 构建产物名
+	Target    string   `json:"target"`    // 目标名
+	Instance  string   `json:"instance"`  // 远端实例名
 	EnvFile   string   `json:"env_file"`  // 远端环境变量路径
 	Restarted bool     `json:"restarted"` // 是否执行了服务重启
 	Hosts     []string `json:"hosts"`     // 已更新的主机列表
@@ -624,7 +640,8 @@ func EnvPush(ctx context.Context, r Runner, t Target, localFile, roleFilter, hos
 		shellQuote(envDir), installFromStdinCommand("600", t.EnvFile))
 	report := &EnvPushReport{
 		App:       t.App,
-		Env:       t.EnvName,
+		Target:    t.Name,
+		Instance:  t.Instance,
 		EnvFile:   t.EnvFile,
 		Restarted: restart,
 		Hosts:     make([]string, 0, len(hosts)),
@@ -637,7 +654,7 @@ func EnvPush(ctx context.Context, r Runner, t Target, localFile, roleFilter, hos
 		fmt.Fprintf(out, "[%s] 已更新 %s\n", h.Addr, t.EnvFile)
 		if restart {
 			for _, part := range h.Parts {
-				unit := UnitName(t.App, part)
+				unit := UnitName(t.Instance, part)
 				if _, err := RunCapture(ctx, r, h, "sudo systemctl restart "+shellQuote(unit)); err != nil {
 					return nil, fmt.Errorf("[%s] 重启 %s 失败: %w", h.Addr, unit, err)
 				}
@@ -671,18 +688,19 @@ func EnvPull(ctx context.Context, r Runner, t Target, roleFilter, hostFilter str
 
 // MaintenanceReport 是维护模式开关的结构化结果。
 type MaintenanceReport struct {
-	App   string   `json:"app"`   // 应用名
-	Env   string   `json:"env"`   // 环境名
-	On    bool     `json:"on"`    // 是否开启维护模式
-	File  string   `json:"file"`  // 维护标记文件路径
-	Hosts []string `json:"hosts"` // 已操作的主机列表
+	App      string   `json:"app"`      // 构建产物名
+	Target   string   `json:"target"`   // 目标名
+	Instance string   `json:"instance"` // 远端实例名
+	On       bool     `json:"on"`       // 是否开启维护模式
+	File     string   `json:"file"`     // 维护标记文件路径
+	Hosts    []string `json:"hosts"`    // 已操作的主机列表
 }
 
 // Maintenance 创建或删除 maintenance_file，控制反向代理 503 维护页；
 // 未指定筛选条件时默认仅操作运行入口服务（all/http）的主机。
 func Maintenance(ctx context.Context, r Runner, t Target, roleFilter, hostFilter string, on bool, out io.Writer) (*MaintenanceReport, error) {
 	if t.MaintenanceFile == "" {
-		return nil, fmt.Errorf("deploy: maintenance_file is not configured in environment %q", t.EnvName)
+		return nil, fmt.Errorf("deploy: maintenance_file is not configured in target %q", t.Name)
 	}
 	var hosts []Host
 	if roleFilter != "" || hostFilter != "" {
@@ -695,11 +713,12 @@ func Maintenance(ctx context.Context, r Runner, t Target, roleFilter, hostFilter
 		hosts = t.HTTPHosts()
 	}
 	report := &MaintenanceReport{
-		App:   t.App,
-		Env:   t.EnvName,
-		On:    on,
-		File:  t.MaintenanceFile,
-		Hosts: make([]string, 0, len(hosts)),
+		App:      t.App,
+		Target:   t.Name,
+		Instance: t.Instance,
+		On:       on,
+		File:     t.MaintenanceFile,
+		Hosts:    make([]string, 0, len(hosts)),
 	}
 	for _, h := range hosts {
 		var cmd string
