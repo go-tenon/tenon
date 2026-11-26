@@ -617,11 +617,7 @@ function FailedJobs({
               </ActionIcon>
             </Menu.Target>
             <Menu.Dropdown>
-              <Menu.Item
-                color="red"
-                leftSection={<IconTrash size={14} stroke={1.6} />}
-                onClick={() => void single("delete", j.id)}
-              >
+              <Menu.Item color="red" onClick={() => void single("delete", j.id)}>
                 {tr("tenon.common.delete")}
               </Menu.Item>
             </Menu.Dropdown>
@@ -688,11 +684,7 @@ function FailedJobs({
                   </ActionIcon>
                 </Menu.Target>
                 <Menu.Dropdown>
-                  <Menu.Item
-                    color="red"
-                    leftSection={<IconTrash size={14} stroke={1.6} />}
-                    onClick={() => void everything("delete")}
-                  >
+                  <Menu.Item color="red" onClick={() => void everything("delete")}>
                     {tr(topic ? "tenon.queue.delete_these" : "tenon.queue.delete_every", { count })}
                   </Menu.Item>
                 </Menu.Dropdown>

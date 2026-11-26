@@ -24,7 +24,7 @@ import {
   TextInput,
   useMantineTheme,
 } from "@mantine/core"
-import { IconDots, IconPencil, IconPlus, IconTrash } from "@tabler/icons-react"
+import { IconDots, IconPencil, IconPlus } from "@tabler/icons-react"
 import { useQueryClient } from "@tanstack/react-query"
 import {
   Outlet,
@@ -259,7 +259,6 @@ function ResourceList({
                   {deletable && (
                     <Menu.Item
                       color="red"
-                      leftSection={<IconTrash size={14} stroke={1.6} />}
                       onClick={async () => {
                         if (
                           await confirm({
