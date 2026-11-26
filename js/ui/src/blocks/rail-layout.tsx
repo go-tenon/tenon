@@ -58,8 +58,10 @@ export interface RailLayoutProps {
   railBottom?: ReactNode // 图标栏底部（用户菜单上方）的附加操作
   settings?: string // 设置页面所在的路径，默认 /settings：其下的页面不进图标栏，从用户菜单进入
   maxWidth?: number // 内容区的最大宽度，默认 1152；staticData.fullBleed 的页面铺满，不受它限制
+  railWidth?: number // 最左侧模块图标栏的宽度，默认 56
   navWidth?: number // 二级导航的宽度，默认 260
   headerHeight?: number // 顶栏基准高度（像素），默认 52，写入 --tn-rail-header 供各栏齐平
+  settingsSearch?: boolean // 是否在设置页二级导航顶部显示搜索框，默认 false
   compactQuery?: string // 窄屏抽屉模式的媒体查询，默认 "(max-width: 48em)"
   documentTitle?: boolean // 浏览器标签的标题是“页面 - 应用的名称”，页面是路由的 staticData.title；默认开启，false 时不设置
   banner?: ReactNode // 布局最顶部的通栏提示，例如 ImpersonationBanner
@@ -187,8 +189,10 @@ export function RailLayout({
   railBottom,
   settings = "/settings",
   maxWidth = 1152,
+  railWidth = 56,
   navWidth = 260,
   headerHeight = 52,
+  settingsSearch = false,
   compactQuery = "(max-width: 48em)",
   documentTitle = true,
   banner,
@@ -294,7 +298,7 @@ export function RailLayout({
           }}
         >
           {customNav && !inSettings && <Slot name="nav" />}
-          {inSettings && (
+          {inSettings && settingsSearch && (
             <TextInput
               placeholder={t("tenon.common.search")}
               aria-label={t("tenon.rail.search_settings")}
@@ -306,7 +310,7 @@ export function RailLayout({
           )}
           {(!customNav || inSettings) && (
             <NavItems
-              items={inSettings ? filterItems(items, search.trim()) : items}
+              items={inSettings && settingsSearch ? filterItems(items, search.trim()) : items}
               active={active}
               onNavigate={() => compact && setDrawer(false)}
             />
@@ -317,6 +321,7 @@ export function RailLayout({
   )
 
   const vars = {
+    "--tn-rail-rail": `${railWidth}px`,
     "--tn-rail-secondary": `${navWidth}px`,
     "--tn-rail-header": `${headerHeight}px`,
   } as CSSProperties
@@ -362,7 +367,7 @@ export function RailLayout({
                   }}
                 >
                   <span className="tn-rail-module-icon">
-                    <Icon name={m.icon} size={18} />
+                    <Icon name={m.icon} size={20} />
                   </span>
                   {m.badge !== undefined && (
                     <span className="tn-rail-module-badge">
@@ -370,7 +375,7 @@ export function RailLayout({
                     </span>
                   )}
                   {expandHere && (
-                    <IconLayoutSidebarLeftExpand className="tn-rail-module-expand" size={18} stroke={1.6} />
+                    <IconLayoutSidebarLeftExpand className="tn-rail-module-expand" size={20} stroke={1.6} />
                   )}
                 </UnstyledButton>
               </Tooltip>
