@@ -26,7 +26,7 @@ type SetupReport struct {
 	Hosts       []string `json:"hosts"`        // 已初始化的主机地址列表
 }
 
-// Setup 幂等初始化目标主机：检查 Linux/systemd/glibc，创建系统用户、部署目录和环境变量文件骨架，
+// Setup 幂等初始化目标主机：检查 Linux/systemd/glibc，创建系统用户、内容寻址目录和环境变量文件骨架，
 // 写入 systemd 模板 unit、角色级 drop-in 覆盖文件与 /usr/local/bin/<app> 包装脚本并执行 daemon-reload。
 func Setup(ctx context.Context, r Runner, t Target, opts SetupOptions, out io.Writer) (*SetupReport, error) {
 	hosts, err := t.FilterHosts(opts.Role, opts.Host)
@@ -39,6 +39,7 @@ func Setup(ctx context.Context, r Runner, t Target, opts SetupOptions, out io.Wr
 	wrapperContent := RenderWrapper(t)
 	envDir := path.Dir(t.EnvFile)
 	binDir := path.Join(t.Dir, "bin")
+	artifactsDir := path.Join(t.Dir, "artifacts")
 	releasesDir := path.Join(t.Dir, "releases")
 	storageDir := path.Join(t.Dir, "storage")
 	report := &SetupReport{
@@ -55,7 +56,8 @@ func Setup(ctx context.Context, r Runner, t Target, opts SetupOptions, out io.Wr
 		fmt.Fprintf(out, "[%s] 初始化 %s（角色 %s，用户 %s，目录 %s）\n",
 			h.Addr, t.App, strings.Join(h.Roles, ","), t.ServiceUser, t.Dir)
 		if opts.DryRun {
-			fmt.Fprintf(out, "[%s] (dry-run) 写入 %s 与 %s，并创建目录 %s、%s、%s\n", h.Addr, unitPath, wrapperPath, binDir, releasesDir, storageDir)
+			fmt.Fprintf(out, "[%s] (dry-run) 写入 %s 与 %s，并创建目录 %s、%s、%s、%s\n",
+				h.Addr, unitPath, wrapperPath, binDir, artifactsDir, releasesDir, storageDir)
 			continue
 		}
 		// 1. 检查运行环境：必须为带 systemd 的 Linux；包含 SSR 前端时检查 glibc。
@@ -74,7 +76,7 @@ func Setup(ctx context.Context, r Runner, t Target, opts SetupOptions, out io.Wr
 if ! id -u %s >/dev/null 2>&1; then
   sudo useradd --system --no-create-home --shell /usr/sbin/nologin %s
 fi
-sudo install -d -m 755 %s %s %s
+sudo install -d -m 755 %s %s %s %s
 sudo install -d -m 755 -o %s -g %s %s
 sudo install -d -m 750 -o root -g root %s
 if ! sudo test -f %s; then
@@ -82,7 +84,7 @@ if ! sudo test -f %s; then
 fi
 `,
 			shellQuote(t.ServiceUser), shellQuote(t.ServiceUser),
-			shellQuote(t.Dir), shellQuote(binDir), shellQuote(releasesDir),
+			shellQuote(t.Dir), shellQuote(binDir), shellQuote(artifactsDir), shellQuote(releasesDir),
 			shellQuote(t.ServiceUser), shellQuote(t.ServiceUser), shellQuote(storageDir),
 			shellQuote(envDir),
 			shellQuote(t.EnvFile), shellQuote(t.EnvFile),
@@ -96,7 +98,7 @@ fi
 		if err := r.Run(ctx, h, writeUnit, strings.NewReader(unitContent), io.Discard, out); err != nil {
 			return nil, fmt.Errorf("[%s] 写入 %s 失败: %w", h.Addr, unitPath, err)
 		}
-		if err := syncDropIns(ctx, r, t, h); err != nil {
+		if _, err := syncDropIns(ctx, r, t, h); err != nil {
 			return nil, err
 		}
 		// 4. 在 /usr/local/bin/<app> 安装运维包装脚本，登录服务器后可在任意目录直接运行应用子命令。

@@ -21,9 +21,9 @@ description: Tenon 应用上线准备、原生二进制与 systemd 多机部署�
    - 登记 `doctorcmd.New(a.doctor()...)` 组合 `database.Doctor`、`migrate.Doctor`、`queue.Doctor` 等，见 `tenon/docs/installation/doctor.md#doctor-command`。
    - 在 `migratecmd.New` 中传入 `migratecmd.Check`，在 `serve` 的入口用 `doctor.Require`，环境不满足要求时拒绝启动，见 `tenon/docs/installation/doctor.md#before-migrating` 和 `tenon/docs/installation/doctor.md#before-starting`。
 5. **只连数据库的运维命令**：创建首个管理员等只读/写数据库的命令行，用只打开数据库的 `openDB` 绑定，避免初始化时强依赖 NATS。
-6. **生成部署配置并发布**：运行 `go tool tenon add deploy` 生成 `deploy.yaml` 和 `.env.example`，单机用 `hosts:`，多服务多机用 `roles:`，独立生产配置或多文件叠加用 `config_files:`。首次执行 `tenon deploy setup` 与 `tenon deploy env push`，日常发布运行 `tenon deploy`，见 `tenon/docs/installation/deployment.md#tenon-deploy` 和 `tenon/docs/installation/deployment.md#deploy-config-files`。
+6. **生成部署配置并发布**：运行 `go tool tenon add deploy` 生成 `deploy.yaml` 和 `.env.example`，单机用 `hosts:`，多服务多机用 `roles:`，独立生产配置或多文件叠加用 `config_files:`。首次执行 `tenon deploy setup` 与 `tenon deploy env push`，日常完整发布运行 `tenon deploy`（或 `--tag vX.Y.Z`），仅改配置运行 `tenon deploy config`，见 `tenon/docs/installation/deployment.md#tenon-deploy` 和 `tenon/docs/installation/deployment.md#deploy-config-files`。
 
 ## AI 助手协助部署与排障
 
 - **只读观测优先走 MCP**：查集群拓扑用 `tenon_deploy_info`，查节点状态用 `tenon_deploy_status`，聚合多机线上报错日志用 `tenon_deploy_logs`（带 `role`、`since`、`contains`），发布前用 `tenon_deploy_plan` 预演波次并向用户确认。
-- **执行变更统一带 `--format json`**：发布（`go tool tenon deploy --format json`）、回滚（`rollback`）、维护开关（`maintenance`）和远端自检（`run -- doctor --format json`）均走命令行并输出结构化结果；绝不回显或提交 `/etc/<应用>/env` 中的密钥。
+- **执行变更统一带 `--format json`**：完整发布（`go tool tenon deploy --format json`）、仅配置热发（`config`）、回滚（`rollback [序号|tag]`）、查看历史（`releases`）、维护开关（`maintenance`）和远端自检（`run -- doctor --format json`）均走命令行并输出结构化结果；绝不回显或提交 `/etc/<应用>/env` 中的密钥。

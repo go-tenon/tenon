@@ -3,7 +3,6 @@ package deploy
 import (
 	"context"
 	"fmt"
-	"io"
 	"path"
 	"slices"
 	"strings"
@@ -37,7 +36,7 @@ func RenderWrapper(t Target) string {
 	var b strings.Builder
 	b.WriteString("#!/usr/bin/env bash\n")
 	b.WriteString("set -euo pipefail\n")
-	fmt.Fprintf(&b, "# 由 tenon deploy setup 生成，以服务用户、工作目录和部署配置运行 %s。\n", t.App)
+	fmt.Fprintf(&b, "# 由 tenon deploy 生成，以服务用户、工作目录和部署配置运行 %s。\n", t.App)
 	b.WriteString("run=()\n")
 	b.WriteString("[[ $(id -u) -eq 0 ]] || run=(sudo)\n")
 	b.WriteString("mode=(--pipe)\n")
@@ -113,18 +112,17 @@ func RenderDropIn(d PartDropIn) string {
 	return b.String()
 }
 
-// syncDropIns 在目标主机同步每个 part 的 systemd drop-in 文件（新增、更新或清理已移除的覆盖项），
-// 有变更时触发 daemon-reload。
-func syncDropIns(ctx context.Context, r Runner, t Target, h Host) error {
+// syncDropIns 在目标主机按内容比对同步每个 part 的 systemd drop-in 文件（新增、更新或清理已移除的覆盖项），
+// 有变更时触发 daemon-reload 并返回 changed=true。
+func syncDropIns(ctx context.Context, r Runner, t Target, h Host) (bool, error) {
 	changed := false
 	for _, part := range h.Parts {
 		di := h.DropIns[part]
 		dp := DropInPath(t.App, part)
 		if di.Empty() {
-			// 若曾经配置过 drop-in，现已清空则删除它。
 			res, err := RunCapture(ctx, r, h, fmt.Sprintf("if sudo test -f %s; then sudo rm -f %s && echo removed; fi", shellQuote(dp), shellQuote(dp)))
 			if err != nil {
-				return fmt.Errorf("[%s] 清理 %s 失败: %w", h.Addr, dp, err)
+				return changed, fmt.Errorf("[%s] 清理 %s 失败: %w", h.Addr, dp, err)
 			}
 			if strings.TrimSpace(res) == "removed" {
 				changed = true
@@ -133,19 +131,34 @@ func syncDropIns(ctx context.Context, r Runner, t Target, h Host) error {
 		}
 		dir := path.Dir(dp)
 		content := RenderDropIn(di)
-		cmd := fmt.Sprintf("sudo install -d -m 755 -o root -g root %s && %s",
-			shellQuote(dir), installFromStdinCommand("644", dp))
-		if err := r.Run(ctx, h, cmd, strings.NewReader(content), io.Discard, io.Discard); err != nil {
-			return fmt.Errorf("[%s] 写入 %s 失败: %w", h.Addr, dp, err)
+		script := fmt.Sprintf(`set -e
+umask 077
+tmp=$(mktemp)
+trap 'rm -f "$tmp"' EXIT
+cat > "$tmp"
+if ! sudo cmp -s "$tmp" %s; then
+  sudo install -d -m 755 -o root -g root %s
+  sudo install -m 644 -o root -g root "$tmp" %s
+  echo updated
+fi`, shellQuote(dp), shellQuote(dir), shellQuote(dp))
+		var out, errBuf strings.Builder
+		if err := r.Run(ctx, h, script, strings.NewReader(content), &out, &errBuf); err != nil {
+			msg := strings.TrimSpace(errBuf.String())
+			if msg != "" {
+				return changed, fmt.Errorf("[%s] 写入 %s 失败: %w: %s", h.Addr, dp, err, msg)
+			}
+			return changed, fmt.Errorf("[%s] 写入 %s 失败: %w", h.Addr, dp, err)
 		}
-		changed = true
+		if strings.TrimSpace(out.String()) == "updated" {
+			changed = true
+		}
 	}
 	if changed {
 		if _, err := RunCapture(ctx, r, h, "sudo systemctl daemon-reload"); err != nil {
-			return fmt.Errorf("[%s] systemctl daemon-reload 失败: %w", h.Addr, err)
+			return changed, fmt.Errorf("[%s] systemctl daemon-reload 失败: %w", h.Addr, err)
 		}
 	}
-	return nil
+	return changed, nil
 }
 
 // syncUnit 在目标主机按需同步 systemd 模板 unit 文件，内容变化时写入并执行 daemon-reload，返回是否发生了更新。
@@ -153,6 +166,7 @@ func syncUnit(ctx context.Context, r Runner, t Target, h Host) (bool, error) {
 	unitPath := TemplateUnitPath(t.App)
 	content := RenderUnit(t)
 	script := fmt.Sprintf(`set -e
+umask 077
 tmp=$(mktemp)
 trap 'rm -f "$tmp"' EXIT
 cat > "$tmp"
@@ -168,6 +182,31 @@ fi`, shellQuote(unitPath), shellQuote(unitPath))
 			return false, fmt.Errorf("[%s] 同步 %s 失败: %w: %s", h.Addr, unitPath, err, msg)
 		}
 		return false, fmt.Errorf("[%s] 同步 %s 失败: %w", h.Addr, unitPath, err)
+	}
+	return strings.TrimSpace(out.String()) == "updated", nil
+}
+
+// syncWrapper 在目标主机按需同步 /usr/local/bin/<app> 运维包装脚本，内容变化时覆盖安装并返回是否更新。
+func syncWrapper(ctx context.Context, r Runner, t Target, h Host) (bool, error) {
+	wp := WrapperPath(t.App)
+	content := RenderWrapper(t)
+	script := fmt.Sprintf(`set -e
+umask 077
+tmp=$(mktemp)
+trap 'rm -f "$tmp"' EXIT
+cat > "$tmp"
+if ! sudo cmp -s "$tmp" %s; then
+  sudo install -d -m 755 -o root -g root /usr/local/bin
+  sudo install -m 755 -o root -g root "$tmp" %s
+  echo updated
+fi`, shellQuote(wp), shellQuote(wp))
+	var out, errBuf strings.Builder
+	if err := r.Run(ctx, h, script, strings.NewReader(content), &out, &errBuf); err != nil {
+		msg := strings.TrimSpace(errBuf.String())
+		if msg != "" {
+			return false, fmt.Errorf("[%s] 同步 %s 失败: %w: %s", h.Addr, wp, err, msg)
+		}
+		return false, fmt.Errorf("[%s] 同步 %s 失败: %w", h.Addr, wp, err)
 	}
 	return strings.TrimSpace(out.String()) == "updated", nil
 }

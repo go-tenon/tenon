@@ -32,9 +32,10 @@ go tool tenon deploy env push .env.production
 go tool tenon deploy
 ```
 
-- `tenon deploy setup` 检查目标机为带 systemd 的 Linux（含 SSR 时检查 glibc），建系统用户和目录，写入 `<应用>@.service`、角色级 drop-in 覆盖文件并 `daemon-reload`，同时在 `/usr/local/bin/<应用>` 安装运维入口（自动切到服务用户、工作目录、环境变量与 `APP_CONFIG`，登录服务器后可在任意目录直接运行 `<应用> doctor` 等子命令）。
-- `tenon deploy` 在 `arch` 留空时通过 SSH 执行 `uname -m` 自动探测全部目标主机架构（`amd64` 或 `arm64`，多机校验一致）并本地交叉编译（在 CI 中可传 `--binary` 跳过构建），在主节点加发布锁，全集群并行上传二进制与配置文件并校验 SHA-256，在主迁移节点依次执行 `config check`、`migrate up` 与 `doctor`，随后按波次切换并清理旧版本。
-- 常用运维命令：`rollback [version]`（回退二进制与配置）、`status [--role http]`（集群表格状态）、`logs [--role http] [-F] [--since 15m] [--contains ERR]`（多机实时日志汇流）、`run -- doctor`（以服务用户和环境变量执行一次性命令）、`maintenance on|off`（默认仅开关入口主机维护页）。
+- `tenon deploy setup` 检查目标机为带 systemd 的 Linux（含 SSR 时检查 glibc），建系统用户与目录（含内容寻址对象池 `artifacts/` 与 `releases/`），写入 `<应用>@.service`、角色级 drop-in 与 `/usr/local/bin/<应用>` 运维入口并 `daemon-reload`。
+- `tenon deploy` 自动校验 Git 工作区干净（可传 `--allow-dirty`），并发探测目标主机架构并本地交叉编译（可传 `--tag vX.Y.Z` 直接从 GitHub Release 拉取并校验 `checksums.txt`，或 `--binary` 指定本地文件），在主节点通过会话级 `flock` 加锁，按二进制 SHA-256 去重后经 gzip 流式上传，二进制、配置与 unit 均未变化时自动跳过（No-op）。随后全机并行 `config check`、主节点 `migrate up` 与 `doctor`，按波次滚动切换（unit 或 drop-in 变更时自动 `restart`，其余走 `reload`），最后按序号清理旧发布并回收无引用对象。
+- **版本与发布分离**：`tenon build` 自动将 `git describe --tags --always --dirty` 注入二进制（供 `--version` 与 `telemetry` `service.version` 使用）；远端以单调递增序号（`releases/0001/`）配合不可变 `manifest.json` 与 `history.jsonl` 记录每次发布，支持仅配置热发与精准回滚。
+- 常用运维命令：`config`（仅同步配置并热重载，复用线上二进制、不编译不迁移）、`releases`（查看历史发布清单）、`rollback [序号|tag]`（按激活历史栈或指定序号/Tag 回退，回退前全机 `config check`）、`status [--role http]`、`logs [--role http] [-F] [--since 15m] [--contains ERR]`、`run -- doctor`、`maintenance on|off`。
 - **AI 助手与人类同等优先**：所有 `tenon deploy` 子命令均支持 `--format json` 结构化输出且全程非交互；只读观测与发布预演同步作为 MCP 工具暴露（`tenon_deploy_info`、`tenon_deploy_status`、`tenon_deploy_logs`、`tenon_deploy_plan`），见 [MCP 服务](ai-assistants.md#mcp-servers)。
 
 <a id="multi-host-roles"></a>
@@ -81,9 +82,9 @@ environments:
     hosts: [203.0.113.10]
 ```
 
-- **精确同步与权限隔离**：`tenon deploy` 在构建前校验清单中的每个文件存在，仅打包清单内文件上传到远端 `releases/<version>/config/`，目录与文件权限分别设为 `0750` / `0640`（属主 `root:<service_user>`），避免把其他环境的配置传到目标机。
-- **自动注入 `--config`**：systemd 模板 unit 的 `ExecStart` 以及 `config check`、`doctor`、`migrate up`、`health`、`tenon deploy run` 自动携带清单中的 `--config` 参数，无需在 `/etc/<应用>/env` 中设置 `APP_CONFIG`。
-- **零停机生效与随版本回滚**：修改配置文件内容后执行 `tenon deploy` 即可经热重载零停机生效，执行 `tenon deploy rollback` 时配置与二进制一起回退；变更 `config_files` 文件列表本身后需重启对应 unit 使新的 `ExecStart` 生效。
+- **精确同步与权限隔离**：`tenon deploy` 在构建前校验清单中的每个文件存在，仅打包清单内文件上传到远端 `releases/<序号>/config/`，目录与文件权限分别设为 `0750` / `0640`（属主 `root:<service_user>`），避免把其他环境的配置传到目标机。
+- **自动注入 `--config`**：systemd 模板 unit 的 `ExecStart`、`/usr/local/bin/<应用>` 以及 `config check`、`doctor`、`migrate up`、`health`、`tenon deploy run` 自动携带清单中的 `--config` 参数，无需在 `/etc/<应用>/env` 中设置 `APP_CONFIG`。
+- **仅配置热发与自动重启收敛**：只改配置文件内容时执行 `tenon deploy config` 即可复用线上二进制零编译热重载生效，执行 `tenon deploy rollback` 时配置与二进制一起回退；变更 `config_files` 列表本身或角色 drop-in 后，部署过程自动同步 unit 与包装脚本并滚动重启使其生效。
 
 <a id="release-process"></a>
 ## 第一次发布与手动步骤

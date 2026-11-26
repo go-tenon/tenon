@@ -68,14 +68,17 @@ go tool tenon deploy setup
 
 ### 3. 打包、上传并启动服务
 
-直接运行 `go tool tenon deploy`，自动通过 SSH 探测目标机架构（`amd64` 或 `arm64`，多机校验一致）、本地交叉编译嵌入前端与迁移文件、上传校验，并依次执行远端 `config check`、`migrate up`、`doctor` 与零停机启动/热重载：
+直接运行 `go tool tenon deploy`，自动校验 Git 工作区干净、并发探测目标机架构（`amd64` 或 `arm64`）、带前端指纹缓存交叉编译（自动注入 Git Tag 版本到 `--version` 与 OTel `service.version`）、内容寻址去重后经 gzip 流式上传、全机并行 `config check`、主节点 `migrate up` 与 `doctor`，最后按波次零停机热重载（unit 或 drop-in 变更时自动滚动重启）：
 
 ```bash
-# 推荐：自动探测架构、交叉编译并发布
+# 推荐：自动探测架构、交叉编译并发布（未提交代码时可显式传 --allow-dirty）
 go tool tenon deploy
 
-# 可选：手动交叉编译后发布指定二进制（适合 CI 构建与发布分离）
-bun run build --arch amd64              # 或 --arch arm64
+# 仅修改 config/prod.yaml 时：零编译、零上传二进制、不执行迁移，秒级热重载生效
+go tool tenon deploy config
+
+# 发布指定 GitHub Release 标签产物（自动校验 checksums.txt）或本地二进制
+go tool tenon deploy --tag v1.0.0
 go tool tenon deploy --binary bin/{{app}}
 ```
 
@@ -83,6 +86,7 @@ go tool tenon deploy --binary bin/{{app}}
 
 ```bash
 go tool tenon deploy status
+go tool tenon deploy releases
 go tool tenon deploy run -- doctor
 ```
 
@@ -136,10 +140,12 @@ curl -fsS http://127.0.0.1:8080/readyz
 ### 5. 日常运维与一次性命令
 
 ```bash
-go tool tenon deploy               # 发布新版本或同步修改后的 config/prod.yaml（零停机热重载）
-go tool tenon deploy status        # 查看当前发布版本与 systemd 服务状态
+go tool tenon deploy               # 完整发布（二进制 + 配置，自动内容去重与 No-op 检测）
+go tool tenon deploy config        # 仅同步修改后的 config/prod.yaml 并零停机热重载
+go tool tenon deploy status        # 查看当前发布序号、Git 版本、配置摘要与 systemd 状态
+go tool tenon deploy releases      # 查看留存的历史发布清单
 go tool tenon deploy logs -F       # 实时查看远端应用日志
-go tool tenon deploy rollback      # 回退二进制与配置到上一版本
+go tool tenon deploy rollback      # 按激活历史栈回退到上一发布（也可指定序号或 Git Tag）
 ```
 
 `tenon deploy setup` 已将运维入口安装到 `/usr/local/bin/{{app}}`，自动挂载服务用户、工作目录、环境变量与默认配置清单（无需手写 `--config`）；登录服务器后可在任意目录直接执行应用子命令，或在本地通过 `ssh -t` 交互执行（例如创建首个后台账号；终端输入密码时关闭回显属正常现象）：

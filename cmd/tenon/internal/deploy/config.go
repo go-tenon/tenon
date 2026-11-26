@@ -34,6 +34,7 @@ var safeEnvKey = regexp.MustCompile(`^[A-Z_][A-Z0-9_]*$`)
 // File 是 deploy.yaml 的顶层结构。
 type File struct {
 	App          string                 `yaml:"app"`           // 应用与二进制名称，默认入口包目录名
+	Repo         string                 `yaml:"repo"`          // GitHub 仓库（owner/repo），供 --tag 拉取 Release 产物；留空时从 git origin 推导
 	Arch         string                 `yaml:"arch"`          // 目标 Linux 架构（amd64、arm64）；留空时自动探测
 	KeepReleases int                    `yaml:"keep_releases"` // 保留的历史发布目录数量，默认 5
 	Environments map[string]Environment `yaml:"environments"`  // 各环境的部署配置
@@ -108,6 +109,7 @@ type ConfigFile struct {
 // Target 是补齐默认值、按主机归并角色并通过校验的单个部署环境。
 type Target struct {
 	App              string          `json:"app"`                    // 应用与二进制名称
+	Repo             string          `json:"repo,omitempty"`         // GitHub 仓库（owner/repo）
 	Arch             string          `json:"arch,omitempty"`         // 目标架构，为空表示由远端 uname -m 探测
 	KeepReleases     int             `json:"keep_releases"`          // 保留的历史发布目录数量
 	EnvName          string          `json:"env"`                    // 当前选中的环境名
@@ -245,10 +247,11 @@ func (t Target) HostByAddr(addr string) (Host, bool) {
 
 // Topology 是 deploy.yaml 的安全只读摘要，供 MCP 工具 tenon_deploy_info 和 JSON 输出使用，不含密钥。
 type Topology struct {
-	App          string                 `json:"app"`           // 应用名
-	Arch         string                 `json:"arch"`          // 目标架构，auto 表示自动探测
-	KeepReleases int                    `json:"keep_releases"` // 保留版本数
-	Environments map[string]EnvTopology `json:"environments"`  // 各环境拓扑摘要
+	App          string                 `json:"app"`            // 应用名
+	Repo         string                 `json:"repo,omitempty"` // GitHub 仓库（owner/repo）
+	Arch         string                 `json:"arch"`           // 目标架构，auto 表示自动探测
+	KeepReleases int                    `json:"keep_releases"`  // 保留版本数
+	Environments map[string]EnvTopology `json:"environments"`   // 各环境拓扑摘要
 }
 
 // EnvTopology 是单个环境的拓扑摘要。
@@ -289,6 +292,7 @@ func LoadTopology(filePath, defaultApp string) (Topology, error) {
 			return Topology{}, err
 		}
 		topo.App = t.App
+		topo.Repo = t.Repo
 		topo.KeepReleases = t.KeepReleases
 		topo.Arch = t.Arch
 		if topo.Arch == "" {
@@ -333,6 +337,13 @@ func Parse(data []byte, defaultApp, envName string) (Target, error) {
 	}
 	if !safeName.MatchString(app) {
 		return Target{}, fmt.Errorf("deploy: app %q must match %s", app, safeName)
+	}
+	repo := strings.TrimSpace(f.Repo)
+	if repo != "" {
+		parts := strings.Split(repo, "/")
+		if len(parts) != 2 || parts[0] == "" || parts[1] == "" || strings.ContainsAny(repo, " \t\r\n\x00") {
+			return Target{}, fmt.Errorf("deploy: repo %q must be in owner/repo format", repo)
+		}
 	}
 	arch := strings.TrimSpace(f.Arch)
 	if arch != "" && arch != "amd64" && arch != "arm64" {
@@ -445,6 +456,7 @@ func Parse(data []byte, defaultApp, envName string) (Target, error) {
 
 	return Target{
 		App:              app,
+		Repo:             repo,
 		Arch:             arch,
 		KeepReleases:     keep,
 		EnvName:          selected,

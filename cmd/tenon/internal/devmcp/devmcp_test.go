@@ -278,15 +278,12 @@ type stubDeployRunner struct{}
 func (stubDeployRunner) Run(_ context.Context, host deploy.Host, script string, _ io.Reader, stdout, _ io.Writer) error {
 	switch {
 	case strings.Contains(script, "systemctl show -p ActiveState"):
-		_, _ = io.WriteString(stdout, "release=v1.2.0\n---unit=blog@http.service\nActiveState=active\nSubState=running\nStatusText=\nActiveEnterTimestamp=Sun\n")
+		_, _ = io.WriteString(stdout, "---manifest\n{\"release_id\":12,\"version\":\"v1.2.0\",\"bin_sha256\":\"aaaa\",\"config_sha256\":\"bbbb\"}\n---unit=blog@http.service\nActiveState=active\nSubState=running\nStatusText=\nActiveEnterTimestamp=Sun\n")
 	case strings.Contains(script, "journalctl"):
 		_, _ = io.WriteString(stdout, "INF ok "+host.Addr+"\nERR fail "+host.Addr+"\n")
 	}
 	return nil
 }
-
-// Upload 在只读 MCP 工具测试中不执行实际上传。
-func (stubDeployRunner) Upload(_ context.Context, _ deploy.Host, _, _ string) error { return nil }
 
 // tenon_deploy_* 四个只读部署观测工具：拓扑、预演计划、状态和多机聚合日志。
 func TestDeployTools(t *testing.T) {
@@ -360,7 +357,7 @@ environments:
 		t.Fatalf("tenon_deploy_status: err=%v res=%+v", err, resStatus)
 	}
 	statusJSON, _ := json.Marshal(resStatus.StructuredContent)
-	if !strings.Contains(string(statusJSON), `"release":"v1.2.0"`) {
+	if !strings.Contains(string(statusJSON), `"version":"v1.2.0"`) || !strings.Contains(string(statusJSON), `"release_id":12`) {
 		t.Errorf("tenon_deploy_status:\n%s", statusJSON)
 	}
 
