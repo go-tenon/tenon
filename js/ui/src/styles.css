@@ -981,13 +981,19 @@
 
 .tn-rail-secondary-drawer {
   height: 100dvh;
+  background: color-mix(in srgb, var(--tn-surface) 65%, var(--tn-canvas));
 }
 
 .tn-rail-secondary-header {
-  height: var(--tn-rail-header);
+  min-height: var(--tn-rail-header, 52px);
   flex-shrink: 0;
   padding: 0 12px;
   border-bottom: 1px solid var(--tn-border);
+}
+
+.tn-rail-secondary-drawer .tn-rail-secondary-header {
+  padding-top: env(safe-area-inset-top);
+  min-height: calc(var(--tn-rail-header, 52px) + env(safe-area-inset-top));
 }
 
 .tn-rail-secondary-content {

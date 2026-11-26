@@ -2,11 +2,11 @@
 // 面包屑在页面中而不在顶栏：顶栏留给标志、多标签和菜单。
 // 内容多的页面可以分成几个页内标签（tabs）：标签在标题区下面，当前的标签记在地址的 ?tab= 中。
 
-import { ActionIcon, Anchor, Badge, Breadcrumbs, Group, Stack, Tabs, Text, Title } from "@mantine/core"
-import { IconArrowLeft } from "@tabler/icons-react"
+import { ActionIcon, Anchor, Badge, Breadcrumbs, Group, Stack, Tabs, Text, Title, Tooltip } from "@mantine/core"
+import { IconArrowLeft, IconLayoutSidebarLeftExpand } from "@tabler/icons-react"
 import { Link, useNavigate, useSearch } from "@tanstack/react-router"
 import { createContext, type ReactNode, useContext, useRef } from "react"
-import { useNavigation } from "../app/layout"
+import { useNavControl, useNavigation } from "../app/layout"
 import { useText } from "../i18n/i18n"
 
 const PageBreadcrumbsContext = createContext(true)
@@ -75,6 +75,8 @@ export function Page({
   children,
 }: PageProps): ReactNode {
   const t = useText()
+  const nav = useNavControl()
+  const showNavToggle = Boolean(nav && nav.hasNav !== false && !nav.open)
   const crumbsByDefault = useContext(PageBreadcrumbsContext)
   const showCrumbs = breadcrumbs ?? crumbsByDefault
   const maw = width === "narrow" ? 720 : typeof width === "number" ? width : undefined
@@ -85,8 +87,27 @@ export function Page({
         <div className="tn-page-header">
           <div className="tn-page-heading">
             <Group gap={6} wrap="nowrap">
+              {showNavToggle && nav && (
+                <Tooltip label={t("tenon.rail.expand_nav")} openDelay={350}>
+                  <ActionIcon
+                    variant="subtle"
+                    color="gray"
+                    aria-label={t("tenon.rail.expand_nav")}
+                    onClick={nav.openNav}
+                    ml={-6}
+                  >
+                    <IconLayoutSidebarLeftExpand size={20} stroke={1.6} />
+                  </ActionIcon>
+                </Tooltip>
+              )}
               {back && (
-                <ActionIcon variant="subtle" color="gray" aria-label={t("tenon.common.back")} onClick={back} ml={-6}>
+                <ActionIcon
+                  variant="subtle"
+                  color="gray"
+                  aria-label={t("tenon.common.back")}
+                  onClick={back}
+                  ml={showNavToggle ? undefined : -6}
+                >
                   <IconArrowLeft size={20} stroke={1.6} />
                 </ActionIcon>
               )}

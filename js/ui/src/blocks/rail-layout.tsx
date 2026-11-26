@@ -25,6 +25,7 @@ import {
   IconLayoutSidebarLeftCollapse,
   IconLayoutSidebarLeftExpand,
   IconSearch,
+  IconX,
 } from "@tabler/icons-react"
 import { Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router"
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useState } from "react"
@@ -274,15 +275,26 @@ export function RailLayout({
         <Text fw={600} truncate style={{ flex: 1 }}>
           {current?.title}
         </Text>
-        {!compact && !inSettings && (
+        {compact ? (
           <ActionIcon
             variant="subtle"
             color="gray"
-            aria-label={t("tenon.rail.collapse_nav")}
-            onClick={() => setExpanded(false)}
+            aria-label={t("tenon.common.close")}
+            onClick={() => setDrawer(false)}
           >
-            <IconLayoutSidebarLeftCollapse size={18} stroke={1.6} />
+            <IconX size={18} stroke={1.6} />
           </ActionIcon>
+        ) : (
+          !inSettings && (
+            <ActionIcon
+              variant="subtle"
+              color="gray"
+              aria-label={t("tenon.rail.collapse_nav")}
+              onClick={() => setExpanded(false)}
+            >
+              <IconLayoutSidebarLeftCollapse size={18} stroke={1.6} />
+            </ActionIcon>
+          )
         )}
       </Group>
       <ScrollArea className="tn-rail-secondary-content" type="hover">
@@ -390,8 +402,17 @@ export function RailLayout({
       <div className="tn-rail-workspace">
         {compact ? (
           hasSecondary && (
-            <Drawer opened={drawer} onClose={() => setDrawer(false)} size={288} padding={0} withCloseButton={false}>
-              <div className="tn-rail-secondary-drawer">{secondary}</div>
+            <Drawer
+              opened={drawer}
+              onClose={() => setDrawer(false)}
+              size={288}
+              padding={0}
+              withCloseButton={false}
+              styles={{ body: { padding: 0 } }}
+            >
+              <div className="tn-rail-secondary-drawer" style={vars}>
+                {secondary}
+              </div>
             </Drawer>
           )
         ) : (
