@@ -1,10 +1,10 @@
 // 文档页的布局：左侧是目录，中间是正文，右侧是本页目录（按正文中的 h2、h3 生成）。放在 SiteLayout 之中。
 
-import { Container, Group, Text, Typography, UnstyledButton } from "@mantine/core"
-import { IconChevronLeft, IconChevronRight } from "@tabler/icons-react"
+import { Container, Drawer, Group, Text, Typography, UnstyledButton } from "@mantine/core"
+import { IconChevronLeft, IconChevronRight, IconMenu2 } from "@tabler/icons-react"
 import { Link, useRouterState } from "@tanstack/react-router"
 import { type ReactNode, useEffect, useRef, useState } from "react"
-import { NavLinkLink } from "../components/links"
+import { normalizePath } from "../app/menu"
 import { useText } from "../i18n/i18n"
 
 /** 文档目录中的一组。 */
@@ -21,6 +21,8 @@ export interface DocsLayoutProps {
   children: ReactNode
   /** 不显示右侧的本页目录。 */
   hideToc?: boolean
+  /** 覆盖当前用于匹配目录与上一篇/下一篇的路径；例如 /docs 入口页直接展示首篇文档时传入首篇地址。 */
+  activePath?: string
 }
 
 /** 本页目录中的一项。 */
@@ -30,34 +32,78 @@ export interface TocItem {
   depth: 2 | 3
 }
 
+function DocsNavTree({
+  nav,
+  current,
+  onSelect,
+}: {
+  nav: DocsSection[]
+  current: string
+  onSelect?: () => void
+}): ReactNode {
+  return (
+    <div className="tn-docs-nav">
+      {nav.map((section, i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: 目录是固定的列表
+        <section key={i} className="tn-docs-group">
+          <div className="tn-docs-section">{section.title}</div>
+          <ul className="tn-docs-items">
+            {section.items.map((item) => {
+              const active = normalizePath(item.to) === current
+              return (
+                <li key={item.to}>
+                  <Link
+                    to={item.to}
+                    className="tn-docs-link"
+                    data-active={active || undefined}
+                    aria-current={active ? "page" : undefined}
+                    onClick={onSelect}
+                  >
+                    {item.title}
+                  </Link>
+                </li>
+              )
+            })}
+          </ul>
+        </section>
+      ))}
+    </div>
+  )
+}
+
 /** 文档页。正文中没有 id 的标题会按文字生成 id，本页目录据此跳转。 */
-export function DocsLayout({ nav, children, hideToc }: DocsLayoutProps): ReactNode {
+export function DocsLayout({ nav, children, hideToc, activePath }: DocsLayoutProps): ReactNode {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
+  const current = normalizePath(activePath ?? pathname)
+  const [navOpen, setNavOpen] = useState(false)
   const t = useText()
   const article = useRef<HTMLElement>(null)
-  const toc = useToc(article, pathname)
+  const toc = useToc(article, current)
   const flat = nav.flatMap((s) => s.items)
-  const index = flat.findIndex((i) => i.to === pathname)
+  const index = flat.findIndex((i) => normalizePath(i.to) === current)
+  const activeItem = index >= 0 ? flat[index] : undefined
   const prev = index > 0 ? flat[index - 1] : undefined
   const next = index >= 0 && index < flat.length - 1 ? flat[index + 1] : undefined
   return (
     <Container size="xl" className="tn-docs">
+      <div className="tn-docs-mobile-bar">
+        <UnstyledButton className="tn-docs-mobile-trigger" onClick={() => setNavOpen(true)}>
+          <IconMenu2 size={16} stroke={1.8} />
+          <span>{t("tenon.docs.sidebar")}</span>
+          {activeItem && <span className="tn-docs-mobile-current">{activeItem.title}</span>}
+        </UnstyledButton>
+      </div>
+      <Drawer
+        opened={navOpen}
+        onClose={() => setNavOpen(false)}
+        size="xs"
+        position="left"
+        title={t("tenon.docs.sidebar")}
+      >
+        <DocsNavTree nav={nav} current={current} onSelect={() => setNavOpen(false)} />
+      </Drawer>
       <aside className="tn-docs-sidebar" aria-label={t("tenon.docs.sidebar")}>
-        {nav.map((section, i) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: 目录是固定的列表
-          <div key={i}>
-            <div className="tn-docs-section">{section.title}</div>
-            {section.items.map((item) => (
-              <NavLinkLink
-                key={item.to}
-                className="tn-nav-item"
-                to={item.to}
-                label={item.title}
-                active={item.to === pathname}
-              />
-            ))}
-          </div>
-        ))}
+        <DocsNavTree nav={nav} current={current} />
       </aside>
       <article className="tn-docs-article" ref={article}>
         <Typography className="tn-prose">{children}</Typography>
@@ -75,9 +121,14 @@ export function DocsLayout({ nav, children, hideToc }: DocsLayoutProps): ReactNo
               <Text size="xs" fw={600} mb={8}>
                 {t("tenon.docs.on_this_page")}
               </Text>
-              {toc.items.map((t) => (
-                <a key={t.id} href={`#${t.id}`} data-depth={t.depth} data-active={t.id === toc.active || undefined}>
-                  {t.title}
+              {toc.items.map((item) => (
+                <a
+                  key={item.id}
+                  href={`#${item.id}`}
+                  data-depth={item.depth}
+                  data-active={item.id === toc.active || undefined}
+                >
+                  {item.title}
                 </a>
               ))}
             </>

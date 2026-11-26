@@ -811,7 +811,7 @@ function Site(): ReactNode {
       brand={brand}
       nav={[
         { label: "首页", to: "/" },
-        { label: "文档", to: "/docs/getting-started" },
+        { label: "文档", to: "/docs/getting-started", activePrefix: "/docs" },
       ]}
       actions={
         <>

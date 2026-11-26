@@ -2,8 +2,9 @@
 // 首页的内容由应用自己写；文档页用 DocsLayout。
 
 import { Box, Burger, Container, Drawer, Group, SimpleGrid, Stack, Text } from "@mantine/core"
-import { Link, Outlet } from "@tanstack/react-router"
+import { Link, Outlet, useRouterState } from "@tanstack/react-router"
 import { type CSSProperties, type ReactNode, useState } from "react"
+import { normalizePath } from "../app/menu"
 import { useText } from "../i18n/i18n"
 
 // 页头的高度（像素）。
@@ -14,6 +15,8 @@ export interface SiteLink {
   label: ReactNode
   to?: string
   href?: string
+  /** 当前路径等于该前缀或在其子路径下时视为选中，例如 to 为 "/docs/quickstart"、activePrefix 为 "/docs"。 */
+  activePrefix?: string
 }
 
 /** 页脚的一列链接。 */
@@ -40,9 +43,25 @@ export interface SiteLayoutProps {
   children?: ReactNode
 }
 
-function SiteAnchor({ link, onClick }: { link: SiteLink; onClick?: () => void }): ReactNode {
+/** 判断页头导航链接在当前路径下是否处于选中状态。根路径严格匹配，其余路径按自身或 activePrefix 前缀匹配。 */
+export function siteLinkActive(pathname: string, link: Pick<SiteLink, "to" | "activePrefix">): boolean {
+  const target = link.activePrefix ?? link.to
+  if (!target) return false
+  const current = normalizePath(pathname)
+  const prefix = normalizePath(target)
+  if (prefix === "/") return current === "/"
+  return current === prefix || current.startsWith(`${prefix}/`)
+}
+
+function SiteAnchor({ link, active, onClick }: { link: SiteLink; active?: boolean; onClick?: () => void }): ReactNode {
   return link.to ? (
-    <Link to={link.to} onClick={onClick} activeOptions={{ exact: link.to === "/" }}>
+    <Link
+      to={link.to}
+      onClick={onClick}
+      activeOptions={{ exact: link.to === "/" }}
+      data-active={active || undefined}
+      aria-current={active ? "page" : undefined}
+    >
       {link.label}
     </Link>
   ) : (
@@ -63,6 +82,7 @@ export function SiteLayout({
   children,
 }: SiteLayoutProps): ReactNode {
   const [open, setOpen] = useState(false)
+  const pathname = useRouterState({ select: (s) => s.location.pathname })
   const t = useText()
   const vars = { "--tn-header-height": `${headerHeight}px` } as CSSProperties
   return (
@@ -75,7 +95,7 @@ export function SiteLayout({
           <Group gap={2} className="tn-site-nav" visibleFrom="sm" component="nav" aria-label={t("tenon.site.nav")}>
             {nav.map((l, i) => (
               // biome-ignore lint/suspicious/noArrayIndexKey: 导航是固定的列表
-              <SiteAnchor key={i} link={l} />
+              <SiteAnchor key={i} link={l} active={siteLinkActive(pathname, l)} />
             ))}
           </Group>
           <Box style={{ flex: 1 }} />
@@ -95,7 +115,7 @@ export function SiteLayout({
         <Stack gap={4} className="tn-site-nav">
           {nav.map((l, i) => (
             // biome-ignore lint/suspicious/noArrayIndexKey: 导航是固定的列表
-            <SiteAnchor key={i} link={l} onClick={() => setOpen(false)} />
+            <SiteAnchor key={i} link={l} active={siteLinkActive(pathname, l)} onClick={() => setOpen(false)} />
           ))}
           <Group mt="md">{actions}</Group>
         </Stack>
