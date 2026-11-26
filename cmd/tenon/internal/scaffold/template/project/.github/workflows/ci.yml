@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
 
+# 同一 PR 连续推送时自动取消旧的运行，主干提交始终跑完。
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 # 两个任务并行：check 是 Go 的检查和测试，以及生成的代码是否已经提交；build 是前端的类型检查和完整的构建。
 # go tool tenon 的版本由 go.mod 固定，Bun 的版本由 package.json 的 packageManager 固定，与本地相同。
 jobs:
@@ -16,6 +21,19 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+          cache: false
+
+      # 显式缓存模块与编译产物，并带前缀回退：依赖升级或新增包时只增量下载变动部分，日常提交复用编译缓存。
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-check-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            go-check-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}-
+            go-check-${{ runner.os }}-
+            go-
 
       # 生成前端的清单（apps/dist，go:embed 需要它）和接口的客户端。客户端提交在仓库中：
       # 改了接口却没有提交重新生成的客户端时，git status 列出有差异或新出现的文件。
@@ -53,8 +71,26 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+          cache: false
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-build-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            go-build-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}-
+            go-build-${{ runner.os }}-
+            go-
 
       - uses: oven-sh/setup-bun@v2
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
 
       # tenon/js 中的框架前端包随仓库提交，直接安装 workspace 依赖。
       - name: Install
