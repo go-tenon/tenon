@@ -34,7 +34,10 @@ function Site() {
   return (
     <SiteLayout
       brand="Acme"
-      nav={[{ label: "产品", to: "/" }, { label: "文档", to: "/docs/getting-started" }]}
+      nav={[
+        { label: "产品", to: "/" },
+        { label: "文档", to: "/docs/getting-started", activePrefix: "/docs" },
+      ]}
       actions={<ButtonLink to="/login" size="sm">登录</ButtonLink>}
       footer={[{ title: "开发者", links: [{ label: "状态", href: "https://status.example.com" }] }]}
       note="© 2026 Acme"
@@ -43,7 +46,7 @@ function Site() {
 }
 ```
 
-- 链接中应用内的地址用 `to`，外部地址用 `href`。
+- 链接中应用内的地址用 `to`，外部地址用 `href`；顶部导航放站点一级栏目（例如“产品”“文档”），文档链接指向具体章节时设 `activePrefix: "/docs"` 让文档下的所有页面保持选中状态。
 - 页头按是否登录切换“登录”“进入控制台”时，用 [`useSignedIn`](app.md#redirect-after-sign-in)。
 
 <a id="home"></a>
@@ -75,6 +78,6 @@ function Doc({ html }: { html: string }) {
 ```
 
 - 本页目录按正文中的 `h2`、`h3` 生成，滚动时高亮当前位置。没有 `id` 的标题按文字生成 `id`（保留中文，规则是 `headingId`）；`hideToc` 隐藏本页目录。
-- 底部是上一篇和下一篇，按 `nav` 的顺序。
-- 窄屏时隐藏左侧目录，中等宽度时隐藏本页目录。
+- 底部是上一篇和下一篇，按 `nav` 的顺序。入口路由（例如 `/docs`）直接展示首篇文档时，传 `activePath` 指定对应的目录地址以高亮侧栏并生成上一篇和下一篇。
+- 窄屏时左侧目录收进抽屉，正文顶部显示目录入口按钮；中等宽度时隐藏本页目录。
 - 放在代码仓库中的文档用[预渲染](hosting.md#prerendering)。
