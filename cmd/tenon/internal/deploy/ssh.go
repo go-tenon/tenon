@@ -10,26 +10,27 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 )
 
-// Runner 抽象远端命令执行与文件上传，便于生产调用系统 ssh/scp，测试中用内存替身验证编排逻辑。
+// Runner 抽象远端 POSIX shell 命令执行与流式数据传输，生产调用系统 ssh，测试用内存替身验证编排逻辑。
 type Runner interface {
 	// Run 在远端主机 host 执行 POSIX shell 脚本 script，stdin 为标准输入，stdout/stderr 接收输出。
 	Run(ctx context.Context, host Host, script string, stdin io.Reader, stdout, stderr io.Writer) error
-	// Upload 将本地文件 localPath 上传到远端主机 host 的 remotePath。
-	Upload(ctx context.Context, host Host, localPath, remotePath string) error
 }
 
-// SSHRunner 调用本机系统 ssh/scp 执行远端操作，启用 ControlMaster 连接复用，
+// SSHRunner 调用本机系统 ssh 执行远端操作，启用 ControlMaster 连接复用，
 // 天然兼容 ~/.ssh/config、ProxyJump 与 SSH Agent。
 type SSHRunner struct {
-	user         string // SSH 登录用户
-	port         int    // SSH 端口，0 表示不显式传 -p/-P
-	identityFile string // SSH 私钥路径，为空时不传 -i
-	controlDir   string // ControlPath 所在的临时目录
+	user         string          // SSH 登录用户
+	port         int             // SSH 端口，0 表示不显式传 -p
+	identityFile string          // SSH 私钥路径，为空时不传 -i
+	controlDir   string          // ControlPath 所在的临时目录
+	mu           sync.Mutex      // 保护 destinations
+	destinations map[string]bool // 本次会话中建立过连接的目标地址集合
 }
 
-// NewSSHRunner 为目标环境 t 创建 SSHRunner，使用结束后应调用 Close 清理控制套接字目录。
+// NewSSHRunner 为目标环境 t 创建 SSHRunner，使用结束后应调用 Close 退出 ControlMaster 并清理控制目录。
 // 优先在 /tmp 下使用短目录名，保证拼接 %C 后的 ControlPath 在 macOS 上也低于 Unix socket 104 字节路径上限。
 func NewSSHRunner(t Target) (*SSHRunner, error) {
 	dir, err := os.MkdirTemp("/tmp", "tn-*")
@@ -44,33 +45,53 @@ func NewSSHRunner(t Target) (*SSHRunner, error) {
 		port:         t.Port,
 		identityFile: t.IdentityFile,
 		controlDir:   dir,
+		destinations: map[string]bool{},
 	}, nil
 }
 
-// ControlPath 返回传给 ssh/scp 的 ControlPath 模板路径。
+// ControlPath 返回传给 ssh 的 ControlPath 模板路径。
 func (r *SSHRunner) ControlPath() string {
 	return filepath.Join(r.controlDir, "%C")
 }
 
-// Close 清理 ControlMaster 的控制套接字目录。
+// Close 优雅退出全部已建立的 ControlMaster 后台连接并清理控制套接字目录。
 func (r *SSHRunner) Close() error {
 	if r.controlDir == "" {
 		return nil
+	}
+	r.mu.Lock()
+	dests := make([]string, 0, len(r.destinations))
+	for d := range r.destinations {
+		dests = append(dests, d)
+	}
+	r.mu.Unlock()
+	for _, dest := range dests {
+		args := []string{"-O", "exit", "-o", "ControlPath=" + r.ControlPath()}
+		if r.port > 0 {
+			args = append(args, "-p", strconv.Itoa(r.port))
+		}
+		args = append(args, dest)
+		_ = exec.Command("ssh", args...).Run()
 	}
 	return os.RemoveAll(r.controlDir)
 }
 
 // Run 通过系统 ssh 在远端主机执行 script。
 func (r *SSHRunner) Run(ctx context.Context, host Host, script string, stdin io.Reader, stdout, stderr io.Writer) error {
-	args := r.commonArgs(false)
+	dest := r.destination(host)
+	r.mu.Lock()
+	r.destinations[dest] = true
+	r.mu.Unlock()
+
+	args := r.commonArgs()
 	var cmd *exec.Cmd
 	if stdin != nil {
 		// 调用方提供 stdin 时通过命令参数执行 script，保留 stdin 给远端命令读取。
-		args = append(args, r.destination(host), script)
+		args = append(args, dest, script)
 		cmd = exec.CommandContext(ctx, "ssh", args...)
 		cmd.Stdin = stdin
 	} else {
-		args = append(args, r.destination(host), "sh -s")
+		args = append(args, dest, "sh -s")
 		cmd = exec.CommandContext(ctx, "ssh", args...)
 		cmd.Stdin = strings.NewReader(script + "\n")
 	}
@@ -82,25 +103,8 @@ func (r *SSHRunner) Run(ctx context.Context, host Host, script string, stdin io.
 	return nil
 }
 
-// Upload 通过系统 scp 将本地文件上传到远端路径。
-func (r *SSHRunner) Upload(ctx context.Context, host Host, localPath, remotePath string) error {
-	args := r.commonArgs(true)
-	args = append(args, localPath, r.destination(host)+":"+remotePath)
-	var stderr bytes.Buffer
-	cmd := exec.CommandContext(ctx, "scp", args...)
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		msg := strings.TrimSpace(stderr.String())
-		if msg != "" {
-			return fmt.Errorf("scp %s -> %s:%s: %w: %s", localPath, host.Addr, remotePath, err, msg)
-		}
-		return fmt.Errorf("scp %s -> %s:%s: %w", localPath, host.Addr, remotePath, err)
-	}
-	return nil
-}
-
-// commonArgs 返回 ssh/scp 共用的选项参数；forSCP 为真时端口标志使用 -P，否则使用 -p。
-func (r *SSHRunner) commonArgs(forSCP bool) []string {
+// commonArgs 返回 ssh 共用的连接复用与认证选项参数。
+func (r *SSHRunner) commonArgs() []string {
 	args := []string{
 		"-o", "BatchMode=yes",
 		"-o", "ControlMaster=auto",
@@ -108,11 +112,7 @@ func (r *SSHRunner) commonArgs(forSCP bool) []string {
 		"-o", "ControlPath=" + r.ControlPath(),
 	}
 	if r.port > 0 {
-		flag := "-p"
-		if forSCP {
-			flag = "-P"
-		}
-		args = append(args, flag, strconv.Itoa(r.port))
+		args = append(args, "-p", strconv.Itoa(r.port))
 	}
 	if r.identityFile != "" {
 		args = append(args, "-i", r.identityFile)

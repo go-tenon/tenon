@@ -111,10 +111,12 @@ bun run build   # 即 go tool tenon build，输出 bin/<入口包的目录名>
 3. 有服务端渲染的前端时，用 `tenon-start compile` 把它们连同 Bun 编译成 `apps/dist/ssr`，见[编译 SSR 程序](../frontend/hosting.md#compiling)。
 4. 写入清单 `apps/dist/frontends.json`。
 
-最后 `go build -trimpath`，`apps/apps.go` 嵌入整个 `apps/dist`。
+最后 `go build -trimpath` 并通过 `-ldflags` 自动注入构建版本号（`git describe --tags --always --dirty`）、提交号与构建时间，供应用 `--version` 与 `telemetry` `service.version` 使用。`apps/dist/.fingerprint` 记录前端源码、依赖锁文件与目标架构的指纹，前端输入未变化时自动复用缓存跳过重建。
 
 - `-o`：输出的文件。
 - `--arch amd64|arm64`：为 Linux 的另一种架构构建。不要用 `GOARCH=amd64 bun run build`：`go tool tenon` 会把 tenon 本身也编译成目标架构，在本机无法运行。
+- `--version`：显式指定注入二进制的版本号。
+- `--no-cache`：跳过前端指纹缓存，强制全量重建 `apps/dist`。
 - `--client <名称>`：只打包这个客户端，见 [Electron 桌面端](../clients/electron.md#packaging)。
 
 Go 托管的 SSR 进程只支持 Linux；前端都只在浏览器中渲染时，程序可以在任何系统上运行。部署见[部署](deployment.md)。
@@ -177,9 +179,9 @@ go tool tenon deploy env push .env.production        # 安全上传环境变量�
 go tool tenon deploy                                 # 交叉编译、自检、迁移并零停机滚动升级
 ```
 
-- 常用标志：`--env`（默认 `production`）、`--file`（默认 `deploy.yaml`）、`--format text|json`（结构化 JSON 输出供 AI 编程助手与脚本解析）、`--binary`（跳过本地构建）、`--version`、`--skip-doctor`、`--dry-run`。
-- 远端运维子命令：`rollback [version]`、`status [--role ...]`（表格化集群视图）、`logs [--role ...] [-F] [--since 15m] [--contains ERR]`（多机实时日志汇流）、`run -- <命令>`、`env pull`、`maintenance on|off`、`unlock`。
-- 通过本机系统 `ssh`/`scp` 连接目标机并启用 `ControlMaster` 复用，直接兼容 `~/.ssh/config`、跳板机与 SSH Agent。细节见[使用 `tenon deploy` 自动发布](deployment.md#tenon-deploy)。
+- 常用标志：`--env`（默认 `production`）、`--file`（默认 `deploy.yaml`）、`--format text|json`（结构化 JSON 输出）、`--tag`（拉取 GitHub Release 产物并校验）、`--binary`（跳过本地构建）、`--version`、`--allow-dirty`、`--force`、`--auto-rollback`、`--no-cache`、`--skip-doctor`、`--dry-run`。
+- 远端运维子命令：`config`（仅同步配置并热重载，零编译零迁移）、`releases`（留存发布清单）、`rollback [序号|tag]`、`status [--role ...]`、`logs [--role ...] [-F] [--since 15m] [--contains ERR]`、`run -- <命令>`、`env pull`、`maintenance on|off`。
+- 通过本机系统 `ssh` 连接目标机并启用 `ControlMaster` 复用，直接兼容 `~/.ssh/config`、跳板机与 SSH Agent，二进制经 gzip 流式压缩并按内容哈希去重上传。细节见[使用 `tenon deploy` 自动发布](deployment.md#tenon-deploy)。
 
 <a id="add-language"></a>
 ## `tenon add language`：加入一种语言

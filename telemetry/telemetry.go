@@ -351,8 +351,14 @@ func compactHeaders(in map[string]string) map[string]string {
 	return out
 }
 
-// buildVersion 返回主模块版本；本地构建的 (devel) 视为无版本。
+// buildVersionOverride 由 tenon build 通过 -ldflags -X 注入，优先作为 service.version 上报。
+var buildVersionOverride string
+
+// buildVersion 返回构建版本号：优先使用链接期注入的版本，否则取主模块版本（本地 (devel) 视为无版本）。
 func buildVersion() string {
+	if v := strings.TrimSpace(buildVersionOverride); v != "" {
+		return v
+	}
 	info, ok := debug.ReadBuildInfo()
 	if !ok || info.Main.Version == "(devel)" {
 		return ""

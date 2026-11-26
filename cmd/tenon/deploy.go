@@ -17,8 +17,8 @@ import (
 // deployCommand 返回 tenon deploy 命令及其子命令：基于 SSH 和 systemd 执行原生单二进制零停机部署与远端运维，
 // 所有子命令均支持 --format json 供 AI 编程助手和脚本直接解析。
 func deployCommand() *cobra.Command {
-	var file, envName, format, binary, version string
-	var skipDoctor, dryRun bool
+	var file, envName, format, binary, tag, version string
+	var allowDirty, force, skipDoctor, autoRollback, noCache, dryRun bool
 
 	checkFormat := func() error {
 		if format != "text" && format != "json" {
@@ -77,12 +77,20 @@ func deployCommand() *cobra.Command {
 			}
 			return withRunner(target, func(r *deploy.SSHRunner) error {
 				report, err := deploy.Deploy(cmd.Context(), r, target, deploy.ReleaseOptions{
-					Binary:     binary,
-					Version:    version,
-					SkipDoctor: skipDoctor,
-					DryRun:     dryRun,
-					Build: func(_ context.Context, arch, outPath string) error {
-						return buildBinary(cmd, cfg, outPath, arch)
+					Binary:       binary,
+					Tag:          tag,
+					Version:      version,
+					AllowDirty:   allowDirty,
+					Force:        force,
+					SkipDoctor:   skipDoctor,
+					AutoRollback: autoRollback,
+					DryRun:       dryRun,
+					Build: func(_ context.Context, arch, outPath string, meta deploy.GitBuildInfo) error {
+						return buildBinary(cmd, cfg, outPath, arch, buildOptions{
+							Version: meta.Version,
+							Commit:  meta.Commit,
+							NoCache: noCache,
+						})
 					},
 				}, textOut(cmd), cmd.ErrOrStderr())
 				if err != nil {
@@ -99,9 +107,47 @@ func deployCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVarP(&envName, "env", "e", "", "目标环境名，默认 production（只有一个环境时自动选用）")
 	cmd.PersistentFlags().StringVar(&format, "format", "text", "输出格式：text（给人阅读）或 json（给 AI 编程助手与脚本解析）")
 	cmd.Flags().StringVar(&binary, "binary", "", "直接发布指定的 Linux 二进制，跳过本地构建（适合 CI 构建与发布分离）")
-	cmd.Flags().StringVar(&version, "version", "", "发布版本号，默认时间戳加当前 Git 短提交号")
+	cmd.Flags().StringVar(&tag, "tag", "", "从 GitHub Release 拉取指定 Git Tag（如 v1.2.0）对应的 Linux 二进制并校验 SHA-256")
+	cmd.Flags().StringVar(&version, "version", "", "构建版本号，默认取 --tag 或 git describe --tags --always --dirty")
+	cmd.Flags().BoolVar(&allowDirty, "allow-dirty", false, "允许在存在未提交改动的工作区执行本地构建发布")
+	cmd.Flags().BoolVar(&force, "force", false, "跳过 No-op 检测，即使二进制与配置均未变化仍创建新发布并切换")
 	cmd.Flags().BoolVar(&skipDoctor, "skip-doctor", false, "跳过上线前的 doctor 自检")
+	cmd.Flags().BoolVar(&autoRollback, "auto-rollback", false, "多机滚动波次中途失败时自动将已切换主机回退到上一发布")
+	cmd.Flags().BoolVar(&noCache, "no-cache", false, "跳过前端构建指纹缓存，强制全量重建 apps/dist")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "只输出发布计划，不修改远端主机")
+
+	// config：仅同步配置文件并热重载，复用线上当前二进制（零编译、零上传二进制、不执行迁移）。
+	var cfgForce, cfgSkipDoctor, cfgAutoRollback, cfgDryRun bool
+	configCmd := &cobra.Command{
+		Use:   "config",
+		Short: "仅同步配置文件并零停机热重载，复用线上当前二进制（不编译、不上传二进制、不执行迁移）",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			_, target, err := loadTarget()
+			if err != nil {
+				return err
+			}
+			return withRunner(target, func(r *deploy.SSHRunner) error {
+				report, err := deploy.DeployConfig(cmd.Context(), r, target, deploy.ConfigReleaseOptions{
+					Force:        cfgForce,
+					SkipDoctor:   cfgSkipDoctor,
+					AutoRollback: cfgAutoRollback,
+					DryRun:       cfgDryRun,
+				}, textOut(cmd), cmd.ErrOrStderr())
+				if err != nil {
+					return err
+				}
+				if format == "json" {
+					return writeJSON(cmd, report)
+				}
+				return nil
+			})
+		},
+	}
+	configCmd.Flags().BoolVar(&cfgForce, "force", false, "即使配置内容未变化仍强制创建发布并重载")
+	configCmd.Flags().BoolVar(&cfgSkipDoctor, "skip-doctor", false, "跳过切换前的 doctor 自检")
+	configCmd.Flags().BoolVar(&cfgAutoRollback, "auto-rollback", false, "波次中途失败时自动回退已切换主机")
+	configCmd.Flags().BoolVar(&cfgDryRun, "dry-run", false, "只输出配置发布计划，不修改远端主机")
 
 	// setup：幂等初始化目标服务器。
 	var setupRole, setupHost string
@@ -137,22 +183,46 @@ func deployCommand() *cobra.Command {
 	setupCmd.Flags().StringVar(&setupHost, "host", "", "只初始化指定主机，留空表示全部主机")
 	setupCmd.Flags().BoolVar(&setupDryRun, "dry-run", false, "只输出初始化计划，不修改远端主机")
 
-	// rollback：回退到历史版本。
+	// releases：列出主节点留存的历史发布与当前激活版本。
+	releasesCmd := &cobra.Command{
+		Use:   "releases",
+		Short: "查看主节点留存的历史发布清单（序号、Git 版本、配置摘要与发布时间）",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			_, target, err := loadTarget()
+			if err != nil {
+				return err
+			}
+			return withRunner(target, func(r *deploy.SSHRunner) error {
+				report, err := deploy.ListReleases(cmd.Context(), r, target)
+				if err != nil {
+					return err
+				}
+				if format == "json" {
+					return writeJSON(cmd, report)
+				}
+				deploy.FormatReleases(cmd.OutOrStdout(), report)
+				return nil
+			})
+		},
+	}
+
+	// rollback：回退到历史发布（默认按激活历史栈回退，也可指定发布序号或 Git Tag）。
 	rollbackCmd := &cobra.Command{
-		Use:   "rollback [version]",
-		Short: "回退二进制与配置到上一版本或指定版本并按波次热重载（不撤销数据库迁移）",
+		Use:   "rollback [release|tag]",
+		Short: "回退二进制与配置到上一激活发布、指定发布序号（如 41）或 Git Tag（如 v1.2.0）（不撤销数据库迁移）",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			_, target, err := loadTarget()
 			if err != nil {
 				return err
 			}
-			ver := ""
+			ref := ""
 			if len(args) == 1 {
-				ver = args[0]
+				ref = args[0]
 			}
 			return withRunner(target, func(r *deploy.SSHRunner) error {
-				report, err := deploy.Rollback(cmd.Context(), r, target, ver, textOut(cmd), cmd.ErrOrStderr())
+				report, err := deploy.Rollback(cmd.Context(), r, target, ref, textOut(cmd), cmd.ErrOrStderr())
 				if err != nil {
 					return err
 				}
@@ -168,7 +238,7 @@ func deployCommand() *cobra.Command {
 	var statusRole, statusHost string
 	statusCmd := &cobra.Command{
 		Use:   "status",
-		Short: "查看各目标主机当前的发布版本与 systemd 服务状态",
+		Short: "查看各目标主机当前的发布序号、构建版本、配置摘要与 systemd 服务状态",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			_, target, err := loadTarget()
@@ -327,29 +397,6 @@ func deployCommand() *cobra.Command {
 	maintCmd.Flags().StringVar(&maintRole, "role", "", "只操作指定角色的主机，留空默认仅操作入口主机")
 	maintCmd.Flags().StringVar(&maintHost, "host", "", "只操作指定主机")
 
-	// unlock：释放异常中断残留的发布锁。
-	unlockCmd := &cobra.Command{
-		Use:   "unlock",
-		Short: "释放主节点上残留的发布锁（用于上次发布异常中断后的恢复）",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			_, target, err := loadTarget()
-			if err != nil {
-				return err
-			}
-			return withRunner(target, func(r *deploy.SSHRunner) error {
-				report, err := deploy.Unlock(cmd.Context(), r, target, textOut(cmd))
-				if err != nil {
-					return err
-				}
-				if format == "json" {
-					return writeJSON(cmd, report)
-				}
-				return nil
-			})
-		},
-	}
-
-	cmd.AddCommand(setupCmd, rollbackCmd, statusCmd, logsCmd, runCmd, envCmd, maintCmd, unlockCmd)
+	cmd.AddCommand(configCmd, setupCmd, releasesCmd, rollbackCmd, statusCmd, logsCmd, runCmd, envCmd, maintCmd)
 	return cmd
 }

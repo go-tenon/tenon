@@ -58,6 +58,7 @@ func Root(name, short string) *cobra.Command {
 	root := &cobra.Command{
 		Use:           name,
 		Short:         short,
+		Version:       BuildInfo().String(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Args:          NoArgs,

@@ -1,5 +1,7 @@
 # 原生二进制 + systemd 部署配置：运行 go tool tenon deploy setup 初始化目标机，再运行 go tool tenon deploy 发布
 app: [[.Slug]]
+# 可选：GitHub 仓库（owner/repo），供 --tag 拉取 Release 产物；留空时从 git origin 自动推导
+# repo: owner/[[.Slug]]
 # 目标 Linux 架构（amd64、arm64）；留空时通过 SSH 自动探测
 # arch: amd64
 keep_releases: 5

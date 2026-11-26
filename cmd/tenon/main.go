@@ -11,8 +11,12 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -22,6 +26,7 @@ import (
 	"slices"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
@@ -29,6 +34,7 @@ import (
 
 	"github.com/go-tenon/tenon/cmd/tenon/internal/agents"
 	"github.com/go-tenon/tenon/cmd/tenon/internal/check"
+	"github.com/go-tenon/tenon/cmd/tenon/internal/deploy"
 	"github.com/go-tenon/tenon/cmd/tenon/internal/dev"
 	"github.com/go-tenon/tenon/cmd/tenon/internal/devmcp"
 	"github.com/go-tenon/tenon/cmd/tenon/internal/project"
@@ -630,10 +636,18 @@ func devCommand() *cobra.Command {
 	return cmd
 }
 
+// buildOptions 控制 buildBinary 的构建版本注入与前端缓存行为。
+type buildOptions struct {
+	Version string // 显式指定构建版本号；留空时取 git describe --tags --always --dirty
+	Commit  string // Git 短提交号；留空时自动读取
+	NoCache bool   // 为真时跳过 apps/dist 前端指纹缓存，全量重建前端
+}
+
 // buildCommand 返回 tenon build 命令：构建每个前端，把它们的静态文件放进 apps/dist；有服务端渲染的前端时，
-// 把它们编进一个 Bun 可执行文件（apps/dist/ssr）；最后编译嵌入 apps/dist 的应用。
+// 把它们编进一个 Bun 可执行文件（apps/dist/ssr）；最后编译嵌入 apps/dist 的应用并注入构建版本元数据。
 func buildCommand() *cobra.Command {
-	var out, arch, client string
+	var out, arch, client, version string
+	var noCache bool
 	cmd := &cobra.Command{
 		Use:   "build",
 		Short: "构建每个前端（有服务端渲染的前端时连同 Bun），再编译嵌入它们的应用；--client 打包一个客户端",
@@ -657,18 +671,21 @@ func buildCommand() *cobra.Command {
 				}
 				return dev.BuildClient(cmd.Context(), c, f, cmd.OutOrStdout(), cmd.ErrOrStderr())
 			}
-			return buildBinary(cmd, cfg, out, arch)
+			return buildBinary(cmd, cfg, out, arch, buildOptions{Version: version, NoCache: noCache})
 		},
 	}
 	cmd.Flags().StringVarP(&out, "output", "o", "", "输出的二进制，默认 bin/<入口包的目录名>")
 	cmd.Flags().StringVar(&client, "client", "", "只打包这个客户端（clients 中的目录名）：网页宿主先按 SPA 模式构建它的前端，安装包在客户端的 release 目录中")
 	cmd.Flags().StringVar(&arch, "arch", "", "目标架构 amd64 或 arm64（Linux），默认与本机相同。"+
 		"不要用 GOARCH 环境变量：go tool tenon 会按它把 tenon 本身编译成目标架构，在本机无法运行")
+	cmd.Flags().StringVar(&version, "version", "", "注入二进制的版本号，默认取 git describe --tags --always --dirty")
+	cmd.Flags().BoolVar(&noCache, "no-cache", false, "跳过前端构建指纹缓存，强制全量重建 apps/dist")
 	return cmd
 }
 
-// buildBinary 构建前端（有 SSR 前端时编译 apps/dist/ssr）并编译嵌入前端产物的应用二进制到 out。
-func buildBinary(cmd *cobra.Command, cfg *project.Config, out, arch string) error {
+// buildBinary 构建前端（输入未变时命中指纹缓存跳过重建；有 SSR 前端时编译 apps/dist/ssr），
+// 并编译嵌入前端产物的应用二进制到 out，同时通过 -ldflags 注入构建版本号、提交号与构建时间。
+func buildBinary(cmd *cobra.Command, cfg *project.Config, out, arch string, opts buildOptions) error {
 	env := os.Environ()
 	switch arch {
 	case "":
@@ -681,71 +698,214 @@ func buildBinary(cmd *cobra.Command, cfg *project.Config, out, arch string) erro
 		if _, err := dev.SyncJS("."); err != nil {
 			return err
 		}
-		if err := run(cmd, ".", "bun", "install", "--frozen-lockfile"); err != nil {
-			return err
-		}
-		// apps/dist 每次从头生成：改成只在浏览器中渲染的前端不留下上次的 SSR 可执行文件。提交在其中的 .gitignore 写回去。
-		if err := os.RemoveAll(filepath.FromSlash(dev.DistDir)); err != nil {
-			return err
-		}
-		if err := dev.WriteDistIgnore("."); err != nil {
-			return err
-		}
 		var ssr []project.Frontend
 		for _, f := range cfg.Frontends {
-			if err := run(cmd, f.Dir, "bun", "run", "build"); err != nil {
-				return err
-			}
-			if err := dev.CopyClient(f); err != nil {
-				return err
-			}
 			if f.SSR {
 				ssr = append(ssr, f)
 			}
 		}
-		if len(ssr) > 0 {
-			// 可执行文件的架构与 Go 程序相同：tenon-start compile 读取 GOARCH。
-			goarch := arch
-			if goarch == "" {
-				out, err := exec.CommandContext(cmd.Context(), "go", "env", "GOARCH").Output()
-				if err != nil {
-					return fmt.Errorf("go env GOARCH: %w", err)
-				}
-				goarch = strings.TrimSpace(string(out))
-			}
-			exe, err := filepath.Abs(filepath.Join(filepath.FromSlash(dev.DistDir), frontend.ExecutableFile))
+		goarch := arch
+		if goarch == "" && len(ssr) > 0 {
+			outArch, err := exec.CommandContext(cmd.Context(), "go", "env", "GOARCH").Output()
 			if err != nil {
+				return fmt.Errorf("go env GOARCH: %w", err)
+			}
+			goarch = strings.TrimSpace(string(outArch))
+		}
+		fp, err := frontendBuildFingerprint(".", cfg, goarch)
+		if err != nil {
+			return err
+		}
+		if !opts.NoCache && frontendCacheValid(".", fp, len(ssr) > 0) {
+			fmt.Fprintln(cmd.OutOrStdout(), "前端产物未变化，复用缓存...")
+		} else {
+			if err := run(cmd, ".", "bun", "install", "--frozen-lockfile"); err != nil {
 				return err
 			}
-			args := []string{"x", "tenon-start", "compile", "--out", exe}
-			for _, f := range ssr {
-				entry, err := filepath.Abs(filepath.Join(f.Dir, "dist", "server", "server.js"))
+			// apps/dist 每次从头生成：改成只在浏览器中渲染的前端不留下上次的 SSR 可执行文件。提交在其中的 .gitignore 写回去。
+			if err := os.RemoveAll(filepath.FromSlash(dev.DistDir)); err != nil {
+				return err
+			}
+			if err := dev.WriteDistIgnore("."); err != nil {
+				return err
+			}
+			for _, f := range cfg.Frontends {
+				if err := run(cmd, f.Dir, "bun", "run", "build"); err != nil {
+					return err
+				}
+				if err := dev.CopyClient(f); err != nil {
+					return err
+				}
+			}
+			if len(ssr) > 0 {
+				exe, err := filepath.Abs(filepath.Join(filepath.FromSlash(dev.DistDir), frontend.ExecutableFile))
 				if err != nil {
 					return err
 				}
-				args = append(args, f.Name+"="+entry)
+				args := []string{"x", "tenon-start", "compile", "--out", exe}
+				for _, f := range ssr {
+					entry, err := filepath.Abs(filepath.Join(f.Dir, "dist", "server", "server.js"))
+					if err != nil {
+						return err
+					}
+					args = append(args, f.Name+"="+entry)
+				}
+				// tenon-start 是前端的依赖，在第一个 SSR 前端的目录中运行它。
+				c := exec.CommandContext(cmd.Context(), "bun", args...)
+				c.Dir = ssr[0].Dir
+				c.Env = append(slices.Clone(env), "GOARCH="+goarch)
+				c.Stdout, c.Stderr = cmd.OutOrStdout(), cmd.ErrOrStderr()
+				if err := c.Run(); err != nil {
+					return fmt.Errorf("tenon-start compile: %w", err)
+				}
 			}
-			// tenon-start 是前端的依赖，在第一个 SSR 前端的目录中运行它。
-			c := exec.CommandContext(cmd.Context(), "bun", args...)
-			c.Dir = ssr[0].Dir
-			c.Env = append(slices.Clone(env), "GOARCH="+goarch)
-			c.Stdout, c.Stderr = cmd.OutOrStdout(), cmd.ErrOrStderr()
-			if err := c.Run(); err != nil {
-				return fmt.Errorf("tenon-start compile: %w", err)
+			if err := dev.WriteManifest(".", cfg); err != nil {
+				return err
 			}
-		}
-		if err := dev.WriteManifest(".", cfg); err != nil {
-			return err
+			fpPath := filepath.Join(filepath.FromSlash(dev.DistDir), ".fingerprint")
+			if err := os.WriteFile(fpPath, []byte(fp+"\n"), 0o644); err != nil {
+				return err
+			}
 		}
 	}
 	if out == "" {
 		out = filepath.Join("bin", path.Base(cfg.Main))
 	}
-	c := exec.CommandContext(cmd.Context(), "go", "build", "-trimpath", "-o", out, cfg.Main)
+	ldflags := buildLDFlags(cmd.Context(), opts)
+	args := []string{"build", "-trimpath"}
+	if ldflags != "" {
+		args = append(args, "-ldflags", ldflags)
+	}
+	args = append(args, "-o", out, cfg.Main)
+	c := exec.CommandContext(cmd.Context(), "go", args...)
 	c.Env = env
 	c.Stdout, c.Stderr = cmd.OutOrStdout(), cmd.ErrOrStderr()
 	if err := c.Run(); err != nil {
 		return fmt.Errorf("go build: %w", err)
+	}
+	return nil
+}
+
+// buildLDFlags 生成注入 command 与 telemetry 构建元数据的 -ldflags 字符串。
+func buildLDFlags(ctx context.Context, opts buildOptions) string {
+	ver := strings.TrimSpace(opts.Version)
+	commit := strings.TrimSpace(opts.Commit)
+	if ver == "" || commit == "" {
+		gitInfo := deploy.InspectGit(ctx, ".")
+		if ver == "" {
+			ver = gitInfo.Version
+		}
+		if commit == "" {
+			commit = gitInfo.Commit
+		}
+	}
+	buildTime := time.Now().UTC().Format(time.RFC3339)
+	var flags []string
+	if ver != "" {
+		flags = append(flags,
+			"-X", framework+"/command.buildVersion="+ver,
+			"-X", framework+"/telemetry.buildVersionOverride="+ver,
+		)
+	}
+	if commit != "" {
+		flags = append(flags, "-X", framework+"/command.buildCommit="+commit)
+	}
+	flags = append(flags, "-X", framework+"/command.buildTime="+buildTime)
+	return strings.Join(flags, " ")
+}
+
+// frontendCacheValid 检查 apps/dist/.fingerprint 与预期指纹一致且必要产物文件均存在。
+func frontendCacheValid(root, wantFingerprint string, hasSSR bool) bool {
+	distDir := filepath.Join(root, filepath.FromSlash(dev.DistDir))
+	got, err := os.ReadFile(filepath.Join(distDir, ".fingerprint"))
+	if err != nil || strings.TrimSpace(string(got)) != wantFingerprint {
+		return false
+	}
+	if _, err := os.Stat(filepath.Join(distDir, frontend.ManifestFile)); err != nil {
+		return false
+	}
+	if hasSSR {
+		if _, err := os.Stat(filepath.Join(distDir, frontend.ExecutableFile)); err != nil {
+			return false
+		}
+	}
+	return true
+}
+
+// frontendBuildFingerprint 基于所有影响前端产物的源文件、锁文件、配置与目标架构计算确定性 SHA-256 指纹。
+func frontendBuildFingerprint(root string, cfg *project.Config, arch string) (string, error) {
+	h := sha256.New()
+	_, _ = fmt.Fprintf(h, "arch=%s\n", arch)
+	for _, f := range cfg.Frontends {
+		_, _ = fmt.Fprintf(h, "frontend=%s|%s|%s|%v\n", f.Name, f.Dir, f.Base, f.SSR)
+	}
+
+	// 单文件输入：项目配置与 workspace 锁文件。
+	for _, rel := range []string{project.File, "package.json", "bun.lock"} {
+		if err := hashFileIfExists(h, filepath.Join(root, rel), rel); err != nil {
+			return "", err
+		}
+	}
+	// 目录输入：框架前端包、生成客户端、翻译目录与每个前端源码目录。
+	dirs := []string{"tenon/js", "packages/client", "locales"}
+	for _, f := range cfg.Frontends {
+		dirs = append(dirs, f.Dir)
+	}
+	for _, relDir := range dirs {
+		absDir := filepath.Join(root, filepath.FromSlash(relDir))
+		if _, err := os.Stat(absDir); os.IsNotExist(err) {
+			continue
+		}
+		if err := hashDir(h, root, absDir); err != nil {
+			return "", err
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// hashFileIfExists 将存在的文件路径与内容写入摘要器。
+func hashFileIfExists(h io.Writer, absPath, label string) error {
+	data, err := os.ReadFile(absPath)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintf(h, "F:%s:%d\x00", label, len(data))
+	_, _ = h.Write(data)
+	return nil
+}
+
+// hashDir 遍历目录计算全部非构建产物文件的确定性内容摘要。
+func hashDir(h io.Writer, root, dir string) error {
+	var paths []string
+	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, werr error) error {
+		if werr != nil {
+			return werr
+		}
+		if d.IsDir() {
+			switch d.Name() {
+			case "node_modules", "dist", ".output", ".nitro", ".tanstack", ".vite", ".git":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		paths = append(paths, p)
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	slices.Sort(paths)
+	for _, p := range paths {
+		rel, err := filepath.Rel(root, p)
+		if err != nil {
+			return err
+		}
+		if err := hashFileIfExists(h, p, filepath.ToSlash(rel)); err != nil {
+			return err
+		}
 	}
 	return nil
 }

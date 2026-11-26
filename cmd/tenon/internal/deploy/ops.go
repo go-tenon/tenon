@@ -3,6 +3,7 @@ package deploy
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -11,92 +12,250 @@ import (
 	"strings"
 	"sync"
 	"text/tabwriter"
+	"time"
 
 	"golang.org/x/sync/errgroup"
 )
 
 // RollbackReport 是 tenon deploy rollback 的结构化结果。
 type RollbackReport struct {
-	App     string           `json:"app"`     // 应用名
-	Env     string           `json:"env"`     // 环境名
-	Version string           `json:"version"` // 回退后的版本号
-	Waves   []Wave           `json:"waves"`   // 执行回退的波次
-	Hosts   []HostSwitchInfo `json:"hosts"`   // 各主机切换详情
+	App       string           `json:"app"`        // 应用名
+	Env       string           `json:"env"`        // 环境名
+	ReleaseID int              `json:"release_id"` // 回退后的发布序号
+	Version   string           `json:"version"`    // 回退后的构建版本号
+	Waves     []Wave           `json:"waves"`      // 执行回退的波次
+	Hosts     []HostSwitchInfo `json:"hosts"`      // 各主机切换详情
 }
 
-// Rollback 将环境内所有主机回退到指定版本（version 为空时自动选择当前版本之前的最近一个版本），
-// 按波次触发 systemd 热重载。数据库迁移不会自动撤销。
-func Rollback(ctx context.Context, r Runner, t Target, version string, out, errOut io.Writer) (*RollbackReport, error) {
+// ReleasesReport 是 tenon deploy releases 的结构化结果。
+type ReleasesReport struct {
+	App            string     `json:"app"`             // 应用名
+	Env            string     `json:"env"`             // 环境名
+	CurrentRelease int        `json:"current_release"` // 当前激活的发布序号
+	Releases       []Manifest `json:"releases"`        // 按发布序号倒序排列的留存发布列表
+}
+
+// ListReleases 读取主节点留存的全部发布清单与当前激活发布序号。
+func ListReleases(ctx context.Context, r Runner, t Target) (*ReleasesReport, error) {
 	primary := t.MigrateHost()
-	if version == "" {
-		prev, err := previousRelease(ctx, r, t, primary)
-		if err != nil {
-			return nil, err
-		}
-		version = prev
-	}
-	if !isSafeVersion(version) {
-		return nil, fmt.Errorf("deploy: invalid release %q", version)
-	}
-	if err := acquireLock(ctx, r, t, primary, "rollback-"+version); err != nil {
+	manifests, curID, err := readHostReleases(ctx, r, t, primary)
+	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = releaseLock(context.Background(), r, t, primary) }()
+	return &ReleasesReport{
+		App:            t.App,
+		Env:            t.EnvName,
+		CurrentRelease: curID,
+		Releases:       manifests,
+	}, nil
+}
 
-	// 先确认所有主机都保留了目标版本，避免滚动到一半缺文件。
-	releaseBin := path.Join(t.Dir, "releases", version, t.App)
-	releaseCfg := path.Join(t.Dir, "releases", version, "config")
+// FormatReleases 将发布历史列表格式化为对齐的表格输出到 out。
+func FormatReleases(out io.Writer, report *ReleasesReport) {
+	fmt.Fprintf(out, "环境: %s (应用: %s)\n", report.Env, report.App)
+	tw := tabwriter.NewWriter(out, 0, 2, 2, ' ', 0)
+	fmt.Fprintln(tw, "CUR\tRELEASE\tVERSION\tKIND\tBIN\tCONFIG\tDEPLOYED AT\tBY")
+	for _, m := range report.Releases {
+		cur := ""
+		if m.ReleaseID == report.CurrentRelease {
+			cur = "*"
+		}
+		cfg := "-"
+		if m.ConfigSHA256 != "" {
+			cfg = ShortSHA(m.ConfigSHA256)
+		}
+		fmt.Fprintf(tw, "%s\t#%d\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			cur, m.ReleaseID, m.Version, m.Kind, ShortSHA(m.BinSHA256), cfg,
+			m.DeployedAt.UTC().Format("2006-01-02 15:04:05Z"), m.DeployedBy)
+	}
+	_ = tw.Flush()
+}
+
+// readHostReleases 读取指定主机上全部 releases/*/manifest.json（按 release_id 倒序）及当前激活序号。
+func readHostReleases(ctx context.Context, r Runner, t Target, h Host) ([]Manifest, int, error) {
+	curPath := path.Join(t.Dir, "current", "manifest.json")
+	releasesDir := path.Join(t.Dir, "releases")
+	script := fmt.Sprintf(`if test -f %s; then
+  echo "---current"
+  cat %s
+  echo ""
+fi
+for f in %s/*/manifest.json; do
+  [ -f "$f" ] || continue
+  echo "---manifest"
+  cat "$f"
+  echo ""
+done`, shellQuote(curPath), shellQuote(curPath), shellQuote(releasesDir))
+	raw, err := RunCapture(ctx, r, h, script)
+	if err != nil {
+		return nil, 0, fmt.Errorf("[%s] 读取发布列表失败: %w", h.Addr, err)
+	}
+	var currentID int
+	var manifests []Manifest
+	var section string
+	var buf strings.Builder
+	flush := func() error {
+		text := strings.TrimSpace(buf.String())
+		buf.Reset()
+		if text == "" {
+			return nil
+		}
+		var m Manifest
+		if err := json.Unmarshal([]byte(text), &m); err != nil {
+			return err
+		}
+		switch section {
+		case "current":
+			currentID = m.ReleaseID
+		case "manifest":
+			manifests = append(manifests, m)
+		}
+		return nil
+	}
+	for line := range strings.Lines(raw) {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "---current" || trimmed == "---manifest" {
+			if err := flush(); err != nil {
+				return nil, 0, fmt.Errorf("[%s] 解析发布清单失败: %w", h.Addr, err)
+			}
+			section = strings.TrimPrefix(trimmed, "---")
+			continue
+		}
+		buf.WriteString(line)
+	}
+	if err := flush(); err != nil {
+		return nil, 0, fmt.Errorf("[%s] 解析发布清单失败: %w", h.Addr, err)
+	}
+	slices.SortFunc(manifests, func(a, b Manifest) int { return b.ReleaseID - a.ReleaseID })
+	return manifests, currentID, nil
+}
+
+// Rollback 将环境内所有主机回退到指定目标（targetRef 可为发布序号如 41/#41、构建版本/Tag 如 v1.1.0，
+// 留空时按 history.jsonl 追溯当前版本之前最近一次激活的不同发布）；切换前在所有主机执行 config check。
+// 数据库迁移不会自动撤销。
+func Rollback(ctx context.Context, r Runner, t Target, targetRef string, out, errOut io.Writer) (*RollbackReport, error) {
+	primary := t.MigrateHost()
+	operator := CurrentOperator()
+	releaseLock, err := acquireLock(ctx, r, t, primary, fmt.Sprintf("rollback (%s)", operator))
+	if err != nil {
+		return nil, err
+	}
+	defer releaseLock()
+
+	targetManifest, err := resolveRollbackTarget(ctx, r, t, primary, strings.TrimSpace(targetRef))
+	if err != nil {
+		return nil, err
+	}
+	relName := FormatReleaseID(targetManifest.ReleaseID)
+	releaseDir := path.Join(t.Dir, "releases", relName)
+	releaseBin := path.Join(releaseDir, t.App)
+	releaseCfg := path.Join(releaseDir, "config")
+
+	// 1. 确认全部主机均保留目标发布目录，避免滚动到一半缺文件。
 	hasConfig := false
 	for i, h := range t.Hosts {
-		check := fmt.Sprintf("test -x %s || { echo 'release %s not found' >&2; exit 1; }; if test -d %s; then echo cfg; fi",
-			shellQuote(releaseBin), version, shellQuote(releaseCfg))
+		check := fmt.Sprintf("test -x %s || { echo 'release #%d not found' >&2; exit 1; }; if test -d %s; then echo cfg; fi",
+			shellQuote(releaseBin), targetManifest.ReleaseID, shellQuote(releaseCfg))
 		res, err := RunCapture(ctx, r, h, check)
 		if err != nil {
-			return nil, fmt.Errorf("[%s] 检查回退版本 %s 失败: %w", h.Addr, version, err)
+			return nil, fmt.Errorf("[%s] 检查回退发布 #%d 失败: %w", h.Addr, targetManifest.ReleaseID, err)
 		}
 		if i == 0 && strings.TrimSpace(res) == "cfg" {
 			hasConfig = true
 		}
 	}
+
+	// 2. 全机并行运行目标发布的 config check，确保历史配置与当前环境变量兼容。
+	fmt.Fprintf(out, "回退前校验 %d 台主机配置（#%d %s）...\n", len(t.Hosts), targetManifest.ReleaseID, targetManifest.Version)
+	if err := configCheckAll(ctx, r, t, releaseDir, releaseBin); err != nil {
+		return nil, err
+	}
+
+	// 3. 按波次滚动回退并记录历史。
 	waves := t.RolloutWaves()
-	results, err := rolloutWaves(ctx, r, t, waves, version, hasConfig, out, errOut)
+	histEntry := HistoryEntry{
+		ReleaseID: targetManifest.ReleaseID,
+		Version:   targetManifest.Version,
+		Kind:      ReleaseKindRollback,
+		At:        time.Now().UTC(),
+		By:        operator,
+	}
+	results, _, err := rolloutWaves(ctx, r, t, waves, targetManifest.ReleaseID, hasConfig, histEntry, out, errOut)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Fprintf(out, "已回退到版本 %s。注意：数据库迁移不会自动撤销。\n", version)
+	fmt.Fprintf(out, "已回退到 #%d (%s)。注意：数据库迁移不会自动撤销。\n", targetManifest.ReleaseID, targetManifest.Version)
 	return &RollbackReport{
-		App:     t.App,
-		Env:     t.EnvName,
-		Version: version,
-		Waves:   waves,
-		Hosts:   results,
+		App:       t.App,
+		Env:       t.EnvName,
+		ReleaseID: targetManifest.ReleaseID,
+		Version:   targetManifest.Version,
+		Waves:     waves,
+		Hosts:     results,
 	}, nil
 }
 
-// previousRelease 读取主节点的当前版本和历史版本列表，返回当前版本之前最近的一个可回退版本。
-func previousRelease(ctx context.Context, r Runner, t Target, h Host) (string, error) {
-	curRaw, err := RunCapture(ctx, r, h, fmt.Sprintf("cat %s 2>/dev/null || true", shellQuote(path.Join(t.Dir, "current_release"))))
+// resolveRollbackTarget 按用户输入或 history.jsonl 确定回退目标的 Manifest。
+func resolveRollbackTarget(ctx context.Context, r Runner, t Target, primary Host, ref string) (Manifest, error) {
+	manifests, curID, err := readHostReleases(ctx, r, t, primary)
 	if err != nil {
-		return "", err
+		return Manifest{}, err
 	}
-	current := strings.TrimSpace(curRaw)
-	raw, err := RunCapture(ctx, r, h, fmt.Sprintf("ls -1 %s 2>/dev/null || true", shellQuote(path.Join(t.Dir, "releases"))))
-	if err != nil {
-		return "", err
+	byID := make(map[int]Manifest, len(manifests))
+	for _, m := range manifests {
+		byID[m.ReleaseID] = m
 	}
-	var versions []string
-	for line := range strings.Lines(raw) {
-		if v := strings.TrimSpace(line); v != "" {
-			versions = append(versions, v)
+
+	// 1. 显式指定发布序号（如 41 / #41 / 0041）。
+	if ref != "" {
+		if id, ok := ParseReleaseID(ref); ok {
+			m, exists := byID[id]
+			if !exists {
+				return Manifest{}, fmt.Errorf("deploy: release #%d not found", id)
+			}
+			return m, nil
+		}
+		// 2. 显式指定构建版本/Git Tag（如 v1.1.0）：取留存中最新匹配的一条。
+		for _, m := range manifests {
+			if m.Version == ref {
+				return m, nil
+			}
+		}
+		return Manifest{}, fmt.Errorf("deploy: no retained release matches version %q", ref)
+	}
+
+	// 3. 缺省目标：读取 history.jsonl，跳过连续指向 curID 的记录，找到之前最近一次激活的仍存在的不同发布。
+	histRaw, err := RunCapture(ctx, r, primary, fmt.Sprintf("cat %s 2>/dev/null || true", shellQuote(path.Join(t.Dir, "history.jsonl"))))
+	if err == nil {
+		var entries []HistoryEntry
+		for line := range strings.Lines(histRaw) {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			var e HistoryEntry
+			if json.Unmarshal([]byte(line), &e) == nil && e.ReleaseID > 0 {
+				entries = append(entries, e)
+			}
+		}
+		for i := len(entries) - 1; i >= 0; i-- {
+			id := entries[i].ReleaseID
+			if id == curID {
+				continue
+			}
+			if m, exists := byID[id]; exists {
+				return m, nil
+			}
 		}
 	}
-	slices.Sort(versions)
-	for i := len(versions) - 1; i >= 0; i-- {
-		if versions[i] != current {
-			return versions[i], nil
+
+	// 4. 历史文件缺失或无可用记录时，退化为留存中序号最大的非当前发布。
+	for _, m := range manifests {
+		if m.ReleaseID != curID {
+			return m, nil
 		}
 	}
-	return "", fmt.Errorf("deploy: no previous release available to roll back (current: %q)", current)
+	return Manifest{}, fmt.Errorf("deploy: no previous release available to roll back (current: #%d)", curID)
 }
 
 // StatusReport 是集群状态查询的结构化结果，供 CLI 表格输出、--format json 和 MCP tenon_deploy_status 共用。
@@ -108,11 +267,15 @@ type StatusReport struct {
 
 // HostStatus 是单台主机的发布版本与服务状态。
 type HostStatus struct {
-	Addr    string       `json:"addr"`    // 主机地址
-	Roles   []string     `json:"roles"`   // 承担的角色
-	Parts   []string     `json:"parts"`   // 期望的 parts
-	Release string       `json:"release"` // 当前版本（未部署时为 none）
-	Units   []UnitStatus `json:"units"`   // 各 systemd unit 状态
+	Addr         string       `json:"addr"`                    // 主机地址
+	Roles        []string     `json:"roles"`                   // 承担的角色
+	Parts        []string     `json:"parts"`                   // 期望的 parts
+	ReleaseID    int          `json:"release_id,omitempty"`    // 当前发布序号
+	Version      string       `json:"version,omitempty"`       // 当前构建版本（如 v1.2.0）
+	Commit       string       `json:"commit,omitempty"`        // 当前提交号
+	ConfigSHA256 string       `json:"config_sha256,omitempty"` // 当前配置内容摘要
+	Release      string       `json:"release"`                 // 综合摘要（如 #42 (v1.2.0)，未部署时为 none）
+	Units        []UnitStatus `json:"units"`                   // 各 systemd unit 状态
 }
 
 // UnitStatus 是单个 systemd unit 的状态摘要。
@@ -124,18 +287,20 @@ type UnitStatus struct {
 	Since       string `json:"since,omitempty"`       // ActiveEnterTimestamp
 }
 
-// CollectStatus 并发查询筛选后各主机的当前发布版本与 systemd unit 状态。
+// CollectStatus 并发查询筛选后各主机的当前发布清单与 systemd unit 状态。
 func CollectStatus(ctx context.Context, r Runner, t Target, roleFilter, hostFilter string) (*StatusReport, error) {
 	hosts, err := t.FilterHosts(roleFilter, hostFilter)
 	if err != nil {
 		return nil, err
 	}
+	manifestPath := path.Join(t.Dir, "current", "manifest.json")
 	results := make([]HostStatus, len(hosts))
 	g, gctx := errgroup.WithContext(ctx)
 	for i, h := range hosts {
 		g.Go(func() error {
 			var script strings.Builder
-			fmt.Fprintf(&script, "echo \"release=$(cat %s 2>/dev/null || echo none)\"\n", shellQuote(path.Join(t.Dir, "current_release")))
+			fmt.Fprintf(&script, "echo \"---manifest\"\nif test -f %s; then cat %s; echo \"\"; fi\n",
+				shellQuote(manifestPath), shellQuote(manifestPath))
 			for _, part := range h.Parts {
 				unit := UnitName(t.App, part)
 				fmt.Fprintf(&script, "echo \"---unit=%s\"\nsystemctl show -p ActiveState -p SubState -p StatusText -p ActiveEnterTimestamp %s\n",
@@ -164,17 +329,41 @@ func parseHostStatus(h Host, raw string) HostStatus {
 		Release: "none",
 		Units:   []UnitStatus{},
 	}
+	inManifest := false
+	var manifestBuf strings.Builder
 	var cur *UnitStatus
+	flushManifest := func() {
+		if !inManifest {
+			return
+		}
+		inManifest = false
+		text := strings.TrimSpace(manifestBuf.String())
+		if text == "" {
+			return
+		}
+		var m Manifest
+		if json.Unmarshal([]byte(text), &m) == nil && m.ReleaseID > 0 {
+			hs.ReleaseID = m.ReleaseID
+			hs.Version = m.Version
+			hs.Commit = m.Commit
+			hs.ConfigSHA256 = m.ConfigSHA256
+			hs.Release = fmt.Sprintf("#%d (%s)", m.ReleaseID, m.Version)
+		}
+	}
 	for line := range strings.Lines(raw) {
-		line = strings.TrimRight(line, "\r\n")
+		trimmed := strings.TrimRight(line, "\r\n")
 		switch {
-		case strings.HasPrefix(line, "release="):
-			hs.Release = strings.TrimPrefix(line, "release=")
-		case strings.HasPrefix(line, "---unit="):
-			hs.Units = append(hs.Units, UnitStatus{Unit: strings.TrimPrefix(line, "---unit=")})
+		case trimmed == "---manifest":
+			inManifest = true
+			cur = nil
+		case strings.HasPrefix(trimmed, "---unit="):
+			flushManifest()
+			hs.Units = append(hs.Units, UnitStatus{Unit: strings.TrimPrefix(trimmed, "---unit=")})
 			cur = &hs.Units[len(hs.Units)-1]
+		case inManifest:
+			manifestBuf.WriteString(line)
 		case cur != nil:
-			k, v, ok := strings.Cut(line, "=")
+			k, v, ok := strings.Cut(trimmed, "=")
 			if !ok {
 				continue
 			}
@@ -190,6 +379,7 @@ func parseHostStatus(h Host, raw string) HostStatus {
 			}
 		}
 	}
+	flushManifest()
 	return hs
 }
 
@@ -197,17 +387,29 @@ func parseHostStatus(h Host, raw string) HostStatus {
 func FormatStatus(out io.Writer, report *StatusReport) {
 	fmt.Fprintf(out, "环境: %s (应用: %s)\n", report.Env, report.App)
 	tw := tabwriter.NewWriter(out, 0, 2, 2, ' ', 0)
-	fmt.Fprintln(tw, "HOST\tROLES\tRELEASE\tUNIT\tSTATE\tSTATUS")
+	fmt.Fprintln(tw, "HOST\tROLES\tRELEASE\tVERSION\tCONFIG\tUNIT\tSTATE\tSTATUS")
 	for _, h := range report.Hosts {
 		roles := strings.Join(h.Roles, ",")
+		relCol := "-"
+		if h.ReleaseID > 0 {
+			relCol = fmt.Sprintf("#%d", h.ReleaseID)
+		}
+		verCol := h.Version
+		if verCol == "" {
+			verCol = "none"
+		}
+		cfgCol := "-"
+		if h.ConfigSHA256 != "" {
+			cfgCol = ShortSHA(h.ConfigSHA256)
+		}
 		if len(h.Units) == 0 {
-			fmt.Fprintf(tw, "%s\t%s\t%s\t-\t-\t-\n", h.Addr, roles, h.Release)
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t-\t-\t-\n", h.Addr, roles, relCol, verCol, cfgCol)
 			continue
 		}
 		for i, u := range h.Units {
-			hostCol, roleCol, relCol := h.Addr, roles, h.Release
+			hostCol, roleCol, rCol, vCol, cCol := h.Addr, roles, relCol, verCol, cfgCol
 			if i > 0 {
-				hostCol, roleCol, relCol = "", "", ""
+				hostCol, roleCol, rCol, vCol, cCol = "", "", "", "", ""
 			}
 			state := u.ActiveState
 			if u.SubState != "" {
@@ -217,7 +419,7 @@ func FormatStatus(out io.Writer, report *StatusReport) {
 			if note == "" {
 				note = u.Since
 			}
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", hostCol, roleCol, relCol, u.Unit, state, note)
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", hostCol, roleCol, rCol, vCol, cCol, u.Unit, state, note)
 		}
 	}
 	_ = tw.Flush()
@@ -516,23 +718,4 @@ func Maintenance(ctx context.Context, r Runner, t Target, roleFilter, hostFilter
 		fmt.Fprintf(out, "[%s] 已%s（%s）\n", h.Addr, action, t.MaintenanceFile)
 	}
 	return report, nil
-}
-
-// UnlockReport 是释放发布锁的结构化结果。
-type UnlockReport struct {
-	App      string `json:"app"`       // 应用名
-	Env      string `json:"env"`       // 环境名
-	Host     string `json:"host"`      // 主迁移节点地址
-	LockPath string `json:"lock_path"` // 锁目录路径
-}
-
-// Unlock 强制清除主节点上遗留的发布锁目录（用于上次发布异常中断后的恢复）。
-func Unlock(ctx context.Context, r Runner, t Target, out io.Writer) (*UnlockReport, error) {
-	primary := t.MigrateHost()
-	if err := releaseLock(ctx, r, t, primary); err != nil {
-		return nil, fmt.Errorf("[%s] 释放发布锁失败: %w", primary.Addr, err)
-	}
-	lp := lockPath(t)
-	fmt.Fprintf(out, "[%s] 已释放发布锁 %s\n", primary.Addr, lp)
-	return &UnlockReport{App: t.App, Env: t.EnvName, Host: primary.Addr, LockPath: lp}, nil
 }
