@@ -691,11 +691,11 @@
 }
 
 /*
- * 最左侧是 48px 的模块图标栏，底色与画布相同；右侧的工作区是一张四周微留白的圆角浮岛卡片，
+ * 最左侧是默认 56px 的模块图标栏，底色与画布相同；右侧的工作区是一张四周微留白的圆角浮岛卡片，
  * 其中是二级导航（默认 260px，RailLayout 的 navWidth 设置，可以收起）和内容。窄屏时卡片贴边无圆角，二级导航是抽屉。
  */
 .tn-rail {
-  --tn-rail-rail: 48px;
+  --tn-rail-rail: 56px;
   --tn-rail-secondary: 260px;
   --tn-rail-header: 52px;
   display: flex;
@@ -747,10 +747,10 @@
 .tn-rail-module {
   position: relative;
   display: grid;
-  width: 32px;
-  height: 32px;
+  width: 38px;
+  height: 38px;
   place-items: center;
-  border-radius: var(--mantine-radius-sm);
+  border-radius: var(--mantine-radius-md);
   color: var(--tn-muted);
 
   &:not([aria-current]):hover {
@@ -776,8 +776,8 @@
 /* 模块的徽标在图标的右上角，例如待处理数、未读数。 */
 .tn-rail-module-badge {
   position: absolute;
-  top: -4px;
-  left: 20px;
+  top: -3px;
+  left: 24px;
   display: flex;
   pointer-events: none;
 }
