@@ -59,7 +59,7 @@ read _ || true' _ %s %s`, shellQuote(lp), shellQuote(holder))
 	case <-ctx.Done():
 		_ = inW.Close()
 		cancel()
-		<-done
+		_ = <-done
 		return nil, ctx.Err()
 	case ok := <-readyCh:
 		if !ok {
@@ -92,7 +92,7 @@ read _ || true' _ %s %s`, shellQuote(lp), shellQuote(holder))
 		_, _ = io.WriteString(inW, "\n")
 		_ = inW.Close()
 		cancel()
-		<-done
+		_ = <-done
 	}
 	return release, nil
 }
