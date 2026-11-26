@@ -11,6 +11,8 @@ import {
   AppShell,
   Box,
   Burger,
+  CloseButton,
+  Drawer,
   Group,
   Kbd,
   Menu,
@@ -111,11 +113,12 @@ export function FrameLayout({
   useDocumentTitle(documentTitle ? formatDocumentTitle(pageTitle, title) : undefined)
   const showTabBar = tabsOn && !narrow
 
-  // 窄屏时打开页面后收起导航抽屉。
-  // biome-ignore lint/correctness/useExhaustiveDependencies: 只在地址变化时收起
+  // 窄屏时打开页面或切回宽屏后收起导航抽屉。
+  const closeNav = () => setState({ navOpen: false })
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 只在地址或断点变化时收起
   useEffect(() => {
     if (state.navOpen) setState({ navOpen: false })
-  }, [pathname])
+  }, [pathname, narrow])
 
   // 路由切页默认瞬切；仅当路由 loader 耗时超过延迟阈值，或用户主动刷新标签时才显示轻磨砂加载覆层。
   const routeBusy = useDelayedLoading(routerPending)
@@ -164,7 +167,7 @@ export function FrameLayout({
       navbar={{
         width: collapsed ? navbarCollapsedWidth : navbarWidth,
         breakpoint: "sm",
-        collapsed: { mobile: !state.navOpen },
+        collapsed: { mobile: true },
       }}
       aside={aside ? { width: 320, breakpoint: "md", collapsed: { mobile: true } } : undefined}
       padding={0}
@@ -208,7 +211,7 @@ export function FrameLayout({
           ) : (
             <Box style={{ flex: 1 }} />
           )}
-          <Group gap="xs" wrap="nowrap">
+          <Group gap="xs" wrap="nowrap" className="tn-header-end">
             <Slot name="actions" />
             {actions}
             {user}
@@ -221,12 +224,38 @@ export function FrameLayout({
         </div>
       </AppShell.Header>
 
-      <AppShell.Navbar className="tn-navbar">
+      <AppShell.Navbar className="tn-navbar" aria-hidden={narrow || undefined} inert={narrow || undefined}>
         {search && <NavSearch collapsed={collapsed} />}
-        <AppShell.Section grow component={ScrollArea} scrollbarSize={6}>
+        <AppShell.Section grow component={ScrollArea} scrollbarSize={6} className="tn-navbar-scroll">
           <Nav collapsed={collapsed} />
         </AppShell.Section>
       </AppShell.Navbar>
+
+      {narrow && (
+        <Drawer
+          opened={state.navOpen}
+          onClose={closeNav}
+          position="left"
+          size={260}
+          padding={0}
+          withCloseButton={false}
+          classNames={{ content: "tn-nav-drawer-content", body: "tn-nav-drawer-body" }}
+        >
+          <div className="tn-nav-drawer">
+            <div className="tn-nav-drawer-header">
+              <Link to="/" className="tn-brand" onClick={closeNav}>
+                {logo ?? <span className="tn-brand-mark">{(title ?? "T").slice(0, 1)}</span>}
+                {title && <span className="tn-brand-title">{title}</span>}
+              </Link>
+              <CloseButton size="sm" onClick={closeNav} aria-label={t("tenon.frame.close_nav")} />
+            </div>
+            {search && <NavSearch collapsed={false} onOpen={closeNav} />}
+            <ScrollArea className="tn-nav-drawer-scroll" scrollbarSize={6}>
+              <Nav collapsed={false} onNavigate={closeNav} />
+            </ScrollArea>
+          </div>
+        </Drawer>
+      )}
 
       {aside && (
         <AppShell.Aside className="tn-navbar">
@@ -274,19 +303,19 @@ export function FrameLayout({
 // ———————————————————————————— 页面搜索 ————————————————————————————
 
 /** 侧栏顶部的搜索入口；收起时是一个图标。 */
-function NavSearch({ collapsed }: { collapsed: boolean }): ReactNode {
+function NavSearch({ collapsed, onOpen }: { collapsed: boolean; onOpen?: () => void }): ReactNode {
   const os = useOs()
   const t = useText()
   const shortcut = os === "macos" || os === "ios" ? "⌘ K" : "Ctrl K"
+  const openSearch = () => {
+    onOpen?.()
+    spotlight.open()
+  }
   if (collapsed) {
     return (
       <div className="tn-nav-search-rail">
         <Tooltip label={`${t("tenon.common.search")}  ${shortcut}`} position="right">
-          <UnstyledButton
-            className="tn-nav-rail-item"
-            aria-label={t("tenon.frame.search_pages")}
-            onClick={spotlight.open}
-          >
+          <UnstyledButton className="tn-nav-rail-item" aria-label={t("tenon.frame.search_pages")} onClick={openSearch}>
             <IconSearch size={18} stroke={1.5} />
           </UnstyledButton>
         </Tooltip>
@@ -296,7 +325,7 @@ function NavSearch({ collapsed }: { collapsed: boolean }): ReactNode {
   }
   return (
     <div className="tn-nav-search-wrap">
-      <UnstyledButton className="tn-nav-search" onClick={spotlight.open}>
+      <UnstyledButton className="tn-nav-search" onClick={openSearch}>
         <IconSearch size={15} stroke={1.5} />
         <span>{t("tenon.common.search")}</span>
         <Kbd size="xs" visibleFrom="sm">
@@ -356,7 +385,7 @@ function pages(
 // ———————————————————————————— 侧栏菜单 ————————————————————————————
 
 /** 侧栏导航：分组可以展开，当前页面所在的分组默认展开。收起时只显示图标，分组用弹出菜单。 */
-function Nav({ collapsed }: { collapsed: boolean }): ReactNode {
+function Nav({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: () => void }): ReactNode {
   const { menu, active } = useNavigation()
   const t = useText()
   if (collapsed) {
@@ -371,7 +400,7 @@ function Nav({ collapsed }: { collapsed: boolean }): ReactNode {
   return (
     <nav className="tn-nav" aria-label={t("tenon.frame.main_nav")}>
       {menu.map((item) => (
-        <Item key={item.id} item={item} active={active} />
+        <Item key={item.id} item={item} active={active} onNavigate={onNavigate} />
       ))}
     </nav>
   )
@@ -381,7 +410,17 @@ function Nav({ collapsed }: { collapsed: boolean }): ReactNode {
  * 菜单项。第一级：浅色底的图标加名称；下级：缩进，左侧一条竖线，有图标时显示图标。
  * 当前页面是主色实底、白字；当前页面所在的分组名称是主色。
  */
-function Item({ item, active, depth = 0 }: { item: MenuItem; active: string[]; depth?: number }): ReactNode {
+function Item({
+  item,
+  active,
+  depth = 0,
+  onNavigate,
+}: {
+  item: MenuItem
+  active: string[]
+  depth?: number
+  onNavigate?: () => void
+}): ReactNode {
   const isActive = active[depth] === item.id && active.length === depth + 1
   const inPath = active[depth] === item.id
   const [opened, setOpened] = useState(inPath)
@@ -416,7 +455,7 @@ function Item({ item, active, depth = 0 }: { item: MenuItem; active: string[]; d
         childrenOffset={0}
       >
         {item.children.map((c) => (
-          <Item key={c.id} item={c} active={active} depth={depth + 1} />
+          <Item key={c.id} item={c} active={active} depth={depth + 1} onNavigate={onNavigate} />
         ))}
       </NavLink>
     )
@@ -431,6 +470,7 @@ function Item({ item, active, depth = 0 }: { item: MenuItem; active: string[]; d
       leftSection={icon}
       rightSection={<MenuBadge value={item.badge} />}
       active={isActive}
+      onClick={onNavigate}
     />
   )
 }

@@ -39,11 +39,20 @@
 
 :root {
   --tn-canvas: var(--mantine-color-gray-0);
+  --tn-navbar: var(--mantine-color-gray-1);
   --tn-surface: var(--mantine-color-white);
   --tn-border: var(--mantine-color-gray-2);
   --tn-border-strong: var(--mantine-color-gray-3);
+  --tn-border-muted: var(--mantine-color-gray-4);
+  --tn-border-hover: var(--mantine-color-gray-4);
   --tn-hover: var(--mantine-color-gray-1);
+  --tn-hover-strong: var(--mantine-color-gray-2);
+  --tn-tab-hover: var(--mantine-color-gray-2);
+  --tn-rail-hover: var(--mantine-color-gray-1);
+  --tn-menu-hover: var(--mantine-color-gray-1);
+  --tn-menu-divider: var(--mantine-color-gray-2);
   --tn-text: var(--mantine-color-gray-9);
+  --tn-text-secondary: var(--mantine-color-gray-7);
   --tn-muted: var(--mantine-color-gray-6);
   --tn-subtle: var(--mantine-color-gray-5);
   --tn-active-bg: var(--mantine-color-brand-0);
@@ -55,11 +64,20 @@
 
 [data-mantine-color-scheme="dark"] {
   --tn-canvas: var(--mantine-color-dark-8);
+  --tn-navbar: var(--mantine-color-dark-8);
   --tn-surface: var(--mantine-color-dark-7);
   --tn-border: var(--mantine-color-dark-5);
   --tn-border-strong: var(--mantine-color-dark-4);
+  --tn-border-muted: var(--mantine-color-dark-4);
+  --tn-border-hover: var(--mantine-color-dark-3);
   --tn-hover: var(--mantine-color-dark-6);
+  --tn-hover-strong: var(--mantine-color-dark-6);
+  --tn-tab-hover: var(--mantine-color-dark-5);
+  --tn-rail-hover: var(--mantine-color-dark-5);
+  --tn-menu-hover: var(--mantine-color-dark-4);
+  --tn-menu-divider: var(--mantine-color-dark-4);
   --tn-text: var(--mantine-color-dark-0);
+  --tn-text-secondary: var(--mantine-color-dark-1);
   --tn-muted: var(--mantine-color-dark-2);
   --tn-subtle: var(--mantine-color-dark-3);
   --tn-active-bg: color-mix(in srgb, var(--mantine-color-brand-5) 16%, transparent);

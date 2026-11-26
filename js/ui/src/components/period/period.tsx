@@ -290,16 +290,19 @@ export function PeriodPicker({
 
   return (
     <Group gap="xs" wrap="wrap" className="tn-period-picker">
-      <SegmentedControl
-        size={size}
-        value={period.preset === "custom" ? "" : period.preset}
-        onChange={(v) => {
-          setDraft(null)
-          if (v) period.setPreset(v as Exclude<PeriodPreset, "custom">)
-        }}
-        data={presets.map((p) => ({ value: p, label: presetLabel(p) }))}
-      />
+      <div className="tn-period-presets">
+        <SegmentedControl
+          size={size}
+          value={period.preset === "custom" ? "" : period.preset}
+          onChange={(v) => {
+            setDraft(null)
+            if (v) period.setPreset(v as Exclude<PeriodPreset, "custom">)
+          }}
+          data={presets.map((p) => ({ value: p, label: presetLabel(p) }))}
+        />
+      </div>
       <DatePickerInput
+        className="tn-period-range"
         type="range"
         size={size}
         valueFormat="YYYY-MM-DD"
@@ -316,12 +319,11 @@ export function PeriodPicker({
           }
         }}
         allowSingleDateInRange
-        w={220}
       />
       {showGranularity && (
         <Select
+          className="tn-period-granularity"
           size={size}
-          w={104}
           clearable
           placeholder={t("tenon.period.granularity")}
           value={period.granularity ?? null}

@@ -299,7 +299,7 @@ function ResourceList({
     />
   )
   const buttons = (
-    <Group gap="xs">
+    <Group gap="xs" wrap="wrap">
       {toolbar}
       {canCreate && (
         <Button leftSection={<IconPlus size={16} />} onClick={openCreate}>
@@ -353,7 +353,7 @@ function Filters({
   // 只看声明的筛选条件：地址中可能还有其他参数。
   const active = model.filters.some((f) => filters[f.name] !== undefined)
   return (
-    <Group gap="xs">
+    <Group gap="xs" className="tn-filters">
       {model.filters.map((f) => (
         <FilterInput
           key={f.name}
@@ -364,7 +364,7 @@ function Filters({
         />
       ))}
       {active && (
-        <Button variant="subtle" color="gray" size={size} onClick={list.reset}>
+        <Button className="tn-filters-clear" variant="subtle" color="gray" size={size} onClick={list.reset}>
           {t("tenon.resource.clear_filters")}
         </Button>
       )}
@@ -387,9 +387,9 @@ function FilterInput({
   if (field.reference && field.kind === "multiselect")
     return (
       <ResourceMultiSelect
+        className="tn-filter-field tn-filter-multi"
         model={field.reference}
         size={size}
-        miw={160}
         placeholder={field.label}
         aria-label={field.label}
         value={(value as string[] | undefined) ?? []}
@@ -400,9 +400,9 @@ function FilterInput({
   if (field.reference)
     return (
       <ResourceSelect
+        className="tn-filter-field tn-filter-wide"
         model={field.reference}
         size={size}
-        w={180}
         placeholder={field.label}
         aria-label={field.label}
         value={(value as string | undefined) ?? null}
@@ -413,8 +413,8 @@ function FilterInput({
   if (field.options && field.kind === "multiselect")
     return (
       <MultiSelect
+        className="tn-filter-field tn-filter-multi"
         size={size}
-        miw={160}
         placeholder={field.label}
         aria-label={field.label}
         data={field.options}
@@ -426,8 +426,8 @@ function FilterInput({
   if (field.options)
     return (
       <Select
+        className="tn-filter-field tn-filter-select"
         size={size}
-        w={150}
         placeholder={field.label}
         aria-label={field.label}
         data={field.options}
@@ -439,8 +439,8 @@ function FilterInput({
   if (field.kind === "boolean")
     return (
       <Select
+        className="tn-filter-field tn-filter-bool"
         size={size}
-        w={120}
         placeholder={field.label}
         aria-label={field.label}
         data={[
@@ -472,8 +472,8 @@ function FilterText({
   useEffect(() => setText(value ?? ""), [value])
   return (
     <TextInput
+      className="tn-filter-field tn-filter-wide"
       size={size}
-      w={180}
       placeholder={field.label}
       aria-label={field.label}
       value={text}

@@ -169,7 +169,7 @@ export function DoctorPanel({ api, title }: DoctorPanelProps): ReactNode {
                         const m = statusMeta[item.status]
                         return (
                           <Stack key={`${item.group}:${item.check}`} gap={4}>
-                            <Group gap="sm" align="center" wrap="nowrap">
+                            <Group gap="sm" align="center" wrap="wrap">
                               <Badge color={m.color} variant="light" w={64}>
                                 {t(m.label)}
                               </Badge>
@@ -186,7 +186,7 @@ export function DoctorPanel({ api, title }: DoctorPanelProps): ReactNode {
                               )}
                             </Group>
                             {item.fix && (
-                              <Stack gap={2} pl={76}>
+                              <Stack gap={2} pl={{ base: 0, sm: 76 }}>
                                 <Text size="xs" c="dimmed">
                                   {t("tenon.doctor.fix")}
                                 </Text>

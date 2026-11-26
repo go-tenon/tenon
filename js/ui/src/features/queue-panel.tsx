@@ -638,7 +638,7 @@ function FailedJobs({
   }
   const filter =
     options.length <= 5 ? (
-      <ScrollArea type="never" offsetScrollbars={false}>
+      <ScrollArea type="never" offsetScrollbars={false} maw="100%">
         <SegmentedControl
           value={topic ?? ""}
           onChange={choose}
@@ -652,7 +652,7 @@ function FailedJobs({
         onChange={choose}
         data={options}
         allowDeselect={false}
-        w={220}
+        w={{ base: "100%", sm: 220 }}
         aria-label={tr("tenon.queue.filter_label")}
       />
     )
@@ -661,7 +661,7 @@ function FailedJobs({
     <>
       <DataTable
         toolbar={
-          <Group justify="space-between" gap="xs">
+          <Group justify="space-between" gap="xs" wrap="wrap">
             {filter}
             <Group gap="xs" wrap="nowrap">
               <Button
