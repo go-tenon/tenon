@@ -2,7 +2,7 @@
 // 提供与 --tn-rail-header（默认 52px）齐平的顶栏（PaneHeader）、带紧凑控件密度的工具条（PaneToolbar）、
 // 独立纵向滚动的正文区（PaneBody）以及支持鼠标拖拽、键盘微调和按账号持久化的栏宽调节（resizable）。
 
-import { ActionIcon, Box, Group, Stack, Text, Tooltip } from "@mantine/core"
+import { ActionIcon, Box, Drawer, Group, Stack, Text, Tooltip } from "@mantine/core"
 import { IconChevronLeft, IconLayoutSidebarLeftExpand } from "@tabler/icons-react"
 import {
   type CSSProperties,
@@ -16,7 +16,7 @@ import {
   useSyncExternalStore,
 } from "react"
 import { useOptionalApp } from "../app/app"
-import { useNavControl } from "../app/layout"
+import { useCollapseNav, useNarrow, useNavControl } from "../app/layout"
 import { noAccount } from "../app/snapshot"
 import { LoadingOverlay } from "../components/loading"
 import { useText } from "../i18n/i18n"
@@ -266,7 +266,7 @@ export function PaneHeader({
 }: PaneHeaderProps): ReactNode {
   const t = useText()
   const nav = useNavControl()
-  const navToggle = showNavToggle && nav && !nav.open && (
+  const navToggle = showNavToggle && nav && nav.hasNav !== false && !nav.open && (
     <Tooltip label={t("tenon.rail.expand_nav")} openDelay={350}>
       <ActionIcon variant="subtle" color="gray" onClick={nav.openNav} aria-label={t("tenon.rail.expand_nav")}>
         <IconLayoutSidebarLeftExpand size={18} stroke={1.6} />
@@ -360,5 +360,151 @@ export function PaneBody({ loading, className, style, children }: PaneBodyProps)
       {body}
       <LoadingOverlay visible={loading} />
     </div>
+  )
+}
+
+/** useAsidePaneState 的选项。 */
+export interface AsidePaneStateOptions {
+  /** 宽屏下首次访问是否默认展开，默认 false。 */
+  defaultOpen?: boolean
+  /** 窄屏媒体查询：进入窄屏时自动收起（不覆写宽屏保存的偏好），默认 "(max-width: 48em)"。 */
+  compactQuery?: string
+}
+
+/** useAsidePaneState 的返回值。 */
+export interface AsidePaneState {
+  opened: boolean
+  open: () => void
+  close: () => void
+  toggle: () => void
+  setOpened: (next: boolean) => void
+}
+
+/**
+ * 管理右侧详情栏的展开/收起状态：在非窄屏下通过 app.storage 按账号持久化偏好，
+ * 切换到窄屏时自动收起以免遮挡主内容区。
+ */
+export function useAsidePaneState(
+  storageKey: string,
+  { defaultOpen = false, compactQuery = "(max-width: 48em)" }: AsidePaneStateOptions = {},
+): AsidePaneState {
+  const app = useOptionalApp()
+  const compact = useNarrow(compactQuery)
+  const account = useSyncExternalStore(
+    app ? app.session.subscribe : noopSubscribe,
+    () => app?.session.identity()?.account ?? "",
+    noAccount,
+  )
+  const fullKey = app && storageKey ? `aside-open:${account}:${storageKey}` : undefined
+
+  const readSaved = useCallback((): boolean => {
+    if (!fullKey || !app) return defaultOpen
+    const saved = app.storage.get<boolean>(fullKey)
+    return typeof saved === "boolean" ? saved : defaultOpen
+  }, [app, defaultOpen, fullKey])
+
+  const [opened, setOpenedState] = useState<boolean>(() => (compact ? false : readSaved()))
+
+  // 账号或 storageKey 变化时按对应账号的偏好重置
+  useEffect(() => {
+    setOpenedState(compact ? false : readSaved())
+  }, [compact, readSaved])
+
+  const setOpened = useCallback(
+    (next: boolean) => {
+      setOpenedState(next)
+      if (!compact && fullKey && app) {
+        app.storage.set(fullKey, next)
+      }
+    },
+    [app, compact, fullKey],
+  )
+
+  const open = useCallback(() => setOpened(true), [setOpened])
+  const close = useCallback(() => setOpened(false), [setOpened])
+  const toggle = useCallback(() => {
+    setOpenedState((prev) => {
+      const next = !prev
+      if (!compact && fullKey && app) {
+        app.storage.set(fullKey, next)
+      }
+      return next
+    })
+  }, [app, compact, fullKey])
+
+  return { opened, open, close, toggle, setOpened }
+}
+
+/** AsidePane 的选项。 */
+export interface AsidePaneProps {
+  /** 是否展开右侧详情栏。 */
+  opened: boolean
+  /** 关闭回调（抽屉点遮罩或按 Esc 时触发）。 */
+  onClose: () => void
+  /** 可拖拽栏宽配置（边线和拖拽手柄固定在左侧）；不传时按 width 固定宽度渲染。 */
+  resizable?: Omit<PaneResizeOptions, "side">
+  /** 未传 resizable 时的内联宽度及抽屉宽度（像素），默认取 resizable.defaultWidth 或 340。 */
+  width?: number
+  /** 达到该媒体查询时以内联分栏显示，否则退化为右侧浮层抽屉；默认 "(min-width: 1360px)"。 */
+  inlineQuery?: string
+  /** 达到该媒体查询时允许与二级导航并排显示；未达到且内联展开时自动临时收起二级导航；默认 "(min-width: 1600px)"。 */
+  keepNavQuery?: string
+  /** 窄屏媒体查询：窄屏展开时使用全屏宽度抽屉，保留主内容区滚动位置；默认 "(max-width: 48em)"。 */
+  compactQuery?: string
+  className?: string
+  children: ReactNode
+}
+
+/**
+ * 响应式右侧详情栏：宽屏内联为可拖拽调节宽度的右侧 Pane（中等宽屏自动临时收起二级导航），
+ * 中屏退化为右侧浮层 Drawer，窄屏以 100% 宽度覆盖展示。
+ */
+export function AsidePane({
+  opened,
+  onClose,
+  resizable,
+  width,
+  inlineQuery = "(min-width: 1360px)",
+  keepNavQuery = "(min-width: 1600px)",
+  compactQuery = "(max-width: 48em)",
+  className,
+  children,
+}: AsidePaneProps): ReactNode {
+  const compact = useNarrow(compactQuery)
+  const canInline = useNarrow(inlineQuery)
+  const wide = useNarrow(keepNavQuery)
+  const inline = opened && !compact && canInline
+
+  useCollapseNav(inline && !wide)
+
+  if (inline) {
+    const paneWidth = width ?? resizable?.defaultWidth ?? 340
+    return (
+      <Pane
+        width={resizable ? undefined : paneWidth}
+        border="left"
+        resizable={resizable ? { ...resizable, side: "left" } : false}
+        className={className}
+      >
+        {children}
+      </Pane>
+    )
+  }
+
+  const drawerSize = compact ? "100%" : (width ?? resizable?.defaultWidth ?? 340)
+  return (
+    <Drawer
+      opened={opened}
+      onClose={onClose}
+      position="right"
+      size={drawerSize}
+      padding={0}
+      withCloseButton={false}
+      transitionProps={compact ? { duration: 0 } : undefined}
+    >
+      <Box h="100dvh" style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+        {opened && children}
+      </Box>
+    </Drawer>
   )
 }

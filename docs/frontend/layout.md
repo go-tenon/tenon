@@ -237,7 +237,7 @@ export const Route = createFileRoute("/t/$tenant")({
 - `settings`（默认 `/settings`）下的页面不进图标栏，从用户菜单进入；其中的页面不显示面包屑，内页用 `Page` 的 `back` 返回。
 - 图标栏的标志下方、底部支持 `railTop`、`railBottom` 扩展（例如全局搜索按钮）；`headerHeight`（默认 52px）写入 `--tn-rail-header`，供各栏顶栏齐平。
 - 窄屏（`compactQuery`，默认 `max-width: 48em`）时二级导航是抽屉，点击导航项后自动关闭。内容区最宽 `maxWidth`（默认 1152px），二级导航宽 `navWidth`（默认 260px）。`RailLayout` 没有多标签。
-- 二级导航的收起状态按账号保存，页面可用 `useNavControl()` 读取展开状态并触发切换。
+- 二级导航的收起状态按账号保存，页面可用 `useNavControl()` 读取展开状态并触发切换；没有子菜单且未使用 `<Fill name="nav">` 的单页模块自动隐藏二级导航。
 
 <a id="full-bleed"></a>
 ### 铺满的模块：`fullBleed`、`nav` 插槽和 `useCollapseNav`
@@ -299,6 +299,7 @@ import { Pane, PaneBody, PaneHeader, PaneToolbar } from "@go-tenon/ui"
 - `PaneHeader` 的 `showNavToggle` 在布局二级导航收起时自动显示展开按钮，`back` 显示返回按钮；窄屏允许内容折行时传 `fixed={false}`。
 - `PaneToolbar` 自动开启 `data-tn-density="dense"`，内部的输入框、按钮与分段切换保持 30px 高度和 13px 字号。
 - `PaneBody` 传入 `loading` 时，在当前可见视口中央叠加轻磨砂加载覆层与转圈，适合配合 [`useSmoothTransition`](lists-forms.md#loading-transition) 处理全栏筛选刷新。
+- 右侧详情栏使用 `AsidePane` 与 `useAsidePaneState(storageKey)`：按账号持久化展开偏好，宽屏内联为可拖拽 `Pane`（中等宽屏自动临时收起二级导航），中屏退化为右侧 `Drawer`，窄屏全屏覆盖展示。
 
 <a id="custom-layouts"></a>
 ## 自己写布局

@@ -227,7 +227,12 @@ export function RailLayout({
   const settingsGroup = menu.find((m) => m.path === settings)
   const inSettings = !!settingsGroup && active[0] === settingsGroup.id
 
-  const expanded = inSettings || (!layout.collapsed && !(requested && !released))
+  const current = inSettings ? settingsGroup : (modules.find((m) => m.id === active[0]) ?? modules[0])
+  // 设置页、存在子菜单或模块提供了自定义 nav 插槽时显示二级导航；单页模块隐藏冗余二级栏。
+  const hasSecondary = inSettings || customNav || Boolean(current?.children?.length)
+  const items = current ? (current.children ?? []) : []
+
+  const expanded = hasSecondary && (inSettings || (!layout.collapsed && !(requested && !released)))
   const setExpanded = useCallback(
     (next: boolean) => {
       if (next && requested) setReleased(true)
@@ -235,7 +240,7 @@ export function RailLayout({
     },
     [requested, setLayout],
   )
-  const open = compact ? drawer : expanded
+  const open = hasSecondary && (compact ? drawer : expanded)
   const setOpen = useCallback(
     (next: boolean) => {
       if (compact) setDrawer(next)
@@ -245,18 +250,19 @@ export function RailLayout({
   )
   const navControl = useMemo(
     () => ({
+      hasNav: hasSecondary,
       open,
       compact,
-      openNav: () => setOpen(true),
+      openNav: () => {
+        if (hasSecondary) setOpen(true)
+      },
       closeNav: () => setOpen(false),
-      toggleNav: () => setOpen(!open),
+      toggleNav: () => {
+        if (hasSecondary) setOpen(!open)
+      },
     }),
-    [open, compact, setOpen],
+    [hasSecondary, open, compact, setOpen],
   )
-
-  const current = inSettings ? settingsGroup : (modules.find((m) => m.id === active[0]) ?? modules[0])
-  // 只有一个页面的模块（例如首页），二级导航中就是它自己。
-  const items = current ? (current.children ?? [current]) : []
 
   const secondary = (
     <>
@@ -327,8 +333,8 @@ export function RailLayout({
         <Stack gap={6} align="center" className="tn-rail-modules">
           {modules.map((m) => {
             const isActive = !inSettings && current?.id === m.id
-            // 当前模块的二级导航收起时，鼠标移上去图标换成“展开”。
-            const expandHere = isActive && !compact && !expanded
+            // 当前模块存在二级导航且处于收起态时，鼠标移上去图标换成“展开”。
+            const expandHere = hasSecondary && isActive && !compact && !expanded
             return (
               <Tooltip
                 key={m.id}
@@ -346,6 +352,8 @@ export function RailLayout({
                       const to = m.children ? firstPage(m.children) : m.path
                       if (to) void navigate({ to })
                       setOpen(true)
+                    } else if (!hasSecondary) {
+                      return
                     } else if (compact) {
                       setDrawer((d) => !d)
                     } else {
@@ -376,9 +384,11 @@ export function RailLayout({
       </nav>
       <div className="tn-rail-workspace">
         {compact ? (
-          <Drawer opened={drawer} onClose={() => setDrawer(false)} size={288} padding={0} withCloseButton={false}>
-            <div className="tn-rail-secondary-drawer">{secondary}</div>
-          </Drawer>
+          hasSecondary && (
+            <Drawer opened={drawer} onClose={() => setDrawer(false)} size={288} padding={0} withCloseButton={false}>
+              <div className="tn-rail-secondary-drawer">{secondary}</div>
+            </Drawer>
+          )
         ) : (
           <aside
             className="tn-rail-secondary"
