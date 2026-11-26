@@ -477,12 +477,12 @@ function Runs({
         ...tasks.map((t) => ({ value: t.name, label: taskLabel(t) })),
       ]}
       allowDeselect={false}
-      w={220}
+      w={{ base: "100%", sm: 220 }}
       aria-label={tr("tenon.schedule.filter_task")}
     />
   )
   const statusFilter = (
-    <ScrollArea type="never" offsetScrollbars={false}>
+    <ScrollArea type="never" offsetScrollbars={false} maw="100%">
       <SegmentedControl
         value={status ?? ""}
         onChange={(v) => {
@@ -504,7 +504,7 @@ function Runs({
     <>
       <DataTable
         toolbar={
-          <Group gap="xs">
+          <Group gap="xs" wrap="wrap">
             {taskFilter}
             {statusFilter}
           </Group>

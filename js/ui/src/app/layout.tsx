@@ -246,8 +246,8 @@ export function useRailSectionState(
   return [opened, setOpened]
 }
 
-/** 是否是窄屏（默认宽度小于 768px）：布局据此把主导航收进抽屉。 */
-export function useNarrow(query = "(max-width: 767px)"): boolean {
+/** 是否是窄屏（默认宽度小于 Mantine 的 sm 断点 48em）：布局据此把主导航收进抽屉。 */
+export function useNarrow(query = "(max-width: 47.99em)"): boolean {
   return useSyncExternalStore(
     (onChange) => {
       const mql = window.matchMedia?.(query)

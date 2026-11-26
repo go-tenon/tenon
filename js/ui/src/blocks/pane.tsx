@@ -367,7 +367,7 @@ export function PaneBody({ loading, className, style, children }: PaneBodyProps)
 export interface AsidePaneStateOptions {
   /** 宽屏下首次访问是否默认展开，默认 false。 */
   defaultOpen?: boolean
-  /** 窄屏媒体查询：进入窄屏时自动收起（不覆写宽屏保存的偏好），默认 "(max-width: 48em)"。 */
+  /** 窄屏媒体查询：进入窄屏时自动收起（不覆写宽屏保存的偏好），默认 "(max-width: 47.99em)"。 */
   compactQuery?: string
 }
 
@@ -386,7 +386,7 @@ export interface AsidePaneState {
  */
 export function useAsidePaneState(
   storageKey: string,
-  { defaultOpen = false, compactQuery = "(max-width: 48em)" }: AsidePaneStateOptions = {},
+  { defaultOpen = false, compactQuery = "(max-width: 47.99em)" }: AsidePaneStateOptions = {},
 ): AsidePaneState {
   const app = useOptionalApp()
   const compact = useNarrow(compactQuery)
@@ -449,7 +449,7 @@ export interface AsidePaneProps {
   inlineQuery?: string
   /** 达到该媒体查询时允许与二级导航并排显示；未达到且内联展开时自动临时收起二级导航；默认 "(min-width: 1600px)"。 */
   keepNavQuery?: string
-  /** 窄屏媒体查询：窄屏展开时使用全屏宽度抽屉，保留主内容区滚动位置；默认 "(max-width: 48em)"。 */
+  /** 窄屏媒体查询：窄屏展开时使用全屏宽度抽屉，保留主内容区滚动位置；默认 "(max-width: 47.99em)"。 */
   compactQuery?: string
   className?: string
   children: ReactNode
@@ -466,7 +466,7 @@ export function AsidePane({
   width,
   inlineQuery = "(min-width: 1360px)",
   keepNavQuery = "(min-width: 1600px)",
-  compactQuery = "(max-width: 48em)",
+  compactQuery = "(max-width: 47.99em)",
   className,
   children,
 }: AsidePaneProps): ReactNode {

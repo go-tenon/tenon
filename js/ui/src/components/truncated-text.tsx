@@ -1,8 +1,8 @@
-// 表格单元格中的长文本：只显示一行，被截断时鼠标停在上面弹出全文。
+// 表格单元格中的长文本：只显示一行，被截断时桌面悬停或触屏点击弹出全文。
 
-import { Box, HoverCard, Text } from "@mantine/core"
+import { Box, Popover, Text } from "@mantine/core"
 import { useElementSize } from "@mantine/hooks"
-import { type ReactNode, useLayoutEffect, useRef, useState } from "react"
+import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react"
 
 /** cardPadding 是弹出卡片左右的内边距，px。 */
 const cardPadding = 12
@@ -19,8 +19,8 @@ export interface TruncatedTextProps {
 
 /**
  * TruncatedText 是表格单元格中的长文本：只显示一行，铺满这一列实际的宽度，超出的部分用省略号代替。
- * 文字被截断时，鼠标停在上面会在上方弹出全文（上方空间不够时在下方），卡片中文字的宽度和左右位置与单元格中的文字相同；
- * 鼠标可以移进卡片选中文字复制，在卡片中点击不会触发表格行的点击。卡片的颜色与主题中的 Tooltip 相同。
+ * 文字被截断时，桌面端鼠标悬停或移动端点击在上方弹出全文（上方空间不够时在下方），卡片中文字的宽度和左右位置与单元格一致；
+ * 弹出后可选中文字复制，在卡片中点击不会触发表格行的点击。卡片的颜色与主题中的 Tooltip 相同。
  *
  * ResourcePage 中文字类型（kind 为 text）的列自动使用它；自己写的列中直接使用：
  *
@@ -36,23 +36,62 @@ export function TruncatedText({ value, maxWidth = 320, minWidth = 120 }: Truncat
   const { ref, width } = useElementSize()
   const text = useRef<HTMLParagraphElement>(null)
   const [truncated, setTruncated] = useState(false)
+  const [opened, setOpened] = useState(false)
+  const timer = useRef<number | undefined>(undefined)
+
+  const clearTimer = () => {
+    if (timer.current !== undefined) {
+      window.clearTimeout(timer.current)
+      timer.current = undefined
+    }
+  }
+  useEffect(
+    () => () => {
+      if (timer.current !== undefined) window.clearTimeout(timer.current)
+    },
+    [],
+  )
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: 列宽或文字变化时重新判断是否截断
   useLayoutEffect(() => {
     const el = text.current
     if (el) setTruncated(el.scrollWidth > el.clientWidth)
   }, [width, value])
+
+  const openLater = () => {
+    if (!truncated) return
+    clearTimer()
+    timer.current = window.setTimeout(() => setOpened(true), 300)
+  }
+  const closeLater = () => {
+    clearTimer()
+    timer.current = window.setTimeout(() => setOpened(false), 200)
+  }
+
   return (
-    <HoverCard
+    <Popover
+      opened={truncated && opened}
+      onChange={setOpened}
       disabled={!truncated}
-      openDelay={300}
-      closeDelay={200}
-      width={width + 2 * cardPadding}
+      width={Math.max(width + 2 * cardPadding, 180)}
       offset={{ mainAxis: 8, crossAxis: -cardPadding }}
       position="top-start"
       shadow="md"
     >
-      <HoverCard.Target>
-        <Box ref={ref} pos="relative">
+      <Popover.Target>
+        <Box
+          ref={ref}
+          pos="relative"
+          style={truncated ? { cursor: "pointer" } : undefined}
+          onMouseEnter={openLater}
+          onMouseLeave={closeLater}
+          onClick={(e) => {
+            if (!truncated) return
+            e.stopPropagation()
+            clearTimer()
+            setOpened((o) => !o)
+          }}
+        >
           <Text
             span
             size="sm"
@@ -78,18 +117,21 @@ export function TruncatedText({ value, maxWidth = 320, minWidth = 120 }: Truncat
             {value}
           </Text>
         </Box>
-      </HoverCard.Target>
+      </Popover.Target>
       {/* 卡片渲染在 portal 中，点击事件仍会经过 React 树冒泡到表格的行；在这里拦住，选中文字时不触发行的点击。 */}
-      <HoverCard.Dropdown
+      <Popover.Dropdown
         bg="var(--mantine-color-dark-filled)"
         bd="none"
         px={cardPadding}
+        maw="calc(100vw - 24px)"
+        onMouseEnter={clearTimer}
+        onMouseLeave={closeLater}
         onClick={(e) => e.stopPropagation()}
       >
         <Text size="sm" c="white" style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", userSelect: "text" }}>
           {value}
         </Text>
-      </HoverCard.Dropdown>
-    </HoverCard>
+      </Popover.Dropdown>
+    </Popover>
   )
 }

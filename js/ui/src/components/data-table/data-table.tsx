@@ -248,10 +248,10 @@ export function DataTable<T>(props: DataTableProps<T>): ReactNode {
   return (
     <Stack gap="sm">
       {(toolbar || (bulkActions && keys.length > 0) || storeKey) && (
-        <Group justify="space-between" gap="sm" wrap="nowrap" align="flex-end">
+        <Group justify="space-between" gap="sm" wrap="nowrap" align="flex-start">
           <Box style={{ flex: 1, minWidth: 0 }}>
             {bulkActions && keys.length > 0 ? (
-              <Group gap="sm">
+              <Group gap="sm" wrap="wrap">
                 <Text size="sm" fw={500}>
                   {t("tenon.table.selected", { count: keys.length })}
                 </Text>

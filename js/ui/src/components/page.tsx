@@ -83,7 +83,7 @@ export function Page({
       <Stack gap={10}>
         {showCrumbs && <Crumbs extra={crumb} />}
         <div className="tn-page-header">
-          <div>
+          <div className="tn-page-heading">
             <Group gap={6} wrap="nowrap">
               {back && (
                 <ActionIcon variant="subtle" color="gray" aria-label={t("tenon.common.back")} onClick={back} ml={-6}>
@@ -100,7 +100,7 @@ export function Page({
               </Text>
             )}
           </div>
-          {actions && <div>{actions}</div>}
+          {actions && <div className="tn-page-actions">{actions}</div>}
         </div>
       </Stack>
       {children}
