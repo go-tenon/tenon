@@ -26,7 +26,6 @@ import (
 	"slices"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
@@ -638,9 +637,10 @@ func devCommand() *cobra.Command {
 
 // buildOptions 控制 buildBinary 的构建版本注入与前端缓存行为。
 type buildOptions struct {
-	Version string // 显式指定构建版本号；留空时取 git describe --tags --always --dirty
-	Commit  string // Git 短提交号；留空时自动读取
-	NoCache bool   // 为真时跳过 apps/dist 前端指纹缓存，全量重建前端
+	Version    string // 显式指定构建版本号；留空时取 git describe --tags --always --dirty
+	Commit     string // Git 短提交号；留空时自动读取
+	CommitTime string // 提交时间（UTC RFC3339）；留空时取 HEAD 提交时间以保持构建可复现
+	NoCache    bool   // 为真时跳过 apps/dist 前端指纹缓存，全量重建前端
 }
 
 // buildCommand 返回 tenon build 命令：构建每个前端，把它们的静态文件放进 apps/dist；有服务端渲染的前端时，
@@ -786,11 +786,13 @@ func buildBinary(cmd *cobra.Command, cfg *project.Config, out, arch string, opts
 	return nil
 }
 
-// buildLDFlags 生成注入 command 与 telemetry 构建元数据的 -ldflags 字符串。
+// buildLDFlags 生成注入 command 与 telemetry 构建元数据的确定性 -ldflags 字符串：
+// 构建时间取 Git HEAD 提交时间（UTC RFC3339），确保同一提交多次构建产出逐字节一致的二进制以命中内容寻址缓存与 No-op 短路。
 func buildLDFlags(ctx context.Context, opts buildOptions) string {
 	ver := strings.TrimSpace(opts.Version)
 	commit := strings.TrimSpace(opts.Commit)
-	if ver == "" || commit == "" {
+	commitTime := strings.TrimSpace(opts.CommitTime)
+	if ver == "" || commit == "" || commitTime == "" {
 		gitInfo := deploy.InspectGit(ctx, ".")
 		if ver == "" {
 			ver = gitInfo.Version
@@ -798,8 +800,10 @@ func buildLDFlags(ctx context.Context, opts buildOptions) string {
 		if commit == "" {
 			commit = gitInfo.Commit
 		}
+		if commitTime == "" {
+			commitTime = gitInfo.CommitTime
+		}
 	}
-	buildTime := time.Now().UTC().Format(time.RFC3339)
 	var flags []string
 	if ver != "" {
 		flags = append(flags,
@@ -810,7 +814,9 @@ func buildLDFlags(ctx context.Context, opts buildOptions) string {
 	if commit != "" {
 		flags = append(flags, "-X", framework+"/command.buildCommit="+commit)
 	}
-	flags = append(flags, "-X", framework+"/command.buildTime="+buildTime)
+	if commitTime != "" {
+		flags = append(flags, "-X", framework+"/command.buildTime="+commitTime)
+	}
 	return strings.Join(flags, " ")
 }
 

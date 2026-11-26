@@ -43,11 +43,12 @@ type HistoryEntry struct {
 
 // GitBuildInfo 是从本地 Git 仓库提取的版本与提交元数据。
 type GitBuildInfo struct {
-	InRepo  bool   // 当前目录是否位于 Git 仓库内
-	Version string // git describe --tags --always --dirty 的结果，缺省为 dev
-	Commit  string // 短提交号
-	Dirty   bool   // 工作区是否存在未提交改动
-	Repo    string // 从 origin 推导出的 GitHub owner/repo（非 GitHub 时为空）
+	InRepo     bool   // 当前目录是否位于 Git 仓库内
+	Version    string // git describe --tags --always --dirty 的结果，缺省为 dev
+	Commit     string // 短提交号
+	CommitTime string // HEAD 提交时间（UTC RFC3339），用于可复现构建的时间注入
+	Dirty      bool   // 工作区是否存在未提交改动
+	Repo       string // 从 origin 推导出的 GitHub owner/repo（非 GitHub 时为空）
 }
 
 // FormatReleaseID 将正整数发布序号格式化为固定宽度的目录名（例如 1 -> 0001，10000 -> 10000）。
@@ -85,6 +86,11 @@ func InspectGit(ctx context.Context, dir string) GitBuildInfo {
 	info := GitBuildInfo{InRepo: true}
 	if sha, err := runGit("rev-parse", "--short", "HEAD"); err == nil {
 		info.Commit = sha
+	}
+	if ct, err := runGit("show", "-s", "--format=%cI", "HEAD"); err == nil && ct != "" {
+		if parsed, perr := time.Parse(time.RFC3339, ct); perr == nil {
+			info.CommitTime = parsed.UTC().Format(time.RFC3339)
+		}
 	}
 	if status, err := runGit("status", "--porcelain"); err == nil && status != "" {
 		info.Dirty = true

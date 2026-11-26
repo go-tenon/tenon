@@ -141,11 +141,12 @@ func Deploy(ctx context.Context, r Runner, t Target, opts ReleaseOptions, out, e
 		return nil, fmt.Errorf("deploy: version %q contains invalid characters", version)
 	}
 	buildMeta := GitBuildInfo{
-		InRepo:  gitInfo.InRepo,
-		Version: version,
-		Commit:  gitInfo.Commit,
-		Dirty:   gitInfo.Dirty && opts.Binary == "" && opts.Tag == "",
-		Repo:    gitInfo.Repo,
+		InRepo:     gitInfo.InRepo,
+		Version:    version,
+		Commit:     gitInfo.Commit,
+		CommitTime: gitInfo.CommitTime,
+		Dirty:      gitInfo.Dirty && opts.Binary == "" && opts.Tag == "",
+		Repo:       gitInfo.Repo,
 	}
 
 	// 1. 先打包配置文件并计算确定性哈希，本地缺少配置时在构建之前立即报错。
