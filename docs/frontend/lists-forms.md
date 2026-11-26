@@ -66,7 +66,7 @@ return (
 
 - `sortable` 的列点击列头排序，`-accessor` 表示降序。没有 `total` 时（游标分页）不显示分页。
 - `selection` 显示勾选框，有选中的行时表格上方显示 `bulkActions`。`useSelection(list.filters)` 翻页时保留选中，换了查询条件才清空。行的标识默认是 `id` 字段，用 `rowKey` 改。
-- `storeKey` 开启列设置（宽度、显示哪些列），保存在浏览器中。`fixed` 的列不能隐藏和调整宽度，`hidden` 的列默认隐藏。
+- `storeKey` 开启列设置（显示哪些列），保存在浏览器中。`resizable` 开启拖动表头边缘调整列宽，默认关闭，同时设置 `storeKey` 时保存列宽。`fixed` 的列保持显示且不参与列宽调整，`hidden` 的列默认隐藏。
 - `expand` 每行可以展开明细，`toolbar` 放在表格上方左侧，例如筛选条件。
 - 表格的行不能点击，用户要能选中、复制每一列的内容。打开详情、对话框的入口用单元格中的 `CellLink` 或操作列的按钮：
 

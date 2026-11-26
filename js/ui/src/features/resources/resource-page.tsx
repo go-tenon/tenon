@@ -85,6 +85,8 @@ export interface ResourcePageProps {
   toolbar?: ReactNode
   /** 展开的内容：每行开头一个箭头按钮，点它展开、收起。 */
   expand?: (row: ResourceRow) => ReactNode
+  /** 允许拖动表头边缘调整列宽，默认 false。 */
+  resizable?: boolean
   /**
    * 新建和修改的表单：page（默认）是单独的页面，需要列表路由下的 new 和 $id/edit 两个子路由（渲染 ResourceFormPage）；
    * modal 是列表上方的对话框，适合字段少的资源；drawer 是右侧滑出的抽屉，适合字段较多或含嵌套结构的资源。
@@ -121,6 +123,7 @@ function ResourceList({
   rowActions,
   toolbar,
   expand,
+  resizable,
   form = "page",
   formSize,
   renderForm,
@@ -290,6 +293,7 @@ function ResourceList({
       columns={columns}
       rowKey={(row) => model.rowKey(row)}
       storeKey={model.name}
+      resizable={resizable}
       toolbar={<Filters model={model} list={view.list} />}
       expand={expand}
       empty={view.error ? t("tenon.resource.load_failed") : undefined}
