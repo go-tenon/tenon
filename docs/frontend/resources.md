@@ -184,6 +184,7 @@ export const Route = createFileRoute("/_app/articles/$id/edit")({
 | `rowActions` | 行上的额外操作，排在声明的操作之后、删除之前 |
 | `toolbar` | 标题区的额外按钮，例如[导入、导出](features.md#transfer) |
 | `expand` | 行的展开内容 |
+| `resizable` | 允许拖动表头边缘调整列宽，默认关闭 |
 | `form` | `page`（默认）是单独的页面，`modal` 是对话框，`drawer` 是右侧抽屉 |
 | `formSize` | `modal` 或 `drawer` 的宽度，默认 `lg` |
 | `renderForm` | `modal` 或 `drawer` 中自己写的表单内容，见[`useResourceForm`](#custom-forms) |

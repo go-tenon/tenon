@@ -1,7 +1,8 @@
 // 表格：包装 mantine-datatable，应用不直接依赖它。分页和排序接 list.ts 中的列表状态（保存在地址中），
-// 选中接 useSelection（可以跨页）。设置了 storeKey 时，用 mantine-datatable 自带的列设置：拖动表头的边缘调整宽度，
-// 在表格右上方的“列设置”菜单（或右键点击表头）中选择显示的列、恢复默认，设置保存在浏览器中。列的顺序就是代码中的顺序。
-// 密度随主题的预设。
+// 选中接 useSelection（可以跨页）。设置了 storeKey 时，用 mantine-datatable 自带的列设置：
+// 在表格右上方的“列设置”菜单（或右键点击表头）中选择显示的列、恢复默认，设置保存在浏览器中。
+// 开启 resizable 时允许拖动表头边缘调整列宽（默认关闭），同时设置 storeKey 时列宽一并保存在浏览器中。
+// 列的顺序就是代码中的顺序。密度随主题的预设。
 
 import {
   ActionIcon,
@@ -46,7 +47,7 @@ export interface Column<T> {
   ellipsis?: boolean
   /** 默认隐藏；设置了 storeKey 时，用户可以在“列设置”菜单中打开。 */
   hidden?: boolean
-  /** 不能隐藏和调整宽度，例如名称列、操作列。 */
+  /** 固定列，保持显示且不参与列宽调整，例如名称列、操作列。 */
   fixed?: boolean
 }
 
@@ -80,10 +81,12 @@ export interface DataTableProps<T> {
   /** 展开的内容：每行开头一个箭头按钮，点它展开、收起。点击行的其他地方没有反应，文字可以照常选中、复制。 */
   expand?: (row: T) => ReactNode
   /**
-   * 保存列设置的键，例如 "orders"：可以拖动表头的边缘调整宽度，在表格右上方的“列设置”菜单
-   * （或右键点击表头）中选择显示的列、恢复默认，保存在浏览器中。
+   * 保存列设置的键，例如 "orders"：在表格右上方的“列设置”菜单（或右键点击表头）中选择显示的列、
+   * 恢复默认，保存在浏览器中；开启 resizable 时一并保存列宽。
    */
   storeKey?: string
+  /** 允许拖动表头边缘调整非 fixed 列的宽度，默认 false；设置了 storeKey 时宽度保存在浏览器中。 */
+  resizable?: boolean
   /** 表格上方左侧的内容，例如筛选条件。 */
   toolbar?: ReactNode
   /** 没有数据时的说明，默认“暂无数据”（当前语言的）。 */
@@ -121,7 +124,7 @@ function keyOf<T>(rowKey: DataTableProps<T>["rowKey"]): (row: T) => string {
  *   <DataTable records={orders.data?.items ?? []} total={orders.data?.total} loading={orders.isPending} list={list} columns={columns} />
  */
 export function DataTable<T>(props: DataTableProps<T>): ReactNode {
-  const { records, columns, list, selection, storeKey, toolbar, bulkActions } = props
+  const { records, columns, list, selection, storeKey, resizable = false, toolbar, bulkActions } = props
   const t = useText()
   const m = layoutMetrics(useMantineTheme())
   const dense = m.preset === "compact"
@@ -138,7 +141,8 @@ export function DataTable<T>(props: DataTableProps<T>): ReactNode {
         textAlign: c.textAlign,
         // ellipsis 和 noWrap 只能二选一。
         ...(c.ellipsis ? { ellipsis: true } : { noWrap: c.noWrap }),
-        ...(storeKey && !c.fixed ? { toggleable: true, resizable: true, defaultToggle: !c.hidden } : {}),
+        ...(storeKey && !c.fixed ? { toggleable: true, defaultToggle: !c.hidden } : {}),
+        ...(resizable && !c.fixed ? { resizable: true } : {}),
       }) as DataTableColumn<T>,
   )
   // 展开的行只由每行开头的箭头按钮切换，点击行不展开（行里的文字要能选中、复制）。
@@ -175,7 +179,17 @@ export function DataTable<T>(props: DataTableProps<T>): ReactNode {
   const storePrefix = storeKey ? `tenon:columns:${storeKey}:` : undefined
   const storeColumnsKey = storePrefix ? storePrefix + columnsHash(mapped.map((c) => String(c.accessor))) : undefined
   const columnSettings = useDataTableColumns<T>({ key: storeColumnsKey, columns: mapped })
-  const { effectiveColumns } = columnSettings
+  const { effectiveColumns, resetColumnsWidth } = columnSettings
+  // 关闭列宽调整时在子组件读取本地存储之前清除历史列宽，使表格按代码中的默认列宽渲染。
+  useLayoutEffect(() => {
+    if (resizable || !storeColumnsKey) return
+    localStorage.removeItem(`${storeColumnsKey}-columns-width`)
+  }, [storeColumnsKey, resizable])
+  const prevResizable = useRef(resizable)
+  useEffect(() => {
+    if (prevResizable.current && !resizable) resetColumnsWidth()
+    prevResizable.current = resizable
+  }, [resizable, resetColumnsWidth])
   useEffect(() => {
     if (!storePrefix || !storeColumnsKey) return
     for (const k of Object.keys(localStorage)) {
@@ -261,7 +275,7 @@ export function DataTable<T>(props: DataTableProps<T>): ReactNode {
               }
               onReset={() => {
                 columnSettings.resetColumnsToggle()
-                columnSettings.resetColumnsWidth()
+                if (resizable) resetColumnsWidth()
               }}
               size={m.controlSize}
             />
@@ -320,13 +334,13 @@ interface ColumnSettingsProps<T> {
   columns: Column<T>[] // 表格的全部列，用来取列的标题
   toggles: { accessor: string; toggleable: boolean; toggled: boolean }[] // 每一列是否可以隐藏、是否显示
   onToggle(accessor: string, toggled: boolean): void // 勾选或取消一列
-  onReset(): void // 恢复默认：显示的列和宽度都回到代码中的设置
+  onReset(): void // 恢复默认：显示的列（开启 resizable 时含列宽）回到代码中的设置
   size: string // 按钮的尺寸，与表格上方的其他控件相同
 }
 
 /**
- * ColumnSettings 是表格右上方的“列设置”按钮：点开后勾选显示的列，底部的“恢复默认”把显示的列和宽度
- * 都恢复为代码中的设置。固定的列（名称、操作）一直显示，不在其中。
+ * ColumnSettings 是表格右上方的“列设置”按钮：点开后勾选显示的列，底部的“恢复默认”把显示的列
+ * （开启 resizable 时含列宽）恢复为代码中的设置。固定的列（名称、操作）一直显示，不在其中。
  */
 function ColumnSettings<T>({ columns, toggles, onToggle, onReset, size }: ColumnSettingsProps<T>): ReactNode {
   const [opened, setOpened] = useState(false)
