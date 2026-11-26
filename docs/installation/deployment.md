@@ -22,69 +22,90 @@ bun run build      # 即 go tool tenon build，输出 bin/<入口目录名>，�
 <a id="tenon-deploy"></a>
 ## 使用 `tenon deploy` 自动发布
 
-在项目根目录生成部署配置并初始化目标服务器：
+在项目根目录生成部署骨架并初始化目标服务器：
 
 ```bash
 go tool tenon add deploy --user deploy --host 203.0.113.10
-go tool tenon deploy setup
-cp .env.example .env.production                      # 填写数据库、NATS、APP_KEY 等密钥
-go tool tenon deploy env push .env.production
-go tool tenon deploy
+# 编辑 deploy/targets/prod/target.yaml 与 deploy/targets/prod/config.yaml
+go tool tenon deploy setup -t prod
+go tool tenon deploy -t prod
 ```
 
-- `tenon deploy setup` 检查目标机为带 systemd 的 Linux（含 SSR 时检查 glibc），建系统用户与目录（含内容寻址对象池 `artifacts/` 与 `releases/`），写入 `<应用>@.service`、角色级 drop-in 与 `/usr/local/bin/<应用>` 运维入口并 `daemon-reload`。
-- `tenon deploy` 自动校验 Git 工作区干净（可传 `--allow-dirty`），并发探测目标主机架构并本地交叉编译（可传 `--tag vX.Y.Z` 直接从 GitHub Release 拉取并校验 `checksums.txt`，或 `--binary` 指定本地文件），在主节点通过会话级 `flock` 加锁，按二进制 SHA-256 去重后经 gzip 流式上传，二进制、配置与 unit 均未变化时自动跳过（No-op）。随后全机并行 `config check`、主节点 `migrate up` 与 `doctor`，按波次滚动切换（unit 或 drop-in 变更时自动 `restart`，其余走 `reload`），最后按序号清理旧发布并回收无引用对象。
-- **版本与发布分离**：`tenon build` 自动将 `git describe --tags --always --dirty` 注入二进制（供 `--version` 与 `telemetry` `service.version` 使用）；远端以单调递增序号（`releases/0001/`）配合不可变 `manifest.json` 与 `history.jsonl` 记录每次发布，支持仅配置热发与精准回滚。
-- 常用运维命令：`config`（仅同步配置并热重载，复用线上二进制、不编译不迁移）、`releases`（查看历史发布清单）、`rollback [序号|tag]`（按激活历史栈或指定序号/Tag 回退，回退前全机 `config check`）、`status [--role http]`、`logs [--role http] [-F] [--since 15m] [--contains ERR]`、`run -- doctor`、`maintenance on|off`。
-- **AI 助手与人类同等优先**：所有 `tenon deploy` 子命令均支持 `--format json` 结构化输出且全程非交互；只读观测与发布预演同步作为 MCP 工具暴露（`tenon_deploy_info`、`tenon_deploy_status`、`tenon_deploy_logs`、`tenon_deploy_plan`），见 [MCP 服务](ai-assistants.md#mcp-servers)。
+- **分层组织**：`deploy/app.yaml` 与 `deploy/example/` 提交到仓库，描述产物名（`app`）、Release 仓库和公共默认值；每套独立部署实例放在 `deploy/targets/<目标名>/`（整体加入 `.gitignore`，也可通过环境变量 `TENON_DEPLOY_TARGETS` 或 `--targets-dir` 指向外部私有运维仓库），内含 `target.yaml` 与 `config.yaml`。
+- `tenon deploy setup` 检查目标机为带 systemd 的 Linux（含 SSR 时检查 glibc），按实例名（`instance`）创建系统用户、内容寻址对象池 `artifacts/` 与 `releases/`，写入 `<instance>@.service`、角色级 drop-in 与 `/usr/local/bin/<instance>` 运维入口并 `daemon-reload`。
+- `tenon deploy` 校验 Git 工作区干净（可传 `--allow-dirty`），探测架构并本地交叉编译（可传 `--tag vX.Y.Z` 拉取并校验 GitHub Release 产物，或 `--binary` 指定本地文件；使用 `--tag`/`--binary` 或查询运维命令时可脱离源码仓库直接运行），在主节点通过会话级 `flock` 加锁，按 SHA-256 去重后经 gzip 流式上传，二进制、配置与 unit 均未变化时自动跳过（No-op）。随后全机并行 `config check`、主节点 `migrate up` 与 `doctor`，按波次滚动切换（unit 或 drop-in 变更时自动 `restart`，其余走 `reload`），最后清理旧发布并回收无引用对象。
+- **版本与发布分离**：`tenon build` 将 `git describe --tags --always --dirty` 注入二进制；远端以单调递增序号（`releases/0001/`）配合不可变 `manifest.json` 与 `history.jsonl` 记录每次发布，支持仅配置热发与精准回滚。
+- 常用运维命令：`config`（仅同步配置并热重载，复用线上二进制）、`releases`（查看历史发布）、`rollback [序号|tag]`、`status [--role http]`、`logs [--role http] [-F] [--since 15m] [--contains ERR]`、`run -- doctor`、`env push|pull`、`maintenance on|off`。
+- **AI 助手与人类同等优先**：所有子命令支持 `--format json` 结构化输出且全程非交互；只读观测与发布预演同步作为 MCP 工具暴露（`tenon_deploy_info`、`tenon_deploy_status`、`tenon_deploy_logs`、`tenon_deploy_plan`），见 [MCP 服务](ai-assistants.md#mcp-servers)。
+
+<a id="multi-targets"></a>
+### 多独立实例与自定义实例名：`app` 与 `instance`
+
+同一份构建产物（`app`）可部署为任意套独立实例（自用生产、预发、多个合作方服务器），各实例互不干扰：
+
+```yaml
+# deploy/app.yaml（进仓库）
+app: omirouter
+repo: owner/omirouter
+keep_releases: 5
+defaults:
+  user: deploy
+```
+
+```yaml
+# deploy/targets/partner-acme/target.yaml（不进仓库）
+instance: acme-router     # 留空时默认等于 app；设置后远端全部资源按 acme-router 隔离
+hosts:
+  - 203.0.113.20
+```
+
+- **完全命名空间隔离**：目标机上的 systemd 模板（`/etc/systemd/system/<instance>@.service`）、`RuntimeDirectory`（`/run/<instance>/%i`）、默认系统用户（`<instance>`）、默认目录（`/opt/<instance>`）、远端二进制（`/opt/<instance>/bin/<instance>`）与命令行入口（`/usr/local/bin/<instance>`）均使用 `instance`，而本地构建与 `--tag` 下载仍使用 `app`。
+- **安全防手滑**：仅存在 1 个目标时可省略 `-t` 自动选中；存在 2 个及以上目标时必须显式传入 `-t <target>`（或 `--all`）。
+- **一次构建，串行发布多目标**：`go tool tenon deploy -t prod -t partner-acme`（或 `--all`）对同一架构只构建一次二进制，按顺序逐个实例发布，任一目标失败立即熔断。
 
 <a id="multi-host-roles"></a>
 ### 多服务与多机拓扑：`roles`
 
-单机环境在 `deploy.yaml` 中直接写 `hosts: [203.0.113.10]`（运行 `all`）；多服务多台服务器改用 `roles` 按角色声明拓扑：
+单机实例在 `target.yaml` 中直接写 `hosts: [203.0.113.10]`（运行 `all`）；多服务多台服务器改用 `roles` 按角色声明拓扑：
 
 ```yaml
-app: blog
-keep_releases: 5
-
-environments:
-  production:
-    user: deploy
-    migrate_host: 10.0.1.21           # 可选；未写时默认选首个非入口节点
-    roles:
-      http:
-        hosts: [10.0.1.11, 10.0.1.12, 10.0.1.13]
-        max_parallel: 2               # 金丝雀通过后其余节点每批最多同时切 2 台
-        stop_timeout: 30s
-      worker:
-        hosts: [10.0.1.21, 10.0.1.22]
-        stop_timeout: 120s            # 自动生成 blog@worker.service.d/override.conf
-        env:
-          GOMAXPROCS: "4"
-      scheduler:
-        hosts: [10.0.1.21]            # 同机兼多角色自动归并，只上传和切换一次
+# deploy/targets/prod/target.yaml
+user: deploy
+migrate_host: 10.0.1.21           # 可选；未写时默认选首个非入口节点
+roles:
+  http:
+    hosts: [10.0.1.11, 10.0.1.12, 10.0.1.13]
+    max_parallel: 2               # 金丝雀通过后其余节点每批最多同时切 2 台
+    stop_timeout: 30s
+  worker:
+    hosts: [10.0.1.21, 10.0.1.22]
+    stop_timeout: 120s            # 自动生成 <instance>@worker.service.d/override.conf
+    env:
+      GOMAXPROCS: "4"
+  scheduler:
+    hosts: [10.0.1.21]            # 同机兼多角色自动归并，只上传和切换一次
 ```
 
 - **分波次金丝雀滚动**：先升级后端节点（`rpc`、`worker`、`scheduler`），再升级入口节点（`http`、`all`）；每组超过 1 台时先单独切换首台金丝雀并校验 `StatusText` 与本机 `health`，通过后再按 `max_parallel` 滚动其余节点，任一台失败立即熔断并输出最近日志。
-- **声明式 unit 对账**：切换每台主机时自动停用并禁用已不在期望列表中的旧 `<应用>@*.service`（例如从 `all` 拆分为 `http` 与 `worker` 时先停 `blog@all.service`），避免端口冲突和孤儿进程。
+- **声明式 unit 对账**：切换每台主机时自动停用并禁用已不在期望列表中的旧 `<instance>@*.service`（例如从 `all` 拆分为 `http` 与 `worker` 时先停 `<instance>@all.service`），避免端口冲突和孤儿进程。
 
 <a id="deploy-config-files"></a>
-### 指定生产配置文件：`config_files`
+### 指定生产配置文件：`config_files` 与可选 `env_file`
 
-在 `deploy.yaml` 的环境中用 `config_files` 声明该环境加载的本地配置文件清单（与 `config_dir` 互斥），将生产配置（例如加入 `.gitignore` 的 `config/prod.yaml`）随发布一起同步。支持独立的单一生产配置文件（其余项使用框架默认值），也支持多文件按顺序叠加：
+目标目录下存在 `config.yaml` 且 `target.yaml` 未显式设置 `config_files` / `config_dir` 时，自动将其作为单一生产配置同步。需要叠加多个文件（例如共享基础配置 + 实例覆盖配置）时在 `target.yaml` 显式列出（相对路径以 `target.yaml` 所在目录为基准，支持上层相对路径与绝对路径）：
 
 ```yaml
-environments:
-  production:
-    user: deploy
-    config_files:
-      - config/prod.yaml            # 单一独立生产配置；需要叠加基础配置时写 [config/app.yaml, config/prod.yaml]
-    hosts: [203.0.113.10]
+# deploy/targets/prod/target.yaml
+config_files:
+  - ../../../config/app.yaml
+  - ./config.yaml
+hosts: [203.0.113.10]
 ```
 
-- **精确同步与权限隔离**：`tenon deploy` 在构建前校验清单中的每个文件存在，仅打包清单内文件上传到远端 `releases/<序号>/config/`，目录与文件权限分别设为 `0750` / `0640`（属主 `root:<service_user>`），避免把其他环境的配置传到目标机。
-- **自动注入 `--config`**：systemd 模板 unit 的 `ExecStart`、`/usr/local/bin/<应用>` 以及 `config check`、`doctor`、`migrate up`、`health`、`tenon deploy run` 自动携带清单中的 `--config` 参数，无需在 `/etc/<应用>/env` 中设置 `APP_CONFIG`。
-- **仅配置热发与自动重启收敛**：只改配置文件内容时执行 `tenon deploy config` 即可复用线上二进制零编译热重载生效，执行 `tenon deploy rollback` 时配置与二进制一起回退；变更 `config_files` 列表本身或角色 drop-in 后，部署过程自动同步 unit 与包装脚本并滚动重启使其生效。
+- **精确同步与权限隔离**：`tenon deploy` 在构建前校验清单中的每个文件存在，仅打包清单内文件上传到远端 `releases/<序号>/config/`，目录与文件权限分别设为 `0750` / `0640`（属主 `root:<service_user>`）。
+- **自动注入 `--config`**：systemd 模板 unit 的 `ExecStart`、`/usr/local/bin/<instance>` 以及 `config check`、`doctor`、`migrate up`、`health`、`tenon deploy run` 自动携带清单中的 `--config` 参数。
+- **可选 `env_file`**：全部配置写在 `config.yaml` 时无需配置 `env_file`（systemd 使用 `EnvironmentFile=-/etc/<instance>/env` 忽略缺失，随时仍可用 `tenon deploy env push` 推送）；需要强制检查环境变量文件时在 `target.yaml` 显式写 `env_file: /etc/<instance>/env`。
+- **仅配置热发与自动重启收敛**：只改配置文件内容时执行 `tenon deploy config -t <target>` 复用线上二进制热重载生效，`rollback` 时配置与二进制一起回退；变更 `config_files` 列表或角色 drop-in 后自动同步 unit 与包装脚本并滚动重启。
 
 <a id="release-process"></a>
 ## 第一次发布与手动步骤

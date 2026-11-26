@@ -132,12 +132,15 @@ func (c Client) AllLanguages() []string {
 // MultiLanguage 报告授权页是否按多语言方式生成。
 func (c Client) MultiLanguage() bool { return len(c.Languages) > 1 }
 
-// Deploy 是原生二进制部署文件模板的参数：deploy.yaml 和 .env.example。
+// Deploy 是原生二进制多实例部署骨架模板的参数（deploy/app.yaml、deploy/example 与初始目标）。
 type Deploy struct {
-	Slug  string // 应用名、二进制名与默认 Linux 服务用户名，例如 blog。
-	User  string // SSH 登录用户，为空时默认 deploy。
-	Host  string // 默认目标主机地址或 ~/.ssh/config 别名，为空时写占位地址。
-	Force bool   // 为真时覆盖已存在的部署文件；为假时已有文件存在则报错。
+	Slug     string // 构建产物名，例如 blog。
+	Target   string // 初始目标目录名（位于 deploy/targets/<Target>），为空时默认 prod。
+	Instance string // 初始目标的远端实例名，为空时与 Slug 相同。
+	User     string // 默认 SSH 登录用户，为空时默认 deploy。
+	Host     string // 初始目标主机地址或 ~/.ssh/config 别名，为空时写占位地址。
+	HasSSR   bool   // 项目是否包含服务端渲染前端，写入 deploy/app.yaml。
+	Force    bool   // 为真时覆盖已存在的部署文件；为假时已有文件存在则报错。
 }
 
 // Layouts 是前端可选的布局：
@@ -278,11 +281,17 @@ func WriteClient(root string, c Client) (consent bool, err error) {
 	return true, nil
 }
 
-// WriteDeploy 在项目 root 中生成原生二进制部署文件：deploy.yaml 和 .env.example。
-// Force 为假且任一目标文件已存在时返回错误；返回写入的文件相对路径列表。
+// WriteDeploy 在项目 root 中生成多实例原生二进制部署骨架：deploy/app.yaml、deploy/example/ 与初始目标 deploy/targets/<Target>/，
+// 并确保项目 .gitignore 包含 deploy/targets/。Force 为假且任一目标文件已存在时返回错误；返回写入的文件相对路径列表。
 func WriteDeploy(root string, d Deploy) ([]string, error) {
 	if d.Slug == "" {
 		return nil, fmt.Errorf("deploy: slug is required")
+	}
+	if d.Target == "" {
+		d.Target = "prod"
+	}
+	if d.Instance == "" {
+		d.Instance = d.Slug
 	}
 	if d.User == "" {
 		d.User = "deploy"
@@ -290,11 +299,17 @@ func WriteDeploy(root string, d Deploy) ([]string, error) {
 	if d.Host == "" {
 		d.Host = "203.0.113.10"
 	}
-	targets := []string{"deploy.yaml", ".env.example"}
+	targets := []string{
+		"deploy/app.yaml",
+		"deploy/example/target.yaml",
+		"deploy/example/config.yaml",
+		path.Join("deploy/targets", d.Target, "target.yaml"),
+		path.Join("deploy/targets", d.Target, "config.yaml"),
+	}
 	if !d.Force {
 		var existing []string
 		for _, f := range targets {
-			if _, err := os.Stat(filepath.Join(root, f)); err == nil {
+			if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(f))); err == nil {
 				existing = append(existing, f)
 			} else if !errors.Is(err, fs.ErrNotExist) {
 				return nil, err
@@ -307,7 +322,35 @@ func WriteDeploy(root string, d Deploy) ([]string, error) {
 	if err := render("template/deploy", root, d); err != nil {
 		return nil, err
 	}
+	if err := ensureGitignoreEntry(root, "deploy/targets/"); err != nil {
+		return nil, err
+	}
 	return targets, nil
+}
+
+// ensureGitignoreEntry 若项目 root 下存在 .gitignore 且尚未包含 entry，则将其追加到末尾。
+func ensureGitignoreEntry(root, entry string) error {
+	p := filepath.Join(root, ".gitignore")
+	data, err := os.ReadFile(p)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for line := range strings.Lines(string(data)) {
+		if strings.TrimSpace(line) == entry {
+			return nil
+		}
+	}
+	var b strings.Builder
+	b.Write(data)
+	if len(data) > 0 && data[len(data)-1] != '\n' {
+		b.WriteByte('\n')
+	}
+	b.WriteString(entry)
+	b.WriteByte('\n')
+	return os.WriteFile(p, []byte(b.String()), 0o644)
 }
 
 // AddLanguage 为已有项目启用或追加语言 lang（langs 为更新后的完整语言列表，第一项是源语言；frontends 为 apps 中的前端名称）：
@@ -672,8 +715,6 @@ func render(root, dir string, data any) error {
 			rel = path.Join(path.Dir(rel), ".gitignore")
 		case "gitattributes":
 			rel = path.Join(path.Dir(rel), ".gitattributes")
-		case "env.example":
-			rel = path.Join(path.Dir(rel), ".env.example")
 		}
 		return writeFile(filepath.Join(dir, filepath.FromSlash(rel)), content)
 	})

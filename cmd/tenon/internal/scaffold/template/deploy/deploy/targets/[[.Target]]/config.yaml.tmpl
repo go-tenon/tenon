@@ -1,0 +1,24 @@
+# 目标 [[.Target]] 的独立生产配置（位于 deploy/targets/，不提交到代码仓库）。
+# 未显式填写的超时、健康探针过滤等由框架默认值补全。
+http:
+  addr: "127.0.0.1:8080"                # 仅监听本机回环，由同机 Nginx/Caddy 反向代理转发
+  public_url: "https://example.com"     # 对外访问地址
+  client_ip:
+    trusted_proxies:
+      - "127.0.0.1/32"
+  access_log:
+    disabled: true
+
+logs:
+  level: info
+
+telemetry:
+  service: [[.Instance]]
+
+# 按项目实际配置结构填写依赖项（仅保留项目 Config 中声明的字段）：
+# database:
+#   dsn: postgres://[[.Instance]]:change-me@127.0.0.1:5432/[[.Instance]]?sslmode=disable
+# crypt:
+#   key: "<openssl rand -base64 32 生成的密钥>"
+# nats:
+#   url: nats://127.0.0.1:4222

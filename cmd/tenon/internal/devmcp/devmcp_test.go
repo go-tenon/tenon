@@ -316,34 +316,47 @@ func TestDeployTools(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = s.Close() })
 
-	// 尚未创建 deploy.yaml 时返回明确引导提示。
+	// 尚未创建 deploy/app.yaml 时返回明确引导提示。
 	if msg, isErr := call(t, s, "tenon_deploy_info", nil); isErr || !strings.Contains(msg, "tenon add deploy") {
-		t.Fatalf("without deploy.yaml: isErr=%v msg=%q", isErr, msg)
+		t.Fatalf("without deploy/app.yaml: isErr=%v msg=%q", isErr, msg)
 	}
 
-	cfg := `app: blog
-environments:
-  production:
-    roles:
-      http:
-        hosts: [web-1, web-2]
-      worker:
-        hosts: [worker-1]
-`
-	if err := os.WriteFile(filepath.Join(root, "deploy.yaml"), []byte(cfg), 0o644); err != nil {
-		t.Fatal(err)
+	writeDeploy := func(rel, content string) {
+		t.Helper()
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
+	writeDeploy("deploy/app.yaml", "app: blog\n")
+	writeDeploy("deploy/targets/prod/target.yaml", `roles:
+  http:
+    hosts: [web-1, web-2]
+  worker:
+    hosts: [worker-1]
+`)
+	writeDeploy("deploy/targets/partner-a/target.yaml", `instance: acme-blog
+hosts: [acme-1]
+`)
 
 	resInfo, err := s.CallTool(ctx, &mcp.CallToolParams{Name: "tenon_deploy_info", Arguments: map[string]any{}})
 	if err != nil || resInfo.IsError {
 		t.Fatalf("tenon_deploy_info: err=%v res=%+v", err, resInfo)
 	}
 	infoJSON, _ := json.Marshal(resInfo.StructuredContent)
-	if !strings.Contains(string(infoJSON), `"migrate_host":"worker-1"`) {
+	if !strings.Contains(string(infoJSON), `"migrate_host":"worker-1"`) || !strings.Contains(string(infoJSON), `"instance":"acme-blog"`) {
 		t.Errorf("tenon_deploy_info:\n%s", infoJSON)
 	}
 
-	resPlan, err := s.CallTool(ctx, &mcp.CallToolParams{Name: "tenon_deploy_plan", Arguments: map[string]any{"version": "v2"}})
+	// 多目标时未传 target 必须报错，不能隐式默认选择。
+	if _, isErr := call(t, s, "tenon_deploy_plan", map[string]any{"version": "v2"}); !isErr {
+		t.Fatalf("expected error when multiple targets exist without target arg")
+	}
+
+	resPlan, err := s.CallTool(ctx, &mcp.CallToolParams{Name: "tenon_deploy_plan", Arguments: map[string]any{"target": "prod", "version": "v2"}})
 	if err != nil || resPlan.IsError {
 		t.Fatalf("tenon_deploy_plan: err=%v res=%+v", err, resPlan)
 	}
@@ -352,7 +365,7 @@ environments:
 		t.Errorf("tenon_deploy_plan:\n%s", planJSON)
 	}
 
-	resStatus, err := s.CallTool(ctx, &mcp.CallToolParams{Name: "tenon_deploy_status", Arguments: map[string]any{"role": "http"}})
+	resStatus, err := s.CallTool(ctx, &mcp.CallToolParams{Name: "tenon_deploy_status", Arguments: map[string]any{"target": "prod", "role": "http"}})
 	if err != nil || resStatus.IsError {
 		t.Fatalf("tenon_deploy_status: err=%v res=%+v", err, resStatus)
 	}
@@ -361,7 +374,7 @@ environments:
 		t.Errorf("tenon_deploy_status:\n%s", statusJSON)
 	}
 
-	resLogs, err := s.CallTool(ctx, &mcp.CallToolParams{Name: "tenon_deploy_logs", Arguments: map[string]any{"role": "http", "contains": "ERR"}})
+	resLogs, err := s.CallTool(ctx, &mcp.CallToolParams{Name: "tenon_deploy_logs", Arguments: map[string]any{"target": "prod", "role": "http", "contains": "ERR"}})
 	if err != nil || resLogs.IsError {
 		t.Fatalf("tenon_deploy_logs: err=%v res=%+v", err, resLogs)
 	}

@@ -1,0 +1,7 @@
+# 目标 [[.Target]] 的部署配置（位于 deploy/targets/，不提交到代码仓库）。
+[[- if ne .Instance .Slug]]
+instance: [[.Instance]]
+[[- end]]
+user: [[.User]]
+hosts:
+  - [[.Host]]

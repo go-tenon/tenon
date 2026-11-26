@@ -29,7 +29,7 @@ go tool tenon dev
 | `tenon deploy` | 通过 SSH 和 systemd 执行原生二进制零停机部署与远端运维 |
 | `tenon add frontend` | 再加一个前端，例如运营后台 |
 | `tenon add client` | 加桌面端等网页以外的客户端 |
-| `tenon add deploy` | 生成原生二进制与 systemd 部署配置（`deploy.yaml`、`.env.example`） |
+| `tenon add deploy` | 生成原生二进制与 systemd 多实例部署骨架（`deploy/app.yaml`、`deploy/example/`、`deploy/targets/`） |
 | `tenon add language` | 为项目加入一种语言，启用多语言翻译文件和检查 |
 | `tenon agents` | 升级框架后更新给 AI 编程助手的文档、技能和 MCP 配置 |
 | `tenon mcp` | AI 编程助手按 MCP 配置启动它，不手动运行 |
@@ -164,23 +164,23 @@ go tool tenon add client admin-desktop --kind electron --frontend admin
 go tool tenon add deploy --user deploy --host 203.0.113.10
 ```
 
-在项目根目录生成 `deploy.yaml` 和 `.env.example`：
+在项目根目录生成 `deploy/` 多实例部署骨架并将 `deploy/targets/` 加入 `.gitignore`：
 
-- `deploy.yaml` 声明目标环境、主机、服务部分（`all` 或 `http`、`worker`、`scheduler`）、部署目录与环境变量路径，进仓库保存，不含密钥。
-- `.env.example` 是生产环境变量模板，复制填写后通过 `tenon deploy env push` 写入远端。
-- 目标文件已存在时报错，传入 `--force` 覆盖。完整部署流程见[部署](deployment.md)。
+- `deploy/app.yaml` 声明产物名、GitHub Release 仓库与所有实例继承的默认参数，进仓库保存，不含主机与密钥。
+- `deploy/example/` 存放标准实例模板（`target.yaml` 与 `config.yaml`），新增环境或合作方实例时直接复制到 `deploy/targets/<目标名>/`。
+- 同时生成初始目标 `deploy/targets/<target>/`（默认 `prod`，可用 `--target` 与 `--instance` 自定义）；目标文件已存在时报错，传入 `--force` 覆盖。完整部署流程见[部署](deployment.md)。
 
 <a id="deploy"></a>
 ## `tenon deploy`：原生二进制零停机部署
 
 ```bash
-go tool tenon deploy setup                           # 首次初始化目标主机和 systemd unit
-go tool tenon deploy env push .env.production        # 安全上传环境变量到 /etc/<应用>/env（权限 600）
-go tool tenon deploy                                 # 交叉编译、自检、迁移并零停机滚动升级
+go tool tenon deploy setup -t prod                   # 首次初始化目标主机和按实例隔离的 systemd unit
+go tool tenon deploy -t prod                         # 交叉编译、自检、迁移并零停机滚动升级
+go tool tenon deploy -t prod -t partner-a            # 一次构建，按序串行发布多个独立实例
 ```
 
-- 常用标志：`--env`（默认 `production`）、`--file`（默认 `deploy.yaml`）、`--format text|json`（结构化 JSON 输出）、`--tag`（拉取 GitHub Release 产物并校验）、`--binary`（跳过本地构建）、`--version`、`--allow-dirty`、`--force`、`--auto-rollback`、`--no-cache`、`--skip-doctor`、`--dry-run`。
-- 远端运维子命令：`config`（仅同步配置并热重载，零编译零迁移）、`releases`（留存发布清单）、`rollback [序号|tag]`、`status [--role ...]`、`logs [--role ...] [-F] [--since 15m] [--contains ERR]`、`run -- <命令>`、`env pull`、`maintenance on|off`。
+- 常用标志：`-t/--target`（目标实例名，支持重复传入或逗号分隔；仅存在唯一目标时可省略）、`--all`（依次发布全部目标）、`-d/--dir`（默认 `deploy`）、`--targets-dir`（或环境变量 `TENON_DEPLOY_TARGETS`）、`--format text|json`、`--tag`、`--binary`、`--version`、`--allow-dirty`、`--force`、`--auto-rollback`、`--no-cache`、`--skip-doctor`、`--dry-run`。
+- 远端运维子命令：`config`（仅同步配置并热重载，零编译零迁移）、`releases`（留存发布清单）、`rollback [序号|tag]`、`status [--role ...]`、`logs [--role ...] [-F] [--since 15m] [--contains ERR]`、`run -- <命令>`、`env push|pull`、`maintenance on|off`。
 - 通过本机系统 `ssh` 连接目标机并启用 `ControlMaster` 复用，直接兼容 `~/.ssh/config`、跳板机与 SSH Agent，二进制经 gzip 流式压缩并按内容哈希去重上传。细节见[使用 `tenon deploy` 自动发布](deployment.md#tenon-deploy)。
 
 <a id="add-language"></a>

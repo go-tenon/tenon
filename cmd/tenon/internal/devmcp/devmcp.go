@@ -6,10 +6,10 @@
 //	tenon_app_info       项目的框架版本、入口、前端与客户端和技能
 //	tenon_check          静态检查项目是否遵守框架约定（文字、时钟、错误码、颜色、依赖、装配）
 //	tenon_dev_logs       tenon dev 运行期间各进程的输出（dev.LogFile）
-//	tenon_deploy_info    deploy.yaml 中的环境、角色、主机和发布波次拓扑（不含密钥）
-//	tenon_deploy_status  远端集群各主机的当前发布版本与 systemd 服务状态
-//	tenon_deploy_logs    按环境/角色/主机/关键字聚合拉取远端 journald 日志
-//	tenon_deploy_plan    预演某环境的发布计划（波次、主机、服务部分、迁移主节点）
+//	tenon_deploy_info    deploy/ 下的所有部署目标实例、角色、主机和发布波次拓扑（不含密钥）
+//	tenon_deploy_status  远端目标实例各主机的当前发布版本与 systemd 服务状态
+//	tenon_deploy_logs    按目标/角色/主机/关键字聚合拉取远端 journald 日志
+//	tenon_deploy_plan    预演某目标实例的发布计划（波次、主机、服务部分、迁移主节点）
 package devmcp
 
 import (
@@ -64,18 +64,25 @@ func New(opts Options) (*mcp.Server, error) {
 			return r, r.Close, nil
 		}
 	}
-	resolveDeployFile := func(file string) (string, string, error) {
+	resolveDeployOpts := func(dir, targetsDir string) (deploy.LoadOptions, error) {
 		p, err := opts.Inspect()
 		if err != nil {
-			return "", "", err
+			return deploy.LoadOptions{}, err
 		}
-		if file == "" {
-			file = deploy.DefaultFile
+		if dir == "" {
+			dir = deploy.DefaultDir
 		}
-		if !filepath.IsAbs(file) {
-			file = filepath.Join(opts.Root, file)
+		if !filepath.IsAbs(dir) {
+			dir = filepath.Join(opts.Root, dir)
 		}
-		return file, path.Base(p.Config.Main), nil
+		if targetsDir != "" && !filepath.IsAbs(targetsDir) {
+			targetsDir = filepath.Join(opts.Root, targetsDir)
+		}
+		return deploy.LoadOptions{
+			Dir:        dir,
+			TargetsDir: targetsDir,
+			DefaultApp: path.Base(p.Config.Main),
+		}, nil
 	}
 
 	srv := mcp.NewServer(&mcp.Implementation{Name: "tenon", Version: opts.Version}, &mcp.ServerOptions{Instructions: instructions})
@@ -234,17 +241,17 @@ func New(opts Options) (*mcp.Server, error) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "tenon_deploy_info",
 		Title:       "部署拓扑信息",
-		Description: "读取项目的 deploy.yaml，返回所有环境的部署拓扑：角色、主机列表、各主机运行的服务部分、主迁移节点和滚动发布波次（不含密钥）。排查或准备发布之前先调用它。",
+		Description: "读取项目的 deploy/app.yaml 与 deploy/targets/*，返回所有部署目标实例的拓扑：实例名、角色、主机列表、各主机运行的服务部分、主迁移节点和滚动发布波次（不含密钥）。排查或准备发布之前先调用它。",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
-	}, func(_ context.Context, _ *mcp.CallToolRequest, in deployFileArgs) (*mcp.CallToolResult, any, error) {
-		filePath, defaultApp, err := resolveDeployFile(in.File)
+	}, func(_ context.Context, _ *mcp.CallToolRequest, in deployInfoArgs) (*mcp.CallToolResult, any, error) {
+		loadOpts, err := resolveDeployOpts(in.Dir, in.TargetsDir)
 		if err != nil {
 			return nil, nil, err
 		}
-		if _, err := os.Stat(filePath); errors.Is(err, fs.ErrNotExist) {
-			return text("当前项目还没有 deploy.yaml：运行 go tool tenon add deploy 生成原生二进制部署配置。"), nil, nil
+		if _, err := os.Stat(deploy.AppFilePath(loadOpts.Dir)); errors.Is(err, fs.ErrNotExist) {
+			return text("当前项目还没有 deploy/app.yaml：运行 go tool tenon add deploy 生成原生二进制多实例部署骨架。"), nil, nil
 		}
-		topo, err := deploy.LoadTopology(filePath, defaultApp)
+		topo, err := deploy.LoadTopology(loadOpts)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -254,14 +261,14 @@ func New(opts Options) (*mcp.Server, error) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "tenon_deploy_status",
 		Title:       "线上部署状态",
-		Description: "通过 SSH 并发查询远端集群各主机当前的发布版本与每个 systemd unit 的运行状态（ActiveState、SubState、StatusText）。可按 env、role、host 过滤。",
+		Description: "通过 SSH 并发查询远端目标实例各主机当前的发布版本与每个 systemd unit 的运行状态（ActiveState、SubState、StatusText）。可按 target、role、host 过滤。",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in deployStatusArgs) (*mcp.CallToolResult, any, error) {
-		filePath, defaultApp, err := resolveDeployFile(in.File)
+		loadOpts, err := resolveDeployOpts(in.Dir, in.TargetsDir)
 		if err != nil {
 			return nil, nil, err
 		}
-		target, err := deploy.Load(filePath, defaultApp, in.Env)
+		target, err := deploy.Load(loadOpts, in.Target)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -282,14 +289,14 @@ func New(opts Options) (*mcp.Server, error) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "tenon_deploy_logs",
 		Title:       "聚合拉取线上日志",
-		Description: "通过 SSH 并发拉取单台或多台线上主机的 journald 日志。支持按 env、role、host、part、since（如 15m、1h）、contains（如 ERR 或 X-Request-ID）过滤，每台默认返回 100 行（最多 1000 行）。",
+		Description: "通过 SSH 并发拉取单台或多台线上主机的 journald 日志。支持按 target、role、host、part、since（如 15m、1h）、contains（如 ERR 或 X-Request-ID）过滤，每台默认返回 100 行（最多 1000 行）。",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in deployLogsArgs) (*mcp.CallToolResult, any, error) {
-		filePath, defaultApp, err := resolveDeployFile(in.File)
+		loadOpts, err := resolveDeployOpts(in.Dir, in.TargetsDir)
 		if err != nil {
 			return nil, nil, err
 		}
-		target, err := deploy.Load(filePath, defaultApp, in.Env)
+		target, err := deploy.Load(loadOpts, in.Target)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -324,14 +331,14 @@ func New(opts Options) (*mcp.Server, error) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "tenon_deploy_plan",
 		Title:       "预演发布计划",
-		Description: "生成某环境的只读发布计划（不构建也不修改远端）：列出目标架构、主迁移节点、各波次（后端优先、入口金丝雀后批量滚动）及各主机将运行的服务部分。执行真实发布前先调用它向用户确认。",
+		Description: "生成某目标实例的只读发布计划（不构建也不修改远端）：列出实例名、目标架构、主迁移节点、各波次（后端优先、入口金丝雀后批量滚动）及各主机将运行的服务部分。执行真实发布前先调用它向用户确认。",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in deployPlanArgs) (*mcp.CallToolResult, any, error) {
-		filePath, defaultApp, err := resolveDeployFile(in.File)
+		loadOpts, err := resolveDeployOpts(in.Dir, in.TargetsDir)
 		if err != nil {
 			return nil, nil, err
 		}
-		target, err := deploy.Load(filePath, defaultApp, in.Env)
+		target, err := deploy.Load(loadOpts, in.Target)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -383,36 +390,40 @@ type checkFinding struct {
 	Message string `json:"message"`
 }
 
-// deployFileArgs 是 tenon_deploy_info 的参数。
-type deployFileArgs struct {
-	File string `json:"file,omitempty" jsonschema:"部署配置文件路径，默认 deploy.yaml"`
+// deployInfoArgs 是 tenon_deploy_info 的参数。
+type deployInfoArgs struct {
+	Dir        string `json:"dir,omitempty" jsonschema:"部署配置根目录，默认 deploy"`
+	TargetsDir string `json:"targets_dir,omitempty" jsonschema:"目标实例目录，留空时依次取 TENON_DEPLOY_TARGETS 与 <dir>/targets"`
 }
 
 // deployStatusArgs 是 tenon_deploy_status 的参数。
 type deployStatusArgs struct {
-	File string `json:"file,omitempty" jsonschema:"部署配置文件路径，默认 deploy.yaml"`
-	Env  string `json:"env,omitempty" jsonschema:"环境名，默认 production"`
-	Role string `json:"role,omitempty" jsonschema:"按角色过滤，例如 http、worker"`
-	Host string `json:"host,omitempty" jsonschema:"按主机地址过滤"`
+	Dir        string `json:"dir,omitempty" jsonschema:"部署配置根目录，默认 deploy"`
+	TargetsDir string `json:"targets_dir,omitempty" jsonschema:"目标实例目录"`
+	Target     string `json:"target,omitempty" jsonschema:"目标实例名（仅存在唯一实例时可省略，多实例时必填）"`
+	Role       string `json:"role,omitempty" jsonschema:"按角色过滤，例如 http、worker"`
+	Host       string `json:"host,omitempty" jsonschema:"按主机地址过滤"`
 }
 
 // deployLogsArgs 是 tenon_deploy_logs 的参数。
 type deployLogsArgs struct {
-	File     string `json:"file,omitempty" jsonschema:"部署配置文件路径，默认 deploy.yaml"`
-	Env      string `json:"env,omitempty" jsonschema:"环境名，默认 production"`
-	Role     string `json:"role,omitempty" jsonschema:"按角色过滤主机，留空聚合全部主机"`
-	Host     string `json:"host,omitempty" jsonschema:"只查看指定主机"`
-	Part     string `json:"part,omitempty" jsonschema:"只查看指定服务部分（如 http），留空查看全部部分"`
-	Lines    int    `json:"lines,omitempty" jsonschema:"每台主机返回最后几行，默认 100，最多 1000"`
-	Since    string `json:"since,omitempty" jsonschema:"时间范围，例如 15m、1h"`
-	Contains string `json:"contains,omitempty" jsonschema:"只保留包含该文字的行，例如 ERR 或 X-Request-ID"`
+	Dir        string `json:"dir,omitempty" jsonschema:"部署配置根目录，默认 deploy"`
+	TargetsDir string `json:"targets_dir,omitempty" jsonschema:"目标实例目录"`
+	Target     string `json:"target,omitempty" jsonschema:"目标实例名（仅存在唯一实例时可省略，多实例时必填）"`
+	Role       string `json:"role,omitempty" jsonschema:"按角色过滤主机，留空聚合全部主机"`
+	Host       string `json:"host,omitempty" jsonschema:"只查看指定主机"`
+	Part       string `json:"part,omitempty" jsonschema:"只查看指定服务部分（如 http），留空查看全部部分"`
+	Lines      int    `json:"lines,omitempty" jsonschema:"每台主机返回最后几行，默认 100，最多 1000"`
+	Since      string `json:"since,omitempty" jsonschema:"时间范围，例如 15m、1h"`
+	Contains   string `json:"contains,omitempty" jsonschema:"只保留包含该文字的行，例如 ERR 或 X-Request-ID"`
 }
 
 // deployPlanArgs 是 tenon_deploy_plan 的参数。
 type deployPlanArgs struct {
-	File    string `json:"file,omitempty" jsonschema:"部署配置文件路径，默认 deploy.yaml"`
-	Env     string `json:"env,omitempty" jsonschema:"环境名，默认 production"`
-	Version string `json:"version,omitempty" jsonschema:"可选的发布版本号"`
+	Dir        string `json:"dir,omitempty" jsonschema:"部署配置根目录，默认 deploy"`
+	TargetsDir string `json:"targets_dir,omitempty" jsonschema:"目标实例目录"`
+	Target     string `json:"target,omitempty" jsonschema:"目标实例名（仅存在唯一实例时可省略，多实例时必填）"`
+	Version    string `json:"version,omitempty" jsonschema:"可选的发布版本号"`
 }
 
 // appInfo 是 tenon_app_info 的结果。

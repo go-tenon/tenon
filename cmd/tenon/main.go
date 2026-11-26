@@ -480,24 +480,28 @@ func addClientCommand() *cobra.Command {
 	return cmd
 }
 
-// addDeployCommand 返回 tenon add deploy 命令：生成原生二进制 + systemd 部署配置（deploy.yaml 和 .env.example）。
+// addDeployCommand 返回 tenon add deploy 命令：生成原生二进制 + systemd 多实例部署目录骨架（deploy/app.yaml、deploy/example 与初始目标）。
 func addDeployCommand() *cobra.Command {
-	var user, host string
+	var user, host, targetName, instance string
 	var force bool
 	cmd := &cobra.Command{
 		Use:   "deploy",
-		Short: "生成原生二进制 + systemd 部署配置文件（deploy.yaml、.env.example）",
+		Short: "生成原生二进制 + systemd 多实例部署骨架（deploy/app.yaml、deploy/example 与初始目标）",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := project.Load(".")
 			if err != nil {
 				return err
 			}
+			hasSSR := slices.ContainsFunc(cfg.Frontends, func(f project.Frontend) bool { return f.SSR })
 			files, err := scaffold.WriteDeploy(".", scaffold.Deploy{
-				Slug:  path.Base(cfg.Main),
-				User:  user,
-				Host:  host,
-				Force: force,
+				Slug:     path.Base(cfg.Main),
+				Target:   targetName,
+				Instance: instance,
+				User:     user,
+				Host:     host,
+				HasSSR:   hasSSR,
+				Force:    force,
 			})
 			if err != nil {
 				return err
@@ -509,15 +513,21 @@ func addDeployCommand() *cobra.Command {
 			if syncedReadme {
 				files = append(files, agents.ReadmeFile)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "已生成 %s。\n按目标服务器修改 deploy.yaml 与 config/prod.yaml 后，运行：\n"+
-				"  1. go tool tenon deploy setup\n"+
-				"  2. go tool tenon deploy\n",
-				strings.Join(files, "、"))
+			tName := targetName
+			if tName == "" {
+				tName = "prod"
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "已生成 %s。\n按目标服务器修改 deploy/targets/%s/target.yaml 与 config.yaml 后，运行：\n"+
+				"  1. go tool tenon deploy setup -t %s\n"+
+				"  2. go tool tenon deploy -t %s\n",
+				strings.Join(files, "、"), tName, tName, tName)
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&user, "user", "", "SSH 登录用户，默认 deploy")
-	cmd.Flags().StringVar(&host, "host", "", "默认目标主机地址或 ~/.ssh/config 别名")
+	cmd.Flags().StringVar(&user, "user", "", "默认 SSH 登录用户，默认 deploy")
+	cmd.Flags().StringVar(&host, "host", "", "初始目标主机地址或 ~/.ssh/config 别名")
+	cmd.Flags().StringVar(&targetName, "target", "prod", "初始目标实例目录名（位于 deploy/targets/<name>）")
+	cmd.Flags().StringVar(&instance, "instance", "", "初始目标的远端实例名，留空时与产物名相同")
 	cmd.Flags().BoolVar(&force, "force", false, "覆盖已存在的部署文件")
 	return cmd
 }

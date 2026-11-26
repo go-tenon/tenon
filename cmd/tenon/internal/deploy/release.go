@@ -23,6 +23,9 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+// RunnerFactory 为指定目标实例创建远端执行器与清理函数，供多目标发布按目标隔离 SSH 配置。
+type RunnerFactory func(t Target) (Runner, func() error, error)
+
 // ReleaseOptions 控制 tenon deploy 单次发布的行为。
 type ReleaseOptions struct {
 	Binary         string                                                                   // 现成的 Linux 二进制路径；留空时按 Tag 或 Build 准备
@@ -52,8 +55,9 @@ type ConfigReleaseOptions struct {
 
 // DeployReport 是 tenon deploy、tenon deploy config 与 tenon_deploy_plan 的结构化结果。
 type DeployReport struct {
-	App            string           `json:"app"`                        // 应用名
-	Env            string           `json:"env"`                        // 环境名
+	App            string           `json:"app"`                        // 构建产物名
+	Target         string           `json:"target"`                     // 目标名
+	Instance       string           `json:"instance"`                   // 远端实例名
 	Kind           string           `json:"kind"`                       // full / config
 	ReleaseID      int              `json:"release_id,omitempty"`       // 分配的单调发布序号
 	Version        string           `json:"version"`                    // 构建版本号（如 v1.2.0）
@@ -73,6 +77,14 @@ type DeployReport struct {
 	Hosts          []HostSwitchInfo `json:"hosts"`                      // 各主机期望角色、parts 与切换结果
 }
 
+// BatchDeployReport 是多目标发布（DeployMany / DeployConfigMany）的结构化结果。
+type BatchDeployReport struct {
+	App     string          `json:"app"`     // 构建产物名
+	Kind    string          `json:"kind"`    // full / config
+	DryRun  bool            `json:"dry_run"` // 是否为预演模式
+	Targets []*DeployReport `json:"targets"` // 按顺序执行的各目标发布报告
+}
+
 // HostSwitchInfo 记录单台主机的切换详情（含声明式清理掉的孤儿 unit 与切换方式）。
 type HostSwitchInfo struct {
 	Addr         string   `json:"addr"`                    // 主机地址
@@ -81,6 +93,14 @@ type HostSwitchInfo struct {
 	Action       string   `json:"action,omitempty"`        // reload / restart / start / unchanged
 	RemovedUnits []string `json:"removed_units,omitempty"` // 声明式对账时停用并禁用的旧 unit
 	Status       string   `json:"status"`                  // planned / active / skipped
+}
+
+// preparedBinary 是多目标发布中按架构缓存的已构建或已下载二进制。
+type preparedBinary struct {
+	arch    string
+	binPath string
+	binSum  string
+	meta    GitBuildInfo
 }
 
 // Plan 生成单次发布的只读预演计划，不触发构建或远端写操作。
@@ -97,7 +117,8 @@ func Plan(ctx context.Context, t Target, opts ReleaseOptions) (*DeployReport, er
 	hosts := plannedHosts(t)
 	return &DeployReport{
 		App:         t.App,
-		Env:         t.EnvName,
+		Target:      t.Name,
+		Instance:    t.Instance,
 		Kind:        ReleaseKindFull,
 		Version:     version,
 		Commit:      gitInfo.Commit,
@@ -111,25 +132,43 @@ func Plan(ctx context.Context, t Target, opts ReleaseOptions) (*DeployReport, er
 	}, nil
 }
 
-// Deploy 执行完整的零停机发布流水线：
+// Deploy 执行单个目标实例的完整零停机发布流水线：
 // Git 工作区校验与架构并发探测 → 本地构建或从 GitHub Release 拉取 → 会话级 flock 加锁 →
 // 内容寻址去重上传（gzip 流式）与 No-op 检测 → 全机并行 config check → 单节点 migrate up → doctor →
 // 按波次切换（自动识别 unit/drop-in 变更走 restart，其余走 tableflip reload）→ 清理旧 release 与无引用 artifacts。
 func Deploy(ctx context.Context, r Runner, t Target, opts ReleaseOptions, out, errOut io.Writer) (*DeployReport, error) {
+	return deployOne(ctx, r, t, opts, nil, out, errOut)
+}
+
+// DeployMany 面向多目标实例执行“一次构建、按序串行发布”：
+// 先校验全部目标的配置文件并探测各自架构，按唯一架构只构建或下载一次二进制，再按顺序逐个实例发布；
+// 任一实例失败立即熔断，不影响后续目标实例。
+func DeployMany(ctx context.Context, targets []Target, newRunner RunnerFactory, opts ReleaseOptions, out, errOut io.Writer) (*BatchDeployReport, error) {
+	if len(targets) == 0 {
+		return nil, fmt.Errorf("deploy: at least one target is required")
+	}
 	if opts.DryRun {
-		plan, err := Plan(ctx, t, opts)
-		if err != nil {
-			return nil, err
+		batch := &BatchDeployReport{
+			App:     targets[0].App,
+			Kind:    ReleaseKindFull,
+			DryRun:  true,
+			Targets: make([]*DeployReport, 0, len(targets)),
 		}
-		printPlan(out, plan)
-		return plan, nil
+		for i, t := range targets {
+			if i > 0 {
+				fmt.Fprintln(out)
+			}
+			plan, err := Plan(ctx, t, opts)
+			if err != nil {
+				return nil, err
+			}
+			printPlan(out, plan)
+			batch.Targets = append(batch.Targets, plan)
+		}
+		return batch, nil
 	}
 	if opts.Binary != "" && opts.Tag != "" {
 		return nil, fmt.Errorf("deploy: --binary and --tag cannot be used together")
-	}
-	now := opts.Now
-	if now == nil {
-		now = time.Now
 	}
 
 	gitInfo := InspectGit(ctx, opts.WorkDir)
@@ -149,57 +188,205 @@ func Deploy(ctx context.Context, r Runner, t Target, opts ReleaseOptions, out, e
 		Repo:       gitInfo.Repo,
 	}
 
+	// 1. 先校验全部目标的本地配置文件，缺文件在编译前立即暴露。
+	for _, t := range targets {
+		if _, _, _, err := packConfig(opts.WorkDir, t); err != nil {
+			return nil, fmt.Errorf("[%s] %w", t.Name, err)
+		}
+	}
+
+	// 2. 为各目标建立 SSH 会话并并发探测架构（复用同一会话供后续上传与切换）。
+	runners := make([]Runner, len(targets))
+	closers := make([]func() error, len(targets))
+	defer func() {
+		for _, closeFn := range closers {
+			if closeFn != nil {
+				_ = closeFn()
+			}
+		}
+	}()
+	targetArches := make([]string, len(targets))
+	for i, t := range targets {
+		r, closeFn, err := newRunner(t)
+		if err != nil {
+			return nil, fmt.Errorf("[%s] 创建 SSH 会话失败: %w", t.Name, err)
+		}
+		runners[i] = r
+		closers[i] = closeFn
+		arch, err := resolveArch(ctx, r, t)
+		if err != nil {
+			return nil, fmt.Errorf("[%s] %w", t.Name, err)
+		}
+		targetArches[i] = arch
+	}
+
+	// 3. 按唯一架构准备二进制（同一架构只构建或下载一次，保证所有目标跑同一份产物）。
+	tmpDir, err := os.MkdirTemp("", "tenon-deploy-batch-*")
+	if err != nil {
+		return nil, fmt.Errorf("deploy: create temp dir: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	byArch := make(map[string]*preparedBinary)
+	var preBinSum string
+	if opts.Binary != "" {
+		preBinSum, err = fileSHA256(opts.Binary)
+		if err != nil {
+			return nil, fmt.Errorf("deploy: hash binary: %w", err)
+		}
+	}
+	for i, t := range targets {
+		arch := targetArches[i]
+		if _, ok := byArch[arch]; ok {
+			continue
+		}
+		if opts.Binary != "" {
+			byArch[arch] = &preparedBinary{arch: arch, binPath: opts.Binary, binSum: preBinSum, meta: buildMeta}
+			continue
+		}
+		binPath := filepath.Join(tmpDir, fmt.Sprintf("%s-linux-%s", t.App, arch))
+		var binSum string
+		if opts.Tag != "" {
+			repo := t.Repo
+			if repo == "" {
+				repo = gitInfo.Repo
+			}
+			fmt.Fprintf(out, "从 GitHub Release (%s %s) 下载 linux/%s 二进制...\n", repo, opts.Tag, arch)
+			sum, err := DownloadReleaseBinary(ctx, opts.HTTPClient, opts.ReleaseBaseURL, repo, opts.Tag, t.App, arch, binPath)
+			if err != nil {
+				return nil, err
+			}
+			binSum = sum
+		} else {
+			if opts.Build == nil {
+				return nil, fmt.Errorf("deploy: neither --binary, --tag nor Build callback is set")
+			}
+			fmt.Fprintf(out, "构建 %s (linux/%s)...\n", version, arch)
+			if err := opts.Build(ctx, arch, binPath, buildMeta); err != nil {
+				return nil, fmt.Errorf("deploy: build binary: %w", err)
+			}
+			binSum, err = fileSHA256(binPath)
+			if err != nil {
+				return nil, fmt.Errorf("deploy: hash binary: %w", err)
+			}
+		}
+		byArch[arch] = &preparedBinary{arch: arch, binPath: binPath, binSum: binSum, meta: buildMeta}
+	}
+
+	// 4. 按顺序串行发布各目标实例，任一目标失败立即熔断。
+	batch := &BatchDeployReport{
+		App:     targets[0].App,
+		Kind:    ReleaseKindFull,
+		Targets: make([]*DeployReport, 0, len(targets)),
+	}
+	for i, t := range targets {
+		if len(targets) > 1 {
+			fmt.Fprintf(out, "\n=== 发布目标 %d/%d: %s ===\n", i+1, len(targets), t.DisplayLabel())
+		}
+		rep, err := deployOne(ctx, runners[i], t, opts, byArch[targetArches[i]], out, errOut)
+		if err != nil {
+			return nil, fmt.Errorf("目标 %s 发布失败: %w", t.Name, err)
+		}
+		batch.Targets = append(batch.Targets, rep)
+	}
+	return batch, nil
+}
+
+// deployOne 执行单个目标的发布流水线；pre 非空时复用已准备好的二进制与架构探测结果。
+func deployOne(ctx context.Context, r Runner, t Target, opts ReleaseOptions, pre *preparedBinary, out, errOut io.Writer) (*DeployReport, error) {
+	if opts.DryRun {
+		plan, err := Plan(ctx, t, opts)
+		if err != nil {
+			return nil, err
+		}
+		printPlan(out, plan)
+		return plan, nil
+	}
+	if opts.Binary != "" && opts.Tag != "" {
+		return nil, fmt.Errorf("deploy: --binary and --tag cannot be used together")
+	}
+	now := opts.Now
+	if now == nil {
+		now = time.Now
+	}
+
 	// 1. 先打包配置文件并计算确定性哈希，本地缺少配置时在构建之前立即报错。
 	cfgArchive, cfgSum, hasConfig, err := packConfig(opts.WorkDir, t)
 	if err != nil {
 		return nil, err
 	}
 
-	// 2. 并发探测全部目标主机架构并确认一致。
-	arch, err := resolveArch(ctx, r, t)
-	if err != nil {
-		return nil, err
-	}
+	var arch, binPath, binSum, version string
+	var buildMeta GitBuildInfo
+	if pre != nil {
+		arch = pre.arch
+		binPath = pre.binPath
+		binSum = pre.binSum
+		buildMeta = pre.meta
+		version = pre.meta.Version
+	} else {
+		gitInfo := InspectGit(ctx, opts.WorkDir)
+		if opts.Binary == "" && opts.Tag == "" && gitInfo.InRepo && gitInfo.Dirty && !opts.AllowDirty {
+			return nil, fmt.Errorf("deploy: git working tree has uncommitted changes; commit them first or pass --allow-dirty")
+		}
+		version = resolveBuildVersion(opts, gitInfo)
+		if !isSafeVersion(version) {
+			return nil, fmt.Errorf("deploy: version %q contains invalid characters", version)
+		}
+		buildMeta = GitBuildInfo{
+			InRepo:     gitInfo.InRepo,
+			Version:    version,
+			Commit:     gitInfo.Commit,
+			CommitTime: gitInfo.CommitTime,
+			Dirty:      gitInfo.Dirty && opts.Binary == "" && opts.Tag == "",
+			Repo:       gitInfo.Repo,
+		}
 
-	// 3. 准备待发布的二进制：--binary 直接使用，--tag 从 GitHub Release 拉取并校验，否则调用 Build。
-	binPath := opts.Binary
-	var binSum string
-	if opts.Tag != "" {
-		tmpDir, err := os.MkdirTemp("", "tenon-release-*")
-		if err != nil {
-			return nil, fmt.Errorf("deploy: create temp dir: %w", err)
-		}
-		defer func() { _ = os.RemoveAll(tmpDir) }()
-		binPath = filepath.Join(tmpDir, t.App)
-		repo := t.Repo
-		if repo == "" {
-			repo = gitInfo.Repo
-		}
-		fmt.Fprintf(out, "从 GitHub Release (%s %s) 下载 linux/%s 二进制...\n", repo, opts.Tag, arch)
-		sum, err := DownloadReleaseBinary(ctx, opts.HTTPClient, opts.ReleaseBaseURL, repo, opts.Tag, t.App, arch, binPath)
+		// 2. 并发探测全部目标主机架构并确认一致。
+		arch, err = resolveArch(ctx, r, t)
 		if err != nil {
 			return nil, err
 		}
-		binSum = sum
-	} else if binPath == "" {
-		if opts.Build == nil {
-			return nil, fmt.Errorf("deploy: neither --binary, --tag nor Build callback is set")
+
+		// 3. 准备待发布的二进制：--binary 直接使用，--tag 从 GitHub Release 拉取并校验，否则调用 Build。
+		binPath = opts.Binary
+		if opts.Tag != "" {
+			tmpDir, err := os.MkdirTemp("", "tenon-release-*")
+			if err != nil {
+				return nil, fmt.Errorf("deploy: create temp dir: %w", err)
+			}
+			defer func() { _ = os.RemoveAll(tmpDir) }()
+			binPath = filepath.Join(tmpDir, t.App)
+			repo := t.Repo
+			if repo == "" {
+				repo = gitInfo.Repo
+			}
+			fmt.Fprintf(out, "从 GitHub Release (%s %s) 下载 linux/%s 二进制...\n", repo, opts.Tag, arch)
+			sum, err := DownloadReleaseBinary(ctx, opts.HTTPClient, opts.ReleaseBaseURL, repo, opts.Tag, t.App, arch, binPath)
+			if err != nil {
+				return nil, err
+			}
+			binSum = sum
+		} else if binPath == "" {
+			if opts.Build == nil {
+				return nil, fmt.Errorf("deploy: neither --binary, --tag nor Build callback is set")
+			}
+			tmpDir, err := os.MkdirTemp("", "tenon-deploy-*")
+			if err != nil {
+				return nil, fmt.Errorf("deploy: create temp dir: %w", err)
+			}
+			defer func() { _ = os.RemoveAll(tmpDir) }()
+			binPath = filepath.Join(tmpDir, t.App)
+			fmt.Fprintf(out, "构建 %s (linux/%s)...\n", version, arch)
+			if err := opts.Build(ctx, arch, binPath, buildMeta); err != nil {
+				return nil, fmt.Errorf("deploy: build binary: %w", err)
+			}
 		}
-		tmpDir, err := os.MkdirTemp("", "tenon-deploy-*")
-		if err != nil {
-			return nil, fmt.Errorf("deploy: create temp dir: %w", err)
-		}
-		defer func() { _ = os.RemoveAll(tmpDir) }()
-		binPath = filepath.Join(tmpDir, t.App)
-		fmt.Fprintf(out, "构建 %s (linux/%s)...\n", version, arch)
-		if err := opts.Build(ctx, arch, binPath, buildMeta); err != nil {
-			return nil, fmt.Errorf("deploy: build binary: %w", err)
-		}
-	}
-	if binSum == "" {
-		binSum, err = fileSHA256(binPath)
-		if err != nil {
-			return nil, fmt.Errorf("deploy: hash binary: %w", err)
+		if binSum == "" {
+			binSum, err = fileSHA256(binPath)
+			if err != nil {
+				return nil, fmt.Errorf("deploy: hash binary: %w", err)
+			}
 		}
 	}
 
@@ -227,8 +414,8 @@ func Deploy(ctx context.Context, r Runner, t Target, opts ReleaseOptions, out, e
 			return nil, err
 		}
 		if !runtimeChanged {
-			fmt.Fprintf(out, "集群已是最新状态（#%d %s，bin:%s，cfg:%s），跳过发布（使用 --force 强制发布）。\n",
-				fromRelease, version, ShortSHA(binSum), ShortSHA(cfgSum))
+			fmt.Fprintf(out, "%s 已是最新状态（#%d %s，bin:%s，cfg:%s），跳过发布（使用 --force 强制发布）。\n",
+				t.DisplayLabel(), fromRelease, version, ShortSHA(binSum), ShortSHA(cfgSum))
 			hosts := make([]HostSwitchInfo, 0, len(t.Hosts))
 			for _, h := range t.Hosts {
 				hosts = append(hosts, HostSwitchInfo{
@@ -241,7 +428,8 @@ func Deploy(ctx context.Context, r Runner, t Target, opts ReleaseOptions, out, e
 			}
 			return &DeployReport{
 				App:          t.App,
-				Env:          t.EnvName,
+				Target:       t.Name,
+				Instance:     t.Instance,
 				Kind:         ReleaseKindFull,
 				ReleaseID:    fromRelease,
 				Version:      version,
@@ -282,11 +470,11 @@ func Deploy(ctx context.Context, r Runner, t Target, opts ReleaseOptions, out, e
 	}
 	manifestBytes = append(manifestBytes, '\n')
 
-	// 7. 并行向全部主机准备发布目录：二进制按 SHA-256 去重后 gzip 流式上传，硬链接进 releases/<id>/。
+	// 7. 并行向全部主机准备发布目录：二进制按 SHA-256 去重后 gzip 流式上传，硬链接为 releases/<id>/<instance>。
 	relName := FormatReleaseID(releaseID)
 	releaseDir := path.Join(t.Dir, "releases", relName)
-	remoteBin := path.Join(releaseDir, t.App)
-	fmt.Fprintf(out, "准备发布 #%d (%s，bin:%s) 到 %d 台主机...\n", releaseID, version, ShortSHA(binSum), len(t.Hosts))
+	remoteBin := path.Join(releaseDir, t.Instance)
+	fmt.Fprintf(out, "准备发布 %s #%d (%s，bin:%s) 到 %d 台主机...\n", t.DisplayLabel(), releaseID, version, ShortSHA(binSum), len(t.Hosts))
 
 	switched := false
 	defer func() {
@@ -357,10 +545,11 @@ func Deploy(ctx context.Context, r Runner, t Target, opts ReleaseOptions, out, e
 	// 12. 并行清理超出 keep_releases 的旧发布目录并回收无引用的 artifacts 对象。
 	pruneCluster(ctx, r, t, releaseID, errOut)
 
-	fmt.Fprintf(out, "发布完成：%s (%s) -> #%d (%s)\n", t.App, t.EnvName, releaseID, version)
+	fmt.Fprintf(out, "发布完成：%s -> #%d (%s)\n", t.DisplayLabel(), releaseID, version)
 	return &DeployReport{
 		App:           t.App,
-		Env:           t.EnvName,
+		Target:        t.Name,
+		Instance:      t.Instance,
 		Kind:          ReleaseKindFull,
 		ReleaseID:     releaseID,
 		Version:       version,
@@ -376,6 +565,57 @@ func Deploy(ctx context.Context, r Runner, t Target, opts ReleaseOptions, out, e
 		Waves:         waves,
 		Hosts:         switchResults,
 	}, nil
+}
+
+// DeployConfigMany 对多个目标实例先统一校验本地配置，再按顺序串行执行仅配置热发布，任一目标失败立即熔断。
+func DeployConfigMany(ctx context.Context, targets []Target, newRunner RunnerFactory, opts ConfigReleaseOptions, out, errOut io.Writer) (*BatchDeployReport, error) {
+	if len(targets) == 0 {
+		return nil, fmt.Errorf("deploy: at least one target is required")
+	}
+	for _, t := range targets {
+		_, _, has, err := packConfig(opts.WorkDir, t)
+		if err != nil {
+			return nil, fmt.Errorf("[%s] %w", t.Name, err)
+		}
+		if !has {
+			return nil, fmt.Errorf("[%s] deploy: no configuration files found to deploy", t.Name)
+		}
+	}
+	batch := &BatchDeployReport{
+		App:     targets[0].App,
+		Kind:    ReleaseKindConfig,
+		DryRun:  opts.DryRun,
+		Targets: make([]*DeployReport, 0, len(targets)),
+	}
+	for i, t := range targets {
+		if i > 0 {
+			fmt.Fprintln(out)
+		}
+		if opts.DryRun {
+			rep, err := DeployConfig(ctx, nil, t, opts, out, errOut)
+			if err != nil {
+				return nil, fmt.Errorf("目标 %s 配置预演失败: %w", t.Name, err)
+			}
+			batch.Targets = append(batch.Targets, rep)
+			continue
+		}
+		if len(targets) > 1 {
+			fmt.Fprintf(out, "=== 配置发布目标 %d/%d: %s ===\n", i+1, len(targets), t.DisplayLabel())
+		}
+		r, closeFn, err := newRunner(t)
+		if err != nil {
+			return nil, fmt.Errorf("[%s] 创建 SSH 会话失败: %w", t.Name, err)
+		}
+		rep, err := DeployConfig(ctx, r, t, opts, out, errOut)
+		if closeFn != nil {
+			_ = closeFn()
+		}
+		if err != nil {
+			return nil, fmt.Errorf("目标 %s 配置发布失败: %w", t.Name, err)
+		}
+		batch.Targets = append(batch.Targets, rep)
+	}
+	return batch, nil
 }
 
 // DeployConfig 仅同步配置文件到远端并零停机热重载：复用集群当前运行的二进制，不编译、不上传二进制、不执行迁移，
@@ -395,7 +635,8 @@ func DeployConfig(ctx context.Context, r Runner, t Target, opts ConfigReleaseOpt
 	if opts.DryRun {
 		report := &DeployReport{
 			App:          t.App,
-			Env:          t.EnvName,
+			Target:       t.Name,
+			Instance:     t.Instance,
 			Kind:         ReleaseKindConfig,
 			ConfigSHA256: cfgSum,
 			DryRun:       true,
@@ -431,8 +672,8 @@ func DeployConfig(ctx context.Context, r Runner, t Target, opts ConfigReleaseOpt
 			return nil, err
 		}
 		if !runtimeChanged {
-			fmt.Fprintf(out, "配置文件未变化（#%d %s，cfg:%s），跳过发布（使用 --force 强制重载）。\n",
-				cur.ReleaseID, cur.Version, ShortSHA(cfgSum))
+			fmt.Fprintf(out, "%s 配置文件未变化（#%d %s，cfg:%s），跳过发布（使用 --force 强制重载）。\n",
+				t.DisplayLabel(), cur.ReleaseID, cur.Version, ShortSHA(cfgSum))
 			hosts := make([]HostSwitchInfo, 0, len(t.Hosts))
 			for _, h := range t.Hosts {
 				hosts = append(hosts, HostSwitchInfo{
@@ -445,7 +686,8 @@ func DeployConfig(ctx context.Context, r Runner, t Target, opts ConfigReleaseOpt
 			}
 			return &DeployReport{
 				App:          t.App,
-				Env:          t.EnvName,
+				Target:       t.Name,
+				Instance:     t.Instance,
 				Kind:         ReleaseKindConfig,
 				ReleaseID:    cur.ReleaseID,
 				Version:      cur.Version,
@@ -487,9 +729,9 @@ func DeployConfig(ctx context.Context, r Runner, t Target, opts ConfigReleaseOpt
 
 	relName := FormatReleaseID(releaseID)
 	releaseDir := path.Join(t.Dir, "releases", relName)
-	remoteBin := path.Join(releaseDir, t.App)
-	fmt.Fprintf(out, "准备仅配置发布 #%d（复用 %s / bin:%s，新配置 cfg:%s）到 %d 台主机...\n",
-		releaseID, cur.Version, ShortSHA(cur.BinSHA256), ShortSHA(cfgSum), len(t.Hosts))
+	remoteBin := path.Join(releaseDir, t.Instance)
+	fmt.Fprintf(out, "准备仅配置发布 %s #%d（复用 %s / bin:%s，新配置 cfg:%s）到 %d 台主机...\n",
+		t.DisplayLabel(), releaseID, cur.Version, ShortSHA(cur.BinSHA256), ShortSHA(cfgSum), len(t.Hosts))
 
 	switched := false
 	defer func() {
@@ -540,10 +782,11 @@ func DeployConfig(ctx context.Context, r Runner, t Target, opts ConfigReleaseOpt
 	}
 
 	pruneCluster(ctx, r, t, releaseID, errOut)
-	fmt.Fprintf(out, "配置发布完成：%s (%s) -> #%d（%s，cfg:%s）\n", t.App, t.EnvName, releaseID, cur.Version, ShortSHA(cfgSum))
+	fmt.Fprintf(out, "配置发布完成：%s -> #%d（%s，cfg:%s）\n", t.DisplayLabel(), releaseID, cur.Version, ShortSHA(cfgSum))
 	return &DeployReport{
 		App:          t.App,
-		Env:          t.EnvName,
+		Target:       t.Name,
+		Instance:     t.Instance,
 		Kind:         ReleaseKindConfig,
 		ReleaseID:    releaseID,
 		Version:      cur.Version,
@@ -588,10 +831,14 @@ func resolveBuildVersion(opts ReleaseOptions, gitInfo GitBuildInfo) string {
 
 // printPlan 以人类可读文本打印发布预演计划。
 func printPlan(out io.Writer, plan *DeployReport) {
+	label := fmt.Sprintf("目标 %s，实例 %s", plan.Target, plan.Instance)
+	if plan.Instance != plan.App {
+		label += fmt.Sprintf("（产物 %s）", plan.App)
+	}
 	if plan.Kind == ReleaseKindConfig {
-		fmt.Fprintf(out, "[dry-run] 配置发布：环境 %s，应用 %s，配置摘要 %s\n", plan.Env, plan.App, ShortSHA(plan.ConfigSHA256))
+		fmt.Fprintf(out, "[dry-run] 配置发布：%s，配置摘要 %s\n", label, ShortSHA(plan.ConfigSHA256))
 	} else {
-		fmt.Fprintf(out, "[dry-run] 环境 %s，应用 %s，版本 %s，架构 linux/%s\n", plan.Env, plan.App, plan.Version, plan.Arch)
+		fmt.Fprintf(out, "[dry-run] %s，版本 %s，架构 linux/%s\n", label, plan.Version, plan.Arch)
 	}
 	if len(plan.ConfigFiles) > 0 {
 		fmt.Fprintf(out, "[dry-run] 配置文件：%s\n", strings.Join(plan.ConfigFiles, ", "))
@@ -653,8 +900,8 @@ func clusterMatchesDesired(t Target, manifests map[string]*Manifest, binSum, cfg
 func checkAnyRuntimeChanged(ctx context.Context, r Runner, t Target) (bool, error) {
 	unitContent := RenderUnit(t)
 	wrapperContent := RenderWrapper(t)
-	unitPath := TemplateUnitPath(t.App)
-	wrapperPath := WrapperPath(t.App)
+	unitPath := TemplateUnitPath(t.Instance)
+	wrapperPath := WrapperPath(t.Instance)
 
 	var mu sync.Mutex
 	changed := false
@@ -682,7 +929,7 @@ func checkAnyRuntimeChanged(ctx context.Context, r Runner, t Target) (bool, erro
 				return nil
 			}
 			for _, part := range h.Parts {
-				dp := DropInPath(t.App, part)
+				dp := DropInPath(t.Instance, part)
 				di := h.DropIns[part]
 				if di.Empty() {
 					res, err := RunCapture(gctx, r, h, fmt.Sprintf("if sudo test -f %s; then echo exists; fi", shellQuote(dp)))
@@ -990,7 +1237,7 @@ func resolveArch(ctx context.Context, r Runner, t Target) (string, error) {
 	detected := arches[0]
 	for _, a := range arches[1:] {
 		if a != detected {
-			return "", fmt.Errorf("deploy: mixed host architectures (%s and %s); deploy them in separate environments", detected, a)
+			return "", fmt.Errorf("deploy: mixed host architectures (%s and %s); deploy them in separate targets", detected, a)
 		}
 	}
 	return detected, nil
@@ -1044,20 +1291,23 @@ type configEntry struct {
 	data []byte
 }
 
-// packConfig 根据目标环境配置打包待同步的配置文件并计算确定性内容哈希：
-// 配置了 config_files 时按清单精确打包，否则打包 config_dir 目录并自动跳过 local.yaml 与隐藏文件。
+// packConfig 根据目标配置打包待同步的配置文件并计算确定性内容哈希：
+// 配置了 config_files 时按清单精确打包；配置了 config_dir 时打包该目录并跳过 local.yaml 与隐藏文件；均未配置时返回 has=false。
 func packConfig(workDir string, t Target) (archive []byte, sum string, has bool, err error) {
 	var entries []configEntry
-	if len(t.ConfigFiles) > 0 {
+	switch {
+	case len(t.ConfigFiles) > 0:
 		entries, err = collectConfigFiles(workDir, t.ConfigFiles)
 		if err != nil {
 			return nil, "", false, err
 		}
-	} else {
+	case t.ConfigDir != "":
 		entries, err = collectConfigDir(resolveLocalPath(workDir, t.ConfigDir))
 		if err != nil {
 			return nil, "", false, err
 		}
+	default:
+		return nil, "", false, nil
 	}
 	if len(entries) == 0 {
 		return nil, "", false, nil
@@ -1184,11 +1434,11 @@ func remoteHasSubcommand(ctx context.Context, r Runner, host Host, remoteBin, su
 func switchHost(ctx context.Context, r Runner, t Target, h Host, releaseID int, hasConfig bool, hist HistoryEntry, out, errOut io.Writer) (string, []string, error) {
 	relName := FormatReleaseID(releaseID)
 	releaseDir := path.Join(t.Dir, "releases", relName)
-	releaseBin := path.Join(releaseDir, t.App)
-	liveBin := path.Join(t.Dir, "bin", t.App)
+	releaseBin := path.Join(releaseDir, t.Instance)
+	liveBin := path.Join(t.Dir, "bin", t.Instance)
 	liveBinNew := liveBin + ".new"
 
-	// 1. 幂等同步模板 unit、角色级 drop-in 与 /usr/local/bin/<app> 运维包装脚本。
+	// 1. 幂等同步模板 unit、角色级 drop-in 与 /usr/local/bin/<instance> 运维包装脚本。
 	unitUpdated, err := syncUnit(ctx, r, t, h)
 	if err != nil {
 		return "", nil, err
@@ -1239,7 +1489,7 @@ func switchHost(ctx context.Context, r Runner, t Target, h Host, releaseID int, 
 		action = "restart"
 	}
 	for _, part := range h.Parts {
-		unit := UnitName(t.App, part)
+		unit := UnitName(t.Instance, part)
 		var unitScript string
 		if needRestart {
 			unitScript = fmt.Sprintf(`set -e
@@ -1287,9 +1537,9 @@ fi`, shellQuote(unit), shellQuote(unit), shellQuote(unit), shellQuote(unit))
 	return action, removed, nil
 }
 
-// reconcileOrphanUnits 查询主机上当前运行中或已启用的 <app>@*.service，停止并禁用不在期望列表中的旧 unit。
+// reconcileOrphanUnits 查询主机上当前运行中或已启用的 <instance>@*.service，停止并禁用不在期望列表中的旧 unit。
 func reconcileOrphanUnits(ctx context.Context, r Runner, t Target, h Host, out io.Writer) ([]string, error) {
-	pattern := t.App + "@*.service"
+	pattern := t.Instance + "@*.service"
 	listCmd := fmt.Sprintf("systemctl list-units %s --state=active,activating,failed --plain --no-legend 2>/dev/null | awk '{print $1}'", shellQuote(pattern))
 	raw, err := RunCapture(ctx, r, h, listCmd)
 	if err != nil {
@@ -1297,10 +1547,10 @@ func reconcileOrphanUnits(ctx context.Context, r Runner, t Target, h Host, out i
 	}
 	desired := make(map[string]bool, len(h.Parts))
 	for _, p := range h.Parts {
-		desired[UnitName(t.App, p)] = true
+		desired[UnitName(t.Instance, p)] = true
 	}
 	var orphans []string
-	prefix := t.App + "@"
+	prefix := t.Instance + "@"
 	for line := range strings.Lines(raw) {
 		unit := strings.TrimSpace(line)
 		if unit == "" || !strings.HasPrefix(unit, prefix) || !strings.HasSuffix(unit, ".service") {

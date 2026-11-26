@@ -1,0 +1,39 @@
+# 部署实例模板：复制整个目录为 deploy/targets/<名称>/ 后修改 target.yaml 与 config.yaml。
+# 远端实例名，留空时默认等于 deploy/app.yaml 中的 app（[[.Slug]]）；
+# 为合作方部署或同机多实例时可改为独立名称，systemd unit、用户、目录、二进制与运维命令均按此名称完全隔离。
+# instance: partner-app
+
+# 可选覆盖：留空时自动按 instance 推导为 service_user=<instance>、dir=/opt/<instance>
+# user: [[.User]]
+# service_user: [[.Slug]]
+# dir: /opt/[[.Slug]]
+
+# 可选：使用 12-Factor 环境变量文件时显式配置（600 权限，通过 tenon deploy env push 上传）；
+# 留空时默认允许 /etc/<instance>/env 不存在，直接将全部配置写在同目录 config.yaml 中即可。
+# env_file: /etc/[[.Slug]]/env
+
+# 同目录存在 config.yaml 时自动按单文件同步（0640 权限）并传入 --config；
+# 需要叠加多个配置文件时可显式列出（相对路径以本文件所在目录为基准）：
+# config_files:
+#   - ../../../config/app.yaml
+#   - ./config.yaml
+
+# 单机最简写法（在一个进程中运行全部部分 all）：
+hosts:
+  - 203.0.113.10
+
+# 多服务多机写法（把上面的 hosts 换成 roles，同一台主机可同时出现在多个角色下）：
+# migrate_host: 10.0.1.21
+# roles:
+#   http:
+#     hosts: [10.0.1.11, 10.0.1.12]
+#     max_parallel: 1
+#     stop_timeout: 30s
+#   worker:
+#     hosts: [10.0.1.21]
+#     stop_timeout: 120s
+#   scheduler:
+#     hosts: [10.0.1.21]
+
+# 可选：维护页标记文件路径，配合反向代理在维护期返回 503
+# maintenance_file: /etc/nginx/[[.Slug]].maintenance

@@ -75,7 +75,7 @@ func TestInitEndToEnd(t *testing.T) {
 	// 助手的 MCP 配置中有 tenon；README 中写着 gopls、Mantine、TanStack 的官方接入方法。
 	for f, wants := range map[string][]string{
 		"AGENTS.md":                {"# Todo\n", "`README.md` 的“AI 编程助手”一节", "## 代码约定"},
-		"README.md":                {"# Todo\n", "<!-- tenon:deploy:begin -->", "go run ./cmd/todo config check --config config/prod.yaml", "gopls mcp", "@mantine/mcp-server", "@tanstack/intent"},
+		"README.md":                {"# Todo\n", "<!-- tenon:deploy:begin -->", "go run ./cmd/todo config check --config deploy/targets/prod/config.yaml", "gopls mcp", "@mantine/mcp-server", "@tanstack/intent"},
 		".gitattributes":           {"tenon/** linguist-generated=true"},
 		".github/workflows/ci.yml": {"go tool tenon generate", "go tool tenon check", "bun run typecheck", "bun run build"},
 		// 单语言项目默认直写界面文字，不生成 messages.gen.ts；授权页直接写在 admin 中。

@@ -6,15 +6,18 @@
 - **基础设施**：按项目实际依赖准备外部服务（例如 PostgreSQL 18+ 放行应用服务器 IP 白名单，NATS 2.15+ 开启 JetStream `-js` 并放通 `4222` 端口）。
 - **本地构建环境**：已安装与 [go.mod](go.mod) 一致的 Go 和 Bun。
 
-### 1. 准备部署与生产配置
+### 1. 准备部署目录与实例配置
 
-首次生成 `deploy.yaml`（留空 `arch` 时 `tenon deploy` 会自动通过 SSH 探测目标服务器是 `amd64` 还是 `arm64` 并交叉编译）：
+首次生成多实例部署骨架（`deploy/app.yaml` 与 `deploy/example/` 提交到仓库，`deploy/targets/` 整体在 `.gitignore` 中，不提交客户主机地址与密钥）：
 
 ```bash
 go tool tenon add deploy --user <ssh用户> --host <服务器IP>
 ```
 
-在 `deploy.yaml` 中将生产配置设为单一独立文件 `config_files: [config/prod.yaml]`，并创建本地 `config/prod.yaml`（已在 `.gitignore` 中，不提交到仓库）。未显式填写的超时、健康探针过滤（`/livez`、`/readyz`）等项均由框架默认值补全，只需填写生产特有配置：
+每套独立部署实例放在 `deploy/targets/<目标名>/` 下（新增合作方或环境时复制 `deploy/example/` 即可，也可通过环境变量 `TENON_DEPLOY_TARGETS` 指向外部私有运维仓库）。每个目标包含：
+
+- `target.yaml`：声明该实例的主机/角色与远端 `instance` 名（留空默认 `{{app}}`；合作方需要独立名称时可改为任意标识，systemd unit、用户、目录、二进制与运维命令均按 `instance` 隔离）。
+- `config.yaml`：该实例的独立生产配置（同目录存在时自动以 `0640` 权限同步并传入 `--config`），未显式填写的超时、健康探针过滤（`/livez`、`/readyz`）等项均由框架默认值补全：
 
 ```yaml
 http:
@@ -48,46 +51,49 @@ http:
 # filesystem:
 #   disks:
 #     local:
-#       root: /opt/{{app}}/storage/files   # 生产本地磁盘使用绝对路径，目录归属 {{app}} 服务用户
+#       root: /opt/{{app}}/storage/files   # 生产本地磁盘使用绝对路径，目录归属服务用户
 ```
 
 本地校验配置与预演发布计划：
 
 ```bash
-go run ./cmd/{{app}} config check --config config/prod.yaml
-go tool tenon deploy --dry-run
+go run ./cmd/{{app}} config check --config deploy/targets/prod/config.yaml
+go tool tenon deploy -t prod --dry-run
 ```
 
 ### 2. 初始化目标服务器
 
-首次部署运行一次 `setup`，自动检查环境、创建 `{{app}}` 系统用户与 `/opt/{{app}}` 目录，写入 `/etc/systemd/system/{{app}}@.service`，并在 `/usr/local/bin/{{app}}` 安装运维入口（后续调整 `deploy.yaml` 中的 `config_files` 列表后需重新执行 `setup` 并重启服务）：
+首次部署运行一次 `setup`，自动检查环境、创建 `<instance>` 系统用户与 `/opt/<instance>` 目录，写入 `/etc/systemd/system/<instance>@.service`，并在 `/usr/local/bin/<instance>` 安装运维入口：
 
 ```bash
-go tool tenon deploy setup
+go tool tenon deploy setup -t prod
 ```
 
 ### 3. 打包、上传并启动服务
 
-直接运行 `go tool tenon deploy`，自动校验 Git 工作区干净、并发探测目标机架构（`amd64` 或 `arm64`）、带前端指纹缓存交叉编译（自动注入 Git Tag 版本到 `--version` 与 OTel `service.version`）、内容寻址去重后经 gzip 流式上传、全机并行 `config check`、主节点 `migrate up` 与 `doctor`，最后按波次零停机热重载（unit 或 drop-in 变更时自动滚动重启）：
+直接运行 `go tool tenon deploy`，自动校验 Git 工作区干净、并发探测目标机架构（`amd64` 或 `arm64`）、带前端指纹缓存交叉编译（自动注入 Git Tag 版本到 `--version` 与 OTel `service.version`）、内容寻址去重后经 gzip 流式上传、全机并行 `config check`、主节点 `migrate up` 与 `doctor`，最后按波次零停机热重载（unit 或 drop-in 变更时自动滚动重启）。存在多个目标时显式传 `-t`（支持一次构建、按序串行发多个实例）：
 
 ```bash
-# 推荐：自动探测架构、交叉编译并发布（未提交代码时可显式传 --allow-dirty）
-go tool tenon deploy
+# 发布单个目标（仅存在唯一目标时可省略 -t；未提交代码时传 --allow-dirty）
+go tool tenon deploy -t prod
 
-# 仅修改 config/prod.yaml 时：零编译、零上传二进制、不执行迁移，秒级热重载生效
-go tool tenon deploy config
+# 一次构建，按序串行发布多个目标实例（任一目标失败立即熔断）
+go tool tenon deploy -t prod -t partner-a
+
+# 仅修改目标 config.yaml 时：零编译、零上传二进制、不执行迁移，秒级热重载生效
+go tool tenon deploy config -t prod
 
 # 发布指定 GitHub Release 标签产物（自动校验 checksums.txt）或本地二进制
-go tool tenon deploy --tag v1.0.0
-go tool tenon deploy --binary bin/{{app}}
+go tool tenon deploy -t prod --tag v1.0.0
+go tool tenon deploy -t prod --binary bin/{{app}}
 ```
 
 验证服务状态与远端自检：
 
 ```bash
-go tool tenon deploy status
-go tool tenon deploy releases
-go tool tenon deploy run -- doctor
+go tool tenon deploy status -t prod
+go tool tenon deploy releases -t prod
+go tool tenon deploy run -t prod -- doctor
 ```
 
 ### 4. 配置 Nginx 反向代理（80 端口模板）
@@ -140,15 +146,15 @@ curl -fsS http://127.0.0.1:8080/readyz
 ### 5. 日常运维与一次性命令
 
 ```bash
-go tool tenon deploy               # 完整发布（二进制 + 配置，自动内容去重与 No-op 检测）
-go tool tenon deploy config        # 仅同步修改后的 config/prod.yaml 并零停机热重载
-go tool tenon deploy status        # 查看当前发布序号、Git 版本、配置摘要与 systemd 状态
-go tool tenon deploy releases      # 查看留存的历史发布清单
-go tool tenon deploy logs -F       # 实时查看远端应用日志
-go tool tenon deploy rollback      # 按激活历史栈回退到上一发布（也可指定序号或 Git Tag）
+go tool tenon deploy -t prod               # 完整发布（二进制 + 配置，自动内容去重与 No-op 检测）
+go tool tenon deploy config -t prod        # 仅同步修改后的配置并零停机热重载
+go tool tenon deploy status -t prod        # 查看当前发布序号、Git 版本、配置摘要与 systemd 状态
+go tool tenon deploy releases -t prod      # 查看留存的历史发布清单
+go tool tenon deploy logs -t prod -F       # 实时查看远端应用日志
+go tool tenon deploy rollback -t prod      # 按激活历史栈回退到上一发布（也可指定序号或 Git Tag）
 ```
 
-`tenon deploy setup` 已将运维入口安装到 `/usr/local/bin/{{app}}`，自动挂载服务用户、工作目录、环境变量与默认配置清单（无需手写 `--config`）；登录服务器后可在任意目录直接执行应用子命令，或在本地通过 `ssh -t` 交互执行（例如创建首个后台账号；终端输入密码时关闭回显属正常现象）：
+`tenon deploy setup` 已将运维入口安装到 `/usr/local/bin/<instance>`（默认 `/usr/local/bin/{{app}}`），自动挂载服务用户、工作目录、环境变量与默认配置清单（无需手写 `--config`）；登录服务器后可在任意目录直接执行应用子命令，或在本地通过 `ssh -t` 交互执行（例如创建首个后台账号；终端输入密码时关闭回显属正常现象）：
 
 ```bash
 # 登录服务器后直接运行
@@ -159,4 +165,4 @@ go tool tenon deploy rollback      # 按激活历史栈回退到上一发布（�
 ssh -t <ssh用户>@<服务器IP> {{app}} <子命令>
 ```
 
-多机 `roles` 拓扑、维护窗口与其他部署选项见 `tenon/docs/installation/deployment.md`。
+多实例命名、多机 `roles` 拓扑、维护窗口与其他部署选项见 `tenon/docs/installation/deployment.md`。

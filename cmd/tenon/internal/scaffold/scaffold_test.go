@@ -586,7 +586,7 @@ func TestWriteDeploy(t *testing.T) {
 	t.Parallel()
 	read := func(dir, name string) string {
 		t.Helper()
-		b, err := os.ReadFile(filepath.Join(dir, name))
+		b, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(name)))
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
@@ -594,49 +594,52 @@ func TestWriteDeploy(t *testing.T) {
 	}
 
 	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("bin/\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	files, err := scaffold.WriteDeploy(dir, scaffold.Deploy{
-		Slug: "omirouter",
-		User: "ops",
-		Host: "prod.example.com",
+		Slug:     "omirouter",
+		Target:   "partner-acme",
+		Instance: "acme-router",
+		User:     "ops",
+		Host:     "prod.example.com",
+		HasSSR:   true,
 	})
-	if err != nil || len(files) != 2 {
+	if err != nil || len(files) != 5 {
 		t.Fatalf("WriteDeploy: files=%v err=%v", files, err)
 	}
-	cfg := read(dir, "deploy.yaml")
-	for _, want := range []string{
-		"app: omirouter",
-		"user: ops",
-		"service_user: omirouter",
-		"dir: /opt/omirouter",
-		"env_file: /etc/omirouter/env",
-		"- prod.example.com",
-		"roles:",
-	} {
-		if !strings.Contains(cfg, want) {
-			t.Errorf("deploy.yaml missing %q:\n%s", want, cfg)
+	appYAML := read(dir, "deploy/app.yaml")
+	for _, want := range []string{"app: omirouter", "has_ssr: true", "user: ops"} {
+		if !strings.Contains(appYAML, want) {
+			t.Errorf("deploy/app.yaml missing %q:\n%s", want, appYAML)
 		}
 	}
-	env := read(dir, ".env.example")
-	for _, want := range []string{
-		"APP_URL=https://example.com",
-		"APP_KEY=",
-		"DATABASE_URL=postgres://omirouter:change-me@127.0.0.1:5432/omirouter?sslmode=disable",
-		"NATS_URL=nats://127.0.0.1:4222",
-		"OTLP_ENDPOINT=",
-	} {
-		if !strings.Contains(env, want) {
-			t.Errorf(".env.example missing %q:\n%s", want, env)
+	targetYAML := read(dir, "deploy/targets/partner-acme/target.yaml")
+	for _, want := range []string{"instance: acme-router", "user: ops", "- prod.example.com"} {
+		if !strings.Contains(targetYAML, want) {
+			t.Errorf("target.yaml missing %q:\n%s", want, targetYAML)
 		}
+	}
+	targetCfg := read(dir, "deploy/targets/partner-acme/config.yaml")
+	if !strings.Contains(targetCfg, "service: acme-router") {
+		t.Errorf("config.yaml missing instance service:\n%s", targetCfg)
+	}
+	exampleTarget := read(dir, "deploy/example/target.yaml")
+	if !strings.Contains(exampleTarget, "roles:") || !strings.Contains(exampleTarget, "instance:") {
+		t.Errorf("example target.yaml:\n%s", exampleTarget)
+	}
+	if gi := read(dir, ".gitignore"); !strings.Contains(gi, "deploy/targets/") {
+		t.Errorf(".gitignore missing deploy/targets/:\n%s", gi)
 	}
 
 	// 重复写入默认拒绝，传入 Force 允许覆盖。
-	if _, err := scaffold.WriteDeploy(dir, scaffold.Deploy{Slug: "omirouter"}); err == nil || !strings.Contains(err.Error(), "already exists") {
+	if _, err := scaffold.WriteDeploy(dir, scaffold.Deploy{Slug: "omirouter", Target: "partner-acme"}); err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Errorf("second write without force: %v", err)
 	}
-	if _, err := scaffold.WriteDeploy(dir, scaffold.Deploy{Slug: "omirouter", Force: true}); err != nil {
+	if _, err := scaffold.WriteDeploy(dir, scaffold.Deploy{Slug: "omirouter", Target: "partner-acme", Force: true}); err != nil {
 		t.Fatalf("overwrite with force: %v", err)
 	}
-	if overwritten := read(dir, "deploy.yaml"); !strings.Contains(overwritten, "user: deploy") {
+	if overwritten := read(dir, "deploy/app.yaml"); !strings.Contains(overwritten, "user: deploy") {
 		t.Errorf("default user after overwrite:\n%s", overwritten)
 	}
 }
