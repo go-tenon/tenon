@@ -134,6 +134,7 @@ func deployCommand() *cobra.Command {
 						Commit:     meta.Commit,
 						CommitTime: meta.CommitTime,
 						NoCache:    noCache,
+						Stdout:     textOut(cmd),
 					})
 				}
 			}

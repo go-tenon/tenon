@@ -645,12 +645,13 @@ func devCommand() *cobra.Command {
 	return cmd
 }
 
-// buildOptions 控制 buildBinary 的构建版本注入与前端缓存行为。
+// buildOptions 控制 buildBinary 的构建版本注入、前端缓存与输出目标。
 type buildOptions struct {
-	Version    string // 显式指定构建版本号；留空时取 git describe --tags --always --dirty
-	Commit     string // Git 短提交号；留空时自动读取
-	CommitTime string // 提交时间（UTC RFC3339）；留空时取 HEAD 提交时间以保持构建可复现
-	NoCache    bool   // 为真时跳过 apps/dist 前端指纹缓存，全量重建前端
+	Version    string    // 显式指定构建版本号；留空时取 git describe --tags --always --dirty
+	Commit     string    // Git 短提交号；留空时自动读取
+	CommitTime string    // 提交时间（UTC RFC3339）；留空时取 HEAD 提交时间以保持构建可复现
+	NoCache    bool      // 为真时跳过 apps/dist 前端指纹缓存，全量重建前端
+	Stdout     io.Writer // 构建过程输出目标；留空时使用 cmd.OutOrStdout()
 }
 
 // buildCommand 返回 tenon build 命令：构建每个前端，把它们的静态文件放进 apps/dist；有服务端渲染的前端时，
@@ -696,6 +697,10 @@ func buildCommand() *cobra.Command {
 // buildBinary 构建前端（输入未变时命中指纹缓存跳过重建；有 SSR 前端时编译 apps/dist/ssr），
 // 并编译嵌入前端产物的应用二进制到 out，同时通过 -ldflags 注入构建版本号、提交号与构建时间。
 func buildBinary(cmd *cobra.Command, cfg *project.Config, out, arch string, opts buildOptions) error {
+	buildOut := opts.Stdout
+	if buildOut == nil {
+		buildOut = cmd.OutOrStdout()
+	}
 	env := os.Environ()
 	switch arch {
 	case "":
@@ -727,9 +732,9 @@ func buildBinary(cmd *cobra.Command, cfg *project.Config, out, arch string, opts
 			return err
 		}
 		if !opts.NoCache && frontendCacheValid(".", fp, len(ssr) > 0) {
-			fmt.Fprintln(cmd.OutOrStdout(), "前端产物未变化，复用缓存...")
+			fmt.Fprintln(buildOut, "前端产物未变化，复用缓存...")
 		} else {
-			if err := run(cmd, ".", "bun", "install", "--frozen-lockfile"); err != nil {
+			if err := runWithOut(cmd, buildOut, ".", "bun", "install", "--frozen-lockfile"); err != nil {
 				return err
 			}
 			// apps/dist 每次从头生成：改成只在浏览器中渲染的前端不留下上次的 SSR 可执行文件。提交在其中的 .gitignore 写回去。
@@ -740,7 +745,7 @@ func buildBinary(cmd *cobra.Command, cfg *project.Config, out, arch string, opts
 				return err
 			}
 			for _, f := range cfg.Frontends {
-				if err := run(cmd, f.Dir, "bun", "run", "build"); err != nil {
+				if err := runWithOut(cmd, buildOut, f.Dir, "bun", "run", "build"); err != nil {
 					return err
 				}
 				if err := dev.CopyClient(f); err != nil {
@@ -764,7 +769,7 @@ func buildBinary(cmd *cobra.Command, cfg *project.Config, out, arch string, opts
 				c := exec.CommandContext(cmd.Context(), "bun", args...)
 				c.Dir = ssr[0].Dir
 				c.Env = append(slices.Clone(env), "GOARCH="+goarch)
-				c.Stdout, c.Stderr = cmd.OutOrStdout(), cmd.ErrOrStderr()
+				c.Stdout, c.Stderr = buildOut, cmd.ErrOrStderr()
 				if err := c.Run(); err != nil {
 					return fmt.Errorf("tenon-start compile: %w", err)
 				}
@@ -789,7 +794,7 @@ func buildBinary(cmd *cobra.Command, cfg *project.Config, out, arch string, opts
 	args = append(args, "-o", out, cfg.Main)
 	c := exec.CommandContext(cmd.Context(), "go", args...)
 	c.Env = env
-	c.Stdout, c.Stderr = cmd.OutOrStdout(), cmd.ErrOrStderr()
+	c.Stdout, c.Stderr = buildOut, cmd.ErrOrStderr()
 	if err := c.Run(); err != nil {
 		return fmt.Errorf("go build: %w", err)
 	}
@@ -1014,9 +1019,14 @@ func checkCommand() *cobra.Command {
 
 // run 在目录 dir 中执行命令 name，输出写到 cmd 的输出，随 cmd 的 context 取消。
 func run(cmd *cobra.Command, dir, name string, args ...string) error {
+	return runWithOut(cmd, cmd.OutOrStdout(), dir, name, args...)
+}
+
+// runWithOut 在目录 dir 中执行命令 name，将标准输出定向到 stdout，错误输出保持写入 cmd.ErrOrStderr()。
+func runWithOut(cmd *cobra.Command, stdout io.Writer, dir, name string, args ...string) error {
 	c := exec.CommandContext(cmd.Context(), name, args...)
 	c.Dir = dir
-	c.Stdout, c.Stderr = cmd.OutOrStdout(), cmd.ErrOrStderr()
+	c.Stdout, c.Stderr = stdout, cmd.ErrOrStderr()
 	if err := c.Run(); err != nil {
 		return fmt.Errorf("%s %v: %w", name, args, err)
 	}

@@ -4,6 +4,8 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"io"
 	"maps"
 	"os"
 	"path/filepath"
@@ -11,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/go-tenon/tenon/cmd/tenon/internal/dev"
+	"github.com/go-tenon/tenon/cmd/tenon/internal/project"
 )
 
 // fake 记录参数；go list -m 输出框架的目录；go build -mod=mod -o BIN（generate 编译应用）写出一个记录参数的伪造应用；
@@ -488,5 +491,44 @@ func TestDeployStandaloneOpsDirAndMultiTargetDryRun(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), `/etc/systemd/system/acme-router@.service`) || !strings.Contains(out.String(), `/usr/local/bin/acme-router`) {
 		t.Errorf("setup json:\n%s", out.String())
+	}
+}
+
+// TestBuildBinaryCustomStdout 验证 buildOptions.Stdout 可将前端构建、缓存提示与 go build 输出定向到自定义 writer，
+// 避免 tenon deploy --format json 的 stdout 被非 JSON 文本污染。
+func TestBuildBinaryCustomStdout(t *testing.T) {
+	newProject(t, map[string]string{
+		"go.mod":                  "module example.com/blog\n\ngo 1.27.4\n",
+		"package.json":            `{"name": "blog", "packageManager": "bun@1.4.4"}`,
+		"apps/web/vite.config.ts": "",
+		"apps/web/package.json":   `{"tenon": {"base": "/", "ssr": false}}`,
+	}, "go", "bun")
+	cfg, err := project.Load(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cmdOut, buildOut bytes.Buffer
+	cmd := root()
+	cmd.SetContext(context.Background())
+	cmd.SetOut(&cmdOut)
+	cmd.SetErr(&cmdOut)
+
+	// 1. 首次构建：传入 io.Discard 时，cmdOut 必须保持为空。
+	if err := buildBinary(cmd, cfg, "bin/blog", "amd64", buildOptions{Version: "v1.0.0", Stdout: io.Discard}); err != nil {
+		t.Fatalf("first buildBinary: %v", err)
+	}
+	if cmdOut.Len() != 0 {
+		t.Errorf("first buildBinary polluted cmd stdout: %q", cmdOut.String())
+	}
+
+	// 2. 二次命中前端缓存：传入自定义 buildOut，提示文本写入 buildOut，不污染 cmdOut。
+	if err := buildBinary(cmd, cfg, "bin/blog", "amd64", buildOptions{Version: "v1.0.0", Stdout: &buildOut}); err != nil {
+		t.Fatalf("cached buildBinary: %v", err)
+	}
+	if cmdOut.Len() != 0 {
+		t.Errorf("cached buildBinary polluted cmd stdout: %q", cmdOut.String())
+	}
+	if !strings.Contains(buildOut.String(), "前端产物未变化，复用缓存...") {
+		t.Errorf("buildOut missing cache hit message: %q", buildOut.String())
 	}
 }
