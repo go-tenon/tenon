@@ -156,15 +156,15 @@ func TestBuildWithoutSSR(t *testing.T) {
 		t.Error("ssr executable built without an SSR frontend")
 	}
 
-	// 二次构建未改前端源码，应命中指纹缓存，仅执行 go build。
+	// 二次构建未改前端源码，应命中指纹缓存，仅执行 go build 且 ldflags 确定性一致。
 	_ = os.WriteFile(log, nil, 0o644)
 	if err := execute(t, "build", "--version", "v1.2.3"); err != nil {
 		t.Fatal(err)
 	}
 	l2, _ := os.ReadFile(log)
 	lines2 := strings.Split(strings.TrimSpace(string(l2)), "\n")
-	if len(lines2) != 1 || !strings.HasPrefix(lines2[0], "go build -trimpath -ldflags ") {
-		t.Fatalf("expected cache hit with only go build, got:\n%s", l2)
+	if len(lines2) != 1 || lines2[0] != lines[2] {
+		t.Fatalf("expected deterministic cache hit with identical go build command:\ngot:  %s\nwant: %s", l2, lines[2])
 	}
 
 	// 修改前端源码后指纹失效，自动重建前端。

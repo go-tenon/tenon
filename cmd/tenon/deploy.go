@@ -87,9 +87,10 @@ func deployCommand() *cobra.Command {
 					DryRun:       dryRun,
 					Build: func(_ context.Context, arch, outPath string, meta deploy.GitBuildInfo) error {
 						return buildBinary(cmd, cfg, outPath, arch, buildOptions{
-							Version: meta.Version,
-							Commit:  meta.Commit,
-							NoCache: noCache,
+							Version:    meta.Version,
+							Commit:     meta.Commit,
+							CommitTime: meta.CommitTime,
+							NoCache:    noCache,
 						})
 					},
 				}, textOut(cmd), cmd.ErrOrStderr())
