@@ -147,9 +147,10 @@ const collapseRequestsOf = perOwner(() => createStore(0))
  *   useCollapseNav(detailOpen && !wide)
  */
 export function useCollapseNav(when: boolean): void {
-  const store = collapseRequestsOf(useApp())
+  const app = useOptionalApp()
+  const store = app ? collapseRequestsOf(app) : undefined
   useLayoutEffect(() => {
-    if (!when) return
+    if (!when || !store) return
     store.set(store.get() + 1)
     return () => store.set(store.get() - 1)
   }, [store, when])
@@ -260,6 +261,8 @@ export function useNarrow(query = "(max-width: 767px)"): boolean {
 
 /** 导航栏的展开状态与切换操作，由 RailLayout 等布局提供给页面使用。 */
 export interface NavControl {
+  /** 当前模块是否存在二级导航。 */
+  hasNav?: boolean
   /** 导航栏当前是否展开（窄屏时表示抽屉是否打开）。 */
   open: boolean
   /** 当前是否处于窄屏抽屉模式。 */
