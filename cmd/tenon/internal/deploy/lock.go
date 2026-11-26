@@ -35,11 +35,12 @@ read _ || true' _ %s %s`, shellQuote(lp), shellQuote(holder))
 	var errBuf bytes.Buffer
 
 	lockCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
-	done := make(chan error, 1)
+	done := make(chan struct{})
+	var runErr error
 	go func() {
-		err := r.Run(lockCtx, host, script, inR, outW, &errBuf)
+		runErr = r.Run(lockCtx, host, script, inR, outW, &errBuf)
 		_ = outW.Close()
-		done <- err
+		close(done)
 	}()
 
 	readyCh := make(chan bool, 1)
@@ -59,31 +60,31 @@ read _ || true' _ %s %s`, shellQuote(lp), shellQuote(holder))
 	case <-ctx.Done():
 		_ = inW.Close()
 		cancel()
-		_ = <-done
+		<-done
 		return nil, ctx.Err()
 	case ok := <-readyCh:
 		if !ok {
 			_ = inW.Close()
 			cancel()
-			err := <-done
+			<-done
 			msg := strings.TrimSpace(errBuf.String())
 			if msg != "" {
 				return nil, fmt.Errorf("[%s] 获取发布锁失败: %s", host.Addr, msg)
 			}
-			if err != nil {
-				return nil, fmt.Errorf("[%s] 获取发布锁失败: %w", host.Addr, err)
+			if runErr != nil {
+				return nil, fmt.Errorf("[%s] 获取发布锁失败: %w", host.Addr, runErr)
 			}
 			return nil, fmt.Errorf("[%s] 获取发布锁失败: unexpected EOF", host.Addr)
 		}
-	case err := <-done:
+	case <-done:
 		_ = inW.Close()
 		cancel()
 		msg := strings.TrimSpace(errBuf.String())
 		if msg != "" {
 			return nil, fmt.Errorf("[%s] 获取发布锁失败: %s", host.Addr, msg)
 		}
-		if err != nil {
-			return nil, fmt.Errorf("[%s] 获取发布锁失败: %w", host.Addr, err)
+		if runErr != nil {
+			return nil, fmt.Errorf("[%s] 获取发布锁失败: %w", host.Addr, runErr)
 		}
 		return nil, fmt.Errorf("[%s] 获取发布锁失败: lock process exited early", host.Addr)
 	}
@@ -92,7 +93,7 @@ read _ || true' _ %s %s`, shellQuote(lp), shellQuote(holder))
 		_, _ = io.WriteString(inW, "\n")
 		_ = inW.Close()
 		cancel()
-		_ = <-done
+		<-done
 	}
 	return release, nil
 }
