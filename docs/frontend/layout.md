@@ -111,8 +111,9 @@ export const Route = createFileRoute("/_app/orders")({
 </Page>
 ```
 
-- 当前的标签记在地址的 `?tab=` 中（第一个标签不写）。路由设置了 `validateSearch` 时要保留 `tab` 参数，否则切换不生效。
+- 当前的标签记在地址的 `?tab=` 中（第一个标签不写）。路由设置了 `validateSearch` 时用 `tabbedListSearch` 保留 `tab` 参数并按标签隔离列表筛选条件。
 - 没打开过的标签不渲染、不发请求；打开过的保留状态。`count` 为 0 时不显示，`alert` 让它是红色。
+- 页内标签的主操作按钮统一放在页面最右上角：在标签项上写 `actions`（与可选的 `description`），或在标签子组件内用 `<PageActions>` 投递，切换标签时自动同步右上角操作。
 
 <a id="tabs"></a>
 ## 多标签

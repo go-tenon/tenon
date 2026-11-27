@@ -91,6 +91,24 @@ export function listSearch<T = Record<string, unknown>>(
   return Object.assign(parse, { defaults: defaults as Partial<T> })
 }
 
+/**
+ * 多标签页（Page tabs）的 validateSearch：保留合法的 tab 参数（默认标签不写入地址），
+ * 并将其余查询参数交给当前标签对应的 listSearch 解析；非列表标签只保留 tab 参数。
+ */
+export function tabbedListSearch(
+  tabs: Readonly<Record<string, ListSearch<Record<string, unknown>> | undefined>>,
+  defaultTab?: string,
+): (search: Record<string, unknown>) => Record<string, unknown> {
+  const keys = Object.keys(tabs)
+  const first = defaultTab ?? keys[0]
+  return (search) => {
+    const raw = typeof search.tab === "string" && keys.includes(search.tab) ? search.tab : first
+    const parser = raw ? tabs[raw] : undefined
+    const parsed = parser ? parser(search) : {}
+    return raw && raw !== first ? { ...parsed, tab: raw } : parsed
+  }
+}
+
 /** useList 需要的路由：createFileRoute 返回的 Route。 */
 export interface ListRoute<T> {
   useSearch(): Partial<T>
@@ -121,18 +139,22 @@ export interface ListState<T> {
 }
 
 /**
- * 列表的状态，保存在地址中。路由的 validateSearch 用 listSearch：
+ * 列表的状态，保存在地址中。路由的 validateSearch 用 listSearch 或 tabbedListSearch：
  *
  *   const list = useList(Route)
  *   const articles = useQuery(queries.article.list(list.params))
+ *
+ * 在多标签页中传入当前列表的 listSearch 时，只提取该列表识别的参数，重置筛选时保留地址中的 tab 等其他参数。
  */
-export function useList<T>(route: ListRoute<T>): ListState<T> {
-  const search = route.useSearch() as Record<string, unknown>
+export function useList<T>(route: ListRoute<T>, searchParser?: ListSearch<T>): ListState<T> {
+  const raw = route.useSearch() as Record<string, unknown>
+  const search = useMemo(
+    () => (searchParser ? (searchParser(raw) as Record<string, unknown>) : raw),
+    [raw, searchParser],
+  )
   const navigate = useNavigate()
-  const defaults = ((route.options.validateSearch as ListSearch<T> | undefined)?.defaults ?? {}) as Record<
-    string,
-    unknown
-  >
+  const defaults = (((searchParser ?? route.options.validateSearch) as ListSearch<T> | undefined)?.defaults ??
+    {}) as Record<string, unknown>
 
   const update = useCallback(
     (changes: Record<string, unknown>, keepPage = false) => {

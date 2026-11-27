@@ -650,7 +650,15 @@
 }
 
 .tn-page-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-xs);
+  flex-wrap: wrap;
   flex-shrink: 0;
+}
+
+.tn-page-actions:empty {
+  display: none;
 }
 
 .tn-page-title {

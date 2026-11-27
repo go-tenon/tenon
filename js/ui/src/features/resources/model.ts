@@ -509,7 +509,7 @@ export interface ResourceList {
  *	const view = useResourceList(articles, Route)
  */
 export function useResourceList(model: ResourceModel, route: ListRoute<Record<string, unknown>>): ResourceList {
-  const list = useList(route)
+  const list = useList(route, model.listSearch)
   const can = useCan()
   // 进入页面和换筛选、翻页、排序时总是向服务器读最新的：缓存中已有的（路由 loader 预取的、上次看过的）先显示，
   // 后台刷新后静默替换；换了条件还在读取时暂留旧行，慢请求超过 delayMs 才叠加加载态。

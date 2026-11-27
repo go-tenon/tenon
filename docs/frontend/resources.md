@@ -188,13 +188,15 @@ export const Route = createFileRoute("/_app/articles")({
 
 | `ResourcePage` 的选项 | 作用 |
 | --- | --- |
-| `title`、`description` | 标题和说明；`title={null}` 不显示标题区 |
+| `title`、`description` | 标题和说明；`title={null}` 嵌入 `Page` 标签页时自动将主操作按钮投递到页面最右上角 |
 | `render` | 覆盖某一列的显示 |
 | `inputs` | 覆盖某个表单字段的输入组件，`ResourceFormPage` 同样有 |
 | `rowActions` | 行上的额外操作，排在声明的操作之后、删除之前 |
-| `toolbar` | 标题区的额外按钮，例如[导入、导出](features.md#transfer) |
+| `toolbar` | 标题区的额外按钮，排在“新建”之前，例如[导入、导出](features.md#transfer) |
+| `createLabel` | 自定义“新建”按钮文字；独立页面默认“新建”，嵌入 `Page` 标签页时默认“新建\<资源名\>” |
 | `expand` | 行的展开内容 |
 | `resizable` | 允许拖动表头边缘调整列宽，默认关闭 |
+| `columnSettings` | 显示表格右上角的列设置菜单，默认关闭 |
 | `form` | `page`（默认）是单独的页面，`modal` 是对话框，`drawer` 是右侧抽屉 |
 | `formSize` | `modal` 或 `drawer` 的宽度，默认 `lg` |
 | `renderForm` | `modal` 或 `drawer` 中自己写的表单内容，见[`useResourceForm`](#custom-forms) |

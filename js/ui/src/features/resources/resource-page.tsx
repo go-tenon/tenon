@@ -21,6 +21,7 @@ import {
   MultiSelect,
   Select,
   Stack,
+  Text,
   TextInput,
   useMantineTheme,
 } from "@mantine/core"
@@ -42,7 +43,7 @@ import type { ListRoute } from "../../components/data-table/list"
 import { confirm, notifyError, notifySuccess } from "../../components/feedback"
 import { applyServerErrors, FormError, useSchemaForm } from "../../components/form/form"
 import { useUnsavedChanges } from "../../components/form/rules"
-import { Page } from "../../components/page"
+import { Page, PageActions, useInPage } from "../../components/page"
 import { TruncatedText } from "../../components/truncated-text"
 import { text as uiText, useText } from "../../i18n/i18n"
 import { layoutMetrics } from "../../theme/theme"
@@ -83,10 +84,14 @@ export interface ResourcePageProps {
   rowActions?: (row: ResourceRow) => RowAction[]
   /** 标题区的额外按钮，排在“新建”之前，例如导入、导出。 */
   toolbar?: ReactNode
+  /** 自定义“新建”按钮的文字；独立页面默认为“新建”，嵌入 Page 标签页时默认为“新建<资源名>”。 */
+  createLabel?: ReactNode
   /** 展开的内容：每行开头一个箭头按钮，点它展开、收起。 */
   expand?: (row: ResourceRow) => ReactNode
   /** 允许拖动表头边缘调整列宽，默认 false。 */
   resizable?: boolean
+  /** 显示表格右上角的列设置菜单（控制列显示与恢复默认），默认 false。 */
+  columnSettings?: boolean
   /**
    * 新建和修改的表单：page（默认）是单独的页面，需要列表路由下的 new 和 $id/edit 两个子路由（渲染 ResourceFormPage）；
    * modal 是列表上方的对话框，适合字段少的资源；drawer 是右侧滑出的抽屉，适合字段较多或含嵌套结构的资源。
@@ -122,13 +127,16 @@ function ResourceList({
   inputs,
   rowActions,
   toolbar,
+  createLabel,
   expand,
   resizable,
+  columnSettings = false,
   form = "page",
   formSize,
   renderForm,
 }: ResourcePageProps): ReactNode {
   const view = useResourceList(model, route)
+  const inPage = useInPage()
   const t = useText()
   const { remove, run } = useResourceMutations(model)
   const [editing, setEditing] = useState<{ row?: ResourceRow } | undefined>()
@@ -291,30 +299,56 @@ function ResourceList({
       list={view.list}
       columns={columns}
       rowKey={(row) => model.rowKey(row)}
-      storeKey={model.name}
+      storeKey={columnSettings ? model.name : undefined}
       resizable={resizable}
-      toolbar={<Filters model={model} list={view.list} />}
+      toolbar={model.filters.length > 0 ? <Filters model={model} list={view.list} /> : undefined}
       expand={expand}
       empty={view.error ? t("tenon.resource.load_failed") : undefined}
     />
   )
-  const buttons = (
-    <Group gap="xs" wrap="wrap">
-      {toolbar}
-      {canCreate && (
-        <Button leftSection={<IconPlus size={16} />} onClick={openCreate}>
-          {t("tenon.resource.create")}
-        </Button>
-      )}
-    </Group>
-  )
+  const embeddedInPage = title === null && inPage
+  const createButtonLabel =
+    createLabel ??
+    (embeddedInPage ? t("tenon.resource.create_title", { name: model.title }) : t("tenon.resource.create"))
+  const buttons =
+    toolbar || canCreate ? (
+      <Group gap="xs" wrap="wrap">
+        {toolbar}
+        {canCreate && (
+          <Button leftSection={<IconPlus size={16} />} onClick={openCreate}>
+            {createButtonLabel}
+          </Button>
+        )}
+      </Group>
+    ) : null
   return (
     <>
       {title === null ? (
-        <Stack gap="sm">
-          <Group justify="flex-end">{buttons}</Group>
-          {table}
-        </Stack>
+        embeddedInPage ? (
+          <>
+            <PageActions>{buttons}</PageActions>
+            <Stack gap="sm">
+              {description && (
+                <Text c="dimmed" size="sm">
+                  {description}
+                </Text>
+              )}
+              {view.error ? <FormError error={describeError(view.error)} /> : null}
+              {table}
+            </Stack>
+          </>
+        ) : (
+          <Stack gap="sm">
+            {description && (
+              <Text c="dimmed" size="sm">
+                {description}
+              </Text>
+            )}
+            {buttons && <Group justify="flex-end">{buttons}</Group>}
+            {view.error ? <FormError error={describeError(view.error)} /> : null}
+            {table}
+          </Stack>
+        )
       ) : (
         <Page title={title ?? model.title} description={description} actions={buttons}>
           {view.error ? <FormError error={describeError(view.error)} /> : null}

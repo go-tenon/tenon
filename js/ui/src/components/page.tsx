@@ -1,15 +1,23 @@
 // 页面的标题区：面包屑、标题、说明和操作按钮，页面之间保持一致的层级和间距。
 // 面包屑在页面中而不在顶栏：顶栏留给标志、多标签和菜单。
 // 内容多的页面可以分成几个页内标签（tabs）：标签在标题区下面，当前的标签记在地址的 ?tab= 中。
+// 无论单页还是多标签页，当前视图的主操作都放在标题区最右侧（actions、PageTab.actions 或 PageActions）。
 
 import { ActionIcon, Anchor, Badge, Breadcrumbs, Group, Stack, Tabs, Text, Title, Tooltip } from "@mantine/core"
 import { IconArrowLeft, IconLayoutSidebarLeftExpand } from "@tabler/icons-react"
 import { Link, useNavigate, useSearch } from "@tanstack/react-router"
-import { createContext, type ReactNode, useContext, useRef } from "react"
+import { createContext, type ReactNode, useContext, useRef, useState } from "react"
+import { createPortal } from "react-dom"
 import { useNavControl, useNavigation } from "../app/layout"
 import { useText } from "../i18n/i18n"
 
 const PageBreadcrumbsContext = createContext(true)
+
+/** PageContext 保存当前 Page 标题区右侧操作容器的 DOM 节点，供 PageActions 投递按钮。 */
+const PageContext = createContext<{ actionsTarget: HTMLDivElement | null } | null>(null)
+
+/** PageTabActiveContext 标记当前子树所在的页内标签是否处于激活状态，非标签页默认为 true。 */
+const PageTabActiveContext = createContext(true)
 
 /** PageBreadcrumbs 的选项。 */
 export interface PageBreadcrumbsProps {
@@ -26,6 +34,22 @@ export function PageBreadcrumbs({ show, children }: PageBreadcrumbsProps): React
   return <PageBreadcrumbsContext.Provider value={show}>{children}</PageBreadcrumbsContext.Provider>
 }
 
+/** useInPage 返回当前组件是否位于 Page 内部。 */
+export function useInPage(): boolean {
+  return useContext(PageContext) !== null
+}
+
+/**
+ * PageActions 将操作按钮投递到外层 Page 标题区最右侧。
+ * 放在页内标签（tabs）的子组件中时，只有所属标签处于激活态才显示，切换标签时自动同步右上角主操作。
+ */
+export function PageActions({ children }: { children?: ReactNode }): ReactNode {
+  const page = useContext(PageContext)
+  const active = useContext(PageTabActiveContext)
+  if (!page?.actionsTarget || !active || !children) return null
+  return createPortal(children, page.actionsTarget)
+}
+
 /** 页内的一个标签。 */
 export interface PageTab {
   /** 标签的标识，也是地址中 ?tab= 的值。 */
@@ -35,6 +59,10 @@ export interface PageTab {
   count?: number
   /** 数字用红色，例如有失败的任务。 */
   alert?: boolean
+  /** 该标签面板顶部的一句说明。 */
+  description?: ReactNode
+  /** 激活该标签时显示在页面最右上角的操作按钮。 */
+  actions?: ReactNode
   content: ReactNode
 }
 
@@ -76,66 +104,73 @@ export function Page({
 }: PageProps): ReactNode {
   const t = useText()
   const nav = useNavControl()
+  const search = useSearch({ strict: false }) as Record<string, unknown>
+  const [actionsTarget, setActionsTarget] = useState<HTMLDivElement | null>(null)
   const showNavToggle = Boolean(nav && nav.hasNav !== false && !nav.open)
   const crumbsByDefault = useContext(PageBreadcrumbsContext)
   const showCrumbs = breadcrumbs ?? crumbsByDefault
   const maw = width === "narrow" ? 720 : typeof width === "number" ? width : undefined
+  const currentTab = tabs && tabs.length > 0 ? (tabs.find((tab) => tab.value === search.tab) ?? tabs[0]) : undefined
+
   return (
-    <Stack gap="md" maw={maw}>
-      <Stack gap={10}>
-        {showCrumbs && <Crumbs extra={crumb} />}
-        <div className="tn-page-header">
-          <div className="tn-page-heading">
-            <Group gap={6} wrap="nowrap">
-              {showNavToggle && nav && (
-                <Tooltip label={t("tenon.rail.expand_nav")} openDelay={350}>
+    <PageContext.Provider value={{ actionsTarget }}>
+      <Stack gap="md" maw={maw}>
+        <Stack gap={10}>
+          {showCrumbs && <Crumbs extra={crumb} />}
+          <div className="tn-page-header">
+            <div className="tn-page-heading">
+              <Group gap={6} wrap="nowrap">
+                {showNavToggle && nav && (
+                  <Tooltip label={t("tenon.rail.expand_nav")} openDelay={350}>
+                    <ActionIcon
+                      variant="subtle"
+                      color="gray"
+                      aria-label={t("tenon.rail.expand_nav")}
+                      onClick={nav.openNav}
+                      ml={-6}
+                    >
+                      <IconLayoutSidebarLeftExpand size={20} stroke={1.6} />
+                    </ActionIcon>
+                  </Tooltip>
+                )}
+                {back && (
                   <ActionIcon
                     variant="subtle"
                     color="gray"
-                    aria-label={t("tenon.rail.expand_nav")}
-                    onClick={nav.openNav}
-                    ml={-6}
+                    aria-label={t("tenon.common.back")}
+                    onClick={back}
+                    ml={showNavToggle ? undefined : -6}
                   >
-                    <IconLayoutSidebarLeftExpand size={20} stroke={1.6} />
+                    <IconArrowLeft size={20} stroke={1.6} />
                   </ActionIcon>
-                </Tooltip>
+                )}
+                <Title order={2} className="tn-page-title">
+                  {title}
+                </Title>
+              </Group>
+              {description && (
+                <Text c="dimmed" size="sm" mt={4}>
+                  {description}
+                </Text>
               )}
-              {back && (
-                <ActionIcon
-                  variant="subtle"
-                  color="gray"
-                  aria-label={t("tenon.common.back")}
-                  onClick={back}
-                  ml={showNavToggle ? undefined : -6}
-                >
-                  <IconArrowLeft size={20} stroke={1.6} />
-                </ActionIcon>
-              )}
-              <Title order={2} className="tn-page-title">
-                {title}
-              </Title>
-            </Group>
-            {description && (
-              <Text c="dimmed" size="sm" mt={4}>
-                {description}
-              </Text>
-            )}
+            </div>
+            <div className="tn-page-actions" ref={setActionsTarget}>
+              {actions}
+              {currentTab?.actions}
+            </div>
           </div>
-          {actions && <div className="tn-page-actions">{actions}</div>}
-        </div>
+        </Stack>
+        {children}
+        {tabs && tabs.length > 0 && currentTab && <PageTabs tabs={tabs} current={currentTab.value} />}
       </Stack>
-      {children}
-      {tabs && tabs.length > 0 && <PageTabs tabs={tabs} />}
-    </Stack>
+    </PageContext.Provider>
   )
 }
 
 /** 页内标签：当前的标签记在地址中，切换时立即展示对应面板并保留已访问面板的状态。 */
-function PageTabs({ tabs }: { tabs: PageTab[] }): ReactNode {
-  const search = useSearch({ strict: false }) as Record<string, unknown>
+function PageTabs({ tabs, current }: { tabs: PageTab[]; current: string }): ReactNode {
   const navigate = useNavigate()
   const first = tabs[0].value
-  const current = tabs.some((t) => t.value === search.tab) ? (search.tab as string) : first
   const visited = useRef(new Set<string>())
   visited.current.add(current)
   const select = (value: string | null) => {
@@ -172,7 +207,20 @@ function PageTabs({ tabs }: { tabs: PageTab[] }): ReactNode {
           hidden={t.value !== current}
           style={{ paddingTop: "var(--mantine-spacing-md)" }}
         >
-          {visited.current.has(t.value) ? t.content : null}
+          <PageTabActiveContext.Provider value={t.value === current}>
+            {visited.current.has(t.value) ? (
+              t.description ? (
+                <Stack gap="sm">
+                  <Text c="dimmed" size="sm">
+                    {t.description}
+                  </Text>
+                  {t.content}
+                </Stack>
+              ) : (
+                t.content
+              )
+            ) : null}
+          </PageTabActiveContext.Provider>
         </div>
       ))}
     </Tabs>
