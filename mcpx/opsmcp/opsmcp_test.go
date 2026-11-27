@@ -200,10 +200,13 @@ INSERT INTO demo_users VALUES
 		t.Fatalf("long cell should be truncated, got %q", note)
 	}
 
-	// 3. 字符串中的分号允许执行。
-	res, err = c.Call("ops_db_query", map[string]any{"sql": "SELECT 'a;b' AS semi, $$c;d$$ AS dollar"})
+	// 3. 字符串中的分号允许执行；即使通过列别名绕过列名，密码哈希值仍自动脱敏。
+	res, err = c.Call("ops_db_query", map[string]any{"sql": "SELECT 'a;b' AS semi, $$c;d$$ AS dollar, '$argon2id$v=19$m=19456,t=2,p=1$abc$def' AS aliased"})
 	if err != nil || res.IsError {
 		t.Fatalf("semicolon inside string literal should pass: err=%v text=%s", err, res.Text)
+	}
+	if strings.Contains(res.Text, "$argon2id$") || !strings.Contains(res.Text, "[REDACTED]") {
+		t.Fatalf("argon2id hash value should be redacted even under column alias: %s", res.Text)
 	}
 
 	// 4. 写操作、多语句与 CTE 写绕过全部被拦截。

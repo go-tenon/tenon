@@ -68,6 +68,7 @@ var (
 var defaultSensitiveColumns = []string{
 	"password",
 	"passwd",
+	"hash",
 	"secret",
 	"token",
 	"private_key",
@@ -79,6 +80,16 @@ var defaultSensitiveColumns = []string{
 	"credential",
 	"totp",
 	"recovery_code",
+}
+
+// sensitiveValuePrefixes 是按值前缀自动脱敏的凭据格式（如密码哈希与 PEM 私钥），防止通过列别名绕过列名脱敏。
+var sensitiveValuePrefixes = []string{
+	"$argon2id$",
+	"$argon2i$",
+	"$2a$",
+	"$2b$",
+	"$2y$",
+	"-----BEGIN ",
 }
 
 // defaultSensitiveRedisKeys 是默认脱敏的 Redis 键名关键词（不区分大小写，子串匹配）。

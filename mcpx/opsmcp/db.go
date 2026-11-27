@@ -573,6 +573,9 @@ func formatSQLCell(v any, maxLen int) any {
 			return fmt.Sprintf("<binary %d bytes>", len(x))
 		}
 		str := string(x)
+		if isSensitiveValue(str) {
+			return redactedValue
+		}
 		if len(str) <= maxLen && json.Valid(x) && (strings.HasPrefix(strings.TrimSpace(str), "{") || strings.HasPrefix(strings.TrimSpace(str), "[")) {
 			var parsed any
 			if json.Unmarshal(x, &parsed) == nil {
@@ -581,8 +584,26 @@ func formatSQLCell(v any, maxLen int) any {
 		}
 		return truncateString(str, maxLen)
 	case string:
+		if isSensitiveValue(x) {
+			return redactedValue
+		}
 		return truncateString(x, maxLen)
 	default:
-		return truncateString(fmt.Sprint(x), maxLen)
+		str := fmt.Sprint(x)
+		if isSensitiveValue(str) {
+			return redactedValue
+		}
+		return truncateString(str, maxLen)
 	}
+}
+
+// isSensitiveValue 报告文本值是否命中密码哈希或私钥等敏感凭据前缀。
+func isSensitiveValue(s string) bool {
+	trimmed := strings.TrimSpace(s)
+	for _, prefix := range sensitiveValuePrefixes {
+		if strings.HasPrefix(trimmed, prefix) {
+			return true
+		}
+	}
+	return false
 }
