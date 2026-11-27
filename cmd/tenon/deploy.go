@@ -104,6 +104,15 @@ func deployCommand() *cobra.Command {
 		return fn(r)
 	}
 
+	withObserveRunner := func(target deploy.Target, fn func(*deploy.SSHRunner) error) error {
+		r, err := deploy.NewObserveSSHRunner(target)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = r.Close() }()
+		return fn(r)
+	}
+
 	runnerFactory := func(t deploy.Target) (deploy.Runner, func() error, error) {
 		r, err := deploy.NewSSHRunner(t)
 		if err != nil {
@@ -259,7 +268,7 @@ func deployCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return withRunner(target, func(r *deploy.SSHRunner) error {
+			return withObserveRunner(target, func(r *deploy.SSHRunner) error {
 				report, err := deploy.ListReleases(cmd.Context(), r, target)
 				if err != nil {
 					return err
@@ -311,7 +320,7 @@ func deployCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return withRunner(target, func(r *deploy.SSHRunner) error {
+			return withObserveRunner(target, func(r *deploy.SSHRunner) error {
 				report, err := deploy.CollectStatus(cmd.Context(), r, target, statusRole, statusHost)
 				if err != nil {
 					return err
@@ -341,7 +350,7 @@ func deployCommand() *cobra.Command {
 			if format == "json" && logsOpts.Follow {
 				return fmt.Errorf("--format json cannot be combined with --follow")
 			}
-			return withRunner(target, func(r *deploy.SSHRunner) error {
+			return withObserveRunner(target, func(r *deploy.SSHRunner) error {
 				if format == "json" {
 					report, err := deploy.CollectLogs(cmd.Context(), r, target, logsOpts)
 					if err != nil {

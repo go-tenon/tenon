@@ -81,6 +81,7 @@ var rules = map[string]rule{
 	"realtime":        {layerEntry, []string{"broadcast", "httpx", "identity", "logging"}},
 	"frontend":        {layerEntry, []string{"logging", "telemetry"}},
 	"mcpx":            {layerEntry, []string{"contract", "errorx", "httpx", "identity", "logging"}},
+	"mcpx/opsmcp":     {layerEntry, []string{"doctor", "errorx", "identity", "logging", "mcpx", "queue", "schedule"}},
 	"natsrpc":         {layerEntry, []string{"contract", "errorx", "i18n", "identity", "logging"}},
 	"natsrpc/rpccmd":  {layerEntry, []string{"command", "natsrpc"}},
 	"mcpx/mcpxtest":   {layerEntry, []string{"identity", "mcpx"}},
@@ -431,12 +432,12 @@ func TestMailCoreDoesNotLinkDrivers(t *testing.T) {
 	}
 }
 
-// TestOnlyCacheImportsRedis 确保只有 cache 直接引用 Redis 客户端：锁和限流保存在 PostgreSQL 中，
-// 广播和在线成员在 NATS 中，其余包都不直接依赖 Redis。realtime 依赖的 Centrifuge 自带 Redis broker，
-// 间接链接 rueidis，但运行时不连接 Redis。
+// TestOnlyCacheImportsRedis 确保只有 cache 和只读运维诊断包 mcpx/opsmcp 直接引用 Redis 客户端：
+// 锁和限流保存在 PostgreSQL 中，广播和在线成员在 NATS 中，其余包都不直接依赖 Redis。
+// realtime 依赖的 Centrifuge 自带 Redis broker，间接链接 rueidis，但运行时不连接 Redis。
 func TestOnlyCacheImportsRedis(t *testing.T) {
 	for pkg, imps := range imports(t) {
-		if pkg == module+"/cache" {
+		if pkg == module+"/cache" || pkg == module+"/mcpx/opsmcp" {
 			continue
 		}
 		for _, imp := range imps {

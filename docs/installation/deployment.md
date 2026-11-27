@@ -36,7 +36,7 @@ go tool tenon deploy -t prod
 - `tenon deploy` 校验 Git 工作区干净（可传 `--allow-dirty`），探测架构并本地交叉编译（可传 `--tag vX.Y.Z` 拉取并校验 GitHub Release 产物，或 `--binary` 指定本地文件；使用 `--tag`/`--binary` 或查询运维命令时可脱离源码仓库直接运行），在主节点通过会话级 `flock` 加锁，按 SHA-256 去重后经 gzip 流式上传，二进制、配置与 unit 均未变化时自动跳过（No-op）。随后全机并行 `config check`、主节点 `migrate up` 与 `doctor`，按波次滚动切换（unit 或 drop-in 变更时自动 `restart`，其余走 `reload`），最后清理旧发布并回收无引用对象。
 - **版本与发布分离**：`tenon build` 将 `git describe --tags --always --dirty` 注入二进制；远端以单调递增序号（`releases/0001/`）配合不可变 `manifest.json` 与 `history.jsonl` 记录每次发布，支持仅配置热发与精准回滚。
 - 常用运维命令：`config`（仅同步配置并热重载，复用线上二进制）、`releases`（查看历史发布）、`rollback [序号|tag]`、`status [--role http]`、`logs [--role http] [-F] [--since 15m] [--contains ERR]`、`run -- doctor`、`env push|pull`、`maintenance on|off`。
-- **AI 助手与人类同等优先**：所有子命令支持 `--format json` 结构化输出且全程非交互；只读观测与发布预演同步作为 MCP 工具暴露（`tenon_deploy_info`、`tenon_deploy_status`、`tenon_deploy_logs`、`tenon_deploy_plan`），见 [MCP 服务](ai-assistants.md#mcp-servers)。
+- **AI 助手与人类同等优先**：所有子命令支持 `--format json` 结构化输出且全程非交互；只读观测与发布预演同步作为 MCP 工具暴露（`tenon_deploy_info`、`tenon_deploy_status`、`tenon_deploy_logs`、`tenon_deploy_plan`），见 [MCP 服务](ai-assistants.md#mcp-servers)。在 `target.yaml` 或 `defaults` 中可选配置 `observe_user`（如 `observe`），`tenon deploy setup` 自动创建仅加入 `systemd-journal` 组、无 `sudo` 权限的低权限观测用户，`status`、`logs`、`releases` 与 MCP 部署观测工具自动使用该用户，与发布账号隔离。
 
 <a id="multi-targets"></a>
 ### 多独立实例与自定义实例名：`app` 与 `instance`

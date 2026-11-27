@@ -18,13 +18,14 @@ type SetupOptions struct {
 
 // SetupReport 是 tenon deploy setup 的结构化执行结果。
 type SetupReport struct {
-	App         string   `json:"app"`          // 构建产物名
-	Target      string   `json:"target"`       // 目标名
-	Instance    string   `json:"instance"`     // 远端实例名
-	DryRun      bool     `json:"dry_run"`      // 是否为预演模式
-	UnitPath    string   `json:"unit_path"`    // systemd 模板 unit 路径
-	WrapperPath string   `json:"wrapper_path"` // 安装在 PATH 中的运维包装脚本路径
-	Hosts       []string `json:"hosts"`        // 已初始化的主机地址列表
+	App         string   `json:"app"`                    // 构建产物名
+	Target      string   `json:"target"`                 // 目标名
+	Instance    string   `json:"instance"`               // 远端实例名
+	ObserveUser string   `json:"observe_user,omitempty"` // 初始化的只读观测用户
+	DryRun      bool     `json:"dry_run"`                // 是否为预演模式
+	UnitPath    string   `json:"unit_path"`              // systemd 模板 unit 路径
+	WrapperPath string   `json:"wrapper_path"`           // 安装在 PATH 中的运维包装脚本路径
+	Hosts       []string `json:"hosts"`                  // 已初始化的主机地址列表
 }
 
 // Setup 幂等初始化目标主机：检查 Linux/systemd/glibc，创建系统用户、内容寻址目录和可选的环境变量文件骨架，
@@ -48,6 +49,7 @@ func Setup(ctx context.Context, r Runner, t Target, opts SetupOptions, out io.Wr
 		App:         t.App,
 		Target:      t.Name,
 		Instance:    t.Instance,
+		ObserveUser: t.ObserveUser,
 		DryRun:      opts.DryRun,
 		UnitPath:    unitPath,
 		WrapperPath: wrapperPath,
@@ -93,6 +95,22 @@ if ! sudo test -f %s; then
   sudo install -m 600 -o root -g root /dev/null %s
 fi
 `, shellQuote(envDir), shellQuote(t.EnvFile), shellQuote(t.EnvFile))
+		}
+		if t.HasObserveUser() {
+			obs := shellQuote(t.ObserveUser)
+			// 创建低权限只读观测用户：仅加入 systemd-journal 组以无 sudo 读日志，不授 sudo，不加入服务用户组。
+			fmt.Fprintf(&prep, `if ! id -u %s >/dev/null 2>&1; then
+  sudo useradd --create-home --shell /bin/sh %s
+fi
+if getent group systemd-journal >/dev/null 2>&1; then
+  sudo usermod -aG systemd-journal %s
+fi
+obs_home=$(getent passwd %s | cut -d: -f6)
+if [ -n "$obs_home" ] && [ -f "$HOME/.ssh/authorized_keys" ] && ! sudo test -f "$obs_home/.ssh/authorized_keys"; then
+  sudo install -d -m 700 -o %s -g %s "$obs_home/.ssh"
+  sudo install -m 600 -o %s -g %s "$HOME/.ssh/authorized_keys" "$obs_home/.ssh/authorized_keys"
+fi
+`, obs, obs, obs, obs, obs, obs, obs, obs)
 		}
 		if _, err := RunCapture(ctx, r, h, prep.String()); err != nil {
 			return nil, fmt.Errorf("[%s] 创建用户和目录失败: %w", h.Addr, err)

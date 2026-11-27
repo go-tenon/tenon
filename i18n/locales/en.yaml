@@ -139,3 +139,5 @@ queue.topic.webhook.deliver.label: Webhook delivery
 queue.topic.webhook.deliver.description: Delivers event notifications to subscribed webhook endpoints
 queue.topic.push.deliver.label: Push notification
 queue.topic.push.deliver.description: Sends push notifications to registered mobile devices
+ops.query_rejected: "Query rejected: {{.reason}}"
+ops.query_failed: "Query failed: {{.reason}}"

@@ -213,3 +213,14 @@ bun run typecheck && go test ./...
 - 改动涉及并发时再运行 `go test -race ./...`。
 - 框架需要的 Go 版本以它的 [go.mod](../../go.mod) 为准，最低要求 PostgreSQL 18 与 NATS 2.15。
 - CI 中启用了[已发布迁移检查](../database/migrations.md#checking-in-ci)和 `migrate verify` 时，分别确认未改写历史迁移且未漏发框架新增迁移。
+
+<a id="agent-troubleshooting"></a>
+## 线上排障与只读诊断
+
+让 AI 助手排查线上问题时，按从外到内、最小权限的三层只读观测面逐级排查，不把生产 `deploy/targets/*` 密钥或高权限 SSH 交给日常排障会话：
+
+1. **外置可观测平台（首选）**：生产开启 [telemetry](../general/telemetry.md#setup) 把日志、指标和链路推送到 OpenObserve，助手通过只读观测 MCP 按 `X-Request-ID` 或时间窗口定位绝大多数报错与慢请求，完全不触碰生产主机。
+2. **应用只读运维 MCP（查库、队列、Redis、NATS）**：在应用内挂载 [`mcpx/opsmcp`](../ai/mcp.md#ops-mcp) 到 `/ops/mcp`，给助手签发仅含 `ops:read` 权限的短期个人访问令牌。数据库侧只需两行 SQL 创建通用只读角色（`GRANT pg_read_all_data`），所有查询强制在只读事务、超时与敏感列脱敏护栏下执行。
+3. **低权限主机观测（进程宕机兜底）**：在 `deploy/targets/<target>/target.yaml`（或 `deploy/app.yaml` 的 `defaults`）中配置 `observe_user: observe` 并运行 `tenon deploy setup`，使 `tenon deploy status`、`logs`、`releases` 与 `tenon mcp` 的部署观测工具走无 `sudo` 的低权限用户；把 `deploy/targets/` 放在外部私有目录并通过 `TENON_DEPLOY_TARGETS` 指定。
+
+- **变更线上走受控流程**：助手通过上述只读面定位根因后，在本地编写回归测试与修复代码提交 PR，由人工确认后走 `tenon deploy` 发布，或由人工审核后执行一次性订正命令。

@@ -40,6 +40,9 @@ const (
 // safeName 限制产物名、实例名、目标名、服务用户名、角色名和服务部分名只包含小写字母、数字和连字符。
 var safeName = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 
+// safeUserName 限制只读观测用户名符合 Linux 系统用户名规范。
+var safeUserName = regexp.MustCompile(`^[a-z_][a-z0-9_-]*$`)
+
 // safeEnvKey 限制角色级 systemd drop-in 环境变量键为标准 POSIX 环境变量名。
 var safeEnvKey = regexp.MustCompile(`^[A-Z_][A-Z0-9_]*$`)
 
@@ -55,29 +58,33 @@ type AppFile struct {
 
 // TargetDefaults 是 deploy/app.yaml 中供各实例继承的公共默认值，可在 target.yaml 中逐项覆盖。
 type TargetDefaults struct {
-	User         string   `yaml:"user"`          // 默认 SSH 登录用户，留空时为 deploy
-	Port         int      `yaml:"port"`          // 默认 SSH 端口，0 表示沿用 ssh 配置
-	IdentityFile string   `yaml:"identity_file"` // 默认 SSH 私钥路径（相对路径以 app.yaml 目录为基准）
-	ConfigFiles  []string `yaml:"config_files"`  // 默认叠加的配置文件路径（以 app.yaml 目录为基准）
+	User                string   `yaml:"user"`                  // 默认 SSH 登录用户，留空时为 deploy
+	Port                int      `yaml:"port"`                  // 默认 SSH 端口，0 表示沿用 ssh 配置
+	IdentityFile        string   `yaml:"identity_file"`         // 默认 SSH 私钥路径（相对路径以 app.yaml 目录为基准）
+	ObserveUser         string   `yaml:"observe_user"`          // 可选：默认只读观测 SSH 用户（用于 status/logs/releases 与 tenon mcp），留空时沿用 user
+	ObserveIdentityFile string   `yaml:"observe_identity_file"` // 可选：默认只读观测 SSH 私钥路径，留空时沿用 identity_file
+	ConfigFiles         []string `yaml:"config_files"`          // 默认叠加的配置文件路径（以 app.yaml 目录为基准）
 }
 
 // TargetFile 是 deploy/targets/<name>/target.yaml 的结构，描述一套独立部署实例的身份、拓扑与运行参数。
 type TargetFile struct {
-	Instance        string          `yaml:"instance"`         // 远端实例名（驱动 systemd unit、用户、目录、二进制和运维命令），留空时默认等于 app
-	Arch            string          `yaml:"arch"`             // 覆盖默认目标 Linux 架构（amd64、arm64）
-	KeepReleases    int             `yaml:"keep_releases"`    // 覆盖默认保留发布数
-	User            string          `yaml:"user"`             // SSH 登录用户，留空继承 defaults.user
-	Port            int             `yaml:"port"`             // SSH 端口，0 继承 defaults.port
-	IdentityFile    string          `yaml:"identity_file"`    // SSH 私钥路径，留空继承 defaults.identity_file
-	ServiceUser     string          `yaml:"service_user"`     // 运行应用的 Linux 系统用户，默认与 instance 相同
-	Dir             string          `yaml:"dir"`              // 远端部署目录，默认 /opt/<instance>
-	EnvFile         string          `yaml:"env_file"`         // 可选：远端环境变量文件路径；显式填写时严格要求存在，省略时默认 /etc/<instance>/env（systemd 允许缺失）
-	ConfigDir       string          `yaml:"config_dir"`       // 要同步的本地配置目录（相对于 target.yaml 所在目录），与 config_files 互斥
-	ConfigFiles     []string        `yaml:"config_files"`     // 按顺序叠加加载的本地配置文件列表（相对于 target.yaml 所在目录）；留空时自动识别同目录 config.yaml
-	MaintenanceFile string          `yaml:"maintenance_file"` // 反向代理维护页标记文件路径，可选
-	MigrateHost     string          `yaml:"migrate_host"`     // 执行预检与数据库迁移的主机地址，可选
-	Hosts           []string        `yaml:"hosts"`            // 单机或同构简写：所有主机运行 all
-	Roles           map[string]Role `yaml:"roles"`            // 多服务角色拓扑：键为角色名（如 http、worker、scheduler）
+	Instance            string          `yaml:"instance"`              // 远端实例名（驱动 systemd unit、用户、目录、二进制和运维命令），留空时默认等于 app
+	Arch                string          `yaml:"arch"`                  // 覆盖默认目标 Linux 架构（amd64、arm64）
+	KeepReleases        int             `yaml:"keep_releases"`         // 覆盖默认保留发布数
+	User                string          `yaml:"user"`                  // SSH 登录用户，留空继承 defaults.user
+	Port                int             `yaml:"port"`                  // SSH 端口，0 继承 defaults.port
+	IdentityFile        string          `yaml:"identity_file"`         // SSH 私钥路径，留空继承 defaults.identity_file
+	ObserveUser         string          `yaml:"observe_user"`          // 可选：只读观测 SSH 用户，留空继承 defaults.observe_user，仍为空时沿用 user
+	ObserveIdentityFile string          `yaml:"observe_identity_file"` // 可选：只读观测 SSH 私钥路径，留空继承 defaults.observe_identity_file
+	ServiceUser         string          `yaml:"service_user"`          // 运行应用的 Linux 系统用户，默认与 instance 相同
+	Dir                 string          `yaml:"dir"`                   // 远端部署目录，默认 /opt/<instance>
+	EnvFile             string          `yaml:"env_file"`              // 可选：远端环境变量文件路径；显式填写时严格要求存在，省略时默认 /etc/<instance>/env（systemd 允许缺失）
+	ConfigDir           string          `yaml:"config_dir"`            // 要同步的本地配置目录（相对于 target.yaml 所在目录），与 config_files 互斥
+	ConfigFiles         []string        `yaml:"config_files"`          // 按顺序叠加加载的本地配置文件列表（相对于 target.yaml 所在目录）；留空时自动识别同目录 config.yaml
+	MaintenanceFile     string          `yaml:"maintenance_file"`      // 反向代理维护页标记文件路径，可选
+	MigrateHost         string          `yaml:"migrate_host"`          // 执行预检与数据库迁移的主机地址，可选
+	Hosts               []string        `yaml:"hosts"`                 // 单机或同构简写：所有主机运行 all
+	Roles               map[string]Role `yaml:"roles"`                 // 多服务角色拓扑：键为角色名（如 http、worker、scheduler）
 }
 
 // LoadOptions 控制部署配置的读取位置与默认产物名。
@@ -138,26 +145,28 @@ type ConfigFile struct {
 
 // Target 是补齐默认值、按主机归并角色并通过校验的单个部署目标实例。
 type Target struct {
-	App              string          `json:"app"`                    // 构建产物与 Release 资产名
-	Name             string          `json:"target"`                 // 目标名（deploy/targets/<target> 目录名）
-	Instance         string          `json:"instance"`               // 远端实例名（用于 systemd unit、目录、用户、二进制与运维命令）
-	Repo             string          `json:"repo,omitempty"`         // GitHub 仓库（owner/repo）
-	Arch             string          `json:"arch,omitempty"`         // 目标架构，为空表示由远端 uname -m 探测
-	KeepReleases     int             `json:"keep_releases"`          // 保留的历史发布目录数量
-	HasSSR           bool            `json:"has_ssr,omitempty"`      // 目标应用是否包含服务端渲染前端
-	User             string          `json:"user"`                   // SSH 登录用户
-	Port             int             `json:"port,omitempty"`         // SSH 端口
-	IdentityFile     string          `json:"-"`                      // SSH 私钥路径（不输出到结构化拓扑）
-	ServiceUser      string          `json:"service_user"`           // 运行应用的系统用户
-	Dir              string          `json:"dir"`                    // 远端部署目录
-	EnvFile          string          `json:"env_file"`               // 远端环境变量文件路径
-	EnvFileStrict    bool            `json:"-"`                      // 为真时强制要求 EnvFile 存在，为假时 systemd 以 - 前缀忽略缺失
-	ConfigDir        string          `json:"config_dir,omitempty"`   // 本地配置目录（未配置 config_files 时生效）
-	ConfigFiles      []ConfigFile    `json:"config_files,omitempty"` // 按顺序叠加加载的配置文件清单
-	MaintenanceFile  string          `json:"maintenance_file"`       // 维护页标记文件路径
-	Roles            map[string]Role `json:"roles"`                  // 标准化后的角色拓扑
-	Hosts            []Host          `json:"hosts"`                  // 按主机去重归并后的主机列表
-	MigrateHostIndex int             `json:"-"`                      // 主迁移节点在 Hosts 中的下标
+	App                 string          `json:"app"`                    // 构建产物与 Release 资产名
+	Name                string          `json:"target"`                 // 目标名（deploy/targets/<target> 目录名）
+	Instance            string          `json:"instance"`               // 远端实例名（用于 systemd unit、目录、用户、二进制与运维命令）
+	Repo                string          `json:"repo,omitempty"`         // GitHub 仓库（owner/repo）
+	Arch                string          `json:"arch,omitempty"`         // 目标架构，为空表示由远端 uname -m 探测
+	KeepReleases        int             `json:"keep_releases"`          // 保留的历史发布目录数量
+	HasSSR              bool            `json:"has_ssr,omitempty"`      // 目标应用是否包含服务端渲染前端
+	User                string          `json:"user"`                   // SSH 登录用户
+	Port                int             `json:"port,omitempty"`         // SSH 端口
+	IdentityFile        string          `json:"-"`                      // SSH 私钥路径（不输出到结构化拓扑）
+	ObserveUser         string          `json:"observe_user,omitempty"` // 可选：只读观测 SSH 用户
+	ObserveIdentityFile string          `json:"-"`                      // 可选：只读观测 SSH 私钥路径（不输出到结构化拓扑）
+	ServiceUser         string          `json:"service_user"`           // 运行应用的系统用户
+	Dir                 string          `json:"dir"`                    // 远端部署目录
+	EnvFile             string          `json:"env_file"`               // 远端环境变量文件路径
+	EnvFileStrict       bool            `json:"-"`                      // 为真时强制要求 EnvFile 存在，为假时 systemd 以 - 前缀忽略缺失
+	ConfigDir           string          `json:"config_dir,omitempty"`   // 本地配置目录（未配置 config_files 时生效）
+	ConfigFiles         []ConfigFile    `json:"config_files,omitempty"` // 按顺序叠加加载的配置文件清单
+	MaintenanceFile     string          `json:"maintenance_file"`       // 维护页标记文件路径
+	Roles               map[string]Role `json:"roles"`                  // 标准化后的角色拓扑
+	Hosts               []Host          `json:"hosts"`                  // 按主机去重归并后的主机列表
+	MigrateHostIndex    int             `json:"-"`                      // 主迁移节点在 Hosts 中的下标
 }
 
 // EnvFileSpec 返回写入 systemd EnvironmentFile 的路径值；非严格模式下附加前导 - 允许文件缺失。
@@ -166,6 +175,24 @@ func (t Target) EnvFileSpec() string {
 		return t.EnvFile
 	}
 	return "-" + t.EnvFile
+}
+
+// HasObserveUser 报告是否配置了独立于发布用户的只读观测 SSH 用户。
+func (t Target) HasObserveUser() bool {
+	return t.ObserveUser != "" && t.ObserveUser != t.User
+}
+
+// ObserveTarget 返回切换到只读观测 SSH 身份后的目标副本；未配置 observe_user 时保持原样。
+func (t Target) ObserveTarget() Target {
+	if t.ObserveUser == "" {
+		return t
+	}
+	cp := t
+	cp.User = t.ObserveUser
+	if t.ObserveIdentityFile != "" {
+		cp.IdentityFile = t.ObserveIdentityFile
+	}
+	return cp
 }
 
 // DisplayLabel 返回人类可读的目标身份描述，实例名与产物名不同时同时标出产物名。
@@ -308,6 +335,7 @@ type Topology struct {
 type TargetTopology struct {
 	Instance        string          `json:"instance"`                   // 远端实例名
 	User            string          `json:"user"`                       // SSH 用户
+	ObserveUser     string          `json:"observe_user,omitempty"`     // 可选：只读观测 SSH 用户
 	ServiceUser     string          `json:"service_user"`               // 服务用户
 	Dir             string          `json:"dir"`                        // 部署目录
 	EnvFile         string          `json:"env_file"`                   // 远端环境变量路径
@@ -419,6 +447,7 @@ func LoadTopology(opts LoadOptions) (Topology, error) {
 		topo.Targets[name] = TargetTopology{
 			Instance:        t.Instance,
 			User:            t.User,
+			ObserveUser:     t.ObserveUser,
 			ServiceUser:     t.ServiceUser,
 			Dir:             t.Dir,
 			EnvFile:         t.EnvFile,
@@ -585,6 +614,24 @@ func BuildTarget(af AppFile, appDir, defaultApp, targetName string, tf TargetFil
 		identityFile = anchorLocalPath(identityBase, identityFile)
 	}
 
+	observeUser := strings.TrimSpace(tf.ObserveUser)
+	if observeUser == "" {
+		observeUser = strings.TrimSpace(af.Defaults.ObserveUser)
+	}
+	if observeUser != "" && !safeUserName.MatchString(observeUser) {
+		return Target{}, fmt.Errorf("deploy: target %q observe_user %q must match %s", targetName, observeUser, safeUserName)
+	}
+
+	observeIdentityFile := strings.TrimSpace(tf.ObserveIdentityFile)
+	observeIdentityBase := targetDir
+	if observeIdentityFile == "" {
+		observeIdentityFile = strings.TrimSpace(af.Defaults.ObserveIdentityFile)
+		observeIdentityBase = appDir
+	}
+	if observeIdentityFile != "" {
+		observeIdentityFile = anchorLocalPath(observeIdentityBase, observeIdentityFile)
+	}
+
 	serviceUser := strings.TrimSpace(tf.ServiceUser)
 	if serviceUser == "" {
 		serviceUser = instance
@@ -640,13 +687,15 @@ func BuildTarget(af AppFile, appDir, defaultApp, targetName string, tf TargetFil
 	maintenanceFile := strings.TrimSpace(tf.MaintenanceFile)
 	migrateHost := strings.TrimSpace(tf.MigrateHost)
 	for field, val := range map[string]string{
-		"user":             user,
-		"dir":              remoteDir,
-		"env_file":         envFile,
-		"config_dir":       configDir,
-		"identity_file":    identityFile,
-		"maintenance_file": maintenanceFile,
-		"migrate_host":     migrateHost,
+		"user":                  user,
+		"observe_user":          observeUser,
+		"dir":                   remoteDir,
+		"env_file":              envFile,
+		"config_dir":            configDir,
+		"identity_file":         identityFile,
+		"observe_identity_file": observeIdentityFile,
+		"maintenance_file":      maintenanceFile,
+		"migrate_host":          migrateHost,
 	} {
 		if strings.ContainsAny(val, "\r\n\x00") {
 			return Target{}, fmt.Errorf("deploy: target %q %s contains invalid control characters", targetName, field)
@@ -708,26 +757,28 @@ func BuildTarget(af AppFile, appDir, defaultApp, targetName string, tf TargetFil
 	}
 
 	return Target{
-		App:              app,
-		Name:             targetName,
-		Instance:         instance,
-		Repo:             repo,
-		Arch:             arch,
-		KeepReleases:     keep,
-		HasSSR:           hasSSR,
-		User:             user,
-		Port:             port,
-		IdentityFile:     identityFile,
-		ServiceUser:      serviceUser,
-		Dir:              remoteDir,
-		EnvFile:          envFile,
-		EnvFileStrict:    envFileStrict,
-		ConfigDir:        configDir,
-		ConfigFiles:      configFiles,
-		MaintenanceFile:  maintenanceFile,
-		Roles:            roles,
-		Hosts:            hosts,
-		MigrateHostIndex: migrateIdx,
+		App:                 app,
+		Name:                targetName,
+		Instance:            instance,
+		Repo:                repo,
+		Arch:                arch,
+		KeepReleases:        keep,
+		HasSSR:              hasSSR,
+		User:                user,
+		Port:                port,
+		IdentityFile:        identityFile,
+		ObserveUser:         observeUser,
+		ObserveIdentityFile: observeIdentityFile,
+		ServiceUser:         serviceUser,
+		Dir:                 remoteDir,
+		EnvFile:             envFile,
+		EnvFileStrict:       envFileStrict,
+		ConfigDir:           configDir,
+		ConfigFiles:         configFiles,
+		MaintenanceFile:     maintenanceFile,
+		Roles:               roles,
+		Hosts:               hosts,
+		MigrateHostIndex:    migrateIdx,
 	}, nil
 }
 

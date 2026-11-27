@@ -2,7 +2,7 @@
 
 `mcpx` 把应用的业务动作作为 MCP 工具提供给 Claude、Cursor、VS Code 等 AI 客户端：应用的用户在 AI 客户端中搜索、发布文章，认证和权限与 JSON 接口相同。开发时给编程助手用的 `tenon mcp` 见 [AI 编程助手](../installation/ai-assistants.md)。
 
-包：`mcpx`、`mcpx/mcpcmd`、`mcpx/mcpxtest`。
+包：`mcpx`、`mcpx/mcpcmd`、`mcpx/mcpxtest`、`mcpx/opsmcp`。
 
 - 工具是业务动作的一个入口，只做转换，授权仍在 `Handle` 中：AI 以谁的令牌调用，就以谁的身份执行。
 - 服务是无状态的，每个请求可以落在任意实例上；通信总是由客户端发起，工具在一次调用中完成。
@@ -213,3 +213,44 @@ func TestPublishTool(t *testing.T) {
 ## resource 和 prompt
 
 `srv.SDK()` 返回底层的 `*mcp.Server`，用 [Go SDK](https://pkg.go.dev/github.com/modelcontextprotocol/go-sdk/mcp) 的 API 添加 resource 和 prompt。工具只用 `mcpx.Register` 登记：用 SDK 直接添加的工具没有权限检查和参数校验。
+
+<a id="ops-mcp"></a>
+## 只读运维诊断工具集：`mcpx/opsmcp`
+
+`opsmcp.Register` 把框架内置的只读排障能力登记到 `*mcpx.Server` 上，让 AI 客户端经由应用的 Bearer 令牌和权限体系安全排查线上状态，无需给助手分发 SSH 私钥、生产配置文件或数据库写权限。传入哪些依赖，就登记对应的工具：
+
+```go
+opsSrv := mcpx.New(mcpx.Options{Name: "app-ops", Instructions: "线上只读排障工具。"})
+opsmcp.Register(opsSrv, opsmcp.Options{
+    Permissions: []string{"ops:read"},
+    Doctor:      a.doctor,
+    DB:          a.diagDB,        // 建议使用 pg_read_all_data 只读角色打开，也可直接传 a.db
+    QueueAdmin:  a.queueAdmin,    // 同时启用 ops_queue_status 与 ops_queue_failed
+    Schedule:    a.scheduleStore,
+    Redis:       a.rdb,
+    NATS:        a.nc,
+})
+router.Handle("/ops/mcp", mcpx.Handler(opsSrv, mcpx.HandlerOptions{
+    Validate: tokens.Validate,
+    Accounts: API.Accounts,
+}))
+```
+
+| 传入字段 | 登记的只读工具 | 内置护栏 |
+| --- | --- | --- |
+| `Doctor` | `ops_doctor` | 复用应用装配的 `doctor.Group` |
+| `DB` | `ops_db_tables`、`ops_db_query` | 强制单条只读 SQL、`BEGIN READ ONLY` + `statement_timeout`（3s）+ `lock_timeout`（500ms）+ 结束回滚、行数与列长截断、常见敏感列脱敏 |
+| `QueueDB` / `QueueAdmin` | `ops_queue_status`、`ops_queue_failed` | 只读 `queue_outbox`、`queue_failed_jobs` 与 JetStream 状态 |
+| `Schedule` | `ops_schedule_status` | 只读 `schedule.Store.States` |
+| `Redis` | `ops_redis_info`、`ops_redis_scan`、`ops_redis_get` | 仅限次 `SCAN`（不用 `KEYS *`），自动脱敏敏感键名 |
+| `NATS` | `ops_nats_status` | 只读 NATS 连接与 JetStream stream/consumer 概览 |
+
+- **只读数据库角色**：在 PostgreSQL 中用两行 SQL 创建通用只读角色（后续新迁移的表自动可读）：
+
+```sql
+CREATE ROLE app_ro LOGIN PASSWORD '<password>';
+GRANT pg_read_all_data TO app_ro;
+```
+
+- 把 `opsmcp.Doctor(a.diagDB)` 加进应用的 `doctor` 自检：若误配了超级用户或可写账号，自检返回提示并打印上述两行 SQL；设置 `RequireReadOnlyRole: true` 时，`ops_db_query` 直接拒绝可写账号执行。
+- 生产排障优先顺序和 `tenon deploy` 的只读观测用户见[线上排障与只读诊断](../installation/operations.md#agent-troubleshooting)。

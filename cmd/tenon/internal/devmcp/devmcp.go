@@ -57,7 +57,7 @@ func New(opts Options) (*mcp.Server, error) {
 	newRunner := opts.DeployRunner
 	if newRunner == nil {
 		newRunner = func(t deploy.Target) (deploy.Runner, func() error, error) {
-			r, err := deploy.NewSSHRunner(t)
+			r, err := deploy.NewObserveSSHRunner(t)
 			if err != nil {
 				return nil, nil, err
 			}

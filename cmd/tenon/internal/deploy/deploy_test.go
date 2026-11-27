@@ -992,3 +992,57 @@ func TestStatusLogsAndMaintenanceWithCustomInstance(t *testing.T) {
 		t.Fatalf("Maintenance: rep=%+v err=%v", mrep, err)
 	}
 }
+
+func TestObserveUserSeparationSetupAndLogs(t *testing.T) {
+	t.Parallel()
+	target, err := deploy.BuildTarget(deploy.AppFile{
+		App: "omirouter",
+		Defaults: deploy.TargetDefaults{
+			User:        "deploy",
+			ObserveUser: "observe",
+		},
+	}, "", "omirouter", "prod", deploy.TargetFile{
+		Hosts: []string{"10.0.0.10"},
+	}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !target.HasObserveUser() || target.ObserveUser != "observe" {
+		t.Fatalf("expected observe_user=observe, got %+v", target)
+	}
+	obsTarget := target.ObserveTarget()
+	if obsTarget.User != "observe" {
+		t.Fatalf("ObserveTarget.User = %q, want observe", obsTarget.User)
+	}
+
+	var sawObserveSetup, sawNonSudoJournal atomic.Bool
+	runner := &fakeRunner{
+		onRun: func(_ deploy.Host, script string, _ []byte) (string, string, error) {
+			if strings.Contains(script, "usermod -aG systemd-journal 'observe'") {
+				sawObserveSetup.Store(true)
+			}
+			if strings.HasPrefix(script, "journalctl -u ") && !strings.Contains(script, "sudo journalctl") {
+				sawNonSudoJournal.Store(true)
+				return "ERR line1\n", "", nil
+			}
+			return "", "", nil
+		},
+	}
+
+	var out bytes.Buffer
+	srep, err := deploy.Setup(context.Background(), runner, target, deploy.SetupOptions{}, &out)
+	if err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	if srep.ObserveUser != "observe" || !sawObserveSetup.Load() {
+		t.Fatalf("expected setup to initialize observe_user, report=%+v sawSetup=%v", srep, sawObserveSetup.Load())
+	}
+
+	lrep, err := deploy.CollectLogs(context.Background(), runner, target, deploy.LogsOptions{Lines: 20})
+	if err != nil {
+		t.Fatalf("CollectLogs: %v", err)
+	}
+	if !sawNonSudoJournal.Load() || len(lrep.Hosts) != 1 || len(lrep.Hosts[0].Lines) != 1 {
+		t.Fatalf("expected non-sudo journalctl for observe_user, saw=%v report=%+v", sawNonSudoJournal.Load(), lrep)
+	}
+}

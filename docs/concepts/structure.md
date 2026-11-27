@@ -214,7 +214,7 @@ SQL 迁移文件，由 `embed.go` 嵌入程序，部署时用 `migrate up` 执�
 | `clientgen` | 从路由生成 TypeScript 与 Go 客户端 | [客户端代码](../http/clients.md) |
 | `frontend` | 托管前端：按挂载路径返回页面和静态文件，服务端渲染的页面交给 Bun 渲染 | [托管前端与服务端渲染](../frontend/hosting.md) |
 | `realtime` | 嵌入 Centrifuge 的 WebSocket 频道 | [实时频道](../libraries/realtime.md) |
-| `mcpx` | 把动作作为 MCP 工具提供给 AI 客户端 | [MCP 服务](../ai/mcp.md) |
+| `mcpx` | 把动作作为 MCP 工具提供给 AI 客户端；`mcpx/opsmcp` 是只读运维诊断工具集 | [MCP 服务](../ai/mcp.md) |
 | `natsrpc` | 把动作作为 RPC 端点，其他服务经由 NATS 同步调用 | [提供和调用端点](../rpc/endpoints.md) |
 | `command` | 根命令、`Serve`、`Bind`、`Daemon`、退出码；`httpcmd`、`migratecmd` 等内置命令 | [命令行](../general/commands.md) |
 | `doctor/doctorapi` | 运行环境自检的运维接口 | [在后台页面中显示](../installation/doctor.md#admin-page) |

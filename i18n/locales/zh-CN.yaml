@@ -139,3 +139,5 @@ queue.topic.webhook.deliver.label: Webhook 投递
 queue.topic.webhook.deliver.description: 向订阅方回调地址投递事件通知
 queue.topic.push.deliver.label: 移动端推送
 queue.topic.push.deliver.description: 向已登记的移动设备发送系统推送通知
+ops.query_rejected: "查询被拒绝：{{.reason}}"
+ops.query_failed: "查询失败：{{.reason}}"

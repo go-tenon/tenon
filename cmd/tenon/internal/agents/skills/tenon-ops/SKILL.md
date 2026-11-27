@@ -25,5 +25,7 @@ description: Tenon 应用上线准备、原生二进制与 systemd 多机部署�
 
 ## AI 助手协助部署与排障
 
-- **只读观测优先走 MCP**：查全部目标拓扑用 `tenon_deploy_info`，查节点状态用 `tenon_deploy_status`（传 `target`），聚合多机线上报错日志用 `tenon_deploy_logs`（带 `target`、`role`、`since`、`contains`），发布前用 `tenon_deploy_plan` 预演波次并向用户确认。
-- **执行变更统一带 `--format json`**：完整发布（`go tool tenon deploy -t <target> --format json`）、仅配置热发（`config`）、回滚（`rollback [序号|tag]`）、查看历史（`releases`）、维护开关（`maintenance`）和远端自检（`run -- doctor --format json`）均走命令行并输出结构化结果；绝不回显或提交实例配置与 `/etc/<instance>/env` 中的密钥。
+- **线上排障三层只读顺序**（见 `tenon/docs/installation/operations.md#agent-troubleshooting`）：优先查外置可观测平台（OpenObserve 日志/链路/指标）→ 再通过应用内挂载的 `mcpx/opsmcp`（`tenon/docs/ai/mcp.md#ops-mcp`，`/ops/mcp` + `ops:read` 只读令牌）只读排查 DB、队列、定时任务、Redis、NATS 与 `doctor` → 进程异常时再走 `tenon_deploy_status` / `tenon_deploy_logs`。
+- **读写权限分离**：在 `deploy` 目标中配置可选 `observe_user` 让状态与日志观测走无 `sudo` 的低权限账号；生产数据库用 `GRANT pg_read_all_data` 创建通用只读角色供 `opsmcp` 使用，并在 `doctor` 中挂上 `opsmcp.Doctor`。
+- **只读观测与预演走 MCP**：查拓扑用 `tenon_deploy_info`，查状态用 `tenon_deploy_status`，拉多机日志用 `tenon_deploy_logs`，发布前用 `tenon_deploy_plan` 预演并确认。
+- **执行变更统一带 `--format json`**：完整发布（`go tool tenon deploy -t <target> --format json`）、仅配置热发（`config`）、回滚（`rollback [序号|tag]`）、查看历史（`releases`）、维护开关（`maintenance`）和远端自检（`run -- doctor --format json`）均走命令行并输出结构化结果；绝不回显或提交实例配置与 `/etc/<instance>/env` 中的密钥，线上修复优先改代码走发布，不直接手改生产数据。

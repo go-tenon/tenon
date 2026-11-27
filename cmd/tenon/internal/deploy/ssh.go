@@ -49,6 +49,11 @@ func NewSSHRunner(t Target) (*SSHRunner, error) {
 	}, nil
 }
 
+// NewObserveSSHRunner 使用目标环境的只读观测身份（observe_user，未配置时沿用 user）创建 SSHRunner。
+func NewObserveSSHRunner(t Target) (*SSHRunner, error) {
+	return NewSSHRunner(t.ObserveTarget())
+}
+
 // ControlPath 返回传给 ssh 的 ControlPath 模板路径。
 func (r *SSHRunner) ControlPath() string {
 	return filepath.Join(r.controlDir, "%C")

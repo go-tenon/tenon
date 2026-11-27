@@ -465,7 +465,7 @@ type HostLogs struct {
 	Lines []string `json:"lines"` // 过滤后的日志行
 }
 
-// buildJournalCmd 构造远端 journalctl 查询命令。
+// buildJournalCmd 构造远端 journalctl 查询命令；使用低权限 observe_user 时不带 sudo（依赖 systemd-journal 组）。
 func buildJournalCmd(t Target, opts LogsOptions, follow bool) string {
 	lines := opts.Lines
 	if lines <= 0 {
@@ -475,7 +475,11 @@ func buildJournalCmd(t Target, opts LogsOptions, follow bool) string {
 	if opts.Part != "" {
 		unit = UnitName(t.Instance, opts.Part)
 	}
-	cmd := fmt.Sprintf("sudo journalctl -u %s -n %d --no-pager", shellQuote(unit), lines)
+	prefix := "sudo journalctl"
+	if t.HasObserveUser() {
+		prefix = "journalctl"
+	}
+	cmd := fmt.Sprintf("%s -u %s -n %d --no-pager", prefix, shellQuote(unit), lines)
 	if strings.TrimSpace(opts.Since) != "" {
 		cmd += " --since " + shellQuote(strings.TrimSpace(opts.Since))
 	}

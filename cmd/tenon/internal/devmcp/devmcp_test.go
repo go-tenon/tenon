@@ -181,6 +181,8 @@ func TestSearchDocs(t *testing.T) {
 		"自托管":                "installation/self-hosting.md",
 		"tenon init":         "installation/installing.md",
 		"MCP 工具":             "ai/mcp.md",
+		"opsmcp 只读排障":        "ai/mcp.md#ops-mcp",
+		"线上排障 只读诊断":          "installation/operations.md#agent-troubleshooting",
 		"向量检索":               "ai/vector.md",
 	} {
 		text, isErr := call(t, s, "tenon_search_docs", map[string]any{"query": query, "limit": 3})
