@@ -30,6 +30,7 @@ export {
   useSlotFilled,
 } from "./app/layout"
 export { type Crumb, firstPage, type MenuItem, pageUnder } from "./app/menu"
+export * from "./app/preload"
 export * from "./app/redirect"
 export * from "./app/storage"
 export * from "./app/tabs/tab-bar"

@@ -162,6 +162,7 @@ func TestSearchDocs(t *testing.T) {
 		"OAuth":              "security/oauth-server.md",
 		"第三方登录":              "security/social-login.md",
 		"表单校验":               "frontend/lists-forms.md#forms",
+		"路由 loader 预取数据":     "frontend/client-react.md#preload",
 		"侧栏菜单":               "frontend/layout.md#menu",
 		"服务端渲染":              "frontend/hosting.md",
 		"预渲染":                "frontend/hosting.md#prerendering",

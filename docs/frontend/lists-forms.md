@@ -181,7 +181,7 @@ return (
 ```
 
 - 首次加载无数据时 `busy` 为 `false`，页面照常展示骨架屏；切换 `changeKey` 且仍在拉数时暂留旧画面。
-- 全栏筛选刷新时把 `busy` 直接交给 [`PaneBody`](layout.md#panes) 的 `loading` 属性；[`ResourcePage`](resources.md#admin) 的 `useResourceList`、`ActivityLog`、`QueuePanel`、`SchedulePanel` 均内置该局部过渡；`FrameLayout` 与 `RailLayout` 切页默认瞬切，仅当路由 `loader` 持续超过 `delayMs`（或用户主动刷新多标签）时才显示整页轻磨砂覆层。
+- 全栏筛选刷新时把 `busy` 直接交给 [`PaneBody`](layout.md#panes) 的 `loading` 属性；[`ResourcePage`](resources.md#admin) 的 `useResourceList`、`ActivityLog`、`QueuePanel`、`SchedulePanel` 均内置该局部过渡；`FrameLayout` 与 `RailLayout` 切页默认瞬切，仅当路由 `loader` 持续超过 `delayMs`（或用户主动刷新多标签）时才显示整页轻磨砂覆层；进入页面时的首次加载用路由 `loader` 预取消除，见[切换页面前预取](client-react.md#preload)。
 - 可按需通过 `{ delayMs, minMs }` 调整延迟与最短停留时长；用户开启系统减少动态效果时覆层过渡动画自动关闭。
 
 <a id="forms"></a>

@@ -27,6 +27,32 @@ function Article({ id }: { id: string }) {
 - `@go-tenon/ui` 的 `createApp` 在登录、退出、切换身份时清空缓存；不用它时调用 `clearOnIdentityChange(session, queryClient)`。
 - [实时频道](../libraries/realtime.md#subscribing)收到消息后让对应的查询失效，缓存始终来自接口。
 
+<a id="preload"></a>
+## 切换页面前预取：`preloadQueries`
+
+页面在组件中用 `useQuery` 读数据时，切换过去的第一帧还没有数据，页面先空白或显示加载状态，数据到了再出现内容。在路由的 `loader` 中用 `preloadQueries` 预取页面要用的查询，传入的选项与组件中 `useQuery` 的相同：
+
+```tsx
+import { createFileRoute } from "@tanstack/react-router"
+import { preloadQueries } from "@go-tenon/ui"
+import { kit } from "../../api"
+
+export const Route = createFileRoute("/_app/articles/$id")({
+  loader: ({ context, params }) =>
+    preloadQueries(context.app.queryClient, [kit.queries.article.get(params.id), kit.queries.comment.list({ article_id: params.id })]),
+  component: Article,
+})
+```
+
+- 缓存中没有数据时预取并最多等 `waitMs`（默认 250 毫秒）：数据到了，路由才切换过去，旧页面一直留到那时，新页面一次完整出现；更慢时照常切换，页面显示自己的骨架。
+- 缓存中都有数据时在后台刷新、立即切换，组件先显示缓存的数据，刷新后静默替换。
+- 请求失败时 `loader` 照常完成，由组件中的查询重试并显示错误。
+- 依赖地址参数的查询用 `loaderDeps` 取出参数：`loaderDeps: ({ search }) => search`，`loader` 中从 `deps` 读。
+- 游标分页的列表传 `infiniteQueryOptions` 的结果，与组件中 `useInfiniteQuery` 的相同。
+- 列表行悬停、键盘切换到下一条之前，用 `prefetchQueries(queryClient, [...])` 提前预取，点下去时数据已在缓存中；同一个查询在 `staleTime`（默认 30 秒）之内只请求一次。
+- 打开详情时，列表中已经有这一行：`useQuery` 的 `placeholderData` 从列表的缓存中取出它，标题这类字段立即显示。
+- [`ResourcePage`](resources.md#admin) 的列表用 `preloadResourceList` 预取。
+
 <a id="pagination"></a>
 ## 分页列表
 

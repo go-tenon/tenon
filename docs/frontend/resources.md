@@ -172,6 +172,16 @@ export const Route = createFileRoute("/_app/articles/$id/edit")({
 - 列表用 [`DataTable`](lists-forms.md#data-table)，翻页、排序和筛选写进地址，文字筛选按回车或离开输入框时生效。
 - 新建和修改在[多标签](layout.md#tabs)中各是一个标签。修改时有详情接口就读取完整的一行，没有时取列表中的那一行；保存或取消后回到列表，有未保存的修改时先询问。
 - 删除和 `Confirm` 的操作先确认。
+- 列表路由的 `loader` 用 `preloadResourceList` 预取当前条件下的列表，进入页面时表格直接显示数据，见[切换页面前预取](client-react.md#preload)。列表的数据保留在缓存中，再次进入时先显示上次的数据，后台刷新后替换：
+
+```tsx
+export const Route = createFileRoute("/_app/articles")({
+  validateSearch: articles.listSearch,
+  loaderDeps: ({ search }) => search,
+  loader: ({ context, deps }) => preloadResourceList(context.app.queryClient, articles, deps),
+  component: () => <ResourcePage model={articles} route={Route} form="modal" />,
+})
+```
 
 <a id="overrides"></a>
 ### 覆盖列、输入组件和按钮
