@@ -34,8 +34,9 @@ router.Use(httpx.Defaults(cfg.HTTP)...)
 ```yaml
 telemetry:
   endpoint: ${OTLP_ENDPOINT:-}  # 基础地址，例如 https://o2.example.com/api/default；为空时不推送
-  headers:                      # 附加到每个请求，通常是认证信息
+  headers:                      # 附加到每个请求，例如认证信息与 OpenObserve 目标流名
     Authorization: Basic ${OTLP_TOKEN:-}
+    stream-name: api            # OpenObserve 目标流名（logs/traces 共用，同名按类型隔离；省略时落入 default）
   service: api                  # service.name；为空时取可执行文件名
   version: ${APP_VERSION:-}     # service.version；为空时取构建信息中的模块版本
   sample_ratio: 1               # 新链路的采样比例，默认 1；带着调用方链路的请求跟随调用方
@@ -48,6 +49,7 @@ telemetry:
 
 - `tenon init` 生成的项目默认已在入口与配置模板（`config/app.yaml`、`config/prod.yaml.example`）中接好后端 OTLP 与前端 OpenObserve 配置，默认留空不推送，在生产配置中填写后自动生效。
 - 日志、指标、链路分别发往 `endpoint` 下的 `/v1/logs`、`/v1/metrics`、`/v1/traces`。
+- 单组织接入 OpenObserve 时，在 `headers` 中配置 `stream-name` 可把后端日志与链路写入应用专属流（`logs` 与 `traces` 属于不同流类型，同名互不冲突）；指标按指标名各自建流，前端 RUM 与日志写入组织系统流并通过 `service` 区分。
 - 把 `cfg.Telemetry` 传入 `frontend.Options.Telemetry` 后，若 `telemetry.browser` 已填写，Go 会自动向页面注入公开配置并在默认 CSP 中放行 OpenObserve 域名和 `worker-src blob:`，见[前端观测](../frontend/observability.md)。
 - 三种数据带有相同的资源属性，其中 `service.instance.id` 每个进程随机生成，区分同一服务的各个进程和副本。
 - `logging.Export(tel.Logs)` 让日志同时推送出去，级别和格式化与标准错误上的相同。标准错误上的日志照常输出，接收端不可用时靠它排查。

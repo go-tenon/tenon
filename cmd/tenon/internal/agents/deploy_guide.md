@@ -37,6 +37,7 @@ http:
 #   endpoint: https://o2.example.com/api/default
 #   headers:
 #     Authorization: Basic <base64(user:password)>
+#     stream-name: {{app}}                # OpenObserve 目标流名（logs/traces 共用，同名按类型隔离）
 #   browser:
 #     site: https://o2.example.com
 #     client_token: <openobserve-rum-client-token>

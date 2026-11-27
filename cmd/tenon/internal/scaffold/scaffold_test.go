@@ -45,7 +45,9 @@ func TestWrite(t *testing.T) {
 		"apps/web/src/observe.ts":        `export function enableObserve`,
 		"./apps/web/package.json":        `"@openobserve/browser-rum"`,
 		"config/app.yaml":                "telemetry:\n  service: todo\n  endpoint: \"\"",
+		"./config/app.yaml":              "#   stream-name: todo",
 		"config/prod.yaml.example":       "# endpoint: https://o2.example.com/api/default",
+		"./config/prod.yaml.example":     "#   stream-name: todo",
 		"apps/web/src/routes/index.tsx":  `from "@todo/client/api"`, // 示例页面覆盖前端模板的首页
 		"apps/web/src/api.ts":            `createClient({ baseURL: "/api", fetch: apiFetch })`,
 		"internal/todo/todo.go":          `errorx.Define(errorx.NotFound, "todo.not_found", "待办事项不存在")`,
@@ -627,6 +629,10 @@ func TestWriteDeploy(t *testing.T) {
 	exampleTarget := read(dir, "deploy/example/target.yaml")
 	if !strings.Contains(exampleTarget, "roles:") || !strings.Contains(exampleTarget, "instance:") {
 		t.Errorf("example target.yaml:\n%s", exampleTarget)
+	}
+	exampleCfg := read(dir, "deploy/example/config.yaml")
+	if !strings.Contains(exampleCfg, "#   stream-name: omirouter") {
+		t.Errorf("example config.yaml missing stream-name:\n%s", exampleCfg)
 	}
 	if gi := read(dir, ".gitignore"); !strings.Contains(gi, "deploy/targets/") {
 		t.Errorf(".gitignore missing deploy/targets/:\n%s", gi)
