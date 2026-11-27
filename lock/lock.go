@@ -101,6 +101,87 @@ func (l *Locker) Do(ctx context.Context, name string, ttl time.Duration, fn func
 	return errors.Join(fnErr, lk.Release(context.WithoutCancel(ctx)))
 }
 
+// Hold 取得 name 上的锁后运行长任务 fn，并在后台按 ttl/3 周期自动续期。
+// 锁被占用时不执行 fn，返回 ErrNotAcquired；续期返回 ErrNotHeld 或在租约到期前仍无法完成续期时，
+// 立即取消传给 fn 的 context（原因包含 ErrNotHeld）以阻止双活；fn 返回后主动释放锁，释放独立于 ctx 的取消。
+func (l *Locker) Hold(ctx context.Context, name string, ttl time.Duration, fn func(ctx context.Context) error) error {
+	lk, err := l.Acquire(ctx, name, ttl)
+	if err != nil {
+		return err
+	}
+	leaseCtx, cancelLease := context.WithCancelCause(ctx)
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	var lostErr error
+
+	// 后台按 ttl/3 定期续期；遇到临时错误在剩余有效期内重试，锁丢失或过期立即取消 leaseCtx。
+	go func() {
+		defer close(done)
+		expiresAt := time.Now().Add(ttl)
+		interval := max(ttl/3, 10*time.Millisecond)
+		retryInterval := max(ttl/10, 10*time.Millisecond)
+		wait := interval
+		var lastErr error
+		for {
+			timer := time.NewTimer(wait)
+			select {
+			case <-stop:
+				timer.Stop()
+				return
+			case <-ctx.Done():
+				timer.Stop()
+				return
+			case <-timer.C:
+			}
+			rem := time.Until(expiresAt)
+			if rem <= 0 {
+				lostErr = errors.Join(ErrNotHeld, lastErr)
+				cancelLease(lostErr)
+				return
+			}
+			refreshTimeout := min(rem, max(ttl/2, 10*time.Millisecond))
+			rctx, rcancel := context.WithTimeout(ctx, refreshTimeout)
+			refreshErr := lk.Refresh(rctx, ttl)
+			rcancel()
+			if refreshErr == nil {
+				expiresAt = time.Now().Add(ttl)
+				wait = interval
+				lastErr = nil
+				continue
+			}
+			if errors.Is(refreshErr, ErrNotHeld) {
+				lostErr = ErrNotHeld
+				cancelLease(ErrNotHeld)
+				return
+			}
+			if ctx.Err() != nil {
+				return
+			}
+			lastErr = refreshErr
+			rem = time.Until(expiresAt)
+			if rem <= 0 {
+				lostErr = errors.Join(ErrNotHeld, lastErr)
+				cancelLease(lostErr)
+				return
+			}
+			wait = min(retryInterval, rem)
+		}
+	}()
+
+	fnErr := fn(leaseCtx)
+	close(stop)
+	<-done
+	cancelLease(nil)
+
+	if lostErr != nil {
+		if errors.Is(fnErr, ErrNotHeld) {
+			return fnErr
+		}
+		return errors.Join(fnErr, lostErr)
+	}
+	return errors.Join(fnErr, lk.Release(context.WithoutCancel(ctx)))
+}
+
 // Held 报告 name 上的锁当前是否被持有，只读取状态。结果只反映查询的那一刻，
 // 用于展示状态，判断能否执行仍用 Acquire。
 func (l *Locker) Held(ctx context.Context, name string) (bool, error) {

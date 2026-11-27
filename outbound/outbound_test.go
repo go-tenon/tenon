@@ -97,3 +97,18 @@ func TestTransportPool(t *testing.T) {
 		t.Errorf("MaxIdleConnsPerHost = %d, want 32", tr.MaxIdleConnsPerHost)
 	}
 }
+
+func TestDialer(t *testing.T) {
+	t.Parallel()
+	srv := server(t, ok)
+	addr := srv.Listener.Addr().String()
+
+	if _, err := outbound.Dialer(outbound.Options{AnyPort: true}).DialContext(t.Context(), "tcp", addr); !errors.Is(err, outbound.ErrForbidden) {
+		t.Fatalf("loopback dial: got %v, want ErrForbidden", err)
+	}
+	conn, err := outbound.Dialer(local).DialContext(t.Context(), "tcp", addr)
+	if err != nil {
+		t.Fatalf("allowed dial: %v", err)
+	}
+	_ = conn.Close()
+}

@@ -42,13 +42,19 @@ type Options struct {
 	Allow   []netip.Prefix // 额外允许的网段，先于内置的拒绝规则检查。用于本地开发（127.0.0.1/32、::1/128），或者有意访问的内部服务。
 }
 
+// Dialer 返回只能连接公网地址的 *net.Dialer，与 New 使用相同的地址与端口检查规则。
+// WebSocket、gRPC 等非 HTTP 传输可用它直接建立带 SSRF 防护的网络连接。
+func Dialer(opts Options) *net.Dialer {
+	return &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second, Control: control(opts)}
+}
+
 // New 返回只能访问公网地址的 HTTP 客户端。连接参数与 http.DefaultTransport 相同（包括 HTTP/2），
 // 只是在建立每个连接之前检查地址，并且不使用代理：经过 HTTP_PROXY 等代理时，连接的是代理的地址，
 // 无法检查真正的目标。需要经代理访问外网的部署，请在代理上做同样的限制。
 //
 // 客户端跟随重定向（最多 10 次），每次重定向建立的连接同样经过检查；要关闭跟随时设置 CheckRedirect。
 func New(opts Options) *http.Client {
-	dialer := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second, Control: control(opts)}
+	dialer := Dialer(opts)
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.Proxy = nil
 	transport.DialContext = dialer.DialContext

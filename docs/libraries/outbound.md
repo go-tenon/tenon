@@ -103,6 +103,7 @@ client.Transport = outbound.Retry(client.Transport, outbound.RetryOptions{})
   ```
 
 - 其他接收 `*http.Client` 的 SDK（例如 `WithHTTPClient` 选项）同样传入它。
+- WebSocket、gRPC 等非 HTTP 传输用 `outbound.Dialer(opts)` 取得带相同地址与端口检查的 `*net.Dialer`。
 
 <a id="testing"></a>
 ## 用 `outboundtest` 测试外部请求

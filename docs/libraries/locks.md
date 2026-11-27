@@ -96,6 +96,23 @@ if err := lk.Refresh(ctx, time.Minute); err != nil {
 - 锁过期并被他人取得后，原持有者的 `Refresh`、`Release` 返回 `lock.ErrNotHeld`。`Do` 的函数超过 `ttl` 时返回值同样包含 `ErrNotHeld`，这时调大 `ttl` 或在函数中续期。
 - `locker.Held(ctx, name)` 只读取锁此刻是否被持有，用于后台页面展示状态。判断能否执行用 `Acquire`。
 
+<a id="holding-locks"></a>
+## 持有租约运行长任务：`Hold`
+
+长连接、常驻消费者等需要整个集群内同一时刻只由一个实例持有的长任务用 `Hold`。它取得锁后按 `ttl/3` 周期在后台自动续期，并在 `fn` 返回后主动释放锁让其他实例立即接管，`locker` 是入口创建的 `*lock.Locker`：
+
+```go
+err := locker.Hold(ctx, "bot:conn:"+id, 45*time.Second, func(ctx context.Context) error {
+    return runConnection(ctx) // 续期丢失时 ctx 立即取消，原因包含 lock.ErrNotHeld
+})
+if errors.Is(err, lock.ErrNotAcquired) {
+    return nil // 锁由其他实例持有
+}
+```
+
+- 锁转给他人或续期在 `ttl` 内持续失败时，`Hold` 立即取消传给 `fn` 的 `ctx`（`context.Cause(ctx)` 包含 `lock.ErrNotHeld`），阻止两个实例同时持有外部长连接。
+- 收到停止信号（外层 `ctx` 取消）时，`Hold` 等待 `fn` 返回后主动释放锁，新实例立即可接管。
+
 <a id="postgres-store"></a>
 ## PostgreSQL 存储：`pglock`
 
