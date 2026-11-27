@@ -12,6 +12,7 @@ type CSP struct {
 	ScriptSrc      []string // script-src，默认 'self' 和本次请求的 nonce
 	StyleSrc       []string // style-src，默认 'self' 'unsafe-inline'
 	ImgSrc         []string // img-src，默认 'self' data:
+	MediaSrc       []string // media-src，默认空（不输出）
 	ConnectSrc     []string // connect-src，默认 'self'
 	WorkerSrc      []string // worker-src，默认空（不输出）
 	BaseURI        []string // base-uri，默认 'none'
@@ -49,6 +50,11 @@ func Origin(rawURL string) string {
 // AddImgSrc 向 img-src 追加非空且尚未存在的来源。
 func (c *CSP) AddImgSrc(sources ...string) { c.ImgSrc = appendUniqueSources(c.ImgSrc, sources...) }
 
+// AddMediaSrc 向 media-src 追加非空且尚未存在的来源。
+func (c *CSP) AddMediaSrc(sources ...string) {
+	c.MediaSrc = appendUniqueSources(c.MediaSrc, sources...)
+}
+
 // AddConnectSrc 向 connect-src 追加非空且尚未存在的来源。
 func (c *CSP) AddConnectSrc(sources ...string) {
 	c.ConnectSrc = appendUniqueSources(c.ConnectSrc, sources...)
@@ -69,6 +75,7 @@ func (c CSP) String() string {
 		{"script-src", c.ScriptSrc},
 		{"style-src", c.StyleSrc},
 		{"img-src", c.ImgSrc},
+		{"media-src", c.MediaSrc},
 		{"connect-src", c.ConnectSrc},
 		{"worker-src", c.WorkerSrc},
 		{"base-uri", c.BaseURI},

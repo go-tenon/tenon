@@ -4,6 +4,7 @@ auth.impersonation_forbidden: This action cannot be performed while impersonatin
 auth.confirm_required: Please confirm your identity first
 auth.two_factor_required: Two-factor authentication is required
 auth.method_required: Sign in again with a required method
+auth.read_only: Write operations are not allowed in read-only mode
 http.cross_site: Cross-site request rejected, please retry from this site
 url.invalid_signature: Invalid link
 url.expired: This link has expired

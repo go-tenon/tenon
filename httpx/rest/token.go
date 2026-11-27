@@ -21,11 +21,12 @@ import (
 type Authenticator func(ctx huma.Context) (identity.Subject, error)
 
 const (
-	authMetadata         = "tenon.auth"
-	schemesMetadata      = "tenon.auth.schemes"
-	confirmMetadata      = "tenon.confirmed"
-	directOnlyMetadata   = "tenon.direct_only"
-	accountScopeMetadata = "tenon.account_scope"
+	authMetadata          = "tenon.auth"
+	schemesMetadata       = "tenon.auth.schemes"
+	confirmMetadata       = "tenon.confirmed"
+	directOnlyMetadata    = "tenon.direct_only"
+	accountScopeMetadata  = "tenon.account_scope"
+	allowReadOnlyMetadata = "tenon.allow_read_only"
 )
 
 // tokenSchemes 是 RequireToken 在 OpenAPI 中登记的两种携带方式，任选其一。会话 cookie 排在前面：
@@ -209,6 +210,12 @@ func requireAuth(api *API, name string, schemes []namedScheme, challenge string,
 				writeError(api, ctx, problem(api, ctx, err))
 				return
 			}
+			if sub.ReadOnly && !httpx.SafeMethod(ctx.Method()) {
+				if allow, _ := meta[allowReadOnlyMetadata].(bool); !allow {
+					writeError(api, ctx, problem(api, ctx, identity.ErrReadOnly.New()))
+					return
+				}
+			}
 			if maxAge, ok := meta[confirmMetadata].(time.Duration); ok && !sub.Auth.ConfirmedWithin(maxAge) {
 				writeError(api, ctx, problem(api, ctx, identity.ErrConfirmRequired.New()))
 				return
@@ -245,6 +252,21 @@ func DirectOnly() func(op *huma.Operation) {
 			op.Extensions = map[string]any{}
 		}
 		op.Extensions["x-direct-only"] = true
+	}
+}
+
+// AllowReadOnly 显式允许只读模式（Subject.ReadOnly）凭据调用该非安全方法路由（例如退出登录 POST /auth/logout）。
+// 与 RequireToken 等认证方案一起使用，先后不限；只有它而没有认证方案时 Register panic。
+func AllowReadOnly() func(op *huma.Operation) {
+	return func(op *huma.Operation) {
+		if op.Metadata == nil {
+			op.Metadata = map[string]any{}
+		}
+		op.Metadata[allowReadOnlyMetadata] = true
+		if op.Extensions == nil {
+			op.Extensions = map[string]any{}
+		}
+		op.Extensions["x-allow-read-only"] = true
 	}
 }
 

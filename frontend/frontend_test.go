@@ -386,3 +386,17 @@ func TestBrowserTelemetryInjection(t *testing.T) {
 		t.Fatalf("forged telemetry header not stripped when disabled: %q", gotHeader)
 	}
 }
+
+func TestCSPMediaSrc(t *testing.T) {
+	t.Parallel()
+	p := DefaultPolicy("n1")
+	if strings.Contains(p.String(), "media-src") {
+		t.Fatalf("unexpected media-src in default policy: %s", p.String())
+	}
+	p.AddMediaSrc("'self'", "blob:", "https://cdn.example.com", "blob:", "")
+	got := p.String()
+	want := "media-src 'self' blob: https://cdn.example.com"
+	if !strings.Contains(got, want) {
+		t.Fatalf("csp %q missing %q", got, want)
+	}
+}

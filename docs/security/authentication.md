@@ -279,4 +279,5 @@ api := rest.New(router, rest.Options{
 - **操作者实时校验**：每个请求都在平台域（`""`）执行操作者的 Resolver 并检查 `Permissions`；操作者被停用或失去权限后，下一个请求返回 `401`。停用操作者时调用 `tokens.RevokeByImpersonator` 和 `creds.RecheckSubject` 立即回收会话并断开实时连接。
 - **单租户边界与账号自省**：签发时设置 `Tenant` 会写入 `Subject.BoundTenant`，凭据只能访问该租户和标记了 `rest.Options.AccountScope` 或 `rest.AccountScoped()` 的账号自省接口（如 `/api/me`、`/api/auth/logout`）。
 - **禁止代为执行的敏感操作**：改密码、改个人资料、管理令牌、付款等路由加上 `rest.DirectOnly()`，代为登录请求直接返回 `403 auth.impersonation_forbidden`；[`rest.Confirmed`](login.md#confirming) 保护的接口同样拒绝代为登录。
+- **只读代为登录模式**：签发代为登录令牌或交换票据时传入 `ReadOnly: true`，`httpx/rest` 对所有非安全写方法（除 `GET`/`HEAD`/`OPTIONS` 之外，以及显式标注了 `rest.AllowReadOnly()` 的退出登录等端点）强制返回 `403 auth.read_only`。
 - [OAuth 授权](oauth-server.md)的同意接口拒绝代为登录的主体；代为登录期间创建的个人访问令牌继承 `Impersonator`。

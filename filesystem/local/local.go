@@ -28,7 +28,7 @@ type Disk struct {
 
 var _ filesystem.Disk = (*Disk)(nil)
 
-// Open 按 filesystem.disks.local 配置创建并打开存储目录。
+// Open 按 filesystem.disks.local 配置创建并打开存储目录；Private 为 true 时仅提供内部读写而不公开伺服 HTTP。
 func Open(cfg filesystem.LocalConfig) (*Disk, error) {
 	if cfg.IsZero() {
 		return nil, errors.New("local: disk is not configured")
@@ -36,15 +36,19 @@ func Open(cfg filesystem.LocalConfig) (*Disk, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, errors.Wrap(err, "local")
 	}
-	u, err := url.Parse(strings.TrimSpace(cfg.PublicURL))
-	if err != nil {
-		return nil, errors.Wrap(err, "local")
-	}
 	if err := os.MkdirAll(cfg.Root, 0o750); err != nil {
 		return nil, errors.Wrap(err, "local")
 	}
 	root, err := os.OpenRoot(cfg.Root)
 	if err != nil {
+		return nil, errors.Wrap(err, "local")
+	}
+	if cfg.Private {
+		return &Disk{root: root, handler: http.NotFoundHandler()}, nil
+	}
+	u, err := url.Parse(strings.TrimSpace(cfg.PublicURL))
+	if err != nil {
+		_ = root.Close()
 		return nil, errors.Wrap(err, "local")
 	}
 	prefix := strings.TrimSuffix(u.Path, "/")
@@ -56,22 +60,25 @@ func Open(cfg filesystem.LocalConfig) (*Disk, error) {
 // Close 释放目录句柄。
 func (d *Disk) Close() error { return d.root.Close() }
 
-// URL 返回对象的公开地址。
-func (d *Disk) URL(key string) string { return d.baseURL + "/" + escapeKey(key) }
+// URL 返回对象的公开地址；私有磁盘始终返回空字符串。
+func (d *Disk) URL(key string) string {
+	if d.baseURL == "" {
+		return ""
+	}
+	return d.baseURL + "/" + escapeKey(key)
+}
 
 // ServeHTTP 提供文件下载，不列目录，也不暴露写入中的临时文件。
 //
 // 文件和应用同源，类型由扩展名决定，而扩展名来自上传者提交的文件名。为了不让上传的文件在应用的源下执行脚本，
-// 所有响应都带 X-Content-Type-Options: nosniff；HTML、SVG、XML 这类浏览器会执行脚本的类型，
+// 所有响应都带 X-Content-Type-Options: nosniff；HTML、SVG、XML、JavaScript 这类浏览器会执行脚本的类型，
 // 还会加上 Content-Security-Policy: sandbox 并作为附件下载。<img> 中引用的 SVG 照常显示。
 func (d *Disk) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if d.baseURL == "" {
+		http.NotFound(w, r)
+		return
+	}
 	d.handler.ServeHTTP(&safeWriter{ResponseWriter: w, ext: path.Ext(r.URL.Path)}, r)
-}
-
-// activeTypes 是浏览器直接打开时可能执行脚本的类型。
-var activeTypes = map[string]bool{
-	"text/html": true, "application/xhtml+xml": true, "image/svg+xml": true,
-	"text/xml": true, "application/xml": true,
 }
 
 // safeWriter 在写出响应头之前，按内置扩展名表修正音视频等二进制 MIME 并补上安全响应头。
@@ -99,7 +106,7 @@ func (s *safeWriter) secure(code int) {
 			cur = builtin
 		}
 	}
-	if activeTypes[cur] {
+	if filesystem.IsActiveType(cur) {
 		h.Set("Content-Security-Policy", "sandbox")
 		h.Set("Content-Disposition", "attachment")
 	}

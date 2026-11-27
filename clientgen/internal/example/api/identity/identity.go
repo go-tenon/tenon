@@ -24,4 +24,6 @@ const (
 	// ErrMethodRequired 表示操作要求这次登录使用特定的方式（Auth.Methods），例如租户要求成员用租户的企业 IdP 登录：
 	// 公开参数 methods 列出可以用的方式，客户端据此让用户用其中一种重新登录。
 	ErrMethodRequired wire.Code = "auth.method_required"
+	// ErrReadOnly 表示当前凭据处于只读模式（如只读代为登录），禁止执行写操作。
+	ErrReadOnly wire.Code = "auth.read_only"
 )

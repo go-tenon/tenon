@@ -21,6 +21,7 @@ import (
 	"context"
 	"database/sql"
 	"io"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -61,16 +62,31 @@ func (e *Export) Progress(ctx context.Context) Progress {
 	return Progress{Export: e, ErrorMessage: e.ErrorMessage(ctx)}
 }
 
+// Option 是 New 的可选配置。
+type Option func(*Service)
+
+// WithDisk 指定导出文件写入的磁盘名（例如私有磁盘 local_private 或 s3_private）。
+func WithDisk(disk string) Option {
+	return func(s *Service) { s.disk = disk }
+}
+
 // Service 登记、处理和查询导出。
 type Service struct {
 	db    *bun.DB
 	ops   *operation.Service
 	files *filesystem.Service
+	disk  string
 }
 
 // New 返回导出服务。ops 记录导出的状态和进度，files 保存导出的文件。
-func New(db *bun.DB, ops *operation.Service, files *filesystem.Service) *Service {
-	return &Service{db: db, ops: ops, files: files}
+func New(db *bun.DB, ops *operation.Service, files *filesystem.Service, opts ...Option) *Service {
+	s := &Service{db: db, ops: ops, files: files}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(s)
+		}
+	}
+	return s
 }
 
 // Start 登记 owner 发起的一次 kind 导出（例如 articles.export），返回 pending 状态的导出。
@@ -109,21 +125,42 @@ func (s *Service) Get(ctx context.Context, owner identity.Subject, id uuid.UUID)
 // Open 打开 owner 的导出文件，供服务端鉴权后流式下载。调用方负责关闭。
 // 不存在或不是 owner 发起时返回 operation.ErrNotFound；尚未完成或已过期回收时返回 filesystem.ErrNotFound。
 func (s *Service) Open(ctx context.Context, owner identity.Subject, id uuid.UUID) (io.ReadCloser, *Export, error) {
-	exp, err := s.Get(ctx, owner, id)
+	exp, err := s.readyExport(ctx, owner, id)
 	if err != nil {
 		return nil, nil, err
-	}
-	if exp.Status != operation.StatusCompleted || exp.FileID == uuid.Nil {
-		return nil, nil, filesystem.ErrNotFound
-	}
-	if exp.ExpiresAt != nil && !time.Now().Before(*exp.ExpiresAt) {
-		return nil, nil, filesystem.ErrNotFound
 	}
 	body, _, err := s.files.Open(ctx, exp.FileID)
 	if err != nil {
 		return nil, nil, err
 	}
 	return body, exp, nil
+}
+
+// Serve 通过 HTTP 响应向 owner 安全下发导出文件（自动附带附件下载头，支持 S3 预签名 302 跳转与断点续传）。
+func (s *Service) Serve(w http.ResponseWriter, r *http.Request, owner identity.Subject, id uuid.UUID, opts ...filesystem.ServeOption) error {
+	exp, err := s.readyExport(r.Context(), owner, id)
+	if err != nil {
+		return err
+	}
+	allOpts := make([]filesystem.ServeOption, 0, len(opts)+1)
+	allOpts = append(allOpts, filesystem.ServeAttachment())
+	allOpts = append(allOpts, opts...)
+	return filesystem.Serve(w, r, s.files, exp.FileID, allOpts...)
+}
+
+// readyExport 校验导出任务归属、已完成且未过期。
+func (s *Service) readyExport(ctx context.Context, owner identity.Subject, id uuid.UUID) (*Export, error) {
+	exp, err := s.Get(ctx, owner, id)
+	if err != nil {
+		return nil, err
+	}
+	if exp.Status != operation.StatusCompleted || exp.FileID == uuid.Nil {
+		return nil, filesystem.ErrNotFound
+	}
+	if exp.ExpiresAt != nil && !time.Now().Before(*exp.ExpiresAt) {
+		return nil, filesystem.ErrNotFound
+	}
+	return exp, nil
 }
 
 // load 读取导出的格式和文件，不存在时返回 nil。
@@ -228,6 +265,7 @@ func (s *Service) export(ctx context.Context, r *operation.Run, exp *Export, wri
 		return errors.Wrap(err, "exports: rewind temporary file")
 	}
 	file, err := s.files.Upload(ctx, exp.Owner(), filesystem.FileInput{
+		Disk:        s.disk,
 		Filename:    strings.ReplaceAll(exp.Kind, ".", "-") + "-" + time.Now().Format("20060102") + "." + string(exp.Format),
 		ContentType: exp.Format.ContentType(),
 		Size:        size,

@@ -192,3 +192,45 @@ func TestOpenRequiresConfig(t *testing.T) {
 		t.Fatal("nil client accepted")
 	}
 }
+
+func TestPrivateDiskAndSignGetWith(t *testing.T) {
+	ctx := context.Background()
+	server := httptest.NewServer(gofakes3.New(s3mem.New()).Server())
+	t.Cleanup(server.Close)
+	client := awss3.New(awss3.Options{
+		BaseEndpoint: aws.String(server.URL), Region: "us-east-1", UsePathStyle: true,
+		Credentials: credentials.NewStaticCredentialsProvider("k", "s", ""), RetryMaxAttempts: 1,
+	})
+	if _, err := client.CreateBucket(ctx, &awss3.CreateBucketInput{Bucket: aws.String("priv")}); err != nil {
+		t.Fatal(err)
+	}
+	disk, err := s3disk.Open(ctx, filesystem.S3Config{
+		Bucket: "priv", Region: "us-east-1", Endpoint: server.URL, PathStyle: true,
+		AccessKey: "k", SecretKey: "s", Private: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := disk.URL("a/secret.txt"); got != "" {
+		t.Fatalf("private disk returned non-empty URL: %q", got)
+	}
+	if err := disk.Put(ctx, "a/secret.txt", "text/plain", strings.NewReader("secret"), 6); err != nil {
+		t.Fatal(err)
+	}
+	req, err := disk.SignGetWith(ctx, "a/secret.txt", 60e9, filesystem.SignedGetOptions{
+		ContentType:        "text/plain",
+		ContentDisposition: `attachment; filename="secret.txt"`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.Get(req.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK || string(body) != "secret" {
+		t.Fatalf("presigned get = %d %q", resp.StatusCode, body)
+	}
+}

@@ -24,6 +24,8 @@ var (
 	// ErrMethodRequired 表示操作要求这次登录使用特定的方式（Auth.Methods），例如租户要求成员用租户的企业 IdP 登录：
 	// 公开参数 methods 列出可以用的方式，客户端据此让用户用其中一种重新登录。
 	ErrMethodRequired = errorx.Define(errorx.PermissionDenied, "auth.method_required")
+	// ErrReadOnly 表示当前凭据处于只读模式（如只读代为登录），禁止执行写操作。
+	ErrReadOnly = errorx.Define(errorx.PermissionDenied, "auth.read_only")
 )
 
 // Authenticator 识别调用者，返回凭据给出的主体。没有凭据或凭据无效时返回 ID 为空的主体，或分类不是系统故障
@@ -119,9 +121,9 @@ func Establish(ctx context.Context, authenticate Authenticator, policy Policy, p
 		case err != nil:
 			return Subject{}, err
 		}
-		// resolve 加载权限和请求租户；主体本身、认证方式、凭据、租户边界、凭据的限制、代为登录者和验证情况由凭据决定，不随 resolve 改变。
+		// resolve 加载权限和请求租户；主体本身、认证方式、凭据、租户边界、凭据的限制、代为登录者、只读标记和验证情况由凭据决定，不随 resolve 改变。
 		sub.Type, sub.ID = cred.Type, cred.ID
-		sub.Method, sub.Credential, sub.BoundTenant, sub.Scopes, sub.Impersonator = cred.Method, cred.Credential, bound, cred.Scopes, cred.Impersonator
+		sub.Method, sub.Credential, sub.BoundTenant, sub.Scopes, sub.Impersonator, sub.ReadOnly = cred.Method, cred.Credential, bound, cred.Scopes, cred.Impersonator, cred.ReadOnly
 		sub.Auth = cred.Auth
 	}
 	for _, perm := range permissions {

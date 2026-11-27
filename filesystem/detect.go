@@ -50,6 +50,7 @@ var builtinExtMIME = map[string]string{
 	".wav":   "audio/wav",
 	".aac":   "audio/aac",
 	".flac":  "audio/flac",
+	".amr":   "audio/amr",
 	".pdf":   "application/pdf",
 	".zip":   "application/zip",
 	".docx":  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -126,6 +127,24 @@ var activeMarkup = map[string]bool{
 	"image/svg+xml":         true,
 	"text/xml":              true,
 	"application/xml":       true,
+}
+
+// activeTypes 是浏览器直接打开或加载时可能执行脚本的类型（含 JavaScript）。
+var activeTypes = map[string]bool{
+	"text/html":                true,
+	"application/xhtml+xml":    true,
+	"image/svg+xml":            true,
+	"text/xml":                 true,
+	"application/xml":          true,
+	"text/javascript":          true,
+	"application/javascript":   true,
+	"application/x-javascript": true,
+	"text/ecmascript":          true,
+}
+
+// IsActiveType 报告 contentType 是否属于浏览器打开时可能执行脚本的类型（HTML、SVG、XML、JavaScript）。
+func IsActiveType(contentType string) bool {
+	return activeTypes[mediaType(contentType)]
 }
 
 // detectContentType 从已上传的对象内容识别真实 MIME 类型：在 http.DetectContentType 之外，
@@ -266,6 +285,11 @@ func detectMediaType(sample []byte, ext, declared string) string {
 		return "audio/flac"
 	}
 
+	// AMR 窄带与宽带语音（企业微信语音等常用格式）。
+	if bytes.HasPrefix(sample, []byte("#!AMR\n")) || bytes.HasPrefix(sample, []byte("#!AMR-WB\n")) {
+		return "audio/amr"
+	}
+
 	// MP3（ID3v2 标签头或裸 MPEG 音频帧同步头）与 ADTS AAC。
 	if len(sample) >= 3 && bytes.Equal(sample[0:3], []byte("ID3")) {
 		return "audio/mpeg"
@@ -394,6 +418,8 @@ func declaredCompatible(declared, actual string) bool {
 		return declared == "audio/x-aac"
 	case "audio/flac":
 		return declared == "audio/x-flac"
+	case "audio/amr":
+		return declared == "audio/amr-wb" || declared == "audio/x-amr"
 	case "audio/webm":
 		return declared == "video/webm"
 	}

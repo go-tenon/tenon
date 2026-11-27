@@ -158,3 +158,64 @@ func TestImpersonationPoliciesAndAccountScope(t *testing.T) {
 		t.Fatalf("actor disabled: %d %s", w.Code, w.Body)
 	}
 }
+
+// 只读模式（ReadOnly: true）放行安全读取与显式标记了 AllowReadOnly 的接口，其余写操作统一返回 403 auth.read_only。
+func TestImpersonationReadOnlyEnforcement(t *testing.T) {
+	t.Parallel()
+	validate := func(_ context.Context, token string) (identity.Subject, error) {
+		if token == "ro" {
+			return identity.Subject{
+				Type: "user", ID: "alice", BoundTenant: "acme",
+				Impersonator: identity.Ref{Type: "staff", ID: "s1"}, ReadOnly: true,
+			}, nil
+		}
+		return identity.Subject{
+			Type: "user", ID: "alice", BoundTenant: "acme",
+			Impersonator: identity.Ref{Type: "staff", ID: "s1"},
+		}, nil
+	}
+	api := rest.New(chi.NewRouter(), rest.Options{
+		Tenant:   func(ctx huma.Context) string { return "acme" },
+		Accounts: identity.Accounts{"user": nil},
+		Impersonation: &identity.Impersonation{
+			Actors: identity.Accounts{"staff": func(_ context.Context, sub identity.Subject) (identity.Subject, error) {
+				sub.Permissions = []string{"users:impersonate"}
+				return sub, nil
+			}},
+			Permissions: []string{"users:impersonate"},
+		},
+	})
+	getOp := huma.Operation{OperationID: "ro-get", Method: http.MethodGet, Path: "/items"}
+	rest.RequireToken(api, validate)(&getOp)
+	rest.Register(api, getOp, func(context.Context, *struct{}) (*struct{}, error) { return nil, nil })
+
+	postOp := huma.Operation{OperationID: "ro-post", Method: http.MethodPost, Path: "/items"}
+	rest.RequireToken(api, validate)(&postOp)
+	rest.Register(api, postOp, func(context.Context, *struct{}) (*struct{}, error) { return nil, nil })
+
+	logoutOp := huma.Operation{OperationID: "ro-logout", Method: http.MethodPost, Path: "/logout"}
+	rest.RequireToken(api, validate)(&logoutOp)
+	rest.AllowReadOnly()(&logoutOp)
+	rest.Register(api, logoutOp, func(context.Context, *struct{}) (*struct{}, error) { return nil, nil })
+
+	call := func(method, path, tok string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, path, nil)
+		r.Header.Set("Authorization", "Bearer "+tok)
+		w := httptest.NewRecorder()
+		api.Handler().ServeHTTP(w, r)
+		return w
+	}
+
+	if w := call(http.MethodGet, "/items", "ro"); w.Code != http.StatusNoContent {
+		t.Fatalf("read-only GET = %d %s", w.Code, w.Body)
+	}
+	if w := call(http.MethodPost, "/items", "ro"); w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), `"code":"auth.read_only"`) {
+		t.Fatalf("read-only POST = %d %s", w.Code, w.Body)
+	}
+	if w := call(http.MethodPost, "/logout", "ro"); w.Code != http.StatusNoContent {
+		t.Fatalf("read-only AllowReadOnly POST = %d %s", w.Code, w.Body)
+	}
+	if w := call(http.MethodPost, "/items", "rw"); w.Code != http.StatusNoContent {
+		t.Fatalf("read-write impersonation POST = %d %s", w.Code, w.Body)
+	}
+}

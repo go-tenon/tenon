@@ -50,6 +50,22 @@ type SignedRequest struct {
 	Headers http.Header `json:"headers,omitempty"`
 }
 
+// SignGetter 是支持签发限时读取地址的磁盘（如 S3）额外提供的能力。
+type SignGetter interface {
+	SignGet(ctx context.Context, key string, ttl time.Duration) (SignedRequest, error)
+}
+
+// SignedGetOptions 是签发限时读取地址时的可选响应头覆盖。
+type SignedGetOptions struct {
+	ContentType        string
+	ContentDisposition string
+}
+
+// ResponseSignGetter 是支持在预签名读取地址中覆写 Content-Type 与 Content-Disposition 的磁盘能力。
+type ResponseSignGetter interface {
+	SignGetWith(ctx context.Context, key string, ttl time.Duration, opts SignedGetOptions) (SignedRequest, error)
+}
+
 // DirectUploader 是支持客户端直传的磁盘（如 S3）额外提供的能力。
 // 签名绑定内容长度；AbortMultipart 幂等，AbortAllMultipart 中止某个对象键上的所有分片会话。
 type DirectUploader interface {

@@ -1025,3 +1025,111 @@ func TestUploadUnknownSize(t *testing.T) {
 		t.Fatalf("over limit left %d rows", after-before)
 	}
 }
+
+// TestUploadAcceptImmediateValidation 验证 Upload 指定 Accept 时在写入后立即校验类型与体积，不合格立即删除对象与记录。
+func TestUploadAcceptImmediateValidation(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	e := newEnv(t)
+	accept := filesystem.Accept{Types: []string{"image/png"}, MaxSize: 512, MaxDimension: 128}
+	before := e.rows(t)
+
+	// HTML 伪装成 PNG 在 Upload 阶段即被拦截并清理。
+	htmlPayload := "<!doctype html>alert"
+	if _, err := e.svc.Upload(ctx, alice, filesystem.FileInput{
+		Filename: "evil.png", ContentType: "image/png", Size: int64(len(htmlPayload)), Accept: &accept,
+	}, strings.NewReader(htmlPayload)); !errors.Is(err, filesystem.ErrNotAccepted) {
+		t.Fatalf("disguised html err=%v, want ErrNotAccepted", err)
+	}
+	if after := e.rows(t); after != before {
+		t.Fatalf("disguised html left %d rows", after-before)
+	}
+
+	// UnknownSize 超出 Accept.MaxSize 立即清理并返回 ErrNotAccepted。
+	if _, err := e.svc.Upload(ctx, alice, filesystem.FileInput{
+		Filename: "big.png", ContentType: "image/png", Size: filesystem.UnknownSize, Accept: &accept,
+	}, bytes.NewReader(bytes.Repeat([]byte{'a'}, 600))); !errors.Is(err, filesystem.ErrNotAccepted) {
+		t.Fatalf("oversized stream err=%v, want ErrNotAccepted", err)
+	}
+	if after := e.rows(t); after != before {
+		t.Fatalf("oversized stream left %d rows", after-before)
+	}
+
+	// 合法 PNG 通过校验并预先写入图片尺寸，且状态仍为 temporary 等待业务 Confirm。
+	var pngBuf bytes.Buffer
+	img := image.NewRGBA(image.Rect(0, 0, 16, 12))
+	if err := png.Encode(&pngBuf, img); err != nil {
+		t.Fatal(err)
+	}
+	f, err := e.svc.Upload(ctx, alice, filesystem.FileInput{
+		Filename: "ok.png", ContentType: "application/octet-stream", Size: int64(pngBuf.Len()), Accept: &accept,
+	}, bytes.NewReader(pngBuf.Bytes()))
+	if err != nil {
+		t.Fatalf("valid upload err=%v", err)
+	}
+	if f.Status != filesystem.StatusTemporary || f.ContentType != "image/png" || f.Meta.Width != 16 || f.Meta.Height != 12 {
+		t.Fatalf("uploaded file = %+v", f)
+	}
+}
+
+// TestConfirmAMRAndServe 验证 AMR 音频探测与 filesystem.Serve 的安全响应头、附件下载、Range 206 及 S3 签名跳转。
+func TestConfirmAMRAndServe(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	e := newEnv(t)
+
+	amrBody := append([]byte("#!AMR\n"), make([]byte, 20)...)
+	amrFile, err := e.svc.Upload(ctx, alice, filesystem.FileInput{
+		Filename: "voice.amr", ContentType: "application/octet-stream", Size: int64(len(amrBody)),
+	}, bytes.NewReader(amrBody))
+	if err != nil {
+		t.Fatal(err)
+	}
+	confirmed, err := e.svc.Confirm(ctx, alice, amrFile.ID, filesystem.Accept{Types: []string{"audio/amr"}})
+	if err != nil || confirmed.ContentType != "audio/amr" {
+		t.Fatalf("confirm amr = %+v %v", confirmed, err)
+	}
+
+	// 本地磁盘支持 HTTP Range 206 与安全头。
+	req := httptest.NewRequest(http.MethodGet, "/download", nil)
+	req.Header.Set("Range", "bytes=0-4")
+	rec := httptest.NewRecorder()
+	if err := filesystem.Serve(rec, req, e.svc, amrFile.ID, filesystem.ServeAttachment()); err != nil {
+		t.Fatal(err)
+	}
+	if rec.Code != http.StatusPartialContent || rec.Body.String() != "#!AMR" ||
+		rec.Header().Get("X-Content-Type-Options") != "nosniff" ||
+		!strings.Contains(rec.Header().Get("Content-Disposition"), "attachment") {
+		t.Fatalf("local range serve: code=%d body=%q headers=%v", rec.Code, rec.Body.String(), rec.Header())
+	}
+
+	// 活跃脚本类型（HTML）强制加上 sandbox 与 attachment。
+	htmlFile, err := e.svc.Upload(ctx, alice, filesystem.FileInput{
+		Filename: "page.html", ContentType: "text/html", Size: 13,
+	}, strings.NewReader("<h1>evil</h1>"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	recHTML := httptest.NewRecorder()
+	if err := filesystem.Serve(recHTML, httptest.NewRequest(http.MethodGet, "/html", nil), e.svc, htmlFile.ID); err != nil {
+		t.Fatal(err)
+	}
+	if recHTML.Header().Get("Content-Security-Policy") != "sandbox" || !strings.Contains(recHTML.Header().Get("Content-Disposition"), "attachment") {
+		t.Fatalf("active type headers = %v", recHTML.Header())
+	}
+
+	// S3 磁盘启用 ServeRedirectSigned 时返回 302 与 nosniff。
+	s3File, err := e.svc.Upload(ctx, alice, filesystem.FileInput{
+		Disk: "s3", Filename: "doc.txt", ContentType: "text/plain", Size: 5,
+	}, strings.NewReader("hello"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	recS3 := httptest.NewRecorder()
+	if err := filesystem.Serve(recS3, httptest.NewRequest(http.MethodGet, "/s3", nil), e.svc, s3File.ID, filesystem.ServeRedirectSigned(5*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if recS3.Code != http.StatusFound || recS3.Header().Get("Location") == "" || recS3.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("s3 redirect = %d %v", recS3.Code, recS3.Header())
+	}
+}

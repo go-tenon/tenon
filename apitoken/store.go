@@ -65,6 +65,7 @@ type Device struct {
 type Impersonation struct {
 	Tenant      string        // 绑定的租户边界；非空时令牌只能用于该租户及账号自省接口
 	Scopes      []string      // 可选的权限限制，支持通配符（例如只读排查传 []string{"*:read"}）；为空表示不额外限制
+	ReadOnly    bool          // 为 true 时强制限制为只读排查模式，HTTP 非安全写方法一律返回 identity.ErrReadOnly
 	Reason      string        // 代为登录原因或工单号，超过 255 个字符时截断
 	Lifetime    time.Duration // 最长有效期；0 时使用 DefaultImpersonationLifetime，超过 MaxImpersonationLifetime 返回错误
 	IdleTimeout time.Duration // 空闲超时时长；0 时使用 DefaultImpersonationIdleTimeout，负数返回错误
@@ -77,6 +78,7 @@ type ExchangedImpersonation struct {
 	Subject  identity.Ref  // 被代为登录的目标主体
 	Actor    identity.Ref  // 实际操作者
 	Tenant   string        // 令牌绑定的租户边界
+	ReadOnly bool          // 是否限定为只读模式
 	Reason   string        // 代为登录原因
 	Lifetime time.Duration // 本次代为登录令牌的最长有效期，供设置会话 cookie 的 MaxAge
 }
@@ -87,6 +89,7 @@ type Token struct {
 	Kind         Kind
 	Name         string       // 个人访问令牌的名称；登录 token 为空
 	Scopes       []string     // 个人访问令牌、OAuth 令牌和受限代为登录令牌的权限限制；不限制时为空
+	ReadOnly     bool         // 是否限定为只读模式
 	ClientID     string       // OAuth 令牌授权的客户端；其余为空
 	ClientName   string       // OAuth 令牌授权时客户端的名称，例如 Claude；其余为空
 	Resource     string       // OAuth 令牌只能用于的资源，例如 https://blog.example.com/mcp；其余为空
@@ -148,6 +151,7 @@ type row struct {
 	Kind             Kind      `bun:"kind,notnull"`
 	Name             string    `bun:"name,notnull"`
 	Scopes           string    `bun:"scopes,notnull"`
+	ReadOnly         bool      `bun:"read_only,notnull"`
 	Reason           string    `bun:"reason,notnull"`
 	IdleTimeout      int64     `bun:"idle_timeout,notnull"` // 秒；0 表示不按空闲延长
 	EndsAt           time.Time `bun:"ends_at,nullzero"`     // 登录、OAuth、代为登录 token 的最长期限，滑动延长不超过它
@@ -175,6 +179,7 @@ type ticketRow struct {
 	ImpersonatorType string    `bun:"impersonator_type,notnull"`
 	ImpersonatorID   string    `bun:"impersonator_id,notnull"`
 	Scopes           string    `bun:"scopes,notnull"`
+	ReadOnly         bool      `bun:"read_only,notnull"`
 	Reason           string    `bun:"reason,notnull"`
 	Lifetime         int64     `bun:"lifetime,notnull"`
 	IdleTimeout      int64     `bun:"idle_timeout,notnull"`
@@ -278,6 +283,7 @@ func (s *Store) Impersonate(ctx context.Context, actor identity.Subject, target 
 		Kind:        KindImpersonation,
 		Tenant:      opt.Tenant,
 		Scopes:      joinedScopes,
+		ReadOnly:    opt.ReadOnly,
 		Reason:      reason,
 		IdleTimeout: int64(idle / time.Second),
 		EndsAt:      end,
@@ -317,6 +323,7 @@ func (s *Store) CreateImpersonationTicket(ctx context.Context, actor identity.Su
 		ImpersonatorType: string(actor.Type),
 		ImpersonatorID:   actor.ID,
 		Scopes:           joinedScopes,
+		ReadOnly:         opt.ReadOnly,
 		Reason:           reason,
 		Lifetime:         int64(lifetime / time.Second),
 		IdleTimeout:      int64(idle / time.Second),
@@ -358,6 +365,7 @@ func (s *Store) ExchangeImpersonationTicket(ctx context.Context, ticket string, 
 		Kind:        KindImpersonation,
 		Tenant:      tr.Tenant,
 		Scopes:      tr.Scopes,
+		ReadOnly:    tr.ReadOnly,
 		Reason:      tr.Reason,
 		IdleTimeout: tr.IdleTimeout,
 		EndsAt:      end,
@@ -374,6 +382,7 @@ func (s *Store) ExchangeImpersonationTicket(ctx context.Context, ticket string, 
 		Subject:  target,
 		Actor:    actor,
 		Tenant:   tr.Tenant,
+		ReadOnly: tr.ReadOnly,
 		Reason:   tr.Reason,
 		Lifetime: lifetime,
 	}, nil
@@ -586,6 +595,7 @@ func (s *Store) validate(ctx context.Context, token, resource string) (identity.
 		Tenant:       r.Tenant,
 		BoundTenant:  r.Tenant,
 		Impersonator: r.impersonator(),
+		ReadOnly:     r.ReadOnly,
 	}
 	switch r.Kind {
 	case KindPersonal, KindOAuth:
@@ -885,6 +895,7 @@ func (r *row) token() Token {
 		Kind:         r.Kind,
 		Name:         r.Name,
 		Scopes:       strings.Fields(r.Scopes),
+		ReadOnly:     r.ReadOnly,
 		Tenant:       r.Tenant,
 		Impersonator: r.impersonator(),
 		Reason:       r.Reason,

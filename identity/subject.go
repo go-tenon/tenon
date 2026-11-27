@@ -27,6 +27,7 @@ type Subject struct {
 	BoundTenant  string   // 凭据绑定的租户边界，"" 表示不限制；由凭据设置，Resolver 不能改写
 	Permissions  []string // 主体在 Tenant 中拥有的权限，支持通配符，见 Can
 	Scopes       []string // 凭据的权限限制，支持通配符；nil 表示不限制，空切片表示什么都不允许
+	ReadOnly     bool     // 凭据是否限定为只读模式；为 true 时 HTTP 写请求一律拒绝
 	Auth         Auth     // 凭据是怎么得到的：登录时通过的验证方式和最近一次验证身份的时间；个人访问令牌、代为登录等凭据为零值
 }
 

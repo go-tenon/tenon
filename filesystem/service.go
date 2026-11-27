@@ -51,7 +51,29 @@ func New(db *bun.DB, cfg Config, disks map[string]Disk) (*Service, error) {
 	if copied[cfg.DefaultDisk] == nil {
 		return nil, errors.Newf("filesystem: default disk %q is not configured", cfg.DefaultDisk)
 	}
+	if cfg.PrivateDisk != "" && copied[cfg.PrivateDisk] == nil {
+		return nil, errors.Newf("filesystem: private disk %q is not configured", cfg.PrivateDisk)
+	}
 	return &Service{db: db, disks: copied, cfg: cfg}, nil
+}
+
+// DefaultDisk 返回配置中的默认磁盘名。
+func (s *Service) DefaultDisk() string { return s.cfg.DefaultDisk }
+
+// PrivateDisk 返回配置中的私有磁盘名，未配置时返回空字符串。
+func (s *Service) PrivateDisk() string { return s.cfg.PrivateDisk }
+
+// SignGet 为支持预签名读取的磁盘签发限时访问请求；磁盘不支持时返回 ErrUnsupported。
+func (s *Service) SignGet(ctx context.Context, id uuid.UUID, ttl time.Duration) (SignedRequest, error) {
+	r, err := s.Get(ctx, id)
+	if err != nil {
+		return SignedRequest{}, err
+	}
+	getter, ok := s.disk(r).(SignGetter)
+	if !ok {
+		return SignedRequest{}, ErrUnsupported
+	}
+	return getter.SignGet(ctx, r.Key, ttl)
 }
 
 // WithDB 返回使用 db（通常是业务事务）的副本，用于让 Confirm、Delete 与业务数据一起提交。
@@ -106,12 +128,18 @@ func (s *Service) Prepare(ctx context.Context, owner identity.Subject, in FileIn
 // Upload 由应用服务器接收正文并写入磁盘，返回 temporary 记录；业务使用时再 Confirm。
 // in.Size 为非负数时严格核对正文长度，不符时返回 ErrInvalid；in.Size 小于 0（如 UnknownSize）时
 // 流式写入未知长度的正文并限制不超过 max_upload_size，写完后把真实字节数回填到记录中。
+// 指定 in.Accept 时在写入后立即校验内容类型、尺寸和体积，不合格时立刻删除对象和记录并返回 ErrNotAccepted。
 func (s *Service) Upload(ctx context.Context, owner identity.Subject, in FileInput, body io.Reader) (File, error) {
 	if body == nil {
 		return File{}, ErrInvalid
 	}
+	if in.Accept != nil && in.Accept.MaxSize > 0 && in.Size >= 0 && in.Size > int64(in.Accept.MaxSize) {
+		return File{}, errors.Wrapf(ErrNotAccepted, "size %d exceeds %s", in.Size, in.Accept.MaxSize)
+	}
+	var r File
 	if in.Size >= 0 {
-		r, err := s.Prepare(ctx, owner, in)
+		var err error
+		r, err = s.Prepare(ctx, owner, in)
 		if err != nil {
 			return File{}, err
 		}
@@ -120,31 +148,70 @@ func (s *Service) Upload(ctx context.Context, owner identity.Subject, in FileInp
 			_, _ = s.db.NewDelete().Model((*File)(nil)).Where("id = ?", r.ID).Exec(context.WithoutCancel(ctx))
 			return File{}, errors.Wrap(err, "filesystem: upload")
 		}
+	} else {
+		prep := in
+		prep.Size = 0
+		var err error
+		r, err = s.Prepare(ctx, owner, prep)
+		if err != nil {
+			return File{}, err
+		}
+		maxBytes := int64(s.cfg.MaxUploadSize)
+		limitByAccept := in.Accept != nil && in.Accept.MaxSize > 0 && int64(in.Accept.MaxSize) < maxBytes
+		if limitByAccept {
+			maxBytes = int64(in.Accept.MaxSize)
+		}
+		lr := &limitCounter{r: body, max: maxBytes}
+		if err := s.disks[r.Disk].Put(ctx, r.Key, r.ContentType, lr, UnknownSize); err != nil {
+			_, _ = s.db.NewDelete().Model((*File)(nil)).Where("id = ?", r.ID).Exec(context.WithoutCancel(ctx))
+			if errors.Is(err, ErrTooLarge) {
+				if limitByAccept {
+					return File{}, errors.Wrapf(ErrNotAccepted, "size exceeds %s", in.Accept.MaxSize)
+				}
+				return File{}, ErrTooLarge
+			}
+			return File{}, errors.Wrap(err, "filesystem: upload")
+		}
+		if lr.n > 0 {
+			if _, err := s.db.NewUpdate().Model((*File)(nil)).
+				Set("size = ?", lr.n).
+				Where("id = ?", r.ID).Exec(ctx); err != nil {
+				_ = s.disks[r.Disk].Delete(context.WithoutCancel(ctx), r.Key)
+				_, _ = s.db.NewDelete().Model((*File)(nil)).Where("id = ?", r.ID).Exec(context.WithoutCancel(ctx))
+				return File{}, errors.Wrap(err, "filesystem: update size")
+			}
+			r.Size = lr.n
+		}
+	}
+	if in.Accept == nil {
 		return r, nil
 	}
-	prep := in
-	prep.Size = 0
-	r, err := s.Prepare(ctx, owner, prep)
+	detected, meta, err := s.validateAndExtractMeta(ctx, r, *in.Accept)
 	if err != nil {
+		bg := context.WithoutCancel(ctx)
+		_ = s.disks[r.Disk].Delete(bg, r.Key)
+		_, _ = s.db.NewDelete().Model((*File)(nil)).Where("id = ?", r.ID).Exec(bg)
 		return File{}, err
 	}
-	lr := &limitCounter{r: body, max: int64(s.cfg.MaxUploadSize)}
-	if err := s.disks[r.Disk].Put(ctx, r.Key, r.ContentType, lr, UnknownSize); err != nil {
-		_, _ = s.db.NewDelete().Model((*File)(nil)).Where("id = ?", r.ID).Exec(context.WithoutCancel(ctx))
-		if errors.Is(err, ErrTooLarge) {
-			return File{}, ErrTooLarge
-		}
-		return File{}, errors.Wrap(err, "filesystem: upload")
+	q := s.db.NewUpdate().Model((*File)(nil)).Where("id = ?", r.ID)
+	changed := false
+	if detected != "" && mediaType(r.ContentType) == "application/octet-stream" && detected != "application/octet-stream" {
+		q = q.Set("content_type = ?", detected)
+		r.ContentType = detected
+		changed = true
 	}
-	if lr.n > 0 {
-		if _, err := s.db.NewUpdate().Model((*File)(nil)).
-			Set("size = ?", lr.n).
-			Where("id = ?", r.ID).Exec(ctx); err != nil {
-			_ = s.disks[r.Disk].Delete(context.WithoutCancel(ctx), r.Key)
-			_, _ = s.db.NewDelete().Model((*File)(nil)).Where("id = ?", r.ID).Exec(context.WithoutCancel(ctx))
-			return File{}, errors.Wrap(err, "filesystem: update size")
+	if meta != (Meta{}) {
+		q = q.Set("meta = ?", meta)
+		r.Meta = meta
+		changed = true
+	}
+	if changed {
+		if _, err := q.Exec(ctx); err != nil {
+			bg := context.WithoutCancel(ctx)
+			_ = s.disks[r.Disk].Delete(bg, r.Key)
+			_, _ = s.db.NewDelete().Model((*File)(nil)).Where("id = ?", r.ID).Exec(bg)
+			return File{}, errors.Wrap(err, "filesystem: save detected metadata")
 		}
-		r.Size = lr.n
 	}
 	return r, nil
 }
@@ -162,32 +229,9 @@ func (s *Service) Confirm(ctx context.Context, owner identity.Subject, id uuid.U
 			return File{}, err
 		}
 	}
-	detected, err := s.checkAccept(ctx, r, accept)
+	detected, meta, err := s.validateAndExtractMeta(ctx, r, accept)
 	if err != nil {
 		return File{}, err
-	}
-	effective := detected
-	if effective == "" {
-		effective = mediaType(r.ContentType)
-	}
-	// 图片文件自动提取宽高元数据，并按 Accept.MaxDimension 拦截损坏图片或超限像素尺寸。
-	var meta Meta
-	if strings.HasPrefix(effective, "image/") {
-		w, h, ok := r.Meta.Width, r.Meta.Height, r.Meta.Width > 0 && r.Meta.Height > 0
-		if !ok {
-			w, h, ok, err = s.readImageDimensions(ctx, r, effective)
-			if err != nil {
-				return File{}, err
-			}
-		}
-		if accept.MaxDimension > 0 {
-			if !ok || w <= 0 || h <= 0 || w > accept.MaxDimension || h > accept.MaxDimension {
-				return File{}, errors.Wrapf(ErrNotAccepted, "image dimensions %dx%d exceed %d", w, h, accept.MaxDimension)
-			}
-		}
-		if ok && w > 0 && h > 0 {
-			meta = Meta{Width: w, Height: h}
-		}
 	}
 	if r.Status == StatusReady {
 		return r, nil
@@ -218,6 +262,37 @@ func (s *Service) Confirm(ctx context.Context, owner identity.Subject, id uuid.U
 	}
 	r.Status, r.ExpiresAt = StatusReady, nil
 	return r, nil
+}
+
+// validateAndExtractMeta 校验文件是否符合 accept，并提取图片的宽高元数据。
+func (s *Service) validateAndExtractMeta(ctx context.Context, r File, accept Accept) (string, Meta, error) {
+	detected, err := s.checkAccept(ctx, r, accept)
+	if err != nil {
+		return "", Meta{}, err
+	}
+	effective := detected
+	if effective == "" {
+		effective = mediaType(r.ContentType)
+	}
+	var meta Meta
+	if strings.HasPrefix(effective, "image/") {
+		w, h, ok := r.Meta.Width, r.Meta.Height, r.Meta.Width > 0 && r.Meta.Height > 0
+		if !ok {
+			w, h, ok, err = s.readImageDimensions(ctx, r, effective)
+			if err != nil {
+				return "", Meta{}, err
+			}
+		}
+		if accept.MaxDimension > 0 {
+			if !ok || w <= 0 || h <= 0 || w > accept.MaxDimension || h > accept.MaxDimension {
+				return "", Meta{}, errors.Wrapf(ErrNotAccepted, "image dimensions %dx%d exceed %d", w, h, accept.MaxDimension)
+			}
+		}
+		if ok && w > 0 && h > 0 {
+			meta = Meta{Width: w, Height: h}
+		}
+	}
+	return detected, meta, nil
 }
 
 // Get 返回未删除的文件记录。业务授权由应用在调用前检查。
