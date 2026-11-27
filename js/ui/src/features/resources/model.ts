@@ -14,6 +14,7 @@ import {
 import { keepPreviousData, type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useCallback, useMemo } from "react"
 import { useCan } from "../../app/app"
+import { type PreloadOptions, preloadQueries } from "../../app/preload"
 import { type ListRoute, type ListSearch, type ListState, listSearch, useList } from "../../components/data-table/list"
 import { useSmoothTransition } from "../../components/loading"
 
@@ -510,8 +511,9 @@ export interface ResourceList {
 export function useResourceList(model: ResourceModel, route: ListRoute<Record<string, unknown>>): ResourceList {
   const list = useList(route)
   const can = useCan()
-  // 换筛选、翻页、排序时总是向服务器读最新的，读取中暂留旧行并展示统一最短时长的加载态，慢请求自动延长。
-  const query = useQuery({ ...model.listQuery(list.params), gcTime: 0, placeholderData: keepPreviousData })
+  // 进入页面和换筛选、翻页、排序时总是向服务器读最新的：缓存中已有的（路由 loader 预取的、上次看过的）先显示，
+  // 后台刷新后静默替换；换了条件还在读取时暂留旧行，慢请求超过 delayMs 才叠加加载态。
+  const query = useQuery({ ...model.listQuery(list.params), placeholderData: keepPreviousData })
   const transition = useSmoothTransition(
     query.data as ListResponse | undefined,
     JSON.stringify(list.params),
@@ -534,6 +536,22 @@ export function useResourceList(model: ResourceModel, route: ListRoute<Record<st
     },
     refetch: () => void query.refetch(),
   }
+}
+
+/**
+ * preloadResourceList 在列表路由的 loader 中预取当前地址条件下的列表，进入页面时表格直接显示数据；
+ * 缓存中已有时在后台刷新、立即放行。params 是路由的 search（loaderDeps 返回它）：
+ *
+ *	loaderDeps: ({ search }) => search,
+ *	loader: ({ context, deps }) => preloadResourceList(context.app.queryClient, articles, deps),
+ */
+export function preloadResourceList(
+  queryClient: QueryClient,
+  model: ResourceModel,
+  params: Record<string, unknown>,
+  options?: PreloadOptions,
+): Promise<void> {
+  return preloadQueries(queryClient, [model.listQuery(params)], options)
 }
 
 /** 一行的详情：编辑表单的初始值。key 为空时不读取（例如新建）。 */

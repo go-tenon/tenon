@@ -11,7 +11,7 @@ description: 在 Tenon 应用的前端（apps/<前端>，TanStack Start + Mantin
 
 1. **先有接口**：页面要的数据和操作先在 Go 中写成接口（技能 `tenon-http-api`），运行 `bun run generate`。前端从 `@<项目>/client/<API 名称>` 导入生成的类型和函数，不手写请求。
 2. **新建页面**：`apps/<前端>/src/routes/` 中一个文件一个页面，用 `createFileRoute`。需要登录的后台页面放在布局路由 `_app` 下，`staticData` 的 `title`、`icon`、`order` 决定菜单，见 `tenon/docs/frontend/app.md#route-metadata`、`tenon/docs/frontend/layout.md#menu`。
-3. **读数据和修改**：用生成的查询选项，`useQuery(queries.article.get(id))`、`useMutation(queries.article.publish())`，修改成功后同一分组的查询自动失效，见 `tenon/docs/frontend/client-react.md#tanstack`。
+3. **读数据和修改**：用生成的查询选项，`useQuery(queries.article.get(id))`、`useMutation(queries.article.publish())`，修改成功后同一分组的查询自动失效，见 `tenon/docs/frontend/client-react.md#tanstack`。页面要用的查询在路由的 `loader` 中用 `preloadQueries` 预取（资源列表用 `preloadResourceList`），切换后页面一次完整出现，见 `tenon/docs/frontend/client-react.md#preload`。
 4. **列表**：查询条件、排序、分页放在地址中，用 `listSearch` 和 `useList`；表格见 `tenon/docs/frontend/lists-forms.md#lists`、`tenon/docs/frontend/lists-forms.md#data-table`。说明、备注这类长文字的列用 `TruncatedText`（一行显示，被截断时鼠标停在上面弹出全文），资源页面的文字列已经自动使用，见 `tenon/docs/frontend/lists-forms.md#long-text`。
 5. **表单**：用生成的校验规则和验证提示，与服务端一致，不手写规则，见 `tenon/docs/frontend/lists-forms.md#forms`、`tenon/docs/frontend/client-react.md#validation-rules`。
 6. **按权限显示**：用生成的 `permissions.ts`，见 `tenon/docs/frontend/client-react.md#ts-permissions`、`tenon/docs/frontend/app.md#permissions`。
