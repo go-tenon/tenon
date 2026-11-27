@@ -20,6 +20,7 @@ import (
 //	    s3: {bucket: blog-files, public_url: https://cdn.example.com}
 type Config struct {
 	DefaultDisk   string        `yaml:"default_disk"`    // 默认磁盘：local 或 s3
+	PrivateDisk   string        `yaml:"private_disk"`    // 可选的私有磁盘：local_private 或 s3_private
 	MaxUploadSize ByteSize      `yaml:"max_upload_size"` // 单个文件的最大声明大小
 	TempTTL       time.Duration `yaml:"temp_ttl"`        // 未确认文件多久后被 Cleanup 回收
 	Disks         DisksConfig   `yaml:"disks"`           // 只需填写用到的磁盘
@@ -27,14 +28,17 @@ type Config struct {
 
 // DisksConfig 是各磁盘的配置。没有填写的磁盘保持零值，表示不使用。
 type DisksConfig struct {
-	Local LocalConfig `yaml:"local"`
-	S3    S3Config    `yaml:"s3"`
+	Local        LocalConfig `yaml:"local"`
+	S3           S3Config    `yaml:"s3"`
+	LocalPrivate LocalConfig `yaml:"local_private"`
+	S3Private    S3Config    `yaml:"s3_private"`
 }
 
 // LocalConfig 是本地磁盘（filesystem/local）的配置。
 type LocalConfig struct {
 	Root      string `yaml:"root"`       // 存储目录，由应用独占
-	PublicURL string `yaml:"public_url"` // 公开访问基址，绝对 URL 或以 / 开头的路径
+	PublicURL string `yaml:"public_url"` // 公开访问基址，绝对 URL 或以 / 开头的路径；Private 为 true 时留空
+	Private   bool   `yaml:"private"`    // 为 true 时表示私有磁盘，不公开访问
 }
 
 // S3Config 是 S3 磁盘（filesystem/s3）的配置。未提供静态密钥时使用 AWS 默认凭证链。
@@ -45,7 +49,8 @@ type S3Config struct {
 	PathStyle bool   `yaml:"path_style"` // 使用 path-style 访问桶，MinIO 等通常需要
 	AccessKey string `yaml:"access_key"`
 	SecretKey string `yaml:"secret_key"`
-	PublicURL string `yaml:"public_url"` // 公开访问基址（CDN 或桶域名），必填
+	PublicURL string `yaml:"public_url"` // 公开访问基址（CDN 或桶域名）；Private 为 true 时留空
+	Private   bool   `yaml:"private"`    // 为 true 时表示私有桶，不公开访问
 }
 
 // SetDefaults 填充默认值：local 磁盘、1GiB、24h。
@@ -53,13 +58,25 @@ func (c *Config) SetDefaults() {
 	*c = Config{DefaultDisk: "local", MaxUploadSize: GiB, TempTTL: 24 * time.Hour}
 }
 
-// Validate 检查上传限制，并要求默认磁盘已在 disks 下配置。各磁盘配置自己校验。
+// Validate 检查上传限制，并要求默认磁盘与私有磁盘（若设置）已在 disks 下配置。各磁盘配置自己校验。
 func (c Config) Validate() error {
-	configured := map[string]bool{"local": !c.Disks.Local.IsZero(), "s3": !c.Disks.S3.IsZero()}
-	if !configured[c.DefaultDisk] {
-		return errors.Join(errors.Newf("default_disk %q must be local or s3 and configured under disks", c.DefaultDisk), c.validateLimits())
+	configured := map[string]bool{
+		"local":         !c.Disks.Local.IsZero(),
+		"s3":            !c.Disks.S3.IsZero(),
+		"local_private": !c.Disks.LocalPrivate.IsZero(),
+		"s3_private":    !c.Disks.S3Private.IsZero(),
 	}
-	return c.validateLimits()
+	var errs []error
+	if !configured[c.DefaultDisk] {
+		errs = append(errs, errors.Newf("default_disk %q must be local or s3 and configured under disks", c.DefaultDisk))
+	}
+	if strings.TrimSpace(c.PrivateDisk) != "" && !configured[c.PrivateDisk] {
+		errs = append(errs, errors.Newf("private_disk %q must be configured under disks", c.PrivateDisk))
+	}
+	if err := c.validateLimits(); err != nil {
+		errs = append(errs, err)
+	}
+	return errors.Join(errs...)
 }
 
 // validateLimits 检查与磁盘无关的上传限制，New 只依赖这部分。
@@ -80,7 +97,7 @@ func (c Config) validateLimits() error {
 // IsZero 报告本地磁盘是否未配置。
 func (c LocalConfig) IsZero() bool { return c == LocalConfig{} }
 
-// Validate 检查目录和公开基址；未配置时跳过。
+// Validate 检查目录和公开基址；未配置时跳过。私有磁盘禁止设置公开基址。
 func (c LocalConfig) Validate() error {
 	if c.IsZero() {
 		return nil
@@ -88,6 +105,12 @@ func (c LocalConfig) Validate() error {
 	var errs []error
 	if strings.TrimSpace(c.Root) == "" {
 		errs = append(errs, errors.New("root is required"))
+	}
+	if c.Private {
+		if strings.TrimSpace(c.PublicURL) != "" {
+			errs = append(errs, errors.New("private local disk must not set public_url"))
+		}
+		return errors.Join(errs...)
 	}
 	u, err := url.Parse(strings.TrimSpace(c.PublicURL))
 	if err != nil || c.PublicURL == "" || u.RawQuery != "" || u.Fragment != "" ||
@@ -101,7 +124,7 @@ func (c LocalConfig) Validate() error {
 // IsZero 报告 S3 磁盘是否未配置。
 func (c S3Config) IsZero() bool { return c == S3Config{} }
 
-// Validate 检查桶、公开基址、端点和静态凭证；未配置时跳过。
+// Validate 检查桶、公开基址、端点和静态凭证；未配置时跳过。私有磁盘禁止设置公开基址。
 func (c S3Config) Validate() error {
 	if c.IsZero() {
 		return nil
@@ -110,7 +133,11 @@ func (c S3Config) Validate() error {
 	if strings.TrimSpace(c.Bucket) == "" {
 		errs = append(errs, errors.New("bucket is required"))
 	}
-	if !httpURL(c.PublicURL) {
+	if c.Private {
+		if strings.TrimSpace(c.PublicURL) != "" {
+			errs = append(errs, errors.New("private s3 disk must not set public_url"))
+		}
+	} else if !httpURL(c.PublicURL) {
 		errs = append(errs, errors.New("public_url must be an http(s) URL"))
 	}
 	if c.Endpoint != "" && !httpURL(c.Endpoint) {

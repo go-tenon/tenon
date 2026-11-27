@@ -478,9 +478,10 @@ func TestImpersonation(t *testing.T) {
 		t.Fatal("exceeded max impersonation lifetime accepted")
 	}
 	impersonating, err := s.Impersonate(ctx, staff, alice.Ref(), apitoken.Impersonation{
-		Tenant: "acme",
-		Scopes: read,
-		Reason: "工单 #42",
+		Tenant:   "acme",
+		Scopes:   read,
+		ReadOnly: true,
+		Reason:   "工单 #42",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -489,10 +490,10 @@ func TestImpersonation(t *testing.T) {
 	if _, err := s.Create(ctx, asAlice, apitoken.Personal{Name: "排查", Scopes: read}); !errors.Is(err, identity.ErrImpersonationForbidden) {
 		t.Fatalf("impersonated Create err=%v", err)
 	}
-	if sub, ok := valid(t, s, own); !ok || !sub.Impersonator.IsZero() {
-		t.Fatalf("own token impersonator=%v ok=%v", sub.Impersonator, ok)
+	if sub, ok := valid(t, s, own); !ok || !sub.Impersonator.IsZero() || sub.ReadOnly {
+		t.Fatalf("own token impersonator=%v readOnly=%v ok=%v", sub.Impersonator, sub.ReadOnly, ok)
 	}
-	if sub, ok := valid(t, s, impersonating); !ok || sub.ID != "alice" || sub.Impersonator != staff.Ref() || sub.BoundTenant != "acme" || !slices.Equal(sub.Scopes, read) || !sub.Auth.Time.IsZero() {
+	if sub, ok := valid(t, s, impersonating); !ok || sub.ID != "alice" || sub.Impersonator != staff.Ref() || sub.BoundTenant != "acme" || !sub.ReadOnly || !slices.Equal(sub.Scopes, read) || !sub.Auth.Time.IsZero() {
 		t.Fatalf("impersonation token sub=%+v ok=%v", sub, ok)
 	}
 	list, err := s.List(ctx, alice)
@@ -505,7 +506,7 @@ func TestImpersonation(t *testing.T) {
 		impersonators[tok.Impersonator]++
 		if tok.Kind == apitoken.KindImpersonation {
 			sawImp = true
-			if tok.Tenant != "acme" || tok.Reason != "工单 #42" {
+			if tok.Tenant != "acme" || tok.Reason != "工单 #42" || !tok.ReadOnly {
 				t.Fatalf("impersonation list item=%+v", tok)
 			}
 		}
@@ -514,8 +515,8 @@ func TestImpersonation(t *testing.T) {
 		t.Fatalf("impersonators=%v sawImp=%v", impersonators, sawImp)
 	}
 
-	// 一次性交换票据：只能消费一次，消费后得到 KindImpersonation 令牌；按操作者撤销会同时清理票据和令牌。
-	ticket, err := s.CreateImpersonationTicket(ctx, staff, alice.Ref(), apitoken.Impersonation{Tenant: "acme", Reason: "工单 #43"}, time.Minute)
+	// 一次性交换票据：只能消费一次，消费后得到 KindImpersonation 令牌并透传 ReadOnly；按操作者撤销会同时清理票据和令牌。
+	ticket, err := s.CreateImpersonationTicket(ctx, staff, alice.Ref(), apitoken.Impersonation{Tenant: "acme", ReadOnly: true, Reason: "工单 #43"}, time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -523,13 +524,13 @@ func TestImpersonation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ex.Subject != alice.Ref() || ex.Actor != staff.Ref() || ex.Tenant != "acme" || ex.Reason != "工单 #43" || ex.Lifetime != apitoken.DefaultImpersonationLifetime {
+	if ex.Subject != alice.Ref() || ex.Actor != staff.Ref() || ex.Tenant != "acme" || !ex.ReadOnly || ex.Reason != "工单 #43" || ex.Lifetime != apitoken.DefaultImpersonationLifetime {
 		t.Fatalf("exchanged=%+v", ex)
 	}
 	if _, err := s.ExchangeImpersonationTicket(ctx, ticket, apitoken.Device{}); !errors.Is(err, apitoken.ErrTicketInvalid) {
 		t.Fatalf("reused ticket err=%v", err)
 	}
-	if sub, ok := valid(t, s, ex.Token); !ok || sub.Impersonator != staff.Ref() || sub.BoundTenant != "acme" {
+	if sub, ok := valid(t, s, ex.Token); !ok || sub.Impersonator != staff.Ref() || sub.BoundTenant != "acme" || !sub.ReadOnly {
 		t.Fatalf("exchanged token sub=%+v ok=%v", sub, ok)
 	}
 	pendingTicket, err := s.CreateImpersonationTicket(ctx, staff, alice.Ref(), apitoken.Impersonation{Tenant: "acme"}, time.Minute)

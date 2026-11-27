@@ -52,6 +52,7 @@ type FileInput struct {
 	Filename    string
 	ContentType string
 	Size        int64
+	Accept      *Accept // 非 nil 时在 Upload 完成后立即校验类型与体积，不合格立即删除对象与记录
 }
 
 // Accept 描述一种用途接受的文件，由 Confirm 检查。零值只要求文件已完整上传。

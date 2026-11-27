@@ -34,8 +34,10 @@ type Disk struct {
 }
 
 var (
-	_ filesystem.Disk           = (*Disk)(nil)
-	_ filesystem.DirectUploader = (*Disk)(nil)
+	_ filesystem.Disk               = (*Disk)(nil)
+	_ filesystem.DirectUploader     = (*Disk)(nil)
+	_ filesystem.SignGetter         = (*Disk)(nil)
+	_ filesystem.ResponseSignGetter = (*Disk)(nil)
 )
 
 // Open 按 filesystem.disks.s3 配置创建客户端并检查桶可访问。桶和公开访问策略由运维预先配置。
@@ -71,10 +73,13 @@ func Open(ctx context.Context, cfg filesystem.S3Config) (*Disk, error) {
 	if _, err := client.HeadBucket(ctx, &awss3.HeadBucketInput{Bucket: aws.String(cfg.Bucket)}); err != nil {
 		return nil, errors.Wrap(err, "s3: head bucket")
 	}
+	if cfg.Private {
+		return NewPrivate(client, cfg.Bucket)
+	}
 	return New(client, cfg.Bucket, cfg.PublicURL)
 }
 
-// New 使用应用自己创建的客户端，不访问网络。
+// New 使用应用自己创建的客户端创建公开访问的 S3 磁盘，不访问网络。
 func New(client *awss3.Client, bucket, publicURL string) (*Disk, error) {
 	if client == nil {
 		return nil, errors.New("s3: client is required")
@@ -85,11 +90,25 @@ func New(client *awss3.Client, bucket, publicURL string) (*Disk, error) {
 	return &Disk{client: client, presigner: awss3.NewPresignClient(client), bucket: bucket, baseURL: strings.TrimRight(publicURL, "/")}, nil
 }
 
+// NewPrivate 使用应用自己创建的客户端创建私有 S3 磁盘（URL 返回空字符串，通过预签名或服务端转发访问），不访问网络。
+func NewPrivate(client *awss3.Client, bucket string) (*Disk, error) {
+	if client == nil {
+		return nil, errors.New("s3: client is required")
+	}
+	if err := (filesystem.S3Config{Bucket: bucket, Private: true}).Validate(); err != nil {
+		return nil, errors.Wrap(err, "s3")
+	}
+	return &Disk{client: client, presigner: awss3.NewPresignClient(client), bucket: bucket}, nil
+}
+
 // Client 返回原生客户端，供应用使用未封装的 S3 能力。
 func (d *Disk) Client() *awss3.Client { return d.client }
 
-// URL 返回对象的公开地址。
+// URL 返回对象的公开地址；私有磁盘始终返回空字符串。
 func (d *Disk) URL(key string) string {
+	if d.baseURL == "" {
+		return ""
+	}
 	parts := strings.Split(key, "/")
 	for i, p := range parts {
 		parts[i] = url.PathEscape(p)
@@ -115,6 +134,7 @@ func (d *Disk) Put(ctx context.Context, key, contentType string, body io.Reader,
 	_, err = d.client.PutObject(ctx, &awss3.PutObjectInput{
 		Bucket: aws.String(d.bucket), Key: aws.String(key), Body: bytes.NewReader(buf[:n]),
 		ContentLength: aws.Int64(int64(n)), ContentType: optional(contentType),
+		ContentDisposition: activeDisposition(contentType),
 	})
 	return wrap("put object", err)
 }
@@ -185,8 +205,16 @@ func (d *Disk) Delete(ctx context.Context, key string) error {
 
 // SignGet 签发限时读取地址，供私有对象按需授权下载。
 func (d *Disk) SignGet(ctx context.Context, key string, ttl time.Duration) (filesystem.SignedRequest, error) {
+	return d.SignGetWith(ctx, key, ttl, filesystem.SignedGetOptions{})
+}
+
+// SignGetWith 签发限时读取地址并可覆写响应头 Content-Type 与 Content-Disposition。
+func (d *Disk) SignGetWith(ctx context.Context, key string, ttl time.Duration, opts filesystem.SignedGetOptions) (filesystem.SignedRequest, error) {
 	out, err := d.presigner.PresignGetObject(ctx, &awss3.GetObjectInput{
-		Bucket: aws.String(d.bucket), Key: aws.String(key),
+		Bucket:                     aws.String(d.bucket),
+		Key:                        aws.String(key),
+		ResponseContentType:        optional(opts.ContentType),
+		ResponseContentDisposition: optional(opts.ContentDisposition),
 	}, awss3.WithPresignExpires(ttl))
 	if err != nil {
 		return filesystem.SignedRequest{}, wrap("presign get", err)
@@ -199,7 +227,8 @@ func (d *Disk) SignGet(ctx context.Context, key string, ttl time.Duration) (file
 func (d *Disk) SignPut(ctx context.Context, key, contentType string, size int64, ttl time.Duration) (filesystem.SignedRequest, error) {
 	out, err := d.presigner.PresignPutObject(ctx, &awss3.PutObjectInput{
 		Bucket: aws.String(d.bucket), Key: aws.String(key), ContentType: optional(contentType), ContentLength: aws.Int64(size),
-		IfNoneMatch: aws.String("*"),
+		ContentDisposition: activeDisposition(contentType),
+		IfNoneMatch:        aws.String("*"),
 	}, awss3.WithPresignExpires(ttl))
 	if err != nil {
 		return filesystem.SignedRequest{}, wrap("presign put", err)
@@ -211,6 +240,7 @@ func (d *Disk) SignPut(ctx context.Context, key, contentType string, size int64,
 func (d *Disk) CreateMultipart(ctx context.Context, key, contentType string) (string, error) {
 	out, err := d.client.CreateMultipartUpload(ctx, &awss3.CreateMultipartUploadInput{
 		Bucket: aws.String(d.bucket), Key: aws.String(key), ContentType: optional(contentType),
+		ContentDisposition: activeDisposition(contentType),
 	})
 	if err != nil {
 		return "", wrap("create multipart", err)
@@ -316,4 +346,12 @@ func optional(s string) *string {
 		return nil
 	}
 	return aws.String(s)
+}
+
+// activeDisposition 对可能执行脚本的内容类型强制写入附件下载头。
+func activeDisposition(contentType string) *string {
+	if filesystem.IsActiveType(contentType) {
+		return aws.String("attachment")
+	}
+	return nil
 }

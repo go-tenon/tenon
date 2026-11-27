@@ -115,10 +115,32 @@ func TestDiskConfigValidate(t *testing.T) {
 		{Bucket: "b", PublicURL: "/storage"},
 		{Bucket: "b", PublicURL: "https://x", Endpoint: "minio:9000"},
 		{Bucket: "b", PublicURL: "https://x", AccessKey: "k"},
+		{Bucket: "b", Private: true, PublicURL: "https://cdn.example.com"},
 	} {
 		if err := bad.Validate(); err == nil {
 			t.Errorf("s3 %+v accepted", bad)
 		}
+	}
+	if err := (filesystem.LocalConfig{Root: "priv", Private: true}).Validate(); err != nil {
+		t.Fatalf("private local rejected: %v", err)
+	}
+	if err := (filesystem.LocalConfig{Root: "priv", Private: true, PublicURL: "/storage"}).Validate(); err == nil {
+		t.Fatal("private local with public_url accepted")
+	}
+	if err := (filesystem.S3Config{Bucket: "priv", Private: true}).Validate(); err != nil {
+		t.Fatalf("private s3 rejected: %v", err)
+	}
+	if err := (filesystem.Config{
+		DefaultDisk:   "local",
+		PrivateDisk:   "local_private",
+		MaxUploadSize: filesystem.MiB,
+		TempTTL:       time.Hour,
+		Disks: filesystem.DisksConfig{
+			Local:        filesystem.LocalConfig{Root: "pub", PublicURL: "/storage"},
+			LocalPrivate: filesystem.LocalConfig{Root: "priv", Private: true},
+		},
+	}).Validate(); err != nil {
+		t.Fatalf("config with private_disk rejected: %v", err)
 	}
 }
 

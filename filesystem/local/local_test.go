@@ -128,13 +128,13 @@ func TestServeHTTPSecurityHeaders(t *testing.T) {
 	html := "<!DOCTYPE html><script>alert(1)</script>"
 	for key, body := range map[string]string{
 		"a.html": html, "b.svg": `<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`,
-		"noext": html, "c.png": "\x89PNG\r\n\x1a\n0000", "d.txt": "hi",
+		"e.js": "alert(1)", "noext": html, "c.png": "\x89PNG\r\n\x1a\n0000", "d.txt": "hi",
 	} {
 		if err := disk.Put(ctx, key, "", strings.NewReader(body), int64(len(body))); err != nil {
 			t.Fatal(err)
 		}
 	}
-	for key, active := range map[string]bool{"a.html": true, "b.svg": true, "noext": true, "c.png": false, "d.txt": false} {
+	for key, active := range map[string]bool{"a.html": true, "b.svg": true, "e.js": true, "noext": true, "c.png": false, "d.txt": false} {
 		for _, rangeHeader := range []string{"", "bytes=0-3"} {
 			req := httptest.NewRequest(http.MethodGet, "/storage/"+key, nil)
 			if rangeHeader != "" {
@@ -182,5 +182,25 @@ func TestServeHTTPMediaContentTypes(t *testing.T) {
 		if rec.Header().Get("X-Content-Type-Options") != "nosniff" {
 			t.Errorf("%s: missing nosniff", key)
 		}
+	}
+}
+
+func TestPrivateDisk(t *testing.T) {
+	ctx := context.Background()
+	disk, err := local.Open(filesystem.LocalConfig{Root: filepath.Join(t.TempDir(), "priv"), Private: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = disk.Close() })
+	if err := disk.Put(ctx, "a/secret.txt", "text/plain", strings.NewReader("secret"), 6); err != nil {
+		t.Fatal(err)
+	}
+	if got := disk.URL("a/secret.txt"); got != "" {
+		t.Fatalf("private disk URL = %q, want empty", got)
+	}
+	rec := httptest.NewRecorder()
+	disk.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/storage/a/secret.txt", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("private ServeHTTP = %d, want 404", rec.Code)
 	}
 }

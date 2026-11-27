@@ -4,6 +4,7 @@ auth.impersonation_forbidden: 代为登录状态下不能执行这个操作
 auth.confirm_required: 请先确认身份
 auth.two_factor_required: 请先完成二次验证
 auth.method_required: 请使用指定的方式重新登录
+auth.read_only: 只读模式下不能执行修改操作
 http.cross_site: 拒绝了来自其他网站的请求，请在本站页面上重试
 url.invalid_signature: 链接无效
 url.expired: 链接已过期

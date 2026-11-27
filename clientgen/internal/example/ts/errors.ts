@@ -42,6 +42,8 @@ export const IdentityErrors = {
    * 公开参数 methods 列出可以用的方式，客户端据此让用户用其中一种重新登录。
    */
   MethodRequired: "auth.method_required",
+  /** ErrReadOnly 表示当前凭据处于只读模式（如只读代为登录），禁止执行写操作。 */
+  ReadOnly: "auth.read_only",
 } as const
 
 /** github.com/go-tenon/tenon/page 的错误码。 */

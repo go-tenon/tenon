@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -295,4 +297,58 @@ func TestStartGetCleanup(t *testing.T) {
 		t.Fatalf("old: %v", err)
 	}
 	e.get(t, recent.ID)
+}
+
+func TestPrivateDiskAndServe(t *testing.T) {
+	ctx := context.Background()
+	t.Cleanup(exports.SetSaveInterval(0))
+	db := dbtest.Open(t, migrations()...)
+	pubDisk, err := local.Open(filesystem.LocalConfig{Root: filepath.Join(t.TempDir(), "pub"), PublicURL: "/storage"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = pubDisk.Close() })
+	privDisk, err := local.Open(filesystem.LocalConfig{Root: filepath.Join(t.TempDir(), "priv"), Private: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = privDisk.Close() })
+	cfg := filesystem.Config{
+		DefaultDisk:   "local",
+		PrivateDisk:   "local_private",
+		MaxUploadSize: filesystem.GiB,
+		TempTTL:       time.Hour,
+	}
+	files, err := filesystem.New(db, cfg, map[string]filesystem.Disk{"local": pubDisk, "local_private": privDisk})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ops := operation.New(db)
+	svc := exports.New(db, ops, files, exports.WithDisk("local_private"))
+
+	exp, err := svc.Start(ctx, db, alice, "contacts.export", sheet.CSV)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Process(ctx, exp.ID, rows(2), nil); err != nil {
+		t.Fatal(err)
+	}
+	got, err := svc.Get(ctx, alice, exp.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.URL != "" || got.FileID == uuid.Nil {
+		t.Fatalf("private export should have empty URL: %+v", got)
+	}
+	// 其他主体无法下载，本人可以通过 Serve 附件下载。
+	if err := svc.Serve(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/download", nil), bob, exp.ID); !errors.Is(err, operation.ErrNotFound) {
+		t.Fatalf("other owner serve err = %v", err)
+	}
+	rec := httptest.NewRecorder()
+	if err := svc.Serve(rec, httptest.NewRequest(http.MethodGet, "/download", nil), alice, exp.ID); err != nil {
+		t.Fatal(err)
+	}
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Header().Get("Content-Disposition"), "attachment") || !strings.Contains(rec.Body.String(), "T1") {
+		t.Fatalf("serve response = %d headers=%v body=%q", rec.Code, rec.Header(), rec.Body.String())
+	}
 }
